@@ -1,0 +1,27 @@
+{
+  "name": "canjuguan",
+  "version": "0.1.0",
+  "description": "世界观动态构建系统 — 绒花计划",
+  "main": "src/main/index.js",
+  "scripts": {
+    "dev": "vite --config vite.config.js --port 5174",
+    "dev:watch": "concurrently -k \"vite --config vite.config.js --port 5174\" \"wait-on tcp:5174 && electron .\"",
+    "build": "vite build --config vite.config.js",
+    "extract-data": "node scripts/extract-data.js"
+  },
+  "keywords": ["worldbuilding", "obsidian", "electron"],
+  "author": "暮雨",
+  "license": "MIT",
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "vue": "^3.4.0",
+    "pinia": "^2.1.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "electron": "^28.0.0",
+    "vite": "^5.0.0",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0"
+  }
+}
