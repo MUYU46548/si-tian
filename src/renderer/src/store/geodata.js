@@ -67,7 +67,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   });
 
   async function loadGeodata() {
-    const result = await window.canjuguanAPI.getGeodata();
+    const result = await window.sitianAPI.getGeodata();
     if (result.success) {
       nodes.value = result.data.nodes || [];
     } else {
@@ -77,7 +77,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   async function reextract() {
-    const result = await window.canjuguanAPI.reextractGeodata();
+    const result = await window.sitianAPI.reextractGeodata();
     if (result.success) {
       nodes.value = result.data.nodes || [];
     }
@@ -85,7 +85,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   async function saveGeodata() {
     const data = { nodes: nodes.value, updatedAt: new Date().toISOString() };
-    await window.canjuguanAPI.saveGeodata(data);
+    await window.sitianAPI.saveGeodata(data);
   }
 
   function updateNodePosition(id, x, y) {

@@ -1,7 +1,7 @@
 <template>
   <div class="app-layout">
     <header class="toolbar">
-      <h1>Canjuguan</h1>
+      <h1>SiTian</h1>
       <div class="toolbar-center">
         <nav class="level-indicator">
           <button 

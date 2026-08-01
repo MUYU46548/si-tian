@@ -290,7 +290,7 @@ module.exports = { extractGeodata };
 if (require.main === module) {
   (async () => {
     const data = await extractGeodata();
-    const outPath = path.join(VAULT_PATH, '.canjuguan', 'geodata.json');
+    const outPath = path.join(VAULT_PATH, '.sitian', 'geodata.json');
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, JSON.stringify(data, null, 2), 'utf-8');
     console.log(`提取完成！数据已保存至: ${outPath}`);

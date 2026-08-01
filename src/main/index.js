@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const { extractGeodata } = require('../../scripts/extract-data');
 
 const VAULT_PATH = 'E:/图书馆/ROSA';
-const CACHE_PATH = path.join(VAULT_PATH, '.canjuguan', 'geodata.json');
+const CACHE_PATH = path.join(VAULT_PATH, '.sitian', 'geodata.json');
 
 let mainWindow;
 
@@ -12,7 +12,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
-    title: 'Canjuguan — 世界观动态构建系统',
+    title: 'SiTian — 世界观动态构建系统',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,

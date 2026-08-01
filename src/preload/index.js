@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('canjuguanAPI', {
+contextBridge.exposeInMainWorld('sitianAPI', {
   // 数据获取
   getGeodata: () => ipcRenderer.invoke('get-geodata'),
   reextractGeodata: () => ipcRenderer.invoke('reextract-geodata'),
