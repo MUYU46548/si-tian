@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 
 export const useGeodataStore = defineStore('geodata', () => {
   const nodes = ref([]);
+  const hyperlanes = ref([]);  // 用户自定义航道
   const currentWorld = ref(null);
   const currentDomain = ref(null);
   const currentSystem = ref(null);
@@ -42,6 +43,23 @@ export const useGeodataStore = defineStore('geodata', () => {
     return domainGalaxies;
   });
   
+  // 获取与指定节点相关的航道
+  const getHyperlanesByNode = computed(() => {
+    return (nodeId) => hyperlanes.value.filter(h => h.fromId === nodeId || h.toId === nodeId);
+  });
+  
+  // 获取当前域的航道
+  const currentDomainHyperlanes = computed(() => {
+    if (!currentDomain.value) return [];
+    const domainGalaxyIds = new Set(currentDomainGalaxies.value.map(g => g.id));
+    return hyperlanes.value.filter(h => {
+      // 两端都在本域内
+      if (domainGalaxyIds.has(h.fromId) && domainGalaxyIds.has(h.toId)) return true;
+      // 跨域航道：一端在本域
+      return domainGalaxyIds.has(h.fromId) || domainGalaxyIds.has(h.toId);
+    });
+  });
+  
   const tree = computed(() => {
     const map = new Map();
     nodes.value.forEach(n => map.set(n.id, { ...n, children: [] }));
@@ -70,9 +88,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     const result = await window.sitianAPI.getGeodata();
     if (result.success) {
       nodes.value = result.data.nodes || [];
+      hyperlanes.value = result.data.hyperlanes || [];
     } else {
       console.error('Failed to load geodata:', result.error);
       nodes.value = [];
+      hyperlanes.value = [];
     }
   }
 
@@ -80,11 +100,21 @@ export const useGeodataStore = defineStore('geodata', () => {
     const result = await window.sitianAPI.reextractGeodata();
     if (result.success) {
       nodes.value = result.data.nodes || [];
+      // 保留用户创建的航道（不覆盖）
+      // hyperlanes 从 result.data.hyperlanes 中提取自动生成的部分
+      const autoHyperlanes = result.data.hyperlanes || [];
+      // 保留用户创建的航道（id 不以 'auto_' 开头的）
+      const userHyperlanes = hyperlanes.value.filter(h => !h.id.startsWith('auto_'));
+      hyperlanes.value = [...autoHyperlanes, ...userHyperlanes];
     }
   }
 
   async function saveGeodata() {
-    const data = { nodes: nodes.value, updatedAt: new Date().toISOString() };
+    const data = { 
+      nodes: nodes.value, 
+      hyperlanes: hyperlanes.value,
+      updatedAt: new Date().toISOString() 
+    };
     await window.sitianAPI.saveGeodata(data);
   }
 
@@ -104,6 +134,42 @@ export const useGeodataStore = defineStore('geodata', () => {
         node.coordinate.y = updated.coordinate.y;
       }
     });
+  }
+  
+  // ===== 航道 CRUD =====
+  
+  function addHyperlane(fromId, toId, type = 'local') {
+    // 检查是否已存在
+    const exists = hyperlanes.value.some(h => 
+      (h.fromId === fromId && h.toId === toId) || 
+      (h.fromId === toId && h.toId === fromId)
+    );
+    if (exists) return null;
+    
+    const id = `hyperlane_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const hyperlane = {
+      id,
+      fromId,
+      toId,
+      type,  // 'local' | 'cross_domain' | 'hyperjump'
+      controlPoints: []  // 可选的贝塞尔控制点
+    };
+    hyperlanes.value.push(hyperlane);
+    return hyperlane;
+  }
+  
+  function removeHyperlane(id) {
+    const idx = hyperlanes.value.findIndex(h => h.id === id);
+    if (idx !== -1) hyperlanes.value.splice(idx, 1);
+  }
+  
+  function updateHyperlane(id, updates) {
+    const h = hyperlanes.value.find(h => h.id === id);
+    if (h) Object.assign(h, updates);
+  }
+  
+  function getHyperlaneById(id) {
+    return hyperlanes.value.find(h => h.id === id);
   }
 
   function selectWorld(world) {
@@ -137,11 +203,13 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   return { 
-    nodes, tree, currentWorld, currentDomain, currentSystem, viewLevel,
+    nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, viewLevel,
     worlds, starDomains, galaxies, planets, locations,
     currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentDomainAllGalaxies,
+    currentDomainHyperlanes, getHyperlanesByNode,
     loadGeodata, reextract, saveGeodata, 
     updateNodePosition, updateAllCoordinates,
+    addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
     selectWorld, selectDomain, selectSystem, backToWorld, backToDomain
   };
 });

@@ -25,3 +25,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# 开发日志与Agent
+开发日志.md
+AGENT.md

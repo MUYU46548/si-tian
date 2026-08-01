@@ -1,8 +1,21 @@
 <template>
   <div class="galaxy-map-container">
     <div class="map-header">
-      <h2>{{ world?.name }} — 银河系图</h2>
-      <p class="hint">点击星域进入 · 滚动缩放 · 拖拽空白处平移</p>
+      <div class="header-left">
+        <h2>{{ world?.name }} — 银河系图</h2>
+        <p class="hint">
+          <span v-if="!editMode">点击星域进入 · 滚动缩放 · 拖拽空白处平移</span>
+          <span v-else class="edit-hint">编辑模式：拖拽星系间创建航道 · 右键航道删除 · 点击空白取消</span>
+        </p>
+      </div>
+      <div class="header-actions">
+        <button 
+          :class="{ active: editMode }" 
+          @click="toggleEditMode"
+        >
+          {{ editMode ? '✓ 完成编辑' : '✎ 编辑航道' }}
+        </button>
+      </div>
     </div>
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
@@ -11,7 +24,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { useGeodataStore } from '../store/geodata';
 
 const props = defineProps({
   world: { type: Object, default: null },
@@ -20,6 +34,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['select', 'back']);
+
+const store = useGeodataStore();
 
 const canvas = ref(null);
 let ctx = null;
@@ -30,11 +46,16 @@ let isDragOperation = false;
 
 let domainNodes = [];
 let galaxyNodes = [];
-let hyperlaneLinks = [];
-let layoutApplied = false;
 let rafId = null;
 let needsRender = true;
 let fastMode = false;
+
+// ===== 航道编辑状态 =====
+const editMode = ref(false);
+let dragSourceNode = null;      // 拖拽创建航道的源节点
+let dragMousePos = { x: 0, y: 0 };  // 当前鼠标世界坐标
+let hoveredHyperlane = null;    // 鼠标悬停的航道
+let targetNode = null;          // 当前拖拽目标节点
 
 onMounted(() => {
   initCanvas();
@@ -49,6 +70,12 @@ onUnmounted(() => {
   if (rafId) cancelAnimationFrame(rafId);
 });
 
+// 监听 props 变化，重新计算布局
+watch(() => [props.galaxies, props.domains], () => {
+  applyStableLayout();
+  requestRender();
+}, { deep: true });
+
 function initCanvas() {
   ctx = canvas.value.getContext('2d');
   resizeCanvas();
@@ -56,6 +83,8 @@ function initCanvas() {
   canvas.value.addEventListener('mousemove', onMouseMove);
   canvas.value.addEventListener('mouseup', onMouseUp);
   canvas.value.addEventListener('wheel', onWheel, { passive: false });
+  canvas.value.addEventListener('contextmenu', onContextMenu);
+  canvas.value.addEventListener('mouseleave', onMouseLeave);
 }
 
 function removeCanvasListeners() {
@@ -64,6 +93,8 @@ function removeCanvasListeners() {
   canvas.value.removeEventListener('mousemove', onMouseMove);
   canvas.value.removeEventListener('mouseup', onMouseUp);
   canvas.value.removeEventListener('wheel', onWheel);
+  canvas.value.removeEventListener('contextmenu', onContextMenu);
+  canvas.value.removeEventListener('mouseleave', onMouseLeave);
 }
 
 function resizeCanvas() {
@@ -87,9 +118,6 @@ function requestRender() {
 }
 
 function applyStableLayout() {
-  if (layoutApplied) return;
-  layoutApplied = true;
-  
   const domainCount = props.domains.length;
   const spacing = 500;
   
@@ -123,18 +151,6 @@ function applyStableLayout() {
       });
     }
   });
-  
-  hyperlaneLinks = [];
-  for (let i = 0; i < galaxyNodes.length; i++) {
-    for (let j = i + 1; j < galaxyNodes.length; j++) {
-      const g1 = galaxyNodes[i];
-      const g2 = galaxyNodes[j];
-      const dist = Math.hypot(g1.x - g2.x, g1.y - g2.y);
-      if (dist < 400) {
-        hyperlaneLinks.push({ from: g1, to: g2, crossDomain: g1.domainId !== g2.domainId });
-      }
-    }
-  }
 }
 
 function render() {
@@ -149,6 +165,7 @@ function render() {
   
   drawDomainBackgrounds();
   drawHyperlanes();
+  drawDragPreview();
   drawDomainNodes();
   drawGalaxyNodes();
   
@@ -180,23 +197,101 @@ function drawDomainBackgrounds() {
   });
 }
 
+// ===== 航道绘制 =====
 function drawHyperlanes() {
-  hyperlaneLinks.forEach(link => {
-    if (link.crossDomain) {
-      ctx.strokeStyle = 'rgba(150, 100, 255, 0.5)';
-      ctx.lineWidth = 1.5;
+  const hyperlanes = store.currentDomainHyperlanes;
+  const nodeMap = new Map(galaxyNodes.map(g => [g.id, g]));
+  
+  hyperlanes.forEach(h => {
+    const from = nodeMap.get(h.fromId);
+    const to = nodeMap.get(h.toId);
+    if (!from || !to) return;
+    
+    const isHovered = hoveredHyperlane === h.id;
+    const isUserCreated = !h.id.startsWith('auto_');
+    
+    // 样式规则
+    if (h.type === 'cross_domain') {
+      ctx.strokeStyle = isHovered ? 'rgba(200, 100, 255, 0.9)' : 'rgba(150, 100, 255, 0.5)';
+      ctx.lineWidth = isHovered ? 2.5 : 1.5;
       ctx.setLineDash([3, 6]);
+    } else if (h.type === 'hyperjump') {
+      ctx.strokeStyle = isHovered ? 'rgba(255, 100, 100, 0.9)' : 'rgba(255, 100, 100, 0.4)';
+      ctx.lineWidth = isHovered ? 2.5 : 1.5;
+      ctx.setLineDash([6, 3]);
     } else {
-      ctx.strokeStyle = 'rgba(100, 150, 200, 0.25)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([]);
+      // local
+      if (isUserCreated) {
+        ctx.strokeStyle = isHovered ? 'rgba(100, 255, 180, 0.9)' : 'rgba(100, 255, 180, 0.45)';
+        ctx.lineWidth = isHovered ? 2 : 1.2;
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = isHovered ? 'rgba(100, 200, 255, 0.6)' : 'rgba(100, 150, 200, 0.25)';
+        ctx.lineWidth = isHovered ? 1.5 : 1;
+        ctx.setLineDash([]);
+      }
     }
+    
     ctx.beginPath();
-    ctx.moveTo(link.from.x, link.from.y);
-    ctx.lineTo(link.to.x, link.to.y);
+    ctx.moveTo(from.x, from.y);
+    
+    // 如果有控制点，使用贝塞尔曲线
+    if (h.controlPoints && h.controlPoints.length > 0) {
+      if (h.controlPoints.length === 1) {
+        ctx.quadraticCurveTo(h.controlPoints[0].x, h.controlPoints[0].y, to.x, to.y);
+      } else {
+        ctx.bezierCurveTo(
+          h.controlPoints[0].x, h.controlPoints[0].y,
+          h.controlPoints[1].x, h.controlPoints[1].y,
+          to.x, to.y
+        );
+      }
+    } else {
+      ctx.lineTo(to.x, to.y);
+    }
     ctx.stroke();
+    
+    // 编辑模式下在航道中点显示小圆点（表示可交互）
+    if (editMode && isHovered) {
+      const midX = (from.x + to.x) / 2;
+      const midY = (from.y + to.y) / 2;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.beginPath();
+      ctx.arc(midX, midY, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
   ctx.setLineDash([]);
+}
+
+// ===== 拖拽预览线 =====
+function drawDragPreview() {
+  if (!editMode || !dragSourceNode) return;
+  
+  ctx.strokeStyle = 'rgba(100, 255, 180, 0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(dragSourceNode.x, dragSourceNode.y);
+  ctx.lineTo(dragMousePos.x, dragMousePos.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // 源节点高亮圈
+  ctx.strokeStyle = 'rgba(100, 255, 180, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(dragSourceNode.x, dragSourceNode.y, 14, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  // 目标节点高亮圈
+  if (targetNode) {
+    ctx.strokeStyle = 'rgba(100, 255, 180, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(targetNode.x, targetNode.y, 14, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 }
 
 function drawDomainNodes() {
@@ -223,9 +318,12 @@ function drawDomainNodes() {
 
 function drawGalaxyNodes() {
   galaxyNodes.forEach(galaxy => {
-    ctx.fillStyle = '#4a90d9';
+    const isSource = editMode && dragSourceNode && dragSourceNode.id === galaxy.id;
+    const isTarget = editMode && targetNode && targetNode.id === galaxy.id;
+    
+    ctx.fillStyle = isSource || isTarget ? '#7affb4' : '#4a90d9';
     if (!fastMode) {
-      ctx.shadowColor = 'rgba(74, 144, 217, 0.4)';
+      ctx.shadowColor = isSource || isTarget ? 'rgba(100, 255, 180, 0.5)' : 'rgba(74, 144, 217, 0.4)';
       ctx.shadowBlur = 5;
     }
     ctx.beginPath();
@@ -239,7 +337,7 @@ function drawGalaxyNodes() {
     ctx.fill();
     
     if (!fastMode) {
-      ctx.fillStyle = '#8b949e';
+      ctx.fillStyle = isSource || isTarget ? '#7affb4' : '#8b949e';
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(galaxy.name, galaxy.x, galaxy.y + 14);
@@ -247,6 +345,7 @@ function drawGalaxyNodes() {
   });
 }
 
+// ===== 坐标转换 =====
 function screenToWorld(sx, sy) {
   return {
     x: (sx - canvas.value.width / 2 - viewTransform.x) / viewTransform.scale,
@@ -254,11 +353,13 @@ function screenToWorld(sx, sy) {
   };
 }
 
+// ===== 命中测试 =====
 function hitTest(wx, wy) {
+  // 增大命中半径到 18px
   for (const galaxy of galaxyNodes) {
     const dx = wx - galaxy.x;
     const dy = wy - galaxy.y;
-    if (dx * dx + dy * dy < 12 * 12) return { type: 'galaxy', node: galaxy };
+    if (dx * dx + dy * dy < 18 * 18) return { type: 'galaxy', node: galaxy };
   }
   for (const domain of domainNodes) {
     const dx = wx - domain.x;
@@ -268,18 +369,97 @@ function hitTest(wx, wy) {
   return null;
 }
 
+// 航道命中测试：点到线段距离
+function hitTestHyperlane(wx, wy) {
+  const hyperlanes = store.currentDomainHyperlanes;
+  const nodeMap = new Map(galaxyNodes.map(g => [g.id, g]));
+  
+  for (const h of hyperlanes) {
+    const from = nodeMap.get(h.fromId);
+    const to = nodeMap.get(h.toId);
+    if (!from || !to) continue;
+    
+    const dist = pointToSegmentDist(wx, wy, from.x, from.y, to.x, to.y);
+    if (dist < 6) return h;
+  }
+  return null;
+}
+
+function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const closestX = x1 + t * dx;
+  const closestY = y1 + t * dy;
+  return Math.hypot(px - closestX, py - closestY);
+}
+
+// ===== 鼠标事件 =====
 function onMouseDown(e) {
   const rect = canvas.value.getBoundingClientRect();
-  mouseDownPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  isPanning = true;
-  isDragOperation = false;
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  mouseDownPos = { x: mx, y: my };
+  
+  if (editMode) {
+    // 编辑模式下：左键拖拽创建航道
+    if (e.button === 0) {
+      const world = screenToWorld(mx, my);
+      const hit = hitTest(world.x, world.y);
+      if (hit && hit.type === 'galaxy') {
+        // 开始拖拽创建航道
+        dragSourceNode = hit.node;
+        dragMousePos = world;
+        isDragOperation = true;
+      } else {
+        // 空白处拖拽 = 平移
+        isPanning = true;
+        isDragOperation = false;
+      }
+    }
+  } else {
+    isPanning = true;
+    isDragOperation = false;
+  }
 }
 
 function onMouseMove(e) {
+  const rect = canvas.value.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  
+  if (editMode) {
+    const world = screenToWorld(mx, my);
+    dragMousePos = world;
+    
+    // 悬停检测航道
+    const prevHovered = hoveredHyperlane;
+    hoveredHyperlane = hitTestHyperlane(world.x, world.y)?.id || null;
+    if (prevHovered !== hoveredHyperlane) {
+      canvas.value.style.cursor = hoveredHyperlane ? 'pointer' : 'default';
+      requestRender();
+    }
+    
+    // 拖拽时检测目标节点
+    if (dragSourceNode) {
+      const hit = hitTest(world.x, world.y);
+      const newTarget = (hit && hit.type === 'galaxy' && hit.node.id !== dragSourceNode.id) ? hit.node : null;
+      if (newTarget?.id !== targetNode?.id) {
+        targetNode = newTarget;
+        canvas.value.style.cursor = targetNode ? 'pointer' : 'default';
+      }
+      requestRender();
+      return;
+    }
+  }
+  
   if (!isPanning) return;
   
-  const dx = e.clientX - mouseDownPos.x;
-  const dy = e.clientY - mouseDownPos.y;
+  const dx = mx - mouseDownPos.x;
+  const dy = my - mouseDownPos.y;
   
   if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
     isDragOperation = true;
@@ -289,13 +469,36 @@ function onMouseMove(e) {
   if (isDragOperation) {
     viewTransform.x += dx;
     viewTransform.y += dy;
-    mouseDownPos = { x: e.clientX, y: e.clientY };
+    mouseDownPos = { x: mx, y: my };
     requestRender();
   }
 }
 
 function onMouseUp(e) {
   isPanning = false;
+  
+  if (editMode && dragSourceNode) {
+    // 拖拽创建航道
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const hit = hitTest(world.x, world.y);
+    
+    if (hit && hit.type === 'galaxy' && hit.node.id !== dragSourceNode.id) {
+      // 创建航道
+      const result = store.addHyperlane(dragSourceNode.id, hit.node.id);
+      if (result) {
+        // 标记 dirty
+        emit('dirty', true);
+      }
+    }
+    
+    dragSourceNode = null;
+    targetNode = null;
+    isDragOperation = false;
+    requestRender();
+    return;
+  }
+  
   if (!isDragOperation) {
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
@@ -313,6 +516,33 @@ function onMouseUp(e) {
     requestRender();
   }
   isDragOperation = false;
+}
+
+function onMouseLeave() {
+  dragSourceNode = null;
+  targetNode = null;
+  hoveredHyperlane = null;
+  isPanning = false;
+  isDragOperation = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  needsRender = true;
+  requestRender();
+}
+
+function onContextMenu(e) {
+  e.preventDefault();
+  if (!editMode) return;
+  
+  const rect = canvas.value.getBoundingClientRect();
+  const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+  const hyperlane = hitTestHyperlane(world.x, world.y);
+  
+  if (hyperlane) {
+    store.removeHyperlane(hyperlane.id);
+    emit('dirty', true);
+    requestRender();
+  }
 }
 
 function onWheel(e) {
@@ -333,13 +563,54 @@ function onWheel(e) {
   
   requestRender();
 }
+
+// ===== 编辑模式切换 =====
+function toggleEditMode() {
+  editMode.value = !editMode.value;
+  dragSourceNode = null;
+  targetNode = null;
+  hoveredHyperlane = null;
+  canvas.value.style.cursor = 'default';
+  requestRender();
+}
+
+// 当数据变化时重绘
+watch(() => store.currentDomainHyperlanes, () => {
+  requestRender();
+});
 </script>
 
 <style scoped>
 .galaxy-map-container { display: flex; flex-direction: column; height: 100%; }
-.map-header { padding: 12px 16px; border-bottom: 1px solid #30363d; background: #161b22; }
+.map-header { 
+  padding: 12px 16px; 
+  border-bottom: 1px solid #30363d; 
+  background: #161b22; 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center;
+}
+.header-left { display: flex; flex-direction: column; }
+.header-actions { display: flex; gap: 8px; }
+.header-actions button {
+  padding: 6px 14px;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #21262d;
+  color: #c9d1d9;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.header-actions button:hover { background: #30363d; }
+.header-actions button.active {
+  background: #0d4718;
+  border-color: #2ea043;
+  color: #7affb4;
+}
 .map-header h2 { font-size: 14px; color: #f0f6fc; margin-bottom: 4px; }
 .hint { font-size: 11px; color: #8b949e; }
+.edit-hint { color: #7affb4; }
 .canvas-wrapper { flex: 1; position: relative; overflow: hidden; }
 canvas { display: block; width: 100%; height: 100%; }
 </style>

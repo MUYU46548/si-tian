@@ -245,6 +245,46 @@ function initializeCoordinates(nodes) {
   return nodes;
 }
 
+/**
+ * 自动生成初始航道（基于距离阈值）
+ */
+function generateAutoHyperlanes(nodes) {
+  const hyperlanes = [];
+  const galaxies = nodes.filter(n => n.layer === 'galaxy');
+  const domainMap = new Map();
+  
+  // 建立星域到星系的映射
+  galaxies.forEach(g => {
+    if (g.parentId) {
+      if (!domainMap.has(g.parentId)) domainMap.set(g.parentId, []);
+      domainMap.get(g.parentId).push(g);
+    }
+  });
+  
+  // 按距离生成航道
+  for (let i = 0; i < galaxies.length; i++) {
+    for (let j = i + 1; j < galaxies.length; j++) {
+      const g1 = galaxies[i];
+      const g2 = galaxies[j];
+      if (g1.coordinate.x === null || g2.coordinate.x === null) continue;
+      
+      const dist = Math.hypot(g1.coordinate.x - g2.coordinate.x, g1.coordinate.y - g2.coordinate.y);
+      if (dist < 400) {
+        const crossDomain = g1.parentId !== g2.parentId;
+        hyperlanes.push({
+          id: `auto_${g1.id}_${g2.id}`,
+          fromId: g1.id,
+          toId: g2.id,
+          type: crossDomain ? 'cross_domain' : 'local',
+          auto: true,  // 标记为自动生成
+          controlPoints: []
+        });
+      }
+    }
+  }
+  return hyperlanes;
+}
+
 async function extractGeodata(vaultPath = VAULT_PATH) {
   console.log('开始提取地理数据...');
   
@@ -276,12 +316,17 @@ async function extractGeodata(vaultPath = VAULT_PATH) {
   allNodes = resolveParents(allNodes, worldStarMap);
   allNodes = initializeCoordinates(allNodes);
   
+  // 自动生成初始航道
+  const autoHyperlanes = generateAutoHyperlanes(allNodes);
+  console.log(`自动生成航道: ${autoHyperlanes.length}`);
+  
   return {
     version: '0.1.0',
     extractedAt: new Date().toISOString(),
     vaultPath,
     nodeCount: allNodes.length,
     nodes: allNodes,
+    hyperlanes: autoHyperlanes,
   };
 }
 

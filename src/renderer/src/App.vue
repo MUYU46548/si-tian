@@ -43,6 +43,7 @@
         :galaxies="store.galaxies"
         @select="store.selectDomain"
         @back="store.backToWorld"
+        @dirty="dirty = true"
       />
       
       <system-view
