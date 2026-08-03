@@ -14,6 +14,13 @@
         <p class="world-desc">{{ world.tags?.filter(t => !['世界', '地理系统'].includes(t)).slice(0, 3).join(' · ') || '暂无描述' }}</p>
         <div class="world-meta">
           <span>{{ getDomainCount(world.id) }} 个星域</span>
+          <span class="separator">·</span>
+          <span>{{ getGalaxyCount(world.id) }} 个星系</span>
+        </div>
+        <div class="world-meta secondary">
+          <span>{{ getPlanetCount(world.id) }} 个行星级</span>
+          <span class="separator">·</span>
+          <span>{{ getLocationCount(world.id) }} 个场景</span>
         </div>
       </div>
     </div>
@@ -23,13 +30,33 @@
 <script setup>
 const props = defineProps({
   worlds: { type: Array, default: () => [] },
-  domains: { type: Array, default: () => [] }
+  domains: { type: Array, default: () => [] },
+  galaxies: { type: Array, default: () => [] },
+  planets: { type: Array, default: () => [] },
+  locations: { type: Array, default: () => [] },
 });
 
 defineEmits(['select']);
 
 function getDomainCount(worldId) {
   return props.domains.filter(d => d.parentId === worldId).length;
+}
+
+function getGalaxyCount(worldId) {
+  const domainIds = new Set(props.domains.filter(d => d.parentId === worldId).map(d => d.id));
+  return props.galaxies.filter(g => domainIds.has(g.parentId)).length;
+}
+
+function getPlanetCount(worldId) {
+  const domainIds = new Set(props.domains.filter(d => d.parentId === worldId).map(d => d.id));
+  const galaxyIds = new Set(props.galaxies.filter(g => domainIds.has(g.parentId)).map(g => g.id));
+  return props.planets.filter(p => galaxyIds.has(p.parentId)).length;
+}
+
+function getLocationCount(worldId) {
+  const domainIds = new Set(props.domains.filter(d => d.parentId === worldId).map(d => d.id));
+  const galaxyIds = new Set(props.galaxies.filter(g => domainIds.has(g.parentId)).map(g => g.id));
+  return props.locations.filter(l => galaxyIds.has(l.parentId)).length;
 }
 </script>
 
@@ -112,5 +139,19 @@ function getDomainCount(worldId) {
   color: #58a6ff;
   padding-top: 12px;
   border-top: 1px solid #21262d;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.world-meta.secondary {
+  color: #8b949e;
+  border-top: none;
+  padding-top: 4px;
+}
+
+.separator {
+  color: #484f58;
+  margin: 0 2px;
 }
 </style>

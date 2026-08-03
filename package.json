@@ -4,24 +4,31 @@
   "description": "世界观动态构建系统 — 绒花计划",
   "main": "src/main/index.js",
   "scripts": {
-    "dev": "vite --config vite.config.js --port 5174",
-    "dev:watch": "concurrently -k \"vite --config vite.config.js --port 5174\" \"wait-on tcp:5174 && electron .\"",
+    "dev": "vite --config vite.config.js",
+    "dev:watch": "concurrently -k \"vite --config vite.config.js\" \"wait-on tcp:5180 && cross-env NODE_ENV=development electron .\"",
+    "dev:watch:debug": "concurrently -k \"vite --config vite.config.js\" \"wait-on tcp:5180 && cross-env NODE_ENV=development OPEN_DEVTOOLS=1 electron .\"",
     "build": "vite build --config vite.config.js",
     "extract-data": "node scripts/extract-data.js"
   },
-  "keywords": ["worldbuilding", "obsidian", "electron"],
+  "keywords": [
+    "worldbuilding",
+    "obsidian",
+    "electron"
+  ],
   "author": "暮雨",
   "license": "MIT",
   "dependencies": {
+    "chokidar": "^3.6.0",
     "gray-matter": "^4.0.3",
-    "vue": "^3.4.0",
-    "pinia": "^2.1.7"
+    "pinia": "^2.1.7",
+    "vue": "^3.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",
+    "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0",
     "electron": "^28.0.0",
     "vite": "^5.0.0",
-    "concurrently": "^8.2.2",
     "wait-on": "^7.2.0"
   }
 }
