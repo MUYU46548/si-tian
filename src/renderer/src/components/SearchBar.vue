@@ -15,6 +15,34 @@
         {{ store.searchResults.length > 0 ? `${store.searchMatchIndex + 1}/${store.searchResults.length}` : (showNoResults ? '无结果' : '0') }}
       </span>
       <button v-if="query" class="clear-btn" @click="clear">×</button>
+      <button 
+        class="filter-btn" 
+        :class="{ active: store.searchLayerFilter.length > 0 }"
+        @click="store.isFilterOpen = !store.isFilterOpen"
+        title="类型过滤"
+      >⚲</button>
+    </div>
+    <!-- 类型过滤面板 -->
+    <div v-if="store.isFilterOpen" class="filter-panel" @click.stop>
+      <div class="filter-header">类型过滤</div>
+      <div class="filter-options">
+        <label 
+          v-for="layer in store.availableLayers" 
+          :key="layer" 
+          class="filter-option"
+          :class="{ active: store.searchLayerFilter.includes(layer) }"
+        >
+          <input 
+            type="checkbox" 
+            :checked="store.searchLayerFilter.includes(layer)"
+            @change="store.toggleLayerFilter(layer)"
+          />
+          <span>{{ store.layerLabels[layer] || layer }}</span>
+        </label>
+      </div>
+      <div class="filter-footer">
+        <button class="filter-clear" @click="store.searchLayerFilter = []; if (store.searchQuery.trim()) store.performSearch(store.searchQuery)">清除</button>
+      </div>
     </div>
   </div>
 </template>
@@ -92,11 +120,19 @@ function findAncestorByLayer(node, targetLayer) {
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown);
+  document.addEventListener('click', closeFilterPanel);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
+  document.removeEventListener('click', closeFilterPanel);
 });
+
+function closeFilterPanel(e) {
+  if (!e.target.closest('.filter-panel') && !e.target.closest('.filter-btn')) {
+    store.isFilterOpen = false;
+  }
+}
 
 function handleGlobalKeydown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
@@ -116,6 +152,7 @@ defineExpose({ focus });
 .search-bar {
   display: flex;
   align-items: center;
+  position: relative;
 }
 
 .search-input-wrapper {
@@ -177,6 +214,100 @@ input::placeholder {
 }
 
 .clear-btn:hover {
+  color: #e2e8f0;
+}
+
+/* 类型过滤按钮 */
+.filter-btn {
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+}
+
+.filter-btn:hover {
+  color: #e2e8f0;
+}
+
+.filter-btn.active {
+  color: #58a6ff;
+}
+
+/* 类型过滤面板 */
+.filter-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 10px;
+  min-width: 160px;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.filter-header {
+  font-size: 11px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.filter-option:hover {
+  background: #21262d;
+}
+
+.filter-option.active {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+}
+
+.filter-option input[type="checkbox"] {
+  accent-color: #58a6ff;
+}
+
+.filter-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #30363d;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.filter-clear {
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.filter-clear:hover {
   color: #e2e8f0;
 }
 </style>

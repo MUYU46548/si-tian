@@ -50,8 +50,13 @@
         </div>
 
         <!-- 正文摘要 -->
-        <div v-if="note.content" class="content-preview">
-          {{ note.content.slice(0, 200) }}{{ note.content.length > 200 ? '...' : '' }}
+        <div v-if="note.content" 
+             class="content-preview" 
+             :class="{ collapsed: isContentLong && !isContentExpanded }">
+          <div class="markdown-body" v-html="renderedContent"></div>
+          <button v-if="isContentLong" class="expand-btn" @click="isContentExpanded = !isContentExpanded">
+            {{ isContentExpanded ? '收起' : '展开全文' }}
+          </button>
         </div>
 
         <!-- Wikilinks -->
@@ -90,13 +95,29 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
+
+// marked 配置 — GFM + 换行符支持
+marked.setOptions({ gfm: true, breaks: true });
 
 const store = useGeodataStore();
 const note = ref(null);
 const loading = ref(false);
+const isContentExpanded = ref(false);
 
 const node = computed(() => store.selectedNode);
+
+// 渲染 Markdown 正文
+const renderedContent = computed(() => {
+  if (!note.value?.content) return '';
+  return marked.parse(note.value.content);
+});
+
+// 内容过长时显示折叠按钮
+const isContentLong = computed(() => {
+  return (note.value?.content?.length || 0) > 800;
+});
 
 // 关联航道
 const relatedHyperlanes = computed(() => {
@@ -142,7 +163,10 @@ async function loadNote() {
   }
 }
 
-watch(node, loadNote, { immediate: true });
+watch(node, () => {
+  isContentExpanded.value = false;
+  loadNote();
+}, { immediate: true });
 
 // 操作
 function openSourceInObsidian() {
@@ -279,13 +303,148 @@ async function revealInExplorer() {
 
 .content-preview {
   font-size: 12px;
-  color: #8b949e;
   line-height: 1.5;
   background: #0d1117;
+  padding: 10px;
+  border-radius: 4px;
+  overflow-y: auto;
+  max-height: 300px;
+  transition: max-height 0.3s ease;
+}
+
+.content-preview.collapsed {
+  max-height: 180px;
+  overflow: hidden;
+  position: relative;
+}
+
+.content-preview.collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(transparent, #0d1117);
+  pointer-events: none;
+}
+
+/* Markdown 渲染样式 */
+.markdown-body {
+  color: #c9d1d9;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  color: #f0f6fc;
+  margin: 12px 0 6px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.markdown-body h1 { font-size: 16px; border-bottom: 1px solid #30363d; padding-bottom: 4px; }
+.markdown-body h2 { font-size: 14px; }
+.markdown-body h3 { font-size: 13px; }
+.markdown-body h4 { font-size: 12px; }
+
+.markdown-body p {
+  margin: 0 0 8px;
+}
+
+.markdown-body a {
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 20px;
+  margin: 0 0 8px;
+}
+
+.markdown-body li {
+  margin-bottom: 2px;
+}
+
+.markdown-body code {
+  background: #161b22;
+  color: #e2e8f0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.markdown-body pre {
+  background: #161b22;
   padding: 8px;
   border-radius: 4px;
-  max-height: 120px;
-  overflow: hidden;
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid #30363d;
+  padding-left: 10px;
+  color: #8b949e;
+  margin: 0 0 8px;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 8px;
+  font-size: 11px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #30363d;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.markdown-body th {
+  background: #161b22;
+  color: #f0f6fc;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid #30363d;
+  margin: 12px 0;
+}
+
+.markdown-body strong { color: #f0f6fc; font-weight: 600; }
+.markdown-body em { color: #e2e8f0; }
+
+.expand-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #58a6ff;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: center;
+}
+
+.expand-btn:hover {
+  background: #30363d;
 }
 
 .wikilinks {

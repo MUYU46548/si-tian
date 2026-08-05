@@ -17,13 +17,18 @@
             :class="{ active: store.viewLevel === 'domain' }"
             @click="store.backToDomain()"
           >{{ store.currentWorld?.name }}</button>
-          <span v-if="store.currentDomain" class="separator">›</span>
+          <span v-if="store.currentDomain && store.viewLevel === 'system'" class="separator">›</span>
           <button 
-            v-if="store.currentDomain" 
-            :class="{ active: store.viewLevel === 'system' }"
+            v-if="store.currentDomain && store.viewLevel === 'system'"
+            class="active"
           >{{ store.currentDomain?.name }}</button>
+          <span v-if="store.currentPlanet" class="separator">›</span>
+          <button 
+            v-if="store.currentPlanet" 
+            class="active"
+          >{{ store.currentPlanet?.name }}</button>
         </nav>
-        <button @click="store.undo" :disabled="!store.canUndo" title="撤销 (Ctrl+Z)">↶</button>
+        <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
         <button @click="reextract" title="重新提取">↻</button>
         <button @click="saveData" :disabled="!dirty" title="保存">💾</button>
@@ -72,21 +77,39 @@
           :planets="store.planets"
           :locations="store.locations"
           @back="store.backToDomain"
+          @select-node="store.selectPlanetOrNode"
+        />
+        
+        <planet-map
+          v-if="store.viewLevel === 'planet'"
+          ref="planetMapRef"
+          :planet="store.currentPlanet"
+          @back="store.backToSystem"
           @select-node="store.selectNode"
+          @dirty="dirty = true"
         />
       </main>
     </div>
 
     <node-detail-panel />
+    <!-- 性能统计面板 -->
+    <div v-if="perfVisible" class="perf-panel">
+      <div class="perf-title">性能统计 (开发模式)</div>
+      <div class="perf-row">FPS: <b>{{ perfStats.fps || 0 }}</b></div>
+      <div class="perf-row">帧时间: <b>{{ perfStats.lastFrameTime?.toFixed(2) || 0 }}ms</b></div>
+      <div class="perf-row">平均: <b>{{ perfStats.avgFrameTime?.toFixed(2) || 0 }}ms</b></div>
+      <div class="perf-row">峰值: <b>{{ perfStats.peakFrameTime?.toFixed(2) || 0 }}ms</b></div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from './store/geodata';
 import WorldSelector from './components/WorldSelector.vue';
 import GalaxyMap from './components/GalaxyMap.vue';
 import SystemView from './components/SystemView.vue';
+import PlanetMap from './components/PlanetMap.vue';
 import NodeDetailPanel from './components/NodeDetailPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
@@ -98,6 +121,25 @@ const searchBar = ref(null);
 const galaxyMapRef = ref(null);
 const systemViewRef = ref(null);
 const showExportMenu = ref(false);
+const perfVisible = ref(false);
+const perfStats = ref({});
+const undoTooltip = computed(() => {
+  const label = store.undoLabel;
+  return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
+});
+let cleanupNodeUpdated = null;
+let cleanupNodeRemoved = null;
+let perfUpdateTimer = null;
+
+// 获取当前活动的 renderer ref
+function getActiveRenderer() {
+  if (store.viewLevel === 'domain') {
+    return galaxyMapRef.value?.renderer;
+  } else if (store.viewLevel === 'system') {
+    return systemViewRef.value?.renderer;
+  }
+  return null;
+}
 
 // 获取当前活动的 canvas ref
 function getActiveCanvas() {
@@ -282,32 +324,57 @@ onMounted(async () => {
   await store.loadGeodata();
   statusText.value = `已加载 ${store.nodes.length} 个节点`;
   window.addEventListener('keydown', handleGlobalKeydown);
-  
+  window.addEventListener('keydown', handlePerfKeydown);
+
   // Vault 监听事件
-  window.sitianAPI.onNodeUpdated((data) => {
+  cleanupNodeUpdated = window.sitianAPI.onNodeUpdated((data) => {
     store.handleNodeUpdated(data.node);
     statusText.value = `已更新: ${data.node.name}`;
   });
-  window.sitianAPI.onNodeRemoved((data) => {
+  cleanupNodeRemoved = window.sitianAPI.onNodeRemoved((data) => {
     store.handleNodeRemoved(data.nodeId);
     statusText.value = `已删除节点`;
   });
+
+  // 性能面板定时更新
+  perfUpdateTimer = setInterval(() => {
+    if (perfVisible.value) {
+      const renderer = getActiveRenderer();
+      if (renderer?.getPerfStats) {
+        perfStats.value = renderer.getPerfStats();
+      }
+    }
+  }, 250);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
+  window.removeEventListener('keydown', handlePerfKeydown);
+  cleanupNodeUpdated?.();
+  cleanupNodeRemoved?.();
+  if (perfUpdateTimer) clearInterval(perfUpdateTimer);
 });
 
 function handleGlobalKeydown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();
     store.undo();
-  } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
     e.preventDefault();
     store.redo();
+    return;
   }
   if (e.key === 'Escape') {
     showExportMenu.value = false;
+  }
+}
+
+function handlePerfKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'D') {
+    e.preventDefault();
+    perfVisible.value = !perfVisible.value;
   }
 }
 
@@ -462,5 +529,44 @@ async function saveData() {
 
 .export-menu button:hover {
   background: #30363d;
+}
+
+/* 性能统计面板 */
+.perf-panel {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: #c9d1d9;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  z-index: 300;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  min-width: 180px;
+}
+
+.perf-title {
+  font-size: 10px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #30363d;
+  padding-bottom: 4px;
+}
+
+.perf-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 3px;
+}
+
+.perf-row b {
+  color: #58a6ff;
 }
 </style>

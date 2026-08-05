@@ -346,6 +346,9 @@ const renderer = useCanvasRenderer(canvas, {
       }
       return true;
     } else {
+      if (hit.type === 'galaxy' || hit.type === 'domain') {
+        store.beginNodePositionCapture(hit.node.id);
+      }
       return { mode: 'node', nodeId: hit.node.id };
     }
   },
@@ -368,7 +371,7 @@ const renderer = useCanvasRenderer(canvas, {
   },
   onDragEnd: (wx, wy, dragInfo) => {
     if (dragInfo.mode === 'node') {
-      store.snapshot();
+      store.endNodePositionCapture();
       emit('dirty', true);
       return;
     }
@@ -455,7 +458,7 @@ function toggleEditMode() {
   renderer.requestRender();
 }
 
-defineExpose({ canvas });
+defineExpose({ canvas, renderer });
 </script>
 
 <style scoped>

@@ -141,3 +141,34 @@ ipcMain.handle('set-watcher-status', (event, enabled) => {
   }
   return { success: true };
 });
+
+// IPC: 获取地图数据
+ipcMain.handle('get-map-data', async (event, planetId) => {
+  try {
+    const MAP_PATH = path.join(VAULT_PATH, '.sitian', 'mapdata.json');
+    const raw = await fs.readFile(MAP_PATH, 'utf-8');
+    const data = JSON.parse(raw);
+    return { success: true, data: data[planetId] || null };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: 保存地图数据
+ipcMain.handle('save-map-data', async (event, planetId, mapData) => {
+  try {
+    const MAP_PATH = path.join(VAULT_PATH, '.sitian', 'mapdata.json');
+    let allData = {};
+    try {
+      const raw = await fs.readFile(MAP_PATH, 'utf-8');
+      allData = JSON.parse(raw);
+    } catch (e) {
+      // File doesn't exist yet
+    }
+    allData[planetId] = mapData;
+    await fs.writeFile(MAP_PATH, JSON.stringify(allData, null, 2), 'utf-8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});

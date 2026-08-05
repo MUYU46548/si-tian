@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { execute, undo as undoCmd, redo as redoCmd, canUndo as undoCanUndo, canRedo as undoCanRedo, getLastCommandLabel } from './undo';
 
-const MAX_HISTORY = 50;
 const AUTO_SAVE_DELAY = 800;
 
 export const useGeodataStore = defineStore('geodata', () => {
@@ -10,61 +10,28 @@ export const useGeodataStore = defineStore('geodata', () => {
   const currentWorld = ref(null);
   const currentDomain = ref(null);
   const currentSystem = ref(null);
+  const currentPlanet = ref(null);
   const viewLevel = ref('world');
   const selectedNode = ref(null);
 
-  // ===== 历史栈 =====
-  const history = ref([]);
-  const future = ref([]);
-  let isUndoRedo = false;
-  let autoSaveTimer = null;
   const autoSaveEnabled = ref(true);
 
-  function snapshot() {
-    if (isUndoRedo) return;
-    history.value.push({
-      nodes: JSON.parse(JSON.stringify(nodes.value)),
-      hyperlanes: JSON.parse(JSON.stringify(hyperlanes.value)),
-    });
-    if (history.value.length > MAX_HISTORY) {
-      history.value.shift();
-    }
-    future.value = [];
-  }
+  // ===== 地图数据 =====
+  const mapData = ref({});
 
-  function undo() {
-    if (history.value.length === 0) return;
-    const prev = history.value.pop();
-    future.value.push({
-      nodes: JSON.parse(JSON.stringify(nodes.value)),
-      hyperlanes: JSON.parse(JSON.stringify(hyperlanes.value)),
-    });
-    isUndoRedo = true;
-    nodes.value = prev.nodes;
-    hyperlanes.value = prev.hyperlanes;
-    isUndoRedo = false;
-  }
+  // ===== 计算属性 =====
+  const canUndo = undoCanUndo;
+  const canRedo = undoCanRedo;
 
-  function redo() {
-    if (future.value.length === 0) return;
-    const next = future.value.pop();
-    history.value.push({
-      nodes: JSON.parse(JSON.stringify(nodes.value)),
-      hyperlanes: JSON.parse(JSON.stringify(hyperlanes.value)),
-    });
-    isUndoRedo = true;
-    nodes.value = next.nodes;
-    hyperlanes.value = next.hyperlanes;
-    isUndoRedo = false;
-  }
-
-  const canUndo = computed(() => history.value.length > 0);
-  const canRedo = computed(() => future.value.length > 0);
+  // 获取最近一次操作的 label（用于 tooltip）
+  const undoLabel = computed(() => getLastCommandLabel());
 
   // ===== 搜索状态 =====
   const searchQuery = ref('');
   const searchResults = ref([]);
   const searchMatchIndex = ref(0);
+  const searchLayerFilter = ref([]); // 选中的层级类型过滤
+  const isFilterOpen = ref(false); // 过滤面板是否展开
 
   const worlds = computed(() => nodes.value.filter(n => n.layer === 'world'));
   const starDomains = computed(() => nodes.value.filter(n => n.layer === 'star_domain'));
@@ -85,6 +52,11 @@ export const useGeodataStore = defineStore('geodata', () => {
   const currentSystemPlanets = computed(() => {
     if (!currentSystem.value) return [];
     return [...planets.value, ...locations.value].filter(p => p.parentId === currentSystem.value.id);
+  });
+
+  const currentPlanetPlaces = computed(() => {
+    if (!currentPlanet.value) return [];
+    return [...planets.value, ...locations.value].filter(p => p.parentId === currentPlanet.value.id);
   });
 
   const currentDomainAllGalaxies = computed(() => {
@@ -112,7 +84,37 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   const isSearching = computed(() => searchQuery.value.trim().length > 0);
 
-  function matchNode(node, query) {
+  // 当前 vault 中存在的层级类型（用于过滤选项）
+  const availableLayers = computed(() => {
+    const layers = new Set(nodes.value.map(n => n.layer));
+    const order = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon', 'region', 'city', 'town', 'village', 'facility', 'location'];
+    return order.filter(l => layers.has(l));
+  });
+
+  const layerLabels = {
+    world: '世界', star_domain: '星域', galaxy: '星系', star: '恒星',
+    planet: '行星', moon: '卫星', region: '区域', city: '城市',
+    town: '城镇', village: '村庄', facility: '设施', location: '地点', unknown: '未知'
+  };
+
+  function toggleLayerFilter(layer) {
+    const idx = searchLayerFilter.value.indexOf(layer);
+    if (idx === -1) {
+      searchLayerFilter.value.push(layer);
+    } else {
+      searchLayerFilter.value.splice(idx, 1);
+    }
+    // 重新执行搜索
+    if (searchQuery.value.trim()) {
+      performSearch(searchQuery.value);
+    }
+  }
+
+  function matchNode(node, query, layerFilter) {
+    // 类型过滤
+    if (layerFilter && layerFilter.length > 0 && !layerFilter.includes(node.layer)) {
+      return false;
+    }
     if (!query) return false;
     const q = query.toLowerCase();
     const name = node.name.toLowerCase();
@@ -128,7 +130,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       searchMatchIndex.value = 0;
       return;
     }
-    const results = nodes.value.filter(n => matchNode(n, query.trim())).map(n => n.id);
+    const results = nodes.value.filter(n => matchNode(n, query.trim(), searchLayerFilter.value)).map(n => n.id);
     searchResults.value = results;
     searchMatchIndex.value = results.length > 0 ? 0 : -1;
   }
@@ -252,6 +254,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   // ===== 自动保存 =====
+  let autoSaveTimer = null;
+  let autoSaveMapTimer = null;
+
   function scheduleAutoSave() {
     if (!autoSaveEnabled.value) return;
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
@@ -261,12 +266,142 @@ export const useGeodataStore = defineStore('geodata', () => {
     }, AUTO_SAVE_DELAY);
   }
 
+  function scheduleAutoSaveMap(planetId) {
+    if (!autoSaveEnabled.value) return;
+    if (autoSaveMapTimer) clearTimeout(autoSaveMapTimer);
+    autoSaveMapTimer = setTimeout(async () => {
+      if (mapData.value[planetId]) {
+        await saveMapData(planetId, mapData.value[planetId]);
+      }
+      autoSaveMapTimer = null;
+    }, AUTO_SAVE_DELAY);
+  }
+
   async function flushSave() {
     if (autoSaveTimer) {
       clearTimeout(autoSaveTimer);
       autoSaveTimer = null;
       await saveGeodata();
     }
+    if (autoSaveMapTimer) {
+      clearTimeout(autoSaveMapTimer);
+      autoSaveMapTimer = null;
+    }
+  }
+
+  // ===== 地图数据持久化 =====
+  async function loadMapData(planetId) {
+    try {
+      const result = await window.sitianAPI.getMapData(planetId);
+      if (result.success) {
+        mapData.value[planetId] = result.data;
+        return result.data;
+      }
+    } catch (e) {
+      console.error('loadMapData failed:', e);
+    }
+    return null;
+  }
+
+  async function saveMapData(planetId, data) {
+    try {
+      const result = await window.sitianAPI.saveMapData(planetId, data);
+      if (result.success) {
+        mapData.value[planetId] = data;
+      }
+      return result;
+    } catch (e) {
+      console.error('saveMapData failed:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  // ===== 地形多边形 CRUD =====
+  function addTerrainPolygon(planetId, polygon) {
+    if (!mapData.value[planetId]) {
+      mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
+    }
+    mapData.value[planetId].terrain.push(polygon);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'add-terrain',
+      label: '绘制地形',
+      undo: () => {
+        mapData.value[planetId].terrain = mapData.value[planetId].terrain.filter(t => t.id !== polygon.id);
+      },
+      redo: () => {
+        mapData.value[planetId].terrain.push(polygon);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function removeTerrainPolygon(planetId, polygonId) {
+    if (!mapData.value[planetId]) return;
+    const idx = mapData.value[planetId].terrain.findIndex(t => t.id === polygonId);
+    if (idx === -1) return;
+    const removed = mapData.value[planetId].terrain[idx];
+    mapData.value[planetId].terrain.splice(idx, 1);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'remove-terrain',
+      label: '删除地形',
+      undo: () => {
+        mapData.value[planetId].terrain.splice(idx, 0, removed);
+      },
+      redo: () => {
+        mapData.value[planetId].terrain = mapData.value[planetId].terrain.filter(t => t.id !== polygonId);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function updateControlPoint(planetId, polygonId, cpIndex, newPos) {
+    if (!mapData.value[planetId]) return;
+    const polygon = mapData.value[planetId].terrain.find(t => t.id === polygonId);
+    if (!polygon || !polygon.controlPoints || cpIndex >= polygon.controlPoints.length) return;
+    const oldPos = { ...polygon.controlPoints[cpIndex] };
+    polygon.controlPoints[cpIndex] = newPos;
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'move-control-point',
+      label: '调整控制点',
+      undo: () => {
+        polygon.controlPoints[cpIndex] = oldPos;
+      },
+      redo: () => {
+        polygon.controlPoints[cpIndex] = newPos;
+      },
+    });
+  }
+
+  function updateTerrainPolygon(planetId, polygonId, updates) {
+    if (!mapData.value[planetId]) return;
+    const polygon = mapData.value[planetId].terrain.find(t => t.id === polygonId);
+    if (!polygon) return;
+
+    const oldState = {};
+    for (const key of Object.keys(updates)) {
+      oldState[key] = polygon[key];
+    }
+    Object.assign(polygon, updates);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'update-terrain',
+      label: '编辑省份属性',
+      undo: () => {
+        Object.assign(polygon, oldState);
+      },
+      redo: () => {
+        Object.assign(polygon, updates);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function saveMapDataImmediate(planetId) {
+    if (!mapData.value[planetId]) return;
+    window.sitianAPI.saveMapData(planetId, mapData.value[planetId]);
   }
 
   function updateNodePosition(id, x, y) {
@@ -276,6 +411,42 @@ export const useGeodataStore = defineStore('geodata', () => {
       node.coordinate.y = y;
       scheduleAutoSave();
     }
+  }
+
+  // ===== 节点拖拽撤销支持 =====
+  let dragStartCoord = null;
+  let dragStartId = null;
+
+  function beginNodePositionCapture(id) {
+    const node = nodes.value.find(n => n.id === id);
+    if (node) {
+      dragStartId = id;
+      dragStartCoord = { x: node.coordinate.x, y: node.coordinate.y };
+    }
+  }
+
+  function endNodePositionCapture() {
+    if (!dragStartId || !dragStartCoord) return;
+    const node = nodes.value.find(n => n.id === dragStartId);
+    if (!node) { dragStartId = null; dragStartCoord = null; return; }
+    const endCoord = { x: node.coordinate.x, y: node.coordinate.y };
+    const startCoord = { ...dragStartCoord };
+    const nodeId = dragStartId;
+    execute({
+      type: 'move-node',
+      label: '移动节点',
+      undo: () => {
+        const n = nodes.value.find(nn => nn.id === nodeId);
+        if (n) { n.coordinate.x = startCoord.x; n.coordinate.y = startCoord.y; }
+      },
+      redo: () => {
+        const n = nodes.value.find(nn => nn.id === nodeId);
+        if (n) { n.coordinate.x = endCoord.x; n.coordinate.y = endCoord.y; }
+      },
+    });
+    dragStartId = null;
+    dragStartCoord = null;
+    scheduleAutoSave();
   }
 
   function updateAllCoordinates(updatedNodes) {
@@ -289,7 +460,15 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSave();
   }
 
-  // ===== 航道 CRUD（带快照） =====
+  // ===== 航道 CRUD（使用通用 UndoStore） =====
+
+  function undo() {
+    undoCmd();
+  }
+
+  function redo() {
+    redoCmd();
+  }
 
   function addHyperlane(fromId, toId, type = 'local') {
     const exists = hyperlanes.value.some(h =>
@@ -298,11 +477,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     );
     if (exists) return null;
 
-    snapshot();
-
     const id = `hyperlane_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const hyperlane = { id, fromId, toId, type, controlPoints: [] };
     hyperlanes.value.push(hyperlane);
+    execute({
+      type: 'add-hyperlane',
+      label: '添加航道',
+      undo: () => {
+        hyperlanes.value = hyperlanes.value.filter(h => h.id !== id);
+      },
+      redo: () => {
+        hyperlanes.value.push(hyperlane);
+      },
+    });
     scheduleAutoSave();
     return hyperlane;
   }
@@ -311,18 +498,41 @@ export const useGeodataStore = defineStore('geodata', () => {
     const idx = hyperlanes.value.findIndex(h => h.id === id);
     if (idx === -1) return;
 
-    snapshot();
+    const removed = hyperlanes.value[idx];
     hyperlanes.value.splice(idx, 1);
+    execute({
+      type: 'remove-hyperlane',
+      label: '删除航道',
+      undo: () => {
+        hyperlanes.value.splice(idx, 0, removed);
+      },
+      redo: () => {
+        hyperlanes.value = hyperlanes.value.filter(h => h.id !== id);
+      },
+    });
     scheduleAutoSave();
   }
 
   function updateHyperlane(id, updates) {
     const h = hyperlanes.value.find(h => h.id === id);
-    if (h) {
-      snapshot();
-      Object.assign(h, updates);
-      scheduleAutoSave();
+    if (!h) return;
+
+    const oldUpdates = {};
+    for (const key of Object.keys(updates)) {
+      oldUpdates[key] = h[key];
     }
+    Object.assign(h, updates);
+    execute({
+      type: 'update-hyperlane',
+      label: '更新航道',
+      undo: () => {
+        Object.assign(h, oldUpdates);
+      },
+      redo: () => {
+        Object.assign(h, updates);
+      },
+    });
+    scheduleAutoSave();
   }
 
   function getHyperlaneById(id) {
@@ -331,6 +541,14 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function selectNode(node) {
     selectedNode.value = node;
+  }
+
+  function selectPlanetOrNode(node) {
+    if (node && node.layer === 'planet') {
+      selectPlanet(node);
+    } else {
+      selectedNode.value = node;
+    }
   }
 
   function clearSelection() {
@@ -355,6 +573,13 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function selectSystem(system) {
     currentSystem.value = system;
+    currentPlanet.value = null;
+    selectedNode.value = null;
+  }
+
+  function selectPlanet(planet) {
+    currentPlanet.value = planet;
+    viewLevel.value = 'planet';
     selectedNode.value = null;
   }
 
@@ -362,6 +587,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     currentWorld.value = null;
     currentDomain.value = null;
     currentSystem.value = null;
+    currentPlanet.value = null;
     viewLevel.value = 'world';
     selectedNode.value = null;
     clearSearch();
@@ -369,7 +595,14 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function backToDomain() {
     currentSystem.value = null;
+    currentPlanet.value = null;
     viewLevel.value = 'domain';
+    selectedNode.value = null;
+  }
+
+  function backToSystem() {
+    currentPlanet.value = null;
+    viewLevel.value = 'system';
     selectedNode.value = null;
   }
 
@@ -389,21 +622,25 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   return {
-    nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, viewLevel,
-    selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode,
-    worlds, starDomains, galaxies, planets, locations,
-    currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentDomainAllGalaxies,
-    currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,
-    isSearching,
-    history, future, canUndo, canRedo,
-    loadGeodata, reextract, saveGeodata,
-    updateNodePosition, updateAllCoordinates,
-    addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
-    selectNode, clearSelection,
-    performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
-    undo, redo,
-    selectWorld, selectDomain, selectSystem, backToWorld, backToDomain,
-    handleNodeUpdated, handleNodeRemoved,
-    scheduleAutoSave, flushSave, autoSaveEnabled,
-  };
+      nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, viewLevel,
+      selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode,
+      worlds, starDomains, galaxies, planets, locations,
+      currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentDomainAllGalaxies,
+      currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,
+      isSearching,
+      availableLayers, layerLabels, searchLayerFilter,
+      toggleLayerFilter, isFilterOpen,
+      canUndo, canRedo, undoLabel, mapData,
+      loadGeodata, reextract, saveGeodata,
+      updateNodePosition, updateAllCoordinates,
+      addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
+      selectNode, clearSelection, selectPlanetOrNode,
+      performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
+      undo, redo,
+      selectWorld, selectDomain, selectSystem, selectPlanet, backToWorld, backToDomain, backToSystem,
+      handleNodeUpdated, handleNodeRemoved,
+      scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
+      loadMapData, saveMapData, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
+      beginNodePositionCapture, endNodePositionCapture,
+    };
 });
