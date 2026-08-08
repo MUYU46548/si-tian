@@ -62,13 +62,15 @@ function render() {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   
   // 背景
-  ctx.fillStyle = '#F5F5F5';
+  ctx.fillStyle = '#0D1117';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   
-  // 绘制所有元素（简化）
+  // 绘制所有元素
   for (const el of props.elements) {
     if (el.type === 'polygon' && el.points && el.points.length >= 3) {
+      // 多边形（省份）
       ctx.fillStyle = el.color || '#A3C4BC';
+      ctx.globalAlpha = 0.7;
       ctx.beginPath();
       const first = worldToScreen(el.points[0].x, el.points[0].y);
       ctx.moveTo(first.x, first.y);
@@ -78,6 +80,48 @@ function render() {
       }
       ctx.closePath();
       ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (el.type === 'circle' && el.x !== undefined) {
+      // 圆形（节点/星域/星系/行星）
+      const pos = worldToScreen(el.x, el.y);
+      ctx.fillStyle = el.color || '#4a90d9';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, el.r || 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (el.type === 'node' && el.x !== undefined) {
+      // 节点（带光晕）
+      const pos = worldToScreen(el.x, el.y);
+      const r = el.r || 4;
+      
+      // 光晕
+      if (el.glow) {
+        ctx.shadowColor = el.color || '#ffd700';
+        ctx.shadowBlur = 4;
+      }
+      ctx.fillStyle = el.color || '#4a90d9';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    } else if (el.type === 'line' && el.from && el.to) {
+      // 线段（航道/连接线）
+      const p1 = worldToScreen(el.from.x, el.from.y);
+      const p2 = worldToScreen(el.to.x, el.to.y);
+      ctx.strokeStyle = el.color || 'rgba(100,200,255,0.4)';
+      ctx.lineWidth = el.lineWidth || 0.5;
+      if (el.dashed) ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (el.type === 'label' && el.x !== undefined) {
+      // 文本标签
+      const pos = worldToScreen(el.x, el.y);
+      ctx.fillStyle = el.color || '#8b949e';
+  ctx.font = `${el.size || 6}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(el.text || '', pos.x, pos.y);
     }
   }
   
@@ -98,7 +142,7 @@ function render() {
     );
     
     // 视图矩形半透明填充
-    ctx.fillStyle = 'rgba(255, 107, 107, 0.15)';
+    ctx.fillStyle = 'rgba(255, 107, 107, 0.1)';
     ctx.fillRect(
       topLeft.x,
       topLeft.y,
@@ -108,7 +152,7 @@ function render() {
   }
   
   // 边框
-  ctx.strokeStyle = '#DDD';
+  ctx.strokeStyle = '#30363d';
   ctx.lineWidth = 1;
   ctx.strokeRect(0, 0, WIDTH, HEIGHT);
 }
@@ -123,6 +167,8 @@ function handleClick(e) {
 
 function initCanvas() {
   if (!canvas.value) return;
+  canvas.value.width = WIDTH;
+  canvas.value.height = HEIGHT;
   ctx = canvas.value.getContext('2d');
   render();
 }
@@ -131,7 +177,7 @@ onMounted(() => {
   initCanvas();
 });
 
-watch([() => props.elements, () => props.viewBounds], () => {
+watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], () => {
   render();
 }, { deep: true });
 
@@ -143,24 +189,26 @@ watch([() => props.elements, () => props.viewBounds], () => {
   top: 8px;
   right: 8px;
   z-index: 20;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #DDD;
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid #30363d;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   overflow: hidden;
 }
 
 canvas {
   display: block;
   cursor: pointer;
+  width: 160px;
+  height: 120px;
 }
 
 .eagle-eye-label {
   font-size: 10px;
-  color: #999;
+  color: #8b949e;
   text-align: center;
   padding: 2px 0;
-  background: #FAFAFA;
-  border-top: 1px solid #EEE;
+  background: #161b22;
+  border-top: 1px solid #30363d;
 }
 </style>

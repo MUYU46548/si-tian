@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
     return () => ipcRenderer.removeListener('vault:node-removed', handler);
   },
 
+  // 清除坐标缓存
+  clearCoordinateCache: () => ipcRenderer.invoke('clear-coordinate-cache'),
+
   // 平台信息
   platform: process.platform,
 });

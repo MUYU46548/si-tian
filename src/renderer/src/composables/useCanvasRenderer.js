@@ -2,7 +2,7 @@ import { onUnmounted } from 'vue';
 
 /**
  * useCanvasRenderer - Canvas 渲染与交互共享逻辑
- * 支持绘制模式（自由绘制多边形）
+ * 支持绘制模式（自由绘制多边形）、顶点拖拽编辑
  */
 export function useCanvasRenderer(canvasRef, options = {}) {
   const {
@@ -23,7 +23,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     drawMode = null,        // ref(boolean)
     currentPath = null,     // ref(array)
     animate = false,        // 是否启用持续动画循环
-    interactionMode = null, // ref('pan' | 'draw' | 'marker')
+    interactionMode = null, // ref('pan' | 'draw' | 'marker' | 'region')
     isSpacebarDown = null,  // ref(boolean)
   } = options;
 
@@ -39,6 +39,11 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   let currentHit = null;
   let dragNodeId = null;
   let animationFrameId = null; // 持续动画循环的 rAF ID
+
+  // ===== 顶点拖拽状态 =====
+  let isDraggingVertex = false;
+  let draggingVertexInfo = null; // { polygonId, vertexIndex }
+  let vertexDragStart = null;    // 拖拽起始位置
 
   // ===== 绘制状态 =====
   let isDrawing = false;
@@ -191,12 +196,15 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     isDragOperation = false;
     panSuppressed = false;
     dragNodeId = null;
+    isDraggingVertex = false;
+    draggingVertexInfo = null;
+    vertexDragStart = null;
     
     // 确定实际交互模式（空格键临时覆盖为拖手）
     const mode = isSpacebarDown?.value ? 'pan' : (interactionMode?.value || 'draw');
     
     // 绘制模式：按住拖动绘制
-    if (mode === 'draw' && drawMode && drawMode.value) {
+    if ((mode === 'draw' || mode === 'region') && drawMode && drawMode.value) {
       isDrawing = true;
       currentPath.value = [screenToWorld(mx, my)];
       return;
@@ -204,6 +212,11 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     
     // 标记模式：不处理拖拽（点击放置标记）
     if (mode === 'marker') {
+      return;
+    }
+    
+    // 区域模式的非绘制状态下，不自动进入绘制
+    if (mode === 'region' && (!drawMode || !drawMode.value)) {
       return;
     }
     
@@ -218,6 +231,12 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     if (onDragStart) {
       const result = onDragStart(world.x, world.y, e.button);
       if (result === false) {
+        panSuppressed = true;
+      } else if (result && typeof result === 'object' && result.mode === 'vertex') {
+        // 顶点拖拽
+        isDraggingVertex = true;
+        draggingVertexInfo = result.vertexInfo;
+        vertexDragStart = { x: world.x, y: world.y };
         panSuppressed = true;
       } else if (result && typeof result === 'object' && result.mode === 'node') {
         panSuppressed = true;
@@ -245,7 +264,14 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       }
       return;
     }
-
+    
+    // 顶点拖拽
+    if (isDraggingVertex && onDragMove) {
+      onDragMove(world.x, world.y, { mode: 'vertex', vertexInfo: draggingVertexInfo });
+      requestRender();
+      return;
+    }
+    
     if (onHitTest && !isPanning && !panSuppressed) {
       const hit = onHitTest(world.x, world.y);
       if (hit !== currentHit) {
@@ -254,7 +280,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
         requestRender();
       }
     }
-
+    
     if (dragNodeId && onDragMove) {
       const dx = mx - mouseDownPos.x;
       const dy = my - mouseDownPos.y;
@@ -266,7 +292,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       requestRender();
       return;
     }
-
+    
     if (isPanning) {
       const dx = mx - mouseDownPos.x;
       const dy = my - mouseDownPos.y;
@@ -284,6 +310,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       }
     }
 
+    // panSuppressed 模式下也需要回调 onDragMove（用于航道拖拽预览等）
     if ((isPanning || panSuppressed) && onDragMove) {
       const dx = mx - mouseDownPos.x;
       const dy = my - mouseDownPos.y;
@@ -296,6 +323,8 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     const wasSuppressed = panSuppressed;
     const didPan = isDragOperation;
     const endedDragNodeId = dragNodeId;
+    const wasDraggingVertex = isDraggingVertex;
+    const endedVertexInfo = draggingVertexInfo;
     
     // 绘制模式松开：完成绘制
     if (isDrawing) {
@@ -307,27 +336,32 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       requestRender();
       return;
     }
-
+    
     isPanning = false;
     panSuppressed = false;
     dragNodeId = null;
+    isDraggingVertex = false;
+    draggingVertexInfo = null;
 
     if (isDragOperation) {
       isDragOperation = false;
       fastMode = false;
       requestRender();
     }
-
+    
     if (onDragEnd && (wasPanning || wasSuppressed)) {
       const rect = canvasRef.value.getBoundingClientRect();
       const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      const dragInfo = endedDragNodeId
-        ? { mode: 'node', nodeId: endedDragNodeId, didPan }
-        : { mode: 'pan', didPan };
+      const dragInfo = wasDraggingVertex
+        ? { mode: 'vertex', vertexInfo: endedVertexInfo }
+        : endedDragNodeId
+          ? { mode: 'node', nodeId: endedDragNodeId, didPan }
+          : { mode: 'pan', didPan };
       onDragEnd(world.x, world.y, dragInfo);
     }
-
-    if (!didPan && !wasSuppressed && onClick && onHitTest) {
+    
+    // 点击判断：当没有发生拖拽且不是顶点拖拽结束时，触发 onClick
+    if (!didPan && !wasDraggingVertex && onClick && onHitTest) {
       const rect = canvasRef.value.getBoundingClientRect();
       const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       const hit = onHitTest(world.x, world.y);
@@ -407,6 +441,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     getViewTransform: () => ({ ...viewTransform }),
     isFastMode: () => fastMode,
     getCurrentHit: () => currentHit,
+    isDraggingVertex: () => isDraggingVertex,
     requestRender,
     resetView,
     focusOn,

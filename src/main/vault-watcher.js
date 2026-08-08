@@ -195,6 +195,7 @@ function stopWatcher() {
   if (watcher) {
     watcher.close();
     watcher = null;
+    mainWindow = null;
     console.log('[Watcher] 文件监听已停止');
   }
 }

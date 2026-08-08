@@ -16,6 +16,9 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   const autoSaveEnabled = ref(true);
 
+  // ===== 边界覆盖持久化 =====
+  const domainBorderOverrides = ref({});
+
   // ===== 地图数据 =====
   const mapData = ref({});
 
@@ -39,9 +42,36 @@ export const useGeodataStore = defineStore('geodata', () => {
   const planets = computed(() => nodes.value.filter(n => n.layer === 'planet'));
   const locations = computed(() => nodes.value.filter(n => n.layer === 'location' || n.layer === 'city' || n.layer === 'town'));
 
+  // 默认势力颜色表
+  const FACTION_COLORS = {
+    '蓝镜帝国': '#4A90D9',
+    '绿野联邦': '#5CB85C',
+    '赤焰王国': '#E74C3C',
+    '紫晶商会': '#9B59B6',
+    '金辉共和国': '#F39C12',
+    '青霜联盟': '#1ABC9C',
+    '橙光同盟': '#E67E22',
+    '银月帝国': '#95A5A6',
+  };
+
+  function getFactionColor(faction) {
+    if (!faction) return '#6b5b95';
+    if (FACTION_COLORS[faction]) return FACTION_COLORS[faction];
+    // 根据 faction 字符串生成确定性颜色
+    let hash = 0;
+    for (let i = 0; i < faction.length; i++) {
+      hash = faction.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 70%, 60%)`;
+  }
+
   const currentWorldDomains = computed(() => {
     if (!currentWorld.value) return [];
-    return starDomains.value.filter(d => d.parentId === currentWorld.value.id);
+    return starDomains.value.filter(d => d.parentId === currentWorld.value.id).map(d => ({
+      ...d,
+      factionColor: d.factionColor || getFactionColor(d.faction),
+    }));
   });
 
   const currentDomainGalaxies = computed(() => {
@@ -116,6 +146,13 @@ export const useGeodataStore = defineStore('geodata', () => {
       return false;
     }
     if (!query) return false;
+  
+    // tag: 前缀搜索
+    if (query.startsWith('tag:')) {
+      const tag = query.slice(4).trim().toLowerCase();
+      return node.tags?.some(t => t.toLowerCase() === tag) ?? false;
+    }
+  
     const q = query.toLowerCase();
     const name = node.name.toLowerCase();
     if (name.includes(q)) return true;
@@ -189,10 +226,12 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (result.success) {
       nodes.value = validateNodes(result.data.nodes || []);
       hyperlanes.value = result.data.hyperlanes || [];
+      domainBorderOverrides.value = result.data.domainBorderOverrides || {};
     } else {
       console.error('Failed to load geodata:', result.error);
       nodes.value = [];
       hyperlanes.value = [];
+      domainBorderOverrides.value = {};
     }
   }
 
@@ -245,11 +284,13 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   async function saveGeodata() {
-    const data = {
+    // 深拷贝去除 Vue reactive Proxy，否则 Electron IPC 会报 "An object could not be cloned"
+    const data = JSON.parse(JSON.stringify({
       nodes: nodes.value,
       hyperlanes: hyperlanes.value,
+      domainBorderOverrides: domainBorderOverrides.value,
       updatedAt: new Date().toISOString()
-    };
+    }));
     await window.sitianAPI.saveGeodata(data);
   }
 
@@ -305,9 +346,11 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   async function saveMapData(planetId, data) {
     try {
-      const result = await window.sitianAPI.saveMapData(planetId, data);
+      // 深拷贝去除 Vue reactive Proxy
+      const cloned = JSON.parse(JSON.stringify(data));
+      const result = await window.sitianAPI.saveMapData(planetId, cloned);
       if (result.success) {
-        mapData.value[planetId] = data;
+        mapData.value[planetId] = cloned;
       }
       return result;
     } catch (e) {
@@ -373,6 +416,73 @@ export const useGeodataStore = defineStore('geodata', () => {
         polygon.controlPoints[cpIndex] = newPos;
       },
     });
+  }
+
+  // ===== 区域多边形 CRUD =====
+  function addRegion(planetId, region) {
+    if (!mapData.value[planetId]) {
+      mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
+    }
+    if (!mapData.value[planetId].regions) {
+      mapData.value[planetId].regions = [];
+    }
+    mapData.value[planetId].regions.push(region);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'add-region',
+      label: '绘制区域',
+      undo: () => {
+        mapData.value[planetId].regions = mapData.value[planetId].regions.filter(r => r.id !== region.id);
+      },
+      redo: () => {
+        mapData.value[planetId].regions.push(region);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function removeRegion(planetId, regionId) {
+    if (!mapData.value[planetId]?.regions) return;
+    const idx = mapData.value[planetId].regions.findIndex(r => r.id === regionId);
+    if (idx === -1) return;
+    const removed = mapData.value[planetId].regions[idx];
+    mapData.value[planetId].regions.splice(idx, 1);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'remove-region',
+      label: '删除区域',
+      undo: () => {
+        mapData.value[planetId].regions.splice(idx, 0, removed);
+      },
+      redo: () => {
+        mapData.value[planetId].regions = mapData.value[planetId].regions.filter(r => r.id !== regionId);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function updateRegion(planetId, regionId, updates) {
+    if (!mapData.value[planetId]?.regions) return;
+    const region = mapData.value[planetId].regions.find(r => r.id === regionId);
+    if (!region) return;
+
+    const oldState = {};
+    for (const key of Object.keys(updates)) {
+      oldState[key] = region[key];
+    }
+    Object.assign(region, updates);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'update-region',
+      label: '编辑区域',
+      undo: () => {
+        Object.assign(region, oldState);
+      },
+      redo: () => {
+        Object.assign(region, updates);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
   }
 
   function updateTerrainPolygon(planetId, polygonId, updates) {
@@ -622,16 +732,16 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   return {
-      nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, viewLevel,
-      selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode,
-      worlds, starDomains, galaxies, planets, locations,
-      currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentDomainAllGalaxies,
-      currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,
-      isSearching,
-      availableLayers, layerLabels, searchLayerFilter,
-      toggleLayerFilter, isFilterOpen,
-      canUndo, canRedo, undoLabel, mapData,
-      loadGeodata, reextract, saveGeodata,
+    nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, viewLevel,
+    selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode,
+    worlds, starDomains, galaxies, planets, locations,
+    currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentDomainAllGalaxies,
+    currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,
+    isSearching,
+    availableLayers, layerLabels, searchLayerFilter,
+    toggleLayerFilter, isFilterOpen,
+    canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
+    loadGeodata, reextract, saveGeodata,
       updateNodePosition, updateAllCoordinates,
       addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
       selectNode, clearSelection, selectPlanetOrNode,
@@ -642,5 +752,6 @@ export const useGeodataStore = defineStore('geodata', () => {
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
       beginNodePositionCapture, endNodePositionCapture,
+      addRegion, removeRegion, updateRegion,
     };
 });

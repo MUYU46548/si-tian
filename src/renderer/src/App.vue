@@ -33,6 +33,9 @@
         <button @click="reextract" title="重新提取">↻</button>
         <button @click="saveData" :disabled="!dirty" title="保存">💾</button>
         <button @click="showExportMenu = !showExportMenu" title="导出">📥</button>
+        <button @click="layersStore.togglePanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }">☷</button>
+        <button @click="settingsPanelRef?.open()" title="设置">⚙️</button>
+        <button @click="aboutPanelRef?.open()" title="帮助 (F1)">?</button>
         <span class="status">{{ statusText }}</span>
       </div>
     </header>
@@ -92,6 +95,11 @@
     </div>
 
     <node-detail-panel />
+    <layer-panel />
+    <about-panel ref="aboutPanelRef" />
+    <settings-panel ref="settingsPanelRef" />
+    <onboarding-guide />
+    <recovery-panel />
     <!-- 性能统计面板 -->
     <div v-if="perfVisible" class="perf-panel">
       <div class="perf-title">性能统计 (开发模式)</div>
@@ -113,8 +121,15 @@ import PlanetMap from './components/PlanetMap.vue';
 import NodeDetailPanel from './components/NodeDetailPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
+import LayerPanel from './components/LayerPanel.vue';
+import AboutPanel from './components/AboutPanel.vue';
+import SettingsPanel from './components/SettingsPanel.vue';
+import OnboardingGuide from './components/OnboardingGuide.vue';
+import RecoveryPanel from './components/RecoveryPanel.vue';
+import { useLayersStore } from './store/layers';
 
 const store = useGeodataStore();
+const layersStore = useLayersStore();
 const dirty = ref(false);
 const statusText = ref('');
 const searchBar = ref(null);
@@ -123,6 +138,8 @@ const systemViewRef = ref(null);
 const showExportMenu = ref(false);
 const perfVisible = ref(false);
 const perfStats = ref({});
+const aboutPanelRef = ref(null);
+const settingsPanelRef = ref(null);
 const undoTooltip = computed(() => {
   const label = store.undoLabel;
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
@@ -345,6 +362,17 @@ onMounted(async () => {
       }
     }
   }, 250);
+
+  // 设置面板事件
+  window.addEventListener('sitian:reextract', () => {
+    reextract();
+  });
+  window.addEventListener('sitian:validate-data', () => {
+    validateDataIntegrity();
+  });
+  window.addEventListener('sitian:clear-cache', () => {
+    clearCoordinateCache();
+  });
 });
 
 onUnmounted(() => {
@@ -356,6 +384,11 @@ onUnmounted(() => {
 });
 
 function handleGlobalKeydown(e) {
+  if (e.key === 'F1') {
+    e.preventDefault();
+    aboutPanelRef.value?.open();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();
     store.undo();
@@ -368,6 +401,12 @@ function handleGlobalKeydown(e) {
   }
   if (e.key === 'Escape') {
     showExportMenu.value = false;
+  }
+  if (e.key === 'l' || e.key === 'L') {
+    if (store.viewLevel === 'domain' || store.viewLevel === 'system' || store.viewLevel === 'planet') {
+      e.preventDefault();
+      layersStore.togglePanel();
+    }
   }
 }
 
@@ -389,6 +428,69 @@ async function saveData() {
   await store.saveGeodata();
   dirty.value = false;
   statusText.value = '已保存';
+}
+
+// ===== 数据完整性检查 =====
+function validateDataIntegrity() {
+  const nodes = store.nodes;
+  const issues = [];
+  
+  // 孤立节点（parentId 指向不存在的节点）
+  const nodeIds = new Set(nodes.map(n => n.id));
+  for (const node of nodes) {
+    if (node.parentId && !nodeIds.has(node.parentId)) {
+      issues.push({ type: 'broken-parent', node: node.name, detail: `parentId "${node.parentId}" 不存在` });
+    }
+  }
+  
+  // 重复 ID
+  const idCounts = {};
+  for (const node of nodes) {
+    idCounts[node.id] = (idCounts[node.id] || 0) + 1;
+  }
+  for (const [id, count] of Object.entries(idCounts)) {
+    if (count > 1) {
+      issues.push({ type: 'duplicate-id', detail: `ID "${id}" 出现 ${count} 次` });
+    }
+  }
+  
+  // 坐标异常
+  for (const node of nodes) {
+    const x = node.coordinate?.x;
+    const y = node.coordinate?.y;
+    if (x !== null && (typeof x !== 'number' || !isFinite(x) || Math.abs(x) > 10000)) {
+      issues.push({ type: 'invalid-coord', node: node.name, detail: `X 坐标异常: ${x}` });
+    }
+    if (y !== null && (typeof y !== 'number' || !isFinite(y) || Math.abs(y) > 10000)) {
+      issues.push({ type: 'invalid-coord', node: node.name, detail: `Y 坐标异常: ${y}` });
+    }
+  }
+  
+  // 显示结果
+  if (issues.length === 0) {
+    alert('✅ 数据完整性检查通过，未发现问题。');
+    statusText.value = '数据检查完成：无问题';
+  } else {
+    const summary = `发现 ${issues.length} 个问题:\n\n` + issues.slice(0, 10).map(i => `• [${i.type}] ${i.node ? i.node + ' - ' : ''}${i.detail}`).join('\n');
+    alert(summary);
+    statusText.value = `数据检查完成：${issues.length} 个问题`;
+  }
+}
+
+// ===== 清除坐标缓存 =====
+async function clearCoordinateCache() {
+  // 删除 geodata.json 和 mapdata.json 的缓存
+  // 通过主进程 API 删除文件
+  try {
+    await window.sitianAPI.clearCoordinateCache();
+    // 重新加载
+    await store.loadGeodata();
+    statusText.value = '坐标缓存已清除，数据已重新提取';
+    dirty.value = false;
+  } catch (e) {
+    console.error('Failed to clear cache:', e);
+    alert('清除缓存失败: ' + e.message);
+  }
 }
 </script>
 

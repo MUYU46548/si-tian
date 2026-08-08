@@ -172,3 +172,29 @@ ipcMain.handle('save-map-data', async (event, planetId, mapData) => {
     return { success: false, error: err.message };
   }
 });
+
+// IPC: 清除坐标缓存
+ipcMain.handle('clear-coordinate-cache', async () => {
+  try {
+    const GEODATA_CACHE = path.join(VAULT_PATH, '.sitian', 'geodata.json');
+    const MAP_CACHE = path.join(VAULT_PATH, '.sitian', 'mapdata.json');
+    
+    // 删除坐标缓存
+    try {
+      await fs.unlink(GEODATA_CACHE);
+    } catch (e) {
+      // 文件不存在则忽略
+    }
+    
+    // 删除地图缓存
+    try {
+      await fs.unlink(MAP_CACHE);
+    } catch (e) {
+      // 文件不存在则忽略
+    }
+    
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});

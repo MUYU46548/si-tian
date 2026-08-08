@@ -1,18 +1,20 @@
 <template>
-  <div class="search-bar">
+  <div class="search-bar-container">
     <div class="search-input-wrapper">
       <span class="search-icon">🔍</span>
       <input
         ref="input"
         v-model="query"
         type="text"
-        placeholder="搜索节点... (Ctrl+F 聚焦, Esc 清除, Enter 跳转)"
+        placeholder="搜索节点... (Ctrl+F)"
         @input="onInput"
         @keydown.enter="onEnter"
         @keydown.esc="onEsc"
+        @focus="showResults = true"
       />
       <span v-if="query" class="match-count" :class="{ 'no-results': showNoResults }">
         {{ store.searchResults.length > 0 ? `${store.searchMatchIndex + 1}/${store.searchResults.length}` : (showNoResults ? '无结果' : '0') }}
+        <span v-if="filterCount > 0" class="filter-badge">{{ filterCount }}</span>
       </span>
       <button v-if="query" class="clear-btn" @click="clear">×</button>
       <button 
@@ -22,6 +24,33 @@
         title="类型过滤"
       >⚲</button>
     </div>
+
+    <!-- 浮动搜索结果面板 -->
+    <div v-if="showResults && query && store.searchResults.length > 0" class="search-results-panel" @click.stop>
+      <div class="results-header">
+        <span>搜索结果</span>
+        <span class="results-count">{{ store.searchResults.length }} 个结果</span>
+      </div>
+      <div class="results-list">
+        <div 
+          v-for="(nodeId, index) in store.searchResults" 
+          :key="nodeId"
+          class="result-item"
+          :class="{ current: index === store.searchMatchIndex }"
+          @click="selectResult(nodeId, index)"
+          @mouseenter="store.searchMatchIndex = index"
+        >
+          <div class="result-name">{{ getNodeName(nodeId) }}</div>
+          <div class="result-meta">
+            <span class="result-layer">{{ getNodeLayer(nodeId) }}</span>
+            <span v-if="getNodeFaction(nodeId)" class="result-faction" :style="{ color: getNodeFactionColor(nodeId) }">
+              {{ getNodeFaction(nodeId) }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 类型过滤面板 -->
     <div v-if="store.isFilterOpen" class="filter-panel" @click.stop>
       <div class="filter-header">类型过滤</div>
@@ -54,12 +83,50 @@ import { useGeodataStore } from '../store/geodata';
 const store = useGeodataStore();
 const query = ref('');
 const input = ref(null);
+const showResults = ref(false);
 
 const hasResults = computed(() => query.value.trim().length > 0 && store.searchResults.length === 0);
 const showNoResults = computed(() => hasResults.value && query.value.trim().length > 0);
+const filterCount = computed(() => store.searchLayerFilter.length);
+
+function getNodeName(nodeId) {
+  const node = store.nodes.find(n => n.id === nodeId);
+  return node?.name || nodeId;
+}
+
+function getNodeLayer(nodeId) {
+  const node = store.nodes.find(n => n.id === nodeId);
+  return store.layerLabels[node?.layer] || node?.layer || '';
+}
+
+function getNodeFaction(nodeId) {
+  const node = store.nodes.find(n => n.id === nodeId);
+  return node?.faction || '';
+}
+
+function getNodeFactionColor(nodeId) {
+  const node = store.nodes.find(n => n.id === nodeId);
+  if (!node?.faction) return '';
+  return store.getFactionColor(node.faction);
+}
+
+function selectResult(nodeId, index) {
+  store.searchMatchIndex = index;
+  const node = store.currentMatchNode;
+  if (node && node.coordinate.x !== null) {
+    autoNavigateToNode(node);
+    window.dispatchEvent(new CustomEvent('sitian:focus-node', { detail: node }));
+  }
+  showResults = false;
+}
 
 function onInput() {
   store.performSearch(query.value);
+  if (query.value.trim().length > 0 && store.searchResults.length > 0) {
+    showResults.value = true;
+  } else {
+    showResults.value = false;
+  }
 }
 
 function onEnter() {
@@ -74,6 +141,7 @@ function onEnter() {
 }
 
 function onEsc() {
+  showResults.value = false;
   clear();
   input.value?.blur();
 }
@@ -121,16 +189,29 @@ function findAncestorByLayer(node, targetLayer) {
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown);
   document.addEventListener('click', closeFilterPanel);
+  window.addEventListener('sitian:search-tag', handleSearchTag);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
   document.removeEventListener('click', closeFilterPanel);
+  window.removeEventListener('sitian:search-tag', handleSearchTag);
 });
 
+function handleSearchTag(e) {
+  const tag = e.detail;
+  if (tag) {
+    query.value = `tag:${tag}`;
+    store.performSearch(query.value);
+    focus();
+  }
+}
+
 function closeFilterPanel(e) {
-  if (!e.target.closest('.filter-panel') && !e.target.closest('.filter-btn')) {
+  const searchBar = input.value?.closest('.search-bar-container');
+  if (searchBar && !searchBar.contains(e.target)) {
     store.isFilterOpen = false;
+    showResults.value = false;
   }
 }
 
@@ -138,6 +219,12 @@ function handleGlobalKeydown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
     e.preventDefault();
     focus();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+    e.preventDefault();
+    focus();
+    store.isFilterOpen = true;
+    return;
   }
   if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
     e.preventDefault();
@@ -204,6 +291,17 @@ input::placeholder {
   border-radius: 3px;
 }
 
+.filter-badge {
+  display: inline-block;
+  background: rgba(88, 166, 255, 0.2);
+  color: #58a6ff;
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  margin-left: 4px;
+  font-weight: 600;
+}
+
 .clear-btn {
   background: none;
   border: none;
@@ -235,7 +333,76 @@ input::placeholder {
   color: #58a6ff;
 }
 
-/* 类型过滤面板 */
+/* 搜索结果面板 */
+.search-results-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 200;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #30363d;
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.results-count {
+  font-size: 11px;
+  color: #484f58;
+}
+
+.results-list {
+  padding: 4px 0;
+}
+
+.result-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.result-item:hover,
+.result-item.current {
+  background: rgba(88, 166, 255, 0.15);
+}
+
+.result-name {
+  font-size: 13px;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.result-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.result-layer {
+  font-size: 11px;
+  color: #8b949e;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #21262d;
+}
+
+.result-faction {
+  font-size: 11px;
+  font-weight: 500;
+}
 .filter-panel {
   position: absolute;
   top: 100%;

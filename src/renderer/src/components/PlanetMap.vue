@@ -20,18 +20,28 @@
     <div v-if="editMode" class="edit-toolbar">
       <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖动画布 (空格临时切换)">🤚 拖手</button>
       <button :class="{ active: interactionMode === 'draw' }" @click="interactionMode = 'draw'" title="绘制省份">✏️ 绘制</button>
+      <button :class="{ active: interactionMode === 'region' }" @click="interactionMode = 'region'" title="圈画区域">🗺️ 区域</button>
       <button :class="{ active: interactionMode === 'marker' }" @click="interactionMode = 'marker'" title="放置标记">📍 标记</button>
       <button class="separator-btn" disabled></button>
       
       <template v-if="interactionMode === 'draw'">
-        <button :class="{ active: drawMode }" @click="drawMode = true" title="按住拖动绘制">自由绘制</button>
-        <button :class="{ active: !drawMode }" @click="drawMode = false" title="点击放置顶点">点击描点</button>
+        <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false" title="按住拖动绘制">✏️ 自由绘制</button>
+        <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false" title="点击放置顶点">📐 点击描点</button>
+        <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode" title="点击空白处生成区域">🪣 区域填充</button>
+        <button class="separator-btn" disabled></button>
+      </template>
+      
+      <template v-if="interactionMode === 'region'">
+        <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false" title="按住拖动绘制区域">✏️ 自由绘制</button>
+        <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false" title="点击放置顶点">📐 点击描点</button>
+        <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode" title="点击空白处自动生成区域">🪣 区域填充</button>
         <button class="separator-btn" disabled></button>
       </template>
       
       <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份">🧲 吸附</button>
       
-      <button @click="deleteSelected" :disabled="!selectedProvince && !selectedMarker" title="删除选中省份/标记 (Del)">🗑 删除</button>
+      <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker" title="删除选中省份/区域/标记 (Del)">🗑 删除</button>
+      <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界为贝塞尔曲线">〰️ 平滑</button>
       <button class="separator-btn" disabled></button>
       <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
       <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
@@ -51,7 +61,20 @@
         @click="selectedTerrain = t.type"
       >{{ t.label }}</button>
     </div>
-
+    
+    <!-- 区域颜色选择器 -->
+    <div v-if="editMode && interactionMode === 'region'" class="terrain-picker">
+      <span class="picker-label">区域颜色：</span>
+      <button 
+        v-for="c in REGION_COLORS" 
+        :key="c"
+        :class="{ active: regionColor === c }"
+        :style="{ background: c }"
+        @click="regionColor = c"
+        class="color-btn"
+      ></button>
+    </div>
+    
     <!-- 标记类型选择器 -->
     <div v-if="editMode && interactionMode === 'marker'" class="terrain-picker">
       <span class="picker-label">标记类型：</span>
@@ -109,19 +132,69 @@
         ></textarea>
       </div>
     </div>
+    
+    <!-- 选中区域的属性编辑面板 -->
+    <div v-if="editMode && selectedRegion" class="province-editor region-editor">
+      <div class="editor-header">
+        <h3>编辑区域</h3>
+        <button class="close-btn" @click="selectedRegion = null">×</button>
+      </div>
+      <div class="editor-field">
+        <label>名称</label>
+        <input 
+          v-model="editingRegionName" 
+          @input="updateRegionName" 
+          placeholder="区域名称"
+        />
+      </div>
+      <div class="editor-field">
+        <label>颜色</label>
+        <div class="terrain-selector">
+          <button 
+            v-for="c in REGION_COLORS" 
+            :key="c"
+            :class="{ active: selectedRegion?.color === c }"
+            :style="{ background: c }" 
+            @click="updateRegionColor(c)"
+            class="color-btn"
+          ></button>
+        </div>
+      </div>
+      <div class="editor-field">
+        <label>描述</label>
+        <textarea 
+          v-model="editingRegionDescription" 
+          @input="updateRegionDescription" 
+          placeholder="区域描述（可选）"
+          rows="3"
+        ></textarea>
+      </div>
+      <div class="editor-field" v-if="selectedRegion?.members?.length">
+        <label>包含地点 ({{ selectedRegion.members.length }})</label>
+        <div class="members-list">
+          <span v-for="memberId in selectedRegion.members" :key="memberId" class="member-tag">
+            {{ getPlaceName(memberId) }}
+          </span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { getLastCommandLabel, execute } from '../store/undo';
 import { getTexturePattern } from '../utils/textures';
 import { snapPolygonToNeighbors } from '../utils/snap';
+import { createProvinceByFloodFill } from '../utils/floodfill';
+import { validatePolygon, pointInPolygon as geoPointInPolygon } from '../utils/geometry';
 import EagleEye from './EagleEye.vue';
 
 const store = useGeodataStore();
+const layers = useLayersStore();
 
 const props = defineProps({
   planet: { type: Object, default: null },
@@ -130,15 +203,26 @@ const props = defineProps({
 const emit = defineEmits(['back', 'select-node', 'dirty']);
 
 const canvas = ref(null);
-const drawMode = ref(true);
+const drawMode = ref(true); // true=自由绘制, false=点击描点
+const floodFillMode = ref(false); // true=区域填充模式
 const currentPath = ref([]);
 const hoveredNode = ref(null);
+const floodPreview = ref(null); // hover 时预览 flood-fill 结果
 
 // ===== 编辑状态 =====
 const editMode = ref(false);
 const selectedTerrain = ref('land');
 const selectedProvince = ref(null);
 const drawingPolygon = ref(null);
+
+// ===== 顶点编辑状态 =====
+const editingVertex = ref(null); // { polygonType, polygonId, vertexIndex }
+const hoveredVertex = ref(null);
+
+// ===== 区域绘制状态 =====
+const selectedRegion = ref(null);
+const regionColor = ref('#FF6B6B');
+const REGION_COLORS = ['#FF6B6B', '#FFA500', '#FFD700', '#32CD32', '#4169E1', '#9B59B6'];
 
 // ===== 交互模式 =====
 const interactionMode = ref('pan');
@@ -148,10 +232,17 @@ const snapEnabled = ref(true);
 // ===== 属性编辑 =====
 const editingName = ref('');
 const editingDescription = ref('');
+const editingRegionName = ref('');
+const editingRegionDescription = ref('');
 
 watch(selectedProvince, (poly) => {
   editingName.value = poly?.name || '';
   editingDescription.value = poly?.description || '';
+});
+
+watch(selectedRegion, (region) => {
+  editingRegionName.value = region?.name || '';
+  editingRegionDescription.value = region?.description || '';
 });
 
 function updateProvinceName() {
@@ -174,6 +265,34 @@ function updateProvinceDescription() {
     description: editingDescription.value,
   });
   emit('dirty', true);
+}
+
+// ===== 区域属性更新 =====
+function updateRegionName() {
+  if (!selectedRegion.value || !editingRegionName.value.trim()) return;
+  store.updateRegion(props.planet.id, selectedRegion.value.id, {
+    name: editingRegionName.value.trim(),
+  });
+  emit('dirty', true);
+}
+
+function updateRegionColor(color) {
+  if (!selectedRegion.value) return;
+  store.updateRegion(props.planet.id, selectedRegion.value.id, { color });
+  emit('dirty', true);
+}
+
+function updateRegionDescription() {
+  if (!selectedRegion.value) return;
+  store.updateRegion(props.planet.id, selectedRegion.value.id, {
+    description: editingRegionDescription.value,
+  });
+  emit('dirty', true);
+}
+
+function getPlaceName(placeId) {
+  const place = places.value.find(p => p.id === placeId);
+  return place?.name || placeId;
 }
 
 const terrainTypes = [
@@ -224,17 +343,36 @@ function getLabelWeight(layer) { return LABEL_WEIGHT[layer] || 'normal'; }
 
 // ===== 命中测试 =====
 function hitTest(wx, wy) {
-  const markerHit = hitTestMarker(wx, wy);
-  if (markerHit) return markerHit;
+  if (!layers.isVisible('planet', 'terrain') && 
+      !layers.isVisible('planet', 'markers') && 
+      !layers.isVisible('planet', 'places') &&
+      !layers.isVisible('planet', 'regions')) return null;
   
-  for (const place of places.value) {
-    const dx = wx - (place.coordinate?.x || 0);
-    const dy = wy - (place.coordinate?.y || 0);
-    const r = getNodeRadius(place.layer) + 4;
-    if (dx * dx + dy * dy < r * r) return { type: 'place', node: place };
+  if (layers.isVisible('planet', 'markers')) {
+    const markerHit = hitTestMarker(wx, wy);
+    if (markerHit) return markerHit;
   }
   
-  if (currentMapData.value) {
+  // 区域命中（在 terrain 之上）
+  if (layers.isVisible('planet', 'regions') && currentMapData.value?.regions) {
+    for (let i = currentMapData.value.regions.length - 1; i >= 0; i--) {
+      const region = currentMapData.value.regions[i];
+      if (geoPointInPolygon(wx, wy, region.points)) {
+        return { type: 'region', region };
+      }
+    }
+  }
+  
+  if (layers.isVisible('planet', 'places')) {
+    for (const place of places.value) {
+      const dx = wx - (place.coordinate?.x || 0);
+      const dy = wy - (place.coordinate?.y || 0);
+      const r = getNodeRadius(place.layer) + 4;
+      if (dx * dx + dy * dy < r * r) return { type: 'place', node: place };
+    }
+  }
+  
+  if (layers.isVisible('planet', 'terrain') && currentMapData.value) {
     for (let i = currentMapData.value.terrain.length - 1; i >= 0; i--) {
       const poly = currentMapData.value.terrain[i];
       if (pointInPolygon(wx, wy, poly.points)) {
@@ -243,6 +381,48 @@ function hitTest(wx, wy) {
     }
   }
   
+  return null;
+}
+
+// ===== 顶点命中测试 =====
+function hitTestVertex(wx, wy) {
+  const selectedPoly = selectedProvince.value || selectedRegion.value;
+  if (!selectedPoly || !editMode.value) return null;
+  
+  const points = selectedPoly.points;
+  for (let i = 0; i < points.length; i++) {
+    const dx = wx - points[i].x;
+    const dy = wy - points[i].y;
+    if (dx * dx + dy * dy < 8 * 8) {
+      return { vertexIndex: i };
+    }
+  }
+  return null;
+}
+
+// ===== 边命中测试（用于右键插入顶点）=====
+function hitTestEdge(wx, wy) {
+  const selectedPoly = selectedProvince.value || selectedRegion.value;
+  if (!selectedPoly || !editMode.value) return null;
+  
+  const points = selectedPoly.points;
+  const n = points.length;
+  
+  for (let i = 0; i < n; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    const dist = perpendicularDistance({ x: wx, y: wy }, a, b);
+    // 检查点是否在线段附近（8px 阈值）且在端点之间
+    if (dist < 8) {
+      // 检查是否不在端点附近（避免与顶点删除冲突）
+      const distToA = Math.hypot(wx - a.x, wy - a.y);
+      const distToB = Math.hypot(wx - b.x, wy - b.y);
+      const edgeLen = Math.hypot(b.x - a.x, b.y - a.y);
+      if (distToA > 10 && distToB > 10 && edgeLen > 20) {
+        return { insertIndex: i + 1 };
+      }
+    }
+  }
   return null;
 }
 
@@ -441,35 +621,97 @@ function onRender(ctx, w, h) {
   lodRef.value = Math.min(1, Math.max(0, (scale - 0.3) / 0.7));
   const lod = lodRef.value;
   
-  // 背景渐变（缓存复用）
+  // 背景渐变（缓存复用）— 始终绘制作为画布底色
   ctx.fillStyle = getBackgroundGradient(ctx, w, h);
   ctx.fillRect(-5000, -5000, 10000, 10000);
   
   // 省份多边形
-  if (currentMapData.value) {
+  if (layers.isVisible('planet', 'terrain') && currentMapData.value) {
     for (const poly of currentMapData.value.terrain) {
       drawProvince(ctx, poly, lod);
     }
   }
   
+  // 区域层（半透明叠加在地形之上）
+  if (layers.isVisible('planet', 'regions') && currentMapData.value?.regions) {
+    for (const region of currentMapData.value.regions) {
+      drawRegion(ctx, region, lod);
+    }
+  }
+  
   // 标记点（带聚合）
-  const markersToRender = clusteredMarkers.value;
-  for (const item of markersToRender) {
-    if (item.type === 'cluster') {
-      drawCluster(ctx, item);
-    } else {
-      drawMarker(ctx, item, lod);
+  if (layers.isVisible('planet', 'markers')) {
+    const markersToRender = clusteredMarkers.value;
+    for (const item of markersToRender) {
+      if (item.type === 'cluster') {
+        drawCluster(ctx, item);
+      } else {
+        drawMarker(ctx, item, lod);
+      }
     }
   }
   
   // 地点节点（带 LOD）
-  for (const place of places.value) {
-    drawPlace(ctx, place, lod);
+  if (layers.isVisible('planet', 'places')) {
+    for (const place of places.value) {
+      drawPlace(ctx, place, lod);
+    }
   }
   
   // 编辑辅助线
-  if (editMode.value) {
+  if (editMode.value && layers.isVisible('planet', 'editHelpers')) {
     drawEditHelpers(ctx);
+    drawMemberHighlight(ctx, lod);
+  }
+  
+  // 区域填充预览
+  if (floodPreview.value && floodPreview.value.length >= 3) {
+    const isRegionMode = interactionMode.value === 'region';
+    const terrainColor = terrainTypes.find(t => t.type === selectedTerrain.value)?.color || '#A3C4BC';
+    const previewColor = isRegionMode ? regionColor.value : terrainColor;
+    ctx.fillStyle = previewColor + '40'; // 半透明
+    ctx.strokeStyle = previewColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(floodPreview.value[0].x, floodPreview.value[0].y);
+    for (let i = 1; i < floodPreview.value.length; i++) {
+      ctx.lineTo(floodPreview.value[i].x, floodPreview.value[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// ===== 成员地点高亮 =====
+function drawMemberHighlight(ctx, lod) {
+  if (!selectedRegion.value?.members?.length || lod < 0.3) return;
+  
+  const memberIds = new Set(selectedRegion.value.members);
+  const regionColor = selectedRegion.value.color || '#FF6B6B';
+  
+  for (const place of places.value) {
+    if (!memberIds.has(place.id)) continue;
+    const x = place.coordinate?.x;
+    const y = place.coordinate?.y;
+    if (x === null || y === null || x === undefined || y === undefined) continue;
+    
+    // 高亮光环
+    ctx.strokeStyle = regionColor + '80';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(x, y, getNodeRadius(place.layer) + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // 小圆点指示
+    ctx.fillStyle = regionColor;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -631,6 +873,78 @@ function drawProvinceLabel(ctx, poly, lod) {
   ctx.fillText(text, cx, cy);
 }
 
+function drawRegion(ctx, region, lod) {
+  if (!region.points || region.points.length < 3) return;
+  
+  const isSelected = selectedRegion.value?.id === region.id;
+  const color = region.color || '#FF6B6B';
+  
+  ctx.beginPath();
+  ctx.moveTo(region.points[0].x, region.points[0].y);
+  
+  if (region.controlPoints && region.controlPoints.length >= region.points.length) {
+    for (let i = 0; i < region.points.length; i++) {
+      const nextIdx = (i + 1) % region.points.length;
+      const cp = region.controlPoints[i];
+      const next = region.points[nextIdx];
+      ctx.quadraticCurveTo(cp.x, cp.y, next.x, next.y);
+    }
+  } else {
+    for (let i = 1; i < region.points.length; i++) {
+      ctx.lineTo(region.points[i].x, region.points[i].y);
+    }
+  }
+  
+  ctx.closePath();
+  
+  // 半透明填充
+  ctx.fillStyle = color + '40';
+  ctx.fill();
+  
+  // 流动虚线边界
+  const time = ctx._animationTime || 0;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = isSelected ? 3 : 2;
+  ctx.setLineDash([8, 4]);
+  ctx.lineDashOffset = -time * 15;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // 区域名称标签
+  if (lod > 0.4 && region.name) {
+    drawRegionLabel(ctx, region, color, lod);
+  }
+}
+
+function drawRegionLabel(ctx, region, color, lod) {
+  let cx = 0, cy = 0;
+  for (const p of region.points) { cx += p.x; cy += p.y; }
+  cx /= region.points.length;
+  cy /= region.points.length;
+  
+  const text = region.name;
+  ctx.font = `bold ${Math.round(13 * lod)}px "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  const metrics = ctx.measureText(text);
+  const padding = 6;
+  
+  ctx.fillStyle = color + 'CC';
+  ctx.beginPath();
+  ctx.roundRect(
+    cx - metrics.width / 2 - padding,
+    cy - 10 * lod,
+    metrics.width + padding * 2,
+    20 * lod,
+    4
+  );
+  ctx.fill();
+  
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText(text, cx, cy);
+}
+
 function drawPlace(ctx, place, lod) {
   const x = place.coordinate?.x || 0;
   const y = place.coordinate?.y || 0;
@@ -766,6 +1080,9 @@ function drawEditHelpers(ctx) {
       ctx.lineTo(currentPath.value[i].x, currentPath.value[i].y);
     }
     ctx.strokeStyle = terrainTypes.find(t => t.type === selectedTerrain.value)?.color || '#000';
+    if (interactionMode.value === 'region') {
+      ctx.strokeStyle = regionColor.value;
+    }
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.stroke();
@@ -799,11 +1116,28 @@ function drawEditHelpers(ctx) {
     }
   }
   
-  if (selectedProvince.value && !drawingPolygon.value) {
-    for (const p of selectedProvince.value.points) {
-      ctx.fillStyle = '#FFD700';
+  // 绘制选中省份/区域的可拖拽顶点
+  const selectedPoly = selectedProvince.value || selectedRegion.value;
+  if (selectedPoly && !drawingPolygon.value) {
+    // 绘制边界辅助线
+    ctx.strokeStyle = selectedRegion.value ? (selectedRegion.value.color || '#FF6B6B') : 'rgba(255, 215, 0, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.moveTo(selectedPoly.points[0].x, selectedPoly.points[0].y);
+    for (let i = 1; i < selectedPoly.points.length; i++) {
+      ctx.lineTo(selectedPoly.points[i].x, selectedPoly.points[i].y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    for (let i = 0; i < selectedPoly.points.length; i++) {
+      const p = selectedPoly.points[i];
+      const isHovered = hoveredVertex.value?.vertexIndex === i;
+      ctx.fillStyle = isHovered ? '#FF6B6B' : '#FFD700';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, isHovered ? 7 : 5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -820,6 +1154,7 @@ function enterEditMode() {
 function exitEditMode() {
   editMode.value = false;
   selectedProvince.value = null;
+  selectedRegion.value = null;
   drawingPolygon.value = null;
   currentPath.value = [];
   interactionMode.value = 'pan';
@@ -830,23 +1165,57 @@ function exitEditMode() {
 function handleDrawComplete(rawPoints) {
   const simplified = simplifyPath(rawPoints, 8);
   if (simplified.length >= 3) {
-    let polygon = {
-      id: 'terrain_' + Date.now(),
-      type: selectedTerrain.value,
-      points: simplified,
-      controlPoints: null,
-    };
-    
-    if (snapEnabled.value && currentMapData.value?.terrain?.length > 0) {
-      const { polygon: snappedPolygon } = snapPolygonToNeighbors(
-        polygon,
-        currentMapData.value.terrain,
-        { vertexThreshold: 12, edgeThreshold: 8, insertVertices: true }
-      );
-      polygon = snappedPolygon;
+    // 拓扑校验
+    const validation = validatePolygon(simplified);
+    if (!validation.valid) {
+      const criticalErrors = validation.errors.filter(e => e.type !== 'self-intersecting');
+      if (criticalErrors.length > 0) {
+        console.warn('[Topology] Polygon validation failed:', criticalErrors);
+      }
     }
     
-    store.addTerrainPolygon(props.planet.id, polygon);
+    const isRegionMode = interactionMode.value === 'region';
+    let polygon;
+    
+    if (isRegionMode) {
+      // 自动检测包含的地点
+      const members = places.value
+        .filter(place => {
+          const px = place.coordinate?.x;
+          const py = place.coordinate?.y;
+          return px !== null && py !== null && geoPointInPolygon(px, py, simplified);
+        })
+        .map(p => p.id);
+      
+      polygon = {
+        id: 'region_' + Date.now(),
+        name: '新区域',
+        points: simplified,
+        color: regionColor.value,
+        description: '',
+        members,
+      };
+      store.addRegion(props.planet.id, polygon);
+    } else {
+      polygon = {
+        id: 'terrain_' + Date.now(),
+        type: selectedTerrain.value,
+        points: simplified,
+        controlPoints: null,
+      };
+      
+      if (snapEnabled.value && currentMapData.value?.terrain?.length > 0) {
+        const { polygon: snappedPolygon } = snapPolygonToNeighbors(
+          polygon,
+          currentMapData.value.terrain,
+          { vertexThreshold: 12, edgeThreshold: 8, insertVertices: true }
+        );
+        polygon = snappedPolygon;
+      }
+      
+      store.addTerrainPolygon(props.planet.id, polygon);
+    }
+    
     emit('dirty', true);
   }
 }
@@ -896,6 +1265,14 @@ function finishPolygon() {
 // ===== 选择/删除省份 =====
 function selectProvince(poly) {
   selectedProvince.value = poly;
+  selectedRegion.value = null;
+  renderer.requestRender();
+}
+
+// ===== 区域选择/删除 =====
+function selectRegion(region) {
+  selectedRegion.value = region;
+  selectedProvince.value = null;
   renderer.requestRender();
 }
 
@@ -903,6 +1280,11 @@ function deleteSelected() {
   if (selectedMarker.value) {
     deleteMarker(selectedMarker.value);
     selectedMarker.value = null;
+    renderer.requestRender();
+    emit('dirty', true);
+  } else if (selectedRegion.value) {
+    store.removeRegion(props.planet.id, selectedRegion.value.id);
+    selectedRegion.value = null;
     renderer.requestRender();
     emit('dirty', true);
   } else if (selectedProvince.value) {
@@ -1025,14 +1407,54 @@ async function confirmClear() {
 const renderer = useCanvasRenderer(canvas, {
   onRender,
   onHitTest: (wx, wy) => hitTest(wx, wy),
-  onHover: (hit) => {
+  onHover: (hit, wx, wy) => {
     hoveredNode.value = hit?.type === 'place' ? hit.node : null;
+    
+    // 更新悬停顶点
+    if (editMode.value && (selectedProvince.value || selectedRegion.value)) {
+      hoveredVertex.value = hitTestVertex(wx, wy);
+    } else {
+      hoveredVertex.value = null;
+    }
+    
+    // 区域填充模式：hover 时预览
+    if (editMode.value && (interactionMode.value === 'draw' || interactionMode.value === 'region') && floodFillMode.value) {
+      // 根据模式决定填充的占用图层
+      const isRegionMode = interactionMode.value === 'region';
+      const occupiedPolygons = isRegionMode
+        ? [...(currentMapData.value.terrain || []), ...(currentMapData.value.regions || [])]
+        : (currentMapData.value?.terrain || []);
+      
+      const points = createProvinceByFloodFill(
+        wx, wy,
+        occupiedPolygons,
+        { gridSize: isRegionMode ? 32 : 32, maxFillRatio: 0.25, simplifyTolerance: 15 }
+      );
+      floodPreview.value = points;
+    } else {
+      floodPreview.value = null;
+    }
+    
     renderer.requestRender();
   },
   onDragStart: (wx, wy, button) => {
     if (button !== 0) return true;
     
     const mode = isSpacebarDown.value ? 'pan' : (interactionMode.value || 'draw');
+    
+    // 顶点拖拽优先
+    if (editMode.value && (selectedProvince.value || selectedRegion.value) && mode === 'pan') {
+      const vertexHit = hitTestVertex(wx, wy);
+      if (vertexHit) {
+        const polygonType = selectedRegion.value ? 'region' : 'terrain';
+        const polygonId = (selectedRegion.value || selectedProvince.value).id;
+        return {
+          mode: 'vertex',
+          vertexInfo: { polygonType, polygonId, vertexIndex: vertexHit.vertexIndex }
+        };
+      }
+    }
+    
     if (mode !== 'pan') return true;
     
     const hit = hitTest(wx, wy);
@@ -1046,6 +1468,20 @@ const renderer = useCanvasRenderer(canvas, {
   onDragMove: (wx, wy, dragInfo) => {
     if (draggingPlace) {
       dragPlace(wx, wy);
+      return;
+    }
+    
+    // 顶点拖拽
+    if (dragInfo?.mode === 'vertex') {
+      const { polygonType, polygonId, vertexIndex } = dragInfo.vertexInfo;
+      const collection = polygonType === 'region' 
+        ? currentMapData.value?.regions 
+        : currentMapData.value?.terrain;
+      const polygon = collection?.find(p => p.id === polygonId);
+      if (polygon) {
+        polygon.points[vertexIndex] = { x: wx, y: wy };
+        renderer.requestRender();
+      }
     }
   },
   onDragEnd: (wx, wy, dragInfo) => {
@@ -1053,18 +1489,76 @@ const renderer = useCanvasRenderer(canvas, {
       endDragPlace();
     }
     draggingPlace = null;
+    
+    // 顶点拖拽结束
+    if (dragInfo?.mode === 'vertex') {
+      const { polygonType, polygonId, vertexIndex } = dragInfo.vertexInfo;
+      const collection = polygonType === 'region' 
+        ? currentMapData.value?.regions 
+        : currentMapData.value?.terrain;
+      const polygon = collection?.find(p => p.id === polygonId);
+      if (polygon) {
+        const endPos = { x: polygon.points[vertexIndex].x, y: polygon.points[vertexIndex].y };
+        polygon.points[vertexIndex] = { x: wx, y: wy };
+        
+        execute({
+          type: 'move-vertex',
+          label: '移动顶点',
+          undo: () => { polygon.points[vertexIndex] = endPos; },
+          redo: () => { polygon.points[vertexIndex] = { x: wx, y: wy }; },
+        });
+        emit('dirty', true);
+      }
+    }
   },
   onClick: (hit, wx, wy) => {
+    if (editMode.value && interactionMode.value === 'draw' && floodFillMode.value) {
+      // 区域填充模式：点击生成新省份/区域
+      const points = createProvinceByFloodFill(
+        wx, wy,
+        currentMapData.value?.terrain || [],
+        { gridSize: 64, maxFillRatio: 0.25, simplifyTolerance: 10 }
+      );
+      
+      if (points && points.length >= 3) {
+        const isRegionMode = interactionMode.value === 'region';
+        if (isRegionMode) {
+          const region = {
+            id: 'region_' + Date.now(),
+            name: '新区域',
+            points,
+            color: regionColor.value,
+            description: '',
+            members: [],
+          };
+          store.addRegion(props.planet.id, region);
+        } else {
+          const polygon = {
+            id: 'terrain_' + Date.now(),
+            type: selectedTerrain.value,
+            points,
+            controlPoints: null,
+            name: '新' + (terrainTypes.find(t => t.type === selectedTerrain.value)?.label || '省份'),
+          };
+          store.addTerrainPolygon(props.planet.id, polygon);
+        }
+        emit('dirty', true);
+      }
+      return;
+    }
+    
     if (editMode.value && interactionMode.value === 'marker') {
       addMarker(wx, wy);
       return;
     }
     
-    if (editMode.value && interactionMode.value === 'pan') {
+    if (editMode.value && (interactionMode.value === 'pan' || interactionMode.value === 'region')) {
       if (hit?.type === 'place') {
         emit('select-node', hit.node);
       } else if (hit?.type === 'province') {
         selectProvince(hit.polygon);
+      } else if (hit?.type === 'region') {
+        selectRegion(hit.region);
       } else if (hit?.type === 'marker') {
         selectedMarker.value = hit.marker;
         renderer.requestRender();
@@ -1083,6 +1577,8 @@ const renderer = useCanvasRenderer(canvas, {
         } else if (hit?.type === 'marker') {
           selectedMarker.value = hit.marker;
           renderer.requestRender();
+        } else if (hit?.type === 'region') {
+          selectRegion(hit.region);
         } else {
           startNewProvince();
           addVertex(wx, wy);
@@ -1090,6 +1586,8 @@ const renderer = useCanvasRenderer(canvas, {
       } else {
         if (hit?.type === 'province') {
           selectProvince(hit.polygon);
+        } else if (hit?.type === 'region') {
+          selectRegion(hit.region);
         } else if (hit?.type === 'place') {
           emit('select-node', hit.node);
         } else if (hit?.type === 'marker') {
@@ -1102,6 +1600,8 @@ const renderer = useCanvasRenderer(canvas, {
         emit('select-node', hit.node);
       } else if (hit?.type === 'province') {
         selectProvince(hit.polygon);
+      } else if (hit?.type === 'region') {
+        selectRegion(hit.region);
       } else if (hit?.type === 'marker') {
         selectedMarker.value = hit.marker;
         renderer.requestRender();
@@ -1116,6 +1616,23 @@ const renderer = useCanvasRenderer(canvas, {
       window.sitianAPI.openExternal(url);
     }
   },
+  onContextMenu: (wx, wy) => {
+    if (!editMode.value) return;
+    
+    // 右键点击顶点 → 删除顶点
+    const vertexHit = hitTestVertex(wx, wy);
+    if (vertexHit) {
+      deleteVertexAt(wx, wy);
+      return;
+    }
+    
+    // 右键点击边 → 插入顶点
+    const edgeHit = hitTestEdge(wx, wy);
+    if (edgeHit) {
+      insertVertexOnEdge(wx, wy);
+      return;
+    }
+  },
   onDrawComplete: handleDrawComplete,
   drawMode,
   currentPath,
@@ -1127,7 +1644,7 @@ const renderer = useCanvasRenderer(canvas, {
 // ===== 键盘事件 =====
 function handleKeydown(e) {
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (selectedProvince.value) {
+    if (selectedProvince.value || selectedRegion.value) {
       e.preventDefault();
       deleteSelected();
     }
@@ -1137,6 +1654,9 @@ function handleKeydown(e) {
       cancelDrawing();
     } else if (selectedProvince.value) {
       selectedProvince.value = null;
+      renderer.requestRender();
+    } else if (selectedRegion.value) {
+      selectedRegion.value = null;
       renderer.requestRender();
     }
   }
@@ -1155,12 +1675,150 @@ function handleKeyup(e) {
   }
 }
 
+// ===== 顶点右键菜单操作 =====
+function deleteSelectedVertex() {
+  const selectedPoly = selectedProvince.value || selectedRegion.value;
+  if (!selectedPoly || selectedPoly.points.length <= 3) return false;
+  
+  const polygonType = selectedRegion.value ? 'region' : 'terrain';
+  const polygonId = selectedPoly.id;
+  const collection = polygonType === 'region'
+    ? currentMapData.value?.regions
+    : currentMapData.value?.terrain;
+  const polygon = collection?.find(p => p.id === polygonId);
+  if (!polygon || polygon.points.length <= 3) return false;
+  
+  // 找最近的顶点
+  let nearestIdx = -1;
+  let nearestDist = Infinity;
+  // 使用当前鼠标位置（需要从事件获取）
+  // 由于此函数由 contextmenu 触发，我们需要在事件处理中计算
+  
+  return true;
+}
+
+function insertVertexOnEdge(wx, wy) {
+  const selectedPoly = selectedProvince.value || selectedRegion.value;
+  if (!selectedPoly) return;
+  
+  const polygonType = selectedRegion.value ? 'region' : 'terrain';
+  const polygonId = selectedPoly.id;
+  const collection = polygonType === 'region'
+    ? currentMapData.value?.regions
+    : currentMapData.value?.terrain;
+  const polygon = collection?.find(p => p.id === polygonId);
+  if (!polygon) return;
+  
+  const edgeHit = hitTestEdge(wx, wy);
+  if (!edgeHit) return;
+  
+  const newPoint = { x: wx, y: wy };
+  const insertIdx = edgeHit.insertIndex;
+  const oldPoints = [...polygon.points];
+  
+  polygon.points.splice(insertIdx, 0, newPoint);
+  
+  execute({
+    type: 'insert-vertex',
+    label: '插入顶点',
+    undo: () => { polygon.points = oldPoints; },
+    redo: () => { polygon.points.splice(insertIdx, 0, newPoint); },
+  });
+  
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function deleteVertexAt(wx, wy) {
+  const selectedPoly = selectedProvince.value || selectedRegion.value;
+  if (!selectedPoly || selectedPoly.points.length <= 3) return;
+  
+  const polygonType = selectedRegion.value ? 'region' : 'terrain';
+  const polygonId = selectedPoly.id;
+  const collection = polygonType === 'region'
+    ? currentMapData.value?.regions
+    : currentMapData.value?.terrain;
+  const polygon = collection?.find(p => p.id === polygonId);
+  if (!polygon || polygon.points.length <= 3) return;
+  
+  const vertexHit = hitTestVertex(wx, wy);
+  if (!vertexHit) return;
+  
+  const removed = polygon.points[vertexHit.vertexIndex];
+  const idx = vertexHit.vertexIndex;
+  const oldPoints = [...polygon.points];
+  
+  polygon.points.splice(idx, 1);
+  
+  execute({
+    type: 'remove-vertex',
+    label: '删除顶点',
+    undo: () => { polygon.points = oldPoints; },
+    redo: () => { polygon.points.splice(idx, 1); },
+  });
+  
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+// ===== 贝塞尔曲线边界平滑 =====
+function smoothPolygonBoundary() {
+  const selectedPoly = selectedRegion.value || selectedProvince.value;
+  if (!selectedPoly || selectedPoly.points.length < 3) return;
+  
+  const polygonType = selectedRegion.value ? 'region' : 'terrain';
+  const polygonId = selectedPoly.id;
+  const collection = polygonType === 'region'
+    ? currentMapData.value?.regions
+    : currentMapData.value?.terrain;
+  const polygon = collection?.find(p => p.id === polygonId);
+  if (!polygon || polygon.points.length < 3) return;
+  
+  const oldPoints = [...polygon.points];
+  const oldControlPoints = polygon.controlPoints ? [...polygon.controlPoints] : null;
+  
+  // 生成平滑曲线：使用中点法生成控制点
+  const n = polygon.points.length;
+  const controlPoints = [];
+  
+  for (let i = 0; i < n; i++) {
+    const prev = polygon.points[(i - 1 + n) % n];
+    const curr = polygon.points[i];
+    const next = polygon.points[(i + 1) % n];
+    
+    // 控制点为前后点的中点（简单的平滑策略）
+    controlPoints.push({
+      x: (prev.x + next.x) / 2,
+      y: (prev.y + next.y) / 2,
+    });
+  }
+  
+  polygon.controlPoints = controlPoints;
+  
+  execute({
+    type: 'smooth-boundary',
+    label: '平滑边界',
+    undo: () => {
+      polygon.points = oldPoints;
+      polygon.controlPoints = oldControlPoints;
+    },
+    redo: () => {
+      polygon.controlPoints = controlPoints;
+    },
+  });
+  
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
 function updateCursor() {
   if (!canvas.value) return;
   if (isSpacebarDown.value) {
     canvas.value.style.cursor = 'grab';
   } else if (interactionMode.value === 'pan') {
     canvas.value.style.cursor = 'grab';
+  } else if (interactionMode.value === 'region') {
+    canvas.value.style.cursor = 'crosshair';
   } else if (interactionMode.value === 'draw') {
     canvas.value.style.cursor = 'crosshair';
   } else if (interactionMode.value === 'marker') {
@@ -1318,6 +1976,13 @@ defineExpose({ canvas, renderer });
   box-shadow: 0 0 6px rgba(255,215,0,0.5);
 }
 
+.color-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50% !important;
+  padding: 0 !important;
+}
+
 .canvas-wrapper {
   flex: 1;
   position: relative;
@@ -1419,5 +2084,22 @@ canvas {
 .marker-icon {
   font-size: 14px;
   margin-right: 2px;
+}
+
+/* 区域编辑器样式 */
+.region-editor .members-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.member-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #E8F4F8;
+  border: 1px solid #C8E6C9;
+  border-radius: 12px;
+  font-size: 11px;
+  color: #2D3436;
 }
 </style>

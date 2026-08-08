@@ -19,6 +19,12 @@
     </div>
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
+      <eagle-eye
+        :view-bounds="systemViewBounds"
+        :elements="systemEyeElements"
+        :world-bounds="systemWorldBounds"
+        @navigate="handleSystemEagleNavigate"
+      />
     </div>
   </div>
 </template>
@@ -26,9 +32,12 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import EagleEye from './EagleEye.vue';
 
 const store = useGeodataStore();
+const layers = useLayersStore();
 
 const props = defineProps({
   domain: { type: Object, default: null },
@@ -83,6 +92,8 @@ function applyLayout() {
 
 // ===== 命中测试 =====
 function hitTest(wx, wy) {
+  if (!layers.isVisible('system', 'nodes')) return null;
+  
   for (const system of systemLayouts) {
     const dx = wx - system.x;
     const dy = wy - system.y;
@@ -136,13 +147,21 @@ function getPlanetRadius(layer) {
 
 // ===== 绘制逻辑 =====
 function onRender(ctx) {
-  if (!renderer.isFastMode()) {
-    systemLayouts.forEach(system => drawSystemOrbits(ctx, system));
+  if (layers.isVisible('system', 'orbits')) {
+    if (!renderer.isFastMode()) {
+      systemLayouts.forEach(system => drawSystemOrbits(ctx, system));
+    }
   }
-  drawHyperlanes(ctx);
-  drawDragPreview(ctx);
-  systemLayouts.forEach(system => drawSystemStar(ctx, system));
-  systemLayouts.forEach(system => drawSystemPlanets(ctx, system));
+  if (layers.isVisible('system', 'hyperlanes')) {
+    drawHyperlanes(ctx);
+  }
+  if (layers.isVisible('system', 'nodes')) {
+    systemLayouts.forEach(system => drawSystemStar(ctx, system));
+    systemLayouts.forEach(system => drawSystemPlanets(ctx, system));
+  }
+  if (layers.isVisible('system', 'editHelpers')) {
+    drawDragPreview(ctx);
+  }
 }
 
 function drawSystemOrbits(ctx, system) {
@@ -429,6 +448,113 @@ function toggleEditMode() {
   dragSourceNode = null;
   targetNode = null;
   if (canvas.value) canvas.value.style.cursor = 'default';
+  renderer.requestRender();
+}
+
+// ===== 鹰眼导航 =====
+const systemWorldBounds = computed(() => {
+  if (!systemLayouts.length) {
+    return { minX: -500, maxX: 500, minY: -500, maxY: 500 };
+  }
+  
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  
+  for (const s of systemLayouts) {
+    minX = Math.min(minX, s.x - 40);
+    maxX = Math.max(maxX, s.x + 40);
+    minY = Math.min(minY, s.y - 40);
+    maxY = Math.max(maxY, s.y + 40);
+    for (const p of s.planets) {
+      minX = Math.min(minX, p.x - 10);
+      maxX = Math.max(maxX, p.x + 10);
+      minY = Math.min(minY, p.y - 10);
+      maxY = Math.max(maxY, p.y + 10);
+    }
+  }
+  
+  const padding = 50;
+  return {
+    minX: minX - padding,
+    maxX: maxX + padding,
+    minY: minY - padding,
+    maxY: maxY + padding,
+  };
+});
+
+const systemViewBounds = computed(() => {
+  const vt = renderer.getViewTransform();
+  const cvs = canvas.value;
+  if (!cvs) return systemWorldBounds.value;
+  
+  const w = cvs.clientWidth / vt.scale;
+  const h = cvs.clientHeight / vt.scale;
+  const cx = -vt.x / vt.scale;
+  const cy = -vt.y / vt.scale;
+  
+  return {
+    minX: cx - w / 2,
+    maxX: cx + w / 2,
+    minY: cy - h / 2,
+    maxY: cy + h / 2,
+  };
+});
+
+const systemEyeElements = computed(() => {
+  const elements = [];
+  
+  // 恒星系节点（金色大点）
+  for (const s of systemLayouts) {
+    elements.push({
+      type: 'node',
+      x: s.x,
+      y: s.y,
+      r: 4,
+      color: '#ffd700',
+      glow: false,
+    });
+  }
+  
+  // 行星节点（彩色小点）
+  for (const s of systemLayouts) {
+    for (const p of s.planets) {
+      const color = getPlanetColor(p.layer);
+      elements.push({
+        type: 'node',
+        x: p.x,
+        y: p.y,
+        r: 2,
+        color: color,
+        glow: false,
+      });
+    }
+  }
+  
+  // 航道（虚线）
+  for (let i = 0; i < systemLayouts.length; i++) {
+    for (let j = i + 1; j < systemLayouts.length; j++) {
+      const s1 = systemLayouts[i];
+      const s2 = systemLayouts[j];
+      const dist = Math.hypot(s1.x - s2.x, s1.y - s2.y);
+      if (dist < 450) {
+        elements.push({
+          type: 'line',
+          from: { x: s1.x, y: s1.y },
+          to: { x: s2.x, y: s2.y },
+          color: 'rgba(100, 150, 200, 0.3)',
+          lineWidth: 0.5,
+          dashed: true,
+        });
+      }
+    }
+  }
+  
+  return elements;
+});
+
+function handleSystemEagleNavigate(world) {
+  const vt = renderer.getViewTransform();
+  vt.x = -world.x * vt.scale;
+  vt.y = -world.y * vt.scale;
   renderer.requestRender();
 }
 
