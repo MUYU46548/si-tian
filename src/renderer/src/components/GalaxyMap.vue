@@ -29,6 +29,11 @@
         >
           {{ editMode ? '✓ 完成编辑' : '✎ 编辑航道' }}
         </button>
+        <button 
+          v-if="editMode"
+          @click="createGalaxy"
+          title="在当前视图中心创建恒星"
+        >＋ 恒星</button>
       </div>
     </div>
 
@@ -107,6 +112,14 @@ const layers = useLayersStore();
 const canvas = ref(null);
 let domainNodes = [];
 const galaxyNodes = ref([]);
+const selectedNodeIds = ref(new Set());
+
+// ===== 框选状态 =====
+let isBoxSelecting = false;
+let boxSelectStart = { x: 0, y: 0 };
+let boxSelectEnd = { x: 0, y: 0 };
+let isDraggingMultiple = false;
+let dragMultipleStart = { x: 0, y: 0 };
 
 // ===== 航道编辑状态 =====
 const editMode = ref(false);
@@ -455,7 +468,11 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('domain', 'editHelpers')) {
     drawDragPreview(ctx);
     drawBoundaryEditHelpers(ctx);
+    drawBoxSelect(ctx);
   }
+  
+  // 绘制选中节点高亮
+  drawSelectedNodes(ctx);
 }
 
 // ===== 背景 =====
@@ -944,6 +961,44 @@ function drawBoundaryEditHelpers(ctx) {
   }
 }
 
+function drawBoxSelect(ctx) {
+  if (!isBoxSelecting) return;
+  
+  const minX = Math.min(boxSelectStart.x, boxSelectEnd.x);
+  const maxX = Math.max(boxSelectStart.x, boxSelectEnd.x);
+  const minY = Math.min(boxSelectStart.y, boxSelectEnd.y);
+  const maxY = Math.max(boxSelectStart.y, boxSelectEnd.y);
+  
+  ctx.save();
+  ctx.strokeStyle = 'rgba(88, 166, 255, 0.8)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+  ctx.setLineDash([]);
+  
+  ctx.fillStyle = 'rgba(88, 166, 255, 0.1)';
+  ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+  ctx.restore();
+}
+
+function drawSelectedNodes(ctx) {
+  if (selectedNodeIds.value.size === 0) return;
+  
+  galaxyNodes.value.forEach(g => {
+    if (!selectedNodeIds.value.has(g.id)) return;
+    
+    ctx.save();
+    ctx.strokeStyle = '#58a6ff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+}
+
 // ===== Canvas Renderer =====
 const renderer = useCanvasRenderer(canvas, {
   onRender,
@@ -965,7 +1020,7 @@ const renderer = useCanvasRenderer(canvas, {
       hoveredBoundaryVertex.value = null;
     }
   },
-  onDragStart: (wx, wy, button) => {
+  onDragStart: (wx, wy, button, shiftKey, ctrlKey) => {
     if (button !== 0) return true;
     
     // 控制点拖拽（最高优先级）
@@ -993,7 +1048,16 @@ const renderer = useCanvasRenderer(canvas, {
     }
     
     const hit = hitTest(wx, wy);
-    if (!hit) return true;
+    if (!hit) {
+      // Shift+拖动触发框选，默认空白处拖动为平移
+      if (shiftKey && !editMode.value) {
+        isBoxSelecting = true;
+        boxSelectStart = { x: wx, y: wy };
+        boxSelectEnd = { x: wx, y: wy };
+        return false;
+      }
+      return true;
+    }
     
     if (editMode.value && hit.type === 'boundary-vertex') {
       editingBoundary.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
@@ -1011,13 +1075,46 @@ const renderer = useCanvasRenderer(canvas, {
       }
       return true;
     } else {
+      // 普通模式：节点拖拽
       if (hit.type === 'galaxy' || hit.type === 'domain') {
+        // 如果点击的节点已选中，开始多节点拖拽
+        if (selectedNodeIds.value.has(hit.node.id) && selectedNodeIds.value.size > 1) {
+          isDraggingMultiple = true;
+          dragMultipleStart = { x: wx, y: wy };
+          store.beginNodePositionCapture(hit.node.id);
+          return false;
+        }
+        
         store.beginNodePositionCapture(hit.node.id);
       }
       return { mode: 'node', nodeId: hit.node.id };
     }
   },
   onDragMove: (wx, wy, dragInfo) => {
+    if (isBoxSelecting) {
+      boxSelectEnd = { x: wx, y: wy };
+      renderer.requestRender();
+      return;
+    }
+    
+    if (isDraggingMultiple) {
+      const dx = wx - dragMultipleStart.x;
+      const dy = wy - dragMultipleStart.y;
+      
+      selectedNodeIds.value.forEach(nodeId => {
+        const galaxy = galaxyNodes.value.find(g => g.id === nodeId);
+        if (galaxy) {
+          galaxy.x += dx;
+          galaxy.y += dy;
+          store.updateNodePosition(nodeId, galaxy.x, galaxy.y);
+        }
+      });
+      
+      dragMultipleStart = { x: wx, y: wy };
+      renderer.requestRender();
+      return;
+    }
+    
     if (draggedControlPoint) {
       const h = store.getHyperlaneById(draggedControlPoint.hyperlaneId);
       if (h && h.controlPoints && h.controlPoints[draggedControlPoint.cpIndex]) {
@@ -1041,15 +1138,6 @@ const renderer = useCanvasRenderer(canvas, {
       return;
     }
     
-    if (editingBoundary.value) {
-      const ov = store.domainBorderOverrides[editingBoundary.value.domainId];
-      if (ov && ov[editingBoundary.value.vertexIndex]) {
-        ov[editingBoundary.value.vertexIndex] = { x: wx, y: wy };
-        renderer.requestRender();
-      }
-      return;
-    }
-    
     if (dragInfo?.mode === 'node') {
       const galaxy = galaxyNodes.value.find(g => g.id === dragInfo.nodeId);
       if (galaxy) {
@@ -1067,6 +1155,31 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onDragEnd: (wx, wy, dragInfo) => {
+    if (isBoxSelecting) {
+      isBoxSelecting = false;
+      // 选择框内所有节点
+      const minX = Math.min(boxSelectStart.x, boxSelectEnd.x);
+      const maxX = Math.max(boxSelectStart.x, boxSelectEnd.x);
+      const minY = Math.min(boxSelectStart.y, boxSelectEnd.y);
+      const maxY = Math.max(boxSelectStart.y, boxSelectEnd.y);
+      
+      galaxyNodes.value.forEach(g => {
+        if (g.x >= minX && g.x <= maxX && g.y >= minY && g.y <= maxY) {
+          selectedNodeIds.value.add(g.id);
+        }
+      });
+      
+      renderer.requestRender();
+      return;
+    }
+    
+    if (isDraggingMultiple) {
+      isDraggingMultiple = false;
+      store.endNodePositionCapture();
+      emit('dirty', true);
+      return;
+    }
+    
     if (draggedControlPoint) {
       const h = store.getHyperlaneById(draggedControlPoint.hyperlaneId);
       if (h) {
@@ -1096,12 +1209,6 @@ const renderer = useCanvasRenderer(canvas, {
       return;
     }
     
-    if (editingBoundary.value) {
-      editingBoundary.value = null;
-      emit('dirty', true);
-      return;
-    }
-    
     if (dragInfo?.mode === 'node') {
       store.endNodePositionCapture();
       emit('dirty', true);
@@ -1124,7 +1231,10 @@ const renderer = useCanvasRenderer(canvas, {
     if (hit?.node) {
       emit('select-node', hit.node);
     }
-      
+    
+    // 编辑模式下不自动进入下一级地图（防止误操作）
+    if (editMode.value) return;
+    
     if (hit?.type === 'galaxy') {
       const parentDomain = domainNodes.find(d => d.id === hit.node.domainId);
       if (parentDomain) emit('select', parentDomain);
@@ -1198,6 +1308,34 @@ function toggleEditMode() {
   editingBoundary.value = null;
   hoveredBoundaryVertex.value = null;
   if (canvas.value) canvas.value.style.cursor = 'default';
+  renderer.requestRender();
+}
+
+// ===== 创建恒星 =====
+function createGalaxy() {
+  const vt = renderer.getViewTransform();
+  const cx = -vt.x / vt.scale;
+  const cy = -vt.y / vt.scale;
+  const id = `galaxy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const newGalaxy = {
+    id,
+    name: `新恒星_${Date.now() % 1000}`,
+    layer: 'galaxy',
+    parentId: props.world?.id || null,
+    tags: ['新创建'],
+    sourcePath: '',
+    coordinate: { x: cx, y: cy },
+  };
+  store.nodes.push(newGalaxy);
+  galaxyNodes.value.push({
+    ...newGalaxy,
+    x: cx,
+    y: cy,
+    domainId: props.world?.id || null,
+    factionColor: '#4a90d9',
+  });
+  store.scheduleAutoSave();
+  emit('dirty', true);
   renderer.requestRender();
 }
 
@@ -1310,13 +1448,13 @@ defineExpose({ canvas, renderer });
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #0c1020;
+  background: var(--map-bg);
 }
 
 .map-header {
   padding: 12px 16px;
-  border-bottom: 1px solid #1e2d45;
-  background: #101828;
+  border-bottom: 1px solid var(--map-header-border);
+  background: var(--map-header-bg);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1335,53 +1473,53 @@ defineExpose({ canvas, renderer });
 
 .hyperlane-type-select {
   padding: 5px 10px;
-  border: 1px solid #2a3a55;
+  border: 1px solid var(--map-btn-border);
   border-radius: 4px;
-  background: #1a2540;
-  color: #d0d8e8;
+  background: var(--map-btn-bg);
+  color: var(--map-btn-text);
   cursor: pointer;
   font-size: 12px;
   outline: none;
 }
 
 .hyperlane-type-select:focus {
-  border-color: #58a6ff;
+  border-color: var(--map-accent-blue);
 }
 
 .header-actions button {
   padding: 6px 14px;
-  border: 1px solid #2a3a55;
+  border: 1px solid var(--map-btn-border);
   border-radius: 4px;
-  background: #1a2540;
-  color: #d0d8e8;
+  background: var(--map-btn-bg);
+  color: var(--map-btn-text);
   cursor: pointer;
   font-size: 12px;
   transition: all 0.2s;
 }
 
 .header-actions button:hover {
-  background: #253555;
+  background: var(--map-btn-hover);
 }
 
 .header-actions button.active {
-  background: #0d4718;
-  border-color: #2ea043;
-  color: #7affb4;
+  background: var(--map-accent-green-bg);
+  border-color: var(--map-accent-green-border);
+  color: var(--map-accent-green);
 }
 
 .map-header h2 {
   font-size: 14px;
-  color: #f0f6fc;
+  color: var(--map-text-heading);
   margin-bottom: 4px;
 }
 
 .hint {
   font-size: 11px;
-  color: #8b9ab0;
+  color: var(--map-text-hint);
 }
 
 .edit-hint {
-  color: #7affb4;
+  color: var(--map-accent-green);
 }
 
 /* 势力图例 */
@@ -1390,10 +1528,10 @@ defineExpose({ canvas, renderer });
   flex-wrap: wrap;
   gap: 16px;
   padding: 10px 16px;
-  background: #101828;
-  border-bottom: 1px solid #1e2d45;
+  background: var(--map-header-bg);
+  border-bottom: 1px solid var(--map-header-border);
   font-size: 12px;
-  color: #d0d8e8;
+  color: var(--map-btn-text);
 }
 
 .legend-item {
@@ -1444,13 +1582,13 @@ defineExpose({ canvas, renderer });
   top: 100%;
   right: 0;
   margin-top: 8px;
-  background: #101828;
-  border: 1px solid #1e2d45;
+  background: var(--map-header-bg);
+  border: 1px solid var(--map-header-border);
   border-radius: 6px;
   padding: 12px;
   min-width: 220px;
   z-index: 200;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 24px var(--map-panel-shadow);
   max-height: 400px;
   overflow-y: auto;
 }
@@ -1465,7 +1603,7 @@ defineExpose({ canvas, renderer });
 
 .filter-section-title {
   font-size: 11px;
-  color: #8b9ab0;
+  color: var(--map-text-hint);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -1478,9 +1616,9 @@ defineExpose({ canvas, renderer });
   padding: 4px 10px;
   margin: 3px;
   border-radius: 12px;
-  background: #1a2540;
-  border: 1px solid #2a3a55;
-  color: #d0d8e8;
+  background: var(--map-btn-bg);
+  border: 1px solid var(--map-btn-border);
+  color: var(--map-btn-text);
   font-size: 11px;
   cursor: pointer;
   user-select: none;
@@ -1488,13 +1626,13 @@ defineExpose({ canvas, renderer });
 }
 
 .filter-chip:hover {
-  background: #253555;
+  background: var(--map-btn-hover);
 }
 
 .filter-chip.active {
   background: rgba(88, 166, 255, 0.2);
-  border-color: #58a6ff;
-  color: #58a6ff;
+  border-color: var(--map-accent-blue);
+  color: var(--map-accent-blue);
 }
 
 .filter-chip input {
@@ -1503,8 +1641,8 @@ defineExpose({ canvas, renderer });
 
 .filter-reset {
   background: none;
-  border: 1px solid #3a4a65;
-  color: #8b9ab0;
+  border: 1px solid var(--map-filter-border);
+  color: var(--map-text-hint);
   font-size: 11px;
   padding: 4px 12px;
   border-radius: 4px;
@@ -1515,8 +1653,8 @@ defineExpose({ canvas, renderer });
 }
 
 .filter-reset:hover {
-  border-color: #58a6ff;
-  color: #58a6ff;
+  border-color: var(--map-accent-blue);
+  color: var(--map-accent-blue);
 }
 
 .canvas-wrapper {
@@ -1529,6 +1667,6 @@ canvas {
   display: block;
   width: 100%;
   height: 100%;
-  background: #0c1020;
+  background: var(--map-bg);
 }
 </style>

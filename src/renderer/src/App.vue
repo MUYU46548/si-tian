@@ -1,5 +1,5 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="`theme-${currentTheme}`">
     <header class="toolbar">
       <h1>SiTian</h1>
       <div class="toolbar-center">
@@ -36,6 +36,11 @@
         <button @click="layersStore.togglePanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }">☷</button>
         <button @click="settingsPanelRef?.open()" title="设置">⚙️</button>
         <button @click="aboutPanelRef?.open()" title="帮助 (F1)">?</button>
+        <button @click="keyboardShortcutsRef?.open()" title="快捷键 (Ctrl+?)">⌨</button>
+        <button @click="changeLogRef?.open()" title="变更日志">📋</button>
+        <button @click="showBookmarks = !showBookmarks" title="视口书签" :class="{ active: showBookmarks }">📌</button>
+        <button @click="validateDataIntegrity" title="数据检查">🔍</button>
+        <button @click="toggleTheme" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`">{{ currentTheme === 'dark' ? '🌙' : '☀️' }}</button>
         <span class="status">{{ statusText }}</span>
       </div>
     </header>
@@ -45,6 +50,9 @@
       <button @click="handleExportPNG">导出 PNG (当前视图)</button>
       <button @click="handleExportSVG">导出 SVG (当前视图)</button>
       <button @click="handleExportFullPNG">导出 PNG (全图)</button>
+      <div class="export-divider"></div>
+      <button @click="handleExportMapConfig">导出地图配置 (JSON)</button>
+      <button @click="handleImportMapConfig">导入地图配置...</button>
     </div>
     
     <div class="app-body">
@@ -100,6 +108,18 @@
     <settings-panel ref="settingsPanelRef" />
     <onboarding-guide />
     <recovery-panel />
+    <keyboard-shortcuts ref="keyboardShortcutsRef" />
+    <change-log ref="changeLogRef" />
+    <bookmark-panel
+      v-if="showBookmarks"
+      :bookmarks="bookmarks"
+      :current-index="currentIndex"
+      @close="showBookmarks = false"
+      @navigate="handleBookmarkNavigate"
+      @add="handleAddBookmark"
+      @remove="handleRemoveBookmark"
+      @clear="handleClearBookmarks"
+    />
     <!-- 性能统计面板 -->
     <div v-if="perfVisible" class="perf-panel">
       <div class="perf-title">性能统计 (开发模式)</div>
@@ -126,20 +146,31 @@ import AboutPanel from './components/AboutPanel.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import OnboardingGuide from './components/OnboardingGuide.vue';
 import RecoveryPanel from './components/RecoveryPanel.vue';
+import KeyboardShortcuts from './components/KeyboardShortcuts.vue';
+import BookmarkPanel from './components/BookmarkPanel.vue';
+import ChangeLog from './components/ChangeLog.vue';
 import { useLayersStore } from './store/layers';
+import { useTheme } from './composables/useTheme';
+import { useBookmarks } from './composables/useBookmarks';
+import { measurePerformance, cleanupTestNodes } from './utils/stressTest';
 
 const store = useGeodataStore();
 const layersStore = useLayersStore();
+const { currentTheme, toggleTheme, initTheme } = useTheme();
+const { bookmarks, currentIndex, addBookmark, removeBookmark, clearAll } = useBookmarks();
 const dirty = ref(false);
 const statusText = ref('');
 const searchBar = ref(null);
 const galaxyMapRef = ref(null);
 const systemViewRef = ref(null);
 const showExportMenu = ref(false);
+const showBookmarks = ref(false);
 const perfVisible = ref(false);
 const perfStats = ref({});
 const aboutPanelRef = ref(null);
 const settingsPanelRef = ref(null);
+const keyboardShortcutsRef = ref(null);
+const changeLogRef = ref(null);
 const undoTooltip = computed(() => {
   const label = store.undoLabel;
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
@@ -216,7 +247,7 @@ async function handleExportSVG() {
   const maxY = Math.max(...ys) + 100;
   const width = maxX - minX;
   const height = maxY - minY;
-
+  
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   
   let paths = '';
@@ -226,21 +257,21 @@ async function handleExportSVG() {
     if (!from || !to) return;
     paths += `<line x1="${from.coordinate.x}" y1="${from.coordinate.y}" x2="${to.coordinate.x}" y2="${to.coordinate.y}" stroke="rgba(100,200,255,0.5)" stroke-width="2"/>`;
   });
-
+  
   let circles = '';
   nodes.forEach(n => {
     const color = getNodeColor(n.layer);
     circles += `<circle cx="${n.coordinate.x}" cy="${n.coordinate.y}" r="6" fill="${color}"/>`;
     circles += `<text x="${n.coordinate.x + 8}" y="${n.coordinate.y + 4}" fill="#e2e8f0" font-size="10">${n.name}</text>`;
   });
-
+  
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width} ${height}" width="${width}" height="${height}">
   <rect x="${minX}" y="${minY}" width="${width}" height="${height}" fill="#0d1117"/>
   ${paths}
   ${circles}
 </svg>`;
-
+  
   const blob = new Blob([svg], { type: 'image/svg+xml' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -271,7 +302,7 @@ async function handleExportFullPNG() {
   const maxY = Math.max(...ys) + 100;
   const width = maxX - minX;
   const height = maxY - minY;
-
+  
   const tmpCanvas = document.createElement('canvas');
   const dpr = 2; // 2x for high quality
   tmpCanvas.width = width * dpr;
@@ -297,7 +328,7 @@ async function handleExportFullPNG() {
     ctx.lineTo(to.coordinate.x, to.coordinate.y);
     ctx.stroke();
   });
-
+  
   // 节点
   nodes.forEach(n => {
     const color = getNodeColor(n.layer);
@@ -314,7 +345,7 @@ async function handleExportFullPNG() {
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText(n.name, n.coordinate.x + 10, n.coordinate.y + 4);
   });
-
+  
   tmpCanvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -336,8 +367,174 @@ function getNodeColor(layer) {
   return colors[layer] || '#888';
 }
 
+// ===== 导入/导出地图配置 =====
+
+function handleExportMapConfig() {
+  const config = {
+    version: '1.0.0',
+    exportedAt: new Date().toISOString(),
+    viewLevel: store.viewLevel,
+    currentWorld: store.currentWorld?.id || null,
+    currentDomain: store.currentDomain?.id || null,
+    nodes: store.nodes.map(n => ({
+      id: n.id,
+      name: n.name,
+      layer: n.layer,
+      coordinate: n.coordinate,
+      tags: n.tags,
+    })),
+    hyperlanes: store.hyperlanes,
+  };
+  
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `sitian-map-config-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  
+  showExportMenu.value = false;
+  statusText.value = '地图配置已导出';
+}
+
+function handleImportMapConfig() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      const text = await file.text();
+      const config = JSON.parse(text);
+      
+      if (!config.version || !config.nodes || !config.hyperlanes) {
+        alert('无效的地图配置文件格式');
+        return;
+      }
+      
+      // 导入节点坐标
+      config.nodes.forEach(importedNode => {
+        const existingNode = store.nodes.find(n => n.id === importedNode.id);
+        if (existingNode) {
+          existingNode.coordinate = importedNode.coordinate;
+        }
+      });
+      
+      // 导入航道
+      config.hyperlanes.forEach(importedH => {
+        const exists = store.hyperlanes.some(h => h.id === importedH.id);
+        if (!exists) {
+          store.hyperlanes.push(importedH);
+        }
+      });
+      
+      statusText.value = `已导入 ${config.nodes.length} 个节点和 ${config.hyperlanes.length} 条航道`;
+      dirty.value = true;
+    } catch (err) {
+      alert('导入失败: ' + err.message);
+    }
+  };
+  input.click();
+  
+  showExportMenu.value = false;
+}
+
+// ===== 压力测试 =====
+
+function runStressTest() {
+  if (window.__stressTestResults) {
+    console.log('[压力测试] 清理之前的测试数据...');
+    window.cleanupStressTest();
+  }
+  
+  const results = measurePerformance(store, 400);
+  window.__stressTestResults = results;
+  
+  console.log('[压力测试] 完成！使用 window.cleanupStressTest() 清理测试数据。');
+  return results;
+}
+
+function cleanupStressTest() {
+  if (!window.__stressTestResults) {
+    console.log('[压力测试] 没有测试数据需要清理');
+    return;
+  }
+  
+  const count = window.__stressTestResults.nodeCount;
+  cleanupTestNodes(store);
+  
+  console.log(`[压力测试] 已清理测试节点`);
+  window.__stressTestResults = null;
+  store.scheduleAutoSave();
+}
+
+// ===== 书签管理 =====
+
+function handleAddBookmark() {
+  const renderer = getActiveRenderer();
+  if (!renderer) return;
+  
+  const vt = renderer.getViewTransform();
+  const layerState = layersStore.layers;
+  addBookmark(`书签 ${bookmarks.value.length + 1}`, vt, store.viewLevel, layerState);
+  statusText.value = '书签已添加';
+}
+
+function handleBookmarkNavigate(bm) {
+  const renderer = getActiveRenderer();
+  if (!renderer) return;
+  
+  renderer.focusOn(
+    -bm.viewTransform.x / bm.viewTransform.scale,
+    -bm.viewTransform.y / bm.viewTransform.scale,
+    bm.viewTransform.scale
+  );
+  
+  // 恢复图层状态
+  if (bm.layerState) {
+    Object.entries(bm.layerState).forEach(([view, layers]) => {
+      Object.entries(layers).forEach(([layerId, cfg]) => {
+        if (layersStore.layers[view]?.[layerId]) {
+          layersStore.layers[view][layerId].visible = cfg.visible;
+        }
+      });
+    });
+  }
+  
+  // 切换视图级别
+  if (bm.viewLevel && bm.viewLevel !== store.viewLevel) {
+    if (bm.viewLevel === 'domain') {
+      store.backToDomain();
+    } else if (bm.viewLevel === 'system') {
+      store.backToSystem();
+    } else if (bm.viewLevel === 'planet') {
+      store.backToSystem();
+    }
+  }
+  
+  showBookmarks.value = false;
+}
+
+function handleRemoveBookmark(id) {
+  removeBookmark(id);
+  statusText.value = '书签已删除';
+}
+
+function handleClearBookmarks() {
+  clearAll();
+  statusText.value = '所有书签已清除';
+}
+
+// 暴露到全局
+window.runStressTest = runStressTest;
+window.cleanupStressTest = cleanupStressTest;
+
 onMounted(async () => {
   statusText.value = '正在加载数据...';
+  initTheme();
   await store.loadGeodata();
   statusText.value = `已加载 ${store.nodes.length} 个节点`;
   window.addEventListener('keydown', handleGlobalKeydown);
@@ -499,8 +696,129 @@ async function clearCoordinateCache() {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #0d1117;
-  color: #e2e8f0;
+  background: var(--app-bg);
+  color: var(--text-primary);
+}
+
+.theme-dark {
+  --app-bg: #0d1117;
+  --toolbar-bg: #161b22;
+  --toolbar-border: #30363d;
+  --nav-bg: #161b22;
+  --nav-border: #30363d;
+  --btn-bg: #21262d;
+  --btn-bg-hover: #30363d;
+  --text-primary: #e2e8f0;
+  --text-secondary: #c9d1d9;
+  --text-tertiary: #8b949e;
+  --accent: #58a6ff;
+  --accent-bg: #388bfd22;
+  --separator: #484f58;
+  --panel-bg: #161b22;
+  --panel-border: #30363d;
+  --input-bg: #0d1117;
+  --input-border: #30363d;
+  /* GalaxyMap / SystemView shared */
+  --map-bg: #0c1020;
+  --map-header-bg: #101828;
+  --map-header-border: #1e2d45;
+  --map-btn-bg: #1a2540;
+  --map-btn-border: #2a3a55;
+  --map-btn-hover: #253555;
+  --map-btn-text: #d0d8e8;
+  --map-text-heading: #f0f6fc;
+  --map-text-hint: #8b9ab0;
+  --map-accent-green: #7affb4;
+  --map-accent-green-bg: #0d4718;
+  --map-accent-green-border: #2ea043;
+  --map-accent-blue: #58a6ff;
+  --map-panel-shadow: rgba(0,0,0,0.5);
+  --map-filter-border: #3a4a65;
+  /* PlanetMap */
+  --planet-bg: #E8F4F8;
+  --planet-header-bg: rgba(255,255,255,0.6);
+  --planet-header-border: #C8E6C9;
+  --planet-text: #2D3436;
+  --planet-text-secondary: #636E72;
+  --planet-text-link: #5B8DEF;
+  --planet-btn-bg: white;
+  --planet-btn-border: #C8E6C9;
+  --planet-btn-hover: #F0F7F4;
+  --planet-btn-active-bg: #4ECDC4;
+  --planet-btn-active-border: #4ECDC4;
+  --planet-editor-bg: rgba(255,255,255,0.95);
+  --planet-editor-border: #e0e0e0;
+  --planet-input-bg: #fff;
+  --planet-input-border: #ddd;
+  --planet-input-focus: #5B8DEF;
+  --planet-tag-bg: #E8F4F8;
+  --planet-tag-border: #C8E6C9;
+}
+
+.theme-light {
+  --app-bg: #ffffff;
+  --toolbar-bg: #f6f8fa;
+  --toolbar-border: #d0d7de;
+  --nav-bg: #f6f8fa;
+  --nav-border: #d0d7de;
+  --btn-bg: #f6f8fa;
+  --btn-bg-hover: #eaeef2;
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-tertiary: #8c959f;
+  --accent: #0969da;
+  --accent-bg: #ddf4ff;
+  --separator: #d0d7de;
+  --panel-bg: #ffffff;
+  --panel-border: #d0d7de;
+  --input-bg: #ffffff;
+  --input-border: #d0d7de;
+  /* GalaxyMap / SystemView shared */
+  --map-bg: #f0f4f8;
+  --map-header-bg: #ffffff;
+  --map-header-border: #e2e8f0;
+  --map-btn-bg: #f6f8fa;
+  --map-btn-border: #d0d7de;
+  --map-btn-hover: #eaeef2;
+  --map-btn-text: #1f2328;
+  --map-text-heading: #1f2328;
+  --map-text-hint: #656d76;
+  --map-accent-green: #2ea043;
+  --map-accent-green-bg: #dafbe1;
+  --map-accent-green-border: #2ea043;
+  --map-accent-blue: #0969da;
+  --map-panel-shadow: rgba(0,0,0,0.1);
+  --map-filter-border: #d0d7de;
+  /* PlanetMap */
+  --planet-bg: #E8F4F8;
+  --planet-header-bg: rgba(255,255,255,0.6);
+  --planet-header-border: #C8E6C9;
+  --planet-text: #2D3436;
+  --planet-text-secondary: #636E72;
+  --planet-text-link: #5B8DEF;
+  --planet-btn-bg: white;
+  --planet-btn-border: #C8E6C9;
+  --planet-btn-hover: #F0F7F4;
+  --planet-btn-active-bg: #4ECDC4;
+  --planet-btn-active-border: #4ECDC4;
+  --planet-editor-bg: rgba(255,255,255,0.95);
+  --planet-editor-border: #e0e0e0;
+  --planet-input-bg: #fff;
+  --planet-input-border: #ddd;
+  --planet-input-focus: #5B8DEF;
+  --planet-tag-bg: #E8F4F8;
+  --planet-tag-border: #C8E6C9;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  overflow: hidden;
 }
 
 .toolbar {
@@ -508,15 +826,15 @@ async function clearCoordinateCache() {
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--toolbar-border);
   gap: 16px;
   position: relative;
 }
 
 .toolbar h1 {
   font-size: 16px;
-  color: #58a6ff;
+  color: var(--accent);
   min-width: 60px;
 }
 
@@ -536,16 +854,16 @@ async function clearCoordinateCache() {
 
 .toolbar-actions button {
   padding: 5px 10px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--toolbar-border);
   border-radius: 4px;
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 12px;
 }
 
 .toolbar-actions button:hover {
-  background: #30363d;
+  background: var(--btn-bg-hover);
 }
 
 .toolbar-actions button:disabled {
@@ -563,42 +881,31 @@ async function clearCoordinateCache() {
 .level-indicator button {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
 }
 
 .level-indicator button:hover {
-  color: #58a6ff;
-  background: #21262d;
+  color: var(--accent);
+  background: var(--btn-bg);
 }
 
 .level-indicator button.active {
-  color: #58a6ff;
-  background: #388bfd22;
+  color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .separator {
-  color: #484f58;
+  color: var(--separator);
   font-size: 14px;
 }
 
 .status {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   white-space: nowrap;
-}
-
-.main-content {
-  flex: 1;
-  overflow: hidden;
-}
-
-.app-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
 }
 
 /* 导出菜单 */
@@ -606,8 +913,8 @@ async function clearCoordinateCache() {
   position: absolute;
   top: 50px;
   right: 16px;
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 6px;
   padding: 8px;
   display: flex;
@@ -621,54 +928,50 @@ async function clearCoordinateCache() {
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 12px;
   white-space: nowrap;
   text-align: left;
 }
 
+.export-divider {
+  height: 1px;
+  background: var(--panel-border);
+  margin: 4px 0;
+}
+
 .export-menu button:hover {
-  background: #30363d;
+  background: var(--btn-bg-hover);
 }
 
 /* 性能统计面板 */
 .perf-panel {
   position: fixed;
-  bottom: 20px;
-  left: 20px;
-  background: rgba(13, 17, 23, 0.95);
-  border: 1px solid #30363d;
+  bottom: 16px;
+  right: 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 6px;
-  padding: 10px 14px;
+  padding: 12px;
   font-size: 11px;
-  color: #c9d1d9;
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  z-index: 300;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  min-width: 180px;
+  color: var(--text-secondary);
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
 .perf-title {
-  font-size: 10px;
-  color: #8b949e;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-weight: bold;
   margin-bottom: 8px;
-  border-bottom: 1px solid #30363d;
-  padding-bottom: 4px;
+  color: var(--text-primary);
 }
 
 .perf-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 
 .perf-row b {
-  color: #58a6ff;
+  color: var(--accent);
 }
 </style>

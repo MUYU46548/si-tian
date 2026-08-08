@@ -61,8 +61,8 @@ function handleSelect(node) {
 .tree-navigation {
   width: 200px;
   min-width: 200px;
-  background: #161b22;
-  border-right: 1px solid #30363d;
+  background: var(--nav-bg);
+  border-right: 1px solid var(--nav-border);
   display: flex;
   flex-direction: column;
   transition: width 0.2s, min-width 0.2s;
@@ -79,13 +79,13 @@ function handleSelect(node) {
   justify-content: space-between;
   align-items: center;
   padding: 8px 10px;
-  border-bottom: 1px solid #30363d;
-  background: #0d1117;
+  border-bottom: 1px solid var(--nav-border);
+  background: var(--toolbar-bg);
 }
 
 .tree-header h4 {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -97,7 +97,7 @@ function handleSelect(node) {
 .toggle-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 10px;
   padding: 2px 4px;
@@ -105,8 +105,8 @@ function handleSelect(node) {
 }
 
 .toggle-btn:hover {
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--btn-bg);
+  color: var(--text-secondary);
 }
 
 .tree-body {
@@ -119,7 +119,7 @@ function handleSelect(node) {
   padding: 16px 10px;
   text-align: center;
   font-size: 11px;
-  color: #484f58;
+  color: var(--separator);
 }
 
 /* 滚动条样式 */
@@ -132,11 +132,11 @@ function handleSelect(node) {
 }
 
 .tree-body::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: var(--nav-border);
   border-radius: 3px;
 }
 
 .tree-body::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: var(--separator);
 }
 </style>

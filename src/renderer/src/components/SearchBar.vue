@@ -32,20 +32,26 @@
         <span class="results-count">{{ store.searchResults.length }} 个结果</span>
       </div>
       <div class="results-list">
-        <div 
-          v-for="(nodeId, index) in store.searchResults" 
-          :key="nodeId"
-          class="result-item"
-          :class="{ current: index === store.searchMatchIndex }"
-          @click="selectResult(nodeId, index)"
-          @mouseenter="store.searchMatchIndex = index"
-        >
-          <div class="result-name">{{ getNodeName(nodeId) }}</div>
-          <div class="result-meta">
-            <span class="result-layer">{{ getNodeLayer(nodeId) }}</span>
-            <span v-if="getNodeFaction(nodeId)" class="result-faction" :style="{ color: getNodeFactionColor(nodeId) }">
-              {{ getNodeFaction(nodeId) }}
-            </span>
+        <!-- 按层级分组显示 -->
+        <div v-for="group in groupedResults" :key="group.layer" class="result-group">
+          <div class="result-group-header">
+            <span class="result-group-label">{{ group.label }}</span>
+            <span class="result-group-count">{{ group.items.length }}</span>
+          </div>
+          <div 
+            v-for="item in group.items" 
+            :key="item.nodeId"
+            class="result-item"
+            :class="{ current: item.index === store.searchMatchIndex }"
+            @click="selectResult(item.nodeId, item.index)"
+            @mouseenter="store.searchMatchIndex = item.index"
+          >
+            <div class="result-name">{{ getNodeName(item.nodeId) }}</div>
+            <div class="result-meta">
+              <span v-if="getNodeFaction(item.nodeId)" class="result-faction" :style="{ color: getNodeFactionColor(item.nodeId) }">
+                {{ getNodeFaction(item.nodeId) }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -89,14 +95,34 @@ const hasResults = computed(() => query.value.trim().length > 0 && store.searchR
 const showNoResults = computed(() => hasResults.value && query.value.trim().length > 0);
 const filterCount = computed(() => store.searchLayerFilter.length);
 
+// 按层级分组搜索结果
+const groupedResults = computed(() => {
+  const groups = new Map();
+  const layerOrder = ['world', 'star_domain', 'galaxy', 'planet', 'city', 'town', 'location'];
+  
+  store.searchResults.forEach((nodeId, index) => {
+    const node = store.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
+    const layer = node.layer || 'unknown';
+    if (!groups.has(layer)) {
+      groups.set(layer, {
+        layer,
+        label: store.layerLabels[layer] || layer,
+        order: layerOrder.indexOf(layer) !== -1 ? layerOrder.indexOf(layer) : 99,
+        items: [],
+      });
+    }
+    groups.get(layer).items.push({ nodeId, index });
+  });
+  
+  return Array.from(groups.values())
+    .sort((a, b) => a.order - b.order);
+});
+
 function getNodeName(nodeId) {
   const node = store.nodes.find(n => n.id === nodeId);
   return node?.name || nodeId;
-}
-
-function getNodeLayer(nodeId) {
-  const node = store.nodes.find(n => n.id === nodeId);
-  return store.layerLabels[node?.layer] || node?.layer || '';
 }
 
 function getNodeFaction(nodeId) {
@@ -155,19 +181,14 @@ function focus() {
   input.value?.select();
 }
 
-/**
- * 根据节点层级自动切换视图级别
- */
 function autoNavigateToNode(node) {
   const layer = node.layer;
   
-  // 搜索的是星系/星域/行星级节点，但当前在世界视图
   if (store.viewLevel === 'world' && layer !== 'world') {
     const world = findAncestorByLayer(node, 'world');
     if (world) store.selectWorld(world);
   }
   
-  // 搜索的是行星/城市/地点，但当前在域视图
   if (store.viewLevel === 'domain' && ['planet', 'city', 'town', 'location', 'region'].includes(layer)) {
     const domain = findAncestorByLayer(node, 'star_domain');
     if (domain) store.selectDomain(domain);
@@ -236,7 +257,7 @@ defineExpose({ focus });
 </script>
 
 <style scoped>
-.search-bar {
+.search-bar-container {
   display: flex;
   align-items: center;
   position: relative;
@@ -246,39 +267,39 @@ defineExpose({ focus });
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   padding: 4px 8px;
   min-width: 240px;
 }
 
 .search-input-wrapper:focus-within {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 
 .search-icon {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 input {
   flex: 1;
   background: none;
   border: none;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 12px;
   outline: none;
   min-width: 0;
 }
 
 input::placeholder {
-  color: #484f58;
+  color: var(--separator);
 }
 
 .match-count {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   white-space: nowrap;
   min-width: 40px;
   text-align: center;
@@ -294,7 +315,7 @@ input::placeholder {
 .filter-badge {
   display: inline-block;
   background: rgba(88, 166, 255, 0.2);
-  color: #58a6ff;
+  color: var(--accent);
   font-size: 10px;
   padding: 0 4px;
   border-radius: 3px;
@@ -305,46 +326,44 @@ input::placeholder {
 .clear-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 14px;
   padding: 2px 4px;
 }
 
 .clear-btn:hover {
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
-/* 类型过滤按钮 */
 .filter-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 14px;
   padding: 2px 4px;
 }
 
 .filter-btn:hover {
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .filter-btn.active {
-  color: #58a6ff;
+  color: var(--accent);
 }
 
-/* 搜索结果面板 */
 .search-results-panel {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
   margin-top: 6px;
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  max-height: 300px;
+  max-height: 350px;
   overflow-y: auto;
   z-index: 200;
 }
@@ -354,34 +373,65 @@ input::placeholder {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .results-count {
   font-size: 11px;
-  color: #484f58;
+  color: var(--separator);
 }
 
 .results-list {
   padding: 4px 0;
 }
 
+.result-group {
+  margin-bottom: 4px;
+}
+
+.result-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(48, 54, 61, 0.3);
+}
+
+.theme-light .result-group-header {
+  background: rgba(208, 215, 222, 0.3);
+}
+
+.result-group-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.result-group-count {
+  font-size: 10px;
+  color: var(--separator);
+  background: var(--btn-bg);
+  padding: 0 6px;
+  border-radius: 8px;
+}
+
 .result-item {
-  padding: 8px 12px;
+  padding: 6px 12px 6px 20px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .result-item:hover,
 .result-item.current {
-  background: rgba(88, 166, 255, 0.15);
+  background: var(--accent-bg);
 }
 
 .result-name {
   font-size: 13px;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -391,25 +441,18 @@ input::placeholder {
   margin-top: 2px;
 }
 
-.result-layer {
-  font-size: 11px;
-  color: #8b949e;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: #21262d;
-}
-
 .result-faction {
   font-size: 11px;
   font-weight: 500;
 }
+
 .filter-panel {
   position: absolute;
   top: 100%;
   right: 0;
   margin-top: 6px;
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 6px;
   padding: 10px;
   min-width: 160px;
@@ -419,7 +462,7 @@ input::placeholder {
 
 .filter-header {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -441,26 +484,26 @@ input::placeholder {
   border-radius: 3px;
   cursor: pointer;
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .filter-option:hover {
-  background: #21262d;
+  background: var(--btn-bg);
 }
 
 .filter-option.active {
-  background: rgba(88, 166, 255, 0.15);
-  color: #58a6ff;
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 .filter-option input[type="checkbox"] {
-  accent-color: #58a6ff;
+  accent-color: var(--accent);
 }
 
 .filter-footer {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid var(--panel-border);
   display: flex;
   justify-content: flex-end;
 }
@@ -468,13 +511,13 @@ input::placeholder {
 .filter-clear {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 11px;
   cursor: pointer;
   padding: 2px 6px;
 }
 
 .filter-clear:hover {
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 </style>

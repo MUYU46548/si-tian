@@ -3,11 +3,13 @@ import { ref, computed } from 'vue';
 
 // 命令结构
 // {
-//   type: string,      // 命令类型：'move-node' | 'add-terrain' | 'remove-terrain' | 'move-control-point' | ...
+//   type: string,      // 命令类型：'move-node' | 'add-terrain' | 'remove-terrain' | 'move-control-point' | 'move-node' | 'add-hyperlane' | ...
 //   label: string,     // 人类可读描述（tooltip 用）
 //   undo: () => void,
 //   redo: () => void,
 //   merge?: (prev) => boolean,  // 返回 true 时合并到前一条命令（用于拖拽连续操作）
+//   timestamp: number, // 时间戳
+//   category: string,  // 分类：'coordinate' | 'hyperlane' | 'terrain' | 'region' | 'property'
 // }
 
 const past = ref([]);
@@ -22,8 +24,33 @@ export function getLastCommandLabel() {
   return past.value.length ? past.value[past.value.length - 1].label : '';
 }
 
+// 获取历史记录（用于变更日志）
+export function getHistory() {
+  return past.value.map((cmd, index) => ({
+    index,
+    type: cmd.type,
+    label: cmd.label,
+    timestamp: cmd.timestamp,
+    category: cmd.category,
+  }));
+}
+
+// 按类型筛选历史
+export function getHistoryByType(category) {
+  return past.value
+    .map((cmd, index) => ({
+      index,
+      type: cmd.type,
+      label: cmd.label,
+      timestamp: cmd.timestamp,
+      category: cmd.category,
+    }))
+    .filter(cmd => cmd.category === category);
+}
+
 // 执行新命令
 export function execute(command) {
+  command.timestamp = Date.now();
   command.redo();
   past.value.push(command);
   future.value = [];

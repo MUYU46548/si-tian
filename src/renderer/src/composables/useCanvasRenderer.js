@@ -229,7 +229,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     const world = screenToWorld(mx, my);
 
     if (onDragStart) {
-      const result = onDragStart(world.x, world.y, e.button);
+      const result = onDragStart(world.x, world.y, e.button, e.shiftKey, e.ctrlKey);
       if (result === false) {
         panSuppressed = true;
       } else if (result && typeof result === 'object' && result.mode === 'vertex') {

@@ -56,7 +56,7 @@ let dragSourceNode = null;
 let dragMousePos = { x: 0, y: 0 };
 let targetNode = null;
 
-const allBodies = computed(() => [...props.planets, ...props.locations]);
+const allBodies = computed(() => props.planets);
 
 // ===== 布局计算 =====
 function applyLayout() {
@@ -565,8 +565,8 @@ defineExpose({ canvas, renderer });
 .system-view-container { display: flex; flex-direction: column; height: 100%; }
 .map-header { 
   padding: 12px 16px; 
-  border-bottom: 1px solid #30363d; 
-  background: #161b22; 
+  border-bottom: 1px solid var(--map-header-border); 
+  background: var(--map-header-bg); 
   display: flex; 
   justify-content: space-between;
   align-items: center;
@@ -575,23 +575,23 @@ defineExpose({ canvas, renderer });
 .header-actions { display: flex; gap: 8px; }
 .header-actions button {
   padding: 6px 14px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--map-btn-border);
   border-radius: 4px;
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--map-btn-bg);
+  color: var(--map-btn-text);
   cursor: pointer;
   font-size: 12px;
   transition: all 0.2s;
 }
-.header-actions button:hover { background: #30363d; }
+.header-actions button:hover { background: var(--map-btn-hover); }
 .header-actions button.active {
-  background: #0d4718;
-  border-color: #2ea043;
-  color: #7affb4;
+  background: var(--map-accent-green-bg);
+  border-color: var(--map-accent-green-border);
+  color: var(--map-accent-green);
 }
-.map-header h2 { font-size: 14px; color: #f0f6fc; margin-bottom: 4px; }
-.hint { font-size: 11px; color: #8b949e; }
-.edit-hint { color: #7affb4; }
+.map-header h2 { font-size: 14px; color: var(--map-text-heading); margin-bottom: 4px; }
+.hint { font-size: 11px; color: var(--map-text-hint); }
+.edit-hint { color: var(--map-accent-green); }
 .canvas-wrapper { flex: 1; position: relative; overflow: hidden; }
-canvas { display: block; width: 100%; height: 100%; }
+canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
 </style>

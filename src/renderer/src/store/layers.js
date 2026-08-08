@@ -4,6 +4,7 @@ import { ref, computed } from 'vue';
 /**
  * 图层可见性管理 store
  * 每个视图（domain/system/planet）有独立的图层栈
+ * 支持跨视图共享图层状态
  */
 export const useLayersStore = defineStore('layers', () => {
   // 图层定义：视图 -> 图层ID -> { visible, label, order }
@@ -29,6 +30,9 @@ export const useLayersStore = defineStore('layers', () => {
     },
   });
 
+  // 是否启用跨视图共享
+  const shareAcrossViews = ref(true);
+
   // 面板是否展开
   const panelOpen = ref(false);
 
@@ -37,6 +41,34 @@ export const useLayersStore = defineStore('layers', () => {
     const v = layers.value[view];
     if (v && v[layerId]) {
       v[layerId].visible = !v[layerId].visible;
+      
+      // 跨视图共享
+      if (shareAcrossViews.value) {
+        syncLayerToOtherViews(view, layerId, v[layerId].visible);
+      }
+    }
+  }
+
+  // 同步图层状态到其他视图
+  function syncLayerToOtherViews(sourceView, layerId, visible) {
+    // 定义图层映射关系
+    const layerMapping = {
+      domain: {
+        hyperlanes: ['system', 'hyperlanes'],
+        editHelpers: ['system', 'editHelpers'],
+      },
+      system: {
+        hyperlanes: ['domain', 'hyperlanes'],
+        editHelpers: ['domain', 'editHelpers'],
+      },
+    };
+
+    const mapping = layerMapping[sourceView]?.[layerId];
+    if (mapping) {
+      const [targetView, targetLayerId] = mapping;
+      if (layers.value[targetView]?.[targetLayerId]) {
+        layers.value[targetView][targetLayerId].visible = visible;
+      }
     }
   }
 
@@ -59,12 +91,19 @@ export const useLayersStore = defineStore('layers', () => {
     panelOpen.value = !panelOpen.value;
   }
 
+  // 切换跨视图共享
+  function toggleShareAcrossViews() {
+    shareAcrossViews.value = !shareAcrossViews.value;
+  }
+
   return {
     layers,
     panelOpen,
+    shareAcrossViews,
     toggleLayer,
     isVisible,
     getViewLayers,
     togglePanel,
+    toggleShareAcrossViews,
   };
 });

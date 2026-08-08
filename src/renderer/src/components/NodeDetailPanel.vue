@@ -108,6 +108,35 @@
         </div>
       </section>
 
+      <!-- 坐标编辑 -->
+      <section class="coordinate-section">
+        <div class="section-header">
+          <span class="section-title">坐标</span>
+        </div>
+        <div class="coordinate-inputs">
+          <div class="coord-field">
+            <label>X</label>
+            <input 
+              type="number" 
+              :value="node.coordinate?.x" 
+              @input="updateCoordinate('x', $event.target.value)"
+              step="1"
+              placeholder="0"
+            />
+          </div>
+          <div class="coord-field">
+            <label>Y</label>
+            <input 
+              type="number" 
+              :value="node.coordinate?.y" 
+              @input="updateCoordinate('y', $event.target.value)"
+              step="1"
+              placeholder="0"
+            />
+          </div>
+        </div>
+      </section>
+
       <!-- 操作按钮 -->
       <section class="actions-section">
         <button class="action-btn primary" @click="openSourceInObsidian">
@@ -319,6 +348,25 @@ async function revealInExplorer() {
   const vaultPath = 'E:/图书馆/ROSA';
   const fullPath = `${vaultPath}/${node.value.sourcePath}`;
   await window.sitianAPI.revealInExplorer(fullPath);
+}
+
+// 更新坐标
+function updateCoordinate(axis, value) {
+  if (!node.value) return;
+  const num = parseFloat(value);
+  if (isNaN(num)) return;
+  
+  const nodeId = node.value.id;
+  const existingCoord = node.value.coordinate || {};
+  
+  if (axis === 'x') {
+    store.updateNodePosition(nodeId, num, existingCoord.y || 0);
+  } else {
+    store.updateNodePosition(nodeId, existingCoord.x || 0, num);
+  }
+  
+  // 触发重新渲染
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
 }
 </script>
 
@@ -824,6 +872,50 @@ async function revealInExplorer() {
 
 .tag-badge:active {
   transform: translateY(0);
+}
+
+/* ===== 坐标编辑 ===== */
+.coordinate-section {
+  margin-bottom: 16px;
+}
+
+.coordinate-inputs {
+  display: flex;
+  gap: 8px;
+}
+
+.coord-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.coord-field label {
+  font-size: 10px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.coord-field input {
+  padding: 6px 8px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.coord-field input:focus {
+  border-color: #58a6ff;
+}
+
+.coord-field input::placeholder {
+  color: #484f58;
 }
 
 /* ===== 操作按钮 ===== */
