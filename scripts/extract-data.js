@@ -117,22 +117,25 @@ function extractWorldsAndStars() {
       
       if (!currentWorld) continue;
       
-      // Match star domains
-      const domainMatch = trimmed.match(/^- \[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
-      if (domainMatch) {
-        const domainName = domainMatch[1].trim();
-        const domainId = normalizeId(domainName);
-        currentStarDomain = { id: domainId, name: domainName };
-        continue;
-      }
+      // 匹配带缩进的 wikilink 列表项，用缩进级别区分层级：
+      //   level 0（无缩进）    -> 星域
+      //   level 1（1 tab/2空格）-> 恒星系（恒星级）
+      //   level >=2            -> 行星及以下（由文件夹扫描提供，此处忽略）
+      const listMatch = line.match(/^([\t ]*)- \[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+      if (!listMatch) continue;
       
-      // Match galaxies (star systems) under domains
-      const galaxyMatch = trimmed.match(/^- \[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
-      if (galaxyMatch && currentStarDomain) {
-        const galaxyName = galaxyMatch[1].trim();
+      const indentStr = listMatch[1];
+      const itemName = listMatch[2].trim();
+      const level = (indentStr.match(/\t/g) || []).length + Math.floor((indentStr.match(/ /g) || []).length / 2);
+      
+      if (level === 0) {
+        // 星域
+        currentStarDomain = { id: normalizeId(itemName), name: itemName };
+      } else if (level === 1 && currentStarDomain) {
+        // 恒星系（星域下）
         galaxies.push({
-          id: normalizeId(galaxyName),
-          name: galaxyName,
+          id: normalizeId(itemName),
+          name: itemName,
           layer: 'galaxy',
           layerLabel: '星系',
           parentId: currentStarDomain.id,
@@ -182,9 +185,21 @@ function normalizeId(name) {
 
 function mergeNodes(geo, loc, worlds, galaxies) {
   const map = new Map();
-  [...geo, ...loc].forEach(n => { if (!map.has(n.id)) map.set(n.id, n); });
+  const collisions = [];
+  [...geo, ...loc].forEach(n => {
+    if (map.has(n.id)) {
+      collisions.push({ id: n.id, name: n.name, existing: map.get(n.id).sourcePath, incoming: n.sourcePath });
+    } else {
+      map.set(n.id, n);
+    }
+  });
   worlds.forEach(w => { if (!map.has(w.id)) map.set(w.id, w); });
   galaxies.forEach(g => { if (!map.has(g.id)) map.set(g.id, g); });
+  
+  if (collisions.length > 0) {
+    console.warn(`[提取] 发现 ${collisions.length} 个跨目录重名节点（后出现的被忽略，可能导致多世界数据丢失）:`);
+    collisions.forEach(c => console.warn(`  - "${c.name}" (${c.existing} vs ${c.incoming})`));
+  }
   
   // Resolve parent references
   const all = Array.from(map.values());

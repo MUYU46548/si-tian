@@ -542,6 +542,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     const endCoord = { x: node.coordinate.x, y: node.coordinate.y };
     const startCoord = { ...dragStartCoord };
     const nodeId = dragStartId;
+    // 标记为用户手动放置的坐标，布局重算时优先保留
+    node.userMoved = true;
     execute({
       type: 'move-node',
       label: '移动节点',
@@ -565,9 +567,98 @@ export const useGeodataStore = defineStore('geodata', () => {
       if (node) {
         node.coordinate.x = updated.coordinate.x;
         node.coordinate.y = updated.coordinate.y;
+        node.userMoved = true;
       }
     });
     scheduleAutoSave();
+  }
+
+  // ===== 节点 CRUD（使用通用 UndoStore） =====
+
+  function addNode(node) {
+    const newNode = { ...node, tags: Array.isArray(node.tags) ? [...node.tags] : [] };
+    nodes.value.push(newNode);
+    execute({
+      type: 'add-node',
+      label: '添加节点',
+      category: 'property',
+      undo: () => {
+        nodes.value = nodes.value.filter(n => n.id !== newNode.id);
+      },
+      redo: () => {
+        nodes.value.push(newNode);
+      },
+    });
+    scheduleAutoSave();
+    return newNode;
+  }
+
+  function removeNode(nodeId) {
+    const idx = nodes.value.findIndex(n => n.id === nodeId);
+    if (idx === -1) return null;
+
+    const removed = nodes.value[idx];
+    // 关联航道（指向该节点的全部删除）
+    const relatedHyperlanes = hyperlanes.value.filter(h => h.fromId === nodeId || h.toId === nodeId);
+    // 直接子节点：暂存原 parentId，删除后置空，避免产生孤立引用
+    const childBackup = nodes.value
+      .filter(n => n.parentId === nodeId)
+      .map(c => ({ id: c.id, parentId: c.parentId }));
+
+    nodes.value.splice(idx, 1);
+    hyperlanes.value = hyperlanes.value.filter(h => h.fromId !== nodeId && h.toId !== nodeId);
+    childBackup.forEach(cb => {
+      const child = nodes.value.find(n => n.id === cb.id);
+      if (child) child.parentId = null;
+    });
+
+    execute({
+      type: 'remove-node',
+      label: '删除节点',
+      category: 'property',
+      undo: () => {
+        nodes.value.splice(idx, 0, removed);
+        childBackup.forEach(cb => {
+          const child = nodes.value.find(n => n.id === cb.id);
+          if (child) child.parentId = cb.parentId;
+        });
+        hyperlanes.value.push(...relatedHyperlanes);
+      },
+      redo: () => {
+        nodes.value = nodes.value.filter(n => n.id !== nodeId);
+        hyperlanes.value = hyperlanes.value.filter(h => h.fromId !== nodeId && h.toId !== nodeId);
+        childBackup.forEach(cb => {
+          const child = nodes.value.find(n => n.id === cb.id);
+          if (child) child.parentId = null;
+        });
+      },
+    });
+    scheduleAutoSave();
+    return removed;
+  }
+
+  function updateNode(nodeId, updates) {
+    const node = nodes.value.find(n => n.id === nodeId);
+    if (!node) return null;
+
+    const oldState = {};
+    for (const key of Object.keys(updates)) {
+      oldState[key] = node[key];
+    }
+    Object.assign(node, updates);
+    execute({
+      type: 'update-node',
+      label: '编辑节点',
+      category: 'property',
+      undo: () => {
+        Object.assign(node, oldState);
+      },
+      redo: () => {
+        Object.assign(node, updates);
+      },
+    });
+    scheduleAutoSave();
+    return node;
   }
 
   // ===== 航道 CRUD（使用通用 UndoStore） =====
@@ -743,6 +834,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
     loadGeodata, reextract, saveGeodata,
       updateNodePosition, updateAllCoordinates,
+      addNode, removeNode, updateNode,
       addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
       selectNode, clearSelection, selectPlanetOrNode,
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,

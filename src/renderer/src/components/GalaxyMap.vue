@@ -275,10 +275,12 @@ function applyStableLayout() {
       const total = domainGalaxies.length;
       const angle = (idx / Math.max(total, 1)) * Math.PI * 2 + 0.3;
       const dist = 100 + (idx % 4) * 60;
+      // 用户手动放置过的坐标优先保留，避免布局重算重置拖拽
+      const savedCoord = galaxy.userMoved && galaxy.coordinate?.x !== null && galaxy.coordinate?.x !== undefined;
       galaxyNodes.value.push({
         ...galaxy,
-        x: parentDomain.x + Math.cos(angle) * dist,
-        y: parentDomain.y + Math.sin(angle) * dist,
+        x: savedCoord ? galaxy.coordinate.x : parentDomain.x + Math.cos(angle) * dist,
+        y: savedCoord ? galaxy.coordinate.y : parentDomain.y + Math.sin(angle) * dist,
         domainId: galaxy.parentId,
         factionColor: parentDomain.factionColor
       });
@@ -1277,17 +1279,32 @@ function onFocusNode(e) {
   }
 }
 
+// ===== 监听节点移除事件（NodeDetailPanel 删除后同步布局） =====
+// 注意：store.nodes 变化会触发下方 deep watch → applyStableLayout 重建布局，
+// 这里只需过滤本地缓存并请求渲染，避免二次布局重算。
+function onNodeRemovedFromMap(e) {
+  const nodeId = e.detail;
+  if (!nodeId) return;
+  const removedCount = galaxyNodes.value.length;
+  galaxyNodes.value = galaxyNodes.value.filter(g => g.id !== nodeId);
+  if (galaxyNodes.value.length !== removedCount) {
+    renderer.requestRender();
+  }
+}
+
 // ===== 生命周期 =====
 onMounted(() => {
   renderer.initCanvas();
   applyStableLayout();
   renderer.requestRender();
   window.addEventListener('sitian:focus-node', onFocusNode);
+  window.addEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
 });
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('sitian:focus-node', onFocusNode);
+  window.removeEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
 });
 
 watch(() => [props.galaxies, props.domains], () => {
@@ -1316,25 +1333,35 @@ function createGalaxy() {
   const vt = renderer.getViewTransform();
   const cx = -vt.x / vt.scale;
   const cy = -vt.y / vt.scale;
+  
+  // 归属到最近的星域（保证恒星进入星域聚簇，可点击进入 system 视图）
+  let targetDomain = null;
+  let minDist = Infinity;
+  for (const d of domainNodes) {
+    const dist = Math.hypot(cx - d.x, cy - d.y);
+    if (dist < minDist) { minDist = dist; targetDomain = d; }
+  }
+  const parentDomain = targetDomain || props.world;
+  
   const id = `galaxy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const newGalaxy = {
     id,
     name: `新恒星_${Date.now() % 1000}`,
     layer: 'galaxy',
-    parentId: props.world?.id || null,
+    parentId: parentDomain?.id || null,
     tags: ['新创建'],
     sourcePath: '',
     coordinate: { x: cx, y: cy },
+    userMoved: true, // 创建位置即用户意图，布局重算时保留
   };
-  store.nodes.push(newGalaxy);
+  store.addNode(newGalaxy);
   galaxyNodes.value.push({
     ...newGalaxy,
     x: cx,
     y: cy,
-    domainId: props.world?.id || null,
-    factionColor: '#4a90d9',
+    domainId: parentDomain?.id || null,
+    factionColor: parentDomain?.factionColor || '#4a90d9',
   });
-  store.scheduleAutoSave();
   emit('dirty', true);
   renderer.requestRender();
 }

@@ -85,10 +85,19 @@
         <!-- 关联航道 -->
         <div v-if="relatedHyperlanes.length" class="relation-group">
           <div class="relation-label">航道</div>
-          <div v-for="h in relatedHyperlanes.slice(0, 4)" :key="h.id" class="relation-link hyperlane-link">
+          <div v-for="h in relatedHyperlanes.slice(0, 6)" :key="h.id" class="relation-link hyperlane-link">
             <span class="relation-icon">🛤</span>
             <span class="relation-name">{{ getNodeName(h.fromId === node.id ? h.toId : h.fromId) }}</span>
-            <span class="relation-type">{{ h.type }}</span>
+            <select
+              class="hyperlane-type-select"
+              :value="h.type"
+              :title="`航道类型：${hyperlaneTypeLabels[h.type] || h.type}`"
+              @change="updateHyperlaneType(h, $event.target.value)"
+              @click.stop
+            >
+              <option v-for="t in hyperlaneTypes" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+            <button class="hyperlane-remove" @click.stop="removeHyperlane(h.id)" title="删除航道">×</button>
           </div>
         </div>
       </section>
@@ -105,6 +114,42 @@
             class="tag-badge"
             @click="searchByTag(tag)"
           >{{ tag }}</span>
+        </div>
+      </section>
+
+      <!-- 属性编辑 -->
+      <section class="property-section">
+        <div class="section-header">
+          <span class="section-title">属性</span>
+          <span class="section-note">仅存缓存，重新提取后还原</span>
+        </div>
+        <div class="prop-field">
+          <label>名称</label>
+          <input type="text" :value="node.name" disabled title="名称对应 Markdown 文件名，请在 Obsidian 中重命名" />
+        </div>
+        <div class="prop-field">
+          <label>层级</label>
+          <select :value="node.layer" @change="updateLayer($event.target.value)">
+            <option v-for="l in editableLayers" :key="l.value" :value="l.value">{{ l.label }}</option>
+          </select>
+        </div>
+        <div class="prop-field">
+          <label>标签</label>
+          <div class="tag-editor">
+            <span v-for="tag in node.tags || []" :key="tag" class="tag-badge removable">
+              {{ tag }}
+              <button class="tag-remove" @click="removeTag(tag)" title="移除标签">×</button>
+            </span>
+            <span v-if="!(node.tags || []).length" class="tag-empty">无标签</span>
+            <input
+              v-model="newTagInput"
+              class="tag-input"
+              placeholder="+ 添加标签"
+              @keydown.enter.prevent="addTag"
+              @keydown.tab.prevent="addTag"
+              @blur="addTag"
+            />
+          </div>
         </div>
       </section>
 
@@ -145,6 +190,9 @@
         <button class="action-btn" @click="revealInExplorer">
           <span class="btn-icon">📁</span> 在文件夹中显示
         </button>
+        <button class="action-btn danger" @click="removeFromMap" title="从地图移除该节点及其关联航道（可撤销）">
+          <span class="btn-icon">🗑</span> 从地图移除
+        </button>
       </section>
     </div>
   </div>
@@ -162,8 +210,33 @@ const store = useGeodataStore();
 const note = ref(null);
 const loading = ref(false);
 const isContentExpanded = ref(false);
+const newTagInput = ref('');
 
 const node = computed(() => store.selectedNode);
+
+// 可编辑层级列表（与 LAYER_ORDER 一致，排除 world 顶层容器避免误改）
+const editableLayers = [
+  { value: 'star_domain', label: '星域' },
+  { value: 'galaxy', label: '星系' },
+  { value: 'star', label: '恒星' },
+  { value: 'planet', label: '行星' },
+  { value: 'moon', label: '卫星' },
+  { value: 'region', label: '区域' },
+  { value: 'city', label: '城市' },
+  { value: 'town', label: '城镇' },
+  { value: 'village', label: '村庄' },
+  { value: 'facility', label: '设施' },
+  { value: 'location', label: '地点' },
+  { value: 'unknown', label: '未知' },
+];
+
+// 航道类型选项
+const hyperlaneTypes = [
+  { value: 'local', label: '域内' },
+  { value: 'cross_domain', label: '跨域' },
+  { value: 'hyperjump', label: '跳跃' },
+];
+const hyperlaneTypeLabels = Object.fromEntries(hyperlaneTypes.map(t => [t.value, t.label]));
 
 // 层级图标映射
 const LAYER_ICONS = {
@@ -350,6 +423,64 @@ async function revealInExplorer() {
   await window.sitianAPI.revealInExplorer(fullPath);
 }
 
+// 从地图移除节点（仅移除 JSON 缓存，不删除 Obsidian 文件）
+function removeFromMap() {
+  if (!node.value) return;
+  const target = node.value;
+  const childCount = store.nodes.filter(n => n.parentId === target.id).length;
+  const linkCount = store.getHyperlanesForNode(target.id).length;
+  
+  const msg = `确定从地图移除「${target.name}」吗？\n\n` +
+    `将同时移除 ${linkCount} 条关联航道` +
+    (childCount ? `，并把 ${childCount} 个子节点置为未归属` : '') +
+    `。\n\n仅移除坐标缓存，不会删除 Obsidian 笔记。可用 Ctrl+Z 撤销。`;
+  
+  if (!confirm(msg)) return;
+  
+  store.removeNode(target.id);
+  store.clearSelection();
+  window.dispatchEvent(new CustomEvent('sitian:node-removed-from-map', { detail: target.id }));
+}
+
+// 更新层级（仅缓存层，可撤销）
+function updateLayer(layer) {
+  if (!node.value || node.value.layer === layer) return;
+  store.updateNode(node.value.id, { layer, layerLabel: editableLayers.find(l => l.value === layer)?.label || layer });
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
+}
+
+// 添加标签
+function addTag() {
+  const tag = newTagInput.value.trim();
+  if (!tag || !node.value) return;
+  const tags = [...(node.value.tags || [])];
+  if (!tags.includes(tag)) {
+    tags.push(tag);
+    store.updateNode(node.value.id, { tags });
+  }
+  newTagInput.value = '';
+}
+
+// 移除标签
+function removeTag(tag) {
+  if (!node.value) return;
+  const tags = (node.value.tags || []).filter(t => t !== tag);
+  store.updateNode(node.value.id, { tags });
+}
+
+// 更新航道类型（走 undo 栈）
+function updateHyperlaneType(h, type) {
+  if (!h || h.type === type) return;
+  store.updateHyperlane(h.id, { type });
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
+}
+
+// 删除航道（走 undo 栈）
+function removeHyperlane(hyperlaneId) {
+  store.removeHyperlane(hyperlaneId);
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
+}
+
 // 更新坐标
 function updateCoordinate(axis, value) {
   if (!node.value) return;
@@ -358,6 +489,12 @@ function updateCoordinate(axis, value) {
   
   const nodeId = node.value.id;
   const existingCoord = node.value.coordinate || {};
+  
+  // 手动输入坐标视为用户意图，布局重算时保留（直接改响应式节点，不产生额外 undo 命令）
+  if (node.value.userMoved !== true) {
+    node.value.userMoved = true;
+    store.scheduleAutoSave();
+  }
   
   if (axis === 'x') {
     store.updateNodePosition(nodeId, num, existingCoord.y || 0);
@@ -818,6 +955,39 @@ function updateCoordinate(axis, value) {
   border-radius: 3px;
 }
 
+.hyperlane-type-select {
+  flex-shrink: 0;
+  max-width: 64px;
+  padding: 2px 4px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #58a6ff;
+  font-size: 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+.hyperlane-type-select:focus {
+  border-color: #58a6ff;
+}
+
+.hyperlane-remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 3px;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.hyperlane-remove:hover {
+  color: #f85149;
+}
+
 .relation-more {
   display: block;
   font-size: 11px;
@@ -872,6 +1042,114 @@ function updateCoordinate(axis, value) {
 
 .tag-badge:active {
   transform: translateY(0);
+}
+
+/* ===== 属性编辑 ===== */
+.property-section {
+  margin-bottom: 16px;
+}
+
+.section-note {
+  font-size: 10px;
+  color: #8b949e;
+  font-weight: normal;
+  margin-left: 8px;
+}
+
+.prop-field {
+  margin-bottom: 10px;
+}
+
+.prop-field label {
+  display: block;
+  font-size: 10px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+
+.prop-field input[type="text"],
+.prop-field select {
+  width: 100%;
+  padding: 6px 8px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.prop-field input[type="text"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.prop-field select:focus,
+.prop-field input[type="text"]:not(:disabled):focus {
+  border-color: #58a6ff;
+}
+
+.tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-badge.removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+
+.tag-badge.removable:hover {
+  transform: none;
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  color: #58a6ff;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.tag-remove:hover {
+  color: #f85149;
+}
+
+.tag-empty {
+  font-size: 11px;
+  color: #8b949e;
+}
+
+.tag-input {
+  flex: 1;
+  min-width: 90px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px dashed #30363d;
+  border-radius: 12px;
+  color: #e2e8f0;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.tag-input:focus {
+  border-color: #58a6ff;
+  border-style: solid;
+}
+
+.tag-input::placeholder {
+  color: #6e7681;
 }
 
 /* ===== 坐标编辑 ===== */
@@ -945,6 +1223,17 @@ function updateCoordinate(axis, value) {
 
 .action-btn:hover {
   background: #30363d;
+}
+
+.action-btn.danger {
+  border-color: #f8514933;
+  background: #f8514914;
+  color: #f85149;
+}
+
+.action-btn.danger:hover {
+  background: #f8514933;
+  border-color: #f85149;
 }
 
 .action-btn.primary {

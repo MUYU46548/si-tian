@@ -250,6 +250,11 @@ async function handleExportSVG() {
   
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   
+  // 背景色跟随当前主题
+  const isDark = currentTheme.value !== 'light';
+  const bgColor = isDark ? '#0d1117' : '#ffffff';
+  const textColor = isDark ? '#e2e8f0' : '#1f2328';
+  
   let paths = '';
   hyperlanes.forEach(h => {
     const from = nodeMap.get(h.fromId);
@@ -262,12 +267,12 @@ async function handleExportSVG() {
   nodes.forEach(n => {
     const color = getNodeColor(n.layer);
     circles += `<circle cx="${n.coordinate.x}" cy="${n.coordinate.y}" r="6" fill="${color}"/>`;
-    circles += `<text x="${n.coordinate.x + 8}" y="${n.coordinate.y + 4}" fill="#e2e8f0" font-size="10">${n.name}</text>`;
+    circles += `<text x="${n.coordinate.x + 8}" y="${n.coordinate.y + 4}" fill="${textColor}" font-size="10">${n.name}</text>`;
   });
   
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width} ${height}" width="${width}" height="${height}">
-  <rect x="${minX}" y="${minY}" width="${width}" height="${height}" fill="#0d1117"/>
+  <rect x="${minX}" y="${minY}" width="${width}" height="${height}" fill="${bgColor}"/>
   ${paths}
   ${circles}
 </svg>`;
@@ -311,8 +316,9 @@ async function handleExportFullPNG() {
   ctx.scale(dpr, dpr);
   ctx.translate(-minX, -minY);
   
-  // 背景
-  ctx.fillStyle = '#0d1117';
+  // 背景色跟随当前主题
+  const isDark = currentTheme.value !== 'light';
+  ctx.fillStyle = isDark ? '#0d1117' : '#ffffff';
   ctx.fillRect(minX, minY, width, height);
   
   // 航道
@@ -330,6 +336,7 @@ async function handleExportFullPNG() {
   });
   
   // 节点
+  const textColor = isDark ? '#e2e8f0' : '#1f2328';
   nodes.forEach(n => {
     const color = getNodeColor(n.layer);
     ctx.fillStyle = color;
@@ -341,7 +348,7 @@ async function handleExportFullPNG() {
     ctx.shadowBlur = 0;
     
     // 名称
-    ctx.fillStyle = '#e2e8f0';
+    ctx.fillStyle = textColor;
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText(n.name, n.coordinate.x + 10, n.coordinate.y + 4);
   });

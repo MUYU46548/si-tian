@@ -67,8 +67,12 @@ function applyLayout() {
   systemLayouts = systems.map((system, idx) => {
     const col = idx % gridSize;
     const row = Math.floor(idx / gridSize);
-    const x = (col - (gridSize - 1) / 2) * spacing;
-    const y = (row - (gridSize - 1) / 2) * spacing;
+    const gridX = (col - (gridSize - 1) / 2) * spacing;
+    const gridY = (row - (gridSize - 1) / 2) * spacing;
+    // 用户手动放置过的恒星系坐标优先保留
+    const sysSaved = system.userMoved && system.coordinate?.x !== null && system.coordinate?.x !== undefined;
+    const sysX = sysSaved ? system.coordinate.x : gridX;
+    const sysY = sysSaved ? system.coordinate.y : gridY;
     
     const systemPlanets = allBodies.value.filter(b => b.parentId === system.id);
     
@@ -77,16 +81,18 @@ function applyLayout() {
       const posInOrbit = pIdx % 3;
       const angle = (posInOrbit / 3) * Math.PI * 2 + orbit * 0.4;
       const orbitRadius = 40 + orbit * 35;
+      // 行星同样保留手动坐标
+      const plSaved = planet.userMoved && planet.coordinate?.x !== null && planet.coordinate?.x !== undefined;
       return {
         ...planet,
-        x: x + Math.cos(angle) * orbitRadius,
-        y: y + Math.sin(angle) * orbitRadius,
+        x: plSaved ? planet.coordinate.x : sysX + Math.cos(angle) * orbitRadius,
+        y: plSaved ? planet.coordinate.y : sysY + Math.sin(angle) * orbitRadius,
         orbitRadius,
         angle
       };
     });
     
-    return { ...system, x, y, planets: planetLayouts };
+    return { ...system, x: sysX, y: sysY, planets: planetLayouts };
   });
 }
 
@@ -418,17 +424,31 @@ function onFocusNode(e) {
   }
 }
 
+// ===== 监听节点移除事件（NodeDetailPanel 删除后同步布局） =====
+function onNodeRemovedFromMap(e) {
+  const nodeId = e.detail;
+  if (!nodeId) return;
+  // 从本地布局缓存中过滤（store.nodes 变化会触发 deep watch 重建布局）
+  systemLayouts = systemLayouts.filter(s => s.id !== nodeId);
+  for (const s of systemLayouts) {
+    s.planets = s.planets.filter(p => p.id !== nodeId);
+  }
+  renderer.requestRender();
+}
+
 // ===== 生命周期 =====
 onMounted(() => {
   renderer.initCanvas();
   applyLayout();
   renderer.requestRender();
   window.addEventListener('sitian:focus-node', onFocusNode);
+  window.addEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
 });
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('sitian:focus-node', onFocusNode);
+  window.removeEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
 });
 
 // ===== 监听 props 变化 =====
