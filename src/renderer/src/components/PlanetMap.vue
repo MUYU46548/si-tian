@@ -33,6 +33,7 @@
       <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️ 路线</button>
       <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤 文本</button>
       <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster')" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
+      <button :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
       <button class="separator-btn" disabled></button>
       
       <template v-if="interactionMode === 'draw'">
@@ -101,6 +102,7 @@
     <!-- 非编辑模式的导出按钮 -->
     <div v-if="!editMode" class="view-actions">
       <button class="adopt-btn" @click="clusterPanelOpen = !clusterPanelOpen" title="地点簇大纲">🗂 地点簇</button>
+      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
       <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG">📤 导出全图</button>
     </div>
     
@@ -164,6 +166,15 @@
         @edit-cluster="openClusterEditor"
         @disband-cluster="disbandCluster"
         @close="clusterPanelOpen = false"
+      />
+      <object-list-panel
+        :planet="props.planet"
+        :open="objectPanelOpen"
+        :active-object-id="activeObjectId"
+        @focus-object="focusObject"
+        @rename-object="renameObject"
+        @delete-object="deleteObject"
+        @close="objectPanelOpen = false"
       />
     </div>
     
@@ -510,6 +521,7 @@ import { createProvinceByFloodFill } from '../utils/floodfill';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon } from '../utils/geometry';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
+import ObjectListPanel from './ObjectListPanel.vue';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -524,6 +536,12 @@ const emit = defineEmits(['back', 'select-node', 'dirty']);
 const clusterPanelOpen = ref(false);
 const activeClusterId = ref(null);
 const hoverMemberId = ref(null);
+// ===== 对象列表面板（地形/标记/路线/文本）=====
+const objectPanelOpen = ref(false);
+const activeObjectId = computed(() =>
+  selectedProvince.value?.id || selectedRegion.value?.id ||
+  selectedMarker.value?.id || selectedRoute.value?.id || selectedTextLabel.value?.id || null
+);
 const clusterEditorOpen = ref(false);
 const editingCluster = ref(null);
 const editingClusterName = ref('');
@@ -2597,16 +2615,25 @@ let vertexDragKind = null;
 
 function finishDrawing() {
   const simplified = simplifyPath(currentPath.value, 2);
+  const isRegion = interactionMode.value === 'region';
+  const type = isRegion ? 'region' : selectedTerrain.value;
+  const typeLabel = isRegion
+    ? '区域'
+    : (terrainTypes.find(t => t.type === type)?.label || '地形');
+  // 默认命名：同类型数量 + 1（如"陆地 3"），供对象列表区分
+  const count = isRegion
+    ? (currentMapData.value?.regions?.length || 0) + 1
+    : (currentMapData.value?.terrain?.filter(t => t.type === type).length || 0) + 1;
   const polygon = {
     id: `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     points: simplified,
-    type: interactionMode.value === 'region' ? 'region' : selectedTerrain.value,
-    name: '',
+    type,
+    name: `${typeLabel} ${count}`,
     description: '',
-    color: interactionMode.value === 'region' ? regionColor.value : undefined,
+    color: isRegion ? regionColor.value : undefined,
   };
   
-  if (interactionMode.value === 'region') {
+  if (isRegion) {
     store.addRegion(props.planet.id, polygon);
   } else {
     store.addTerrainPolygon(props.planet.id, polygon);
@@ -2777,7 +2804,7 @@ function finishRouteDraft() {
     points: routeDraftPoints.value.map(p => ({ x: p.x, y: p.y, placeId: p.placeId || null })),
     dashed: routeDashed.value,
     color: routeColor.value,
-    name: '',
+    name: `路线 ${(currentMapData.value?.routes?.length || 0) + 1}`,
     label: '',
     description: '',
   };
@@ -2907,6 +2934,79 @@ function toggleClusterCollapse(clusterId) {
   renderer.requestRender();
 }
 
+// ===== 对象列表面板事件（地形/标记/路线/文本）=====
+// 聚焦：选中对象并平移画布到对象中心
+function focusObject({ type, id }) {
+  const data = currentMapData.value;
+  if (!data) return;
+  let center = null;
+  // 清空其他选中（terrain 分支会重新设置 selectedProvince）
+  selectedProvince.value = null;
+  selectedRegion.value = null;
+  selectedMarker.value = null;
+  selectedRoute.value = null;
+  selectedTextLabel.value = null;
+
+  if (type === 'terrain') {
+    const poly = (data.terrain || []).find(p => p.id === id);
+    if (!poly) return;
+    selectedProvince.value = poly;
+    if (poly.points?.length) center = getPolygonCenter(poly.points);
+  } else if (type === 'marker') {
+    const m = (data.markers || []).find(x => x.id === id);
+    if (!m) return;
+    selectedMarker.value = m;
+    center = { x: m.x, y: m.y };
+  } else if (type === 'route') {
+    const r = (data.routes || []).find(x => x.id === id);
+    if (!r || !r.points?.length) return;
+    selectedRoute.value = r;
+    center = r.points[Math.floor(r.points.length / 2)];
+  } else if (type === 'text') {
+    const t = (data.textLabels || []).find(x => x.id === id);
+    if (!t) return;
+    selectedTextLabel.value = t;
+    center = { x: t.x, y: t.y };
+  }
+
+  if (center) {
+    renderer.focusOn(center.x, center.y, renderer.getViewTransform().scale);
+  }
+  renderer.requestRender();
+}
+
+// 重命名对象（文本对象改 text 字段，其余改 name）
+function renameObject({ type, id, name }) {
+  const planetId = props.planet.id;
+  if (type === 'terrain') store.updateTerrainPolygon(planetId, id, { name });
+  else if (type === 'marker') store.updateMarker(planetId, id, { name });
+  else if (type === 'route') store.updateRoute(planetId, id, { name });
+  else if (type === 'text') store.updateTextLabel(planetId, id, { text: name });
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+// 删除对象（走 undo store + 清选中）
+function deleteObject({ type, id }) {
+  if (!confirm('确定删除该对象吗？')) return;
+  const planetId = props.planet.id;
+  if (type === 'terrain') {
+    store.removeTerrainPolygon(planetId, id);
+    if (selectedProvince.value?.id === id) selectedProvince.value = null;
+  } else if (type === 'marker') {
+    store.removeMarker(planetId, id);
+    if (selectedMarker.value?.id === id) selectedMarker.value = null;
+  } else if (type === 'route') {
+    store.removeRoute(planetId, id);
+    if (selectedRoute.value?.id === id) selectedRoute.value = null;
+  } else if (type === 'text') {
+    store.removeTextLabel(planetId, id);
+    if (selectedTextLabel.value?.id === id) selectedTextLabel.value = null;
+  }
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
 function openClusterEditor(clusterId) {
   const cluster = getClusters().find(c => c.id === clusterId);
   if (!cluster) return;
@@ -2960,11 +3060,12 @@ function handleCanvasClick(hit, wx, wy) {
   
   // text 模式：点击放置浮动文本
   if (mode === 'text') {
+    const textCount = (currentMapData.value?.textLabels?.length || 0) + 1;
     const label = {
       id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       x: wx,
       y: wy,
-      text: '文本',
+      text: `文本 ${textCount}`,
       fontSize: textFontSize.value,
       color: textColor.value,
     };
@@ -2982,12 +3083,14 @@ function handleCanvasClick(hit, wx, wy) {
       renderer.requestRender();
       return;
     }
+    const markerTypeMeta = markerTypes.find(m => m.type === selectedMarkerType.value);
+    const markerCount = (currentMapData.value?.markers?.filter(m => m.type === selectedMarkerType.value).length || 0) + 1;
     const marker = {
       id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       type: selectedMarkerType.value,
       x: wx,
       y: wy,
-      name: '',
+      name: `${markerTypeMeta?.label || '标记'} ${markerCount}`,
       description: '',
     };
     store.addMarker(props.planet.id, marker);
