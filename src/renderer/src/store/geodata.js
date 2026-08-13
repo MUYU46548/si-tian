@@ -364,8 +364,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
-    mapData.value[planetId].terrain.push(polygon);
     mapData.value[planetId].updatedAt = new Date().toISOString();
+    // execute() 会立即调用 redo 完成首次写入，这里不再手动 push（避免双写）
     execute({
       type: 'add-terrain',
       label: '绘制地形',
@@ -426,8 +426,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (!mapData.value[planetId].regions) {
       mapData.value[planetId].regions = [];
     }
-    mapData.value[planetId].regions.push(region);
     mapData.value[planetId].updatedAt = new Date().toISOString();
+    // execute() 的 redo 完成首次写入（避免双写）
     execute({
       type: 'add-region',
       label: '绘制区域',
@@ -514,11 +514,346 @@ export const useGeodataStore = defineStore('geodata', () => {
     window.sitianAPI.saveMapData(planetId, mapData.value[planetId]);
   }
 
+  // ===== 路线 CRUD =====
+  function addRoute(planetId, route) {
+    if (!mapData.value[planetId]) {
+      mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
+    }
+    if (!mapData.value[planetId].routes) {
+      mapData.value[planetId].routes = [];
+    }
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    // execute() 的 redo 完成首次写入（避免双写）
+    execute({
+      type: 'add-route',
+      label: '绘制路线',
+      undo: () => {
+        mapData.value[planetId].routes = mapData.value[planetId].routes.filter(r => r.id !== route.id);
+      },
+      redo: () => {
+        mapData.value[planetId].routes.push(route);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function removeRoute(planetId, routeId) {
+    if (!mapData.value[planetId]?.routes) return;
+    const idx = mapData.value[planetId].routes.findIndex(r => r.id === routeId);
+    if (idx === -1) return;
+    const removed = mapData.value[planetId].routes[idx];
+    mapData.value[planetId].routes.splice(idx, 1);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'remove-route',
+      label: '删除路线',
+      undo: () => {
+        mapData.value[planetId].routes.splice(idx, 0, removed);
+      },
+      redo: () => {
+        mapData.value[planetId].routes = mapData.value[planetId].routes.filter(r => r.id !== routeId);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function updateRoute(planetId, routeId, updates) {
+    if (!mapData.value[planetId]?.routes) return;
+    const route = mapData.value[planetId].routes.find(r => r.id === routeId);
+    if (!route) return;
+
+    const oldState = {};
+    for (const key of Object.keys(updates)) {
+      oldState[key] = route[key];
+    }
+    Object.assign(route, updates);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'update-route',
+      label: '编辑路线',
+      undo: () => {
+        Object.assign(route, oldState);
+      },
+      redo: () => {
+        Object.assign(route, updates);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== 浮动文本标签 CRUD =====
+  function addTextLabel(planetId, label) {
+    if (!mapData.value[planetId]) {
+      mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
+    }
+    if (!mapData.value[planetId].textLabels) {
+      mapData.value[planetId].textLabels = [];
+    }
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    // execute() 的 redo 完成首次写入（避免双写）
+    execute({
+      type: 'add-text-label',
+      label: '添加文本',
+      undo: () => {
+        mapData.value[planetId].textLabels = mapData.value[planetId].textLabels.filter(l => l.id !== label.id);
+      },
+      redo: () => {
+        mapData.value[planetId].textLabels.push(label);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function removeTextLabel(planetId, labelId) {
+    if (!mapData.value[planetId]?.textLabels) return;
+    const idx = mapData.value[planetId].textLabels.findIndex(l => l.id === labelId);
+    if (idx === -1) return;
+    const removed = mapData.value[planetId].textLabels[idx];
+    mapData.value[planetId].textLabels.splice(idx, 1);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'remove-text-label',
+      label: '删除文本',
+      undo: () => {
+        mapData.value[planetId].textLabels.splice(idx, 0, removed);
+      },
+      redo: () => {
+        mapData.value[planetId].textLabels = mapData.value[planetId].textLabels.filter(l => l.id !== labelId);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function updateTextLabel(planetId, labelId, updates) {
+    if (!mapData.value[planetId]?.textLabels) return;
+    const label = mapData.value[planetId].textLabels.find(l => l.id === labelId);
+    if (!label) return;
+
+    const oldState = {};
+    for (const key of Object.keys(updates)) {
+      oldState[key] = label[key];
+    }
+    Object.assign(label, updates);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'update-text-label',
+      label: '编辑文本',
+      undo: () => {
+        Object.assign(label, oldState);
+      },
+      redo: () => {
+        Object.assign(label, updates);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== 标记 CRUD（带 undo） =====
+  function addMarker(planetId, marker) {
+    if (!mapData.value[planetId]) {
+      mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
+    }
+    if (!mapData.value[planetId].markers) {
+      mapData.value[planetId].markers = [];
+    }
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    // execute() 的 redo 完成首次写入（避免双写）
+    execute({
+      type: 'add-marker',
+      label: '放置标记',
+      undo: () => {
+        mapData.value[planetId].markers = mapData.value[planetId].markers.filter(m => m.id !== marker.id);
+      },
+      redo: () => {
+        mapData.value[planetId].markers.push(marker);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function removeMarker(planetId, markerId) {
+    if (!mapData.value[planetId]?.markers) return;
+    const idx = mapData.value[planetId].markers.findIndex(m => m.id === markerId);
+    if (idx === -1) return;
+    const removed = mapData.value[planetId].markers[idx];
+    mapData.value[planetId].markers.splice(idx, 1);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'remove-marker',
+      label: '删除标记',
+      undo: () => {
+        mapData.value[planetId].markers.splice(idx, 0, removed);
+      },
+      redo: () => {
+        mapData.value[planetId].markers = mapData.value[planetId].markers.filter(m => m.id !== markerId);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function updateMarker(planetId, markerId, updates) {
+    if (!mapData.value[planetId]?.markers) return;
+    const marker = mapData.value[planetId].markers.find(m => m.id === markerId);
+    if (!marker) return;
+
+    const oldState = {};
+    for (const key of Object.keys(updates)) {
+      oldState[key] = marker[key];
+    }
+    Object.assign(marker, updates);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'update-marker',
+      label: '编辑标记',
+      undo: () => {
+        Object.assign(marker, oldState);
+      },
+      redo: () => {
+        Object.assign(marker, updates);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== 参考图底图 =====
+  function updateReferenceImage(planetId, refImage) {
+    if (!mapData.value[planetId]) {
+      mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
+    }
+    mapData.value[planetId].referenceImage = refImage;
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function clearReferenceImage(planetId) {
+    if (!mapData.value[planetId]) return;
+    delete mapData.value[planetId].referenceImage;
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== 地点簇 CRUD =====
+  // cluster: { id, name, memberIds: [nodeId...], color, collapsed }
+  function addCluster(planetId, cluster) {
+    if (!mapData.value[planetId]) {
+      mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
+    }
+    if (!mapData.value[planetId].clusters) {
+      mapData.value[planetId].clusters = [];
+    }
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    // execute() 的 redo 完成首次写入（避免双写）
+    execute({
+      type: 'add-cluster',
+      label: '创建地点簇',
+      undo: () => {
+        mapData.value[planetId].clusters = mapData.value[planetId].clusters.filter(c => c.id !== cluster.id);
+      },
+      redo: () => {
+        mapData.value[planetId].clusters.push(cluster);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function removeCluster(planetId, clusterId) {
+    if (!mapData.value[planetId]?.clusters) return;
+    const idx = mapData.value[planetId].clusters.findIndex(c => c.id === clusterId);
+    if (idx === -1) return;
+    const removed = mapData.value[planetId].clusters[idx];
+    mapData.value[planetId].clusters.splice(idx, 1);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'remove-cluster',
+      label: '解散地点簇',
+      undo: () => {
+        mapData.value[planetId].clusters.splice(idx, 0, removed);
+      },
+      redo: () => {
+        mapData.value[planetId].clusters = mapData.value[planetId].clusters.filter(c => c.id !== clusterId);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function updateCluster(planetId, clusterId, updates) {
+    if (!mapData.value[planetId]?.clusters) return;
+    const cluster = mapData.value[planetId].clusters.find(c => c.id === clusterId);
+    if (!cluster) return;
+
+    const oldState = {};
+    for (const key of Object.keys(updates)) {
+      oldState[key] = cluster[key];
+    }
+    Object.assign(cluster, updates);
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'update-cluster',
+      label: '编辑地点簇',
+      undo: () => {
+        Object.assign(cluster, oldState);
+      },
+      redo: () => {
+        Object.assign(cluster, updates);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // 统一移动簇内地点（保持相对位置）
+  function moveClusterMembers(planetId, clusterId, dx, dy) {
+    const cluster = mapData.value[planetId]?.clusters?.find(c => c.id === clusterId);
+    if (!cluster) return;
+    const moved = [];
+    cluster.memberIds.forEach(memberId => {
+      const node = nodes.value.find(n => n.id === memberId);
+      if (node && node.coordinate?.x !== null && node.coordinate?.x !== undefined) {
+        moved.push({
+          id: memberId,
+          oldX: node.coordinate.x,
+          oldY: node.coordinate.y,
+          newX: node.coordinate.x + dx,
+          newY: node.coordinate.y + dy,
+        });
+        node.coordinate.x += dx;
+        node.coordinate.y += dy;
+        node.userMoved = true;
+      }
+    });
+    if (moved.length === 0) return;
+    execute({
+      type: 'move-cluster',
+      label: '移动地点簇',
+      undo: () => {
+        moved.forEach(m => {
+          const n = nodes.value.find(nn => nn.id === m.id);
+          if (n) { n.coordinate.x = m.oldX; n.coordinate.y = m.oldY; }
+        });
+      },
+      redo: () => {
+        moved.forEach(m => {
+          const n = nodes.value.find(nn => nn.id === m.id);
+          if (n) { n.coordinate.x = m.newX; n.coordinate.y = m.newY; }
+        });
+      },
+    });
+    scheduleAutoSave();
+  }
+
   function updateNodePosition(id, x, y) {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.coordinate.x = x;
       node.coordinate.y = y;
+      scheduleAutoSave();
+    }
+  }
+
+  // 切换节点锁定（锁定后不可拖拽/微调）
+  function toggleNodeLock(id) {
+    const node = nodes.value.find(n => n.id === id);
+    if (node) {
+      node.locked = !node.locked;
       scheduleAutoSave();
     }
   }
@@ -577,7 +912,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function addNode(node) {
     const newNode = { ...node, tags: Array.isArray(node.tags) ? [...node.tags] : [] };
-    nodes.value.push(newNode);
+    // execute() 的 redo 完成首次写入（避免双写）
     execute({
       type: 'add-node',
       label: '添加节点',
@@ -680,7 +1015,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
     const id = `hyperlane_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const hyperlane = { id, fromId, toId, type, controlPoints: [] };
-    hyperlanes.value.push(hyperlane);
+    // execute() 的 redo 完成首次写入（避免双写）
     execute({
       type: 'add-hyperlane',
       label: '添加航道',
@@ -843,7 +1178,12 @@ export const useGeodataStore = defineStore('geodata', () => {
       handleNodeUpdated, handleNodeRemoved,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
-      beginNodePositionCapture, endNodePositionCapture,
+      beginNodePositionCapture, endNodePositionCapture, toggleNodeLock,
       addRegion, removeRegion, updateRegion,
+      addRoute, removeRoute, updateRoute,
+      addTextLabel, removeTextLabel, updateTextLabel,
+      addMarker, removeMarker, updateMarker,
+      addCluster, removeCluster, updateCluster, moveClusterMembers,
+      updateReferenceImage, clearReferenceImage,
     };
 });

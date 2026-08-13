@@ -18,6 +18,12 @@
           />
           <span class="layer-label">{{ layer.label }}</span>
         </label>
+        <button
+          class="lock-btn"
+          :class="{ locked: layer.locked }"
+          :title="layer.locked ? '解锁图层' : '锁定图层（不可编辑）'"
+          @click="layers.toggleLayerLock(currentView, layer.id)"
+        >{{ layer.locked ? '🔒' : '🔓' }}</button>
       </div>
     </div>
   </div>
@@ -107,6 +113,25 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
 .layer-row {
   display: flex;
   align-items: center;
+}
+
+.lock-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px;
+  opacity: 0.5;
+  color: #8b949e;
+  line-height: 1;
+}
+
+.lock-btn:hover {
+  opacity: 1;
+}
+
+.lock-btn.locked {
+  opacity: 1;
 }
 
 .layer-toggle {

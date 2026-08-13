@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   getMapData: (planetId) => ipcRenderer.invoke('get-map-data', planetId),
   saveMapData: (planetId, data) => ipcRenderer.invoke('save-map-data', planetId, data),
 
+  // 参考图底图（文件选择 + base64 读取）
+  selectReferenceImage: () => ipcRenderer.invoke('select-reference-image'),
+
+  // 导出文件（保存对话框 + 写入）
+  saveExportFile: (options) => ipcRenderer.invoke('save-export-file', options),
+
   // Obsidian 笔记读取
   readObsidianNote: (sourcePath) => ipcRenderer.invoke('read-obsidian-note', sourcePath),
 

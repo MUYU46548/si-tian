@@ -204,7 +204,10 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     const mode = isSpacebarDown?.value ? 'pan' : (interactionMode?.value || 'draw');
     
     // 绘制模式：按住拖动绘制
-    if ((mode === 'draw' || mode === 'region') && drawMode && drawMode.value) {
+    // 仅当调用方未提供自定义 onDragStart 管线时启用内置绘制（PlanetMap 自带
+    // onDragStart/onDragMove/onDragEnd 完整管线，若此处拦截会短路其 isDrawingActive，
+    // 且松手时只调 onDrawComplete 而 PlanetMap 未传 → 地形静默丢失）
+    if ((mode === 'draw' || mode === 'region') && drawMode && drawMode.value && !onDragStart) {
       isDrawing = true;
       currentPath.value = [screenToWorld(mx, my)];
       return;
@@ -220,8 +223,20 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       return;
     }
     
-    // 拖手模式：直接平移画布（跳过 onDragStart 命中测试）
+    // 拖手模式：先尝试顶点拖拽（选中多边形/区域/路线时点击顶点），否则平移画布
+    // panTry=true 表示仅做顶点检测（pan 模式试顶点），组件应避免其他副作用
     if (mode === 'pan') {
+      const world = screenToWorld(mx, my);
+      if (onDragStart) {
+        const result = onDragStart(world.x, world.y, e.button, e.shiftKey, e.ctrlKey, true);
+        if (result && typeof result === 'object' && result.mode === 'vertex') {
+          isDraggingVertex = true;
+          draggingVertexInfo = result.vertexInfo;
+          vertexDragStart = { x: world.x, y: world.y };
+          panSuppressed = true;
+          return;
+        }
+      }
       isPanning = true;
       return;
     }
@@ -403,10 +418,8 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     if (onDblClick) {
       const rect = canvasRef.value.getBoundingClientRect();
       const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      const hit = onHitTest(world.x, world.y);
-      if (hit) {
-        onDblClick(hit, world.x, world.y);
-      }
+      const hit = onHitTest ? onHitTest(world.x, world.y) : null;
+      onDblClick(hit, world.x, world.y);
     }
   }
 

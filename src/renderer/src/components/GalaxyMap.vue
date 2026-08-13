@@ -277,10 +277,25 @@ function applyStableLayout() {
       const dist = 100 + (idx % 4) * 60;
       // 用户手动放置过的坐标优先保留，避免布局重算重置拖拽
       const savedCoord = galaxy.userMoved && galaxy.coordinate?.x !== null && galaxy.coordinate?.x !== undefined;
+      let gx, gy;
+      if (savedCoord) {
+        // 校验：坐标必须落在该星域边界圆内，否则视为旧布局残留坐标（未随 domain 迁移），回落算法位置
+        const distToDomain = Math.hypot(galaxy.coordinate.x - parentDomain.x, galaxy.coordinate.y - parentDomain.y);
+        if (distToDomain <= parentDomain.radius) {
+          gx = galaxy.coordinate.x;
+          gy = galaxy.coordinate.y;
+        } else {
+          gx = parentDomain.x + Math.cos(angle) * dist;
+          gy = parentDomain.y + Math.sin(angle) * dist;
+        }
+      } else {
+        gx = parentDomain.x + Math.cos(angle) * dist;
+        gy = parentDomain.y + Math.sin(angle) * dist;
+      }
       galaxyNodes.value.push({
         ...galaxy,
-        x: savedCoord ? galaxy.coordinate.x : parentDomain.x + Math.cos(angle) * dist,
-        y: savedCoord ? galaxy.coordinate.y : parentDomain.y + Math.sin(angle) * dist,
+        x: gx,
+        y: gy,
         domainId: galaxy.parentId,
         factionColor: parentDomain.factionColor
       });
@@ -1022,8 +1037,11 @@ const renderer = useCanvasRenderer(canvas, {
       hoveredBoundaryVertex.value = null;
     }
   },
-  onDragStart: (wx, wy, button, shiftKey, ctrlKey) => {
+  onDragStart: (wx, wy, button, shiftKey, ctrlKey, panTry) => {
     if (button !== 0) return true;
+    
+    // panTry=true：pan 模式的顶点试探，本组件无顶点拖拽，直接允许平移
+    if (panTry) return true;
     
     // 控制点拖拽（最高优先级）
     if (editMode.value) {
@@ -1058,6 +1076,11 @@ const renderer = useCanvasRenderer(canvas, {
         boxSelectEnd = { x: wx, y: wy };
         return false;
       }
+      return true;
+    }
+    
+    // 锁定节点不可拖拽（仍可选中）
+    if ((hit.type === 'galaxy' || hit.type === 'domain') && hit.node.locked) {
       return true;
     }
     

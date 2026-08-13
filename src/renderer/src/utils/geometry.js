@@ -186,3 +186,66 @@ export function perpendicularDistance(point, lineStart, lineEnd) {
   const projY = lineStart.y + t * dy;
   return Math.hypot(point.x - projX, point.y - projY);
 }
+
+/**
+ * 凸包（Andrew's monotone chain）
+ * @param {Array} points - [{x, y}, ...]
+ * @returns {Array} 凸包顶点（逆时针顺序）
+ */
+export function convexHull(points) {
+  if (!points || points.length < 3) return points ? [...points] : [];
+  
+  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+  
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+  
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+/**
+ * 多边形中心（顶点平均）
+ */
+export function polygonCenter(points) {
+  if (!points || points.length === 0) return { x: 0, y: 0 };
+  let x = 0, y = 0;
+  for (const p of points) { x += p.x; y += p.y; }
+  return { x: x / points.length, y: y / points.length };
+}
+
+/**
+ * 沿中心向外扩展多边形
+ * @param {Array} points - 多边形顶点
+ * @param {number} distance - 外扩距离
+ * @returns {Array} 外扩后的顶点
+ */
+export function expandPolygon(points, distance) {
+  if (!points || points.length === 0) return [];
+  const center = polygonCenter(points);
+  return points.map(p => {
+    const dx = p.x - center.x;
+    const dy = p.y - center.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    return {
+      x: p.x + (dx / dist) * distance,
+      y: p.y + (dy / dist) * distance,
+    };
+  });
+}

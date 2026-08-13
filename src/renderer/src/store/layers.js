@@ -24,9 +24,13 @@ export const useLayersStore = defineStore('layers', () => {
     planet: {
       terrain: { visible: true, label: '地形', order: 0 },
       regions: { visible: true, label: '区域', order: 1 },
-      markers: { visible: true, label: '标记', order: 2 },
-      places: { visible: true, label: '地点', order: 3 },
-      editHelpers: { visible: true, label: '编辑辅助', order: 4 },
+      routes: { visible: true, label: '路线', order: 2 },
+      markers: { visible: true, label: '标记', order: 3 },
+      places: { visible: true, label: '地点', order: 4 },
+      clusters: { visible: true, label: '地点簇', order: 5 },
+      textLabels: { visible: true, label: '文本', order: 6 },
+      referenceImage: { visible: true, label: '参考底图', order: 7 },
+      editHelpers: { visible: true, label: '编辑辅助', order: 8 },
     },
   });
 
@@ -77,6 +81,26 @@ export const useLayersStore = defineStore('layers', () => {
     return layers.value[view]?.[layerId]?.visible ?? false;
   }
 
+  // 检查图层是否锁定
+  function isLocked(view, layerId) {
+    return layers.value[view]?.[layerId]?.locked ?? false;
+  }
+
+  // 切换图层锁定
+  function toggleLayerLock(view, layerId) {
+    const v = layers.value[view];
+    if (v && v[layerId]) {
+      v[layerId].locked = !v[layerId].locked;
+    }
+  }
+
+  // 检查图层是否可交互（可见且未锁定）
+  function isEditable(view, layerId) {
+    const cfg = layers.value[view]?.[layerId];
+    if (!cfg) return false;
+    return cfg.visible && !cfg.locked;
+  }
+
   // 获取视图的图层列表（按 order 排序）
   function getViewLayers(view) {
     const v = layers.value[view];
@@ -102,6 +126,9 @@ export const useLayersStore = defineStore('layers', () => {
     shareAcrossViews,
     toggleLayer,
     isVisible,
+    isLocked,
+    toggleLayerLock,
+    isEditable,
     getViewLayers,
     togglePanel,
     toggleShareAcrossViews,

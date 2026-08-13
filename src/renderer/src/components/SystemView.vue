@@ -325,11 +325,19 @@ const renderer = useCanvasRenderer(canvas, {
       targetNode = (h && h.type === 'star' && h.node.id !== dragSourceNode.id) ? h.node : null;
     }
   },
-  onDragStart: (wx, wy, button) => {
+  onDragStart: (wx, wy, button, shiftKey, ctrlKey, panTry) => {
     if (button !== 0) return true;
+    
+    // panTry=true：pan 模式的顶点试探，本组件无顶点拖拽，直接允许平移
+    if (panTry) return true;
     
     const hit = hitTest(wx, wy);
     if (!hit) return true;
+    
+    // 锁定节点不可拖拽（仍可选中）
+    if ((hit.type === 'star' || hit.type === 'planet') && hit.node.locked) {
+      return true;
+    }
     
     if (editMode) {
       if (hit.type === 'star') {
@@ -392,7 +400,7 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onClick: (hit) => {
-    if (hit.node) {
+    if (hit?.node) {
       emit('select-node', hit.node);
     }
   },

@@ -198,3 +198,66 @@ ipcMain.handle('clear-coordinate-cache', async () => {
     return { success: false, error: err.message };
   }
 });
+
+// IPC: 选择参考图并读取为 base64 dataURL
+ipcMain.handle('select-reference-image', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择参考底图（手绘草图 / 大陆轮廓）',
+      properties: ['openFile'],
+      filters: [
+        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    
+    const filePath = result.filePaths[0];
+    const ext = path.extname(filePath).toLowerCase().replace('.', '') || 'png';
+    const mimeMap = {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      bmp: 'image/bmp',
+    };
+    const mime = mimeMap[ext] || 'image/png';
+    
+    // 限制大小（10MB），避免 base64 撑爆 mapdata.json
+    const stat = await fs.stat(filePath);
+    if (stat.size > 10 * 1024 * 1024) {
+      return { success: false, error: '图片超过 10MB 限制，请压缩后再导入' };
+    }
+    
+    const buffer = await fs.readFile(filePath);
+    const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
+    return { success: true, dataUrl, fileName: path.basename(filePath) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: 弹出保存对话框并写入 PNG 文件（导出）
+ipcMain.handle('save-export-file', async (event, { dataUrl, defaultName }) => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出图片',
+      defaultPath: path.join(app.getPath('pictures'), defaultName || 'sitian-export.png'),
+      filters: [
+        { name: 'PNG 图片', extensions: ['png'] },
+      ],
+    });
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+    
+    const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64, 'base64');
+    await fs.writeFile(result.filePath, buffer);
+    return { success: true, path: result.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});

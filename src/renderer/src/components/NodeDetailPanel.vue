@@ -190,6 +190,9 @@
         <button class="action-btn" @click="revealInExplorer">
           <span class="btn-icon">📁</span> 在文件夹中显示
         </button>
+        <button class="action-btn" @click="toggleLock" :title="isLocked ? '解除锁定（可拖拽/微调）' : '锁定位置（防误拖）'">
+          <span class="btn-icon">{{ isLocked ? '🔓' : '🔒' }}</span> {{ isLocked ? '解除锁定' : '锁定位置' }}
+        </button>
         <button class="action-btn danger" @click="removeFromMap" title="从地图移除该节点及其关联航道（可撤销）">
           <span class="btn-icon">🗑</span> 从地图移除
         </button>
@@ -421,6 +424,14 @@ async function revealInExplorer() {
   const vaultPath = 'E:/图书馆/ROSA';
   const fullPath = `${vaultPath}/${node.value.sourcePath}`;
   await window.sitianAPI.revealInExplorer(fullPath);
+}
+
+// 锁定/解锁节点位置
+const isLocked = computed(() => !!node.value?.locked);
+
+function toggleLock() {
+  if (!node.value) return;
+  store.toggleNodeLock(node.value.id);
 }
 
 // 从地图移除节点（仅移除 JSON 缓存，不删除 Obsidian 文件）
