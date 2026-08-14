@@ -1189,7 +1189,7 @@ const renderer = useCanvasRenderer(canvas, {
         if (selectedNodeIds.value.has(hit.node.id) && selectedNodeIds.value.size > 1) {
           isDraggingMultiple = true;
           dragMultipleStart = { x: wx, y: wy };
-          store.beginNodePositionCapture(hit.node.id);
+          store.beginMultiNodePositionCapture([...selectedNodeIds.value]);
           return false;
         }
         
@@ -1283,7 +1283,7 @@ const renderer = useCanvasRenderer(canvas, {
     
     if (isDraggingMultiple) {
       isDraggingMultiple = false;
-      store.endNodePositionCapture();
+      store.endMultiNodePositionCapture();
       emit('dirty', true);
       return;
     }
@@ -1419,6 +1419,26 @@ function onNodeRemovedFromMap(e) {
   }
 }
 
+// ===== 键盘删除选中节点（Delete 键，多选时批量删除） =====
+function handleGlobalKeydown(e) {
+  if (e.target.closest('input, textarea, select')) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.value.size > 0) {
+    e.preventDefault();
+    const ids = [...selectedNodeIds.value];
+    const msg = ids.length === 1
+      ? `确定从地图移除该节点吗？（可撤销）`
+      : `确定从地图移除选中的 ${ids.length} 个节点吗？（可撤销）`;
+    if (!confirm(msg)) return;
+    ids.forEach(id => {
+      store.removeNode(id);
+      galaxyNodes.value = galaxyNodes.value.filter(g => g.id !== id);
+    });
+    selectedNodeIds.value.clear();
+    emit('dirty', true);
+    renderer.requestRender();
+  }
+}
+
 // ===== 生命周期 =====
 onMounted(() => {
   renderer.initCanvas();
@@ -1426,12 +1446,14 @@ onMounted(() => {
   renderer.requestRender();
   window.addEventListener('sitian:focus-node', onFocusNode);
   window.addEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
+  window.addEventListener('keydown', handleGlobalKeydown);
 });
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('sitian:focus-node', onFocusNode);
   window.removeEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
+  window.removeEventListener('keydown', handleGlobalKeydown);
 });
 
 watch(() => [props.galaxies, props.domains], () => {

@@ -16,17 +16,17 @@
             v-if="store.currentWorld" 
             :class="{ active: store.viewLevel === 'domain' }"
             @click="store.backToDomain()"
-          >{{ store.currentWorld?.name }}</button>
+          >{{ store.currentWorld?.displayName || store.currentWorld?.name }}</button>
           <span v-if="store.currentDomain && store.viewLevel === 'system'" class="separator">›</span>
           <button 
             v-if="store.currentDomain && store.viewLevel === 'system'"
             class="active"
-          >{{ store.currentDomain?.name }}</button>
+          >{{ store.currentDomain?.displayName || store.currentDomain?.name }}</button>
           <span v-if="store.currentPlanet" class="separator">›</span>
           <button 
             v-if="store.currentPlanet" 
             class="active"
-          >{{ store.currentPlanet?.name }}</button>
+          >{{ store.currentPlanet?.displayName || store.currentPlanet?.name }}</button>
         </nav>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
@@ -303,10 +303,10 @@ async function handleExportFullPNG() {
   
   if (xs.length === 0 || ys.length === 0) return;
   
-  const minX = Math.min(...xs) - 100;
-  const minY = Math.min(...ys) - 100;
-  const maxX = Math.max(...xs) + 100;
-  const maxY = Math.max(...ys) + 100;
+  const minX = Math.min(...xs) - 150;
+  const minY = Math.min(...ys) - 150;
+  const maxX = Math.max(...xs) + 150;
+  const maxY = Math.max(...ys) + 150;
   const width = maxX - minX;
   const height = maxY - minY;
   
@@ -320,39 +320,150 @@ async function handleExportFullPNG() {
   
   // 背景色跟随当前主题
   const isDark = currentTheme.value !== 'light';
-  ctx.fillStyle = isDark ? '#0d1117' : '#ffffff';
+  const textColor = isDark ? '#e8edf6' : '#1f2328';
+  
+  // 1. 背景渐变（暗色：深蓝灰径向；亮色：浅灰线性）
+  if (isDark) {
+    const bg = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(width, height) * 0.72);
+    bg.addColorStop(0, '#151b2e');
+    bg.addColorStop(0.5, '#0f1424');
+    bg.addColorStop(1, '#0a0e1a');
+    ctx.fillStyle = bg;
+  } else {
+    const bg = ctx.createLinearGradient(0, minY, 0, maxY);
+    bg.addColorStop(0, '#f8fafc');
+    bg.addColorStop(1, '#eef2f7');
+    ctx.fillStyle = bg;
+  }
   ctx.fillRect(minX, minY, width, height);
   
-  // 航道
+  // 2. 星云 + 星尘（仅暗色主题，保证导出图有太空氛围）
+  if (isDark) {
+    const nebulae = [
+      { x: minX + width * 0.3, y: minY + height * 0.4, r: width * 0.25, color: 'rgba(70, 100, 190, 0.07)' },
+      { x: minX + width * 0.7, y: minY + height * 0.6, r: width * 0.2, color: 'rgba(140, 70, 170, 0.06)' },
+    ];
+    for (const neb of nebulae) {
+      const g = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
+      g.addColorStop(0, neb.color);
+      g.addColorStop(0.6, neb.color.replace('0.', '0.0'));
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.fillRect(neb.x - neb.r, neb.y - neb.r, neb.r * 2, neb.r * 2);
+    }
+    ctx.fillStyle = 'rgba(220, 230, 245, 0.12)';
+    for (let i = 0; i < 300; i++) {
+      const x = minX + ((i * 97 + 23) % Math.floor(width));
+      const y = minY + ((i * 61 + 41) % Math.floor(height));
+      ctx.beginPath();
+      ctx.arc(x, y, (i % 3) * 0.4 + 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  
+  // 3. 势力边界（星域分组 → 星系凸包 → 半透明染色 + 边界线 + 星域名标签）
+  const domainGalaxyMap = new Map();
+  nodes.filter(n => n.layer === 'galaxy').forEach(g => {
+    if (g.coordinate?.x === null || g.coordinate?.x === undefined) return;
+    if (!domainGalaxyMap.has(g.parentId)) domainGalaxyMap.set(g.parentId, []);
+    domainGalaxyMap.get(g.parentId).push(g);
+  });
+  for (const [domainId, galaxies] of domainGalaxyMap) {
+    const domain = nodeMap.get(domainId);
+    if (!domain || galaxies.length < 3) continue;
+    const pts = galaxies.map(g => ({ x: g.coordinate.x, y: g.coordinate.y })).filter(p => p.x !== null && p.y !== null);
+    if (pts.length < 3) continue;
+    const hull = convexHullForExport(pts);
+    if (hull.length < 3) continue;
+    const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
+    const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
+    const expanded = hull.map(p => {
+      const dx = p.x - cx, dy = p.y - cy;
+      const dist = Math.hypot(dx, dy) || 1;
+      return { x: p.x + (dx / dist) * 25, y: p.y + (dy / dist) * 25 };
+    });
+    const color = getDomainColorForExport(domain.displayName || domain.name);
+    ctx.beginPath();
+    ctx.moveTo(expanded[0].x, expanded[0].y);
+    for (let i = 1; i < expanded.length; i++) ctx.lineTo(expanded[i].x, expanded[i].y);
+    ctx.closePath();
+    ctx.fillStyle = color.replace('hsl(', 'hsla(').replace(')', isDark ? ', 0.15)' : ', 0.10)');
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    // 星域名标签（带衬底，保证可读）
+    const label = domain.displayName || domain.name;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const m = ctx.measureText(label);
+    ctx.fillStyle = isDark ? 'rgba(10, 14, 26, 0.72)' : 'rgba(255, 255, 255, 0.8)';
+    ctx.beginPath();
+    ctx.roundRect(cx - m.width / 2 - 8, cy - 12, m.width + 16, 24, 5);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.fillText(label, cx, cy + 1);
+  }
+  
+  // 4. 航道（分类型颜色 + 辉光，跨域虚线）
   hyperlanes.forEach(h => {
     const from = nodeMap.get(h.fromId);
     const to = nodeMap.get(h.toId);
-    if (!from || !to) return;
-    ctx.strokeStyle = h.type === 'cross_domain' ? 'rgba(150, 100, 255, 0.5)' : 'rgba(100, 200, 255, 0.5)';
-    ctx.lineWidth = 2;
+    if (!from || !to || from.coordinate?.x === null || to.coordinate?.x === null) return;
+    const color = h.type === 'cross_domain'
+      ? (isDark ? 'rgba(190, 130, 255, 0.75)' : 'rgba(110, 70, 200, 0.55)')
+      : h.type === 'hyperjump'
+        ? (isDark ? 'rgba(255, 120, 120, 0.7)' : 'rgba(200, 70, 70, 0.5)')
+        : (isDark ? 'rgba(120, 210, 255, 0.6)' : 'rgba(60, 140, 200, 0.5)');
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = h.type === 'cross_domain' ? 2.5 : 2;
+    if (h.type === 'cross_domain') ctx.setLineDash([8, 5]);
     ctx.beginPath();
     ctx.moveTo(from.coordinate.x, from.coordinate.y);
     ctx.lineTo(to.coordinate.x, to.coordinate.y);
     ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   });
   
-  // 节点
-  const textColor = isDark ? '#e2e8f0' : '#1f2328';
+  // 5. 节点 + 光晕 + 亮核 + 带衬底名称标签（导出可读性核心）
   nodes.forEach(n => {
+    if (n.coordinate?.x === null || n.coordinate?.x === undefined) return;
     const color = getNodeColor(n.layer);
+    const r = n.layer === 'world' ? 10 : n.layer === 'star_domain' ? 9 : n.layer === 'galaxy' ? 7 : 5;
     ctx.fillStyle = color;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 10;
     ctx.beginPath();
-    ctx.arc(n.coordinate.x, n.coordinate.y, 6, 0, Math.PI * 2);
+    ctx.arc(n.coordinate.x, n.coordinate.y, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(n.coordinate.x - 1, n.coordinate.y - 1, r * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
     
-    // 名称
+    const label = n.displayName || n.name;
+    ctx.font = (n.layer === 'world' || n.layer === 'star_domain' ? 'bold ' : '') + '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const m = ctx.measureText(label);
+    const pad = 4;
+    ctx.fillStyle = isDark ? 'rgba(8, 12, 22, 0.65)' : 'rgba(255, 255, 255, 0.75)';
+    ctx.beginPath();
+    ctx.roundRect(n.coordinate.x + r + 4, n.coordinate.y - 7, m.width + pad * 2, 14, 3);
+    ctx.fill();
     ctx.fillStyle = textColor;
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillText(n.name, n.coordinate.x + 10, n.coordinate.y + 4);
+    ctx.fillText(label, n.coordinate.x + r + 4 + pad, n.coordinate.y + 1);
   });
   
   tmpCanvas.toBlob(blob => {
@@ -374,6 +485,35 @@ function getNodeColor(layer) {
     planet: '#5cb85c', city: '#f0ad4e', town: '#d9853b', location: '#888',
   };
   return colors[layer] || '#888';
+}
+
+// ===== 全图导出辅助（Stellaris 风格） =====
+
+function convexHullForExport(points) {
+  if (points.length < 3) return points;
+  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+function getDomainColorForExport(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 62%, 58%)`;
 }
 
 // ===== 导入/导出地图配置 =====

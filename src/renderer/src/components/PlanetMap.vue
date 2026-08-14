@@ -24,8 +24,15 @@
       </div>
     </div>
     
-    <!-- 编辑工具栏 -->
-    <div v-if="editMode" class="edit-toolbar">
+    <!-- 编辑工具栏（可收起，腾出地图空间） -->
+    <div v-if="editMode" class="edit-toolbar-wrap">
+      <button
+        v-if="toolbarCollapsed"
+        class="toolbar-toggle"
+        @click="toolbarCollapsed = false"
+        title="展开编辑工具栏"
+      >🧰 编辑工具 ▾</button>
+      <div v-else class="edit-toolbar">
       <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚 拖手</button>
       <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象：点击选中地点/标记/文本/区域，拖动移动；空白处拖动画布">✥ 移动</button>
       <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️ 绘制</button>
@@ -98,6 +105,9 @@
       <button class="separator-btn" disabled></button>
       <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图：导入手绘草图/大陆轮廓描摹">🖼 参考图</button>
       <button @click="exportFullMapPNG" title="导出全图高清 PNG（含全部省份/区域/路线/标记/文本）">📤 导出全图</button>
+      <button class="separator-btn" disabled></button>
+      <button class="toolbar-close" @click="toolbarCollapsed = true" title="收起工具栏，腾出地图空间">✕ 收起</button>
+      </div>
     </div>
     
     <!-- 非编辑模式的导出按钮 -->
@@ -591,6 +601,8 @@ const REGION_COLORS = ['#FF6B6B', '#FFA500', '#FFD700', '#32CD32', '#4169E1', '#
 
 // ===== 交互模式 =====
 const interactionMode = ref('pan');
+// 编辑工具栏折叠（常态收起腾出地图空间，点胶囊呼出）
+const toolbarCollapsed = ref(true);
 // 移动工具拖拽状态（marker/textLabel/region 走"本地改+松手一次提交"，避免 undo 栈爆炸）
 const dragObject = ref(null);
 const dragRegionAnchor = ref(null);
@@ -2502,7 +2514,7 @@ const renderer = useCanvasRenderer(canvas, {
       if (selectedPlaceIds.value.has(hit.node.id) && selectedPlaceIds.value.size > 1) {
         isDraggingPlaces.value = true;
         placesDragStart.value = { x: wx, y: wy };
-        selectedPlaceIds.value.forEach(id => store.beginNodePositionCapture(id));
+        store.beginMultiNodePositionCapture([...selectedPlaceIds.value]);
         return false;
       }
       // 单选：清空多选并启动单地点拖拽
@@ -2671,11 +2683,12 @@ const renderer = useCanvasRenderer(canvas, {
       selectedPlaceIds.value = selected;
       renderer.requestRender();
     }
-    // 批量拖拽结束：结束节点坐标捕获（入 undo）
+    // 批量拖拽结束：结束节点坐标捕获（一次拖动 = 一个 undo 步骤）
     if (isDraggingPlaces.value) {
       isDraggingPlaces.value = false;
       placesDragStart.value = null;
-      selectedPlaceIds.value.forEach(id => store.endNodePositionCapture(id));
+      if (selectedPlaceIds.value.size > 1) store.endMultiNodePositionCapture();
+      else selectedPlaceIds.value.forEach(id => store.endNodePositionCapture(id));
       emit('dirty', true);
     }
     // 地形笔刷结束：将笔画落点合并为一个地形多边形
@@ -3722,12 +3735,34 @@ watch(() => store.mapData[props.planet?.id], () => {
   opacity: 1;
 }
 
+.edit-toolbar-wrap {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  background: rgba(255,255,255,0.8);
+  border-bottom: 1px solid var(--planet-header-border);
+}
+
+.toolbar-toggle {
+  padding: 6px 16px;
+  border: 1px dashed var(--planet-btn-border);
+  border-radius: 6px;
+  background: var(--planet-btn-bg);
+  color: var(--planet-text);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.toolbar-toggle:hover { background: var(--planet-btn-hover); }
+
+.toolbar-close {
+  color: var(--planet-text) !important;
+  border-color: var(--planet-btn-border) !important;
+}
+
 .edit-toolbar {
   display: flex;
   gap: 4px;
-  padding: 8px 20px;
-  background: rgba(255,255,255,0.8);
-  border-bottom: 1px solid var(--planet-header-border);
   flex-wrap: wrap;
 }
 

@@ -896,6 +896,50 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSave();
   }
 
+  // ===== 多节点拖拽撤销支持（多选批量移动：一次拖动 = 一个 undo 步骤） =====
+  let dragStartMap = null;
+
+  function beginMultiNodePositionCapture(ids) {
+    dragStartMap = new Map();
+    for (const id of ids) {
+      const node = nodes.value.find(n => n.id === id);
+      if (node && node.coordinate && node.coordinate.x !== null && node.coordinate.y !== null) {
+        dragStartMap.set(id, { x: node.coordinate.x, y: node.coordinate.y });
+      }
+    }
+  }
+
+  function endMultiNodePositionCapture() {
+    if (!dragStartMap || dragStartMap.size === 0) return;
+    const startMap = dragStartMap;
+    const endMap = new Map();
+    for (const id of startMap.keys()) {
+      const node = nodes.value.find(n => n.id === id);
+      if (node && node.coordinate) {
+        endMap.set(id, { x: node.coordinate.x, y: node.coordinate.y });
+        node.userMoved = true;
+      }
+    }
+    execute({
+      type: 'move-nodes',
+      label: `移动 ${startMap.size} 个节点`,
+      undo: () => {
+        for (const [id, coord] of startMap) {
+          const n = nodes.value.find(nn => nn.id === id);
+          if (n && n.coordinate) { n.coordinate.x = coord.x; n.coordinate.y = coord.y; }
+        }
+      },
+      redo: () => {
+        for (const [id, coord] of endMap) {
+          const n = nodes.value.find(nn => nn.id === id);
+          if (n && n.coordinate) { n.coordinate.x = coord.x; n.coordinate.y = coord.y; }
+        }
+      },
+    });
+    dragStartMap = null;
+    scheduleAutoSave();
+  }
+
   function updateAllCoordinates(updatedNodes) {
     updatedNodes.forEach(updated => {
       const node = nodes.value.find(n => n.id === updated.id);
@@ -1178,7 +1222,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       handleNodeUpdated, handleNodeRemoved,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
-      beginNodePositionCapture, endNodePositionCapture, toggleNodeLock,
+      beginNodePositionCapture, endNodePositionCapture, beginMultiNodePositionCapture, endMultiNodePositionCapture, toggleNodeLock,
       addRegion, removeRegion, updateRegion,
       addRoute, removeRoute, updateRoute,
       addTextLabel, removeTextLabel, updateTextLabel,
