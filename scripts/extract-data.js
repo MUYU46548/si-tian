@@ -8,6 +8,7 @@ const LOCATIONS_PATH = path.join(VAULT_PATH, '03 设定', '02 场景地点');
 const INDEX_PATH = path.join(VAULT_PATH, '01 索引', '地理系统索引.md');
 
 const LAYER_KEYWORDS = {
+  '世界': 'world',
   '星系': 'galaxy',
   '星域': 'star_domain',
   '行星': 'planet',
@@ -16,6 +17,9 @@ const LAYER_KEYWORDS = {
   '区域': 'region',
   '城镇': 'town',
   '城市': 'city',
+  '村庄': 'village',
+  '设施': 'facility',
+  '地点': 'location',
 };
 
 const LAYER_LABELS = {
@@ -59,7 +63,12 @@ function scanGeoSystem() {
         let parentId = null;
         if (parentLink && parentLink !== '无') parentId = normalizeId(parentLink.replace(/\[\[|\]\]/g, '').trim());
         const tags = Array.isArray(parsed.frontmatter['tags']) ? parsed.frontmatter['tags'] : [];
-        nodes.push({ id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer, parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks, coordinate: { x: null, y: null } });
+        nodes.push({
+          id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer,
+          parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
+          placeType: parsed.frontmatter['地点类型'] || null,
+          coordinate: { x: null, y: null },
+        });
       }
     }
   }
@@ -84,8 +93,15 @@ function scanLocations() {
       let parentId = null;
       if (parentLink && parentLink !== '无') parentId = normalizeId(parentLink.replace(/\[\[|\]\]/g, '').trim());
       const tags = Array.isArray(parsed.frontmatter['tags']) ? parsed.frontmatter['tags'] : [];
-      const layer = detectLocationLayer(parsed.frontmatter, parsed.content, parsed.fileName);
-      nodes.push({ id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer, parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks, coordinate: { x: null, y: null } });
+      // frontmatter `层级` 字段为权威来源（中文，如 设施/地点/城市），缺失时回退启发式
+      const explicitLayer = parsed.frontmatter['层级'] ? LAYER_KEYWORDS[parsed.frontmatter['层级']] : null;
+      const layer = explicitLayer || detectLocationLayer(parsed.frontmatter, parsed.content, parsed.fileName);
+      nodes.push({
+        id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer,
+        parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
+        placeType: parsed.frontmatter['地点类型'] || null,
+        coordinate: { x: null, y: null },
+      });
     }
   }
   scanDir(LOCATIONS_PATH);
@@ -447,6 +463,32 @@ function generateAutoHyperlanes(nodes) {
   return hyperlanes;
 }
 
+/**
+ * 保留司天中用户创建的节点（sourcePath 为空的节点不在 Markdown 中，
+ * 重新提取时若不合并会被静默丢弃 —— 数据丢失）
+ */
+function mergeUserCreatedNodes(allNodes, cachePath) {
+  if (!fs.existsSync(cachePath)) return allNodes;
+  try {
+    const old = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+    const oldNodes = old.nodes || [];
+    const existingIds = new Set(allNodes.map(n => n.id));
+    const userCreated = oldNodes.filter(n => !n.sourcePath);
+    let added = 0;
+    for (const n of userCreated) {
+      if (!existingIds.has(n.id)) {
+        allNodes.push(n);
+        existingIds.add(n.id);
+        added++;
+      }
+    }
+    if (added > 0) console.log(`保留司天用户创建节点: ${added} 个（${userCreated.map(n => n.name).join('、')}）`);
+  } catch (e) {
+    console.warn('[提取] 读取旧缓存失败，跳过用户节点保留:', e.message);
+  }
+  return allNodes;
+}
+
 async function extractGeodata(vaultPath = VAULT_PATH) {
   console.log('开始提取地理数据...');
   
@@ -461,6 +503,9 @@ async function extractGeodata(vaultPath = VAULT_PATH) {
   
   let allNodes = mergeNodes(geoNodes, locationNodes, worlds, galaxies);
   console.log(`合并后总数: ${allNodes.length}`);
+  
+  // 保留司天用户创建的节点（sourcePath 为空），避免重新提取时丢失
+  allNodes = mergeUserCreatedNodes(allNodes, path.join(vaultPath, '.sitian', 'geodata.json'));
   
   // 从地点 tags 提取区域节点（两城流域等），合并进节点列表
   const regionNodes = extractRegions(allNodes);

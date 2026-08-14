@@ -1,12 +1,13 @@
 <template>
-  <div class="object-panel" :class="{ open: open }">
+  <div v-if="open" class="object-panel">
     <div class="panel-header">
       <h3>对象列表</h3>
       <div class="header-actions">
+        <button class="fold-btn" @click="collapsed = !collapsed" :title="collapsed ? '展开面板' : '折叠面板'">{{ collapsed ? '▸' : '▾' }}</button>
         <button class="close-btn" @click="$emit('close')" title="关闭面板">×</button>
       </div>
     </div>
-    <div v-if="open" class="panel-body">
+    <div v-if="!collapsed" class="panel-body">
       <div class="tab-bar">
         <button
           v-for="t in tabs"
@@ -159,6 +160,8 @@ const tabs = [
 ];
 
 const tab = ref('terrain');
+// 面板内部折叠（与 open 独立：open=false 时面板整体隐藏，collapsed=true 时仅收起 body 保留 header）
+const collapsed = ref(false);
 
 const mapData = computed(() => (props.planet ? store.mapData[props.planet.id] : null));
 
@@ -236,6 +239,8 @@ function commitRename() {
   padding: 8px 12px;
   border-bottom: 1px solid #30363d;
   background: #0d1117;
+  cursor: move;
+  user-select: none;
 }
 
 .panel-header h3 {
@@ -261,6 +266,23 @@ function commitRename() {
   font-size: 16px;
   padding: 0 4px;
   line-height: 1;
+}
+
+.fold-btn {
+  background: none;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.fold-btn:hover {
+  color: #f0f6fc;
+  background: #21262d;
 }
 
 .close-btn:hover {

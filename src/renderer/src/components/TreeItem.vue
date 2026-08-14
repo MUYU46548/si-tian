@@ -11,7 +11,7 @@
       </span>
       <span v-else class="expand-placeholder"></span>
       <span class="node-icon" :class="node.layer"></span>
-      <span class="node-name">{{ node.name }}</span>
+      <span class="node-name">{{ node.displayName || node.name }}</span>
     </div>
     <div v-if="isExpanded && node.children" class="tree-children">
       <tree-item

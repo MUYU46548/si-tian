@@ -27,13 +27,14 @@
     <!-- 编辑工具栏 -->
     <div v-if="editMode" class="edit-toolbar">
       <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚 拖手</button>
+      <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象：点击选中地点/标记/文本/区域，拖动移动；空白处拖动画布">✥ 移动</button>
       <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️ 绘制</button>
       <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域">🗺️ 区域</button>
       <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记">📍 标记</button>
       <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️ 路线</button>
       <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤 文本</button>
-      <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster')" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
-      <button :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+      <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); clusterPanelOpen = true; objectPanelOpen = false" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
+      <button :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
       <button class="separator-btn" disabled></button>
       
       <template v-if="interactionMode === 'draw'">
@@ -101,8 +102,8 @@
     
     <!-- 非编辑模式的导出按钮 -->
     <div v-if="!editMode" class="view-actions">
-      <button class="adopt-btn" @click="clusterPanelOpen = !clusterPanelOpen" title="地点簇大纲">🗂 地点簇</button>
-      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+      <button class="adopt-btn" @click="clusterPanelOpen = !clusterPanelOpen; objectPanelOpen = false" title="地点簇大纲">🗂 地点簇</button>
+      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
       <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG">📤 导出全图</button>
     </div>
     
@@ -590,6 +591,9 @@ const REGION_COLORS = ['#FF6B6B', '#FFA500', '#FFD700', '#32CD32', '#4169E1', '#
 
 // ===== 交互模式 =====
 const interactionMode = ref('pan');
+// 移动工具拖拽状态（marker/textLabel/region 走"本地改+松手一次提交"，避免 undo 栈爆炸）
+const dragObject = ref(null);
+const dragRegionAnchor = ref(null);
 const isSpacebarDown = ref(false);
 const snapEnabled = ref(true);
 
@@ -615,6 +619,8 @@ function setInteractionMode(mode) {
   clusterSelectMode.value = false;
   clusterBoxStart.value = null;
   clusterBoxEnd.value = null;
+  dragObject.value = null;
+  dragRegionAnchor.value = null;
   renderer.requestRender();
 }
 
@@ -1056,10 +1062,27 @@ const NODE_RADIUS = { city: 10, town: 7, location: 5 };
 const LABEL_SIZE = { city: 13, town: 12, location: 11 };
 const LABEL_WEIGHT = { city: 'bold', town: 'normal', location: 'normal' };
 
+// ===== 地点类型样式（第二维度，优先于 layer 颜色） =====
+const PLACE_TYPE_COLORS = {
+  自然: '#4CAF50', 宗教: '#9B59B6', 皇室: '#F1C40F', 商业: '#E67E22',
+  工业: '#7F8C8D', 居住: '#1ABC9C', 公共: '#3498DB', 特殊: '#E91E63',
+};
+const PLACE_TYPE_ICONS = {
+  自然: '⛰', 宗教: '🛕', 皇室: '🏯', 商业: '🏪',
+  工业: '🏭', 居住: '🏠', 公共: '🏛', 特殊: '✦',
+};
+
 function getNodeColor(layer) { return NODE_COLORS[layer] || '#95E1D3'; }
 function getNodeRadius(layer) { return NODE_RADIUS[layer] || 5; }
 function getLabelSize(layer) { return LABEL_SIZE[layer] || 11; }
 function getLabelWeight(layer) { return LABEL_WEIGHT[layer] || 'normal'; }
+function getPlaceColor(place) {
+  if (place.placeType && PLACE_TYPE_COLORS[place.placeType]) return PLACE_TYPE_COLORS[place.placeType];
+  return getNodeColor(place.layer);
+}
+function getPlaceIcon(place) {
+  return place.placeType ? PLACE_TYPE_ICONS[place.placeType] : null;
+}
 
 // ===== 命中测试 =====
 function hitTest(wx, wy) {
@@ -1370,7 +1393,7 @@ const eagleEyeElements = computed(() => {
       x: place.coordinate?.x || 0,
       y: place.coordinate?.y || 0,
       r: getNodeRadius(place.layer),
-      color: getNodeColor(place.layer),
+      color: getPlaceColor(place),
       glow: false,
     });
   }
@@ -1679,9 +1702,10 @@ function drawPlaces(ctx) {
   places.value.forEach(place => {
     const x = place.coordinate?.x || 0;
     const y = place.coordinate?.y || 0;
-    const color = getNodeColor(place.layer);
+    const color = getPlaceColor(place);
     const radius = getNodeRadius(place.layer);
     const isHovered = hoveredNode.value?.id === place.id;
+    const icon = getPlaceIcon(place);
     
     ctx.fillStyle = color;
     ctx.shadowColor = color;
@@ -1691,19 +1715,30 @@ function drawPlaces(ctx) {
     ctx.fill();
     ctx.shadowBlur = 0;
     
-    ctx.fillStyle = '#FFFFFF';
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.arc(x, y, radius * 0.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    if (icon && lodRef.value > 0.6) {
+      // 高缩放：地点类型图标覆盖中心
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.globalAlpha = 0.95;
+      ctx.fillText(icon, x, y + 0.5);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     
     if (place.name && lodRef.value > 0.4) {
       ctx.font = `${getLabelWeight(place.layer)} ${getLabelSize(place.layer)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#2D3436';
-      ctx.fillText(place.name, x, y + radius + 4);
+      ctx.fillText(place.displayName || place.name, x, y + radius + 4);
     }
     
     // 锁定标记
@@ -2315,6 +2350,14 @@ const renderer = useCanvasRenderer(canvas, {
   onHitTest: (wx, wy) => hitTest(wx, wy),
   onHover: (hit, wx, wy) => {
     hoveredNode.value = hit?.type === 'place' ? hit.node : null;
+    // 移动工具光标提示：可移动对象上显示 move，空白显示 grab
+    const hoverMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
+    if (hoverMode === 'move' && canvas.value) {
+      const movable = hit && (hit.type === 'place' || hit.type === 'marker' || hit.type === 'textLabel' || hit.type === 'region');
+      canvas.value.style.cursor = movable ? 'move' : 'grab';
+    } else if (canvas.value) {
+      canvas.value.style.cursor = '';
+    }
     // 顶点悬停（多边形/区域/路线）
     if (editMode.value && (selectedProvince.value || selectedRegion.value || selectedRoute.value)) {
       const vHit = hitTestVertex(wx, wy);
@@ -2430,7 +2473,31 @@ const renderer = useCanvasRenderer(canvas, {
       return true; // 空白处平移
     }
     
-    // 选中地点：如果点击的是已选中的地点，开始批量拖拽
+    // 移动工具：拖动 marker/textLabel/region；place 落到下方分支；其余平移
+    if (mode === 'move') {
+      if (hit.type === 'marker') {
+        selectedMarker.value = hit.marker;
+        selectedProvince.value = null; selectedRegion.value = null; selectedRoute.value = null; selectedTextLabel.value = null;
+        dragObject.value = { type: 'marker', id: hit.marker.id, marker: hit.marker, old: { x: hit.marker.x, y: hit.marker.y } };
+        return false;
+      }
+      if (hit.type === 'textLabel') {
+        selectedTextLabel.value = hit.label;
+        selectedProvince.value = null; selectedRegion.value = null; selectedMarker.value = null; selectedRoute.value = null;
+        dragObject.value = { type: 'textLabel', id: hit.label.id, label: hit.label, old: { x: hit.label.x, y: hit.label.y } };
+        return false;
+      }
+      if (hit.type === 'region') {
+        selectedRegion.value = hit.region;
+        selectedProvince.value = null; selectedMarker.value = null; selectedRoute.value = null; selectedTextLabel.value = null;
+        dragObject.value = { type: 'region', id: hit.region.id, region: hit.region, old: hit.region.points.map(p => ({ ...p })) };
+        dragRegionAnchor.value = { x: wx, y: wy };
+        return false;
+      }
+      if (hit.type !== 'place') return true; // 省份等 → 平移
+    }
+    
+    // 选中地点：点击已选中地点且多选 → 批量拖拽；否则启动单地点拖拽
     if (hit.type === 'place') {
       if (selectedPlaceIds.value.has(hit.node.id) && selectedPlaceIds.value.size > 1) {
         isDraggingPlaces.value = true;
@@ -2438,9 +2505,14 @@ const renderer = useCanvasRenderer(canvas, {
         selectedPlaceIds.value.forEach(id => store.beginNodePositionCapture(id));
         return false;
       }
-      // 单选：清空多选
+      // 单选：清空多选并启动单地点拖拽
+      // （原实现 return true 会走画布平移 → 用户"点来点去拖不动地点"）
       selectedPlaceIds.value = new Set();
-      return true;
+      selectedPlaceIds.value.add(hit.node.id);
+      isDraggingPlaces.value = true;
+      placesDragStart.value = { x: wx, y: wy };
+      store.beginNodePositionCapture(hit.node.id);
+      return false;
     }
     
     if (mode === 'pan') return true;
@@ -2448,6 +2520,20 @@ const renderer = useCanvasRenderer(canvas, {
     return false;
   },
   onDragMove: (wx, wy, dragInfo) => {
+    const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
+    // 移动工具：marker/textLabel/region 本地平移（松手一次提交，避免 undo 栈爆炸）
+    if (mode === 'move' && dragObject.value) {
+      const obj = dragObject.value;
+      if (obj.type === 'marker') { obj.marker.x = wx; obj.marker.y = wy; }
+      else if (obj.type === 'textLabel') { obj.label.x = wx; obj.label.y = wy; }
+      else if (obj.type === 'region' && dragRegionAnchor.value) {
+        const dx = wx - dragRegionAnchor.value.x;
+        const dy = wy - dragRegionAnchor.value.y;
+        obj.region.points = obj.old.map(p => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) }));
+      }
+      renderer.requestRender();
+      return;
+    }
     if (isDrawingActive) {
       const last = currentPath.value[currentPath.value.length - 1];
       // wx/wy 已是世界坐标，直接使用（同 onDragStart）
@@ -2540,6 +2626,19 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onDragEnd: (wx, wy, dragInfo) => {
+    const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
+    // 移动工具松手：一次提交（入一次 undo），避免拖动期间 undo 栈爆炸
+    if (mode === 'move' && dragObject.value) {
+      const obj = dragObject.value;
+      if (obj.type === 'marker') store.updateMarker(props.planet.id, obj.id, { x: obj.marker.x, y: obj.marker.y });
+      else if (obj.type === 'textLabel') store.updateTextLabel(props.planet.id, obj.id, { x: obj.label.x, y: obj.label.y });
+      else if (obj.type === 'region') store.updateRegion(props.planet.id, obj.id, { points: obj.region.points });
+      dragObject.value = null;
+      dragRegionAnchor.value = null;
+      emit('dirty', true);
+      renderer.requestRender();
+      return;
+    }
     if (isDrawingActive) {
       isDrawingActive = false;
       if (currentPath.value.length > 2) {
@@ -2839,7 +2938,9 @@ function getClusterMembers(cluster) {
 function enterClusterMode() {
   interactionMode.value = 'cluster';
   clusterSelectMode.value = true;
+  // 互斥：打开簇面板时关闭对象列表面板（防止两面板同位置叠加互相遮挡 ×）
   clusterPanelOpen.value = true;
+  objectPanelOpen.value = false;
   clusterDraftMembers.value = [];
   renderer.requestRender();
 }
@@ -3154,6 +3255,16 @@ function handleCanvasClick(hit, wx, wy) {
       selectedMarker.value = null;
       selectedRoute.value = null;
       break;
+    case 'place':
+      // 点击地点 → 单选 + 打开详情面板（原 switch 缺此 case → 点击无反应）
+      selectedPlaceIds.value = new Set([hit.node.id]);
+      selectedProvince.value = null;
+      selectedRegion.value = null;
+      selectedMarker.value = null;
+      selectedRoute.value = null;
+      selectedTextLabel.value = null;
+      emit('select-node', hit.node);
+      break;
   }
   renderer.requestRender();
 }
@@ -3390,6 +3501,8 @@ function exitEditMode() {
   selectedPlaceIds.value = new Set();
   isDraggingPlaces.value = false;
   placesDragStart.value = null;
+  dragObject.value = null;
+  dragRegionAnchor.value = null;
   drawingPolygon.value = null;
 }
 
@@ -3415,14 +3528,15 @@ onUnmounted(() => {
 });
 
 // ===== 编辑面板拖拽 =====
-// 点击编辑面板 header 时拖动整个面板（事件委托在根容器）
+// 点击面板 header 时拖动整个面板（事件委托在根容器）
+// 支持：province-editor（属性编辑面板）、cluster-panel（地点簇）、object-panel（对象列表）
 function handlePanelHeaderDrag(e) {
   // header 内的交互元素（× 关闭按钮、输入框、颜色按钮等）不触发拖拽
   // 否则点击 × 会先启动面板拖拽（mousedown 在 header 内冒泡到委托），面板被位移、preventDefault 吞掉关闭
   if (e.target.closest('button, input, select, textarea, a, label')) return;
-  const header = e.target.closest('.province-editor .editor-header');
+  const header = e.target.closest('.province-editor .editor-header, .cluster-panel .panel-header, .object-panel .panel-header');
   if (!header) return;
-  const panel = header.closest('.province-editor');
+  const panel = header.closest('.province-editor, .cluster-panel, .object-panel');
   if (!panel) return;
   e.preventDefault();
   

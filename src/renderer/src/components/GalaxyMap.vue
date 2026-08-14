@@ -37,6 +37,20 @@
       </div>
     </div>
 
+    <!-- 右键菜单 -->
+    <div
+      v-if="contextMenu.visible"
+      class="context-menu"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      @mousedown.stop
+    >
+      <div v-if="contextMenu.target?.type === 'galaxy'" class="menu-item" @click="ctxCreateGalaxyHere">＋ 在此创建恒星</div>
+      <div v-if="contextMenu.target?.type === 'galaxy' || contextMenu.target?.type === 'domain'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
+      <div v-if="contextMenu.target?.type === 'hyperlane'" class="menu-item" @click="ctxDeleteControlPoint">✂ 删除控制点</div>
+      <div v-if="contextMenu.target?.type === 'hyperlane'" class="menu-item danger" @click="ctxDeleteHyperlane">🗑 删除航道</div>
+      <div v-if="!contextMenu.target" class="menu-item" @click="ctxCreateGalaxyHere">＋ 在此创建恒星</div>
+    </div>
+
     <!-- 节点筛选面板 -->
     <div v-if="filterPanelOpen" class="filter-panel-galaxy">
       <div class="filter-section">
@@ -113,6 +127,75 @@ const canvas = ref(null);
 let domainNodes = [];
 const galaxyNodes = ref([]);
 const selectedNodeIds = ref(new Set());
+const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0 });
+
+// ===== 右键菜单 =====
+function worldToScreen(wx, wy) {
+  const vt = renderer.getViewTransform();
+  const cvs = canvas.value;
+  return {
+    x: wx * vt.scale + vt.x + cvs.clientWidth / 2,
+    y: wy * vt.scale + vt.y + cvs.clientHeight / 2,
+  };
+}
+
+function openContextMenu(wx, wy, target) {
+  const pos = worldToScreen(wx, wy);
+  const wrapper = canvas.value?.parentElement;
+  const maxX = wrapper ? wrapper.clientWidth - 170 : pos.x;
+  const maxY = wrapper ? wrapper.clientHeight - 120 : pos.y;
+  contextMenu.value = {
+    visible: true,
+    x: Math.max(4, Math.min(pos.x, maxX)),
+    y: Math.max(4, Math.min(pos.y, maxY)),
+    target,
+    worldX: wx,
+    worldY: wy,
+  };
+}
+
+function closeContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+function ctxCreateGalaxyHere() {
+  createGalaxyAt(contextMenu.value.worldX, contextMenu.value.worldY);
+  closeContextMenu();
+}
+
+function ctxDeleteNode() {
+  const node = contextMenu.value.target?.node;
+  if (node) {
+    store.removeNode(node.id);
+    galaxyNodes.value = galaxyNodes.value.filter(g => g.id !== node.id);
+    if (selectedNodeIds.value.has(node.id)) selectedNodeIds.value.delete(node.id);
+    emit('dirty', true);
+    renderer.requestRender();
+  }
+  closeContextMenu();
+}
+
+function ctxDeleteHyperlane() {
+  const hl = contextMenu.value.target?.hyperlane;
+  if (hl) {
+    store.removeHyperlane(hl.id);
+    emit('dirty', true);
+    renderer.requestRender();
+  }
+  closeContextMenu();
+}
+
+function ctxDeleteControlPoint() {
+  const hl = contextMenu.value.target?.hyperlane;
+  const cpIndex = contextMenu.value.target?.controlPointIndex;
+  if (hl && cpIndex !== undefined && hl.controlPoints && hl.controlPoints.length > 0) {
+    hl.controlPoints.splice(cpIndex, 1);
+    store.updateHyperlane(hl.id, { controlPoints: hl.controlPoints });
+    emit('dirty', true);
+    renderer.requestRender();
+  }
+  closeContextMenu();
+}
 
 // ===== 框选状态 =====
 let isBoxSelecting = false;
@@ -894,7 +977,7 @@ function drawGalaxyNodes(ctx, lod) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       
-      const text = galaxy.name;
+      const text = galaxy.displayName || galaxy.name;
       const metrics = ctx.measureText(text);
       const padding = 5;
       
@@ -1253,8 +1336,20 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onClick: (hit) => {
+    closeContextMenu();
     if (hit?.node) {
+      // 点击节点 → 清空旧选择并单选（多选由 Shift 框选产生）
+      if (!selectedNodeIds.value.has(hit.node.id)) {
+        selectedNodeIds.value.clear();
+        selectedNodeIds.value.add(hit.node.id);
+      }
       emit('select-node', hit.node);
+    } else if (!hit) {
+      // 点击空白 → 清空多选
+      if (selectedNodeIds.value.size > 0) {
+        selectedNodeIds.value.clear();
+        renderer.requestRender();
+      }
     }
     
     // 编辑模式下不自动进入下一级地图（防止误操作）
@@ -1268,21 +1363,30 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onContextMenu: (wx, wy) => {
-    if (!editMode.value) return;
-    const hit = hitTestHyperlane(wx, wy);
-    if (hit) {
-      if (hit.controlPointIndex !== undefined) {
-        const h = hit.hyperlane;
-        if (h.controlPoints && h.controlPoints.length > 0) {
-          h.controlPoints.splice(hit.controlPointIndex, 1);
-          store.updateHyperlane(h.id, { controlPoints: h.controlPoints });
-          emit('dirty', true);
+    const hit = hitTest(wx, wy);
+    let target = null;
+    if (hit?.type === 'galaxy' || hit?.type === 'domain') {
+      target = { type: hit.type, node: hit.node };
+    } else if (hit?.type === 'boundary-vertex') {
+      // 边界顶点右键 → 保留原编辑语义（进入顶点编辑）
+      if (editMode.value) {
+        editingBoundary.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
+        if (!store.domainBorderOverrides[hit.border.domainId]) {
+          setBorderPoints(hit.border.domainId, [...hit.border.points]);
         }
-      } else {
-        store.removeHyperlane(hit.hyperlane.id);
-        emit('dirty', true);
+      }
+      return;
+    } else {
+      const h = hitTestHyperlane(wx, wy);
+      if (h) {
+        target = {
+          type: 'hyperlane',
+          hyperlane: h.hyperlane,
+          controlPointIndex: h.controlPointIndex,
+        };
       }
     }
+    openContextMenu(wx, wy, target);
   },
 });
 
@@ -1352,16 +1456,12 @@ function toggleEditMode() {
 }
 
 // ===== 创建恒星 =====
-function createGalaxy() {
-  const vt = renderer.getViewTransform();
-  const cx = -vt.x / vt.scale;
-  const cy = -vt.y / vt.scale;
-  
+function createGalaxyAt(wx, wy) {
   // 归属到最近的星域（保证恒星进入星域聚簇，可点击进入 system 视图）
   let targetDomain = null;
   let minDist = Infinity;
   for (const d of domainNodes) {
-    const dist = Math.hypot(cx - d.x, cy - d.y);
+    const dist = Math.hypot(wx - d.x, wy - d.y);
     if (dist < minDist) { minDist = dist; targetDomain = d; }
   }
   const parentDomain = targetDomain || props.world;
@@ -1374,19 +1474,26 @@ function createGalaxy() {
     parentId: parentDomain?.id || null,
     tags: ['新创建'],
     sourcePath: '',
-    coordinate: { x: cx, y: cy },
+    coordinate: { x: Math.round(wx), y: Math.round(wy) },
     userMoved: true, // 创建位置即用户意图，布局重算时保留
   };
   store.addNode(newGalaxy);
   galaxyNodes.value.push({
     ...newGalaxy,
-    x: cx,
-    y: cy,
+    x: wx,
+    y: wy,
     domainId: parentDomain?.id || null,
     factionColor: parentDomain?.factionColor || '#4a90d9',
   });
+  selectedNodeIds.value.clear();
+  selectedNodeIds.value.add(newGalaxy.id);
   emit('dirty', true);
   renderer.requestRender();
+}
+
+function createGalaxy() {
+  const vt = renderer.getViewTransform();
+  createGalaxyAt(-vt.x / vt.scale, -vt.y / vt.scale);
 }
 
 // ===== 鹰眼导航 =====
@@ -1719,4 +1826,26 @@ canvas {
   height: 100%;
   background: var(--map-bg);
 }
+/* ===== 右键菜单 ===== */
+.context-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 150px;
+  padding: 4px 0;
+  border: 1px solid var(--map-header-border, #2a3550);
+  border-radius: 6px;
+  background: var(--map-header-bg, #151c2e);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  user-select: none;
+}
+.context-menu .menu-item {
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--map-btn-text, #c9d4e8);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu .menu-item:hover { background: rgba(100, 150, 200, 0.15); }
+.context-menu .menu-item.danger { color: #ff7b72; }
+.context-menu .menu-item.danger:hover { background: rgba(255, 123, 114, 0.12); }
 </style>

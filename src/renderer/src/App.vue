@@ -66,6 +66,8 @@
           :planets="store.planets"
           :locations="store.locations"
           @select="store.selectWorld"
+          @create-world="handleCreateWorld"
+          @delete-world="handleDeleteWorld"
         />
         
         <galaxy-map
@@ -476,6 +478,36 @@ function cleanupStressTest() {
   console.log(`[压力测试] 已清理测试节点`);
   window.__stressTestResults = null;
   store.scheduleAutoSave();
+}
+
+// ===== 世界管理（WorldSelector） =====
+
+function handleCreateWorld() {
+  const id = `world_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  store.addNode({
+    id,
+    name: `新世界${Date.now() % 1000}`,
+    layer: 'world',
+    parentId: null,
+    tags: ['世界', '新创建'],
+    sourcePath: '',
+    coordinate: { x: null, y: null },
+  });
+  dirty.value = true;
+  statusText.value = `已创建「新世界${Date.now() % 1000}」，可在左侧树中选中后重命名`;
+  setTimeout(() => { statusText.value = ''; }, 4000);
+}
+
+function handleDeleteWorld(world) {
+  const childCount = store.starDomains.filter(d => d.parentId === world.id).length;
+  const msg = `确定删除世界「${world.name}」吗？\n\n` +
+    (childCount > 0 ? `该世界下有 ${childCount} 个星域（及其星系/行星）将失去上级关联。\n` : '') +
+    `仅从地图缓存移除，不删除 Obsidian 文件。可撤销。`;
+  if (!confirm(msg)) return;
+  store.removeNode(world.id);
+  dirty.value = true;
+  statusText.value = `世界「${world.name}」已从地图移除`;
+  setTimeout(() => { statusText.value = ''; }, 4000);
 }
 
 // ===== 书签管理 =====

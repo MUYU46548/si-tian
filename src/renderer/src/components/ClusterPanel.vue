@@ -1,13 +1,14 @@
 <template>
-  <div class="cluster-panel" :class="{ open: open }">
+  <div v-if="open" class="cluster-panel">
     <div class="panel-header">
       <h3>地点簇</h3>
       <div class="header-actions">
+        <button class="fold-btn" @click="collapsed = !collapsed" :title="collapsed ? '展开面板' : '折叠面板'">{{ collapsed ? '▸' : '▾' }}</button>
         <button class="icon-btn" @click="$emit('create-cluster')" title="创建地点簇（框选地点后创建）">＋</button>
         <button class="close-btn" @click="$emit('close')" title="关闭面板">×</button>
       </div>
     </div>
-    <div v-if="open" class="panel-body">
+    <div v-if="!collapsed" class="panel-body">
       <div v-if="clusters.length === 0" class="empty-hint">
         暂无地点簇<br />
         <span class="sub">框选多个地点 → 创建簇，便于统一管理</span>
@@ -50,7 +51,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 
 const store = useGeodataStore();
@@ -72,6 +73,8 @@ const clusters = computed(() => {
   const data = store.mapData[props.planet.id];
   return data?.clusters || [];
 });
+// 面板内部折叠（与 open 独立：open=false 时面板整体隐藏，collapsed=true 时仅收起 body 保留 header）
+const collapsed = ref(false);
 
 function getMemberName(memberId) {
   const node = store.nodes.find(n => n.id === memberId);
@@ -104,6 +107,8 @@ function getMemberName(memberId) {
   padding: 8px 12px;
   border-bottom: 1px solid #30363d;
   background: #0d1117;
+  cursor: move;
+  user-select: none;
 }
 
 .panel-header h3 {
@@ -131,6 +136,23 @@ function getMemberName(memberId) {
   height: 22px;
   border-radius: 4px;
   line-height: 1;
+}
+
+.fold-btn {
+  background: none;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.fold-btn:hover {
+  color: #f0f6fc;
+  background: #21262d;
 }
 
 .icon-btn:hover {

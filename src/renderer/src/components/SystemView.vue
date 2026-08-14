@@ -9,16 +9,33 @@
         </p>
       </div>
       <div class="header-actions">
-        <button 
-          :class="{ active: editMode }" 
+        <button
+          :class="{ active: editMode }"
           @click="toggleEditMode"
         >
           {{ editMode ? '✓ 完成编辑' : '✎ 编辑航道' }}
+        </button>
+        <button title="在当前星域创建恒星系（视图中心）" @click="createSystem">
+          ＋ 恒星系
+        </button>
+        <button title="在选中恒星系下创建行星（无选中则归属最近恒星系）" @click="createPlanet">
+          ＋ 行星
         </button>
       </div>
     </div>
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
+      <div
+        v-if="contextMenu.visible"
+        class="context-menu"
+        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        @mousedown.stop
+      >
+        <div v-if="contextMenu.target?.type === 'star'" class="menu-item" @click="ctxAddPlanet">＋ 添加行星</div>
+        <div v-if="contextMenu.target?.type === 'star' || contextMenu.target?.type === 'planet'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
+        <div v-if="contextMenu.target?.type === 'hyperlane'" class="menu-item danger" @click="ctxDeleteHyperlane">🗑 删除航道</div>
+        <div v-if="!contextMenu.target" class="menu-item" @click="ctxCreateSystemHere">＋ 在此创建恒星系</div>
+      </div>
       <eagle-eye
         :view-bounds="systemViewBounds"
         :elements="systemEyeElements"
@@ -55,6 +72,155 @@ const editMode = ref(false);
 let dragSourceNode = null;
 let dragMousePos = { x: 0, y: 0 };
 let targetNode = null;
+
+// ===== 右键菜单与选中状态 =====
+const selectedSystemId = ref(null);
+const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0 });
+
+function worldToScreen(wx, wy) {
+  const vt = renderer.getViewTransform();
+  const cvs = canvas.value;
+  return {
+    x: wx * vt.scale + vt.x + cvs.clientWidth / 2,
+    y: wy * vt.scale + vt.y + cvs.clientHeight / 2,
+  };
+}
+
+function openContextMenu(wx, wy, target) {
+  const pos = worldToScreen(wx, wy);
+  const wrapper = canvas.value?.parentElement;
+  const maxX = wrapper ? wrapper.clientWidth - 170 : pos.x;
+  const maxY = wrapper ? wrapper.clientHeight - 110 : pos.y;
+  contextMenu.value = {
+    visible: true,
+    x: Math.max(4, Math.min(pos.x, maxX)),
+    y: Math.max(4, Math.min(pos.y, maxY)),
+    target,
+    worldX: wx,
+    worldY: wy,
+  };
+}
+
+function closeContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+function createSystemAt(wx, wy, namePrefix = '新恒星系') {
+  const newSystem = {
+    id: `galaxy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: `${namePrefix}${Date.now() % 1000}`,
+    layer: 'galaxy',
+    parentId: props.domain?.id || null,
+    tags: ['新创建'],
+    sourcePath: '',
+    coordinate: { x: Math.round(wx), y: Math.round(wy) },
+    userMoved: true, // 创建位置即用户意图，布局重算时保留
+  };
+  store.addNode(newSystem);
+  selectedSystemId.value = newSystem.id;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function createSystem() {
+  const vt = renderer.getViewTransform();
+  const cx = -vt.x / vt.scale;
+  const cy = -vt.y / vt.scale;
+  createSystemAt(cx, cy);
+}
+
+function getTargetSystemId() {
+  if (selectedSystemId.value && systemLayouts.some(s => s.id === selectedSystemId.value)) {
+    return selectedSystemId.value;
+  }
+  // 无选中 → 最近视图中心的恒星系
+  const vt = renderer.getViewTransform();
+  const cx = -vt.x / vt.scale;
+  const cy = -vt.y / vt.scale;
+  let best = null;
+  let minD = Infinity;
+  for (const s of systemLayouts) {
+    const d = Math.hypot(s.x - cx, s.y - cy);
+    if (d < minD) { minD = d; best = s; }
+  }
+  return best?.id || null;
+}
+
+function createPlanet() {
+  const parentId = getTargetSystemId();
+  if (!parentId) {
+    // 无任何恒星系 → 先创建一个
+    createSystem();
+    return;
+  }
+  const parent = systemLayouts.find(s => s.id === parentId);
+  // 轨道位置（与 applyLayout 的 orbit 算法一致，首次布局即落在轨道上）
+  const siblings = allBodies.value.filter(b => b.parentId === parentId);
+  const pIdx = siblings.length;
+  const orbit = Math.floor(pIdx / 3) + 1;
+  const posInOrbit = pIdx % 3;
+  const angle = (posInOrbit / 3) * Math.PI * 2 + orbit * 0.4;
+  const orbitRadius = 40 + orbit * 35;
+  const newPlanet = {
+    id: `planet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: `新行星${Date.now() % 1000}`,
+    layer: 'planet',
+    parentId,
+    tags: ['新创建'],
+    sourcePath: '',
+    coordinate: {
+      x: Math.round(parent.x + Math.cos(angle) * orbitRadius),
+      y: Math.round(parent.y + Math.sin(angle) * orbitRadius),
+    },
+    userMoved: true,
+  };
+  store.addNode(newPlanet);
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function deleteNodeById(nodeId) {
+  store.removeNode(nodeId);
+  // 本地布局缓存同步过滤（store 变化通过 watch 触发 applyLayout 兜底）
+  systemLayouts = systemLayouts.filter(s => s.id !== nodeId);
+  for (const s of systemLayouts) {
+    s.planets = s.planets.filter(p => p.id !== nodeId);
+  }
+  if (selectedSystemId.value === nodeId) selectedSystemId.value = null;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+// ===== 右键菜单操作 =====
+function ctxAddPlanet() {
+  const sys = contextMenu.value.target?.node;
+  if (sys) {
+    selectedSystemId.value = sys.id;
+    createPlanet();
+  }
+  closeContextMenu();
+}
+
+function ctxDeleteNode() {
+  const node = contextMenu.value.target?.node;
+  if (node) deleteNodeById(node.id);
+  closeContextMenu();
+}
+
+function ctxDeleteHyperlane() {
+  const hl = contextMenu.value.target?.hyperlane;
+  if (hl) {
+    store.removeHyperlane(hl.id);
+    emit('dirty', true);
+    renderer.requestRender();
+  }
+  closeContextMenu();
+}
+
+function ctxCreateSystemHere() {
+  createSystemAt(contextMenu.value.worldX, contextMenu.value.worldY, '新恒星系');
+  closeContextMenu();
+}
 
 const allBodies = computed(() => props.planets);
 
@@ -276,7 +442,18 @@ function drawSystemStar(ctx, system) {
   ctx.fillStyle = '#e2e8f0';
   ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(system.name, system.x, system.y + 20);
+  ctx.fillText(system.displayName || system.name, system.x, system.y + 20);
+
+  // 选中恒星系 → 金色虚线环
+  if (selectedSystemId.value === system.id) {
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.arc(system.x, system.y, 32, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }
 
 function drawSystemPlanets(ctx, system) {
@@ -309,7 +486,7 @@ function drawSystemPlanets(ctx, system) {
       ctx.fillStyle = '#8b949e';
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(planet.name, planet.x, planet.y + getPlanetRadius(planet.layer) + 10);
+      ctx.fillText(planet.displayName || planet.name, planet.x, planet.y + getPlanetRadius(planet.layer) + 10);
     }
   });
 }
@@ -400,17 +577,28 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onClick: (hit) => {
+    closeContextMenu();
     if (hit?.node) {
+      if (hit.type === 'star') selectedSystemId.value = hit.node.id;
+      if (hit.type === 'planet') {
+        const parent = systemLayouts.find(s => s.id === hit.node.parentId);
+        if (parent) selectedSystemId.value = parent.id;
+      }
       emit('select-node', hit.node);
     }
   },
   onContextMenu: (wx, wy) => {
-    if (!editMode) return;
-    const hyperlane = hitTestHyperlane(wx, wy);
-    if (hyperlane) {
-      store.removeHyperlane(hyperlane.id);
-      emit('dirty', true);
+    const hit = hitTest(wx, wy);
+    let target = null;
+    if (hit?.type === 'star' || hit?.type === 'planet') {
+      target = { type: hit.type, node: hit.node };
+    } else {
+      const hyperlane = hitTestHyperlane(wx, wy);
+      if (hyperlane) {
+        target = { type: 'hyperlane', hyperlane };
+      }
     }
+    openContextMenu(wx, wy, target);
   },
 });
 
@@ -436,6 +624,7 @@ function onFocusNode(e) {
 function onNodeRemovedFromMap(e) {
   const nodeId = e.detail;
   if (!nodeId) return;
+  if (selectedSystemId.value === nodeId) selectedSystemId.value = null;
   // 从本地布局缓存中过滤（store.nodes 变化会触发 deep watch 重建布局）
   systemLayouts = systemLayouts.filter(s => s.id !== nodeId);
   for (const s of systemLayouts) {
@@ -475,6 +664,7 @@ function toggleEditMode() {
   editMode.value = !editMode.value;
   dragSourceNode = null;
   targetNode = null;
+  closeContextMenu();
   if (canvas.value) canvas.value.style.cursor = 'default';
   renderer.requestRender();
 }
@@ -622,4 +812,27 @@ defineExpose({ canvas, renderer });
 .edit-hint { color: var(--map-accent-green); }
 .canvas-wrapper { flex: 1; position: relative; overflow: hidden; }
 canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
+
+/* ===== 右键菜单 ===== */
+.context-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 150px;
+  padding: 4px 0;
+  border: 1px solid var(--map-header-border, #2a3550);
+  border-radius: 6px;
+  background: var(--map-header-bg, #151c2e);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  user-select: none;
+}
+.context-menu .menu-item {
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--map-btn-text, #c9d4e8);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu .menu-item:hover { background: rgba(100, 150, 200, 0.15); }
+.context-menu .menu-item.danger { color: #ff7b72; }
+.context-menu .menu-item.danger:hover { background: rgba(255, 123, 114, 0.12); }
 </style>

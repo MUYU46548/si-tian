@@ -1,7 +1,12 @@
 <template>
   <div class="world-selector">
-    <h1>选择世界</h1>
-    <p class="subtitle">选择一个世界观作为起点</p>
+    <div class="header-row">
+      <div>
+        <h1>选择世界</h1>
+        <p class="subtitle">选择一个世界观作为起点</p>
+      </div>
+      <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
+    </div>
     <div class="world-grid">
       <div 
         v-for="world in worlds" 
@@ -9,8 +14,13 @@
         class="world-card"
         @click="$emit('select', world)"
       >
-        <div class="world-icon">{{ world.name.charAt(0) }}</div>
-        <h3>{{ world.name }}</h3>
+        <button
+          class="delete-btn"
+          title="删除世界（其下星域/星系将失去上级关联，可撤销）"
+          @click.stop="$emit('delete-world', world)"
+        >🗑</button>
+        <div class="world-icon">{{ (world.displayName || world.name).charAt(0) }}</div>
+        <h3>{{ world.displayName || world.name }}</h3>
         <p class="world-desc">{{ world.tags?.filter(t => !['世界', '地理系统'].includes(t)).slice(0, 3).join(' · ') || '暂无描述' }}</p>
         <div class="world-meta">
           <span>{{ getDomainCount(world.id) }} 个星域</span>
@@ -36,7 +46,7 @@ const props = defineProps({
   locations: { type: Array, default: () => [] },
 });
 
-defineEmits(['select']);
+defineEmits(['select', 'create-world', 'delete-world']);
 
 function getDomainCount(worldId) {
   return props.domains.filter(d => d.parentId === worldId).length;
@@ -71,11 +81,34 @@ function getLocationCount(worldId) {
   overflow-y: auto;
 }
 
-.world-selector h1 {
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+
+.header-row h1 {
   font-size: 28px;
   color: #f0f6fc;
   margin-bottom: 8px;
 }
+
+.create-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 8px 18px;
+  border: 1px solid #58a6ff;
+  border-radius: 6px;
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.create-btn:hover { background: rgba(88, 166, 255, 0.22); }
 
 .subtitle {
   font-size: 14px;
@@ -92,6 +125,7 @@ function getLocationCount(worldId) {
 }
 
 .world-card {
+  position: relative;
   background: #161b22;
   border: 1px solid #30363d;
   border-radius: 8px;
@@ -100,6 +134,24 @@ function getLocationCount(worldId) {
   transition: all 0.2s;
   text-align: center;
 }
+
+.delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #8b949e;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+}
+.world-card:hover .delete-btn { opacity: 1; }
+.delete-btn:hover { background: rgba(255, 123, 114, 0.15); color: #ff7b72; }
 
 .world-card:hover {
   border-color: #58a6ff;

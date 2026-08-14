@@ -4,7 +4,8 @@
     <div class="panel-hero" :style="heroStyle">
       <div class="hero-icon">{{ layerIcon }}</div>
       <div class="hero-info">
-        <h2 class="hero-title">{{ node.name }}</h2>
+        <h2 class="hero-title">{{ node.displayName || node.name }}</h2>
+        <span v-if="node.displayName" class="hero-source-name">原文名：{{ node.name }}</span>
         <span class="hero-layer">{{ node.layerLabel || node.layer }}</span>
       </div>
       <button class="close-btn" @click="store.clearSelection()">×</button>
@@ -49,7 +50,7 @@
           <div class="relation-label">上级</div>
           <a class="relation-link parent-link" @click="navigateToNode(parentNode)">
             <span class="relation-icon">{{ getLayerIcon(parentNode.layer) }}</span>
-            <span class="relation-name">{{ parentNode.name }}</span>
+            <span class="relation-name">{{ parentNode.displayName || parentNode.name }}</span>
           </a>
         </div>
 
@@ -63,7 +64,7 @@
             @click="navigateToNode(child)"
           >
             <span class="relation-icon">{{ getLayerIcon(child.layer) }}</span>
-            <span class="relation-name">{{ child.name }}</span>
+            <span class="relation-name">{{ child.displayName || child.name }}</span>
           </a>
           <span v-if="childNodes.length > 6" class="relation-more">+{{ childNodes.length - 6 }} 更多...</span>
         </div>
@@ -128,9 +129,20 @@
           <input type="text" :value="node.name" disabled title="名称对应 Markdown 文件名，请在 Obsidian 中重命名" />
         </div>
         <div class="prop-field">
+          <label>显示名称</label>
+          <input type="text" :value="node.displayName || ''" @change="updateDisplayName($event.target.value)" placeholder="留空使用原文名（如 时间钟楼（建筑）→ 时间钟楼）" />
+        </div>
+        <div class="prop-field">
           <label>层级</label>
           <select :value="node.layer" @change="updateLayer($event.target.value)">
             <option v-for="l in editableLayers" :key="l.value" :value="l.value">{{ l.label }}</option>
+          </select>
+        </div>
+        <div class="prop-field" v-if="isPlaceNode">
+          <label>地点类型</label>
+          <select :value="node.placeType || ''" @change="updatePlaceType($event.target.value)">
+            <option value="">未设置（回落默认样式）</option>
+            <option v-for="t in placeTypes" :key="t" :value="t">{{ t }}</option>
           </select>
         </div>
         <div class="prop-field">
@@ -232,6 +244,10 @@ const editableLayers = [
   { value: 'location', label: '地点' },
   { value: 'unknown', label: '未知' },
 ];
+
+// 地点类型（第二维度，与提取脚本一致）
+const placeTypes = ['自然', '宗教', '皇室', '商业', '工业', '居住', '公共', '特殊'];
+const isPlaceNode = computed(() => ['facility', 'location', 'region'].includes(node.value?.layer));
 
 // 航道类型选项
 const hyperlaneTypes = [
@@ -460,6 +476,19 @@ function updateLayer(layer) {
   window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
 }
 
+function updateDisplayName(value) {
+  if (!node.value) return;
+  const v = value.trim();
+  store.updateNode(node.value.id, { displayName: v || null });
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
+}
+
+function updatePlaceType(value) {
+  if (!node.value) return;
+  store.updateNode(node.value.id, { placeType: value || null });
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
+}
+
 // 添加标签
 function addTag() {
   const tag = newTagInput.value.trim();
@@ -566,6 +595,16 @@ function updateCoordinate(axis, value) {
   color: #f0f6fc;
   margin: 0;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-source-name {
+  display: block;
+  font-size: 10px;
+  color: #6e7681;
+  margin-top: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
