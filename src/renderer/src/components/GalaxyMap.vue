@@ -10,6 +10,7 @@
       </div>
       <div class="header-actions">
         <select 
+          v-if="editMode"
           v-model="nextHyperlaneType" 
           class="hyperlane-type-select"
           title="选择要创建的航道类型"

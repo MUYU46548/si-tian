@@ -8,10 +8,11 @@
       <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
     </div>
     <div class="world-grid">
-      <div 
-        v-for="world in worlds" 
-        :key="world.id" 
+      <div
+        v-for="world in worlds"
+        :key="world.id"
         class="world-card"
+        :style="{ background: getWorldGradient(world.name), '--card-accent': getWorldAccent(world.name) }"
         @click="$emit('select', world)"
       >
         <button
@@ -19,7 +20,7 @@
           title="删除世界（其下星域/星系将失去上级关联，可撤销）"
           @click.stop="$emit('delete-world', world)"
         >🗑</button>
-        <div class="world-icon">{{ (world.displayName || world.name).charAt(0) }}</div>
+        <div class="world-icon" :style="{ background: getWorldIconGradient(world.name) }">{{ (world.displayName || world.name).charAt(0) }}</div>
         <h3>{{ world.displayName || world.name }}</h3>
         <p class="world-desc">{{ world.tags?.filter(t => !['世界', '地理系统'].includes(t)).slice(0, 3).join(' · ') || '暂无描述' }}</p>
         <div class="world-meta">
@@ -48,6 +49,28 @@ const props = defineProps({
 
 defineEmits(['select', 'create-world', 'delete-world']);
 
+// ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
+function hashName(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return Math.abs(hash);
+}
+
+function getWorldGradient(name) {
+  const hue = hashName(name) % 360;
+  return `linear-gradient(160deg, hsl(${hue}, 38%, 20%) 0%, hsl(${(hue + 35) % 360}, 42%, 12%) 60%, #0c101c 100%)`;
+}
+
+function getWorldIconGradient(name) {
+  const hue = hashName(name) % 360;
+  return `linear-gradient(135deg, hsl(${hue}, 68%, 58%) 0%, hsl(${(hue + 45) % 360}, 72%, 42%) 100%)`;
+}
+
+function getWorldAccent(name) {
+  const hue = hashName(name) % 360;
+  return `hsl(${hue}, 70%, 60%)`;
+}
+
 function getDomainCount(worldId) {
   return props.domains.filter(d => d.parentId === worldId).length;
 }
@@ -72,6 +95,7 @@ function getLocationCount(worldId) {
 
 <style scoped>
 .world-selector {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -79,6 +103,28 @@ function getLocationCount(worldId) {
   height: 100%;
   padding: 40px;
   overflow-y: auto;
+  background:
+    radial-gradient(ellipse at 25% 15%, rgba(58, 80, 140, 0.22) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 85%, rgba(100, 60, 140, 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 60% 40%, rgba(40, 90, 100, 0.12) 0%, transparent 50%),
+    #0a0e18;
+}
+
+/* 星尘（确定性伪元素，与星图背景一致） */
+.world-selector::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 40px 70px, rgba(255, 255, 255, 0.25), transparent),
+    radial-gradient(1.5px 1.5px at 50px 160px, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 90px 40px, rgba(255, 255, 255, 0.2), transparent),
+    radial-gradient(1px 1px at 130px 120px, rgba(255, 255, 255, 0.28), transparent),
+    radial-gradient(1.2px 1.2px at 160px 60px, rgba(255, 255, 255, 0.22), transparent);
+  background-size: 200px 200px;
+  opacity: 0.7;
 }
 
 .header-row {
@@ -126,13 +172,22 @@ function getLocationCount(worldId) {
 
 .world-card {
   position: relative;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
+  border: 1px solid rgba(88, 166, 255, 0.25);
+  border-radius: 10px;
   padding: 24px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s;
   text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.world-card:hover {
+  border-color: var(--card-accent);
+  transform: translateY(-4px);
+  box-shadow:
+    0 0 22px color-mix(in srgb, var(--card-accent) 30%, transparent),
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .delete-btn {
@@ -153,17 +208,10 @@ function getLocationCount(worldId) {
 .world-card:hover .delete-btn { opacity: 1; }
 .delete-btn:hover { background: rgba(255, 123, 114, 0.15); color: #ff7b72; }
 
-.world-card:hover {
-  border-color: #58a6ff;
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 .world-icon {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
   font-size: 24px;
   font-weight: bold;
@@ -171,6 +219,8 @@ function getLocationCount(worldId) {
   align-items: center;
   justify-content: center;
   margin: 0 auto 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 14px color-mix(in srgb, var(--card-accent) 45%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .world-card h3 {

@@ -15,10 +15,10 @@
         >
           {{ editMode ? '✓ 完成编辑' : '✎ 编辑航道' }}
         </button>
-        <button title="在当前星域创建恒星系（视图中心）" @click="createSystem">
+        <button v-if="editMode" title="在当前星域创建恒星系（视图中心）" @click="createSystem">
           ＋ 恒星系
         </button>
-        <button title="在选中恒星系下创建行星（无选中则归属最近恒星系）" @click="createPlanet">
+        <button v-if="editMode" title="在选中恒星系下创建行星（无选中则归属最近恒星系）" @click="createPlanet">
           ＋ 行星
         </button>
       </div>

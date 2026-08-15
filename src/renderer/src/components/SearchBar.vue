@@ -61,6 +61,7 @@
     <div v-if="store.isFilterOpen" class="filter-panel" @click.stop>
       <div class="filter-header">类型过滤</div>
       <div class="filter-options">
+        <div class="filter-subtitle">层级</div>
         <label 
           v-for="layer in store.availableLayers" 
           :key="layer" 
@@ -75,8 +76,24 @@
           <span>{{ store.layerLabels[layer] || layer }}</span>
         </label>
       </div>
+      <div v-if="store.availablePlaceTypes.length > 0" class="filter-options">
+        <div class="filter-subtitle">地点类型</div>
+        <label 
+          v-for="type in store.availablePlaceTypes" 
+          :key="type" 
+          class="filter-option"
+          :class="{ active: store.searchPlaceTypeFilter.includes(type) }"
+        >
+          <input 
+            type="checkbox" 
+            :checked="store.searchPlaceTypeFilter.includes(type)"
+            @change="store.togglePlaceTypeFilter(type)"
+          />
+          <span>{{ type }}</span>
+        </label>
+      </div>
       <div class="filter-footer">
-        <button class="filter-clear" @click="store.searchLayerFilter = []; if (store.searchQuery.trim()) store.performSearch(store.searchQuery)">清除</button>
+        <button class="filter-clear" @click="store.searchLayerFilter = []; store.searchPlaceTypeFilter = []; if (store.searchQuery.trim()) store.performSearch(store.searchQuery)">清除</button>
       </div>
     </div>
   </div>
@@ -93,7 +110,7 @@ const showResults = ref(false);
 
 const hasResults = computed(() => query.value.trim().length > 0 && store.searchResults.length === 0);
 const showNoResults = computed(() => hasResults.value && query.value.trim().length > 0);
-const filterCount = computed(() => store.searchLayerFilter.length);
+const filterCount = computed(() => store.searchLayerFilter.length + store.searchPlaceTypeFilter.length);
 
 // 按层级分组搜索结果
 const groupedResults = computed(() => {
@@ -474,6 +491,14 @@ input::placeholder {
   gap: 4px;
   max-height: 240px;
   overflow-y: auto;
+}
+
+.filter-subtitle {
+  font-size: 11px;
+  color: #8b949e;
+  margin: 6px 0 2px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #21262d;
 }
 
 .filter-option {

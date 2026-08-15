@@ -34,6 +34,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   const searchResults = ref([]);
   const searchMatchIndex = ref(0);
   const searchLayerFilter = ref([]); // 选中的层级类型过滤
+  const searchPlaceTypeFilter = ref([]); // 选中的地点类型过滤（第二维度）
   const isFilterOpen = ref(false); // 过滤面板是否展开
 
   const worlds = computed(() => nodes.value.filter(n => n.layer === 'world'));
@@ -121,6 +122,12 @@ export const useGeodataStore = defineStore('geodata', () => {
     return order.filter(l => layers.has(l));
   });
 
+  // 当前 vault 中存在的地点类型（第二维度过滤选项）
+  const availablePlaceTypes = computed(() => {
+    const types = new Set(nodes.value.map(n => n.placeType).filter(Boolean));
+    return ['自然', '宗教', '皇室', '商业', '工业', '居住', '公共', '特殊'].filter(t => types.has(t));
+  });
+
   const layerLabels = {
     world: '世界', star_domain: '星域', galaxy: '星系', star: '恒星',
     planet: '行星', moon: '卫星', region: '区域', city: '城市',
@@ -140,10 +147,26 @@ export const useGeodataStore = defineStore('geodata', () => {
     }
   }
 
-  function matchNode(node, query, layerFilter) {
-    // 类型过滤
+  function togglePlaceTypeFilter(type) {
+    const idx = searchPlaceTypeFilter.value.indexOf(type);
+    if (idx === -1) {
+      searchPlaceTypeFilter.value.push(type);
+    } else {
+      searchPlaceTypeFilter.value.splice(idx, 1);
+    }
+    if (searchQuery.value.trim()) {
+      performSearch(searchQuery.value);
+    }
+  }
+
+  function matchNode(node, query, layerFilter, placeTypeFilter) {
+    // 层级过滤
     if (layerFilter && layerFilter.length > 0 && !layerFilter.includes(node.layer)) {
       return false;
+    }
+    // 地点类型过滤（激活时排除无 placeType 的节点）
+    if (placeTypeFilter && placeTypeFilter.length > 0) {
+      if (!node.placeType || !placeTypeFilter.includes(node.placeType)) return false;
     }
     if (!query) return false;
   
@@ -155,7 +178,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   
     const q = query.toLowerCase();
     const name = node.name.toLowerCase();
+    const displayName = node.displayName?.toLowerCase() || '';
     if (name.includes(q)) return true;
+    if (displayName.includes(q)) return true;
     if (node.tags?.some(t => t.toLowerCase().includes(q))) return true;
     return false;
   }
@@ -167,7 +192,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       searchMatchIndex.value = 0;
       return;
     }
-    const results = nodes.value.filter(n => matchNode(n, query.trim(), searchLayerFilter.value)).map(n => n.id);
+    const results = nodes.value
+      .filter(n => matchNode(n, query.trim(), searchLayerFilter.value, searchPlaceTypeFilter.value))
+      .map(n => n.id);
     searchResults.value = results;
     searchMatchIndex.value = results.length > 0 ? 0 : -1;
   }
@@ -1209,6 +1236,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,
     isSearching,
     availableLayers, layerLabels, searchLayerFilter,
+    availablePlaceTypes, searchPlaceTypeFilter, togglePlaceTypeFilter,
     toggleLayerFilter, isFilterOpen,
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
     loadGeodata, reextract, saveGeodata,
