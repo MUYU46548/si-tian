@@ -410,3 +410,27 @@ export function mergePolygons(poly1, poly2, tolerance = 10) {
   const out = dedupeAdjacent(merged);
   return out.length >= 3 ? out : null;
 }
+
+/**
+ * 路径简化（Douglas-Peucker，2026-08-16 自 PlanetMap 迁入）
+ * @param {Array} points - 顶点数组
+ * @param {number} tolerance - 简化容差
+ * @returns {Array} 简化后顶点
+ */
+export function simplifyPath(points, tolerance) {
+  if (points.length <= 2) return points;
+  let maxDist = 0;
+  let maxIdx = 0;
+  const end = points.length - 1;
+  for (let i = 1; i < end; i++) {
+    const dist = perpendicularDistance(points[i], points[0], points[end]);
+    if (dist > maxDist) { maxDist = dist; maxIdx = i; }
+  }
+  if (maxDist > tolerance) {
+    const left = simplifyPath(points.slice(0, maxIdx + 1), tolerance);
+    const right = simplifyPath(points.slice(maxIdx), tolerance);
+    return left.slice(0, -1).concat(right);
+  } else {
+    return [points[0], points[end]];
+  }
+}

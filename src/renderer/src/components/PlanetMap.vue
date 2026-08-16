@@ -635,11 +635,12 @@ import { useLayersStore } from '../store/layers';
 import { usePanelsStore } from '../store/panels';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { createPlanetDrawing } from '../composables/planetDrawing';
+import { createPlanetHitTest } from '../composables/planetHitTest';
 import { getLastCommandLabel, execute } from '../store/undo';
 import { getTexturePattern } from '../utils/textures';
 import { snapPolygonToNeighbors } from '../utils/snap';
 import { createProvinceByFloodFill } from '../utils/floodfill';
-import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons } from '../utils/geometry';
+import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
@@ -1387,172 +1388,6 @@ function getPlaceIcon(place) {
 }
 
 // ===== 命中测试 =====
-function hitTest(wx, wy) {
-  if (!layers.isEditable('planet', 'terrain') && 
-      !layers.isEditable('planet', 'markers') && 
-      !layers.isEditable('planet', 'places') &&
-      !layers.isEditable('planet', 'regions')) return null;
-  
-  if (layers.isEditable('planet', 'markers')) {
-    const markerHit = hitTestMarker(wx, wy);
-    if (markerHit) return markerHit;
-  }
-  
-  // 浮动文本（优先级在标记之后、区域之前）
-  if (layers.isEditable('planet', 'textLabels') && currentMapData.value?.textLabels) {
-    const textHit = hitTestTextLabel(wx, wy);
-    if (textHit) return textHit;
-  }
-  
-  // 路线（线命中）
-  if (layers.isEditable('planet', 'routes') && currentMapData.value?.routes) {
-    const routeHit = hitTestRoute(wx, wy);
-    if (routeHit) return routeHit;
-  }
-  
-  if (layers.isEditable('planet', 'regions') && currentMapData.value?.regions) {
-    for (let i = currentMapData.value.regions.length - 1; i >= 0; i--) {
-      const region = currentMapData.value.regions[i];
-      if (geoPointInPolygon(wx, wy, region.points)) {
-        return { type: 'region', region };
-      }
-    }
-  }
-  
-  if (layers.isEditable('planet', 'places')) {
-    for (const place of places.value) {
-      const dx = wx - (place.coordinate?.x || 0);
-      const dy = wy - (place.coordinate?.y || 0);
-      const r = getNodeRadius(place.layer) + 4;
-      if (dx * dx + dy * dy < r * r) return { type: 'place', node: place };
-    }
-  }
-  
-  if (layers.isEditable('planet', 'terrain') && currentMapData.value) {
-    for (let i = currentMapData.value.terrain.length - 1; i >= 0; i--) {
-      const poly = currentMapData.value.terrain[i];
-      if (pointInPolygon(wx, wy, poly.points)) {
-        return { type: 'province', polygon: poly };
-      }
-    }
-  }
-  
-  return null;
-}
-
-// 路线命中测试：点到线段距离 < 8px
-function hitTestRoute(wx, wy) {
-  if (!currentMapData.value?.routes) return null;
-  const routes = currentMapData.value.routes;
-  for (let i = routes.length - 1; i >= 0; i--) {
-    const route = routes[i];
-    if (!route.points || route.points.length < 2) continue;
-    // 先检查端点（优先级更高）
-    for (let j = 0; j < route.points.length; j++) {
-      const p = route.points[j];
-      const dx = wx - p.x;
-      const dy = wy - p.y;
-      if (dx * dx + dy * dy < 64) {
-        return { type: 'route-endpoint', route, pointIndex: j };
-      }
-    }
-    // 再检查线段
-    for (let j = 0; j < route.points.length - 1; j++) {
-      const a = route.points[j];
-      const b = route.points[j + 1];
-      const dist = perpendicularDistance({ x: wx, y: wy }, a, b);
-      if (dist < 8) {
-        return { type: 'route', route };
-      }
-    }
-  }
-  return null;
-}
-
-// 浮动文本命中测试：文本包围盒内
-function hitTestTextLabel(wx, wy) {
-  if (!currentMapData.value?.textLabels) return null;
-  const labels = currentMapData.value.textLabels;
-  for (let i = labels.length - 1; i >= 0; i--) {
-    const label = labels[i];
-    if (!label?.text) continue;
-    const fontSize = label.fontSize || 16;
-    const w = (label.text.length * fontSize * 0.9) / 2 + 8;
-    const h = fontSize + 10;
-    if (Math.abs(wx - label.x) < w && Math.abs(wy - label.y) < h / 2) {
-      return { type: 'textLabel', label };
-    }
-  }
-  return null;
-}
-
-// ===== 顶点命中测试 =====
-function hitTestVertex(wx, wy) {
-  // 多边形/区域顶点
-  const selectedPoly = selectedProvince.value || selectedRegion.value;
-  if (selectedPoly && editMode.value) {
-    const points = selectedPoly.points;
-    for (let i = 0; i < points.length; i++) {
-      const dx = wx - points[i].x;
-      const dy = wy - points[i].y;
-      if (dx * dx + dy * dy < 8 * 8) {
-        return { vertexIndex: i };
-      }
-    }
-  }
-  
-  // 路线顶点（开放折线）
-  if (selectedRoute.value && editMode.value) {
-    const points = selectedRoute.value.points;
-    if (points) {
-      for (let i = 0; i < points.length; i++) {
-        const dx = wx - points[i].x;
-        const dy = wy - points[i].y;
-        if (dx * dx + dy * dy < 8 * 8) {
-          return { vertexIndex: i };
-        }
-      }
-    }
-  }
-  
-  return null;
-}
-
-// ===== 边命中测试 =====
-function hitTestEdge(wx, wy) {
-  const selectedPoly = selectedProvince.value || selectedRegion.value;
-  if (!selectedPoly || !editMode.value) return null;
-  
-  const points = selectedPoly.points;
-  const n = points.length;
-  
-  for (let i = 0; i < n; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % n];
-    const dist = perpendicularDistance({ x: wx, y: wy }, a, b);
-    if (dist < 8) {
-      const distToA = Math.hypot(wx - a.x, wy - a.y);
-      const distToB = Math.hypot(wx - b.x, wy - b.y);
-      const edgeLen = Math.hypot(b.x - a.x, b.y - a.y);
-      if (distToA > 10 && distToB > 10 && edgeLen > 20) {
-        return { insertIndex: i + 1 };
-      }
-    }
-  }
-  return null;
-}
-
-function pointInPolygon(x, y, points) {
-  let inside = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const xi = points[i].x, yi = points[i].y;
-    const xj = points[j].x, yj = points[j].y;
-    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
 // 重叠率（2026-08-16）：网格采样 a 内点，统计也落在 b 内的比例（0~1）
 // 用于绘制完成时检测新地形与已有地形重叠，避免互相覆盖
 function polygonOverlapRatio(a, b) {
@@ -1565,57 +1400,15 @@ function polygonOverlapRatio(a, b) {
   let total = 0, inside = 0;
   for (let x = minX; x <= maxX; x += STEP) {
     for (let y = minY; y <= maxY; y += STEP) {
-      if (pointInPolygon(x, y, a)) {
+      if (geoPointInPolygon(x, y, a)) {
         total++;
-        if (pointInPolygon(x, y, b)) inside++;
+        if (geoPointInPolygon(x, y, b)) inside++;
       }
     }
   }
   return total === 0 ? 0 : inside / total;
 }
 
-function hitTestMarker(wx, wy) {
-  if (!currentMapData.value?.markers) return null;
-  for (let i = currentMapData.value.markers.length - 1; i >= 0; i--) {
-    const marker = currentMapData.value.markers[i];
-    const dx = wx - marker.x;
-    const dy = wy - marker.y;
-    if (dx * dx + dy * dy < 64) {
-      return { type: 'marker', marker };
-    }
-  }
-  return null;
-}
-
-// ===== 路径简化（Douglas-Peucker）=====
-function simplifyPath(points, tolerance) {
-  if (points.length <= 2) return points;
-  let maxDist = 0;
-  let maxIdx = 0;
-  const end = points.length - 1;
-  for (let i = 1; i < end; i++) {
-    const dist = perpendicularDistance(points[i], points[0], points[end]);
-    if (dist > maxDist) { maxDist = dist; maxIdx = i; }
-  }
-  if (maxDist > tolerance) {
-    const left = simplifyPath(points.slice(0, maxIdx + 1), tolerance);
-    const right = simplifyPath(points.slice(maxIdx), tolerance);
-    return left.slice(0, -1).concat(right);
-  } else {
-    return [points[0], points[end]];
-  }
-}
-
-function perpendicularDistance(point, lineStart, lineEnd) {
-  const dx = lineEnd.x - lineStart.x;
-  const dy = lineEnd.y - lineStart.y;
-  const len = Math.hypot(dx, dy);
-  if (len === 0) return Math.hypot(point.x - lineStart.x, point.y - lineStart.y);
-  const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (len * len);
-  const projX = lineStart.x + t * dx;
-  const projY = lineStart.y + t * dy;
-  return Math.hypot(point.x - projX, point.y - projY);
-}
 
 // ===== Undo/Redo label =====
 const undoLabel = computed(() => getLastCommandLabel());
@@ -1823,6 +1616,19 @@ function onRender(ctx, w, h) {
 
 // 参考图底图渲染
 
+// ===== 命中检测（批次 2c：拆分至 composables/planetHitTest.js，2026-08-16） =====
+// 只读工厂：getState 每次命中测试取最新解包状态
+const hitTestModule = createPlanetHitTest(() => ({
+  layers,
+  currentMapData: currentMapData.value,
+  places: places.value,
+  selectedProvince: selectedProvince.value,
+  selectedRegion: selectedRegion.value,
+  selectedRoute: selectedRoute.value,
+  editMode: editMode.value,
+  getNodeRadius,
+}));
+
 // ===== Canvas Renderer =====
 // ===== 绘制函数（批次 2a：拆分至 composables/planetDrawing.js，2026-08-16） =====
 // 工厂注入状态访问器：每次渲染 getState() 取最新解包值；绘制只读状态不修改
@@ -1853,7 +1659,7 @@ const drawing = createPlanetDrawing(() => ({
 
 const renderer = useCanvasRenderer(canvas, {
   onRender,
-  onHitTest: (wx, wy) => hitTest(wx, wy),
+  onHitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
   onHover: (hit, wx, wy) => {
     // 光标世界坐标（左下角状态条）
     cursorCoord.value = { x: Math.round(wx), y: Math.round(wy), visible: true };
@@ -1868,7 +1674,7 @@ const renderer = useCanvasRenderer(canvas, {
     }
     // 顶点悬停（多边形/区域/路线）
     if (editMode.value && (selectedProvince.value || selectedRegion.value || selectedRoute.value)) {
-      const vHit = hitTestVertex(wx, wy);
+      const vHit = hitTestModule.hitTestVertex(wx, wy);
       if (vHit) {
         hoveredVertex.value = { vertexIndex: vHit.vertexIndex };
       } else {
@@ -1917,7 +1723,7 @@ const renderer = useCanvasRenderer(canvas, {
     // panTry=true：pan 模式下的顶点试探，只做顶点检测，不做其他副作用
     if (panTry) {
       if (editMode.value && (selectedProvince.value || selectedRegion.value || selectedRoute.value)) {
-        const vertexHit = hitTestVertex(wx, wy);
+        const vertexHit = hitTestModule.hitTestVertex(wx, wy);
         if (vertexHit) {
           const kind = selectedRoute.value ? 'route' : (selectedRegion.value ? 'region' : 'province');
           vertexDragKind = kind;
@@ -1936,7 +1742,7 @@ const renderer = useCanvasRenderer(canvas, {
     
     // 顶点拖拽（选中多边形/区域/路线时，pan 模式或任意模式下点击顶点）
     if (editMode.value && (selectedProvince.value || selectedRegion.value || selectedRoute.value)) {
-      const vertexHit = hitTestVertex(wx, wy);
+      const vertexHit = hitTestModule.hitTestVertex(wx, wy);
       if (vertexHit) {
         const kind = selectedRoute.value ? 'route' : (selectedRegion.value ? 'region' : 'province');
         vertexDragKind = kind;
@@ -1973,7 +1779,7 @@ const renderer = useCanvasRenderer(canvas, {
       return false;
     }
     
-    const hit = hitTest(wx, wy);
+    const hit = hitTestModule.hitTest(wx, wy);
     if (!hit) {
       // Shift+拖动：框选多个地点
       if (shiftKey && editMode.value && mode === 'pan') {
@@ -2534,7 +2340,7 @@ function finishPointDrawing() {
 // 在 route 模式点击画布：放置路线顶点
 function handleRouteClick(wx, wy) {
   // 若命中已有路线端点，直接开始编辑该路线（选中）
-  const hit = hitTest(wx, wy);
+  const hit = hitTestModule.hitTest(wx, wy);
   if (hit?.type === 'route' || hit?.type === 'route-endpoint') {
     selectedRoute.value = hit.route;
     routeDraftPoints.value = [];
