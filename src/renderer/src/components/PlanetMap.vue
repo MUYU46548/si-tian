@@ -636,6 +636,7 @@ import { usePanelsStore } from '../store/panels';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { createPlanetDrawing } from '../composables/planetDrawing';
 import { createPlanetHitTest } from '../composables/planetHitTest';
+import { createPlanetInteractions } from '../composables/planetInteractions';
 import { getLastCommandLabel, execute } from '../store/undo';
 import { getTexturePattern } from '../utils/textures';
 import { snapPolygonToNeighbors } from '../utils/snap';
@@ -844,7 +845,7 @@ function setInteractionMode(mode) {
   brushLastPoint.value = null;
   brushStrokePoints.value = [];
   drawingPolygon.value = null;
-  isDrawingActive = false;
+  isDrawingActive.value = false;
   currentPath.value = [];
   clusterSelectMode.value = false;
   clusterBoxStart.value = null;
@@ -1657,6 +1658,157 @@ const drawing = createPlanetDrawing(() => ({
   terrainTypes,
 }));
 
+// ===== 交互状态机（P0-2：从巨型组件拆分，composables/planetInteractions.js）=====
+// getState：读通道，回调执行时惰性取最新解包状态（数组/对象内部修改直接写回 reactive）
+const getState = () => ({
+  interactionMode: interactionMode.value,
+  isSpacebarDown: isSpacebarDown.value,
+  editMode: editMode.value,
+  splitSelectMode: splitSelectMode.value,
+  mergeSelectMode: mergeSelectMode.value,
+  refDragMode: refDragMode.value,
+  brushMode: brushMode.value,
+  drawMode: drawMode.value,
+  isBoxSelecting: isBoxSelecting.value,
+  boxSelectStart: boxSelectStart.value,
+  boxSelectEnd: boxSelectEnd.value,
+  isBrushing: isBrushing.value,
+  brushLastPoint: brushLastPoint.value,
+  brushStrokePoints: brushStrokePoints.value,
+  isDrawingActive: isDrawingActive.value,
+  currentPath: currentPath.value,
+  clusterBoxStart: clusterBoxStart.value,
+  clusterBoxEnd: clusterBoxEnd.value,
+  dragObject: dragObject.value,
+  dragRegionAnchor: dragRegionAnchor.value,
+  selectedProvince: selectedProvince.value,
+  selectedRegion: selectedRegion.value,
+  selectedMarker: selectedMarker.value,
+  selectedRoute: selectedRoute.value,
+  selectedTextLabel: selectedTextLabel.value,
+  selectedPlaceIds: selectedPlaceIds.value,
+  selectedMarkerType: selectedMarkerType.value,
+  splitPoints: splitPoints.value,
+  mergeTargetId: mergeTargetId.value,
+  drawingPolygon: drawingPolygon.value,
+  refDragStart: refDragStart.value,
+  refDragStartWorld: refDragStartWorld.value,
+  isDraggingPlaces: isDraggingPlaces.value,
+  placesDragStart: placesDragStart.value,
+  referenceImage: referenceImage.value,
+  currentMapData: currentMapData.value,
+  places: places.value,
+  planetId: props.planet.id,
+  brushSize: brushSize.value,
+  textFontSize: textFontSize.value,
+  textColor: textColor.value,
+  markerTypes,
+  hitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
+  hitTestVertex: (wx, wy) => hitTestModule.hitTestVertex(wx, wy),
+  captureVertexSnapshot,
+  snapPoint,
+  snapDrawPoint,
+  store,
+});
+
+// actions：写通道，组件注入 ref 整体赋值 / store 调用 / 私有函数（闭包引用后定义函数，运行时调用）
+const interactions = createPlanetInteractions(getState, {
+  setVertexDrag(kind, snapshot) { vertexDragKind.value = kind; vertexDragOld.value = snapshot; },
+  clearVertexDrag() { vertexDragKind.value = null; vertexDragOld.value = null; },
+  setRefDragStart(start, world) { refDragStart.value = start; refDragStartWorld.value = world; },
+  clearRefDragStart() { refDragStart.value = null; },
+  startBrush(p) { isBrushing.value = true; brushLastPoint.value = { ...p }; brushStrokePoints.value = [{ ...p }]; },
+  setBrushLastPoint(p) { brushLastPoint.value = { ...p }; },
+  clearBrush() { isBrushing.value = false; brushLastPoint.value = null; brushStrokePoints.value = []; },
+  startDrawing(p) { isDrawingActive.value = true; currentPath.value = [p]; },
+  clearDrawing() { isDrawingActive.value = false; edgeSnapPreview.value = null; currentPath.value = []; },
+  setClusterBox(p) { clusterBoxStart.value = { ...p }; clusterBoxEnd.value = { ...p }; },
+  setClusterBoxEnd(p) { clusterBoxEnd.value = { ...p }; },
+  startBoxSelect(p) { isBoxSelecting.value = true; boxSelectStart.value = { ...p }; boxSelectEnd.value = { ...p }; },
+  setBoxSelectEnd(p) { boxSelectEnd.value = { ...p }; },
+  clearBoxSelect() { isBoxSelecting.value = false; boxSelectStart.value = null; boxSelectEnd.value = null; },
+  setMoveObject(obj) { dragObject.value = obj; },
+  setDragRegionAnchor(p) { dragRegionAnchor.value = p; },
+  clearMoveObject() { dragObject.value = null; dragRegionAnchor.value = null; },
+  selectOnly(kind, obj) {
+    selectedProvince.value = null;
+    selectedRegion.value = null;
+    selectedMarker.value = null;
+    selectedRoute.value = null;
+    selectedTextLabel.value = null;
+    if (kind === 'province') selectedProvince.value = obj;
+    else if (kind === 'region') selectedRegion.value = obj;
+    else if (kind === 'marker') selectedMarker.value = obj;
+    else if (kind === 'route') selectedRoute.value = obj;
+    else if (kind === 'textLabel') selectedTextLabel.value = obj;
+    else if (kind === 'place') selectedPlaceIds.value = new Set([obj]);
+  },
+  setSelectedPlaces(set) { selectedPlaceIds.value = set; },
+  startPlacesDrag(start, ids) {
+    isDraggingPlaces.value = true;
+    placesDragStart.value = { ...start };
+    if (ids.length > 1) store.beginMultiNodePositionCapture(ids);
+    else store.beginNodePositionCapture(ids[0]);
+  },
+  setPlacesDragStart(p) { placesDragStart.value = { ...p }; },
+  endPlacesDrag() {
+    isDraggingPlaces.value = false;
+    placesDragStart.value = null;
+    if (selectedPlaceIds.value.size > 1) store.endMultiNodePositionCapture();
+    else selectedPlaceIds.value.forEach(id => store.endNodePositionCapture(id));
+    emit('dirty', true);
+  },
+  commitMove() {
+    const obj = dragObject.value;
+    if (!obj) return;
+    if (obj.type === 'marker') store.updateMarker(props.planet.id, obj.id, { x: obj.marker.x, y: obj.marker.y }, obj.old);
+    else if (obj.type === 'textLabel') store.updateTextLabel(props.planet.id, obj.id, { x: obj.label.x, y: obj.label.y }, obj.old);
+    else if (obj.type === 'region') store.updateRegion(props.planet.id, obj.id, { points: obj.region.points.map(p => ({ ...p })) }, { points: obj.old });
+    dragObject.value = null;
+    dragRegionAnchor.value = null;
+    emit('dirty', true);
+  },
+  commitVertexDrag() {
+    if (vertexDragOld.value) {
+      const { kind, id, points } = vertexDragOld.value;
+      const target = kind === 'route' ? selectedRoute.value : (kind === 'region' ? selectedRegion.value : selectedProvince.value);
+      if (target?.points) {
+        const newPoints = target.points.map(p => ({ ...p }));
+        if (kind === 'province') store.updateTerrainPolygon(props.planet.id, id, { points: newPoints }, { points });
+        else if (kind === 'region') store.updateRegion(props.planet.id, id, { points: newPoints }, { points });
+        else if (kind === 'route') store.updateRoute(props.planet.id, id, { points: newPoints }, { points });
+        emit('dirty', true);
+      }
+    }
+    vertexDragKind.value = null;
+    vertexDragOld.value = null;
+  },
+  finishDraw() { finishDrawing(); },
+  finishBrush() { finishBrushStroke(); },
+  finishCluster(wx, wy) { finishClusterBox(wx, wy); },
+  setSplitPoint(p) { splitPoints.value = [p]; },
+  doSplit(pA, pB) { performSplit(pA, pB); },
+  doMerge(idA, idB) { performMerge(idA, idB); },
+  setStatus(msg) { exportStatus.value = msg; },
+  clusterClick(wx, wy) { handleClusterCanvasClick(wx, wy); },
+  routeClick(wx, wy) { handleRouteClick(wx, wy); },
+  pointClick(wx, wy, mode) { handlePointClick(wx, wy, mode); },
+  addTextLabel(label) {
+    store.addTextLabel(props.planet.id, label);
+    selectedTextLabel.value = label;
+    emit('dirty', true);
+    renderer.requestRender();
+  },
+  addMarker(marker) {
+    store.addMarker(props.planet.id, marker);
+    selectedMarker.value = marker;
+    emit('dirty', true);
+    renderer.requestRender();
+  },
+  emitSelectNode(node) { emit('select-node', node); },
+  requestRender() { renderer.requestRender(); },
+});
+
 const renderer = useCanvasRenderer(canvas, {
   onRender,
   onHitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
@@ -1687,7 +1839,7 @@ const renderer = useCanvasRenderer(canvas, {
   onClick: (hit, wx, wy) => {
     // 参考图拖动模式：单击不处理
     if (refDragMode.value && referenceImage.value && !referenceImage.value.locked) return;
-    handleCanvasClick(hit, wx, wy);
+    interactions.handleCanvasClick(hit, wx, wy);
   },
   onDblClick: (hit, wx, wy) => {
     if (interactionMode.value === 'route') {
@@ -1711,311 +1863,9 @@ const renderer = useCanvasRenderer(canvas, {
       renderer.requestRender();
     }
   },
-  onDragStart: (wx, wy, button, shiftKey, ctrlKey, panTry) => {
-    if (button !== 0) return true;
-
-    // 拆分/合并模式：屏蔽顶点/节点/参考图拖拽（选点优先，点击由 onClick 收集；
-    // 否则点击锚点会被顶点拖拽拦截导致无法选点，2026-08-16 用户反馈）
-    if (splitSelectMode.value || mergeSelectMode.value) return true;
-
-    const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
-    
-    // panTry=true：pan 模式下的顶点试探，只做顶点检测，不做其他副作用
-    if (panTry) {
-      if (editMode.value && (selectedProvince.value || selectedRegion.value || selectedRoute.value)) {
-        const vertexHit = hitTestModule.hitTestVertex(wx, wy);
-        if (vertexHit) {
-          const kind = selectedRoute.value ? 'route' : (selectedRegion.value ? 'region' : 'province');
-          vertexDragKind = kind;
-          return { mode: 'vertex', vertexInfo: { kind, vertexIndex: vertexHit.vertexIndex } };
-        }
-      }
-      return true; // 非顶点 → 允许平移
-    }
-    
-    // 参考图拖动模式：拖动画布移动底图
-    if (refDragMode.value && referenceImage.value && !referenceImage.value.locked) {
-      refDragStart = { x: referenceImage.value.offsetX, y: referenceImage.value.offsetY };
-      refDragStartWorld = { x: wx, y: wy };
-      return false;
-    }
-    
-    // 顶点拖拽（选中多边形/区域/路线时，pan 模式或任意模式下点击顶点）
-    if (editMode.value && (selectedProvince.value || selectedRegion.value || selectedRoute.value)) {
-      const vertexHit = hitTestModule.hitTestVertex(wx, wy);
-      if (vertexHit) {
-        const kind = selectedRoute.value ? 'route' : (selectedRegion.value ? 'region' : 'province');
-        vertexDragKind = kind;
-        return { mode: 'vertex', vertexInfo: { kind, vertexIndex: vertexHit.vertexIndex } };
-      }
-    }
-    
-    // 地形笔刷：开始涂抹（优先于自由绘制）
-    if (mode === 'draw' && brushMode.value) {
-      isBrushing.value = true;
-      brushLastPoint.value = { x: wx, y: wy };
-      brushStrokePoints.value = [{ x: wx, y: wy }];
-      return false;
-    }
-    
-    // 绘制模式：开始绘制（笔刷模式不进入）
-    // 注意：wx/wy 已是世界坐标（useCanvasRenderer 已 screenToWorld），直接用，
-    // 不要再次 screenToWorldFunc —— 双重转换会导致图案偏移到画笔右侧
-    if ((mode === 'draw' || mode === 'region') && drawMode.value && !brushMode.value) {
-      isDrawingActive = true;
-      currentPath.value = [snapDrawPoint({ x: wx, y: wy })];
-      return false;
-    }
-    
-    // cluster 模式：框选起点
-    if (mode === 'cluster') {
-      clusterBoxStart.value = { x: wx, y: wy };
-      clusterBoxEnd.value = { x: wx, y: wy };
-      return false;
-    }
-    
-    // route/text/marker 模式：点击处理，禁止拖拽平移（用空格临时平移）
-    if (mode === 'marker' || mode === 'route' || mode === 'text') {
-      return false;
-    }
-    
-    const hit = hitTestModule.hitTest(wx, wy);
-    if (!hit) {
-      // Shift+拖动：框选多个地点
-      if (shiftKey && editMode.value && mode === 'pan') {
-        isBoxSelecting.value = true;
-        boxSelectStart.value = { x: wx, y: wy };
-        boxSelectEnd.value = { x: wx, y: wy };
-        return false;
-      }
-      return true; // 空白处平移
-    }
-    
-    // 移动工具：拖动 marker/textLabel/region；place 落到下方分支；其余平移
-    if (mode === 'move') {
-      if (hit.type === 'marker') {
-        selectedMarker.value = hit.marker;
-        selectedProvince.value = null; selectedRegion.value = null; selectedRoute.value = null; selectedTextLabel.value = null;
-        dragObject.value = { type: 'marker', id: hit.marker.id, marker: hit.marker, old: { x: hit.marker.x, y: hit.marker.y } };
-        return false;
-      }
-      if (hit.type === 'textLabel') {
-        selectedTextLabel.value = hit.label;
-        selectedProvince.value = null; selectedRegion.value = null; selectedMarker.value = null; selectedRoute.value = null;
-        dragObject.value = { type: 'textLabel', id: hit.label.id, label: hit.label, old: { x: hit.label.x, y: hit.label.y } };
-        return false;
-      }
-      if (hit.type === 'region') {
-        selectedRegion.value = hit.region;
-        selectedProvince.value = null; selectedMarker.value = null; selectedRoute.value = null; selectedTextLabel.value = null;
-        dragObject.value = { type: 'region', id: hit.region.id, region: hit.region, old: hit.region.points.map(p => ({ ...p })) };
-        dragRegionAnchor.value = snapPoint({ x: wx, y: wy });
-        return false;
-      }
-      if (hit.type !== 'place') return true; // 省份等 → 平移
-    }
-    
-    // 选中地点：点击已选中地点且多选 → 批量拖拽；否则启动单地点拖拽
-    if (hit.type === 'place') {
-      if (selectedPlaceIds.value.has(hit.node.id) && selectedPlaceIds.value.size > 1) {
-        isDraggingPlaces.value = true;
-        placesDragStart.value = { x: wx, y: wy };
-        store.beginMultiNodePositionCapture([...selectedPlaceIds.value]);
-        return false;
-      }
-      // 单选：清空多选并启动单地点拖拽
-      // （原实现 return true 会走画布平移 → 用户"点来点去拖不动地点"）
-      selectedPlaceIds.value = new Set();
-      selectedPlaceIds.value.add(hit.node.id);
-      isDraggingPlaces.value = true;
-      placesDragStart.value = { x: wx, y: wy };
-      store.beginNodePositionCapture(hit.node.id);
-      return false;
-    }
-    
-    if (mode === 'pan') return true;
-    
-    return false;
-  },
-  onDragMove: (wx, wy, dragInfo) => {
-    const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
-    // 移动工具：marker/textLabel/region 本地平移（松手一次提交，避免 undo 栈爆炸；网格吸附对齐）
-    if (mode === 'move' && dragObject.value) {
-      const obj = dragObject.value;
-      if (obj.type === 'marker') { const sp = snapPoint({ x: wx, y: wy }); obj.marker.x = sp.x; obj.marker.y = sp.y; }
-      else if (obj.type === 'textLabel') { const sp = snapPoint({ x: wx, y: wy }); obj.label.x = sp.x; obj.label.y = sp.y; }
-      else if (obj.type === 'region' && dragRegionAnchor.value) {
-        const sp = snapPoint({ x: wx, y: wy });
-        const dx = sp.x - dragRegionAnchor.value.x;
-        const dy = sp.y - dragRegionAnchor.value.y;
-        obj.region.points = obj.old.map(p => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) }));
-      }
-      renderer.requestRender();
-      return;
-    }
-    if (isDrawingActive) {
-      const last = currentPath.value[currentPath.value.length - 1];
-      // wx/wy 已是世界坐标，直接使用（同 onDragStart）；边缘吸附优先，网格吸附其次，跳过重复点
-      const snapped = snapDrawPoint({ x: wx, y: wy });
-      if (!last || snapped.x !== last.x || snapped.y !== last.y) {
-        currentPath.value.push(snapped);
-        renderer.requestRender();
-      }
-      return;
-    }
-    
-    // 顶点拖拽：更新选中对象的顶点坐标（网格吸附）
-    if (dragInfo?.mode === 'vertex') {
-      const { kind, vertexIndex } = dragInfo.vertexInfo;
-      const sp = snapPoint({ x: wx, y: wy });
-      if (kind === 'route' && selectedRoute.value?.points) {
-        selectedRoute.value.points[vertexIndex].x = sp.x;
-        selectedRoute.value.points[vertexIndex].y = sp.y;
-        store.updateRoute(props.planet.id, selectedRoute.value.id, {
-          points: selectedRoute.value.points,
-        });
-      } else if (kind === 'province' && selectedProvince.value?.points) {
-        selectedProvince.value.points[vertexIndex].x = sp.x;
-        selectedProvince.value.points[vertexIndex].y = sp.y;
-        store.updateTerrainPolygon(props.planet.id, selectedProvince.value.id, {
-          points: selectedProvince.value.points,
-        });
-      } else if (kind === 'region' && selectedRegion.value?.points) {
-        selectedRegion.value.points[vertexIndex].x = sp.x;
-        selectedRegion.value.points[vertexIndex].y = sp.y;
-        store.updateRegion(props.planet.id, selectedRegion.value.id, {
-          points: selectedRegion.value.points,
-        });
-      }
-      renderer.requestRender();
-      return;
-    }
-    
-    // 框选拖拽：更新选框
-    if (isBoxSelecting.value && boxSelectStart.value) {
-      boxSelectEnd.value = { x: wx, y: wy };
-      renderer.requestRender();
-      return;
-    }
-    
-    // 批量拖拽：移动所有选中地点
-    if (isDraggingPlaces.value && placesDragStart.value) {
-      const dx = wx - placesDragStart.value.x;
-      const dy = wy - placesDragStart.value.y;
-      selectedPlaceIds.value.forEach(id => {
-        const node = places.value.find(p => p.id === id);
-        if (node && !node.locked) {
-          node.coordinate.x = (node.coordinate.x || 0) + dx;
-          node.coordinate.y = (node.coordinate.y || 0) + dy;
-          store.updateNodePosition(id, node.coordinate.x, node.coordinate.y);
-        }
-      });
-      placesDragStart.value = { x: wx, y: wy };
-      renderer.requestRender();
-      return;
-    }
-    
-    // cluster 框选拖拽
-    if (interactionMode.value === 'cluster' && clusterBoxStart.value) {
-      clusterBoxEnd.value = { x: wx, y: wy };
-      renderer.requestRender();
-      return;
-    }
-    
-    // 地形笔刷拖拽：间隔落点
-    if (isBrushing.value && brushMode.value) {
-      const last = brushLastPoint.value;
-      if (last && Math.hypot(wx - last.x, wy - last.y) >= brushSize.value * 0.25) {
-        brushStrokePoints.value.push({ x: wx, y: wy });
-        brushLastPoint.value = { x: wx, y: wy };
-        // 实时预览落点
-        renderer.requestRender();
-      }
-      return;
-    }
-    
-    // 参考图拖动
-    if (refDragStart && refDragMode.value && referenceImage.value && !referenceImage.value.locked) {
-      // wx/wy 已是世界坐标，直接使用（refDragStartWorld 同为世界坐标）
-      store.updateReferenceImage(props.planet.id, {
-        ...referenceImage.value,
-        offsetX: refDragStart.x + (wx - refDragStartWorld.x),
-        offsetY: refDragStart.y + (wy - refDragStartWorld.y),
-      });
-      renderer.requestRender();
-      return;
-    }
-  },
-  onDragEnd: (wx, wy, dragInfo) => {
-    const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
-    // 移动工具松手：一次提交（入一次 undo），避免拖动期间 undo 栈爆炸
-    if (mode === 'move' && dragObject.value) {
-      const obj = dragObject.value;
-      if (obj.type === 'marker') store.updateMarker(props.planet.id, obj.id, { x: obj.marker.x, y: obj.marker.y });
-      else if (obj.type === 'textLabel') store.updateTextLabel(props.planet.id, obj.id, { x: obj.label.x, y: obj.label.y });
-      else if (obj.type === 'region') store.updateRegion(props.planet.id, obj.id, { points: obj.region.points });
-      dragObject.value = null;
-      dragRegionAnchor.value = null;
-      emit('dirty', true);
-      renderer.requestRender();
-      return;
-    }
-    if (isDrawingActive) {
-      isDrawingActive = false;
-      edgeSnapPreview.value = null;
-      if (currentPath.value.length > 2) {
-        finishDrawing();
-      }
-      currentPath.value = [];
-    }
-    // 框选结束：确定选中地点集合
-    if (isBoxSelecting.value) {
-      isBoxSelecting.value = false;
-      const start = boxSelectStart.value;
-      const end = boxSelectEnd.value || { x: wx, y: wy };
-      boxSelectStart.value = null;
-      boxSelectEnd.value = null;
-      
-      const minX = Math.min(start.x, end.x);
-      const maxX = Math.max(start.x, end.x);
-      const minY = Math.min(start.y, end.y);
-      const maxY = Math.max(start.y, end.y);
-      
-      const selected = new Set();
-      places.value.forEach(p => {
-        const x = p.coordinate?.x;
-        const y = p.coordinate?.y;
-        if (x === null || x === undefined) return;
-        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-          selected.add(p.id);
-        }
-      });
-      selectedPlaceIds.value = selected;
-      renderer.requestRender();
-    }
-    // 批量拖拽结束：结束节点坐标捕获（一次拖动 = 一个 undo 步骤）
-    if (isDraggingPlaces.value) {
-      isDraggingPlaces.value = false;
-      placesDragStart.value = null;
-      if (selectedPlaceIds.value.size > 1) store.endMultiNodePositionCapture();
-      else selectedPlaceIds.value.forEach(id => store.endNodePositionCapture(id));
-      emit('dirty', true);
-    }
-    // 地形笔刷结束：将笔画落点合并为一个地形多边形
-    if (isBrushing.value) {
-      isBrushing.value = false;
-      brushLastPoint.value = null;
-      finishBrushStroke();
-    }
-    // cluster 框选结束
-    if (interactionMode.value === 'cluster' && clusterBoxStart.value) {
-      finishClusterBox(wx, wy);
-    }
-    refDragStart = null;
-    if (dragInfo?.mode === 'vertex') {
-      vertexDragKind = null;
-    }
-  },
+  onDragStart: interactions.onDragStart,
+  onDragMove: interactions.onDragMove,
+  onDragEnd: interactions.onDragEnd,
   onWheel: (e, newScale) => {
     // 滚轮缩放 → 同步滑条/百分比显示
     zoomPercent.value = Math.round(newScale * 100);
@@ -2027,7 +1877,7 @@ const renderer = useCanvasRenderer(canvas, {
   isSpacebarDown,
 });
 
-let isDrawingActive = false;
+const isDrawingActive = ref(false);
 
 // ===== 缩放控件（P0-1）=====
 // zoomPercent 为 ref：滚轮（onWheel 回调）、滑条、按钮、输入框共用，保证互相联动
@@ -2059,10 +1909,23 @@ function onZoomSlider() {
 let onWheelCallback = null;
 
 // 参考图拖动起始状态（dragInfo 中 world 坐标起点）
-let refDragStart = null;
-let refDragStartWorld = null;
+const refDragStart = ref(null);
+const refDragStartWorld = ref(null);
 // 当前顶点拖拽的对象类型（route/province/region）
-let vertexDragKind = null;
+const vertexDragKind = ref(null);
+// 顶点拖拽起始快照（onDragStart 记录 → onDragEnd 带快照提交 undo）
+const vertexDragOld = ref(null);
+
+// 记录选中多边形/区域/路线的 points 深拷贝快照（顶点拖拽 undo 用）
+function captureVertexSnapshot(kind) {
+  const target = kind === 'route' ? selectedRoute.value : (kind === 'region' ? selectedRegion.value : selectedProvince.value);
+  if (!target) return null;
+  return {
+    kind,
+    id: target.id,
+    points: (target.points || []).map(p => ({ ...p })),
+  };
+}
 
 function finishDrawing() {
   const simplified = simplifyPath(currentPath.value, 2);
@@ -2615,153 +2478,6 @@ function handleClusterCanvasClick(wx, wy) {
 }
 
 // ===== 单击分发 =====
-function handleCanvasClick(hit, wx, wy) {
-  // 拆分模式：点击收集切割线两点（第一点起点，第二点执行拆分）
-  if (splitSelectMode.value) {
-    if (splitPoints.value.length === 0) {
-      splitPoints.value = [{ x: wx, y: wy }];
-      renderer.requestRender();
-    } else {
-      performSplit(splitPoints.value[0], { x: wx, y: wy });
-    }
-    return;
-  }
-  // 合并模式：点击第二个要合并的省份
-  if (mergeSelectMode.value) {
-    if (hit?.type === 'province' && hit.polygon && hit.polygon.id !== mergeTargetId.value) {
-      performMerge(mergeTargetId.value, hit.polygon.id);
-    } else {
-      exportStatus.value = '点击一个相邻省份完成合并（Esc 取消）';
-      setTimeout(() => { exportStatus.value = ''; }, 2500);
-    }
-    return;
-  }
-
-  const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
-  
-  // cluster 模式：点击选中簇成员/空白清除
-  if (mode === 'cluster') {
-    handleClusterCanvasClick(wx, wy);
-    return;
-  }
-  
-  // route 模式：点击放置顶点
-  if (mode === 'route') {
-    handleRouteClick(wx, wy);
-    return;
-  }
-  
-  // text 模式：点击放置浮动文本
-  if (mode === 'text') {
-    const sp = snapPoint({ x: wx, y: wy });
-    const textCount = (currentMapData.value?.textLabels?.length || 0) + 1;
-    const label = {
-      id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      x: sp.x,
-      y: sp.y,
-      text: `文本 ${textCount}`,
-      fontSize: textFontSize.value,
-      color: textColor.value,
-    };
-    store.addTextLabel(props.planet.id, label);
-    selectedTextLabel.value = label;
-    emit('dirty', true);
-    renderer.requestRender();
-    return;
-  }
-  
-  // marker 模式：点击放置标记
-  if (mode === 'marker') {
-    if (hit?.type === 'marker') {
-      selectedMarker.value = hit.marker;
-      renderer.requestRender();
-      return;
-    }
-    const sp = snapPoint({ x: wx, y: wy });
-    const markerTypeMeta = markerTypes.find(m => m.type === selectedMarkerType.value);
-    const markerCount = (currentMapData.value?.markers?.filter(m => m.type === selectedMarkerType.value).length || 0) + 1;
-    const marker = {
-      id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type: selectedMarkerType.value,
-      x: sp.x,
-      y: sp.y,
-      name: `${markerTypeMeta?.label || '标记'} ${markerCount}`,
-      description: '',
-    };
-    store.addMarker(props.planet.id, marker);
-    selectedMarker.value = marker;
-    emit('dirty', true);
-    renderer.requestRender();
-    return;
-  }
-  
-  // draw/region 描点模式（drawMode=false）：点击放置顶点
-  if ((mode === 'draw' || mode === 'region') && !drawMode.value && !brushMode.value) {
-    handlePointClick(wx, wy, mode);
-    return;
-  }
-  
-  // 其他模式：常规选择
-  if (!hit) {
-    selectedProvince.value = null;
-    selectedRegion.value = null;
-    selectedMarker.value = null;
-    selectedRoute.value = null;
-    selectedTextLabel.value = null;
-    renderer.requestRender();
-    return;
-  }
-  
-  switch (hit.type) {
-    case 'province':
-      selectedProvince.value = hit.polygon;
-      selectedRegion.value = null;
-      selectedMarker.value = null;
-      selectedRoute.value = null;
-      selectedTextLabel.value = null;
-      break;
-    case 'region':
-      selectedRegion.value = hit.region;
-      selectedProvince.value = null;
-      selectedMarker.value = null;
-      selectedRoute.value = null;
-      selectedTextLabel.value = null;
-      break;
-    case 'marker':
-      selectedMarker.value = hit.marker;
-      selectedProvince.value = null;
-      selectedRegion.value = null;
-      selectedRoute.value = null;
-      selectedTextLabel.value = null;
-      break;
-    case 'route':
-    case 'route-endpoint':
-      selectedRoute.value = hit.route;
-      selectedProvince.value = null;
-      selectedRegion.value = null;
-      selectedMarker.value = null;
-      selectedTextLabel.value = null;
-      break;
-    case 'textLabel':
-      selectedTextLabel.value = hit.label;
-      selectedProvince.value = null;
-      selectedRegion.value = null;
-      selectedMarker.value = null;
-      selectedRoute.value = null;
-      break;
-    case 'place':
-      // 点击地点 → 单选 + 打开详情面板（原 switch 缺此 case → 点击无反应）
-      selectedPlaceIds.value = new Set([hit.node.id]);
-      selectedProvince.value = null;
-      selectedRegion.value = null;
-      selectedMarker.value = null;
-      selectedRoute.value = null;
-      selectedTextLabel.value = null;
-      emit('select-node', hit.node);
-      break;
-  }
-  renderer.requestRender();
-}
 
 function smoothPolygonBoundary() {
   const poly = selectedProvince.value || selectedRegion.value;
@@ -3133,12 +2849,12 @@ function enterEditMode() {
   brushLastPoint.value = null;
   brushStrokePoints.value = [];
   drawingPolygon.value = null;
-  isDrawingActive = false;
+  isDrawingActive.value = false;
 }
 
 function exitEditMode() {
   editMode.value = false;
-  isDrawingActive = false;
+  isDrawingActive.value = false;
   currentPath.value = [];
   routeDraftPoints.value = [];
   selectedProvince.value = null;

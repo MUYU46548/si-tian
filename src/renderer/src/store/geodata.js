@@ -544,14 +544,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSaveMap(planetId);
   }
 
-  function updateRegion(planetId, regionId, updates) {
+  function updateRegion(planetId, regionId, updates, oldSnapshot = null) {
     if (!mapData.value[planetId]?.regions) return;
     const region = mapData.value[planetId].regions.find(r => r.id === regionId);
     if (!region) return;
 
     const oldState = {};
-    for (const key of Object.keys(updates)) {
-      oldState[key] = region[key];
+    if (oldSnapshot) {
+      Object.assign(oldState, oldSnapshot);
+    } else {
+      for (const key of Object.keys(updates)) {
+        // oldSnapshot 缺失时采集当前值（拖拽类操作应传 onDragStart 记录的快照）
+        oldState[key] = Array.isArray(region[key]) ? region[key].map(p => ({ ...p })) : region[key];
+      }
     }
     Object.assign(region, updates);
     mapData.value[planetId].updatedAt = new Date().toISOString();
@@ -568,14 +573,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSaveMap(planetId);
   }
 
-  function updateTerrainPolygon(planetId, polygonId, updates) {
+  function updateTerrainPolygon(planetId, polygonId, updates, oldSnapshot = null) {
     if (!mapData.value[planetId]) return;
     const polygon = mapData.value[planetId].terrain.find(t => t.id === polygonId);
     if (!polygon) return;
 
     const oldState = {};
-    for (const key of Object.keys(updates)) {
-      oldState[key] = polygon[key];
+    if (oldSnapshot) {
+      Object.assign(oldState, oldSnapshot);
+    } else {
+      for (const key of Object.keys(updates)) {
+        // oldSnapshot 缺失时采集当前值（拖拽类操作应传 onDragStart 记录的快照）
+        oldState[key] = Array.isArray(polygon[key]) ? polygon[key].map(p => ({ ...p })) : polygon[key];
+      }
     }
     Object.assign(polygon, updates);
     mapData.value[planetId].updatedAt = new Date().toISOString();
@@ -640,14 +650,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSaveMap(planetId);
   }
 
-  function updateRoute(planetId, routeId, updates) {
+  function updateRoute(planetId, routeId, updates, oldSnapshot = null) {
     if (!mapData.value[planetId]?.routes) return;
     const route = mapData.value[planetId].routes.find(r => r.id === routeId);
     if (!route) return;
 
     const oldState = {};
-    for (const key of Object.keys(updates)) {
-      oldState[key] = route[key];
+    if (oldSnapshot) {
+      Object.assign(oldState, oldSnapshot);
+    } else {
+      for (const key of Object.keys(updates)) {
+        // oldSnapshot 缺失时采集当前值（拖拽类操作应传 onDragStart 记录的快照）
+        oldState[key] = Array.isArray(route[key]) ? route[key].map(p => ({ ...p })) : route[key];
+      }
     }
     Object.assign(route, updates);
     mapData.value[planetId].updatedAt = new Date().toISOString();
@@ -707,14 +722,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSaveMap(planetId);
   }
 
-  function updateTextLabel(planetId, labelId, updates) {
+  function updateTextLabel(planetId, labelId, updates, oldSnapshot = null) {
     if (!mapData.value[planetId]?.textLabels) return;
     const label = mapData.value[planetId].textLabels.find(l => l.id === labelId);
     if (!label) return;
 
     const oldState = {};
-    for (const key of Object.keys(updates)) {
-      oldState[key] = label[key];
+    if (oldSnapshot) {
+      Object.assign(oldState, oldSnapshot);
+    } else {
+      for (const key of Object.keys(updates)) {
+        // oldSnapshot 缺失时采集当前值（拖拽类操作应传 onDragStart 记录的快照）
+        oldState[key] = label[key];
+      }
     }
     Object.assign(label, updates);
     mapData.value[planetId].updatedAt = new Date().toISOString();
@@ -774,14 +794,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSaveMap(planetId);
   }
 
-  function updateMarker(planetId, markerId, updates) {
+  function updateMarker(planetId, markerId, updates, oldSnapshot = null) {
     if (!mapData.value[planetId]?.markers) return;
     const marker = mapData.value[planetId].markers.find(m => m.id === markerId);
     if (!marker) return;
 
     const oldState = {};
-    for (const key of Object.keys(updates)) {
-      oldState[key] = marker[key];
+    if (oldSnapshot) {
+      Object.assign(oldState, oldSnapshot);
+    } else {
+      for (const key of Object.keys(updates)) {
+        // oldSnapshot 缺失时采集当前值（拖拽类操作应传 onDragStart 记录的快照）
+        oldState[key] = marker[key];
+      }
     }
     Object.assign(marker, updates);
     mapData.value[planetId].updatedAt = new Date().toISOString();

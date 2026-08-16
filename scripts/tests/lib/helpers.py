@@ -99,3 +99,57 @@ def confirm_yes(cdp):
 
 def confirm_no(cdp):
     cdp.eval("window.confirm = () => false;")
+
+
+def fit_world(cdp):
+    """适屏整个世界（确保世界坐标可见；PlanetMap 的 zoomFit）"""
+    return cdp.eval("(() => { const pm = document.querySelector('.planet-map-container')?.__vueParentComponent?.setupState; if (!pm) return 'no-pm'; pm.zoomFit(); return 'ok'; })()")
+
+
+def set_pm_state(cdp, code):
+    """在 PlanetMap setupState 上下文执行 JS 片段（变量 pm 已绑定，code 返回串行化结果）"""
+    return cdp.eval(f"(() => {{ const pm = document.querySelector('.planet-map-container')?.__vueParentComponent?.setupState; if (!pm) return 'no-pm'; {code} }})()")
+
+
+def drag_canvas_polyline(cdp, points, shift=False, ctrl=False):
+    """按世界坐标折线拖拽（真实事件链路：mousedown → mousemove×N → mouseup）。
+
+    points: [(x, y), ...]，至少 2 点；首点 mousedown、中间点逐个 mousemove、末点 mousemove+mouseup。
+    shift/ctrl: 拖拽全程携带修饰键（框选需要 shift）。
+    """
+    pts_js = json.dumps(points)
+    expr = f"""(() => {{
+      const pm = document.querySelector('.planet-map-container')?.__vueParentComponent?.setupState;
+      const c = document.querySelector('.canvas-wrapper canvas');
+      if (!pm || !c) return 'no-canvas';
+      const r = c.getBoundingClientRect();
+      const vt = pm.renderer.viewTransform;
+      const toSX = wx => wx * vt.scale + vt.x + c.clientWidth / 2;
+      const toSY = wy => wy * vt.scale + vt.y + c.clientHeight / 2;
+      const mk = (sx, sy, t) => new MouseEvent(t, {{ clientX: r.left + sx, clientY: r.top + sy, bubbles: true, cancelable: true, button: 0, shiftKey: {'true' if shift else 'false'}, ctrlKey: {'true' if ctrl else 'false'} }});
+      const pts = {pts_js};
+      c.dispatchEvent(mk(toSX(pts[0][0]), toSY(pts[0][1]), 'mousedown'));
+      for (let i = 1; i < pts.length; i++) {{
+        c.dispatchEvent(mk(toSX(pts[i][0]), toSY(pts[i][1]), 'mousemove'));
+      }}
+      const last = pts[pts.length - 1];
+      c.dispatchEvent(mk(toSX(last[0]), toSY(last[1]), 'mouseup'));
+      return 'ok';
+    }})()"""
+    return cdp.eval(expr)
+
+
+def dblclick_canvas_at_world(cdp, wx, wy):
+    """世界坐标双击（描点模式收尾 / 路线完成）"""
+    expr = f"""(() => {{
+      const pm = document.querySelector('.planet-map-container')?.__vueParentComponent?.setupState;
+      const c = document.querySelector('.canvas-wrapper canvas');
+      if (!pm || !c) return 'no-canvas';
+      const r = c.getBoundingClientRect();
+      const vt = pm.renderer.viewTransform;
+      const sx = {wx} * vt.scale + vt.x + c.clientWidth / 2;
+      const sy = {wy} * vt.scale + vt.y + c.clientHeight / 2;
+      c.dispatchEvent(new MouseEvent('dblclick', {{ clientX: r.left + sx, clientY: r.top + sy, bubbles: true, cancelable: true, button: 0 }}));
+      return 'ok';
+    }})()"""
+    return cdp.eval(expr)

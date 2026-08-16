@@ -9,6 +9,7 @@ import { pointInPolygon, perpendicularDistance } from '../utils/geometry';
 export function createPlanetHitTest(getState) {
 
 function hitTest(wx, wy) {
+  const s = getState();
   if (!s.layers.isEditable('planet', 'terrain') && 
       !s.layers.isEditable('planet', 'markers') && 
       !s.layers.isEditable('planet', 'places') &&
@@ -61,6 +62,7 @@ function hitTest(wx, wy) {
   return null;
 }
 function hitTestRoute(wx, wy) {
+  const s = getState();
   if (!s.currentMapData?.routes) return null;
   const routes = s.currentMapData.routes;
   for (let i = routes.length - 1; i >= 0; i--) {
@@ -88,6 +90,7 @@ function hitTestRoute(wx, wy) {
   return null;
 }
 function hitTestTextLabel(wx, wy) {
+  const s = getState();
   if (!s.currentMapData?.textLabels) return null;
   const labels = s.currentMapData.textLabels;
   for (let i = labels.length - 1; i >= 0; i--) {
@@ -103,6 +106,7 @@ function hitTestTextLabel(wx, wy) {
   return null;
 }
 function hitTestVertex(wx, wy) {
+  const s = getState();
   // 多边形/区域顶点
   const selectedPoly = s.selectedProvince || s.selectedRegion;
   if (selectedPoly && s.editMode) {
@@ -133,6 +137,7 @@ function hitTestVertex(wx, wy) {
   return null;
 }
 function hitTestEdge(wx, wy) {
+  const s = getState();
   const selectedPoly = s.selectedProvince || s.selectedRegion;
   if (!selectedPoly || !s.editMode) return null;
   
@@ -155,6 +160,7 @@ function hitTestEdge(wx, wy) {
   return null;
 }
 function hitTestMarker(wx, wy) {
+  const s = getState();
   if (!s.currentMapData?.markers) return null;
   for (let i = s.currentMapData.markers.length - 1; i >= 0; i--) {
     const marker = s.currentMapData.markers[i];

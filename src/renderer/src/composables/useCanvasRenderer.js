@@ -237,6 +237,11 @@ export function useCanvasRenderer(canvasRef, options = {}) {
           panSuppressed = true;
           return;
         }
+        // pan 模式下组件可能返回 false 抑制平移（如 Shift+框选，2026-08-16 P0-1）
+        if (result === false) {
+          panSuppressed = true;
+          return;
+        }
       }
       isPanning = true;
       return;
