@@ -49,9 +49,10 @@ MOCK_SCRIPT = """<script>
         getVaultPath: async () => 'E:/图书馆/ROSA',
         selectVaultPath: async () => ({ success: false, canceled: true }),
         setVaultPath: async () => ({ success: false, canceled: true }),
-        getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] || null }),
+        getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
         saveMapData: async () => ({ success: true }),
         backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
+        batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
         selectReferenceImage: async () => ({ success: false, canceled: true }),
         saveExportFile: async () => ({ success: false, canceled: true }),
         readObsidianNote: async () => ({ success: true, content: '' }),
@@ -181,7 +182,9 @@ def main():
             '--remote-debugging-port=%d' % CDP_PORT,
             '--remote-allow-origins=*',
             '--user-data-dir=%s' % os.path.join(ROOT, '.test-edge-profile'),
-            '--no-first-run', '--no-default-browser-check', 'about:blank',
+            '--no-first-run', '--no-default-browser-check',
+            '--disable-sync', '--disable-features=SyncConsentUI,SigninCheckoutFlow',
+            '--no-sandbox', 'about:blank',
         ])
         handles.append(ProcessHandle(edge, 'edge'))
         if not wait_port(CDP_PORT):

@@ -114,6 +114,7 @@
     <node-detail-panel />
     <layer-panel />
     <about-panel ref="aboutPanelRef" />
+    <batch-import-panel ref="batchImportPanelRef" />
     <settings-panel ref="settingsPanelRef" />
     <onboarding-guide />
     <recovery-panel />
@@ -153,6 +154,7 @@ import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
 import LayerPanel from './components/LayerPanel.vue';
 import AboutPanel from './components/AboutPanel.vue';
+import BatchImportPanel from './components/BatchImportPanel.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import OnboardingGuide from './components/OnboardingGuide.vue';
 import RecoveryPanel from './components/RecoveryPanel.vue';
@@ -177,6 +179,7 @@ const systemViewRef = ref(null);
 const perfVisible = ref(false);
 const perfStats = ref({});
 const aboutPanelRef = ref(null);
+const batchImportPanelRef = ref(null);
 const settingsPanelRef = ref(null);
 const keyboardShortcutsRef = ref(null);
 const changeLogRef = ref(null);
@@ -777,6 +780,9 @@ onMounted(async () => {
   window.addEventListener('sitian:backup-cache', () => {
     performBackup();
   });
+  window.addEventListener('sitian:open-batch-import', () => {
+    batchImportPanelRef.value?.open();
+  });
   window.addEventListener('sitian:clear-cache', () => {
     clearCoordinateCache();
   });
@@ -1101,6 +1107,15 @@ async function clearCoordinateCache() {
 .main-content {
   flex: 1;
   overflow: hidden;
+}
+
+/* 视图切换进入动画（P2-3）：v-if 重新挂载时淡入 + 轻微上移，一次触发不影响交互 */
+.main-content > * {
+  animation: view-fade-in 0.28s ease-out;
+}
+@keyframes view-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .toolbar {

@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳
   backupSitianCache: () => ipcRenderer.invoke('backup-sitian-cache'),
 
+  // 批量导入笔记（P2-1，纯创建式：只创建不修改）
+  batchImportNotes: (payload) => ipcRenderer.invoke('batch-import-notes', payload),
+
   // 参考图底图（文件选择 + base64 读取）
   selectReferenceImage: () => ipcRenderer.invoke('select-reference-image'),
 

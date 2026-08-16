@@ -186,6 +186,9 @@
             <button class="data-btn" @click="backupCache" title="将 .sitian/ 缓存备份到 backups/（带时间戳，保留最近 10 批）">
               📦 立即备份
             </button>
+            <button class="data-btn" @click="openBatchImport" title="批量创建笔记（只创建不修改，已存在自动跳过）">
+              📥 批量导入
+            </button>
             <button class="data-btn danger" @click="clearCache">
               🗑 清除坐标缓存
             </button>
@@ -280,6 +283,10 @@ function validateData() {
 
 function backupCache() {
   window.dispatchEvent(new CustomEvent('sitian:backup-cache'));
+}
+
+function openBatchImport() {
+  window.dispatchEvent(new CustomEvent('sitian:open-batch-import'));
 }
 
 function clearCache() {

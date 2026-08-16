@@ -219,6 +219,80 @@ ipcMain.handle('open-external', async (event, url) => {
   }
 });
 
+// ===== 批量导入笔记（P2-1，纯创建式：只创建不修改）=====
+const ILLEGAL_CHARS = /[\\/:*?"<>|]/g;
+const LAYER_IMPORT_DIRS = {
+  star_domain: ['03 设定', '11 地理系统', '星域'],
+  galaxy: ['03 设定', '11 地理系统', '星系'],
+  planet: ['03 设定', '11 地理系统', '行星'],
+};
+const LAYER_IMPORT_CN = { star_domain: '星域', galaxy: '星系', planet: '行星', city: '城市', town: '城镇', village: '村庄', facility: '设施', location: '地点', region: '区域' };
+
+function sanitizeFileName(name) {
+  return path.basename(String(name || '').trim()).replace(ILLEGAL_CHARS, '_');
+}
+
+ipcMain.handle('batch-import-notes', async (event, payload) => {
+  const { worldName = '', layer = 'location', names = [], parentName = '' } = payload || {};
+  const vault = getVaultPath();
+  const created = [];
+  const skipped = [];
+  const errors = [];
+  try {
+    // 目标目录：地理类 → 11 地理系统/<层级>；地点类 → 02 场景地点/<世界>/<父节点?>
+    let targetDir;
+    if (LAYER_IMPORT_DIRS[layer]) {
+      targetDir = path.join(vault, ...LAYER_IMPORT_DIRS[layer]);
+    } else {
+      const worldDir = sanitizeFileName(worldName) || '未分类';
+      targetDir = path.join(vault, '03 设定', '02 场景地点', worldDir);
+      if (parentName) targetDir = path.join(targetDir, sanitizeFileName(parentName));
+    }
+    await fs.mkdir(targetDir, { recursive: true });
+    const today = new Date().toISOString().slice(0, 10);
+    for (const rawName of names) {
+      const name = String(rawName || '').trim();
+      if (!name) continue;
+      const safeName = sanitizeFileName(name);
+      if (!safeName) {
+        errors.push({ name, reason: '文件名非法' });
+        continue;
+      }
+      const filePath = path.join(targetDir, safeName + '.md');
+      // 红线：只创建不修改 —— 已存在即跳过，绝不覆盖
+      try {
+        await fs.access(filePath);
+        skipped.push({ name, reason: '已存在' });
+        continue;
+      } catch (e) { /* 不存在 → 创建 */ }
+      const lines = [
+        '---',
+        'publish: true',
+        'tags:',
+        `- ${name}`,
+        '- 场景地点',
+        parentName ? `上层区域: '[[${parentName}]]'` : null,
+        `创建日期: ${today}`,
+        `层级: ${LAYER_IMPORT_CN[layer] || layer}`,
+        '---',
+        '',
+        `# ${name}`,
+        '',
+      ].filter(l => l !== null);
+      try {
+        const nl = '\n';
+        await fs.writeFile(filePath, lines.join(nl) + nl, 'utf-8');
+        created.push({ name, path: filePath });
+      } catch (e) {
+        errors.push({ name, reason: e.message });
+      }
+    }
+    return { success: true, targetDir, created, skipped, errors };
+  } catch (err) {
+    return { success: false, error: err.message, created, skipped, errors };
+  }
+});
+
 // IPC: 获取 Vault 监听状态
 ipcMain.handle('get-watcher-status', () => vaultWatcherEnabled);
 
@@ -233,13 +307,15 @@ ipcMain.handle('set-watcher-status', (event, enabled) => {
   return { success: true };
 });
 
-// IPC: 获取地图数据
+// IPC: 获取地图数据（key 支持 worldId/planetId 与旧版纯 planetId）
 ipcMain.handle('get-map-data', async (event, planetId) => {
   try {
     const MAP_PATH = path.join(getVaultPath(), '.sitian', 'mapdata.json');
     const raw = await fs.readFile(MAP_PATH, 'utf-8');
     const data = JSON.parse(raw);
-    return { success: true, data: data[planetId] || null };
+    // 兼容旧版：新 key（含 / 前缀）读不到时回退纯 planetId
+    const legacyKey = String(planetId).split('/').pop();
+    return { success: true, data: data[planetId] ?? data[legacyKey] ?? null };
   } catch (err) {
     return { success: false, error: err.message };
   }

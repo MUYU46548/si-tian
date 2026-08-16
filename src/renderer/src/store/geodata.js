@@ -358,13 +358,41 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   // ===== 地图数据持久化 =====
+  // 多世界坐标缓存隔离（P2-2）：写盘 key = worldId/planetId（如 幻境/乐园星），
+  // 防止未来允许跨世界同名时 mapdata.json key 覆盖；内存索引仍用 planetId（全局唯一）
+  function getWorldIdForNode(nodeId) {
+    const visited = new Set();
+    let cur = nodes.value.find(n => n.id === nodeId);
+    while (cur && cur.id && !visited.has(cur.id)) {
+      visited.add(cur.id);
+      if (cur.layer === 'world') return cur.id;
+      cur = nodes.value.find(n => n.id === cur.parentId);
+    }
+    return '';
+  }
+
+  function getMapDataKey(planetId) {
+    const w = getWorldIdForNode(planetId);
+    return w ? `${w}/${planetId}` : planetId;
+  }
+
   async function loadMapData(planetId) {
     try {
-      const result = await window.sitianAPI.getMapData(planetId);
-      if (result.success) {
-        migrateReferenceImages(planetId, result.data);
-        mapData.value[planetId] = result.data;
-        return result.data;
+      const key = getMapDataKey(planetId);
+      const result = await window.sitianAPI.getMapData(key);
+      let data = result.success ? result.data : null;
+      // 兼容迁移：新 key（worldId/planetId）无数据时读旧 key（纯 planetId）并迁移
+      if (!data && key !== planetId) {
+        const legacy = await window.sitianAPI.getMapData(planetId);
+        if (legacy.success && legacy.data) {
+          data = legacy.data;
+          await saveMapData(planetId, data);
+        }
+      }
+      if (data) {
+        migrateReferenceImages(planetId, data);
+        mapData.value[planetId] = data;
+        return data;
       }
     } catch (e) {
       console.error('loadMapData failed:', e);
@@ -376,7 +404,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     try {
       // 深拷贝去除 Vue reactive Proxy（仅用于 IPC 传输）
       const cloned = JSON.parse(JSON.stringify(data));
-      const result = await window.sitianAPI.saveMapData(planetId, cloned);
+      const result = await window.sitianAPI.saveMapData(getMapDataKey(planetId), cloned);
       // 注意：不再 mapData.value[planetId] = cloned —— 替换对象会让已入栈的
       // undo/redo 闭包与 selectedProvince 等选中引用全部失效（2026-08-16 修复：
       // autoSave 触发后撤销失灵、选中对象与数据分离的存量根因）
@@ -1411,7 +1439,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       selectWorld, selectDomain, selectSystem, selectPlanet, backToWorld, backToDomain, backToSystem,
       handleNodeUpdated, handleNodeRemoved,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
-      loadMapData, saveMapData, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
+      loadMapData, saveMapData, getMapDataKey, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
       splitTerrainPolygon, mergeTerrainPolygons,
       beginNodePositionCapture, endNodePositionCapture, beginMultiNodePositionCapture, endMultiNodePositionCapture, toggleNodeLock,
       addRegion, removeRegion, updateRegion,
