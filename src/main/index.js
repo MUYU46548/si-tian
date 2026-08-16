@@ -4,9 +4,7 @@ const fs = require('fs').promises;
 const matter = require('gray-matter');
 const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
-
-const VAULT_PATH = 'E:/图书馆/ROSA';
-const CACHE_PATH = path.join(VAULT_PATH, '.sitian', 'geodata.json');
+const { loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT } = require('./config');
 
 let mainWindow;
 let vaultWatcherEnabled = true;
@@ -38,7 +36,8 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await loadConfig();
   createWindow();
 
   app.on('activate', () => {
@@ -57,7 +56,7 @@ app.on('before-quit', () => {
 // IPC: 获取地理数据
 ipcMain.handle('get-geodata', async () => {
   try {
-    const raw = await fs.readFile(CACHE_PATH, 'utf-8');
+    const raw = await fs.readFile(path.join(getVaultPath(), '.sitian', 'geodata.json'), 'utf-8');
     return { success: true, data: JSON.parse(raw) };
   } catch (err) {
     return { success: false, error: err.message };
@@ -67,7 +66,7 @@ ipcMain.handle('get-geodata', async () => {
 // IPC: 保存坐标数据（仅 JSON）
 ipcMain.handle('save-geodata', async (event, data) => {
   try {
-    await fs.writeFile(CACHE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.writeFile(path.join(getVaultPath(), '.sitian', 'geodata.json'), JSON.stringify(data, null, 2), 'utf-8');
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -77,8 +76,8 @@ ipcMain.handle('save-geodata', async (event, data) => {
 // IPC: 从 Markdown 重新提取
 ipcMain.handle('reextract-geodata', async () => {
   try {
-    const data = await extractGeodata(VAULT_PATH);
-    await fs.writeFile(CACHE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    const data = await extractGeodata(getVaultPath());
+    await fs.writeFile(path.join(getVaultPath(), '.sitian', 'geodata.json'), JSON.stringify(data, null, 2), 'utf-8');
     return { success: true, data };
   } catch (err) {
     return { success: false, error: err.message };
@@ -86,12 +85,64 @@ ipcMain.handle('reextract-geodata', async () => {
 });
 
 // IPC: 获取 Vault 路径
-ipcMain.handle('get-vault-path', () => VAULT_PATH);
+ipcMain.handle('get-vault-path', () => getVaultPath());
+
+// IPC: 选择 Vault 库目录（首次引导/设置面板），校验 .obsidian 后保存并重新提取（2026-08-16）
+ipcMain.handle('select-vault-path', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择 Obsidian 知识库目录（应包含 .obsidian 文件夹）',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const selected = result.filePaths[0];
+    const validation = await validateVaultPath(selected);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+    await setVaultPath(selected);
+    return { success: true, path: selected };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: 直接设置 Vault 路径（设置面板手动输入）
+ipcMain.handle('set-vault-path', async (event, newPath) => {
+  try {
+    if (!newPath || typeof newPath !== 'string') {
+      return { success: false, error: '路径无效' };
+    }
+    const validation = await validateVaultPath(newPath);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+    await setVaultPath(newPath);
+    return { success: true, path: newPath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 校验目录是否为 Obsidian 库（存在 .obsidian 目录）
+async function validateVaultPath(dirPath) {
+  try {
+    const stat = await fs.stat(dirPath);
+    if (!stat.isDirectory()) return { valid: false, error: '选择的不是文件夹' };
+    const obsidianDir = path.join(dirPath, '.obsidian');
+    await fs.access(obsidianDir);
+    return { valid: true };
+  } catch (e) {
+    return { valid: false, error: '目录下未找到 .obsidian 文件夹，请选择 Obsidian 知识库根目录' };
+  }
+}
 
 // IPC: 读取 Obsidian 笔记内容
 ipcMain.handle('read-obsidian-note', async (event, sourcePath) => {
   try {
-    const fullPath = path.join(VAULT_PATH, sourcePath);
+    const fullPath = path.join(getVaultPath(), sourcePath);
     const raw = await fs.readFile(fullPath, 'utf-8');
     const { data: frontmatter, content } = matter(raw);
     
@@ -145,7 +196,7 @@ ipcMain.handle('set-watcher-status', (event, enabled) => {
 // IPC: 获取地图数据
 ipcMain.handle('get-map-data', async (event, planetId) => {
   try {
-    const MAP_PATH = path.join(VAULT_PATH, '.sitian', 'mapdata.json');
+    const MAP_PATH = path.join(getVaultPath(), '.sitian', 'mapdata.json');
     const raw = await fs.readFile(MAP_PATH, 'utf-8');
     const data = JSON.parse(raw);
     return { success: true, data: data[planetId] || null };
@@ -157,7 +208,7 @@ ipcMain.handle('get-map-data', async (event, planetId) => {
 // IPC: 保存地图数据
 ipcMain.handle('save-map-data', async (event, planetId, mapData) => {
   try {
-    const MAP_PATH = path.join(VAULT_PATH, '.sitian', 'mapdata.json');
+    const MAP_PATH = path.join(getVaultPath(), '.sitian', 'mapdata.json');
     let allData = {};
     try {
       const raw = await fs.readFile(MAP_PATH, 'utf-8');
@@ -176,8 +227,8 @@ ipcMain.handle('save-map-data', async (event, planetId, mapData) => {
 // IPC: 清除坐标缓存
 ipcMain.handle('clear-coordinate-cache', async () => {
   try {
-    const GEODATA_CACHE = path.join(VAULT_PATH, '.sitian', 'geodata.json');
-    const MAP_CACHE = path.join(VAULT_PATH, '.sitian', 'mapdata.json');
+    const GEODATA_CACHE = path.join(getVaultPath(), '.sitian', 'geodata.json');
+    const MAP_CACHE = path.join(getVaultPath(), '.sitian', 'mapdata.json');
     
     // 删除坐标缓存
     try {

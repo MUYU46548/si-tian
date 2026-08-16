@@ -2,10 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 
-const VAULT_PATH = 'E:/图书馆/ROSA';
-const GEO_SYSTEM_PATH = path.join(VAULT_PATH, '03 设定', '11 地理系统');
-const LOCATIONS_PATH = path.join(VAULT_PATH, '03 设定', '02 场景地点');
-const INDEX_PATH = path.join(VAULT_PATH, '01 索引', '地理系统索引.md');
+// Vault 路径可配置化（2026-08-16）：模块级可变，extractGeodata(targetVault) 入口覆盖；
+// CLI 支持 --vault 参数；主进程通过 require 传入配置的路径
+const DEFAULT_VAULT = 'E:/图书馆/ROSA';
+let vaultPath = DEFAULT_VAULT;
+
+function geoSystemPath() { return path.join(vaultPath, '03 设定', '11 地理系统'); }
+function locationsPath() { return path.join(vaultPath, '03 设定', '02 场景地点'); }
+function indexPath() { return path.join(vaultPath, '01 索引', '地理系统索引.md'); }
 
 const LAYER_KEYWORDS = {
   '世界': 'world',
@@ -38,7 +42,7 @@ function parseMdFile(filePath) {
     const linkRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
     let match;
     while ((match = linkRegex.exec(content)) !== null) wikilinks.push(match[1].trim());
-    return { frontmatter, content, wikilinks, fileName: path.basename(filePath, '.md'), relativePath: path.relative(VAULT_PATH, filePath) };
+    return { frontmatter, content, wikilinks, fileName: path.basename(filePath, '.md'), relativePath: path.relative(vaultPath, filePath) };
   } catch (e) { console.error(`解析失败: ${filePath}`, e.message); return null; }
 }
 
@@ -72,7 +76,7 @@ function scanGeoSystem() {
       }
     }
   }
-  scanDir(GEO_SYSTEM_PATH, null);
+  scanDir(geoSystemPath(), null);
   return nodes;
 }
 
@@ -104,13 +108,13 @@ function scanLocations() {
       });
     }
   }
-  scanDir(LOCATIONS_PATH);
+  scanDir(locationsPath());
   return nodes;
 }
 
 function extractWorldsAndStars() {
   try {
-    const raw = fs.readFileSync(INDEX_PATH, 'utf-8');
+    const raw = fs.readFileSync(indexPath(), 'utf-8');
     const { content } = matter(raw);
     const lines = content.split('\n');
     const worlds = [];
@@ -489,7 +493,8 @@ function mergeUserCreatedNodes(allNodes, cachePath) {
   return allNodes;
 }
 
-async function extractGeodata(vaultPath = VAULT_PATH) {
+async function extractGeodata(targetVault) {
+  if (targetVault) vaultPath = targetVault;
   console.log('开始提取地理数据...');
   
   const geoNodes = scanGeoSystem();
@@ -516,7 +521,7 @@ async function extractGeodata(vaultPath = VAULT_PATH) {
   }
   
   // Build world-star map from index for parent resolution
-  const raw = fs.readFileSync(INDEX_PATH, 'utf-8');
+  const raw = fs.readFileSync(indexPath(), 'utf-8');
   const { content } = matter(raw);
   const worldStarMap = {};
   let cw = null;
@@ -549,8 +554,11 @@ module.exports = { extractGeodata };
 
 if (require.main === module) {
   (async () => {
-    const data = await extractGeodata();
-    const outPath = path.join(VAULT_PATH, '.sitian', 'geodata.json');
+    // CLI 支持 --vault <path> 指定库目录（2026-08-16 可配置化）
+    const vaultArgIdx = process.argv.indexOf('--vault');
+    const targetVault = vaultArgIdx !== -1 ? process.argv[vaultArgIdx + 1] : undefined;
+    const data = await extractGeodata(targetVault);
+    const outPath = path.join(vaultPath, '.sitian', 'geodata.json');
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, JSON.stringify(data, null, 2), 'utf-8');
     console.log(`提取完成！数据已保存至: ${outPath}`);

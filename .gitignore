@@ -30,3 +30,10 @@ Thumbs.db
 开发日志.md
 AGENT.md
 版权备忘.md
+
+# Python
+__pycache__/
+*.pyc
+
+# 测试临时
+.test-edge-profile/

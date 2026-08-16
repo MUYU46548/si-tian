@@ -165,6 +165,17 @@
         <!-- 数据管理 -->
         <section class="settings-section">
           <h3>数据管理</h3>
+          <!-- 知识库路径（2026-08-16 可配置化） -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <span class="setting-name">知识库路径</span>
+              <span class="setting-desc">Obsidian 库根目录（需包含 .obsidian 文件夹），更改后自动重新提取</span>
+            </div>
+            <div class="vault-path-row">
+              <span class="vault-path-text" :title="vaultPath">{{ vaultPath || '未设置（使用默认库）' }}</span>
+              <button class="vault-btn" @click="chooseVaultPath" title="选择知识库目录">📂 选择</button>
+            </div>
+          </div>
           <div class="data-actions">
             <button class="data-btn" @click="reextractData">
               🔄 重新提取数据
@@ -234,6 +245,32 @@ function reextractData() {
   window.dispatchEvent(new CustomEvent('sitian:reextract'));
 }
 
+// ===== 知识库路径（2026-08-16 可配置化） =====
+const vaultPath = ref('');
+
+async function loadVaultPath() {
+  try {
+    const res = await window.sitianAPI.getVaultPath();
+    if (typeof res === 'string') vaultPath.value = res;
+  } catch (e) { /* 浏览器环境忽略 */ }
+}
+
+async function chooseVaultPath() {
+  try {
+    const result = await window.sitianAPI.selectVaultPath();
+    if (result?.success) {
+      vaultPath.value = result.path;
+      // 库路径已变更 → 重新提取数据
+      window.dispatchEvent(new CustomEvent('sitian:reextract'));
+      setTimeout(() => alert('知识库路径已更新，数据已重新提取'), 300);
+    } else if (result?.error) {
+      alert(result.error);
+    }
+  } catch (e) {
+    alert('选择知识库失败：' + e.message);
+  }
+}
+
 function validateData() {
   window.dispatchEvent(new CustomEvent('sitian:validate-data'));
 }
@@ -246,6 +283,7 @@ function clearCache() {
 
 onMounted(() => {
   loadSettings();
+  loadVaultPath();
 });
 
 defineExpose({ open, close });
@@ -432,6 +470,40 @@ input:checked + .toggle-slider::before {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 知识库路径（2026-08-16 可配置化） */
+.vault-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.vault-path-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-tertiary, #8b949e);
+  background: var(--input-bg, #0d1117);
+  border: 1px solid var(--input-border, #30363d);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+.vault-btn {
+  padding: 6px 12px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: var(--radius-sm);
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.vault-btn:hover {
+  background: #30363d;
 }
 
 .data-btn {

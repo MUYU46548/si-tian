@@ -8,7 +8,8 @@
     "dev:watch": "concurrently -k \"vite --config vite.config.js\" \"wait-on tcp:5180 && cross-env NODE_ENV=development electron .\"",
     "dev:watch:debug": "concurrently -k \"vite --config vite.config.js\" \"wait-on tcp:5180 && cross-env NODE_ENV=development OPEN_DEVTOOLS=1 electron .\"",
     "build": "vite build --config vite.config.js",
-    "extract-data": "node scripts/extract-data.js"
+    "extract-data": "node scripts/extract-data.js",
+    "test": "python scripts/tests/run_tests.py"
   },
   "keywords": [
     "worldbuilding",
