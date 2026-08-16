@@ -249,3 +249,164 @@ export function expandPolygon(points, distance) {
     };
   });
 }
+
+// ===== 省份拆分/合并（2026-08-16） =====
+
+function lineIntersection(p1, p2, q1, q2) {
+  const dx1 = p2.x - p1.x, dy1 = p2.y - p1.y;
+  const dx2 = q2.x - q1.x, dy2 = q2.y - q1.y;
+  const denom = dx1 * dy2 - dy1 * dx2;
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = ((q1.x - p1.x) * dy2 - (q1.y - p1.y) * dx2) / denom;
+  return { x: p1.x + t * dx1, y: p1.y + t * dy1 };
+}
+
+function onSegment(a, b, p) {
+  return Math.min(a.x, b.x) - 1e-6 <= p.x && p.x <= Math.max(a.x, b.x) + 1e-6 &&
+         Math.min(a.y, b.y) - 1e-6 <= p.y && p.y <= Math.max(a.y, b.y) + 1e-6;
+}
+
+/**
+ * 线段求交（含端点接触）
+ */
+function segmentIntersection(p1, p2, q1, q2) {
+  const d1 = direction(p1, p2, q1);
+  const d2 = direction(p1, p2, q2);
+  const d3 = direction(q1, q2, p1);
+  const d4 = direction(q1, q2, p2);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return lineIntersection(p1, p2, q1, q2);
+  }
+  if (d1 === 0 && onSegment(p1, p2, q1)) return { x: q1.x, y: q1.y };
+  if (d2 === 0 && onSegment(p1, p2, q2)) return { x: q2.x, y: q2.y };
+  if (d3 === 0 && onSegment(q1, q2, p1)) return { x: p1.x, y: p1.y };
+  if (d4 === 0 && onSegment(q1, q2, p2)) return { x: p2.x, y: p2.y };
+  return null;
+}
+
+function dedupeAdjacent(points) {
+  const out = [];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(last.x - p.x, last.y - p.y) > 1e-6) out.push(p);
+  }
+  if (out.length > 1 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) < 1e-6) {
+    out.pop();
+  }
+  return out;
+}
+
+/**
+ * 沿切割线拆分多边形为两个
+ * @param {Array} points - 多边形顶点（有序）
+ * @param {Object} lineA - 切割线起点（世界坐标）
+ * @param {Object} lineB - 切割线终点
+ * @returns {Array|null} [poly1, poly2] 两个闭合多边形；切割线未穿过时返回 null
+ */
+export function splitPolygon(points, lineA, lineB) {
+  const n = points.length;
+  if (n < 4) return null;
+
+  const cuts = [];
+  // 用「无限直线」求交：切割线两端可能都在多边形内部（用户在多边形内点两点），
+  // 线段求交会因端点在内而找不到交点（bug 2026-08-16：20→380 内部切割失败）
+  for (let i = 0; i < n; i++) {
+    const p1 = points[i], p2 = points[(i + 1) % n];
+    const d1 = direction(lineA, lineB, p1);
+    const d2 = direction(lineA, lineB, p2);
+    if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
+      const inter = lineIntersection(lineA, lineB, p1, p2);
+      if (inter) {
+        const dup = cuts.some(c => Math.hypot(c.point.x - inter.x, c.point.y - inter.y) < 1e-6);
+        if (!dup) cuts.push({ edgeIndex: i, point: inter });
+      }
+    }
+  }
+  if (cuts.length < 2) return null;
+
+  // 沿切割线方向投影，取跨度最大的两个交点
+  const dx = lineB.x - lineA.x, dy = lineB.y - lineA.y;
+  const denom = dx * dx + dy * dy || 1;
+  cuts.forEach(c => {
+    c.t = ((c.point.x - lineA.x) * dx + (c.point.y - lineA.y) * dy) / denom;
+  });
+  cuts.sort((a, b) => a.t - b.t);
+  const cut1 = cuts[0];
+  const cut2 = cuts[cuts.length - 1];
+
+  // 正向路径：cut1 → 沿多边形轮廓 → cut2
+  const polyA = [cut1.point];
+  for (let step = 1; step <= n; step++) {
+    const idx = (cut1.edgeIndex + step) % n;
+    polyA.push(points[idx]);
+    if (idx === cut2.edgeIndex) {
+      polyA.push(cut2.point);
+      break;
+    }
+  }
+  // 反向路径：cut2 → 沿多边形轮廓 → cut1
+  const polyB = [cut2.point];
+  for (let step = 1; step <= n; step++) {
+    const idx = (cut2.edgeIndex + step) % n;
+    polyB.push(points[idx]);
+    if (idx === cut1.edgeIndex) {
+      polyB.push(cut1.point);
+      break;
+    }
+  }
+
+  const a = dedupeAdjacent(polyA);
+  const b = dedupeAdjacent(polyB);
+  if (a.length < 3 || b.length < 3) return null;
+  return [a, b];
+}
+
+/**
+ * 合并两个多边形为一个
+ * 优先共边合并（顶点距离 < tolerance 判定），否则最近顶点桥接
+ * @param {Array} poly1
+ * @param {Array} poly2
+ * @param {number} tolerance - 共边判定容差（世界坐标 px，默认 10）
+ * @returns {Array} 合并后的多边形顶点
+ */
+export function mergePolygons(poly1, poly2, tolerance = 10) {
+  const p1 = [...poly1];
+  const p2 = [...poly2];
+
+  // 方案 A：共边合并（两多边形共享一条近似重合的边）
+  for (let i = 0; i < p1.length; i++) {
+    const a1 = p1[i], a2 = p1[(i + 1) % p1.length];
+    for (let j = 0; j < p2.length; j++) {
+      const b1 = p2[j], b2 = p2[(j + 1) % p2.length];
+      const reverseShared = Math.hypot(a1.x - b2.x, a1.y - b2.y) < tolerance &&
+                            Math.hypot(a2.x - b1.x, a2.y - b1.y) < tolerance;
+      const sameShared = Math.hypot(a1.x - b1.x, a1.y - b1.y) < tolerance &&
+                         Math.hypot(a2.x - b2.x, a2.y - b2.y) < tolerance;
+      if (reverseShared || sameShared) {
+        const merged = [];
+        for (let k = 1; k <= p1.length; k++) merged.push(p1[(i + k) % p1.length]);
+        for (let k = 1; k <= p2.length; k++) merged.push(p2[(j + k) % p2.length]);
+        const out = dedupeAdjacent(merged);
+        return out.length >= 3 ? out : null;
+      }
+    }
+  }
+
+  // 方案 B：最近顶点桥接（不相邻多边形，形成哑铃轮廓）
+  let best = { dist: Infinity, i: -1, j: -1 };
+  for (let i = 0; i < p1.length; i++) {
+    for (let j = 0; j < p2.length; j++) {
+      const d = Math.hypot(p1[i].x - p2[j].x, p1[i].y - p2[j].y);
+      if (d < best.dist) best = { dist: d, i, j };
+    }
+  }
+  if (best.i === -1) return null;
+  const merged = [];
+  for (let k = 0; k < p1.length; k++) merged.push(p1[(best.i + k) % p1.length]);
+  merged.push(p2[best.j]);
+  for (let k = 1; k < p2.length; k++) merged.push(p2[(best.j + k) % p2.length]);
+  merged.push({ ...p1[best.i] });
+  const out = dedupeAdjacent(merged);
+  return out.length >= 3 ? out : null;
+}

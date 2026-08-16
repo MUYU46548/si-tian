@@ -57,6 +57,17 @@
       </div>
     </div>
 
+    <!-- 无结果提示（P1-3）：有查询但无命中时给出建议 -->
+    <div v-if="showResults && query && store.searchResults.length === 0" class="no-results-panel" @click.stop>
+      <div class="no-results-title">未找到「{{ query }}」</div>
+      <div class="no-results-hint">
+        试试：
+        <span v-if="filterCount > 0">清除类型过滤 · </span>
+        检查名称拼写 · 使用更短的关键词 · 用 tag:前缀 搜标签
+      </div>
+      <button v-if="filterCount > 0" class="no-results-clear" @click="clearFilters">清除过滤 ({{ filterCount }})</button>
+    </div>
+
     <!-- 类型过滤面板 -->
     <div v-if="store.isFilterOpen" class="filter-panel" @click.stop>
       <div class="filter-header">类型过滤</div>
@@ -100,7 +111,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 
 const store = useGeodataStore();
@@ -158,18 +169,26 @@ function selectResult(nodeId, index) {
   const node = store.currentMatchNode;
   if (node && node.coordinate.x !== null) {
     autoNavigateToNode(node);
-    window.dispatchEvent(new CustomEvent('sitian:focus-node', { detail: node }));
+    // 等 v-if 视图切换完成后再派发焦点事件，确保目标组件已挂载监听
+    nextTick(() => window.dispatchEvent(new CustomEvent('sitian:focus-node', { detail: node })));
+    // 导航成功后清空搜索状态：避免输入框残留 query + searchResults 已被 clearSearch 清空
+    // → 无结果面板误报「未找到 xx」（原 showResults = false 是对 const ref 非法赋值，运行时抛 TypeError 中断）
+    query.value = '';
+    store.clearSearch();
   }
-  showResults = false;
+  showResults.value = false;
 }
 
 function onInput() {
   store.performSearch(query.value);
-  if (query.value.trim().length > 0 && store.searchResults.length > 0) {
-    showResults.value = true;
-  } else {
-    showResults.value = false;
-  }
+  // 有查询就显示面板（有结果显示列表，无结果显示建议），空查询不显示
+  showResults.value = query.value.trim().length > 0;
+}
+
+function clearFilters() {
+  store.searchLayerFilter = [];
+  store.searchPlaceTypeFilter = [];
+  if (store.searchQuery.trim()) store.performSearch(store.searchQuery);
 }
 
 function onEnter() {
@@ -178,8 +197,12 @@ function onEnter() {
     const node = store.currentMatchNode;
     if (node && node.coordinate.x !== null) {
       autoNavigateToNode(node);
-      window.dispatchEvent(new CustomEvent('sitian:focus-node', { detail: node }));
+      nextTick(() => window.dispatchEvent(new CustomEvent('sitian:focus-node', { detail: node })));
+      // 与 selectResult 一致：导航后清空搜索状态，防止无结果面板误报
+      query.value = '';
+      store.clearSearch();
     }
+    showResults.value = false;
   }
 }
 
@@ -200,16 +223,33 @@ function focus() {
 
 function autoNavigateToNode(node) {
   const layer = node.layer;
-  
-  if (store.viewLevel === 'world' && layer !== 'world') {
-    const world = findAncestorByLayer(node, 'world');
-    if (world) store.selectWorld(world);
+
+  // 世界节点：直接进入该世界
+  if (layer === 'world') {
+    store.selectWorld(node);
+    return;
   }
-  
-  if (store.viewLevel === 'domain' && ['planet', 'city', 'town', 'location', 'region'].includes(layer)) {
-    const domain = findAncestorByLayer(node, 'star_domain');
-    if (domain) store.selectDomain(domain);
+
+  // 先定位到所属世界（星域总览视图）
+  const world = findAncestorByLayer(node, 'world');
+  if (world) store.selectWorld(world);
+
+  // 星域/星系在 domain 视图（星域总览）可见，到此为止
+  if (layer === 'star_domain' || layer === 'galaxy') return;
+
+  // 行星及以下：进入所属星域的恒星系总览
+  const domain = findAncestorByLayer(node, 'star_domain');
+  if (domain) store.selectDomain(domain);
+
+  // planet 节点：直接打开行星地图（P1-4 操作流精简）
+  if (layer === 'planet') {
+    store.selectPlanet(node);
+    return;
   }
+
+  // 地点类（city/town/location/region/facility/village）：打开所属行星的地图
+  const planet = findAncestorByLayer(node, 'planet');
+  if (planet) store.selectPlanet(planet);
 }
 
 function findAncestorByLayer(node, targetLayer) {
@@ -286,7 +326,7 @@ defineExpose({ focus });
   gap: 6px;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 4px 8px;
   min-width: 240px;
 }
@@ -378,11 +418,52 @@ input::placeholder {
   margin-top: 6px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   max-height: 350px;
   overflow-y: auto;
   z-index: 200;
+}
+
+/* 无结果建议面板（P1-3） */
+.no-results-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  padding: 14px 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.no-results-title {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.no-results-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+.no-results-clear {
+  align-self: flex-start;
+  padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+.no-results-clear:hover {
+  background: color-mix(in srgb, var(--accent-bg) 70%, transparent);
 }
 
 .results-header {
@@ -470,7 +551,7 @@ input::placeholder {
   margin-top: 6px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 10px;
   min-width: 160px;
   z-index: 200;

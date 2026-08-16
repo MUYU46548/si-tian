@@ -30,113 +30,129 @@
       </div>
     </div>
     
-    <!-- 编辑工具栏（仅编辑形态显示，退出即隐藏，无折叠中间态） -->
+    <!-- 编辑工具栏（仅编辑形态显示，退出即隐藏，无折叠中间态；按功能分组 P0-1） -->
     <div v-if="editMode" class="edit-toolbar-wrap">
       <div class="edit-toolbar">
-      <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚 拖手</button>
-      <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象：点击选中地点/标记/文本/区域，拖动移动；空白处拖动画布">✥ 移动</button>
-      <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️ 绘制</button>
-      <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域">🗺️ 区域</button>
-      <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记">📍 标记</button>
-      <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️ 路线</button>
-      <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤 文本</button>
-      <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); clusterPanelOpen = true; objectPanelOpen = false; snapshotPanelOpen = false" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
-      <button :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false; snapshotPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
-      <button :class="{ active: snapshotPanelOpen }" @click="snapshotPanelOpen = !snapshotPanelOpen; clusterPanelOpen = false; objectPanelOpen = false" title="地图版本快照：拍摄/恢复">📸 快照</button>
-      <button class="separator-btn" disabled></button>
-      
-      <template v-if="interactionMode === 'draw'">
-        <button :class="{ active: drawMode && !floodFillMode && !brushMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制">✏️ 自由绘制</button>
-        <button :class="{ active: !drawMode && !floodFillMode && !brushMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点">📐 点击描点</button>
-        <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处生成区域">🪣 区域填充</button>
-        <button :class="{ active: brushMode }" @click="brushMode = !brushMode; floodFillMode = false" title="按住拖动地形笔刷涂抹">🖌 笔刷</button>
-        <template v-if="brushMode">
-          <span class="toolbar-label">大小</span>
-          <button v-for="s in [24, 40, 64, 96]" :key="s" :class="{ active: brushSize === s }" @click="brushSize = s">{{ s }}</button>
+        <div class="toolbar-group" title="绘制工具">
+          <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚 拖手</button>
+          <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象：点击选中地点/标记/文本/区域，拖动移动；空白处拖动画布">✥ 移动</button>
+          <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️ 绘制</button>
+          <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域">🗺️ 区域</button>
+          <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记">📍 标记</button>
+          <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️ 路线</button>
+          <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤 文本</button>
+          <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
+        </div>
+
+        <div class="toolbar-group" title="面板管理">
+          <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+          <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照：拍摄/恢复">📸 快照</button>
+        </div>
+
+        <template v-if="interactionMode === 'draw'">
+          <div class="toolbar-group toolbar-group-sub">
+            <button :class="{ active: drawMode && !floodFillMode && !brushMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制">✏️ 自由绘制</button>
+            <button :class="{ active: !drawMode && !floodFillMode && !brushMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点">📐 点击描点</button>
+            <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处生成区域">▣ 区域填充</button>
+            <button :class="{ active: brushMode }" @click="brushMode = !brushMode; floodFillMode = false" title="按住拖动地形笔刷涂抹">🖌 笔刷</button>
+            <template v-if="brushMode">
+              <span class="toolbar-label">大小</span>
+              <button v-for="s in [24, 40, 64, 96]" :key="s" :class="{ active: brushSize === s }" @click="brushSize = s">{{ s }}</button>
+            </template>
+          </div>
         </template>
-        <button class="separator-btn" disabled></button>
-      </template>
-      
-      <template v-if="interactionMode === 'region'">
-        <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制区域">✏️ 自由绘制</button>
-        <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点">📐 点击描点</button>
-        <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处自动生成区域">🪣 区域填充</button>
-        <button class="separator-btn" disabled></button>
-      </template>
-      
-      <template v-if="interactionMode === 'route'">
-        <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）">➖ 实线</button>
-        <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）">〰️ 虚线</button>
-        <span class="toolbar-label">颜色</span>
-        <button
-          v-for="c in ROUTE_COLORS"
-          :key="c"
-          :class="{ active: routeColor === c }"
-          :style="{ background: c }"
-          @click="routeColor = c"
-          class="color-btn"
-        ></button>
-        <span class="toolbar-label">↗ 点击放置顶点 · 双击完成 · 右键取消</span>
-      </template>
-      
-      <template v-if="interactionMode === 'text'">
-        <span class="toolbar-label">字号</span>
-        <button v-for="s in [12, 16, 22, 30]" :key="s" :class="{ active: textFontSize === s }" @click="textFontSize = s">{{ s }}px</button>
-        <button
-          v-for="c in TEXT_COLORS"
-          :key="c"
-          :class="{ active: textColor === c }"
-          :style="{ background: c }"
-          @click="textColor = c"
-          class="color-btn"
-        ></button>
-        <span class="toolbar-label">↗ 点击放置文本</span>
-      </template>
-      
-      <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份">🧲 吸附</button>
-      
-      <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格：绘制/移动/放置吸附到网格（按住 Ctrl 临时关闭）">⊞ 网格</button>
-      <template v-if="gridSnapEnabled">
-        <span class="toolbar-label">间距</span>
-        <button v-for="s in [50, 100, 200]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s }}</button>
-      </template>
-      <button :class="{ active: mirrorMode }" @click="mirrorMode = !mirrorMode" title="对称绘制：绘制时自动镜像（以 X/Y 轴为对称轴）">⇌ 对称</button>
-      <template v-if="mirrorMode">
-        <button :class="{ active: mirrorAxis === 'y' }" @click="mirrorAxis = 'y'" title="左右镜像（以竖直线 X=偏移 为对称轴）">⇋ 左右</button>
-        <button :class="{ active: mirrorAxis === 'x' }" @click="mirrorAxis = 'x'" title="上下镜像（以水平线 Y=偏移 为对称轴）">⇵ 上下</button>
-        <span class="toolbar-label">轴</span>
-        <input type="number" class="mirror-axis-input" v-model.number="mirrorAxisOffset" step="50" title="对称轴位置（世界坐标，默认 0=原点）" />
-      </template>
-      <button class="separator-btn" disabled></button>
-      
-      <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel" title="删除选中对象 (Del)">🗑 删除</button>
-      <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界为贝塞尔曲线">〰️ 平滑</button>
-      <button class="separator-btn" disabled></button>
-      <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
-      <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
-      <button class="separator-btn" disabled></button>
-      <button @click="saveMap" title="保存地图">💾 保存</button>
-      <button @click="confirmClear" title="清空所有省份">🧹 清空</button>
-      <button class="separator-btn" disabled></button>
-      <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图：导入手绘草图/大陆轮廓描摹">🖼 参考图</button>
-      <select class="boundary-select" v-model="canvasSizePreset" title="行星地图边界（作为鹰眼/适屏的下限，内容超出自动扩展；正式绘制前统一各行星尺寸）">
-        <option value="auto">📐 边界:自动</option>
-        <option value="500">边界: ±500</option>
-        <option value="800">边界: ±800</option>
-        <option value="1000">边界: ±1000</option>
-      </select>
-      <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺">📏 标尺</button>
-      <button @click="exportFullMapPNG" title="导出全图高清 PNG（含全部省份/区域/路线/标记/文本）">📤 导出全图</button>
-      <button class="separator-btn" disabled></button>
-      <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出编辑</button>
+
+        <template v-if="interactionMode === 'region'">
+          <div class="toolbar-group toolbar-group-sub">
+            <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制区域">✏️ 自由绘制</button>
+            <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点">📐 点击描点</button>
+            <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处自动生成区域">▣ 区域填充</button>
+          </div>
+        </template>
+
+        <template v-if="interactionMode === 'route'">
+          <div class="toolbar-group toolbar-group-sub">
+            <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）">➖ 实线</button>
+            <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）">〰️ 虚线</button>
+            <span class="toolbar-label">颜色</span>
+            <button
+              v-for="c in ROUTE_COLORS"
+              :key="c"
+              :class="{ active: routeColor === c }"
+              :style="{ background: c }"
+              @click="routeColor = c"
+              class="color-btn"
+            ></button>
+            <span class="toolbar-label">↗ 点击放置顶点 · 双击完成 · 右键取消</span>
+          </div>
+        </template>
+
+        <template v-if="interactionMode === 'text'">
+          <div class="toolbar-group toolbar-group-sub">
+            <span class="toolbar-label">字号</span>
+            <button v-for="s in [12, 16, 22, 30]" :key="s" :class="{ active: textFontSize === s }" @click="textFontSize = s">{{ s }}px</button>
+            <button
+              v-for="c in TEXT_COLORS"
+              :key="c"
+              :class="{ active: textColor === c }"
+              :style="{ background: c }"
+              @click="textColor = c"
+              class="color-btn"
+            ></button>
+            <span class="toolbar-label">↗ 点击放置文本</span>
+          </div>
+        </template>
+
+        <div class="toolbar-group" title="绘制辅助">
+          <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份">🧲 吸附</button>
+          <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格：绘制/移动/放置吸附到网格（按住 Ctrl 临时关闭）">⊞ 网格</button>
+          <template v-if="gridSnapEnabled">
+            <span class="toolbar-label">间距</span>
+            <button v-for="s in [50, 100, 200]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s }}</button>
+          </template>
+          <button :class="{ active: mirrorMode }" @click="mirrorMode = !mirrorMode" title="对称绘制：绘制时自动镜像（以 X/Y 轴为对称轴）">⇌ 对称</button>
+          <template v-if="mirrorMode">
+            <button :class="{ active: mirrorAxis === 'y' }" @click="mirrorAxis = 'y'" title="左右镜像（以竖直线 X=偏移 为对称轴）">⇋ 左右</button>
+            <button :class="{ active: mirrorAxis === 'x' }" @click="mirrorAxis = 'x'" title="上下镜像（以水平线 Y=偏移 为对称轴）">⇵ 上下</button>
+            <span class="toolbar-label">轴</span>
+            <input type="number" class="mirror-axis-input" v-model.number="mirrorAxisOffset" step="50" title="对称轴位置（世界坐标，默认 0=原点）" />
+          </template>
+        </div>
+
+        <div class="toolbar-group" title="对象操作">
+          <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份：点击多边形内两点画切割线">✂ 拆分</button>
+          <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份：再点击一个相邻省份">⛓ 合并</button>
+          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel" title="删除选中对象 (Del)">🗑 删除</button>
+          <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界为贝塞尔曲线">〰️ 平滑</button>
+          <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
+          <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
+          <button @click="saveMap" title="保存地图">💾 保存</button>
+          <button @click="confirmClear" title="清空所有省份">🧹 清空</button>
+        </div>
+
+        <div class="toolbar-group" title="视图与输出">
+          <button :class="{ active: showRefImagePanel }" @click="openPlanetPanel('refimage')" title="参考底图：导入手绘草图/大陆轮廓描摹">🖼 参考图</button>
+          <select class="boundary-select" v-model="canvasSizePreset" title="行星地图边界（作为鹰眼/适屏的下限，内容超出自动扩展；正式绘制前统一各行星尺寸）">
+            <option value="auto">📐 边界:自动</option>
+            <option value="500">边界: ±500</option>
+            <option value="800">边界: ±800</option>
+            <option value="1000">边界: ±1000</option>
+          </select>
+          <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺">📏 标尺</button>
+          <button @click="exportFullMapPNG" title="导出全图高清 PNG（含全部省份/区域/路线/标记/文本）">📤 导出全图</button>
+        </div>
+
+        <div class="toolbar-group toolbar-group-exit">
+          <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出编辑</button>
+        </div>
       </div>
     </div>
     
     <!-- 非编辑模式的导出按钮 -->
     <div v-if="!editMode" class="view-actions">
-      <button class="adopt-btn" @click="clusterPanelOpen = !clusterPanelOpen; objectPanelOpen = false; snapshotPanelOpen = false" title="地点簇大纲">🗂 地点簇</button>
-      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false; snapshotPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
-      <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="snapshotPanelOpen = !snapshotPanelOpen; clusterPanelOpen = false; objectPanelOpen = false" title="地图版本快照：拍摄/恢复">📸 快照</button>
+      <button class="adopt-btn" @click="openPlanetPanel('cluster')" title="地点簇大纲">🗂 地点簇</button>
+      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+      <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照：拍摄/恢复">📸 快照</button>
       <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG">📤 导出全图</button>
     </div>
     
@@ -187,6 +203,13 @@
         :world-bounds="worldBounds"
         @navigate="handleEagleEyeNavigate"
       />
+      <!-- 空地图引导（P1-3）：浏览态且地图完全为空时提示可编辑 -->
+      <div v-if="!editMode && fogMode" class="empty-map-hint">
+        <div class="empty-map-icon">🗺️</div>
+        <div class="empty-map-title">这张行星地图还是空的</div>
+        <div class="empty-map-desc">点击「编辑地图」开始绘制省份、标记地点、规划路线</div>
+        <button class="adopt-btn edit-entry-btn" @click="enterEditMode">✏️ 编辑地图</button>
+      </div>
       <cluster-panel
         :planet="props.planet"
         :open="clusterPanelOpen"
@@ -622,24 +645,52 @@
 import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
+import { usePanelsStore } from '../store/panels';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { getLastCommandLabel, execute } from '../store/undo';
 import { getTexturePattern } from '../utils/textures';
 import { snapPolygonToNeighbors } from '../utils/snap';
 import { createProvinceByFloodFill } from '../utils/floodfill';
-import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon } from '../utils/geometry';
+import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons } from '../utils/geometry';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
+const panelsStore = usePanelsStore();
 
 const props = defineProps({
   planet: { type: Object, default: null },
 });
 
 const emit = defineEmits(['back', 'select-node', 'dirty']);
+
+// ===== 面板互斥（P0-2）：本地四个面板单开互斥 + 与 App 层浮层互斥 =====
+function openPlanetPanel(panelName) {
+  const alreadyOpen =
+    (panelName === 'cluster' && clusterPanelOpen.value) ||
+    (panelName === 'object' && objectPanelOpen.value) ||
+    (panelName === 'snapshot' && snapshotPanelOpen.value) ||
+    (panelName === 'refimage' && showRefImagePanel.value);
+  // 通知 App 层关闭导出/书签/图层面板
+  window.dispatchEvent(new CustomEvent('sitian:panel-open'));
+  clusterPanelOpen.value = panelName === 'cluster' && !alreadyOpen;
+  objectPanelOpen.value = panelName === 'object' && !alreadyOpen;
+  snapshotPanelOpen.value = panelName === 'snapshot' && !alreadyOpen;
+  showRefImagePanel.value = panelName === 'refimage' && !alreadyOpen;
+  renderer.requestRender();
+}
+
+// App 层打开其他浮层（export/bookmarks/layers）时，关闭本地面板
+watch(() => panelsStore.openPanelId, (id) => {
+  if (id !== null && !['planet-cluster', 'planet-object', 'planet-snapshot', 'planet-refimage'].includes(id)) {
+    clusterPanelOpen.value = false;
+    objectPanelOpen.value = false;
+    snapshotPanelOpen.value = false;
+    showRefImagePanel.value = false;
+  }
+});
 
 // ===== 地点簇状态 =====
 const clusterPanelOpen = ref(false);
@@ -691,6 +742,12 @@ const placesDragStart = ref(null);
 // ===== 顶点编辑状态 =====
 const editingVertex = ref(null);
 const hoveredVertex = ref(null);
+
+// ===== 省份拆分/合并（2026-08-16） =====
+const splitSelectMode = ref(false);
+const splitPoints = ref([]);
+const mergeSelectMode = ref(false);
+const mergeTargetId = ref(null);
 
 // ===== 区域绘制状态 =====
 const selectedRegion = ref(null);
@@ -805,6 +862,10 @@ function setInteractionMode(mode) {
   dragObject.value = null;
   dragRegionAnchor.value = null;
   edgeSnapPreview.value = null;
+  splitSelectMode.value = false;
+  splitPoints.value = [];
+  mergeSelectMode.value = false;
+  mergeTargetId.value = null;
   renderer.requestRender();
 }
 
@@ -881,7 +942,7 @@ const terrainTypes = [
   { type: 'desert', label: '沙漠', color: '#E9C46A' },
   { type: 'mountain', label: '山脉', color: '#8B7355' },
   { type: 'snow', label: '雪地', color: '#E8E8E8' },
-  { type: 'lake', label: '湖泊', color: '#457B9D' },
+  { type: 'lake', label: '湖泊', color: '#6FB3C8' },
 ];
 
 // ===== 标记系统 =====
@@ -1503,6 +1564,27 @@ function pointInPolygon(x, y, points) {
   return inside;
 }
 
+// 重叠率（2026-08-16）：网格采样 a 内点，统计也落在 b 内的比例（0~1）
+// 用于绘制完成时检测新地形与已有地形重叠，避免互相覆盖
+function polygonOverlapRatio(a, b) {
+  if (!a || !b || a.length < 3 || b.length < 3) return 0;
+  const minX = Math.min(...a.map(p => p.x)), maxX = Math.max(...a.map(p => p.x));
+  const minY = Math.min(...a.map(p => p.y)), maxY = Math.max(...a.map(p => p.y));
+  const span = Math.max(maxX - minX, maxY - minY);
+  // 步长随跨度自适应（约 60 采样/边），控制采样成本
+  const STEP = Math.max(6, Math.round(span / 60));
+  let total = 0, inside = 0;
+  for (let x = minX; x <= maxX; x += STEP) {
+    for (let y = minY; y <= maxY; y += STEP) {
+      if (pointInPolygon(x, y, a)) {
+        total++;
+        if (pointInPolygon(x, y, b)) inside++;
+      }
+    }
+  }
+  return total === 0 ? 0 : inside / total;
+}
+
 function hitTestMarker(wx, wy) {
   if (!currentMapData.value?.markers) return null;
   for (let i = currentMapData.value.markers.length - 1; i >= 0; i--) {
@@ -1881,6 +1963,18 @@ function drawTerrain(ctx) {
     ctx.globalAlpha = 1;
     ctx.fill();
     ctx.globalAlpha = 1;
+
+    // 程序化纹理（P2-4）：LOD 高时叠加细节增强 EU4 省份质感；低缩放纯色省性能
+    // 拖拽（fastMode）不跳过纹理：pattern 是缓存的一次 fill，成本低（2026-08-16 用户反馈拖拽时纹理消失）
+    if (lodRef.value > 0.55) {
+      const pattern = getTexturePattern(poly.type, terrainColor, ctx);
+      if (pattern) {
+        ctx.fillStyle = pattern;
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
     
     // 边界线
     ctx.strokeStyle = isSelected ? '#FFD700' : darkenColor(terrainColor, 20);
@@ -2505,6 +2599,25 @@ function drawEditHelpers(ctx) {
     ctx.setLineDash([]);
     ctx.restore();
   }
+
+  // 拆分模式：切割线起点标记（2026-08-16）
+  if (splitSelectMode.value && editMode.value) {
+    ctx.save();
+    ctx.strokeStyle = '#FFD700';
+    ctx.fillStyle = '#FFD700';
+    ctx.lineWidth = 2;
+    if (splitPoints.value.length === 1) {
+      const p = splitPoints.value[0];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
   
   // 笔刷预览：当前笔画落点圆形
   if (isBrushing.value && brushMode.value) {
@@ -2802,7 +2915,11 @@ const renderer = useCanvasRenderer(canvas, {
   },
   onDragStart: (wx, wy, button, shiftKey, ctrlKey, panTry) => {
     if (button !== 0) return true;
-    
+
+    // 拆分/合并模式：屏蔽顶点/节点/参考图拖拽（选点优先，点击由 onClick 收集；
+    // 否则点击锚点会被顶点拖拽拦截导致无法选点，2026-08-16 用户反馈）
+    if (splitSelectMode.value || mergeSelectMode.value) return true;
+
     const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
     
     // panTry=true：pan 模式下的顶点试探，只做顶点检测，不做其他副作用
@@ -3160,10 +3277,26 @@ function finishDrawing() {
   const count = isRegion
     ? (currentMapData.value?.regions?.length || 0) + 1
     : (currentMapData.value?.terrain?.filter(t => t.type === type).length || 0) + 1;
+  const finalPoints = getMirroredPath(simplified);
+
+  // 重叠检测（2026-08-16）：新地形与已有地形重叠 > 5% 时确认，避免互相覆盖
+  if (!isRegion && finalPoints.length >= 3) {
+    const existing = currentMapData.value?.terrain || [];
+    const overlapList = existing.filter(t => polygonOverlapRatio(finalPoints, t.points) > 0.05);
+    if (overlapList.length > 0) {
+      const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「🧲 边缘吸附」对齐边界。仍要创建吗？`;
+      if (!confirm(msg)) {
+        currentPath.value = [];
+        renderer.requestRender();
+        return;
+      }
+    }
+  }
+
   const polygon = {
     id: `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     // 对称模式：原路径 + 镜像路径合并成完整对称多边形
-    points: getMirroredPath(simplified),
+    points: finalPoints,
     type,
     name: `${typeLabel} ${count}`,
     description: '',
@@ -3177,6 +3310,92 @@ function finishDrawing() {
   }
   
   emit('dirty', true);
+}
+
+// ===== 省份拆分/合并执行（2026-08-16） =====
+function startSplitMode() {
+  if (!selectedProvince.value) return;
+  splitSelectMode.value = !splitSelectMode.value;
+  mergeSelectMode.value = false;
+  splitPoints.value = [];
+  if (splitSelectMode.value) {
+    exportStatus.value = '拆分模式：点击省份内两点画切割线（Esc 取消）';
+  } else {
+    exportStatus.value = '';
+  }
+  renderer.requestRender();
+}
+
+function startMergeMode() {
+  if (!selectedProvince.value) return;
+  mergeSelectMode.value = !mergeSelectMode.value;
+  splitSelectMode.value = false;
+  splitPoints.value = [];
+  if (mergeSelectMode.value) {
+    mergeTargetId.value = selectedProvince.value.id;
+    exportStatus.value = '合并模式：再点击一个要合并的省份（Esc 取消）';
+  } else {
+    mergeTargetId.value = null;
+    exportStatus.value = '';
+  }
+  renderer.requestRender();
+}
+
+function performSplit(pA, pB) {
+  const poly = selectedProvince.value;
+  splitSelectMode.value = false;
+  splitPoints.value = [];
+  if (!poly || !poly.points || poly.points.length < 4) return;
+  const result = splitPolygon(poly.points, pA, pB);
+  if (!result) {
+    exportStatus.value = '拆分失败：切割线需穿过省份边界（两点在多边形两侧）';
+    setTimeout(() => { exportStatus.value = ''; }, 3500);
+    renderer.requestRender();
+    return;
+  }
+  const [pa, pb] = result;
+  const base = poly.name || '省份';
+  const mkId = () => `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const newA = { ...poly, id: mkId(), points: pa, controlPoints: null, name: `${base} 1` };
+  const newB = { ...poly, id: mkId(), points: pb, controlPoints: null, name: `${base} 2` };
+  store.splitTerrainPolygon(props.planet.id, poly.id, newA, newB);
+  selectedProvince.value = null;
+  emit('dirty', true);
+  renderer.requestRender();
+  exportStatus.value = `已拆分「${base}」为两个省份`;
+  setTimeout(() => { exportStatus.value = ''; }, 3000);
+}
+
+function performMerge(idA, idB) {
+  const list = currentMapData.value?.terrain || [];
+  const polyA = list.find(t => t.id === idA);
+  const polyB = list.find(t => t.id === idB);
+  mergeSelectMode.value = false;
+  mergeTargetId.value = null;
+  if (!polyA || !polyB) return;
+  const merged = mergePolygons(polyA.points, polyB.points);
+  if (!merged) {
+    exportStatus.value = '合并失败：多边形无效';
+    setTimeout(() => { exportStatus.value = ''; }, 3500);
+    renderer.requestRender();
+    return;
+  }
+  const mergedNameRaw = `${polyA.name || '省份'} + ${polyB.name || '省份'}`;
+  // 多次合并会让名字疯长（"陆地 1 2 + 陆地 1 1 1 + ..."），超过 20 字符截断（2026-08-16）
+  const mergedName = mergedNameRaw.length > 20 ? mergedNameRaw.slice(0, 20) + '…' : mergedNameRaw;
+  const newPoly = {
+    ...polyA,
+    id: `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    points: merged,
+    controlPoints: null,
+    name: mergedName,
+  };
+  store.mergeTerrainPolygons(props.planet.id, idA, idB, newPoly);
+  selectedProvince.value = newPoly;
+  emit('dirty', true);
+  renderer.requestRender();
+  exportStatus.value = '已合并省份';
+  setTimeout(() => { exportStatus.value = ''; }, 3000);
 }
 
 function deleteSelected() {
@@ -3299,6 +3518,19 @@ function finishPointDrawing() {
   if (finalPoly.type === 'region') {
     store.addRegion(props.planet.id, finalPoly);
   } else {
+    // 重叠检测（2026-08-16）：新地形与已有地形重叠 > 5% 时确认
+    if (finalPoly.points.length >= 3) {
+      const existing = currentMapData.value?.terrain || [];
+      const overlapList = existing.filter(t => polygonOverlapRatio(finalPoly.points, t.points) > 0.05);
+      if (overlapList.length > 0) {
+        const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「🧲 边缘吸附」对齐边界。仍要创建吗？`;
+        if (!confirm(msg)) {
+          drawingPolygon.value = null;
+          renderer.requestRender();
+          return;
+        }
+      }
+    }
     store.addTerrainPolygon(props.planet.id, finalPoly);
   }
   drawingPolygon.value = null;
@@ -3380,9 +3612,8 @@ function getClusterMembers(cluster) {
 function enterClusterMode() {
   interactionMode.value = 'cluster';
   clusterSelectMode.value = true;
-  // 互斥：打开簇面板时关闭对象列表面板（防止两面板同位置叠加互相遮挡 ×）
-  clusterPanelOpen.value = true;
-  objectPanelOpen.value = false;
+  // 互斥：打开簇面板时关闭其他面板（防止同位置叠加互相遮挡 ×）
+  openPlanetPanel('cluster');
   clusterDraftMembers.value = [];
   renderer.requestRender();
 }
@@ -3587,6 +3818,27 @@ function handleClusterCanvasClick(wx, wy) {
 
 // ===== 单击分发 =====
 function handleCanvasClick(hit, wx, wy) {
+  // 拆分模式：点击收集切割线两点（第一点起点，第二点执行拆分）
+  if (splitSelectMode.value) {
+    if (splitPoints.value.length === 0) {
+      splitPoints.value = [{ x: wx, y: wy }];
+      renderer.requestRender();
+    } else {
+      performSplit(splitPoints.value[0], { x: wx, y: wy });
+    }
+    return;
+  }
+  // 合并模式：点击第二个要合并的省份
+  if (mergeSelectMode.value) {
+    if (hit?.type === 'province' && hit.polygon && hit.polygon.id !== mergeTargetId.value) {
+      performMerge(mergeTargetId.value, hit.polygon.id);
+    } else {
+      exportStatus.value = '点击一个相邻省份完成合并（Esc 取消）';
+      setTimeout(() => { exportStatus.value = ''; }, 2500);
+    }
+    return;
+  }
+
   const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
   
   // cluster 模式：点击选中簇成员/空白清除
@@ -4124,6 +4376,10 @@ function exitEditMode() {
   dragObject.value = null;
   dragRegionAnchor.value = null;
   drawingPolygon.value = null;
+  splitSelectMode.value = false;
+  splitPoints.value = [];
+  mergeSelectMode.value = false;
+  mergeTargetId.value = null;
 }
 
 function undo() {
@@ -4159,9 +4415,9 @@ function handlePanelHeaderDrag(e) {
   // header 内的交互元素（× 关闭按钮、输入框、颜色按钮等）不触发拖拽
   // 否则点击 × 会先启动面板拖拽（mousedown 在 header 内冒泡到委托），面板被位移、preventDefault 吞掉关闭
   if (e.target.closest('button, input, select, textarea, a, label')) return;
-  const header = e.target.closest('.province-editor .editor-header, .cluster-panel .panel-header, .object-panel .panel-header');
+  const header = e.target.closest('.province-editor .editor-header, .cluster-panel .panel-header, .object-panel .panel-header, .snapshot-panel .editor-header');
   if (!header) return;
-  const panel = header.closest('.province-editor, .cluster-panel, .object-panel');
+  const panel = header.closest('.province-editor, .cluster-panel, .object-panel, .snapshot-panel');
   if (!panel) return;
   e.preventDefault();
   
@@ -4194,6 +4450,18 @@ function handlePanelHeaderDrag(e) {
 function handleKeydown(e) {
   // Ctrl 按住：临时关闭网格吸附（精细微调），不受编辑模式限制
   if (e.key === 'Control') { snapCtrlHeld = true; return; }
+  // Esc：取消拆分/合并模式（不依赖编辑模式）
+  if (e.key === 'Escape') {
+    if (splitSelectMode.value || mergeSelectMode.value) {
+      splitSelectMode.value = false;
+      splitPoints.value = [];
+      mergeSelectMode.value = false;
+      mergeTargetId.value = null;
+      exportStatus.value = '';
+      renderer.requestRender();
+      return;
+    }
+  }
   if (!editMode.value) return;
   const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
   if (!arrows.includes(e.key)) return;
@@ -4280,6 +4548,21 @@ function regenerateAutoRegions() {
 watch(() => store.mapData[props.planet?.id], () => {
   renderer.requestRender();
 }, { deep: true });
+
+// ===== 地图数据加载（2026-08-16 修复存量缺陷） =====
+// 此前 loadMapData 无任何调用方 → 打开行星地图时已保存的地形/标记/路线从不加载
+watch(() => props.planet?.id, async (id) => {
+  if (!id) return;
+  try {
+    const data = await store.loadMapData(id);
+    if (data) {
+      // loadMapData 已写入 store.mapData[id]，currentMapData 响应式更新
+      renderer.requestRender();
+    }
+  } catch (e) {
+    console.error('加载地图数据失败:', e);
+  }
+}, { immediate: true });
 </script>
 
 <style scoped>
@@ -4311,7 +4594,7 @@ watch(() => store.mapData[props.planet?.id], () => {
 .back-btn {
   padding: 3px 10px;
   border: 1px solid var(--planet-header-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--planet-header-bg);
   color: var(--planet-text);
   cursor: pointer;
@@ -4354,7 +4637,7 @@ watch(() => store.mapData[props.planet?.id], () => {
 .adopt-btn {
   padding: 6px 12px;
   border: 1px solid var(--planet-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--planet-btn-bg);
   cursor: pointer;
   font-size: 12px;
@@ -4393,7 +4676,7 @@ watch(() => store.mapData[props.planet?.id], () => {
 .boundary-select {
   padding: 5px 8px;
   border: 1px solid var(--planet-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--planet-btn-bg);
   color: var(--planet-text);
   cursor: pointer;
@@ -4409,7 +4692,7 @@ watch(() => store.mapData[props.planet?.id], () => {
   width: 56px;
   height: 26px;
   border: 1px solid var(--planet-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--planet-btn-bg);
   color: var(--planet-text);
   font-size: 11px;
@@ -4424,14 +4707,14 @@ watch(() => store.mapData[props.planet?.id], () => {
   display: flex;
   align-items: center;
   padding: 6px 16px;
-  background: rgba(255,255,255,0.8);
+  background: var(--panel-glass);
   border-bottom: 1px solid var(--planet-header-border);
 }
 
 .toolbar-toggle {
   padding: 6px 16px;
   border: 1px dashed var(--planet-btn-border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--planet-btn-bg);
   color: var(--planet-text);
   cursor: pointer;
@@ -4454,7 +4737,7 @@ watch(() => store.mapData[props.planet?.id], () => {
 .edit-toolbar button {
   padding: 6px 12px;
   border: 1px solid var(--planet-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--planet-btn-bg);
   cursor: pointer;
   font-size: 12px;
@@ -4484,11 +4767,38 @@ watch(() => store.mapData[props.planet?.id], () => {
   pointer-events: none;
 }
 
+/* 工具栏分组（P0-1）：组间用分隔线 + 留白建立视觉层级 */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.toolbar-group + .toolbar-group {
+  border-left: 1px solid var(--planet-btn-border);
+  margin-left: 8px;
+  padding-left: 8px;
+}
+/* 次级选项（自由绘制/描点/颜色等子模式）弱化底色，与主工具区分 */
+.toolbar-group-sub button {
+  background: var(--planet-btn-hover) !important;
+  font-size: 11px !important;
+  padding: 5px 10px !important;
+}
+/* 次级按钮选中态必须恢复强调背景，否则白字浅底看不见（background 被上方 !important 覆盖） */
+.toolbar-group-sub button.active {
+  background: var(--planet-btn-active-bg) !important;
+  border-color: var(--planet-btn-active-border) !important;
+  color: white;
+}
+.toolbar-group-exit {
+  margin-left: auto !important;
+}
+
 .terrain-picker {
   display: flex;
   gap: 6px;
   padding: 8px 20px;
-  background: rgba(255,255,255,0.6);
+  background: var(--panel-glass-soft);
   border-bottom: 1px solid var(--planet-header-border);
   align-items: center;
   flex-wrap: wrap;
@@ -4502,7 +4812,7 @@ watch(() => store.mapData[props.planet?.id], () => {
 .terrain-picker button {
   padding: 4px 10px;
   border: 2px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 11px;
   color: white;
@@ -4527,6 +4837,31 @@ watch(() => store.mapData[props.planet?.id], () => {
   overflow: hidden;
 }
 
+/* 空地图引导卡片（P1-3） */
+.empty-map-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 40px;
+  background: rgba(13, 17, 23, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-xl);
+  color: #e2e8f0;
+  text-align: center;
+  z-index: 15;
+  box-shadow: var(--shadow-lg);
+  max-width: 340px;
+}
+.empty-map-icon { font-size: 34px; line-height: 1; }
+.empty-map-title { font-size: 15px; font-weight: 600; }
+.empty-map-desc { font-size: 12px; color: #8b949e; }
+.empty-map-hint .edit-entry-btn { margin-top: 4px; }
+
 canvas {
   display: block;
   width: 100%;
@@ -4545,7 +4880,7 @@ canvas {
   background: var(--planet-editor-bg, rgba(15, 22, 35, 0.88));
   border: 1px solid var(--planet-header-border, rgba(255, 255, 255, 0.14));
   border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-md);
   z-index: 25;
   user-select: none;
 }
@@ -4554,7 +4889,7 @@ canvas {
   height: 26px;
   padding: 0 6px;
   border: 1px solid var(--planet-header-border, rgba(255, 255, 255, 0.16));
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--planet-text, #dbe4f0);
   cursor: pointer;
@@ -4580,7 +4915,7 @@ canvas {
   width: 54px;
   height: 26px;
   border: 1px solid var(--planet-header-border, rgba(255, 255, 255, 0.16));
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--planet-text, #dbe4f0);
   font-size: 11px;
@@ -4599,13 +4934,13 @@ canvas {
   bottom: 22px;
   transform: translateX(-50%);
   padding: 8px 20px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: rgba(46, 160, 67, 0.95);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
   z-index: 26;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-md);
   pointer-events: none;
   animation: save-banner-in 0.18s ease-out;
 }
@@ -4623,7 +4958,7 @@ canvas {
   left: 14px;
   bottom: 14px;
   padding: 4px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: rgba(15, 22, 35, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--planet-text-secondary, #aeb9c8);
@@ -4692,7 +5027,7 @@ canvas {
   background: var(--planet-editor-bg);
   border: 1px solid var(--planet-editor-border);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-md);
   z-index: 100;
   cursor: default;
   overflow: hidden;
@@ -4725,7 +5060,7 @@ canvas {
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--planet-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--planet-btn-bg);
   color: var(--planet-text);
   font-size: 12px;
@@ -4746,7 +5081,7 @@ canvas {
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin-bottom: 4px;
   background: rgba(255, 255, 255, 0.04);
 }
@@ -4771,7 +5106,7 @@ canvas {
 .snapshot-restore {
   padding: 3px 8px;
   border: 1px solid var(--planet-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--planet-btn-bg);
   color: var(--planet-text-link, #4A90D9);
   cursor: pointer;
@@ -4811,7 +5146,7 @@ canvas {
   align-items: center;
   gap: 6px;
   padding: 5px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid transparent;
   cursor: pointer;
@@ -4856,7 +5191,7 @@ canvas {
   background: var(--planet-editor-bg);
   border-radius: 8px;
   border: 1px solid var(--planet-editor-border);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  box-shadow: var(--shadow-md);
   z-index: 100;
   cursor: default;
 }
@@ -4906,7 +5241,7 @@ canvas {
   width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--planet-input-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-family: "Microsoft YaHei", sans-serif;
   background: var(--planet-input-bg);
@@ -4956,7 +5291,7 @@ canvas {
   padding: 2px 8px;
   background: var(--planet-tag-bg);
   border: 1px solid var(--planet-tag-border);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   font-size: 11px;
   color: var(--planet-text);
 }
@@ -4977,7 +5312,7 @@ canvas {
 .line-style-row button {
   padding: 4px 10px;
   border: 2px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 11px;
   background: var(--planet-btn-bg);
@@ -5002,7 +5337,7 @@ canvas {
   width: 56px;
   padding: 4px 6px;
   border: 1px solid var(--planet-input-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
   background: var(--planet-input-bg);
   color: var(--planet-text);
@@ -5015,7 +5350,7 @@ canvas {
   font-size: 12px;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   line-height: 1;
 }
 .mini-reset:hover {
@@ -5037,7 +5372,7 @@ canvas {
   width: 30px;
   height: 30px;
   border: 2px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 15px;
   background: var(--planet-btn-bg);
@@ -5086,17 +5421,17 @@ canvas {
   left: 50%;
   transform: translateX(-50%);
   z-index: 90;
-  background: rgba(22, 27, 34, 0.92);
+  background: var(--panel-bg);
   color: #f0f6fc;
   border: 1px solid #30363d;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px 16px;
   font-size: 12px;
   max-width: 70%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  box-shadow: var(--shadow-md);
 }
 
 /* 地点簇对话框 */

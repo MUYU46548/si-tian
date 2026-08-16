@@ -97,7 +97,7 @@
               </div>
             </div>
             <div class="mode-item">
-              <span class="mode-icon">🪣</span>
+              <span class="mode-icon">▣</span>
               <div class="mode-info">
                 <span class="mode-name">区域填充</span>
                 <span class="mode-desc">点击空白处自动生成不重叠区域</span>
@@ -191,8 +191,8 @@ defineExpose({ open, close });
   max-height: 80vh;
   background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -230,7 +230,7 @@ defineExpose({ open, close });
   color: #58a6ff;
   background: rgba(88, 166, 255, 0.15);
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 
 .about-content {
@@ -330,7 +330,7 @@ defineExpose({ open, close });
   gap: 12px;
   padding: 10px;
   background: #161b22;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border: 1px solid #30363d;
 }
 
@@ -386,7 +386,7 @@ defineExpose({ open, close });
   line-height: 1.5;
   padding: 10px;
   background: #161b22;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border-left: 3px solid #58a6ff;
   margin: 0;
 }
@@ -432,7 +432,7 @@ defineExpose({ open, close });
   font-size: 20px;
   cursor: pointer;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .close-btn:hover {

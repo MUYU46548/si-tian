@@ -97,8 +97,8 @@ defineExpose({ open, close });
   width: 420px;
   background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
   padding: 24px;
 }
 
@@ -200,7 +200,7 @@ defineExpose({ open, close });
   padding: 8px 16px;
   background: #238636;
   border: 1px solid #2ea043;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: #f0f6fc;
   cursor: pointer;
   font-size: 12px;
@@ -215,7 +215,7 @@ defineExpose({ open, close });
   padding: 8px 16px;
   background: #21262d;
   border: 1px solid #30363d;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: #8b949e;
   cursor: pointer;
   font-size: 12px;

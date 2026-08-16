@@ -140,13 +140,13 @@ defineExpose({ open, close });
 .keyboard-shortcuts-panel {
   background: #161b22;
   border: 1px solid #30363d;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   width: 500px;
   max-width: 90vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
 }
 
 .shortcuts-header {
@@ -170,7 +170,7 @@ defineExpose({ open, close });
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition: all 0.15s;
 }
 
@@ -213,7 +213,7 @@ kbd {
   padding: 0 6px;
   background: #21262d;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-family: 'SF Mono', Monaco, Consolas, monospace;
   font-size: 11px;
   color: #e2e8f0;

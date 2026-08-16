@@ -263,7 +263,7 @@ const hyperlaneTypeLabels = Object.fromEntries(hyperlaneTypes.map(t => [t.value,
 // 层级图标映射
 const LAYER_ICONS = {
   world: '🌍', star_domain: '🌌', galaxy: '☀️', star: '✨',
-  planet: '🪐', moon: '🌙', region: '🏞', city: '🏙',
+  planet: '🌍', moon: '🌙', region: '🏞', city: '🏙',
   town: '🏘', village: '🏡', facility: '🏛', location: '📍', unknown: '❓'
 };
 
@@ -595,7 +595,7 @@ function updateCoordinate(axis, value) {
   justify-content: center;
   font-size: 28px;
   background: rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   flex-shrink: 0;
 }
 
@@ -632,7 +632,7 @@ function updateCoordinate(axis, value) {
   margin-top: 4px;
   padding: 2px 8px;
   background: rgba(88, 166, 255, 0.12);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   color: #58a6ff;
 }
 
@@ -643,7 +643,7 @@ function updateCoordinate(axis, value) {
   font-size: 18px;
   cursor: pointer;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 
@@ -673,7 +673,7 @@ function updateCoordinate(axis, value) {
 .meta-item {
   background: #161b22;
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border: 1px solid #30363d;
 }
 
@@ -697,7 +697,7 @@ function updateCoordinate(axis, value) {
 .frontmatter-block {
   background: #161b22;
   padding: 10px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border: 1px solid #30363d;
   margin-bottom: 12px;
 }
@@ -733,7 +733,7 @@ function updateCoordinate(axis, value) {
   line-height: 1.6;
   background: #161b22;
   padding: 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border: 1px solid #30363d;
 }
 
@@ -761,7 +761,7 @@ function updateCoordinate(axis, value) {
   padding: 8px;
   background: #21262d;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: #58a6ff;
   cursor: pointer;
   font-size: 11px;
@@ -827,7 +827,7 @@ function updateCoordinate(axis, value) {
 .markdown-body pre {
   background: #0d1117;
   padding: 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow-x: auto;
   margin: 0 0 10px;
   border: 1px solid #21262d;
@@ -901,7 +901,7 @@ function updateCoordinate(axis, value) {
 .callout {
   margin: 0 0 10px;
   padding: 10px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border-left: 3px solid #58a6ff;
   background: rgba(88, 166, 255, 0.08);
 }
@@ -985,7 +985,7 @@ function updateCoordinate(axis, value) {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 12px;
   color: #e2e8f0;
@@ -1026,7 +1026,7 @@ function updateCoordinate(axis, value) {
   padding: 2px 4px;
   background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: #58a6ff;
   font-size: 10px;
   outline: none;
@@ -1140,7 +1140,7 @@ function updateCoordinate(axis, value) {
   padding: 6px 8px;
   background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: #e2e8f0;
   font-size: 12px;
   outline: none;
@@ -1201,7 +1201,7 @@ function updateCoordinate(axis, value) {
   padding: 4px 8px;
   background: transparent;
   border: 1px dashed #30363d;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   color: #e2e8f0;
   font-size: 11px;
   outline: none;
@@ -1245,7 +1245,7 @@ function updateCoordinate(axis, value) {
   padding: 6px 8px;
   background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: #e2e8f0;
   font-size: 12px;
   font-family: 'SF Mono', Monaco, Consolas, monospace;
@@ -1274,7 +1274,7 @@ function updateCoordinate(axis, value) {
   flex: 1;
   padding: 10px 14px;
   border: 1px solid #30363d;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: #21262d;
   color: #e2e8f0;
   cursor: pointer;

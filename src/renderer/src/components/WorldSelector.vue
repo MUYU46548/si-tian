@@ -7,7 +7,16 @@
       </div>
       <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
     </div>
-    <div class="world-grid">
+    <div v-if="worlds.length === 0" class="empty-state">
+      <div class="empty-icon">🌌</div>
+      <h2>这里还没有世界</h2>
+      <p>从 Obsidian 库提取地理节点，或创建一个空世界开始绘制。</p>
+      <div class="empty-actions">
+        <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
+        <button class="extract-btn" @click="$emit('reextract')">↻ 从 Obsidian 重新提取</button>
+      </div>
+    </div>
+    <div v-else class="world-grid">
       <div
         v-for="world in worlds"
         :key="world.id"
@@ -47,7 +56,7 @@ const props = defineProps({
   locations: { type: Array, default: () => [] },
 });
 
-defineEmits(['select', 'create-world', 'delete-world']);
+defineEmits(['select', 'create-world', 'delete-world', 'reextract']);
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {
@@ -146,7 +155,7 @@ function getLocationCount(worldId) {
   margin-top: 6px;
   padding: 8px 18px;
   border: 1px solid #58a6ff;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: rgba(88, 166, 255, 0.12);
   color: #58a6ff;
   font-size: 13px;
@@ -170,10 +179,42 @@ function getLocationCount(worldId) {
   width: 100%;
 }
 
+/* 空状态（P1-3）：库中没有世界时的引导卡片 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 40px;
+  border: 1px dashed rgba(88, 166, 255, 0.35);
+  border-radius: var(--radius-xl);
+  background: rgba(22, 27, 34, 0.6);
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+.empty-state .empty-icon { font-size: 40px; }
+.empty-state h2 { font-size: 17px; color: #f0f6fc; margin: 0; }
+.empty-state p { font-size: 13px; color: #8b949e; margin: 0 0 8px; }
+.empty-actions { display: flex; gap: 10px; }
+.empty-actions .create-btn { align-self: auto; margin-top: 0; }
+.extract-btn {
+  padding: 8px 18px;
+  border: 1px solid var(--toolbar-border, #30363d);
+  border-radius: var(--radius-md);
+  background: var(--btn-bg, #21262d);
+  color: var(--text-secondary, #c9d1d9);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.extract-btn:hover { background: var(--btn-bg-hover, #30363d); }
+
 .world-card {
   position: relative;
   border: 1px solid rgba(88, 166, 255, 0.25);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 24px;
   cursor: pointer;
   transition: all 0.25s;
@@ -197,7 +238,7 @@ function getLocationCount(worldId) {
   width: 26px;
   height: 26px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: #8b949e;
   font-size: 13px;

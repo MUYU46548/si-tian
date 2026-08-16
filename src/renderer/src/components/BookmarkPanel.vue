@@ -55,7 +55,7 @@ function formatDate(iso) {
   border: 1px solid #30363d;
   border-radius: 8px;
   z-index: 200;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
 }
@@ -163,7 +163,7 @@ function formatDate(iso) {
   flex: 1;
   padding: 6px 12px;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: #21262d;
   color: #c9d1d9;
   font-size: 11px;

@@ -28,7 +28,7 @@
           :class="{ active: editMode }"
           @click="toggleEditMode"
         >
-          {{ editMode ? '✓ 完成编辑' : '✎ 编辑航道' }}
+          {{ editMode ? '✓ 完成编辑' : '✎ 编辑地图' }}
         </button>
         <button v-if="editMode" title="在当前星域创建恒星系（视图中心）" @click="createSystem">
           ＋ 恒星系
@@ -881,7 +881,7 @@ defineExpose({ canvas, renderer });
 .back-btn {
   padding: 3px 10px;
   border: 1px solid var(--map-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--map-btn-bg);
   color: var(--map-btn-text);
   cursor: pointer;
@@ -893,7 +893,7 @@ defineExpose({ canvas, renderer });
 .header-actions button {
   padding: 6px 14px;
   border: 1px solid var(--map-btn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--map-btn-bg);
   color: var(--map-btn-text);
   cursor: pointer;
@@ -919,9 +919,9 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
   min-width: 150px;
   padding: 4px 0;
   border: 1px solid var(--map-header-border, #2a3550);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--map-header-bg, #151c2e);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-md);
   user-select: none;
 }
 .context-menu .menu-item {

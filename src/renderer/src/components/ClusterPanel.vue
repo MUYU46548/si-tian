@@ -88,10 +88,10 @@ function getMemberName(memberId) {
   left: 8px;
   bottom: 8px;
   z-index: 30;
-  background: rgba(22, 27, 34, 0.95);
+  background: var(--panel-bg);
   border: 1px solid #30363d;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   min-width: 220px;
   max-width: 280px;
   max-height: 320px;
@@ -134,7 +134,7 @@ function getMemberName(memberId) {
   font-size: 14px;
   width: 22px;
   height: 22px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   line-height: 1;
 }
 
@@ -146,7 +146,7 @@ function getMemberName(memberId) {
   font-size: 10px;
   width: 22px;
   height: 22px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   line-height: 1;
 }
 
@@ -193,7 +193,7 @@ function getMemberName(memberId) {
 
 .cluster-row {
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin-bottom: 6px;
   background: #161b22;
   position: relative;

@@ -213,7 +213,7 @@ watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], (
   z-index: 20;
   background: rgba(13, 17, 23, 0.95);
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   overflow: hidden;
 }
@@ -246,7 +246,7 @@ watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], (
   width: 34px;
   height: 30px;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: rgba(13, 17, 23, 0.9);
   color: #8b949e;
   cursor: pointer;

@@ -374,12 +374,12 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   async function saveMapData(planetId, data) {
     try {
-      // 深拷贝去除 Vue reactive Proxy
+      // 深拷贝去除 Vue reactive Proxy（仅用于 IPC 传输）
       const cloned = JSON.parse(JSON.stringify(data));
       const result = await window.sitianAPI.saveMapData(planetId, cloned);
-      if (result.success) {
-        mapData.value[planetId] = cloned;
-      }
+      // 注意：不再 mapData.value[planetId] = cloned —— 替换对象会让已入栈的
+      // undo/redo 闭包与 selectedProvince 等选中引用全部失效（2026-08-16 修复：
+      // autoSave 触发后撤销失灵、选中对象与数据分离的存量根因）
       return result;
     } catch (e) {
       console.error('saveMapData failed:', e);
@@ -422,6 +422,61 @@ export const useGeodataStore = defineStore('geodata', () => {
       },
       redo: () => {
         mapData.value[planetId].terrain = mapData.value[planetId].terrain.filter(t => t.id !== polygonId);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== 省份拆分/合并（2026-08-16，原子操作：一次 undo 恢复全部） =====
+  // 注意：execute 会立即调用 redo，这里不能先手动 splice（见 undo.js execute 双写陷阱）
+  // 注意：闭包内每次访问 mapData.value[planetId]（不捕获 data 引用，防止对象被替换后失效）
+  function splitTerrainPolygon(planetId, oldId, newA, newB) {
+    const data = mapData.value[planetId];
+    if (!data) return;
+    const idx = data.terrain.findIndex(t => t.id === oldId);
+    if (idx === -1) return;
+    const oldPoly = data.terrain[idx];
+    data.updatedAt = new Date().toISOString();
+    execute({
+      type: 'split-terrain',
+      label: '拆分省份',
+      undo: () => {
+        const cur = mapData.value[planetId];
+        cur.terrain = cur.terrain.filter(t => t.id !== newA.id && t.id !== newB.id);
+        cur.terrain.splice(idx, 0, oldPoly);
+      },
+      redo: () => {
+        const cur = mapData.value[planetId];
+        cur.terrain = cur.terrain.filter(t => t.id !== oldId);
+        cur.terrain.push(newA, newB);
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function mergeTerrainPolygons(planetId, idA, idB, merged) {
+    const data = mapData.value[planetId];
+    if (!data) return;
+    const idxA = data.terrain.findIndex(t => t.id === idA);
+    const idxB = data.terrain.findIndex(t => t.id === idB);
+    if (idxA === -1 || idxB === -1) return;
+    const polyA = data.terrain[idxA];
+    const polyB = data.terrain[idxB];
+    data.updatedAt = new Date().toISOString();
+    execute({
+      type: 'merge-terrain',
+      label: '合并省份',
+      undo: () => {
+        const cur = mapData.value[planetId];
+        cur.terrain = cur.terrain.filter(t => t.id !== merged.id);
+        const insert = (i, poly) => cur.terrain.splice(Math.min(i, cur.terrain.length), 0, poly);
+        if (idxA <= idxB) { insert(idxA, polyA); insert(idxB + 1, polyB); }
+        else { insert(idxB, polyB); insert(idxA + 1, polyA); }
+      },
+      redo: () => {
+        const cur = mapData.value[planetId];
+        cur.terrain = cur.terrain.filter(t => t.id !== idA && t.id !== idB);
+        cur.terrain.push(merged);
       },
     });
     scheduleAutoSaveMap(planetId);
@@ -1332,6 +1387,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       handleNodeUpdated, handleNodeRemoved,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
+      splitTerrainPolygon, mergeTerrainPolygons,
       beginNodePositionCapture, endNodePositionCapture, beginMultiNodePositionCapture, endMultiNodePositionCapture, toggleNodeLock,
       addRegion, removeRegion, updateRegion,
       addRoute, removeRoute, updateRoute,

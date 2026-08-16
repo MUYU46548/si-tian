@@ -220,10 +220,10 @@ function commitRename() {
   left: 8px;
   bottom: 8px;
   z-index: 31;
-  background: rgba(22, 27, 34, 0.95);
+  background: var(--panel-bg);
   border: 1px solid #30363d;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   min-width: 240px;
   max-width: 300px;
   max-height: 360px;
@@ -276,7 +276,7 @@ function commitRename() {
   font-size: 10px;
   width: 22px;
   height: 22px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   line-height: 1;
 }
 
@@ -307,7 +307,7 @@ function commitRename() {
   color: #8b949e;
   font-size: 11px;
   padding: 4px 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -340,7 +340,7 @@ function commitRename() {
   align-items: center;
   gap: 6px;
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
   color: #c9d1d9;
   cursor: default;
@@ -455,7 +455,7 @@ function commitRename() {
   color: #f0f6fc;
   font-size: 12px;
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   outline: none;
 }
 </style>

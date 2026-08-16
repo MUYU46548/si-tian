@@ -103,13 +103,13 @@ defineExpose({ open, close });
 .change-log-panel {
   background: #161b22;
   border: 1px solid #30363d;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   width: 500px;
   max-width: 90vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
 }
 
 .change-log-header {
@@ -133,7 +133,7 @@ defineExpose({ open, close });
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition: all 0.15s;
 }
 
@@ -152,7 +152,7 @@ defineExpose({ open, close });
 .filter-btn {
   padding: 4px 12px;
   border: 1px solid #30363d;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   background: #21262d;
   color: #c9d1d9;
   font-size: 11px;
@@ -203,7 +203,7 @@ defineExpose({ open, close });
   align-items: center;
   justify-content: center;
   background: #21262d;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 
@@ -229,6 +229,6 @@ defineExpose({ open, close });
   color: #8b949e;
   padding: 2px 6px;
   background: #21262d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 </style>

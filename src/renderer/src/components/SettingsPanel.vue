@@ -268,8 +268,8 @@ defineExpose({ open, close });
   max-height: 80vh;
   background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -363,7 +363,7 @@ defineExpose({ open, close });
   cursor: pointer;
   inset: 0;
   background: #30363d;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   transition: 0.2s;
 }
 
@@ -393,7 +393,7 @@ input:checked + .toggle-slider::before {
   padding: 4px 8px;
   background: #161b22;
   border: 1px solid #30363d;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: #e2e8f0;
   font-size: 12px;
   text-align: center;
@@ -438,7 +438,7 @@ input:checked + .toggle-slider::before {
   padding: 10px 14px;
   background: #21262d;
   border: 1px solid #30363d;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: #e2e8f0;
   cursor: pointer;
   font-size: 12px;
@@ -477,7 +477,7 @@ input:checked + .toggle-slider::before {
   font-size: 18px;
   cursor: pointer;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .close-btn:hover {

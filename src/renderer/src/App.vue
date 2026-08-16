@@ -30,17 +30,21 @@
             class="active"
           >{{ store.currentPlanet?.displayName || store.currentPlanet?.name }}</button>
         </nav>
+        <span class="toolbar-divider"></span>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
         <button @click="reextract" title="重新提取">↻</button>
         <button @click="saveData" :disabled="!dirty" title="保存">💾</button>
-        <button @click="showExportMenu = !showExportMenu" title="导出">📥</button>
-        <button @click="layersStore.togglePanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }">☷</button>
+        <span class="toolbar-divider"></span>
+        <button v-if="store.viewLevel !== 'world'" @click="toggleLayersPanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }">☷</button>
+        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }">📌</button>
+        <span class="toolbar-divider"></span>
+        <button @click="panelsStore.toggle('export')" title="导出">📥</button>
+        <span class="toolbar-divider"></span>
         <button @click="settingsPanelRef?.open()" title="设置">⚙️</button>
         <button @click="aboutPanelRef?.open()" title="帮助 (F1)">?</button>
         <button @click="keyboardShortcutsRef?.open()" title="快捷键 (Ctrl+?)">⌨</button>
         <button @click="changeLogRef?.open()" title="变更日志">📋</button>
-        <button @click="showBookmarks = !showBookmarks" title="视口书签" :class="{ active: showBookmarks }">📌</button>
         <button @click="validateDataIntegrity" title="数据检查">🔍</button>
         <button @click="toggleTheme" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`">{{ currentTheme === 'dark' ? '🌙' : '☀️' }}</button>
         <span class="status">{{ statusText }}</span>
@@ -48,7 +52,7 @@
     </header>
 
     <!-- 导出菜单 -->
-    <div v-if="showExportMenu" class="export-menu" @click.self="showExportMenu = false">
+    <div v-if="panelsStore.isOpen('export')" class="export-menu" @click.self="panelsStore.close('export')">
       <button @click="handleExportPNG">导出 PNG (当前视图)</button>
       <button @click="handleExportSVG">导出 SVG (当前视图)</button>
       <button @click="handleExportFullPNG">导出 PNG (全图)</button>
@@ -70,6 +74,7 @@
           @select="store.selectWorld"
           @create-world="handleCreateWorld"
           @delete-world="handleDeleteWorld"
+          @reextract="reextract"
         />
         
         <galaxy-map
@@ -115,10 +120,10 @@
     <keyboard-shortcuts ref="keyboardShortcutsRef" />
     <change-log ref="changeLogRef" />
     <bookmark-panel
-      v-if="showBookmarks"
+      v-if="panelsStore.isOpen('bookmarks')"
       :bookmarks="bookmarks"
       :current-index="currentIndex"
-      @close="showBookmarks = false"
+      @close="panelsStore.close('bookmarks')"
       @navigate="handleBookmarkNavigate"
       @add="handleAddBookmark"
       @remove="handleRemoveBookmark"
@@ -136,8 +141,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from './store/geodata';
+import { usePanelsStore } from './store/panels';
 import WorldSelector from './components/WorldSelector.vue';
 import GalaxyMap from './components/GalaxyMap.vue';
 import SystemView from './components/SystemView.vue';
@@ -160,6 +166,7 @@ import { measurePerformance, cleanupTestNodes } from './utils/stressTest';
 
 const store = useGeodataStore();
 const layersStore = useLayersStore();
+const panelsStore = usePanelsStore();
 const { currentTheme, toggleTheme, initTheme } = useTheme();
 const { bookmarks, currentIndex, addBookmark, removeBookmark, clearAll } = useBookmarks();
 const dirty = ref(false);
@@ -167,14 +174,26 @@ const statusText = ref('');
 const searchBar = ref(null);
 const galaxyMapRef = ref(null);
 const systemViewRef = ref(null);
-const showExportMenu = ref(false);
-const showBookmarks = ref(false);
 const perfVisible = ref(false);
 const perfStats = ref({});
 const aboutPanelRef = ref(null);
 const settingsPanelRef = ref(null);
 const keyboardShortcutsRef = ref(null);
 const changeLogRef = ref(null);
+
+// ===== 面板互斥（P0-2）：图层面板接入全局面板注册表 =====
+function toggleLayersPanel() {
+  layersStore.togglePanel();
+  if (layersStore.panelOpen) panelsStore.open('layers');
+  else panelsStore.closeAll();
+}
+
+// 其他浮层面板打开时，自动关闭图层面板
+watch(() => panelsStore.openPanelId, (id) => {
+  if (id !== 'layers' && layersStore.panelOpen) {
+    layersStore.panelOpen = false;
+  }
+});
 const undoTooltip = computed(() => {
   const label = store.undoLabel;
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
@@ -236,7 +255,7 @@ async function handleExportPNG() {
     statusText.value = '导出完成';
   });
   
-  showExportMenu.value = false;
+  panelsStore.close('export');
 }
 
 async function handleExportSVG() {
@@ -297,7 +316,7 @@ async function handleExportSVG() {
   URL.revokeObjectURL(url);
   
   statusText.value = '导出完成';
-  showExportMenu.value = false;
+  panelsStore.close('export');
 }
 
 async function handleExportFullPNG() {
@@ -485,7 +504,7 @@ async function handleExportFullPNG() {
     statusText.value = '导出完成';
   });
   
-  showExportMenu.value = false;
+  panelsStore.close('export');
 }
 
 function getNodeColor(layer) {
@@ -552,7 +571,7 @@ function handleExportMapConfig() {
   a.click();
   URL.revokeObjectURL(url);
   
-  showExportMenu.value = false;
+  panelsStore.close('export');
   statusText.value = '地图配置已导出';
 }
 
@@ -597,7 +616,7 @@ function handleImportMapConfig() {
   };
   input.click();
   
-  showExportMenu.value = false;
+  panelsStore.close('export');
 }
 
 // ===== 压力测试 =====
@@ -703,7 +722,7 @@ function handleBookmarkNavigate(bm) {
     }
   }
   
-  showBookmarks.value = false;
+  panelsStore.close('bookmarks');
 }
 
 function handleRemoveBookmark(id) {
@@ -758,7 +777,13 @@ onMounted(async () => {
   window.addEventListener('sitian:clear-cache', () => {
     clearCoordinateCache();
   });
+  // PlanetMap 本地面板打开时，关闭 App 层浮层面板（面板互斥）
+  window.addEventListener('sitian:panel-open', closeAppPanels);
 });
+
+function closeAppPanels() {
+  panelsStore.closeAll();
+}
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
@@ -766,6 +791,7 @@ onUnmounted(() => {
   cleanupNodeUpdated?.();
   cleanupNodeRemoved?.();
   if (perfUpdateTimer) clearInterval(perfUpdateTimer);
+  window.removeEventListener('sitian:panel-open', closeAppPanels);
 });
 
 function handleGlobalKeydown(e) {
@@ -785,12 +811,12 @@ function handleGlobalKeydown(e) {
     return;
   }
   if (e.key === 'Escape') {
-    showExportMenu.value = false;
+    panelsStore.closeAll();
   }
   if (e.key === 'l' || e.key === 'L') {
     if (store.viewLevel === 'domain' || store.viewLevel === 'system' || store.viewLevel === 'planet') {
       e.preventDefault();
-      layersStore.togglePanel();
+      toggleLayersPanel();
     }
   }
 }
@@ -941,6 +967,27 @@ async function clearCoordinateCache() {
   --planet-input-focus: #5B8DEF;
   --planet-tag-bg: #E8F4F8;
   --planet-tag-border: #C8E6C9;
+  /* ===== 设计令牌（P0-1）：间距/圆角/阴影/z-index/玻璃面板 ===== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --z-eagle: 20;
+  --z-panel: 30;
+  --z-context-menu: 100;
+  --z-modal: 900;
+  --panel-glass: rgba(255, 255, 255, 0.8);
+  --panel-glass-strong: rgba(255, 255, 255, 0.95);
+  --panel-glass-soft: rgba(255, 255, 255, 0.6);
 }
 
 .theme-light {
@@ -996,6 +1043,27 @@ async function clearCoordinateCache() {
   --planet-input-focus: #5B8DEF;
   --planet-tag-bg: #E8F4F8;
   --planet-tag-border: #C8E6C9;
+  /* ===== 设计令牌（P0-1）：与暗色主题一致 ===== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.25);
+  --z-eagle: 20;
+  --z-panel: 30;
+  --z-context-menu: 100;
+  --z-modal: 900;
+  --panel-glass: rgba(255, 255, 255, 0.8);
+  --panel-glass-strong: rgba(255, 255, 255, 0.95);
+  --panel-glass-soft: rgba(255, 255, 255, 0.6);
 }
 
 .app-body {
@@ -1043,7 +1111,7 @@ async function clearCoordinateCache() {
 .toolbar-actions button {
   padding: 5px 10px;
   border: 1px solid var(--toolbar-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--btn-bg);
   color: var(--text-secondary);
   cursor: pointer;
@@ -1059,6 +1127,15 @@ async function clearCoordinateCache() {
   cursor: not-allowed;
 }
 
+/* 工具栏分组分隔线（P0-1） */
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--toolbar-border);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
 .level-indicator {
   display: flex;
   gap: 6px;
@@ -1072,7 +1149,7 @@ async function clearCoordinateCache() {
   color: var(--text-tertiary);
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .level-indicator button:hover {
@@ -1103,19 +1180,19 @@ async function clearCoordinateCache() {
   right: 16px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  z-index: 200;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: var(--z-context-menu);
+  box-shadow: var(--shadow-md);
 }
 
 .export-menu button {
   padding: 8px 16px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--btn-bg);
   color: var(--text-secondary);
   cursor: pointer;
@@ -1141,7 +1218,7 @@ async function clearCoordinateCache() {
   right: 16px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 12px;
   font-size: 11px;
   color: var(--text-secondary);
@@ -1161,5 +1238,29 @@ async function clearCoordinateCache() {
 
 .perf-row b {
   color: var(--accent);
+}
+</style>
+
+<!-- 全局面板动画（P1-3）：非 scoped，供所有浮层面板组件引用 -->
+<style>
+@keyframes sitian-panel-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+/* 浮层面板统一入场动画 + 统一阴影由各面板组件各自 box-shadow 令牌控制 */
+.export-menu,
+.bookmarks-panel,
+.layer-panel,
+.cluster-panel,
+.object-panel,
+.snapshot-panel,
+.province-editor,
+.context-menu,
+.search-results-panel,
+.no-results-panel,
+.filter-panel,
+.filter-panel-galaxy,
+.perf-panel {
+  animation: sitian-panel-in 0.15s ease-out;
 }
 </style>
