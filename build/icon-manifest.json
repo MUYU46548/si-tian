@@ -1,0 +1,28 @@
+{
+  "name": "司天 SiTian",
+  "version": "V2-A2",
+  "design": "围棋星位 × 银河航道",
+  "files": {
+    "svg": "E:\\CODE\\CangKu\\SiTian\\build\\icon.svg",
+    "ico": "E:\\CODE\\CangKu\\SiTian\\build\\icon.ico",
+    "icns": "E:\\CODE\\CangKu\\SiTian\\build\\icon.icns",
+    "png": {
+      "16": "E:\\CODE\\CangKu\\SiTian\\build\\icon-16.png",
+      "32": "E:\\CODE\\CangKu\\SiTian\\build\\icon-32.png",
+      "48": "E:\\CODE\\CangKu\\SiTian\\build\\icon-48.png",
+      "64": "E:\\CODE\\CangKu\\SiTian\\build\\icon-64.png",
+      "128": "E:\\CODE\\CangKu\\SiTian\\build\\icon-128.png",
+      "256": "E:\\CODE\\CangKu\\SiTian\\build\\icon-256.png",
+      "512": "E:\\CODE\\CangKu\\SiTian\\build\\icon-512.png",
+      "1024": "E:\\CODE\\CangKu\\SiTian\\build\\icon-1024.png"
+    }
+  },
+  "colors": {
+    "background": "#eef1f6",
+    "stroke": "#3a4a62",
+    "lane": "rgba(40,80,130,0.8)",
+    "diagonal": "rgba(100,60,140,0.6)",
+    "star": "#2a3a52",
+    "core": "#e8c66a"
+  }
+}
