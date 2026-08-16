@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   getMapData: (planetId) => ipcRenderer.invoke('get-map-data', planetId),
   saveMapData: (planetId, data) => ipcRenderer.invoke('save-map-data', planetId, data),
 
+  // 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳
+  backupSitianCache: () => ipcRenderer.invoke('backup-sitian-cache'),
+
   // 参考图底图（文件选择 + base64 读取）
   selectReferenceImage: () => ipcRenderer.invoke('select-reference-image'),
 

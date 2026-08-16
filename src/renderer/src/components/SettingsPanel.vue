@@ -183,6 +183,9 @@
             <button class="data-btn" @click="validateData">
               🔍 数据完整性检查
             </button>
+            <button class="data-btn" @click="backupCache" title="将 .sitian/ 缓存备份到 backups/（带时间戳，保留最近 10 批）">
+              📦 立即备份
+            </button>
             <button class="data-btn danger" @click="clearCache">
               🗑 清除坐标缓存
             </button>
@@ -273,6 +276,10 @@ async function chooseVaultPath() {
 
 function validateData() {
   window.dispatchEvent(new CustomEvent('sitian:validate-data'));
+}
+
+function backupCache() {
+  window.dispatchEvent(new CustomEvent('sitian:backup-cache'));
 }
 
 function clearCache() {

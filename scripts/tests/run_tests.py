@@ -51,6 +51,7 @@ MOCK_SCRIPT = """<script>
         setVaultPath: async () => ({ success: false, canceled: true }),
         getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] || null }),
         saveMapData: async () => ({ success: true }),
+        backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
         selectReferenceImage: async () => ({ success: false, canceled: true }),
         saveExportFile: async () => ({ success: false, canceled: true }),
         readObsidianNote: async () => ({ success: true, content: '' }),

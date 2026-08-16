@@ -38,6 +38,8 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await loadConfig();
+  // 启动时静默备份 .sitian/ 缓存（P1-2 数据安全；失败不影响启动）
+  backupSitianCache();
   createWindow();
 
   app.on('activate', () => {
@@ -83,6 +85,44 @@ ipcMain.handle('reextract-geodata', async () => {
     return { success: false, error: err.message };
   }
 });
+
+// ===== 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳，保留最近 10 批 =====
+const BACKUP_KEEP = 10;
+
+async function backupSitianCache() {
+  try {
+    const sitianDir = path.join(getVaultPath(), '.sitian');
+    const backupDir = path.join(sitianDir, 'backups');
+    await fs.mkdir(backupDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const copied = [];
+    for (const name of ['geodata.json', 'mapdata.json']) {
+      const src = path.join(sitianDir, name);
+      try {
+        await fs.access(src);
+      } catch (e) {
+        continue; // 文件不存在（如 mapdata 尚未生成）跳过
+      }
+      const dest = path.join(backupDir, `${name.replace('.json', '')}-${ts}.json`);
+      await fs.copyFile(src, dest);
+      copied.push(path.basename(dest));
+    }
+    // 清理旧备份：同一时间戳的 geodata/mapdata 算一批，只保留最近 BACKUP_KEEP 批
+    const all = (await fs.readdir(backupDir)).filter(f => f.endsWith('.json'));
+    const batches = [...new Set(all.map(f => f.replace(/^(geodata|mapdata)-/, '')))].sort();
+    const removeBatches = new Set(batches.slice(0, Math.max(0, batches.length - BACKUP_KEEP)));
+    for (const f of all) {
+      if (removeBatches.has(f.replace(/^(geodata|mapdata)-/, ''))) {
+        await fs.unlink(path.join(backupDir, f)).catch(() => {});
+      }
+    }
+    return { success: true, backupDir, count: copied.length, files: copied };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+ipcMain.handle('backup-sitian-cache', async () => backupSitianCache());
 
 // IPC: 获取 Vault 路径
 ipcMain.handle('get-vault-path', () => getVaultPath());

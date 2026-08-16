@@ -774,11 +774,19 @@ onMounted(async () => {
   window.addEventListener('sitian:validate-data', () => {
     validateDataIntegrity();
   });
+  window.addEventListener('sitian:backup-cache', () => {
+    performBackup();
+  });
   window.addEventListener('sitian:clear-cache', () => {
     clearCoordinateCache();
   });
   // PlanetMap 本地面板打开时，关闭 App 层浮层面板（面板互斥）
   window.addEventListener('sitian:panel-open', closeAppPanels);
+
+  // 启动时静默备份 .sitian/ 缓存（P1-2 数据安全；主进程已自动备份，这里兜底确认）
+  if (window.sitianAPI?.backupSitianCache) {
+    window.sitianAPI.backupSitianCache().catch(() => {});
+  }
 });
 
 function closeAppPanels() {
@@ -839,6 +847,24 @@ async function saveData() {
   await store.saveGeodata();
   dirty.value = false;
   statusText.value = '已保存';
+}
+
+// ===== 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳 =====
+async function performBackup() {
+  if (!window.sitianAPI?.backupSitianCache) return;
+  statusText.value = '正在备份数据...';
+  try {
+    const result = await window.sitianAPI.backupSitianCache();
+    if (result?.success) {
+      statusText.value = result.count > 0
+        ? `✓ 已备份 ${result.count} 个文件 → ${result.backupDir}`
+        : '备份完成（当前无缓存文件）';
+    } else {
+      statusText.value = `✗ 备份失败: ${result?.error || '未知错误'}`;
+    }
+  } catch (e) {
+    statusText.value = '✗ 备份失败';
+  }
 }
 
 // ===== 数据完整性检查 =====

@@ -9,7 +9,9 @@
     "dev:watch:debug": "concurrently -k \"vite --config vite.config.js\" \"wait-on tcp:5180 && cross-env NODE_ENV=development OPEN_DEVTOOLS=1 electron .\"",
     "build": "vite build --config vite.config.js",
     "extract-data": "node scripts/extract-data.js",
-    "test": "python scripts/tests/run_tests.py"
+    "test": "python scripts/tests/run_tests.py",
+    "dist": "npm run build && electron-builder",
+    "dist:dir": "npm run build && electron-builder --dir"
   },
   "keywords": [
     "worldbuilding",
@@ -30,7 +32,32 @@
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0",
     "electron": "^28.0.0",
+    "electron-builder": "^26.15.3",
     "vite": "^5.0.0",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.rosawiki.sitian",
+    "productName": "SiTian",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/main/**/*",
+      "src/preload/**/*",
+      "scripts/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }
