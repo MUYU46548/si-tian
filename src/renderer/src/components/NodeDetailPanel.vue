@@ -199,6 +199,9 @@
         <button class="action-btn primary" @click="openSourceInObsidian">
           <span class="btn-icon">📝</span> 在 Obsidian 中打开
         </button>
+        <button class="action-btn" @click="focusOnMap" :disabled="!canFocusOnMap" title="镜头定位到该节点在地图上的位置">
+          <span class="btn-icon">🎯</span> 在地图上定位
+        </button>
         <button class="action-btn" @click="revealInExplorer">
           <span class="btn-icon">📁</span> 在文件夹中显示
         </button>
@@ -418,6 +421,18 @@ function openSourceInObsidian() {
   if (!node.value?.sourcePath) return;
   const url = `obsidian://open?vault=${encodeURIComponent('ROSA')}&file=${encodeURIComponent(node.value.sourcePath)}`;
   window.sitianAPI.openExternal(url);
+}
+
+// 在地图上定位：节点有坐标且当前视图能展示时才可用
+const canFocusOnMap = computed(() => {
+  const n = node.value;
+  if (!n || n.coordinate?.x === null || n.coordinate?.x === undefined) return false;
+  return ['world', 'star_domain', 'galaxy', 'planet', 'location', 'city', 'town', 'village', 'facility'].includes(n.layer);
+});
+
+function focusOnMap() {
+  if (!node.value) return;
+  window.dispatchEvent(new CustomEvent('sitian:focus-node', { detail: node.value }));
 }
 
 function openInObsidian(linkName) {

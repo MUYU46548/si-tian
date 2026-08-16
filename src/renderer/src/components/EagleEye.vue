@@ -1,12 +1,16 @@
 <template>
-  <div class="eagle-eye" ref="container">
+  <!-- 关闭状态：迷你展开按钮 -->
+  <button v-if="!visible" class="eagle-eye-toggle" @click="open" title="显示鹰眼导航">🗺</button>
+  <!-- 打开状态：鹰眼主体 -->
+  <div v-else class="eagle-eye" ref="container">
+    <button class="eagle-eye-close" @click="close" title="隐藏鹰眼">×</button>
     <canvas ref="canvas" @click="handleClick"></canvas>
     <div class="eagle-eye-label">鹰眼导航</div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
   // 当前视图的世界坐标范围
@@ -18,6 +22,24 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['navigate']);
+
+// 独立开关（localStorage 持久化，跨会话保留）
+const visible = ref(true);
+try {
+  if (localStorage.getItem('sitian-eagle-eye') === '0') visible.value = false;
+} catch (e) { /* ignore */ }
+
+function close() {
+  visible.value = false;
+  try { localStorage.setItem('sitian-eagle-eye', '0'); } catch (e) { /* ignore */ }
+}
+
+function open() {
+  visible.value = true;
+  try { localStorage.setItem('sitian-eagle-eye', '1'); } catch (e) { /* ignore */ }
+  // v-if 重建 canvas 后需重新初始化
+  nextTick(initCanvas);
+}
 
 const container = ref(null);
 const canvas = ref(null);
@@ -194,6 +216,46 @@ watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], (
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+}
+
+.eagle-eye-close {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  z-index: 2;
+  border-radius: 3px;
+}
+.eagle-eye-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.eagle-eye-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  width: 34px;
+  height: 30px;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: rgba(13, 17, 23, 0.9);
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.eagle-eye-toggle:hover {
+  color: #fff;
+  border-color: #58a6ff;
 }
 
 canvas {

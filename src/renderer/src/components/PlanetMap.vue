@@ -2,7 +2,10 @@
   <div class="planet-map-container" @mousedown="handlePanelHeaderDrag">
     <div class="map-header">
       <div class="header-left">
-        <h2>{{ planet?.name }} — 行星地图</h2>
+        <div class="header-title-row">
+          <button class="back-btn" @click="$emit('back')" title="返回域内恒星系总览">← 返回</button>
+          <h2>{{ planet?.name }} — 行星地图</h2>
+        </div>
         <p class="hint">
           <template v-if="!editMode">
             点击省份选中 · 点击地点查看详情 · 双击在 Obsidian 打开 · 滚动缩放 · 拖拽平移 · <a href="#" @click.prevent="enterEditMode">编辑地图</a>
@@ -14,25 +17,22 @@
           </template>
         </p>
       </div>
-      <div class="header-actions" v-if="!editMode && autoRegions.length > 0">
-        <button class="adopt-btn" @click="adoptAutoRegions" title="将自动生成的区域边界转为正式区域，可继续编辑">
-          ✨ 采用自动区域 ({{ autoRegions.length }})
-        </button>
-        <button class="adopt-btn ghost" @click="regenerateAutoRegions" title="重新按地点聚类生成区域边界">
-          ↻ 重新生成
-        </button>
+      <div class="header-actions" v-if="!editMode">
+        <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制地形/区域/标记/路线/文本等">✏️ 编辑地图</button>
+        <template v-if="autoRegions.length > 0">
+          <button class="adopt-btn" @click="adoptAutoRegions" title="将自动生成的区域边界转为正式区域，可继续编辑">
+            ✨ 采用自动区域 ({{ autoRegions.length }})
+          </button>
+          <button class="adopt-btn ghost" @click="regenerateAutoRegions" title="重新按地点聚类生成区域边界">
+            ↻ 重新生成
+          </button>
+        </template>
       </div>
     </div>
     
-    <!-- 编辑工具栏（可收起，腾出地图空间） -->
+    <!-- 编辑工具栏（仅编辑形态显示，退出即隐藏，无折叠中间态） -->
     <div v-if="editMode" class="edit-toolbar-wrap">
-      <button
-        v-if="toolbarCollapsed"
-        class="toolbar-toggle"
-        @click="toolbarCollapsed = false"
-        title="展开编辑工具栏"
-      >🧰 编辑工具 ▾</button>
-      <div v-else class="edit-toolbar">
+      <div class="edit-toolbar">
       <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚 拖手</button>
       <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象：点击选中地点/标记/文本/区域，拖动移动；空白处拖动画布">✥ 移动</button>
       <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️ 绘制</button>
@@ -40,8 +40,9 @@
       <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记">📍 标记</button>
       <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️ 路线</button>
       <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤 文本</button>
-      <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); clusterPanelOpen = true; objectPanelOpen = false" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
-      <button :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+      <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); clusterPanelOpen = true; objectPanelOpen = false; snapshotPanelOpen = false" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
+      <button :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false; snapshotPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+      <button :class="{ active: snapshotPanelOpen }" @click="snapshotPanelOpen = !snapshotPanelOpen; clusterPanelOpen = false; objectPanelOpen = false" title="地图版本快照：拍摄/恢复">📸 快照</button>
       <button class="separator-btn" disabled></button>
       
       <template v-if="interactionMode === 'draw'">
@@ -94,6 +95,20 @@
       
       <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份">🧲 吸附</button>
       
+      <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格：绘制/移动/放置吸附到网格（按住 Ctrl 临时关闭）">⊞ 网格</button>
+      <template v-if="gridSnapEnabled">
+        <span class="toolbar-label">间距</span>
+        <button v-for="s in [50, 100, 200]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s }}</button>
+      </template>
+      <button :class="{ active: mirrorMode }" @click="mirrorMode = !mirrorMode" title="对称绘制：绘制时自动镜像（以 X/Y 轴为对称轴）">⇌ 对称</button>
+      <template v-if="mirrorMode">
+        <button :class="{ active: mirrorAxis === 'y' }" @click="mirrorAxis = 'y'" title="左右镜像（以竖直线 X=偏移 为对称轴）">⇋ 左右</button>
+        <button :class="{ active: mirrorAxis === 'x' }" @click="mirrorAxis = 'x'" title="上下镜像（以水平线 Y=偏移 为对称轴）">⇵ 上下</button>
+        <span class="toolbar-label">轴</span>
+        <input type="number" class="mirror-axis-input" v-model.number="mirrorAxisOffset" step="50" title="对称轴位置（世界坐标，默认 0=原点）" />
+      </template>
+      <button class="separator-btn" disabled></button>
+      
       <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel" title="删除选中对象 (Del)">🗑 删除</button>
       <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界为贝塞尔曲线">〰️ 平滑</button>
       <button class="separator-btn" disabled></button>
@@ -104,16 +119,24 @@
       <button @click="confirmClear" title="清空所有省份">🧹 清空</button>
       <button class="separator-btn" disabled></button>
       <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图：导入手绘草图/大陆轮廓描摹">🖼 参考图</button>
+      <select class="boundary-select" v-model="canvasSizePreset" title="行星地图边界（作为鹰眼/适屏的下限，内容超出自动扩展；正式绘制前统一各行星尺寸）">
+        <option value="auto">📐 边界:自动</option>
+        <option value="500">边界: ±500</option>
+        <option value="800">边界: ±800</option>
+        <option value="1000">边界: ±1000</option>
+      </select>
+      <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺">📏 标尺</button>
       <button @click="exportFullMapPNG" title="导出全图高清 PNG（含全部省份/区域/路线/标记/文本）">📤 导出全图</button>
       <button class="separator-btn" disabled></button>
-      <button class="toolbar-close" @click="toolbarCollapsed = true" title="收起工具栏，腾出地图空间">✕ 收起</button>
+      <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出编辑</button>
       </div>
     </div>
     
     <!-- 非编辑模式的导出按钮 -->
     <div v-if="!editMode" class="view-actions">
-      <button class="adopt-btn" @click="clusterPanelOpen = !clusterPanelOpen; objectPanelOpen = false" title="地点簇大纲">🗂 地点簇</button>
-      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+      <button class="adopt-btn" @click="clusterPanelOpen = !clusterPanelOpen; objectPanelOpen = false; snapshotPanelOpen = false" title="地点簇大纲">🗂 地点簇</button>
+      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="objectPanelOpen = !objectPanelOpen; clusterPanelOpen = false; snapshotPanelOpen = false" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
+      <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="snapshotPanelOpen = !snapshotPanelOpen; clusterPanelOpen = false; objectPanelOpen = false" title="地图版本快照：拍摄/恢复">📸 快照</button>
       <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG">📤 导出全图</button>
     </div>
     
@@ -156,7 +179,7 @@
       ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
     </div>
     
-    <div class="canvas-wrapper">
+    <div class="canvas-wrapper" @dragover.prevent="handleDragOver" @drop.prevent="handleDrop">
       <canvas ref="canvas"></canvas>
       <eagle-eye
         :view-bounds="viewBounds"
@@ -187,6 +210,53 @@
         @delete-object="deleteObject"
         @close="objectPanelOpen = false"
       />
+      <!-- 版本快照面板（P2）：与簇/对象面板互斥 -->
+      <div v-if="snapshotPanelOpen" class="snapshot-panel" @mousedown.stop>
+        <div class="editor-header">
+          <h3>📸 地图快照</h3>
+          <button class="close-btn" @click="snapshotPanelOpen = false">×</button>
+        </div>
+        <div class="snapshot-body">
+          <div class="snapshot-create">
+            <input v-model="newSnapshotName" placeholder="快照名称（留空自动命名）" @keydown.enter="takeSnapshot" />
+            <button class="adopt-btn" @click="takeSnapshot">📸 拍摄</button>
+          </div>
+          <div v-if="mapSnapshots.length === 0" class="snapshot-empty">暂无快照<br />绘制前拍摄一份，后续可随时恢复</div>
+          <div v-for="snap in mapSnapshots" :key="snap.id" class="snapshot-item">
+            <div class="snapshot-info">
+              <div class="snapshot-name">{{ snap.name }}</div>
+              <div class="snapshot-time">{{ formatSnapshotTime(snap.createdAt) }}</div>
+            </div>
+            <button class="snapshot-restore" @click="restoreSnapshot(snap)">↺ 恢复</button>
+            <button class="snapshot-del" @click="removeSnapshot(snap)" title="删除快照">×</button>
+          </div>
+        </div>
+      </div>
+      <!-- 缩放控件组（P0-1）：− 滑条 ＋ 100% 适屏 + 百分比输入 -->
+      <div class="zoom-controls" @mousedown.stop @wheel.stop>
+        <button @click="zoomBy(-0.2)" title="缩小">−</button>
+        <input type="range" min="20" max="300" step="5" v-model.number="zoomPercent" @input="onZoomSlider" title="缩放级别" />
+        <button @click="zoomBy(0.2)" title="放大">＋</button>
+        <button @click="applyZoom(100)" title="重置为 100%">重置</button>
+        <button @click="zoomFit" title="适屏显示全部内容">⤢</button>
+        <input type="number" class="zoom-input" min="20" max="300" v-model.number="zoomPercent" @change="onZoomSlider" title="输入缩放百分比后回车/失焦生效" />
+        <span class="zoom-value">%</span>
+      </div>
+      <!-- 保存状态横幅 -->
+      <div v-if="saveStatus" class="save-banner" :class="{ error: saveStatus.startsWith('✗') }">{{ saveStatus }}</div>
+      <!-- 光标世界坐标（P1-1） -->
+      <div v-if="cursorCoord.visible" class="cursor-coords">X: {{ cursorCoord.x }} · Y: {{ cursorCoord.y }}</div>
+      <!-- 画布边缘标尺（P2）：顶部 X 轴 / 左侧 Y 轴，随镜头联动；可开关 -->
+      <div v-if="rulerVisible" class="ruler ruler-top">
+        <div v-for="tick in hTicks" :key="tick.left" class="ruler-tick" :style="{ left: tick.left + 'px' }">
+          <span>{{ tick.label }}</span>
+        </div>
+      </div>
+      <div v-if="rulerVisible" class="ruler ruler-left">
+        <div v-for="tick in vTicks" :key="tick.top" class="ruler-tick" :style="{ top: tick.top + 'px' }">
+          <span>{{ tick.label }}</span>
+        </div>
+      </div>
     </div>
     
     <!-- 创建/编辑地点簇对话框 -->
@@ -487,15 +557,43 @@
       <div class="editor-field">
         <label>导入草图 / 大陆轮廓</label>
         <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
-          {{ refImageLoading ? '加载中...' : (referenceImage ? '🔄 更换底图' : '📂 选择图片') }}
+          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
         </button>
         <p class="ref-hint">点击「编辑地图」后，从「☷ 图层」旁打开此面板或从工具栏进入</p>
+      </div>
+      <div class="editor-field" v-if="referenceImages.length > 0">
+        <label>底图列表（{{ referenceImages.length }}）</label>
+        <div class="ref-list">
+          <div
+            v-for="(img, idx) in referenceImages"
+            :key="img.id"
+            class="ref-item"
+            :class="{ active: idx === activeRefIndex }"
+            @click="activeRefIndex = idx"
+            :title="'选中底图 ' + (idx + 1) + '（属性编辑作用于该图）'"
+          >
+            <span class="ref-item-name">{{ img.name || '底图 ' + (idx + 1) }}</span>
+            <button class="ref-item-del" @click.stop="removeRefListItem(idx)" title="删除该底图">×</button>
+          </div>
+        </div>
       </div>
       <template v-if="referenceImage">
         <div class="editor-field">
           <label>透明度</label>
           <input type="range" min="0.05" max="1" step="0.05" v-model.number="refOpacity" @input="updateRefOpacity" />
           <span class="ref-value">{{ Math.round(refOpacity * 100) }}%</span>
+        </div>
+        <div class="editor-field">
+          <label>缩放（围绕中心）</label>
+          <input type="range" min="0.05" max="5" step="0.05" v-model.number="refScale" @input="updateRefScale" />
+          <span class="ref-value">{{ Math.round(refScale * 100) }}%</span>
+        </div>
+        <div class="editor-field">
+          <label>方向</label>
+          <div class="line-style-row">
+            <button class="adopt-btn" @click="rotateRefImage" title="顺时针旋转 90°">↻ 旋转</button>
+            <button class="adopt-btn" @click="flipRefImageH" title="水平镜像（左右翻转）">⇋ 镜像</button>
+          </div>
         </div>
         <div class="editor-field">
           <label>锁定位置</label>
@@ -521,7 +619,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
@@ -601,13 +699,86 @@ const REGION_COLORS = ['#FF6B6B', '#FFA500', '#FFD700', '#32CD32', '#4169E1', '#
 
 // ===== 交互模式 =====
 const interactionMode = ref('pan');
-// 编辑工具栏折叠（常态收起腾出地图空间，点胶囊呼出）
-const toolbarCollapsed = ref(true);
 // 移动工具拖拽状态（marker/textLabel/region 走"本地改+松手一次提交"，避免 undo 栈爆炸）
 const dragObject = ref(null);
 const dragRegionAnchor = ref(null);
 const isSpacebarDown = ref(false);
 const snapEnabled = ref(true);
+
+// ===== 网格对齐（P0-2）=====
+const gridSnapEnabled = ref(true); // 网格吸附开关（与"省份边缘吸附" snapEnabled 独立）
+const gridSize = ref(100);         // 网格间距 50/100/200
+let snapCtrlHeld = false;          // Ctrl 按住临时关闭吸附（精细微调）
+
+// 世界坐标吸附到网格（返回新点；Ctrl 或开关关闭时不吸附）
+function snapPoint(p) {
+  if (!gridSnapEnabled.value || snapCtrlHeld) return p;
+  const g = gridSize.value;
+  return { x: Math.round(p.x / g) * g, y: Math.round(p.y / g) * g };
+}
+
+// ===== 边缘吸附（P1-3）：绘制中实时吸附到已有地形边 =====
+// 绘制落点的吸附预览（金色小圆提示将吸附到的边）
+const edgeSnapPreview = ref(null);
+
+// 点到线段的最近点
+function closestPointOnSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return { x: x1, y: y1 };
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return { x: x1 + t * dx, y: y1 + t * dy };
+}
+
+// 距已有地形多边形边 < threshold 时吸附到边（返回吸附点；否则原样返回）
+function snapToNearestEdge(p, threshold = 12) {
+  if (!snapEnabled.value) return p;
+  const terrain = currentMapData.value?.terrain || [];
+  let best = null;
+  let bestDist = threshold;
+  for (const poly of terrain) {
+    const pts = poly.points || [];
+    if (pts.length < 2) continue;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const cp = closestPointOnSegment(p.x, p.y, a.x, a.y, b.x, b.y);
+      const d = Math.hypot(cp.x - p.x, cp.y - p.y);
+      if (d < bestDist) { bestDist = d; best = cp; }
+    }
+  }
+  return best || p;
+}
+
+// 绘制落点统一入口：边缘吸附优先（贴合已有省份边界），否则网格吸附
+function snapDrawPoint(p) {
+  const edge = snapToNearestEdge(p);
+  if (edge !== p) {
+    edgeSnapPreview.value = edge;
+    return edge;
+  }
+  edgeSnapPreview.value = null;
+  return snapPoint(p);
+}
+
+// ===== 对称绘制（P2）=====
+const mirrorMode = ref(false); // 对称绘制开关
+const mirrorAxis = ref('y');   // 'y'=以竖直线为对称轴 → 左右镜像；'x'=以水平线为对称轴 → 上下镜像
+const mirrorAxisOffset = ref(0); // 对称轴位置（世界坐标，默认 0=原点）
+
+function mirrorPoint(p) {
+  if (!mirrorMode.value) return p;
+  if (mirrorAxis.value === 'y') return { x: 2 * mirrorAxisOffset.value - p.x, y: p.y };
+  return { x: p.x, y: 2 * mirrorAxisOffset.value - p.y };
+}
+
+// 对称闭合路径：原路径 + 镜像路径（反向），构成完整对称多边形
+function getMirroredPath(points) {
+  if (!mirrorMode.value || points.length < 2) return points;
+  const mirrored = points.map(mirrorPoint).reverse();
+  return [...points, ...mirrored];
+}
 
 // 切换交互模式时清理路线草稿
 watch(interactionMode, (mode) => {
@@ -633,6 +804,7 @@ function setInteractionMode(mode) {
   clusterBoxEnd.value = null;
   dragObject.value = null;
   dragRegionAnchor.value = null;
+  edgeSnapPreview.value = null;
   renderer.requestRender();
 }
 
@@ -880,13 +1052,32 @@ const currentMapData = computed(() => {
   return store.mapData[props.planet.id] || { planetId: props.planet.id, version: 1, terrain: [], regions: [], markers: [], routes: [], textLabels: [] };
 });
 
-// ===== 参考图底图 =====
+// ===== 参考图底图（P2 多图）=====
 const showRefImagePanel = ref(false);
 const refImageLoading = ref(false);
 const refDragMode = ref(false);
 const refOpacity = ref(0.5);
-const refImageObj = ref(null); // HTMLImageElement 缓存
-const referenceImage = computed(() => currentMapData.value?.referenceImage || null);
+const refScale = ref(1); // 参考图缩放（drawImage 以 offset 为中心，缩放保持中心不变）
+// 全部参考图数组 + 当前选中索引（referenceImage 保持单图语义，其余渲染/交互代码不变）
+const referenceImages = computed(() => currentMapData.value?.referenceImages || []);
+const activeRefIndex = ref(0);
+const referenceImage = computed(() => referenceImages.value[activeRefIndex.value] || null);
+// 每张图的 HTMLImageElement 缓存（id → img）
+const refImageObjs = reactive({});
+
+// 列表变化时校正选中索引 + 懒加载全部图的 Image
+watch(referenceImages, (list) => {
+  if (activeRefIndex.value >= list.length) {
+    activeRefIndex.value = Math.max(0, list.length - 1);
+  }
+  list.forEach(ref => {
+    if (ref.dataUrl && refImageObjs[ref.id]?.src !== ref.dataUrl) {
+      const img = new Image();
+      img.onload = () => { refImageObjs[ref.id] = img; renderer.requestRender(); };
+      img.src = ref.dataUrl;
+    }
+  });
+}, { deep: true, immediate: true });
 
 // 加载参考图（Electron 主进程读取文件 → base64 dataURL）
 async function importReferenceImage() {
@@ -897,12 +1088,14 @@ async function importReferenceImage() {
     if (result?.success && result.dataUrl) {
       const img = new Image();
       img.onload = () => {
-        refImageObj.value = img;
         // 默认放到画布中心，宽度适配 1200 世界单位
         const scale = 1200 / img.width;
         const cx = renderer.getViewTransform();
         const center = { x: -cx.x / cx.scale, y: -cx.y / cx.scale };
-        store.updateReferenceImage(props.planet.id, {
+        const list = currentMapData.value.referenceImages || [];
+        const refImage = {
+          id: `ref_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          name: `底图 ${list.length + 1}`,
           dataUrl: result.dataUrl,
           opacity: refOpacity.value,
           locked: false,
@@ -911,7 +1104,10 @@ async function importReferenceImage() {
           scale,
           width: img.width,
           height: img.height,
-        });
+        };
+        store.updateReferenceImage(props.planet.id, refImage);
+        activeRefIndex.value = (currentMapData.value.referenceImages || []).length - 1;
+        refImageObjs[refImage.id] = img;
         emit('dirty', true);
         refImageLoading.value = false;
       };
@@ -938,6 +1134,37 @@ function updateRefOpacity() {
   emit('dirty', true);
 }
 
+function updateRefScale() {
+  if (!referenceImage.value) return;
+  const s = Number(refScale.value);
+  if (!Number.isFinite(s) || s <= 0) return;
+  // offset 是参考图中心点，scale 变化时保持中心不动（围绕中心缩放）
+  store.updateReferenceImage(props.planet.id, {
+    ...referenceImage.value,
+    scale: s,
+  });
+  emit('dirty', true);
+}
+
+// 参考图方向（P2）：旋转 90° 步进 / 水平镜像（绕中心）
+function rotateRefImage() {
+  if (!referenceImage.value) return;
+  store.updateReferenceImage(props.planet.id, {
+    ...referenceImage.value,
+    rotation: ((referenceImage.value.rotation || 0) + 1) % 4,
+  });
+  emit('dirty', true);
+}
+
+function flipRefImageH() {
+  if (!referenceImage.value) return;
+  store.updateReferenceImage(props.planet.id, {
+    ...referenceImage.value,
+    flipH: !referenceImage.value.flipH,
+  });
+  emit('dirty', true);
+}
+
 function toggleRefLocked() {
   if (!referenceImage.value) return;
   store.updateReferenceImage(props.planet.id, {
@@ -949,22 +1176,32 @@ function toggleRefLocked() {
 }
 
 function removeReferenceImage() {
-  if (!referenceImage.value) return;
-  if (!confirm('确定移除参考底图？')) return;
-  store.clearReferenceImage(props.planet.id);
-  refImageObj.value = null;
+  const ref = referenceImage.value;
+  if (!ref) return;
+  if (!confirm('确定移除该参考底图？')) return;
+  store.removeReferenceImageById(props.planet.id, ref.id);
+  delete refImageObjs[ref.id];
+  refDragMode.value = false;
+  emit('dirty', true);
+}
+
+// 从底图列表删除指定项（active 校正由 watch referenceImages 处理）
+function removeRefListItem(idx) {
+  const ref = referenceImages.value[idx];
+  if (!ref) return;
+  if (!confirm(`删除底图「${ref.name || '底图 ' + (idx + 1)}」？`)) return;
+  store.removeReferenceImageById(props.planet.id, ref.id);
+  delete refImageObjs[ref.id];
+  if (activeRefIndex.value >= referenceImages.value.length) {
+    activeRefIndex.value = Math.max(0, referenceImages.value.length - 1);
+  }
   refDragMode.value = false;
   emit('dirty', true);
 }
 
 watch(referenceImage, (refImg) => {
   if (refImg?.opacity !== undefined) refOpacity.value = refImg.opacity;
-  // 重新加载图片
-  if (refImg?.dataUrl && (!refImageObj.value)) {
-    const img = new Image();
-    img.onload = () => { refImageObj.value = img; renderer.requestRender(); };
-    img.src = refImg.dataUrl;
-  }
+  if (refImg?.scale !== undefined) refScale.value = refImg.scale;
 }, { deep: true });
 
 // ===== 迷雾/自动区域状态 =====
@@ -989,7 +1226,7 @@ function generateAutoRegions() {
   const planetRegions = store.nodes.filter(n => n.layer === 'region' && n.parentId === planetId);
   if (planetRegions.length === 0) return;
   
-  const planetPlaces = [...store.planets, ...store.locations].filter(p => p.parentId === planetId);
+  const planetPlaces = store.nodes.filter(p => PLACE_LAYERS.includes(p.layer) && p.parentId === planetId);
   const newRegions = [];
   
   planetRegions.forEach(region => {
@@ -1063,16 +1300,19 @@ const placeRegionMap = computed(() => {
 });
 
 // ===== 地点集合 =====
+// 地点类层级（含 facility/village —— 曾只含 location/city/town 导致设施层地点不渲染、定位失效）
+const PLACE_LAYERS = ['location', 'city', 'town', 'village', 'facility'];
+
 const places = computed(() => {
   if (!props.planet) return [];
-  return [...store.planets, ...store.locations].filter(p => p.parentId === props.planet.id);
+  return store.nodes.filter(p => PLACE_LAYERS.includes(p.layer) && p.parentId === props.planet.id);
 });
 
 // ===== 节点样式 =====
-const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', location: '#95E1D3' };
-const NODE_RADIUS = { city: 10, town: 7, location: 5 };
-const LABEL_SIZE = { city: 13, town: 12, location: 11 };
-const LABEL_WEIGHT = { city: 'bold', town: 'normal', location: 'normal' };
+const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
+const NODE_RADIUS = { city: 10, town: 7, village: 7, location: 5, facility: 5 };
+const LABEL_SIZE = { city: 13, town: 12, village: 12, location: 11, facility: 11 };
+const LABEL_WEIGHT = { city: 'bold', town: 'normal', village: 'normal', location: 'normal', facility: 'normal' };
 
 // ===== 地点类型样式（第二维度，优先于 layer 颜色） =====
 const PLACE_TYPE_COLORS = {
@@ -1316,7 +1556,18 @@ const isDrawing = computed(() => currentPath.value.length > 0);
 const lodRef = ref(1);
 
 // ===== 鹰眼导航数据 =====
+// 画布尺寸预设（P1-2）：auto 动态 | 500/800/1000 固定边界（作为下限，内容超出仍扩展）
+const canvasSizePreset = ref('auto');
+try {
+  const saved = localStorage.getItem('sitian-canvas-size');
+  if (saved) canvasSizePreset.value = saved;
+} catch (e) { /* localStorage 不可用时忽略 */ }
+watch(canvasSizePreset, (v) => {
+  try { localStorage.setItem('sitian-canvas-size', v); } catch (e) { /* ignore */ }
+});
+
 const worldBounds = computed(() => {
+  const preset = Number(canvasSizePreset.value);
   const elements = [];
   for (const poly of currentMapData.value?.terrain || []) {
     if (poly.points) elements.push(...poly.points);
@@ -1339,11 +1590,17 @@ const worldBounds = computed(() => {
     }
   }
   
+  // 空地图：有预设用预设，否则 ±300
   if (elements.length === 0) {
+    if (preset > 0) return { minX: -preset, maxX: preset, minY: -preset, maxY: preset };
     return { minX: -300, maxX: 300, minY: -300, maxY: 300 };
   }
   
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  // 预设为边界下限，内容超出自动扩展
+  let minX = preset > 0 ? -preset : Infinity;
+  let maxX = preset > 0 ? preset : -Infinity;
+  let minY = preset > 0 ? -preset : Infinity;
+  let maxY = preset > 0 ? preset : -Infinity;
   for (const p of elements) {
     minX = Math.min(minX, p.x);
     maxX = Math.max(maxX, p.x);
@@ -1361,7 +1618,7 @@ const worldBounds = computed(() => {
 });
 
 const viewBounds = computed(() => {
-  const vt = renderer.getViewTransform();
+  const vt = renderer.viewTransform;
   const cvs = canvas.value;
   if (!cvs) return worldBounds.value;
   
@@ -1439,10 +1696,8 @@ const eagleEyeElements = computed(() => {
 });
 
 function handleEagleEyeNavigate(world) {
-  const vt = renderer.getViewTransform();
-  vt.x = -world.x * vt.scale;
-  vt.y = -world.y * vt.scale;
-  renderer.requestRender();
+  // 修复：getViewTransform() 返回浅拷贝，改 vt 无效。改为 focusOn 直接设置内部 viewTransform
+  renderer.focusOn(world.x, world.y, renderer.getViewTransform().scale);
 }
 
 // ===== 绘制逻辑 =====
@@ -1497,39 +1752,50 @@ function onRender(ctx, w, h) {
 
 // 参考图底图渲染
 function drawReferenceImage(ctx) {
-  const refImg = referenceImage.value;
-  if (!refImg || !refImg.dataUrl) return;
-  const img = refImageObj.value;
-  if (!img) return;
+  const refs = referenceImages.value;
+  if (!refs || refs.length === 0) return;
   
-  const w = (refImg.width || img.width) * (refImg.scale || 1);
-  const h = (refImg.height || img.height) * (refImg.scale || 1);
-  
-  ctx.save();
-  ctx.globalAlpha = refImg.opacity ?? 0.5;
-  ctx.drawImage(
-    img,
-    refImg.offsetX - w / 2,
-    refImg.offsetY - h / 2,
-    w,
-    h
-  );
-  ctx.restore();
-  
-  // 未锁定且拖动模式开启时，显示虚线边框提示
-  if (editMode.value && !refImg.locked && refDragMode.value) {
+  refs.forEach((refImg, idx) => {
+    if (!refImg || !refImg.dataUrl) return;
+    const img = refImageObjs[refImg.id];
+    if (!img) return;
+    
+    const w = (refImg.width || img.width) * (refImg.scale || 1);
+    const h = (refImg.height || img.height) * (refImg.scale || 1);
+    const rot = (refImg.rotation || 0) % 4; // 0/1/2/3 = 0/90/180/270°
+    const flipH = !!refImg.flipH;
+    const cx = refImg.offsetX;
+    const cy = refImg.offsetY;
+    // 旋转后绘制尺寸交换（90/270 时宽高互换）
+    const drawW = rot % 2 === 0 ? w : h;
+    const drawH = rot % 2 === 0 ? h : w;
+    
     ctx.save();
-    ctx.strokeStyle = '#4A90D9';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(refImg.offsetX - w / 2, refImg.offsetY - h / 2, w, h);
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#4A90D9';
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('参考底图（可拖动）', refImg.offsetX - w / 2, refImg.offsetY - h / 2 - 8);
+    ctx.globalAlpha = refImg.opacity ?? 0.5;
+    ctx.translate(cx, cy);
+    ctx.rotate(rot * Math.PI / 2);
+    if (flipH) ctx.scale(-1, 1);
+    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     ctx.restore();
-  }
+    
+    // 未锁定且拖动模式开启时，只对当前选中图显示虚线边框提示（与图片同变换）
+    if (editMode.value && !refImg.locked && refDragMode.value && idx === activeRefIndex.value) {
+      ctx.save();
+      ctx.strokeStyle = '#4A90D9';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.translate(cx, cy);
+      ctx.rotate(rot * Math.PI / 2);
+      if (flipH) ctx.scale(-1, 1);
+      ctx.strokeRect(-drawW / 2, -drawH / 2, drawW, drawH);
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#4A90D9';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`参考底图（可拖动）${refs.length > 1 ? ` · ${idx + 1}/${refs.length}` : ''}`, -drawW / 2, -drawH / 2 - 8);
+      ctx.restore();
+    }
+  });
 }
 
 // 迷雾占位符：地图未编辑时的探索态视觉（参考原神未探索区域）
@@ -1572,16 +1838,21 @@ function drawBackground(ctx, w, h) {
   ctx.fillStyle = bgGradient;
   ctx.fillRect(-2000, -2000, 4000, 4000);
   
-  ctx.strokeStyle = 'rgba(150, 180, 200, 0.15)';
+  // 网格线（间距可配，随 gridSize 变化；编辑模式更亮辅助对齐）
+  const gs = gridSize.value;
+  const gridAlpha = editMode.value ? 0.28 : 0.15;
   ctx.lineWidth = 0.5;
-  const gridSize = 100;
-  for (let gx = -2000; gx <= 2000; gx += gridSize) {
+  for (let gx = -2000; gx <= 2000; gx += gs) {
+    const isMajor = gx % 500 === 0;
+    ctx.strokeStyle = isMajor ? `rgba(120, 160, 190, ${gridAlpha + 0.12})` : `rgba(150, 180, 200, ${gridAlpha})`;
     ctx.beginPath();
     ctx.moveTo(gx, -2000);
     ctx.lineTo(gx, 2000);
     ctx.stroke();
   }
-  for (let gy = -2000; gy <= 2000; gy += gridSize) {
+  for (let gy = -2000; gy <= 2000; gy += gs) {
+    const isMajor = gy % 500 === 0;
+    ctx.strokeStyle = isMajor ? `rgba(120, 160, 190, ${gridAlpha + 0.12})` : `rgba(150, 180, 200, ${gridAlpha})`;
     ctx.beginPath();
     ctx.moveTo(-2000, gy);
     ctx.lineTo(2000, gy);
@@ -1772,6 +2043,34 @@ function drawPlaces(ctx) {
       ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.restore();
+    }
+    
+    // 刚放置高亮（金色双层光环 + 名称衬底，提示"这就是刚放的地点"）
+    if (highlightedPlaceId.value === place.id) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.45)';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 20, 0, Math.PI * 2);
+      ctx.stroke();
+      // 名称带衬底，任何缩放都可见
+      const labelText = place.displayName || place.name;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const m = ctx.measureText(labelText);
+      ctx.fillStyle = 'rgba(15, 22, 35, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(x - m.width / 2 - 6, y - radius - 24, m.width + 12, 18, 4);
+      ctx.fill();
+      ctx.fillStyle = '#FFD700';
+      ctx.fillText(labelText, x, y - radius - 21);
       ctx.restore();
     }
     
@@ -2187,6 +2486,26 @@ function drawTextLabels(ctx) {
 }
 
 function drawEditHelpers(ctx) {
+  // 对称轴虚线（P2）：镜像模式开启时显示（沿 X=偏移 或 Y=偏移）
+  if (mirrorMode.value && editMode.value) {
+    const off = mirrorAxisOffset.value || 0;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    if (mirrorAxis.value === 'y') {
+      ctx.moveTo(off, -2000);
+      ctx.lineTo(off, 2000);
+    } else {
+      ctx.moveTo(-2000, off);
+      ctx.lineTo(2000, off);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+  
   // 笔刷预览：当前笔画落点圆形
   if (isBrushing.value && brushMode.value) {
     const brushColor = terrainTypes.find(t => t.type === selectedTerrain.value)?.color || '#000';
@@ -2224,6 +2543,54 @@ function drawEditHelpers(ctx) {
       ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
       ctx.fill();
     });
+    
+    // 对称镜像路径预览（P2）：金色虚线
+    if (mirrorMode.value && currentPath.value.length >= 2) {
+      const mp = currentPath.value.map(mirrorPoint);
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(mp[0].x, mp[0].y);
+      for (let i = 1; i < mp.length; i++) {
+        ctx.lineTo(mp[i].x, mp[i].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      mp.forEach(p => {
+        ctx.fillStyle = 'rgba(255, 200, 50, 0.9)';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  }
+  
+  // 边缘吸附预览（P1-3）：金色小圆提示将吸附到的已有边界
+  if (edgeSnapPreview.value && (isDrawing.value || (drawingPolygon.value && drawingPolygon.value.points.length > 0))) {
+    const ep = edgeSnapPreview.value;
+    ctx.save();
+    ctx.fillStyle = '#FFD700';
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ep.x, ep.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // 从最后落点到吸附点的虚线提示
+    const last = currentPath.value[currentPath.value.length - 1]
+      || (drawingPolygon.value?.points && drawingPolygon.value.points[drawingPolygon.value.points.length - 1]);
+    if (last && (last.x !== ep.x || last.y !== ep.y)) {
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(last.x, last.y);
+      ctx.lineTo(ep.x, ep.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
   }
   
   // 描点模式：绘制中的多边形预览
@@ -2255,6 +2622,28 @@ function drawEditHelpers(ctx) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     });
+    
+    // 描点模式对称镜像预览（P2）
+    if (mirrorMode.value && pts.length >= 2) {
+      const mp = pts.map(mirrorPoint);
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(mp[0].x, mp[0].y);
+      for (let i = 1; i < mp.length; i++) {
+        ctx.lineTo(mp[i].x, mp[i].y);
+      }
+      if (mp.length >= 3) ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      mp.forEach(p => {
+        ctx.fillStyle = 'rgba(255, 200, 50, 0.9)';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
   }
   
   // 选中省份的顶点
@@ -2361,6 +2750,8 @@ const renderer = useCanvasRenderer(canvas, {
   onRender,
   onHitTest: (wx, wy) => hitTest(wx, wy),
   onHover: (hit, wx, wy) => {
+    // 光标世界坐标（左下角状态条）
+    cursorCoord.value = { x: Math.round(wx), y: Math.round(wy), visible: true };
     hoveredNode.value = hit?.type === 'place' ? hit.node : null;
     // 移动工具光标提示：可移动对象上显示 move，空白显示 grab
     const hoverMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
@@ -2457,7 +2848,7 @@ const renderer = useCanvasRenderer(canvas, {
     // 不要再次 screenToWorldFunc —— 双重转换会导致图案偏移到画笔右侧
     if ((mode === 'draw' || mode === 'region') && drawMode.value && !brushMode.value) {
       isDrawingActive = true;
-      currentPath.value = [{ x: wx, y: wy }];
+      currentPath.value = [snapDrawPoint({ x: wx, y: wy })];
       return false;
     }
     
@@ -2503,7 +2894,7 @@ const renderer = useCanvasRenderer(canvas, {
         selectedRegion.value = hit.region;
         selectedProvince.value = null; selectedMarker.value = null; selectedRoute.value = null; selectedTextLabel.value = null;
         dragObject.value = { type: 'region', id: hit.region.id, region: hit.region, old: hit.region.points.map(p => ({ ...p })) };
-        dragRegionAnchor.value = { x: wx, y: wy };
+        dragRegionAnchor.value = snapPoint({ x: wx, y: wy });
         return false;
       }
       if (hit.type !== 'place') return true; // 省份等 → 平移
@@ -2533,14 +2924,15 @@ const renderer = useCanvasRenderer(canvas, {
   },
   onDragMove: (wx, wy, dragInfo) => {
     const mode = isSpacebarDown.value ? 'pan' : interactionMode.value;
-    // 移动工具：marker/textLabel/region 本地平移（松手一次提交，避免 undo 栈爆炸）
+    // 移动工具：marker/textLabel/region 本地平移（松手一次提交，避免 undo 栈爆炸；网格吸附对齐）
     if (mode === 'move' && dragObject.value) {
       const obj = dragObject.value;
-      if (obj.type === 'marker') { obj.marker.x = wx; obj.marker.y = wy; }
-      else if (obj.type === 'textLabel') { obj.label.x = wx; obj.label.y = wy; }
+      if (obj.type === 'marker') { const sp = snapPoint({ x: wx, y: wy }); obj.marker.x = sp.x; obj.marker.y = sp.y; }
+      else if (obj.type === 'textLabel') { const sp = snapPoint({ x: wx, y: wy }); obj.label.x = sp.x; obj.label.y = sp.y; }
       else if (obj.type === 'region' && dragRegionAnchor.value) {
-        const dx = wx - dragRegionAnchor.value.x;
-        const dy = wy - dragRegionAnchor.value.y;
+        const sp = snapPoint({ x: wx, y: wy });
+        const dx = sp.x - dragRegionAnchor.value.x;
+        const dy = sp.y - dragRegionAnchor.value.y;
         obj.region.points = obj.old.map(p => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) }));
       }
       renderer.requestRender();
@@ -2548,32 +2940,34 @@ const renderer = useCanvasRenderer(canvas, {
     }
     if (isDrawingActive) {
       const last = currentPath.value[currentPath.value.length - 1];
-      // wx/wy 已是世界坐标，直接使用（同 onDragStart）
-      if (!last || Math.hypot(wx - last.x, wy - last.y) > 3) {
-        currentPath.value.push({ x: wx, y: wy });
+      // wx/wy 已是世界坐标，直接使用（同 onDragStart）；边缘吸附优先，网格吸附其次，跳过重复点
+      const snapped = snapDrawPoint({ x: wx, y: wy });
+      if (!last || snapped.x !== last.x || snapped.y !== last.y) {
+        currentPath.value.push(snapped);
         renderer.requestRender();
       }
       return;
     }
     
-    // 顶点拖拽：更新选中对象的顶点坐标
+    // 顶点拖拽：更新选中对象的顶点坐标（网格吸附）
     if (dragInfo?.mode === 'vertex') {
       const { kind, vertexIndex } = dragInfo.vertexInfo;
+      const sp = snapPoint({ x: wx, y: wy });
       if (kind === 'route' && selectedRoute.value?.points) {
-        selectedRoute.value.points[vertexIndex].x = wx;
-        selectedRoute.value.points[vertexIndex].y = wy;
+        selectedRoute.value.points[vertexIndex].x = sp.x;
+        selectedRoute.value.points[vertexIndex].y = sp.y;
         store.updateRoute(props.planet.id, selectedRoute.value.id, {
           points: selectedRoute.value.points,
         });
       } else if (kind === 'province' && selectedProvince.value?.points) {
-        selectedProvince.value.points[vertexIndex].x = wx;
-        selectedProvince.value.points[vertexIndex].y = wy;
+        selectedProvince.value.points[vertexIndex].x = sp.x;
+        selectedProvince.value.points[vertexIndex].y = sp.y;
         store.updateTerrainPolygon(props.planet.id, selectedProvince.value.id, {
           points: selectedProvince.value.points,
         });
       } else if (kind === 'region' && selectedRegion.value?.points) {
-        selectedRegion.value.points[vertexIndex].x = wx;
-        selectedRegion.value.points[vertexIndex].y = wy;
+        selectedRegion.value.points[vertexIndex].x = sp.x;
+        selectedRegion.value.points[vertexIndex].y = sp.y;
         store.updateRegion(props.planet.id, selectedRegion.value.id, {
           points: selectedRegion.value.points,
         });
@@ -2653,6 +3047,7 @@ const renderer = useCanvasRenderer(canvas, {
     }
     if (isDrawingActive) {
       isDrawingActive = false;
+      edgeSnapPreview.value = null;
       if (currentPath.value.length > 2) {
         finishDrawing();
       }
@@ -2707,6 +3102,8 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onWheel: (e, newScale) => {
+    // 滚轮缩放 → 同步滑条/百分比显示
+    zoomPercent.value = Math.round(newScale * 100);
     if (onWheelCallback) onWheelCallback(e, newScale);
   },
   drawMode,
@@ -2716,6 +3113,33 @@ const renderer = useCanvasRenderer(canvas, {
 });
 
 let isDrawingActive = false;
+
+// ===== 缩放控件（P0-1）=====
+// zoomPercent 为 ref：滚轮（onWheel 回调）、滑条、按钮、输入框共用，保证互相联动
+const zoomPercent = ref(100);
+
+function applyZoom(v) { // v 为百分比
+  const num = Number(v);
+  if (!Number.isFinite(num) || num <= 0) return;
+  const s = renderer.setScale(num / 100);
+  zoomPercent.value = Math.round(s * 100);
+}
+
+function zoomBy(delta) {
+  applyZoom(zoomPercent.value + delta * 100);
+}
+
+function zoomFit() {
+  const s = renderer.fitView(worldBounds.value);
+  zoomPercent.value = Math.round(s * 100);
+}
+
+// 滑条 / 数字输入框变化 → 应用缩放（v-model 已写 zoomPercent）
+function onZoomSlider() {
+  const v = Number(zoomPercent.value);
+  if (!Number.isFinite(v) || v <= 0) return;
+  renderer.setScale(v / 100);
+}
 
 let onWheelCallback = null;
 
@@ -2738,7 +3162,8 @@ function finishDrawing() {
     : (currentMapData.value?.terrain?.filter(t => t.type === type).length || 0) + 1;
   const polygon = {
     id: `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    points: simplified,
+    // 对称模式：原路径 + 镜像路径合并成完整对称多边形
+    points: getMirroredPath(simplified),
     type,
     name: `${typeLabel} ${count}`,
     description: '',
@@ -2839,11 +3264,12 @@ function makeCirclePolygon(cx, cy, r) {
 // ===== 点击描点模式 =====
 // drawMode=false 时：点击依次放置顶点，双击完成，右键取消
 function handlePointClick(wx, wy, mode) {
+  const sp = snapDrawPoint({ x: wx, y: wy });
   // 若已存在绘制中的多边形，继续追加顶点
   if (drawingPolygon.value) {
     const last = drawingPolygon.value.points[drawingPolygon.value.points.length - 1];
-    if (Math.hypot(wx - last.x, wy - last.y) < 5) return; // 防止重复点击同一点
-    drawingPolygon.value.points.push({ x: wx, y: wy });
+    if (Math.hypot(sp.x - last.x, sp.y - last.y) < 5) return; // 防止重复点击同一点
+    drawingPolygon.value.points.push(sp);
     renderer.requestRender();
     return;
   }
@@ -2851,7 +3277,7 @@ function handlePointClick(wx, wy, mode) {
   // 新建绘制中的多边形
   drawingPolygon.value = {
     id: `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    points: [{ x: wx, y: wy }],
+    points: [sp],
     type: mode === 'region' ? 'region' : selectedTerrain.value,
     name: '',
     description: '',
@@ -2868,10 +3294,12 @@ function finishPointDrawing() {
     renderer.requestRender();
     return;
   }
-  if (poly.type === 'region') {
-    store.addRegion(props.planet.id, poly);
+  // 对称模式：原路径 + 镜像路径合并
+  const finalPoly = { ...poly, points: getMirroredPath(poly.points) };
+  if (finalPoly.type === 'region') {
+    store.addRegion(props.planet.id, finalPoly);
   } else {
-    store.addTerrainPolygon(props.planet.id, poly);
+    store.addTerrainPolygon(props.planet.id, finalPoly);
   }
   drawingPolygon.value = null;
   emit('dirty', true);
@@ -2889,7 +3317,7 @@ function handleRouteClick(wx, wy) {
     return;
   }
   
-  // 吸附：若点击位置附近有地点（<20px），吸附到地点坐标
+  // 吸附：地点优先（<20px 贴到地点坐标），否则网格吸附（开启时）
   let target = { x: wx, y: wy };
   for (const place of places.value) {
     const dx = wx - (place.coordinate?.x || 0);
@@ -2899,6 +3327,7 @@ function handleRouteClick(wx, wy) {
       break;
     }
   }
+  if (!target.placeId) target = snapPoint(target);
   
   routeDraftPoints.value.push(target);
   renderer.requestRender();
@@ -3174,11 +3603,12 @@ function handleCanvasClick(hit, wx, wy) {
   
   // text 模式：点击放置浮动文本
   if (mode === 'text') {
+    const sp = snapPoint({ x: wx, y: wy });
     const textCount = (currentMapData.value?.textLabels?.length || 0) + 1;
     const label = {
       id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      x: wx,
-      y: wy,
+      x: sp.x,
+      y: sp.y,
       text: `文本 ${textCount}`,
       fontSize: textFontSize.value,
       color: textColor.value,
@@ -3197,13 +3627,14 @@ function handleCanvasClick(hit, wx, wy) {
       renderer.requestRender();
       return;
     }
+    const sp = snapPoint({ x: wx, y: wy });
     const markerTypeMeta = markerTypes.find(m => m.type === selectedMarkerType.value);
     const markerCount = (currentMapData.value?.markers?.filter(m => m.type === selectedMarkerType.value).length || 0) + 1;
     const marker = {
       id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       type: selectedMarkerType.value,
-      x: wx,
-      y: wy,
+      x: sp.x,
+      y: sp.y,
       name: `${markerTypeMeta?.label || '标记'} ${markerCount}`,
       description: '',
     };
@@ -3310,7 +3741,183 @@ function smoothPolygonBoundary() {
 }
 
 function saveMap() {
-  store.saveMapDataImmediate(props.planet.id);
+  // 异步保存 + 横幅反馈，避免用户无反馈狂点
+  saveStatus.value = '正在保存...';
+  store.saveMapData(props.planet.id, currentMapData.value).then(result => {
+    saveStatus.value = result?.success ? '✓ 保存成功' : '✗ 保存失败';
+    if (saveStatusTimer) clearTimeout(saveStatusTimer);
+    saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 3000);
+  }).catch(() => {
+    saveStatus.value = '✗ 保存失败';
+    if (saveStatusTimer) clearTimeout(saveStatusTimer);
+    saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 3000);
+  });
+}
+
+// ===== 保存状态横幅 =====
+const saveStatus = ref('');
+let saveStatusTimer = null;
+// 版本快照面板（P2）
+const snapshotPanelOpen = ref(false);
+const newSnapshotName = ref('');
+const mapSnapshots = computed(() => currentMapData.value?.snapshots || []);
+
+function takeSnapshot() {
+  const snap = store.addMapSnapshot(props.planet.id, newSnapshotName.value);
+  if (snap) {
+    newSnapshotName.value = '';
+    emit('dirty', true);
+    renderer.requestRender();
+    saveStatus.value = `✓ 已拍摄快照「${snap.name}」`;
+    if (saveStatusTimer) clearTimeout(saveStatusTimer);
+    saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 2500);
+  }
+}
+
+function restoreSnapshot(snap) {
+  if (!confirm(`确定恢复快照「${snap.name}」？\n当前地图内容将被快照替换（可撤销）。`)) return;
+  store.restoreMapSnapshot(props.planet.id, snap.id);
+  emit('dirty', true);
+  renderer.requestRender();
+  saveStatus.value = `✓ 已恢复快照「${snap.name}」`;
+  if (saveStatusTimer) clearTimeout(saveStatusTimer);
+  saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 2500);
+}
+
+function removeSnapshot(snap) {
+  if (!confirm(`删除快照「${snap.name}」？`)) return;
+  store.removeMapSnapshot(props.planet.id, snap.id);
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function formatSnapshotTime(iso) {
+  try {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  } catch (e) {
+    return '';
+  }
+}
+// 光标世界坐标（P1-1）
+const cursorCoord = ref({ x: 0, y: 0, visible: false });
+// 刚放置的地点高亮（短暂光环提示位置）
+const highlightedPlaceId = ref(null);
+
+// ===== 画布边缘标尺（P2）=====
+// 独立开关（localStorage 持久化）
+const rulerVisible = ref(true);
+try {
+  if (localStorage.getItem('sitian-ruler') === '0') rulerVisible.value = false;
+} catch (e) { /* ignore */ }
+watch(rulerVisible, (v) => {
+  try { localStorage.setItem('sitian-ruler', v ? '1' : '0'); } catch (e) { /* ignore */ }
+});
+
+// 选择"漂亮"步长（1/2/5×10^n），使屏幕上刻度间距 ~80px
+function niceStep(raw) {
+  if (!isFinite(raw) || raw <= 0) return 100;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const rem = raw / pow;
+  let n;
+  if (rem <= 1) n = 1;
+  else if (rem <= 2) n = 2;
+  else if (rem <= 5) n = 5;
+  else n = 10;
+  return n * pow;
+}
+
+// 顶部 X 轴刻度（依赖 reactive viewTransform，镜头移动自动重算）
+const hTicks = computed(() => {
+  const vt = renderer.viewTransform;
+  const cvs = canvas.value;
+  if (!cvs) return [];
+  const w = cvs.clientWidth;
+  const scale = vt.scale;
+  const step = niceStep(80 / scale);
+  const worldLeft = -(vt.x + w / 2) / scale;
+  const start = Math.floor(worldLeft / step) * step;
+  const ticks = [];
+  for (let wx = start; wx <= start + (w / scale) + step; wx += step) {
+    ticks.push({ left: Math.round(wx * scale + vt.x + w / 2), label: Math.round(wx) });
+  }
+  return ticks;
+});
+
+// 左侧 Y 轴刻度
+const vTicks = computed(() => {
+  const vt = renderer.viewTransform;
+  const cvs = canvas.value;
+  if (!cvs) return [];
+  const h = cvs.clientHeight;
+  const scale = vt.scale;
+  const step = niceStep(80 / scale);
+  const worldTop = -(vt.y + h / 2) / scale;
+  const start = Math.floor(worldTop / step) * step;
+  const ticks = [];
+  for (let wy = start; wy <= start + (h / scale) + step; wy += step) {
+    ticks.push({ top: Math.round(wy * scale + vt.y + h / 2), label: Math.round(wy) });
+  }
+  return ticks;
+});
+let highlightTimer = null;
+
+// ===== 导航树地点拖放到画布放置 =====
+function handleDragOver(e) {
+  if (e.dataTransfer?.types?.includes('text/sitian-node-id')) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+}
+
+function handleDrop(e) {
+  const nodeId = e.dataTransfer.getData('text/sitian-node-id');
+  if (!nodeId) return;
+  const node = store.nodes.find(n => n.id === nodeId);
+  // 仅地点类节点可放置（与 TreeItem draggable 一致，双保险）
+  if (!node || !['location', 'city', 'town', 'village', 'facility'].includes(node.layer)) return;
+  if (!canvas.value) return;
+  
+  // 计算世界坐标（drop 的屏幕位置 → 画布相对 → 世界坐标 → 网格吸附）
+  const rect = canvas.value.getBoundingClientRect();
+  const world = renderer.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+  const sp = snapPoint({ x: world.x, y: world.y });
+  
+  // 归属当前行星 + 设置坐标（走 undo，可撤销）
+  store.updateNode(nodeId, {
+    parentId: props.planet.id,
+    coordinate: { x: Math.round(sp.x), y: Math.round(sp.y) },
+    userMoved: true,
+  });
+  emit('dirty', true);
+  const updated = store.nodes.find(n => n.id === nodeId);
+  if (updated) emit('select-node', updated);
+  renderer.requestRender();
+  
+  // 镜头立即定位到放置位置（至少 1.2x 保证地点图标/标签可见）+ 短暂金色光环提示
+  renderer.focusOn(sp.x, sp.y, Math.max(renderer.getViewTransform().scale, 1.2));
+  highlightedPlaceId.value = nodeId;
+  if (highlightTimer) clearTimeout(highlightTimer);
+  highlightTimer = setTimeout(() => {
+    highlightedPlaceId.value = null;
+    renderer.requestRender();
+  }, 2500);
+  
+  // 放置反馈横幅（含定位引导）
+  saveStatus.value = `✓ 已放置「${node.displayName || node.name}」，镜头已定位`;
+  if (saveStatusTimer) clearTimeout(saveStatusTimer);
+  saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 2500);
+}
+
+// ===== 搜索/详情定位：监听 sitian:focus-node =====
+// PlanetMap 此前未监听该事件 → 搜索跳转/详情定位在行星地图无效（GalaxyMap/SystemView 已有）
+function onFocusNode(e) {
+  const node = e.detail;
+  if (!node) return;
+  const place = places.value.find(p => p.id === node.id);
+  if (place && place.coordinate?.x !== null && place.coordinate?.x !== undefined) {
+    renderer.focusOn(place.coordinate.x, place.coordinate.y, Math.max(renderer.getViewTransform().scale, 1.2));
+    renderer.requestRender();
+  }
 }
 
 // ===== 全图高清导出 =====
@@ -3533,11 +4140,16 @@ onMounted(() => {
   generateAutoRegions();
   renderer.requestRender();
   window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('keyup', handleKeyup);
+  window.addEventListener('sitian:focus-node', onFocusNode);
 });
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('keyup', handleKeyup);
+  window.removeEventListener('sitian:focus-node', onFocusNode);
+  if (highlightTimer) clearTimeout(highlightTimer);
 });
 
 // ===== 编辑面板拖拽 =====
@@ -3580,6 +4192,8 @@ function handlePanelHeaderDrag(e) {
 // ===== 方向键微调 =====
 // 方向键：选中对象逐像素移动（Shift+方向键 = 10px）
 function handleKeydown(e) {
+  // Ctrl 按住：临时关闭网格吸附（精细微调），不受编辑模式限制
+  if (e.key === 'Control') { snapCtrlHeld = true; return; }
   if (!editMode.value) return;
   const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
   if (!arrows.includes(e.key)) return;
@@ -3629,6 +4243,11 @@ function handleKeydown(e) {
   }
   
   if (moved) emit('dirty', true);
+}
+
+// Ctrl 松开 → 恢复网格吸附
+function handleKeyup(e) {
+  if (e.key === 'Control') snapCtrlHeld = false;
 }
 
 // 采用自动生成的区域为正式区域（转为可编辑的正式 region，保存到 mapdata）
@@ -3683,6 +4302,28 @@ watch(() => store.mapData[props.planet?.id], () => {
   gap: 16px;
 }
 
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-title-row h2 { margin: 0; }
+.back-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--planet-header-border);
+  border-radius: 4px;
+  background: var(--planet-header-bg);
+  color: var(--planet-text);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.back-btn:hover {
+  background: var(--planet-btn-hover, rgba(255,255,255,0.1));
+  border-color: var(--planet-text-link);
+  color: var(--planet-text-link);
+}
+
 .map-header h2 {
   font-size: 16px;
   color: var(--planet-text);
@@ -3733,6 +4374,50 @@ watch(() => store.mapData[props.planet?.id], () => {
 
 .adopt-btn.ghost:hover {
   opacity: 1;
+}
+
+/* 编辑地图主入口（醒目按钮） */
+.edit-entry-btn {
+  background: var(--planet-text-link, #4A90D9);
+  border-color: var(--planet-text-link, #4A90D9);
+  color: #fff;
+  font-weight: 600;
+}
+.edit-entry-btn:hover {
+  background: var(--planet-text-link, #4A90D9);
+  filter: brightness(1.15);
+  border-color: var(--planet-text-link, #4A90D9);
+}
+
+/* 画布边界预设下拉（P1-2） */
+.boundary-select {
+  padding: 5px 8px;
+  border: 1px solid var(--planet-btn-border);
+  border-radius: 4px;
+  background: var(--planet-btn-bg);
+  color: var(--planet-text);
+  cursor: pointer;
+  font-size: 12px;
+  outline: none;
+}
+.boundary-select:hover {
+  border-color: var(--planet-btn-active-border);
+}
+
+/* 对称轴偏移输入（P2-3） */
+.mirror-axis-input {
+  width: 56px;
+  height: 26px;
+  border: 1px solid var(--planet-btn-border);
+  border-radius: 4px;
+  background: var(--planet-btn-bg);
+  color: var(--planet-text);
+  font-size: 11px;
+  text-align: center;
+  outline: none;
+}
+.mirror-axis-input:focus {
+  border-color: var(--planet-text-link, #4A90D9);
 }
 
 .edit-toolbar-wrap {
@@ -3848,6 +4533,321 @@ canvas {
   height: 100%;
 }
 
+/* ===== 缩放控件组（P0-1）===== */
+.zoom-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--planet-editor-bg, rgba(15, 22, 35, 0.88));
+  border: 1px solid var(--planet-header-border, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 25;
+  user-select: none;
+}
+.zoom-controls button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--planet-header-border, rgba(255, 255, 255, 0.16));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--planet-text, #dbe4f0);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+.zoom-controls button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--planet-text-link, #4A90D9);
+  color: var(--planet-text-link, #4A90D9);
+}
+.zoom-controls input[type="range"] {
+  width: 110px;
+  accent-color: #4A90D9;
+  cursor: pointer;
+}
+.zoom-value {
+  font-size: 11px;
+  color: var(--planet-text-secondary, #8b949e);
+}
+.zoom-input {
+  width: 54px;
+  height: 26px;
+  border: 1px solid var(--planet-header-border, rgba(255, 255, 255, 0.16));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--planet-text, #dbe4f0);
+  font-size: 11px;
+  text-align: right;
+  padding: 0 6px;
+  outline: none;
+}
+.zoom-input:focus {
+  border-color: var(--planet-text-link, #4A90D9);
+}
+
+/* ===== 保存状态横幅 ===== */
+.save-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 6px;
+  background: rgba(46, 160, 67, 0.95);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 26;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  animation: save-banner-in 0.18s ease-out;
+}
+.save-banner.error {
+  background: rgba(248, 81, 73, 0.95);
+}
+@keyframes save-banner-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ===== 光标坐标状态条（P1-1）===== */
+.cursor-coords {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(15, 22, 35, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--planet-text-secondary, #aeb9c8);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  z-index: 25;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ===== 画布边缘标尺（P2）===== */
+.ruler {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+.ruler-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: rgba(15, 22, 35, 0.55);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ruler-left {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 20px;
+  background: rgba(15, 22, 35, 0.55);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ruler-tick {
+  position: absolute;
+  width: 1px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.35);
+}
+.ruler-left .ruler-tick {
+  width: 6px;
+  height: 1px;
+}
+.ruler-tick span {
+  position: absolute;
+  top: 7px;
+  left: 2px;
+  font-size: 9px;
+  color: rgba(200, 215, 230, 0.75);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.ruler-left .ruler-tick span {
+  top: -4px;
+  left: 8px;
+  transform: none;
+}
+
+/* ===== 版本快照面板（P2）===== */
+.snapshot-panel {
+  position: absolute;
+  left: 16px;
+  bottom: 60px;
+  width: 260px;
+  background: var(--planet-editor-bg);
+  border: 1px solid var(--planet-editor-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  z-index: 100;
+  cursor: default;
+  overflow: hidden;
+}
+.snapshot-panel .editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--planet-editor-border);
+}
+.snapshot-panel .editor-header h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--planet-text);
+}
+.snapshot-body {
+  padding: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.snapshot-create {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.snapshot-create input {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--planet-btn-border);
+  border-radius: 4px;
+  background: var(--planet-btn-bg);
+  color: var(--planet-text);
+  font-size: 12px;
+  outline: none;
+}
+.snapshot-create input:focus {
+  border-color: var(--planet-text-link, #4A90D9);
+}
+.snapshot-empty {
+  text-align: center;
+  color: var(--planet-text-secondary);
+  font-size: 12px;
+  padding: 12px 0;
+  line-height: 1.6;
+}
+.snapshot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.snapshot-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.snapshot-info {
+  flex: 1;
+  min-width: 0;
+}
+.snapshot-name {
+  font-size: 12px;
+  color: var(--planet-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.snapshot-time {
+  font-size: 10px;
+  color: var(--planet-text-secondary);
+}
+.snapshot-restore {
+  padding: 3px 8px;
+  border: 1px solid var(--planet-btn-border);
+  border-radius: 4px;
+  background: var(--planet-btn-bg);
+  color: var(--planet-text-link, #4A90D9);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.snapshot-restore:hover {
+  border-color: var(--planet-text-link, #4A90D9);
+  background: rgba(74, 144, 217, 0.15);
+}
+.snapshot-del {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--planet-text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 3px;
+}
+.snapshot-del:hover {
+  color: #ff7b72;
+  background: rgba(255, 123, 114, 0.12);
+}
+
+/* ===== 参考图底图列表（P2 多图）===== */
+.ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.ref-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.ref-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.ref-item.active {
+  border-color: var(--planet-text-link, #4A90D9);
+  background: rgba(74, 144, 217, 0.12);
+}
+.ref-item-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--planet-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ref-item-del {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--planet-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 3px;
+}
+.ref-item-del:hover {
+  color: #ff7b72;
+  background: rgba(255, 123, 114, 0.12);
+}
+
+/* ===== 版本快照面板（P2）===== */
 .province-editor {
   position: absolute;
   right: 16px;

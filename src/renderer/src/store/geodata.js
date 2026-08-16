@@ -362,6 +362,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     try {
       const result = await window.sitianAPI.getMapData(planetId);
       if (result.success) {
+        migrateReferenceImages(planetId, result.data);
         mapData.value[planetId] = result.data;
         return result.data;
       }
@@ -742,14 +743,95 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSaveMap(planetId);
   }
 
-  // ===== 参考图底图 =====
+  // ===== 参考图底图（P2 多图：referenceImages 数组，按 id 更新兼容 active 语义）=====
   function updateReferenceImage(planetId, refImage) {
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
-    mapData.value[planetId].referenceImage = refImage;
-    mapData.value[planetId].updatedAt = new Date().toISOString();
+    const map = mapData.value[planetId];
+    // 数组结构：按 id 更新（现有调用传完整对象含 id）
+    if (Array.isArray(map.referenceImages)) {
+      const idx = map.referenceImages.findIndex(r => r.id === refImage?.id);
+      if (idx >= 0) {
+        map.referenceImages[idx] = { ...map.referenceImages[idx], ...refImage };
+      } else if (refImage?.id) {
+        map.referenceImages.push(refImage);
+      }
+    } else {
+      // 旧单图结构兜底
+      map.referenceImage = refImage;
+    }
+    map.updatedAt = new Date().toISOString();
     scheduleAutoSaveMap(planetId);
+  }
+
+  function removeReferenceImageById(planetId, refId) {
+    const map = mapData.value[planetId];
+    if (!map?.referenceImages) return;
+    map.referenceImages = map.referenceImages.filter(r => r.id !== refId);
+    map.updatedAt = new Date().toISOString();
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // 旧单图结构迁移到数组（loadMapData 时调用）
+  function migrateReferenceImages(planetId, map) {
+    if (!map) return;
+    if (map.referenceImage && !Array.isArray(map.referenceImages)) {
+      map.referenceImages = [{ ...map.referenceImage, id: `ref_${Date.now()}` }];
+      delete map.referenceImage;
+    }
+    if (!Array.isArray(map.referenceImages)) map.referenceImages = [];
+  }
+
+  // ===== 地图版本快照（P2）=====
+  function addMapSnapshot(planetId, name = '') {
+    const map = mapData.value[planetId];
+    if (!map) return null;
+    // 深拷贝当前地图数据（排除 snapshots 自身避免递归）
+    const { snapshots, ...rest } = map;
+    const count = (map.snapshots?.length || 0) + 1;
+    const snapshot = {
+      id: `snap_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      name: name.trim() || `快照 ${count}`,
+      createdAt: new Date().toISOString(),
+      data: JSON.parse(JSON.stringify(rest)),
+    };
+    if (!map.snapshots) map.snapshots = [];
+    map.snapshots.push(snapshot);
+    map.updatedAt = new Date().toISOString();
+    scheduleAutoSaveMap(planetId);
+    return snapshot;
+  }
+
+  function removeMapSnapshot(planetId, snapshotId) {
+    const map = mapData.value[planetId];
+    if (!map?.snapshots) return;
+    map.snapshots = map.snapshots.filter(s => s.id !== snapshotId);
+    map.updatedAt = new Date().toISOString();
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function restoreMapSnapshot(planetId, snapshotId) {
+    const map = mapData.value[planetId];
+    const snapshot = map?.snapshots?.find(s => s.id === snapshotId);
+    if (!snapshot) return false;
+    const oldMap = JSON.parse(JSON.stringify(map));
+    const restored = {
+      ...snapshot.data,
+      planetId,
+      version: map.version || 1,
+      snapshots: map.snapshots,
+      updatedAt: new Date().toISOString(),
+    };
+    // 走 undo：恢复可撤销
+    execute({
+      type: 'restore-snapshot',
+      label: `恢复快照「${snapshot.name}」`,
+      undo: () => { mapData.value[planetId] = oldMap; },
+      redo: () => { mapData.value[planetId] = restored; },
+    });
+    scheduleAutoSaveMap(planetId);
+    return true;
   }
 
   function clearReferenceImage(planetId) {
@@ -1256,6 +1338,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       addTextLabel, removeTextLabel, updateTextLabel,
       addMarker, removeMarker, updateMarker,
       addCluster, removeCluster, updateCluster, moveClusterMembers,
-      updateReferenceImage, clearReferenceImage,
+      updateReferenceImage, clearReferenceImage, removeReferenceImageById,
+      addMapSnapshot, removeMapSnapshot, restoreMapSnapshot,
     };
 });

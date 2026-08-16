@@ -1,4 +1,4 @@
-import { onUnmounted } from 'vue';
+import { onUnmounted, reactive } from 'vue';
 
 /**
  * useCanvasRenderer - Canvas 渲染与交互共享逻辑
@@ -28,7 +28,8 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   } = options;
 
   let ctx = null;
-  let viewTransform = { x: 0, y: 0, scale: 1 };
+  // viewTransform 用 reactive：组件中读它构建的 computed（如鹰眼 viewBounds）才能自动跟随镜头
+  const viewTransform = reactive({ x: 0, y: 0, scale: 1 });
   let isPanning = false;
   let panSuppressed = false;
   let mouseDownPos = { x: 0, y: 0 };
@@ -437,7 +438,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   }
 
   function resetView() {
-    viewTransform = { x: 0, y: 0, scale: 1 };
+    Object.assign(viewTransform, { x: 0, y: 0, scale: 1 });
     requestRender();
   }
 
@@ -448,9 +449,51 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     requestRender();
   }
 
+  /**
+   * 设置缩放级别（保持视口中心，clamp 到 minScale/maxScale）
+   * 滑条/按钮/快捷键与滚轮共用的统一缩放入口，避免百分比显示不同步
+   */
+  function setScale(newScale) {
+    const cvs = canvasRef.value;
+    if (!cvs) return viewTransform.scale;
+    newScale = Math.max(minScale, Math.min(maxScale, newScale));
+    // 以视口中心为锚点（等价于鼠标停在画布中心的 wheel 缩放）
+    const cx = -viewTransform.x / viewTransform.scale;
+    const cy = -viewTransform.y / viewTransform.scale;
+    viewTransform.scale = newScale;
+    viewTransform.x = -cx * newScale;
+    viewTransform.y = -cy * newScale;
+    requestRender();
+    return viewTransform.scale;
+  }
+
+  /**
+   * 适屏：将给定世界边界适配到画布（带 padding），缩放并居中
+   */
+  function fitView(bounds, padding = 0.1) {
+    const cvs = canvasRef.value;
+    if (!cvs) return viewTransform.scale;
+    if (!bounds) return viewTransform.scale;
+    const w = (bounds.maxX || 0) - (bounds.minX || 0);
+    const h = (bounds.maxY || 0) - (bounds.minY || 0);
+    if (w <= 0 || h <= 0) return viewTransform.scale;
+    const pad = 1 + padding * 2;
+    const scale = Math.max(minScale, Math.min(maxScale,
+      Math.min(cvs.clientWidth / (w * pad), cvs.clientHeight / (h * pad))
+    ));
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    viewTransform.scale = scale;
+    viewTransform.x = -cx * scale;
+    viewTransform.y = -cy * scale;
+    requestRender();
+    return viewTransform.scale;
+  }
+
   onUnmounted(cleanupCanvas);
 
   return {
+    viewTransform, // reactive 对象本体（组件 computed 直接读它才能响应镜头变化，如鹰眼 viewBounds）
     getViewTransform: () => ({ ...viewTransform }),
     isFastMode: () => fastMode,
     getCurrentHit: () => currentHit,
@@ -458,6 +501,8 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     requestRender,
     resetView,
     focusOn,
+    setScale,
+    fitView,
     screenToWorld,
     initCanvas,
     cleanupCanvas,

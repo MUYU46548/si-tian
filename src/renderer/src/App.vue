@@ -17,10 +17,12 @@
             :class="{ active: store.viewLevel === 'domain' }"
             @click="store.backToDomain()"
           >{{ store.currentWorld?.displayName || store.currentWorld?.name }}</button>
-          <span v-if="store.currentDomain && store.viewLevel === 'system'" class="separator">›</span>
+          <span v-if="store.currentDomain && (store.viewLevel === 'system' || store.viewLevel === 'planet')" class="separator">›</span>
           <button 
-            v-if="store.currentDomain && store.viewLevel === 'system'"
-            class="active"
+            v-if="store.currentDomain && (store.viewLevel === 'system' || store.viewLevel === 'planet')"
+            :class="{ active: store.viewLevel === 'system' }"
+            @click="handleBreadcrumbDomain"
+            :title="store.viewLevel === 'planet' ? '返回域内恒星系总览' : ''"
           >{{ store.currentDomain?.displayName || store.currentDomain?.name }}</button>
           <span v-if="store.currentPlanet" class="separator">›</span>
           <button 
@@ -177,6 +179,13 @@ const undoTooltip = computed(() => {
   const label = store.undoLabel;
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
 });
+
+// 面包屑点击星域：行星地图 → 返回域内恒星系总览（system 视图）
+function handleBreadcrumbDomain() {
+  if (store.viewLevel === 'planet') {
+    store.backToSystem();
+  }
+}
 let cleanupNodeUpdated = null;
 let cleanupNodeRemoved = null;
 let perfUpdateTimer = null;

@@ -2,13 +2,28 @@
   <div class="system-view-container">
     <div class="map-header">
       <div class="header-left">
-        <h2>{{ domain?.name }} — 域内恒星系总览</h2>
+        <div class="header-title-row">
+          <button class="back-btn" @click="$emit('back')" title="返回星域总览">← 返回</button>
+          <h2>{{ domain?.name }} — 域内恒星系总览</h2>
+        </div>
         <p class="hint">
-          <span v-if="!editMode">点击节点查看详情 · 滚动缩放 · 拖拽空白处平移 · 拖拽节点编辑坐标</span>
+          <span v-if="!editMode">点击节点查看详情 · 滚动缩放 · 拖拽空白处平移 · <b>「✥ 移动」工具下拖拽节点调整坐标</b>（默认拖手模式防误触）</span>
           <span v-else class="edit-hint">编辑模式：拖拽恒星间创建航道 · 右键航道删除 · 点击空白取消</span>
         </p>
       </div>
       <div class="header-actions">
+        <template v-if="!editMode">
+          <button
+            :class="{ active: interactionMode === 'pan' }"
+            @click="interactionMode = 'pan'"
+            title="拖手模式：拖拽空白处平移，节点只选中不移动（防误触）"
+          >🤚 拖手</button>
+          <button
+            :class="{ active: interactionMode === 'move' }"
+            @click="interactionMode = 'move'"
+            title="移动模式：拖拽恒星系/行星调整坐标"
+          >✥ 移动</button>
+        </template>
         <button
           :class="{ active: editMode }"
           @click="toggleEditMode"
@@ -69,6 +84,8 @@ const canvas = ref(null);
 let systemLayouts = [];
 let hoveredNode = null;
 const editMode = ref(false);
+// 浏览模式交互：'pan' 拖手（默认，防误触）| 'move' 移动工具（拖拽节点调整坐标）
+const interactionMode = ref('pan');
 let dragSourceNode = null;
 let dragMousePos = { x: 0, y: 0 };
 let targetNode = null;
@@ -408,8 +425,8 @@ function drawHyperlanes(ctx) {
       const s2 = systemLayouts[j];
       const dist = Math.hypot(s1.x - s2.x, s1.y - s2.y);
       if (dist < 450) {
-        ctx.strokeStyle = 'rgba(100, 150, 200, 0.3)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(100, 180, 230, 0.65)';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(s1.x, s1.y);
         ctx.lineTo(s2.x, s2.y);
@@ -421,7 +438,7 @@ function drawHyperlanes(ctx) {
 }
 
 function drawDragPreview(ctx) {
-  if (!editMode || !dragSourceNode) return;
+  if (!editMode.value || !dragSourceNode) return;
   
   ctx.strokeStyle = 'rgba(100, 255, 180, 0.6)';
   ctx.lineWidth = 1.5;
@@ -451,8 +468,8 @@ function drawSystemStar(ctx, system) {
   const matched = store.isNodeMatched(system.id);
   const isCurrent = store.isCurrentMatch(system.id);
   const isHovered = hoveredNode && hoveredNode.id === system.id;
-  const isSource = editMode && dragSourceNode && dragSourceNode.id === system.id;
-  const isTarget = editMode && targetNode && targetNode.id === system.id;
+  const isSource = editMode.value && dragSourceNode && dragSourceNode.id === system.id;
+  const isTarget = editMode.value && targetNode && targetNode.id === system.id;
   
   if (renderer.isFastMode() && !matched && !isHovered) {
     ctx.fillStyle = '#ffd700';
@@ -493,9 +510,12 @@ function drawSystemStar(ctx, system) {
   }
   
   ctx.fillStyle = '#e2e8f0';
-  ctx.font = 'bold 11px sans-serif';
+  // 字号按"目标屏幕字号 / scale"稳定（世界坐标被 scale 放大，字号需反比抵消，避免放大过大/缩小看不清）
+  const starScale = renderer.getViewTransform().scale;
+  const starFont = Math.min(70, Math.max(6, Math.round(14 / starScale)));
+  ctx.font = `bold ${starFont}px sans-serif`;
   ctx.textAlign = 'center';
-  ctx.fillText(system.displayName || system.name, system.x, system.y + 20);
+  ctx.fillText(system.displayName || system.name, system.x, system.y + starFont * 1.7);
 
   // 选中恒星系 → 金色虚线环
   if (selectedSystemId.value === system.id) {
@@ -537,9 +557,11 @@ function drawSystemPlanets(ctx, system) {
     
     if (!renderer.isFastMode()) {
       ctx.fillStyle = '#8b949e';
-      ctx.font = '9px sans-serif';
+      const pScale = renderer.getViewTransform().scale;
+      const pFont = Math.min(55, Math.max(5, Math.round(10 / pScale)));
+      ctx.font = `${pFont}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(planet.displayName || planet.name, planet.x, planet.y + getPlanetRadius(planet.layer) + 10);
+      ctx.fillText(planet.displayName || planet.name, planet.x, planet.y + getPlanetRadius(planet.layer) + pFont * 1.2);
     }
   });
 }
@@ -550,9 +572,19 @@ const renderer = useCanvasRenderer(canvas, {
   onHitTest: (wx, wy) => hitTest(wx, wy),
   onHover: (hit, wx, wy) => {
     hoveredNode = hit?.node || null;
-    if (editMode && dragSourceNode) {
+    if (editMode.value && dragSourceNode) {
       const h = hitTest(wx, wy);
       targetNode = (h && h.type === 'star' && h.node.id !== dragSourceNode.id) ? h.node : null;
+    }
+    // 浏览模式光标反馈：移动工具下可移动节点显示 move，拖手模式空白显示 grab
+    if (!editMode.value && canvas.value) {
+      if (interactionMode.value === 'move' && (hit?.type === 'star' || hit?.type === 'planet')) {
+        canvas.value.style.cursor = 'move';
+      } else if (interactionMode.value === 'move') {
+        canvas.value.style.cursor = 'default';
+      } else {
+        canvas.value.style.cursor = 'grab';
+      }
     }
   },
   onDragStart: (wx, wy, button, shiftKey, ctrlKey, panTry) => {
@@ -569,7 +601,7 @@ const renderer = useCanvasRenderer(canvas, {
       return true;
     }
     
-    if (editMode) {
+    if (editMode.value) {
       if (hit.type === 'star') {
         dragSourceNode = hit.node;
         dragMousePos = { x: wx, y: wy };
@@ -577,6 +609,9 @@ const renderer = useCanvasRenderer(canvas, {
       }
       return true;
     } else {
+      // 拖手模式（默认）：节点只选中不移动，防止浏览时误触
+      if (interactionMode.value === 'pan') return true;
+      // 移动工具：拖拽 star/planet 调整坐标
       if (hit.type === 'star' || hit.type === 'planet') {
         store.beginNodePositionCapture(hit.node.id);
       }
@@ -604,7 +639,7 @@ const renderer = useCanvasRenderer(canvas, {
       return;
     }
     
-    if (editMode && dragSourceNode) {
+    if (editMode.value && dragSourceNode) {
       dragMousePos = { x: wx, y: wy };
       const hit = hitTest(wx, wy);
       targetNode = (hit && hit.type === 'star' && hit.node.id !== dragSourceNode.id) ? hit.node : null;
@@ -617,7 +652,7 @@ const renderer = useCanvasRenderer(canvas, {
       return;
     }
     
-    if (editMode && dragSourceNode) {
+    if (editMode.value && dragSourceNode) {
       const hit = hitTest(wx, wy);
       if (hit && hit.type === 'star' && hit.node.id !== dragSourceNode.id) {
         const result = store.addHyperlane(dragSourceNode.id, hit.node.id);
@@ -753,7 +788,7 @@ const systemWorldBounds = computed(() => {
 });
 
 const systemViewBounds = computed(() => {
-  const vt = renderer.getViewTransform();
+  const vt = renderer.viewTransform;
   const cvs = canvas.value;
   if (!cvs) return systemWorldBounds.value;
   
@@ -823,10 +858,8 @@ const systemEyeElements = computed(() => {
 });
 
 function handleSystemEagleNavigate(world) {
-  const vt = renderer.getViewTransform();
-  vt.x = -world.x * vt.scale;
-  vt.y = -world.y * vt.scale;
-  renderer.requestRender();
+  // 修复：getViewTransform() 返回浅拷贝，改 vt 无效。改为 focusOn 直接设置内部 viewTransform
+  renderer.focusOn(world.x, world.y, renderer.getViewTransform().scale);
 }
 
 defineExpose({ canvas, renderer });
@@ -843,6 +876,19 @@ defineExpose({ canvas, renderer });
   align-items: center;
 }
 .header-left { display: flex; flex-direction: column; }
+.header-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.header-title-row h2 { margin-bottom: 0; }
+.back-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--map-btn-border);
+  border-radius: 4px;
+  background: var(--map-btn-bg);
+  color: var(--map-btn-text);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.back-btn:hover { background: var(--map-btn-hover); }
 .header-actions { display: flex; gap: 8px; }
 .header-actions button {
   padding: 6px 14px;

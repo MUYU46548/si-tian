@@ -2,7 +2,10 @@
   <div class="galaxy-map-container">
     <div class="map-header">
       <div class="header-left">
-        <h2>{{ world?.name }} — 银河系图</h2>
+        <div class="header-title-row">
+          <button class="back-btn" @click="$emit('back')" title="返回世界选择">← 返回</button>
+          <h2>{{ world?.name }} — 星域总览</h2>
+        </div>
         <p class="hint">
           <span v-if="!editMode">点击恒星进入 · 滚动缩放 · 拖拽空白处平移 · 拖拽恒星编辑坐标</span>
           <span v-else class="edit-hint">编辑模式：拖拽恒星间创建航道 · 右键航道删除 · 拖拽边界顶点编辑势力范围 · 点击空白取消</span>
@@ -494,8 +497,17 @@ function hitTest(wx, wy) {
   return null;
 }
 
+// ===== 当前视图可见航道 =====
+// 注意：不能依赖 store.currentDomainHyperlanes —— 它在 domain 视图下 currentDomain 为 null 时返回空数组，
+// 导致首次进入星域总览不显示任何航道（用户需离开再回来才显示）。
+// 这里直接基于本视图的 galaxyNodes 过滤：两端节点都在当前视图内才显示。
+const visibleHyperlanes = computed(() => {
+  const ids = new Set(galaxyNodes.value.map(g => g.id));
+  return store.hyperlanes.filter(h => ids.has(h.fromId) && ids.has(h.toId));
+});
+
 function hitTestHyperlane(wx, wy) {
-  const hyperlanes = store.currentDomainHyperlanes;
+  const hyperlanes = visibleHyperlanes.value;
   const nodeMap = new Map(galaxyNodes.value.map(g => [g.id, g]));
   
   let closest = null;
@@ -707,41 +719,44 @@ function drawFactionBorders(ctx, lod) {
     if (lod > 0.4) {
       const cx = border.center.x;
       const cy = border.center.y;
-      
-      ctx.font = `bold ${Math.round(14 * lod)}px sans-serif`;
+      const scale = renderer.getViewTransform().scale;
+      // 字号按"目标屏幕字号 / scale"稳定（屏幕始终 ~15px）
+      const fontSize = Math.min(70, Math.max(7, Math.round(15 / scale)));
+
+      ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      
+
       const text = border.name;
       const metrics = ctx.measureText(text);
       const padding = 10;
-      
+
       ctx.fillStyle = border.color + 'EE';
       ctx.beginPath();
       ctx.roundRect(
         cx - metrics.width / 2 - padding,
-        cy - 14 * lod,
+        cy - fontSize / 2 - 4,
         metrics.width + padding * 2,
-        28 * lod,
+        fontSize + 8,
         8
       );
       ctx.fill();
-      
+
       ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 1.5;
       ctx.globalAlpha = 0.6;
       ctx.stroke();
       ctx.globalAlpha = 1.0;
-      
+
       ctx.fillStyle = '#FFFFFF';
       ctx.fillText(text, cx, cy);
     }
   }
 }
 
-// ===== 航道 =====
+// ===== 航道（静态线段：无阴影、无动画，保证性能与对比度） =====
 function drawHyperlanes(ctx) {
-  const hyperlanes = store.currentDomainHyperlanes;
+  const hyperlanes = visibleHyperlanes.value;
   const nodeMap = new Map(galaxyNodes.value.map(g => [g.id, g]));
   
   hyperlanes.forEach(h => {
@@ -752,33 +767,32 @@ function drawHyperlanes(ctx) {
     const isHovered = hoveredHyperlane === h.id;
     const isUserCreated = !h.id.startsWith('auto_');
     
-    let baseColor, glowColor, lineWidth;
+    // 单层静态样式：类型区分靠颜色 + 虚线样式，hover 提亮加粗
+    let color, lineWidth, dash = null;
     
     if (h.type === 'cross_domain') {
-      baseColor = isHovered ? 'rgba(230, 160, 255, 1.0)' : 'rgba(200, 140, 255, 0.65)';
-      glowColor = 'rgba(200, 140, 255, 0.4)';
+      color = isHovered ? 'rgba(220, 170, 255, 1.0)' : 'rgba(190, 130, 255, 0.85)';
       lineWidth = isHovered ? 3 : 2;
+      dash = [6, 6];
     } else if (h.type === 'hyperjump') {
-      baseColor = isHovered ? 'rgba(255, 130, 130, 1.0)' : 'rgba(255, 110, 110, 0.55)';
-      glowColor = 'rgba(255, 110, 110, 0.4)';
+      color = isHovered ? 'rgba(255, 150, 150, 1.0)' : 'rgba(255, 120, 120, 0.85)';
       lineWidth = isHovered ? 3 : 2;
+      dash = [10, 6];
+    } else if (isUserCreated) {
+      color = isHovered ? 'rgba(120, 255, 210, 1.0)' : 'rgba(100, 240, 180, 0.85)';
+      lineWidth = isHovered ? 2.5 : 2;
     } else {
-      if (isUserCreated) {
-        baseColor = isHovered ? 'rgba(100, 255, 200, 1.0)' : 'rgba(100, 255, 180, 0.7)';
-        glowColor = 'rgba(100, 255, 180, 0.4)';
-        lineWidth = isHovered ? 2.5 : 2;
-      } else {
-        baseColor = isHovered ? 'rgba(130, 210, 255, 0.9)' : 'rgba(100, 200, 255, 0.5)';
-        glowColor = 'rgba(100, 200, 255, 0.3)';
-        lineWidth = isHovered ? 2 : 1.5;
-      }
+      color = isHovered ? 'rgba(150, 220, 255, 1.0)' : 'rgba(120, 200, 255, 0.75)';
+      lineWidth = isHovered ? 2 : 1.8;
+      dash = [5, 7];
     }
     
     ctx.save();
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur = isHovered ? 20 : 12;
-    ctx.strokeStyle = glowColor;
-    ctx.lineWidth = lineWidth + 6;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (dash) ctx.setLineDash(dash);
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     if (h.controlPoints && h.controlPoints.length === 1) {
@@ -793,43 +807,8 @@ function drawHyperlanes(ctx) {
       ctx.lineTo(to.x, to.y);
     }
     ctx.stroke();
-    ctx.restore();
-    
-    ctx.strokeStyle = baseColor;
-    ctx.lineWidth = lineWidth;
-    ctx.lineCap = 'round';
-    
-    if (h.type === 'cross_domain') {
-      ctx.setLineDash([5, 10]);
-      ctx.lineDashOffset = -animationTime * 25;
-    } else if (h.type === 'hyperjump') {
-      ctx.setLineDash([10, 5]);
-      ctx.lineDashOffset = -animationTime * 35;
-    } else if (isUserCreated) {
-      ctx.setLineDash([]);
-    } else {
-      ctx.setLineDash([4, 8]);
-      ctx.lineDashOffset = -animationTime * 15;
-    }
-    
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    
-    if (h.controlPoints && h.controlPoints.length > 0) {
-      if (h.controlPoints.length === 1) {
-        ctx.quadraticCurveTo(h.controlPoints[0].x, h.controlPoints[0].y, to.x, to.y);
-      } else {
-        ctx.bezierCurveTo(
-          h.controlPoints[0].x, h.controlPoints[0].y,
-          h.controlPoints[1].x, h.controlPoints[1].y,
-          to.x, to.y
-        );
-      }
-    } else {
-      ctx.lineTo(to.x, to.y);
-    }
-    ctx.stroke();
     ctx.setLineDash([]);
+    ctx.restore();
     
     if (editMode.value && isHovered) {
       const midX = (from.x + to.x) / 2;
@@ -837,25 +816,19 @@ function drawHyperlanes(ctx) {
       
       if (!h.controlPoints || h.controlPoints.length === 0) {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-        ctx.shadowBlur = 12;
         ctx.beginPath();
         ctx.arc(midX, midY, 6, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
       }
       
       if (h.controlPoints && h.controlPoints.length > 0) {
         h.controlPoints.forEach((cp, i) => {
           ctx.fillStyle = 'rgba(255, 200, 50, 0.95)';
-          ctx.shadowColor = 'rgba(255, 200, 50, 0.9)';
-          ctx.shadowBlur = 12;
           ctx.beginPath();
           ctx.arc(cp.x, cp.y, 7, 0, Math.PI * 2);
           ctx.fill();
-          ctx.shadowBlur = 0;
           
-          ctx.strokeStyle = 'rgba(255, 200, 50, 0.4)';
+          ctx.strokeStyle = 'rgba(255, 200, 50, 0.5)';
           ctx.lineWidth = 1;
           ctx.setLineDash([2, 2]);
           ctx.beginPath();
@@ -870,7 +843,7 @@ function drawHyperlanes(ctx) {
         });
         
         if (h.controlPoints.length === 1) {
-          ctx.strokeStyle = 'rgba(255, 200, 50, 0.4)';
+          ctx.strokeStyle = 'rgba(255, 200, 50, 0.5)';
           ctx.lineWidth = 1;
           ctx.setLineDash([2, 2]);
           ctx.beginPath();
@@ -900,7 +873,7 @@ function drawGalaxyNodes(ctx, lod) {
     if (isSource || isTarget) starColor = '#7affb4';
     if (matched) starColor = isCurrent ? '#ffd700' : '#ffaa00';
     
-    const baseRadius = matched ? 8 : 6;
+    const baseRadius = matched ? 11 : 9;
     
     if (lod < 0.35) {
       ctx.fillStyle = starColor;
@@ -971,25 +944,28 @@ function drawGalaxyNodes(ctx, lod) {
     ctx.arc(galaxy.x - 1.5, galaxy.y - 1.5, baseRadius * 0.3, 0, Math.PI * 2);
     ctx.fill();
     
-    if (lod > 0.65 && galaxy.name) {
-      const labelY = galaxy.y + baseRadius + 12;
-      
-      ctx.font = `${matched ? 'bold ' : ''}10px sans-serif`;
+    const scale = renderer.getViewTransform().scale;
+    if (scale >= 0.35 && galaxy.name) {
+      const labelY = galaxy.y + baseRadius + 8;
+      // 字号按"目标屏幕字号 / scale"稳定（世界坐标被 scale 放大，字号反比抵消 → 屏幕始终 ~13px）
+      const fontSize = Math.min(60, Math.max(6, Math.round(13 / scale)));
+
+      ctx.font = `${matched ? 'bold ' : ''}${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      
+
       const text = galaxy.displayName || galaxy.name;
       const metrics = ctx.measureText(text);
       const padding = 5;
-      
+
       ctx.fillStyle = 'rgba(15, 22, 35, 0.85)';
       ctx.fillRect(
         galaxy.x - metrics.width / 2 - padding,
         labelY - 2,
         metrics.width + padding * 2,
-        14
+        fontSize + 4
       );
-      
+
       ctx.fillStyle = isHighlighted ? starColor : 'rgba(230, 240, 255, 0.95)';
       ctx.fillText(text, galaxy.x, labelY);
     }
@@ -1036,6 +1012,8 @@ function drawDragPreview(ctx) {
 }
 
 function drawBoundaryEditHelpers(ctx) {
+  // 编辑辅助（锚点/手柄）仅编辑模式绘制，避免"看得到却拖不动"的困惑
+  if (!editMode.value) return;
   const borders = computeFactionBorders();
   
   for (const border of borders) {
@@ -1200,6 +1178,16 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onDragMove: (wx, wy, dragInfo) => {
+    // 星域边界顶点拖拽（最高优先级：拖住锚点时其他拖拽逻辑全部短路）
+    if (editingBoundary.value) {
+      const points = store.domainBorderOverrides[editingBoundary.value.domainId];
+      if (points && points[editingBoundary.value.vertexIndex]) {
+        points[editingBoundary.value.vertexIndex] = { x: wx, y: wy };
+        renderer.requestRender();
+      }
+      return;
+    }
+    
     if (isBoxSelecting) {
       boxSelectEnd = { x: wx, y: wy };
       renderer.requestRender();
@@ -1264,6 +1252,18 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onDragEnd: (wx, wy, dragInfo) => {
+    // 星域边界顶点拖拽结束：提交 override 并标记脏
+    if (editingBoundary.value) {
+      const domainId = editingBoundary.value.domainId;
+      const points = store.domainBorderOverrides[domainId];
+      if (points) {
+        setBorderPoints(domainId, points.map(p => ({ ...p })));
+        emit('dirty', true);
+      }
+      editingBoundary.value = null;
+      return;
+    }
+    
     if (isBoxSelecting) {
       isBoxSelecting = false;
       // 选择框内所有节点
@@ -1462,7 +1462,7 @@ watch(() => [props.galaxies, props.domains], () => {
   renderer.requestRender();
 }, { deep: true });
 
-watch(() => store.currentDomainHyperlanes, () => {
+watch(visibleHyperlanes, () => {
   renderer.requestRender();
 });
 
@@ -1550,7 +1550,7 @@ const galaxyWorldBounds = computed(() => {
 });
 
 const galaxyViewBounds = computed(() => {
-  const vt = renderer.getViewTransform();
+  const vt = renderer.viewTransform;
   const cvs = canvas.value;
   if (!cvs) return galaxyWorldBounds.value;
   
@@ -1581,14 +1581,14 @@ const galaxyEyeElements = computed(() => {
     });
   }
   
-  const hyperlanes = store.currentDomainHyperlanes;
+  const hyperlanes = visibleHyperlanes.value;
   const nodeMap = new Map(galaxyNodes.value.map(g => [g.id, g]));
-  
+
   for (const h of hyperlanes) {
     const from = nodeMap.get(h.fromId);
     const to = nodeMap.get(h.toId);
     if (!from || !to) continue;
-    
+
     elements.push({
       type: 'line',
       from: { x: from.x, y: from.y },
@@ -1614,10 +1614,8 @@ const galaxyEyeElements = computed(() => {
 });
 
 function handleGalaxyEagleNavigate(world) {
-  const vt = renderer.getViewTransform();
-  vt.x = -world.x * vt.scale;
-  vt.y = -world.y * vt.scale;
-  renderer.requestRender();
+  // 修复：getViewTransform() 返回浅拷贝，改 vt 无效。改为 focusOn 直接设置内部 viewTransform
+  renderer.focusOn(world.x, world.y, renderer.getViewTransform().scale);
 }
 
 defineExpose({ canvas, renderer });
@@ -1644,6 +1642,24 @@ defineExpose({ canvas, renderer });
   display: flex;
   flex-direction: column;
 }
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.header-title-row h2 { margin-bottom: 0; }
+.back-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--map-btn-border);
+  border-radius: 4px;
+  background: var(--map-btn-bg);
+  color: var(--map-btn-text);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.back-btn:hover { background: var(--map-btn-hover); }
 
 .header-actions {
   display: flex;

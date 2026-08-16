@@ -2,8 +2,10 @@
   <div class="tree-item">
     <div
       class="tree-node"
-      :class="{ expanded: isExpanded, selected: selectedId === node.id }"
+      :class="{ expanded: isExpanded, selected: selectedId === node.id, 'draggable-node': isPlaceNode }"
       :style="{ paddingLeft: depth * 12 + 8 + 'px' }"
+      :draggable="isPlaceNode"
+      @dragstart="onDragStart"
       @click="$emit('select', node)"
     >
       <span v-if="node.children && node.children.length" class="expand-toggle" @click.stop="toggle">
@@ -27,7 +29,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -38,6 +40,18 @@ const props = defineProps({
 defineEmits(['select']);
 
 const isExpanded = ref(true);
+
+// 地点类节点可拖拽到行星地图画布放置（location/city/town/village/facility）
+const isPlaceNode = computed(() =>
+  ['location', 'city', 'town', 'village', 'facility'].includes(props.node.layer)
+);
+
+function onDragStart(e) {
+  if (!isPlaceNode.value) return;
+  e.dataTransfer.setData('text/sitian-node-id', props.node.id);
+  e.dataTransfer.effectAllowed = 'copy';
+  // 拖拽视觉反馈（部分浏览器需要设置 drag image，默认即可）
+}
 
 function toggle() {
   isExpanded.value = !isExpanded.value;
@@ -57,6 +71,13 @@ function toggle() {
 
 .tree-node:hover {
   background: #21262d;
+}
+
+.tree-node.draggable-node {
+  cursor: grab;
+}
+.tree-node.draggable-node:active {
+  cursor: grabbing;
 }
 
 .tree-node.selected {
