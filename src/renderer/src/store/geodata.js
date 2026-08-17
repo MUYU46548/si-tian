@@ -11,6 +11,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   const currentDomain = ref(null);
   const currentSystem = ref(null);
   const currentPlanet = ref(null);
+  const currentArea = ref(null); // 当前下钻区域（城市/地点节点）
   const viewLevel = ref('world');
   const selectedNode = ref(null);
 
@@ -87,7 +88,17 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   const currentPlanetPlaces = computed(() => {
     if (!currentPlanet.value) return [];
-    return [...planets.value, ...locations.value].filter(p => p.parentId === currentPlanet.value.id);
+    // 行星地图只显示聚落（城市/城镇/村庄）+ 地点，不显示设施/区域/地形
+    return nodes.value.filter(p =>
+      p.parentId === currentPlanet.value.id &&
+      ['city', 'town', 'village', 'location'].includes(p.layer)
+    );
+  });
+
+  // 区域地图（下钻视图）：显示当前区域/聚落的子节点（设施/建筑/小区等）
+  const currentAreaPlaces = computed(() => {
+    if (!currentArea.value) return [];
+    return nodes.value.filter(p => p.parentId === currentArea.value.id);
   });
 
   const currentDomainAllGalaxies = computed(() => {
@@ -391,7 +402,8 @@ export const useGeodataStore = defineStore('geodata', () => {
       }
       if (data) {
         migrateReferenceImages(planetId, data);
-        mapData.value[planetId] = data;
+        // 创建新对象触发 Vue 3 ref 的响应式更新（直接设置嵌套属性在某些情况下不触发 computed）
+        mapData.value = { ...mapData.value, [planetId]: data };
         return data;
       }
     } catch (e) {
@@ -1376,7 +1388,15 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function selectPlanet(planet) {
     currentPlanet.value = planet;
+    currentArea.value = null;
     viewLevel.value = 'planet';
+    selectedNode.value = null;
+  }
+
+  // 进入区域地图（下钻到聚落/地点的子视图）
+  function selectArea(areaNode) {
+    currentArea.value = areaNode;
+    viewLevel.value = 'area';
     selectedNode.value = null;
   }
 
@@ -1385,6 +1405,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     currentDomain.value = null;
     currentSystem.value = null;
     currentPlanet.value = null;
+    currentArea.value = null;
     viewLevel.value = 'world';
     selectedNode.value = null;
     clearSearch();
@@ -1393,13 +1414,22 @@ export const useGeodataStore = defineStore('geodata', () => {
   function backToDomain() {
     currentSystem.value = null;
     currentPlanet.value = null;
+    currentArea.value = null;
     viewLevel.value = 'domain';
     selectedNode.value = null;
   }
 
   function backToSystem() {
     currentPlanet.value = null;
+    currentArea.value = null;
     viewLevel.value = 'system';
+    selectedNode.value = null;
+  }
+
+  // 从区域地图返回行星地图
+  function backToPlanet() {
+    currentArea.value = null;
+    viewLevel.value = 'planet';
     selectedNode.value = null;
   }
 
@@ -1419,10 +1449,10 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   return {
-    nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, viewLevel,
+    nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, currentArea, viewLevel,
     selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode,
     worlds, starDomains, galaxies, planets, locations,
-    currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentDomainAllGalaxies,
+    currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentAreaPlaces, currentDomainAllGalaxies,
     currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,
     isSearching,
     availableLayers, layerLabels, searchLayerFilter,
@@ -1436,7 +1466,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       selectNode, clearSelection, selectPlanetOrNode,
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
       undo, redo,
-      selectWorld, selectDomain, selectSystem, selectPlanet, backToWorld, backToDomain, backToSystem,
+      selectWorld, selectDomain, selectSystem, selectPlanet, selectArea, backToWorld, backToDomain, backToSystem, backToPlanet,
       handleNodeUpdated, handleNodeRemoved,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, getMapDataKey, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,

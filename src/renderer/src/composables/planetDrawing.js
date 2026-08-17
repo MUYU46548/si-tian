@@ -7,7 +7,37 @@
  */
 import { getTexturePattern } from '../utils/textures';
 
+// ===== 样式常量（从 PlanetMap.vue 迁移） =====
+const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
+const NODE_RADIUS = { city: 10, town: 7, village: 7, location: 5, facility: 5 };
+const LABEL_SIZE = { city: 13, town: 12, village: 12, location: 11, facility: 11 };
+const LABEL_WEIGHT = { city: 'bold', town: 'normal', village: 'normal', location: 'normal', facility: 'normal' };
+const PLACE_TYPE_COLORS = {
+  '自然': '#4CAF50', '宗教': '#9B59B6', '皇室': '#F1C40F', '商业': '#E67E22',
+  '工业': '#7F8C8D', '居住': '#1ABC9C', '公共': '#3498DB', '特殊': '#E91E63',
+};
+const PLACE_TYPE_ICONS = {
+  '自然': '⛰', '宗教': '⛪', '皇室': '🏯', '商业': '🏪',
+  '工业': '🏭', '居住': '🏠', '公共': '🏛', '特殊': '✦',
+};
+
 export function createPlanetDrawing(getState) {
+  // ===== 辅助函数（纯函数，不依赖 getState） =====
+  function getNodeColor(layer) { return NODE_COLORS[layer] || '#95E1D3'; }
+  function getNodeRadius(layer) { return NODE_RADIUS[layer] || 5; }
+  function getLabelSize(layer) { return LABEL_SIZE[layer] || 11; }
+  function getLabelWeight(layer) { return LABEL_WEIGHT[layer] || 'normal'; }
+  function getPlaceIcon(place) { return place.placeType ? PLACE_TYPE_ICONS[place.placeType] : null; }
+  function getPlaceColor(place) {
+    if (place.placeType && PLACE_TYPE_COLORS[place.placeType]) return PLACE_TYPE_COLORS[place.placeType];
+    return getNodeColor(place.layer);
+  }
+  function getClusterMembers(cluster) {
+    const s = getState();
+    return cluster.memberIds
+      .map(id => s.places?.find(p => p.id === id))
+      .filter(Boolean);
+  }
 
 function drawReferenceImage(ctx) {
   const s = getState(); // 每次渲染取最新状态
@@ -91,32 +121,44 @@ function drawFog(ctx, w, h) {
 }
 
 function drawBackground(ctx, w, h) {
-  const s = getState(); // 每次渲染取最新状态
-  const bgGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1500);
+  const s = getState();
+  // 只填充可见区域（避免每帧填充 4000x4000 像素）
+  const topLeft = s.screenToWorld(0, 0);
+  const bottomRight = s.screenToWorld(w, h);
+  
+  const bgGradient = ctx.createRadialGradient(
+    (topLeft.x + bottomRight.x) / 2, (topLeft.y + bottomRight.y) / 2, 0,
+    (topLeft.x + bottomRight.x) / 2, (topLeft.y + bottomRight.y) / 2,
+    Math.max(bottomRight.x - topLeft.x, bottomRight.y - topLeft.y) * 0.7
+  );
   bgGradient.addColorStop(0, '#E8F4F8');
   bgGradient.addColorStop(0.5, '#C8E6C9');
   bgGradient.addColorStop(1, '#FFF9C4');
   ctx.fillStyle = bgGradient;
-  ctx.fillRect(-2000, -2000, 4000, 4000);
+  ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
   
   // 网格线（间距可配，随 gridSize 变化；编辑模式更亮辅助对齐）
   const gs = s.gridSize;
   const gridAlpha = s.editMode ? 0.28 : 0.15;
   ctx.lineWidth = 0.5;
-  for (let gx = -2000; gx <= 2000; gx += gs) {
+  
+  const startX = Math.floor(topLeft.x / gs) * gs;
+  const startY = Math.floor(topLeft.y / gs) * gs;
+  
+  for (let gx = startX; gx <= bottomRight.x; gx += gs) {
     const isMajor = gx % 500 === 0;
     ctx.strokeStyle = isMajor ? `rgba(120, 160, 190, ${gridAlpha + 0.12})` : `rgba(150, 180, 200, ${gridAlpha})`;
     ctx.beginPath();
-    ctx.moveTo(gx, -2000);
-    ctx.lineTo(gx, 2000);
+    ctx.moveTo(gx, topLeft.y);
+    ctx.lineTo(gx, bottomRight.y);
     ctx.stroke();
   }
-  for (let gy = -2000; gy <= 2000; gy += gs) {
+  for (let gy = startY; gy <= bottomRight.y; gy += gs) {
     const isMajor = gy % 500 === 0;
     ctx.strokeStyle = isMajor ? `rgba(120, 160, 190, ${gridAlpha + 0.12})` : `rgba(150, 180, 200, ${gridAlpha})`;
     ctx.beginPath();
-    ctx.moveTo(-2000, gy);
-    ctx.lineTo(2000, gy);
+    ctx.moveTo(topLeft.x, gy);
+    ctx.lineTo(bottomRight.x, gy);
     ctx.stroke();
   }
 }
@@ -160,16 +202,6 @@ function drawTerrain(ctx) {
     ctx.strokeStyle = isSelected ? '#FFD700' : darkenColor(terrainColor, 20);
     ctx.lineWidth = isSelected ? 3 : 1.5;
     ctx.stroke();
-    
-    // 名称标签
-    if (poly.name && s.lodRef > 0.3) {
-      const center = getPolygonCenter(poly.points);
-      ctx.font = `${getLabelWeight(poly.layer)} ${getLabelSize(poly.layer)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = getContrastColor(terrainColor);
-      ctx.fillText(poly.name, center.x, center.y);
-    }
   });
 }
 
@@ -317,6 +349,19 @@ function drawPlaces(ctx) {
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
       ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+    
+    // 暂存地点（draft=true）：虚线边框标记
+    if (place.draft) {
+      ctx.save();
+      ctx.strokeStyle = '#888888';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
@@ -591,6 +636,28 @@ function drawTextOnPath(ctx, text, points, fontSize, color, labelColor, offsetX 
   
   ctx.restore();
   return true;
+}
+
+// 地形名称标注（独立图层，可切换）
+function drawTerrainLabels(ctx) {
+  const s = getState();
+  const terrain = s.currentMapData?.terrain || [];
+  
+  // 仅在 LOD > 0.3 时绘制，与 drawTerrain 的名称标签 LOD 同步（避免重叠）
+  if (s.lodRef <= 0.3) return;
+  
+  terrain.forEach(poly => {
+    if (!poly.points || poly.points.length < 3 || !poly.name) return;
+    
+    const terrainColor = s.terrainTypes.find(t => t.type === poly.type)?.color || '#A3C4BC';
+    const center = getPolygonCenter(poly.points);
+    
+    ctx.font = `${getLabelWeight(poly.layer)} ${getLabelSize(poly.layer)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = getContrastColor(terrainColor);
+    ctx.fillText(poly.name, center.x, center.y);
+  });
 }
 
 // 地点簇渲染：虚线边界 + 成员高亮/闪烁 + 折叠聚合
@@ -1056,6 +1123,7 @@ function getContrastColor(hex) {
     drawFog,
     drawBackground,
     drawTerrain,
+    drawTerrainLabels,
     drawRegions,
     drawPlaces,
     drawMarkers,

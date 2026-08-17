@@ -23,14 +23,15 @@ export const useLayersStore = defineStore('layers', () => {
     },
     planet: {
       terrain: { visible: true, label: '地形', order: 0 },
-      regions: { visible: true, label: '区域', order: 1 },
-      routes: { visible: true, label: '路线', order: 2 },
-      markers: { visible: true, label: '标记', order: 3 },
-      places: { visible: true, label: '地点', order: 4 },
-      clusters: { visible: true, label: '地点簇', order: 5 },
-      textLabels: { visible: true, label: '文本', order: 6 },
-      referenceImage: { visible: true, label: '参考底图', order: 7 },
-      editHelpers: { visible: true, label: '编辑辅助', order: 8 },
+      terrainLabels: { visible: true, label: '地形名称', order: 1 },
+      regions: { visible: true, label: '区域', order: 2 },
+      routes: { visible: true, label: '路线', order: 3 },
+      markers: { visible: true, label: '标记', order: 4 },
+      places: { visible: true, label: '聚落地点', order: 5 },
+      clusters: { visible: true, label: '地点簇', order: 6 },
+      textLabels: { visible: true, label: '文本', order: 7 },
+      referenceImage: { visible: true, label: '参考底图', order: 8 },
+      editHelpers: { visible: true, label: '编辑辅助', order: 9 },
     },
   });
 

@@ -26,9 +26,15 @@
           >{{ store.currentDomain?.displayName || store.currentDomain?.name }}</button>
           <span v-if="store.currentPlanet" class="separator">›</span>
           <button 
-            v-if="store.currentPlanet" 
-            class="active"
+            v-if="store.currentPlanet"
+            :class="{ active: store.viewLevel === 'planet' }"
+            @click="store.backToPlanet"
           >{{ store.currentPlanet?.displayName || store.currentPlanet?.name }}</button>
+          <span v-if="store.currentArea" class="separator">›</span>
+          <button 
+            v-if="store.currentArea"
+            class="active"
+          >{{ store.currentArea?.displayName || store.currentArea?.name }}</button>
         </nav>
         <span class="toolbar-divider"></span>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
@@ -108,6 +114,15 @@
           @select-node="store.selectNode"
           @dirty="dirty = true"
         />
+        
+        <area-map
+          v-if="store.viewLevel === 'area'"
+          ref="areaMapRef"
+          :area-node="store.currentArea"
+          @back="store.backToPlanet"
+          @select-node="store.selectNode"
+          @dirty="dirty = true"
+        />
       </main>
     </div>
 
@@ -149,6 +164,7 @@ import WorldSelector from './components/WorldSelector.vue';
 import GalaxyMap from './components/GalaxyMap.vue';
 import SystemView from './components/SystemView.vue';
 import PlanetMap from './components/PlanetMap.vue';
+import AreaMap from './components/AreaMap.vue';
 import NodeDetailPanel from './components/NodeDetailPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
@@ -202,9 +218,9 @@ const undoTooltip = computed(() => {
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
 });
 
-// 面包屑点击星域：行星地图 → 返回域内恒星系总览（system 视图）
+// 面包屑点击星域：行星地图/区域地图 → 返回域内恒星系总览（system 视图）
 function handleBreadcrumbDomain() {
-  if (store.viewLevel === 'planet') {
+  if (store.viewLevel === 'planet' || store.viewLevel === 'area') {
     store.backToSystem();
   }
 }

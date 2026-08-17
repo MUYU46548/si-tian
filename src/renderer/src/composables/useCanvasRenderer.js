@@ -129,6 +129,8 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     }
   }
 
+  function getContext() { return ctx; }
+
   function render() {
     if (!ctx || !canvasRef.value || !onRender) return;
 
@@ -498,7 +500,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   onUnmounted(cleanupCanvas);
 
   return {
-    viewTransform, // reactive 对象本体（组件 computed 直接读它才能响应镜头变化，如鹰眼 viewBounds）
+    viewTransform, getContext, // reactive 对象本体 + 上下文访问
     getViewTransform: () => ({ ...viewTransform }),
     isFastMode: () => fastMode,
     getCurrentHit: () => currentHit,

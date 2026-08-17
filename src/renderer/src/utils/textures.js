@@ -395,3 +395,18 @@ export function getTexturePattern(terrainType, baseColor, ctx) {
 export function clearTextureCache() {
   textureCache.clear();
 }
+
+/**
+ * 预生成纹理（数据加载完成后调用，避免首帧卡顿）
+ */
+export function prewarmTextures(terrainTypes, ctx) {
+  if (!ctx) return;
+  terrainTypes.forEach(type => {
+    const colors = {
+      ocean: '#2E86AB', land: '#A3C4BC', forest: '#2D6A4F',
+      desert: '#E9C46A', mountain: '#8B7355', snow: '#E8E8E8', lake: '#6FB3C8'
+    };
+    const color = colors[type];
+    if (color) getTexturePattern(type, color, ctx);
+  });
+}

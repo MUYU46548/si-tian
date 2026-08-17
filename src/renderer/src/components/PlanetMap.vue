@@ -141,6 +141,12 @@
           <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺">📏 标尺</button>
           <button @click="exportFullMapPNG" title="导出全图高清 PNG（含全部省份/区域/路线/标记/文本）">📤 导出全图</button>
         </div>
+        
+        <div class="toolbar-group" title="图层可见性">
+          <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="切换地形图层显示">▣ 地形</button>
+          <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示">🏔 地名</button>
+          <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
+        </div>
 
         <div class="toolbar-group toolbar-group-exit">
           <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出编辑</button>
@@ -161,7 +167,7 @@
     
     <!-- 地形类型选择器 -->
     <div v-if="editMode && interactionMode === 'draw'" class="terrain-picker">
-      <span class="picker-label">省份地形：</span>
+      <span class="picker-label">地形类型：</span>
       <button 
         v-for="t in terrainTypes" 
         :key="t.type"
@@ -638,7 +644,7 @@ import { createPlanetDrawing } from '../composables/planetDrawing';
 import { createPlanetHitTest } from '../composables/planetHitTest';
 import { createPlanetInteractions } from '../composables/planetInteractions';
 import { getLastCommandLabel, execute } from '../store/undo';
-import { getTexturePattern } from '../utils/textures';
+import { getTexturePattern, prewarmTextures } from '../utils/textures';
 import { snapPolygonToNeighbors } from '../utils/snap';
 import { createProvinceByFloodFill } from '../utils/floodfill';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
@@ -1566,6 +1572,15 @@ function handleEagleEyeNavigate(world) {
 }
 
 // ===== 绘制逻辑 =====
+// 图层变化时自动重绘（解决切换按钮无反馈的问题）
+watch(
+  () => {
+    const p = layers.layers.planet;
+    return Object.keys(p).map(k => p[k].visible).join(',');
+  },
+  () => { renderer.requestRender(); }
+);
+
 function onRender(ctx, w, h) {
   const scale = renderer.getViewTransform().scale;
   lodRef.value = Math.min(1, Math.max(0, (scale - 0.5) / 0.5));
@@ -1582,6 +1597,10 @@ function onRender(ctx, w, h) {
   
   if (layers.isVisible('planet', 'terrain')) {
     drawing.drawTerrain(ctx);
+  }
+  
+  if (layers.isVisible('planet', 'terrainLabels')) {
+    drawing.drawTerrainLabels(ctx);
   }
   
   if (layers.isVisible('planet', 'regions')) {
@@ -1654,8 +1673,8 @@ const drawing = createPlanetDrawing(() => ({
   clusterBoxStart: clusterBoxStart.value, clusterBoxEnd: clusterBoxEnd.value,
   boxSelectStart: boxSelectStart.value, boxSelectEnd: boxSelectEnd.value,
   isBoxSelecting: isBoxSelecting.value, edgeSnapPreview: edgeSnapPreview.value,
-  placeRegionMap: placeRegionMap.value,
-  terrainTypes,
+  placeRegionMap: placeRegionMap.value, terrainTypes,
+  screenToWorld: renderer.screenToWorld,
 }));
 
 // ===== 交互状态机（P0-2：从巨型组件拆分，composables/planetInteractions.js）=====
@@ -1850,6 +1869,10 @@ const renderer = useCanvasRenderer(canvas, {
     if ((interactionMode.value === 'draw' || interactionMode.value === 'region') && !drawMode.value && drawingPolygon.value) {
       finishPointDrawing();
       return;
+    }
+    // 双击地点节点：进入区域地图（下钻）
+    if (hit?.type === 'place' && hit.node) {
+      store.selectArea(hit.node);
     }
   },
   onContextMenu: (wx, wy) => {
@@ -2773,6 +2796,7 @@ async function exportFullMapPNG() {
   drawing.drawReferenceImage(ctx);
   
   if (layers.isVisible('planet', 'terrain')) drawing.drawTerrain(ctx);
+  if (layers.isVisible('planet', 'terrainLabels')) drawing.drawTerrainLabels(ctx);
   if (layers.isVisible('planet', 'regions')) drawing.drawRegions(ctx);
   if (layers.isVisible('planet', 'routes')) drawing.drawRoutes(ctx);
   if (layers.isVisible('planet', 'places')) drawing.drawPlaces(ctx);
@@ -3061,6 +3085,12 @@ watch(() => props.planet?.id, async (id) => {
     if (data) {
       // loadMapData 已写入 store.mapData[id]，currentMapData 响应式更新
       renderer.requestRender();
+      // 预生成纹理，避免首帧渲染时卡顿
+      if (data.terrain?.length > 0) {
+        const types = [...new Set(data.terrain.map(t => t.type))];
+        const ctx = renderer.getContext?.();
+        if (ctx) prewarmTextures(types, ctx);
+      }
     }
   } catch (e) {
     console.error('加载地图数据失败:', e);
