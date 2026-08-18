@@ -13,7 +13,7 @@
           </span>
           <span v-else class="edit-hint">
             <strong>编辑模式</strong> —
-            {{ interactionMode === 'pan' ? '拖拽平移 / 点击选中' : '' }}
+            {{ interactionMode === 'pan' ? '拖拽平移 / 点击选中 / Shift+点击多选 / Shift+拖拽框选' : '' }}
             {{ interactionMode === 'add_place' ? '点击空白处添加地点（自动网格对齐）' : '' }}
             {{ interactionMode === 'zone' ? '拖拽绘制区域 · 松开闭合' : '' }}
             · <a href="#" @click.prevent="exitEditMode">退出</a>
@@ -149,6 +149,7 @@ const canvas = ref(null);
 const editMode = ref(false);
 const interactionMode = ref('pan');
 const selectedNode = ref(null);
+const selectedNodeIds = ref([]); // 多选节点 ID 列表
 const gridSnapEnabled = ref(true);
 const gridSize = ref(50);
 const ZONE_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
@@ -201,7 +202,7 @@ const areaZones = computed(() => {
 // 选中区域
 const selectedZone = ref(null);
 
-// ===== Canvas Renderer =====
+// ===== Canvas Renderer (new drag interface) =====
 const renderer = useCanvasRenderer(canvas, {
   onRender: (ctx, w, h) => {
     // 背景
@@ -227,11 +228,15 @@ const renderer = useCanvasRenderer(canvas, {
       drawZoneDraft(ctx);
     }
   },
-  onMouseDown: handleCanvasMouseDown,
-  onMouseMove: handleCanvasMouseMove,
-  onMouseUp: handleCanvasMouseUp,
+  onDragStart: handleDragStart,
+  onDragMove: handleDragMove,
+  onDragEnd: handleDragEnd,
+  onHitTest: hitTest,
+  onClick: handleCanvasClick,
+  onBoxSelect: handleBoxSelect,
   onWheel: handleWheel,
   onDblClick: handleDblClick,
+  interactionMode: interactionMode,
 });
 
 function handleDblClick(hit, worldX, worldY) {
@@ -283,6 +288,7 @@ function drawNodes(ctx) {
     const x = node.coordinate?.x || 0;
     const y = node.coordinate?.y || 0;
     const isSelected = selectedNode.value?.id === node.id;
+    const isMultiSelected = selectedNodeIds.value.includes(node.id);
     const isDraft = node.draft === true;
     const color = getNodeColor(node.layer);
 
@@ -307,8 +313,8 @@ function drawNodes(ctx) {
     }
 
     // 选中高亮
-    if (isSelected) {
-      ctx.strokeStyle = '#FFD700';
+    if (isSelected || isMultiSelected) {
+      ctx.strokeStyle = isSelected ? '#FFD700' : '#58a6ff';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(x, y, 12, 0, Math.PI * 2);
@@ -393,49 +399,195 @@ function getNodeColor(layer) {
   return colors[layer] || '#95A5A6';
 }
 
-// ===== 交互 =====
-function handleCanvasMouseDown(e) {
-  const world = renderer.screenToWorld(e.offsetX, e.offsetY);
+// ===== 拖拽状态 =====
+const dragStartPos = ref(null);
+const dragStartNodePos = ref(null);
+const isDraggingNode = ref(false);
+const multiDragStartMap = ref(null); // Map<id, {x,y}>
 
+// ===== 交互 =====
+function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   if (interactionMode.value === 'add_place') {
-    // 添加地点模式
-    addPlaceWorldPos.value = gridSnapEnabled.value ? snapPoint(world) : world;
+    return false;
+  }
+
+  if (interactionMode.value === 'zone') {
+    isDrawingZone.value = true;
+    zoneDraftPoints.value = [{ x: wx, y: wy }];
+    return false;
+  }
+
+  // pan 模式：检测是否点击了节点
+  const hit = hitTest(wx, wy);
+  if (hit) {
+    // 多选模式：Shift/Ctrl+点击
+    if (shiftKey || ctrlKey) {
+      const idx = selectedNodeIds.value.indexOf(hit.id);
+      if (idx === -1) {
+        selectedNodeIds.value.push(hit.id);
+      } else {
+        selectedNodeIds.value.splice(idx, 1);
+      }
+      selectedNode.value = hit;
+    } else {
+      // 单选：如果点击的节点不在多选列表中，清空多选
+      if (!selectedNodeIds.value.includes(hit.id)) {
+        selectedNodeIds.value = [hit.id];
+      }
+      selectedNode.value = hit;
+    }
+    dragStartPos.value = { x: wx, y: wy };
+    dragStartNodePos.value = { x: hit.coordinate?.x || 0, y: hit.coordinate?.y || 0 };
+    isDraggingNode.value = true;
+
+    // 记录多选拖拽起始位置
+    if (selectedNodeIds.value.length > 1) {
+      multiDragStartMap.value = new Map();
+      for (const id of selectedNodeIds.value) {
+        const n = areaPlaces.value.find(p => p.id === id);
+        if (n) {
+          multiDragStartMap.value.set(id, { x: n.coordinate?.x || 0, y: n.coordinate?.y || 0 });
+        }
+      }
+    }
+
+    renderer.requestRender();
+    return { mode: 'node', nodeId: hit.id };
+  }
+
+  // 空白处
+  if (!shiftKey && !ctrlKey) {
+    selectedNode.value = null;
+    selectedNodeIds.value = [];
+    renderer.requestRender();
+  }
+  return true; // 允许平移
+}
+
+function handleDragMove(wx, wy, info) {
+  if (isDraggingZone.value) {
+    zoneDraftPoints.value.push({ x: wx, y: wy });
+    renderer.requestRender();
+    return;
+  }
+
+  if (isDraggingNode.value && selectedNode.value) {
+    const dx = wx - dragStartPos.value.x;
+    const dy = wy - dragStartPos.value.y;
+
+    if (selectedNodeIds.value.length > 1 && multiDragStartMap.value) {
+      // 多选拖拽：移动所有选中节点
+      for (const [id, startPos] of multiDragStartMap.value) {
+        const n = areaPlaces.value.find(p => p.id === id);
+        if (n) {
+          const newX = startPos.x + dx;
+          const newY = startPos.y + dy;
+          if (gridSnapEnabled.value) {
+            const step = gridSize.value;
+            n.coordinate.x = Math.round(newX / step) * step;
+            n.coordinate.y = Math.round(newY / step) * step;
+          } else {
+            n.coordinate.x = newX;
+            n.coordinate.y = newY;
+          }
+        }
+      }
+    } else {
+      // 单选拖拽
+      const newX = dragStartNodePos.value.x + dx;
+      const newY = dragStartNodePos.value.y + dy;
+      if (gridSnapEnabled.value) {
+        const step = gridSize.value;
+        selectedNode.value.coordinate.x = Math.round(newX / step) * step;
+        selectedNode.value.coordinate.y = Math.round(newY / step) * step;
+      } else {
+        selectedNode.value.coordinate.x = newX;
+        selectedNode.value.coordinate.y = newY;
+      }
+    }
+    renderer.requestRender();
+  }
+}
+
+function handleDragEnd(wx, wy, info) {
+  if (isDraggingZone.value) {
+    isDraggingZone.value = false;
+    finishZoneDrawing();
+    return;
+  }
+
+  if (isDraggingNode.value && selectedNode.value && info.didPan) {
+    if (selectedNodeIds.value.length > 1 && multiDragStartMap.value) {
+      // 多选拖拽结束：批量更新
+      const ids = [...selectedNodeIds.value];
+      const startMap = multiDragStartMap.value;
+      for (const id of ids) {
+        const n = areaPlaces.value.find(p => p.id === id);
+        if (n) {
+          n.userMoved = true;
+        }
+      }
+      store.beginMultiNodePositionCapture(ids);
+      store.endMultiNodePositionCapture();
+    } else {
+      // 单选拖拽结束
+      const n = selectedNode.value;
+      n.userMoved = true;
+      store.beginNodePositionCapture(n.id);
+      store.endNodePositionCapture();
+    }
+  }
+  isDraggingNode.value = false;
+  dragStartPos.value = null;
+  dragStartNodePos.value = null;
+  multiDragStartMap.value = null;
+}
+
+function handleCanvasClick(hit, wx, wy) {
+  if (interactionMode.value === 'add_place') {
+    addPlaceWorldPos.value = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
     newPlaceName.value = '';
     newPlaceLayer.value = 'facility';
     addPlaceDialogOpen.value = true;
     return;
   }
 
-  if (interactionMode.value === 'zone') {
-    isDrawingZone.value = true;
-    zoneDraftPoints.value = [world];
-    return;
-  }
-
-  // pan 模式：检测是否点击了节点
-  const hit = hitTest(world.x, world.y);
   if (hit) {
     selectedNode.value = hit;
-    renderer.requestRender();
+    if (!selectedNodeIds.value.includes(hit.id)) {
+      selectedNodeIds.value = [hit.id];
+    }
   } else {
     selectedNode.value = null;
-    renderer.requestRender();
+    selectedNodeIds.value = [];
   }
+  renderer.requestRender();
 }
 
-function handleCanvasMouseMove(e) {
-  if (isDrawingZone.value) {
-    const world = renderer.screenToWorld(e.offsetX, e.offsetY);
-    zoneDraftPoints.value.push(world);
-    renderer.requestRender();
-  }
-}
+function handleBoxSelect(box, shiftKey) {
+  // 框选：选中框内所有节点
+  const nodes = areaPlaces.value;
+  const inBox = nodes.filter(n => {
+    const x = n.coordinate?.x || 0;
+    const y = n.coordinate?.y || 0;
+    return x >= box.x1 && x <= box.x2 && y >= box.y1 && y <= box.y2;
+  });
 
-function handleCanvasMouseUp(e) {
-  if (isDrawingZone.value) {
-    isDrawingZone.value = false;
-    finishZoneDrawing();
+  if (shiftKey) {
+    // Shift+框选：追加到多选列表
+    for (const n of inBox) {
+      if (!selectedNodeIds.value.includes(n.id)) {
+        selectedNodeIds.value.push(n.id);
+      }
+    }
+  } else {
+    selectedNodeIds.value = inBox.map(n => n.id);
   }
+
+  if (inBox.length > 0) {
+    selectedNode.value = inBox[inBox.length - 1];
+  }
+  renderer.requestRender();
 }
 
 function handleWheel(e) {
@@ -592,12 +744,26 @@ onUnmounted(() => {
 });
 
 function handleKeydown(e) {
-  if (e.key === 'Delete' && selectedNode.value) {
-    deleteSelected();
+  if (e.key === 'Delete') {
+    if (selectedNodeIds.value.length > 1) {
+      if (confirm(`确定删除选中的 ${selectedNodeIds.value.length} 个节点？`)) {
+        for (const id of [...selectedNodeIds.value]) {
+          store.removeNode(id);
+        }
+        selectedNodeIds.value = [];
+        selectedNode.value = null;
+        renderer.requestRender();
+      }
+    } else if (selectedNode.value) {
+      deleteSelected();
+    }
   }
   if (e.key === 'Escape') {
     if (editMode.value) exitEditMode();
-    else selectedNode.value = null;
+    else {
+      selectedNode.value = null;
+      selectedNodeIds.value = [];
+    }
     renderer.requestRender();
   }
 }

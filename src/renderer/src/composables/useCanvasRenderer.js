@@ -17,6 +17,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     onWheel = null,
     onContextMenu = null,
     onDrawComplete = null,
+    onBoxSelect = null,     // (box: { x1, y1, x2, y2 }, shiftKey) => void  框选回调（世界坐标）
     minScale = 0.2,
     maxScale = 3,
     fastModeThreshold = 5,
@@ -40,6 +41,11 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   let currentHit = null;
   let dragNodeId = null;
   let animationFrameId = null; // 持续动画循环的 rAF ID
+
+  // ===== 框选状态 =====
+  let isBoxSelecting = false;
+  let boxSelectStart = { x: 0, y: 0 };
+  let boxSelectEnd = { x: 0, y: 0 };
 
   // ===== 顶点拖拽状态 =====
   let isDraggingVertex = false;
@@ -147,6 +153,24 @@ export function useCanvasRenderer(canvasRef, options = {}) {
 
     onRender(ctx, w, h);
 
+    // 框选矩形（屏幕坐标）
+    if (isBoxSelecting) {
+      const vt = viewTransform;
+      const sx1 = (boxSelectStart.x * vt.scale + vt.x + w / 2);
+      const sy1 = (boxSelectStart.y * vt.scale + vt.y + h / 2);
+      const sx2 = (boxSelectEnd.x * vt.scale + vt.x + w / 2);
+      const sy2 = (boxSelectEnd.y * vt.scale + vt.y + h / 2);
+      ctx.save();
+      ctx.strokeStyle = '#58a6ff';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.fillStyle = 'rgba(88, 166, 255, 0.08)';
+      ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+      ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     ctx.restore();
 
     // 性能统计
@@ -248,6 +272,12 @@ export function useCanvasRenderer(canvasRef, options = {}) {
         // pan 模式下组件可能返回 false 抑制平移（如 Shift+框选，2026-08-16 P0-1）
         if (result === false) {
           panSuppressed = true;
+          // Shift+空白处拖拽 → 框选
+          if (e.shiftKey && onBoxSelect) {
+            isBoxSelecting = true;
+            boxSelectStart = { x: world.x, y: world.y };
+            boxSelectEnd = { x: world.x, y: world.y };
+          }
           return;
         }
       }
@@ -321,7 +351,14 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       requestRender();
       return;
     }
-    
+
+    // 框选拖拽
+    if (isBoxSelecting) {
+      boxSelectEnd = { x: world.x, y: world.y };
+      requestRender();
+      return;
+    }
+
     if (isPanning) {
       const dx = mx - mouseDownPos.x;
       const dy = my - mouseDownPos.y;
@@ -366,6 +403,24 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       return;
     }
     
+    // 框选结束
+    if (isBoxSelecting) {
+      isBoxSelecting = false;
+      const wasBoxSelecting = true;
+      // 构造规范化框选区（无论拖拽方向）
+      const box = {
+        x1: Math.min(boxSelectStart.x, boxSelectEnd.x),
+        y1: Math.min(boxSelectStart.y, boxSelectEnd.y),
+        x2: Math.max(boxSelectStart.x, boxSelectEnd.x),
+        y2: Math.max(boxSelectStart.y, boxSelectEnd.y),
+      };
+      panSuppressed = false;
+      requestRender();
+      if (onBoxSelect) onBoxSelect(box, e.shiftKey);
+      // 框选不触发 onClick
+      return;
+    }
+
     isPanning = false;
     panSuppressed = false;
     dragNodeId = null;
@@ -443,6 +498,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     isDragOperation = false;
     fastMode = false;
     dragNodeId = null;
+    isBoxSelecting = false;
     currentHit = null;
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
@@ -511,6 +567,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     isFastMode: () => fastMode,
     getCurrentHit: () => currentHit,
     isDraggingVertex: () => isDraggingVertex,
+    isBoxSelecting: () => isBoxSelecting,
     requestRender,
     resetView,
     focusOn,

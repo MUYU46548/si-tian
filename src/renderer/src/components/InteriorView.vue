@@ -13,7 +13,7 @@
           </span>
           <span v-else class="edit-hint">
             <strong>编辑模式</strong> —
-            {{ interactionMode === 'pan' ? '拖拽家具移动 / 点击选中' : '' }}
+            {{ interactionMode === 'pan' ? '拖拽家具移动 / 点击选中 / Shift+点击多选 / Shift+拖拽框选' : '' }}
             {{ interactionMode === 'add_furniture' ? '点击空白处放置家具' : '' }}
             · <a href="#" @click.prevent="exitEditMode">退出</a>
           </span>
@@ -98,16 +98,23 @@
       />
     </div>
 
-    <!-- 选中家具详情浮窗 -->
+    <!-- 选中家具详情浮窗（可编辑） -->
     <div v-if="selectedFurniture && !editMode" class="node-detail-popover">
       <div class="popover-header">
-        <h4>{{ selectedFurniture.name }}</h4>
-        <button class="close-btn" @click="selectedFurniture = null">×</button>
+        <h4 v-if="!editingPopover">{{ selectedFurniture.name }}</h4>
+        <input v-else v-model="editForm.name" class="popover-title-input" placeholder="家具名称" />
+        <div class="popover-header-actions">
+          <button v-if="!editingPopover" class="edit-btn" @click="startEditPopover" title="编辑">✎</button>
+          <button class="close-btn" @click="cancelEditPopover">×</button>
+        </div>
       </div>
       <div class="popover-body">
         <div class="detail-row">
           <span class="detail-label">类型</span>
-          <span class="detail-value">{{ getFurnitureTypeLabel(selectedFurniture.type) }}</span>
+          <select v-if="editingPopover" v-model="editForm.type" class="popover-select">
+            <option v-for="ft in FURNITURE_TYPES" :key="ft.type" :value="ft.type">{{ ft.icon }} {{ ft.label }}</option>
+          </select>
+          <span v-else class="detail-value">{{ getFurnitureTypeLabel(selectedFurniture.type) }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">位置</span>
@@ -115,7 +122,24 @@
         </div>
         <div class="detail-row">
           <span class="detail-label">尺寸</span>
-          <span class="detail-value">{{ selectedFurniture.width }} × {{ selectedFurniture.height }}</span>
+          <div v-if="editingPopover" class="size-inputs">
+            <input type="number" v-model.number="editForm.width" min="10" max="500" class="size-input" />
+            <span class="size-sep">×</span>
+            <input type="number" v-model.number="editForm.height" min="10" max="500" class="size-input" />
+          </div>
+          <span v-else class="detail-value">{{ selectedFurniture.width }} × {{ selectedFurniture.height }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">旋转</span>
+          <div v-if="editingPopover" class="rotation-input">
+            <input type="number" v-model.number="editForm.rotation" min="0" max="359" step="1" class="popover-number" />
+            <span class="unit-label">°</span>
+          </div>
+          <span v-else class="detail-value">{{ selectedFurniture.rotation || 0 }}°</span>
+        </div>
+        <div v-if="editingPopover" class="popover-actions">
+          <button class="adopt-btn" @click="saveEditPopover">保存</button>
+          <button class="adopt-btn ghost" @click="cancelEditPopover">取消</button>
         </div>
       </div>
     </div>
@@ -167,6 +191,7 @@ const canvas = ref(null);
 const editMode = ref(false);
 const interactionMode = ref('pan');
 const selectedFurniture = ref(null);
+const selectedFurnitureIds = ref([]); // 多选家具 ID 列表
 const gridSnapEnabled = ref(true);
 const gridSize = ref(40);
 
@@ -191,6 +216,16 @@ const newFurnitureType = ref('generic');
 const newFurnitureWidth = ref(60);
 const newFurnitureHeight = ref(40);
 const addFurnitureWorldPos = ref({ x: 0, y: 0 });
+
+// 家具详情浮窗编辑
+const editingPopover = ref(false);
+const editForm = reactive({
+  name: '',
+  type: 'generic',
+  width: 40,
+  height: 40,
+  rotation: 0,
+});
 
 // 当前楼层列表
 const floors = computed(() => {
@@ -266,6 +301,7 @@ const renderer = useCanvasRenderer(canvas, {
   onDragEnd: handleDragEnd,
   onHitTest: hitTest,
   onClick: handleCanvasClick,
+  onBoxSelect: handleBoxSelect,
   onWheel: handleWheel,
   interactionMode: interactionMode,
 });
@@ -305,6 +341,7 @@ function drawFurniture(ctx) {
   const items = currentFurniture.value;
   items.forEach(item => {
     const isSelected = selectedFurniture.value?.id === item.id;
+    const isMultiSelected = selectedFurnitureIds.value.includes(item.id);
     const color = getFurnitureColor(item.type);
 
     ctx.save();
@@ -321,6 +358,10 @@ function drawFurniture(ctx) {
     // 选中高亮
     if (isSelected) {
       ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-item.width / 2 - 2, -item.height / 2 - 2, item.width + 4, item.height + 4);
+    } else if (isMultiSelected) {
+      ctx.strokeStyle = '#58a6ff';
       ctx.lineWidth = 2;
       ctx.strokeRect(-item.width / 2 - 2, -item.height / 2 - 2, item.width + 4, item.height + 4);
     }
@@ -357,24 +398,55 @@ function getFurnitureTypeLabel(type) {
 const dragStartPos = ref(null);
 const dragStartFurniturePos = ref(null);
 const isDraggingFurniture = ref(false);
+const multiFurnitureStartMap = ref(null); // Map<id, {x,y}>
 
 // ===== 交互 =====
-function handleDragStart(wx, wy) {
+function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   if (interactionMode.value === 'add_furniture') {
     return false;
   }
 
   const hit = hitTest(wx, wy);
   if (hit) {
-    selectedFurniture.value = hit;
+    // 多选模式：Shift/Ctrl+点击
+    if (shiftKey || ctrlKey) {
+      const idx = selectedFurnitureIds.value.indexOf(hit.id);
+      if (idx === -1) {
+        selectedFurnitureIds.value.push(hit.id);
+      } else {
+        selectedFurnitureIds.value.splice(idx, 1);
+      }
+      selectedFurniture.value = hit;
+    } else {
+      // 单选：如果点击的家具不在多选列表中，清空多选
+      if (!selectedFurnitureIds.value.includes(hit.id)) {
+        selectedFurnitureIds.value = [hit.id];
+      }
+      selectedFurniture.value = hit;
+    }
     dragStartPos.value = { x: wx, y: wy };
     dragStartFurniturePos.value = { x: hit.x, y: hit.y };
     isDraggingFurniture.value = true;
+
+    // 记录多选拖拽起始位置
+    if (selectedFurnitureIds.value.length > 1) {
+      multiFurnitureStartMap.value = new Map();
+      for (const id of selectedFurnitureIds.value) {
+        const item = currentFurniture.value.find(f => f.id === id);
+        if (item) {
+          multiFurnitureStartMap.value.set(id, { x: item.x, y: item.y });
+        }
+      }
+    }
+
     renderer.requestRender();
     return { mode: 'node', nodeId: hit.id };
   }
 
   selectedFurniture.value = null;
+  if (!shiftKey && !ctrlKey) {
+    selectedFurnitureIds.value = [];
+  }
   renderer.requestRender();
   return true;
 }
@@ -383,16 +455,36 @@ function handleDragMove(wx, wy, info) {
   if (isDraggingFurniture.value && selectedFurniture.value) {
     const dx = wx - dragStartPos.value.x;
     const dy = wy - dragStartPos.value.y;
-    const newX = dragStartFurniturePos.value.x + dx;
-    const newY = dragStartFurniturePos.value.y + dy;
-    
-    if (gridSnapEnabled.value) {
-      const step = gridSize.value;
-      selectedFurniture.value.x = Math.round(newX / step) * step;
-      selectedFurniture.value.y = Math.round(newY / step) * step;
+
+    if (selectedFurnitureIds.value.length > 1 && multiFurnitureStartMap.value) {
+      // 多选拖拽：移动所有选中家具
+      for (const [id, startPos] of multiFurnitureStartMap.value) {
+        const item = currentFurniture.value.find(f => f.id === id);
+        if (item) {
+          const newX = startPos.x + dx;
+          const newY = startPos.y + dy;
+          if (gridSnapEnabled.value) {
+            const step = gridSize.value;
+            item.x = Math.round(newX / step) * step;
+            item.y = Math.round(newY / step) * step;
+          } else {
+            item.x = newX;
+            item.y = newY;
+          }
+        }
+      }
     } else {
-      selectedFurniture.value.x = newX;
-      selectedFurniture.value.y = newY;
+      // 单选拖拽
+      const newX = dragStartFurniturePos.value.x + dx;
+      const newY = dragStartFurniturePos.value.y + dy;
+      if (gridSnapEnabled.value) {
+        const step = gridSize.value;
+        selectedFurniture.value.x = Math.round(newX / step) * step;
+        selectedFurniture.value.y = Math.round(newY / step) * step;
+      } else {
+        selectedFurniture.value.x = newX;
+        selectedFurniture.value.y = newY;
+      }
     }
     renderer.requestRender();
   }
@@ -400,25 +492,31 @@ function handleDragMove(wx, wy, info) {
 
 function handleDragEnd(wx, wy, info) {
   if (isDraggingFurniture.value && selectedFurniture.value && info.didPan) {
-    const item = selectedFurniture.value;
-    const oldX = dragStartFurniturePos.value.x;
-    const oldY = dragStartFurniturePos.value.y;
-    const newX = item.x;
-    const newY = item.y;
-    
-    if (oldX !== newX || oldY !== newY) {
-      store.updateFurniture(
-        props.buildingNode.id,
-        currentFloorId.value,
-        item.id,
-        { x: newX, y: newY },
-        { x: oldX, y: oldY }
-      );
+    if (selectedFurnitureIds.value.length > 1 && multiFurnitureStartMap.value) {
+      // 多选拖拽结束：批量更新
+      const ids = [...selectedFurnitureIds.value];
+      store.beginMultiFurnitureCapture(props.buildingNode.id, currentFloorId.value, ids);
+      store.endMultiFurnitureCapture(props.buildingNode.id, currentFloorId.value);
+    } else {
+      // 单选拖拽结束
+      const item = selectedFurniture.value;
+      const oldX = dragStartFurniturePos.value.x;
+      const oldY = dragStartFurniturePos.value.y;
+      if (oldX !== item.x || oldY !== item.y) {
+        store.updateFurniture(
+          props.buildingNode.id,
+          currentFloorId.value,
+          item.id,
+          { x: item.x, y: item.y },
+          { x: oldX, y: oldY }
+        );
+      }
     }
   }
   isDraggingFurniture.value = false;
   dragStartPos.value = null;
   dragStartFurniturePos.value = null;
+  multiFurnitureStartMap.value = null;
 }
 
 function handleCanvasClick(hit, wx, wy) {
@@ -434,8 +532,37 @@ function handleCanvasClick(hit, wx, wy) {
 
   if (hit) {
     selectedFurniture.value = hit;
+    if (!selectedFurnitureIds.value.includes(hit.id)) {
+      selectedFurnitureIds.value = [hit.id];
+    }
   } else {
     selectedFurniture.value = null;
+    selectedFurnitureIds.value = [];
+  }
+  renderer.requestRender();
+}
+
+function handleBoxSelect(box, shiftKey) {
+  // 框选：选中框内所有家具
+  const items = currentFurniture.value;
+  const inBox = items.filter(item => {
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.height / 2;
+    return cx >= box.x1 && cx <= box.x2 && cy >= box.y1 && cy <= box.y2;
+  });
+
+  if (shiftKey) {
+    for (const item of inBox) {
+      if (!selectedFurnitureIds.value.includes(item.id)) {
+        selectedFurnitureIds.value.push(item.id);
+      }
+    }
+  } else {
+    selectedFurnitureIds.value = inBox.map(i => i.id);
+  }
+
+  if (inBox.length > 0) {
+    selectedFurniture.value = inBox[inBox.length - 1];
   }
   renderer.requestRender();
 }
@@ -511,6 +638,63 @@ function rotateSelected() {
   renderer.requestRender();
 }
 
+// ===== 家具详情浮窗编辑 =====
+function startEditPopover() {
+  if (!selectedFurniture.value) return;
+  const item = selectedFurniture.value;
+  editForm.name = item.name;
+  editForm.type = item.type;
+  editForm.width = item.width;
+  editForm.height = item.height;
+  editForm.rotation = item.rotation || 0;
+  editingPopover.value = true;
+}
+
+function cancelEditPopover() {
+  editingPopover.value = false;
+  selectedFurniture.value = null;
+}
+
+function saveEditPopover() {
+  if (!selectedFurniture.value || !currentFloorId.value) return;
+  const item = selectedFurniture.value;
+  const updates = {};
+  const oldSnapshot = {};
+
+  if (editForm.name !== item.name) {
+    updates.name = editForm.name;
+    oldSnapshot.name = item.name;
+  }
+  if (editForm.type !== item.type) {
+    updates.type = editForm.type;
+    oldSnapshot.type = item.type;
+  }
+  if (editForm.width !== item.width) {
+    updates.width = editForm.width;
+    oldSnapshot.width = item.width;
+  }
+  if (editForm.height !== item.height) {
+    updates.height = editForm.height;
+    oldSnapshot.height = item.height;
+  }
+  if (editForm.rotation !== (item.rotation || 0)) {
+    updates.rotation = editForm.rotation;
+    oldSnapshot.rotation = item.rotation || 0;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    store.updateFurniture(
+      props.buildingNode.id,
+      currentFloorId.value,
+      item.id,
+      updates,
+      oldSnapshot
+    );
+  }
+  editingPopover.value = false;
+  renderer.requestRender();
+}
+
 function undo() {
   store.undo();
   renderer.requestRender();
@@ -580,12 +764,26 @@ onUnmounted(() => {
 });
 
 function handleKeydown(e) {
-  if (e.key === 'Delete' && selectedFurniture.value) {
-    deleteSelected();
+  if (e.key === 'Delete') {
+    if (selectedFurnitureIds.value.length > 1) {
+      if (confirm(`确定删除选中的 ${selectedFurnitureIds.value.length} 件家具？`)) {
+        for (const id of [...selectedFurnitureIds.value]) {
+          store.removeFurniture(props.buildingNode.id, currentFloorId.value, id);
+        }
+        selectedFurnitureIds.value = [];
+        selectedFurniture.value = null;
+        renderer.requestRender();
+      }
+    } else if (selectedFurniture.value) {
+      deleteSelected();
+    }
   }
   if (e.key === 'Escape') {
     if (editMode.value) exitEditMode();
-    else selectedFurniture.value = null;
+    else {
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+    }
     renderer.requestRender();
   }
   if (e.key === 'r' && selectedFurniture.value && editMode.value) {
@@ -850,12 +1048,103 @@ watch(currentFurniture, () => {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 220px;
+  width: 240px;
   background: var(--panel-bg);
   border: 1px solid var(--nav-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   z-index: 30;
+}
+
+.popover-header-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.edit-btn {
+  background: none;
+  border: 1px solid var(--nav-border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.edit-btn:hover {
+  background: var(--btn-bg);
+  color: var(--text-primary);
+}
+
+.popover-title-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--nav-border);
+  color: var(--text-primary);
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.popover-select,
+.popover-number {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--nav-border);
+  color: var(--text-primary);
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+
+.size-inputs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.size-input {
+  width: 50px;
+  background: var(--bg-primary);
+  border: 1px solid var(--nav-border);
+  color: var(--text-primary);
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+
+.size-sep {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.rotation-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.unit-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.popover-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--nav-border);
+}
+
+.popover-actions .adopt-btn {
+  flex: 1;
+  text-align: center;
 }
 
 .popover-header {

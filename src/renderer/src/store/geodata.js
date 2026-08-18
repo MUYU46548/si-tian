@@ -1632,6 +1632,58 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSave();
   }
 
+  // ===== 家具多选拖拽撤销支持 =====
+  let furnitureDragStartMap = null;
+
+  function beginMultiFurnitureCapture(buildingId, floorId, furnitureIds) {
+    const data = interiorData.value[buildingId];
+    if (!data) return;
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor) return;
+    furnitureDragStartMap = new Map();
+    for (const id of furnitureIds) {
+      const item = floor.furniture.find(f => f.id === id);
+      if (item) {
+        furnitureDragStartMap.set(id, { x: item.x, y: item.y });
+      }
+    }
+  }
+
+  function endMultiFurnitureCapture(buildingId, floorId) {
+    if (!furnitureDragStartMap || furnitureDragStartMap.size === 0) return;
+    const startMap = furnitureDragStartMap;
+    const data = interiorData.value[buildingId];
+    if (!data) { furnitureDragStartMap = null; return; }
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor) { furnitureDragStartMap = null; return; }
+    const endMap = new Map();
+    for (const id of startMap.keys()) {
+      const item = floor.furniture.find(f => f.id === id);
+      if (item) {
+        endMap.set(id, { x: item.x, y: item.y });
+      }
+    }
+    execute({
+      type: 'move-furnitures',
+      label: `移动 ${startMap.size} 件家具`,
+      undo: () => {
+        const start = startMap;
+        for (const [id, coord] of start) {
+          const item = floor.furniture.find(f => f.id === id);
+          if (item) { item.x = coord.x; item.y = coord.y; }
+        }
+      },
+      redo: () => {
+        for (const [id, coord] of endMap) {
+          const item = floor.furniture.find(f => f.id === id);
+          if (item) { item.x = coord.x; item.y = coord.y; }
+        }
+      },
+    });
+    furnitureDragStartMap = null;
+    scheduleAutoSave();
+  }
+
   // ===== Vault 监听事件 =====
   function handleNodeUpdated(node) {
     const idx = nodes.value.findIndex(n => n.id === node.id);
@@ -1680,5 +1732,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       updateReferenceImage, clearReferenceImage, removeReferenceImageById,
       addMapSnapshot, removeMapSnapshot, restoreMapSnapshot,
       interiorData, addFloor, removeFloor, updateFloor, addFurniture, removeFurniture, updateFurniture,
+      beginMultiFurnitureCapture, endMultiFurnitureCapture,
+      areaZones, addAreaZone, removeAreaZone, updateAreaZone,
     };
 });

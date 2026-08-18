@@ -33,6 +33,17 @@ export const useLayersStore = defineStore('layers', () => {
       referenceImage: { visible: true, label: '参考底图', order: 8 },
       editHelpers: { visible: true, label: '编辑辅助', order: 9 },
     },
+    area: {
+      zones: { visible: true, label: '区域多边形', order: 0 },
+      places: { visible: true, label: '地点节点', order: 1 },
+      grid: { visible: true, label: '网格', order: 2 },
+      editHelpers: { visible: true, label: '编辑辅助', order: 3 },
+    },
+    interior: {
+      furniture: { visible: true, label: '家具', order: 0 },
+      grid: { visible: true, label: '网格', order: 1 },
+      editHelpers: { visible: true, label: '编辑辅助', order: 2 },
+    },
   });
 
   // 是否启用跨视图共享
@@ -59,20 +70,27 @@ export const useLayersStore = defineStore('layers', () => {
     // 定义图层映射关系
     const layerMapping = {
       domain: {
-        hyperlanes: ['system', 'hyperlanes'],
-        editHelpers: ['system', 'editHelpers'],
+        hyperlanes: [['system', 'hyperlanes']],
+        editHelpers: [['system', 'editHelpers'], ['area', 'editHelpers'], ['interior', 'editHelpers']],
       },
       system: {
-        hyperlanes: ['domain', 'hyperlanes'],
-        editHelpers: ['domain', 'editHelpers'],
+        hyperlanes: [['domain', 'hyperlanes']],
+        editHelpers: [['domain', 'editHelpers'], ['area', 'editHelpers'], ['interior', 'editHelpers']],
+      },
+      area: {
+        editHelpers: [['domain', 'editHelpers'], ['system', 'editHelpers'], ['interior', 'editHelpers']],
+      },
+      interior: {
+        editHelpers: [['domain', 'editHelpers'], ['system', 'editHelpers'], ['area', 'editHelpers']],
       },
     };
 
-    const mapping = layerMapping[sourceView]?.[layerId];
-    if (mapping) {
-      const [targetView, targetLayerId] = mapping;
-      if (layers.value[targetView]?.[targetLayerId]) {
-        layers.value[targetView][targetLayerId].visible = visible;
+    const mappings = layerMapping[sourceView]?.[layerId];
+    if (mappings) {
+      for (const [targetView, targetLayerId] of mappings) {
+        if (layers.value[targetView]?.[targetLayerId]) {
+          layers.value[targetView][targetLayerId].visible = visible;
+        }
       }
     }
   }

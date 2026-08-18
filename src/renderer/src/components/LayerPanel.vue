@@ -42,6 +42,8 @@ const currentView = computed(() => {
   if (level === 'domain') return 'domain';
   if (level === 'system') return 'system';
   if (level === 'planet') return 'planet';
+  if (level === 'area') return 'area';
+  if (level === 'interior') return 'interior';
   return 'domain'; // fallback
 });
 
