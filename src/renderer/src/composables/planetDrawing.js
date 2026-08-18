@@ -208,8 +208,8 @@ function drawTerrain(ctx) {
 function drawRegions(ctx) {
   const s = getState(); // 每次渲染取最新状态
   const regions = s.currentMapData?.regions || [];
-  // 未进入编辑模式时，叠加自动生成的初始区域边界（辅助用户理解区域划分）
-  const showAuto = !s.editMode && s.autoRegions.length > 0;
+  // 自动生成的区域边界始终显示（辅助理解区域划分），编辑模式下更淡
+  const showAuto = s.autoRegions.length > 0;
   
   regions.forEach(region => {
     if (!region.points || region.points.length < 3) return;
@@ -251,7 +251,8 @@ function drawRegions(ctx) {
       const color = region.color || '#FF6B6B';
       
       ctx.save();
-      ctx.globalAlpha = 0.18;
+      // 编辑模式下更淡，避免干扰绘制
+      ctx.globalAlpha = s.editMode ? 0.08 : 0.18;
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(region.points[0].x, region.points[0].y);
