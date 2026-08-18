@@ -239,6 +239,12 @@ export function useCanvasRenderer(canvasRef, options = {}) {
           panSuppressed = true;
           return;
         }
+        // 节点拖拽（家具/地点等）：抑制平移，进入节点拖拽模式
+        if (result && typeof result === 'object' && result.mode === 'node') {
+          panSuppressed = true;
+          dragNodeId = result.nodeId;
+          return;
+        }
         // pan 模式下组件可能返回 false 抑制平移（如 Shift+框选，2026-08-16 P0-1）
         if (result === false) {
           panSuppressed = true;

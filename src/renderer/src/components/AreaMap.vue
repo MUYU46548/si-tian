@@ -192,6 +192,15 @@ const isSelectedBuilding = computed(() => {
   return selectedNode.value?.layer === 'building';
 });
 
+// 当前区域多边形列表
+const areaZones = computed(() => {
+  if (!props.areaNode) return [];
+  return store.areaZones[props.areaNode.id] || [];
+});
+
+// 选中区域
+const selectedZone = ref(null);
+
 // ===== Canvas Renderer =====
 const renderer = useCanvasRenderer(canvas, {
   onRender: (ctx, w, h) => {
@@ -206,6 +215,9 @@ const renderer = useCanvasRenderer(canvas, {
     if (editMode.value && gridSnapEnabled.value) {
       drawGrid(ctx, w, h);
     }
+
+    // 绘制区域多边形（在节点下方作为背景）
+    drawZones(ctx);
 
     // 绘制子节点
     drawNodes(ctx);
@@ -315,6 +327,46 @@ function drawNodes(ctx) {
   });
 }
 
+function drawZones(ctx) {
+  const zones = areaZones.value;
+  zones.forEach(zone => {
+    if (!zone.points || zone.points.length < 3) return;
+    const color = zone.color || '#FF6B6B';
+    const isSelected = selectedZone.value?.id === zone.id;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(zone.points[0].x, zone.points[0].y);
+    for (let i = 1; i < zone.points.length; i++) {
+      ctx.lineTo(zone.points[i].x, zone.points[i].y);
+    }
+    ctx.closePath();
+
+    ctx.fillStyle = color;
+    ctx.globalAlpha = isSelected ? 0.35 : 0.18;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isSelected ? 2.5 : 1.5;
+    ctx.setLineDash(isSelected ? [] : [4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (zone.name) {
+      const cx = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length;
+      const cy = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length;
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillText(zone.name, cx, cy);
+    }
+
+    ctx.restore();
+  });
+}
+
 function drawZoneDraft(ctx) {
   if (zoneDraftPoints.value.length < 2) return;
   ctx.strokeStyle = zoneColor.value;
@@ -416,8 +468,16 @@ function finishZoneDrawing() {
     zoneDraftPoints.value = [];
     return;
   }
-  // 创建区域（暂存实现，后续可扩展为正式区域对象）
-  alert('区域绘制功能即将完善，当前版本先使用地点标记区域');
+  // 创建正式区域对象
+  const zone = {
+    id: `zone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: '',
+    color: zoneColor.value,
+    points: [...zoneDraftPoints.value],
+    parentId: props.areaNode.id,
+    createdAt: new Date().toISOString(),
+  };
+  store.addAreaZone(props.areaNode.id, zone);
   zoneDraftPoints.value = [];
   renderer.requestRender();
 }

@@ -27,6 +27,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   // ===== 建筑内部数据（第三层：楼层 + 家具） =====
   const interiorData = ref({});
 
+  // ===== 区域地图数据（区域多边形） =====
+  const areaZones = ref({});
+
   // ===== 计算属性 =====
   const canUndo = undoCanUndo;
   const canRedo = undoCanRedo;
@@ -338,6 +341,8 @@ export const useGeodataStore = defineStore('geodata', () => {
       nodes: nodes.value,
       hyperlanes: hyperlanes.value,
       domainBorderOverrides: domainBorderOverrides.value,
+      interiorData: interiorData.value,
+      areaZones: areaZones.value,
       updatedAt: new Date().toISOString()
     }));
     await window.sitianAPI.saveGeodata(data);
@@ -1545,15 +1550,85 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSave();
   }
 
-  // 更新家具属性
-  function updateFurniture(buildingId, floorId, furnitureId, updates) {
+  // 更新家具属性（支持 undo：传 oldSnapshot 记录变更前的值）
+  function updateFurniture(buildingId, floorId, furnitureId, updates, oldSnapshot = null) {
     const data = interiorData.value[buildingId];
     if (!data) return;
     const floor = data.floors.find(f => f.id === floorId);
     if (!floor || !floor.furniture) return;
     const item = floor.furniture.find(f => f.id === furnitureId);
     if (!item) return;
+    const oldState = {};
+    if (oldSnapshot) {
+      Object.assign(oldState, oldSnapshot);
+    } else {
+      for (const key of Object.keys(updates)) {
+        oldState[key] = item[key];
+      }
+    }
     Object.assign(item, updates);
+    execute({
+      type: 'update-furniture',
+      label: '移动家具',
+      undo: () => { Object.assign(item, oldState); },
+      redo: () => { Object.assign(item, updates); },
+    });
+    scheduleAutoSave();
+  }
+
+  // ===== 区域地图数据（区域多边形）管理 =====
+  function addAreaZone(areaId, zone) {
+    if (!areaZones.value[areaId]) {
+      areaZones.value[areaId] = [];
+    }
+    areaZones.value[areaId].push(zone);
+    execute({
+      type: 'add-area-zone',
+      label: '绘制区域',
+      undo: () => {
+        areaZones.value[areaId] = areaZones.value[areaId].filter(z => z.id !== zone.id);
+      },
+      redo: () => {
+        areaZones.value[areaId].push(zone);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  function removeAreaZone(areaId, zoneId) {
+    if (!areaZones.value[areaId]) return;
+    const idx = areaZones.value[areaId].findIndex(z => z.id === zoneId);
+    if (idx === -1) return;
+    const removed = areaZones.value[areaId][idx];
+    areaZones.value[areaId].splice(idx, 1);
+    execute({
+      type: 'remove-area-zone',
+      label: '删除区域',
+      undo: () => { areaZones.value[areaId].splice(idx, 0, removed); },
+      redo: () => { areaZones.value[areaId] = areaZones.value[areaId].filter(z => z.id !== zoneId); },
+    });
+    scheduleAutoSave();
+  }
+
+  function updateAreaZone(areaId, zoneId, updates, oldSnapshot = null) {
+    if (!areaZones.value[areaId]) return;
+    const zone = areaZones.value[areaId].find(z => z.id === zoneId);
+    if (!zone) return;
+    const oldState = {};
+    if (oldSnapshot) {
+      Object.assign(oldState, oldSnapshot);
+    } else {
+      for (const key of Object.keys(updates)) {
+        oldState[key] = Array.isArray(zone[key]) ? zone[key].map(p => ({...p})) : zone[key];
+      }
+    }
+    Object.assign(zone, updates);
+    execute({
+      type: 'update-area-zone',
+      label: '编辑区域',
+      undo: () => { Object.assign(zone, oldState); },
+      redo: () => { Object.assign(zone, updates); },
+    });
     scheduleAutoSave();
   }
 

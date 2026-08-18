@@ -76,6 +76,7 @@
 
         <div class="toolbar-group" title="操作">
           <button @click="deleteSelected" :disabled="!selectedFurniture" title="删除选中家具 (Del)">🗑 删除</button>
+          <button @click="rotateSelected" :disabled="!selectedFurniture" title="旋转选中家具 (R)">↻ 旋转</button>
           <button @click="undo" :disabled="!store.canUndo">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
         </div>
@@ -260,10 +261,13 @@ const renderer = useCanvasRenderer(canvas, {
     // 绘制家具
     drawFurniture(ctx);
   },
-  onMouseDown: handleCanvasMouseDown,
-  onMouseMove: handleCanvasMouseMove,
-  onMouseUp: handleCanvasMouseUp,
+  onDragStart: handleDragStart,
+  onDragMove: handleDragMove,
+  onDragEnd: handleDragEnd,
+  onHitTest: hitTest,
+  onClick: handleCanvasClick,
   onWheel: handleWheel,
+  interactionMode: interactionMode,
 });
 
 // ===== 绘制函数 =====
@@ -349,12 +353,77 @@ function getFurnitureTypeLabel(type) {
   return ft?.label || type;
 }
 
-// ===== 交互 =====
-function handleCanvasMouseDown(e) {
-  const world = renderer.screenToWorld(e.offsetX, e.offsetY);
+// ===== 拖拽状态 =====
+const dragStartPos = ref(null);
+const dragStartFurniturePos = ref(null);
+const isDraggingFurniture = ref(false);
 
+// ===== 交互 =====
+function handleDragStart(wx, wy) {
   if (interactionMode.value === 'add_furniture') {
-    addFurnitureWorldPos.value = gridSnapEnabled.value ? snapPoint(world) : world;
+    return false;
+  }
+
+  const hit = hitTest(wx, wy);
+  if (hit) {
+    selectedFurniture.value = hit;
+    dragStartPos.value = { x: wx, y: wy };
+    dragStartFurniturePos.value = { x: hit.x, y: hit.y };
+    isDraggingFurniture.value = true;
+    renderer.requestRender();
+    return { mode: 'node', nodeId: hit.id };
+  }
+
+  selectedFurniture.value = null;
+  renderer.requestRender();
+  return true;
+}
+
+function handleDragMove(wx, wy, info) {
+  if (isDraggingFurniture.value && selectedFurniture.value) {
+    const dx = wx - dragStartPos.value.x;
+    const dy = wy - dragStartPos.value.y;
+    const newX = dragStartFurniturePos.value.x + dx;
+    const newY = dragStartFurniturePos.value.y + dy;
+    
+    if (gridSnapEnabled.value) {
+      const step = gridSize.value;
+      selectedFurniture.value.x = Math.round(newX / step) * step;
+      selectedFurniture.value.y = Math.round(newY / step) * step;
+    } else {
+      selectedFurniture.value.x = newX;
+      selectedFurniture.value.y = newY;
+    }
+    renderer.requestRender();
+  }
+}
+
+function handleDragEnd(wx, wy, info) {
+  if (isDraggingFurniture.value && selectedFurniture.value && info.didPan) {
+    const item = selectedFurniture.value;
+    const oldX = dragStartFurniturePos.value.x;
+    const oldY = dragStartFurniturePos.value.y;
+    const newX = item.x;
+    const newY = item.y;
+    
+    if (oldX !== newX || oldY !== newY) {
+      store.updateFurniture(
+        props.buildingNode.id,
+        currentFloorId.value,
+        item.id,
+        { x: newX, y: newY },
+        { x: oldX, y: oldY }
+      );
+    }
+  }
+  isDraggingFurniture.value = false;
+  dragStartPos.value = null;
+  dragStartFurniturePos.value = null;
+}
+
+function handleCanvasClick(hit, wx, wy) {
+  if (interactionMode.value === 'add_furniture') {
+    addFurnitureWorldPos.value = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
     newFurnitureName.value = '';
     newFurnitureType.value = selectedFurnitureType.value;
     newFurnitureWidth.value = 60;
@@ -363,23 +432,12 @@ function handleCanvasMouseDown(e) {
     return;
   }
 
-  // pan 模式：检测是否点击了家具
-  const hit = hitTest(world.x, world.y);
   if (hit) {
     selectedFurniture.value = hit;
-    renderer.requestRender();
   } else {
     selectedFurniture.value = null;
-    renderer.requestRender();
   }
-}
-
-function handleCanvasMouseMove(e) {
-  // 拖拽家具逻辑（简化版：pan模式下拖拽选中的家具）
-}
-
-function handleCanvasMouseUp(e) {
-  // 拖拽结束逻辑
+  renderer.requestRender();
 }
 
 function handleWheel(e) {
@@ -435,6 +493,21 @@ function deleteSelected() {
   if (!confirm(`确定删除「${selectedFurniture.value.name}」？`)) return;
   store.removeFurniture(props.buildingNode.id, currentFloorId.value, selectedFurniture.value.id);
   selectedFurniture.value = null;
+  renderer.requestRender();
+}
+
+function rotateSelected() {
+  if (!selectedFurniture.value || !currentFloorId.value) return;
+  const item = selectedFurniture.value;
+  const oldRotation = item.rotation || 0;
+  const newRotation = (oldRotation + 90) % 360;
+  store.updateFurniture(
+    props.buildingNode.id,
+    currentFloorId.value,
+    item.id,
+    { rotation: newRotation },
+    { rotation: oldRotation }
+  );
   renderer.requestRender();
 }
 
@@ -514,6 +587,9 @@ function handleKeydown(e) {
     if (editMode.value) exitEditMode();
     else selectedFurniture.value = null;
     renderer.requestRender();
+  }
+  if (e.key === 'r' && selectedFurniture.value && editMode.value) {
+    rotateSelected();
   }
 }
 
