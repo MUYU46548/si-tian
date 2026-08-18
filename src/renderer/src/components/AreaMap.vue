@@ -100,6 +100,7 @@
         </div>
         <div class="popover-actions">
           <button class="adopt-btn" @click="enterChildArea" v-if="hasChildNodes">🔍 进入子视图</button>
+          <button class="adopt-btn" @click="enterBuildingInterior" v-if="isSelectedBuilding">🏠 建筑内部</button>
           <button class="adopt-btn ghost" @click="openInObsidian" v-if="selectedNode.sourcePath">📄 Obsidian 打开</button>
         </div>
       </div>
@@ -186,6 +187,11 @@ const hasChildNodes = computed(() => {
   return store.nodes.some(n => n.parentId === selectedNode.value.id);
 });
 
+// 是否为建筑节点（用于显示"进入建筑内部"按钮）
+const isSelectedBuilding = computed(() => {
+  return selectedNode.value?.layer === 'building';
+});
+
 // ===== Canvas Renderer =====
 const renderer = useCanvasRenderer(canvas, {
   onRender: (ctx, w, h) => {
@@ -213,7 +219,20 @@ const renderer = useCanvasRenderer(canvas, {
   onMouseMove: handleCanvasMouseMove,
   onMouseUp: handleCanvasMouseUp,
   onWheel: handleWheel,
+  onDblClick: handleDblClick,
 });
+
+function handleDblClick(hit, worldX, worldY) {
+  if (hit && hit.layer === 'building') {
+    store.selectBuilding(hit);
+  } else if (hit && hasChildNodesCheck(hit)) {
+    store.selectArea(hit);
+  }
+}
+
+function hasChildNodesCheck(node) {
+  return store.nodes.some(n => n.parentId === node.id);
+}
 
 // ===== 绘制函数 =====
 function drawGrid(ctx, w, h) {
@@ -435,6 +454,11 @@ function deleteSelected() {
 function enterChildArea() {
   if (!selectedNode.value) return;
   store.selectArea(selectedNode.value);
+}
+
+function enterBuildingInterior() {
+  if (!selectedNode.value) return;
+  store.selectBuilding(selectedNode.value);
 }
 
 function openInObsidian() {

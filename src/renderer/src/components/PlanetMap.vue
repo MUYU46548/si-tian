@@ -349,6 +349,48 @@
           rows="3"
         ></textarea>
       </div>
+      <!-- 扩展字段：海拔/气候/生态（阶段4 预留接口） -->
+      <div class="editor-field">
+        <label>海拔</label>
+        <select
+          :value="selectedProvince?.elevation || ''"
+          @change="updateTerrainField('elevation', $event.target.value)"
+        >
+          <option value="">未指定</option>
+          <option value="深海">深海 (-2000m 以下)</option>
+          <option value="浅海">浅海 (-200~0m)</option>
+          <option value="平原">平原 (0~200m)</option>
+          <option value="丘陵">丘陵 (200~500m)</option>
+          <option value="高原">高原 (500~2000m)</option>
+          <option value="山地">山地 (2000~4000m)</option>
+          <option value="高山">高山 (4000m+)</option>
+        </select>
+      </div>
+      <div class="editor-field">
+        <label>气候</label>
+        <select
+          :value="selectedProvince?.climate || ''"
+          @change="updateTerrainField('climate', $event.target.value)"
+        >
+          <option value="">未指定</option>
+          <option value="热带">热带</option>
+          <option value="亚热带">亚热带</option>
+          <option value="温带">温带</option>
+          <option value="寒温带">寒温带</option>
+          <option value="寒带">寒带</option>
+          <option value="干旱">干旱</option>
+          <option value="湿润">湿润</option>
+        </select>
+      </div>
+      <div class="editor-field">
+        <label>生态</label>
+        <input
+          type="text"
+          :value="selectedProvince?.ecology || ''"
+          @input="updateTerrainField('ecology', $event.target.value)"
+          placeholder="生态描述（如：温带落叶林）"
+        />
+      </div>
     </div>
     
     <!-- 选中区域的属性编辑面板 -->
@@ -900,6 +942,14 @@ function updateProvinceDescription() {
   if (!selectedProvince.value) return;
   store.updateTerrainPolygon(props.planet.id, selectedProvince.value.id, {
     description: editingDescription.value,
+  });
+  emit('dirty', true);
+}
+
+function updateTerrainField(field, value) {
+  if (!selectedProvince.value) return;
+  store.updateTerrainPolygon(props.planet.id, selectedProvince.value.id, {
+    [field]: value,
   });
   emit('dirty', true);
 }
@@ -1984,6 +2034,9 @@ function finishDrawing() {
     type,
     name: `${typeLabel} ${count}`,
     description: '',
+    elevation: '',
+    climate: '',
+    ecology: '',
     color: isRegion ? regionColor.value : undefined,
   };
   

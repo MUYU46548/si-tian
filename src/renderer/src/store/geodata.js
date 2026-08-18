@@ -12,6 +12,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   const currentSystem = ref(null);
   const currentPlanet = ref(null);
   const currentArea = ref(null); // 当前下钻区域（城市/地点节点）
+  const currentBuilding = ref(null); // 当前下钻建筑（第三层）
   const viewLevel = ref('world');
   const selectedNode = ref(null);
 
@@ -22,6 +23,9 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   // ===== 地图数据 =====
   const mapData = ref({});
+
+  // ===== 建筑内部数据（第三层：楼层 + 家具） =====
+  const interiorData = ref({});
 
   // ===== 计算属性 =====
   const canUndo = undoCanUndo;
@@ -99,6 +103,13 @@ export const useGeodataStore = defineStore('geodata', () => {
   const currentAreaPlaces = computed(() => {
     if (!currentArea.value) return [];
     return nodes.value.filter(p => p.parentId === currentArea.value.id);
+  });
+
+  // 建筑内部：当前建筑的家具/物品列表
+  const currentBuildingFurniture = computed(() => {
+    if (!currentBuilding.value) return [];
+    const data = interiorData.value[currentBuilding.value.id];
+    return data?.floors || [];
   });
 
   const currentDomainAllGalaxies = computed(() => {
@@ -1400,12 +1411,27 @@ export const useGeodataStore = defineStore('geodata', () => {
     selectedNode.value = null;
   }
 
+  // 进入建筑内部（第三层下钻）
+  function selectBuilding(buildingNode) {
+    currentBuilding.value = buildingNode;
+    viewLevel.value = 'interior';
+    selectedNode.value = null;
+    // 初始化建筑的内部数据结构（如不存在）
+    if (!interiorData.value[buildingNode.id]) {
+      interiorData.value[buildingNode.id] = {
+        buildingId: buildingNode.id,
+        floors: [],
+      };
+    }
+  }
+
   function backToWorld() {
     currentWorld.value = null;
     currentDomain.value = null;
     currentSystem.value = null;
     currentPlanet.value = null;
     currentArea.value = null;
+    currentBuilding.value = null;
     viewLevel.value = 'world';
     selectedNode.value = null;
     clearSearch();
@@ -1415,6 +1441,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     currentSystem.value = null;
     currentPlanet.value = null;
     currentArea.value = null;
+    currentBuilding.value = null;
     viewLevel.value = 'domain';
     selectedNode.value = null;
   }
@@ -1422,15 +1449,112 @@ export const useGeodataStore = defineStore('geodata', () => {
   function backToSystem() {
     currentPlanet.value = null;
     currentArea.value = null;
+    currentBuilding.value = null;
     viewLevel.value = 'system';
+    selectedNode.value = null;
+  }
+
+  // 从建筑内部返回区域地图
+  function backToArea() {
+    currentBuilding.value = null;
+    viewLevel.value = 'area';
     selectedNode.value = null;
   }
 
   // 从区域地图返回行星地图
   function backToPlanet() {
     currentArea.value = null;
+    currentBuilding.value = null;
     viewLevel.value = 'planet';
     selectedNode.value = null;
+  }
+
+  // ===== 建筑内部数据（第三层：楼层 + 家具）管理 =====
+
+  // 添加楼层到建筑
+  function addFloor(buildingId, floorName = '', position = 0) {
+    if (!interiorData.value[buildingId]) {
+      interiorData.value[buildingId] = { buildingId, floors: [] };
+    }
+    const data = interiorData.value[buildingId];
+    const newFloor = {
+      id: `floor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: floorName || `楼层 ${data.floors.length + 1}`,
+      level: data.floors.length,
+      furniture: [],
+      createdAt: new Date().toISOString(),
+    };
+    data.floors.push(newFloor);
+    scheduleAutoSave();
+    return newFloor;
+  }
+
+  // 移除楼层
+  function removeFloor(buildingId, floorId) {
+    const data = interiorData.value[buildingId];
+    if (!data) return;
+    const idx = data.floors.findIndex(f => f.id === floorId);
+    if (idx === -1) return;
+    data.floors.splice(idx, 1);
+    // 重新编号
+    data.floors.forEach((f, i) => f.level = i);
+    scheduleAutoSave();
+  }
+
+  // 更新楼层属性
+  function updateFloor(buildingId, floorId, updates) {
+    const data = interiorData.value[buildingId];
+    if (!data) return;
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor) return;
+    Object.assign(floor, updates);
+    floor.updatedAt = new Date().toISOString();
+    scheduleAutoSave();
+  }
+
+  // 添加家具到楼层
+  function addFurniture(buildingId, floorId, furniture) {
+    const data = interiorData.value[buildingId];
+    if (!data) return;
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor) return;
+    if (!floor.furniture) floor.furniture = [];
+    const item = {
+      id: `furniture_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: furniture.name || '新物品',
+      type: furniture.type || 'generic',
+      x: furniture.x ?? 0,
+      y: furniture.y ?? 0,
+      width: furniture.width ?? 40,
+      height: furniture.height ?? 40,
+      rotation: furniture.rotation ?? 0,
+      color: furniture.color || '#8B8B8B',
+    };
+    floor.furniture.push(item);
+    scheduleAutoSave();
+    return item;
+  }
+
+  // 移除家具
+  function removeFurniture(buildingId, floorId, furnitureId) {
+    const data = interiorData.value[buildingId];
+    if (!data) return;
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor || !floor.furniture) return;
+    floor.furniture = floor.furniture.filter(f => f.id !== furnitureId);
+    scheduleAutoSave();
+  }
+
+  // 更新家具属性
+  function updateFurniture(buildingId, floorId, furnitureId, updates) {
+    const data = interiorData.value[buildingId];
+    if (!data) return;
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor || !floor.furniture) return;
+    const item = floor.furniture.find(f => f.id === furnitureId);
+    if (!item) return;
+    Object.assign(item, updates);
+    scheduleAutoSave();
   }
 
   // ===== Vault 监听事件 =====
@@ -1454,6 +1578,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     worlds, starDomains, galaxies, planets, locations,
     currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentAreaPlaces, currentDomainAllGalaxies,
     currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,
+    currentBuilding, currentBuildingFurniture,
     isSearching,
     availableLayers, layerLabels, searchLayerFilter,
     availablePlaceTypes, searchPlaceTypeFilter, togglePlaceTypeFilter,
@@ -1466,7 +1591,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       selectNode, clearSelection, selectPlanetOrNode,
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
       undo, redo,
-      selectWorld, selectDomain, selectSystem, selectPlanet, selectArea, backToWorld, backToDomain, backToSystem, backToPlanet,
+      selectWorld, selectDomain, selectSystem, selectPlanet, selectArea, selectBuilding, backToWorld, backToDomain, backToSystem, backToPlanet, backToArea,
       handleNodeUpdated, handleNodeRemoved,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, getMapDataKey, addTerrainPolygon, removeTerrainPolygon, updateTerrainPolygon, updateControlPoint, saveMapDataImmediate,
@@ -1479,5 +1604,6 @@ export const useGeodataStore = defineStore('geodata', () => {
       addCluster, removeCluster, updateCluster, moveClusterMembers,
       updateReferenceImage, clearReferenceImage, removeReferenceImageById,
       addMapSnapshot, removeMapSnapshot, restoreMapSnapshot,
+      interiorData, addFloor, removeFloor, updateFloor, addFurniture, removeFurniture, updateFurniture,
     };
 });

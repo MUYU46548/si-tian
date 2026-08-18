@@ -33,8 +33,14 @@
           <span v-if="store.currentArea" class="separator">›</span>
           <button 
             v-if="store.currentArea"
-            class="active"
+            :class="{ active: store.viewLevel === 'area' }"
+            @click="store.backToArea"
           >{{ store.currentArea?.displayName || store.currentArea?.name }}</button>
+          <span v-if="store.currentBuilding" class="separator">›</span>
+          <button 
+            v-if="store.currentBuilding"
+            class="active"
+          >{{ store.currentBuilding?.displayName || store.currentBuilding?.name }}</button>
         </nav>
         <span class="toolbar-divider"></span>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
@@ -123,6 +129,12 @@
           @select-node="store.selectNode"
           @dirty="dirty = true"
         />
+        
+        <interior-view
+          v-if="store.viewLevel === 'interior'"
+          ref="interiorViewRef"
+          :building-node="store.currentBuilding"
+        />
       </main>
     </div>
 
@@ -165,6 +177,7 @@ import GalaxyMap from './components/GalaxyMap.vue';
 import SystemView from './components/SystemView.vue';
 import PlanetMap from './components/PlanetMap.vue';
 import AreaMap from './components/AreaMap.vue';
+import InteriorView from './components/InteriorView.vue';
 import NodeDetailPanel from './components/NodeDetailPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
@@ -218,9 +231,9 @@ const undoTooltip = computed(() => {
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
 });
 
-// 面包屑点击星域：行星地图/区域地图 → 返回域内恒星系总览（system 视图）
+// 面包屑点击星域：行星地图/区域地图/建筑内部 → 返回域内恒星系总览（system 视图）
 function handleBreadcrumbDomain() {
-  if (store.viewLevel === 'planet' || store.viewLevel === 'area') {
+  if (store.viewLevel === 'planet' || store.viewLevel === 'area' || store.viewLevel === 'interior') {
     store.backToSystem();
   }
 }
