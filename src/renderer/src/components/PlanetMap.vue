@@ -122,7 +122,8 @@
         <div class="toolbar-group" title="对象操作">
           <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份：点击多边形内两点画切割线">✂ 拆分</button>
           <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份：再点击一个相邻省份">⛓ 合并</button>
-          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel" title="删除选中对象 (Del)">🗑 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0" title="删除选中对象 (Del)">🗑 删除</button>
+          <button v-if="selectedPlaceIds.size > 0" @click="openReparentDialog" title="批量移入区域">⬆ 移入区域</button>
           <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界为贝塞尔曲线">〰️ 平滑</button>
           <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
@@ -672,6 +673,28 @@
           <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
         </div>
       </template>
+    </div>
+  </div>
+
+  <!-- 批量移入区域对话框 -->
+  <div v-if="reparentDialogOpen" class="modal-overlay" @click.self="reparentDialogOpen = false">
+    <div class="modal-dialog">
+      <h3>批量移入区域</h3>
+      <p class="modal-desc">将选中的 <strong>{{ selectedPlaceIds.size }}</strong> 个地点移入目标区域。</p>
+      <div class="form-row">
+        <label>目标区域</label>
+        <select v-model="reparentTargetId">
+          <option value="">请选择...</option>
+          <option v-for="candidate in reparentCandidates" :key="candidate.id" :value="candidate.id">
+            {{ candidate.displayName || candidate.name }}（{{ store.layerLabels[candidate.layer] || candidate.layer }}）
+          </option>
+        </select>
+      </div>
+      <p class="reparent-warning">⚠️ 移动后这些地点将从行星地图消失，仅在区域地图中显示。</p>
+      <div class="modal-actions">
+        <button class="adopt-btn" @click="confirmReparent" :disabled="!reparentTargetId">确认移入</button>
+        <button class="adopt-btn ghost" @click="reparentDialogOpen = false">取消</button>
+      </div>
     </div>
   </div>
 </template>
@@ -3125,6 +3148,38 @@ function regenerateAutoRegions() {
   renderer.requestRender();
 }
 
+// ===== 批量移入区域 =====
+const reparentDialogOpen = ref(false);
+const reparentTargetId = ref('');
+
+// 移入目标候选：当前行星下的所有聚落节点（城市/城镇/村庄）
+const reparentCandidates = computed(() => {
+  return store.nodes.filter(n =>
+    n.parentId === props.planet.id &&
+    ['city', 'town', 'village'].includes(n.layer)
+  );
+});
+
+function openReparentDialog() {
+  if (selectedPlaceIds.value.size === 0) return;
+  reparentTargetId.value = '';
+  reparentDialogOpen.value = true;
+}
+
+function confirmReparent() {
+  if (!reparentTargetId.value || selectedPlaceIds.value.size === 0) return;
+  const ids = Array.from(selectedPlaceIds.value);
+  const results = store.reparentNodes(ids, reparentTargetId.value);
+  const failed = results.filter(r => !r.success);
+  if (failed.length > 0) {
+    alert(`${failed.length} 个节点迁移失败：${failed.map(f => `${f.id} (${f.reason})`).join(', ')}`);
+  }
+  selectedPlaceIds.value = new Set();
+  reparentDialogOpen.value = false;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
 watch(() => store.mapData[props.planet?.id], () => {
   renderer.requestRender();
 }, { deep: true });
@@ -3934,5 +3989,67 @@ canvas {
 }
 .dialog-actions .adopt-btn {
   padding: 6px 16px;
+}
+
+/* 批量移入区域对话框 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-dialog {
+  width: 380px;
+  max-width: 90vw;
+  background: #161b22;
+  border-radius: 10px;
+  border: 1px solid #30363d;
+  box-shadow: 0 16px 64px rgba(0,0,0,0.5);
+  padding: 20px;
+}
+.modal-dialog h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #e2e8f0;
+}
+.modal-desc {
+  margin: 0 0 16px 0;
+  font-size: 13px;
+  color: #8b949e;
+}
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.form-row label {
+  font-size: 12px;
+  color: #8b949e;
+  font-weight: 500;
+}
+.form-row select,
+.form-row input {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.reparent-warning {
+  font-size: 11px;
+  color: #f0883e;
+  margin: 8px 0 0 0;
+  line-height: 1.4;
 }
 </style>

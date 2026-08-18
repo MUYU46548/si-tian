@@ -103,6 +103,30 @@
         </div>
       </section>
 
+      <!-- 层级迁移 -->
+      <section class="reparent-section">
+        <div class="section-header">
+          <span class="section-title">层级迁移</span>
+          <span class="section-note">修改上级节点归属</span>
+        </div>
+        <div class="reparent-control">
+          <label>上级节点</label>
+          <select :value="node.parentId ?? ''" @change="handleReparent($event.target.value || null)">
+            <option value="">无（顶层 — 直接挂载于行星/星系下）</option>
+            <option
+              v-for="candidate in parentCandidates"
+              :key="candidate.id"
+              :value="candidate.id"
+            >
+              {{ getLayerIcon(candidate.layer) }} {{ candidate.displayName || candidate.name }}（{{ store.layerLabels[candidate.layer] || candidate.layer }}）
+            </option>
+          </select>
+          <p class="reparent-hint">
+            {{ parentCandidates.length }} 个可选目标 · 选择后立即生效，可撤销
+          </p>
+        </div>
+      </section>
+
       <!-- 标签云 -->
       <section v-if="node.tags?.length" class="tags-section">
         <div class="section-header">
@@ -360,9 +384,54 @@ const childNodes = computed(() => {
   return store.nodes.filter(n => n.parentId === node.value.id);
 });
 
+// 计算当前节点的所有后代节点 ID（用于过滤父节点候选）
+function getDescendantIds(nodeId) {
+  const descendants = new Set();
+  const queue = [nodeId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const children = store.nodes.filter(n => n.parentId === current);
+    for (const child of children) {
+      if (!descendants.has(child.id)) {
+        descendants.add(child.id);
+        queue.push(child.id);
+      }
+    }
+  }
+  return descendants;
+}
+
+// 父节点候选列表：排除自身和后代，按层级分组排序
+const parentCandidates = computed(() => {
+  if (!node.value) return [];
+  const descendants = getDescendantIds(node.value.id);
+  return store.nodes
+    .filter(n => n.id !== node.value.id && !descendants.has(n.id))
+    .sort((a, b) => {
+      const order = ['world', 'star_domain', 'galaxy', 'planet', 'region', 'city', 'town', 'village', 'facility', 'location'];
+      return order.indexOf(a.layer) - order.indexOf(b.layer);
+    });
+});
+
 function getParentName(parentId) {
   const parent = store.nodes.find(n => n.id === parentId);
   return parent?.name || parentId;
+}
+
+// 层级迁移处理
+function handleReparent(newParentId) {
+  if (!node.value) return;
+  // 未变化则跳过
+  const currentParentId = node.value.parentId ?? null;
+  if ((newParentId === null && currentParentId === null) || newParentId === currentParentId) return;
+
+  const result = store.reparentNode(node.value.id, newParentId);
+  if (!result.success) {
+    alert('迁移失败：' + result.reason);
+    // 重置 select 显示
+    const selectEl = document.querySelector('.reparent-control select');
+    if (selectEl) selectEl.value = currentParentId ?? '';
+  }
 }
 
 function getNodeName(nodeId) {
@@ -1313,5 +1382,44 @@ function updateCoordinate(axis, value) {
 
 .btn-icon {
   font-size: 14px;
+}
+
+/* 层级迁移 */
+.reparent-section {
+  padding: 16px 18px;
+  border-top: 1px solid #21262d;
+}
+
+.reparent-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reparent-control label {
+  font-size: 12px;
+  color: #8b949e;
+  font-weight: 500;
+}
+
+.reparent-control select {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  color: #e2e8f0;
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.reparent-control select:hover {
+  border-color: #58a6ff;
+}
+
+.reparent-hint {
+  font-size: 11px;
+  color: #6e7681;
+  margin: 0;
 }
 </style>

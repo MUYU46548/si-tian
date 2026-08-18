@@ -102,6 +102,7 @@
           <button class="adopt-btn" @click="enterChildArea" v-if="hasChildNodes">🔍 进入子视图</button>
           <button class="adopt-btn" @click="enterBuildingInterior" v-if="isSelectedBuilding">🏠 建筑内部</button>
           <button class="adopt-btn ghost" @click="openInObsidian" v-if="selectedNode.sourcePath">📄 Obsidian 打开</button>
+          <button class="adopt-btn ghost" @click="reparentNodeToPlanet" v-if="props.areaNode?.parentId">⬇ 移出区域</button>
         </div>
       </div>
     </div>
@@ -677,6 +678,20 @@ function openInObsidian() {
   if (selectedNode.value?.sourcePath) {
     const fullPath = `E:/图书馆/ROSA/${selectedNode.value.sourcePath}`;
     window.sitianAPI?.openExternal(`obsidian://open?vault=ROSA&file=${encodeURIComponent(selectedNode.value.sourcePath)}`);
+  }
+}
+
+// 将节点从区域移回行星（修改 parentId 为行星 ID）
+function reparentNodeToPlanet() {
+  if (!selectedNode.value || !props.areaNode?.parentId) return;
+  const node = selectedNode.value;
+  const planetId = props.areaNode.parentId;
+  const result = store.reparentNode(node.id, planetId);
+  if (result.success) {
+    selectedNode.value = null;
+    renderer.requestRender();
+  } else {
+    alert('移出失败：' + result.reason);
   }
 }
 

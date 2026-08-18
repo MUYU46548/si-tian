@@ -1285,6 +1285,48 @@ export const useGeodataStore = defineStore('geodata', () => {
     return node;
   }
 
+  // ===== 节点层级迁移（含循环检测） =====
+  // 安全地将节点迁移到新的父节点下
+  // 返回 { success: boolean, reason?: string }
+  function reparentNode(nodeId, newParentId) {
+    const node = nodes.value.find(n => n.id === nodeId);
+    if (!node) return { success: false, reason: '节点不存在' };
+
+    // null 表示移到根层（行星下）
+    if (newParentId === null) {
+      const oldParentId = node.parentId;
+      updateNode(nodeId, { parentId: null });
+      return { success: true, oldParentId };
+    }
+
+    const newParent = nodes.value.find(n => n.id === newParentId);
+    if (!newParent) return { success: false, reason: '目标父节点不存在' };
+
+    // 不能将自己设为自己的父节点
+    if (newParentId === nodeId) return { success: false, reason: '不能将节点设为自己的父节点' };
+
+    // 循环检测：新父节点不能是当前节点的后代（避免形成环）
+    let cursor = newParent;
+    while (cursor) {
+      if (cursor.id === nodeId) return { success: false, reason: '不能将节点移到自己的子树下（会形成循环）' };
+      cursor = cursor.parentId ? nodes.value.find(n => n.id === cursor.parentId) : null;
+    }
+
+    const oldParentId = node.parentId;
+    updateNode(nodeId, { parentId: newParentId });
+    return { success: true, oldParentId };
+  }
+
+  // 批量迁移多个节点到同一父节点
+  function reparentNodes(nodeIds, newParentId) {
+    const results = [];
+    for (const id of nodeIds) {
+      const res = reparentNode(id, newParentId);
+      results.push({ id, ...res });
+    }
+    return results;
+  }
+
   // ===== 航道 CRUD（使用通用 UndoStore） =====
 
   function undo() {
@@ -1713,7 +1755,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
     loadGeodata, reextract, saveGeodata,
       updateNodePosition, updateAllCoordinates,
-      addNode, removeNode, updateNode,
+      addNode, removeNode, updateNode, reparentNode, reparentNodes,
       addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
       selectNode, clearSelection, selectPlanetOrNode,
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
