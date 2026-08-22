@@ -213,6 +213,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import EagleEye from './EagleEye.vue';
 
 const props = defineProps({
@@ -335,13 +336,31 @@ const focusHighlightNode = ref(null);
 const focusHighlightTimer = ref(null);
 
 // ===== Canvas Renderer =====
+// 世界坐标视口（批次C2）：各绘制循环裁剪用；canvas 未就绪时返回 null（不过滤）
+function getViewport() {
+  const cvs = canvas.value;
+  if (!cvs) return null;
+  const tl = renderer.screenToWorld(0, 0);
+  const br = renderer.screenToWorld(cvs.clientWidth, cvs.clientHeight);
+  return {
+    minX: Math.min(tl.x, br.x), minY: Math.min(tl.y, br.y),
+    maxX: Math.max(tl.x, br.x), maxY: Math.max(tl.y, br.y),
+  };
+}
+// 背景渐变缓存（批次C2）：仅画布尺寸变化时重建，平移/缩放复用同一 gradient 对象
+let _bgGradient = { key: '', grad: null };
+
 const renderer = useCanvasRenderer(canvas, {
   onRender: (ctx, w, h) => {
     // 背景（城镇尺度：调亮的深蓝渐变）
-    const bg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
-    bg.addColorStop(0, '#2a2a4a');
-    bg.addColorStop(1, '#1e2a4a');
-    ctx.fillStyle = bg;
+    const bgKey = w + 'x' + h;
+    if (_bgGradient.key !== bgKey || !_bgGradient.grad) {
+      const bg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+      bg.addColorStop(0, '#2a2a4a');
+      bg.addColorStop(1, '#1e2a4a');
+      _bgGradient = { key: bgKey, grad: bg };
+    }
+    ctx.fillStyle = _bgGradient.grad;
     ctx.fillRect(0, 0, w, h);
 
     // 网格（编辑模式开启时显示）
@@ -349,20 +368,22 @@ const renderer = useCanvasRenderer(canvas, {
       drawGrid(ctx, w, h);
     }
 
+    const vp = getViewport();
+
     // 绘制区域多边形
-    drawZones(ctx);
+    drawZones(ctx, vp);
 
     // 绘制道路
-    drawRoutes(ctx);
+    drawRoutes(ctx, vp);
 
     // 绘制子节点
-    drawNodes(ctx);
+    drawNodes(ctx, vp);
 
     // 绘制标记
-    drawMarkers(ctx);
+    drawMarkers(ctx, vp);
 
     // 绘制文本
-    drawTexts(ctx);
+    drawTexts(ctx, vp);
 
     // 绘制区域绘制中的草稿
     if (isDrawingZone.value && zoneDraftPoints.value.length > 0) {
@@ -488,19 +509,23 @@ function drawGrid(ctx, w, h) {
   ctx.stroke();
 }
 
-function drawNodes(ctx) {
+function drawNodes(ctx, vp) {
   const nodes = areaPlaces.value;
+  const fast = renderer.isFastMode(); // 批次C2：拖拽中跳过光晕与名称标签
   nodes.forEach(node => {
     const x = node.coordinate?.x || 0;
     const y = node.coordinate?.y || 0;
+    if (!pointInViewport(x, y, vp, 100)) return; // margin 覆盖标签与选中圈
     const isSelected = selectedNode.value?.id === node.id;
     const isMultiSelected = selectedNodeIds.value.includes(node.id);
     const isDraft = node.draft === true;
     const color = getNodeColor(node.layer);
 
     ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = isSelected ? 12 : 6;
+    if (!fast) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = isSelected ? 12 : 6;
+    }
     ctx.beginPath();
     ctx.arc(x, y, isSelected ? 8 : 6, 0, Math.PI * 2);
     ctx.fill();
@@ -524,21 +549,25 @@ function drawNodes(ctx) {
       ctx.stroke();
     }
 
-    const label = node.displayName || node.name;
-    if (label) {
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(label, x, y + 12);
+    if (!fast) {
+      const label = node.displayName || node.name;
+      if (label) {
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillText(label, x, y + 12);
+      }
     }
   });
 }
 
-function drawZones(ctx) {
+function drawZones(ctx, vp) {
   const zones = areaZones.value;
+  const fast = renderer.isFastMode();
   zones.forEach(zone => {
     if (!zone.points || zone.points.length < 3) return;
+    if (!bboxInViewport(pointsBBox(zone.points), vp)) return; // 批次C2：视口外整块跳过
     const color = zone.color || '#FF6B6B';
     const isSelected = selectedZone.value?.id === zone.id;
 
@@ -561,7 +590,7 @@ function drawZones(ctx) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    if (zone.name) {
+    if (zone.name && !fast) {
       const cx = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length;
       const cy = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length;
       ctx.font = '11px sans-serif';
@@ -575,10 +604,12 @@ function drawZones(ctx) {
   });
 }
 
-function drawRoutes(ctx) {
+function drawRoutes(ctx, vp) {
   const routes = areaRoutes.value;
+  const fast = renderer.isFastMode(); // 批次C2：拖拽中跳过顶点圆与名称
   routes.forEach(route => {
     if (!route.points || route.points.length < 2) return;
+    if (!bboxInViewport(pointsBBox(route.points), vp, 40)) return;
     const color = route.color || '#F39C12';
 
     ctx.save();
@@ -598,14 +629,18 @@ function drawRoutes(ctx) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    route.points.forEach((p, i) => {
+    // 顶点圆合并为单次 fill（批次C2）：此前每顶点独立 beginPath+arc+fill
+    if (!fast) {
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      route.points.forEach(p => {
+        ctx.moveTo(p.x + 4, p.y);
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      });
       ctx.fill();
-    });
+    }
 
-    if (route.name) {
+    if (route.name && !fast) {
       const midIdx = Math.floor(route.points.length / 2);
       const mid = route.points[midIdx];
       ctx.font = '10px sans-serif';
@@ -618,11 +653,21 @@ function drawRoutes(ctx) {
   });
 }
 
-function drawMarkers(ctx) {
+function drawMarkers(ctx, vp) {
   const markers = areaMarkers.value;
+  const fast = renderer.isFastMode(); // 批次C2：拖拽中 emoji 字形退化为色点
   markers.forEach(marker => {
     const x = marker.x;
     const y = marker.y;
+    if (!pointInViewport(x, y, vp, 80)) return;
+
+    if (fast) {
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.beginPath();
@@ -643,11 +688,13 @@ function drawMarkers(ctx) {
   });
 }
 
-function drawTexts(ctx) {
+function drawTexts(ctx, vp) {
   const texts = areaTexts.value;
+  const fast = renderer.isFastMode(); // 批次C2：拖拽中跳过描边（3 倍文字成本），保留正文
   texts.forEach(label => {
     const x = label.x;
     const y = label.y;
+    if (!pointInViewport(x, y, vp, 300)) return; // margin 覆盖长文本
     const fontSize = label.fontSize || 16;
     const color = label.color || '#FFFFFF';
 
@@ -655,9 +702,11 @@ function drawTexts(ctx) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.lineWidth = 3;
-    ctx.strokeText(label.text, x, y);
+    if (!fast) {
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(label.text, x, y);
+    }
 
     ctx.fillStyle = color;
     ctx.fillText(label.text, x, y);
@@ -789,8 +838,12 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 
 function handleDragMove(wx, wy, info) {
   if (isDrawingZone.value) {
-    zoneDraftPoints.value.push({ x: wx, y: wy });
-    renderer.requestRender();
+    // 批次C2：手绘抽稀——与上一点距离过近不落点，避免一条 zone 累积上千冗余顶点
+    const last = zoneDraftPoints.value[zoneDraftPoints.value.length - 1];
+    if (!last || Math.hypot(wx - last.x, wy - last.y) >= 3) {
+      zoneDraftPoints.value.push({ x: wx, y: wy });
+      renderer.requestRender();
+    }
     return;
   }
 

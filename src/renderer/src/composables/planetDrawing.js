@@ -6,6 +6,7 @@
  * 拆分原则：绘制只读状态 + 渲染，交互/修改留在组件。
  */
 import { getTexturePattern } from '../utils/textures';
+import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 
 // ===== 样式常量（从 PlanetMap.vue 迁移） =====
 const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
@@ -21,29 +22,7 @@ const PLACE_TYPE_ICONS = {
   '工业': '🏭', '居住': '🏠', '公共': '🏛', '特殊': '✦',
 };
 
-// ===== 视口裁剪（批次C1）：视口为世界坐标可见矩形，null 表示不过滤 =====
-function pointsBBox(points) {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of points) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-function bboxInViewport(bbox, vp, margin = 0) {
-  if (!vp) return true;
-  return bbox.maxX >= vp.minX - margin && bbox.minX <= vp.maxX + margin
-    && bbox.maxY >= vp.minY - margin && bbox.minY <= vp.maxY + margin;
-}
-
-function pointInViewport(x, y, vp, margin = 0) {
-  if (!vp) return true;
-  return x >= vp.minX - margin && x <= vp.maxX + margin
-    && y >= vp.minY - margin && y <= vp.maxY + margin;
-}
+// ===== 视口裁剪（批次C1）：工具函数统一在 utils/geometry.js，视口为世界坐标可见矩形 =====
 
 export function createPlanetDrawing(getState) {
   // ===== 辅助函数（纯函数，不依赖 getState） =====

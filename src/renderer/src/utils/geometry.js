@@ -154,6 +154,34 @@ export function pointInPolygon(x, y, points) {
   return inside;
 }
 
+// ===== 视口裁剪工具（批次C1/C2）：vp 为世界坐标可见矩形 {minX,minY,maxX,maxY}，null 表示不过滤 =====
+
+/** 点集包围盒（一次线性扫描，远低于随后的 fill/stroke 成本） */
+export function pointsBBox(points) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/** 包围盒与视口（含 margin 余量）是否相交 */
+export function bboxInViewport(bbox, vp, margin = 0) {
+  if (!vp) return true;
+  return bbox.maxX >= vp.minX - margin && bbox.minX <= vp.maxX + margin
+    && bbox.maxY >= vp.minY - margin && bbox.minY <= vp.maxY + margin;
+}
+
+/** 点与视口（含 margin 余量）是否相交 */
+export function pointInViewport(x, y, vp, margin = 0) {
+  if (!vp) return true;
+  return x >= vp.minX - margin && x <= vp.maxX + margin
+    && y >= vp.minY - margin && y <= vp.maxY + margin;
+}
+
 /**
  * 获取点到线段的最近点
  */

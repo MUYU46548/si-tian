@@ -407,6 +407,7 @@ function drawGrid(ctx, w, h) {
 
 function drawFurniture(ctx) {
   const items = currentFurniture.value;
+  const fast = renderer.isFastMode(); // 批次C2：拖拽中跳过家具阴影与名称标签
   items.forEach(item => {
     const isSelected = selectedFurniture.value?.id === item.id;
     const isMultiSelected = selectedFurnitureIds.value.includes(item.id);
@@ -431,12 +432,14 @@ function drawFurniture(ctx) {
       ctx.font = `${Math.min(item.width, item.height) * 0.4}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(icon, 0, 0);
+      if (!fast) ctx.fillText(icon, 0, 0);
     } else {
       // 家具类型：实心矩形
       ctx.fillStyle = color;
-      ctx.shadowColor = isSelected ? '#FFD700' : 'rgba(0,0,0,0.3)';
-      ctx.shadowBlur = isSelected ? 8 : 4;
+      if (!fast) {
+        ctx.shadowColor = isSelected ? '#FFD700' : 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = isSelected ? 8 : 4;
+      }
       ctx.fillRect(-item.width / 2, -item.height / 2, item.width, item.height);
       ctx.shadowBlur = 0;
     }
@@ -462,7 +465,7 @@ function drawFurniture(ctx) {
     ctx.restore();
 
     // 名称标签
-    if (item.name) {
+    if (item.name && !fast) {
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';

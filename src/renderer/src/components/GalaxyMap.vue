@@ -784,12 +784,40 @@ function drawFactionBorders(ctx, lod) {
 function drawHyperlanes(ctx) {
   const hyperlanes = visibleHyperlanes.value;
   const nodeMap = new Map(galaxyNodes.value.map(g => [g.id, g]));
-  
+
+  // 批次C2：视口裁剪——端点+控制点的包围盒与视口不相交的航道整条跳过
+  // （bezier/quadratic 曲线必在控制点凸包内，此测试不会漏画穿屏曲线）
+  const vt = renderer.getViewTransform();
+  const cvs = canvas.value;
+  let vp = null;
+  if (cvs) {
+    const hw = cvs.clientWidth / 2 / vt.scale;
+    const hh = cvs.clientHeight / 2 / vt.scale;
+    const cx = -vt.x / vt.scale;
+    const cy = -vt.y / vt.scale;
+    vp = { minX: cx - hw, minY: cy - hh, maxX: cx + hw, maxY: cy + hh };
+  }
+
   hyperlanes.forEach(h => {
     const from = nodeMap.get(h.fromId);
     const to = nodeMap.get(h.toId);
     if (!from || !to) return;
-    
+
+    if (vp && h.controlPoints?.length) {
+      let minX = Math.min(from.x, to.x), maxX = Math.max(from.x, to.x);
+      let minY = Math.min(from.y, to.y), maxY = Math.max(from.y, to.y);
+      for (const cp of h.controlPoints) {
+        if (cp.x < minX) minX = cp.x;
+        if (cp.x > maxX) maxX = cp.x;
+        if (cp.y < minY) minY = cp.y;
+        if (cp.y > maxY) maxY = cp.y;
+      }
+      if (maxX < vp.minX || minX > vp.maxX || maxY < vp.minY || minY > vp.maxY) return;
+    } else if (vp) {
+      if ((from.x < vp.minX && to.x < vp.minX) || (from.x > vp.maxX && to.x > vp.maxX)
+        || (from.y < vp.minY && to.y < vp.minY) || (from.y > vp.maxY && to.y > vp.maxY)) return;
+    }
+
     const isHovered = hoveredHyperlane === h.id;
     const isUserCreated = !h.id.startsWith('auto_');
     
