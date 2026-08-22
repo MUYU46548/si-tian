@@ -45,7 +45,7 @@
           </template>
           
           <!-- 恒星系（域名） -->
-          <template v-if="store.currentDomain && (store.viewLevel === 'system' || store.viewLevel === 'planet' || store.viewLevel === 'area' || store.viewLevel === 'interior')">
+          <template v-if="store.currentDomain && (store.viewLevel === 'system' || store.viewLevel === 'system_detail' || store.viewLevel === 'planet' || store.viewLevel === 'area' || store.viewLevel === 'interior')">
             <span class="separator">›</span>
             <div class="breadcrumb-item">
               <button 
@@ -60,6 +60,27 @@
                   :key="g.id" 
                   :class="{ current: g.id === store.currentSystem?.id }"
                   @click="store.selectSystem(g); dropdowns.system = false"
+                >{{ g.displayName || g.name }}</div>
+              </div>
+            </div>
+          </template>
+          
+          <!-- 恒星系（单系地图，B4） -->
+          <template v-if="store.currentSystem && (store.viewLevel === 'system_detail' || store.viewLevel === 'planet' || store.viewLevel === 'area' || store.viewLevel === 'interior')">
+            <span class="separator">›</span>
+            <div class="breadcrumb-item">
+              <button 
+                :class="{ active: store.viewLevel === 'system_detail' }"
+                @click="handleBreadcrumbSystem"
+                :title="store.viewLevel !== 'system_detail' ? '返回该恒星系地图' : ''"
+              >{{ store.currentSystem?.displayName || store.currentSystem?.name }}</button>
+              <span class="dropdown-arrow" @click.stop="toggleDropdown('systemDetail')">▾</span>
+              <div v-if="dropdowns.systemDetail" class="dropdown-menu" @click.stop>
+                <div 
+                  v-for="g in store.currentDomainGalaxies" 
+                  :key="g.id" 
+                  :class="{ current: g.id === store.currentSystem?.id }"
+                  @click="store.selectSystem(g); dropdowns.systemDetail = false"
                 >{{ g.displayName || g.name }}</div>
               </div>
             </div>
@@ -165,6 +186,7 @@
           :domains="store.currentWorldDomains"
           :galaxies="store.galaxies"
           @select="store.selectDomain"
+          @enter-system="store.enterSystemDetail"
           @back="store.backToWorld"
           @dirty="dirty = true"
           @select-node="store.selectNode"
@@ -181,11 +203,19 @@
           @select-node="store.selectPlanetOrNode"
         />
         
+        <system-detail-view
+          v-if="store.viewLevel === 'system_detail'"
+          ref="systemDetailRef"
+          :system="store.currentSystem"
+          @back="store.backToDomain"
+          @select-node="store.selectPlanetOrNode"
+        />
+        
         <planet-map
           v-if="store.viewLevel === 'planet'"
           ref="planetMapRef"
           :planet="store.currentPlanet"
-          @back="store.backToSystem"
+          @back="handlePlanetBack"
           @select-node="store.selectNode"
           @dirty="dirty = true"
         />
@@ -244,6 +274,7 @@ import { usePanelsStore } from './store/panels';
 import WorldSelector from './components/WorldSelector.vue';
 import GalaxyMap from './components/GalaxyMap.vue';
 import SystemView from './components/SystemView.vue';
+import SystemDetailView from './components/SystemDetailView.vue';
 import PlanetMap from './components/PlanetMap.vue';
 import AreaMap from './components/AreaMap.vue';
 import InteriorView from './components/InteriorView.vue';
@@ -274,6 +305,7 @@ const statusText = ref('');
 const searchBar = ref(null);
 const galaxyMapRef = ref(null);
 const systemViewRef = ref(null);
+const systemDetailRef = ref(null);
 const perfVisible = ref(false);
 const perfStats = ref({});
 const aboutPanelRef = ref(null);
@@ -287,6 +319,7 @@ const dropdowns = reactive({
   world: false,
   domain: false,
   system: false,
+  systemDetail: false,
   planet: false,
   area: false,
 });
@@ -324,11 +357,24 @@ const undoTooltip = computed(() => {
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
 });
 
-// 面包屑点击星域：行星地图/区域地图/建筑内部 → 返回域内恒星系总览（system 视图）
+// 面包屑点击星域：单系地图/行星地图/区域地图/建筑内部 → 返回域内恒星系总览（system 视图）
 function handleBreadcrumbDomain() {
-  if (store.viewLevel === 'planet' || store.viewLevel === 'area' || store.viewLevel === 'interior') {
+  if (store.viewLevel === 'system_detail' || store.viewLevel === 'planet' || store.viewLevel === 'area' || store.viewLevel === 'interior') {
     store.backToSystem();
   }
+}
+
+// 面包屑点击恒星系：行星地图/区域地图/建筑内部 → 返回该恒星系单系地图
+function handleBreadcrumbSystem() {
+  if (store.viewLevel !== 'system_detail' && store.currentSystem) {
+    store.selectSystem(store.currentSystem);
+  }
+}
+
+// 行星地图返回：来自单系视图（currentSystem 存在）→ 回该系；否则回域总览
+function handlePlanetBack() {
+  if (store.currentSystem) store.selectSystem(store.currentSystem);
+  else store.backToSystem();
 }
 let cleanupNodeUpdated = null;
 let cleanupNodeRemoved = null;
@@ -340,6 +386,8 @@ function getActiveRenderer() {
     return galaxyMapRef.value?.renderer;
   } else if (store.viewLevel === 'system') {
     return systemViewRef.value?.renderer;
+  } else if (store.viewLevel === 'system_detail') {
+    return systemDetailRef.value?.renderer;
   }
   return null;
 }
@@ -350,6 +398,8 @@ function getActiveCanvas() {
     return galaxyMapRef.value?.canvas;
   } else if (store.viewLevel === 'system') {
     return systemViewRef.value?.canvas;
+  } else if (store.viewLevel === 'system_detail') {
+    return systemDetailRef.value?.canvas;
   }
   return null;
 }
@@ -837,6 +887,9 @@ function handleBookmarkNavigate(bm) {
       store.backToDomain();
     } else if (bm.viewLevel === 'system') {
       store.backToSystem();
+    } else if (bm.viewLevel === 'system_detail') {
+      if (store.currentSystem) store.selectSystem(store.currentSystem);
+      else store.backToSystem();
     } else if (bm.viewLevel === 'planet') {
       store.backToSystem();
     }
@@ -947,7 +1000,7 @@ function handleGlobalKeydown(e) {
     panelsStore.closeAll();
   }
   if (e.key === 'l' || e.key === 'L') {
-    if (store.viewLevel === 'domain' || store.viewLevel === 'system' || store.viewLevel === 'planet') {
+    if (store.viewLevel === 'domain' || store.viewLevel === 'system' || store.viewLevel === 'system_detail' || store.viewLevel === 'planet') {
       e.preventDefault();
       toggleLayersPanel();
     }

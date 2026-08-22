@@ -162,7 +162,8 @@ def load_case(path):
 
 
 def main():
-    case_names = sys.argv[1:]
+    # 用例过滤参数（--vault/--edge 已在常量解析阶段从 argv 剥离）
+    case_names = _case_names
     cases_dir = os.path.join(ROOT, 'scripts', 'tests', 'cases')
     case_files = sorted(f for f in os.listdir(cases_dir) if f.startswith('test_') and f.endswith('.py'))
     if case_names:

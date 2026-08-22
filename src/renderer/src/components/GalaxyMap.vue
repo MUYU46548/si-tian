@@ -122,7 +122,7 @@ const props = defineProps({
   galaxies: { type: Array, default: () => [] }
 });
 
-const emit = defineEmits(['select', 'back', 'dirty', 'select-node']);
+const emit = defineEmits(['select', 'enter-system', 'back', 'dirty', 'select-node']);
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -480,6 +480,21 @@ function hitTest(wx, wy) {
     if (dx * dx + dy * dy < 16 * 16) return { type: 'galaxy', node: galaxy };
   }
   
+  // 星域名称标签命中（非编辑模式）→ 点击进入域内总览
+  if (!editMode.value) {
+    const scale = renderer.getViewTransform().scale;
+    const fontSize = Math.min(70, Math.max(7, Math.round(15 / scale)));
+    for (const border of computeFactionBorders()) {
+      if (border.points.length < 3) continue;
+      const w = border.name.length * fontSize + 20;
+      const h = fontSize + 8;
+      if (Math.abs(wx - border.center.x) <= w / 2 && Math.abs(wy - border.center.y) <= h / 2) {
+        const d = domainNodes.find(dd => dd.id === border.domainId);
+        if (d) return { type: 'domain-label', node: d };
+      }
+    }
+  }
+
   if (editMode.value) {
     const borders = computeFactionBorders();
     for (const border of borders) {
@@ -1394,8 +1409,10 @@ const renderer = useCanvasRenderer(canvas, {
     if (editMode.value) return;
     
     if (hit?.type === 'galaxy') {
-      const parentDomain = domainNodes.find(d => d.id === hit.node.domainId);
-      if (parentDomain) emit('select', parentDomain);
+      emit('enter-system', hit.node);
+    } else if (hit?.type === 'domain-label') {
+      // 点击星域名称标签 → 进入域内恒星系总览
+      emit('select', hit.node);
     } else if (hit?.type === 'boundary-vertex') {
       editingBoundary.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
     }

@@ -21,6 +21,11 @@ export const useLayersStore = defineStore('layers', () => {
       hyperlanes: { visible: true, label: '航道', order: 2 },
       editHelpers: { visible: true, label: '编辑辅助', order: 3 },
     },
+    system_detail: {
+      orbits: { visible: true, label: '轨道', order: 0 },
+      nodes: { visible: true, label: '节点', order: 1 },
+      hyperlanes: { visible: true, label: '邻系航道', order: 2 },
+    },
     planet: {
       terrain: { visible: true, label: '地形', order: 0 },
       terrainLabels: { visible: true, label: '地形名称', order: 1 },
@@ -70,12 +75,19 @@ export const useLayersStore = defineStore('layers', () => {
     // 定义图层映射关系
     const layerMapping = {
       domain: {
-        hyperlanes: [['system', 'hyperlanes']],
+        hyperlanes: [['system', 'hyperlanes'], ['system_detail', 'hyperlanes']],
         editHelpers: [['system', 'editHelpers'], ['area', 'editHelpers'], ['interior', 'editHelpers']],
       },
       system: {
-        hyperlanes: [['domain', 'hyperlanes']],
+        hyperlanes: [['domain', 'hyperlanes'], ['system_detail', 'hyperlanes']],
+        orbits: [['system_detail', 'orbits']],
+        nodes: [['system_detail', 'nodes']],
         editHelpers: [['domain', 'editHelpers'], ['area', 'editHelpers'], ['interior', 'editHelpers']],
+      },
+      system_detail: {
+        hyperlanes: [['domain', 'hyperlanes'], ['system', 'hyperlanes']],
+        orbits: [['system', 'orbits']],
+        nodes: [['system', 'nodes']],
       },
       area: {
         editHelpers: [['domain', 'editHelpers'], ['system', 'editHelpers'], ['interior', 'editHelpers']],

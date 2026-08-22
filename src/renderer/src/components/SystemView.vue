@@ -66,6 +66,8 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import { planetOrbitLayout, getPlanetColor, getPlanetRadius } from '../composables/systemOrbit';
+import { drawDeepSpaceBackground as drawSpaceBg } from '../composables/spaceBackground';
 import EagleEye from './EagleEye.vue';
 
 const store = useGeodataStore();
@@ -174,10 +176,7 @@ function createPlanet() {
   // 轨道位置（与 applyLayout 的 orbit 算法一致，首次布局即落在轨道上）
   const siblings = allBodies.value.filter(b => b.parentId === parentId);
   const pIdx = siblings.length;
-  const orbit = Math.floor(pIdx / 3) + 1;
-  const posInOrbit = pIdx % 3;
-  const angle = (posInOrbit / 3) * Math.PI * 2 + orbit * 0.4;
-  const orbitRadius = 40 + orbit * 35;
+  const { angle, orbitRadius } = planetOrbitLayout(pIdx);
   const newPlanet = {
     id: `planet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name: `新行星${Date.now() % 1000}`,
@@ -241,6 +240,12 @@ function ctxCreateSystemHere() {
 
 const allBodies = computed(() => props.planets);
 
+// 本视图可见航道（批次 B4 修正：改读 store.hyperlanes 真数据；原为 dist<450 距离启发，与数据层脱钩）
+const visibleSystemHyperlanes = computed(() => {
+  const ids = new Set(props.systems.map(s => s.id));
+  return store.hyperlanes.filter(h => ids.has(h.fromId) && ids.has(h.toId));
+});
+
 // ===== 布局计算 =====
 function applyLayout() {
   const systems = props.systems;
@@ -260,10 +265,7 @@ function applyLayout() {
     const systemPlanets = allBodies.value.filter(b => b.parentId === system.id);
     
     const planetLayouts = systemPlanets.map((planet, pIdx) => {
-      const orbit = Math.floor(pIdx / 3) + 1;
-      const posInOrbit = pIdx % 3;
-      const angle = (posInOrbit / 3) * Math.PI * 2 + orbit * 0.4;
-      const orbitRadius = 40 + orbit * 35;
+      const { angle, orbitRadius } = planetOrbitLayout(pIdx);
       // 行星同样保留手动坐标
       const plSaved = planet.userMoved && planet.coordinate?.x !== null && planet.coordinate?.x !== undefined;
       return {
@@ -300,16 +302,12 @@ function hitTest(wx, wy) {
 }
 
 function hitTestHyperlane(wx, wy) {
-  for (let i = 0; i < systemLayouts.length; i++) {
-    for (let j = i + 1; j < systemLayouts.length; j++) {
-      const s1 = systemLayouts[i];
-      const s2 = systemLayouts[j];
-      const dist = Math.hypot(s1.x - s2.x, s1.y - s2.y);
-      if (dist < 450) {
-        const d = pointToSegmentDist(wx, wy, s1.x, s1.y, s2.x, s2.y);
-        if (d < 6) return { fromId: s1.id, toId: s2.id };
-      }
-    }
+  const layoutMap = new Map(systemLayouts.map(s => [s.id, s]));
+  for (const h of visibleSystemHyperlanes.value) {
+    const s1 = layoutMap.get(h.fromId);
+    const s2 = layoutMap.get(h.toId);
+    if (!s1 || !s2) continue;
+    if (pointToSegmentDist(wx, wy, s1.x, s1.y, s2.x, s2.y) < 6) return h;
   }
   return null;
 }
@@ -326,67 +324,9 @@ function pointToSegmentDist(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - closestX, py - closestY);
 }
 
-function getPlanetColor(layer) {
-  return { planet: '#5cb85c', city: '#f0ad4e', town: '#d9853b', location: '#888888' }[layer] || '#888888';
-}
-
-function getPlanetRadius(layer) {
-  return { planet: 7, city: 5, town: 4, location: 3 }[layer] || 3;
-}
-
 // ===== 绘制逻辑 =====
-function drawDeepSpaceBackground(ctx) {
-  // 深空渐变背景（以原点为亮核，覆盖视图范围）
-  const bg = ctx.createRadialGradient(0, 0, 0, 0, 0, 1800);
-  bg.addColorStop(0, '#161d33');
-  bg.addColorStop(0.5, '#101527');
-  bg.addColorStop(1, '#0a0e1c');
-  ctx.fillStyle = bg;
-  ctx.fillRect(-3000, -3000, 6000, 6000);
-
-  // 星云（2 个，确定性位置）
-  const nebulae = [
-    { x: -500, y: -300, r: 420, color: 'rgba(80, 110, 200, 0.07)' },
-    { x: 400, y: 250, r: 380, color: 'rgba(130, 70, 160, 0.06)' },
-  ];
-  for (const neb of nebulae) {
-    const g = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
-    g.addColorStop(0, neb.color);
-    g.addColorStop(0.6, neb.color.replace('0.', '0.0'));
-    g.addColorStop(1, 'transparent');
-    ctx.fillStyle = g;
-    ctx.fillRect(neb.x - neb.r, neb.y - neb.r, neb.r * 2, neb.r * 2);
-  }
-
-  // 星尘 3 层（确定性随机，避免渲染抖动）
-  for (let layer = 0; layer < 3; layer++) {
-    const alpha = 0.1 + layer * 0.05;
-    const count = 150 + layer * 60;
-    const sizeBase = 0.4 + layer * 0.3;
-    ctx.fillStyle = `rgba(220, 230, 245, ${alpha})`;
-    for (let i = layer * 200; i < count; i++) {
-      const x = ((i * 97 + 23) % 2500) - 1250;
-      const y = ((i * 61 + 41) % 2500) - 1250;
-      const size = sizeBase + (i % 4) * 0.25;
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // 导航星（少量明亮白星）
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-  for (let i = 0; i < 10; i++) {
-    const x = ((i * 137 + 53) % 2200) - 1100;
-    const y = ((i * 89 + 67) % 2200) - 1100;
-    ctx.beginPath();
-    ctx.arc(x, y, 1.3, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
 function onRender(ctx) {
-  drawDeepSpaceBackground(ctx);
+  drawSpaceBg(ctx);
   if (layers.isVisible('system', 'orbits')) {
     if (!renderer.isFastMode()) {
       systemLayouts.forEach(system => drawSystemOrbits(ctx, system));
@@ -418,21 +358,25 @@ function drawSystemOrbits(ctx, system) {
 }
 
 function drawHyperlanes(ctx) {
-  ctx.setLineDash([3, 5]);
-  for (let i = 0; i < systemLayouts.length; i++) {
-    for (let j = i + 1; j < systemLayouts.length; j++) {
-      const s1 = systemLayouts[i];
-      const s2 = systemLayouts[j];
-      const dist = Math.hypot(s1.x - s2.x, s1.y - s2.y);
-      if (dist < 450) {
-        ctx.strokeStyle = 'rgba(100, 180, 230, 0.65)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(s1.x, s1.y);
-        ctx.lineTo(s2.x, s2.y);
-        ctx.stroke();
-      }
+  const layoutMap = new Map(systemLayouts.map(s => [s.id, s]));
+  for (const h of visibleSystemHyperlanes.value) {
+    const s1 = layoutMap.get(h.fromId);
+    const s2 = layoutMap.get(h.toId);
+    if (!s1 || !s2) continue;
+    // 跨星域紫虚线（超空间航道）、同星域蓝虚线，与 GalaxyMap 语义一致
+    const isCross = h.type === 'cross_domain' || s1.parentId !== s2.parentId;
+    if (isCross) {
+      ctx.strokeStyle = 'rgba(170, 120, 240, 0.6)';
+      ctx.setLineDash([6, 6]);
+    } else {
+      ctx.strokeStyle = 'rgba(100, 180, 230, 0.65)';
+      ctx.setLineDash([3, 5]);
     }
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y);
+    ctx.lineTo(s2.x, s2.y);
+    ctx.stroke();
   }
   ctx.setLineDash([]);
 }
@@ -835,22 +779,21 @@ const systemEyeElements = computed(() => {
     }
   }
   
-  // 航道（虚线）
-  for (let i = 0; i < systemLayouts.length; i++) {
-    for (let j = i + 1; j < systemLayouts.length; j++) {
-      const s1 = systemLayouts[i];
-      const s2 = systemLayouts[j];
-      const dist = Math.hypot(s1.x - s2.x, s1.y - s2.y);
-      if (dist < 450) {
-        elements.push({
-          type: 'line',
-          from: { x: s1.x, y: s1.y },
-          to: { x: s2.x, y: s2.y },
-          color: 'rgba(100, 150, 200, 0.3)',
-          lineWidth: 0.5,
-          dashed: true,
-        });
-      }
+  // 航道（虚线，真实 hyperlanes 数据）
+  {
+    const layoutMap = new Map(systemLayouts.map(s => [s.id, s]));
+    for (const h of visibleSystemHyperlanes.value) {
+      const s1 = layoutMap.get(h.fromId);
+      const s2 = layoutMap.get(h.toId);
+      if (!s1 || !s2) continue;
+      elements.push({
+        type: 'line',
+        from: { x: s1.x, y: s1.y },
+        to: { x: s2.x, y: s2.y },
+        color: 'rgba(100, 150, 200, 0.3)',
+        lineWidth: 0.5,
+        dashed: true,
+      });
     }
   }
   

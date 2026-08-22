@@ -746,10 +746,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     selectedNode.value = null;
   }
 
+  // 进入单恒星系详情视图（批次 B4：点击恒星系亮点下钻，Stellaris 式单系地图）
   function selectSystem(system) {
     currentSystem.value = system;
     currentPlanet.value = null;
+    viewLevel.value = 'system_detail';
     selectedNode.value = null;
+  }
+
+  // 从星域地图点击恒星系亮点进入单系视图：顺带补齐 currentDomain（面包屑第三/四段依赖）
+  function enterSystemDetail(system) {
+    const domain = nodes.value.find(n => n.id === system.parentId && n.layer === 'star_domain');
+    if (domain) currentDomain.value = domain;
+    selectSystem(system);
   }
 
   function selectPlanet(planet) {
@@ -863,7 +872,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       selectNode, clearSelection, selectPlanetOrNode,
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
       undo, redo,
-      selectWorld, selectDomain, selectSystem, selectPlanet, selectArea, selectBuilding, backToWorld, backToDomain, backToSystem, backToPlanet, backToArea,
+      selectWorld, selectDomain, selectSystem, enterSystemDetail, selectPlanet, selectArea, selectBuilding, backToWorld, backToDomain, backToSystem, backToPlanet, backToArea,
       handleNodeUpdated, handleNodeRemoved,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, getMapDataKey, saveMapDataImmediate,
