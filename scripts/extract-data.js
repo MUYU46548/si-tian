@@ -35,15 +35,74 @@ const LAYER_LABELS = {
 
 const LAYER_ORDER = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon', 'region', 'city', 'town', 'village', 'building', 'facility', 'location', 'unknown'];
 
+// ===== 增量提取缓存（批次C3） =====
+// .sitian/extract-cache.json 按 mtimeMs+size 指纹缓存每个 Markdown 的解析产物
+// （frontmatter/wikilinks/正文），未变更的文件跳过读盘与 gray-matter 解析。
+// 该文件与 geodata.json 同级、同为编辑器元数据（可删可重建），绝不写回 Markdown。
+const PARSE_CACHE_VERSION = 1;
+const parseCache = {
+  files: {},        // { [relativePath]: { fp: 'mtimeMs:size', parsed } }
+  seen: new Set(),  // 本次扫描遇到的文件（用于清理已删除文件的缓存条目）
+  hits: 0,
+  misses: 0,
+};
+
+function parseCachePath() { return path.join(vaultPath, '.sitian', 'extract-cache.json'); }
+
+function loadParseCache() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(parseCachePath(), 'utf-8'));
+    if (raw.version !== PARSE_CACHE_VERSION || raw.vaultPath !== vaultPath) return;
+    if (!raw.files || typeof raw.files !== 'object') return;
+    parseCache.files = raw.files;
+  } catch (e) { /* 缓存缺失/损坏 → 全量提取 */ }
+}
+
+function saveParseCache() {
+  try {
+    fs.mkdirSync(path.dirname(parseCachePath()), { recursive: true });
+    fs.writeFileSync(parseCachePath(), JSON.stringify({
+      version: PARSE_CACHE_VERSION,
+      vaultPath,
+      files: parseCache.files,
+    }), 'utf-8');
+  } catch (e) { console.warn('[提取] 写入解析缓存失败（不影响提取结果）:', e.message); }
+}
+
 function parseMdFile(filePath) {
   try {
+    const relativePath = path.relative(vaultPath, filePath);
+    parseCache.seen.add(relativePath);
+
+    // 指纹命中 → 复用上次解析产物（浅拷贝防下游 mutation 污染缓存）
+    let fp = null;
+    try {
+      const st = fs.statSync(filePath);
+      fp = `${st.mtimeMs}:${st.size}`;
+    } catch (e) { /* stat 失败 → 走全量读取 */ }
+    const cached = fp ? parseCache.files[relativePath] : null;
+    if (cached && cached.fp === fp) {
+      parseCache.hits++;
+      const fm = cached.parsed.frontmatter;
+      return {
+        frontmatter: { ...fm, tags: Array.isArray(fm.tags) ? [...fm.tags] : fm.tags },
+        content: cached.parsed.content,
+        wikilinks: [...cached.parsed.wikilinks],
+        fileName: cached.parsed.fileName,
+        relativePath,
+      };
+    }
+    parseCache.misses++;
+
     const raw = fs.readFileSync(filePath, 'utf-8');
     const { data: frontmatter, content } = matter(raw);
     const wikilinks = [];
     const linkRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
     let match;
     while ((match = linkRegex.exec(content)) !== null) wikilinks.push(match[1].trim());
-    return { frontmatter, content, wikilinks, fileName: path.basename(filePath, '.md'), relativePath: path.relative(vaultPath, filePath) };
+    const parsed = { frontmatter, content, wikilinks, fileName: path.basename(filePath, '.md') };
+    if (fp) parseCache.files[relativePath] = { fp, parsed };
+    return { ...parsed, relativePath };
   } catch (e) { console.error(`解析失败: ${filePath}`, e.message); return null; }
 }
 
@@ -113,16 +172,22 @@ function scanLocations() {
   return nodes;
 }
 
-function extractWorldsAndStars() {
+// 索引文件行缓存（批次C3）：extractWorldsAndStars 与 worldStarMap 构建共用一次读取
+let _indexLines = null;
+function getIndexLines() {
+  if (_indexLines) return _indexLines;
+  const raw = fs.readFileSync(indexPath(), 'utf-8');
+  _indexLines = matter(raw).content.split('\n');
+  return _indexLines;
+}
+
+function extractWorldsAndStars(lines) {
   try {
-    const raw = fs.readFileSync(indexPath(), 'utf-8');
-    const { content } = matter(raw);
-    const lines = content.split('\n');
     const worlds = [];
     const galaxies = []; // star systems
     let currentWorld = null;
     let currentStarDomain = null;
-    
+
     for (const line of lines) {
       const trimmed = line.trim();
       
@@ -553,19 +618,34 @@ function mergeUserCreatedNodes(allNodes, cachePath) {
   return allNodes;
 }
 
-async function extractGeodata(targetVault) {
+async function extractGeodata(targetVault, options = {}) {
   if (targetVault) vaultPath = targetVault;
-  console.log('开始提取地理数据...');
-  
+  const forceFull = !!options.forceFull;
+  console.log(`开始提取地理数据...${forceFull ? '（强制全量）' : ''}`);
+
+  // 批次C3：增量提取——加载指纹缓存（--full / forceFull 跳过）
+  if (!forceFull) loadParseCache();
+  else parseCache.files = {};
+  _indexLines = null; // vault 切换时重置索引行缓存
+
   const geoNodes = scanGeoSystem();
   console.log(`地理系统节点: ${geoNodes.length}`);
-  
+
   const locationNodes = scanLocations();
   console.log(`场景地点节点: ${locationNodes.length}`);
-  
-  const { worlds, galaxies } = extractWorldsAndStars();
+
+  const { worlds, galaxies } = extractWorldsAndStars(getIndexLines());
   console.log(`世界节点: ${worlds.length}, 星系节点: ${galaxies.length}`);
-  
+
+  // 增量提取统计 + 清理已删除文件的缓存条目
+  if (parseCache.misses > 0 || parseCache.hits > 0) {
+    console.log(`解析缓存: 复用 ${parseCache.hits} 个未变更文件，重新解析 ${parseCache.misses} 个`);
+  }
+  for (const rel of Object.keys(parseCache.files)) {
+    if (!parseCache.seen.has(rel)) delete parseCache.files[rel];
+  }
+  saveParseCache();
+
   let allNodes = mergeNodes(geoNodes, locationNodes, worlds, galaxies);
   console.log(`合并后总数: ${allNodes.length}`);
   
@@ -580,12 +660,10 @@ async function extractGeodata(targetVault) {
     console.log(`区域节点: ${regionNodes.map(r => r.name).join('、')}`);
   }
   
-  // Build world-star map from index for parent resolution
-  const raw = fs.readFileSync(indexPath(), 'utf-8');
-  const { content } = matter(raw);
+  // Build world-star map from index for parent resolution（批次C3：与上方共用一次索引读取）
   const worldStarMap = {};
   let cw = null;
-  for (const line of content.split('\n')) {
+  for (const line of getIndexLines()) {
     const tm = line.trim();
     const wm = tm.match(/^# ([^\s#].*?)$/);
     if (wm) { cw = normalizeId(wm[1]); worldStarMap[cw] = []; continue; }
@@ -614,10 +692,11 @@ module.exports = { extractGeodata };
 
 if (require.main === module) {
   (async () => {
-    // CLI 支持 --vault <path> 指定库目录（2026-08-16 可配置化）
+    // CLI 支持 --vault <path> 指定库目录（2026-08-16 可配置化）；--full 强制全量提取（忽略解析缓存，批次C3）
     const vaultArgIdx = process.argv.indexOf('--vault');
     const targetVault = vaultArgIdx !== -1 ? process.argv[vaultArgIdx + 1] : undefined;
-    const data = await extractGeodata(targetVault);
+    const forceFull = process.argv.includes('--full');
+    const data = await extractGeodata(targetVault, { forceFull });
     const outPath = path.join(vaultPath, '.sitian', 'geodata.json');
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, JSON.stringify(data, null, 2), 'utf-8');

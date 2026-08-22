@@ -3080,8 +3080,13 @@ function redo() {
 // ===== 生命周期 =====
 onMounted(() => {
   renderer.initCanvas();
-  generateAutoRegions();
   renderer.requestRender();
+  // 批次C3：挂载链分帧——自动区域生成（同步 O(regions×places)）延后一帧，
+  // 首帧先呈现画布与背景网格，避免挂载帧被长任务阻塞
+  requestAnimationFrame(() => {
+    generateAutoRegions();
+    renderer.requestRender();
+  });
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('keyup', handleKeyup);
   window.addEventListener('sitian:focus-node', onFocusNode);
