@@ -1,9 +1,5 @@
 <template>
-  <div class="layer-panel" :class="{ open: layers.panelOpen }">
-    <div class="panel-header">
-      <h3>图层</h3>
-      <button class="close-btn" @click="layers.togglePanel">×</button>
-    </div>
+  <PanelShell title="图层" :open="layers.panelOpen" class="layer-panel" @close="layers.togglePanel()">
     <div class="panel-body">
       <div
         v-for="layer in currentLayers"
@@ -26,13 +22,14 @@
         >{{ layer.locked ? '🔒' : '🔓' }}</button>
       </div>
     </div>
-  </div>
+  </PanelShell>
 </template>
 
 <script setup>
 import { computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
+import PanelShell from './PanelShell.vue';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -51,59 +48,12 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
 </script>
 
 <style scoped>
+/* 定位/尺寸透传到 PanelShell 根节点（批次A9 收编统一外壳，header/关闭/拖拽/折叠由 PanelShell 提供） */
 .layer-panel {
-  position: absolute;
   top: 8px;
   left: 8px;
   z-index: 30;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
   min-width: 160px;
-  overflow: hidden;
-  transform: translateY(-10px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.layer-panel.open {
-  transform: translateY(0);
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--panel-border);
-  background: var(--panel-header-bg);
-}
-
-.panel-header h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  font-size: 16px;
-  padding: 2px 6px;
-  line-height: 1;
-}
-
-.close-btn:hover {
-  color: var(--text-primary);
 }
 
 .panel-body {

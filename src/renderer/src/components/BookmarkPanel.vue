@@ -1,15 +1,11 @@
 <template>
-  <div class="bookmarks-panel">
-    <div class="bookmarks-header">
-      <h3>视口书签</h3>
-      <button class="close-btn" @click="$emit('close')">×</button>
-    </div>
+  <PanelShell title="视口书签" class="bookmarks-panel" @close="$emit('close')">
     <div class="bookmarks-content">
       <div v-if="bookmarks.length === 0" class="empty-hint">
         暂无书签。点击 "+" 保存当前视图位置。
       </div>
-      <div 
-        v-for="(bm, index) in bookmarks" 
+      <div
+        v-for="(bm, index) in bookmarks"
         :key="bm.id"
         class="bookmark-item"
         :class="{ current: index === currentIndex }"
@@ -26,11 +22,11 @@
       <button @click="$emit('add')" title="添加当前视图为书签">+ 添加书签</button>
       <button @click="$emit('clear')" :disabled="bookmarks.length === 0">清空全部</button>
     </div>
-  </div>
+  </PanelShell>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import PanelShell from './PanelShell.vue';
 
 const props = defineProps({
   bookmarks: { type: Array, default: () => [] },
@@ -46,45 +42,12 @@ function formatDate(iso) {
 </script>
 
 <style scoped>
+/* 定位/尺寸透传到 PanelShell 根节点（批次A9 收编统一外壳，header/关闭/拖拽/折叠由 PanelShell 提供） */
 .bookmarks-panel {
-  position: fixed;
   top: 50px;
   right: 16px;
   width: 280px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
   z-index: 200;
-  box-shadow: var(--shadow-md);
-  display: flex;
-  flex-direction: column;
-}
-
-.bookmarks-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.bookmarks-header h3 {
-  font-size: 13px;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--text-tertiary);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 2px 6px;
-}
-
-.close-btn:hover {
-  color: var(--text-primary);
 }
 
 .bookmarks-content {
