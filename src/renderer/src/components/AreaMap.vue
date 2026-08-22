@@ -15,14 +15,18 @@
             <strong>编辑模式</strong> —
             {{ interactionMode === 'pan' ? '拖拽平移 / 点击选中 / Shift+点击多选 / Shift+拖拽框选' : '' }}
             {{ interactionMode === 'add_place' ? '点击空白处添加地点（自动网格对齐）' : '' }}
+            {{ interactionMode === 'route' ? '点击放置道路顶点 · 双击完成 · 右键取消' : '' }}
+            {{ interactionMode === 'marker' ? '点击放置标记' : '' }}
+            {{ interactionMode === 'text' ? '点击放置文本标签' : '' }}
             {{ interactionMode === 'zone' ? '拖拽绘制区域 · 松开闭合' : '' }}
+            {{ interactionMode === 'building' ? '点击放置建筑' : '' }}
             · <a href="#" @click.prevent="exitEditMode">退出</a>
           </span>
         </p>
       </div>
       <div class="header-actions">
         <template v-if="!editMode">
-          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：添加地点/绘制区域">✏️ 编辑</button>
+          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式">✏️ 编辑</button>
         </template>
       </div>
     </div>
@@ -33,7 +37,11 @@
         <div class="toolbar-group" title="工具">
           <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖拽平移 / 点击选中">🤚 拖手</button>
           <button :class="{ active: interactionMode === 'add_place' }" @click="interactionMode = 'add_place'" title="点击空白处添加地点">➕ 地点</button>
-          <button :class="{ active: interactionMode === 'zone' }" @click="interactionMode = 'zone'" title="拖拽绘制区域">🗺️ 区域</button>
+          <button :class="{ active: interactionMode === 'route' }" @click="interactionMode = 'route'" title="绘制道路">🛣️ 道路</button>
+          <button :class="{ active: interactionMode === 'marker' }" @click="interactionMode = 'marker'" title="放置标记">📍 标记</button>
+          <button :class="{ active: interactionMode === 'text' }" @click="interactionMode = 'text'" title="浮动文本">🔤 文本</button>
+          <button :class="{ active: interactionMode === 'zone' }" @click="interactionMode = 'zone'" title="绘制区域">🗺️ 区域</button>
+          <button :class="{ active: interactionMode === 'building' }" @click="interactionMode = 'building'" title="放置建筑">🏛️ 建筑</button>
         </div>
 
         <div class="toolbar-group" title="绘制辅助">
@@ -42,6 +50,14 @@
             <span class="toolbar-label">间距</span>
             <button v-for="s in [20, 50, 100]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s }}</button>
           </template>
+        </div>
+
+        <!-- 道路绘制时的操作按钮 -->
+        <div class="toolbar-group" v-if="interactionMode === 'route'">
+          <button class="route-confirm-btn" @click="finishRouteDraft" :disabled="routeDraftPoints.length < 2" title="完成道路绘制（至少需要2个顶点）">✅ 完成</button>
+          <button class="route-cancel-btn" @click="cancelRouteDraft" title="放弃当前绘制">🚫 取消</button>
+          <button @click="undoLastRoutePoint" :disabled="routeDraftPoints.length === 0" title="删除最后一个顶点">⌫ 撤销点</button>
+          <span v-if="routeDraftPoints.length === 0" class="toolbar-hint">点击空白处放置第一个顶点</span>
         </div>
 
         <div class="toolbar-group" title="操作">
@@ -65,6 +81,51 @@
         :class="{ active: zoneColor === c }"
         :style="{ background: c }"
         @click="zoneColor = c"
+        class="color-btn"
+      ></button>
+    </div>
+
+    <!-- 道路样式选择器 -->
+    <div v-if="editMode && interactionMode === 'route'" class="terrain-picker">
+      <span class="picker-label">道路样式：</span>
+      <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）">➖ 实线</button>
+      <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）">〰️ 虚线</button>
+      <span class="picker-label">颜色：</span>
+      <button
+        v-for="c in ROUTE_COLORS"
+        :key="c"
+        :class="{ active: routeColor === c }"
+        :style="{ background: c }"
+        @click="routeColor = c"
+        class="color-btn"
+      ></button>
+      <span class="picker-label" v-if="routeDraftPoints.length > 0">{{ routeDraftPoints.length }} 个顶点</span>
+    </div>
+
+    <!-- 标记图标选择器 -->
+    <div v-if="editMode && interactionMode === 'marker'" class="terrain-picker">
+      <span class="picker-label">标记图标：</span>
+      <button
+        v-for="m in MARKER_ICONS"
+        :key="m.icon"
+        :class="{ active: markerIcon === m.icon }"
+        @click="markerIcon = m.icon"
+        class="marker-btn"
+      >{{ m.icon }}</button>
+      <span class="picker-label">名称</span>
+      <input v-model="markerName" class="marker-name-input" placeholder="标记名称（可选）" />
+    </div>
+
+    <!-- 文本样式选择器 -->
+    <div v-if="editMode && interactionMode === 'text'" class="terrain-picker">
+      <span class="picker-label">字号</span>
+      <button v-for="s in [12, 16, 22, 30]" :key="s" :class="{ active: textFontSize === s }" @click="textFontSize = s">{{ s }}px</button>
+      <button
+        v-for="c in TEXT_COLORS"
+        :key="c"
+        :class="{ active: textColor === c }"
+        :style="{ background: c }"
+        @click="textColor = c"
         class="color-btn"
       ></button>
     </div>
@@ -107,6 +168,21 @@
       </div>
     </div>
 
+    <!-- 通用输入对话框 -->
+    <div v-if="inputDialogOpen" class="modal-overlay" @click.self="inputDialogOpen = false">
+      <div class="modal-dialog">
+        <h3>{{ inputDialogTitle }}</h3>
+        <div class="form-row">
+          <label>{{ inputDialogLabel }}</label>
+          <input v-model="inputDialogValue" :placeholder="inputDialogPlaceholder" @keyup.enter="confirmInputDialog" />
+        </div>
+        <div class="modal-actions">
+          <button class="adopt-btn primary" @click="confirmInputDialog">确定</button>
+          <button class="adopt-btn ghost" @click="inputDialogOpen = false">取消</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 添加地点对话框 -->
     <div v-if="addPlaceDialogOpen" class="modal-overlay" @click.self="addPlaceDialogOpen = false">
       <div class="modal-dialog">
@@ -133,7 +209,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, reactive } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
@@ -150,10 +226,22 @@ const canvas = ref(null);
 const editMode = ref(false);
 const interactionMode = ref('pan');
 const selectedNode = ref(null);
-const selectedNodeIds = ref([]); // 多选节点 ID 列表
+const selectedNodeIds = ref([]);
 const gridSnapEnabled = ref(true);
 const gridSize = ref(50);
 const ZONE_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+const ROUTE_COLORS = ['#F39C12', '#E74C3C', '#3498DB', '#2ECC71', '#9B59B6', '#1ABC9C'];
+const MARKER_ICONS = [
+  { icon: '📍', name: '标记' },
+  { icon: '⭐', name: '星标' },
+  { icon: '⚔️', name: '战斗' },
+  { icon: '💰', name: '宝藏' },
+  { icon: '🏰', name: '城堡' },
+  { icon: '🗡️', name: '危险' },
+  { icon: '🏪', name: '商店' },
+  { icon: '🚪', name: '入口' },
+];
+const TEXT_COLORS = ['#FFFFFF', '#FFD700', '#58a6ff', '#f85149', '#3fb950'];
 
 // 添加地点对话框
 const addPlaceDialogOpen = ref(false);
@@ -161,10 +249,31 @@ const newPlaceName = ref('');
 const newPlaceLayer = ref('facility');
 const addPlaceWorldPos = ref({ x: 0, y: 0 });
 
+// 通用输入对话框
+const inputDialogOpen = ref(false);
+const inputDialogTitle = ref('');
+const inputDialogLabel = ref('');
+const inputDialogPlaceholder = ref('');
+const inputDialogValue = ref('');
+const inputDialogCallback = ref(null);
+
 // 区域绘制
 const zoneColor = ref('#FF6B6B');
 const zoneDraftPoints = ref([]);
 const isDrawingZone = ref(false);
+
+// 道路绘制
+const routeColor = ref('#F39C12');
+const routeDashed = ref(false);
+const routeDraftPoints = ref([]);
+
+// 标记放置
+const markerIcon = ref('📍');
+const markerName = ref('');
+
+// 文本放置
+const textFontSize = ref(16);
+const textColor = ref('#FFFFFF');
 
 // 撤销/重做 label
 const undoLabel = computed(() => store.undoLabel);
@@ -183,13 +292,13 @@ const areaPlaces = computed(() => {
   return store.currentAreaPlaces;
 });
 
-// 是否有子节点（用于显示"进入子视图"按钮）
+// 是否有子节点
 const hasChildNodes = computed(() => {
   if (!selectedNode.value) return false;
   return store.nodes.some(n => n.parentId === selectedNode.value.id);
 });
 
-// 是否为建筑节点（用于显示"进入建筑内部"按钮）
+// 是否为建筑节点
 const isSelectedBuilding = computed(() => {
   return selectedNode.value?.layer === 'building';
 });
@@ -200,16 +309,38 @@ const areaZones = computed(() => {
   return store.areaZones[props.areaNode.id] || [];
 });
 
+// 当前区域道路列表
+const areaRoutes = computed(() => {
+  if (!props.areaNode) return [];
+  return store.areaRoutes[props.areaNode.id] || [];
+});
+
+// 当前区域标记列表
+const areaMarkers = computed(() => {
+  if (!props.areaNode) return [];
+  return store.areaMarkers[props.areaNode.id] || [];
+});
+
+// 当前区域文本列表
+const areaTexts = computed(() => {
+  if (!props.areaNode) return [];
+  return store.areaTextLabels[props.areaNode.id] || [];
+});
+
 // 选中区域
 const selectedZone = ref(null);
 
-// ===== Canvas Renderer (new drag interface) =====
+// 定位高亮
+const focusHighlightNode = ref(null);
+const focusHighlightTimer = ref(null);
+
+// ===== Canvas Renderer =====
 const renderer = useCanvasRenderer(canvas, {
   onRender: (ctx, w, h) => {
-    // 背景
+    // 背景（城镇尺度：调亮的深蓝渐变）
     const bg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
-    bg.addColorStop(0, '#1a1a2e');
-    bg.addColorStop(1, '#16213e');
+    bg.addColorStop(0, '#2a2a4a');
+    bg.addColorStop(1, '#1e2a4a');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
 
@@ -218,15 +349,34 @@ const renderer = useCanvasRenderer(canvas, {
       drawGrid(ctx, w, h);
     }
 
-    // 绘制区域多边形（在节点下方作为背景）
+    // 绘制区域多边形
     drawZones(ctx);
+
+    // 绘制道路
+    drawRoutes(ctx);
 
     // 绘制子节点
     drawNodes(ctx);
 
+    // 绘制标记
+    drawMarkers(ctx);
+
+    // 绘制文本
+    drawTexts(ctx);
+
     // 绘制区域绘制中的草稿
     if (isDrawingZone.value && zoneDraftPoints.value.length > 0) {
       drawZoneDraft(ctx);
+    }
+
+    // 绘制道路草稿
+    if (interactionMode.value === 'route' && routeDraftPoints.value.length > 0) {
+      drawRouteDraft(ctx);
+    }
+
+    // 绘制定位高亮
+    if (focusHighlightNode.value) {
+      drawFocusHighlight(ctx, focusHighlightNode.value);
     }
   },
   onDragStart: handleDragStart,
@@ -241,6 +391,11 @@ const renderer = useCanvasRenderer(canvas, {
 });
 
 function handleDblClick(hit, worldX, worldY) {
+  // 道路绘制模式：双击完成
+  if (interactionMode.value === 'route' && routeDraftPoints.value.length >= 2) {
+    finishRouteDraft();
+    return;
+  }
   if (hit && hit.layer === 'building') {
     store.selectBuilding(hit);
   } else if (hit && hasChildNodesCheck(hit)) {
@@ -250,6 +405,56 @@ function handleDblClick(hit, worldX, worldY) {
 
 function hasChildNodesCheck(node) {
   return store.nodes.some(n => n.parentId === node.id);
+}
+
+// ===== 定位高亮 =====
+function showFocusHighlight(node) {
+  focusHighlightNode.value = node;
+  if (focusHighlightTimer.value) clearTimeout(focusHighlightTimer.value);
+  focusHighlightTimer.value = setTimeout(() => {
+    focusHighlightNode.value = null;
+    renderer.requestRender();
+  }, 2000);
+  renderer.requestRender();
+}
+
+function drawFocusHighlight(ctx, node) {
+  const x = node.coordinate?.x || 0;
+  const y = node.coordinate?.y || 0;
+  const time = Date.now() / 1000;
+  const pulse = Math.sin(time * 4) * 0.5 + 0.5;
+
+  // 外层脉冲光圈
+  ctx.save();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#FFD700';
+  ctx.shadowBlur = 10 + pulse * 10;
+  ctx.beginPath();
+  ctx.arc(x, y, 18 + pulse * 8, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 内层实心高亮
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+  ctx.beginPath();
+  ctx.arc(x, y, 14, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 十字标记
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 22, y);
+  ctx.lineTo(x - 10, y);
+  ctx.moveTo(x + 10, y);
+  ctx.lineTo(x + 22, y);
+  ctx.moveTo(x, y - 22);
+  ctx.lineTo(x, y - 10);
+  ctx.moveTo(x, y + 10);
+  ctx.lineTo(x, y + 22);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ===== 绘制函数 =====
@@ -293,7 +498,6 @@ function drawNodes(ctx) {
     const isDraft = node.draft === true;
     const color = getNodeColor(node.layer);
 
-    // 节点圆点
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = isSelected ? 12 : 6;
@@ -302,7 +506,6 @@ function drawNodes(ctx) {
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // 暂存节点虚线边框
     if (isDraft) {
       ctx.strokeStyle = '#888888';
       ctx.lineWidth = 1.5;
@@ -313,7 +516,6 @@ function drawNodes(ctx) {
       ctx.setLineDash([]);
     }
 
-    // 选中高亮
     if (isSelected || isMultiSelected) {
       ctx.strokeStyle = isSelected ? '#FFD700' : '#58a6ff';
       ctx.lineWidth = 2;
@@ -322,7 +524,6 @@ function drawNodes(ctx) {
       ctx.stroke();
     }
 
-    // 名称标签
     const label = node.displayName || node.name;
     if (label) {
       ctx.font = '11px sans-serif';
@@ -374,6 +575,95 @@ function drawZones(ctx) {
   });
 }
 
+function drawRoutes(ctx) {
+  const routes = areaRoutes.value;
+  routes.forEach(route => {
+    if (!route.points || route.points.length < 2) return;
+    const color = route.color || '#F39C12';
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (route.dashed) {
+      ctx.setLineDash([6, 4]);
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(route.points[0].x, route.points[0].y);
+    for (let i = 1; i < route.points.length; i++) {
+      ctx.lineTo(route.points[i].x, route.points[i].y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    route.points.forEach((p, i) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    if (route.name) {
+      const midIdx = Math.floor(route.points.length / 2);
+      const mid = route.points[midIdx];
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillText(route.name, mid.x, mid.y - 8);
+    }
+
+    ctx.restore();
+  });
+}
+
+function drawMarkers(ctx) {
+  const markers = areaMarkers.value;
+  markers.forEach(marker => {
+    const x = marker.x;
+    const y = marker.y;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.arc(x, y, 14, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(marker.icon || '📍', x, y);
+
+    if (marker.name) {
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillText(marker.name, x, y + 22);
+    }
+  });
+}
+
+function drawTexts(ctx) {
+  const texts = areaTexts.value;
+  texts.forEach(label => {
+    const x = label.x;
+    const y = label.y;
+    const fontSize = label.fontSize || 16;
+    const color = label.color || '#FFFFFF';
+
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(label.text, x, y);
+
+    ctx.fillStyle = color;
+    ctx.fillText(label.text, x, y);
+  });
+}
+
 function drawZoneDraft(ctx) {
   if (zoneDraftPoints.value.length < 2) return;
   ctx.strokeStyle = zoneColor.value;
@@ -386,6 +676,31 @@ function drawZoneDraft(ctx) {
   }
   ctx.stroke();
   ctx.setLineDash([]);
+}
+
+function drawRouteDraft(ctx) {
+  if (routeDraftPoints.value.length < 1) return;
+  ctx.strokeStyle = routeColor.value;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  if (routeDashed.value) {
+    ctx.setLineDash([6, 4]);
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(routeDraftPoints.value[0].x, routeDraftPoints.value[0].y);
+  for (let i = 1; i < routeDraftPoints.value.length; i++) {
+    ctx.lineTo(routeDraftPoints.value[i].x, routeDraftPoints.value[i].y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  routeDraftPoints.value.forEach(p => {
+    ctx.fillStyle = routeColor.value;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function getNodeColor(layer) {
@@ -404,11 +719,23 @@ function getNodeColor(layer) {
 const dragStartPos = ref(null);
 const dragStartNodePos = ref(null);
 const isDraggingNode = ref(false);
-const multiDragStartMap = ref(null); // Map<id, {x,y}>
+const multiDragStartMap = ref(null);
 
 // ===== 交互 =====
 function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   if (interactionMode.value === 'add_place') {
+    return false;
+  }
+
+  if (interactionMode.value === 'building') {
+    return false;
+  }
+
+  if (interactionMode.value === 'marker' || interactionMode.value === 'text') {
+    return false;
+  }
+
+  if (interactionMode.value === 'route') {
     return false;
   }
 
@@ -418,10 +745,8 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
     return false;
   }
 
-  // pan 模式：检测是否点击了节点
   const hit = hitTest(wx, wy);
   if (hit) {
-    // 多选模式：Shift/Ctrl+点击
     if (shiftKey || ctrlKey) {
       const idx = selectedNodeIds.value.indexOf(hit.id);
       if (idx === -1) {
@@ -431,7 +756,6 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
       }
       selectedNode.value = hit;
     } else {
-      // 单选：如果点击的节点不在多选列表中，清空多选
       if (!selectedNodeIds.value.includes(hit.id)) {
         selectedNodeIds.value = [hit.id];
       }
@@ -441,7 +765,6 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
     dragStartNodePos.value = { x: hit.coordinate?.x || 0, y: hit.coordinate?.y || 0 };
     isDraggingNode.value = true;
 
-    // 记录多选拖拽起始位置
     if (selectedNodeIds.value.length > 1) {
       multiDragStartMap.value = new Map();
       for (const id of selectedNodeIds.value) {
@@ -456,17 +779,16 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
     return { mode: 'node', nodeId: hit.id };
   }
 
-  // 空白处
   if (!shiftKey && !ctrlKey) {
     selectedNode.value = null;
     selectedNodeIds.value = [];
     renderer.requestRender();
   }
-  return true; // 允许平移
+  return true;
 }
 
 function handleDragMove(wx, wy, info) {
-  if (isDraggingZone.value) {
+  if (isDrawingZone.value) {
     zoneDraftPoints.value.push({ x: wx, y: wy });
     renderer.requestRender();
     return;
@@ -477,7 +799,6 @@ function handleDragMove(wx, wy, info) {
     const dy = wy - dragStartPos.value.y;
 
     if (selectedNodeIds.value.length > 1 && multiDragStartMap.value) {
-      // 多选拖拽：移动所有选中节点
       for (const [id, startPos] of multiDragStartMap.value) {
         const n = areaPlaces.value.find(p => p.id === id);
         if (n) {
@@ -494,7 +815,6 @@ function handleDragMove(wx, wy, info) {
         }
       }
     } else {
-      // 单选拖拽
       const newX = dragStartNodePos.value.x + dx;
       const newY = dragStartNodePos.value.y + dy;
       if (gridSnapEnabled.value) {
@@ -511,15 +831,14 @@ function handleDragMove(wx, wy, info) {
 }
 
 function handleDragEnd(wx, wy, info) {
-  if (isDraggingZone.value) {
-    isDraggingZone.value = false;
+  if (isDrawingZone.value) {
+    isDrawingZone.value = false;
     finishZoneDrawing();
     return;
   }
 
   if (isDraggingNode.value && selectedNode.value && info.didPan) {
     if (selectedNodeIds.value.length > 1 && multiDragStartMap.value) {
-      // 多选拖拽结束：批量更新
       const ids = [...selectedNodeIds.value];
       const startMap = multiDragStartMap.value;
       for (const id of ids) {
@@ -531,7 +850,6 @@ function handleDragEnd(wx, wy, info) {
       store.beginMultiNodePositionCapture(ids);
       store.endMultiNodePositionCapture();
     } else {
-      // 单选拖拽结束
       const n = selectedNode.value;
       n.userMoved = true;
       store.beginNodePositionCapture(n.id);
@@ -545,11 +863,83 @@ function handleDragEnd(wx, wy, info) {
 }
 
 function handleCanvasClick(hit, wx, wy) {
+  const snappedPos = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
+
   if (interactionMode.value === 'add_place') {
-    addPlaceWorldPos.value = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
+    addPlaceWorldPos.value = snappedPos;
     newPlaceName.value = '';
     newPlaceLayer.value = 'facility';
     addPlaceDialogOpen.value = true;
+    return;
+  }
+
+  if (interactionMode.value === 'route') {
+    routeDraftPoints.value.push({ x: snappedPos.x, y: snappedPos.y });
+    renderer.requestRender();
+    return;
+  }
+
+  if (interactionMode.value === 'marker') {
+    const marker = {
+      id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      icon: markerIcon.value,
+      name: markerName.value || '',
+      x: snappedPos.x,
+      y: snappedPos.y,
+    };
+    store.addAreaMarker(props.areaNode.id, marker);
+    markerName.value = '';
+    renderer.requestRender();
+    return;
+  }
+
+  if (interactionMode.value === 'text') {
+    showInputDialog({
+      title: '放置文本',
+      label: '文本内容',
+      placeholder: '请输入文本内容...',
+      value: '',
+      onConfirm: (text) => {
+        if (text && text.trim()) {
+          const label = {
+            id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            text: text.trim(),
+            x: snappedPos.x,
+            y: snappedPos.y,
+            fontSize: textFontSize.value,
+            color: textColor.value,
+          };
+          store.addAreaTextLabel(props.areaNode.id, label);
+          renderer.requestRender();
+        }
+      }
+    });
+    return;
+  }
+
+  if (interactionMode.value === 'building') {
+    showInputDialog({
+      title: '放置建筑',
+      label: '建筑名称',
+      placeholder: '请输入建筑名称...',
+      value: '',
+      onConfirm: (name) => {
+        if (name && name.trim()) {
+          const newNode = {
+            id: `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            name: name.trim(),
+            layer: 'building',
+            parentId: props.areaNode.id,
+            tags: [],
+            sourcePath: '',
+            coordinate: { x: Math.round(snappedPos.x), y: Math.round(snappedPos.y) },
+            draft: true,
+          };
+          store.addNode(newNode);
+          renderer.requestRender();
+        }
+      }
+    });
     return;
   }
 
@@ -566,7 +956,6 @@ function handleCanvasClick(hit, wx, wy) {
 }
 
 function handleBoxSelect(box, shiftKey) {
-  // 框选：选中框内所有节点
   const nodes = areaPlaces.value;
   const inBox = nodes.filter(n => {
     const x = n.coordinate?.x || 0;
@@ -575,7 +964,6 @@ function handleBoxSelect(box, shiftKey) {
   });
 
   if (shiftKey) {
-    // Shift+框选：追加到多选列表
     for (const n of inBox) {
       if (!selectedNodeIds.value.includes(n.id)) {
         selectedNodeIds.value.push(n.id);
@@ -621,7 +1009,6 @@ function finishZoneDrawing() {
     zoneDraftPoints.value = [];
     return;
   }
-  // 创建正式区域对象
   const zone = {
     id: `zone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name: '',
@@ -633,6 +1020,52 @@ function finishZoneDrawing() {
   store.addAreaZone(props.areaNode.id, zone);
   zoneDraftPoints.value = [];
   renderer.requestRender();
+}
+
+function finishRouteDraft() {
+  if (routeDraftPoints.value.length < 2) {
+    routeDraftPoints.value = [];
+    return;
+  }
+  const route = {
+    id: `route_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    points: routeDraftPoints.value.map(p => ({ x: p.x, y: p.y })),
+    dashed: routeDashed.value,
+    color: routeColor.value,
+    name: `道路 ${(areaRoutes.value.length) + 1}`,
+  };
+  store.addAreaRoute(props.areaNode.id, route);
+  routeDraftPoints.value = [];
+  renderer.requestRender();
+}
+
+function cancelRouteDraft() {
+  routeDraftPoints.value = [];
+  renderer.requestRender();
+}
+
+function undoLastRoutePoint() {
+  if (routeDraftPoints.value.length > 0) {
+    routeDraftPoints.value.pop();
+    renderer.requestRender();
+  }
+}
+
+// 通用输入对话框
+function showInputDialog({ title, label, placeholder, value, onConfirm }) {
+  inputDialogTitle.value = title;
+  inputDialogLabel.value = label;
+  inputDialogPlaceholder.value = placeholder;
+  inputDialogValue.value = value;
+  inputDialogCallback.value = onConfirm;
+  inputDialogOpen.value = true;
+}
+
+function confirmInputDialog() {
+  if (inputDialogCallback.value) {
+    inputDialogCallback.value(inputDialogValue.value);
+  }
+  inputDialogOpen.value = false;
 }
 
 // ===== 操作 =====
@@ -648,7 +1081,7 @@ function confirmAddPlace() {
     tags: [],
     sourcePath: '',
     coordinate: { x: Math.round(pos.x), y: Math.round(pos.y) },
-    draft: true, // 标记为暂存（无 Obsidian 词条）
+    draft: true,
   };
 
   store.addNode(newNode);
@@ -676,12 +1109,10 @@ function enterBuildingInterior() {
 
 function openInObsidian() {
   if (selectedNode.value?.sourcePath) {
-    const fullPath = `E:/图书馆/ROSA/${selectedNode.value.sourcePath}`;
     window.sitianAPI?.openExternal(`obsidian://open?vault=ROSA&file=${encodeURIComponent(selectedNode.value.sourcePath)}`);
   }
 }
 
-// 将节点从区域移回行星（修改 parentId 为行星 ID）
 function reparentNodeToPlanet() {
   if (!selectedNode.value || !props.areaNode?.parentId) return;
   const node = selectedNode.value;
@@ -705,7 +1136,6 @@ function redo() {
   renderer.requestRender();
 }
 
-// ===== 编辑模式 =====
 function enterEditMode() {
   editMode.value = true;
   interactionMode.value = 'pan';
@@ -715,6 +1145,7 @@ function exitEditMode() {
   editMode.value = false;
   isDrawingZone.value = false;
   zoneDraftPoints.value = [];
+  routeDraftPoints.value = [];
 }
 
 // ===== 面包屑与视图边界 =====
@@ -749,17 +1180,51 @@ function handleEagleEyeNavigate(world) {
 // ===== 生命周期 =====
 onMounted(() => {
   renderer.initCanvas();
+  initNodeCoordinates();
+  renderer.fitView(viewBounds.value);
   renderer.requestRender();
   window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('sitian:focus-node', onFocusNode);
 });
+
+function onFocusNode(e) {
+  const node = e.detail;
+  if (!node) return;
+  const place = areaPlaces.value.find(p => p.id === node.id);
+  if (place && place.coordinate?.x !== null && place.coordinate?.x !== undefined) {
+    renderer.focusOn(place.coordinate.x, place.coordinate.y, Math.max(renderer.getViewTransform().scale, 1.2));
+    showFocusHighlight(place);
+    renderer.requestRender();
+  }
+}
+
+function initNodeCoordinates() {
+  const nodes = areaPlaces.value;
+  const needsInit = nodes.filter(n => n.coordinate.x === null || n.coordinate.y === null || n.coordinate.x === undefined || n.coordinate.y === undefined);
+  if (needsInit.length === 0) return;
+
+  const step = gridSize.value;
+  const cols = Math.ceil(Math.sqrt(needsInit.length));
+  needsInit.forEach((n, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    n.coordinate = { x: col * step, y: row * step };
+  });
+  renderer.requestRender();
+}
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('sitian:focus-node', onFocusNode);
+  if (focusHighlightTimer.value) clearTimeout(focusHighlightTimer.value);
 });
 
 function handleKeydown(e) {
-  if (e.key === 'Delete') {
+  const tag = document.activeElement?.tagName;
+  const isEditingInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+  if (e.key === 'Delete' && !isEditingInput) {
     if (selectedNodeIds.value.length > 1) {
       if (confirm(`确定删除选中的 ${selectedNodeIds.value.length} 个节点？`)) {
         for (const id of [...selectedNodeIds.value]) {
@@ -773,7 +1238,7 @@ function handleKeydown(e) {
       deleteSelected();
     }
   }
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape' && !isEditingInput) {
     if (editMode.value) exitEditMode();
     else {
       selectedNode.value = null;
@@ -783,13 +1248,13 @@ function handleKeydown(e) {
   }
 }
 
-// 监听节点变化自动重绘
 watch(areaPlaces, () => {
   renderer.requestRender();
 });
 </script>
 
 <style scoped>
+/* 复用之前定义的所有样式 */
 .area-map-container {
   display: flex;
   flex-direction: column;
@@ -820,22 +1285,15 @@ watch(areaPlaces, () => {
 
 .back-btn {
   background: none;
-  border: 1px solid var(--nav-border);
+  border: none;
   color: var(--text-secondary);
   cursor: pointer;
+  font-size: 13px;
   padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
 }
 
 .back-btn:hover {
-  background: var(--btn-bg);
-}
-
-.area-map-container h2 {
-  font-size: 14px;
   color: var(--text-primary);
-  margin: 0;
 }
 
 .hint {
@@ -849,12 +1307,13 @@ watch(areaPlaces, () => {
   text-decoration: none;
 }
 
-.hint a:hover {
-  text-decoration: underline;
-}
-
 .edit-hint {
   color: var(--accent);
+}
+
+.edit-hint a {
+  color: var(--text-secondary);
+  text-decoration: none;
 }
 
 .header-actions {
@@ -862,42 +1321,23 @@ watch(areaPlaces, () => {
   gap: 8px;
 }
 
-.adopt-btn {
-  padding: 5px 10px;
-  border: 1px solid var(--nav-border);
-  background: var(--btn-bg);
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.adopt-btn:hover {
-  background: var(--btn-hover);
-  color: var(--text-primary);
-}
-
-.adopt-btn.ghost {
-  background: transparent;
-}
-
 .edit-entry-btn {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
+  padding: 6px 14px;
+  font-size: 12px;
 }
 
 .edit-toolbar-wrap {
-  border-bottom: 1px solid var(--nav-border);
   background: var(--toolbar-bg);
-  padding: 6px 16px;
+  border-bottom: 1px solid var(--nav-border);
+  padding: 6px 12px;
+  overflow-x: auto;
 }
 
 .edit-toolbar {
   display: flex;
   gap: 12px;
   align-items: center;
-  flex-wrap: wrap;
+  min-width: max-content;
 }
 
 .toolbar-group {
@@ -906,20 +1346,32 @@ watch(areaPlaces, () => {
   align-items: center;
 }
 
+.toolbar-group + .toolbar-group {
+  padding-left: 12px;
+  border-left: 1px solid var(--nav-border);
+}
+
 .toolbar-group button {
-  padding: 4px 8px;
+  padding: 4px 10px;
   border: 1px solid var(--nav-border);
   background: var(--btn-bg);
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .toolbar-group button.active {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(88, 166, 255, 0); }
 }
 
 .toolbar-group button:hover:not(.active) {
@@ -942,16 +1394,41 @@ watch(areaPlaces, () => {
 }
 
 .toolbar-close {
-  background: #2ea043 !important;
-  color: white !important;
+  background: #238636 !important;
   border-color: #2ea043 !important;
+  color: white !important;
+}
+
+.route-confirm-btn {
+  background: #238636 !important;
+  border-color: #2ea043 !important;
+  color: white !important;
+}
+
+.route-confirm-btn:disabled {
+  background: #1a472a !important;
+  border-color: #238636 !important;
+  color: #8b949e !important;
+  cursor: not-allowed !important;
+}
+
+.route-cancel-btn {
+  background: #da3633 !important;
+  border-color: #f85149 !important;
+  color: white !important;
+}
+
+.toolbar-hint {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 .terrain-picker {
   display: flex;
-  align-items: center;
   gap: 6px;
-  padding: 6px 16px;
+  align-items: center;
+  padding: 6px 12px;
   background: var(--toolbar-bg);
   border-bottom: 1px solid var(--nav-border);
 }
@@ -959,11 +1436,12 @@ watch(areaPlaces, () => {
 .picker-label {
   font-size: 11px;
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .color-btn {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
@@ -971,7 +1449,35 @@ watch(areaPlaces, () => {
 
 .color-btn.active {
   border-color: white;
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.marker-btn {
+  padding: 4px 8px;
+  border: 1px solid var(--nav-border);
+  background: var(--btn-bg);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.marker-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.marker-name-input {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--nav-border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+  outline: none;
+}
+
+.marker-name-input:focus {
+  border-color: var(--accent);
 }
 
 .canvas-wrapper {
@@ -986,17 +1492,16 @@ watch(areaPlaces, () => {
   height: 100%;
 }
 
-/* 节点详情浮窗 */
 .node-detail-popover {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 240px;
   background: var(--panel-bg);
-  border: 1px solid var(--nav-border);
+  border: 1px solid #30363d;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
-  z-index: 30;
+  min-width: 200px;
+  z-index: 20;
 }
 
 .popover-header {
@@ -1004,62 +1509,81 @@ watch(areaPlaces, () => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--nav-border);
+  border-bottom: 1px solid #30363d;
 }
 
 .popover-header h4 {
-  margin: 0;
   font-size: 13px;
-  color: var(--text-primary);
+  margin: 0;
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: var(--text-tertiary);
+  color: #8b949e;
   cursor: pointer;
   font-size: 16px;
 }
 
-.close-btn:hover {
-  color: var(--text-primary);
-}
-
 .popover-body {
-  padding: 10px 12px;
+  padding: 8px 12px;
 }
 
 .detail-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .detail-label {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  min-width: 60px;
+  font-size: 10px;
+  color: #8b949e;
+  text-transform: uppercase;
+  min-width: 50px;
 }
 
 .detail-value {
   font-size: 11px;
-  color: var(--text-primary);
+  color: #e2e8f0;
 }
 
 .popover-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--nav-border);
+  margin-top: 8px;
 }
 
-.popover-actions .adopt-btn {
-  flex: 1;
-  text-align: center;
+.adopt-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--nav-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
-/* 添加地点对话框 */
+.adopt-btn:hover {
+  background: var(--btn-hover);
+}
+
+.adopt-btn.ghost {
+  background: transparent;
+}
+
+.adopt-btn.primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.adopt-btn.danger {
+  border-color: #f85149;
+  color: #f85149;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1070,52 +1594,53 @@ watch(areaPlaces, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 900;
+  z-index: 100;
 }
 
 .modal-dialog {
   background: var(--panel-bg);
-  border: 1px solid var(--nav-border);
-  border-radius: var(--radius-lg);
+  border: 1px solid #30363d;
+  border-radius: var(--radius-md);
   padding: 20px;
-  width: 320px;
-  box-shadow: var(--shadow-lg);
+  min-width: 300px;
 }
 
 .modal-dialog h3 {
   margin: 0 0 16px 0;
-  font-size: 15px;
-  color: var(--text-primary);
+  font-size: 14px;
 }
 
 .form-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
   margin-bottom: 12px;
 }
 
 .form-row label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  min-width: 50px;
+  display: block;
+  font-size: 11px;
+  color: #8b949e;
+  margin-bottom: 4px;
 }
 
 .form-row input,
 .form-row select {
-  flex: 1;
-  padding: 6px 8px;
-  border: 1px solid var(--nav-border);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  width: 100%;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
+  border: 1px solid #30363d;
+  background: #161b22;
+  color: #e2e8f0;
   font-size: 12px;
+  outline: none;
+}
+
+.form-row input:focus,
+.form-row select:focus {
+  border-color: var(--accent);
 }
 
 .modal-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 16px;
 }
 </style>
