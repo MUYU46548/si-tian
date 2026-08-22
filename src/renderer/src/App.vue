@@ -1099,6 +1099,8 @@ async function clearCoordinateCache() {
   // 通过主进程 API 删除文件
   try {
     await window.sitianAPI.clearCoordinateCache();
+    // 重置内存地图缓存（loadMapData 的短路缓存依赖此处失效，批次A3）
+    store.mapData = {};
     // 重新加载
     await store.loadGeodata();
     statusText.value = '坐标缓存已清除，数据已重新提取';

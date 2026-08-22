@@ -407,6 +407,9 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   async function loadMapData(planetId) {
     try {
+      // 内存缓存命中直接返回（批次A3：避免每次进入行星视图都重走 IPC+JSON 解析；
+      // 清除坐标缓存时 App 侧会整体重置 mapData，不会供旧数据）
+      if (mapData.value[planetId]) return mapData.value[planetId];
       const key = getMapDataKey(planetId);
       const result = await window.sitianAPI.getMapData(key);
       let data = result.success ? result.data : null;

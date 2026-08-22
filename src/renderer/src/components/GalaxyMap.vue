@@ -353,13 +353,19 @@ function applyStableLayout() {
   
   galaxyNodes.value = [];
   const domainMap = new Map(domainNodes.map(d => [d.id, d]));
-  
-  props.galaxies.forEach(galaxy => {
-    const parentDomain = domainMap.get(galaxy.parentId);
-    if (parentDomain) {
-      const domainGalaxies = props.galaxies.filter(g => g.parentId === galaxy.parentId);
-      const idx = domainGalaxies.indexOf(galaxy);
-      const total = domainGalaxies.length;
+
+  // 按 parentId 一次分组（O(n)，替代每星系 filter 的 O(n²)，批次A3 挂载期卡顿缓解）
+  const galaxiesByParent = new Map();
+  for (const g of props.galaxies) {
+    if (!galaxiesByParent.has(g.parentId)) galaxiesByParent.set(g.parentId, []);
+    galaxiesByParent.get(g.parentId).push(g);
+  }
+
+  for (const [pid, domainGalaxies] of galaxiesByParent) {
+    const parentDomain = domainMap.get(pid);
+    if (!parentDomain) continue;
+    const total = domainGalaxies.length;
+    domainGalaxies.forEach((galaxy, idx) => {
       const angle = (idx / Math.max(total, 1)) * Math.PI * 2 + 0.3;
       const dist = 100 + (idx % 4) * 60;
       // 用户手动放置过的坐标优先保留，避免布局重算重置拖拽
@@ -386,8 +392,8 @@ function applyStableLayout() {
         domainId: galaxy.parentId,
         factionColor: parentDomain.factionColor
       });
-    }
-  });
+    });
+  }
 }
 
 // ===== 计算势力边界（凸包）=====
@@ -1526,10 +1532,12 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
 });
 
-watch(() => [props.galaxies, props.domains], () => {
+// props 数组来自 store computed（节点更新是对象替换 → computed 重算 → 数组引用变化），
+// 浅 watch 即可触发重布局；deep 遍历全部节点对象属无谓开销（批次A3）
+watch([() => props.galaxies, () => props.domains], () => {
   applyStableLayout();
   renderer.requestRender();
-}, { deep: true });
+});
 
 watch(visibleHyperlanes, () => {
   renderer.requestRender();
