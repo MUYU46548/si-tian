@@ -27,8 +27,14 @@ export const useGeodataStore = defineStore('geodata', () => {
   // ===== 建筑内部数据（第三层：楼层 + 家具） =====
   const interiorData = ref({});
 
+
   // ===== 区域地图数据（区域多边形） =====
   const areaZones = ref({});
+
+  // ===== 区域地图编辑数据（道路、标记、文本） =====
+  const areaRoutes = ref({});
+  const areaMarkers = ref({});
+  const areaTextLabels = ref({});
 
   // ===== 计算属性 =====
   const canUndo = undoCanUndo;
@@ -143,7 +149,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 当前 vault 中存在的层级类型（用于过滤选项）
   const availableLayers = computed(() => {
     const layers = new Set(nodes.value.map(n => n.layer));
-    const order = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon', 'region', 'city', 'town', 'village', 'facility', 'location'];
+    const order = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon', 'region', 'city', 'town', 'village', 'building', 'facility', 'location'];
     return order.filter(l => layers.has(l));
   });
 
@@ -156,7 +162,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   const layerLabels = {
     world: '世界', star_domain: '星域', galaxy: '星系', star: '恒星',
     planet: '行星', moon: '卫星', region: '区域', city: '城市',
-    town: '城镇', village: '村庄', facility: '设施', location: '地点', unknown: '未知'
+    town: '城镇', village: '村庄', building: '建筑', facility: '设施', location: '地点', unknown: '未知'
   };
 
   function toggleLayerFilter(layer) {
@@ -279,11 +285,21 @@ export const useGeodataStore = defineStore('geodata', () => {
       nodes.value = validateNodes(result.data.nodes || []);
       hyperlanes.value = result.data.hyperlanes || [];
       domainBorderOverrides.value = result.data.domainBorderOverrides || {};
+      interiorData.value = result.data.interiorData || {};
+      areaZones.value = result.data.areaZones || {};
+      areaRoutes.value = result.data.areaRoutes || {};
+      areaMarkers.value = result.data.areaMarkers || {};
+      areaTextLabels.value = result.data.areaTextLabels || {};
     } else {
       console.error('Failed to load geodata:', result.error);
       nodes.value = [];
       hyperlanes.value = [];
       domainBorderOverrides.value = {};
+      interiorData.value = {};
+      areaZones.value = {};
+      areaRoutes.value = {};
+      areaMarkers.value = {};
+      areaTextLabels.value = {};
     }
   }
 
@@ -343,6 +359,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       domainBorderOverrides: domainBorderOverrides.value,
       interiorData: interiorData.value,
       areaZones: areaZones.value,
+      areaRoutes: areaRoutes.value,
+      areaMarkers: areaMarkers.value,
+      areaTextLabels: areaTextLabels.value,
       updatedAt: new Date().toISOString()
     }));
     await window.sitianAPI.saveGeodata(data);
@@ -1536,6 +1555,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     return newFloor;
   }
 
+  // 获取当前区域内的所有建筑（用于建筑间跳转）
+  function getBuildingsInArea(areaId) {
+    return nodes.value.filter(n => n.parentId === areaId && n.layer === 'building');
+  }
+
   // 移除楼层
   function removeFloor(buildingId, floorId) {
     const data = interiorData.value[buildingId];
@@ -1620,10 +1644,6 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   // ===== 区域地图数据（区域多边形）管理 =====
   function addAreaZone(areaId, zone) {
-    if (!areaZones.value[areaId]) {
-      areaZones.value[areaId] = [];
-    }
-    areaZones.value[areaId].push(zone);
     execute({
       type: 'add-area-zone',
       label: '绘制区域',
@@ -1631,6 +1651,7 @@ export const useGeodataStore = defineStore('geodata', () => {
         areaZones.value[areaId] = areaZones.value[areaId].filter(z => z.id !== zone.id);
       },
       redo: () => {
+        if (!areaZones.value[areaId]) areaZones.value[areaId] = [];
         areaZones.value[areaId].push(zone);
       },
     });
@@ -1642,7 +1663,6 @@ export const useGeodataStore = defineStore('geodata', () => {
     const idx = areaZones.value[areaId].findIndex(z => z.id === zoneId);
     if (idx === -1) return;
     const removed = areaZones.value[areaId][idx];
-    areaZones.value[areaId].splice(idx, 1);
     execute({
       type: 'remove-area-zone',
       label: '删除区域',
@@ -1664,12 +1684,137 @@ export const useGeodataStore = defineStore('geodata', () => {
         oldState[key] = Array.isArray(zone[key]) ? zone[key].map(p => ({...p})) : zone[key];
       }
     }
-    Object.assign(zone, updates);
     execute({
       type: 'update-area-zone',
       label: '编辑区域',
       undo: () => { Object.assign(zone, oldState); },
       redo: () => { Object.assign(zone, updates); },
+    });
+    scheduleAutoSave();
+  }
+
+  // ===== 区域地图道路管理 =====
+  function addAreaRoute(areaId, route) {
+    execute({
+      type: 'add-area-route',
+      label: '绘制道路',
+      undo: () => { areaRoutes.value[areaId] = areaRoutes.value[areaId].filter(r => r.id !== route.id); },
+      redo: () => {
+        if (!areaRoutes.value[areaId]) areaRoutes.value[areaId] = [];
+        areaRoutes.value[areaId].push(route);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  function removeAreaRoute(areaId, routeId) {
+    if (!areaRoutes.value[areaId]) return;
+    const idx = areaRoutes.value[areaId].findIndex(r => r.id === routeId);
+    if (idx === -1) return;
+    const removed = areaRoutes.value[areaId][idx];
+    execute({
+      type: 'remove-area-route',
+      label: '删除道路',
+      undo: () => { areaRoutes.value[areaId].splice(idx, 0, removed); },
+      redo: () => { areaRoutes.value[areaId] = areaRoutes.value[areaId].filter(r => r.id !== routeId); },
+    });
+    scheduleAutoSave();
+  }
+
+  function updateAreaRoute(areaId, routeId, updates) {
+    if (!areaRoutes.value[areaId]) return;
+    const route = areaRoutes.value[areaId].find(r => r.id === routeId);
+    if (!route) return;
+    const oldState = { ...route };
+    execute({
+      type: 'update-area-route',
+      label: '编辑道路',
+      undo: () => { Object.assign(route, oldState); },
+      redo: () => { Object.assign(route, updates); },
+    });
+    scheduleAutoSave();
+  }
+
+  // ===== 区域地图标记管理 =====
+  function addAreaMarker(areaId, marker) {
+    execute({
+      type: 'add-area-marker',
+      label: '放置标记',
+      undo: () => { areaMarkers.value[areaId] = areaMarkers.value[areaId].filter(m => m.id !== marker.id); },
+      redo: () => {
+        if (!areaMarkers.value[areaId]) areaMarkers.value[areaId] = [];
+        areaMarkers.value[areaId].push(marker);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  function removeAreaMarker(areaId, markerId) {
+    if (!areaMarkers.value[areaId]) return;
+    const idx = areaMarkers.value[areaId].findIndex(m => m.id === markerId);
+    if (idx === -1) return;
+    const removed = areaMarkers.value[areaId][idx];
+    execute({
+      type: 'remove-area-marker',
+      label: '删除标记',
+      undo: () => { areaMarkers.value[areaId].splice(idx, 0, removed); },
+      redo: () => { areaMarkers.value[areaId] = areaMarkers.value[areaId].filter(m => m.id !== markerId); },
+    });
+    scheduleAutoSave();
+  }
+
+  function updateAreaMarker(areaId, markerId, updates) {
+    if (!areaMarkers.value[areaId]) return;
+    const marker = areaMarkers.value[areaId].find(m => m.id === markerId);
+    if (!marker) return;
+    const oldState = { ...marker };
+    execute({
+      type: 'update-area-marker',
+      label: '编辑标记',
+      undo: () => { Object.assign(marker, oldState); },
+      redo: () => { Object.assign(marker, updates); },
+    });
+    scheduleAutoSave();
+  }
+
+  // ===== 区域地图文本管理 =====
+  function addAreaTextLabel(areaId, label) {
+    execute({
+      type: 'add-area-text',
+      label: '放置文本',
+      undo: () => { areaTextLabels.value[areaId] = areaTextLabels.value[areaId].filter(l => l.id !== label.id); },
+      redo: () => {
+        if (!areaTextLabels.value[areaId]) areaTextLabels.value[areaId] = [];
+        areaTextLabels.value[areaId].push(label);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  function removeAreaTextLabel(areaId, labelId) {
+    if (!areaTextLabels.value[areaId]) return;
+    const idx = areaTextLabels.value[areaId].findIndex(l => l.id === labelId);
+    if (idx === -1) return;
+    const removed = areaTextLabels.value[areaId][idx];
+    execute({
+      type: 'remove-area-text',
+      label: '删除文本',
+      undo: () => { areaTextLabels.value[areaId].splice(idx, 0, removed); },
+      redo: () => { areaTextLabels.value[areaId] = areaTextLabels.value[areaId].filter(l => l.id !== labelId); },
+    });
+    scheduleAutoSave();
+  }
+
+  function updateAreaTextLabel(areaId, labelId, updates) {
+    if (!areaTextLabels.value[areaId]) return;
+    const label = areaTextLabels.value[areaId].find(l => l.id === labelId);
+    if (!label) return;
+    const oldState = { ...label };
+    execute({
+      type: 'update-area-text',
+      label: '编辑文本',
+      undo: () => { Object.assign(label, oldState); },
+      redo: () => { Object.assign(label, updates); },
     });
     scheduleAutoSave();
   }
@@ -1776,5 +1921,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       interiorData, addFloor, removeFloor, updateFloor, addFurniture, removeFurniture, updateFurniture,
       beginMultiFurnitureCapture, endMultiFurnitureCapture,
       areaZones, addAreaZone, removeAreaZone, updateAreaZone,
+      areaRoutes, addAreaRoute, removeAreaRoute, updateAreaRoute,
+      areaMarkers, addAreaMarker, removeAreaMarker, updateAreaMarker,
+      areaTextLabels, addAreaTextLabel, removeAreaTextLabel, updateAreaTextLabel,
+      getBuildingsInArea,
     };
 });
