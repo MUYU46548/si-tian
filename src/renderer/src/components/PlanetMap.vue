@@ -3305,6 +3305,10 @@ watch(() => props.planet?.id, async (id) => {
 }
 
 .map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   padding: 12px 20px;
   background: var(--planet-header-bg);
   border-bottom: 1px solid var(--planet-header-border);
@@ -3312,8 +3316,9 @@ watch(() => props.planet?.id, async (id) => {
 
 .header-left {
   display: flex;
-  align-items: baseline;
-  gap: 16px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .header-title-row {
@@ -3363,6 +3368,7 @@ watch(() => props.planet?.id, async (id) => {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .adopt-btn {

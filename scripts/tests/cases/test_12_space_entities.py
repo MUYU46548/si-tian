@@ -98,14 +98,26 @@ def run(cdp):
         if not any(need in t for t in menu['items']):
             return False, f'空白菜单缺少「{need}」项 {menu}'
 
-    marker = _js_obj(cdp, f"""(() => {{
-      // prompt 序列：类型 2=资源点 → 名称「银矿带」
-      const seq = ['2', '银矿带']; let i = 0;
-      window.prompt = () => seq[i++] ?? '';
+    marker = _js_obj(cdp, f"""(async () => {{
+      // 模态序列（批次D1 后走 PromptDialog，替代 window.prompt）：类型选资源点 → 名称「银矿带」
       const el = {DETAIL_EL};
       const item = Array.from(el.querySelectorAll('.context-menu .menu-item')).find(m => m.textContent.includes('添加太空标记'));
       if (!item) return 'no-item';
       item.click();
+      await new Promise(r => setTimeout(r, 80));
+      let dlg = document.querySelector('.prompt-dialog');
+      if (!dlg) return 'no-dialog';
+      const opt = Array.from(dlg.querySelectorAll('.prompt-choice')).find(b => b.textContent.includes('资源点'));
+      if (!opt) return 'no-type';
+      opt.click();
+      await new Promise(r => setTimeout(r, 80));
+      dlg = document.querySelector('.prompt-dialog');
+      const input = dlg && dlg.querySelector('.prompt-input');
+      if (!input) return 'no-input';
+      input.value = '银矿带';
+      input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+      Array.from(dlg.querySelectorAll('.prompt-btn')).find(b => b.textContent === '确定').click();
+      await new Promise(r => setTimeout(r, 80));
       const s = {APP_STORE};
       const m = s.spaceMarkers[s.spaceMarkers.length - 1];
       return JSON.stringify({{
@@ -130,7 +142,7 @@ def run(cdp):
     # d) 部队卡片：setupState 辅助函数 createFleetCardAt（prompt：2=行星军 → 名称 → 阵营）
     #    位置取标记的对侧（标记环 55 + 卡片环 150 → 对侧距离 205）：卡片是屏幕定宽
     #    （世界单位宽随缩小而增大，scale~0.46 时半宽 ~90），需远离标记避免命中域互相覆盖
-    card = _js_obj(cdp, f"""(() => {{
+    card = _js_obj(cdp, f"""(async () => {{
       const st = {DETAIL_ST};
       const s = {APP_STORE};
       const mm = s.spaceMarkers[0];
@@ -144,12 +156,34 @@ def run(cdp):
             Math.hypot(mm.x - x, mm.y - y) > 180) spot = {{ x, y }};
       }}
       if (!spot) return 'no-spot';
-      const seq = ['2', '第七行星军', '蓝镜帝国']; let i = 0;
-      window.prompt = () => seq[i++] ?? '';
-      const created = st.createFleetCardAt(spot.x, spot.y);
+      // 模态序列（批次D1）：类型行星军 → 名称「第七行星军」→ 阵营「蓝镜帝国」
+      const p = st.createFleetCardAt(spot.x, spot.y);
+      const step = async (matchText, inputValue) => {{
+        await new Promise(r => setTimeout(r, 80));
+        const dlg = document.querySelector('.prompt-dialog');
+        if (!dlg) throw new Error('no-dialog');
+        if (inputValue === undefined) {{
+          const opt = Array.from(dlg.querySelectorAll('.prompt-choice')).find(b => b.textContent.includes(matchText));
+          if (!opt) throw new Error('no-choice:' + matchText);
+          opt.click();
+        }} else {{
+          const input = dlg.querySelector('.prompt-input');
+          if (!input) throw new Error('no-input');
+          input.value = inputValue;
+          input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+          Array.from(dlg.querySelectorAll('.prompt-btn')).find(b => b.textContent === '确定').click();
+        }}
+      }};
+      let err = null;
+      try {{
+        await step('行星军');
+        await step(null, '第七行星军');
+        await step(null, '蓝镜帝国');
+      }} catch (e) {{ err = String(e.message); }}
+      const created = err ? null : await p;
       return JSON.stringify({{
         count: s.fleetCards.length, card: created,
-        compCount: st.systemFleetCards.length,
+        compCount: st.systemFleetCards.length, err,
       }});
     }})()""")
     if not isinstance(card, dict) or card.get('card') is None:

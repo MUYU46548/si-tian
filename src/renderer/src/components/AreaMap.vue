@@ -26,7 +26,7 @@
       </div>
       <div class="header-actions">
         <template v-if="!editMode">
-          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式">✏️ 编辑</button>
+          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制区域/道路/标记等">✏️ 编辑地图</button>
         </template>
       </div>
     </div>
@@ -1372,11 +1372,43 @@ watch(areaPlaces, () => {
 .header-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 与行星地图同款按钮基底（批次D4：此前缺失导致编辑入口退化为浏览器默认按钮样式） */
+.adopt-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--nav-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.adopt-btn:hover {
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
+}
+
+.adopt-btn.ghost {
+  background: transparent;
 }
 
 .edit-entry-btn {
   padding: 6px 14px;
   font-size: 12px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.edit-entry-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  filter: brightness(1.15);
 }
 
 .edit-toolbar-wrap {

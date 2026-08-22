@@ -29,6 +29,11 @@ function createWindow() {
     height: 900,
     title: 'SiTian — 世界观动态构建系统',
     backgroundColor: '#0a0e18',
+    // 窗口/任务栏图标（问题2）：打包后 exe 资源由 electron-builder 注入，
+    // 开发与未打包运行时由此处提供；macOS 窗口图标由系统取 app bundle，无需设置
+    icon: process.platform === 'win32'
+      ? path.join(__dirname, '../../build/icon.ico')
+      : path.join(__dirname, '../../build/icon-512.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,

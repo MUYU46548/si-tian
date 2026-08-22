@@ -127,9 +127,8 @@ def run(cdp):
     if not isinstance(rc, dict) or (rc['x'], rc['y']) != (drag['before']['x'], drag['before']['y']):
         return False, f'undo 未恢复坐标 {rc} (期望 {drag["before"]})'
 
-    # d) 添加天体：stub prompt 选「卫星」→ 点头部「＋ 天体」→ 落下一轨道槽公式位
-    add = _js_obj(cdp, """(() => {
-      window.prompt = () => '2';
+    # d) 添加天体：点「＋ 天体」→ 模态选「卫星」→ 落下一轨道槽公式位（批次D1 后走 PromptDialog）
+    add = _js_obj(cdp, """(async () => {
       const el = document.querySelector('.system-detail-container');
       const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('＋ 天体'));
       if (!btn) return 'no-btn';
@@ -137,6 +136,13 @@ def run(cdp):
       const before = store.nodes.length;
       const sysBefore = store.currentSystemPlanets.length;
       btn.click();
+      await new Promise(r => setTimeout(r, 80));
+      const dlg = document.querySelector('.prompt-dialog');
+      if (!dlg) return 'no-dialog';
+      const opt = Array.from(dlg.querySelectorAll('.prompt-choice')).find(b => b.textContent.includes('卫星'));
+      if (!opt) return 'no-choice';
+      opt.click();
+      await new Promise(r => setTimeout(r, 80));
       const added = store.nodes[store.nodes.length - 1];
       const base = store.nodes.find(n => n.id === '乐园星系').coordinate;
       // 与组件 createBody 相同的轨道槽公式：pIdx = 现有行星数（2 颗 → 第 3 槽）
@@ -170,9 +176,8 @@ def run(cdp):
     if not isinstance(ub, dict) or ub['nodes'] != add['before'] or ub['sys'] != add['sysBefore']:
         return False, f'undo 添加未恢复 {ub} (期望 {add["before"]}/{add["sysBefore"]})'
 
-    # d3) 右键空白处 → 「＋ 添加天体（此位置）」原地添加（stub prompt 选空间站）
+    # d3) 右键空白处 → 「＋ 添加天体（此位置）」原地添加（模态选「空间站」）
     spot_info = _js_obj(cdp, """(() => {
-      window.prompt = () => '3';
       const el = document.querySelector('.system-detail-container');
       const st = el.__vueParentComponent.setupState;
       const store = document.querySelector('#app').__vue_app__._instance.setupState.store;
@@ -203,12 +208,19 @@ def run(cdp):
     })()""")
     if not isinstance(menu, dict) or not menu['visible'] or not any('添加天体' in t for t in menu['items']):
         return False, f'右键空白未出现添加菜单 {menu}'
-    ctx_add = _js_obj(cdp, """(() => {
+    ctx_add = _js_obj(cdp, """(async () => {
       const el = document.querySelector('.system-detail-container');
       const store = document.querySelector('#app').__vue_app__._instance.setupState.store;
       const item = Array.from(el.querySelectorAll('.context-menu .menu-item')).find(m => m.textContent.includes('添加天体'));
       if (!item) return 'no-item';
       item.click();
+      await new Promise(r => setTimeout(r, 80));
+      const dlg = document.querySelector('.prompt-dialog');
+      if (!dlg) return 'no-dialog';
+      const opt = Array.from(dlg.querySelectorAll('.prompt-choice')).find(b => b.textContent.includes('空间站'));
+      if (!opt) return 'no-choice';
+      opt.click();
+      await new Promise(r => setTimeout(r, 80));
       const added = store.nodes[store.nodes.length - 1];
       return JSON.stringify({
         after: store.nodes.length, tags: added.tags, coord: added.coordinate, parentId: added.parentId,

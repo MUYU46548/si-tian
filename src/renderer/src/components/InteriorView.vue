@@ -35,7 +35,7 @@
       </div>
       <div class="header-actions">
         <template v-if="!editMode">
-          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式">✏️ 编辑</button>
+          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：放置/拖拽家具">✏️ 编辑地图</button>
         </template>
       </div>
     </div>
@@ -193,6 +193,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, reactive } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import { usePromptDialog } from '../composables/usePromptDialog';
 import EagleEye from './EagleEye.vue';
 
 const props = defineProps({
@@ -325,11 +326,12 @@ function addFloor() {
   renderer.requestRender();
 }
 
-function renameFloor() {
+async function renameFloor() {
   if (!currentFloorId.value) return;
   const floor = floors.value.find(f => f.id === currentFloorId.value);
   if (!floor) return;
-  const newName = prompt('楼层名称', floor.name);
+  // 批次D1：window.prompt 在 Electron 渲染进程不被支持（楼层重命名此前静默失效）
+  const newName = await promptDialog.askText({ title: '楼层名称', defaultValue: floor.name });
   if (newName && newName.trim()) {
     store.updateFloor(props.buildingNode.id, currentFloorId.value, { name: newName.trim() });
   }
@@ -615,8 +617,10 @@ function handleCanvasClick(hit, wx, wy) {
     addFurnitureWorldPos.value = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
     newFurnitureName.value = '';
     newFurnitureType.value = selectedFurnitureType.value;
-    newFurnitureWidth.value = 60;
-    newFurnitureHeight.value = 40;
+    // 显式取类型默认尺寸：watch(newFurnitureType) 在类型未变时不触发，此前硬编码 60/40（批次D2）
+    const size = getDefaultSize(selectedFurnitureType.value);
+    newFurnitureWidth.value = size.w;
+    newFurnitureHeight.value = size.h;
     addFurnitureDialogOpen.value = true;
     return;
   }
@@ -687,14 +691,21 @@ function snapPoint(world) {
 }
 
 function confirmAddFurniture() {
-  if (!newFurnitureName.value.trim() || !currentFloorId.value) return;
+  // 批次D2：此前空名称/楼层失效时静默 return（用户点了"放置"毫无反馈）
+  if (!props.buildingNode) return;
+  // 楼层缺失或指向旧建筑（建筑切换器换楼后 currentFloorId 过期）→ 自动补建一楼
+  if (!currentFloorId.value || !floors.value.some(f => f.id === currentFloorId.value)) {
+    const newFloor = store.addFloor(props.buildingNode.id, '一楼');
+    currentFloorId.value = newFloor.id;
+  }
 
   const pos = addFurnitureWorldPos.value;
-  store.addFurniture(
+  const typeMeta = FURNITURE_TYPES.find(t => t.type === newFurnitureType.value);
+  const item = store.addFurniture(
     props.buildingNode.id,
     currentFloorId.value,
     {
-      name: newFurnitureName.value.trim(),
+      name: newFurnitureName.value.trim() || `新${typeMeta?.label || '家具'}`,
       type: newFurnitureType.value,
       x: Math.round(pos.x),
       y: Math.round(pos.y),
@@ -702,6 +713,10 @@ function confirmAddFurniture() {
       height: newFurnitureHeight.value,
     }
   );
+  if (!item) {
+    console.warn('[InteriorView] 家具放置失败：目标楼层不存在', props.buildingNode.id, currentFloorId.value);
+    return;
+  }
   addFurnitureDialogOpen.value = false;
   renderer.requestRender();
 }
@@ -801,9 +816,16 @@ function enterEditMode() {
   editMode.value = true;
   interactionMode.value = 'pan';
 }
+// 模态输入（批次D1）：楼层重命名等，替代 Electron 不支持的 window.prompt
+const promptDialog = usePromptDialog();
 
 function exitEditMode() {
   editMode.value = false;
+  // 批次D2：退出编辑时重置工具，否则浏览态点击画布仍会触发放置对话框
+  interactionMode.value = 'pan';
+  selectedFurniture.value = null;
+  selectedFurnitureIds.value = [];
+  addFurnitureDialogOpen.value = false;
 }
 
 // ===== 面包屑与视图边界 =====
@@ -847,6 +869,22 @@ onMounted(() => {
   } else if (floors.value.length > 0) {
     currentFloorId.value = floors.value[0].id;
   }
+});
+
+// 建筑切换器换建筑时 viewLevel 不变、组件不重挂（批次D2）：
+// 此前 currentFloorId 仍指向旧建筑楼层 → addFurniture 找不到楼层静默丢弃，家具放置"无效"
+watch(() => props.buildingNode?.id, (newId, oldId) => {
+  if (!newId || newId === oldId) return;
+  selectedFurniture.value = null;
+  selectedFurnitureIds.value = [];
+  editingPopover.value = false;
+  if (floors.value.length === 0) {
+    const newFloor = store.addFloor(newId, '一楼');
+    currentFloorId.value = newFloor.id;
+  } else {
+    currentFloorId.value = floors.value[0]?.id || null;
+  }
+  renderer.requestRender();
 });
 
 onUnmounted(() => {
@@ -1015,6 +1053,13 @@ watch(currentFurniture, () => {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
+  font-weight: 600;
+}
+
+.edit-entry-btn:hover {
+  background: var(--accent);
+  color: white;
+  filter: brightness(1.15);
 }
 
 /* 楼层切换栏 */

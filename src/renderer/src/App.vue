@@ -247,6 +247,7 @@
     <recovery-panel />
     <keyboard-shortcuts ref="keyboardShortcutsRef" />
     <change-log ref="changeLogRef" />
+    <prompt-dialog />
     <bookmark-panel
       v-if="panelsStore.isOpen('bookmarks')"
       :bookmarks="bookmarks"
@@ -289,6 +290,7 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import OnboardingGuide from './components/OnboardingGuide.vue';
 import RecoveryPanel from './components/RecoveryPanel.vue';
 import KeyboardShortcuts from './components/KeyboardShortcuts.vue';
+import PromptDialog from './components/PromptDialog.vue';
 import BookmarkPanel from './components/BookmarkPanel.vue';
 import ChangeLog from './components/ChangeLog.vue';
 import { useLayersStore } from './store/layers';
@@ -1373,7 +1375,8 @@ async function clearCoordinateCache() {
 
 .level-indicator {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap; /* 深层级放不下时整段换行，而不是把按钮文字压成竖排 */
+  gap: 2px 6px;
   align-items: center;
   font-size: 13px;
   position: relative;
@@ -1386,6 +1389,11 @@ async function clearCoordinateCache() {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: var(--radius-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+  min-width: 0;
 }
 
 .level-indicator button:hover {
@@ -1396,6 +1404,7 @@ async function clearCoordinateCache() {
 .level-indicator button.active {
   color: var(--accent);
   background: var(--accent-bg);
+  max-width: none; /* 当前层名称完整显示，由非当前层收缩让位 */
 }
 
 .separator {

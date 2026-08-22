@@ -71,6 +71,7 @@ import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius, sortPlanetsByOrbit } from '../composables/systemOrbit';
 import { drawDeepSpaceBackground } from '../composables/spaceBackground';
 import { SPACE_MARKER_TYPES, FLEET_KINDS } from '../store/geodataModules/spaceEditing';
+import { usePromptDialog } from '../composables/usePromptDialog';
 import PanelShell from './PanelShell.vue';
 
 /**
@@ -100,6 +101,8 @@ const editMode = ref(false);
 // 公式位布局，需此覆盖层提供拖拽跟手反馈；mouseup 落盘 userMoved 后由 saved 路径接管
 const dragPlanet = ref(null); // { nodeId, x, y } | null
 const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0 });
+// 模态输入（批次D1）：天体/标记/部队的类型与名称录入，替代 Electron 不支持的 window.prompt
+const usePromptDialogState = usePromptDialog();
 let hoveredArrowId = null;
 let hoveredPlanetId = null;
 
@@ -319,18 +322,17 @@ function closeContextMenu() {
 }
 
 // ===== 天体 CRUD =====
-// 类型选择：window.prompt 数字序（1=行星 2=卫星 3=空间站），取消返回 null（中止创建）
-function promptBodyType() {
-  const input = window.prompt('天体类型：1=行星 2=卫星 3=空间站（输入数字）', '1');
-  if (input == null) return null;
-  const idx = parseInt(String(input).trim(), 10) - 1;
-  return BODY_TYPES[idx] || BODY_TYPES[0];
+// 类型选择：模态选项列表（批次D1：window.prompt 在 Electron 渲染进程不被支持，
+// 此前「＋ 天体」点击即抛 "prompt() is and will not be supported" 静默失效），取消返回 null（中止创建）
+async function promptBodyType() {
+  // askChoice 原样返回选项对象（含 prefix），取消返回 null
+  return usePromptDialogState.askChoice({ title: '选择天体类型', options: BODY_TYPES });
 }
 
 // 在系内相对坐标 (wx, wy) 处创建天体（存储层换算回域地图绝对坐标）
-function createBodyAt(wx, wy) {
+async function createBodyAt(wx, wy) {
   if (!props.system) return null;
-  const type = promptBodyType();
+  const type = await promptBodyType();
   if (!type) return null;
   const base = sysBase();
   const newBody = {
@@ -368,21 +370,18 @@ function deleteBodyById(nodeId) {
   renderer.requestRender();
 }
 
-// ===== 太空标记 CRUD（B6）：右键占位交互，类型/名称经 window.prompt =====
-// 类型选择：数字序（1=异常 2=资源点 3=古战场 4=太空兽群），取消返回 null（中止创建）
-function promptSpaceMarkerType() {
-  const input = window.prompt('标记类型：1=异常 2=资源点 3=古战场 4=太空兽群（输入数字）', '1');
-  if (input == null) return null;
-  const idx = parseInt(String(input).trim(), 10) - 1;
-  return SPACE_MARKER_TYPES[idx] || SPACE_MARKER_TYPES[0];
+// ===== 太空标记 CRUD（B6）：右键占位交互，类型/名称经模态对话框（批次D1 去 window.prompt）=====
+// 类型选择：选项列表，取消返回 null（中止创建）
+async function promptSpaceMarkerType() {
+  return usePromptDialogState.askChoice({ title: '选择太空标记类型', options: SPACE_MARKER_TYPES });
 }
 
 // 在系内相对坐标 (wx, wy) 处创建太空标记（x/y 即相对恒星坐标，无域地图换算）
-function createSpaceMarkerAt(wx, wy) {
+async function createSpaceMarkerAt(wx, wy) {
   if (!props.system) return null;
-  const type = promptSpaceMarkerType();
+  const type = await promptSpaceMarkerType();
   if (!type) return null;
-  const name = window.prompt('标记名称：', `新${type.label}`);
+  const name = await usePromptDialogState.askText({ title: '标记名称', label: type.label, defaultValue: `新${type.label}` });
   if (name == null) return null;
   const marker = {
     id: `space_marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -406,20 +405,18 @@ function deleteSpaceMarkerById(markerId) {
 }
 
 // ===== 部队卡片 CRUD（B7）：信息提示卡片，无任何策略行为 =====
-// 类型选择：1=太空舰队 2=行星军，再输名称/阵营；任一步取消即中止
-function promptFleetKind() {
-  const input = window.prompt('部队类型：1=太空舰队 2=行星军（输入数字）', '1');
-  if (input == null) return null;
-  return String(parseInt(String(input).trim(), 10)) === '2' ? FLEET_KINDS[1] : FLEET_KINDS[0];
+// 类型选择：选项列表 + 名称/阵营输入，任一步取消即中止（批次D1 去 window.prompt）
+async function promptFleetKind() {
+  return usePromptDialogState.askChoice({ title: '选择部队类型', options: FLEET_KINDS });
 }
 
-function createFleetCardAt(wx, wy) {
+async function createFleetCardAt(wx, wy) {
   if (!props.system) return null;
-  const kind = promptFleetKind();
+  const kind = await promptFleetKind();
   if (!kind) return null;
-  const name = window.prompt('部队名称：', `新${kind.label}`);
+  const name = await usePromptDialogState.askText({ title: '部队名称', label: kind.label, defaultValue: `新${kind.label}` });
   if (name == null) return null;
-  const faction = window.prompt('所属阵营（可留空）：', '') ?? '';
+  const faction = await usePromptDialogState.askText({ title: '所属阵营', label: '可留空', defaultValue: '' }) ?? '';
   const card = {
     id: `fleet_card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     systemId: props.system.id,
