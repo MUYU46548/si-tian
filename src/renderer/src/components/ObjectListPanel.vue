@@ -1,13 +1,6 @@
 <template>
-  <div v-if="open" class="object-panel">
-    <div class="panel-header">
-      <h3>对象列表</h3>
-      <div class="header-actions">
-        <button class="fold-btn" @click="collapsed = !collapsed" :title="collapsed ? '展开面板' : '折叠面板'">{{ collapsed ? '▸' : '▾' }}</button>
-        <button class="close-btn" @click="$emit('close')" title="关闭面板">×</button>
-      </div>
-    </div>
-    <div v-if="!collapsed" class="panel-body">
+  <PanelShell class="object-panel" title="对象列表" :open="open" @close="$emit('close')">
+    <div class="panel-body">
       <div class="tab-bar">
         <button
           v-for="t in tabs"
@@ -116,11 +109,12 @@
         />
       </div>
     </div>
-  </div>
+  </PanelShell>
 </template>
 
 <script setup>
 import { ref, computed, nextTick } from 'vue';
+import PanelShell from './PanelShell.vue';
 import { useGeodataStore } from '../store/geodata';
 
 const store = useGeodataStore();
@@ -160,8 +154,6 @@ const tabs = [
 ];
 
 const tab = ref('terrain');
-// 面板内部折叠（与 open 独立：open=false 时面板整体隐藏，collapsed=true 时仅收起 body 保留 header）
-const collapsed = ref(false);
 
 const mapData = computed(() => (props.planet ? store.mapData[props.planet.id] : null));
 
@@ -215,78 +207,15 @@ function commitRename() {
 </script>
 
 <style scoped>
+/* 定位与尺寸由本类提供，外观/拖拽/折叠/关闭由 PanelShell 统一处理 */
 .object-panel {
   position: absolute;
   left: 8px;
   bottom: 8px;
   z-index: 31;
-  background: var(--panel-bg);
-  border: 1px solid #30363d;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
   min-width: 240px;
   max-width: 300px;
   max-height: 360px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid #30363d;
-  background: #0d1117;
-  cursor: move;
-  user-select: none;
-}
-
-.panel-header h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: #f0f6fc;
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #8b949e;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.fold-btn {
-  background: none;
-  border: 1px solid #30363d;
-  color: #8b949e;
-  cursor: pointer;
-  font-size: 10px;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  line-height: 1;
-}
-
-.fold-btn:hover {
-  color: #f0f6fc;
-  background: #21262d;
-}
-
-.close-btn:hover {
-  color: #f0f6fc;
 }
 
 .panel-body {

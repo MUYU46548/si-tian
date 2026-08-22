@@ -1,9 +1,5 @@
 <template>
-  <div v-if="open" class="snapshot-panel" @mousedown.stop>
-    <div class="editor-header">
-      <h3>📸 地图快照</h3>
-      <button class="close-btn" @click="$emit('close')">×</button>
-    </div>
+  <PanelShell class="snapshot-panel" title="📸 地图快照" :open="open" :collapsible="false" :stop-mouse-down="true" @close="$emit('close')">
     <div class="snapshot-body">
       <div class="snapshot-create">
         <input v-model="name" placeholder="快照名称（留空自动命名）" @keydown.enter="take" />
@@ -19,11 +15,12 @@
         <button class="snapshot-del" @click="$emit('remove', snap)" title="删除快照">×</button>
       </div>
     </div>
-  </div>
+  </PanelShell>
 </template>
 
 <script setup>
 import { ref } from 'vue';
+import PanelShell from './PanelShell.vue';
 
 defineProps({
   open: { type: Boolean, default: false },
@@ -49,31 +46,15 @@ function formatTime(iso) {
 </script>
 
 <style scoped>
+/* 定位与宽度由本类提供，外观/拖拽/关闭由 PanelShell 统一处理（含 planet 主题变量） */
 .snapshot-panel {
   position: absolute;
   left: 16px;
   bottom: 60px;
   width: 260px;
-  background: var(--planet-editor-bg);
-  border: 1px solid var(--planet-editor-border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-md);
   z-index: 100;
-  cursor: default;
-  overflow: hidden;
-}
-.snapshot-panel .editor-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid var(--planet-editor-border);
-}
-.snapshot-panel .editor-header h3 {
-  margin: 0;
-  font-size: 13px;
-  color: var(--planet-text);
+  background: var(--planet-editor-bg);
+  border-color: var(--planet-editor-border);
 }
 .snapshot-body {
   padding: 10px;

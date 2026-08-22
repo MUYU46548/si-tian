@@ -3070,14 +3070,14 @@ onUnmounted(() => {
 
 // ===== 编辑面板拖拽 =====
 // 点击面板 header 时拖动整个面板（事件委托在根容器）
-// 支持：province-editor（属性编辑面板）、cluster-panel（地点簇）、object-panel（对象列表）
+// 支持：province-editor（属性编辑面板）；cluster/object/snapshot 面板已迁到 PanelShell，拖拽由其内部处理
 function handlePanelHeaderDrag(e) {
   // header 内的交互元素（× 关闭按钮、输入框、颜色按钮等）不触发拖拽
   // 否则点击 × 会先启动面板拖拽（mousedown 在 header 内冒泡到委托），面板被位移、preventDefault 吞掉关闭
   if (e.target.closest('button, input, select, textarea, a, label')) return;
-  const header = e.target.closest('.province-editor .editor-header, .cluster-panel .panel-header, .object-panel .panel-header, .snapshot-panel .editor-header');
+  const header = e.target.closest('.province-editor .editor-header');
   if (!header) return;
-  const panel = header.closest('.province-editor, .cluster-panel, .object-panel, .snapshot-panel');
+  const panel = header.closest('.province-editor');
   if (!panel) return;
   e.preventDefault();
   

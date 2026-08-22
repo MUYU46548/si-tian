@@ -1,14 +1,9 @@
 <template>
-  <div v-if="open" class="cluster-panel">
-    <div class="panel-header">
-      <h3>地点簇</h3>
-      <div class="header-actions">
-        <button class="fold-btn" @click="collapsed = !collapsed" :title="collapsed ? '展开面板' : '折叠面板'">{{ collapsed ? '▸' : '▾' }}</button>
-        <button class="icon-btn" @click="$emit('create-cluster')" title="创建地点簇（框选地点后创建）">＋</button>
-        <button class="close-btn" @click="$emit('close')" title="关闭面板">×</button>
-      </div>
-    </div>
-    <div v-if="!collapsed" class="panel-body">
+  <PanelShell class="cluster-panel" title="地点簇" :open="open" @close="$emit('close')">
+    <template #actions>
+      <button class="icon-btn" @click="$emit('create-cluster')" title="创建地点簇（框选地点后创建）">＋</button>
+    </template>
+    <div class="panel-body">
       <div v-if="clusters.length === 0" class="empty-hint">
         暂无地点簇<br />
         <span class="sub">框选多个地点 → 创建簇，便于统一管理</span>
@@ -47,11 +42,12 @@
         </div>
       </div>
     </div>
-  </div>
+  </PanelShell>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
+import PanelShell from './PanelShell.vue';
 import { useGeodataStore } from '../store/geodata';
 
 const store = useGeodataStore();
@@ -73,9 +69,6 @@ const clusters = computed(() => {
   const data = store.mapData[props.planet.id];
   return data?.clusters || [];
 });
-// 面板内部折叠（与 open 独立：open=false 时面板整体隐藏，collapsed=true 时仅收起 body 保留 header）
-const collapsed = ref(false);
-
 function getMemberName(memberId) {
   const node = store.nodes.find(n => n.id === memberId);
   return node?.name || memberId;
@@ -83,49 +76,18 @@ function getMemberName(memberId) {
 </script>
 
 <style scoped>
+/* 定位与尺寸由本类提供，外观/拖拽/折叠由 PanelShell 统一处理 */
 .cluster-panel {
   position: absolute;
   left: 8px;
   bottom: 8px;
   z-index: 30;
-  background: var(--panel-bg);
-  border: 1px solid #30363d;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
   min-width: 220px;
   max-width: 280px;
   max-height: 320px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid #30363d;
-  background: #0d1117;
-  cursor: move;
-  user-select: none;
-}
-
-.panel-header h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: #f0f6fc;
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
+/* header/关闭/折叠由 PanelShell 提供，这里只留 actions 槽里的自定义按钮 */
 .icon-btn {
   background: none;
   border: 1px solid #30363d;
@@ -138,39 +100,8 @@ function getMemberName(memberId) {
   line-height: 1;
 }
 
-.fold-btn {
-  background: none;
-  border: 1px solid #30363d;
-  color: #8b949e;
-  cursor: pointer;
-  font-size: 10px;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  line-height: 1;
-}
-
-.fold-btn:hover {
-  color: #f0f6fc;
-  background: #21262d;
-}
-
 .icon-btn:hover {
   background: #21262d;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #8b949e;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.close-btn:hover {
-  color: #f0f6fc;
 }
 
 .panel-body {
