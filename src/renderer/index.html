@@ -75,6 +75,35 @@
       };
     })();
   </script>
+  <script>
+    window.__SITIAN_MOCK__ = true;
+    (async () => {
+      const geodata = await (await fetch('/mock-data/geodata.json')).json();
+      const mapdata = await (await fetch('/mock-data/mapdata.json')).json();
+      window.sitianAPI = {
+        getGeodata: async () => ({ success: true, data: geodata }),
+        reextractGeodata: async () => ({ success: true }),
+        saveGeodata: async () => ({ success: true }),
+        getVaultPath: async () => 'E:/图书馆/ROSA',
+        selectVaultPath: async () => ({ success: false, canceled: true }),
+        setVaultPath: async () => ({ success: false, canceled: true }),
+        getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
+        saveMapData: async () => ({ success: true }),
+        backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
+        batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
+        selectReferenceImage: async () => ({ success: false, canceled: true }),
+        saveExportFile: async () => ({ success: false, canceled: true }),
+        readObsidianNote: async () => ({ success: true, data: { frontmatter: { publish: true, tags: ['测试'], 层级: '星系' }, content: '测试笔记正文。', wikilinks: [] } }),
+        revealInExplorer: async () => ({ success: true }),
+        openExternal: async () => ({ success: true }),
+        onNodeUpdated: () => () => {},
+        onNodeRemoved: () => () => {},
+        clearCoordinateCache: async () => ({ success: true }),
+        platform: 'browser',
+      };
+      window.dispatchEvent(new CustomEvent('sitian-mock-ready'));
+    })();
+  </script>
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

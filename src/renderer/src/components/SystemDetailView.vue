@@ -31,12 +31,28 @@
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         @mousedown.stop
       >
-        <div v-if="contextMenu.target?.type === 'planet'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
-        <div v-if="contextMenu.target?.type === 'space-marker'" class="menu-item danger" @click="ctxDeleteSpaceMarker">🗑 删除标记</div>
-        <div v-if="contextMenu.target?.type === 'fleet-card'" class="menu-item danger" @click="ctxDeleteFleetCard">🗑 删除部队卡片</div>
-        <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddBodyHere">＋ 添加天体（此位置）</div>
-        <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddSpaceMarkerHere">◈ 添加太空标记（此位置）</div>
-        <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddFleetCardHere">⚑ 添加部队卡片（此位置）</div>
+        <!-- 「设为卫星」母行星选择模式（批次D5） -->
+        <template v-if="contextMenu.pickHostFor">
+          <div class="menu-item menu-header">🛰 选择母行星</div>
+          <div
+            v-for="p in pickHostCandidates"
+            :key="p.id"
+            class="menu-item"
+            @click="ctxSetMoonHost(p.id)"
+          >🪐 {{ p.displayName || p.name }}</div>
+          <div class="menu-item" @click="ctxCancelPickHost">↩ 返回</div>
+        </template>
+        <template v-else>
+          <div v-if="contextMenu.target?.type === 'planet'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
+          <div v-if="contextMenu.target?.type === 'planet' && !contextMenu.target.node.isMoon" class="menu-item" @click="ctxBeginPickHost">🛰 设为卫星…</div>
+          <div v-if="contextMenu.target?.type === 'planet' && contextMenu.target.node.isMoon" class="menu-item" @click="ctxUnsetMoon">↩ 取消卫星（回到独立轨道）</div>
+          <div v-if="contextMenu.target?.type === 'planet'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
+          <div v-if="contextMenu.target?.type === 'space-marker'" class="menu-item danger" @click="ctxDeleteSpaceMarker">🗑 删除标记</div>
+          <div v-if="contextMenu.target?.type === 'fleet-card'" class="menu-item danger" @click="ctxDeleteFleetCard">🗑 删除部队卡片</div>
+          <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddBodyHere">＋ 添加天体（此位置）</div>
+          <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddSpaceMarkerHere">◈ 添加太空标记（此位置）</div>
+          <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddFleetCardHere">⚑ 添加部队卡片（此位置）</div>
+        </template>
       </div>
       <PanelShell
         class="system-neighbor-panel"
@@ -100,7 +116,7 @@ const editMode = ref(false);
 // 拖拽中的行星显示位置（系内相对坐标）：非 userMoved 行星改 store 坐标不会立刻反映到
 // 公式位布局，需此覆盖层提供拖拽跟手反馈；mouseup 落盘 userMoved 后由 saved 路径接管
 const dragPlanet = ref(null); // { nodeId, x, y } | null
-const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0 });
+const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0, pickHostFor: null });
 // 模态输入（批次D1）：天体/标记/部队的类型与名称录入，替代 Electron 不支持的 window.prompt
 const usePromptDialogState = usePromptDialog();
 let hoveredArrowId = null;
@@ -132,12 +148,22 @@ function sysBase() {
   return { x: c?.x ?? 0, y: c?.y ?? 0 };
 }
 
-// ===== 行星布局（恒星在原点） =====
+// ===== 行星布局（恒星在原点）+ 卫星绕行（批次D5） =====
+// 卫星 = layer 'moon' + parentId 指向系内行星：锚定母行星渲染，不占恒星轨道槽。
+// currentSystemPlanets 只含恒星直接子（parentId==system），卫星经 systemBodies 扩展取回。
+const systemBodies = computed(() => {
+  if (!props.system) return { planets: [], moons: [] };
+  const planets = store.currentSystemPlanets;
+  const planetIds = new Set(planets.map(p => p.id));
+  const moons = store.nodes.filter(n => n.layer === 'moon' && planetIds.has(n.parentId));
+  return { planets, moons };
+});
+
 const planetLayouts = computed(() => {
   if (!props.system) return [];
   const sysCoord = props.system.coordinate;
-  // 轨道顺序按标准化命名罗马数字（衡佑Ⅲ < 津廊Ⅵ），无数字保持原序
-  return sortPlanetsByOrbit(store.currentSystemPlanets).map((planet, pIdx) => {
+  // 第一轮：恒星直接子行星，轨道顺序按标准化命名罗马数字（衡佑Ⅲ < 津廊Ⅵ），无数字保持原序
+  const layouts = sortPlanetsByOrbit(systemBodies.value.planets).map((planet, pIdx) => {
     const { angle, orbitRadius } = planetOrbitLayout(pIdx);
     // 手动坐标 → 相对恒星偏移（保留用户在域地图上的相对布局意图）；否则用公式位
     const saved = planet.userMoved && planet.coordinate?.x != null && sysCoord?.x != null;
@@ -148,9 +174,44 @@ const planetLayouts = computed(() => {
       y: dragging ? dragPlanet.value.y : saved ? planet.coordinate.y - sysCoord.y : Math.sin(angle) * orbitRadius,
       orbitRadius,
       angle,
+      isMoon: false,
     };
   });
+  // 第二轮：卫星绕母行星——确定性槽位（半径随卫星序递增、角度均匀分布，无随机）。
+  // 卫星不参与拖拽/userMoved：位置始终由母行星锚定推导（母星被拖动时卫星跟随）。
+  const moonsByParent = new Map();
+  for (const moon of systemBodies.value.moons) {
+    if (!moonsByParent.has(moon.parentId)) moonsByParent.set(moon.parentId, []);
+    moonsByParent.get(moon.parentId).push(moon);
+  }
+  const planetCount = layouts.length;
+  for (let pi = 0; pi < planetCount; pi++) {
+    const planet = layouts[pi];
+    const moons = moonsByParent.get(planet.id);
+    if (!moons) continue;
+    moons.forEach((moon, mIdx) => {
+      const r = getPlanetRadius(planet.layer) * 2 + 12 + mIdx * 9;
+      const a = (Math.PI * 2 * (mIdx + 1)) / (moons.length + 1) + 0.7;
+      layouts.push({
+        ...moon,
+        x: planet.x + Math.cos(a) * r,
+        y: planet.y + Math.sin(a) * r,
+        orbitRadius: null,
+        angle: a,
+        isMoon: true,
+        moonOrbitRadius: r,
+        hostX: planet.x,
+        hostY: planet.y,
+      });
+    });
+  }
+  return layouts;
 });
+
+// 「设为卫星」母行星候选：系内恒星直接子，排除自身（卫星不能绕自己）
+const pickHostCandidates = computed(() =>
+  systemBodies.value.planets.filter(p => p.id !== contextMenu.value.pickHostFor)
+);
 
 // 最外圈轨道半径（箭头环的基准）
 const maxOrbitRadius = computed(() =>
@@ -314,11 +375,13 @@ function openContextMenu(wx, wy, target) {
     target,
     worldX: wx,
     worldY: wy,
+    pickHostFor: null, // 批次D5：每次打开重置「选择母行星」模式
   };
 }
 
 function closeContextMenu() {
   contextMenu.value.visible = false;
+  contextMenu.value.pickHostFor = null;
 }
 
 // ===== 天体 CRUD =====
@@ -477,6 +540,46 @@ function ctxDeleteFleetCard() {
   if (card) deleteFleetCardById(card.id);
 }
 
+// ===== 右键菜单扩展（批次D5）：查看信息 / 设为卫星 / 取消卫星 =====
+// 查看信息：把节点交给 NodeDetailPanel（与浏览模式点击选中同通道）
+function ctxViewNode() {
+  const node = contextMenu.value.target?.node;
+  closeContextMenu();
+  if (node) emit('select-node', node);
+}
+
+// 进入「选择母行星」模式：菜单切换为系内行星列表（排除自身）
+function ctxBeginPickHost() {
+  const node = contextMenu.value.target?.node;
+  if (!node) return;
+  contextMenu.value = { ...contextMenu.value, pickHostFor: node.id };
+}
+
+function ctxCancelPickHost() {
+  contextMenu.value = { ...contextMenu.value, pickHostFor: null };
+}
+
+// 设为卫星：layer → moon、parentId → 母行星（一次 updateNode 事务，入 undo 栈）。
+// userMoved 置 false：卫星布局始终由母行星锚定推导，不读保存坐标。
+function ctxSetMoonHost(hostId) {
+  const moonId = contextMenu.value.pickHostFor;
+  closeContextMenu();
+  if (!moonId || !hostId || moonId === hostId) return;
+  store.updateNode(moonId, { parentId: hostId, layer: 'moon', userMoved: false });
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+// 取消卫星：回到恒星独立轨道（公式槽位），名称/坐标保留
+function ctxUnsetMoon() {
+  const node = contextMenu.value.target?.node;
+  closeContextMenu();
+  if (!node || !props.system) return;
+  store.updateNode(node.id, { parentId: props.system.id, layer: node.layer === 'moon' ? 'planet' : node.layer, userMoved: false });
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
 // ===== 行星拖拽收尾 =====
 function finalizePlanetDrag() {
   if (!dragPlanet.value) return;
@@ -579,6 +682,17 @@ function drawPlanets(ctx) {
     const isCurrent = store.isCurrentMatch(planet.id);
     const isHovered = hoveredPlanetId === planet.id;
 
+    // 卫星：绕母行星的虚线小轨道 + 小号天体（批次D5）
+    if (planet.isMoon) {
+      ctx.strokeStyle = 'rgba(139, 148, 158, 0.35)';
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.arc(planet.hostX, planet.hostY, planet.moonOrbitRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     if (matched) {
       ctx.fillStyle = isCurrent ? '#ffd700' : '#ffaa00';
       ctx.shadowColor = isCurrent ? 'rgba(255, 200, 50, 0.8)' : 'rgba(255, 170, 0, 0.6)';
@@ -588,9 +702,9 @@ function drawPlanets(ctx) {
       ctx.shadowColor = 'rgba(100, 255, 180, 0.6)';
       ctx.shadowBlur = 10;
     } else {
-      ctx.fillStyle = getPlanetColor(planet.layer);
+      ctx.fillStyle = planet.isMoon ? '#c9d1d9' : getPlanetColor(planet.layer);
     }
-    const r = getPlanetRadius(planet.layer) + (matched ? 2 : 0) + 1;
+    const r = (planet.isMoon ? 3 : getPlanetRadius(planet.layer) + (matched ? 2 : 0) + 1);
     ctx.beginPath();
     ctx.arc(planet.x, planet.y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -601,7 +715,9 @@ function drawPlanets(ctx) {
 
     if (!renderer.isFastMode()) {
       ctx.fillStyle = '#8b949e';
-      const pFont = Math.min(55, Math.max(5, Math.round(11 / scale)));
+      const pFont = planet.isMoon
+        ? Math.min(45, Math.max(4, Math.round(9 / scale)))
+        : Math.min(55, Math.max(5, Math.round(11 / scale)));
       ctx.font = `${pFont}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillText(planet.displayName || planet.name, planet.x, planet.y + r + pFont * 1.2);
@@ -759,8 +875,9 @@ const renderer = useCanvasRenderer(canvas, {
     // panTry 顶点试探：本视图无顶点编辑，直接允许平移
     if (panTry) return true;
     const hit = hitTest(wx, wy);
-    // 命中行星（未锁定）→ 轨道编辑拖拽；锁定节点不可拖（仍可平移/选中）
-    if (hit?.type === 'planet' && !hit.node.locked) {
+    // 命中行星（未锁定且非卫星）→ 轨道编辑拖拽；锁定节点不可拖（仍可平移/选中）；
+    // 卫星位置由母行星锚定推导，不可拖（批次D5）
+    if (hit?.type === 'planet' && !hit.node.locked && !hit.node.isMoon) {
       store.beginNodePositionCapture(hit.node.id);
       dragPlanet.value = { nodeId: hit.node.id, x: hit.node.x, y: hit.node.y };
       return { mode: 'node', nodeId: hit.node.id };
@@ -863,6 +980,8 @@ defineExpose({
   canvas, renderer, neighborArrows, planetLayouts, allNeighbors, omittedCount, jumpTo,
   // 编辑模式（B3，供测试/父组件访问）
   editMode, toggleEditMode, createBody, createBodyAt, deleteBodyById, contextMenu, dragPlanet,
+  // 卫星轨道（批次D5，供测试访问）
+  systemBodies, ctxSetMoonHost, ctxUnsetMoon,
   // 太空实体（B6/B7，供测试/父组件访问）
   systemSpaceMarkers, systemFleetCards,
   createSpaceMarkerAt, deleteSpaceMarkerById, createFleetCardAt, deleteFleetCardById,
@@ -957,12 +1076,20 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
   position: absolute;
   z-index: 30;
   min-width: 150px;
+  max-height: 300px; /* 母行星列表可能较长，超出滚动（批次D5） */
+  overflow-y: auto;
   padding: 4px 0;
   border: 1px solid var(--map-header-border);
   border-radius: var(--radius-md);
   background: var(--map-header-bg);
   box-shadow: var(--shadow-md);
   user-select: none;
+}
+.context-menu .menu-header {
+  padding: 5px 14px 3px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: default;
 }
 .context-menu .menu-item {
   padding: 7px 14px;
