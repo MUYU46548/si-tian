@@ -4,22 +4,39 @@ const fs = require('fs').promises;
 const matter = require('gray-matter');
 const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
-const { loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT } = require('./config');
+const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode } = require('./config');
 
 let mainWindow;
 let vaultWatcherEnabled = true;
+
+// 按配置应用窗口模式（批次A7：默认最大化启动，设置面板可改；三种模式间切换均可还原）
+function applyWindowMode(win, mode) {
+  if (mode === 'fullscreen') {
+    win.setFullScreen(true);
+    return;
+  }
+  if (win.isFullScreen()) win.setFullScreen(false);
+  if (mode === 'maximized') {
+    win.maximize();
+  } else if (win.isMaximized()) {
+    win.unmaximize();
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
     title: 'SiTian — 世界观动态构建系统',
+    backgroundColor: '#0a0e18',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  applyWindowMode(mainWindow, getWindowMode());
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5180');
@@ -126,6 +143,16 @@ ipcMain.handle('backup-sitian-cache', async () => backupSitianCache());
 
 // IPC: 获取 Vault 路径
 ipcMain.handle('get-vault-path', () => getVaultPath());
+
+// IPC: 窗口启动模式（批次A7）：读取 / 设置（立即生效并持久化）
+ipcMain.handle('get-window-mode', () => getWindowMode());
+ipcMain.handle('set-window-mode', async (event, mode) => {
+  const applied = await setWindowMode(mode);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    applyWindowMode(mainWindow, applied);
+  }
+  return { success: true, mode: applied };
+});
 
 // IPC: 选择 Vault 库目录（首次引导/设置面板），校验 .obsidian 后保存并重新提取（2026-08-16）
 ipcMain.handle('select-vault-path', async () => {

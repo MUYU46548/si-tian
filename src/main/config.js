@@ -5,7 +5,11 @@ const fs = require('fs').promises;
 
 const DEFAULT_VAULT = 'E:/图书馆/ROSA';
 
-let vaultPath = DEFAULT_VAULT;
+// 窗口启动模式（批次A7）：maximized=默认最大化 | fullscreen=全屏 | default=1600×900
+const WINDOW_MODES = ['maximized', 'fullscreen', 'default'];
+const DEFAULT_WINDOW_MODE = 'maximized';
+
+let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE };
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'config.json');
@@ -19,25 +23,45 @@ async function loadConfig() {
     const raw = await fs.readFile(getConfigPath(), 'utf-8');
     const cfg = JSON.parse(raw);
     if (cfg.vaultPath && typeof cfg.vaultPath === 'string') {
-      vaultPath = cfg.vaultPath;
+      config.vaultPath = cfg.vaultPath;
+    }
+    if (WINDOW_MODES.includes(cfg.windowMode)) {
+      config.windowMode = cfg.windowMode;
     }
   } catch (e) {
-    // 无配置 → 使用默认路径（兼容旧版硬编码）
+    // 无配置 → 使用默认值（兼容旧版硬编码）
   }
-  return vaultPath;
+  return config.vaultPath;
+}
+
+async function writeConfig() {
+  await fs.writeFile(getConfigPath(), JSON.stringify(config, null, 2), 'utf-8');
 }
 
 function getVaultPath() {
-  return vaultPath;
+  return config.vaultPath;
 }
 
 /**
- * 保存新库路径（写入 userData/config.json）
+ * 保存新库路径（写入 userData/config.json，保留其他配置键）
  */
 async function setVaultPath(newPath) {
-  vaultPath = newPath;
-  await fs.writeFile(getConfigPath(), JSON.stringify({ vaultPath }, null, 2), 'utf-8');
-  return vaultPath;
+  config.vaultPath = newPath;
+  await writeConfig();
+  return config.vaultPath;
 }
 
-module.exports = { loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT };
+function getWindowMode() {
+  return config.windowMode;
+}
+
+async function setWindowMode(mode) {
+  config.windowMode = WINDOW_MODES.includes(mode) ? mode : DEFAULT_WINDOW_MODE;
+  await writeConfig();
+  return config.windowMode;
+}
+
+module.exports = {
+  loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT,
+  getWindowMode, setWindowMode,
+};

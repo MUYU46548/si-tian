@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 库路径可配置（2026-08-16）：选择目录 / 手动设置
   selectVaultPath: () => ipcRenderer.invoke('select-vault-path'),
   setVaultPath: (newPath) => ipcRenderer.invoke('set-vault-path', newPath),
+  // 窗口启动模式（批次A7）
+  getWindowMode: () => ipcRenderer.invoke('get-window-mode'),
+  setWindowMode: (mode) => ipcRenderer.invoke('set-window-mode', mode),
 
   // 地图数据
   getMapData: (planetId) => ipcRenderer.invoke('get-map-data', planetId),

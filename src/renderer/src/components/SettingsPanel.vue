@@ -81,6 +81,17 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
+          <div class="setting-item" v-if="windowMode !== null">
+            <div class="setting-info">
+              <span class="setting-name">启动窗口</span>
+              <span class="setting-desc">应用启动时的窗口模式（立即生效并记忆）</span>
+            </div>
+            <select class="setting-input window-mode-select" v-model="windowMode" @change="onWindowModeChange">
+              <option value="maximized">最大化</option>
+              <option value="fullscreen">全屏</option>
+              <option value="default">默认 1600×900</option>
+            </select>
+          </div>
         </section>
 
         <!-- 数据设置 -->
@@ -208,6 +219,9 @@ import { ref, onMounted } from 'vue';
 
 const isOpen = ref(false);
 
+// 窗口启动模式（批次A7）：null = 当前环境无 sitianAPI（纯浏览器 dev），隐藏该选项
+const windowMode = ref(null);
+
 const settings = ref({
   autoSave: true,
   snapEnabled: true,
@@ -222,6 +236,7 @@ const settings = ref({
 function open() {
   isOpen.value = true;
   loadSettings();
+  loadWindowMode();
 }
 
 function close() {
@@ -244,6 +259,22 @@ function saveSettings() {
     localStorage.setItem('sitian-settings', JSON.stringify(settings.value));
   } catch (e) {
     console.warn('Failed to save settings:', e);
+  }
+}
+
+async function loadWindowMode() {
+  try {
+    windowMode.value = await window.sitianAPI.getWindowMode();
+  } catch (e) {
+    windowMode.value = null;
+  }
+}
+
+async function onWindowModeChange() {
+  try {
+    await window.sitianAPI.setWindowMode(windowMode.value);
+  } catch (e) {
+    console.warn('Failed to set window mode:', e);
   }
 }
 
@@ -452,8 +483,15 @@ input:checked + .toggle-slider::before {
 }
 
 .setting-input:focus {
-  border-color: #58a6ff;
   outline: none;
+  border-color: var(--accent);
+}
+
+/* 窗口模式下拉（批次A7）：选项文案较长，放宽并左对齐 */
+.window-mode-select {
+  width: 130px;
+  text-align: left;
+  cursor: pointer;
 }
 
 .shortcuts-list {
