@@ -243,7 +243,26 @@ def run(cdp):
             and ur['afterRedo']['label'] == '银矿带' and ur['afterRedo']['kind'] == 'army'):
         return False, f'redo×2 未恢复 {ur}'
 
+    # h) B1 层级越级校验：真实 mock 数据（117 节点）应 0 违规；
+    #    含自引用父级清理个案（若空之境 parentId 指向自身 → 置空）
+    b1 = _js_obj(cdp, f"""(() => {{
+      const s = {APP_STORE};
+      const v = s.validateNodes(s.nodes);
+      const selfLoop = s.nodes.find(n => n.name === '若空之境');
+      return JSON.stringify({{
+        total: s.nodes.length,
+        violations: v.violations,
+        selfLoopParentNull: selfLoop ? selfLoop.parentId === null : 'no-node',
+      }});
+    }})()""")
+    if not isinstance(b1, dict):
+        return False, f'B1 校验链路异常 {b1}'
+    if b1['violations'] != 0:
+        return False, f'真实数据存在越级违规 {b1}'
+    if b1['selfLoopParentNull'] is not True:
+        return False, f'自引用父级未清理 {b1}'
+
     # 清场：撤销 redo 回来的两个添加，回到世界层
     cdp.eval(f"{APP_STORE}.undo(); {APP_STORE}.undo(); {APP_STORE}.backToWorld();")
 
-    return True, '太空实体链路完整（标记/卡片添加×2·点击选中·图层开关·undo/redo）'
+    return True, f'太空实体链路完整（标记/卡片添加×2·点击选中·图层开关·undo/redo·B1 校验 {b1["total"]} 节点 0 违规）'

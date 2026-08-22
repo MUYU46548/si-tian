@@ -9,6 +9,10 @@ import { createSpaceEditingModule, normalizeSpaceMarkers, normalizeFleetCards } 
 
 const AUTO_SAVE_DELAY = 800;
 
+// 层级深度顺序（B1 越级校验用）——与 scripts/extract-data.js 的 LAYER_ORDER 保持同步，
+// 两处同步修改；renderer 侧不直接 import 提取脚本（Node 脚本无法进浏览器 bundle）
+const LAYER_ORDER = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon', 'region', 'city', 'town', 'village', 'building', 'facility', 'location', 'unknown'];
+
 export const useGeodataStore = defineStore('geodata', () => {
   const nodes = ref([]);
   const hyperlanes = ref([]);
@@ -18,6 +22,23 @@ export const useGeodataStore = defineStore('geodata', () => {
   const currentPlanet = ref(null);
   const currentArea = ref(null); // 当前下钻区域（城市/地点节点）
   const currentBuilding = ref(null); // 当前下钻建筑（第三层）
+
+  // ===== 未来视图扩展点预留（批次 B2，仅注释、零副作用）=====
+  // 现有 viewLevel: 'world' | 'domain' | 'system' | 'system_detail' | 'planet' | 'area' | 'interior'
+  // 预留三个扩展方向（接入前不要提前建状态/路由，保持零副作用）：
+  // 1. 'universe' 宇宙总览 —— 多世界之上的宏观层。接入步骤：
+  //    a. App.vue 增加 v-if="store.viewLevel === 'universe'" 路由分支（新组件 UniverseView）
+  //    b. 面包屑最左插入「宇宙」段；store 增加 currentUniverse ref
+  //    c. layers.js 新增 universe 图层栈（各世界卡片/世界间连线）
+  //    d. select 动作：UniverseView 点击世界 → selectWorld（现有链路直接复用）
+  // 2. 'timeline' 时间维度 —— 同一地理在不同时代的切片。推荐做成现有视图的横切过滤而非新视图级：
+  //    a. store 增加 currentEra ref + geodata/mapdata 增加 era 维度（或独立 timeline 缓存文件）
+  //    b. 顶栏加时代切换器；各视图组件按 era 过滤节点/坐标
+  //    c. 若确需独立视图：App.vue 路由分支 + TimelineView + layers.js 的 timeline 图层栈
+  // 3. 'scene' 场景视图 —— 地点特写（城市场景/室内场景的延伸，比 area 更深一级）：
+  //    a. App.vue 增加 v-if="store.viewLevel === 'scene'" 路由分支（新组件 SceneView）
+  //    b. 面包屑在 area 段后顺延一段；store 增加 currentScene ref
+  //    c. layers.js 新增 scene 图层栈；select 动作：AreaMap 点击场景地点 → selectScene(node)
   const viewLevel = ref('world');
   const selectedNode = ref(null);
 
@@ -199,7 +220,8 @@ export const useGeodataStore = defineStore('geodata', () => {
   async function loadGeodata() {
     const result = await window.sitianAPI.getGeodata();
     if (result.success) {
-      nodes.value = validateNodes(result.data.nodes || []);
+      const validated = validateNodes(result.data.nodes || []);
+      nodes.value = validated.nodes;
       hyperlanes.value = result.data.hyperlanes || [];
       domainBorderOverrides.value = result.data.domainBorderOverrides || {};
       interiorData.value = result.data.interiorData || {};
@@ -227,12 +249,13 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   /**
    * 校验并清理节点数据，防止异常坐标导致渲染错误
+   * 返回 { nodes: 清理后的节点数组, violations: 层级越级违规数 }（B1）
    */
   function validateNodes(rawNodes) {
     const COORD_MIN = -10000;
     const COORD_MAX = 10000;
 
-    return rawNodes.map(node => {
+    const cleaned = rawNodes.map(node => {
       const coord = node.coordinate || {};
       let x = coord.x;
       let y = coord.y;
@@ -255,12 +278,47 @@ export const useGeodataStore = defineStore('geodata', () => {
         node.parentId = null;
       }
 
+      // 自引用父级（parentId 指向自身）视为无效父级：
+      // 会造成树构建自嵌套（tree computed 的 children 循环引用），与"parentId 不存在"同类的数据脏污，直接置空
+      if (node.parentId && node.parentId === node.id) {
+        console.warn(`[Geodata] 节点 "${node.name}" 的 parentId 指向自身，已置空`);
+        node.parentId = null;
+      }
+
       return {
         ...node,
         coordinate: { x, y },
         tags: Array.isArray(node.tags) ? node.tags : [],
       };
     });
+
+    // B1 越级校验：子节点 layer 必须比父节点 layer 在 LAYER_ORDER 更深（严格大于）。
+    // 未知层级（indexOf === -1）无法比较，跳过不判。
+    const violations = countLayerOrderViolations(cleaned);
+    return { nodes: cleaned, violations };
+  }
+
+  /**
+   * 统计层级越级违规（B1）：console.warn 列出并返回违规数
+   */
+  function countLayerOrderViolations(cleanedNodes) {
+    const byId = new Map(cleanedNodes.map(n => [n.id, n]));
+    let violations = 0;
+    for (const node of cleanedNodes) {
+      if (!node.parentId) continue;
+      const parent = byId.get(node.parentId);
+      if (!parent) continue;
+      const childIdx = LAYER_ORDER.indexOf(node.layer);
+      const parentIdx = LAYER_ORDER.indexOf(parent.layer);
+      if (childIdx === -1 || parentIdx === -1) continue;
+      if (childIdx <= parentIdx) {
+        violations++;
+        console.warn(
+          `[Geodata] 越级节点 "${node.name}"(layer=${node.layer}) 的父级 "${parent.name}"(layer=${parent.layer}) 层级不比其更深`
+        );
+      }
+    }
+    return violations;
   }
 
   async function reextract() {
@@ -876,7 +934,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     availablePlaceTypes, searchPlaceTypeFilter, togglePlaceTypeFilter,
     toggleLayerFilter, isFilterOpen,
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
-    loadGeodata, reextract, saveGeodata,
+    loadGeodata, reextract, saveGeodata, validateNodes,
     FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,
       addNode, removeNode, updateNode, reparentNode, reparentNodes,
