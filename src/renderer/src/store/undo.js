@@ -9,7 +9,7 @@ import { ref, computed } from 'vue';
 //   redo: () => void,
 //   merge?: (prev) => boolean,  // 返回 true 时合并到前一条命令（用于拖拽连续操作）
 //   timestamp: number, // 时间戳
-//   category: string,  // 分类：'coordinate' | 'hyperlane' | 'terrain' | 'region' | 'property'
+//   category: string,  // 分类：'coordinate' | 'hyperlane' | 'terrain' | 'region' | 'property' | 'marker'（B6/B7 太空实体）
 // }
 
 const past = ref([]);

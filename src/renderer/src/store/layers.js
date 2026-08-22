@@ -25,6 +25,8 @@ export const useLayersStore = defineStore('layers', () => {
       orbits: { visible: true, label: '轨道', order: 0 },
       nodes: { visible: true, label: '节点', order: 1 },
       hyperlanes: { visible: true, label: '邻系航道', order: 2 },
+      markers: { visible: true, label: '太空标记', order: 3 },     // B6：异常/资源点/古战场/太空兽群
+      fleetCards: { visible: true, label: '部队卡片', order: 4 },  // B7：太空舰队/行星军（信息卡片）
     },
     planet: {
       terrain: { visible: true, label: '地形', order: 0 },

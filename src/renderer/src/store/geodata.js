@@ -5,6 +5,7 @@ import { createSearchModule } from './geodataModules/search';
 import { createMapDataEditingModule } from './geodataModules/mapDataEditing';
 import { createInteriorModule } from './geodataModules/interior';
 import { createAreaEditingModule } from './geodataModules/areaEditing';
+import { createSpaceEditingModule, normalizeSpaceMarkers, normalizeFleetCards } from './geodataModules/spaceEditing';
 
 const AUTO_SAVE_DELAY = 800;
 
@@ -40,6 +41,8 @@ export const useGeodataStore = defineStore('geodata', () => {
   const searchModule = createSearchModule({ nodes });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });
+  // 太空实体编辑（B6 太空标记 / B7 部队卡片）：扁平数组，坐标系为「相对恒星」的系内偏移
+  const spaceEditingModule = createSpaceEditingModule({ execute, scheduleAutoSave });
   const mapDataEditingModule = createMapDataEditingModule({
     mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap,
   });
@@ -53,6 +56,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   } = searchModule;
   const { interiorData } = interiorModule;
   const { areaZones, areaRoutes, areaMarkers, areaTextLabels } = areaEditingModule;
+  const { spaceMarkers, fleetCards } = spaceEditingModule;
 
   const worlds = computed(() => nodes.value.filter(n => n.layer === 'world'));
   const starDomains = computed(() => nodes.value.filter(n => n.layer === 'star_domain'));
@@ -203,6 +207,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       areaRoutes.value = result.data.areaRoutes || {};
       areaMarkers.value = result.data.areaMarkers || {};
       areaTextLabels.value = result.data.areaTextLabels || {};
+      // B6/B7 太空实体：缺字段兼容（无 id/systemId 的脏数据被过滤，类型/数值补默认值）
+      spaceMarkers.value = normalizeSpaceMarkers(result.data.spaceMarkers);
+      fleetCards.value = normalizeFleetCards(result.data.fleetCards);
     } else {
       console.error('Failed to load geodata:', result.error);
       nodes.value = [];
@@ -213,6 +220,8 @@ export const useGeodataStore = defineStore('geodata', () => {
       areaRoutes.value = {};
       areaMarkers.value = {};
       areaTextLabels.value = {};
+      spaceMarkers.value = [];
+      fleetCards.value = [];
     }
   }
 
@@ -275,6 +284,8 @@ export const useGeodataStore = defineStore('geodata', () => {
       areaRoutes: areaRoutes.value,
       areaMarkers: areaMarkers.value,
       areaTextLabels: areaTextLabels.value,
+      spaceMarkers: spaceMarkers.value,
+      fleetCards: fleetCards.value,
       updatedAt: new Date().toISOString()
     }));
     await window.sitianAPI.saveGeodata(data);
@@ -866,6 +877,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     toggleLayerFilter, isFilterOpen,
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
     loadGeodata, reextract, saveGeodata,
+    FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,
       addNode, removeNode, updateNode, reparentNode, reparentNodes,
       addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
@@ -882,5 +894,6 @@ export const useGeodataStore = defineStore('geodata', () => {
     ...mapDataEditingModule,
     ...interiorModule,
     ...areaEditingModule,
+    ...spaceEditingModule,
   };
 });
