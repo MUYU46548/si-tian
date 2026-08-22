@@ -33,9 +33,22 @@ DEV_PORT = 5180
 CDP_PORT = 9222
 INDEX_HTML = os.path.join(ROOT, 'src', 'renderer', 'index.html')
 MOCK_DATA_DIR = os.path.join(ROOT, 'src', 'renderer', 'mock-data')
-REAL_GEODATA = r'E:/图书馆/ROSA/.sitian/geodata.json'
-REAL_MAPDATA = r'E:/图书馆/ROSA/.sitian/mapdata.json'
-EDGE_EXE = r'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+# 环境相关常量：可用环境变量覆盖（SITIAN_VAULT / SITIAN_EDGE_EXE），也可用 --vault / --edge 覆盖
+# 例：python scripts/tests/run_tests.py --vault D:/MyVault --edge "C:/path/to/msedge.exe"
+VAULT = os.environ.get('SITIAN_VAULT', r'E:/图书馆/ROSA')
+EDGE_EXE = os.environ.get('SITIAN_EDGE_EXE', r'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+_args = sys.argv[1:]
+_case_names = []
+_i = 0
+while _i < len(_args):
+    if _args[_i] == '--vault' and _i + 1 < len(_args):
+        VAULT = _args[_i + 1]; _i += 2
+    elif _args[_i] == '--edge' and _i + 1 < len(_args):
+        EDGE_EXE = _args[_i + 1]; _i += 2
+    else:
+        _case_names.append(_args[_i]); _i += 1
+REAL_GEODATA = os.path.join(VAULT, '.sitian', 'geodata.json').replace('\\', '/')
+REAL_MAPDATA = os.path.join(VAULT, '.sitian', 'mapdata.json').replace('\\', '/')
 
 MOCK_SCRIPT = """<script>
     window.__SITIAN_MOCK__ = true;
