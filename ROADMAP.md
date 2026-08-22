@@ -66,7 +66,7 @@
 - [ ] 想法 B1：严格遵守ROSA系统层级划分规则，当前的城镇、建筑等属于合理添加。
 - [ ] 想法 B2：为宇宙总览、时间维度、场景视图等未来功能预留接口。
 - [ ] 想法 B3：恒星系层级可能需要精细制作，支持添加复杂的天体、编辑轨道等。
-- [ ] 想法 B4：当前恒星系层级为星域内所有恒星系的聚合，与预设并不相符。预设为游戏《Stellaris》式的，每点击一个代表恒星系的“亮点”，进入的是单个恒星系的地图。
+- [ ] 想法 B4：当前恒星系层级为星域内所有恒星系的聚合，与预设并不相符。预设为游戏《Stellaris》式的，每点击一个代表恒星系的“亮点”，进入的是单个恒星系的地图。**（改造方案评估稿见 §6，待定夺后编码）**
 - [ ] 想法 B5：恒星系地图可添加箭头，继续效仿《Stellaris》，用于快速跳转至邻近的恒星系。以航道链接为跳转依据，视为相邻。
 - [ ] 想法 B6：后期可能添加太空兽群、资源点、古战场等标记，甚至太空实体。
 - [ ] 想法 B7：后续可能会加入太空舰队、行星军，模仿《Stellaris》风格用小卡片表示部队。但本项目并非策略游戏，点击卡片仅为信息提示（强化版的地理信息系统）。
@@ -100,6 +100,72 @@
 1. 你在 🟡 填空位写入**具体想法**（甚至可以很口语，我来转译）。
 2. 我把某条想法 + §1 前置条件，改写成 `HANDOFF.md` §5 的**精确批次指令**（含验收标准），交给 Zcode。
 3. Zcode 产出后贴回给我 → 我评审是否违反 HANDOFF §3 红线 + 帮你整理 commit。
+
+---
+
+## 6. B4 恒星系单系视图 — 改造方案（评估稿，待暮雨定夺）
+
+> 产出方：Zcode（GLM-5.3）｜ 评估基准：2026-08-22 代码实测（批次 B4，只出方案不改业务代码）
+
+### 6.1 现状测绘（实测事实）
+
+- **'system' 级 ≠ 单系**：`App.vue:173-182` 在 `viewLevel==='system'` 渲染 `SystemView.vue`，内容是**本星域所有恒星系的网格总览**（`applyLayout` 按 `ceil(sqrt(n))` 网格摆恒星，间距 500）。
+- **点恒星进的是父域**：`GalaxyMap.vue:1396-1398` 点击恒星实际 `emit('select', parentDomain)` → `selectDomain` → 进入整个星域的总览。没有任何路径进入"单个恒星系"。
+- **selectSystem 已有但没接线**：`store/geodata.js` 的 `selectSystem` 只设 `currentSystem`/清选择，**不改 viewLevel**；当前仅面包屑下拉与 TreeNavigation 调用。`SystemView` 完全不消费 `currentSystem`。
+- **单系轨道算法已存在、可复用**：`SystemView.vue` L262-276 的确定性轨道布局（`orbit = floor(pIdx/3)+1`、每圈 3 颗、`angle = (posInOrbit/3)·2π + orbit·0.4`、`orbitRadius = 40+orbit·35`），`createPlanet` 复用同一公式。单系地图可直接复用整套算法。
+- **航道数据两套、互不相通（隐性 bug）**：`GalaxyMap` 画真数据 `store.hyperlanes`（区分 cross_domain 紫虚线等 4 类样式）；`SystemView.drawHyperlanes` 却是 **dist<450 距离启发**现场重算，与 hyperlanes 脱钩，且其右键删航道因命中对象无 id 实际删不掉。
+- **数据现状**：18 个 galaxy 中仅 7 个有 planet 子节点（6 系各 1 颗 + 乐园星系 2 颗）；hyperlanes 72 条全部 auto（提取端 `dist<400` 规则生成）；行星轨道顺序 = 节点扫描顺序，md 正文的"轨道位置"字段目前为空、标准化命名中的罗马数字（衡佑Ⅲ 等）是唯一潜在顺序线索但未接线。
+- **提取端**：`extract-data.js` 的 `initializeCoordinates`（L471-488）是按层同心圆，无父子感知；galaxy 节点 frontmatter 未提取恒星类型等正文字段。
+
+### 6.2 方案比选
+
+**方案 A（推荐）：新增 `system_detail` 视图级，域总览保留**
+
+- 导航链变为：`world → domain(GalaxyMap) → [域总览 system(SystemView)｜单系 system_detail(SystemDetailView·新)] → planet → area → interior`。
+- GalaxyMap 点恒星 → `selectSystem(g)` + 进入**单系地图**（Stellaris 主路径）；域总览入口改为：GalaxyMap 点击星域边界圆/星域名标签、面包屑"星域"段点击（当前该点击无操作，正好利用）、树导航。
+- 域总览 SystemView **原样保留**：其"一屏看全域恒星+行星"、加行星、手动航道等编辑功能暂不迁移，后续若单系视图成熟可再评估下线（列为可选项，不在本次范围）。
+- 面包屑新增第四段"恒星系名"（system_detail 级），planet 段顺延。
+- 优点：零功能损失、现有 9 个回归测试全兼容（test_02 的 planet→system→domain→world 链路不变）、风险最低；单系视图成为 B3（轨道编辑）/B5（邻系跳转箭头）/B6/B7（太空标记/舰队卡片）的独立宿主，后续演进互不牵连。
+- 缺点：视图级从 6 个变 7 个，面包屑/书签/图层栈都要加一段；域总览与单系地图存在部分视觉重叠。
+
+**方案 B：'system' 级语义直接替换为单系地图，删除域总览**
+
+- 导航链：`world → domain → system(单系) → planet …`，层级数不变，叙事最贴近 Stellaris。
+- 优点：层级最简洁，无重叠。
+- 缺点：域总览的一屏全域编辑能力直接丢失（或需先搬移其编辑功能，工作量前移）；`viewLevel==='system'` 的全部引用（App 路由/面包屑/书签/图层/快捷键/导出）语义连带你改，回归面大；test_02 等用例需重写。
+- 结论：除非确定"域总览无用"，否则不建议。
+
+**extract-data.js 是否预生成轨道数据：结论是"不需要"**
+
+- 单系轨道由渲染端确定性算法（复用 SystemView 公式）+ 现有 JSON 坐标缓存即可满足，符合"布局确定性、坐标只存缓存层"红线；在提取端预生成反而引入"重提取即重置"的冲突（脚本重提取会重置 .md 节点坐标，仅保护手建节点）。
+- 可选增强（单列，不随主体）：在提取端解析标准化命名的罗马数字作为行星确定性排序依据（替代扫描顺序），属于"数据事实"更适合放 Markdown 管线；md 的"轨道位置"字段目前为空，等有内容再接线。
+
+### 6.3 影响面清单（方案 A）
+
+| 文件 | 改动 |
+|---|---|
+| `store/geodata.js` | `viewLevel` 增加 `'system_detail'`；`selectSystem` 改为同时切视图级；`back*` 链新增 system_detail→system 的回退；return 导出 |
+| `components/SystemDetailView.vue`（新） | 单系地图：恒星居中 + 行星轨道（复用 SystemView 算法，迁移时辅助函数与样式常量一并带走）+ **真 hyperlanes** 邻系箭头占位（B5 宿主） |
+| `App.vue` | v-if 路由链插一段；面包屑第四段（恒星系名+下拉）；`getActiveRenderer/getActiveCanvas` 增分支；书签回跳、快捷键 L 的级别枚举 |
+| `components/GalaxyMap.vue` | 点恒星分支改为下钻单系；星域边界圆/星域名标签新增"进域总览"命中 |
+| `store/layers.js` | 新增 `system_detail` 图层栈（orbits/nodes/hyperlanes 等）+ 跨视图共享映射 |
+| `components/TreeNavigation.vue` | 树点 galaxy 的跳转链改为落到 system_detail |
+| `useBookmarks.js` / `BookmarkPanel.vue` | viewLevel 枚举与中文标签 |
+| `scripts/tests/` | 新增 1 个用例：GalaxyMap 点恒星 → 单系视图 → 点行星 → PlanetMap → 回退链；现有 9 例必须保持绿 |
+| 顺手修正（建议并入） | SystemView 假航道与真 hyperlanes 脱钩、右键删航道删不掉的问题——域总览保留则应改读 `store.hyperlanes` |
+
+### 6.4 工作量估算（agent 工作批次）
+
+1. **阶段 1（主体，约 1 个批次 commit）**：store 导航 + SystemDetailView + App 路由/面包屑 + GalaxyMap 入口 + 图层栈 + 测试用例。
+2. **阶段 2（收尾，约半个批次）**：书签/树导航/导出适配 + SystemView 航道数据源修正。
+3. **阶段 3（独立，即 B5）**：单系地图邻系跳转箭头交互（hover 高亮 + 点击跳转），依赖真 hyperlanes 已就位。
+
+### 6.5 待暮雨定夺的点
+
+1. 选 **方案 A**（新增层级、保留域总览）还是 **方案 B**（替换语义、删域总览）？
+2. GalaxyMap **点恒星直接进单系、跳过域总览**是否接受？（域总览仍可从星域边界/面包屑/树进入）
+3. 行星轨道顺序要不要接线罗马数字解析（可选增强，建议后置）？
+4. B5 邻系跳转箭头：随阶段 1 做静态占位、交互留阶段 3，还是一步到位？
 
 ---
 
