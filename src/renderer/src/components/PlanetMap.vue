@@ -1410,19 +1410,32 @@ function generateAutoRegions() {
 const placeRegionMap = computed(() => {
   const map = new Map();
   if (!props.planet) return map;
-  
+
   const regionPolys = [
     ...(currentMapData.value?.regions || []),
     ...autoRegions.value,
   ].filter(r => r.points && r.points.length >= 3);
-  
+
+  // 批次C1：预计算各区域包围盒，pointInPolygon 前先做 bbox 排除（拖动期间每帧触发时的常数削减）
+  const polysWithBBox = regionPolys.map(r => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of r.points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { poly: r, minX, minY, maxX, maxY };
+  });
+
   for (const place of places.value) {
     const x = place.coordinate?.x;
     const y = place.coordinate?.y;
     if (x === null || x === undefined) continue;
-    for (const region of regionPolys) {
-      if (geoPointInPolygon(x, y, region.points)) {
-        map.set(place.id, region);
+    for (const { poly, minX, minY, maxX, maxY } of polysWithBBox) {
+      if (x < minX || x > maxX || y < minY || y > maxY) continue;
+      if (geoPointInPolygon(x, y, poly.points)) {
+        map.set(place.id, poly);
         break;
       }
     }
@@ -1730,6 +1743,19 @@ const hitTestModule = createPlanetHitTest(() => ({
 // ===== Canvas Renderer =====
 // ===== 绘制函数（批次 2a：拆分至 composables/planetDrawing.js，2026-08-16） =====
 // 工厂注入状态访问器：每次渲染 getState() 取最新解包值；绘制只读状态不修改
+// 空归属 Map（批次C1）：fastMode 帧传给绘制层，避免读取 computed 触发全量 pointInPolygon 重算
+const EMPTY_REGION_MAP = new Map();
+// 世界坐标视口（批次C1）：绘制层裁剪用；canvas 未就绪时返回 null（不过滤）
+function getRenderViewport() {
+  const cvs = canvas.value;
+  if (!cvs) return null;
+  const tl = renderer.screenToWorld(0, 0);
+  const br = renderer.screenToWorld(cvs.clientWidth, cvs.clientHeight);
+  return {
+    minX: Math.min(tl.x, br.x), minY: Math.min(tl.y, br.y),
+    maxX: Math.max(tl.x, br.x), maxY: Math.max(tl.y, br.y),
+  };
+}
 const drawing = createPlanetDrawing(() => ({
   lodRef: lodRef.value, editMode: editMode.value, interactionMode: interactionMode.value,
   currentMapData: currentMapData.value, places: places.value, autoRegions: autoRegions.value,
@@ -1751,7 +1777,9 @@ const drawing = createPlanetDrawing(() => ({
   clusterBoxStart: clusterBoxStart.value, clusterBoxEnd: clusterBoxEnd.value,
   boxSelectStart: boxSelectStart.value, boxSelectEnd: boxSelectEnd.value,
   isBoxSelecting: isBoxSelecting.value, edgeSnapPreview: edgeSnapPreview.value,
-  placeRegionMap: placeRegionMap.value, terrainTypes,
+  placeRegionMap: renderer.isFastMode() ? EMPTY_REGION_MAP : placeRegionMap.value,
+  terrainTypes, markerTypes,
+  isFastMode: renderer.isFastMode(), viewport: getRenderViewport(),
   screenToWorld: renderer.screenToWorld,
 }));
 

@@ -21,6 +21,30 @@ const PLACE_TYPE_ICONS = {
   '工业': '🏭', '居住': '🏠', '公共': '🏛', '特殊': '✦',
 };
 
+// ===== 视口裁剪（批次C1）：视口为世界坐标可见矩形，null 表示不过滤 =====
+function pointsBBox(points) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function bboxInViewport(bbox, vp, margin = 0) {
+  if (!vp) return true;
+  return bbox.maxX >= vp.minX - margin && bbox.minX <= vp.maxX + margin
+    && bbox.maxY >= vp.minY - margin && bbox.minY <= vp.maxY + margin;
+}
+
+function pointInViewport(x, y, vp, margin = 0) {
+  if (!vp) return true;
+  return x >= vp.minX - margin && x <= vp.maxX + margin
+    && y >= vp.minY - margin && y <= vp.maxY + margin;
+}
+
 export function createPlanetDrawing(getState) {
   // ===== 辅助函数（纯函数，不依赖 getState） =====
   function getNodeColor(layer) { return NODE_COLORS[layer] || '#95E1D3'; }
@@ -32,10 +56,10 @@ export function createPlanetDrawing(getState) {
     if (place.placeType && PLACE_TYPE_COLORS[place.placeType]) return PLACE_TYPE_COLORS[place.placeType];
     return getNodeColor(place.layer);
   }
-  function getClusterMembers(cluster) {
-    const s = getState();
+  // 批次C1：接受预建索引，避免每个成员 O(n) find（大图上簇多时每帧 O(成员×地点)）
+  function getClusterMembers(cluster, placeById) {
     return cluster.memberIds
-      .map(id => s.places?.find(p => p.id === id))
+      .map(id => placeById.get(id))
       .filter(Boolean);
   }
 
@@ -166,10 +190,12 @@ function drawBackground(ctx, w, h) {
 function drawTerrain(ctx) {
   const s = getState(); // 每次渲染取最新状态
   const terrain = s.currentMapData?.terrain || [];
-  
+  const vp = s.viewport;
+
   terrain.forEach(poly => {
     if (!poly.points || poly.points.length < 3) return;
-    
+    if (!bboxInViewport(pointsBBox(poly.points), vp)) return; // 批次C1：视口外的多边形整块跳过
+
     const terrainColor = s.terrainTypes.find(t => t.type === poly.type)?.color || '#A3C4BC';
     const isSelected = s.selectedProvince?.id === poly.id;
     
@@ -210,10 +236,13 @@ function drawRegions(ctx) {
   const regions = s.currentMapData?.regions || [];
   // 自动生成的区域边界始终显示（辅助理解区域划分），编辑模式下更淡
   const showAuto = s.autoRegions.length > 0;
-  
+  const vp = s.viewport;
+  const fast = s.isFastMode; // 批次C1：拖拽中跳过名称标签
+
   regions.forEach(region => {
     if (!region.points || region.points.length < 3) return;
-    
+    if (!bboxInViewport(pointsBBox(region.points), vp)) return;
+
     const color = region.color || '#FF6B6B';
     const isSelected = s.selectedRegion?.id === region.id;
     
@@ -235,7 +264,7 @@ function drawRegions(ctx) {
     ctx.stroke();
     ctx.setLineDash([]);
     
-    if (region.name && s.lodRef > 0.3) {
+    if (region.name && s.lodRef > 0.3 && !fast) {
       const center = getPolygonCenter(region.points);
       ctx.font = '11px sans-serif';
       ctx.textAlign = 'center';
@@ -244,10 +273,11 @@ function drawRegions(ctx) {
       ctx.fillText(region.name, center.x, center.y);
     }
   });
-  
+
   if (showAuto) {
     s.autoRegions.forEach(region => {
       if (!region.points || region.points.length < 3) return;
+      if (!bboxInViewport(pointsBBox(region.points), vp)) return;
       const color = region.color || '#FF6B6B';
       
       ctx.save();
@@ -277,7 +307,7 @@ function drawRegions(ctx) {
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
       
-      if (region.name && s.lodRef > 0.3) {
+      if (region.name && s.lodRef > 0.3 && !fast) {
         const center = getPolygonCenter(region.points);
         ctx.font = 'bold 10px sans-serif';
         ctx.textAlign = 'center';
@@ -291,23 +321,29 @@ function drawRegions(ctx) {
 
 function drawPlaces(ctx) {
   const s = getState(); // 每次渲染取最新状态
+  const vp = s.viewport;
+  const fast = s.isFastMode; // 批次C1：拖拽中跳过光晕/图标/文字（最贵的逐元素效果）
   s.places.forEach(place => {
     const x = place.coordinate?.x || 0;
     const y = place.coordinate?.y || 0;
+    // margin 覆盖标签与光环的绘制范围（约半径+标签行+徽标行）
+    if (!pointInViewport(x, y, vp, 120)) return;
     const color = getPlaceColor(place);
     const radius = getNodeRadius(place.layer);
     const isHovered = s.hoveredNode?.id === place.id;
     const icon = getPlaceIcon(place);
-    
+
     ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = isHovered ? 12 : 6;
+    if (!fast) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = isHovered ? 12 : 6;
+    }
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
-    
-    if (icon && s.lodRef > 0.6) {
+
+    if (icon && !fast && s.lodRef > 0.6) {
       // 高缩放：地点类型图标覆盖中心
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
@@ -325,16 +361,16 @@ function drawPlaces(ctx) {
       ctx.globalAlpha = 1;
     }
     
-    if (place.name && s.lodRef > 0.4) {
+    if (place.name && !fast && s.lodRef > 0.4) {
       ctx.font = `${getLabelWeight(place.layer)} ${getLabelSize(place.layer)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#2D3436';
       ctx.fillText(place.displayName || place.name, x, y + radius + 4);
     }
-    
+
     // 锁定标记
-    if (place.locked) {
+    if (place.locked && !fast) {
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -397,8 +433,9 @@ function drawPlaces(ctx) {
     }
     
     // 区域归属徽标（近缩放时显示所属区域名）
+    // fastMode 下 getState 传入空 Map：既跳过绘制，也避免读取 computed 触发全量 pointInPolygon 重算
     const ownedRegion = s.placeRegionMap.get(place.id);
-    if (ownedRegion?.name && s.lodRef > 0.75) {
+    if (ownedRegion?.name && s.lodRef > 0.75 && !fast) {
       const badgeY = y + radius + (place.name ? 18 : 4);
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
@@ -425,26 +462,34 @@ function drawPlaces(ctx) {
 function drawMarkers(ctx) {
   const s = getState(); // 每次渲染取最新状态
   if (!s.currentMapData?.markers) return;
-  
+  const vp = s.viewport;
+  const fast = s.isFastMode; // 批次C1：拖拽中退化为纯色点
+
   s.currentMapData.markers.forEach(marker => {
-    const preset = markerTypes.find(m => m.type === marker.type);
+    if (!pointInViewport(marker.x, marker.y, vp, 60)) return;
+    // markerTypes 由 PlanetMap 经 getState 注入（修复：此前裸引用未导入的标识符，markers 非空即 ReferenceError）
+    const preset = (s.markerTypes || []).find(m => m.type === marker.type);
     const color = marker.color || preset?.color || '#FFD700';
     const icon = marker.icon || preset?.icon || '📍';
     const isSelected = s.selectedMarker?.id === marker.id;
-    
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 8;
+
+    if (!fast) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+    }
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(marker.x, marker.y, 6, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
-    
-    ctx.font = '14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(icon, marker.x, marker.y);
-    
+
+    if (!fast) {
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(icon, marker.x, marker.y);
+    }
+
     if (isSelected) {
       ctx.strokeStyle = '#FFD700';
       ctx.lineWidth = 2;
@@ -452,9 +497,9 @@ function drawMarkers(ctx) {
       ctx.arc(marker.x, marker.y, 10, 0, Math.PI * 2);
       ctx.stroke();
     }
-    
+
     // 名称标签
-    if (marker.name && s.lodRef > 0.4) {
+    if (marker.name && !fast && s.lodRef > 0.4) {
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
@@ -468,7 +513,9 @@ function drawMarkers(ctx) {
 function drawRoutes(ctx) {
   const s = getState(); // 每次渲染取最新状态
   const routes = s.currentMapData?.routes || [];
-  
+  const vp = s.viewport;
+  const fast = s.isFastMode; // 批次C1：拖拽中跳过沿路径文字（每帧逐字排版，最贵的路线成本）
+
   // 绘制中的路线草稿
   if (s.interactionMode === 'route' && s.routeDraftPoints.length > 0) {
     drawRoutePolyline(ctx, s.routeDraftPoints, s.routeColor, s.routeDashed, true);
@@ -479,16 +526,17 @@ function drawRoutes(ctx) {
       ctx.fill();
     });
   }
-  
+
   routes.forEach(route => {
     if (!route.points || route.points.length < 2) return;
+    if (!bboxInViewport(pointsBBox(route.points), vp, 40)) return;
     const color = route.color || '#E67E22';
     const isSelected = s.selectedRoute?.id === route.id;
-    
+
     drawRoutePolyline(ctx, route.points, color, route.dashed, isSelected);
-    
+
     // 文字标签：优先沿路径排布，路径过短时回退中点居中
-    if (route.label && s.lodRef > 0.3) {
+    if (route.label && !fast && s.lodRef > 0.3) {
       const offsetX = route.labelOffsetX || 0;
       const offsetY = route.labelOffsetY || 0;
       const ok = drawTextOnPath(ctx, route.label, route.points, 11, color, '#2D3436', offsetX, offsetY);
@@ -643,12 +691,15 @@ function drawTextOnPath(ctx, text, points, fontSize, color, labelColor, offsetX 
 function drawTerrainLabels(ctx) {
   const s = getState();
   const terrain = s.currentMapData?.terrain || [];
-  
+
   // 仅在 LOD > 0.3 时绘制，与 drawTerrain 的名称标签 LOD 同步（避免重叠）
   if (s.lodRef <= 0.3) return;
-  
+  if (s.isFastMode) return; // 批次C1：拖拽中整层跳过
+  const vp = s.viewport;
+
   terrain.forEach(poly => {
     if (!poly.points || poly.points.length < 3 || !poly.name) return;
+    if (!bboxInViewport(pointsBBox(poly.points), vp)) return;
     
     const terrainColor = s.terrainTypes.find(t => t.type === poly.type)?.color || '#A3C4BC';
     const center = getPolygonCenter(poly.points);
@@ -666,11 +717,14 @@ function drawClusters(ctx) {
   const s = getState(); // 每次渲染取最新状态
   const clusters = s.currentMapData?.clusters || [];
   const time = performance.now() / 1000;
-  
+  const fast = s.isFastMode; // 批次C1：拖拽中跳过凸包重算与标签（松手即恢复）
+  // 批次C1：一次 O(n) 建地点索引，替代每成员 O(n) find
+  const placeById = new Map((s.places || []).map(p => [p.id, p]));
+
   clusters.forEach(cluster => {
     if (!cluster.memberIds?.length) return;
     const color = cluster.color || '#FF6B6B';
-    const members = getClusterMembers(cluster);
+    const members = getClusterMembers(cluster, placeById);
     if (members.length === 0) return;
     
     const isActive = s.activeClusterId === cluster.id;
@@ -700,7 +754,7 @@ function drawClusters(ctx) {
       ctx.textBaseline = 'middle';
       ctx.fillText(String(members.length), cx, cy + 0.5);
       // 标签
-      if (s.lodRef > 0.3) {
+      if (s.lodRef > 0.3 && !fast) {
         ctx.font = '10px sans-serif';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#2D3436';
@@ -709,9 +763,10 @@ function drawClusters(ctx) {
       ctx.restore();
       return;
     }
-    
+
     // 展开：虚线范围框（凸包或包围盒）
-    if (members.length >= 2) {
+    // fastMode 跳过：凸包每帧 O(n log n) 重算，拖拽中暂隐、松手即恢复
+    if (members.length >= 2 && !fast) {
       const hull = convexHull(members.map(m => ({ x: m.coordinate.x, y: m.coordinate.y })));
       if (hull.length >= 3) {
         ctx.save();
@@ -749,7 +804,7 @@ function drawClusters(ctx) {
     }
     
     // 仅悬停成员时闪烁（避免与凸包视觉重复）
-    if (hasHover) {
+    if (hasHover && !fast) {
       const hoverMember = members.find(m => m.id === s.hoverMemberId);
       if (hoverMember) {
         const x = hoverMember.coordinate.x;
@@ -797,9 +852,11 @@ function drawClusters(ctx) {
 function drawTextLabels(ctx) {
   const s = getState(); // 每次渲染取最新状态
   const labels = s.currentMapData?.textLabels || [];
-  
+  const vp = s.viewport;
+
   labels.forEach(label => {
     if (!label?.text) return;
+    if (!pointInViewport(label.x, label.y, vp, 250)) return; // 批次C1：margin 覆盖长文本宽度
     const fontSize = label.fontSize || 16;
     const color = label.color || '#2D3436';
     const isSelected = s.selectedTextLabel?.id === label.id;

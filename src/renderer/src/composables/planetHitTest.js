@@ -35,7 +35,8 @@ function hitTest(wx, wy) {
   if (s.layers.isEditable('planet', 'regions') && s.currentMapData?.regions) {
     for (let i = s.currentMapData.regions.length - 1; i >= 0; i--) {
       const region = s.currentMapData.regions[i];
-      if (geoPointInPolygon(wx, wy, region.points)) {
+      // 修复（批次C1）：此前引用未导入的 geoPointInPolygon，regions 非空即 ReferenceError
+      if (pointInPolygon(wx, wy, region.points)) {
         return { type: 'region', region };
       }
     }
