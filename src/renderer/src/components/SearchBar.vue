@@ -113,8 +113,11 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+import { useNodeNavigation } from '../composables/useNodeNavigation';
 
 const store = useGeodataStore();
+// 跳转逻辑与树导航共用（批次A4 抽取为共享 composable）
+const { navigateToNode: autoNavigateToNode } = useNodeNavigation();
 const query = ref('');
 const input = ref(null);
 const showResults = ref(false);
@@ -219,49 +222,6 @@ function clear() {
 
 function focus() {
   input.value?.select();
-}
-
-function autoNavigateToNode(node) {
-  const layer = node.layer;
-
-  // 世界节点：直接进入该世界
-  if (layer === 'world') {
-    store.selectWorld(node);
-    return;
-  }
-
-  // 先定位到所属世界（星域总览视图）
-  const world = findAncestorByLayer(node, 'world');
-  if (world) store.selectWorld(world);
-
-  // 星域/星系在 domain 视图（星域总览）可见，到此为止
-  if (layer === 'star_domain' || layer === 'galaxy') return;
-
-  // 行星及以下：进入所属星域的恒星系总览
-  const domain = findAncestorByLayer(node, 'star_domain');
-  if (domain) store.selectDomain(domain);
-
-  // planet 节点：直接打开行星地图（P1-4 操作流精简）
-  if (layer === 'planet') {
-    store.selectPlanet(node);
-    return;
-  }
-
-  // 地点类（city/town/location/region/facility/village）：打开所属行星的地图
-  const planet = findAncestorByLayer(node, 'planet');
-  if (planet) store.selectPlanet(planet);
-}
-
-function findAncestorByLayer(node, targetLayer) {
-  let current = node;
-  const visited = new Set();
-  while (current && current.id) {
-    if (visited.has(current.id)) break;
-    visited.add(current.id);
-    if (current.layer === targetLayer) return current;
-    current = store.nodes.find(n => n.id === current.parentId);
-  }
-  return null;
 }
 
 onMounted(() => {

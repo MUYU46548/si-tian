@@ -5,8 +5,10 @@
       :class="{ expanded: isExpanded, selected: selectedId === node.id, 'draggable-node': isPlaceNode }"
       :style="{ paddingLeft: depth * 12 + 8 + 'px' }"
       :draggable="isPlaceNode"
+      :title="`${node.displayName || node.name}（单击选中 · 双击跳转）`"
       @dragstart="onDragStart"
       @click="$emit('select', node)"
+      @dblclick="$emit('jump', node)"
     >
       <span v-if="node.children && node.children.length" class="expand-toggle" @click.stop="toggle">
         {{ isExpanded ? '▼' : '▶' }}
@@ -23,6 +25,7 @@
         :depth="depth + 1"
         :selected-id="selectedId"
         @select="$emit('select', $event)"
+        @jump="$emit('jump', $event)"
       />
     </div>
   </div>
@@ -37,7 +40,7 @@ const props = defineProps({
   selectedId: { type: String, default: null },
 });
 
-defineEmits(['select']);
+defineEmits(['select', 'jump']);
 
 const isExpanded = ref(true);
 

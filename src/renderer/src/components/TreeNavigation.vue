@@ -15,6 +15,7 @@
         :depth="0"
         :selected-id="store.selectedNode?.id || null"
         @select="handleSelect"
+        @jump="handleJump"
       />
     </div>
   </div>
@@ -23,37 +24,23 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+import { useNodeNavigation } from '../composables/useNodeNavigation';
 import TreeItem from './TreeItem.vue';
 
 const store = useGeodataStore();
+const { jumpToNode } = useNodeNavigation();
 const collapsed = ref(false);
 
 const tree = computed(() => store.tree);
 
+// 单击=选中并打开详情面板（所有层级统一语义，批次A4）
 function handleSelect(node) {
   store.selectNode(node);
-  
-  // 根据节点层级自动跳转视图
-  if (node.layer === 'world') {
-    store.selectWorld(node);
-  } else if (node.layer === 'star_domain') {
-    // 找到所属世界并进入
-    const world = store.nodes.find(n => n.id === node.parentId);
-    if (world) {
-      store.selectWorld(world);
-      store.selectDomain(node);
-    }
-  } else if (node.layer === 'galaxy') {
-    const domain = store.nodes.find(n => n.id === node.parentId);
-    if (domain) {
-      const world = store.nodes.find(n => n.id === domain.parentId);
-      if (world) {
-        store.selectWorld(world);
-        store.selectDomain(domain);
-        store.selectSystem(node);
-      }
-    }
-  }
+}
+
+// 双击=跳转到节点对应视图（含镜头聚焦与详情面板恢复，逻辑与搜索直达共用）
+function handleJump(node) {
+  jumpToNode(node);
 }
 </script>
 
