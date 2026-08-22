@@ -12,13 +12,39 @@
     </div>
 
     <div class="panel-content" @click="handlePanelClick">
-      <!-- 元数据区域 -->
-      <section v-if="note && hasFrontmatter" class="meta-section">
-        <div class="meta-grid">
-          <div v-for="(val, key) in note.frontmatter" :key="key" class="meta-item">
-            <span class="meta-key">{{ key }}</span>
-            <span class="meta-val">{{ formatFmValue(val) }}</span>
-          </div>
+      <!-- 回退按钮（浏览历史非空时显示） -->
+      <button v-if="nodeHistory.length > 0" class="history-back-btn" @click="goBackToNode" title="返回上一个查看的节点">
+        ← 返回「{{ nodeHistory[nodeHistory.length - 1].displayName || nodeHistory[nodeHistory.length - 1].name }}」
+      </button>
+
+      <!-- 操作按钮（高频前置） -->
+      <section class="actions-section actions-section-top">
+        <button class="action-btn primary" @click="openSourceInObsidian">
+          <span class="btn-icon">📝</span> 在 Obsidian 中打开
+        </button>
+        <button class="action-btn locate-btn" @click="focusOnMap" :disabled="!canFocusOnMap" title="镜头定位到该节点在地图上的位置">
+          <span class="btn-icon">🎯</span> 在地图上定位
+        </button>
+        <button class="action-btn" @click="revealInExplorer">
+          <span class="btn-icon">📁</span> 在文件夹中显示
+        </button>
+        <button class="action-btn" @click="toggleLock" :title="isLocked ? '解除锁定（可拖拽/微调）' : '锁定位置（防误拖）'">
+          <span class="btn-icon">{{ isLocked ? '🔓' : '🔒' }}</span> {{ isLocked ? '解除锁定' : '锁定位置' }}
+        </button>
+        <button class="action-btn danger" @click="removeFromMap" title="从地图移除该节点及其关联航道（可撤销）">
+          <span class="btn-icon">🗑</span> 从地图移除
+        </button>
+      </section>
+
+      <!-- 元数据区域：仅显示 TAGS + 层级 -->
+      <section v-if="node.tags?.length || node.layer" class="meta-section meta-section-compact">
+        <div class="meta-row" v-if="node.layer">
+          <span class="meta-key">层级</span>
+          <span class="meta-val">{{ node.layerLabel || node.layer }}</span>
+        </div>
+        <div class="meta-row" v-if="node.tags?.length">
+          <span class="meta-key">TAGS</span>
+          <span class="meta-val meta-tags">{{ node.tags.join(', ') }}</span>
         </div>
       </section>
 
@@ -111,10 +137,16 @@
         </div>
         <div class="reparent-control">
           <label>上级节点</label>
+          <input
+            v-model="reparentSearchQuery"
+            type="text"
+            class="reparent-search-input"
+            placeholder="搜索节点名称或层级..."
+          />
           <select :value="node.parentId ?? ''" @change="handleReparent($event.target.value || null)">
             <option value="">无（顶层 — 直接挂载于行星/星系下）</option>
             <option
-              v-for="candidate in parentCandidates"
+              v-for="candidate in filteredParentCandidates"
               :key="candidate.id"
               :value="candidate.id"
             >
@@ -122,7 +154,7 @@
             </option>
           </select>
           <p class="reparent-hint">
-            {{ parentCandidates.length }} 个可选目标 · 选择后立即生效，可撤销
+            {{ filteredParentCandidates.length }} / {{ parentCandidates.length }} 个可选目标 · 选择后立即生效，可撤销
           </p>
         </div>
       </section>
@@ -218,24 +250,6 @@
         </div>
       </section>
 
-      <!-- 操作按钮 -->
-      <section class="actions-section">
-        <button class="action-btn primary" @click="openSourceInObsidian">
-          <span class="btn-icon">📝</span> 在 Obsidian 中打开
-        </button>
-        <button class="action-btn" @click="focusOnMap" :disabled="!canFocusOnMap" title="镜头定位到该节点在地图上的位置">
-          <span class="btn-icon">🎯</span> 在地图上定位
-        </button>
-        <button class="action-btn" @click="revealInExplorer">
-          <span class="btn-icon">📁</span> 在文件夹中显示
-        </button>
-        <button class="action-btn" @click="toggleLock" :title="isLocked ? '解除锁定（可拖拽/微调）' : '锁定位置（防误拖）'">
-          <span class="btn-icon">{{ isLocked ? '🔓' : '🔒' }}</span> {{ isLocked ? '解除锁定' : '锁定位置' }}
-        </button>
-        <button class="action-btn danger" @click="removeFromMap" title="从地图移除该节点及其关联航道（可撤销）">
-          <span class="btn-icon">🗑</span> 从地图移除
-        </button>
-      </section>
     </div>
   </div>
 </template>
@@ -253,6 +267,7 @@ const note = ref(null);
 const loading = ref(false);
 const isContentExpanded = ref(false);
 const newTagInput = ref('');
+const reparentSearchQuery = ref('');
 
 const node = computed(() => store.selectedNode);
 
@@ -413,6 +428,18 @@ const parentCandidates = computed(() => {
     });
 });
 
+// 搜索过滤后的候选列表
+const filteredParentCandidates = computed(() => {
+  const candidates = parentCandidates.value;
+  const query = reparentSearchQuery.value.trim().toLowerCase();
+  if (!query) return candidates;
+  return candidates.filter(c => {
+    const name = (c.displayName || c.name || '').toLowerCase();
+    const layer = (store.layerLabels[c.layer] || c.layer || '').toLowerCase();
+    return name.includes(query) || layer.includes(query) || c.layer.toLowerCase().includes(query);
+  });
+});
+
 function getParentName(parentId) {
   const parent = store.nodes.find(n => n.id === parentId);
   return parent?.name || parentId;
@@ -421,14 +448,19 @@ function getParentName(parentId) {
 // 层级迁移处理
 function handleReparent(newParentId) {
   if (!node.value) return;
-  // 未变化则跳过
   const currentParentId = node.value.parentId ?? null;
   if ((newParentId === null && currentParentId === null) || newParentId === currentParentId) return;
+
+  const targetName = newParentId ? (store.nodes.find(n => n.id === newParentId)?.name || '未知') : '无（顶层）';
+  const currentName = currentParentId ? (store.nodes.find(n => n.id === currentParentId)?.name || '未知') : '无（顶层）';
+  
+  // 确认迁移
+  const confirmed = confirm(`确定将「${node.value.name}」的上级节点从「${currentName}」修改为「${targetName}」？`);
+  if (!confirmed) return;
 
   const result = store.reparentNode(node.value.id, newParentId);
   if (!result.success) {
     alert('迁移失败：' + result.reason);
-    // 重置 select 显示
     const selectEl = document.querySelector('.reparent-control select');
     if (selectEl) selectEl.value = currentParentId ?? '';
   }
@@ -444,10 +476,29 @@ function formatFmValue(val) {
   return String(val);
 }
 
-// 导航到节点
+// 节点浏览历史（用于回退按钮）
+const nodeHistory = ref([]);
+
+// 导航到节点（记录历史）
 function navigateToNode(targetNode) {
   if (targetNode) {
+    // 将当前节点压入历史栈
+    if (node.value && node.value.id !== targetNode.id) {
+      nodeHistory.value.push(node.value);
+      // 限制历史栈长度，防止无限增长
+      if (nodeHistory.value.length > 20) {
+        nodeHistory.value.shift();
+      }
+    }
     store.selectNode(targetNode);
+  }
+}
+
+// 返回上一个查看的节点
+function goBackToNode() {
+  if (nodeHistory.value.length > 0) {
+    const prevNode = nodeHistory.value.pop();
+    store.selectNode(prevNode);
   }
 }
 
@@ -731,6 +782,40 @@ function updateCoordinate(axis, value) {
 /* ===== 元数据区域 ===== */
 .meta-section {
   margin-bottom: 16px;
+}
+
+.meta-section-compact {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #161b22;
+  border-radius: var(--radius-sm);
+  border: 1px solid #30363d;
+}
+
+.meta-section-compact .meta-key {
+  font-size: 10px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.meta-section-compact .meta-val {
+  font-size: 12px;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.meta-section-compact .meta-tags {
+  font-size: 11px;
+  color: #58a6ff;
 }
 
 .meta-grid {
@@ -1334,9 +1419,32 @@ function updateCoordinate(axis, value) {
 .actions-section {
   display: flex;
   gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid #21262d;
-  margin-top: auto;
+  padding: 0 0 12px 0;
+}
+
+.actions-section-top {
+  border-bottom: 1px solid #21262d;
+  margin-bottom: 12px;
+}
+
+/* 回退按钮：返回上一个查看的节点 */
+.history-back-btn {
+  width: 100%;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  border: 1px dashed #30363d;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.history-back-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
 }
 
 .action-btn {
@@ -1357,6 +1465,23 @@ function updateCoordinate(axis, value) {
 
 .action-btn:hover {
   background: #30363d;
+}
+
+/* 定位按钮高亮（金色呼吸光圈） */
+.action-btn.locate-btn {
+  border-color: #FFD70055;
+  background: #FFD70014;
+  color: #FFD700;
+  animation: locate-pulse 2.5s ease-in-out infinite;
+}
+
+.action-btn.locate-btn:hover {
+  background: #FFD70028;
+}
+
+@keyframes locate-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.3); }
+  50% { box-shadow: 0 0 0 5px rgba(255, 215, 0, 0); }
 }
 
 .action-btn.danger {
@@ -1411,6 +1536,24 @@ function updateCoordinate(axis, value) {
   font-size: 13px;
   cursor: pointer;
   max-width: 100%;
+}
+
+.reparent-search-input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  color: #e2e8f0;
+  font-size: 13px;
+  outline: none;
+}
+
+.reparent-search-input:focus {
+  border-color: #58a6ff;
+}
+
+.reparent-search-input::placeholder {
+  color: #8b949e;
 }
 
 .reparent-control select:hover {

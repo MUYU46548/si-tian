@@ -7,40 +7,109 @@
       </div>
       <div class="toolbar-actions">
         <nav class="level-indicator">
-          <button 
-            :class="{ active: store.viewLevel === 'world' }" 
-            @click="store.backToWorld()"
-          >世界</button>
-          <span v-if="store.currentWorld" class="separator">›</span>
-          <button 
-            v-if="store.currentWorld" 
-            :class="{ active: store.viewLevel === 'domain' }"
-            @click="store.backToDomain()"
-          >{{ store.currentWorld?.displayName || store.currentWorld?.name }}</button>
-          <span v-if="store.currentDomain && (store.viewLevel === 'system' || store.viewLevel === 'planet')" class="separator">›</span>
-          <button 
-            v-if="store.currentDomain && (store.viewLevel === 'system' || store.viewLevel === 'planet')"
-            :class="{ active: store.viewLevel === 'system' }"
-            @click="handleBreadcrumbDomain"
-            :title="store.viewLevel === 'planet' ? '返回域内恒星系总览' : ''"
-          >{{ store.currentDomain?.displayName || store.currentDomain?.name }}</button>
-          <span v-if="store.currentPlanet" class="separator">›</span>
-          <button 
-            v-if="store.currentPlanet"
-            :class="{ active: store.viewLevel === 'planet' }"
-            @click="store.backToPlanet"
-          >{{ store.currentPlanet?.displayName || store.currentPlanet?.name }}</button>
-          <span v-if="store.currentArea" class="separator">›</span>
-          <button 
-            v-if="store.currentArea"
-            :class="{ active: store.viewLevel === 'area' }"
-            @click="store.backToArea"
-          >{{ store.currentArea?.displayName || store.currentArea?.name }}</button>
-          <span v-if="store.currentBuilding" class="separator">›</span>
-          <button 
-            v-if="store.currentBuilding"
-            class="active"
-          >{{ store.currentBuilding?.displayName || store.currentBuilding?.name }}</button>
+          <!-- 世界（下拉选择） -->
+          <div class="breadcrumb-item">
+            <button 
+              :class="{ active: store.viewLevel === 'world' }" 
+              @click="store.backToWorld()"
+            >世界</button>
+            <span class="dropdown-arrow" @click.stop="toggleDropdown('world')">▾</span>
+            <div v-if="dropdowns.world" class="dropdown-menu" @click.stop>
+              <div 
+                v-for="w in store.worlds" 
+                :key="w.id" 
+                :class="{ current: w.id === store.currentWorld?.id }"
+                @click="store.selectWorld(w); dropdowns.world = false"
+              >{{ w.displayName || w.name }}</div>
+            </div>
+          </div>
+          
+          <!-- 星域（世界名） -->
+          <template v-if="store.currentWorld">
+            <span class="separator">›</span>
+            <div class="breadcrumb-item">
+              <button 
+                :class="{ active: store.viewLevel === 'domain' }"
+                @click="store.backToDomain()"
+              >{{ store.currentWorld?.displayName || store.currentWorld?.name }}</button>
+              <span class="dropdown-arrow" @click.stop="toggleDropdown('domain')">▾</span>
+              <div v-if="dropdowns.domain" class="dropdown-menu" @click.stop>
+                <div 
+                  v-for="d in store.currentWorldDomains" 
+                  :key="d.id" 
+                  :class="{ current: d.id === store.currentDomain?.id }"
+                  @click="store.selectDomain(d); dropdowns.domain = false"
+                >{{ d.displayName || d.name }}</div>
+              </div>
+            </div>
+          </template>
+          
+          <!-- 恒星系（域名） -->
+          <template v-if="store.currentDomain && (store.viewLevel === 'system' || store.viewLevel === 'planet' || store.viewLevel === 'area' || store.viewLevel === 'interior')">
+            <span class="separator">›</span>
+            <div class="breadcrumb-item">
+              <button 
+                :class="{ active: store.viewLevel === 'system' }"
+                @click="handleBreadcrumbDomain"
+                :title="store.viewLevel === 'planet' ? '返回域内恒星系总览' : ''"
+              >{{ store.currentDomain?.displayName || store.currentDomain?.name }}</button>
+              <span class="dropdown-arrow" @click.stop="toggleDropdown('system')">▾</span>
+              <div v-if="dropdowns.system" class="dropdown-menu" @click.stop>
+                <div 
+                  v-for="g in store.currentDomainGalaxies" 
+                  :key="g.id" 
+                  :class="{ current: g.id === store.currentSystem?.id }"
+                  @click="store.selectSystem(g); dropdowns.system = false"
+                >{{ g.displayName || g.name }}</div>
+              </div>
+            </div>
+          </template>
+          
+          <!-- 行星 -->
+          <template v-if="store.currentPlanet">
+            <span class="separator">›</span>
+            <div class="breadcrumb-item">
+              <button 
+                :class="{ active: store.viewLevel === 'planet' }"
+                @click="store.backToPlanet"
+              >{{ store.currentPlanet?.displayName || store.currentPlanet?.name }}</button>
+              <span class="dropdown-arrow" @click.stop="toggleDropdown('planet')">▾</span>
+              <div v-if="dropdowns.planet" class="dropdown-menu" @click.stop>
+                <div 
+                  v-for="p in store.currentSystemPlanets" 
+                  :key="p.id" 
+                  :class="{ current: p.id === store.currentPlanet?.id }"
+                  @click="store.selectPlanet(p); dropdowns.planet = false"
+                >{{ p.displayName || p.name }}</div>
+              </div>
+            </div>
+          </template>
+          
+          <!-- 区域 -->
+          <template v-if="store.currentArea">
+            <span class="separator">›</span>
+            <div class="breadcrumb-item">
+              <button 
+                :class="{ active: store.viewLevel === 'area' }"
+                @click="store.backToArea"
+              >{{ store.currentArea?.displayName || store.currentArea?.name }}</button>
+              <span class="dropdown-arrow" @click.stop="toggleDropdown('area')">▾</span>
+              <div v-if="dropdowns.area" class="dropdown-menu" @click.stop>
+                <div 
+                  v-for="a in store.currentPlanetPlaces" 
+                  :key="a.id" 
+                  :class="{ current: a.id === store.currentArea?.id }"
+                  @click="store.selectArea(a); dropdowns.area = false"
+                >{{ a.displayName || a.name }}</div>
+              </div>
+            </div>
+          </template>
+          
+          <!-- 建筑 -->
+          <template v-if="store.currentBuilding">
+            <span class="separator">›</span>
+            <button class="active">{{ store.currentBuilding?.displayName || store.currentBuilding?.name }}</button>
+          </template>
         </nav>
         <span class="toolbar-divider"></span>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
@@ -169,7 +238,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from './store/geodata';
 import { usePanelsStore } from './store/panels';
 import WorldSelector from './components/WorldSelector.vue';
@@ -212,6 +281,30 @@ const batchImportPanelRef = ref(null);
 const settingsPanelRef = ref(null);
 const keyboardShortcutsRef = ref(null);
 const changeLogRef = ref(null);
+
+// 面包屑下拉菜单状态
+const dropdowns = reactive({
+  world: false,
+  domain: false,
+  system: false,
+  planet: false,
+  area: false,
+});
+
+function toggleDropdown(level) {
+  Object.keys(dropdowns).forEach(key => {
+    if (key !== level) dropdowns[key] = false;
+  });
+  dropdowns[level] = !dropdowns[level];
+}
+
+function handleClickOutside(e) {
+  if (!e.target.closest('.breadcrumb-item')) {
+    Object.keys(dropdowns).forEach(key => {
+      dropdowns[key] = false;
+    });
+  }
+}
 
 // ===== 面板互斥（P0-2）：图层面板接入全局面板注册表 =====
 function toggleLayersPanel() {
@@ -293,52 +386,23 @@ async function handleExportPNG() {
 async function handleExportSVG() {
   statusText.value = '正在导出 SVG...';
   
-  const nodes = store.nodes;
-  const hyperlanes = store.hyperlanes;
   const canvas = getActiveCanvas();
-  if (!canvas || nodes.length === 0) return;
+  if (!canvas) return;
 
-  const xs = nodes.map(n => n.coordinate?.x || 0).filter(x => x !== null);
-  const ys = nodes.map(n => n.coordinate?.y || 0).filter(y => y !== null);
-  
-  if (xs.length === 0 || ys.length === 0) return;
-  
-  const minX = Math.min(...xs) - 100;
-  const minY = Math.min(...ys) - 100;
-  const maxX = Math.max(...xs) + 100;
-  const maxY = Math.max(...ys) + 100;
-  const width = maxX - minX;
-  const height = maxY - minY;
-  
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  
-  // 背景色跟随当前主题
+  const width = canvas.width;
+  const height = canvas.height;
   const isDark = currentTheme.value !== 'light';
   const bgColor = isDark ? '#0d1117' : '#ffffff';
-  const textColor = isDark ? '#e2e8f0' : '#1f2328';
-  
-  let paths = '';
-  hyperlanes.forEach(h => {
-    const from = nodeMap.get(h.fromId);
-    const to = nodeMap.get(h.toId);
-    if (!from || !to) return;
-    paths += `<line x1="${from.coordinate.x}" y1="${from.coordinate.y}" x2="${to.coordinate.x}" y2="${to.coordinate.y}" stroke="rgba(100,200,255,0.5)" stroke-width="2"/>`;
-  });
-  
-  let circles = '';
-  nodes.forEach(n => {
-    const color = getNodeColor(n.layer);
-    circles += `<circle cx="${n.coordinate.x}" cy="${n.coordinate.y}" r="6" fill="${color}"/>`;
-    circles += `<text x="${n.coordinate.x + 8}" y="${n.coordinate.y + 4}" fill="${textColor}" font-size="10">${n.name}</text>`;
-  });
+
+  // 将画布内容转为 base64 图片嵌入 SVG
+  const dataUrl = canvas.toDataURL('image/png');
   
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width} ${height}" width="${width}" height="${height}">
-  <rect x="${minX}" y="${minY}" width="${width}" height="${height}" fill="${bgColor}"/>
-  ${paths}
-  ${circles}
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+  <rect x="0" y="0" width="${width}" height="${height}" fill="${bgColor}"/>
+  <image xlink:href="${dataUrl}" x="0" y="0" width="${width}" height="${height}"/>
 </svg>`;
-  
+
   const blob = new Blob([svg], { type: 'image/svg+xml' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -639,6 +703,30 @@ function handleImportMapConfig() {
           store.hyperlanes.push(importedH);
         }
       });
+
+      // 导入地图数据（地形、区域、标记等）
+      if (config.mapData) {
+        Object.entries(config.mapData).forEach(([planetId, data]) => {
+          store.mapData[planetId] = data;
+          store.scheduleAutoSaveMap(planetId);
+        });
+      }
+
+      // 导入区域多边形
+      if (config.areaZones) {
+        Object.entries(config.areaZones).forEach(([areaId, zones]) => {
+          store.areaZones[areaId] = zones;
+        });
+        store.scheduleAutoSave();
+      }
+
+      // 导入建筑内部数据
+      if (config.interiorData) {
+        Object.entries(config.interiorData).forEach(([buildingId, data]) => {
+          store.interiorData[buildingId] = data;
+        });
+        store.scheduleAutoSave();
+      }
       
       statusText.value = `已导入 ${config.nodes.length} 个节点和 ${config.hyperlanes.length} 条航道`;
       dirty.value = true;
@@ -822,6 +910,7 @@ onMounted(async () => {
   if (window.sitianAPI?.backupSitianCache) {
     window.sitianAPI.backupSitianCache().catch(() => {});
   }
+  document.addEventListener('click', handleClickOutside);
 });
 
 function closeAppPanels() {
@@ -835,6 +924,7 @@ onUnmounted(() => {
   cleanupNodeRemoved?.();
   if (perfUpdateTimer) clearInterval(perfUpdateTimer);
   window.removeEventListener('sitian:panel-open', closeAppPanels);
+  document.removeEventListener('click', handleClickOutside);
 });
 
 function handleGlobalKeydown(e) {
@@ -1178,6 +1268,16 @@ async function clearCoordinateCache() {
   justify-content: flex-end;
 }
 
+/* 图层按钮呼吸光圈（高频功能视觉指引） */
+.toolbar-actions button[title*="图层面板"] {
+  animation: layer-pulse 3s ease-in-out infinite;
+}
+
+@keyframes layer-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.3); }
+}
+
 .toolbar-actions button {
   padding: 5px 10px;
   border: 1px solid var(--toolbar-border);
@@ -1211,6 +1311,7 @@ async function clearCoordinateCache() {
   gap: 6px;
   align-items: center;
   font-size: 13px;
+  position: relative;
 }
 
 .level-indicator button {
@@ -1235,6 +1336,64 @@ async function clearCoordinateCache() {
 .separator {
   color: var(--separator);
   font-size: 14px;
+}
+
+/* 面包屑下拉菜单 */
+.breadcrumb-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+}
+
+.dropdown-arrow {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  opacity: 0.5;
+  transition: opacity 0.1s ease;
+}
+
+.dropdown-arrow:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 180px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--nav-bg, #1c2128);
+  border: 1px solid var(--nav-border, #30363d);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  margin-top: 4px;
+  padding: 4px 0;
+}
+
+.dropdown-menu div {
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: background 0.1s ease;
+}
+
+.dropdown-menu div:hover {
+  background: var(--btn-hover, #30363d);
+  color: var(--text-primary);
+}
+
+.dropdown-menu div.current {
+  color: var(--accent);
+  background: var(--accent-bg, rgba(88, 166, 255, 0.1));
+  font-weight: 600;
 }
 
 .status {

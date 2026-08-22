@@ -586,6 +586,11 @@ function onRender(ctx, w, h) {
   
   // 绘制选中节点高亮
   drawSelectedNodes(ctx);
+
+  // 绘制定位高亮
+  if (focusHighlightNode) {
+    drawFocusHighlight(ctx, focusHighlightNode);
+  }
 }
 
 // ===== 背景 =====
@@ -1078,6 +1083,42 @@ function drawSelectedNodes(ctx) {
   });
 }
 
+function drawFocusHighlight(ctx, node) {
+  const x = node.x;
+  const y = node.y;
+  const time = Date.now() / 1000;
+  const pulse = Math.sin(time * 4) * 0.5 + 0.5;
+
+  ctx.save();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#FFD700';
+  ctx.shadowBlur = 10 + pulse * 10;
+  ctx.beginPath();
+  ctx.arc(x, y, 20 + pulse * 8, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+  ctx.beginPath();
+  ctx.arc(x, y, 16, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 24, y);
+  ctx.lineTo(x - 12, y);
+  ctx.moveTo(x + 12, y);
+  ctx.lineTo(x + 24, y);
+  ctx.moveTo(x, y - 24);
+  ctx.lineTo(x, y - 12);
+  ctx.moveTo(x, y + 12);
+  ctx.lineTo(x, y + 24);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ===== Canvas Renderer =====
 const renderer = useCanvasRenderer(canvas, {
   onRender,
@@ -1162,19 +1203,15 @@ const renderer = useCanvasRenderer(canvas, {
       }
       return true;
     } else {
-      // 普通模式：节点拖拽
+      // 普通模式：仅选中，不拖拽（防止误触改坐标）
       if (hit.type === 'galaxy' || hit.type === 'domain') {
-        // 如果点击的节点已选中，开始多节点拖拽
-        if (selectedNodeIds.value.has(hit.node.id) && selectedNodeIds.value.size > 1) {
-          isDraggingMultiple = true;
-          dragMultipleStart = { x: wx, y: wy };
-          store.beginMultiNodePositionCapture([...selectedNodeIds.value]);
-          return false;
+        if (!selectedNodeIds.value.has(hit.node.id)) {
+          selectedNodeIds.value.clear();
+          selectedNodeIds.value.add(hit.node.id);
         }
-        
-        store.beginNodePositionCapture(hit.node.id);
+        emit('select-node', hit.node);
       }
-      return { mode: 'node', nodeId: hit.node.id };
+      return true; // 允许平移
     }
   },
   onDragMove: (wx, wy, dragInfo) => {
@@ -1392,19 +1429,34 @@ const renderer = useCanvasRenderer(canvas, {
 });
 
 // ===== 监听聚焦节点事件 =====
+let focusHighlightNode = null;
+let focusHighlightTimer = null;
+
 function onFocusNode(e) {
   const node = e.detail;
   if (!node) return;
   const galaxy = galaxyNodes.value.find(g => g.id === node.id);
   if (galaxy) {
     renderer.focusOn(galaxy.x, galaxy.y, 1.5);
+    showFocusHighlight(galaxy);
     return;
   }
   const domain = domainNodes.find(d => d.id === node.id);
   if (domain) {
     renderer.focusOn(domain.x, domain.y, 1.2);
+    showFocusHighlight(domain);
     return;
   }
+}
+
+function showFocusHighlight(node) {
+  focusHighlightNode = node;
+  if (focusHighlightTimer) clearTimeout(focusHighlightTimer);
+  focusHighlightTimer = setTimeout(() => {
+    focusHighlightNode = null;
+    renderer.requestRender();
+  }, 2000);
+  renderer.requestRender();
 }
 
 // ===== 监听节点移除事件（NodeDetailPanel 删除后同步布局） =====

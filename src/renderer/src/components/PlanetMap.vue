@@ -1705,6 +1705,11 @@ function onRender(ctx, w, h) {
   }
   
   drawing.drawSelectedHighlight(ctx);
+  
+  // 定位高亮（金色脉冲光圈 + 十字标记）
+  if (focusHighlightNode.value) {
+    drawFocusHighlight(ctx, focusHighlightNode.value);
+  }
 }
 
 // 参考图底图渲染
@@ -2657,6 +2662,9 @@ function removeSnapshot(snap) {
 const cursorCoord = ref({ x: 0, y: 0, visible: false });
 // 刚放置的地点高亮（短暂光环提示位置）
 const highlightedPlaceId = ref(null);
+// 定位高亮节点（金色脉冲光圈 + 十字标记，来自搜索/详情面板）
+const focusHighlightNode = ref(null);
+let focusHighlightTimer = null;
 
 // ===== 画布边缘标尺（P2）=====
 // 独立开关（localStorage 持久化）
@@ -2771,7 +2779,55 @@ function onFocusNode(e) {
   if (place && place.coordinate?.x !== null && place.coordinate?.x !== undefined) {
     renderer.focusOn(place.coordinate.x, place.coordinate.y, Math.max(renderer.getViewTransform().scale, 1.2));
     renderer.requestRender();
+    showFocusHighlight(place);
   }
+}
+
+// ===== 定位高亮（金色脉冲光圈 + 十字标记） =====
+function showFocusHighlight(place) {
+  focusHighlightNode.value = place;
+  if (focusHighlightTimer) clearTimeout(focusHighlightTimer);
+  focusHighlightTimer = setTimeout(() => {
+    focusHighlightNode.value = null;
+    renderer.requestRender();
+  }, 2000);
+  renderer.requestRender();
+}
+
+function drawFocusHighlight(ctx, place) {
+  const x = place.coordinate?.x || 0;
+  const y = place.coordinate?.y || 0;
+  const time = Date.now() / 1000;
+  const pulse = Math.sin(time * 4) * 0.5 + 0.5;
+
+  ctx.save();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#FFD700';
+  ctx.shadowBlur = 10 + pulse * 10;
+  ctx.beginPath();
+  ctx.arc(x, y, 18 + pulse * 8, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+  ctx.beginPath();
+  ctx.arc(x, y, 14, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 22, y);
+  ctx.lineTo(x - 10, y);
+  ctx.moveTo(x + 10, y);
+  ctx.lineTo(x + 22, y);
+  ctx.moveTo(x, y - 22);
+  ctx.lineTo(x, y - 10);
+  ctx.moveTo(x, y + 10);
+  ctx.lineTo(x, y + 22);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ===== 全图高清导出 =====
@@ -3009,6 +3065,7 @@ onUnmounted(() => {
   window.removeEventListener('keyup', handleKeyup);
   window.removeEventListener('sitian:focus-node', onFocusNode);
   if (highlightTimer) clearTimeout(highlightTimer);
+  if (focusHighlightTimer) clearTimeout(focusHighlightTimer);
 });
 
 // ===== 编辑面板拖拽 =====
@@ -3393,6 +3450,12 @@ watch(() => props.planet?.id, async (id) => {
   background: var(--planet-btn-active-bg);
   color: white;
   border-color: var(--planet-btn-active-border);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(88, 166, 255, 0); }
 }
 
 .edit-toolbar button:disabled {
