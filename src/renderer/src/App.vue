@@ -269,7 +269,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from './store/geodata';
 import { usePanelsStore } from './store/panels';
 import WorldSelector from './components/WorldSelector.vue';
@@ -916,8 +916,15 @@ window.cleanupStressTest = cleanupStressTest;
 onMounted(async () => {
   statusText.value = '正在加载数据...';
   initTheme();
-  await store.loadGeodata();
-  statusText.value = `已加载 ${store.nodes.length} 个节点`;
+  window.__sitianSplash?.set?.(65, '正在加载世界数据…');
+  try {
+    await store.loadGeodata();
+    statusText.value = `已加载 ${store.nodes.length} 个节点`;
+  } finally {
+    // 数据就绪（或加载失败）后关闭启动 splash（批次A10，finally 保证不会卡在加载画面）
+    window.__sitianSplash?.set?.(100, '就绪');
+    nextTick(() => window.__sitianSplash?.close?.());
+  }
   window.addEventListener('keydown', handleGlobalKeydown);
   window.addEventListener('keydown', handlePerfKeydown);
 
