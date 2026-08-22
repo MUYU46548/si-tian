@@ -5,6 +5,20 @@
         <div class="header-title-row">
           <button class="back-btn" @click="store.backToArea()" title="返回区域地图">← 返回</button>
           <h2>{{ buildingNode?.name }} — 建筑内部</h2>
+          <!-- 相邻建筑切换器 -->
+          <div v-if="sameAreaBuildings.length > 1" class="building-switcher">
+            <button class="building-switch-btn" @click="showBuildingMenu = !showBuildingMenu" title="切换同区域建筑">
+              🏛 {{ sameAreaBuildings.length }}
+            </button>
+            <div v-if="showBuildingMenu" class="building-menu" @click.stop>
+              <div 
+                v-for="b in sameAreaBuildings" 
+                :key="b.id" 
+                :class="{ current: b.id === buildingNode?.id }"
+                @click="switchBuilding(b)"
+              >{{ b.displayName || b.name }}</div>
+            </div>
+          </div>
         </div>
         <p class="hint">
           <span v-if="!editMode">
@@ -205,7 +219,19 @@ const FURNITURE_TYPES = [
   { type: 'decoration', label: '装饰', icon: '🏺', color: '#DAA520' },
   { type: 'door', label: '门', icon: '🚪', color: '#696969' },
   { type: 'window', label: '窗', icon: '🪟', color: '#87CEEB' },
+  // 区域类型（院落/园林）
+  { type: 'courtyard', label: '院落', icon: '🏡', color: '#4CAF50', isArea: true },
+  { type: 'garden', label: '园林', icon: '🌿', color: '#2E7D32', isArea: true },
+  { type: 'corridor', label: '走廊', icon: '🛤', color: '#FF9800', isArea: true },
+  { type: 'pond', label: '水池', icon: '💧', color: '#2196F3', isArea: true },
+  { type: 'wall', label: '围墙', icon: '🧱', color: '#795548', isArea: true },
 ];
+
+// 判断是否为区域类型
+function isAreaType(type) {
+  const ft = FURNITURE_TYPES.find(t => t.type === type);
+  return ft?.isArea || false;
+}
 
 const selectedFurnitureType = ref('generic');
 
@@ -216,6 +242,33 @@ const newFurnitureType = ref('generic');
 const newFurnitureWidth = ref(60);
 const newFurnitureHeight = ref(40);
 const addFurnitureWorldPos = ref({ x: 0, y: 0 });
+
+// 根据类型获取默认尺寸
+function getDefaultSize(type) {
+  const defaults = {
+    generic: { w: 60, h: 40 },
+    table: { w: 80, h: 60 },
+    chair: { w: 40, h: 40 },
+    bed: { w: 100, h: 80 },
+    chest: { w: 60, h: 40 },
+    decoration: { w: 30, h: 30 },
+    door: { w: 40, h: 10 },
+    window: { w: 60, h: 10 },
+    courtyard: { w: 200, h: 200 },
+    garden: { w: 240, h: 180 },
+    corridor: { w: 160, h: 60 },
+    pond: { w: 120, h: 100 },
+    wall: { w: 200, h: 20 },
+  };
+  return defaults[type] || { w: 60, h: 40 };
+}
+
+// 类型变化时自动调整默认尺寸
+watch(newFurnitureType, (type) => {
+  const size = getDefaultSize(type);
+  newFurnitureWidth.value = size.w;
+  newFurnitureHeight.value = size.h;
+});
 
 // 家具详情浮窗编辑
 const editingPopover = ref(false);
@@ -233,6 +286,21 @@ const floors = computed(() => {
   const data = store.interiorData[props.buildingNode.id];
   return data?.floors || [];
 });
+
+// 同区域建筑列表（用于建筑间跳转）
+const sameAreaBuildings = computed(() => {
+  if (!props.buildingNode?.parentId) return [];
+  return store.getBuildingsInArea(props.buildingNode.parentId);
+});
+const showBuildingMenu = ref(false);
+
+// 切换到相邻建筑
+function switchBuilding(building) {
+  if (building.id !== props.buildingNode?.id) {
+    store.selectBuilding(building);
+  }
+  showBuildingMenu.value = false;
+}
 
 // 当前选中楼层 ID
 const currentFloorId = ref(null);
@@ -343,17 +411,35 @@ function drawFurniture(ctx) {
     const isSelected = selectedFurniture.value?.id === item.id;
     const isMultiSelected = selectedFurnitureIds.value.includes(item.id);
     const color = getFurnitureColor(item.type);
+    const isArea = isAreaType(item.type);
 
     ctx.save();
     ctx.translate(item.x + item.width / 2, item.y + item.height / 2);
     if (item.rotation) ctx.rotate((item.rotation * Math.PI) / 180);
 
-    // 家具矩形
-    ctx.fillStyle = color;
-    ctx.shadowColor = isSelected ? '#FFD700' : 'rgba(0,0,0,0.3)';
-    ctx.shadowBlur = isSelected ? 8 : 4;
-    ctx.fillRect(-item.width / 2, -item.height / 2, item.width, item.height);
-    ctx.shadowBlur = 0;
+    if (isArea) {
+      // 区域类型：半透明填充 + 虚线边框 + 图标
+      ctx.fillStyle = color + '33';
+      ctx.fillRect(-item.width / 2, -item.height / 2, item.width, item.height);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(-item.width / 2, -item.height / 2, item.width, item.height);
+      ctx.setLineDash([]);
+      const ft = FURNITURE_TYPES.find(t => t.type === item.type);
+      const icon = ft?.icon || '📍';
+      ctx.font = `${Math.min(item.width, item.height) * 0.4}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(icon, 0, 0);
+    } else {
+      // 家具类型：实心矩形
+      ctx.fillStyle = color;
+      ctx.shadowColor = isSelected ? '#FFD700' : 'rgba(0,0,0,0.3)';
+      ctx.shadowBlur = isSelected ? 8 : 4;
+      ctx.fillRect(-item.width / 2, -item.height / 2, item.width, item.height);
+      ctx.shadowBlur = 0;
+    }
 
     // 选中高亮
     if (isSelected) {
@@ -366,10 +452,12 @@ function drawFurniture(ctx) {
       ctx.strokeRect(-item.width / 2 - 2, -item.height / 2 - 2, item.width + 4, item.height + 4);
     }
 
-    // 边框
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(-item.width / 2, -item.height / 2, item.width, item.height);
+    // 边框（仅家具类型）
+    if (!isArea) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-item.width / 2, -item.height / 2, item.width, item.height);
+    }
 
     ctx.restore();
 
@@ -764,7 +852,38 @@ onUnmounted(() => {
 });
 
 function handleKeydown(e) {
-  if (e.key === 'Delete') {
+  const tag = document.activeElement?.tagName;
+  const isEditingInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+  if (!isEditingInput && selectedFurniture.value && editMode.value) {
+    // 方向键微调家具位置
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+      e.preventDefault();
+      const step = e.shiftKey ? gridSize.value * 5 : gridSize.value;
+      let dx = 0, dy = 0;
+      if (e.key === 'ArrowLeft') dx = -step;
+      if (e.key === 'ArrowRight') dx = step;
+      if (e.key === 'ArrowUp') dy = -step;
+      if (e.key === 'ArrowDown') dy = step;
+      
+      const item = selectedFurniture.value;
+      const oldX = item.x;
+      const oldY = item.y;
+      item.x += dx;
+      item.y += dy;
+      store.updateFurniture(
+        props.buildingNode.id,
+        currentFloorId.value,
+        item.id,
+        { x: item.x, y: item.y },
+        { x: oldX, y: oldY }
+      );
+      renderer.requestRender();
+      return;
+    }
+  }
+  
+  if (e.key === 'Delete' && !isEditingInput) {
     if (selectedFurnitureIds.value.length > 1) {
       if (confirm(`确定删除选中的 ${selectedFurnitureIds.value.length} 件家具？`)) {
         for (const id of [...selectedFurnitureIds.value]) {
@@ -778,7 +897,7 @@ function handleKeydown(e) {
       deleteSelected();
     }
   }
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape' && !isEditingInput) {
     if (editMode.value) exitEditMode();
     else {
       selectedFurniture.value = null;
@@ -966,8 +1085,65 @@ watch(currentFurniture, () => {
 }
 
 .floor-btn.danger:hover:not(:disabled) {
-  background: rgba(220, 53, 69, 0.2);
-  border-color: #dc3545;
+  background: rgba(255, 0, 0, 0.1);
+  color: #ff6b6b;
+}
+
+/* 相邻建筑切换器 */
+.building-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.building-switch-btn {
+  padding: 4px 8px;
+  border: 1px solid var(--nav-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.1s ease;
+}
+
+.building-switch-btn:hover {
+  background: var(--btn-hover);
+  color: var(--text-primary);
+}
+
+.building-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--nav-bg, #1c2128);
+  border: 1px solid var(--nav-border, #30363d);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  margin-top: 4px;
+  padding: 4px 0;
+}
+
+.building-menu div {
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.building-menu div:hover {
+  background: var(--btn-hover, #30363d);
+  color: var(--text-primary);
+}
+
+.building-menu div.current {
+  color: var(--accent);
+  background: var(--accent-bg, rgba(88, 166, 255, 0.1));
+  font-weight: 600;
 }
 
 /* 编辑工具栏 */
@@ -1004,6 +1180,12 @@ watch(currentFurniture, () => {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(88, 166, 255, 0); }
 }
 
 .toolbar-group button:hover:not(.active) {
