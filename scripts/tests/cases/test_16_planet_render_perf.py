@@ -51,7 +51,8 @@ def run(cdp):
 
     # b) 模拟 mousemove 穿越 region 内部 → 触发 hitTest 的 region 分支（含 pointInPolygon）
     # c) 同一事件链里做大幅平移拖拽（>5px 阈值）→ fastMode 置位 + 降级重绘
-    drag = cdp.eval("""(() => {
+    #    每步 await rAF 强制每步一帧（同步 dispatch 会被 rAF 合并成一帧，帧数不可控）
+    drag = cdp.eval("""(async () => {
       const pm = document.querySelector('.planet-map-container').__vueParentComponent.setupState;
       const c = pm.canvas;
       const r = c.getBoundingClientRect();
@@ -64,8 +65,12 @@ def run(cdp):
       c.dispatchEvent(mk(30, 20, 'mousemove'));
       // 平移拖拽：累计位移远超 fastModeThreshold=5
       c.dispatchEvent(mk(-40, -30, 'mousedown'));
-      for (let i = 1; i <= 8; i++) c.dispatchEvent(mk(-40 + i * 25, -30 + i * 18, 'mousemove'));
+      for (let i = 1; i <= 8; i++) {
+        c.dispatchEvent(mk(-40 + i * 25, -30 + i * 18, 'mousemove'));
+        await new Promise(res => requestAnimationFrame(res));
+      }
       c.dispatchEvent(mk(160, 114, 'mouseup'));
+      await new Promise(res => requestAnimationFrame(res));
       const stats = pm.renderer.getPerfStats();
       // frameCount 每秒被 fps 统计清零，用滚动窗口 _frameTimes 判帧数
       return JSON.stringify({ avgFrameTime: stats.avgFrameTime, sampled: (stats._frameTimes || []).length });

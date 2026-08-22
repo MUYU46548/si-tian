@@ -24,7 +24,7 @@ SiTian 是一个本地 Electron + Vue 3 应用，把 Obsidian 库（`E:/图书�
 | `npm run dev:watch` | 完整 Electron 开发模式 | — |
 | `npm run build` | 生产构建（Vite，输出 `dist/`） | — |
 | `npm run extract-data` | 从 ROSA 重新提取地理节点到 JSON | 需 `E:/图书馆/ROSA/` 存在 |
-| `npm run test` | **回归测试**（`python scripts/tests/run_tests.py`，9 个用例） | 见 §6 环境前提 |
+| `npm run test` | **回归测试**（`python scripts/tests/run_tests.py`，16 个用例） | 见 §6 环境前提 |
 
 **每次提交前必须过：`npm run build` + `npm run test`。** 任一失败不可合并。
 
@@ -132,11 +132,14 @@ world(世界) → star_domain(星域) → galaxy(恒星系) → planet(行星) �
 
 ---
 
-### 批次 C — 性能与渲染优化（来源 ROADMAP §4）
-- [ ] **C1 行星地图卡顿**：低配设备绘制/拖动优化（视口裁剪、LOD、离屏缓存）。
-- [ ] **C2 多线路/标记渲染压力**：大量路线/标记时降级或分层绘制。
-- [ ] **C3 启动压力**：首屏加载与数据提取优化（`extract-data.js` 增量提取，避免全量重提）。
-- **验收**：在基准数据集下，行星地图拖动帧率可测改善；加载时间缩短；build+test 绿。
+### 批次 C — 性能与渲染优化（来源 ROADMAP §4）✅ 2026-08-22 完成（3/3，commit f87eae9…b86dc04 + test_16）
+- [x] **C1 行星地图卡顿**：fastMode 接线（拖拽>5px 跳过地点/标记 shadowBlur 光晕、全部名称标签、图标字形、沿路径文字逐字排版、簇凸包重算；纹理 pattern 按用户既有反馈保留）；planetDrawing 全部实体循环加世界坐标视口裁剪；drawClusters 建 placeById 索引（原每帧 O(成员×地点)）；fastMode 帧传空归属 Map 避免触发 placeRegionMap 全量 pointInPolygon 重算（Vue computed 惰性求值）+ placeRegionMap 区域 bbox 预筛（f87eae9）。
+  - **顺手修复 2 处渲染管线 ReferenceError**：planetDrawing.drawMarkers 裸引用未导入的 `markerTypes`（markers 非空即崩）、planetHitTest 引用未导入的 `geoPointInPolygon`（regions 非空 + mousemove 即崩）。
+  - **离屏位图缓存：评估后不做**——视口裁剪后绘制成本已与可见元素成正比；整层位图（世界 ~4000²@2x ≈128MB RGBA）对低配设备是内存负担；失效点分散（地形/区域编辑、undo、主题切换、行星切换、lod 跨 0.55 纹理阈值）漏一处即视觉陈旧。纹理已有 textureCache 兜底。
+- [x] **C2 多线路/标记渲染压力**：AreaMap 五个绘制循环（zones/routes/nodes/markers/texts）全部加视口裁剪 + fastMode 降级（跳光晕/标签/顶点圆/emoji 字形/文本描边）；路线顶点圆合并单 path 单 fill；背景径向渐变按画布尺寸缓存；zone 手绘抽稀（落点间距 <3 世界单位不追加，绘制与持久化双收益）。InteriorView fastMode 跳家具阴影/图标/标签；GalaxyMap 航道按「端点+控制点包围盒与视口相交」裁剪（曲线必在控制点凸包内，不漏画）（3a35911）。
+- [x] **C3 启动压力**：extract-data.js 解析层指纹缓存（`.sitian/extract-cache.json`，mtimeMs+size）——未变更 Markdown 跳过读盘与 gray-matter 解析，缓存按扫描集自清理，version/vaultPath 不符自动降级全量，CLI `--full` 强制全量；索引文件双读合并为一次。PlanetMap 挂载链分帧（generateAutoRegions 延后一帧）（b86dc04）。
+  - **keep-alive 视图缓存：评估后本批不实装**——App.vue 七个平行 v-if 全量重建虽是导航卡顿的结构性主因，但画布组件持有 window 级 keydown/resize 监听与 renderer 状态，缓存后会跨视图串扰（快捷键冲突、canvas 重挂后 ctx/事件需 deactivated 钩子清理），需单独设计状态失效策略后再动。
+- **验收**：build ✅ + test **16/16** 全绿（新增 test_16 渲染回归）；**拖拽帧时间可测改善**——headless 软渲染同数据集（48 注入 place + 40 步拖拽平移）avg 4.6ms→2.0ms（~2.3×），p50 3.0→1.6ms；增量提取沙盒验证：二次全复用、增量与全量输出逐字节一致、单文件变更只重解析该文件、删除文件节点与缓存同步收缩。
 
 ---
 
