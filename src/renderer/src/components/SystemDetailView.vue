@@ -6,16 +6,34 @@
           <button class="back-btn" @click="$emit('back')" title="返回星域地图">← 返回</button>
           <h2>{{ system?.displayName || system?.name || '未知恒星系' }} — 恒星系</h2>
         </div>
-        <p class="hint">点击行星进入行星地图 · 点击箭头跳转相邻恒星系 · 滚动缩放 · 拖拽空白处平移</p>
+        <p class="hint">
+          <span v-if="!editMode">点击行星进入行星地图 · 点击箭头跳转相邻恒星系 · 滚动缩放 · 拖拽空白处平移</span>
+          <span v-else class="edit-hint">编辑模式：拖拽行星编辑轨道 · 头部「＋ 天体」落下一轨道槽 · 右键空白处在原地添加 · 右键行星删除</span>
+        </p>
       </div>
       <div class="header-actions">
         <button :class="{ active: neighborPanelOpen }" @click="neighborPanelOpen = !neighborPanelOpen" title="邻近恒星系列表（含未显示航道）">
           🧭 邻系 ({{ allNeighbors.length }})
         </button>
+        <button :class="{ active: editMode }" @click="toggleEditMode" :title="editMode ? '退出编辑模式' : '编辑系内天体（拖拽轨道/添加/删除）'">
+          {{ editMode ? '✓ 完成编辑' : '✎ 编辑地图' }}
+        </button>
+        <button v-if="editMode" title="在下一轨道槽添加天体（行星/卫星/空间站）" @click="createBody">
+          ＋ 天体
+        </button>
       </div>
     </div>
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
+      <div
+        v-if="contextMenu.visible"
+        class="context-menu"
+        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        @mousedown.stop
+      >
+        <div v-if="contextMenu.target?.type === 'planet'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
+        <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddBodyHere">＋ 添加天体（此位置）</div>
+      </div>
       <PanelShell
         class="system-neighbor-panel"
         title="邻近恒星系"
@@ -51,10 +69,12 @@ import { drawDeepSpaceBackground } from '../composables/spaceBackground';
 import PanelShell from './PanelShell.vue';
 
 /**
- * 单恒星系详情视图（批次 B4 + B5）
+ * 单恒星系详情视图（批次 B4 + B5 + B3 编辑）
  * - 恒星居中（原点），行星按确定性轨道公式环绕（共享 systemOrbit composable）
  * - 行星手动坐标以"相对恒星偏移"保留（坐标缓存是域地图绝对坐标，此处取相对量）
  * - 邻系箭头基于真实 hyperlanes 邻接（B5）：静态指向 + 点击跳转相邻系
+ * - 系内编辑（B3）：编辑模式拖拽行星改轨道（相对坐标 ↔ 域地图绝对坐标换算基准 system.coordinate）、
+ *   头部「＋ 天体」落下一轨道槽、右键原地添加/删除（layer:'planet'，类型记入 tags 第二项）
  */
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -63,16 +83,36 @@ const props = defineProps({
   system: { type: Object, default: null },
 });
 
-const emit = defineEmits(['back', 'select-node']);
+const emit = defineEmits(['back', 'select-node', 'dirty']);
 
 const canvas = ref(null);
 const neighborPanelOpen = ref(false);
+// ===== 编辑模式状态（B3） =====
+const editMode = ref(false);
+// 拖拽中的行星显示位置（系内相对坐标）：非 userMoved 行星改 store 坐标不会立刻反映到
+// 公式位布局，需此覆盖层提供拖拽跟手反馈；mouseup 落盘 userMoved 后由 saved 路径接管
+const dragPlanet = ref(null); // { nodeId, x, y } | null
+const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0 });
 let hoveredArrowId = null;
 let hoveredPlanetId = null;
 
 // 箭头防重叠参数：画布最多显示 arrowsLimit 条（按距离取最近），标签角距至少 MIN_GAP 弧度
 const arrowsLimit = 10;
 const ARROW_MIN_GAP = 0.42;
+
+// ===== 添加天体类型（B3）：layer 统一 'planet'（行星级天体），类型记入 tags 第二项 =====
+const BODY_TYPES = [
+  { key: 'planet', label: '行星', prefix: '新行星' },
+  { key: 'moon', label: '卫星', prefix: '新卫星' },
+  { key: 'station', label: '空间站', prefix: '新空间站' },
+];
+
+// 系内相对坐标 ↔ 域地图绝对坐标 的换算基准（本视图恒星画在原点，行星坐标是相对量；
+// 坐标缓存层存的却是域地图绝对坐标，故加减 system.coordinate；null 时按 0,0）
+function sysBase() {
+  const c = props.system?.coordinate;
+  return { x: c?.x ?? 0, y: c?.y ?? 0 };
+}
 
 // ===== 行星布局（恒星在原点） =====
 const planetLayouts = computed(() => {
@@ -83,10 +123,11 @@ const planetLayouts = computed(() => {
     const { angle, orbitRadius } = planetOrbitLayout(pIdx);
     // 手动坐标 → 相对恒星偏移（保留用户在域地图上的相对布局意图）；否则用公式位
     const saved = planet.userMoved && planet.coordinate?.x != null && sysCoord?.x != null;
+    const dragging = dragPlanet.value && dragPlanet.value.nodeId === planet.id;
     return {
       ...planet,
-      x: saved ? planet.coordinate.x - sysCoord.x : Math.cos(angle) * orbitRadius,
-      y: saved ? planet.coordinate.y - sysCoord.y : Math.sin(angle) * orbitRadius,
+      x: dragging ? dragPlanet.value.x : saved ? planet.coordinate.x - sysCoord.x : Math.cos(angle) * orbitRadius,
+      y: dragging ? dragPlanet.value.y : saved ? planet.coordinate.y - sysCoord.y : Math.sin(angle) * orbitRadius,
       orbitRadius,
       angle,
     };
@@ -188,6 +229,122 @@ const neighborArrows = computed(() => {
 function jumpTo(neighborId) {
   const neighbor = store.nodes.find(n => n.id === neighborId);
   if (neighbor) store.selectSystem(neighbor);
+}
+
+// ===== 编辑模式（B3） =====
+function toggleEditMode() {
+  editMode.value = !editMode.value;
+  closeContextMenu();
+  // 边界兜底：切出编辑时若仍有未收尾的拖拽（如鼠标已离开画布），补齐撤销记录
+  if (!editMode.value) finalizePlanetDrag();
+  if (canvas.value) canvas.value.style.cursor = editMode.value ? 'default' : 'grab';
+  renderer.requestRender();
+}
+
+// ===== 右键菜单 =====
+function worldToScreen(wx, wy) {
+  const vt = renderer.getViewTransform();
+  const cvs = canvas.value;
+  return {
+    x: wx * vt.scale + vt.x + cvs.clientWidth / 2,
+    y: wy * vt.scale + vt.y + cvs.clientHeight / 2,
+  };
+}
+
+function openContextMenu(wx, wy, target) {
+  const pos = worldToScreen(wx, wy);
+  const wrapper = canvas.value?.parentElement;
+  const maxX = wrapper ? wrapper.clientWidth - 180 : pos.x;
+  const maxY = wrapper ? wrapper.clientHeight - 90 : pos.y;
+  contextMenu.value = {
+    visible: true,
+    x: Math.max(4, Math.min(pos.x, maxX)),
+    y: Math.max(4, Math.min(pos.y, maxY)),
+    target,
+    worldX: wx,
+    worldY: wy,
+  };
+}
+
+function closeContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+// ===== 天体 CRUD =====
+// 类型选择：window.prompt 数字序（1=行星 2=卫星 3=空间站），取消返回 null（中止创建）
+function promptBodyType() {
+  const input = window.prompt('天体类型：1=行星 2=卫星 3=空间站（输入数字）', '1');
+  if (input == null) return null;
+  const idx = parseInt(String(input).trim(), 10) - 1;
+  return BODY_TYPES[idx] || BODY_TYPES[0];
+}
+
+// 在系内相对坐标 (wx, wy) 处创建天体（存储层换算回域地图绝对坐标）
+function createBodyAt(wx, wy) {
+  if (!props.system) return null;
+  const type = promptBodyType();
+  if (!type) return null;
+  const base = sysBase();
+  const newBody = {
+    id: `planet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: `${type.prefix}${Date.now() % 1000}`,
+    layer: 'planet',
+    parentId: props.system.id,
+    tags: ['新创建', type.label],
+    sourcePath: '',
+    coordinate: {
+      x: Math.round(base.x + wx),
+      y: Math.round(base.y + wy),
+    },
+    userMoved: true, // 创建位置即用户意图，布局重算时保留
+  };
+  store.addNode(newBody);
+  emit('dirty', true);
+  renderer.requestRender();
+  return newBody;
+}
+
+// 头部「＋ 天体」：落下一轨道槽公式位（与 planetLayouts 布局公式一致，无随机）
+function createBody() {
+  if (!props.system) return null;
+  const sorted = sortPlanetsByOrbit(store.currentSystemPlanets);
+  const { angle, orbitRadius } = planetOrbitLayout(sorted.length);
+  return createBodyAt(Math.cos(angle) * orbitRadius, Math.sin(angle) * orbitRadius);
+}
+
+function deleteBodyById(nodeId) {
+  if (!nodeId) return;
+  store.removeNode(nodeId);
+  if (dragPlanet.value?.nodeId === nodeId) dragPlanet.value = null;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+// ===== 右键菜单操作 =====
+function ctxAddBodyHere() {
+  const { worldX, worldY } = contextMenu.value;
+  closeContextMenu();
+  createBodyAt(worldX, worldY);
+}
+
+function ctxDeleteNode() {
+  const node = contextMenu.value.target?.node;
+  closeContextMenu();
+  if (node) deleteBodyById(node.id);
+}
+
+// ===== 行星拖拽收尾 =====
+function finalizePlanetDrag() {
+  if (!dragPlanet.value) return;
+  dragPlanet.value = null;
+  store.endNodePositionCapture();
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+// 边界兜底：鼠标拖拽途中离开画布时 renderer 不派发 onDragEnd，此处补收尾（含撤销记录）
+function onCanvasMouseLeave() {
+  finalizePlanetDrag();
 }
 
 // ===== 命中测试 =====
@@ -352,11 +509,46 @@ const renderer = useCanvasRenderer(canvas, {
     hoveredArrowId = hit?.type === 'jump-arrow' ? hit.arrow.id : null;
     hoveredPlanetId = hit?.type === 'planet' ? hit.node.id : null;
     if (canvas.value) {
-      canvas.value.style.cursor = hit ? 'pointer' : 'grab';
+      // 编辑模式下可拖拽行星显示 move 光标
+      if (editMode.value && hit?.type === 'planet' && !hit.node.locked) {
+        canvas.value.style.cursor = 'move';
+      } else {
+        canvas.value.style.cursor = hit ? 'pointer' : 'grab';
+      }
     }
   },
-  onDragStart: () => true, // 全部允许平移（本视图无节点拖拽编辑）
+  onDragStart: (wx, wy, button, shiftKey, ctrlKey, panTry) => {
+    if (button !== 0) return true;
+    // 浏览模式：纯平移（本视图节点拖拽仅在编辑模式开放）
+    if (!editMode.value) return true;
+    // panTry 顶点试探：本视图无顶点编辑，直接允许平移
+    if (panTry) return true;
+    const hit = hitTest(wx, wy);
+    // 命中行星（未锁定）→ 轨道编辑拖拽；锁定节点不可拖（仍可平移/选中）
+    if (hit?.type === 'planet' && !hit.node.locked) {
+      store.beginNodePositionCapture(hit.node.id);
+      dragPlanet.value = { nodeId: hit.node.id, x: hit.node.x, y: hit.node.y };
+      return { mode: 'node', nodeId: hit.node.id };
+    }
+    return true;
+  },
+  onDragMove: (wx, wy, dragInfo) => {
+    if (dragInfo.mode !== 'node') return;
+    if (!dragPlanet.value || dragPlanet.value.nodeId !== dragInfo.nodeId) return;
+    // 系内相对坐标 (wx, wy) → 域地图绝对坐标（换算基准 system.coordinate）
+    dragPlanet.value = { nodeId: dragInfo.nodeId, x: wx, y: wy };
+    const base = sysBase();
+    store.updateNodePosition(dragInfo.nodeId, base.x + wx, base.y + wy);
+  },
+  onDragEnd: (wx, wy, dragInfo) => {
+    if (dragInfo.mode === 'node') {
+      finalizePlanetDrag();
+    }
+  },
   onClick: (hit) => {
+    closeContextMenu();
+    // 编辑模式：点击不导航（防误触下钻/跳系），仅清理菜单
+    if (editMode.value) return;
     if (hit?.type === 'planet') {
       emit('select-node', hit.node);
     } else if (hit?.type === 'jump-arrow') {
@@ -364,6 +556,12 @@ const renderer = useCanvasRenderer(canvas, {
       const neighbor = store.nodes.find(n => n.id === hit.arrow.neighborId);
       if (neighbor) store.selectSystem(neighbor);
     }
+  },
+  onContextMenu: (wx, wy) => {
+    // 右键菜单仅编辑模式开放（浏览模式保持原生行为，不弹菜单）
+    if (!editMode.value) return;
+    const hit = hitTest(wx, wy);
+    openContextMenu(wx, wy, hit?.type === 'planet' ? { type: 'planet', node: hit.node } : null);
   },
 });
 
@@ -381,11 +579,13 @@ function fitSystem() {
 
 onMounted(() => {
   renderer.initCanvas();
+  canvas.value?.addEventListener('mouseleave', onCanvasMouseLeave);
   fitSystem();
   renderer.requestRender();
 });
 
 onUnmounted(() => {
+  canvas.value?.removeEventListener('mouseleave', onCanvasMouseLeave);
   renderer.cleanupCanvas();
 });
 
@@ -398,7 +598,11 @@ watch(() => [props.system?.id, store.currentSystemPlanets, store.hyperlanes, sto
   renderer.requestRender();
 }, { deep: true });
 
-defineExpose({ canvas, renderer, neighborArrows, planetLayouts, allNeighbors, omittedCount, jumpTo });
+defineExpose({
+  canvas, renderer, neighborArrows, planetLayouts, allNeighbors, omittedCount, jumpTo,
+  // 编辑模式（B3，供测试/父组件访问）
+  editMode, toggleEditMode, createBody, createBodyAt, deleteBodyById, contextMenu, dragPlanet,
+});
 </script>
 
 <style scoped>
@@ -427,6 +631,7 @@ defineExpose({ canvas, renderer, neighborArrows, planetLayouts, allNeighbors, om
 .back-btn:hover { background: var(--map-btn-hover); }
 .map-header h2 { font-size: 14px; color: var(--map-text-heading); margin-bottom: 4px; }
 .hint { font-size: 11px; color: var(--map-text-hint); }
+.edit-hint { color: var(--map-accent-green); }
 .header-actions { display: flex; gap: 8px; }
 .header-actions button {
   padding: 6px 14px;
@@ -482,4 +687,27 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
 .neighbor-badge.cross { color: #d2a8ff; background: rgba(210, 168, 255, 0.1); }
 .neighbor-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .neighbor-dist { font-size: 10px; color: #8b949e; }
+
+/* ===== 右键菜单（编辑模式，样式与 SystemView 一致） ===== */
+.context-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 150px;
+  padding: 4px 0;
+  border: 1px solid var(--map-header-border, #2a3550);
+  border-radius: var(--radius-md);
+  background: var(--map-header-bg, #151c2e);
+  box-shadow: var(--shadow-md);
+  user-select: none;
+}
+.context-menu .menu-item {
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--map-btn-text, #c9d4e8);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu .menu-item:hover { background: rgba(100, 150, 200, 0.15); }
+.context-menu .menu-item.danger { color: #ff7b72; }
+.context-menu .menu-item.danger:hover { background: rgba(255, 123, 114, 0.12); }
 </style>

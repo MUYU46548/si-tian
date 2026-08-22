@@ -209,6 +209,7 @@
           :system="store.currentSystem"
           @back="store.backToDomain"
           @select-node="store.selectPlanetOrNode"
+          @dirty="dirty = true"
         />
         
         <planet-map
