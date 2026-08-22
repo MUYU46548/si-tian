@@ -17,7 +17,7 @@
         ← 返回「{{ nodeHistory[nodeHistory.length - 1].displayName || nodeHistory[nodeHistory.length - 1].name }}」
       </button>
 
-      <!-- 操作按钮（高频前置） -->
+      <!-- 操作按钮（高频前置，任何 tab 下常驻可见） -->
       <section class="actions-section actions-section-top">
         <button class="action-btn primary" @click="openSourceInObsidian">
           <span class="btn-icon">📝</span> 在 Obsidian 中打开
@@ -36,37 +36,54 @@
         </button>
       </section>
 
-      <!-- 元数据区域：仅显示 TAGS + 层级 -->
-      <section v-if="node.tags?.length || node.layer" class="meta-section meta-section-compact">
-        <div class="meta-row" v-if="node.layer">
-          <span class="meta-key">层级</span>
-          <span class="meta-val">{{ node.layerLabel || node.layer }}</span>
-        </div>
-        <div class="meta-row" v-if="node.tags?.length">
-          <span class="meta-key">TAGS</span>
-          <span class="meta-val meta-tags">{{ node.tags.join(', ') }}</span>
-        </div>
-      </section>
+      <!-- 信息分区 tab（批次A5：概览=读、关系=跳转/归属、编辑=写操作） -->
+      <div class="detail-tab-bar">
+        <button class="detail-tab-btn" :class="{ active: activeTab === 'overview' }" @click="activeTab = 'overview'">概览</button>
+        <button class="detail-tab-btn" :class="{ active: activeTab === 'relations' }" @click="activeTab = 'relations'">
+          关系<span v-if="relationsCount" class="tab-count">{{ relationsCount }}</span>
+        </button>
+        <button class="detail-tab-btn" :class="{ active: activeTab === 'edit' }" @click="activeTab = 'edit'">编辑</button>
+      </div>
 
-      <!-- 正文区域 -->
-      <section v-if="note" class="content-section">
-        <div v-if="note.frontmatter && Object.keys(note.frontmatter).length" class="frontmatter-block">
-          <div v-for="(val, key) in note.frontmatter" :key="key" class="fm-row">
-            <span class="fm-key">{{ key }}:</span>
-            <span class="fm-val">{{ formatFmValue(val) }}</span>
+      <!-- ===== Tab 概览：元信息 + frontmatter(默认折叠) + 正文 ===== -->
+      <template v-if="activeTab === 'overview'">
+        <!-- 元数据区域：仅显示 TAGS + 层级 -->
+        <section v-if="node.tags?.length || node.layer" class="meta-section meta-section-compact">
+          <div class="meta-row" v-if="node.layer">
+            <span class="meta-key">层级</span>
+            <span class="meta-val">{{ node.layerLabel || node.layer }}</span>
           </div>
-        </div>
+          <div class="meta-row" v-if="node.tags?.length">
+            <span class="meta-key">TAGS</span>
+            <span class="meta-val meta-tags">{{ node.tags.join(', ') }}</span>
+          </div>
+        </section>
 
-        <div v-if="note.content" class="content-body" :class="{ collapsed: isContentLong && !isContentExpanded }">
-          <div class="markdown-body" v-html="renderedContent"></div>
-          <button v-if="isContentLong" class="expand-btn" @click="isContentExpanded = !isContentExpanded">
-            {{ isContentExpanded ? '收起全文' : '展开全文' }}
-          </button>
-        </div>
-      </section>
+        <!-- 正文区域 -->
+        <section v-if="note" class="content-section">
+          <div v-if="note.frontmatter && Object.keys(note.frontmatter).length" class="frontmatter-block" :class="{ collapsed: !isFmExpanded }">
+            <div v-for="(val, key) in note.frontmatter" :key="key" class="fm-row">
+              <span class="fm-key">{{ key }}:</span>
+              <span class="fm-val">{{ formatFmValue(val) }}</span>
+            </div>
+            <button class="expand-btn" @click="isFmExpanded = !isFmExpanded">
+              {{ isFmExpanded ? '收起详情' : `展开详情 (${Object.keys(note.frontmatter).length} 项)` }}
+            </button>
+          </div>
 
-      <!-- 关系区域 -->
-      <section class="relations-section">
+          <div v-if="note.content" class="content-body" :class="{ collapsed: isContentLong && !isContentExpanded }">
+            <div class="markdown-body" v-html="renderedContent"></div>
+            <button v-if="isContentLong" class="expand-btn" @click="isContentExpanded = !isContentExpanded">
+              {{ isContentExpanded ? '收起全文' : '展开全文' }}
+            </button>
+          </div>
+        </section>
+      </template>
+
+      <!-- ===== Tab 关系：节点间跳转 + 层级迁移 ===== -->
+      <template v-else-if="activeTab === 'relations'">
+        <!-- 关系区域 -->
+        <section class="relations-section">
         <div class="section-header">
           <span class="section-title">关系</span>
         </div>
@@ -158,9 +175,12 @@
           </p>
         </div>
       </section>
+      </template>
 
-      <!-- 标签云 -->
-      <section v-if="node.tags?.length" class="tags-section">
+      <!-- ===== Tab 编辑：标签 + 属性 + 坐标（全部写操作收拢） ===== -->
+      <template v-else-if="activeTab === 'edit'">
+        <!-- 标签云 -->
+        <section v-if="node.tags?.length" class="tags-section">
         <div class="section-header">
           <span class="section-title">标签</span>
         </div>
@@ -249,6 +269,7 @@
           </div>
         </div>
       </section>
+      </template>
 
     </div>
   </div>
@@ -266,6 +287,8 @@ const store = useGeodataStore();
 const note = ref(null);
 const loading = ref(false);
 const isContentExpanded = ref(false);
+const isFmExpanded = ref(false); // frontmatter 默认折叠（批次A5）
+const activeTab = ref('overview'); // overview=概览 | relations=关系 | edit=编辑（批次A5）
 const newTagInput = ref('');
 const reparentSearchQuery = ref('');
 
@@ -398,6 +421,11 @@ const childNodes = computed(() => {
   if (!node.value) return [];
   return store.nodes.filter(n => n.parentId === node.value.id);
 });
+
+// 关系 tab 徽标计数（子节点 + 关联链接 + 航道）
+const relationsCount = computed(() =>
+  childNodes.value.length + wikilinksFromContent.value.length + relatedHyperlanes.value.length
+);
 
 // 计算当前节点的所有后代节点 ID（用于过滤父节点候选）
 function getDescendantIds(nodeId) {
@@ -533,6 +561,8 @@ async function loadNote() {
 
 watch(node, () => {
   isContentExpanded.value = false;
+  isFmExpanded.value = false;
+  activeTab.value = 'overview';
   loadNote();
 }, { immediate: true });
 
@@ -856,6 +886,15 @@ function updateCoordinate(axis, value) {
   margin-bottom: 12px;
 }
 
+/* 默认折叠（批次A5）：只露前几行 + 底部渐隐，展开按钮见下 */
+.frontmatter-block.collapsed .fm-row:nth-child(n+4) {
+  display: none;
+}
+
+.frontmatter-block.collapsed {
+  padding-bottom: 6px;
+}
+
 .fm-row {
   display: flex;
   gap: 8px;
@@ -924,6 +963,46 @@ function updateCoordinate(axis, value) {
 
 .expand-btn:hover {
   background: #30363d;
+}
+
+/* ===== 信息分区 tab（批次A5，样式对齐 ObjectListPanel tab-bar） ===== */
+.detail-tab-bar {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #30363d;
+}
+
+.detail-tab-btn {
+  flex: 1;
+  padding: 7px 4px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #8b949e;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.detail-tab-btn:hover {
+  color: #e2e8f0;
+}
+
+.detail-tab-btn.active {
+  color: #58a6ff;
+  border-bottom-color: #58a6ff;
+}
+
+.tab-count {
+  font-size: 10px;
+  background: #21262d;
+  border-radius: 8px;
+  padding: 0 5px;
+  line-height: 14px;
 }
 
 /* ===== Markdown 渲染 ===== */

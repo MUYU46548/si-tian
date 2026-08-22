@@ -68,7 +68,7 @@ MOCK_SCRIPT = """<script>
         batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
         selectReferenceImage: async () => ({ success: false, canceled: true }),
         saveExportFile: async () => ({ success: false, canceled: true }),
-        readObsidianNote: async () => ({ success: true, content: '' }),
+        readObsidianNote: async () => ({ success: true, data: { frontmatter: { publish: true, tags: ['测试'], 层级: '星系' }, content: '测试笔记正文。', wikilinks: [] } }),
         revealInExplorer: async () => ({ success: true }),
         openExternal: async () => ({ success: true }),
         onNodeUpdated: () => () => {},
