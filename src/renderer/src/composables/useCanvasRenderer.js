@@ -1,4 +1,25 @@
-import { onUnmounted, reactive } from 'vue';
+import { onUnmounted, reactive, watch } from 'vue';
+
+/**
+ * 工具 → 光标映射（批次A2）：
+ *   pan=抓手（拖动中 grabbing）、move=移动、创建/绘制类（区域/道路/标记/文本/簇/放置）=十字
+ * 未列出的工具回退 default；仅对传入 interactionMode 的组件生效，
+ * 自管光标的星图组件（GalaxyMap/SystemView/SystemDetailView）不受影响。
+ */
+const TOOL_CURSOR = {
+  pan: 'grab',
+  move: 'move',
+  draw: 'crosshair',
+  region: 'crosshair',
+  zone: 'crosshair',
+  marker: 'crosshair',
+  route: 'crosshair',
+  text: 'text',
+  cluster: 'crosshair',
+  add_place: 'crosshair',
+  add_furniture: 'crosshair',
+  building: 'crosshair',
+};
 
 /**
  * useCanvasRenderer - Canvas 渲染与交互共享逻辑
@@ -42,6 +63,31 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   let dragNodeId = null;
   let animationFrameId = null; // 持续动画循环的 rAF ID
 
+  // ===== 工具光标（批次A2）：仅当组件传入 interactionMode 时接管 canvas 光标 =====
+  const manageCursor = !!interactionMode;
+  let cursorOverride = null; // 组件经 setCursorOverride 设置的临时覆盖（如 move 工具悬停可动对象）
+
+  function currentToolCursor() {
+    const mode = isSpacebarDown?.value ? 'pan' : (interactionMode?.value || 'pan');
+    return TOOL_CURSOR[mode] || 'default';
+  }
+
+  function applyCursor() {
+    const canvas = canvasRef.value;
+    if (!canvas || !manageCursor) return;
+    if (isPanning) {
+      canvas.style.cursor = 'grabbing';
+    } else {
+      canvas.style.cursor = cursorOverride || currentToolCursor();
+    }
+  }
+
+  if (manageCursor) {
+    // 工具切换 / 空格临时拖手 → 即时更新光标形态
+    if (interactionMode) watch(interactionMode, applyCursor);
+    if (isSpacebarDown) watch(isSpacebarDown, applyCursor);
+  }
+
   // ===== 框选状态 =====
   let isBoxSelecting = false;
   let boxSelectStart = { x: 0, y: 0 };
@@ -72,6 +118,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
 
     ctx = canvas.getContext('2d');
     resizeCanvas();
+    applyCursor();
 
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('mousemove', onMouseMove);
@@ -282,9 +329,10 @@ export function useCanvasRenderer(canvasRef, options = {}) {
         }
       }
       isPanning = true;
+      applyCursor();
       return;
     }
-    
+
     const world = screenToWorld(mx, my);
 
     if (onDragStart) {
@@ -306,6 +354,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     } else {
       isPanning = true;
     }
+    applyCursor();
   }
 
   function onMouseMove(e) {
@@ -426,6 +475,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     dragNodeId = null;
     isDraggingVertex = false;
     draggingVertexInfo = null;
+    applyCursor();
 
     if (isDragOperation) {
       isDragOperation = false;
@@ -500,6 +550,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     dragNodeId = null;
     isBoxSelecting = false;
     currentHit = null;
+    applyCursor();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
     needsRender = true;
@@ -561,6 +612,16 @@ export function useCanvasRenderer(canvasRef, options = {}) {
 
   onUnmounted(cleanupCanvas);
 
+  /**
+   * 组件悬停光标覆写（批次A2）：cursor 传 null 清除覆写、恢复当前工具光标。
+   * 仅 manageCursor 模式生效（未传 interactionMode 的组件自管光标，调用无副作用）。
+   */
+  function setCursorOverride(cursor) {
+    if (!manageCursor) return;
+    cursorOverride = cursor;
+    applyCursor();
+  }
+
   return {
     viewTransform, getContext, // reactive 对象本体 + 上下文访问
     getViewTransform: () => ({ ...viewTransform }),
@@ -568,6 +629,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     getCurrentHit: () => currentHit,
     isDraggingVertex: () => isDraggingVertex,
     isBoxSelecting: () => isBoxSelecting,
+    setCursorOverride,
     requestRender,
     resetView,
     focusOn,

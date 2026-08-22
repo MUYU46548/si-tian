@@ -1913,13 +1913,13 @@ const renderer = useCanvasRenderer(canvas, {
     // 光标世界坐标（左下角状态条）
     cursorCoord.value = { x: Math.round(wx), y: Math.round(wy), visible: true };
     hoveredNode.value = hit?.type === 'place' ? hit.node : null;
-    // 移动工具光标提示：可移动对象上显示 move，空白显示 grab
+    // 移动工具光标提示：可移动对象上显示 move，空白交还工具光标（批次A2 统一光标管理）
     const hoverMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
-    if (hoverMode === 'move' && canvas.value) {
+    if (hoverMode === 'move') {
       const movable = hit && (hit.type === 'place' || hit.type === 'marker' || hit.type === 'textLabel' || hit.type === 'region');
-      canvas.value.style.cursor = movable ? 'move' : 'grab';
-    } else if (canvas.value) {
-      canvas.value.style.cursor = '';
+      renderer.setCursorOverride(movable ? 'move' : null);
+    } else {
+      renderer.setCursorOverride(null);
     }
     // 顶点悬停（多边形/区域/路线）
     if (editMode.value && (selectedProvince.value || selectedRegion.value || selectedRoute.value)) {
