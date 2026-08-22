@@ -1364,7 +1364,7 @@ watch(areaPlaces, () => {
 
 .toolbar-group button.active {
   background: var(--accent);
-  color: white;
+  color: var(--panel-bg);
   border-color: var(--accent);
   animation: pulse-glow 2s ease-in-out infinite;
 }
@@ -1375,7 +1375,7 @@ watch(areaPlaces, () => {
 }
 
 .toolbar-group button:hover:not(.active) {
-  background: var(--btn-hover);
+  background: var(--btn-bg-hover);
 }
 
 .toolbar-group button:disabled {
@@ -1408,7 +1408,7 @@ watch(areaPlaces, () => {
 .route-confirm-btn:disabled {
   background: #1a472a !important;
   border-color: #238636 !important;
-  color: #8b949e !important;
+  color: var(--text-tertiary) !important;
   cursor: not-allowed !important;
 }
 
@@ -1497,7 +1497,7 @@ watch(areaPlaces, () => {
   top: 8px;
   right: 8px;
   background: var(--panel-bg);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   min-width: 200px;
@@ -1509,7 +1509,7 @@ watch(areaPlaces, () => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .popover-header h4 {
@@ -1520,7 +1520,7 @@ watch(areaPlaces, () => {
 .close-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 16px;
 }
@@ -1537,14 +1537,14 @@ watch(areaPlaces, () => {
 
 .detail-label {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   min-width: 50px;
 }
 
 .detail-value {
   font-size: 11px;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .popover-actions {
@@ -1566,7 +1566,7 @@ watch(areaPlaces, () => {
 }
 
 .adopt-btn:hover {
-  background: var(--btn-hover);
+  background: var(--btn-bg-hover);
 }
 
 .adopt-btn.ghost {
@@ -1575,7 +1575,7 @@ watch(areaPlaces, () => {
 
 .adopt-btn.primary {
   background: var(--accent);
-  color: white;
+  color: var(--panel-bg);
   border-color: var(--accent);
 }
 
@@ -1599,7 +1599,7 @@ watch(areaPlaces, () => {
 
 .modal-dialog {
   background: var(--panel-bg);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 20px;
   min-width: 300px;
@@ -1617,7 +1617,7 @@ watch(areaPlaces, () => {
 .form-row label {
   display: block;
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin-bottom: 4px;
 }
 
@@ -1626,9 +1626,9 @@ watch(areaPlaces, () => {
   width: 100%;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
-  border: 1px solid #30363d;
-  background: #161b22;
-  color: #e2e8f0;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
   font-size: 12px;
   outline: none;
 }

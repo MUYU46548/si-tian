@@ -1000,7 +1000,7 @@ watch(currentFurniture, () => {
 }
 
 .adopt-btn:hover {
-  background: var(--btn-hover);
+  background: var(--btn-bg-hover);
   color: var(--text-primary);
 }
 
@@ -1052,7 +1052,7 @@ watch(currentFurniture, () => {
 }
 
 .floor-tab:hover:not(.active) {
-  background: var(--btn-hover);
+  background: var(--btn-bg-hover);
 }
 
 .floor-level {
@@ -1076,7 +1076,7 @@ watch(currentFurniture, () => {
 }
 
 .floor-btn:hover:not(:disabled) {
-  background: var(--btn-hover);
+  background: var(--btn-bg-hover);
 }
 
 .floor-btn:disabled {
@@ -1108,7 +1108,7 @@ watch(currentFurniture, () => {
 }
 
 .building-switch-btn:hover {
-  background: var(--btn-hover);
+  background: var(--btn-bg-hover);
   color: var(--text-primary);
 }
 
@@ -1136,7 +1136,7 @@ watch(currentFurniture, () => {
 }
 
 .building-menu div:hover {
-  background: var(--btn-hover, #30363d);
+  background: var(--btn-bg-hover);
   color: var(--text-primary);
 }
 
@@ -1189,7 +1189,7 @@ watch(currentFurniture, () => {
 }
 
 .toolbar-group button:hover:not(.active) {
-  background: var(--btn-hover);
+  background: var(--btn-bg-hover);
 }
 
 .toolbar-group button:disabled {

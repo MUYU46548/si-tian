@@ -78,7 +78,7 @@ function formatTime(iso) {
   outline: none;
 }
 .snapshot-create input:focus {
-  border-color: var(--planet-text-link, #4A90D9);
+  border-color: var(--planet-text-link);
 }
 .snapshot-empty {
   text-align: center;
@@ -94,10 +94,10 @@ function formatTime(iso) {
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   margin-bottom: 4px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--planet-btn-bg);
 }
 .snapshot-item:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--planet-btn-hover);
 }
 .snapshot-info {
   flex: 1;
@@ -119,7 +119,7 @@ function formatTime(iso) {
   border: 1px solid var(--planet-btn-border);
   border-radius: var(--radius-sm);
   background: var(--planet-btn-bg);
-  color: var(--planet-text-link, #4A90D9);
+  color: var(--planet-text-link);
   cursor: pointer;
   font-size: 11px;
   white-space: nowrap;

@@ -150,8 +150,8 @@ defineExpose({ open, close });
   max-height: 86vh;
   display: flex;
   flex-direction: column;
-  background: var(--panel-bg, #1b2130);
-  border: 1px solid var(--panel-border, #2c3547);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg, 10px);
   box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, 0.4));
   overflow: hidden;
@@ -161,15 +161,15 @@ defineExpose({ open, close });
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--panel-border, #2c3547);
+  border-bottom: 1px solid var(--panel-border);
   cursor: move;
 }
 .panel-header h3 { margin: 0; font-size: 15px; }
 .close-btn {
-  background: none; border: none; color: var(--text-dim, #8b94a7);
+  background: none; border: none; color: var(--text-tertiary);
   font-size: 18px; cursor: pointer; padding: 2px 8px; border-radius: 4px;
 }
-.close-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.close-btn:hover { background: var(--btn-bg-hover); color: var(--text-primary); }
 .panel-body {
   padding: 14px 18px;
   overflow-y: auto;
@@ -180,7 +180,7 @@ defineExpose({ open, close });
 .hint {
   margin: 0 0 4px;
   font-size: 12px;
-  color: var(--text-dim, #8b94a7);
+  color: var(--text-tertiary);
   line-height: 1.6;
 }
 .form-row {
@@ -192,25 +192,25 @@ defineExpose({ open, close });
   width: 76px;
   flex-shrink: 0;
   font-size: 13px;
-  color: var(--text-dim, #aab3c5);
+  color: var(--text-secondary);
 }
 .form-row select, .form-row input {
   flex: 1;
   padding: 6px 10px;
-  background: var(--input-bg, #121826);
-  border: 1px solid var(--panel-border, #2c3547);
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 6px;
-  color: var(--text-main, #e2e8f0);
+  color: var(--text-primary);
   font-size: 13px;
 }
 .textarea-row { align-items: flex-start; }
 .textarea-row textarea {
   flex: 1;
   padding: 8px 10px;
-  background: var(--input-bg, #121826);
-  border: 1px solid var(--panel-border, #2c3547);
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 6px;
-  color: var(--text-main, #e2e8f0);
+  color: var(--text-primary);
   font-size: 13px;
   line-height: 1.6;
   resize: vertical;
@@ -236,28 +236,28 @@ defineExpose({ open, close });
 .import-tip {
   margin: 0;
   font-size: 12px;
-  color: var(--text-dim, #8b94a7);
+  color: var(--text-tertiary);
 }
 .panel-footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   padding: 12px 18px;
-  border-top: 1px solid var(--panel-border, #2c3547);
+  border-top: 1px solid var(--panel-border);
 }
 .btn-secondary, .btn-primary {
   padding: 7px 16px;
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
-  border: 1px solid var(--panel-border, #2c3547);
+  border: 1px solid var(--panel-border);
 }
-.btn-secondary { background: transparent; color: var(--text-dim, #aab3c5); }
-.btn-secondary:hover { background: rgba(255, 255, 255, 0.06); }
+.btn-secondary { background: transparent; color: var(--text-secondary); }
+.btn-secondary:hover { background: var(--btn-bg-hover); }
 .btn-primary {
-  background: #3b82f6;
-  color: #fff;
-  border-color: #3b82f6;
+  background: var(--accent);
+  color: var(--panel-bg);
+  border-color: var(--accent);
 }
 .btn-primary:hover { background: #2f6fe0; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }

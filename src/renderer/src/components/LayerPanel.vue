@@ -57,7 +57,7 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
   left: 8px;
   z-index: 30;
   background: var(--panel-bg);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   min-width: 160px;
@@ -79,14 +79,14 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid #30363d;
-  background: #0d1117;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel-header-bg);
 }
 
 .panel-header h3 {
   font-size: 12px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -95,7 +95,7 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
 .close-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 16px;
   padding: 2px 6px;
@@ -103,7 +103,7 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
 }
 
 .close-btn:hover {
-  color: #f0f6fc;
+  color: var(--text-primary);
 }
 
 .panel-body {
@@ -124,7 +124,7 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
   font-size: 11px;
   padding: 4px;
   opacity: 0.5;
-  color: #8b949e;
+  color: var(--text-tertiary);
   line-height: 1;
 }
 
@@ -145,16 +145,16 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
   cursor: pointer;
   width: 100%;
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
   transition: background 0.1s ease;
 }
 
 .layer-toggle:hover {
-  background: #21262d;
+  background: var(--btn-bg-hover);
 }
 
 .layer-toggle input[type="checkbox"] {
-  accent-color: #58a6ff;
+  accent-color: var(--accent);
   width: 14px;
   height: 14px;
   cursor: pointer;

@@ -90,8 +90,8 @@ function getMemberName(memberId) {
 /* header/关闭/折叠由 PanelShell 提供，这里只留 actions 槽里的自定义按钮 */
 .icon-btn {
   background: none;
-  border: 1px solid #30363d;
-  color: #58a6ff;
+  border: 1px solid var(--panel-border);
+  color: var(--accent);
   cursor: pointer;
   font-size: 14px;
   width: 22px;
@@ -101,7 +101,7 @@ function getMemberName(memberId) {
 }
 
 .icon-btn:hover {
-  background: #21262d;
+  background: var(--btn-bg-hover);
 }
 
 .panel-body {
@@ -113,25 +113,25 @@ function getMemberName(memberId) {
   padding: 14px 10px;
   text-align: center;
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   line-height: 1.6;
 }
 
 .empty-hint .sub {
   font-size: 10px;
-  color: #484f58;
+  color: var(--text-tertiary);
 }
 
 .cluster-row {
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   margin-bottom: 6px;
-  background: #161b22;
+  background: var(--btn-bg);
   position: relative;
 }
 
 .cluster-row.active {
-  border-color: #58a6ff;
+  border-color: var(--accent);
   box-shadow: 0 0 6px rgba(88, 166, 255, 0.3);
 }
 
@@ -142,18 +142,18 @@ function getMemberName(memberId) {
   padding: 6px 8px;
   cursor: pointer;
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
   user-select: none;
 }
 
 .cluster-head:hover {
-  background: #21262d;
+  background: var(--btn-bg-hover);
 }
 
 .fold-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 10px;
   padding: 0;
@@ -175,8 +175,8 @@ function getMemberName(memberId) {
 }
 
 .cluster-count {
-  background: #21262d;
-  color: #8b949e;
+  background: var(--btn-bg);
+  color: var(--text-tertiary);
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 8px;
@@ -194,7 +194,7 @@ function getMemberName(memberId) {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #c9d1d9;
+  color: var(--text-secondary);
   padding: 3px 6px;
   border-radius: 3px;
   cursor: pointer;
@@ -202,8 +202,8 @@ function getMemberName(memberId) {
 
 .member-row:hover,
 .member-row.hovered {
-  background: rgba(88, 166, 255, 0.15);
-  color: #f0f6fc;
+  background: var(--accent-bg);
+  color: var(--text-primary);
 }
 
 .member-dot {
@@ -229,8 +229,8 @@ function getMemberName(memberId) {
 
 .mini-btn {
   background: none;
-  border: 1px solid #30363d;
-  color: #8b949e;
+  border: 1px solid var(--panel-border);
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 11px;
   width: 20px;
@@ -240,7 +240,7 @@ function getMemberName(memberId) {
 }
 
 .mini-btn:hover {
-  color: #f0f6fc;
-  background: #21262d;
+  color: var(--text-primary);
+  background: var(--btn-bg-hover);
 }
 </style>

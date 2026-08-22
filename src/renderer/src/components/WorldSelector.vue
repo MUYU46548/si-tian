@@ -116,7 +116,7 @@ function getLocationCount(worldId) {
     radial-gradient(ellipse at 25% 15%, rgba(58, 80, 140, 0.22) 0%, transparent 55%),
     radial-gradient(ellipse at 75% 85%, rgba(100, 60, 140, 0.18) 0%, transparent 55%),
     radial-gradient(ellipse at 60% 40%, rgba(40, 90, 100, 0.12) 0%, transparent 50%),
-    #0a0e18;
+    var(--app-bg);
 }
 
 /* 星尘（确定性伪元素，与星图背景一致） */
@@ -146,7 +146,7 @@ function getLocationCount(worldId) {
 
 .header-row h1 {
   font-size: 28px;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 
@@ -154,10 +154,10 @@ function getLocationCount(worldId) {
   align-self: flex-start;
   margin-top: 6px;
   padding: 8px 18px;
-  border: 1px solid #58a6ff;
+  border: 1px solid var(--accent);
   border-radius: var(--radius-md);
-  background: rgba(88, 166, 255, 0.12);
-  color: #58a6ff;
+  background: var(--accent-bg);
+  color: var(--accent);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
@@ -167,7 +167,7 @@ function getLocationCount(worldId) {
 
 .subtitle {
   font-size: 14px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin-bottom: 32px;
 }
 
@@ -188,28 +188,28 @@ function getLocationCount(worldId) {
   padding: 48px 40px;
   border: 1px dashed rgba(88, 166, 255, 0.35);
   border-radius: var(--radius-xl);
-  background: rgba(22, 27, 34, 0.6);
+  background: var(--panel-bg);
   max-width: 420px;
   width: 100%;
   text-align: center;
 }
 .empty-state .empty-icon { font-size: 40px; }
-.empty-state h2 { font-size: 17px; color: #f0f6fc; margin: 0; }
-.empty-state p { font-size: 13px; color: #8b949e; margin: 0 0 8px; }
+.empty-state h2 { font-size: 17px; color: var(--text-primary); margin: 0; }
+.empty-state p { font-size: 13px; color: var(--text-tertiary); margin: 0 0 8px; }
 .empty-actions { display: flex; gap: 10px; }
 .empty-actions .create-btn { align-self: auto; margin-top: 0; }
 .extract-btn {
   padding: 8px 18px;
-  border: 1px solid var(--toolbar-border, #30363d);
+  border: 1px solid var(--toolbar-border);
   border-radius: var(--radius-md);
-  background: var(--btn-bg, #21262d);
-  color: var(--text-secondary, #c9d1d9);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
 }
-.extract-btn:hover { background: var(--btn-bg-hover, #30363d); }
+.extract-btn:hover { background: var(--btn-bg-hover); }
 
 .world-card {
   position: relative;
@@ -240,7 +240,7 @@ function getLocationCount(worldId) {
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 13px;
   cursor: pointer;
   opacity: 0;
@@ -266,35 +266,35 @@ function getLocationCount(worldId) {
 
 .world-card h3 {
   font-size: 18px;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 
 .world-desc {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin-bottom: 16px;
   line-height: 1.4;
 }
 
 .world-meta {
   font-size: 11px;
-  color: #58a6ff;
+  color: var(--accent);
   padding-top: 12px;
-  border-top: 1px solid #21262d;
+  border-top: 1px solid var(--separator);
   display: flex;
   gap: 4px;
   align-items: center;
 }
 
 .world-meta.secondary {
-  color: #8b949e;
+  color: var(--text-tertiary);
   border-top: none;
   padding-top: 4px;
 }
 
 .separator {
-  color: #484f58;
+  color: var(--separator);
   margin: 0 2px;
 }
 </style>

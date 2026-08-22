@@ -929,7 +929,7 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
   max-height: 300px;
 }
 .neighbor-list { padding: 6px; }
-.neighbor-empty { padding: 14px 10px; text-align: center; font-size: 11px; color: #8b949e; }
+.neighbor-empty { padding: 14px 10px; text-align: center; font-size: 11px; color: var(--text-tertiary); }
 .neighbor-omitted { padding: 4px 8px 8px; font-size: 10px; color: #d29922; }
 .neighbor-row {
   display: flex;
@@ -938,22 +938,22 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
   padding: 5px 8px;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  color: #c9d1d9;
+  color: var(--text-secondary);
   cursor: pointer;
 }
-.neighbor-row:hover { background: rgba(88, 166, 255, 0.15); color: #f0f6fc; }
+.neighbor-row:hover { background: var(--accent-bg); color: var(--text-primary); }
 .neighbor-badge {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 8px;
-  border: 1px solid #30363d;
-  color: #79c0ff;
-  background: rgba(121, 192, 255, 0.1);
+  border: 1px solid var(--panel-border);
+  color: var(--accent);
+  background: var(--accent-bg);
   flex-shrink: 0;
 }
 .neighbor-badge.cross { color: #d2a8ff; background: rgba(210, 168, 255, 0.1); }
 .neighbor-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.neighbor-dist { font-size: 10px; color: #8b949e; }
+.neighbor-dist { font-size: 10px; color: var(--text-tertiary); }
 
 /* ===== 右键菜单（编辑模式，样式与 SystemView 一致） ===== */
 .context-menu {
@@ -961,16 +961,16 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
   z-index: 30;
   min-width: 150px;
   padding: 4px 0;
-  border: 1px solid var(--map-header-border, #2a3550);
+  border: 1px solid var(--map-header-border);
   border-radius: var(--radius-md);
-  background: var(--map-header-bg, #151c2e);
+  background: var(--map-header-bg);
   box-shadow: var(--shadow-md);
   user-select: none;
 }
 .context-menu .menu-item {
   padding: 7px 14px;
   font-size: 12px;
-  color: var(--map-btn-text, #c9d4e8);
+  color: var(--map-btn-text);
   cursor: pointer;
   white-space: nowrap;
 }

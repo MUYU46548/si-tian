@@ -95,8 +95,8 @@ defineExpose({ open, close });
 
 .onboarding-panel {
   width: 420px;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   padding: 24px;
@@ -106,19 +106,19 @@ defineExpose({ open, close });
   text-align: center;
   margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--separator);
 }
 
 .onboarding-header h2 {
   font-size: 18px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0 0 4px;
 }
 
 .onboarding-header p {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin: 0;
 }
 
@@ -135,16 +135,16 @@ defineExpose({ open, close });
   gap: 12px;
   padding: 12px;
   border-radius: 8px;
-  border: 1px solid #21262d;
-  background: #161b22;
+  border: 1px solid var(--separator);
+  background: var(--btn-bg);
   transition: all 0.2s ease;
   opacity: 0.6;
 }
 
 .step-item.active {
   opacity: 1;
-  border-color: #58a6ff;
-  background: rgba(88, 166, 255, 0.08);
+  border-color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .step-item.completed {
@@ -157,8 +157,8 @@ defineExpose({ open, close });
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #21262d;
-  color: #8b949e;
+  background: var(--btn-bg);
+  color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 600;
   display: flex;
@@ -168,8 +168,8 @@ defineExpose({ open, close });
 }
 
 .step-item.active .step-number {
-  background: #58a6ff;
-  color: #0d1117;
+  background: var(--accent);
+  color: var(--panel-bg);
 }
 
 .step-item.completed .step-number {
@@ -180,13 +180,13 @@ defineExpose({ open, close });
 .step-content h4 {
   font-size: 13px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0 0 2px;
 }
 
 .step-content p {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin: 0;
 }
 
@@ -213,16 +213,16 @@ defineExpose({ open, close });
 
 .btn-secondary {
   padding: 8px 16px;
-  background: #21262d;
-  border: 1px solid #30363d;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 12px;
 }
 
 .btn-secondary:hover {
-  background: #30363d;
-  color: #e2e8f0;
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
 }
 </style>

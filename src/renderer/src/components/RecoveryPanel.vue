@@ -154,7 +154,7 @@ onUnmounted(() => {
 
 .recovery-panel {
   width: 400px;
-  background: #0d1117;
+  background: var(--panel-bg);
   border: 1px solid #f85149;
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
@@ -170,13 +170,13 @@ onUnmounted(() => {
 .recovery-panel h3 {
   font-size: 16px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0 0 8px;
 }
 
 .recovery-desc {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   line-height: 1.5;
   margin: 0 0 20px;
 }
@@ -187,9 +187,9 @@ onUnmounted(() => {
   gap: 8px;
   margin-bottom: 24px;
   padding: 14px;
-  background: #161b22;
+  background: var(--btn-bg);
   border-radius: var(--radius-md);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
 }
 
 .info-item {
@@ -199,11 +199,11 @@ onUnmounted(() => {
 }
 
 .info-label {
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .info-value {
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -230,16 +230,16 @@ onUnmounted(() => {
 
 .btn-discard {
   padding: 10px 20px;
-  background: #21262d;
-  border: 1px solid #30363d;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 13px;
 }
 
 .btn-discard:hover {
-  background: #30363d;
-  color: #e2e8f0;
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
 }
 </style>

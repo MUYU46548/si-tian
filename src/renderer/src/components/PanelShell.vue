@@ -93,7 +93,7 @@ function onHeaderMouseDown(e) {
   flex-direction: column;
   overflow: hidden;
   background: var(--panel-bg);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
 }
@@ -103,8 +103,8 @@ function onHeaderMouseDown(e) {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid #30363d;
-  background: #0d1117;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel-header-bg);
   cursor: move;
   user-select: none;
 }
@@ -112,7 +112,7 @@ function onHeaderMouseDown(e) {
 .panel-shell .panel-header h3 {
   font-size: 12px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -126,8 +126,8 @@ function onHeaderMouseDown(e) {
 
 .panel-shell .fold-btn {
   background: none;
-  border: 1px solid #30363d;
-  color: #8b949e;
+  border: 1px solid var(--panel-border);
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 10px;
   width: 22px;
@@ -137,14 +137,14 @@ function onHeaderMouseDown(e) {
 }
 
 .panel-shell .fold-btn:hover {
-  color: #f0f6fc;
-  background: #21262d;
+  color: var(--text-primary);
+  background: var(--btn-bg);
 }
 
 .panel-shell .close-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 16px;
   padding: 0 4px;
@@ -152,7 +152,7 @@ function onHeaderMouseDown(e) {
 }
 
 .panel-shell .close-btn:hover {
-  color: #f0f6fc;
+  color: var(--text-primary);
 }
 
 .panel-shell-body {

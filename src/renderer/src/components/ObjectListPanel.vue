@@ -231,9 +231,9 @@ function commitRename() {
 
 .tab-btn {
   flex: 1;
-  background: #161b22;
-  border: 1px solid #30363d;
-  color: #8b949e;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-tertiary);
   font-size: 11px;
   padding: 4px 2px;
   border-radius: var(--radius-sm);
@@ -245,14 +245,14 @@ function commitRename() {
 }
 
 .tab-btn.active {
-  background: #21262d;
-  color: #f0f6fc;
-  border-color: #58a6ff;
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 .tab-count {
-  background: #30363d;
-  color: #8b949e;
+  background: var(--btn-bg-hover);
+  color: var(--text-tertiary);
   font-size: 9px;
   padding: 0 5px;
   border-radius: 8px;
@@ -271,16 +271,16 @@ function commitRename() {
   padding: 4px 6px;
   border-radius: var(--radius-sm);
   font-size: 11px;
-  color: #c9d1d9;
+  color: var(--text-secondary);
   cursor: default;
 }
 
 .row:hover {
-  background: #21262d;
+  background: var(--btn-bg-hover);
 }
 
 .row.active {
-  background: rgba(88, 166, 255, 0.15);
+  background: var(--accent-bg);
   border: 1px solid rgba(88, 166, 255, 0.4);
   padding: 3px 5px;
 }
@@ -308,18 +308,18 @@ function commitRename() {
 }
 
 .row-name:hover {
-  color: #f0f6fc;
+  color: var(--text-primary);
 }
 
 .row-sub {
-  color: #484f58;
+  color: var(--text-tertiary);
   font-size: 10px;
   margin-left: 4px;
 }
 
 .row-tag {
-  background: #21262d;
-  color: #8b949e;
+  background: var(--btn-bg);
+  color: var(--text-tertiary);
   font-size: 9px;
   padding: 1px 5px;
   border-radius: 8px;
@@ -340,8 +340,8 @@ function commitRename() {
 
 .mini-btn {
   background: none;
-  border: 1px solid #30363d;
-  color: #8b949e;
+  border: 1px solid var(--panel-border);
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 10px;
   width: 19px;
@@ -351,8 +351,8 @@ function commitRename() {
 }
 
 .mini-btn:hover {
-  color: #f0f6fc;
-  background: #21262d;
+  color: var(--text-primary);
+  background: var(--btn-bg-hover);
 }
 
 .mini-btn.danger:hover {
@@ -364,13 +364,13 @@ function commitRename() {
   padding: 14px 10px;
   text-align: center;
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   line-height: 1.6;
 }
 
 .empty-hint .sub {
   font-size: 10px;
-  color: #484f58;
+  color: var(--text-tertiary);
 }
 
 .rename-bar {
@@ -379,9 +379,9 @@ function commitRename() {
 
 .rename-bar input {
   width: 100%;
-  background: #0d1117;
-  border: 1px solid #58a6ff;
-  color: #f0f6fc;
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
   font-size: 12px;
   padding: 4px 6px;
   border-radius: var(--radius-sm);

@@ -3552,10 +3552,10 @@ watch(() => props.planet?.id, async (id) => {
   align-items: center;
   gap: 10px;
   padding: 28px 40px;
-  background: rgba(13, 17, 23, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
-  color: #e2e8f0;
+  color: var(--text-primary);
   text-align: center;
   z-index: 15;
   box-shadow: var(--shadow-lg);
@@ -3563,7 +3563,7 @@ watch(() => props.planet?.id, async (id) => {
 }
 .empty-map-icon { font-size: 34px; line-height: 1; }
 .empty-map-title { font-size: 15px; font-weight: 600; }
-.empty-map-desc { font-size: 12px; color: #8b949e; }
+.empty-map-desc { font-size: 12px; color: var(--text-tertiary); }
 .empty-map-hint .edit-entry-btn { margin-top: 4px; }
 
 canvas {
@@ -3602,13 +3602,13 @@ canvas {
   transition: all 0.15s;
 }
 .zoom-controls button:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--planet-btn-hover);
   border-color: var(--planet-text-link, #4A90D9);
   color: var(--planet-text-link, #4A90D9);
 }
 .zoom-controls input[type="range"] {
   width: 110px;
-  accent-color: #4A90D9;
+  accent-color: var(--planet-text-link);
   cursor: pointer;
 }
 .zoom-value {
@@ -3738,12 +3738,12 @@ canvas {
   gap: 6px;
   padding: 5px 8px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--planet-btn-bg);
   border: 1px solid transparent;
   cursor: pointer;
 }
 .ref-item:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--planet-btn-hover);
 }
 .ref-item.active {
   border-color: var(--planet-text-link, #4A90D9);
@@ -3795,7 +3795,7 @@ canvas {
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--panel-border);
 }
 .editor-header h3 {
   margin: 0;
@@ -3808,20 +3808,20 @@ canvas {
   border: none;
   font-size: 18px;
   cursor: pointer;
-  color: #999;
+  color: var(--text-tertiary);
   line-height: 1;
   padding: 0 4px;
 }
-.close-btn:hover { color: #333; }
+.close-btn:hover { color: var(--text-primary); }
 .editor-field {
   padding: 10px 14px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--panel-border);
 }
 .editor-field:last-child { border-bottom: none; }
 .editor-field label {
   display: block;
   font-size: 11px;
-  color: #888;
+  color: var(--text-tertiary);
   margin-bottom: 4px;
   font-weight: 500;
   text-transform: uppercase;
@@ -3975,7 +3975,7 @@ canvas {
 /* 参考图面板 */
 .ref-hint {
   font-size: 10px;
-  color: #888;
+  color: var(--text-tertiary);
   margin: 4px 0 0;
   line-height: 1.4;
 }
@@ -4013,8 +4013,8 @@ canvas {
   transform: translateX(-50%);
   z-index: 90;
   background: var(--panel-bg);
-  color: #f0f6fc;
-  border: 1px solid #30363d;
+  color: var(--text-primary);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 8px 16px;
   font-size: 12px;
@@ -4067,21 +4067,21 @@ canvas {
 .modal-dialog {
   width: 380px;
   max-width: 90vw;
-  background: #161b22;
+  background: var(--panel-bg);
   border-radius: 10px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   box-shadow: 0 16px 64px rgba(0,0,0,0.5);
   padding: 20px;
 }
 .modal-dialog h3 {
   margin: 0 0 8px 0;
   font-size: 16px;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 .modal-desc {
   margin: 0 0 16px 0;
   font-size: 13px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 .form-row {
   display: flex;
@@ -4091,16 +4091,16 @@ canvas {
 }
 .form-row label {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-weight: 500;
 }
 .form-row select,
 .form-row input {
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid #30363d;
-  background: #0d1117;
-  color: #e2e8f0;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
   font-size: 13px;
 }
 .modal-actions {

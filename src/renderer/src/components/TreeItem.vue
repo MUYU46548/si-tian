@@ -73,7 +73,7 @@ function toggle() {
 }
 
 .tree-node:hover {
-  background: #21262d;
+  background: var(--btn-bg-hover);
 }
 
 .tree-node.draggable-node {
@@ -84,13 +84,13 @@ function toggle() {
 }
 
 .tree-node.selected {
-  background: #388bfd22;
+  background: var(--accent-bg);
 }
 
 .expand-toggle {
   width: 12px;
   font-size: 9px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
 }
 

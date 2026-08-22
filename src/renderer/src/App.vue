@@ -1135,6 +1135,7 @@ async function clearCoordinateCache() {
   --separator: #484f58;
   --panel-bg: #161b22;
   --panel-border: #30363d;
+  --panel-header-bg: #0d1117;
   --input-bg: #0d1117;
   --input-border: #30363d;
   /* GalaxyMap / SystemView shared */
@@ -1211,6 +1212,7 @@ async function clearCoordinateCache() {
   --separator: #d0d7de;
   --panel-bg: #ffffff;
   --panel-border: #d0d7de;
+  --panel-header-bg: #f6f8fa;
   --input-bg: #ffffff;
   --input-border: #d0d7de;
   /* GalaxyMap / SystemView shared */
@@ -1440,7 +1442,7 @@ async function clearCoordinateCache() {
 }
 
 .dropdown-menu div:hover {
-  background: var(--btn-hover, #30363d);
+  background: var(--btn-bg-hover);
   color: var(--text-primary);
 }
 

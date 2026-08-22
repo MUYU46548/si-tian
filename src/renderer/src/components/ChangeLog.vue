@@ -101,8 +101,8 @@ defineExpose({ open, close });
 }
 
 .change-log-panel {
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
   width: 500px;
   max-width: 90vw;
@@ -117,19 +117,19 @@ defineExpose({ open, close });
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .change-log-header h2 {
   font-size: 16px;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
@@ -138,36 +138,36 @@ defineExpose({ open, close });
 }
 
 .close-btn:hover {
-  color: #f0f6fc;
-  background: #21262d;
+  color: var(--text-primary);
+  background: var(--btn-bg-hover);
 }
 
 .change-log-filters {
   display: flex;
   gap: 6px;
   padding: 12px 20px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .filter-btn {
   padding: 4px 12px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .filter-btn:hover {
-  background: #30363d;
+  background: var(--btn-bg-hover);
 }
 
 .filter-btn.active {
-  background: rgba(88, 166, 255, 0.2);
-  border-color: #58a6ff;
-  color: #58a6ff;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .change-log-content {
@@ -180,7 +180,7 @@ defineExpose({ open, close });
   padding: 32px;
   text-align: center;
   font-size: 13px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .log-item {
@@ -188,7 +188,7 @@ defineExpose({ open, close });
   align-items: center;
   gap: 10px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  border-bottom: 1px solid var(--separator);
 }
 
 .log-item:last-child {
@@ -202,7 +202,7 @@ defineExpose({ open, close });
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #21262d;
+  background: var(--btn-bg);
   border-radius: var(--radius-md);
   flex-shrink: 0;
 }
@@ -216,19 +216,19 @@ defineExpose({ open, close });
 
 .log-label {
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .log-time {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .log-type {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   padding: 2px 6px;
-  background: #21262d;
+  background: var(--btn-bg);
   border-radius: var(--radius-sm);
 }
 </style>

@@ -211,8 +211,8 @@ watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], (
   top: 8px;
   right: 8px;
   z-index: 20;
-  background: rgba(13, 17, 23, 0.95);
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   overflow: hidden;
@@ -226,7 +226,7 @@ watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], (
   height: 18px;
   border: none;
   background: transparent;
-  color: #8b949e;
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
@@ -234,8 +234,8 @@ watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], (
   border-radius: 3px;
 }
 .eagle-eye-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
 }
 
 .eagle-eye-toggle {
@@ -245,17 +245,17 @@ watch([() => props.elements, () => props.viewBounds, () => props.worldBounds], (
   z-index: 20;
   width: 34px;
   height: 30px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  background: rgba(13, 17, 23, 0.9);
-  color: #8b949e;
+  background: var(--panel-bg);
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 14px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .eagle-eye-toggle:hover {
-  color: #fff;
-  border-color: #58a6ff;
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 canvas {
@@ -267,10 +267,10 @@ canvas {
 
 .eagle-eye-label {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-align: center;
   padding: 2px 0;
-  background: #161b22;
-  border-top: 1px solid #30363d;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--panel-border);
 }
 </style>

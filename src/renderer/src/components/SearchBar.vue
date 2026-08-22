@@ -331,7 +331,7 @@ input::placeholder {
 
 .filter-badge {
   display: inline-block;
-  background: rgba(88, 166, 255, 0.2);
+  background: var(--accent-bg);
   color: var(--accent);
   font-size: 10px;
   padding: 0 4px;
@@ -536,10 +536,10 @@ input::placeholder {
 
 .filter-subtitle {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin: 6px 0 2px;
   padding-bottom: 2px;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--separator);
 }
 
 .filter-option {

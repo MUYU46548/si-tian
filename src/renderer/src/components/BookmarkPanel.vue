@@ -51,8 +51,8 @@ function formatDate(iso) {
   top: 50px;
   right: 16px;
   width: 280px;
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 8px;
   z-index: 200;
   box-shadow: var(--shadow-md);
@@ -65,26 +65,26 @@ function formatDate(iso) {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .bookmarks-header h3 {
   font-size: 13px;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 18px;
   cursor: pointer;
   padding: 2px 6px;
 }
 
 .close-btn:hover {
-  color: #f0f6fc;
+  color: var(--text-primary);
 }
 
 .bookmarks-content {
@@ -96,7 +96,7 @@ function formatDate(iso) {
 .empty-hint {
   padding: 16px;
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-align: center;
 }
 
@@ -109,11 +109,11 @@ function formatDate(iso) {
 }
 
 .bookmark-item:hover {
-  background: #21262d;
+  background: var(--btn-bg-hover);
 }
 
 .bookmark-item.current {
-  background: rgba(88, 166, 255, 0.1);
+  background: var(--accent-bg);
 }
 
 .bookmark-info {
@@ -125,18 +125,18 @@ function formatDate(iso) {
 
 .bookmark-name {
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .bookmark-meta {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .remove-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 16px;
   cursor: pointer;
   padding: 2px 6px;
@@ -156,23 +156,23 @@ function formatDate(iso) {
   display: flex;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid var(--panel-border);
 }
 
 .bookmarks-footer button {
   flex: 1;
   padding: 6px 12px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .bookmarks-footer button:hover:not(:disabled) {
-  background: #30363d;
+  background: var(--btn-bg-hover);
 }
 
 .bookmarks-footer button:disabled {

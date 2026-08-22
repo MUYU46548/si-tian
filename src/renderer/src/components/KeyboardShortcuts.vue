@@ -138,8 +138,8 @@ defineExpose({ open, close });
 }
 
 .keyboard-shortcuts-panel {
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
   width: 500px;
   max-width: 90vw;
@@ -154,19 +154,19 @@ defineExpose({ open, close });
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .shortcuts-header h2 {
   font-size: 16px;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
@@ -175,8 +175,8 @@ defineExpose({ open, close });
 }
 
 .close-btn:hover {
-  color: #f0f6fc;
-  background: #21262d;
+  color: var(--text-primary);
+  background: var(--btn-bg-hover);
 }
 
 .shortcuts-content {
@@ -189,7 +189,7 @@ defineExpose({ open, close });
 
 .shortcut-group h3 {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin: 0 0 10px 0;
@@ -201,7 +201,7 @@ defineExpose({ open, close });
   gap: 6px;
   margin-bottom: 8px;
   font-size: 12px;
-  color: #c9d1d9;
+  color: var(--text-secondary);
 }
 
 kbd {
@@ -211,24 +211,24 @@ kbd {
   min-width: 24px;
   height: 22px;
   padding: 0 6px;
-  background: #21262d;
-  border: 1px solid #30363d;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   font-family: 'SF Mono', Monaco, Consolas, monospace;
   font-size: 11px;
   color: #e2e8f0;
   white-space: nowrap;
-  box-shadow: 0 1px 0 #30363d;
+  box-shadow: 0 1px 0 var(--panel-border);
 }
 
 .shortcuts-footer {
   padding: 12px 20px;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid var(--panel-border);
   text-align: center;
 }
 
 .shortcuts-footer .hint {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 </style>

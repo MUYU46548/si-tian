@@ -719,8 +719,8 @@ function updateCoordinate(axis, value) {
   top: 0;
   width: 360px;
   height: 100vh;
-  background: #0d1117;
-  border-left: 1px solid #30363d;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -733,7 +733,7 @@ function updateCoordinate(axis, value) {
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
   min-height: 80px;
 }
 
@@ -744,7 +744,7 @@ function updateCoordinate(axis, value) {
   align-items: center;
   justify-content: center;
   font-size: 28px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--btn-bg);
   border-radius: var(--radius-lg);
   flex-shrink: 0;
 }
@@ -757,7 +757,7 @@ function updateCoordinate(axis, value) {
 .hero-title {
   font-size: 16px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0;
   line-height: 1.3;
   overflow: hidden;
@@ -768,7 +768,7 @@ function updateCoordinate(axis, value) {
 .hero-source-name {
   display: block;
   font-size: 10px;
-  color: #6e7681;
+  color: var(--text-tertiary);
   margin-top: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -778,18 +778,18 @@ function updateCoordinate(axis, value) {
 .hero-layer {
   display: inline-block;
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin-top: 4px;
   padding: 2px 8px;
-  background: rgba(88, 166, 255, 0.12);
+  background: var(--accent-bg);
   border-radius: var(--radius-lg);
-  color: #58a6ff;
+  color: var(--accent);
 }
 
 .close-btn {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--btn-bg);
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 18px;
   cursor: pointer;
   padding: 6px 10px;
@@ -798,8 +798,8 @@ function updateCoordinate(axis, value) {
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #f0f6fc;
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
 }
 
 /* ===== 面板内容 ===== */
@@ -825,27 +825,27 @@ function updateCoordinate(axis, value) {
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background: #161b22;
+  background: var(--btn-bg);
   border-radius: var(--radius-sm);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
 }
 
 .meta-section-compact .meta-key {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
 .meta-section-compact .meta-val {
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
 .meta-section-compact .meta-tags {
   font-size: 11px;
-  color: #58a6ff;
+  color: var(--accent);
 }
 
 .meta-grid {
@@ -855,16 +855,16 @@ function updateCoordinate(axis, value) {
 }
 
 .meta-item {
-  background: #161b22;
+  background: var(--btn-bg);
   padding: 8px 12px;
   border-radius: var(--radius-md);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
 }
 
 .meta-key {
   display: block;
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.3px;
   margin-bottom: 2px;
@@ -873,16 +873,16 @@ function updateCoordinate(axis, value) {
 .meta-val {
   display: block;
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
 /* ===== Frontmatter 块 ===== */
 .frontmatter-block {
-  background: #161b22;
+  background: var(--btn-bg);
   padding: 10px 14px;
   border-radius: var(--radius-md);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   margin-bottom: 12px;
 }
 
@@ -907,13 +907,13 @@ function updateCoordinate(axis, value) {
 }
 
 .fm-key {
-  color: #8b949e;
+  color: var(--text-tertiary);
   min-width: 60px;
   flex-shrink: 0;
 }
 
 .fm-val {
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 /* ===== 正文区域 ===== */
@@ -924,10 +924,10 @@ function updateCoordinate(axis, value) {
 .content-body {
   font-size: 12px;
   line-height: 1.6;
-  background: #161b22;
+  background: var(--btn-bg);
   padding: 14px;
   border-radius: var(--radius-md);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
 }
 
 .content-body.collapsed {
@@ -943,7 +943,7 @@ function updateCoordinate(axis, value) {
   left: 0;
   right: 0;
   height: 50px;
-  background: linear-gradient(transparent, #161b22);
+  background: linear-gradient(transparent, var(--btn-bg));
   pointer-events: none;
 }
 
@@ -952,17 +952,17 @@ function updateCoordinate(axis, value) {
   width: 100%;
   margin-top: 10px;
   padding: 8px;
-  background: #21262d;
-  border: 1px solid #30363d;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  color: #58a6ff;
+  color: var(--accent);
   cursor: pointer;
   font-size: 11px;
   text-align: center;
 }
 
 .expand-btn:hover {
-  background: #30363d;
+  background: var(--btn-bg-hover);
 }
 
 /* ===== 信息分区 tab（批次A5，样式对齐 ObjectListPanel tab-bar） ===== */
@@ -970,7 +970,7 @@ function updateCoordinate(axis, value) {
   display: flex;
   gap: 2px;
   margin-bottom: 12px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .detail-tab-btn {
@@ -979,7 +979,7 @@ function updateCoordinate(axis, value) {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 12px;
   cursor: pointer;
   display: flex;
@@ -989,17 +989,17 @@ function updateCoordinate(axis, value) {
 }
 
 .detail-tab-btn:hover {
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .detail-tab-btn.active {
-  color: #58a6ff;
-  border-bottom-color: #58a6ff;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .tab-count {
   font-size: 10px;
-  background: #21262d;
+  background: var(--btn-bg);
   border-radius: 8px;
   padding: 0 5px;
   line-height: 14px;
@@ -1007,20 +1007,20 @@ function updateCoordinate(axis, value) {
 
 /* ===== Markdown 渲染 ===== */
 .markdown-body {
-  color: #c9d1d9;
+  color: var(--text-secondary);
 }
 
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,
 .markdown-body h4 {
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 14px 0 8px;
   font-weight: 600;
   line-height: 1.3;
 }
 
-.markdown-body h1 { font-size: 16px; border-bottom: 1px solid #30363d; padding-bottom: 6px; }
+.markdown-body h1 { font-size: 16px; border-bottom: 1px solid var(--panel-border); padding-bottom: 6px; }
 .markdown-body h2 { font-size: 14px; }
 .markdown-body h3 { font-size: 13px; }
 .markdown-body h4 { font-size: 12px; }
@@ -1030,7 +1030,7 @@ function updateCoordinate(axis, value) {
 }
 
 .markdown-body a {
-  color: #58a6ff;
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -1049,8 +1049,8 @@ function updateCoordinate(axis, value) {
 }
 
 .markdown-body code {
-  background: #0d1117;
-  color: #e2e8f0;
+  background: var(--input-bg);
+  color: var(--text-primary);
   padding: 2px 5px;
   border-radius: 3px;
   font-size: 11px;
@@ -1058,12 +1058,12 @@ function updateCoordinate(axis, value) {
 }
 
 .markdown-body pre {
-  background: #0d1117;
+  background: var(--input-bg);
   padding: 10px;
   border-radius: var(--radius-md);
   overflow-x: auto;
   margin: 0 0 10px;
-  border: 1px solid #21262d;
+  border: 1px solid var(--separator);
 }
 
 .markdown-body pre code {
@@ -1072,9 +1072,9 @@ function updateCoordinate(axis, value) {
 }
 
 .markdown-body blockquote {
-  border-left: 3px solid #30363d;
+  border-left: 3px solid var(--panel-border);
   padding-left: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin: 0 0 10px;
 }
 
@@ -1087,31 +1087,31 @@ function updateCoordinate(axis, value) {
 
 .markdown-body th,
 .markdown-body td {
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   padding: 5px 10px;
   text-align: left;
 }
 
 .markdown-body th {
-  background: #161b22;
-  color: #f0f6fc;
+  background: var(--btn-bg);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .markdown-body hr {
   border: none;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid var(--panel-border);
   margin: 14px 0;
 }
 
-.markdown-body strong { color: #f0f6fc; font-weight: 600; }
-.markdown-body em { color: #e2e8f0; }
+.markdown-body strong { color: var(--text-primary); font-weight: 600; }
+.markdown-body em { color: var(--text-primary); }
 
 /* Wikilinks */
 .wikilink {
-  color: #58a6ff;
+  color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px dashed #58a6ff;
+  border-bottom: 1px dashed var(--accent);
   cursor: pointer;
 }
 
@@ -1123,8 +1123,8 @@ function updateCoordinate(axis, value) {
 /* Obsidian 图片占位 */
 .obsidian-image {
   display: inline-block;
-  background: #21262d;
-  color: #8b949e;
+  background: var(--btn-bg);
+  color: var(--text-tertiary);
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 11px;
@@ -1135,13 +1135,13 @@ function updateCoordinate(axis, value) {
   margin: 0 0 10px;
   padding: 10px 14px;
   border-radius: var(--radius-md);
-  border-left: 3px solid #58a6ff;
-  background: rgba(88, 166, 255, 0.08);
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg);
 }
 
 .callout-title {
   font-weight: 600;
-  color: #58a6ff;
+  color: var(--accent);
   margin-bottom: 4px;
   font-size: 11px;
   text-transform: uppercase;
@@ -1149,11 +1149,11 @@ function updateCoordinate(axis, value) {
 }
 
 .callout-content {
-  color: #c9d1d9;
+  color: var(--text-secondary);
 }
 
-.callout-info { border-left-color: #58a6ff; background: rgba(88, 166, 255, 0.08); }
-.callout-info .callout-title { color: #58a6ff; }
+.callout-info { border-left-color: var(--accent); background: var(--accent-bg); }
+.callout-info .callout-title { color: var(--accent); }
 
 .callout-warning, .callout-caution, .callout-attention { 
   border-left-color: #d29922; 
@@ -1196,7 +1196,7 @@ function updateCoordinate(axis, value) {
 .section-title {
   font-size: 11px;
   font-weight: 600;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1207,7 +1207,7 @@ function updateCoordinate(axis, value) {
 
 .relation-label {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -1221,16 +1221,16 @@ function updateCoordinate(axis, value) {
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 12px;
-  color: #e2e8f0;
-  background: #161b22;
-  border: 1px solid #30363d;
+  color: var(--text-primary);
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
   margin-bottom: 4px;
   transition: background 0.1s ease, border-color 0.1s ease;
 }
 
 .relation-link:hover {
-  background: #21262d;
-  border-color: #58a6ff;
+  background: var(--btn-bg-hover);
+  border-color: var(--accent);
 }
 
 .relation-icon {
@@ -1247,9 +1247,9 @@ function updateCoordinate(axis, value) {
 
 .relation-type {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   padding: 1px 6px;
-  background: #0d1117;
+  background: var(--input-bg);
   border-radius: 3px;
 }
 
@@ -1257,24 +1257,24 @@ function updateCoordinate(axis, value) {
   flex-shrink: 0;
   max-width: 64px;
   padding: 2px 4px;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius-sm);
-  color: #58a6ff;
+  color: var(--accent);
   font-size: 10px;
   outline: none;
   cursor: pointer;
 }
 
 .hyperlane-type-select:focus {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 
 .hyperlane-remove {
   flex-shrink: 0;
   background: none;
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 14px;
   line-height: 1;
   padding: 0 3px;
@@ -1289,7 +1289,7 @@ function updateCoordinate(axis, value) {
 .relation-more {
   display: block;
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   padding: 6px 10px;
   text-align: center;
   font-style: italic;
@@ -1300,7 +1300,7 @@ function updateCoordinate(axis, value) {
 }
 
 .parent-link:hover {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 
 .wikilink-item {
@@ -1325,8 +1325,8 @@ function updateCoordinate(axis, value) {
 .tag-badge {
   display: inline-block;
   padding: 4px 10px;
-  background: #388bfd22;
-  color: #58a6ff;
+  background: var(--accent-bg);
+  color: var(--accent);
   border-radius: 14px;
   font-size: 11px;
   cursor: pointer;
@@ -1349,7 +1349,7 @@ function updateCoordinate(axis, value) {
 
 .section-note {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-weight: normal;
   margin-left: 8px;
 }
@@ -1361,7 +1361,7 @@ function updateCoordinate(axis, value) {
 .prop-field label {
   display: block;
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.3px;
   margin-bottom: 4px;
@@ -1371,10 +1371,10 @@ function updateCoordinate(axis, value) {
 .prop-field select {
   width: 100%;
   padding: 6px 8px;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius-sm);
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 12px;
   outline: none;
   transition: border-color 0.15s;
@@ -1387,7 +1387,7 @@ function updateCoordinate(axis, value) {
 
 .prop-field select:focus,
 .prop-field input[type="text"]:not(:disabled):focus {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 
 .tag-editor {
@@ -1411,7 +1411,7 @@ function updateCoordinate(axis, value) {
 .tag-remove {
   background: none;
   border: none;
-  color: #58a6ff;
+  color: var(--accent);
   font-size: 13px;
   line-height: 1;
   padding: 0 2px;
@@ -1425,7 +1425,7 @@ function updateCoordinate(axis, value) {
 
 .tag-empty {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .tag-input {
@@ -1433,21 +1433,21 @@ function updateCoordinate(axis, value) {
   min-width: 90px;
   padding: 4px 8px;
   background: transparent;
-  border: 1px dashed #30363d;
+  border: 1px dashed var(--panel-border);
   border-radius: var(--radius-xl);
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 11px;
   outline: none;
   transition: border-color 0.15s;
 }
 
 .tag-input:focus {
-  border-color: #58a6ff;
+  border-color: var(--accent);
   border-style: solid;
 }
 
 .tag-input::placeholder {
-  color: #6e7681;
+  color: var(--text-tertiary);
 }
 
 /* ===== 坐标编辑 ===== */
@@ -1469,17 +1469,17 @@ function updateCoordinate(axis, value) {
 
 .coord-field label {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
 .coord-field input {
   padding: 6px 8px;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius-sm);
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: 'SF Mono', Monaco, Consolas, monospace;
   outline: none;
@@ -1487,11 +1487,11 @@ function updateCoordinate(axis, value) {
 }
 
 .coord-field input:focus {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 
 .coord-field input::placeholder {
-  color: #484f58;
+  color: var(--text-tertiary);
 }
 
 /* ===== 操作按钮 ===== */
@@ -1502,7 +1502,7 @@ function updateCoordinate(axis, value) {
 }
 
 .actions-section-top {
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--separator);
   margin-bottom: 12px;
 }
 
@@ -1511,10 +1511,10 @@ function updateCoordinate(axis, value) {
   width: 100%;
   padding: 6px 12px;
   margin-bottom: 12px;
-  border: 1px dashed #30363d;
+  border: 1px dashed var(--panel-border);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.02);
-  color: #8b949e;
+  background: var(--btn-bg);
+  color: var(--text-tertiary);
   cursor: pointer;
   font-size: 12px;
   text-align: left;
@@ -1522,17 +1522,17 @@ function updateCoordinate(axis, value) {
 }
 
 .history-back-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e2e8f0;
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
 }
 
 .action-btn {
   flex: 1;
   padding: 10px 14px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  background: #21262d;
-  color: #e2e8f0;
+  background: var(--btn-bg);
+  color: var(--text-primary);
   cursor: pointer;
   font-size: 12px;
   display: flex;
@@ -1543,7 +1543,7 @@ function updateCoordinate(axis, value) {
 }
 
 .action-btn:hover {
-  background: #30363d;
+  background: var(--btn-bg-hover);
 }
 
 /* 定位按钮高亮（金色呼吸光圈） */
@@ -1591,7 +1591,7 @@ function updateCoordinate(axis, value) {
 /* 层级迁移 */
 .reparent-section {
   padding: 16px 18px;
-  border-top: 1px solid #21262d;
+  border-top: 1px solid var(--separator);
 }
 
 .reparent-control {
@@ -1602,16 +1602,16 @@ function updateCoordinate(axis, value) {
 
 .reparent-control label {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-weight: 500;
 }
 
 .reparent-control select {
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid #30363d;
-  background: #161b22;
-  color: #e2e8f0;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
   max-width: 100%;
@@ -1620,28 +1620,28 @@ function updateCoordinate(axis, value) {
 .reparent-search-input {
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid #30363d;
-  background: #161b22;
-  color: #e2e8f0;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
   font-size: 13px;
   outline: none;
 }
 
 .reparent-search-input:focus {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 
 .reparent-search-input::placeholder {
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .reparent-control select:hover {
-  border-color: #58a6ff;
+  border-color: var(--accent);
 }
 
 .reparent-hint {
   font-size: 11px;
-  color: #6e7681;
+  color: var(--text-tertiary);
   margin: 0;
 }
 </style>

@@ -189,8 +189,8 @@ defineExpose({ open, close });
 .about-panel {
   width: 560px;
   max-height: 80vh;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   display: flex;
@@ -203,7 +203,7 @@ defineExpose({ open, close });
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--panel-border);
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
 }
 
@@ -250,16 +250,16 @@ defineExpose({ open, close });
 .about-section h3 {
   font-size: 14px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
   margin: 0 0 12px;
   padding-bottom: 6px;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid var(--separator);
 }
 
 .description {
   font-size: 13px;
   line-height: 1.6;
-  color: #8b949e;
+  color: var(--text-tertiary);
   margin: 0;
 }
 
@@ -271,7 +271,7 @@ defineExpose({ open, close });
 
 .guide-list li {
   font-size: 12px;
-  color: #c9d1d9;
+  color: var(--text-secondary);
   padding: 6px 0;
   padding-left: 16px;
   position: relative;
@@ -281,11 +281,11 @@ defineExpose({ open, close });
   content: '•';
   position: absolute;
   left: 0;
-  color: #58a6ff;
+  color: var(--accent);
 }
 
 .guide-list li b {
-  color: #f0f6fc;
+  color: var(--text-primary);
 }
 
 .shortcuts-grid {
@@ -299,23 +299,23 @@ defineExpose({ open, close });
   align-items: center;
   gap: 8px;
   font-size: 11px;
-  color: #c9d1d9;
+  color: var(--text-secondary);
 }
 
 .shortcut-item kbd {
-  background: #21262d;
-  border: 1px solid #30363d;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 10px;
-  color: #f0f6fc;
+  color: var(--text-primary);
   min-width: 20px;
   text-align: center;
 }
 
 .shortcut-desc {
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .edit-modes {
@@ -329,9 +329,9 @@ defineExpose({ open, close });
   align-items: flex-start;
   gap: 12px;
   padding: 10px;
-  background: #161b22;
+  background: var(--btn-bg);
   border-radius: var(--radius-md);
-  border: 1px solid #30363d;
+  border: 1px solid var(--panel-border);
 }
 
 .mode-icon {
@@ -348,12 +348,12 @@ defineExpose({ open, close });
 .mode-name {
   font-size: 12px;
   font-weight: 600;
-  color: #f0f6fc;
+  color: var(--text-primary);
 }
 
 .mode-desc {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .data-info {
@@ -371,23 +371,23 @@ defineExpose({ open, close });
 }
 
 .data-label {
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .data-path {
-  color: #58a6ff;
+  color: var(--accent);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
 }
 
 .note {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   line-height: 1.5;
   padding: 10px;
-  background: #161b22;
+  background: var(--btn-bg);
   border-radius: var(--radius-md);
-  border-left: 3px solid #58a6ff;
+  border-left: 3px solid var(--accent);
   margin: 0;
 }
 
@@ -400,8 +400,8 @@ defineExpose({ open, close });
 .tech-tag {
   font-size: 11px;
   padding: 4px 10px;
-  background: #388bfd22;
-  color: #58a6ff;
+  background: var(--accent-bg);
+  color: var(--accent);
   border-radius: 14px;
 }
 
@@ -410,25 +410,25 @@ defineExpose({ open, close });
   justify-content: space-between;
   align-items: center;
   padding: 14px 24px;
-  border-top: 1px solid #21262d;
-  background: #161b22;
+  border-top: 1px solid var(--separator);
+  background: var(--panel-header-bg);
 }
 
 .copyright {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--text-tertiary);
 }
 
 .license {
   font-size: 10px;
-  color: #6e7681;
+  color: var(--text-tertiary);
   font-style: italic;
 }
 
 .close-btn {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--btn-bg);
   border: none;
-  color: #8b949e;
+  color: var(--text-tertiary);
   font-size: 20px;
   cursor: pointer;
   padding: 6px 10px;
@@ -436,7 +436,7 @@ defineExpose({ open, close });
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #f0f6fc;
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
 }
 </style>
