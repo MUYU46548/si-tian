@@ -89,6 +89,57 @@ def run(cdp):
     if not (isinstance(arrows, int) and arrows >= 1):
         return False, f'邻系箭头异常 ({arrows})'
 
+    # 3b. 行星轨道顺序：按标准化命名罗马数字稳定排序（乐园星=衡佑Ⅲ、月球=衡佑Ⅲa，同号保持原序）
+    order = cdp.eval("""(() => {
+      const el = document.querySelector('.system-detail-container');
+      const ps = el.__vueParentComponent.setupState.planetLayouts.map(p => p.name);
+      return JSON.stringify(ps);
+    })()""")
+    if json.loads(order)[:2] != ['乐园星', '月球']:
+        return False, f'行星轨道顺序异常 ({order})'
+
+    # 3c. 邻系跳转面板：完整列表（含画布未显示的）+ 点击跳转
+    panel = cdp.eval("""(() => {
+      const el = document.querySelector('.system-detail-container');
+      const st = el.__vueParentComponent.setupState;
+      const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('邻系'));
+      if (!btn) return 'no-btn';
+      btn.click();
+      return JSON.stringify({ total: st.allNeighbors.length, limitShown: st.neighborArrows.length, omitted: st.omittedCount });
+    })()""")
+    if panel == 'no-btn':
+        return False, '未找到邻系面板按钮'
+    time.sleep(0.3)
+    pn = json.loads(panel)
+    if not (pn['total'] >= 1 and pn['limitShown'] <= 10 and pn['limitShown'] <= pn['total']):
+        return False, f'邻系面板数据异常 {panel}'
+    rows = cdp.eval("""(() => {
+      const el = document.querySelector('.system-detail-container .neighbor-list');
+      return el ? el.querySelectorAll('.neighbor-row').length : -1;
+    })()""")
+    if rows != pn['total']:
+        return False, f'面板行数 ({rows}) 与邻接总数 ({pn["total"]}) 不符'
+    first = cdp.eval("""(() => {
+      const st = document.querySelector('.system-detail-container').__vueParentComponent.setupState;
+      return st.allNeighbors[0].neighborId;
+    })()""")
+    cdp.eval(f"""(() => {{
+      const st = document.querySelector('.system-detail-container').__vueParentComponent.setupState;
+      st.jumpTo({json.dumps(first)});
+      return 'ok';
+    }})()""")
+    time.sleep(0.4)
+    jumped2 = cdp.eval("document.querySelector('#app').__vue_app__._instance.setupState.store.currentSystem.id")
+    if jumped2 != first:
+        return False, f'面板跳转异常 (期望 {first}, 实际 {jumped2})'
+    # 关闭面板
+    cdp.eval("""(() => {
+      const el = document.querySelector('.system-detail-container');
+      const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('邻系'));
+      if (btn) btn.click();
+      return 'ok';
+    })()""")
+
     # 4. B5 点击箭头 → 跳转相邻恒星系（仍停留单系视图）
     arrow0 = cdp.eval("""(() => {
       const el = document.querySelector('.system-detail-container');

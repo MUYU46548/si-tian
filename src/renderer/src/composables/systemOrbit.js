@@ -33,3 +33,46 @@ export function getPlanetColor(layer) {
 export function getPlanetRadius(layer) {
   return PLANET_RADII[layer] || 3;
 }
+
+// ===== 罗马数字轨道排序（标准化命名 衡佑Ⅲ / 津廊Ⅵd / 衡佑Ⅲa） =====
+// 轨道顺序应来自世界观数据（罗马数字），而非文件扫描顺序；无数字者保持原序（稳定排序）
+const ROMAN_CHARS = { 'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10, 'Ⅺ': 11, 'Ⅻ': 12 };
+
+function asciiRomanValue(tok) {
+  const V = { I: 1, V: 5, X: 10, L: 50, C: 100 };
+  let total = 0;
+  for (let i = 0; i < tok.length; i++) {
+    const v = V[tok[i]];
+    const next = V[tok[i + 1]] || 0;
+    total += v < next ? -v : v;
+  }
+  return total;
+}
+
+// 从 displayName/name/tags 提取轨道序号（首个罗马数字）；无则 Infinity
+export function planetOrbitOrderKey(node) {
+  const sources = [node.displayName, node.name, ...(node.tags || [])];
+  for (const s of sources) {
+    if (!s) continue;
+    for (const ch of s) {
+      if (ROMAN_CHARS[ch]) return ROMAN_CHARS[ch];
+    }
+  }
+  for (const s of sources) {
+    if (!s) continue;
+    const m = s.match(/(?:^|[^A-Za-z])([IVXLC]{1,6})(?![A-Za-z])/);
+    if (m) {
+      const v = asciiRomanValue(m[1]);
+      if (v > 0) return v;
+    }
+  }
+  return Infinity;
+}
+
+// 稳定排序：按轨道序号升序，同号（含卫星 Ⅲa）保持原相对顺序
+export function sortPlanetsByOrbit(list) {
+  return list
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => (planetOrbitOrderKey(a.p) - planetOrbitOrderKey(b.p)) || (a.i - b.i))
+    .map(x => x.p);
+}

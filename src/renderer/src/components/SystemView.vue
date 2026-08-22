@@ -66,7 +66,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
-import { planetOrbitLayout, getPlanetColor, getPlanetRadius } from '../composables/systemOrbit';
+import { planetOrbitLayout, getPlanetColor, getPlanetRadius, sortPlanetsByOrbit } from '../composables/systemOrbit';
 import { drawDeepSpaceBackground as drawSpaceBg } from '../composables/spaceBackground';
 import EagleEye from './EagleEye.vue';
 
@@ -262,7 +262,8 @@ function applyLayout() {
     const sysX = sysSaved ? system.coordinate.x : gridX;
     const sysY = sysSaved ? system.coordinate.y : gridY;
     
-    const systemPlanets = allBodies.value.filter(b => b.parentId === system.id);
+    // 轨道顺序按标准化命名罗马数字（衡佑Ⅲ < 津廊Ⅵ），无数字保持原序
+    const systemPlanets = sortPlanetsByOrbit(allBodies.value.filter(b => b.parentId === system.id));
     
     const planetLayouts = systemPlanets.map((planet, pIdx) => {
       const { angle, orbitRadius } = planetOrbitLayout(pIdx);

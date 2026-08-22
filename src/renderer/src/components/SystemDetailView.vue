@@ -8,9 +8,35 @@
         </div>
         <p class="hint">点击行星进入行星地图 · 点击箭头跳转相邻恒星系 · 滚动缩放 · 拖拽空白处平移</p>
       </div>
+      <div class="header-actions">
+        <button :class="{ active: neighborPanelOpen }" @click="neighborPanelOpen = !neighborPanelOpen" title="邻近恒星系列表（含未显示航道）">
+          🧭 邻系 ({{ allNeighbors.length }})
+        </button>
+      </div>
     </div>
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
+      <PanelShell
+        class="system-neighbor-panel"
+        title="邻近恒星系"
+        :open="neighborPanelOpen"
+        @close="neighborPanelOpen = false"
+      >
+        <div class="neighbor-list">
+          <div v-if="allNeighbors.length === 0" class="neighbor-empty">暂无航道连接的相邻恒星系</div>
+          <div v-if="omittedCount > 0" class="neighbor-omitted">航道过密：画布仅显示最近 {{ arrowsLimit }} 条箭头，其余 {{ omittedCount }} 条见此列表</div>
+          <div
+            v-for="n in allNeighbors"
+            :key="n.id"
+            class="neighbor-row"
+            @click="jumpTo(n.neighborId)"
+          >
+            <span class="neighbor-badge" :class="{ cross: n.crossDomain }">{{ n.crossDomain ? '跨域' : '同域' }}</span>
+            <span class="neighbor-name" :title="n.neighborName">{{ n.neighborName }}</span>
+            <span class="neighbor-dist">{{ Math.round(n.dist) }}</span>
+          </div>
+        </div>
+      </PanelShell>
     </div>
   </div>
 </template>
@@ -20,8 +46,9 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
-import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius } from '../composables/systemOrbit';
+import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius, sortPlanetsByOrbit } from '../composables/systemOrbit';
 import { drawDeepSpaceBackground } from '../composables/spaceBackground';
+import PanelShell from './PanelShell.vue';
 
 /**
  * 单恒星系详情视图（批次 B4 + B5）
@@ -39,14 +66,20 @@ const props = defineProps({
 const emit = defineEmits(['back', 'select-node']);
 
 const canvas = ref(null);
+const neighborPanelOpen = ref(false);
 let hoveredArrowId = null;
 let hoveredPlanetId = null;
+
+// 箭头防重叠参数：画布最多显示 arrowsLimit 条（按距离取最近），标签角距至少 MIN_GAP 弧度
+const arrowsLimit = 10;
+const ARROW_MIN_GAP = 0.42;
 
 // ===== 行星布局（恒星在原点） =====
 const planetLayouts = computed(() => {
   if (!props.system) return [];
   const sysCoord = props.system.coordinate;
-  return store.currentSystemPlanets.map((planet, pIdx) => {
+  // 轨道顺序按标准化命名罗马数字（衡佑Ⅲ < 津廊Ⅵ），无数字保持原序
+  return sortPlanetsByOrbit(store.currentSystemPlanets).map((planet, pIdx) => {
     const { angle, orbitRadius } = planetOrbitLayout(pIdx);
     // 手动坐标 → 相对恒星偏移（保留用户在域地图上的相对布局意图）；否则用公式位
     const saved = planet.userMoved && planet.coordinate?.x != null && sysCoord?.x != null;
@@ -65,39 +98,97 @@ const maxOrbitRadius = computed(() =>
   planetLayouts.value.reduce((max, p) => Math.max(max, p.orbitRadius || ORBIT_RING_START), ORBIT_RING_START)
 );
 
-// ===== 邻系跳转箭头（B5：真实 hyperlanes 邻接） =====
-const neighborArrows = computed(() => {
+// ===== 邻系数据（B5：真实 hyperlanes 邻接） =====
+// 全量邻接（面板数据源 + 距离排序依据）
+const allNeighbors = computed(() => {
   if (!props.system) return [];
   const sys = props.system;
   const sysCoord = sys.coordinate;
-  const lanes = store.hyperlanes.filter(h => h.fromId === sys.id || h.toId === sys.id);
-  const r = maxOrbitRadius.value + 120;
   const nodeMap = new Map(store.nodes.map(n => [n.id, n]));
-  return lanes.map((h, idx) => {
+  const lanes = store.hyperlanes.filter(h => h.fromId === sys.id || h.toId === sys.id);
+  const list = lanes.map(h => {
     const neighborId = h.fromId === sys.id ? h.toId : h.fromId;
     const neighbor = nodeMap.get(neighborId);
-    // 方向：优先用两系在星域地图上的真实相对方位；缺坐标时按索引确定性均分圆周
-    let angle;
     const nCoord = neighbor?.coordinate;
+    const dist = nCoord?.x != null && sysCoord?.x != null
+      ? Math.hypot(nCoord.x - sysCoord.x, nCoord.y - sysCoord.y)
+      : Infinity;
+    let angle = null;
     if (nCoord?.x != null && sysCoord?.x != null && (nCoord.x !== sysCoord.x || nCoord.y !== sysCoord.y)) {
       angle = Math.atan2(nCoord.y - sysCoord.y, nCoord.x - sysCoord.x);
-    } else {
-      angle = (idx / lanes.length) * Math.PI * 2 - Math.PI / 2;
     }
     return {
       id: h.id,
-      hyperlane: h,
       neighborId,
       neighborName: neighbor?.displayName || neighbor?.name || neighborId,
       crossDomain: h.type === 'cross_domain' || (neighbor ? neighbor.parentId !== sys.parentId : false),
-      angle,
-      r0: maxOrbitRadius.value + 40,
-      r1: r,
-      x: Math.cos(angle) * r,
-      y: Math.sin(angle) * r,
+      dist,
+      idealAngle: angle,
+      sortDist: dist === Infinity ? Number.MAX_SAFE_INTEGER : dist,
     };
   });
+  // 确定性排序：距离升序，同距按 id
+  list.sort((a, b) => (a.sortDist - b.sortDist) || (a.id < b.id ? -1 : 1));
+  return list;
 });
+
+const omittedCount = computed(() => Math.max(0, allNeighbors.value.length - arrowsLimit));
+
+// 圆上确定性角距分离：保持理想方位的环形顺序，仅把过近的相邻对推开到 MIN_GAP
+function spreadAngles(angles) {
+  const n = angles.length;
+  if (n < 2) return angles.slice();
+  const TWO_PI = Math.PI * 2;
+  if (n * ARROW_MIN_GAP >= TWO_PI) {
+    // 过密兜底：均分圆周（确定性）
+    return angles.map((_, i) => (i * TWO_PI) / n - Math.PI / 2);
+  }
+  const arr = angles.slice().sort((a, b) => a - b);
+  for (let iter = 0; iter < 24; iter++) {
+    let moved = false;
+    for (let i = 1; i < n; i++) {
+      if (arr[i] - arr[i - 1] < ARROW_MIN_GAP) {
+        const mid = (arr[i] + arr[i - 1]) / 2;
+        arr[i - 1] = mid - ARROW_MIN_GAP / 2;
+        arr[i] = mid + ARROW_MIN_GAP / 2;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  arr.sort((a, b) => a - b);
+  return arr.map(a => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2));
+}
+
+// 画布显示的箭头子集（最近 arrowsLimit 条；角度经防重叠分离）
+const neighborArrows = computed(() => {
+  const shown = allNeighbors.value.slice(0, arrowsLimit);
+  if (!shown.length) return [];
+  const fallbackAngles = shown.map((_, i) => (i / shown.length) * Math.PI * 2 - Math.PI / 2);
+  const ideal = shown.map((n, i) => n.idealAngle == null ? fallbackAngles[i] : n.idealAngle);
+  // 按理想角排序后逐一分离，再按同序回填（保持各自大致方位）
+  const order = ideal.map((a, i) => ({ a, i })).sort((x, y) => x.a - y.a);
+  const spread = spreadAngles(order.map(o => o.a));
+  const finalAngles = [];
+  order.forEach((o, k) => { finalAngles[o.i] = spread[k]; });
+
+  const r0 = maxOrbitRadius.value + 40;
+  const r1 = maxOrbitRadius.value + 120;
+  return shown.map((n, i) => ({
+    ...n,
+    angle: finalAngles[i],
+    r0,
+    r1,
+    x: Math.cos(finalAngles[i]) * r1,
+    y: Math.sin(finalAngles[i]) * r1,
+  }));
+});
+
+// 面板/箭头共用：跳转到相邻恒星系
+function jumpTo(neighborId) {
+  const neighbor = store.nodes.find(n => n.id === neighborId);
+  if (neighbor) store.selectSystem(neighbor);
+}
 
 // ===== 命中测试 =====
 function hitTest(wx, wy) {
@@ -307,7 +398,7 @@ watch(() => [props.system?.id, store.currentSystemPlanets, store.hyperlanes, sto
   renderer.requestRender();
 }, { deep: true });
 
-defineExpose({ canvas, renderer, neighborArrows, planetLayouts });
+defineExpose({ canvas, renderer, neighborArrows, planetLayouts, allNeighbors, omittedCount, jumpTo });
 </script>
 
 <style scoped>
@@ -336,6 +427,59 @@ defineExpose({ canvas, renderer, neighborArrows, planetLayouts });
 .back-btn:hover { background: var(--map-btn-hover); }
 .map-header h2 { font-size: 14px; color: var(--map-text-heading); margin-bottom: 4px; }
 .hint { font-size: 11px; color: var(--map-text-hint); }
+.header-actions { display: flex; gap: 8px; }
+.header-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--map-btn-border);
+  border-radius: var(--radius-sm);
+  background: var(--map-btn-bg);
+  color: var(--map-btn-text);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.header-actions button:hover { background: var(--map-btn-hover); }
+.header-actions button.active {
+  background: var(--map-accent-green-bg);
+  border-color: var(--map-accent-green-border);
+  color: var(--map-accent-green);
+}
 .canvas-wrapper { flex: 1; position: relative; overflow: hidden; }
 canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
+
+/* 邻系跳转面板（PanelShell 提供外观/拖拽/关闭） */
+.system-neighbor-panel {
+  right: 12px;
+  top: 12px;
+  z-index: 30;
+  min-width: 200px;
+  max-width: 260px;
+  max-height: 300px;
+}
+.neighbor-list { padding: 6px; }
+.neighbor-empty { padding: 14px 10px; text-align: center; font-size: 11px; color: #8b949e; }
+.neighbor-omitted { padding: 4px 8px 8px; font-size: 10px; color: #d29922; }
+.neighbor-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: #c9d1d9;
+  cursor: pointer;
+}
+.neighbor-row:hover { background: rgba(88, 166, 255, 0.15); color: #f0f6fc; }
+.neighbor-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  color: #79c0ff;
+  background: rgba(121, 192, 255, 0.1);
+  flex-shrink: 0;
+}
+.neighbor-badge.cross { color: #d2a8ff; background: rgba(210, 168, 255, 0.1); }
+.neighbor-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.neighbor-dist { font-size: 10px; color: #8b949e; }
 </style>
