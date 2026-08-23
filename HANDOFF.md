@@ -132,6 +132,17 @@ world(世界) → star_domain(星域) → galaxy(恒星系) → planet(行星) �
 
 ---
 
+### 批次 D — 用户反馈修复 + 卫星功能（2026-08-22/23，7 项反馈）✅ 代码完成（811b14c + 07c5cc1）
+- [x] **D1 prompt 失效（反馈5根因）**：window.prompt 在 Electron 渲染进程不被支持（"prompt() is and will not be supported"）——「＋ 天体」/太空标记/部队卡片/楼层重命名共 8 处点击即静默失效。新增 usePromptDialog（askText/askChoice 单例，Promise 语义）+ PromptDialog.vue（挂 App 根）；类型选择从「输入数字」升级为按钮列表；test_11/12 的 prompt stub 改为操作对话框 DOM。
+- [x] **D2 家具放置失效（反馈1）**：三处静默失败——空名守卫（改类型默认名）、建筑切换器换楼后 currentFloorId 过期被 store 静默吞（新增 watch(buildingNode) 重置 + 楼层失效自动补建）、exitEditMode 不重置工具；放置宽高改用 getDefaultSize。
+- [x] **D3 图标（反馈2）**：BrowserWindow 补 icon（win=build/icon.ico，其他 icon-512.png）——开发/未打包运行不再显示 Electron 默认图标；打包 exe 图标 electron-builder 本就正确。
+- [x] **D4 编辑按钮/面包屑（反馈3/4）**：AreaMap 补 .adopt-btn 基础样式（此前按钮退化为浏览器默认样式）+ 三视图统一「✏️ 编辑地图」蓝底按钮；PlanetMap .map-header 改 flex（按钮不再掉行与标题粘连）；面包屑按钮 white-space:nowrap + max-width/ellipsis + flex-wrap（深层下钻不再竖排文字）。
+- [x] **D5 卫星轨道 + 右键菜单（反馈6/7）**：planetLayouts 两轮布局——卫星（layer='moon'+parentId 指向系内行星）锚定母行星绕行（确定性槽位，母星拖动跟随，卫星不可拖）；右键行星→「ℹ 查看信息」/「🛰 设为卫星…」（菜单内选母行星）/删除；右键卫星→「取消卫星」；updateNode 单事务入 undo。test_17 全链路（月球 绕 乐园星）。
+- **验收状态**：build ✅；test_17 单跑 ✅、test_11/12 单跑 ✅；**全套 17 用例回归被会话中断未跑完——接手后第一件事：`npm run test` 确认全绿**。测试残留（index.html mock 注入/mock-data/）已从 commit 剔除并还原。
+- **已知未做**：右键「查看信息」对太空标记/部队卡片未加（非 nodes，无 NodeDetailPanel 数据通道）；卫星在 SystemView 聚合视图/面包屑行星下拉不显示（仅单系详情视图渲染，语义如此）；keep-alive 评估记录见批次 C。
+
+---
+
 ### 批次 C — 性能与渲染优化（来源 ROADMAP §4）✅ 2026-08-22 完成（3/3，commit f87eae9…b86dc04 + test_16）
 - [x] **C1 行星地图卡顿**：fastMode 接线（拖拽>5px 跳过地点/标记 shadowBlur 光晕、全部名称标签、图标字形、沿路径文字逐字排版、簇凸包重算；纹理 pattern 按用户既有反馈保留）；planetDrawing 全部实体循环加世界坐标视口裁剪；drawClusters 建 placeById 索引（原每帧 O(成员×地点)）；fastMode 帧传空归属 Map 避免触发 placeRegionMap 全量 pointInPolygon 重算（Vue computed 惰性求值）+ placeRegionMap 区域 bbox 预筛（f87eae9）。
   - **顺手修复 2 处渲染管线 ReferenceError**：planetDrawing.drawMarkers 裸引用未导入的 `markerTypes`（markers 非空即崩）、planetHitTest 引用未导入的 `geoPointInPolygon`（regions 非空 + mousemove 即崩）。
