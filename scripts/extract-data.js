@@ -4,7 +4,7 @@ const matter = require('gray-matter');
 
 // Vault 路径可配置化（2026-08-16）：模块级可变，extractGeodata(targetVault) 入口覆盖；
 // CLI 支持 --vault 参数；主进程通过 require 传入配置的路径
-const DEFAULT_VAULT = 'E:/图书馆/ROSA';
+const DEFAULT_VAULT = ''; // 留空：主进程调用时传入用户配置的路径，CLI 时通过 --vault 指定
 let vaultPath = DEFAULT_VAULT;
 
 function geoSystemPath() { return path.join(vaultPath, '03 设定', '11 地理系统'); }

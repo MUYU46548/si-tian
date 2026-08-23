@@ -38,3 +38,10 @@ __pycache__/
 
 # 测试临时
 .test-edge-profile/
+
+# 内部文档（不公开）
+HANDOFF.md
+ROADMAP.md
+AGENTS.md
+.hermes/
+docs/

@@ -44,10 +44,13 @@
         </template>
         <template v-else>
           <div v-if="contextMenu.target?.type === 'planet'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
+          <div v-if="contextMenu.target?.type === 'star'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
           <div v-if="contextMenu.target?.type === 'planet' && !contextMenu.target.node.isMoon" class="menu-item" @click="ctxBeginPickHost">🛰 设为卫星…</div>
           <div v-if="contextMenu.target?.type === 'planet' && contextMenu.target.node.isMoon" class="menu-item" @click="ctxUnsetMoon">↩ 取消卫星（回到独立轨道）</div>
           <div v-if="contextMenu.target?.type === 'planet'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
+          <div v-if="contextMenu.target?.type === 'space-marker'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
           <div v-if="contextMenu.target?.type === 'space-marker'" class="menu-item danger" @click="ctxDeleteSpaceMarker">🗑 删除标记</div>
+          <div v-if="contextMenu.target?.type === 'fleet-card'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
           <div v-if="contextMenu.target?.type === 'fleet-card'" class="menu-item danger" @click="ctxDeleteFleetCard">🗑 删除部队卡片</div>
           <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddBodyHere">＋ 添加天体（此位置）</div>
           <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddSpaceMarkerHere">◈ 添加太空标记（此位置）</div>
@@ -84,7 +87,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
-import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius, sortPlanetsByOrbit } from '../composables/systemOrbit';
+import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius, getStarRadius, getStarColor, sortPlanetsByOrbit } from '../composables/systemOrbit';
 import { drawDeepSpaceBackground } from '../composables/spaceBackground';
 import { SPACE_MARKER_TYPES, FLEET_KINDS } from '../store/geodataModules/spaceEditing';
 import { usePromptDialog } from '../composables/usePromptDialog';
@@ -150,13 +153,25 @@ function sysBase() {
 
 // ===== 行星布局（恒星在原点）+ 卫星绕行（批次D5） =====
 // 卫星 = layer 'moon' + parentId 指向系内行星：锚定母行星渲染，不占恒星轨道槽。
-// currentSystemPlanets 只含恒星直接子（parentId==system），卫星经 systemBodies 扩展取回。
+// A3: 恒星名称（优先取主恒星节点名称，无则兜底系统名）
+const starName = computed(() => {
+  const primary = systemBodies.value.primaryStar;
+  if (primary) {
+    return primary.displayName || primary.name;
+  }
+  return null;
+});
 const systemBodies = computed(() => {
-  if (!props.system) return { planets: [], moons: [] };
-  const planets = store.currentSystemPlanets;
+  if (!props.system) return { stars: [], primaryStar: null, binaryStars: [], planets: [], moons: [] };
+  const children = store.currentSystemPlanets;
+  const stars = children.filter(n => n.layer === 'star');
+  // B3：双星系统 — 区分主恒星（无 parentStar）与子恒星（parentStar 指向主恒星）
+  const primaryStar = stars.find(s => !s.parentStar) || stars[0] || null;
+  const binaryStars = stars.filter(s => s.parentStar && s.parentStar !== s.id);
+  const planets = children.filter(n => n.layer !== 'star');
   const planetIds = new Set(planets.map(p => p.id));
   const moons = store.nodes.filter(n => n.layer === 'moon' && planetIds.has(n.parentId));
-  return { planets, moons };
+  return { stars, primaryStar, binaryStars, planets, moons };
 });
 
 const planetLayouts = computed(() => {
@@ -541,11 +556,38 @@ function ctxDeleteFleetCard() {
 }
 
 // ===== 右键菜单扩展（批次D5）：查看信息 / 设为卫星 / 取消卫星 =====
-// 查看信息：把节点交给 NodeDetailPanel（与浏览模式点击选中同通道）
+// 查看信息：把节点/标记/卡片交给 NodeDetailPanel（与浏览模式点击选中同通道）
 function ctxViewNode() {
-  const node = contextMenu.value.target?.node;
+  const target = contextMenu.value.target;
   closeContextMenu();
-  if (node) emit('select-node', node);
+  if (!target) return;
+  if (target.type === 'planet' || target.type === 'planet-moon') {
+    if (target.node) emit('select-node', target.node);
+  } else if (target.type === 'star') {
+    if (target.node) emit('select-node', target.node);
+  } else if (target.type === 'space-marker') {
+    const m = target.marker;
+    const style = spaceMarkerStyle(m.type);
+    emit('select-node', {
+      id: m.id,
+      name: m.label || style.label,
+      layer: 'space_marker',
+      layerLabel: '太空标记',
+      tags: [style.label, m.systemId].filter(Boolean),
+      sourcePath: '',
+    });
+  } else if (target.type === 'fleet-card') {
+    const c = target.card;
+    const kind = fleetKindStyle(c.kind);
+    emit('select-node', {
+      id: c.id,
+      name: c.name,
+      layer: 'fleet_card',
+      layerLabel: '部队卡片',
+      tags: [kind.label, c.faction].filter(Boolean),
+      sourcePath: '',
+    });
+  }
 }
 
 // 进入「选择母行星」模式：菜单切换为系内行星列表（排除自身）
@@ -596,11 +638,32 @@ function onCanvasMouseLeave() {
 
 // ===== 命中测试 =====
 function hitTest(wx, wy) {
+  const bodies = systemBodies.value;
+  // B3：双星 — 子恒星命中（优先于主恒星，子恒星在轨道上）
+  if (bodies.binaryStars.length > 0) {
+    for (let i = 0; i < bodies.binaryStars.length; i++) {
+      const a = (i / bodies.binaryStars.length) * Math.PI * 2 + 0.5;
+      const bx = Math.cos(a) * 30;
+      const by = Math.sin(a) * 30;
+      const dxB = wx - bx;
+      const dyB = wy - by;
+      if (dxB * dxB + dyB * dyB < 12 * 12) {
+        return { type: 'star', node: bodies.binaryStars[i] };
+      }
+    }
+  }
   if (layers.isVisible('system_detail', 'nodes')) {
+    // 恒星命中（B2：优先于行星，恒星半径较大）
+    const starR = getStarRadius(bodies.primaryStar || props.system);
+    const dxStar = wx - 0;
+    const dyStar = wy - 0;
+    if (dxStar * dxStar + dyStar * dyStar < (starR + 5) * (starR + 5)) {
+      return { type: 'star', node: bodies.primaryStar || props.system };
+    }
     for (const planet of planetLayouts.value) {
       const dx = wx - planet.x;
       const dy = wy - planet.y;
-      const rad = getPlanetRadius(planet.layer) + 5;
+      const rad = getPlanetRadius(planet.layer, planet) + 5;
       if (dx * dx + dy * dy < rad * rad) return { type: 'planet', node: planet };
     }
   }
@@ -633,6 +696,43 @@ function hitTest(wx, wy) {
 }
 
 // ===== 绘制 =====
+// C2: 拖拽轨道 — 轨道半径吸附（拖拽行星时吸附到最近的标准轨道槽）
+const ORBIT_SNAP_THRESHOLD = 12;
+function snapOrbitRadius(r) {
+  const n = Math.round((r - ORBIT_RING_START) / ORBIT_RING_STEP);
+  return Math.max(ORBIT_RING_START, ORBIT_RING_START + Math.max(0, n) * ORBIT_RING_STEP);
+}
+
+function drawOrbitDragPreview(ctx) {
+  if (!dragPlanet.value) return;
+  const px = dragPlanet.value.x;
+  const py = dragPlanet.value.y;
+  const dist = Math.sqrt(px * px + py * py);
+  const snapped = snapOrbitRadius(dist);
+  const scale = renderer.getViewTransform().scale;
+
+  ctx.strokeStyle = 'rgba(110, 200, 255, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(0, 0, snapped, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = 'rgba(110, 200, 255, 0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(px, py);
+  ctx.stroke();
+
+  ctx.fillStyle = '#a0e1ff';
+  const font = Math.min(40, Math.max(5, Math.round(11 / scale)));
+  ctx.font = `${font}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`r=${snapped}`, px, py - 8);
+}
+
 function drawOrbitRings(ctx) {
   ctx.strokeStyle = 'rgba(110, 170, 230, 0.22)';
   ctx.lineWidth = 1;
@@ -648,21 +748,60 @@ function drawOrbitRings(ctx) {
 function drawStar(ctx) {
   const matched = store.isNodeMatched(props.system.id);
   const isCurrent = store.isCurrentMatch(props.system.id);
+  const bodies = systemBodies.value;
+  const primary = bodies.primaryStar;
+  // B1: 光谱类型配色（默认 G 型，与之前金色一致，向后兼容）
+  const starColor = getStarColor(primary?.starType);
 
-  ctx.shadowColor = '#ffd700';
+  // B3：双星系统 — 主恒星居中，子恒星绕行（预留：仅渲染子恒星标记，暂不实现质心轨道）
+  const binaryStars = bodies.binaryStars;
+  if (binaryStars.length > 0) {
+    // 子恒星小轨道（虚线环，提示双星系统存在）
+    ctx.strokeStyle = 'rgba(255, 170, 50, 0.25)';
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 子恒星（固定角度，按索引均分圆周，确定性无随机）
+    binaryStars.forEach((bs, i) => {
+      const a = (i / binaryStars.length) * Math.PI * 2 + 0.5;
+      const bx = Math.cos(a) * 30;
+      const by = Math.sin(a) * 30;
+      const bsColor = getStarColor(bs.starType);
+      ctx.shadowColor = bsColor.glow;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = bsColor.center;
+      ctx.beginPath();
+      ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#e2e8f0';
+      const scale = renderer.getViewTransform().scale;
+      const font = Math.min(40, Math.max(5, Math.round(9 / scale)));
+      ctx.font = `${font}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(bs.displayName || bs.name, bx, by + 14);
+    });
+  }
+
+  ctx.shadowColor = starColor.glow;
   ctx.shadowBlur = 20;
   const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 60);
-  gradient.addColorStop(0, 'rgba(255, 220, 90, 0.95)');
-  gradient.addColorStop(0.3, 'rgba(255, 170, 50, 0.45)');
-  gradient.addColorStop(1, 'rgba(255, 120, 50, 0)');
+  gradient.addColorStop(0, starColor.center + 'F2');
+  gradient.addColorStop(0.3, starColor.mid + '73');
+  gradient.addColorStop(1, starColor.outer + '00');
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(0, 0, 60, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = matched ? (isCurrent ? '#fff' : '#ffd700') : '#ffd700';
+  ctx.fillStyle = matched ? (isCurrent ? '#fff' : starColor.glow) : starColor.center;
+  const starR = getStarRadius(primary || props.system);
   ctx.beginPath();
-  ctx.arc(0, 0, matched ? 18 : 16, 0, Math.PI * 2);
+  ctx.arc(0, 0, matched ? starR + 2 : starR, 0, Math.PI * 2);
   ctx.fill();
   ctx.shadowBlur = 0;
 
@@ -672,7 +811,7 @@ function drawStar(ctx) {
   const font = Math.min(70, Math.max(6, Math.round(15 / scale)));
   ctx.font = `bold ${font}px sans-serif`;
   ctx.textAlign = 'center';
-  ctx.fillText(props.system.displayName || props.system.name, 0, font * 1.9);
+  ctx.fillText(starName.value || props.system.displayName || props.system.name, 0, font * 1.9);
 }
 
 function drawPlanets(ctx) {
@@ -704,14 +843,26 @@ function drawPlanets(ctx) {
     } else {
       ctx.fillStyle = planet.isMoon ? '#c9d1d9' : getPlanetColor(planet.layer);
     }
-    const r = (planet.isMoon ? 3 : getPlanetRadius(planet.layer) + (matched ? 2 : 0) + 1);
-    ctx.beginPath();
-    ctx.arc(planet.x, planet.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    const r = (planet.isMoon ? 3 : getPlanetRadius(planet.layer, planet) + (matched ? 2 : 0) + 1);
+    // C1: 图标优化 — 空间站绘制为方块（区别于行星圆点），标签在 tags 第二项
+    const isStation = planet.tags && planet.tags.includes('空间站');
+    if (isStation) {
+      ctx.beginPath();
+      ctx.rect(planet.x - r, planet.y - r, r * 2, r * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(planet.x, planet.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
 
     if (!renderer.isFastMode()) {
       ctx.fillStyle = '#8b949e';
@@ -850,10 +1001,17 @@ function onRender(ctx) {
   if (layers.isVisible('system_detail', 'fleetCards')) {
     drawFleetCards(ctx);
   }
+  // C2: 拖拽轨道预览（吸附轨道环 + 径向指示线）
+  if (editMode.value && dragPlanet.value) {
+    drawOrbitDragPreview(ctx);
+  }
 }
 
 // ===== Canvas Renderer =====
+// A5: 单系视图允许更大缩放（看清行星细节），缩放到 5x，最小 0.1
 const renderer = useCanvasRenderer(canvas, {
+  minScale: 0.1,
+  maxScale: 5,
   onRender,
   onHitTest: (wx, wy) => hitTest(wx, wy),
   onHover: (hit) => {
@@ -887,10 +1045,19 @@ const renderer = useCanvasRenderer(canvas, {
   onDragMove: (wx, wy, dragInfo) => {
     if (dragInfo.mode !== 'node') return;
     if (!dragPlanet.value || dragPlanet.value.nodeId !== dragInfo.nodeId) return;
-    // 系内相对坐标 (wx, wy) → 域地图绝对坐标（换算基准 system.coordinate）
-    dragPlanet.value = { nodeId: dragInfo.nodeId, x: wx, y: wy };
+    // C2: 拖拽轨道 — 拖拽位置吸附到最近的标准轨道槽
+    const dist = Math.sqrt(wx * wx + wy * wy);
+    const snapped = snapOrbitRadius(dist);
+    let sx = wx, sy = wy;
+    if (Math.abs(dist - snapped) < ORBIT_SNAP_THRESHOLD && dist > 0) {
+      // 吸附：保持角度，半径替换为标准轨道
+      const ratio = snapped / dist;
+      sx = wx * ratio;
+      sy = wy * ratio;
+    }
+    dragPlanet.value = { nodeId: dragInfo.nodeId, x: sx, y: sy };
     const base = sysBase();
-    store.updateNodePosition(dragInfo.nodeId, base.x + wx, base.y + wy);
+    store.updateNodePosition(dragInfo.nodeId, base.x + sx, base.y + sy);
   },
   onDragEnd: (wx, wy, dragInfo) => {
     if (dragInfo.mode === 'node') {
@@ -902,6 +1069,9 @@ const renderer = useCanvasRenderer(canvas, {
     // 编辑模式：点击不导航（防误触下钻/跳系），仅清理菜单
     if (editMode.value) return;
     if (hit?.type === 'planet') {
+      emit('select-node', hit.node);
+    } else if (hit?.type === 'star') {
+      // B2：点击恒星 → 选中恒星节点（展示详情面板）
       emit('select-node', hit.node);
     } else if (hit?.type === 'jump-arrow') {
       // B5：点击箭头 → 跳转相邻恒星系（仍停留单系视图）
@@ -937,6 +1107,7 @@ const renderer = useCanvasRenderer(canvas, {
     const hit = hitTest(wx, wy);
     let target = null;
     if (hit?.type === 'planet') target = { type: 'planet', node: hit.node };
+    else if (hit?.type === 'star') target = { type: 'star', node: hit.node };
     else if (hit?.type === 'space-marker') target = { type: 'space-marker', marker: hit.marker };
     else if (hit?.type === 'fleet-card') target = { type: 'fleet-card', card: hit.card };
     openContextMenu(wx, wy, target);

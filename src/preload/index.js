@@ -49,6 +49,17 @@ contextBridge.exposeInMainWorld('sitianAPI', {
     ipcRenderer.on('vault:node-removed', handler);
     return () => ipcRenderer.removeListener('vault:node-removed', handler);
   },
+  // 系统托盘菜单 → 渲染进程事件
+  onOpenSettings: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('sitian:open-settings', handler);
+    return () => ipcRenderer.removeListener('sitian:open-settings', handler);
+  },
+  onOpenAbout: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('sitian:open-about', handler);
+    return () => ipcRenderer.removeListener('sitian:open-about', handler);
+  },
 
   // 清除坐标缓存
   clearCoordinateCache: () => ipcRenderer.invoke('clear-coordinate-cache'),

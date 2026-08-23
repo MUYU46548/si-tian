@@ -3,7 +3,7 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 
-const DEFAULT_VAULT = 'E:/图书馆/ROSA';
+const DEFAULT_VAULT = ''; // 留空：首次启动由用户通过设置面板指定知识库路径
 
 // 窗口启动模式（批次A7）：maximized=默认最大化 | fullscreen=全屏 | default=1600×900
 const WINDOW_MODES = ['maximized', 'fullscreen', 'default'];

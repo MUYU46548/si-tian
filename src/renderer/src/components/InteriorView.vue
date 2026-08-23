@@ -405,6 +405,22 @@ function drawGrid(ctx, w, h) {
     ctx.lineTo(cvs.clientWidth, sy);
   }
   ctx.stroke();
+
+  // A4: 拖拽家具时高亮吸附网格点
+  if (isDraggingFurniture.value && gridSnapEnabled.value && dragPreviewPos.value && selectedFurniture.value) {
+    const item = selectedFurniture.value;
+    const snapX = Math.round(dragPreviewPos.value.x / step) * step;
+    const snapY = Math.round(dragPreviewPos.value.y / step) * step;
+    const sx = (snapX - worldLeft + item.width / 2) * vt.scale;
+    const sy = (snapY - worldTop + item.height / 2) * vt.scale;
+    ctx.fillStyle = 'rgba(88, 166, 255, 0.5)';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#58a6ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
 }
 
 function drawFurniture(ctx) {
@@ -490,6 +506,8 @@ function getFurnitureTypeLabel(type) {
 // ===== 拖拽状态 =====
 const dragStartPos = ref(null);
 const dragStartFurniturePos = ref(null);
+// A4: 拖拽家具时的预览位置（用于网格吸附高亮）
+const dragPreviewPos = ref(null);
 const isDraggingFurniture = ref(false);
 const multiFurnitureStartMap = ref(null); // Map<id, {x,y}>
 
@@ -566,6 +584,11 @@ function handleDragMove(wx, wy, info) {
           }
         }
       }
+      // A4: 更新预览位置（用最后一个吸附点）
+      if (gridSnapEnabled.value && selectedFurniture.value) {
+        const item = selectedFurniture.value;
+        dragPreviewPos.value = { x: item.x, y: item.y };
+      }
     } else {
       // 单选拖拽
       const newX = dragStartFurniturePos.value.x + dx;
@@ -578,6 +601,8 @@ function handleDragMove(wx, wy, info) {
         selectedFurniture.value.x = newX;
         selectedFurniture.value.y = newY;
       }
+      // A4: 更新预览位置
+      dragPreviewPos.value = { x: selectedFurniture.value.x, y: selectedFurniture.value.y };
     }
     renderer.requestRender();
   }
@@ -606,6 +631,8 @@ function handleDragEnd(wx, wy, info) {
       }
     }
   }
+  // A4: 清理预览状态
+  dragPreviewPos.value = null;
   isDraggingFurniture.value = false;
   dragStartPos.value = null;
   dragStartFurniturePos.value = null;

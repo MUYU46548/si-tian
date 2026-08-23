@@ -5,6 +5,7 @@ const matter = require('gray-matter');
 const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
 const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode } = require('./config');
+const { createTray, destroyTray, getIsQuitting } = require('./tray');
 
 let mainWindow;
 let vaultWatcherEnabled = true;
@@ -52,10 +53,28 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
 
-  // 启动 Vault 文件监听
+  // 启动 Vault 文件监听（若已配置知识库路径）
   if (vaultWatcherEnabled) {
-    startWatcher(mainWindow);
+    startWatcher(mainWindow, getVaultPath());
   }
+
+  // 窗口关闭拦截：用户点 × 时最小化到托盘，而非退出
+  // 退出只能通过托盘菜单「退出」或 Alt+F4（应用退出时 getIsQuitting() === true）
+  mainWindow.on('close', (event) => {
+    if (!getIsQuitting()) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
+  // 创建系统托盘
+  createTray(mainWindow);
+}
+
+// 单实例锁：防止多开
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
 }
 
 app.whenReady().then(async () => {
@@ -75,6 +94,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopWatcher();
+  destroyTray();
 });
 
 // IPC: 获取地理数据
@@ -332,7 +352,7 @@ ipcMain.handle('get-watcher-status', () => vaultWatcherEnabled);
 ipcMain.handle('set-watcher-status', (event, enabled) => {
   vaultWatcherEnabled = enabled;
   if (enabled) {
-    startWatcher(mainWindow);
+    startWatcher(mainWindow, getVaultPath());
   } else {
     stopWatcher();
   }
@@ -458,5 +478,14 @@ ipcMain.handle('save-export-file', async (event, { dataUrl, defaultName }) => {
     return { success: true, path: result.filePath };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+});
+
+// 单实例锁：第二个实例尝试启动时，聚焦现有窗口
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
   }
 });

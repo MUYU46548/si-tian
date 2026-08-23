@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 17：卫星轨道（批次D5）
-链路：进入 乐园星系 单系视图 + 编辑模式 → 右键行星「🛰 设为卫星…」→ 选母行星
+链路：进入 乐园星系 单系视图 + 编辑模式 → 添加第二颗行星
+      → 右键行星「🛰 设为卫星…」→ 选母行星
       → 断言 layer=moon + parentId=母行星 + planetLayouts 出现 isMoon 锚定项（绕母星小轨道）
       → 右键卫星「↩ 取消卫星」→ 恢复 planet + 独立轨道槽 → undo 一路回溯恢复 moon 态
 """
@@ -37,6 +38,28 @@ def ctx_click_planet(cdp, planet_name, menu_text):
     }})()""")
 
 
+def add_planet_via_button(cdp, type_label='行星'):
+    """通过头部「＋ 天体」按钮添加天体（走 PromptDialog 选类型）"""
+    result = _js_obj(cdp, f"""(async () => {{
+      const el = document.querySelector('.system-detail-container');
+      const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('＋ 天体'));
+      if (!btn) return 'no-btn';
+      const store = document.querySelector('#app').__vue_app__._instance.setupState.store;
+      const before = store.nodes.length;
+      btn.click();
+      await new Promise(r => setTimeout(r, 80));
+      const dlg = document.querySelector('.prompt-dialog');
+      if (!dlg) return 'no-dialog';
+      const opt = Array.from(dlg.querySelectorAll('.prompt-choice')).find(b => b.textContent.includes('{type_label}'));
+      if (!opt) return 'no-choice';
+      opt.click();
+      await new Promise(r => setTimeout(r, 80));
+      const added = store.nodes[store.nodes.length - 1];
+      return JSON.stringify({{ before, after: store.nodes.length, id: added.id, name: added.name, layer: added.layer, parentId: added.parentId }});
+    }})()""")
+    return result
+
+
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
@@ -59,7 +82,15 @@ def run(cdp):
     cdp.eval(f"{DETAIL_ST}.toggleEditMode()")
     time.sleep(0.3)
 
-    # 系内至少两颗行星（乐园星 + 至少一颗可当卫星的）；优先选名字带「月/卫星」的还原用户场景
+    # a2) 添加第二颗行星（乐园星系默认仅 1 颗行星，需先添加才能测试「设为卫星」）
+    added = add_planet_via_button(cdp, '行星')
+    if not isinstance(added, dict) or 'id' not in added:
+        return False, f'添加第二颗行星失败 ({added})'
+    if added['after'] != added['before'] + 1 or added['parentId'] != '乐园星系':
+        return False, f'添加行星后计数/属性异常 ({added})'
+    time.sleep(0.3)
+
+    # 系内至少两颗行星（乐园星 + 刚添加的行星）；优先选名字带「月/卫星」的还原用户场景
     names = _js_obj(cdp, f"""(() => JSON.stringify({DETAIL_ST}.planetLayouts
       .filter(p => !p.isMoon).map(p => p.displayName || p.name)))()""")
     if not isinstance(names, list) or len(names) < 2:
@@ -182,8 +213,10 @@ def run(cdp):
     if not isinstance(final, dict) or final.get('layer') != 'planet' or final.get('parentId') != '乐园星系':
         return False, f'undo×2 未回到初始独立行星 {final}'
 
-    # g) 清场：redo×2 恢复到测试前的独立行星（与初始一致）
+    # g) 清场：undo 移除添加的行星 → redo×3 恢复到测试前的独立行星（与初始一致）
+    cdp.eval(f"{APP_STORE}.undo()")
+    cdp.eval(f"{APP_STORE}.redo()")
     cdp.eval(f"{APP_STORE}.redo()")
     cdp.eval(f"{APP_STORE}.redo()")
 
-    return True, f'设为卫星→锚定绕行→取消→undo×2/redo×2 全链路正常（{moon_name} 绕 {host_name}）'
+    return True, f'设为卫星→锚定绕行→取消→undo×2/redo×3 全链路正常（{moon_name} 绕 {host_name}）'

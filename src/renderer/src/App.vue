@@ -412,44 +412,52 @@ function getActiveCanvas() {
 async function handleExportPNG() {
   const canvas = getActiveCanvas();
   if (!canvas) return;
-  
-  statusText.value = '正在导出...';
-  
-  // 创建临时 canvas，HiDPI 适配
+
+  showExportProgress('正在导出 PNG...');
+
+  // 让 UI 再入渲染进度框后再执行阻塞导出
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => setTimeout(r, 30));
+
   const tmpCanvas = document.createElement('canvas');
   const dpr = window.devicePixelRatio || 1;
   tmpCanvas.width = canvas.clientWidth * dpr;
   tmpCanvas.height = canvas.clientHeight * dpr;
   const ctx = tmpCanvas.getContext('2d');
   ctx.drawImage(canvas, 0, 0, tmpCanvas.width, tmpCanvas.height);
-  
-  tmpCanvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sitian-${store.viewLevel}-${Date.now()}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
-    statusText.value = '导出完成';
+
+  await new Promise(resolve => {
+    tmpCanvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sitian-${store.viewLevel}-${Date.now()}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      hideExportProgress();
+      statusText.value = '导出完成';
+      resolve();
+    });
   });
-  
+
   panelsStore.close('export');
 }
 
 async function handleExportSVG() {
-  statusText.value = '正在导出 SVG...';
-  
   const canvas = getActiveCanvas();
   if (!canvas) return;
+
+  showExportProgress('正在导出 SVG...');
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => setTimeout(r, 30));
 
   const width = canvas.width;
   const height = canvas.height;
   const isDark = currentTheme.value !== 'light';
   const bgColor = isDark ? '#0d1117' : '#ffffff';
 
-  // 将画布内容转为 base64 图片嵌入 SVG
   const dataUrl = canvas.toDataURL('image/png');
-  
+
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
   <rect x="0" y="0" width="${width}" height="${height}" fill="${bgColor}"/>
@@ -463,9 +471,29 @@ async function handleExportSVG() {
   a.download = `sitian-${store.viewLevel}-${Date.now()}.svg`;
   a.click();
   URL.revokeObjectURL(url);
-  
+
+  hideExportProgress();
   statusText.value = '导出完成';
   panelsStore.close('export');
+}
+
+function showExportProgress(msg) {
+  let overlay = document.getElementById('sitian-export-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'sitian-export-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);color:#fff;font-family:system-ui,sans-serif;';
+    overlay.innerHTML = `<div style="text-align:center;"><div style="font-size:32px;margin-bottom:12px;">📥</div><div id="sitian-export-msg" style="font-size:14px;"></div><div style="margin-top:16px;width:200px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden;margin-left:auto;margin-right:auto;"><div style="height:100%;width:30%;background:#4A90D9;animation:sitian-progress 1s ease-in-out infinite;"></div></div></div><style>@keyframes sitian-progress{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}</style>`;
+    document.body.appendChild(overlay);
+  }
+  const msgEl = overlay.querySelector('#sitian-export-msg');
+  if (msgEl) msgEl.textContent = msg;
+  overlay.style.display = 'flex';
+}
+
+function hideExportProgress() {
+  const overlay = document.getElementById('sitian-export-overlay');
+  if (overlay) overlay.style.display = 'none';
 }
 
 async function handleExportFullPNG() {
@@ -966,6 +994,10 @@ onMounted(async () => {
   window.addEventListener('sitian:clear-cache', () => {
     clearCoordinateCache();
   });
+
+  // 系统托盘菜单 → 打开面板（托盘图标右键菜单触发）
+  window.sitianAPI.onOpenSettings(() => settingsPanelRef.value?.open());
+  window.sitianAPI.onOpenAbout(() => aboutPanelRef.value?.open());
   // PlanetMap 本地面板打开时，关闭 App 层浮层面板（面板互斥）
   window.addEventListener('sitian:panel-open', closeAppPanels);
 
@@ -988,7 +1020,16 @@ onUnmounted(() => {
   if (perfUpdateTimer) clearInterval(perfUpdateTimer);
   window.removeEventListener('sitian:panel-open', closeAppPanels);
   document.removeEventListener('click', handleClickOutside);
+  window.removeEventListener('beforeunload', handleBeforeUnload);
 });
+
+function handleBeforeUnload(e) {
+  if (dirty.value) {
+    e.preventDefault();
+    e.returnValue = '您有未保存的编辑，确定要离开吗？';
+    return e.returnValue;
+  }
+}
 
 function handleGlobalKeydown(e) {
   if (e.key === 'F1') {
@@ -1013,6 +1054,12 @@ function handleGlobalKeydown(e) {
     if (store.viewLevel === 'domain' || store.viewLevel === 'system' || store.viewLevel === 'system_detail' || store.viewLevel === 'planet') {
       e.preventDefault();
       toggleLayersPanel();
+    }
+  }
+  if (e.key === 'm' || e.key === 'M') {
+    if (store.viewLevel !== 'world') {
+      e.preventDefault();
+      panelsStore.toggle('bookmarks');
     }
   }
 }

@@ -229,6 +229,34 @@ def run(cdp):
     if not (click.get('cardSel', {}).get('layer') == 'fleet_card' and click['cardSel']['name'] == '第七行星军'):
         return False, f'点击卡片未选中伪节点 {click}'
 
+    # e2) 详情面板对伪节点的 DOM 适配：面板应显示且含伪节点图标/简化视图
+    panel = _js_obj(cdp, f"""(() => {{
+      const pn = document.querySelector('.detail-panel');
+      if (!pn) return 'no-panel';
+      const icon = pn.querySelector('.hero-icon');
+      const layer = pn.querySelector('.hero-layer');
+      const tabBtns = Array.from(pn.querySelectorAll('.detail-tab-btn')).map(b => b.textContent);
+      // 伪节点：应含「概览/关系」tab，「编辑」tab 应隐藏
+      const hasEditTab = tabBtns.includes('编辑');
+      // 操作按钮区应隐藏
+      const actionsHidden = !pn.querySelector('.actions-section');
+      return JSON.stringify({{
+        visible: true,
+        icon: icon?.textContent,
+        layer: layer?.textContent,
+        hasEditTab,
+        actionsHidden,
+      }});
+    }})()""")
+    if not isinstance(panel, dict) or panel == 'no-panel':
+        return False, f'伪节点详情面板未渲染 {panel}'
+    if not (panel.get('icon') in ('◈', '⚑') and panel.get('layer') in ('太空标记', '部队卡片')):
+        return False, f'伪节点图标/层级显示异常 {panel}'
+    if panel.get('hasEditTab'):
+        return False, f'伪节点不应显示「编辑」tab {panel}'
+    if not panel.get('actionsHidden'):
+        return False, f'伪节点不应显示操作按钮区 {panel}'
+
     # f) 图层开关：toggle 后 isVisible 翻转（markers/fleetCards 互不牵连）
     layers = _js_obj(cdp, f"""(() => {{
       const L = {DETAIL_ST}.layers;

@@ -54,8 +54,16 @@
         <div class="shortcut-group">
           <h3>视图</h3>
           <div class="shortcut-item">
-            <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd>
-            <span>切换性能面板</span>
+            <kbd>L</kbd>
+            <span>切换图层面板</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>M</kbd>
+            <span>切换书签面板</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>F1</kbd>
+            <span>打开帮助面板</span>
           </div>
           <div class="shortcut-item">
             <kbd>?</kbd>

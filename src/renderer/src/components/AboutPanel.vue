@@ -18,7 +18,7 @@
           <h3>关于</h3>
           <p class="description">
             世界观地理可视化编辑器，为 Obsidian 知识库设计的星图工具。
-            以 Stellaris 风格的三层视图呈现地理层级，支持 Markdown 附加可编辑坐标元数据，
+            以 Stellaris 风格的五层视图呈现地理层级，支持 Markdown 附加可编辑坐标元数据，
             实现画布与笔记的双向同步。
           </p>
         </section>
@@ -27,11 +27,11 @@
         <section class="about-section">
           <h3>📖 快速开始</h3>
           <ul class="guide-list">
-            <li><b>三层视图导航</b>：世界卡片 → 星域地图 → 恒星系详情</li>
+            <li><b>五层视图导航</b>：世界卡片 → 星域地图 → 域内星系总览 → 单系详情 → 行星地图</li>
+            <li><b>区域与建筑</b>：行星地图中点击聚落进入区域地图，再下钻建筑内部</li>
             <li><b>点击节点</b>：查看百科卡片式详情面板</li>
-            <li><b>双击节点</b>：在 Obsidian 中打开对应笔记</li>
-            <li><b>滚动缩放</b>：支持画布缩放和平移</li>
-            <li><b>拖拽节点</b>：编辑坐标位置，自动保存到 JSON 缓存</li>
+            <li><b>编辑模式</b>：各视图均支持编辑地图，自动保存到 JSON 缓存</li>
+            <li><b>撤销/重做</b>：Ctrl+Z / Ctrl+Y 全程可回溯</li>
           </ul>
         </section>
 
@@ -119,7 +119,7 @@
           <div class="data-info">
             <div class="data-row">
               <span class="data-label">Obsidian 知识库</span>
-              <span class="data-path">E:/图书馆/ROSA/</span>
+              <span class="data-path">（用户配置的 Obsidian 知识库路径）</span>
             </div>
             <div class="data-row">
               <span class="data-label">坐标缓存</span>

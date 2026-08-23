@@ -38,11 +38,11 @@ const isOpen = ref(false);
 const currentStep = ref(0);
 
 const steps = [
-  { title: '浏览世界观', desc: '从世界卡片开始，逐级探索星域、星系和行星' },
-  { title: '查看详情', desc: '点击任何节点查看百科式详情卡片' },
-  { title: '编辑地图', desc: '进入行星地图编辑模式，绘制省份和放置标记' },
-  { title: '同步 Obsidian', desc: '双击节点在 Obsidian 中打开对应笔记' },
-  { title: '开始创造', desc: '按 F1 随时查看帮助' },
+  { title: '浏览世界观', desc: '从世界卡片开始，逐级探索星域、星系总览和单系地图' },
+  { title: '下钻行星与区域', desc: '单系地图点击行星进入行星地图，再点击聚落进入区域地图与建筑内部' },
+  { title: '查看与编辑', desc: '点击节点查看百科式详情，进入编辑模式拖拽坐标、添加天体' },
+  { title: '太空实体', desc: '在单系地图编辑模式下，右键添加太空标记和部队卡片（信息提示）' },
+  { title: '随时求助', desc: '按 F1 或 Ctrl+? 查看帮助与快捷键' },
 ];
 
 function open() {

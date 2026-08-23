@@ -3,11 +3,36 @@ const path = require('path');
 const fs = require('fs');
 const matter = require('gray-matter');
 
-const VAULT_PATH = 'E:/图书馆/ROSA';
-const GEO_SYSTEM_PATH = path.join(VAULT_PATH, '03 设定', '11 地理系统');
-const LOCATIONS_PATH = path.join(VAULT_PATH, '03 设定', '02 场景地点');
-const INDEX_PATH = path.join(VAULT_PATH, '01 索引', '地理系统索引.md');
-const CACHE_PATH = path.join(VAULT_PATH, '.sitian', 'geodata.json');
+// 运行时路径（由 startWatcher(vaultPath) 设置，避免硬编码本地路径）
+let currentVaultPath = null;
+let vaultPaths = null;
+
+/**
+ * 根据知识库路径生成各子路径
+ */
+function resolveVaultPaths(vaultPath) {
+  if (!vaultPath) return null;
+  return {
+    vault: vaultPath,
+    geoSystem: path.join(vaultPath, '03 设定', '11 地理系统'),
+    locations: path.join(vaultPath, '03 设定', '02 场景地点'),
+    index: path.join(vaultPath, '01 索引', '地理系统索引.md'),
+    cache: path.join(vaultPath, '.sitian', 'geodata.json'),
+  };
+}
+
+function setVaultPath(vaultPath) {
+  currentVaultPath = vaultPath;
+  vaultPaths = resolveVaultPaths(vaultPath);
+}
+
+function getVaultPath() {
+  return currentVaultPath;
+}
+
+function getVaultPaths() {
+  return vaultPaths;
+}
 
 const LAYER_KEYWORDS = {
   '星系': 'galaxy', '星域': 'star_domain', '行星': 'planet', '恒星': 'star',
@@ -28,7 +53,7 @@ let debounceTimer = null;
 
 function normalizeId(name) {
   if (!name) return 'unknown';
-  return name.replace(/\[\[|\]\]/g, '').replace(/[\\\/\s]/g, '_').replace(/[^\w一-鿿]/g, '').toLowerCase();
+  return name.replace(/\[\[|\]\]/g, '').replace(/[\\\/\\s]/g, '_').replace(/[^\w一-鿿]/g, '').toLowerCase();
 }
 
 function detectLayer(folderName) {
@@ -60,13 +85,15 @@ function detectLocationLayer(frontmatter, content) {
 
 function parseMdFile(filePath) {
   try {
+    const vault = getVaultPath();
+    if (!vault) return null;
     const raw = fs.readFileSync(filePath, 'utf-8');
     const { data: frontmatter, content } = matter(raw);
     const wikilinks = [];
     const linkRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
     let match;
     while ((match = linkRegex.exec(content)) !== null) wikilinks.push(match[1].trim());
-    return { frontmatter, content, wikilinks, fileName: path.basename(filePath, '.md'), relativePath: path.relative(VAULT_PATH, filePath) };
+    return { frontmatter, content, wikilinks, fileName: path.basename(filePath, '.md'), relativePath: path.relative(vault, filePath) };
   } catch (e) {
     console.error(`解析失败: ${filePath}`, e.message);
     return null;
@@ -94,7 +121,9 @@ function extractSingleFile(filePath) {
 
 function readCache() {
   try {
-    const raw = fs.readFileSync(CACHE_PATH, 'utf-8');
+    const paths = getVaultPaths();
+    if (!paths) return { nodes: [], hyperlanes: [] };
+    const raw = fs.readFileSync(paths.cache, 'utf-8');
     return JSON.parse(raw);
   } catch (e) {
     return { nodes: [], hyperlanes: [] };
@@ -102,7 +131,9 @@ function readCache() {
 }
 
 function writeCache(data) {
-  fs.writeFileSync(CACHE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  const paths = getVaultPaths();
+  if (!paths) return;
+  fs.writeFileSync(paths.cache, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 function updateNodeInCache(node) {
@@ -110,7 +141,6 @@ function updateNodeInCache(node) {
   const idx = data.nodes.findIndex(n => n.id === node.id);
   
   if (idx !== -1) {
-    // 保留坐标
     const existingCoord = data.nodes[idx].coordinate;
     data.nodes[idx] = { ...node, coordinate: existingCoord };
   } else {
@@ -129,20 +159,19 @@ function removeNodeFromCache(nodeId) {
 }
 
 function handleFileChange(filePath) {
-  const relativePath = path.relative(VAULT_PATH, filePath);
+  const vault = getVaultPath();
+  if (!vault) return;
+  const relativePath = path.relative(vault, filePath);
   const fileName = path.basename(filePath, '.md');
   const nodeId = normalizeId(fileName);
   
   console.log(`[Watcher] 文件变更: ${relativePath}`);
   
-  // 重新提取该文件
   const node = extractSingleFile(filePath);
   if (!node) return;
   
-  // 更新缓存
   const data = updateNodeInCache(node);
   
-  // 通知渲染进程
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('vault:node-updated', { node, data });
   }
@@ -161,19 +190,27 @@ function handleFileRemoved(filePath) {
   }
 }
 
-function startWatcher(window) {
+function startWatcher(window, vaultPath) {
   if (watcher) return;
   
   mainWindow = window;
   
+  // 运行时设置路径（不硬编码，由调用方传入）
+  if (vaultPath) setVaultPath(vaultPath);
+  const paths = getVaultPaths();
+  if (!paths) {
+    console.error('[Watcher] 未设置知识库路径，watcher 未启动');
+    return;
+  }
+  
   const watchPaths = [
-    GEO_SYSTEM_PATH,
-    LOCATIONS_PATH,
-    INDEX_PATH,
+    paths.geoSystem,
+    paths.locations,
+    paths.index,
   ];
   
   watcher = chokidar.watch(watchPaths, {
-    ignored: /(^|[\/\\])\../, // 忽略隐藏文件
+    ignored: /(^|[\\/\\\\])\\../,
     persistent: true,
     ignoreInitial: true,
     awaitWriteFinish: {
@@ -200,4 +237,4 @@ function stopWatcher() {
   }
 }
 
-module.exports = { startWatcher, stopWatcher };
+module.exports = { startWatcher, stopWatcher, setVaultPath, getVaultPath };

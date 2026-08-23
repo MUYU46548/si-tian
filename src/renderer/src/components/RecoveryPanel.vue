@@ -18,6 +18,7 @@
       </div>
       <div class="recovery-actions">
         <button class="btn-discard" @click="discardBackup">丢弃备份</button>
+        <button class="btn-revert" @click="revertToLastSave">撤销全部未保存</button>
         <button class="btn-recover" @click="recoverData">恢复数据</button>
       </div>
     </div>
@@ -91,7 +92,7 @@ function recoverData() {
     showRecovery.value = false;
     return;
   }
-  
+
   try {
     const data = JSON.parse(backup);
     if (data.mapData) {
@@ -106,6 +107,25 @@ function recoverData() {
   } catch (e) {
     console.error('Failed to recover:', e);
     alert('恢复失败: ' + e.message);
+  }
+}
+
+// B4: 撤销全部未保存（从备份读取上次保存点，回退所有后续操作）
+function revertToLastSave() {
+  try {
+    // 触发 store 的 undo 直到栈清空（回退所有可撤销操作）
+    let count = 0;
+    while (store.canUndo && count < 1000) {
+      store.undo();
+      count++;
+    }
+    // 清除备份标记，避免重复提示
+    localStorage.removeItem(BACKUP_KEY);
+    showRecovery.value = false;
+    alert(`✅ 已撤销 ${count} 步操作，回到上次保存状态`);
+  } catch (e) {
+    console.error('Failed to revert:', e);
+    alert('撤销失败: ' + e.message);
   }
 }
 

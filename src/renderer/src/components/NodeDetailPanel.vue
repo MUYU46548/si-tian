@@ -18,7 +18,7 @@
       </button>
 
       <!-- 操作按钮（高频前置，任何 tab 下常驻可见） -->
-      <section class="actions-section actions-section-top">
+      <section v-if="!isPseudoNode" class="actions-section actions-section-top">
         <button class="action-btn primary" @click="openSourceInObsidian">
           <span class="btn-icon">📝</span> 在 Obsidian 中打开
         </button>
@@ -42,7 +42,7 @@
         <button class="detail-tab-btn" :class="{ active: activeTab === 'relations' }" @click="activeTab = 'relations'">
           关系<span v-if="relationsCount" class="tab-count">{{ relationsCount }}</span>
         </button>
-        <button class="detail-tab-btn" :class="{ active: activeTab === 'edit' }" @click="activeTab = 'edit'">编辑</button>
+        <button v-if="!isPseudoNode" class="detail-tab-btn" :class="{ active: activeTab === 'edit' }" @click="activeTab = 'edit'">编辑</button>
       </div>
 
       <!-- ===== Tab 概览：元信息 + frontmatter(默认折叠) + 正文 ===== -->
@@ -82,8 +82,16 @@
 
       <!-- ===== Tab 关系：节点间跳转 + 层级迁移 ===== -->
       <template v-else-if="activeTab === 'relations'">
+        <!-- 伪节点提示 -->
+        <div v-if="isPseudoNode" class="pseudo-node-tip">
+          <div class="tip-icon">ℹ️</div>
+          <div class="tip-content">
+            <p>太空标记/部队卡片为系内信息标识，无层级归属关系。</p>
+            <p class="tip-sub">在单系地图中可查看其位置与标签信息。</p>
+          </div>
+        </div>
         <!-- 关系区域 -->
-        <section class="relations-section">
+        <section v-else class="relations-section">
         <div class="section-header">
           <span class="section-title">关系</span>
         </div>
@@ -221,6 +229,12 @@
             <option v-for="t in placeTypes" :key="t" :value="t">{{ t }}</option>
           </select>
         </div>
+        <div class="prop-field" v-if="isStarNode">
+          <label>光谱类型</label>
+          <select :value="node.starType || 'G'" @change="updateStarType($event.target.value)">
+            <option v-for="t in starTypes" :key="t.value" :value="t.value">{{ t.label }}</option>
+          </select>
+        </div>
         <div class="prop-field">
           <label>标签</label>
           <div class="tag-editor">
@@ -242,7 +256,7 @@
       </section>
 
       <!-- 坐标编辑 -->
-      <section class="coordinate-section">
+      <section v-if="!isPseudoNode" class="coordinate-section">
         <div class="section-header">
           <span class="section-title">坐标</span>
         </div>
@@ -313,6 +327,18 @@ const editableLayers = [
 // 地点类型（第二维度，与提取脚本一致）
 const placeTypes = ['自然', '宗教', '皇室', '商业', '工业', '居住', '公共', '特殊'];
 const isPlaceNode = computed(() => ['facility', 'location', 'region'].includes(node.value?.layer));
+const isStarNode = computed(() => node.value?.layer === 'star');
+
+// 恒星光谱类型（与 systemOrbit.js 共用，B1）
+const starTypes = [
+  { value: 'O', label: 'O型（蓝星）' },
+  { value: 'B', label: 'B型（蓝白星）' },
+  { value: 'A', label: 'A型（白星）' },
+  { value: 'F', label: 'F型（黄白星）' },
+  { value: 'G', label: 'G型（黄星）' },
+  { value: 'K', label: 'K型（橙星）' },
+  { value: 'M', label: 'M型（红星）' },
+];
 
 // 航道类型选项
 const hyperlaneTypes = [
@@ -326,10 +352,16 @@ const hyperlaneTypeLabels = Object.fromEntries(hyperlaneTypes.map(t => [t.value,
 const LAYER_ICONS = {
   world: '🌍', star_domain: '🌌', galaxy: '☀️', star: '✨',
   planet: '🌍', moon: '🌙', region: '🏞', city: '🏙',
-  town: '🏘', village: '🏡', facility: '🏛', location: '📍', unknown: '❓'
+  town: '🏘', village: '🏡', facility: '🏛', location: '📍', unknown: '❓',
+  space_marker: '◈', fleet_card: '⚑',
 };
 
 const layerIcon = computed(() => LAYER_ICONS[node.value?.layer] || '❓');
+
+// 伪节点（太空标记/部队卡片）：无 Obsidian 正文、无层级关系，需简化面板
+const isPseudoNode = computed(() =>
+  node.value?.layer === 'space_marker' || node.value?.layer === 'fleet_card'
+);
 
 // 头部背景样式（根据层级）
 const heroStyle = computed(() => {
@@ -602,8 +634,9 @@ function handlePanelClick(e) {
 
 async function revealInExplorer() {
   if (!node.value?.sourcePath) return;
-  const vaultPath = 'E:/图书馆/ROSA';
-  const fullPath = `${vaultPath}/${node.value.sourcePath}`;
+  // 通过 IPC 获取用户配置的知识库路径，避免硬编码
+  const vaultPath = await window.sitianAPI.getVaultPath?.() || '';
+  const fullPath = vaultPath ? `${vaultPath}/${node.value.sourcePath}` : node.value.sourcePath;
   await window.sitianAPI.revealInExplorer(fullPath);
 }
 
@@ -651,6 +684,12 @@ function updateDisplayName(value) {
 function updatePlaceType(value) {
   if (!node.value) return;
   store.updateNode(node.value.id, { placeType: value || null });
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
+}
+
+function updateStarType(value) {
+  if (!node.value) return;
+  store.updateNode(node.value.id, { starType: value || 'G' });
   window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
 }
 
@@ -1497,13 +1536,44 @@ function updateCoordinate(axis, value) {
 /* ===== 操作按钮 ===== */
 .actions-section {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 0 0 12px 0;
+  margin-bottom: 12px;
 }
 
 .actions-section-top {
-  border-bottom: 1px solid var(--separator);
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.pseudo-node-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: var(--card-bg, rgba(255,255,255,0.6));
+  border: 1px solid var(--border, #ddd);
+  border-radius: 8px;
+  border-left: 3px solid #4A90D9;
+}
+
+.pseudo-node-tip .tip-icon {
+  font-size: 18px;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+.pseudo-node-tip .tip-content p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #555);
+}
+
+.pseudo-node-tip .tip-content .tip-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary, #888);
 }
 
 /* 回退按钮：返回上一个查看的节点 */

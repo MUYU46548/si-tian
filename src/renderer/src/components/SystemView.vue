@@ -620,6 +620,20 @@ const renderer = useCanvasRenderer(canvas, {
       emit('select-node', hit.node);
     }
   },
+  onDblClick: (hit) => {
+    if (!hit?.node) return;
+    // 双击恒星 → 进入单系详情视图
+    if (hit.type === 'star') {
+      store.enterSystemDetail(hit.node);
+    }
+    // 双击行星 → 进入该行星所在恒星的单系详情视图
+    else if (hit.type === 'planet') {
+      const parent = systemLayouts.find(s => s.id === hit.node.parentId);
+      if (parent) {
+        store.enterSystemDetail(parent);
+      }
+    }
+  },
   onContextMenu: (wx, wy) => {
     const hit = hitTest(wx, wy);
     let target = null;

@@ -78,8 +78,24 @@
   <script>
     window.__SITIAN_MOCK__ = true;
     (async () => {
-      const geodata = await (await fetch('/mock-data/geodata.json')).json();
-      const mapdata = await (await fetch('/mock-data/mapdata.json')).json();
+      async function safeFetch(url, fallback) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const text = await res.text();
+          // 防止 SPA fallback 返回 HTML 导致 JSON.parse 报错
+          if (text.trimStart().startsWith('<!DOCTYPE')) {
+            console.warn(`[mock] ${url} 返回 HTML（SPA fallback），使用空数据兜底`);
+            return fallback;
+          }
+          return JSON.parse(text);
+        } catch (e) {
+          console.warn(`[mock] ${url} 加载失败，使用空数据兜底: ${e.message}`);
+          return fallback;
+        }
+      }
+      const geodata = await safeFetch('/mock-data/geodata.json', { nodes: [], hyperlanes: [] });
+      const mapdata = await safeFetch('/mock-data/mapdata.json', {});
       window.sitianAPI = {
         getGeodata: async () => ({ success: true, data: geodata }),
         reextractGeodata: async () => ({ success: true }),

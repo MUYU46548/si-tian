@@ -30,8 +30,43 @@ export function getPlanetColor(layer) {
   return PLANET_COLORS[layer] || '#888888';
 }
 
-export function getPlanetRadius(layer) {
+// A2: 支持 per-node 大小覆盖（存储在 geodata.json 的 sizeOverride 字段）
+export function getPlanetRadius(layer, node) {
+  if (node?.sizeOverride && node.sizeOverride > 0) return node.sizeOverride;
   return PLANET_RADII[layer] || 3;
+}
+
+// 恒星半径（A2：支持覆盖）
+const STAR_RADIUS = 16;
+export function getStarRadius(node) {
+  if (node?.sizeOverride && node.sizeOverride > 0) return node.sizeOverride;
+  return STAR_RADIUS;
+}
+
+// 恒星光谱类型配色（Morgan-Keenan 分类，按温度从高到低 O→M）
+export const STAR_COLORS = {
+  O: { center: '#9bb0ff', mid: '#4a6fff', outer: '#2a4fcf', glow: '#4a6fff' },
+  B: { center: '#aabfff', mid: '#5a8fff', outer: '#3a6fdf', glow: '#5a8fff' },
+  A: { center: '#cad7ff', mid: '#8faaff', outer: '#6f8adf', glow: '#8faaff' },
+  F: { center: '#f8f7ff', mid: '#c8d8ff', outer: '#a8b8df', glow: '#c8d8ff' },
+  G: { center: '#ffd2a1', mid: '#ff9933', outer: '#cc6600', glow: '#ff9933' },
+  K: { center: '#ffcc6f', mid: '#ff7700', outer: '#cc4400', glow: '#ff7700' },
+  M: { center: '#ff6666', mid: '#cc0000', outer: '#990000', glow: '#cc0000' },
+};
+
+// 光谱类型选项（用于编辑面板）
+export const STAR_TYPES = [
+  { key: 'O', label: 'O型（蓝星）' },
+  { key: 'B', label: 'B型（蓝白星）' },
+  { key: 'A', label: 'A型（白星）' },
+  { key: 'F', label: 'F型（黄白星）' },
+  { key: 'G', label: 'G型（黄星）' },
+  { key: 'K', label: 'K型（橙星）' },
+  { key: 'M', label: 'M型（红星）' },
+];
+
+export function getStarColor(starType) {
+  return STAR_COLORS[starType] || STAR_COLORS.G;
 }
 
 // ===== 罗马数字轨道排序（标准化命名 衡佑Ⅲ / 津廊Ⅵd / 衡佑Ⅲa） =====
