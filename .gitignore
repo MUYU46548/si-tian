@@ -30,7 +30,6 @@ Thumbs.db
 # 开发日志与Agent
 开发日志.md
 AGENT.md
-版权备忘.md
 
 # Python
 __pycache__/
@@ -44,4 +43,6 @@ HANDOFF.md
 ROADMAP.md
 AGENTS.md
 .hermes/
-docs/
+# docs/ 内部设计文档（保留 RELEASE_PROCESS.md 等公开文档）
+docs/交互审计-A批次.md
+docs/图标选型-A8.md

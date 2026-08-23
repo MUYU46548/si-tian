@@ -6,6 +6,7 @@ const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
 const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode } = require('./config');
 const { createTray, destroyTray, getIsQuitting } = require('./tray');
+const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 
 let mainWindow;
 let vaultWatcherEnabled = true;
@@ -69,6 +70,9 @@ function createWindow() {
 
   // 创建系统托盘
   createTray(mainWindow);
+
+  // 初始化自动更新模块
+  initUpdater(mainWindow);
 }
 
 // 单实例锁：防止多开
@@ -357,6 +361,19 @@ ipcMain.handle('set-watcher-status', (event, enabled) => {
     stopWatcher();
   }
   return { success: true };
+});
+
+// IPC: 自动更新
+ipcMain.handle('update:check', () => {
+  return checkForUpdates();
+});
+
+ipcMain.handle('update:download', () => {
+  return downloadUpdate();
+});
+
+ipcMain.handle('update:install', () => {
+  quitAndInstall();
 });
 
 // IPC: 获取地图数据（key 支持 worldId/planetId 与旧版纯 planetId）

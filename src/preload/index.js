@@ -66,4 +66,42 @@ contextBridge.exposeInMainWorld('sitianAPI', {
 
   // 平台信息
   platform: process.platform,
+
+  // 应用版本
+  version: process.env.npm_package_version || require('../../package.json').version,
+
+  // 自动更新
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateCheckManual: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('update:check-manual', handler);
+    return () => ipcRenderer.removeListener('update:check-manual', handler);
+  },
+  onUpdateAvailable: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('update:available', handler);
+    return () => ipcRenderer.removeListener('update:available', handler);
+  },
+  onUpdateNotAvailable: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('update:not-available', handler);
+    return () => ipcRenderer.removeListener('update:not-available', handler);
+  },
+  onUpdateProgress: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('update:progress', handler);
+    return () => ipcRenderer.removeListener('update:progress', handler);
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('update:downloaded', handler);
+    return () => ipcRenderer.removeListener('update:downloaded', handler);
+  },
+  onUpdateError: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('update:error', handler);
+    return () => ipcRenderer.removeListener('update:error', handler);
+  },
 });

@@ -6,7 +6,7 @@
           <span class="logo-icon">🌌</span>
           <div class="logo-info">
             <h2>SiTian</h2>
-            <span class="version">v0.1.0</span>
+            <span class="version">v{{ appVersion }}</span>
           </div>
         </div>
         <button class="close-btn" @click="close">×</button>
@@ -152,16 +152,18 @@
 
       <div class="about-footer">
         <span class="copyright">© 2026 暮雨 · 绒花计划 (ROSA)</span>
-        <span class="license">内部工具，暂无开源许可</span>
+        <span class="license">MIT License</span>
+        <button class="update-btn" @click="checkForUpdates">检查更新</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
 const isOpen = ref(false);
+const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
 
 function open() {
   isOpen.value = true;
@@ -169,6 +171,11 @@ function open() {
 
 function close() {
   isOpen.value = false;
+}
+
+function checkForUpdates() {
+  // 通过 window 事件通知 App.vue 中的更新组件
+  window.dispatchEvent(new CustomEvent('sitian:check-update'));
 }
 
 defineExpose({ open, close });
@@ -423,6 +430,22 @@ defineExpose({ open, close });
   font-size: 10px;
   color: var(--text-tertiary);
   font-style: italic;
+}
+
+.update-btn {
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.update-btn:hover {
+  opacity: 1;
 }
 
 .close-btn {

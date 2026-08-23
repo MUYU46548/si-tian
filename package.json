@@ -1,6 +1,6 @@
 {
   "name": "sitian",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "世界观动态构建系统 — 绒花计划",
   "main": "src/main/index.js",
   "scripts": {
@@ -11,7 +11,11 @@
     "extract-data": "node scripts/extract-data.js",
     "test": "python scripts/tests/run_tests.py",
     "dist": "npm run build && electron-builder",
-    "dist:dir": "npm run build && electron-builder --dir"
+    "dist:dir": "npm run build && electron-builder --dir",
+    "dist:publish": "npm run build && electron-builder --publish always",
+    "bump": "npm version --no-git-tag-version",
+    "bump:patch": "npm version patch --no-git-tag-version",
+    "bump:minor": "npm version minor --no-git-tag-version"
   },
   "keywords": [
     "worldbuilding",
@@ -22,6 +26,8 @@
   "license": "MIT",
   "dependencies": {
     "chokidar": "^3.6.0",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "gray-matter": "^4.0.3",
     "marked": "^18.0.9",
     "pinia": "^2.1.7",
@@ -67,6 +73,14 @@
     "linux": {
       "icon": "build/icon-512.png",
       "category": "Development"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "MUYU46548",
+      "repo": "si-tian",
+      "private": false,
+      "releaseType": "release",
+      "publishAutoUpdate": true
     }
   }
 }

@@ -247,6 +247,7 @@
     <recovery-panel />
     <keyboard-shortcuts ref="keyboardShortcutsRef" />
     <change-log ref="changeLogRef" />
+    <update-notification ref="updateNotificationRef" />
     <prompt-dialog />
     <bookmark-panel
       v-if="panelsStore.isOpen('bookmarks')"
@@ -293,6 +294,7 @@ import KeyboardShortcuts from './components/KeyboardShortcuts.vue';
 import PromptDialog from './components/PromptDialog.vue';
 import BookmarkPanel from './components/BookmarkPanel.vue';
 import ChangeLog from './components/ChangeLog.vue';
+import UpdateNotification from './components/UpdateNotification.vue';
 import { useLayersStore } from './store/layers';
 import { useTheme } from './composables/useTheme';
 import { useBookmarks } from './composables/useBookmarks';
@@ -316,6 +318,7 @@ const batchImportPanelRef = ref(null);
 const settingsPanelRef = ref(null);
 const keyboardShortcutsRef = ref(null);
 const changeLogRef = ref(null);
+const updateNotificationRef = ref(null);
 
 // 面包屑下拉菜单状态
 const dropdowns = reactive({
@@ -998,6 +1001,10 @@ onMounted(async () => {
   // 系统托盘菜单 → 打开面板（托盘图标右键菜单触发）
   window.sitianAPI.onOpenSettings(() => settingsPanelRef.value?.open());
   window.sitianAPI.onOpenAbout(() => aboutPanelRef.value?.open());
+  // 关于面板中的检查更新按钮
+  window.addEventListener('sitian:check-update', () => {
+    updateNotificationRef.value?.checkForUpdates();
+  });
   // PlanetMap 本地面板打开时，关闭 App 层浮层面板（面板互斥）
   window.addEventListener('sitian:panel-open', closeAppPanels);
 
