@@ -527,6 +527,11 @@ const renderer = useCanvasRenderer(canvas, {
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
 
+    // 参考图底图（编辑模式下）
+    if (editMode.value) {
+      drawReferenceImage(ctx);
+    }
+
     // 网格（编辑模式开启时显示）
     if (editMode.value && gridSnapEnabled.value) {
       drawGrid(ctx, w, h);

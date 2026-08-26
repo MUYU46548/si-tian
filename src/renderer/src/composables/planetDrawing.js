@@ -637,47 +637,73 @@ function drawRegions(ctx) {
   }
 }
 
+// 节点形状差异化
+function getPlaceShape(layer) {
+  return ({ city: 'star', town: 'square', village: 'diamond' })[layer] || 'circle';
+}
+
+function drawNodeShape(ctx, x, y, r, shape) {
+  ctx.beginPath();
+  switch (shape) {
+    case 'star': {
+      for (let i = 0; i < 5; i++) {
+        const outerAngle = (i * 72 - 90) * Math.PI / 180;
+        const innerAngle = ((i * 72) + 36 - 90) * Math.PI / 180;
+        if (i === 0) ctx.moveTo(x + Math.cos(outerAngle) * r, y + Math.sin(outerAngle) * r);
+        else ctx.lineTo(x + Math.cos(outerAngle) * r, y + Math.sin(outerAngle) * r);
+        ctx.lineTo(x + Math.cos(innerAngle) * r * 0.5, y + Math.sin(innerAngle) * r * 0.5);
+      }
+      ctx.closePath();
+      break;
+    }
+    case 'square': {
+      ctx.rect(x - r, y - r, r * 2, r * 2);
+      break;
+    }
+    case 'diamond': {
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r, y);
+      ctx.lineTo(x, y + r);
+      ctx.lineTo(x - r, y);
+      ctx.closePath();
+      break;
+    }
+    default: {
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+    }
+  }
+}
+
 function drawPlaces(ctx) {
-  const s = getState(); // 每次渲染取最新状态
+  const s = getState();
   const vp = s.viewport;
-  const fast = s.isFastMode; // 批次C1：拖拽中跳过光晕/图标/文字（最贵的逐元素效果）
+  const fast = s.isFastMode;
   s.places.forEach(place => {
     const x = place.coordinate?.x || 0;
     const y = place.coordinate?.y || 0;
-    // margin 覆盖标签与光环的绘制范围（约半径+标签行+徽标行）
     if (!pointInViewport(x, y, vp, 120)) return;
     const color = getPlaceColor(place);
     const radius = getNodeRadius(place.layer);
     const isHovered = s.hoveredNode?.id === place.id;
-    const icon = getPlaceIcon(place);
+    const shape = getPlaceShape(place.layer);
 
     ctx.fillStyle = color;
     if (!fast) {
       ctx.shadowColor = color;
       ctx.shadowBlur = isHovered ? 12 : 6;
     }
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    
+    drawNodeShape(ctx, x, y, radius, shape);
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    if (icon && !fast && s.lodRef > 0.6) {
-      // 高缩放：地点类型图标覆盖中心
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#FFFFFF';
-      ctx.globalAlpha = 0.95;
-      ctx.fillText(icon, x, y + 0.5);
-      ctx.globalAlpha = 1;
-    } else {
-      ctx.fillStyle = '#FFFFFF';
-      ctx.globalAlpha = 0.85;
-      ctx.beginPath();
-      ctx.arc(x, y, radius * 0.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
+    // 白色中心点
+    ctx.fillStyle = '#FFFFFF';
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
     
     if (place.name && !fast && s.lodRef > 0.4) {
       ctx.font = `${getLabelWeight(place.layer)} ${getLabelSize(place.layer)}px sans-serif`;
@@ -687,42 +713,31 @@ function drawPlaces(ctx) {
       ctx.fillText(place.displayName || place.name, x, y + radius + 4);
     }
 
-    // 锁定标记
-    if (place.locked && !fast) {
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#E67E22';
-      ctx.fillText('🔒', x + radius + 5, y - radius - 5);
-    }
-    
     // 多选高亮
     if (s.selectedPlaceIds.has(place.id)) {
       ctx.save();
       ctx.strokeStyle = '#58A6FF';
       ctx.lineWidth = 2;
       ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+      drawNodeShape(ctx, x, y, radius + 6, shape);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
     }
     
-    // 暂存地点（draft=true）：虚线边框标记
+    // 暂存地点
     if (place.draft) {
       ctx.save();
       ctx.strokeStyle = '#888888';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
+      drawNodeShape(ctx, x, y, radius + 2, shape);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
     }
     
-    // 刚放置高亮（金色双层光环 + 名称衬底，提示"这就是刚放的地点"）
+    // 刚放置高亮
     if (s.highlightedPlaceId === place.id) {
       ctx.save();
       ctx.strokeStyle = 'rgba(255, 215, 0, 0.95)';
@@ -735,7 +750,6 @@ function drawPlaces(ctx) {
       ctx.beginPath();
       ctx.arc(x, y, radius + 20, 0, Math.PI * 2);
       ctx.stroke();
-      // 名称带衬底，任何缩放都可见
       const labelText = place.displayName || place.name;
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
@@ -750,8 +764,7 @@ function drawPlaces(ctx) {
       ctx.restore();
     }
     
-    // 区域归属徽标（近缩放时显示所属区域名）
-    // fastMode 下 getState 传入空 Map：既跳过绘制，也避免读取 computed 触发全量 pointInPolygon 重算
+    // 区域归属徽标
     const ownedRegion = s.placeRegionMap.get(place.id);
     if (ownedRegion?.name && s.lodRef > 0.75 && !fast) {
       const badgeY = y + radius + (place.name ? 18 : 4);
@@ -763,13 +776,7 @@ function drawPlaces(ctx) {
       const padding = 3;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
       ctx.beginPath();
-      ctx.roundRect(
-        x - metrics.width / 2 - padding,
-        badgeY - 1,
-        metrics.width + padding * 2,
-        12,
-        4
-      );
+      ctx.roundRect(x - metrics.width / 2 - padding, badgeY - 1, metrics.width + padding * 2, 12, 4);
       ctx.fill();
       ctx.fillStyle = '#888';
       ctx.fillText(badgeText, x, badgeY);

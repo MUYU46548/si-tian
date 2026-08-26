@@ -124,6 +124,7 @@
           <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份：点击多边形内两点画切割线">✂ 拆分</button>
           <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份：再点击一个相邻省份">⛓ 合并</button>
           <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0" title="删除选中对象 (Del)">🗑 删除</button>
+          <button v-if="selectedPlaceIds.size > 1" @click="openArrangeDialog" title="批量排列选中节点">⊞ 排列</button>
           <button v-if="selectedPlaceIds.size > 0" @click="openReparentDialog" title="批量移入区域">⬆ 移入区域</button>
           <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界为贝塞尔曲线">〰️ 平滑</button>
           <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
@@ -722,6 +723,34 @@
       <div class="modal-actions">
         <button class="adopt-btn" @click="confirmReparent" :disabled="!reparentTargetId">确认移入</button>
         <button class="adopt-btn ghost" @click="reparentDialogOpen = false">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量排列对话框 -->
+  <div v-if="arrangeDialogOpen" class="modal-overlay" @click.self="arrangeDialogOpen = false">
+    <div class="modal-dialog">
+      <h3>批量排列节点 ({{ selectedPlaceIds.size }})</h3>
+      <div class="form-row">
+        <label>排列方式</label>
+        <select v-model="arrangeMode">
+          <option value="grid">网格</option>
+          <option value="circle">圆形</option>
+          <option value="line_h">水平线</option>
+          <option value="line_v">垂直线</option>
+        </select>
+      </div>
+      <div class="form-row" v-if="arrangeMode === 'grid'">
+        <label>列数</label>
+        <input type="number" v-model.number="arrangeCols" min="1" max="20" />
+      </div>
+      <div class="form-row">
+        <label>间距 (km)</label>
+        <input type="number" v-model.number="arrangeSpacing" min="1" max="10000" step="10" />
+      </div>
+      <div class="modal-actions">
+        <button class="adopt-btn" @click="confirmArrange">应用</button>
+        <button class="adopt-btn ghost" @click="arrangeDialogOpen = false">取消</button>
       </div>
     </div>
   </div>
@@ -3078,6 +3107,9 @@ async function exportFullMapPNG() {
   drawing.drawReferenceImage(ctx);
   
   if (layers.isVisible('planet', 'terrain')) drawing.drawTerrain(ctx);
+  if (layers.isVisible('planet', 'elevation')) drawing.drawElevation(ctx);
+  if (layers.isVisible('planet', 'climate')) drawing.drawClimate(ctx);
+  if (layers.isVisible('planet', 'precipitation')) drawing.drawPrecipitation(ctx);
   if (layers.isVisible('planet', 'terrainLabels')) drawing.drawTerrainLabels(ctx);
   if (layers.isVisible('planet', 'regions')) drawing.drawRegions(ctx);
   if (layers.isVisible('planet', 'routes')) drawing.drawRoutes(ctx);
@@ -3088,6 +3120,77 @@ async function exportFullMapPNG() {
   
   lodRef.value = oldLod;
   ctx.restore();
+  
+  // 导出时叠加指北针和比例尺（屏幕坐标）
+  if (compassVisible.value) {
+    const compassX = w - 50;
+    const compassY = 50;
+    const compassR = 25;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.strokeStyle = 'rgba(58, 74, 98, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(compassX, compassY, compassR + 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = '#2a3a52';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', compassX, compassY - compassR + 8);
+    ctx.fillText('S', compassX, compassY + compassR - 8);
+    ctx.fillText('E', compassX + compassR - 8, compassY);
+    ctx.fillText('W', compassX - compassR + 8, compassY);
+    ctx.fillStyle = '#f85149';
+    ctx.beginPath();
+    ctx.moveTo(compassX, compassY - compassR + 2);
+    ctx.lineTo(compassX - 6, compassY);
+    ctx.lineTo(compassX - 3, compassY);
+    ctx.lineTo(compassX - 3, compassY + compassR - 2);
+    ctx.lineTo(compassX + 3, compassY + compassR - 2);
+    ctx.lineTo(compassX + 3, compassY);
+    ctx.lineTo(compassX + 6, compassY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(42, 58, 82, 0.4)';
+    ctx.beginPath();
+    ctx.moveTo(compassX, compassY + compassR - 2);
+    ctx.lineTo(compassX - 4, compassY + compassR - 8);
+    ctx.lineTo(compassX + 4, compassY + compassR - 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  
+  if (scaleBarVisible.value) {
+    const scaleBarX = w - 150;
+    const scaleBarY = h - 30;
+    const targetPx = 100;
+    const worldWidth = bounds.maxX - bounds.minX;
+    const worldStep = niceStepForScale(targetPx / (w / worldWidth));
+    const barPx = worldStep * (w / worldWidth);
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(scaleBarX - 10, scaleBarY - 18, barPx + 20, 36);
+    ctx.strokeStyle = '#2a3a52';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(scaleBarX, scaleBarY);
+    ctx.lineTo(scaleBarX + barPx, scaleBarY);
+    ctx.moveTo(scaleBarX, scaleBarY - 6);
+    ctx.lineTo(scaleBarX, scaleBarY + 6);
+    ctx.moveTo(scaleBarX + barPx, scaleBarY - 6);
+    ctx.lineTo(scaleBarX + barPx, scaleBarY + 6);
+    ctx.stroke();
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#2a3a52';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const scaleLabel = worldStep >= 1000 ? (worldStep / 1000) + 'km' : worldStep + 'm';
+    ctx.fillText(scaleLabel, scaleBarX + barPx / 2, scaleBarY + 10);
+    ctx.restore();
+  }
   
   // 通过保存对话框导出
   try {
@@ -3390,6 +3493,106 @@ function confirmReparent() {
   reparentDialogOpen.value = false;
   emit('dirty', true);
   renderer.requestRender();
+}
+
+// ===== 批量排列工具 =====
+const arrangeDialogOpen = ref(false);
+const arrangeMode = ref('grid');
+const arrangeCols = ref(4);
+const arrangeSpacing = ref(500);
+
+function openArrangeDialog() {
+  if (selectedPlaceIds.value.size < 2) return;
+  arrangeMode.value = 'grid';
+  arrangeCols.value = Math.ceil(Math.sqrt(selectedPlaceIds.value.size));
+  arrangeSpacing.value = 500;
+  arrangeDialogOpen.value = true;
+}
+
+function confirmArrange() {
+  const ids = Array.from(selectedPlaceIds.value);
+  if (ids.length < 2) return;
+  
+  const spacing = arrangeSpacing.value;
+  const center = getSelectedNodesCenter();
+  let positions = [];
+  
+  switch (arrangeMode.value) {
+    case 'grid': {
+      const cols = Math.max(1, arrangeCols.value);
+      const rows = Math.ceil(ids.length / cols);
+      const startX = center.x - ((cols - 1) * spacing) / 2;
+      const startY = center.y - ((rows - 1) * spacing) / 2;
+      for (let i = 0; i < ids.length; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        positions.push({
+          id: ids[i],
+          x: Math.round(startX + col * spacing),
+          y: Math.round(startY + row * spacing),
+        });
+      }
+      break;
+    }
+    case 'circle': {
+      const radius = spacing;
+      for (let i = 0; i < ids.length; i++) {
+        const angle = (i / ids.length) * Math.PI * 2 - Math.PI / 2;
+        positions.push({
+          id: ids[i],
+          x: Math.round(center.x + Math.cos(angle) * radius),
+          y: Math.round(center.y + Math.sin(angle) * radius),
+        });
+      }
+      break;
+    }
+    case 'line_h': {
+      const startX = center.x - ((ids.length - 1) * spacing) / 2;
+      for (let i = 0; i < ids.length; i++) {
+        positions.push({
+          id: ids[i],
+          x: Math.round(startX + i * spacing),
+          y: Math.round(center.y),
+        });
+      }
+      break;
+    }
+    case 'line_v': {
+      const startY = center.y - ((ids.length - 1) * spacing) / 2;
+      for (let i = 0; i < ids.length; i++) {
+        positions.push({
+          id: ids[i],
+          x: Math.round(center.x),
+          y: Math.round(startY + i * spacing),
+        });
+      }
+      break;
+    }
+  }
+  
+  // Apply positions via store
+  for (const pos of positions) {
+    store.updateNodePosition(pos.id, pos.x, pos.y);
+  }
+  
+  arrangeDialogOpen.value = false;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function getSelectedNodesCenter() {
+  const ids = Array.from(selectedPlaceIds.value);
+  let sumX = 0, sumY = 0, count = 0;
+  for (const id of ids) {
+    const node = store.nodes.find(n => n.id === id);
+    if (node && node.coordinate) {
+      sumX += node.coordinate.x || 0;
+      sumY += node.coordinate.y || 0;
+      count++;
+    }
+  }
+  if (count === 0) return { x: 0, y: 0 };
+  return { x: sumX / count, y: sumY / count };
 }
 
 watch(() => store.mapData[props.planet?.id], () => {
