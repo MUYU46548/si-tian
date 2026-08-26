@@ -365,6 +365,9 @@ const renderer = useCanvasRenderer(canvas, {
 
     // 绘制家具
     drawFurniture(ctx);
+
+    // A4: 拖拽家具时高亮吸附网格点
+    drawDragHighlight(ctx);
   },
   onDragStart: handleDragStart,
   onDragMove: handleDragMove,
@@ -391,8 +394,9 @@ function drawGrid(ctx, w, h) {
   const startX = Math.floor(worldLeft / step) * step;
   const startY = Math.floor(worldTop / step) * step;
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-  ctx.lineWidth = 1;
+  // 网格线
+  ctx.strokeStyle = 'rgba(150, 180, 200, 0.18)';
+  ctx.lineWidth = 0.5;
   ctx.beginPath();
   for (let x = startX; x <= worldRight; x += step) {
     const sx = (x - worldLeft) * vt.scale;
@@ -405,8 +409,30 @@ function drawGrid(ctx, w, h) {
     ctx.lineTo(cvs.clientWidth, sy);
   }
   ctx.stroke();
+  
+  // 网格标签
+  ctx.font = '9px sans-serif';
+  ctx.fillStyle = 'rgba(150, 180, 200, 0.6)';
+  if (step >= 50) {
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (let x = startX; x <= worldRight; x += step) {
+      if (x !== 0 && x % (step * 2) === 0) {
+        const sx = (x - worldLeft) * vt.scale;
+        ctx.fillText(x + 'm', sx + 2, 2);
+      }
+    }
+  }
+}
 
-  // A4: 拖拽家具时高亮吸附网格点
+// A4: 拖拽家具时高亮吸附网格点
+function drawDragHighlight(ctx) {
+  const step = gridSize.value;
+  const vt = renderer.getViewTransform();
+  const cvs = canvas.value;
+  const centerX = cvs.clientWidth / 2 + vt.x;
+  const centerY = cvs.clientHeight / 2 + vt.y;
+  const worldLeft = -centerX / vt.scale;
   if (isDraggingFurniture.value && gridSnapEnabled.value && dragPreviewPos.value && selectedFurniture.value) {
     const item = selectedFurniture.value;
     const snapX = Math.round(dragPreviewPos.value.x / step) * step;

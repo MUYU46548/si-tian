@@ -148,6 +148,9 @@ function drawBackground(ctx, w, h) {
   const startX = Math.floor(topLeft.x / gs) * gs;
   const startY = Math.floor(topLeft.y / gs) * gs;
   
+  // 标签每 500 单位标注一次（或网格间距的 5 倍，取较疏的）
+  const labelEvery = gs >= 500 ? gs : Math.max(500, Math.ceil(500 / gs) * gs);
+  
   for (let gx = startX; gx <= bottomRight.x; gx += gs) {
     const isMajor = gx % 500 === 0;
     ctx.strokeStyle = isMajor ? `rgba(120, 160, 190, ${gridAlpha + 0.12})` : `rgba(150, 180, 200, ${gridAlpha})`;
@@ -155,6 +158,17 @@ function drawBackground(ctx, w, h) {
     ctx.moveTo(gx, topLeft.y);
     ctx.lineTo(gx, bottomRight.y);
     ctx.stroke();
+    // X 轴网格标签（主网格线 + 足够间距，避免拥挤）
+    if (gx !== 0 && gx % labelEvery === 0 && s.gridLabels) {
+      ctx.save();
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = 'rgba(150, 180, 200, 0.7)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const label = gx >= 1000 ? (gx / 1000) + 'km' : gx + 'm';
+      ctx.fillText(label, gx, topLeft.y + 2);
+      ctx.restore();
+    }
   }
   for (let gy = startY; gy <= bottomRight.y; gy += gs) {
     const isMajor = gy % 500 === 0;
@@ -163,7 +177,160 @@ function drawBackground(ctx, w, h) {
     ctx.moveTo(topLeft.x, gy);
     ctx.lineTo(bottomRight.x, gy);
     ctx.stroke();
+    // Y 轴网格标签
+    if (gy !== 0 && gy % labelEvery === 0 && s.gridLabels) {
+      ctx.save();
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = 'rgba(150, 180, 200, 0.7)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const label = gy >= 1000 ? (gy / 1000) + 'km' : gy + 'm';
+      ctx.fillText(label, topLeft.x + 2, gy);
+      ctx.restore();
+    }
   }
+  
+  // 坐标轴（0 线）加粗
+  ctx.strokeStyle = 'rgba(120, 160, 190, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, topLeft.y);
+  ctx.lineTo(0, bottomRight.y);
+  ctx.moveTo(topLeft.x, 0);
+  ctx.lineTo(bottomRight.x, 0);
+  ctx.stroke();
+  ctx.lineWidth = 0.5;
+  
+  // 指北针（右上角）
+  const compassX = bottomRight.x - 30;
+  const compassY = topLeft.y + 35;
+  const compassR = 18;
+  ctx.save();
+  // 圆形底
+  ctx.fillStyle = 'rgba(10, 14, 24, 0.75)';
+  ctx.strokeStyle = 'rgba(120, 160, 190, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(compassX, compassY, compassR + 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // 方向文字（N/S/E/W）
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = '#e2e8f0';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('N', compassX, compassY - compassR + 6);
+  ctx.fillText('S', compassX, compassY + compassR - 6);
+  ctx.fillText('E', compassX + compassR - 6, compassY);
+  ctx.fillText('W', compassX - compassR + 6, compassY);
+  // 指北针箭头（红）
+  ctx.fillStyle = '#f85149';
+  ctx.strokeStyle = '#f85149';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(compassX, compassY - compassR + 1);
+  ctx.lineTo(compassX - 5, compassY);
+  ctx.lineTo(compassX - 2, compassY);
+  ctx.lineTo(compassX - 2, compassY + compassR - 2);
+  ctx.lineTo(compassX + 2, compassY + compassR - 2);
+  ctx.lineTo(compassX + 2, compassY);
+  ctx.lineTo(compassX + 5, compassY);
+  ctx.closePath();
+  ctx.fill();
+  // 指南针箭头（浅色）
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.5)';
+  ctx.beginPath();
+  ctx.moveTo(compassX, compassY + compassR - 1);
+  ctx.lineTo(compassX - 3, compassY + compassR - 6);
+  ctx.lineTo(compassX + 3, compassY + compassR - 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  
+  // 比例尺（右下角）
+  const scaleX = bottomRight.x - 120;
+  const scaleY = bottomRight.y - 18;
+  const targetPx = 80;
+  const worldStep = niceStepForScale(targetPx / (w / (bottomRight.x - topLeft.x)));
+  const barPx = worldStep * (w / (bottomRight.x - topLeft.x));
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 14, 24, 0.75)';
+  ctx.fillRect(scaleX - 10, scaleY - 14, barPx + 20, 28);
+  // 刻度线
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(scaleX, scaleY);
+  ctx.lineTo(scaleX + barPx, scaleY);
+  ctx.moveTo(scaleX, scaleY - 5);
+  ctx.lineTo(scaleX, scaleY + 5);
+  ctx.moveTo(scaleX + barPx, scaleY - 5);
+  ctx.lineTo(scaleX + barPx, scaleY + 5);
+  ctx.stroke();
+  // 文字
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = '#e2e8f0';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const scaleLabel = worldStep >= 1000 ? (worldStep / 1000) + 'km' : worldStep + 'm';
+  ctx.fillText(scaleLabel, scaleX + barPx / 2, scaleY + 8);
+  ctx.restore();
+  
+  // 校准点渲染
+  if (s.calibrationPoints && s.calibrationPoints.length > 0) {
+    s.calibrationPoints.forEach((p, idx) => {
+      ctx.save();
+      ctx.strokeStyle = '#FFD700';
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // 十字
+      ctx.beginPath();
+      ctx.moveTo(p.x - 12, p.y);
+      ctx.lineTo(p.x + 12, p.y);
+      ctx.moveTo(p.x, p.y - 12);
+      ctx.lineTo(p.x, p.y + 12);
+      ctx.stroke();
+      // 标签
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillStyle = '#FFD700';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`P${idx + 1}`, p.x + 10, p.y - 10);
+      ctx.restore();
+    });
+    // 两点间连线
+    if (s.calibrationPoints.length === 2) {
+      const p1 = s.calibrationPoints[0];
+      const p2 = s.calibrationPoints[1];
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+}
+
+// 计算"漂亮"步长（1/2/5×10^n）用于比例尺
+function niceStepForScale(raw) {
+  if (!isFinite(raw) || raw <= 0) return 100;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const rem = raw / pow;
+  let n;
+  if (rem <= 1) n = 1;
+  else if (rem <= 2) n = 2;
+  else if (rem <= 5) n = 5;
+  else n = 10;
+  return n * pow;
 }
 
 function drawTerrain(ctx) {

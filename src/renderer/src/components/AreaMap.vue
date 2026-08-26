@@ -66,10 +66,88 @@
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
         </div>
 
+        <div class="toolbar-group" title="视图">
+          <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图">🖼 参考图</button>
+        </div>
+
         <div class="toolbar-group toolbar-group-exit">
           <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出</button>
         </div>
       </div>
+    </div>
+
+    <!-- 参考图控制面板 -->
+    <div v-if="editMode && showRefImagePanel" class="province-editor refimage-editor">
+      <div class="editor-header">
+        <h3>参考底图</h3>
+        <button class="close-btn" @click="showRefImagePanel = false">×</button>
+      </div>
+      <div class="editor-field">
+        <label>导入草图 / 区域轮廓</label>
+        <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
+          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
+        </button>
+      </div>
+      <div class="editor-field" v-if="referenceImages.length > 0">
+        <label>底图列表（{{ referenceImages.length }}）</label>
+        <div class="ref-list">
+          <div v-for="(img, idx) in referenceImages" :key="img.id" class="ref-item"
+            :class="{ active: idx === activeRefIndex }" @click="activeRefIndex = idx">
+            <span class="ref-item-name">{{ img.name || '底图 ' + (idx + 1) }}</span>
+            <button class="ref-item-del" @click.stop="removeRefListItem(idx)" title="删除该底图">×</button>
+          </div>
+        </div>
+      </div>
+      <template v-if="referenceImage">
+        <div class="editor-field">
+          <label>透明度</label>
+          <input type="range" min="0.05" max="1" step="0.05" v-model.number="refOpacity" @input="updateRefOpacity" />
+          <span class="ref-value">{{ Math.round(refOpacity * 100) }}%</span>
+        </div>
+        <div class="editor-field">
+          <label>缩放</label>
+          <input type="range" min="0.05" max="5" step="0.05" v-model.number="refScale" @input="updateRefScale" />
+          <span class="ref-value">{{ Math.round(refScale * 100) }}%</span>
+        </div>
+        <div class="editor-field">
+          <label>方向</label>
+          <div class="line-style-row">
+            <button class="adopt-btn" @click="rotateRefImage" title="顺时针旋转 90°">↻ 旋转</button>
+            <button class="adopt-btn" @click="flipRefImageH" title="水平镜像">⇋ 镜像</button>
+          </div>
+        </div>
+        <div class="editor-field">
+          <label>锁定</label>
+          <div class="line-style-row">
+            <button :class="{ active: referenceImage.locked }" @click="toggleRefLocked">🔒 已锁定</button>
+            <button :class="{ active: !referenceImage.locked }" @click="toggleRefLocked">🔓 可拖动</button>
+          </div>
+        </div>
+        <div class="editor-field" v-if="!referenceImage.locked">
+          <button class="adopt-btn" style="width:100%" @click="refDragMode = !refDragMode" :class="{ 'active-btn': refDragMode }">
+            {{ refDragMode ? '✅ 拖动模式已开启' : '🧲 开启拖动模式' }}
+          </button>
+        </div>
+        <div class="editor-field">
+          <label>校准</label>
+          <button class="adopt-btn" style="width:100%" @click="startCalibration" :class="{ 'active-btn': calibrationMode }">
+            {{ calibrationMode ? `📐 校准中 (${calibrationPoints.length}/2)` : '📏 两点校准' }}
+          </button>
+          <div v-if="calibrationMode" class="calibration-input">
+            <span class="toolbar-label">距离</span>
+            <input type="number" v-model.number="calibrationDist" min="0.1" step="0.1" style="width:50px" />
+            <span class="toolbar-label">km</span>
+          </div>
+        </div>
+        <div class="editor-field" v-if="referenceImage.calibrated">
+          <label>状态</label>
+          <span class="ref-value" style="color:#3fb950">✓ 已校准</span>
+        </div>
+        <div class="editor-field">
+          <label>移除</label>
+          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
+        </div>
+      </template>
     </div>
 
     <!-- 区域颜色选择器 -->
@@ -209,7 +287,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
@@ -229,7 +307,7 @@ const interactionMode = ref('pan');
 const selectedNode = ref(null);
 const selectedNodeIds = ref([]);
 const gridSnapEnabled = ref(true);
-const gridSize = ref(50);
+const gridSize = ref(100);
 const ZONE_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
 const ROUTE_COLORS = ['#F39C12', '#E74C3C', '#3498DB', '#2ECC71', '#9B59B6', '#1ABC9C'];
 const MARKER_ICONS = [
@@ -274,6 +352,22 @@ const markerName = ref('');
 
 // 文本放置
 const textFontSize = ref(16);
+
+// ===== 参考图底图 =====
+const showRefImagePanel = ref(false);
+const refImageLoading = ref(false);
+const refDragMode = ref(false);
+const refOpacity = ref(0.5);
+const refScale = ref(1);
+const referenceImages = computed(() => store.areaReferenceImages[props.areaNode?.id] || []);
+const activeRefIndex = ref(0);
+const referenceImage = computed(() => referenceImages.value[activeRefIndex.value] || null);
+const refImageObjs = reactive({});
+
+// ===== 两点校准 =====
+const calibrationMode = ref(false);
+const calibrationPoints = ref([]);
+const calibrationDist = ref(5);
 const textColor = ref('#FFFFFF');
 
 // 撤销/重做 label
@@ -363,6 +457,11 @@ const renderer = useCanvasRenderer(canvas, {
     ctx.fillStyle = _bgGradient.grad;
     ctx.fillRect(0, 0, w, h);
 
+    // 参考图底图（最底层，地形之下）
+    if (editMode.value) {
+      drawReferenceImage(ctx);
+    }
+
     // 网格（编辑模式开启时显示）
     if (editMode.value && gridSnapEnabled.value) {
       drawGrid(ctx, w, h);
@@ -399,12 +498,55 @@ const renderer = useCanvasRenderer(canvas, {
     if (focusHighlightNode.value) {
       drawFocusHighlight(ctx, focusHighlightNode.value);
     }
+
+    // 绘制校准点
+    if (calibrationPoints.value.length > 0) {
+      calibrationPoints.value.forEach((p, idx) => {
+        ctx.save();
+        ctx.strokeStyle = '#FFD700';
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(p.x - 12, p.y);
+        ctx.lineTo(p.x + 12, p.y);
+        ctx.moveTo(p.x, p.y - 12);
+        ctx.lineTo(p.x, p.y + 12);
+        ctx.stroke();
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = '#FFD700';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`P${idx + 1}`, p.x + 10, p.y - 10);
+        ctx.restore();
+      });
+      if (calibrationPoints.value.length === 2) {
+        const p1 = calibrationPoints.value[0];
+        const p2 = calibrationPoints.value[1];
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
   },
   onDragStart: handleDragStart,
   onDragMove: handleDragMove,
   onDragEnd: handleDragEnd,
   onHitTest: hitTest,
-  onClick: handleCanvasClick,
+  onClick: (hit, wx, wy) => {
+    if (calibrationMode.value && handleCalibrationClick(wx, wy)) return;
+    handleCanvasClick(hit, wx, wy);
+  },
   onBoxSelect: handleBoxSelect,
   onWheel: handleWheel,
   onDblClick: handleDblClick,
@@ -478,6 +620,186 @@ function drawFocusHighlight(ctx, node) {
   ctx.restore();
 }
 
+// ===== 参考图绘制 =====
+function drawReferenceImage(ctx) {
+  const refs = referenceImages.value;
+  if (!refs || refs.length === 0) return;
+  
+  refs.forEach((refImg) => {
+    if (!refImg || !refImg.dataUrl) return;
+    const img = refImageObjs[refImg.id];
+    if (!img) return;
+    
+    const w = (refImg.width || img.width) * (refImg.scale || 1);
+    const h = (refImg.height || img.height) * (refImg.scale || 1);
+    const rot = (refImg.rotation || 0) % 4;
+    const flipH = !!refImg.flipH;
+    const cx = refImg.offsetX;
+    const cy = refImg.offsetY;
+    const drawW = rot % 2 === 0 ? w : h;
+    const drawH = rot % 2 === 0 ? h : w;
+    
+    ctx.save();
+    ctx.globalAlpha = refImg.opacity ?? 0.5;
+    ctx.translate(cx, cy);
+    ctx.rotate(rot * Math.PI / 2);
+    if (flipH) ctx.scale(-1, 1);
+    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+    ctx.restore();
+  });
+}
+
+// ===== 参考图操作 =====
+watch(referenceImages, (list) => {
+  if (activeRefIndex.value >= list.length) {
+    activeRefIndex.value = Math.max(0, list.length - 1);
+  }
+  list.forEach(ref => {
+    if (ref.dataUrl && refImageObjs[ref.id]?.src !== ref.dataUrl) {
+      const img = new Image();
+      img.onload = () => { refImageObjs[ref.id] = img; renderer.requestRender(); };
+      img.src = ref.dataUrl;
+    }
+  });
+}, { deep: true, immediate: true });
+
+async function importReferenceImage() {
+  if (!props.areaNode) return;
+  refImageLoading.value = true;
+  try {
+    const result = await window.sitianAPI.selectReferenceImage();
+    if (result?.success && result.dataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        const scale = 500 / img.width;
+        const cx = renderer.getViewTransform();
+        const center = { x: -cx.x / cx.scale, y: -cx.y / cx.scale };
+        const list = referenceImages.value || [];
+        const refImage = {
+          id: `ref_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          name: `底图 ${list.length + 1}`,
+          dataUrl: result.dataUrl,
+          opacity: refOpacity.value,
+          locked: false,
+          offsetX: center.x,
+          offsetY: center.y,
+          scale,
+          width: img.width,
+          height: img.height,
+        };
+        store.updateAreaReferenceImage(props.areaNode.id, refImage);
+        activeRefIndex.value = (referenceImages.value || []).length - 1;
+        refImageObjs[refImage.id] = img;
+        refImageLoading.value = false;
+      };
+      img.onerror = () => { refImageLoading.value = false; };
+      img.src = result.dataUrl;
+    } else {
+      refImageLoading.value = false;
+    }
+  } catch (e) {
+    refImageLoading.value = false;
+  }
+}
+
+function updateRefOpacity() {
+  if (!referenceImage.value) return;
+  store.updateAreaReferenceImage(props.areaNode.id, {
+    ...referenceImage.value,
+    opacity: refOpacity.value,
+  });
+}
+
+function updateRefScale() {
+  if (!referenceImage.value) return;
+  store.updateAreaReferenceImage(props.areaNode.id, {
+    ...referenceImage.value,
+    scale: refScale.value,
+  });
+}
+
+function rotateRefImage() {
+  if (!referenceImage.value) return;
+  store.updateAreaReferenceImage(props.areaNode.id, {
+    ...referenceImage.value,
+    rotation: ((referenceImage.value.rotation || 0) + 1) % 4,
+  });
+}
+
+function flipRefImageH() {
+  if (!referenceImage.value) return;
+  store.updateAreaReferenceImage(props.areaNode.id, {
+    ...referenceImage.value,
+    flipH: !referenceImage.value.flipH,
+  });
+}
+
+function toggleRefLocked() {
+  if (!referenceImage.value) return;
+  store.updateAreaReferenceImage(props.areaNode.id, {
+    ...referenceImage.value,
+    locked: !referenceImage.value.locked,
+  });
+  if (referenceImage.value.locked) refDragMode.value = false;
+}
+
+function removeReferenceImage() {
+  const ref = referenceImage.value;
+  if (!ref) return;
+  store.removeAreaReferenceImage(props.areaNode.id, ref.id);
+  delete refImageObjs[ref.id];
+  refDragMode.value = false;
+}
+
+function removeRefListItem(idx) {
+  const ref = referenceImages.value[idx];
+  if (!ref) return;
+  store.removeAreaReferenceImage(props.areaNode.id, ref.id);
+  delete refImageObjs[ref.id];
+  if (activeRefIndex.value >= referenceImages.value.length) {
+    activeRefIndex.value = Math.max(0, referenceImages.value.length - 1);
+  }
+  refDragMode.value = false;
+}
+
+// ===== 两点校准 =====
+function startCalibration() {
+  if (!referenceImage.value) return;
+  calibrationMode.value = !calibrationMode.value;
+  calibrationPoints.value = [];
+}
+
+function handleCalibrationClick(worldX, worldY) {
+  if (!calibrationMode.value) return false;
+  calibrationPoints.value.push({ x: worldX, y: worldY });
+  renderer.requestRender();
+  if (calibrationPoints.value.length >= 2) {
+    const p1 = calibrationPoints.value[0];
+    const p2 = calibrationPoints.value[1];
+    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    const targetPxPerKm = 100;
+    const targetScale = (calibrationDist.value * targetPxPerKm) / dist;
+    const ref = referenceImage.value;
+    const oldScale = ref.scale || 1;
+    const newScale = oldScale * targetScale;
+    const midWorldX = (p1.x + p2.x) / 2;
+    const midWorldY = (p1.y + p2.y) / 2;
+    const oldCx = ref.offsetX;
+    const oldCy = ref.offsetY;
+    store.updateAreaReferenceImage(props.areaNode.id, {
+      ...ref,
+      scale: newScale,
+      offsetX: oldCx + (midWorldX - oldCx) * (1 - targetScale),
+      offsetY: oldCy + (midWorldY - oldCy) * (1 - targetScale),
+      ppm: targetPxPerKm,
+      calibrated: true,
+    });
+    calibrationMode.value = false;
+    calibrationPoints.value = [];
+  }
+  return true;
+}
+
 // ===== 绘制函数 =====
 function drawGrid(ctx, w, h) {
   const vt = renderer.getViewTransform();
@@ -493,8 +815,9 @@ function drawGrid(ctx, w, h) {
   const startX = Math.floor(worldLeft / step) * step;
   const startY = Math.floor(worldTop / step) * step;
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.lineWidth = 1;
+  // 网格线
+  ctx.strokeStyle = 'rgba(150, 180, 200, 0.18)';
+  ctx.lineWidth = 0.5;
   ctx.beginPath();
   for (let x = startX; x <= worldRight; x += step) {
     const sx = (x - worldLeft) * vt.scale;
@@ -507,6 +830,39 @@ function drawGrid(ctx, w, h) {
     ctx.lineTo(cvs.clientWidth, sy);
   }
   ctx.stroke();
+  
+  // 坐标轴（0 线）加粗
+  ctx.strokeStyle = 'rgba(150, 180, 200, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, worldBottom);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(worldRight, 0);
+  ctx.stroke();
+  
+  // 网格标签（每 1000 单位或每 step 标注一次，避免拥挤）
+  const labelEvery = step >= 1000 ? step : Math.max(1000, Math.ceil(1000 / step) * step);
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = 'rgba(150, 180, 200, 0.7)';
+  for (let x = startX; x <= worldRight; x += step) {
+    if (x !== 0 && x % labelEvery === 0) {
+      const sx = (x - worldLeft) * vt.scale;
+      const label = x >= 1000 ? (x / 1000) + 'km' : x + 'm';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(label, sx, 2);
+    }
+  }
+  for (let y = startY; y <= worldBottom; y += step) {
+    if (y !== 0 && y % labelEvery === 0) {
+      const sy = (y - worldTop) * vt.scale;
+      const label = y >= 1000 ? (y / 1000) + 'km' : y + 'm';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, 2, sy);
+    }
+  }
 }
 
 function drawNodes(ctx, vp) {

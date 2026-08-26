@@ -13,6 +13,9 @@ export function createAreaEditingModule(ctx) {
   const areaMarkers = ref({});
   const areaTextLabels = ref({});
 
+  // ===== 参考图底图（P2 多图）=====
+  const areaReferenceImages = ref({});
+
   function addAreaZone(areaId, zone) {
     execute({
       type: 'add-area-zone',
@@ -189,11 +192,33 @@ export function createAreaEditingModule(ctx) {
     scheduleAutoSave();
   }
 
+  // ===== 参考图底图（P2 多图）=====
+  function updateAreaReferenceImage(areaId, refImage) {
+    if (!areaReferenceImages.value[areaId]) {
+      areaReferenceImages.value[areaId] = [];
+    }
+    const list = areaReferenceImages.value[areaId];
+    const idx = list.findIndex(r => r.id === refImage?.id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...refImage };
+    } else if (refImage?.id) {
+      list.push(refImage);
+    }
+    scheduleAutoSave();
+  }
+
+  function removeAreaReferenceImage(areaId, refId) {
+    if (!areaReferenceImages.value[areaId]) return;
+    areaReferenceImages.value[areaId] = areaReferenceImages.value[areaId].filter(r => r.id !== refId);
+    scheduleAutoSave();
+  }
+
   return {
     areaZones,
     areaRoutes,
     areaMarkers,
     areaTextLabels,
+    areaReferenceImages,
     addAreaZone,
     removeAreaZone,
     updateAreaZone,
@@ -206,5 +231,7 @@ export function createAreaEditingModule(ctx) {
     addAreaTextLabel,
     removeAreaTextLabel,
     updateAreaTextLabel,
+    updateAreaReferenceImage,
+    removeAreaReferenceImage,
   };
 }

@@ -108,8 +108,9 @@
           <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格：绘制/移动/放置吸附到网格（按住 Ctrl 临时关闭）">⊞ 网格</button>
           <template v-if="gridSnapEnabled">
             <span class="toolbar-label">间距</span>
-            <button v-for="s in [50, 100, 200]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s }}</button>
+            <button v-for="s in [100, 500, 1000]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s >= 1000 ? (s/1000)+'km' : s+'m' }}</button>
           </template>
+          <button :class="{ active: gridLabels }" @click="gridLabels = !gridLabels" title="显示/隐藏网格距离标签">🔢 标签</button>
           <button :class="{ active: mirrorMode }" @click="mirrorMode = !mirrorMode" title="对称绘制：绘制时自动镜像（以 X/Y 轴为对称轴）">⇌ 对称</button>
           <template v-if="mirrorMode">
             <button :class="{ active: mirrorAxis === 'y' }" @click="mirrorAxis = 'y'" title="左右镜像（以竖直线 X=偏移 为对称轴）">⇋ 左右</button>
@@ -669,6 +670,22 @@
           </button>
         </div>
         <div class="editor-field">
+          <label>校准（对齐到世界坐标）</label>
+          <button class="adopt-btn" style="width:100%" @click="startCalibration" :class="{ 'active-btn': calibrationMode }">
+            {{ calibrationMode ? `📐 校准中 (点 ${calibrationPoints.length}/2)` : '📏 两点校准' }}
+          </button>
+          <p class="ref-hint">点击画布上的两个已知距离的点，自动对齐底图比例</p>
+          <div v-if="calibrationMode" class="calibration-input">
+            <span class="toolbar-label">两点距离</span>
+            <input type="number" v-model.number="calibrationDist" min="0.1" step="0.5" style="width:60px" />
+            <span class="toolbar-label">km</span>
+          </div>
+        </div>
+        <div class="editor-field" v-if="referenceImage.calibrated">
+          <label>校准状态</label>
+          <span class="ref-value" style="color:#3fb950">✓ 已校准 ({{ (referenceImage.ppm || 0).toFixed(1) }} px/km)</span>
+        </div>
+        <div class="editor-field">
           <label>移除底图</label>
           <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
         </div>
@@ -826,7 +843,8 @@ const snapEnabled = ref(true);
 
 // ===== 网格对齐（P0-2）=====
 const gridSnapEnabled = ref(true); // 网格吸附开关（与"省份边缘吸附" snapEnabled 独立）
-const gridSize = ref(100);         // 网格间距 50/100/200
+const gridSize = ref(500);         // 网格间距 100/500/1000（单位：米）
+const gridLabels = ref(true);      // 网格距离标签显示开关
 let snapCtrlHeld = false;          // Ctrl 按住临时关闭吸附（精细微调）
 
 // 世界坐标吸附到网格（返回新点；Ctrl 或开关关闭时不吸附）
@@ -1196,6 +1214,11 @@ const referenceImage = computed(() => referenceImages.value[activeRefIndex.value
 // 每张图的 HTMLImageElement 缓存（id → img）
 const refImageObjs = reactive({});
 
+// ===== 两点校准 =====
+const calibrationMode = ref(false);
+const calibrationPoints = ref([]); // 世界坐标点
+const calibrationDist = ref(10); // 两点间距离（km），默认 10km
+
 // 列表变化时校正选中索引 + 懒加载全部图的 Image
 watch(referenceImages, (list) => {
   if (activeRefIndex.value >= list.length) {
@@ -1334,6 +1357,57 @@ watch(referenceImage, (refImg) => {
   if (refImg?.opacity !== undefined) refOpacity.value = refImg.opacity;
   if (refImg?.scale !== undefined) refScale.value = refImg.scale;
 }, { deep: true });
+
+// ===== 两点校准 =====
+function startCalibration() {
+  if (!referenceImage.value) return;
+  calibrationMode.value = !calibrationMode.value;
+  calibrationPoints.value = [];
+}
+
+function handleCalibrationClick(worldX, worldY) {
+  if (!calibrationMode.value) return false;
+  calibrationPoints.value.push({ x: worldX, y: worldY });
+  renderer.requestRender();
+  if (calibrationPoints.value.length >= 2) {
+    // 计算两点间距离
+    const p1 = calibrationPoints.value[0];
+    const p2 = calibrationPoints.value[1];
+    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    // 实际距离 = calibrationDist km
+    // 像素距离 = dist / (refScale * ppm?) 
+    // 校准: 缩放参考图使 像素距离 = km距离 * 基准
+    // 简单处理: scale = calibrationDist * 100 / dist (假设 1km=100px 作为基准)
+    const targetPxPerKm = 100; // 1km 对应 100 像素
+    const targetScale = (calibrationDist.value * targetPxPerKm) / dist;
+    
+    const ref = referenceImage.value;
+    const oldScale = ref.scale || 1;
+    const newScale = oldScale * targetScale;
+    
+    // 计算中心点（两校准点的中点）
+    const midWorldX = (p1.x + p2.x) / 2;
+    const midWorldY = (p1.y + p2.y) / 2;
+    
+    // 调整 offset 使中点对齐
+    const oldCx = ref.offsetX;
+    const oldCy = ref.offsetY;
+    
+    store.updateReferenceImage(props.planet.id, {
+      ...ref,
+      scale: newScale,
+      offsetX: oldCx + (midWorldX - oldCx) * (1 - targetScale),
+      offsetY: oldCy + (midWorldY - oldCy) * (1 - targetScale),
+      ppm: targetPxPerKm,
+      calibrated: true,
+    });
+    
+    calibrationMode.value = false;
+    calibrationPoints.value = [];
+    emit('dirty', true);
+  }
+  return true; // 消费点击事件
+}
 
 // ===== 迷雾/自动区域状态 =====
 // 非编辑模式下：无地形数据时显示迷雾占位符；有 region 节点时自动生成初始区域边界
@@ -1767,7 +1841,8 @@ const drawing = createPlanetDrawing(() => ({
   highlightedPlaceId: highlightedPlaceId.value, activeClusterId: activeClusterId.value,
   activeRefIndex: activeRefIndex.value, refDragMode: refDragMode.value,
   referenceImages: referenceImages.value, refImageObjs,
-  gridSize: gridSize.value, routeDashed: routeDashed.value, routeColor: routeColor.value,
+  gridSize: gridSize.value, gridLabels: gridLabels.value, routeDashed: routeDashed.value, routeColor: routeColor.value,
+  calibrationPoints: calibrationPoints.value, calibrationMode: calibrationMode.value,
   routeDraftPoints: routeDraftPoints.value, isDrawing: isDrawing.value,
   drawingPolygon: drawingPolygon.value, currentPath: currentPath.value,
   brushMode: brushMode.value, brushSize: brushSize.value, isBrushing: isBrushing.value,
@@ -1964,6 +2039,8 @@ const renderer = useCanvasRenderer(canvas, {
   onClick: (hit, wx, wy) => {
     // 参考图拖动模式：单击不处理
     if (refDragMode.value && referenceImage.value && !referenceImage.value.locked) return;
+    // 校准模式：捕获两个点
+    if (calibrationMode.value && handleCalibrationClick(wx, wy)) return;
     interactions.handleCanvasClick(hit, wx, wy);
   },
   onDblClick: (hit, wx, wy) => {
@@ -2729,7 +2806,7 @@ const hTicks = computed(() => {
   const start = Math.floor(worldLeft / step) * step;
   const ticks = [];
   for (let wx = start; wx <= start + (w / scale) + step; wx += step) {
-    ticks.push({ left: Math.round(wx * scale + vt.x + w / 2), label: Math.round(wx) });
+    ticks.push({ left: Math.round(wx * scale + vt.x + w / 2), label: wx >= 1000 ? (wx / 1000) + 'km' : Math.round(wx) + 'm' });
   }
   return ticks;
 });
@@ -2746,7 +2823,7 @@ const vTicks = computed(() => {
   const start = Math.floor(worldTop / step) * step;
   const ticks = [];
   for (let wy = start; wy <= start + (h / scale) + step; wy += step) {
-    ticks.push({ top: Math.round(wy * scale + vt.y + h / 2), label: Math.round(wy) });
+    ticks.push({ top: Math.round(wy * scale + vt.y + h / 2), label: wy >= 1000 ? (wy / 1000) + 'km' : Math.round(wy) + 'm' });
   }
   return ticks;
 });
