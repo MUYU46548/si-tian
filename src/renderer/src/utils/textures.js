@@ -360,11 +360,261 @@ const textureGenerators = {
   ocean: generateOceanTexture,
   land: generateLandTexture,
   forest: generateForestTexture,
+  rainforest: generateRainforestTexture,
+  grassland: generateGrasslandTexture,
   desert: generateDesertTexture,
+  coast: generateCoastTexture,
+  wetland: generateWetlandTexture,
   mountain: generateMountainTexture,
+  volcano: generateVolcanoTexture,
+  barren: generateBarrenTexture,
+  tundra: generateTundraTexture,
   snow: generateSnowTexture,
   lake: generateLakeTexture,
 };
+
+/**
+ * 生成雨林纹理：深绿底 + 密集的树冠 + 雾气感
+ */
+function generateRainforestTexture(baseColor) {
+  const c = createOffscreenCanvas(TEXTURE_SIZE);
+  const ctx = c.getContext('2d');
+  paintNoiseBase(ctx, baseColor, 41, 0.08, -0.05);
+
+  // 密集多层树冠（大小不一，营造雨林层次）
+  for (let i = 0; i < 18; i++) {
+    const x = 2 + Math.random() * (TEXTURE_SIZE - 4);
+    const y = 2 + Math.random() * (TEXTURE_SIZE - 4);
+    const r = 2 + Math.random() * 5;
+    ctx.fillStyle = `rgba(5,35,15,${0.15 + Math.random() * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    // 偶尔加高光（阳光穿透树冠）
+    if (Math.random() > 0.7) {
+      ctx.fillStyle = 'rgba(180,220,120,0.18)';
+      ctx.beginPath();
+      ctx.arc(x - r*0.2, y - r*0.3, r*0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  return c;
+}
+
+/**
+ * 生成草原纹理：柔和绿地 + 小花 + 浅草纹
+ */
+function generateGrasslandTexture(baseColor) {
+  const c = createOffscreenCanvas(TEXTURE_SIZE);
+  const ctx = c.getContext('2d');
+  paintNoiseBase(ctx, baseColor, 53, 0.06, 0.02);
+
+  // 细小的草叶纹
+  ctx.lineWidth = 0.7;
+  for (let i = 0; i < 20; i++) {
+    const x = Math.random() * TEXTURE_SIZE;
+    const y = Math.random() * TEXTURE_SIZE;
+    const len = 2 + Math.random() * 3;
+    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(80,140,60,0.2)' : 'rgba(180,210,100,0.18)';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (Math.random()-0.5)*2, y - len);
+    ctx.stroke();
+  }
+
+  // 零星小花（小白点/小黄点）
+  for (let i = 0; i < 8; i++) {
+    const x = Math.random() * TEXTURE_SIZE;
+    const y = Math.random() * TEXTURE_SIZE;
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,200,0.5)' : 'rgba(255,200,100,0.4)';
+    ctx.beginPath();
+    ctx.arc(x, y, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return c;
+}
+
+/**
+ * 生成海岸纹理：沙滩颗粒 + 潮汐线
+ */
+function generateCoastTexture(baseColor) {
+  const c = createOffscreenCanvas(TEXTURE_SIZE);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+
+  // 沙粒
+  for (let i = 0; i < 80; i++) {
+    const x = Math.random() * TEXTURE_SIZE;
+    const y = Math.random() * TEXTURE_SIZE;
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(210,190,140,0.3)' : 'rgba(180,160,110,0.25)';
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // 潮汐线（横向不规则条纹）
+  for (let i = 0; i < 5; i++) {
+    const y = 8 + i * 12 + Math.random() * 4;
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for (let x = 0; x <= TEXTURE_SIZE; x += 4) {
+      ctx.lineTo(x, y + Math.sin(x * 0.2) * 2);
+    }
+    ctx.stroke();
+  }
+  return c;
+}
+
+/**
+ * 生成湿地纹理：水洼 + 泥泞 + 枯草
+ */
+function generateWetlandTexture(baseColor) {
+  const c = createOffscreenCanvas(TEXTURE_SIZE);
+  const ctx = c.getContext('2d');
+  paintNoiseBase(ctx, baseColor, 67, 0.07, -0.02);
+
+  // 水洼（暗色圆斑）
+  for (let i = 0; i < 6; i++) {
+    const x = 5 + Math.random() * (TEXTURE_SIZE - 10);
+    const y = 5 + Math.random() * (TEXTURE_SIZE - 10);
+    const r = 2 + Math.random() * 4;
+    ctx.fillStyle = `rgba(30,50,40,${0.2 + Math.random() * 0.15})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    // 水洼高光
+    ctx.fillStyle = 'rgba(200,220,230,0.15)';
+    ctx.beginPath();
+    ctx.arc(x - r*0.2, y - r*0.3, r*0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 枯草（短褐线）
+  for (let i = 0; i < 10; i++) {
+    const x = Math.random() * TEXTURE_SIZE;
+    const y = Math.random() * TEXTURE_SIZE;
+    ctx.strokeStyle = 'rgba(120,90,50,0.25)';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (Math.random()-0.5)*4, y - 2 - Math.random()*3);
+    ctx.stroke();
+  }
+  return c;
+}
+
+/**
+ * 生成火山纹理：暗色岩石 + 熔岩裂纹 + 火山口
+ */
+function generateVolcanoTexture(baseColor) {
+  const c = createOffscreenCanvas(TEXTURE_SIZE);
+  const ctx = c.getContext('2d');
+  paintNoiseBase(ctx, baseColor, 71, 0.08, -0.05);
+
+  // 熔岩裂纹（暗红/橙色细线）
+  for (let i = 0; i < 5; i++) {
+    const startX = Math.random() * TEXTURE_SIZE;
+    const startY = Math.random() * TEXTURE_SIZE;
+    ctx.strokeStyle = Math.random() > 0.5 ? 'rgba(200,60,20,0.4)' : 'rgba(255,140,0,0.3)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    let x = startX, y = startY;
+    for (let s = 0; s < 8; s++) {
+      x += (Math.random() - 0.5) * 12;
+      y += (Math.random() - 0.5) * 12;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // 火山口（暗圆 + 红边）
+  for (let i = 0; i < 3; i++) {
+    const x = 8 + Math.random() * (TEXTURE_SIZE - 16);
+    const y = 8 + Math.random() * (TEXTURE_SIZE - 16);
+    const r = 2 + Math.random() * 3;
+    ctx.fillStyle = 'rgba(80,15,5,0.6)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,80,0,0.4)';
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  return c;
+}
+
+/**
+ * 生成石漠纹理：灰色碎石 + 干裂纹
+ */
+function generateBarrenTexture(baseColor) {
+  const c = createOffscreenCanvas(TEXTURE_SIZE);
+  const ctx = c.getContext('2d');
+  paintNoiseBase(ctx, baseColor, 83, 0.08, 0);
+
+  // 碎石（不规则多边形的浅色点）
+  for (let i = 0; i < 15; i++) {
+    const x = 2 + Math.random() * (TEXTURE_SIZE - 4);
+    const y = 2 + Math.random() * (TEXTURE_SIZE - 4);
+    const r = 1 + Math.random() * 2;
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(160,160,160,0.4)' : 'rgba(120,120,120,0.35)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 干裂纹（暗色折线）
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = 'rgba(60,60,60,0.2)';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    let x = Math.random() * TEXTURE_SIZE;
+    let y = Math.random() * TEXTURE_SIZE;
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 6; s++) {
+      x += (Math.random() - 0.5) * 15;
+      y += (Math.random() - 0.5) * 15;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  return c;
+}
+
+/**
+ * 生成苔原纹理：浅灰绿底 + 斑块状地衣 + 偶尔融雪
+ */
+function generateTundraTexture(baseColor) {
+  const c = createOffscreenCanvas(TEXTURE_SIZE);
+  const ctx = c.getContext('2d');
+  paintNoiseBase(ctx, baseColor, 97, 0.05, 0);
+
+  // 地衣斑块（不规则浅色圆斑）
+  for (let i = 0; i < 8; i++) {
+    const x = 5 + Math.random() * (TEXTURE_SIZE - 10);
+    const y = 5 + Math.random() * (TEXTURE_SIZE - 10);
+    const r = 3 + Math.random() * 5;
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(140,160,130,0.25)' : 'rgba(180,190,170,0.2)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 融白斑（白色小圆，表示未化尽的雪）
+  for (let i = 0; i < 5; i++) {
+    const x = 8 + Math.random() * (TEXTURE_SIZE - 16);
+    const y = 8 + Math.random() * (TEXTURE_SIZE - 16);
+    const r = 1 + Math.random() * 3;
+    ctx.fillStyle = 'rgba(240,245,250,0.5)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return c;
+}
 
 /**
  * 获取指定地形类型的纹理图案
@@ -404,7 +654,11 @@ export function prewarmTextures(terrainTypes, ctx) {
   terrainTypes.forEach(type => {
     const colors = {
       ocean: '#2E86AB', land: '#A3C4BC', forest: '#2D6A4F',
-      desert: '#E9C46A', mountain: '#8B7355', snow: '#E8E8E8', lake: '#6FB3C8'
+      rainforest: '#1B5E20', grassland: '#8BC34A',
+      desert: '#E9C46A', coast: '#C2B280', wetland: '#5D737E',
+      mountain: '#8B7355', volcano: '#5D4037',
+      barren: '#9E9E9E', tundra: '#78909C',
+      snow: '#E8E8E8', lake: '#6FB3C8'
     };
     const color = colors[type];
     if (color) getTexturePattern(type, color, ctx);

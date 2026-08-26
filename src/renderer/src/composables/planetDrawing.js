@@ -201,7 +201,8 @@ function drawBackground(ctx, w, h) {
   ctx.stroke();
   ctx.lineWidth = 0.5;
   
-  // 指北针（右上角）
+  // 指北针（右上角，固定位置）
+  if (s.compassVisible) {
   const compassX = bottomRight.x - 30;
   const compassY = topLeft.y + 35;
   const compassR = 18;
@@ -246,8 +247,10 @@ function drawBackground(ctx, w, h) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+  }
   
-  // 比例尺（右下角）
+  // 比例尺（右下角，固定位置）
+  if (s.scaleBarVisible) {
   const scaleX = bottomRight.x - 120;
   const scaleY = bottomRight.y - 18;
   const targetPx = 80;
@@ -275,6 +278,7 @@ function drawBackground(ctx, w, h) {
   const scaleLabel = worldStep >= 1000 ? (worldStep / 1000) + 'km' : worldStep + 'm';
   ctx.fillText(scaleLabel, scaleX + barPx / 2, scaleY + 8);
   ctx.restore();
+  }
   
   // 校准点渲染
   if (s.calibrationPoints && s.calibrationPoints.length > 0) {

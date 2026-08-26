@@ -141,6 +141,8 @@
             <option value="1000">边界: ±1000</option>
           </select>
           <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺">📏 标尺</button>
+          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="显示/隐藏指北针">🧭 指北针</button>
+          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="显示/隐藏比例尺">📐 比例尺</button>
           <button @click="exportFullMapPNG" title="导出全图高清 PNG（含全部省份/区域/路线/标记/文本）">📤 导出全图</button>
         </div>
         
@@ -148,6 +150,7 @@
           <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="切换地形图层显示">▣ 地形</button>
           <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示">🏔 地名</button>
           <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
+          <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）">☷ 更多</button>
         </div>
 
         <div class="toolbar-group toolbar-group-exit">
@@ -179,6 +182,14 @@
       >{{ t.label }}</button>
     </div>
     
+    <!-- 更多图层面板 -->
+    <div v-if="editMode && showExtraLayers" class="terrain-picker">
+      <span class="picker-label">更多图层：</span>
+      <button :class="{ active: layers.isVisible('planet', 'elevation') }" @click="layers.toggleLayer('planet', 'elevation')" title="显示海拔等高线">⛰ 海拔</button>
+      <button :class="{ active: layers.isVisible('planet', 'climate') }" @click="layers.toggleLayer('planet', 'climate')" title="显示气候分区">🌡 气候</button>
+      <button :class="{ active: layers.isVisible('planet', 'precipitation') }" @click="layers.toggleLayer('planet', 'precipitation')" title="显示降水分布">💧 降水</button>
+    </div>
+
     <!-- 区域颜色选择器 -->
     <div v-if="editMode && interactionMode === 'region'" class="terrain-picker">
       <span class="picker-label">区域颜色：</span>
@@ -1027,8 +1038,15 @@ const terrainTypes = [
   { type: 'ocean', label: '海洋', color: '#2E86AB' },
   { type: 'land', label: '陆地', color: '#A3C4BC' },
   { type: 'forest', label: '森林', color: '#2D6A4F' },
+  { type: 'rainforest', label: '雨林', color: '#1B5E20' },
+  { type: 'grassland', label: '草原', color: '#8BC34A' },
   { type: 'desert', label: '沙漠', color: '#E9C46A' },
+  { type: 'coast', label: '海岸', color: '#C2B280' },
+  { type: 'wetland', label: '湿地', color: '#5D737E' },
   { type: 'mountain', label: '山脉', color: '#8B7355' },
+  { type: 'volcano', label: '火山', color: '#5D4037' },
+  { type: 'barren', label: '石漠', color: '#9E9E9E' },
+  { type: 'tundra', label: '苔原', color: '#78909C' },
   { type: 'snow', label: '雪地', color: '#E8E8E8' },
   { type: 'lake', label: '湖泊', color: '#6FB3C8' },
 ];
@@ -1205,6 +1223,7 @@ const currentMapData = computed(() => {
 const showRefImagePanel = ref(false);
 const refImageLoading = ref(false);
 const refDragMode = ref(false);
+const showExtraLayers = ref(false);
 const refOpacity = ref(0.5);
 const refScale = ref(1); // 参考图缩放（drawImage 以 offset 为中心，缩放保持中心不变）
 // 全部参考图数组 + 当前选中索引（referenceImage 保持单图语义，其余渲染/交互代码不变）
@@ -1843,6 +1862,7 @@ const drawing = createPlanetDrawing(() => ({
   referenceImages: referenceImages.value, refImageObjs,
   gridSize: gridSize.value, gridLabels: gridLabels.value, routeDashed: routeDashed.value, routeColor: routeColor.value,
   calibrationPoints: calibrationPoints.value, calibrationMode: calibrationMode.value,
+  compassVisible: compassVisible.value, scaleBarVisible: scaleBarVisible.value,
   routeDraftPoints: routeDraftPoints.value, isDrawing: isDrawing.value,
   drawingPolygon: drawingPolygon.value, currentPath: currentPath.value,
   brushMode: brushMode.value, brushSize: brushSize.value, isBrushing: isBrushing.value,
@@ -2774,11 +2794,21 @@ let focusHighlightTimer = null;
 // ===== 画布边缘标尺（P2）=====
 // 独立开关（localStorage 持久化）
 const rulerVisible = ref(true);
+const compassVisible = ref(true);
+const scaleBarVisible = ref(true);
 try {
   if (localStorage.getItem('sitian-ruler') === '0') rulerVisible.value = false;
+  if (localStorage.getItem('sitian-compass') === '0') compassVisible.value = false;
+  if (localStorage.getItem('sitian-scalebar') === '0') scaleBarVisible.value = false;
 } catch (e) { /* ignore */ }
 watch(rulerVisible, (v) => {
   try { localStorage.setItem('sitian-ruler', v ? '1' : '0'); } catch (e) { /* ignore */ }
+});
+watch(compassVisible, (v) => {
+  try { localStorage.setItem('sitian-compass', v ? '1' : '0'); } catch (e) { /* ignore */ }
+});
+watch(scaleBarVisible, (v) => {
+  try { localStorage.setItem('sitian-scalebar', v ? '1' : '0'); } catch (e) { /* ignore */ }
 });
 
 // 选择"漂亮"步长（1/2/5×10^n），使屏幕上刻度间距 ~80px
