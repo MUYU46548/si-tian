@@ -381,6 +381,174 @@ function drawTerrain(ctx) {
   });
 }
 
+// ==================== 新增图层：海拔/气候/降水 ====================
+
+// 海拔图层：基于地形 polygon 的 elevation 字段绘制等高线/色块
+function drawElevation(ctx) {
+  const s = getState();
+  const terrain = s.currentMapData?.terrain || [];
+  const vp = s.viewport;
+  
+  // 海拔到颜色的映射
+  const elevationColors = {
+    '深海': '#0a2a4a',
+    '浅海': '#1a4a6a',
+    '平原': '#4a7a3a',
+    '丘陵': '#6a8a4a',
+    '高原': '#8a7a3a',
+    '山地': '#7a5a2a',
+    '高山': '#5a3a1a',
+  };
+  
+  terrain.forEach(poly => {
+    if (!poly.points || poly.points.length < 3) return;
+    if (!bboxInViewport(pointsBBox(poly.points), vp)) return;
+    
+    const elev = poly.elevation;
+    if (!elev || !elevationColors[elev]) return;
+    
+    // 半透明填充表示海拔带
+    ctx.beginPath();
+    ctx.moveTo(poly.points[0].x, poly.points[0].y);
+    for (let i = 1; i < poly.points.length; i++) {
+      ctx.lineTo(poly.points[i].x, poly.points[i].y);
+    }
+    ctx.closePath();
+    
+    ctx.fillStyle = elevationColors[elev];
+    ctx.globalAlpha = 0.35;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    
+    // 边界线
+    ctx.strokeStyle = elevationColors[elev];
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // 标注文字（仅 LOD 足够时）
+    if (s.lodRef > 0.5) {
+      const center = getPolygonCenter(poly.points);
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.8;
+      ctx.fillText(elev, center.x, center.y);
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
+// 气候图层：基于 terrain polygon 的 climate 字段绘制气候分区
+function drawClimate(ctx) {
+  const s = getState();
+  const terrain = s.currentMapData?.terrain || [];
+  const vp = s.viewport;
+  
+  // 气候类型到颜色的映射
+  const climateColors = {
+    '热带': '#d32f2f',    // 红
+    '亚热带': '#f57c00',  // 橙
+    '温带': '#fbc02d',    // 黄
+    '寒温带': '#0097a7',  // 青
+    '寒带': '#1565c0',    // 蓝
+    '干旱': '#8d6e63',    // 棕
+    '湿润': '#2e7d32',    // 绿
+  };
+  
+  terrain.forEach(poly => {
+    if (!poly.points || poly.points.length < 3) return;
+    if (!bboxInViewport(pointsBBox(poly.points), vp)) return;
+    
+    const climate = poly.climate;
+    if (!climate || !climateColors[climate]) return;
+    
+    ctx.beginPath();
+    ctx.moveTo(poly.points[0].x, poly.points[0].y);
+    for (let i = 1; i < poly.points.length; i++) {
+      ctx.lineTo(poly.points[i].x, poly.points[i].y);
+    }
+    ctx.closePath();
+    
+    ctx.fillStyle = climateColors[climate];
+    ctx.globalAlpha = 0.3;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    
+    // 边界
+    ctx.strokeStyle = climateColors[climate];
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // 标注
+    if (s.lodRef > 0.5) {
+      const center = getPolygonCenter(poly.points);
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.8;
+      ctx.fillText(climate, center.x, center.y);
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
+// 降水图层：在地形上以半透明蓝色等值线形式叠加
+function drawPrecipitation(ctx) {
+  const s = getState();
+  const terrain = s.currentMapData?.terrain || [];
+  const vp = s.viewport;
+  
+  // 降水等级到颜色的映射
+  const precipColors = {
+    '极旱': '#ffeb3b',
+    '干旱': '#ffc107',
+    '半干旱': '#ff9800',
+    '适中': '#8bc34a',
+    '湿润': '#4caf50',
+    '多雨': '#2196f3',
+    '暴雨': '#3f51b5',
+  };
+  
+  terrain.forEach(poly => {
+    if (!poly.points || poly.points.length < 3) return;
+    if (!bboxInViewport(pointsBBox(poly.points), vp)) return;
+    
+    // 使用 ecology 字段存储降水信息（复用已有字段）
+    const precip = poly.ecology;
+    if (!precip || !precipColors[precip]) return;
+    
+    ctx.beginPath();
+    ctx.moveTo(poly.points[0].x, poly.points[0].y);
+    for (let i = 1; i < poly.points.length; i++) {
+      ctx.lineTo(poly.points[i].x, poly.points[i].y);
+    }
+    ctx.closePath();
+    
+    ctx.fillStyle = precipColors[precip];
+    ctx.globalAlpha = 0.25;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    
+    // 标注
+    if (s.lodRef > 0.6) {
+      const center = getPolygonCenter(poly.points);
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.8;
+      ctx.fillText(precip, center.x, center.y);
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
 function drawRegions(ctx) {
   const s = getState(); // 每次渲染取最新状态
   const regions = s.currentMapData?.regions || [];
@@ -1331,6 +1499,9 @@ function getContrastColor(hex) {
     drawFog,
     drawBackground,
     drawTerrain,
+    drawElevation,
+    drawClimate,
+    drawPrecipitation,
     drawTerrainLabels,
     drawRegions,
     drawPlaces,

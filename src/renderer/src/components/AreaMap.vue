@@ -68,6 +68,8 @@
 
         <div class="toolbar-group" title="视图">
           <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图">🖼 参考图</button>
+          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="指北针">🧭</button>
+          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="比例尺">📐</button>
         </div>
 
         <div class="toolbar-group toolbar-group-exit">
@@ -370,6 +372,28 @@ const calibrationPoints = ref([]);
 const calibrationDist = ref(5);
 const textColor = ref('#FFFFFF');
 
+// ===== 指北针/比例尺 =====
+const compassVisible = ref(true);
+const scaleBarVisible = ref(true);
+try {
+  if (localStorage.getItem('sitian-area-compass') === '0') compassVisible.value = false;
+  if (localStorage.getItem('sitian-area-scalebar') === '0') scaleBarVisible.value = false;
+} catch(e) {}
+watch(compassVisible, (v) => { try { localStorage.setItem('sitian-area-compass', v ? '1' : '0'); } catch(e) {} });
+watch(scaleBarVisible, (v) => { try { localStorage.setItem('sitian-area-scalebar', v ? '1' : '0'); } catch(e) {} });
+
+function niceStepArea(raw) {
+  if (!isFinite(raw) || raw <= 0) return 100;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const rem = raw / pow;
+  let n;
+  if (rem <= 1) n = 1;
+  else if (rem <= 2) n = 2;
+  else if (rem <= 5) n = 5;
+  else n = 10;
+  return n * pow;
+}
+
 // 撤销/重做 label
 const undoLabel = computed(() => store.undoLabel);
 
@@ -523,20 +547,91 @@ const renderer = useCanvasRenderer(canvas, {
         ctx.fillText(`P${idx + 1}`, p.x + 10, p.y - 10);
         ctx.restore();
       });
-      if (calibrationPoints.value.length === 2) {
-        const p1 = calibrationPoints.value[0];
-        const p2 = calibrationPoints.value[1];
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
-      }
+    }
+
+    // 指北针（右上角，固定位置）
+    if (compassVisible.value) {
+      const vt = renderer.getViewTransform();
+      const cvs = canvas.value;
+      const centerX = cvs.clientWidth / 2 + vt.x;
+      const centerY = cvs.clientHeight / 2 + vt.y;
+      const worldRight = (cvs.clientWidth - centerX) / vt.scale;
+      const worldTop = -centerY / vt.scale;
+      
+      const compassX = worldRight - 30;
+      const compassY = worldTop + 35;
+      const compassR = 18;
+      ctx.save();
+      ctx.fillStyle = 'rgba(10, 14, 24, 0.75)';
+      ctx.strokeStyle = 'rgba(120, 160, 190, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(compassX, compassY, compassR + 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('N', compassX, compassY - compassR + 6);
+      ctx.fillText('S', compassX, compassY + compassR - 6);
+      ctx.fillText('E', compassX + compassR - 6, compassY);
+      ctx.fillText('W', compassX - compassR + 6, compassY);
+      ctx.fillStyle = '#f85149';
+      ctx.beginPath();
+      ctx.moveTo(compassX, compassY - compassR + 1);
+      ctx.lineTo(compassX - 5, compassY);
+      ctx.lineTo(compassX - 2, compassY);
+      ctx.lineTo(compassX - 2, compassY + compassR - 2);
+      ctx.lineTo(compassX + 2, compassY + compassR - 2);
+      ctx.lineTo(compassX + 2, compassY);
+      ctx.lineTo(compassX + 5, compassY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(226, 232, 240, 0.5)';
+      ctx.beginPath();
+      ctx.moveTo(compassX, compassY + compassR - 1);
+      ctx.lineTo(compassX - 3, compassY + compassR - 6);
+      ctx.lineTo(compassX + 3, compassY + compassR - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 比例尺（右下角，固定位置）
+    if (scaleBarVisible.value) {
+      const vt = renderer.getViewTransform();
+      const cvs = canvas.value;
+      const centerX = cvs.clientWidth / 2 + vt.x;
+      const centerY = cvs.clientHeight / 2 + vt.y;
+      const worldRight = (cvs.clientWidth - centerX) / vt.scale;
+      const worldBottom = (cvs.clientHeight - centerY) / vt.scale;
+      
+      const scaleX = worldRight - 120;
+      const scaleY = worldBottom - 18;
+      const targetPx = 80;
+      const worldStep = niceStepArea(targetPx / (cvs.clientWidth / (worldRight - (-centerX / vt.scale))));
+      const barPx = worldStep * (cvs.clientWidth / (worldRight - (-centerX / vt.scale)));
+      ctx.save();
+      ctx.fillStyle = 'rgba(10, 14, 24, 0.75)';
+      ctx.fillRect(scaleX - 10, scaleY - 14, barPx + 20, 28);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(scaleX, scaleY);
+      ctx.lineTo(scaleX + barPx, scaleY);
+      ctx.moveTo(scaleX, scaleY - 5);
+      ctx.lineTo(scaleX, scaleY + 5);
+      ctx.moveTo(scaleX + barPx, scaleY - 5);
+      ctx.lineTo(scaleX + barPx, scaleY + 5);
+      ctx.stroke();
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const scaleLabel = worldStep >= 1000 ? (worldStep / 1000) + 'km' : worldStep + 'm';
+      ctx.fillText(scaleLabel, scaleX + barPx / 2, scaleY + 8);
+      ctx.restore();
     }
   },
   onDragStart: handleDragStart,

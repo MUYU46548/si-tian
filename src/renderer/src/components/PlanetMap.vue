@@ -1778,6 +1778,21 @@ function onRender(ctx, w, h) {
     drawing.drawTerrain(ctx);
   }
   
+  // 海拔图层：等高线叠加
+  if (layers.isVisible('planet', 'elevation')) {
+    drawing.drawElevation(ctx);
+  }
+  
+  // 气候图层：半透明色域叠加
+  if (layers.isVisible('planet', 'climate')) {
+    drawing.drawClimate(ctx);
+  }
+  
+  // 降水图层：等值线叠加
+  if (layers.isVisible('planet', 'precipitation')) {
+    drawing.drawPrecipitation(ctx);
+  }
+  
   if (layers.isVisible('planet', 'terrainLabels')) {
     drawing.drawTerrainLabels(ctx);
   }

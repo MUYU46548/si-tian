@@ -313,7 +313,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       const childIdx = LAYER_ORDER.indexOf(node.layer);
       const parentIdx = LAYER_ORDER.indexOf(parent.layer);
       if (childIdx === -1 || parentIdx === -1) continue;
-      if (childIdx <= parentIdx) {
+      if (childIdx < parentIdx) {
         violations++;
         console.warn(
           `[Geodata] 越级节点 "${node.name}"(layer=${node.layer}) 的父级 "${parent.name}"(layer=${parent.layer}) 层级不比其更深`
