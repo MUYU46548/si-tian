@@ -95,10 +95,54 @@
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
         </div>
 
+        <div class="toolbar-group" title="视图">
+          <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图">🖼 参考图</button>
+        </div>
+
         <div class="toolbar-group toolbar-group-exit">
           <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出</button>
         </div>
       </div>
+    </div>
+
+    <!-- 参考图控制面板 -->
+    <div v-if="editMode && showRefImagePanel" class="province-editor refimage-editor">
+      <div class="editor-header">
+        <h3>参考底图</h3>
+        <button class="close-btn" @click="showRefImagePanel = false">×</button>
+      </div>
+      <div class="editor-field">
+        <label>导入室内平面图</label>
+        <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
+          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
+        </button>
+      </div>
+      <div class="editor-field" v-if="referenceImages.length > 0">
+        <label>底图列表（{{ referenceImages.length }}）</label>
+        <div class="ref-list">
+          <div v-for="(img, idx) in referenceImages" :key="img.id" class="ref-item"
+            :class="{ active: idx === activeRefIndex }" @click="activeRefIndex = idx">
+            <span class="ref-item-name">{{ img.name || '底图 ' + (idx + 1) }}</span>
+            <button class="ref-item-del" @click.stop="removeRefListItem(idx)" title="删除该底图">×</button>
+          </div>
+        </div>
+      </div>
+      <template v-if="referenceImage">
+        <div class="editor-field">
+          <label>透明度</label>
+          <input type="range" min="0.05" max="1" step="0.05" v-model.number="refOpacity" @input="updateRefOpacity" />
+          <span class="ref-value">{{ Math.round(refOpacity * 100) }}%</span>
+        </div>
+        <div class="editor-field">
+          <label>缩放</label>
+          <input type="range" min="0.05" max="5" step="0.05" v-model.number="refScale" @input="updateRefScale" />
+          <span class="ref-value">{{ Math.round(refScale * 100) }}%</span>
+        </div>
+        <div class="editor-field">
+          <label>移除</label>
+          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
+        </div>
+      </template>
     </div>
 
     <div class="canvas-wrapper">
@@ -210,6 +254,16 @@ const selectedFurnitureIds = ref([]); // 多选家具 ID 列表
 const gridSnapEnabled = ref(true);
 const gridSize = ref(40);
 
+// ===== 参考图底图 =====
+const showRefImagePanel = ref(false);
+const refImageLoading = ref(false);
+const refOpacity = ref(0.5);
+const refScale = ref(1);
+const activeRefIndex = ref(0);
+const refImageObjs = reactive({});
+const referenceImages = computed(() => store.interiorReferenceImages[props.buildingNode?.id] || []);
+const referenceImage = computed(() => referenceImages.value[activeRefIndex.value] || null);
+
 // 家具类型
 const FURNITURE_TYPES = [
   { type: 'generic', label: '通用', icon: '📦', color: '#8B8B8B' },
@@ -232,6 +286,121 @@ const FURNITURE_TYPES = [
 function isAreaType(type) {
   const ft = FURNITURE_TYPES.find(t => t.type === type);
   return ft?.isArea || false;
+}
+
+// ===== 参考图绘制 =====
+function drawReferenceImage(ctx) {
+  const refs = referenceImages.value;
+  if (!refs || refs.length === 0) return;
+  
+  refs.forEach((refImg) => {
+    if (!refImg || !refImg.dataUrl) return;
+    const img = refImageObjs[refImg.id];
+    if (!img) return;
+    
+    const w = (refImg.width || img.width) * (refImg.scale || 1);
+    const h = (refImg.height || img.height) * (refImg.scale || 1);
+    const rot = (refImg.rotation || 0) % 4;
+    const flipH = !!refImg.flipH;
+    const cx = refImg.offsetX;
+    const cy = refImg.offsetY;
+    const drawW = rot % 2 === 0 ? w : h;
+    const drawH = rot % 2 === 0 ? h : w;
+    
+    ctx.save();
+    ctx.globalAlpha = refImg.opacity ?? 0.5;
+    ctx.translate(cx, cy);
+    ctx.rotate(rot * Math.PI / 2);
+    if (flipH) ctx.scale(-1, 1);
+    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+    ctx.restore();
+  });
+}
+
+// ===== 参考图操作 =====
+watch(referenceImages, (list) => {
+  if (activeRefIndex.value >= list.length) {
+    activeRefIndex.value = Math.max(0, list.length - 1);
+  }
+  list.forEach(ref => {
+    if (ref.dataUrl && refImageObjs[ref.id]?.src !== ref.dataUrl) {
+      const img = new Image();
+      img.onload = () => { refImageObjs[ref.id] = img; renderer.requestRender(); };
+      img.src = ref.dataUrl;
+    }
+  });
+}, { deep: true, immediate: true });
+
+async function importReferenceImage() {
+  if (!props.buildingNode) return;
+  refImageLoading.value = true;
+  try {
+    const result = await window.sitianAPI.selectReferenceImage();
+    if (result?.success && result.dataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        const scale = 500 / img.width;
+        const cx = renderer.getViewTransform();
+        const center = { x: -cx.x / cx.scale, y: -cx.y / cx.scale };
+        const list = referenceImages.value || [];
+        const refImage = {
+          id: `ref_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          name: `底图 ${list.length + 1}`,
+          dataUrl: result.dataUrl,
+          opacity: refOpacity.value,
+          locked: false,
+          offsetX: center.x,
+          offsetY: center.y,
+          scale,
+          width: img.width,
+          height: img.height,
+        };
+        store.updateInteriorReferenceImage(props.buildingNode.id, refImage);
+        activeRefIndex.value = (referenceImages.value || []).length - 1;
+        refImageObjs[refImage.id] = img;
+        refImageLoading.value = false;
+      };
+      img.onerror = () => { refImageLoading.value = false; };
+      img.src = result.dataUrl;
+    } else {
+      refImageLoading.value = false;
+    }
+  } catch (e) {
+    refImageLoading.value = false;
+  }
+}
+
+function updateRefOpacity() {
+  if (!referenceImage.value) return;
+  store.updateInteriorReferenceImage(props.buildingNode.id, {
+    ...referenceImage.value,
+    opacity: refOpacity.value,
+  });
+}
+
+function updateRefScale() {
+  if (!referenceImage.value) return;
+  store.updateInteriorReferenceImage(props.buildingNode.id, {
+    ...referenceImage.value,
+    scale: refScale.value,
+  });
+}
+
+function removeReferenceImage() {
+  const ref = referenceImage.value;
+  if (!ref) return;
+  store.removeInteriorReferenceImage(props.buildingNode.id, ref.id);
+  delete refImageObjs[ref.id];
+}
+
+function removeRefListItem(idx) {
+  const ref = referenceImages.value[idx];
+  if (!ref) return;
+  store.removeInteriorReferenceImage(props.buildingNode.id, ref.id);
+  delete refImageObjs[ref.id];
+  if (activeRefIndex.value >= referenceImages.value.length) {
+    activeRefIndex.value = Math.max(0, referenceImages.value.length - 1);
+  }
 }
 
 const selectedFurnitureType = ref('generic');

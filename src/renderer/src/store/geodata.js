@@ -75,7 +75,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     toggleLayerFilter, togglePlaceTypeFilter,
     cycleSearchMatch, isNodeMatched, isCurrentMatch,
   } = searchModule;
-  const { interiorData } = interiorModule;
+  const { interiorData, interiorReferenceImages } = interiorModule;
   const { areaZones, areaRoutes, areaMarkers, areaTextLabels, areaReferenceImages } = areaEditingModule;
   const { spaceMarkers, fleetCards } = spaceEditingModule;
 
@@ -230,6 +230,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       areaMarkers.value = result.data.areaMarkers || {};
       areaTextLabels.value = result.data.areaTextLabels || {};
       areaReferenceImages.value = result.data.areaReferenceImages || {};
+      interiorReferenceImages.value = result.data.interiorReferenceImages || {};
       // B6/B7 太空实体：缺字段兼容（无 id/systemId 的脏数据被过滤，类型/数值补默认值）
       spaceMarkers.value = normalizeSpaceMarkers(result.data.spaceMarkers);
       fleetCards.value = normalizeFleetCards(result.data.fleetCards);
@@ -244,6 +245,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       areaMarkers.value = {};
       areaTextLabels.value = {};
       areaReferenceImages.value = {};
+      interiorReferenceImages.value = {};
       spaceMarkers.value = [];
       fleetCards.value = [];
     }

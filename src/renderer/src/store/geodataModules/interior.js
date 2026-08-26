@@ -7,6 +7,7 @@ export function createInteriorModule(ctx) {
   const { execute, scheduleAutoSave } = ctx;
 
   const interiorData = ref({});
+  const interiorReferenceImages = ref({});
 
   // 添加楼层到建筑
   function addFloor(buildingId, floorName = '', position = 0) {
@@ -161,8 +162,30 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  // ===== 参考图底图 =====
+  function updateInteriorReferenceImage(buildingId, refImage) {
+    if (!interiorReferenceImages.value[buildingId]) {
+      interiorReferenceImages.value[buildingId] = [];
+    }
+    const list = interiorReferenceImages.value[buildingId];
+    const idx = list.findIndex(r => r.id === refImage?.id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...refImage };
+    } else if (refImage?.id) {
+      list.push(refImage);
+    }
+    scheduleAutoSave();
+  }
+
+  function removeInteriorReferenceImage(buildingId, refId) {
+    if (!interiorReferenceImages.value[buildingId]) return;
+    interiorReferenceImages.value[buildingId] = interiorReferenceImages.value[buildingId].filter(r => r.id !== refId);
+    scheduleAutoSave();
+  }
+
   return {
     interiorData,
+    interiorReferenceImages,
     addFloor,
     removeFloor,
     updateFloor,
@@ -171,5 +194,7 @@ export function createInteriorModule(ctx) {
     updateFurniture,
     beginMultiFurnitureCapture,
     endMultiFurnitureCapture,
+    updateInteriorReferenceImage,
+    removeInteriorReferenceImage,
   };
 }
