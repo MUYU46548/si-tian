@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 清除坐标缓存
   clearCoordinateCache: () => ipcRenderer.invoke('clear-coordinate-cache'),
 
+  // P0.4: 渲染进程错误上报（主进程 electron-log 落盘）
+  reportError: (payload) => ipcRenderer.invoke('report-error', payload),
+
   // 平台信息
   platform: process.platform,
 

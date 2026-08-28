@@ -162,6 +162,9 @@ function retryCheck() {
 onMounted(() => {
   currentVersion.value = window.sitianAPI?.version || '0.1.0';
 
+  // P0.4: 浏览器环境（无 Electron preload）无更新 API，跳过监听避免挂载报错
+  if (!window.sitianAPI?.onUpdateAvailable) return;
+
   // 监听主进程推送的更新事件
   cleanupFns.push(
     window.sitianAPI.onUpdateAvailable((data) => {

@@ -238,6 +238,8 @@
       </main>
     </div>
 
+    <status-bar />
+
     <node-detail-panel />
     <layer-panel />
     <about-panel ref="aboutPanelRef" />
@@ -295,6 +297,7 @@ import PromptDialog from './components/PromptDialog.vue';
 import BookmarkPanel from './components/BookmarkPanel.vue';
 import ChangeLog from './components/ChangeLog.vue';
 import UpdateNotification from './components/UpdateNotification.vue';
+import StatusBar from './components/StatusBar.vue';
 import { useLayersStore } from './store/layers';
 import { useTheme } from './composables/useTheme';
 import { useBookmarks } from './composables/useBookmarks';

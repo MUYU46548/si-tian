@@ -61,7 +61,17 @@
         </div>
 
         <div class="toolbar-group" title="操作">
-          <button @click="deleteSelected" :disabled="!selectedNode" title="删除选中节点 (Del)">🗑 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedNode && selectedNodeIds.length === 0" title="删除选中节点 (Del)">🗑 删除</button>
+          <template v-if="selectedNodeIds.length >= 2">
+            <button @click="alignSelected('left')" title="左对齐">⇤</button>
+            <button @click="alignSelected('hcenter')" title="水平居中对齐">⇹</button>
+            <button @click="alignSelected('right')" title="右对齐">⇥</button>
+            <button @click="alignSelected('top')" title="顶对齐">⇧</button>
+            <button @click="alignSelected('vcenter')" title="垂直居中对齐">⇳</button>
+            <button @click="alignSelected('bottom')" title="底对齐">⇩</button>
+            <button @click="distributeSelected('h')" title="水平等间距分布">⋯</button>
+            <button @click="distributeSelected('v')" title="垂直等间距分布">⋮</button>
+          </template>
           <button @click="undo" :disabled="!store.canUndo">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
         </div>
@@ -218,6 +228,7 @@
         :world-bounds="worldBounds"
         @navigate="handleEagleEyeNavigate"
       />
+      <zoom-controls :renderer="renderer" :on-fit-all="fitAllContent" :on-fit-selection="fitSelection" />
     </div>
 
     <!-- 选中节点详情浮窗 -->
@@ -294,7 +305,11 @@ import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
+import { alignItems, distributeItems, diffPositions } from '../utils/align';
+import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
+import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
 import EagleEye from './EagleEye.vue';
+import ZoomControls from './ZoomControls.vue';
 
 const props = defineProps({
   areaNode: { type: Object, default: null },
@@ -637,6 +652,14 @@ const renderer = useCanvasRenderer(canvas, {
   onDragStart: handleDragStart,
   onDragMove: handleDragMove,
   onDragEnd: handleDragEnd,
+  onPointerMove: (wx, wy) => {
+    // E11: 状态栏坐标/缩放（每次鼠标移动，rAF 节流）
+    setStatusThrottled({
+      mouseWorld: { x: wx, y: wy },
+      zoom: renderer.viewTransform.scale * 100,
+      selectionCount: selectedNodeIds.value.length,
+    });
+  },
   onHitTest: hitTest,
   onClick: (hit, wx, wy) => {
     if (calibrationMode.value && handleCalibrationClick(wx, wy)) return;
@@ -1687,6 +1710,8 @@ onMounted(() => {
   initNodeCoordinates();
   renderer.fitView(viewBounds.value);
   renderer.requestRender();
+  showStatusBar('区域地图');
+  setStatus({ toolLabel: interactionMode.value === 'pan' ? '浏览' : '编辑' });
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('sitian:focus-node', onFocusNode);
 });
@@ -1719,6 +1744,7 @@ function initNodeCoordinates() {
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
+  hideStatusBar();
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('sitian:focus-node', onFocusNode);
   if (focusHighlightTimer.value) clearTimeout(focusHighlightTimer.value);
@@ -1727,6 +1753,14 @@ onUnmounted(() => {
 function handleKeydown(e) {
   const tag = document.activeElement?.tagName;
   const isEditingInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+  // E1: 克隆 / 复制粘贴（编辑模式下）
+  if (!isEditingInput && editMode.value && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
+    if (k === 'c') { e.preventDefault(); copySelection(); return; }
+    if (k === 'v') { e.preventDefault(); pasteClipboard(); return; }
+  }
 
   if (e.key === 'Delete' && !isEditingInput) {
     if (selectedNodeIds.value.length > 1) {
@@ -1755,6 +1789,99 @@ function handleKeydown(e) {
 watch(areaPlaces, () => {
   renderer.requestRender();
 });
+
+// ===== E3: 对齐与分布（多选地点） =====
+function getSelectedPlaceItems() {
+  const items = [];
+  for (const id of selectedNodeIds.value) {
+    const node = store.nodes.find(n => n.id === id);
+    if (node?.coordinate?.x != null) {
+      items.push({ id: node.id, x: node.coordinate.x, y: node.coordinate.y });
+    }
+  }
+  return items;
+}
+
+function applyPositions(positions) {
+  const valid = positions.filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (!valid.length) return;
+  store.beginMultiNodePositionCapture(valid.map(p => p.id));
+  for (const pos of valid) {
+    store.updateNodePosition(pos.id, pos.x, pos.y);
+  }
+  store.endMultiNodePositionCapture();
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function alignSelected(mode) {
+  const items = getSelectedPlaceItems();
+  if (items.length < 2) return;
+  applyPositions(diffPositions(items, alignItems(items, mode)));
+}
+
+function distributeSelected(axis) {
+  const items = getSelectedPlaceItems();
+  if (items.length < 3) return;
+  applyPositions(diffPositions(items, distributeItems(items, axis)));
+}
+
+// ===== E1: 克隆 / 复制粘贴（地点节点；克隆体为暂存性质，不写回 vault） =====
+let pasteCount = 0;
+const PASTE_OFFSET = 20; // 区域地图网格 20 单位起错位
+
+function copySelection() {
+  const places = (selectedNodeIds.value.length ? selectedNodeIds.value : (selectedNode.value ? [selectedNode.value.id] : []))
+    .map(id => store.nodes.find(n => n.id === id))
+    .filter(n => n && n.coordinate?.x != null);
+  if (places.length) {
+    setClipboard('places', places.map(n => ({ ...n })), 'area');
+    pasteCount = 0;
+  }
+}
+
+function pasteClipboard() {
+  const clip = getClipboard();
+  if (!clip || clip.kind !== 'places') return;
+  pasteCount += 1;
+  const dx = PASTE_OFFSET * pasteCount;
+  const dy = PASTE_OFFSET * pasteCount;
+  const newIds = [];
+  for (const item of clip.items) {
+    const copy = cloneItem(item, dx, dy);
+    copy.id = `${copy.id}_p`;
+    copy.sourcePath = '';
+    copy.displayName = `${copy.displayName || copy.name} 副本`;
+    copy.parentId = props.areaNode?.id || copy.parentId; // 归属当前层级
+    store.addNode(copy);
+    newIds.push(copy.id);
+  }
+  selectedNodeIds.value = newIds;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function duplicateSelection() {
+  copySelection();
+  pasteClipboard();
+}
+
+// ===== U2: 适配全部 / 适配选中 =====
+function fitAllContent() {
+  renderer.fitView(viewBounds.value);
+}
+
+function fitSelection() {
+  const items = getSelectedPlaceItems();
+  if (!items.length) return;
+  const padding = 100;
+  renderer.fitView({
+    minX: Math.min(...items.map(i => i.x)) - padding,
+    minY: Math.min(...items.map(i => i.y)) - padding,
+    maxX: Math.max(...items.map(i => i.x)) + padding,
+    maxY: Math.max(...items.map(i => i.y)) + padding,
+  });
+}
 </script>
 
 <style scoped>

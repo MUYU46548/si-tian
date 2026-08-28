@@ -7,9 +7,18 @@ const { startWatcher, stopWatcher } = require('./vault-watcher');
 const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode } = require('./config');
 const { createTray, destroyTray, getIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
+const log = require('electron-log');
 
 let mainWindow;
 let vaultWatcherEnabled = true;
+
+// P0.4: 主进程全局异常兜底 — electron-log 落盘，不弹系统对话框打断用户
+process.on('uncaughtException', (err) => {
+  log.error('[main] uncaughtException:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  log.error('[main] unhandledRejection:', reason);
+});
 
 // 按配置应用窗口模式（批次A7：默认最大化启动，设置面板可改；三种模式间切换均可还原）
 function applyWindowMode(win, mode) {
@@ -359,6 +368,22 @@ ipcMain.handle('set-watcher-status', (event, enabled) => {
     startWatcher(mainWindow, getVaultPath());
   } else {
     stopWatcher();
+  }
+  return { success: true };
+});
+
+// IPC: 渲染进程错误上报（P0.4）— electron-log 落盘，供用户反馈时排查
+ipcMain.handle('report-error', (event, payload) => {
+  try {
+    const { message, stack, component, info, extra } = payload || {};
+    log.error('[renderer]', message, {
+      component,
+      info,
+      stack,
+      extra,
+    });
+  } catch (e) {
+    log.error('[renderer] report-error 处理失败:', e);
   }
   return { success: true };
 });

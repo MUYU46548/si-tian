@@ -30,6 +30,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     onHitTest = null,
     onRender = null,
     onHover = null,
+    onPointerMove = null,   // (worldX, worldY) => void  每次鼠标移动都触发（区别于 onHover 仅命中变化时触发；E11 状态栏坐标用）
     onDragStart = null,
     onDragEnd = null,
     onDragMove = null,
@@ -362,7 +363,8 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const world = screenToWorld(mx, my);
-    
+    if (onPointerMove) onPointerMove(world.x, world.y);
+
     // 绘制模式：追加点到路径
     if (isDrawing) {
       const last = currentPath.value[currentPath.value.length - 1];

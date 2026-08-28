@@ -125,6 +125,18 @@
           <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份：再点击一个相邻省份">⛓ 合并</button>
           <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0" title="删除选中对象 (Del)">🗑 删除</button>
           <button v-if="selectedPlaceIds.size > 1" @click="openArrangeDialog" title="批量排列选中节点">⊞ 排列</button>
+          <template v-if="selectedPlaceIds.size >= 2">
+            <div class="toolbar-group" title="对齐与分布 (E3)">
+              <button @click="alignSelected('left')" title="左对齐">⇤</button>
+              <button @click="alignSelected('hcenter')" title="水平居中对齐">⇹</button>
+              <button @click="alignSelected('right')" title="右对齐">⇥</button>
+              <button @click="alignSelected('top')" title="顶对齐">⇧</button>
+              <button @click="alignSelected('vcenter')" title="垂直居中对齐">⇳</button>
+              <button @click="alignSelected('bottom')" title="底对齐">⇩</button>
+              <button @click="distributeSelected('h')" title="水平等间距分布">⋯</button>
+              <button @click="distributeSelected('v')" title="垂直等间距分布">⋮</button>
+            </div>
+          </template>
           <button v-if="selectedPlaceIds.size > 0" @click="openReparentDialog" title="批量移入区域">⬆ 移入区域</button>
           <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界为贝塞尔曲线">〰️ 平滑</button>
           <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
@@ -223,6 +235,7 @@
         :world-bounds="worldBounds"
         @navigate="handleEagleEyeNavigate"
       />
+      <zoom-controls :renderer="renderer" :on-fit-all="fitAllContent" :on-fit-selection="fitSelection" />
       <!-- 空地图引导（P1-3）：浏览态且地图完全为空时提示可编辑 -->
       <div v-if="!editMode && fogMode" class="empty-map-hint">
         <div class="empty-map-icon">🗺️</div>
@@ -768,12 +781,16 @@ import { createPlanetInteractions } from '../composables/planetInteractions';
 import { getLastCommandLabel, execute } from '../store/undo';
 import { getTexturePattern, prewarmTextures } from '../utils/textures';
 import { snapPolygonToNeighbors } from '../utils/snap';
+import { alignItems, distributeItems, diffPositions } from '../utils/align';
+import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
+import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
 import { createProvinceByFloodFill } from '../utils/floodfill';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
 import SnapshotPanel from './SnapshotPanel.vue';
+import ZoomControls from './ZoomControls.vue';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -968,6 +985,7 @@ watch(interactionMode, (mode) => {
 // 拦截后续模式的自由绘制（根因：点过笔刷后 brushMode=true，切到区域/绘制被 !brushMode 拦截）
 function setInteractionMode(mode) {
   interactionMode.value = mode;
+  setStatus({ toolLabel: mode === 'pan' ? '浏览' : mode === 'move' ? '移动' : '绘制' });
   brushMode.value = false;
   floodFillMode.value = false;
   isBrushing.value = false;
@@ -2076,9 +2094,19 @@ const interactions = createPlanetInteractions(getState, {
 const renderer = useCanvasRenderer(canvas, {
   onRender,
   onHitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
+  onPointerMove: (wx, wy) => {
+    // E11: 状态栏坐标/缩放（每次鼠标移动，rAF 节流）
+    setStatusThrottled({
+      mouseWorld: { x: wx, y: wy },
+      zoom: renderer.viewTransform.scale * 100,
+    });
+  },
   onHover: (hit, wx, wy) => {
     // 光标世界坐标（左下角状态条）
     cursorCoord.value = { x: Math.round(wx), y: Math.round(wy), visible: true };
+    // E11: 底部状态栏（rAF 节流，不进渲染循环）
+    // （onPointerMove 见 renderer options，坐标持续更新；此处命中变化时同步选中数）
+    setStatusThrottled({ selectionCount: selectedPlaceIds.value.size });
     hoveredNode.value = hit?.type === 'place' ? hit.node : null;
     // 移动工具光标提示：可移动对象上显示 move，空白交还工具光标（批次A2 统一光标管理）
     const hoverMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
@@ -3306,6 +3334,8 @@ function redo() {
 onMounted(() => {
   renderer.initCanvas();
   renderer.requestRender();
+  showStatusBar('行星地图');
+  setStatus({ toolLabel: '浏览' });
   // 批次C3：挂载链分帧——自动区域生成（同步 O(regions×places)）延后一帧，
   // 首帧先呈现画布与背景网格，避免挂载帧被长任务阻塞
   requestAnimationFrame(() => {
@@ -3319,6 +3349,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
+  hideStatusBar();
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('keyup', handleKeyup);
   window.removeEventListener('sitian:focus-node', onFocusNode);
@@ -3381,6 +3412,13 @@ function handleKeydown(e) {
     }
   }
   if (!editMode.value) return;
+  // E1: 克隆 / 复制粘贴（编辑模式下生效；App 全局键不处理 C/V/D，无冲突）
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
+    if (k === 'c') { e.preventDefault(); copySelection(); return; }
+    if (k === 'v') { e.preventDefault(); pasteClipboard(); return; }
+  }
   const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
   if (!arrows.includes(e.key)) return;
   // 输入框/文本框聚焦时不拦截
@@ -3570,14 +3608,10 @@ function confirmArrange() {
     }
   }
   
-  // Apply positions via store
-  for (const pos of positions) {
-    store.updateNodePosition(pos.id, pos.x, pos.y);
-  }
-  
+  // Apply positions via store（单 undo 步骤）
+  applyPositions(positions);
+
   arrangeDialogOpen.value = false;
-  emit('dirty', true);
-  renderer.requestRender();
 }
 
 function getSelectedNodesCenter() {
@@ -3593,6 +3627,124 @@ function getSelectedNodesCenter() {
   }
   if (count === 0) return { x: 0, y: 0 };
   return { x: sumX / count, y: sumY / count };
+}
+
+// ===== E3: 对齐与分布（多选地点） =====
+// 位置批量应用统一走此函数：一次拖动/排列/对齐 = 一个 undo 步骤
+function applyPositions(positions) {
+  const valid = positions.filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (!valid.length) return;
+  store.beginMultiNodePositionCapture(valid.map(p => p.id));
+  for (const pos of valid) {
+    store.updateNodePosition(pos.id, pos.x, pos.y);
+  }
+  store.endMultiNodePositionCapture();
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function getSelectedPlaceItems() {
+  const items = [];
+  for (const id of selectedPlaceIds.value) {
+    const node = store.nodes.find(n => n.id === id);
+    if (node?.coordinate?.x != null) {
+      items.push({ id: node.id, x: node.coordinate.x, y: node.coordinate.y });
+    }
+  }
+  return items;
+}
+
+function alignSelected(mode) {
+  const items = getSelectedPlaceItems();
+  if (items.length < 2) return;
+  applyPositions(diffPositions(items, alignItems(items, mode)));
+}
+
+function distributeSelected(axis) {
+  const items = getSelectedPlaceItems();
+  if (items.length < 3) return;
+  applyPositions(diffPositions(items, distributeItems(items, axis)));
+}
+
+// ===== E1: 克隆 / 复制粘贴 =====
+// 内部剪贴板（utils/clipboard），不写 Markdown（红线 2）；克隆 id 用序列计数器（红线 1）
+let pasteCount = 0;
+const PASTE_OFFSET = 100; // 米，逐次粘贴累计错位
+
+function copySelection() {
+  const places = Array.from(selectedPlaceIds.value)
+    .map(id => store.nodes.find(n => n.id === id))
+    .filter(n => n && n.coordinate?.x != null);
+  if (places.length) {
+    setClipboard('places', places.map(n => ({ ...n })), 'planet');
+    pasteCount = 0;
+    return;
+  }
+  if (selectedMarker.value) {
+    setClipboard('markers', [selectedMarker.value], 'planet');
+    pasteCount = 0;
+  } else if (selectedTextLabel.value) {
+    setClipboard('textLabels', [selectedTextLabel.value], 'planet');
+    pasteCount = 0;
+  }
+}
+
+function pasteClipboard() {
+  const clip = getClipboard();
+  if (!clip) return;
+  // 跨视图粘贴按层级规则归一：places 粘到行星地图OK；area 类只粘回区域视图，此处跳过
+  pasteCount += 1;
+  const dx = PASTE_OFFSET * pasteCount;
+  const dy = PASTE_OFFSET * pasteCount;
+
+  if (clip.kind === 'places') {
+    for (const item of clip.items) {
+      const copy = cloneItem(item, dx, dy);
+      copy.id = `${copy.id}_p`;
+      copy.sourcePath = ''; // 克隆体无 Obsidian 词条（暂存性质，不写回 vault）
+      copy.displayName = `${copy.displayName || copy.name} 副本`;
+      store.addNode(copy);
+    }
+    emit('dirty', true);
+    renderer.requestRender();
+    return;
+  }
+  const planetId = props.planet?.id;
+  if (!planetId) return;
+  if (clip.kind === 'markers') {
+    for (const item of clip.items) {
+      store.addMarker(planetId, cloneItem(item, dx, dy));
+    }
+    emit('dirty', true);
+    renderer.requestRender();
+  } else if (clip.kind === 'textLabels') {
+    for (const item of clip.items) {
+      store.addTextLabel(planetId, cloneItem(item, dx, dy));
+    }
+    emit('dirty', true);
+    renderer.requestRender();
+  }
+}
+
+function duplicateSelection() {
+  copySelection();
+  pasteClipboard();
+}
+
+// ===== U2: 适配全部 / 适配选中 =====
+function fitAllContent() {
+  if (worldBounds.value) renderer.fitView(worldBounds.value);
+}
+
+function fitSelection() {
+  const items = getSelectedPlaceItems();
+  if (!items.length) return;
+  renderer.fitView({
+    minX: Math.min(...items.map(i => i.x)),
+    minY: Math.min(...items.map(i => i.y)),
+    maxX: Math.max(...items.map(i => i.x)),
+    maxY: Math.max(...items.map(i => i.y)),
+  });
 }
 
 watch(() => store.mapData[props.planet?.id], () => {
