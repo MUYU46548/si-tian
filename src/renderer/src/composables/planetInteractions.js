@@ -42,9 +42,13 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   // 否则点击锚点会被顶点拖拽拦截导致无法选点，2026-08-16 用户反馈）
   if (s.splitSelectMode || s.mergeSelectMode) return true;
 
-  // E4：选中标记/文本的旋转/缩放手柄（悬浮于对象之上，任意模式优先命中）
+  const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
+
+  // E4：选中标记/文本的旋转/缩放手柄（悬浮于对象之上，pan/move 模式优先命中）。
+  // 仅限选择类模式：marker/text/route/draw 等放置模式下手柄不拦截点击，
+  // 否则无法在已选对象手柄附近放置新对象（P1 修复，2026-08-29）
   // 采用状态驱动（与 move 拖拽一致）：返回 false 抑制平移，变换信息存组件 state
-  if (s.editMode && (s.selectedMarker || s.selectedTextLabel)) {
+  if ((mode === 'pan' || mode === 'move') && s.editMode && (s.selectedMarker || s.selectedTextLabel)) {
     const handleHit = s.hitTestSelectionHandle(wx, wy);
     if (handleHit) {
       const sel = s.selectedMarker
@@ -62,8 +66,6 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
       return false;
     }
   }
-
-  const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
 
   // panTry=true：pan 模式下的顶点试探，只做顶点检测，不做其他副作用
   if (panTry) {

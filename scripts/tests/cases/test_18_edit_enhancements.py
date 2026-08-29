@@ -8,6 +8,9 @@
   3. E4 缩放手柄：拖缩放手柄放大一倍 → scale=2 + undo 恢复
   4. E9 内联文本：双击文本 → 覆盖层出现 → 改名 Enter 提交 + undo 恢复
   5. E7 批量：Shift+点击两个标记 → multiSel=2 → 批量改类型 + 批量拖动 + undo
+  6. P1：marker 放置模式下点击已选对象手柄位置 → 放置新标记而非变换（不劫持）
+  7. P1：批量面板出现时侧栏 marker 编辑器让位，关闭批量面板后恢复
+  8. P1：同层级切换行星 → 选中/批量/内联态清空（无幽灵手柄/输入框）
 
 坐标精度说明：合成 MouseEvent 的 clientX/Y 会被引擎截断为整数像素，
 zoom=0.2 时 1px 误差 = 5 世界单位。所有拖拽/点击点先经 quantize_world_pts
@@ -17,8 +20,7 @@ import sys, os, json, time, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
 from lib.helpers import (goto_planet, enter_edit, confirm_yes, fit_world,
-                         set_pm_state, click_canvas_at_world,
-                         drag_canvas_polyline, dblclick_canvas_at_world)
+                         set_pm_state, drag_canvas_polyline, dblclick_canvas_at_world)
 
 
 def quantize_world_pts(cdp, pts):
@@ -266,7 +268,85 @@ def run(cdp):
         set_pm_state(cdp, "pm.undo(); pm.multiSel = []; return 'ok';")
         time.sleep(0.3)
 
-        return True, '编辑增强专项 5 项全通过（E5 磁吸/E4 旋转/E4 缩放/E9 内联文本/E7 批量）'
+        # ============ 6. P1：放置模式不被手柄劫持 ============
+        set_pm_state(cdp, "pm.selectedMarker = pm.currentMapData.markers.find(m => m.id === 't18_mkA'); pm.setInteractionMode('marker'); return 'ok';")
+        time.sleep(0.2)
+        before_ids = set(json.loads(set_pm_state(cdp, "return JSON.stringify(pm.currentMapData.markers.map(m => m.id));") or '[]'))
+        # 旋转手柄位于 (1500, 1500-10-22/zoom)；marker 放置模式下点击该处应放置新标记
+        hpos = json.loads(set_pm_state(cdp, """
+          const z = pm.renderer.viewTransform.scale;
+          return JSON.stringify({ x: 1500, y: 1500 - 10 - 22 / z });
+        """) or '{}')
+        q = quantize_world_pts(cdp, [(hpos['x'], hpos['y'])])
+        # 注意用同点折线派发点击：click_canvas_at_world 有视口内检查，
+        # 而手柄位置（A 上方 120 世界单位）超出 headless 小画布会被拒绝
+        drag_canvas_polyline(cdp, [q[0], q[0]])
+        time.sleep(0.3)
+        after_ids = json.loads(set_pm_state(cdp, "return JSON.stringify(pm.currentMapData.markers.map(m => m.id));") or '[]')
+        new_ids = [i for i in after_ids if i not in before_ids]
+        if not new_ids:
+            return False, 'P1: marker 放置模式下手柄位置点击未放置新标记（被手柄劫持）'
+        new_pos = json.loads(set_pm_state(cdp, f"const m = pm.currentMapData.markers.find(m => m.id === '{new_ids[0]}'); return JSON.stringify({{ x: m.x, y: m.y, rot: m.rotation || 0 }});") or '{}')
+        if abs(new_pos['x'] - q[0][0]) > 1e-6 or abs(new_pos['y'] - q[0][1]) > 1e-6:
+            return False, f'P1: 新标记位置不符 {new_pos} 预期 {q[0]}'
+        set_pm_state(cdp, f"pm.store.removeMarker(pm.store.currentPlanet.id, '{new_ids[0]}'); pm.setInteractionMode('move'); return 'ok';")
+        time.sleep(0.2)
+
+        # ============ 7. P1：批量面板出现时侧栏编辑器让位 ============
+        set_pm_state(cdp, """
+          pm.selectedMarker = pm.currentMapData.markers.find(m => m.id === 't18_mkA');
+          pm.multiSel = [ { type: 'marker', id: 't18_mkA' }, { type: 'marker', id: 't18_mkB' } ];
+          return 'ok';
+        """)
+        time.sleep(0.3)
+        if not cdp.eval("!!document.querySelector('.batch-editor')"):
+            return False, 'P1: 批量面板未出现'
+        if cdp.eval("!!document.querySelector('.marker-editor')"):
+            return False, 'P1: 批量面板出现时侧栏 marker 编辑器未让位（重叠）'
+        set_pm_state(cdp, "pm.multiSel = []; return 'ok';")
+        time.sleep(0.3)
+        if not cdp.eval("!!document.querySelector('.marker-editor')"):
+            return False, 'P1: 批量面板关闭后侧栏 marker 编辑器未恢复'
+
+        # ============ 8. P1：切换行星清空选中/批量/内联态 ============
+        set_pm_state(cdp, """
+          pm.selectedMarker = pm.currentMapData.markers.find(m => m.id === 't18_mkA');
+          pm.multiSel = [ { type: 'marker', id: 't18_mkA' } ];
+          const lbl = pm.currentMapData.textLabels.find(l => l.id === 't18_txt');
+          if (lbl) pm.startInlineTextEdit(lbl);
+          return 'ok';
+        """)
+        time.sleep(0.2)
+        if not cdp.eval("!!document.querySelector('.inline-text-edit')"):
+            return False, 'P1: 前置内联编辑覆盖层未出现'
+        set_pm_state(cdp, """
+          const other = pm.store.nodes.find(n => n.layer === 'planet' && n.name !== '乐园星');
+          if (!other) return 'no-other';
+          pm.store.selectPlanet(other);
+          return 'ok';
+        """)
+        time.sleep(1.0)
+        cleared = json.loads(set_pm_state(cdp, """
+          return JSON.stringify({
+            marker: !!pm.selectedMarker,
+            multi: pm.multiSel.length,
+            overlay: !!document.querySelector('.inline-text-edit'),
+            planet: pm.store.currentPlanet.name,
+          });
+        """) or '{}')
+        if cleared.get('marker') or cleared.get('multi', 1) != 0 or cleared.get('overlay'):
+            return False, f'P1: 切换行星后状态未清空 {cleared}'
+        # 切回乐园星（恢复清理上下文）
+        set_pm_state(cdp, """
+          const home = pm.store.nodes.find(n => n.layer === 'planet' && n.name === '乐园星');
+          pm.store.selectPlanet(home);
+          return 'ok';
+        """)
+        time.sleep(1.0)
+        if not _marker(cdp, 't18_mkA'):
+            return False, 'P1: 切回乐园星后标记 A 丢失'
+
+        return True, '编辑增强专项 8 项全通过（E5 磁吸/E4 旋转/E4 缩放/E9 内联/E7 批量/P1×3）'
     finally:
         # 清理注入对象（幂等：失败路径也执行）
         set_pm_state(cdp, "pm.multiSel = []; pm.selectedMarker = null; return 'ok';")

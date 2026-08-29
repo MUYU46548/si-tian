@@ -477,7 +477,7 @@
     </div>
     
     <!-- 选中标记的属性编辑面板 -->
-    <div v-if="editMode && selectedMarker" class="province-editor marker-editor">
+    <div v-if="editMode && selectedMarker && !batchPanelVisible" class="province-editor marker-editor">
       <div class="editor-header">
         <h3>编辑标记</h3>
         <button class="close-btn" @click="selectedMarker = null">×</button>
@@ -608,7 +608,7 @@
     </div>
     
     <!-- 选中浮动文本的属性编辑面板 -->
-    <div v-if="editMode && selectedTextLabel" class="province-editor text-editor">
+    <div v-if="editMode && selectedTextLabel && !batchPanelVisible" class="province-editor text-editor">
       <div class="editor-header">
         <h3>编辑文本</h3>
         <button class="close-btn" @click="selectedTextLabel = null">×</button>
@@ -643,8 +643,8 @@
       </div>
     </div>
 
-    <!-- E7 批量属性编辑面板（Shift 多选 ≥2 个标记/文本时出现） -->
-    <div v-if="editMode && multiSel.length >= 2 && multiSelObjects.length >= 2" class="province-editor batch-editor">
+    <!-- E7 批量属性编辑面板（Shift 多选 ≥2 个标记/文本时出现，同时侧栏编辑器让位） -->
+    <div v-if="batchPanelVisible" class="province-editor batch-editor">
       <div class="editor-header">
         <h3>批量编辑（{{ multiSelObjects.length }} 个对象）</h3>
         <button class="close-btn" @click="multiSel = []" title="取消批量选择（点空白处亦可）">×</button>
@@ -1357,6 +1357,9 @@ const multiSelObjects = computed(() => {
 });
 const multiMarkers = computed(() => multiSelObjects.value.filter(o => o.type === 'marker'));
 const multiLabels = computed(() => multiSelObjects.value.filter(o => o.type === 'textLabel'));
+// P1：批量面板与侧栏属性面板共用 .province-editor 定位槽（right:16 top:120），
+// 同时可见会完全重叠——批量面板出现时侧栏 marker/text 编辑器让位
+const batchPanelVisible = computed(() => editMode.value && multiSel.value.length >= 2 && multiSelObjects.value.length >= 2);
 
 // ===== E9 内联文本编辑（双击画布文本 → 原位覆盖层）=====
 const inlineEdit = ref(null);        // { id, sx, sy, value, fontSize, color }
@@ -1430,6 +1433,39 @@ function batchResetTransform() {
 const currentMapData = computed(() => {
   if (!props.planet) return null;
   return store.mapData[props.planet.id] || { planetId: props.planet.id, version: 1, terrain: [], regions: [], markers: [], routes: [], textLabels: [] };
+});
+
+// P1：同层级切换行星时组件不重建（App.vue 的 v-if 无 :key），必须手动清空
+// 选中/批量/内联/草稿态——否则旧行星坐标处的选中环/变换手柄/内联输入框会
+// 以"幽灵对象"形式画在新行星地图上（选中环按 id 匹配无此问题，手柄/输入框直接读坐标）
+watch(() => props.planet?.id, () => {
+  selectedProvince.value = null;
+  selectedRegion.value = null;
+  selectedMarker.value = null;
+  selectedRoute.value = null;
+  selectedTextLabel.value = null;
+  selectedPlaceIds.value = new Set();
+  multiSel.value = [];
+  lastShiftToggle.value = null;
+  transformDrag.value = null;
+  smartGuides.value = [];
+  inlineEdit.value = null;
+  dragObject.value = null;
+  dragRegionAnchor.value = null;
+  vertexDragKind.value = null;
+  vertexDragOld.value = null;
+  hoveredNode.value = null;
+  hoveredVertex.value = null;
+  // 绘制草稿同样属于旧行星坐标系
+  isDrawingActive.value = false;
+  currentPath.value = [];
+  drawingPolygon.value = null;
+  routeDraftPoints.value = [];
+  splitPoints.value = [];
+  isBoxSelecting.value = false;
+  boxSelectStart.value = null;
+  boxSelectEnd.value = null;
+  renderer?.requestRender();
 });
 
 // ===== 参考图底图（P2 多图）=====
