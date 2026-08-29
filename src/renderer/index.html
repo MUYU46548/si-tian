@@ -107,7 +107,7 @@
       var tipEl = document.getElementById('splash-tip');
       if (tipEl) tipEl.textContent = '💡 ' + SPLASH_TIPS[Math.floor(Date.now() / 86400000) % SPLASH_TIPS.length];
       var verEl = document.getElementById('splash-version');
-      if (verEl) verEl.textContent = 'v' + (window.sitianAPI?.version || '0.1.2');
+      if (verEl) verEl.textContent = 'v' + (window.sitianAPI?.version || '0.1.3');
       var root = document.getElementById('sitian-splash');
       var fill = document.getElementById('splash-bar-fill');
       var status = document.getElementById('splash-status');
