@@ -239,6 +239,8 @@
         />
         <div class="inline-text-hint">Enter 确认 · Esc 取消</div>
       </div>
+      <!-- P3：右键菜单（U3 统一框架）— 标记/文本编辑/复制/删除，空白处粘贴 -->
+      <context-menu :state="ctxMenu.state" @close="ctxMenu.close()" />
       <eagle-eye
         :view-bounds="viewBounds"
         :elements="eagleEyeElements"
@@ -700,6 +702,21 @@
         </div>
       </div>
 
+      <!-- P2：批量对齐与分布（marker/textLabel 混合组，与工具栏 E3 地点对齐同算法） -->
+      <div class="editor-field">
+        <label>对齐与分布（P2）</label>
+        <div class="line-style-row">
+          <button @click="alignMultiSel('left')" title="左对齐">⇤</button>
+          <button @click="alignMultiSel('hcenter')" title="水平居中对齐">⇹</button>
+          <button @click="alignMultiSel('right')" title="右对齐">⇥</button>
+          <button @click="alignMultiSel('top')" title="顶对齐">⇧</button>
+          <button @click="alignMultiSel('vcenter')" title="垂直居中对齐">⇳</button>
+          <button @click="alignMultiSel('bottom')" title="底对齐">⇩</button>
+          <button @click="distributeMultiSel('h')" title="水平等间距分布">⋯</button>
+          <button @click="distributeMultiSel('v')" title="垂直等间距分布">⋮</button>
+        </div>
+      </div>
+
       <div class="editor-field">
         <button class="adopt-btn batch-delete-btn" @click="deleteSelected" title="删除全部批量选中对象">🗑 删除所选（{{ multiSelObjects.length }}）</button>
       </div>
@@ -856,6 +873,7 @@ import { snapPolygonToNeighbors } from '../utils/snap';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
+import { useContextMenu } from '../composables/useContextMenu';
 import { createProvinceByFloodFill } from '../utils/floodfill';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
 import CanvasSkeleton from './CanvasSkeleton.vue';
@@ -864,6 +882,7 @@ import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
 import SnapshotPanel from './SnapshotPanel.vue';
 import ZoomControls from './ZoomControls.vue';
+import ContextMenu from './ContextMenu.vue';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -2089,6 +2108,7 @@ function onRender(ctx, w, h) {
 
 // ===== 命中检测（批次 2c：拆分至 composables/planetHitTest.js，2026-08-16） =====
 // 只读工厂：getState 每次命中测试取最新解包状态
+const ctxMenu = useContextMenu();
 const hitTestModule = createPlanetHitTest(() => ({
   layers,
   currentMapData: currentMapData.value,
@@ -2449,7 +2469,46 @@ const renderer = useCanvasRenderer(canvas, {
     if ((interactionMode.value === 'draw' || interactionMode.value === 'region') && drawingPolygon.value) {
       drawingPolygon.value = null;
       renderer.requestRender();
+      return;
     }
+    // P3：编辑模式下标记/文本右键菜单（U3 统一 ContextMenu 框架）
+    if (!editMode.value) return;
+    const hit = hitTestModule.hitTest(wx, wy);
+    const items = [];
+    if (hit?.type === 'marker') {
+      const m = hit.marker;
+      items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('marker', m); } });
+      items.push({ key: 'ctx-marker-copy', label: '复制标记', icon: '📋', action: () => { setClipboard('markers', [m], 'planet'); } });
+      items.push({ key: 'ctx-marker-del', label: '删除标记', icon: '🗑', danger: true, action: () => {
+        store.removeMarker(props.planet.id, m.id);
+        if (selectedMarker.value?.id === m.id) selectedMarker.value = null;
+        emit('dirty', true);
+        renderer.requestRender();
+      } });
+    } else if (hit?.type === 'textLabel') {
+      const l = hit.label;
+      items.push({ key: 'ctx-text-edit', label: '编辑文本', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('textLabel', l); startInlineTextEdit(l); } });
+      items.push({ key: 'ctx-text-copy', label: '复制文本', icon: '📋', action: () => { setClipboard('textLabels', [l], 'planet'); } });
+      items.push({ key: 'ctx-text-del', label: '删除文本', icon: '🗑', danger: true, action: () => {
+        store.removeTextLabel(props.planet.id, l.id);
+        if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null;
+        emit('dirty', true);
+        renderer.requestRender();
+      } });
+    } else if (!hit) {
+      const clip = getClipboard();
+      if (clip && ['markers', 'textLabels', 'planetObjects'].includes(clip.kind)) {
+        items.push({ key: 'ctx-paste', label: '粘贴', icon: '📋', action: () => pasteClipboard() });
+      }
+    }
+    if (!items.length) return;
+    const vt = renderer.viewTransform;
+    const cvs = canvas.value;
+    if (!cvs) return;
+    ctxMenu.open(items, {
+      x: wx * vt.scale + vt.x + cvs.clientWidth / 2,
+      y: wy * vt.scale + vt.y + cvs.clientHeight / 2,
+    }, cvs.parentElement);
   },
   onDragStart: interactions.onDragStart,
   onDragMove: interactions.onDragMove,
@@ -3976,6 +4035,39 @@ function distributeSelected(axis) {
   applyPositions(diffPositions(items, distributeItems(items, axis)));
 }
 
+// P2：批量组（markers/textLabels 混合）对齐与分布 — 与 E3 地点对齐共用
+// utils/align 纯函数，位置变更经 batchUpdateMapObjects 合并为单条 undo
+function getMultiSelItems() {
+  return multiSelObjects.value.map(({ id, obj }) => ({ id, x: obj.x, y: obj.y }));
+}
+
+function applyMultiTargets(targets) {
+  const map = new Map(multiSelObjects.value.map(o => [o.id, o]));
+  const entries = targets
+    .map(t => {
+      const o = map.get(t.id);
+      if (!o || (o.obj.x === t.x && o.obj.y === t.y)) return null;
+      return { kind: o.type, id: t.id, updates: { x: t.x, y: t.y }, old: { x: o.obj.x, y: o.obj.y } };
+    })
+    .filter(Boolean);
+  if (!entries.length) return;
+  store.batchUpdateMapObjects(props.planet.id, entries);
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function alignMultiSel(mode) {
+  const items = getMultiSelItems();
+  if (items.length < 2) return;
+  applyMultiTargets(alignItems(items, mode));
+}
+
+function distributeMultiSel(axis) {
+  const items = getMultiSelItems();
+  if (items.length < 3) return;
+  applyMultiTargets(distributeItems(items, axis));
+}
+
 // ===== E1: 克隆 / 复制粘贴 =====
 // 内部剪贴板（utils/clipboard），不写 Markdown（红线 2）；克隆 id 用序列计数器（红线 1）
 let pasteCount = 0;
@@ -3988,6 +4080,17 @@ function copySelection() {
   if (places.length) {
     setClipboard('places', places.map(n => ({ ...n })), 'planet');
     pasteCount = 0;
+    return;
+  }
+  // P2：批量组（marker/textLabel 混合）整体复制，粘贴保持相对布局
+  if (multiSel.value.length >= 2 && multiSelObjects.value.length >= 2) {
+    const items = multiSelObjects.value.map(({ type, obj }) => ({
+      type,
+      data: JSON.parse(JSON.stringify(obj)),
+    }));
+    setClipboard('planetObjects', items, 'planet');
+    pasteCount = 0;
+    exportStatus.value = `已复制 ${items.length} 个对象`;
     return;
   }
   if (selectedMarker.value) {
@@ -4015,6 +4118,32 @@ function pasteClipboard() {
       copy.displayName = `${copy.displayName || copy.name} 副本`;
       store.addNode(copy);
     }
+    emit('dirty', true);
+    renderer.requestRender();
+    return;
+  }
+  // P2：批量组粘贴 — markers/textLabels 混合按相对布局整体落位，粘贴后整组选中
+  // （批量面板随之出现，可直接继续批量调整）
+  if (clip.kind === 'planetObjects') {
+    const planetId = props.planet?.id;
+    if (!planetId) return;
+    const newSel = [];
+    for (const item of clip.items) {
+      const copy = cloneItem(item.data, dx, dy);
+      if (item.type === 'marker') {
+        store.addMarker(planetId, copy);
+        newSel.push({ type: 'marker', id: copy.id });
+      } else if (item.type === 'textLabel') {
+        store.addTextLabel(planetId, copy);
+        newSel.push({ type: 'textLabel', id: copy.id });
+      }
+    }
+    if (newSel.length) {
+      selectedMarker.value = null;
+      selectedTextLabel.value = null;
+      multiSel.value = newSel;
+    }
+    exportStatus.value = `已粘贴 ${newSel.length} 个对象`;
     emit('dirty', true);
     renderer.requestRender();
     return;

@@ -28,6 +28,26 @@ function applySmartSnap(s, pos, exclude) {
     places: s.places || [],
     regions: s.currentMapData?.regions || [],
   }, exclude);
+  return snapAgainst(s, pos, candidates);
+}
+
+// P2：多对象磁吸 — 候选集中排除整组成员（ids 按类型分组），按组中心对齐
+function applySmartSnapMulti(s, pos, { markerIds = [], labelIds = [], placeIds = [] } = {}) {
+  if (!s.smartGuidesEnabled) {
+    actions.setSmartGuides([]);
+    return pos;
+  }
+  const mid = new Set(markerIds), lid = new Set(labelIds), pid = new Set(placeIds);
+  const candidates = buildSnapCandidates({
+    markers: (s.currentMapData?.markers || []).filter(m => !mid.has(m.id)),
+    textLabels: (s.currentMapData?.textLabels || []).filter(l => !lid.has(l.id)),
+    places: (s.places || []).filter(p => !pid.has(p.id)),
+    regions: s.currentMapData?.regions || [],
+  }, {});
+  return snapAgainst(s, pos, candidates);
+}
+
+function snapAgainst(s, pos, candidates) {
   const threshold = SMART_SNAP_PX / (s.zoom || 1);
   const snapped = computeSmartSnap(pos, candidates, threshold);
   actions.setSmartGuides(snapped.guides);
@@ -241,9 +261,21 @@ function onDragMove(wx, wy, dragInfo) {
       // E7：批量拖动（成员位置 = 起始快照 + 指针位移，保持相对布局）
       const dx = wx - obj.start.x;
       const dy = wy - obj.start.y;
+      // P2：整组按组中心磁吸（候选排除组内全部成员，成员间互不为对方候选）
+      let sdx = 0, sdy = 0;
+      if (obj.members.length) {
+        const cx = obj.members.reduce((a, m) => a + m.old.x + dx, 0) / obj.members.length;
+        const cy = obj.members.reduce((a, m) => a + m.old.y + dy, 0) / obj.members.length;
+        const snapped = applySmartSnapMulti(s, { x: cx, y: cy }, {
+          markerIds: obj.members.filter(m => m.type === 'marker').map(m => m.id),
+          labelIds: obj.members.filter(m => m.type === 'textLabel').map(m => m.id),
+        });
+        sdx = snapped.x - cx;
+        sdy = snapped.y - cy;
+      }
       obj.members.forEach(m => {
-        m.obj.x = m.old.x + dx;
-        m.obj.y = m.old.y + dy;
+        m.obj.x = m.old.x + dx + sdx;
+        m.obj.y = m.old.y + dy + sdy;
       });
     }
     else if (obj.type === 'region' && s.dragRegionAnchor) {
@@ -300,15 +332,28 @@ function onDragMove(wx, wy, dragInfo) {
     return;
   }
 
-  // 批量拖拽：移动所有选中地点
+  // 批量拖拽：移动所有选中地点（P2：整组按组中心磁吸，候选排除组内成员）
   if (s.isDraggingPlaces && s.placesDragStart) {
     const dx = wx - s.placesDragStart.x;
     const dy = wy - s.placesDragStart.y;
+    const movable = [...s.selectedPlaceIds]
+      .map(id => s.places.find(p => p.id === id))
+      .filter(p => p && !p.locked && p.coordinate?.x != null);
+    let sdx = 0, sdy = 0;
+    if (movable.length && s.smartGuidesEnabled) {
+      const cx = movable.reduce((a, p) => a + p.coordinate.x, 0) / movable.length;
+      const cy = movable.reduce((a, p) => a + p.coordinate.y, 0) / movable.length;
+      const snapped = applySmartSnapMulti(s, { x: cx + dx, y: cy + dy }, { placeIds: [...s.selectedPlaceIds] });
+      sdx = snapped.x - (cx + dx);
+      sdy = snapped.y - (cy + dy);
+    } else if (!s.smartGuidesEnabled) {
+      actions.setSmartGuides([]);
+    }
     s.selectedPlaceIds.forEach(id => {
       const node = s.places.find(p => p.id === id);
       if (node && !node.locked) {
-        node.coordinate.x = (node.coordinate.x || 0) + dx;
-        node.coordinate.y = (node.coordinate.y || 0) + dy;
+        node.coordinate.x = (node.coordinate.x || 0) + dx + sdx;
+        node.coordinate.y = (node.coordinate.y || 0) + dy + sdy;
         s.store.updateNodePosition(id, node.coordinate.x, node.coordinate.y);
       }
     });

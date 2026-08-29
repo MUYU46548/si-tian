@@ -6,6 +6,7 @@
  */
 import { pointInPolygon, perpendicularDistance } from '../utils/geometry';
 import { hitHandleAt } from '../utils/selectionHandles';
+import { measureLabelWidth, labelPadding } from '../utils/textMeasure';
 
 export function createPlanetHitTest(getState) {
 
@@ -100,9 +101,24 @@ function hitTestTextLabel(wx, wy) {
     if (!label?.text) continue;
     const fontSize = label.fontSize || 16;
     const scale = label.scale || 1;
-    const w = ((label.text.length * fontSize * 0.9) / 2 + 8) * scale;
-    const h = (fontSize + 10) * scale;
-    if (Math.abs(wx - label.x) < w && Math.abs(wy - label.y) < h / 2) {
+    const rot = ((label.rotation || 0) * Math.PI) / 180;
+    // P2：命中框 = 绘制层文本背景框（measureText 实测宽 + padding，见 textMeasure.js），
+    // 不再字符数估算；命中点做逆变换（平移 → 逆旋转 → 逆缩放）到文本本地坐标再比较，
+    // 旋转/缩放后的正文才能点中
+    const pad = labelPadding(fontSize);
+    const halfW = measureLabelWidth(label.text, fontSize) / 2 + pad;
+    const halfH = fontSize / 2 + pad / 2;
+    const dx = wx - label.x;
+    const dy = wy - label.y;
+    let lx = dx, ly = dy;
+    if (rot !== 0) {
+      const cos = Math.cos(-rot), sin = Math.sin(-rot);
+      lx = dx * cos - dy * sin;
+      ly = dx * sin + dy * cos;
+    }
+    lx /= scale;
+    ly /= scale;
+    if (Math.abs(lx) <= halfW && Math.abs(ly) <= halfH) {
       return { type: 'textLabel', label };
     }
   }
@@ -117,6 +133,8 @@ function hitTestSelectionHandle(wx, wy) {
     ? { kind: 'marker', obj: s.selectedMarker }
     : (s.selectedTextLabel ? { kind: 'textLabel', obj: s.selectedTextLabel } : null);
   if (!sel) return null;
+  // P2：空文本标签与绘制层一致不显示手柄，也不响应手柄命中（幽灵手柄）
+  if (sel.kind === 'textLabel' && !sel.obj.text?.trim()) return null;
   const handle = hitHandleAt(wx, wy, sel.obj, sel.kind, s.zoom || 1);
   return handle ? { handle } : null;
 }

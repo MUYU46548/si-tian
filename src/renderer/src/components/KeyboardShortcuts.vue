@@ -37,6 +37,33 @@
           </div>
         </div>
         <div class="shortcut-group">
+          <h3>行星地图编辑</h3>
+          <div class="shortcut-item">
+            <kbd>Shift</kbd> + <kbd>点击</kbd>
+            <span>批量选择标记/文本</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>V</kbd>
+            <span>复制 / 粘贴（含批量组）</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Ctrl</kbd> + <kbd>D</kbd>
+            <span>克隆选中对象/组</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>双击文本</kbd>
+            <span>内联编辑文本内容</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>方向键</kbd>
+            <span>微调选中位置（Shift 加速）</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Right Click</kbd>
+            <span>标记/文本右键菜单</span>
+          </div>
+        </div>
+        <div class="shortcut-group">
           <h3>搜索</h3>
           <div class="shortcut-item">
             <kbd>Ctrl</kbd> + <kbd>F</kbd>

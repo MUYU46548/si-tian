@@ -8,6 +8,7 @@
 import { getTexturePattern } from '../utils/textures';
 import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '../utils/selectionHandles';
+import { labelFont } from '../utils/textMeasure';
 
 // ===== 样式常量（从 PlanetMap.vue 迁移） =====
 const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
@@ -1214,7 +1215,7 @@ function drawTextLabels(ctx) {
     }
     const cx = transformed ? 0 : label.x;
     const cy = transformed ? 0 : label.y;
-    ctx.font = `${fontSize}px "Microsoft YaHei", sans-serif`;
+    ctx.font = labelFont(fontSize);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -1516,6 +1517,9 @@ function drawSelectionHandles(ctx) {
     ? { kind: 'marker', obj: s.selectedMarker }
     : (s.selectedTextLabel ? { kind: 'textLabel', obj: s.selectedTextLabel } : null);
   if (!sel) return;
+  // P2：空文本标签正文不渲染（drawTextLabels 跳过），手柄也不画——否则只剩
+  // 一个看不见锚点的"幽灵手柄"悬浮在画布上
+  if (sel.kind === 'textLabel' && !sel.obj.text?.trim()) return;
   const zoom = s.zoom || 1;
   const hp = getHandlePositions(sel.obj, sel.kind, zoom);
 

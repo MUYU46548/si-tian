@@ -153,3 +153,35 @@ def dblclick_canvas_at_world(cdp, wx, wy):
       return 'ok';
     }})()"""
     return cdp.eval(expr)
+
+
+def quantize_world_pts(cdp, pts):
+    """把世界坐标点集量化为整数屏幕像素栅格上的精确世界坐标。
+
+    原理：dispatch 的 clientY = rect.top + sy 会被引擎 floor；
+    取 K = ceil(rect.top + sy) 并反解 world' = (K - rect.top - ch/2 - vt.y) / scale，
+    则 floor(rect.top + sy') == K 恒成立，screenToWorld 还原结果与 world' 严格一致。
+
+    合成 MouseEvent 的 clientX/Y 会被引擎截断为整数像素，zoom=0.2 时 1px 误差
+    = 5 世界单位。所有拖拽/点击点先经本函数量化，保证断言可复现。
+    （P2：从 test_18 提升为共享工具，供各画布编辑用例复用）
+    """
+    pts_js = json.dumps(pts)
+    expr = f"""(() => {{
+      const pm = document.querySelector('.planet-map-container')?.__vueParentComponent?.setupState;
+      const c = document.querySelector('.canvas-wrapper canvas');
+      if (!pm || !c) return '[]';
+      const r = c.getBoundingClientRect();
+      const vt = pm.renderer.viewTransform;
+      const toSX = wx => wx * vt.scale + vt.x + c.clientWidth / 2;
+      const toSY = wy => wy * vt.scale + vt.y + c.clientHeight / 2;
+      const fromSX = sx => (sx - c.clientWidth / 2 - vt.x) / vt.scale;
+      const fromSY = sy => (sy - c.clientHeight / 2 - vt.y) / vt.scale;
+      const pts = {pts_js};
+      return JSON.stringify(pts.map(([wx, wy]) => {{
+        const kx = Math.ceil(r.left + toSX(wx));
+        const ky = Math.ceil(r.top + toSY(wy));
+        return [fromSX(kx - r.left), fromSY(ky - r.top)];
+      }}));
+    }})()"""
+    return json.loads(cdp.eval(expr))

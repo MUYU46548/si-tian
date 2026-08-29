@@ -75,7 +75,8 @@ export function planetToGeoJSON(data) {
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: pointCoords({ x: marker.x, y: marker.y }) },
-      properties: { kind: 'marker', id: marker.id, type: marker.type || null, icon: marker.icon || null, color: marker.color || null, note: marker.note || null },
+      // P3：rotation/scale 随导出保留（E4 变换往返不丢）
+      properties: { kind: 'marker', id: marker.id, type: marker.type || null, icon: marker.icon || null, color: marker.color || null, note: marker.note || null, rotation: marker.rotation ?? null, scale: marker.scale ?? null },
     });
   }
 
@@ -83,7 +84,7 @@ export function planetToGeoJSON(data) {
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: pointCoords({ x: label.x, y: label.y }) },
-      properties: { kind: 'textLabel', id: label.id, text: label.text || null, fontSize: label.fontSize || null, color: label.color || null },
+      properties: { kind: 'textLabel', id: label.id, text: label.text || null, fontSize: label.fontSize || null, color: label.color || null, rotation: label.rotation ?? null, scale: label.scale ?? null },
     });
   }
 
@@ -135,10 +136,10 @@ export function geoJSONToPlanet(fc) {
         });
       } else if (geom.type === 'Point' && props.kind === 'marker') {
         const [x, y] = geom.coordinates;
-        result.markers.push({ id: newId, type: props.type || 'pin', x, y, icon: props.icon || '📍', color: props.color || null, note: props.note || '' });
+        result.markers.push({ id: newId, type: props.type || 'pin', x, y, icon: props.icon || '📍', color: props.color || null, note: props.note || '', rotation: props.rotation ?? 0, scale: props.scale ?? 1 });
       } else if (geom.type === 'Point' && props.kind === 'textLabel') {
         const [x, y] = geom.coordinates;
-        result.textLabels.push({ id: newId, text: props.text || '', x, y, fontSize: props.fontSize || 14, color: props.color || '#cccccc' });
+        result.textLabels.push({ id: newId, text: props.text || '', x, y, fontSize: props.fontSize || 14, color: props.color || '#cccccc', rotation: props.rotation ?? 0, scale: props.scale ?? 1 });
       } else if (geom.type === 'LineString' && props.kind === 'route') {
         result.routes.push({ id: newId, name: props.name || null, color: props.color || null, points: geom.coordinates.map(([x, y]) => ({ x, y })) });
       } else if (geom.type === 'Polygon' && props.kind === 'region') {

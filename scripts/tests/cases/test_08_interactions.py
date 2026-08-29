@@ -60,8 +60,12 @@ def run(cdp):
         return False, f'place 拖拽准备失败: {info}'
     orig = json.loads(cdp.eval("JSON.stringify(window.__t_orig)"))
     dx, dy = 120, 80
+    # P2 起 place 拖拽接 E5 磁吸（与 marker/text 一致，test_18 步骤 1/9 覆盖），
+    # 乐园星对象密集，落点易被吸到候选轴上——本用例断言精确位移，先关闭磁吸
+    set_pm_state(cdp, "pm.smartGuidesEnabled = false; return 'ok';")
     drag_canvas_polyline(cdp, [(orig['x'], orig['y']), (orig['x'] + dx, orig['y'] + dy)])
     time.sleep(0.4)
+    set_pm_state(cdp, "pm.smartGuidesEnabled = true; return 'ok';")
     moved = json.loads(set_pm_state(cdp, """
       const p = pm.places.find(x => x.id === window.__t_place);
       return JSON.stringify({ x: p.coordinate.x, y: p.coordinate.y });

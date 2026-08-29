@@ -11,44 +11,21 @@
   6. P1：marker 放置模式下点击已选对象手柄位置 → 放置新标记而非变换（不劫持）
   7. P1：批量面板出现时侧栏 marker 编辑器让位，关闭批量面板后恢复
   8. P1：同层级切换行星 → 选中/批量/内联态清空（无幽灵手柄/输入框）
+  9. P2：批量组（marker+text 混合）复制 → 粘贴整体偏移 + 粘贴后整组选中
+ 10. P2：批量组对齐/分布 → 单条 undo
+ 11. P2：文本命中框 measureText 精确化 + 旋转正文命中 + 空文本无幽灵手柄
+ 12. P2：顶点拖拽启用 fastMode（松手恢复全质量渲染）
 
 坐标精度说明：合成 MouseEvent 的 clientX/Y 会被引擎截断为整数像素，
 zoom=0.2 时 1px 误差 = 5 世界单位。所有拖拽/点击点先经 quantize_world_pts
-量化到"整数屏幕像素栅格"对应的精确世界坐标，保证断言可复现。
+（已提升至 lib/helpers.py 共享）量化到"整数屏幕像素栅格"对应的精确世界坐标。
 """
 import sys, os, json, time, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
 from lib.helpers import (goto_planet, enter_edit, confirm_yes, fit_world,
-                         set_pm_state, drag_canvas_polyline, dblclick_canvas_at_world)
-
-
-def quantize_world_pts(cdp, pts):
-    """把世界坐标点集量化为整数屏幕像素栅格上的精确世界坐标。
-
-    原理：dispatch 的 clientY = rect.top + sy 会被引擎 floor；
-    取 K = ceil(rect.top + sy) 并反解 world' = (K - rect.top - ch/2 - vt.y) / scale，
-    则 floor(rect.top + sy') == K 恒成立，screenToWorld 还原结果与 world' 严格一致。
-    """
-    pts_js = json.dumps(pts)
-    expr = f"""(() => {{
-      const pm = document.querySelector('.planet-map-container')?.__vueParentComponent?.setupState;
-      const c = document.querySelector('.canvas-wrapper canvas');
-      if (!pm || !c) return '[]';
-      const r = c.getBoundingClientRect();
-      const vt = pm.renderer.viewTransform;
-      const toSX = wx => wx * vt.scale + vt.x + c.clientWidth / 2;
-      const toSY = wy => wy * vt.scale + vt.y + c.clientHeight / 2;
-      const fromSX = sx => (sx - c.clientWidth / 2 - vt.x) / vt.scale;
-      const fromSY = sy => (sy - c.clientHeight / 2 - vt.y) / vt.scale;
-      const pts = {pts_js};
-      return JSON.stringify(pts.map(([wx, wy]) => {{
-        const kx = Math.ceil(r.left + toSX(wx));
-        const ky = Math.ceil(r.top + toSY(wy));
-        return [fromSX(kx - r.left), fromSY(ky - r.top)];
-      }}));
-    }})()"""
-    return json.loads(cdp.eval(expr))
+                         set_pm_state, drag_canvas_polyline, dblclick_canvas_at_world,
+                         quantize_world_pts)
 
 
 def _add_marker(cdp, mid, x, y, name):
@@ -224,6 +201,8 @@ def run(cdp):
         # ============ 5. E7 批量选择/属性/拖动 ============
         # Shift+点击 A 与 B（真实鼠标链路：同点 mousedown/move/mouseup + shiftKey）
         # 注意：A 在步骤 1 拖拽后已 undo 回 (1500,1500)
+        # P2 组磁吸开启时会按组中心修正位移，此处关闭保证位移断言精确
+        set_pm_state(cdp, "pm.smartGuidesEnabled = false; return 'ok';")
         a_pos = _marker(cdp, 't18_mkA')
         q = quantize_world_pts(cdp, [(a_pos['x'], a_pos['y'])])
         drag_canvas_polyline(cdp, [q[0], q[0]], shift=True)
@@ -346,14 +325,189 @@ def run(cdp):
         if not _marker(cdp, 't18_mkA'):
             return False, 'P1: 切回乐园星后标记 A 丢失'
 
-        return True, '编辑增强专项 8 项全通过（E5 磁吸/E4 旋转/E4 缩放/E9 内联/E7 批量/P1×3）'
+        # ============ 9. P2：批量组复制/粘贴 ============
+        set_pm_state(cdp, """
+          const pid = pm.store.currentPlanet.id;
+          pm.store.addMarker(pid, { id: 't18_mkC', type: 'chest', name: 'C', x: 2000, y: 2000, description: '' });
+          pm.store.addTextLabel(pid, { id: 't18_lblC', x: 2100, y: 2050, text: '组合文本', fontSize: 16, color: '#2D3436' });
+          pm.multiSel = [
+            { type: 'marker', id: 't18_mkC' },
+            { type: 'textLabel', id: 't18_lblC' },
+          ];
+          pm.selectedMarker = null; pm.selectedTextLabel = null;
+          pm.selectedPlaceIds = new Set();
+          return 'ok';
+        """)
+        time.sleep(0.3)
+        mk_before = json.loads(set_pm_state(cdp, "return JSON.stringify(pm.currentMapData.markers.map(m => m.id));") or '[]')
+        lbl_before = json.loads(set_pm_state(cdp, "return JSON.stringify(pm.currentMapData.textLabels.map(l => l.id));") or '[]')
+        set_pm_state(cdp, "pm.copySelection(); pm.pasteClipboard(); return 'ok';")
+        time.sleep(0.3)
+        pasted = json.loads(set_pm_state(cdp, """
+          const nm = pm.currentMapData.markers.filter(m => m.id.startsWith('t18_mkC_c'));
+          const nl = pm.currentMapData.textLabels.filter(l => l.id.startsWith('t18_lblC_c'));
+          return JSON.stringify({ m: nm.map(m => ({ x: m.x, y: m.y })), l: nl.map(l => ({ x: l.x, y: l.y })), sel: pm.multiSel.length });
+        """) or '{}')
+        if len(pasted.get('m', [])) != 1 or len(pasted.get('l', [])) != 1:
+            return False, f'P2: 组粘贴应产生 1 标记+1 文本 ({pasted})'
+        if abs(pasted['m'][0]['x'] - 2100) > 1e-6 or abs(pasted['m'][0]['y'] - 2100) > 1e-6:
+            return False, f'P2: 组粘贴标记偏移不符 {pasted["m"][0]} 预期 (2100, 2100)'
+        if abs(pasted['l'][0]['x'] - 2200) > 1e-6 or abs(pasted['l'][0]['y'] - 2150) > 1e-6:
+            return False, f'P2: 组粘贴文本偏移不符 {pasted["l"][0]} 预期 (2200, 2150)'
+        if pasted.get('sel') != 2:
+            return False, f'P2: 粘贴后未整组选中 (multiSel={pasted.get("sel")})'
+        if not cdp.eval("!!document.querySelector('.batch-editor')"):
+            return False, 'P2: 组粘贴后批量面板未出现'
+        set_pm_state(cdp, "pm.undo(); pm.undo(); pm.multiSel = []; return 'ok';")
+        time.sleep(0.3)
+        mk_after = json.loads(set_pm_state(cdp, "return JSON.stringify(pm.currentMapData.markers.map(m => m.id));") or '[]')
+        lbl_after = json.loads(set_pm_state(cdp, "return JSON.stringify(pm.currentMapData.textLabels.map(l => l.id));") or '[]')
+        if mk_after != mk_before or lbl_after != lbl_before:
+            return False, 'P2: 组粘贴 undo 未恢复（残留副本对象）'
+
+        # ============ 10. P2：批量组对齐/分布 ============
+        set_pm_state(cdp, """
+          const pid = pm.store.currentPlanet.id;
+          pm.store.addMarker(pid, { id: 't18_mkD', type: 'flag', name: 'D', x: 3000, y: 3000, description: '' });
+          pm.store.addMarker(pid, { id: 't18_mkE', type: 'flag', name: 'E', x: 3250, y: 3100, description: '' });
+          pm.store.addTextLabel(pid, { id: 't18_lblF', x: 3400, y: 3200, text: '对齐', fontSize: 16, color: '#2D3436' });
+          pm.multiSel = [
+            { type: 'marker', id: 't18_mkD' },
+            { type: 'marker', id: 't18_mkE' },
+            { type: 'textLabel', id: 't18_lblF' },
+          ];
+          return 'ok';
+        """)
+        time.sleep(0.3)
+        # 顶对齐 → 三者 y = min(3000, 3100, 3200) = 3000
+        set_pm_state(cdp, "pm.alignMultiSel('top'); return 'ok';")
+        time.sleep(0.3)
+        ys = json.loads(set_pm_state(cdp, """
+          const d = pm.currentMapData;
+          const ys = [d.markers.find(m => m.id === 't18_mkD').y, d.markers.find(m => m.id === 't18_mkE').y, d.textLabels.find(l => l.id === 't18_lblF').y];
+          return JSON.stringify(ys);
+        """) or '[]')
+        if len(ys) != 3 or any(abs(y - 3000) > 1e-6 for y in ys):
+            return False, f'P2: 批量顶对齐未生效 (ys={ys})'
+        set_pm_state(cdp, "pm.undo(); return 'ok';")
+        time.sleep(0.3)
+        # 水平分布 → x sorted [3000, 3250, 3400] → 等距 [3000, 3200, 3400]
+        set_pm_state(cdp, "pm.distributeMultiSel('h'); return 'ok';")
+        time.sleep(0.3)
+        xs = json.loads(set_pm_state(cdp, """
+          const d = pm.currentMapData;
+          const xs = [d.markers.find(m => m.id === 't18_mkD').x, d.markers.find(m => m.id === 't18_mkE').x, d.textLabels.find(l => l.id === 't18_lblF').x];
+          return JSON.stringify(xs);
+        """) or '[]')
+        if len(xs) != 3 or abs(sorted(xs)[1] - 3200) > 1e-6:
+            return False, f'P2: 批量水平分布未生效 (xs={xs})'
+        set_pm_state(cdp, "pm.undo(); pm.multiSel = []; return 'ok';")
+        time.sleep(0.3)
+
+        # ============ 11. P2：文本命中框精确化 + 旋转正文命中 + 空文本幽灵手柄 ============
+        set_pm_state(cdp, """
+          const pid = pm.store.currentPlanet.id;
+          pm.store.addTextLabel(pid, { id: 't18_txt_hit', x: 1500, y: 2500, text: 'Station Alpha', fontSize: 16, color: '#2D3436' });
+          pm.store.addTextLabel(pid, { id: 't18_txt_empty', x: 1800, y: 2500, text: '', fontSize: 16, color: '#2D3436' });
+          pm.selectedMarker = null; pm.selectedTextLabel = null; pm.multiSel = [];
+          return 'ok';
+        """)
+        time.sleep(0.3)
+        W = json.loads(cdp.eval("""
+          (() => {
+            const c = document.createElement('canvas').getContext('2d');
+            c.font = '16px "Microsoft YaHei", sans-serif';
+            return JSON.stringify({ w: c.measureText('Station Alpha').width });
+          })()
+        """) or '{}').get('w', 0)
+        if not W:
+            return False, 'P2: measureText 校验宽度计算失败'
+        pad = 16 * 0.4  # textMeasure.labelPadding(16)
+        # 未旋转：框内命中（半宽 -2），框外（半宽+pad+2）不命中
+        hit_in = set_pm_state(cdp, f"const h = pm.hitTestModule.hitTestTextLabel({1500 + W / 2 - 2}, 2500); return h ? h.label.id : 'null';")
+        if hit_in != 't18_txt_hit':
+            return False, f'P2: 文本命中框未按 measureText 精确化 (命中={hit_in})'
+        hit_out = set_pm_state(cdp, f"const h = pm.hitTestModule.hitTestTextLabel({1500 + W / 2 + pad + 2}, 2500); return h ? h.label.id : 'null';")
+        if hit_out != 'null':
+            return False, f'P2: 文本命中框出界未排除 (命中={hit_out})'
+        # 旋转 90°：本地点 (W/2-2, 0) → 世界 (1500, 2500 + W/2-2)；旧字符数估算框（半高 13）命不中此点
+        set_pm_state(cdp, "pm.store.updateTextLabel(pm.store.currentPlanet.id, 't18_txt_hit', { rotation: 90 }); return 'ok';")
+        time.sleep(0.3)
+        rot_in = set_pm_state(cdp, f"const h = pm.hitTestModule.hitTestTextLabel(1500, {2500 + W / 2 - 2}); return h ? h.label.id : 'null';")
+        if rot_in != 't18_txt_hit':
+            return False, f'P2: 旋转正文未命中 (命中={rot_in})'
+        rot_out = set_pm_state(cdp, f"const h = pm.hitTestModule.hitTestTextLabel(1500, {2500 + W / 2 + pad + 3}); return h ? h.label.id : 'null';")
+        if rot_out != 'null':
+            return False, f'P2: 旋转正文出界未排除 (命中={rot_out})'
+        set_pm_state(cdp, "pm.undo(); return 'ok';")
+        time.sleep(0.3)
+        # 空文本幽灵手柄：空文本选中 → 手柄位置不响应；非空对照 → 命中 rotate
+        ghost = json.loads(set_pm_state(cdp, """
+          const z = pm.renderer.viewTransform.scale;
+          const h = (16 + 16 * 0.4); // textLabel 手柄框高（fontSize + padding）
+          const hy = 2500 - h / 2 - 22 / z;  // 旋转手柄世界 y（rotation=0, scale=1）
+          pm.selectedTextLabel = pm.currentMapData.textLabels.find(l => l.id === 't18_txt_empty');
+          const g = pm.hitTestModule.hitTestSelectionHandle(1800, hy);
+          pm.selectedTextLabel = pm.currentMapData.textLabels.find(l => l.id === 't18_txt_hit');
+          const ok = pm.hitTestModule.hitTestSelectionHandle(1500, hy);
+          pm.selectedTextLabel = null;
+          return JSON.stringify({ ghost: g ? g.handle : null, live: ok ? ok.handle : null });
+        """) or '{}')
+        if ghost.get('ghost') is not None:
+            return False, f'P2: 空文本幽灵手柄仍可命中 ({ghost["ghost"]})'
+        if ghost.get('live') != 'rotate':
+            return False, f'P2: 非空文本手柄对照未命中 ({ghost.get("live")})'
+
+        # ============ 12. P2：顶点拖拽启用 fastMode ============
+        terrain_ok = json.loads(set_pm_state(cdp, """
+          const t = pm.currentMapData.terrain && pm.currentMapData.terrain[0];
+          if (!t || !t.points || !t.points.length) return 'null';
+          pm.selectedProvince = t;
+          pm.setInteractionMode('pan');
+          return JSON.stringify({ x: t.points[0].x, y: t.points[0].y });
+        """) or 'null')
+        if not terrain_ok:
+            return False, 'P2: 无可用地形顶点（fastMode 用例前置失败）'
+        drag_js = f"""
+          (() => {{
+            const pm = document.querySelector('.planet-map-container').__vueParentComponent.setupState;
+            const c = document.querySelector('.canvas-wrapper canvas');
+            const r = c.getBoundingClientRect();
+            const vt = pm.renderer.viewTransform;
+            const sx = {terrain_ok['x']} * vt.scale + vt.x + c.clientWidth / 2;
+            const sy = {terrain_ok['y']} * vt.scale + vt.y + c.clientHeight / 2;
+            const mk = (x, y, t) => new MouseEvent(t, {{ clientX: r.left + x, clientY: r.top + y, bubbles: true, cancelable: true, button: 0 }});
+            c.dispatchEvent(mk(sx, sy, 'mousedown'));
+            c.dispatchEvent(mk(sx + 30, sy + 20, 'mousemove'));
+            const during = pm.renderer.isFastMode();
+            c.dispatchEvent(mk(sx + 30, sy + 20, 'mouseup'));
+            const after = pm.renderer.isFastMode();
+            pm.undo();  // 顶点微移回滚
+            pm.selectedProvince = null;
+            return JSON.stringify({{ during, after }});
+          }})()
+        """
+        fm = json.loads(cdp.eval(drag_js) or '{}')
+        if not fm.get('during'):
+            return False, f'P2: 顶点拖拽未启用 fastMode ({fm})'
+        if fm.get('after') is not False:
+            return False, f'P2: 松手后 fastMode 未恢复 ({fm})'
+
+        return True, '编辑增强专项 12 项全通过（E5 磁吸/E4 旋转/E4 缩放/E9 内联/E7 批量/P1×3/P2×4）'
     finally:
         # 清理注入对象（幂等：失败路径也执行）
-        set_pm_state(cdp, "pm.multiSel = []; pm.selectedMarker = null; return 'ok';")
+        set_pm_state(cdp, "pm.multiSel = []; pm.selectedMarker = null; pm.selectedTextLabel = null; return 'ok';")
         _remove_marker(cdp, 't18_mkA')
         _remove_marker(cdp, 't18_mkB')
+        _remove_marker(cdp, 't18_mkC')
+        _remove_marker(cdp, 't18_mkD')
+        _remove_marker(cdp, 't18_mkE')
         set_pm_state(cdp, """
           const pid = pm.store.currentPlanet.id;
           pm.store.removeTextLabel(pid, 't18_txt');
+          pm.store.removeTextLabel(pid, 't18_lblC');
+          pm.store.removeTextLabel(pid, 't18_lblF');
+          pm.store.removeTextLabel(pid, 't18_txt_hit');
+          pm.store.removeTextLabel(pid, 't18_txt_empty');
           return 'ok';
         """)

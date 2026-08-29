@@ -381,6 +381,13 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     
     // 顶点拖拽
     if (isDraggingVertex && onDragMove) {
+      // P2：顶点拖拽与节点/平移同阈值启用 fastMode（大区域顶点拖拽曾是全质量渲染）
+      const vdx = mx - mouseDownPos.x;
+      const vdy = my - mouseDownPos.y;
+      if (Math.abs(vdx) > fastModeThreshold || Math.abs(vdy) > fastModeThreshold) {
+        isDragOperation = true;
+        fastMode = true;
+      }
       onDragMove(world.x, world.y, { mode: 'vertex', vertexInfo: draggingVertexInfo });
       requestRender();
       return;
@@ -437,6 +444,10 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       const dy = my - mouseDownPos.y;
       if (panSuppressed && Math.hypot(dx, dy) > fastModeThreshold) {
         suppressedMoved = true;
+        // P2：对象拖拽（marker/textLabel/地点，经 panSuppressed 驱动）同样接 fastMode；
+        // isDragOperation 置位使松手时 fastMode 复位 + 全质量重绘，并抑制拖拽后误触 onClick
+        isDragOperation = true;
+        fastMode = true;
       }
       onDragMove(world.x, world.y, { mode: 'pan', dx, dy });
     }

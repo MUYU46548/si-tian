@@ -7,8 +7,10 @@
  * 约定：
  *  - rotation 存角度（degree，顺时针为正，Canvas 2D y 向下），scale 存无量纲倍数
  *  - 手柄/线宽尺寸用 zoom 反推世界坐标（屏幕常数大小）
- *  - 文本包围盒用与 hitTest 一致的近似测宽（字符数 × 字号 × 0.9），保证手柄框与命中框一致
+ *  - 文本包围盒用 measureText 实测宽度（utils/textMeasure，与绘制背景框/命中框同源），
+ *    保证手柄框与视觉文本边缘贴合
  */
+import { measureLabelWidth, labelPadding } from './textMeasure';
 
 // 手柄视觉尺寸（屏幕像素）
 export const HANDLE_HIT_PX = 10;   // 命中半径
@@ -25,8 +27,8 @@ export function getSelectionBox(obj, kind) {
   const scale = obj.scale || 1;
   if (kind === 'textLabel') {
     const fontSize = obj.fontSize || 16;
-    const pad = fontSize * 0.4;
-    const w = ((obj.text?.length || 0) * fontSize * 0.9 + pad * 2) * scale;
+    const pad = labelPadding(fontSize);
+    const w = (measureLabelWidth(obj.text || '', fontSize) + pad * 2) * scale;
     const h = (fontSize + pad) * scale;
     return { w, h, rot };
   }
