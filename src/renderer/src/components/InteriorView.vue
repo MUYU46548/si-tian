@@ -1085,9 +1085,15 @@ function handleEagleEyeNavigate(world) {
 }
 
 // ===== 生命周期 =====
+// E2: 撤销历史跳转后重绘画布（历史面板广播）
+function onHistoryJump() {
+  renderer.requestRender();
+}
+
 onMounted(() => {
   renderer.initCanvas();
   window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('sitian:history-jump', onHistoryJump);
 
   // 初始化：如果没有楼层则创建一个
   if (props.buildingNode && floors.value.length === 0) {
@@ -1117,6 +1123,7 @@ watch(() => props.buildingNode?.id, (newId, oldId) => {
 onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('sitian:history-jump', onHistoryJump);
 });
 
 function handleKeydown(e) {

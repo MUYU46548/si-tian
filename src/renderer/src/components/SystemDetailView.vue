@@ -25,38 +25,8 @@
     </div>
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
-      <div
-        v-if="contextMenu.visible"
-        class="context-menu"
-        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-        @mousedown.stop
-      >
-        <!-- 「设为卫星」母行星选择模式（批次D5） -->
-        <template v-if="contextMenu.pickHostFor">
-          <div class="menu-item menu-header">🛰 选择母行星</div>
-          <div
-            v-for="p in pickHostCandidates"
-            :key="p.id"
-            class="menu-item"
-            @click="ctxSetMoonHost(p.id)"
-          >🪐 {{ p.displayName || p.name }}</div>
-          <div class="menu-item" @click="ctxCancelPickHost">↩ 返回</div>
-        </template>
-        <template v-else>
-          <div v-if="contextMenu.target?.type === 'planet'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
-          <div v-if="contextMenu.target?.type === 'star'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
-          <div v-if="contextMenu.target?.type === 'planet' && !contextMenu.target.node.isMoon" class="menu-item" @click="ctxBeginPickHost">🛰 设为卫星…</div>
-          <div v-if="contextMenu.target?.type === 'planet' && contextMenu.target.node.isMoon" class="menu-item" @click="ctxUnsetMoon">↩ 取消卫星（回到独立轨道）</div>
-          <div v-if="contextMenu.target?.type === 'planet'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
-          <div v-if="contextMenu.target?.type === 'space-marker'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
-          <div v-if="contextMenu.target?.type === 'space-marker'" class="menu-item danger" @click="ctxDeleteSpaceMarker">🗑 删除标记</div>
-          <div v-if="contextMenu.target?.type === 'fleet-card'" class="menu-item" @click="ctxViewNode">ℹ 查看信息</div>
-          <div v-if="contextMenu.target?.type === 'fleet-card'" class="menu-item danger" @click="ctxDeleteFleetCard">🗑 删除部队卡片</div>
-          <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddBodyHere">＋ 添加天体（此位置）</div>
-          <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddSpaceMarkerHere">◈ 添加太空标记（此位置）</div>
-          <div v-if="!contextMenu.target" class="menu-item" @click="ctxAddFleetCardHere">⚑ 添加部队卡片（此位置）</div>
-        </template>
-      </div>
+      <!-- U3: 右键菜单迁移到统一 ContextMenu 组件 -->
+      <context-menu :state="ctxMenu.state" @close="closeContextMenu" />
       <PanelShell
         class="system-neighbor-panel"
         title="邻近恒星系"
@@ -87,11 +57,13 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import { useContextMenu } from '../composables/useContextMenu';
 import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius, getStarRadius, getStarColor, sortPlanetsByOrbit } from '../composables/systemOrbit';
 import { drawDeepSpaceBackground } from '../composables/spaceBackground';
 import { SPACE_MARKER_TYPES, FLEET_KINDS } from '../store/geodataModules/spaceEditing';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import PanelShell from './PanelShell.vue';
+import ContextMenu from './ContextMenu.vue';
 
 /**
  * 单恒星系详情视图（批次 B4 + B5 + B3 编辑 + B6/B7 太空实体）
@@ -119,7 +91,19 @@ const editMode = ref(false);
 // 拖拽中的行星显示位置（系内相对坐标）：非 userMoved 行星改 store 坐标不会立刻反映到
 // 公式位布局，需此覆盖层提供拖拽跟手反馈；mouseup 落盘 userMoved 后由 saved 路径接管
 const dragPlanet = ref(null); // { nodeId, x, y } | null
-const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0, pickHostFor: null });
+// U3: 统一右键菜单框架。contextMenu computed 别名保留 setupState/expose 兼容（测试读取 visible）。
+const ctxMenu = useContextMenu();
+const ctxTarget = ref(null);
+const ctxPickHostFor = ref(null);
+const ctxWorld = ref({ x: 0, y: 0 });
+let lastMenuPos = { x: 0, y: 0 };
+const contextMenu = computed(() => ({
+  visible: ctxMenu.state.visible,
+  target: ctxTarget.value,
+  pickHostFor: ctxPickHostFor.value,
+  worldX: ctxWorld.value.x,
+  worldY: ctxWorld.value.y,
+}));
 // 模态输入（批次D1）：天体/标记/部队的类型与名称录入，替代 Electron 不支持的 window.prompt
 const usePromptDialogState = usePromptDialog();
 let hoveredArrowId = null;
@@ -225,7 +209,7 @@ const planetLayouts = computed(() => {
 
 // 「设为卫星」母行星候选：系内恒星直接子，排除自身（卫星不能绕自己）
 const pickHostCandidates = computed(() =>
-  systemBodies.value.planets.filter(p => p.id !== contextMenu.value.pickHostFor)
+  systemBodies.value.planets.filter(p => p.id !== ctxPickHostFor.value)
 );
 
 // 最外圈轨道半径（箭头环的基准）
@@ -377,26 +361,56 @@ function worldToScreen(wx, wy) {
   };
 }
 
+function buildMenuItems() {
+  // 「选择母行星」模式：菜单切换为系内行星列表（批次D5）
+  if (ctxPickHostFor.value) {
+    const items = [{ key: 'pick-header', header: true, label: '选择母行星', icon: '🛰' }];
+    for (const p of pickHostCandidates.value) {
+      items.push({ key: 'host-' + p.id, label: p.displayName || p.name, icon: '🪐', action: () => ctxSetMoonHost(p.id) });
+    }
+    items.push({ key: 'pick-cancel', label: '返回', icon: '↩', action: ctxCancelPickHost, keepOpen: true });
+    return items;
+  }
+  const t = ctxTarget.value;
+  const items = [];
+  if (t?.type === 'planet' || t?.type === 'star' || t?.type === 'space-marker' || t?.type === 'fleet-card') {
+    items.push({ key: 'view', label: '查看信息', icon: 'ℹ', action: ctxViewNode });
+  }
+  if (t?.type === 'planet' && !t.node.isMoon) {
+    items.push({ key: 'pick-host', label: '设为卫星…', icon: '🛰', action: ctxBeginPickHost, keepOpen: true });
+  }
+  if (t?.type === 'planet' && t.node.isMoon) {
+    items.push({ key: 'unset-moon', label: '取消卫星（回到独立轨道）', icon: '↩', action: ctxUnsetMoon });
+  }
+  if (t?.type === 'planet') {
+    items.push({ key: 'del-node', label: '删除该节点', icon: '🗑', danger: true, action: ctxDeleteNode });
+  }
+  if (t?.type === 'space-marker') {
+    items.push({ key: 'del-marker', label: '删除标记', icon: '🗑', danger: true, action: ctxDeleteSpaceMarker });
+  }
+  if (t?.type === 'fleet-card') {
+    items.push({ key: 'del-card', label: '删除部队卡片', icon: '🗑', danger: true, action: ctxDeleteFleetCard });
+  }
+  if (!t) {
+    items.push({ key: 'add-body', label: '添加天体（此位置）', icon: '＋', action: ctxAddBodyHere });
+    items.push({ key: 'add-marker', label: '添加太空标记（此位置）', icon: '◈', action: ctxAddSpaceMarkerHere });
+    items.push({ key: 'add-fleet', label: '添加部队卡片（此位置）', icon: '⚑', action: ctxAddFleetCardHere });
+  }
+  return items;
+}
+
 function openContextMenu(wx, wy, target) {
-  const pos = worldToScreen(wx, wy);
-  const wrapper = canvas.value?.parentElement;
-  // 空白菜单最多 3 项（天体/太空标记/部队卡片），预留 ~140px 高度防溢出
-  const maxX = wrapper ? wrapper.clientWidth - 180 : pos.x;
-  const maxY = wrapper ? wrapper.clientHeight - 140 : pos.y;
-  contextMenu.value = {
-    visible: true,
-    x: Math.max(4, Math.min(pos.x, maxX)),
-    y: Math.max(4, Math.min(pos.y, maxY)),
-    target,
-    worldX: wx,
-    worldY: wy,
-    pickHostFor: null, // 批次D5：每次打开重置「选择母行星」模式
-  };
+  ctxTarget.value = target;
+  ctxPickHostFor.value = null; // 批次D5：每次打开重置「选择母行星」模式
+  ctxWorld.value = { x: wx, y: wy };
+  lastMenuPos = worldToScreen(wx, wy);
+  ctxMenu.open(buildMenuItems(), lastMenuPos, canvas.value?.parentElement);
 }
 
 function closeContextMenu() {
-  contextMenu.value.visible = false;
-  contextMenu.value.pickHostFor = null;
+  ctxMenu.close();
+  ctxTarget.value = null;
+  ctxPickHostFor.value = null;
 }
 
 // ===== 天体 CRUD =====
@@ -520,37 +534,37 @@ function deleteFleetCardById(cardId) {
 
 // ===== 右键菜单操作 =====
 function ctxAddBodyHere() {
-  const { worldX, worldY } = contextMenu.value;
+  const { x: worldX, y: worldY } = ctxWorld.value;
   closeContextMenu();
   createBodyAt(worldX, worldY);
 }
 
 function ctxAddSpaceMarkerHere() {
-  const { worldX, worldY } = contextMenu.value;
+  const { x: worldX, y: worldY } = ctxWorld.value;
   closeContextMenu();
   createSpaceMarkerAt(worldX, worldY);
 }
 
 function ctxAddFleetCardHere() {
-  const { worldX, worldY } = contextMenu.value;
+  const { x: worldX, y: worldY } = ctxWorld.value;
   closeContextMenu();
   createFleetCardAt(worldX, worldY);
 }
 
 function ctxDeleteNode() {
-  const node = contextMenu.value.target?.node;
+  const node = ctxTarget.value?.node;
   closeContextMenu();
   if (node) deleteBodyById(node.id);
 }
 
 function ctxDeleteSpaceMarker() {
-  const marker = contextMenu.value.target?.marker;
+  const marker = ctxTarget.value?.marker;
   closeContextMenu();
   if (marker) deleteSpaceMarkerById(marker.id);
 }
 
 function ctxDeleteFleetCard() {
-  const card = contextMenu.value.target?.card;
+  const card = ctxTarget.value?.card;
   closeContextMenu();
   if (card) deleteFleetCardById(card.id);
 }
@@ -558,7 +572,7 @@ function ctxDeleteFleetCard() {
 // ===== 右键菜单扩展（批次D5）：查看信息 / 设为卫星 / 取消卫星 =====
 // 查看信息：把节点/标记/卡片交给 NodeDetailPanel（与浏览模式点击选中同通道）
 function ctxViewNode() {
-  const target = contextMenu.value.target;
+  const target = ctxTarget.value;
   closeContextMenu();
   if (!target) return;
   if (target.type === 'planet' || target.type === 'planet-moon') {
@@ -592,19 +606,21 @@ function ctxViewNode() {
 
 // 进入「选择母行星」模式：菜单切换为系内行星列表（排除自身）
 function ctxBeginPickHost() {
-  const node = contextMenu.value.target?.node;
+  const node = ctxTarget.value?.node;
   if (!node) return;
-  contextMenu.value = { ...contextMenu.value, pickHostFor: node.id };
+  ctxPickHostFor.value = node.id;
+  ctxMenu.open(buildMenuItems(), lastMenuPos, canvas.value?.parentElement);
 }
 
 function ctxCancelPickHost() {
-  contextMenu.value = { ...contextMenu.value, pickHostFor: null };
+  ctxPickHostFor.value = null;
+  ctxMenu.open(buildMenuItems(), lastMenuPos, canvas.value?.parentElement);
 }
 
 // 设为卫星：layer → moon、parentId → 母行星（一次 updateNode 事务，入 undo 栈）。
 // userMoved 置 false：卫星布局始终由母行星锚定推导，不读保存坐标。
 function ctxSetMoonHost(hostId) {
-  const moonId = contextMenu.value.pickHostFor;
+  const moonId = ctxPickHostFor.value;
   closeContextMenu();
   if (!moonId || !hostId || moonId === hostId) return;
   store.updateNode(moonId, { parentId: hostId, layer: 'moon', userMoved: false });
@@ -614,7 +630,7 @@ function ctxSetMoonHost(hostId) {
 
 // 取消卫星：回到恒星独立轨道（公式槽位），名称/坐标保留
 function ctxUnsetMoon() {
-  const node = contextMenu.value.target?.node;
+  const node = ctxTarget.value?.node;
   closeContextMenu();
   if (!node || !props.system) return;
   store.updateNode(node.id, { parentId: props.system.id, layer: node.layer === 'moon' ? 'planet' : node.layer, userMoved: false });
@@ -1126,15 +1142,22 @@ function fitSystem() {
   renderer.focusOn(0, 0, Math.max(0.2, Math.min(2, scale)));
 }
 
+// E2: 撤销历史跳转后重绘画布（历史面板广播）
+function onHistoryJump() {
+  renderer.requestRender();
+}
+
 onMounted(() => {
   renderer.initCanvas();
   canvas.value?.addEventListener('mouseleave', onCanvasMouseLeave);
   fitSystem();
   renderer.requestRender();
+  window.addEventListener('sitian:history-jump', onHistoryJump);
 });
 
 onUnmounted(() => {
   canvas.value?.removeEventListener('mouseleave', onCanvasMouseLeave);
+  window.removeEventListener('sitian:history-jump', onHistoryJump);
   renderer.cleanupCanvas();
 });
 
@@ -1243,33 +1266,5 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
 .neighbor-dist { font-size: 10px; color: var(--text-tertiary); }
 
 /* ===== 右键菜单（编辑模式，样式与 SystemView 一致） ===== */
-.context-menu {
-  position: absolute;
-  z-index: 30;
-  min-width: 150px;
-  max-height: 300px; /* 母行星列表可能较长，超出滚动（批次D5） */
-  overflow-y: auto;
-  padding: 4px 0;
-  border: 1px solid var(--map-header-border);
-  border-radius: var(--radius-md);
-  background: var(--map-header-bg);
-  box-shadow: var(--shadow-md);
-  user-select: none;
-}
-.context-menu .menu-header {
-  padding: 5px 14px 3px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  cursor: default;
-}
-.context-menu .menu-item {
-  padding: 7px 14px;
-  font-size: 12px;
-  color: var(--map-btn-text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.context-menu .menu-item:hover { background: rgba(100, 150, 200, 0.15); }
-.context-menu .menu-item.danger { color: #ff7b72; }
-.context-menu .menu-item.danger:hover { background: rgba(255, 123, 114, 0.12); }
+/* 右键菜单样式已迁移到统一 ContextMenu 组件（U3）；长列表滚动由其全局样式承担 */
 </style>

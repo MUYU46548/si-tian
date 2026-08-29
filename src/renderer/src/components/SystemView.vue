@@ -40,17 +40,8 @@
     </div>
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
-      <div
-        v-if="contextMenu.visible"
-        class="context-menu"
-        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-        @mousedown.stop
-      >
-        <div v-if="contextMenu.target?.type === 'star'" class="menu-item" @click="ctxAddPlanet">＋ 添加行星</div>
-        <div v-if="contextMenu.target?.type === 'star' || contextMenu.target?.type === 'planet'" class="menu-item danger" @click="ctxDeleteNode">🗑 删除该节点</div>
-        <div v-if="contextMenu.target?.type === 'hyperlane'" class="menu-item danger" @click="ctxDeleteHyperlane">🗑 删除航道</div>
-        <div v-if="!contextMenu.target" class="menu-item" @click="ctxCreateSystemHere">＋ 在此创建恒星系</div>
-      </div>
+      <!-- U3: 右键菜单迁移到统一 ContextMenu 组件 -->
+      <context-menu :state="ctxMenu.state" @close="closeCtxMenu" />
       <eagle-eye
         :view-bounds="systemViewBounds"
         :elements="systemEyeElements"
@@ -66,9 +57,11 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import { useContextMenu } from '../composables/useContextMenu';
 import { planetOrbitLayout, getPlanetColor, getPlanetRadius, sortPlanetsByOrbit } from '../composables/systemOrbit';
 import { drawDeepSpaceBackground as drawSpaceBg } from '../composables/spaceBackground';
 import EagleEye from './EagleEye.vue';
+import ContextMenu from './ContextMenu.vue';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -94,7 +87,10 @@ let targetNode = null;
 
 // ===== 右键菜单与选中状态 =====
 const selectedSystemId = ref(null);
-const contextMenu = ref({ visible: false, x: 0, y: 0, target: null, worldX: 0, worldY: 0 });
+// U3: 统一右键菜单框架；ctxTarget/ctxWorld 保存命中对象与坐标供菜单动作读取
+const ctxMenu = useContextMenu();
+const ctxTarget = ref(null);
+const ctxWorld = ref({ x: 0, y: 0 });
 
 function worldToScreen(wx, wy) {
   const vt = renderer.getViewTransform();
@@ -106,22 +102,27 @@ function worldToScreen(wx, wy) {
 }
 
 function openContextMenu(wx, wy, target) {
-  const pos = worldToScreen(wx, wy);
-  const wrapper = canvas.value?.parentElement;
-  const maxX = wrapper ? wrapper.clientWidth - 170 : pos.x;
-  const maxY = wrapper ? wrapper.clientHeight - 110 : pos.y;
-  contextMenu.value = {
-    visible: true,
-    x: Math.max(4, Math.min(pos.x, maxX)),
-    y: Math.max(4, Math.min(pos.y, maxY)),
-    target,
-    worldX: wx,
-    worldY: wy,
-  };
+  ctxTarget.value = target;
+  ctxWorld.value = { x: wx, y: wy };
+  const items = [];
+  if (target?.type === 'star') {
+    items.push({ key: 'add-planet', label: '添加行星', icon: '＋', action: ctxAddPlanet });
+  }
+  if (target?.type === 'star' || target?.type === 'planet') {
+    items.push({ key: 'delete-node', label: '删除该节点', icon: '🗑', danger: true, action: ctxDeleteNode });
+  }
+  if (target?.type === 'hyperlane') {
+    items.push({ key: 'delete-lane', label: '删除航道', icon: '🗑', danger: true, action: ctxDeleteHyperlane });
+  }
+  if (!target) {
+    items.push({ key: 'create-system', label: '在此创建恒星系', icon: '＋', action: ctxCreateSystemHere });
+  }
+  ctxMenu.open(items, worldToScreen(wx, wy), canvas.value?.parentElement);
 }
 
-function closeContextMenu() {
-  contextMenu.value.visible = false;
+function closeCtxMenu() {
+  ctxMenu.close();
+  ctxTarget.value = null;
 }
 
 function createSystemAt(wx, wy, namePrefix = '新恒星系') {
@@ -209,33 +210,33 @@ function deleteNodeById(nodeId) {
 
 // ===== 右键菜单操作 =====
 function ctxAddPlanet() {
-  const sys = contextMenu.value.target?.node;
+  const sys = ctxTarget.value?.node;
   if (sys) {
     selectedSystemId.value = sys.id;
     createPlanet();
   }
-  closeContextMenu();
+  closeCtxMenu();
 }
 
 function ctxDeleteNode() {
-  const node = contextMenu.value.target?.node;
+  const node = ctxTarget.value?.node;
   if (node) deleteNodeById(node.id);
-  closeContextMenu();
+  closeCtxMenu();
 }
 
 function ctxDeleteHyperlane() {
-  const hl = contextMenu.value.target?.hyperlane;
+  const hl = ctxTarget.value?.hyperlane;
   if (hl) {
     store.removeHyperlane(hl.id);
     emit('dirty', true);
     renderer.requestRender();
   }
-  closeContextMenu();
+  closeCtxMenu();
 }
 
 function ctxCreateSystemHere() {
-  createSystemAt(contextMenu.value.worldX, contextMenu.value.worldY, '新恒星系');
-  closeContextMenu();
+  createSystemAt(ctxWorld.value.x, ctxWorld.value.y, '新恒星系');
+  closeCtxMenu();
 }
 
 const allBodies = computed(() => props.planets);
@@ -610,7 +611,7 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onClick: (hit) => {
-    closeContextMenu();
+    closeCtxMenu();
     if (hit?.node) {
       if (hit.type === 'star') selectedSystemId.value = hit.node.id;
       if (hit.type === 'planet') {
@@ -681,17 +682,24 @@ function onNodeRemovedFromMap(e) {
 }
 
 // ===== 生命周期 =====
+// E2: 撤销历史跳转后重绘画布（历史面板广播）
+function onHistoryJump() {
+  renderer.requestRender();
+}
+
 onMounted(() => {
   renderer.initCanvas();
   applyLayout();
   renderer.requestRender();
   window.addEventListener('sitian:focus-node', onFocusNode);
+  window.addEventListener('sitian:history-jump', onHistoryJump);
   window.addEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
 });
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('sitian:focus-node', onFocusNode);
+  window.removeEventListener('sitian:history-jump', onHistoryJump);
   window.removeEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
 });
 
@@ -711,7 +719,7 @@ function toggleEditMode() {
   editMode.value = !editMode.value;
   dragSourceNode = null;
   targetNode = null;
-  closeContextMenu();
+  closeCtxMenu();
   if (canvas.value) canvas.value.style.cursor = 'default';
   renderer.requestRender();
 }
@@ -871,25 +879,5 @@ defineExpose({ canvas, renderer });
 canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
 
 /* ===== 右键菜单 ===== */
-.context-menu {
-  position: absolute;
-  z-index: 30;
-  min-width: 150px;
-  padding: 4px 0;
-  border: 1px solid var(--map-header-border, #2a3550);
-  border-radius: var(--radius-md);
-  background: var(--map-header-bg, #151c2e);
-  box-shadow: var(--shadow-md);
-  user-select: none;
-}
-.context-menu .menu-item {
-  padding: 7px 14px;
-  font-size: 12px;
-  color: var(--map-btn-text, #c9d4e8);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.context-menu .menu-item:hover { background: rgba(100, 150, 200, 0.15); }
-.context-menu .menu-item.danger { color: #ff7b72; }
-.context-menu .menu-item.danger:hover { background: rgba(255, 123, 114, 0.12); }
+/* 右键菜单样式已迁移到统一 ContextMenu 组件（U3） */
 </style>

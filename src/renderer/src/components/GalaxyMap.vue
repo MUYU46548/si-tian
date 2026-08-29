@@ -87,6 +87,7 @@
     
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
+      <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
       <eagle-eye
         :view-bounds="galaxyViewBounds"
         :elements="galaxyEyeElements"
@@ -106,6 +107,7 @@ import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
+import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
 import ZoomControls from './ZoomControls.vue';
 import ContextMenu from './ContextMenu.vue';
@@ -122,6 +124,8 @@ const store = useGeodataStore();
 const layers = useLayersStore();
 
 const canvas = ref(null);
+// U4: 骨架屏显隐——首帧渲染后淡出
+const skeletonReady = ref(false);
 let domainNodes = [];
 const galaxyNodes = ref([]);
 const selectedNodeIds = ref(new Set());
@@ -1565,13 +1569,20 @@ function handleGlobalKeydown(e) {
 }
 
 // ===== 生命周期 =====
+// E2: 撤销历史跳转后重绘画布（历史面板广播）
+function onHistoryJump() {
+  renderer.requestRender();
+}
+
 onMounted(() => {
   renderer.initCanvas();
   applyStableLayout();
   renderer.requestRender();
+  requestAnimationFrame(() => requestAnimationFrame(() => { skeletonReady.value = true; }));
   showStatusBar('星域地图');
   setStatus({ toolLabel: '浏览' });
   window.addEventListener('sitian:focus-node', onFocusNode);
+  window.addEventListener('sitian:history-jump', onHistoryJump);
   window.addEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
   window.addEventListener('keydown', handleGlobalKeydown);
 });
@@ -1580,6 +1591,7 @@ onUnmounted(() => {
   renderer.cleanupCanvas();
   hideStatusBar();
   window.removeEventListener('sitian:focus-node', onFocusNode);
+  window.removeEventListener('sitian:history-jump', onHistoryJump);
   window.removeEventListener('sitian:node-removed-from-map', onNodeRemovedFromMap);
   window.removeEventListener('keydown', handleGlobalKeydown);
 });

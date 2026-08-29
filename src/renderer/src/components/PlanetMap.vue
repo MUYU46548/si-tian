@@ -229,6 +229,7 @@
     
     <div class="canvas-wrapper" @dragover.prevent="handleDragOver" @drop.prevent="handleDrop">
       <canvas ref="canvas"></canvas>
+      <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
       <eagle-eye
         :view-bounds="viewBounds"
         :elements="eagleEyeElements"
@@ -786,6 +787,7 @@ import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
 import { createProvinceByFloodFill } from '../utils/floodfill';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
+import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
@@ -850,6 +852,8 @@ const clusterBoxEnd = ref(null);
 const clusterDraftMembers = ref([]);
 
 const canvas = ref(null);
+// U4: 骨架屏显隐——首帧渲染后淡出
+const skeletonReady = ref(false);
 const drawMode = ref(true);
 const floodFillMode = ref(false);
 // 地形笔刷
@@ -3331,9 +3335,15 @@ function redo() {
 }
 
 // ===== 生命周期 =====
+// E2: 撤销历史跳转后重绘画布（历史面板广播）
+function onHistoryJump() {
+  renderer.requestRender();
+}
+
 onMounted(() => {
   renderer.initCanvas();
   renderer.requestRender();
+  requestAnimationFrame(() => requestAnimationFrame(() => { skeletonReady.value = true; }));
   showStatusBar('行星地图');
   setStatus({ toolLabel: '浏览' });
   // 批次C3：挂载链分帧——自动区域生成（同步 O(regions×places)）延后一帧，
@@ -3345,6 +3355,7 @@ onMounted(() => {
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('keyup', handleKeyup);
   window.addEventListener('sitian:focus-node', onFocusNode);
+  window.addEventListener('sitian:history-jump', onHistoryJump);
 });
 
 onUnmounted(() => {
@@ -3353,6 +3364,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('keyup', handleKeyup);
   window.removeEventListener('sitian:focus-node', onFocusNode);
+  window.removeEventListener('sitian:history-jump', onHistoryJump);
   if (highlightTimer) clearTimeout(highlightTimer);
   if (focusHighlightTimer) clearTimeout(focusHighlightTimer);
 });

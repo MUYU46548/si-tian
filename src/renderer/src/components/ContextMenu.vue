@@ -1,13 +1,14 @@
 <template>
   <div
     v-if="state.visible"
-    class="sitian-context-menu"
+    class="sitian-context-menu context-menu"
     :style="{ left: state.x + 'px', top: state.y + 'px' }"
     @mousedown.stop
     @contextmenu.prevent
   >
     <template v-for="(item, i) in state.items" :key="item.key || i">
       <div v-if="item.separator" class="menu-separator" />
+      <div v-else-if="item.header" class="menu-item menu-header">{{ item.icon ? item.icon + ' ' : '' }}{{ item.label }}</div>
       <div
         v-else
         class="menu-item"
@@ -30,8 +31,10 @@ const emit = defineEmits(['close']);
 
 function onSelect(item) {
   if (item.disabled) return;
-  emit('close');
+  // 先执行动作再关闭：动作可能读取 ctxTarget 等菜单状态；
+  // keepOpen 项（如「设为卫星」切换菜单内容）由动作自行控制菜单去留
   item.action?.();
+  if (!item.keepOpen) emit('close');
 }
 
 function onGlobalMouseDown(e) {
@@ -85,6 +88,15 @@ window.addEventListener('keydown', onGlobalKeydown, true);
   cursor: default;
 }
 .sitian-context-menu .menu-item.disabled:hover {
+  background: transparent;
+}
+.sitian-context-menu .menu-header {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  cursor: default;
+  font-weight: 600;
+}
+.sitian-context-menu .menu-header:hover {
   background: transparent;
 }
 .sitian-context-menu .menu-icon {

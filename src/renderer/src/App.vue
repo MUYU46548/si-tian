@@ -135,6 +135,7 @@
         <span class="toolbar-divider"></span>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
+        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)">⏱</button>
         <button @click="reextract" title="重新提取">↻</button>
         <button @click="saveData" :disabled="!dirty" title="保存">💾</button>
         <span class="toolbar-divider"></span>
@@ -161,6 +162,11 @@
       <div class="export-divider"></div>
       <button @click="handleExportMapConfig">导出地图配置 (JSON)</button>
       <button @click="handleImportMapConfig">导入地图配置...</button>
+      <template v-if="store.viewLevel === 'planet'">
+        <div class="export-divider"></div>
+        <button @click="handleExportGeoJSON">导出 GeoJSON (当前行星)</button>
+        <button @click="handleImportGeoJSON">导入 GeoJSON...</button>
+      </template>
     </div>
     
     <div class="app-body">
@@ -242,6 +248,7 @@
 
     <node-detail-panel />
     <layer-panel />
+    <history-panel v-if="panelsStore.isOpen('history')" @close="panelsStore.close('history')" />
     <about-panel ref="aboutPanelRef" />
     <batch-import-panel ref="batchImportPanelRef" />
     <settings-panel ref="settingsPanelRef" />
@@ -298,6 +305,8 @@ import BookmarkPanel from './components/BookmarkPanel.vue';
 import ChangeLog from './components/ChangeLog.vue';
 import UpdateNotification from './components/UpdateNotification.vue';
 import StatusBar from './components/StatusBar.vue';
+import HistoryPanel from './components/HistoryPanel.vue';
+import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
 import { useLayersStore } from './store/layers';
 import { useTheme } from './composables/useTheme';
 import { useBookmarks } from './composables/useBookmarks';
@@ -729,8 +738,90 @@ function getDomainColorForExport(name) {
 
 // ===== 导入/导出地图配置 =====
 
-function handleExportMapConfig() {
-  const config = {
+// E10: GeoJSON 导出（当前行星地图 → FeatureCollection，局部米制坐标系）
+function handleExportGeoJSON() {
+  const planet = store.currentPlanet;
+  if (!planet) return;
+  const mapData = store.mapData[planet.id] || {};
+  const fc = planetToGeoJSON({
+    planet,
+    places: store.nodes.filter(n =>
+      n.parentId === planet.id &&
+      ['city', 'town', 'village', 'location'].includes(n.layer)
+    ),
+    terrain: mapData.terrain || [],
+    regions: mapData.regions || [],
+    markers: mapData.markers || [],
+    routes: mapData.routes || [],
+    textLabels: mapData.textLabels || [],
+  });
+
+  const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/geo+json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `sitian-${planet.id}-geojson-${Date.now()}.geojson`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  panelsStore.close('export');
+  statusText.value = `GeoJSON 已导出（${fc.features.length} 个要素）`;
+}
+
+// E10: GeoJSON 导入（draft 回填，不覆盖 Obsidian 节点/原始地形）
+function handleImportGeoJSON() {
+  const planet = store.currentPlanet;
+  if (!planet) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.geojson,.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const fc = JSON.parse(await file.text());
+      const parsed = geoJSONToPlanet(fc);
+      if (parsed.errors.length && parsed.places.length + parsed.markers.length + parsed.textLabels.length + parsed.routes.length + parsed.regions.length === 0) {
+        statusText.value = `GeoJSON 导入失败：${parsed.errors[0]}`;
+        return;
+      }
+      for (const p of parsed.places) {
+        store.addNode({ ...p, parentId: planet.id, coordinate: { ...p.coordinate } });
+      }
+      for (const m of parsed.markers) store.addMarker(planet.id, { ...m });
+      for (const t of parsed.textLabels) store.addTextLabel(planet.id, { ...t });
+      for (const r of parsed.routes) {
+        store.addRoute(planet.id, {
+          id: r.id,
+          points: r.points.map(pt => ({ x: pt.x, y: pt.y, placeId: null })),
+          dashed: false,
+          color: r.color || '#F39C12',
+          name: r.name || '导入路线',
+          label: '',
+          description: '',
+        });
+      }
+      for (const rg of parsed.regions) {
+        if (rg.points.length < 3) { parsed.skipped += 1; continue; }
+        store.addRegion(planet.id, {
+          id: rg.id,
+          name: rg.name || '导入区域',
+          type: 'region',
+          color: rg.color || '#FF6B6B',
+          points: rg.points,
+          auto: false,
+        });
+      }
+      panelsStore.close('export');
+      statusText.value = `GeoJSON 已导入：地点 ${parsed.places.length}、标记 ${parsed.markers.length}、文本 ${parsed.textLabels.length}、路线 ${parsed.routes.length}、区域 ${parsed.regions.length}、跳过 ${parsed.skipped}`;
+    } catch (err) {
+      statusText.value = 'GeoJSON 导入失败：' + err.message;
+    }
+  };
+  input.click();
+}
+
+function handleExportMapConfig() {  const config = {
     version: '1.0.0',
     exportedAt: new Date().toISOString(),
     viewLevel: store.viewLevel,

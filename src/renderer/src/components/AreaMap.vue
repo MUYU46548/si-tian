@@ -222,6 +222,7 @@
 
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
+      <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
       <eagle-eye
         :view-bounds="viewBounds"
         :elements="eyeElements"
@@ -308,6 +309,7 @@ import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
+import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
 import ZoomControls from './ZoomControls.vue';
 
@@ -319,6 +321,8 @@ const store = useGeodataStore();
 const layers = useLayersStore();
 
 const canvas = ref(null);
+// U4: 骨架屏显隐——首帧渲染后淡出
+const skeletonReady = ref(false);
 const editMode = ref(false);
 const interactionMode = ref('pan');
 const selectedNode = ref(null);
@@ -1705,15 +1709,22 @@ function handleEagleEyeNavigate(world) {
 }
 
 // ===== 生命周期 =====
+// E2: 撤销历史跳转后重绘画布（历史面板广播）
+function onHistoryJump() {
+  renderer.requestRender();
+}
+
 onMounted(() => {
   renderer.initCanvas();
   initNodeCoordinates();
   renderer.fitView(viewBounds.value);
   renderer.requestRender();
+  requestAnimationFrame(() => requestAnimationFrame(() => { skeletonReady.value = true; }));
   showStatusBar('区域地图');
   setStatus({ toolLabel: interactionMode.value === 'pan' ? '浏览' : '编辑' });
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('sitian:focus-node', onFocusNode);
+  window.addEventListener('sitian:history-jump', onHistoryJump);
 });
 
 function onFocusNode(e) {
@@ -1747,6 +1758,7 @@ onUnmounted(() => {
   hideStatusBar();
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('sitian:focus-node', onFocusNode);
+  window.removeEventListener('sitian:history-jump', onHistoryJump);
   if (focusHighlightTimer.value) clearTimeout(focusHighlightTimer.value);
 });
 
