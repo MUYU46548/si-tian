@@ -9,8 +9,30 @@
  *    由组件注入 lambda，交互模块不直接触碰 ref 或组件私有函数
  *
  * 迁移历史：2026-08-16 P0-2（方案 P0-2），配合 P0-1 交互专项测试护航。
+ * 第三批增强：E4 旋转/缩放手柄、E5 智能参考线磁吸、E7 批量选择拖动。
  */
+import { buildSnapCandidates, computeSmartSnap, SMART_SNAP_PX } from '../utils/smartGuides';
+
 export function createPlanetInteractions(getState, actions) {
+
+// E5：拖拽对象的对齐磁吸（网格吸附之后应用，命中轴覆盖网格结果）
+// 返回 { x, y }；参考线经 actions.setSmartGuides 交给绘制层
+function applySmartSnap(s, pos, exclude) {
+  if (!s.smartGuidesEnabled) {
+    actions.setSmartGuides([]);
+    return pos;
+  }
+  const candidates = buildSnapCandidates({
+    markers: s.currentMapData?.markers || [],
+    textLabels: s.currentMapData?.textLabels || [],
+    places: s.places || [],
+    regions: s.currentMapData?.regions || [],
+  }, exclude);
+  const threshold = SMART_SNAP_PX / (s.zoom || 1);
+  const snapped = computeSmartSnap(pos, candidates, threshold);
+  actions.setSmartGuides(snapped.guides);
+  return { x: snapped.x, y: snapped.y };
+}
 
 function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   const s = getState();
@@ -19,6 +41,27 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   // 拆分/合并模式：屏蔽顶点/节点/参考图拖拽（选点优先，点击由 onClick 收集；
   // 否则点击锚点会被顶点拖拽拦截导致无法选点，2026-08-16 用户反馈）
   if (s.splitSelectMode || s.mergeSelectMode) return true;
+
+  // E4：选中标记/文本的旋转/缩放手柄（悬浮于对象之上，任意模式优先命中）
+  // 采用状态驱动（与 move 拖拽一致）：返回 false 抑制平移，变换信息存组件 state
+  if (s.editMode && (s.selectedMarker || s.selectedTextLabel)) {
+    const handleHit = s.hitTestSelectionHandle(wx, wy);
+    if (handleHit) {
+      const sel = s.selectedMarker
+        ? { kind: 'marker', obj: s.selectedMarker }
+        : { kind: 'textLabel', obj: s.selectedTextLabel };
+      actions.setTransformDrag({
+        handle: handleHit.handle,
+        kind: sel.kind,
+        id: sel.obj.id,
+        center: { x: sel.obj.x, y: sel.obj.y },
+        old: { rotation: sel.obj.rotation || 0, scale: sel.obj.scale || 1 },
+        startAngle: Math.atan2(wy - sel.obj.y, wx - sel.obj.x),
+        startDist: Math.max(Math.hypot(wx - sel.obj.x, wy - sel.obj.y), 1e-6),
+      });
+      return false;
+    }
+  }
 
   const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
 
@@ -98,11 +141,33 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   // 移动工具：拖动 marker/textLabel/region；place 落到下方分支；其余平移
   if (mode === 'move') {
     if (hit.type === 'marker') {
+      // E7：Shift+点击 → 切换批量选择成员（不启动拖拽）
+      if (shiftKey) {
+        actions.shiftSelect('marker', hit.marker);
+        actions.requestRender();
+        return false;
+      }
+      // E7：点击批量组成员 → 整组拖动（保留组，selectOnly 会清组，故用 KeepGroup 变体）
+      if (s.multiSel && s.multiSel.length > 1 && s.multiSel.some(m => m.type === 'marker' && m.id === hit.marker.id)) {
+        actions.beginMultiObjectDrag({ x: wx, y: wy });
+        actions.selectOnlyKeepGroup('marker', hit.marker);
+        return false;
+      }
       actions.setMoveObject({ type: 'marker', id: hit.marker.id, marker: hit.marker, old: { x: hit.marker.x, y: hit.marker.y } });
       actions.selectOnly('marker', hit.marker);
       return false;
     }
     if (hit.type === 'textLabel') {
+      if (shiftKey) {
+        actions.shiftSelect('textLabel', hit.label);
+        actions.requestRender();
+        return false;
+      }
+      if (s.multiSel && s.multiSel.length > 1 && s.multiSel.some(m => m.type === 'textLabel' && m.id === hit.label.id)) {
+        actions.beginMultiObjectDrag({ x: wx, y: wy });
+        actions.selectOnlyKeepGroup('textLabel', hit.label);
+        return false;
+      }
       actions.setMoveObject({ type: 'textLabel', id: hit.label.id, label: hit.label, old: { x: hit.label.x, y: hit.label.y } });
       actions.selectOnly('textLabel', hit.label);
       return false;
@@ -138,16 +203,64 @@ function onDragMove(wx, wy, dragInfo) {
   const s = getState();
   const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
 
+  // E4：旋转/缩放手柄拖拽（角度/距离围绕对象中心，本地改字段，松手一次提交）
+  if (s.transformDrag) {
+    const info = s.transformDrag;
+    const list = info.kind === 'marker' ? s.currentMapData?.markers : s.currentMapData?.textLabels;
+    const target = list?.find(o => o.id === info.id);
+    if (target) {
+      if (info.handle === 'rotate') {
+        const deltaDeg = (Math.atan2(wy - info.center.y, wx - info.center.x) - info.startAngle) * 180 / Math.PI;
+        let deg = info.old.rotation + deltaDeg;
+        deg = ((deg % 360) + 540) % 360 - 180; // 归一化到 (-180, 180]
+        target.rotation = Math.round(deg * 10) / 10;
+      } else {
+        const dist = Math.hypot(wx - info.center.x, wy - info.center.y);
+        const scale = info.old.scale * (dist / info.startDist);
+        target.scale = Math.round(Math.min(5, Math.max(0.2, scale)) * 100) / 100;
+      }
+      actions.requestRender();
+    }
+    return;
+  }
+
   // 移动工具：marker/textLabel/region 本地平移（松手一次提交，避免 undo 栈爆炸；网格吸附对齐）
   if (mode === 'move' && s.dragObject) {
     const obj = s.dragObject;
-    if (obj.type === 'marker') { const sp = s.snapPoint({ x: wx, y: wy }); obj.marker.x = sp.x; obj.marker.y = sp.y; }
-    else if (obj.type === 'textLabel') { const sp = s.snapPoint({ x: wx, y: wy }); obj.label.x = sp.x; obj.label.y = sp.y; }
+    if (obj.type === 'marker') {
+      const sp = applySmartSnap(s, s.snapPoint({ x: wx, y: wy }), { type: 'marker', id: obj.id });
+      obj.marker.x = sp.x; obj.marker.y = sp.y;
+    }
+    else if (obj.type === 'textLabel') {
+      const sp = applySmartSnap(s, s.snapPoint({ x: wx, y: wy }), { type: 'textLabel', id: obj.id });
+      obj.label.x = sp.x; obj.label.y = sp.y;
+    }
+    else if (obj.type === 'multi') {
+      // E7：批量拖动（成员位置 = 起始快照 + 指针位移，保持相对布局）
+      const dx = wx - obj.start.x;
+      const dy = wy - obj.start.y;
+      obj.members.forEach(m => {
+        m.obj.x = m.old.x + dx;
+        m.obj.y = m.old.y + dy;
+      });
+    }
     else if (obj.type === 'region' && s.dragRegionAnchor) {
       const sp = s.snapPoint({ x: wx, y: wy });
       const dx = sp.x - s.dragRegionAnchor.x;
       const dy = sp.y - s.dragRegionAnchor.y;
       obj.region.points = obj.old.map(p => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) }));
+      // E5：区域按中心点对齐磁吸（调整位移量使中心落到参考线上）
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      obj.old.forEach(p => {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      });
+      const oldCx = (minX + maxX) / 2, oldCy = (minY + maxY) / 2;
+      const snapped = applySmartSnap(s, { x: oldCx + dx, y: oldCy + dy }, { type: 'region', id: obj.id });
+      if (snapped.x !== oldCx + dx || snapped.y !== oldCy + dy) {
+        const sdx = snapped.x - oldCx, sdy = snapped.y - oldCy;
+        obj.region.points = obj.old.map(p => ({ x: Math.round(p.x + sdx), y: Math.round(p.y + sdy) }));
+      }
     }
     actions.requestRender();
     return;
@@ -237,13 +350,24 @@ function onDragEnd(wx, wy, dragInfo) {
   const s = getState();
   const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
 
+  // E4：旋转/缩放松手 → 一次提交 undo（old 快照来自 onDragStart）
+  if (s.transformDrag) {
+    actions.clearSmartGuides();
+    actions.commitTransform();
+    actions.requestRender();
+    return;
+  }
+
   // 移动工具松手：一次提交（入一次 undo，避免拖动期间 undo 栈爆炸；
   // 传 onDragStart 记录的旧快照，否则 store 采集到已修改值 → undo 失效）
   if (mode === 'move' && s.dragObject) {
     actions.commitMove();
+    actions.clearSmartGuides();
     actions.requestRender();
     return;
   }
+
+  actions.clearSmartGuides();
 
   // 自由绘制/描点收尾：先完成绘制（内部读 currentPath.value）再清空，
   // 顺序颠倒会读到空路径 → 空多边形或直接失败（2026-08-16 P0-2 迁移发现）
@@ -400,14 +524,26 @@ function handleCanvasClick(hit, wx, wy) {
       actions.selectOnly('region', hit.region);
       break;
     case 'marker':
-      actions.selectOnly('marker', hit.marker);
+      // E7：Shift 切换后紧跟的 onClick 不改选区（否则移出成员会被误清组）；
+      // 点击批量组成员（移动工具下）保留组，其余单选并清组
+      if (s.isShiftToggled(hit.marker.id, 'marker')) break;
+      if (mode === 'move' && s.multiSel && s.multiSel.length >= 1 && s.multiSel.some(m => m.type === 'marker' && m.id === hit.marker.id)) {
+        actions.selectOnlyKeepGroup('marker', hit.marker);
+      } else {
+        actions.selectOnly('marker', hit.marker);
+      }
       break;
     case 'route':
     case 'route-endpoint':
       actions.selectOnly('route', hit.route);
       break;
     case 'textLabel':
-      actions.selectOnly('textLabel', hit.label);
+      if (s.isShiftToggled(hit.label.id, 'textLabel')) break;
+      if (mode === 'move' && s.multiSel && s.multiSel.length >= 1 && s.multiSel.some(m => m.type === 'textLabel' && m.id === hit.label.id)) {
+        actions.selectOnlyKeepGroup('textLabel', hit.label);
+      } else {
+        actions.selectOnly('textLabel', hit.label);
+      }
       break;
     case 'place':
       // 点击地点 → 单选 + 打开详情面板（原 switch 缺此 case → 点击无反应）

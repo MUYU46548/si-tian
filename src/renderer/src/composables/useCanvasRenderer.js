@@ -55,6 +55,9 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   const viewTransform = reactive({ x: 0, y: 0, scale: 1 });
   let isPanning = false;
   let panSuppressed = false;
+  // 状态驱动拖拽（panSuppressed）期间是否发生了真实位移：
+  // 松手时据此跳过 onClick，避免"拖完标记/手柄反被反选"（第三批 E4/E7 修复）
+  let suppressedMoved = false;
   let mouseDownPos = { x: 0, y: 0 };
   let isDragOperation = false;
   let rafId = null;
@@ -270,6 +273,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     mouseDownPos = { x: mx, y: my };
     isDragOperation = false;
     panSuppressed = false;
+    suppressedMoved = false;
     dragNodeId = null;
     isDraggingVertex = false;
     draggingVertexInfo = null;
@@ -431,6 +435,9 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     if ((isPanning || panSuppressed) && onDragMove) {
       const dx = mx - mouseDownPos.x;
       const dy = my - mouseDownPos.y;
+      if (panSuppressed && Math.hypot(dx, dy) > fastModeThreshold) {
+        suppressedMoved = true;
+      }
       onDragMove(world.x, world.y, { mode: 'pan', dx, dy });
     }
   }
@@ -497,12 +504,14 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     }
     
     // 点击判断：当没有发生拖拽且不是顶点拖拽结束时，触发 onClick
-    if (!didPan && !wasDraggingVertex && onClick && onHitTest) {
+    // （抑制拖拽期间发生真实位移的 onClick：拖拽松手不应被解释为点击/反选）
+    if (!didPan && !wasDraggingVertex && !suppressedMoved && onClick && onHitTest) {
       const rect = canvasRef.value.getBoundingClientRect();
       const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       const hit = onHitTest(world.x, world.y);
       onClick(hit, world.x, world.y);
     }
+    suppressedMoved = false;
   }
 
   function handleWheel(e) {

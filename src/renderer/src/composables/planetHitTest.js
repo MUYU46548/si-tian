@@ -5,6 +5,7 @@
  * 依赖 geometry 的 pointInPolygon / perpendicularDistance（纯函数）。
  */
 import { pointInPolygon, perpendicularDistance } from '../utils/geometry';
+import { hitHandleAt } from '../utils/selectionHandles';
 
 export function createPlanetHitTest(getState) {
 
@@ -98,13 +99,26 @@ function hitTestTextLabel(wx, wy) {
     const label = labels[i];
     if (!label?.text) continue;
     const fontSize = label.fontSize || 16;
-    const w = (label.text.length * fontSize * 0.9) / 2 + 8;
-    const h = fontSize + 10;
+    const scale = label.scale || 1;
+    const w = ((label.text.length * fontSize * 0.9) / 2 + 8) * scale;
+    const h = (fontSize + 10) * scale;
     if (Math.abs(wx - label.x) < w && Math.abs(wy - label.y) < h / 2) {
       return { type: 'textLabel', label };
     }
   }
   return null;
+}
+
+// E4：选中标记/文本的旋转/缩放手柄命中（屏幕常数半径，需 state 提供 zoom）
+function hitTestSelectionHandle(wx, wy) {
+  const s = getState();
+  if (!s.editMode) return null;
+  const sel = s.selectedMarker
+    ? { kind: 'marker', obj: s.selectedMarker }
+    : (s.selectedTextLabel ? { kind: 'textLabel', obj: s.selectedTextLabel } : null);
+  if (!sel) return null;
+  const handle = hitHandleAt(wx, wy, sel.obj, sel.kind, s.zoom || 1);
+  return handle ? { handle } : null;
 }
 function hitTestVertex(wx, wy) {
   const s = getState();
@@ -167,7 +181,8 @@ function hitTestMarker(wx, wy) {
     const marker = s.currentMapData.markers[i];
     const dx = wx - marker.x;
     const dy = wy - marker.y;
-    if (dx * dx + dy * dy < 64) {
+    const r = 8 * Math.max(1, marker.scale || 1); // E4：缩放后的标记命中区随之放大
+    if (dx * dx + dy * dy < r * r) {
       return { type: 'marker', marker };
     }
   }
@@ -181,5 +196,6 @@ function hitTestMarker(wx, wy) {
     hitTestVertex,
     hitTestEdge,
     hitTestMarker,
+    hitTestSelectionHandle,
   };
 }

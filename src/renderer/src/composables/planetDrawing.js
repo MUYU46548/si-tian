@@ -7,6 +7,7 @@
  */
 import { getTexturePattern } from '../utils/textures';
 import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
+import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '../utils/selectionHandles';
 
 // ===== 样式常量（从 PlanetMap.vue 迁移） =====
 const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
@@ -797,6 +798,20 @@ function drawMarkers(ctx) {
     const color = marker.color || preset?.color || '#FFD700';
     const icon = marker.icon || preset?.icon || '📍';
     const isSelected = s.selectedMarker?.id === marker.id;
+    // E4：缩放/旋转变换（围绕标记中心；缩放作用于点径与图标）
+    const scale = marker.scale || 1;
+    const rot = ((marker.rotation || 0) * Math.PI) / 180;
+    const transformed = rot !== 0 || scale !== 1;
+
+    ctx.save();
+    if (transformed) {
+      ctx.translate(marker.x, marker.y);
+      ctx.rotate(rot);
+      ctx.scale(scale, scale);
+    }
+
+    const cx = transformed ? 0 : marker.x;
+    const cy = transformed ? 0 : marker.y;
 
     if (!fast) {
       ctx.shadowColor = color;
@@ -804,7 +819,7 @@ function drawMarkers(ctx) {
     }
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(marker.x, marker.y, 6, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
 
@@ -812,24 +827,25 @@ function drawMarkers(ctx) {
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(icon, marker.x, marker.y);
+      ctx.fillText(icon, cx, cy);
     }
+    ctx.restore();
 
     if (isSelected) {
       ctx.strokeStyle = '#FFD700';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(marker.x, marker.y, 10, 0, Math.PI * 2);
+      ctx.arc(marker.x, marker.y, 10 * scale, 0, Math.PI * 2);
       ctx.stroke();
     }
 
-    // 名称标签
+    // 名称标签（不参与旋转变换，跟随缩放偏移）
     if (marker.name && !fast && s.lodRef > 0.4) {
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#2D3436';
-      ctx.fillText(marker.name, marker.x, marker.y + 10);
+      ctx.fillText(marker.name, marker.x, marker.y + 10 * scale);
     }
   });
 }
@@ -1185,40 +1201,75 @@ function drawTextLabels(ctx) {
     const fontSize = label.fontSize || 16;
     const color = label.color || '#2D3436';
     const isSelected = s.selectedTextLabel?.id === label.id;
-    
+    // E4：缩放/旋转变换（围绕文本中心）
+    const scale = label.scale || 1;
+    const rot = ((label.rotation || 0) * Math.PI) / 180;
+    const transformed = rot !== 0 || scale !== 1;
+
     ctx.save();
+    if (transformed) {
+      ctx.translate(label.x, label.y);
+      ctx.rotate(rot);
+      ctx.scale(scale, scale);
+    }
+    const cx = transformed ? 0 : label.x;
+    const cy = transformed ? 0 : label.y;
     ctx.font = `${fontSize}px "Microsoft YaHei", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
+
     // 半透明背景提高可读性
     const metrics = ctx.measureText(label.text);
     const padding = fontSize * 0.4;
     ctx.fillStyle = isSelected ? 'rgba(255, 215, 0, 0.35)' : 'rgba(255, 255, 255, 0.75)';
     ctx.beginPath();
     ctx.roundRect(
-      label.x - metrics.width / 2 - padding,
-      label.y - fontSize / 2 - padding / 2,
+      cx - metrics.width / 2 - padding,
+      cy - fontSize / 2 - padding / 2,
       metrics.width + padding * 2,
       fontSize + padding,
       fontSize * 0.3
     );
     ctx.fill();
-    
+
     if (isSelected) {
       ctx.strokeStyle = '#FFD700';
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-    
+
     ctx.fillStyle = color;
-    ctx.fillText(label.text, label.x, label.y);
+    ctx.fillText(label.text, cx, cy);
     ctx.restore();
   });
 }
 
 function drawEditHelpers(ctx) {
   const s = getState(); // 每次渲染取最新状态
+
+  // E5 智能参考线：拖拽对齐时贯穿视口的虚线（置于最底层辅助之下，先画）
+  if (s.smartGuides && s.smartGuides.length > 0 && s.viewport) {
+    const vp = s.viewport;
+    const pad = 4000; // 超出视口边界的余量，避免线端露头
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 79, 216, 0.85)';
+    ctx.lineWidth = 1 / (s.zoom || 1);
+    ctx.setLineDash([6 / (s.zoom || 1), 4 / (s.zoom || 1)]);
+    s.smartGuides.forEach(g => {
+      ctx.beginPath();
+      if (g.axis === 'v') {
+        ctx.moveTo(g.coord, vp.minY - pad);
+        ctx.lineTo(g.coord, vp.maxY + pad);
+      } else {
+        ctx.moveTo(vp.minX - pad, g.coord);
+        ctx.lineTo(vp.maxX + pad, g.coord);
+      }
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   // 对称轴虚线（P2）：镜像模式开启时显示（沿 X=偏移 或 Y=偏移）
   if (s.mirrorMode && s.editMode) {
     const off = s.mirrorAxisOffset || 0;
@@ -1457,6 +1508,54 @@ function drawEditHelpers(ctx) {
   }
 }
 
+// E4：选中标记/文本的旋转/缩放手柄（渲染与命中共用 utils/selectionHandles 的几何）
+function drawSelectionHandles(ctx) {
+  const s = getState();
+  if (!s.editMode) return;
+  const sel = s.selectedMarker
+    ? { kind: 'marker', obj: s.selectedMarker }
+    : (s.selectedTextLabel ? { kind: 'textLabel', obj: s.selectedTextLabel } : null);
+  if (!sel) return;
+  const zoom = s.zoom || 1;
+  const hp = getHandlePositions(sel.obj, sel.kind, zoom);
+
+  ctx.save();
+  // 旋转包围盒（虚线框）
+  ctx.translate(sel.obj.x, sel.obj.y);
+  ctx.rotate(hp.rot);
+  ctx.strokeStyle = 'rgba(88, 166, 255, 0.9)';
+  ctx.lineWidth = 1 / zoom;
+  ctx.setLineDash([4 / zoom, 3 / zoom]);
+  ctx.strokeRect(-hp.w / 2, -hp.h / 2, hp.w, hp.h);
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // 旋转手柄：支杆 + 顶部圆点
+  ctx.save();
+  ctx.strokeStyle = 'rgba(88, 166, 255, 0.9)';
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.beginPath();
+  ctx.moveTo(hp.rotateStemBase.x, hp.rotateStemBase.y);
+  ctx.lineTo(hp.rotate.x, hp.rotate.y);
+  ctx.stroke();
+  ctx.fillStyle = '#4AA3FF';
+  ctx.beginPath();
+  ctx.arc(hp.rotate.x, hp.rotate.y, ROTATE_R_PX / zoom, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.stroke();
+
+  // 缩放手柄：右下角方块
+  const hs = SCALE_SIZE_PX / zoom;
+  ctx.fillStyle = '#4AA3FF';
+  ctx.fillRect(hp.scale.x - hs / 2, hp.scale.y - hs / 2, hs, hs);
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.strokeRect(hp.scale.x - hs / 2, hp.scale.y - hs / 2, hs, hs);
+  ctx.restore();
+}
+
 function drawSelectedHighlight(ctx) {
   const s = getState(); // 每次渲染取最新状态
   if (s.selectedProvince) {
@@ -1520,6 +1619,7 @@ function getContrastColor(hex) {
     drawTextLabels,
     drawEditHelpers,
     drawSelectedHighlight,
+    drawSelectionHandles,
     getPolygonCenter,
     darkenColor,
     getContrastColor,

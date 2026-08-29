@@ -30,25 +30,9 @@
       </div>
     </div>
     
-    <!-- 编辑工具栏（仅编辑形态显示，退出即隐藏，无折叠中间态；按功能分组 P0-1） -->
+    <!-- 编辑选项栏（U1 dock 化：主工具移至画布左侧竖排工具箱，顶部仅保留上下文选项/操作组） -->
     <div v-if="editMode" class="edit-toolbar-wrap">
       <div class="edit-toolbar">
-        <div class="toolbar-group" title="绘制工具">
-          <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚 拖手</button>
-          <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象：点击选中地点/标记/文本/区域，拖动移动；空白处拖动画布">✥ 移动</button>
-          <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️ 绘制</button>
-          <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域">🗺️ 区域</button>
-          <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记">📍 标记</button>
-          <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️ 路线</button>
-          <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤 文本</button>
-          <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇 (拖动圈选)">🗂 簇</button>
-        </div>
-
-        <div class="toolbar-group" title="面板管理">
-          <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表：地形/标记/路线/文本管理">📋 对象</button>
-          <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照：拍摄/恢复">📸 快照</button>
-        </div>
-
         <template v-if="interactionMode === 'draw'">
           <div class="toolbar-group toolbar-group-sub">
             <button :class="{ active: drawMode && !floodFillMode && !brushMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制">✏️ 自由绘制</button>
@@ -105,6 +89,7 @@
 
         <div class="toolbar-group" title="绘制辅助">
           <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份">🧲 吸附</button>
+          <button :class="{ active: smartGuidesEnabled }" @click="smartGuidesEnabled = !smartGuidesEnabled" title="E5 智能参考线：移动标记/文本/区域时显示对齐参考线并磁吸对齐其他对象">⇔ 对齐</button>
           <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格：绘制/移动/放置吸附到网格（按住 Ctrl 临时关闭）">⊞ 网格</button>
           <template v-if="gridSnapEnabled">
             <span class="toolbar-label">间距</span>
@@ -123,7 +108,7 @@
         <div class="toolbar-group" title="对象操作">
           <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份：点击多边形内两点画切割线">✂ 拆分</button>
           <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份：再点击一个相邻省份">⛓ 合并</button>
-          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0" title="删除选中对象 (Del)">🗑 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0 && multiSel.length === 0" title="删除选中对象 (Del)">🗑 删除</button>
           <button v-if="selectedPlaceIds.size > 1" @click="openArrangeDialog" title="批量排列选中节点">⊞ 排列</button>
           <template v-if="selectedPlaceIds.size >= 2">
             <div class="toolbar-group" title="对齐与分布 (E3)">
@@ -164,10 +149,6 @@
           <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示">🏔 地名</button>
           <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
           <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）">☷ 更多</button>
-        </div>
-
-        <div class="toolbar-group toolbar-group-exit">
-          <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出编辑</button>
         </div>
       </div>
     </div>
@@ -230,6 +211,34 @@
     <div class="canvas-wrapper" @dragover.prevent="handleDragOver" @drop.prevent="handleDrop">
       <canvas ref="canvas"></canvas>
       <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
+      <!-- U1 工具箱 dock：左侧竖排主工具（悬浮画布），悬停 tooltip 显示说明 -->
+      <div v-if="editMode" class="tool-dock" @mousedown.stop @dblclick.stop @wheel.stop>
+        <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚</button>
+        <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象：点击选中地点/标记/文本/区域，拖动移动；Shift+点击多选；空白处拖动画布">✥</button>
+        <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️</button>
+        <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域">🗺️</button>
+        <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记">📍</button>
+        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️</button>
+        <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤</button>
+        <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇 (拖动圈选)">🗂</button>
+        <div class="tool-dock-sep"></div>
+        <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表：地形/标记/路线/文本管理">📋</button>
+        <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照：拍摄/恢复">📸</button>
+        <div class="tool-dock-flex"></div>
+        <button class="tool-dock-exit" @click="exitEditMode" title="退出编辑模式">✓</button>
+      </div>
+      <!-- E9 内联文本编辑覆盖层：双击文本原位编辑 -->
+      <div v-if="inlineEdit" class="inline-text-edit" :style="{ left: inlineEdit.sx + 'px', top: inlineEdit.sy + 'px' }" @mousedown.stop @dblclick.stop @wheel.stop>
+        <input
+          ref="inlineEditInput"
+          v-model="inlineEdit.value"
+          :style="{ fontSize: inlineEdit.fontSize + 'px', color: inlineEdit.color, width: Math.max(120, (inlineEdit.value.length * inlineEdit.fontSize * 0.62) + 32) + 'px' }"
+          @keydown.enter.exact.prevent="commitInlineEdit"
+          @keydown.esc.prevent="cancelInlineEdit"
+          @blur="commitInlineEdit"
+        />
+        <div class="inline-text-hint">Enter 确认 · Esc 取消</div>
+      </div>
       <eagle-eye
         :view-bounds="viewBounds"
         :elements="eagleEyeElements"
@@ -622,15 +631,77 @@
       <div class="editor-field">
         <label>颜色</label>
         <div class="terrain-selector">
-          <button 
-            v-for="c in TEXT_COLORS" 
+          <button
+            v-for="c in TEXT_COLORS"
             :key="c"
             :class="{ active: selectedTextLabel?.color === c }"
-            :style="{ background: c }" 
+            :style="{ background: c }"
             @click="updateTextColor(c)"
             class="color-btn"
           ></button>
         </div>
+      </div>
+    </div>
+
+    <!-- E7 批量属性编辑面板（Shift 多选 ≥2 个标记/文本时出现） -->
+    <div v-if="editMode && multiSel.length >= 2 && multiSelObjects.length >= 2" class="province-editor batch-editor">
+      <div class="editor-header">
+        <h3>批量编辑（{{ multiSelObjects.length }} 个对象）</h3>
+        <button class="close-btn" @click="multiSel = []" title="取消批量选择（点空白处亦可）">×</button>
+      </div>
+      <p class="ref-hint">拖动任一组成员可整组移动；此处统一修改共有属性</p>
+
+      <template v-if="multiMarkers.length >= 1">
+        <div class="editor-field">
+          <label>标记类型（{{ multiMarkers.length }} 个标记）</label>
+          <div class="terrain-selector">
+            <button
+              v-for="m in markerTypes"
+              :key="m.type"
+              :class="{ active: multiMarkers.every(o => o.obj.type === m.type) }"
+              @click="batchApply('marker', { type: m.type, color: null })"
+              :title="'统一设为' + m.label"
+            ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
+          </div>
+        </div>
+      </template>
+
+      <template v-if="multiLabels.length >= 1">
+        <div class="editor-field">
+          <label>文本字号（{{ multiLabels.length }} 个文本）</label>
+          <div class="line-style-row">
+            <button
+              v-for="s in [12, 16, 22, 30]"
+              :key="s"
+              :class="{ active: multiLabels.every(o => (o.obj.fontSize || 16) === s) }"
+              @click="batchApply('textLabel', { fontSize: s })"
+            >{{ s }}px</button>
+          </div>
+        </div>
+        <div class="editor-field">
+          <label>文本颜色</label>
+          <div class="terrain-selector">
+            <button
+              v-for="c in TEXT_COLORS"
+              :key="c"
+              :class="{ active: multiLabels.every(o => (o.obj.color || '#2D3436') === c) }"
+              :style="{ background: c }"
+              @click="batchApply('textLabel', { color: c })"
+              class="color-btn"
+            ></button>
+          </div>
+        </div>
+      </template>
+
+      <div class="editor-field">
+        <label>变换（E4 旋转/缩放）</label>
+        <div class="line-style-row">
+          <button @click="batchResetTransform" title="旋转归零、缩放恢复 100%">↺ 重置变换</button>
+        </div>
+      </div>
+
+      <div class="editor-field">
+        <button class="adopt-btn batch-delete-btn" @click="deleteSelected" title="删除全部批量选中对象">🗑 删除所选（{{ multiSelObjects.length }}）</button>
       </div>
     </div>
     
@@ -771,7 +842,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, reactive, onMounted, onUnmounted, nextTick } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { usePanelsStore } from '../store/panels';
@@ -1261,6 +1332,97 @@ function updateTextColor(color) {
   if (!selectedTextLabel.value) return;
   store.updateTextLabel(props.planet.id, selectedTextLabel.value.id, { color });
   emit('dirty', true);
+}
+
+// ===== E7 批量选择（marker/textLabel，Shift+点击累加）+ E5 智能参考线状态 =====
+const multiSel = ref([]);            // [{ type: 'marker'|'textLabel', id }]
+const smartGuides = ref([]);         // 拖拽中的对齐参考线 [{ axis: 'v'|'h', coord }]
+const smartGuidesEnabled = ref(true);
+// E4：旋转/缩放手柄拖拽中的变换信息（onDragStart 写入，松手提交后清空）
+const transformDrag = ref(null);
+// E7：刚被 Shift 切换的成员（onClick 守卫，600ms 窗口）
+const lastShiftToggle = ref(null);
+
+// E7：批量组成员对象解析（供面板/计数使用）
+const multiSelObjects = computed(() => {
+  const data = currentMapData.value;
+  return multiSel.value
+    .map(m => {
+      const obj = m.type === 'marker'
+        ? data?.markers?.find(o => o.id === m.id)
+        : data?.textLabels?.find(o => o.id === m.id);
+      return obj ? { type: m.type, id: m.id, obj } : null;
+    })
+    .filter(Boolean);
+});
+const multiMarkers = computed(() => multiSelObjects.value.filter(o => o.type === 'marker'));
+const multiLabels = computed(() => multiSelObjects.value.filter(o => o.type === 'textLabel'));
+
+// ===== E9 内联文本编辑（双击画布文本 → 原位覆盖层）=====
+const inlineEdit = ref(null);        // { id, sx, sy, value, fontSize, color }
+const inlineEditInput = ref(null);
+
+function startInlineTextEdit(label) {
+  const cvs = canvas.value;
+  if (!cvs) return;
+  const vt = renderer.viewTransform;
+  const sx = label.x * vt.scale + cvs.clientWidth / 2 + vt.x;
+  const sy = label.y * vt.scale + cvs.clientHeight / 2 + vt.y;
+  inlineEdit.value = {
+    id: label.id,
+    sx, sy,
+    value: label.text || '',
+    fontSize: (label.fontSize || 16) * vt.scale,
+    color: label.color || '#2D3436',
+  };
+  nextTick(() => {
+    const el = inlineEditInput.value;
+    if (el) { el.focus(); el.select(); }
+  });
+}
+
+function commitInlineEdit() {
+  const ed = inlineEdit.value;
+  if (!ed) return;
+  inlineEdit.value = null;
+  const label = currentMapData.value?.textLabels?.find(l => l.id === ed.id);
+  if (label && ed.value !== label.text && ed.value.trim()) {
+    store.updateTextLabel(props.planet.id, ed.id, { text: ed.value }, { text: label.text });
+    emit('dirty', true);
+  }
+  renderer.requestRender();
+}
+
+function cancelInlineEdit() {
+  inlineEdit.value = null;
+  renderer.requestRender();
+}
+
+// ===== E7 批量属性应用（统一类型/颜色/字号；单条 undo 命令）=====
+function batchApply(kind, updates) {
+  const entries = (kind === 'marker' ? multiMarkers.value : multiLabels.value)
+    .map(({ id, obj }) => {
+      const old = {};
+      for (const key of Object.keys(updates)) old[key] = obj[key];
+      return { kind, id, updates: { ...updates }, old };
+    });
+  if (entries.length === 0) return;
+  store.batchUpdateMapObjects(props.planet.id, entries);
+  exportStatus.value = `已批量更新 ${entries.length} 个${kind === 'marker' ? '标记' : '文本'}`;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+// E7：重置批量成员的旋转/缩放（配合 E4）
+function batchResetTransform() {
+  const entries = multiSelObjects.value
+    .filter(({ obj }) => obj.rotation || (obj.scale && obj.scale !== 1))
+    .map(({ kind, id, obj }) => ({ kind, id, updates: { rotation: 0, scale: 1 }, old: { rotation: obj.rotation || 0, scale: obj.scale || 1 } }));
+  if (entries.length === 0) return;
+  store.batchUpdateMapObjects(props.planet.id, entries);
+  exportStatus.value = `已重置 ${entries.length} 个对象的变换`;
+  emit('dirty', true);
+  renderer.requestRender();
 }
 
 // ===== 当前地图数据 =====
@@ -1877,7 +2039,10 @@ function onRender(ctx, w, h) {
   }
   
   drawing.drawSelectedHighlight(ctx);
-  
+
+  // E4：选中标记/文本的旋转/缩放手柄（须在 highlight 之后，保证在最上层）
+  drawing.drawSelectionHandles(ctx);
+
   // 定位高亮（金色脉冲光圈 + 十字标记）
   if (focusHighlightNode.value) {
     drawFocusHighlight(ctx, focusHighlightNode.value);
@@ -1895,7 +2060,10 @@ const hitTestModule = createPlanetHitTest(() => ({
   selectedProvince: selectedProvince.value,
   selectedRegion: selectedRegion.value,
   selectedRoute: selectedRoute.value,
+  selectedMarker: selectedMarker.value,
+  selectedTextLabel: selectedTextLabel.value,
   editMode: editMode.value,
+  zoom: renderer.viewTransform.scale,
   getNodeRadius,
 }));
 
@@ -1942,10 +2110,32 @@ const drawing = createPlanetDrawing(() => ({
   terrainTypes, markerTypes,
   isFastMode: renderer.isFastMode(), viewport: getRenderViewport(),
   screenToWorld: renderer.screenToWorld,
+  zoom: renderer.viewTransform.scale, smartGuides: smartGuides.value,
 }));
 
 // ===== 交互状态机（P0-2：从巨型组件拆分，composables/planetInteractions.js）=====
 // getState：读通道，回调执行时惰性取最新解包状态（数组/对象内部修改直接写回 reactive）
+// setPrimarySelection：仅切换主选中（province/region/marker/route/label/place 五选一），
+// 不触碰批量组 multiSel——批量组生命周期由 selectOnly（清组）/ shiftSelect（切换成员）管理
+function isShiftToggleActive(id, type) {
+  const t = lastShiftToggle.value;
+  return !!(t && t.id === id && t.type === type && Date.now() - t.t < 600);
+}
+
+function setPrimarySelection(kind, obj) {
+  selectedProvince.value = null;
+  selectedRegion.value = null;
+  selectedMarker.value = null;
+  selectedRoute.value = null;
+  selectedTextLabel.value = null;
+  if (kind === 'province') selectedProvince.value = obj;
+  else if (kind === 'region') selectedRegion.value = obj;
+  else if (kind === 'marker') selectedMarker.value = obj;
+  else if (kind === 'route') selectedRoute.value = obj;
+  else if (kind === 'textLabel') selectedTextLabel.value = obj;
+  else if (kind === 'place') selectedPlaceIds.value = new Set([obj]);
+}
+
 const getState = () => ({
   interactionMode: interactionMode.value,
   isSpacebarDown: isSpacebarDown.value,
@@ -1989,6 +2179,12 @@ const getState = () => ({
   textFontSize: textFontSize.value,
   textColor: textColor.value,
   markerTypes,
+  zoom: renderer.viewTransform.scale,
+  multiSel: multiSel.value,
+  smartGuidesEnabled: smartGuidesEnabled.value,
+  transformDrag: transformDrag.value,
+  isShiftToggled: (id, type) => isShiftToggleActive(id, type),
+  hitTestSelectionHandle: (wx, wy) => hitTestModule.hitTestSelectionHandle(wx, wy),
   hitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
   hitTestVertex: (wx, wy) => hitTestModule.hitTestVertex(wx, wy),
   captureVertexSnapshot,
@@ -2016,19 +2212,39 @@ const interactions = createPlanetInteractions(getState, {
   setMoveObject(obj) { dragObject.value = obj; },
   setDragRegionAnchor(p) { dragRegionAnchor.value = p; },
   clearMoveObject() { dragObject.value = null; dragRegionAnchor.value = null; },
+  // E7：批量选择（marker/textLabel）——主选中与批量组分离
   selectOnly(kind, obj) {
-    selectedProvince.value = null;
-    selectedRegion.value = null;
-    selectedMarker.value = null;
-    selectedRoute.value = null;
-    selectedTextLabel.value = null;
-    if (kind === 'province') selectedProvince.value = obj;
-    else if (kind === 'region') selectedRegion.value = obj;
-    else if (kind === 'marker') selectedMarker.value = obj;
-    else if (kind === 'route') selectedRoute.value = obj;
-    else if (kind === 'textLabel') selectedTextLabel.value = obj;
-    else if (kind === 'place') selectedPlaceIds.value = new Set([obj]);
+    multiSel.value = []; // 新选择：清空批量组
+    setPrimarySelection(kind, obj);
   },
+  selectOnlyKeepGroup(kind, obj) { setPrimarySelection(kind, obj); },
+  shiftSelect(kind, obj) {
+    const idx = multiSel.value.findIndex(m => m.type === kind && m.id === obj.id);
+    if (idx >= 0) multiSel.value = multiSel.value.filter((_, i) => i !== idx);
+    else multiSel.value = [...multiSel.value, { type: kind, id: obj.id }];
+    // 记录刚被 Shift 切换的成员：onClick 紧随 mousedown 触发，
+    // 命中同一对象时须跳过选区修改（否则 Shift 移出成员会被误清组）
+    lastShiftToggle.value = { type: kind, id: obj.id, t: Date.now() };
+    setPrimarySelection(kind, obj);
+  },
+  isShiftToggled(id, type) {
+    const t = lastShiftToggle.value;
+    return !!(t && t.id === id && t.type === type && Date.now() - t.t < 600);
+  },
+  beginMultiObjectDrag(start) {
+    const members = [];
+    multiSel.value.forEach(m => {
+      const obj = m.type === 'marker'
+        ? currentMapData.value?.markers?.find(o => o.id === m.id)
+        : currentMapData.value?.textLabels?.find(o => o.id === m.id);
+      if (obj) members.push({ type: m.type, id: m.id, obj, old: { x: obj.x, y: obj.y } });
+    });
+    if (members.length === 0) return;
+    dragObject.value = { type: 'multi', start: { ...start }, members };
+  },
+  // E5：智能参考线状态（拖拽中由交互层写入，绘制层读取）
+  setSmartGuides(guides) { smartGuides.value = guides; },
+  clearSmartGuides() { smartGuides.value = []; },
   setSelectedPlaces(set) { selectedPlaceIds.value = set; },
   startPlacesDrag(start, ids) {
     isDraggingPlaces.value = true;
@@ -2049,9 +2265,37 @@ const interactions = createPlanetInteractions(getState, {
     if (!obj) return;
     if (obj.type === 'marker') store.updateMarker(props.planet.id, obj.id, { x: obj.marker.x, y: obj.marker.y }, obj.old);
     else if (obj.type === 'textLabel') store.updateTextLabel(props.planet.id, obj.id, { x: obj.label.x, y: obj.label.y }, obj.old);
+    else if (obj.type === 'multi') {
+      // E7：批量拖动提交（零位移成员跳过；单条 undo 命令）
+      const entries = obj.members
+        .filter(m => m.obj.x !== m.old.x || m.obj.y !== m.old.y)
+        .map(m => ({ kind: m.type, id: m.id, updates: { x: m.obj.x, y: m.obj.y }, old: { x: m.old.x, y: m.old.y } }));
+      if (entries.length > 0) store.batchUpdateMapObjects(props.planet.id, entries);
+    }
     else if (obj.type === 'region') store.updateRegion(props.planet.id, obj.id, { points: obj.region.points.map(p => ({ ...p })) }, { points: obj.old });
     dragObject.value = null;
     dragRegionAnchor.value = null;
+    emit('dirty', true);
+  },
+  // E4：旋转/缩放手柄拖拽状态（onDragStart 写入，onDragMove 读通道，onDragEnd 提交后清理）
+  setTransformDrag(info) { transformDrag.value = info; },
+  // E4：松手提交（仅提交变化的字段，old 快照来自 onDragStart）
+  commitTransform() {
+    const info = transformDrag.value;
+    transformDrag.value = null;
+    if (!info) return;
+    const list = info.kind === 'marker' ? currentMapData.value?.markers : currentMapData.value?.textLabels;
+    const target = list?.find(o => o.id === info.id);
+    if (!target) return;
+    const updates = {};
+    const newRotation = target.rotation || 0;
+    const newScale = target.scale || 1;
+    if (newRotation !== info.old.rotation) updates.rotation = newRotation;
+    if (newScale !== info.old.scale) updates.scale = newScale;
+    if (Object.keys(updates).length === 0) return;
+    const oldSnapshot = { rotation: info.old.rotation, scale: info.old.scale };
+    if (info.kind === 'marker') store.updateMarker(props.planet.id, info.id, updates, oldSnapshot);
+    else store.updateTextLabel(props.planet.id, info.id, updates, oldSnapshot);
     emit('dirty', true);
   },
   commitVertexDrag() {
@@ -2147,6 +2391,12 @@ const renderer = useCanvasRenderer(canvas, {
     // 描点模式：双击完成
     if ((interactionMode.value === 'draw' || interactionMode.value === 'region') && !drawMode.value && drawingPolygon.value) {
       finishPointDrawing();
+      return;
+    }
+    // E9：双击浮动文本 → 画布内联编辑（原位覆盖层）
+    if (hit?.type === 'textLabel' && hit.label) {
+      selectedTextLabel.value = hit.label;
+      startInlineTextEdit(hit.label);
       return;
     }
     // 双击地点节点：进入区域地图（下钻）
@@ -2365,6 +2615,18 @@ function performMerge(idA, idB) {
 }
 
 function deleteSelected() {
+  // E7：批量删除 Shift 多选的标记/文本（逐个走 store，各生成一条 undo）
+  if (multiSel.value.length > 0) {
+    if (confirm(`确定删除选中的 ${multiSel.value.length} 个对象吗？`)) {
+      multiSelObjects.value.forEach(({ type, id }) => {
+        if (type === 'marker') store.removeMarker(props.planet.id, id);
+        else store.removeTextLabel(props.planet.id, id);
+      });
+      multiSel.value = [];
+      emit('dirty', true);
+    }
+    return;
+  }
   // 批量删除选中的地点
   if (selectedPlaceIds.value.size > 0) {
     if (confirm(`确定从地图移除选中的 ${selectedPlaceIds.value.size} 个地点吗？`)) {
@@ -4024,6 +4286,103 @@ watch(() => props.planet?.id, async (id) => {
 }
 .toolbar-group-exit {
   margin-left: auto !important;
+}
+
+/* U1 工具箱 dock：左侧竖排主工具，悬浮于画布；顶部选项栏仅显示上下文组 */
+.tool-dock {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 46px;
+  max-height: calc(100% - 24px);
+  padding: 7px 5px;
+  background: var(--panel-glass);
+  border: 1px solid var(--planet-header-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.tool-dock::-webkit-scrollbar { display: none; }
+.tool-dock button {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--planet-text);
+  transition: background 0.15s, border-color 0.15s;
+}
+.tool-dock button:hover { background: var(--planet-btn-hover); }
+.tool-dock button.active {
+  background: var(--planet-btn-active-bg);
+  border-color: var(--planet-btn-active-border);
+  color: white;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+.tool-dock-sep {
+  height: 1px;
+  flex-shrink: 0;
+  margin: 4px 3px;
+  background: var(--planet-btn-border);
+}
+.tool-dock-flex { flex: 1; min-height: 6px; }
+.tool-dock-exit { color: var(--planet-text-link, #4A90D9) !important; font-weight: bold; }
+
+/* E9 内联文本编辑覆盖层：定位到文本世界坐标的屏幕投影点 */
+.inline-text-edit {
+  position: absolute;
+  z-index: 45;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.inline-text-edit input {
+  padding: 2px 6px;
+  border: 2px solid #4AA3FF;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.92);
+  text-align: center;
+  font-family: "Microsoft YaHei", sans-serif;
+  outline: none;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+.inline-text-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.55);
+  padding: 2px 8px;
+  border-radius: 8px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* E7 批量属性编辑面板 */
+.batch-editor .terrain-selector button {
+  background: var(--planet-btn-hover);
+  color: var(--planet-text);
+}
+.batch-editor .terrain-selector button.active {
+  background: var(--planet-btn-active-bg);
+  border-color: var(--planet-btn-active-border);
+  color: white;
+}
+.batch-delete-btn {
+  width: 100%;
+  color: #FF6B6B;
 }
 
 .terrain-picker {

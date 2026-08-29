@@ -434,6 +434,41 @@ export function createMapDataEditingModule(ctx) {
     scheduleAutoSaveMap(planetId);
   }
 
+  // E7 批量属性/位置更新：一次 execute 合并多个对象的修改（单条 undo 步骤）
+  // entries: [{ kind: 'marker'|'textLabel', id, updates: {...}, old: {...} }]
+  function batchUpdateMapObjects(planetId, entries) {
+    const data = mapData.value[planetId];
+    if (!data) return;
+    const applied = [];
+    for (const entry of entries || []) {
+      const list = entry.kind === 'marker' ? data.markers : (entry.kind === 'textLabel' ? data.textLabels : null);
+      if (!list) continue;
+      const obj = list.find(o => o.id === entry.id);
+      if (!obj) continue;
+      const updates = { ...entry.updates };
+      const oldState = {};
+      for (const key of Object.keys(updates)) {
+        oldState[key] = entry.old && entry.old[key] !== undefined ? entry.old[key] : obj[key];
+      }
+      Object.assign(obj, updates);
+      applied.push({ obj, updates, oldState });
+    }
+    if (applied.length === 0) return;
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    execute({
+      type: 'batch-update-objects',
+      label: `批量编辑 ${applied.length} 个对象`,
+      category: 'property',
+      undo: () => {
+        applied.forEach(a => Object.assign(a.obj, a.oldState));
+      },
+      redo: () => {
+        applied.forEach(a => Object.assign(a.obj, a.updates));
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
   // ===== 参考图底图（P2 多图：referenceImages 数组，按 id 更新兼容 active 语义）=====
   function updateReferenceImage(planetId, refImage) {
     if (!mapData.value[planetId]) {
@@ -649,6 +684,7 @@ export function createMapDataEditingModule(ctx) {
     addMarker,
     removeMarker,
     updateMarker,
+    batchUpdateMapObjects,
     updateReferenceImage,
     clearReferenceImage,
     removeReferenceImageById,
