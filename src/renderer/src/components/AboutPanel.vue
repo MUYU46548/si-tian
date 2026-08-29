@@ -153,7 +153,25 @@
       <div class="about-footer">
         <span class="copyright">© 2026 暮雨 · 绒花计划 (ROSA)</span>
         <span class="license">MIT License</span>
-        <button class="update-btn" @click="checkForUpdates">检查更新</button>
+        <div class="footer-actions">
+          <button class="update-btn" @click="checkForUpdates">检查更新</button>
+          <button class="uninstall-btn" @click="confirmUninstall">卸载 SiTian</button>
+        </div>
+      </div>
+
+      <!-- 卸载确认模态（自定义，规避 Electron alert 限制） -->
+      <div v-if="showUninstallConfirm" class="uninstall-modal-overlay" @click.self="showUninstallConfirm = false">
+        <div class="uninstall-modal">
+          <h3>卸载 SiTian</h3>
+          <p>将打开系统卸载程序移除 SiTian 及其安装项。你的 Obsidian 知识库与笔记<strong>不会被删除</strong>。</p>
+          <p class="uninstall-hint" v-if="uninstallHint">{{ uninstallHint }}</p>
+          <div class="uninstall-modal-actions">
+            <button class="btn-cancel" @click="showUninstallConfirm = false">取消</button>
+            <button class="btn-danger" @click="doUninstall" :disabled="uninstalling">
+              {{ uninstalling ? '正在打开卸载程序…' : '确认卸载' }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -164,6 +182,35 @@ import { ref, computed } from 'vue';
 
 const isOpen = ref(false);
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
+
+// 卸载（应用内入口，调用主进程定位系统卸载器）
+const showUninstallConfirm = ref(false);
+const uninstalling = ref(false);
+const uninstallHint = ref('');
+
+function confirmUninstall() {
+  showUninstallConfirm.value = true;
+  uninstallHint.value = '';
+}
+
+async function doUninstall() {
+  uninstalling.value = true;
+  uninstallHint.value = '';
+  try {
+    const result = await window.sitianAPI.uninstallApp();
+    if (!result?.success) {
+      // 开发模式或找不到卸载器：给出手动指引
+      uninstallHint.value = result?.dev
+        ? '当前为开发模式，未安装到系统，无需卸载。发布版中此按钮将启动系统卸载程序。'
+        : (result?.error || '未能定位卸载程序，请通过「设置 → 应用 → SiTian → 卸载」手动卸载。');
+      uninstalling.value = false;
+    }
+    // success=true 时主进程已打开卸载器，模态可保留或关闭均可
+  } catch (e) {
+    uninstallHint.value = '卸载启动失败：' + e.message;
+    uninstalling.value = false;
+  }
+}
 
 function open() {
   isOpen.value = true;
@@ -446,6 +493,107 @@ defineExpose({ open, close });
 
 .update-btn:hover {
   opacity: 1;
+}
+
+.uninstall-btn {
+  font-size: 11px;
+  color: #f85149;
+  background: transparent;
+  border: 1px solid #f85149;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.uninstall-btn:hover {
+  opacity: 1;
+}
+
+/* 卸载确认模态 */
+.uninstall-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.uninstall-modal {
+  width: 380px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: 24px;
+}
+
+.uninstall-modal h3 {
+  font-size: 16px;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+}
+
+.uninstall-modal p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0 0 10px;
+}
+
+.uninstall-modal strong {
+  color: var(--text-primary);
+}
+
+.uninstall-hint {
+  color: #f85149 !important;
+  font-size: 11px !important;
+}
+
+.uninstall-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-cancel {
+  padding: 7px 16px;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-cancel:hover {
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
+}
+
+.btn-danger {
+  padding: 7px 16px;
+  background: #f85149;
+  border: 1px solid #f85149;
+  border-radius: var(--radius-md);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #da3633;
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .close-btn {

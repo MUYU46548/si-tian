@@ -21,6 +21,11 @@
         </div>
       </div>
       
+      <div class="onboarding-vault">
+        <button class="btn-vault" @click="chooseVault">📂 选择 Obsidian 知识库</button>
+        <p v-if="vaultMsg" class="vault-msg" :class="{ error: vaultError }">{{ vaultMsg }}</p>
+      </div>
+
       <div class="onboarding-actions">
         <button v-if="currentStep < steps.length - 1" class="btn-secondary" @click="skip">跳过</button>
         <button class="btn-primary" @click="next">
@@ -36,6 +41,32 @@ import { ref, onMounted } from 'vue';
 
 const isOpen = ref(false);
 const currentStep = ref(0);
+const vaultMsg = ref('');
+const vaultError = ref(false);
+
+async function chooseVault() {
+  vaultMsg.value = '';
+  vaultError.value = false;
+  try {
+    const result = await window.sitianAPI.selectVaultPath();
+    if (result?.canceled) return;
+    if (result?.success) {
+      vaultMsg.value = `已选择知识库：${result.path}，正在重新提取数据…`;
+      // 触发 App.vue 监听的 reextract 事件（自动重扫 + 刷新地图）
+      window.dispatchEvent(new Event('sitian:reextract'));
+      close();
+    } else if (result?.error) {
+      vaultError.value = true;
+      vaultMsg.value = result.error;
+    } else {
+      vaultError.value = true;
+      vaultMsg.value = '未选择知识库目录';
+    }
+  } catch (e) {
+    vaultError.value = true;
+    vaultMsg.value = '选择知识库失败：' + e.message;
+  }
+}
 
 const steps = [
   { title: '浏览世界观', desc: '从世界卡片开始，逐级探索星域、星系总览和单系地图' },
@@ -188,6 +219,44 @@ defineExpose({ open, close });
   font-size: 11px;
   color: var(--text-tertiary);
   margin: 0;
+}
+
+.onboarding-vault {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--accent);
+  background: var(--accent-bg);
+}
+
+.btn-vault {
+  padding: 10px 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: opacity 0.2s ease;
+}
+
+.btn-vault:hover {
+  opacity: 0.9;
+}
+
+.vault-msg {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.vault-msg.error {
+  color: #f85149;
 }
 
 .onboarding-actions {

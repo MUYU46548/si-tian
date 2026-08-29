@@ -9,7 +9,7 @@ const DEFAULT_VAULT = ''; // 留空：首次启动由用户通过设置面板指
 const WINDOW_MODES = ['maximized', 'fullscreen', 'default'];
 const DEFAULT_WINDOW_MODE = 'maximized';
 
-let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE };
+let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE, closeQuitsApp: false };
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'config.json');
@@ -27,6 +27,9 @@ async function loadConfig() {
     }
     if (WINDOW_MODES.includes(cfg.windowMode)) {
       config.windowMode = cfg.windowMode;
+    }
+    if (typeof cfg.closeQuitsApp === 'boolean') {
+      config.closeQuitsApp = cfg.closeQuitsApp;
     }
   } catch (e) {
     // 无配置 → 使用默认值（兼容旧版硬编码）
@@ -61,7 +64,19 @@ async function setWindowMode(mode) {
   return config.windowMode;
 }
 
+// 关闭窗口行为（批次A12）：closeQuitsApp=false（默认）= 最小化到托盘；true = 点 × 直接退出
+function getCloseQuitsApp() {
+  return config.closeQuitsApp;
+}
+
+async function setCloseQuitsApp(v) {
+  config.closeQuitsApp = !!v;
+  await writeConfig();
+  return config.closeQuitsApp;
+}
+
 module.exports = {
   loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT,
   getWindowMode, setWindowMode,
+  getCloseQuitsApp, setCloseQuitsApp,
 };

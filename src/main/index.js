@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const matter = require('gray-matter');
 const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
-const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode } = require('./config');
+const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp } = require('./config');
 const { createTray, destroyTray, getIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const log = require('electron-log');
@@ -49,6 +49,7 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
@@ -68,14 +69,29 @@ function createWindow() {
     startWatcher(mainWindow, getVaultPath());
   }
 
-  // 窗口关闭拦截：用户点 × 时最小化到托盘，而非退出
-  // 退出只能通过托盘菜单「退出」或 Alt+F4（应用退出时 getIsQuitting() === true）
-  mainWindow.on('close', (event) => {
-    if (!getIsQuitting()) {
-      event.preventDefault();
-      mainWindow.hide();
-    }
-  });
+// 窗口关闭拦截：默认（closeQuitsApp=false）点 × 时最小化到托盘，而非退出；
+// closeQuitsApp=true 时直接退出。退出只能通过托盘菜单「退出」或 Alt+F4（getIsQuitting()===true）。
+// 首次最小化到托盘时，通过托盘气泡提示用户，避免"不知道去哪了"的困惑（批次A12）。
+let trayMinimizeHinted = false;
+mainWindow.on('close', (event) => {
+  if (getIsQuitting()) return;
+  if (getCloseQuitsApp()) {
+    app.quit();
+    return;
+  }
+  event.preventDefault();
+  mainWindow.hide();
+  if (!trayMinimizeHinted && tray) {
+    trayMinimizeHinted = true;
+    try {
+      tray.displayBalloon({
+        title: 'SiTian 已最小化到托盘',
+        content: '点击托盘图标可重新显示；关闭窗口不会退出程序，右键托盘可退出。',
+        iconType: 'info',
+      });
+    } catch (e) { /* 部分环境无气泡支持，忽略 */ }
+  }
+});
 
   // 创建系统托盘
   createTray(mainWindow);
@@ -190,6 +206,13 @@ ipcMain.handle('set-window-mode', async (event, mode) => {
     applyWindowMode(mainWindow, applied);
   }
   return { success: true, mode: applied };
+});
+
+// IPC: 关闭行为（批次A12）：读取 / 设置「点 × 直接退出」开关（持久化）
+ipcMain.handle('get-close-quits-app', () => getCloseQuitsApp());
+ipcMain.handle('set-close-quits-app', async (event, v) => {
+  const applied = await setCloseQuitsApp(v);
+  return { success: true, closeQuitsApp: applied };
 });
 
 // IPC: 选择 Vault 库目录（首次引导/设置面板），校验 .obsidian 后保存并重新提取（2026-08-16）
@@ -386,6 +409,39 @@ ipcMain.handle('report-error', (event, payload) => {
     log.error('[renderer] report-error 处理失败:', e);
   }
   return { success: true };
+});
+
+// IPC: 应用内卸载入口（批次A11）：定位 NSIS 生成的卸载器并打开
+// 开发模式（源码运行，非 asar 打包）无安装目录，返回 dev:true 提示无需卸载
+ipcMain.handle('uninstall-app', async () => {
+  try {
+    // 仅打包环境（app.asar）才有真实安装目录
+    if (!app.isPackaged) {
+      return { success: false, dev: true };
+    }
+    const installDir = path.dirname(app.getPath('exe'));
+    let uninstaller = null;
+    try {
+      const entries = await fs.readdir(installDir);
+      uninstaller = entries.find((f) => /^SiTian Setup.*__uninstaller\.exe$/i.test(f));
+    } catch (e) {
+      return { success: false, error: '读取安装目录失败：' + e.message };
+    }
+    if (!uninstaller) {
+      // 回退：打开系统「程序和功能」供手动卸载
+      shell.openExternal('control.exe /name Microsoft.ProgramsAndFeatures').catch(() => {});
+      return { success: false, error: '未找到卸载程序，已为你打开系统卸载面板' };
+    }
+    await shell.openPath(path.join(installDir, uninstaller));
+    // 卸载器需要回收正在运行的 SiTian 文件句柄：先安全退出本进程，让 NSIS 完成删除。
+    // 延迟 600ms 确保卸载器已启动并接管，避免先 quit 导致 shell.openPath 取消。
+    setTimeout(() => {
+      try { app.quit(); } catch (e) { /* 忽略退出异常 */ }
+    }, 600);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 // IPC: 自动更新

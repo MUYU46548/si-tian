@@ -8,16 +8,17 @@ let isQuitting = false;
 function createTray(mainWindow) {
   if (tray) return tray;
 
-  // 使用 16px 图标作为托盘图标（Windows 任务栏托盘标准尺寸）
+  // 使用图标作为托盘图标。Windows 托盘推荐多分辨率 .ico（含 16/32/48/256），缩放更清晰；
+  // 其他平台无 .ico 时用 32px png。resolve 路径在打包后指向 app.asar 内的 build/（需 files 含 build/**/*）。
   const iconPath = process.platform === 'win32'
-    ? path.join(__dirname, '../../build/icon-16.png')
+    ? path.join(__dirname, '../../build/icon.ico')
     : path.join(__dirname, '../../build/icon-32.png');
-  const icon = nativeImage.createFromPath(iconPath);
-
-  // Windows 需要缩小图标以适配托盘
-  const trayIcon = process.platform === 'win32'
-    ? icon.resize({ width: 16, height: 16 })
-    : icon;
+  let icon = nativeImage.createFromPath(iconPath);
+  // 兜底：.ico 缺失时用 32px png（极端环境防护）
+  if (icon.isEmpty() && process.platform === 'win32') {
+    icon = nativeImage.createFromPath(path.join(__dirname, '../../build/icon-32.png'));
+  }
+  const trayIcon = icon;
 
   tray = new Tray(trayIcon);
   tray.setToolTip('SiTian — 世界观动态构建系统');

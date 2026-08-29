@@ -1,5 +1,16 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 版本号：优先 Electron 提供的安装版本，回退到打包时注入的环境变量，最后用硬编码常量。
+// 注意：禁止 require('../../package.json') —— 在打包后的 asar 内该相对路径指向不存在的文件，
+// require 失败会抛出并中断整个 exposeInMainWorld 调用，导致 window.sitianAPI 为 undefined（批次A11 复盘）。
+const APP_VERSION = (function () {
+  try {
+    const v = require('electron').app.getVersion();
+    if (v) return v;
+  } catch (e) { /* 忽略：preload 中可能尚未就绪 */ }
+  return process.env.npm_package_version || '0.1.2';
+})();
+
 contextBridge.exposeInMainWorld('sitianAPI', {
   // 数据获取
   getGeodata: () => ipcRenderer.invoke('get-geodata'),
@@ -12,6 +23,10 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 窗口启动模式（批次A7）
   getWindowMode: () => ipcRenderer.invoke('get-window-mode'),
   setWindowMode: (mode) => ipcRenderer.invoke('set-window-mode', mode),
+
+  // 关闭行为（批次A12）：点 × 直接退出应用（默认 false = 最小化到托盘）
+  getCloseQuitsApp: () => ipcRenderer.invoke('get-close-quits-app'),
+  setCloseQuitsApp: (v) => ipcRenderer.invoke('set-close-quits-app', v),
 
   // 地图数据
   getMapData: (planetId) => ipcRenderer.invoke('get-map-data', planetId),
@@ -71,7 +86,10 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   platform: process.platform,
 
   // 应用版本
-  version: process.env.npm_package_version || require('../../package.json').version,
+  version: APP_VERSION,
+
+  // 应用内卸载入口（批次A11）
+  uninstallApp: () => ipcRenderer.invoke('uninstall-app'),
 
   // 自动更新
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

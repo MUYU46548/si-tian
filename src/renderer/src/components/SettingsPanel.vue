@@ -43,6 +43,17 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
+
+          <div class="setting-item">
+            <div class="setting-info">
+              <span class="setting-name">关闭时退出应用</span>
+              <span class="setting-desc">关闭窗口直接退出程序（默认关闭窗口仅最小化到托盘，右键托盘可退出）</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="closeQuitsApp" @change="onCloseQuitsAppChange" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </section>
 
         <!-- 视图设置 -->
@@ -221,6 +232,8 @@ const isOpen = ref(false);
 
 // 窗口启动模式（批次A7）：null = 当前环境无 sitianAPI（纯浏览器 dev），隐藏该选项
 const windowMode = ref(null);
+// 关闭行为（批次A12）：点 × 直接退出应用
+const closeQuitsApp = ref(false);
 
 const settings = ref({
   autoSave: true,
@@ -237,6 +250,7 @@ function open() {
   isOpen.value = true;
   loadSettings();
   loadWindowMode();
+  loadCloseQuitsApp();
 }
 
 function close() {
@@ -275,6 +289,23 @@ async function onWindowModeChange() {
     await window.sitianAPI.setWindowMode(windowMode.value);
   } catch (e) {
     console.warn('Failed to set window mode:', e);
+  }
+}
+
+// 关闭行为（批次A12）：读取 / 切换「点 × 直接退出应用」
+async function loadCloseQuitsApp() {
+  try {
+    closeQuitsApp.value = await window.sitianAPI.getCloseQuitsApp();
+  } catch (e) {
+    closeQuitsApp.value = false;
+  }
+}
+
+async function onCloseQuitsAppChange() {
+  try {
+    await window.sitianAPI.setCloseQuitsApp(closeQuitsApp.value);
+  } catch (e) {
+    console.warn('Failed to set close-quits-app:', e);
   }
 }
 
