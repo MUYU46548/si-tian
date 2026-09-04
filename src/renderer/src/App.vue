@@ -183,6 +183,7 @@
           @create-world="handleCreateWorld"
           @delete-world="handleDeleteWorld"
           @reextract="reextract"
+          @load-sample="handleLoadSampleWorld"
         />
         
         <galaxy-map
@@ -283,6 +284,7 @@
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from './store/geodata';
 import { usePanelsStore } from './store/panels';
+import { createSampleWorld } from './utils/sampleData';
 import WorldSelector from './components/WorldSelector.vue';
 import GalaxyMap from './components/GalaxyMap.vue';
 import SystemView from './components/SystemView.vue';
@@ -962,6 +964,21 @@ function handleCreateWorld() {
   dirty.value = true;
   statusText.value = `已创建「新世界${Date.now() % 1000}」，可在左侧树中选中后重命名`;
   setTimeout(() => { statusText.value = ''; }, 4000);
+}
+
+function handleLoadSampleWorld() {
+  const sample = createSampleWorld();
+  // 批量添加示例节点
+  for (const node of sample.nodes) {
+    store.addNode({ ...node, tags: [...node.tags] });
+  }
+  // 添加示例航道
+  for (const lane of sample.hyperlanes) {
+    store.addHyperlane(lane.fromId, lane.toId, lane.type);
+  }
+  dirty.value = true;
+  statusText.value = '已加载示例世界观「幻境」，点击世界卡片开始探索';
+  setTimeout(() => { statusText.value = ''; }, 5000);
 }
 
 function handleDeleteWorld(world) {

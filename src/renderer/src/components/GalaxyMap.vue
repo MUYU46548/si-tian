@@ -633,6 +633,7 @@ function onRender(ctx, w, h) {
 
 // ===== 背景 =====
 function drawStarfield(ctx, w, h) {
+  // 1. 基础深空渐变 — 从中心微亮到边缘暗角
   const bgGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 3500);
   bgGradient.addColorStop(0, '#1a2035');
   bgGradient.addColorStop(0.4, '#141828');
@@ -641,23 +642,27 @@ function drawStarfield(ctx, w, h) {
   ctx.fillStyle = bgGradient;
   ctx.fillRect(-5000, -5000, 10000, 10000);
   
+  // 2. 星云层 — 更多层、更低 opacity、有机分布
   const nebulae = [
-    { x: 300, y: -200, r: 600, color: 'rgba(60, 90, 180, 0.08)' },
-    { x: -400, y: 300, r: 500, color: 'rgba(120, 60, 150, 0.07)' },
-    { x: 100, y: 400, r: 400, color: 'rgba(60, 150, 120, 0.06)' },
-    { x: -200, y: -350, r: 450, color: 'rgba(150, 100, 60, 0.05)' },
+    { x: 300, y: -200, r: 600, color: 'rgba(60, 90, 180, 0.06)' },
+    { x: -400, y: 300, r: 500, color: 'rgba(120, 60, 150, 0.05)' },
+    { x: 100, y: 400, r: 400, color: 'rgba(60, 150, 120, 0.04)' },
+    { x: -200, y: -350, r: 450, color: 'rgba(150, 100, 60, 0.04)' },
+    { x: 600, y: 100, r: 550, color: 'rgba(80, 120, 200, 0.05)' },
+    { x: -600, y: -100, r: 480, color: 'rgba(100, 80, 160, 0.04)' },
   ];
   
   for (const neb of nebulae) {
     const nebGradient = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
     nebGradient.addColorStop(0, neb.color);
-    nebGradient.addColorStop(0.5, neb.color.replace('0.', '0.0'));
+    nebGradient.addColorStop(0.4, neb.color.replace(/[\d.]+\)$/, (parseFloat(neb.color.match(/[\d.]+\)$/)[0]) * 0.5) + ')'));
     nebGradient.addColorStop(1, 'transparent');
     ctx.fillStyle = nebGradient;
     ctx.fillRect(neb.x - neb.r, neb.y - neb.r, neb.r * 2, neb.r * 2);
   }
   
-  ctx.strokeStyle = 'rgba(60, 80, 120, 0.18)';
+  // 3. 网格线 — 更暗、更细腻
+  ctx.strokeStyle = 'rgba(60, 80, 120, 0.12)';
   ctx.lineWidth = 0.5;
   const gridSize = 200;
   for (let gx = -2500; gx <= 2500; gx += gridSize) {
@@ -673,29 +678,46 @@ function drawStarfield(ctx, w, h) {
     ctx.stroke();
   }
   
-  for (let layer = 0; layer < 4; layer++) {
-    const alpha = 0.12 + layer * 0.06;
-    const count = 200 + layer * 80;
-    const sizeBase = 0.5 + layer * 0.4;
+  // 4. 星空粒子 — 多层、不同大小和亮度
+  for (let layer = 0; layer < 5; layer++) {
+    const alpha = 0.08 + layer * 0.04;
+    const count = 150 + layer * 60;
+    const sizeBase = 0.3 + layer * 0.3;
+    const seedOffset = layer * 234;
     ctx.fillStyle = `rgba(220, 230, 245, ${alpha})`;
-    for (let i = layer * 300; i < count; i++) {
-      const x = ((i * 97 + 23) % 3500) - 1750;
-      const y = ((i * 61 + 41) % 3500) - 1750;
-      const size = sizeBase + (i % 4) * 0.3;
+    for (let i = seedOffset; i < count + seedOffset; i++) {
+      const x = ((i * 97 + 23 + layer * 137) % 3500) - 1750;
+      const y = ((i * 61 + 41 + layer * 89) % 3500) - 1750;
+      const size = sizeBase + (i % 5) * 0.2;
       ctx.beginPath();
       ctx.arc(x, y, size, 0, Math.PI * 2);
       ctx.fill();
     }
   }
   
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  for (let i = 0; i < 15; i++) {
+  // 5. 亮星 — 带光晕
+  for (let i = 0; i < 20; i++) {
     const x = ((i * 137 + 53) % 3000) - 1500;
     const y = ((i * 89 + 67) % 3000) - 1500;
+    const starGlow = ctx.createRadialGradient(x, y, 0, x, y, 4);
+    starGlow.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+    starGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = starGlow;
     ctx.beginPath();
-    ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.beginPath();
+    ctx.arc(x, y, 1.2, 0, Math.PI * 2);
     ctx.fill();
   }
+  
+  // 6. 暗角 — 增加深度感
+  const vignette = ctx.createRadialGradient(0, 0, 1000, 0, 0, 4000);
+  vignette.addColorStop(0, 'transparent');
+  vignette.addColorStop(1, 'rgba(5, 8, 16, 0.4)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(-5000, -5000, 10000, 10000);
 }
 
 // ===== 势力边界 =====

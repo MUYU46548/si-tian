@@ -296,10 +296,64 @@ export const useGeodataStore = defineStore('geodata', () => {
       };
     });
 
+    // 循环引用检测：A → B → C → A
+    detectCycles(cleaned);
+
     // B1 越级校验：子节点 layer 必须比父节点 layer 在 LAYER_ORDER 更深（严格大于）。
     // 未知层级（indexOf === -1）无法比较，跳过不判。
     const violations = countLayerOrderViolations(cleaned);
     return { nodes: cleaned, violations };
+  }
+
+  /**
+   * 检测并打破循环引用（A → B → C → A）
+   */
+  function detectCycles(nodes) {
+    const byId = new Map(nodes.map(n => [n.id, n]));
+    const visited = new Set();
+    const inStack = new Set();
+    const cycles = [];
+
+    function dfs(nodeId, path) {
+      if (inStack.has(nodeId)) {
+        // 发现循环
+        const cycleStart = path.indexOf(nodeId);
+        const cycle = path.slice(cycleStart).concat(nodeId);
+        cycles.push(cycle);
+        return;
+      }
+      if (visited.has(nodeId)) return;
+      
+      const node = byId.get(nodeId);
+      if (!node || !node.parentId) return;
+
+      visited.add(nodeId);
+      inStack.add(nodeId);
+      path.push(nodeId);
+      
+      dfs(node.parentId, path);
+      
+      path.pop();
+      inStack.delete(nodeId);
+    }
+
+    for (const node of nodes) {
+      if (!visited.has(node.id)) {
+        dfs(node.id, []);
+      }
+    }
+
+    // 打破循环：将循环中最后一个节点的 parentId 置空
+    for (const cycle of cycles) {
+      const breakNodeId = cycle[cycle.length - 2]; // 最后一个边的起点
+      const breakNode = byId.get(breakNodeId);
+      if (breakNode) {
+        console.warn(`[Geodata] 检测到循环引用: ${cycle.map(id => byId.get(id)?.name || id).join(' → ')}，已打破（${breakNode.name} 的 parentId 置空）`);
+        breakNode.parentId = null;
+      }
+    }
+
+    return cycles;
   }
 
   /**
@@ -332,6 +386,8 @@ export const useGeodataStore = defineStore('geodata', () => {
       const autoHyperlanes = result.data.hyperlanes || [];
       const userHyperlanes = hyperlanes.value.filter(h => !h.id.startsWith('auto_'));
       hyperlanes.value = [...autoHyperlanes, ...userHyperlanes];
+      // 保留仅存在于缓存中的编辑器数据（提取结果不含这些字段）
+      // interiorData / areaZones / areaMarkers 等不受影响，因为它们不走提取
     }
   }
 
@@ -582,10 +638,23 @@ export const useGeodataStore = defineStore('geodata', () => {
     scheduleAutoSave();
   }
 
+  // ===== 工具函数 =====
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
   // ===== 节点 CRUD（使用通用 UndoStore） =====
 
   function addNode(node) {
-    const newNode = { ...node, tags: Array.isArray(node.tags) ? [...node.tags] : [] };
+    const newNode = { 
+      ...node, 
+      tags: Array.isArray(node.tags) ? [...node.tags] : [],
+      uuid: node.uuid || generateUUID(),
+    };
     // execute() 的 redo 完成首次写入（避免双写）
     execute({
       type: 'add-node',
@@ -916,7 +985,33 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   // ===== Vault 监听事件 =====
+  // ===== 并发编辑保护 =====
+  let isDragging = false;
+  let pendingNodeUpdates = [];
+
+  function setDragging(state) {
+    isDragging = state;
+    if (!state && pendingNodeUpdates.length > 0) {
+      // 拖拽结束后应用挂起的更新
+      for (const node of pendingNodeUpdates) {
+        applyNodeUpdate(node);
+      }
+      pendingNodeUpdates = [];
+    }
+  }
+
   function handleNodeUpdated(node) {
+    if (isDragging) {
+      // 拖拽期间暂存更新，避免打断用户操作
+      const idx = pendingNodeUpdates.findIndex(n => n.id === node.id);
+      if (idx !== -1) pendingNodeUpdates[idx] = node;
+      else pendingNodeUpdates.push(node);
+      return;
+    }
+    applyNodeUpdate(node);
+  }
+
+  function applyNodeUpdate(node) {
     const idx = nodes.value.findIndex(n => n.id === node.id);
     if (idx !== -1) {
       const existingCoord = nodes.value[idx].coordinate;
@@ -951,7 +1046,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
       undo, redo,
       selectWorld, selectDomain, selectSystem, enterSystemDetail, selectPlanet, selectArea, selectBuilding, backToWorld, backToDomain, backToSystem, backToPlanet, backToArea,
-      handleNodeUpdated, handleNodeRemoved,
+      handleNodeUpdated, handleNodeRemoved, setDragging,
       scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, getMapDataKey, saveMapDataImmediate,
       beginNodePositionCapture, endNodePositionCapture, beginMultiNodePositionCapture, endMultiNodePositionCapture, toggleNodeLock,

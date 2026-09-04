@@ -267,6 +267,59 @@ async function validateVaultPath(dirPath) {
   }
 }
 
+// IPC: 创建 Obsidian 笔记（从 draft 节点创建）
+ipcMain.handle('create-obsidian-note', async (event, payload) => {
+  const { name, layer, parentId, tags = [], coordinate = null, content = '' } = payload || {};
+  const vault = getVaultPath();
+  if (!vault) return { success: false, error: '未设置知识库路径' };
+  
+  try {
+    // 确定目标目录
+    let targetDir;
+    if (layer === 'star_domain') {
+      targetDir = path.join(vault, '03 设定', '11 地理系统', '星域');
+    } else if (layer === 'galaxy') {
+      targetDir = path.join(vault, '03 设定', '11 地理系统', '星系');
+    } else if (layer === 'planet') {
+      targetDir = path.join(vault, '03 设定', '11 地理系统', '行星');
+    } else {
+      // 地点类 → 场景地点/<世界>
+      targetDir = path.join(vault, '03 设定', '02 场景地点');
+    }
+    await fs.mkdir(targetDir, { recursive: true });
+    
+    // 文件名
+    const safeName = String(name || '未命名').replace(/[\\/:*?"<>|]/g, '_');
+    const filePath = path.join(targetDir, safeName + '.md');
+    
+    // 检查文件是否已存在
+    try {
+      await fs.access(filePath);
+      return { success: false, error: '文件已存在' };
+    } catch (e) { /* 文件不存在，继续创建 */ }
+    
+    // 构建 frontmatter
+    const frontmatter = {
+      layer: { city: '城市', town: '城镇', village: '村庄', location: '地点', planet: '行星', galaxy: '星系', star_domain: '星域' }[layer] || layer,
+      tags: Array.isArray(tags) ? tags : [],
+    };
+    if (parentId) frontmatter['上层区域'] = `[[${parentId}]]`;
+    
+    // 坐标写入 frontmatter（供后续提取时保留）
+    if (coordinate && coordinate.x !== null && coordinate.y !== null) {
+      frontmatter['coordinate'] = { x: coordinate.x, y: coordinate.y };
+    }
+    
+    // 写入文件
+    const fileContent = matter.stringify(content || `# ${name}\n\n`, frontmatter);
+    await fs.writeFile(filePath, fileContent, 'utf-8');
+    
+    return { success: true, path: path.relative(vault, filePath) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: 读取 Obsidian 笔记内容
 ipcMain.handle('read-obsidian-note', async (event, sourcePath) => {
   try {

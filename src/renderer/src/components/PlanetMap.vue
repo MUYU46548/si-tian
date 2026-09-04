@@ -2475,6 +2475,36 @@ const renderer = useCanvasRenderer(canvas, {
     if (!editMode.value) return;
     const hit = hitTestModule.hitTest(wx, wy);
     const items = [];
+    if (hit?.type === 'place') {
+      const place = hit.node;
+      const isDraft = !place.sourcePath;
+      if (isDraft) {
+        items.push({
+          key: 'ctx-place-create-note',
+          label: '创建 Obsidian 笔记',
+          icon: '📝',
+          action: async () => {
+            const result = await window.sitianAPI.createObsidianNote({
+              name: place.name,
+              layer: place.layer,
+              parentId: place.parentId,
+              tags: place.tags || [],
+              coordinate: place.coordinate,
+              content: `# ${place.name}\n\n`,
+            });
+            if (result?.success) {
+              // 更新 sourcePath 关联
+              store.updateNode(place.id, { sourcePath: result.path });
+              emit('dirty', true);
+              renderer.requestRender();
+            } else if (result?.error) {
+              console.error('创建笔记失败:', result.error);
+            }
+          }
+        });
+        items.push({ separator: true });
+      }
+    }
     if (hit?.type === 'marker') {
       const m = hit.marker;
       items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('marker', m); } });

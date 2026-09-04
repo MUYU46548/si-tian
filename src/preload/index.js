@@ -47,7 +47,10 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 导出文件（保存对话框 + 写入）
   saveExportFile: (options) => ipcRenderer.invoke('save-export-file', options),
 
-  // Obsidian 笔记读取
+  // 创建 Obsidian 笔记（从 draft 节点创建）
+  createObsidianNote: (payload) => ipcRenderer.invoke('create-obsidian-note', payload),
+
+  // 读取 Obsidian 笔记内容
   readObsidianNote: (sourcePath) => ipcRenderer.invoke('read-obsidian-note', sourcePath),
 
   // 在文件管理器中显示

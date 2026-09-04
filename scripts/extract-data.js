@@ -132,6 +132,7 @@ function scanGeoSystem() {
           parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
           placeType: parsed.frontmatter['地点类型'] || null,
           coordinate: { x: null, y: null },
+          uuid: generateUUID(),
         });
       }
     }
@@ -165,6 +166,7 @@ function scanLocations() {
         parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
         placeType: parsed.frontmatter['地点类型'] || null,
         coordinate: { x: null, y: null },
+        uuid: generateUUID(),
       });
     }
   }
@@ -411,7 +413,16 @@ function detectLocationLayer(frontmatter, content, fileName) {
 
 function normalizeId(name) {
   if (!name) return 'unknown';
-  return name.replace(/\[\[|\]\]/g, '').replace(/[\s\\/]/g, '_').replace(/[^\w一-鿿]/g, '').toLowerCase();
+  return name.replace(/\[\[|\]\]/g, '').replace(/[\\\/\s]/g, '_').replace(/[^\w一-鿿]/g, '').toLowerCase();
+}
+
+function generateUUID() {
+  // 简单 UUID v4 实现（不依赖 crypto 模块）
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
 /**
@@ -533,7 +544,17 @@ function isHigherLayer(l1, l2) {
   return i1 !== -1 && i2 !== -1 && i1 < i2;
 }
 
-function initializeCoordinates(nodes) {
+function initializeCoordinates(nodes, oldNodes = []) {
+  // 构建旧节点坐标映射：uuid → {x, y}，用于保留用户已编辑的坐标
+  const oldCoordMap = new Map();
+  for (const old of oldNodes) {
+    if (old.coordinate && old.coordinate.x !== null && old.coordinate.y !== null) {
+      // 优先用 UUID 匹配，其次用 id
+      const key = old.uuid || old.id;
+      oldCoordMap.set(key, { x: old.coordinate.x, y: old.coordinate.y });
+    }
+  }
+
   const layers = {};
   nodes.forEach(n => { if (!layers[n.layer]) layers[n.layer] = []; layers[n.layer].push(n); });
   
@@ -543,7 +564,16 @@ function initializeCoordinates(nodes) {
     const radius = 80 + idx * 100;
     const angleStep = (2 * Math.PI) / Math.max(lnodes.length, 1);
     lnodes.forEach((n, i) => {
+      // 已有坐标 → 保留（用户拖拽后的位置）
       if (n.coordinate.x !== null && n.coordinate.y !== null) return;
+      // 旧缓存中有 UUID 或 id 匹配 → 恢复坐标
+      const oldCoord = (n.uuid ? oldCoordMap.get(n.uuid) : null) || oldCoordMap.get(n.id);
+      if (oldCoord) {
+        n.coordinate.x = oldCoord.x;
+        n.coordinate.y = oldCoord.y;
+        return;
+      }
+      // 全新节点 → 按层级环形布局分配初始坐标
       const angle = i * angleStep - Math.PI / 2;
       n.coordinate.x = Math.round(600 + radius * Math.cos(angle));
       n.coordinate.y = Math.round(400 + radius * Math.sin(angle));
@@ -596,18 +626,26 @@ function generateAutoHyperlanes(nodes) {
  * 保留司天中用户创建的节点（sourcePath 为空的节点不在 Markdown 中，
  * 重新提取时若不合并会被静默丢弃 —— 数据丢失）
  */
-function mergeUserCreatedNodes(allNodes, cachePath) {
+function mergeUserCreatedNodes(allNodes, cachePath, oldNodes = null) {
   if (!fs.existsSync(cachePath)) return allNodes;
   try {
-    const old = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-    const oldNodes = old.nodes || [];
+    // 支持传入已读取的 oldNodes（避免重复读盘）
+    let nodes = oldNodes;
+    if (!nodes) {
+      const old = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+      nodes = old.nodes || [];
+    }
     const existingIds = new Set(allNodes.map(n => n.id));
-    const userCreated = oldNodes.filter(n => !n.sourcePath);
+    const existingUuids = new Set(allNodes.filter(n => n.uuid).map(n => n.uuid));
+    const userCreated = nodes.filter(n => !n.sourcePath);
     let added = 0;
     for (const n of userCreated) {
-      if (!existingIds.has(n.id)) {
+      // 用 UUID 或 id 去重
+      const alreadyExists = existingIds.has(n.id) || (n.uuid && existingUuids.has(n.uuid));
+      if (!alreadyExists) {
         allNodes.push(n);
         existingIds.add(n.id);
+        if (n.uuid) existingUuids.add(n.uuid);
         added++;
       }
     }
@@ -616,6 +654,70 @@ function mergeUserCreatedNodes(allNodes, cachePath) {
     console.warn('[提取] 读取旧缓存失败，跳过用户节点保留:', e.message);
   }
   return allNodes;
+}
+
+/**
+ * 父节点缺失检测 + 循环引用检测
+ * 在提取阶段就处理脏数据，避免渲染时出现无限循环
+ */
+function validateParentReferences(nodes) {
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const orphanIds = new Set();
+  
+  // 第一轮：检测父节点缺失
+  for (const node of nodes) {
+    if (node.parentId && !byId.has(node.parentId)) {
+      console.warn(`[提取] 节点 "${node.name}" 的 parentId "${node.parentId}" 不存在，标记为孤儿`);
+      orphanIds.add(node.id);
+      node.orphan = true;
+    }
+  }
+  
+  // 第二轮：检测循环引用（DFS）
+  const visited = new Set();
+  const inStack = new Set();
+  const cycles = [];
+  
+  function dfs(nodeId, path) {
+    if (inStack.has(nodeId)) {
+      const cycleStart = path.indexOf(nodeId);
+      const cycle = path.slice(cycleStart).concat(nodeId);
+      cycles.push(cycle);
+      return;
+    }
+    if (visited.has(nodeId)) return;
+    
+    const node = byId.get(nodeId);
+    if (!node || !node.parentId) return;
+
+    visited.add(nodeId);
+    inStack.add(nodeId);
+    path.push(nodeId);
+    
+    dfs(node.parentId, path);
+    
+    path.pop();
+    inStack.delete(nodeId);
+  }
+
+  for (const node of nodes) {
+    if (!visited.has(node.id)) {
+      dfs(node.id, []);
+    }
+  }
+
+  // 打破循环：将循环中最后一个节点的 parentId 置空
+  for (const cycle of cycles) {
+    const breakNodeId = cycle[cycle.length - 2];
+    const breakNode = byId.get(breakNodeId);
+    if (breakNode) {
+      console.warn(`[提取] 检测到循环引用: ${cycle.map(id => byId.get(id)?.name || id).join(' → ')}，已打破（${breakNode.name} 的 parentId 置空）`);
+      breakNode.parentId = null;
+      breakNode.orphan = true;
+    }
+  }
+  
+  return nodes;
 }
 
 async function extractGeodata(targetVault, options = {}) {
@@ -627,6 +729,16 @@ async function extractGeodata(targetVault, options = {}) {
   if (!forceFull) loadParseCache();
   else parseCache.files = {};
   _indexLines = null; // vault 切换时重置索引行缓存
+  
+  // 读取旧 geodata.json（用于保留用户坐标编辑）
+  const oldGeodataPath = path.join(vaultPath, '.sitian', 'geodata.json');
+  let oldNodes = [];
+  try {
+    if (fs.existsSync(oldGeodataPath)) {
+      const oldRaw = JSON.parse(fs.readFileSync(oldGeodataPath, 'utf-8'));
+      oldNodes = oldRaw.nodes || [];
+    }
+  } catch (e) { /* 旧缓存不存在/损坏 → 全量初始化 */ }
 
   const geoNodes = scanGeoSystem();
   console.log(`地理系统节点: ${geoNodes.length}`);
@@ -650,7 +762,7 @@ async function extractGeodata(targetVault, options = {}) {
   console.log(`合并后总数: ${allNodes.length}`);
   
   // 保留司天用户创建的节点（sourcePath 为空），避免重新提取时丢失
-  allNodes = mergeUserCreatedNodes(allNodes, path.join(vaultPath, '.sitian', 'geodata.json'));
+  allNodes = mergeUserCreatedNodes(allNodes, oldGeodataPath, oldNodes);
   
   // 从地点 tags 提取区域节点（两城流域等），合并进节点列表
   const regionNodes = extractRegions(allNodes);
@@ -659,6 +771,9 @@ async function extractGeodata(targetVault, options = {}) {
     regionNodes.forEach(r => { if (!existingIds.has(r.id)) allNodes.push(r); });
     console.log(`区域节点: ${regionNodes.map(r => r.name).join('、')}`);
   }
+  
+  // 父节点缺失检测 + 循环引用检测
+  allNodes = validateParentReferences(allNodes);
   
   // Build world-star map from index for parent resolution（批次C3：与上方共用一次索引读取）
   const worldStarMap = {};
@@ -672,7 +787,7 @@ async function extractGeodata(targetVault, options = {}) {
   }
   
   allNodes = resolveParents(allNodes, worldStarMap);
-  allNodes = initializeCoordinates(allNodes);
+  allNodes = initializeCoordinates(allNodes, oldNodes);
   
   // 自动生成初始航道
   const autoHyperlanes = generateAutoHyperlanes(allNodes);

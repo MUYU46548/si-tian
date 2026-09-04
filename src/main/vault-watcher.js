@@ -141,8 +141,12 @@ function updateNodeInCache(node) {
   const idx = data.nodes.findIndex(n => n.id === node.id);
   
   if (idx !== -1) {
+    // 保留用户已编辑的坐标（关键：不覆盖用户拖拽后的位置）
     const existingCoord = data.nodes[idx].coordinate;
-    data.nodes[idx] = { ...node, coordinate: existingCoord };
+    const preservedCoord = (existingCoord && existingCoord.x !== null && existingCoord.y !== null)
+      ? existingCoord
+      : node.coordinate;
+    data.nodes[idx] = { ...node, coordinate: preservedCoord };
   } else {
     data.nodes.push(node);
   }

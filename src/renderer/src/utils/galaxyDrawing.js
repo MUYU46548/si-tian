@@ -50,6 +50,7 @@ export function convexHull(points) {
 // ===== 背景绘制 =====
 
 export function drawStarfield(ctx, w, h) {
+  // 1. 基础深空渐变 — 从中心微亮到边缘暗角
   const bgGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 3500);
   bgGradient.addColorStop(0, '#1a2035');
   bgGradient.addColorStop(0.4, '#141828');
@@ -58,23 +59,29 @@ export function drawStarfield(ctx, w, h) {
   ctx.fillStyle = bgGradient;
   ctx.fillRect(-5000, -5000, 10000, 10000);
   
+  // 2. 星云层 — 更多层、更低 opacity、有机分布
   const nebulae = [
-    { x: 300, y: -200, r: 600, color: 'rgba(60, 90, 180, 0.08)' },
-    { x: -400, y: 300, r: 500, color: 'rgba(120, 60, 150, 0.07)' },
-    { x: 100, y: 400, r: 400, color: 'rgba(60, 150, 120, 0.06)' },
-    { x: -200, y: -350, r: 450, color: 'rgba(150, 100, 60, 0.05)' },
+    { x: 300, y: -200, r: 600, color: 'rgba(60, 90, 180, 0.06)' },
+    { x: -400, y: 300, r: 500, color: 'rgba(120, 60, 150, 0.05)' },
+    { x: 100, y: 400, r: 400, color: 'rgba(60, 150, 120, 0.04)' },
+    { x: -200, y: -350, r: 450, color: 'rgba(150, 100, 60, 0.04)' },
+    { x: 600, y: 100, r: 550, color: 'rgba(80, 120, 200, 0.05)' },
+    { x: -600, y: -100, r: 480, color: 'rgba(100, 80, 160, 0.04)' },
+    { x: 0, y: -500, r: 350, color: 'rgba(120, 180, 100, 0.03)' },
+    { x: -500, y: -500, r: 400, color: 'rgba(180, 120, 80, 0.03)' },
   ];
   
   for (const neb of nebulae) {
     const nebGradient = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
     nebGradient.addColorStop(0, neb.color);
-    nebGradient.addColorStop(0.5, neb.color.replace('0.', '0.0'));
+    nebGradient.addColorStop(0.4, neb.color.replace(/[\d.]+\)$/, (parseFloat(neb.color.match(/[\d.]+\)$/)[0]) * 0.5) + ')'));
     nebGradient.addColorStop(1, 'transparent');
     ctx.fillStyle = nebGradient;
     ctx.fillRect(neb.x - neb.r, neb.y - neb.r, neb.r * 2, neb.r * 2);
   }
   
-  ctx.strokeStyle = 'rgba(60, 80, 120, 0.18)';
+  // 3. 网格线 — 更暗、更细腻
+  ctx.strokeStyle = 'rgba(60, 80, 120, 0.12)';
   ctx.lineWidth = 0.5;
   const gridSize = 200;
   for (let gx = -2500; gx <= 2500; gx += gridSize) {
@@ -90,29 +97,48 @@ export function drawStarfield(ctx, w, h) {
     ctx.stroke();
   }
   
-  for (let layer = 0; layer < 4; layer++) {
-    const alpha = 0.12 + layer * 0.06;
-    const count = 200 + layer * 80;
-    const sizeBase = 0.5 + layer * 0.4;
+  // 4. 星空粒子 — 多层、不同大小和亮度
+  for (let layer = 0; layer < 5; layer++) {
+    const alpha = 0.08 + layer * 0.04;
+    const count = 150 + layer * 60;
+    const sizeBase = 0.3 + layer * 0.3;
+    const seedOffset = layer * 234;
     ctx.fillStyle = `rgba(220, 230, 245, ${alpha})`;
-    for (let i = layer * 300; i < count; i++) {
-      const x = ((i * 97 + 23) % 3500) - 1750;
-      const y = ((i * 61 + 41) % 3500) - 1750;
-      const size = sizeBase + (i % 4) * 0.3;
+    for (let i = seedOffset; i < count + seedOffset; i++) {
+      const x = ((i * 97 + 23 + layer * 137) % 3500) - 1750;
+      const y = ((i * 61 + 41 + layer * 89) % 3500) - 1750;
+      const size = sizeBase + (i % 5) * 0.2;
       ctx.beginPath();
       ctx.arc(x, y, size, 0, Math.PI * 2);
       ctx.fill();
     }
   }
   
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  for (let i = 0; i < 15; i++) {
+  // 5. 亮星 — 少量高亮星星带光晕
+  for (let i = 0; i < 20; i++) {
     const x = ((i * 137 + 53) % 3000) - 1500;
     const y = ((i * 89 + 67) % 3000) - 1500;
+    // 光晕
+    const starGlow = ctx.createRadialGradient(x, y, 0, x, y, 4);
+    starGlow.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+    starGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = starGlow;
     ctx.beginPath();
-    ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // 核心
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.beginPath();
+    ctx.arc(x, y, 1.2, 0, Math.PI * 2);
     ctx.fill();
   }
+  
+  // 6. 暗角 — 增加深度感
+  const vignette = ctx.createRadialGradient(0, 0, 1000, 0, 0, 4000);
+  vignette.addColorStop(0, 'transparent');
+  vignette.addColorStop(1, 'rgba(5, 8, 16, 0.4)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(-5000, -5000, 10000, 10000);
 }
 
 // ===== 势力边界绘制 =====
@@ -330,29 +356,32 @@ export function drawHyperlanes(ctx, hyperlanes, galaxyNodes, animationTime, edit
     
     if (h.type === 'cross_domain') {
       baseColor = isHovered ? 'rgba(230, 160, 255, 1.0)' : 'rgba(200, 140, 255, 0.65)';
-      glowColor = 'rgba(200, 140, 255, 0.4)';
+      glowColor = 'rgba(200, 140, 255, 0.5)';
       lineWidth = isHovered ? 3 : 2;
     } else if (h.type === 'hyperjump') {
       baseColor = isHovered ? 'rgba(255, 130, 130, 1.0)' : 'rgba(255, 110, 110, 0.55)';
-      glowColor = 'rgba(255, 110, 110, 0.4)';
+      glowColor = 'rgba(255, 110, 110, 0.5)';
       lineWidth = isHovered ? 3 : 2;
     } else {
       if (isUserCreated) {
         baseColor = isHovered ? 'rgba(100, 255, 200, 1.0)' : 'rgba(100, 255, 180, 0.7)';
-        glowColor = 'rgba(100, 255, 180, 0.4)';
+        glowColor = 'rgba(100, 255, 180, 0.5)';
         lineWidth = isHovered ? 2.5 : 2;
       } else {
         baseColor = isHovered ? 'rgba(130, 210, 255, 0.9)' : 'rgba(100, 200, 255, 0.5)';
-        glowColor = 'rgba(100, 200, 255, 0.3)';
+        glowColor = 'rgba(100, 200, 255, 0.35)';
         lineWidth = isHovered ? 2 : 1.5;
       }
     }
     
+    // 1. 外层发光（更宽、更柔和）
     ctx.save();
     ctx.shadowColor = glowColor;
-    ctx.shadowBlur = isHovered ? 20 : 12;
+    ctx.shadowBlur = isHovered ? 25 : 15;
     ctx.strokeStyle = glowColor;
-    ctx.lineWidth = lineWidth + 6;
+    ctx.lineWidth = lineWidth + 8;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     if (h.controlPoints && h.controlPoints.length === 1) {
@@ -369,9 +398,34 @@ export function drawHyperlanes(ctx, hyperlanes, galaxyNodes, animationTime, edit
     ctx.stroke();
     ctx.restore();
     
+    // 2. 中层光晕（无 shadow，半透明叠加）
+    ctx.save();
+    ctx.strokeStyle = glowColor;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = lineWidth + 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    if (h.controlPoints && h.controlPoints.length === 1) {
+      ctx.quadraticCurveTo(h.controlPoints[0].x, h.controlPoints[0].y, to.x, to.y);
+    } else if (h.controlPoints && h.controlPoints.length >= 2) {
+      ctx.bezierCurveTo(
+        h.controlPoints[0].x, h.controlPoints[0].y,
+        h.controlPoints[1].x, h.controlPoints[1].y,
+        to.x, to.y
+      );
+    } else {
+      ctx.lineTo(to.x, to.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    
+    // 3. 主线
     ctx.strokeStyle = baseColor;
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     
     if (h.type === 'cross_domain') {
       ctx.setLineDash([5, 10]);
@@ -405,6 +459,7 @@ export function drawHyperlanes(ctx, hyperlanes, galaxyNodes, animationTime, edit
     ctx.stroke();
     ctx.setLineDash([]);
     
+    // 4. 编辑模式 hover 控制点
     if (editMode && isHovered) {
       const midX = (from.x + to.x) / 2;
       const midY = (from.y + to.y) / 2;
@@ -479,7 +534,7 @@ export function drawGalaxyNodes(ctx, lod, galaxyNodes, animationTime, store, edi
     if (lod < 0.35) {
       ctx.fillStyle = starColor;
       ctx.shadowColor = starColor;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 14;
       ctx.beginPath();
       ctx.arc(galaxy.x, galaxy.y, baseRadius + 2, 0, Math.PI * 2);
       ctx.fill();
@@ -489,25 +544,27 @@ export function drawGalaxyNodes(ctx, lod, galaxyNodes, animationTime, store, edi
     
     const flicker = 0.88 + Math.sin(animationTime * 4 + galaxy.x * 0.05) * 0.12;
     
-    const glowRadius = baseRadius * (matched ? 12 : 8) * flicker;
+    // 外层光晕 — 更大、更柔和
+    const glowRadius = baseRadius * (matched ? 14 : 10) * flicker;
     const glowGradient = ctx.createRadialGradient(
       galaxy.x, galaxy.y, 0,
       galaxy.x, galaxy.y, glowRadius
     );
     glowGradient.addColorStop(0, starColor + 'CC');
-    glowGradient.addColorStop(0.25, starColor + '66');
-    glowGradient.addColorStop(0.5, starColor + '22');
-    glowGradient.addColorStop(0.75, starColor + '08');
+    glowGradient.addColorStop(0.2, starColor + '88');
+    glowGradient.addColorStop(0.5, starColor + '33');
+    glowGradient.addColorStop(0.75, starColor + '11');
     glowGradient.addColorStop(1, 'transparent');
     ctx.fillStyle = glowGradient;
     ctx.beginPath();
     ctx.arc(galaxy.x, galaxy.y, glowRadius, 0, Math.PI * 2);
     ctx.fill();
     
+    // 星光射线 — 高亮时显示
     if (lod > 0.45 && isHighlighted) {
-      const spikeLength = glowRadius * 1.8 * flicker;
+      const spikeLength = glowRadius * 2.0 * flicker;
       const spikeWidth = 1.5;
-      ctx.strokeStyle = starColor + '50';
+      ctx.strokeStyle = starColor + '60';
       ctx.lineWidth = spikeWidth;
       ctx.lineCap = 'round';
       ctx.beginPath();
@@ -518,7 +575,7 @@ export function drawGalaxyNodes(ctx, lod, galaxyNodes, animationTime, store, edi
       ctx.stroke();
       
       const diagLength = spikeLength * 0.5;
-      ctx.strokeStyle = starColor + '30';
+      ctx.strokeStyle = starColor + '40';
       ctx.lineWidth = spikeWidth * 0.7;
       ctx.beginPath();
       ctx.moveTo(galaxy.x - diagLength, galaxy.y - diagLength);
@@ -528,23 +585,26 @@ export function drawGalaxyNodes(ctx, lod, galaxyNodes, animationTime, store, edi
       ctx.stroke();
     }
     
-    ctx.fillStyle = starColor;
+    // 恒星核心 — 径向渐变（白→原色→暗边）
+    const coreGradient = ctx.createRadialGradient(
+      galaxy.x - baseRadius * 0.2, galaxy.y - baseRadius * 0.2, 0,
+      galaxy.x, galaxy.y, baseRadius
+    );
+    coreGradient.addColorStop(0, '#FFFFFF');
+    coreGradient.addColorStop(0.3, starColor);
+    coreGradient.addColorStop(1, shadeColor(starColor, -40));
+    ctx.fillStyle = coreGradient;
     ctx.beginPath();
     ctx.arc(galaxy.x, galaxy.y, baseRadius, 0, Math.PI * 2);
     ctx.fill();
     
-    ctx.fillStyle = '#FFFFFF';
-    ctx.globalAlpha = 0.95;
+    // 高光点
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.beginPath();
-    ctx.arc(galaxy.x, galaxy.y, baseRadius * 0.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(galaxy.x - 1.5, galaxy.y - 1.5, baseRadius * 0.3, 0, Math.PI * 2);
+    ctx.arc(galaxy.x - baseRadius * 0.3, galaxy.y - baseRadius * 0.3, baseRadius * 0.25, 0, Math.PI * 2);
     ctx.fill();
     
+    // 标签
     if (lod > 0.65 && galaxy.name) {
       const labelY = galaxy.y + baseRadius + 12;
       
@@ -556,18 +616,31 @@ export function drawGalaxyNodes(ctx, lod, galaxyNodes, animationTime, store, edi
       const metrics = ctx.measureText(text);
       const padding = 5;
       
-      ctx.fillStyle = 'rgba(15, 22, 35, 0.85)';
-      ctx.fillRect(
+      // 半透明背景板
+      ctx.fillStyle = 'rgba(10, 14, 24, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(
         galaxy.x - metrics.width / 2 - padding,
         labelY - 2,
         metrics.width + padding * 2,
-        14
+        14,
+        3
       );
+      ctx.fill();
       
       ctx.fillStyle = isHighlighted ? starColor : 'rgba(230, 240, 255, 0.95)';
       ctx.fillText(text, galaxy.x, labelY);
     }
   });
+}
+
+function shadeColor(color, percent) {
+  const num = parseInt(color.replace('#', ''), 16);
+  const amt = Math.round(2.55 * percent);
+  const R = Math.max(0, Math.min(255, (num >> 16) + amt));
+  const G = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + amt));
+  const B = Math.max(0, Math.min(255, (num & 0x0000FF) + amt));
+  return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
 // ===== 拖拽预览绘制 =====

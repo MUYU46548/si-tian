@@ -10,8 +10,9 @@
     <div v-if="worlds.length === 0" class="empty-state">
       <div class="empty-icon">🌌</div>
       <h2>这里还没有世界</h2>
-      <p>从 Obsidian 库提取地理节点，或创建一个空世界开始绘制。</p>
+      <p>从 Obsidian 库提取地理节点，加载示例世界观体验，或创建一个空世界开始绘制。</p>
       <div class="empty-actions">
+        <button class="create-btn" @click="$emit('load-sample')">✨ 加载示例世界观</button>
         <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
         <button class="extract-btn" @click="$emit('reextract')">↻ 从 Obsidian 重新提取</button>
       </div>
@@ -56,7 +57,7 @@ const props = defineProps({
   locations: { type: Array, default: () => [] },
 });
 
-defineEmits(['select', 'create-world', 'delete-world', 'reextract']);
+defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample']);
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {

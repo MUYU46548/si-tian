@@ -44,6 +44,17 @@ export function createPlanetDrawing(getState) {
       .filter(Boolean);
   }
 
+  function shadeColorHex(color, percent) {
+    let hex = color.replace('#', '');
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    const num = parseInt(hex, 16);
+    const amt = Math.round(2.55 * percent);
+    const R = Math.max(0, Math.min(255, (num >> 16) + amt));
+    const G = Math.max(0, Math.min(255, ((num >> 8) & 0xFF) + amt));
+    const B = Math.max(0, Math.min(255, (num & 0xFF) + amt));
+    return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+  }
+
 function drawReferenceImage(ctx) {
   const s = getState(); // 每次渲染取最新状态
   const refs = s.referenceImages;
@@ -127,44 +138,55 @@ function drawFog(ctx, w, h) {
 
 function drawBackground(ctx, w, h) {
   const s = getState();
-  // 只填充可见区域（避免每帧填充 4000x4000 像素）
   const topLeft = s.screenToWorld(0, 0);
   const bottomRight = s.screenToWorld(w, h);
   
-  const bgGradient = ctx.createRadialGradient(
-    (topLeft.x + bottomRight.x) / 2, (topLeft.y + bottomRight.y) / 2, 0,
-    (topLeft.x + bottomRight.x) / 2, (topLeft.y + bottomRight.y) / 2,
-    Math.max(bottomRight.x - topLeft.x, bottomRight.y - topLeft.y) * 0.7
-  );
-  bgGradient.addColorStop(0, '#E8F4F8');
-  bgGradient.addColorStop(0.5, '#C8E6C9');
-  bgGradient.addColorStop(1, '#FFF9C4');
+  // 深空背景 — 从中心微亮到边缘暗角
+  const cx = (topLeft.x + bottomRight.x) / 2;
+  const cy = (topLeft.y + bottomRight.y) / 2;
+  const bgGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(bottomRight.x - topLeft.x, bottomRight.y - topLeft.y) * 0.7);
+  bgGradient.addColorStop(0, '#0f1a2e');
+  bgGradient.addColorStop(0.5, '#0a0e18');
+  bgGradient.addColorStop(1, '#050810');
   ctx.fillStyle = bgGradient;
   ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
   
-  // 网格线（间距可配，随 gridSize 变化；编辑模式更亮辅助对齐）
+  // 星云纹理（低 opacity）
+  const nebCount = 6;
+  for (let i = 0; i < nebCount; i++) {
+    const seed = i * 137 + 23;
+    const nx = topLeft.x + ((seed * 97) % (bottomRight.x - topLeft.x));
+    const ny = topLeft.y + ((seed * 61) % (bottomRight.y - topLeft.y));
+    const nr = 150 + (i % 4) * 80;
+    const neb = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+    const colors = ['rgba(60, 90, 180, 0.04)', 'rgba(120, 60, 150, 0.03)', 'rgba(60, 150, 120, 0.03)'];
+    neb.addColorStop(0, colors[i % 3]);
+    neb.addColorStop(1, 'transparent');
+    ctx.fillStyle = neb;
+    ctx.fillRect(nx - nr, ny - nr, nr * 2, nr * 2);
+  }
+  
+  // 网格线
   const gs = s.gridSize;
-  const gridAlpha = s.editMode ? 0.28 : 0.15;
+  const gridAlpha = s.editMode ? 0.28 : 0.12;
   ctx.lineWidth = 0.5;
   
   const startX = Math.floor(topLeft.x / gs) * gs;
   const startY = Math.floor(topLeft.y / gs) * gs;
   
-  // 标签每 500 单位标注一次（或网格间距的 5 倍，取较疏的）
   const labelEvery = gs >= 500 ? gs : Math.max(500, Math.ceil(500 / gs) * gs);
   
   for (let gx = startX; gx <= bottomRight.x; gx += gs) {
     const isMajor = gx % 500 === 0;
-    ctx.strokeStyle = isMajor ? `rgba(120, 160, 190, ${gridAlpha + 0.12})` : `rgba(150, 180, 200, ${gridAlpha})`;
+    ctx.strokeStyle = isMajor ? `rgba(80, 120, 180, ${gridAlpha + 0.1})` : `rgba(60, 90, 140, ${gridAlpha})`;
     ctx.beginPath();
     ctx.moveTo(gx, topLeft.y);
     ctx.lineTo(gx, bottomRight.y);
     ctx.stroke();
-    // X 轴网格标签（主网格线 + 足够间距，避免拥挤）
     if (gx !== 0 && gx % labelEvery === 0 && s.gridLabels) {
       ctx.save();
       ctx.font = '10px sans-serif';
-      ctx.fillStyle = 'rgba(150, 180, 200, 0.7)';
+      ctx.fillStyle = 'rgba(100, 150, 200, 0.6)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const label = gx >= 1000 ? (gx / 1000) + 'km' : gx + 'm';
@@ -174,16 +196,15 @@ function drawBackground(ctx, w, h) {
   }
   for (let gy = startY; gy <= bottomRight.y; gy += gs) {
     const isMajor = gy % 500 === 0;
-    ctx.strokeStyle = isMajor ? `rgba(120, 160, 190, ${gridAlpha + 0.12})` : `rgba(150, 180, 200, ${gridAlpha})`;
+    ctx.strokeStyle = isMajor ? `rgba(80, 120, 180, ${gridAlpha + 0.1})` : `rgba(60, 90, 140, ${gridAlpha})`;
     ctx.beginPath();
     ctx.moveTo(topLeft.x, gy);
     ctx.lineTo(bottomRight.x, gy);
     ctx.stroke();
-    // Y 轴网格标签
     if (gy !== 0 && gy % labelEvery === 0 && s.gridLabels) {
       ctx.save();
       ctx.font = '10px sans-serif';
-      ctx.fillStyle = 'rgba(150, 180, 200, 0.7)';
+      ctx.fillStyle = 'rgba(100, 150, 200, 0.6)';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       const label = gy >= 1000 ? (gy / 1000) + 'km' : gy + 'm';
@@ -192,8 +213,8 @@ function drawBackground(ctx, w, h) {
     }
   }
   
-  // 坐标轴（0 线）加粗
-  ctx.strokeStyle = 'rgba(120, 160, 190, 0.4)';
+  // 坐标轴
+  ctx.strokeStyle = 'rgba(80, 120, 180, 0.35)';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(0, topLeft.y);
@@ -689,29 +710,36 @@ function drawPlaces(ctx) {
     const isHovered = s.hoveredNode?.id === place.id;
     const shape = getPlaceShape(place.layer);
 
-    ctx.fillStyle = color;
+    // 外层光晕
     if (!fast) {
       ctx.shadowColor = color;
-      ctx.shadowBlur = isHovered ? 12 : 6;
+      ctx.shadowBlur = isHovered ? 16 : 10;
     }
-    
-    drawNodeShape(ctx, x, y, radius, shape);
+    ctx.fillStyle = color;
+    drawNodeShape(ctx, x, y, radius + 2, shape);
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // 白色中心点
-    ctx.fillStyle = '#FFFFFF';
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.arc(x, y, radius * 0.4, 0, Math.PI * 2);
+    // 径向渐变核心
+    const coreGrad = ctx.createRadialGradient(x - radius * 0.2, y - radius * 0.2, 0, x, y, radius);
+    coreGrad.addColorStop(0, '#ffffff');
+    coreGrad.addColorStop(0.4, color);
+    coreGrad.addColorStop(1, shadeColorHex(color, -40));
+    ctx.fillStyle = coreGrad;
+    drawNodeShape(ctx, x, y, radius, shape);
     ctx.fill();
-    ctx.globalAlpha = 1;
+
+    // 高光点
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.beginPath();
+    ctx.arc(x - radius * 0.25, y - radius * 0.25, radius * 0.2, 0, Math.PI * 2);
+    ctx.fill();
     
     if (place.name && !fast && s.lodRef > 0.4) {
       ctx.font = `${getLabelWeight(place.layer)} ${getLabelSize(place.layer)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = '#2D3436';
+      ctx.fillStyle = 'rgba(220, 230, 245, 0.95)';
       ctx.fillText(place.displayName || place.name, x, y + radius + 4);
     }
 
