@@ -281,7 +281,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from './store/geodata';
 import { usePanelsStore } from './store/panels';
 import { createSampleWorld } from './utils/sampleData';
@@ -296,18 +296,20 @@ import NodeDetailPanel from './components/NodeDetailPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
 import LayerPanel from './components/LayerPanel.vue';
-import AboutPanel from './components/AboutPanel.vue';
-import BatchImportPanel from './components/BatchImportPanel.vue';
-import SettingsPanel from './components/SettingsPanel.vue';
-import OnboardingGuide from './components/OnboardingGuide.vue';
-import RecoveryPanel from './components/RecoveryPanel.vue';
-import KeyboardShortcuts from './components/KeyboardShortcuts.vue';
-import PromptDialog from './components/PromptDialog.vue';
-import BookmarkPanel from './components/BookmarkPanel.vue';
-import ChangeLog from './components/ChangeLog.vue';
-import UpdateNotification from './components/UpdateNotification.vue';
 import StatusBar from './components/StatusBar.vue';
-import HistoryPanel from './components/HistoryPanel.vue';
+
+// 低频面板动态导入：减少初始 bundle
+const AboutPanel = defineAsyncComponent(() => import('./components/AboutPanel.vue'));
+const BatchImportPanel = defineAsyncComponent(() => import('./components/BatchImportPanel.vue'));
+const SettingsPanel = defineAsyncComponent(() => import('./components/SettingsPanel.vue'));
+const OnboardingGuide = defineAsyncComponent(() => import('./components/OnboardingGuide.vue'));
+const RecoveryPanel = defineAsyncComponent(() => import('./components/RecoveryPanel.vue'));
+const KeyboardShortcuts = defineAsyncComponent(() => import('./components/KeyboardShortcuts.vue'));
+const ChangeLog = defineAsyncComponent(() => import('./components/ChangeLog.vue'));
+const UpdateNotification = defineAsyncComponent(() => import('./components/UpdateNotification.vue'));
+const PromptDialog = defineAsyncComponent(() => import('./components/PromptDialog.vue'));
+const BookmarkPanel = defineAsyncComponent(() => import('./components/BookmarkPanel.vue'));
+const HistoryPanel = defineAsyncComponent(() => import('./components/HistoryPanel.vue'));
 import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
 import { useLayersStore } from './store/layers';
 import { useTheme } from './composables/useTheme';

@@ -141,30 +141,9 @@ function drawBackground(ctx, w, h) {
   const topLeft = s.screenToWorld(0, 0);
   const bottomRight = s.screenToWorld(w, h);
   
-  // 深空背景 — 从中心微亮到边缘暗角
-  const cx = (topLeft.x + bottomRight.x) / 2;
-  const cy = (topLeft.y + bottomRight.y) / 2;
-  const bgGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(bottomRight.x - topLeft.x, bottomRight.y - topLeft.y) * 0.7);
-  bgGradient.addColorStop(0, '#0f1a2e');
-  bgGradient.addColorStop(0.5, '#0a0e18');
-  bgGradient.addColorStop(1, '#050810');
-  ctx.fillStyle = bgGradient;
+  // 中性地图底色 — 深色海蓝灰，适配行星地表地图（非深空背景）
+  ctx.fillStyle = '#1a2a3a';
   ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
-  
-  // 星云纹理（低 opacity）
-  const nebCount = 6;
-  for (let i = 0; i < nebCount; i++) {
-    const seed = i * 137 + 23;
-    const nx = topLeft.x + ((seed * 97) % (bottomRight.x - topLeft.x));
-    const ny = topLeft.y + ((seed * 61) % (bottomRight.y - topLeft.y));
-    const nr = 150 + (i % 4) * 80;
-    const neb = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
-    const colors = ['rgba(60, 90, 180, 0.04)', 'rgba(120, 60, 150, 0.03)', 'rgba(60, 150, 120, 0.03)'];
-    neb.addColorStop(0, colors[i % 3]);
-    neb.addColorStop(1, 'transparent');
-    ctx.fillStyle = neb;
-    ctx.fillRect(nx - nr, ny - nr, nr * 2, nr * 2);
-  }
   
   // 网格线
   const gs = s.gridSize;
