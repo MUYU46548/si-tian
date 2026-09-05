@@ -36,11 +36,12 @@ def click_canvas_at(cdp, selector, wx, wy):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    # 1. 世界 → 星域地图
-    cdp.eval("document.querySelector('.world-card').click()")
+    # 1. 世界 → 星域地图（选中第一个有星域子节点的世界，避免空壳世界）
+    from lib.helpers import select_world_with_domains
+    world_id = select_world_with_domains(cdp)
     time.sleep(0.8)
     if view_level(cdp) != 'domain':
-        return False, f'未进入 domain ({view_level(cdp)})'
+        return False, f'未进入 domain ({view_level(cdp)}, world={world_id})'
 
     # 2. GalaxyMap 点击"乐园星系"恒星亮点 → 应直接下钻单系视图（跳过域总览）
     star = cdp.eval("""(() => {

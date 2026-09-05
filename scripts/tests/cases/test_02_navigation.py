@@ -4,18 +4,18 @@
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import view_level, goto_planet
+from lib.helpers import view_level, goto_planet, select_world_with_domains
 
 
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    # 世界 → 星域总览（点击世界卡片）
-    cdp.eval("document.querySelector('.world-card').click()")
+    # 世界 → 星域总览（选中第一个有星域子节点的世界，避免空壳世界如"伏夜提加"）
+    world_id = select_world_with_domains(cdp)
     import time; time.sleep(0.8)
     level = view_level(cdp)
     if level != 'domain':
-        return False, f'点击世界卡片未进入 domain ({level})'
+        return False, f'点击世界卡片未进入 domain ({level}, world={world_id})'
 
     # 星域 → 恒星系总览（通过 store 直接 selectDomain 验证层级切换）
     nav = cdp.eval("(() => { const s = document.querySelector('#app').__vue_app__._instance.setupState.store; const w = s.currentWorld; const d = s.currentWorldDomains[0]; if (!d) return 'no-domain'; s.selectDomain(d); return s.viewLevel; })()")
@@ -29,7 +29,7 @@ def run(cdp):
 
     # 返回（行星 → 恒星系 → 星域 → 世界）
     cdp.eval("(() => { const s = document.querySelector('#app').__vue_app__._instance.setupState.store; s.backToSystem(); return 'ok'; })()")
-    import time; time.sleep(0.5)
+    time.sleep(0.5)
     l1 = view_level(cdp)
     cdp.eval("(() => { const s = document.querySelector('#app').__vue_app__._instance.setupState.store; s.backToDomain(); return 'ok'; })()")
     time.sleep(0.5)

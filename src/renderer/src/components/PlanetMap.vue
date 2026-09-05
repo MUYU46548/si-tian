@@ -89,7 +89,7 @@
 
         <div class="toolbar-group" title="绘制辅助">
           <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份">🧲 吸附</button>
-          <button :class="{ active: batchSelection.smartGuidesEnabled }" @click="batchSelection.smartGuidesEnabled = !batchSelection.smartGuidesEnabled" title="E5 智能参考线">⇔ 对齐</button>
+          <button :class="{ active: smartGuidesEnabled }" @click="smartGuidesEnabled = !smartGuidesEnabled" title="E5 智能参考线">⇔ 对齐</button>
           <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格">⊞ 网格</button>
           <template v-if="gridSnapEnabled">
             <span class="toolbar-label">间距</span>
@@ -108,7 +108,7 @@
         <div class="toolbar-group" title="对象操作">
           <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份">✂ 拆分</button>
           <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份">⛓ 合并</button>
-          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0 && batchSelection.multiSel.length === 0" title="删除选中对象 (Del)">🗑 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0 && multiSel.length === 0" title="删除选中对象 (Del)">🗑 删除</button>
           <button v-if="selectedPlaceIds.size > 1" @click="openArrangeDialog(selectedPlaceIds)" title="批量排列选中节点">⊞ 排列</button>
           <template v-if="selectedPlaceIds.size >= 2">
             <div class="toolbar-group" title="对齐与分布 (E3)">
@@ -449,7 +449,7 @@
     </div>
     
     <!-- 选中标记的属性编辑面板 -->
-    <div v-if="editMode && selectedMarker && !batchSelection.batchPanelVisible" class="province-editor marker-editor">
+    <div v-if="editMode && selectedMarker && !batchPanelVisible" class="province-editor marker-editor">
       <div class="editor-header">
         <h3>编辑标记</h3>
         <button class="close-btn" @click="selectedMarker = null">×</button>
@@ -553,7 +553,7 @@
     </div>
     
     <!-- 选中浮动文本的属性编辑面板 -->
-    <div v-if="editMode && selectedTextLabel && !batchSelection.batchPanelVisible" class="province-editor text-editor">
+    <div v-if="editMode && selectedTextLabel && !batchPanelVisible" class="province-editor text-editor">
       <div class="editor-header">
         <h3>编辑文本</h3>
         <button class="close-btn" @click="selectedTextLabel = null">×</button>
@@ -584,37 +584,37 @@
     </div>
 
     <!-- E7 批量属性编辑面板 -->
-    <div v-if="batchSelection.batchPanelVisible" class="province-editor batch-editor">
+    <div v-if="batchPanelVisible" class="province-editor batch-editor">
       <div class="editor-header">
-        <h3>批量编辑（{{ batchSelection.multiSelObjs.length }} 个对象）</h3>
-        <button class="close-btn" @click="batchSelection.multiSel = []" title="取消批量选择">×</button>
+        <h3>批量编辑（{{ multiSelObjs.length }} 个对象）</h3>
+        <button class="close-btn" @click="multiSel = []" title="取消批量选择">×</button>
       </div>
       <p class="ref-hint">拖动任一组成员可整组移动；此处统一修改共有属性</p>
 
-      <template v-if="batchSelection.multiMarkers.length >= 1">
+      <template v-if="multiMarkers.length >= 1">
         <div class="editor-field">
-          <label>标记类型（{{ batchSelection.multiMarkers.length }} 个标记）</label>
+          <label>标记类型（{{ multiMarkers.length }} 个标记）</label>
           <div class="terrain-selector">
             <button
               v-for="m in markerEditor.markerTypes"
               :key="m.type"
-              :class="{ active: batchSelection.multiMarkers.every(o => o.obj.type === m.type) }"
-              @click="batchSelection.batchApply('marker', { type: m.type, color: null })"
+              :class="{ active: multiMarkers.every(o => o.obj.type === m.type) }"
+              @click="batchApply('marker', { type: m.type, color: null })"
               :title="'统一设为' + m.label"
             ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
           </div>
         </div>
       </template>
 
-      <template v-if="batchSelection.multiLabels.length >= 1">
+      <template v-if="multiLabels.length >= 1">
         <div class="editor-field">
-          <label>文本字号（{{ batchSelection.multiLabels.length }} 个文本）</label>
+          <label>文本字号（{{ multiLabels.length }} 个文本）</label>
           <div class="line-style-row">
             <button
               v-for="s in [12, 16, 22, 30]"
               :key="s"
-              :class="{ active: batchSelection.multiLabels.every(o => (o.obj.fontSize || 16) === s) }"
-              @click="batchSelection.batchApply('textLabel', { fontSize: s })"
+              :class="{ active: multiLabels.every(o => (o.obj.fontSize || 16) === s) }"
+              @click="batchApply('textLabel', { fontSize: s })"
             >{{ s }}px</button>
           </div>
         </div>
@@ -624,9 +624,9 @@
             <button
               v-for="c in textEditor.TEXT_COLORS"
               :key="c"
-              :class="{ active: batchSelection.multiLabels.every(o => (o.obj.color || '#2D3436') === c) }"
+              :class="{ active: multiLabels.every(o => (o.obj.color || '#2D3436') === c) }"
               :style="{ background: c }"
-              @click="batchSelection.batchApply('textLabel', { color: c })"
+              @click="batchApply('textLabel', { color: c })"
               class="color-btn"
             ></button>
           </div>
@@ -643,19 +643,19 @@
       <div class="editor-field">
         <label>对齐与分布（P2）</label>
         <div class="line-style-row">
-          <button @click="batchSelection.alignMultiSel('left')" title="左对齐">⇤</button>
-          <button @click="batchSelection.alignMultiSel('hcenter')" title="水平居中对齐">⇹</button>
-          <button @click="batchSelection.alignMultiSel('right')" title="右对齐">⇥</button>
-          <button @click="batchSelection.alignMultiSel('top')" title="顶对齐">⇧</button>
-          <button @click="batchSelection.alignMultiSel('vcenter')" title="垂直居中对齐">⇳</button>
-          <button @click="batchSelection.alignMultiSel('bottom')" title="底对齐">⇩</button>
-          <button @click="batchSelection.distributeMultiSel('h')" title="水平等间距分布">⋯</button>
-          <button @click="batchSelection.distributeMultiSel('v')" title="垂直等间距分布">⋮</button>
+          <button @click="alignMultiSel('left')" title="左对齐">⇤</button>
+          <button @click="alignMultiSel('hcenter')" title="水平居中对齐">⇹</button>
+          <button @click="alignMultiSel('right')" title="右对齐">⇥</button>
+          <button @click="alignMultiSel('top')" title="顶对齐">⇧</button>
+          <button @click="alignMultiSel('vcenter')" title="垂直居中对齐">⇳</button>
+          <button @click="alignMultiSel('bottom')" title="底对齐">⇩</button>
+          <button @click="distributeMultiSel('h')" title="水平等间距分布">⋯</button>
+          <button @click="distributeMultiSel('v')" title="垂直等间距分布">⋮</button>
         </div>
       </div>
 
       <div class="editor-field">
-        <button class="adopt-btn batch-delete-btn" @click="deleteSelected" title="删除全部批量选中对象">🗑 删除所选（{{ batchSelection.multiSelObjs.length }}）</button>
+        <button class="adopt-btn batch-delete-btn" @click="deleteSelected" title="删除全部批量选中对象">🗑 删除所选（{{ multiSelObjs.length }}）</button>
       </div>
     </div>
     
@@ -795,6 +795,7 @@
   </div>
 </template>
 
+<script setup>
 import { ref, computed, watch, reactive, onMounted, onUnmounted, nextTick } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
@@ -806,6 +807,7 @@ import { createPlanetInteractions } from '../composables/planetInteractions';
 import { useProvinceEditor } from '../composables/useProvinceEditor';
 import { useRegionEditor } from '../composables/useRegionEditor';
 import { useMarkerEditor } from '../composables/useMarkerEditor';
+import { useRouteEditor } from '../composables/useRouteEditor';
 import { useTextEditor } from '../composables/useTextEditor';
 import { useReferenceImage } from '../composables/useReferenceImage';
 import { useClusterEditor } from '../composables/useClusterEditor';
@@ -1067,10 +1069,10 @@ const drawing = createPlanetDrawing(() => ({
   selectedPlaceIds: selectedPlaceIds.value, hoveredNode: hoveredNode.value,
   hoveredVertex: hoveredVertex.value, hoverMemberId: clusterEditor.hoverMemberId,
   highlightedPlaceId: highlightedPlaceId.value, activeClusterId: clusterEditor.activeClusterId,
-  activeRefIndex: referenceImage.activeRefIndex, refDragMode: referenceImage.refDragMode,
-  referenceImages: referenceImage.referenceImages, refImageObjs: referenceImage.refImageObjs,
+  activeRefIndex: referenceImage.activeRefIndex.value, refDragMode: referenceImage.refDragMode.value,
+  referenceImages: referenceImage.referenceImages.value, refImageObjs: referenceImage.refImageObjs,
   gridSize: gridSize.value, gridLabels: gridLabels.value, routeDashed: routeEditor.routeDashed, routeColor: routeEditor.routeColor,
-  calibrationPoints: referenceImage.calibrationPoints, calibrationMode: referenceImage.calibrationMode,
+  calibrationPoints: referenceImage.calibrationPoints.value, calibrationMode: referenceImage.calibrationMode.value,
   compassVisible: compassVisible.value, scaleBarVisible: scaleBarVisible.value,
   routeDraftPoints: routeEditor.routeDraftPoints, isDrawing: isDrawing.value,
   drawingPolygon: drawingPolygon.value, currentPath: currentPath.value,
@@ -1084,7 +1086,7 @@ const drawing = createPlanetDrawing(() => ({
   placeRegionMap: renderer.isFastMode() ? EMPTY_REGION_MAP : placeRegionMap.value,
   terrainTypes: provinceEditor.terrainTypes, markerTypes: markerEditor.markerTypes,
   isFastMode: renderer.isFastMode(), viewport: getRenderViewport(),
-  screenToWorld: renderer.screenToWorld, zoom: renderer.viewTransform.scale, smartGuides: batchSelection.smartGuides,
+  screenToWorld: renderer.screenToWorld, zoom: renderer.viewTransform.scale, smartGuides: smartGuides,
 }));
 
 // ===== 交互状态机 =====
@@ -1106,7 +1108,7 @@ function setPrimarySelection(kind, obj) {
 const getState = () => ({
   interactionMode: interactionMode.value, isSpacebarDown: isSpacebarDown.value, editMode: editMode.value,
   splitSelectMode: splitSelectMode.value, mergeSelectMode: mergeSelectMode.value,
-  refDragMode: referenceImage.refDragMode, brushMode: brushMode.value, drawMode: drawMode.value,
+  refDragMode: referenceImage.refDragMode.value, brushMode: brushMode.value, drawMode: drawMode.value,
   isBoxSelecting: isBoxSelecting.value, boxSelectStart: boxSelectStart.value, boxSelectEnd: boxSelectEnd.value,
   isBrushing: isBrushing.value, brushLastPoint: brushLastPoint.value, brushStrokePoints: brushStrokePoints.value,
   isDrawingActive: isDrawingActive.value, currentPath: currentPath.value,
@@ -1122,8 +1124,8 @@ const getState = () => ({
   referenceImage: referenceImage.referenceImage, currentMapData: currentMapData.value, places: places.value,
   planetId: props.planet.id, brushSize: brushSize.value, textFontSize: textEditor.textFontSize,
   textColor: textEditor.textColor, markerTypes: markerEditor.markerTypes, zoom: renderer.viewTransform.scale,
-  multiSel: batchSelection.multiSel, smartGuidesEnabled: batchSelection.smartGuidesEnabled,
-  transformDrag: batchSelection.transformDrag, isShiftToggled: (id, type) => isShiftToggleActive(id, type),
+  multiSel: multiSel.value, smartGuidesEnabled: smartGuidesEnabled.value,
+  transformDrag: batchSelection.transformDrag.value, isShiftToggled: (id, type) => isShiftToggleActive(id, type),
   hitTestSelectionHandle: (wx, wy) => hitTestModule.hitTestSelectionHandle(wx, wy),
   hitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
   hitTestVertex: (wx, wy) => hitTestModule.hitTestVertex(wx, wy),
@@ -1148,27 +1150,27 @@ const interactions = createPlanetInteractions(getState, {
   setMoveObject(obj) { dragObject.value = obj; },
   setDragRegionAnchor(p) { dragRegionAnchor.value = p; },
   clearMoveObject() { dragObject.value = null; dragRegionAnchor.value = null; },
-  selectOnly(kind, obj) { batchSelection.multiSel.value = []; setPrimarySelection(kind, obj); },
+  selectOnly(kind, obj) { multiSel.value = []; setPrimarySelection(kind, obj); },
   selectOnlyKeepGroup(kind, obj) { setPrimarySelection(kind, obj); },
   shiftSelect(kind, obj) {
-    const idx = batchSelection.multiSel.value.findIndex(m => m.type === kind && m.id === obj.id);
-    if (idx >= 0) batchSelection.multiSel.value = batchSelection.multiSel.value.filter((_, i) => i !== idx);
-    else batchSelection.multiSel.value = [...batchSelection.multiSel.value, { type: kind, id: obj.id }];
+    const idx = multiSel.value.findIndex(m => m.type === kind && m.id === obj.id);
+    if (idx >= 0) multiSel.value = multiSel.value.filter((_, i) => i !== idx);
+    else multiSel.value = [...multiSel.value, { type: kind, id: obj.id }];
     batchSelection.lastShiftToggle.value = { type: kind, id: obj.id, t: Date.now() };
     setPrimarySelection(kind, obj);
   },
   isShiftToggled(id, type) { const t = batchSelection.lastShiftToggle.value; return !!(t && t.id === id && t.type === type && Date.now() - t.t < 600); },
   beginMultiObjectDrag(start) {
     const members = [];
-    batchSelection.multiSel.value.forEach(m => {
+    multiSel.value.forEach(m => {
       const obj = m.type === 'marker' ? currentMapData.value?.markers?.find(o => o.id === m.id) : currentMapData.value?.textLabels?.find(o => o.id === m.id);
       if (obj) members.push({ type: m.type, id: m.id, obj, old: { x: obj.x, y: obj.y } });
     });
     if (members.length === 0) return;
     dragObject.value = { type: 'multi', start: { ...start }, members };
   },
-  setSmartGuides(guides) { batchSelection.smartGuides.value = guides; },
-  clearSmartGuides() { batchSelection.smartGuides.value = []; },
+  setSmartGuides(guides) { smartGuides.value = guides; },
+  clearSmartGuides() { smartGuides.value = []; },
   setSelectedPlaces(set) { selectedPlaceIds.value = set; },
   startPlacesDrag(start, ids) { isDraggingPlaces.value = true; placesDragStart.value = { ...start }; if (ids.length > 1) store.beginMultiNodePositionCapture(ids); else store.beginNodePositionCapture(ids[0]); },
   setPlacesDragStart(p) { placesDragStart.value = { ...p }; },
@@ -1249,8 +1251,8 @@ const renderer = useCanvasRenderer(canvas, {
     } else { hoveredVertex.value = null; }
   },
   onClick: (hit, wx, wy) => {
-    if (referenceImage.refDragMode && referenceImage.referenceImage && !referenceImage.referenceImage.locked) return;
-    if (referenceImage.calibrationMode && referenceImage.handleCalibrationClick(wx, wy)) return;
+    if (referenceImage.refDragMode.value && referenceImage.referenceImage.value && !referenceImage.referenceImage.value.locked) return;
+    if (referenceImage.calibrationMode.value && referenceImage.handleCalibrationClick(wx, wy)) return;
     interactions.handleCanvasClick(hit, wx, wy);
   },
   onDblClick: (hit, wx, wy) => {
@@ -1277,12 +1279,12 @@ const renderer = useCanvasRenderer(canvas, {
     }
     if (hit?.type === 'marker') {
       const m = hit.marker;
-      items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: '✏️', action: () => { batchSelection.multiSel.value = []; setPrimarySelection('marker', m); } });
+      items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('marker', m); } });
       items.push({ key: 'ctx-marker-copy', label: '复制标记', icon: '📋', action: () => { setClipboard('markers', [m], 'planet'); } });
       items.push({ key: 'ctx-marker-del', label: '删除标记', icon: '🗑', danger: true, action: () => { store.removeMarker(props.planet.id, m.id); if (selectedMarker.value?.id === m.id) selectedMarker.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (hit?.type === 'textLabel') {
       const l = hit.label;
-      items.push({ key: 'ctx-text-edit', label: '编辑文本', icon: '✏️', action: () => { batchSelection.multiSel.value = []; setPrimarySelection('textLabel', l); startInlineTextEdit(l); } });
+      items.push({ key: 'ctx-text-edit', label: '编辑文本', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('textLabel', l); startInlineTextEdit(l); } });
       items.push({ key: 'ctx-text-copy', label: '复制文本', icon: '📋', action: () => { setClipboard('textLabels', [l], 'planet'); } });
       items.push({ key: 'ctx-text-del', label: '删除文本', icon: '🗑', danger: true, action: () => { store.removeTextLabel(props.planet.id, l.id); if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (!hit) {
@@ -1306,10 +1308,13 @@ const referenceImage = useReferenceImage({ store, props, emit, renderer, current
 const clusterEditor = useClusterEditor({ store, props, emit, renderer, places, interactionMode });
 const batchSelection = useBatchSelection({ store, props, emit, renderer, currentMapData, exportStatus });
 
+// ===== 快照面板 composable =====
+const snapshotPanel = useSnapshotPanel({ store, props, emit, renderer, currentMapData });
+
 // ===== 面板管理 composable =====
 const panelManager = usePanelManager({
   panelsStore, clusterEditor, objectPanelOpen,
-  snapshotPanelOpen: snapshotPanelOpen,
+  snapshotPanelOpen: snapshotPanel.snapshotPanelOpen,
   referenceImage, renderer,
 });
 
@@ -1318,9 +1323,6 @@ const objectPanel = useObjectPanel({
   store, props, emit, renderer, drawing, currentMapData,
   selectedProvince, selectedRegion, selectedMarker, selectedRoute, selectedTextLabel,
 });
-
-// ===== 快照面板 composable =====
-const snapshotPanel = useSnapshotPanel({ store, props, emit, renderer, currentMapData });
 
 // ===== 批量排列 composable =====
 const batchArrange = useBatchArrange({ store, props, emit, renderer, currentMapData, batchSelection });
@@ -1359,7 +1361,7 @@ const compassVisible = ruler.compassVisible;
 const scaleBarVisible = ruler.scaleBarVisible;
 const hTicks = ruler.hTicks;
 const vTicks = ruler.vTicks;
-const { startInlineTextEdit, commitInlineEdit, cancelInlineEdit } = inlineEditMgr;
+const { inlineEdit, inlineEditInput, startInlineTextEdit, commitInlineEdit, cancelInlineEdit } = inlineEditMgr;
 const focusHighlightNode = focusHighlight.focusHighlightNode;
 const snapshotPanelOpen = snapshotPanel.snapshotPanelOpen;
 const mapSnapshots = snapshotPanel.mapSnapshots;
@@ -1390,6 +1392,22 @@ const { openArrangeDialog, confirmArrange, alignSelected, distributeSelected, op
 const { openPlanetPanel } = panelManager;
 const { focusObject, renameObject, deleteObject } = objectPanel;
 const { exportFullMapPNG } = fullMapExport;
+
+// ===== 批量选择短名委托（tests、模板与 getState 使用的旧顶层名）=====
+const multiSel = batchSelection.multiSel;
+const smartGuides = batchSelection.smartGuides;
+const smartGuidesEnabled = batchSelection.smartGuidesEnabled;
+const batchApply = batchSelection.batchApply;
+const alignMultiSel = batchSelection.alignMultiSel;
+const distributeMultiSel = batchSelection.distributeMultiSel;
+const batchPanelVisible = batchSelection.batchPanelVisible;
+const multiSelObjs = batchSelection.multiSelObjs;
+const multiMarkers = batchSelection.multiMarkers;
+const multiLabels = batchSelection.multiLabels;
+// 拆分/合并：包一层默认注入 selectedProvince（旧签名 performSplit(pA, pB) 的兼容形态）
+const performSplit = (pA, pB) => provinceSplitMerge.performSplit(pA, pB, selectedProvince);
+const performMerge = (idA, idB) => provinceSplitMerge.performMerge(idA, idB, selectedProvince);
+const terrainTypes = provinceEditor.terrainTypes;
 
 // ===== 键盘快捷键 composable =====
 const keyboardShortcuts = useKeyboardShortcuts({
@@ -1438,7 +1456,7 @@ function setInteractionMode(mode) {
 // ===== 同层级切换行星时清空状态 =====
 watch(() => props.planet?.id, () => {
   selectedProvince.value = null; selectedRegion.value = null; selectedMarker.value = null; selectedRoute.value = null; selectedTextLabel.value = null;
-  selectedPlaceIds.value = new Set(); batchSelection.multiSel.value = []; batchSelection.lastShiftToggle.value = null; batchSelection.transformDrag.value = null; batchSelection.smartGuides.value = [];
+  selectedPlaceIds.value = new Set(); multiSel.value = []; batchSelection.lastShiftToggle.value = null; batchSelection.transformDrag.value = null; smartGuides.value = [];
   inlineEdit.value = null; dragObject.value = null; dragRegionAnchor.value = null; vertexDragKind.value = null; vertexDragOld.value = null; hoveredNode.value = null; hoveredVertex.value = null;
   isDrawingActive.value = false; currentPath.value = []; drawingPolygon.value = null; routeEditor.routeDraftPoints.value = []; splitPoints.value = [];
   isBoxSelecting.value = false; boxSelectStart.value = null; boxSelectEnd.value = null;
@@ -1507,8 +1525,8 @@ const PASTE_OFFSET = 100;
 function copySelection() {
   const places = Array.from(selectedPlaceIds.value).map(id => store.nodes.find(n => n.id === id)).filter(n => n && n.coordinate?.x != null);
   if (places.length) { setClipboard('places', places.map(n => ({ ...n })), 'planet'); pasteCount = 0; return; }
-  if (batchSelection.multiSel.value.length >= 2 && batchSelection.multiSelObjs.value.length >= 2) {
-    const items = batchSelection.multiSelObjs.value.map(({ type, obj }) => ({ type, data: JSON.parse(JSON.stringify(obj)) }));
+  if (multiSel.value.length >= 2 && multiSelObjs.value.length >= 2) {
+    const items = multiSelObjs.value.map(({ type, obj }) => ({ type, data: JSON.parse(JSON.stringify(obj)) }));
     setClipboard('planetObjects', items, 'planet'); pasteCount = 0; exportStatus.value = `已复制 ${items.length} 个对象`; return;
   }
   if (selectedMarker.value) { setClipboard('markers', [selectedMarker.value], 'planet'); pasteCount = 0; }
@@ -1527,7 +1545,7 @@ function pasteClipboard() {
       if (item.type === 'marker') { store.addMarker(planetId, copy); newSel.push({ type: 'marker', id: copy.id }); }
       else if (item.type === 'textLabel') { store.addTextLabel(planetId, copy); newSel.push({ type: 'textLabel', id: copy.id }); }
     }
-    if (newSel.length) { selectedMarker.value = null; selectedTextLabel.value = null; batchSelection.multiSel.value = newSel; }
+    if (newSel.length) { selectedMarker.value = null; selectedTextLabel.value = null; multiSel.value = newSel; }
     exportStatus.value = `已粘贴 ${newSel.length} 个对象`; emit('dirty', true); renderer.requestRender(); return;
   }
   const planetId = props.planet?.id; if (!planetId) return;
@@ -1536,6 +1554,336 @@ function pasteClipboard() {
 }
 
 function duplicateSelection() { copySelection(); pasteClipboard(); }
+
+// ===== 拆分时丢失的编辑模式与工具函数（2026-09-05 回填自 8c1962d）=====
+function enterEditMode() {
+  editMode.value = true;
+  interactionMode.value = 'draw';
+  drawMode.value = true;
+  // 重置绘制子模式，避免上次退出残留导致自由绘制被拦截
+  floodFillMode.value = false;
+  brushDrawing.brushMode.value = false;
+  brushDrawing.isBrushing.value = false;
+  brushDrawing.brushLastPoint.value = null;
+  brushDrawing.brushStrokePoints.value = [];
+  drawingPolygon.value = null;
+  isDrawingActive.value = false;
+}
+
+function exitEditMode() {
+  editMode.value = false;
+  isDrawingActive.value = false;
+  currentPath.value = [];
+  routeEditor.routeDraftPoints.value = [];
+  selectedProvince.value = null;
+  selectedRegion.value = null;
+  selectedMarker.value = null;
+  selectedRoute.value = null;
+  selectedTextLabel.value = null;
+  referenceImage.refDragMode.value = false;
+  clusterEditor.clusterSelectMode = false;
+  clusterEditor.clusterBoxStart = null;
+  clusterEditor.clusterBoxEnd = null;
+  brushDrawing.brushMode.value = false;
+  brushDrawing.isBrushing.value = false;
+  brushDrawing.brushLastPoint.value = null;
+  brushDrawing.brushStrokePoints.value = [];
+  isBoxSelecting.value = false;
+  boxSelectStart.value = null;
+  boxSelectEnd.value = null;
+  selectedPlaceIds.value = new Set();
+  isDraggingPlaces.value = false;
+  placesDragStart.value = null;
+  dragObject.value = null;
+  dragRegionAnchor.value = null;
+  drawingPolygon.value = null;
+  provinceSplitMerge.splitSelectMode.value = false;
+  provinceSplitMerge.splitPoints.value = [];
+  provinceSplitMerge.mergeSelectMode.value = false;
+  provinceSplitMerge.mergeTargetId.value = null;
+  renderer.requestRender();
+}
+
+function undo() { store.undo(); }
+function redo() { store.redo(); }
+
+function deleteSelected() {
+  // E7：批量删除 Shift 多选的标记/文本（逐个走 store，各生成一条 undo）
+  if (multiSel.value.length > 0) {
+    if (confirm(`确定删除选中的 ${multiSel.value.length} 个对象吗？`)) {
+      multiSelObjs.value.forEach(({ type, id }) => {
+        if (type === 'marker') store.removeMarker(props.planet.id, id);
+        else store.removeTextLabel(props.planet.id, id);
+      });
+      multiSel.value = [];
+      emit('dirty', true);
+    }
+    return;
+  }
+  // 批量删除选中的地点
+  if (selectedPlaceIds.value.size > 0) {
+    if (confirm(`确定从地图移除选中的 ${selectedPlaceIds.value.size} 个地点吗？`)) {
+      selectedPlaceIds.value.forEach(id => store.removeNode(id));
+      selectedPlaceIds.value = new Set();
+      emit('dirty', true);
+    }
+    return;
+  }
+  if (selectedProvince.value) {
+    store.removeTerrainPolygon(props.planet.id, selectedProvince.value.id);
+    selectedProvince.value = null;
+    emit('dirty', true);
+  }
+  if (selectedRegion.value) {
+    store.removeRegion(props.planet.id, selectedRegion.value.id);
+    selectedRegion.value = null;
+    emit('dirty', true);
+  }
+  if (selectedMarker.value) {
+    store.removeMarker(props.planet.id, selectedMarker.value.id);
+    selectedMarker.value = null;
+    emit('dirty', true);
+  }
+  if (selectedRoute.value) {
+    store.removeRoute(props.planet.id, selectedRoute.value.id);
+    selectedRoute.value = null;
+    emit('dirty', true);
+  }
+  if (selectedTextLabel.value) {
+    store.removeTextLabel(props.planet.id, selectedTextLabel.value.id);
+    selectedTextLabel.value = null;
+    emit('dirty', true);
+  }
+  renderer.requestRender();
+}
+
+function smoothPolygonBoundary() {
+  const poly = selectedProvince.value || selectedRegion.value;
+  if (!poly || poly.points.length < 3) return;
+
+  const smoothed = [];
+  const points = poly.points;
+  const n = points.length;
+
+  for (let i = 0; i < n; i++) {
+    const prev = points[(i - 1 + n) % n];
+    const curr = points[i];
+    const next = points[(i + 1) % n];
+
+    smoothed.push({
+      x: curr.x * 0.5 + (prev.x + next.x) * 0.25,
+      y: curr.y * 0.5 + (prev.y + next.y) * 0.25,
+    });
+  }
+
+  if (selectedProvince.value) {
+    store.updateTerrainPolygon(props.planet.id, poly.id, { points: smoothed });
+  } else {
+    store.updateRegion(props.planet.id, poly.id, { points: smoothed });
+  }
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function saveMap() {
+  // 异步保存 + 横幅反馈，避免用户无反馈狂点
+  saveStatus.value = '正在保存...';
+  store.saveMapData(props.planet.id, currentMapData.value).then(result => {
+    saveStatus.value = result?.success ? '✓ 保存成功' : '✗ 保存失败';
+    snapshotPanel.clearSaveStatusTimer();
+    snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 3000);
+  }).catch(() => {
+    saveStatus.value = '✗ 保存失败';
+    snapshotPanel.clearSaveStatusTimer();
+    snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 3000);
+  });
+}
+
+function confirmClear() {
+  if (confirm('确定要清空所有省份、区域、路线、标记、文本和地点簇吗？此操作不可撤销。')) {
+    store.mapData[props.planet.id] = {
+      planetId: props.planet.id,
+      version: 1,
+      terrain: [],
+      regions: [],
+      markers: [],
+      routes: [],
+      textLabels: [],
+      clusters: [],
+    };
+    selectedProvince.value = null;
+    selectedRegion.value = null;
+    selectedMarker.value = null;
+    selectedRoute.value = null;
+    selectedTextLabel.value = null;
+    clusterEditor.activeClusterId.value = null;
+    emit('dirty', true);
+    renderer.requestRender();
+  }
+}
+
+// ===== 路线草稿/描点绘制（2026-09-05 回填自 8c1962d，拆分时丢失）=====
+function finishDrawing() {
+  const simplified = simplifyPath(currentPath.value, 2);
+  const isRegion = interactionMode.value === 'region';
+  const type = isRegion ? 'region' : selectedTerrain.value;
+  const typeLabel = isRegion
+    ? '区域'
+    : (terrainTypes.find(t => t.type === type)?.label || '地形');
+  // 默认命名：同类型数量 + 1（如"陆地 3"），供对象列表区分
+  const count = isRegion
+    ? (currentMapData.value?.regions?.length || 0) + 1
+    : (currentMapData.value?.terrain?.filter(t => t.type === type).length || 0) + 1;
+  const finalPoints = getMirroredPath(simplified);
+
+  // 重叠检测（2026-08-16）：新地形与已有地形重叠 > 5% 时确认，避免互相覆盖
+  if (!isRegion && finalPoints.length >= 3) {
+    const existing = currentMapData.value?.terrain || [];
+    const overlapList = existing.filter(t => polygonOverlapRatio(finalPoints, t.points) > 0.05);
+    if (overlapList.length > 0) {
+      const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「🧲 边缘吸附」对齐边界。仍要创建吗？`;
+      if (!confirm(msg)) {
+        currentPath.value = [];
+        renderer.requestRender();
+        return;
+      }
+    }
+  }
+
+  const polygon = {
+    id: `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    // 对称模式：原路径 + 镜像路径合并成完整对称多边形
+    points: finalPoints,
+    type,
+    name: `${typeLabel} ${count}`,
+    description: '',
+    elevation: '',
+    climate: '',
+    ecology: '',
+    color: isRegion ? regionColor.value : undefined,
+  };
+  
+  if (isRegion) {
+    store.addRegion(props.planet.id, polygon);
+  } else {
+    store.addTerrainPolygon(props.planet.id, polygon);
+  }
+  
+  emit('dirty', true);
+}
+
+function finishPointDrawing() {
+  const poly = drawingPolygon.value;
+  if (!poly || poly.points.length < 3) {
+    drawingPolygon.value = null;
+    renderer.requestRender();
+    return;
+  }
+  // 对称模式：原路径 + 镜像路径合并
+  const finalPoly = { ...poly, points: getMirroredPath(poly.points) };
+  if (finalPoly.type === 'region') {
+    store.addRegion(props.planet.id, finalPoly);
+  } else {
+    // 重叠检测（2026-08-16）：新地形与已有地形重叠 > 5% 时确认
+    if (finalPoly.points.length >= 3) {
+      const existing = currentMapData.value?.terrain || [];
+      const overlapList = existing.filter(t => polygonOverlapRatio(finalPoly.points, t.points) > 0.05);
+      if (overlapList.length > 0) {
+        const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「🧲 边缘吸附」对齐边界。仍要创建吗？`;
+        if (!confirm(msg)) {
+          drawingPolygon.value = null;
+          renderer.requestRender();
+          return;
+        }
+      }
+    }
+    store.addTerrainPolygon(props.planet.id, finalPoly);
+  }
+  drawingPolygon.value = null;
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function finishRouteDraft() {
+  if (routeEditor.routeDraftPoints.value.length < 2) {
+    routeEditor.routeDraftPoints.value = [];
+    return;
+  }
+  
+  const route = {
+    id: `route_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    points: routeEditor.routeDraftPoints.value.map(p => ({ x: p.x, y: p.y, placeId: p.placeId || null })),
+    dashed: routeEditor.routeDashed.value,
+    color: routeEditor.routeColor.value,
+    name: `路线 ${(currentMapData.value?.routes?.length || 0) + 1}`,
+    label: '',
+    description: '',
+  };
+  store.addRoute(props.planet.id, route);
+  selectedRoute.value = route;
+  routeEditor.routeDraftPoints.value = [];
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+function cancelRouteDraft() {
+  if (routeEditor.routeDraftPoints.value.length > 0) {
+    routeEditor.routeDraftPoints.value = [];
+    renderer.requestRender();
+    return true;
+  }
+  return false;
+}
+
+function handleRouteClick(wx, wy) {
+  // 若命中已有路线端点，直接开始编辑该路线（选中）
+  const hit = hitTestModule.hitTest(wx, wy);
+  if (hit?.type === 'route' || hit?.type === 'route-endpoint') {
+    selectedRoute.value = hit.route;
+    routeEditor.routeDraftPoints.value = [];
+    return;
+  }
+  
+  // 吸附：地点优先（<20px 贴到地点坐标），否则网格吸附（开启时）
+  let target = { x: wx, y: wy };
+  for (const place of places.value) {
+    const dx = wx - (place.coordinate?.x || 0);
+    const dy = wy - (place.coordinate?.y || 0);
+    if (dx * dx + dy * dy < 20 * 20) {
+      target = { x: place.coordinate.x, y: place.coordinate.y, placeId: place.id };
+      break;
+    }
+  }
+  if (!target.placeId) target = snapPoint(target);
+  
+  routeEditor.routeDraftPoints.value.push(target);
+  renderer.requestRender();
+}
+
+function handlePointClick(wx, wy, mode) {
+  const sp = snapDrawPoint({ x: wx, y: wy });
+  // 若已存在绘制中的多边形，继续追加顶点
+  if (drawingPolygon.value) {
+    const last = drawingPolygon.value.points[drawingPolygon.value.points.length - 1];
+    if (Math.hypot(sp.x - last.x, sp.y - last.y) < 5) return; // 防止重复点击同一点
+    drawingPolygon.value.points.push(sp);
+    renderer.requestRender();
+    return;
+  }
+  
+  // 新建绘制中的多边形
+  drawingPolygon.value = {
+    id: `poly_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    points: [sp],
+    type: mode === 'region' ? 'region' : selectedTerrain.value,
+    name: '',
+    description: '',
+    color: mode === 'region' ? regionColor.value : undefined,
+  };
+  renderer.requestRender();
+}
+
+
 
 // ===== 适配全部 / 适配选中 =====
 function fitAllContent() { if (worldBounds.value) renderer.fitView(worldBounds.value); }
@@ -1584,6 +1932,7 @@ onUnmounted(() => {
   if (highlightTimer) clearTimeout(highlightTimer);
   focusHighlight.clearFocusHighlightTimer();
 });
+</script>
 
 <style scoped>
 .planet-map-container {

@@ -137,3 +137,9 @@ npm run test
 ## 许可证
 
 [MIT License](LICENSE) © 2026 暮雨
+
+## 欢迎赞助
+
+如果喜欢司天，欢迎来[爱发电](https://afdian.com/a/muyu46548B?utm_source=copylink&utm_medium=link)支持作者！
+
+您也可以在爱发电获取绒花计划相关资讯或部分作品资料。

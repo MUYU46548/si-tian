@@ -26,12 +26,16 @@ def planet_map(cdp):
 
 
 def goto_planet(cdp, planet_name='乐园星'):
-    """直接导航到指定行星地图（世界→星域→星系→行星）"""
+    """直接导航到指定行星地图（世界→星域→星系→行星）。
+    自底向上锚定：优先取有星域子节点的世界（避免取到空壳世界如"伏夜提加"，
+    否则其 star_domain/galaxy 查找返回 undefined，抛 TypeError）。"""
     expr = f"""(() => {{
       const app = document.querySelector('#app').__vue_app__;
       const s = app._instance.setupState.store;
       const nodes = s.nodes;
-      const w = nodes.find(n => n.layer === 'world');
+      // 找有星域子节点的世界
+      let w = nodes.find(n => n.layer === 'world' && nodes.some(c => c.layer === 'star_domain' && c.parentId === n.id));
+      if (!w) w = nodes.find(n => n.layer === 'world'); // 兜底
       const d = nodes.find(n => n.layer === 'star_domain' && n.parentId === w.id);
       const g = nodes.find(n => n.layer === 'galaxy' && n.parentId === d.id);
       const p = nodes.find(n => n.name === '{planet_name}' && n.layer === 'planet');
@@ -40,6 +44,19 @@ def goto_planet(cdp, planet_name='乐园星'):
       return s.viewLevel;
     }})()"""
     return cdp.eval(expr)
+
+
+def select_world_with_domains(cdp):
+    """选中第一个有星域子节点的世界（避免空壳世界），进入 domain 视图。
+    返回选中世界的 id；若无满足条件的世界返回第一个 world 的 id。"""
+    return cdp.eval("""(() => {
+      const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+      const nodes = s.nodes;
+      let w = nodes.find(n => n.layer === 'world' && nodes.some(c => c.layer === 'star_domain' && c.parentId === n.id));
+      if (!w) w = nodes.find(n => n.layer === 'world');
+      if (w) { s.selectWorld(w); return w.id; }
+      return 'no-world';
+    })()""")
 
 
 def enter_edit(cdp):

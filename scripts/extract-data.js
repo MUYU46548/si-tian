@@ -106,6 +106,11 @@ function parseMdFile(filePath) {
   } catch (e) { console.error(`解析失败: ${filePath}`, e.message); return null; }
 }
 
+// 扫描排除名单：这些文件名是"索引/说明"性质，历史上曾被误判为地理节点
+// （如 世界索引.md 的 H1 标题被 extractWorldsAndStars 当成世界，产生无子节点的幽灵世界）。
+// 它们不是真实地理实体，提取时直接跳过。
+const SCAN_EXCLUDED_BASENAMES = new Set(['世界索引']);
+
 function scanGeoSystem() {
   const nodes = [];
   function scanDir(dir, parentLayer, depth = 0) {
@@ -118,6 +123,7 @@ function scanGeoSystem() {
         const layerName = detectLayer(entry.name);
         scanDir(fullPath, layerName || parentLayer, depth + 1);
       } else if (entry.name.endsWith('.md')) {
+        if (SCAN_EXCLUDED_BASENAMES.has(path.basename(entry.name, '.md'))) continue;
         const parsed = parseMdFile(fullPath);
         if (!parsed) continue;
         const id = normalizeId(parsed.fileName);
@@ -190,6 +196,11 @@ function extractWorldsAndStars(lines) {
     let currentWorld = null;
     let currentStarDomain = null;
 
+    // 页面结构性标题（非世界）：'# 世界索引' 是索引说明段的标题，其下列表是指向真实
+    // 世界段的跨引用。若当作世界，会产生无子节点的幽灵世界，且其后的真实世界会被
+    // worldStarMap 误挂为其子节点（越级违规）。世界名（幻境/粘土世界/若空之境…）不含"索引"。
+    function isStructuralHeader(name) { return name.includes('索引'); }
+
     for (const line of lines) {
       const trimmed = line.trim();
       
@@ -197,6 +208,11 @@ function extractWorldsAndStars(lines) {
       const worldMatch = trimmed.match(/^# ([^\s#].*?)$/);
       if (worldMatch && !worldMatch[1].includes('发布') && !worldMatch[1].includes('tags')) {
         const worldName = worldMatch[1].trim();
+        if (isStructuralHeader(worldName)) {
+          currentWorld = null;
+          currentStarDomain = null;
+          continue;
+        }
         currentWorld = { id: normalizeId(worldName), name: worldName, layer: 'world', layerLabel: '世界', parentId: null, tags: ['世界'], sourcePath: '01 索引/地理系统索引.md', wikilinks: [], coordinate: { x: null, y: null } };
         worlds.push(currentWorld);
         currentStarDomain = null;
@@ -204,7 +220,7 @@ function extractWorldsAndStars(lines) {
       }
       
       if (!currentWorld) continue;
-      
+
       // 匹配带缩进的 wikilink 列表项，用缩进级别区分层级：
       //   level 0（无缩进）    -> 星域
       //   level 1（1 tab/2空格）-> 恒星系（恒星级）
@@ -212,9 +228,15 @@ function extractWorldsAndStars(lines) {
       const listMatch = line.match(/^([\t ]*)- \[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
       if (!listMatch) continue;
       
+      sawEntryUnderHeader = true;
+      
       const indentStr = listMatch[1];
       const itemName = listMatch[2].trim();
       const level = (indentStr.match(/\t/g) || []).length + Math.floor((indentStr.match(/ /g) || []).length / 2);
+      
+      // 自引用条目：'# 若空之境' 段下列出 [[若空之境]] 自己——若接收会产生
+      // world→location 自引用（渲染循环风险），靠下游 detectCycles 兜底不如源头跳过
+      if (currentWorld && normalizeId(itemName) === currentWorld.id) continue;
       
       if (level === 0) {
         // 星域
@@ -776,14 +798,21 @@ async function extractGeodata(targetVault, options = {}) {
   allNodes = validateParentReferences(allNodes);
   
   // Build world-star map from index for parent resolution（批次C3：与上方共用一次索引读取）
+  // 与 extractWorldsAndStars 同规则：跳过 '# 世界索引' 结构性标题（其列表是跨引用），
+  // 否则真实世界节点会被 resolveParents 误挂到该伪世界下（world→world 越级违规）。
+  const isStructuralHeader = (name) => name.includes('索引');
   const worldStarMap = {};
   let cw = null;
   for (const line of getIndexLines()) {
     const tm = line.trim();
     const wm = tm.match(/^# ([^\s#].*?)$/);
-    if (wm) { cw = normalizeId(wm[1]); worldStarMap[cw] = []; continue; }
+    if (wm) {
+      cw = isStructuralHeader(wm[1].trim()) ? null : normalizeId(wm[1]);
+      if (cw) worldStarMap[cw] = [];
+      continue;
+    }
     const sm = tm.match(/^- \[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
-    if (sm && cw) worldStarMap[cw].push(normalizeId(sm[1]));
+    if (sm && cw && normalizeId(sm[1]) !== cw) worldStarMap[cw].push(normalizeId(sm[1]));
   }
   
   allNodes = resolveParents(allNodes, worldStarMap);
@@ -814,6 +843,14 @@ if (require.main === module) {
     const data = await extractGeodata(targetVault, { forceFull });
     const outPath = path.join(vaultPath, '.sitian', 'geodata.json');
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    // 合并保留旧缓存中的编辑器字段（与主进程 reextract-geodata IPC 同逻辑）
+    const EDITOR_FIELDS = ['domainBorderOverrides', 'interiorData', 'areaZones', 'areaRoutes', 'areaMarkers', 'areaTextLabels', 'areaReferenceImages', 'interiorReferenceImages', 'spaceMarkers', 'fleetCards'];
+    try {
+      const oldRaw = JSON.parse(fs.readFileSync(outPath, 'utf-8'));
+      for (const f of EDITOR_FIELDS) {
+        if (oldRaw[f] !== undefined && data[f] === undefined) data[f] = oldRaw[f];
+      }
+    } catch (e) { /* 旧文件不存在/损坏 → 无可合并 */ }
     fs.writeFileSync(outPath, JSON.stringify(data, null, 2), 'utf-8');
     console.log(`提取完成！数据已保存至: ${outPath}`);
     console.log(`总节点数: ${data.nodeCount}`);

@@ -150,7 +150,18 @@ ipcMain.handle('save-geodata', async (event, data) => {
 ipcMain.handle('reextract-geodata', async () => {
   try {
     const data = await extractGeodata(getVaultPath());
-    await fs.writeFile(path.join(getVaultPath(), '.sitian', 'geodata.json'), JSON.stringify(data, null, 2), 'utf-8');
+    // 合并保留旧缓存中的编辑器字段（提取结果只含 nodes/hyperlanes，不含编辑器数据）。
+    // 渲染层 reextract() 只更新内存态，若用户此后不触发 saveGeodata，
+    // 覆盖写盘会让 interiorData/areaZones/area*/space*/interiorReferenceImages 从磁盘消失。
+    const GEODATA_PATH = path.join(getVaultPath(), '.sitian', 'geodata.json');
+    const EDITOR_FIELDS = ['domainBorderOverrides', 'interiorData', 'areaZones', 'areaRoutes', 'areaMarkers', 'areaTextLabels', 'areaReferenceImages', 'interiorReferenceImages', 'spaceMarkers', 'fleetCards'];
+    try {
+      const oldRaw = JSON.parse(await fs.readFile(GEODATA_PATH, 'utf-8'));
+      for (const f of EDITOR_FIELDS) {
+        if (oldRaw[f] !== undefined && data[f] === undefined) data[f] = oldRaw[f];
+      }
+    } catch (e) { /* 旧文件不存在/损坏 → 无可合并，按纯提取结果写盘 */ }
+    await fs.writeFile(GEODATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
     return { success: true, data };
   } catch (err) {
     return { success: false, error: err.message };
