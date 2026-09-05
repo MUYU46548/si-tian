@@ -305,14 +305,16 @@ def run(cdp):
             and ur['afterRedo']['label'] == '银矿带' and ur['afterRedo']['kind'] == 'army'):
         return False, f'redo×2 未恢复 {ur}'
 
-    # h) B1 层级越级校验：真实 mock 数据（117 节点）应 0 违规；
-    #    含自引用父级清理个案（若空之境 parentId 指向自身 → 置空）
+    # h) B1 层级越级校验：真实 mock 数据（121 节点）应 0 违规；
+    #    含自引用父级清理个案（构造一个 parentId 指向自身的节点 → 置空）
     b1 = _js_obj(cdp, f"""(() => {{
       const s = {APP_STORE};
-      const v = s.validateNodes(s.nodes);
-      const selfLoop = s.nodes.find(n => n.name === '若空之境');
+      // 注入自引用父级个案（不污染真实数据：注入后立即验证）
+      const nodes = s.nodes.map(n => n.name === '若空之境' ? {{ ...n, parentId: n.id }} : n);
+      const v = s.validateNodes(nodes);
+      const selfLoop = v.nodes.find(n => n.name === '若空之境');
       return JSON.stringify({{
-        total: s.nodes.length,
+        total: nodes.length,
         violations: v.violations,
         selfLoopParentNull: selfLoop ? selfLoop.parentId === null : 'no-node',
       }});

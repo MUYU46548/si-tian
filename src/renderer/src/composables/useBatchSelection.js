@@ -2,6 +2,7 @@
 // 批量选择与变换状态管理
 
 import { ref, computed } from 'vue';
+import { alignItems, distributeItems } from '../utils/align';
 
 export function useBatchSelection({ store, props, emit, renderer, currentMapData, exportStatus }) {
   // ===== E7 批量选择（marker/textLabel，Shift+点击累加）+ E5 智能参考线状态 =====
