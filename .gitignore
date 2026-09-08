@@ -41,7 +41,6 @@ __pycache__/
 # 内部文档（不公开）
 HANDOFF.md
 ROADMAP.md
-AGENTS.md
 .hermes/
 # docs/ 内部设计文档（保留 RELEASE_PROCESS.md 等公开文档）
 docs/交互审计-A批次.md
