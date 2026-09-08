@@ -1,8 +1,16 @@
 // src/renderer/src/composables/useKeyboardShortcuts.js
-// 键盘快捷键：方向键微调、Ctrl+C/V/D、Esc 取消
+// 键盘快捷键：方向键微调、Ctrl+C/V/D、Del 删除、Esc 取消
 
-export function useKeyboardShortcuts({ store, props, emit, renderer, selectedProvince, selectedMarker, selectedTextLabel, exportStatus, splitSelectMode, mergeSelectMode, editMode, copySelection, pasteClipboard }) {
+export function useKeyboardShortcuts({ store, props, emit, renderer, selectedProvince, selectedMarker, selectedTextLabel, exportStatus, splitSelectMode, mergeSelectMode, editMode, copySelection, pasteClipboard, deleteSelected }) {
   let snapCtrlHeld = false;
+
+  // 输入类元素聚焦时，画布编辑快捷键全部让路（打字/复制粘贴/退格都不劫持）
+  function isTypingTarget(e) {
+    const t = e.target;
+    if (!t) return false;
+    const tag = t.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!t.isContentEditable;
+  }
 
   // 方向键微调
   function handleKeydown(e) {
@@ -19,6 +27,9 @@ export function useKeyboardShortcuts({ store, props, emit, renderer, selectedPro
       }
     }
     if (!editMode.value) return;
+    // 输入框/文本框聚焦时不拦截任何画布编辑快捷键
+    // （原实现守卫只在方向键分支，Ctrl+C/V/D 会劫持输入框内的复制粘贴，Del 补齐时一并前移修复）
+    if (isTypingTarget(e)) return;
     // E1: 克隆 / 复制粘贴（编辑模式下生效；App 全局键不处理 C/V/D，无冲突）
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
       const k = e.key.toLowerCase();
@@ -26,11 +37,17 @@ export function useKeyboardShortcuts({ store, props, emit, renderer, selectedPro
       if (k === 'c') { e.preventDefault(); copySelection(); return; }
       if (k === 'v') { e.preventDefault(); pasteClipboard(); return; }
     }
+    // Del/Backspace：删除当前选中对象（走 deleteSelected 的确认链路）
+    // 按钮 title 一直写"(Del)"但此前无实现
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (typeof deleteSelected === 'function') {
+        e.preventDefault();
+        deleteSelected();
+      }
+      return;
+    }
     const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
     if (!arrows.includes(e.key)) return;
-    // 输入框/文本框聚焦时不拦截
-    const tag = e.target?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
     let dx = 0, dy = 0;
     if (e.key === 'ArrowLeft') dx = -1;

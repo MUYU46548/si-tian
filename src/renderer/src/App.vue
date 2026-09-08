@@ -1152,11 +1152,20 @@ function handleBeforeUnload(e) {
 }
 
 function handleGlobalKeydown(e) {
+  // 输入类元素聚焦时，除 F1/Escape 外全部让路：
+  // 修复搜索框/重命名框里打 l/m 误开面板、Ctrl+Z 撤的是地图数据而非文字
+  const t = e.target;
+  const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
   if (e.key === 'F1') {
     e.preventDefault();
     aboutPanelRef.value?.open();
     return;
   }
+  if (e.key === 'Escape') {
+    panelsStore.closeAll();
+    return;
+  }
+  if (typing) return;
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();
     store.undo();
@@ -1166,9 +1175,6 @@ function handleGlobalKeydown(e) {
     e.preventDefault();
     store.redo();
     return;
-  }
-  if (e.key === 'Escape') {
-    panelsStore.closeAll();
   }
   if (e.key === 'l' || e.key === 'L') {
     if (store.viewLevel === 'domain' || store.viewLevel === 'system' || store.viewLevel === 'system_detail' || store.viewLevel === 'planet') {

@@ -1,6 +1,6 @@
 {
   "name": "sitian",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "世界观动态构建系统 — 绒花计划",
   "main": "src/main/index.js",
   "scripts": {

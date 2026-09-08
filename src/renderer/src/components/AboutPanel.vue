@@ -6,7 +6,7 @@
           <span class="logo-icon">🌌</span>
           <div class="logo-info">
             <h2>SiTian</h2>
-            <span class="version">v{{ appVersion }}</span>
+            <span class="version" :title="'点击复制版本号'" style="cursor: pointer;" @click="copyVersion">{{ copiedVersion ? '已复制 ✓' : `v${appVersion}` }}</span>
           </div>
         </div>
         <button class="close-btn" @click="close">×</button>
@@ -182,6 +182,24 @@ import { ref, computed } from 'vue';
 
 const isOpen = ref(false);
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
+const copiedVersion = ref(false);
+
+// 点击复制版本号（clipboard API 在 Electron 渲染进程可用；execText 兜底）
+async function copyVersion() {
+  const text = `v${appVersion.value}`;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* 两种方式都失败则静默 */ }
+    ta.remove();
+  }
+  copiedVersion.value = true;
+  setTimeout(() => { copiedVersion.value = false; }, 1500);
+}
 
 // 卸载（应用内入口，调用主进程定位系统卸载器）
 const showUninstallConfirm = ref(false);

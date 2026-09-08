@@ -11,8 +11,14 @@
             点击省份选中 · 点击地点查看详情 · 双击在 Obsidian 打开 · 滚动缩放 · 拖拽平移 · <a href="#" @click.prevent="enterEditMode">编辑地图</a>
           </template>
           <template v-else>
-            <strong>编辑模式</strong> — 
-            {{ isDrawing ? '正在绘制...' : '按住拖动绘制省份边界，松开自动闭合' }}
+            <strong>编辑模式</strong> —
+            <template v-if="interactionMode === 'cluster'">{{ clusterSelectMode ? '簇框选中：按住左键拖一个框圈住地点，松开完成选择' : '簇工具：点击工具栏 🗂 后按住拖动框选地点 → 弹窗创建簇' }}</template>
+            <template v-else-if="interactionMode === 'marker'">选择类型后点击画布放置标记</template>
+            <template v-else-if="interactionMode === 'route'">点击放置路线顶点，双击结束</template>
+            <template v-else-if="interactionMode === 'text'">点击画布放置文本</template>
+            <template v-else-if="interactionMode === 'region'">按住拖动圈画区域</template>
+            <template v-else-if="interactionMode === 'move'">点击选中对象并拖动（Shift 多选）</template>
+            <template v-else>{{ isDrawing ? '正在绘制...' : '按住拖动绘制省份边界，松开自动闭合' }}</template>
             · <a href="#" @click.prevent="exitEditMode">退出编辑</a>
           </template>
         </p>
@@ -56,15 +62,15 @@
 
         <template v-if="interactionMode === 'route'">
           <div class="toolbar-group toolbar-group-sub">
-            <button :class="{ active: !routeEditor.routeDashed }" @click="routeEditor.routeDashed = false" title="实线（道路/边界）">➖ 实线</button>
-            <button :class="{ active: routeEditor.routeDashed }" @click="routeEditor.routeDashed = true" title="虚线（航线/秘密路线）">〰️ 虚线</button>
+            <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）">➖ 实线</button>
+            <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）">〰️ 虚线</button>
             <span class="toolbar-label">颜色</span>
             <button
               v-for="c in routeEditor.ROUTE_COLORS"
               :key="c"
-              :class="{ active: routeEditor.routeColor === c }"
+              :class="{ active: routeColor === c }"
               :style="{ background: c }"
-              @click="routeEditor.routeColor = c"
+              @click="routeColor = c"
               class="color-btn"
             ></button>
             <span class="toolbar-label">↗ 点击放置顶点 · 双击完成 · 右键取消</span>
@@ -74,13 +80,13 @@
         <template v-if="interactionMode === 'text'">
           <div class="toolbar-group toolbar-group-sub">
             <span class="toolbar-label">字号</span>
-            <button v-for="s in [12, 16, 22, 30]" :key="s" :class="{ active: textEditor.textFontSize === s }" @click="textEditor.textFontSize = s">{{ s }}px</button>
+            <button v-for="s in [12, 16, 22, 30]" :key="s" :class="{ active: textFontSize === s }" @click="textFontSize = s">{{ s }}px</button>
             <button
               v-for="c in textEditor.TEXT_COLORS"
               :key="c"
-              :class="{ active: textEditor.textColor === c }"
+              :class="{ active: textColor === c }"
               :style="{ background: c }"
-              @click="textEditor.textColor = c"
+              @click="textColor = c"
               class="color-btn"
             ></button>
             <span class="toolbar-label">↗ 点击放置文本</span>
@@ -131,7 +137,7 @@
         </div>
 
         <div class="toolbar-group" title="视图与输出">
-          <button :class="{ active: referenceImage.showRefImagePanel }" @click="openPlanetPanel('refimage')" title="参考底图">🖼 参考图</button>
+          <button :class="{ active: showRefImagePanel }" @click="openPlanetPanel('refimage')" title="参考底图">🖼 参考图</button>
           <select class="boundary-select" v-model="canvasSizePreset" title="行星地图边界">
             <option value="auto">📐 边界:自动</option>
             <option value="500">边界: ±500</option>
@@ -148,7 +154,7 @@
           <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="切换地形图层显示">▣ 地形</button>
           <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示">🏔 地名</button>
           <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
-          <button @click="referenceImage.showExtraLayers = !referenceImage.showExtraLayers" title="更多图层（海拔/气候/降水）">☷ 更多</button>
+          <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）">☷ 更多</button>
         </div>
       </div>
     </div>
@@ -177,7 +183,7 @@
     </div>
     
     <!-- 更多图层面板 -->
-    <div v-if="editMode && referenceImage.showExtraLayers" class="terrain-picker">
+    <div v-if="editMode && showExtraLayers" class="terrain-picker">
       <span class="picker-label">更多图层：</span>
       <button :class="{ active: layers.isVisible('planet', 'elevation') }" @click="layers.toggleLayer('planet', 'elevation')" title="显示海拔等高线">⛰ 海拔</button>
       <button :class="{ active: layers.isVisible('planet', 'climate') }" @click="layers.toggleLayer('planet', 'climate')" title="显示气候分区">🌡 气候</button>
@@ -203,8 +209,8 @@
       <button 
         v-for="m in markerEditor.markerTypes" 
         :key="m.type"
-        :class="{ active: markerEditor.selectedMarkerType === m.type }"
-        @click="markerEditor.selectedMarkerType = m.type"
+        :class="{ active: selectedMarkerType === m.type }"
+        @click="selectedMarkerType = m.type"
       ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
     </div>
     
@@ -257,17 +263,17 @@
       </div>
       <cluster-panel
         :planet="props.planet"
-        :open="clusterEditor.clusterPanelOpen"
-        :active-cluster-id="clusterEditor.activeClusterId"
-        :hover-member-id="clusterEditor.hoverMemberId"
-        @create-cluster="clusterEditor.enterClusterMode"
-        @focus-cluster="clusterEditor.focusCluster"
-        @toggle-collapse="clusterEditor.toggleClusterCollapse"
-        @hover-member="clusterEditor.hoverMemberId = $event; renderer.requestRender()"
-        @select-member="clusterEditor.selectClusterMember"
-        @edit-cluster="clusterEditor.openClusterEditor"
-        @disband-cluster="clusterEditor.disbandCluster"
-        @close="clusterEditor.clusterPanelOpen = false"
+        :open="clusterPanelOpen"
+        :active-cluster-id="activeClusterId"
+        :hover-member-id="hoverMemberId"
+        @create-cluster="enterClusterMode"
+        @focus-cluster="focusCluster"
+        @toggle-collapse="toggleClusterCollapse"
+        @hover-member="hoverMemberId = $event; renderer.requestRender()"
+        @select-member="selectClusterMember"
+        @edit-cluster="openClusterEditor"
+        @disband-cluster="disbandCluster"
+        @close="clusterPanelOpen = false"
       />
       <object-list-panel
         :planet="props.planet"
@@ -315,15 +321,15 @@
     </div>
     
     <!-- 创建/编辑地点簇对话框 -->
-    <div v-if="clusterEditor.clusterEditorOpen" class="cluster-dialog-backdrop">
+    <div v-if="clusterEditorOpen" class="cluster-dialog-backdrop">
       <div class="cluster-dialog">
         <div class="editor-header">
-          <h3>{{ clusterEditor.editingCluster ? '编辑地点簇' : '创建地点簇' }}</h3>
-          <button class="close-btn" @click="clusterEditor.clusterEditorOpen = false">×</button>
+          <h3>{{ editingCluster ? '编辑地点簇' : '创建地点簇' }}</h3>
+          <button class="close-btn" @click="clusterEditorOpen = false">×</button>
         </div>
         <div class="editor-field">
           <label>名称</label>
-          <input v-model="clusterEditor.editingClusterName" placeholder="簇名称（如：周边村落）" />
+          <input v-model="editingClusterName" placeholder="簇名称（如：周边村落）" />
         </div>
         <div class="editor-field">
           <label>颜色</label>
@@ -331,24 +337,24 @@
             <button 
               v-for="c in clusterEditor.CLUSTER_COLORS" 
               :key="c"
-              :class="{ active: clusterEditor.editingClusterColor === c }"
+              :class="{ active: editingClusterColor === c }"
               :style="{ background: c }" 
-              @click="clusterEditor.editingClusterColor = c"
+              @click="editingClusterColor = c"
               class="color-btn"
             ></button>
           </div>
         </div>
-        <div v-if="clusterEditor.editingCluster" class="editor-field">
-          <label>成员 ({{ clusterEditor.editingCluster?.memberIds?.length || 0 }})</label>
+        <div v-if="editingCluster" class="editor-field">
+          <label>成员 ({{ editingCluster?.memberIds?.length || 0 }})</label>
           <div class="members-list">
-            <span v-for="memberId in clusterEditor.editingCluster?.memberIds || []" :key="memberId" class="member-tag">
+            <span v-for="memberId in editingCluster?.memberIds || []" :key="memberId" class="member-tag">
               {{ getPlaceName(memberId) }}
             </span>
           </div>
         </div>
         <div class="dialog-actions">
-          <button class="adopt-btn" @click="clusterEditor.saveCluster">{{ clusterEditor.editingCluster ? '保存' : '创建' }}</button>
-          <button v-if="clusterEditor.editingCluster" class="adopt-btn ghost" @click="clusterEditor.disbandCluster(clusterEditor.editingCluster.id)">解散簇</button>
+          <button class="adopt-btn" @click="saveCluster">{{ editingCluster ? '保存' : '创建' }}</button>
+          <button v-if="editingCluster" class="adopt-btn ghost" @click="disbandCluster(editingCluster.id)">解散簇</button>
         </div>
       </div>
     </div>
@@ -361,7 +367,7 @@
       </div>
       <div class="editor-field">
         <label>名称</label>
-        <input v-model="provinceEditor.editingName" @input="provinceEditor.updateProvinceName" placeholder="省份名称" />
+        <input v-model="editingName" @input="updateProvinceName" placeholder="省份名称" />
       </div>
       <div class="editor-field">
         <label>地形</label>
@@ -371,17 +377,17 @@
             :key="t.type"
             :class="{ active: selectedProvince?.type === t.type }"
             :style="{ background: t.color }" 
-            @click="provinceEditor.updateTerrainType(t.type)"
+            @click="updateTerrainType(t.type)"
           >{{ t.label }}</button>
         </div>
       </div>
       <div class="editor-field">
         <label>描述</label>
-        <textarea v-model="provinceEditor.editingDescription" @input="provinceEditor.updateProvinceDescription" placeholder="省份描述（可选）" rows="3"></textarea>
+        <textarea v-model="editingDescription" @input="updateProvinceDescription" placeholder="省份描述（可选）" rows="3"></textarea>
       </div>
       <div class="editor-field">
         <label>海拔</label>
-        <select :value="selectedProvince?.elevation || ''" @change="provinceEditor.updateTerrainField('elevation', $event.target.value)">
+        <select :value="selectedProvince?.elevation || ''" @change="updateTerrainField('elevation', $event.target.value)">
           <option value="">未指定</option>
           <option value="深海">深海 (-2000m 以下)</option>
           <option value="浅海">浅海 (-200~0m)</option>
@@ -394,7 +400,7 @@
       </div>
       <div class="editor-field">
         <label>气候</label>
-        <select :value="selectedProvince?.climate || ''" @change="provinceEditor.updateTerrainField('climate', $event.target.value)">
+        <select :value="selectedProvince?.climate || ''" @change="updateTerrainField('climate', $event.target.value)">
           <option value="">未指定</option>
           <option value="热带">热带</option>
           <option value="亚热带">亚热带</option>
@@ -407,7 +413,7 @@
       </div>
       <div class="editor-field">
         <label>生态</label>
-        <input type="text" :value="selectedProvince?.ecology || ''" @input="provinceEditor.updateTerrainField('ecology', $event.target.value)" placeholder="生态描述（如：温带落叶林）" />
+        <input type="text" :value="selectedProvince?.ecology || ''" @input="updateTerrainField('ecology', $event.target.value)" placeholder="生态描述（如：温带落叶林）" />
       </div>
     </div>
     
@@ -419,7 +425,7 @@
       </div>
       <div class="editor-field">
         <label>名称</label>
-        <input v-model="regionEditor.editingRegionName" @input="regionEditor.updateRegionName" placeholder="区域名称" />
+        <input v-model="editingRegionName" @input="updateRegionName" placeholder="区域名称" />
       </div>
       <div class="editor-field">
         <label>颜色</label>
@@ -429,14 +435,14 @@
             :key="c"
             :class="{ active: selectedRegion?.color === c }"
             :style="{ background: c }" 
-            @click="regionEditor.updateRegionColor(c)"
+            @click="updateRegionColor(c)"
             class="color-btn"
           ></button>
         </div>
       </div>
       <div class="editor-field">
         <label>描述</label>
-        <textarea v-model="regionEditor.editingRegionDescription" @input="regionEditor.updateRegionDescription" placeholder="区域描述（可选）" rows="3"></textarea>
+        <textarea v-model="editingRegionDescription" @input="updateRegionDescription" placeholder="区域描述（可选）" rows="3"></textarea>
       </div>
       <div class="editor-field" v-if="selectedRegion?.members?.length">
         <label>包含地点 ({{ selectedRegion.members.length }})</label>
@@ -456,7 +462,7 @@
       </div>
       <div class="editor-field">
         <label>名称</label>
-        <input v-model="markerEditor.editingMarkerName" @input="markerEditor.updateMarkerName" placeholder="标记名称（如：辉石矿脉）" />
+        <input v-model="editingMarkerName" @input="updateMarkerName" placeholder="标记名称（如：辉石矿脉）" />
       </div>
       <div class="editor-field">
         <label>类型</label>
@@ -465,20 +471,20 @@
             v-for="m in markerEditor.markerTypes" 
             :key="m.type"
             :class="{ active: selectedMarker?.type === m.type }"
-            @click="markerEditor.updateMarkerType(m.type)"
+            @click="updateMarkerType(m.type)"
           ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
         </div>
       </div>
       <div class="editor-field">
         <label>图标</label>
         <div class="icon-input-row">
-          <input v-model="markerEditor.editingMarkerIcon" @input="markerEditor.updateMarkerIcon" placeholder="自定义 emoji 图标" maxlength="4" />
+          <input v-model="editingMarkerIcon" @input="updateMarkerIcon" placeholder="自定义 emoji 图标" maxlength="4" />
           <button
             v-for="m in markerEditor.markerTypes"
             :key="'ic_' + m.type"
             class="icon-pick-btn"
-            :class="{ active: markerEditor.editingMarkerIcon === m.icon }"
-            @click="markerEditor.editingMarkerIcon = m.icon; markerEditor.updateMarkerIcon()"
+            :class="{ active: editingMarkerIcon === m.icon }"
+            @click="editingMarkerIcon = m.icon; updateMarkerIcon()"
           >{{ m.icon }}</button>
         </div>
       </div>
@@ -490,14 +496,14 @@
             :key="c"
             :class="{ active: selectedMarker?.color === c }"
             :style="{ background: c }" 
-            @click="markerEditor.updateMarkerColor(c)"
+            @click="updateMarkerColor(c)"
             class="color-btn"
           ></button>
         </div>
       </div>
       <div class="editor-field">
         <label>描述</label>
-        <textarea v-model="markerEditor.editingMarkerDesc" @input="markerEditor.updateMarkerDesc" placeholder="标记描述（可选）" rows="3"></textarea>
+        <textarea v-model="editingMarkerDesc" @input="updateMarkerDesc" placeholder="标记描述（可选）" rows="3"></textarea>
       </div>
     </div>
     
@@ -509,28 +515,28 @@
       </div>
       <div class="editor-field">
         <label>名称</label>
-        <input v-model="routeEditor.editingRouteName" @input="routeEditor.updateRouteName" placeholder="路线名称（如：商路）" />
+        <input v-model="editingRouteName" @input="updateRouteName" placeholder="路线名称（如：商路）" />
       </div>
       <div class="editor-field">
         <label>文字标签（显示在路线中点）</label>
-        <input v-model="routeEditor.editingRouteLabel" @input="routeEditor.updateRouteLabel" placeholder="如：贸易路线·7日路程" />
+        <input v-model="editingRouteLabel" @input="updateRouteLabel" placeholder="如：贸易路线·7日路程" />
       </div>
       <div class="editor-field">
         <label>标签偏移</label>
         <div class="offset-row">
           <span>X</span>
-          <input type="number" v-model.number="routeEditor.editingRouteOffsetX" @input="routeEditor.updateRouteOffset" placeholder="0" />
+          <input type="number" v-model.number="editingRouteOffsetX" @input="updateRouteOffset" placeholder="0" />
           <span>Y</span>
-          <input type="number" v-model.number="routeEditor.editingRouteOffsetY" @input="routeEditor.updateRouteOffset" placeholder="0" />
-          <button class="mini-reset" @click="routeEditor.resetRouteOffset" title="重置偏移">↺</button>
+          <input type="number" v-model.number="editingRouteOffsetY" @input="updateRouteOffset" placeholder="0" />
+          <button class="mini-reset" @click="resetRouteOffset" title="重置偏移">↺</button>
         </div>
         <p class="ref-hint">调整标签相对路线的位置（世界坐标像素）</p>
       </div>
       <div class="editor-field">
         <label>线型</label>
         <div class="line-style-row">
-          <button :class="{ active: !selectedRoute?.dashed }" @click="routeEditor.updateRouteDashed(false)">➖ 实线</button>
-          <button :class="{ active: selectedRoute?.dashed }" @click="routeEditor.updateRouteDashed(true)">〰️ 虚线</button>
+          <button :class="{ active: !selectedRoute?.dashed }" @click="updateRouteDashed(false)">➖ 实线</button>
+          <button :class="{ active: selectedRoute?.dashed }" @click="updateRouteDashed(true)">〰️ 虚线</button>
         </div>
       </div>
       <div class="editor-field">
@@ -541,14 +547,14 @@
             :key="c"
             :class="{ active: selectedRoute?.color === c }"
             :style="{ background: c }" 
-            @click="routeEditor.updateRouteColor(c)"
+            @click="updateRouteColor(c)"
             class="color-btn"
           ></button>
         </div>
       </div>
       <div class="editor-field">
         <label>描述</label>
-        <textarea v-model="routeEditor.editingRouteDesc" @input="routeEditor.updateRouteDesc" placeholder="路线描述（可选）" rows="3"></textarea>
+        <textarea v-model="editingRouteDesc" @input="updateRouteDesc" placeholder="路线描述（可选）" rows="3"></textarea>
       </div>
     </div>
     
@@ -560,12 +566,12 @@
       </div>
       <div class="editor-field">
         <label>内容</label>
-        <textarea v-model="textEditor.editingTextContent" @input="textEditor.updateTextContent" placeholder="浮动文本内容（如：迷雾森林）" rows="3"></textarea>
+        <textarea v-model="editingTextContent" @input="updateTextContent" placeholder="浮动文本内容（如：迷雾森林）" rows="3"></textarea>
       </div>
       <div class="editor-field">
         <label>字号</label>
         <div class="line-style-row">
-          <button v-for="s in [12, 16, 22, 30]" :key="s" :class="{ active: selectedTextLabel?.fontSize === s }" @click="textEditor.updateTextFontSize(s)">{{ s }}px</button>
+          <button v-for="s in [12, 16, 22, 30]" :key="s" :class="{ active: selectedTextLabel?.fontSize === s }" @click="updateTextFontSize(s)">{{ s }}px</button>
         </div>
       </div>
       <div class="editor-field">
@@ -576,7 +582,7 @@
             :key="c"
             :class="{ active: selectedTextLabel?.color === c }"
             :style="{ background: c }"
-            @click="textEditor.updateTextColor(c)"
+            @click="updateTextColor(c)"
             class="color-btn"
           ></button>
         </div>
@@ -660,85 +666,85 @@
     </div>
     
     <!-- 参考图控制面板 -->
-    <div v-if="editMode && referenceImage.showRefImagePanel" class="province-editor refimage-editor">
+    <div v-if="editMode && showRefImagePanel" class="province-editor refimage-editor">
       <div class="editor-header">
         <h3>参考底图</h3>
-        <button class="close-btn" @click="referenceImage.showRefImagePanel = false">×</button>
+        <button class="close-btn" @click="showRefImagePanel = false">×</button>
       </div>
       <div class="editor-field">
         <label>导入草图 / 大陆轮廓</label>
-        <button class="adopt-btn" style="width:100%" @click="referenceImage.importReferenceImage" :disabled="referenceImage.refImageLoading">
-          {{ referenceImage.refImageLoading ? '加载中...' : (referenceImage.referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
+        <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
+          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
         </button>
         <p class="ref-hint">点击「编辑地图」后，从「☷ 图层」旁打开此面板或从工具栏进入</p>
       </div>
-      <div class="editor-field" v-if="referenceImage.referenceImages.length > 0">
-        <label>底图列表（{{ referenceImage.referenceImages.length }}）</label>
+      <div class="editor-field" v-if="referenceImages.length > 0">
+        <label>底图列表（{{ referenceImages.length }}）</label>
         <div class="ref-list">
           <div
-            v-for="(img, idx) in referenceImage.referenceImages"
+            v-for="(img, idx) in referenceImages"
             :key="img.id"
             class="ref-item"
-            :class="{ active: idx === referenceImage.activeRefIndex }"
-            @click="referenceImage.activeRefIndex = idx"
+            :class="{ active: idx === activeRefIndex }"
+            @click="activeRefIndex = idx"
             :title="'选中底图 ' + (idx + 1) + '（属性编辑作用于该图）'"
           >
             <span class="ref-item-name">{{ img.name || '底图 ' + (idx + 1) }}</span>
-            <button class="ref-item-del" @click.stop="referenceImage.removeRefListItem(idx)" title="删除该底图">×</button>
+            <button class="ref-item-del" @click.stop="removeRefListItem(idx)" title="删除该底图">×</button>
           </div>
         </div>
       </div>
-      <template v-if="referenceImage.referenceImage">
+      <template v-if="activeRefImage">
         <div class="editor-field">
           <label>透明度</label>
-          <input type="range" min="0.05" max="1" step="0.05" v-model.number="referenceImage.refOpacity" @input="referenceImage.updateRefOpacity" />
-          <span class="ref-value">{{ Math.round(referenceImage.refOpacity * 100) }}%</span>
+          <input type="range" min="0.05" max="1" step="0.05" v-model.number="refOpacity" @input="updateRefOpacity" />
+          <span class="ref-value">{{ Math.round(refOpacity * 100) }}%</span>
         </div>
         <div class="editor-field">
           <label>缩放（围绕中心）</label>
-          <input type="range" min="0.05" max="5" step="0.05" v-model.number="referenceImage.refScale" @input="referenceImage.updateRefScale" />
-          <span class="ref-value">{{ Math.round(referenceImage.refScale * 100) }}%</span>
+          <input type="range" min="0.05" max="5" step="0.05" v-model.number="refScale" @input="updateRefScale" />
+          <span class="ref-value">{{ Math.round(refScale * 100) }}%</span>
         </div>
         <div class="editor-field">
           <label>方向</label>
           <div class="line-style-row">
-            <button class="adopt-btn" @click="referenceImage.rotateRefImage" title="顺时针旋转 90°">↻ 旋转</button>
-            <button class="adopt-btn" @click="referenceImage.flipRefImageH" title="水平镜像（左右翻转）">⇋ 镜像</button>
+            <button class="adopt-btn" @click="rotateRefImage" title="顺时针旋转 90°">↻ 旋转</button>
+            <button class="adopt-btn" @click="flipRefImageH" title="水平镜像（左右翻转）">⇋ 镜像</button>
           </div>
         </div>
         <div class="editor-field">
           <label>锁定位置</label>
           <div class="line-style-row">
-            <button :class="{ active: referenceImage.referenceImage.locked }" @click="referenceImage.toggleRefLocked">🔒 已锁定</button>
-            <button :class="{ active: !referenceImage.referenceImage.locked }" @click="referenceImage.toggleRefLocked">🔓 可拖动</button>
+            <button :class="{ active: activeRefImage.locked }" @click="toggleRefLocked">🔒 已锁定</button>
+            <button :class="{ active: !activeRefImage.locked }" @click="toggleRefLocked">🔓 可拖动</button>
           </div>
           <p class="ref-hint">锁定后底图不可拖动，避免描摹时误触</p>
         </div>
-        <div class="editor-field" v-if="!referenceImage.referenceImage.locked">
+        <div class="editor-field" v-if="!activeRefImage.locked">
           <label>拖动调整位置</label>
-          <button class="adopt-btn" style="width:100%" @click="referenceImage.refDragMode = !referenceImage.refDragMode" :class="{ 'active-btn': referenceImage.refDragMode }">
-            {{ referenceImage.refDragMode ? '✅ 拖动模式已开启（拖动画布移动底图）' : '🧲 开启拖动模式' }}
+          <button class="adopt-btn" style="width:100%" @click="refDragMode = !refDragMode" :class="{ 'active-btn': refDragMode }">
+            {{ refDragMode ? '✅ 拖动模式已开启（拖动画布移动底图）' : '🧲 开启拖动模式' }}
           </button>
         </div>
         <div class="editor-field">
           <label>校准（对齐到世界坐标）</label>
-          <button class="adopt-btn" style="width:100%" @click="referenceImage.startCalibration" :class="{ 'active-btn': referenceImage.calibrationMode }">
-            {{ referenceImage.calibrationMode ? `📐 校准中 (点 ${referenceImage.calibrationPoints.length}/2)` : '📏 两点校准' }}
+          <button class="adopt-btn" style="width:100%" @click="startCalibration" :class="{ 'active-btn': calibrationMode }">
+            {{ calibrationMode ? `📐 校准中 (点 ${calibrationPoints.length}/2)` : '📏 两点校准' }}
           </button>
           <p class="ref-hint">点击画布上的两个已知距离的点，自动对齐底图比例</p>
-          <div v-if="referenceImage.calibrationMode" class="calibration-input">
+          <div v-if="calibrationMode" class="calibration-input">
             <span class="toolbar-label">两点距离</span>
-            <input type="number" v-model.number="referenceImage.calibrationDist" min="0.1" step="0.5" style="width:60px" />
+            <input type="number" v-model.number="calibrationDist" min="0.1" step="0.5" style="width:60px" />
             <span class="toolbar-label">km</span>
           </div>
         </div>
-        <div class="editor-field" v-if="referenceImage.referenceImage.calibrated">
+        <div class="editor-field" v-if="activeRefImage.calibrated">
           <label>校准状态</label>
-          <span class="ref-value" style="color:#3fb950">✓ 已校准 ({{ (referenceImage.referenceImage.ppm || 0).toFixed(1) }} px/km)</span>
+          <span class="ref-value" style="color:#3fb950">✓ 已校准 ({{ (activeRefImage.ppm || 0).toFixed(1) }} px/km)</span>
         </div>
         <div class="editor-field">
           <label>移除底图</label>
-          <button class="adopt-btn ghost" style="width:100%" @click="referenceImage.removeReferenceImage">🗑 移除</button>
+          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
         </div>
       </template>
     </div>
@@ -1067,20 +1073,20 @@ const drawing = createPlanetDrawing(() => ({
   selectedMarker: selectedMarker.value, selectedRoute: selectedRoute.value,
   selectedTextLabel: selectedTextLabel.value, selectedTerrain: selectedTerrain.value,
   selectedPlaceIds: selectedPlaceIds.value, hoveredNode: hoveredNode.value,
-  hoveredVertex: hoveredVertex.value, hoverMemberId: clusterEditor.hoverMemberId,
-  highlightedPlaceId: highlightedPlaceId.value, activeClusterId: clusterEditor.activeClusterId,
+  hoveredVertex: hoveredVertex.value, hoverMemberId: clusterEditor.hoverMemberId.value,
+  highlightedPlaceId: highlightedPlaceId.value, activeClusterId: clusterEditor.activeClusterId.value,
   activeRefIndex: referenceImage.activeRefIndex.value, refDragMode: referenceImage.refDragMode.value,
   referenceImages: referenceImage.referenceImages.value, refImageObjs: referenceImage.refImageObjs,
-  gridSize: gridSize.value, gridLabels: gridLabels.value, routeDashed: routeEditor.routeDashed, routeColor: routeEditor.routeColor,
+  gridSize: gridSize.value, gridLabels: gridLabels.value, routeDashed: routeEditor.routeDashed.value, routeColor: routeEditor.routeColor.value,
   calibrationPoints: referenceImage.calibrationPoints.value, calibrationMode: referenceImage.calibrationMode.value,
   compassVisible: compassVisible.value, scaleBarVisible: scaleBarVisible.value,
-  routeDraftPoints: routeEditor.routeDraftPoints, isDrawing: isDrawing.value,
+  routeDraftPoints: routeEditor.routeDraftPoints.value, isDrawing: isDrawing.value,
   drawingPolygon: drawingPolygon.value, currentPath: currentPath.value,
   brushMode: brushMode.value, brushSize: brushSize.value, isBrushing: isBrushing.value,
   brushStrokePoints: brushStrokePoints.value, mirrorMode: mirrorMode.value,
   mirrorAxis: mirrorAxis.value, mirrorAxisOffset: mirrorAxisOffset.value,
   splitSelectMode: splitSelectMode.value, splitPoints: splitPoints.value,
-  clusterBoxStart: clusterEditor.clusterBoxStart, clusterBoxEnd: clusterEditor.clusterBoxEnd,
+  clusterBoxStart: clusterEditor.clusterBoxStart.value, clusterBoxEnd: clusterEditor.clusterBoxEnd.value,
   boxSelectStart: boxSelectStart.value, boxSelectEnd: boxSelectEnd.value,
   isBoxSelecting: isBoxSelecting.value, edgeSnapPreview: edgeSnapPreview.value,
   placeRegionMap: renderer.isFastMode() ? EMPTY_REGION_MAP : placeRegionMap.value,
@@ -1112,18 +1118,18 @@ const getState = () => ({
   isBoxSelecting: isBoxSelecting.value, boxSelectStart: boxSelectStart.value, boxSelectEnd: boxSelectEnd.value,
   isBrushing: isBrushing.value, brushLastPoint: brushLastPoint.value, brushStrokePoints: brushStrokePoints.value,
   isDrawingActive: isDrawingActive.value, currentPath: currentPath.value,
-  clusterBoxStart: clusterEditor.clusterBoxStart, clusterBoxEnd: clusterEditor.clusterBoxEnd,
+  clusterBoxStart: clusterEditor.clusterBoxStart.value, clusterBoxEnd: clusterEditor.clusterBoxEnd.value,
   dragObject: dragObject.value, dragRegionAnchor: dragRegionAnchor.value,
   selectedProvince: selectedProvince.value, selectedRegion: selectedRegion.value,
   selectedMarker: selectedMarker.value, selectedRoute: selectedRoute.value,
   selectedTextLabel: selectedTextLabel.value, selectedPlaceIds: selectedPlaceIds.value,
-  selectedMarkerType: markerEditor.selectedMarkerType, splitPoints: splitPoints.value,
+  selectedMarkerType: markerEditor.selectedMarkerType.value, splitPoints: splitPoints.value,
   mergeTargetId: mergeTargetId.value, drawingPolygon: drawingPolygon.value,
   refDragStart: refDragStart.value, refDragStartWorld: refDragStartWorld.value,
   isDraggingPlaces: isDraggingPlaces.value, placesDragStart: placesDragStart.value,
-  referenceImage: referenceImage.referenceImage, currentMapData: currentMapData.value, places: places.value,
-  planetId: props.planet.id, brushSize: brushSize.value, textFontSize: textEditor.textFontSize,
-  textColor: textEditor.textColor, markerTypes: markerEditor.markerTypes, zoom: renderer.viewTransform.scale,
+  referenceImage: referenceImage.referenceImage.value, currentMapData: currentMapData.value, places: places.value,
+  planetId: props.planet.id, brushSize: brushSize.value, textFontSize: textEditor.textFontSize.value,
+  textColor: textEditor.textColor.value, markerTypes: markerEditor.markerTypes, zoom: renderer.viewTransform.scale,
   multiSel: multiSel.value, smartGuidesEnabled: smartGuidesEnabled.value,
   transformDrag: batchSelection.transformDrag.value, isShiftToggled: (id, type) => isShiftToggleActive(id, type),
   hitTestSelectionHandle: (wx, wy) => hitTestModule.hitTestSelectionHandle(wx, wy),
@@ -1142,8 +1148,8 @@ const interactions = createPlanetInteractions(getState, {
   clearBrush() { brushDrawing.clearBrush(); },
   startDrawing(p) { isDrawingActive.value = true; currentPath.value = [p]; },
   clearDrawing() { isDrawingActive.value = false; edgeSnapPreview.value = null; currentPath.value = []; },
-  setClusterBox(p) { clusterEditor.clusterBoxStart = { ...p }; clusterEditor.clusterBoxEnd = { ...p }; },
-  setClusterBoxEnd(p) { clusterEditor.clusterBoxEnd = { ...p }; },
+  setClusterBox(p) { clusterEditor.clusterBoxStart.value = { ...p }; clusterEditor.clusterBoxEnd.value = { ...p }; },
+  setClusterBoxEnd(p) { clusterEditor.clusterBoxEnd.value = { ...p }; },
   startBoxSelect(p) { isBoxSelecting.value = true; boxSelectStart.value = { ...p }; boxSelectEnd.value = { ...p }; },
   setBoxSelectEnd(p) { boxSelectEnd.value = { ...p }; },
   clearBoxSelect() { isBoxSelecting.value = false; boxSelectStart.value = null; boxSelectEnd.value = null; },
@@ -1281,12 +1287,12 @@ const renderer = useCanvasRenderer(canvas, {
       const m = hit.marker;
       items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('marker', m); } });
       items.push({ key: 'ctx-marker-copy', label: '复制标记', icon: '📋', action: () => { setClipboard('markers', [m], 'planet'); } });
-      items.push({ key: 'ctx-marker-del', label: '删除标记', icon: '🗑', danger: true, action: () => { store.removeMarker(props.planet.id, m.id); if (selectedMarker.value?.id === m.id) selectedMarker.value = null; emit('dirty', true); renderer.requestRender(); } });
+      items.push({ key: 'ctx-marker-del', label: '删除标记', icon: '🗑', danger: true, action: () => { if (!confirm(`确定删除标记「${m.name || '未命名'}」吗？`)) return; store.removeMarker(props.planet.id, m.id); if (selectedMarker.value?.id === m.id) selectedMarker.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (hit?.type === 'textLabel') {
       const l = hit.label;
       items.push({ key: 'ctx-text-edit', label: '编辑文本', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('textLabel', l); startInlineTextEdit(l); } });
       items.push({ key: 'ctx-text-copy', label: '复制文本', icon: '📋', action: () => { setClipboard('textLabels', [l], 'planet'); } });
-      items.push({ key: 'ctx-text-del', label: '删除文本', icon: '🗑', danger: true, action: () => { store.removeTextLabel(props.planet.id, l.id); if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null; emit('dirty', true); renderer.requestRender(); } });
+      items.push({ key: 'ctx-text-del', label: '删除文本', icon: '🗑', danger: true, action: () => { if (!confirm(`确定删除文本「${l.text || l.name || '未命名'}」吗？`)) return; store.removeTextLabel(props.planet.id, l.id); if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (!hit) {
       const clip = getClipboard();
       if (clip && ['markers', 'textLabels', 'planetObjects'].includes(clip.kind)) { items.push({ key: 'ctx-paste', label: '粘贴', icon: '📋', action: () => pasteClipboard() }); }
@@ -1409,12 +1415,64 @@ const performSplit = (pA, pB) => provinceSplitMerge.performSplit(pA, pB, selecte
 const performMerge = (idA, idB) => provinceSplitMerge.performMerge(idA, idB, selectedProvince);
 const terrainTypes = provinceEditor.terrainTypes;
 
+// ===== 编辑器 ref 成员顶层解构（陷阱 #54：setupState 嵌套 ref 不自动解包 =====
+// 模板中 clusterEditor.editingClusterName 这类嵌套 ref 拿到的是 Ref 壳（恒真/恒 undefined），
+// 曾导致簇编辑对话框永久挂载锁死全屏、v-model 显示 [object Object]。
+// 顶层解构后模板自动解包，v-model 赋值也回到正常 ref 语义。
+const clusterEditorOpen = clusterEditor.clusterEditorOpen;
+const editingCluster = clusterEditor.editingCluster;
+const editingClusterName = clusterEditor.editingClusterName;
+const editingClusterColor = clusterEditor.editingClusterColor;
+const clusterPanelOpen = clusterEditor.clusterPanelOpen;
+const activeClusterId = clusterEditor.activeClusterId;
+const hoverMemberId = clusterEditor.hoverMemberId;
+const clusterSelectMode = clusterEditor.clusterSelectMode;
+const { saveCluster, enterClusterMode, focusCluster, toggleClusterCollapse, openClusterEditor, disbandCluster, selectClusterMember } = clusterEditor;
+// 省份/区域/标记/路线/文本编辑器同类隐患统一解构
+const editingName = provinceEditor.editingName;
+const editingDescription = provinceEditor.editingDescription;
+const { updateProvinceName, updateProvinceDescription, updateTerrainType, updateTerrainField } = provinceEditor;
+const editingRegionName = regionEditor.editingRegionName;
+const editingRegionDescription = regionEditor.editingRegionDescription;
+const { updateRegionName, updateRegionColor, updateRegionDescription } = regionEditor;
+const editingMarkerName = markerEditor.editingMarkerName;
+const editingMarkerDesc = markerEditor.editingMarkerDesc;
+const editingMarkerIcon = markerEditor.editingMarkerIcon;
+const selectedMarkerType = markerEditor.selectedMarkerType;
+const { updateMarkerName, updateMarkerType, updateMarkerIcon, updateMarkerColor, updateMarkerDesc } = markerEditor;
+const editingRouteName = routeEditor.editingRouteName;
+const editingRouteLabel = routeEditor.editingRouteLabel;
+const editingRouteDesc = routeEditor.editingRouteDesc;
+const editingRouteOffsetX = routeEditor.editingRouteOffsetX;
+const editingRouteOffsetY = routeEditor.editingRouteOffsetY;
+const routeColor = routeEditor.routeColor;
+const routeDashed = routeEditor.routeDashed;
+const { updateRouteName, updateRouteLabel, updateRouteDesc, updateRouteColor, updateRouteOffset, updateRouteDashed, resetRouteOffset } = routeEditor;
+const editingTextContent = textEditor.editingTextContent;
+const textFontSize = textEditor.textFontSize;
+const textColor = textEditor.textColor;
+const { updateTextContent, updateTextFontSize, updateTextColor } = textEditor;
+// 参考图面板（referenceImage 同名嵌套引用丑陋且踩同一陷阱，全部顶层化）
+const showRefImagePanel = referenceImage.showRefImagePanel;
+const refImageLoading = referenceImage.refImageLoading;
+const refDragMode = referenceImage.refDragMode;
+const showExtraLayers = referenceImage.showExtraLayers;
+const refOpacity = referenceImage.refOpacity;
+const refScale = referenceImage.refScale;
+const activeRefIndex = referenceImage.activeRefIndex;
+const referenceImages = referenceImage.referenceImages;
+const activeRefImage = referenceImage.referenceImage;
+const calibrationMode = referenceImage.calibrationMode;
+const calibrationPoints = referenceImage.calibrationPoints;
+const calibrationDist = referenceImage.calibrationDist;
+const { importReferenceImage, updateRefOpacity, updateRefScale, rotateRefImage, flipRefImageH, removeRefListItem, removeReferenceImage, toggleRefLocked, startCalibration } = referenceImage;
+
 // ===== 键盘快捷键 composable =====
 const keyboardShortcuts = useKeyboardShortcuts({
   store, props, emit, renderer,
   selectedProvince, selectedMarker, selectedTextLabel,
   exportStatus, splitSelectMode, mergeSelectMode, editMode,
-  copySelection, pasteClipboard,
+  copySelection, pasteClipboard, deleteSelected,
 });
 
 // ===== 网格吸附 =====
@@ -1447,7 +1505,7 @@ function setInteractionMode(mode) {
   interactionMode.value = mode;
   setStatus({ toolLabel: mode === 'pan' ? '浏览' : mode === 'move' ? '移动' : '绘制' });
   brushMode.value = false; floodFillMode.value = false; isBrushing.value = false; brushLastPoint.value = null; brushStrokePoints.value = []; drawingPolygon.value = null; isDrawingActive.value = false; currentPath.value = [];
-  clusterEditor.clusterSelectMode = false; clusterEditor.clusterBoxStart = null; clusterEditor.clusterBoxEnd = null;
+  clusterEditor.clusterSelectMode.value = false; clusterEditor.clusterBoxStart.value = null; clusterEditor.clusterBoxEnd.value = null;
   dragObject.value = null; dragRegionAnchor.value = null; edgeSnapPreview.value = null;
   splitSelectMode.value = false; splitPoints.value = []; mergeSelectMode.value = false; mergeTargetId.value = null;
   renderer.requestRender();
@@ -1581,9 +1639,9 @@ function exitEditMode() {
   selectedRoute.value = null;
   selectedTextLabel.value = null;
   referenceImage.refDragMode.value = false;
-  clusterEditor.clusterSelectMode = false;
-  clusterEditor.clusterBoxStart = null;
-  clusterEditor.clusterBoxEnd = null;
+  clusterEditor.clusterSelectMode.value = false;
+  clusterEditor.clusterBoxStart.value = null;
+  clusterEditor.clusterBoxEnd.value = null;
   brushDrawing.brushMode.value = false;
   brushDrawing.isBrushing.value = false;
   brushDrawing.brushLastPoint.value = null;
@@ -1630,29 +1688,39 @@ function deleteSelected() {
     return;
   }
   if (selectedProvince.value) {
-    store.removeTerrainPolygon(props.planet.id, selectedProvince.value.id);
-    selectedProvince.value = null;
-    emit('dirty', true);
+    if (confirm(`确定删除地形「${selectedProvince.value.name || '未命名'}」吗？`)) {
+      store.removeTerrainPolygon(props.planet.id, selectedProvince.value.id);
+      selectedProvince.value = null;
+      emit('dirty', true);
+    }
   }
   if (selectedRegion.value) {
-    store.removeRegion(props.planet.id, selectedRegion.value.id);
-    selectedRegion.value = null;
-    emit('dirty', true);
+    if (confirm(`确定删除区域「${selectedRegion.value.name || '未命名'}」吗？`)) {
+      store.removeRegion(props.planet.id, selectedRegion.value.id);
+      selectedRegion.value = null;
+      emit('dirty', true);
+    }
   }
   if (selectedMarker.value) {
-    store.removeMarker(props.planet.id, selectedMarker.value.id);
-    selectedMarker.value = null;
-    emit('dirty', true);
+    if (confirm(`确定删除标记「${selectedMarker.value.name || '未命名'}」吗？`)) {
+      store.removeMarker(props.planet.id, selectedMarker.value.id);
+      selectedMarker.value = null;
+      emit('dirty', true);
+    }
   }
   if (selectedRoute.value) {
-    store.removeRoute(props.planet.id, selectedRoute.value.id);
-    selectedRoute.value = null;
-    emit('dirty', true);
+    if (confirm(`确定删除路线「${selectedRoute.value.name || '未命名'}」吗？`)) {
+      store.removeRoute(props.planet.id, selectedRoute.value.id);
+      selectedRoute.value = null;
+      emit('dirty', true);
+    }
   }
   if (selectedTextLabel.value) {
-    store.removeTextLabel(props.planet.id, selectedTextLabel.value.id);
-    selectedTextLabel.value = null;
-    emit('dirty', true);
+    if (confirm(`确定删除文本「${selectedTextLabel.value.text || selectedTextLabel.value.name || '未命名'}」吗？`)) {
+      store.removeTextLabel(props.planet.id, selectedTextLabel.value.id);
+      selectedTextLabel.value = null;
+      emit('dirty', true);
+    }
   }
   renderer.requestRender();
 }
@@ -2292,8 +2360,16 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 11px;
-  color: white;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  /* 默认深底浅字保证可读（此前无背景绑定的按钮白字透玻璃底不可读，2026-09-08 用户实测） */
+  background: var(--planet-editor-bg, #1f2937);
+  color: var(--planet-text-primary, #e5e7eb);
+  text-shadow: none;
+}
+/* 有自身彩底的按钮(区域颜色/地形类型)仍用白字 */
+.terrain-picker button.color-btn,
+.terrain-picker button[style*="background"] {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
 }
 
 .terrain-picker button.active {
@@ -2626,11 +2702,16 @@ canvas {
   padding: 4px 0;
   border: 2px solid transparent;
   border-radius: 3px;
-  color: #fff;
   font-size: 10px;
   cursor: pointer;
   opacity: 0.85;
   transition: all 0.15s;
+  /* 默认深底兜底: 未带 style 彩底绑定的按钮白字不可读 */
+  background: var(--planet-editor-bg, #1f2937);
+  color: var(--planet-text-primary, #e5e7eb);
+}
+.terrain-selector button[style*="background"] {
+  color: #fff;
 }
 .terrain-selector button:hover { opacity: 1; }
 .terrain-selector button.active {

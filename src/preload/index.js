@@ -1,17 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const path = require('path');
 
-// 版本号：优先读取打包进 asar 的 package.json（preload 位于 app.asar/dist/electron/preload，
-// 上溯 3 级即 app.asar/package.json），该文件由 electron-builder 在构建时写入真实版本号；
-// 回退到构建环境注入的 npm_package_version；最后用中性常量。
-// 注意：禁止 require('../../package.json')（指向不存在的 dist/package.json 会抛错），
-// 更禁止 require('electron').app.getVersion()（contextIsolation preload 中 app 为 undefined，必抛）。
+// 版本号：读取打包进 asar 的 package.json。preload 位于 app.asar/src/preload，
+// 上溯 2 级即 app.asar/package.json（electron-builder 构建时写入真实版本号）。
+// ⚠️ 曾写 '../../../'（按旧 dist/electron 结构算的 3 级），打包后落到 resources/，
+// require 必抛 → 静默回退硬编码 '0.1.3' → 版本升了面板仍显示 0.1.3（2026-09-08 用户实测）。
+// 回退：npm_package_version（electron-builder 打包时不注入，仅 dev 生效）→ 中性常量。
+// 仍禁止 require('electron').app.getVersion()（contextIsolation preload 中 app 为 undefined，必抛）。
 const APP_VERSION = (function () {
   try {
-    const pj = require(path.join(__dirname, '../../../package.json'));
+    const pj = require(path.join(__dirname, '../../package.json'));
     if (pj && pj.version) return pj.version;
   } catch (e) { /* 忽略：极端环境防护 */ }
-  return process.env.npm_package_version || '0.1.3';
+  return process.env.npm_package_version || '0.1.4';
 })();
 
 contextBridge.exposeInMainWorld('sitianAPI', {
