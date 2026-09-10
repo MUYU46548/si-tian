@@ -14,8 +14,8 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     import time
 
-    # 1. 打开设置面板（world 视图的 ⚙ 按钮）
-    opened = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('⚙')); if (!b) return 'no-btn'; b.click(); return 'ok'; })()")
+    # 1. 打开设置面板（world 视图的设置按钮）
+    opened = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.title === '设置'); if (!b) return 'no-btn'; b.click(); return 'ok'; })()")
     if opened != 'ok':
         return False, f'设置面板按钮未找到: {opened}'
     time.sleep(0.5)

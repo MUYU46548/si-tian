@@ -135,21 +135,21 @@
         <span class="toolbar-divider"></span>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
-        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)">⏱</button>
-        <button @click="reextract" title="重新提取">↻</button>
-        <button @click="saveData" :disabled="!dirty" title="保存">💾</button>
+        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)"><Icon name="history" :size="15"/></button>
+        <button @click="reextract" title="重新提取"><Icon name="refresh" :size="15"/></button>
+        <button @click="saveData" :disabled="!dirty" title="保存"><Icon name="save" :size="15"/></button>
         <span class="toolbar-divider"></span>
-        <button v-if="store.viewLevel !== 'world'" @click="toggleLayersPanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }">☷</button>
-        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }">📌</button>
+        <button v-if="store.viewLevel !== 'world'" @click="toggleLayersPanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }"><Icon name="layers" :size="15"/></button>
+        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }"><Icon name="bookmark" :size="15"/></button>
         <span class="toolbar-divider"></span>
-        <button @click="panelsStore.toggle('export')" title="导出">📥</button>
+        <button @click="panelsStore.toggle('export')" title="导出"><Icon name="download" :size="15"/></button>
         <span class="toolbar-divider"></span>
-        <button @click="settingsPanelRef?.open()" title="设置">⚙️</button>
+        <button @click="settingsPanelRef?.open()" title="设置"><Icon name="settings" :size="15"/></button>
         <button @click="aboutPanelRef?.open()" title="帮助 (F1)">?</button>
-        <button @click="keyboardShortcutsRef?.open()" title="快捷键 (Ctrl+?)">⌨</button>
-        <button @click="changeLogRef?.open()" title="变更日志">📋</button>
-        <button @click="validateDataIntegrity" title="数据检查">🔍</button>
-        <button @click="toggleTheme" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`">{{ currentTheme === 'dark' ? '🌙' : '☀️' }}</button>
+        <button @click="keyboardShortcutsRef?.open()" title="快捷键 (Ctrl+?)"><Icon name="keyboard" :size="15"/></button>
+        <button @click="changeLogRef?.open()" title="变更日志"><Icon name="clipboard" :size="15"/></button>
+        <button @click="validateDataIntegrity" title="数据检查"><Icon name="search" :size="15"/></button>
+        <button @click="toggleTheme" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`"><Icon :name="currentTheme === 'dark' ? 'moon' : 'sun'" :size="15"/></button>
         <span class="status">{{ statusText }}</span>
       </div>
     </header>
@@ -325,6 +325,7 @@ import { useLayersStore } from './store/layers';
 import { useTheme } from './composables/useTheme';
 import { useBookmarks } from './composables/useBookmarks';
 import { measurePerformance, cleanupTestNodes } from './utils/stressTest';
+import Icon from './components/Icon.vue';
 
 const store = useGeodataStore();
 const layersStore = useLayersStore();

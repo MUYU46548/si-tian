@@ -3,7 +3,7 @@
     <div class="about-panel">
       <div class="about-header">
         <div class="about-logo">
-          <span class="logo-icon">🌌</span>
+          <span class="logo-icon"><Icon name="sparkles" :size="24"/></span>
           <div class="logo-info">
             <h2>SiTian</h2>
             <span class="version" :title="'点击复制版本号'" style="cursor: pointer;" @click="copyVersion">{{ copiedVersion ? '已复制 ✓' : `v${appVersion}` }}</span>
@@ -25,7 +25,7 @@
 
         <!-- 快速开始 -->
         <section class="about-section">
-          <h3>📖 快速开始</h3>
+          <h3><Icon name="book" :size="16" style="margin-right:6px"/>快速开始</h3>
           <ul class="guide-list">
             <li><b>五层视图导航</b>：世界卡片 → 星域地图 → 域内星系总览 → 单系详情 → 行星地图</li>
             <li><b>区域与建筑</b>：行星地图中点击聚落进入区域地图，再下钻建筑内部</li>
@@ -37,7 +37,7 @@
 
         <!-- 快捷键 -->
         <section class="about-section">
-          <h3>⌨️ 快捷键</h3>
+          <h3><Icon name="keyboard" :size="16" style="margin-right:6px"/>快捷键</h3>
           <div class="shortcuts-grid">
             <div class="shortcut-item">
               <kbd>Ctrl</kbd> + <kbd>Z</kbd>
@@ -80,31 +80,31 @@
 
         <!-- 行星地图编辑 -->
         <section class="about-section">
-          <h3>🛠 行星地图编辑</h3>
+          <h3><Icon name="tools" :size="16" style="margin-right:6px"/>行星地图编辑</h3>
           <div class="edit-modes">
             <div class="mode-item">
-              <span class="mode-icon">✏️</span>
+              <span class="mode-icon"><Icon name="pencil" :size="16"/></span>
               <div class="mode-info">
                 <span class="mode-name">自由绘制</span>
                 <span class="mode-desc">按住拖动绘制省份边界，松开自动闭合</span>
               </div>
             </div>
             <div class="mode-item">
-              <span class="mode-icon">📐</span>
+              <span class="mode-icon"><Icon name="ruler" :size="16"/></span>
               <div class="mode-info">
                 <span class="mode-name">点击描点</span>
                 <span class="mode-desc">逐点放置顶点，双击闭合多边形</span>
               </div>
             </div>
             <div class="mode-item">
-              <span class="mode-icon">▣</span>
+              <span class="mode-icon"><Icon name="square" :size="16"/></span>
               <div class="mode-info">
                 <span class="mode-name">区域填充</span>
                 <span class="mode-desc">点击空白处自动生成不重叠区域</span>
               </div>
             </div>
             <div class="mode-item">
-              <span class="mode-icon">🧲</span>
+              <span class="mode-icon"><Icon name="magnet" :size="16"/></span>
               <div class="mode-info">
                 <span class="mode-name">边缘吸附</span>
                 <span class="mode-desc">自动贴合相邻省份边界</span>
@@ -115,7 +115,7 @@
 
         <!-- 数据来源 -->
         <section class="about-section">
-          <h3>📂 数据来源</h3>
+          <h3><Icon name="folder" :size="16" style="margin-right:6px"/>数据来源</h3>
           <div class="data-info">
             <div class="data-row">
               <span class="data-label">Obsidian 知识库</span>
@@ -138,7 +138,7 @@
 
         <!-- 技术栈 -->
         <section class="about-section">
-          <h3>🔧 技术栈</h3>
+          <h3><Icon name="wrench" :size="16" style="margin-right:6px"/>技术栈</h3>
           <div class="tech-tags">
             <span class="tech-tag">Electron 28</span>
             <span class="tech-tag">Vue 3</span>
@@ -179,6 +179,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import Icon from './Icon.vue';
 
 const isOpen = ref(false);
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
