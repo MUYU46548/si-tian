@@ -85,4 +85,8 @@ function getIsQuitting() {
   return isQuitting;
 }
 
-module.exports = { createTray, destroyTray, getIsQuitting };
+function setIsQuitting(value) {
+  isQuitting = value;
+}
+
+module.exports = { createTray, destroyTray, getIsQuitting, setIsQuitting };

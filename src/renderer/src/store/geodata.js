@@ -414,15 +414,32 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   // ===== 剧本地图持久化（独立文件 scenarios.json）=====
+  const saveStatus = ref('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+  let saveStatusTimer = null;
+
   async function saveScenarios() {
     if (!scenarioEditingModule) return;
-    const data = JSON.parse(JSON.stringify({
-      version: 2,
-      baseMaps: scenarioEditingModule.baseMaps.value,
-      scenarios: scenarioEditingModule.scenarios.value,
-      updatedAt: new Date().toISOString()
-    }));
-    await window.sitianAPI.saveScenarios(data);
+    saveStatus.value = 'saving';
+    try {
+      const data = JSON.parse(JSON.stringify({
+        version: 2,
+        baseMaps: scenarioEditingModule.baseMaps.value,
+        scenarios: scenarioEditingModule.scenarios.value,
+        updatedAt: new Date().toISOString()
+      }));
+      await window.sitianAPI.saveScenarios(data);
+      saveStatus.value = 'saved';
+      if (saveStatusTimer) clearTimeout(saveStatusTimer);
+      saveStatusTimer = setTimeout(() => {
+        if (saveStatus.value === 'saved') saveStatus.value = 'idle';
+      }, 3000);
+    } catch (err) {
+      saveStatus.value = 'error';
+      if (saveStatusTimer) clearTimeout(saveStatusTimer);
+      saveStatusTimer = setTimeout(() => {
+        if (saveStatus.value === 'error') saveStatus.value = 'idle';
+      }, 5000);
+    }
   }
 
   // ===== 自动保存 =====
@@ -1053,6 +1070,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     toggleLayerFilter, isFilterOpen,
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
     loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
+    saveStatus,
     FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,
       addNode, removeNode, updateNode, reparentNode, reparentNodes,

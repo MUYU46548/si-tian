@@ -7,42 +7,51 @@
         <button 
           :class="{ active: tool === 'select' }" 
           @click="setTool('select')"
-          title="选择 (V)"
-        >↖</button>
+          title="选择 (V) — 拖动平移画布，点击选中省份"
+        >✋</button>
         <button 
           :class="{ active: tool === 'draw' }" 
           @click="setTool('draw')"
-          title="绘制省份 (B)"
+          title="绘制省份 (B) — 点击添加顶点，双击完成"
         >✎</button>
+        <button 
+          :class="{ active: tool === 'vertex' }" 
+          @click="setTool('vertex')"
+          title="顶点编辑 (G) — 拖拽省份顶点调整形状，点击边插入顶点"
+        >⬡</button>
         <button 
           :class="{ active: tool === 'split' }" 
           @click="setTool('split')"
-          title="拆分省份 (X)"
+          title="拆分省份 (X) — 点击两个点定义分割线"
         >✂</button>
         <button 
           :class="{ active: tool === 'merge' }" 
           @click="setTool('merge')"
-          title="合并省份 (M)"
+          title="合并省份 (M) — 依次点击两个省份"
         >⊕</button>
         <button 
-          v-if="viewMode === 'scenario'"
           :class="{ active: tool === 'paint' }" 
           @click="setTool('paint')"
-          title="势力油漆桶 (P)"
+          title="势力油漆桶 (P) — 点击省份指派势力"
         >🎨</button>
         <button 
-          v-if="viewMode === 'scenario'"
           :class="{ active: tool === 'label' }" 
           @click="setTool('label')"
-          title="历史地名 (T)"
+          title="历史地名 (T) — 点击放置文字标记"
         >🏷</button>
+        <button 
+          :class="{ active: tool === 'erase' }" 
+          @click="setTool('erase')"
+          title="删除 (E) — 点击省份删除"
+        >🗑</button>
       </div>
       <div class="tool-group">
-        <button @click="addReferenceImage" title="添加参考图">🖼</button>
         <button @click="triggerMapImport" title="导入 .map 底图">🗺</button>
-        <button @click="handleUndo" :disabled="!canUndo" title="撤销 (Ctrl+Z)">↶</button>
-        <button @click="handleRedo" :disabled="!canRedo" title="重做 (Ctrl+Y)">↷</button>
-        <button @click="exportPNG" title="导出 PNG">💾</button>
+        <button @click="fitToView" title="适应画布 (F)">⊞</button>
+        <button @click="exportPNG" title="导出 PNG 图片">📥</button>
+        <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': store.saveStatus.value === 'saving' }">
+          {{ store.saveStatus.value === 'saving' ? '⏳' : (store.saveStatus.value === 'saved' ? '✅' : '💾') }}
+        </button>
       </div>
       <div class="tool-group">
         <label>模式：</label>
@@ -50,6 +59,12 @@
           <option value="base">底图编辑</option>
           <option value="scenario">剧本模式</option>
         </select>
+      </div>
+      <div class="tool-group">
+        <label>图层：</label>
+        <label class="check-label"><input type="checkbox" v-model="showBiomes" /> 生物群系</label>
+        <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
+        <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
       </div>
       <div class="tool-group">
         <button @click="showScenarioManager = true" title="剧本管理">📜</button>
@@ -75,6 +90,7 @@
 
     <!-- 势力色板（剧本模式） -->
     <div v-if="viewMode === 'scenario' && selectedScenario" class="polity-palette">
+      <span class="palette-title">势力：</span>
       <div 
         v-for="polity in selectedScenario.polities" 
         :key="polity.id"
@@ -85,6 +101,7 @@
         :title="polity.name"
       >
         {{ polity.name?.charAt(0) || '?' }}
+        <span class="polity-name">{{ polity.name }}</span>
       </div>
       <div 
         class="polity-swatch clear"
@@ -96,14 +113,76 @@
 
     <!-- 画布 -->
     <div class="scenario-canvas-wrap" ref="canvasWrap">
-      <canvas ref="canvas" @click="onCanvasClick"></canvas>
+      <canvas ref="canvas"></canvas>
     </div>
 
     <!-- 状态栏 -->
     <div class="scenario-status-bar">
       <span>{{ statusText }}</span>
+      <span>缩放: {{ (cameraScale * 100).toFixed(0) }}%</span>
+      <span v-if="selectedProvince" class="selected-province">已选：{{ selectedProvince.name }}（{{ selectedProvince.biome || '未分类' }}）</span>
+      <span v-if="drawPoints.length > 0" class="draw-hint">绘制中: {{ drawPoints.length }} 个点 (双击完成, Esc 取消)</span>
+      <span v-if="splitStep > 0" class="draw-hint">拆分: 点击第 {{ splitStep + 1 }} 个点</span>
+      <span v-if="mergeStep > 0" class="draw-hint">合并: 点击第 {{ mergeStep + 1 }} 个省份</span>
+      <span v-if="vertexEditMode" class="draw-hint">顶点编辑：拖拽顶点 | 点击边插入 | 右键顶点删除</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
       <span v-if="selectedPolity" class="selected-polity">已选势力：<span class="polity-dot" :style="{ background: selectedPolity.color }"></span>{{ selectedPolity.name }}</span>
+      <span class="save-status" :class="store.saveStatus.value">
+        <template v-if="store.saveStatus.value === 'saving'">💾 保存中...</template>
+        <template v-else-if="store.saveStatus.value === 'saved'">✅ 已保存</template>
+        <template v-else-if="store.saveStatus.value === 'error'">❌ 保存失败</template>
+        <template v-else>💾 自动保存</template>
+      </span>
+    </div>
+
+    <!-- 省份右键菜单 -->
+    <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
+      <div class="ctx-item" @click="ctxRenameProvince">✎ 重命名</div>
+      <div class="ctx-item" @click="ctxChangeBiome">🎨 更改生物群系</div>
+      <div class="ctx-item" @click="ctxDuplicateProvince">⧉ 复制省份</div>
+      <div class="ctx-item danger" @click="ctxDeleteProvince">🗑 删除</div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item disabled" v-if="selectedProvince">
+        {{ selectedProvince.name }} · {{ selectedProvince.biome || '未分类' }}
+      </div>
+    </div>
+
+    <!-- 省份属性面板 -->
+    <div v-if="selectedProvince && showProps" class="province-props">
+      <div class="props-header">
+        <input v-model="selectedProvince.name" @input="onProvinceNameChange" class="props-name" />
+        <button @click="showProps = false" class="props-close">✕</button>
+      </div>
+      <div class="props-row">
+        <label>生物群系：</label>
+        <select v-model="selectedProvince.biome" @change="onProvinceBiomeChange">
+          <option value="">未分类</option>
+          <option value="ocean">海洋</option>
+          <option value="hot_desert">热沙漠</option>
+          <option value="cold_desert">冷沙漠</option>
+          <option value="savanna">热带草原</option>
+          <option value="grassland">草原</option>
+          <option value="tropical_seasonal">热带季雨林</option>
+          <option value="temperate_deciduous">温带落叶林</option>
+          <option value="tropical_rainforest">热带雨林</option>
+          <option value="temperate_rainforest">温带雨林</option>
+          <option value="taiga">针叶林</option>
+          <option value="tundra">冻原</option>
+          <option value="glacier">冰川</option>
+          <option value="wetland">湿地</option>
+        </select>
+      </div>
+      <div class="props-row">
+        <label>文化：</label>
+        <input v-model="selectedProvince.culture" @input="onProvinceCultureChange" placeholder="文化名称" />
+      </div>
+      <div class="props-row">
+        <label>海岸：</label>
+        <input type="checkbox" v-model="selectedProvince.coast" @change="onProvinceCoastChange" />
+      </div>
+      <div class="props-stats">
+        顶点数: {{ selectedProvince.points?.length || 0 }}
+      </div>
     </div>
 
     <!-- 剧本管理对话框 -->
@@ -173,9 +252,52 @@ const baseMapKey = ref('德斯特星');
 const selectedScenario = ref(null);
 const selectedPolity = ref(null);
 const ctx = ref(null);
-const canUndo = ref(false);
-const canRedo = ref(false);
 const showScenarioManager = ref(false);
+
+// 图层可见性
+const showBiomes = ref(true);
+const showBorders = ref(true);
+const showLabels = ref(true);
+
+// 摄像机（pan/zoom）
+const cameraX = ref(0);
+const cameraY = ref(0);
+const cameraScale = ref(1);
+
+// 绘制/拆分/合并状态
+const drawPoints = ref([]);
+const splitStep = ref(0);
+const splitPoints = ref([]);
+const mergeStep = ref(0);
+const mergeProvId = ref(null);
+
+// 顶点编辑状态
+const vertexEditMode = ref(false);
+const draggingVertex = ref(null); // { provId, vertexIdx }
+const hoveredVertex = ref(null);
+
+// 右键菜单
+const contextMenu = ref({ show: false, x: 0, y: 0, provId: null });
+const showProps = ref(false);
+const selectedProvince = ref(null);
+
+// 生物群系颜色
+const BIOME_COLORS = {
+  ocean: '#2E86AB',
+  hot_desert: '#E9C46A',
+  cold_desert: '#B5B887',
+  savanna: '#D2D082',
+  grassland: '#C8D68F',
+  tropical_seasonal: '#B6D95D',
+  temperate_deciduous: '#29BC56',
+  tropical_rainforest: '#7DCB35',
+  temperate_rainforest: '#409C43',
+  taiga: '#4B6B32',
+  tundra: '#96784B',
+  glacier: '#D5E7EB',
+  wetland: '#0B9131',
+  land: '#A3C4BC',
+};
 
 const newScenario = ref({
   name: '',
@@ -199,11 +321,32 @@ const sortedScenarios = computed(() => {
 
 const statusText = computed(() => {
   if (!baseMap.value) return '未加载底图';
-  return `${baseMap.value.terrain?.length || 0} 省份 | ${baseMap.value.referenceImages?.length || 0} 参考图`;
+  return `${baseMap.value.terrain?.length || 0} 省份 | ${baseMap.value.heightmap?.biomes?.length || 0} 生物群系`;
 });
 
 function setTool(t) {
   tool.value = t;
+  drawPoints.value = [];
+  splitStep.value = 0;
+  splitPoints.value = [];
+  mergeStep.value = 0;
+  mergeProvId.value = null;
+  vertexEditMode.value = (t === 'vertex');
+  draggingVertex.value = null;
+  updateCursor();
+}
+
+function updateCursor() {
+  if (!canvas.value) return;
+  if (tool.value === 'select') canvas.value.style.cursor = 'grab';
+  else if (tool.value === 'draw') canvas.value.style.cursor = 'crosshair';
+  else if (tool.value === 'vertex') canvas.value.style.cursor = 'move';
+  else if (tool.value === 'split') canvas.value.style.cursor = 'cell';
+  else if (tool.value === 'merge') canvas.value.style.cursor = 'pointer';
+  else if (tool.value === 'paint') canvas.value.style.cursor = 'copy';
+  else if (tool.value === 'label') canvas.value.style.cursor = 'text';
+  else if (tool.value === 'erase') canvas.value.style.cursor = 'not-allowed';
+  else canvas.value.style.cursor = 'default';
 }
 
 function onModeChange() {
@@ -223,34 +366,387 @@ function selectPolity(p) {
   selectedPolity.value = p;
 }
 
+// ═══════════════════════════════════════════
+// 坐标转换
+// ═══════════════════════════════════════════
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - cameraX.value) / cameraScale.value,
+    y: (sy - cameraY.value) / cameraScale.value,
+  };
+}
+
+// ═══════════════════════════════════════════
+// Pan & Zoom
+// ═══════════════════════════════════════════
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+
+function onMouseDown(event) {
+  if (event.button === 2) return; // 右键留给 context menu
+  if (event.button === 0 && (tool.value === 'select' || tool.value === 'vertex')) {
+    // 顶点编辑模式：检查是否点到顶点
+    if (tool.value === 'vertex' && selectedProvince.value) {
+      const rect = canvas.value.getBoundingClientRect();
+      const sx = event.clientX - rect.left;
+      const sy = event.clientY - rect.top;
+      const world = screenToWorld(sx, sy);
+      const prov = selectedProvince.value;
+      const threshold = 8 / cameraScale.value;
+      for (let i = 0; i < prov.points.length; i++) {
+        const p = prov.points[i];
+        const dx = (p.x || p[0]) - world.x;
+        const dy = (p.y || p[1]) - world.y;
+        if (Math.sqrt(dx * dx + dy * dy) < threshold) {
+          draggingVertex.value = { provId: prov.id, vertexIdx: i };
+          canvas.value.style.cursor = 'grabbing';
+          return;
+        }
+      }
+    }
+    isPanning = true;
+    panStart = { x: event.clientX, y: event.clientY };
+    canvas.value.style.cursor = 'grabbing';
+  }
+}
+
+function onMouseMove(event) {
+  if (draggingVertex.value) {
+    const rect = canvas.value.getBoundingClientRect();
+    const sx = event.clientX - rect.left;
+    const sy = event.clientY - rect.top;
+    const world = screenToWorld(sx, sy);
+    const prov = baseMap.value?.terrain?.find(p => p.id === draggingVertex.value.provId);
+    if (prov && prov.points[draggingVertex.value.vertexIdx]) {
+      prov.points[draggingVertex.value.vertexIdx] = { x: world.x, y: world.y };
+      render();
+    }
+    return;
+  }
+  if (!isPanning) return;
+  const dx = event.clientX - panStart.x;
+  const dy = event.clientY - panStart.y;
+  cameraX.value += dx;
+  cameraY.value += dy;
+  panStart = { x: event.clientX, y: event.clientY };
+  render();
+}
+
+function onMouseUp() {
+  if (isPanning) {
+    isPanning = false;
+    updateCursor();
+  }
+  if (draggingVertex.value) {
+    draggingVertex.value = null;
+    // 保存修改
+    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { points: selectedProvince.value.points });
+    updateCursor();
+  }
+}
+
+function onWheel(event) {
+  event.preventDefault();
+  const rect = canvas.value.getBoundingClientRect();
+  const mx = event.clientX - rect.left;
+  const my = event.clientY - rect.top;
+  const worldBefore = screenToWorld(mx, my);
+  const zoomFactor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+  cameraScale.value = Math.max(0.1, Math.min(50, cameraScale.value * zoomFactor));
+  const worldAfter = screenToWorld(mx, my);
+  cameraX.value += (worldAfter.x - worldBefore.x) * cameraScale.value;
+  cameraY.value += (worldAfter.y - worldBefore.y) * cameraScale.value;
+  render();
+}
+
+function fitToView() {
+  if (!baseMap.value?.terrain?.length) return;
+  const terrain = baseMap.value.terrain;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const prov of terrain) {
+    if (!prov.points) continue;
+    for (const p of prov.points) {
+      const px = p.x || p[0] || 0;
+      const py = p.y || p[1] || 0;
+      if (px < minX) minX = px;
+      if (py < minY) minY = py;
+      if (px > maxX) maxX = px;
+      if (py > maxY) maxY = py;
+    }
+  }
+  if (!isFinite(minX)) return;
+  const w = canvasWrap.value.clientWidth;
+  const h = canvasWrap.value.clientHeight;
+  const padding = 40;
+  const bw = maxX - minX || 1;
+  const bh = maxY - minY || 1;
+  cameraScale.value = Math.min((w - padding * 2) / bw, (h - padding * 2) / bh);
+  cameraX.value = padding + (w - padding * 2 - bw * cameraScale.value) / 2 - minX * cameraScale.value;
+  cameraY.value = padding + (h - padding * 2 - bh * cameraScale.value) / 2 - minY * cameraScale.value;
+  render();
+}
+
+// ═══════════════════════════════════════════
+// 鼠标交互
+// ═══════════════════════════════════════════
 function onCanvasClick(event) {
-  if (viewMode.value !== 'scenario' || !selectedScenario.value) return;
+  if (event.button === 2) {
+    // 右键菜单
+    const rect = canvas.value.getBoundingClientRect();
+    const sx = event.clientX - rect.left;
+    const sy = event.clientY - rect.top;
+    const world = screenToWorld(sx, sy);
+    const prov = findProvinceAt(world.x, world.y);
+    if (prov) {
+      selectedProvince.value = prov;
+      contextMenu.value = { show: true, x: event.clientX - rect.left, y: event.clientY - rect.top, provId: prov.id };
+    }
+    return;
+  }
   
   const rect = canvas.value.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  
+  const sx = event.clientX - rect.left;
+  const sy = event.clientY - rect.top;
+  const world = screenToWorld(sx, sy);
+
+  if (tool.value === 'erase') {
+    const prov = findProvinceAt(world.x, world.y);
+    if (prov && confirm(`确定删除省份「${prov.name}」？`)) {
+      store.removeBaseProvince(baseMapKey.value, prov.id);
+      render();
+    }
+    return;
+  }
+
+  if (tool.value === 'vertex') {
+    // 选中省份
+    const prov = findProvinceAt(world.x, world.y);
+    if (prov) {
+      selectedProvince.value = prov;
+      showProps.value = true;
+    }
+    render();
+    return;
+  }
+
+  if (tool.value === 'draw') {
+    drawPoints.value = [...drawPoints.value, world];
+    render();
+    return;
+  }
+
+  if (tool.value === 'split') {
+    handleSplitClick(world);
+    return;
+  }
+
+  if (tool.value === 'merge') {
+    handleMergeClick(world);
+    return;
+  }
+
+  // 选择模式：选中/取消选中
+  if (tool.value === 'select') {
+    const prov = findProvinceAt(world.x, world.y);
+    selectedProvince.value = prov;
+    showProps.value = !!prov;
+    render();
+    return;
+  }
+
+  if (viewMode.value !== 'scenario' || !selectedScenario.value) return;
+
   if (tool.value === 'paint' && selectedPolity.value) {
-    // Find clicked province and assign polity
-    const prov = findProvinceAt(x, y);
+    const prov = findProvinceAt(world.x, world.y);
     if (prov) {
       store.setOwnership(selectedScenario.value.id, prov.id, selectedPolity.value.id);
       render();
     }
   } else if (tool.value === 'label') {
-    // Add historical label at click position
     const text = prompt('输入地名：');
     if (text) {
-      store.addScenarioLabel(selectedScenario.value.id, { x, y, text });
+      store.addScenarioLabel(selectedScenario.value.id, { x: world.x, y: world.y, text });
       render();
     }
   }
 }
 
+function onCanvasDblClick(event) {
+  if (tool.value === 'draw' && drawPoints.value.length >= 3) {
+    finishDraw();
+  }
+}
+
+function onKeyDown(event) {
+  if (event.key === 'Escape') {
+    drawPoints.value = [];
+    splitStep.value = 0;
+    splitPoints.value = [];
+    mergeStep.value = 0;
+    mergeProvId.value = null;
+    contextMenu.value.show = false;
+    render();
+  }
+  if (event.key === 'Enter' && tool.value === 'draw' && drawPoints.value.length >= 3) {
+    finishDraw();
+  }
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+  if (event.key === 'v' || event.key === 'V') setTool('select');
+  else if (event.key === 'b' || event.key === 'B') setTool('draw');
+  else if (event.key === 'g' || event.key === 'G') setTool('vertex');
+  else if (event.key === 'x' || event.key === 'X') setTool('split');
+  else if (event.key === 'm' || event.key === 'M') setTool('merge');
+  else if (event.key === 'p' || event.key === 'P') setTool('paint');
+  else if (event.key === 't' || event.key === 'T') setTool('label');
+  else if (event.key === 'e' || event.key === 'E') setTool('erase');
+  else if (event.key === 'f' || event.key === 'F') fitToView();
+}
+
+function finishDraw() {
+  const id = `prov_${Date.now()}`;
+  const points = drawPoints.value.map(p => ({ x: p.x, y: p.y }));
+  store.addBaseProvince(baseMapKey.value, {
+    id,
+    name: `新省份 ${baseMap.value?.terrain?.length + 1 || 1}`,
+    points,
+  });
+  drawPoints.value = [];
+  render();
+}
+
+function handleSplitClick(world) {
+  if (splitStep.value === 0) {
+    splitPoints.value = [world];
+    splitStep.value = 1;
+    render();
+  } else {
+    const p1 = splitPoints.value[0];
+    const p2 = world;
+    const terrain = baseMap.value?.terrain || [];
+    let targetProv = null;
+    for (const prov of terrain) {
+      if (prov.points && prov.points.length > 2) {
+        if (isPointInPolygon(p1.x, p1.y, prov.points) || isPointInPolygon(p2.x, p2.y, prov.points)) {
+          targetProv = prov;
+          break;
+        }
+      }
+    }
+    if (targetProv) {
+      const newProvs = splitProvinceByLine(targetProv, p1, p2);
+      if (newProvs) {
+        store.splitBaseProvince(baseMapKey.value, targetProv.id, newProvs[0], newProvs[1]);
+      }
+    }
+    splitStep.value = 0;
+    splitPoints.value = [];
+    render();
+  }
+}
+
+function handleMergeClick(world) {
+  const prov = findProvinceAt(world.x, world.y);
+  if (!prov) return;
+  if (mergeStep.value === 0) {
+    mergeProvId.value = prov.id;
+    mergeStep.value = 1;
+    render();
+  } else {
+    if (mergeProvId.value && mergeProvId.value !== prov.id) {
+      const terrain = baseMap.value?.terrain || [];
+      const provA = terrain.find(p => p.id === mergeProvId.value);
+      const provB = prov;
+      if (provA && provB) {
+        const hull = convexHull([...provA.points, ...provB.points]);
+        const id = `prov_${Date.now()}`;
+        store.mergeBaseProvinces(baseMapKey.value, [mergeProvId.value, provB.id], {
+          id,
+          name: `${provA.name}+${provB.name}`,
+          points: hull.map(p => ({ x: p.x || p[0], y: p.y || p[1] })),
+        });
+      }
+    }
+    mergeStep.value = 0;
+    mergeProvId.value = null;
+    render();
+  }
+}
+
+// ═══════════════════════════════════════════
+// 右键菜单
+// ═══════════════════════════════════════════
+function ctxRenameProvince() {
+  const name = prompt('省份名称：', selectedProvince.value?.name);
+  if (name && selectedProvince.value) {
+    selectedProvince.value.name = name;
+    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { name });
+    render();
+  }
+  contextMenu.value.show = false;
+}
+
+function ctxChangeBiome() {
+  const biomes = Object.keys(BIOME_COLORS);
+  const biome = prompt(`生物群系（${biomes.join('/')}）：`, selectedProvince.value?.biome || '');
+  if (biome && selectedProvince.value) {
+    selectedProvince.value.biome = biome;
+    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { biome });
+    render();
+  }
+  contextMenu.value.show = false;
+}
+
+function ctxDuplicateProvince() {
+  if (!selectedProvince.value) return;
+  const prov = selectedProvince.value;
+  const offset = 20 / cameraScale.value;
+  const newPoints = prov.points.map(p => ({ x: (p.x || p[0]) + offset, y: (p.y || p[1]) + offset }));
+  const id = `prov_${Date.now()}`;
+  store.addBaseProvince(baseMapKey.value, { id, name: prov.name + ' 副本', points: newPoints, biome: prov.biome, culture: prov.culture });
+  render();
+  contextMenu.value.show = false;
+}
+
+function ctxDeleteProvince() {
+  if (selectedProvince.value && confirm(`确定删除省份「${selectedProvince.value.name}」？`)) {
+    store.removeBaseProvince(baseMapKey.value, selectedProvince.value.id);
+    selectedProvince.value = null;
+    showProps.value = false;
+    render();
+  }
+  contextMenu.value.show = false;
+}
+
+function onProvinceNameChange() {
+  if (selectedProvince.value) {
+    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { name: selectedProvince.value.name });
+  }
+}
+
+function onProvinceBiomeChange() {
+  if (selectedProvince.value) {
+    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { biome: selectedProvince.value.biome });
+    render();
+  }
+}
+
+function onProvinceCultureChange() {
+  if (selectedProvince.value) {
+    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { culture: selectedProvince.value.culture });
+  }
+}
+
+function onProvinceCoastChange() {
+  if (selectedProvince.value) {
+    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { coast: selectedProvince.value.coast });
+  }
+}
+
+// ═══════════════════════════════════════════
+// 几何工具
+// ═══════════════════════════════════════════
 function findProvinceAt(x, y) {
-  // Simple hit test: check if point is inside any province polygon
   if (!baseMap.value?.terrain) return null;
-  
   for (const prov of baseMap.value.terrain) {
     if (prov.points && isPointInPolygon(x, y, prov.points)) {
       return prov;
@@ -266,7 +762,6 @@ function isPointInPolygon(px, py, points) {
     const yi = points[i].y || points[i][1];
     const xj = points[j].x || points[j][0];
     const yj = points[j].y || points[j][1];
-    
     if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
       inside = !inside;
     }
@@ -274,19 +769,63 @@ function isPointInPolygon(px, py, points) {
   return inside;
 }
 
-async function addReferenceImage() {
-  const result = await window.sitianAPI.selectReferenceImage();
-  if (result?.success) {
-    store.addBaseReferenceImage(baseMapKey.value, {
-      name: result.name,
-      dataUrl: result.dataUrl,
-    });
-    render();
+function splitProvinceByLine(prov, p1, p2) {
+  const points = prov.points.map(p => ({ x: p.x || p[0], y: p.y || p[1] }));
+  const side = [];
+  for (const p of points) {
+    const cross = (p2.x - p1.x) * (p.y - p1.y) - (p2.y - p1.y) * (p.x - p1.x);
+    side.push(cross >= 0 ? 1 : -1);
   }
+  const poly1 = [];
+  const poly2 = [];
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    if (side[i] >= 0) poly1.push(points[i]);
+    else poly2.push(points[i]);
+    if (side[i] !== side[j]) {
+      const denom = (points[j].x - points[i].x) * (p1.y - p2.y) - (points[j].y - points[i].y) * (p1.x - p2.x);
+      if (Math.abs(denom) > 1e-10) {
+        const t = ((p1.x - points[i].x) * (p1.y - p2.y) - (p1.y - points[i].y) * (p1.x - p2.x)) / denom;
+        if (t >= 0 && t <= 1) {
+          const ix = points[i].x + t * (points[j].x - points[i].x);
+          const iy = points[i].y + t * (points[j].y - points[i].y);
+          poly1.push({ x: ix, y: iy });
+          poly2.push({ x: ix, y: iy });
+        }
+      }
+    }
+  }
+  if (poly1.length < 3 || poly2.length < 3) return null;
+  return [
+    { id: `prov_${Date.now()}_a`, name: prov.name + ' (A)', points: poly1 },
+    { id: `prov_${Date.now()}_b`, name: prov.name + ' (B)', points: poly2 },
+  ];
 }
 
-// 触发文件选择 → 加载 .map 文件
-function triggerMapImport() {
+function convexHull(points) {
+  const pts = points.map(p => ({ x: p.x || p[0], y: p.y || p[1] })).filter(p => isFinite(p.x) && isFinite(p.y));
+  if (pts.length < 3) return pts;
+  pts.sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (const p of pts.reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
+// ═══════════════════════════════════════════
+// 导入
+// ═══════════════════════════════════════════
+async function triggerMapImport() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.map';
@@ -299,12 +838,12 @@ function triggerMapImport() {
       const name = file.name.replace(/\.map$/, '').replace(/\s*\d{4}-\d{2}-\d{2}.*$/, '');
       const json = buildScenariosJson(parsed, name, '当前');
       store.importFromScenariosJson(json);
-      // 自动切换到剧本模式并选中新建的场景
+      baseMapKey.value = name;
       if (json.scenarios[name + '/当前']) {
         selectedScenario.value = json.scenarios[name + '/当前'];
         viewMode.value = 'scenario';
       }
-      render();
+      setTimeout(fitToView, 50);
     } catch (err) {
       alert('导入失败: ' + err.message);
     }
@@ -312,51 +851,34 @@ function triggerMapImport() {
   input.click();
 }
 
-function handleUndo() {
-  // TODO: undo integration
+function manualSave() {
+  store.saveScenarios();
 }
 
-function handleRedo() {
-  // TODO: redo integration
-}
-
+// ═══════════════════════════════════════════
+// 剧本管理
+// ═══════════════════════════════════════════
 function createNewScenario() {
   const baseScenarioId = newScenario.value.inherit && sortedScenarios.value.length > 0
     ? sortedScenarios.value[sortedScenarios.value.length - 1].id
     : null;
-  
   const scenarioId = `${baseMapKey.value}/${newScenario.value.name}`;
-  
   if (baseScenarioId) {
     store.inheritScenario(scenarioId, baseScenarioId, {
       name: newScenario.value.name,
-      era: {
-        roman: newScenario.value.roman,
-        label: newScenario.value.label,
-        startYear: newScenario.value.startYear,
-        endYear: newScenario.value.endYear,
-      },
+      era: { roman: newScenario.value.roman, label: newScenario.value.label, startYear: newScenario.value.startYear, endYear: newScenario.value.endYear },
       description: newScenario.value.description,
     });
   } else {
     store.createScenario(scenarioId, {
       ownerKey: baseMapKey.value,
       name: newScenario.value.name,
-      era: {
-        roman: newScenario.value.roman,
-        label: newScenario.value.label,
-        startYear: newScenario.value.startYear,
-        endYear: newScenario.value.endYear,
-      },
+      era: { roman: newScenario.value.roman, label: newScenario.value.label, startYear: newScenario.value.startYear, endYear: newScenario.value.endYear },
       description: newScenario.value.description,
     });
   }
-  
-  // Reset form
   newScenario.value = { name: '', roman: '', label: '', startYear: '', endYear: '', description: '', inherit: true };
   showScenarioManager.value = false;
-  
-  // Select the new scenario
   const newS = store.getScenario(scenarioId);
   if (newS) selectScenario(newS);
 }
@@ -371,47 +893,89 @@ function deleteScenario(s) {
   }
 }
 
+// ═══════════════════════════════════════════
+// 渲染
+// ═══════════════════════════════════════════
 function render() {
   if (!ctx.value) return;
   const cvs = canvas.value;
   const w = cvs.width;
   const h = cvs.height;
-  
   ctx.value.clearRect(0, 0, w, h);
-  drawBackground(ctx.value, w, h);
+
+  ctx.value.save();
+  ctx.value.translate(cameraX.value, cameraY.value);
+  ctx.value.scale(cameraScale.value, cameraScale.value);
+
+  drawBackground(ctx.value);
+  if (showBiomes.value) drawBiomeBackground(ctx.value);
   drawProvinces(ctx.value);
-  drawLabels(ctx.value);
+  if (showBorders.value) drawProvinceBorders(ctx.value);
+  drawVertexHandles(ctx.value);
+  drawPreviewOverlay(ctx.value);
+  if (showLabels.value) drawLabels(ctx.value);
+
+  ctx.value.restore();
 }
 
-function drawBackground(ctx, w, h) {
+function drawBackground(ctx) {
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
   ctx.fillStyle = '#1a2a3a';
-  ctx.fillRect(0, 0, w, h);
-  
+  ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+
   // Grid
   ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1 / cameraScale.value;
   const step = 50;
-  for (let x = 0; x < w; x += step) {
+  const startX = Math.floor(tl.x / step) * step;
+  const startY = Math.floor(tl.y / step) * step;
+  const endX = br.x + step;
+  const endY = br.y + step;
+  for (let x = startX; x <= endX; x += step) {
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
+    ctx.moveTo(x, startY);
+    ctx.lineTo(x, endY);
     ctx.stroke();
   }
-  for (let y = 0; y < h; y += step) {
+  for (let y = startY; y <= endY; y += step) {
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
+    ctx.moveTo(startX, y);
+    ctx.lineTo(endX, y);
     ctx.stroke();
   }
+}
+
+function drawBiomeBackground(ctx) {
+  // 如果有生物群系数据，用半透明色块显示
+  const biomes = baseMap.value?.heightmap?.biomes;
+  if (!biomes || !biomes.length) return;
+  
+  // 绘制生物群系图例（右下角）
+  const legendX = screenToWorld(canvas.value.width - 150, canvas.value.height - 300).x;
+  const legendY = screenToWorld(canvas.value.width - 150, canvas.value.height - 300).y;
+  ctx.font = `${11}px "PingFang SC", sans-serif`;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(legendX - 5, legendY - 15, 140, biomes.length * 18 + 20);
+  ctx.fillStyle = '#fff';
+  ctx.fillText('生物群系', legendX, legendY);
+  biomes.forEach((b, i) => {
+    if (i < 10) {
+      ctx.fillStyle = b.color || '#888';
+      ctx.fillRect(legendX, legendY + 5 + i * 18, 12, 12);
+      ctx.fillStyle = '#ccc';
+      ctx.fillText(b.name || `Biome ${i}`, legendX + 16, legendY + 15 + i * 18);
+    }
+  });
 }
 
 function drawProvinces(c) {
   if (!baseMap.value?.terrain) return;
-  
   baseMap.value.terrain.forEach(prov => {
-    c.fillStyle = getProvinceColor(prov);
-    c.strokeStyle = '#8d8a82';
-    c.lineWidth = 0.6;
+    const color = getProvinceColor(prov);
+    c.fillStyle = color;
+    c.strokeStyle = 'transparent';
+    c.lineWidth = 0;
     
     if (prov.points && Array.isArray(prov.points) && prov.points.length > 2) {
       c.beginPath();
@@ -421,26 +985,96 @@ function drawProvinces(c) {
       }
       c.closePath();
       c.fill();
+    }
+  });
+}
+
+function drawProvinceBorders(c) {
+  if (!baseMap.value?.terrain) return;
+  baseMap.value.terrain.forEach(prov => {
+    const isSelected = selectedProvince.value?.id === prov.id;
+    const isMergeTarget = mergeProvId.value === prov.id;
+    c.strokeStyle = isMergeTarget ? '#ffd700' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)');
+    c.lineWidth = isSelected ? 1.5 / cameraScale.value : 0.6 / cameraScale.value;
+    
+    if (prov.points && Array.isArray(prov.points) && prov.points.length > 2) {
+      c.beginPath();
+      c.moveTo(prov.points[0].x || prov.points[0][0], prov.points[0].y || prov.points[0][1]);
+      for (let i = 1; i < prov.points.length; i++) {
+        c.lineTo(prov.points[i].x || prov.points[i][0], prov.points[i].y || prov.points[i][1]);
+      }
+      c.closePath();
       c.stroke();
     }
   });
 }
 
+function drawVertexHandles(c) {
+  if (!vertexEditMode.value || !selectedProvince.value) return;
+  const prov = selectedProvince.value;
+  if (!prov.points) return;
+  const r = 4 / cameraScale.value;
+  prov.points.forEach((p, i) => {
+    const px = p.x || p[0];
+    const py = p.y || p[1];
+    c.fillStyle = draggingVertex.value?.vertexIdx === i ? '#ffd700' : '#a78bfa';
+    c.strokeStyle = '#fff';
+    c.lineWidth = 1 / cameraScale.value;
+    c.beginPath();
+    c.arc(px, py, r, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+  });
+}
+
 function getProvinceColor(prov) {
+  // 优先使用生物群系颜色
+  if (prov.biome && BIOME_COLORS[prov.biome]) {
+    return BIOME_COLORS[prov.biome];
+  }
   if (viewMode.value === 'scenario' && selectedScenario.value) {
     const owner = selectedScenario.value.ownership?.[prov.id];
     if (owner) {
       const polity = selectedScenario.value.polities?.find(p => p.id === owner);
       return polity?.color || '#6b7280';
     }
-    return '#4a5568'; // Unowned in scenario mode
+    return '#4a5568';
   }
   return prov.biomeColor || '#bccda0';
 }
 
+function drawPreviewOverlay() {
+  const c = ctx.value;
+  if (tool.value === 'draw' && drawPoints.value.length > 0) {
+    c.strokeStyle = '#7c3aed';
+    c.fillStyle = 'rgba(124, 58, 237, 0.15)';
+    c.lineWidth = 2 / cameraScale.value;
+    c.beginPath();
+    c.moveTo(drawPoints.value[0].x, drawPoints.value[0].y);
+    for (let i = 1; i < drawPoints.value.length; i++) {
+      c.lineTo(drawPoints.value[i].x, drawPoints.value[i].y);
+    }
+    if (drawPoints.value.length >= 3) c.closePath();
+    c.fill();
+    c.stroke();
+    for (const p of drawPoints.value) {
+      c.fillStyle = '#a78bfa';
+      c.beginPath();
+      c.arc(p.x, p.y, 3 / cameraScale.value, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+
+  if (tool.value === 'split' && splitStep.value === 1 && splitPoints.value.length === 1) {
+    c.fillStyle = '#fbbf24';
+    c.beginPath();
+    c.arc(splitPoints.value[0].x, splitPoints.value[0].y, 5 / cameraScale.value, 0, Math.PI * 2);
+    c.fill();
+  }
+}
+
 function drawLabels(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.labels) return;
-  
   selectedScenario.value.labels.forEach(label => {
     c.font = `${label.size || 12}px "PingFang SC", sans-serif`;
     c.fillStyle = label.color || '#e2e8f0';
@@ -456,40 +1090,31 @@ function handleResize() {
 }
 
 async function exportPNG() {
-  // Create offscreen canvas at 2x scale
   const cvs = canvas.value;
   const scale = 2;
   const offscreen = document.createElement('canvas');
   offscreen.width = cvs.width * scale;
   offscreen.height = cvs.height * scale;
   const ctx = offscreen.getContext('2d');
-  
-  // Scale and redraw
   ctx.scale(scale, scale);
-  drawBackground(ctx, cvs.width, cvs.height);
+  ctx.translate(cameraX.value, cameraY.value);
+  ctx.scale(cameraScale.value, cameraScale.value);
+  drawBackground(ctx);
   drawProvinces(ctx);
   drawLabels(ctx);
-  
-  // Add watermark
   ctx.font = '14px "PingFang SC", sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   const scenarioName = selectedScenario?.value?.name || '未命名剧本';
   const eraLabel = selectedScenario?.value?.era?.roman || '';
   const watermark = eraLabel ? `${eraLabel} · ${scenarioName}` : scenarioName;
-  ctx.fillText(watermark, 10, cvs.height - 10);
-  
-  // Convert to blob and save
+  ctx.fillText(watermark, 10, cvs.height / scale - 10);
   offscreen.toBlob(async (blob) => {
     if (!blob) return;
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = reader.result;
-      const result = await window.sitianAPI.saveExportFile({
-        dataUrl,
-        defaultName: `scenario-${Date.now()}.png`,
-      });
+      const result = await window.sitianAPI.saveExportFile({ dataUrl, defaultName: `scenario-${Date.now()}.png` });
       if (!result?.success) {
-        // Fallback: trigger download
         const a = document.createElement('a');
         a.href = dataUrl;
         a.download = `scenario-${Date.now()}.png`;
@@ -508,25 +1133,42 @@ onMounted(() => {
   cvs.width = wrap.clientWidth;
   cvs.height = wrap.clientHeight;
   ctx.value = cvs.getContext('2d');
-  
-  // Initialize base map if not exists
+
   if (!store.baseMaps?.[baseMapKey.value]) {
     store.addBaseMap(baseMapKey.value, { name: '德斯特星' });
   }
-  
+
+  cvs.addEventListener('mousedown', onMouseDown);
+  cvs.addEventListener('mousemove', onMouseMove);
+  cvs.addEventListener('mouseup', onMouseUp);
+  cvs.addEventListener('mouseleave', onMouseUp);
+  cvs.addEventListener('click', onCanvasClick);
+  cvs.addEventListener('dblclick', onCanvasDblClick);
+  cvs.addEventListener('wheel', onWheel, { passive: false });
+  cvs.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('click', () => { contextMenu.value.show = false; });
+
   render();
-  
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(wrap);
-});
 
-onUnmounted(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect();
+  if (baseMap.value?.terrain?.length) {
+    setTimeout(fitToView, 100);
   }
 });
 
-watch(baseMap, () => render(), { deep: true });
+onUnmounted(() => {
+  if (resizeObserver) resizeObserver.disconnect();
+  window.removeEventListener('keydown', onKeyDown);
+});
+
+watch(baseMap, () => {
+  render();
+  if (baseMap.value?.terrain?.length) {
+    setTimeout(fitToView, 50);
+  }
+}, { deep: true });
 </script>
 
 <style scoped>
@@ -539,11 +1181,12 @@ watch(baseMap, () => render(), { deep: true });
 
 .scenario-toolbar {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   padding: 8px 12px;
   background: #1e293b;
   border-bottom: 1px solid #334155;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .back-btn {
@@ -557,9 +1200,7 @@ watch(baseMap, () => render(), { deep: true });
   margin-right: 8px;
 }
 
-.back-btn:hover {
-  background: #475569;
-}
+.back-btn:hover { background: #475569; }
 
 .tool-group {
   display: flex;
@@ -581,6 +1222,15 @@ watch(baseMap, () => render(), { deep: true });
   font-size: 12px;
 }
 
+.check-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
 .tool-group button {
   width: 32px;
   height: 32px;
@@ -592,21 +1242,11 @@ watch(baseMap, () => render(), { deep: true });
   font-size: 14px;
 }
 
-.tool-group button:hover {
-  background: #475569;
-}
+.tool-group button:hover { background: #475569; }
+.tool-group button.active { background: #5b21b6; border-color: #7c3aed; }
+.tool-group button:disabled { opacity: 0.4; cursor: not-allowed; }
+.tool-group button.saving { animation: pulse 1s infinite; }
 
-.tool-group button.active {
-  background: #5b21b6;
-  border-color: #7c3aed;
-}
-
-.tool-group button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* 时间轴条 */
 .scenario-timeline {
   background: #172033;
   border-bottom: 1px solid #334155;
@@ -614,10 +1254,7 @@ watch(baseMap, () => render(), { deep: true });
   overflow-x: auto;
 }
 
-.timeline-scroll {
-  display: flex;
-  gap: 6px;
-}
+.timeline-scroll { display: flex; gap: 6px; }
 
 .timeline-btn {
   display: flex;
@@ -634,27 +1271,12 @@ watch(baseMap, () => render(), { deep: true });
   min-width: 60px;
 }
 
-.timeline-btn:hover {
-  background: #334155;
-}
+.timeline-btn:hover { background: #334155; }
+.timeline-btn.active { background: #5b21b6; border-color: #7c3aed; color: #fff; }
 
-.timeline-btn.active {
-  background: #5b21b6;
-  border-color: #7c3aed;
-  color: #fff;
-}
+.era-roman { font-size: 14px; font-weight: 600; }
+.era-label { font-size: 10px; opacity: 0.8; }
 
-.era-roman {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.era-label {
-  font-size: 10px;
-  opacity: 0.8;
-}
-
-/* 势力色板 */
 .polity-palette {
   display: flex;
   gap: 4px;
@@ -662,6 +1284,13 @@ watch(baseMap, () => render(), { deep: true });
   background: #172033;
   border-bottom: 1px solid #334155;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.palette-title {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-right: 4px;
 }
 
 .polity-swatch {
@@ -677,23 +1306,32 @@ watch(baseMap, () => render(), { deep: true });
   color: #fff;
   font-weight: 600;
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  position: relative;
 }
 
-.polity-swatch:hover {
-  transform: scale(1.1);
+.polity-swatch:hover { transform: scale(1.1); }
+.polity-swatch.active { border-color: #ffd700; box-shadow: 0 0 6px rgba(255, 215, 0, 0.5); }
+
+.polity-name {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  z-index: 100;
+  border: 1px solid #475569;
 }
 
-.polity-swatch.active {
-  border-color: #ffd700;
-  box-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
-}
+.polity-swatch:hover .polity-name { display: block; }
 
-.polity-swatch.clear {
-  background: #475569;
-  border-color: #64748b;
-}
+.polity-swatch.clear { background: #475569; border-color: #64748b; }
 
-/* 画布 */
 .scenario-canvas-wrap {
   flex: 1;
   position: relative;
@@ -704,10 +1342,9 @@ watch(baseMap, () => render(), { deep: true });
   width: 100%;
   height: 100%;
   display: block;
-  cursor: crosshair;
+  cursor: grab;
 }
 
-/* 状态栏 */
 .scenario-status-bar {
   padding: 6px 12px;
   background: #1e293b;
@@ -717,6 +1354,9 @@ watch(baseMap, () => render(), { deep: true });
   display: flex;
   gap: 16px;
 }
+
+.draw-hint { color: #a78bfa; font-weight: 600; }
+.selected-provity { color: #fbbf24; }
 
 .selected-polity {
   display: flex;
@@ -729,6 +1369,113 @@ watch(baseMap, () => render(), { deep: true });
   height: 10px;
   border-radius: 50%;
   display: inline-block;
+}
+
+.save-status { margin-left: auto; }
+.save-status.saved { color: #4ade80; }
+.save-status.error { color: #f87171; }
+.save-status.saving { color: #fbbf24; }
+
+/* 右键菜单 */
+.context-menu {
+  position: absolute;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 4px 0;
+  z-index: 1000;
+  min-width: 160px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.ctx-item {
+  padding: 8px 16px;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ctx-item:hover { background: #334155; }
+.ctx-item.danger { color: #f87171; }
+.ctx-item.disabled { color: #64748b; cursor: default; }
+
+.ctx-divider {
+  height: 1px;
+  background: #334155;
+  margin: 4px 0;
+}
+
+/* 省份属性面板 */
+.province-props {
+  position: absolute;
+  top: 100px;
+  right: 16px;
+  width: 280px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 12px;
+  padding: 16px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.props-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.props-name {
+  flex: 1;
+  background: #334155;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.props-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.props-close:hover { color: #e2e8f0; }
+
+.props-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.props-row label {
+  min-width: 70px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.props-row input[type="text"], .props-row select {
+  flex: 1;
+  background: #334155;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.props-stats {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #334155;
 }
 
 /* 模态框 */
@@ -754,14 +1501,9 @@ watch(baseMap, () => render(), { deep: true });
   color: #e2e8f0;
 }
 
-.modal-dialog h3 {
-  margin: 0 0 16px;
-  font-size: 16px;
-}
+.modal-dialog h3 { margin: 0 0 16px; font-size: 16px; }
 
-.scenario-list {
-  margin-bottom: 20px;
-}
+.scenario-list { margin-bottom: 20px; }
 
 .scenario-item {
   display: flex;
@@ -771,21 +1513,9 @@ watch(baseMap, () => render(), { deep: true });
   border-bottom: 1px solid #334155;
 }
 
-.item-era {
-  font-weight: 600;
-  color: #7c3aed;
-  min-width: 20px;
-}
-
-.item-name {
-  flex: 1;
-  font-size: 13px;
-}
-
-.item-years {
-  font-size: 11px;
-  color: #64748b;
-}
+.item-era { font-weight: 600; color: #7c3aed; min-width: 20px; }
+.item-name { flex: 1; font-size: 13px; }
+.item-years { font-size: 11px; color: #64748b; }
 
 .item-delete {
   background: none;
@@ -794,19 +1524,14 @@ watch(baseMap, () => render(), { deep: true });
   opacity: 0.5;
 }
 
-.item-delete:hover {
-  opacity: 1;
-}
+.item-delete:hover { opacity: 1; }
 
 .new-scenario-form {
   border-top: 1px solid #334155;
   padding-top: 16px;
 }
 
-.new-scenario-form h4 {
-  margin: 0 0 12px;
-  font-size: 14px;
-}
+.new-scenario-form h4 { margin: 0 0 12px; font-size: 14px; }
 
 .form-row {
   display: flex;
@@ -821,8 +1546,7 @@ watch(baseMap, () => render(), { deep: true });
   color: #94a3b8;
 }
 
-.form-row input[type="text"],
-.form-row textarea {
+.form-row input[type="text"], .form-row textarea {
   flex: 1;
   background: #334155;
   border: 1px solid #475569;
@@ -832,13 +1556,8 @@ watch(baseMap, () => render(), { deep: true });
   font-size: 12px;
 }
 
-.form-row input.short-input {
-  max-width: 60px;
-}
-
-.form-row.checkbox label {
-  min-width: auto;
-}
+.form-row input.short-input { max-width: 60px; }
+.form-row.checkbox label { min-width: auto; }
 
 .form-actions {
   display: flex;
@@ -857,13 +1576,11 @@ watch(baseMap, () => render(), { deep: true });
   font-size: 12px;
 }
 
-.form-actions button:first-child {
-  background: #5b21b6;
-  border-color: #7c3aed;
-}
+.form-actions button:first-child { background: #5b21b6; border-color: #7c3aed; }
+.form-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.form-actions button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 </style>

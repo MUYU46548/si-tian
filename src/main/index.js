@@ -5,7 +5,7 @@ const matter = require('gray-matter');
 const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
 const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp } = require('./config');
-const { createTray, destroyTray, getIsQuitting } = require('./tray');
+const { createTray, destroyTray, getIsQuitting, setIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const log = require('electron-log');
 
@@ -70,9 +70,8 @@ function createWindow() {
   }
 
 // 窗口关闭拦截：默认（closeQuitsApp=false）点 × 时最小化到托盘，而非退出；
-// closeQuitsApp=true 时直接退出。退出只能通过托盘菜单「退出」或 Alt+F4（getIsQuitting()===true）。
-// 首次最小化到托盘时，通过托盘气泡提示用户，避免"不知道去哪了"的困惑（批次A12）。
-let trayMinimizeHinted = false;
+// closeQuitsApp=true 时直接退出。退出方式：托盘菜单「退出」/ Alt+F4 / Ctrl+Q。
+// 每次最小化到托盘都显示气泡提示，让用户始终知道去哪了（批次A12 → 改进：不限首次）。
 mainWindow.on('close', (event) => {
   if (getIsQuitting()) return;
   if (getCloseQuitsApp()) {
@@ -81,15 +80,23 @@ mainWindow.on('close', (event) => {
   }
   event.preventDefault();
   mainWindow.hide();
-  if (!trayMinimizeHinted && tray) {
-    trayMinimizeHinted = true;
+  if (tray) {
     try {
       tray.displayBalloon({
         title: 'SiTian 已最小化到托盘',
-        content: '点击托盘图标可重新显示；关闭窗口不会退出程序，右键托盘可退出。',
+        content: '左键双击恢复 · 右键菜单可退出 · 快捷键 Ctrl+Q 彻底关闭',
         iconType: 'info',
       });
     } catch (e) { /* 部分环境无气泡支持，忽略 */ }
+  }
+});
+
+// Ctrl+Q 彻底退出（无论当前状态如何）
+mainWindow.webContents.on('before-input-event', (event, input) => {
+  if (input.control && input.key.toLowerCase() === 'q') {
+    setIsQuitting(true);
+    app.quit();
+    event.preventDefault();
   }
 });
 

@@ -1,6 +1,6 @@
 /**
  * Azgaar FMG .map 文件解析器（纯浏览器兼容）
- * 提取自 docs/mockups/convert_map.js，无 Node.js 依赖
+ * 完整提取：高度图、生物群系、温度、降水、文化、宗教、城镇、势力、省份
  */
 
 // SVG 路径 d 属性 → 多边形点数组（贝塞尔采样，2 样本/曲线，避免全黑）
@@ -85,15 +85,31 @@ export function parseMapFile(text) {
     throw new Error('未找到 feature paths。请确认是 FMG 导出的 .map 文件。');
   }
 
-  // 3. Parse burg data (line 141 - 0-indexed 140)
+  // 3. Parse heightmap cells (line 3 - 0-indexed 2)
+  let cellsData = [];
+  try { cellsData = JSON.parse(lines[2]); } catch(e) { /* ignore */ }
+
+  // 4. Parse biomes data (line 4 - 0-indexed 3)
+  let biomesData = [];
+  try { biomesData = JSON.parse(lines[3]); } catch(e) { /* ignore */ }
+
+  // 5. Parse burg data (line 141 - 0-indexed 140)
   let burgData = [];
   try { burgData = JSON.parse(lines[140]); } catch(e) { /* ignore */ }
 
-  // 4. Parse states data (line 156 - 0-indexed 155)
+  // 6. Parse states data (line 156 - 0-indexed 155)
   let statesData = [];
   try { statesData = JSON.parse(lines[155]); } catch(e) { /* ignore */ }
 
-  // 5. Build terrain polygons from feature paths
+  // 7. Parse cultures data (line 161 - 0-indexed 160)
+  let culturesData = [];
+  try { culturesData = JSON.parse(lines[160]); } catch(e) { /* ignore */ }
+
+  // 8. Parse religions data (line 166 - 0-indexed 165)
+  let religionsData = [];
+  try { religionsData = JSON.parse(lines[165]); } catch(e) { /* ignore */ }
+
+  // 9. Build terrain polygons from feature paths
   const terrain = [];
   for (const id of Object.keys(featurePaths)) {
     const d = featurePaths[id];
@@ -111,7 +127,7 @@ export function parseMapFile(text) {
     });
   }
 
-  // 6. Build polities from states
+  // 10. Build polities from states
   const polities = {};
   statesData.filter(s => s.i > 0).forEach(s => {
     polities[s.i] = {
@@ -121,7 +137,7 @@ export function parseMapFile(text) {
     };
   });
 
-  // 7. Map states to features via burgs (vote by burg count)
+  // 11. Map states to features via burgs (vote by burg count)
   const featureStateVotes = {};
   burgData.forEach(b => {
     if (b.state && b.feature) {
@@ -138,7 +154,7 @@ export function parseMapFile(text) {
     ownership['feature_' + feature] = topState;
   }
 
-  // 8. Build labels from burgs (top 50)
+  // 12. Build labels from burgs (top 50)
   const labels = [];
   burgData.filter(b => b.x && b.y && b.name).slice(0, 50).forEach(b => {
     labels.push({
@@ -150,7 +166,7 @@ export function parseMapFile(text) {
     });
   });
 
-  // 9. Build markers for capitals
+  // 13. Build markers for capitals
   const markers = burgData
     .filter(b => b.x && b.y && b.capital)
     .map(b => ({
@@ -160,17 +176,28 @@ export function parseMapFile(text) {
       type: 'capital',
     }));
 
+  // 14. Build heightmap grid info
+  const heightmap = {
+    cells: cellsData,
+    biomes: biomesData,
+    cultures: culturesData,
+    religions: religionsData,
+  };
+
   return {
     terrain,
     polities,
     ownership,
     labels,
     markers,
+    heightmap,
     stats: {
       provinces: terrain.length,
       burgs: burgData.length,
       states: Object.keys(polities).length,
       ownedProvinces: Object.keys(ownership).length,
+      cells: cellsData.length,
+      biomes: biomesData.length,
     }
   };
 }
@@ -199,6 +226,7 @@ export function buildScenariosJson(parsed, mapName, scenarioName) {
         id: mapName,
         name: mapName,
         terrain: parsed.terrain,
+        heightmap: parsed.heightmap,
         referenceImages: [],
         createdAt: now,
         updatedAt: now,
