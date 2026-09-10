@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>FMG .map 查看器 · SiTian 管线</title>
+<style>
+  :root{
+    --bg:#eef0f4; --ink:#3c4150; --muted:#6b7180; --accent:#9b8fc4; --accent-soft:#c3bce0;
+    --card:#ffffff; --border:#e4e2ee; --shadow:0 8px 32px rgba(90,90,130,0.12);
+    --radius:18px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,-apple-system,sans-serif;
+    font-size:14px; min-height:100vh;
+  }
+  body::before,body::after{
+    content:''; position:fixed; border-radius:50%; filter:blur(70px); opacity:.38; z-index:0;
+  }
+  body::before{width:380px; height:380px; background:#cfc6ec; top:-80px; left:-60px;}
+  body::after{width:320px; height:320px; background:#cdd9ee; bottom:-60px; right:-40px;}
+
+  #topbar{
+    position:relative; z-index:20;
+    display:flex; align-items:center; gap:12px; padding:10px 18px;
+    background:rgba(255,255,255,0.82); backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--border); flex-wrap:wrap;
+  }
+  #topbar .title{font-weight:700; font-size:15px; white-space:nowrap;}
+  #topbar .title small{color:var(--muted); font-weight:400; margin-left:6px; font-size:11.5px;}
+
+  .seg{display:flex; border:1px solid var(--border); border-radius:9px; overflow:hidden; background:var(--card);}
+  .seg button{border:0; background:transparent; padding:6px 12px; cursor:pointer; font-size:12px; color:var(--muted); font-family:inherit; transition:all .15s;}
+  .seg button.active{background:var(--accent); color:#fff;}
+  .seg button:hover:not(.active){background:#f4f2f8;}
+
+  .file-btn{
+    border:1px solid var(--border); background:var(--card); color:var(--ink);
+    padding:6px 14px; border-radius:9px; cursor:pointer; font-size:12px; font-family:inherit;
+    transition:all .15s;
+  }
+  .file-btn:hover{background:#f4f2f8; border-color:var(--accent-soft);}
+  .file-btn.accent{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .file-btn.accent:hover{background:#8a7fb8;}
+
+  #main{position:relative; z-index:10; display:flex; height:calc(100vh - 56px);}
+  #mapWrap{
+    flex:1; position:relative; overflow:hidden; cursor:grab;
+    background:#c9d6e4;
+  }
+  #mapWrap.dragging{cursor:grabbing;}
+  #mapWrap svg{width:100%; height:100%; display:block;}
+
+  #panel{
+    width:320px; background:rgba(255,255,255,0.94); backdrop-filter:blur(10px);
+    border-left:1px solid var(--border); padding:16px; overflow:auto;
+  }
+  #panel h3{font-size:14px; margin-bottom:4px;}
+  #panel .sub{color:var(--muted); font-size:11.5px; margin-bottom:10px;}
+  #panel .desc{font-size:12px; line-height:1.6; background:#f4f2f8; border-radius:9px; padding:8px 10px; margin-bottom:10px;}
+  #panel .warn{font-size:12px; line-height:1.6; background:#fef3c7; border-radius:9px; padding:8px 10px; margin-bottom:10px; color:#92400e;}
+  #panel h4{font-size:11.5px; color:var(--muted); font-weight:600; margin:12px 0 6px;}
+
+  .leg-row{display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12px;}
+  .leg-swatch{width:16px; height:16px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); flex:none;}
+  .leg-row .cnt{margin-left:auto; color:var(--muted); font-size:11px;}
+
+  #tip{
+    position:absolute; z-index:30; pointer-events:none; display:none;
+    background:rgba(60,65,80,0.94); color:#fff; font-size:11.5px; line-height:1.5;
+    padding:6px 10px; border-radius:8px; max-width:280px;
+  }
+
+  #status{
+    position:fixed; bottom:0; left:0; right:320px; z-index:20;
+    padding:6px 18px; font-size:11px; color:var(--muted);
+    background:rgba(255,255,255,0.82); border-top:1px solid var(--border);
+    display:flex; gap:16px; align-items:center;
+  }
+  #status b{color:var(--ink);}
+  #status .right{margin-left:auto;}
+
+  #empty{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:12px; color:var(--muted); pointer-events:none;
+  }
+  #empty .icon{font-size:48px; opacity:.3;}
+  #empty .text{font-size:13px; text-align:center; max-width:400px; line-height:1.6;}
+
+  .prov{stroke:#8d8a82; stroke-width:0.6; transition:stroke .15s, fill .2s; cursor:pointer;}
+  .prov:hover{stroke:#3c4150; stroke-width:1.8;}
+  .prov.selected{stroke:#ffd700; stroke-width:2.2;}
+
+  .toolbar{display:flex; gap:6px; margin-left:auto;}
+
+  #fileInput{display:none;}
+
+  .color-picker{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;}
+  .color-dot{
+    width:22px; height:22px; border-radius:50%; cursor:pointer;
+    border:2px solid transparent; transition:all .15s;
+  }
+  .color-dot:hover{transform:scale(1.1);}
+  .color-dot.active{border-color:var(--ink);}
+
+  #msg{
+    position:fixed; bottom:40px; left:50%; transform:translateX(-50%); z-index:50;
+    background:rgba(60,65,80,0.94); color:#fff; padding:10px 20px; border-radius:10px;
+    font-size:12px; display:none; max-width:600px; text-align:center;
+  }
+  #msg.show{display:block; animation:fadeOut 4s forwards;}
+  @keyframes fadeOut{0%{opacity:1;}75%{opacity:1;}100%{opacity:0;}}
+
+  .burg-dot{
+    position:absolute; width:4px; height:4px; border-radius:50%;
+    background:#ff6b6b; border:1px solid #fff; transform:translate(-50%,-50%);
+    pointer-events:none; z-index:5;
+  }
+</style>
+</head>
+<body>
+<div id="errLog" style="position:fixed;top:60px;right:10px;z-index:999;background:#fee;color:#900;padding:8px 12px;border-radius:6px;font-size:11px;max-width:400px;white-space:pre-wrap;display:none;"></div>
+<div id="topbar">
+  <div class="title">FMG .map 查看器<small>SiTian 管线 · 内联 SVG 渲染</small></div>
+  <div class="seg" id="modeSeg">
+    <button data-mode="terrain" class="active">地形底图</button>
+    <button data-mode="political">政治染色</button>
+  </div>
+  <div class="seg" id="eraSeg"></div>
+  <div class="toolbar">
+    <button class="file-btn" id="loadMapBtn">📦 导入 .map</button>
+    <button class="file-btn" id="genBtn">🌍 演示</button>
+    <button class="file-btn accent" id="exportBtn">💾 导出</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="mapWrap">
+    <svg id="map" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="panel"></div>
+    <div id="tip"></div>
+    <div id="empty">
+      <div class="icon">🗺️</div>
+      <div class="text">
+        导入 FMG 导出的 <b>.map</b> 文件<br>
+        查看省份多边形、势力分布、城镇位置<br>
+        或点击「演示」查看效果
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="status">
+  <span>省份 <b id="stCount">0</b></span>
+  <span>城镇 <b id="stBurgs">0</b></span>
+  <span>模式 <b id="stMode">地形</b></span>
+  <span class="right">拖拽平移 · 滚轮缩放 · 点击省份编辑 · 悬停查看</span>
+</div>
+
+<input type="file" id="fileInput" accept=".map">
+<div id="msg"></div>
+
+<script>
+/* ======================================================================
+   FMG .map 文件查看器
+   - 解析 FMG .map 格式（SVG preview + JSON data）
+   - 提取 feature paths 作为省份形状
+   - 通过 burg data 映射 states -> features
+   - 内联 SVG DOM 渲染
+   ====================================================================== */
+
+let WORLD_W = 1920, WORLD_H = 1080;
+const NS = 'http://www.w3.org/2000/svg';
+
+window.state = {
+  mode: 'terrain',
+  provinces: [],
+  polities: {},
+  scenarios: [],
+  activeScenario: null,
+  selectedProv: null,
+  hoveredProv: null,
+  burgs: [],
+  tx: 0, ty: 0, scale: 1,
+};
+
+const state = window.state;
+const svg = document.getElementById('map');
+const mapWrap = document.getElementById('mapWrap');
+const tip = document.getElementById('tip');
+const panel = document.getElementById('panel');
+const empty = document.getElementById('empty');
+const fileInput = document.getElementById('fileInput');
+
+let msgTimer = null;
+function showMsg(text){
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  if(msgTimer) clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+function logErr(e){
+  const el = document.getElementById('errLog');
+  el.style.display = 'block';
+  el.textContent += (e && e.message ? e.message : String(e)) + '\n';
+  console.error(e);
+}
+
+/* ---------- SVG Path 解析（含贝塞尔采样） ---------- */
+function parsePathD(d){
+  const points = [];
+  const tokens = d.match(/[MLHVCSQTAZ][^MLHVCSQTAZ]*/gi) || [];
+  let cx = 0, cy = 0;
+  let startX = 0, startY = 0;
+  let lastCX = 0, lastCY = 0;
+
+  function parseNumbers(str){
+    return str.trim().split(/[\s,]+/).map(s => parseFloat(s)).filter(n => !isNaN(n));
+  }
+
+  for(const token of tokens){
+    const cmd = token[0].toUpperCase();
+    const nums = parseNumbers(token.slice(1));
+
+    if(cmd === 'M'){
+      cx = nums[0]; cy = nums[1];
+      startX = cx; startY = cy;
+      points.push({x: cx, y: cy});
+      for(let i = 2; i < nums.length; i += 2){
+        cx = nums[i]; cy = nums[i + 1];
+        points.push({x: cx, y: cy});
+      }
+    } else if(cmd === 'L'){
+      for(let i = 0; i < nums.length; i += 2){
+        cx = nums[i]; cy = nums[i + 1];
+        points.push({x: cx, y: cy});
+      }
+    } else if(cmd === 'H'){
+      for(let i = 0; i < nums.length; i++){
+        cx = nums[i];
+        points.push({x: cx, y: cy});
+      }
+    } else if(cmd === 'V'){
+      for(let i = 0; i < nums.length; i++){
+        cy = nums[i];
+        points.push({x: cx, y: cy});
+      }
+    } else if(cmd === 'Q'){
+      for(let i = 0; i < nums.length; i += 4){
+        const cpx = nums[i], cpy = nums[i + 1];
+        const ex = nums[i + 2], ey = nums[i + 3];
+        for(let t = 1; t <= 6; t++){
+          const u = t / 6;
+          const x = (1-u)*(1-u)*cx + 2*(1-u)*u*cpx + u*u*ex;
+          const y = (1-u)*(1-u)*cy + 2*(1-u)*u*cpy + u*u*ey;
+          points.push({x, y});
+        }
+        lastCX = cpx; lastCY = cpy;
+        cx = ex; cy = ey;
+      }
+    } else if(cmd === 'T'){
+      for(let i = 0; i < nums.length; i += 2){
+        const cpx = 2*cx - lastCX;
+        const cpy = 2*cy - lastCY;
+        const ex = nums[i], ey = nums[i + 1];
+        for(let t = 1; t <= 6; t++){
+          const u = t / 6;
+          const x = (1-u)*(1-u)*cx + 2*(1-u)*u*cpx + u*u*ex;
+          const y = (1-u)*(1-u)*cy + 2*(1-u)*u*cpy + u*u*ey;
+          points.push({x, y});
+        }
+        lastCX = cpx; lastCY = cpy;
+        cx = ex; cy = ey;
+      }
+    } else if(cmd === 'C'){
+      for(let i = 0; i < nums.length; i += 6){
+        const cpx1 = nums[i], cpy1 = nums[i + 1];
+        const cpx2 = nums[i + 2], cpy2 = nums[i + 3];
+        const ex = nums[i + 4], ey = nums[i + 5];
+        for(let t = 1; t <= 8; t++){
+          const u = t / 8;
+          const x = (1-u)*(1-u)*(1-u)*cx + 3*(1-u)*(1-u)*u*cpx1 + 3*(1-u)*u*u*cpx2 + u*u*u*ex;
+          const y = (1-u)*(1-u)*(1-u)*cy + 3*(1-u)*(1-u)*u*cpy1 + 3*(1-u)*u*u*cpy2 + u*u*u*ey;
+          points.push({x, y});
+        }
+        lastCX = cpx2; lastCY = cpy2;
+        cx = ex; cy = ey;
+      }
+    } else if(cmd === 'S'){
+      for(let i = 0; i < nums.length; i += 4){
+        const cpx1 = 2*cx - lastCX;
+        const cpy1 = 2*cy - lastCY;
+        const cpx2 = nums[i], cpy2 = nums[i + 1];
+        const ex = nums[i + 2], ey = nums[i + 3];
+        for(let t = 1; t <= 8; t++){
+          const u = t / 8;
+          const x = (1-u)*(1-u)*(1-u)*cx + 3*(1-u)*(1-u)*u*cpx1 + 3*(1-u)*u*u*cpx2 + u*u*u*ex;
+          const y = (1-u)*(1-u)*(1-u)*cy + 3*(1-u)*(1-u)*u*cpy1 + 3*(1-u)*u*u*cpy2 + u*u*u*ey;
+          points.push({x, y});
+        }
+        lastCX = cpx2; lastCY = cpy2;
+        cx = ex; cy = ey;
+      }
+    } else if(cmd === 'A'){
+      for(let i = 0; i < nums.length; i += 7){
+        cx = nums[i + 5]; cy = nums[i + 6];
+        points.push({x: cx, y: cy});
+      }
+    } else if(cmd === 'Z'){
+      if(points.length > 0 && (Math.abs(points[0].x - cx) > 0.01 || Math.abs(points[0].y - cy) > 0.01)){
+        points.push({x: startX, y: startY});
+      }
+    }
+  }
+  return points;
+}
+
+/* ---------- SVG 辅助 ---------- */
+function el(tag, attrs, parent){
+  const e = document.createElementNS(NS, tag);
+  for(const k in attrs){
+    if(attrs[k] !== undefined && attrs[k] !== null) e.setAttribute(k, attrs[k]);
+  }
+  if(parent) parent.appendChild(e);
+  return e;
+}
+
+function pathD(points){
+  if(!points || !points.length) return '';
+  return 'M' + points.map(p => {
+    const x = typeof p.x === 'number' ? p.x.toFixed(1) : p[0];
+    const y = typeof p.y === 'number' ? p.y.toFixed(1) : p[1];
+    return x + ',' + y;
+  }).join('L') + 'Z';
+}
+
+/* ---------- 渲染 ---------- */
+let worldGroup = null;
+
+function clearSVG(){
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+}
+
+function render(){
+  clearSVG();
+
+  const defs = el('defs', {}, svg);
+  const lg = el('linearGradient', {id:'oc', x1:'0', y1:'0', x2:'0', y2:'1'}, defs);
+  el('stop', {offset:'0', 'stop-color':'#b9c9da'}, lg);
+  el('stop', {offset:'0.5', 'stop-color':'#c3d2e2'}, lg);
+  el('stop', {offset:'1', 'stop-color':'#b4c4d6'}, lg);
+
+  worldGroup = el('g', {id:'worldG'}, svg);
+  const oceanGroup = el('g', {}, worldGroup);
+  el('rect', {x:0, y:0, width:WORLD_W, height:WORLD_H, fill:'url(#oc)'}, oceanGroup);
+
+  const provGroup = el('g', {}, worldGroup);
+  const coastGroup = el('g', {}, worldGroup);
+  const labelGroup = el('g', {}, worldGroup);
+
+  for(const p of state.provinces){
+    const pathEl = el('path', {
+      class: 'prov' + (state.selectedProv === p.id ? ' selected' : ''),
+      d: p.d || p.points,
+      fill: fillFor(p),
+      'data-id': p.id
+    }, provGroup);
+
+    pathEl.addEventListener('pointerenter', ev => showTip(ev, p));
+    pathEl.addEventListener('pointermove', ev => moveTip(ev));
+    pathEl.addEventListener('pointerleave', hideTip);
+    pathEl.addEventListener('pointerdown', ev => {
+      ev.stopPropagation();
+      selectProvince(p.id);
+    });
+  }
+
+
+
+  renderLabels(labelGroup);
+  applyTransform();
+  updateStatusBar();
+  empty.style.display = state.provinces.length ? 'none' : 'flex';
+  buildPanel();
+}
+
+function fillFor(p){
+  if(state.mode === 'terrain'){
+    return p.biomeColor || '#dcd8cf';
+  }
+  if(state.activeScenario){
+    const owner = p.owner || state.activeScenario.ownership?.[p.id];
+    if(owner && state.polities[owner]){
+      return state.polities[owner].color;
+    }
+    // Unowned land - use biome color, not grey
+    return p.biomeColor || '#dcd8cf';
+  }
+  return p.biomeColor || '#dcd8cf';
+}
+
+function renderLabels(labelGroup){
+  if(state.mode === 'terrain'){
+    for(const L of state.terrainLabels || []){
+      const t = el('text', {
+        class: 'map-label ' + (L.cls || ''),
+        x: L.x, y: L.y,
+        'text-anchor': 'middle',
+        'font-size': L.size || 15,
+        fill: L.color || '#3c4150'
+      }, labelGroup);
+      t.textContent = L.text;
+    }
+  } else if(state.activeScenario){
+    for(const L of (state.activeScenario.labels || [])){
+      const t = el('text', {
+        class: 'map-label ' + (L.event ? 'event' : ''),
+        x: L.x, y: L.y,
+        'text-anchor': 'middle',
+        'font-size': L.size || 15,
+        fill: L.color || '#3c4150'
+      }, labelGroup);
+      t.textContent = L.text;
+    }
+  }
+  for(const p of state.provinces){
+    if(p.label){
+      const c = p.centroid || [0, 0];
+      const t = el('text', {
+        class: 'map-label',
+        x: c[0], y: c[1],
+        'text-anchor': 'middle',
+        'font-size': p.label.size || 11,
+        fill: p.label.color || '#3c4150'
+      }, labelGroup);
+      t.textContent = p.label.text;
+    }
+  }
+}
+
+function applyTransform(){
+  const b = svg.getBoundingClientRect();
+  const k = Math.min(b.width / WORLD_W, b.height / WORLD_H) * state.scale;
+  state.tx = Math.max(Math.min(0, b.width - WORLD_W * k), Math.min(0, state.tx));
+  state.ty = Math.max(Math.min(0, b.height - WORLD_H * k), Math.min(0, state.ty));
+  if(worldGroup){
+    worldGroup.setAttribute('transform', `translate(${state.tx},${state.ty}) scale(${state.scale})`);
+  }
+}
+
+function resetView(){
+  state.scale = 1; state.tx = 0; state.ty = 0;
+  applyTransform();
+}
+
+/* ---------- 交互 ---------- */
+let dragging = false, sx = 0, sy = 0, stx = 0, sty = 0;
+
+mapWrap.addEventListener('pointerdown', e => {
+  if(e.target.closest('#panel') || e.target.closest('#tip')) return;
+  dragging = true; sx = e.clientX; sy = e.clientY; stx = state.tx; sty = state.ty;
+  mapWrap.classList.add('dragging');
+  mapWrap.setPointerCapture(e.pointerId);
+  if(e.target === svg || e.target === worldGroup || e.target.tagName === 'rect'){
+    selectProvince(null);
+  }
+});
+
+mapWrap.addEventListener('pointermove', e => {
+  if(!dragging) return;
+  state.tx = stx + (e.clientX - sx); state.ty = sty + (e.clientY - sy);
+  applyTransform();
+});
+
+addEventListener('pointerup', () => { dragging = false; mapWrap.classList.remove('dragging'); });
+
+mapWrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const b = svg.getBoundingClientRect();
+  const mx = e.clientX - b.left, my = e.clientY - b.top;
+  const old = state.scale;
+  state.scale = Math.max(0.3, Math.min(5, state.scale * (e.deltaY < 0 ? 1.12 : 0.89)));
+  state.tx = mx - (mx - state.tx) * state.scale / old;
+  state.ty = my - (my - state.ty) * state.scale / old;
+  applyTransform();
+}, {passive: false});
+
+function showTip(ev, p){
+  state.hoveredProv = p.id;
+  const owner = state.activeScenario?.ownership?.[p.id];
+  const polName = owner ? (state.polities[owner]?.name || '—') : '无主';
+  let html = `<b>${p.name || p.id}</b><br>`;
+  html += `类型：${p.biome || '—'} · 文化圈：${p.culture || '—'}`;
+  if(state.mode === 'political' && state.activeScenario){
+    html += `<br>归属：${polName}`;
+  }
+  if(p.area) html += `<br>面积：${(p.area / 100).toFixed(1)} km²`;
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  moveTip(ev);
+}
+
+function moveTip(ev){
+  const b = mapWrap.getBoundingClientRect();
+  tip.style.left = Math.min(ev.clientX - b.left + 14, b.width - 290) + 'px';
+  tip.style.top = (ev.clientY - b.top + 14) + 'px';
+}
+
+function hideTip(){ state.hoveredProv = null; tip.style.display = 'none'; }
+
+function selectProvince(id){
+  state.selectedProv = id;
+  render();
+  if(id){
+    const p = state.provinces.find(p => p.id === id);
+    if(p) buildProvEditor(p);
+  } else {
+    buildPanel();
+  }
+}
+
+/* ---------- 面板 ---------- */
+function buildPanel(){
+  if(state.mode === 'terrain'){
+    const biomeCounts = {};
+    state.provinces.forEach(p => { biomeCounts[p.biome] = (biomeCounts[p.biome] || 0) + 1; });
+    let h = `<h3>地形底图</h3>`;
+    h += `<div class="sub">省份 ${state.provinces.length} 块 · 城镇 ${state.burgs.length} 个</div>`;
+    h += `<div class="desc">从 FMG .map 文件提取的 SVG feature paths。每个 feature 对应一个地理区域（大陆/岛屿/湖泊）。</div>`;
+    h += `<h4>地形分布</h4>`;
+    for(const b in biomeCounts){
+      h += `<div class="leg-row"><span class="leg-swatch" style="background:${biomeColors[b] || '#ccc'}"></span>${b}<span class="cnt">${biomeCounts[b]} 块</span></div>`;
+    }
+    panel.innerHTML = h;
+  } else if(state.activeScenario){
+    const sc = state.activeScenario;
+    const cnt = {}; let un = 0;
+    state.provinces.forEach(p => {
+      const o = p.owner || sc.ownership?.[p.id];
+      if(o) cnt[o] = (cnt[o] || 0) + 1; else un++;
+    });
+    let h = `<h3>剧本 · ${sc.name}</h3>`;
+    h += `<div class="sub">${sc.sub || ''} ｜ ${sc.years || ''}</div>`;
+    if(sc.desc) h += `<div class="desc">${sc.desc}</div>`;
+    h += `<h4>势力图例</h4>`;
+    for(const pid in cnt){
+      const pol = state.polities[pid];
+      if(pol) h += `<div class="leg-row"><span class="leg-swatch" style="background:${pol.color}"></span>${pol.name}<span class="cnt">${cnt[pid]} 省</span></div>`;
+    }
+    if(un) h += `<div class="leg-row"><span class="leg-swatch" style="background:#cfcabf"></span>无主 / 未探明<span class="cnt">${un} 省</span></div>`;
+    panel.innerHTML = h;
+  }
+}
+
+function buildProvEditor(p){
+  const c = p.centroid || [0, 0];
+  const owner = state.activeScenario?.ownership?.[p.id];
+  const polName = owner ? (state.polities[owner]?.name || '—') : '无主';
+
+  let h = `<h3>${p.name || p.id}</h3>`;
+  h += `<div class="sub">${p.biome || '—'} · ${p.culture || '—'}</div>`;
+  h += `<div class="prov-info">`;
+  h += `<div class="row"><span class="k">归属</span><span>${polName}</span></div>`;
+  h += `<div class="row"><span class="k">面积</span><span>${p.area ? (p.area / 100).toFixed(1) + ' km²' : '—'}</span></div>`;
+  h += `<div class="row"><span class="k">海岸</span><span>${p.coast ? '是' : '否'}</span></div>`;
+  h += `</div>`;
+
+  if(state.mode === 'political' && state.activeScenario){
+    h += `<h4>指派势力</h4><div class="color-picker">`;
+    for(const pid in state.polities){
+      const pol = state.polities[pid];
+      const active = (p.owner || state.activeScenario.ownership?.[p.id]) === pid;
+      h += `<div class="color-dot${active ? ' active' : ''}" style="background:${pol.color}" data-pol="${pid}" title="${pol.name}"></div>`;
+    }
+    h += `<div class="color-dot${!owner ? ' active' : ''}" style="background:#cfcabf" data-pol="" title="清除归属"></div>`;
+    h += `</div>`;
+  }
+
+  h += `<h4>省份标签</h4>`;
+  h += `<div class="label-editor open">`;
+  h += `<label>名称</label><input type="text" id="labelText" value="${p.label?.text || ''}" placeholder="留空则隐藏">`;
+  h += `<label>字号</label><input type="range" id="labelSize" min="8" max="24" value="${p.label?.size || 11}">`;
+  h += `<div class="actions"><button id="labelCancel">取消</button><button class="primary" id="labelSave">保存</button></div>`;
+  h += `</div>`;
+
+  panel.innerHTML = h;
+
+  panel.querySelectorAll('.color-dot').forEach(dot => {
+    dot.addEventListener('click', () => {
+      const polId = dot.dataset.pol || null;
+      assignOwner(p.id, polId);
+    });
+  });
+
+  document.getElementById('labelSave').addEventListener('click', () => {
+    const text = document.getElementById('labelText').value.trim();
+    const size = parseInt(document.getElementById('labelSize').value);
+    if(text) p.label = { text, size, color: '#3c4150' };
+    else p.label = null;
+    render(); buildProvEditor(p);
+  });
+
+  document.getElementById('labelCancel').addEventListener('click', () => buildProvEditor(p));
+}
+
+function assignOwner(provId, polId){
+  if(!state.activeScenario.ownership) state.activeScenario.ownership = {};
+  if(polId) state.activeScenario.ownership[provId] = polId;
+  else delete state.activeScenario.ownership[provId];
+  render();
+  buildProvEditor(state.provinces.find(p => p.id === provId));
+}
+
+/* ---------- 模式切换 ---------- */
+document.querySelectorAll('#modeSeg button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.mode = btn.dataset.mode;
+    document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b === btn));
+    render();
+  });
+});
+
+function buildEraSeg(){
+  const seg = document.getElementById('eraSeg');
+  seg.innerHTML = '';
+  state.scenarios.forEach(sc => {
+    const b = document.createElement('button');
+    b.dataset.era = sc.id;
+    b.textContent = sc.name;
+    b.className = (state.activeScenario === sc ? 'active' : '');
+    b.addEventListener('click', () => {
+      state.activeScenario = sc;
+      state.mode = 'political';
+      document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === 'political'));
+      document.querySelectorAll('#eraSeg button').forEach(b => b.classList.toggle('active', b.dataset.era === sc.id));
+      render();
+    });
+    seg.appendChild(b);
+  });
+}
+
+/* ---------- 文件导入：.map ---------- */
+document.getElementById('loadMapBtn').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => importMap(ev.target.result);
+  reader.readAsText(file);
+  fileInput.value = '';
+});
+
+function importMap(text){
+  const lines = text.split('\n');
+
+  // 1. Extract SVG from lines 6-126
+  const svgContent = lines.slice(6, 127).join('\n');
+
+  // 2. Parse feature paths (d attribute comes BEFORE id)
+  const featureRegex = /<path[^>]*d="([^"]+)"[^>]*id="feature_(\d+)"/g;
+  let m;
+  const featurePaths = {};
+  while ((m = featureRegex.exec(svgContent)) !== null) {
+    featurePaths[m[2]] = m[1];
+  }
+
+  if(Object.keys(featurePaths).length === 0){
+    showMsg('未找到 feature paths。请确认是 FMG 导出的 .map 文件。');
+    return;
+  }
+
+  // 3. Parse burg data (line 141 - 0-indexed 140)
+  let burgData = [];
+  try { burgData = JSON.parse(lines[140]); } catch(e) { console.warn('Burg data parse failed'); }
+
+  // 4. Parse states data (line 156 - 0-indexed 155)
+  let statesData = [];
+  try { statesData = JSON.parse(lines[155]); } catch(e) { console.warn('States data parse failed'); }
+
+  // 5. Parse province features (line 138 - 0-indexed 137)
+  let provFeatures = [];
+  try { provFeatures = JSON.parse(lines[137]); } catch(e) { console.warn('Province features parse failed'); }
+
+  // 6. Build provinces from feature paths
+  const provinces = [];
+  const colors = ['#bccda0','#a8bd92','#cfcd9e','#d6cc9f','#93b183','#e6ebf1','#d4dccc','#e0d3ac','#b5a893'];
+  let colorIdx = 0;
+
+  for(const id of Object.keys(featurePaths)){
+    const d = featurePaths[id];
+    const points = parsePathD(d);
+    if(points.length < 3) continue;
+
+    const area = polyArea(points);
+    if(area < 100) continue;
+
+    // Check if this feature is land or water
+    const isLand = isLandFeature(svgContent, id);
+
+    provinces.push({
+      id: 'feature_' + id,
+      name: 'Feature ' + id,
+      d,
+      points: pathD(points),
+      rawPoints: points,
+      area,
+      biome: isLand ? 'temperate' : 'water',
+      biomeColor: isLand ? colors[colorIdx % colors.length] : '#466eab',
+      culture: '未分类',
+      coast: isLand,
+      owner: null,
+      label: null,
+      centroid: centroid(points),
+      dataF: id,
+    });
+    if(isLand) colorIdx++;
+  }
+
+  // 7. Build polities from states
+  const polities = {};
+  statesData.filter(s => s.i > 0).forEach(s => {
+    polities[s.i] = {
+      id: s.i,
+      name: s.name,
+      color: s.color || '#888888',
+    };
+  });
+
+  // 8. Build burg list
+  const burgs = burgData.filter(b => b.x && b.y).map((b, i) => ({
+    id: 'burg_' + (b.i || i),
+    name: b.name || ('Burg ' + i),
+    x: b.x,
+    y: b.y,
+    cell: b.cell,
+    state: b.state,
+    feature: b.feature,
+    population: b.population,
+    type: b.type,
+  }));
+
+  // 9. Map states to features via burgs
+  const stateFeatures = {};
+  burgs.forEach(b => {
+    if(b.state && b.feature){
+      if(!stateFeatures[b.state]) stateFeatures[b.state] = new Set();
+      stateFeatures[b.state].add(b.feature);
+    }
+  });
+
+  // Update state names on provinces
+  for(const prov of provinces){
+    const featureId = prov.dataF;
+    // Find states that have burgs on this feature
+    const stateIds = Object.keys(stateFeatures).filter(sid => stateFeatures[sid].has(parseInt(featureId)));
+    if(stateIds.length > 0){
+      prov.name = stateIds.map(sid => polities[sid]?.name).filter(n => n).join(', ');
+    }
+  }
+
+  // 10. Update state
+  state.provinces = provinces;
+  state.polities = polities;
+  state.burgs = burgs;
+
+  // 11. Build scenarios
+  buildScenarios();
+  state.activeScenario = state.scenarios[0];
+
+  // 12. Render
+  buildEraSeg();
+  render();
+  resetView();
+  showMsg(`成功导入: ${provinces.length} 个地理区域, ${burgs.length} 个城镇, ${Object.keys(polities).length} 个势力`);
+}
+
+function isLandFeature(svgContent, featureId){
+  // Check the land mask: fill="white" means land
+  const landMatch = svgContent.match(/<mask id="land">([\s\S]*?)<\/mask>/);
+  if(!landMatch) return true;
+  const landMask = landMatch[1];
+  const regex = new RegExp(`data-f="${featureId}"[^>]*fill="white"`);
+  return regex.test(landMask);
+}
+
+function buildScenarios(){
+  // Auto-assign ownership: for each feature, find the state with most burgs
+  const featureStateVotes = {};
+  state.burgs.forEach(b => {
+    if(b.state && b.feature){
+      const key = b.feature;
+      if(!featureStateVotes[key]) featureStateVotes[key] = {};
+      featureStateVotes[key][b.state] = (featureStateVotes[key][b.state] || 0) + 1;
+    }
+  });
+
+  const ownership = {};
+  for(const feature in featureStateVotes){
+    const votes = featureStateVotes[feature];
+    const topState = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+    const prov = state.provinces.find(p => parseInt(p.dataF) === parseInt(feature));
+    if(prov && topState){
+      ownership[prov.id] = topState;
+    }
+  }
+
+  state.scenarios = [
+    { id: 'current', name: '当前', sub: '导入数据', years: '—', desc: '从 FMG .map 文件提取的当前状态。', ownership, labels: [] },
+  ];
+  state.activeScenario = state.scenarios[0];
+}
+
+/* ---------- 演示数据 ---------- */
+document.getElementById('genBtn').addEventListener('click', () => {
+  generateDemoData();
+  render();
+  resetView();
+});
+
+function generateDemoData(){
+  WORLD_W = 1600; WORLD_H = 800;
+  svg.setAttribute('viewBox', `0 0 ${WORLD_W} ${WORLD_H}`);
+
+  const provinces = [];
+  provinces.push(makeProvince('P1', '西陆北境', [[200,200],[450,180],[480,350],[220,370]], 'boreal', '西陆北'));
+  provinces.push(makeProvince('P2', '西陆中部', [[220,370],[480,350],[500,500],[240,520]], 'temperate', '西陆北'));
+  provinces.push(makeProvince('P3', '西陆南部', [[240,520],[500,500],[520,650],[260,670]], 'steppe', '西陆南'));
+  provinces.push(makeProvince('P4', '内海沿岸', [[480,350],[650,330],[670,500],[500,500]], 'temperate', '内海'));
+  provinces.push(makeProvince('P5', '东陆北境', [[900,180],[1200,160],[1230,350],[930,370]], 'boreal', '东陆北'));
+  provinces.push(makeProvince('P6', '东陆中部', [[930,370],[1230,350],[1260,520],[960,540]], 'temperate', '东陆北'));
+  provinces.push(makeProvince('P7', '东陆南部', [[960,540],[1260,520],[1290,680],[990,700]], 'savanna', '东陆南'));
+  provinces.push(makeProvince('P8', '南陆', [[400,700],[800,680],[1000,720],[1100,750],[700,770],[350,750]], 'jungle', '南陆'));
+  provinces.push(makeProvince('P9', '中央环礁', [[750,450],[820,440],[830,490],[760,500]], 'savanna', '群岛'));
+  provinces.push(makeProvince('P10', '远东岛链', [[1350,400],[1420,390],[1430,440],[1360,450]], 'savanna', '群岛'));
+
+  state.provinces = provinces;
+  state.polities = {
+    ou: { name: '瓯', color: '#7f9bc4' },
+    li: { name: '俪', color: '#86ad8f' },
+    jue: { name: '玦', color: '#c2a06b' },
+    yantai: { name: '炎太帝国', color: '#b07d7d' },
+    yue: { name: '大玥帝国', color: '#9b8fc4' },
+    tribal: { name: '部落城邦', color: '#a89a83' },
+    ash: { name: '废土', color: '#b3afa8' },
+  };
+  state.burgs = [];
+  state.scenarios = [
+    { id: 'yuangu', name: '远古', sub: '部落与城邦', years: '纪年占位', desc: '早期部落与城邦。', ownership: { P1: 'tribal', P2: 'tribal', P5: 'tribal', P6: 'tribal', P9: 'tribal' }, labels: [] },
+    { id: 'shanggu', name: '上古', sub: '瓯 · 俪 · 玦', years: '纪年占位', desc: '瓯、俪、玦等朝代。', ownership: { P1: 'ou', P2: 'ou', P4: 'jue', P5: 'li', P6: 'li', P9: 'li' }, labels: [
+      { text: '瓯', x: 350, y: 400, size: 28, color: '#7f9bc4' },
+      { text: '俪', x: 1080, y: 400, size: 28, color: '#86ad8f' },
+      { text: '玦', x: 580, y: 420, size: 22, color: '#c2a06b' },
+    ]},
+    { id: 'zhonggu', name: '中古', sub: '炎太帝国', years: '纪年占位', desc: '以炎太帝国为代表的大型帝国出现。', ownership: { P1: 'yantai', P2: 'yantai', P3: 'yantai', P4: 'yantai', P5: 'tribal', P6: 'tribal', P9: 'yantai' }, labels: [
+      { text: '炎太帝国', x: 350, y: 450, size: 30, color: '#b07d7d' },
+    ]},
+    { id: 'yueguo', name: '玥国', sub: '大玥帝国', years: '……～青崖2138', desc: '玥国文明是德斯特星最后一个文明。', ownership: { P1: 'yue', P2: 'yue', P3: 'yue', P4: 'yue', P5: 'yue', P6: 'yue', P7: 'yue', P8: 'yue', P9: 'yue', P10: 'yue' }, labels: [
+      { text: '大玥帝国', x: 700, y: 450, size: 34, color: '#5a4d8f' },
+      { text: '⚔ 复仇之战 · 青崖2049', x: 400, y: 300, size: 15, color: '#7c4343', event: true },
+    ]},
+    { id: 'zhongjie', name: '终结', sub: '末日灾变后', years: '青崖2138～', desc: '玥国文明迅速衰亡。', ownership: { P1: 'ash', P2: 'ash', P3: 'ash', P4: 'ash', P5: 'ash', P6: 'ash', P7: 'ash', P8: 'ash', P9: 'ash', P10: 'ash' }, labels: [
+      { text: '☄ 末日灾变 · 青崖2138', x: 600, y: 400, size: 17, color: '#55514b', event: true },
+    ]},
+  ];
+  state.activeScenario = null;
+  state.terrainLabels = [
+    { text: '西大陆（占位名）', x: 350, y: 300, size: 22, cls: 'cont-label' },
+    { text: '东大陆（占位名）', x: 1080, y: 380, size: 22, cls: 'cont-label' },
+    { text: '南大陆（占位名）', x: 700, y: 730, size: 18, cls: 'cont-label' },
+    { text: '环西大洋', x: 750, y: 250, size: 15, cls: 'ocean-label' },
+    { text: '极北冰海', x: 700, y: 120, size: 17, cls: 'pole-label' },
+    { text: '南冰洋', x: 700, y: 780, size: 17, cls: 'pole-label' },
+  ];
+  buildEraSeg();
+}
+
+function makeProvince(id, name, pts, biome, culture){
+  const points = pts.map(p => ({x: p[0], y: p[1]}));
+  return {
+    id, name,
+    points: pathD(points),
+    rawPoints: points,
+    biome,
+    biomeColor: biomeColors[biome] || '#dcd8cf',
+    culture,
+    area: polyArea(points),
+    coast: true,
+    owner: null,
+    label: null,
+    centroid: centroid(points),
+  };
+}
+
+/* ---------- 导出 JSON ---------- */
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const data = {
+    version: 2,
+    baseMaps: {
+      '德斯特星': {
+        id: '德斯特星',
+        name: '德斯特星',
+        terrain: state.provinces.map(p => ({
+          id: p.id,
+          name: p.name,
+          biome: p.biome,
+          culture: p.culture,
+          points: p.rawPoints || reparsePoints(p.points),
+          coast: p.coast,
+          label: p.label,
+        })),
+        referenceImages: [],
+        exportedAt: new Date().toISOString(),
+      }
+    },
+    scenarios: state.scenarios.reduce((acc, sc) => {
+      acc[sc.id] = {
+        id: sc.id,
+        ownerKey: '德斯特星',
+        name: sc.name,
+        era: { label: sc.sub, years: sc.years },
+        polities: Object.entries(state.polities).map(([id, p]) => ({ id, name: p.name, color: p.color })),
+        ownership: sc.ownership,
+        labels: sc.labels,
+        description: sc.desc,
+      };
+      return acc;
+    }, {}),
+  };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'scenarios.json'; a.click();
+  URL.revokeObjectURL(url);
+  showMsg('已导出 scenarios.json');
+});
+
+/* ---------- 工具函数 ---------- */
+function centroid(pts){
+  let x = 0, y = 0;
+  for(const p of pts){ x += p.x || p[0] || 0; y += p.y || p[1] || 0; }
+  return [x / pts.length, y / pts.length];
+}
+
+function polyArea(pts){
+  let a = 0;
+  for(let i = 0; i < pts.length; i++){
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    const px = p.x || p[0] || 0, py = p.y || p[1] || 0;
+    const qx = q.x || q[0] || 0, qy = q.y || q[1] || 0;
+    a += px * qy - qx * py;
+  }
+  return Math.abs(a) / 2;
+}
+
+function reparsePoints(d){
+  const pts = [];
+  const tokens = d.match(/[ML][^ML]*/gi) || [];
+  for(const token of tokens){
+    const nums = token.slice(1).trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
+    for(let i = 0; i < nums.length; i += 2){
+      pts.push({x: nums[i], y: nums[i + 1]});
+    }
+  }
+  return pts;
+}
+
+function mixColor(hex1, hex2, t){
+  const p = h => {
+    const n = parseInt(h.replace('#',''), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const a = p(hex1), b = p(hex2);
+  return `rgb(${a.map((c,i) => Math.round(c + (b[i] - c) * t)).join(',')})`;
+}
+
+function updateStatusBar(){
+  document.getElementById('stCount').textContent = state.provinces.length;
+  document.getElementById('stBurgs').textContent = state.burgs.length;
+  document.getElementById('stMode').textContent = state.mode === 'terrain' ? '地形' : '政治';
+}
+
+const biomeColors = {
+  ice: '#e6ebf1', tundra: '#d4dccc', boreal: '#a8bd92', temperate: '#bccda0',
+  savanna: '#cfcd9e', steppe: '#d6cc9f', desert: '#e0d3ac', jungle: '#93b183',
+  mountain: '#b5a893', water: '#466eab'
+};
+
+/* ---------- 启动 ---------- */
+// Auto-load .map if available
+fetch('desite.map')
+  .then(r => r.text())
+  .then(text => {
+    try {
+      importMap(text);
+      // Switch to political mode after import
+      state.mode = 'political';
+      state.activeScenario = state.scenarios[0];
+      document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === 'political'));
+      render();
+    } catch(e) {
+      logErr('importMap failed: ' + e.message + '\n' + e.stack);
+      generateDemoData(); render(); resetView();
+    }
+  })
+  .catch(e => { logErr('Fetch failed: ' + e.message); generateDemoData(); render(); resetView(); });
+</script>
+</body>
+</html>
