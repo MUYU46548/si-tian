@@ -61,9 +61,16 @@
         </select>
       </div>
       <div class="tool-group">
+        <label>吸附：</label>
+        <label class="check-label" title="绘制/顶点编辑时对齐到 50px 网格（按住 Shift 临时禁用）">
+          <input type="checkbox" v-model="snapToGridEnabled" /> 网格吸附
+        </label>
+      </div>
+      <div class="tool-group">
         <label>图层：</label>
         <label class="check-label"><input type="checkbox" v-model="showBiomes" /> 生物群系</label>
         <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
+        <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
       </div>
       <div class="tool-group">
@@ -125,6 +132,8 @@
       <span v-if="splitStep > 0" class="draw-hint">拆分: 点击第 {{ splitStep + 1 }} 个点</span>
       <span v-if="mergeStep > 0" class="draw-hint">合并: 点击第 {{ mergeStep + 1 }} 个省份</span>
       <span v-if="vertexEditMode" class="draw-hint">顶点编辑：拖拽顶点 | 点击边插入 | 右键顶点删除</span>
+      <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
+      <span v-if="selectedBurg" class="selected-burg">城镇：{{ selectedBurg.name }}（人口 {{ formatPopulation(selectedBurg.population) }}）</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
       <span v-if="selectedPolity" class="selected-polity">已选势力：<span class="polity-dot" :style="{ background: selectedPolity.color }"></span>{{ selectedPolity.name }}</span>
       <span class="save-status" :class="store.saveStatus.value">
@@ -258,6 +267,7 @@ const showScenarioManager = ref(false);
 const showBiomes = ref(true);
 const showBorders = ref(true);
 const showLabels = ref(true);
+const showBurgs = ref(true);
 
 // 摄像机（pan/zoom）
 const cameraX = ref(0);
@@ -275,6 +285,21 @@ const mergeProvId = ref(null);
 const vertexEditMode = ref(false);
 const draggingVertex = ref(null); // { provId, vertexIdx }
 const hoveredVertex = ref(null);
+// 拖拽中的临时顶点（仅做渲染预览，不写 store → undo 快照保持正确）
+const dragPreview = ref(null); // { provId, points }
+
+// 网格吸附（P0-T3）
+const GRID_STEP = 50;                // 世界坐标网格间距，与 drawBackground 网格线一致
+const snapToGridEnabled = ref(true); // 工具栏开关，默认开启
+const snapMarker = ref(null);        // { x, y } 最近吸附点，用于十字标记
+let snapMarkerTimer = null;
+let lastFitKey = '';                 // 自动适屏：上次适配的底图键
+let lastFitCount = 0;                // 自动适屏：上次适配时的省份数
+
+// 城镇标记（P1-T4）
+const BURG_HIT_RADIUS = 10;          // 命中半径（屏幕像素）
+const hoveredBurg = ref(null);
+const selectedBurg = ref(null);
 
 // 右键菜单
 const contextMenu = ref({ show: false, x: 0, y: 0, provId: null });
@@ -311,6 +336,20 @@ const newScenario = ref({
 
 const baseMap = computed(() => store.baseMaps?.[baseMapKey.value]);
 
+// 城镇数据：优先取 .map 导入的 burgs，兼容旧数据（早期导入只把首都写进剧本 markers）
+const burgs = computed(() => {
+  const list = baseMap.value?.burgs;
+  if (Array.isArray(list) && list.length) return list;
+  return (selectedScenario.value?.markers || []).map((m, i) => ({
+    id: `marker_${i}`,
+    name: m.name || '',
+    x: m.x,
+    y: m.y,
+    capital: 1,
+    population: 0,
+  }));
+});
+
 const scenarios = computed(() => {
   return store.getScenariosByOwner?.(baseMapKey.value) || [];
 });
@@ -333,6 +372,9 @@ function setTool(t) {
   mergeProvId.value = null;
   vertexEditMode.value = (t === 'vertex');
   draggingVertex.value = null;
+  dragPreview.value = null;
+  hoveredBurg.value = null;
+  clearSnapMarker();
   updateCursor();
 }
 
@@ -367,6 +409,48 @@ function selectPolity(p) {
 }
 
 // ═══════════════════════════════════════════
+// 网格吸附（P0-T3）
+// ═══════════════════════════════════════════
+/** 对齐到最近网格点；bypass（按住 Shift）或关闭开关时原样返回 */
+function snapToGrid(world, bypass = false) {
+  if (!snapToGridEnabled.value || bypass) return { x: world.x, y: world.y, snapped: false };
+  return {
+    x: Math.round(world.x / GRID_STEP) * GRID_STEP,
+    y: Math.round(world.y / GRID_STEP) * GRID_STEP,
+    snapped: true,
+  };
+}
+
+function setSnapMarker(x, y) {
+  snapMarker.value = { x, y };
+  if (snapMarkerTimer) { clearTimeout(snapMarkerTimer); snapMarkerTimer = null; }
+}
+
+/** delay > 0 时延时自动清除（绘制点击后短暂显示），否则立即清除 */
+function clearSnapMarker(delay = 0) {
+  if (snapMarkerTimer) { clearTimeout(snapMarkerTimer); snapMarkerTimer = null; }
+  if (delay <= 0) { snapMarker.value = null; return; }
+  snapMarkerTimer = setTimeout(() => {
+    snapMarkerTimer = null;
+    snapMarker.value = null;
+    render();
+  }, delay);
+}
+
+/** 拖拽中返回临时预览点集，避免渲染读到未提交的修改 */
+function resolvePoints(prov) {
+  if (dragPreview.value && dragPreview.value.provId === prov.id) return dragPreview.value.points;
+  return prov.points;
+}
+
+/** 选中省份始终指向 store 中的最新对象（updateBaseProvince 会生成新对象） */
+function currentProvince() {
+  const sp = selectedProvince.value;
+  if (!sp) return null;
+  return baseMap.value?.terrain?.find(p => p.id === sp.id) || sp;
+}
+
+// ═══════════════════════════════════════════
 // 坐标转换
 // ═══════════════════════════════════════════
 function screenToWorld(sx, sy) {
@@ -391,16 +475,19 @@ function onMouseDown(event) {
       const sx = event.clientX - rect.left;
       const sy = event.clientY - rect.top;
       const world = screenToWorld(sx, sy);
-      const prov = selectedProvince.value;
+      const prov = currentProvince();
       const threshold = 8 / cameraScale.value;
-      for (let i = 0; i < prov.points.length; i++) {
-        const p = prov.points[i];
-        const dx = (p.x || p[0]) - world.x;
-        const dy = (p.y || p[1]) - world.y;
-        if (Math.sqrt(dx * dx + dy * dy) < threshold) {
-          draggingVertex.value = { provId: prov.id, vertexIdx: i };
-          canvas.value.style.cursor = 'grabbing';
-          return;
+      const points = prov && prov.points ? resolvePoints(prov) : null;
+      if (points) {
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          const dx = (p.x || p[0]) - world.x;
+          const dy = (p.y || p[1]) - world.y;
+          if (Math.sqrt(dx * dx + dy * dy) < threshold) {
+            draggingVertex.value = { provId: prov.id, vertexIdx: i };
+            canvas.value.style.cursor = 'grabbing';
+            return;
+          }
         }
       }
     }
@@ -416,14 +503,27 @@ function onMouseMove(event) {
     const sx = event.clientX - rect.left;
     const sy = event.clientY - rect.top;
     const world = screenToWorld(sx, sy);
-    const prov = baseMap.value?.terrain?.find(p => p.id === draggingVertex.value.provId);
-    if (prov && prov.points[draggingVertex.value.vertexIdx]) {
-      prov.points[draggingVertex.value.vertexIdx] = { x: world.x, y: world.y };
+    const { provId, vertexIdx } = draggingVertex.value;
+    const prov = baseMap.value?.terrain?.find(p => p.id === provId);
+    if (prov && prov.points && prov.points[vertexIdx]) {
+      // 顶点编辑拖拽同样吸附网格
+      const snapped = snapToGrid(world, event.shiftKey);
+      if (snapped.snapped) setSnapMarker(snapped.x, snapped.y);
+      // 只更新临时预览，不写 store（拖拽结束再一次性提交，保证 undo 可回滚）
+      dragPreview.value = {
+        provId,
+        points: resolvePoints(prov).map((p, i) => (
+          i === vertexIdx ? { x: snapped.x, y: snapped.y } : { x: p.x ?? p[0], y: p.y ?? p[1] }
+        )),
+      };
       render();
     }
     return;
   }
-  if (!isPanning) return;
+  if (!isPanning) {
+    updateBurgHover(event);
+    return;
+  }
   const dx = event.clientX - panStart.x;
   const dy = event.clientY - panStart.y;
   cameraX.value += dx;
@@ -438,10 +538,25 @@ function onMouseUp() {
     updateCursor();
   }
   if (draggingVertex.value) {
+    const { provId } = draggingVertex.value;
+    const preview = dragPreview.value;
     draggingVertex.value = null;
-    // 保存修改
-    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { points: selectedProvince.value.points });
+    dragPreview.value = null;
+    clearSnapMarker();
+    // 拖拽结束后一次性写入 store：redo 写坐标、undo 回滚到拖拽前
+    if (preview && preview.provId === provId) {
+      store.updateBaseProvince(baseMapKey.value, provId, { points: preview.points });
+    }
+    render();
     updateCursor();
+  }
+}
+
+function onCanvasMouseLeave() {
+  onMouseUp();
+  if (hoveredBurg.value) {
+    hoveredBurg.value = null;
+    render();
   }
 }
 
@@ -530,7 +645,13 @@ function onCanvasClick(event) {
   }
 
   if (tool.value === 'draw') {
-    drawPoints.value = [...drawPoints.value, world];
+    // 绘制顶点对齐网格（Shift 临时禁用）
+    const snapped = snapToGrid(world, event.shiftKey);
+    drawPoints.value = [...drawPoints.value, { x: snapped.x, y: snapped.y }];
+    if (snapped.snapped) {
+      setSnapMarker(snapped.x, snapped.y);
+      clearSnapMarker(600);
+    }
     render();
     return;
   }
@@ -545,11 +666,15 @@ function onCanvasClick(event) {
     return;
   }
 
-  // 选择模式：选中/取消选中
+  // 选择模式：城镇点击优先（标记支持选中，为后续编辑预留），否则选中省份
   if (tool.value === 'select') {
-    const prov = findProvinceAt(world.x, world.y);
-    selectedProvince.value = prov;
-    showProps.value = !!prov;
+    const burg = showBurgs.value ? findBurgAt(sx, sy) : null;
+    selectedBurg.value = burg;
+    if (!burg) {
+      const prov = findProvinceAt(world.x, world.y);
+      selectedProvince.value = prov;
+      showProps.value = !!prov;
+    }
     render();
     return;
   }
@@ -585,6 +710,9 @@ function onKeyDown(event) {
     mergeStep.value = 0;
     mergeProvId.value = null;
     contextMenu.value.show = false;
+    selectedBurg.value = null;
+    dragPreview.value = null;
+    clearSnapMarker();
     render();
   }
   if (event.key === 'Enter' && tool.value === 'draw' && drawPoints.value.length >= 3) {
@@ -912,10 +1040,14 @@ function render() {
   drawProvinces(ctx.value);
   if (showBorders.value) drawProvinceBorders(ctx.value);
   drawVertexHandles(ctx.value);
+  if (showBurgs.value) drawBurgs(ctx.value);
   drawPreviewOverlay(ctx.value);
   if (showLabels.value) drawLabels(ctx.value);
 
   ctx.value.restore();
+
+  // 城镇信息浮层画在屏幕坐标系：字号与命中不受缩放影响
+  drawBurgTooltip(ctx.value);
 }
 
 function drawBackground(ctx) {
@@ -927,7 +1059,7 @@ function drawBackground(ctx) {
   // Grid
   ctx.strokeStyle = 'rgba(255,255,255,0.03)';
   ctx.lineWidth = 1 / cameraScale.value;
-  const step = 50;
+  const step = GRID_STEP;
   const startX = Math.floor(tl.x / step) * step;
   const startY = Math.floor(tl.y / step) * step;
   const endX = br.x + step;
@@ -973,15 +1105,16 @@ function drawProvinces(c) {
   if (!baseMap.value?.terrain) return;
   baseMap.value.terrain.forEach(prov => {
     const color = getProvinceColor(prov);
+    const points = resolvePoints(prov);
     c.fillStyle = color;
     c.strokeStyle = 'transparent';
     c.lineWidth = 0;
     
-    if (prov.points && Array.isArray(prov.points) && prov.points.length > 2) {
+    if (points && Array.isArray(points) && points.length > 2) {
       c.beginPath();
-      c.moveTo(prov.points[0].x || prov.points[0][0], prov.points[0].y || prov.points[0][1]);
-      for (let i = 1; i < prov.points.length; i++) {
-        c.lineTo(prov.points[i].x || prov.points[i][0], prov.points[i].y || prov.points[i][1]);
+      c.moveTo(points[0].x || points[0][0], points[0].y || points[0][1]);
+      for (let i = 1; i < points.length; i++) {
+        c.lineTo(points[i].x || points[i][0], points[i].y || points[i][1]);
       }
       c.closePath();
       c.fill();
@@ -994,14 +1127,15 @@ function drawProvinceBorders(c) {
   baseMap.value.terrain.forEach(prov => {
     const isSelected = selectedProvince.value?.id === prov.id;
     const isMergeTarget = mergeProvId.value === prov.id;
+    const points = resolvePoints(prov);
     c.strokeStyle = isMergeTarget ? '#ffd700' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)');
     c.lineWidth = isSelected ? 1.5 / cameraScale.value : 0.6 / cameraScale.value;
     
-    if (prov.points && Array.isArray(prov.points) && prov.points.length > 2) {
+    if (points && Array.isArray(points) && points.length > 2) {
       c.beginPath();
-      c.moveTo(prov.points[0].x || prov.points[0][0], prov.points[0].y || prov.points[0][1]);
-      for (let i = 1; i < prov.points.length; i++) {
-        c.lineTo(prov.points[i].x || prov.points[i][0], prov.points[i].y || prov.points[i][1]);
+      c.moveTo(points[0].x || points[0][0], points[0].y || points[0][1]);
+      for (let i = 1; i < points.length; i++) {
+        c.lineTo(points[i].x || points[i][0], points[i].y || points[i][1]);
       }
       c.closePath();
       c.stroke();
@@ -1011,10 +1145,11 @@ function drawProvinceBorders(c) {
 
 function drawVertexHandles(c) {
   if (!vertexEditMode.value || !selectedProvince.value) return;
-  const prov = selectedProvince.value;
-  if (!prov.points) return;
+  const prov = currentProvince();
+  const points = prov ? resolvePoints(prov) : null;
+  if (!points) return;
   const r = 4 / cameraScale.value;
-  prov.points.forEach((p, i) => {
+  points.forEach((p, i) => {
     const px = p.x || p[0];
     const py = p.y || p[1];
     c.fillStyle = draggingVertex.value?.vertexIdx === i ? '#ffd700' : '#a78bfa';
@@ -1065,12 +1200,164 @@ function drawPreviewOverlay() {
     }
   }
 
+  // 网格吸附十字标记（P0-T3）
+  if (snapMarker.value) {
+    const mx = snapMarker.value.x;
+    const my = snapMarker.value.y;
+    const arm = 7 / cameraScale.value;
+    c.strokeStyle = '#34d399';
+    c.lineWidth = 1.5 / cameraScale.value;
+    c.beginPath();
+    c.moveTo(mx - arm, my);
+    c.lineTo(mx + arm, my);
+    c.moveTo(mx, my - arm);
+    c.lineTo(mx, my + arm);
+    c.stroke();
+    c.beginPath();
+    c.arc(mx, my, 2.5 / cameraScale.value, 0, Math.PI * 2);
+    c.stroke();
+  }
+
   if (tool.value === 'split' && splitStep.value === 1 && splitPoints.value.length === 1) {
     c.fillStyle = '#fbbf24';
     c.beginPath();
     c.arc(splitPoints.value[0].x, splitPoints.value[0].y, 5 / cameraScale.value, 0, Math.PI * 2);
     c.fill();
   }
+}
+
+// ═══════════════════════════════════════════
+// 城镇图层（P1-T4）
+// ═══════════════════════════════════════════
+/** 屏幕坐标命中城镇；首都优先（避免小城镇遮住首都） */
+function findBurgAt(sx, sy) {
+  const list = burgs.value;
+  if (!list.length) return null;
+  const r2 = BURG_HIT_RADIUS * BURG_HIT_RADIUS;
+  let best = null;
+  let bestD = Infinity;
+  for (let pass = 1; pass >= 0; pass--) {
+    for (const b of list) {
+      if ((b.capital ? 1 : 0) !== pass) continue;
+      const dx = cameraX.value + b.x * cameraScale.value - sx;
+      const dy = cameraY.value + b.y * cameraScale.value - sy;
+      const d = dx * dx + dy * dy;
+      if (d <= r2 && d < bestD) { bestD = d; best = b; }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
+/** 选择工具下 hover 命中城镇；仅状态变化时重绘，避免 mousemove 刷屏 */
+function updateBurgHover(event) {
+  if (tool.value !== 'select' || !showBurgs.value) {
+    if (hoveredBurg.value) { hoveredBurg.value = null; render(); }
+    return;
+  }
+  const rect = canvas.value.getBoundingClientRect();
+  const hit = findBurgAt(event.clientX - rect.left, event.clientY - rect.top);
+  const prevId = hoveredBurg.value ? hoveredBurg.value.id : null;
+  const nextId = hit ? hit.id : null;
+  if (prevId === nextId) return;
+  hoveredBurg.value = hit;
+  canvas.value.style.cursor = hit ? 'pointer' : 'grab';
+  render();
+}
+
+/** 首都：金色星形 */
+function drawCapitalStar(c, x, y, r) {
+  c.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rad = i % 2 === 0 ? r : r * 0.42;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const px = x + Math.cos(a) * rad;
+    const py = y + Math.sin(a) * rad;
+    if (i === 0) c.moveTo(px, py);
+    else c.lineTo(px, py);
+  }
+  c.closePath();
+  c.fillStyle = '#ffd700';
+  c.fill();
+  c.strokeStyle = 'rgba(20,24,34,0.65)';
+  c.lineWidth = 1 / cameraScale.value;
+  c.stroke();
+}
+
+function drawBurgs(c) {
+  const list = burgs.value;
+  if (!list.length) return;
+  // 视口裁剪：只画可见范围（含边距）
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const pad = 24 / cameraScale.value;
+  const minX = tl.x - pad, maxX = br.x + pad;
+  const minY = tl.y - pad, maxY = br.y + pad;
+  const dotR = 2.5 / cameraScale.value;
+  const starR = 5.5 / cameraScale.value;
+  const hoverId = hoveredBurg.value ? hoveredBurg.value.id : null;
+  const selectedId = selectedBurg.value ? selectedBurg.value.id : null;
+
+  // 两趟绘制（普通城镇在下、首都在上）；不新建数组，避免渲染循环内分配
+  for (let pass = 0; pass <= 1; pass++) {
+    for (const b of list) {
+      if ((b.capital ? 1 : 0) !== pass) continue;
+      if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
+      if (pass === 1) {
+        drawCapitalStar(c, b.x, b.y, starR);
+      } else {
+        c.fillStyle = 'rgba(214,219,228,0.85)';
+        c.beginPath();
+        c.arc(b.x, b.y, dotR, 0, Math.PI * 2);
+        c.fill();
+      }
+      if (b.id === selectedId || b.id === hoverId) {
+        c.strokeStyle = b.id === selectedId ? '#34d399' : '#ffffff';
+        c.lineWidth = 1.5 / cameraScale.value;
+        c.beginPath();
+        c.arc(b.x, b.y, starR * 1.8, 0, Math.PI * 2);
+        c.stroke();
+      }
+    }
+  }
+}
+
+/** FMG 的 population 为原始数值（不做单位换算，避免臆造量纲） */
+function formatPopulation(pop) {
+  if (!pop) return '—';
+  return pop >= 100 ? String(Math.round(pop)) : pop.toFixed(1);
+}
+
+/** 悬停/选中的城镇信息浮层（屏幕坐标系，字号不随缩放变化） */
+function drawBurgTooltip(c) {
+  if (!showBurgs.value) return;
+  const b = hoveredBurg.value || selectedBurg.value;
+  if (!b) return;
+  const sx = cameraX.value + b.x * cameraScale.value;
+  const sy = cameraY.value + b.y * cameraScale.value;
+  const title = b.name || '未命名城镇';
+  const sub = `${b.capital ? '首都 · ' : ''}人口 ${formatPopulation(b.population)}`;
+  c.font = '12px "PingFang SC", sans-serif';
+  const w = Math.max(c.measureText(title).width, c.measureText(sub).width) + 18;
+  const h = 36;
+  let tx = sx + 12;
+  let ty = sy - h - 6;
+  if (tx + w > canvas.value.width) tx = sx - w - 12;
+  if (ty < 0) ty = sy + 12;
+  c.fillStyle = 'rgba(15,26,46,0.94)';
+  c.strokeStyle = b.capital ? '#ffd700' : '#475569';
+  c.lineWidth = 1;
+  c.beginPath();
+  if (typeof c.roundRect === 'function') c.roundRect(tx, ty, w, h, 6);
+  else c.rect(tx, ty, w, h);
+  c.fill();
+  c.stroke();
+  c.fillStyle = '#e2e8f0';
+  c.font = '12px "PingFang SC", sans-serif';
+  c.fillText(title, tx + 9, ty + 15);
+  c.fillStyle = '#94a3b8';
+  c.font = '11px "PingFang SC", sans-serif';
+  c.fillText(sub, tx + 9, ty + 28);
 }
 
 function drawLabels(c) {
@@ -1101,6 +1388,7 @@ async function exportPNG() {
   ctx.scale(cameraScale.value, cameraScale.value);
   drawBackground(ctx);
   drawProvinces(ctx);
+  if (showBurgs.value) drawBurgs(ctx);
   drawLabels(ctx);
   ctx.font = '14px "PingFang SC", sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -1141,7 +1429,7 @@ onMounted(() => {
   cvs.addEventListener('mousedown', onMouseDown);
   cvs.addEventListener('mousemove', onMouseMove);
   cvs.addEventListener('mouseup', onMouseUp);
-  cvs.addEventListener('mouseleave', onMouseUp);
+  cvs.addEventListener('mouseleave', onCanvasMouseLeave);
   cvs.addEventListener('click', onCanvasClick);
   cvs.addEventListener('dblclick', onCanvasDblClick);
   cvs.addEventListener('wheel', onWheel, { passive: false });
@@ -1153,6 +1441,8 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(wrap);
 
+  lastFitKey = baseMapKey.value;
+  lastFitCount = baseMap.value?.terrain?.length || 0;
   if (baseMap.value?.terrain?.length) {
     setTimeout(fitToView, 100);
   }
@@ -1163,11 +1453,32 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
 });
 
-watch(baseMap, () => {
-  render();
-  if (baseMap.value?.terrain?.length) {
-    setTimeout(fitToView, 50);
+// 关闭城镇图层时同时收起悬停/选中态（避免残留浮层）
+watch(showBurgs, (visible) => {
+  if (!visible) {
+    hoveredBurg.value = null;
+    selectedBurg.value = null;
   }
+  render();
+});
+
+// 换图或省份增删时自动适应视图；编辑顶点/改名不打断当前镜头
+watch([baseMapKey, () => baseMap.value?.terrain?.length || 0], ([key, count]) => {
+  if (!count) return;
+  if (key === lastFitKey && count === lastFitCount) return;
+  lastFitKey = key;
+  lastFitCount = count;
+  setTimeout(fitToView, 50);
+});
+
+watch(baseMap, () => {
+  // updateBaseProvince 会生成新对象，重新对齐选中引用，避免读到旧数据
+  const sp = selectedProvince.value;
+  if (sp) {
+    const fresh = baseMap.value?.terrain?.find(p => p.id === sp.id);
+    if (fresh && fresh !== sp) selectedProvince.value = fresh;
+  }
+  render();
 }, { deep: true });
 </script>
 
@@ -1357,6 +1668,7 @@ watch(baseMap, () => {
 
 .draw-hint { color: #a78bfa; font-weight: 600; }
 .selected-provity { color: #fbbf24; }
+.selected-burg { color: #ffd700; font-weight: 600; }
 
 .selected-polity {
   display: flex;

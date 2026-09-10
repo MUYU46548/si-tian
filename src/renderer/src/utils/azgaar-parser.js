@@ -176,7 +176,23 @@ export function parseMapFile(text) {
       type: 'capital',
     }));
 
-  // 14. Build heightmap grid info
+  // 14. Build burgs (城镇/首都) — 紧凑字段，供地图图层渲染与点击查询
+  //     注意：FMG 的 burg[0] 是占位项（数字），且 capital 是 1/0 而非 true/false
+  const burgs = burgData
+    .filter(b => b && typeof b === 'object' && b.i && b.x && b.y)
+    .map(b => ({
+      id: b.i,
+      name: b.name || `Burg ${b.i}`,
+      x: b.x,
+      y: b.y,
+      capital: b.capital ? 1 : 0,
+      population: b.population || 0,
+      state: b.state || 0,
+      feature: b.feature || 0,
+      group: b.group || (b.capital ? 'capital' : 'town'),
+    }));
+
+  // 15. Build heightmap grid info
   const heightmap = {
     cells: cellsData,
     biomes: biomesData,
@@ -190,6 +206,7 @@ export function parseMapFile(text) {
     ownership,
     labels,
     markers,
+    burgs,
     heightmap,
     stats: {
       provinces: terrain.length,
@@ -226,6 +243,7 @@ export function buildScenariosJson(parsed, mapName, scenarioName) {
         id: mapName,
         name: mapName,
         terrain: parsed.terrain,
+        burgs: parsed.burgs || [],
         heightmap: parsed.heightmap,
         referenceImages: [],
         createdAt: now,
