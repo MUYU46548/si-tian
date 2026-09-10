@@ -5,10 +5,12 @@
         <h1>选择世界</h1>
         <p class="subtitle">选择一个世界观作为起点</p>
       </div>
-      <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
+      <div class="header-actions">
+        <button class="scenario-btn" @click="$emit('open-scenarios')" title="历史剧本">⏳ 历史剧本</button>
+        <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
+      </div>
     </div>
     <div v-if="worlds.length === 0" class="empty-state">
-      <div class="empty-icon">🌌</div>
       <h2>这里还没有世界</h2>
       <p>从 Obsidian 库提取地理节点，加载示例世界观体验，或创建一个空世界开始绘制。</p>
       <div class="empty-actions">
@@ -57,7 +59,7 @@ const props = defineProps({
   locations: { type: Array, default: () => [] },
 });
 
-defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample']);
+defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios']);
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {
@@ -140,9 +142,17 @@ function getLocationCount(worldId) {
 .header-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 24px;
   margin-bottom: 8px;
+  width: 100%;
+  max-width: 800px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .header-row h1 {
@@ -165,6 +175,19 @@ function getLocationCount(worldId) {
   white-space: nowrap;
 }
 .create-btn:hover { background: rgba(88, 166, 255, 0.22); }
+
+.scenario-btn {
+  padding: 8px 18px;
+  border: 1px solid #7c3aed;
+  border-radius: var(--radius-md);
+  background: rgba(124, 58, 237, 0.15);
+  color: #a78bfa;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.scenario-btn:hover { background: rgba(124, 58, 237, 0.3); }
 
 .subtitle {
   font-size: 14px;

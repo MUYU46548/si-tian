@@ -1,0 +1,802 @@
+// store/geodataModules/scenarioEditing.js — 剧本地图 store 模块
+// ctx: { execute, scheduleAutoSave, saveScenarios }
+// 所有 mutation 走 execute（redo 内写入，防双写铁律）
+import { ref } from 'vue';
+
+export function createScenarioEditingModule(ctx) {
+  const { execute, scheduleAutoSave, saveScenarios } = ctx;
+
+  const baseMaps = ref({});
+  const scenarios = ref({});
+
+  // ============================================================
+  // BaseMaps CRUD（全走 execute，undo 支持）
+  // ============================================================
+  
+  function addBaseMap(baseMapKey, baseMap) {
+    const newMap = {
+      id: baseMapKey,
+      name: baseMap.name || baseMapKey,
+      terrain: [],
+      referenceImages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...baseMap,
+    };
+    
+    execute({
+      type: 'add-basemap',
+      label: '新建底图',
+      undo: () => {
+        const { [baseMapKey]: _, ...rest } = baseMaps.value;
+        baseMaps.value = rest;
+      },
+      redo: () => {
+        baseMaps.value = { ...baseMaps.value, [baseMapKey]: newMap };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function removeBaseMap(baseMapKey) {
+    const oldMap = baseMaps.value[baseMapKey];
+    if (!oldMap) return;
+    
+    const associatedScenarios = Object.fromEntries(
+      Object.entries(scenarios.value).filter(([_, s]) => s.ownerKey === baseMapKey)
+    );
+    
+    execute({
+      type: 'remove-basemap',
+      label: '删除底图',
+      undo: () => {
+        baseMaps.value = { ...baseMaps.value, [baseMapKey]: oldMap };
+        scenarios.value = { ...scenarios.value, ...associatedScenarios };
+      },
+      redo: () => {
+        const { [baseMapKey]: _, ...rest } = baseMaps.value;
+        baseMaps.value = rest;
+        scenarios.value = Object.fromEntries(
+          Object.entries(scenarios.value).filter(([_, s]) => s.ownerKey !== baseMapKey)
+        );
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function addBaseProvince(baseMapKey, province) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const newProv = {
+      id: province.id || `prov_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: province.name || 'New Province',
+      type: 'polygon',
+      points: province.points || province.d || [],
+      biome: province.biome || 'temperate',
+      culture: province.culture || '未分类',
+      coast: province.coast ?? true,
+      ...province,
+    };
+    
+    execute({
+      type: 'add-province',
+      label: '绘制省份',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain.filter(p => p.id !== newProv.id),
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: [...baseMaps.value[baseMapKey].terrain, newProv],
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function updateBaseProvince(baseMapKey, provinceId, updates) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const oldProv = baseMap.terrain.find(p => p.id === provinceId);
+    if (!oldProv) return;
+    
+    execute({
+      type: 'update-province',
+      label: '编辑省份',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain.map(p =>
+              p.id === provinceId ? oldProv : p
+            ),
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain.map(p =>
+              p.id === provinceId ? { ...p, ...updates } : p
+            ),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function removeBaseProvince(baseMapKey, provinceId) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const oldProv = baseMap.terrain.find(p => p.id === provinceId);
+    if (!oldProv) return;
+    
+    execute({
+      type: 'remove-province',
+      label: '删除省份',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: [...baseMaps.value[baseMapKey].terrain, oldProv],
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain.filter(p => p.id !== provinceId),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function splitBaseProvince(baseMapKey, originalId, poly1, poly2) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const original = baseMap.terrain.find(p => p.id === originalId);
+    if (!original) return;
+    
+    const newProv1 = { ...original, id: poly1.id || `prov_${Date.now()}_a`, name: poly1.name || original.name + ' A', points: poly1.points || poly1.d, area: poly1.area };
+    const newProv2 = { ...original, id: poly2.id || `prov_${Date.now()}_b`, name: poly2.name || original.name + ' B', points: poly2.points || poly2.d, area: poly2.area };
+    
+    execute({
+      type: 'split-province',
+      label: '拆分省份',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain
+              .filter(p => p.id !== newProv1.id && p.id !== newProv2.id)
+              .concat([original]),
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain
+              .filter(p => p.id !== originalId)
+              .concat([newProv1, newProv2]),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function mergeBaseProvinces(baseMapKey, provinceIds, mergedProvince) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const oldProvinces = baseMap.terrain.filter(p => provinceIds.includes(p.id));
+    if (oldProvinces.length === 0) return;
+    
+    const merged = {
+      id: mergedProvince.id || `prov_${Date.now()}`,
+      name: mergedProvince.name || 'Merged Province',
+      type: 'polygon',
+      points: mergedProvince.points || mergedProvince.d || [],
+      biome: mergedProvince.biome || 'temperate',
+      culture: mergedProvince.culture || '未分类',
+      coast: mergedProvince.coast ?? true,
+      area: mergedProvince.area || 0,
+    };
+    
+    execute({
+      type: 'merge-provinces',
+      label: '合并省份',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain
+              .filter(p => p.id !== merged.id)
+              .concat(oldProvinces),
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            terrain: baseMaps.value[baseMapKey].terrain
+              .filter(p => !provinceIds.includes(p.id))
+              .concat([merged]),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function addBaseReferenceImage(baseMapKey, refImage) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const newRef = {
+      id: refImage.id || `ref_${Date.now()}`,
+      name: refImage.name || 'Reference',
+      dataUrl: refImage.dataUrl || '',
+      opacity: refImage.opacity ?? 0.5,
+      locked: refImage.locked ?? false,
+      offsetX: refImage.offsetX ?? 0,
+      offsetY: refImage.offsetY ?? 0,
+      scale: refImage.scale ?? 1,
+      rotation: refImage.rotation ?? 0,
+      flipH: refImage.flipH ?? false,
+      width: refImage.width || 0,
+      height: refImage.height || 0,
+      ppm: refImage.ppm || 0,
+      calibrated: refImage.calibrated ?? false,
+    };
+    
+    execute({
+      type: 'add-refimage',
+      label: '添加参考图',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            referenceImages: baseMaps.value[baseMapKey].referenceImages.filter(r => r.id !== newRef.id),
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            referenceImages: [...(baseMaps.value[baseMapKey].referenceImages || []), newRef],
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function updateBaseReferenceImage(baseMapKey, refId, updates) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const oldRef = (baseMap.referenceImages || []).find(r => r.id === refId);
+    if (!oldRef) return;
+    
+    execute({
+      type: 'update-refimage',
+      label: '编辑参考图',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            referenceImages: baseMaps.value[baseMapKey].referenceImages.map(r =>
+              r.id === refId ? oldRef : r
+            ),
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            referenceImages: baseMaps.value[baseMapKey].referenceImages.map(r =>
+              r.id === refId ? { ...r, ...updates } : r
+            ),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function removeBaseReferenceImage(baseMapKey, refId) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
+    
+    const oldRef = (baseMap.referenceImages || []).find(r => r.id === refId);
+    if (!oldRef) return;
+    
+    execute({
+      type: 'remove-refimage',
+      label: '删除参考图',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            referenceImages: [...(baseMaps.value[baseMapKey].referenceImages || []), oldRef],
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            referenceImages: (baseMaps.value[baseMapKey].referenceImages || []).filter(r => r.id !== refId),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  // ============================================================
+  // Scenarios CRUD
+  // ============================================================
+  
+  function createScenario(scenarioId, scenario) {
+    const now = new Date().toISOString();
+    const newScenario = {
+      id: scenarioId,
+      ownerKey: scenario.ownerKey,
+      name: scenario.name || 'New Scenario',
+      era: scenario.era || { roman: '', label: '', startYear: '', endYear: '' },
+      order: scenario.order || Object.keys(scenarios.value).length + 1,
+      description: scenario.description || '',
+      sourceNote: scenario.sourceNote || '',
+      polities: scenario.polities || [],
+      ownership: scenario.ownership || {},
+      labels: scenario.labels || [],
+      markers: scenario.markers || [],
+      createdAt: now,
+      updatedAt: now,
+      ...scenario,
+    };
+    
+    execute({
+      type: 'create-scenario',
+      label: '创建剧本',
+      undo: () => {
+        const { [scenarioId]: _, ...rest } = scenarios.value;
+        scenarios.value = rest;
+      },
+      redo: () => {
+        scenarios.value = { ...scenarios.value, [scenarioId]: newScenario };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function updateScenario(scenarioId, updates) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    execute({
+      type: 'update-scenario',
+      label: '编辑剧本',
+      undo: () => {
+        scenarios.value = { ...scenarios.value, [scenarioId]: scenario };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: { ...scenario, ...updates, updatedAt: new Date().toISOString() },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function removeScenario(scenarioId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    execute({
+      type: 'remove-scenario',
+      label: '删除剧本',
+      undo: () => {
+        scenarios.value = { ...scenarios.value, [scenarioId]: scenario };
+      },
+      redo: () => {
+        const { [scenarioId]: _, ...rest } = scenarios.value;
+        scenarios.value = rest;
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function inheritScenario(newScenarioId, baseScenarioId, overrides = {}) {
+    const base = scenarios.value[baseScenarioId];
+    const now = new Date().toISOString();
+    
+    const newScenario = {
+      id: newScenarioId,
+      ownerKey: base?.ownerKey || overrides.ownerKey,
+      name: overrides.name || 'New Era',
+      era: overrides.era || { roman: '', label: '', startYear: '', endYear: '' },
+      order: (base?.order || 0) + 1,
+      description: overrides.description || '',
+      sourceNote: overrides.sourceNote || '',
+      polities: overrides.polities || base?.polities || [],
+      ownership: JSON.parse(JSON.stringify(base?.ownership || {})),
+      labels: JSON.parse(JSON.stringify(base?.labels || [])),
+      markers: JSON.parse(JSON.stringify(base?.markers || [])),
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    };
+    
+    execute({
+      type: 'inherit-scenario',
+      label: '继承剧本',
+      undo: () => {
+        const { [newScenarioId]: _, ...rest } = scenarios.value;
+        scenarios.value = rest;
+      },
+      redo: () => {
+        scenarios.value = { ...scenarios.value, [newScenarioId]: newScenario };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  // ============================================================
+  // Ownership（EU4 省份染色）
+  // ============================================================
+  
+  function setOwnership(scenarioId, provinceId, polityId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    const oldOwner = scenario.ownership?.[provinceId] || null;
+    
+    execute({
+      type: 'set-ownership',
+      label: '指派势力',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            ownership: { ...scenarios.value[scenarioId].ownership, [provinceId]: oldOwner },
+          },
+        };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            ownership: { ...scenarios.value[scenarioId].ownership, [provinceId]: polityId },
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function clearOwnership(scenarioId, provinceId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    const oldOwner = scenario.ownership?.[provinceId];
+    if (!oldOwner) return;
+    
+    execute({
+      type: 'clear-ownership',
+      label: '清除归属',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            ownership: { ...scenarios.value[scenarioId].ownership, [provinceId]: oldOwner },
+          },
+        };
+      },
+      redo: () => {
+        const { [provinceId]: _, ...rest } = scenarios.value[scenarioId].ownership;
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            ownership: rest,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function batchSetOwnership(scenarioId, provinceIds, polityId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    const oldOwnership = { ...scenario.ownership };
+    const newOwnership = { ...scenario.ownership };
+    provinceIds.forEach(id => { newOwnership[id] = polityId; });
+    
+    execute({
+      type: 'batch-ownership',
+      label: '批量指派',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: { ...scenarios.value[scenarioId], ownership: oldOwnership },
+        };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            ownership: newOwnership,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  // ============================================================
+  // Labels & Markers
+  // ============================================================
+  
+  function addScenarioLabel(scenarioId, label) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    const newLabel = {
+      id: label.id || `label_${Date.now()}`,
+      x: label.x,
+      y: label.y,
+      text: label.text || '',
+      size: label.size || 12,
+      color: label.color || '#3c4150',
+    };
+    
+    execute({
+      type: 'add-label',
+      label: '添加地名',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            labels: scenarios.value[scenarioId].labels.filter(l => l.id !== newLabel.id),
+          },
+        };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            labels: [...(scenarios.value[scenarioId].labels || []), newLabel],
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function removeScenarioLabel(scenarioId, labelId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    const oldLabel = (scenario.labels || []).find(l => l.id === labelId);
+    if (!oldLabel) return;
+    
+    execute({
+      type: 'remove-label',
+      label: '删除地名',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            labels: [...(scenarios.value[scenarioId].labels || []), oldLabel],
+          },
+        };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            labels: (scenarios.value[scenarioId].labels || []).filter(l => l.id !== labelId),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function addScenarioMarker(scenarioId, marker) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    const newMarker = {
+      id: marker.id || `marker_${Date.now()}`,
+      x: marker.x,
+      y: marker.y,
+      name: marker.name || '',
+      type: marker.type || 'default',
+    };
+    
+    execute({
+      type: 'add-marker',
+      label: '添加标记',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            markers: scenarios.value[scenarioId].markers.filter(m => m.id !== newMarker.id),
+          },
+        };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            markers: [...(scenarios.value[scenarioId].markers || []), newMarker],
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  function removeScenarioMarker(scenarioId, markerId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    
+    const oldMarker = (scenario.markers || []).find(m => m.id === markerId);
+    if (!oldMarker) return;
+    
+    execute({
+      type: 'remove-marker',
+      label: '删除标记',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            markers: [...(scenarios.value[scenarioId].markers || []), oldMarker],
+          },
+        };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: {
+            ...scenarios.value[scenarioId],
+            markers: (scenarios.value[scenarioId].markers || []).filter(m => m.id !== markerId),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    
+    saveScenarios();
+  }
+
+  // ============================================================
+  // Import/Load
+  // ============================================================
+  
+  function importFromScenariosJson(data) {
+    if (data.baseMaps) {
+      baseMaps.value = { ...baseMaps.value, ...data.baseMaps };
+    }
+    if (data.scenarios) {
+      scenarios.value = { ...scenarios.value, ...data.scenarios };
+    }
+    saveScenarios();
+  }
+
+  function loadScenarioState(data) {
+    if (data.baseMaps) baseMaps.value = data.baseMaps;
+    if (data.scenarios) scenarios.value = data.scenarios;
+  }
+
+  // ============================================================
+  // Getters
+  // ============================================================
+  
+  function getBaseMap(baseMapKey) { return baseMaps.value[baseMapKey]; }
+  function getScenario(scenarioId) { return scenarios.value[scenarioId]; }
+  function getScenariosByOwner(ownerKey) { return Object.values(scenarios.value).filter(s => s.ownerKey === ownerKey); }
+  function getBaseMapsList() { return Object.values(baseMaps.value); }
+  function getAllScenarios() { return Object.values(scenarios.value); }
+
+  return {
+    baseMaps, scenarios,
+    addBaseMap, removeBaseMap, addBaseProvince, updateBaseProvince, removeBaseProvince,
+    splitBaseProvince, mergeBaseProvinces,
+    addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
+    createScenario, updateScenario, removeScenario, inheritScenario,
+    setOwnership, clearOwnership, batchSetOwnership,
+    addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
+    importFromScenariosJson, loadScenarioState,
+    getBaseMap, getScenario, getScenariosByOwner, getBaseMapsList, getAllScenarios,
+  };
+}

@@ -6,6 +6,7 @@ import { createMapDataEditingModule } from './geodataModules/mapDataEditing';
 import { createInteriorModule } from './geodataModules/interior';
 import { createAreaEditingModule } from './geodataModules/areaEditing';
 import { createSpaceEditingModule, normalizeSpaceMarkers, normalizeFleetCards } from './geodataModules/spaceEditing';
+import { createScenarioEditingModule } from './geodataModules/scenarioEditing';
 
 const AUTO_SAVE_DELAY = 800;
 
@@ -67,6 +68,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   const mapDataEditingModule = createMapDataEditingModule({
     mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap,
   });
+
+  // 剧本地图（S0）：独立底图 + EU4 势力染色
+  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios });
 
   // 从模块解构常用 state（保持原 store 内引用）
   const {
@@ -408,6 +412,18 @@ export const useGeodataStore = defineStore('geodata', () => {
       updatedAt: new Date().toISOString()
     }));
     await window.sitianAPI.saveGeodata(data);
+  }
+
+  // ===== 剧本地图持久化（独立文件 scenarios.json）=====
+  async function saveScenarios() {
+    if (!scenarioEditingModule) return;
+    const data = JSON.parse(JSON.stringify({
+      version: 2,
+      baseMaps: scenarioEditingModule.baseMaps.value,
+      scenarios: scenarioEditingModule.scenarios.value,
+      updatedAt: new Date().toISOString()
+    }));
+    await window.sitianAPI.saveScenarios(data);
   }
 
   // ===== 自动保存 =====
@@ -1037,7 +1053,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     availablePlaceTypes, searchPlaceTypeFilter, togglePlaceTypeFilter,
     toggleLayerFilter, isFilterOpen,
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
-    loadGeodata, reextract, saveGeodata, validateNodes,
+    loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
     FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,
       addNode, removeNode, updateNode, reparentNode, reparentNodes,
@@ -1056,5 +1072,6 @@ export const useGeodataStore = defineStore('geodata', () => {
     ...interiorModule,
     ...areaEditingModule,
     ...spaceEditingModule,
+    ...scenarioEditingModule,
   };
 });

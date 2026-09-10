@@ -173,7 +173,7 @@
       <tree-navigation />
       <main class="main-content">
         <world-selector
-          v-if="store.viewLevel === 'world'"
+          v-if="store.viewLevel === 'world' && !scenarioMode"
           :worlds="store.worlds"
           :domains="store.starDomains"
           :galaxies="store.galaxies"
@@ -184,6 +184,12 @@
           @delete-world="handleDeleteWorld"
           @reextract="reextract"
           @load-sample="handleLoadSampleWorld"
+          @open-scenarios="enterScenarioMode"
+        />
+
+        <scenario-map
+          v-if="scenarioMode"
+          @exit="exitScenarioMode"
         />
         
         <galaxy-map
@@ -292,6 +298,7 @@ import SystemDetailView from './components/SystemDetailView.vue';
 import PlanetMap from './components/PlanetMap.vue';
 import AreaMap from './components/AreaMap.vue';
 import InteriorView from './components/InteriorView.vue';
+import ScenarioMap from './components/ScenarioMap.vue';
 import NodeDetailPanel from './components/NodeDetailPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
@@ -322,6 +329,7 @@ const panelsStore = usePanelsStore();
 const { currentTheme, toggleTheme, initTheme } = useTheme();
 const { bookmarks, currentIndex, addBookmark, removeBookmark, clearAll } = useBookmarks();
 const dirty = ref(false);
+const scenarioMode = ref(false);
 const statusText = ref('');
 const searchBar = ref(null);
 const galaxyMapRef = ref(null);
@@ -981,6 +989,21 @@ function handleLoadSampleWorld() {
   dirty.value = true;
   statusText.value = '已加载示例世界观「幻境」，点击世界卡片开始探索';
   setTimeout(() => { statusText.value = ''; }, 5000);
+}
+
+// ===== 剧本地图模式 =====
+
+async function enterScenarioMode() {
+  // Load scenarios from disk
+  const result = await window.sitianAPI.loadScenarios();
+  if (result?.success && result.data) {
+    store.importFromScenariosJson(result.data);
+  }
+  scenarioMode.value = true;
+}
+
+function exitScenarioMode() {
+  scenarioMode.value = false;
 }
 
 function handleDeleteWorld(world) {

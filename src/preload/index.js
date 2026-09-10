@@ -45,6 +45,10 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 参考图底图（文件选择 + base64 读取）
   selectReferenceImage: () => ipcRenderer.invoke('select-reference-image'),
 
+  // ===== 剧本地图（S0）=====
+  saveScenarios: (data) => ipcRenderer.invoke('save-scenarios', data),
+  loadScenarios: () => ipcRenderer.invoke('load-scenarios'),
+
   // 导出文件（保存对话框 + 写入）
   saveExportFile: (options) => ipcRenderer.invoke('save-export-file', options),
 

@@ -50,12 +50,12 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 80 | `scripts/tools_migrate_planetdrawing.py` | 一次性迁移工具（planetDrawing 拆分） |
 | 59 | `scripts/tools_migrate_planethittest.py` | 一次性迁移工具（planetHitTest 拆分） |
 | 82 | `src/main/config.js` | userData/config.json 读写（VAULT_PATH、closeQuitsApp、windowMode） |
-| 653 | `src/main/index.js` | 主进程入口：28 个 IPC handle + 窗口/单实例锁/关闭拦截 |
+| 681 | `src/main/index.js` | 主进程入口：28 个 IPC handle + 窗口/单实例锁/关闭拦截 |
 | 88 | `src/main/tray.js` | 托盘图标（多分辨率 ico）+ 菜单 |
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 244 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
-| 135 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 1742 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 12 个低频面板异步挂载 |
+| 139 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
+| 1765 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 12 个低频面板异步挂载 |
 | 631 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
 | 2321 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 264 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
@@ -77,6 +77,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 2972 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 265 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
+| 794 | `src/renderer/src/components/ScenarioMap.vue` | （待补） |
 | 589 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
 | 642 | `src/renderer/src/components/SettingsPanel.vue` | 设置面板（选库/关闭行为/窗口模式） |
 | 145 | `src/renderer/src/components/SnapshotPanel.vue` | 版本快照面板 |
@@ -86,7 +87,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 127 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
 | 129 | `src/renderer/src/components/TreeNavigation.vue` | 树形导航面板 |
 | 406 | `src/renderer/src/components/UpdateNotification.vue` | 更新可用提示 |
-| 301 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
+| 324 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
 | 93 | `src/renderer/src/components/ZoomControls.vue` | 缩放控件 |
 | 1638 | `src/renderer/src/composables/planetDrawing.js` | 行星图 Canvas 绘制全集（createPlanetDrawing getState 工厂） |
 | 219 | `src/renderer/src/composables/planetHitTest.js` | 行星图命中检测 |
@@ -123,10 +124,11 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 35 | `src/renderer/src/composables/useTheme.js` | 主题切换 |
 | 38 | `src/renderer/src/composables/useZoomControls.js` | 缩放百分比联动 |
 | 17 | `src/renderer/src/main.js` | renderer 入口 |
-| 1060 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
+| 1077 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
 | 237 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 200 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 699 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
+| 802 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | （待补） |
 | 123 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 172 | `src/renderer/src/store/layers.js` | 图层可见性栈 |

@@ -168,6 +168,34 @@ ipcMain.handle('reextract-geodata', async () => {
   }
 });
 
+// ===== 剧本地图持久化（独立文件 scenarios.json）=====
+ipcMain.handle('save-scenarios', async (event, data) => {
+  try {
+    await fs.writeFile(path.join(getVaultPath(), '.sitian', 'scenarios.json'), JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('load-scenarios', async () => {
+  try {
+    const filePath = path.join(getVaultPath(), '.sitian', 'scenarios.json');
+    try {
+      await fs.access(filePath);
+    } catch (e) {
+      // File doesn't exist yet, return empty structure
+      return { success: true, data: { version: 2, baseMaps: {}, scenarios: {} } };
+    }
+    const raw = await fs.readFile(filePath, 'utf-8');
+    const data = JSON.parse(raw);
+    return { success: true, data };
+  } catch (err) {
+    // Corrupted JSON: return empty + error info (don't crash)
+    return { success: false, error: err.message, data: { version: 2, baseMaps: {}, scenarios: {} } };
+  }
+});
+
 // ===== 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳，保留最近 10 批 =====
 const BACKUP_KEEP = 10;
 
@@ -178,7 +206,7 @@ async function backupSitianCache() {
     await fs.mkdir(backupDir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const copied = [];
-    for (const name of ['geodata.json', 'mapdata.json']) {
+    for (const name of ['geodata.json', 'mapdata.json', 'scenarios.json']) {
       const src = path.join(sitianDir, name);
       try {
         await fs.access(src);
