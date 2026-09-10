@@ -104,7 +104,15 @@
         </label>
       </div>
       <div class="filter-footer">
-        <button class="filter-clear" @click="store.searchLayerFilter = []; store.searchPlaceTypeFilter = []; if (store.searchQuery.trim()) store.performSearch(store.searchQuery)">清除</button>
+        <label class="filter-option include-scenarios">
+          <input 
+            type="checkbox" 
+            :checked="store.includeScenarios"
+            @change="store.toggleIncludeScenarios()"
+          />
+          <span>含剧本地点</span>
+        </label>
+        <button class="filter-clear" @click="store.searchLayerFilter = []; store.searchPlaceTypeFilter = []; store.includeScenarios = false; if (store.searchQuery.trim()) store.performSearch(store.searchQuery)">清除</button>
       </div>
     </div>
   </div>
@@ -571,7 +579,8 @@ input::placeholder {
   padding-top: 8px;
   border-top: 1px solid var(--panel-border);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .filter-clear {
@@ -586,4 +595,17 @@ input::placeholder {
 .filter-clear:hover {
   color: var(--text-primary);
 }
-</style>
+
+.include-scenarios {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  margin: 0;
+}
+
+.include-scenarios input {
+  accent-color: #7c3aed;
+}</style>

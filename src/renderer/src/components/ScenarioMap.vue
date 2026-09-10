@@ -41,6 +41,7 @@
         <button @click="addReferenceImage" title="添加参考图">🖼</button>
         <button @click="handleUndo" :disabled="!canUndo" title="撤销 (Ctrl+Z)">↶</button>
         <button @click="handleRedo" :disabled="!canRedo" title="重做 (Ctrl+Y)">↷</button>
+        <button @click="exportPNG" title="导出 PNG">💾</button>
       </div>
       <div class="tool-group">
         <label>模式：</label>
@@ -423,6 +424,51 @@ function handleResize() {
   canvas.value.width = canvasWrap.value.clientWidth;
   canvas.value.height = canvasWrap.value.clientHeight;
   render();
+}
+
+async function exportPNG() {
+  // Create offscreen canvas at 2x scale
+  const cvs = canvas.value;
+  const scale = 2;
+  const offscreen = document.createElement('canvas');
+  offscreen.width = cvs.width * scale;
+  offscreen.height = cvs.height * scale;
+  const ctx = offscreen.getContext('2d');
+  
+  // Scale and redraw
+  ctx.scale(scale, scale);
+  drawBackground(ctx, cvs.width, cvs.height);
+  drawProvinces(ctx);
+  drawLabels(ctx);
+  
+  // Add watermark
+  ctx.font = '14px "PingFang SC", sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  const scenarioName = selectedScenario?.value?.name || '未命名剧本';
+  const eraLabel = selectedScenario?.value?.era?.roman || '';
+  const watermark = eraLabel ? `${eraLabel} · ${scenarioName}` : scenarioName;
+  ctx.fillText(watermark, 10, cvs.height - 10);
+  
+  // Convert to blob and save
+  offscreen.toBlob(async (blob) => {
+    if (!blob) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result;
+      const result = await window.sitianAPI.saveExportFile({
+        dataUrl,
+        defaultName: `scenario-${Date.now()}.png`,
+      });
+      if (!result?.success) {
+        // Fallback: trigger download
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `scenario-${Date.now()}.png`;
+        a.click();
+      }
+    };
+    reader.readAsDataURL(blob);
+  }, 'image/png');
 }
 
 let resizeObserver = null;

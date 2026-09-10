@@ -60,7 +60,9 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   // ===== 领域子模块组装 =====
   // 各模块通过 ctx 拿到所需的 refs/函数引用（ref 传引用保持响应式）
-  const searchModule = createSearchModule({ nodes });
+  // 注意：scenarioEditingModule 必须在 searchModule 之前创建（search 需要引用 scenarios）
+  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios });
+  const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });
   // 太空实体编辑（B6 太空标记 / B7 部队卡片）：扁平数组，坐标系为「相对恒星」的系内偏移
@@ -69,14 +71,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap,
   });
 
-  // 剧本地图（S0）：独立底图 + EU4 势力染色
-  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios });
-
   // 从模块解构常用 state（保持原 store 内引用）
   const {
     searchQuery, searchResults, searchMatchIndex, searchLayerFilter, searchPlaceTypeFilter,
-    isFilterOpen, currentMatchNode, clearSearch, performSearch,
-    toggleLayerFilter, togglePlaceTypeFilter,
+    isFilterOpen, currentMatchNode, clearSearch, performSearch, includeScenarios,
+    toggleLayerFilter, togglePlaceTypeFilter, toggleIncludeScenarios,
     cycleSearchMatch, isNodeMatched, isCurrentMatch,
   } = searchModule;
   const { interiorData, interiorReferenceImages } = interiorModule;

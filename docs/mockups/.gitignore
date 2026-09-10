@@ -1,0 +1,23 @@
+# 调试产物（脚本调试过程产出）
+analyze_*.js
+debug*.js
+check_*.js
+check_*.py
+render_debug.js
+extract_map_data.js
+verify_mockup.js
+test_*.js
+test_*.html
+test_*.py
+test-import.html
+fetch-test.html
+simple-test.html
+minimal-test.html
+load-map.html
+preview_*.png
+import_test.png
+temp_user_map.png
+viewer_*.png
+
+# 临时测试数据
+test_output.json

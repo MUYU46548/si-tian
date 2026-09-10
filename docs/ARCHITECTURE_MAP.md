@@ -77,8 +77,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 2972 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 265 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
-| 794 | `src/renderer/src/components/ScenarioMap.vue` | （待补） |
-| 589 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
+| 840 | `src/renderer/src/components/ScenarioMap.vue` | （待补） |
+| 611 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
 | 642 | `src/renderer/src/components/SettingsPanel.vue` | 设置面板（选库/关闭行为/窗口模式） |
 | 145 | `src/renderer/src/components/SnapshotPanel.vue` | 版本快照面板 |
 | 55 | `src/renderer/src/components/StatusBar.vue` | 状态栏 |
@@ -124,12 +124,12 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 35 | `src/renderer/src/composables/useTheme.js` | 主题切换 |
 | 38 | `src/renderer/src/composables/useZoomControls.js` | 缩放百分比联动 |
 | 17 | `src/renderer/src/main.js` | renderer 入口 |
-| 1077 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
+| 1076 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
 | 237 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 200 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 699 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
 | 802 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | （待补） |
-| 123 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
+| 154 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 172 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
 | 39 | `src/renderer/src/store/panels.js` | App 层浮层互斥 |
