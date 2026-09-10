@@ -50,8 +50,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 80 | `scripts/tools_migrate_planetdrawing.py` | 一次性迁移工具（planetDrawing 拆分） |
 | 59 | `scripts/tools_migrate_planethittest.py` | 一次性迁移工具（planetHitTest 拆分） |
 | 82 | `src/main/config.js` | userData/config.json 读写（VAULT_PATH、closeQuitsApp、windowMode） |
-| 681 | `src/main/index.js` | 主进程入口：28 个 IPC handle + 窗口/单实例锁/关闭拦截 |
-| 88 | `src/main/tray.js` | 托盘图标（多分辨率 ico）+ 菜单 |
+| 688 | `src/main/index.js` | 主进程入口：28 个 IPC handle + 窗口/单实例锁/关闭拦截 |
+| 92 | `src/main/tray.js` | 托盘图标（多分辨率 ico）+ 菜单 |
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 244 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
 | 139 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
@@ -77,7 +77,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 2972 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 265 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
-| 840 | `src/renderer/src/components/ScenarioMap.vue` | （待补） |
+| 2480 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 611 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
 | 642 | `src/renderer/src/components/SettingsPanel.vue` | 设置面板（选库/关闭行为/窗口模式） |
 | 145 | `src/renderer/src/components/SnapshotPanel.vue` | 版本快照面板 |
@@ -87,7 +87,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 127 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
 | 129 | `src/renderer/src/components/TreeNavigation.vue` | 树形导航面板 |
 | 406 | `src/renderer/src/components/UpdateNotification.vue` | 更新可用提示 |
-| 324 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
+| 322 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
 | 93 | `src/renderer/src/components/ZoomControls.vue` | 缩放控件 |
 | 1638 | `src/renderer/src/composables/planetDrawing.js` | 行星图 Canvas 绘制全集（createPlanetDrawing getState 工厂） |
 | 219 | `src/renderer/src/composables/planetHitTest.js` | 行星图命中检测 |
@@ -124,11 +124,11 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 35 | `src/renderer/src/composables/useTheme.js` | 主题切换 |
 | 38 | `src/renderer/src/composables/useZoomControls.js` | 缩放百分比联动 |
 | 17 | `src/renderer/src/main.js` | renderer 入口 |
-| 1076 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
+| 1094 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
 | 237 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 200 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 699 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
-| 802 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | （待补） |
+| 802 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 154 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 172 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
@@ -136,6 +136,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 100 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 93 | `src/renderer/src/utils/SpatialIndex.js` | 空间索引（命中加速） |
 | 63 | `src/renderer/src/utils/align.js` | 对齐/分布纯函数 |
+| 610 | `src/renderer/src/utils/azgaar-parser.js` | Azgaar FMG .map 解析器：按内容嗅探定位各数据段（不写死行号）、grid 级高度/温度/降水数组、provincesBody/河流/道路 SVG 几何、文化/宗教/势力/城镇定义与 province→burg→culture 映射 |
 | 44 | `src/renderer/src/utils/clipboard.js` | 复制/粘贴/克隆 |
 | 111 | `src/renderer/src/utils/errorReport.js` | 全局错误捕获 + 主进程落盘 |
 | 295 | `src/renderer/src/utils/floodfill.js` | 泛洪填充（地形快速绘制） |

@@ -65,6 +65,9 @@
         <label class="check-label" title="绘制/顶点编辑时对齐到 50px 网格（按住 Shift 临时禁用）">
           <input type="checkbox" v-model="snapToGridEnabled" /> 网格吸附
         </label>
+        <label class="check-label" title="绘制时顶点吸附到已有省份边界（按住 Shift 临时禁用）">
+          <input type="checkbox" v-model="snapToEdgeEnabled" /> 海岸线吸附
+        </label>
       </div>
       <div class="tool-group">
         <label>图层：</label>
@@ -72,6 +75,26 @@
         <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
+      </div>
+      <div class="tool-group">
+        <label>底图图层：</label>
+        <select v-model="rasterLayer" title="网格数据图层（一次只渲染一层，避免叠加失真）">
+          <option value="none">无</option>
+          <option value="landsea">陆海底色</option>
+          <option value="height">地形高度</option>
+          <option value="temp">温度</option>
+          <option value="prec">降水</option>
+        </select>
+        <label class="check-label"><input type="checkbox" v-model="showRivers" /> 河流</label>
+        <label class="check-label"><input type="checkbox" v-model="showRoutes" /> 道路</label>
+      </div>
+      <div class="tool-group">
+        <label>着色：</label>
+        <select v-model="colorMode">
+          <option value="default">默认</option>
+          <option value="culture">文化</option>
+          <option value="religion">宗教</option>
+        </select>
       </div>
       <div class="tool-group">
         <button @click="showScenarioManager = true" title="剧本管理">📜</button>
@@ -133,6 +156,11 @@
       <span v-if="mergeStep > 0" class="draw-hint">合并: 点击第 {{ mergeStep + 1 }} 个省份</span>
       <span v-if="vertexEditMode" class="draw-hint">顶点编辑：拖拽顶点 | 点击边插入 | 右键顶点删除</span>
       <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
+      <span v-if="snapFeedback" class="snap-feedback" :class="{ edge: snapFeedback === '吸附到边界' }">{{ snapFeedback }}</span>
+      <span v-if="tool === 'vertex' && activeVertexIdx >= 0" class="draw-hint">切线手柄：拖拽圆点调曲率（Alt 临时直线）</span>
+      <span v-if="baseMap?.source?.warnings?.length" class="layer-warn" :title="baseMap.source.warnings.join('\n')">
+        ⚠ {{ baseMap.source.warnings.length }} 条图层提示
+      </span>
       <span v-if="selectedBurg" class="selected-burg">城镇：{{ selectedBurg.name }}（人口 {{ formatPopulation(selectedBurg.population) }}）</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
       <span v-if="selectedPolity" class="selected-polity">已选势力：<span class="polity-dot" :style="{ background: selectedPolity.color }"></span>{{ selectedPolity.name }}</span>
@@ -284,6 +312,7 @@ const mergeProvId = ref(null);
 // 顶点编辑状态
 const vertexEditMode = ref(false);
 const draggingVertex = ref(null); // { provId, vertexIdx }
+const draggingHandle = ref(null); // { provId, vertexIdx, which: 'in'|'out' }（P0-T1 切线手柄）
 const hoveredVertex = ref(null);
 // 拖拽中的临时顶点（仅做渲染预览，不写 store → undo 快照保持正确）
 const dragPreview = ref(null); // { provId, points }
@@ -300,6 +329,34 @@ let lastFitCount = 0;                // 自动适屏：上次适配时的省份�
 const BURG_HIT_RADIUS = 10;          // 命中半径（屏幕像素）
 const hoveredBurg = ref(null);
 const selectedBurg = ref(null);
+
+// ── 底图数据图层（FMG .map 解析产物：网格高度/温度/降水 + 河流/道路 + 文化/宗教）──
+const rasterLayer = ref('landsea');  // none | landsea | height | temp | prec（互斥单选）
+const showRivers = ref(true);
+const showRoutes = ref(false);
+const colorMode = ref('default');    // default | culture | religion
+
+// 顶点切线手柄当前选中顶点（P0-T1）；-1 = 未选中
+const activeVertexIdx = ref(-1);
+// Alt 临时直线（P0-T1）；不参与响应式，只在绘制时读取
+let altStraight = false;
+
+// 海岸线吸附（P0-T2）
+const snapToEdgeEnabled = ref(true);
+const SNAP_EDGE_THRESHOLD = 10;      // 世界坐标像素
+const snapFeedback = ref('');
+let snapFeedbackTimer = null;
+
+// 底图数据图层的离屏预渲染缓存（键：layerKey -> {canvas,minX,minY,w,h}）
+const rasterCache = new Map();
+
+// 分层设色盘（低→高；海洋/陆地分段）
+const HYPSO_WATER = ['#12314f', '#1d4a70', '#2b6b93', '#3f8fb0', '#63b0c9'];
+const HYPSO_LAND = ['#6f9f5a', '#8fb063', '#c3c46c', '#d8bf7a', '#b59468', '#8f7a5c', '#d9d2c6'];
+const TEMP_RAMP = ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#fee090', '#fdae61', '#f46d43', '#d73027'];
+const PREC_RAMP = ['#fff7bc', '#fee391', '#fec44f', '#c7e9b4', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8'];
+const LAND_BASE_COLOR = [220, 216, 207];   // #dcd8cf 无主省份本色
+const SEA_BASE_COLOR = [201, 214, 228];    // #c9d6e4 海洋底
 
 // 右键菜单
 const contextMenu = ref({ show: false, x: 0, y: 0, provId: null });
@@ -360,7 +417,14 @@ const sortedScenarios = computed(() => {
 
 const statusText = computed(() => {
   if (!baseMap.value) return '未加载底图';
-  return `${baseMap.value.terrain?.length || 0} 省份 | ${baseMap.value.heightmap?.biomes?.length || 0} 生物群系`;
+  const la = layerAvailability.value;
+  const bits = [`${baseMap.value.terrain?.length || 0} 省份`];
+  if (la.cells) bits.push(`${la.cells} 网格`);
+  if (la.rivers) bits.push(`${la.rivers} 河流`);
+  if (la.routes) bits.push(`${la.routes} 道路`);
+  if (la.cultures > 1) bits.push(`${la.cultures - 1} 文化`);
+  if (la.religions > 1) bits.push(`${la.religions - 1} 宗教`);
+  return bits.join(' | ');
 });
 
 function setTool(t) {
@@ -372,6 +436,8 @@ function setTool(t) {
   mergeProvId.value = null;
   vertexEditMode.value = (t === 'vertex');
   draggingVertex.value = null;
+  draggingHandle.value = null;
+  activeVertexIdx.value = -1;
   dragPreview.value = null;
   hoveredBurg.value = null;
   clearSnapMarker();
@@ -421,8 +487,8 @@ function snapToGrid(world, bypass = false) {
   };
 }
 
-function setSnapMarker(x, y) {
-  snapMarker.value = { x, y };
+function setSnapMarker(x, y, kind = 'grid') {
+  snapMarker.value = { x, y, kind };
   if (snapMarkerTimer) { clearTimeout(snapMarkerTimer); snapMarkerTimer = null; }
 }
 
@@ -469,7 +535,7 @@ let panStart = { x: 0, y: 0 };
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
   if (event.button === 0 && (tool.value === 'select' || tool.value === 'vertex')) {
-    // 顶点编辑模式：检查是否点到顶点
+    // 顶点编辑模式：先判切线手柄，再判顶点
     if (tool.value === 'vertex' && selectedProvince.value) {
       const rect = canvas.value.getBoundingClientRect();
       const sx = event.clientX - rect.left;
@@ -479,12 +545,39 @@ function onMouseDown(event) {
       const threshold = 8 / cameraScale.value;
       const points = prov && prov.points ? resolvePoints(prov) : null;
       if (points) {
+        // P0-T1：切线手柄命中（仅当前选中顶点）
+        const ai = activeVertexIdx.value;
+        if (ai >= 0 && ai < points.length && !altStraight) {
+          const ap = points[ai];
+          const hR = 10 / cameraScale.value;
+          const out = ap.controlOut;
+          const inn = ap.controlIn;
+          if (out && Math.hypot(vx(ap) + out.x - world.x, vy(ap) + out.y - world.y) < hR) {
+            draggingHandle.value = { provId: prov.id, vertexIdx: ai, which: 'out' };
+            canvas.value.style.cursor = 'crosshair';
+            return;
+          }
+          if (inn && Math.hypot(vx(ap) + inn.x - world.x, vy(ap) + inn.y - world.y) < hR) {
+            draggingHandle.value = { provId: prov.id, vertexIdx: ai, which: 'in' };
+            canvas.value.style.cursor = 'crosshair';
+            return;
+          }
+        }
         for (let i = 0; i < points.length; i++) {
           const p = points[i];
-          const dx = (p.x || p[0]) - world.x;
-          const dy = (p.y || p[1]) - world.y;
+          const dx = vx(p) - world.x;
+          const dy = vy(p) - world.y;
           if (Math.sqrt(dx * dx + dy * dy) < threshold) {
             draggingVertex.value = { provId: prov.id, vertexIdx: i };
+            activeVertexIdx.value = i;
+            // 旧数据没有控制点：首次选中顶点时自动生成平滑切线（走 undo 栈）
+            if (!p.controlIn && !p.controlOut) {
+              store.updateBaseProvince(baseMapKey.value, prov.id, {
+                points: withBezierControls(resolvePoints(prov).map(q => ({ x: vx(q), y: vy(q) }))),
+              });
+              showSnapFeedback('已生成贝塞尔切线');
+            }
+            render();
             canvas.value.style.cursor = 'grabbing';
             return;
           }
@@ -498,6 +591,36 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
+  if (draggingHandle.value) {
+    const rect = canvas.value.getBoundingClientRect();
+    const sx = event.clientX - rect.left;
+    const sy = event.clientY - rect.top;
+    const world = screenToWorld(sx, sy);
+    const { provId, vertexIdx, which } = draggingHandle.value;
+    const prov = baseMap.value?.terrain?.find(p => p.id === provId);
+    if (prov && prov.points && prov.points[vertexIdx]) {
+      const src = resolvePoints(prov);
+      const target = src[vertexIdx];
+      // 切线偏移 = 光标 - 顶点；对称约束（拖一端，另一端镜像）
+      const off = { x: world.x - vx(target), y: world.y - vy(target) };
+      dragPreview.value = {
+        provId,
+        points: src.map((p, i) => {
+          const base = { x: vx(p), y: vy(p) };
+          if (i !== vertexIdx) {
+            return p.controlIn || p.controlOut
+              ? { x: base.x, y: base.y, controlIn: p.controlIn, controlOut: p.controlOut }
+              : base;
+          }
+          return which === 'out'
+            ? { x: base.x, y: base.y, controlOut: off, controlIn: { x: -off.x, y: -off.y } }
+            : { x: base.x, y: base.y, controlIn: off, controlOut: { x: -off.x, y: -off.y } };
+        }),
+      };
+      render();
+    }
+    return;
+  }
   if (draggingVertex.value) {
     const rect = canvas.value.getBoundingClientRect();
     const sx = event.clientX - rect.left;
@@ -506,15 +629,19 @@ function onMouseMove(event) {
     const { provId, vertexIdx } = draggingVertex.value;
     const prov = baseMap.value?.terrain?.find(p => p.id === provId);
     if (prov && prov.points && prov.points[vertexIdx]) {
-      // 顶点编辑拖拽同样吸附网格
-      const snapped = snapToGrid(world, event.shiftKey);
-      if (snapped.snapped) setSnapMarker(snapped.x, snapped.y);
+      // 顶点编辑拖拽同样吸附（边界 > 网格；Shift 禁用）
+      const snapped = resolveSnapPoint(world, event.shiftKey);
+      if (snapped.snapped) setSnapMarker(snapped.x, snapped.y, snapped.kind);
       // 只更新临时预览，不写 store（拖拽结束再一次性提交，保证 undo 可回滚）
       dragPreview.value = {
         provId,
-        points: resolvePoints(prov).map((p, i) => (
-          i === vertexIdx ? { x: snapped.x, y: snapped.y } : { x: p.x ?? p[0], y: p.y ?? p[1] }
-        )),
+        points: resolvePoints(prov).map((p, i) => {
+          if (i !== vertexIdx) return p;
+          const next = { x: snapped.x, y: snapped.y };
+          if (p.controlIn) next.controlIn = p.controlIn;
+          if (p.controlOut) next.controlOut = p.controlOut;
+          return next;
+        }),
       };
       render();
     }
@@ -522,6 +649,19 @@ function onMouseMove(event) {
   }
   if (!isPanning) {
     updateBurgHover(event);
+    // 绘制模式下实时预览吸附点（只在命中变化时重绘）
+    if (tool.value === 'draw' && snapToEdgeEnabled.value && !event.shiftKey) {
+      const rect = canvas.value.getBoundingClientRect();
+      const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+      const e = snapToEdge(world);
+      const cur = snapMarker.value;
+      const changed = !!e !== !!cur || (e && cur && (e.x !== cur.x || e.y !== cur.y || cur.kind !== 'edge'));
+      if (changed) {
+        if (e) setSnapMarker(e.x, e.y, 'edge');
+        else { snapMarker.value = null; }
+        render();
+      }
+    }
     return;
   }
   const dx = event.clientX - panStart.x;
@@ -536,6 +676,18 @@ function onMouseUp() {
   if (isPanning) {
     isPanning = false;
     updateCursor();
+  }
+  if (draggingHandle.value) {
+    const { provId } = draggingHandle.value;
+    const preview = dragPreview.value;
+    draggingHandle.value = null;
+    dragPreview.value = null;
+    if (preview && preview.provId === provId) {
+      store.updateBaseProvince(baseMapKey.value, provId, { points: preview.points });
+    }
+    render();
+    updateCursor();
+    return;
   }
   if (draggingVertex.value) {
     const { provId } = draggingVertex.value;
@@ -634,9 +786,10 @@ function onCanvasClick(event) {
   }
 
   if (tool.value === 'vertex') {
-    // 选中省份
+    // 选中省份（顶点/手柄命中已在 mousedown 处理）
     const prov = findProvinceAt(world.x, world.y);
     if (prov) {
+      if (selectedProvince.value?.id !== prov.id) activeVertexIdx.value = -1;
       selectedProvince.value = prov;
       showProps.value = true;
     }
@@ -645,12 +798,13 @@ function onCanvasClick(event) {
   }
 
   if (tool.value === 'draw') {
-    // 绘制顶点对齐网格（Shift 临时禁用）
-    const snapped = snapToGrid(world, event.shiftKey);
+    // 绘制顶点吸附：P0-T2 省份边界 > P0-T3 网格；Shift 临时禁用（验收：阈劀10px）
+    const snapped = resolveSnapPoint(world, event.shiftKey);
     drawPoints.value = [...drawPoints.value, { x: snapped.x, y: snapped.y }];
     if (snapped.snapped) {
-      setSnapMarker(snapped.x, snapped.y);
+      setSnapMarker(snapped.x, snapped.y, snapped.kind);
       clearSnapMarker(600);
+      showSnapFeedback(snapped.kind === 'edge' ? '吸附到边界' : '吸附到网格');
     }
     render();
     return;
@@ -712,7 +866,15 @@ function onKeyDown(event) {
     contextMenu.value.show = false;
     selectedBurg.value = null;
     dragPreview.value = null;
+    draggingHandle.value = null;
+    activeVertexIdx.value = -1;
     clearSnapMarker();
+    render();
+  }
+  // P0-T1：Alt 临时直线段（按下即重绘，松开恢复曲线）
+  if (event.key === 'Alt' && !altStraight) {
+    altStraight = true;
+    event.preventDefault();
     render();
   }
   if (event.key === 'Enter' && tool.value === 'draw' && drawPoints.value.length >= 3) {
@@ -730,9 +892,17 @@ function onKeyDown(event) {
   else if (event.key === 'f' || event.key === 'F') fitToView();
 }
 
+function onKeyUp(event) {
+  if (event.key === 'Alt' && altStraight) {
+    altStraight = false;
+    render();
+  }
+}
+
 function finishDraw() {
   const id = `prov_${Date.now()}`;
-  const points = drawPoints.value.map(p => ({ x: p.x, y: p.y }));
+  // P0-T1 验收：新绘制省份自动生成平滑贝塞尔曲线（控制点 = 相邻顶点连线的 1/3）
+  const points = withBezierControls(drawPoints.value.map(p => ({ x: p.x, y: p.y })));
   store.addBaseProvince(baseMapKey.value, {
     id,
     name: `新省份 ${baseMap.value?.terrain?.length + 1 || 1}`,
@@ -1024,6 +1194,364 @@ function deleteScenario(s) {
 // ═══════════════════════════════════════════
 // 渲染
 // ═══════════════════════════════════════════
+// ══════════════════════════════════════
+// 贝塞尔边界（P0-T1）
+// ══════════════════════════════════════
+/** 顶点坐标读取（兼容 {x,y} 与 [x,y]） */
+function vx(p) { return p.x !== undefined ? p.x : p[0]; }
+function vy(p) { return p.y !== undefined ? p.y : p[1]; }
+
+/**
+ * 为顶点批量生成平滑切线（验收：控制点位于相邻顶点连线的 1/3 处）。
+ * 已带控制点的顶点原样保留（不覆盖手工调过的曲线）。
+ */
+function withBezierControls(points) {
+  const n = points.length;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const p = points[i];
+    if (p.controlIn && p.controlOut) { out[i] = p; continue; }
+    const prev = points[(i - 1 + n) % n];
+    const next = points[(i + 1) % n];
+    const dx = (vx(next) - vx(prev)) / 3;
+    const dy = (vy(next) - vy(prev)) / 3;
+    out[i] = { x: vx(p), y: vy(p), controlOut: { x: dx, y: dy }, controlIn: { x: -dx, y: -dy } };
+  }
+  return out;
+}
+
+/**
+ * 描绘闭合/开口路径：有控制点且未按 Alt 时走 bezierCurveTo，否则退化直线段。
+ * 红线：渲染循环内不创建新数组——本函数只读不分配。
+ */
+function traceShapePath(c, points, close = true) {
+  const n = points.length;
+  if (n < 2) return;
+  c.moveTo(vx(points[0]), vy(points[0]));
+  const last = close ? n : n - 1;
+  for (let i = 1; i <= last; i++) {
+    const prev = points[(i - 1) % n];
+    const cur = points[i % n];
+    const o = prev.controlOut;
+    const k = cur.controlIn;
+    if (!altStraight && o && k) {
+      c.bezierCurveTo(vx(prev) + o.x, vy(prev) + o.y, vx(cur) + k.x, vy(cur) + k.y, vx(cur), vy(cur));
+    } else {
+      c.lineTo(vx(cur), vy(cur));
+    }
+  }
+}
+
+// ══════════════════════════════════════
+// 海岸线吸附（P0-T2）
+// ══════════════════════════════════════
+/** 点到线段的最近投影 */
+function projectOnSegment(world, a, b) {
+  const ax = vx(a), ay = vy(a), bx = vx(b), by = vy(b);
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 1e-9 ? ((world.x - ax) * dx + (world.y - ay) * dy) / len2 : 0;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  const x = ax + t * dx;
+  const y = ay + t * dy;
+  const ddx = world.x - x, ddy = world.y - y;
+  return { x, y, dist: Math.sqrt(ddx * ddx + ddy * ddy), t };
+}
+
+/**
+ * 在已有省份边界上找最近吸附点（阈值默认 10px 世界坐标）。
+ * 只在绘制/顶点编辑时调用；200 省 × ~30 边 ≈ 6000 次投影，单次调用微秒级。
+ */
+function snapToEdge(world, threshold = SNAP_EDGE_THRESHOLD) {
+  const terrain = baseMap.value?.terrain;
+  if (!terrain || !terrain.length) return null;
+  let best = null;
+  for (const prov of terrain) {
+    const pts = resolvePoints(prov);
+    if (!pts || pts.length < 2) continue;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const r = projectOnSegment(world, pts[j], pts[i]);
+      if (r.dist <= threshold && (!best || r.dist < best.dist)) {
+        best = { x: r.x, y: r.y, dist: r.dist, provId: prov.id, t: r.t, edgeIndex: i };
+      }
+    }
+  }
+  return best;
+}
+
+function showSnapFeedback(text, ms = 1000) {
+  snapFeedback.value = text;
+  if (snapFeedbackTimer) { clearTimeout(snapFeedbackTimer); snapFeedbackTimer = null; }
+  snapFeedbackTimer = setTimeout(() => {
+    snapFeedbackTimer = null;
+    snapFeedback.value = '';
+  }, ms);
+}
+
+/** 输入点 → 吸附结果（优先级：省份边界 > 网格；Shift 同时禁用两者） */
+function resolveSnapPoint(world, shiftKey) {
+  if (!shiftKey && snapToEdgeEnabled.value) {
+    const e = snapToEdge(world);
+    if (e) return { x: e.x, y: e.y, kind: 'edge', snapped: true };
+  }
+  const g = snapToGrid(world, shiftKey);
+  return { x: g.x, y: g.y, kind: g.snapped ? 'grid' : 'none', snapped: g.snapped };
+}
+
+// ══════════════════════════════════════
+// 底图数据图层（P1-T1 地形 / P1-T2 温度降水 / 陆海底色）
+// ══════════════════════════════════════
+function hexToRgb(hex) {
+  const h = hex.charAt(0) === '#' ? hex.slice(1) : hex;
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+const HYPSO_WATER_RGB = HYPSO_WATER.map(hexToRgb);
+const HYPSO_LAND_RGB = HYPSO_LAND.map(hexToRgb);
+const TEMP_RGB = TEMP_RAMP.map(hexToRgb);
+const PREC_RGB = PREC_RAMP.map(hexToRgb);
+
+function clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
+
+/** 色带采样（线性插值，返回 [r,g,b]） */
+function sampleRamp(rgbList, t) {
+  const u = clamp01(t);
+  if (u <= 0) return rgbList[0];
+  if (u >= 1) return rgbList[rgbList.length - 1];
+  const f = u * (rgbList.length - 1);
+  const i = Math.floor(f);
+  const k = f - i;
+  const a = rgbList[i];
+  const b = rgbList[i + 1] || a;
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+}
+
+/** 网格单元 → 颜色（kind: landsea | height | temp | prec） */
+function cellColor(kind, i, hm) {
+  if (kind === 'landsea') {
+    return hm.h[i] >= 20 ? LAND_BASE_COLOR : SEA_BASE_COLOR;
+  }
+  if (kind === 'temp') {
+    return sampleRamp(TEMP_RGB, (hm.temp[i] + 40) / 60);   // 实测范围 -40…20 °C
+  }
+  if (kind === 'prec') {
+    return sampleRamp(PREC_RGB, hm.prec[i] / 100);        // FMG 降水标尺 0…100
+  }
+  const h = hm.h[i];
+  return h < 20
+    ? sampleRamp(HYPSO_WATER_RGB, h / 19)
+    : sampleRamp(HYPSO_LAND_RGB, (h - 20) / 80);
+}
+
+function fillPixelBlock(data, w, h, x0, y0, x1, y1, rgb) {
+  let ix0 = Math.floor(x0), iy0 = Math.floor(y0);
+  let ix1 = Math.ceil(x1), iy1 = Math.ceil(y1);
+  if (ix0 < 0) ix0 = 0;
+  if (iy0 < 0) iy0 = 0;
+  if (ix1 > w) ix1 = w;
+  if (iy1 > h) iy1 = h;
+  const r = rgb[0] | 0, g = rgb[1] | 0, b = rgb[2] | 0;
+  for (let y = iy0; y < iy1; y++) {
+    let p = (y * w + ix0) * 4;
+    for (let x = ix0; x < ix1; x++) {
+      data[p] = r; data[p + 1] = g; data[p + 2] = b; data[p + 3] = 255;
+      p += 4;
+    }
+  }
+}
+
+/**
+ * 把网格数据预渲染为离屏图层（红线：大数据量必须预渲染，不逐帧重绘）。
+ * 每个网格单元画一个 spacing × spacing 的方块——网格点在 spacing/2 内抖动，方块拼接即完整覆盖。
+ */
+function buildCellRaster(kind) {
+  const hm = baseMap.value?.heightmap;
+  const pts = hm?.grid?.points;
+  if (!hm || !pts || !pts.length) return null;
+  const values = kind === 'temp' ? hm.temp : kind === 'prec' ? hm.prec : hm.h;
+  if (!values || !values.length) return null;
+
+  const spacing = hm.grid.spacing || 14.4;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i][0], y = pts[i][1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const pad = spacing;
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  const w = Math.max(1, Math.ceil(maxX - minX));
+  const h = Math.max(1, Math.ceil(maxY - minY));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const rc = canvas.getContext('2d');
+  const img = rc.createImageData(w, h);
+  const data = img.data;
+  const half = spacing / 2;
+
+  for (let i = 0; i < pts.length && i < values.length; i++) {
+    const rgb = cellColor(kind, i, hm);
+    const cx = pts[i][0] - minX;
+    const cy = pts[i][1] - minY;
+    fillPixelBlock(data, w, h, cx - half, cy - half, cx + half, cy + half, rgb);
+  }
+  rc.putImageData(img, 0, 0);
+  return { canvas, minX, minY, w, h };
+}
+
+function getRaster(kind) {
+  const key = baseMapKey.value + '|' + kind;
+  const hit = rasterCache.get(key);
+  if (hit) return hit;
+  const built = buildCellRaster(kind);
+  if (built) rasterCache.set(key, built);
+  return built;
+}
+
+function drawRasterLayer(c, kind, alpha) {
+  const r = getRaster(kind);
+  if (!r) return;
+  c.save();
+  c.globalAlpha = alpha;
+  c.imageSmoothingEnabled = false;
+  c.drawImage(r.canvas, r.minX, r.minY, r.w, r.h);
+  c.restore();
+}
+
+// ══════════════════════════════════════
+// 河流 / 道路图层（P1-T3）
+// ══════════════════════════════════════
+/** 折线是否与当前视口相交（含 pad） */
+function polylineInView(pts, minX, minY, maxX, maxY) {
+  for (let i = 0; i < pts.length; i++) {
+    const x = vx(pts[i]), y = vy(pts[i]);
+    if (x >= minX && x <= maxX && y >= minY && y <= maxY) return true;
+  }
+  return false;
+}
+
+function drawRivers(c) {
+  const list = baseMap.value?.rivers;
+  if (!list || !list.length) return;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const pad = 40 / cameraScale.value;
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+
+  c.save();
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  c.strokeStyle = '#5d97bb';
+  for (const r of list) {
+    const pts = r.points;
+    if (!pts || pts.length < 2) continue;
+    if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
+    // 线宽走世界坐标（随缩放变粗），并用 discharge 做量级区分
+    const scaleW = r.discharge ? Math.sqrt(Math.max(r.discharge, 1)) / 14 : 1;
+    c.lineWidth = Math.max(0.7, Math.min(4, (r.width || 0.2) * 6 * Math.max(scaleW, 0.6)));
+    c.beginPath();
+    c.moveTo(vx(pts[0]), vy(pts[0]));
+    for (let i = 1; i < pts.length; i++) c.lineTo(vx(pts[i]), vy(pts[i]));
+    c.stroke();
+  }
+  c.restore();
+}
+
+/** 配色/样式对齐 Azgaar FMG 默认：道路棕色实线、小径棕色虚线、海路白色虚线 */
+const ROUTE_STYLES = {
+  roads: { color: '#d06324', width: 0.9, dash: null, alpha: 0.95 },
+  trails: { color: '#d06324', width: 0.5, dash: [2, 3], alpha: 0.85 },
+  searoutes: { color: '#ffffff', width: 0.5, dash: [1.5, 3], alpha: 0.5 },
+};
+
+function drawRoutes(c) {
+  const list = baseMap.value?.routes;
+  if (!list || !list.length) return;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const pad = 40 / cameraScale.value;
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+
+  c.save();
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  for (const r of list) {
+    const pts = r.points;
+    if (!pts || pts.length < 2) continue;
+    if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
+    const st = ROUTE_STYLES[r.group] || ROUTE_STYLES.roads;
+    c.globalAlpha = st.alpha;
+    c.strokeStyle = st.color;
+    c.lineWidth = st.width;
+    c.setLineDash(st.dash || []);
+    c.beginPath();
+    c.moveTo(vx(pts[0]), vy(pts[0]));
+    for (let i = 1; i < pts.length; i++) c.lineTo(vx(pts[i]), vy(pts[i]));
+    c.stroke();
+  }
+  c.setLineDash([]);
+  c.restore();
+}
+
+// ══════════════════════════════════════
+// 文化/宗教图例（P1-T5，屏幕坐标系右下角）
+// ══════════════════════════════════════
+function drawCultureLegend(c) {
+  if (colorMode.value === 'default') return;
+  const hm = baseMap.value?.heightmap;
+  const src = colorMode.value === 'culture' ? hm?.cultures : hm?.religions;
+  if (!src || !src.length) return;
+  const rows = src.filter(x => x && x.i > 0 && x.color);
+  if (!rows.length) return;
+
+  const rowH = 15;
+  const shown = rows.slice(0, 22);
+  c.font = '11px "PingFang SC", sans-serif';
+  let maxW = 40;
+  for (const r of shown) maxW = Math.max(maxW, c.measureText(r.name || '').width);
+  const boxW = Math.min(250, maxW + 34);
+  const boxH = shown.length * rowH + 12;
+  const bx = canvas.value.width - boxW - 12;
+  const by = canvas.value.height - boxH - 12;
+
+  c.save();
+  c.fillStyle = 'rgba(15,26,46,0.86)';
+  c.strokeStyle = 'rgba(148,163,184,0.5)';
+  c.lineWidth = 1;
+  c.beginPath();
+  if (typeof c.roundRect === 'function') c.roundRect(bx, by, boxW, boxH, 6);
+  else c.rect(bx, by, boxW, boxH);
+  c.fill();
+  c.stroke();
+  for (let i = 0; i < shown.length; i++) {
+    const y = by + 6 + i * rowH;
+    c.fillStyle = shown[i].color;
+    c.fillRect(bx + 8, y + 3, 10, 10);
+    c.fillStyle = '#cbd5e1';
+    c.fillText(shown[i].name || '', bx + 24, y + 12);
+  }
+  c.restore();
+}
+
+/** 当前底图可用的数据图层清单（状态栏显示） */
+const layerAvailability = computed(() => {
+  const hm = baseMap.value?.heightmap;
+  return {
+    cells: hm?.grid?.points?.length || 0,
+    temp: (hm?.temp?.length || 0) > 0,
+    prec: (hm?.prec?.length || 0) > 0,
+    rivers: (baseMap.value?.rivers?.length || 0),
+    routes: (baseMap.value?.routes?.length || 0),
+    cultures: (hm?.cultures?.length || 0),
+    religions: (hm?.religions?.length || 0),
+  };
+});
+
 function render() {
   if (!ctx.value) return;
   const cvs = canvas.value;
@@ -1036,8 +1564,20 @@ function render() {
   ctx.value.scale(cameraScale.value, cameraScale.value);
 
   drawBackground(ctx.value);
+
+  // 底图数据图层：陆海底色铺底（补足省份多边形之外的海岸缝隙）
+  if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
+
   if (showBiomes.value) drawBiomeBackground(ctx.value);
   drawProvinces(ctx.value);
+
+  // 地形/温度/降水：半透明叠加在省份之上（验收：alpha ≈ 0.4，不影响点击选中）
+  if (rasterLayer.value === 'height') drawRasterLayer(ctx.value, 'height', 0.45);
+  else if (rasterLayer.value === 'temp') drawRasterLayer(ctx.value, 'temp', 0.5);
+  else if (rasterLayer.value === 'prec') drawRasterLayer(ctx.value, 'prec', 0.5);
+
+  if (showRoutes.value) drawRoutes(ctx.value);
+  if (showRivers.value) drawRivers(ctx.value);
   if (showBorders.value) drawProvinceBorders(ctx.value);
   drawVertexHandles(ctx.value);
   if (showBurgs.value) drawBurgs(ctx.value);
@@ -1046,8 +1586,9 @@ function render() {
 
   ctx.value.restore();
 
-  // 城镇信息浮层画在屏幕坐标系：字号与命中不受缩放影响
+  // 以下浮层画在屏幕坐标系：字号与命中不受缩放影响
   drawBurgTooltip(ctx.value);
+  drawCultureLegend(ctx.value);
 }
 
 function drawBackground(ctx) {
@@ -1104,21 +1645,14 @@ function drawBiomeBackground(ctx) {
 function drawProvinces(c) {
   if (!baseMap.value?.terrain) return;
   baseMap.value.terrain.forEach(prov => {
-    const color = getProvinceColor(prov);
     const points = resolvePoints(prov);
-    c.fillStyle = color;
-    c.strokeStyle = 'transparent';
-    c.lineWidth = 0;
-    
-    if (points && Array.isArray(points) && points.length > 2) {
-      c.beginPath();
-      c.moveTo(points[0].x || points[0][0], points[0].y || points[0][1]);
-      for (let i = 1; i < points.length; i++) {
-        c.lineTo(points[i].x || points[i][0], points[i].y || points[i][1]);
-      }
-      c.closePath();
-      c.fill();
-    }
+    if (!points || points.length < 3) return;
+    c.fillStyle = getProvinceColor(prov);
+    c.beginPath();
+    // P0-T1：有控制点时走贝塞尔曲线；Alt 时退化直线
+    traceShapePath(c, points, true);
+    c.closePath();
+    c.fill();
   });
 }
 
@@ -1128,18 +1662,13 @@ function drawProvinceBorders(c) {
     const isSelected = selectedProvince.value?.id === prov.id;
     const isMergeTarget = mergeProvId.value === prov.id;
     const points = resolvePoints(prov);
+    if (!points || points.length < 3) return;
     c.strokeStyle = isMergeTarget ? '#ffd700' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)');
     c.lineWidth = isSelected ? 1.5 / cameraScale.value : 0.6 / cameraScale.value;
-    
-    if (points && Array.isArray(points) && points.length > 2) {
-      c.beginPath();
-      c.moveTo(points[0].x || points[0][0], points[0].y || points[0][1]);
-      for (let i = 1; i < points.length; i++) {
-        c.lineTo(points[i].x || points[i][0], points[i].y || points[i][1]);
-      }
-      c.closePath();
-      c.stroke();
-    }
+    c.beginPath();
+    traceShapePath(c, points, true);
+    c.closePath();
+    c.stroke();
   });
 }
 
@@ -1149,10 +1678,35 @@ function drawVertexHandles(c) {
   const points = prov ? resolvePoints(prov) : null;
   if (!points) return;
   const r = 4 / cameraScale.value;
+  const hR = 3.5 / cameraScale.value;
+  const active = activeVertexIdx.value;
+
+  // P0-T1：仅对当前选中顶点画切线手柄（大省份全画会遮满屏幕）
+  if (active >= 0 && active < points.length && !altStraight) {
+    const p = points[active];
+    const cx = vx(p), cy = vy(p);
+    const out = p.controlOut;
+    const inn = p.controlIn;
+    if (out || inn) {
+      c.save();
+      c.setLineDash([3 / cameraScale.value, 3 / cameraScale.value]);
+      c.strokeStyle = 'rgba(167,139,250,0.8)';
+      c.lineWidth = 1 / cameraScale.value;
+      if (out) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + out.x, cy + out.y); c.stroke(); }
+      if (inn) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + inn.x, cy + inn.y); c.stroke(); }
+      c.setLineDash([]);
+      c.fillStyle = '#38bdf8';
+      c.strokeStyle = '#ffffff';
+      if (out) { c.beginPath(); c.arc(cx + out.x, cy + out.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
+      if (inn) { c.beginPath(); c.arc(cx + inn.x, cy + inn.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
+      c.restore();
+    }
+  }
+
   points.forEach((p, i) => {
-    const px = p.x || p[0];
-    const py = p.y || p[1];
-    c.fillStyle = draggingVertex.value?.vertexIdx === i ? '#ffd700' : '#a78bfa';
+    const px = vx(p);
+    const py = vy(p);
+    c.fillStyle = draggingVertex.value?.vertexIdx === i ? '#ffd700' : (i === active ? '#f472b6' : '#a78bfa');
     c.strokeStyle = '#fff';
     c.lineWidth = 1 / cameraScale.value;
     c.beginPath();
@@ -1163,18 +1717,23 @@ function drawVertexHandles(c) {
 }
 
 function getProvinceColor(prov) {
-  // 优先使用生物群系颜色
-  if (prov.biome && BIOME_COLORS[prov.biome]) {
-    return BIOME_COLORS[prov.biome];
-  }
+  // P1-T5：文化/宗教着色（颜色取自 .map 的 cultures/religions 定义，归属来自 province → burg → culture）
+  if (colorMode.value === 'culture' && prov.cultureColor) return prov.cultureColor;
+  if (colorMode.value === 'religion' && prov.religionColor) return prov.religionColor;
+
+  // 剧本模式：优先势力归属色
   if (viewMode.value === 'scenario' && selectedScenario.value) {
     const owner = selectedScenario.value.ownership?.[prov.id];
     if (owner) {
       const polity = selectedScenario.value.polities?.find(p => p.id === owner);
-      return polity?.color || '#6b7280';
+      if (polity?.color) return polity.color;
     }
-    return '#4a5568';
   }
+
+  // 生物群系图层开启时按群系染色
+  if (showBiomes.value && prov.biome && BIOME_COLORS[prov.biome]) return BIOME_COLORS[prov.biome];
+
+  if (viewMode.value === 'scenario' && selectedScenario.value) return '#4a5568';
   return prov.biomeColor || '#bccda0';
 }
 
@@ -1200,12 +1759,13 @@ function drawPreviewOverlay() {
     }
   }
 
-  // 网格吸附十字标记（P0-T3）
+  // 吸附标记（P0-T3 网格绿十字 / P0-T2 边界青环）
   if (snapMarker.value) {
     const mx = snapMarker.value.x;
     const my = snapMarker.value.y;
+    const isEdge = snapMarker.value.kind === 'edge';
     const arm = 7 / cameraScale.value;
-    c.strokeStyle = '#34d399';
+    c.strokeStyle = isEdge ? '#22d3ee' : '#34d399';
     c.lineWidth = 1.5 / cameraScale.value;
     c.beginPath();
     c.moveTo(mx - arm, my);
@@ -1216,6 +1776,11 @@ function drawPreviewOverlay() {
     c.beginPath();
     c.arc(mx, my, 2.5 / cameraScale.value, 0, Math.PI * 2);
     c.stroke();
+    if (isEdge) {
+      c.beginPath();
+      c.arc(mx, my, 6 / cameraScale.value, 0, Math.PI * 2);
+      c.stroke();
+    }
   }
 
   if (tool.value === 'split' && splitStep.value === 1 && splitPoints.value.length === 1) {
@@ -1435,6 +2000,7 @@ onMounted(() => {
   cvs.addEventListener('wheel', onWheel, { passive: false });
   cvs.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
   window.addEventListener('click', () => { contextMenu.value.show = false; });
 
   render();
@@ -1451,6 +2017,19 @@ onMounted(() => {
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect();
   window.removeEventListener('keydown', onKeyDown);
+  window.removeEventListener('keyup', onKeyUp);
+  if (snapMarkerTimer) { clearTimeout(snapMarkerTimer); snapMarkerTimer = null; }
+  if (snapFeedbackTimer) { clearTimeout(snapFeedbackTimer); snapFeedbackTimer = null; }
+  rasterCache.clear();
+});
+
+// 图层开关/着色模式变化 → 重绘（栅格图层已有离屏缓存，重绘只是 drawImage）
+watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels], () => render());
+
+// 切换底图 → 作废离屏栅格缓存（不同地图的网格数据不同）
+watch(baseMapKey, () => {
+  rasterCache.clear();
+  render();
 });
 
 // 关闭城镇图层时同时收起悬停/选中态（避免残留浮层）
@@ -1667,6 +2246,9 @@ watch(baseMap, () => {
 }
 
 .draw-hint { color: #a78bfa; font-weight: 600; }
+.snap-feedback { color: #34d399; font-weight: 600; }
+.snap-feedback.edge { color: #22d3ee; }
+.layer-warn { color: #fbbf24; cursor: help; }
 .selected-provity { color: #fbbf24; }
 .selected-burg { color: #ffd700; font-weight: 600; }
 
