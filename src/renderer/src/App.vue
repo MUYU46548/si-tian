@@ -292,18 +292,21 @@ import { useGeodataStore } from './store/geodata';
 import { usePanelsStore } from './store/panels';
 import { createSampleWorld } from './utils/sampleData';
 import WorldSelector from './components/WorldSelector.vue';
-import GalaxyMap from './components/GalaxyMap.vue';
-import SystemView from './components/SystemView.vue';
-import SystemDetailView from './components/SystemDetailView.vue';
-import PlanetMap from './components/PlanetMap.vue';
-import AreaMap from './components/AreaMap.vue';
-import InteriorView from './components/InteriorView.vue';
-import ScenarioMap from './components/ScenarioMap.vue';
 import NodeDetailPanel from './components/NodeDetailPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
 import LayerPanel from './components/LayerPanel.vue';
 import StatusBar from './components/StatusBar.vue';
+
+// 七层视图动态导入：视图切换为 v-if，初始只需当前层，整体拆出主 bundle
+// （画布类视图体量大：PlanetMap/ScenarioMap/AreaMap/GalaxyMap/InteriorView/System*）
+const GalaxyMap = defineAsyncComponent(() => import('./components/GalaxyMap.vue'));
+const SystemView = defineAsyncComponent(() => import('./components/SystemView.vue'));
+const SystemDetailView = defineAsyncComponent(() => import('./components/SystemDetailView.vue'));
+const PlanetMap = defineAsyncComponent(() => import('./components/PlanetMap.vue'));
+const AreaMap = defineAsyncComponent(() => import('./components/AreaMap.vue'));
+const InteriorView = defineAsyncComponent(() => import('./components/InteriorView.vue'));
+const ScenarioMap = defineAsyncComponent(() => import('./components/ScenarioMap.vue'));
 
 // 低频面板动态导入：减少初始 bundle
 const AboutPanel = defineAsyncComponent(() => import('./components/AboutPanel.vue'));

@@ -216,10 +216,34 @@
             </button>
           </div>
         </section>
+
+        <!-- 配置管理（对外发布打磨 P1.2）：导出 / 导入 / 恢复默认 -->
+        <section class="settings-section">
+          <h3>配置管理</h3>
+          <div class="data-actions">
+            <button class="data-btn" @click="exportSettings" title="将当前设置导出为 JSON 文件（便于备份或多机同步）">
+              📤 导出设置
+            </button>
+            <button class="data-btn" @click="triggerImportSettings" title="从 JSON 文件导入设置（仅覆盖可识别的设置项）">
+              📥 导入设置
+            </button>
+            <button class="data-btn danger" @click="resetSettings" title="将所有设置项恢复为默认值">
+              ♻️ 恢复默认设置
+            </button>
+            <input
+              ref="settingsFileInput"
+              type="file"
+              accept="application/json,.json"
+              class="hidden-file-input"
+              @change="onSettingsFileChosen"
+            />
+          </div>
+        </section>
       </div>
 
       <div class="settings-footer">
         <span>设置自动保存到本地</span>
+        <span class="settings-version" :title="appPlatform ? ('平台：' + appPlatform) : ''">SiTian v{{ appVersion }}</span>
       </div>
     </div>
   </div>
@@ -235,7 +259,8 @@ const windowMode = ref(null);
 // 关闭行为（批次A12）：点 × 直接退出应用
 const closeQuitsApp = ref(false);
 
-const settings = ref({
+// 默认设置（对外发布打磨 P1.2）：「恢复默认设置」与「导入校验」的单一事实来源
+const DEFAULT_SETTINGS = Object.freeze({
   autoSave: true,
   snapEnabled: true,
   showEditHelpers: true,
@@ -246,11 +271,29 @@ const settings = ref({
   autoSaveDelay: 800,
 });
 
+const settings = ref({ ...DEFAULT_SETTINGS });
+
+// 版本号 / 平台（设置面板展示 + 导出文件元信息）
+const appVersion = ref('开发版');
+const appPlatform = ref('');
+const settingsFileInput = ref(null);
+
+function loadVersion() {
+  appVersion.value = window.sitianAPI?.version || '开发版';
+  appPlatform.value = window.sitianAPI?.platform || '';
+}
+
+// 通知订阅方重新读取设置（如画布动画/FPS 开关）
+function notifySettingsChanged() {
+  window.dispatchEvent(new CustomEvent('sitian:settings-changed', { detail: { ...settings.value } }));
+}
+
 function open() {
   isOpen.value = true;
   loadSettings();
   loadWindowMode();
   loadCloseQuitsApp();
+  loadVersion();
 }
 
 function close() {
@@ -357,9 +400,81 @@ function clearCache() {
   }
 }
 
+// ===== 配置管理（对外发布打磨 P1.2）：导出 / 导入 / 恢复默认 =====
+function exportSettings() {
+  const payload = {
+    app: 'SiTian',
+    type: 'settings',
+    schema: 1,
+    version: appVersion.value,
+    exportedAt: new Date().toISOString(),
+    settings: { ...settings.value },
+  };
+  const ts = new Date().toISOString().slice(0, 10);
+  const name = `sitian-settings-${ts}.json`;
+  try {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    alert('导出设置失败：' + e.message);
+  }
+}
+
+function triggerImportSettings() {
+  settingsFileInput.value?.click();
+}
+
+// 只接受已知字段且类型一致的值，避免导入脏数据破坏设置结构
+function applyImportedSettings(incoming) {
+  const applied = [];
+  for (const key of Object.keys(DEFAULT_SETTINGS)) {
+    if (!Object.prototype.hasOwnProperty.call(incoming, key)) continue;
+    const val = incoming[key];
+    if (typeof val !== typeof DEFAULT_SETTINGS[key]) continue;
+    settings.value[key] = val;
+    applied.push(key);
+  }
+  return applied;
+}
+
+async function onSettingsFileChosen(event) {
+  const file = event.target.files?.[0];
+  event.target.value = ''; // 允许重复选择同一文件
+  if (!file) return;
+  try {
+    const raw = JSON.parse(await file.text());
+    const incoming = raw && typeof raw === 'object' && raw.settings && typeof raw.settings === 'object'
+      ? raw.settings
+      : raw;
+    if (!incoming || typeof incoming !== 'object') throw new Error('不是有效的设置文件');
+    const applied = applyImportedSettings(incoming);
+    if (!applied.length) throw new Error('未找到可识别的设置项');
+    saveSettings();
+    notifySettingsChanged();
+    alert(`已导入 ${applied.length} 项设置`);
+  } catch (e) {
+    alert('导入设置失败：' + e.message);
+  }
+}
+
+function resetSettings() {
+  if (!confirm('确定要恢复默认设置吗？当前所有设置项都会被重置。')) return;
+  Object.assign(settings.value, DEFAULT_SETTINGS);
+  saveSettings();
+  notifySettingsChanged();
+}
+
 onMounted(() => {
   loadSettings();
   loadVaultPath();
+  loadVersion();
 });
 
 defineExpose({ open, close });
@@ -617,12 +732,24 @@ input:checked + .toggle-slider::before {
 .settings-footer {
   padding: 12px 24px;
   border-top: 1px solid var(--separator);
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .settings-footer span {
   font-size: 10px;
   color: var(--text-tertiary);
+}
+
+.settings-version {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .close-btn {
