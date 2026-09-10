@@ -39,6 +39,7 @@
       </div>
       <div class="tool-group">
         <button @click="addReferenceImage" title="添加参考图">🖼</button>
+        <button @click="triggerMapImport" title="导入 .map 底图">🗺</button>
         <button @click="handleUndo" :disabled="!canUndo" title="撤销 (Ctrl+Z)">↶</button>
         <button @click="handleRedo" :disabled="!canRedo" title="重做 (Ctrl+Y)">↷</button>
         <button @click="exportPNG" title="导出 PNG">💾</button>
@@ -160,6 +161,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 
 const store = useGeodataStore();
 
@@ -281,6 +283,33 @@ async function addReferenceImage() {
     });
     render();
   }
+}
+
+// 触发文件选择 → 加载 .map 文件
+function triggerMapImport() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.map';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = parseMapFile(text);
+      const name = file.name.replace(/\.map$/, '').replace(/\s*\d{4}-\d{2}-\d{2}.*$/, '');
+      const json = buildScenariosJson(parsed, name, '当前');
+      store.importFromScenariosJson(json);
+      // 自动切换到剧本模式并选中新建的场景
+      if (json.scenarios[name + '/当前']) {
+        selectedScenario.value = json.scenarios[name + '/当前'];
+        viewMode.value = 'scenario';
+      }
+      render();
+    } catch (err) {
+      alert('导入失败: ' + err.message);
+    }
+  };
+  input.click();
 }
 
 function handleUndo() {

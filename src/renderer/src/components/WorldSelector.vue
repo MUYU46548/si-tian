@@ -162,8 +162,6 @@ function getLocationCount(worldId) {
 }
 
 .create-btn {
-  align-self: flex-start;
-  margin-top: 6px;
   padding: 8px 18px;
   border: 1px solid var(--accent);
   border-radius: var(--radius-md);
