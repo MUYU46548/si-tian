@@ -64,6 +64,8 @@ MOCK_SCRIPT = """<script>
         setVaultPath: async () => ({ success: false, canceled: true }),
         getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
         saveMapData: async () => ({ success: true }),
+        saveScenarios: async () => ({ success: true }),
+        loadScenarios: async () => ({ success: true, data: { version: 2, baseMaps: {}, scenarios: {} } }),
         backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
         batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
         selectReferenceImage: async () => ({ success: false, canceled: true }),
