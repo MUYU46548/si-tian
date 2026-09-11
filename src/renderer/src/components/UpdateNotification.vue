@@ -5,7 +5,7 @@
       <!-- 发现新版本 -->
       <template v-if="state === 'available'">
         <div class="update-header">
-          <span class="update-icon">🔄</span>
+          <span class="update-icon"><Icon name="refresh" :size="20"/></span>
           <h3>发现新版本</h3>
         </div>
         <div class="update-body">
@@ -28,7 +28,7 @@
       <!-- 下载中 -->
       <template v-else-if="state === 'downloading'">
         <div class="update-header">
-          <span class="update-icon spinning">⏳</span>
+          <span class="update-icon spinning"><Icon name="loader" :size="20"/></span>
           <h3>正在下载更新</h3>
         </div>
         <div class="update-body">
@@ -47,7 +47,7 @@
       <!-- 下载完成 -->
       <template v-else-if="state === 'downloaded'">
         <div class="update-header">
-          <span class="update-icon">✅</span>
+          <span class="update-icon"><Icon name="check-circle" :size="20"/></span>
           <h3>更新已就绪</h3>
         </div>
         <div class="update-body">
@@ -62,7 +62,7 @@
       <!-- 已是最新 -->
       <template v-else-if="state === 'up-to-date'">
         <div class="update-header">
-          <span class="update-icon">✨</span>
+          <span class="update-icon"><Icon name="sparkles" :size="20"/></span>
           <h3>已是最新版本</h3>
         </div>
         <div class="update-body">
@@ -76,7 +76,7 @@
       <!-- 错误 -->
       <template v-else-if="state === 'error'">
         <div class="update-header">
-          <span class="update-icon">⚠️</span>
+          <span class="update-icon"><Icon name="alert-triangle" :size="20"/></span>
           <h3>更新检查失败</h3>
         </div>
         <div class="update-body">
@@ -92,7 +92,7 @@
       <!-- 检查中 -->
       <template v-else-if="state === 'checking'">
         <div class="update-header">
-          <span class="update-icon spinning">🔍</span>
+          <span class="update-icon spinning"><Icon name="search" :size="20"/></span>
           <h3>正在检查更新...</h3>
         </div>
       </template>
@@ -101,6 +101,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, reactive, onMounted, onUnmounted } from 'vue';
 
 const visible = ref(false);

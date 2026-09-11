@@ -1,9 +1,10 @@
 <template>
-  <PanelShell class="snapshot-panel" title="📸 地图快照" :open="open" :collapsible="false" :stop-mouse-down="true" @close="$emit('close')">
+  <PanelShell class="snapshot-panel" :open="open" :collapsible="false" :stop-mouse-down="true" @close="$emit('close')">
+    <template #title><Icon name="camera" :size="15" style="margin-right:6px"/>地图快照</template>
     <div class="snapshot-body">
       <div class="snapshot-create">
         <input v-model="name" placeholder="快照名称（留空自动命名）" @keydown.enter="take" />
-        <button class="adopt-btn" @click="take">📸 拍摄</button>
+        <button class="adopt-btn" @click="take"><Icon name="camera" :size="14"/> 拍摄</button>
       </div>
       <div v-if="snapshots.length === 0" class="snapshot-empty">暂无快照<br />绘制前拍摄一份，后续可随时恢复</div>
       <div v-for="snap in snapshots" :key="snap.id" class="snapshot-item">
@@ -19,6 +20,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref } from 'vue';
 import PanelShell from './PanelShell.vue';
 

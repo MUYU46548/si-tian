@@ -1,6 +1,6 @@
 <template>
   <!-- 关闭状态：迷你展开按钮 -->
-  <button v-if="!visible" class="eagle-eye-toggle" @click="open" title="显示鹰眼导航">🗺</button>
+  <button v-if="!visible" class="eagle-eye-toggle" @click="open" title="显示鹰眼导航"><Icon name="map" :size="14"/></button>
   <!-- 打开状态：鹰眼主体 -->
   <div v-else class="eagle-eye" ref="container">
     <button class="eagle-eye-close" @click="close" title="隐藏鹰眼">×</button>
@@ -10,6 +10,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({

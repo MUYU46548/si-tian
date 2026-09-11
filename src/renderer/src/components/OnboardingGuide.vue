@@ -2,7 +2,7 @@
   <div v-if="isOpen" class="onboarding-overlay">
     <div class="onboarding-panel">
       <div class="onboarding-header">
-        <h2>👋 欢迎来到 SiTian</h2>
+        <h2><Icon name="hand" :size="20" style="margin-right:6px"/>欢迎来到 SiTian</h2>
         <p>世界观地理可视化编辑器</p>
       </div>
       
@@ -22,7 +22,7 @@
       </div>
       
       <div class="onboarding-vault">
-        <button class="btn-vault" @click="chooseVault">📂 选择 Obsidian 知识库</button>
+        <button class="btn-vault" @click="chooseVault"><Icon name="folder" :size="14"/> 选择 Obsidian 知识库</button>
         <p v-if="vaultMsg" class="vault-msg" :class="{ error: vaultError }">{{ vaultMsg }}</p>
       </div>
 
@@ -37,6 +37,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, onMounted } from 'vue';
 
 const isOpen = ref(false);

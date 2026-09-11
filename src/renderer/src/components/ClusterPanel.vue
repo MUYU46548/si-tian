@@ -16,7 +16,7 @@
       >
         <div class="cluster-head" @click="$emit('focus-cluster', cluster.id)">
           <button class="fold-btn" @click.stop="$emit('toggle-collapse', cluster.id)">
-            {{ cluster.collapsed ? '▶' : '▼' }}
+            <Icon :name="cluster.collapsed ? 'chevron-right' : 'chevron-down'" :size="12"/>
           </button>
           <span class="cluster-color" :style="{ background: cluster.color || '#FF6B6B' }"></span>
           <span class="cluster-name">{{ cluster.name }}</span>
@@ -37,8 +37,8 @@
           </div>
         </div>
         <div class="cluster-actions">
-          <button class="mini-btn" @click="$emit('edit-cluster', cluster.id)" title="重命名/改色">✎</button>
-          <button class="mini-btn" @click="$emit('disband-cluster', cluster.id)" title="解散簇（成员恢复独立）">✕</button>
+          <button class="mini-btn" @click="$emit('edit-cluster', cluster.id)" title="重命名/改色"><Icon name="pencil" :size="12"/></button>
+          <button class="mini-btn" @click="$emit('disband-cluster', cluster.id)" title="解散簇（成员恢复独立）"><Icon name="x" :size="12"/></button>
         </div>
       </div>
     </div>
@@ -46,6 +46,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { computed } from 'vue';
 import PanelShell from './PanelShell.vue';
 import { useGeodataStore } from '../store/geodata';

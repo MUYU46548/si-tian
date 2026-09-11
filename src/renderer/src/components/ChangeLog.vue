@@ -23,7 +23,7 @@
           :key="log.index"
           class="log-item"
         >
-          <div class="log-icon">{{ getCategoryIcon(log.category) }}</div>
+          <div class="log-icon"><Icon :name="getCategoryIcon(log.category)" :size="14"/></div>
           <div class="log-info">
             <span class="log-label">{{ log.label }}</span>
             <span class="log-time">{{ formatTime(log.timestamp) }}</span>
@@ -36,6 +36,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed } from 'vue';
 import { getHistory } from '../store/undo';
 
@@ -73,13 +74,13 @@ function formatTime(timestamp) {
 
 function getCategoryIcon(category) {
   const icons = {
-    coordinate: '📍',
-    hyperlane: '🛤',
-    terrain: '🗺',
-    region: '🗂',
-    property: '✏️',
+    coordinate: 'map-pin',
+    hyperlane: 'route',
+    terrain: 'map',
+    region: 'folder-open',
+    property: 'pencil',
   };
-  return icons[category] || '📝';
+  return icons[category] || 'file-text';
 }
 
 defineExpose({ open, close });

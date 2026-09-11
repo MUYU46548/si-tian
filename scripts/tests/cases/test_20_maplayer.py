@@ -299,8 +299,11 @@ def run(cdp):
          abs(gp.get('x', 0) - 150) < 0.01 and abs(gp.get('y', 0) - 100) < 0.01, gp),
         ('P0-T2 边界吸附 (15,4)→(15,0)',
          abs(ep.get('x', -1) - 15) < 0.5 and abs(ep.get('y', -1)) < 0.5, ep),
-        ('P0-T2 Shift 禁用吸附（保持 (15,4)）',
-         abs(sp.get('x', 0) - 15) < 0.01 and abs(sp.get('y', 0) - 4) < 0.01, sp),
+        # 注：浏览器会把 MouseEvent 的 clientX/clientY 截断为整数，而 canvas 的 rect.top
+        # 在部分布局下为小数（如 220.375），故「无吸附」断言须容忍亚像素偏差。
+        # 容差 0.5 远小于吸附位移（4px），仍可证明 Shift 未触发边界吸附（吸附会落到 y=0）。
+        ('P0-T2 Shift 禁用吸附（保持 (15,4)±亚像素）',
+         abs(sp.get('x', 0) - 15) < 0.01 and abs(sp.get('y', 0) - 4) < 0.5, sp),
         ('P0-T2 远离边界不吸附（网格 (250,200)）',
          abs(fp.get('x', 0) - 250) < 0.01 and abs(fp.get('y', 0) - 200) < 0.01, fp),
         ('P0-T1 新省份已入库(共 2 个)', bz.get('total') == 2, bz.get('total')),

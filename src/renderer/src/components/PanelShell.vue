@@ -7,7 +7,7 @@
     @mousedown="stopMouseDown && $event.stopPropagation()"
   >
     <div class="panel-header" @mousedown="onHeaderMouseDown">
-      <h3>{{ title }}</h3>
+      <h3><slot name="title">{{ title }}</slot></h3>
       <div class="header-actions">
         <slot name="actions" />
         <button

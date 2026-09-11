@@ -1,6 +1,8 @@
 // P0.4: 全局错误上报 — 渲染层错误统一格式化 + 落盘（主进程 electron-log）+ 友好覆盖层
 // 模态用纯 DOM 实现（不进 Vue 响应式，避免错误处理器自身再触发渲染循环）
 
+import { iconSvg } from './iconSvg';
+
 let lastReportedMessage = '';
 let lastReportedAt = 0;
 
@@ -42,7 +44,7 @@ function showOverlay(err, ctx) {
   overlay.innerHTML = `
     <div style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(10,10,20,0.92);color:#e0e0e0;font-family:system-ui,sans-serif;padding:24px;box-sizing:border-box;">
       <div style="max-width:600px;width:100%;background:#1a1a2e;border:1px solid #444;border-radius:12px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
-        <div style="font-size:22px;margin-bottom:12px;">⚠️ 应用遇到错误</div>
+        <div style="font-size:22px;margin-bottom:12px;">${iconSvg('alert-triangle', { size: 22, style: 'margin-right:8px' })}应用遇到错误</div>
         <p style="color:#aaa;font-size:13px;line-height:1.6;margin-bottom:12px;">SiTian 遇到了一个内部错误，详细信息已记录到本地日志。您可以复制详情后提交反馈，或尝试重新加载应用。</p>
         <pre data-role="detail" style="background:#0d1117;border:1px solid #333;border-radius:6px;padding:12px;font-size:11.5px;color:#f97583;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow:auto;margin-bottom:16px;"></pre>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -51,7 +53,7 @@ function showOverlay(err, ctx) {
           <button data-role="issue" style="flex:1;min-width:120px;padding:10px;border:1px solid #555;border-radius:6px;background:transparent;color:#ccc;cursor:pointer;font-size:13px;">提交反馈</button>
           <button data-role="dismiss" style="flex:1;min-width:120px;padding:10px;border:1px solid #555;border-radius:6px;background:transparent;color:#ccc;cursor:pointer;font-size:13px;">忽略并继续</button>
         </div>
-        <p data-role="copied" style="display:none;color:#7ec699;font-size:12px;margin:10px 0 0;">✓ 已复制到剪贴板</p>
+        <p data-role="copied" style="display:none;color:#7ec699;font-size:12px;margin:10px 0 0;">${iconSvg('check', { size: 13, style: 'margin-right:4px' })}已复制到剪贴板</p>
       </div>
     </div>
   `;
@@ -64,7 +66,7 @@ function showOverlay(err, ctx) {
       await navigator.clipboard.writeText(details);
       const tip = overlay.querySelector('[data-role="copied"]');
       tip.style.display = 'block';
-      e.target.textContent = '✓ 已复制';
+      e.target.innerHTML = iconSvg('check', { size: 13, style: 'margin-right:4px' }) + '已复制';
     } catch (_) { /* 剪贴板不可用时静默 */ }
   });
   overlay.querySelector('[data-role="issue"]').addEventListener('click', () => {

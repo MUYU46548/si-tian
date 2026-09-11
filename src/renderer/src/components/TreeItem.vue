@@ -11,7 +11,7 @@
       @dblclick="$emit('jump', node)"
     >
       <span v-if="node.children && node.children.length" class="expand-toggle" @click.stop="toggle">
-        {{ isExpanded ? '▼' : '▶' }}
+        <Icon :name="isExpanded ? 'chevron-down' : 'chevron-right'" :size="11"/>
       </span>
       <span v-else class="expand-placeholder"></span>
       <span class="node-icon" :class="node.layer"></span>
@@ -32,6 +32,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed } from 'vue';
 
 const props = defineProps({

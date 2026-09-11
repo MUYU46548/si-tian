@@ -2,7 +2,7 @@
   <div class="batch-import-overlay" v-if="isOpen" @mousedown.self="close">
     <div class="batch-import-panel">
       <div class="panel-header">
-        <h3>📥 批量导入笔记</h3>
+        <h3><Icon name="download" :size="16" style="margin-right:6px"/>批量导入笔记</h3>
         <button class="close-btn" @click="close" title="关闭">×</button>
       </div>
       <div class="panel-body">
@@ -48,22 +48,22 @@
         </div>
 
         <div v-if="formError" class="result-box error">
-          <p>✗ {{ formError }}</p>
+          <p><Icon name="x-circle" :size="14"/> {{ formError }}</p>
         </div>
 
         <div v-if="result" class="result-box" :class="{ error: result.failed }">
           <template v-if="result.failed">
-            <p>✗ 导入失败：{{ result.error }}</p>
+            <p><Icon name="x-circle" :size="14"/> 导入失败：{{ result.error }}</p>
           </template>
           <template v-else>
-            <p>✓ 创建 {{ result.created.length }} 个 / 跳过 {{ result.skipped.length }} 个（已存在）/ 失败 {{ result.errors.length }} 个</p>
+            <p><Icon name="check-circle" :size="14"/> 创建 {{ result.created.length }} 个 / 跳过 {{ result.skipped.length }} 个（已存在）/ 失败 {{ result.errors.length }} 个</p>
             <p class="result-path">目标目录：{{ result.targetDir }}</p>
             <p v-if="result.skipped.length" class="result-detail">跳过：{{ result.skipped.map(s => s.name).join('、') }}</p>
             <p v-if="result.errors.length" class="result-detail error-text">失败：{{ result.errors.map(e => `${e.name}(${e.reason})`).join('、') }}</p>
           </template>
         </div>
 
-        <p class="import-tip">导入后需在设置面板执行「🔄 重新提取数据」，新节点才会出现在地图中。</p>
+        <p class="import-tip">导入后需在设置面板执行「<Icon name="refresh" :size="12"/>重新提取数据」，新节点才会出现在地图中。</p>
       </div>
       <div class="panel-footer">
         <button class="btn-secondary" @click="close">取消</button>
@@ -76,6 +76,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 

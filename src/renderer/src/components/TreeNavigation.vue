@@ -3,7 +3,7 @@
     <div class="tree-header">
       <h4>导航</h4>
       <button class="toggle-btn" @click="collapsed = !collapsed" :title="collapsed ? '展开' : '收起'">
-        {{ collapsed ? '▶' : '◀' }}
+        <Icon :name="collapsed ? 'chevron-right' : 'chevron-left'" :size="12"/>
       </button>
     </div>
     <div v-if="!collapsed" class="tree-body">
@@ -22,6 +22,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useNodeNavigation } from '../composables/useNodeNavigation';

@@ -1,7 +1,7 @@
 <template>
   <div v-if="showRecovery" class="recovery-overlay">
     <div class="recovery-panel">
-      <div class="recovery-icon">⚠️</div>
+      <div class="recovery-icon"><Icon name="alert-triangle" :size="30"/></div>
       <h3>检测到未保存的编辑</h3>
       <p class="recovery-desc">
         上次使用时检测到未保存的地图编辑数据，可能是异常退出导致。
@@ -26,6 +26,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 
@@ -103,7 +104,7 @@ function recoverData() {
     }
     localStorage.removeItem(BACKUP_KEY);
     showRecovery.value = false;
-    alert('✅ 数据已恢复！');
+    alert('数据已恢复！');
   } catch (e) {
     console.error('Failed to recover:', e);
     alert('恢复失败: ' + e.message);
@@ -122,7 +123,7 @@ function revertToLastSave() {
     // 清除备份标记，避免重复提示
     localStorage.removeItem(BACKUP_KEY);
     showRecovery.value = false;
-    alert(`✅ 已撤销 ${count} 步操作，回到上次保存状态`);
+    alert(`已撤销 ${count} 步操作，回到上次保存状态`);
   } catch (e) {
     console.error('Failed to revert:', e);
     alert('撤销失败: ' + e.message);

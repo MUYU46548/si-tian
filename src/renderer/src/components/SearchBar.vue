@@ -1,7 +1,7 @@
 <template>
   <div class="search-bar-container">
     <div class="search-input-wrapper">
-      <span class="search-icon">🔍</span>
+      <span class="search-icon"><Icon name="search" :size="13"/></span>
       <input
         ref="input"
         v-model="query"
@@ -22,7 +22,7 @@
         :class="{ active: store.searchLayerFilter.length > 0 }"
         @click="store.isFilterOpen = !store.isFilterOpen"
         title="类型过滤"
-      >⚲</button>
+      ><Icon name="filter" :size="13"/></button>
     </div>
 
     <!-- 浮动搜索结果面板 -->
@@ -119,6 +119,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useNodeNavigation } from '../composables/useNodeNavigation';

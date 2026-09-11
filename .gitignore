@@ -36,6 +36,9 @@ __pycache__/
 
 # 测试临时
 .test-edge-profile/
+# 测试运行残留（中断时可能滞留；mock-data 含真实库数据副本，禁止提交）
+src/renderer/mock-data/
+src/renderer/index.html.bak
 
 # 内部文档（不公开）
 HANDOFF.md

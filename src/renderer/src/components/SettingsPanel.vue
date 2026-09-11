@@ -2,7 +2,7 @@
   <div v-if="isOpen" class="settings-overlay" @click.self="close">
     <div class="settings-panel">
       <div class="settings-header">
-        <h2>⚙️ 设置</h2>
+        <h2><Icon name="settings" :size="18" style="margin-right:6px"/>设置</h2>
         <button class="close-btn" @click="close">×</button>
       </div>
 
@@ -195,24 +195,24 @@
             </div>
             <div class="vault-path-row">
               <span class="vault-path-text" :title="vaultPath">{{ vaultPath || '未设置（使用默认库）' }}</span>
-              <button class="vault-btn" @click="chooseVaultPath" title="选择知识库目录">📂 选择</button>
+              <button class="vault-btn" @click="chooseVaultPath" title="选择知识库目录"><Icon name="folder" :size="14"/> 选择</button>
             </div>
           </div>
           <div class="data-actions">
             <button class="data-btn" @click="reextractData">
-              🔄 重新提取数据
+              <Icon name="refresh" :size="14"/> 重新提取数据
             </button>
             <button class="data-btn" @click="validateData">
-              🔍 数据完整性检查
+              <Icon name="search" :size="14"/> 数据完整性检查
             </button>
             <button class="data-btn" @click="backupCache" title="将 .sitian/ 缓存备份到 backups/（带时间戳，保留最近 10 批）">
-              📦 立即备份
+              <Icon name="package" :size="14"/> 立即备份
             </button>
             <button class="data-btn" @click="openBatchImport" title="批量创建笔记（只创建不修改，已存在自动跳过）">
-              📥 批量导入
+              <Icon name="download" :size="14"/> 批量导入
             </button>
             <button class="data-btn danger" @click="clearCache">
-              🗑 清除坐标缓存
+              <Icon name="trash" :size="14"/> 清除坐标缓存
             </button>
           </div>
         </section>
@@ -222,13 +222,13 @@
           <h3>配置管理</h3>
           <div class="data-actions">
             <button class="data-btn" @click="exportSettings" title="将当前设置导出为 JSON 文件（便于备份或多机同步）">
-              📤 导出设置
+              <Icon name="upload" :size="14"/> 导出设置
             </button>
             <button class="data-btn" @click="triggerImportSettings" title="从 JSON 文件导入设置（仅覆盖可识别的设置项）">
-              📥 导入设置
+              <Icon name="download" :size="14"/> 导入设置
             </button>
             <button class="data-btn danger" @click="resetSettings" title="将所有设置项恢复为默认值">
-              ♻️ 恢复默认设置
+              <Icon name="refresh" :size="14"/> 恢复默认设置
             </button>
             <input
               ref="settingsFileInput"
@@ -250,6 +250,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, onMounted } from 'vue';
 
 const isOpen = ref(false);

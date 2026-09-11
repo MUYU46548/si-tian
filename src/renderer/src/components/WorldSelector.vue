@@ -6,7 +6,7 @@
         <p class="subtitle">选择一个世界观作为起点</p>
       </div>
       <div class="header-actions">
-        <button class="scenario-btn" @click="$emit('open-scenarios')" title="历史剧本">⏳ 历史剧本</button>
+        <button class="scenario-btn" @click="$emit('open-scenarios')" title="历史剧本"><Icon name="history" :size="14"/> 历史剧本</button>
         <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
       </div>
     </div>
@@ -14,9 +14,9 @@
       <h2>这里还没有世界</h2>
       <p>从 Obsidian 库提取地理节点，加载示例世界观体验，或创建一个空世界开始绘制。</p>
       <div class="empty-actions">
-        <button class="create-btn" @click="$emit('load-sample')">✨ 加载示例世界观</button>
+        <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
         <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
-        <button class="extract-btn" @click="$emit('reextract')">↻ 从 Obsidian 重新提取</button>
+        <button class="extract-btn" @click="$emit('reextract')"><Icon name="refresh" :size="14"/> 从 Obsidian 重新提取</button>
       </div>
     </div>
     <div v-else class="world-grid">
@@ -31,7 +31,7 @@
           class="delete-btn"
           title="删除世界（其下星域/星系将失去上级关联，可撤销）"
           @click.stop="$emit('delete-world', world)"
-        >🗑</button>
+        ><Icon name="trash" :size="14"/></button>
         <div class="world-icon" :style="{ background: getWorldIconGradient(world.name) }">{{ (world.displayName || world.name).charAt(0) }}</div>
         <h3>{{ world.displayName || world.name }}</h3>
         <p class="world-desc">{{ world.tags?.filter(t => !['世界', '地理系统'].includes(t)).slice(0, 3).join(' · ') || '暂无描述' }}</p>
@@ -51,6 +51,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 const props = defineProps({
   worlds: { type: Array, default: () => [] },
   domains: { type: Array, default: () => [] },

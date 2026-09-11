@@ -19,13 +19,14 @@
           :class="{ locked: layer.locked }"
           :title="layer.locked ? '解锁图层' : '锁定图层（不可编辑）'"
           @click="layers.toggleLayerLock(currentView, layer.id)"
-        >{{ layer.locked ? '🔒' : '🔓' }}</button>
+        ><Icon :name="layer.locked ? 'lock' : 'unlock'" :size="13"/></button>
       </div>
     </div>
   </PanelShell>
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';

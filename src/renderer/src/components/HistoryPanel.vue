@@ -18,7 +18,7 @@
             : '点击重做到此步骤'"
         @click="jumpTo(entry.index)"
       >
-        <span class="history-icon">{{ getCategoryIcon(entry.category) }}</span>
+        <span class="history-icon"><Icon :name="getCategoryIcon(entry.category)" :size="13"/></span>
         <span class="history-label">{{ entry.label }}</span>
         <span class="history-time">{{ formatTime(entry.timestamp) }}</span>
       </div>
@@ -31,6 +31,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { computed } from 'vue';
 import PanelShell from './PanelShell.vue';
 import { getHistory, jumpTo as jumpToIndex, currentIndex } from '../store/undo';
@@ -61,13 +62,13 @@ function formatTime(timestamp) {
 
 function getCategoryIcon(category) {
   const icons = {
-    coordinate: '📍',
-    hyperlane: '🛤',
-    terrain: '🗺',
-    region: '🗂',
-    property: '✏️',
+    coordinate: 'map-pin',
+    hyperlane: 'route',
+    terrain: 'map',
+    region: 'folder-open',
+    property: 'pencil',
   };
-  return icons[category] || '📝';
+  return icons[category] || 'file-text';
 }
 </script>
 
@@ -107,9 +108,14 @@ function getCategoryIcon(category) {
   font-weight: 600;
 }
 .history-item.current::before {
-  content: '▶';
-  font-size: 9px;
-  color: var(--accent);
+  content: '';
+  display: inline-block;
+  vertical-align: middle;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--accent);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
   margin-right: 2px;
 }
 .history-item.future {
