@@ -206,7 +206,7 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
         defaultName: `sitian-${props.planet?.id || 'map'}-full-${Date.now()}.png`,
       });
       if (result?.success) {
-        exportStatus.value = `✅ 导出成功：${result.path}`;
+        exportStatus.value = `导出成功：${result.path}`;
         setTimeout(() => { exportStatus.value = ''; }, 4000);
       } else if (result?.canceled) {
         exportStatus.value = '已取消导出';
@@ -226,7 +226,7 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
         a.click();
         URL.revokeObjectURL(url);
       }, 'image/png');
-      exportStatus.value = '✅ 已下载（浏览器回退模式）';
+      exportStatus.value = '已下载（浏览器回退模式）';
       setTimeout(() => { exportStatus.value = ''; }, 3000);
     }
   }

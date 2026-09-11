@@ -3,13 +3,14 @@
 
 import { ref, watch } from 'vue';
 
+// icon 为 Icon.vue 图标名；Canvas 侧由 utils/canvasIcon.js 以同名矢量绘制
 const MARKER_TYPES = [
-  { type: 'chest', label: '宝箱', icon: '📦', color: '#FFD700' },
-  { type: 'teleport', label: '传送点', icon: '🌀', color: '#9B59B6' },
-  { type: 'boss', label: 'Boss', icon: '💀', color: '#E74C3C' },
-  { type: 'resource', label: '资源', icon: '💎', color: '#3498DB' },
-  { type: 'npc', label: 'NPC', icon: '👤', color: '#2ECC71' },
-  { type: 'flag', label: '旗帜', icon: '🚩', color: '#E67E22' },
+  { type: 'chest', label: '宝箱', icon: 'package', color: '#FFD700' },
+  { type: 'teleport', label: '传送点', icon: 'spiral', color: '#9B59B6' },
+  { type: 'boss', label: 'Boss', icon: 'skull', color: '#E74C3C' },
+  { type: 'resource', label: '资源', icon: 'gem', color: '#3498DB' },
+  { type: 'npc', label: 'NPC', icon: 'user', color: '#2ECC71' },
+  { type: 'flag', label: '旗帜', icon: 'flag', color: '#E67E22' },
 ];
 
 const MARKER_COLORS = ['#FFD700', '#9B59B6', '#E74C3C', '#3498DB', '#2ECC71', '#E67E22', '#FF6B6B', '#32CD32'];
@@ -24,7 +25,7 @@ export function useMarkerEditor({ store, props, emit, selectedMarker }) {
     editingMarkerName.value = marker?.name || '';
     editingMarkerDesc.value = marker?.description || '';
     const preset = MARKER_TYPES.find(m => m.type === marker?.type);
-    editingMarkerIcon.value = marker?.icon || preset?.icon || '📍';
+    editingMarkerIcon.value = marker?.icon || preset?.icon || 'map-pin';
   });
 
   function updateMarkerName() {
@@ -44,16 +45,16 @@ export function useMarkerEditor({ store, props, emit, selectedMarker }) {
     const preset = MARKER_TYPES.find(m => m.type === type);
     store.updateMarker(props.planet.id, selectedMarker.value.id, {
       type,
-      icon: preset?.icon || '📍',
+      icon: preset?.icon || 'map-pin',
       color: preset?.color || '#FFD700',
     });
-    editingMarkerIcon.value = preset?.icon || '📍';
+    editingMarkerIcon.value = preset?.icon || 'map-pin';
     emit('dirty', true);
   }
 
   function updateMarkerIcon() {
     if (!selectedMarker.value) return;
-    store.updateMarker(props.planet.id, selectedMarker.value.id, { icon: editingMarkerIcon.value || '📍' });
+    store.updateMarker(props.planet.id, selectedMarker.value.id, { icon: editingMarkerIcon.value || 'map-pin' });
     emit('dirty', true);
   }
 

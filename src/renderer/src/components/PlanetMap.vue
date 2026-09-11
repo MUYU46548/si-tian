@@ -168,7 +168,7 @@
     </div>
     
     <!-- 导出状态提示 -->
-    <div v-if="exportStatus" class="export-status">{{ exportStatus }}</div>
+    <div v-if="exportStatus" class="export-status"><Icon name="info" :size="12" style="margin-right:5px"/>{{ exportStatus }}</div>
     
     <!-- 地形类型选择器 -->
     <div v-if="editMode && interactionMode === 'draw'" class="terrain-picker">
@@ -211,7 +211,7 @@
         :key="m.type"
         :class="{ active: selectedMarkerType === m.type }"
         @click="selectedMarkerType = m.type"
-      ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
+      ><span class="marker-icon"><Icon :name="m.icon" :size="13"/></span> {{ m.label }}</button>
     </div>
     
     <div class="canvas-wrapper" @dragover.prevent="handleDragOver" @drop.prevent="handleDrop">
@@ -304,7 +304,7 @@
         <span class="zoom-value">%</span>
       </div>
       <!-- 保存状态横幅 -->
-      <div v-if="saveStatus" class="save-banner" :class="{ error: saveStatus.startsWith('✗') }">{{ saveStatus }}</div>
+      <div v-if="saveStatus" class="save-banner" :class="{ error: saveStatusKind === 'err' }"><Icon :name="saveStatusKind === 'err' ? 'x-circle' : saveStatusKind === 'busy' ? 'loader' : 'check-circle'" :size="13" style="margin-right:5px"/>{{ saveStatus }}</div>
       <!-- 光标世界坐标 -->
       <div v-if="cursorCoord.visible" class="cursor-coords">X: {{ cursorCoord.x }} · Y: {{ cursorCoord.y }}</div>
       <!-- 画布边缘标尺 -->
@@ -472,20 +472,20 @@
             :key="m.type"
             :class="{ active: selectedMarker?.type === m.type }"
             @click="updateMarkerType(m.type)"
-          ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
+          ><span class="marker-icon"><Icon :name="m.icon" :size="13"/></span> {{ m.label }}</button>
         </div>
       </div>
       <div class="editor-field">
         <label>图标</label>
         <div class="icon-input-row">
-          <input v-model="editingMarkerIcon" @input="updateMarkerIcon" placeholder="自定义 emoji 图标" maxlength="4" />
+          <input v-model="editingMarkerIcon" @input="updateMarkerIcon" placeholder="自定义图标（图标名或 emoji）" maxlength="4" />
           <button
             v-for="m in markerEditor.markerTypes"
             :key="'ic_' + m.type"
             class="icon-pick-btn"
             :class="{ active: editingMarkerIcon === m.icon }"
             @click="editingMarkerIcon = m.icon; updateMarkerIcon()"
-          >{{ m.icon }}</button>
+          ><Icon :name="m.icon" :size="13"/></button>
         </div>
       </div>
       <div class="editor-field">
@@ -607,7 +607,7 @@
               :class="{ active: multiMarkers.every(o => o.obj.type === m.type) }"
               @click="batchApply('marker', { type: m.type, color: null })"
               :title="'统一设为' + m.label"
-            ><span class="marker-icon">{{ m.icon }}</span> {{ m.label }}</button>
+            ><span class="marker-icon"><Icon :name="m.icon" :size="13"/></span> {{ m.label }}</button>
           </div>
         </div>
       </template>
@@ -802,6 +802,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed, watch, reactive, onMounted, onUnmounted, nextTick } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
@@ -934,14 +935,12 @@ const NODE_RADIUS = { city: 10, town: 7, village: 7, location: 5, facility: 5 };
 const LABEL_SIZE = { city: 13, town: 12, village: 12, location: 11, facility: 11 };
 const LABEL_WEIGHT = { city: 'bold', town: 'normal', village: 'normal', location: 'normal', facility: 'normal' };
 const PLACE_TYPE_COLORS = { '自然': '#4CAF50', '宗教': '#9B59B6', '皇室': '#F1C40F', '商业': '#E67E22', '工业': '#7F8C8D', '居住': '#1ABC9C', '公共': '#3498DB', '特殊': '#E91E63' };
-const PLACE_TYPE_ICONS = { '自然': '⛰', '宗教': '⛪', '皇室': '🏯', '商业': '🏪', '工业': '🏭', '居住': '🏠', '公共': '🏛', '特殊': '✦' };
 
 function getNodeColor(layer) { return NODE_COLORS[layer] || '#95E1D3'; }
 function getNodeRadius(layer) { return NODE_RADIUS[layer] || 5; }
 function getLabelSize(layer) { return LABEL_SIZE[layer] || 11; }
 function getLabelWeight(layer) { return LABEL_WEIGHT[layer] || 'normal'; }
 function getPlaceColor(place) { return place.placeType && PLACE_TYPE_COLORS[place.placeType] ? PLACE_TYPE_COLORS[place.placeType] : getNodeColor(place.layer); }
-function getPlaceIcon(place) { return place.placeType ? PLACE_TYPE_ICONS[place.placeType] : null; }
 
 // ===== 属性编辑器 composables =====
 const provinceEditor = useProvinceEditor({ store, props, emit, selectedProvince });
@@ -1372,6 +1371,7 @@ const focusHighlightNode = focusHighlight.focusHighlightNode;
 const snapshotPanelOpen = snapshotPanel.snapshotPanelOpen;
 const mapSnapshots = snapshotPanel.mapSnapshots;
 const saveStatus = snapshotPanel.saveStatus;
+const saveStatusKind = snapshotPanel.saveStatusKind;
 const { takeSnapshot, restoreSnapshot, removeSnapshot } = snapshotPanel;
 const autoRegions = autoRegionsMgr.autoRegions;
 const fogMode = autoRegionsMgr.fogMode;
@@ -1542,7 +1542,8 @@ function handleDrop(e) {
   highlightedPlaceId.value = nodeId;
   if (highlightTimer) clearTimeout(highlightTimer);
   highlightTimer = setTimeout(() => { highlightedPlaceId.value = null; renderer.requestRender(); }, 2500);
-  saveStatus.value = `✓ 已放置「${node.displayName || node.name}」，镜头已定位`;
+  saveStatus.value = `已放置「${node.displayName || node.name}」，镜头已定位`;
+  saveStatusKind.value = 'ok';
   setTimeout(() => { saveStatus.value = ''; }, 2500);
 }
 
@@ -1756,12 +1757,15 @@ function smoothPolygonBoundary() {
 function saveMap() {
   // 异步保存 + 横幅反馈，避免用户无反馈狂点
   saveStatus.value = '正在保存...';
+  saveStatusKind.value = 'busy';
   store.saveMapData(props.planet.id, currentMapData.value).then(result => {
-    saveStatus.value = result?.success ? '✓ 保存成功' : '✗ 保存失败';
+    saveStatus.value = result?.success ? '保存成功' : '保存失败';
+    saveStatusKind.value = result?.success ? 'ok' : 'err';
     snapshotPanel.clearSaveStatusTimer();
     snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 3000);
   }).catch(() => {
-    saveStatus.value = '✗ 保存失败';
+    saveStatus.value = '保存失败';
+    saveStatusKind.value = 'err';
     snapshotPanel.clearSaveStatusTimer();
     snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 3000);
   });

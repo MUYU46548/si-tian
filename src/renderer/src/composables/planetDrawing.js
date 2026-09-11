@@ -5,6 +5,7 @@
  * getState() 每次渲染时调用，返回解包后的最新状态对象（ref 已在组件侧 .value 解包）。
  * 拆分原则：绘制只读状态 + 渲染，交互/修改留在组件。
  */
+import { drawCanvasIcon, drawIconOrEmoji } from '../utils/canvasIcon';
 import { getTexturePattern } from '../utils/textures';
 import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '../utils/selectionHandles';
@@ -19,11 +20,6 @@ const PLACE_TYPE_COLORS = {
   '自然': '#4CAF50', '宗教': '#9B59B6', '皇室': '#F1C40F', '商业': '#E67E22',
   '工业': '#7F8C8D', '居住': '#1ABC9C', '公共': '#3498DB', '特殊': '#E91E63',
 };
-const PLACE_TYPE_ICONS = {
-  '自然': '⛰', '宗教': '⛪', '皇室': '🏯', '商业': '🏪',
-  '工业': '🏭', '居住': '🏠', '公共': '🏛', '特殊': '✦',
-};
-
 // ===== 视口裁剪（批次C1）：工具函数统一在 utils/geometry.js，视口为世界坐标可见矩形 =====
 
 export function createPlanetDrawing(getState) {
@@ -32,7 +28,6 @@ export function createPlanetDrawing(getState) {
   function getNodeRadius(layer) { return NODE_RADIUS[layer] || 5; }
   function getLabelSize(layer) { return LABEL_SIZE[layer] || 11; }
   function getLabelWeight(layer) { return LABEL_WEIGHT[layer] || 'normal'; }
-  function getPlaceIcon(place) { return place.placeType ? PLACE_TYPE_ICONS[place.placeType] : null; }
   function getPlaceColor(place) {
     if (place.placeType && PLACE_TYPE_COLORS[place.placeType]) return PLACE_TYPE_COLORS[place.placeType];
     return getNodeColor(place.layer);
@@ -633,7 +628,14 @@ function drawRegions(ctx) {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = color;
-        ctx.fillText(`⏳ ${region.name}`, center.x, center.y);
+        const rIcon = 10;
+        const rGap = 3;
+        const rW = rIcon + rGap + ctx.measureText(region.name).width;
+        const rX = center.x - rW / 2;
+        drawCanvasIcon(ctx, 'timer', rX + rIcon / 2, center.y, rIcon, color);
+        ctx.textAlign = 'left';
+        ctx.fillText(region.name, rX + rIcon + rGap, center.y);
+        ctx.textAlign = 'center';
       }
     });
   }
@@ -780,15 +782,21 @@ function drawPlaces(ctx) {
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const badgeText = `📍 ${ownedRegion.name}`;
-      const metrics = ctx.measureText(badgeText);
+      const badgeText = ownedRegion.name;
+      const badgeIcon = 9;
+      const badgeGap = 3;
+      const badgeW = badgeIcon + badgeGap + ctx.measureText(badgeText).width;
       const padding = 3;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
       ctx.beginPath();
-      ctx.roundRect(x - metrics.width / 2 - padding, badgeY - 1, metrics.width + padding * 2, 12, 4);
+      ctx.roundRect(x - badgeW / 2 - padding, badgeY - 1, badgeW + padding * 2, 12, 4);
       ctx.fill();
       ctx.fillStyle = '#888';
-      ctx.fillText(badgeText, x, badgeY);
+      const badgeX = x - badgeW / 2;
+      drawCanvasIcon(ctx, 'map-pin', badgeX + badgeIcon / 2, badgeY + 5, badgeIcon, '#888');
+      ctx.textAlign = 'left';
+      ctx.fillText(badgeText, badgeX + badgeIcon + badgeGap, badgeY);
+      ctx.textAlign = 'center';
     }
   });
 }
@@ -804,7 +812,7 @@ function drawMarkers(ctx) {
     // markerTypes 由 PlanetMap 经 getState 注入（修复：此前裸引用未导入的标识符，markers 非空即 ReferenceError）
     const preset = (s.markerTypes || []).find(m => m.type === marker.type);
     const color = marker.color || preset?.color || '#FFD700';
-    const icon = marker.icon || preset?.icon || '📍';
+    const icon = marker.icon || preset?.icon || 'map-pin';
     const isSelected = s.selectedMarker?.id === marker.id;
     // E4：缩放/旋转变换（围绕标记中心；缩放作用于点径与图标）
     const scale = marker.scale || 1;
@@ -832,10 +840,8 @@ function drawMarkers(ctx) {
     ctx.shadowBlur = 0;
 
     if (!fast) {
-      ctx.font = '14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(icon, cx, cy);
+      // 图标名走矢量绘制；用户旧数据中的自定义 emoji 由 drawIconOrEmoji 回退 fillText
+      drawIconOrEmoji(ctx, icon, cx, cy, 14, '#FFFFFF');
     }
     ctx.restore();
 
@@ -1107,7 +1113,15 @@ function drawClusters(ctx) {
         ctx.font = '10px sans-serif';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#2D3436';
-        ctx.fillText(`⛁ ${cluster.name} (${members.length})`, cx, cy + 12);
+        const clusterLabel = `${cluster.name} (${members.length})`;
+        const clIcon = 10;
+        const clGap = 3;
+        const clW = clIcon + clGap + ctx.measureText(clusterLabel).width;
+        const clX = cx - clW / 2;
+        drawCanvasIcon(ctx, 'layers', clX + clIcon / 2, cy + 12 + 5.5, clIcon, '#2D3436');
+        ctx.textAlign = 'left';
+        ctx.fillText(clusterLabel, clX + clIcon + clGap, cy + 12);
+        ctx.textAlign = 'center';
       }
       ctx.restore();
       return;

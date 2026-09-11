@@ -136,7 +136,7 @@ export function geoJSONToPlanet(fc) {
         });
       } else if (geom.type === 'Point' && props.kind === 'marker') {
         const [x, y] = geom.coordinates;
-        result.markers.push({ id: newId, type: props.type || 'pin', x, y, icon: props.icon || '📍', color: props.color || null, note: props.note || '', rotation: props.rotation ?? 0, scale: props.scale ?? 1 });
+        result.markers.push({ id: newId, type: props.type || 'pin', x, y, icon: props.icon || 'map-pin', color: props.color || null, note: props.note || '', rotation: props.rotation ?? 0, scale: props.scale ?? 1 });
       } else if (geom.type === 'Point' && props.kind === 'textLabel') {
         const [x, y] = geom.coordinates;
         result.textLabels.push({ id: newId, text: props.text || '', x, y, fontSize: props.fontSize || 14, color: props.color || '#cccccc', rotation: props.rotation ?? 0, scale: props.scale ?? 1 });

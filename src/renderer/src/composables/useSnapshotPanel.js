@@ -7,6 +7,8 @@ export function useSnapshotPanel({ store, props, emit, renderer, currentMapData 
   const snapshotPanelOpen = ref(false);
   const mapSnapshots = computed(() => currentMapData.value?.snapshots || []);
   const saveStatus = ref('');
+  // 状态类型：ok | err（供状态条选择图标/配色，替代原先靠 emoji 前缀判断）
+  const saveStatusKind = ref('');
   let saveStatusTimer = null;
 
   function takeSnapshot(name) {
@@ -14,7 +16,8 @@ export function useSnapshotPanel({ store, props, emit, renderer, currentMapData 
     if (snap) {
       emit('dirty', true);
       renderer.requestRender();
-      saveStatus.value = `✓ 已拍摄快照「${snap.name}」`;
+      saveStatus.value = `已拍摄快照「${snap.name}」`;
+      saveStatusKind.value = 'ok';
       if (saveStatusTimer) clearTimeout(saveStatusTimer);
       saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 2500);
     }
@@ -25,7 +28,8 @@ export function useSnapshotPanel({ store, props, emit, renderer, currentMapData 
     store.restoreMapSnapshot(props.planet.id, snap.id);
     emit('dirty', true);
     renderer.requestRender();
-    saveStatus.value = `✓ 已恢复快照「${snap.name}」`;
+    saveStatus.value = `已恢复快照「${snap.name}」`;
+    saveStatusKind.value = 'ok';
     if (saveStatusTimer) clearTimeout(saveStatusTimer);
     saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 2500);
   }
@@ -45,6 +49,7 @@ export function useSnapshotPanel({ store, props, emit, renderer, currentMapData 
     snapshotPanelOpen,
     mapSnapshots,
     saveStatus,
+    saveStatusKind,
     saveStatusTimer,
     takeSnapshot,
     restoreSnapshot,
