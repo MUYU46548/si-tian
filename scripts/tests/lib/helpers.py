@@ -60,8 +60,20 @@ def select_world_with_domains(cdp):
 
 
 def enter_edit(cdp):
-    """进入行星地图编辑模式"""
-    return cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.trim() === '✏️ 编辑地图'); if (!b) return 'no-btn'; b.click(); return 'ok'; })()")
+    """进入行星地图编辑模式。
+
+    选择器不依赖图标文本（图标已从 emoji 字形改为 <Icon> 组件）：
+    优先用入口按钮的 class，其次按按钮文案「编辑地图」兜底（恒星系/星域视图的
+    编辑开关是切换式按钮，文案在「编辑地图 / 完成编辑」之间变化）。
+    """
+    return cdp.eval("""(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const b = btns.find(x => x.classList.contains('edit-entry-btn'))
+             || btns.find(x => (x.textContent || '').includes('编辑地图'));
+      if (!b) return 'no-btn';
+      b.click();
+      return 'ok';
+    })()""")
 
 
 def sample_colors(cdp, count=600):

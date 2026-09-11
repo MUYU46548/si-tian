@@ -2,7 +2,7 @@
   <div v-if="node" class="detail-panel">
     <!-- 头部：图标 + 名称 + 层级 -->
     <div class="panel-hero" :style="heroStyle">
-      <div class="hero-icon">{{ layerIcon }}</div>
+      <div class="hero-icon" :data-icon="layerIcon"><Icon :name="layerIcon" :size="22"/></div>
       <div class="hero-info">
         <h2 class="hero-title">{{ node.displayName || node.name }}</h2>
         <span v-if="node.displayName" class="hero-source-name">原文名：{{ node.name }}</span>
@@ -20,19 +20,19 @@
       <!-- 操作按钮（高频前置，任何 tab 下常驻可见） -->
       <section v-if="!isPseudoNode" class="actions-section actions-section-top">
         <button class="action-btn primary" @click="openSourceInObsidian">
-          <span class="btn-icon">📝</span> 在 Obsidian 中打开
+          <span class="btn-icon"><Icon name="file-text" :size="14"/></span> 在 Obsidian 中打开
         </button>
         <button class="action-btn locate-btn" @click="focusOnMap" :disabled="!canFocusOnMap" title="镜头定位到该节点在地图上的位置">
-          <span class="btn-icon">🎯</span> 在地图上定位
+          <span class="btn-icon"><Icon name="target" :size="14"/></span> 在地图上定位
         </button>
         <button class="action-btn" @click="revealInExplorer">
-          <span class="btn-icon">📁</span> 在文件夹中显示
+          <span class="btn-icon"><Icon name="folder" :size="14"/></span> 在文件夹中显示
         </button>
         <button class="action-btn" @click="toggleLock" :title="isLocked ? '解除锁定（可拖拽/微调）' : '锁定位置（防误拖）'">
-          <span class="btn-icon">{{ isLocked ? '🔓' : '🔒' }}</span> {{ isLocked ? '解除锁定' : '锁定位置' }}
+          <span class="btn-icon"><Icon :name="isLocked ? 'unlock' : 'lock'" :size="14"/></span> {{ isLocked ? '解除锁定' : '锁定位置' }}
         </button>
         <button class="action-btn danger" @click="removeFromMap" title="从地图移除该节点及其关联航道（可撤销）">
-          <span class="btn-icon">🗑</span> 从地图移除
+          <span class="btn-icon"><Icon name="trash" :size="14"/></span> 从地图移除
         </button>
       </section>
 
@@ -84,7 +84,7 @@
       <template v-else-if="activeTab === 'relations'">
         <!-- 伪节点提示 -->
         <div v-if="isPseudoNode" class="pseudo-node-tip">
-          <div class="tip-icon">ℹ️</div>
+          <div class="tip-icon"><Icon name="info" :size="16"/></div>
           <div class="tip-content">
             <p>太空标记/部队卡片为系内信息标识，无层级归属关系。</p>
             <p class="tip-sub">在单系地图中可查看其位置与标签信息。</p>
@@ -129,7 +129,7 @@
             class="relation-link wikilink-item"
             @click="openInObsidian(link)"
           >
-            <span class="relation-icon">🔗</span>
+            <span class="relation-icon"><Icon name="link" :size="13"/></span>
             <span class="relation-name">{{ link }}</span>
           </a>
         </div>
@@ -138,7 +138,7 @@
         <div v-if="relatedHyperlanes.length" class="relation-group">
           <div class="relation-label">航道</div>
           <div v-for="h in relatedHyperlanes.slice(0, 6)" :key="h.id" class="relation-link hyperlane-link">
-            <span class="relation-icon">🛤</span>
+            <span class="relation-icon"><Icon name="route" :size="13"/></span>
             <span class="relation-name">{{ getNodeName(h.fromId === node.id ? h.toId : h.fromId) }}</span>
             <select
               class="hyperlane-type-select"
@@ -290,6 +290,8 @@
 </template>
 
 <script setup>
+import { iconSvg } from '../utils/iconSvg';
+import Icon from './Icon.vue';
 import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
@@ -350,13 +352,13 @@ const hyperlaneTypeLabels = Object.fromEntries(hyperlaneTypes.map(t => [t.value,
 
 // 层级图标映射
 const LAYER_ICONS = {
-  world: '🌍', star_domain: '🌌', galaxy: '☀️', star: '✨',
-  planet: '🌍', moon: '🌙', region: '🏞', city: '🏙',
-  town: '🏘', village: '🏡', facility: '🏛', location: '📍', unknown: '❓',
-  space_marker: '◈', fleet_card: '⚑',
+  world: 'globe', star_domain: 'orbit', galaxy: 'sun', star: 'sparkles',
+  planet: 'globe', moon: 'moon', region: 'map', city: 'building',
+  town: 'home', village: 'home', facility: 'building', location: 'map-pin', unknown: 'help-circle',
+  space_marker: 'crosshair', fleet_card: 'flag',
 };
 
-const layerIcon = computed(() => LAYER_ICONS[node.value?.layer] || '❓');
+const layerIcon = computed(() => LAYER_ICONS[node.value?.layer] || 'help-circle');
 
 // 伪节点（太空标记/部队卡片）：无 Obsidian 正文、无层级关系，需简化面板
 const isPseudoNode = computed(() =>
@@ -379,7 +381,7 @@ const heroStyle = computed(() => {
 
 // 获取层级图标
 function getLayerIcon(layer) {
-  return LAYER_ICONS[layer] || '❓';
+  return LAYER_ICONS[layer] || 'help-circle';
 }
 
 // 计算 frontmatter 是否有内容
@@ -406,7 +408,7 @@ function preprocessObsidianSyntax(content) {
   
   // ![[image.png]] → 图片占位
   processed = processed.replace(/!\[\[([^\]]+)\]\]/g, 
-    '<span class="obsidian-image">📷 $1</span>');
+    '<span class="obsidian-image">' + iconSvg('camera', { size: 14, style: 'margin-right:4px' }) + '$1</span>');
   
   // [[显示名|链接]] → 可点击链接
   processed = processed.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, 

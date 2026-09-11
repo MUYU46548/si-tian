@@ -234,6 +234,7 @@ def run(cdp):
       const pn = document.querySelector('.detail-panel');
       if (!pn) return 'no-panel';
       const icon = pn.querySelector('.hero-icon');
+      const iconName = icon && icon.dataset ? icon.dataset.icon : null;
       const layer = pn.querySelector('.hero-layer');
       const tabBtns = Array.from(pn.querySelectorAll('.detail-tab-btn')).map(b => b.textContent);
       // 伪节点：应含「概览/关系」tab，「编辑」tab 应隐藏
@@ -242,7 +243,7 @@ def run(cdp):
       const actionsHidden = !pn.querySelector('.actions-section');
       return JSON.stringify({{
         visible: true,
-        icon: icon?.textContent,
+        icon: iconName,
         layer: layer?.textContent,
         hasEditTab,
         actionsHidden,
@@ -250,7 +251,7 @@ def run(cdp):
     }})()""")
     if not isinstance(panel, dict) or panel == 'no-panel':
         return False, f'伪节点详情面板未渲染 {panel}'
-    if not (panel.get('icon') in ('◈', '⚑') and panel.get('layer') in ('太空标记', '部队卡片')):
+    if not (panel.get('icon') in ('crosshair', 'flag') and panel.get('layer') in ('太空标记', '部队卡片')):
         return False, f'伪节点图标/层级显示异常 {panel}'
     if panel.get('hasEditTab'):
         return False, f'伪节点不应显示「编辑」tab {panel}'

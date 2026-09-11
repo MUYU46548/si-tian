@@ -7,7 +7,7 @@
           <h2>{{ domain?.name }} — 域内恒星系总览</h2>
         </div>
         <p class="hint">
-          <span v-if="!editMode">点击节点查看详情 · 滚动缩放 · 拖拽空白处平移 · <b>「✥ 移动」工具下拖拽节点调整坐标</b>（默认拖手模式防误触）</span>
+          <span v-if="!editMode">点击节点查看详情 · 滚动缩放 · 拖拽空白处平移 · <b>「移动」工具下拖拽节点调整坐标</b>（默认拖手模式防误触）</span>
           <span v-else class="edit-hint">编辑模式：拖拽恒星间创建航道 · 右键航道删除 · 点击空白取消</span>
         </p>
       </div>
@@ -17,18 +17,18 @@
             :class="{ active: interactionMode === 'pan' }"
             @click="interactionMode = 'pan'"
             title="拖手模式：拖拽空白处平移，节点只选中不移动（防误触）"
-          >🤚 拖手</button>
+          ><Icon name="hand" :size="14"/> 拖手</button>
           <button
             :class="{ active: interactionMode === 'move' }"
             @click="interactionMode = 'move'"
             title="移动模式：拖拽恒星系/行星调整坐标"
-          >✥ 移动</button>
+          ><Icon name="move" :size="14"/> 移动</button>
         </template>
         <button
           :class="{ active: editMode }"
           @click="toggleEditMode"
         >
-          {{ editMode ? '✓ 完成编辑' : '✎ 编辑地图' }}
+          <template v-if="editMode"><Icon name="check" :size="14"/> 完成编辑</template><template v-else><Icon name="pencil" :size="14"/> 编辑地图</template>
         </button>
         <button v-if="editMode" title="在当前星域创建恒星系（视图中心）" @click="createSystem">
           ＋ 恒星系
@@ -53,6 +53,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
@@ -106,16 +107,16 @@ function openContextMenu(wx, wy, target) {
   ctxWorld.value = { x: wx, y: wy };
   const items = [];
   if (target?.type === 'star') {
-    items.push({ key: 'add-planet', label: '添加行星', icon: '＋', action: ctxAddPlanet });
+    items.push({ key: 'add-planet', label: '添加行星', icon: 'plus', action: ctxAddPlanet });
   }
   if (target?.type === 'star' || target?.type === 'planet') {
-    items.push({ key: 'delete-node', label: '删除该节点', icon: '🗑', danger: true, action: ctxDeleteNode });
+    items.push({ key: 'delete-node', label: '删除该节点', icon: 'trash', danger: true, action: ctxDeleteNode });
   }
   if (target?.type === 'hyperlane') {
-    items.push({ key: 'delete-lane', label: '删除航道', icon: '🗑', danger: true, action: ctxDeleteHyperlane });
+    items.push({ key: 'delete-lane', label: '删除航道', icon: 'trash', danger: true, action: ctxDeleteHyperlane });
   }
   if (!target) {
-    items.push({ key: 'create-system', label: '在此创建恒星系', icon: '＋', action: ctxCreateSystemHere });
+    items.push({ key: 'create-system', label: '在此创建恒星系', icon: 'plus', action: ctxCreateSystemHere });
   }
   ctxMenu.open(items, worldToScreen(wx, wy), canvas.value?.parentElement);
 }

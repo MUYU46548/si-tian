@@ -8,14 +8,14 @@
   >
     <template v-for="(item, i) in state.items" :key="item.key || i">
       <div v-if="item.separator" class="menu-separator" />
-      <div v-else-if="item.header" class="menu-item menu-header">{{ item.icon ? item.icon + ' ' : '' }}{{ item.label }}</div>
+      <div v-else-if="item.header" class="menu-item menu-header"><Icon v-if="item.icon" :name="item.icon" :size="13" style="margin-right:4px"/>{{ item.label }}</div>
       <div
         v-else
         class="menu-item"
         :class="{ danger: item.danger, disabled: item.disabled }"
         @click="onSelect(item)"
       >
-        <span v-if="item.icon" class="menu-icon">{{ item.icon }}</span>
+        <span v-if="item.icon" class="menu-icon"><Icon :name="item.icon" :size="13"/></span>
         <span>{{ item.label }}</span>
       </div>
     </template>
@@ -23,6 +23,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 // U3: 统一右键菜单组件 — 配合 useContextMenu 使用，定位状态由 composable 管理
 const props = defineProps({
   state: { type: Object, required: true },

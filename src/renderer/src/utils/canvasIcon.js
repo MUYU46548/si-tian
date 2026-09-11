@@ -120,11 +120,102 @@ export const CANVAS_ICON_PATHS = {
     'M6 12H2',
     'M12 6V2',
     'M12 22v-4'
+  ],
+  // ---- P1.1 批次 C：家具 / 区域类型 / 标记预设 ----
+  timer: [
+    'M10 2h4',
+    'M12 11l-2.5 2.5',
+    'M12 6a8 8 0 1 0 0.01 0z'
+  ],
+  'alert-triangle': [
+    'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
+    'M12 9v4',
+    'M12 17h.01'
+  ],
+  swords: [
+    'M14.5 17.5 3 6V3h3l11.5 11.5',
+    'M13 19l6-6',
+    'M16 16l4 4',
+    'M19 21l2-2',
+    'M14.5 6.5 18 3h3v3l-3.5 3.5',
+    'M5 14l4 4',
+    'M7 17l-3 3',
+    'M3 19l2 2'
+  ],
+  store: [
+    'M3 9l1-4h16l1 4',
+    'M5 9v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9',
+    'M9 9V5a3 3 0 0 1 6 0v4'
+  ],
+  'door-open': [
+    'M13 4h3a2 2 0 0 1 2 2v14',
+    'M2 20h3',
+    'M13 20h9',
+    'M10 12h.01',
+    'M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.562z'
+  ],
+  home: [
+    'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+    'M9 22V12h6v10'
+  ],
+  route: [
+    'M6 16a3 3 0 1 0 0.01 0z',
+    'M18 2a3 3 0 1 0 0.01 0z',
+    'M12 19h6a3 3 0 0 0 3-3v-3',
+    'M6 10.5V16',
+    'M8.5 8.5l7.5-4'
+  ],
+  droplet: [
+    'M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z'
+  ],
+  armchair: [
+    'M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3',
+    'M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v2H7v-2a2 2 0 0 0-4 0z',
+    'M5 18v2',
+    'M19 18v2'
+  ],
+  table: [
+    'M4 8h16a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z',
+    'M5 11v9',
+    'M19 11v9'
+  ],
+  bed: [
+    'M2 4v16',
+    'M2 8h18a2 2 0 0 1 2 2v10',
+    'M2 17h20',
+    'M6 8v9'
+  ],
+  archive: [
+    'M3 4h18a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z',
+    'M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9',
+    'M10 13h4'
+  ],
+  vase: [
+    'M8 3h8',
+    'M11 3c0 3-4 4-4 9a5 5 0 0 0 10 0c0-5-4-6-4-9'
+  ],
+  window: [
+    'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z',
+    'M12 3v18',
+    'M3 12h18'
+  ],
+  tree: [
+    'M12 3 7 11h10z',
+    'M12 8 6 17h12z',
+    'M12 17v5'
+  ],
+  fence: [
+    'M7 21V6l3-3 3 3v15',
+    'M3 11h16',
+    'M3 16h16'
   ]
 };
 
 // 已缓存的 Path2D 实例（避免每帧重复解析路径字符串）
 const pathCache = new Map();
+
+// 图标名形态（小写字母/数字/连字符）：用于区分「漏登记的图标名」与「用户自定义 emoji」
+const IDENT_RE = /^[a-z0-9-]+$/i;
 
 function getPaths(name) {
   let cached = pathCache.get(name);
@@ -167,11 +258,14 @@ export function drawCanvasIcon(ctx, name, cx, cy, size, color = '#FFFFFF') {
 /**
  * 兼容入口：传入值为已知图标名时画矢量图标；
  * 否则按历史数据（用户自定义 emoji）用 fillText 回退，保证旧缓存可正常显示。
+ *
+ * 注意：仅对「非标识符形态」的值做 fillText 回退。纯 ASCII 标识符若缺几何，
+ * 说明是漏登记的图标名——此时宁可留白，也不能把 'table' 这种字样画到画布上。
  * @returns {boolean} 是否以矢量图标绘制
  */
 export function drawIconOrEmoji(ctx, value, cx, cy, size, color = '#FFFFFF') {
   if (drawCanvasIcon(ctx, value, cx, cy, size, color)) return true;
-  if (typeof value === 'string' && value) {
+  if (typeof value === 'string' && value && !IDENT_RE.test(value)) {
     ctx.save();
     ctx.fillStyle = color;
     ctx.font = `${size}px sans-serif`;

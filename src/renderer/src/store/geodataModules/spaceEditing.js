@@ -16,8 +16,8 @@ export const SPACE_MARKER_TYPES = [
 
 // 部队卡片类型（fleet=太空舰队 / army=行星军）
 export const FLEET_KINDS = [
-  { key: 'fleet', label: '太空舰队', icon: '⛱' },
-  { key: 'army', label: '行星军', icon: '🛡' },
+  { key: 'fleet', label: '太空舰队', icon: 'rocket' },
+  { key: 'army', label: '行星军', icon: 'shield' },
 ];
 
 // 加载缺字段兼容：过滤无 id/systemId 的脏数据，补齐类型/数值默认值

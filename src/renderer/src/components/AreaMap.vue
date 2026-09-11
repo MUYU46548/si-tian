@@ -26,7 +26,7 @@
       </div>
       <div class="header-actions">
         <template v-if="!editMode">
-          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制区域/道路/标记等">✏️ 编辑地图</button>
+          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制区域/道路/标记等"><Icon name="pencil" :size="14"/> 编辑地图</button>
         </template>
       </div>
     </div>
@@ -35,13 +35,13 @@
     <div v-if="editMode" class="edit-toolbar-wrap">
       <div class="edit-toolbar">
         <div class="toolbar-group" title="工具">
-          <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖拽平移 / 点击选中">🤚 拖手</button>
-          <button :class="{ active: interactionMode === 'add_place' }" @click="interactionMode = 'add_place'" title="点击空白处添加地点">➕ 地点</button>
-          <button :class="{ active: interactionMode === 'route' }" @click="interactionMode = 'route'" title="绘制道路">🛣️ 道路</button>
-          <button :class="{ active: interactionMode === 'marker' }" @click="interactionMode = 'marker'" title="放置标记">📍 标记</button>
-          <button :class="{ active: interactionMode === 'text' }" @click="interactionMode = 'text'" title="浮动文本">🔤 文本</button>
-          <button :class="{ active: interactionMode === 'zone' }" @click="interactionMode = 'zone'" title="绘制区域">🗺️ 区域</button>
-          <button :class="{ active: interactionMode === 'building' }" @click="interactionMode = 'building'" title="放置建筑">🏛️ 建筑</button>
+          <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖拽平移 / 点击选中"><Icon name="hand" :size="13"/> 拖手</button>
+          <button :class="{ active: interactionMode === 'add_place' }" @click="interactionMode = 'add_place'" title="点击空白处添加地点"><Icon name="plus" :size="13"/> 地点</button>
+          <button :class="{ active: interactionMode === 'route' }" @click="interactionMode = 'route'" title="绘制道路"><Icon name="route" :size="13"/> 道路</button>
+          <button :class="{ active: interactionMode === 'marker' }" @click="interactionMode = 'marker'" title="放置标记"><Icon name="map-pin" :size="13"/> 标记</button>
+          <button :class="{ active: interactionMode === 'text' }" @click="interactionMode = 'text'" title="浮动文本"><Icon name="type" :size="13"/> 文本</button>
+          <button :class="{ active: interactionMode === 'zone' }" @click="interactionMode = 'zone'" title="绘制区域"><Icon name="map" :size="13"/> 区域</button>
+          <button :class="{ active: interactionMode === 'building' }" @click="interactionMode = 'building'" title="放置建筑"><Icon name="building" :size="13"/> 建筑</button>
         </div>
 
         <div class="toolbar-group" title="绘制辅助">
@@ -54,14 +54,14 @@
 
         <!-- 道路绘制时的操作按钮 -->
         <div class="toolbar-group" v-if="interactionMode === 'route'">
-          <button class="route-confirm-btn" @click="finishRouteDraft" :disabled="routeDraftPoints.length < 2" title="完成道路绘制（至少需要2个顶点）">✅ 完成</button>
-          <button class="route-cancel-btn" @click="cancelRouteDraft" title="放弃当前绘制">🚫 取消</button>
+          <button class="route-confirm-btn" @click="finishRouteDraft" :disabled="routeDraftPoints.length < 2" title="完成道路绘制（至少需要2个顶点）"><Icon name="check-circle" :size="13"/> 完成</button>
+          <button class="route-cancel-btn" @click="cancelRouteDraft" title="放弃当前绘制"><Icon name="x-circle" :size="13"/> 取消</button>
           <button @click="undoLastRoutePoint" :disabled="routeDraftPoints.length === 0" title="删除最后一个顶点">⌫ 撤销点</button>
           <span v-if="routeDraftPoints.length === 0" class="toolbar-hint">点击空白处放置第一个顶点</span>
         </div>
 
         <div class="toolbar-group" title="操作">
-          <button @click="deleteSelected" :disabled="!selectedNode && selectedNodeIds.length === 0" title="删除选中节点 (Del)">🗑 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedNode && selectedNodeIds.length === 0" title="删除选中节点 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <template v-if="selectedNodeIds.length >= 2">
             <button @click="alignSelected('left')" title="左对齐">⇤</button>
             <button @click="alignSelected('hcenter')" title="水平居中对齐">⇹</button>
@@ -77,13 +77,13 @@
         </div>
 
         <div class="toolbar-group" title="视图">
-          <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图">🖼 参考图</button>
-          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="指北针">🧭</button>
-          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="比例尺">📐</button>
+          <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图"><Icon name="image" :size="13"/> 参考图</button>
+          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="指北针"><Icon name="compass" :size="13"/></button>
+          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="比例尺"><Icon name="ruler" :size="13"/></button>
         </div>
 
         <div class="toolbar-group toolbar-group-exit">
-          <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出</button>
+          <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式"><Icon name="check" :size="13"/> 退出</button>
         </div>
       </div>
     </div>
@@ -97,7 +97,7 @@
       <div class="editor-field">
         <label>导入草图 / 区域轮廓</label>
         <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
-          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
+          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '添加底图' : '选择图片') }}
         </button>
       </div>
       <div class="editor-field" v-if="referenceImages.length > 0">
@@ -131,19 +131,19 @@
         <div class="editor-field">
           <label>锁定</label>
           <div class="line-style-row">
-            <button :class="{ active: referenceImage.locked }" @click="toggleRefLocked">🔒 已锁定</button>
-            <button :class="{ active: !referenceImage.locked }" @click="toggleRefLocked">🔓 可拖动</button>
+            <button :class="{ active: referenceImage.locked }" @click="toggleRefLocked"><Icon name="lock" :size="13"/> 已锁定</button>
+            <button :class="{ active: !referenceImage.locked }" @click="toggleRefLocked"><Icon name="unlock" :size="13"/> 可拖动</button>
           </div>
         </div>
         <div class="editor-field" v-if="!referenceImage.locked">
           <button class="adopt-btn" style="width:100%" @click="refDragMode = !refDragMode" :class="{ 'active-btn': refDragMode }">
-            {{ refDragMode ? '✅ 拖动模式已开启' : '🧲 开启拖动模式' }}
+            {{ refDragMode ? '拖动模式已开启' : '开启拖动模式' }}
           </button>
         </div>
         <div class="editor-field">
           <label>校准</label>
           <button class="adopt-btn" style="width:100%" @click="startCalibration" :class="{ 'active-btn': calibrationMode }">
-            {{ calibrationMode ? `📐 校准中 (${calibrationPoints.length}/2)` : '📏 两点校准' }}
+            {{ calibrationMode ? `校准中 (${calibrationPoints.length}/2)` : '两点校准' }}
           </button>
           <div v-if="calibrationMode" class="calibration-input">
             <span class="toolbar-label">距离</span>
@@ -153,11 +153,11 @@
         </div>
         <div class="editor-field" v-if="referenceImage.calibrated">
           <label>状态</label>
-          <span class="ref-value" style="color:#3fb950">✓ 已校准</span>
+          <span class="ref-value" style="color:#3fb950"><Icon name="check" :size="12"/> 已校准</span>
         </div>
         <div class="editor-field">
           <label>移除</label>
-          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
+          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage"><Icon name="trash" :size="13"/> 移除</button>
         </div>
       </template>
     </div>
@@ -178,8 +178,8 @@
     <!-- 道路样式选择器 -->
     <div v-if="editMode && interactionMode === 'route'" class="terrain-picker">
       <span class="picker-label">道路样式：</span>
-      <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）">➖ 实线</button>
-      <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）">〰️ 虚线</button>
+      <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）"><Icon name="minus" :size="13"/> 实线</button>
+      <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）"><Icon name="activity" :size="13"/> 虚线</button>
       <span class="picker-label">颜色：</span>
       <button
         v-for="c in ROUTE_COLORS"
@@ -201,7 +201,7 @@
         :class="{ active: markerIcon === m.icon }"
         @click="markerIcon = m.icon"
         class="marker-btn"
-      >{{ m.icon }}</button>
+      ><Icon :name="m.icon" :size="14"/></button>
       <span class="picker-label">名称</span>
       <input v-model="markerName" class="marker-name-input" placeholder="标记名称（可选）" />
     </div>
@@ -252,10 +252,10 @@
           <span class="detail-value">{{ selectedNode.tags.join(', ') }}</span>
         </div>
         <div class="popover-actions">
-          <button class="adopt-btn" @click="enterChildArea" v-if="hasChildNodes">🔍 进入子视图</button>
-          <button class="adopt-btn" @click="enterBuildingInterior" v-if="isSelectedBuilding">🏠 建筑内部</button>
-          <button class="adopt-btn ghost" @click="openInObsidian" v-if="selectedNode.sourcePath">📄 Obsidian 打开</button>
-          <button class="adopt-btn ghost" @click="reparentNodeToPlanet" v-if="props.areaNode?.parentId">⬇ 移出区域</button>
+          <button class="adopt-btn" @click="enterChildArea" v-if="hasChildNodes"><Icon name="search" :size="13"/> 进入子视图</button>
+          <button class="adopt-btn" @click="enterBuildingInterior" v-if="isSelectedBuilding"><Icon name="home" :size="13"/> 建筑内部</button>
+          <button class="adopt-btn ghost" @click="openInObsidian" v-if="selectedNode.sourcePath"><Icon name="file-text" :size="13"/> Obsidian 打开</button>
+          <button class="adopt-btn ghost" @click="reparentNodeToPlanet" v-if="props.areaNode?.parentId"><Icon name="arrow-down" :size="13"/> 移出区域</button>
         </div>
       </div>
     </div>
@@ -301,6 +301,8 @@
 </template>
 
 <script setup>
+import { drawIconOrEmoji } from '../utils/canvasIcon';
+import Icon from './Icon.vue';
 import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
@@ -332,14 +334,14 @@ const gridSize = ref(100);
 const ZONE_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
 const ROUTE_COLORS = ['#F39C12', '#E74C3C', '#3498DB', '#2ECC71', '#9B59B6', '#1ABC9C'];
 const MARKER_ICONS = [
-  { icon: '📍', name: '标记' },
-  { icon: '⭐', name: '星标' },
-  { icon: '⚔️', name: '战斗' },
-  { icon: '💰', name: '宝藏' },
-  { icon: '🏰', name: '城堡' },
-  { icon: '🗡️', name: '危险' },
-  { icon: '🏪', name: '商店' },
-  { icon: '🚪', name: '入口' },
+  { icon: 'map-pin', name: '标记' },
+  { icon: 'star', name: '星标' },
+  { icon: 'swords', name: '战斗' },
+  { icon: 'gem', name: '宝藏' },
+  { icon: 'castle', name: '城堡' },
+  { icon: 'alert-triangle', name: '危险' },
+  { icon: 'store', name: '商店' },
+  { icon: 'door-open', name: '入口' },
 ];
 const TEXT_COLORS = ['#FFFFFF', '#FFD700', '#58a6ff', '#f85149', '#3fb950'];
 
@@ -368,7 +370,7 @@ const routeDashed = ref(false);
 const routeDraftPoints = ref([]);
 
 // 标记放置
-const markerIcon = ref('📍');
+const markerIcon = ref('map-pin');
 const markerName = ref('');
 
 // 文本放置
@@ -1152,11 +1154,8 @@ function drawMarkers(ctx, vp) {
     ctx.arc(x, y, 14, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.font = '16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(marker.icon || '📍', x, y);
+    drawIconOrEmoji(ctx, marker.icon || 'map-pin', x, y, 16, '#FFFFFF');
 
     if (marker.name) {
       ctx.font = '10px sans-serif';

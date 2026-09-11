@@ -26,12 +26,12 @@
           :class="{ active: filterPanelOpen }" 
           @click="filterPanelOpen = !filterPanelOpen"
           title="节点筛选"
-        >⚡ 筛选</button>
+        ><Icon name="filter" :size="14"/> 筛选</button>
         <button 
           :class="{ active: editMode }" 
           @click="toggleEditMode"
         >
-          {{ editMode ? '✓ 完成编辑' : '✎ 编辑地图' }}
+          <template v-if="editMode"><Icon name="check" :size="14"/> 完成编辑</template><template v-else><Icon name="pencil" :size="14"/> 编辑地图</template>
         </button>
         <button 
           v-if="editMode"
@@ -101,6 +101,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
@@ -152,14 +153,14 @@ function openContextMenu(wx, wy, target) {
   ctxTarget.value = target;
   const items = [];
   if (!target || target.type === 'galaxy') {
-    items.push({ key: 'create-galaxy', label: '在此创建恒星', icon: '＋', action: () => ctxCreateGalaxyHere(wx, wy) });
+    items.push({ key: 'create-galaxy', label: '在此创建恒星', icon: 'plus', action: () => ctxCreateGalaxyHere(wx, wy) });
   }
   if (target?.type === 'galaxy' || target?.type === 'domain') {
-    items.push({ key: 'delete-node', label: '删除该节点', icon: '🗑', danger: true, action: ctxDeleteNode });
+    items.push({ key: 'delete-node', label: '删除该节点', icon: 'trash', danger: true, action: ctxDeleteNode });
   }
   if (target?.type === 'hyperlane') {
-    items.push({ key: 'delete-cp', label: '删除控制点', icon: '✂', action: ctxDeleteControlPoint });
-    items.push({ key: 'delete-lane', label: '删除航道', icon: '🗑', danger: true, action: ctxDeleteHyperlane });
+    items.push({ key: 'delete-cp', label: '删除控制点', icon: 'scissors', action: ctxDeleteControlPoint });
+    items.push({ key: 'delete-lane', label: '删除航道', icon: 'trash', danger: true, action: ctxDeleteHyperlane });
   }
   const pos = worldToScreen(wx, wy);
   ctxMenu.open(items, pos, canvas.value?.parentElement);

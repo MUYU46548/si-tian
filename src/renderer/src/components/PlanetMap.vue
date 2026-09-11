@@ -12,7 +12,7 @@
           </template>
           <template v-else>
             <strong>编辑模式</strong> —
-            <template v-if="interactionMode === 'cluster'">{{ clusterSelectMode ? '簇框选中：按住左键拖一个框圈住地点，松开完成选择' : '簇工具：点击工具栏 🗂 后按住拖动框选地点 → 弹窗创建簇' }}</template>
+            <template v-if="interactionMode === 'cluster'">{{ clusterSelectMode ? '簇框选中：按住左键拖一个框圈住地点，松开完成选择' : '簇工具：从工具栏「地点簇」进入后按住拖动框选地点 → 弹窗创建簇' }}</template>
             <template v-else-if="interactionMode === 'marker'">选择类型后点击画布放置标记</template>
             <template v-else-if="interactionMode === 'route'">点击放置路线顶点，双击结束</template>
             <template v-else-if="interactionMode === 'text'">点击画布放置文本</template>
@@ -24,10 +24,10 @@
         </p>
       </div>
       <div class="header-actions" v-if="!editMode">
-        <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制地形/区域/标记/路线/文本等">✏️ 编辑地图</button>
+        <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制地形/区域/标记/路线/文本等"><Icon name="pencil" :size="14"/> 编辑地图</button>
         <template v-if="autoRegions.length > 0">
           <button class="adopt-btn" @click="adoptAutoRegions" title="将自动生成的区域边界转为正式区域，可继续编辑">
-            ✨ 采用自动区域 ({{ autoRegions.length }})
+            <Icon name="sparkles" :size="13"/> 采用自动区域 ({{ autoRegions.length }})
           </button>
           <button class="adopt-btn ghost" @click="regenerateAutoRegions" title="重新按地点聚类生成区域边界">
             ↻ 重新生成
@@ -41,10 +41,10 @@
       <div class="edit-toolbar">
         <template v-if="interactionMode === 'draw'">
           <div class="toolbar-group toolbar-group-sub">
-            <button :class="{ active: drawMode && !floodFillMode && !brushMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制">✏️ 自由绘制</button>
-            <button :class="{ active: !drawMode && !floodFillMode && !brushMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点">📐 点击描点</button>
+            <button :class="{ active: drawMode && !floodFillMode && !brushMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制"><Icon name="pencil" :size="13"/> 自由绘制</button>
+            <button :class="{ active: !drawMode && !floodFillMode && !brushMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点"><Icon name="crosshair" :size="13"/> 点击描点</button>
             <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处生成区域">▣ 区域填充</button>
-            <button :class="{ active: brushMode }" @click="brushMode = !brushMode; floodFillMode = false" title="按住拖动地形笔刷涂抹">🖌 笔刷</button>
+            <button :class="{ active: brushMode }" @click="brushMode = !brushMode; floodFillMode = false" title="按住拖动地形笔刷涂抹"><Icon name="pen-tool" :size="13"/> 笔刷</button>
             <template v-if="brushMode">
               <span class="toolbar-label">大小</span>
               <button v-for="s in [24, 40, 64, 96]" :key="s" :class="{ active: brushSize === s }" @click="brushSize = s">{{ s }}</button>
@@ -54,16 +54,16 @@
 
         <template v-if="interactionMode === 'region'">
           <div class="toolbar-group toolbar-group-sub">
-            <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制区域">✏️ 自由绘制</button>
-            <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点">📐 点击描点</button>
+            <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制区域"><Icon name="pencil" :size="13"/> 自由绘制</button>
+            <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点"><Icon name="crosshair" :size="13"/> 点击描点</button>
             <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处自动生成区域">▣ 区域填充</button>
           </div>
         </template>
 
         <template v-if="interactionMode === 'route'">
           <div class="toolbar-group toolbar-group-sub">
-            <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）">➖ 实线</button>
-            <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）">〰️ 虚线</button>
+            <button :class="{ active: !routeDashed }" @click="routeDashed = false" title="实线（道路/边界）"><Icon name="minus" :size="13"/> 实线</button>
+            <button :class="{ active: routeDashed }" @click="routeDashed = true" title="虚线（航线/秘密路线）"><Icon name="activity" :size="13"/> 虚线</button>
             <span class="toolbar-label">颜色</span>
             <button
               v-for="c in routeEditor.ROUTE_COLORS"
@@ -94,14 +94,14 @@
         </template>
 
         <div class="toolbar-group" title="绘制辅助">
-          <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份">🧲 吸附</button>
+          <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份"><Icon name="magnet" :size="13"/> 吸附</button>
           <button :class="{ active: smartGuidesEnabled }" @click="smartGuidesEnabled = !smartGuidesEnabled" title="E5 智能参考线">⇔ 对齐</button>
           <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格">⊞ 网格</button>
           <template v-if="gridSnapEnabled">
             <span class="toolbar-label">间距</span>
             <button v-for="s in [100, 500, 1000]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s >= 1000 ? (s/1000)+'km' : s+'m' }}</button>
           </template>
-          <button :class="{ active: gridLabels }" @click="gridLabels = !gridLabels" title="显示/隐藏网格距离标签">🔢 标签</button>
+          <button :class="{ active: gridLabels }" @click="gridLabels = !gridLabels" title="显示/隐藏网格距离标签"><Icon name="hash" :size="13"/> 标签</button>
           <button :class="{ active: mirrorMode }" @click="mirrorMode = !mirrorMode" title="对称绘制">⇌ 对称</button>
           <template v-if="mirrorMode">
             <button :class="{ active: mirrorAxis === 'y' }" @click="mirrorAxis = 'y'" title="左右镜像">⇋ 左右</button>
@@ -112,9 +112,9 @@
         </div>
 
         <div class="toolbar-group" title="对象操作">
-          <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份">✂ 拆分</button>
-          <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份">⛓ 合并</button>
-          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0 && multiSel.length === 0" title="删除选中对象 (Del)">🗑 删除</button>
+          <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份"><Icon name="scissors" :size="13"/> 拆分</button>
+          <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份"><Icon name="link" :size="13"/> 合并</button>
+          <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0 && multiSel.length === 0" title="删除选中对象 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <button v-if="selectedPlaceIds.size > 1" @click="openArrangeDialog(selectedPlaceIds)" title="批量排列选中节点">⊞ 排列</button>
           <template v-if="selectedPlaceIds.size >= 2">
             <div class="toolbar-group" title="对齐与分布 (E3)">
@@ -128,43 +128,43 @@
               <button @click="distributeSelected('v', selectedPlaceIds)" title="垂直等间距分布">⋮</button>
             </div>
           </template>
-          <button v-if="selectedPlaceIds.size > 0" @click="openReparentDialog(selectedPlaceIds)" title="批量移入区域">⬆ 移入区域</button>
-          <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界">〰️ 平滑</button>
+          <button v-if="selectedPlaceIds.size > 0" @click="openReparentDialog(selectedPlaceIds)" title="批量移入区域"><Icon name="arrow-up" :size="13"/> 移入区域</button>
+          <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界"><Icon name="activity" :size="13"/> 平滑</button>
           <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
-          <button @click="saveMap" title="保存地图">💾 保存</button>
-          <button @click="confirmClear" title="清空所有省份">🧹 清空</button>
+          <button @click="saveMap" title="保存地图"><Icon name="save" :size="13"/> 保存</button>
+          <button @click="confirmClear" title="清空所有省份"><Icon name="trash" :size="13"/> 清空</button>
         </div>
 
         <div class="toolbar-group" title="视图与输出">
-          <button :class="{ active: showRefImagePanel }" @click="openPlanetPanel('refimage')" title="参考底图">🖼 参考图</button>
+          <button :class="{ active: showRefImagePanel }" @click="openPlanetPanel('refimage')" title="参考底图"><Icon name="image" :size="13"/> 参考图</button>
           <select class="boundary-select" v-model="canvasSizePreset" title="行星地图边界">
-            <option value="auto">📐 边界:自动</option>
+            <option value="auto">边界：自动</option>
             <option value="500">边界: ±500</option>
             <option value="800">边界: ±800</option>
             <option value="1000">边界: ±1000</option>
           </select>
-          <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺">📏 标尺</button>
-          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="显示/隐藏指北针">🧭 指北针</button>
-          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="显示/隐藏比例尺">📐 比例尺</button>
-          <button @click="exportFullMapPNG" title="导出全图高清 PNG">📤 导出全图</button>
+          <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺"><Icon name="ruler" :size="13"/> 标尺</button>
+          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="显示/隐藏指北针"><Icon name="compass" :size="13"/> 指北针</button>
+          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="显示/隐藏比例尺"><Icon name="ruler" :size="13"/> 比例尺</button>
+          <button @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="upload" :size="13"/> 导出全图</button>
         </div>
         
         <div class="toolbar-group" title="图层可见性">
           <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="切换地形图层显示">▣ 地形</button>
-          <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示">🏔 地名</button>
+          <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示"><Icon name="mountain" :size="13"/> 地名</button>
           <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
-          <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）">☷ 更多</button>
+          <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）"><Icon name="more-horizontal" :size="13"/> 更多</button>
         </div>
       </div>
     </div>
     
     <!-- 非编辑模式的导出按钮 -->
     <div v-if="!editMode" class="view-actions">
-      <button class="adopt-btn" @click="openPlanetPanel('cluster')" title="地点簇大纲">🗂 地点簇</button>
-      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表">📋 对象</button>
-      <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照">📸 快照</button>
-      <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG">📤 导出全图</button>
+      <button class="adopt-btn" @click="openPlanetPanel('cluster')" title="地点簇大纲"><Icon name="folder-open" :size="13"/> 地点簇</button>
+      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="13"/> 对象</button>
+      <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="13"/> 快照</button>
+      <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="upload" :size="13"/> 导出全图</button>
     </div>
     
     <!-- 导出状态提示 -->
@@ -185,9 +185,9 @@
     <!-- 更多图层面板 -->
     <div v-if="editMode && showExtraLayers" class="terrain-picker">
       <span class="picker-label">更多图层：</span>
-      <button :class="{ active: layers.isVisible('planet', 'elevation') }" @click="layers.toggleLayer('planet', 'elevation')" title="显示海拔等高线">⛰ 海拔</button>
-      <button :class="{ active: layers.isVisible('planet', 'climate') }" @click="layers.toggleLayer('planet', 'climate')" title="显示气候分区">🌡 气候</button>
-      <button :class="{ active: layers.isVisible('planet', 'precipitation') }" @click="layers.toggleLayer('planet', 'precipitation')" title="显示降水分布">💧 降水</button>
+      <button :class="{ active: layers.isVisible('planet', 'elevation') }" @click="layers.toggleLayer('planet', 'elevation')" title="显示海拔等高线"><Icon name="mountain" :size="13"/> 海拔</button>
+      <button :class="{ active: layers.isVisible('planet', 'climate') }" @click="layers.toggleLayer('planet', 'climate')" title="显示气候分区"><Icon name="thermometer" :size="13"/> 气候</button>
+      <button :class="{ active: layers.isVisible('planet', 'precipitation') }" @click="layers.toggleLayer('planet', 'precipitation')" title="显示降水分布"><Icon name="droplet" :size="13"/> 降水</button>
     </div>
 
     <!-- 区域颜色选择器 -->
@@ -219,19 +219,19 @@
       <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
       <!-- U1 工具箱 dock -->
       <div v-if="editMode" class="tool-dock" @mousedown.stop @dblclick.stop @wheel.stop>
-        <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)">🤚</button>
-        <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象">✥</button>
-        <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份">✏️</button>
-        <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域">🗺️</button>
-        <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记">📍</button>
-        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线">🛣️</button>
-        <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本">🔤</button>
-        <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇">🗂</button>
+        <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)"><Icon name="hand" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象"><Icon name="move" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份"><Icon name="pencil" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域"><Icon name="map" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记"><Icon name="map-pin" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线"><Icon name="route" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本"><Icon name="type" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
         <div class="tool-dock-sep"></div>
-        <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表">📋</button>
-        <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照">📸</button>
+        <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="15"/></button>
+        <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="15"/></button>
         <div class="tool-dock-flex"></div>
-        <button class="tool-dock-exit" @click="exitEditMode" title="退出编辑模式">✓</button>
+        <button class="tool-dock-exit" @click="exitEditMode" title="退出编辑模式"><Icon name="check" :size="15"/></button>
       </div>
       <!-- E9 内联文本编辑覆盖层 -->
       <div v-if="inlineEdit" class="inline-text-edit" :style="{ left: inlineEdit.sx + 'px', top: inlineEdit.sy + 'px' }" @mousedown.stop @dblclick.stop @wheel.stop>
@@ -256,10 +256,10 @@
       <zoom-controls :renderer="renderer" :on-fit-all="fitAllContent" :on-fit-selection="fitSelection" />
       <!-- 空地图引导 -->
       <div v-if="!editMode && fogMode" class="empty-map-hint">
-        <div class="empty-map-icon">🗺️</div>
+        <div class="empty-map-icon"><Icon name="map" :size="34"/></div>
         <div class="empty-map-title">这张行星地图还是空的</div>
         <div class="empty-map-desc">点击「编辑地图」开始绘制省份、标记地点、规划路线</div>
-        <button class="adopt-btn edit-entry-btn" @click="enterEditMode">✏️ 编辑地图</button>
+        <button class="adopt-btn edit-entry-btn" @click="enterEditMode"><Icon name="pencil" :size="14"/> 编辑地图</button>
       </div>
       <cluster-panel
         :planet="props.planet"
@@ -535,8 +535,8 @@
       <div class="editor-field">
         <label>线型</label>
         <div class="line-style-row">
-          <button :class="{ active: !selectedRoute?.dashed }" @click="updateRouteDashed(false)">➖ 实线</button>
-          <button :class="{ active: selectedRoute?.dashed }" @click="updateRouteDashed(true)">〰️ 虚线</button>
+          <button :class="{ active: !selectedRoute?.dashed }" @click="updateRouteDashed(false)"><Icon name="minus" :size="13"/> 实线</button>
+          <button :class="{ active: selectedRoute?.dashed }" @click="updateRouteDashed(true)"><Icon name="activity" :size="13"/> 虚线</button>
         </div>
       </div>
       <div class="editor-field">
@@ -661,7 +661,7 @@
       </div>
 
       <div class="editor-field">
-        <button class="adopt-btn batch-delete-btn" @click="deleteSelected" title="删除全部批量选中对象">🗑 删除所选（{{ multiSelObjs.length }}）</button>
+        <button class="adopt-btn batch-delete-btn" @click="deleteSelected" title="删除全部批量选中对象"><Icon name="trash" :size="13"/> 删除所选（{{ multiSelObjs.length }}）</button>
       </div>
     </div>
     
@@ -674,9 +674,9 @@
       <div class="editor-field">
         <label>导入草图 / 大陆轮廓</label>
         <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
-          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
+          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '添加底图' : '选择图片') }}
         </button>
-        <p class="ref-hint">点击「编辑地图」后，从「☷ 图层」旁打开此面板或从工具栏进入</p>
+        <p class="ref-hint">点击「编辑地图」后，从「更多」图层旁打开此面板或从工具栏进入</p>
       </div>
       <div class="editor-field" v-if="referenceImages.length > 0">
         <label>底图列表（{{ referenceImages.length }}）</label>
@@ -715,21 +715,21 @@
         <div class="editor-field">
           <label>锁定位置</label>
           <div class="line-style-row">
-            <button :class="{ active: activeRefImage.locked }" @click="toggleRefLocked">🔒 已锁定</button>
-            <button :class="{ active: !activeRefImage.locked }" @click="toggleRefLocked">🔓 可拖动</button>
+            <button :class="{ active: activeRefImage.locked }" @click="toggleRefLocked"><Icon name="lock" :size="13"/> 已锁定</button>
+            <button :class="{ active: !activeRefImage.locked }" @click="toggleRefLocked"><Icon name="unlock" :size="13"/> 可拖动</button>
           </div>
           <p class="ref-hint">锁定后底图不可拖动，避免描摹时误触</p>
         </div>
         <div class="editor-field" v-if="!activeRefImage.locked">
           <label>拖动调整位置</label>
           <button class="adopt-btn" style="width:100%" @click="refDragMode = !refDragMode" :class="{ 'active-btn': refDragMode }">
-            {{ refDragMode ? '✅ 拖动模式已开启（拖动画布移动底图）' : '🧲 开启拖动模式' }}
+            {{ refDragMode ? '拖动模式已开启（拖动画布移动底图）' : '开启拖动模式' }}
           </button>
         </div>
         <div class="editor-field">
           <label>校准（对齐到世界坐标）</label>
           <button class="adopt-btn" style="width:100%" @click="startCalibration" :class="{ 'active-btn': calibrationMode }">
-            {{ calibrationMode ? `📐 校准中 (点 ${calibrationPoints.length}/2)` : '📏 两点校准' }}
+            {{ calibrationMode ? `校准中 (点 ${calibrationPoints.length}/2)` : '两点校准' }}
           </button>
           <p class="ref-hint">点击画布上的两个已知距离的点，自动对齐底图比例</p>
           <div v-if="calibrationMode" class="calibration-input">
@@ -740,11 +740,11 @@
         </div>
         <div class="editor-field" v-if="activeRefImage.calibrated">
           <label>校准状态</label>
-          <span class="ref-value" style="color:#3fb950">✓ 已校准 ({{ (activeRefImage.ppm || 0).toFixed(1) }} px/km)</span>
+          <span class="ref-value" style="color:#3fb950"><Icon name="check" :size="12"/> 已校准 ({{ (activeRefImage.ppm || 0).toFixed(1) }} px/km)</span>
         </div>
         <div class="editor-field">
           <label>移除底图</label>
-          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
+          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage"><Icon name="trash" :size="13"/> 移除</button>
         </div>
       </template>
     </div>
@@ -764,7 +764,7 @@
           </option>
         </select>
       </div>
-      <p class="reparent-warning">⚠️ 移动后这些地点将从行星地图消失，仅在区域地图中显示。</p>
+      <p class="reparent-warning"><Icon name="alert-triangle" :size="13"/> 移动后这些地点将从行星地图消失，仅在区域地图中显示。</p>
       <div class="modal-actions">
         <button class="adopt-btn" @click="confirmReparent(selectedPlaceIds)" :disabled="!reparentTargetId">确认移入</button>
         <button class="adopt-btn ghost" @click="reparentDialogOpen = false">取消</button>
@@ -1275,7 +1275,7 @@ const renderer = useCanvasRenderer(canvas, {
     if (hit?.type === 'place') {
       const place = hit.node; const isDraft = !place.sourcePath;
       if (isDraft) {
-        items.push({ key: 'ctx-place-create-note', label: '创建 Obsidian 笔记', icon: '📝', action: async () => {
+        items.push({ key: 'ctx-place-create-note', label: '创建 Obsidian 笔记', icon: 'file-text', action: async () => {
           const result = await window.sitianAPI.createObsidianNote({ name: place.name, layer: place.layer, parentId: place.parentId, tags: place.tags || [], coordinate: place.coordinate, content: `# ${place.name}\n\n` });
           if (result?.success) { store.updateNode(place.id, { sourcePath: result.path }); emit('dirty', true); renderer.requestRender(); } else if (result?.error) { console.error('创建笔记失败:', result.error); }
         } });
@@ -1284,17 +1284,17 @@ const renderer = useCanvasRenderer(canvas, {
     }
     if (hit?.type === 'marker') {
       const m = hit.marker;
-      items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('marker', m); } });
-      items.push({ key: 'ctx-marker-copy', label: '复制标记', icon: '📋', action: () => { setClipboard('markers', [m], 'planet'); } });
-      items.push({ key: 'ctx-marker-del', label: '删除标记', icon: '🗑', danger: true, action: () => { if (!confirm(`确定删除标记「${m.name || '未命名'}」吗？`)) return; store.removeMarker(props.planet.id, m.id); if (selectedMarker.value?.id === m.id) selectedMarker.value = null; emit('dirty', true); renderer.requestRender(); } });
+      items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: 'pencil', action: () => { multiSel.value = []; setPrimarySelection('marker', m); } });
+      items.push({ key: 'ctx-marker-copy', label: '复制标记', icon: 'clipboard', action: () => { setClipboard('markers', [m], 'planet'); } });
+      items.push({ key: 'ctx-marker-del', label: '删除标记', icon: 'trash', danger: true, action: () => { if (!confirm(`确定删除标记「${m.name || '未命名'}」吗？`)) return; store.removeMarker(props.planet.id, m.id); if (selectedMarker.value?.id === m.id) selectedMarker.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (hit?.type === 'textLabel') {
       const l = hit.label;
-      items.push({ key: 'ctx-text-edit', label: '编辑文本', icon: '✏️', action: () => { multiSel.value = []; setPrimarySelection('textLabel', l); startInlineTextEdit(l); } });
-      items.push({ key: 'ctx-text-copy', label: '复制文本', icon: '📋', action: () => { setClipboard('textLabels', [l], 'planet'); } });
-      items.push({ key: 'ctx-text-del', label: '删除文本', icon: '🗑', danger: true, action: () => { if (!confirm(`确定删除文本「${l.text || l.name || '未命名'}」吗？`)) return; store.removeTextLabel(props.planet.id, l.id); if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null; emit('dirty', true); renderer.requestRender(); } });
+      items.push({ key: 'ctx-text-edit', label: '编辑文本', icon: 'pencil', action: () => { multiSel.value = []; setPrimarySelection('textLabel', l); startInlineTextEdit(l); } });
+      items.push({ key: 'ctx-text-copy', label: '复制文本', icon: 'clipboard', action: () => { setClipboard('textLabels', [l], 'planet'); } });
+      items.push({ key: 'ctx-text-del', label: '删除文本', icon: 'trash', danger: true, action: () => { if (!confirm(`确定删除文本「${l.text || l.name || '未命名'}」吗？`)) return; store.removeTextLabel(props.planet.id, l.id); if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (!hit) {
       const clip = getClipboard();
-      if (clip && ['markers', 'textLabels', 'planetObjects'].includes(clip.kind)) { items.push({ key: 'ctx-paste', label: '粘贴', icon: '📋', action: () => pasteClipboard() }); }
+      if (clip && ['markers', 'textLabels', 'planetObjects'].includes(clip.kind)) { items.push({ key: 'ctx-paste', label: '粘贴', icon: 'clipboard', action: () => pasteClipboard() }); }
     }
     if (!items.length) return;
     const vt = renderer.viewTransform; const cvs = canvas.value; if (!cvs) return;
@@ -1813,7 +1813,7 @@ function finishDrawing() {
     const existing = currentMapData.value?.terrain || [];
     const overlapList = existing.filter(t => polygonOverlapRatio(finalPoints, t.points) > 0.05);
     if (overlapList.length > 0) {
-      const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「🧲 边缘吸附」对齐边界。仍要创建吗？`;
+      const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「边缘吸附」对齐边界。仍要创建吗？`;
       if (!confirm(msg)) {
         currentPath.value = [];
         renderer.requestRender();
@@ -1861,7 +1861,7 @@ function finishPointDrawing() {
       const existing = currentMapData.value?.terrain || [];
       const overlapList = existing.filter(t => polygonOverlapRatio(finalPoly.points, t.points) > 0.05);
       if (overlapList.length > 0) {
-        const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「🧲 边缘吸附」对齐边界。仍要创建吗？`;
+        const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「边缘吸附」对齐边界。仍要创建吗？`;
         if (!confirm(msg)) {
           drawingPolygon.value = null;
           renderer.requestRender();

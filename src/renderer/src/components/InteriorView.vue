@@ -8,7 +8,7 @@
           <!-- 相邻建筑切换器 -->
           <div v-if="sameAreaBuildings.length > 1" class="building-switcher">
             <button class="building-switch-btn" @click="showBuildingMenu = !showBuildingMenu" title="切换同区域建筑">
-              🏛 {{ sameAreaBuildings.length }}
+              <Icon name="building" :size="13"/> {{ sameAreaBuildings.length }}
             </button>
             <div v-if="showBuildingMenu" class="building-menu" @click.stop>
               <div 
@@ -35,7 +35,7 @@
       </div>
       <div class="header-actions">
         <template v-if="!editMode">
-          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：放置/拖拽家具">✏️ 编辑地图</button>
+          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：放置/拖拽家具"><Icon name="pencil" :size="14"/> 编辑地图</button>
         </template>
       </div>
     </div>
@@ -55,9 +55,9 @@
         </button>
       </div>
       <div class="floor-actions">
-        <button class="floor-btn" @click="addFloor" title="添加楼层">➕ 楼层</button>
-        <button class="floor-btn" @click="renameFloor" :disabled="floors.length <= 1" title="重命名楼层">✎ 命名</button>
-        <button class="floor-btn danger" @click="removeFloor" :disabled="floors.length <= 1" title="删除当前楼层">🗑 删除</button>
+        <button class="floor-btn" @click="addFloor" title="添加楼层"><Icon name="plus" :size="13"/> 楼层</button>
+        <button class="floor-btn" @click="renameFloor" :disabled="floors.length <= 1" title="重命名楼层"><Icon name="pencil" :size="13"/> 命名</button>
+        <button class="floor-btn danger" @click="removeFloor" :disabled="floors.length <= 1" title="删除当前楼层"><Icon name="trash" :size="13"/> 删除</button>
       </div>
     </div>
 
@@ -65,8 +65,8 @@
     <div v-if="editMode" class="edit-toolbar-wrap">
       <div class="edit-toolbar">
         <div class="toolbar-group" title="工具">
-          <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖拽平移 / 选中家具">🤚 拖手</button>
-          <button :class="{ active: interactionMode === 'add_furniture' }" @click="interactionMode = 'add_furniture'" title="点击空白处放置家具">🪑 家具</button>
+          <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖拽平移 / 选中家具"><Icon name="hand" :size="13"/> 拖手</button>
+          <button :class="{ active: interactionMode === 'add_furniture' }" @click="interactionMode = 'add_furniture'" title="点击空白处放置家具"><Icon name="armchair" :size="13"/> 家具</button>
         </div>
 
         <div class="toolbar-group" title="家具类型" v-if="interactionMode === 'add_furniture'">
@@ -77,7 +77,7 @@
             :class="{ active: selectedFurnitureType === ft.type }"
             @click="selectedFurnitureType = ft.type"
             :title="ft.label"
-          >{{ ft.icon }} {{ ft.label }}</button>
+          ><Icon :name="ft.icon" :size="13"/> {{ ft.label }}</button>
         </div>
 
         <div class="toolbar-group" title="绘制辅助">
@@ -89,18 +89,18 @@
         </div>
 
         <div class="toolbar-group" title="操作">
-          <button @click="deleteSelected" :disabled="!selectedFurniture" title="删除选中家具 (Del)">🗑 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedFurniture" title="删除选中家具 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <button @click="rotateSelected" :disabled="!selectedFurniture" title="旋转选中家具 (R)">↻ 旋转</button>
           <button @click="undo" :disabled="!store.canUndo">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
         </div>
 
         <div class="toolbar-group" title="视图">
-          <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图">🖼 参考图</button>
+          <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图"><Icon name="image" :size="13"/> 参考图</button>
         </div>
 
         <div class="toolbar-group toolbar-group-exit">
-          <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式">✓ 退出</button>
+          <button class="toolbar-close" @click="exitEditMode" title="退出编辑模式"><Icon name="check" :size="13"/> 退出</button>
         </div>
       </div>
     </div>
@@ -114,7 +114,7 @@
       <div class="editor-field">
         <label>导入室内平面图</label>
         <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
-          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '➕ 添加底图' : '📂 选择图片') }}
+          {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '添加底图' : '选择图片') }}
         </button>
       </div>
       <div class="editor-field" v-if="referenceImages.length > 0">
@@ -140,7 +140,7 @@
         </div>
         <div class="editor-field">
           <label>移除</label>
-          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage">🗑 移除</button>
+          <button class="adopt-btn ghost" style="width:100%" @click="removeReferenceImage"><Icon name="trash" :size="13"/> 移除</button>
         </div>
       </template>
     </div>
@@ -162,7 +162,7 @@
         <h4 v-if="!editingPopover">{{ selectedFurniture.name }}</h4>
         <input v-else v-model="editForm.name" class="popover-title-input" placeholder="家具名称" />
         <div class="popover-header-actions">
-          <button v-if="!editingPopover" class="edit-btn" @click="startEditPopover" title="编辑">✎</button>
+          <button v-if="!editingPopover" class="edit-btn" @click="startEditPopover" title="编辑"><Icon name="pencil" :size="12"/></button>
           <button class="close-btn" @click="cancelEditPopover">×</button>
         </div>
       </div>
@@ -170,7 +170,7 @@
         <div class="detail-row">
           <span class="detail-label">类型</span>
           <select v-if="editingPopover" v-model="editForm.type" class="popover-select">
-            <option v-for="ft in FURNITURE_TYPES" :key="ft.type" :value="ft.type">{{ ft.icon }} {{ ft.label }}</option>
+            <option v-for="ft in FURNITURE_TYPES" :key="ft.type" :value="ft.type">{{ ft.label }}</option>
           </select>
           <span v-else class="detail-value">{{ getFurnitureTypeLabel(selectedFurniture.type) }}</span>
         </div>
@@ -213,7 +213,7 @@
         <div class="form-row">
           <label>类型</label>
           <select v-model="newFurnitureType">
-            <option v-for="ft in FURNITURE_TYPES" :key="ft.type" :value="ft.type">{{ ft.icon }} {{ ft.label }}</option>
+            <option v-for="ft in FURNITURE_TYPES" :key="ft.type" :value="ft.type">{{ ft.label }}</option>
           </select>
         </div>
         <div class="form-row">
@@ -234,6 +234,8 @@
 </template>
 
 <script setup>
+import { drawIconOrEmoji } from '../utils/canvasIcon';
+import Icon from './Icon.vue';
 import { ref, computed, watch, onMounted, onUnmounted, reactive } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
@@ -266,20 +268,20 @@ const referenceImage = computed(() => referenceImages.value[activeRefIndex.value
 
 // 家具类型
 const FURNITURE_TYPES = [
-  { type: 'generic', label: '通用', icon: '📦', color: '#8B8B8B' },
-  { type: 'table', label: '桌子', icon: '🪑', color: '#A0522D' },
-  { type: 'chair', label: '椅子', icon: '💺', color: '#CD853F' },
-  { type: 'bed', label: '床', icon: '🛏', color: '#4682B4' },
-  { type: 'chest', label: '柜子', icon: '🗄', color: '#8B4513' },
-  { type: 'decoration', label: '装饰', icon: '🏺', color: '#DAA520' },
-  { type: 'door', label: '门', icon: '🚪', color: '#696969' },
-  { type: 'window', label: '窗', icon: '🪟', color: '#87CEEB' },
+  { type: 'generic', label: '通用', icon: 'package', color: '#8B8B8B' },
+  { type: 'table', label: '桌子', icon: 'table', color: '#A0522D' },
+  { type: 'chair', label: '椅子', icon: 'armchair', color: '#CD853F' },
+  { type: 'bed', label: '床', icon: 'bed', color: '#4682B4' },
+  { type: 'chest', label: '柜子', icon: 'archive', color: '#8B4513' },
+  { type: 'decoration', label: '装饰', icon: 'vase', color: '#DAA520' },
+  { type: 'door', label: '门', icon: 'door-open', color: '#696969' },
+  { type: 'window', label: '窗', icon: 'window', color: '#87CEEB' },
   // 区域类型（院落/园林）
-  { type: 'courtyard', label: '院落', icon: '🏡', color: '#4CAF50', isArea: true },
-  { type: 'garden', label: '园林', icon: '🌿', color: '#2E7D32', isArea: true },
-  { type: 'corridor', label: '走廊', icon: '🛤', color: '#FF9800', isArea: true },
-  { type: 'pond', label: '水池', icon: '💧', color: '#2196F3', isArea: true },
-  { type: 'wall', label: '围墙', icon: '🧱', color: '#795548', isArea: true },
+  { type: 'courtyard', label: '院落', icon: 'home', color: '#4CAF50', isArea: true },
+  { type: 'garden', label: '园林', icon: 'tree', color: '#2E7D32', isArea: true },
+  { type: 'corridor', label: '走廊', icon: 'route', color: '#FF9800', isArea: true },
+  { type: 'pond', label: '水池', icon: 'droplet', color: '#2196F3', isArea: true },
+  { type: 'wall', label: '围墙', icon: 'fence', color: '#795548', isArea: true },
 ];
 
 // 判断是否为区域类型
@@ -646,11 +648,9 @@ function drawFurniture(ctx) {
       ctx.strokeRect(-item.width / 2, -item.height / 2, item.width, item.height);
       ctx.setLineDash([]);
       const ft = FURNITURE_TYPES.find(t => t.type === item.type);
-      const icon = ft?.icon || '📍';
-      ctx.font = `${Math.min(item.width, item.height) * 0.4}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      if (!fast) ctx.fillText(icon, 0, 0);
+      const icon = ft?.icon || 'map-pin';
+      const iconSize = Math.min(item.width, item.height) * 0.6;
+      if (!fast) drawIconOrEmoji(ctx, icon, 0, 0, iconSize, color);
     } else {
       // 家具类型：实心矩形
       ctx.fillStyle = color;

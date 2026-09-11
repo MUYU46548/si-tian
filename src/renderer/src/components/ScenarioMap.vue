@@ -8,12 +8,12 @@
           :class="{ active: tool === 'select' }" 
           @click="setTool('select')"
           title="选择 (V) — 拖动平移画布，点击选中省份"
-        >✋</button>
+        ><Icon name="hand" :size="15"/></button>
         <button 
           :class="{ active: tool === 'draw' }" 
           @click="setTool('draw')"
           title="绘制省份 (B) — 点击添加顶点，双击完成"
-        >✎</button>
+        ><Icon name="pencil" :size="15"/></button>
         <button 
           :class="{ active: tool === 'vertex' }" 
           @click="setTool('vertex')"
@@ -23,7 +23,7 @@
           :class="{ active: tool === 'split' }" 
           @click="setTool('split')"
           title="拆分省份 (X) — 点击两个点定义分割线"
-        >✂</button>
+        ><Icon name="scissors" :size="15"/></button>
         <button 
           :class="{ active: tool === 'merge' }" 
           @click="setTool('merge')"
@@ -33,24 +33,26 @@
           :class="{ active: tool === 'paint' }" 
           @click="setTool('paint')"
           title="势力油漆桶 (P) — 点击省份指派势力"
-        >🎨</button>
+        ><Icon name="palette" :size="15"/></button>
         <button 
           :class="{ active: tool === 'label' }" 
           @click="setTool('label')"
           title="历史地名 (T) — 点击放置文字标记"
-        >🏷</button>
+        ><Icon name="tag" :size="15"/></button>
         <button 
           :class="{ active: tool === 'erase' }" 
           @click="setTool('erase')"
           title="删除 (E) — 点击省份删除"
-        >🗑</button>
+        ><Icon name="trash" :size="15"/></button>
       </div>
       <div class="tool-group">
-        <button @click="triggerMapImport" title="导入 .map 底图">🗺</button>
+        <button @click="triggerMapImport" title="导入 .map 底图"><Icon name="map" :size="15"/></button>
         <button @click="fitToView" title="适应画布 (F)">⊞</button>
-        <button @click="exportPNG" title="导出 PNG 图片">📥</button>
+        <button @click="exportPNG" title="导出 PNG 图片"><Icon name="download" :size="15"/></button>
         <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': store.saveStatus.value === 'saving' }">
-          {{ store.saveStatus.value === 'saving' ? '⏳' : (store.saveStatus.value === 'saved' ? '✅' : '💾') }}
+          <Icon v-if="store.saveStatus.value === 'saving'" name="loader" :size="15"/>
+          <Icon v-else-if="store.saveStatus.value === 'saved'" name="check-circle" :size="15"/>
+          <Icon v-else name="save" :size="15"/>
         </button>
       </div>
       <div class="tool-group">
@@ -97,7 +99,7 @@
         </select>
       </div>
       <div class="tool-group">
-        <button @click="showScenarioManager = true" title="剧本管理">📜</button>
+        <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/></button>
       </div>
     </div>
 
@@ -138,7 +140,7 @@
         :class="{ active: !selectedPolity }"
         @click="selectPolity(null)"
         title="清除归属"
-      >✕</div>
+      ><Icon name="x" :size="14"/></div>
     </div>
 
     <!-- 画布 -->
@@ -159,25 +161,25 @@
       <span v-if="snapFeedback" class="snap-feedback" :class="{ edge: snapFeedback === '吸附到边界' }">{{ snapFeedback }}</span>
       <span v-if="tool === 'vertex' && activeVertexIdx >= 0" class="draw-hint">切线手柄：拖拽圆点调曲率（Alt 临时直线）</span>
       <span v-if="baseMap?.source?.warnings?.length" class="layer-warn" :title="baseMap.source.warnings.join('\n')">
-        ⚠ {{ baseMap.source.warnings.length }} 条图层提示
+        <Icon name="alert-triangle" :size="13"/> {{ baseMap.source.warnings.length }} 条图层提示
       </span>
       <span v-if="selectedBurg" class="selected-burg">城镇：{{ selectedBurg.name }}（人口 {{ formatPopulation(selectedBurg.population) }}）</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
       <span v-if="selectedPolity" class="selected-polity">已选势力：<span class="polity-dot" :style="{ background: selectedPolity.color }"></span>{{ selectedPolity.name }}</span>
       <span class="save-status" :class="store.saveStatus.value">
-        <template v-if="store.saveStatus.value === 'saving'">💾 保存中...</template>
-        <template v-else-if="store.saveStatus.value === 'saved'">✅ 已保存</template>
-        <template v-else-if="store.saveStatus.value === 'error'">❌ 保存失败</template>
-        <template v-else>💾 自动保存</template>
+        <template v-if="store.saveStatus.value === 'saving'"><Icon name="loader" :size="13"/> 保存中...</template>
+        <template v-else-if="store.saveStatus.value === 'saved'"><Icon name="check-circle" :size="13"/> 已保存</template>
+        <template v-else-if="store.saveStatus.value === 'error'"><Icon name="x-circle" :size="13"/> 保存失败</template>
+        <template v-else><Icon name="save" :size="13"/> 自动保存</template>
       </span>
     </div>
 
     <!-- 省份右键菜单 -->
     <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
-      <div class="ctx-item" @click="ctxRenameProvince">✎ 重命名</div>
-      <div class="ctx-item" @click="ctxChangeBiome">🎨 更改生物群系</div>
+      <div class="ctx-item" @click="ctxRenameProvince"><Icon name="pencil" :size="13"/> 重命名</div>
+      <div class="ctx-item" @click="ctxChangeBiome"><Icon name="palette" :size="13"/> 更改生物群系</div>
       <div class="ctx-item" @click="ctxDuplicateProvince">⧉ 复制省份</div>
-      <div class="ctx-item danger" @click="ctxDeleteProvince">🗑 删除</div>
+      <div class="ctx-item danger" @click="ctxDeleteProvince"><Icon name="trash" :size="13"/> 删除</div>
       <div class="ctx-divider"></div>
       <div class="ctx-item disabled" v-if="selectedProvince">
         {{ selectedProvince.name }} · {{ selectedProvince.biome || '未分类' }}
@@ -188,7 +190,7 @@
     <div v-if="selectedProvince && showProps" class="province-props">
       <div class="props-header">
         <input v-model="selectedProvince.name" @input="onProvinceNameChange" class="props-name" />
-        <button @click="showProps = false" class="props-close">✕</button>
+        <button @click="showProps = false" class="props-close"><Icon name="x" :size="13"/></button>
       </div>
       <div class="props-row">
         <label>生物群系：</label>
@@ -231,7 +233,7 @@
             <span class="item-era">{{ s.era?.roman || '·' }}</span>
             <span class="item-name">{{ s.name }}</span>
             <span class="item-years">{{ s.era?.startYear || '?' }} – {{ s.era?.endYear || '?' }}</span>
-            <button class="item-delete" @click="deleteScenario(s)" title="删除">🗑</button>
+            <button class="item-delete" @click="deleteScenario(s)" title="删除"><Icon name="trash" :size="15"/></button>
           </div>
         </div>
         <div class="new-scenario-form">
@@ -275,6 +277,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';

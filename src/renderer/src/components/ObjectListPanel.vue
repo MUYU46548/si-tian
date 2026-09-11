@@ -16,7 +16,7 @@
 
       <!-- 地形 -->
       <div v-if="tab === 'terrain'" class="list">
-        <div v-if="terrainItems.length === 0" class="empty-hint">暂无地形<br /><span class="sub">✏️ 绘制 → 选择地形类型 → 按住拖动绘制省份</span></div>
+        <div v-if="terrainItems.length === 0" class="empty-hint">暂无地形<br /><span class="sub"><Icon name="pencil" :size="12"/> 绘制 → 选择地形类型 → 按住拖动绘制省份</span></div>
         <div
           v-for="poly in terrainItems"
           :key="poly.id"
@@ -29,35 +29,35 @@
           </span>
           <span class="row-tag">{{ terrainLabel(poly.type) }}</span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('terrain', poly)" title="重命名">✎</button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'terrain', id: poly.id })" title="删除">🗑</button>
+            <button class="mini-btn" @click="startRename('terrain', poly)" title="重命名"><Icon name="pencil" :size="12"/></button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'terrain', id: poly.id })" title="删除"><Icon name="trash" :size="12"/></button>
           </div>
         </div>
       </div>
 
       <!-- 标记 -->
       <div v-if="tab === 'markers'" class="list">
-        <div v-if="markerItems.length === 0" class="empty-hint">暂无标记<br /><span class="sub">📍 标记模式 → 点击地图放置</span></div>
+        <div v-if="markerItems.length === 0" class="empty-hint">暂无标记<br /><span class="sub"><Icon name="map-pin" :size="12"/> 标记模式 → 点击地图放置</span></div>
         <div
           v-for="m in markerItems"
           :key="m.id"
           class="row"
           :class="{ active: activeObjectId === m.id }"
         >
-          <span class="row-icon">{{ markerIcon(m) }}</span>
+          <span class="row-icon"><Icon :name="markerIcon(m)" :size="13"/></span>
           <span class="row-name" :title="m.name || markerLabel(m.type)" @click="$emit('focus-object', { type: 'marker', id: m.id })">
             {{ m.name || markerLabel(m.type) }}
           </span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('marker', m)" title="重命名">✎</button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'marker', id: m.id })" title="删除">🗑</button>
+            <button class="mini-btn" @click="startRename('marker', m)" title="重命名"><Icon name="pencil" :size="12"/></button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'marker', id: m.id })" title="删除"><Icon name="trash" :size="12"/></button>
           </div>
         </div>
       </div>
 
       <!-- 路线 -->
       <div v-if="tab === 'routes'" class="list">
-        <div v-if="routeItems.length === 0" class="empty-hint">暂无路线<br /><span class="sub">🛣️ 路线模式 → 点击放置顶点 → 双击完成</span></div>
+        <div v-if="routeItems.length === 0" class="empty-hint">暂无路线<br /><span class="sub"><Icon name="route" :size="12"/> 路线模式 → 点击放置顶点 → 双击完成</span></div>
         <div
           v-for="r in routeItems"
           :key="r.id"
@@ -71,15 +71,15 @@
           </span>
           <span class="row-tag">{{ r.dashed ? '虚线' : '实线' }}</span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('route', r)" title="重命名">✎</button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'route', id: r.id })" title="删除">🗑</button>
+            <button class="mini-btn" @click="startRename('route', r)" title="重命名"><Icon name="pencil" :size="12"/></button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'route', id: r.id })" title="删除"><Icon name="trash" :size="12"/></button>
           </div>
         </div>
       </div>
 
       <!-- 文本 -->
       <div v-if="tab === 'texts'" class="list">
-        <div v-if="textItems.length === 0" class="empty-hint">暂无浮动文本<br /><span class="sub">🔤 文本模式 → 点击地图放置</span></div>
+        <div v-if="textItems.length === 0" class="empty-hint">暂无浮动文本<br /><span class="sub"><Icon name="type" :size="12"/> 文本模式 → 点击地图放置</span></div>
         <div
           v-for="t in textItems"
           :key="t.id"
@@ -91,8 +91,8 @@
             {{ t.text || '文本' }}
           </span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('text', t)" title="重命名">✎</button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'text', id: t.id })" title="删除">🗑</button>
+            <button class="mini-btn" @click="startRename('text', t)" title="重命名"><Icon name="pencil" :size="12"/></button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'text', id: t.id })" title="删除"><Icon name="trash" :size="12"/></button>
           </div>
         </div>
       </div>
@@ -113,6 +113,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed, nextTick } from 'vue';
 import PanelShell from './PanelShell.vue';
 import { useGeodataStore } from '../store/geodata';
@@ -138,12 +139,12 @@ const TERRAIN_META = {
 };
 
 const MARKER_META = {
-  chest: { label: '宝箱', icon: '📦', color: '#FFD700' },
-  teleport: { label: '传送点', icon: '🌀', color: '#9B59B6' },
-  boss: { label: 'Boss', icon: '💀', color: '#E74C3C' },
-  resource: { label: '资源', icon: '💎', color: '#3498DB' },
-  npc: { label: 'NPC', icon: '👤', color: '#2ECC71' },
-  flag: { label: '旗帜', icon: '🚩', color: '#E67E22' },
+  chest: { label: '宝箱', icon: 'package', color: '#FFD700' },
+  teleport: { label: '传送点', icon: 'spiral', color: '#9B59B6' },
+  boss: { label: 'Boss', icon: 'skull', color: '#E74C3C' },
+  resource: { label: '资源', icon: 'gem', color: '#3498DB' },
+  npc: { label: 'NPC', icon: 'user', color: '#2ECC71' },
+  flag: { label: '旗帜', icon: 'flag', color: '#E67E22' },
 };
 
 const tabs = [
@@ -176,7 +177,7 @@ function terrainLabel(type) {
   return TERRAIN_META[type]?.label || type;
 }
 function markerIcon(m) {
-  return m.icon || MARKER_META[m.type]?.icon || '📍';
+  return m.icon || MARKER_META[m.type]?.icon || 'map-pin';
 }
 function markerLabel(type) {
   return MARKER_META[type]?.label || type;

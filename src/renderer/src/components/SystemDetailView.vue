@@ -13,10 +13,10 @@
       </div>
       <div class="header-actions">
         <button :class="{ active: neighborPanelOpen }" @click="neighborPanelOpen = !neighborPanelOpen" title="邻近恒星系列表（含未显示航道）">
-          🧭 邻系 ({{ allNeighbors.length }})
+          <Icon name="compass" :size="14"/> 邻系 ({{ allNeighbors.length }})
         </button>
         <button :class="{ active: editMode }" @click="toggleEditMode" :title="editMode ? '退出编辑模式' : '编辑系内天体（拖拽轨道/添加/删除）'">
-          {{ editMode ? '✓ 完成编辑' : '✎ 编辑地图' }}
+          <template v-if="editMode"><Icon name="check" :size="14"/> 完成编辑</template><template v-else><Icon name="pencil" :size="14"/> 编辑地图</template>
         </button>
         <button v-if="editMode" title="在下一轨道槽添加天体（行星/卫星/空间站）" @click="createBody">
           ＋ 天体
@@ -53,6 +53,7 @@
 </template>
 
 <script setup>
+import Icon from './Icon.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
@@ -60,6 +61,7 @@ import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius, getStarRadius, getStarColor, sortPlanetsByOrbit } from '../composables/systemOrbit';
 import { drawDeepSpaceBackground } from '../composables/spaceBackground';
+import { drawCanvasIcon } from '../utils/canvasIcon';
 import { SPACE_MARKER_TYPES, FLEET_KINDS } from '../store/geodataModules/spaceEditing';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import PanelShell from './PanelShell.vue';
@@ -243,10 +245,11 @@ function fleetKindStyle(kind) {
 
 // 部队卡片包围盒（绘制与命中共用同一公式，避免两处宽度不一致）
 function fleetCardBox(card, font) {
-  const name = `${fleetKindStyle(card.kind).icon} ${card.name}`;
-  const w = Math.max(CARD_MIN_W, name.length * font * 0.9 + 20);
+  const name = card.name;
+  const iconSize = font;
+  const w = Math.max(CARD_MIN_W, name.length * font * 0.9 + 20 + iconSize + 4);
   const h = font + 12;
-  return { x: card.x - w / 2, y: card.y - h / 2, w, h, name };
+  return { x: card.x - w / 2, y: card.y - h / 2, w, h, name, iconSize };
 }
 
 // ===== 邻系数据（B5：真实 hyperlanes 邻接） =====
@@ -364,37 +367,37 @@ function worldToScreen(wx, wy) {
 function buildMenuItems() {
   // 「选择母行星」模式：菜单切换为系内行星列表（批次D5）
   if (ctxPickHostFor.value) {
-    const items = [{ key: 'pick-header', header: true, label: '选择母行星', icon: '🛰' }];
+    const items = [{ key: 'pick-header', header: true, label: '选择母行星', icon: 'satellite' }];
     for (const p of pickHostCandidates.value) {
-      items.push({ key: 'host-' + p.id, label: p.displayName || p.name, icon: '🪐', action: () => ctxSetMoonHost(p.id) });
+      items.push({ key: 'host-' + p.id, label: p.displayName || p.name, icon: 'orbit', action: () => ctxSetMoonHost(p.id) });
     }
-    items.push({ key: 'pick-cancel', label: '返回', icon: '↩', action: ctxCancelPickHost, keepOpen: true });
+    items.push({ key: 'pick-cancel', label: '返回', icon: 'undo', action: ctxCancelPickHost, keepOpen: true });
     return items;
   }
   const t = ctxTarget.value;
   const items = [];
   if (t?.type === 'planet' || t?.type === 'star' || t?.type === 'space-marker' || t?.type === 'fleet-card') {
-    items.push({ key: 'view', label: '查看信息', icon: 'ℹ', action: ctxViewNode });
+    items.push({ key: 'view', label: '查看信息', icon: 'info', action: ctxViewNode });
   }
   if (t?.type === 'planet' && !t.node.isMoon) {
-    items.push({ key: 'pick-host', label: '设为卫星…', icon: '🛰', action: ctxBeginPickHost, keepOpen: true });
+    items.push({ key: 'pick-host', label: '设为卫星…', icon: 'satellite', action: ctxBeginPickHost, keepOpen: true });
   }
   if (t?.type === 'planet' && t.node.isMoon) {
-    items.push({ key: 'unset-moon', label: '取消卫星（回到独立轨道）', icon: '↩', action: ctxUnsetMoon });
+    items.push({ key: 'unset-moon', label: '取消卫星（回到独立轨道）', icon: 'undo', action: ctxUnsetMoon });
   }
   if (t?.type === 'planet') {
-    items.push({ key: 'del-node', label: '删除该节点', icon: '🗑', danger: true, action: ctxDeleteNode });
+    items.push({ key: 'del-node', label: '删除该节点', icon: 'trash', danger: true, action: ctxDeleteNode });
   }
   if (t?.type === 'space-marker') {
-    items.push({ key: 'del-marker', label: '删除标记', icon: '🗑', danger: true, action: ctxDeleteSpaceMarker });
+    items.push({ key: 'del-marker', label: '删除标记', icon: 'trash', danger: true, action: ctxDeleteSpaceMarker });
   }
   if (t?.type === 'fleet-card') {
-    items.push({ key: 'del-card', label: '删除部队卡片', icon: '🗑', danger: true, action: ctxDeleteFleetCard });
+    items.push({ key: 'del-card', label: '删除部队卡片', icon: 'trash', danger: true, action: ctxDeleteFleetCard });
   }
   if (!t) {
-    items.push({ key: 'add-body', label: '添加天体（此位置）', icon: '＋', action: ctxAddBodyHere });
-    items.push({ key: 'add-marker', label: '添加太空标记（此位置）', icon: '◈', action: ctxAddSpaceMarkerHere });
-    items.push({ key: 'add-fleet', label: '添加部队卡片（此位置）', icon: '⚑', action: ctxAddFleetCardHere });
+    items.push({ key: 'add-body', label: '添加天体（此位置）', icon: 'plus', action: ctxAddBodyHere });
+    items.push({ key: 'add-marker', label: '添加太空标记（此位置）', icon: 'crosshair', action: ctxAddSpaceMarkerHere });
+    items.push({ key: 'add-fleet', label: '添加部队卡片（此位置）', icon: 'flag', action: ctxAddFleetCardHere });
   }
   return items;
 }
@@ -952,7 +955,8 @@ function drawFleetCards(ctx) {
       ctx.font = `bold ${font}px sans-serif`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(box.name, box.x + 9, box.y + box.h / 2);
+      drawCanvasIcon(ctx, fleetKindStyle(card.kind).icon, box.x + 9 + box.iconSize / 2, box.y + box.h / 2, box.iconSize, '#FFFFFF');
+  ctx.fillText(box.name, box.x + 9 + box.iconSize + 4, box.y + box.h / 2);
       ctx.textBaseline = 'alphabetic';
     }
   }
