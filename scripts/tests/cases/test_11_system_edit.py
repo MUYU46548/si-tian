@@ -5,7 +5,7 @@
       （系内相对坐标 ↔ 域地图绝对坐标换算断言）→ undo 恢复
       → 头部「＋ 天体」添加（stub window.prompt，落下一轨道槽公式位）→ undo
       → 右键空白「＋ 添加天体（此位置）」原地添加 → undo
-      → 右键行星「🗑 删除该节点」→ nodes.length -1 → undo 恢复
+      → 右键行星「删除该节点」→ nodes.length -1 → undo 恢复
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
