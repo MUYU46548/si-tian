@@ -6,7 +6,7 @@
           <span class="logo-icon"><Icon name="sparkles" :size="24"/></span>
           <div class="logo-info">
             <h2>SiTian</h2>
-            <span class="version" :title="'点击复制版本号'" style="cursor: pointer;" @click="copyVersion">{{ copiedVersion ? '已复制 ✓' : `v${appVersion}` }}</span>
+            <span class="version" :title="'点击复制版本号'" style="cursor: pointer;" @click="copyVersion"><template v-if="copiedVersion"><Icon name="check" :size="12"/> 已复制</template><template v-else>v{{ appVersion }}</template></span>
           </div>
         </div>
         <button class="close-btn" @click="close">×</button>

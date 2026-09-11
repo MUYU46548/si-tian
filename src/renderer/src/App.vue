@@ -150,7 +150,7 @@
         <button @click="changeLogRef?.open()" title="变更日志"><Icon name="clipboard" :size="15"/></button>
         <button @click="validateDataIntegrity" title="数据检查"><Icon name="search" :size="15"/></button>
         <button @click="toggleTheme" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`"><Icon :name="currentTheme === 'dark' ? 'moon' : 'sun'" :size="15"/></button>
-        <span class="status">{{ statusText }}</span>
+        <span class="status"><Icon v-if="statusKind === 'ok'" name="check-circle" :size="12" style="margin-right:4px"/><Icon v-else-if="statusKind === 'err'" name="x-circle" :size="12" style="margin-right:4px"/>{{ statusText }}</span>
       </div>
     </header>
 
@@ -287,6 +287,7 @@
 </template>
 
 <script setup>
+import { iconSvg } from './utils/iconSvg';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from './store/geodata';
 import { usePanelsStore } from './store/panels';
@@ -335,6 +336,8 @@ const { bookmarks, currentIndex, addBookmark, removeBookmark, clearAll } = useBo
 const dirty = ref(false);
 const scenarioMode = ref(false);
 const statusText = ref('');
+// 状态类型：ok | err —— 驱动状态栏图标（替代原先在文案里内嵌的对错符号）
+const statusKind = ref('');
 const searchBar = ref(null);
 const galaxyMapRef = ref(null);
 const systemViewRef = ref(null);
@@ -467,6 +470,7 @@ async function handleExportPNG() {
       URL.revokeObjectURL(url);
       hideExportProgress();
       statusText.value = '导出完成';
+      statusKind.value = 'ok';
       resolve();
     });
   });
@@ -505,6 +509,7 @@ async function handleExportSVG() {
 
   hideExportProgress();
   statusText.value = '导出完成';
+  statusKind.value = 'ok';
   panelsStore.close('export');
 }
 
@@ -514,7 +519,7 @@ function showExportProgress(msg) {
     overlay = document.createElement('div');
     overlay.id = 'sitian-export-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);color:#fff;font-family:system-ui,sans-serif;';
-    overlay.innerHTML = `<div style="text-align:center;"><div style="font-size:32px;margin-bottom:12px;">📥</div><div id="sitian-export-msg" style="font-size:14px;"></div><div style="margin-top:16px;width:200px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden;margin-left:auto;margin-right:auto;"><div style="height:100%;width:30%;background:#4A90D9;animation:sitian-progress 1s ease-in-out infinite;"></div></div></div><style>@keyframes sitian-progress{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}</style>`;
+    overlay.innerHTML = `<div style="text-align:center;"><div style="margin-bottom:12px;">${iconSvg('download', { size: 32 })}</div><div id="sitian-export-msg" style="font-size:14px;"></div><div style="margin-top:16px;width:200px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden;margin-left:auto;margin-right:auto;"><div style="height:100%;width:30%;background:#4A90D9;animation:sitian-progress 1s ease-in-out infinite;"></div></div></div><style>@keyframes sitian-progress{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}</style>`;
     document.body.appendChild(overlay);
   }
   const msgEl = overlay.querySelector('#sitian-export-msg');
@@ -799,6 +804,7 @@ function handleImportGeoJSON() {
       const parsed = geoJSONToPlanet(fc);
       if (parsed.errors.length && parsed.places.length + parsed.markers.length + parsed.textLabels.length + parsed.routes.length + parsed.regions.length === 0) {
         statusText.value = `GeoJSON 导入失败：${parsed.errors[0]}`;
+        statusKind.value = 'err';
         return;
       }
       for (const p of parsed.places) {
@@ -830,8 +836,10 @@ function handleImportGeoJSON() {
       }
       panelsStore.close('export');
       statusText.value = `GeoJSON 已导入：地点 ${parsed.places.length}、标记 ${parsed.markers.length}、文本 ${parsed.textLabels.length}、路线 ${parsed.routes.length}、区域 ${parsed.regions.length}、跳过 ${parsed.skipped}`;
+      statusKind.value = 'ok';
     } catch (err) {
       statusText.value = 'GeoJSON 导入失败：' + err.message;
+      statusKind.value = 'err';
     }
   };
   input.click();
@@ -977,7 +985,7 @@ function handleCreateWorld() {
   });
   dirty.value = true;
   statusText.value = `已创建「新世界${Date.now() % 1000}」，可在左侧树中选中后重命名`;
-  setTimeout(() => { statusText.value = ''; }, 4000);
+  setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 4000);
 }
 
 function handleLoadSampleWorld() {
@@ -992,7 +1000,7 @@ function handleLoadSampleWorld() {
   }
   dirty.value = true;
   statusText.value = '已加载示例世界观「幻境」，点击世界卡片开始探索';
-  setTimeout(() => { statusText.value = ''; }, 5000);
+  setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 5000);
 }
 
 // ===== 剧本地图模式 =====
@@ -1019,7 +1027,7 @@ function handleDeleteWorld(world) {
   store.removeNode(world.id);
   dirty.value = true;
   statusText.value = `世界「${world.name}」已从地图移除`;
-  setTimeout(() => { statusText.value = ''; }, 4000);
+  setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 4000);
 }
 
 // ===== 书签管理 =====
@@ -1245,13 +1253,16 @@ async function performBackup() {
     const result = await window.sitianAPI.backupSitianCache();
     if (result?.success) {
       statusText.value = result.count > 0
-        ? `✓ 已备份 ${result.count} 个文件 → ${result.backupDir}`
+        ? `已备份 ${result.count} 个文件 → ${result.backupDir}`
         : '备份完成（当前无缓存文件）';
+      statusKind.value = 'ok';
     } else {
-      statusText.value = `✗ 备份失败: ${result?.error || '未知错误'}`;
+      statusText.value = `备份失败: ${result?.error || '未知错误'}`;
+      statusKind.value = 'err';
     }
   } catch (e) {
-    statusText.value = '✗ 备份失败';
+    statusText.value = '备份失败';
+    statusKind.value = 'err';
   }
 }
 
@@ -1293,7 +1304,7 @@ function validateDataIntegrity() {
   
   // 显示结果
   if (issues.length === 0) {
-    alert('✅ 数据完整性检查通过，未发现问题。');
+    alert('数据完整性检查通过，未发现问题。');
     statusText.value = '数据检查完成：无问题';
   } else {
     const summary = `发现 ${issues.length} 个问题:\n\n` + issues.slice(0, 10).map(i => `• [${i.type}] ${i.node ? i.node + ' - ' : ''}${i.detail}`).join('\n');
