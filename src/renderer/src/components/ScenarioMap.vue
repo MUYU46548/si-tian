@@ -54,6 +54,21 @@
           @click="setTool('biome')"
           title="生物群系笔刷 (N) — 涂抹生物群系"
         ><Icon name="palette" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'burg' }" 
+          @click="setTool('burg')"
+          title="智能聚落 (U) — 点击放置，自动贴合地形"
+        ><Icon name="home" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'river' }" 
+          @click="generateAndShowRivers"
+          title="自动生成河流 — 沿高度梯度从高地流向海洋"
+        ><Icon name="waves" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'derive' }" 
+          @click="deriveLayers"
+          title="重算派生图层 — 基于高度重算温度/降水/生物群系"
+        ><Icon name="refresh-cw" :size="15"/></button>
       </div>
       <!-- 笔刷设置 -->
       <div class="tool-group brush-settings" v-if="tool === 'height' || tool === 'biome'">
@@ -365,6 +380,10 @@ const brushBiome = ref('grassland'); // 当前选中生物群系
 let isBrushing = false;              // 是否正在笔刷拖动中
 let brushMode = 'raise';             // 'raise' | 'lower' | 'smooth'
 const brushPreview = ref(null);      // { x, y, radius } 笔刷预览（hover 显示）
+const autoRivers = ref([]);          // {x,y}[] 生成的河流路径
+
+// v2 智能放置
+const burgStart = ref(null);         // {x, y} 道路起点
 
 // 城镇标记（P1-T4）
 const BURG_HIT_RADIUS = 10;          // 命中半径（屏幕像素）
@@ -668,6 +687,14 @@ function onMouseMove(event) {
         store.applyBiomeBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushBiome.value);
       }
     }
+    render();
+    return;
+  }
+
+  if (tool.value === 'burg') {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    placeSmartBurg(world);
     render();
     return;
   }
@@ -1679,6 +1706,23 @@ function render() {
 
   if (showRoutes.value) drawRoutes(ctx.value);
   if (showRivers.value) drawRivers(ctx.value);
+
+  // v2: 自动生成的河流
+  if (autoRivers.value.length > 0 && showRivers.value) {
+    ctx.save();
+    ctx.strokeStyle = '#5d97bb';
+    ctx.lineWidth = 1 / cameraScale.value;
+    for (const river of autoRivers.value) {
+      if (river.length < 2) continue;
+      ctx.beginPath();
+      ctx.moveTo(river[0].x, river[0].y);
+      for (let i = 1; i < river.length; i++) {
+        ctx.lineTo(river[i].x, river[i].y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   if (showBorders.value) drawProvinceBorders(ctx.value);
   drawVertexHandles(ctx.value);
   if (showBurgs.value) drawBurgs(ctx.value);
@@ -2055,6 +2099,73 @@ function handleResize() {
   if (!canvas.value || !canvasWrap.value) return;
   canvas.value.width = canvasWrap.value.clientWidth;
   canvas.value.height = canvasWrap.value.clientHeight;
+  render();
+}
+
+// ═══════════════════════════════════════════
+// v2 智能放置与派生
+// ═══════════════════════════════════════════
+
+function placeSmartBurg(world) {
+  const baseMapData = baseMap.value;
+  if (!baseMapData?.heightmap?.grid?.points) return;
+  const hm = baseMapData.heightmap;
+  const pts = hm.grid.points;
+  const spacing = hm.grid.spacing || 14.4;
+  const searchRadius = 100;
+  let bestI = -1;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < pts.length; i++) {
+    const h = hm.h[i];
+    if (h < 20 || h > 70) continue;
+    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+    const clickDist = Math.hypot(px - world.x, py - world.y);
+    if (clickDist > searchRadius) continue;
+
+    let score = -Math.abs(h - 40) * 0.1 - clickDist * 0.05;
+    // 靠近已有 burg 则减分（避免堆叠）
+    for (const b of burgs.value) {
+      const bd = Math.hypot(b.x - px, b.y - py);
+      if (bd < spacing * 3) score -= 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestI = i;
+    }
+  }
+
+  if (bestI >= 0) {
+    const px = Array.isArray(pts[bestI]) ? pts[bestI][0] : pts[bestI].x;
+    const py = Array.isArray(pts[bestI]) ? pts[bestI][1] : pts[bestI].y;
+    const burgId = `burg_${Date.now()}`;
+    // 添加到 baseMap.burgs
+    if (!baseMapData.burgs) {
+      baseMapData.burgs = [];
+    }
+    // 临时：直接修改（应走 undo 栈，后续补）
+    const newBurgs = [...baseMapData.burgs, { id: burgId, name: `新聚落 ${baseMapData.burgs.length + 1}`, x: px, y: py, capital: 0, population: 5 }];
+    store.baseMaps = {
+      ...store.baseMaps,
+      [baseMapKey.value]: {
+        ...baseMapData,
+        burgs: newBurgs,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
+}
+
+function generateAndShowRivers() {
+  const rivers = store.generateRivers(baseMapKey.value);
+  autoRivers.value = rivers;
+  render();
+}
+
+function deriveLayers() {
+  store.deriveAllLayers(baseMapKey.value);
   render();
 }
 

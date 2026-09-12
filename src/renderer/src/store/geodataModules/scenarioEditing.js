@@ -1,10 +1,11 @@
 // store/geodataModules/scenarioEditing.js — 剧本地图 store 模块
 // ctx: { execute, scheduleAutoSave, saveScenarios }
 // 所有 mutation 走 execute（redo 内写入，防双写铁律）
+
+
 import { ref } from 'vue';
 import {
-  temperatureAtIndex, precipitationAtIndex, classifyBiome, biomeColor,
-  brushFalloff, deriveLayers, smoothHeightmap, SEA_LEVEL,
+  brushFalloff, deriveLayers, SEA_LEVEL,
 } from '../../utils/heightMath';
 
 export function createScenarioEditingModule(ctx) {
@@ -956,6 +957,92 @@ export function createScenarioEditingModule(ctx) {
     };
   }
 
+  // ============================================================
+  // River Generation (v2)
+  // ============================================================
+
+  function generateRivers(baseMapKey) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap?.heightmap?.grid?.points) return [];
+    const hm = baseMap.heightmap;
+    const pts = hm.grid.points;
+    const n = pts.length;
+    const rivers = [];
+    const visited = new Set();
+
+    const sources = [];
+    for (let i = 0; i < n; i++) {
+      if (hm.h[i] > 60) sources.push(i);
+    }
+
+    for (const src of sources) {
+      if (visited.has(src)) continue;
+      const river = [src];
+      let current = src;
+      let steps = 0;
+      while (hm.h[current] >= SEA_LEVEL && steps < 200) {
+        visited.add(current);
+        const cx = Array.isArray(pts[current]) ? pts[current][0] : pts[current].x;
+        const cy = Array.isArray(pts[current]) ? pts[current][1] : pts[current].y;
+        let lowest = -1, lowestH = hm.h[current];
+        for (let j = 0; j < n; j++) {
+          if (j === current) continue;
+          const qx = Array.isArray(pts[j]) ? pts[j][0] : pts[j].x;
+          const qy = Array.isArray(pts[j]) ? pts[j][1] : pts[j].y;
+          const d = Math.hypot(qx - cx, qy - cy);
+          if (d < (hm.grid.spacing || 14.4) * 1.5 && hm.h[j] < lowestH) {
+            lowestH = hm.h[j];
+            lowest = j;
+          }
+        }
+        if (lowest < 0) break;
+        river.push(lowest);
+        current = lowest;
+        steps++;
+      }
+      if (river.length > 3) rivers.push(river.map(i => ({ x: pts[i][0], y: pts[i][1] })));
+    }
+
+    return rivers;
+  }
+
+  function deriveAllLayers(baseMapKey) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap?.heightmap?.grid?.points) return null;
+    const hm = baseMap.heightmap;
+    const pts = hm.grid.points;
+    const oldTemp = hm.temp ? new Float32Array(hm.temp) : null;
+    const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
+    const oldBiome = hm.biome ? new Uint8Array(hm.biome) : null;
+    const derived = deriveLayers(hm.h, pts, null, null);
+
+    execute({
+      type: 'derive-layers',
+      label: '重算派生图层',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            heightmap: { ...hm, temp: oldTemp, prec: oldPrec, biome: oldBiome },
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            heightmap: { ...hm, temp: derived.temperature, prec: derived.precipitation, biome: derived.biome },
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    saveScenarios();
+    return derived;
+  }
+
   return {
     baseMaps, scenarios,
     addBaseMap, removeBaseMap, addBaseProvince, updateBaseProvince, removeBaseProvince,
@@ -965,7 +1052,7 @@ export function createScenarioEditingModule(ctx) {
     setOwnership, clearOwnership, batchSetOwnership,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, loadScenarioState,
-    applyHeightBrush, applyBiomeBrush, getHeightAt,
+    applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
     getBaseMap, getScenario, getScenariosByOwner, getBaseMapsList, getAllScenarios,
   };
 }
