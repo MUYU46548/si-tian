@@ -70,8 +70,29 @@
           title="重算派生图层 — 基于高度重算温度/降水/生物群系"
         ><Icon name="refresh-cw" :size="15"/></button>
       </div>
+        <button 
+          :class="{ active: tool === 'culture' }" 
+          @click="setTool('culture')"
+          title="文化笔刷 (C) — 涂抹文化区域"
+        ><Icon name="users" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'religion' }" 
+          @click="setTool('religion')"
+          title="宗教笔刷 (R) — 涂抹宗教区域"
+        ><Icon name="church" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'marker' }" 
+          @click="setTool('marker')"
+          title="标记 (K) — 点击放置标记"
+        ><Icon name="map-pin" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'road' }" 
+          @click="setTool('road')"
+          title="道路 (J) — 两点连线，自动生成沿等高线路径"
+        ><Icon name="git-branch" :size="15"/></button>
+      </div>
       <!-- 笔刷设置 -->
-      <div class="tool-group brush-settings" v-if="tool === 'height' || tool === 'biome'">
+      <div class="tool-group brush-settings" v-if="['height','biome','culture','religion'].includes(tool)">
         <label>笔刷：</label>
         <label class="check-label" title="笔刷半径（滚轮调节）">
           半径
@@ -87,6 +108,18 @@
           群系
           <select v-model="brushBiome" class="brush-biome-select">
             <option v-for="(color, key) in BIOME_COLORS" :key="key" :value="key">{{ key }}</option>
+          </select>
+        </label>
+        <label class="check-label" v-if="tool === 'culture'">
+          文化
+          <select v-model="brushCulture" class="brush-biome-select">
+            <option v-for="c in availableCultures" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
+          </select>
+        </label>
+        <label class="check-label" v-if="tool === 'religion'">
+          宗教
+          <select v-model="brushReligion" class="brush-biome-select">
+            <option v-for="r in availableReligions" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
           </select>
         </label>
       </div>
@@ -318,7 +351,6 @@
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <script setup>
@@ -326,6 +358,7 @@ import Icon from './Icon.vue';
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
+import { generateRoadPath } from '../utils/placement';
 
 const store = useGeodataStore();
 
@@ -377,13 +410,27 @@ let lastFitCount = 0;                // 自动适屏：上次适配时的省份�
 const brushRadius = ref(80);         // 世界坐标像素
 const brushStrength = ref(3);        // 高度变化强度
 const brushBiome = ref('grassland'); // 当前选中生物群系
+const brushCulture = ref('1');       // 当前选中文化 ID
+const brushReligion = ref('1');      // 当前选中宗教 ID
 let isBrushing = false;              // 是否正在笔刷拖动中
 let brushMode = 'raise';             // 'raise' | 'lower' | 'smooth'
 const brushPreview = ref(null);      // { x, y, radius } 笔刷预览（hover 显示）
+// 文化/宗教选项
+const availableCultures = computed(() => {
+  const hm = baseMap.value?.heightmap;
+  return hm?.cultures?.filter(c => c.i > 0) || [{ id: 1, name: '未分类' }];
+});
+
+const availableReligions = computed(() => {
+  const hm = baseMap.value?.heightmap;
+  return hm?.religions?.filter(r => r.i > 0) || [{ id: 1, name: '未分类' }];
+});
+
 const autoRivers = ref([]);          // {x,y}[] 生成的河流路径
 
-// v2 智能放置
-const burgStart = ref(null);         // {x, y} 道路起点
+// v2 道路绘制
+const roadStart = ref(null);         // {x, y} 道路起点
+const roadPath = ref([]);            // {x, y}[] 道路路径预览
 
 // 城镇标记（P1-T4）
 const BURG_HIT_RADIUS = 10;          // 命中半径（屏幕像素）
@@ -502,6 +549,8 @@ function setTool(t) {
   hoveredBurg.value = null;
   brushPreview.value = null;
   isBrushing = false;
+  roadStart.value = null;
+  roadPath.value = [];
   clearSnapMarker();
   updateCursor();
 }
@@ -615,6 +664,23 @@ function onMouseDown(event) {
     store.applyBiomeBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushBiome.value);
     return;
   }
+  if (tool.value === 'culture' && event.button === 0) {
+    isBrushing = true;
+    brushMode = 'culture';
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    store.applyCultureBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushCulture.value);
+    return;
+  }
+  if (tool.value === 'religion' && event.button === 0) {
+    isBrushing = true;
+    brushMode = 'religion';
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    store.applyReligionBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushReligion.value);
+    return;
+  }
+  // marker 和 road 在 onCanvasClick 处理
 
   if (event.button === 0 && (tool.value === 'select' || tool.value === 'vertex')) {
     // 顶点编辑模式：先判切线手柄，再判顶点
@@ -674,7 +740,7 @@ function onMouseDown(event) {
 
 function onMouseMove(event) {
   // 笔刷预览更新
-  if (tool.value === 'height' || tool.value === 'biome') {
+  if (['height', 'biome', 'culture', 'religion'].includes(tool.value)) {
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     brushPreview.value = { x: world.x, y: world.y, radius: brushRadius.value };
@@ -683,10 +749,23 @@ function onMouseMove(event) {
     if (isBrushing) {
       if (tool.value === 'height') {
         store.applyHeightBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushStrength.value, brushMode);
-      } else if (tool.value === 'biome' && brushMode === 'biome') {
+      } else if (tool.value === 'biome') {
         store.applyBiomeBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushBiome.value);
+      } else if (tool.value === 'culture') {
+        store.applyCultureBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushCulture.value);
+      } else if (tool.value === 'religion') {
+        store.applyReligionBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushReligion.value);
       }
     }
+    render();
+    return;
+  }
+
+  if (tool.value === 'road' && roadStart.value) {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    // 实时预览：从 roadStart 到当前鼠标的直线（松开时计算实际路径）
+    roadPath.value = [roadStart.value, world];
     render();
     return;
   }
@@ -973,6 +1052,67 @@ function onCanvasClick(event) {
       store.addScenarioLabel(selectedScenario.value.id, { x: world.x, y: world.y, text });
       render();
     }
+  } else if (tool.value === 'marker') {
+    // 点击放置标记（临时：写到 baseMap.scenario markers）
+    if (viewMode.value === 'scenario' && selectedScenario.value) {
+      const name = prompt('标记名称：');
+      if (name) {
+        store.addScenarioMarker(selectedScenario.value.id, { x: world.x, y: world.y, name, type: 'custom' });
+        render();
+      }
+    } else {
+      alert('请先在剧本模式下使用标记工具');
+    }
+  } else if (tool.value === 'road') {
+    if (!roadStart.value) {
+      roadStart.value = world;
+      roadPath.value = [world];
+    } else {
+      // 两点完成道路：用 generateRoadPath 算实际路径
+      const baseMapData = baseMap.value;
+      if (baseMapData?.heightmap?.grid?.points) {
+        const hm = baseMapData.heightmap;
+        const pts = hm.grid.points;
+        const spacing = hm.grid.spacing || 14.4;
+        // 找最近网格点作为起终点
+        let startIdx = -1, startDist = Infinity;
+        let endIdx = -1, endDist = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+          const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+          const sd = Math.hypot(px - roadStart.value.x, py - roadStart.value.y);
+          if (sd < startDist) { startDist = sd; startIdx = i; }
+          const ed = Math.hypot(px - world.x, py - world.y);
+          if (ed < endDist) { endDist = ed; endIdx = i; }
+        }
+        if (startIdx >= 0 && endIdx >= 0 && startIdx !== endIdx) {
+          const path = generateRoadPath(hm.h, hm.grid, startIdx, endIdx);
+          if (path.length > 0) {
+            const roadPoints = path.map(i => ({ x: pts[i][0], y: pts[i][1] }));
+            // 添加到 autoRivers 数组旁——直接写入 routes
+            const newRoute = {
+              id: `road_${Date.now()}`,
+              group: 'roads',
+              name: `道路 ${Date.now()}`,
+              points: roadPoints,
+            };
+            if (!baseMapData.routes) baseMapData.routes = [];
+            baseMapData.routes.push(newRoute);
+            store.baseMaps = {
+              ...store.baseMaps,
+              [baseMapKey.value]: {
+                ...baseMapData,
+                routes: [...baseMapData.routes],
+                updatedAt: new Date().toISOString(),
+              },
+            };
+          }
+        }
+      }
+      roadStart.value = null;
+      roadPath.value = [];
+      render();
+    }
   }
 }
 
@@ -1017,6 +1157,11 @@ function onKeyDown(event) {
   else if (event.key === 'e' || event.key === 'E') setTool('erase');
   else if (event.key === 'h' || event.key === 'H') setTool('height');
   else if (event.key === 'n' || event.key === 'N') setTool('biome');
+  else if (event.key === 'u' || event.key === 'U') setTool('burg');
+  else if (event.key === 'c' || event.key === 'C') setTool('culture');
+  else if (event.key === 'r' || event.key === 'R') setTool('religion');
+  else if (event.key === 'k' || event.key === 'K') setTool('marker');
+  else if (event.key === 'j' || event.key === 'J') setTool('road');
   else if (event.key === 'f' || event.key === 'F') fitToView();
 }
 
@@ -1929,18 +2074,42 @@ function drawPreviewOverlay() {
   }
 
   // 笔刷预览（hover 时显示）
-  if (brushPreview.value && (tool.value === 'height' || tool.value === 'biome')) {
+  if (brushPreview.value && ['height', 'biome', 'culture', 'religion'].includes(tool.value)) {
     const bp = brushPreview.value;
     c.beginPath();
     c.arc(bp.x, bp.y, bp.radius, 0, Math.PI * 2);
-    c.strokeStyle = tool.value === 'height' ? 'rgba(74, 158, 255, 0.8)' : 'rgba(255, 107, 107, 0.8)';
+    let color = 'rgba(74, 158, 255, 0.8)';
+    if (tool.value === 'biome') color = 'rgba(255, 107, 107, 0.8)';
+    else if (tool.value === 'culture') color = 'rgba(255, 215, 0, 0.8)';
+    else if (tool.value === 'religion') color = 'rgba(167, 139, 250, 0.8)';
+    c.strokeStyle = color;
     c.lineWidth = 2 / cameraScale.value;
     c.setLineDash([5 / cameraScale.value, 5 / cameraScale.value]);
     c.stroke();
     c.setLineDash([]);
-    c.fillStyle = tool.value === 'height'
-      ? 'rgba(74, 158, 255, 0.1)'
-      : 'rgba(255, 107, 107, 0.1)';
+    c.fillStyle = color.replace('0.8', '0.1');
+    c.fill();
+  }
+
+  // 道路预览
+  if (tool.value === 'road' && roadPath.value.length >= 2) {
+    c.strokeStyle = '#ffd700';
+    c.lineWidth = 2 / cameraScale.value;
+    c.setLineDash([4 / cameraScale.value, 4 / cameraScale.value]);
+    c.beginPath();
+    c.moveTo(roadPath.value[0].x, roadPath.value[0].y);
+    for (let i = 1; i < roadPath.value.length; i++) {
+      c.lineTo(roadPath.value[i].x, roadPath.value[i].y);
+    }
+    c.stroke();
+    c.setLineDash([]);
+    // 起终点标记
+    c.fillStyle = '#ffd700';
+    c.beginPath();
+    c.arc(roadPath.value[0].x, roadPath.value[0].y, 4 / cameraScale.value, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.arc(roadPath.value[roadPath.value.length - 1].x, roadPath.value[roadPath.value.length - 1].y, 4 / cameraScale.value, 0, Math.PI * 2);
     c.fill();
   }
 
@@ -2141,20 +2310,11 @@ function placeSmartBurg(world) {
     const px = Array.isArray(pts[bestI]) ? pts[bestI][0] : pts[bestI].x;
     const py = Array.isArray(pts[bestI]) ? pts[bestI][1] : pts[bestI].y;
     const burgId = `burg_${Date.now()}`;
-    // 添加到 baseMap.burgs
     if (!baseMapData.burgs) {
       baseMapData.burgs = [];
     }
-    // 临时：直接修改（应走 undo 栈，后续补）
-    const newBurgs = [...baseMapData.burgs, { id: burgId, name: `新聚落 ${baseMapData.burgs.length + 1}`, x: px, y: py, capital: 0, population: 5 }];
-    store.baseMaps = {
-      ...store.baseMaps,
-      [baseMapKey.value]: {
-        ...baseMapData,
-        burgs: newBurgs,
-        updatedAt: new Date().toISOString(),
-      },
-    };
+    const newBurg = { id: burgId, name: `新聚落 ${baseMapData.burgs.length + 1}`, x: px, y: py, capital: 0, population: 5 };
+    store.addBaseMapBurg(baseMapKey.value, newBurg);
   }
 }
 

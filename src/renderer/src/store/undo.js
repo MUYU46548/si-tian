@@ -13,7 +13,7 @@ import { ref, computed } from 'vue';
 // }
 
 // E2: 由 past/future 双栈改为线性数组 + 指针，支持按索引跳转（撤销历史面板）
-// 语义：pointer 指向"最后一条已应用"的命令索引；-1 = 初始态
+// 语义：pointer 指向"最后一条已应用"命令索引；-1 = 初始态
 const history = ref([]);
 const pointer = ref(-1);
 const MAX_HISTORY = 100;
@@ -49,6 +49,16 @@ export function getHistoryByType(category) {
 // 执行新命令（redo 是唯一写入点——调用前不要手动改数据，避免双写）
 export function execute(command) {
   command.timestamp = Date.now();
+  // 合并连续相同类型操作（如笔刷拖拽）：保留最旧的 undo，用新的 redo 覆盖，避免堆栈爆炸
+  if (command.merge && pointer.value >= 0) {
+    const prev = history.value[pointer.value];
+    if (command.merge(prev)) {
+      command.undo = prev.undo; // 保留拖拽开始前的状态
+      command.redo();           // 执行新状态的写入
+      history.value[pointer.value] = command;
+      return;
+    }
+  }
   command.redo();
   // 在中间状态执行新命令 → 新建分支，丢弃"未来"
   if (pointer.value < history.value.length - 1) {

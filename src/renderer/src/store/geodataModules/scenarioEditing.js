@@ -834,9 +834,11 @@ export function createScenarioEditingModule(ctx) {
     const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
     const oldBiome = hm.biome ? new Uint8Array(hm.biome) : null;
 
-    execute({
+    const cmd = {
       type: 'height-brush',
+      mode,
       label: mode === 'raise' ? '抬高地形' : mode === 'lower' ? '降低地形' : '平滑地形',
+      merge: (prev) => prev.type === 'height-brush' && prev.mode === mode,
       undo: () => {
         baseMaps.value = {
           ...baseMaps.value,
@@ -862,7 +864,8 @@ export function createScenarioEditingModule(ctx) {
           },
         };
       },
-    });
+    };
+    execute(cmd);
 
     saveScenarios();
   }
@@ -894,9 +897,11 @@ export function createScenarioEditingModule(ctx) {
       newBiome[i] = idx;
     }
 
-    execute({
+    const cmd = {
       type: 'biome-brush',
+      biomeKey,
       label: '生物群系笔刷',
+      merge: (prev) => prev.type === 'biome-brush' && prev.biomeKey === biomeKey,
       undo: () => {
         baseMaps.value = {
           ...baseMaps.value,
@@ -916,7 +921,8 @@ export function createScenarioEditingModule(ctx) {
           },
         };
       },
-    });
+    };
+    execute(cmd);
 
     saveScenarios();
   }
@@ -934,10 +940,134 @@ export function createScenarioEditingModule(ctx) {
   function getAllScenarios() { return Object.values(scenarios.value); }
 
   // ── 高度查询：取最近网格点 ──
+  function addBaseMapBurg(baseMapKey, burg) {
+  const baseMap = baseMaps.value[baseMapKey];
+  if (!baseMap) return;
+
+  execute({
+    type: 'add-burg',
+    label: '放置聚落',
+    undo: () => {
+      baseMaps.value = {
+        ...baseMaps.value,
+        [baseMapKey]: {
+          ...baseMap,
+          burgs: (baseMap.burgs || []).filter(b => b.id !== burg.id),
+        },
+      };
+    },
+    redo: () => {
+      baseMaps.value = {
+        ...baseMaps.value,
+        [baseMapKey]: {
+          ...baseMap,
+          burgs: [...(baseMap.burgs || []), burg],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    },
+  });
+  saveScenarios();
+}
+
+function applyCultureBrush(baseMapKey, cx, cy, radius, cultureKey) {
+  const baseMap = baseMaps.value[baseMapKey];
+  if (!baseMap?.heightmap?.grid?.points) return;
+
+  const hm = baseMap.heightmap;
+  const pts = hm.grid.points;
+  const oldCultures = hm.culture ? new Uint8Array(hm.culture) : new Uint8Array(pts.length);
+  const newCultures = new Uint8Array(oldCultures);
+  const idx = parseInt(cultureKey, 10) || 0;
+
+  for (let i = 0; i < pts.length; i++) {
+    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+    const dist = Math.hypot(px - cx, py - cy);
+    if (dist >= radius) continue;
+    const falloff = brushFalloff(radius, dist);
+    if (falloff < 0.1) continue;
+    newCultures[i] = idx;
+  }
+
+  execute({
+    type: 'culture-brush',
+    cultureKey,
+    label: '文化笔刷',
+    merge: (prev) => prev.type === 'culture-brush' && prev.cultureKey === cultureKey,
+    undo: () => {
+      baseMaps.value = {
+        ...baseMaps.value,
+        [baseMapKey]: {
+          ...baseMap,
+          heightmap: { ...hm, culture: oldCultures },
+        },
+      };
+    },
+    redo: () => {
+      baseMaps.value = {
+        ...baseMaps.value,
+        [baseMapKey]: {
+          ...baseMap,
+          heightmap: { ...hm, culture: new Uint8Array(newCultures) },
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    },
+  });
+  saveScenarios();
+}
+
+function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
+  const baseMap = baseMaps.value[baseMapKey];
+  if (!baseMap?.heightmap?.grid?.points) return;
+
+  const hm = baseMap.heightmap;
+  const pts = hm.grid.points;
+  const oldReligions = hm.religion ? new Uint8Array(hm.religion) : new Uint8Array(pts.length);
+  const newReligions = new Uint8Array(oldReligions);
+  const idx = parseInt(religionKey, 10) || 0;
+
+  for (let i = 0; i < pts.length; i++) {
+    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+    const dist = Math.hypot(px - cx, py - cy);
+    if (dist >= radius) continue;
+    const falloff = brushFalloff(radius, dist);
+    if (falloff < 0.1) continue;
+    newReligions[i] = idx;
+  }
+
+  execute({
+    type: 'religion-brush',
+    religionKey,
+    label: '宗教笔刷',
+    merge: (prev) => prev.type === 'religion-brush' && prev.religionKey === religionKey,
+    undo: () => {
+      baseMaps.value = {
+        ...baseMaps.value,
+        [baseMapKey]: {
+          ...baseMap,
+          heightmap: { ...hm, religion: oldReligions },
+        },
+      };
+    },
+    redo: () => {
+      baseMaps.value = {
+        ...baseMaps.value,
+        [baseMapKey]: {
+          ...baseMap,
+          heightmap: { ...hm, religion: new Uint8Array(newReligions) },
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    },
+  });
+  saveScenarios();
+}
+
   function getHeightAt(baseMapKey, worldX, worldY) {
     const baseMap = baseMaps.value[baseMapKey];
-    if (!baseMap?.heightmap?.grid?.points) return null;
-    const pts = baseMap.heightmap.grid.points;
     const spacing = baseMap.heightmap.grid.spacing || 14.4;
     const h = baseMap.heightmap.h;
     let bestI = -1;
@@ -1053,6 +1183,7 @@ export function createScenarioEditingModule(ctx) {
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
+    addBaseMapBurg, applyCultureBrush, applyReligionBrush,
     getBaseMap, getScenario, getScenariosByOwner, getBaseMapsList, getAllScenarios,
   };
 }
