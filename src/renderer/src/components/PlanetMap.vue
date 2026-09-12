@@ -825,6 +825,7 @@ import { useSnapshotPanel } from '../composables/useSnapshotPanel';
 import { useBatchArrange } from '../composables/useBatchArrange';
 import { useBrushDrawing } from '../composables/useBrushDrawing';
 import { useProvinceSplitMerge } from '../composables/useProvinceSplitMerge';
+import { usePlanetHeightBrush } from '../composables/usePlanetHeightBrush';
 import { useAutoRegions } from '../composables/useAutoRegions';
 import { useZoomControls } from '../composables/useZoomControls';
 import { useRuler } from '../composables/useRuler';
@@ -1337,6 +1338,9 @@ const brushDrawing = useBrushDrawing({ store, props, emit, renderer });
 
 // ===== 省份拆分合并 composable =====
 const provinceSplitMerge = useProvinceSplitMerge({ store, props, emit, renderer, currentMapData, exportStatus });
+
+// ===== 高度图笔刷 composable =====
+const planetHeightBrush = usePlanetHeightBrush({ store, renderer, currentMapData });
 
 // ===== 自动区域 composable =====
 const autoRegionsMgr = useAutoRegions({ store, props, emit, renderer, currentMapData });
