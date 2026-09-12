@@ -2129,6 +2129,150 @@ const layerAvailability = computed(() => {
   };
 });
 
+// 小地图（P11）
+const showMinimap = ref(true);
+const MINIMAP_SIZE = 150;
+const minimapViewportDragging = false;
+
+function getMinimapWorldBounds() {
+  const terrain = baseMap.value?.terrain;
+  if (!terrain?.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const prov of terrain) {
+    if (!prov.points) continue;
+    for (const p of prov.points) {
+      const px = p.x || p[0] || 0;
+      const py = p.y || p[1] || 0;
+      if (px < minX) minX = px;
+      if (py < minY) minY = py;
+      if (px > maxX) maxX = px;
+      if (py > maxY) maxY = py;
+    }
+  }
+  if (!isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function drawMinimap(c) {
+  if (!showMinimap.value) return;
+  const bounds = getMinimapWorldBounds();
+  if (!bounds) return;
+  const { minX, minY, maxX, maxY } = bounds;
+  const mw = MINIMAP_SIZE;
+  const mh = MINIMAP_SIZE;
+  const pad = 12;
+  const mx = canvas.value.width - mw - pad;
+  const my = canvas.value.height - mh - pad;
+  const scaleX = (mw - 4) / (maxX - minX || 1);
+  const scaleY = (mh - 4) / (maxY - minY || 1);
+  const scale = Math.min(scaleX, scaleY);
+  const offX = mx + 2 + ((mw - 4) - (maxX - minX) * scale) / 2;
+  const offY = my + 2 + ((mh - 4) - (maxY - minY) * scale) / 2;
+
+  c.save();
+  c.fillStyle = 'rgba(15,26,46,0.85)';
+  c.strokeStyle = 'rgba(148,163,184,0.5)';
+  c.lineWidth = 1;
+  c.fillRect(mx, my, mw, mh);
+  c.strokeRect(mx, my, mw, mh);
+
+  const terrain = baseMap.value?.terrain;
+  if (terrain) {
+    c.fillStyle = 'rgba(148,163,184,0.4)';
+    for (const prov of terrain) {
+      if (!prov.points || prov.points.length < 3) continue;
+      c.beginPath();
+      for (let i = 0; i < prov.points.length; i++) {
+        const px = prov.points[i].x || prov.points[i][0];
+        const py = prov.points[i].y || prov.points[i][1];
+        const sx = offX + (px - minX) * scale;
+        const sy = offY + (py - minY) * scale;
+        if (i === 0) c.moveTo(sx, sy);
+        else c.lineTo(sx, sy);
+      }
+      c.closePath();
+      c.fill();
+    }
+  }
+
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const vx1 = offX + (tl.x - minX) * scale;
+  const vy1 = offY + (tl.y - minY) * scale;
+  const vx2 = offX + (br.x - minX) * scale;
+  const vy2 = offY + (br.y - minY) * scale;
+  c.strokeStyle = '#ffd700';
+  c.lineWidth = 1.5;
+  c.strokeRect(vx1, vy1, vx2 - vx1, vy2 - vy1);
+
+  c.restore();
+}
+
+// 数据图表（P2-T3 文化/宗教/势力分布）
+const showDataChart = ref(false);
+const dataChartType = ref('culture'); // culture | religion | polity
+
+function toggleDataChart() {
+  showDataChart.value = !showDataChart.value;
+}
+
+function drawDataChart(c) {
+  if (!showDataChart.value) return;
+  const hm = baseMap.value?.heightmap;
+  const rows = dataChartType.value === 'culture' ? hm?.cultures : dataChartType.value === 'religion' ? hm?.religions : null;
+  if (!rows || !rows.length) return;
+  const data = rows.filter(x => x && x.i > 0 && x.color);
+  if (!data.length) return;
+
+  // 统计各文化/宗教的网格点数
+  const counts = {};
+  const arr = dataChartType.value === 'culture' ? hm.culture : hm.religion;
+  if (!arr) return;
+  for (let i = 0; i < arr.length; i++) {
+    const id = arr[i];
+    counts[id] = (counts[id] || 0) + 1;
+  }
+
+  const labels = data.map(r => ({ name: r.name, color: r.color, count: counts[r.i] || 0 }));
+  const total = labels.reduce((s, l) => s + l.count, 0);
+  if (!total) return;
+
+  const boxW = 220;
+  const boxH = labels.length * 22 + 50;
+  const bx = 12;
+  const by = canvas.value.height - boxH - 12;
+
+  c.save();
+  c.fillStyle = 'rgba(15,26,46,0.9)';
+  c.strokeStyle = 'rgba(148,163,184,0.5)';
+  c.lineWidth = 1;
+  c.fillRect(bx, by, boxW, boxH);
+  c.strokeRect(bx, by, boxW, boxH);
+
+  c.font = 'bold 12px "PingFang SC", sans-serif';
+  c.fillStyle = '#e2e8f0';
+  c.fillText(`${dataChartType.value === 'culture' ? '文化' : '宗教'}分布`, bx + 10, by + 18);
+
+  const maxCount = Math.max(...labels.map(l => l.count));
+  for (let i = 0; i < labels.length; i++) {
+    const y = by + 35 + i * 22;
+    const pct = (labels[i].count / total * 100).toFixed(1);
+    // 色块
+    c.fillStyle = labels[i].color;
+    c.fillRect(bx + 10, y, 12, 12);
+    // 名称 + 百分比
+    c.fillStyle = '#cbd5e1';
+    c.font = '11px "PingFang SC", sans-serif';
+    c.fillText(`${labels[i].name} ${pct}%`, bx + 28, y + 11);
+    // 条形图
+    const barW = 80;
+    const barX = bx + 120;
+    c.fillStyle = labels[i].color;
+    c.fillRect(barX, y, (labels[i].count / maxCount) * barW, 12);
+  }
+  c.restore();
+}
+
 function render() {
   if (!ctx.value) return;
   const cvs = canvas.value;
@@ -2186,6 +2330,8 @@ function render() {
   // 以下浮层画在屏幕坐标系：字号与命中不受缩放影响
   drawBurgTooltip(ctx.value);
   drawCultureLegend(ctx.value);
+  drawMinimap(ctx.value);
+  drawDataChart(ctx.value);
 }
 
 function drawBackground(ctx) {
