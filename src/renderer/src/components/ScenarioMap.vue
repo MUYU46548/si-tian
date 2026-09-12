@@ -81,6 +81,9 @@
           @click="setTool('burg')"
           title="智能聚落 (U) — 点击放置，自动贴合地形"
         ><Icon name="home" :size="15"/></button>
+        <select v-if="tool === 'burg'" v-model="selectedBurgSize" class="brush-biome-select" title="聚落规模">
+          <option v-for="size in BURG_SIZES" :key="size.id" :value="size.id">{{ size.name }}</option>
+        </select>
         <button 
           :class="{ active: tool === 'river' }" 
           @click="generateAndShowRivers"
@@ -399,6 +402,42 @@
 
     <!-- 撤销历史面板 -->
     <HistoryPanel v-if="showHistoryPanel" :open="showHistoryPanel" @close="showHistoryPanel = false" />
+
+    <!-- 聚落编辑器面板 -->
+    <div v-if="burgEditorOpen && editingBurg" class="burg-editor-panel">
+      <div class="burg-editor-header">
+        <span>聚落编辑</span>
+        <button @click="closeBurgEditor" class="burg-editor-close"><Icon name="x" :size="13"/></button>
+      </div>
+      <div class="burg-editor-body">
+        <div class="burg-editor-row">
+          <label>名称：</label>
+          <input v-model="editingBurg.name" placeholder="聚落名称" />
+        </div>
+        <div class="burg-editor-row">
+          <label>规模：</label>
+          <select v-model="editingBurg.size">
+            <option v-for="size in BURG_SIZES" :key="size.id" :value="size.id">{{ size.name }}</option>
+          </select>
+        </div>
+        <div class="burg-editor-row">
+          <label>人口：</label>
+          <input v-model.number="editingBurg.population" type="number" min="0" />
+        </div>
+        <div class="burg-editor-row">
+          <label>文化：</label>
+          <input v-model="editingBurg.culture" placeholder="文化归属" />
+        </div>
+        <div class="burg-editor-row checkbox-row">
+          <label>首都：</label>
+          <input type="checkbox" v-model="editingBurg.capital" :true-value="1" :false-value="0" />
+        </div>
+        <div class="burg-editor-actions">
+          <button @click="saveBurgEditor" class="burg-save-btn">保存</button>
+          <button @click="closeBurgEditor">取消</button>
+        </div>
+      </div>
+    </div>
 </template>
 
 <script setup>
@@ -611,7 +650,17 @@ const selectedLabelPreset = ref('default');
 const roadStart = ref(null);         // {x, y} 道路起点
 const roadPath = ref([]);            // {x, y}[] 道路路径预览
 
-// 城镇标记（P1-T4）
+// 聚落编辑器（P1-T4 聚落规模/人口/文化归属）
+const BURG_SIZES = [
+  { id: 'capital', name: '首都', radius: 5.5, color: '#ffd700', basePop: 100 },
+  { id: 'city', name: '城市', radius: 4.5, color: '#e2e8f0', basePop: 50 },
+  { id: 'town', name: '城镇', radius: 3.5, color: '#94a3b8', basePop: 20 },
+  { id: 'village', name: '村庄', radius: 2.5, color: '#64748b', basePop: 5 },
+];
+
+const selectedBurgSize = ref('city');
+const burgEditorOpen = ref(false);
+const editingBurg = ref(null); // { id, name, size, population, culture }
 const BURG_HIT_RADIUS = 10;          // 命中半径（屏幕像素）
 const hoveredBurg = ref(null);
 const selectedBurg = ref(null);
@@ -1208,7 +1257,9 @@ function onCanvasClick(event) {
   if (tool.value === 'select') {
     const burg = showBurgs.value ? findBurgAt(sx, sy) : null;
     selectedBurg.value = burg;
-    if (!burg) {
+    if (burg) {
+      openBurgEditor(burg);
+    } else {
       const prov = findProvinceAt(world.x, world.y);
       selectedProvince.value = prov;
       showProps.value = !!prov;
@@ -2462,8 +2513,7 @@ function drawBurgs(c) {
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
   const pad = 24 / cameraScale.value;
-  const minX = tl.x - pad, maxX = br.x + pad;
-  const minY = tl.y - pad, maxY = br.y + pad;
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
   const dotR = 2.5 / cameraScale.value;
   const starR = 5.5 / cameraScale.value;
   const hoverId = hoveredBurg.value ? hoveredBurg.value.id : null;
@@ -2477,10 +2527,15 @@ function drawBurgs(c) {
       if (pass === 1) {
         drawCapitalStar(c, b.x, b.y, starR);
       } else {
-        c.fillStyle = 'rgba(214,219,228,0.85)';
+        // 根据聚落规模调整大小（P1-T4）
+        const sizeDef = BURG_SIZES.find(s => s.id === b.size) || BURG_SIZES[1];
+        const r = dotR * (sizeDef.radius / 3.5);
+        c.fillStyle = sizeDef.color;
+        c.globalAlpha = 0.85;
         c.beginPath();
-        c.arc(b.x, b.y, dotR, 0, Math.PI * 2);
+        c.arc(b.x, b.y, r, 0, Math.PI * 2);
         c.fill();
+        c.globalAlpha = 1;
       }
       if (b.id === selectedId || b.id === hoverId) {
         c.strokeStyle = b.id === selectedId ? '#34d399' : '#ffffff';
@@ -2637,9 +2692,47 @@ function placeSmartBurg(world) {
     if (!baseMapData.burgs) {
       baseMapData.burgs = [];
     }
-    const newBurg = { id: burgId, name: `新聚落 ${baseMapData.burgs.length + 1}`, x: px, y: py, capital: 0, population: 5 };
+    const sizeDef = BURG_SIZES.find(s => s.id === selectedBurgSize.value) || BURG_SIZES[1];
+    const newBurg = {
+      id: burgId,
+      name: `新${sizeDef.name} ${baseMapData.burgs.length + 1}`,
+      x: px,
+      y: py,
+      capital: sizeDef.id === 'capital' ? 1 : 0,
+      population: sizeDef.basePop,
+      size: sizeDef.id,
+    };
     store.addBaseMapBurg(baseMapKey.value, newBurg);
   }
+}
+
+function openBurgEditor(burg) {
+  editingBurg.value = { ...burg };
+  burgEditorOpen.value = true;
+}
+
+function saveBurgEditor() {
+  if (!editingBurg.value) return;
+  const burg = baseMap.value?.burgs?.find(b => b.id === editingBurg.value.id);
+  if (burg) {
+    Object.assign(burg, editingBurg.value);
+    store.baseMaps = {
+      ...store.baseMaps,
+      [baseMapKey.value]: {
+        ...baseMap.value,
+        burgs: [...baseMap.value.burgs],
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
+  burgEditorOpen.value = false;
+  editingBurg.value = null;
+  render();
+}
+
+function closeBurgEditor() {
+  burgEditorOpen.value = false;
+  editingBurg.value = null;
 }
 
 function generateAndShowRivers() {
@@ -3296,5 +3389,95 @@ watch(baseMap, () => {
 .history-panel {
   top: 100px !important;
   left: 12px !important;
+}
+
+/* 聚落编辑器面板 */
+.burg-editor-panel {
+  position: absolute;
+  top: 100px;
+  right: 16px;
+  width: 280px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 12px;
+  padding: 16px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.burg-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.burg-editor-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.burg-editor-close:hover { color: #e2e8f0; }
+
+.burg-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.burg-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.burg-editor-row label {
+  min-width: 60px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.burg-editor-row input[type="text"],
+.burg-editor-row input[type="number"],
+.burg-editor-row select {
+  flex: 1;
+  background: #334155;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.burg-editor-row.checkbox-row label {
+  min-width: auto;
+}
+
+.burg-editor-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.burg-editor-actions button {
+  padding: 6px 16px;
+  border: 1px solid #475569;
+  background: #334155;
+  color: #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.burg-editor-actions button.burg-save-btn {
+  background: #5b21b6;
+  border-color: #7c3aed;
 }
 </style>
