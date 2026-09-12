@@ -2,6 +2,10 @@
 // ctx: { execute, scheduleAutoSave, saveScenarios }
 // 所有 mutation 走 execute（redo 内写入，防双写铁律）
 import { ref } from 'vue';
+import {
+  temperatureAtIndex, precipitationAtIndex, classifyBiome, biomeColor,
+  brushFalloff, deriveLayers, smoothHeightmap, SEA_LEVEL,
+} from '../../utils/heightMath';
 
 export function createScenarioEditingModule(ctx) {
   const { execute, scheduleAutoSave, saveScenarios } = ctx;
@@ -779,6 +783,146 @@ export function createScenarioEditingModule(ctx) {
   }
 
   // ============================================================
+  // Height Map Brush (v2 data-driven editing)
+  // ============================================================
+
+  function applyHeightBrush(baseMapKey, cx, cy, radius, strength, mode) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap?.heightmap?.grid?.points) return;
+
+    const hm = baseMap.heightmap;
+    const grid = hm.grid;
+    const pts = grid.points;
+    const spacing = grid.spacing || 14.4;
+    const newH = new Float32Array(hm.h);
+
+    for (let i = 0; i < pts.length; i++) {
+      const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+      const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+      const dx = px - cx;
+      const dy = py - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist >= radius) continue;
+
+      const falloff = brushFalloff(radius, dist);
+      const delta = strength * falloff;
+
+      if (mode === 'raise') {
+        newH[i] = Math.min(100, newH[i] + delta);
+      } else if (mode === 'lower') {
+        newH[i] = Math.max(0, newH[i] - delta);
+      } else if (mode === 'smooth') {
+        let sum = 0, count = 0;
+        for (let j = 0; j < pts.length; j++) {
+          const qx = Array.isArray(pts[j]) ? pts[j][0] : pts[j].x;
+          const qy = Array.isArray(pts[j]) ? pts[j][1] : pts[j].y;
+          const ddx = qx - px, ddy = qy - py;
+          if (Math.abs(ddx) < spacing * 1.5 && Math.abs(ddy) < spacing * 1.5) {
+            sum += hm.h[j];
+            count++;
+          }
+        }
+        newH[i] = count > 0 ? sum / count : newH[i];
+      }
+    }
+
+    // 重新派生温度/降水/生物群系
+    const derived = deriveLayers(newH, pts, null, null);
+    const oldH = new Float32Array(hm.h);
+    const oldTemp = hm.temp ? new Float32Array(hm.temp) : null;
+    const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
+    const oldBiome = hm.biome ? new Uint8Array(hm.biome) : null;
+
+    execute({
+      type: 'height-brush',
+      label: mode === 'raise' ? '抬高地形' : mode === 'lower' ? '降低地形' : '平滑地形',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            heightmap: { ...hm, h: oldH, temp: oldTemp, prec: oldPrec, biome: oldBiome },
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            heightmap: {
+              ...hm,
+              h: new Float32Array(newH),
+              temp: derived.temperature,
+              prec: derived.precipitation,
+              biome: derived.biome,
+            },
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+
+    saveScenarios();
+  }
+
+  // 生物群系 key → Uint8 编码
+  const BIOME_KEY_INDEX = {
+    ocean: 0, hot_desert: 1, cold_desert: 2, savanna: 3, grassland: 4,
+    tropical_seasonal: 5, temperate_deciduous: 6, tropical_rainforest: 7,
+    temperate_rainforest: 8, taiga: 9, tundra: 10, glacier: 11, wetland: 12,
+  };
+
+  function applyBiomeBrush(baseMapKey, cx, cy, radius, biomeKey) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap?.heightmap?.grid?.points) return;
+
+    const hm = baseMap.heightmap;
+    const pts = hm.grid.points;
+    const oldBiome = hm.biome ? new Uint8Array(hm.biome) : new Uint8Array(pts.length);
+    const newBiome = new Uint8Array(oldBiome);
+    const idx = BIOME_KEY_INDEX[biomeKey] ?? 0;
+
+    for (let i = 0; i < pts.length; i++) {
+      const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+      const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+      const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+      if (dist >= radius) continue;
+      const falloff = brushFalloff(radius, dist);
+      if (falloff < 0.1) continue;
+      newBiome[i] = idx;
+    }
+
+    execute({
+      type: 'biome-brush',
+      label: '生物群系笔刷',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            heightmap: { ...hm, biome: oldBiome },
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMaps.value[baseMapKey],
+            heightmap: { ...hm, biome: new Uint8Array(newBiome) },
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+
+    saveScenarios();
+  }
+
+
+
+  // ============================================================
   // Getters
   // ============================================================
   
@@ -787,6 +931,30 @@ export function createScenarioEditingModule(ctx) {
   function getScenariosByOwner(ownerKey) { return Object.values(scenarios.value).filter(s => s.ownerKey === ownerKey); }
   function getBaseMapsList() { return Object.values(baseMaps.value); }
   function getAllScenarios() { return Object.values(scenarios.value); }
+
+  // ── 高度查询：取最近网格点 ──
+  function getHeightAt(baseMapKey, worldX, worldY) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap?.heightmap?.grid?.points) return null;
+    const pts = baseMap.heightmap.grid.points;
+    const spacing = baseMap.heightmap.grid.spacing || 14.4;
+    const h = baseMap.heightmap.h;
+    let bestI = -1;
+    let bestD = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+      const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+      const d = Math.hypot(px - worldX, py - worldY);
+      if (d < bestD) { bestD = d; bestI = i; }
+    }
+    if (bestI < 0 || bestD > spacing) return null;
+    return {
+      h: h[bestI],
+      temp: baseMap.heightmap.temp?.[bestI],
+      prec: baseMap.heightmap.prec?.[bestI],
+      biome: baseMap.heightmap.biome?.[bestI],
+    };
+  }
 
   return {
     baseMaps, scenarios,
@@ -797,6 +965,7 @@ export function createScenarioEditingModule(ctx) {
     setOwnership, clearOwnership, batchSetOwnership,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, loadScenarioState,
+    applyHeightBrush, applyBiomeBrush, getHeightAt,
     getBaseMap, getScenario, getScenariosByOwner, getBaseMapsList, getAllScenarios,
   };
 }

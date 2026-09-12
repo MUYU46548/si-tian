@@ -44,6 +44,36 @@
           @click="setTool('erase')"
           title="删除 (E) — 点击省份删除"
         ><Icon name="trash" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'height' }" 
+          @click="setTool('height')"
+          title="高度笔刷 (H) — 左键抬高/右键降低地形"
+        ><Icon name="trending-up" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'biome' }" 
+          @click="setTool('biome')"
+          title="生物群系笔刷 (N) — 涂抹生物群系"
+        ><Icon name="palette" :size="15"/></button>
+      </div>
+      <!-- 笔刷设置 -->
+      <div class="tool-group brush-settings" v-if="tool === 'height' || tool === 'biome'">
+        <label>笔刷：</label>
+        <label class="check-label" title="笔刷半径（滚轮调节）">
+          半径
+          <input type="range" v-model.number="brushRadius" min="20" max="300" step="10" class="brush-slider" />
+          {{ brushRadius }}
+        </label>
+        <label class="check-label" v-if="tool === 'height'" title="笔刷强度（Shift+滚轮调节）">
+          强度
+          <input type="range" v-model.number="brushStrength" min="0.5" max="10" step="0.5" class="brush-slider" />
+          {{ brushStrength }}
+        </label>
+        <label class="check-label" v-if="tool === 'biome'">
+          群系
+          <select v-model="brushBiome" class="brush-biome-select">
+            <option v-for="(color, key) in BIOME_COLORS" :key="key" :value="key">{{ key }}</option>
+          </select>
+        </label>
       </div>
       <div class="tool-group">
         <button @click="triggerMapImport" title="导入 .map 底图"><Icon name="map" :size="15"/></button>
@@ -328,6 +358,14 @@ let snapMarkerTimer = null;
 let lastFitKey = '';                 // 自动适屏：上次适配的底图键
 let lastFitCount = 0;                // 自动适屏：上次适配时的省份数
 
+// 笔刷状态（v2 高度图编辑）
+const brushRadius = ref(80);         // 世界坐标像素
+const brushStrength = ref(3);        // 高度变化强度
+const brushBiome = ref('grassland'); // 当前选中生物群系
+let isBrushing = false;              // 是否正在笔刷拖动中
+let brushMode = 'raise';             // 'raise' | 'lower' | 'smooth'
+const brushPreview = ref(null);      // { x, y, radius } 笔刷预览（hover 显示）
+
 // 城镇标记（P1-T4）
 const BURG_HIT_RADIUS = 10;          // 命中半径（屏幕像素）
 const hoveredBurg = ref(null);
@@ -443,6 +481,8 @@ function setTool(t) {
   activeVertexIdx.value = -1;
   dragPreview.value = null;
   hoveredBurg.value = null;
+  brushPreview.value = null;
+  isBrushing = false;
   clearSnapMarker();
   updateCursor();
 }
@@ -457,6 +497,7 @@ function updateCursor() {
   else if (tool.value === 'paint') canvas.value.style.cursor = 'copy';
   else if (tool.value === 'label') canvas.value.style.cursor = 'text';
   else if (tool.value === 'erase') canvas.value.style.cursor = 'not-allowed';
+  else if (tool.value === 'height' || tool.value === 'biome') canvas.value.style.cursor = 'none';
   else canvas.value.style.cursor = 'default';
 }
 
@@ -537,6 +578,25 @@ let panStart = { x: 0, y: 0 };
 
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
+
+  // 笔刷工具：左键抬高 / 右键降低
+  if (tool.value === 'height' && (event.button === 0 || event.button === 2)) {
+    isBrushing = true;
+    brushMode = event.button === 0 ? 'raise' : 'lower';
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    store.applyHeightBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushStrength.value, brushMode);
+    return;
+  }
+  if (tool.value === 'biome' && event.button === 0) {
+    isBrushing = true;
+    brushMode = 'biome';
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    store.applyBiomeBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushBiome.value);
+    return;
+  }
+
   if (event.button === 0 && (tool.value === 'select' || tool.value === 'vertex')) {
     // 顶点编辑模式：先判切线手柄，再判顶点
     if (tool.value === 'vertex' && selectedProvince.value) {
@@ -594,6 +654,24 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
+  // 笔刷预览更新
+  if (tool.value === 'height' || tool.value === 'biome') {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    brushPreview.value = { x: world.x, y: world.y, radius: brushRadius.value };
+
+    // 拖动中应用笔刷
+    if (isBrushing) {
+      if (tool.value === 'height') {
+        store.applyHeightBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushStrength.value, brushMode);
+      } else if (tool.value === 'biome' && brushMode === 'biome') {
+        store.applyBiomeBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushBiome.value);
+      }
+    }
+    render();
+    return;
+  }
+
   if (draggingHandle.value) {
     const rect = canvas.value.getBoundingClientRect();
     const sx = event.clientX - rect.left;
@@ -680,6 +758,9 @@ function onMouseUp() {
     isPanning = false;
     updateCursor();
   }
+  if (isBrushing) {
+    isBrushing = false;
+  }
   if (draggingHandle.value) {
     const { provId } = draggingHandle.value;
     const preview = dragPreview.value;
@@ -713,9 +794,24 @@ function onCanvasMouseLeave() {
     hoveredBurg.value = null;
     render();
   }
+  if (brushPreview.value) {
+    brushPreview.value = null;
+    render();
+  }
 }
 
 function onWheel(event) {
+  // 笔刷工具下：滚轮调半径，Shift+滚轮调强度
+  if (tool.value === 'height' || tool.value === 'biome') {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 1 : -1;
+    if (event.shiftKey && tool.value === 'height') {
+      brushStrength.value = Math.max(0.5, Math.min(10, brushStrength.value + delta * 0.5));
+    } else {
+      brushRadius.value = Math.max(20, Math.min(300, brushRadius.value + delta * 10));
+    }
+    return;
+  }
   event.preventDefault();
   const rect = canvas.value.getBoundingClientRect();
   const mx = event.clientX - rect.left;
@@ -892,6 +988,8 @@ function onKeyDown(event) {
   else if (event.key === 'p' || event.key === 'P') setTool('paint');
   else if (event.key === 't' || event.key === 'T') setTool('label');
   else if (event.key === 'e' || event.key === 'E') setTool('erase');
+  else if (event.key === 'h' || event.key === 'H') setTool('height');
+  else if (event.key === 'n' || event.key === 'N') setTool('biome');
   else if (event.key === 'f' || event.key === 'F') fitToView();
 }
 
@@ -1786,6 +1884,22 @@ function drawPreviewOverlay() {
     }
   }
 
+  // 笔刷预览（hover 时显示）
+  if (brushPreview.value && (tool.value === 'height' || tool.value === 'biome')) {
+    const bp = brushPreview.value;
+    c.beginPath();
+    c.arc(bp.x, bp.y, bp.radius, 0, Math.PI * 2);
+    c.strokeStyle = tool.value === 'height' ? 'rgba(74, 158, 255, 0.8)' : 'rgba(255, 107, 107, 0.8)';
+    c.lineWidth = 2 / cameraScale.value;
+    c.setLineDash([5 / cameraScale.value, 5 / cameraScale.value]);
+    c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = tool.value === 'height'
+      ? 'rgba(74, 158, 255, 0.1)'
+      : 'rgba(255, 107, 107, 0.1)';
+    c.fill();
+  }
+
   if (tool.value === 'split' && splitStep.value === 1 && splitPoints.value.length === 1) {
     c.fillStyle = '#fbbf24';
     c.beginPath();
@@ -2139,6 +2253,27 @@ watch(baseMap, () => {
 .tool-group button.active { background: #5b21b6; border-color: #7c3aed; }
 .tool-group button:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool-group button.saving { animation: pulse 1s infinite; }
+
+/* 笔刷设置 */
+.brush-settings {
+  gap: 8px;
+}
+.brush-settings .check-label {
+  gap: 4px;
+}
+.brush-slider {
+  width: 80px;
+  vertical-align: middle;
+}
+.brush-biome-select {
+  background: #334155;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  vertical-align: middle;
+}
 
 .scenario-timeline {
   background: #172033;
