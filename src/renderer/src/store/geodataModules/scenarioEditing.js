@@ -9,7 +9,7 @@ import {
 } from '../../utils/heightMath';
 
 export function createScenarioEditingModule(ctx) {
-  const { execute, scheduleAutoSave, saveScenarios } = ctx;
+  const { execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios } = ctx;
 
   const baseMaps = ref({});
   const scenarios = ref({});
@@ -797,33 +797,68 @@ export function createScenarioEditingModule(ctx) {
     const spacing = grid.spacing || 14.4;
     const newH = new Float32Array(hm.h);
 
-    for (let i = 0; i < pts.length; i++) {
-      const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
-      const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
-      const dx = px - cx;
-      const dy = py - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist >= radius) continue;
+    // 性能优化：空间索引（构建一次，复用多次）
+    if (!hm._spatialIndex) {
+      const cellSize = spacing * 2;
+      let minX = Infinity, minY = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+        const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+        if (px < minX) minX = px;
+        if (py < minY) minY = py;
+      }
+      const cellMap = new Map();
+      for (let i = 0; i < pts.length; i++) {
+        const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+        const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+        const cxi = Math.floor((px - minX) / cellSize);
+        const cyi = Math.floor((py - minY) / cellSize);
+        const key = `${cxi},${cyi}`;
+        if (!cellMap.has(key)) cellMap.set(key, []);
+        cellMap.get(key).push(i);
+      }
+      hm._spatialIndex = { cellSize, minX, minY, cellMap };
+    }
 
-      const falloff = brushFalloff(radius, dist);
-      const delta = strength * falloff;
+    const idx = hm._spatialIndex;
+    const minCx = Math.floor((cx - radius - idx.minX) / idx.cellSize);
+    const maxCx = Math.floor((cx + radius - idx.minX) / idx.cellSize);
+    const minCy = Math.floor((cy - radius - idx.minY) / idx.cellSize);
+    const maxCy = Math.floor((cy + radius - idx.minY) / idx.cellSize);
 
-      if (mode === 'raise') {
-        newH[i] = Math.min(100, newH[i] + delta);
-      } else if (mode === 'lower') {
-        newH[i] = Math.max(0, newH[i] - delta);
-      } else if (mode === 'smooth') {
-        let sum = 0, count = 0;
-        for (let j = 0; j < pts.length; j++) {
-          const qx = Array.isArray(pts[j]) ? pts[j][0] : pts[j].x;
-          const qy = Array.isArray(pts[j]) ? pts[j][1] : pts[j].y;
-          const ddx = qx - px, ddy = qy - py;
-          if (Math.abs(ddx) < spacing * 1.5 && Math.abs(ddy) < spacing * 1.5) {
-            sum += hm.h[j];
-            count++;
+    for (let ci = minCx; ci <= maxCx; ci++) {
+      for (let cj = minCy; cj <= maxCy; cj++) {
+        const cell = idx.cellMap.get(`${ci},${cj}`);
+        if (!cell) continue;
+        for (const i of cell) {
+          const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+          const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+          const dx = px - cx;
+          const dy = py - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist >= radius) continue;
+
+          const falloff = brushFalloff(radius, dist);
+          const delta = strength * falloff;
+
+          if (mode === 'raise') {
+            newH[i] = Math.min(100, newH[i] + delta);
+          } else if (mode === 'lower') {
+            newH[i] = Math.max(0, newH[i] - delta);
+          } else if (mode === 'smooth') {
+            let sum = 0, count = 0;
+            for (let j = 0; j < pts.length; j++) {
+              const qx = Array.isArray(pts[j]) ? pts[j][0] : pts[j].x;
+              const qy = Array.isArray(pts[j]) ? pts[j][1] : pts[j].y;
+              const ddx = qx - px, ddy = qy - py;
+              if (Math.abs(ddx) < spacing * 1.5 && Math.abs(ddy) < spacing * 1.5) {
+                sum += hm.h[j];
+                count++;
+              }
+            }
+            newH[i] = count > 0 ? sum / count : newH[i];
           }
         }
-        newH[i] = count > 0 ? sum / count : newH[i];
       }
     }
 
@@ -867,7 +902,7 @@ export function createScenarioEditingModule(ctx) {
     };
     execute(cmd);
 
-    saveScenarios();
+    scheduleAutoSaveScenarios();
   }
 
   // 生物群系 key → Uint8 编码

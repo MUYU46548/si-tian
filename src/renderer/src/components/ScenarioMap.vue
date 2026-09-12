@@ -39,6 +39,9 @@
           @click="setTool('label')"
           title="历史地名 (T) — 点击放置文字标记"
         ><Icon name="tag" :size="15"/></button>
+        <select v-if="tool === 'label'" v-model="selectedLabelPreset" class="brush-biome-select" title="标签样式预设">
+          <option v-for="preset in LABEL_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+        </select>
         <button 
           :class="{ active: tool === 'erase' }" 
           @click="setTool('erase')"
@@ -155,6 +158,7 @@
         <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
+        <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
       <div class="tool-group">
         <label>底图图层：</label>
@@ -178,6 +182,7 @@
       </div>
       <div class="tool-group">
         <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/></button>
+        <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/></button>
       </div>
     </div>
 
@@ -351,16 +356,43 @@
         </div>
       </div>
     </div>
+
+    <!-- 图层锁定面板 -->
+    <div v-if="showLayerPanel" class="layer-lock-panel">
+      <div class="layer-lock-header">
+        <span>图层锁定</span>
+        <button @click="showLayerPanel = false" class="layer-lock-close"><Icon name="x" :size="13"/></button>
+      </div>
+      <div class="layer-lock-list">
+        <div v-for="(layer, id) in scenarioLayers" :key="id" class="layer-lock-row">
+          <span class="layer-lock-label">{{ layer.label }}</span>
+          <button
+            class="layer-lock-btn"
+            :class="{ locked: layer.locked }"
+            :title="layer.locked ? '解锁图层' : '锁定图层（不可编辑）'"
+            @click="toggleLayerLock(id)"
+          >
+            <Icon :name="layer.locked ? 'lock' : 'unlock'" :size="13"/>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 撤销历史面板 -->
+    <HistoryPanel v-if="showHistoryPanel" :open="showHistoryPanel" @close="showHistoryPanel = false" />
 </template>
 
 <script setup>
 import Icon from './Icon.vue';
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 import { generateRoadPath } from '../utils/placement';
+import HistoryPanel from './HistoryPanel.vue';
 
 const store = useGeodataStore();
+const layers = useLayersStore();
 
 const canvas = ref(null);
 const canvasWrap = ref(null);
@@ -371,8 +403,39 @@ const selectedScenario = ref(null);
 const selectedPolity = ref(null);
 const ctx = ref(null);
 const showScenarioManager = ref(false);
+const showLayerPanel = ref(false);
+const showHistoryPanel = ref(false);
 
-// 图层可见性
+// 图层锁定（P0 图层锁定迁移）
+const scenarioLayers = ref({
+  terrain: { visible: true, label: '省份', locked: false, order: 0 },
+  biomes: { visible: true, label: '生物群系', locked: false, order: 1 },
+  borders: { visible: true, label: '边界', locked: false, order: 2 },
+  burgs: { visible: true, label: '城镇', locked: false, order: 3 },
+  labels: { visible: true, label: '标签', locked: false, order: 4 },
+  rivers: { visible: true, label: '河流', locked: false, order: 5 },
+  routes: { visible: false, label: '道路', locked: false, order: 6 },
+  raster: { visible: true, label: '底图数据', locked: false, order: 7 },
+});
+
+function isLayerLocked(layerId) {
+  return scenarioLayers.value[layerId]?.locked ?? false;
+}
+
+function toggleLayerLock(layerId) {
+  const layer = scenarioLayers.value[layerId];
+  if (layer) {
+    layer.locked = !layer.locked;
+  }
+}
+
+function isLayerEditable(layerId) {
+  const layer = scenarioLayers.value[layerId];
+  if (!layer) return false;
+  return layer.visible && !layer.locked;
+}
+
+// 图层可见性（保留旧 ref 兼容模板）
 const showBiomes = ref(true);
 const showBorders = ref(true);
 const showLabels = ref(true);
@@ -415,6 +478,53 @@ const brushReligion = ref('1');      // 当前选中宗教 ID
 let isBrushing = false;              // 是否正在笔刷拖动中
 let brushMode = 'raise';             // 'raise' | 'lower' | 'smooth'
 const brushPreview = ref(null);      // { x, y, radius } 笔刷预览（hover 显示）
+
+// 笔刷性能优化：空间索引（网格快速定位，避免全量遍历）
+let gridSpatialIndex = null;
+
+function buildSpatialIndex(pts, spacing) {
+  if (!pts || !pts.length) return null;
+  const cellSize = spacing * 2;
+  const cellMap = new Map();
+  let minX = Infinity, minY = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+    if (px < minX) minX = px;
+    if (py < minY) minY = py;
+  }
+  for (let i = 0; i < pts.length; i++) {
+    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+    const cx = Math.floor((px - minX) / cellSize);
+    const cy = Math.floor((py - minY) / cellSize);
+    const key = `${cx},${cy}`;
+    if (!cellMap.has(key)) cellMap.set(key, []);
+    cellMap.get(key).push(i);
+  }
+  return { cellSize, minX, minY, cellMap };
+}
+
+function getNearbyIndices(worldX, worldY, radius, spatialIndex) {
+  if (!spatialIndex) return null;
+  const { cellSize, minX, minY, cellMap } = spatialIndex;
+  const minCx = Math.floor((worldX - radius - minX) / cellSize);
+  const maxCx = Math.floor((worldX + radius - minX) / cellSize);
+  const minCy = Math.floor((worldY - radius - minY) / cellSize);
+  const maxCy = Math.floor((worldY + radius - minY) / cellSize);
+  const result = [];
+  for (let cx = minCx; cx <= maxCx; cx++) {
+    for (let cy = minCy; cy <= maxCy; cy++) {
+      const cell = cellMap.get(`${cx},${cy}`);
+      if (cell) result.push(...cell);
+    }
+  }
+  return result;
+}
+
+// 笔刷性能优化：派生节流（拖拽中每 3 帧派生一次）
+let brushFrameCount = 0;
+let pendingDerive = false;
 // 文化/宗教选项
 const availableCultures = computed(() => {
   const hm = baseMap.value?.heightmap;
@@ -428,7 +538,16 @@ const availableReligions = computed(() => {
 
 const autoRivers = ref([]);          // {x,y}[] 生成的河流路径
 
-// v2 道路绘制
+// 标签样式预设（P0 标签样式预设）
+const LABEL_PRESETS = [
+  { id: 'default', name: '默认', font: '12px "PingFang SC"', color: '#e2e8f0', stroke: 'rgba(0,0,0,0.7)', strokeWidth: 3 },
+  { id: 'title', name: '标题', font: 'bold 18px "PingFang SC"', color: '#ffd700', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 },
+  { id: 'subtitle', name: '副标题', font: '14px "PingFang SC"', color: '#94a3b8', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 2 },
+  { id: 'culture', name: '文化', font: 'italic 13px "PingFang SC"', color: '#c4b5fd', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 2 },
+  { id: 'danger', name: '危险', font: 'bold 13px "PingFang SC"', color: '#f87171', stroke: 'rgba(0,0,0,0.7)', strokeWidth: 3 },
+];
+
+const selectedLabelPreset = ref('default');
 const roadStart = ref(null);         // {x, y} 道路起点
 const roadPath = ref([]);            // {x, y}[] 道路路径预览
 
@@ -1049,7 +1168,17 @@ function onCanvasClick(event) {
   } else if (tool.value === 'label') {
     const text = prompt('输入地名：');
     if (text) {
-      store.addScenarioLabel(selectedScenario.value.id, { x: world.x, y: world.y, text });
+      const preset = LABEL_PRESETS.find(p => p.id === selectedLabelPreset.value) || LABEL_PRESETS[0];
+      store.addScenarioLabel(selectedScenario.value.id, {
+        x: world.x,
+        y: world.y,
+        text,
+        font: preset.font,
+        color: preset.color,
+        stroke: preset.stroke,
+        strokeWidth: preset.strokeWidth,
+        preset: preset.id,
+      });
       render();
     }
   } else if (tool.value === 'marker') {
@@ -2258,8 +2387,15 @@ function drawBurgTooltip(c) {
 function drawLabels(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.labels) return;
   selectedScenario.value.labels.forEach(label => {
-    c.font = `${label.size || 12}px "PingFang SC", sans-serif`;
+    c.font = label.font || `${label.size || 12}px "PingFang SC", sans-serif`;
     c.fillStyle = label.color || '#e2e8f0';
+    // 描边（提升可读性，Wonderdraft 风格）
+    if (label.stroke && label.strokeWidth > 0) {
+      c.strokeStyle = label.stroke;
+      c.lineWidth = label.strokeWidth;
+      c.lineJoin = 'round';
+      c.strokeText(label.text, label.x, label.y);
+    }
     c.fillText(label.text, label.x, label.y);
   });
 }
@@ -2390,6 +2526,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('click', () => { contextMenu.value.show = false; });
+  window.addEventListener('sitian:history-jump', onHistoryJump);
 
   render();
   resizeObserver = new ResizeObserver(handleResize);
@@ -2406,12 +2543,21 @@ onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect();
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
+  window.removeEventListener('sitian:history-jump', onHistoryJump);
   if (snapMarkerTimer) { clearTimeout(snapMarkerTimer); snapMarkerTimer = null; }
   if (snapFeedbackTimer) { clearTimeout(snapFeedbackTimer); snapFeedbackTimer = null; }
   rasterCache.clear();
 });
 
-// 图层开关/着色模式变化 → 重绘（栅格图层已有离屏缓存，重绘只是 drawImage）
+function onHistoryJump() {
+  // 撤销/重做后重新对齐选中引用（updateBaseProvince 会生成新对象）
+  const sp = selectedProvince.value;
+  if (sp) {
+    const fresh = baseMap.value?.terrain?.find(p => p.id === sp.id);
+    if (fresh && fresh !== sp) selectedProvince.value = fresh;
+  }
+  render();
+}
 watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels], () => render());
 
 // 切换底图 → 作废离屏栅格缓存（不同地图的网格数据不同）
@@ -2885,5 +3031,82 @@ watch(baseMap, () => {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* 图层锁定面板 */
+.layer-lock-panel {
+  position: absolute;
+  top: 100px;
+  right: 16px;
+  width: 200px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 12px;
+  padding: 12px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.layer-lock-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.layer-lock-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.layer-lock-close:hover { color: #e2e8f0; }
+
+.layer-lock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.layer-lock-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.layer-lock-row:hover { background: #334155; }
+
+.layer-lock-label {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.layer-lock-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.5;
+  color: #94a3b8;
+}
+
+.layer-lock-btn:hover { opacity: 1; }
+
+.layer-lock-btn.locked {
+  opacity: 1;
+  color: #fbbf24;
+}
+
+/* 撤销历史面板（覆盖 HistoryPanel 默认定位） */
+.history-panel {
+  top: 100px !important;
+  left: 12px !important;
 }
 </style>

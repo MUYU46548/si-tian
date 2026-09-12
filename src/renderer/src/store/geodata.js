@@ -61,7 +61,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // ===== 领域子模块组装 =====
   // 各模块通过 ctx 拿到所需的 refs/函数引用（ref 传引用保持响应式）
   // 注意：scenarioEditingModule 必须在 searchModule 之前创建（search 需要引用 scenarios）
-  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios });
+  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios });
   const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });
@@ -440,6 +440,16 @@ export const useGeodataStore = defineStore('geodata', () => {
         if (saveStatus.value === 'error') saveStatus.value = 'idle';
       }, 5000);
     }
+  }
+
+  // 防抖保存剧本（笔刷拖拽时避免频繁写盘）
+  let scenarioSaveTimer = null;
+  function scheduleAutoSaveScenarios() {
+    if (scenarioSaveTimer) clearTimeout(scenarioSaveTimer);
+    scenarioSaveTimer = setTimeout(() => {
+      scenarioSaveTimer = null;
+      saveScenarios();
+    }, 300);
   }
 
   // ===== 自动保存 =====
