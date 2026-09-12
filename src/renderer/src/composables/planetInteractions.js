@@ -64,6 +64,19 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 
   const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
 
+  // 高度图笔刷模式
+  if (mode === 'height' && s.editMode) {
+    s.planetHeightBrush.brushMode.value = s.heightTool.value;
+    s.planetHeightBrush.isBrushing.value = true;
+    if (s.heightTool.value === 'biome') {
+      s.planetHeightBrush.applyBiomeBrush(s.currentMapData.planetId, wx, wy);
+    } else {
+      s.planetHeightBrush.brushMode.value = s.heightTool.value;
+      s.planetHeightBrush.applyHeightBrush(s.currentMapData.planetId, wx, wy);
+    }
+    return true;
+  }
+
   // E4：选中标记/文本的旋转/缩放手柄（悬浮于对象之上，pan/move 模式优先命中）。
   // 仅限选择类模式：marker/text/route/draw 等放置模式下手柄不拦截点击，
   // 否则无法在已选对象手柄附近放置新对象（P1 修复，2026-08-29）
@@ -246,6 +259,16 @@ function onDragMove(wx, wy, dragInfo) {
     return;
   }
 
+  // 高度图笔刷拖动
+  if (mode === 'height' && s.editMode && s.planetHeightBrush.isBrushing.value) {
+    if (s.heightTool.value === 'biome') {
+      s.planetHeightBrush.applyBiomeBrush(s.currentMapData.planetId, wx, wy);
+    } else {
+      s.planetHeightBrush.applyHeightBrush(s.currentMapData.planetId, wx, wy);
+    }
+    return;
+  }
+
   // 移动工具：marker/textLabel/region 本地平移（松手一次提交，避免 undo 栈爆炸；网格吸附对齐）
   if (mode === 'move' && s.dragObject) {
     const obj = s.dragObject;
@@ -402,6 +425,12 @@ function onDragEnd(wx, wy, dragInfo) {
     actions.clearSmartGuides();
     actions.commitTransform();
     actions.requestRender();
+    return;
+  }
+
+  // 高度图笔刷松手
+  if (mode === 'height' && s.editMode) {
+    s.planetHeightBrush.isBrushing.value = false;
     return;
   }
 

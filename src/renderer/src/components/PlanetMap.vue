@@ -93,6 +93,25 @@
           </div>
         </template>
 
+        <template v-if="interactionMode === 'height'">
+          <div class="toolbar-group toolbar-group-sub">
+            <button :class="{ active: heightTool === 'raise' }" @click="heightTool = 'raise'" title="左键抬高地形"><Icon name="trending-up" :size="13"/> 抬高</button>
+            <button :class="{ active: heightTool === 'lower' }" @click="heightTool = 'lower'" title="左键降低地形"><Icon name="trending-down" :size="13"/> 降低</button>
+            <button :class="{ active: heightTool === 'smooth' }" @click="heightTool = 'smooth'" title="平滑地形"><Icon name="activity" :size="13"/> 平滑</button>
+            <button :class="{ active: heightTool === 'biome' }" @click="heightTool = 'biome'" title="涂抹生物群系"><Icon name="palette" :size="13"/> 群系</button>
+            <template v-if="heightTool === 'biome'">
+              <span class="toolbar-label">群系</span>
+              <select v-model="planetHeightBrush.brushBiome.value" class="brush-biome-select">
+                <option v-for="(color, key) in BIOME_COLORS" :key="key" :value="key">{{ key }}</option>
+              </select>
+            </template>
+            <span class="toolbar-label">半径</span>
+            <input type="range" v-model.number="planetHeightBrush.brushRadius.value" min="20" max="300" step="10" class="brush-slider" />
+            <span class="toolbar-label">强度</span>
+            <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
+          </div>
+        </template>
+
         <div class="toolbar-group" title="绘制辅助">
           <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份"><Icon name="magnet" :size="13"/> 吸附</button>
           <button :class="{ active: smartGuidesEnabled }" @click="smartGuidesEnabled = !smartGuidesEnabled" title="E5 智能参考线">⇔ 对齐</button>
@@ -227,6 +246,7 @@
         <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线"><Icon name="route" :size="15"/></button>
         <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本"><Icon name="type" :size="15"/></button>
         <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度图笔刷 (实验)"><Icon name="trending-up" :size="15"/></button>
         <div class="tool-dock-sep"></div>
         <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="15"/></button>
         <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="15"/></button>
@@ -864,6 +884,14 @@ const emit = defineEmits(['back', 'select-node', 'dirty']);
 const canvas = ref(null);
 const skeletonReady = ref(false);
 const drawMode = ref(true);
+const heightTool = ref('raise');
+const BIOME_COLORS = {
+  ocean: '#2E86AB', hot_desert: '#E9C46A', cold_desert: '#B5B887',
+  savanna: '#D2D082', grassland: '#C8D68F', tropical_seasonal: '#B6D95D',
+  temperate_deciduous: '#29BC56', tropical_rainforest: '#7DCB35',
+  temperate_rainforest: '#409C43', taiga: '#4B6B32', tundra: '#96784B',
+  glacier: '#D5E7EB', wetland: '#0B9131',
+};
 const floodFillMode = ref(false);
 const currentPath = ref([]);
 const hoveredNode = ref(null);
@@ -1136,6 +1164,7 @@ const getState = () => ({
   hitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
   hitTestVertex: (wx, wy) => hitTestModule.hitTestVertex(wx, wy),
   captureVertexSnapshot, snapPoint, snapDrawPoint, store,
+  planetHeightBrush, heightTool: heightTool.value,
 });
 
 const interactions = createPlanetInteractions(getState, {
