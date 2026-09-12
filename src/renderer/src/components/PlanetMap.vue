@@ -1068,9 +1068,13 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('planet', 'markers')) drawing.drawMarkers(ctx);
   if (layers.isVisible('planet', 'clusters')) drawing.drawClusters(ctx);
   if (layers.isVisible('planet', 'textLabels')) drawing.drawTextLabels(ctx);
+  // 高度图渲染（P3 阶段 3）：terrain 图层开启时叠加生物群系色块
+  if (layers.isVisible('planet', 'terrain')) drawing.drawHeightmap(ctx);
   if (editMode.value) drawing.drawEditHelpers(ctx);
   drawing.drawSelectedHighlight(ctx);
   drawing.drawSelectionHandles(ctx);
+  // 高度图笔刷预览（最上层）
+  if (editMode.value && interactionMode.value === 'height') drawing.drawHeightBrushPreview(ctx);
   if (focusHighlightNode.value) focusHighlight.drawFocusHighlight(ctx, focusHighlightNode.value);
 }
 
@@ -1121,6 +1125,7 @@ const drawing = createPlanetDrawing(() => ({
   terrainTypes: provinceEditor.terrainTypes, markerTypes: markerEditor.markerTypes,
   isFastMode: renderer.isFastMode(), viewport: getRenderViewport(),
   screenToWorld: renderer.screenToWorld, zoom: renderer.viewTransform.scale, smartGuides: smartGuides,
+  planetHeightBrush,
 }));
 
 // ===== 交互状态机 =====

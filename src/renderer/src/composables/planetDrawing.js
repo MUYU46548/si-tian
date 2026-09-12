@@ -10,6 +10,7 @@ import { getTexturePattern } from '../utils/textures';
 import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '../utils/selectionHandles';
 import { labelFont } from '../utils/textMeasure';
+import { biomeColor, biomeKeyFromIndex } from '../utils/heightMath';
 
 // ===== 样式常量（从 PlanetMap.vue 迁移） =====
 const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
@@ -197,7 +198,7 @@ function drawBackground(ctx, w, h) {
   ctx.lineTo(bottomRight.x, 0);
   ctx.stroke();
   ctx.lineWidth = 0.5;
-  
+
   // 指北针（右上角，固定位置）
   if (s.compassVisible) {
   const compassX = bottomRight.x - 30;
@@ -319,6 +320,52 @@ function drawBackground(ctx, w, h) {
       ctx.restore();
     }
   }
+}
+
+// ===== 高度图渲染（P3 阶段 3） =====
+function drawHeightmap(ctx) {
+  const s = getState();
+  const hm = s.currentMapData?.heightmap;
+  if (!hm || !hm.h || !hm.grid) return;
+  const pts = hm.grid.points;
+  const spacing = hm.grid.spacing || 14.4;
+  const biome = hm.biome;
+  const vp = s.viewport;
+  if (!vp) return;
+  const half = spacing / 2;
+  const minI = Math.max(0, Math.floor((vp.minX - half) / spacing));
+  const maxI = Math.min(hm.grid.cellsX - 1, Math.ceil((vp.maxX + half) / spacing));
+  const minJ = Math.max(0, Math.floor((vp.minY - half) / spacing));
+  const maxJ = Math.min(hm.grid.cellsY - 1, Math.ceil((vp.maxY + half) / spacing));
+  for (let j = minJ; j <= maxJ; j++) {
+    for (let i = minI; i <= maxI; i++) {
+      const idx = j * hm.grid.cellsX + i;
+      if (idx >= biome.length) continue;
+      const key = biomeKeyFromIndex(biome[idx]);
+      const color = biomeColor(key);
+      const px = Array.isArray(pts[idx]) ? pts[idx][0] : pts[idx].x;
+      const py = Array.isArray(pts[idx]) ? pts[idx][1] : pts[idx].y;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.fillRect(px - half, py - half, spacing, spacing);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHeightBrushPreview(ctx) {
+  const s = getState();
+  const preview = s.planetHeightBrush?.brushPreview?.value;
+  if (!preview) return;
+  ctx.save();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.arc(preview.x, preview.y, preview.radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 // 计算"漂亮"步长（1/2/5×10^n）用于比例尺
@@ -1645,6 +1692,8 @@ function getContrastColor(hex) {
     drawEditHelpers,
     drawSelectedHighlight,
     drawSelectionHandles,
+    drawHeightmap,
+    drawHeightBrushPreview,
     getPolygonCenter,
     darkenColor,
     getContrastColor,
