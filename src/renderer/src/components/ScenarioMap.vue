@@ -35,12 +35,31 @@
           title="势力油漆桶 (P) — 点击省份指派势力"
         ><Icon name="palette" :size="15"/></button>
         <button 
+          :class="{ active: tool === 'river' }" 
+          @click="setTool('river')"
+          title="河流编辑器 (W) — 手动绘制河流路径"
+        ><Icon name="droplets" :size="15"/></button>
+        <button 
+          :class="{ active: tool === 'relief' }" 
+          @click="setTool('relief')"
+          title="Relief 图标 (I) — 放置山脉/树木/沙漠等自然特征"
+        ><Icon name="mountain" :size="15"/></button>
+        <button 
           :class="{ active: tool === 'label' }" 
           @click="setTool('label')"
           title="历史地名 (T) — 点击放置文字标记"
         ><Icon name="tag" :size="15"/></button>
         <select v-if="tool === 'label'" v-model="selectedLabelPreset" class="brush-biome-select" title="标签样式预设">
           <option v-for="preset in LABEL_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+        </select>
+        <select v-if="tool === 'relief'" v-model="selectedReliefIcon" class="brush-biome-select" title="Relief 图标">
+          <option v-for="icon in RELIEF_ICONS" :key="icon.id" :value="icon.id">{{ icon.name }}</option>
+        </select>
+        <select v-if="tool === 'road'" v-model="selectedRoadStyle" class="brush-biome-select" title="道路样式">
+          <option v-for="style in ROAD_STYLES" :key="style.id" :value="style.id">{{ style.name }}</option>
+        </select>
+        <select v-if="tool === 'marker'" v-model="selectedMarkerType" class="brush-biome-select" title="标记类型">
+          <option v-for="type in MARKER_TYPES" :key="type.id" :value="type.id">{{ type.name }}</option>
         </select>
         <button 
           :class="{ active: tool === 'erase' }" 
@@ -538,7 +557,48 @@ const availableReligions = computed(() => {
 
 const autoRivers = ref([]);          // {x,y}[] 生成的河流路径
 
-// 标签样式预设（P0 标签样式预设）
+// Relief icons (P1-T1 山脉/树木/沙漠等自然特征)
+const RELIEF_ICONS = [
+  { id: 'mountain', name: '山脉', icon: '⛰️', color: '#8B7355' },
+  { id: 'forest', name: '森林', icon: '🌲', color: '#228B22' },
+  { id: 'desert', name: '沙漠', icon: '🏜️', color: '#EDC9AF' },
+  { id: 'volcano', name: '火山', icon: '🌋', color: '#FF4500' },
+  { id: 'lake', name: '湖泊', icon: '💧', color: '#4A90D9' },
+  { id: 'cactus', name: '仙人掌', icon: '🌵', color: '#5F7A4A' },
+  { id: 'palm', name: '棕榈', icon: '🌴', color: '#228B22' },
+  { id: 'snow', name: '雪地', icon: '❄️', color: '#F0F8FF' },
+];
+
+const selectedReliefIcon = ref('mountain');
+const reliefIcons = ref([]); // { id, iconId, x, y, icon, color }
+
+// 道路编辑器（P1-T3 道路样式预设）
+const ROAD_STYLES = [
+  { id: 'highway', name: '公路', width: 1.5, dash: null, color: '#d06324' },
+  { id: 'road', name: '道路', width: 1.0, dash: null, color: '#d06324' },
+  { id: 'trail', name: '小径', width: 0.7, dash: [3, 3], color: '#d06324' },
+  { id: 'path', name: '步道', width: 0.5, dash: [1.5, 3], color: '#d06324' },
+  { id: 'searoute', name: '海路', width: 0.8, dash: [2, 4], color: '#ffffff' },
+];
+
+const selectedRoadStyle = ref('road');
+
+// 标记类型系统（P1-T5 多种标记类型）
+const MARKER_TYPES = [
+  { id: 'city', name: '城市', icon: '🏰', color: '#ffd700' },
+  { id: 'port', name: '港口', icon: '⚓', color: '#4A90D9' },
+  { id: 'battlefield', name: '战场', icon: '⚔️', color: '#f87171' },
+  { id: 'ruin', name: '遗迹', icon: '🏛️', color: '#a78bfa' },
+  { id: 'resource', name: '资源', icon: '💎', color: '#34d399' },
+  { id: 'danger', name: '危险', icon: '☠️', color: '#f87171' },
+  { id: 'custom', name: '自定义', icon: '📍', color: '#94a3b8' },
+];
+
+const selectedMarkerType = ref('city');
+
+// 河流编辑器（P1-T2 手动编辑河流路径）
+const riverDraft = ref([]); // {x, y}[] 当前绘制中的河流路径
+const riverPaths = ref([]); // {x, y}[][] 已完成的河流路径
 const LABEL_PRESETS = [
   { id: 'default', name: '默认', font: '12px "PingFang SC"', color: '#e2e8f0', stroke: 'rgba(0,0,0,0.7)', strokeWidth: 3 },
   { id: 'title', name: '标题', font: 'bold 18px "PingFang SC"', color: '#ffd700', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 },
@@ -1182,16 +1242,42 @@ function onCanvasClick(event) {
       render();
     }
   } else if (tool.value === 'marker') {
-    // 点击放置标记（临时：写到 baseMap.scenario markers）
+    // 点击放置标记（P1-T5 标记类型系统）
     if (viewMode.value === 'scenario' && selectedScenario.value) {
       const name = prompt('标记名称：');
       if (name) {
-        store.addScenarioMarker(selectedScenario.value.id, { x: world.x, y: world.y, name, type: 'custom' });
+        const typeDef = MARKER_TYPES.find(t => t.id === selectedMarkerType.value) || MARKER_TYPES[0];
+        store.addScenarioMarker(selectedScenario.value.id, {
+          x: world.x,
+          y: world.y,
+          name,
+          type: selectedMarkerType.value,
+          icon: typeDef.icon,
+          color: typeDef.color,
+        });
         render();
       }
     } else {
       alert('请先在剧本模式下使用标记工具');
     }
+  } else if (tool.value === 'relief') {
+    // Relief 图标放置（P1-T1）
+    const iconDef = RELIEF_ICONS.find(i => i.id === selectedReliefIcon.value);
+    if (iconDef) {
+      reliefIcons.value.push({
+        id: `relief_${Date.now()}`,
+        iconId: iconDef.id,
+        x: world.x,
+        y: world.y,
+        icon: iconDef.icon,
+        color: iconDef.color,
+      });
+      render();
+    }
+  } else if (tool.value === 'river') {
+    // 河流编辑器（P1-T2 手动绘制河流路径）
+    riverDraft.value.push({ x: world.x, y: world.y });
+    render();
   } else if (tool.value === 'road') {
     if (!roadStart.value) {
       roadStart.value = world;
@@ -1218,12 +1304,16 @@ function onCanvasClick(event) {
           const path = generateRoadPath(hm.h, hm.grid, startIdx, endIdx);
           if (path.length > 0) {
             const roadPoints = path.map(i => ({ x: pts[i][0], y: pts[i][1] }));
-            // 添加到 autoRivers 数组旁——直接写入 routes
+            const style = ROAD_STYLES.find(s => s.id === selectedRoadStyle.value) || ROAD_STYLES[1];
             const newRoute = {
               id: `road_${Date.now()}`,
               group: 'roads',
               name: `道路 ${Date.now()}`,
               points: roadPoints,
+              style: style.id,
+              width: style.width,
+              dash: style.dash,
+              color: style.color,
             };
             if (!baseMapData.routes) baseMapData.routes = [];
             baseMapData.routes.push(newRoute);
@@ -1248,6 +1338,9 @@ function onCanvasClick(event) {
 function onCanvasDblClick(event) {
   if (tool.value === 'draw' && drawPoints.value.length >= 3) {
     finishDraw();
+  }
+  if (tool.value === 'river' && riverDraft.value.length >= 2) {
+    finishRiverDraft();
   }
 }
 
@@ -1291,6 +1384,8 @@ function onKeyDown(event) {
   else if (event.key === 'r' || event.key === 'R') setTool('religion');
   else if (event.key === 'k' || event.key === 'K') setTool('marker');
   else if (event.key === 'j' || event.key === 'J') setTool('road');
+  else if (event.key === 'w' || event.key === 'W') setTool('river');
+  else if (event.key === 'i' || event.key === 'I') setTool('relief');
   else if (event.key === 'f' || event.key === 'F') fitToView();
 }
 
@@ -1312,6 +1407,14 @@ function finishDraw() {
   });
   drawPoints.value = [];
   render();
+}
+
+function finishRiverDraft() {
+  if (riverDraft.value.length >= 2) {
+    riverPaths.value.push([...riverDraft.value]);
+    riverDraft.value = [];
+    render();
+  }
 }
 
 function handleSplitClick(world) {
@@ -1886,7 +1989,8 @@ function drawRoutes(c) {
     const pts = r.points;
     if (!pts || pts.length < 2) continue;
     if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
-    const st = ROUTE_STYLES[r.group] || ROUTE_STYLES.roads;
+    // 优先使用道路自带样式（P1-T3），回退到 group 默认
+    const st = r.color ? { color: r.color, width: r.width || 1, dash: r.dash || null, alpha: 0.95 } : ROUTE_STYLES[r.group] || ROUTE_STYLES.roads;
     c.globalAlpha = st.alpha;
     c.strokeStyle = st.color;
     c.lineWidth = st.width;
@@ -1900,11 +2004,31 @@ function drawRoutes(c) {
   c.restore();
 }
 
+function drawRiverPaths(c) {
+  if (!riverPaths.value.length) return;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const pad = 40 / cameraScale.value;
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  c.save();
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  c.strokeStyle = '#5d97bb';
+  for (const path of riverPaths.value) {
+    if (path.length < 2) continue;
+    c.lineWidth = Math.max(1, 2 / cameraScale.value);
+    c.beginPath();
+    c.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i++) c.lineTo(path[i].x, path[i].y);
+    c.stroke();
+  }
+  c.restore();
+}
+
 // ══════════════════════════════════════
 // 文化/宗教图例（P1-T5，屏幕坐标系右下角）
 // ══════════════════════════════════════
 function drawCultureLegend(c) {
-  if (colorMode.value === 'default') return;
   const hm = baseMap.value?.heightmap;
   const src = colorMode.value === 'culture' ? hm?.cultures : hm?.religions;
   if (!src || !src.length) return;
@@ -1980,6 +2104,7 @@ function render() {
 
   if (showRoutes.value) drawRoutes(ctx.value);
   if (showRivers.value) drawRivers(ctx.value);
+  drawRiverPaths(ctx.value);
 
   // v2: 自动生成的河流
   if (autoRivers.value.length > 0 && showRivers.value) {
@@ -2002,6 +2127,8 @@ function render() {
   if (showBurgs.value) drawBurgs(ctx.value);
   drawPreviewOverlay(ctx.value);
   if (showLabels.value) drawLabels(ctx.value);
+  drawReliefIcons(ctx.value);
+  drawScenarioMarkers(ctx.value);
 
   ctx.value.restore();
 
@@ -2248,6 +2375,26 @@ function drawPreviewOverlay() {
     c.arc(splitPoints.value[0].x, splitPoints.value[0].y, 5 / cameraScale.value, 0, Math.PI * 2);
     c.fill();
   }
+
+  // 河流编辑器预览（P1-T2）
+  if (tool.value === 'river' && riverDraft.value.length > 0) {
+    c.strokeStyle = '#5d97bb';
+    c.lineWidth = 2 / cameraScale.value;
+    c.setLineDash([4 / cameraScale.value, 4 / cameraScale.value]);
+    c.beginPath();
+    c.moveTo(riverDraft.value[0].x, riverDraft.value[0].y);
+    for (let i = 1; i < riverDraft.value.length; i++) {
+      c.lineTo(riverDraft.value[i].x, riverDraft.value[i].y);
+    }
+    c.stroke();
+    c.setLineDash([]);
+    for (const p of riverDraft.value) {
+      c.fillStyle = '#5d97bb';
+      c.beginPath();
+      c.arc(p.x, p.y, 3 / cameraScale.value, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -2398,6 +2545,47 @@ function drawLabels(c) {
     }
     c.fillText(label.text, label.x, label.y);
   });
+}
+
+function drawReliefIcons(c) {
+  if (!reliefIcons.value.length) return;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const pad = 30 / cameraScale.value;
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  const fontSize = Math.max(12, 16 / cameraScale.value);
+  c.font = `${fontSize}px "PingFang SC", sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (const r of reliefIcons.value) {
+    if (r.x < minX || r.x > maxX || r.y < minY || r.y > maxY) continue;
+    c.fillText(r.icon, r.x, r.y);
+  }
+  c.textAlign = 'start';
+  c.textBaseline = 'alphabetic';
+}
+
+function drawScenarioMarkers(c) {
+  if (viewMode.value !== 'scenario' || !selectedScenario.value?.markers?.length) return;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const pad = 30 / cameraScale.value;
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  const fontSize = Math.max(12, 14 / cameraScale.value);
+  c.font = `${fontSize}px "PingFang SC", sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (const m of selectedScenario.value.markers) {
+    if (m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
+    // 图标
+    c.fillText(m.icon || '📍', m.x, m.y);
+    // 名称标签
+    c.font = `${Math.max(10, 11 / cameraScale.value)}px "PingFang SC", sans-serif`;
+    c.fillStyle = m.color || '#e2e8f0';
+    c.fillText(m.name, m.x, m.y + fontSize * 0.8);
+  }
+  c.textAlign = 'start';
+  c.textBaseline = 'alphabetic';
 }
 
 function handleResize() {
