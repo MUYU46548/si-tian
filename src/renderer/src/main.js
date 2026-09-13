@@ -1,6 +1,11 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
+import { installDevFallback } from './dev-standalone.js';
+
+// 纯浏览器开发（npm run dev，无 Electron preload）兜底：避免 window.sitianAPI undefined 直接崩。
+// DEV 分支在生产构建里被静态替换为 false → 整个模块作为死代码被摇掉（mock 红线：dist 不得含 mock）。
+if (import.meta.env.DEV) installDevFallback();
 
 // 启动进度上报（批次A10）：splash 定义在 index.html，无 splash 环境(如测试注入)下静默跳过
 window.__sitianSplash?.set?.(30, '正在初始化界面…');
