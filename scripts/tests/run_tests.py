@@ -212,6 +212,15 @@ def main():
         # 首个用例前必须导航（Edge 新 profile 停在 about:blank / 首启页）
         cdp.navigate()
         wait_for(cdp, "!!document.querySelector('.app-layout')", desc='首次导航')
+        # 首启引导层（.onboarding-overlay）会挡住数据加载：此时 store.nodes 恒为 0，
+        # 第一个用例必然看到空数据（test_01 历史上因此红）。先把首启标记写掉再重载。
+        try:
+            cdp.eval("localStorage.setItem('sitian-first-run-complete', 'true')")
+            cdp.navigate()
+            wait_for(cdp, "!!document.querySelector('.app-layout')", desc='跳过首启引导后重载')
+            wait_for(cdp, "!document.querySelector('.onboarding-overlay')", timeout=30, desc='引导层已关闭')
+        except Exception as e:
+            print(f'  ⚠️ 跳过首启引导失败（首个用例可能看到空数据）：{e}')
         passed, failed = 0, []
         for cf in case_files:
             name = os.path.splitext(cf)[0]

@@ -9,6 +9,9 @@ from lib.helpers import view_level, goto_planet, select_world_with_domains
 
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
+    # mock 数据异步注入（冷启动时 app-layout 先于数据出现）
+    wait_for(cdp, "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
+             timeout=45, desc='地理数据加载')
 
     # 世界 → 星域总览（选中第一个有星域子节点的世界，避免空壳世界如"伏夜提加"）
     world_id = select_world_with_domains(cdp)

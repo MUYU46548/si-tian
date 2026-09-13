@@ -7,6 +7,22 @@ import json
 import time
 
 
+def ensure_data_ready(cdp, timeout=45):
+    """等 mock 数据就绪再断言。
+
+    测试 harness 每个用例后都会重载页面 → 每个用例都是冷启动，而 mock 是异步注入的
+    （geodata + 2MB mapdata）。不等就断言会看到空 store，误报成"导航失败/未进入 domain"。
+    超时不抛错：让用例自己的断言给出有意义的失败原因。
+    """
+    from lib.cdp import wait_for  # 局部导入（cdp 不反向依赖 helpers，无循环）
+    try:
+        wait_for(cdp,
+                 "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
+                 timeout=timeout, desc='地理数据加载')
+    except Exception:
+        pass
+
+
 def store(cdp):
     """注意：不要序列化整个 Pinia store（proxy 返回空 {}）。用 view_level/node_count 等具体函数"""
     return None
@@ -29,6 +45,7 @@ def goto_planet(cdp, planet_name='乐园星'):
     """直接导航到指定行星地图（世界→星域→星系→行星）。
     自底向上锚定：优先取有星域子节点的世界（避免取到空壳世界如"伏夜提加"，
     否则其 star_domain/galaxy 查找返回 undefined，抛 TypeError）。"""
+    ensure_data_ready(cdp)
     expr = f"""(() => {{
       const app = document.querySelector('#app').__vue_app__;
       const s = app._instance.setupState.store;
@@ -49,6 +66,7 @@ def goto_planet(cdp, planet_name='乐园星'):
 def select_world_with_domains(cdp):
     """选中第一个有星域子节点的世界（避免空壳世界），进入 domain 视图。
     返回选中世界的 id；若无满足条件的世界返回第一个 world 的 id。"""
+    ensure_data_ready(cdp)
     return cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       const nodes = s.nodes;
@@ -66,6 +84,7 @@ def enter_edit(cdp):
     优先用入口按钮的 class，其次按按钮文案「编辑地图」兜底（恒星系/星域视图的
     编辑开关是切换式按钮，文案在「编辑地图 / 完成编辑」之间变化）。
     """
+    ensure_data_ready(cdp)
     return cdp.eval("""(() => {
       const btns = Array.from(document.querySelectorAll('button'));
       const b = btns.find(x => x.classList.contains('edit-entry-btn'))
