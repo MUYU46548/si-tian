@@ -55,7 +55,7 @@ function snapAgainst(s, pos, candidates) {
 }
 
 function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
-  const s = getState();
+  let s = getState();
   if (button !== 0) return true;
 
   // 拆分/合并模式：屏蔽顶点/节点/参考图拖拽（选点优先，点击由 onClick 收集；
@@ -66,15 +66,31 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 
   // 高度图笔刷模式
   if (mode === 'height' && s.editMode) {
-    s.planetHeightBrush.brushMode.value = s.heightTool.value;
+    // 注意：getState 已解包——s.heightTool 是字符串（曾误写成 s.heightTool.value，
+    // 取到 undefined → brushMode 变 undefined → 涂抹无任何效果）
+    const tool = s.heightTool;
+    s.planetHeightBrush.brushMode.value = tool;
     s.planetHeightBrush.isBrushing.value = true;
-    if (s.heightTool.value === 'biome') {
+    s.planetHeightBrush.beginHeightStroke();
+    if (tool === 'biome') {
       s.planetHeightBrush.applyBiomeBrush(s.currentMapData.planetId, wx, wy);
     } else {
-      s.planetHeightBrush.brushMode.value = s.heightTool.value;
       s.planetHeightBrush.applyHeightBrush(s.currentMapData.planetId, wx, wy);
     }
-    return true;
+    return false; // 抑制平移
+  }
+
+  // 画布地形笔刷模式
+  if (mode === 'terrain' && s.editMode) {
+    // 懒初始化：组件挂载时地图数据可能还没加载完
+    if (!s.terrainGridEnabled) {
+      s.terrainCanvasBrush.initTerrainGrid();
+      s = getState(); // 重新取最新状态（initTerrainGrid 成功后 terrainGridEnabled = true）
+    }
+    if (s.terrainGridEnabled) {
+      s.terrainCanvasBrush.startTerrainBrush(wx, wy);
+      return false; // 抑制平移
+    }
   }
 
   // E4：选中标记/文本的旋转/缩放手柄（悬浮于对象之上，pan/move 模式优先命中）。
@@ -261,7 +277,7 @@ function onDragMove(wx, wy, dragInfo) {
 
   // 高度图笔刷拖动
   if (mode === 'height' && s.editMode && s.planetHeightBrush.isBrushing.value) {
-    if (s.heightTool.value === 'biome') {
+    if (s.heightTool === 'biome') {
       s.planetHeightBrush.applyBiomeBrush(s.currentMapData.planetId, wx, wy);
     } else {
       s.planetHeightBrush.applyHeightBrush(s.currentMapData.planetId, wx, wy);
@@ -392,6 +408,12 @@ function onDragMove(wx, wy, dragInfo) {
     return;
   }
 
+  // 画布地形笔刷模式
+  if (mode === 'terrain' && s.editMode && s.terrainGridEnabled) {
+    s.terrainCanvasBrush.moveTerrainBrush(wx, wy);
+    return; // 抑制其他拖拽处理
+  }
+
   // 地形笔刷拖拽：间隔落点
   if (s.isBrushing && s.brushMode) {
     const last = s.brushLastPoint;
@@ -428,9 +450,18 @@ function onDragEnd(wx, wy, dragInfo) {
     return;
   }
 
-  // 高度图笔刷松手
+  // 高度图笔刷松手：结束 stroke（一次拖动 = 一条 undo）
   if (mode === 'height' && s.editMode) {
     s.planetHeightBrush.isBrushing.value = false;
+    s.planetHeightBrush.clearBrushPreview();
+    actions.endHeightStroke();
+    return;
+  }
+
+  // 画布地形笔刷松手
+  if (mode === 'terrain' && s.editMode && s.terrainGridEnabled) {
+    actions.finishTerrainBrush();
+    actions.clearTerrainBrush();
     return;
   }
 

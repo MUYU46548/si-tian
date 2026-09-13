@@ -104,6 +104,41 @@ export function clearHistory() {
   pointer.value = -1;
 }
 
+// ===== 网格快照撤销支持 =====
+/**
+ * 为网格编辑创建 undo 命令（单次笔刷 = 一次 undo）
+ * 用法：在笔刷 stroke 开始前调用 beginGridSnapshot，stroke 结束时调用 endGridStroke
+ * 
+ * 模式：按下鼠标时保存快照，拖动时实时修改网格 + 渲染，抬起时压入 undo 栈
+ */
+const _gridStrokeState = new Map(); // gridRef -> { before: Uint8Array, type, label }
+
+export function beginGridSnapshot(grid, type, label) {
+  _gridStrokeState.set(grid, {
+    before: new Uint8Array(grid),
+    type,
+    label,
+  });
+}
+
+export function endGridStroke(grid, afterApply) {
+  const state = _gridStrokeState.get(grid);
+  if (!state) return;
+  _gridStrokeState.delete(grid);
+  
+  const { before, type, label } = state;
+  const after = new Uint8Array(grid);
+  
+  execute({
+    type,
+    label,
+    undo: () => { grid.set(before); },
+    redo: () => { grid.set(after); },
+  });
+  
+  if (afterApply) afterApply();
+}
+
 // 获取历史长度（调试用）
 export function getHistorySize() {
   return { past: pointer.value + 1, future: history.value.length - 1 - pointer.value };

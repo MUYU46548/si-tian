@@ -12,6 +12,21 @@ const log = require('electron-log');
 let mainWindow;
 let vaultWatcherEnabled = true;
 
+// TypedArray（Float32Array/Uint8Array…）经结构化克隆到达主进程后，JSON.stringify 会退化成
+// {"0":…}（无 length）→ 读回即废（高度图 h/biome、地形笔刷 grid 曾被静默清空）。
+// 统一序列化为普通数组；浮点保留 3 位小数以控制缓存体积。
+function jsonReplacer(key, value) {
+  if (ArrayBuffer.isView(value) && typeof value.length === 'number') {
+    const out = new Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      const n = value[i];
+      out[i] = typeof n === 'number' ? Math.round(n * 1000) / 1000 : n;
+    }
+    return out;
+  }
+  return value;
+}
+
 // P0.4: 主进程全局异常兜底 — electron-log 落盘，不弹系统对话框打断用户
 process.on('uncaughtException', (err) => {
   log.error('[main] uncaughtException:', err);
@@ -178,7 +193,7 @@ ipcMain.handle('reextract-geodata', async () => {
 // ===== 剧本地图持久化（独立文件 scenarios.json）=====
 ipcMain.handle('save-scenarios', async (event, data) => {
   try {
-    await fs.writeFile(path.join(getVaultPath(), '.sitian', 'scenarios.json'), JSON.stringify(data, null, 2), 'utf-8');
+    await fs.writeFile(path.join(getVaultPath(), '.sitian', 'scenarios.json'), JSON.stringify(data, jsonReplacer, 2), 'utf-8');
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -582,7 +597,7 @@ ipcMain.handle('save-map-data', async (event, planetId, mapData) => {
       // File doesn't exist yet
     }
     allData[planetId] = mapData;
-    await fs.writeFile(MAP_PATH, JSON.stringify(allData, null, 2), 'utf-8');
+    await fs.writeFile(MAP_PATH, JSON.stringify(allData, jsonReplacer, 2), 'utf-8');
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };

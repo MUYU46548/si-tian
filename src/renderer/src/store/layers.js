@@ -30,6 +30,7 @@ export const useLayersStore = defineStore('layers', () => {
     },
     planet: {
       terrain: { visible: true, label: '地形', order: 0 },
+      heightmap: { visible: false, label: '高度图（生物群系）', order: 0.5 },
       terrainLabels: { visible: true, label: '地形名称', order: 1 },
       elevation: { visible: false, label: '海拔', order: 2 },
       climate: { visible: false, label: '气候', order: 3 },

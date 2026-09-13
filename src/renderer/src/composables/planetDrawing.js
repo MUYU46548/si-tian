@@ -10,7 +10,10 @@ import { getTexturePattern } from '../utils/textures';
 import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '../utils/selectionHandles';
 import { labelFont } from '../utils/textMeasure';
-import { biomeColor, biomeKeyFromIndex } from '../utils/heightMath';
+import { toRaw } from 'vue';
+import { biomeColor, biomeKeyFromIndex, BIOME_KEYS } from '../utils/heightMath';
+
+const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（批量绘制时按编码分桶）
 
 // ===== 样式常量（从 PlanetMap.vue 迁移） =====
 const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
@@ -325,31 +328,47 @@ function drawBackground(ctx, w, h) {
 // ===== 高度图渲染（P3 阶段 3） =====
 function drawHeightmap(ctx) {
   const s = getState();
-  const hm = s.currentMapData?.heightmap;
+  const hm = toRaw(toRaw(s.currentMapData))?.heightmap; // 原始对象：每帧读数千格坐标/群系，逐格走响应式代理是纯开销
+
   if (!hm || !hm.h || !hm.grid) return;
   const pts = hm.grid.points;
+  const count = hm.h.length;
+  if (!count || pts.length !== count) return; // 数据损坏（历史版本 JSON 往返丢失 length）→ 不画
   const spacing = hm.grid.spacing || 14.4;
   const biome = hm.biome;
   const vp = s.viewport;
   if (!vp) return;
   const half = spacing / 2;
-  const minI = Math.max(0, Math.floor((vp.minX - half) / spacing));
-  const maxI = Math.min(hm.grid.cellsX - 1, Math.ceil((vp.maxX + half) / spacing));
-  const minJ = Math.max(0, Math.floor((vp.minY - half) / spacing));
-  const maxJ = Math.min(hm.grid.cellsY - 1, Math.ceil((vp.maxY + half) / spacing));
-  for (let j = minJ; j <= maxJ; j++) {
-    for (let i = minI; i <= maxI; i++) {
-      const idx = j * hm.grid.cellsX + i;
-      if (idx >= biome.length) continue;
-      const key = biomeKeyFromIndex(biome[idx]);
-      const color = biomeColor(key);
-      const px = Array.isArray(pts[idx]) ? pts[idx][0] : pts[idx].x;
-      const py = Array.isArray(pts[idx]) ? pts[idx][1] : pts[idx].y;
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.7;
-      ctx.fillRect(px - half, py - half, spacing, spacing);
+  // 网格原点取真实首点坐标（曾按世界原点 0 反推下标 → 视口裁剪失效、整张网格每帧全量重绘）
+  const first = pts[0];
+  const originX = Array.isArray(first) ? first[0] : first.x;
+  const originY = Array.isArray(first) ? first[1] : first.y;
+  const minI = Math.max(0, Math.floor((vp.minX - half - originX) / spacing));
+  const maxI = Math.min(hm.grid.cellsX - 1, Math.ceil((vp.maxX + half - originX) / spacing));
+  const minJ = Math.max(0, Math.floor((vp.minY - half - originY) / spacing));
+  const maxJ = Math.min(hm.grid.cellsY - 1, Math.ceil((vp.maxY + half - originY) / spacing));
+  if (maxI < minI || maxJ < minJ) return;
+  ctx.globalAlpha = 0.7;
+  // 按生物群系批量成路径再一次性 fill（逐格 fillStyle+fillRect 是笔刷拖拽时的主要开销）
+  for (let b = 0; b < BIOME_BUCKETS; b++) {
+    ctx.beginPath();
+    let any = false;
+    for (let j = minJ; j <= maxJ; j++) {
+      const rowBase = j * hm.grid.cellsX;
+      for (let i = minI; i <= maxI; i++) {
+        const idx = rowBase + i;
+        if (idx >= count || biome[idx] !== b) continue;
+        const px = Array.isArray(pts[idx]) ? pts[idx][0] : pts[idx].x;
+        const py = Array.isArray(pts[idx]) ? pts[idx][1] : pts[idx].y;
+        ctx.rect(px - half, py - half, spacing, spacing);
+        any = true;
+      }
     }
+    if (!any) continue;
+    ctx.fillStyle = biomeColor(biomeKeyFromIndex(b));
+    ctx.fill();
   }
+  ctx.beginPath(); // 收尾清空路径，避免污染后续绘制（fill() 会填充累积的路径）
   ctx.globalAlpha = 1;
 }
 
@@ -357,10 +376,29 @@ function drawHeightBrushPreview(ctx) {
   const s = getState();
   const preview = s.planetHeightBrush?.brushPreview?.value;
   if (!preview) return;
+  // ctx 已带 camera scale → 线宽/虚线按 1/zoom 补偿，保证屏幕上恒定粗细（曾用世界单位 → 缩放后几乎看不见）
+  const k = 1 / Math.max(s.zoom || 1, 0.0001);
   ctx.save();
   ctx.strokeStyle = '#FFD700';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 2 * k;
+  ctx.setLineDash([4 * k, 3 * k]);
+  ctx.beginPath();
+  ctx.arc(preview.x, preview.y, preview.radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// 画布地形笔刷预览：半径 = 实际会被写入的格子范围（有效半径）
+function drawTerrainBrushPreview(ctx) {
+  const s = getState();
+  const preview = s.terrainCanvasBrush?.terrainBrushPreview?.value;
+  if (!preview || preview.radius <= 0) return;
+  const k = 1 / Math.max(s.zoom || 1, 0.0001);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(232, 198, 106, 0.95)';
+  ctx.lineWidth = 2 * k;
+  ctx.setLineDash([5 * k, 4 * k]);
   ctx.beginPath();
   ctx.arc(preview.x, preview.y, preview.radius, 0, Math.PI * 2);
   ctx.stroke();
@@ -1694,6 +1732,7 @@ function getContrastColor(hex) {
     drawSelectionHandles,
     drawHeightmap,
     drawHeightBrushPreview,
+    drawTerrainBrushPreview,
     getPolygonCenter,
     darkenColor,
     getContrastColor,

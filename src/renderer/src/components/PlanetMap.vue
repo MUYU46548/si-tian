@@ -17,6 +17,7 @@
             <template v-else-if="interactionMode === 'route'">点击放置路线顶点，双击结束</template>
             <template v-else-if="interactionMode === 'text'">点击画布放置文本</template>
             <template v-else-if="interactionMode === 'region'">按住拖动圈画区域</template>
+            <template v-else-if="interactionMode === 'terrain'">地形笔刷 — 在画布上涂抹地形（海洋/草地/森林/沙漠/山脉等）</template>
             <template v-else-if="interactionMode === 'move'">点击选中对象并拖动（Shift 多选）</template>
             <template v-else>{{ isDrawing ? '正在绘制...' : '按住拖动绘制省份边界，松开自动闭合' }}</template>
             · <a href="#" @click.prevent="exitEditMode">退出编辑</a>
@@ -109,6 +110,22 @@
             <input type="range" v-model.number="planetHeightBrush.brushRadius.value" min="20" max="300" step="10" class="brush-slider" />
             <span class="toolbar-label">强度</span>
             <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
+          </div>
+        </template>
+
+        <template v-if="interactionMode === 'terrain'">
+          <div class="toolbar-group toolbar-group-sub">
+            <span class="toolbar-label">地形</span>
+            <select v-model.number="terrainBrushType" class="brush-biome-select">
+              <option v-for="(t, i) in TERRAIN_TYPES" :key="i" :value="i">{{ t.name }}</option>
+              <option :value="255">橡皮擦</option>
+            </select>
+            <span class="toolbar-label">大小</span>
+            <input type="range" v-model.number="terrainBrushSize" min="1" max="30" step="1" class="brush-slider" />
+            <span class="toolbar-label">{{ terrainBrushSize }} 格（{{ cellWorldSize }}m/格）</span>
+            <span class="toolbar-label">硬度</span>
+            <input type="range" v-model.number="terrainBrushHardness" min="0" max="1" step="0.05" class="brush-slider" />
+            <span class="toolbar-label">↗ 按住拖动涂抹地形</span>
           </div>
         </template>
 
@@ -246,7 +263,8 @@
         <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线"><Icon name="route" :size="15"/></button>
         <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本"><Icon name="type" :size="15"/></button>
         <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度图笔刷 (实验)"><Icon name="trending-up" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度 / 群系笔刷（14.4m 格，改高度自动派生温度降水群系）"><Icon name="trending-up" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'terrain' }" @click="setInteractionMode('terrain')" title="地形涂色笔刷（同 14.4m 格，直接铺地表类型：海洋/草地/森林…）"><Icon name="brush" :size="15"/></button>
         <div class="tool-dock-sep"></div>
         <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="15"/></button>
         <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="15"/></button>
@@ -844,6 +862,7 @@ import { useObjectPanel } from '../composables/useObjectPanel';
 import { useSnapshotPanel } from '../composables/useSnapshotPanel';
 import { useBatchArrange } from '../composables/useBatchArrange';
 import { useBrushDrawing } from '../composables/useBrushDrawing';
+import { useTerrainCanvasBrush } from '../composables/useTerrainCanvasBrush';
 import { useProvinceSplitMerge } from '../composables/useProvinceSplitMerge';
 import { usePlanetHeightBrush } from '../composables/usePlanetHeightBrush';
 import { useAutoRegions } from '../composables/useAutoRegions';
@@ -1068,13 +1087,24 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('planet', 'markers')) drawing.drawMarkers(ctx);
   if (layers.isVisible('planet', 'clusters')) drawing.drawClusters(ctx);
   if (layers.isVisible('planet', 'textLabels')) drawing.drawTextLabels(ctx);
-  // 高度图渲染（P3 阶段 3）：terrain 图层开启时叠加生物群系色块
-  if (layers.isVisible('planet', 'terrain')) drawing.drawHeightmap(ctx);
+  // 高度图渲染（P3 阶段 3）：生物群系色块
+  // 默认关闭（否则整屏半透明色块像"遮罩"），但高度笔刷进行中强制显示 —— 否则涂了看不见
+  if (layers.isVisible('planet', 'heightmap')
+    || (editMode.value && (interactionMode.value === 'height'))) {
+    drawing.drawHeightmap(ctx);
+  }
+
+  // 画布地形笔刷网格渲染（P3 验证通过的原型集成）
+  if (layers.isVisible('planet', 'terrain') && terrainGridEnabled.value) {
+    terrainCanvasBrush.drawTerrainGridToCtx(ctx);
+  }
+
   if (editMode.value) drawing.drawEditHelpers(ctx);
   drawing.drawSelectedHighlight(ctx);
   drawing.drawSelectionHandles(ctx);
-  // 高度图笔刷预览（最上层）
+  // 笔刷预览（最上层）
   if (editMode.value && interactionMode.value === 'height') drawing.drawHeightBrushPreview(ctx);
+  if (editMode.value && interactionMode.value === 'terrain') drawing.drawTerrainBrushPreview(ctx);
   if (focusHighlightNode.value) focusHighlight.drawFocusHighlight(ctx, focusHighlightNode.value);
 }
 
@@ -1126,6 +1156,7 @@ const drawing = createPlanetDrawing(() => ({
   isFastMode: renderer.isFastMode(), viewport: getRenderViewport(),
   screenToWorld: renderer.screenToWorld, zoom: renderer.viewTransform.scale, smartGuides: smartGuides,
   planetHeightBrush,
+  terrainCanvasBrush,
 }));
 
 // ===== 交互状态机 =====
@@ -1170,6 +1201,7 @@ const getState = () => ({
   hitTestVertex: (wx, wy) => hitTestModule.hitTestVertex(wx, wy),
   captureVertexSnapshot, snapPoint, snapDrawPoint, store,
   planetHeightBrush, heightTool: heightTool.value,
+  terrainCanvasBrush, terrainGridEnabled: terrainGridEnabled.value,
 });
 
 const interactions = createPlanetInteractions(getState, {
@@ -1258,6 +1290,9 @@ const interactions = createPlanetInteractions(getState, {
   },
   finishDraw() { finishDrawing(); },
   finishBrush() { brushDrawing.finishBrushStroke(selectedTerrain); },
+  finishTerrainBrush() { terrainCanvasBrush.endTerrainBrush(); },
+  clearTerrainBrush() { terrainCanvasBrush.clearTerrainBrush(); },
+  endHeightStroke() { planetHeightBrush.endHeightStroke(); },
   finishCluster(wx, wy) { clusterEditor.finishClusterBox(wx, wy); },
   setSplitPoint(p) { splitPoints.value = [p]; },
   doSplit(pA, pB) { provinceSplitMerge.performSplit(pA, pB, selectedProvince); },
@@ -1275,7 +1310,23 @@ const interactions = createPlanetInteractions(getState, {
 const renderer = useCanvasRenderer(canvas, {
   onRender,
   onHitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
-  onPointerMove: (wx, wy) => { setStatusThrottled({ mouseWorld: { x: wx, y: wy }, zoom: renderer.viewTransform.scale * 100 }); },
+  onPointerMove: (wx, wy) => {
+    setStatusThrottled({ mouseWorld: { x: wx, y: wy }, zoom: renderer.viewTransform.scale * 100 });
+    // 笔刷光标预览（世界坐标）：让用户看到实际会涂到哪里
+    const brushMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
+    if (editMode.value && brushMode === 'height') {
+      planetHeightBrush.updateBrushPreview(wx, wy);
+      if (terrainCanvasBrush.terrainBrushPreview.value) terrainCanvasBrush.clearBrushPreview();
+      renderer.requestRender();
+    } else if (editMode.value && brushMode === 'terrain') {
+      terrainCanvasBrush.updateBrushPreview(wx, wy);
+      if (planetHeightBrush.brushPreview.value) planetHeightBrush.clearBrushPreview();
+      renderer.requestRender();
+    } else {
+      if (planetHeightBrush.brushPreview.value) planetHeightBrush.clearBrushPreview();
+      if (terrainCanvasBrush.terrainBrushPreview.value) terrainCanvasBrush.clearBrushPreview();
+    }
+  },
   onHover: (hit, wx, wy) => {
     cursorCoord.value = { x: Math.round(wx), y: Math.round(wy), visible: true };
     setStatusThrottled({ selectionCount: selectedPlaceIds.value.size });
@@ -1376,6 +1427,9 @@ const provinceSplitMerge = useProvinceSplitMerge({ store, props, emit, renderer,
 // ===== 高度图笔刷 composable =====
 const planetHeightBrush = usePlanetHeightBrush({ store, renderer, currentMapData });
 
+// ===== 画布地形笔刷 composable =====
+const terrainCanvasBrush = useTerrainCanvasBrush({ store, props, renderer, canvas });
+
 // ===== 自动区域 composable =====
 const autoRegionsMgr = useAutoRegions({ store, props, emit, renderer, currentMapData });
 
@@ -1420,6 +1474,13 @@ const brushSize = brushDrawing.brushSize;
 const isBrushing = brushDrawing.isBrushing;
 const brushLastPoint = brushDrawing.brushLastPoint;
 const brushStrokePoints = brushDrawing.brushStrokePoints;
+const terrainBrushSize = terrainCanvasBrush.terrainBrushSize;
+const terrainBrushHardness = terrainCanvasBrush.terrainBrushHardness;
+const terrainBrushType = terrainCanvasBrush.terrainBrushType;
+const isTerrainBrushing = terrainCanvasBrush.isTerrainBrushing;
+const terrainGridEnabled = terrainCanvasBrush.terrainGridEnabled;
+const cellWorldSize = terrainCanvasBrush.cellWorldSize;
+const TERRAIN_TYPES = terrainCanvasBrush.TERRAIN_TYPES;
 const splitSelectMode = provinceSplitMerge.splitSelectMode;
 const splitPoints = provinceSplitMerge.splitPoints;
 const mergeSelectMode = provinceSplitMerge.mergeSelectMode;
@@ -1541,11 +1602,12 @@ watch(interactionMode, (mode) => { if (mode !== 'route') routeEditor.routeDraftP
 
 function setInteractionMode(mode) {
   interactionMode.value = mode;
-  setStatus({ toolLabel: mode === 'pan' ? '浏览' : mode === 'move' ? '移动' : '绘制' });
+  setStatus({ toolLabel: mode === 'pan' ? '浏览' : mode === 'move' ? '移动' : mode === 'terrain' ? '地形笔刷' : '绘制' });
   brushMode.value = false; floodFillMode.value = false; isBrushing.value = false; brushLastPoint.value = null; brushStrokePoints.value = []; drawingPolygon.value = null; isDrawingActive.value = false; currentPath.value = [];
   clusterEditor.clusterSelectMode.value = false; clusterEditor.clusterBoxStart.value = null; clusterEditor.clusterBoxEnd.value = null;
   dragObject.value = null; dragRegionAnchor.value = null; edgeSnapPreview.value = null;
   splitSelectMode.value = false; splitPoints.value = []; mergeSelectMode.value = false; mergeTargetId.value = null;
+  planetHeightBrush.clearBrushPreview(); terrainCanvasBrush.clearBrushPreview();
   renderer.requestRender();
 }
 
@@ -1698,6 +1760,8 @@ function exitEditMode() {
   provinceSplitMerge.splitPoints.value = [];
   provinceSplitMerge.mergeSelectMode.value = false;
   provinceSplitMerge.mergeTargetId.value = null;
+  planetHeightBrush.clearBrushPreview();
+  terrainCanvasBrush.clearBrushPreview();
   renderer.requestRender();
 }
 
@@ -2019,6 +2083,8 @@ watch(() => props.planet?.id, async (id) => {
     const data = await store.loadMapData(id);
     if (data) {
       renderer.requestRender();
+      // 地形笔刷网格几何依赖地形包围盒 → 数据就绪后再初始化（挂载时数据可能还没加载完）
+      terrainCanvasBrush.initTerrainGrid();
       if (data.terrain?.length > 0) { const types = [...new Set(data.terrain.map(t => t.type))]; const ctx = renderer.getContext?.(); if (ctx) prewarmTextures(types, ctx); }
     }
   } catch (e) { console.error('加载地图数据失败:', e); }
@@ -2033,6 +2099,8 @@ onMounted(() => {
   requestAnimationFrame(() => { autoRegionsMgr.generateAutoRegions(); renderer.requestRender(); });
   window.addEventListener('keydown', keyboardShortcuts.handleKeydown); window.addEventListener('keyup', keyboardShortcuts.handleKeyup);
   window.addEventListener('sitian:focus-node', onFocusNode); window.addEventListener('sitian:history-jump', onHistoryJump);
+  // 初始化画布地形笔刷网格
+  terrainCanvasBrush.initTerrainGrid();
 });
 
 onUnmounted(() => {

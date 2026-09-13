@@ -19,6 +19,8 @@ const TOOL_CURSOR = {
   add_place: 'crosshair',
   add_furniture: 'crosshair',
   building: 'crosshair',
+  terrain: 'crosshair',
+  height: 'crosshair',
 };
 
 /**
@@ -302,6 +304,9 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       return;
     }
     
+    // 画布地形笔刷模式：走下方通用 onDragStart 管线
+    // （组件返回 false → panSuppressed；网格不可用时返回 true → 允许平移）
+
     // 拖手模式：先尝试顶点拖拽（选中多边形/区域/路线时点击顶点），否则平移画布
     // panTry=true 表示仅做顶点检测（pan 模式试顶点），组件应避免其他副作用
     if (mode === 'pan') {
@@ -344,6 +349,9 @@ export function useCanvasRenderer(canvasRef, options = {}) {
       const result = onDragStart(world.x, world.y, e.button, e.shiftKey, e.ctrlKey);
       if (result === false) {
         panSuppressed = true;
+        // 关键：不设置 isPanning，否则 panSuppressed 无法阻止平移
+        applyCursor();
+        return; // 直接返回，不进入 isPanning 分支
       } else if (result && typeof result === 'object' && result.mode === 'vertex') {
         // 顶点拖拽
         isDraggingVertex = true;
@@ -564,18 +572,41 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     }
   }
 
-  function onMouseLeave() {
+  function onMouseLeave(e) {
+    // 拖拽移到画布外（松手发生在画布之外）必须收尾：
+    // 否则 onDragEnd 永不触发 → 笔刷不保存、对象位移不入 undo 栈（静默丢失）
+    const wasPanning = isPanning;
+    const wasSuppressed = panSuppressed;
+    const wasDraggingVertex = isDraggingVertex;
+    const endedVertexInfo = draggingVertexInfo;
+    const endedDragNodeId = dragNodeId;
+    const didPan = isDragOperation;
+    const shouldFinalize = !!(wasPanning || wasSuppressed || wasDraggingVertex || endedDragNodeId);
     isPanning = false;
     panSuppressed = false;
     isDragOperation = false;
     fastMode = false;
     dragNodeId = null;
+    isDraggingVertex = false;
+    draggingVertexInfo = null;
     isBoxSelecting = false;
     currentHit = null;
     applyCursor();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
     needsRender = true;
+    if (shouldFinalize && onDragEnd) {
+      const rect = canvasRef.value.getBoundingClientRect();
+      const cx = e && typeof e.clientX === 'number' ? e.clientX - rect.left : mouseDownPos.x;
+      const cy = e && typeof e.clientY === 'number' ? e.clientY - rect.top : mouseDownPos.y;
+      const world = screenToWorld(cx, cy);
+      const dragInfo = wasDraggingVertex
+        ? { mode: 'vertex', vertexInfo: endedVertexInfo }
+        : endedDragNodeId
+          ? { mode: 'node', nodeId: endedDragNodeId, didPan }
+          : {};
+      onDragEnd(world.x, world.y, dragInfo);
+    }
     requestRender();
   }
 

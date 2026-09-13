@@ -91,6 +91,7 @@
     <template v-else-if="name === 'pointer'"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></template>
     <template v-else-if="name === 'mouse-pointer'"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></template>
     <template v-else-if="name === 'pen-tool'"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></template>
+    <template v-else-if="name === 'brush'"><path d="M18.37 2.63a2.12 2.12 0 0 1 3 3L14 13l-4 1 1-4 7.37-7.37z"/><path d="M9 14.5c-2.5 1-3.5 3.5-4.5 5.5 2 0 4-.5 5.5-2.5 1-1.5 0-3-1-3z"/></template>
     <template v-else-if="name === 'droplet'"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></template>
     <template v-else-if="name === 'cloud'"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></template>
     <template v-else-if="name === 'thermometer'"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></template>

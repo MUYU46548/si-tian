@@ -10,6 +10,21 @@ import { createScenarioEditingModule } from './geodataModules/scenarioEditing';
 
 const AUTO_SAVE_DELAY = 800;
 
+// JSON.stringify 的 TypedArray 兜底：结构化克隆/深拷贝后 Float32Array 会变成
+// {"0":..}（无 length），读回 new Float32Array(obj) 即空数组 → 高度图/地形网格静默丢失。
+// 缓存的浮点保留 3 位小数以控制 mapdata.json 体积。
+export function jsonSafeReplacer(key, value) {
+  if (ArrayBuffer.isView(value) && typeof value.length === 'number') {
+    const out = new Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      const n = value[i];
+      out[i] = typeof n === 'number' ? Math.round(n * 1000) / 1000 : n;
+    }
+    return out;
+  }
+  return value;
+}
+
 // 层级深度顺序（B1 越级校验用）——与 scripts/extract-data.js 的 LAYER_ORDER 保持同步，
 // 两处同步修改；renderer 侧不直接 import 提取脚本（Node 脚本无法进浏览器 bundle）
 const LAYER_ORDER = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon', 'region', 'city', 'town', 'village', 'building', 'facility', 'location', 'unknown'];
@@ -538,8 +553,10 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   async function saveMapData(planetId, data) {
     try {
-      // 深拷贝去除 Vue reactive Proxy（仅用于 IPC 传输）
-      const cloned = JSON.parse(JSON.stringify(data));
+      // 深拷贝去除 Vue reactive Proxy（仅用于 IPC 传输）。
+      // TypedArray 必须显式转普通数组：JSON.stringify(new Float32Array(3)) → {"0":..}
+      // （无 length），读回 new Float32Array(obj) 得到空数组 —— 高度图/地形网格曾被静默清空。
+      const cloned = JSON.parse(JSON.stringify(data, jsonSafeReplacer));
       const result = await window.sitianAPI.saveMapData(getMapDataKey(planetId), cloned);
       // 注意：不再 mapData.value[planetId] = cloned —— 替换对象会让已入栈的
       // undo/redo 闭包与 selectedProvince 等选中引用全部失效（2026-08-16 修复：

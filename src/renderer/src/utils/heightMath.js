@@ -96,8 +96,8 @@ export function deriveLayers(heightmap, gridPoints, latitudeFn, oceanDistFn) {
   return { temperature: temp, precipitation: prec, biome };
 }
 
-// 生物群系 key → Uint8 编码（用于 TypedArray）
-const BIOME_KEYS = [
+// 生物群系 key → Uint8 编码（用于 TypedArray）；与 BIOME_KEYS 顺序严格对应
+export const BIOME_KEYS = [
   'ocean', 'hot_desert', 'cold_desert', 'savanna', 'grassland',
   'tropical_seasonal', 'temperate_deciduous', 'tropical_rainforest',
   'temperate_rainforest', 'taiga', 'tundra', 'glacier', 'wetland',
@@ -105,6 +105,12 @@ const BIOME_KEYS = [
 
 export function biomeIndex(height, temperature, precipitation) {
   const key = classifyBiome(height, temperature, precipitation);
+  const idx = BIOME_KEYS.indexOf(key);
+  return idx >= 0 ? idx : 0;
+}
+
+// 生物群系 key → 编码下标（笔刷写入用）
+export function biomeKeyIndex(key) {
   const idx = BIOME_KEYS.indexOf(key);
   return idx >= 0 ? idx : 0;
 }
