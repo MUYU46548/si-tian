@@ -1423,24 +1423,6 @@ function drawEditHelpers(ctx) {
     ctx.restore();
   }
   
-  // 笔刷预览：当前笔画落点圆形
-  if (s.isBrushing && s.brushMode) {
-    const brushColor = s.terrainTypes.find(t => t.type === s.selectedTerrain)?.color || '#000';
-    ctx.save();
-    ctx.strokeStyle = brushColor;
-    ctx.globalAlpha = 0.6;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 3]);
-    s.brushStrokePoints.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, s.brushSize / 2, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-  
   // 绘制中的路径
   if (s.isDrawing) {
     ctx.strokeStyle = s.terrainTypes.find(t => t.type === s.selectedTerrain)?.color || '#000';

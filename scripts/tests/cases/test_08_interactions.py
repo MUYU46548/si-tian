@@ -8,7 +8,7 @@
   3. 点击描点（3 次单击 + 双击收尾 → terrain +1 + undo）
   4. 框选（Shift+拖拽空白 → 多地点选中）
   5. 顶点拖拽（选中省份拖顶点 → points 变化 + undo 恢复）
-  6. 笔刷（brushMode 拖拽 → terrain +1 + undo）
+  6. 地形笔刷入口（旧 brushMode 凸包笔刷已移除 → 守入口不存在 + 新网格笔刷在位）
 """
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -18,6 +18,17 @@ from lib.helpers import (goto_planet, enter_edit, confirm_yes, terrain_count,
                          drag_canvas_polyline, dblclick_canvas_at_world)
 
 NEAR = 1e-6  # 坐标比较容差（place 坐标为浮点）
+
+
+def _j(cdp, expr):
+    """eval 并解析 JSON 串；异常/非串原样返回（供失败信息）"""
+    v = cdp.eval(expr)
+    if isinstance(v, str) and (v.startswith('{') or v.startswith('[')):
+        try:
+            return json.loads(v)
+        except ValueError:
+            return v
+    return v
 
 
 def _eq(a, b, tol=8):
@@ -179,19 +190,27 @@ def run(cdp):
     if not restored:
         return False, f'顶点拖拽 undo 未恢复 ({vcur} → {vcheck})'
 
-    # ============ 6. 笔刷 ============
-    c0 = terrain_count(cdp)
-    set_pm_state(cdp, "pm.setInteractionMode('draw'); pm.brushMode = true; return 'ok';")
-    drag_canvas_polyline(cdp, [(300, 700), (360, 720), (430, 745), (500, 780)])
-    time.sleep(0.5)
-    c1 = terrain_count(cdp)
-    if c1 != c0 + 1:
-        return False, f'笔刷失败 ({c0} → {c1})'
-    if _last_terrain_points(cdp) < 3:
-        return False, '笔刷创建了空多边形'
-    set_pm_state(cdp, "pm.undo(); return 'ok';")
-    time.sleep(0.3)
-    if terrain_count(cdp) != c0:
-        return False, '笔刷 undo 失败'
+    # ============ 6. 地形笔刷入口（旧凸包笔刷已移除，入口统一到网格笔刷） ============
+    # 旧 `brushMode` 凸包笔刷产出无名多边形（本库遗留 22 个）、且与网格笔刷双套并存，
+    # 按 UX 铁律移除。这里同时守两件事：入口确实没了 + 新入口还在。
+    legacy = _j(cdp, """(() => {
+      const pm = document.querySelector('.planet-map-container').__vueParentComponent.setupState;
+      const btns = Array.from(document.querySelectorAll('.edit-toolbar button')).map(b => b.textContent.trim());
+      const dockTitles = Array.from(document.querySelectorAll('.tool-dock button')).map(b => b.getAttribute('title') || '');
+      return JSON.stringify({
+        brushModeUndefined: (typeof pm.brushMode === 'undefined') || pm.brushMode === null,
+        toolbarBrushButtons: btns.filter(t => t.includes('笔刷')),
+        dockKinds: { height: dockTitles.some(t => t.includes('高度')), terrain: dockTitles.some(t => t.includes('地形涂色')) },
+        hasBrushState: Object.keys(pm).some(k => ['isBrushing', 'brushStrokePoints', 'brushLastPoint'].includes(k)),
+      });
+    })()""")
+    if not isinstance(legacy, dict):
+        return False, f'旧笔刷入口检查链路异常 {legacy}'
+    if legacy['toolbarBrushButtons']:
+        return False, f'旧凸包笔刷按钮仍在工具栏 {legacy["toolbarBrushButtons"]}'
+    if not legacy['brushModeUndefined'] or legacy['hasBrushState']:
+        return False, f'旧笔刷状态未清理干净 {legacy}'
+    if not (legacy['dockKinds']['height'] and legacy['dockKinds']['terrain']):
+        return False, f'新网格笔刷入口缺失 {legacy["dockKinds"]}'
 
-    return True, '交互专项 6 项全通过（place 拖拽/自由绘制/点击描点/框选/顶点拖拽/笔刷）'
+    return True, '交互专项 6 项全通过（place 拖拽/自由绘制/点击描点/框选/顶点拖拽/旧笔刷入口已移除+新网格笔刷在位）'

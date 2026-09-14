@@ -154,16 +154,10 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
     }
   }
 
-  // 地形笔刷：开始涂抹（优先于自由绘制）
-  if (mode === 'draw' && s.brushMode) {
-    actions.startBrush({ x: wx, y: wy });
-    return false;
-  }
-
-  // 绘制模式：开始绘制（笔刷模式不进入）
+  // 绘制模式：开始绘制
   // 注意：wx/wy 已是世界坐标（useCanvasRenderer 已 screenToWorld），直接用，
   // 不要再次 screenToWorldFunc —— 双重转换会导致图案偏移到画笔右侧
-  if ((mode === 'draw' || mode === 'region') && s.drawMode && !s.brushMode) {
+  if ((mode === 'draw' || mode === 'region') && s.drawMode) {
     actions.startDrawing(s.snapDrawPoint({ x: wx, y: wy }));
     return false;
   }
@@ -415,16 +409,6 @@ function onDragMove(wx, wy, dragInfo) {
   }
 
   // 地形笔刷拖拽：间隔落点
-  if (s.isBrushing && s.brushMode) {
-    const last = s.brushLastPoint;
-    if (last && Math.hypot(wx - last.x, wy - last.y) >= s.brushSize * 0.25) {
-      s.brushStrokePoints.push({ x: wx, y: wy });
-      actions.setBrushLastPoint({ x: wx, y: wy });
-      actions.requestRender();
-    }
-    return;
-  }
-
   // 参考图拖动
   if (s.refDragStart && s.refDragMode && s.referenceImage && !s.referenceImage.locked) {
     // wx/wy 已是世界坐标，直接使用（refDragStartWorld 同为世界坐标）
@@ -512,13 +496,6 @@ function onDragEnd(wx, wy, dragInfo) {
   // 批量拖拽结束：结束节点坐标捕获（一次拖动 = 一个 undo 步骤）
   if (s.isDraggingPlaces) {
     actions.endPlacesDrag();
-  }
-
-  // 地形笔刷结束：先完成（finishBrushStroke 内部读并清空 brushStrokePoints）再清理，
-  // 顺序颠倒会读到空落点 → 不创建多边形（2026-08-16 P0-2 迁移发现）
-  if (s.isBrushing) {
-    actions.finishBrush();
-    actions.clearBrush();
   }
 
   // cluster 框选结束
@@ -611,7 +588,7 @@ function handleCanvasClick(hit, wx, wy) {
   }
 
   // draw/region 描点模式（drawMode=false）：点击放置顶点
-  if ((mode === 'draw' || mode === 'region') && !s.drawMode && !s.brushMode) {
+  if ((mode === 'draw' || mode === 'region') && !s.drawMode) {
     actions.pointClick(wx, wy, mode);
     return;
   }

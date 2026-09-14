@@ -1101,6 +1101,12 @@ onMounted(async () => {
   try {
     await store.loadGeodata();
     statusText.value = `已加载 ${store.nodes.length} 个节点`;
+  } catch (e) {
+    // 加载失败必须显式暴露：否则界面只是「空地图」，用户与测试都看不出原因
+    // （历史上 preload/ mock 未就绪时正是这样静默留在 0 节点）
+    statusText.value = `数据加载失败：${e?.message || e}`;
+    statusKind.value = 'error';
+    window.sitianAPI?.reportError?.({ message: String(e?.message || e), stack: e?.stack, component: 'App.onMounted' });
   } finally {
     // 数据就绪（或加载失败）后关闭启动 splash（批次A10，finally 保证不会卡在加载画面）
     window.__sitianSplash?.set?.(100, '就绪');
@@ -1147,8 +1153,10 @@ onMounted(async () => {
   });
 
   // 系统托盘菜单 → 打开面板（托盘图标右键菜单触发）
-  window.sitianAPI.onOpenSettings(() => settingsPanelRef.value?.open());
-  window.sitianAPI.onOpenAbout(() => aboutPanelRef.value?.open());
+  // 注意：用 ?. 守卫 —— preload 缺该 API 时（老版本 preload / 测试 mock）不能让
+  // onMounted 抛错，否则后续初始化与数据加载链路会被静默中断
+  window.sitianAPI?.onOpenSettings?.(() => settingsPanelRef.value?.open());
+  window.sitianAPI?.onOpenAbout?.(() => aboutPanelRef.value?.open());
   // 关于面板中的检查更新按钮
   window.addEventListener('sitian:check-update', () => {
     updateNotificationRef.value?.checkForUpdates();

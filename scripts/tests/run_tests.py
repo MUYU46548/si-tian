@@ -52,9 +52,26 @@ REAL_MAPDATA = os.path.join(VAULT, '.sitian', 'mapdata.json').replace('\\', '/')
 
 MOCK_SCRIPT = """<script>
     window.__SITIAN_MOCK__ = true;
-    (async () => {
-      const geodata = await (await fetch('/mock-data/geodata.json')).json();
-      const mapdata = await (await fetch('/mock-data/mapdata.json')).json();
+    // ⚠️ 必须**同步**安装 sitianAPI（同步 XHR 阻塞解析）：
+    // 本 <script> 之后的 <script type="module"> 是 defer 执行，只要这里的安装是同步的，
+    // 应用 mount 时 sitianAPI 必然已存在。历史 bug：原来用 async fetch → 若 fetch 解析
+    // 慢于应用 mount，`await store.loadGeodata()` 抛 TypeError → store.nodes 恒为 0 →
+    // 用例报「no-world / 树节点未渲染 / 地理数据加载超时」这类**假失败**（跨多个会话反复出现）。
+    (function () {
+      const loadJson = (url) => {
+        const x = new XMLHttpRequest();
+        x.open('GET', url, false); // false = 同步，锁死安装顺序
+        x.send(null);
+        return JSON.parse(x.responseText);
+      };
+      let geodata = null, mapdata = {};
+      try {
+        geodata = loadJson('/mock-data/geodata.json');
+        mapdata = loadJson('/mock-data/mapdata.json');
+      } catch (e) {
+        console.error('[mock] 数据加载失败', e);
+      }
+      const noop = () => () => {};
       window.sitianAPI = {
         getGeodata: async () => ({ success: true, data: geodata }),
         reextractGeodata: async () => ({ success: true }),
@@ -77,11 +94,30 @@ MOCK_SCRIPT = """<script>
         onNodeUpdated: () => () => {},
         onNodeRemoved: () => () => {},
         clearCoordinateCache: async () => ({ success: true }),
+        // 以下 API 应用侧**无 ?. 守卫**，缺失会让 onMounted 抛错（进而中断挂载链路）→ 必须提供
+        onOpenSettings: noop,
+        onOpenAbout: noop,
+        reportError: async () => ({ success: true }),
+        getCurrentBaseMapKey: async () => '',
+        setCurrentBaseMapKey: async () => ({ success: true }),
+        getWindowMode: async () => 'default',
+        setWindowMode: async () => ({ success: true }),
+        getCloseQuitsApp: async () => false,
+        setCloseQuitsApp: async () => ({ success: true }),
+        uninstallApp: async () => ({ success: false, dev: true }),
+        version: '0.0.0-mock',
+        // 自动更新通道（UpdateNotification 用 ?. 调用，这里给全以免测试环境报错）
+        onUpdateAvailable: noop, onUpdateCheckManual: noop, onUpdateNotAvailable: noop,
+        onUpdateProgress: noop, onUpdateDownloaded: noop, onUpdateError: noop,
+        checkForUpdates: async () => ({ success: false, error: 'mock' }),
+        downloadUpdate: async () => ({ success: false, error: 'mock' }),
+        installUpdate: async () => ({ success: false, error: 'mock' }),
         platform: 'browser',
       };
       window.dispatchEvent(new CustomEvent('sitian-mock-ready'));
     })();
   </script>"""
+
 
 
 class ProcessHandle:

@@ -14,7 +14,8 @@
             <strong>编辑模式</strong> —
             <template v-if="interactionMode === 'cluster'">{{ clusterSelectMode ? '簇框选中：按住左键拖一个框圈住地点，松开完成选择' : '簇工具：从工具栏「地点簇」进入后按住拖动框选地点 → 弹窗创建簇' }}</template>
             <template v-else-if="interactionMode === 'marker'">选择类型后点击画布放置标记</template>
-            <template v-else-if="interactionMode === 'route'">点击放置路线顶点，双击结束</template>
+            <template v-else-if="interactionMode === 'route'">{{ autoRoadEnabled ? '自动寻路：点起点 → 点终点，沿等高线生成道路（右键取消）' : '点击放置路线顶点，双击结束' }}</template>
+            <template v-else-if="interactionMode === 'settle'">智能聚落 — 点击放置，自动吸附到附近最优位置（避开海洋/高山，偏好缓坡近水）</template>
             <template v-else-if="interactionMode === 'text'">点击画布放置文本</template>
             <template v-else-if="interactionMode === 'region'">按住拖动圈画区域</template>
             <template v-else-if="interactionMode === 'terrain'">地形笔刷 — 在画布上涂抹地形（海洋/草地/森林/沙漠/山脉等）</template>
@@ -42,22 +43,17 @@
       <div class="edit-toolbar">
         <template v-if="interactionMode === 'draw'">
           <div class="toolbar-group toolbar-group-sub">
-            <button :class="{ active: drawMode && !floodFillMode && !brushMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制"><Icon name="pencil" :size="13"/> 自由绘制</button>
-            <button :class="{ active: !drawMode && !floodFillMode && !brushMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点"><Icon name="crosshair" :size="13"/> 点击描点</button>
-            <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处生成区域">▣ 区域填充</button>
-            <button :class="{ active: brushMode }" @click="brushMode = !brushMode; floodFillMode = false" title="按住拖动地形笔刷涂抹"><Icon name="pen-tool" :size="13"/> 笔刷</button>
-            <template v-if="brushMode">
-              <span class="toolbar-label">大小</span>
-              <button v-for="s in [24, 40, 64, 96]" :key="s" :class="{ active: brushSize === s }" @click="brushSize = s">{{ s }}</button>
-            </template>
+            <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false" title="按住拖动绘制"><Icon name="pencil" :size="13"/> 自由绘制</button>
+            <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false" title="点击放置顶点"><Icon name="crosshair" :size="13"/> 点击描点</button>
+            <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode" title="点击空白处生成区域">▣ 区域填充</button>
           </div>
         </template>
 
         <template v-if="interactionMode === 'region'">
           <div class="toolbar-group toolbar-group-sub">
-            <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false; brushMode = false" title="按住拖动绘制区域"><Icon name="pencil" :size="13"/> 自由绘制</button>
-            <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false; brushMode = false" title="点击放置顶点"><Icon name="crosshair" :size="13"/> 点击描点</button>
-            <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode; brushMode = false" title="点击空白处自动生成区域">▣ 区域填充</button>
+            <button :class="{ active: drawMode && !floodFillMode }" @click="drawMode = true; floodFillMode = false" title="按住拖动绘制区域"><Icon name="pencil" :size="13"/> 自由绘制</button>
+            <button :class="{ active: !drawMode && !floodFillMode }" @click="drawMode = false; floodFillMode = false" title="点击放置顶点"><Icon name="crosshair" :size="13"/> 点击描点</button>
+            <button :class="{ active: floodFillMode }" @click="floodFillMode = !floodFillMode" title="点击空白处自动生成区域">▣ 区域填充</button>
           </div>
         </template>
 
@@ -74,7 +70,8 @@
               @click="routeColor = c"
               class="color-btn"
             ></button>
-            <span class="toolbar-label">↗ 点击放置顶点 · 双击完成 · 右键取消</span>
+            <button :class="{ active: autoRoadEnabled }" @click="autoRoadEnabled = !autoRoadEnabled; roadStart = null; routeEditor.routeDraftPoints.value = []" title="自动寻路：点两个端点，A* 沿等高线生成道路（避开陡崖）"><Icon name="route" :size="13"/> 自动寻路</button>
+            <span class="toolbar-label">↗ {{ autoRoadEnabled ? '点起点 → 点终点' : '点击放置顶点 · 双击完成 · 右键取消' }}</span>
           </div>
         </template>
 
@@ -276,7 +273,8 @@
         <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份"><Icon name="pencil" :size="15"/></button>
         <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域"><Icon name="map" :size="15"/></button>
         <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记"><Icon name="map-pin" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线"><Icon name="route" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线（路线工具内可开「自动寻路」）"><Icon name="route" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'settle' }" @click="setInteractionMode('settle')" title="智能聚落 — 点击放置，自动吸附到最优位置（避开海洋/高山，偏好缓坡近水）"><Icon name="home" :size="15"/></button>
         <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本"><Icon name="type" :size="15"/></button>
         <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
         <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度 / 群系笔刷（14.4m 格，改高度自动派生温度降水群系）"><Icon name="trending-up" :size="15"/></button>
@@ -878,7 +876,6 @@ import { usePanelManager } from '../composables/usePanelManager';
 import { useObjectPanel } from '../composables/useObjectPanel';
 import { useSnapshotPanel } from '../composables/useSnapshotPanel';
 import { useBatchArrange } from '../composables/useBatchArrange';
-import { useBrushDrawing } from '../composables/useBrushDrawing';
 import { useTerrainCanvasBrush } from '../composables/useTerrainCanvasBrush';
 import { useProvinceSplitMerge } from '../composables/useProvinceSplitMerge';
 import { usePlanetHeightBrush } from '../composables/usePlanetHeightBrush';
@@ -897,6 +894,7 @@ import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
 import { useContextMenu } from '../composables/useContextMenu';
 import { createProvinceByFloodFill } from '../utils/floodfill';
+import { generateRoadPath, findOptimalBurgPosition, findNearestGridPoint } from '../utils/placement';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
@@ -1025,6 +1023,9 @@ function onWrapperMouseLeave() {
 const floodPreview = ref(null);
 const editMode = ref(false);
 const selectedTerrain = ref('land');
+// ===== R4 统一笔刷/智能工具 =====
+const autoRoadEnabled = ref(false);  // 路线工具内的「自动寻路」开关
+const roadStart = ref(null);         // 自动寻路起点（世界坐标）
 const selectedProvince = ref(null);
 const drawingPolygon = ref(null);
 const isBoxSelecting = ref(false);
@@ -1272,8 +1273,7 @@ const drawing = createPlanetDrawing(() => ({
   compassVisible: compassVisible.value, scaleBarVisible: scaleBarVisible.value,
   routeDraftPoints: routeEditor.routeDraftPoints.value, isDrawing: isDrawing.value,
   drawingPolygon: drawingPolygon.value, currentPath: currentPath.value,
-  brushMode: brushMode.value, brushSize: brushSize.value, isBrushing: isBrushing.value,
-  brushStrokePoints: brushStrokePoints.value, mirrorMode: mirrorMode.value,
+  mirrorMode: mirrorMode.value,
   mirrorAxis: mirrorAxis.value, mirrorAxisOffset: mirrorAxisOffset.value,
   splitSelectMode: splitSelectMode.value, splitPoints: splitPoints.value,
   clusterBoxStart: clusterEditor.clusterBoxStart.value, clusterBoxEnd: clusterEditor.clusterBoxEnd.value,
@@ -1306,9 +1306,8 @@ function setPrimarySelection(kind, obj) {
 const getState = () => ({
   interactionMode: interactionMode.value, isSpacebarDown: isSpacebarDown.value, editMode: editMode.value,
   splitSelectMode: splitSelectMode.value, mergeSelectMode: mergeSelectMode.value,
-  refDragMode: referenceImage.refDragMode.value, brushMode: brushMode.value, drawMode: drawMode.value,
+  refDragMode: referenceImage.refDragMode.value, drawMode: drawMode.value,
   isBoxSelecting: isBoxSelecting.value, boxSelectStart: boxSelectStart.value, boxSelectEnd: boxSelectEnd.value,
-  isBrushing: isBrushing.value, brushLastPoint: brushLastPoint.value, brushStrokePoints: brushStrokePoints.value,
   isDrawingActive: isDrawingActive.value, currentPath: currentPath.value,
   clusterBoxStart: clusterEditor.clusterBoxStart.value, clusterBoxEnd: clusterEditor.clusterBoxEnd.value,
   dragObject: dragObject.value, dragRegionAnchor: dragRegionAnchor.value,
@@ -1320,7 +1319,7 @@ const getState = () => ({
   refDragStart: refDragStart.value, refDragStartWorld: refDragStartWorld.value,
   isDraggingPlaces: isDraggingPlaces.value, placesDragStart: placesDragStart.value,
   referenceImage: referenceImage.referenceImage.value, currentMapData: currentMapData.value, places: places.value,
-  planetId: props.planet.id, brushSize: brushSize.value, textFontSize: textEditor.textFontSize.value,
+  planetId: props.planet.id, textFontSize: textEditor.textFontSize.value,
   textColor: textEditor.textColor.value, markerTypes: markerEditor.markerTypes, zoom: renderer.viewTransform.scale,
   multiSel: multiSel.value, smartGuidesEnabled: smartGuidesEnabled.value,
   transformDrag: batchSelection.transformDrag.value, isShiftToggled: (id, type) => isShiftToggleActive(id, type),
@@ -1337,9 +1336,6 @@ const interactions = createPlanetInteractions(getState, {
   clearVertexDrag() { vertexDragKind.value = null; vertexDragOld.value = null; },
   setRefDragStart(start, world) { refDragStart.value = start; refDragStartWorld.value = world; },
   clearRefDragStart() { refDragStart.value = null; },
-  startBrush(p) { isBrushing.value = true; brushLastPoint.value = { ...p }; brushStrokePoints.value = [{ ...p }]; },
-  setBrushLastPoint(p) { brushLastPoint.value = { ...p }; },
-  clearBrush() { brushDrawing.clearBrush(); },
   startDrawing(p) { isDrawingActive.value = true; currentPath.value = [p]; },
   clearDrawing() { isDrawingActive.value = false; edgeSnapPreview.value = null; currentPath.value = []; },
   setClusterBox(p) { clusterEditor.clusterBoxStart.value = { ...p }; clusterEditor.clusterBoxEnd.value = { ...p }; },
@@ -1417,7 +1413,6 @@ const interactions = createPlanetInteractions(getState, {
     vertexDragKind.value = null; vertexDragOld.value = null;
   },
   finishDraw() { finishDrawing(); },
-  finishBrush() { brushDrawing.finishBrushStroke(selectedTerrain); },
   finishTerrainBrush() { terrainCanvasBrush.endTerrainBrush(); },
   clearTerrainBrush() { terrainCanvasBrush.clearTerrainBrush(); },
   endHeightStroke() { planetHeightBrush.endHeightStroke(); },
@@ -1440,13 +1435,18 @@ const renderer = useCanvasRenderer(canvas, {
   onHitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
   onPointerMove: (wx, wy) => {
     setStatusThrottled({ mouseWorld: { x: wx, y: wy }, zoom: renderer.viewTransform.scale * 100 });
+    // R4 自动寻路：已设起点时实时预览直线（真实路径在第二次点击时算）
+    if (autoRoadEnabled.value && roadStart.value && interactionMode.value === 'route') {
+      routeEditor.routeDraftPoints.value = [roadStart.value, { x: wx, y: wy }];
+      renderer.requestRender();
+    }
     // 笔刷光标预览（世界坐标）：让用户看到实际会涂到哪里
-    const brushMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
-    if (editMode.value && brushMode === 'height') {
+    const hoverMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
+    if (editMode.value && hoverMode === 'height') {
       planetHeightBrush.updateBrushPreview(wx, wy);
       if (terrainCanvasBrush.terrainBrushPreview.value) terrainCanvasBrush.clearBrushPreview();
       renderer.requestRender();
-    } else if (editMode.value && brushMode === 'terrain') {
+    } else if (editMode.value && hoverMode === 'terrain') {
       terrainCanvasBrush.updateBrushPreview(wx, wy);
       if (planetHeightBrush.brushPreview.value) planetHeightBrush.clearBrushPreview();
       renderer.requestRender();
@@ -1473,16 +1473,21 @@ const renderer = useCanvasRenderer(canvas, {
   onClick: (hit, wx, wy) => {
     if (referenceImage.refDragMode.value && referenceImage.referenceImage.value && !referenceImage.referenceImage.value.locked) return;
     if (referenceImage.calibrationMode.value && referenceImage.handleCalibrationClick(wx, wy)) return;
+    // R4：自动寻路 / 智能聚落（在通用命中分发之前拦截，二者都是「点画布做事」的工具）
+    if (editMode.value && !isSpacebarDown.value) {
+      if (interactionMode.value === 'route' && autoRoadEnabled.value) { handleAutoRoadClick(wx, wy); return; }
+      if (interactionMode.value === 'settle') { handleSmartSettle(wx, wy); return; }
+    }
     interactions.handleCanvasClick(hit, wx, wy);
   },
   onDblClick: (hit, wx, wy) => {
-    if (interactionMode.value === 'route') { finishRouteDraft(); return; }
+    if (interactionMode.value === 'route') { finishRouteDraft(); roadStart.value = null; return; }
     if ((interactionMode.value === 'draw' || interactionMode.value === 'region') && !drawMode.value && drawingPolygon.value) { finishPointDrawing(); return; }
     if (hit?.type === 'textLabel' && hit.label) { selectedTextLabel.value = hit.label; startInlineTextEdit(hit.label); return; }
     if (hit?.type === 'place' && hit.node) { store.selectArea(hit.node); }
   },
   onContextMenu: (wx, wy) => {
-    if (interactionMode.value === 'route') { cancelRouteDraft(); return; }
+    if (interactionMode.value === 'route') { cancelRouteDraft(); roadStart.value = null; return; }
     if ((interactionMode.value === 'draw' || interactionMode.value === 'region') && drawingPolygon.value) { drawingPolygon.value = null; renderer.requestRender(); return; }
     if (!editMode.value) return;
     const hit = hitTestModule.hitTest(wx, wy);
@@ -1547,9 +1552,6 @@ const objectPanel = useObjectPanel({
 // ===== 批量排列 composable =====
 const batchArrange = useBatchArrange({ store, props, emit, renderer, currentMapData, batchSelection });
 
-// ===== 笔刷绘制 composable =====
-const brushDrawing = useBrushDrawing({ store, props, emit, renderer });
-
 // ===== 省份拆分合并 composable =====
 const provinceSplitMerge = useProvinceSplitMerge({ store, props, emit, renderer, currentMapData, exportStatus });
 
@@ -1598,11 +1600,6 @@ const autoRegions = autoRegionsMgr.autoRegions;
 const fogMode = autoRegionsMgr.fogMode;
 const placeRegionMap = autoRegionsMgr.placeRegionMap;
 const { adoptAutoRegions, regenerateAutoRegions } = autoRegionsMgr;
-const brushMode = brushDrawing.brushMode;
-const brushSize = brushDrawing.brushSize;
-const isBrushing = brushDrawing.isBrushing;
-const brushLastPoint = brushDrawing.brushLastPoint;
-const brushStrokePoints = brushDrawing.brushStrokePoints;
 const terrainBrushSize = terrainCanvasBrush.terrainBrushSize;
 const terrainBrushHardness = terrainCanvasBrush.terrainBrushHardness;
 const terrainBrushType = terrainCanvasBrush.terrainBrushType;
@@ -1731,8 +1728,13 @@ watch(interactionMode, (mode) => { if (mode !== 'route') routeEditor.routeDraftP
 
 function setInteractionMode(mode) {
   interactionMode.value = mode;
-  setStatus({ toolLabel: mode === 'pan' ? '浏览' : mode === 'move' ? '移动' : mode === 'terrain' ? '地形笔刷' : '绘制' });
-  brushMode.value = false; floodFillMode.value = false; isBrushing.value = false; brushLastPoint.value = null; brushStrokePoints.value = []; drawingPolygon.value = null; isDrawingActive.value = false; currentPath.value = [];
+  const labelOf = {
+    pan: '浏览', move: '移动', terrain: '地形笔刷', height: '高度/群系笔刷',
+    settle: '智能聚落', route: '路线', marker: '标记', text: '文本', region: '区域', draw: '绘制',
+  };
+  setStatus({ toolLabel: labelOf[mode] || '绘制' });
+  floodFillMode.value = false; drawingPolygon.value = null; isDrawingActive.value = false; currentPath.value = [];
+  if (mode !== 'route') { autoRoadEnabled.value = false; roadStart.value = null; }
   clusterEditor.clusterSelectMode.value = false; clusterEditor.clusterBoxStart.value = null; clusterEditor.clusterBoxEnd.value = null;
   dragObject.value = null; dragRegionAnchor.value = null; edgeSnapPreview.value = null;
   splitSelectMode.value = false; splitPoints.value = []; mergeSelectMode.value = false; mergeTargetId.value = null;
@@ -1850,10 +1852,6 @@ function enterEditMode() {
   drawMode.value = true;
   // 重置绘制子模式，避免上次退出残留导致自由绘制被拦截
   floodFillMode.value = false;
-  brushDrawing.brushMode.value = false;
-  brushDrawing.isBrushing.value = false;
-  brushDrawing.brushLastPoint.value = null;
-  brushDrawing.brushStrokePoints.value = [];
   drawingPolygon.value = null;
   isDrawingActive.value = false;
 }
@@ -1863,6 +1861,8 @@ function exitEditMode() {
   isDrawingActive.value = false;
   currentPath.value = [];
   routeEditor.routeDraftPoints.value = [];
+  autoRoadEnabled.value = false;
+  roadStart.value = null;
   selectedProvince.value = null;
   selectedRegion.value = null;
   selectedMarker.value = null;
@@ -1872,10 +1872,6 @@ function exitEditMode() {
   clusterEditor.clusterSelectMode.value = false;
   clusterEditor.clusterBoxStart.value = null;
   clusterEditor.clusterBoxEnd.value = null;
-  brushDrawing.brushMode.value = false;
-  brushDrawing.isBrushing.value = false;
-  brushDrawing.brushLastPoint.value = null;
-  brushDrawing.brushStrokePoints.value = [];
   isBoxSelecting.value = false;
   boxSelectStart.value = null;
   boxSelectEnd.value = null;
@@ -2136,6 +2132,89 @@ function cancelRouteDraft() {
     return true;
   }
   return false;
+}
+
+/**
+ * R4-2 自动寻路：两次点击（起点→终点）沿等高线生成道路。
+ * 用 placement.generateRoadPath（A*，优先缓坡、避开单步高差 > 15 的陡崖）。
+ */
+function handleAutoRoadClick(wx, wy) {
+  const hm = planetHeightBrush.ensureHeightmap();
+  if (!hm || !hm.grid || !hm.grid.points || !hm.h) {
+    setStatus({ toolLabel: '无高度图数据：先导入 Azgaar .map，或切到高度笔刷涂抹一次' });
+    return;
+  }
+  if (!roadStart.value) {
+    roadStart.value = { x: wx, y: wy };
+    routeEditor.routeDraftPoints.value = [{ x: wx, y: wy }];
+    setStatus({ toolLabel: '已设起点 — 点第二个点生成道路（右键取消）' });
+    renderer.requestRender();
+    return;
+  }
+  const pts = hm.grid.points;
+  const startIdx = findNearestGridPoint(hm.h, hm.grid, roadStart.value.x, roadStart.value.y);
+  const endIdx = findNearestGridPoint(hm.h, hm.grid, wx, wy);
+  const path = (startIdx >= 0 && endIdx >= 0 && startIdx !== endIdx)
+    ? generateRoadPath(hm.h, hm.grid, startIdx, endIdx)
+    : [];
+  if (path.length < 2) {
+    setStatus({ toolLabel: '两点之间没有可通行路径（海/高山阻隔）' });
+    roadStart.value = null;
+    routeEditor.routeDraftPoints.value = [];
+    renderer.requestRender();
+    return;
+  }
+  const gx = (i) => (Array.isArray(pts[i]) ? pts[i][0] : pts[i].x);
+  const gy = (i) => (Array.isArray(pts[i]) ? pts[i][1] : pts[i].y);
+  const route = {
+    id: `route_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    points: path.map(i => ({ x: gx(i), y: gy(i), placeId: null })),
+    dashed: routeEditor.routeDashed.value,
+    color: routeEditor.routeColor.value,
+    name: `道路 ${(currentMapData.value?.routes?.length || 0) + 1}`,
+    label: '',
+    description: '',
+  };
+  store.addRoute(props.planet.id, route);
+  selectedRoute.value = route;
+  roadStart.value = null;
+  routeEditor.routeDraftPoints.value = [];
+  setStatus({ toolLabel: `已生成道路（${path.length} 个路径点）` });
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+/**
+ * R4-3 智能聚落：点击后自动把聚落吸附到附近最优位置
+ * （避开海洋/高山，偏好中等海拔、缓坡、近水；算法见 utils/placement.js）
+ */
+function handleSmartSettle(wx, wy) {
+  const hm = planetHeightBrush.ensureHeightmap();
+  if (!hm || !hm.grid || !hm.grid.points || !hm.h) {
+    setStatus({ toolLabel: '无高度图数据：先导入 Azgaar .map，或切到高度笔刷涂抹一次' });
+    return;
+  }
+  const best = findOptimalBurgPosition(hm.h, hm.grid, wx, wy);
+  if (!best) {
+    setStatus({ toolLabel: '附近没有可建聚落的位置（海/高山）——换个地方点' });
+    return;
+  }
+  const id = `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const node = {
+    id,
+    name: `聚落 ${(currentMapData.value?.places?.length || store.nodes.filter(n => n.parentId === props.planet.id && n.layer === 'city').length) + 1}`,
+    layer: 'city',
+    parentId: props.planet.id,
+    tags: [],
+    sourcePath: '',
+    coordinate: { x: Math.round(best.x), y: Math.round(best.y) },
+    draft: true,
+  };
+  store.addNode(node);
+  store.selectNode(store.nodes.find(n => n.id === id) || node);
+  setStatus({ toolLabel: `已放置聚落（海拔 ${Math.round(best.h)}，偏离点击点 ${Math.round(Math.hypot(best.x - wx, best.y - wy))}m）` });
+  emit('dirty', true);
+  renderer.requestRender();
 }
 
 function handleRouteClick(wx, wy) {
