@@ -144,6 +144,8 @@
     <template v-else-if="name === 'fence'"><path d="M7 21V6l3-3 3 3v15"/><path d="M3 11h16"/><path d="M3 16h16"/></template>
     <template v-else-if="name === 'swords'"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></template>
     <template v-else-if="name === 'orbit'"><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M10.4 21.9a10 10 0 0 0 9.941-15.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 15.416"/></template>
+    <template v-else-if="name === 'users'"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></template>
+    <template v-else-if="name === 'waves'"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9 5c1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1"/></template>
   </svg>
 </template>
 

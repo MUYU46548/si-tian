@@ -276,6 +276,13 @@ ipcMain.handle('set-close-quits-app', async (event, v) => {
   return { success: true, closeQuitsApp: applied };
 });
 
+// IPC: 当前激活底图键（P0 持久化）
+ipcMain.handle('get-current-basemap-key', () => getCurrentBaseMapKey());
+ipcMain.handle('set-current-basemap-key', async (event, key) => {
+  const applied = await setCurrentBaseMapKey(key);
+  return { success: true, currentBaseMapKey: applied };
+});
+
 // IPC: 选择 Vault 库目录（首次引导/设置面板），校验 .obsidian 后保存并重新提取（2026-08-16）
 ipcMain.handle('select-vault-path', async () => {
   try {

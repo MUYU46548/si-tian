@@ -269,6 +269,12 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
       r1 = clamp(Math.ceil((maxY - gridOriginY) / cell) + 1, 0, rows - 1);
     }
 
+    // P0-C: 圆角 + 轻模糊，柔化格子体素感
+    const zoom = renderer.viewTransform?.scale || 1;
+    const roundR = cell * 0.22;
+    const blurPx = 1.4 / zoom;
+    ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
+
     // 按「地形类型 × 噪点档」批量成路径再一次性 fill（逐格 fillStyle+fillRect 是拖拽卡顿主因）
     for (let t = 0; t < TERRAIN_TYPES.length; t++) {
       const type = TERRAIN_TYPES[t];
@@ -282,7 +288,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
           for (let col = c0; col <= c1; col++) {
             if (grid[rowBase + col] !== t) continue;
             if (((col * 7 + row * 13) % 5) - 2 !== noise) continue;
-            ctx.rect(gridOriginX + col * cell, gridOriginY + row * cell, cell, cell);
+            ctx.roundRect(gridOriginX + col * cell, gridOriginY + row * cell, cell, cell, roundR);
             any = true;
           }
         }
@@ -291,6 +297,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
         ctx.fill();
       }
     }
+    ctx.filter = 'none';
     ctx.beginPath(); // 收尾清空路径，避免污染后续绘制
   }
 

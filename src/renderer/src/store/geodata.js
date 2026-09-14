@@ -76,7 +76,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // ===== 领域子模块组装 =====
   // 各模块通过 ctx 拿到所需的 refs/函数引用（ref 传引用保持响应式）
   // 注意：scenarioEditingModule 必须在 searchModule 之前创建（search 需要引用 scenarios）
-  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios });
+  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap });
   const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });

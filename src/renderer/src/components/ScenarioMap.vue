@@ -148,8 +148,18 @@
           </select>
         </label>
       </div>
+      <!-- 底图选择器（P1 切换底图） -->
       <div class="tool-group">
-        <button @click="triggerMapImport" title="导入 .map 底图"><Icon name="map" :size="15"/></button>
+        <label>底图：</label>
+        <select v-model="baseMapKey" @change="onBaseMapChange" class="basemap-select" :title="`当前底图: ${baseMapKey}`">
+          <option v-for="bm in availableBaseMaps" :key="bm.id" :value="bm.id">
+            {{ bm.name }} ({{ bm.count }}省)
+          </option>
+        </select>
+        <button @click="triggerMapImport" title="导入新底图"><Icon name="plus" :size="15"/></button>
+      </div>
+
+      <div class="tool-group">
         <button @click="fitToView" title="适应画布 (F)">⊞</button>
         <button @click="exportPNG" title="导出 PNG 图片"><Icon name="download" :size="15"/></button>
         <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': store.saveStatus.value === 'saving' }">
@@ -463,6 +473,40 @@ const ctx = ref(null);
 const showScenarioManager = ref(false);
 const showLayerPanel = ref(false);
 const showHistoryPanel = ref(false);
+
+// 底图列表（P1 切换底图）
+const availableBaseMaps = computed(() => {
+  const maps = store.getBaseMapsList();
+  return maps.map(b => ({
+    id: b.id,
+    name: b.name || b.id,
+    count: b.terrain?.length || 0,
+  }));
+});
+
+// 底图切换（P2 方案A：切换底图 = 切换剧本集）
+async function onBaseMapChange() {
+  // 清空当前选中态（避免引用旧底图数据）
+  selectedProvince.value = null;
+  selectedScenario.value = null;
+  selectedPolity.value = null;
+  showProps.value = false;
+  contextMenu.value.show = false;
+  rasterCache.clear();
+
+  // 持久化当前底图键
+  if (window.sitianAPI?.setCurrentBaseMapKey) {
+    await window.sitianAPI.setCurrentBaseMapKey(baseMapKey.value);
+  }
+
+  // 自动选中该底图下的第一个剧本
+  const first = sortedScenarios.value[0];
+  if (first) {
+    selectScenario(first);
+  } else {
+    render();
+  }
+}
 
 // 图层锁定（P0 图层锁定迁移）
 const scenarioLayers = ref({
@@ -1693,11 +1737,30 @@ async function triggerMapImport() {
       const json = buildScenariosJson(parsed, name, '当前');
       store.importFromScenariosJson(json);
       baseMapKey.value = name;
+      // 持久化当前底图键（P0）
+      if (window.sitianAPI?.setCurrentBaseMapKey) {
+        window.sitianAPI.setCurrentBaseMapKey(name);
+      }
       if (json.scenarios[name + '/当前']) {
         selectedScenario.value = json.scenarios[name + '/当前'];
         viewMode.value = 'scenario';
       }
       setTimeout(fitToView, 50);
+
+      // 尝试自动同步 Azgaar 数据到对应行星的 mapData
+      const planetNode = store.nodes?.find(n =>
+        n.layer === 'planet' && (n.name === name || n.displayName === name)
+      );
+      if (planetNode && json.baseMaps?.[name]?.heightmap) {
+        store.importPlanetLayerData(planetNode.id, {
+          provinces: json.baseMaps[name].terrain,
+          states: parsed.states,
+          cultures: parsed.cultures,
+          religions: parsed.religions,
+          polities: parsed.polities,
+          ownership: parsed.ownership,
+        });
+      }
     } catch (err) {
       alert('导入失败: ' + err.message);
     }
@@ -2931,12 +2994,20 @@ async function exportPNG() {
 
 let resizeObserver = null;
 
-onMounted(() => {
+onMounted(async () => {
   const cvs = canvas.value;
   const wrap = canvasWrap.value;
   cvs.width = wrap.clientWidth;
   cvs.height = wrap.clientHeight;
   ctx.value = cvs.getContext('2d');
+
+  // P0: 恢复上次使用的底图键
+  if (window.sitianAPI?.getCurrentBaseMapKey) {
+    const savedKey = await window.sitianAPI.getCurrentBaseMapKey();
+    if (savedKey && store.baseMaps?.[savedKey]) {
+      baseMapKey.value = savedKey;
+    }
+  }
 
   if (!store.baseMaps?.[baseMapKey.value]) {
     store.addBaseMap(baseMapKey.value, { name: '德斯特星' });
@@ -3109,6 +3180,10 @@ watch(baseMap, () => {
   width: 80px;
   vertical-align: middle;
 }
+.basemap-select {
+  min-width: 120px;
+}
+
 .brush-biome-select {
   background: #334155;
   color: #e2e8f0;
@@ -3118,6 +3193,7 @@ watch(baseMap, () => {
   font-size: 11px;
   vertical-align: middle;
 }
+
 
 .scenario-timeline {
   background: #172033;

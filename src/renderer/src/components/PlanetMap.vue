@@ -222,8 +222,16 @@
     <div v-if="editMode && showExtraLayers" class="terrain-picker">
       <span class="picker-label">更多图层：</span>
       <button :class="{ active: layers.isVisible('planet', 'elevation') }" @click="layers.toggleLayer('planet', 'elevation')" title="显示海拔等高线"><Icon name="mountain" :size="13"/> 海拔</button>
-      <button :class="{ active: layers.isVisible('planet', 'climate') }" @click="layers.toggleLayer('planet', 'climate')" title="显示气候分区"><Icon name="thermometer" :size="13"/> 气候</button>
-      <button :class="{ active: layers.isVisible('planet', 'precipitation') }" @click="layers.toggleLayer('planet', 'precipitation')" title="显示降水分布"><Icon name="droplet" :size="13"/> 降水</button>
+      <button :class="{ active: layers.isVisible('planet', 'climate') }" @click="layers.toggleLayer('planet', 'climate')" title="显示气候带"><Icon name="sun" :size="13"/> 气候</button>
+      <button :class="{ active: layers.isVisible('planet', 'precipitation') }" @click="layers.toggleLayer('planet', 'precipitation')" title="显示降水"><Icon name="cloud" :size="13"/> 降水</button>
+    </div>
+
+    <!-- Azgaar .map 参考图层（C → A → B → D）-->
+    <div v-if="hasAzgaarData" class="toolbar-group azgaar-layers" title="Azgaar 参考图层">
+      <button :class="{ active: layers.isVisible('planet', 'politicalBorders') }" @click="layers.toggleLayer('planet', 'politicalBorders')" title="政治实体边界（虚线参考）"><Icon name="flag" :size="13"/> 政治</button>
+      <button :class="{ active: layers.isVisible('planet', 'biomeContours') }" @click="layers.toggleLayer('planet', 'biomeContours')" title="自然区划轮廓（生物群系边界）"><Icon name="grid" :size="13"/> 自然</button>
+      <button :class="{ active: layers.isVisible('planet', 'coastlineRidges') }" @click="layers.toggleLayer('planet', 'coastlineRidges')" title="海岸线与山脊线"><Icon name="waves" :size="13"/> 海岸</button>
+      <button :class="{ active: layers.isVisible('planet', 'cultureReligion') }" @click="layers.toggleLayer('planet', 'cultureReligion')" title="文化/宗教区域（半透明叠加）"><Icon name="users" :size="13"/> 文化</button>
     </div>
 
     <!-- 区域颜色选择器 -->
@@ -265,6 +273,7 @@
         <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
         <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度 / 群系笔刷（14.4m 格，改高度自动派生温度降水群系）"><Icon name="trending-up" :size="15"/></button>
         <button :class="{ active: interactionMode === 'terrain' }" @click="setInteractionMode('terrain')" title="地形涂色笔刷（同 14.4m 格，直接铺地表类型：海洋/草地/森林…）"><Icon name="brush" :size="15"/></button>
+        <button v-if="hasAzgaarData" :class="{ active: interactionMode === 'political' }" @click="setInteractionMode('political')" title="编辑政治实体边界"><Icon name="flag" :size="15"/></button>
         <div class="tool-dock-sep"></div>
         <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="15"/></button>
         <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="15"/></button>
@@ -970,6 +979,12 @@ const currentMapData = computed(() => {
   return store.mapData[props.planet.id] || { planetId: props.planet.id, version: 1, terrain: [], regions: [], markers: [], routes: [], textLabels: [] };
 });
 
+// Azgaar .map 参考数据是否可用
+const hasAzgaarData = computed(() => {
+  const md = currentMapData.value;
+  return !!(md?.azgaarProvinces?.length || md?.heightmap?.biome?.length || md?.azgaarStates?.length);
+});
+
 // ===== 地点集合 =====
 const PLACE_LAYERS = ['location', 'city', 'town', 'village', 'facility'];
 const places = computed(() => {
@@ -1092,6 +1107,20 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('planet', 'heightmap')
     || (editMode.value && (interactionMode.value === 'height'))) {
     drawing.drawHeightmap(ctx);
+  }
+
+  // Azgaar .map 参考图层（C → A → B → D）
+  if (layers.isVisible('planet', 'politicalBorders')) {
+    drawing.drawPoliticalBorders(ctx);
+  }
+  if (layers.isVisible('planet', 'biomeContours')) {
+    drawing.drawBiomeContours(ctx);
+  }
+  if (layers.isVisible('planet', 'coastlineRidges')) {
+    drawing.drawCoastlineAndRidges(ctx);
+  }
+  if (layers.isVisible('planet', 'cultureReligion')) {
+    drawing.drawCultureReligionRegions(ctx);
   }
 
   // 画布地形笔刷网格渲染（P3 验证通过的原型集成）

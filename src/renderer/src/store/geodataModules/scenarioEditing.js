@@ -9,7 +9,7 @@ import {
 } from '../../utils/heightMath';
 
 export function createScenarioEditingModule(ctx) {
-  const { execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios } = ctx;
+  const { execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap } = ctx;
 
   const baseMaps = ref({});
   const scenarios = ref({});
@@ -778,6 +778,60 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
+  /**
+   * 将 Azgaar .map 中的政治/文化/宗教数据同步到指定行星的 mapData
+   * 供 PlanetMap 渲染参考图层使用
+   */
+  function importPlanetLayerData(planetId, data) {
+    if (!planetId || !data) return;
+    const map = mapData.value?.[planetId];
+    if (!map) return;
+
+    // 补充省份多边形（按政治实体/文化/宗教分组）
+    if (data.provinces && Array.isArray(data.provinces)) {
+      map.azgaarProvinces = data.provinces.map(p => ({
+        id: p.id,
+        name: p.name || '',
+        points: p.points || [],
+        stateId: p.stateId || 0,
+        cultureId: p.cultureId || 0,
+        religionId: p.religionId || 0,
+        color: p.color || p.stateColor || p.cultureColor || '#888888',
+      }));
+    }
+
+    // 补充政治实体数据
+    if (data.states && Array.isArray(data.states)) {
+      map.azgaarStates = data.states.map(s => ({
+        id: s.id || s.i,
+        name: s.name || ('State ' + (s.id || s.i)),
+        color: s.color || '#888888',
+      }));
+    }
+
+    // 补充文化数据
+    if (data.cultures && Array.isArray(data.cultures)) {
+      map.azgaarCultures = data.cultures.map(c => ({
+        id: c.id || c.i,
+        name: c.name || ('Culture ' + (c.id || c.i)),
+        color: c.color || '#888888',
+      }));
+    }
+
+    // 补充宗教数据
+    if (data.religions && Array.isArray(data.religions)) {
+      map.azgaarReligions = data.religions.map(r => ({
+        id: r.id || r.i,
+        name: r.name || ('Religion ' + (r.id || r.i)),
+        color: r.color || '#888888',
+      }));
+    }
+
+    // 触发响应式更新
+    mapData.value = { ...mapData.value, [planetId]: { ...map } };
+    scheduleAutoSaveMap(planetId);
+  }
+
   function loadScenarioState(data) {
     if (data.baseMaps) baseMaps.value = data.baseMaps;
     if (data.scenarios) scenarios.value = data.scenarios;
@@ -1216,7 +1270,7 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     createScenario, updateScenario, removeScenario, inheritScenario,
     setOwnership, clearOwnership, batchSetOwnership,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
-    importFromScenariosJson, loadScenarioState,
+    importFromScenariosJson, importPlanetLayerData, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
     addBaseMapBurg, applyCultureBrush, applyReligionBrush,
     getBaseMap, getScenario, getScenariosByOwner, getBaseMapsList, getAllScenarios,

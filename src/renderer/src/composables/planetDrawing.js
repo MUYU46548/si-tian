@@ -12,6 +12,7 @@ import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '
 import { labelFont } from '../utils/textMeasure';
 import { toRaw } from 'vue';
 import { biomeColor, biomeKeyFromIndex, BIOME_KEYS } from '../utils/heightMath';
+import { extractContours, simplifyContour } from '../utils/contour';
 
 const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（批量绘制时按编码分桶）
 
@@ -339,7 +340,7 @@ function drawHeightmap(ctx) {
   const vp = s.viewport;
   if (!vp) return;
   const half = spacing / 2;
-  // 网格原点取真实首点坐标（曾按世界原点 0 反推下标 → 视口裁剪失效、整张网格每帧全量重绘）
+  // 网格原点取真实首点坐标（曾按世界原点 0 反推下标 → 视口裁剪失效、整张网格每量重绘）
   const first = pts[0];
   const originX = Array.isArray(first) ? first[0] : first.x;
   const originY = Array.isArray(first) ? first[1] : first.y;
@@ -349,6 +350,11 @@ function drawHeightmap(ctx) {
   const maxJ = Math.min(hm.grid.cellsY - 1, Math.ceil((vp.maxY + half - originY) / spacing));
   if (maxI < minI || maxJ < minJ) return;
   ctx.globalAlpha = 0.7;
+  // P0-C: 圆角 + 轻模糊，柔化格子体素感
+  const zoom = s.zoom || 1;
+  const roundR = spacing * 0.22; // 格子 22% 圆角
+  const blurPx = 1.4 / zoom;     // 屏幕空间 ~1.4px 模糊（抵消 zoom 影响）
+  ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
   // 按生物群系批量成路径再一次性 fill（逐格 fillStyle+fillRect 是笔刷拖拽时的主要开销）
   for (let b = 0; b < BIOME_BUCKETS; b++) {
     ctx.beginPath();
@@ -360,7 +366,7 @@ function drawHeightmap(ctx) {
         if (idx >= count || biome[idx] !== b) continue;
         const px = Array.isArray(pts[idx]) ? pts[idx][0] : pts[idx].x;
         const py = Array.isArray(pts[idx]) ? pts[idx][1] : pts[idx].y;
-        ctx.rect(px - half, py - half, spacing, spacing);
+        ctx.roundRect(px - half, py - half, spacing, spacing, roundR);
         any = true;
       }
     }
@@ -368,6 +374,7 @@ function drawHeightmap(ctx) {
     ctx.fillStyle = biomeColor(biomeKeyFromIndex(b));
     ctx.fill();
   }
+  ctx.filter = 'none';
   ctx.beginPath(); // 收尾清空路径，避免污染后续绘制（fill() 会填充累积的路径）
   ctx.globalAlpha = 1;
 }
@@ -1733,8 +1740,302 @@ function getContrastColor(hex) {
     drawHeightmap,
     drawHeightBrushPreview,
     drawTerrainBrushPreview,
+    drawPoliticalBorders,
+    drawBiomeContours,
+    drawCoastlineAndRidges,
+    drawCultureReligionRegions,
     getPolygonCenter,
     darkenColor,
     getContrastColor,
   };
+}
+
+// ============================================================
+// Azgaar .map 参考图层（C: 政治实体 → A: 自然区划 → B: 山脊/海岸 → D: 文化/宗教）
+// ============================================================
+
+/**
+ * C. 政治实体边界（来自 Azgaar states/provinces）
+ * 常态：半透明虚线，不参与点击
+ * 编辑模式 + interactionMode='political'：可点击选中
+ */
+function drawPoliticalBorders(ctx) {
+  const s = getState();
+  const azgaarProvinces = s.currentMapData?.azgaarProvinces;
+  if (!azgaarProvinces || !azgaarProvinces.length) return;
+
+  const isEditMode = s.editMode;
+  const isPoliticalMode = s.interactionMode === 'political';
+  const vp = s.viewport;
+
+  ctx.save();
+
+  for (const prov of azgaarProvinces) {
+    if (!prov.points || prov.points.length < 3) continue;
+
+    // 视口裁剪
+    let inView = false;
+    for (const p of prov.points) {
+      const px = p.x || p[0] || 0;
+      const py = p.y || p[1] || 0;
+      if (px >= vp.minX && px <= vp.maxX && py >= vp.minY && py <= vp.maxY) {
+        inView = true;
+        break;
+      }
+    }
+    if (!inView) continue;
+
+    ctx.beginPath();
+    const first = prov.points[0];
+    ctx.moveTo(first.x || first[0] || 0, first.y || first[1] || 0);
+    for (let i = 1; i < prov.points.length; i++) {
+      const p = prov.points[i];
+      ctx.lineTo(p.x || p[0] || 0, p.y || p[1] || 0);
+    }
+    ctx.closePath();
+
+    if (isEditMode && isPoliticalMode) {
+      // 可编辑模式：半透明填充 + 实线边界
+      ctx.fillStyle = (prov.color || '#888888') + '33';
+      ctx.globalAlpha = 1;
+      ctx.fill();
+      ctx.strokeStyle = prov.color || '#888888';
+      ctx.lineWidth = 2 / (s.zoom || 1);
+      ctx.setLineDash([]);
+    } else {
+      // 常态：虚线轮廓，低透明度
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = prov.color || '#aaaaaa';
+      ctx.lineWidth = 1.5 / (s.zoom || 1);
+      ctx.setLineDash([6 / (s.zoom || 1), 4 / (s.zoom || 1)]);
+    }
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * A. 自然区划轮廓线（来自 heightmap.biome）
+ * 相邻 biome 的边界线，柔化显示
+ */
+function drawBiomeContours(ctx) {
+  const s = getState();
+  const hm = s.currentMapData?.heightmap;
+  if (!hm?.biome?.length || !hm.grid?.points?.length) return;
+
+  const cols = hm.grid.cellsX;
+  const rows = hm.grid.cellsY;
+  if (!cols || !rows || cols * rows > hm.biome.length) return;
+
+  const pts = hm.grid.points;
+  const spacing = hm.grid.spacing || 14.4;
+  const vp = s.viewport;
+  const half = spacing / 2;
+
+  // 视口裁剪
+  const c0 = Math.max(0, Math.floor((vp.minX - half) / spacing));
+  const c1 = Math.min(cols - 1, Math.ceil((vp.maxX + half) / spacing));
+  const r0 = Math.max(0, Math.floor((vp.minY - half) / spacing));
+  const r1 = Math.min(rows - 1, Math.ceil((vp.maxY + half) / spacing));
+  if (c1 <= c0 || r1 <= r0) return;
+
+  // 提取可见区域的子场
+  const subCols = c1 - c0 + 1;
+  const subRows = r1 - r0 + 1;
+  const subField = new Uint8Array(subCols * subRows);
+  for (let r = 0; r < subRows; r++) {
+    for (let c = 0; c < subCols; c++) {
+      subField[r * subCols + c] = hm.biome[(r + r0) * cols + (c + c0)];
+    }
+  }
+
+  // 坐标转换
+  const subPts = [];
+  for (let r = 0; r < subRows; r++) {
+    for (let c = 0; c < subCols; c++) {
+      const globalIdx = (r + r0) * cols + (c + c0);
+      const p = pts[globalIdx];
+      subPts.push(Array.isArray(p) ? p : [p.x, p.y]);
+    }
+  }
+
+  const contours = extractContours(subField, subCols, subRows, subPts, spacing);
+  if (!contours.length) return;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.lineWidth = 1 / (s.zoom || 1);
+
+  for (const contour of contours) {
+    if (contour.points.length < 2) continue;
+
+    // 简化轮廓线
+    const simplified = simplifyContour(contour.points, spacing * 0.6);
+    if (simplified.length < 2) continue;
+
+    ctx.beginPath();
+    ctx.moveTo(simplified[0].x, simplified[0].y);
+    for (let i = 1; i < simplified.length; i++) {
+      ctx.lineTo(simplified[i].x, simplified[i].y);
+    }
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * B. 海岸线（h=20 等值线）和山脊线（高度梯度大的边）
+ * 海岸线：实线；山脊线：虚线
+ */
+function drawCoastlineAndRidges(ctx) {
+  const s = getState();
+  const hm = s.currentMapData?.heightmap;
+  if (!hm?.h?.length || !hm.grid?.points?.length) return;
+
+  const cols = hm.grid.cellsX;
+  const rows = hm.grid.cellsY;
+  const pts = hm.grid.points;
+  const h = hm.h;
+  const spacing = hm.grid.spacing || 14.4;
+  const vp = s.viewport;
+  const half = spacing / 2;
+
+  const c0 = Math.max(0, Math.floor((vp.minX - half) / spacing));
+  const c1 = Math.min(cols - 1, Math.ceil((vp.maxX + half) / spacing));
+  const r0 = Math.max(0, Math.floor((vp.minY - half) / spacing));
+  const r1 = Math.min(rows - 1, Math.ceil((vp.maxY + half) / spacing));
+  if (c1 <= c0 || r1 <= r0) return;
+
+  const SEA_LEVEL = 20;
+  const zoom = s.zoom || 1;
+
+  // 预计算每个格子中心坐标（局部）
+  const coord = (c, r) => {
+    const p = pts[r * cols + c];
+    return Array.isArray(p) ? { x: p[0], y: p[1] } : { x: p.x, y: p.y };
+  };
+
+  // 收集海岸线段（h=20 等值）和山脊线段
+  const coastSegments = [];
+  const ridgeSegments = [];
+
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const idx = r * cols + c;
+      const hVal = h[idx];
+
+      // 检查右边邻居
+      if (c < c1) {
+        const hRight = h[idx + 1];
+        if ((hVal < SEA_LEVEL) !== (hRight < SEA_LEVEL)) {
+          const p1 = coord(c, r);
+          const p2 = coord(c + 1, r);
+          coastSegments.push({ x1: (p1.x + p2.x) / 2, y1: (p1.y + p2.y) / 2, x2: p2.x, y2: p2.y });
+        }
+        // 山脊：高度差 > 30
+        if (Math.abs(hVal - hRight) > 30) {
+          const p1 = coord(c, r);
+          const p2 = coord(c + 1, r);
+          ridgeSegments.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+        }
+      }
+
+      // 检查下边邻居
+      if (r < r1) {
+        const hDown = h[idx + cols];
+        if ((hVal < SEA_LEVEL) !== (hDown < SEA_LEVEL)) {
+          const p1 = coord(c, r);
+          const p2 = coord(c, r + 1);
+          coastSegments.push({ x1: (p1.x + p2.x) / 2, y1: (p1.y + p2.y) / 2, x2: p2.x, y2: p2.y });
+        }
+        if (Math.abs(hVal - hDown) > 30) {
+          const p1 = coord(c, r);
+          const p2 = coord(c, r + 1);
+          ridgeSegments.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+        }
+      }
+    }
+  }
+
+  ctx.save();
+
+  // 海岸线
+  ctx.strokeStyle = '#5d97bb';
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.beginPath();
+  for (const seg of coastSegments) {
+    ctx.moveTo(seg.x1, seg.y1);
+    ctx.lineTo(seg.x2, seg.y2);
+  }
+  ctx.stroke();
+
+  // 山脊线
+  ctx.strokeStyle = 'rgba(255, 200, 150, 0.5)';
+  ctx.lineWidth = 1 / zoom;
+  ctx.setLineDash([3 / zoom, 3 / zoom]);
+  ctx.beginPath();
+  for (const seg of ridgeSegments) {
+    ctx.moveTo(seg.x1, seg.y1);
+    ctx.lineTo(seg.x2, seg.y2);
+  }
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/**
+ * D. 文化/宗教区域（来自 Azgaar cultures/religions）
+ * 半透明色块叠加
+ */
+function drawCultureReligionRegions(ctx) {
+  const s = getState();
+  const azgaarProvinces = s.currentMapData?.azgaarProvinces;
+  if (!azgaarProvinces || !azgaarProvinces.length) return;
+
+  const vp = s.viewport;
+
+  // 根据 colorMode 决定用什么数据着色
+  const colorMode = s.azgaarColorMode || 'state'; // state | culture | religion
+
+  ctx.save();
+
+  for (const prov of azgaarProvinces) {
+    if (!prov.points || prov.points.length < 3) continue;
+
+    // 视口裁剪
+    let inView = false;
+    for (const p of prov.points) {
+      const px = p.x || p[0] || 0;
+      const py = p.y || p[1] || 0;
+      if (px >= vp.minX && px <= vp.maxX && py >= vp.minY && py <= vp.maxY) {
+        inView = true;
+        break;
+      }
+    }
+    if (!inView) continue;
+
+    let color = prov.color || '#888888';
+    if (colorMode === 'culture' && prov.cultureColor) {
+      color = prov.cultureColor;
+    } else if (colorMode === 'religion' && prov.religionColor) {
+      color = prov.religionColor;
+    }
+
+    ctx.beginPath();
+    const first = prov.points[0];
+    ctx.moveTo(first.x || first[0] || 0, first.y || first[1] || 0);
+    for (let i = 1; i < prov.points.length; i++) {
+      const p = prov.points[i];
+      ctx.lineTo(p.x || p[0] || 0, p.y || p[1] || 0);
+    }
+    ctx.closePath();
+
+    ctx.fillStyle = color + '40'; // 25% opacity
+    ctx.globalAlpha = 1;
+    ctx.fill();
+  }
+
+  ctx.restore();
 }

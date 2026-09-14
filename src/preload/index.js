@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   getCloseQuitsApp: () => ipcRenderer.invoke('get-close-quits-app'),
   setCloseQuitsApp: (v) => ipcRenderer.invoke('set-close-quits-app', v),
 
+  // 当前激活的底图键（P0 持久化）
+  getCurrentBaseMapKey: () => ipcRenderer.invoke('get-current-basemap-key'),
+  setCurrentBaseMapKey: (key) => ipcRenderer.invoke('set-current-basemap-key', key),
+
   // 地图数据
   getMapData: (planetId) => ipcRenderer.invoke('get-map-data', planetId),
   saveMapData: (planetId, data) => ipcRenderer.invoke('save-map-data', planetId, data),

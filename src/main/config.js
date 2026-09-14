@@ -9,7 +9,7 @@ const DEFAULT_VAULT = ''; // 留空：首次启动由用户通过设置面板指
 const WINDOW_MODES = ['maximized', 'fullscreen', 'default'];
 const DEFAULT_WINDOW_MODE = 'maximized';
 
-let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE, closeQuitsApp: false };
+let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE, closeQuitsApp: false, currentBaseMapKey: '' };
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'config.json');
@@ -75,8 +75,20 @@ async function setCloseQuitsApp(v) {
   return config.closeQuitsApp;
 }
 
+// 当前激活的底图键（P0 持久化）
+function getCurrentBaseMapKey() {
+  return config.currentBaseMapKey || '';
+}
+
+async function setCurrentBaseMapKey(key) {
+  config.currentBaseMapKey = typeof key === 'string' ? key : '';
+  await writeConfig();
+  return config.currentBaseMapKey;
+}
+
 module.exports = {
   loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT,
   getWindowMode, setWindowMode,
   getCloseQuitsApp, setCloseQuitsApp,
+  getCurrentBaseMapKey, setCurrentBaseMapKey,
 };

@@ -42,7 +42,12 @@ export const useLayersStore = defineStore('layers', () => {
       clusters: { visible: true, label: '地点簇', order: 9 },
       textLabels: { visible: true, label: '文本', order: 10 },
       referenceImage: { visible: true, label: '参考底图', order: 11 },
-      editHelpers: { visible: true, label: '编辑辅助', order: 12 },
+      // Azgaar .map 参考图层（C: 政治实体 → A: 自然区划 → B: 山脊/海岸 → D: 文化/宗教）
+      politicalBorders: { visible: false, label: '政治实体边界', order: 12 },
+      biomeContours: { visible: false, label: '自然区划轮廓', order: 13 },
+      coastlineRidges: { visible: false, label: '海岸线/山脊', order: 14 },
+      cultureReligion: { visible: false, label: '文化/宗教区域', order: 15 },
+      editHelpers: { visible: true, label: '编辑辅助', order: 16 },
     },
     area: {
       zones: { visible: true, label: '区域多边形', order: 0 },
