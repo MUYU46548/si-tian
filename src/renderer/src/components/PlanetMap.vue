@@ -258,8 +258,16 @@
       ><span class="marker-icon"><Icon :name="m.icon" :size="13"/></span> {{ m.label }}</button>
     </div>
     
-    <div class="canvas-wrapper" @dragover.prevent="handleDragOver" @drop.prevent="handleDrop">
+    <div class="canvas-wrapper" @dragover.prevent="handleDragOver" @drop.prevent="handleDrop"
+         @mousemove="onWrapperMouseMove" @mouseleave="onWrapperMouseLeave" @mouseenter="onWrapperMouseEnter"
+         @mousedown="tipSuppressed = true" @mouseup="tipSuppressed = false">
       <canvas ref="canvas"></canvas>
+      <!-- R6 悬停提示：跟随鼠标显示当前对象名/层级（pointer-events:none，不干扰命中与点击） -->
+      <div v-if="hoverTip.visible && !tipSuppressed && !isSpacebarDown" ref="hoverTipEl"
+           class="hover-tooltip" :class="`hover-tip-${hoverTip.kind}`">
+        <div class="hover-tooltip-name">{{ hoverTip.title }}</div>
+        <div v-if="hoverTip.meta" class="hover-tooltip-meta">{{ hoverTip.meta }}</div>
+      </div>
       <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
       <!-- U1 工具箱 dock -->
       <div v-if="editMode" class="tool-dock" @mousedown.stop @dblclick.stop @wheel.stop>
@@ -923,6 +931,97 @@ const BIOME_COLORS = {
 const floodFillMode = ref(false);
 const currentPath = ref([]);
 const hoveredNode = ref(null);
+// ===== R6 悬停提示（DOM 层，指针事件穿透）=====
+// 内容（title/meta）仅在命中目标变化时更新（onHover 本就只在 hit 变化时触发）；
+// 位置在 mousemove 里直接写 style.transform，不走响应式 —— 否则每次鼠标移动都会
+// 重渲染这个 3000 行的组件（帧时间会被拖垮，见 test_16 的 perf 阈值）。
+const hoverTip = ref({ visible: false, kind: '', title: '', meta: '' });
+const hoverTipEl = ref(null);
+const tipSuppressed = ref(false);   // 拖拽/平移期间抑制（mousedown→mouseup）
+const tipSize = { w: 0, h: 0 };     // 尺寸缓存：避免每次 mousemove 触发强制重排
+const tipMouse = { x: 0, y: 0 };    // 鼠标在 canvas-wrapper 内的相对坐标
+let tipWrapRect = null;             // wrapper 视口矩形缓存（mouseenter 时取一次，避免每次 mousemove 触发重排）
+
+/** 把提示框放到鼠标右下（空间不足则翻转到左上）；直接写 transform，不触发响应式 */
+function syncTipPos() {
+  const el = hoverTipEl.value;
+  if (!el) return;
+  const wrap = el.parentElement;
+  const rect = tipWrapRect || (wrap && wrap.getBoundingClientRect());
+  if (!rect) return;
+  const w = tipSize.w || el.offsetWidth;
+  const h = tipSize.h || el.offsetHeight;
+  const flipX = tipMouse.x + 14 + w > rect.width;
+  const flipY = tipMouse.y + 16 + h > rect.height;
+  el.style.transform = `translate(${Math.round(tipMouse.x + (flipX ? -14 - w : 14))}px, `
+    + `${Math.round(tipMouse.y + (flipY ? -16 - h : 16))}px)`;
+}
+
+/** 命中目标 → 提示内容。仅命中变化时更新（onHover 只在 hit 变化时触发） */
+function updateHoverTip(hit) {
+  const t = hit && hit.type;
+  let next = null;
+  if (t === 'place' && hit.node) {
+    const n = hit.node;
+    next = {
+      kind: 'place',
+      title: n.displayName || n.name,
+      meta: [n.layerLabel || store.layerLabels?.[n.layer], n.placeType, (n.tags || []).slice(0, 3).join(' ')]
+        .filter(Boolean).join(' · '),
+    };
+  } else if (t === 'province' && hit.polygon) {
+    const p = hit.polygon;
+    const meta = [p.elevation, p.climate, p.ecology].filter(Boolean).join(' · ');
+    // 全匿名地形（本库有 20+ 个空名多边形）不弹提示 —— 只有「(未命名地形) · 地形」是噪声
+    if (!p.name && !meta) return;
+    next = { kind: 'province', title: p.name || '(未命名地形)', meta: meta || '地形' };
+  } else if (t === 'region' && hit.region) {
+    const g = hit.region;
+    if (!g.name && !g.type) return;
+    next = { kind: 'region', title: g.name || '(未命名区域)', meta: g.type || '区域' };
+  } else if (t === 'marker' && hit.marker) {
+    const m = hit.marker;
+    next = { kind: 'marker', title: m.name || '(未命名标记)', meta: [m.type, '标记'].filter(Boolean).join(' · ') };
+  } else if (t === 'textLabel' && hit.label) {
+    next = { kind: 'textLabel', title: hit.label.text || '(空文本)', meta: '浮动文本' };
+  } else if ((t === 'route' || t === 'route-endpoint') && hit.route) {
+    const rt = hit.route;
+    next = { kind: 'route', title: rt.name || '(未命名路线)', meta: [rt.style, '路线'].filter(Boolean).join(' · ') };
+  }
+  if (!next) {
+    if (hoverTip.value.visible) hoverTip.value = { visible: false, kind: '', title: '', meta: '' };
+    return;
+  }
+  const cur = hoverTip.value;
+  if (cur.visible && cur.kind === next.kind && cur.title === next.title && cur.meta === next.meta) return;
+  hoverTip.value = { visible: true, ...next };
+  // 等 DOM 换内容后再量尺寸并定位（尺寸变化会让翻转判定失效）
+  nextTick(() => {
+    const el = hoverTipEl.value;
+    if (!el) return;
+    tipSize.w = el.offsetWidth;
+    tipSize.h = el.offsetHeight;
+    syncTipPos();
+  });
+}
+
+function onWrapperMouseEnter(e) {
+  tipWrapRect = e.currentTarget.getBoundingClientRect();
+}
+
+function onWrapperMouseMove(e) {
+  const rect = tipWrapRect || e.currentTarget.getBoundingClientRect();
+  tipMouse.x = e.clientX - rect.left;
+  tipMouse.y = e.clientY - rect.top;
+  if (hoverTip.value.visible && !tipSuppressed.value) syncTipPos();
+}
+
+function onWrapperMouseLeave() {
+  tipSuppressed.value = false;
+  tipWrapRect = null;
+  if (hoverTip.value.visible) hoverTip.value = { visible: false, kind: '', title: '', meta: '' };
+}
+
 const floodPreview = ref(null);
 const editMode = ref(false);
 const selectedTerrain = ref('land');
@@ -1360,6 +1459,7 @@ const renderer = useCanvasRenderer(canvas, {
     cursorCoord.value = { x: Math.round(wx), y: Math.round(wy), visible: true };
     setStatusThrottled({ selectionCount: selectedPlaceIds.value.size });
     hoveredNode.value = hit?.type === 'place' ? hit.node : null;
+    updateHoverTip(hit);
     const hoverMode = isSpacebarDown.value ? 'pan' : interactionMode.value;
     if (hoverMode === 'move') {
       const movable = hit && (hit.type === 'place' || hit.type === 'marker' || hit.type === 'textLabel' || hit.type === 'region');
@@ -2527,6 +2627,37 @@ onUnmounted(() => {
   flex: 1;
   position: relative;
   overflow: hidden;
+}
+
+/* R6 悬停提示：跟随鼠标显示对象名/层级 */
+.hover-tooltip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;      /* 关键：绝不能拦截画布命中与点击 */
+  z-index: 30;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(10, 14, 24, 0.92);
+  border: 1px solid var(--panel-border, #2a3550);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  will-change: transform;
+}
+
+.hover-tooltip-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary, #e6edf6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hover-tooltip-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary, #9aa7bd);
 }
 
 /* 空地图引导卡片（P1-3） */

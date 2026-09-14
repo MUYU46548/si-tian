@@ -63,6 +63,7 @@
     <template v-else-if="name === 'zap'"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></template>
     <template v-else-if="name === 'activity'"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></template>
     <template v-else-if="name === 'trending-up'"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></template>
+    <template v-else-if="name === 'trending-down'"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></template>
     <template v-else-if="name === 'bar-chart'"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></template>
     <template v-else-if="name === 'hash'"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></template>
     <template v-else-if="name === 'corner-down-left'"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></template>
@@ -93,6 +94,7 @@
     <template v-else-if="name === 'pen-tool'"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></template>
     <template v-else-if="name === 'brush'"><path d="M18.37 2.63a2.12 2.12 0 0 1 3 3L14 13l-4 1 1-4 7.37-7.37z"/><path d="M9 14.5c-2.5 1-3.5 3.5-4.5 5.5 2 0 4-.5 5.5-2.5 1-1.5 0-3-1-3z"/></template>
     <template v-else-if="name === 'droplet'"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></template>
+    <template v-else-if="name === 'droplets'"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/></template>
     <template v-else-if="name === 'cloud'"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></template>
     <template v-else-if="name === 'thermometer'"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></template>
     <template v-else-if="name === 'wind'"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></template>

@@ -222,6 +222,13 @@ def main():
             wait_for(cdp, "!document.querySelector('.onboarding-overlay')", timeout=30, desc='引导层已关闭')
         except Exception as e:
             print(f'  ⚠️ 跳过首启引导失败（首个用例可能看到空数据）：{e}')
+        # 首个用例前同样等数据就绪（见下方循环内同款说明）
+        try:
+            wait_for(cdp,
+                     "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
+                     timeout=30, desc='首个用例前数据就绪')
+        except Exception:
+            print('  ⚠️ 首个用例前置数据未就绪（30s 内 store.nodes 仍为 0）')
         passed, failed = 0, []
         for cf in case_files:
             name = os.path.splitext(cf)[0]
@@ -241,6 +248,16 @@ def main():
             try:
                 cdp.navigate()
                 wait_for(cdp, "!!document.querySelector('.app-layout')", desc='重载')
+                # 用例前统一等数据就绪：mock 是异步注入的（geodata + 2MB mapdata），
+                # 只等 .app-layout 会让下一个用例的首个断言撞上空 store，报「no-world /
+                # 树节点未渲染 / 地理数据加载超时」这类**假失败**（历史上曾据此误判
+                # test_07/test_12 为回归失败）。超时只告警不中断：由用例自己给出有意义的失败原因。
+                try:
+                    wait_for(cdp,
+                             "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
+                             timeout=30, desc='用例前数据就绪')
+                except Exception:
+                    print('  ⚠️ 前置数据未就绪（30s 内 store.nodes 仍为 0，冷启动抖动？）')
                 time.sleep(0.5)
             except Exception:
                 pass

@@ -7,9 +7,19 @@ const matter = require('gray-matter');
 const DEFAULT_VAULT = ''; // 留空：主进程调用时传入用户配置的路径，CLI 时通过 --vault 指定
 let vaultPath = DEFAULT_VAULT;
 
-function geoSystemPath() { return path.join(vaultPath, '03 设定', '11 地理系统'); }
-function locationsPath() { return path.join(vaultPath, '03 设定', '02 场景地点'); }
-function indexPath() { return path.join(vaultPath, '01 索引', '地理系统索引.md'); }
+// 提取范围：单一事实源。审计脚本 scripts/audit-coverage.js 直接 require 本常量，
+// 避免「审计脚本自己硬编码目录 → 与提取器漂移 → 覆盖率报告失真」。
+// 注意：范围外的笔记（如 03 设定/01 人物、00 基础）本就不该成为地图节点，不计入覆盖率缺口。
+const SCAN_SCOPE = {
+  geoSystem: '03 设定/11 地理系统',
+  locations: '03 设定/02 场景地点',
+  index: '01 索引/地理系统索引.md',
+  excludedBasenames: ['世界索引'],
+};
+
+function geoSystemPath() { return path.join(vaultPath, ...SCAN_SCOPE.geoSystem.split('/')); }
+function locationsPath() { return path.join(vaultPath, ...SCAN_SCOPE.locations.split('/')); }
+function indexPath() { return path.join(vaultPath, ...SCAN_SCOPE.index.split('/')); }
 
 const LAYER_KEYWORDS = {
   '世界': 'world',
@@ -109,7 +119,7 @@ function parseMdFile(filePath) {
 // 扫描排除名单：这些文件名是"索引/说明"性质，历史上曾被误判为地理节点
 // （如 世界索引.md 的 H1 标题被 extractWorldsAndStars 当成世界，产生无子节点的幽灵世界）。
 // 它们不是真实地理实体，提取时直接跳过。
-const SCAN_EXCLUDED_BASENAMES = new Set(['世界索引']);
+const SCAN_EXCLUDED_BASENAMES = new Set(SCAN_SCOPE.excludedBasenames);
 
 function scanGeoSystem() {
   const nodes = [];
@@ -854,7 +864,7 @@ async function extractGeodata(targetVault, options = {}) {
   };
 }
 
-module.exports = { extractGeodata };
+module.exports = { extractGeodata, SCAN_SCOPE };
 
 if (require.main === module) {
   (async () => {
