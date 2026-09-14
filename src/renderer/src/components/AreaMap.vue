@@ -254,6 +254,7 @@
         <div class="popover-actions">
           <button class="adopt-btn" @click="enterChildArea" v-if="hasChildNodes"><Icon name="search" :size="13"/> 进入子视图</button>
           <button class="adopt-btn" @click="enterBuildingInterior" v-if="isSelectedBuilding"><Icon name="home" :size="13"/> 建筑内部</button>
+          <button class="adopt-btn primary" @click="promoteDraft" v-if="selectedNode && !selectedNode.sourcePath" :disabled="promoting"><Icon name="file-text" :size="13"/> {{ promoting ? '创建中…' : '创建 Obsidian 笔记' }}</button>
           <button class="adopt-btn ghost" @click="openInObsidian" v-if="selectedNode.sourcePath"><Icon name="file-text" :size="13"/> Obsidian 打开</button>
           <button class="adopt-btn ghost" @click="reparentNodeToPlanet" v-if="props.areaNode?.parentId"><Icon name="arrow-down" :size="13"/> 移出区域</button>
         </div>
@@ -311,6 +312,7 @@ import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
+import { openObsidianUri } from '../utils/vault';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
 import ZoomControls from './ZoomControls.vue';
@@ -1639,7 +1641,35 @@ function enterBuildingInterior() {
 
 function openInObsidian() {
   if (selectedNode.value?.sourcePath) {
-    window.sitianAPI?.openExternal(`obsidian://open?vault=ROSA&file=${encodeURIComponent(selectedNode.value.sourcePath)}`);
+    openObsidianUri(selectedNode.value.sourcePath);
+  }
+}
+
+// 暂存节点转正：创建 Obsidian 笔记并回填 sourcePath
+// （批次 R2：AreaMap 曾是唯一无转正入口的视图，draft 建筑/地点只能永远留在缓存里）
+const promoting = ref(false);
+async function promoteDraft() {
+  const n = selectedNode.value;
+  if (!n || promoting.value) return;
+  promoting.value = true;
+  try {
+    const result = await window.sitianAPI.createObsidianNote({
+      name: n.name, layer: n.layer, parentId: n.parentId,
+      tags: n.tags || [], coordinate: n.coordinate,
+      content: `# ${n.name}\n\n`,
+    });
+    if (result?.success) {
+      store.updateNode(n.id, { sourcePath: result.path, draft: false });
+      // selectedNode 是本地 ref：节点对象已就地更新，重新指向以刷新模板
+      selectedNode.value = store.nodes.find(x => x.id === n.id) || n;
+      renderer.requestRender();
+    } else {
+      alert('创建笔记失败：' + (result?.error || '未知错误'));
+    }
+  } catch (e) {
+    alert('创建笔记失败：' + e.message);
+  } finally {
+    promoting.value = false;
   }
 }
 

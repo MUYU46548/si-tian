@@ -137,7 +137,7 @@ function scanGeoSystem() {
           id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer,
           parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
           placeType: parsed.frontmatter['地点类型'] || null,
-          coordinate: { x: null, y: null },
+          coordinate: readFrontmatterCoordinate(parsed.frontmatter),
           uuid: generateUUID(),
         });
       }
@@ -171,7 +171,7 @@ function scanLocations() {
         id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer,
         parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
         placeType: parsed.frontmatter['地点类型'] || null,
-        coordinate: { x: null, y: null },
+        coordinate: readFrontmatterCoordinate(parsed.frontmatter),
         uuid: generateUUID(),
       });
     }
@@ -436,6 +436,28 @@ function detectLocationLayer(frontmatter, content, fileName) {
 function normalizeId(name) {
   if (!name) return 'unknown';
   return name.replace(/\[\[|\]\]/g, '').replace(/[\\\/\s]/g, '_').replace(/[^\w一-鿿]/g, '').toLowerCase();
+}
+
+/**
+ * 读取 frontmatter 里的坐标（编辑器元数据外置除外，词条自带 coordinate 时优先采用）。
+ *
+ * 为什么需要：司天的转正流程（create-obsidian-note）会把节点的 coordinate 写进
+ * frontmatter「供后续提取时保留」（main/index.js），若提取时不读回，重提取后该节点
+ * 会落到环形布局的默认位置 —— 用户在地图上摆好的位置被静默重置。
+ * 兼容 { x, y } 对象与 "x,y" / "x y" 字符串两种写法；非法值一律返回 null（交给布局分配）。
+ */
+function readFrontmatterCoordinate(fm) {
+  const c = fm && fm.coordinate;
+  if (c && typeof c === 'object') {
+    const x = Number(c.x), y = Number(c.y);
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+    return { x: null, y: null };
+  }
+  if (typeof c === 'string') {
+    const m = c.split(/[,\s]+/).map(s => Number(s.trim())).filter(Number.isFinite);
+    if (m.length === 2) return { x: m[0], y: m[1] };
+  }
+  return { x: null, y: null };
 }
 
 function generateUUID() {

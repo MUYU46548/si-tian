@@ -48,6 +48,7 @@
           >
             <div class="result-name">{{ getNodeName(item.nodeId) }}</div>
             <div class="result-meta">
+              <span v-if="store.isWikilinkMatch(item.nodeId)" class="result-mention-badge" title="该词条正文提及了搜索词（反向链接）">提及</span>
               <span v-if="getNodeFaction(item.nodeId)" class="result-faction" :style="{ color: getNodeFactionColor(item.nodeId) }">
                 {{ getNodeFaction(item.nodeId) }}
               </span>
@@ -511,6 +512,17 @@ input::placeholder {
 .result-faction {
   font-size: 11px;
   font-weight: 500;
+}
+
+/* 「提及」徽标：该结果靠正文 wikilink 命中（反向链接），非名称直配 */
+.result-mention-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 5px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: var(--accent-bg);
+  border: 1px solid var(--panel-border);
 }
 
 .filter-panel {

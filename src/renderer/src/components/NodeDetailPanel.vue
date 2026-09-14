@@ -19,13 +19,17 @@
 
       <!-- 操作按钮（高频前置，任何 tab 下常驻可见） -->
       <section v-if="!isPseudoNode" class="actions-section actions-section-top">
-        <button class="action-btn primary" @click="openSourceInObsidian">
+        <button v-if="!isDraftNode" class="action-btn primary" @click="openSourceInObsidian">
           <span class="btn-icon"><Icon name="file-text" :size="14"/></span> 在 Obsidian 中打开
+        </button>
+        <button v-else class="action-btn primary" @click="promoteDraft" :disabled="promoting"
+                title="暂存节点尚无 Obsidian 词条：创建笔记后即可在知识库中检索/双链">
+          <span class="btn-icon"><Icon name="file-text" :size="14"/></span> {{ promoting ? '创建中…' : '创建 Obsidian 笔记' }}
         </button>
         <button class="action-btn locate-btn" @click="focusOnMap" :disabled="!canFocusOnMap" title="镜头定位到该节点在地图上的位置">
           <span class="btn-icon"><Icon name="target" :size="14"/></span> 在地图上定位
         </button>
-        <button class="action-btn" @click="revealInExplorer">
+        <button v-if="!isDraftNode" class="action-btn" @click="revealInExplorer">
           <span class="btn-icon"><Icon name="folder" :size="14"/></span> 在文件夹中显示
         </button>
         <button class="action-btn" @click="toggleLock" :title="isLocked ? '解除锁定（可拖拽/微调）' : '锁定位置（防误拖）'">
@@ -295,6 +299,7 @@ import Icon from './Icon.vue';
 import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
+import { openObsidianUri } from '../utils/vault';
 
 // marked 配置
 marked.setOptions({ gfm: true, breaks: true });
@@ -364,6 +369,13 @@ const layerIcon = computed(() => LAYER_ICONS[node.value?.layer] || 'help-circle'
 const isPseudoNode = computed(() =>
   node.value?.layer === 'space_marker' || node.value?.layer === 'fleet_card'
 );
+
+// 暂存（draft）节点：司天内创建、尚无 Obsidian 词条 —— 无 sourcePath
+// （兼容两种标记：新建入口写 draft:true；旧数据仅凭 sourcePath 为空判定）
+const isDraftNode = computed(() =>
+  !!node.value && !isPseudoNode.value && (node.value.draft === true || !node.value.sourcePath)
+);
+const promoting = ref(false);
 
 // 头部背景样式（根据层级）
 const heroStyle = computed(() => {
@@ -601,10 +613,33 @@ watch(node, () => {
 }, { immediate: true });
 
 // 操作
-function openSourceInObsidian() {
+async function openSourceInObsidian() {
   if (!node.value?.sourcePath) return;
-  const url = `obsidian://open?vault=${encodeURIComponent('ROSA')}&file=${encodeURIComponent(node.value.sourcePath)}`;
-  window.sitianAPI.openExternal(url);
+  await openObsidianUri(node.value.sourcePath);
+}
+
+// 暂存节点转正：创建 Obsidian 笔记并回填 sourcePath（转正后不再是 draft）
+async function promoteDraft() {
+  const n = node.value;
+  if (!n || promoting.value) return;
+  promoting.value = true;
+  try {
+    const result = await window.sitianAPI.createObsidianNote({
+      name: n.name, layer: n.layer, parentId: n.parentId,
+      tags: n.tags || [], coordinate: n.coordinate,
+      content: `# ${n.name}\n\n`,
+    });
+    if (result?.success) {
+      store.updateNode(n.id, { sourcePath: result.path, draft: false });
+      await loadNote();
+    } else {
+      alert('创建笔记失败：' + (result?.error || '未知错误'));
+    }
+  } catch (e) {
+    alert('创建笔记失败：' + e.message);
+  } finally {
+    promoting.value = false;
+  }
 }
 
 // 在地图上定位：节点有坐标且当前视图能展示时才可用
@@ -620,8 +655,8 @@ function focusOnMap() {
 }
 
 function openInObsidian(linkName) {
-  const url = `obsidian://open?vault=${encodeURIComponent('ROSA')}&file=${encodeURIComponent(linkName)}`;
-  window.sitianAPI.openExternal(url);
+  if (!linkName) return;
+  openObsidianUri(linkName);
 }
 
 // 事件委托处理点击

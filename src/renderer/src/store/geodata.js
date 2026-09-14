@@ -91,7 +91,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     searchQuery, searchResults, searchMatchIndex, searchLayerFilter, searchPlaceTypeFilter,
     isFilterOpen, currentMatchNode, clearSearch, performSearch, includeScenarios,
     toggleLayerFilter, togglePlaceTypeFilter, toggleIncludeScenarios,
-    cycleSearchMatch, isNodeMatched, isCurrentMatch,
+    cycleSearchMatch, isNodeMatched, isCurrentMatch, isWikilinkMatch,
   } = searchModule;
   const { interiorData, interiorReferenceImages } = interiorModule;
   const { areaZones, areaRoutes, areaMarkers, areaTextLabels, areaReferenceImages } = areaEditingModule;
@@ -570,7 +570,9 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function saveMapDataImmediate(planetId) {
     if (!mapData.value[planetId]) return;
-    window.sitianAPI.saveMapData(planetId, mapData.value[planetId]);
+    // 必须走 saveMapData：它负责 ① 世界前缀化 key（旧实现直写 planetId = 重新制造旧 key）
+    // ② TypedArray → 普通数组的 JSON replacer（直传 TypedArray 会被 stringify 成无 length 的对象）
+    return saveMapData(planetId, mapData.value[planetId]);
   }
 
   // 旧单图结构迁移到数组（loadMapData 时调用）
@@ -1086,7 +1088,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   return {
     nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, currentArea, viewLevel,
-    selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode,
+    selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode, isWikilinkMatch,
     worlds, starDomains, galaxies, planets, locations,
     currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentAreaPlaces, currentDomainAllGalaxies,
     currentDomainHyperlanes, getHyperlanesByNode, getHyperlanesForNode,

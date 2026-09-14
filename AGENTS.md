@@ -17,7 +17,7 @@
 - 开发模式 (Electron 完整): `npm run dev:watch`（wait-on tcp:5180 后拉起 Electron）
 - 构建生产版本: `npm run build`
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（20 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（22 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 图标一致性校验: `python scripts/icon_check.py`（校验所有被引用的图标名在 `Icon.vue` 中有定义）
 - 结构清单再生成: `python scripts/gen_architecture_map.py`（详见下节）
@@ -30,7 +30,7 @@
 - **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 6 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / interior / search / spaceEditing
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
 - **大文件警告**: PlanetMap.vue 约 2900 行（22 个 composables 的装配体），AreaMap / GalaxyMap / InteriorView / App.vue / NodeDetailPanel 均 >1700 行——**读片段勿整读**。行星图绘制与交互逻辑在 `composables/planetDrawing.js`、`planetInteractions.js`、`planetHitTest.js`
-- **测试基线**: `scripts/tests/cases/` 21 个用例（Edge CDP 驱动），21/21 全绿 = 迁移/重构完整
+- **测试基线**: `scripts/tests/cases/` 22 个用例（Edge CDP 驱动），22/22 全绿 = 迁移/重构完整
 - **图标系统**: `src/renderer/src/components/Icon.vue`（141 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 339 处 emoji
 - **开发规则全集**: 60+ 条铁律与踩坑复盘（composable 接线、getState ref 解包、SFC 结构标签、发布验收等）在 Hermes skill `obsidian/sitian-development`，动代码前先加载；本文件不复制规则，防双源漂移
 - **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > HANDOFF.md / ROADMAP.md（严重滞后，仅作历史参考）
@@ -39,7 +39,7 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 21 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 22 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 6 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 19 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 30 | `grep -c "ipcMain.handle" src/main/index.js` |
