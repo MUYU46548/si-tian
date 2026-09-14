@@ -18,7 +18,7 @@
             {{ interactionMode === 'route' ? '点击放置道路顶点 · 双击完成 · 右键取消' : '' }}
             {{ interactionMode === 'marker' ? '点击放置标记' : '' }}
             {{ interactionMode === 'text' ? '点击放置文本标签' : '' }}
-            {{ interactionMode === 'zone' ? '拖拽绘制区域 · 松开闭合' : '' }}
+            {{ interactionMode === 'zone' ? (zoneBrushMode ? '笔刷涂抹：按住涂抹，松开自动合并成一块命名区域' : '拖拽绘制区域 · 松开闭合') : '' }}
             {{ interactionMode === 'building' ? '点击放置建筑' : '' }}
             · <a href="#" @click.prevent="exitEditMode">退出</a>
           </span>
@@ -173,6 +173,14 @@
         @click="zoneColor = c"
         class="color-btn"
       ></button>
+      <span class="picker-label" style="margin-left:10px">模式：</span>
+      <button :class="{ active: !zoneBrushMode }" @click="zoneBrushMode = false; zoneStrokePoints = []" title="描边绘制：按住拖出手绘轮廓，松开闭合"><Icon name="pencil" :size="13"/> 描边</button>
+      <button :class="{ active: zoneBrushMode }" @click="zoneBrushMode = true; zoneDraftPoints = []" title="笔刷涂抹：按住涂抹，松开自动合并成一块区域（涂抹比描边好画）"><Icon name="brush" :size="13"/> 笔刷</button>
+      <template v-if="zoneBrushMode">
+        <span class="picker-label">笔刷</span>
+        <input type="range" v-model.number="zoneBrushSize" min="20" max="200" step="10" class="brush-slider" />
+        <span class="picker-label">{{ zoneBrushSize }}m</span>
+      </template>
     </div>
 
     <!-- 道路样式选择器 -->
@@ -308,7 +316,7 @@ import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
-import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
+import { pointsBBox, bboxInViewport, pointInViewport, convexHull, simplifyPath } from '../utils/geometry';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -365,6 +373,10 @@ const inputDialogCallback = ref(null);
 const zoneColor = ref('#FF6B6B');
 const zoneDraftPoints = ref([]);
 const isDrawingZone = ref(false);
+// R5-2 区域笔刷：涂抹落点 → 凸包合并为一块命名区域（描边绘制仍保留）
+const zoneBrushMode = ref(false);
+const zoneBrushSize = ref(60);
+const zoneStrokePoints = ref([]);
 
 // 道路绘制
 const routeColor = ref('#F39C12');
@@ -532,8 +544,9 @@ const renderer = useCanvasRenderer(canvas, {
     drawTexts(ctx, vp);
 
     // 绘制区域绘制中的草稿
-    if (isDrawingZone.value && zoneDraftPoints.value.length > 0) {
-      drawZoneDraft(ctx);
+    if (isDrawingZone.value && (zoneDraftPoints.value.length > 0 || zoneStrokePoints.value.length > 0)) {
+      if (zoneBrushMode.value) drawZoneBrushPreview(ctx);
+      else drawZoneDraft(ctx);
     }
 
     // 绘制道路草稿
@@ -1206,6 +1219,22 @@ function drawZoneDraft(ctx) {
   ctx.setLineDash([]);
 }
 
+function drawZoneBrushPreview(ctx) {
+  // R5-2：涂抹预览——沿落点画虚线圆（真实生效范围 = 半径）
+  const r = Math.max(10, zoneBrushSize.value / 2);
+  ctx.strokeStyle = zoneColor.value;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  for (const p of zoneStrokePoints.value) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+}
+
 function drawRouteDraft(ctx) {
   if (routeDraftPoints.value.length < 1) return;
   ctx.strokeStyle = routeColor.value;
@@ -1269,7 +1298,12 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 
   if (interactionMode.value === 'zone') {
     isDrawingZone.value = true;
-    zoneDraftPoints.value = [{ x: wx, y: wy }];
+    if (zoneBrushMode.value) {
+      zoneStrokePoints.value = [{ x: wx, y: wy }];
+      zoneDraftPoints.value = [];
+    } else {
+      zoneDraftPoints.value = [{ x: wx, y: wy }];
+    }
     return false;
   }
 
@@ -1317,6 +1351,15 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 
 function handleDragMove(wx, wy, info) {
   if (isDrawingZone.value) {
+    if (zoneBrushMode.value) {
+      // 笔刷：落点间距按笔刷半径的 1/4 控制（太密则凸包顶点爆表）
+      const lastB = zoneStrokePoints.value[zoneStrokePoints.value.length - 1];
+      if (!lastB || Math.hypot(wx - lastB.x, wy - lastB.y) >= Math.max(4, zoneBrushSize.value / 4)) {
+        zoneStrokePoints.value.push({ x: wx, y: wy });
+        renderer.requestRender();
+      }
+      return;
+    }
     // 批次C2：手绘抽稀——与上一点距离过近不落点，避免一条 zone 累积上千冗余顶点
     const last = zoneDraftPoints.value[zoneDraftPoints.value.length - 1];
     if (!last || Math.hypot(wx - last.x, wy - last.y) >= 3) {
@@ -1365,7 +1408,8 @@ function handleDragMove(wx, wy, info) {
 function handleDragEnd(wx, wy, info) {
   if (isDrawingZone.value) {
     isDrawingZone.value = false;
-    finishZoneDrawing();
+    if (zoneBrushMode.value) finishZoneBrush();
+    else finishZoneDrawing();
     return;
   }
 
@@ -1554,6 +1598,41 @@ function finishZoneDrawing() {
   renderer.requestRender();
 }
 
+/**
+ * R5-2 区域笔刷收尾：把涂抹落点合并成**一块有名字的区域**。
+ * 为什么不用「一次涂抹=一个多边形」就完事：PlanetMap 的旧凸包笔刷正是那样产出 22 个
+ * 无名多边形（垃圾数据 + 与新网格笔刷双套并存，已按 UX 铁律移除）。这里的做法是
+ * 落点 → 每点采样圆 → 凸包 → 简化为单块命名区域，一次 addAreaZone（走 undo，一条）。
+ */
+function finishZoneBrush() {
+  const stroke = zoneStrokePoints.value;
+  zoneStrokePoints.value = [];
+  if (stroke.length === 0) return;
+  const r = Math.max(10, zoneBrushSize.value / 2);
+  const SEG = 12;
+  const ring = [];
+  for (const p of stroke) {
+    for (let i = 0; i < SEG; i++) {
+      const a = (i / SEG) * Math.PI * 2;
+      ring.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r });
+    }
+  }
+  let hull = convexHull(ring);
+  if (!hull || hull.length < 3) { renderer.requestRender(); return; }
+  hull = simplifyPath(hull, Math.max(1, r * 0.15));
+  const zone = {
+    id: `zone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: `笔刷区域 ${(areaZones.value?.length || 0) + 1}`,
+    color: zoneColor.value,
+    points: hull.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
+    parentId: props.areaNode.id,
+    createdAt: new Date().toISOString(),
+  };
+  store.addAreaZone(props.areaNode.id, zone);
+  selectedZone.value = zone;
+  renderer.requestRender();
+}
+
 function finishRouteDraft() {
   if (routeDraftPoints.value.length < 2) {
     routeDraftPoints.value = [];
@@ -1705,6 +1784,7 @@ function exitEditMode() {
   editMode.value = false;
   isDrawingZone.value = false;
   zoneDraftPoints.value = [];
+  zoneStrokePoints.value = [];
   routeDraftPoints.value = [];
 }
 

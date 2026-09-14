@@ -104,6 +104,7 @@
         <div class="toolbar-group" title="操作">
           <button @click="deleteSelected" :disabled="!selectedFurniture" title="删除选中家具 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <button @click="rotateSelected" :disabled="!selectedFurniture" title="旋转选中家具 (R)">↻ 旋转</button>
+          <button @click="openTransferDialog" :disabled="selectedFurnitureIds.length === 0" title="把选中的家具复制/移动到其他楼层（整批 = 一条 undo）"><Icon name="copy" :size="13"/> 跨楼层</button>
           <button @click="undo" :disabled="!store.canUndo">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
         </div>
@@ -211,6 +212,36 @@
         <div v-if="editingPopover" class="popover-actions">
           <button class="adopt-btn" @click="saveEditPopover">保存</button>
           <button class="adopt-btn ghost" @click="cancelEditPopover">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 跨楼层复制/移动对话框（R5-3） -->
+    <div v-if="transferDialogOpen" class="modal-overlay" @click.self="transferDialogOpen = false">
+      <div class="modal-dialog">
+        <h3>跨楼层复制 / 移动</h3>
+        <div class="form-row">
+          <label>选中</label>
+          <span>{{ selectedFurnitureIds.length }} 件家具</span>
+        </div>
+        <div class="form-row">
+          <label>方式</label>
+          <select v-model="transferMode">
+            <option value="copy">复制（原层保留）</option>
+            <option value="move">移动（原层移除）</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>目标楼层</label>
+          <select v-model="transferTargetFloorId">
+            <option v-for="fl in floors" :key="fl.id" :value="fl.id" :disabled="fl.id === currentFloorId">
+              {{ fl.name }}{{ fl.id === currentFloorId ? '（当前层）' : '' }}
+            </option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="adopt-btn primary" @click="confirmTransfer" :disabled="!canTransfer">确定</button>
+          <button class="adopt-btn ghost" @click="transferDialogOpen = false">取消</button>
         </div>
       </div>
     </div>
@@ -420,6 +451,10 @@ function removeRefListItem(idx) {
 
 const selectedFurnitureType = ref('generic');
 const selectedRoomTemplate = ref('bedroom');
+// R5-3 跨楼层复制/移动
+const transferDialogOpen = ref(false);
+const transferTargetFloorId = ref(null);
+const transferMode = ref('copy');
 
 // 添加家具对话框
 const addFurnitureDialogOpen = ref(false);
@@ -1012,6 +1047,40 @@ function snapPoint(world) {
     x: Math.round(world.x / step) * step,
     y: Math.round(world.y / step) * step,
   };
+}
+
+// ===== R5-3 跨楼层复制 / 移动 =====
+const canTransfer = computed(() =>
+  !!transferTargetFloorId.value
+  && transferTargetFloorId.value !== currentFloorId.value
+  && selectedFurnitureIds.value.length > 0
+);
+
+function openTransferDialog() {
+  if (!selectedFurnitureIds.value.length) return;
+  const others = floors.value.filter(f => f.id !== currentFloorId.value);
+  if (!others.length) return;
+  transferTargetFloorId.value = others[0].id;
+  transferMode.value = 'copy';
+  transferDialogOpen.value = true;
+}
+
+function confirmTransfer() {
+  if (!canTransfer.value || !props.buildingNode) return;
+  const ids = [...selectedFurnitureIds.value];
+  const created = store.transferFurnitureBatch(
+    props.buildingNode.id, currentFloorId.value, transferTargetFloorId.value, ids, transferMode.value,
+  );
+  transferDialogOpen.value = false;
+  if (transferMode.value === 'move') {
+    // 家具已离开当前层：清空选中，避免面板指向不存在的对象
+    selectedFurnitureIds.value = [];
+    selectedFurniture.value = null;
+  } else {
+    selectedFurnitureIds.value = created.map(c => c.id);
+    selectedFurniture.value = created[created.length - 1] || null;
+  }
+  renderer.requestRender();
 }
 
 function confirmAddFurniture() {

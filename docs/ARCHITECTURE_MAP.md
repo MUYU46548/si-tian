@@ -50,7 +50,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
 | 84 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
 | 235 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
-| 285 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
+| 321 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
 | 80 | `scripts/tools_migrate_planetdrawing.py` | 一次性迁移工具（planetDrawing 拆分） |
 | 59 | `scripts/tools_migrate_planethittest.py` | 一次性迁移工具（planetHitTest 拆分） |
 | 94 | `src/main/config.js` | userData/config.json 读写（VAULT_PATH、closeQuitsApp、windowMode） |
@@ -59,9 +59,9 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 244 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
 | 143 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 1780 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 12 个低频面板异步挂载 |
+| 1788 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 12 个低频面板异步挂载 |
 | 632 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
-| 2350 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
+| 2430 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 265 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
 | 145 | `src/renderer/src/components/BookmarkPanel.vue` | 书签面板 |
 | 63 | `src/renderer/src/components/CanvasSkeleton.vue` | 画布加载骨架屏 |
@@ -72,14 +72,14 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 2033 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
 | 153 | `src/renderer/src/components/HistoryPanel.vue` | undo 历史面板 |
 | 168 | `src/renderer/src/components/Icon.vue` | （待补） |
-| 1720 | `src/renderer/src/components/InteriorView.vue` | 建筑内部：楼层切换 + 家具放置 |
+| 1886 | `src/renderer/src/components/InteriorView.vue` | 建筑内部：楼层切换 + 家具放置 |
 | 269 | `src/renderer/src/components/KeyboardShortcuts.vue` | 快捷键说明面板 |
 | 117 | `src/renderer/src/components/LayerPanel.vue` | 图层可见性面板 |
 | 1754 | `src/renderer/src/components/NodeDetailPanel.vue` | 节点详情（正文/层级迁移/定位；含 space_marker、fleet_card 伪节点适配） |
 | 391 | `src/renderer/src/components/ObjectListPanel.vue` | 对象列表面板 |
 | 298 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
-| 3242 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
+| 3321 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 3705 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
@@ -94,16 +94,15 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 407 | `src/renderer/src/components/UpdateNotification.vue` | 更新可用提示 |
 | 323 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
 | 93 | `src/renderer/src/components/ZoomControls.vue` | 缩放控件 |
-| 2041 | `src/renderer/src/composables/planetDrawing.js` | 行星图 Canvas 绘制全集（createPlanetDrawing getState 工厂） |
+| 2023 | `src/renderer/src/composables/planetDrawing.js` | 行星图 Canvas 绘制全集（createPlanetDrawing getState 工厂） |
 | 219 | `src/renderer/src/composables/planetHitTest.js` | 行星图命中检测 |
-| 665 | `src/renderer/src/composables/planetInteractions.js` | 行星图交互回调（createPlanetInteractions getState 工厂） |
+| 642 | `src/renderer/src/composables/planetInteractions.js` | 行星图交互回调（createPlanetInteractions getState 工厂） |
 | 56 | `src/renderer/src/composables/spaceBackground.js` | 深空背景绘制（GalaxyMap 专用） |
 | 113 | `src/renderer/src/composables/systemOrbit.js` | 恒星轨道布局计算 |
 | 150 | `src/renderer/src/composables/useAutoRegions.js` | 基于 region 子地点凸包自动生成区域边界 + 迷雾 |
 | 187 | `src/renderer/src/composables/useBatchArrange.js` | 批量排列（网格/圆形/对齐/分布/移入区域） |
 | 120 | `src/renderer/src/composables/useBatchSelection.js` | 多选/框选 + 批量属性应用 |
 | 66 | `src/renderer/src/composables/useBookmarks.js` | 书签逻辑 |
-| 71 | `src/renderer/src/composables/useBrushDrawing.js` | 地形笔刷（拖动涂抹 → 凸合并） |
 | 698 | `src/renderer/src/composables/useCanvasRenderer.js` | 渲染引擎：viewTransform/rAF/拖拽平移模式切换 |
 | 70 | `src/renderer/src/composables/useChangeLog.js` | 变更日志逻辑 |
 | 181 | `src/renderer/src/composables/useClusterEditor.js` | 地点簇编辑器 |
@@ -134,7 +133,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 22 | `src/renderer/src/main.js` | renderer 入口 |
 | 1123 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
 | 237 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
-| 200 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
+| 287 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 699 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
 | 1278 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 186 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
@@ -155,7 +154,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 464 | `src/renderer/src/utils/geometry.js` | 凸包/多边形拆分合并/点包含判定 |
 | 188 | `src/renderer/src/utils/heightMath.js` | （待补） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
-| 186 | `src/renderer/src/utils/placement.js` | （待补） |
+| 260 | `src/renderer/src/utils/placement.js` | （待补） |
 | 151 | `src/renderer/src/utils/planetHeightMap.js` | （待补） |
 | 44 | `src/renderer/src/utils/sampleData.js` | 示例数据 |
 | 69 | `src/renderer/src/utils/selectionHandles.js` | 选择框手柄 |
@@ -168,4 +167,4 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 51 | `src/renderer/src/utils/vault.js` | 库名解析：obsidian:// URI 的 vault 参数取自主进程配置（禁硬编码） |
 <!-- GEN:END -->
 
-> 测试用例（23 个）在 `scripts/tests/cases/test_01~test_23`，职责见文件名：load/navigation/search/panels/terrain/texture/nodes/interactions/batch_import/system_detail/system_edit/space_entities/tree_jump/tool_cursor/detail_panel_tabs/planet_render_perf/moon_orbit/edit_enhancements/scenario/maplayer/brushes/r2_integrity/tooltip。
+> 测试用例（27 个）在 `scripts/tests/cases/test_01~test_27`，职责见文件名：load/navigation/search/panels/terrain/texture/nodes/interactions/batch_import/system_detail/system_edit/space_entities/tree_jump/tool_cursor/detail_panel_tabs/planet_render_perf/moon_orbit/edit_enhancements/scenario/maplayer/brushes/r2_integrity/tooltip/r4_smart_tools/interior_room/zone_brush/cross_floor。

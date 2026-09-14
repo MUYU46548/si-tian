@@ -117,6 +117,47 @@ export function createInteriorModule(ctx) {
     return built;
   }
 
+  // 跨楼层批量复制/移动家具（R5-3）：整批 = 一条 undo
+  // 全部用「快照 + 按 id 过滤重建」，不用闭包下标（中途增删不会错位）
+  function transferFurnitureBatch(buildingId, fromFloorId, toFloorId, furnitureIds = [], mode = 'copy') {
+    const data = interiorData.value[buildingId];
+    if (!data) return [];
+    const from = data.floors.find(f => f.id === fromFloorId);
+    const to = data.floors.find(f => f.id === toFloorId);
+    if (!from || !to || fromFloorId === toFloorId) return [];
+    const ids = new Set(furnitureIds);
+    const moving = (from.furniture || []).filter(f => ids.has(f.id));
+    if (!moving.length) return [];
+
+    const beforeSource = (from.furniture || []).map(f => ({ ...f }));
+    const beforeTarget = (to.furniture || []).map(f => ({ ...f }));
+    const placed = moving.map(f => ({
+      ...f,
+      id: mode === 'copy' ? `furniture_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : f.id,
+    }));
+    const afterSource = mode === 'move'
+      ? beforeSource.filter(f => !ids.has(f.id))
+      : beforeSource.map(f => ({ ...f }));
+    const afterTarget = [...beforeTarget.map(f => ({ ...f })), ...placed];
+
+    const setFloors = (sourceList, targetList) => {
+      const d = interiorData.value[buildingId];
+      const fs = d?.floors?.find(f => f.id === fromFloorId);
+      const ts = d?.floors?.find(f => f.id === toFloorId);
+      if (fs) fs.furniture = sourceList.map(f => ({ ...f }));
+      if (ts) ts.furniture = targetList.map(f => ({ ...f }));
+    };
+
+    execute({
+      type: mode === 'copy' ? 'copy-furniture-across-floors' : 'move-furniture-across-floors',
+      label: mode === 'copy' ? `复制 ${placed.length} 件到其他楼层` : `移动 ${placed.length} 件到其他楼层`,
+      undo: () => setFloors(beforeSource, beforeTarget),
+      redo: () => setFloors(afterSource, afterTarget),
+    });
+    scheduleAutoSave();
+    return placed;
+  }
+
   // 移除家具
   function removeFurniture(buildingId, floorId, furnitureId) {
     const data = interiorData.value[buildingId];
@@ -235,6 +276,7 @@ export function createInteriorModule(ctx) {
     updateFloor,
     addFurniture,
     addFurnitureBatch,
+    transferFurnitureBatch,
     removeFurniture,
     updateFurniture,
     beginMultiFurnitureCapture,
