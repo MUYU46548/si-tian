@@ -29,6 +29,7 @@
             <strong>编辑模式</strong> —
             {{ interactionMode === 'pan' ? '拖拽家具移动 / 点击选中 / Shift+点击多选 / Shift+拖拽框选' : '' }}
             {{ interactionMode === 'add_furniture' ? '点击空白处放置家具' : '' }}
+            {{ interactionMode === 'add_room' ? '选一个房间模板后点击空白处整间放置（一次可撤销）' : '' }}
             · <a href="#" @click.prevent="exitEditMode">退出</a>
           </span>
         </p>
@@ -67,6 +68,18 @@
         <div class="toolbar-group" title="工具">
           <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖拽平移 / 选中家具"><Icon name="hand" :size="13"/> 拖手</button>
           <button :class="{ active: interactionMode === 'add_furniture' }" @click="interactionMode = 'add_furniture'" title="点击空白处放置家具"><Icon name="armchair" :size="13"/> 家具</button>
+          <button :class="{ active: interactionMode === 'add_room' }" @click="interactionMode = 'add_room'" title="房间模板：一键铺好整间（卧室/厨房/大厅/书房/仓库），一次操作可撤销"><Icon name="home" :size="13"/> 房间模板</button>
+        </div>
+
+        <div class="toolbar-group" title="房间模板" v-if="interactionMode === 'add_room'">
+          <span class="toolbar-label">模板</span>
+          <button
+            v-for="tpl in ROOM_TEMPLATES"
+            :key="tpl.id"
+            :class="{ active: selectedRoomTemplate === tpl.id }"
+            @click="selectedRoomTemplate = tpl.id"
+            :title="tpl.hint || tpl.label"
+          ><Icon :name="tpl.icon" :size="13"/> {{ tpl.label }}</button>
         </div>
 
         <div class="toolbar-group" title="家具类型" v-if="interactionMode === 'add_furniture'">
@@ -406,6 +419,7 @@ function removeRefListItem(idx) {
 }
 
 const selectedFurnitureType = ref('generic');
+const selectedRoomTemplate = ref('bedroom');
 
 // 添加家具对话框
 const addFurnitureDialogOpen = ref(false);
@@ -415,7 +429,61 @@ const newFurnitureWidth = ref(60);
 const newFurnitureHeight = ref(40);
 const addFurnitureWorldPos = ref({ x: 0, y: 0 });
 
-// 根据类型获取默认尺寸
+// ===== 房间模板（R5-1）：一键铺好整间，一次操作 = 一条 undo =====
+// 坐标是相对「点击点」的偏移；尺寸取 getDefaultSize（单一事实源，不重复写死宽高）
+// ⚠️ 偏移必须是网格步长（20）的整数倍 —— 开启网格吸附时基点会被吸附，
+// 若偏移不整则整间里会有家具落在网格外（test_25 会守这条）
+const ROOM_TEMPLATES = [
+  {
+    id: 'bedroom', label: '卧室', icon: 'bed', hint: '床 + 两侧柜 + 装饰',
+    items: [
+      { type: 'bed', name: '床', dx: 0, dy: 0 },
+      { type: 'chest', name: '衣柜', dx: -100, dy: -80 },
+      { type: 'chest', name: '床头柜', dx: 100, dy: 0 },
+      { type: 'decoration', name: '挂饰', dx: 0, dy: 80 },
+    ],
+  },
+  {
+    id: 'kitchen', label: '厨房', icon: 'package', hint: '餐桌 + 灶台 + 储物 + 椅',
+    items: [
+      { type: 'table', name: '料理台', dx: 0, dy: 0 },
+      { type: 'chest', name: '灶台', dx: -100, dy: -80 },
+      { type: 'chest', name: '储物柜', dx: 100, dy: -80 },
+      { type: 'chair', name: '凳', dx: 0, dy: 80 },
+    ],
+  },
+  {
+    id: 'hall', label: '大厅', icon: 'table', hint: '长桌 + 四椅 + 双装饰',
+    items: [
+      { type: 'table', name: '长桌', dx: 0, dy: 0 },
+      { type: 'chair', name: '椅·左', dx: -100, dy: 0 },
+      { type: 'chair', name: '椅·右', dx: 100, dy: 0 },
+      { type: 'chair', name: '椅·上', dx: 0, dy: -80 },
+      { type: 'chair', name: '椅·下', dx: 0, dy: 80 },
+      { type: 'decoration', name: '装饰·左', dx: -180, dy: -80 },
+      { type: 'decoration', name: '装饰·右', dx: 180, dy: -80 },
+    ],
+  },
+  {
+    id: 'study', label: '书房', icon: 'book', hint: '书桌 + 椅 + 双书柜',
+    items: [
+      { type: 'table', name: '书桌', dx: 0, dy: 0 },
+      { type: 'chair', name: '椅', dx: 0, dy: 80 },
+      { type: 'chest', name: '书柜·一', dx: 120, dy: -80 },
+      { type: 'chest', name: '书柜·二', dx: 120, dy: 40 },
+    ],
+  },
+  {
+    id: 'storage', label: '仓库', icon: 'archive', hint: '四组货架',
+    items: [
+      { type: 'chest', name: '货架·一', dx: -100, dy: -80 },
+      { type: 'chest', name: '货架·二', dx: 100, dy: -80 },
+      { type: 'chest', name: '货架·三', dx: -100, dy: 80 },
+      { type: 'chest', name: '货架·四', dx: 100, dy: 80 },
+    ],
+  },
+];
+
 function getDefaultSize(type) {
   const defaults = {
     generic: { w: 60, h: 40 },
@@ -840,6 +908,35 @@ function handleDragEnd(wx, wy, info) {
 }
 
 function handleCanvasClick(hit, wx, wy) {
+  // R5-1 房间模板：整间一次性放置（一条 undo）
+  if (interactionMode.value === 'add_room') {
+    const tpl = ROOM_TEMPLATES.find(t => t.id === selectedRoomTemplate.value);
+    const floorId = currentFloorId.value;
+    if (!tpl || !floorId || !props.buildingNode) return;
+    const base = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
+    const items = tpl.items.map(it => {
+      const size = getDefaultSize(it.type);
+      return {
+        name: it.name || it.type,
+        type: it.type,
+        x: Math.round(base.x + (it.dx || 0)),
+        y: Math.round(base.y + (it.dy || 0)),
+        width: it.w ?? size.w,
+        height: it.h ?? size.h,
+        rotation: it.rotation || 0,
+        templateLabel: tpl.label,
+      };
+    });
+    const created = store.addFurnitureBatch(props.buildingNode.id, floorId, items);
+    if (created.length) {
+      // 视觉反馈：选中刚放置的整间（撤销一次即整间消失）
+      selectedFurnitureIds.value = created.map(c => c.id);
+      selectedFurniture.value = created[created.length - 1];
+    }
+    renderer.requestRender();
+    return;
+  }
+
   if (interactionMode.value === 'add_furniture') {
     addFurnitureWorldPos.value = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
     newFurnitureName.value = '';

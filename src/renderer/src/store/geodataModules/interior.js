@@ -73,6 +73,50 @@ export function createInteriorModule(ctx) {
     return item;
   }
 
+  // 批量放置家具（房间模板）：一次操作 = 一条 undo（R5-1）
+  // 与 addFurniture 的区别：整组当作一个原子操作，撤销一次回到放置前；
+  // 家具以副本入栈，撤销时按 id 过滤移除（不用闭包下标，避免中途增删错位）
+  function addFurnitureBatch(buildingId, floorId, items = []) {
+    const data = interiorData.value[buildingId];
+    if (!data) return [];
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor) return [];
+    if (!floor.furniture) floor.furniture = [];
+
+    const built = (items || []).map(f => ({
+      id: `furniture_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: f.name || '新物品',
+      type: f.type || 'generic',
+      x: f.x ?? 0,
+      y: f.y ?? 0,
+      width: f.width ?? 40,
+      height: f.height ?? 40,
+      rotation: f.rotation ?? 0,
+      color: f.color || '#8B8B8B',
+    }));
+    if (!built.length) return [];
+
+    const label = items[0]?.templateLabel ? `放置${items[0].templateLabel}` : `放置 ${built.length} 件家具`;
+    execute({
+      type: 'add-furniture-batch',
+      label,
+      undo: () => {
+        const ids = new Set(built.map(b => b.id));
+        const fl = interiorData.value[buildingId]?.floors?.find(f => f.id === floorId);
+        if (fl && fl.furniture) fl.furniture = fl.furniture.filter(f => !ids.has(f.id));
+      },
+      redo: () => {
+        const fl = interiorData.value[buildingId]?.floors?.find(f => f.id === floorId);
+        if (fl) {
+          if (!fl.furniture) fl.furniture = [];
+          fl.furniture.push(...built.map(b => ({ ...b })));
+        }
+      },
+    });
+    scheduleAutoSave();
+    return built;
+  }
+
   // 移除家具
   function removeFurniture(buildingId, floorId, furnitureId) {
     const data = interiorData.value[buildingId];
@@ -190,6 +234,7 @@ export function createInteriorModule(ctx) {
     removeFloor,
     updateFloor,
     addFurniture,
+    addFurnitureBatch,
     removeFurniture,
     updateFurniture,
     beginMultiFurnitureCapture,
