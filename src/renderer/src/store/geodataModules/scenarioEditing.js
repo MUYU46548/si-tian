@@ -7,12 +7,23 @@ import { ref } from 'vue';
 import {
   brushFalloff, deriveLayers, SEA_LEVEL,
 } from '../../utils/heightMath';
+import {
+  scheduleDerive, isWorkerAvailable, getAsyncThreshold, getDeriveStats,
+} from '../../utils/deriveClient';
 
 export function createScenarioEditingModule(ctx) {
   const { execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap } = ctx;
 
   const baseMaps = ref({});
   const scenarios = ref({});
+
+  // P2-4：派生计算世代号。异步派生回来时必须确认「这仍是当前这条命令的结果」，
+  // 否则会把旧 h 的派生值写到新 h 上（脏写）。
+  const deriveEpoch = {};
+
+  // 底图级笔刷的 merge 谓词必须带上 baseMapKey —— 否则在两张底图上交替涂抹会被合并成
+  // 同一条命令（merge 无 key 判定），撤销时按"最旧那条的 undo"回滚，把另一张底图的
+  // 高度图一起改掉。test_39-e 用交叉涂抹复现过这个坑。
 
   // ============================================================
   // BaseMaps CRUD（全走 execute，undo 支持）
@@ -917,7 +928,18 @@ export function createScenarioEditingModule(ctx) {
     }
 
     // 重新派生温度/降水/生物群系
-    const derived = deriveLayers(newH, pts, null, null);
+    // P2-4：小网格同步（一次 postMessage 往返的开销 ≥ 计算量本身），大网格把派生挪到 Worker。
+    // 大网格时本帧先复用「上一条命令的派生数组」（派生是 h 的纯函数，短时陈旧无害），
+    // 真值由 redo 里的 scheduleDerive 在 300ms 防抖后回写，主线程不再被 O(n) 循环占住。
+    const canDefer = newH.length > getAsyncThreshold()
+      && isWorkerAvailable()
+      && !!(hm.temp && hm.prec && hm.biome)
+      && hm.temp.length === newH.length
+      && hm.prec.length === newH.length
+      && hm.biome.length === newH.length;
+    const derived = canDefer
+      ? { temperature: hm.temp, precipitation: hm.prec, biome: hm.biome }
+      : deriveLayers(newH, pts, null, null);
     const oldH = new Float32Array(hm.h);
     const oldTemp = hm.temp ? new Float32Array(hm.temp) : null;
     const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
@@ -925,9 +947,10 @@ export function createScenarioEditingModule(ctx) {
 
     const cmd = {
       type: 'height-brush',
+      baseMapKey,
       mode,
       label: mode === 'raise' ? '抬高地形' : mode === 'lower' ? '降低地形' : '平滑地形',
-      merge: (prev) => prev.type === 'height-brush' && prev.mode === mode,
+      merge: (prev) => prev.type === 'height-brush' && prev.mode === mode && prev.baseMapKey === baseMapKey,
       undo: () => {
         baseMaps.value = {
           ...baseMaps.value,
@@ -952,6 +975,22 @@ export function createScenarioEditingModule(ctx) {
             updatedAt: new Date().toISOString(),
           },
         };
+        // P2-4：异步派生挂在 redo 内 —— execute() 首帧与后续 redo 都会走到，
+        // 所以「撤销后再重做」同样能拿回正确派生值（否则重做会留下陈旧图层）。
+        if (canDefer) {
+          const epoch = (deriveEpoch[baseMapKey] = (deriveEpoch[baseMapKey] || 0) + 1);
+          scheduleDerive(newH, (res) => {
+            if (!res || deriveEpoch[baseMapKey] !== epoch) return; // 已被更新的命令取代
+            const cur = baseMaps.value[baseMapKey] && baseMaps.value[baseMapKey].heightmap;
+            if (!cur || !cur.h || cur.h.length !== res.n) return;
+            // 派生数组直接回写（不进 undo 栈：它是 h 的纯函数、可随时重算；
+            // undo/redo 闭包里各自持有自己那一代的值，回写只影响"当前"这一代）
+            cur.temp = res.temperature;
+            cur.prec = res.precipitation;
+            cur.biome = res.biome;
+            scheduleAutoSaveScenarios();
+          });
+        }
       },
     };
     execute(cmd);
@@ -988,9 +1027,10 @@ export function createScenarioEditingModule(ctx) {
 
     const cmd = {
       type: 'biome-brush',
+      baseMapKey,
       biomeKey,
       label: '生物群系笔刷',
-      merge: (prev) => prev.type === 'biome-brush' && prev.biomeKey === biomeKey,
+      merge: (prev) => prev.type === 'biome-brush' && prev.biomeKey === biomeKey && prev.baseMapKey === baseMapKey,
       undo: () => {
         baseMaps.value = {
           ...baseMaps.value,
@@ -1081,9 +1121,10 @@ function applyCultureBrush(baseMapKey, cx, cy, radius, cultureKey) {
 
   execute({
     type: 'culture-brush',
+    baseMapKey,
     cultureKey,
     label: '文化笔刷',
-    merge: (prev) => prev.type === 'culture-brush' && prev.cultureKey === cultureKey,
+    merge: (prev) => prev.type === 'culture-brush' && prev.cultureKey === cultureKey && prev.baseMapKey === baseMapKey,
     undo: () => {
       baseMaps.value = {
         ...baseMaps.value,
@@ -1129,9 +1170,10 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
 
   execute({
     type: 'religion-brush',
+    baseMapKey,
     religionKey,
     label: '宗教笔刷',
-    merge: (prev) => prev.type === 'religion-brush' && prev.religionKey === religionKey,
+    merge: (prev) => prev.type === 'religion-brush' && prev.religionKey === religionKey && prev.baseMapKey === baseMapKey,
     undo: () => {
       baseMaps.value = {
         ...baseMaps.value,
@@ -1272,6 +1314,7 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
+    getDeriveStats,
     addBaseMapBurg, applyCultureBrush, applyReligionBrush,
     getBaseMap, getScenario, getScenariosByOwner, getBaseMapsList, getAllScenarios,
   };

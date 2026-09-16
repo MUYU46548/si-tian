@@ -19,6 +19,7 @@
 
 import { ref, toRaw } from 'vue';
 import { execute } from '../store/undo';
+import { brushSegmentRect } from '../utils/dirtyRect';
 import {
   SEA_LEVEL, BIOME_KEYS,
   temperatureAtIndex, precipitationAtIndex, biomeIndex, brushFalloff,
@@ -50,6 +51,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
   let strokeLabel = '高度笔刷';
   let strokeDirty = false;
   let indexCache = null; // 空间索引缓存（只依赖 grid.points，与高度值无关）
+  let lastPaintPos = null; // P2-3 脏矩形：上一个落点（含它才能不拖尾）
 
   function planetId() { return currentMapData.value?.planetId; }
   function liveHeightmap() {
@@ -250,6 +252,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
 
   // ===== stroke 生命周期（一次拖动 = 一条 undo 记录） =====
   function beginHeightStroke() {
+    lastPaintPos = null; // 新 stroke 起点，避免跨 stroke 的伪脏区
     const hm = ensureHeightmap();
     strokeBefore = null;
     strokeDirty = false;
@@ -303,7 +306,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     store.scheduleAutoSaveMap(id);
   }
 
-  function strokeAborted() { strokeBefore = null; strokeDirty = false; }
+  function strokeAborted() { strokeBefore = null; strokeDirty = false; lastPaintPos = null; }
 
   // ===== 高度笔刷 =====
   function paintHeight(hm, worldX, worldY) {
@@ -360,6 +363,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     const touched = paintHeight(hm, worldX, worldY);
     if (!touched) return false;
     strokeDirty = true;
+    markPaintDirty(worldX, worldY);
     renderer?.requestRender();
     return true;
   }
@@ -370,6 +374,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     if (!hm) return false;
     const idx = getIndex(hm);
     if (!idx) return false;
+    markPaintDirty(worldX, worldY);
     const pts = idx.pts;
     const radius = brushRadius.value;
     const target = BIOME_KEY_INDEX[brushBiome.value] ?? 0;
@@ -393,6 +398,13 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
   }
 
   function clearBrushPreview() { brushPreview.value = null; }
+
+  // P2-3 脏矩形：高度笔刷的落点范围（预览圈半径 = brushRadius，取同值即可覆盖）
+  function markPaintDirty(wx, wy) {
+    if (!renderer?.markDirtyRect) return;
+    renderer.markDirtyRect(brushSegmentRect(lastPaintPos, { x: wx, y: wy }, brushRadius.value + 1));
+    lastPaintPos = { x: wx, y: wy };
+  }
 
   return {
     brushRadius,

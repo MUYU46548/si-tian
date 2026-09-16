@@ -17,6 +17,7 @@
 import { ref, toRaw, watch } from 'vue';
 import { TerrainBrush, TERRAIN_TYPES } from '../utils/terrainBrush';
 import { beginGridSnapshot, endGridStroke } from '../store/undo';
+import { brushSegmentRect } from '../utils/dirtyRect';
 
 const DEFAULT_SPACING = 14.4; // 与 heightMath / 高度图保持同一格宽
 const EMPTY_TERRAIN = 255;    // 未绘制（0 是海洋）
@@ -188,6 +189,17 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
 
   function clearBrushPreview() { terrainBrushPreview.value = null; }
 
+  // P2-3 脏矩形：网格笔刷的实际影响半径（含预览圈，预览半径 ≤ 涂抹半径）
+  function brushWorldRadius() {
+    return Math.max(1, (terrainBrushSize.value * cellWorldSize.value) / 2);
+  }
+
+  /** 把「上一落点 → 本落点」的覆盖范围交给脏矩形追踪器（缺一就会留拖尾） */
+  function markBrushDirty(prev, cur) {
+    if (!renderer.markDirtyRect) return;
+    renderer.markDirtyRect(brushSegmentRect(prev, cur, brushWorldRadius()));
+  }
+
   function paintAt(wx, wy) {
     terrainBrush.paint(
       terrainGrid.value, gridWidth.value, gridHeight.value,
@@ -204,11 +216,13 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     syncBrush();
     paintAt(wx, wy);
     updateBrushPreview(wx, wy);
+    markBrushDirty(null, { x: wx, y: wy });
     renderer.requestRender();
   }
 
   function moveTerrainBrush(wx, wy) {
     if (!isTerrainBrushing.value || !terrainGrid.value) return;
+    const prev = { x: lastBrushX.value, y: lastBrushY.value };
     terrainBrush.paintInterpolated(
       terrainGrid.value, gridWidth.value, gridHeight.value,
       lastBrushX.value - gridOriginX, lastBrushY.value - gridOriginY,
@@ -217,6 +231,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     lastBrushX.value = wx;
     lastBrushY.value = wy;
     updateBrushPreview(wx, wy);
+    markBrushDirty(prev, { x: wx, y: wy });
     renderer.requestRender();
   }
 

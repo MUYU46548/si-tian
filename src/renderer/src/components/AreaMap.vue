@@ -319,7 +319,7 @@ import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
-import { pointsBBox, bboxInViewport, pointInViewport, convexHull, simplifyPath } from '../utils/geometry';
+import { pointsBBox, bboxInViewport, pointInViewport, pointInPolygon, convexHull, simplifyPath } from '../utils/geometry';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -491,6 +491,9 @@ const areaTexts = computed(() => {
 
 // 选中区域
 const selectedZone = ref(null);
+// P2-1：区域多边形顶点编辑 —— 选中区域后拖顶点，松手落一条 undo
+const zoneVertexDrag = ref(null);
+const zoneDragSnapshot = ref(null);
 
 // 定位高亮
 const focusHighlightNode = ref(null);
@@ -1094,6 +1097,20 @@ function drawZones(ctx, vp) {
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // P2-1：选中区域画顶点手柄（屏幕尺寸恒定 → 按缩放折算回世界坐标）
+    if (isSelected && !fast) {
+      const hs = 4 / Math.max(0.01, renderer.viewTransform.scale);
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = hs / 2;
+      for (const p of zone.points) {
+        ctx.beginPath();
+        ctx.rect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
     if (zone.name && !fast) {
       const cx = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length;
       const cy = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length;
@@ -1320,6 +1337,15 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
     return false;
   }
 
+  // P2-1 区域顶点拖拽：先于节点命中（顶点常与子节点重叠，被抢走就永远拖不到）
+  // 返回 mode:'node' 而不是 false —— pan 模式下 false + Shift 会被解释为框选起点
+  const zvHit = hitZoneVertex(wx, wy);
+  if (zvHit) {
+    zoneDragSnapshot.value = { points: selectedZone.value.points.map(p => ({ ...p })) };
+    zoneVertexDrag.value = { zoneId: selectedZone.value.id, index: zvHit.index };
+    return { mode: 'node', nodeId: 'zoneVertex:' + selectedZone.value.id };
+  }
+
   const hit = hitTest(wx, wy);
   if (hit) {
     if (shiftKey || ctrlKey) {
@@ -1382,6 +1408,21 @@ function handleDragMove(wx, wy, info) {
     return;
   }
 
+  if (zoneVertexDrag.value && selectedZone.value) {
+    const p = selectedZone.value.points[zoneVertexDrag.value.index];
+    if (p) {
+      if (gridSnapEnabled.value) {
+        p.x = Math.round(wx / gridSize.value) * gridSize.value;
+        p.y = Math.round(wy / gridSize.value) * gridSize.value;
+      } else {
+        p.x = wx;
+        p.y = wy;
+      }
+      renderer.requestRender();
+    }
+    return;
+  }
+
   if (isDraggingNode.value && selectedNode.value) {
     const dx = wx - dragStartPos.value.x;
     const dy = wy - dragStartPos.value.y;
@@ -1423,6 +1464,22 @@ function handleDragEnd(wx, wy, info) {
     isDrawingZone.value = false;
     if (zoneBrushMode.value) finishZoneBrush();
     else finishZoneDrawing();
+    return;
+  }
+
+  if (zoneVertexDrag.value && selectedZone.value) {
+    const zone = selectedZone.value;
+    const snapshot = zoneDragSnapshot.value;
+    zoneVertexDrag.value = null;
+    zoneDragSnapshot.value = null;
+    if (snapshot) {
+      // 以 snapshot 为 oldSnapshot 提交：拖拽中被直接改写的 points 由 redo 重新落定，
+      // undo 回滚到涂抹/绘制出的原始形状（一条命令，不是每个 mousemove 一条）
+      store.updateAreaZone(props.areaNode.id, zone.id, {
+        points: zone.points.map(p => ({ ...p })),
+      }, snapshot);
+      renderer.requestRender();
+    }
     return;
   }
 
@@ -1537,9 +1594,13 @@ function handleCanvasClick(hit, wx, wy) {
     if (!selectedNodeIds.value.includes(hit.id)) {
       selectedNodeIds.value = [hit.id];
     }
+    selectedZone.value = null;
   } else {
+    // P2-1：没点到子节点时看是否点在区域多边形内 → 进入该区域的顶点编辑态
+    const zone = hitZonePolygon(wx, wy);
     selectedNode.value = null;
     selectedNodeIds.value = [];
+    selectedZone.value = zone || null;
   }
   renderer.requestRender();
 }
@@ -1591,6 +1652,40 @@ function snapPoint(world) {
     x: Math.round(world.x / step) * step,
     y: Math.round(world.y / step) * step,
   };
+}
+
+// ── P2-1：区域多边形命中（面 + 顶点） ───────────────────────────
+// 顶点命中半径按屏幕像素折算回世界坐标，缩放后手感一致
+function vertexHitRadius() {
+  return 10 / Math.max(0.01, renderer.viewTransform.scale);
+}
+
+function hitZonePolygon(wx, wy) {
+  const zones = areaZones.value;
+  for (let i = zones.length - 1; i >= 0; i--) {
+    const z = zones[i];
+    if (z.points && z.points.length >= 3 && pointInPolygon(wx, wy, z.points)) return z;
+  }
+  return null;
+}
+
+function hitZoneVertex(wx, wy) {
+  const z = selectedZone.value;
+  if (!z || !z.points || z.points.length < 3) return null;
+  const r = vertexHitRadius();
+  // 取**最近**的顶点，而不是第一个落在半径内的：简化后的多边形顶点间距可能小于
+  // 命中半径（半径按屏幕折算，缩得越小世界半径越大），取第一个会拖到隔壁顶点
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < z.points.length; i++) {
+    const p = z.points[i];
+    const d = Math.hypot(wx - p.x, wy - p.y);
+    if (d <= r && d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best >= 0 ? { index: best, dist: bestD } : null;
 }
 
 function finishZoneDrawing() {

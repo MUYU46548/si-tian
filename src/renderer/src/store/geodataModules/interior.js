@@ -68,7 +68,24 @@ export function createInteriorModule(ctx) {
       rotation: furniture.rotation ?? 0,
       color: furniture.color || '#8B8B8B',
     };
-    floor.furniture.push(item);
+    // 走 undo 栈：与 addFurnitureBatch / transferFurnitureBatch 一致。
+    // 此前这里直接 push，命令不入栈 → 放一件家具后点撤销，撤掉的是**上一条**命令
+    // （典型表现：把刚放的一整间房间/上一批家具撤没了），本次用例 37-c 抓到该缺口。
+    // 注意 execute() 内部会立即调用 redo() 完成首次写入，这里不能再手动 push（防双写）。
+    execute({
+      type: 'add-furniture',
+      label: `放置家具 ${item.name}`,
+      undo: () => {
+        const fl = interiorData.value[buildingId]?.floors?.find(f => f.id === floorId);
+        if (fl && fl.furniture) fl.furniture = fl.furniture.filter(f => f.id !== item.id);
+      },
+      redo: () => {
+        const fl = interiorData.value[buildingId]?.floors?.find(f => f.id === floorId);
+        if (!fl) return;
+        if (!fl.furniture) fl.furniture = [];
+        fl.furniture.push({ ...item });
+      },
+    });
     scheduleAutoSave();
     return item;
   }

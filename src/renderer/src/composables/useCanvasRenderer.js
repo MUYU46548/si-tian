@@ -50,6 +50,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     animate = false,        // 是否启用持续动画循环
     interactionMode = null, // ref('pan' | 'draw' | 'marker' | 'region')
     isSpacebarDown = null,  // ref(boolean)
+    dirtyTracker = null,    // P2-3：DirtyRectTracker 实例（可选，不传=永远全画布）
   } = options;
 
   let ctx = null;
@@ -65,6 +66,14 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   let rafId = null;
   let needsRender = true;
   let fastMode = false;
+  // P2-3 脏矩形：只重绘笔刷影响的区域。以下三种情况强制全画布——
+  // ① viewTransform 变化（缩放/平移）② fastMode 切换（快/全质量混用会留残影）
+  // ③ tracker.markFull()；另加「脏面积 > 50% 画布」的面积兜底（见 shouldFullRedraw）
+  let tracker = dirtyTracker;
+  let forceFullNextRender = true;
+  let lastVT = { x: NaN, y: NaN, scale: NaN };
+  let lastFastMode = false;
+  let renderInfo = { mode: 'full', rects: 0, dirtyAreaRatio: 0, bbox: null };
   let currentHit = null;
   let dragNodeId = null;
   let animationFrameId = null; // 持续动画循环的 rAF ID
@@ -199,10 +208,56 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
 
-    ctx.clearRect(0, 0, w, h);
+    // ---- 脏矩形决策 ----
+    const vtChanged = viewTransform.x !== lastVT.x || viewTransform.y !== lastVT.y
+      || viewTransform.scale !== lastVT.scale;
+    const fastChanged = fastMode !== lastFastMode;
+    let partial = null;
+    if (tracker) tracker.setScale(viewTransform.scale);
+    if (tracker && tracker.enabled && !forceFullNextRender && !vtChanged && !fastChanged) {
+      tracker.merge();
+      if (!tracker.isEmpty && !tracker.shouldFullRedraw(w, h, viewTransform.scale)) {
+        partial = tracker.boundingBox();
+      }
+    }
+    if (!partial && tracker) tracker.markFull(); // 记下本帧是全画布（下次 add 仍可用）
+
+    if (!partial) ctx.clearRect(0, 0, w, h);
     ctx.save();
     ctx.translate(w / 2 + viewTransform.x, h / 2 + viewTransform.y);
     ctx.scale(viewTransform.scale, viewTransform.scale);
+
+    if (partial) {
+      // 在变换坐标系里清脏区并裁剪：区域内结果与全画布重绘逐像素一致。
+      // 关键：先把世界矩形对齐到**整数设备像素**再 clear/clip —— canvas 的 clip 是抗锯齿的，
+      // 边界落在半个像素上会让边界那一列/行按 alpha 混合，与全画布重绘产生可见差异（test_38-e 抓到）。
+      const dpr = window.devicePixelRatio || 1;
+      const toDev = (v) => v * dpr;
+      const fromDev = (v) => v / dpr;
+      const cs = viewTransform.scale;
+      const sx0 = toDev(partial.x * cs + w / 2 + viewTransform.x);
+      const sy0 = toDev(partial.y * cs + h / 2 + viewTransform.y);
+      const sx1 = toDev((partial.x + partial.w) * cs + w / 2 + viewTransform.x);
+      const sy1 = toDev((partial.y + partial.h) * cs + h / 2 + viewTransform.y);
+      const dx0 = Math.max(0, Math.floor(sx0 - 1e-6));
+      const dy0 = Math.max(0, Math.floor(sy0 - 1e-6));
+      const dx1 = Math.min(toDev(w), Math.ceil(sx1 + 1e-6));
+      const dy1 = Math.min(toDev(h), Math.ceil(sy1 + 1e-6));
+      const rx = fromDev(dx0) - w / 2 - viewTransform.x;
+      const ry = fromDev(dy0) - h / 2 - viewTransform.y;
+      const rw = (dx1 - dx0) / dpr;
+      const rh = (dy1 - dy0) / dpr;
+      if (rw > 0 && rh > 0) {
+        ctx.clearRect(rx / cs, ry / cs, rw / cs, rh / cs);
+        ctx.beginPath();
+        ctx.rect(rx / cs, ry / cs, rw / cs, rh / cs);
+        ctx.clip();
+        partial = { x: rx / cs, y: ry / cs, w: rw / cs, h: rh / cs };
+      } else {
+        partial = null;
+        ctx.clearRect(-(w / 2 + viewTransform.x) / cs, -(h / 2 + viewTransform.y) / cs, w / cs, h / cs);
+      }
+    }
 
     onRender(ctx, w, h);
 
@@ -231,6 +286,25 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     perfStats.lastFrameTime = frameTime;
     perfStats.frameCount++;
     perfStats.peakFrameTime = Math.max(perfStats.peakFrameTime, frameTime);
+
+    // ---- 脏矩形状态收尾：本帧已消费，清空等待下次 add ----
+    if (tracker) {
+      const px = viewTransform.scale;
+      renderInfo = partial
+        ? {
+            mode: 'partial',
+            rects: tracker.count,
+            dirtyArea: Math.round(tracker.totalArea() * px * px),
+            dirtyAreaRatio: (tracker.totalArea() * px * px) / (w * h),
+            bbox: partial,
+          }
+        : { mode: 'full', rects: tracker.count, dirtyArea: w * h, dirtyAreaRatio: 1, bbox: null };
+      tracker.clear();
+      tracker.setScale(px);
+    }
+    forceFullNextRender = false;
+    lastVT = { x: viewTransform.x, y: viewTransform.y, scale: viewTransform.scale };
+    lastFastMode = fastMode;
 
     perfStats._frameTimes.push(frameTime);
     if (perfStats._frameTimes.length > 60) perfStats._frameTimes.shift();
@@ -692,6 +766,12 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     initCanvas,
     cleanupCanvas,
     getPerfStats: () => ({ ...perfStats }),
+    // P2-3 脏矩形
+    setDirtyTracker: (t) => { tracker = t; forceFullNextRender = true; },
+    getDirtyTracker: () => tracker,
+    markDirtyRect: (rect) => { if (tracker) tracker.add(rect); },
+    markFullRedraw: () => { forceFullNextRender = true; if (tracker) tracker.markFull(); requestRender(); },
+    getRenderInfo: () => ({ ...renderInfo }),
     startAnimation,
     stopAnimation,
   };

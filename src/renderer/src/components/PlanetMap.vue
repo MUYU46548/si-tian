@@ -932,6 +932,7 @@ import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { usePanelsStore } from '../store/panels';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import { DirtyRectTracker, brushSegmentRect } from '../utils/dirtyRect';
 import { createPlanetDrawing } from '../composables/planetDrawing';
 import { createPlanetHitTest } from '../composables/planetHitTest';
 import { createPlanetInteractions } from '../composables/planetInteractions';
@@ -1541,7 +1542,12 @@ const interactions = createPlanetInteractions(getState, {
   requestRender() { renderer.requestRender(); },
 });
 
+// P2-3 脏矩形：笔刷拖动期间只重绘受影响区域（全画布兜底见 utils/dirtyRect.js）
+// 只给 PlanetMap 开：它是笔刷主场，AreaMap/InteriorView 场景小、改动风险大于收益
+const planetDirtyTracker = new DirtyRectTracker({ marginPx: 3 });
+
 const renderer = useCanvasRenderer(canvas, {
+  dirtyTracker: planetDirtyTracker,
   onRender,
   onHitTest: (wx, wy) => hitTestModule.hitTest(wx, wy),
   onPointerMove: (wx, wy) => {
@@ -1682,7 +1688,7 @@ const planetHeightBrush = usePlanetHeightBrush({ store, renderer, currentMapData
 const terrainCanvasBrush = useTerrainCanvasBrush({ store, props, renderer, canvas });
 
 // ===== P0-1 地貌图标笔刷 composable =====
-const reliefBrush = useReliefBrush({ store, currentMapData });
+const reliefBrush = useReliefBrush({ store, currentMapData, renderer });
 
 // 滚轮调散布间距（捕获阶段拦截，避免同时触发画布缩放）
 function onWrapperWheel(e) {
@@ -2448,10 +2454,13 @@ function moveRiverNode(wx, wy) {
   const drag = riverDrag.value;
   const r = selectedRiver.value;
   if (!drag || !r) return;
+  const prev = r.nodes[drag.index] ? { x: r.nodes[drag.index].x, y: r.nodes[drag.index].y } : null;
   const res = clampRiverNode(r.nodes, drag.index, { x: wx, y: wy }, heightAt);
   r.nodes[drag.index] = res.point;
   riverFlowHint.value = res.clamped ? res.reason : '';
   if (res.clamped) setStatus({ toolLabel: res.reason });
+  // P2-3 脏矩形：覆盖「拖动前 + 拖动后」节点位置（含节点高亮圆与河宽），否则节点会拖出残影
+  renderer.markDirtyRect(brushSegmentRect(prev, res.point, Math.max(24, (r.width || riverWidth.value || 10) * 2)));
   renderer.requestRender();
 }
 

@@ -17,8 +17,9 @@ import {
   RELIEF_TYPES,
   RELIEF_TYPE_MAP,
 } from '../utils/reliefIcons';
+import { brushSegmentRect } from '../utils/dirtyRect';
 
-export function useReliefBrush({ store, currentMapData }) {
+export function useReliefBrush({ store, currentMapData, renderer = null }) {
   // ===== 参数（笔刷子面板绑定）=====
   const reliefType = ref(DEFAULT_RELIEF_PARAMS.type);
   const reliefSize = ref(DEFAULT_RELIEF_PARAMS.size);
@@ -36,6 +37,7 @@ export function useReliefBrush({ store, currentMapData }) {
   const reliefLiveIcons = ref(null);   // 拖动中的"实时列表"（绘制层优先用它）
   const reliefCursor = ref(null);      // 笔刷光标预览 {x, y}
 
+  let lastDirtyPos = null;             // P2-3 脏矩形：上一个落点
   let strokeSeed = 1;
   let walkedLength = 0;                // 本次拖动已累积的弧长（用于间距相位连续）
   let lastPoint = null;
@@ -43,6 +45,13 @@ export function useReliefBrush({ store, currentMapData }) {
   const reliefTypeMeta = computed(() => RELIEF_TYPE_MAP[reliefType.value] || RELIEF_TYPES[0]);
   const reliefStep = computed(() =>
     Math.max(4, reliefSpacing.value * (RELIEF_DENSITY[reliefDensity.value] || RELIEF_DENSITY.medium).factor));
+
+  // P2-3 脏矩形：地貌图标散布半径（size 是世界单位的一半边长，留足余量）
+  function markStrokeDirty(a, b) {
+    if (!renderer?.markDirtyRect) return;
+    const r = Math.max(reliefSize.value * 1.5, reliefEraseRadius.value);
+    renderer.markDirtyRect(brushSegmentRect(a, b, r));
+  }
 
   function _params() {
     return {
@@ -79,6 +88,8 @@ export function useReliefBrush({ store, currentMapData }) {
     reliefPending.value = [];
     reliefRemovedIds.value = [];
     walkedLength = 0;
+    markStrokeDirty(lastDirtyPos, { x: wx, y: wy });
+    lastDirtyPos = { x: wx, y: wy };
     lastPoint = { x: wx, y: wy };
     // 每次拖动换 seed：同一次拖动内保持确定性，不同拖动之间有点变化
     strokeSeed = (strokeSeed + 1) & 0x7fffffff;
@@ -94,6 +105,8 @@ export function useReliefBrush({ store, currentMapData }) {
     if (reliefEraseMode.value) {
       _eraseAt(wx, wy);
       _rebuildLive();
+      markStrokeDirty(lastDirtyPos, { x: wx, y: wy });
+      lastDirtyPos = { x: wx, y: wy };
       return true;
     }
     const a = lastPoint || { x: wx, y: wy };
@@ -102,6 +115,8 @@ export function useReliefBrush({ store, currentMapData }) {
     if (segLen < 0.5) return false; // 微小移动不重复散布
     _scatterSegment(seg);
     walkedLength += segLen;
+    markStrokeDirty(lastDirtyPos, { x: wx, y: wy });
+    lastDirtyPos = { x: wx, y: wy };
     lastPoint = { x: wx, y: wy };
     reliefPath.value = reliefPath.value.concat([{ x: wx, y: wy }]);
     _rebuildLive();
@@ -122,6 +137,7 @@ export function useReliefBrush({ store, currentMapData }) {
     reliefLiveIcons.value = null;
     reliefCursor.value = null;
     lastPoint = null;
+    lastDirtyPos = null;
     walkedLength = 0;
     if (planetId && (added.length || removedIds.length)) {
       store.applyReliefStroke(planetId, added, removedIds);
@@ -131,6 +147,7 @@ export function useReliefBrush({ store, currentMapData }) {
 
   /** 取消当前拖动（Esc） */
   function cancelStroke() {
+    lastDirtyPos = null;
     isReliefBrushing.value = false;
     reliefEraseMode.value = false;
     reliefPath.value = [];
