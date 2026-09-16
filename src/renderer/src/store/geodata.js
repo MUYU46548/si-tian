@@ -96,6 +96,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   const { interiorData, interiorReferenceImages } = interiorModule;
   const { areaZones, areaRoutes, areaMarkers, areaTextLabels, areaReferenceImages } = areaEditingModule;
   const { spaceMarkers, fleetCards } = spaceEditingModule;
+  const { scenarios } = scenarioEditingModule; // 转正 id 级联需改写 ownership（省份归属）键
 
   const worlds = computed(() => nodes.value.filter(n => n.layer === 'world'));
   const starDomains = computed(() => nodes.value.filter(n => n.layer === 'star_domain'));
@@ -842,6 +843,161 @@ export const useGeodataStore = defineStore('geodata', () => {
     return results;
   }
 
+  // ===== 节点 id 变更（Draft 转正 id 连续性，2026-09-16） =====
+  // 转正后节点 id 由随机 id（`node_<ts>_<rand>`）切换为 normalizeId(文件名)，与
+  // scripts/extract-data.js 的提取结果对齐 —— 否则重提取会产出第二个节点（新 id），
+  // 而子节点的 parentId、地图数据、剧本归属仍指向那张"消失了的脸"（幽灵引用）。
+  //
+  // ★ 引用清单（新增任何以节点 id 为「值」或为「键」的结构时必须在此登记，漏一处 = 幽灵引用）
+  //   值槽（字段值 === 旧 id → 改写为新 id）：
+  //     nodes[].parentId                      子节点归属
+  //     hyperlanes[].fromId / toId             航道端点
+  //     spaceMarkers[].systemId                太空标记所属恒星系（B6）
+  //     fleetCards[].systemId                  部队卡片所属恒星系（B7）
+  //     mapData[*].planetId                    行星地图自引用字段
+  //     mapData[*].{regions,markers,routes,textLabels,places}[].nodeId   地图对象绑定节点
+  //     interiorData[*].buildingId             建筑内部自引用字段
+  //     areaZones / areaRoutes / areaMarkers / areaTextLabels 内的 nodeId / areaId / buildingId
+  //   数组槽（逐元素改写）：
+  //     mapData[*].clusters[].memberIds[]      聚簇成员 id 数组
+  //   字典键（键 === 旧 id → 改名）：
+  //     mapData（行星 id）、domainBorderOverrides（星域 id）
+  //     areaZones|areaRoutes|areaMarkers|areaTextLabels|areaReferenceImages（区域 id）
+  //     interiorData|interiorReferenceImages（建筑 id）
+  //     scenarios[*].ownership（省份/区域归属键）
+  //   不参与级联（已知例外，刻意排除）：
+  //     scenarios.baseMaps —— 其键语义混用（既可能是行星**名称**又可能是 id，
+  //     如真实数据里并存 `德斯特星` 与 `desite`），按 id 改名会误伤，故不列入；
+  //     底图与节点本就非同源（来自 azgaar 导入），重提取不受影响。
+  const ID_REF_VALUE_FIELDS = ['nodeId', 'parentId', 'fromId', 'toId', 'systemId', 'areaId', 'buildingId', 'planetId'];
+  const ID_REF_ARRAY_FIELDS = ['memberIds'];
+  // 深度遍历跳过的重字段（大数组，不可能承载节点 id 字符串引用）
+  const ID_REF_SKIP_KEYS = new Set(['terrainGrid', 'heightmap', 'data', 'points', 'grid']);
+
+  // 深度收集「值槽 / 数组槽」——显式记录旧值，undo 直接回填（不做反向推断）
+  function collectIdRefSlots(root, oldId, slots, seen) {
+    if (!root || typeof root !== 'object' || seen.has(root)) return;
+    seen.add(root);
+    if (Array.isArray(root)) {
+      for (const item of root) collectIdRefSlots(item, oldId, slots, seen);
+      return;
+    }
+    for (const key of Object.keys(root)) {
+      const val = root[key];
+      if (ID_REF_VALUE_FIELDS.includes(key)) {
+        if (val === oldId) slots.push({ container: root, key, old: oldId });
+        continue;
+      }
+      if (ID_REF_ARRAY_FIELDS.includes(key)) {
+        if (Array.isArray(val)) {
+          val.forEach((v, i) => { if (v === oldId) slots.push({ container: val, key: i, old: oldId }); });
+        }
+        continue;
+      }
+      if (ID_REF_SKIP_KEYS.has(key)) continue;
+      collectIdRefSlots(val, oldId, slots, seen);
+    }
+  }
+
+  // 以节点 id 为「字典键」的容器集合（改名而非改字段值）
+  function idRefDicts() {
+    const dicts = [
+      mapData.value,
+      domainBorderOverrides.value,
+      areaZones.value, areaRoutes.value, areaMarkers.value, areaTextLabels.value, areaReferenceImages.value,
+      interiorData.value, interiorReferenceImages.value,
+    ];
+    const sc = scenarios.value || {};
+    for (const key of Object.keys(sc)) {
+      const item = sc[key];
+      if (item && item.ownership && typeof item.ownership === 'object') dicts.push(item.ownership);
+    }
+    return dicts;
+  }
+
+  /**
+   * 同步变更节点 id 并级联更新全部引用（入 undo 栈，可撤销/重做）。
+   *
+   * @param {string} oldId 当前节点 id
+   * @param {string} newId 目标 id（通常为 normalizeId(笔记文件名)）
+   * @returns {{success: boolean, changed?: boolean, oldId?: string, newId?: string,
+   *            reason?: string, collidesWith?: string, refs?: number, dictKeys?: number, warnings?: string[]}}
+   *   冲突（目标 id 已存在）时返回 success:false —— 调用方应降级为「只回填 sourcePath，id 不变」，不阻断转正。
+   */
+  function changeNodeId(oldId, newId) {
+    const node = nodes.value.find(n => n.id === oldId);
+    if (!node) return { success: false, reason: '节点不存在' };
+    if (!newId) return { success: false, reason: '目标 id 为空' };
+    if (oldId === newId) return { success: true, changed: false, oldId, newId };
+    if (nodes.value.some(n => n.id === newId)) {
+      return { success: false, reason: '目标 id 已存在', collidesWith: newId };
+    }
+
+    // ---- 采集阶段：一次性把所有被修改的位置与旧值记录下来（undo 闭包只做回填） ----
+    const seen = new Set();
+    const slots = [];
+    collectIdRefSlots(nodes.value, oldId, slots, seen);
+    collectIdRefSlots(hyperlanes.value, oldId, slots, seen);
+    collectIdRefSlots(spaceMarkers.value, oldId, slots, seen);
+    collectIdRefSlots(fleetCards.value, oldId, slots, seen);
+    collectIdRefSlots(mapData.value, oldId, slots, seen);
+    collectIdRefSlots(areaZones.value, oldId, slots, seen);
+    collectIdRefSlots(areaRoutes.value, oldId, slots, seen);
+    collectIdRefSlots(areaMarkers.value, oldId, slots, seen);
+    collectIdRefSlots(areaTextLabels.value, oldId, slots, seen);
+    collectIdRefSlots(areaReferenceImages.value, oldId, slots, seen);
+    collectIdRefSlots(interiorData.value, oldId, slots, seen);
+    collectIdRefSlots(interiorReferenceImages.value, oldId, slots, seen);
+
+    const dicts = idRefDicts();
+    const keyHits = dicts.filter(d => d && Object.prototype.hasOwnProperty.call(d, oldId));
+    const mapDataRenamed = keyHits.includes(mapData.value);
+
+    const writeValues = (value) => {
+      for (const s of slots) s.container[s.key] = value;
+    };
+    const writeOldValues = () => {
+      for (const s of slots) s.container[s.key] = s.old;
+    };
+    const renameKeys = (from, to) => {
+      for (const d of keyHits) {
+        if (!Object.prototype.hasOwnProperty.call(d, from)) continue;
+        d[to] = d[from];
+        delete d[from];
+      }
+    };
+
+    // 写入全部在 execute 的 redo 内完成（undo 纪律：execute 前不得手动改数据）
+    execute({
+      type: 'change-node-id',
+      label: `同步节点 id（${oldId} → ${newId}）`,
+      category: 'property',
+      undo: () => {
+        renameKeys(newId, oldId);
+        writeOldValues();
+        node.id = oldId;
+      },
+      redo: () => {
+        renameKeys(oldId, newId);
+        writeValues(newId);
+        node.id = newId;
+      },
+    });
+
+    const warnings = [];
+    if (mapDataRenamed) {
+      // 内存索引与磁盘 key 必须一致：按新 key 重新落盘，旧 key 的缓存文件成为孤儿（不自动删除）
+      scheduleAutoSaveMap(newId);
+      warnings.push('行星地图已迁移到新 id 的 key，旧 key 的缓存文件为孤儿文件（可手动清理）');
+    }
+    scheduleAutoSave();
+    scheduleAutoSaveScenarios();
+    return {
+      success: true, changed: true, oldId, newId,
+      refs: slots.length, dictKeys: keyHits.length, warnings,
+    };
+  }
+
   // ===== 航道 CRUD（使用通用 UndoStore） =====
 
   function undo() {
@@ -1102,7 +1258,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     saveStatus,
     FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,
-      addNode, removeNode, updateNode, reparentNode, reparentNodes,
+      addNode, removeNode, updateNode, changeNodeId, reparentNode, reparentNodes,
       addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
       selectNode, clearSelection, selectPlanetOrNode,
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,

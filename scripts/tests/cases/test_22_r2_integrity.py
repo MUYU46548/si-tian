@@ -6,6 +6,7 @@
      并带「提及」徽标；名称直配优先于提及（两级排序）
   b) 暂存（draft）节点转正入口 —— 详情面板对无 sourcePath 的节点给出
      「创建 Obsidian 笔记」，转正后回填 sourcePath 并切换为「在 Obsidian 中打开」
+     （转正同时会把节点 id 同步为 normalizeId(文件名)，详见用例 40；此处按名称查找）
   c) 库名动态化 —— obsidian:// URI 的 vault 参数取自当前配置库名，不再硬编码 ROSA
   d) mapdata 旧 key 清理的运行时前提 —— saveMapDataImmediate 不得直写无世界前缀 key
      （静态断言：函数体必须经由 saveMapData 前缀化路径，防止旧 key 复活）
@@ -125,11 +126,16 @@ def run(cdp):
       btn.click();
       await new Promise(r => setTimeout(r, 300));
       const s = {APP_STORE};
-      const n = s.nodes.find(x => x.id === {json.dumps(draft_id)});
+      // 注意：转正会同步把 id 换成 normalizeId(文件名)（用例 40 的核心行为），
+      // 因此这里按**名称**查找而不是旧随机 id —— 否则会误报「sourcePath 未回填」。
+      const n = s.nodes.find(x => x.name === '暂存测试地点');
+      const oldIdGone = !s.nodes.some(x => x.id === {json.dumps(draft_id)});
       const sec2 = document.querySelector('.detail-panel .actions-section-top');
       return JSON.stringify({{
         sourcePath: n ? n.sourcePath : null,
         draft: n ? n.draft : null,
+        newId: n ? n.id : null,
+        oldIdGone,
         labels2: sec2 ? Array.from(sec2.querySelectorAll('button')).map(b => b.textContent.trim()) : [],
       }});
     }})()""")
@@ -193,7 +199,7 @@ def run(cdp):
         return False, f'写盘 key 未带世界前缀（会重新制造旧 key） {keycheck}'
 
     # 清场：撤销转正 + 删除暂存节点
-    cdp.eval(f"(() => {{ const s = {APP_STORE}; const n = s.nodes.find(x => x.id === {json.dumps(draft_id)}); if (n) s.removeNode(n.id); s.clearSelection(); return 'clean'; }})()")
+    cdp.eval(f"(() => {{ const s = {APP_STORE}; const n = s.nodes.find(x => x.name === '暂存测试地点'); if (n) s.removeNode(n.id); s.clearSelection(); return 'clean'; }})()")
     time.sleep(0.3)
 
     return True, ('搜索覆盖 wikilinks（白芝原→哈伦的住所/卡莉的工作室，带提及徽标）+ 名称直配优先 + '

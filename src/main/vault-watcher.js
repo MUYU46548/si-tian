@@ -51,9 +51,13 @@ let watcher = null;
 let mainWindow = null;
 let debounceTimer = null;
 
+// ⚠️ 与 scripts/extract-data.js（唯一真值来源）及 src/renderer/src/utils/normalizeId.js **逐字符一致**。
+// 2026-09-16 修正历史漂移：此处曾写作 /[\\\/\\s]/（把字面量 s 也当分隔符、反而不匹配空白），
+// 导致同一个文件名在「增量监听」与「全量提取」下得到不同 id。三处一致性由
+// scripts/tests/cases/test_40_draft_id_continuity.py 的源码比对用例守卫。
 function normalizeId(name) {
   if (!name) return 'unknown';
-  return name.replace(/\[\[|\]\]/g, '').replace(/[\\\/\\s]/g, '_').replace(/[^\w一-鿿]/g, '').toLowerCase();
+  return name.replace(/\[\[|\]\]/g, '').replace(/[\\\/\s]/g, '_').replace(/[^\w一-鿿]/g, '').toLowerCase();
 }
 
 function detectLayer(folderName) {

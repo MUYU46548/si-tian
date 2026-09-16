@@ -38,6 +38,7 @@
         <button class="action-btn danger" @click="removeFromMap" title="从地图移除该节点及其关联航道（可撤销）">
           <span class="btn-icon"><Icon name="trash" :size="14"/></span> 从地图移除
         </button>
+        <p v-if="promoteNotice" class="promote-notice" :class="promoteNotice.kind" data-testid="promote-notice">{{ promoteNotice.text }}</p>
       </section>
 
       <!-- 信息分区 tab（批次A5：概览=读、关系=跳转/归属、编辑=写操作） -->
@@ -394,6 +395,7 @@ import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
 import { openObsidianUri } from '../utils/vault';
+import { nodeIdFromNoteResult } from '../utils/normalizeId';
 import {
   POP_MIN, POP_MAX, CULTURE_NONE_ID, CULTURE_COLORS,
   popToSlider, sliderToPop, tierOf, tierLabelOf, formatPop,
@@ -475,6 +477,8 @@ const isDraftNode = computed(() =>
   !!node.value && !isPseudoNode.value && (node.value.draft === true || !node.value.sourcePath)
 );
 const promoting = ref(false);
+// 转正结果提示：id 同步成功 / 同名冲突降级 —— 用状态字段而非 emoji 前缀（便于断言与样式化）
+const promoteNotice = ref(null);
 
 // 头部背景样式（根据层级）
 const heroStyle = computed(() => {
@@ -816,23 +820,40 @@ async function openSourceInObsidian() {
   await openObsidianUri(node.value.sourcePath);
 }
 
-// 暂存节点转正：创建 Obsidian 笔记并回填 sourcePath（转正后不再是 draft）
+// 暂存节点转正：创建 Obsidian 笔记 → 回填 sourcePath（转正后不再是 draft）
+// ★ id 连续性（2026-09-16）：笔记落盘后把节点 id 从随机 id 切换为 normalizeId(文件名)，
+//   并级联更新全部引用（子节点 parentId / 地图数据 / 剧本归属 / 建筑内部 …）。否则下次
+//   extract-data 会按文件名再生成一个同义节点，而引用仍指向旧 id（幽灵引用）。
+//   目标 id 已被占用时降级为「只回填 sourcePath，id 不变」，不阻断转正，并在面板内提示。
 async function promoteDraft() {
   const n = node.value;
   if (!n || promoting.value) return;
   promoting.value = true;
+  promoteNotice.value = null;
   try {
     const result = await window.sitianAPI.createObsidianNote({
       name: n.name, layer: n.layer, parentId: n.parentId,
       tags: n.tags || [], coordinate: n.coordinate,
       content: `# ${n.name}\n\n`,
     });
-    if (result?.success) {
-      store.updateNode(n.id, { sourcePath: result.path, draft: false });
-      await loadNote();
-    } else {
+    if (!result?.success) {
       alert('创建笔记失败：' + (result?.error || '未知错误'));
+      return;
     }
+    const newId = nodeIdFromNoteResult(result, n.name);
+    const changeResult = store.changeNodeId(n.id, newId);
+    // 注意：changeNodeId 成功时是**就地**改 id，n.id 已变为 newId —— 后续按 n.id 查找仍有效
+    if (changeResult.success) {
+      store.updateNode(n.id, { sourcePath: result.path, draft: false });
+      promoteNotice.value = changeResult.changed
+        ? { kind: 'ok', text: `已转正：节点 id 同步为「${changeResult.newId}」，级联更新 ${changeResult.refs} 处引用、${changeResult.dictKeys} 个数据字典` }
+        : { kind: 'ok', text: '已转正：节点 id 与笔记名一致，无需变更' };
+    } else {
+      store.updateNode(n.id, { sourcePath: result.path, draft: false });
+      promoteNotice.value = { kind: 'warn', text: `同名笔记已存在，id 保持不变（${changeResult.reason}）：重提取可能产生重复节点` };
+      console.warn('节点 id 同步失败，已降级为仅回填 sourcePath：', changeResult);
+    }
+    await loadNote();
   } catch (e) {
     alert('创建笔记失败：' + e.message);
   } finally {
@@ -2127,4 +2148,16 @@ function updateCoordinate(axis, value) {
   color: var(--text-tertiary);
   margin: 0;
 }
+
+/* 转正提示：id 同步结果（ok）/ 同名冲突降级（warn） */
+.promote-notice {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.promote-notice.ok { background: rgba(92, 184, 92, 0.14); color: #3f7d3f; }
+.promote-notice.warn { background: rgba(230, 126, 34, 0.16); color: #a85a12; }
 </style>

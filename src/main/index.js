@@ -417,7 +417,9 @@ ipcMain.handle('create-obsidian-note', async (event, payload) => {
     const fileContent = matter.stringify(content || `# ${name}\n\n`, frontmatter);
     await fs.writeFile(filePath, fileContent, 'utf-8');
     
-    return { success: true, path: path.relative(vault, filePath) };
+    // filename 一并返回：渲染端转正流程要用「文件名主干」推导节点 id（normalizeId(文件名)），
+    // 与 extract-data 的 id 生成规则对齐；仅从 path 反推在语义上不够明确，故显式给出
+    return { success: true, path: path.relative(vault, filePath), filename: safeName };
   } catch (err) {
     return { success: false, error: err.message };
   }

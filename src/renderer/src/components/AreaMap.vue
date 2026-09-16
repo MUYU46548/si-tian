@@ -269,6 +269,7 @@
           <button class="adopt-btn ghost" @click="openInObsidian" v-if="selectedNode.sourcePath"><Icon name="file-text" :size="13"/> Obsidian 打开</button>
           <button class="adopt-btn ghost" @click="reparentNodeToPlanet" v-if="props.areaNode?.parentId"><Icon name="arrow-down" :size="13"/> 移出区域</button>
         </div>
+        <p v-if="promoteNotice" class="promote-notice" :class="promoteNotice.kind" data-testid="area-promote-notice">{{ promoteNotice.text }}</p>
       </div>
     </div>
 
@@ -314,6 +315,7 @@
 
 <script setup>
 import { drawIconOrEmoji } from '../utils/canvasIcon';
+import { nodeIdFromNoteResult } from '../utils/normalizeId';
 import Icon from './Icon.vue';
 import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
@@ -1832,27 +1834,46 @@ function openInObsidian() {
   }
 }
 
-// 暂存节点转正：创建 Obsidian 笔记并回填 sourcePath
+// 暂存节点转正：创建 Obsidian 笔记 → 回填 sourcePath
 // （批次 R2：AreaMap 曾是唯一无转正入口的视图，draft 建筑/地点只能永远留在缓存里）
+// ★ id 连续性（2026-09-16）：转正后节点 id 由随机 id 切换为 normalizeId(文件名)，
+//   并级联更新全部引用（子节点 parentId / 建筑内部数据键 / 地图数据 / 剧本归属 …）。
+//   目标 id 已被占用时降级为「只回填 sourcePath，id 不变」，不阻断转正并在浮层内提示。
 const promoting = ref(false);
+// 转正结果提示（id 同步 / 同名冲突降级）—— 用 kind 区分样式，不靠 emoji 前缀
+const promoteNotice = ref(null);
+
 async function promoteDraft() {
   const n = selectedNode.value;
   if (!n || promoting.value) return;
   promoting.value = true;
+  promoteNotice.value = null;
   try {
     const result = await window.sitianAPI.createObsidianNote({
       name: n.name, layer: n.layer, parentId: n.parentId,
       tags: n.tags || [], coordinate: n.coordinate,
       content: `# ${n.name}\n\n`,
     });
-    if (result?.success) {
-      store.updateNode(n.id, { sourcePath: result.path, draft: false });
-      // selectedNode 是本地 ref：节点对象已就地更新，重新指向以刷新模板
-      selectedNode.value = store.nodes.find(x => x.id === n.id) || n;
-      renderer.requestRender();
-    } else {
+    if (!result?.success) {
       alert('创建笔记失败：' + (result?.error || '未知错误'));
+      return;
     }
+    const newId = nodeIdFromNoteResult(result, n.name);
+    const changeResult = store.changeNodeId(n.id, newId);
+    // changeNodeId 成功时是**就地**改 id（n.id 已等于 newId），故下面按 n.id 查找仍能命中
+    if (changeResult.success) {
+      store.updateNode(n.id, { sourcePath: result.path, draft: false });
+      promoteNotice.value = changeResult.changed
+        ? { kind: 'ok', text: `已转正：节点 id 同步为「${changeResult.newId}」，级联更新 ${changeResult.refs} 处引用、${changeResult.dictKeys} 个数据字典` }
+        : { kind: 'ok', text: '已转正：节点 id 与笔记名一致，无需变更' };
+    } else {
+      store.updateNode(n.id, { sourcePath: result.path, draft: false });
+      promoteNotice.value = { kind: 'warn', text: `同名笔记已存在，id 保持不变（${changeResult.reason}）：重提取可能产生重复节点` };
+      console.warn('节点 id 同步失败，已降级为仅回填 sourcePath：', changeResult);
+    }
+    // selectedNode 是本地 ref：节点对象已就地更新，重新指向以刷新模板
+    selectedNode.value = store.nodes.find(x => x.id === n.id) || n;
+    renderer.requestRender();
   } catch (e) {
     alert('创建笔记失败：' + e.message);
   } finally {
@@ -2544,4 +2565,16 @@ function fitSelection() {
   gap: 8px;
   justify-content: flex-end;
 }
+
+/* 转正提示：id 同步结果（ok）/ 同名冲突降级（warn） */
+.promote-notice {
+  margin: 6px 0 0;
+  padding: 5px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+.promote-notice.ok { background: rgba(92, 184, 92, 0.16); color: #b7e5b7; }
+.promote-notice.warn { background: rgba(230, 126, 34, 0.18); color: #f0c08a; }
 </style>

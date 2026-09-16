@@ -85,7 +85,10 @@ MOCK_SCRIPT = """<script>
         loadScenarios: async () => ({ success: true, data: { version: 2, baseMaps: {}, scenarios: {} } }),
         backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
         batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
-        createObsidianNote: async (payload) => ({ success: true, path: `mock/${payload?.name || '未命名'}.md` }),
+        createObsidianNote: async (payload) => {
+          const nm = String(payload?.name || '未命名').replace(/[\\/:*?"<>|]/g, '_');
+          return { success: true, path: `mock/${nm}.md`, filename: nm };
+        },
         selectReferenceImage: async () => ({ success: false, canceled: true }),
         saveExportFile: async () => ({ success: false, canceled: true }),
         readObsidianNote: async () => ({ success: true, data: { frontmatter: { publish: true, tags: ['测试'], 层级: '星系' }, content: '测试笔记正文。', wikilinks: [] } }),
