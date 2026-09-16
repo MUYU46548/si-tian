@@ -163,7 +163,7 @@
       <canvas ref="canvas"></canvas>
       <eagle-eye
         v-if="viewBounds"
-        :view-bounds="viewBounds"
+        :view-bounds="viewportBounds"
         :elements="eyeElements"
         :world-bounds="worldBounds"
         @navigate="handleEagleEyeNavigate"
@@ -285,6 +285,8 @@ import { useGeodataStore } from '../store/geodata';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import EagleEye from './EagleEye.vue';
+import { computeViewBounds } from '../utils/viewport';
+import { getPreset, drawStyledLabel } from '../utils/labelStyles';
 
 const props = defineProps({
   buildingNode: { type: Object, default: null },
@@ -785,13 +787,13 @@ function drawFurniture(ctx) {
 
     ctx.restore();
 
-    // 名称标签
+    // 名称标签（P0-2：走 building 预设，与其它视图同一套样式系统）
     if (item.name && !fast) {
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(item.name, item.x + item.width / 2, item.y + item.height + 4);
+      drawStyledLabel(ctx, item.name, item.x + item.width / 2, item.y + item.height + 4, getPreset('building'), {
+        align: 'center',
+        baseline: 'top',
+        screenScale: renderer.viewTransform.scale,
+      });
     }
   });
 }
@@ -1238,11 +1240,16 @@ const viewBounds = computed(() => {
 
 const worldBounds = computed(() => viewBounds.value);
 
+// P0-4：视口边界（镜头当前看到的世界矩形）≠ 内容边界
+const viewportBounds = computed(() => computeViewBounds(renderer, canvas.value, viewBounds.value));
+
 const eyeElements = computed(() => {
   return currentFurniture.value.map(f => ({
+    type: 'circle',
     x: f.x + f.width / 2,
     y: f.y + f.height / 2,
-    radius: Math.max(f.width, f.height) / 2,
+    r: Math.max(3, Math.min(9, Math.max(f.width, f.height) / 2)),
+    color: '#8B7355',
   }));
 });
 
@@ -1260,6 +1267,8 @@ onMounted(() => {
   renderer.initCanvas();
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('sitian:history-jump', onHistoryJump);
+  window.addEventListener('sitian:label-styles-changed', onHistoryJump); // P0-2 标签样式
+  window.addEventListener('sitian:marker-types-changed', onHistoryJump);  // P1-4 标记类型
 
   // 初始化：如果没有楼层则创建一个
   if (props.buildingNode && floors.value.length === 0) {
@@ -1290,6 +1299,8 @@ onUnmounted(() => {
   renderer.cleanupCanvas();
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('sitian:history-jump', onHistoryJump);
+  window.removeEventListener('sitian:label-styles-changed', onHistoryJump);
+  window.removeEventListener('sitian:marker-types-changed', onHistoryJump);
 });
 
 function handleKeydown(e) {

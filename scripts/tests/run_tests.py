@@ -100,6 +100,13 @@ MOCK_SCRIPT = """<script>
         reportError: async () => ({ success: true }),
         getCurrentBaseMapKey: async () => '',
         setCurrentBaseMapKey: async () => ({ success: true }),
+        // .sitian/config/*.json（P0-2 标签预设 / P1-4 标记类型）：内存态，不落盘
+        getSitianConfig: async (name) => ({ success: true, data: (window.__uiConfig || {})[name] ?? null }),
+        setSitianConfig: async (name, data) => {
+          window.__uiConfig = window.__uiConfig || {};
+          window.__uiConfig[name] = data;
+          return { success: true };
+        },
         getWindowMode: async () => 'default',
         setWindowMode: async () => ({ success: true }),
         getCloseQuitsApp: async () => false,

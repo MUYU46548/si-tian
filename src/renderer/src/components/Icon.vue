@@ -148,6 +148,8 @@
     <template v-else-if="name === 'orbit'"><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M10.4 21.9a10 10 0 0 0 9.941-15.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 15.416"/></template>
     <template v-else-if="name === 'users'"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></template>
     <template v-else-if="name === 'waves'"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9 5c1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1"/></template>
+    <template v-else-if="name === 'cactus'"><path d="M9 22V9a3 3 0 0 1 6 0v13"/><path d="M9 14H7a2 2 0 0 1-2-2v-2"/><path d="M15 11h2a2 2 0 0 1 2 2v2"/><path d="M5 22h14"/></template>
+    <template v-else-if="name === 'rock'"><path d="M2 19h20l-3-8-5-4-4 3-4-2-4 6z"/><path d="M11 7l4 3"/></template>
   </svg>
 </template>
 

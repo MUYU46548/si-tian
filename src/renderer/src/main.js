@@ -19,4 +19,12 @@ installErrorBoundary(app);
 
 app.mount('#app');
 
+// P0-2 标签样式预设：先读 localStorage 镜像（同步，立即可用），再异步拉 .sitian/config/label-presets.json
+import { initLabelPresets } from './utils/labelStyles';
+initLabelPresets();
+
+// P1-4 标记类型注册表：同上（.sitian/config/marker-types.json）
+import { initMarkerTypes } from './utils/markerTypes';
+initMarkerTypes();
+
 window.__sitianSplash?.set?.(55, '正在加载世界数据…');

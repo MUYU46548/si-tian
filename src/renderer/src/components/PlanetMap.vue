@@ -15,6 +15,7 @@
             <template v-if="interactionMode === 'cluster'">{{ clusterSelectMode ? '簇框选中：按住左键拖一个框圈住地点，松开完成选择' : '簇工具：从工具栏「地点簇」进入后按住拖动框选地点 → 弹窗创建簇' }}</template>
             <template v-else-if="interactionMode === 'marker'">选择类型后点击画布放置标记</template>
             <template v-else-if="interactionMode === 'route'">{{ autoRoadEnabled ? '自动寻路：点起点 → 点终点，沿等高线生成道路（右键取消）' : '点击放置路线顶点，双击结束' }}</template>
+            <template v-else-if="interactionMode === 'river'">河流编辑器：连续点击描点 → 双击完成（自动从高到低排序，保持流向）；点击已有河流可选中，拖中间节点调整路径（不会反向），空格脱离拖动</template>
             <template v-else-if="interactionMode === 'settle'">智能聚落 — 点击放置，自动吸附到附近最优位置（避开海洋/高山，偏好缓坡近水）</template>
             <template v-else-if="interactionMode === 'text'">点击画布放置文本</template>
             <template v-else-if="interactionMode === 'region'">按住拖动圈画区域</template>
@@ -72,6 +73,17 @@
             ></button>
             <button :class="{ active: autoRoadEnabled }" @click="autoRoadEnabled = !autoRoadEnabled; roadStart = null; routeEditor.routeDraftPoints.value = []" title="自动寻路：点两个端点，A* 沿等高线生成道路（避开陡崖）"><Icon name="route" :size="13"/> 自动寻路</button>
             <span class="toolbar-label">↗ {{ autoRoadEnabled ? '点起点 → 点终点' : '点击放置顶点 · 双击完成 · 右键取消' }}</span>
+          </div>
+          <!-- P1-2 道路样式预设（Shift+J 进入道路模式后生效于新生成的道路） -->
+          <div class="toolbar-group" title="道路样式（作用于新生成的道路；选中道路后点样式可改现有道路）">
+            <span class="toolbar-label">样式</span>
+            <button
+              v-for="k in ROAD_STYLE_KEYS" :key="k"
+              :class="{ active: roadStyle === k }"
+              :data-testid="'road-style-' + k"
+              @click="applyRoadStyle(k)"
+              :title="ROAD_STYLES[k].note"
+            >{{ ROAD_STYLES[k].label }}</button>
           </div>
         </template>
 
@@ -165,6 +177,7 @@
           <button v-if="selectedProvince || selectedRegion" @click="smoothPolygonBoundary" title="平滑边界"><Icon name="activity" :size="13"/> 平滑</button>
           <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
+          <button :class="{ active: historyPanelOpen }" @click="historyPanelOpen = !historyPanelOpen" title="撤销历史面板（列出全部操作，可跳到任意一步）"><Icon name="history" :size="13"/> 历史</button>
           <button @click="saveMap" title="保存地图"><Icon name="save" :size="13"/> 保存</button>
           <button @click="confirmClear" title="清空所有省份"><Icon name="trash" :size="13"/> 清空</button>
         </div>
@@ -248,14 +261,68 @@
     <div v-if="editMode && interactionMode === 'marker'" class="terrain-picker">
       <span class="picker-label">标记类型：</span>
       <button 
-        v-for="m in markerEditor.markerTypes" 
+        v-for="m in markerTypeList" 
         :key="m.type"
         :class="{ active: selectedMarkerType === m.type }"
         @click="selectedMarkerType = m.type"
       ><span class="marker-icon"><Icon :name="m.icon" :size="13"/></span> {{ m.label }}</button>
     </div>
     
+    <!-- P0-1 地貌图标笔刷子面板 -->
+    <div v-if="editMode && interactionMode === 'relief'" class="terrain-picker relief-picker" data-testid="relief-panel">
+      <span class="picker-label">地貌类型：</span>
+      <button
+        v-for="t in RELIEF_TYPES" :key="t.key"
+        :class="{ active: reliefBrush.reliefType.value === t.key }"
+        :data-testid="'relief-type-' + t.key"
+        @click="reliefBrush.reliefType.value = t.key"
+      ><Icon :name="t.icon" :size="13"/> {{ t.label }}</button>
+      <span class="picker-label">大小</span>
+      <input type="range" class="relief-range" min="16" max="48" step="1"
+             :value="reliefBrush.reliefSize.value"
+             @input="reliefBrush.reliefSize.value = Number($event.target.value)"
+             title="图标大小 (16–48px)" />
+      <span class="relief-num">{{ reliefBrush.reliefSize.value }}</span>
+      <span class="picker-label">间距</span>
+      <input type="range" class="relief-range" min="8" max="120" step="1"
+             :value="reliefBrush.reliefSpacing.value"
+             @input="reliefBrush.reliefSpacing.value = Number($event.target.value)"
+             title="散布间距 (滚轮也可调)" />
+      <span class="relief-num">{{ reliefBrush.reliefSpacing.value }}</span>
+      <span class="picker-label">密度</span>
+      <button v-for="(d, k) in RELIEF_DENSITY" :key="k"
+              :class="{ active: reliefBrush.reliefDensity.value === k }"
+              @click="reliefBrush.reliefDensity.value = k">{{ d.label }}</button>
+      <button :class="{ active: reliefBrush.reliefRandomRotation.value }"
+              @click="reliefBrush.reliefRandomRotation.value = !reliefBrush.reliefRandomRotation.value"
+              title="随机旋转角度（0–359°）"><Icon name="rotate" :size="13"/> 随机角度</button>
+      <span class="relief-hint">左键散布 · 右键擦除 · 滚轮调间距 · 共 {{ reliefBrush.reliefCount.value }} 个</span>
+      <button v-if="reliefBrush.reliefCount.value > 0" @click="reliefBrush.clearAll()" title="清空本行星全部地貌图标"><Icon name="trash" :size="13"/> 清空</button>
+    </div>
+
+    <!-- P1-1 河流编辑器子面板 -->
+    <div v-if="editMode && interactionMode === 'river'" class="terrain-picker relief-picker" data-testid="river-panel">
+      <span class="picker-label">河流：</span>
+      <span class="relief-hint">
+        描点 {{ riverDraftPoints.length }} · 共 {{ (currentMapData?.rivers || []).length }} 条<template v-if="selectedRiver"> · 选中「{{ selectedRiver.name || '未命名' }}」</template>
+      </span>
+      <span class="picker-label">线宽</span>
+      <input type="range" class="relief-range" min="1" max="12" step="0.5"
+             :value="riverWidth" data-testid="river-width"
+             @input="riverWidth = Number($event.target.value)"
+             @change="applyRiverWidth(Number($event.target.value))" />
+      <span class="relief-num">{{ riverWidth }}</span>
+      <button :class="{ active: riverWidthByFlowEnabled }"
+              @click="riverWidthByFlowEnabled = !riverWidthByFlowEnabled; applyRiverWidth()"
+              title="按流量（节点数：越长=干流越宽）自动分级线宽"><Icon name="activity" :size="13"/> 按流量</button>
+      <button v-if="riverDraftPoints.length >= 2" @click="finishRiverDraft()" data-testid="river-finish"><Icon name="check" :size="13"/> 完成描点</button>
+      <button v-if="riverDraftPoints.length > 0" @click="cancelRiverDraft()">取消</button>
+      <button v-if="selectedRiver" @click="deleteSelectedRiver()" data-testid="river-delete"><Icon name="trash" :size="13"/> 删除河流</button>
+      <span v-if="riverFlowHint" class="river-flow-hint" data-testid="river-flow-hint">{{ riverFlowHint }}</span>
+    </div>
+
     <div class="canvas-wrapper" @dragover.prevent="handleDragOver" @drop.prevent="handleDrop"
+         @wheel.capture="onWrapperWheel"
          @mousemove="onWrapperMouseMove" @mouseleave="onWrapperMouseLeave" @mouseenter="onWrapperMouseEnter"
          @mousedown="tipSuppressed = true" @mouseup="tipSuppressed = false">
       <canvas ref="canvas"></canvas>
@@ -279,6 +346,8 @@
         <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
         <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度 / 群系笔刷（14.4m 格，改高度自动派生温度降水群系）"><Icon name="trending-up" :size="15"/></button>
         <button :class="{ active: interactionMode === 'terrain' }" @click="setInteractionMode('terrain')" title="地形涂色笔刷（同 14.4m 格，直接铺地表类型：海洋/草地/森林…）"><Icon name="brush" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'relief' }" @click="setInteractionMode('relief')" title="地貌图标笔刷 (R) — 左键拖动散布山脉/树木/沙漠/岩石，右键拖动擦除，滚轮调间距"><Icon name="mountain" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'river' }" @click="setInteractionMode('river')" title="河流编辑器 (Shift+R) — 连续点击描点、双击完成（自动按高度从高到低排序），拖节点保持流向"><Icon name="waves" :size="15"/></button>
         <button v-if="hasAzgaarData" :class="{ active: interactionMode === 'political' }" @click="setInteractionMode('political')" title="编辑政治实体边界"><Icon name="flag" :size="15"/></button>
         <div class="tool-dock-sep"></div>
         <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="15"/></button>
@@ -346,6 +415,8 @@
         @restore="restoreSnapshot"
         @remove="removeSnapshot"
       />
+      <!-- P0-3 撤销历史面板（可折叠；点任意步跳转） -->
+      <history-panel :open="historyPanelOpen" @close="historyPanelOpen = false" />
       <!-- 缩放控件组 -->
       <div class="zoom-controls" @mousedown.stop @wheel.stop>
         <button @click="zoomBy(-0.2)" title="缩小">−</button>
@@ -521,7 +592,7 @@
         <label>类型</label>
         <div class="terrain-selector">
           <button 
-            v-for="m in markerEditor.markerTypes" 
+            v-for="m in markerTypeList" 
             :key="m.type"
             :class="{ active: selectedMarker?.type === m.type }"
             @click="updateMarkerType(m.type)"
@@ -533,7 +604,7 @@
         <div class="icon-input-row">
           <input v-model="editingMarkerIcon" @input="updateMarkerIcon" placeholder="自定义图标（图标名或 emoji）" maxlength="4" />
           <button
-            v-for="m in markerEditor.markerTypes"
+            v-for="m in markerTypeList"
             :key="'ic_' + m.type"
             class="icon-pick-btn"
             :class="{ active: editingMarkerIcon === m.icon }"
@@ -655,7 +726,7 @@
           <label>标记类型（{{ multiMarkers.length }} 个标记）</label>
           <div class="terrain-selector">
             <button
-              v-for="m in markerEditor.markerTypes"
+              v-for="m in markerTypeList"
               :key="m.type"
               :class="{ active: multiMarkers.every(o => o.obj.type === m.type) }"
               @click="batchApply('marker', { type: m.type, color: null })"
@@ -867,6 +938,7 @@ import { createPlanetInteractions } from '../composables/planetInteractions';
 import { useProvinceEditor } from '../composables/useProvinceEditor';
 import { useRegionEditor } from '../composables/useRegionEditor';
 import { useMarkerEditor } from '../composables/useMarkerEditor';
+import { effectiveMarkerStyle } from '../utils/markerTypes';
 import { useRouteEditor } from '../composables/useRouteEditor';
 import { useTextEditor } from '../composables/useTextEditor';
 import { useReferenceImage } from '../composables/useReferenceImage';
@@ -877,6 +949,14 @@ import { useObjectPanel } from '../composables/useObjectPanel';
 import { useSnapshotPanel } from '../composables/useSnapshotPanel';
 import { useBatchArrange } from '../composables/useBatchArrange';
 import { useTerrainCanvasBrush } from '../composables/useTerrainCanvasBrush';
+import { useReliefBrush } from '../composables/useReliefBrush';
+import { RELIEF_TYPES, RELIEF_DENSITY } from '../utils/reliefIcons';
+import { ROAD_STYLES, ROAD_STYLE_KEYS, DEFAULT_ROAD_STYLE } from '../utils/roadStyles';
+import {
+  sampleNodes, normalizeRiverFlow, clampRiverNode, finalizeRiverNodes,
+  findRiverPointIndex, clampRiverWidth, widthByFlow,
+  RIVER_DEFAULT_WIDTH, RIVER_WIDTH_MIN, RIVER_WIDTH_MAX,
+} from '../utils/rivers';
 import { useProvinceSplitMerge } from '../composables/useProvinceSplitMerge';
 import { usePlanetHeightBrush } from '../composables/usePlanetHeightBrush';
 import { useAutoRegions } from '../composables/useAutoRegions';
@@ -901,6 +981,7 @@ import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
 import SnapshotPanel from './SnapshotPanel.vue';
+import HistoryPanel from './HistoryPanel.vue';
 import ZoomControls from './ZoomControls.vue';
 import ContextMenu from './ContextMenu.vue';
 
@@ -1025,6 +1106,14 @@ const editMode = ref(false);
 const selectedTerrain = ref('land');
 // ===== R4 统一笔刷/智能工具 =====
 const autoRoadEnabled = ref(false);  // 路线工具内的「自动寻路」开关
+const roadStyle = ref(DEFAULT_ROAD_STYLE);  // P1-2 道路样式预设（官道/普通/山路/小径）
+// ===== P1-1 河流编辑器状态 =====
+const selectedRiver = ref(null);
+const riverDraftPoints = ref([]);       // 正在描的河流（世界坐标 + 采样高度）
+const riverDrag = ref(null);            // { riverId, index, oldNodes }
+const riverWidth = ref(RIVER_DEFAULT_WIDTH);
+const riverWidthByFlowEnabled = ref(false);
+const riverFlowHint = ref('');          // 流向校验提示（"已贴到上游高度"等）
 const roadStart = ref(null);         // 自动寻路起点（世界坐标）
 const selectedProvince = ref(null);
 const drawingPolygon = ref(null);
@@ -1059,6 +1148,8 @@ const refDragStartWorld = ref(null);
 const vertexDragKind = ref(null);
 const vertexDragOld = ref(null);
 const objectPanelOpen = ref(false);
+// P0-3 撤销历史面板（读 store/undo.js 线性历史 + 指针，点击任意步跳转）
+const historyPanelOpen = ref(false);
 const activeObjectId = ref(null);
 const canvasSizePreset = ref('auto');
 const highlightedPlaceId = ref(null);
@@ -1109,6 +1200,8 @@ function getPlaceColor(place) { return place.placeType && PLACE_TYPE_COLORS[plac
 const provinceEditor = useProvinceEditor({ store, props, emit, selectedProvince });
 const regionEditor = useRegionEditor({ store, props, emit, selectedRegion });
 const markerEditor = useMarkerEditor({ store, props, emit, selectedMarker });
+// P1-4：类型注册表（utils/markerTypes.js）。提升为顶层绑定以便模板自动解包 ref。
+const markerTypeList = markerEditor.markerTypes;
 const textEditor = useTextEditor({ store, props, emit, selectedTextLabel });
 
 // ===== 解构 composables 到组件作用域 =====
@@ -1175,7 +1268,7 @@ const eagleEyeElements = computed(() => {
   for (const poly of currentMapData.value?.terrain || []) { elements.push({ type: 'polygon', points: poly.points, color: provinceEditor.terrainTypes.find(t => t.type === poly.type)?.color || '#A3C4BC', id: poly.id }); }
   for (const region of currentMapData.value?.regions || []) { elements.push({ type: 'polygon', points: region.points, color: region.color || '#FF6B6B', id: region.id }); }
   for (const place of places.value) { elements.push({ type: 'node', x: place.coordinate?.x || 0, y: place.coordinate?.y || 0, r: getNodeRadius(place.layer), color: getPlaceColor(place), glow: false }); }
-  for (const marker of currentMapData.value?.markers || []) { elements.push({ type: 'marker', x: marker.x, y: marker.y, r: 6, color: marker.color || markerEditor.markerTypes.find(m => m.type === marker.type)?.color || '#FFD700', glow: true }); }
+  for (const marker of currentMapData.value?.markers || []) { elements.push({ type: 'marker', x: marker.x, y: marker.y, r: 6, color: effectiveMarkerStyle(marker).color, glow: true }); }
   for (const route of currentMapData.value?.routes || []) { if (route.points && route.points.length >= 2) { for (let i = 0; i < route.points.length - 1; i++) { elements.push({ type: 'line', from: route.points[i], to: route.points[i + 1], color: route.color || '#E67E22', dashed: !!route.dashed }); } } }
   return elements;
 });
@@ -1196,7 +1289,14 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('planet', 'climate')) drawing.drawClimate(ctx);
   if (layers.isVisible('planet', 'precipitation')) drawing.drawPrecipitation(ctx);
   if (layers.isVisible('planet', 'terrainLabels')) drawing.drawTerrainLabels(ctx);
+  // P0-1 地貌图标层：地形之上、聚落/区域之下
+  if (editMode.value && reliefBrush.isReliefBrushing.value && reliefBrush.reliefLiveIcons.value) {
+    drawing.drawReliefIcons(ctx, reliefBrush.reliefLiveIcons.value);
+  } else if (layers.isVisible('planet', 'reliefIcons')) {
+    drawing.drawReliefIcons(ctx);
+  }
   if (layers.isVisible('planet', 'regions')) drawing.drawRegions(ctx);
+  if (layers.isVisible('planet', 'rivers')) drawing.drawRivers(ctx);
   if (layers.isVisible('planet', 'routes')) drawing.drawRoutes(ctx);
   if (layers.isVisible('planet', 'places')) drawing.drawPlaces(ctx);
   if (layers.isVisible('planet', 'markers')) drawing.drawMarkers(ctx);
@@ -1280,11 +1380,12 @@ const drawing = createPlanetDrawing(() => ({
   boxSelectStart: boxSelectStart.value, boxSelectEnd: boxSelectEnd.value,
   isBoxSelecting: isBoxSelecting.value, edgeSnapPreview: edgeSnapPreview.value,
   placeRegionMap: renderer.isFastMode() ? EMPTY_REGION_MAP : placeRegionMap.value,
-  terrainTypes: provinceEditor.terrainTypes, markerTypes: markerEditor.markerTypes,
+  terrainTypes: provinceEditor.terrainTypes, markerTypes: markerTypeList.value,
   isFastMode: renderer.isFastMode(), viewport: getRenderViewport(),
   screenToWorld: renderer.screenToWorld, zoom: renderer.viewTransform.scale, smartGuides: smartGuides,
   planetHeightBrush,
   terrainCanvasBrush,
+  reliefBrush,
 }));
 
 // ===== 交互状态机 =====
@@ -1320,7 +1421,7 @@ const getState = () => ({
   isDraggingPlaces: isDraggingPlaces.value, placesDragStart: placesDragStart.value,
   referenceImage: referenceImage.referenceImage.value, currentMapData: currentMapData.value, places: places.value,
   planetId: props.planet.id, textFontSize: textEditor.textFontSize.value,
-  textColor: textEditor.textColor.value, markerTypes: markerEditor.markerTypes, zoom: renderer.viewTransform.scale,
+  textColor: textEditor.textColor.value, markerTypes: markerTypeList.value, zoom: renderer.viewTransform.scale,
   multiSel: multiSel.value, smartGuidesEnabled: smartGuidesEnabled.value,
   transformDrag: batchSelection.transformDrag.value, isShiftToggled: (id, type) => isShiftToggleActive(id, type),
   hitTestSelectionHandle: (wx, wy) => hitTestModule.hitTestSelectionHandle(wx, wy),
@@ -1329,6 +1430,16 @@ const getState = () => ({
   captureVertexSnapshot, snapPoint, snapDrawPoint, store,
   planetHeightBrush, heightTool: heightTool.value,
   terrainCanvasBrush, terrainGridEnabled: terrainGridEnabled.value,
+  // P0-1 Relief 笔刷：拖动中绘制层优先用 reliefLiveIcons（含本次新增/擦除的实时效果）
+  reliefBrush,
+  // P1-1 河流编辑器
+  selectedRiver: selectedRiver.value,
+  riverDraftPoints: riverDraftPoints.value,
+  riverDrag: riverDrag.value,
+  hitRiverPoint,
+  beginRiverDrag,
+  moveRiverNode,
+  endRiverDrag,
 });
 
 const interactions = createPlanetInteractions(getState, {
@@ -1476,17 +1587,26 @@ const renderer = useCanvasRenderer(canvas, {
     // R4：自动寻路 / 智能聚落（在通用命中分发之前拦截，二者都是「点画布做事」的工具）
     if (editMode.value && !isSpacebarDown.value) {
       if (interactionMode.value === 'route' && autoRoadEnabled.value) { handleAutoRoadClick(wx, wy); return; }
+      if (interactionMode.value === 'river') { handleRiverClick(wx, wy); return; }
       if (interactionMode.value === 'settle') { handleSmartSettle(wx, wy); return; }
     }
     interactions.handleCanvasClick(hit, wx, wy);
   },
   onDblClick: (hit, wx, wy) => {
     if (interactionMode.value === 'route') { finishRouteDraft(); roadStart.value = null; return; }
+    if (interactionMode.value === 'river') { finishRiverDraft(); return; }
     if ((interactionMode.value === 'draw' || interactionMode.value === 'region') && !drawMode.value && drawingPolygon.value) { finishPointDrawing(); return; }
     if (hit?.type === 'textLabel' && hit.label) { selectedTextLabel.value = hit.label; startInlineTextEdit(hit.label); return; }
     if (hit?.type === 'place' && hit.node) { store.selectArea(hit.node); }
   },
   onContextMenu: (wx, wy) => {
+    // P0-1：地貌笔刷模式下右键 = 擦除，不弹菜单
+    if (interactionMode.value === 'relief' && editMode.value) return;
+    if (interactionMode.value === 'river') {
+      if (cancelRiverDraft()) return;               // 描点中 → 取消描点
+      if (selectedRiver.value) { deleteSelectedRiver(); return; }  // 已选中 → 删除整条
+      return;
+    }
     if (interactionMode.value === 'route') { cancelRouteDraft(); roadStart.value = null; return; }
     if ((interactionMode.value === 'draw' || interactionMode.value === 'region') && drawingPolygon.value) { drawingPolygon.value = null; renderer.requestRender(); return; }
     if (!editMode.value) return;
@@ -1560,6 +1680,47 @@ const planetHeightBrush = usePlanetHeightBrush({ store, renderer, currentMapData
 
 // ===== 画布地形笔刷 composable =====
 const terrainCanvasBrush = useTerrainCanvasBrush({ store, props, renderer, canvas });
+
+// ===== P0-1 地貌图标笔刷 composable =====
+const reliefBrush = useReliefBrush({ store, currentMapData });
+
+// 滚轮调散布间距（捕获阶段拦截，避免同时触发画布缩放）
+function onWrapperWheel(e) {
+  if (!editMode.value || interactionMode.value !== 'relief') return;
+  e.preventDefault();
+  e.stopPropagation();
+  const spacing = reliefBrush.adjustSpacing(e.deltaY > 0 ? 1 : -1);
+  setStatus({ toolLabel: `地貌笔刷 · 间距 ${spacing}` });
+  renderer.requestRender();
+}
+
+// R 切换地貌笔刷（Shift+R 留给河流编辑器）；Esc 取消当前笔迹
+function onReliefKeydown(e) {
+  if (!editMode.value || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (e.shiftKey && (e.key === 'R' || e.key === 'r')) {
+    // P1-1 河流模式
+    setInteractionMode('river');
+    riverDraftPoints.value = [];
+    setStatus({ toolLabel: '河流模式：连续点击描点 → 双击完成（自动从高到低流向）' });
+    e.preventDefault();
+  } else if (e.shiftKey && (e.key === 'J' || e.key === 'j')) {
+    // P1-2 道路模式：路线工具 + 自动寻路（沿等高线 A*），Shift+J 一键进入
+    setInteractionMode('route');
+    autoRoadEnabled.value = true;
+    roadStart.value = null;
+    setStatus({ toolLabel: `道路模式（${(ROAD_STYLES[roadStyle.value] || {}).label || '道路'}）：点起点 → 点终点沿等高线生成` });
+    e.preventDefault();
+  } else if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) {
+    setInteractionMode(interactionMode.value === 'relief' ? 'pan' : 'relief');
+    e.preventDefault();
+  } else if (e.key === 'Escape' && reliefBrush.isReliefBrushing.value) {
+    reliefBrush.cancelStroke();
+    renderer.requestRender();
+    e.preventDefault();
+  }
+}
 
 // ===== 自动区域 composable =====
 const autoRegionsMgr = useAutoRegions({ store, props, emit, renderer, currentMapData });
@@ -1731,6 +1892,7 @@ function setInteractionMode(mode) {
   const labelOf = {
     pan: '浏览', move: '移动', terrain: '地形笔刷', height: '高度/群系笔刷',
     settle: '智能聚落', route: '路线', marker: '标记', text: '文本', region: '区域', draw: '绘制',
+    relief: '地貌图标笔刷', river: '河流编辑器',
   };
   setStatus({ toolLabel: labelOf[mode] || '绘制' });
   floodFillMode.value = false; drawingPolygon.value = null; isDrawingActive.value = false; currentPath.value = [];
@@ -1739,6 +1901,8 @@ function setInteractionMode(mode) {
   dragObject.value = null; dragRegionAnchor.value = null; edgeSnapPreview.value = null;
   splitSelectMode.value = false; splitPoints.value = []; mergeSelectMode.value = false; mergeTargetId.value = null;
   planetHeightBrush.clearBrushPreview(); terrainCanvasBrush.clearBrushPreview();
+  if (mode !== 'river') { riverDraftPoints.value = []; riverDrag.value = null; }
+  if (mode !== 'river') selectedRiver.value = null;
   renderer.requestRender();
 }
 
@@ -1894,6 +2058,8 @@ function undo() { store.undo(); }
 function redo() { store.redo(); }
 
 function deleteSelected() {
+  // P1-1：河流模式下优先删选中的河流
+  if (interactionMode.value === 'river' && selectedRiver.value) { deleteSelectedRiver(); return; }
   // E7：批量删除 Shift 多选的标记/文本（逐个走 store，各生成一条 undo）
   if (multiSel.value.length > 0) {
     if (confirm(`确定删除选中的 ${multiSel.value.length} 个对象吗？`)) {
@@ -2138,6 +2304,188 @@ function cancelRouteDraft() {
  * R4-2 自动寻路：两次点击（起点→终点）沿等高线生成道路。
  * 用 placement.generateRoadPath（A*，优先缓坡、避开单步高差 > 15 的陡崖）。
  */
+/** 采样世界坐标处的高度（河流流向判定的唯一依据） */
+function heightAt(wx, wy) {
+  const hm = planetHeightBrush.ensureHeightmap();
+  if (!hm || !hm.grid || !hm.grid.points || !hm.h) return null;
+  const idx = findNearestGridPoint(hm.h, hm.grid, wx, wy);
+  return idx >= 0 ? hm.h[idx] : null;
+}
+
+/** 点到折线的最短距离（河流命中测试） */
+function distanceToPolyline(px, py, nodes) {
+  let best = Infinity;
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const a = nodes[i];
+    const b = nodes[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const L = dx * dx + dy * dy;
+    let t = L === 0 ? 0 : ((px - a.x) * dx + (py - a.y) * dy) / L;
+    t = Math.max(0, Math.min(1, t));
+    best = Math.min(best, Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy)));
+  }
+  return best;
+}
+
+/** 命中的河流（自身坐标系阈值随缩放换算） */
+function hitRiver(wx, wy) {
+  const list = currentMapData.value?.rivers || [];
+  const tol = 12 / (renderer.viewTransform.scale || 1);
+  let best = null;
+  let bestD = tol;
+  for (const r of list) {
+    if (!r.nodes || r.nodes.length < 2) continue;
+    const d = distanceToPolyline(wx, wy, r.nodes);
+    if (d <= bestD) { bestD = d; best = r; }
+  }
+  return best;
+}
+
+/** P1-1：河流模式点击 —— 命中已有河流则选中；否则作为描点追加 */
+function handleRiverClick(wx, wy) {
+  const hit = hitRiver(wx, wy);
+  if (hit && riverDraftPoints.value.length === 0) {
+    selectedRiver.value = hit;
+    riverWidth.value = hit.width || RIVER_DEFAULT_WIDTH;
+    setStatus({ toolLabel: `已选中河流「${hit.name || '未命名'}」（${hit.nodes.length} 个节点）— Delete 删除` });
+    renderer.requestRender();
+    return;
+  }
+  const h = heightAt(wx, wy);
+  riverDraftPoints.value = riverDraftPoints.value.concat([{ x: wx, y: wy, h: Number.isFinite(h) ? h : 0 }]);
+  setStatus({ toolLabel: `河流描点 ${riverDraftPoints.value.length} 个 — 双击完成（自动从高到低排序）` });
+  renderer.requestRender();
+}
+
+/**
+ * P1-1：双击完成 —— 按高度从高到低排序后落库（一次创建 = 一条 undo）。
+ * 排序是"保持流向"的核心：用户点按顺序随意，落库时一律高→低。
+ */
+function finishRiverDraft() {
+  const pts = riverDraftPoints.value;
+  riverDraftPoints.value = [];
+  if (!pts || pts.length < 2) {
+    setStatus({ toolLabel: '河流至少需要 2 个点' });
+    renderer.requestRender();
+    return null;
+  }
+  const nodes = finalizeRiverNodes(pts, heightAt);
+  if (nodes.length < 2) {
+    setStatus({ toolLabel: '河流点过于集中，已丢弃' });
+    renderer.requestRender();
+    return null;
+  }
+  const river = {
+    id: `river_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: `河流 ${(currentMapData.value?.rivers?.length || 0) + 1}`,
+    width: clampRiverWidth(riverWidth.value),
+    nodes,
+  };
+  store.addRiver(props.planet.id, river);
+  selectedRiver.value = river;
+  emit('dirty', true);
+  setStatus({ toolLabel: `已生成河流（${nodes.length} 点，源头海拔 ${Math.round(nodes[0].h)} → 入海 ${Math.round(nodes[nodes.length - 1].h)}）` });
+  renderer.requestRender();
+  return river;
+}
+
+function cancelRiverDraft() {
+  if (riverDraftPoints.value.length === 0) return false;
+  riverDraftPoints.value = [];
+  setStatus({ toolLabel: '已取消本次河流描点' });
+  renderer.requestRender();
+  return true;
+}
+
+function deleteSelectedRiver() {
+  const r = selectedRiver.value;
+  if (!r) return false;
+  store.removeRiver(props.planet.id, r.id);
+  selectedRiver.value = null;
+  emit('dirty', true);
+  setStatus({ toolLabel: `已删除河流「${r.name || '未命名'}」` });
+  renderer.requestRender();
+  return true;
+}
+
+/**
+ * 设置选中河流的线宽（可按流量自动：节点越多代表干流越长）
+ */
+function applyRiverWidth(width = null) {
+  const r = selectedRiver.value;
+  const w = width !== null
+    ? clampRiverWidth(width)
+    : (riverWidthByFlowEnabled.value ? widthByFlow(r?.nodes?.length || 0, riverWidth.value) : clampRiverWidth(riverWidth.value));
+  riverWidth.value = w;
+  if (r) {
+    store.updateRiver(props.planet.id, r.id, { width: w }, { width: r.width });
+    const fresh = (currentMapData.value?.rivers || []).find(x => x.id === r.id);
+    if (fresh) selectedRiver.value = fresh;
+    emit('dirty', true);
+  }
+  renderer.requestRender();
+  return w;
+}
+
+/** 命中选中河流的第几个节点（河流模式拖拽入口） */
+function hitRiverPoint(wx, wy) {
+  const r = selectedRiver.value;
+  if (!r?.nodes) return -1;
+  const tol = 14 / (renderer.viewTransform.scale || 1);
+  return findRiverPointIndex(r.nodes, wx, wy, tol);
+}
+
+function beginRiverDrag(wx, wy, index) {
+  const r = selectedRiver.value;
+  if (!r) return false;
+  riverDrag.value = { riverId: r.id, index, oldNodes: JSON.parse(JSON.stringify(r.nodes)) };
+  return true;
+}
+
+/** 拖动中：先按流向约束修正位置，再直接改内存（不入 undo，松手才提交） */
+function moveRiverNode(wx, wy) {
+  const drag = riverDrag.value;
+  const r = selectedRiver.value;
+  if (!drag || !r) return;
+  const res = clampRiverNode(r.nodes, drag.index, { x: wx, y: wy }, heightAt);
+  r.nodes[drag.index] = res.point;
+  riverFlowHint.value = res.clamped ? res.reason : '';
+  if (res.clamped) setStatus({ toolLabel: res.reason });
+  renderer.requestRender();
+}
+
+/** 松手：一条 undo 提交（传操作前快照，否则 undo 会采到已改后的值） */
+function endRiverDrag() {
+  const drag = riverDrag.value;
+  const r = selectedRiver.value;
+  riverDrag.value = null;
+  if (!drag || !r) return;
+  const nodes = JSON.parse(JSON.stringify(r.nodes));
+  store.updateRiver(props.planet.id, r.id, { nodes }, { nodes: drag.oldNodes });
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+/**
+ * P1-2：选择道路样式。若当前有选中道路 → 立即改它（一条 undo）；否则作为"新道路默认样式"。
+ */
+function applyRoadStyle(key) {
+  const st = ROAD_STYLES[key];
+  if (!st) return;
+  roadStyle.value = key;
+  if (selectedRoute.value?.id) {
+    store.setRouteStyle(props.planet.id, selectedRoute.value.id, key, { color: st.color, dashed: st.dashed });
+    const r = (currentMapData.value?.routes || []).find(x => x.id === selectedRoute.value.id);
+    if (r) selectedRoute.value = r;
+    emit('dirty', true);
+    setStatus({ toolLabel: `已把选中道路改为「${st.label}」` });
+  } else {
+    setStatus({ toolLabel: `道路样式：${st.label}（新生成的道路将使用该样式）` });
+  }
+  renderer.requestRender();
+}
+
 function handleAutoRoadClick(wx, wy) {
   const hm = planetHeightBrush.ensureHeightmap();
   if (!hm || !hm.grid || !hm.grid.points || !hm.h) {
@@ -2169,8 +2517,9 @@ function handleAutoRoadClick(wx, wy) {
   const route = {
     id: `route_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     points: path.map(i => ({ x: gx(i), y: gy(i), placeId: null })),
-    dashed: routeEditor.routeDashed.value,
-    color: routeEditor.routeColor.value,
+    dashed: (ROAD_STYLES[roadStyle.value] || {}).dashed ?? routeEditor.routeDashed.value,
+    color: (ROAD_STYLES[roadStyle.value] || {}).color || routeEditor.routeColor.value,
+    style: roadStyle.value,
     name: `道路 ${(currentMapData.value?.routes?.length || 0) + 1}`,
     label: '',
     description: '',
@@ -2307,6 +2656,12 @@ onMounted(() => {
   requestAnimationFrame(() => { autoRegionsMgr.generateAutoRegions(); renderer.requestRender(); });
   window.addEventListener('keydown', keyboardShortcuts.handleKeydown); window.addEventListener('keyup', keyboardShortcuts.handleKeyup);
   window.addEventListener('sitian:focus-node', onFocusNode); window.addEventListener('sitian:history-jump', onHistoryJump);
+  // P0-2：标签样式预设变化 → 重绘（不依赖深度 watch，避免每帧比对）
+  window.addEventListener('sitian:label-styles-changed', onHistoryJump);
+  // P1-4：标记类型注册表变化 → 重绘
+  window.addEventListener('sitian:marker-types-changed', onHistoryJump);
+  // P0-1：R 切换地貌笔刷 / Esc 取消笔迹
+  window.addEventListener('keydown', onReliefKeydown);
   // 初始化画布地形笔刷网格
   terrainCanvasBrush.initTerrainGrid();
 });
@@ -2315,6 +2670,9 @@ onUnmounted(() => {
   renderer.cleanupCanvas(); hideStatusBar();
   window.removeEventListener('keydown', keyboardShortcuts.handleKeydown); window.removeEventListener('keyup', keyboardShortcuts.handleKeyup);
   window.removeEventListener('sitian:focus-node', onFocusNode); window.removeEventListener('sitian:history-jump', onHistoryJump);
+  window.removeEventListener('sitian:label-styles-changed', onHistoryJump);
+  window.removeEventListener('sitian:marker-types-changed', onHistoryJump);
+  window.removeEventListener('keydown', onReliefKeydown);
   if (highlightTimer) clearTimeout(highlightTimer);
   focusHighlight.clearFocusHighlightTimer();
 });
@@ -2670,6 +3028,34 @@ onUnmounted(() => {
 .picker-label {
   font-size: 12px;
   color: var(--planet-text-secondary);
+}
+
+/* P0-1 地貌图标笔刷子面板 */
+.relief-picker {
+  gap: 8px;
+}
+.relief-range {
+  width: 96px;
+  accent-color: var(--planet-text-link, #58a6ff);
+}
+.relief-num {
+  min-width: 26px;
+  font-size: 11px;
+  color: var(--planet-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.relief-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--planet-text-secondary);
+}
+.river-flow-hint {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #F97316;
+  border: 1px solid rgba(249, 115, 22, 0.45);
+  border-radius: var(--radius-sm, 4px);
 }
 
 .terrain-picker button {

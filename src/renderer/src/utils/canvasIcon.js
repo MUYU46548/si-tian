@@ -208,6 +208,17 @@ export const CANVAS_ICON_PATHS = {
     'M7 21V6l3-3 3 3v15',
     'M3 11h16',
     'M3 16h16'
+  ],
+  // ---- P0-1 地貌（Relief icons）：与 Icon.vue 同名图标几何一致 ----
+  cactus: [
+    'M9 22V9a3 3 0 0 1 6 0v13',
+    'M9 14H7a2 2 0 0 1-2-2v-2',
+    'M15 11h2a2 2 0 0 1 2 2v2',
+    'M5 22h14'
+  ],
+  rock: [
+    'M2 19h20l-3-8-5-4-4 3-4-2-4 6z',
+    'M11 7l4 3'
   ]
 };
 

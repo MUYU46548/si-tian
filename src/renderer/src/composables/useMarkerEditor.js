@@ -1,31 +1,33 @@
-// src/renderer/src/composables/useMarkerEditor.js
+// composables/useMarkerEditor.js
 // 标记属性编辑状态 + 函数
+//
+// P1-4：类型定义已迁到 utils/markerTypes.js（可编辑、可排序、落盘 .sitian/config）。
+// 此处的 markerTypes 是模块级响应式注册表的**引用**，类型增删改后这里自动跟随，
+// 不需要再维护一份硬编码副本（此前那份是"界面能改但改不完"的根源）。
 
-import { ref, watch } from 'vue';
-
-// icon 为 Icon.vue 图标名；Canvas 侧由 utils/canvasIcon.js 以同名矢量绘制
-const MARKER_TYPES = [
-  { type: 'chest', label: '宝箱', icon: 'package', color: '#FFD700' },
-  { type: 'teleport', label: '传送点', icon: 'spiral', color: '#9B59B6' },
-  { type: 'boss', label: 'Boss', icon: 'skull', color: '#E74C3C' },
-  { type: 'resource', label: '资源', icon: 'gem', color: '#3498DB' },
-  { type: 'npc', label: 'NPC', icon: 'user', color: '#2ECC71' },
-  { type: 'flag', label: '旗帜', icon: 'flag', color: '#E67E22' },
-];
-
-const MARKER_COLORS = ['#FFD700', '#9B59B6', '#E74C3C', '#3498DB', '#2ECC71', '#E67E22', '#FF6B6B', '#32CD32'];
+import { ref, computed, watch } from 'vue';
+import {
+  markerTypes as markerTypeRegistry,
+  resolveMarkerType,
+  effectiveMarkerStyle,
+  MARKER_COLORS,
+} from '../utils/markerTypes';
 
 export function useMarkerEditor({ store, props, emit, selectedMarker }) {
-  const selectedMarkerType = ref('chest');
+  const selectedMarkerType = ref('interest');
   const editingMarkerName = ref('');
   const editingMarkerDesc = ref('');
   const editingMarkerIcon = ref('');
 
+  // 类型注册表（响应式，随设置面板的增删改实时更新）
+  const markerTypes = computed(() => markerTypeRegistry.value);
+
   watch(selectedMarker, (marker) => {
     editingMarkerName.value = marker?.name || '';
     editingMarkerDesc.value = marker?.description || '';
-    const preset = MARKER_TYPES.find(m => m.type === marker?.type);
-    editingMarkerIcon.value = marker?.icon || preset?.icon || 'map-pin';
+    const style = effectiveMarkerStyle(marker || {});
+    editingMarkerIcon.value = style.icon;
+    if (marker?.type) selectedMarkerType.value = resolveMarkerType(marker.type).type;
   });
 
   function updateMarkerName() {
@@ -40,18 +42,20 @@ export function useMarkerEditor({ store, props, emit, selectedMarker }) {
     emit('dirty', true);
   }
 
+  /** 选择类型 → 继承该类型的默认图标 + 颜色（P1-4「选择 type 后自动继承」） */
   function updateMarkerType(type) {
     if (!selectedMarker.value) return;
-    const preset = MARKER_TYPES.find(m => m.type === type);
+    const preset = resolveMarkerType(type);
     store.updateMarker(props.planet.id, selectedMarker.value.id, {
-      type,
-      icon: preset?.icon || 'map-pin',
-      color: preset?.color || '#FFD700',
+      type: preset.type,
+      icon: preset.icon,
+      color: preset.color,
     });
-    editingMarkerIcon.value = preset?.icon || 'map-pin';
+    editingMarkerIcon.value = preset.icon;
     emit('dirty', true);
   }
 
+  /** 单点覆盖图标（覆盖后不再跟随类型，保存后不丢） */
   function updateMarkerIcon() {
     if (!selectedMarker.value) return;
     store.updateMarker(props.planet.id, selectedMarker.value.id, { icon: editingMarkerIcon.value || 'map-pin' });
@@ -64,17 +68,27 @@ export function useMarkerEditor({ store, props, emit, selectedMarker }) {
     emit('dirty', true);
   }
 
+  /** 恢复为类型的默认图标/颜色（清掉单点覆盖） */
+  function resetMarkerToType() {
+    if (!selectedMarker.value) return;
+    const preset = resolveMarkerType(selectedMarker.value.type);
+    store.updateMarker(props.planet.id, selectedMarker.value.id, { icon: preset.icon, color: preset.color });
+    editingMarkerIcon.value = preset.icon;
+    emit('dirty', true);
+  }
+
   return {
     selectedMarkerType,
     editingMarkerName,
     editingMarkerDesc,
     editingMarkerIcon,
-    markerTypes: MARKER_TYPES,
+    markerTypes,
     MARKER_COLORS,
     updateMarkerName,
     updateMarkerDesc,
     updateMarkerType,
     updateMarkerIcon,
     updateMarkerColor,
+    resetMarkerToType,
   };
 }

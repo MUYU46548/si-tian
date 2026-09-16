@@ -72,8 +72,9 @@
             <button @click="distributeSelected('h')" title="水平等间距分布">⋯</button>
             <button @click="distributeSelected('v')" title="垂直等间距分布">⋮</button>
           </template>
-          <button @click="undo" :disabled="!store.canUndo">↶ 撤销</button>
+          <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
+          <button :class="{ active: historyPanelOpen }" @click="historyPanelOpen = !historyPanelOpen" title="撤销历史面板（列出全部操作，可跳到任意一步）"><Icon name="history" :size="13"/> 历史</button>
         </div>
 
         <div class="toolbar-group" title="视图">
@@ -232,12 +233,14 @@
       <canvas ref="canvas"></canvas>
       <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
       <eagle-eye
-        :view-bounds="viewBounds"
+        :view-bounds="viewportBounds"
         :elements="eyeElements"
         :world-bounds="worldBounds"
         @navigate="handleEagleEyeNavigate"
       />
       <zoom-controls :renderer="renderer" :on-fit-all="fitAllContent" :on-fit-selection="fitSelection" />
+      <!-- P0-3 撤销历史面板（可折叠；点任意步跳转） -->
+      <history-panel :open="historyPanelOpen" @close="historyPanelOpen = false" />
     </div>
 
     <!-- 选中节点详情浮窗 -->
@@ -323,7 +326,10 @@ import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../
 import { openObsidianUri } from '../utils/vault';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
+import HistoryPanel from './HistoryPanel.vue';
 import ZoomControls from './ZoomControls.vue';
+import { computeViewBounds } from '../utils/viewport';
+import { getPreset, getPresetForLayer, drawStyledLabel } from '../utils/labelStyles';
 
 const props = defineProps({
   areaNode: { type: Object, default: null },
@@ -431,6 +437,8 @@ function niceStepArea(raw) {
 
 // 撤销/重做 label
 const undoLabel = computed(() => store.undoLabel);
+// P0-3 撤销历史面板开关
+const historyPanelOpen = ref(false);
 
 // 层级标签
 const layerLabels = {
@@ -1047,11 +1055,12 @@ function drawNodes(ctx, vp) {
     if (!fast) {
       const label = node.displayName || node.name;
       if (label) {
-        ctx.font = '11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = '#e2e8f0';
-        ctx.fillText(label, x, y + 12);
+        // P0-2：节点标签按 layer 匹配样式预设（与行星地图同一套）
+        drawStyledLabel(ctx, label, x, y + 12, getPresetForLayer(node.layer), {
+          align: 'center',
+          baseline: 'top',
+          screenScale: renderer.viewTransform.scale,
+        });
       }
     }
   });
@@ -1088,11 +1097,12 @@ function drawZones(ctx, vp) {
     if (zone.name && !fast) {
       const cx = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length;
       const cy = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length;
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(zone.name, cx, cy);
+      // P0-2：区域名走 region 预设（半透明大字 + 背景条）
+      drawStyledLabel(ctx, zone.name, cx, cy, getPreset('region'), {
+        align: 'center',
+        baseline: 'middle',
+        screenScale: renderer.viewTransform.scale,
+      });
     }
 
     ctx.restore();
@@ -1138,10 +1148,11 @@ function drawRoutes(ctx, vp) {
     if (route.name && !fast) {
       const midIdx = Math.floor(route.points.length / 2);
       const mid = route.points[midIdx];
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(route.name, mid.x, mid.y - 8);
+      drawStyledLabel(ctx, route.name, mid.x, mid.y - 8, getPreset('building'), {
+        align: 'center',
+        baseline: 'bottom',
+        screenScale: renderer.viewTransform.scale,
+      });
     }
 
     ctx.restore();
@@ -1173,9 +1184,11 @@ function drawMarkers(ctx, vp) {
     drawIconOrEmoji(ctx, marker.icon || 'map-pin', x, y, 16, '#FFFFFF');
 
     if (marker.name) {
-      ctx.font = '10px sans-serif';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(marker.name, x, y + 22);
+      drawStyledLabel(ctx, marker.name, x, y + 22, getPreset('building'), {
+        align: 'center',
+        baseline: 'top',
+        screenScale: renderer.viewTransform.scale,
+      });
     }
   });
 }
@@ -1187,21 +1200,21 @@ function drawTexts(ctx, vp) {
     const x = label.x;
     const y = label.y;
     if (!pointInViewport(x, y, vp, 300)) return; // margin 覆盖长文本
-    const fontSize = label.fontSize || 16;
-    const color = label.color || '#FFFFFF';
+    // P0-2：浮动文本走 custom 预设（与行星地图一致），单条 color/fontSize 作为覆盖
+    const preset = getPreset(label.presetKey || 'custom');
+    const style = {
+      ...preset,
+      color: label.color || preset.color,
+      fontSize: label.fontSize || preset.fontSize,
+    };
+    // 批次C2：拖拽中跳过描边（3 倍文字成本），保留正文
+    if (fast) style.stroke = { enabled: false, color: '#000000', width: 1 };
 
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    if (!fast) {
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.lineWidth = 3;
-      ctx.strokeText(label.text, x, y);
-    }
-
-    ctx.fillStyle = color;
-    ctx.fillText(label.text, x, y);
+    drawStyledLabel(ctx, label.text, x, y, style, {
+      align: 'center',
+      baseline: 'middle',
+      screenScale: renderer.viewTransform.scale,
+    });
   });
 }
 
@@ -1805,11 +1818,16 @@ const viewBounds = computed(() => {
 
 const worldBounds = computed(() => viewBounds.value);
 
+// P0-4：视口边界（镜头当前看到的世界矩形）≠ 内容边界，遮罩靠它算位置
+const viewportBounds = computed(() => computeViewBounds(renderer, canvas.value, viewBounds.value));
+
 const eyeElements = computed(() => {
   return areaPlaces.value.map(n => ({
+    type: 'circle',
     x: n.coordinate?.x || 0,
     y: n.coordinate?.y || 0,
-    radius: 6,
+    r: 4,
+    color: getNodeColor(n.layer),
   }));
 });
 
@@ -1834,6 +1852,8 @@ onMounted(() => {
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('sitian:focus-node', onFocusNode);
   window.addEventListener('sitian:history-jump', onHistoryJump);
+  window.addEventListener('sitian:label-styles-changed', onHistoryJump); // P0-2 标签样式
+  window.addEventListener('sitian:marker-types-changed', onHistoryJump);  // P1-4 标记类型
 });
 
 function onFocusNode(e) {
@@ -1868,6 +1888,8 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('sitian:focus-node', onFocusNode);
   window.removeEventListener('sitian:history-jump', onHistoryJump);
+  window.removeEventListener('sitian:label-styles-changed', onHistoryJump);
+  window.removeEventListener('sitian:marker-types-changed', onHistoryJump);
   if (focusHighlightTimer.value) clearTimeout(focusHighlightTimer.value);
 });
 

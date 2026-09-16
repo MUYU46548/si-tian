@@ -259,6 +259,41 @@ ipcMain.handle('backup-sitian-cache', async () => backupSitianCache());
 // IPC: 获取 Vault 路径
 ipcMain.handle('get-vault-path', () => getVaultPath());
 
+// ===== .sitian/config/*.json 通用读写（P0-2 标签样式预设 / P1-4 标记类型）=====
+// 只认白名单键名 → 文件名，杜绝路径穿越；文件不存在返回 data:null（调用方用内置默认值）
+const SITIAN_CONFIG_FILES = {
+  labelPresets: 'label-presets.json',
+  markerTypes: 'marker-types.json',
+};
+
+function sitianConfigPath(name) {
+  const file = SITIAN_CONFIG_FILES[name];
+  return file ? path.join(getVaultPath(), '.sitian', 'config', file) : null;
+}
+
+ipcMain.handle('get-sitian-config', async (event, name) => {
+  const p = sitianConfigPath(name);
+  if (!p) return { success: false, error: `unknown config name: ${name}` };
+  try {
+    const raw = await fs.readFile(p, 'utf-8');
+    return { success: true, data: JSON.parse(raw) };
+  } catch (err) {
+    return { success: true, data: null };
+  }
+});
+
+ipcMain.handle('set-sitian-config', async (event, name, data) => {
+  const p = sitianConfigPath(name);
+  if (!p) return { success: false, error: `unknown config name: ${name}` };
+  try {
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: 窗口启动模式（批次A7）：读取 / 设置（立即生效并持久化）
 ipcMain.handle('get-window-mode', () => getWindowMode());
 ipcMain.handle('set-window-mode', async (event, mode) => {

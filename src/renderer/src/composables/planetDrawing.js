@@ -9,10 +9,14 @@ import { drawCanvasIcon, drawIconOrEmoji } from '../utils/canvasIcon';
 import { getTexturePattern } from '../utils/textures';
 import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
 import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '../utils/selectionHandles';
-import { labelFont } from '../utils/textMeasure';
 import { toRaw } from 'vue';
 import { biomeColor, biomeKeyFromIndex, BIOME_KEYS } from '../utils/heightMath';
 import { extractContours, simplifyContour } from '../utils/contour';
+import { getPreset, getPresetForLayer, drawStyledLabel } from '../utils/labelStyles';
+import { RELIEF_TYPES, RELIEF_TYPE_MAP, buildReliefGrid, queryReliefGridRect } from '../utils/reliefIcons';
+import { settlementRadius } from '../utils/settlement';
+import { roadDrawParams } from '../utils/roadStyles';
+import { RIVER_COLOR, RIVER_DEFAULT_WIDTH } from '../utils/rivers';
 
 const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（批量绘制时按编码分桶）
 
@@ -673,11 +677,12 @@ function drawRegions(ctx) {
     
     if (region.name && s.lodRef > 0.3 && !fast) {
       const center = getPolygonCenter(region.points);
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = color;
-      ctx.fillText(region.name, center.x, center.y);
+      // P0-2：区域标签走 region 预设（半透明大字 + 背景条）
+      drawStyledLabel(ctx, region.name, center.x, center.y, getPreset('region'), {
+        align: 'center',
+        baseline: 'middle',
+        screenScale: s.zoom,
+      });
     }
   });
 
@@ -779,7 +784,8 @@ function drawPlaces(ctx) {
     const y = place.coordinate?.y || 0;
     if (!pointInViewport(x, y, vp, 120)) return;
     const color = getPlaceColor(place);
-    const radius = getNodeRadius(place.layer);
+    // P1-3：聚落图标按人口分级放大（无 population 的旧数据保持原尺寸）
+    const radius = settlementRadius(getNodeRadius(place.layer), place.population) * (Number(place.sizeScale) || 1);
     const isHovered = s.hoveredNode?.id === place.id;
     const shape = getPlaceShape(place.layer);
 
@@ -809,11 +815,13 @@ function drawPlaces(ctx) {
     ctx.fill();
     
     if (place.name && !fast && s.lodRef > 0.4) {
-      ctx.font = `${getLabelWeight(place.layer)} ${getLabelSize(place.layer)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = 'rgba(220, 230, 245, 0.95)';
-      ctx.fillText(place.displayName || place.name, x, y + radius + 4);
+      // P0-2：标签统一走样式预设（按 layer 匹配 city/town/village/building…）
+      drawStyledLabel(ctx, place.displayName || place.name, x, y + radius + 4, getPresetForLayer(place.layer), {
+        align: 'center',
+        baseline: 'top',
+        screenScale: s.zoom,
+        highlight: s.selectedPlaceIds?.has(place.id),
+      });
     }
 
     // 多选高亮
@@ -946,12 +954,15 @@ function drawMarkers(ctx) {
     }
 
     // 名称标签（不参与旋转变换，跟随缩放偏移）
-    if (marker.name && !fast && s.lodRef > 0.4) {
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#2D3436';
-      ctx.fillText(marker.name, marker.x, marker.y + 10 * scale);
+    // P1-4：缩放 < 0.5× 时只显示图标不显示名称（密集标记下的性能与可读性）
+    if (marker.name && !fast && s.lodRef > 0.4 && (s.zoom || 1) >= 0.5) {
+      // P0-2：标记名走 building 预设（小字）；P1-4 起类型可覆盖图标/颜色
+      drawStyledLabel(ctx, marker.name, marker.x, marker.y + 10 * scale, getPreset('building'), {
+        align: 'center',
+        baseline: 'top',
+        screenScale: s.zoom,
+        highlight: isSelected,
+      });
     }
   });
 }
@@ -977,10 +988,12 @@ function drawRoutes(ctx) {
   routes.forEach(route => {
     if (!route.points || route.points.length < 2) return;
     if (!bboxInViewport(pointsBBox(route.points), vp, 40)) return;
-    const color = route.color || '#E67E22';
+    // P1-2：有 style 字段 → 用样式预设（颜色/线宽/虚实）；旧数据沿用自身字段
+    const rp = roadDrawParams(route);
+    const color = rp.color;
     const isSelected = s.selectedRoute?.id === route.id;
 
-    drawRoutePolyline(ctx, route.points, color, route.dashed, isSelected);
+    drawRoutePolyline(ctx, route.points, color, rp.dashed, isSelected, rp.styled ? rp.width : null);
 
     // 文字标签：优先沿路径排布，路径过短时回退中点居中
     if (route.label && !fast && s.lodRef > 0.3) {
@@ -1023,11 +1036,12 @@ function drawRoutes(ctx) {
   }
 }
 
-function drawRoutePolyline(ctx, points, color, dashed, highlight) {
+function drawRoutePolyline(ctx, points, color, dashed, highlight, width = null) {
   const s = getState(); // 每次渲染取最新状态
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = highlight ? 4 : 2.5;
+  // width=null → 沿用历史默认（2.5 / 选中 4）；P1-2 道路样式会传入 1~3 的细线宽
+  ctx.lineWidth = highlight ? Math.max(4, (width || 2) + 1.5) : (width || 2.5);
   if (dashed) ctx.setLineDash([8, 5]);
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
@@ -1135,6 +1149,143 @@ function drawTextOnPath(ctx, text, points, fontSize, color, labelColor, offsetX 
 }
 
 // 地形名称标注（独立图层，可切换）
+// ===== P0-1 Relief Icons：地貌图标层（地形之上、聚落之下） =====
+// 网格桶按数组引用缓存：同一批图标只在首帧建一次索引，之后按视口矩形查桶，
+// 避免图标多时每帧 O(n) 全量遍历。
+let _reliefGridCache = { ref: null, grid: null };
+
+function getReliefGrid(icons) {
+  if (_reliefGridCache.ref !== icons) {
+    _reliefGridCache = { ref: icons, grid: buildReliefGrid(icons) };
+  }
+  return _reliefGridCache.grid;
+}
+
+function drawReliefIcons(ctx, overrideList = null) {
+  const s = getState();
+  const icons = overrideList || s.currentMapData?.reliefIcons || [];
+  if (!icons.length) return;
+  if (s.isFastMode && s.lodRef < 0.35) return; // 拖拽 + 缩得很小时整层跳过（保帧率）
+
+  const vp = s.viewport;
+  // 小规模直接全量（避免建索引的开销）；大规模走网格桶按视口裁剪
+  let list = null;
+  if (icons.length > 400 && vp) {
+    const idx = queryReliefGridRect(getReliefGrid(icons), icons, {
+      minX: Math.min(vp.minX, vp.maxX) - 80,
+      maxX: Math.max(vp.minX, vp.maxX) + 80,
+      minY: Math.min(vp.minY, vp.maxY) - 80,
+      maxY: Math.max(vp.minY, vp.maxY) + 80,
+    });
+    list = idx.map(i => icons[i]);
+  } else {
+    list = icons;
+  }
+
+  for (const it of list) {
+    if (!it || !Number.isFinite(it.x) || !Number.isFinite(it.y)) continue;
+    if (vp && !pointInViewport(it.x, it.y, vp, 60)) continue;
+    const meta = RELIEF_TYPE_MAP[it.type] || RELIEF_TYPES[0];
+    const size = it.size || 24;
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    if (it.rotation) ctx.rotate((it.rotation * Math.PI) / 180);
+    ctx.globalAlpha = 0.92;
+    drawCanvasIcon(ctx, meta.icon, 0, 0, size, meta.color);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+}
+
+// ===== P1-1 河流层（在路线之下、区域之上渲染，蓝线按宽度渐变） =====
+function drawRivers(ctx) {
+  const s = getState();
+  const rivers = s.currentMapData?.rivers || [];
+  const draft = s.riverDraftPoints || [];
+  const vp = s.viewport;
+
+  // 绘制中的河流草稿
+  if (s.interactionMode === 'river' && draft.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = RIVER_COLOR;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(draft[0].x, draft[0].y);
+    for (let i = 1; i < draft.length; i++) ctx.lineTo(draft[i].x, draft[i].y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 节点手柄 + 源头标记（高处的点画三角，直观体现"从高到低"）
+    draft.forEach((p, i) => {
+      ctx.fillStyle = i === 0 ? '#F97316' : '#93C5FD';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  for (const river of rivers) {
+    const nodes = river.nodes || [];
+    if (nodes.length < 2) continue;
+    if (!bboxInViewport(pointsBBox(nodes), vp, 60)) continue;
+    const isSelected = s.selectedRiver?.id === river.id;
+    ctx.save();
+    ctx.strokeStyle = RIVER_COLOR;
+    ctx.lineWidth = Math.max(1, river.width || RIVER_DEFAULT_WIDTH);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    if (isSelected) {
+      ctx.shadowColor = '#60A5FA';
+      ctx.shadowBlur = 10;
+    }
+    ctx.beginPath();
+    ctx.moveTo(nodes[0].x, nodes[0].y);
+    for (let i = 1; i < nodes.length; i++) ctx.lineTo(nodes[i].x, nodes[i].y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    if (isSelected) {
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 流向箭头（每 1/3 处一个，指示高→低）
+      const step = Math.max(1, Math.floor(nodes.length / 3));
+      for (let i = step; i < nodes.length - 1; i += step) {
+        const a = nodes[i];
+        const b = nodes[i + 1];
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        ctx.save();
+        ctx.translate(a.x, a.y);
+        ctx.rotate(ang);
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.moveTo(6, 0);
+        ctx.lineTo(-3, -4);
+        ctx.lineTo(-3, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      // 节点手柄
+      nodes.forEach(p => {
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    }
+    ctx.restore();
+  }
+}
+
 function drawTerrainLabels(ctx) {
   const s = getState();
   const terrain = s.currentMapData?.terrain || [];
@@ -1312,13 +1463,19 @@ function drawTextLabels(ctx) {
   labels.forEach(label => {
     if (!label?.text) return;
     if (!pointInViewport(label.x, label.y, vp, 250)) return; // 批次C1：margin 覆盖长文本宽度
-    const fontSize = label.fontSize || 16;
-    const color = label.color || '#2D3436';
     const isSelected = s.selectedTextLabel?.id === label.id;
     // E4：缩放/旋转变换（围绕文本中心）
     const scale = label.scale || 1;
     const rot = ((label.rotation || 0) * Math.PI) / 180;
     const transformed = rot !== 0 || scale !== 1;
+
+    // P0-2：浮动文本走 custom 预设，单条数据的 color/fontSize 作为覆盖项（保持旧数据观感）
+    const preset = getPreset(label.presetKey || 'custom');
+    const style = {
+      ...preset,
+      color: label.color || preset.color,
+      fontSize: label.fontSize || preset.fontSize,
+    };
 
     ctx.save();
     if (transformed) {
@@ -1328,32 +1485,13 @@ function drawTextLabels(ctx) {
     }
     const cx = transformed ? 0 : label.x;
     const cy = transformed ? 0 : label.y;
-    ctx.font = labelFont(fontSize);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
 
-    // 半透明背景提高可读性
-    const metrics = ctx.measureText(label.text);
-    const padding = fontSize * 0.4;
-    ctx.fillStyle = isSelected ? 'rgba(255, 215, 0, 0.35)' : 'rgba(255, 255, 255, 0.75)';
-    ctx.beginPath();
-    ctx.roundRect(
-      cx - metrics.width / 2 - padding,
-      cy - fontSize / 2 - padding / 2,
-      metrics.width + padding * 2,
-      fontSize + padding,
-      fontSize * 0.3
-    );
-    ctx.fill();
-
-    if (isSelected) {
-      ctx.strokeStyle = '#FFD700';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = color;
-    ctx.fillText(label.text, cx, cy);
+    drawStyledLabel(ctx, label.text, cx, cy, style, {
+      align: 'center',
+      baseline: 'middle',
+      screenScale: s.zoom,
+      highlight: isSelected,
+    });
     ctx.restore();
   });
 }
@@ -1708,6 +1846,8 @@ function getContrastColor(hex) {
     drawClimate,
     drawPrecipitation,
     drawTerrainLabels,
+    drawReliefIcons,
+    drawRivers,
     drawRegions,
     drawPlaces,
     drawMarkers,

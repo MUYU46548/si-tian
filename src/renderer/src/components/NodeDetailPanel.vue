@@ -239,6 +239,45 @@
             <option v-for="t in starTypes" :key="t.value" :value="t.value">{{ t.label }}</option>
           </select>
         </div>
+        <!-- P1-3 聚落：人口 / 文化归属 / Burg Editor -->
+        <div class="prop-field" v-if="isSettlementNode" data-testid="settlement-pop-field">
+          <label>人口</label>
+          <div class="pop-row">
+            <input
+              type="range" min="0" max="100" step="1" class="pop-slider"
+              data-testid="settlement-pop-slider"
+              :value="popSlider"
+              @input="onPopSlider($event.target.value, false)"
+              @change="onPopSlider($event.target.value, true)"
+            />
+            <input
+              type="number" class="pop-number" data-testid="settlement-pop-input"
+              :value="settlementPop" :min="POP_MIN" :max="POP_MAX" step="100"
+              @change="onPopNumber($event.target.value)"
+            />
+          </div>
+          <div class="pop-hint" data-testid="settlement-tier">{{ tierLabel }} · 图标 ×{{ tierScale }}</div>
+        </div>
+        <div class="prop-field" v-if="isSettlementNode">
+          <label>文化归属</label>
+          <div class="culture-row">
+            <select :value="cultureId" data-testid="settlement-culture" @change="onCultureChange($event.target.value)">
+              <option :value="-1">无归属</option>
+              <option v-for="c in cultures" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+            <span
+              v-if="currentCulture" class="culture-swatch"
+              :style="{ background: currentCulture.color }" :title="currentCulture.name"
+            ></span>
+            <button class="mini-add" title="新建文化" data-testid="settlement-add-culture" @click="createCulture">＋</button>
+          </div>
+        </div>
+        <div class="prop-field" v-if="isSettlementNode">
+          <label>高级编辑</label>
+          <button class="burg-editor-btn" data-testid="open-burg-editor" @click="burgEditorOpen = true">
+            <Icon name="castle" :size="13"/> Burg Editor（规模 / 人口 / 文化）
+          </button>
+        </div>
         <div class="prop-field">
           <label>标签</label>
           <div class="tag-editor">
@@ -290,7 +329,62 @@
       </template>
 
     </div>
+  
+  <!-- P1-3 Burg Editor（双击面板标题也可打开；专业编辑窗口） -->
+  <div v-if="burgEditorOpen && node" class="burg-editor-backdrop" @click.self="burgEditorOpen = false">
+    <div class="burg-editor" data-testid="burg-editor">
+      <div class="burg-header">
+        <h3><Icon name="castle" :size="16"/> Burg Editor — {{ node.displayName || node.name }}</h3>
+        <button class="burg-close" @click="burgEditorOpen = false">×</button>
+      </div>
+      <div class="burg-body">
+        <div class="burg-row">
+          <label>人口</label>
+          <input
+            type="range" min="0" max="100" step="1" class="pop-slider"
+            data-testid="burg-pop-slider"
+            :value="popSlider"
+            @input="onPopSlider($event.target.value, false)"
+            @change="onPopSlider($event.target.value, true)"
+          />
+          <input
+            type="number" class="pop-number" data-testid="burg-pop-input"
+            :value="settlementPop" :min="POP_MIN" :max="POP_MAX" step="100"
+            @change="onPopNumber($event.target.value)"
+          />
+        </div>
+        <div class="burg-row">
+          <label>文化</label>
+          <select :value="cultureId" data-testid="burg-culture" @change="onCultureChange($event.target.value)">
+            <option :value="-1">无归属</option>
+            <option v-for="c in cultures" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+          <button class="mini-add" @click="createCulture" title="新建文化">＋</button>
+          <span v-if="currentCulture" class="culture-swatch" :style="{ background: currentCulture.color }"></span>
+        </div>
+        <div class="burg-row">
+          <label>缩放</label>
+          <input
+            type="range" min="0.5" max="2" step="0.05" class="pop-slider"
+            data-testid="burg-size-slider"
+            :value="settlementSize" @input="onSizeInput($event.target.value)" @change="onSizeInput($event.target.value)"
+          />
+          <span class="burg-num">×{{ settlementSize }}</span>
+        </div>
+        <div class="burg-summary" data-testid="burg-summary">
+          <div class="burg-summary-tier">{{ tierLabel }}</div>
+          <div class="burg-summary-hint">
+            预计地图尺寸 ×{{ (tierScale * settlementSize).toFixed(2) }} ·
+            {{ currentCulture ? ('文化：' + currentCulture.name) : '无文化归属' }}
+          </div>
+        </div>
+      </div>
+      <div class="burg-footer">
+        <button class="adopt-btn" @click="burgEditorOpen = false">完成</button>
+      </div>
+    </div>
   </div>
+</div>
 </template>
 
 <script setup>
@@ -300,6 +394,11 @@ import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
 import { openObsidianUri } from '../utils/vault';
+import {
+  POP_MIN, POP_MAX, CULTURE_NONE_ID, CULTURE_COLORS,
+  popToSlider, sliderToPop, tierOf, tierLabelOf, formatPop,
+  isSettlementLayer, defaultSettlementMeta, resolveCulture,
+} from '../utils/settlement';
 
 // marked 配置
 marked.setOptions({ gfm: true, breaks: true });
@@ -390,6 +489,105 @@ const heroStyle = computed(() => {
   const bg = colors[node.value?.layer] || 'linear-gradient(135deg, #1a1a2e 0%, #0d1117 100%)';
   return { background: bg };
 });
+
+// ===== P1-3 聚落（人口 / 文化归属 / Burg Editor） =====
+const burgEditorOpen = ref(false);
+const popDraft = ref(null);   // 拖动滑块期间的本地预览值（松手才落 undo 栈）
+
+const isSettlementNode = computed(() => isSettlementLayer(node.value?.layer));
+
+/** 聚落所属行星 id：沿 parentId 向上找 layer === 'planet' 的祖先 */
+const settlementPlanetId = computed(() => {
+  const n = node.value;
+  if (!n) return null;
+  if (n.layer === 'planet') return n.id;
+  let cur = n;
+  const seen = new Set();
+  while (cur?.parentId && !seen.has(cur.parentId)) {
+    seen.add(cur.parentId);
+    const p = store.nodes.find(x => x.id === cur.parentId);
+    if (!p) return null;
+    if (p.layer === 'planet') return p.id;
+    cur = p;
+  }
+  return null;
+});
+
+const cultures = computed(() => {
+  const pid = settlementPlanetId.value;
+  return (pid && store.mapData?.[pid]?.cultures) || [];
+});
+
+const settlementPop = computed(() => {
+  if (popDraft.value !== null) return popDraft.value;
+  const n = node.value;
+  if (!n) return POP_MIN;
+  if (Number.isFinite(n.population) && n.population > 0) return n.population;
+  return defaultSettlementMeta(n.layer).population;
+});
+
+const popSlider = computed(() => popToSlider(settlementPop.value));
+const tierLabel = computed(() => tierLabelOf(settlementPop.value));
+const tierScale = computed(() => tierOf(settlementPop.value).scale);
+
+const cultureId = computed(() => {
+  const n = node.value;
+  if (!n || n.cultureId === undefined || n.cultureId === null) return CULTURE_NONE_ID;
+  return n.cultureId;
+});
+const currentCulture = computed(() => resolveCulture(cultures.value, cultureId.value));
+
+const settlementSize = computed(() => {
+  const n = node.value;
+  return Number.isFinite(n?.sizeScale) && n.sizeScale > 0 ? n.sizeScale : 1;
+});
+
+/** commit=false：只更新预览（滑块拖动中，避免刷屏 undo）；commit=true：写入节点（一条 undo） */
+function onPopSlider(value, commit) {
+  const pop = sliderToPop(value);
+  popDraft.value = pop;
+  if (commit) {
+    popDraft.value = null;
+    store.updateNode(node.value.id, { population: pop });
+  }
+}
+
+function onPopNumber(value) {
+  const pop = Math.round(Math.min(POP_MAX, Math.max(POP_MIN, Number(value) || POP_MIN)));
+  popDraft.value = null;
+  store.updateNode(node.value.id, { population: pop });
+}
+
+function onCultureChange(value) {
+  const id = Number(value);
+  store.updateNode(node.value.id, { cultureId: Number.isFinite(id) ? id : CULTURE_NONE_ID });
+}
+
+function onSizeInput(value) {
+  const v = Math.min(2, Math.max(0.5, Number(value) || 1));
+  store.updateNode(node.value.id, { sizeScale: Math.round(v * 100) / 100 });
+}
+
+async function createCulture() {
+  const pid = settlementPlanetId.value;
+  if (!pid) { alert('请先在地图上进入该聚落所属的行星'); return; }
+  const name = window.prompt('文化名称', '新文化');
+  if (!name) return;
+  // 关键：文化列表存在 mapData 里，而 mapData 是「进入行星视图才懒加载」的。
+  // 从左侧树直接点开聚落详情时缓存可能为空 —— 先按需加载，否则写进去的文化会被当成
+  // 空 mapData 覆盖写回磁盘（丢数据）。
+  await store.loadMapData(pid);
+  const existing = cultures.value.length;
+  const item = store.addCulture(pid, {
+    id: Date.now(),
+    name: name.trim(),
+    color: CULTURE_COLORS[existing % CULTURE_COLORS.length],
+  });
+  if (item) store.updateNode(node.value.id, { cultureId: item.id });
+}
+
+// 打开聚落详情时按需加载所属行星的 mapData（文化列表来源）
+watch(settlementPlanetId, (pid) => { if (pid) store.loadMapData(pid); }, { immediate: true });
 
 // 获取层级图标
 function getLayerIcon(layer) {
@@ -789,6 +987,184 @@ function updateCoordinate(axis, value) {
 </script>
 
 <style scoped>
+/* ===== P1-3 聚落编辑器 ===== */
+.pop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pop-slider {
+  flex: 1;
+  accent-color: var(--accent, #58a6ff);
+}
+.pop-number {
+  width: 90px;
+  padding: 4px 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.pop-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.culture-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.culture-row select {
+  flex: 1;
+  padding: 4px 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.culture-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+}
+.mini-add {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mini-add:hover {
+  color: var(--text-primary);
+  background: var(--btn-bg-hover);
+}
+.burg-editor-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.burg-editor-btn:hover {
+  background: var(--btn-bg-hover);
+  border-color: var(--accent, #58a6ff);
+}
+
+/* Burg Editor 弹窗 */
+.burg-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+.burg-editor {
+  width: 520px;
+  max-width: 92vw;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.burg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel-header-bg);
+}
+.burg-header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.burg-close {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+.burg-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.burg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.burg-row > label {
+  width: 46px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.burg-row select {
+  padding: 4px 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.burg-num {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+}
+.burg-summary {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--input-bg);
+}
+.burg-summary-tier {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.burg-summary-hint {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.burg-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--panel-border);
+}
 .detail-panel {
   position: fixed;
   right: 0;

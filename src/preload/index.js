@@ -36,6 +36,10 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   getCurrentBaseMapKey: () => ipcRenderer.invoke('get-current-basemap-key'),
   setCurrentBaseMapKey: (key) => ipcRenderer.invoke('set-current-basemap-key', key),
 
+  // .sitian/config/*.json 通用读写（P0-2 标签样式预设 / P1-4 标记类型）
+  getSitianConfig: (name) => ipcRenderer.invoke('get-sitian-config', name),
+  setSitianConfig: (name, data) => ipcRenderer.invoke('set-sitian-config', name, data),
+
   // 地图数据
   getMapData: (planetId) => ipcRenderer.invoke('get-map-data', planetId),
   saveMapData: (planetId, data) => ipcRenderer.invoke('save-map-data', planetId, data),

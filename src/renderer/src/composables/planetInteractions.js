@@ -56,6 +56,24 @@ function snapAgainst(s, pos, candidates) {
 
 function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   let s = getState();
+
+  // P0-1 Relief 笔刷：左键散布 / 右键擦除。
+  // 必须放在 button!==0 早退之前——右键拖拽是"擦除"的主要入口。
+  if (s.interactionMode === 'relief' && s.editMode && s.reliefBrush) {
+    s.reliefBrush.startStroke(wx, wy, { erase: button === 2 });
+    actions.requestRender();
+    return false; // 抑制平移
+  }
+
+  // P1-1 河流：拖拽选中河流的节点（流向约束在组件侧 clampRiverNode 里做）
+  if (s.interactionMode === 'river' && s.editMode && s.selectedRiver) {
+    const idx = s.hitRiverPoint(wx, wy);
+    if (idx >= 0) {
+      s.beginRiverDrag(wx, wy, idx);
+      return false; // 抑制平移
+    }
+  }
+
   if (button !== 0) return true;
 
   // 拆分/合并模式：屏蔽顶点/节点/参考图拖拽（选点优先，点击由 onClick 收集；
@@ -269,6 +287,19 @@ function onDragMove(wx, wy, dragInfo) {
     return;
   }
 
+  // P1-1 河流节点拖动（实时 clamp，松手一条 undo）
+  if (mode === 'river' && s.editMode && s.riverDrag) {
+    s.moveRiverNode(wx, wy);
+    return;
+  }
+
+  // P0-1 Relief 笔刷拖动：沿路径散布 / 擦除
+  if (mode === 'relief' && s.editMode && s.reliefBrush && s.reliefBrush.isReliefBrushing.value) {
+    s.reliefBrush.moveStroke(wx, wy);
+    actions.requestRender();
+    return;
+  }
+
   // 高度图笔刷拖动
   if (mode === 'height' && s.editMode && s.planetHeightBrush.isBrushing.value) {
     if (s.heightTool === 'biome') {
@@ -434,6 +465,20 @@ function onDragEnd(wx, wy, dragInfo) {
     return;
   }
 
+  // P1-1 河流节点松手：一条 undo
+  if (mode === 'river' && s.editMode && s.riverDrag) {
+    s.endRiverDrag();
+    actions.requestRender();
+    return;
+  }
+
+  // P0-1 Relief 笔刷松手：整次拖动 = 一条 undo
+  if (mode === 'relief' && s.editMode && s.reliefBrush) {
+    s.reliefBrush.finishStroke();
+    actions.requestRender();
+    return;
+  }
+
   // 高度图笔刷松手：结束 stroke（一次拖动 = 一条 undo）
   if (mode === 'height' && s.editMode) {
     s.planetHeightBrush.isBrushing.value = false;
@@ -537,6 +582,12 @@ function handleCanvasClick(hit, wx, wy) {
 
   const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
 
+  // P0-1 Relief 笔刷：落点已由拖动处理，点击不再命中对象
+  if (mode === 'relief' && s.editMode) return;
+
+  // P1-1 河流：点击是描点/选中河流，不走通用对象选择
+  if (mode === 'river' && s.editMode) return;
+
   // cluster 模式：点击选中簇成员/空白清除
   if (mode === 'cluster') {
     actions.clusterClick(wx, wy);
@@ -573,11 +624,16 @@ function handleCanvasClick(hit, wx, wy) {
       return;
     }
     const sp = s.snapPoint({ x: wx, y: wy });
-    const markerTypeMeta = s.markerTypes.find(m => m.type === s.selectedMarkerType);
+    const markerTypeMeta = (s.markerTypes || []).find(m => m.type === s.selectedMarkerType)
+      || (s.markerTypes || []).find(m => m.type === 'custom');
     const markerCount = (s.currentMapData?.markers?.filter(m => m.type === s.selectedMarkerType).length || 0) + 1;
     const marker = {
       id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       type: s.selectedMarkerType,
+      // P1-4：创建时把类型的图标/颜色materialize进标记自身 ——
+      // 这样"继承类型"与"单点覆盖"在数据层可区分（后者只需改这两个字段）
+      icon: markerTypeMeta?.icon || 'map-pin',
+      color: markerTypeMeta?.color || '#FFD700',
       x: sp.x,
       y: sp.y,
       name: `${markerTypeMeta?.label || '标记'} ${markerCount}`,

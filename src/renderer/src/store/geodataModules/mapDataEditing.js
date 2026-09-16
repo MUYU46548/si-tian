@@ -665,6 +665,184 @@ export function createMapDataEditingModule(ctx) {
     scheduleAutoSave();
   }
 
+  // ===== P0-1 Relief Icons：一次笔刷拖动 = 一条 undo（增/删合并成单条命令）=====
+  /**
+   * @param {string} planetId
+   * @param {Array} added   本次拖动新增的图标
+   * @param {Array<string>} removedIds 本次拖动擦除的图标 id
+   */
+  function applyReliefStroke(planetId, added = [], removedIds = []) {
+    if (!mapData.value[planetId]) return;
+    if (!Array.isArray(mapData.value[planetId].reliefIcons)) {
+      mapData.value[planetId].reliefIcons = [];
+    }
+    const removeSet = new Set(removedIds);
+    const before = mapData.value[planetId].reliefIcons.slice();
+    const after = before.filter(it => !removeSet.has(it.id)).concat(added);
+    if (before.length === after.length && added.length === 0) return;
+
+    const label = added.length && removedIds.length
+      ? '修整地貌图标'
+      : (added.length ? '散布地貌图标' : '擦除地貌图标');
+
+    // 快照式 undo：只换数组内容，不逐个记忆下标（下标会随增删漂移）
+    execute({
+      type: 'relief-stroke',
+      label,
+      category: 'region',
+      undo: () => { mapData.value[planetId].reliefIcons = before.slice(); },
+      redo: () => { mapData.value[planetId].reliefIcons = after.slice(); },
+    });
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    scheduleAutoSaveMap(planetId);
+  }
+
+  /** 清空全部地貌图标（单条 undo） */
+  function clearReliefIcons(planetId) {
+    if (!mapData.value[planetId]?.reliefIcons?.length) return;
+    const before = mapData.value[planetId].reliefIcons.slice();
+    execute({
+      type: 'clear-relief',
+      label: '清空地貌图标',
+      category: 'region',
+      undo: () => { mapData.value[planetId].reliefIcons = before.slice(); },
+      redo: () => { mapData.value[planetId].reliefIcons = []; },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== P1-1 河流图层（节点带 h 高度，供流向校验）=====
+  function ensureRivers(planetId) {
+    if (!mapData.value[planetId]) return null;
+    if (!Array.isArray(mapData.value[planetId].rivers)) mapData.value[planetId].rivers = [];
+    return mapData.value[planetId].rivers;
+  }
+
+  /** 新增整条河流（一次创建 = 一条 undo） */
+  function addRiver(planetId, river) {
+    if (!ensureRivers(planetId)) return null;
+    const item = JSON.parse(JSON.stringify(river));
+    execute({
+      type: 'add-river',
+      label: '绘制河流',
+      category: 'region',
+      undo: () => { mapData.value[planetId].rivers = mapData.value[planetId].rivers.filter(r => r.id !== item.id); },
+      redo: () => { if (!mapData.value[planetId].rivers.some(r => r.id === item.id)) mapData.value[planetId].rivers.push(item); },
+    });
+    scheduleAutoSaveMap(planetId);
+    return item;
+  }
+
+  function removeRiver(planetId, riverId) {
+    const list = mapData.value[planetId]?.rivers;
+    if (!Array.isArray(list)) return;
+    const before = list.slice();
+    const after = before.filter(r => r.id !== riverId);
+    if (after.length === before.length) return;
+    execute({
+      type: 'remove-river',
+      label: '删除河流',
+      category: 'region',
+      undo: () => { mapData.value[planetId].rivers = before.slice(); },
+      redo: () => { mapData.value[planetId].rivers = after.slice(); },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  /**
+   * 更新河流（路径/线宽/名称）。
+   * @param {object} oldSnapshot 拖动类操作必须传"操作前"的快照，否则 undo 会采集到已改后的值
+   */
+  function updateRiver(planetId, riverId, updates, oldSnapshot = null) {
+    const list = mapData.value[planetId]?.rivers;
+    if (!Array.isArray(list)) return;
+    const river = list.find(r => r.id === riverId);
+    if (!river) return;
+    const old = oldSnapshot ? JSON.parse(JSON.stringify(oldSnapshot)) : {};
+    if (!oldSnapshot) { for (const k of Object.keys(updates)) old[k] = river[k]; }
+    const next = JSON.parse(JSON.stringify(updates));
+    execute({
+      type: 'update-river',
+      label: '编辑河流',
+      category: 'region',
+      undo: () => { Object.assign(river, JSON.parse(JSON.stringify(old))); },
+      redo: () => { Object.assign(river, JSON.parse(JSON.stringify(next))); },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== P1-2 道路样式（style 字段 + 同步 color/dashed 以保持与旧渲染路径一致）=====
+  function setRouteStyle(planetId, routeId, style, styleMeta = null) {
+    const list = mapData.value[planetId]?.routes;
+    if (!Array.isArray(list)) return;
+    const route = list.find(r => r.id === routeId);
+    if (!route) return;
+    const old = { style: route.style, color: route.color, dashed: route.dashed };
+    const next = {
+      style,
+      color: styleMeta?.color || route.color,
+      dashed: styleMeta?.dashed !== undefined ? styleMeta.dashed : route.dashed,
+    };
+    execute({
+      type: 'set-route-style',
+      label: '道路样式',
+      category: 'property',
+      undo: () => { Object.assign(route, old); },
+      redo: () => { Object.assign(route, next); },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  // ===== P1-3 文化列表（行星级共享数据，供聚落"文化归属"下拉使用）=====
+  function addCulture(planetId, culture) {
+    if (!mapData.value[planetId]) return null;
+    if (!Array.isArray(mapData.value[planetId].cultures)) mapData.value[planetId].cultures = [];
+    const list = mapData.value[planetId].cultures;
+    const item = { id: culture.id, name: culture.name, color: culture.color, note: culture.note || '' };
+    execute({
+      type: 'add-culture',
+      label: '新建文化',
+      category: 'property',
+      undo: () => { mapData.value[planetId].cultures = mapData.value[planetId].cultures.filter(c => c.id !== item.id); },
+      redo: () => { if (!mapData.value[planetId].cultures.some(c => c.id === item.id)) mapData.value[planetId].cultures.push(item); },
+    });
+    scheduleAutoSaveMap(planetId);
+    return item;
+  }
+
+  function removeCulture(planetId, cultureId) {
+    const list = mapData.value[planetId]?.cultures;
+    if (!Array.isArray(list)) return;
+    const before = list.slice();
+    const after = before.filter(c => c.id !== cultureId);
+    if (after.length === before.length) return;
+    execute({
+      type: 'remove-culture',
+      label: '删除文化',
+      category: 'property',
+      undo: () => { mapData.value[planetId].cultures = before.slice(); },
+      redo: () => { mapData.value[planetId].cultures = after.slice(); },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
+  function updateCulture(planetId, cultureId, patch) {
+    const list = mapData.value[planetId]?.cultures;
+    if (!Array.isArray(list)) return;
+    const idx = list.findIndex(c => c.id === cultureId);
+    if (idx < 0) return;
+    const old = { ...list[idx] };
+    const next = { ...old, ...patch };
+    execute({
+      type: 'update-culture',
+      label: '编辑文化',
+      category: 'property',
+      undo: () => { mapData.value[planetId].cultures = mapData.value[planetId].cultures.map(c => (c.id === cultureId ? old : c)); },
+      redo: () => { mapData.value[planetId].cultures = mapData.value[planetId].cultures.map(c => (c.id === cultureId ? next : c)); },
+    });
+    scheduleAutoSaveMap(planetId);
+  }
+
   return {
     addTerrainPolygon,
     removeTerrainPolygon,
@@ -695,5 +873,14 @@ export function createMapDataEditingModule(ctx) {
     removeCluster,
     updateCluster,
     moveClusterMembers,
+    applyReliefStroke,
+    clearReliefIcons,
+    addCulture,
+    removeCulture,
+    updateCulture,
+    setRouteStyle,
+    addRiver,
+    removeRiver,
+    updateRiver,
   };
 }
