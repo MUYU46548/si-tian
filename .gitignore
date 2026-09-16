@@ -41,6 +41,8 @@ src/renderer/mock-data/
 # 纯浏览器开发（npm run dev）用的真实数据只读副本，含真实库数据，禁止提交
 src/renderer/dev-data/
 src/renderer/index.html.bak
+# 迁移脚本备份（含真实库数据副本，禁止提交）
+backups/
 
 # 内部文档（不公开）
 HANDOFF.md

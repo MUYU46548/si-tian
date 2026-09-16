@@ -12,8 +12,8 @@
  *   1. 脚本默认 **只报告**（dry-run）；加 `--apply` 才写盘。
  *   2. 只处理「存在对应新 key」的旧 key —— 没有对应新 key 的旧 key 仍然会被
  *      回退分支读到，删除即数据丢失，一律保留并单独列在报告里。
- *   3. 写盘前先整体备份 mapdata.json 到 .sitian/backups/，
- *      并把被移除的旧条目原样存档到 .sitian/backups/archived-mapdata-legacy-<ts>.json。
+ *   3. 写盘前先整体备份 mapdata.json 到项目目录 backups/，
+ *      并把被移除的旧条目原样存档到项目目录 backups/archived-mapdata-legacy-<ts>.json。
  *      **旧 key 的独有内容不合并进现行数据**：那是用户主动重画后废弃的陈旧多边形，
  *      合并回去等于把已删除的地形复活（覆盖率差异只在报告里列出供人判断）。
  *
@@ -35,7 +35,8 @@ const VAULT = (vaultIdx !== -1 ? ARGS[vaultIdx + 1] : null)
 const SITIAN_DIR = path.join(VAULT, '.sitian');
 const MAPDATA_PATH = path.join(SITIAN_DIR, 'mapdata.json');
 const GEODATA_PATH = path.join(SITIAN_DIR, 'geodata.json');
-const BACKUP_DIR = path.join(SITIAN_DIR, 'backups');
+// 备份存到项目目录，不进 Obsidian 库（.sitian/ 是缓存层，Obsidian 不应膨胀）
+const BACKUP_DIR = path.join(__dirname, '..', 'backups');
 
 /** 实例内以 '/' 分隔的数组字段（用于覆盖率对比） */
 const LIST_FIELDS = ['terrain', 'regions', 'markers', 'routes', 'textLabels', 'referenceImages'];
