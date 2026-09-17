@@ -3,7 +3,7 @@
     <div class="about-panel">
       <div class="about-header">
         <div class="about-logo">
-          <span class="logo-icon"><Icon name="sparkles" :size="24"/></span>
+          <BrandMark class="logo-icon" :size="34" />
           <div class="logo-info">
             <h2>SiTian</h2>
             <span class="version" :title="'点击复制版本号'" style="cursor: pointer;" @click="copyVersion"><template v-if="copiedVersion"><Icon name="check" :size="12"/> 已复制</template><template v-else>v{{ appVersion }}</template></span>
@@ -180,6 +180,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import Icon from './Icon.vue';
+import BrandMark from './BrandMark.vue';
 
 const isOpen = ref(false);
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
@@ -287,7 +288,7 @@ defineExpose({ open, close });
 }
 
 .logo-icon {
-  font-size: 36px;
+  color: #e8c66a;   /* 品牌强调色：与 splash 的金色光晕一致 */
 }
 
 .logo-info h2 {

@@ -1,28 +1,42 @@
 {
   "name": "司天 SiTian",
-  "version": "V2-A2",
-  "design": "围棋星位 × 银河航道",
+  "version": "V3-Ring",
+  "design": "环系·剪影 — 双环 + 紧贴行星 + 长轴偏置",
   "files": {
-    "svg": "E:\\CODE\\CangKu\\SiTian\\build\\icon.svg",
-    "ico": "E:\\CODE\\CangKu\\SiTian\\build\\icon.ico",
-    "icns": "E:\\CODE\\CangKu\\SiTian\\build\\icon.icns",
+    "svg": "E://CODE//CangKu//SiTian//build//icon.svg",
+    "ico": "E://CODE//CangKu//SiTian//build//icon.ico",
+    "icns": "E://CODE//CangKu//SiTian//build//icon.icns",
     "png": {
-      "16": "E:\\CODE\\CangKu\\SiTian\\build\\icon-16.png",
-      "32": "E:\\CODE\\CangKu\\SiTian\\build\\icon-32.png",
-      "48": "E:\\CODE\\CangKu\\SiTian\\build\\icon-48.png",
-      "64": "E:\\CODE\\CangKu\\SiTian\\build\\icon-64.png",
-      "128": "E:\\CODE\\CangKu\\SiTian\\build\\icon-128.png",
-      "256": "E:\\CODE\\CangKu\\SiTian\\build\\icon-256.png",
-      "512": "E:\\CODE\\CangKu\\SiTian\\build\\icon-512.png",
-      "1024": "E:\\CODE\\CangKu\\SiTian\\build\\icon-1024.png"
+      "16": "E://CODE//CangKu//SiTian//build//icon-16.png",
+      "32": "E://CODE//CangKu//SiTian//build//icon-32.png",
+      "48": "E://CODE//CangKu//SiTian//build//icon-48.png",
+      "64": "E://CODE//CangKu//SiTian//build//icon-64.png",
+      "128": "E://CODE//CangKu//SiTian//build//icon-128.png",
+      "256": "E://CODE//CangKu//SiTian//build//icon-256.png",
+      "512": "E://CODE//CangKu//SiTian//build//icon-512.png",
+      "1024": "E://CODE//CangKu//SiTian//build//icon-1024.png"
     }
   },
+  "geometry": {
+    "viewBox": 512,
+    "planetRadius": 32,
+    "ringInnerRatio": 1.04,
+    "ringOuterRatio": 2.42,
+    "ringFlatten": 0.32,
+    "ringTilt": -18,
+    "ringCount": 2,
+    "planetOffset": 8,
+    "fillRatio": 0.92,
+    "note": "环内缘/外缘为行星半径的倍数；偏置为局部坐标位移；小尺寸档位在 finalize.py params_for()"
+  },
   "colors": {
-    "background": "#eef1f6",
-    "stroke": "#3a4a62",
-    "lane": "rgba(40,80,130,0.8)",
-    "diagonal": "rgba(100,60,140,0.6)",
-    "star": "#2a3a52",
-    "core": "#e8c66a"
+    "ink": "#1b2a4a",
+    "tileBackground": "#eef1f6",
+    "darkForeground": "#f5f8fc"
+  },
+  "variants": {
+    "tile": "浅底圆角 — 本目录 icon.* 采用此款，任何背景可见",
+    "plain": "透明底 — 浅色界面 / macOS，见 logo-concepts/icon.*",
+    "dark": "深底白图 — 深色主题配套，见 logo-concepts/dark.*"
   }
 }

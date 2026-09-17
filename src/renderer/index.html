@@ -41,46 +41,10 @@
 <body>
   <div id="sitian-splash">
     <div class="splash-inner">
-      <!-- 同款矢量 LOGO（与 exe 图标 icon.svg 同源：天文网格 + 四角星 + 中心金核） -->
+      <!-- 品牌 LOGO：土星环系（双环 + 紧贴行星 + 长轴偏置），与 build/icon.svg 同源。
+           splash 为深色底（#0a0e18→#16233f），故图形用浅色 #e6edf7 而非深蓝主色 -->
       <svg class="splash-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-label="SiTian">
-        <defs>
-          <radialGradient id="splash-core" cx="50%" cy="50%">
-            <stop offset="0%" stop-color="#fffbe6"/>
-            <stop offset="50%" stop-color="#e8c66a"/>
-            <stop offset="100%" stop-color="#b8860b"/>
-          </radialGradient>
-          <radialGradient id="splash-glow" cx="50%" cy="50%">
-            <stop offset="0%" stop-color="#e8c66a" stop-opacity="0.45"/>
-            <stop offset="100%" stop-color="#e8c66a" stop-opacity="0"/>
-          </radialGradient>
-        </defs>
-        <g stroke="rgba(88,166,255,0.85)" stroke-width="8" stroke-linecap="round">
-          <line x1="28" y1="28" x2="484" y2="28"/>
-          <line x1="28" y1="256" x2="484" y2="256"/>
-          <line x1="28" y1="484" x2="484" y2="484"/>
-          <line x1="28" y1="28" x2="28" y2="484"/>
-          <line x1="256" y1="28" x2="256" y2="484"/>
-          <line x1="484" y1="28" x2="484" y2="484"/>
-        </g>
-        <g stroke="rgba(155,89,182,0.55)" stroke-width="5" stroke-dasharray="14 10" stroke-linecap="round">
-          <line x1="28" y1="28" x2="484" y2="484"/>
-          <line x1="484" y1="28" x2="28" y2="484"/>
-        </g>
-        <g fill="#2a3a52">
-          <circle cx="28" cy="28" r="28"/>
-          <circle cx="484" cy="28" r="28"/>
-          <circle cx="484" cy="484" r="28"/>
-          <circle cx="28" cy="484" r="28"/>
-        </g>
-        <g fill="rgba(42,58,82,0.95)">
-          <circle cx="256" cy="28" r="18"/>
-          <circle cx="484" cy="256" r="18"/>
-          <circle cx="256" cy="484" r="18"/>
-          <circle cx="28" cy="256" r="18"/>
-        </g>
-        <circle cx="256" cy="256" r="58" fill="url(#splash-glow)"/>
-        <circle cx="256" cy="256" r="28" fill="url(#splash-core)"/>
-        <circle cx="250" cy="250" r="10" fill="rgba(255,255,255,0.85)"/>
+        <g transform="translate(256 256) rotate(-18) scale(3.1807)"><g opacity="0.74"><path d="M -49.84 0 A 49.84 15.95 0 1 0 49.84 0 A 49.84 15.95 0 1 0 -49.84 0 Z M -38.80 0 A 38.80 12.42 0 1 0 38.80 0 A 38.80 12.42 0 1 0 -38.80 0 Z M -71.92 0 A 71.92 23.01 0 1 0 71.92 0 A 71.92 23.01 0 1 0 -71.92 0 Z M -60.88 0 A 60.88 19.48 0 1 0 60.88 0 A 60.88 19.48 0 1 0 -60.88 0 Z" fill-rule="evenodd" fill="#e6edf7"/></g><circle cx="8.0" cy="0" r="32.0" fill="#e6edf7"/><path d="M -49.84 0 A 49.84 15.95 0 1 0 49.84 0 A 49.84 15.95 0 1 0 -49.84 0 Z M -38.80 0 A 38.80 12.42 0 1 0 38.80 0 A 38.80 12.42 0 1 0 -38.80 0 Z M -71.92 0 A 71.92 23.01 0 1 0 71.92 0 A 71.92 23.01 0 1 0 -71.92 0 Z M -60.88 0 A 60.88 19.48 0 1 0 60.88 0 A 60.88 19.48 0 1 0 -60.88 0 Z" fill-rule="evenodd" fill="#e6edf7"/></g>
       </svg>
       <div class="splash-title">司天<span>SiTian</span></div>
       <div class="splash-sub">世界观动态构建系统</div>

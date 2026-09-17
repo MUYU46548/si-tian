@@ -63,3 +63,11 @@ docs/项目概况报告_2026-08-29.md
 # Archify 生成物（与本项目无关）
 sitian-architecture.html
 sitian-architecture.json
+
+# LOGO 选型临时产物（finals、variants、scans、backups、比较 HTML、atlas）
+build/logo-concepts/
+
+# 遗留临时文件（MSYS / Electron 生成）
+NUL
+# 根目录下的 index.html 是 src/renderer/index.html 的旧副本，不再使用
+/index.html
