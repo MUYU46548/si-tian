@@ -91,6 +91,11 @@ MOCK_SCRIPT = """<script>
         },
         selectReferenceImage: async () => ({ success: false, canceled: true }),
         saveExportFile: async () => ({ success: false, canceled: true }),
+        saveTextFile: async (opts) => {
+          // 记录最近一次导出内容供断言（不写盘 → 零污染）
+          window.__LAST_TEXT_EXPORT__ = opts || null;
+          return { success: true, path: '/mock/' + ((opts && opts.defaultName) || 'export.txt') };
+        },
         readObsidianNote: async () => ({ success: true, data: { frontmatter: { publish: true, tags: ['测试'], 层级: '星系' }, content: '测试笔记正文。', wikilinks: [] } }),
         revealInExplorer: async () => ({ success: true }),
         openExternal: async () => ({ success: true }),

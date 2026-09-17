@@ -524,89 +524,120 @@ export function createScenarioEditingModule(ctx) {
   // Ownership（EU4 省份染色）
   // ============================================================
   
-  function setOwnership(scenarioId, provinceId, polityId) {
+  /**
+   * 指派势力。可选 changeYear：把「易主年份」一并记为显式值 ——
+   * 这是 changeYear 最自然的录入路径：把游标拖到某年再上色 = 该年易主。
+   */
+  function setOwnership(scenarioId, provinceId, polityId, changeYear) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return;
-    
+
     const oldOwner = scenario.ownership?.[provinceId] || null;
-    
+    const oldCY = scenario.changeYears?.[provinceId];
+    const hadOldCY = oldCY !== undefined;
+    const writeCY = typeof changeYear === 'number' && Number.isFinite(changeYear);
+
     execute({
       type: 'set-ownership',
-      label: '指派势力',
+      label: writeCY ? '指派势力（含易主年份）' : '指派势力',
       undo: () => {
+        const sc = scenarios.value[scenarioId];
+        const changeYears = { ...(sc.changeYears || {}) };
+        if (hadOldCY) changeYears[provinceId] = oldCY; else delete changeYears[provinceId];
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            ownership: { ...scenarios.value[scenarioId].ownership, [provinceId]: oldOwner },
+            ...sc,
+            ownership: { ...sc.ownership, [provinceId]: oldOwner },
+            changeYears,
           },
         };
       },
       redo: () => {
+        const sc = scenarios.value[scenarioId];
+        const changeYears = { ...(sc.changeYears || {}) };
+        if (writeCY) changeYears[provinceId] = changeYear;
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            ownership: { ...scenarios.value[scenarioId].ownership, [provinceId]: polityId },
+            ...sc,
+            ownership: { ...sc.ownership, [provinceId]: polityId },
+            changeYears,
             updatedAt: new Date().toISOString(),
           },
         };
       },
     });
-    
+
     saveScenarios();
   }
 
-  function clearOwnership(scenarioId, provinceId) {
+  function clearOwnership(scenarioId, provinceId, changeYear) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return;
-    
+
     const oldOwner = scenario.ownership?.[provinceId];
     if (!oldOwner) return;
-    
+
+    const oldCY = scenario.changeYears?.[provinceId];
+    const hadOldCY = oldCY !== undefined;
+    const writeCY = typeof changeYear === 'number' && Number.isFinite(changeYear);
+
     execute({
       type: 'clear-ownership',
       label: '清除归属',
       undo: () => {
+        const sc = scenarios.value[scenarioId];
+        const changeYears = { ...(sc.changeYears || {}) };
+        if (hadOldCY) changeYears[provinceId] = oldCY; else delete changeYears[provinceId];
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            ownership: { ...scenarios.value[scenarioId].ownership, [provinceId]: oldOwner },
+            ...sc,
+            ownership: { ...sc.ownership, [provinceId]: oldOwner },
+            changeYears,
           },
         };
       },
       redo: () => {
-        const { [provinceId]: _, ...rest } = scenarios.value[scenarioId].ownership;
+        const sc = scenarios.value[scenarioId];
+        const { [provinceId]: _, ...rest } = sc.ownership;
+        const changeYears = { ...(sc.changeYears || {}) };
+        if (writeCY) changeYears[provinceId] = changeYear;
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
-            ...scenarios.value[scenarioId],
+            ...sc,
             ownership: rest,
+            changeYears,
             updatedAt: new Date().toISOString(),
           },
         };
       },
     });
-    
+
     saveScenarios();
   }
 
-  function batchSetOwnership(scenarioId, provinceIds, polityId) {
+  function batchSetOwnership(scenarioId, provinceIds, polityId, changeYear) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return;
-    
+
     const oldOwnership = { ...scenario.ownership };
+    const oldChangeYears = { ...(scenario.changeYears || {}) };
     const newOwnership = { ...scenario.ownership };
     provinceIds.forEach(id => { newOwnership[id] = polityId; });
-    
+    const writeCY = typeof changeYear === 'number' && Number.isFinite(changeYear);
+    const newChangeYears = { ...oldChangeYears };
+    if (writeCY) provinceIds.forEach(id => { newChangeYears[id] = changeYear; });
+
     execute({
       type: 'batch-ownership',
       label: '批量指派',
       undo: () => {
         scenarios.value = {
           ...scenarios.value,
-          [scenarioId]: { ...scenarios.value[scenarioId], ownership: oldOwnership },
+          [scenarioId]: { ...scenarios.value[scenarioId], ownership: oldOwnership, changeYears: oldChangeYears },
         };
       },
       redo: () => {
@@ -615,12 +646,201 @@ export function createScenarioEditingModule(ctx) {
           [scenarioId]: {
             ...scenarios.value[scenarioId],
             ownership: newOwnership,
+            changeYears: newChangeYears,
             updatedAt: new Date().toISOString(),
           },
         };
       },
     });
-    
+
+    saveScenarios();
+  }
+
+  // ============================================================
+  // 势力谱系（P2：时间轴的人工纠正入口）
+  // ============================================================
+
+  /**
+   * 设置势力的谱系信息（走 undo）。
+   * successorOf: 承自某**前代势力**的 polity id（语义最自然，推荐）
+   * lineage:     显式谱系标签（同名即同谱系）
+   * 传空字符串 / null 表示清除该项。
+   */
+  function setPolityLineage(scenarioId, polityId, { successorOf, lineage } = {}) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+    const idx = (scenario.polities || []).findIndex(p => p.id === polityId);
+    if (idx < 0) return;
+
+    const oldPolities = JSON.parse(JSON.stringify(scenario.polities));
+    const next = scenario.polities.map(p => {
+      if (p.id !== polityId) return p;
+      const np = { ...p };
+      if (successorOf !== undefined) {
+        if (successorOf) np.successorOf = successorOf; else delete np.successorOf;
+      }
+      if (lineage !== undefined) {
+        if (lineage) np.lineage = lineage; else delete np.lineage;
+      }
+      return np;
+    });
+
+    execute({
+      type: 'set-polity-lineage',
+      label: '设置势力谱系',
+      undo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: { ...scenarios.value[scenarioId], polities: oldPolities },
+        };
+      },
+      redo: () => {
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: { ...scenarios.value[scenarioId], polities: next, updatedAt: new Date().toISOString() },
+        };
+      },
+    });
+
+    saveScenarios();
+  }
+
+  /** 显式设置/清除某省的易主年份（走 undo）。year=null 表示删除显式值（回到自动推算） */
+  function setProvinceChangeYear(scenarioId, provinceId, year) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return;
+
+    const oldCY = scenario.changeYears?.[provinceId];
+    const hadOldCY = oldCY !== undefined;
+    const write = typeof year === 'number' && Number.isFinite(year);
+
+    execute({
+      type: 'set-change-year',
+      label: '设置易主年份',
+      undo: () => {
+        const sc = scenarios.value[scenarioId];
+        const changeYears = { ...(sc.changeYears || {}) };
+        if (hadOldCY) changeYears[provinceId] = oldCY; else delete changeYears[provinceId];
+        scenarios.value = { ...scenarios.value, [scenarioId]: { ...sc, changeYears } };
+      },
+      redo: () => {
+        const sc = scenarios.value[scenarioId];
+        const changeYears = { ...(sc.changeYears || {}) };
+        if (write) changeYears[provinceId] = year; else delete changeYears[provinceId];
+        scenarios.value = {
+          ...scenarios.value,
+          [scenarioId]: { ...sc, changeYears, updatedAt: new Date().toISOString() },
+        };
+      },
+    });
+
+    saveScenarios();
+  }
+
+  // ============================================================
+  // 导出 / 导入（P0）
+  // ============================================================
+
+  /**
+   * 导出为 .sitian/scenarios.json 同构的载荷。
+   * ownerKey 为空则导出全部底图与剧本。
+   */
+  function exportScenariosPayload(ownerKey = null) {
+    if (!ownerKey) {
+      return {
+        version: 1,
+        baseMaps: JSON.parse(JSON.stringify(baseMaps.value || {})),
+        scenarios: JSON.parse(JSON.stringify(scenarios.value || {})),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    const bm = {};
+    if (baseMaps.value?.[ownerKey]) bm[ownerKey] = JSON.parse(JSON.stringify(baseMaps.value[ownerKey]));
+    const sc = {};
+    for (const [k, v] of Object.entries(scenarios.value || {})) {
+      if (v?.ownerKey === ownerKey || String(k).startsWith(ownerKey + '/')) {
+        sc[k] = JSON.parse(JSON.stringify(v));
+      }
+    }
+    return { version: 1, baseMaps: bm, scenarios: sc, updatedAt: new Date().toISOString() };
+  }
+
+  /** 导出前体检：返回给人看的警告清单 */
+  function auditScenariosPayload(payload) {
+    const warns = [];
+    const scen = payload?.scenarios || {};
+    const maps = payload?.baseMaps || {};
+    const keys = Object.keys(scen);
+    if (!keys.length) warns.push('没有任何剧本');
+    if (!Object.keys(maps).length) warns.push('没有任何底图（剧本将没有省份可渲染）');
+    for (const [k, s] of Object.entries(scen)) {
+      const owner = s?.ownerKey;
+      if (!owner) { warns.push(`剧本「${s?.name || k}」缺 ownerKey`); continue; }
+      if (!maps[owner]) warns.push(`剧本「${s?.name || k}」指向的底图「${owner}」不在导出范围内`);
+      if (!Array.isArray(s?.polities) || !s.polities.length) warns.push(`剧本「${s?.name || k}」没有势力`);
+      const own = Object.keys(s?.ownership || {}).length;
+      if (!own) warns.push(`剧本「${s?.name || k}」没有省份归属`);
+      if (s?.era?.startYear === undefined || s?.era?.startYear === '') warns.push(`剧本「${s?.name || k}」缺起始年份`);
+    }
+    return warns;
+  }
+
+  /**
+   * 导入 scenarios.json 载荷。
+   * mode='merge'（默认）按 key 合并；mode='replace' 整体替换 baseMaps/scenarios。
+   * 整个导入是**一条 undo**（快照 + 整体替换，见铁律 #108）。
+   */
+  function importScenariosPayload(data, { mode = 'merge' } = {}) {
+    if (!data || typeof data !== 'object') return { success: false, error: '不是合法的 JSON 对象' };
+    const inMaps = data.baseMaps && typeof data.baseMaps === 'object' ? data.baseMaps : null;
+    const inScen = data.scenarios && typeof data.scenarios === 'object' ? data.scenarios : null;
+    if (!inMaps && !inScen) return { success: false, error: '缺少 baseMaps / scenarios 字段' };
+
+    const snapMaps = JSON.parse(JSON.stringify(baseMaps.value || {}));
+    const snapScen = JSON.parse(JSON.stringify(scenarios.value || {}));
+    const nextMaps = mode === 'replace'
+      ? JSON.parse(JSON.stringify(inMaps || {}))
+      : { ...snapMaps, ...JSON.parse(JSON.stringify(inMaps || {})) };
+    const nextScen = mode === 'replace'
+      ? JSON.parse(JSON.stringify(inScen || {}))
+      : { ...snapScen, ...JSON.parse(JSON.stringify(inScen || {})) };
+
+    const addedMaps = Object.keys(nextMaps).filter(k => !snapMaps[k]).length;
+    const addedScen = Object.keys(nextScen).filter(k => !snapScen[k]).length;
+
+    execute({
+      type: 'import-scenarios',
+      label: mode === 'replace' ? '导入剧本（替换）' : '导入剧本（合并）',
+      undo: () => {
+        baseMaps.value = snapMaps;
+        scenarios.value = snapScen;
+      },
+      redo: () => {
+        baseMaps.value = nextMaps;
+        scenarios.value = nextScen;
+      },
+    });
+
+    saveScenarios();
+    return {
+      success: true,
+      mode,
+      baseMaps: Object.keys(nextMaps).length,
+      scenarios: Object.keys(nextScen).length,
+      addedMaps,
+      addedScenarios: addedScen,
+    };
+  }
+
+  /** 清空全部剧本（保留底图）—— 替换式导入前的显式动作 */
+  function removeAllScenarios() {
+    const snap = JSON.parse(JSON.stringify(scenarios.value || {}));
+    execute({
+      type: 'remove-all-scenarios',
+      label: '清空剧本',
+      undo: () => { scenarios.value = snap; },
+      redo: () => { scenarios.value = {}; },
+    });
     saveScenarios();
   }
 
@@ -1311,6 +1531,8 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
     createScenario, updateScenario, removeScenario, inheritScenario,
     setOwnership, clearOwnership, batchSetOwnership,
+    setPolityLineage, setProvinceChangeYear,
+    exportScenariosPayload, auditScenariosPayload, importScenariosPayload, removeAllScenarios,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,

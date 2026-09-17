@@ -1,7 +1,18 @@
 // src/renderer/src/composables/useFullMapExport.js
-// 全图高清导出：离屏 canvas 重绘全部对象，2x 缩放
+// 全图导出：PNG（离屏 canvas 重绘全部对象，2x 缩放）+ SVG（矢量，可进设计工具继续加工）
 
 import { ref } from 'vue';
+import {
+  serializeSvg, svgPathD, svgPath, svgRect, svgTextEl, svgCircleEl, svgImageEl,
+  svgLine, escXml, stamp,
+} from '../utils/svgExport';
+
+// 与 planetDrawing 的同名表保持一致（SVG 导出要复刻画布配色）
+const PLACE_TYPE_COLORS = {
+  '自然': '#4CAF50', '宗教': '#9B59B6', '皇室': '#F1C40F', '商业': '#E67E22',
+  '工业': '#7F8C8D', '居住': '#1ABC9C', '公共': '#3498DB', '特殊': '#E91E63',
+};
+const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
 
 export function useFullMapExport({ store, props, emit, renderer, currentMapData, layers, drawing, referenceImage, places, provinceEditor, markerEditor, lodRef, ruler }) {
   const exportStatus = ref('');
@@ -231,10 +242,246 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
     }
   }
 
+  // ============================================================
+  // SVG 矢量导出
+  // 与 PNG 共用同一份数据源；几何忠实复刻，配色沿用画布的表
+  // ============================================================
+
+  function centroidOf(points) {
+    let x = 0, y = 0, n = 0;
+    for (const p of points || []) {
+      const px = p.x !== undefined ? p.x : p[0];
+      const py = p.y !== undefined ? p.y : p[1];
+      if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+      x += px; y += py; n++;
+    }
+    return n ? { x: x / n, y: y / n } : null;
+  }
+
+  function buildFullMapSVG({ legend = true, title = true } = {}) {
+    const bounds = computeFullBounds();
+    const W = Math.ceil(bounds.maxX - bounds.minX);
+    const H = Math.ceil(bounds.maxY - bounds.minY);
+    const defs = [];
+    const body = [];
+    const md = currentMapData.value || {};
+    const vis = (id) => layers.isVisible('planet', id);
+
+    body.push(`<g transform="translate(${Math.round(-bounds.minX)},${Math.round(-bounds.minY)})">`);
+
+    // 参考底图（数据 URL 内联，光栅化时无需外部资源）
+    const ri = referenceImage.referenceImage;
+    if (ri && ri.dataUrl && ri.width) {
+      const w = ri.width * (ri.scale || 1);
+      const h = ri.height * (ri.scale || 1);
+      const rot = (ri.rotation || 0) * 180 / Math.PI;
+      body.push(`<g transform="translate(${Math.round(ri.offsetX || 0)},${Math.round(ri.offsetY || 0)}) ` +
+        `rotate(${Math.round(rot)}) translate(${Math.round(-w / 2)},${Math.round(-h / 2)})">`);
+      body.push(svgImageEl(0, 0, w, h, ri.dataUrl, { opacity: ri.opacity ?? 0.6 }));
+      body.push('</g>');
+    }
+
+    // 地形多边形
+    if (vis('terrain')) {
+      for (const poly of md.terrain || []) {
+        const pts = poly.points || [];
+        if (pts.length < 3) continue;
+        const d = svgPathD(pts, { closed: true });
+        if (!d) continue;
+        const col = (provinceEditor?.terrainTypes || []).find((t) => t.type === poly.type)?.color || '#A3C4BC';
+        body.push(svgPath(d, {
+          fill: col, 'fill-opacity': 0.92, stroke: 'rgba(0,0,0,0.28)', 'stroke-width': 0.8,
+          'stroke-linejoin': 'round',
+        }));
+      }
+    }
+
+    // 地形名称
+    if (vis('terrainLabels')) {
+      for (const poly of md.terrain || []) {
+        const nm = poly.name;
+        if (!nm || /^\(?未命名/.test(nm)) continue;      // 匿名对象不标注
+        const c = centroidOf(poly.points);
+        if (!c) continue;
+        body.push(svgTextEl(c.x, c.y, nm, {
+          fill: '#3c4150', 'font-size': 12, 'font-family': 'Microsoft YaHei, sans-serif',
+          'text-anchor': 'middle', 'dominant-baseline': 'middle', opacity: 0.9,
+        }));
+      }
+    }
+
+    // 区域多边形
+    if (vis('regions')) {
+      for (const region of md.regions || []) {
+        const pts = region.points || [];
+        if (pts.length < 3) continue;
+        const d = svgPathD(pts, { closed: true });
+        if (!d) continue;
+        body.push(svgPath(d, {
+          fill: region.color || '#7c3aed', 'fill-opacity': 0.3,
+          stroke: region.color || '#7c3aed', 'stroke-width': 1.2, 'stroke-opacity': 0.8,
+        }));
+      }
+    }
+
+    // 路线 / 道路
+    if (vis('routes')) {
+      for (const route of md.routes || []) {
+        const pts = route.points || [];
+        if (pts.length < 2) continue;
+        const d = svgPathD(pts, { closed: false, straight: true });
+        if (!d) continue;
+        body.push(svgPath(d, {
+          fill: 'none', stroke: route.color || '#c9a227',
+          'stroke-width': route.width || 2.5, 'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          ...(route.dashed ? { 'stroke-dasharray': '7 5' } : {}),
+        }));
+      }
+    }
+
+    // 河流
+    if (vis('rivers')) {
+      for (const river of md.rivers || []) {
+        const pts = river.points || river;
+        if (!Array.isArray(pts) || pts.length < 2) continue;
+        const d = svgPathD(pts, { closed: false, straight: true });
+        if (!d) continue;
+        body.push(svgPath(d, {
+          fill: 'none', stroke: river.color || '#5d97bb',
+          'stroke-width': river.width || 2, 'stroke-linecap': 'round',
+        }));
+      }
+    }
+
+    // 标记
+    if (vis('markers')) {
+      for (const mk of md.markers || []) {
+        const col = mk.color || '#f6ad55';
+        body.push(svgCircleEl(mk.x, mk.y, 5, { fill: col, stroke: '#1a2a3a', 'stroke-width': 1.2 }));
+        if (mk.name) {
+          body.push(svgTextEl(mk.x, mk.y - 10, mk.name, {
+            fill: '#e2e8f0', 'font-size': 10, 'font-family': 'Microsoft YaHei, sans-serif',
+            'text-anchor': 'middle',
+          }));
+        }
+      }
+    }
+
+    // 聚落 / 地点
+    if (vis('places')) {
+      for (const pl of places.value || []) {
+        const cx = pl.coordinate?.x, cy = pl.coordinate?.y;
+        if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+        const col = (pl.placeType && PLACE_TYPE_COLORS[pl.placeType])
+          || NODE_COLORS[pl.layer] || '#95E1D3';
+        const r = pl.layer === 'city' ? 6 : (pl.layer === 'town' || pl.layer === 'village' ? 4.5 : 3.5);
+        body.push(svgCircleEl(cx, cy, r, { fill: col, stroke: '#ffffff', 'stroke-width': 1 }));
+        if (pl.name) {
+          body.push(svgTextEl(cx, cy - r - 4, pl.name, {
+            fill: '#dbeafe', 'font-size': 10, 'font-family': 'Microsoft YaHei, sans-serif',
+            'text-anchor': 'middle',
+          }));
+        }
+      }
+    }
+
+    // 浮动文本
+    if (vis('textLabels')) {
+      for (const lb of md.textLabels || []) {
+        const size = (lb.fontSize || 14) * (lb.scale || 1);
+        const rot = lb.rotation || 0;
+        const transform = rot ? ` transform="rotate(${Math.round(rot)} ${Math.round(lb.x)} ${Math.round(lb.y)})"` : '';
+        body.push(`<text x="${Math.round(lb.x)}" y="${Math.round(lb.y)}" fill="${escXml(lb.color || '#3c4150')}"` +
+          ` font-size="${Math.round(size)}" font-family="Microsoft YaHei, sans-serif"` +
+          ` text-anchor="middle"${transform}>${escXml(lb.text || '')}</text>`);
+      }
+    }
+
+    body.push('</g>');
+
+    // 标题（左上）
+    if (title) {
+      const lines = [
+        props.planet?.name || props.planet?.id || '行星地图',
+        `${md.terrain?.length || 0} 地形 · ${md.regions?.length || 0} 区域 · ${(places.value || []).length} 地点`,
+      ];
+      body.push(svgRect(12, 12, 250, 20 + lines.length * 16, {
+        fill: 'rgba(15,23,42,0.86)', stroke: '#334155', 'stroke-width': 1, rx: 6,
+      }));
+      lines.forEach((t, i) => {
+        body.push(svgTextEl(24, 32 + i * 16, t, {
+          fill: i === 0 ? '#e2e8f0' : '#94a3b8', 'font-size': i === 0 ? 13 : 10,
+          'font-family': 'Microsoft YaHei, sans-serif',
+        }));
+      });
+    }
+
+    // 图例（右上）：地形类型分布
+    if (legend) {
+      const counts = {};
+      for (const poly of md.terrain || []) {
+        if (poly.type) counts[poly.type] = (counts[poly.type] || 0) + 1;
+      }
+      const rows = (provinceEditor?.terrainTypes || []).filter((t) => counts[t.type]);
+      if (rows.length) {
+        const lw = 168;
+        const lh = 20 + rows.length * 15;
+        const lx = W - lw - 12;
+        body.push(svgRect(lx, 12, lw, lh, {
+          fill: 'rgba(15,23,42,0.86)', stroke: '#334155', 'stroke-width': 1, rx: 6,
+        }));
+        body.push(svgTextEl(lx + 12, 30, '地形', {
+          fill: '#64748b', 'font-size': 10, 'font-family': 'Microsoft YaHei, sans-serif',
+        }));
+        rows.forEach((t, i) => {
+          const y = 46 + i * 15;
+          body.push(svgRect(lx + 12, y - 7, 9, 9, { fill: t.color || '#A3C4BC', rx: 2 }));
+          body.push(svgTextEl(lx + 27, y, t.label || t.type, {
+            fill: '#cbd5e1', 'font-size': 11, 'font-family': 'Microsoft YaHei, sans-serif',
+          }));
+          body.push(svgTextEl(W - 20, y, String(counts[t.type]), {
+            fill: '#64748b', 'font-size': 10, 'font-family': 'Microsoft YaHei, sans-serif',
+            'text-anchor': 'end',
+          }));
+        });
+      }
+    }
+
+    return { svg: serializeSvg({ width: W, height: H, background: '#1a2a3a', defs, body }), width: W, height: H };
+  }
+
+  async function exportFullMapSVG() {
+    try {
+      const { svg } = buildFullMapSVG();
+      const defaultName = `sitian-${props.planet?.id || 'map'}-full-${stamp()}.svg`;
+      if (window.sitianAPI?.saveTextFile) {
+        const r = await window.sitianAPI.saveTextFile({ text: svg, defaultName, kind: 'svg' });
+        if (r?.success) exportStatus.value = `已导出 SVG：${r.path}`;
+        else if (r?.canceled) exportStatus.value = '已取消导出';
+        else exportStatus.value = `导出失败：${r?.error || '未知错误'}`;
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+        a.download = defaultName;
+        a.click();
+        exportStatus.value = '已下载（浏览器回退模式）';
+      }
+      setTimeout(() => { exportStatus.value = ''; }, 5000);
+      return { success: true };
+    } catch (e) {
+      exportStatus.value = `导出失败：${e.message}`;
+      setTimeout(() => { exportStatus.value = ''; }, 5000);
+      return { success: false, error: e.message };
+    }
+  }
+
   return {
     exportStatus,
     computeFullBounds,
     exportFullMapPNG,
+    exportFullMapSVG,
+    buildFullMapSVG,
     niceStepForScale,
   };
 }

@@ -737,6 +737,28 @@ ipcMain.handle('save-export-file', async (event, { dataUrl, defaultName }) => {
   }
 });
 
+// IPC: 弹出保存对话框并写入 UTF-8 文本（导出 SVG 矢量图 / scenarios.json 数据）
+ipcMain.handle('save-text-file', async (event, { text, defaultName, kind }) => {
+  try {
+    const isSvg = kind === 'svg';
+    const baseDir = isSvg ? app.getPath('pictures') : app.getPath('documents');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: isSvg ? '导出 SVG 矢量图' : '导出剧本数据（scenarios.json）',
+      defaultPath: path.join(baseDir, defaultName || (isSvg ? 'sitian-map.svg' : 'scenarios.json')),
+      filters: isSvg
+        ? [{ name: 'SVG 矢量图', extensions: ['svg'] }]
+        : [{ name: 'JSON 数据', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+    await fs.writeFile(result.filePath, typeof text === 'string' ? text : String(text ?? ''), 'utf8');
+    return { success: true, path: result.filePath, bytes: Buffer.byteLength(String(text ?? ''), 'utf8') };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // 单实例锁：第二个实例尝试启动时，聚焦现有窗口
 app.on('second-instance', () => {
   if (mainWindow) {

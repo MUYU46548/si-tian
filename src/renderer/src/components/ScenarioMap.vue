@@ -214,26 +214,30 @@
       </div>
       <div class="tool-group">
         <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/></button>
+        <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/></button>
         <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/></button>
+      </div>
+      <div class="tool-group" title="导出">
+        <button @click="exportScenarioPNG()" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/></button>
+        <button @click="exportScenarioSVG()" title="导出当前剧本/年份为 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-svg"><Icon name="layers" :size="15"/></button>
+        <button @click="exportScenariosJson({ scope: 'current' })" title="导出当前底图的剧本数据（scenarios.json）" data-testid="export-json"><Icon name="upload" :size="15"/></button>
+        <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/></button>
+        <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/></button>
       </div>
     </div>
 
-    <!-- 剧本时间轴条 -->
-    <div v-if="viewMode === 'scenario'" class="scenario-timeline">
-      <div class="timeline-scroll">
-        <button 
-          v-for="scenario in sortedScenarios" 
-          :key="scenario.id"
-          class="timeline-btn"
-          :class="{ active: selectedScenario?.id === scenario.id }"
-          @click="selectScenario(scenario)"
-          :title="scenario.name"
-        >
-          <span class="era-roman">{{ scenario.era?.roman || '·' }}</span>
-          <span class="era-label">{{ scenario.name }}</span>
-        </button>
-      </div>
-    </div>
+    <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代） -->
+    <scenario-timeline
+      v-if="timeline.years.length"
+      :timeline="timeline"
+      v-model:year="tlYear"
+      v-model:era="tlEra"
+      v-model:axis-mode="tlAxisMode"
+      v-model:diff-mode="tlDiffMode"
+      v-model:playing="tlPlaying"
+      @select-scenario="onTimelineSelectScenario"
+      @open-lineage="showLineagePanel = true"
+    />
 
     <!-- 势力色板（剧本模式） -->
     <div v-if="viewMode === 'scenario' && selectedScenario" class="polity-palette">
@@ -280,6 +284,12 @@
       </span>
       <span v-if="selectedBurg" class="selected-burg">城镇：{{ selectedBurg.name }}（人口 {{ formatPopulation(selectedBurg.population) }}）</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
+      <span v-if="timeline.years.length" class="tl-status" data-testid="tl-status">
+        年份 <b>{{ Math.round(tlYear) }}</b>
+        <template v-if="tlEra > 0"> · 本剧本 <b>{{ tlSettled.settled }}</b>/{{ tlSettled.total }} 省已易主</template>
+        <template v-if="tlAxisMode === 'year' && tlInGap"> · <span class="tl-warn">空位（沿用 {{ timeline.scenarios[tlEra].name }}）</span></template>
+      </span>
+      <span v-if="exportStatus" class="export-msg" data-testid="export-msg"><Icon name="info" :size="13"/> {{ exportStatus }}</span>
       <span v-if="selectedPolity" class="selected-polity">已选势力：<span class="polity-dot" :style="{ background: selectedPolity.color }"></span>{{ selectedPolity.name }}</span>
       <span class="save-status" :class="store.saveStatus.value">
         <template v-if="store.saveStatus.value === 'saving'"><Icon name="loader" :size="13"/> 保存中...</template>
@@ -413,6 +423,18 @@
     <!-- 撤销历史面板 -->
     <HistoryPanel v-if="showHistoryPanel" :open="showHistoryPanel" @close="showHistoryPanel = false" />
 
+    <!-- P2 势力谱系管理面板 -->
+    <scenario-lineage-panel
+      :open="showLineagePanel"
+      :timeline="timeline"
+      :current-era="tlEra"
+      :year="tlYear"
+      :province-names="provinceNameMap"
+      @close="showLineagePanel = false"
+      @set-polity-lineage="onSetPolityLineage"
+      @set-change-year="onSetChangeYear"
+    />
+
     <!-- 聚落编辑器面板 -->
     <div v-if="burgEditorOpen && editingBurg" class="burg-editor-panel">
       <div class="burg-editor-header">
@@ -458,6 +480,13 @@ import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 import { generateRoadPath } from '../utils/placement';
 import HistoryPanel from './HistoryPanel.vue';
+import ScenarioTimeline from './ScenarioTimeline.vue';
+import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
+import {
+  buildTimeline, currentOwnerRef, isStriped, polityColor,
+  settledCount, eraIndexOfYear, findGap,
+} from '../utils/scenarioTimeline';
+import { useScenarioExport } from '../composables/useScenarioExport';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -473,7 +502,6 @@ const ctx = ref(null);
 const showScenarioManager = ref(false);
 const showLayerPanel = ref(false);
 const showHistoryPanel = ref(false);
-
 // 底图列表（P1 切换底图）
 const availableBaseMaps = computed(() => {
   const maps = store.getBaseMapsList();
@@ -501,6 +529,7 @@ async function onBaseMapChange() {
 
   // 自动选中该底图下的第一个剧本
   const first = sortedScenarios.value[0];
+  resetTimelineToStart();
   if (first) {
     selectScenario(first);
   } else {
@@ -856,6 +885,170 @@ function selectScenario(s) {
 
 function selectPolity(p) {
   selectedPolity.value = p;
+}
+
+const showLineagePanel = ref(false);
+
+// ═══════════════════════════════════════════
+// 时间轴（P1）：按年比例轴 + EU4 斜线占领
+// ═══════════════════════════════════════════
+// 状态与 ScenarioTimeline 组件双向绑定；播放为一帧一剧本推进（3488 年按年播需 4 分钟）
+const tlEra = ref(0);
+const tlYear = ref(0);
+const tlAxisMode = ref('year');   // year | equal
+const tlDiffMode = ref('eu4');    // eu4 | outline | off
+const tlPlaying = ref(false);
+
+/** 时间轴模型（谱系匹配 + 逐省变化年份 + 年代区间/断层）——纯函数，见 utils/scenarioTimeline.js */
+const timeline = computed(() => buildTimeline(sortedScenarios.value || []));
+
+const tlSettled = computed(() => settledCount(timeline.value, tlEra.value, tlYear.value));
+const tlInGap = computed(() => (tlAxisMode.value === 'year'
+  ? !!findGap(timeline.value, tlYear.value) : false));
+
+/** 省 id → 名称（P2 面板与导出用） */
+const provinceNameMap = computed(() => {
+  const m = {};
+  for (const p of (baseMap.value?.terrain || [])) {
+    if (p?.id) m[p.id] = p.name || p.id;
+  }
+  return m;
+});
+
+const scenarioExport = useScenarioExport({
+  store,
+  baseMap,
+  timeline,
+  currentEra: tlEra,
+  currentYear: tlYear,
+  diffMode: tlDiffMode,
+  provinceNames: provinceNameMap,
+  layerFlags: () => ({ labels: showLabels.value, borders: showBorders.value }),
+});
+const { exportStatus, exportScenarioPNG, exportScenarioSVG, exportScenariosJson, pickScenariosJson } = scenarioExport;
+
+function importScenariosJson(mode) {
+  return pickScenariosJson({ mode });
+}
+
+function onSetPolityLineage({ scenarioId, polityId, successorOf }) {
+  store.setPolityLineage(scenarioId, polityId, { successorOf });
+  render();
+}
+
+function onSetChangeYear({ scenarioId, provinceId, year }) {
+  store.setProvinceChangeYear(scenarioId, provinceId, year);
+  render();
+}
+
+/** 时间轴切剧本时同步选中态（编辑目标跟着走） */
+function onTimelineSelectScenario(s) {
+  if (s && selectedScenario.value?.id !== s.id) {
+    selectedScenario.value = s;
+    selectedPolity.value = null;
+  }
+  render();
+}
+
+// ——— 播放：一帧一剧本，剧本内年份线性扫过，跨剧本自动跳过年份断层 ———
+const TL_ERA_MS = 1300;
+let tlRafId = null;
+let tlLastT = 0;
+let tlPlayT = 0;
+
+function tlFrame(t) {
+  const dt = Math.min(64, t - tlLastT);
+  tlLastT = t;
+  if (!tlPlaying.value) { tlRafId = null; return; }
+  const n = timeline.value.years.length;
+  tlPlayT += dt / TL_ERA_MS;
+  while (tlPlayT >= 1) {
+    tlPlayT -= 1;
+    if (tlEra.value >= n - 1) {
+      tlEra.value = n - 1;
+      tlYear.value = timeline.value.years[n - 1].end;
+      tlPlaying.value = false;
+      tlPlayT = 0;
+      break;
+    }
+    tlEra.value += 1;
+  }
+  if (tlPlaying.value) {
+    const y = timeline.value.years[tlEra.value];
+    tlYear.value = y.start + tlPlayT * (y.end - y.start);
+  }
+  render();
+  if (tlPlaying.value) tlRafId = requestAnimationFrame(tlFrame);
+  else tlRafId = null;
+}
+
+watch(tlPlaying, (v) => {
+  if (!v) return;
+  const n = timeline.value.years.length;
+  if (!n) { tlPlaying.value = false; return; }
+  // 已播到末尾则从头开始
+  if (tlEra.value >= n - 1 && tlYear.value >= timeline.value.years[n - 1].end) {
+    tlEra.value = 0;
+    tlYear.value = timeline.value.years[0].start;
+  }
+  const y = timeline.value.years[tlEra.value];
+  tlPlayT = Math.max(0, Math.min(1, (tlYear.value - y.start) / Math.max(1, y.end - y.start)));
+  tlLastT = performance.now();
+  if (tlRafId == null) tlRafId = requestAnimationFrame(tlFrame);
+});
+
+// 时间轴的**唯一真源是 year**：era 必须由 year 派生。
+// 否则拖动游标后 era 不跟着变 → 地图仍按旧剧本的归属渲染、HUD 的「已易主」也是错的。
+watch(tlYear, (y) => {
+  const tl = timeline.value;
+  if (!tl.years.length) return;
+  const k = eraIndexOfYear(tl, y);
+  if (k !== tlEra.value) tlEra.value = k;
+  render();
+});
+
+// era 变化 → 编辑目标（selectedScenario）跟着走
+watch(tlEra, (k) => {
+  const s = timeline.value.scenarios[k];
+  if (s && selectedScenario.value?.id !== s.id) {
+    selectedScenario.value = s;
+    selectedPolity.value = null;
+  }
+  render();
+});
+
+watch([tlDiffMode, tlAxisMode], () => { render(); });
+
+// ⚠️ 这两个必须在 onMounted 里注册：setup 期调用 watch(computedRef) 会**立刻求值一次**，
+//    而 sortedScenarios 在本行位置尚未定义（TDZ ReferenceError）。
+onMounted(() => {
+  watch(sortedScenarios, (list) => {
+    if (!list || !list.length) return;
+    // 剧情数据被编辑（拖顶点/上色/undo）后重指向最新对象，否则选中态会悬在旧对象上
+    if (selectedScenario.value) {
+      const fresh = list.find(s => s.id === selectedScenario.value.id);
+      if (fresh) selectedScenario.value = fresh;
+    }
+    if (tlEra.value > list.length - 1) tlEra.value = list.length - 1;
+    // 剧本是异步载入的（scenarios.json）：数据到了就切政治视图，否则时间轴拖动看不出效果
+    if (list.length && viewMode.value !== 'scenario') viewMode.value = 'scenario';
+    const tl = timeline.value;
+    if (tlYear.value < tl.minYear || tlYear.value > tl.maxYear) tlYear.value = tl.minYear;
+    render();
+  }, { deep: false });
+
+  // 首帧把游标落到第一个剧本
+  resetTimelineToStart();
+});
+
+/** 初始化/切换底图后把游标落到第一个剧本 */
+function resetTimelineToStart() {
+  const tl = timeline.value;
+  if (!tl.years.length) { tlEra.value = 0; tlYear.value = 0; return; }
+  tlEra.value = 0;
+  tlYear.value = tl.years[0].start;
+  // 进入剧本模块时默认就是「政治视图」——否则省份按生物群系着色，时间轴等于白拖
+  if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
 }
 
 // ═══════════════════════════════════════════
@@ -1317,7 +1510,9 @@ function onCanvasClick(event) {
   if (tool.value === 'paint' && selectedPolity.value) {
     const prov = findProvinceAt(world.x, world.y);
     if (prov) {
-      store.setOwnership(selectedScenario.value.id, prov.id, selectedPolity.value.id);
+      // 把时间轴当前年份一并记为**显式易主年份** ——
+      // 「拖到某年再上色 = 该年易主」，这是 changeYear 最自然的录入路径
+      store.setOwnership(selectedScenario.value.id, prov.id, selectedPolity.value.id, Math.round(tlYear.value));
       render();
     }
   } else if (tool.value === 'label') {
@@ -2448,8 +2643,28 @@ function drawBiomeBackground(ctx) {
   });
 }
 
+/** 点集包围盒（EU4 斜线裁剪用；每省每次调用只算一次边界） */
+function boundsOfPoints(points) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    const x = vx(p), y = vy(p);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  return { minX, minY, maxX, maxY };
+}
+
 function drawProvinces(c) {
   if (!baseMap.value?.terrain) return;
+  const tl = timeline.value;
+  const k = tlEra.value;
+  const year = tlYear.value;
+  const scenarioMode = viewMode.value === 'scenario' && tl.scenarios.length > 0;
+
   baseMap.value.terrain.forEach(prov => {
     const points = resolvePoints(prov);
     if (!points || points.length < 3) return;
@@ -2459,6 +2674,45 @@ function drawProvinces(c) {
     traceShapePath(c, points, true);
     c.closePath();
     c.fill();
+
+    // EU4 式斜线占领：底色刻意是**旧主**色（上面刚填的），斜线用**新主**色。
+    // 两方本色即可表达「谁占了谁的」，不需要引入任何新色相。
+    if (scenarioMode && tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, year)) {
+      const newCol = polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[prov.id]);
+      const b = boundsOfPoints(points);
+      const dy = b.maxY - b.minY;
+      const step = 8.5 / cameraScale.value;
+      c.save();
+      c.clip();                       // 复用当前路径（fill 不会清空路径）
+      c.globalAlpha = 0.92;
+      c.strokeStyle = newCol;
+      c.lineWidth = 3.2 / cameraScale.value;
+      for (let t = b.minX - dy - 20; t < b.maxX + 20; t += step) {
+        c.beginPath();
+        c.moveTo(t, b.minY - 20);
+        c.lineTo(t + dy + 40, b.maxY + 20);
+        c.stroke();
+      }
+      c.restore();
+      c.save();
+      c.lineWidth = 1.4 / cameraScale.value;
+      c.strokeStyle = newCol;
+      c.beginPath();
+      traceShapePath(c, points, true);
+      c.closePath();
+      c.stroke();
+      c.restore();
+    } else if (scenarioMode && tlDiffMode.value === 'outline'
+               && k > 0 && (tl.eraChg[k]?.changed || []).includes(prov.id)) {
+      c.save();
+      c.lineWidth = 2 / cameraScale.value;
+      c.strokeStyle = '#ffffff';
+      c.beginPath();
+      traceShapePath(c, points, true);
+      c.closePath();
+      c.stroke();
+      c.restore();
+    }
   });
 }
 
@@ -2527,12 +2781,26 @@ function getProvinceColor(prov) {
   if (colorMode.value === 'culture' && prov.cultureColor) return prov.cultureColor;
   if (colorMode.value === 'religion' && prov.religionColor) return prov.religionColor;
 
-  // 剧本模式：优先势力归属色
-  if (viewMode.value === 'scenario' && selectedScenario.value) {
-    const owner = selectedScenario.value.ownership?.[prov.id];
-    if (owner) {
+  // 剧本模式：优先势力归属色。归属按**时间轴当前年份**取（含「演变铺开」），
+  // 而不是用选中剧本的静态快照 —— 否则拖时间轴时地图不会随年份变。
+  if (viewMode.value === 'scenario') {
+    const tl = timeline.value;
+    const k = tlEra.value;
+    if (tl.scenarios.length) {
+      // ⚠️ 底色随变化图层模式切换：
+      //   EU4 斜线占领 → 底色刻意保持**旧主**色（新主由斜线表达，两方本色）
+      //   其他模式    → 底色 = **当前实际**持有者（关掉图层就该看到真实归属）
+      // 颜色必须在 owner 所属的那个剧本里查（旧主 id 属于上一个剧本，跨剧本查会落到灰）
+      const ref = (tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, tlYear.value))
+        ? { owner: tl.scenarios[k - 1].ownership?.[prov.id], era: k - 1 }
+        : currentOwnerRef(tl, k, prov.id, tlYear.value);
+      return polityColor(tl.scenarios[ref.era], ref.owner);
+    }
+    // 时间轴不可用（剧本缺年份等）时退回选中剧本的静态归属
+    if (selectedScenario.value) {
+      const owner = selectedScenario.value.ownership?.[prov.id];
       const polity = selectedScenario.value.polities?.find(p => p.id === owner);
-      if (polity?.color) return polity.color;
+      return polity?.color || '#4a5568';
     }
   }
 
@@ -3035,10 +3303,15 @@ onMounted(async () => {
   if (baseMap.value?.terrain?.length) {
     setTimeout(fitToView, 100);
   }
+
+  // 时间轴游标落到第一个剧本（数据可能刚由 scenarios.json 异步载入）
+  resetTimelineToStart();
+  setTimeout(resetTimelineToStart, 300);
 });
 
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect();
+  if (tlRafId != null) { cancelAnimationFrame(tlRafId); tlRafId = null; }
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('sitian:history-jump', onHistoryJump);
@@ -3195,35 +3468,11 @@ watch(baseMap, () => {
 }
 
 
-.scenario-timeline {
-  background: #172033;
-  border-bottom: 1px solid #334155;
-  padding: 6px 12px;
-  overflow-x: auto;
-}
-
-.timeline-scroll { display: flex; gap: 6px; }
-
-.timeline-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 6px 12px;
-  border: 1px solid #475569;
-  background: #1e293b;
-  color: #cbd5e1;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 11px;
-  white-space: nowrap;
-  min-width: 60px;
-}
-
-.timeline-btn:hover { background: #334155; }
-.timeline-btn.active { background: #5b21b6; border-color: #7c3aed; color: #fff; }
-
-.era-roman { font-size: 14px; font-weight: 600; }
-.era-label { font-size: 10px; opacity: 0.8; }
+/* 旧「按钮式时间轴条」的样式已随入口一起移除（现由 ScenarioTimeline.vue 承载） */
+.tl-status { color: #94a3b8; }
+.tl-status b { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.tl-warn { color: #fbbf24; }
+.export-msg { color: #a78bfa; }
 
 .polity-palette {
   display: flex;

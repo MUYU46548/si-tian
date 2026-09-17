@@ -17,7 +17,7 @@
 - 开发模式 (Electron 完整): `npm run dev:watch`（wait-on tcp:5180 后拉起 Electron）
 - 构建生产版本: `npm run build`
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（40 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（45 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
 - mapdata 旧 key 清理: `npm run migrate-mapdata-keys`（默认 dry-run，`-- --apply` 才写盘）
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
@@ -32,10 +32,12 @@
 - **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 6 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / interior / search / spaceEditing
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
 - **大文件警告**: PlanetMap.vue 约 2900 行（22 个 composables 的装配体），AreaMap / GalaxyMap / InteriorView / App.vue / NodeDetailPanel 均 >1700 行——**读片段勿整读**。行星图绘制与交互逻辑在 `composables/planetDrawing.js`、`planetInteractions.js`、`planetHitTest.js`
-- **测试基线**: `scripts/tests/cases/` 40 个用例（Edge CDP 驱动），40/40 全绿 = 迁移/重构完整
+- **测试基线**: `scripts/tests/cases/` 45 个用例（Edge CDP 驱动），45/45 全绿 = 迁移/重构完整
 - **图标系统**: `src/renderer/src/components/Icon.vue`（148 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 339 处 emoji；`python scripts/icon_check.py` 校验引用名均有定义
 - **开发规则全集**: 60+ 条铁律与踩坑复盘（composable 接线、getState ref 解包、SFC 结构标签、发布验收等）在 Hermes skill `obsidian/sitian-development`，动代码前先加载；本文件不复制规则，防双源漂移
 - **P0/P1 编辑器模块**（2026-09-15 落地，全部有回归用例 test_28~test_35）: `utils/labelStyles.js`（标签样式预设 + `drawStyledLabel` 统一文本渲染）、`utils/reliefIcons.js`（地貌图标确定性散布 + 网格桶）、`utils/markerTypes.js`（标记类型注册表）、`utils/settlement.js`（人口对数滑块/分级/半径）、`utils/roadStyles.js`（道路样式）、`utils/rivers.js`（河流流向排序/拖拽 clamp）、`utils/viewport.js`（视口世界矩形，小地图遮罩用）；`composables/useReliefBrush.js`
+- **历史剧本时间轴**（2026-09-17 落地，回归用例 test_41~test_45）: `utils/scenarioTimeline.js`（**纯函数**：势力谱系按省份重叠度贪心匹配 + 逐省易主年份 + 年份/轨道轴向映射；无 DOM 依赖，可单独在 Node 里跑）、`components/ScenarioTimeline.vue`（按年比例/等宽双轴向轨道 + 游标拖动 + 键盘 + 播放）、`components/ScenarioLineagePanel.vue`（P2 谱系纠正面板）、`composables/useScenarioExport.js`（SVG/PNG/scenarios.json 导出导入）。**出口**：`utils/svgExport.js`（SVG 序列化，曲线约定同 `traceShapePath`；PNG 由 SVG 光栅化而来，两者永远一致）+ `save-text-file` IPC
+- **剧本时间轴的两条硬约束**：① `era.startYear/endYear` 是**字符串且可为负**（`'-1350'`→`'2138'`），任何算术先 `Number()`；② **每个剧本的 polity id 都是全新的**（`pol_ou`→`pol_li`），直接比 id 会得出「每代 100% 省份全变」→ 必须先做谱系匹配。详见 skill `obsidian/sitian-development`
 - **交互模式全集**: pan / move / draw / region / marker / route（含自动寻路=道路编辑器，Shift+J）/ settle / text / cluster / height / terrain / political / **relief（R）** / **river（Shift+R）**
 - **新增全局事件**: `sitian:label-styles-changed` / `sitian:marker-types-changed`（画布监听后 `requestRender`，不依赖深度 watch）
 - **节点 id 连续性（Draft 转正）**: `store.changeNodeId(oldId,newId)` 是「节点 id 变更 + 引用级联」的唯一入口（入 undo 栈，undo 闭包**显式记录**旧值不做反向推断）。引用清单（值槽 / 数组槽 / 字典键）在 `store/geodata.js` 内以注释 + `ID_REF_VALUE_FIELDS`/`ID_REF_ARRAY_FIELDS` 白名单登记，**新增任何以节点 id 为值或为键的结构必须同步登记**。`utils/normalizeId.js` 是 `scripts/extract-data.js` 的逐字符副本（三处一致由 test_40 用例守卫，改一处必改三处）
@@ -45,10 +47,10 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 35 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 45 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 6 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 19 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
-| IPC handle 数 | 30 | `grep -c "ipcMain.handle" src/main/index.js` |
+| IPC handle 数 | 35 | `grep -c "ipcMain.handle" src/main/index.js` |
 | 七层视图组件 | 7 个齐全 | `ls src/renderer/src/components/` |
 
 ## 核心原则 (Critical Principles)

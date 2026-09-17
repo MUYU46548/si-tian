@@ -50,20 +50,21 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
 | 84 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
 | 235 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
-| 331 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
+| 336 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
 | 80 | `scripts/tools_migrate_planetdrawing.py` | 一次性迁移工具（planetDrawing 拆分） |
 | 59 | `scripts/tools_migrate_planethittest.py` | 一次性迁移工具（planetHitTest 拆分） |
 | 94 | `src/main/config.js` | userData/config.json 读写（VAULT_PATH、closeQuitsApp、windowMode） |
-| 747 | `src/main/index.js` | 主进程入口：28 个 IPC handle + 窗口/单实例锁/关闭拦截 |
+| 769 | `src/main/index.js` | 主进程入口：28 个 IPC handle + 窗口/单实例锁/关闭拦截 |
 | 92 | `src/main/tray.js` | 托盘图标（多分辨率 ico）+ 菜单 |
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 248 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
-| 147 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
+| 148 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
 | 1788 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 12 个低频面板异步挂载 |
-| 632 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
+| 633 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
 | 2580 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 265 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
 | 145 | `src/renderer/src/components/BookmarkPanel.vue` | 书签面板 |
+| 29 | `src/renderer/src/components/BrandMark.vue` | （待补） |
 | 63 | `src/renderer/src/components/CanvasSkeleton.vue` | 画布加载骨架屏 |
 | 235 | `src/renderer/src/components/ChangeLog.vue` | 更新日志面板 |
 | 247 | `src/renderer/src/components/ClusterPanel.vue` | 地点簇面板（框选成簇/解散/聚焦） |
@@ -79,10 +80,12 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 391 | `src/renderer/src/components/ObjectListPanel.vue` | 对象列表面板 |
 | 298 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
-| 3716 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
+| 3718 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
-| 3705 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 300 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
+| 3954 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 464 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
 | 624 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
 | 1506 | `src/renderer/src/components/SettingsPanel.vue` | 设置面板（选库/关闭行为/窗口模式） |
 | 147 | `src/renderer/src/components/SnapshotPanel.vue` | 版本快照面板 |
@@ -108,7 +111,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 181 | `src/renderer/src/composables/useClusterEditor.js` | 地点簇编辑器 |
 | 61 | `src/renderer/src/composables/useContextMenu.js` | 右键菜单状态 |
 | 66 | `src/renderer/src/composables/useFocusHighlight.js` | 定位高亮（金色脉冲光圈 + 十字） |
-| 240 | `src/renderer/src/composables/useFullMapExport.js` | 全图 PNG 导出（离屏 canvas 重绘 + 比例尺） |
+| 487 | `src/renderer/src/composables/useFullMapExport.js` | 全图 PNG 导出（离屏 canvas 重绘 + 比例尺） |
 | 53 | `src/renderer/src/composables/useInlineEdit.js` | 双击画布文本原位编辑 |
 | 102 | `src/renderer/src/composables/useKeyboardShortcuts.js` | 键盘快捷键（方向键微调/Ctrl+CVD/Esc） |
 | 94 | `src/renderer/src/composables/useMarkerEditor.js` | 标记属性编辑器 |
@@ -124,6 +127,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 238 | `src/renderer/src/composables/useReliefBrush.js` | （待补） |
 | 92 | `src/renderer/src/composables/useRouteEditor.js` | 路线编辑（描点/虚线/偏移） |
 | 82 | `src/renderer/src/composables/useRuler.js` | 标尺/指北针/比例尺（localStorage 持久化） |
+| 385 | `src/renderer/src/composables/useScenarioExport.js` | 剧本导出/导入：SVG 矢量图 + PNG（由 SVG 光栅化，两者永远一致）+ scenarios.json 全量数据（含导出前体检与 merge/replace 导入） |
 | 59 | `src/renderer/src/composables/useSnapshotPanel.js` | 快照拍摄/恢复/删除 |
 | 53 | `src/renderer/src/composables/useStatusBar.js` | 状态栏逻辑 |
 | 355 | `src/renderer/src/composables/useTerrainCanvasBrush.js` | （待补） |
@@ -136,7 +140,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 237 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 304 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 886 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
-| 1321 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
+| 1543 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 186 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 180 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
@@ -166,11 +170,13 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 139 | `src/renderer/src/utils/rivers.js` | （待补） |
 | 69 | `src/renderer/src/utils/roadStyles.js` | （待补） |
 | 44 | `src/renderer/src/utils/sampleData.js` | 示例数据 |
+| 381 | `src/renderer/src/utils/scenarioTimeline.js` | 剧本时间轴纯函数层（无 DOM/store 依赖）：势力谱系按省份重叠度贪心匹配、逐省易主年份、年份↔轨道轴向映射、EU4 斜线占领判定 |
 | 69 | `src/renderer/src/utils/selectionHandles.js` | 选择框手柄 |
 | 104 | `src/renderer/src/utils/settlement.js` | （待补） |
 | 73 | `src/renderer/src/utils/smartGuides.js` | 智能参考线 |
 | 229 | `src/renderer/src/utils/snap.js` | 网格吸附 |
 | 84 | `src/renderer/src/utils/stressTest.js` | 压测数据生成 |
+| 163 | `src/renderer/src/utils/svgExport.js` | 地图 → SVG 矢量序列化：path 曲线约定同 ScenarioMap 的 `traceShapePath`、斜线 pattern、文档组装与 SVG→PNG 光栅化 |
 | 118 | `src/renderer/src/utils/terrainBrush.js` | （待补） |
 | 39 | `src/renderer/src/utils/textMeasure.js` | 文本宽度测量 |
 | 666 | `src/renderer/src/utils/textures.js` | 程序化地形纹理 |

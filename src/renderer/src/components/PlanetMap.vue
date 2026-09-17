@@ -194,6 +194,7 @@
           <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="显示/隐藏指北针"><Icon name="compass" :size="13"/> 指北针</button>
           <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="显示/隐藏比例尺"><Icon name="ruler" :size="13"/> 比例尺</button>
           <button @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="upload" :size="13"/> 导出全图</button>
+          <button @click="exportFullMapSVG" title="导出全图 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-full-svg"><Icon name="layers" :size="13"/> 导出 SVG</button>
         </div>
         
         <div class="toolbar-group" title="图层可见性">
@@ -211,6 +212,7 @@
       <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="13"/> 对象</button>
       <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="13"/> 快照</button>
       <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="upload" :size="13"/> 导出全图</button>
+      <button class="adopt-btn" @click="exportFullMapSVG" title="导出全图 SVG 矢量图" data-testid="export-full-svg-view"><Icon name="layers" :size="13"/> 导出 SVG</button>
     </div>
     
     <!-- 导出状态提示 -->
@@ -1789,7 +1791,7 @@ const reparentCandidates = batchArrange.reparentCandidates;
 const { openArrangeDialog, confirmArrange, alignSelected, distributeSelected, openReparentDialog, confirmReparent, getSelectedPlaceItems } = batchArrange;
 const { openPlanetPanel } = panelManager;
 const { focusObject, renameObject, deleteObject } = objectPanel;
-const { exportFullMapPNG } = fullMapExport;
+const { exportFullMapPNG, exportFullMapSVG, buildFullMapSVG } = fullMapExport;
 
 // ===== 批量选择短名委托（tests、模板与 getState 使用的旧顶层名）=====
 const multiSel = batchSelection.multiSel;
