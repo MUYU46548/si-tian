@@ -225,6 +225,9 @@ async function main() {
     const created = await handlers.get('project-create')(null, { name: 'IPC测试', dir: DIR, project: sampleProject('IPC测试') });
     eq(created.success, true, `create 失败：${created.error}`);
     eq(lastPath, created.filePath, 'create 未记住最近项目路径');
+    // ⚠️ 必须回显项目正文：渲染层 adopt() 靠它装载（只回路径 → 新建项目在生产环境必然失败）
+    assert(created.project && created.project.version === '1.0.0', 'project-create 未回显项目正文（渲染层 adopt 会拿到 undefined）');
+    eq(created.project.meta.name, 'IPC测试', '回显的项目内容不对');
 
     // save（用 create 返回的路径）
     const saved = await handlers.get('project-save')(null, { filePath: created.filePath, project: sampleProject('IPC测试-改') });

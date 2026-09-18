@@ -93,7 +93,8 @@ MOCK_SCRIPT = """<script>
           window.__projectCalls = window.__projectCalls || [];
           window.__projects[filePath] = JSON.parse(JSON.stringify(p.project || {}));
           window.__projectCalls.push({ op: 'create', filePath: filePath });
-          return { success: true, filePath: filePath, dir: dir, name: name + '.sitian', bytes: 0 };
+          // 与真实主进程一致：必须回显项目正文（否则渲染层 adopt() 拿到 undefined）
+          return { success: true, filePath: filePath, dir: dir, name: name + '.sitian', bytes: 0, project: JSON.parse(JSON.stringify(p.project || {})) };
         },
         projectOpen: async (filePath) => {
           window.__projects = window.__projects || {};

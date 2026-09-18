@@ -15,6 +15,9 @@
 // 持久化：.sitian/config/marker-types.json（经 IPC，不直接碰文件系统）+ localStorage 镜像。
 import { ref } from 'vue';
 
+// 单一写闸门（writeGate #6）：无项目只读态下 persist 不得写库内 .sitian/config
+import { guardWrite } from '../store/writeGate';
+
 /** 自定义类型可选的图标池（均在 Icon.vue / canvasIcon.js 中有定义） */
 export const MARKER_ICON_POOL = [
   'map-pin', 'target', 'home', 'swords', 'gem', 'alert-triangle', 'flag', 'star',
@@ -87,6 +90,8 @@ function mirror() {
 }
 
 async function persist() {
+  // 落盘守卫（writeGate #6）：同上，只读态不写库内配置
+  if (!guardWrite('保存标记类型').ok) return;
   try { await window.sitianAPI?.setSitianConfig?.(CONFIG_NAME, markerTypes.value); } catch (e) { /* ignore */ }
 }
 

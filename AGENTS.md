@@ -20,9 +20,10 @@
 - 开发模式 (Electron 完整): `npm run dev:watch`（wait-on tcp:5180 后拉起 Electron）
 - 构建生产版本: `npm run build`
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（46 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（47 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 该命令会先跑 `scripts/tests/unit/*.js`（Node 单元测试：主进程文件 I/O，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
-  - 单跑某个用例：`python scripts/tests/run_tests.py test_46`
+  - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
+  - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
 - mapdata 旧 key 清理: `npm run migrate-mapdata-keys`（默认 dry-run，`-- --apply` 才写盘）
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
@@ -37,7 +38,8 @@
 - **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 6 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / interior / search / spaceEditing
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
 - **大文件警告**: PlanetMap.vue 约 2900 行（22 个 composables 的装配体），AreaMap / GalaxyMap / InteriorView / App.vue / NodeDetailPanel 均 >1700 行——**读片段勿整读**。行星图绘制与交互逻辑在 `composables/planetDrawing.js`、`planetInteractions.js`、`planetHitTest.js`
-- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程文件 I/O**：`.sitian` 原子写/备份轮转/路径守卫——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘）；② `scripts/tests/cases/` 46 个 CDP 用例（Edge 驱动），46/46 全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例
+- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程文件 I/O**：`.sitian` 原子写/备份轮转/路径守卫——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘）；② `scripts/tests/cases/` 47 个 CDP 用例（Edge 驱动），47/47 全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例
+- **单一写闸门（Phase 2，2026-09-18）**: `store/writeGate.js` = 世界观数据**落盘写**的唯一判定入口（`guardWrite()` + `isReadOnly`）。三模式 `project` / `legacy` / `readonly`，对应决策「有项目文件用项目、无项目回退 Obsidian，但**无项目必须只读**」。⚠️ 当前 `READONLY_WITHOUT_PROJECT = false`（无项目仍走 legacy，行为与接线前一致），**翻 true 必须与「projectStore 接线 + harness 自动开 mock 项目」同时落地**——否则 47 个用例跑在无项目态会因写被拒而全红。文件头维护**落盘入口清单（11 条）**，test_47 读源码校验「已守」条目真存在守卫
 - **`.sitian` 项目文件（Phase 1，独立运行基础）**: 三层边界**只许单向依赖**——`utils/projectSchema.js`（**纯函数**：结构/校验修复/版本迁移/就地 diff 快照，Node 可读）← `store/projectStore.js`（内存态 + 实体 CRUD，走 `undo.js`）← `main/handlers/projectHandler.js`（只管路径/磁盘/备份，**顶层不 require electron** 以便 Node 测）。改文件结构只改 schema + 升 `PROJECT_VERSION` + 补 `MIGRATIONS`。默认项目目录：用户文档下的 `SiTianProjects`；快照 = 「1 份 base + ≤50 份 diff」（`maps` 不进快照，另有磁盘整文件备份 10 份兜底）。回归用例 test_46 + Node 单元测试
 - **图标系统**: `src/renderer/src/components/Icon.vue`（148 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 339 处 emoji；`python scripts/icon_check.py` 校验引用名均有定义
 - **开发规则全集**: 60+ 条铁律与踩坑复盘（composable 接线、getState ref 解包、SFC 结构标签、发布验收等）在 Hermes skill `obsidian/sitian-development`，动代码前先加载；本文件不复制规则，防双源漂移
@@ -53,7 +55,7 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 46 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 47 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 6 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 19 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 35 | `grep -c "ipcMain.handle" src/main/index.js` |

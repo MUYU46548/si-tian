@@ -48,14 +48,14 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 60 | `scripts/icon_check.py` | 图标一致性校验（引用名是否都在 Icon.vue 中定义） |
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
-| 84 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
+| 115 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
 | 235 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
-| 437 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
-| 288 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
+| 438 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
+| 291 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
 | 80 | `scripts/tools_migrate_planetdrawing.py` | 一次性迁移工具（planetDrawing 拆分） |
 | 59 | `scripts/tools_migrate_planethittest.py` | 一次性迁移工具（planetHitTest 拆分） |
 | 109 | `src/main/config.js` | userData/config.json 读写（VAULT_PATH、closeQuitsApp、windowMode） |
-| 369 | `src/main/handlers/projectHandler.js` | `.sitian` 项目文件 I/O：原子写 + 旧文件备份轮转 + 8 个 `project-*` IPC（顶层不依赖 electron，供 Node 单元测试） |
+| 372 | `src/main/handlers/projectHandler.js` | `.sitian` 项目文件 I/O：原子写 + 旧文件备份轮转 + 8 个 `project-*` IPC（顶层不依赖 electron，供 Node 单元测试） |
 | 781 | `src/main/index.js` | 主进程入口：28 个 IPC handle + 窗口/单实例锁/关闭拦截 |
 | 92 | `src/main/tray.js` | 托盘图标（多分辨率 ico）+ 菜单 |
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
@@ -91,7 +91,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 624 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
 | 1506 | `src/renderer/src/components/SettingsPanel.vue` | 设置面板（选库/关闭行为/窗口模式） |
 | 147 | `src/renderer/src/components/SnapshotPanel.vue` | 版本快照面板 |
-| 55 | `src/renderer/src/components/StatusBar.vue` | 状态栏 |
+| 69 | `src/renderer/src/components/StatusBar.vue` | 状态栏 |
 | 1274 | `src/renderer/src/components/SystemDetailView.vue` | 单恒星系地图：恒星居中 + 轨道 + 邻系箭头 + 太空标记/部队卡片 |
 | 884 | `src/renderer/src/components/SystemView.vue` | 域内恒星系总览（真 hyperlanes） |
 | 128 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
@@ -138,7 +138,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 38 | `src/renderer/src/composables/useZoomControls.js` | 缩放百分比联动 |
 | 116 | `src/renderer/src/dev-standalone.js` | （待补） |
 | 30 | `src/renderer/src/main.js` | renderer 入口 |
-| 1279 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
+| 1300 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 5 个 geodataModules + 视图导航 |
 | 237 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 304 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 886 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
@@ -147,8 +147,9 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 180 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
 | 39 | `src/renderer/src/store/panels.js` | App 层浮层互斥 |
-| 442 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚（Phase 1 未接线） |
+| 449 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚（Phase 1 未接线） |
 | 145 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
+| 128 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
 | 93 | `src/renderer/src/utils/SpatialIndex.js` | 空间索引（命中加速） |
 | 63 | `src/renderer/src/utils/align.js` | 对齐/分布纯函数 |
 | 610 | `src/renderer/src/utils/azgaar-parser.js` | Azgaar FMG .map 解析器：按内容嗅探定位各数据段（不写死行号）、grid 级高度/温度/降水数组、provincesBody/河流/道路 SVG 几何、文化/宗教/势力/城镇定义与 province→burg→culture 映射 |
@@ -164,8 +165,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 464 | `src/renderer/src/utils/geometry.js` | 凸包/多边形拆分合并/点包含判定 |
 | 188 | `src/renderer/src/utils/heightMath.js` | （待补） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
-| 454 | `src/renderer/src/utils/labelStyles.js` | （待补） |
-| 233 | `src/renderer/src/utils/markerTypes.js` | （待补） |
+| 459 | `src/renderer/src/utils/labelStyles.js` | （待补） |
+| 238 | `src/renderer/src/utils/markerTypes.js` | （待补） |
 | 42 | `src/renderer/src/utils/normalizeId.js` | （待补） |
 | 260 | `src/renderer/src/utils/placement.js` | （待补） |
 | 151 | `src/renderer/src/utils/planetHeightMap.js` | （待补） |

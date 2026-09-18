@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { execute, undo as undoCmd, redo as redoCmd, canUndo as undoCanUndo, canRedo as undoCanRedo, getLastCommandLabel } from './undo';
+// 单一写闸门（Phase 2）：本文件是「世界观数据落盘」的主要入口，所有 save*/re-extract 必须先过 guardWrite。
+// 无项目只读态下这些调用会被拒绝（不写散文件、不写回 Obsidian）。见 store/writeGate.js 的入口清单。
+import {
+  guardWrite, isReadOnly as gateIsReadOnly, writeMode as gateWriteMode,
+  writeModeReason as gateWriteModeReason, WRITE_BLOCKED_HINT,
+} from './writeGate';
 import { createSearchModule } from './geodataModules/search';
 import { createMapDataEditingModule } from './geodataModules/mapDataEditing';
 import { createInteriorModule } from './geodataModules/interior';
@@ -399,6 +405,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   async function reextract() {
+    // 重提取会整库重写 <vault>/.sitian/geodata.json → 属落盘写，只读态必须拒绝
+    const gate = guardWrite('重新提取');
+    if (!gate.ok) return gate;
     const result = await window.sitianAPI.reextractGeodata();
     if (result.success) {
       nodes.value = result.data.nodes || [];
@@ -411,6 +420,8 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   async function saveGeodata() {
+    const gate = guardWrite('保存地理数据');
+    if (!gate.ok) return gate;
     // 深拷贝去除 Vue reactive Proxy，否则 Electron IPC 会报 "An object could not be cloned"
     const data = JSON.parse(JSON.stringify({
       nodes: nodes.value,
@@ -435,6 +446,8 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   async function saveScenarios() {
     if (!scenarioEditingModule) return;
+    const gate = guardWrite('保存剧本');
+    if (!gate.ok) return gate;
     saveStatus.value = 'saving';
     try {
       const data = JSON.parse(JSON.stringify({
@@ -461,6 +474,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 防抖保存剧本（笔刷拖拽时避免频繁写盘）
   let scenarioSaveTimer = null;
   function scheduleAutoSaveScenarios() {
+    if (gateIsReadOnly.value) return;
     if (scenarioSaveTimer) clearTimeout(scenarioSaveTimer);
     scenarioSaveTimer = setTimeout(() => {
       scenarioSaveTimer = null;
@@ -475,6 +489,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function scheduleAutoSave() {
     if (!autoSaveEnabled.value) return;
+    if (gateIsReadOnly.value) return; // 只读态：不起自动保存定时器（落盘必被拒，省无谓的定时器与报错）
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(async () => {
       await saveGeodata();
@@ -484,6 +499,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   function scheduleAutoSaveMap(planetId) {
     if (!autoSaveEnabled.value) return;
+    if (gateIsReadOnly.value) return;
     if (autoSaveMapTimer) clearTimeout(autoSaveMapTimer);
     autoSaveMapTimer = setTimeout(async () => {
       if (mapData.value[planetId]) {
@@ -553,6 +569,8 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   async function saveMapData(planetId, data) {
+    const gate = guardWrite('保存行星地图');
+    if (!gate.ok) return gate;
     try {
       // 深拷贝去除 Vue reactive Proxy（仅用于 IPC 传输）。
       // TypedArray 必须显式转普通数组：JSON.stringify(new Float32Array(3)) → {"0":..}
@@ -1254,6 +1272,9 @@ export const useGeodataStore = defineStore('geodata', () => {
     availablePlaceTypes, searchPlaceTypeFilter, togglePlaceTypeFilter,
     toggleLayerFilter, isFilterOpen,
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
+    // 单一写闸门状态（Phase 2）：UI 侧据此做灰禁与「只读」提示
+    isReadOnly: gateIsReadOnly, writeMode: gateWriteMode, readOnlyReason: gateWriteModeReason,
+    writeBlockedHint: WRITE_BLOCKED_HINT,
     loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
     saveStatus,
     FACTION_COLORS, getFactionColor,

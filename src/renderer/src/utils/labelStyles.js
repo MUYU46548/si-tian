@@ -11,6 +11,9 @@
 //   · 改动预设后广播 sitian:label-styles-changed，各画布监听到后 requestRender（不依赖深度 watch）
 import { ref } from 'vue';
 
+// 单一写闸门（writeGate #5）：无项目只读态下 saveToVault 不得写库内 .sitian/config
+import { guardWrite } from '../store/writeGate';
+
 /** 描边默认值（关闭态；开启后由预设补 color/width） */
 const NO_STROKE = { enabled: false, color: '#101820', width: 2 };
 const NO_SHADOW = { enabled: false, color: 'rgba(0,0,0,0.6)', blur: 6 };
@@ -293,6 +296,8 @@ export async function loadFromVault() {
 }
 
 export async function saveToVault() {
+  // 落盘守卫（writeGate #5）：无项目只读态下不得把预设写进 <vault>/.sitian/config
+  if (!guardWrite('保存标签样式预设').ok) return;
   try {
     await window.sitianAPI?.setSitianConfig?.(CONFIG_NAME, labelPresets.value);
   } catch (e) { /* 忽略：localStorage 镜像已保底 */ }

@@ -254,7 +254,10 @@ function registerProjectHandlers(deps) {
       const dir = payload.dir || getDefaultProjectDir();
       const res = await createProjectFile(dir, payload.name || '未命名项目', payload.project || {});
       await setLastProjectPath(res.filePath);
-      return ok(res);
+      // ⚠️ 必须回显项目正文：渲染层 adopt() 的入参是「{filePath, project}」，
+      // 只回路径会让「新建项目」解析到 undefined → validateProject 报「项目内容不是对象」→ 新建失败。
+      // （该缺陷曾被 CDP 用例的假绿掩盖，由 Node 单测的通道级断言补上真实覆盖。）
+      return ok({ ...res, project: payload.project || {} });
     } catch (err) {
       return fail(err);
     }

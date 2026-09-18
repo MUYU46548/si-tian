@@ -23,7 +23,7 @@ CDP 用例里的 sitianAPI 是 mock（不落盘），测不到主进程 I/O。
 """
 import sys, os, json, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from lib.cdp import wait_for
+from lib.cdp import wait_for, eval_json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 APP = "document.querySelector('#app').__vue_app__"
@@ -185,9 +185,9 @@ SCHEMA_JS = """(async () => {
 
 
 def sub_schema(cdp):
-    res = _j(cdp, SCHEMA_JS)
-    if not isinstance(res, dict):
-        return False, f'projectSchema 用例求值失败 {res}'
+    ok, res = eval_json(cdp, SCHEMA_JS, desc='projectSchema')
+    if not ok:
+        return False, res
     fails = res.get('fails') or []
     if fails:
         return False, f'projectSchema 断言失败 {len(fails)} 项：' + '；'.join(fails[:8])
@@ -215,6 +215,8 @@ STORE_JS = """(async () => {
   // 1) 创建项目
   const cr = await s.createProject({ name: 'test46项目', dir: 'mock/projects' });
   ck('createProject 成功', cr.success === true, cr);
+  // 前置失败立即中止：后续断言会因 store 空态抛 TypeError，那会把「失败」变成看不懂的异常
+  if (cr.success !== true) return JSON.stringify({ fails: fails, aborted: 'createProject 失败：' + (cr.error || '') });
   ck('isOpen + meta.name', s.isOpen === true && s.meta.name === 'test46项目', s.meta);
   ck('filePath 指向 .sitian', String(s.filePath).indexOf('test46项目.sitian') > 0, s.filePath);
   same('projectDir', s.projectDir, 'mock/projects');
@@ -231,16 +233,19 @@ STORE_JS = """(async () => {
   same('entityTree 根数', s.entityTree.length, 1);
   same('entityTree 子数', s.entityTree[0].children.length, 2);
   same('childrenOf', s.childrenOf('世界').length, 2);
-  same('parentCandidates 排除自身与后代', s.parentCandidates('世界').map(x => x.id).sort(), ['青崖城','青崖城_2']);
+  // 父级候选：排除「自身 + 全部后代」。世界是根 → 其余实体都是它的后代 → 候选为空
+  same('parentCandidates（根实体：无候选）', s.parentCandidates('世界').map(x => x.id).sort(), []);
+  // 青崖城此刻还没有后代 → 只排除自身，兄弟（青崖城_2）与父级（世界）仍可选
+  same('parentCandidates（仅排除自身）', s.parentCandidates('青崖城').map(x => x.id).sort(), ['世界', '青崖城_2']);
   const badParent = s.createEntity({ name: '孤儿', layer: 'city', parentId: '不存在' });
   ck('父实体不存在时拒绝创建', badParent.success === false, badParent);
   const dupId = s.createEntity({ id: '世界', name: '重复世界', layer: 'world' });
   ck('id 冲突时拒绝创建', dupId.success === false, dupId);
 
-  // 3) 重命名不改 id
+  // 3) 重命名不改 id、不动子实体的父子关系（此刻青崖城_2 仍挂在世界下）
   const rn = s.renameEntity('青崖城', '青崖新城');
   ck('重命名成功且 id 不变', rn.success === true && !!s.getEntity('青崖城') && s.getEntity('青崖城').name === '青崖新城', rn);
-  ck('重命名的子实体引用未变', s.getEntity('青崖城_2').parentId === '青崖城');
+  ck('重命名未动子实体父子关系', s.getEntity('青崖城_2').parentId === '世界', s.getEntity('青崖城_2').parentId);
   ck('空名拒绝', s.renameEntity('青崖城', '   ').success === false);
 
   // 4) 循环移动拒绝 / 合法移动
@@ -248,6 +253,8 @@ STORE_JS = """(async () => {
   ck('移到自己的后代下被拒', cyc.success === false, cyc);
   const mv = s.moveEntity('青崖城_2', '青崖城');
   ck('合法移动生效', mv.success === true && s.childrenOf('青崖城').length === 1, mv);
+  // 有了真正的后代之后，后代必须从父级候选里消失（防循环的 UI 入口）
+  same('parentCandidates 排除自己的后代', s.parentCandidates('青崖城').map(x => x.id).sort(), ['世界']);
   const self = s.moveEntity('世界', '世界');
   ck('移到自己下被拒', self.success === false, self);
 
@@ -259,7 +266,9 @@ STORE_JS = """(async () => {
   same('undo 恢复计数', s.entityCount, 3);
   ck('undo 恢复父子关系', s.getEntity('青崖城_2').parentId === '青崖城');
   const delOne = s.deleteEntity('青崖城', { cascade: false });
-  ck('不级联删除时子实体上提', delOne.success === true && !s.getEntity('青崖城') && s.getEntity('青崖城_2').parentId === null, delOne);
+  ck('不级联删除时子实体上提到被删者的父级',
+     delOne.success === true && !s.getEntity('青崖城') && s.getEntity('青崖城_2').parentId === '世界',
+     { delOne: delOne, orphanParent: s.getEntity('青崖城_2') ? s.getEntity('青崖城_2').parentId : null });
   U.undo();
   same('上提删除可撤销', s.entityCount, 3);
 
@@ -291,18 +300,24 @@ STORE_JS = """(async () => {
   same('列表读到实体数', ls.items[0].entityCount, 4);
   s.closeProject();
   ck('closeProject', s.isOpen === false && s.filePath === '');
-  ck('未打开时的守卫', s.createEntity({ name: 'x' }).success === false && s.saveProject().success === false);
+  // ⚠️ saveProject 是 async —— 漏 await 会拿到 Promise 上的 undefined（.success === false 恒假）
+  const noProjectCreate = s.createEntity({ name: 'x' });
+  const noProjectSave = await s.saveProject();
+  ck('未打开项目时创建实体被拒', noProjectCreate.success === false, noProjectCreate);
+  ck('未打开项目时保存被拒', noProjectSave.success === false, noProjectSave);
 
   return JSON.stringify({ fails: fails });
 })()""".replace('@APP@', APP)
 
 
 def sub_store(cdp):
-    res = _j(cdp, STORE_JS)
-    if not isinstance(res, dict):
-        return False, f'projectStore 用例求值失败 {res}'
+    ok, res = eval_json(cdp, STORE_JS, desc='projectStore')
+    if not ok:
+        return False, res
     if res.get('err'):
         return False, f'projectStore 用例环境异常：{res["err"]}'
+    if res.get('aborted'):
+        return False, f'projectStore 前置步骤失败已中止：{res["aborted"]}'
     fails = res.get('fails') or []
     if fails:
         return False, f'projectStore 断言失败 {len(fails)} 项：' + '；'.join(fails[:8])

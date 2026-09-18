@@ -78,6 +78,37 @@ def wait_for(cdp, expr, timeout=10, desc=''):
     raise RuntimeError(f'等待超时: {desc} | {expr}')
 
 
+def eval_json(cdp, expr, required=('fails',), desc=''):
+    """求值并要求返回**含 required 字段的 JSON 结果**。
+
+    🔴 为什么必须有这个函数（本项目真实踩过）：`cdp.eval` 在 JS 抛异常时返回
+    `{'__err__': '...'}`。若调用方写成「没有 fails 字段 → 当成通过」，用例会**静默假绿**——
+    test_46 的 projectStore 子测试就因一个下游 TypeError 被当成通过，掩盖了
+    「主进程 project-create 不回显 project → 新建项目在生产环境必然失败」的真实缺陷。
+    判定一律走本函数：异常 / 非 JSON / 缺字段 = 失败，绝不等于通过。
+
+    :param required: 必须存在的字段名；传 None 表示接受任意 JSON 值（调用方自查类型）
+    :returns: (ok: bool, obj_or_error_text)
+    """
+    v = cdp.eval(expr)
+    if isinstance(v, dict) and '__err__' in v:
+        return False, f'JS 求值异常（{desc}）：{str(v["__err__"])[:400]}'
+    if not isinstance(v, str):
+        return False, f'求值结果既不是 JSON 字符串也不是异常（{type(v).__name__}）：{str(v)[:200]}'
+    try:
+        obj = json.loads(v)
+    except ValueError as e:
+        return False, f'JSON 解析失败（{desc}）：{e} | 原始：{v[:200]}'
+    if required is None:
+        return True, obj
+    if not isinstance(obj, dict):
+        return False, f'求值结果不是对象（{type(obj).__name__}）：{str(obj)[:200]}'
+    missing = [k for k in required if k not in obj]
+    if missing:
+        return False, (f'求值结果缺少字段 {missing}（疑似"异常被当成通过"的假绿）：{str(obj)[:200]}')
+    return True, obj
+
+
 def skip_onboarding(cdp):
     """跳过首次引导（Onboarding overlay 全屏拦截点击）"""
     cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.trim() === '跳过'); if (b) b.click(); return !!b; })()")

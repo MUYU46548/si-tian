@@ -13,6 +13,8 @@
 import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
 import { execute } from './undo';
+// 单一写闸门（Phase 2）：打开项目 = 切到 'project' 写模式；关闭 = 回到无项目默认模式
+import { setWriteMode, resetWriteMode } from './writeGate';
 import {
   createEmptyProject,
   createEntity as createEntityShape,
@@ -106,6 +108,8 @@ export const useProjectStore = defineStore('project', () => {
     dirty.value = false;
     lastSavedAt.value = migrated.project.meta.updated || '';
     lastError.value = '';
+    // 有项目 → 允许写（写进项目文件）
+    setWriteMode('project', `已打开项目：${migrated.project.meta.name}`);
     return { success: true, problems: migrated.problems, steps: migrated.steps };
   }
 
@@ -116,7 +120,8 @@ export const useProjectStore = defineStore('project', () => {
     const draft = createEmptyProject({ name });
     const res = await a.projectCreate({ name, dir, project: draft });
     if (!res || !res.success) return { success: false, error: (res && res.error) || '创建项目失败' };
-    return adopt(res);
+    // 主进程会回显项目正文；旧版/第三方主进程不回显时用本地 draft 兜底（否则新建必然失败）
+    return adopt(res.project ? res : { ...res, project: draft });
   }
 
   async function openProject(path = '') {
@@ -175,6 +180,8 @@ export const useProjectStore = defineStore('project', () => {
     dirty.value = false;
     lastError.value = '';
     setSaveStatus('idle');
+    // 回到「无项目」默认模式：READONLY_WITHOUT_PROJECT=true 时即切换为只读（决策 1）
+    resetWriteMode('项目已关闭');
   }
 
   // ===== 文件系统侧（列表 / 目录 / 备份 / 定位）=====
