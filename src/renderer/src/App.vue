@@ -138,6 +138,7 @@
         <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)"><Icon name="history" :size="15"/></button>
         <button @click="reextract" title="重新提取"><Icon name="refresh" :size="15"/></button>
         <button @click="saveData" :disabled="!dirty" title="保存"><Icon name="save" :size="15"/></button>
+        <button @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/></button>
         <span class="toolbar-divider"></span>
         <button v-if="store.viewLevel !== 'world'" @click="toggleLayersPanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }"><Icon name="layers" :size="15"/></button>
         <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }"><Icon name="bookmark" :size="15"/></button>
@@ -256,6 +257,7 @@
     <node-detail-panel />
     <layer-panel />
     <history-panel v-if="panelsStore.isOpen('history')" @close="panelsStore.close('history')" />
+    <project-panel v-if="panelsStore.isOpen('project')" @close="panelsStore.close('project')" />
     <about-panel ref="aboutPanelRef" />
     <batch-import-panel ref="batchImportPanelRef" />
     <settings-panel ref="settingsPanelRef" />
@@ -321,6 +323,8 @@ const UpdateNotification = defineAsyncComponent(() => import('./components/Updat
 const PromptDialog = defineAsyncComponent(() => import('./components/PromptDialog.vue'));
 const BookmarkPanel = defineAsyncComponent(() => import('./components/BookmarkPanel.vue'));
 const HistoryPanel = defineAsyncComponent(() => import('./components/HistoryPanel.vue'));
+// Phase 2.1：项目面板（项目文件操作 + 实体浏览器 + 快照回滚）。EntityCreator 随该 chunk 一起加载。
+const ProjectPanel = defineAsyncComponent(() => import('./components/ProjectPanel.vue'));
 import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
 import { useLayersStore } from './store/layers';
 import { useTheme } from './composables/useTheme';

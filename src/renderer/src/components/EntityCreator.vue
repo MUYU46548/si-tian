@@ -1,0 +1,321 @@
+<template>
+  <div class="ec-overlay" @click.self="$emit('close')">
+    <div class="ec-card" role="dialog" aria-label="新建实体">
+      <header class="ec-head">
+        <span class="ec-title">新建实体</span>
+        <button class="ec-x" title="关闭" @click="$emit('close')">×</button>
+      </header>
+
+      <div class="ec-body">
+        <!-- 表单 -->
+        <div class="ec-field">
+          <label>名称</label>
+          <input
+            ref="nameInput"
+            v-model="name"
+            class="ec-input"
+            placeholder="如 青崖城 / 东部荒原"
+            @keydown.enter="create"
+          />
+          <span class="ec-id" :title="'实体 id（由名称规范化，重名自动加序号）'">id: {{ previewId || '—' }}</span>
+        </div>
+
+        <div class="ec-field">
+          <label>层级</label>
+          <select v-model="layer" class="ec-input">
+            <option v-for="l in layerOptions" :key="l" :value="l">{{ LAYER_LABELS[l] || l }}（{{ l }}）</option>
+          </select>
+        </div>
+
+        <div class="ec-field">
+          <label>父级</label>
+          <select v-model="parentId" class="ec-input">
+            <option value="">（顶层）</option>
+            <option v-for="e in parentOptions" :key="e.id" :value="e.id">
+              {{ e.name }}（{{ e.layerLabel }}）
+            </option>
+          </select>
+        </div>
+
+        <div class="ec-field">
+          <label>标签</label>
+          <input v-model="tagsText" class="ec-input" placeholder="逗号分隔，可留空" />
+        </div>
+
+        <div class="ec-field">
+          <label>坐标</label>
+          <div class="ec-coord">
+            <input v-model="coordX" class="ec-input small" placeholder="x（可留空）" />
+            <input v-model="coordY" class="ec-input small" placeholder="y（可留空）" />
+          </div>
+        </div>
+
+        <!-- 分派计划：C 方案的核心 —— 创建后按层级走不同的落位/绘制流程 -->
+        <div class="ec-dispatch">
+          <div class="ec-dispatch-title">创建后</div>
+          <ol>
+            <li v-for="(s, i) in dispatchSteps" :key="i">{{ s }}</li>
+          </ol>
+          <div class="ec-note">
+            落位与画边界在「接线」完成后与画布打通（Phase 2.4 / 2.6）；当前先落库为项目实体。
+          </div>
+        </div>
+
+        <div v-if="result" class="ec-result" :class="result.ok ? 'ok' : 'err'">{{ result.text }}</div>
+      </div>
+
+      <footer class="ec-foot">
+        <span class="ec-parent-hint">{{ parentHint }}</span>
+        <button class="ec-btn" @click="$emit('close')">关闭</button>
+        <button class="ec-btn" :disabled="!result || !result.ok" @click="reset">再建一个</button>
+        <button class="ec-btn primary" :disabled="!name.trim()" @click="create">创建</button>
+      </footer>
+    </div>
+  </div>
+</template>
+
+<script setup>
+// components/EntityCreator.vue — 实体创建向导（Phase 2.2，C 方案「分派式向导」）
+//
+// 用户决策（2026-09-18）：实体创建用 C 方案 —— 表单填「名称 / 层级 / 父级」，
+// 再**按层级自动分派后续步骤**，画布交互一律复用各视图现有工具，不在弹窗里再实现一套画布。
+// 依据：只有 region 一个层级天生带多边形边界，其余层级是点/圆/卡片/容器（见层级×空间能力矩阵）。
+//
+// 本组件只写 `projectStore`（项目实体），不碰 geodata：接线（Phase 2.4）由 geodata 侧完成。
+
+import { computed, nextTick, ref, watch } from 'vue';
+import { useProjectStore } from '../store/projectStore';
+import { LAYER_LABELS } from '../utils/projectSchema';
+
+const props = defineProps({
+  open: { type: Boolean, default: false },
+});
+defineEmits(['close']);
+
+const proj = useProjectStore();
+const nameInput = ref(null);
+
+// 可创建层级：排除 building（沿用区域地图现有入口，用户已确认）与 unknown
+const layerOptions = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon',
+  'region', 'city', 'town', 'village', 'facility', 'location'];
+
+const name = ref('');
+const layer = ref('city');
+const parentId = ref('');
+const tagsText = ref('');
+const coordX = ref('');
+const coordY = ref('');
+const result = ref(null);
+
+const previewId = computed(() => (name.value.trim() ? proj.previewEntityId(name.value.trim()) : ''));
+
+const parentOptions = computed(() => {
+  // 创建新实体时没有「自己」，只需排除……（新实体尚无后代）→ 全部实体都可作父级
+  return proj.entityList;
+});
+
+const parentHint = computed(() => {
+  if (!parentId.value) return '父级：顶层';
+  const p = proj.getEntity(parentId.value);
+  return p ? `父级：${p.name}（${p.layerLabel}）` : '父级：—';
+});
+
+// 分派计划表：层级 → 创建后的落位/绘制流程（与画布能力一一对应）
+const DISPATCH = {
+  world: ['直接创建；世界卡片在启动页展示。', '星域划分随后在星域图里添加。'],
+  star_domain: ['直接创建。', '边界圆在星域图里拖动调整半径（半径会持久化）。'],
+  galaxy: ['创建后在恒星系视图落点：进入所属星域 → 点「新增」放置恒星系。'],
+  star: ['创建后在单恒星系视图落点（作为该系中心恒星）。'],
+  planet: ['创建后在单恒星系视图落点：恒星居中，行星按轨道半径摆放。'],
+  moon: ['创建后在所属行星附近落点。'],
+  region: ['创建后进入行星表面，用自由绘制工具画区域边界。',
+    '绘制方式：按住拖动勾轮廓 → RDP 简化去毛刺 → 离屏 Canvas 校验「落在陆地内 + 不与已有区域重叠」。'],
+  city: ['创建后在行星表面点选落位（自动吸附到陆地）。', '下钻城市后可继续画区域多边形、放建筑入口。'],
+  town: ['创建后在行星表面点选落位（自动吸附到陆地）。'],
+  village: ['创建后在行星表面点选落位（自动吸附到陆地）。'],
+  facility: ['创建后在行星表面或区域地图点选落位。'],
+  location: ['创建后在行星表面或区域地图点选落位。'],
+};
+
+const dispatchSteps = computed(() => DISPATCH[layer.value] || ['落位方式待定：建议改选具体层级。']);
+
+function reset() {
+  name.value = '';
+  tagsText.value = '';
+  coordX.value = '';
+  coordY.value = '';
+  result.value = null;
+  nextTick(() => nameInput.value?.focus());
+}
+
+function create() {
+  const n = name.value.trim();
+  if (!n) return;
+  const numOrNull = (v) => {
+    const t = String(v ?? '').trim();
+    if (!t) return null;
+    const num = Number(t);
+    return Number.isFinite(num) ? num : null;
+  };
+  const res = proj.createEntity({
+    name: n,
+    layer: layer.value,
+    parentId: parentId.value || null,
+    tags: tagsText.value.split(/[,,、]/).map(t => t.trim()).filter(Boolean),
+    coordinate: { x: numOrNull(coordX.value), y: numOrNull(coordY.value) },
+  });
+  if (res.success) {
+    result.value = { ok: true, text: `已创建「${res.entity.name}」（id: ${res.entity.id}，层级 ${res.entity.layerLabel}）` };
+  } else {
+    result.value = { ok: false, text: `创建失败：${res.error}` };
+  }
+}
+
+// 打开时自动聚焦名称输入
+watch(() => props.open, (v) => { if (v) nextTick(() => nameInput.value?.focus()); });
+</script>
+
+<style scoped>
+.ec-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 10, 18, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+.ec-card {
+  width: 420px;
+  max-height: calc(100% - 80px);
+  display: flex;
+  flex-direction: column;
+  background: var(--planet-editor-bg, #111a26);
+  border: 1px solid var(--planet-editor-border, #24384f);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.ec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--planet-editor-border, #24384f);
+}
+.ec-title {
+  color: var(--planet-text, #d8e2ef);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ec-x {
+  background: none;
+  border: none;
+  color: var(--planet-text-secondary, #8fa3bb);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+.ec-x:hover { color: var(--planet-text, #d8e2ef); }
+.ec-body {
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ec-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ec-field > label {
+  width: 34px;
+  flex-shrink: 0;
+  color: var(--planet-text-secondary, #8fa3bb);
+  font-size: 11.5px;
+}
+.ec-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 7px;
+  font-size: 12px;
+  color: var(--planet-text, #d8e2ef);
+  background: var(--planet-btn-bg, #16222f);
+  border: 1px solid var(--planet-btn-border, #2b4059);
+  border-radius: var(--radius-sm, 4px);
+}
+.ec-input:focus { outline: none; border-color: var(--planet-text-link, #4a90d9); }
+.ec-input.small { flex: 1; }
+.ec-coord { flex: 1; display: flex; gap: 6px; }
+.ec-id {
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--planet-text-secondary, #8fa3bb);
+  font-size: 10.5px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.ec-dispatch {
+  border: 1px dashed var(--planet-btn-border, #2b4059);
+  border-radius: var(--radius-sm, 4px);
+  padding: 7px 9px;
+  background: rgba(74, 144, 217, 0.06);
+}
+.ec-dispatch-title {
+  color: var(--planet-text, #d8e2ef);
+  font-size: 11.5px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.ec-dispatch ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--planet-text-secondary, #8fa3bb);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.ec-note {
+  margin-top: 5px;
+  color: var(--planet-text-secondary, #8fa3bb);
+  font-size: 10.5px;
+  opacity: 0.85;
+}
+.ec-result {
+  font-size: 11.5px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--planet-btn-border, #2b4059);
+}
+.ec-result.ok { color: #7ee0a6; border-color: #2e6b48; background: rgba(46, 204, 113, 0.08); }
+.ec-result.err { color: #ff9a8d; border-color: #8f4a3a; background: rgba(231, 76, 60, 0.1); }
+.ec-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--planet-editor-border, #24384f);
+}
+.ec-parent-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--planet-text-secondary, #8fa3bb);
+  font-size: 11px;
+}
+.ec-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--planet-text, #d8e2ef);
+  background: var(--planet-btn-bg, #16222f);
+  border: 1px solid var(--planet-btn-border, #2b4059);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+.ec-btn:hover:not(:disabled) { background: var(--planet-btn-hover, #1e3044); }
+.ec-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ec-btn.primary:not(:disabled) { color: #8fd3ff; border-color: #3a6b8f; }
+</style>

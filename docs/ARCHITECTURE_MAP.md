@@ -50,8 +50,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
 | 115 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
 | 235 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
-| 438 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
-| 291 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
+| 445 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
+| 323 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
 | 80 | `scripts/tools_migrate_planetdrawing.py` | 一次性迁移工具（planetDrawing 拆分） |
 | 59 | `scripts/tools_migrate_planethittest.py` | 一次性迁移工具（planetHitTest 拆分） |
 | 109 | `src/main/config.js` | userData/config.json 读写（VAULT_PATH、closeQuitsApp、windowMode） |
@@ -61,7 +61,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 248 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
 | 159 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 1788 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 12 个低频面板异步挂载 |
+| 1792 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 12 个低频面板异步挂载 |
 | 633 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
 | 2580 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 265 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
@@ -72,6 +72,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 247 | `src/renderer/src/components/ClusterPanel.vue` | 地点簇面板（框选成簇/解散/聚焦） |
 | 112 | `src/renderer/src/components/ContextMenu.vue` | 画布右键菜单 |
 | 417 | `src/renderer/src/components/EagleEye.vue` | 鹰眼小地图 |
+| 321 | `src/renderer/src/components/EntityCreator.vue` | 实体创建向导（C 方案分派式）：表单「名称/层级/父级」→ 按层级显示落位/绘制流程说明 |
 | 2033 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
 | 231 | `src/renderer/src/components/HistoryPanel.vue` | undo 历史面板 |
 | 170 | `src/renderer/src/components/Icon.vue` | （待补） |
@@ -83,6 +84,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 298 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
 | 3718 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
+| 485 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建/打开/保存/备份/关闭 + 实体树浏览器 + 快照回滚（只依赖 projectStore，Phase 2.4 前不接线） |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 300 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |

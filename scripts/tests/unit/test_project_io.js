@@ -39,8 +39,39 @@ function eq(actual, expected, label) {
   }
 }
 
-const TMP = path.join(os.tmpdir(), `sitian-project-io-${Date.now()}-${Math.floor(Math.random() * 1e4)}`);
-const DIR = path.join(TMP, 'projects');
+// 临时目录：**不能只依赖 os.tmpdir()** —— TMP/TEMP 未设时它可能返回 `C:\WINDOWS`
+// （实测：EPERM mkdir 'C:\WINDOWS\sitian-project-io-…' → 整个单测文件"无输出"失败）。
+// 所以按候选顺序逐个试探：能 mkdir 且能写删探针文件者胜出；全部失败则明确报错。
+const TMP_CANDIDATES = [
+  process.env.SITIAN_TEST_TMP,
+  process.env.TEMP,
+  process.env.TMP,
+  (() => { try { return os.tmpdir(); } catch (e) { return ''; } })(),
+  path.join(os.homedir(), 'AppData', 'Local', 'Temp'),
+  path.join(os.homedir(), '.sitian-test-tmp'),
+].filter(Boolean);
+
+let TMP = '';
+let DIR = '';
+
+async function resolveTmpRoot() {
+  const tried = [];
+  for (const base of TMP_CANDIDATES) {
+    const dir = path.join(base, `sitian-project-io-${Date.now()}-${Math.floor(Math.random() * 1e4)}`);
+    try {
+      await fsp.mkdir(dir, { recursive: true });
+      const probe = path.join(dir, '.write-probe');
+      await fsp.writeFile(probe, 'ok', 'utf-8');
+      await fsp.unlink(probe);
+      TMP = dir;
+      DIR = path.join(dir, 'projects');
+      return;
+    } catch (e) {
+      tried.push(`${base} → ${e.code || e.message}`);
+    }
+  }
+  throw new Error('找不到可写的临时目录。候选：' + tried.join(' | '));
+}
 
 function sampleProject(name) {
   return {
@@ -63,6 +94,7 @@ async function exists(p) {
 }
 
 async function main() {
+  await resolveTmpRoot();
   await fsp.mkdir(DIR, { recursive: true });
 
   // ── 1. ILLEGAL_CHARS 与 main/index.js 的同名实现保持一致（防漂移）────────────

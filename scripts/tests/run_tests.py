@@ -283,12 +283,19 @@ def run_node_unit_tests():
     if not files:
         return {'ok': True, 'detail': '（无 unit 用例，跳过）', 'output': '', 'skipped': True}
     outputs, failed = [], []
+    # 环境兜底：TMP/TEMP 未设时 Node 的 os.tmpdir() 可能落到 C:\WINDOWS（不可写）→ 单测直接失败
+    env = dict(os.environ)
+    tmp_base = next((p for p in (env.get('TEMP'), env.get('TMP'), env.get('LOCALAPPDATA', ''),
+                                 os.path.expanduser('~')) if p and os.path.isdir(p) and os.access(p, os.W_OK)), None)
+    if tmp_base:
+        env.setdefault('TEMP', tmp_base)
+        env.setdefault('TMP', tmp_base)
     for f in files:
         try:
             proc = subprocess.run(
                 ['node', os.path.join(UNIT_TEST_DIR, f)],
                 capture_output=True, text=True, encoding='utf-8', errors='replace',
-                timeout=300, cwd=ROOT)
+                timeout=300, cwd=ROOT, env=env)
         except FileNotFoundError:
             return {'ok': True, 'detail': '（未找到 node，跳过）', 'output': '', 'skipped': True}
         except subprocess.TimeoutExpired:
