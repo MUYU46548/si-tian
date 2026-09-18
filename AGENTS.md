@@ -2,6 +2,9 @@
 
 为世界构建者设计的本地桌面应用（Electron 28），以 Obsidian 库（默认 `E:/图书馆/ROSA/`）为唯一事实源，通过七层视图呈现世界观地理层级，为 Markdown 附加可编辑的坐标元数据，实现画布与笔记的双向同步。
 
+> **独立运行化（Phase 1 已落地 2026-09-18）**：司天另有一套自有项目文件（`.sitian`，JSON 单文件：实体树 + 剧本 + 地图 + 自动快照），目标是脱离知识库也能新建/编辑/保存世界观。
+> 当前七层视图仍读 Obsidian 缓存（`<vault>/.sitian/*.json`），**项目文件尚未接线**（接线属 Phase 2）——两套事实源并存期间以 geodata 链路为准。
+
 ## 技术栈 (Tech Stack)
 
 - 桌面壳: Electron 28
@@ -17,7 +20,9 @@
 - 开发模式 (Electron 完整): `npm run dev:watch`（wait-on tcp:5180 后拉起 Electron）
 - 构建生产版本: `npm run build`
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（45 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（46 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+  - 该命令会先跑 `scripts/tests/unit/*.js`（Node 单元测试：主进程文件 I/O，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 单跑某个用例：`python scripts/tests/run_tests.py test_46`
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
 - mapdata 旧 key 清理: `npm run migrate-mapdata-keys`（默认 dry-run，`-- --apply` 才写盘）
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
@@ -32,7 +37,8 @@
 - **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 6 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / interior / search / spaceEditing
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
 - **大文件警告**: PlanetMap.vue 约 2900 行（22 个 composables 的装配体），AreaMap / GalaxyMap / InteriorView / App.vue / NodeDetailPanel 均 >1700 行——**读片段勿整读**。行星图绘制与交互逻辑在 `composables/planetDrawing.js`、`planetInteractions.js`、`planetHitTest.js`
-- **测试基线**: `scripts/tests/cases/` 45 个用例（Edge CDP 驱动），45/45 全绿 = 迁移/重构完整
+- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程文件 I/O**：`.sitian` 原子写/备份轮转/路径守卫——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘）；② `scripts/tests/cases/` 46 个 CDP 用例（Edge 驱动），46/46 全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例
+- **`.sitian` 项目文件（Phase 1，独立运行基础）**: 三层边界**只许单向依赖**——`utils/projectSchema.js`（**纯函数**：结构/校验修复/版本迁移/就地 diff 快照，Node 可读）← `store/projectStore.js`（内存态 + 实体 CRUD，走 `undo.js`）← `main/handlers/projectHandler.js`（只管路径/磁盘/备份，**顶层不 require electron** 以便 Node 测）。改文件结构只改 schema + 升 `PROJECT_VERSION` + 补 `MIGRATIONS`。默认项目目录：用户文档下的 `SiTianProjects`；快照 = 「1 份 base + ≤50 份 diff」（`maps` 不进快照，另有磁盘整文件备份 10 份兜底）。回归用例 test_46 + Node 单元测试
 - **图标系统**: `src/renderer/src/components/Icon.vue`（148 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 339 处 emoji；`python scripts/icon_check.py` 校验引用名均有定义
 - **开发规则全集**: 60+ 条铁律与踩坑复盘（composable 接线、getState ref 解包、SFC 结构标签、发布验收等）在 Hermes skill `obsidian/sitian-development`，动代码前先加载；本文件不复制规则，防双源漂移
 - **P0/P1 编辑器模块**（2026-09-15 落地，全部有回归用例 test_28~test_35）: `utils/labelStyles.js`（标签样式预设 + `drawStyledLabel` 统一文本渲染）、`utils/reliefIcons.js`（地貌图标确定性散布 + 网格桶）、`utils/markerTypes.js`（标记类型注册表）、`utils/settlement.js`（人口对数滑块/分级/半径）、`utils/roadStyles.js`（道路样式）、`utils/rivers.js`（河流流向排序/拖拽 clamp）、`utils/viewport.js`（视口世界矩形，小地图遮罩用）；`composables/useReliefBrush.js`
@@ -47,10 +53,11 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 45 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 46 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 6 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 19 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 35 | `grep -c "ipcMain.handle" src/main/index.js` |
+| 项目文件 IPC 通道数 | 8 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
 | 七层视图组件 | 7 个齐全 | `ls src/renderer/src/components/` |
 
 ## 核心原则 (Critical Principles)

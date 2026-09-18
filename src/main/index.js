@@ -4,9 +4,10 @@ const fs = require('fs').promises;
 const matter = require('gray-matter');
 const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
-const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp } = require('./config');
+const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp, getLastProjectPath, setLastProjectPath } = require('./config');
 const { createTray, destroyTray, getIsQuitting, setIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
+const { registerProjectHandlers } = require('./handlers/projectHandler');
 const log = require('electron-log');
 
 let mainWindow;
@@ -258,6 +259,17 @@ ipcMain.handle('backup-sitian-cache', async () => backupSitianCache());
 
 // IPC: 获取 Vault 路径
 ipcMain.handle('get-vault-path', () => getVaultPath());
+
+// ===== .sitian 项目文件（Phase 1：独立运行基础）=====
+// 文件 I/O 在 handlers/projectHandler.js（内容结构解释在 renderer 的 utils/projectSchema.js）。
+// 默认项目目录：用户「文档」下的 SiTianProjects（可通过 project-pick-dir 更改）。
+registerProjectHandlers({
+  ipcMain, dialog, shell,
+  getMainWindow: () => mainWindow,
+  getDefaultProjectDir: () => path.join(app.getPath('documents'), 'SiTianProjects'),
+  getLastProjectPath,
+  setLastProjectPath,
+});
 
 // ===== .sitian/config/*.json 通用读写（P0-2 标签样式预设 / P1-4 标记类型）=====
 // 只认白名单键名 → 文件名，杜绝路径穿越；文件不存在返回 data:null（调用方用内置默认值）

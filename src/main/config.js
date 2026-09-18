@@ -9,7 +9,7 @@ const DEFAULT_VAULT = ''; // 留空：首次启动由用户通过设置面板指
 const WINDOW_MODES = ['maximized', 'fullscreen', 'default'];
 const DEFAULT_WINDOW_MODE = 'maximized';
 
-let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE, closeQuitsApp: false, currentBaseMapKey: '' };
+let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE, closeQuitsApp: false, currentBaseMapKey: '', lastProjectPath: '' };
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'config.json');
@@ -30,6 +30,9 @@ async function loadConfig() {
     }
     if (typeof cfg.closeQuitsApp === 'boolean') {
       config.closeQuitsApp = cfg.closeQuitsApp;
+    }
+    if (typeof cfg.lastProjectPath === 'string') {
+      config.lastProjectPath = cfg.lastProjectPath;
     }
   } catch (e) {
     // 无配置 → 使用默认值（兼容旧版硬编码）
@@ -86,9 +89,21 @@ async function setCurrentBaseMapKey(key) {
   return config.currentBaseMapKey;
 }
 
+// 最近打开的 .sitian 项目文件（Phase 1 独立运行基础：下次启动可直接续接）
+function getLastProjectPath() {
+  return config.lastProjectPath || '';
+}
+
+async function setLastProjectPath(p) {
+  config.lastProjectPath = typeof p === 'string' ? p : '';
+  await writeConfig();
+  return config.lastProjectPath;
+}
+
 module.exports = {
   loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT,
   getWindowMode, setWindowMode,
   getCloseQuitsApp, setCloseQuitsApp,
   getCurrentBaseMapKey, setCurrentBaseMapKey,
+  getLastProjectPath, setLastProjectPath,
 };

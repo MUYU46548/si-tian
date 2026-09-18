@@ -83,6 +83,59 @@ MOCK_SCRIPT = """<script>
         saveMapData: async () => ({ success: true }),
         saveScenarios: async () => ({ success: true }),
         loadScenarios: async () => ({ success: true, data: { version: 2, baseMaps: {}, scenarios: {} } }),
+        // ===== .sitian 项目文件（Phase 1）：内存态，不落盘 → 对真实数据零污染 =====
+        projectCreate: async (payload) => {
+          const p = payload || {};
+          const name = String(p.name || '未命名项目');
+          const dir = p.dir || 'mock/projects';
+          const filePath = dir + '/' + name + '.sitian';
+          window.__projects = window.__projects || {};
+          window.__projectCalls = window.__projectCalls || [];
+          window.__projects[filePath] = JSON.parse(JSON.stringify(p.project || {}));
+          window.__projectCalls.push({ op: 'create', filePath: filePath });
+          return { success: true, filePath: filePath, dir: dir, name: name + '.sitian', bytes: 0 };
+        },
+        projectOpen: async (filePath) => {
+          window.__projects = window.__projects || {};
+          window.__projectCalls = window.__projectCalls || [];
+          const target = filePath || Object.keys(window.__projects)[0] || '';
+          if (!target || !window.__projects[target]) return { success: false, error: '项目不存在: ' + target };
+          window.__projectCalls.push({ op: 'open', filePath: target });
+          const cut = target.lastIndexOf('/');
+          return {
+            success: true, filePath: target, dir: cut > 0 ? target.substring(0, cut) : '',
+            project: JSON.parse(JSON.stringify(window.__projects[target])),
+          };
+        },
+        projectSave: async (payload) => {
+          const p = payload || {};
+          window.__projects = window.__projects || {};
+          window.__projectCalls = window.__projectCalls || [];
+          if (!p.filePath) return { success: false, error: 'no-path' };
+          window.__projects[p.filePath] = JSON.parse(JSON.stringify(p.project || {}));
+          window.__projectCalls.push({ op: 'save', filePath: p.filePath });
+          return {
+            success: true, filePath: p.filePath,
+            bytes: JSON.stringify(p.project || {}).length,
+            backupPath: p.filePath + '.backups/mock.sitian',
+          };
+        },
+        projectList: async (dir) => {
+          window.__projects = window.__projects || {};
+          const d = dir || 'mock/projects';
+          const items = Object.keys(window.__projects).map((fp) => ({
+            name: fp.split('/').pop(), filePath: fp,
+            meta: window.__projects[fp].meta || null,
+            version: window.__projects[fp].version || '',
+            entityCount: Object.keys(window.__projects[fp].entities || {}).length,
+            bytes: 0, mtime: '',
+          }));
+          return { success: true, dir: d, items: items };
+        },
+        projectPickDir: async () => ({ success: true, dir: 'mock/picked' }),
+        projectReveal: async (filePath) => ({ success: true, filePath: filePath }),
+        projectBackupNow: async () => ({ success: true, backedUp: true, backupPath: 'mock/x.sitian' }),
+        projectGitSnapshot: async () => ({ success: false, skipped: true, reason: 'mock 环境非 git 仓库' }),
         backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
         batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
         createObsidianNote: async (payload) => {
@@ -215,6 +268,42 @@ def load_case(path):
     return mod
 
 
+# ===== Node 层单元测试（主进程文件 I/O）=====
+# CDP 用例里的 window.sitianAPI 是 mock（不落盘），主进程的真实文件读写**覆盖不到**。
+# 项目文件（.sitian）写坏 = 用户数据丢失，所以单独用纯 Node 测试守（projectHandler 顶层不含 electron）。
+UNIT_TEST_DIR = os.path.join(ROOT, 'scripts', 'tests', 'unit')
+
+
+def run_node_unit_tests():
+    """跑 scripts/tests/unit/*.js。返回 {'ok', 'detail', 'output'}；无 node / 无用例时跳过（ok=True）。"""
+    if not os.path.isdir(UNIT_TEST_DIR):
+        return {'ok': True, 'detail': '（无 unit 目录，跳过）', 'output': '', 'skipped': True}
+    files = sorted(f for f in os.listdir(UNIT_TEST_DIR) if f.endswith('.js'))
+    if not files:
+        return {'ok': True, 'detail': '（无 unit 用例，跳过）', 'output': '', 'skipped': True}
+    outputs, failed = [], []
+    for f in files:
+        try:
+            proc = subprocess.run(
+                ['node', os.path.join(UNIT_TEST_DIR, f)],
+                capture_output=True, text=True, encoding='utf-8', errors='replace',
+                timeout=300, cwd=ROOT)
+        except FileNotFoundError:
+            return {'ok': True, 'detail': '（未找到 node，跳过）', 'output': '', 'skipped': True}
+        except subprocess.TimeoutExpired:
+            failed.append(f'{f}: 超时（300s）')
+            continue
+        out = (proc.stdout or '') + (proc.stderr or '')
+        outputs.append(out)
+        summary = [l for l in out.splitlines() if l.startswith('===')]
+        detail = summary[-1].strip('= ').strip() if summary else '无输出'
+        if proc.returncode != 0:
+            failed.append(f'{f}: {detail}')
+    if failed:
+        return {'ok': False, 'detail': '；'.join(failed), 'output': '\n'.join(outputs)}
+    return {'ok': True, 'detail': f'{len(files)} 个 Node 单元测试全通过', 'output': '\n'.join(outputs)}
+
+
 def main():
     # 用例过滤参数（--vault/--edge 已在常量解析阶段从 argv 剥离）
     case_names = _case_names
@@ -228,6 +317,16 @@ def main():
 
     print('=== SiTian 回归测试 ===')
     print(f'用例: {len(case_files)} 个')
+
+    # 前置：Node 单元测试（主进程文件 I/O；CDP 用例覆盖不到）。失败计为 1 个失败用例。
+    unit = run_node_unit_tests()
+    if unit.get('skipped'):
+        print(f'前置 Node 单元测试 {unit["detail"]}')
+    elif unit['ok']:
+        print(f'前置 Node 单元测试 ✅ {unit["detail"]}')
+    else:
+        print(f'前置 Node 单元测试 ❌ {unit["detail"]}')
+        print(unit['output'])
 
     handles = []
     try:
@@ -281,6 +380,8 @@ def main():
         except Exception:
             print('  ⚠️ 首个用例前置数据未就绪（30s 内 store.nodes 仍为 0）')
         passed, failed = 0, []
+        if not unit['ok']:
+            failed.append(('unit:test_project_io', unit['detail']))
         for cf in case_files:
             name = os.path.splitext(cf)[0]
             try:

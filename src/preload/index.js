@@ -57,6 +57,17 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   saveScenarios: (data) => ipcRenderer.invoke('save-scenarios', data),
   loadScenarios: () => ipcRenderer.invoke('load-scenarios'),
 
+  // ===== .sitian 项目文件（Phase 1：独立运行基础）=====
+  // 文件格式/校验/快照见 renderer 的 utils/projectSchema.js；主进程只管路径与落盘。
+  projectCreate: (payload) => ipcRenderer.invoke('project-create', payload),
+  projectOpen: (filePath) => ipcRenderer.invoke('project-open', filePath),
+  projectSave: (payload) => ipcRenderer.invoke('project-save', payload),
+  projectList: (dir) => ipcRenderer.invoke('project-list', dir),
+  projectPickDir: () => ipcRenderer.invoke('project-pick-dir'),
+  projectReveal: (filePath) => ipcRenderer.invoke('project-reveal', filePath),
+  projectBackupNow: (filePath) => ipcRenderer.invoke('project-backup-now', filePath),
+  projectGitSnapshot: (payload) => ipcRenderer.invoke('project-git-snapshot', payload),
+
   // 导出文件（保存对话框 + 写入）
   saveExportFile: (options) => ipcRenderer.invoke('save-export-file', options),
   saveTextFile: (options) => ipcRenderer.invoke('save-text-file', options),
