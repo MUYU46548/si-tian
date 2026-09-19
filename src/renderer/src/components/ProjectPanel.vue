@@ -88,23 +88,70 @@
         </div>
         <div v-if="!proj.isOpen" class="pp-empty">打开项目后可在这里浏览实体树</div>
         <div v-else-if="!proj.entityCount" class="pp-empty">还没有实体。点「+ 新建实体」开始。</div>
-        <div v-else class="pp-tree">
+        <template v-else>
           <div
-            v-for="row in flatTree"
-            :key="row.id"
-            class="pp-node-row"
-            :class="{ sel: selectedId === row.id }"
-            :style="{ paddingLeft: (8 + row.depth * 14) + 'px' }"
-            @click="selectedId = row.id"
-          >
-            <span class="pp-badge">{{ row.layerLabel }}</span>
-            <span class="pp-node-name">{{ row.name }}</span>
+            v-if="draggingId"
+            class="pp-drop-root"
+            @dragover.prevent="dropTargetId = ''"
+            @drop.prevent="onDropRoot"
+          >松开以移到顶层</div>
+          <div class="pp-tree">
+            <div
+              v-for="row in flatTree"
+              :key="row.id"
+              class="pp-node-row"
+              :class="{
+                sel: selectedId === row.id,
+                drop: dropTargetId === row.id,
+                dragging: draggingId === row.id,
+                forbid: !!draggingId && !canDropInto(row.id),
+              }"
+              :style="{ paddingLeft: (8 + row.depth * 14) + 'px' }"
+              :draggable="editingId !== row.id"
+              title="拖动到别的行可改父级；双击名称可改名"
+              @click="select(row)"
+              @dragstart="onDragStart(row, $event)"
+              @dragover.prevent="onDragOver(row)"
+              @dragleave="onDragLeave(row)"
+              @drop.prevent="onDrop(row)"
+              @dragend="onDragEnd"
+            >
+              <span class="pp-badge">{{ row.layerLabel }}</span>
+              <input
+                v-if="editingId === row.id"
+                :ref="el => { if (el) renameInputEl = el; }"
+                v-model="editName"
+                class="pp-rename"
+                @keydown.enter="commitRename"
+                @keydown.esc="cancelRename"
+                @blur="commitRename"
+                @click.stop
+              />
+              <span v-else class="pp-node-name" @dblclick.stop="startRename(row)">{{ row.name }}</span>
+              <span v-if="editingId !== row.id" class="pp-row-actions">
+                <button class="icon-btn" title="改名" @click.stop="startRename(row)"><Icon name="pencil" :size="12" /></button>
+                <button class="icon-btn" title="删除（含子实体）" @click.stop="askDelete(row)"><Icon name="trash" :size="12" /></button>
+              </span>
+            </div>
           </div>
-        </div>
+          <div v-if="pendingDelete" class="pp-confirm">
+            <span class="pp-confirm-text">
+              删除「{{ pendingDelete.name }}」{{ pendingDelete.kids ? `及其 ${pendingDelete.kids} 个子实体` : '' }}？
+            </span>
+            <button class="pp-btn danger" @click="confirmDelete">删除</button>
+            <button class="pp-btn" @click="pendingDelete = null">取消</button>
+          </div>
+        </template>
         <div v-if="selectedEntity" class="pp-detail">
           <div><span class="pp-k">id</span>{{ selectedEntity.id }}</div>
           <div><span class="pp-k">层级</span>{{ selectedEntity.layerLabel }}（{{ selectedEntity.layer }}）</div>
-          <div><span class="pp-k">父级</span>{{ selectedEntity.parentId || '（顶层）' }}</div>
+          <div class="pp-parent-row">
+            <span class="pp-k">父级</span>
+            <select class="pp-parent" :value="selectedEntity.parentId || ''" @change="onParentChange($event)">
+              <option value="">（顶层）</option>
+              <option v-for="e in parentOptionsForSelected" :key="e.id" :value="e.id">{{ e.name }}（{{ e.layerLabel }}）</option>
+            </select>
+          </div>
           <div><span class="pp-k">标签</span>{{ selectedEntity.tags.length ? selectedEntity.tags.join('、') : '—' }}</div>
           <div><span class="pp-k">坐标</span>{{ coordText(selectedEntity) }}</div>
         </div>
@@ -124,7 +171,7 @@
       </div>
     </div>
 
-    <EntityCreator v-if="creatorOpen" :open="creatorOpen" @close="creatorOpen = false" />
+    <EntityCreator v-if="creatorOpen" :open="creatorOpen" @close="creatorOpen = false" @goto="onGoto" />
   </PanelShell>
 </template>
 
@@ -138,7 +185,7 @@
 //    七层视图仍读 Obsidian 缓存。所以本面板的实体树只反映**项目文件里的实体**，
 //    与当前画布内容暂时是两套。接线后二者合一。
 
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import PanelShell from './PanelShell.vue';
 import EntityCreator from './EntityCreator.vue';
@@ -160,6 +207,14 @@ const tip = ref('');
 const tipKind = ref('ok');
 const selectedId = ref('');
 const creatorOpen = ref(false);
+
+// 实体树交互状态（改名 / 删除 / 拖动改父级）
+const editingId = ref('');          // 正在内联改名的行
+const editName = ref('');
+const renameInputEl = ref(null);
+const draggingId = ref('');         // 拖动中的实体（HTML5 DnD）
+const dropTargetId = ref('');
+const pendingDelete = ref(null);    // { id, name, kids } —— 两段式删除确认（不用原生 confirm：headless 下会被自动拒绝）
 
 const canCreate = computed(() => !!newName.value.trim() && !isReadOnly.value);
 
@@ -188,6 +243,10 @@ const flatTree = computed(() => {
 });
 
 const selectedEntity = computed(() => (selectedId.value ? proj.getEntity(selectedId.value) : null));
+
+// 选中实体的合法父级候选（`parentCandidates` 已排除自身与全部后代 —— 防循环）
+const parentOptionsForSelected = computed(() =>
+  selectedEntity.value ? proj.parentCandidates(selectedEntity.value.id) : []);
 
 // 只显示最近 5 条快照（面板高度有限；完整列表属 Phase 2 后续）
 const recentSnapshots = computed(() => proj.snapshots.slice(-5).reverse());
@@ -265,7 +324,137 @@ async function doReveal() {
 function doClose() {
   proj.closeProject();
   selectedId.value = '';
+  cancelRename();
+  pendingDelete.value = null;
   setTip('项目已关闭', 'ok');
+}
+
+// ── 实体树：选中 / 改名 / 删除 / 拖动改父级 ────────────────────────────────
+// 三个操作全部走 `projectStore`（内部走 undo.js 的 execute），因此都可用 Ctrl+Z 撤销，
+// 且本组件不碰 IPC / 文件系统（接线属 Phase 2.4）。
+
+function select(row) {
+  selectedId.value = row.id;
+  pendingDelete.value = null;
+}
+
+function startRename(row) {
+  editingId.value = row.id;
+  editName.value = row.name;
+  nextTick(() => renameInputEl.value?.focus?.());
+}
+
+function cancelRename() {
+  editingId.value = '';
+  editName.value = '';
+}
+
+function commitRename() {
+  const id = editingId.value;
+  const next = editName.value.trim();
+  const before = id ? proj.getEntity(id) : null;
+  cancelRename();
+  if (!id || !before || !next || before.name === next) return;
+  const res = proj.renameEntity(id, next);
+  setTip(res.success
+    ? `已把「${before.name}」改名为「${next}」（Ctrl+Z 可撤销）`
+    : (res.error || '改名失败'), res.success ? 'ok' : 'err');
+}
+
+function askDelete(row) {
+  const kids = proj.descendantsOf(row.id).length;
+  selectedId.value = row.id;
+  pendingDelete.value = { id: row.id, name: row.name, kids };
+}
+
+function confirmDelete() {
+  const pd = pendingDelete.value;
+  pendingDelete.value = null;
+  if (!pd) return;
+  const res = proj.deleteEntity(pd.id, { cascade: true });
+  if (res.success) {
+    if (selectedId.value === pd.id) selectedId.value = '';
+    setTip(`已删除「${pd.name}」${pd.kids ? `及 ${pd.kids} 个子实体` : ''}（Ctrl+Z 可撤销）`, 'ok');
+  } else {
+    setTip(res.error || '删除失败', 'err');
+  }
+}
+
+/** 拖动目标是否合法（不能落到自己或自己的后代下 —— 会形成循环） */
+function canDropInto(targetId) {
+  if (!draggingId.value) return true;
+  return proj.parentCandidates(draggingId.value).some(e => e.id === targetId);
+}
+
+function onDragStart(row, e) {
+  draggingId.value = row.id;
+  try {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', row.id);
+  } catch (_) { /* 合成事件下 dataTransfer 可能为 null —— 状态已记在 draggingId */ }
+}
+
+function onDragEnd() {
+  draggingId.value = '';
+  dropTargetId.value = '';
+}
+
+function onDragOver(row) {
+  if (!draggingId.value || draggingId.value === row.id || !canDropInto(row.id)) return;
+  dropTargetId.value = row.id;
+}
+
+function onDragLeave(row) {
+  if (dropTargetId.value === row.id) dropTargetId.value = '';
+}
+
+function onDrop(row) {
+  if (!draggingId.value) return;
+  if (draggingId.value === row.id) return onDragEnd();
+  if (!canDropInto(row.id)) {
+    const src = proj.getEntity(draggingId.value);
+    onDragEnd();
+    setTip(`不能把「${src ? src.name : draggingId.value}」移到它自己或它的后代下（会形成循环）`, 'err');
+    return;
+  }
+  reparent(draggingId.value, row.id);
+}
+
+function onDropRoot() {
+  if (!draggingId.value) return;
+  reparent(draggingId.value, null);
+}
+
+function reparent(id, parentId) {
+  const src = proj.getEntity(id);
+  onDragEnd();
+  if (!src) return;
+  const res = proj.moveEntity(id, parentId);
+  const toName = parentId ? ((proj.getEntity(parentId) || {}).name || parentId) : '顶层';
+  setTip(res.success
+    ? `已把「${src.name}」移到「${toName}」（Ctrl+Z 可撤销）`
+    : (res.error || '移动失败'), res.success ? 'ok' : 'err');
+}
+
+function onParentChange(e) {
+  if (!selectedEntity.value) return;
+  const target = e.target.value || null;
+  if ((selectedEntity.value.parentId || null) === target) return;
+  reparent(selectedEntity.value.id, target);
+}
+
+/** 向导「前往编辑」落到本面板：选中新实体并滚到可见处 */
+function onGoto(entity) {
+  creatorOpen.value = false;
+  pendingDelete.value = null;
+  if (!entity) return;
+  selectedId.value = entity.id;
+  nextTick(() => {
+    const row = document.querySelector('.project-panel .pp-node-row.sel');
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+  });
+  setTip(`已选中「${entity.name}」：可在下方改父级、用行内铅笔改名或删除；`
+    + `画布落位与边界绘制等接线（Phase 2.4 / 2.6）后再从这里直达。`, 'ok');
 }
 
 function doRestore(s) {
@@ -381,12 +570,12 @@ refresh();
 }
 .pp-btn:hover:not(:disabled) { background: var(--planet-btn-hover); }
 .pp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.pp-btn.primary:not(:disabled) { color: #8fd3ff; border-color: #3a6b8f; }
-.pp-btn.danger:hover:not(:disabled) { color: #ff8b7d; border-color: #8f4a3a; }
+.pp-btn.primary:not(:disabled) { color: #1c4fa1; border-color: #3a6b8f; }
+.pp-btn.danger:hover:not(:disabled) { color: #b3261e; border-color: #8f4a3a; }
 .link-btn {
   background: none;
   border: none;
-  color: var(--planet-text-link);
+  color: #2f5fd0;   /* 面板卡面是浅色（--planet-editor-bg 两套主题都是白），链接必须用深蓝才看得清 */
   font-size: 11.5px;
   cursor: pointer;
   padding: 0;
@@ -406,8 +595,8 @@ refresh();
   border-radius: var(--radius-sm);
   border: 1px solid var(--planet-btn-border);
 }
-.pp-tip.ok { color: #7ee0a6; border-color: #2e6b48; background: rgba(46, 204, 113, 0.08); }
-.pp-tip.err { color: #ff9a8d; border-color: #8f4a3a; background: rgba(231, 76, 60, 0.1); }
+.pp-tip.ok { color: #1b6b3a; border-color: #2e6b48; background: rgba(46, 204, 113, 0.10); }
+.pp-tip.err { color: #b3261e; border-color: #8f4a3a; background: rgba(231, 76, 60, 0.10); }
 .pp-empty {
   color: var(--planet-text-secondary);
   font-size: 11.5px;
@@ -435,7 +624,7 @@ refresh();
   text-overflow: ellipsis;
 }
 .pp-item-sub { color: var(--planet-text-secondary); font-size: 10.5px; }
-.pp-warn { color: #d29922; font-weight: 700; }
+.pp-warn { color: #a06b00; font-weight: 700; }
 .pp-tree {
   border: 1px solid var(--planet-btn-border);
   border-radius: var(--radius-sm);
@@ -452,6 +641,9 @@ refresh();
 }
 .pp-node-row:hover { background: var(--planet-btn-hover); }
 .pp-node-row.sel { background: rgba(74, 144, 217, 0.16); }
+.pp-node-row.dragging { opacity: 0.45; }
+.pp-node-row.drop { outline: 1px solid var(--planet-text-link); background: rgba(74, 144, 217, 0.22); }
+.pp-node-row.forbid { cursor: no-drop; }
 .pp-badge {
   flex-shrink: 0;
   font-size: 10px;
@@ -467,6 +659,59 @@ refresh();
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.pp-row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.pp-node-row:hover .pp-row-actions,
+.pp-node-row.sel .pp-row-actions { opacity: 1; }
+.icon-btn {
+  background: none;
+  border: none;
+  padding: 1px 2px;
+  color: var(--planet-text-secondary);
+  cursor: pointer;
+  line-height: 1;
+  display: inline-flex;
+}
+.icon-btn:hover { color: var(--planet-text); }
+.pp-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 5px;
+  font-size: 12px;
+  color: var(--planet-text);
+  background: var(--planet-btn-bg);
+  border: 1px solid var(--planet-text-link);
+  border-radius: var(--radius-sm);
+}
+.pp-rename:focus { outline: none; }
+.pp-drop-root {
+  border: 1px dashed #2f5fd0;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #2f5fd0;
+  text-align: center;
+}
+.pp-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid #8f4a3a;
+  border-radius: var(--radius-sm);
+  background: rgba(231, 76, 60, 0.1);
+}
+.pp-confirm-text {
+  flex: 1;
+  min-width: 0;
+  color: #b3261e;
+  font-size: 11.5px;
+}
 .pp-detail {
   border: 1px dashed var(--planet-btn-border);
   border-radius: var(--radius-sm);
@@ -476,6 +721,17 @@ refresh();
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+.pp-parent-row { display: flex; align-items: center; gap: 4px; }
+.pp-parent {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--planet-text);
+  background: var(--planet-btn-bg);
+  border: 1px solid var(--planet-btn-border);
+  border-radius: var(--radius-sm);
+  padding: 1px 3px;
 }
 .pp-k {
   display: inline-block;

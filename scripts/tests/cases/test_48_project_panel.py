@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 48：项目面板 + 实体创建向导（Phase 2.1 / 2.2）
+"""用例 48：项目面板 + 实体创建向导（Phase 2.1 / 2.2 / 2.3）
 
 用户决策（2026-09-18）：
   · 实体创建走 **C 方案「分派式向导」**——表单填「名称/层级/父级」，创建后按层级走不同的
@@ -8,16 +8,30 @@
   · region 层级的边界用**专用自由绘制工具**（沿用 v7 原型）→ 向导里对应「按住拖动勾轮廓 + 离屏校验」的说明。
   · building 不纳入向导（沿用区域地图现有入口）。
 
+用户决策（2026-09-19，本轮）：
+  · 面板位置的现状（右上 340px）保持；
+  · 实体树要能**改名 / 删除 / 拖动改父级**（都走 undo）；
+  · 向导的层级下拉**按已选父级自动过滤**；
+  · 分派说明改为**创建完成后的结果卡片**，按钮文案用「前往编辑」（不是「前往落位」）。
+
 本用例守：
   a) 入口可用：工具栏「项目」按钮 → 面板出现 → 再点关闭（不是死按钮）
   b) 未打开项目时的空态文案（不误导：当前仍写知识库缓存，接线后才变只读）
   c) 面板内新建项目 → 状态条 + 项目列表 + 实体/快照区就位
   d) 向导：分派说明随层级变化（region / galaxy / city 三种文案必须不同且有层级特征词）
-  e) 创建实体 → 结果提示 + 实体树出现 + 详情显示 id/层级
-  f) 父子两级 → 树按深度缩进（depth 1 的 padding-left 更大）
-  g) 保存 → 快照区出现一条 + 状态条「已保存」
-  h) 关闭项目 → 回到未打开状态
-  i) 静态：面板是懒加载 chunk 且不引用 geodata（接线属 Phase 2.4，本阶段不得偷跑）
+  e) 层级下拉按父级过滤（顶层=全量 12；父级 world → 仅 star_domain 且自动切换）
+  f) 创建实体 → **结果卡片**（成功文案 + 该层级步骤 + 「前往编辑」）→ 点「前往编辑」关向导并在面板选中该实体
+  g) 实体树改名（走 undo：撤销后名字还原）
+  h) 实体树删除（两段式确认：先出现确认条，取消不删、确认才删）
+  i) 实体树拖动改父级（拖到别的行=挂到它下面；拖到「顶层」条=回到根；拖到自己后代=拒绝且不写入）
+  j) 详情区父级下拉改父级（拖动之外的等价入口，且不含自身）
+  k) 保存 → 快照区出现一条 + 状态条「已保存」；关闭面板 → 面板消失
+  l) 静态：面板是懒加载 chunk、不引用 geodata（接线属 Phase 2.4，本阶段不得偷跑）；向导不含 building
+
+⚠️ 测试写法提醒（本次踩过）：
+  · **不要缓存 DOM 引用**：向导/面板会被 v-if 卸载重建，缓存的元素会变成脱离文档的旧节点，
+    断言会读到过期的选项列表（静默假绿/假红）。
+  · **行名比较用 `.pp-node-name` 精确相等**：`textContent.indexOf('测试世界')` 会命中「测试世界改」。
 """
 import sys, os, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -27,28 +41,59 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 APP = "document.querySelector('#app').__vue_app__"
 STORE = f"{APP}._instance.setupState.store"
 
-PANEL = "document.querySelector('.project-panel')"
-TOOLBAR_BTN = ("Array.from(document.querySelectorAll('button'))"
-               ".find(b => (b.getAttribute('title') || '').startsWith('项目'))")
-
 
 def _read(rel):
     with open(os.path.join(ROOT, rel), 'r', encoding='utf-8') as f:
         return f.read()
 
 
-# ─────────────────────────────────────────────────────────────
-# a) 入口 + b) 空态 + c) 新建项目 + g) 快照 + h) 关闭（一次性驱动，减少刷新次数）
-# ─────────────────────────────────────────────────────────────
-PANEL_JS = """(async () => {
+PANEL_JS = r"""(async () => {
   const fails = [];
   const ck = (label, cond, extra) => { if (!cond) fails.push(label + (extra !== undefined ? ' → ' + JSON.stringify(extra) : '')); };
   const same = (label, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(label + ' → got ' + JSON.stringify(a) + ' want ' + JSON.stringify(b)); };
   const tick = (ms) => new Promise(r => setTimeout(r, ms || 160));
   const q = (sel) => document.querySelector(sel);
+  const qa = (sel) => Array.from(document.querySelectorAll(sel));
   const text = (sel) => { const el = q(sel); return el ? el.textContent.trim() : null; };
+  const btnIn = (sel, label) => qa(sel).find(b => b.textContent.trim() === label);
+  const panelRows = () => qa('.project-panel .pp-node-row');
+  const rowName = (r) => { const e = r.querySelector('.pp-node-name'); return e ? e.textContent.trim() : '<改名中>'; };
+  const rowOfName = (nm) => panelRows().find(r => rowName(r) === nm) || null;
+  const rowNames = () => panelRows().map(rowName);
+  const rowPad = (nm) => { const r = rowOfName(nm); return r ? parseInt(r.style.paddingLeft || '0', 10) : -1; };
 
   window.__projects = {}; window.__projectCalls = [];
+
+  // store 直读（断言落库结果，不只信 DOM）
+  const pinia = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia;
+  const { useProjectStore } = await import('/src/store/projectStore.js');
+  const ps = useProjectStore(pinia);
+  const ent = (nm) => Object.values(ps.entities).find(e => (e.name || '') === nm) || null;
+  const entId = (nm) => { const e = ent(nm); return e ? e.id : null; };
+  const entCount = () => Object.keys(ps.entities).length;
+
+  // 合成 HTML5 拖拽（headless 下不能真拖鼠标）
+  const mkDT = () => { try { return new DataTransfer(); } catch (e) { return undefined; } };
+  const fireDrag = (type, el, dt) => {
+    if (!el) return;
+    let ev;
+    try { ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }); }
+    catch (e) { ev = new Event(type, { bubbles: true, cancelable: true }); }
+    el.dispatchEvent(ev);
+  };
+  const dragTo = async (srcName, dstEl) => {
+    const src = rowOfName(srcName);
+    if (!src || !dstEl) { ck('拖动前置：找不到行或目标', false, [srcName, !!src, !!dstEl]); return; }
+    const dt = mkDT();
+    fireDrag('dragstart', src, dt);
+    await tick(100);
+    fireDrag('dragover', dstEl, dt);
+    await tick(100);
+    fireDrag('drop', dstEl, dt);
+    await tick(250);
+    fireDrag('dragend', src, dt);
+    await tick(150);
+  };
 
   // ---- a) 入口：工具栏按钮真实可用 ----
   const btn = Array.from(document.querySelectorAll('button'))
@@ -76,114 +121,225 @@ PANEL_JS = """(async () => {
   input.value = '面板测试项目';
   input.dispatchEvent(new Event('input', { bubbles: true }));
   await tick(60);
-  const createBtn = Array.from(document.querySelectorAll('.project-panel .pp-btn'))
-    .find(b => b.textContent.trim() === '新建');
+  const createBtn = btnIn('.project-panel .pp-btn', '新建');
   ck('有「新建」按钮', !!createBtn);
   ck('名称非空时「新建」可用', createBtn && !createBtn.disabled);
   createBtn.click();
   await tick(400);
   same('状态条显示项目名', text('.pp-status-name'), '面板测试项目');
   ck('落盘路径提示存在（.sitian）', String(text('.pp-file') || '').indexOf('.sitian') >= 0, text('.pp-file'));
-  const listItems = Array.from(document.querySelectorAll('.project-panel .pp-item'));
+  const listItems = qa('.project-panel .pp-item');
   ck('项目列表出现该项', listItems.some(el => el.textContent.indexOf('面板测试项目') >= 0), listItems.length);
   ck('mock 收到 create 调用', (window.__projectCalls || []).some(c => c.op === 'create'), window.__projectCalls);
   ck('打开项目后实体区空态变成「还没有实体」', document.body.innerHTML.indexOf('还没有实体') >= 0);
 
-  // ---- d) 向导：分派说明随层级变化 ----
-  const addBtn = Array.from(document.querySelectorAll('.project-panel .link-btn'))
-    .find(b => b.textContent.trim() === '+ 新建实体');
-  ck('有「+ 新建实体」入口', !!addBtn);
-  ck('打开项目后该入口可用', addBtn && !addBtn.disabled);
-  addBtn.click();
-  await tick(300);
+  // ---- 向导操作器（**每次都现查 DOM**，绝不缓存元素）----
+  const openWizard = async () => {
+    btnIn('.project-panel .link-btn', '+ 新建实体').click();
+    for (let i = 0; i < 30 && !q('.ec-overlay'); i++) await tick(100);
+  };
+  const layerEl = () => q('[data-testid="ec-layer"]');
+  const parentEl = () => q('[data-testid="ec-parent"]');
+  const layerVals = () => { const el = layerEl(); return el ? Array.from(el.options).map(o => o.value) : null; };
+  const fillName = async (nm) => {
+    const inp = q('.ec-card input');
+    inp.value = nm;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick(90);
+  };
+  const setLayer = async (val) => {
+    const el = layerEl();
+    el.value = val;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick(130);
+    return qa('.ec-dispatch li').map(li => li.textContent.trim()).join(' | ');
+  };
+  const setParent = async (val) => {
+    const el = parentEl();
+    el.value = val || '';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick(200);
+  };
+  const createNow = async () => { btnIn('.ec-btn', '创建').click(); await tick(350); };
+  const cardText = () => text('.ec-card-done .ec-result');
+  const cardSteps = () => qa('.ec-card-done .ec-dispatch li').map(li => li.textContent.trim()).join(' | ');
+
+  // ---- d) 向导：分派说明随层级变化 + 层级下拉 ----
+  await openWizard();
   ck('向导弹层出现', !!q('.ec-overlay'));
   if (!q('.ec-overlay')) return JSON.stringify({ fails: fails, aborted: '向导未渲染' });
   ck('向导标题', text('.ec-title') === '新建实体');
-
-  const selectLayer = async (val) => {
-    const sel = q('.ec-card select');
-    sel.value = val;
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
-    await tick(80);
-    return Array.from(document.querySelectorAll('.ec-dispatch li')).map(li => li.textContent.trim()).join(' | ');
-  };
-  const cityTxt = await selectLayer('city');
-  const galaxyTxt = await selectLayer('galaxy');
-  const regionTxt = await selectLayer('region');
+  ck('层级下拉/父级下拉可定位', !!layerEl() && !!parentEl());
+  same('未选父级时层级全量可选（12）', (layerVals() || []).length, 12);
+  ck('层级选项不含 building', !(layerVals() || []).includes('building'), layerVals());
+  const cityTxt = await setLayer('city');
+  const galaxyTxt = await setLayer('galaxy');
+  const regionTxt = await setLayer('region');
   ck('city 分派提到行星表面落位', cityTxt.indexOf('行星表面') >= 0, cityTxt);
   ck('galaxy 分派提到恒星系视图', galaxyTxt.indexOf('恒星系视图') >= 0, galaxyTxt);
   ck('region 分派提到自由绘制', regionTxt.indexOf('自由绘制') >= 0, regionTxt);
   ck('region 分派含离屏校验说明', regionTxt.indexOf('离屏') >= 0, regionTxt);
   ck('三种层级的分派文案互不相同', new Set([cityTxt, galaxyTxt, regionTxt]).size === 3);
-  ck('向导不含 building 选项', !document.body.innerHTML.includes('>建筑（building）'));
-  ck('有「接线后打通」的说明（不假装已可用）', text('.ec-note').indexOf('接线') >= 0, text('.ec-note'));
+  ck('创建前有「接线后打通」的说明（不假装已可用）', (text('.ec-note') || '').indexOf('接线') >= 0, text('.ec-note'));
 
-  // ---- e) 创建一个世界 + 一个城市（父子两级）----
-  const nameInput = q('.ec-card input');
-  nameInput.value = '测试世界';
-  nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-  await tick(60);
-  ck('id 预览随名称变化', text('.ec-id') && text('.ec-id').indexOf('测试世界') >= 0, text('.ec-id'));
-  await selectLayer('world');
-  q('.ec-btn.primary').click();
-  await tick(250);
-  ck('创建结果提示 ok', (text('.ec-result') || '').indexOf('已创建') >= 0, text('.ec-result'));
-  ck('结果含实体 id', (text('.ec-result') || '').indexOf('测试世界') >= 0, text('.ec-result'));
+  // ---- e) 创建第一个实体（world，顶层）----
+  await fillName('测试世界');
+  ck('id 预览随名称变化', (text('.ec-id') || '').indexOf('测试世界') >= 0, text('.ec-id'));
+  await setLayer('world');
+  await createNow();
 
-  // 再建一个（reset + 填城市 + 选父级）
-  const again = Array.from(document.querySelectorAll('.ec-btn')).find(b => b.textContent.trim() === '再建一个');
-  again.click();
-  await tick(120);
-  const ni2 = q('.ec-card input');
-  ni2.value = '测试城';
-  ni2.dispatchEvent(new Event('input', { bubbles: true }));
-  await tick(60);
-  await selectLayer('city');
-  const parentSel = document.querySelectorAll('.ec-card select')[1];
-  parentSel.value = '测试世界';
-  parentSel.dispatchEvent(new Event('change', { bubbles: true }));
-  await tick(80);
-  q('.ec-btn.primary').click();
-  await tick(250);
-  ck('第二个实体创建成功', (text('.ec-result') || '').indexOf('测试城') >= 0, text('.ec-result'));
+  // ---- f) 结果卡片（用户 2026-09-19 决策）----
+  ck('创建后出现结果卡片', !!q('.ec-card-done'));
+  ck('卡片成功文案含实体名', (cardText() || '').indexOf('测试世界') >= 0, cardText());
+  ck('卡片内含该层级（world）的分派步骤', cardSteps().indexOf('世界卡片') >= 0, cardSteps());
+  ck('卡片含「接线后打通」说明（不假装已可用）', (text('.ec-card-done .ec-note') || '').indexOf('接线') >= 0, text('.ec-card-done .ec-note'));
+  const gotoBtn = btnIn('.ec-btn', '前往编辑');
+  ck('卡片按钮文案是「前往编辑」', !!gotoBtn);
+  ck('全页面不再出现「前往落位」字样', document.body.innerHTML.indexOf('前往落位') < 0);
+  gotoBtn.click();
+  await tick(350);
+  ck('点「前往编辑」后向导关闭', !q('.ec-overlay'));
+  ck('点「前往编辑」后面板选中该实体', !!q('.project-panel .pp-node-row.sel'), rowNames());
+  ck('面板提示说明当前可编辑什么', (text('.pp-tip') || '').indexOf('已选中') >= 0, text('.pp-tip'));
+  same('落库：实体数量 1', entCount(), 1);
+  ck('落库：父级为空（顶层）', ent('测试世界').parentId === null, ent('测试世界'));
 
-  // 关向导
-  Array.from(document.querySelectorAll('.ec-btn')).find(b => b.textContent.trim() === '关闭').click();
+  // ---- g) 改名（走 undo）----
+  const renameBtn = q('.project-panel .pp-node-row [title="改名"]');
+  ck('行内有「改名」按钮', !!renameBtn);
+  renameBtn.click();
   await tick(200);
+  const renameInput = q('.pp-rename');
+  ck('出现行内改名输入框', !!renameInput);
+  renameInput.value = '改名世界';
+  renameInput.dispatchEvent(new Event('input', { bubbles: true }));
+  await tick(90);
+  renameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await tick(300);
+  ck('改名后树显示新名字', rowNames().includes('改名世界'), rowNames());
+  ck('改名不动 id（id 仍是名称规范化结果）', !!entId('改名世界') && entId('测试世界') === null, Object.keys(ps.entities));
+  const { undo } = await import('/src/store/undo.js');
+  undo();
+  await tick(300);
+  ck('改名可撤销（undo 后名字还原）', rowNames().includes('测试世界'), rowNames());
+
+  // ---- e2) 再建一个顶层 star_domain ----
+  await openWizard();
+  await fillName('独立星域');
+  await setLayer('star_domain');
+  await createNow();
+  ck('第二个实体创建成功（顶层星域）', (cardText() || '').indexOf('独立星域') >= 0, cardText());
+  ck('卡片步骤随层级变化（星域=边界圆）', cardSteps().indexOf('边界圆') >= 0, cardSteps());
+
+  // ---- e3) 层级按父级过滤：父级 = world → 只剩 star_domain 且自动切换 ----
+  btnIn('.ec-btn', '再建一个').click();
+  await tick(300);
+  ck('「再建一个」后回到表单（预告重现、卡片消失）', !!q('.ec-dispatch') && !q('.ec-card-done'));
+  await fillName('北星域');
+  await setLayer('city');
+  const worldId = entId('测试世界');
+  await setParent(worldId);
+  same('父级=世界时的层级候选只剩 star_domain', layerVals(), ['star_domain']);
+  same('父级变化后自动把层级切到合法值', layerEl().value, 'star_domain');
+  ck('过滤生效时给出说明文案', (text('.ec-hint') || '').indexOf('已按父级过滤') >= 0, text('.ec-hint'));
+  await createNow();
+  ck('第三个实体创建成功', (cardText() || '').indexOf('北星域') >= 0, cardText());
+  ck('挂到父级下的实体 parentId 正确', ent('北星域').parentId === worldId, ent('北星域').parentId);
+  await setParent('');
+  same('父级清空后层级恢复全量 12', (layerVals() || []).length, 12);
+
+  btnIn('.ec-btn', '关闭').click();
+  await tick(300);
   ck('向导关闭', !q('.ec-overlay'));
 
-  // ---- e/f) 实体树：两行 + 缩进 ----
-  const rows = Array.from(document.querySelectorAll('.project-panel .pp-node-row'));
-  same('实体树行数', rows.length, 2);
-  ck('树显示层级徽标', rows.every(r => !!r.querySelector('.pp-badge')));
-  ck('树显示名称', rows.map(r => r.textContent.replace(/\\s+/g, '')).join('|').indexOf('测试城') >= 0, rows.map(r => r.textContent.trim()));
-  const pad = rows.map(r => parseInt(r.style.paddingLeft || '0', 10));
-  ck('子实体缩进更深', pad.length === 2 && pad[1] > pad[0], pad);
-  const entityLabel = Array.from(document.querySelectorAll('.project-panel .pp-label'))
-    .map(el => el.textContent.replace(/\\s+/g, ' ').trim())
+  // ---- 实体树：行数 / 缩进 / 计数 ----
+  same('实体树行数', panelRows().length, 3);
+  ck('树显示层级徽标', panelRows().every(r => !!r.querySelector('.pp-badge')));
+  ck('子实体缩进更深', rowPad('北星域') > rowPad('独立星域'), [rowPad('北星域'), rowPad('独立星域')]);
+  const entityLabel = qa('.project-panel .pp-label')
+    .map(el => el.textContent.replace(/\s+/g, ' ').trim())
     .find(t => t.startsWith('实体（'));
-  same('实体计数标签', entityLabel, '实体（2） + 新建实体');
+  same('实体计数标签', entityLabel, '实体（3） + 新建实体');
 
-  // 点第一行 → 详情
-  rows[0].click();
-  await tick(120);
+  // ---- h) 拖到别的行 = 改父级 ----
+  await dragTo('独立星域', rowOfName('测试世界'));
+  same('拖动后 parentId 落到目标行', ent('独立星域').parentId, worldId);
+  ck('拖动后缩进变深', rowPad('独立星域') === rowPad('北星域'), [rowPad('独立星域'), rowPad('北星域')]);
+  ck('拖动后有结果提示', (text('.pp-tip') || '').indexOf('移到') >= 0, text('.pp-tip'));
+
+  // ---- h2) 拖到「顶层」条 = 回到根 ----
+  {
+    const src = rowOfName('独立星域');
+    const dt = mkDT();
+    fireDrag('dragstart', src, dt);
+    await tick(200);
+    const rootZone = q('.pp-drop-root');
+    ck('拖动中出现「松开以移到顶层」投放条', !!rootZone, (rootZone || {}).textContent);
+    fireDrag('dragover', rootZone, dt);
+    fireDrag('drop', rootZone, dt);
+    await tick(300);
+    fireDrag('dragend', src, dt);
+    await tick(150);
+  }
+  same('拖到顶层条后 parentId 归 null', ent('独立星域').parentId, null);
+  ck('回到顶层后缩进回到最浅', rowPad('独立星域') < rowPad('北星域'), [rowPad('独立星域'), rowPad('北星域')]);
+
+  // ---- h3) 拖到自己后代 = 拒绝（防循环）----
+  await dragTo('测试世界', rowOfName('北星域'));
+  same('拒绝循环后父级未变', ent('测试世界').parentId, null);
+  same('拒绝循环后子实体父级未变', ent('北星域').parentId, worldId);
+  ck('拒绝循环时给出原因提示', (text('.pp-tip') || '').indexOf('循环') >= 0, text('.pp-tip'));
+
+  // ---- i) 删除：两段式确认 ----
+  const delBtn = rowOfName('北星域').querySelector('[title^="删除"]');
+  ck('行内有删除按钮', !!delBtn);
+  delBtn.click();
+  await tick(250);
+  ck('出现删除确认条（不直接删）', !!q('.pp-confirm'));
+  ck('确认条写明删除对象', (text('.pp-confirm-text') || '').indexOf('北星域') >= 0, text('.pp-confirm-text'));
+  same('确认前未删除', entCount(), 3);
+  btnIn('.pp-confirm .pp-btn', '取消').click();
+  await tick(200);
+  ck('取消后确认条消失', !q('.pp-confirm'));
+  same('取消后实体仍在', entCount(), 3);
+  rowOfName('北星域').querySelector('[title^="删除"]').click();
+  await tick(250);
+  btnIn('.pp-confirm .pp-btn', '删除').click();
+  await tick(350);
+  same('确认后实体被删', entCount(), 2);
+  ck('树里不再有被删实体', !rowOfName('北星域'), rowNames());
+  ck('删除有结果提示', (text('.pp-tip') || '').indexOf('已删除') >= 0, text('.pp-tip'));
+
+  // ---- j) 详情区父级下拉（拖动的等价入口）----
+  rowOfName('独立星域').click();
+  await tick(250);
   ck('详情面板出现', !!q('.pp-detail'));
-  ck('详情含 id/层级/父级', (text('.pp-detail') || '').indexOf('顶层') >= 0, text('.pp-detail'));
+  const detailParent = q('.pp-parent');
+  ck('详情区有父级下拉', !!detailParent);
+  detailParent.value = worldId;
+  detailParent.dispatchEvent(new Event('change', { bubbles: true }));
+  await tick(300);
+  same('下拉改父级生效', ent('独立星域').parentId, worldId);
+  ck('下拉里不含自身（防自环）', !qa('.pp-parent option').some(o => o.value === entId('独立星域')),
+     qa('.pp-parent option').map(o => o.value));
 
-  // ---- g) 保存 → 快照 ----
-  const saveBtn = Array.from(document.querySelectorAll('.project-panel .pp-btn')).find(b => b.textContent.trim() === '保存');
-  saveBtn.click();
-  await tick(400);
-  ck('状态条显示已保存', (text('.pp-status-sub') || '').indexOf('已保存') >= 0, text('.pp-status-sub'));
+  // ---- k) 保存 → 快照 ----
+  const statusSeen = { v: '' };
+  btnIn('.project-panel .pp-btn', '保存').click();
+  for (let i = 0; i < 25; i++) {                    // 轮询而不是死等固定毫秒（状态条是瞬态 UI）
+    statusSeen.v = text('.pp-status-sub') || '';
+    if (statusSeen.v.indexOf('已保存') >= 0) break;
+    await tick(120);
+  }
+  ck('状态条显示已保存', statusSeen.v.indexOf('已保存') >= 0, statusSeen.v);
   ck('mock 收到 save 调用', (window.__projectCalls || []).some(c => c.op === 'save'), window.__projectCalls);
-  const snapSection = document.body.innerHTML.indexOf('快照（最近 50 份');
-  ck('快照区出现', snapSection >= 0);
-  ck('快照条目出现', document.body.innerHTML.indexOf('手动保存') >= 0);
+  ck('保存后 dirty 归位', ps.dirty === false, ps.dirty);
+  ck('快照区出现', document.body.innerHTML.indexOf('快照（最近 50 份') >= 0);
+  ck('快照条目出现（手动保存）', document.body.innerHTML.indexOf('手动保存') >= 0);
 
   // ---- 关闭面板（入口可逆）----
-  const closeX = q('.project-panel .close-btn');
-  closeX.click();
-  await tick(250);
+  q('.project-panel .close-btn').click();
+  await tick(300);
   ck('关闭按钮隐藏面板', !q('.project-panel'));
 
   return JSON.stringify({ fails: fails });
@@ -199,21 +355,21 @@ def sub_panel(cdp):
     fails = res.get('fails') or []
     if fails:
         return False, f'面板断言失败 {len(fails)} 项：' + '；'.join(fails[:8])
-    return True, ('入口开关/空态文案/新建项目/分派说明三层级差异/实体树父子缩进/详情/保存+快照'
-                  '全部通过')
+    return True, ('入口开关/空态文案/新建项目/分派说明三层级差异/层级按父级过滤/结果卡片与「前往编辑」'
+                  '/改名(可撤销)/拖动改父级(含顶层与防循环)/两段式删除/详情区父级下拉/保存+快照 全部通过')
 
 
 # ─────────────────────────────────────────────────────────────
-# i) 静态：懒加载 + 不得偷跑接线
+# l) 静态：懒加载 + 不得偷跑接线 + 新能力真的走 projectStore
 # ─────────────────────────────────────────────────────────────
 def sub_static(cdp):
     bad = []
     app = _read('src/renderer/src/App.vue')
     if "defineAsyncComponent(() => import('./components/ProjectPanel.vue'))" not in app:
         bad.append('App.vue 未把 ProjectPanel 注册为懒加载组件')
-    if 'panelsStore.toggle(\'project\')' not in app:
+    if "panelsStore.toggle('project')" not in app:
         bad.append('App.vue 缺少项目面板入口按钮')
-    if 'panelsStore.isOpen(\'project\')' not in app:
+    if "panelsStore.isOpen('project')" not in app:
         bad.append('App.vue 未挂载 project-panel')
     for rel in ('src/renderer/src/components/ProjectPanel.vue',
                 'src/renderer/src/components/EntityCreator.vue'):
@@ -222,13 +378,32 @@ def sub_static(cdp):
             bad.append(f'{rel} 引用了 geodata store（接线属 Phase 2.4，本阶段不得偷跑）')
         if 'sitianAPI' in src:
             bad.append(f'{rel} 直接调用了 sitianAPI（应只经 projectStore）')
-    # 向导的层级选项不得包含 building（用户已确认沿用区域地图入口）
+
+    pp = _read('src/renderer/src/components/ProjectPanel.vue')
+    for call in ('proj.renameEntity(', 'proj.deleteEntity(', 'proj.moveEntity(', 'proj.parentCandidates('):
+        if call not in pp:
+            bad.append(f'ProjectPanel 未接实体树操作：缺 {call}')
+    for token in ('draggable', '@dragstart', '@drop'):
+        if token not in pp:
+            bad.append(f'ProjectPanel 实体树缺少拖动改父级要素：{token}')
+    if '@goto' not in pp:
+        bad.append('ProjectPanel 未接 EntityCreator 的 goto 事件（「前往编辑」会是死按钮）')
+
     ec = _read('src/renderer/src/components/EntityCreator.vue')
-    if "'building'" in ec.split('const layerOptions')[1].split('];')[0]:
-        bad.append('EntityCreator 的层级选项里出现了 building（用户已确认不纳入）')
+    creatable = ec.split('const CREATABLE')[1].split('];')[0]
+    if "'building'" in creatable:
+        bad.append('EntityCreator 的可创建层级里出现了 building（用户已确认不纳入）')
+    if 'CHILD_LAYERS' not in ec:
+        bad.append('EntityCreator 缺少层级父子表（层级下拉无法按父级过滤）')
+    for token in ('前往编辑', "emit('goto'", 'gotoEdit'):
+        if token not in ec:
+            bad.append(f'EntityCreator 缺少结果卡片要素：{token}')
+    if '前往落位' in ec:
+        bad.append('EntityCreator 里仍有「前往落位」（用户已改为「前往编辑」）')
     if bad:
         return False, '；'.join(bad)
-    return True, '面板为懒加载 chunk、入口齐全；两个新组件均不引用 geodata/sitianAPI（接线属 Phase 2.4）；向导不含 building'
+    return True, ('面板为懒加载 chunk、入口齐全；两个新组件均不引用 geodata/sitianAPI（接线属 Phase 2.4）；'
+                  '向导不含 building、层级过滤表与结果卡片（前往编辑）齐全，且面板已接改名/删除/拖动改父级')
 
 
 def run(cdp):
@@ -236,8 +411,8 @@ def run(cdp):
     wait_for(cdp, f"{STORE}.nodes.length > 0", timeout=45, desc='地理数据加载')
 
     results = []
-    for name, fn in (('a~h 面板与向导端到端', sub_panel),
-                     ('i 静态约定（懒加载/不偷跑接线）', sub_static)):
+    for name, fn in (('a~k 面板与向导端到端', sub_panel),
+                     ('l 静态约定（懒加载/不偷跑接线/新能力接线）', sub_static)):
         try:
             ok, detail = fn(cdp)
         except Exception as e:

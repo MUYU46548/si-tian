@@ -22,14 +22,15 @@
 
         <div class="ec-field">
           <label>层级</label>
-          <select v-model="layer" class="ec-input">
+          <select v-model="layer" class="ec-input" data-testid="ec-layer">
             <option v-for="l in layerOptions" :key="l" :value="l">{{ LAYER_LABELS[l] || l }}（{{ l }}）</option>
           </select>
         </div>
+        <div v-if="layerFilterHint" class="ec-hint">{{ layerFilterHint }}</div>
 
         <div class="ec-field">
           <label>父级</label>
-          <select v-model="parentId" class="ec-input">
+          <select v-model="parentId" class="ec-input" data-testid="ec-parent">
             <option value="">（顶层）</option>
             <option v-for="e in parentOptions" :key="e.id" :value="e.id">
               {{ e.name }}（{{ e.layerLabel }}）
@@ -50,8 +51,8 @@
           </div>
         </div>
 
-        <!-- 分派计划：C 方案的核心 —— 创建后按层级走不同的落位/绘制流程 -->
-        <div class="ec-dispatch">
+        <!-- 分派计划：C 方案的核心 —— 创建后按层级走不同的落位/绘制流程（创建前作为预告） -->
+        <div v-if="!created" class="ec-dispatch">
           <div class="ec-dispatch-title">创建后</div>
           <ol>
             <li v-for="(s, i) in dispatchSteps" :key="i">{{ s }}</li>
@@ -61,13 +62,31 @@
           </div>
         </div>
 
-        <div v-if="result" class="ec-result" :class="result.ok ? 'ok' : 'err'">{{ result.text }}</div>
+        <!-- 创建结果卡片（用户决策 2026-09-19）：结果 + 该层级的分派流程 + 「前往编辑」 -->
+        <div v-if="created" class="ec-card-done">
+          <div class="ec-result ok">已创建「{{ created.entity.name }}」（id: {{ created.entity.id }}，层级 {{ created.entity.layerLabel }}）</div>
+          <div class="ec-dispatch">
+            <div class="ec-dispatch-title">下一步</div>
+            <ol>
+              <li v-for="(s, i) in created.steps" :key="i">{{ s }}</li>
+            </ol>
+            <div class="ec-note">
+              落位与画边界在「接线」完成后与画布打通（Phase 2.4 / 2.6）；当前先落库为项目实体。
+            </div>
+          </div>
+          <div class="ec-card-actions">
+            <button class="ec-btn primary" @click="gotoEdit">前往编辑</button>
+            <button class="ec-btn" @click="reset">再建一个</button>
+          </div>
+        </div>
+
+        <div v-if="result && !result.ok" class="ec-result err">{{ result.text }}</div>
       </div>
 
       <footer class="ec-foot">
         <span class="ec-parent-hint">{{ parentHint }}</span>
         <button class="ec-btn" @click="$emit('close')">关闭</button>
-        <button class="ec-btn" :disabled="!result || !result.ok" @click="reset">再建一个</button>
+        <button class="ec-btn" :disabled="!created" @click="reset">清空重填</button>
         <button class="ec-btn primary" :disabled="!name.trim()" @click="create">创建</button>
       </footer>
     </div>
@@ -90,14 +109,28 @@ import { LAYER_LABELS } from '../utils/projectSchema';
 const props = defineProps({
   open: { type: Boolean, default: false },
 });
-defineEmits(['close']);
+const emit = defineEmits(['close', 'goto']);
 
 const proj = useProjectStore();
 const nameInput = ref(null);
 
 // 可创建层级：排除 building（沿用区域地图现有入口，用户已确认）与 unknown
-const layerOptions = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon',
+const CREATABLE = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon',
   'region', 'city', 'town', 'village', 'facility', 'location'];
+
+// 层级父子关系（与 ROSA 地理系统层级一致，用于「按已选父级过滤层级下拉」）
+const CHILD_LAYERS = {
+  world: ['star_domain'],
+  star_domain: ['galaxy'],
+  galaxy: ['star'],
+  star: ['planet'],
+  planet: ['moon', 'region', 'city', 'town', 'village', 'facility', 'location'],
+  moon: ['region', 'city', 'town', 'village', 'facility', 'location'],
+  region: ['city', 'town', 'village', 'facility', 'location', 'building'],
+  city: ['facility', 'location', 'building'],
+  town: ['facility', 'location', 'building'],
+  village: ['facility', 'location', 'building'],
+};
 
 const name = ref('');
 const layer = ref('city');
@@ -105,13 +138,42 @@ const parentId = ref('');
 const tagsText = ref('');
 const coordX = ref('');
 const coordY = ref('');
-const result = ref(null);
+const result = ref(null);       // 仅承载失败信息
+const created = ref(null);      // { entity, steps } —— 创建成功后的结果卡片数据
 
 const previewId = computed(() => (name.value.trim() ? proj.previewEntityId(name.value.trim()) : ''));
 
 const parentOptions = computed(() => {
   // 创建新实体时没有「自己」，只需排除……（新实体尚无后代）→ 全部实体都可作父级
   return proj.entityList;
+});
+
+// 父级约束：选定父级后，只允许建它语义上能容纳的子层级
+const parentRestriction = computed(() => {
+  if (!parentId.value) return null;
+  const p = proj.getEntity(parentId.value);
+  if (!p) return null;
+  const list = (CHILD_LAYERS[p.layer] || []).filter(l => CREATABLE.includes(l));
+  return list.length ? { parent: p, list } : null;
+});
+
+const layerOptions = computed(() => (parentRestriction.value ? parentRestriction.value.list : CREATABLE));
+
+const layerFilterHint = computed(() => {
+  if (parentRestriction.value) {
+    const names = parentRestriction.value.list.map(l => LAYER_LABELS[l] || l).join(' / ');
+    return `已按父级过滤：${parentRestriction.value.parent.name} 之下只能建 ${names}`;
+  }
+  if (parentId.value) {
+    const p = proj.getEntity(parentId.value);
+    return `${p ? p.layerLabel : '该层级'} 通常不再有子实体，层级暂不过滤`;
+  }
+  return '';
+});
+
+// 父级变化后若当前层级不再合法 → 自动切到第一个合法层级（避免提交出「世界下挂城市」这类脏数据）
+watch(parentId, () => {
+  if (!layerOptions.value.includes(layer.value)) layer.value = layerOptions.value[0];
 });
 
 const parentHint = computed(() => {
@@ -145,7 +207,14 @@ function reset() {
   coordX.value = '';
   coordY.value = '';
   result.value = null;
+  created.value = null;
   nextTick(() => nameInput.value?.focus());
+}
+
+/** 结果卡片上的「前往编辑」：把新实体交回面板（选中 + 可改名/改父级/删除） */
+function gotoEdit() {
+  if (!created.value) return;
+  emit('goto', created.value.entity);
 }
 
 function create() {
@@ -157,6 +226,7 @@ function create() {
     const num = Number(t);
     return Number.isFinite(num) ? num : null;
   };
+  const steps = dispatchSteps.value.slice();      // 冻结在创建成功的那一刻（改层级不影响卡片）
   const res = proj.createEntity({
     name: n,
     layer: layer.value,
@@ -165,8 +235,10 @@ function create() {
     coordinate: { x: numOrNull(coordX.value), y: numOrNull(coordY.value) },
   });
   if (res.success) {
-    result.value = { ok: true, text: `已创建「${res.entity.name}」（id: ${res.entity.id}，层级 ${res.entity.layerLabel}）` };
+    result.value = null;
+    created.value = { entity: res.entity, steps };
   } else {
+    created.value = null;
     result.value = { ok: false, text: `创建失败：${res.error}` };
   }
 }
@@ -282,14 +354,31 @@ watch(() => props.open, (v) => { if (v) nextTick(() => nameInput.value?.focus())
   font-size: 10.5px;
   opacity: 0.85;
 }
+.ec-hint {
+  margin-top: -4px;
+  color: var(--planet-text-secondary, #8fa3bb);
+  font-size: 10.5px;
+  padding-left: 42px;
+  opacity: 0.9;
+}
+.ec-card-done {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ec-card-actions {
+  display: flex;
+  gap: 7px;
+  justify-content: flex-end;
+}
 .ec-result {
   font-size: 11.5px;
   padding: 5px 8px;
   border-radius: var(--radius-sm, 4px);
   border: 1px solid var(--planet-btn-border, #2b4059);
 }
-.ec-result.ok { color: #7ee0a6; border-color: #2e6b48; background: rgba(46, 204, 113, 0.08); }
-.ec-result.err { color: #ff9a8d; border-color: #8f4a3a; background: rgba(231, 76, 60, 0.1); }
+.ec-result.ok { color: #1b6b3a; border-color: #2e6b48; background: rgba(46, 204, 113, 0.10); }
+.ec-result.err { color: #b3261e; border-color: #8f4a3a; background: rgba(231, 76, 60, 0.10); }
 .ec-foot {
   display: flex;
   align-items: center;
@@ -317,5 +406,5 @@ watch(() => props.open, (v) => { if (v) nextTick(() => nameInput.value?.focus())
 }
 .ec-btn:hover:not(:disabled) { background: var(--planet-btn-hover, #1e3044); }
 .ec-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.ec-btn.primary:not(:disabled) { color: #8fd3ff; border-color: #3a6b8f; }
+.ec-btn.primary:not(:disabled) { color: #1c4fa1; border-color: #3a6b8f; }
 </style>

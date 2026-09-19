@@ -34,6 +34,11 @@ async function loadConfig() {
     if (typeof cfg.lastProjectPath === 'string') {
       config.lastProjectPath = cfg.lastProjectPath;
     }
+    // 当前激活底图键（P0 持久化）：**必须读回**，否则 writeConfig 只写不读 = 每次启动都丢
+    //（曾经只写不读，重启后 ScenarioMap 打开的底图与上次不一致）。
+    if (typeof cfg.currentBaseMapKey === 'string') {
+      config.currentBaseMapKey = cfg.currentBaseMapKey;
+    }
   } catch (e) {
     // 无配置 → 使用默认值（兼容旧版硬编码）
   }

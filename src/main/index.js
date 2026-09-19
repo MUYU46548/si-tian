@@ -4,7 +4,11 @@ const fs = require('fs').promises;
 const matter = require('gray-matter');
 const { extractGeodata } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
-const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp, getLastProjectPath, setLastProjectPath } = require('./config');
+// ⚠️ 本行是**唯一的 config 导入点**：config.js 里任何在此处被用到的导出都必须一并解构，
+//    漏掉不会报错，只会在 handler 被调用时抛 `ReferenceError: xxx is not defined`（实测事故：
+//    getCurrentBaseMapKey/setCurrentBaseMapKey 漏解构 → 打开历史剧本必报错）。
+//    scripts/tests/unit/test_main_module_wiring.js 会读本源码守住这条不变式。
+const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp, getCurrentBaseMapKey, setCurrentBaseMapKey, getLastProjectPath, setLastProjectPath } = require('./config');
 const { createTray, destroyTray, getIsQuitting, setIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const { registerProjectHandlers } = require('./handlers/projectHandler');
