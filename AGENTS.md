@@ -38,9 +38,10 @@
 - **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 6 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / interior / search / spaceEditing
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
 - **大文件警告**: PlanetMap.vue 约 2900 行（22 个 composables 的装配体），AreaMap / GalaxyMap / InteriorView / App.vue / NodeDetailPanel 均 >1700 行——**读片段勿整读**。行星图绘制与交互逻辑在 `composables/planetDrawing.js`、`planetInteractions.js`、`planetHitTest.js`
-- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程侧**：`.sitian` 原子写/备份轮转/路径守卫 + `index.js` 模块接线不变式 + `config.js` 读回校验——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘与主进程接线）；② `scripts/tests/cases/` 48 个 CDP 用例（Edge 驱动），48/48 全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例
+- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程侧**：`.sitian` 原子写/备份轮转/路径守卫 + `index.js` 模块接线不变式 + `config.js` 读回校验——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘与主进程接线）；② `scripts/tests/cases/` 49 个 CDP 用例（Edge 驱动），全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例
 - **项目面板 + 实体向导（Phase 2.1/2.2/2.3，2026-09-18/19）**: `components/ProjectPanel.vue`（工具栏「项目」按钮 → `panelsStore.toggle('project')`；项目新建/打开/保存/备份/关闭 + 实体树（改名 / 两段式删除 / 拖动改父级 / 详情区父级下拉，全部经 projectStore 走 undo）+ 快照回滚）+ `components/EntityCreator.vue`（**C 方案分派式向导**：表单「名称/层级/父级」→ 层级按父级过滤（`CHILD_LAYERS`）→ 创建后**结果卡片**（该层级分派步骤 + 「前往编辑」）；画布交互复用各视图现有工具）。两者**只依赖 projectStore**，不引用 geodata/sitianAPI（接线属 Phase 2.4，test_48 静态断言守）。⚠️ 挂载语义：面板由 `v-if="panelsStore.isOpen('project')"` 控制挂载，**不要**给 PanelShell 传 `open`（默认 true；传了会因父级未传值而默认 false → 面板静默空白），`title` 是 PanelShell 必填 prop。⚠️ 面板/向导是**浅色卡面**（`--planet-editor-bg` 两套主题都是白）：文字强调色必须用深色（`#1c4fa1`/`#1b6b3a`/`#b3261e`/`#2f5fd0`），浅色系在白底上对比度只有 1.4~1.6 = 看不见
-- **单一写闸门（Phase 2，2026-09-18）**: `store/writeGate.js` = 世界观数据**落盘写**的唯一判定入口（`guardWrite()` + `isReadOnly`）。三模式 `project` / `legacy` / `readonly`，对应决策「有项目文件用项目、无项目回退 Obsidian，但**无项目必须只读**」。⚠️ 当前 `READONLY_WITHOUT_PROJECT = false`（无项目仍走 legacy，行为与接线前一致），**翻 true 必须与「projectStore 接线 + harness 自动开 mock 项目」同时落地**——否则 48 个用例跑在无项目态会因写被拒而全红。文件头维护**落盘入口清单（11 条）**，test_47 读源码校验「已守」条目真存在守卫
+- **单一写闸门（Phase 2，2026-09-18）**: `store/writeGate.js` = 世界观数据**落盘写**的唯一判定入口（`guardWrite()` + `isReadOnly`）。三模式 `project` / `legacy` / `readonly`，对应决策「有项目文件用项目、无项目回退 Obsidian，但**无项目必须只读**」。⚠️ 当前 `READONLY_WITHOUT_PROJECT = false`（无项目仍走 legacy）。**11 条落盘入口全部已守 + 只读态 UI 灰禁已落（Phase 2.4）**，test_47 读源码校验（含新增的只读灰禁子测试）；但把默认值翻成只读需要**同批改造既有用例的落盘断言**（约 11 个用例断言的是 legacy IPC 载荷，接线后落盘去向是项目文件），属独立批次，未执行
+- **项目↔画布接线（Phase 2.4，2026-09-19）**: 打开项目 → **画布事实源切到项目文件**（实体树/航道/地图/剧本），关闭 → 恢复打开前的知识库工作态（`vaultSnapshot` 留底）。实现要点：`store/canvasBridge.js` 是唯一的接线点（**双向注册表**：geodata 注册画布适配器 `applyProject/releaseProject/refreshEntities/exportCanvas`；projectStore 注册入水口 `syncFromCanvas`），两个 store **禁止互相 import**（test_46 静态守，防循环依赖与两套事实源）；geodata 仍是唯一工作内存，七层视图与编辑器一行不改。⚠️ 两个必须记住的点：① `projectStore` 的 `watch(entities)` **必须 `flush: 'sync'`** —— 异步 flush 会让"面板刚建的实体还没推给画布"时被一次画布保存覆盖（真实数据丢失路径，test_46 抓到）；② 关闭项目时 watch 必须**先判画布仍在 project 态**，否则清空 project 会把刚还原的知识库节点清成 0。回归用例 test_49。**写闸门 11 条落盘入口已全部带守卫 + 只读态 UI 灰禁**（转正/批量导入/清缓存）
 - **`.sitian` 项目文件（Phase 1，独立运行基础）**: 三层边界**只许单向依赖**——`utils/projectSchema.js`（**纯函数**：结构/校验修复/版本迁移/就地 diff 快照，Node 可读）← `store/projectStore.js`（内存态 + 实体 CRUD，走 `undo.js`）← `main/handlers/projectHandler.js`（只管路径/磁盘/备份，**顶层不 require electron** 以便 Node 测）。改文件结构只改 schema + 升 `PROJECT_VERSION` + 补 `MIGRATIONS`。默认项目目录：用户文档下的 `SiTianProjects`；快照 = 「1 份 base + ≤50 份 diff」（`maps` 不进快照，另有磁盘整文件备份 10 份兜底）。回归用例 test_46 + Node 单元测试
 - **图标系统**: `src/renderer/src/components/Icon.vue`（148 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 339 处 emoji；`python scripts/icon_check.py` 校验引用名均有定义
 - **开发规则全集**: 60+ 条铁律与踩坑复盘（composable 接线、getState ref 解包、SFC 结构标签、发布验收等）在 Hermes skill `obsidian/sitian-development`，动代码前先加载；本文件不复制规则，防双源漂移
@@ -56,7 +57,7 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 48 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 49 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 6 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 19 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 35 | `grep -c "ipcMain.handle" src/main/index.js` |

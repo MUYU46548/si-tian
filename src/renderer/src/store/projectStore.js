@@ -10,11 +10,14 @@
 //   · 结构解释只走 `utils/projectSchema.js`（本文件不重复实现校验/快照算法）
 //   · 磁盘 I/O 只走 `window.sitianAPI.project*`（主进程 projectHandler）
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { execute } from './undo';
 // 单一写闸门（Phase 2）：打开项目 = 切到 'project' 写模式；关闭 = 回到无项目默认模式
 import { setWriteMode, resetWriteMode } from './writeGate';
+// 画布接线（Phase 2.4）：打开/保存/关闭项目时驱动 geodata 侧切换事实源。
+// 反向依赖也是经本注册表（geodata 不 import 本文件），无循环。
+import { getCanvasAdapter, setProjectSink } from './canvasBridge';
 import {
   createEmptyProject,
   createEntity as createEntityShape,
@@ -84,6 +87,22 @@ export const useProjectStore = defineStore('project', () => {
   });
 
   // ===== 内部工具 =====
+  // 实体集变更 → 同步画布（唯一集中点）：
+  //   面板侧的新建/改名/删除/移动、以及 undo/redo 都会替换 `entities` 对象 → 这里统一推给画布。
+  //   若不作这一步，画布会与项目脱节，而画布下一次保存又会以画布为准写回项目（撤销被静默覆盖）。
+  watch(entities, (list) => {
+    const a = getCanvasAdapter();
+    if (!a || typeof a.refreshEntities !== 'function') return;
+    // ⚠️ 只在画布确实处于项目态时推：关闭项目会先 releaseProject（画布已还原知识库工作态）
+    //    再清空 project.value —— 若此时还推一次空实体集，会把刚还原的 121 个知识库节点清成 0。
+    if (typeof a.source === 'function' && a.source() !== 'project') return;
+    try { a.refreshEntities(list); } catch (err) { console.warn('[project] 同步画布失败:', err); }
+  }, { flush: 'sync' });   // 🔴 必须同步：默认 'pre' 是异步的 → 面板刚建好的实体还没推给画布时，
+                           //    一次画布保存就会以"还没有它"的画布状态覆盖项目（真实数据丢失路径）
+
+  // 注册「画布 → 项目」入水口（geodata 的 saveGeodata/saveMapData/saveScenarios 会调它）
+  setProjectSink({ syncFromCanvas });
+
   function api() {
     return (typeof window !== 'undefined' && window.sitianAPI) ? window.sitianAPI : null;
   }
@@ -110,7 +129,35 @@ export const useProjectStore = defineStore('project', () => {
     lastError.value = '';
     // 有项目 → 允许写（写进项目文件）
     setWriteMode('project', `已打开项目：${migrated.project.meta.name}`);
+    // Phase 2.4 接线：画布切到项目文件（实体树/航道/地图/剧本），并保留关闭时的回退留底
+    const adapter = getCanvasAdapter();
+    if (adapter && typeof adapter.applyProject === 'function') {
+      adapter.applyProject(project.value);
+    }
     return { success: true, problems: migrated.problems, steps: migrated.steps };
+  }
+
+  /**
+   * 画布 → 项目：把 geodata 导出的载荷并进项目态（**不直接落盘**，交给 scheduleAutoSave）。
+   * 由 geodata 的 saveGeodata/saveMapData/saveScenarios 在 project 模式下调用。
+   */
+  function syncFromCanvas(payload = {}, reason = '') {
+    if (!project.value) return { success: false, error: '没有打开的项目' };
+    project.value = mergeCanvasPayload(project.value, payload);
+    dirty.value = true;
+    scheduleAutoSave();
+    return { success: true, reason, entities: Object.keys(payload.entities || {}).length };
+  }
+
+  /** 把画布载荷并进项目对象（纯函数式合并：返回新对象，保持响应式替换语义） */
+  function mergeCanvasPayload(project, payload = {}) {
+    if (!payload || (!payload.entities && !payload.hyperlanes && !payload.maps && !payload.scenarios)) return project;
+    const next = { ...project };
+    if (payload.entities) next.entities = { ...payload.entities };
+    if (payload.hyperlanes) next.hyperlanes = payload.hyperlanes;
+    if (payload.maps) next.maps = { ...(project.maps || {}), ...payload.maps };   // mapData + editor 逐键合并
+    if (payload.scenarios) next.scenarios = payload.scenarios;
+    return next;
   }
 
   // ===== 项目级 CRUD =====
@@ -141,7 +188,12 @@ export const useProjectStore = defineStore('project', () => {
     if (!a || !a.projectSave) return { success: false, error: API_MISSING };
     setSaveStatus('saving');
     try {
-      const withSnapshot = pushSnapshot(project.value, { label, keep });
+      // Phase 2.4：落盘前把画布当前状态并进项目（画布是用户看到的真相，项目文件必须与之一致）
+      const adapter = getCanvasAdapter();
+      const merged = (adapter && typeof adapter.exportCanvas === 'function')
+        ? mergeCanvasPayload(project.value, adapter.exportCanvas())
+        : project.value;
+      const withSnapshot = pushSnapshot(merged, { label, keep });
       const res = await a.projectSave({ filePath: filePath.value, project: withSnapshot });
       if (!res || !res.success) throw new Error((res && res.error) || '写入失败');
       project.value = withSnapshot;
@@ -175,6 +227,11 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function closeProject() {
+    // Phase 2.4：先让画布回到知识库工作态（恢复打开项目前的留底），再清项目内存态
+    const adapter = getCanvasAdapter();
+    if (adapter && typeof adapter.releaseProject === 'function') {
+      try { adapter.releaseProject(); } catch (err) { console.warn('[project] 恢复画布失败:', err); }
+    }
     project.value = null;
     filePath.value = '';
     dirty.value = false;
@@ -441,6 +498,8 @@ export const useProjectStore = defineStore('project', () => {
     // entity CRUD
     getEntity, childrenOf, descendantsOf, parentCandidates, createEntity, updateEntity,
     renameEntity, deleteEntity, moveEntity, setEntityCoordinate, previewEntityId, importEntities,
+    // 画布接线（Phase 2.4）：geodata 在 project 模式下把画布状态同步进来
+    syncFromCanvas, mergeCanvasPayload,
     // hyperlanes
     addHyperlane, removeHyperlane,
     // constants

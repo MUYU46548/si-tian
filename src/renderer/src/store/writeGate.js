@@ -21,14 +21,14 @@
 //   | 4 | store/geodata.js | reextractGeodata（重提取会整库重写 geodata.json） | ✅ 已守 |
 //   | 5 | utils/labelStyles.js | setSitianConfig(label-presets) 写进库内 .sitian/config | ✅ 已守 |
 //   | 6 | utils/markerTypes.js | setSitianConfig(marker-types) 同上 | ✅ 已守 |
-//   | 7 | components/PlanetMap.vue | createObsidianNote（draft 转正 → 新建 .md） | ⬜ 2.4 与按钮灰禁同时落 |
-//   | 8 | components/AreaMap.vue | createObsidianNote 同上 | ⬜ 2.4 |
-//   | 9 | components/NodeDetailPanel.vue | createObsidianNote 同上 | ⬜ 2.4 |
-//   | 10 | components/BatchImportPanel.vue | batchImportNotes（批量新建 .md） | ⬜ 2.4 |
-//   | 11 | App.vue | clearCoordinateCache（删除 geodata/mapdata 缓存） | ⬜ 2.4 |
+//   | 7 | components/PlanetMap.vue | createObsidianNote（draft 转正 → 新建 .md） | ✅ 已守（右键项灰禁） |
+//   | 8 | components/AreaMap.vue | createObsidianNote 同上 | ✅ 已守（按钮灰禁） |
+//   | 9 | components/NodeDetailPanel.vue | createObsidianNote 同上 | ✅ 已守（按钮灰禁） |
+//   | 10 | components/BatchImportPanel.vue | batchImportNotes（批量新建 .md） | ✅ 已守（按钮灰禁） |
+//   | 11 | App.vue | clearCoordinateCache（删除 geodata/mapdata 缓存） | ✅ 已守（设置面板按钮灰禁） |
 //
-// 7~11 刻意与「UI 灰禁」一起落地：只拦不灰禁＝用户点了按钮得到一句拒绝，属于坏交互；
-// 灰禁必须同时给出「打开项目后即可编辑」的说明（能力不减，见 skill 铁律）。
+// 11 条全部已守（2.4 落地）：每条守卫都同时配了 UI 灰禁 + 原因说明——
+// 只拦不灰禁＝用户点了按钮才得到一句拒绝，属于坏交互（见 skill 铁律：能力不减，入口要说明去处）。
 //
 // ── 三种模式 ────────────────────────────────────────────────────────────
 //   'project'  已打开项目文件 → 允许写（写进项目文件）
@@ -58,11 +58,11 @@ export const WRITE_CALLSITES = [
   { id: 4, file: 'src/renderer/src/store/geodata.js', marker: 'guardWrite(', what: 'reextractGeodata', guarded: true },
   { id: 5, file: 'src/renderer/src/utils/labelStyles.js', marker: 'guardWrite(', what: 'setSitianConfig(labelPresets)', guarded: true },
   { id: 6, file: 'src/renderer/src/utils/markerTypes.js', marker: 'guardWrite(', what: 'setSitianConfig(markerTypes)', guarded: true },
-  { id: 7, file: 'src/renderer/src/components/PlanetMap.vue', marker: 'guardWrite(', what: 'createObsidianNote', guarded: false },
-  { id: 8, file: 'src/renderer/src/components/AreaMap.vue', marker: 'guardWrite(', what: 'createObsidianNote', guarded: false },
-  { id: 9, file: 'src/renderer/src/components/NodeDetailPanel.vue', marker: 'guardWrite(', what: 'createObsidianNote', guarded: false },
-  { id: 10, file: 'src/renderer/src/components/BatchImportPanel.vue', marker: 'guardWrite(', what: 'batchImportNotes', guarded: false },
-  { id: 11, file: 'src/renderer/src/App.vue', marker: 'guardWrite(', what: 'clearCoordinateCache', guarded: false },
+  { id: 7, file: 'src/renderer/src/components/PlanetMap.vue', marker: 'guardWrite(', what: 'createObsidianNote', guarded: true },
+  { id: 8, file: 'src/renderer/src/components/AreaMap.vue', marker: 'guardWrite(', what: 'createObsidianNote', guarded: true },
+  { id: 9, file: 'src/renderer/src/components/NodeDetailPanel.vue', marker: 'guardWrite(', what: 'createObsidianNote', guarded: true },
+  { id: 10, file: 'src/renderer/src/components/BatchImportPanel.vue', marker: 'guardWrite(', what: 'batchImportNotes', guarded: true },
+  { id: 11, file: 'src/renderer/src/App.vue', marker: 'guardWrite(', what: 'clearCoordinateCache', guarded: true },
 ];
 
 // ===== 状态（模块级单例：与 store/undo.js 同模式）=====

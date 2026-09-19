@@ -222,7 +222,8 @@
             <button class="data-btn" @click="openBatchImport" title="批量创建笔记（只创建不修改，已存在自动跳过）">
               <Icon name="download" :size="14"/> 批量导入
             </button>
-            <button class="data-btn danger" @click="clearCache">
+            <button class="data-btn danger" @click="clearCache" :disabled="gateReadOnly"
+                    :title="gateReadOnly ? gateReason : '删除 .sitian/ 坐标缓存，下次启动自动从 Obsidian 重新提取'">
               <Icon name="trash" :size="14"/> 清除坐标缓存
             </button>
           </div>
@@ -546,6 +547,8 @@ import {
   exportMarkerTypes, importMarkerTypes,
 } from '../utils/markerTypes';
 import { useGeodataStore } from '../store/geodata';
+// 单一写闸门状态：只读态下涉及落盘写的按钮灰禁（并给出原因，能力说明不减）
+import { isReadOnly as gateReadOnly, writeModeReason as gateReason } from '../store/writeGate';
 
 const isOpen = ref(false);
 

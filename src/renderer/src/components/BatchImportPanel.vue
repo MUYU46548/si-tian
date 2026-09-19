@@ -67,7 +67,8 @@
       </div>
       <div class="panel-footer">
         <button class="btn-secondary" @click="close">取消</button>
-        <button class="btn-primary" @click="runImport" :disabled="importing">
+        <button class="btn-primary" @click="runImport" :disabled="importing || store.isReadOnly"
+                :title="store.isReadOnly ? store.readOnlyReason : ''">
           {{ importing ? '导入中...' : '开始导入' }}
         </button>
       </div>
@@ -79,6 +80,8 @@
 import Icon from './Icon.vue';
 import { ref, computed } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+// 单一写闸门：批量导入会新建 .md → 属落盘写，只读态必须拦（Phase 2.4 接线）
+import { guardWrite } from '../store/writeGate';
 
 const store = useGeodataStore();
 const isOpen = ref(false);
@@ -112,6 +115,9 @@ async function runImport() {
     formError.value = '请至少输入一个笔记名';
     return;
   }
+  // 只读态（无项目 + 严格模式）拒绝落盘写；正常态 guard 恒 ok，行为零变化
+  const gate = guardWrite('批量导入笔记');
+  if (!gate.ok) { formError.value = gate.error; return; }
   formError.value = '';
   importing.value = true;
   result.value = null;

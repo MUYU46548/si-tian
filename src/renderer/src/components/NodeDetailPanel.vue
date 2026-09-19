@@ -22,8 +22,8 @@
         <button v-if="!isDraftNode" class="action-btn primary" @click="openSourceInObsidian">
           <span class="btn-icon"><Icon name="file-text" :size="14"/></span> 在 Obsidian 中打开
         </button>
-        <button v-else class="action-btn primary" @click="promoteDraft" :disabled="promoting"
-                title="暂存节点尚无 Obsidian 词条：创建笔记后即可在知识库中检索/双链">
+        <button v-else class="action-btn primary" @click="promoteDraft" :disabled="promoting || store.isReadOnly"
+                :title="store.isReadOnly ? store.readOnlyReason : '暂存节点尚无 Obsidian 词条：创建笔记后即可在知识库中检索/双链'">
           <span class="btn-icon"><Icon name="file-text" :size="14"/></span> {{ promoting ? '创建中…' : '创建 Obsidian 笔记' }}
         </button>
         <button class="action-btn locate-btn" @click="focusOnMap" :disabled="!canFocusOnMap" title="镜头定位到该节点在地图上的位置">
@@ -394,6 +394,8 @@ import Icon from './Icon.vue';
 import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
+// 单一写闸门：转正会新建 .md → 属落盘写，只读态必须拦（Phase 2.4 接线）
+import { guardWrite } from '../store/writeGate';
 import { openObsidianUri } from '../utils/vault';
 import { nodeIdFromNoteResult } from '../utils/normalizeId';
 import {
@@ -828,6 +830,9 @@ async function openSourceInObsidian() {
 async function promoteDraft() {
   const n = node.value;
   if (!n || promoting.value) return;
+  // 只读态（无项目 + 严格模式）拒绝落盘写；正常态 guard 恒 ok，行为零变化
+  const gate = guardWrite('创建 Obsidian 笔记');
+  if (!gate.ok) { promoteNotice.value = { kind: 'warn', text: gate.error }; return; }
   promoting.value = true;
   promoteNotice.value = null;
   try {

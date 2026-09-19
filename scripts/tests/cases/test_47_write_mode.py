@@ -16,6 +16,8 @@
   c) 只读徽标常驻可见（含「打开项目后即可编辑」的能力说明 —— 能力不减纪律）
   d) projectStore 联动：打开项目 → project 模式；关闭 → 回到无项目默认模式
   e) 源码契约：writeGate 里的 11 条落盘入口清单，标记 guarded 的必须在对应文件里真有守卫
+  f) 只读态 UI 灰禁（Phase 2.4）：转正 / 批量导入 / 清缓存 三处入口必须灰禁 + 给出原因
+     （只拦不灰禁 = 用户点完才被拒，属坏交互；能力说明必须保留）
 """
 import sys, os, json, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -318,6 +320,84 @@ def sub_callsite_contract(cdp):
     return True, f"清单 {len(res)} 条（已守 {len(guarded)} / 待守 {len(unguarded)}），已守条目在源码中均真存在守卫"
 
 
+# ─────────────────────────────────────────────────────────────
+# f) 只读态 UI 灰禁（Phase 2.4）：只拦不灰禁 = 用户点完才被拒（坏交互）
+#    三条落盘入口的按钮必须在只读态灰禁，并给出「打开项目后即可编辑」的原因说明。
+# ─────────────────────────────────────────────────────────────
+UI_JS = r"""(async () => {
+  const fails = [];
+  const ck = (label, cond, extra) => { if (!cond) fails.push(label + (extra !== undefined ? ' → ' + JSON.stringify(extra) : '')); };
+  const tick = (ms) => new Promise(r => setTimeout(r, ms || 200));
+  const q = (s) => document.querySelector(s);
+  const qa = (s) => Array.from(document.querySelectorAll(s));
+  const btnByText = (sel, t) => qa(sel).find(b => (b.textContent || '').indexOf(t) >= 0);
+
+  const W = await import('/src/store/writeGate.js');
+  const pinia = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia;
+  const { useProjectStore } = await import('/src/store/projectStore.js');
+  const proj = useProjectStore(pinia);
+  const store = document.querySelector('#app').__vue_app__._instance.setupState.store;
+
+  if (proj.isOpen) proj.closeProject();
+  await tick(300);
+  W.setWriteMode('readonly', '测试只读');
+  await tick(200);
+  ck('已切到只读态', W.isReadOnly.value === true, W.writeMode.value);
+
+  // 1) 详情面板：draft 转正
+  const draft = store.addNode({ id: '只读灰禁暂存点', name: '只读灰禁暂存点', layer: 'location',
+    parentId: null, tags: [], sourcePath: '', draft: true, coordinate: { x: 0, y: 0 } });
+  store.selectNode(draft);
+  await tick(400);
+  const promoteBtn = btnByText('button.action-btn.primary', '创建 Obsidian 笔记');
+  ck('详情面板出现转正按钮', !!promoteBtn);
+  ck('只读态转正按钮灰禁', !!promoteBtn && promoteBtn.disabled === true, promoteBtn && promoteBtn.disabled);
+  ck('灰禁按钮带原因（不是静默失效）', !!promoteBtn && /只读/.test(promoteBtn.getAttribute('title') || ''),
+     promoteBtn && promoteBtn.getAttribute('title'));
+
+  // 2) 批量导入面板
+  window.dispatchEvent(new CustomEvent('sitian:open-batch-import'));
+  await tick(500);
+  const importBtn = btnByText('button.btn-primary', '开始导入');
+  ck('批量导入面板出现', !!importBtn);
+  ck('只读态批量导入按钮灰禁', !!importBtn && importBtn.disabled === true, importBtn && importBtn.disabled);
+  ck('批量导入灰禁带原因', !!importBtn && /只读/.test(importBtn.getAttribute('title') || ''),
+     importBtn && importBtn.getAttribute('title'));
+  const cancelBtn = btnByText('button.btn-secondary', '取消');
+  if (cancelBtn) cancelBtn.click();
+  await tick(300);
+
+  // 3) 设置面板：清除坐标缓存
+  const setBtn = qa('.toolbar-actions button').find(b => b.title === '设置');
+  ck('工具栏有设置入口', !!setBtn);
+  if (setBtn) setBtn.click();
+  await tick(600);
+  const clearBtn = qa('.settings-panel button').find(b => (b.textContent || '').indexOf('清除坐标缓存') >= 0);
+  ck('设置面板出现清缓存按钮', !!clearBtn);
+  ck('只读态清缓存按钮灰禁', !!clearBtn && clearBtn.disabled === true, clearBtn && clearBtn.disabled);
+  ck('清缓存灰禁带原因', !!clearBtn && /只读/.test(clearBtn.getAttribute('title') || ''),
+     clearBtn && clearBtn.getAttribute('title'));
+
+  // 复位：删掉测试节点、模式回到无项目默认值（页面每个用例后会 reload，这里只是不留脏状态）
+  store.removeNode('只读灰禁暂存点');
+  W.setWriteMode(W.READONLY_WITHOUT_PROJECT ? 'readonly' : 'legacy', '');
+  await tick(200);
+  ck('复位后不再只读（无项目默认模式）', W.isReadOnly.value === W.READONLY_WITHOUT_PROJECT,
+     { mode: W.writeMode.value, readonly_without_project: W.READONLY_WITHOUT_PROJECT });
+  return JSON.stringify({ fails: fails });
+})()"""
+
+
+def sub_readonly_ui(cdp):
+    ok, res = eval_json(cdp, UI_JS, desc='只读态 UI 灰禁')
+    if not ok:
+        return False, res
+    fails = res.get('fails') or []
+    if fails:
+        return False, '只读灰禁断言失败 ' + str(len(fails)) + ' 项：' + '；'.join(fails[:8])
+    return True, '转正 / 批量导入 / 清缓存 三处入口在只读态均灰禁且给出原因说明'
+
+
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     wait_for(cdp, f"{STORE}.nodes.length > 0", timeout=45, desc='地理数据加载')
@@ -327,7 +407,8 @@ def run(cdp):
                      ('b 落盘守卫端到端', sub_guard),
                      ('c 只读徽标', sub_badge),
                      ('d projectStore 联动', sub_wiring),
-                     ('e 入口清单源码契约', sub_callsite_contract)):
+                     ('e 入口清单源码契约', sub_callsite_contract),
+                     ('f 只读态 UI 灰禁', sub_readonly_ui)):
         try:
             ok, detail = fn(cdp)
         except Exception as e:

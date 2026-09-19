@@ -13,6 +13,11 @@ import { createInteriorModule } from './geodataModules/interior';
 import { createAreaEditingModule } from './geodataModules/areaEditing';
 import { createSpaceEditingModule, normalizeSpaceMarkers, normalizeFleetCards } from './geodataModules/spaceEditing';
 import { createScenarioEditingModule } from './geodataModules/scenarioEditing';
+// 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
+// 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
+import { setCanvasAdapter, getProjectSink } from './canvasBridge';
+// 纯函数：实体的规范化构造（保证写进项目文件的实体形状统一；不引入任何 IO）
+import { createEntity as createProjectEntity } from '../utils/projectSchema';
 
 const AUTO_SAVE_DELAY = 800;
 
@@ -408,6 +413,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     // 重提取会整库重写 <vault>/.sitian/geodata.json → 属落盘写，只读态必须拒绝
     const gate = guardWrite('重新提取');
     if (!gate.ok) return gate;
+    // Phase 2.4：已打开项目时画布的事实源是项目文件 —— 重提取会把知识库数据倒进当前画布，
+    // 与「有项目用项目」直接冲突。明确拒绝并给出可行做法（不是静默失败）。
+    if (canvasSourceRef.value === 'project') {
+      return { ok: false, error: '已打开项目：画布数据来自项目文件，重提取请先关闭项目' };
+    }
     const result = await window.sitianAPI.reextractGeodata();
     if (result.success) {
       nodes.value = result.data.nodes || [];
@@ -422,6 +432,8 @@ export const useGeodataStore = defineStore('geodata', () => {
   async function saveGeodata() {
     const gate = guardWrite('保存地理数据');
     if (!gate.ok) return gate;
+    // Phase 2.4：已打开项目 → 落盘去向是项目文件（projectStore 是项目文件的唯一写者）
+    if (canvasSourceRef.value === 'project') return syncCanvasToProject('保存地理数据');
     // 深拷贝去除 Vue reactive Proxy，否则 Electron IPC 会报 "An object could not be cloned"
     const data = JSON.parse(JSON.stringify({
       nodes: nodes.value,
@@ -448,6 +460,17 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (!scenarioEditingModule) return;
     const gate = guardWrite('保存剧本');
     if (!gate.ok) return gate;
+    // Phase 2.4：已打开项目 → 剧本随项目文件落盘（同一份 saveStatus 反馈照旧给用户）
+    if (canvasSourceRef.value === 'project') {
+      saveStatus.value = 'saving';
+      const r = syncCanvasToProject('保存剧本');
+      saveStatus.value = r.ok ? 'saved' : 'error';
+      if (saveStatusTimer) clearTimeout(saveStatusTimer);
+      saveStatusTimer = setTimeout(() => {
+        if (saveStatus.value === 'saved') saveStatus.value = 'idle';
+      }, 3000);
+      return r;
+    }
     saveStatus.value = 'saving';
     try {
       const data = JSON.parse(JSON.stringify({
@@ -571,6 +594,11 @@ export const useGeodataStore = defineStore('geodata', () => {
   async function saveMapData(planetId, data) {
     const gate = guardWrite('保存行星地图');
     if (!gate.ok) return gate;
+    // Phase 2.4：已打开项目 → 地图数据落进项目文件（mapData 已在内存态更新，这里只触发项目侧落盘）
+    if (canvasSourceRef.value === 'project') {
+      syncCanvasToProject(`保存行星地图 ${planetId || ''}`.trim());
+      return { success: true, source: 'project' };
+    }
     try {
       // 深拷贝去除 Vue reactive Proxy（仅用于 IPC 传输）。
       // TypedArray 必须显式转普通数组：JSON.stringify(new Float32Array(3)) → {"0":..}
@@ -1260,6 +1288,212 @@ export const useGeodataStore = defineStore('geodata', () => {
     nodes.value = nodes.value.filter(n => n.id !== nodeId);
   }
 
+  // ===== 项目文件接线（Phase 2.4）=============================================
+  // 决策：有项目文件 → 画布的事实源 = 项目文件（实体树 / 航道 / 地图 / 剧本）；
+  //       无项目 → 知识库缓存（legacy，行为与接线前一致）。
+  // 实现要点：
+  //   · geodata 仍是**唯一工作内存** —— 七层视图与全部编辑器一行不改，只切换「装载来源」与「落盘去向」；
+  //   · 与 projectStore 之间不互相 import，只经 store/canvasBridge.js 注册表通信（防循环依赖）；
+  //   · 打开项目时把打开前的知识库工作态**留底**，关闭项目时原样恢复
+  //     （否则用户关掉项目后画布会变空 —— 那是数据看起来"丢了"的最坏观感）。
+  const canvasSourceRef = ref('vault');   // 'vault' | 'project'
+  let vaultSnapshot = null;                // 打开项目前的知识库工作态留底
+
+  /** 编辑器容器（不进 nodes/hyperlanes，但同样属于世界观数据，必须随事实源一起切换） */
+  function readEditorContainers() {
+    return {
+      domainBorderOverrides: JSON.parse(JSON.stringify(domainBorderOverrides.value, jsonSafeReplacer)),
+      interiorData: JSON.parse(JSON.stringify(interiorData.value, jsonSafeReplacer)),
+      areaZones: JSON.parse(JSON.stringify(areaZones.value, jsonSafeReplacer)),
+      areaRoutes: JSON.parse(JSON.stringify(areaRoutes.value, jsonSafeReplacer)),
+      areaMarkers: JSON.parse(JSON.stringify(areaMarkers.value, jsonSafeReplacer)),
+      areaTextLabels: JSON.parse(JSON.stringify(areaTextLabels.value, jsonSafeReplacer)),
+      areaReferenceImages: JSON.parse(JSON.stringify(areaReferenceImages.value, jsonSafeReplacer)),
+      interiorReferenceImages: JSON.parse(JSON.stringify(interiorReferenceImages.value, jsonSafeReplacer)),
+      spaceMarkers: normalizeSpaceMarkers(spaceMarkers.value),
+      fleetCards: normalizeFleetCards(fleetCards.value),
+    };
+  }
+
+  function writeEditorContainers(src = {}) {
+    domainBorderOverrides.value = src.domainBorderOverrides || {};
+    interiorData.value = src.interiorData || {};
+    areaZones.value = src.areaZones || {};
+    areaRoutes.value = src.areaRoutes || {};
+    areaMarkers.value = src.areaMarkers || {};
+    areaTextLabels.value = src.areaTextLabels || {};
+    areaReferenceImages.value = src.areaReferenceImages || {};
+    interiorReferenceImages.value = src.interiorReferenceImages || {};
+    spaceMarkers.value = normalizeSpaceMarkers(src.spaceMarkers);
+    fleetCards.value = normalizeFleetCards(src.fleetCards);
+  }
+
+  function takeVaultSnapshot() {
+    return {
+      nodes: nodes.value.map(n => ({ ...n })),
+      hyperlanes: hyperlanes.value.map(h => ({ ...h })),
+      mapData: JSON.parse(JSON.stringify(mapData.value, jsonSafeReplacer)),
+      editor: readEditorContainers(),
+      scenarios: scenarioEditingModule ? {
+        baseMaps: JSON.parse(JSON.stringify(scenarioEditingModule.baseMaps.value, jsonSafeReplacer)),
+        scenarios: JSON.parse(JSON.stringify(scenarioEditingModule.scenarios.value, jsonSafeReplacer)),
+      } : null,
+    };
+  }
+
+  const numOrNull = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+
+  /** 项目实体 → 画布节点（GeoNode 同形；项目实体没有 Obsidian 词条 → sourcePath 为空即 draft） */
+  function entityToNode(e) {
+    const c = (e && e.coordinate) || {};
+    return {
+      id: e.id,
+      name: e.name,
+      layer: e.layer,
+      layerLabel: e.layerLabel || layerLabels[e.layer] || e.layer,
+      parentId: e.parentId || null,
+      tags: Array.isArray(e.tags) ? [...e.tags] : [],
+      sourcePath: e.sourcePath || '',
+      wikilinks: [],
+      coordinate: { x: numOrNull(c.x), y: numOrNull(c.y) },
+      uuid: e.uuid || '',
+      origin: e.origin || 'project',
+      draft: !e.sourcePath,            // 无词条 = 暂存节点（虚线边框 + 可转正）
+      createdAt: e.createdAt || '',
+    };
+  }
+
+  /** 画布节点 → 项目实体（走 schema 的 createEntity 保证形状统一；显式传 id/uuid 不重新生成） */
+  function nodeToProjectEntity(n, now) {
+    return createProjectEntity({
+      id: n.id,
+      name: n.name,
+      layer: n.layer,
+      parentId: n.parentId || null,
+      tags: n.tags || [],
+      coordinate: { x: numOrNull(n.coordinate && n.coordinate.x), y: numOrNull(n.coordinate && n.coordinate.y) },
+      origin: 'canvas',
+      sourcePath: n.sourcePath || '',
+      uuid: n.uuid || '',
+      now,
+    });
+  }
+
+  /** 画布 → 项目文件载荷（唯一写者仍是 projectStore；本函数只产出，不落盘） */
+  function exportCanvasToProject() {
+    const now = new Date().toISOString();
+    const entities = {};
+    for (const n of nodes.value) entities[n.id] = nodeToProjectEntity(n, now);
+    return {
+      entities,
+      hyperlanes: JSON.parse(JSON.stringify(hyperlanes.value)),
+      // maps 不进快照（体积），另有整文件备份兜底；editor 放这里也一样（快照回滚不覆盖编辑器容器，
+      // 这条限制写在 projectSchema 的头部注释里）
+      maps: {
+        mapData: JSON.parse(JSON.stringify(mapData.value, jsonSafeReplacer)),
+        editor: readEditorContainers(),
+      },
+      scenarios: scenarioEditingModule ? {
+        version: 2,
+        baseMaps: JSON.parse(JSON.stringify(scenarioEditingModule.baseMaps.value, jsonSafeReplacer)),
+        scenarios: JSON.parse(JSON.stringify(scenarioEditingModule.scenarios.value, jsonSafeReplacer)),
+      } : undefined,
+    };
+  }
+
+  /** 打开/新建项目后调用：把画布切到项目文件 */
+  function applyProjectToCanvas(project) {
+    if (!project) return { ok: false, error: '没有项目' };
+    if (!vaultSnapshot) vaultSnapshot = takeVaultSnapshot();
+    const list = Object.values(project.entities || {}).map(entityToNode);
+    nodes.value = validateNodes(list).nodes;
+    hyperlanes.value = Array.isArray(project.hyperlanes) ? project.hyperlanes.map(h => ({ ...h })) : [];
+    mapData.value = (project.maps && project.maps.mapData)
+      ? JSON.parse(JSON.stringify(project.maps.mapData, jsonSafeReplacer)) : {};
+    // 区域/建筑/太空等编辑器容器（项目文件里存于 maps.editor；老项目没有 → 一律清空）
+    writeEditorContainers((project.maps && project.maps.editor) || {});
+    if (scenarioEditingModule) {
+      const sc = project.scenarios || {};
+      scenarioEditingModule.baseMaps.value = sc.baseMaps ? JSON.parse(JSON.stringify(sc.baseMaps)) : {};
+      scenarioEditingModule.scenarios.value = sc.scenarios ? JSON.parse(JSON.stringify(sc.scenarios)) : {};
+    }
+    canvasSourceRef.value = 'project';
+    backToWorld();   // 别停在项目里不存在的节点上
+    return { ok: true, source: 'project', nodes: nodes.value.length, hyperlanes: hyperlanes.value.length };
+  }
+
+  /**
+   * 项目侧实体变更 → 同步画布（按 id 双向补齐：项目里改名的更新画布节点、新增的补进画布、
+   * 已删除的从画布移除）。**坐标以画布为准**（项目实体里的坐标可能落后于用户刚拖动的值）。
+   * 由 projectStore 在 entities 变化时调用（含 undo/redo —— 否则撤销后画布会与项目脱节，
+   * 下一次画布保存会把撤销结果覆盖掉）。
+   */
+  function refreshEntitiesFromProject(entities) {
+    const byId = new Map(Object.values(entities || {}).map(e => [e.id, e]));
+    const out = [];
+    for (const n of nodes.value) {
+      const e = byId.get(n.id);
+      if (!e) continue;                     // 项目里已删除 → 画布同步移除
+      byId.delete(n.id);
+      out.push({
+        ...n,
+        name: e.name,
+        layer: e.layer,
+        layerLabel: e.layerLabel || layerLabels[e.layer] || e.layer,
+        parentId: e.parentId || null,
+        tags: Array.isArray(e.tags) ? [...e.tags] : [],
+        sourcePath: e.sourcePath || '',
+        uuid: e.uuid || n.uuid || '',
+        draft: !e.sourcePath,
+      });
+    }
+    for (const e of byId.values()) out.push(entityToNode(e));   // 项目里新增 → 画布补上
+    nodes.value = validateNodes(out).nodes;
+    return { ok: true, nodes: nodes.value.length };
+  }
+
+  /** 关闭项目后调用：恢复打开前的知识库工作态 */
+  function releaseProjectFromCanvas() {
+    const snap = vaultSnapshot;
+    canvasSourceRef.value = 'vault';
+    if (!snap) return { ok: true, restored: false };
+    nodes.value = snap.nodes;
+    hyperlanes.value = snap.hyperlanes;
+    mapData.value = snap.mapData;
+    if (snap.editor) writeEditorContainers(snap.editor);
+    if (scenarioEditingModule && snap.scenarios) {
+      scenarioEditingModule.baseMaps.value = snap.scenarios.baseMaps;
+      scenarioEditingModule.scenarios.value = snap.scenarios.scenarios;
+    }
+    backToWorld();
+    return { ok: true, restored: true };
+  }
+
+  /** 画布 → 项目（转交 projectStore 落盘；本函数不写磁盘） */
+  function syncCanvasToProject(reason = '画布保存') {
+    const s = getProjectSink();
+    if (!s || typeof s.syncFromCanvas !== 'function') {
+      return { ok: false, error: '项目接线未就绪（projectStore 未装载）' };
+    }
+    s.syncFromCanvas(exportCanvasToProject(), reason);
+    return { ok: true, source: 'project' };
+  }
+
+  // 注册适配器：projectStore 在 打开/保存/关闭 项目 时回调这里
+  setCanvasAdapter({
+    source: () => canvasSourceRef.value,
+    applyProject: applyProjectToCanvas,
+    releaseProject: releaseProjectFromCanvas,
+    refreshEntities: refreshEntitiesFromProject,
+    exportCanvas: exportCanvasToProject,
+    describe: () => ({
+      attached: true,
+      source: canvasSourceRef.value,
+      nodes: nodes.value.length,
+      hasVaultSnapshot: !!vaultSnapshot,
+    }),
+  });
+
   return {
     nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, currentArea, viewLevel,
     selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode, isWikilinkMatch,
@@ -1290,6 +1524,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       loadMapData, saveMapData, getMapDataKey, saveMapDataImmediate,
       beginNodePositionCapture, endNodePositionCapture, beginMultiNodePositionCapture, endMultiNodePositionCapture, toggleNodeLock,
       getBuildingsInArea,
+      // 项目文件接线（Phase 2.4）：画布事实源 + 画布↔项目 同步（测试与 UI 都读这里）
+      canvasSource: canvasSourceRef, applyProjectToCanvas, releaseProjectFromCanvas,
+      refreshEntitiesFromProject, exportCanvasToProject, syncCanvasToProject,
     ...searchModule,
     ...mapDataEditingModule,
     ...interiorModule,

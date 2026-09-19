@@ -341,10 +341,33 @@ def sub_static(cdp):
         if sym not in store:
             bad.append(f'projectStore 缺少 {sym}')
 
-    # Phase 1 必须保持「不接线」：现有 Obsidian 链路不得引用 projectStore
-    for rel in ('src/renderer/src/store/geodata.js', 'src/renderer/src/App.vue'):
+    # Phase 2.4 接线后的**依赖方向不变式**（取代 Phase 1 的「不得接线」闸门）：
+    #   · geodata 与 projectStore 之间**不得互相 import** —— 只许经 store/canvasBridge.js 通信，
+    #     否则会形成循环依赖、也会长成两套事实源（这正是接线最危险的形态）。
+    #   · 两侧都必须真的接上桥：geodata 注册适配器，projectStore 在 打开/保存/关闭 时调用它。
+    geo = _read('src/renderer/src/store/geodata.js')
+    pstore = _read('src/renderer/src/store/projectStore.js')
+    # ⚠️ 只认 import 语句，不要用 'projectStore' 子串判断（注释里出现同名会误报，本次已踩）
+    if re.search(r"from\s+['\"][^'\"]*projectStore['\"]", geo):
+        bad.append('geodata.js 直接 import 了 projectStore（必须只经 canvasBridge，防循环依赖）')
+    if re.search(r"from\s+['\"][^'\"]*geodata['\"]", pstore):
+        bad.append('projectStore.js 直接 import 了 geodata（必须只经 canvasBridge，防循环依赖）')
+    for token in ('canvasBridge', 'setCanvasAdapter', 'applyProjectToCanvas',
+                  'releaseProjectFromCanvas', 'syncCanvasToProject'):
+        if token not in geo:
+            bad.append(f'geodata.js 接线缺 {token}')
+    for token in ('canvasBridge', 'getCanvasAdapter', 'applyProject', 'releaseProject', 'exportCanvas'):
+        if token not in pstore:
+            bad.append(f'projectStore.js 接线缺 {token}')
+    bridge = _read('src/renderer/src/store/canvasBridge.js')
+    for token in ('setCanvasAdapter', 'getCanvasAdapter'):
+        if token not in bridge:
+            bad.append(f'canvasBridge.js 缺少 {token}')
+
+    # 旧「Phase 1 未接线」遗留断言：geodata/App 不得直接引用 projectStore（已由上面的方向不变式覆盖）
+    for rel in ('src/renderer/src/App.vue',):
         if 'projectStore' in _read(rel):
-            bad.append(f'{rel} 引用了 projectStore（Phase 1 应保持不接线，接线属 Phase 2）')
+            bad.append(f'{rel} 直接引用了 projectStore（应经面板/组件，勿在 App 里直连）')
 
     # main 注册 + 通道名与 preload 一一对应
     if 'registerProjectHandlers' not in _read('src/main/index.js'):
@@ -385,7 +408,8 @@ def sub_static(cdp):
     if bad:
         return False, '；'.join(bad)
     return True, ('preload 8 个 API ↔ 主进程 8 个通道一一对应；projectHandler 无 electron 顶层依赖；'
-                  'layerLabels 两处一致；Phase 1 未接线（geodata/App 均未引用 projectStore）')
+                  'layerLabels 两处一致；Phase 2.4 接线方向正确（geodata ↔ projectStore 只经 canvasBridge，'
+                  '两侧适配器齐全、App 不直连 projectStore）')
 
 
 # ─────────────────────────────────────────────────────────────

@@ -931,6 +931,8 @@
 import Icon from './Icon.vue';
 import { ref, computed, watch, reactive, onMounted, onUnmounted, nextTick } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+// 单一写闸门：转正会新建 .md → 属落盘写，只读态必须拦（Phase 2.4 接线）
+import { guardWrite } from '../store/writeGate';
 import { useLayersStore } from '../store/layers';
 import { usePanelsStore } from '../store/panels';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
@@ -1623,7 +1625,9 @@ const renderer = useCanvasRenderer(canvas, {
     if (hit?.type === 'place') {
       const place = hit.node; const isDraft = !place.sourcePath;
       if (isDraft) {
-        items.push({ key: 'ctx-place-create-note', label: '创建 Obsidian 笔记', icon: 'file-text', action: async () => {
+        items.push({ key: 'ctx-place-create-note', label: store.isReadOnly ? '创建 Obsidian 笔记（只读：打开项目后可编辑）' : '创建 Obsidian 笔记', icon: 'file-text', disabled: store.isReadOnly, action: async () => {
+          const gate = guardWrite('创建 Obsidian 笔记');
+          if (!gate.ok) return;
           const result = await window.sitianAPI.createObsidianNote({ name: place.name, layer: place.layer, parentId: place.parentId, tags: place.tags || [], coordinate: place.coordinate, content: `# ${place.name}\n\n` });
           if (result?.success) { store.updateNode(place.id, { sourcePath: result.path }); emit('dirty', true); renderer.requestRender(); } else if (result?.error) { console.error('创建笔记失败:', result.error); }
         } });

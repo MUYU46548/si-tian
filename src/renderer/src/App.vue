@@ -292,6 +292,8 @@
 import { iconSvg } from './utils/iconSvg';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from './store/geodata';
+// 单一写闸门：清缓存等落盘写统一过 guardWrite（只读态拒绝）
+import { guardWrite } from './store/writeGate';
 import { usePanelsStore } from './store/panels';
 import { createSampleWorld } from './utils/sampleData';
 import WorldSelector from './components/WorldSelector.vue';
@@ -1327,7 +1329,12 @@ function validateDataIntegrity() {
 
 // ===== 清除坐标缓存 =====
 async function clearCoordinateCache() {
-  // 删除 geodata.json 和 mapdata.json 的缓存
+  // 删除 geodata.json 和 mapdata.json 的缓存 —— 属落盘写，只读态必须拒绝（Phase 2.4：清单第 11 条）
+  const gate = guardWrite('清除坐标缓存');
+  if (!gate.ok) {
+    statusText.value = gate.error;
+    return;
+  }
   // 通过主进程 API 删除文件
   try {
     await window.sitianAPI.clearCoordinateCache();
