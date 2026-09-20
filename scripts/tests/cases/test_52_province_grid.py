@@ -358,8 +358,12 @@ def run(cdp):
     keys = cdp.eval("(() => { const s = %s; return JSON.stringify(Object.keys(s.baseMaps || {})); })()" % STORE)
     keys = json.loads(keys) if isinstance(keys, str) else []
     if not keys:
-        return False, '底图未加载（scenarios 加载链路没走通）'
-    key = 'desite' if 'desite' in keys else keys[0]
+        # 底图 fixture：司天不再默认建/选示例底图（见 helpers.open_test_base_map 说明）
+        bm_ok, bm_info = H.open_test_base_map(cdp, '用例52底图')
+        if not bm_ok:
+            return False, f'底图 fixture 未就位（scenarios 加载链路没走通）: {bm_info}'
+        keys = list(bm_info.get('keys') or [])
+    key = keys[0]
 
     # b-f) store 层
     js_store = JS_STORE.replace('PLACEHOLDER_STORE', STORE).replace('__KEY__', json.dumps(key))

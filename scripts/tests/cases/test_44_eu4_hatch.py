@@ -13,7 +13,7 @@
 import sys, os, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import ensure_data_ready
+from lib.helpers import ensure_data_ready, open_test_base_map
 
 SM = "document.querySelector('.scenario-map-container').__vueParentComponent.setupState"
 
@@ -120,6 +120,10 @@ def run(cdp):
     r = _enter(cdp)
     if r != 'ok':
         return False, f'进入剧本模式失败: {r}'
+    # 底图 fixture：司天不再默认建/选示例底图（见 helpers.open_test_base_map 说明）
+    bm_ok, bm_info = open_test_base_map(cdp, '德斯特星')
+    if not bm_ok:
+        return False, f'底图 fixture 未就位: {bm_info}'
     if _seed(cdp) != 2:
         return False, '数据注入失败'
     cdp.eval(CENSUS)

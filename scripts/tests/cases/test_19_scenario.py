@@ -14,7 +14,7 @@
 import sys, os, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import goto_planet
+from lib.helpers import goto_planet, open_test_base_map
 
 
 def _eval(cdp, expr):
@@ -101,6 +101,11 @@ def run(cdp):
     ok = wait_for(cdp, "!!document.querySelector('.scenario-map-container')", desc='ScenarioMap 挂载', timeout=5)
     if not ok:
         return False, 'ScenarioMap 组件未挂载'
+
+    # 底图 fixture：司天不再默认建/选任何示例底图（见 helpers.open_test_base_map 说明）
+    bm_ok, bm_info = open_test_base_map(cdp, '德斯特星')
+    if not bm_ok:
+        return False, f'底图 fixture 未就位: {bm_info}'
     
     # Step 2: 画省份
     count = _add_test_province(cdp)

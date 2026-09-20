@@ -306,11 +306,21 @@
     <!-- 画布 -->
     <div class="scenario-canvas-wrap" ref="canvasWrap">
       <canvas ref="canvas"></canvas>
+      <!-- 项目里还没有底图：说清现状 + 去处（不是「点了没反应」） -->
+      <div v-if="!baseMap" class="scenario-empty-hint" data-testid="scenario-empty-hint">
+        <p class="eh-title">这个项目里还没有底图</p>
+        <p class="eh-line">用上方「+」导入 Azgaar .map 底图，或直接选一个绘制/笔刷工具开始画（会自动新建一张空底图）。</p>
+      </div>
     </div>
 
     <!-- 状态栏 -->
     <div class="scenario-status-bar">
       <span>{{ statusText }}</span>
+      <!-- 渲染护栏：连续异常暂停渲染后必须可见 + 可恢复 -->
+      <span v-if="renderPaused" class="render-guard" data-testid="render-guard">
+        <Icon name="alert-triangle" :size="13"/> 渲染已暂停：{{ renderError }}
+        <button class="rg-btn" @click="resumeRender">继续渲染</button>
+      </span>
       <span>缩放: {{ (cameraScale * 100).toFixed(0) }}%</span>
       <span v-if="selectedProvince" class="selected-province">已选：{{ selectedProvince.name }}（{{ selectedProvince.biome || '未分类' }}）</span>
       <span v-if="drawPoints.length > 0" class="draw-hint">绘制中: {{ drawPoints.length }} 个点 (双击完成, Esc 取消)</span>
@@ -553,7 +563,7 @@ const canvas = ref(null);
 const canvasWrap = ref(null);
 const tool = ref('select');
 const viewMode = ref('base');
-const baseMapKey = ref('德斯特星');
+const baseMapKey = ref('');   // 空 = 当前项目还没有底图（onMounted 里解析：上次的 → 项目里第一张 → 空）
 const selectedScenario = ref(null);
 const selectedPolity = ref(null);
 const ctx = ref(null);
@@ -634,6 +644,20 @@ const showBurgs = ref(true);
 const cameraX = ref(0);
 const cameraY = ref(0);
 const cameraScale = ref(1);
+
+// 🔴 屏幕像素长度 → 世界单位：所有「屏幕空间尺寸/线宽/半径」的换算**一律走 px()**。
+// 内部把相机缩放夹正数，从根上杜绝 `N / cameraScale` 在 scale 异常时算出负半径/负线宽
+// （2026-09-20 实测：fitToView 在窄高窗口算出负 scale → `3 / cameraScale` 变负 →
+//  ctx.arc 抛 IndexSizeError，而抛在 render 路径里会把整页交互一起拖死，后续用例连环 CDP 超时）。
+// 注意：坐标变换（screenToWorld）不能用 px()，它要的是真实 scale。
+const MIN_CAMERA_SCALE = 0.02;
+const px = (v) => v / Math.max(cameraScale.value, MIN_CAMERA_SCALE);
+
+// 渲染护栏状态（见下方 render()）：连续异常则暂停渲染循环并给可见提示
+const renderError = ref('');        // 最近一次渲染异常信息
+const renderErrorCount = ref(0);    // 连续异常帧数
+const renderPaused = ref(false);    // 已暂停渲染（避免每帧刷屏/拖死交互）
+let renderErrorLogged = false;      // 首次异常只报告一次（console + 主进程日志）
 
 // 绘制/拆分/合并状态
 const drawPoints = ref([]);
@@ -1233,7 +1257,7 @@ function drawProvinceBrushOverlay(c) {
   if (p && tool.value === 'provinceBrush' && cell > 0) {
     c.save();
     c.strokeStyle = 'rgba(255,255,255,0.7)';
-    c.lineWidth = 1.2 / cameraScale.value;
+    c.lineWidth = px(1.2);
     c.beginPath();
     c.arc(p.x, p.y, provBrushRadius.value * cell, 0, Math.PI * 2);
     c.stroke();
@@ -1242,9 +1266,9 @@ function drawProvinceBrushOverlay(c) {
   const pts = provLassoPoints.value;
   if (pts && pts.length > 1) {
     c.save();
-    c.setLineDash([5 / cameraScale.value, 4 / cameraScale.value]);
+    c.setLineDash([px(5), px(4)]);
     c.strokeStyle = '#c4b5fd';
-    c.lineWidth = 1.6 / cameraScale.value;
+    c.lineWidth = px(1.6);
     c.beginPath();
     pts.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)));
     if (!provLassoActive) c.closePath();
@@ -1257,6 +1281,44 @@ function drawProvinceBrushOverlay(c) {
 
 function statusMsg(text) {
   provinceHint.value = text;   // 省份网格操作提示（状态栏，与其它工具的 draw-hint 并列）
+}
+
+// ── 底图懒建（Phase 3 收尾）─────────────────────────────────────────────
+// 项目里一张底图都没有时，**在第一次真正落笔前**建一张空底图，避免「点了没反应」。
+// ⚠️ 名字绝不借用任何真实剧本名（曾硬编码「德斯特星」= 拿暮雨自用剧本当示例，已移除）。
+const CREATES_CONTENT_TOOLS = new Set([
+  'draw', 'height', 'biome', 'culture', 'religion', 'burg', 'river', 'relief',
+  'label', 'marker', 'road', 'provinceBrush', 'provinceLasso',
+]);
+
+/** 空底图命名：底图 1 / 底图 2 …（避开已有名字） */
+function nextBaseMapName() {
+  const used = new Set(availableBaseMaps.value.map(b => b.id));
+  let i = 1;
+  while (used.has(`底图 ${i}`)) i += 1;
+  return `底图 ${i}`;
+}
+
+/**
+ * 确保有一张可写的底图。返回 false = 现在不能写 → 调用方必须直接 return（不落笔）。
+ * - 已有可用底图：直接用
+ * - 项目里有底图但当前键失效：切到第一张
+ * - 一张都没有：懒建空底图（只读态则拒绝并说明去处）
+ */
+function ensureBaseMap() {
+  if (baseMapKey.value && store.baseMaps?.[baseMapKey.value]) return true;
+  const first = availableBaseMaps.value[0]?.id;
+  if (first) { baseMapKey.value = first; return true; }
+  if (store.isReadOnly) {
+    statusMsg(`编辑已停用：${store.readOnlyReason}（在上面新建/打开项目后即可编辑）`);
+    return false;
+  }
+  const name = nextBaseMapName();
+  store.addBaseMap(name, { name });
+  if (!store.baseMaps?.[name]) { statusMsg('无法新建底图：请先用工具栏「+」导入 .map 底图'); return false; }
+  baseMapKey.value = name;
+  statusMsg(`项目里还没有底图：已新建空底图「${name}」（可用工具栏「+」导入 .map 覆盖）`);
+  return true;
 }
 
 function addGridProvince() {
@@ -1286,6 +1348,9 @@ function onProvinceMeshToggle() {
 
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
+
+  // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会「点了没反应」）
+  if (CREATES_CONTENT_TOOLS.has(tool.value) && !ensureBaseMap()) return;
 
   // Phase 3：省份网格 —— 笔刷落笔 / 套索起笔
   if ((tool.value === 'provinceBrush' || tool.value === 'provinceLasso') && event.button === 0) {
@@ -1357,14 +1422,14 @@ function onMouseDown(event) {
       const sy = event.clientY - rect.top;
       const world = screenToWorld(sx, sy);
       const prov = currentProvince();
-      const threshold = 8 / cameraScale.value;
+      const threshold = px(8);
       const points = prov && prov.points ? resolvePoints(prov) : null;
       if (points) {
         // P0-T1：切线手柄命中（仅当前选中顶点）
         const ai = activeVertexIdx.value;
         if (ai >= 0 && ai < points.length && !altStraight) {
           const ap = points[ai];
-          const hR = 10 / cameraScale.value;
+          const hR = px(10);
           const out = ap.controlOut;
           const inn = ap.controlIn;
           if (out && Math.hypot(vx(ap) + out.x - world.x, vy(ap) + out.y - world.y) < hR) {
@@ -2037,7 +2102,7 @@ function ctxChangeBiome() {
 function ctxDuplicateProvince() {
   if (!selectedProvince.value) return;
   const prov = selectedProvince.value;
-  const offset = 20 / cameraScale.value;
+  const offset = px(20);
   const newPoints = prov.points.map(p => ({ x: (p.x || p[0]) + offset, y: (p.y || p[1]) + offset }));
   const id = `prov_${Date.now()}`;
   store.addBaseProvince(baseMapKey.value, { id, name: prov.name + ' 副本', points: newPoints, biome: prov.biome, culture: prov.culture });
@@ -2499,7 +2564,7 @@ function drawRivers(c) {
   if (!list || !list.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
-  const pad = 40 / cameraScale.value;
+  const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
 
   c.save();
@@ -2533,7 +2598,7 @@ function drawRoutes(c) {
   if (!list || !list.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
-  const pad = 40 / cameraScale.value;
+  const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
 
   c.save();
@@ -2562,7 +2627,7 @@ function drawRiverPaths(c) {
   if (!riverPaths.value.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
-  const pad = 40 / cameraScale.value;
+  const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
   c.save();
   c.lineCap = 'round';
@@ -2570,7 +2635,7 @@ function drawRiverPaths(c) {
   c.strokeStyle = '#5d97bb';
   for (const path of riverPaths.value) {
     if (path.length < 2) continue;
-    c.lineWidth = Math.max(1, 2 / cameraScale.value);
+    c.lineWidth = Math.max(1, px(2));
     c.beginPath();
     c.moveTo(path[0].x, path[0].y);
     for (let i = 1; i < path.length; i++) c.lineTo(path[i].x, path[i].y);
@@ -2777,6 +2842,44 @@ function drawDataChart(c) {
 }
 
 function render() {
+  if (renderPaused.value) return;
+  try {
+    renderFrame();
+    if (renderErrorCount.value) { renderErrorCount.value = 0; renderError.value = ''; }
+  } catch (e) {
+    // ── 渲染护栏 ─────────────────────────────────────────────────────────
+    // render() 里抛出的异常会在 rAF / 事件回调里反复抛出：用户看到的是「画布黑掉 + 整页交互失效」；
+    // 回归里表现为后续用例连环 CDP 超时（2026-09-20 一次负半径 IndexSizeError 连坐 12 个用例）。
+    // 策略：捕获 → 只记录一次（console + 主进程错误日志）→ 连续 3 帧仍失败则**暂停渲染循环**
+    // 并在状态栏给可见提示 + 「继续渲染」按钮（可见、可恢复，绝不静默黑屏）。
+    renderErrorCount.value += 1;
+    renderError.value = String((e && e.message) || e);
+    if (!renderErrorLogged) {
+      renderErrorLogged = true;
+      console.error('[ScenarioMap] 渲染异常：', e);
+      window.sitianAPI?.reportError?.({
+        message: `ScenarioMap 渲染异常：${renderError.value}`,
+        stack: e && e.stack,
+        component: 'ScenarioMap.render',
+      });
+    }
+    if (renderErrorCount.value >= 3) {
+      renderPaused.value = true;
+      statusMsg(`渲染已暂停（连续 ${renderErrorCount.value} 帧异常）：${renderError.value}`);
+    }
+  }
+}
+
+/** 手动恢复渲染（护栏暂停后由状态栏按钮触发） */
+function resumeRender() {
+  renderPaused.value = false;
+  renderErrorCount.value = 0;
+  renderError.value = '';
+  renderErrorLogged = false;
+  render();
+}
+
+function renderFrame() {
   if (!ctx.value) return;
   const cvs = canvas.value;
   const w = cvs.width;
@@ -2810,7 +2913,7 @@ function render() {
   if (autoRivers.value.length > 0 && showRivers.value) {
     ctx.save();
     ctx.strokeStyle = '#5d97bb';
-    ctx.lineWidth = 1 / cameraScale.value;
+    ctx.lineWidth = px(1);
     for (const river of autoRivers.value) {
       if (river.length < 2) continue;
       ctx.beginPath();
@@ -2848,7 +2951,7 @@ function drawBackground(ctx) {
 
   // Grid
   ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-  ctx.lineWidth = 1 / cameraScale.value;
+  ctx.lineWidth = px(1);
   const step = GRID_STEP;
   const startX = Math.floor(tl.x / step) * step;
   const startY = Math.floor(tl.y / step) * step;
@@ -2929,12 +3032,12 @@ function drawProvinces(c) {
       const newCol = polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[prov.id]);
       const b = boundsOfPoints(points);
       const dy = b.maxY - b.minY;
-      const step = 8.5 / cameraScale.value;
+      const step = px(8.5);
       c.save();
       c.clip();                       // 复用当前路径（fill 不会清空路径）
       c.globalAlpha = 0.92;
       c.strokeStyle = newCol;
-      c.lineWidth = 3.2 / cameraScale.value;
+      c.lineWidth = px(3.2);
       for (let t = b.minX - dy - 20; t < b.maxX + 20; t += step) {
         c.beginPath();
         c.moveTo(t, b.minY - 20);
@@ -2943,7 +3046,7 @@ function drawProvinces(c) {
       }
       c.restore();
       c.save();
-      c.lineWidth = 1.4 / cameraScale.value;
+      c.lineWidth = px(1.4);
       c.strokeStyle = newCol;
       c.beginPath();
       traceShapePath(c, points, true);
@@ -2953,7 +3056,7 @@ function drawProvinces(c) {
     } else if (scenarioMode && tlDiffMode.value === 'outline'
                && k > 0 && (tl.eraChg[k]?.changed || []).includes(prov.id)) {
       c.save();
-      c.lineWidth = 2 / cameraScale.value;
+      c.lineWidth = px(2);
       c.strokeStyle = '#ffffff';
       c.beginPath();
       traceShapePath(c, points, true);
@@ -2972,7 +3075,7 @@ function drawProvinceBorders(c) {
     const points = resolvePoints(prov);
     if (!points || points.length < 3) return;
     c.strokeStyle = isMergeTarget ? '#ffd700' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)');
-    c.lineWidth = isSelected ? 1.5 / cameraScale.value : 0.6 / cameraScale.value;
+    c.lineWidth = isSelected ? px(1.5) : px(0.6);
     c.beginPath();
     traceShapePath(c, points, true);
     c.closePath();
@@ -2985,8 +3088,8 @@ function drawVertexHandles(c) {
   const prov = currentProvince();
   const points = prov ? resolvePoints(prov) : null;
   if (!points) return;
-  const r = 4 / cameraScale.value;
-  const hR = 3.5 / cameraScale.value;
+  const r = px(4);
+  const hR = px(3.5);
   const active = activeVertexIdx.value;
 
   // P0-T1：仅对当前选中顶点画切线手柄（大省份全画会遮满屏幕）
@@ -2997,9 +3100,9 @@ function drawVertexHandles(c) {
     const inn = p.controlIn;
     if (out || inn) {
       c.save();
-      c.setLineDash([3 / cameraScale.value, 3 / cameraScale.value]);
+      c.setLineDash([px(3), px(3)]);
       c.strokeStyle = 'rgba(167,139,250,0.8)';
-      c.lineWidth = 1 / cameraScale.value;
+      c.lineWidth = px(1);
       if (out) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + out.x, cy + out.y); c.stroke(); }
       if (inn) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + inn.x, cy + inn.y); c.stroke(); }
       c.setLineDash([]);
@@ -3016,7 +3119,7 @@ function drawVertexHandles(c) {
     const py = vy(p);
     c.fillStyle = draggingVertex.value?.vertexIdx === i ? '#ffd700' : (i === active ? '#f472b6' : '#a78bfa');
     c.strokeStyle = '#fff';
-    c.lineWidth = 1 / cameraScale.value;
+    c.lineWidth = px(1);
     c.beginPath();
     c.arc(px, py, r, 0, Math.PI * 2);
     c.fill();
@@ -3064,7 +3167,7 @@ function drawPreviewOverlay() {
   if (tool.value === 'draw' && drawPoints.value.length > 0) {
     c.strokeStyle = '#7c3aed';
     c.fillStyle = 'rgba(124, 58, 237, 0.15)';
-    c.lineWidth = 2 / cameraScale.value;
+    c.lineWidth = px(2);
     c.beginPath();
     c.moveTo(drawPoints.value[0].x, drawPoints.value[0].y);
     for (let i = 1; i < drawPoints.value.length; i++) {
@@ -3076,7 +3179,7 @@ function drawPreviewOverlay() {
     for (const p of drawPoints.value) {
       c.fillStyle = '#a78bfa';
       c.beginPath();
-      c.arc(p.x, p.y, 3 / cameraScale.value, 0, Math.PI * 2);
+      c.arc(p.x, p.y, px(3), 0, Math.PI * 2);
       c.fill();
     }
   }
@@ -3086,9 +3189,9 @@ function drawPreviewOverlay() {
     const mx = snapMarker.value.x;
     const my = snapMarker.value.y;
     const isEdge = snapMarker.value.kind === 'edge';
-    const arm = 7 / cameraScale.value;
+    const arm = px(7);
     c.strokeStyle = isEdge ? '#22d3ee' : '#34d399';
-    c.lineWidth = 1.5 / cameraScale.value;
+    c.lineWidth = px(1.5);
     c.beginPath();
     c.moveTo(mx - arm, my);
     c.lineTo(mx + arm, my);
@@ -3096,11 +3199,11 @@ function drawPreviewOverlay() {
     c.lineTo(mx, my + arm);
     c.stroke();
     c.beginPath();
-    c.arc(mx, my, 2.5 / cameraScale.value, 0, Math.PI * 2);
+    c.arc(mx, my, px(2.5), 0, Math.PI * 2);
     c.stroke();
     if (isEdge) {
       c.beginPath();
-      c.arc(mx, my, 6 / cameraScale.value, 0, Math.PI * 2);
+      c.arc(mx, my, px(6), 0, Math.PI * 2);
       c.stroke();
     }
   }
@@ -3115,8 +3218,8 @@ function drawPreviewOverlay() {
     else if (tool.value === 'culture') color = 'rgba(255, 215, 0, 0.8)';
     else if (tool.value === 'religion') color = 'rgba(167, 139, 250, 0.8)';
     c.strokeStyle = color;
-    c.lineWidth = 2 / cameraScale.value;
-    c.setLineDash([5 / cameraScale.value, 5 / cameraScale.value]);
+    c.lineWidth = px(2);
+    c.setLineDash([px(5), px(5)]);
     c.stroke();
     c.setLineDash([]);
     c.fillStyle = color.replace('0.8', '0.1');
@@ -3126,8 +3229,8 @@ function drawPreviewOverlay() {
   // 道路预览
   if (tool.value === 'road' && roadPath.value.length >= 2) {
     c.strokeStyle = '#ffd700';
-    c.lineWidth = 2 / cameraScale.value;
-    c.setLineDash([4 / cameraScale.value, 4 / cameraScale.value]);
+    c.lineWidth = px(2);
+    c.setLineDash([px(4), px(4)]);
     c.beginPath();
     c.moveTo(roadPath.value[0].x, roadPath.value[0].y);
     for (let i = 1; i < roadPath.value.length; i++) {
@@ -3138,25 +3241,25 @@ function drawPreviewOverlay() {
     // 起终点标记
     c.fillStyle = '#ffd700';
     c.beginPath();
-    c.arc(roadPath.value[0].x, roadPath.value[0].y, 4 / cameraScale.value, 0, Math.PI * 2);
+    c.arc(roadPath.value[0].x, roadPath.value[0].y, px(4), 0, Math.PI * 2);
     c.fill();
     c.beginPath();
-    c.arc(roadPath.value[roadPath.value.length - 1].x, roadPath.value[roadPath.value.length - 1].y, 4 / cameraScale.value, 0, Math.PI * 2);
+    c.arc(roadPath.value[roadPath.value.length - 1].x, roadPath.value[roadPath.value.length - 1].y, px(4), 0, Math.PI * 2);
     c.fill();
   }
 
   if (tool.value === 'split' && splitStep.value === 1 && splitPoints.value.length === 1) {
     c.fillStyle = '#fbbf24';
     c.beginPath();
-    c.arc(splitPoints.value[0].x, splitPoints.value[0].y, 5 / cameraScale.value, 0, Math.PI * 2);
+    c.arc(splitPoints.value[0].x, splitPoints.value[0].y, px(5), 0, Math.PI * 2);
     c.fill();
   }
 
   // 河流编辑器预览（P1-T2）
   if (tool.value === 'river' && riverDraft.value.length > 0) {
     c.strokeStyle = '#5d97bb';
-    c.lineWidth = 2 / cameraScale.value;
-    c.setLineDash([4 / cameraScale.value, 4 / cameraScale.value]);
+    c.lineWidth = px(2);
+    c.setLineDash([px(4), px(4)]);
     c.beginPath();
     c.moveTo(riverDraft.value[0].x, riverDraft.value[0].y);
     for (let i = 1; i < riverDraft.value.length; i++) {
@@ -3167,7 +3270,7 @@ function drawPreviewOverlay() {
     for (const p of riverDraft.value) {
       c.fillStyle = '#5d97bb';
       c.beginPath();
-      c.arc(p.x, p.y, 3 / cameraScale.value, 0, Math.PI * 2);
+      c.arc(p.x, p.y, px(3), 0, Math.PI * 2);
       c.fill();
     }
   }
@@ -3227,7 +3330,7 @@ function drawCapitalStar(c, x, y, r) {
   c.fillStyle = '#ffd700';
   c.fill();
   c.strokeStyle = 'rgba(20,24,34,0.65)';
-  c.lineWidth = 1 / cameraScale.value;
+  c.lineWidth = px(1);
   c.stroke();
 }
 
@@ -3237,10 +3340,10 @@ function drawBurgs(c) {
   // 视口裁剪：只画可见范围（含边距）
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
-  const pad = 24 / cameraScale.value;
+  const pad = px(24);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  const dotR = 2.5 / cameraScale.value;
-  const starR = 5.5 / cameraScale.value;
+  const dotR = px(2.5);
+  const starR = px(5.5);
   const hoverId = hoveredBurg.value ? hoveredBurg.value.id : null;
   const selectedId = selectedBurg.value ? selectedBurg.value.id : null;
 
@@ -3264,7 +3367,7 @@ function drawBurgs(c) {
       }
       if (b.id === selectedId || b.id === hoverId) {
         c.strokeStyle = b.id === selectedId ? '#34d399' : '#ffffff';
-        c.lineWidth = 1.5 / cameraScale.value;
+        c.lineWidth = px(1.5);
         c.beginPath();
         c.arc(b.x, b.y, starR * 1.8, 0, Math.PI * 2);
         c.stroke();
@@ -3331,9 +3434,9 @@ function drawReliefIcons(c) {
   if (!reliefIcons.value.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
-  const pad = 30 / cameraScale.value;
+  const pad = px(30);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  const fontSize = Math.max(12, 16 / cameraScale.value);
+  const fontSize = Math.max(12, px(16));
   c.font = `${fontSize}px "PingFang SC", sans-serif`;
   c.textAlign = 'center';
   c.textBaseline = 'middle';
@@ -3349,9 +3452,9 @@ function drawScenarioMarkers(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.markers?.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
-  const pad = 30 / cameraScale.value;
+  const pad = px(30);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  const fontSize = Math.max(12, 14 / cameraScale.value);
+  const fontSize = Math.max(12, px(14));
   c.font = `${fontSize}px "PingFang SC", sans-serif`;
   c.textAlign = 'center';
   c.textBaseline = 'middle';
@@ -3360,7 +3463,7 @@ function drawScenarioMarkers(c) {
     // 图标
     c.fillText(m.icon || '📍', m.x, m.y);
     // 名称标签
-    c.font = `${Math.max(10, 11 / cameraScale.value)}px "PingFang SC", sans-serif`;
+    c.font = `${Math.max(10, px(11))}px "PingFang SC", sans-serif`;
     c.fillStyle = m.color || '#e2e8f0';
     c.fillText(m.name, m.x, m.y + fontSize * 0.8);
   }
@@ -3517,7 +3620,7 @@ onMounted(async () => {
   cvs.height = wrap.clientHeight;
   ctx.value = cvs.getContext('2d');
 
-  // P0: 恢复上次使用的底图键
+  // P0: 恢复上次使用的底图键（全局配置）——但只在**当前项目里确实存在**这张底图时才用
   if (window.sitianAPI?.getCurrentBaseMapKey) {
     const savedKey = await window.sitianAPI.getCurrentBaseMapKey();
     if (savedKey && store.baseMaps?.[savedKey]) {
@@ -3525,8 +3628,12 @@ onMounted(async () => {
     }
   }
 
+  // 🔴 不再默默造一张叫「德斯特星」的空底图（2026-09-20 用户决策）：
+  //    ① 那是暮雨自用剧本地图的名字，硬编码进产品 = 用真实剧本当示例；
+  //    ② 每个新项目一打开剧本模式就凭空多出一张假底图（还会随保存写进项目文件）。
+  //    现在：没有可用底图就留空 → 画布显示「还没有底图」提示，由用户导入 .map 或懒建。
   if (!store.baseMaps?.[baseMapKey.value]) {
-    store.addBaseMap(baseMapKey.value, { name: '德斯特星' });
+    baseMapKey.value = availableBaseMaps.value[0]?.id || '';
   }
 
   cvs.addEventListener('mousedown', onMouseDown);
@@ -3802,6 +3909,37 @@ watch(baseMap, () => {
   display: block;
   cursor: grab;
 }
+
+/* 「还没有底图」空态提示：居中、不拦事件（绝不挡住画布交互） */
+.scenario-empty-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 420px;
+  padding: 16px 20px;
+  text-align: center;
+  border: 1px dashed rgba(148, 163, 184, 0.55);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  pointer-events: none;
+}
+.scenario-empty-hint .eh-title { margin: 0 0 6px; font-size: 14px; color: #e2e8f0; }
+.scenario-empty-hint .eh-line { margin: 0; font-size: 12px; line-height: 1.6; }
+
+/* 渲染护栏提示（状态栏内，红黄警示 + 可点击恢复） */
+.render-guard { color: #fbbf24; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.render-guard .rg-btn {
+  padding: 1px 7px;
+  font-size: 11px;
+  color: #fbbf24;
+  background: transparent;
+  border: 1px solid #b45309;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.render-guard .rg-btn:hover { background: rgba(251, 191, 36, 0.12); }
 
 .scenario-status-bar {
   padding: 6px 12px;

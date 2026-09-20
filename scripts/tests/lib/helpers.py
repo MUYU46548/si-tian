@@ -130,6 +130,52 @@ def ensure_case_state(cdp):
     return open_harness_project(cdp)
 
 
+# ─────────────────────────────────────────────────────────────
+# 底图 fixture（用例自带，**不依赖产品默认值**）
+#   2026-09-20 起司天不再硬编码/凭空注入任何示例底图（曾默认叫「德斯特星」—— 那是暮雨自用剧本名，
+#   已按用户决策移除：新项目打开剧本模式就是「还没有底图」）。所以凡需要底图的用例必须自己声明：
+#   建一张 + 让 ScenarioMap 选中它。否则 store.baseMaps 为空、组件 baseMapKey 为 ''，
+#   时间轴/谱系/像素断言全部会看到空数据（「底图未加载 / eraChg = [] / eras: 0」）。
+# ─────────────────────────────────────────────────────────────
+OPEN_TEST_BASEMAP_JS = r"""(() => {
+  const s = PLACEHOLDER_STORE;
+  const KEY = __KEY__;
+  if (!s.baseMaps[KEY]) s.addBaseMap(KEY, { name: __NAME__ });
+  const el = document.querySelector('.scenario-map-container');
+  const sm = el && el.__vueParentComponent && el.__vueParentComponent.setupState;
+  if (sm) {
+    sm.baseMapKey = KEY;
+    if (typeof sm.onBaseMapChange === 'function') sm.onBaseMapChange();
+  }
+  return JSON.stringify({
+    exists: !!s.baseMaps[KEY],
+    keys: Object.keys(s.baseMaps || {}),
+    active: sm ? sm.baseMapKey : null,
+  });
+})()"""
+
+
+def open_test_base_map(cdp, key='用例底图', name=None):
+    """用例自带的底图 fixture：不存在则创建，并让 ScenarioMap 选中它。
+
+    返回 (ok, info)；ok=False 时 info 里带原因（求值异常 / 未选中）。
+    ⚠️ ScenarioMap 未挂载时只建不选（active=None）→ 调用方应确保已进入剧本模式。
+    """
+    expr = (OPEN_TEST_BASEMAP_JS
+            .replace('PLACEHOLDER_STORE',
+                     "document.querySelector('#app').__vue_app__._instance.setupState.store")
+            .replace('__KEY__', json.dumps(key))
+            .replace('__NAME__', json.dumps(name if name is not None else key)))
+    v = cdp.eval(expr)
+    if isinstance(v, str) and v.startswith('{'):
+        try:
+            info = json.loads(v)
+        except ValueError:
+            return False, {'error': f'底图 fixture 返回非 JSON：{v[:200]}'}
+        return bool(info.get('exists')) and info.get('active') == key, info
+    return False, {'error': f'底图 fixture 求值异常：{str(v)[:200]}'}
+
+
 def store(cdp):
     """注意：不要序列化整个 Pinia store（proxy 返回空 {}）。用 view_level/node_count 等具体函数"""
     return None

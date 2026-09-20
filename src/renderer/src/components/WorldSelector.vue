@@ -202,24 +202,34 @@ function getLocationCount(worldId) {
   width: 100%;
 }
 
-/* 空状态（P1-3）：库中没有世界时的引导卡片 */
+/* 空状态（P1-3）：库中没有世界时的引导卡片
+   ⚠️ 三个按钮并排的总宽 > 卡片宽（用户实测：按钮溢出卡片左右边界）→
+      卡片加宽 + 按钮换行居中，窄窗口下也不会挤出去 */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 48px 40px;
+  padding: 40px 28px;
   border: 1px dashed rgba(88, 166, 255, 0.35);
   border-radius: var(--radius-xl);
   background: var(--panel-bg);
-  max-width: 420px;
+  max-width: 560px;
   width: 100%;
   text-align: center;
 }
 .empty-state .empty-icon { font-size: 40px; }
 .empty-state h2 { font-size: 17px; color: var(--text-primary); margin: 0; }
 .empty-state p { font-size: 13px; color: var(--text-tertiary); margin: 0 0 8px; }
-.empty-actions { display: flex; gap: 10px; }
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 100%;
+}
+.empty-actions .create-btn,
+.empty-actions .extract-btn { flex: 0 1 auto; max-width: 100%; }
 .empty-actions .create-btn { align-self: auto; margin-top: 0; }
 .extract-btn {
   padding: 8px 18px;

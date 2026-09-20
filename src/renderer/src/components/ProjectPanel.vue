@@ -21,11 +21,13 @@
       <!-- 新建项目 -->
       <div class="pp-section">
         <div class="pp-label">新建项目</div>
-        <div class="pp-row">
+        <div class="pp-row pp-name-row" @click="focusNameInput">
           <input
+            ref="nameInputEl"
             v-model="newName"
             class="pp-input"
-            placeholder="项目名称（如 ROSA世界）"
+            placeholder="项目名称"
+            aria-label="项目名称"
             @keydown.enter="doCreate"
           />
           <button class="pp-btn primary" :disabled="!canCreate" @click="doCreate">新建</button>
@@ -55,6 +57,11 @@
           <template v-if="proj.isOpen">
             <button class="pp-btn" :disabled="proj.saveStatus === 'saving'" @click="doSave">保存</button>
             <button class="pp-btn" @click="doBackup">备份</button>
+            <button
+              class="pp-btn"
+              title="把项目所在目录当作 git 仓库提交一次快照。⚠️ 司天不会自动初始化 git 仓库：目录不是仓库时会跳过（如需 git 备份，请自行在项目目录 git init）"
+              @click="doGitSnapshot"
+            >Git 快照</button>
             <button class="pp-btn" @click="doReveal">定位文件</button>
             <button class="pp-btn danger" @click="doClose">关闭</button>
           </template>
@@ -196,7 +203,7 @@
 //    七层视图仍读 Obsidian 缓存。所以本面板的实体树只反映**项目文件里的实体**，
 //    与当前画布内容暂时是两套。接线后二者合一。
 
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import PanelShell from './PanelShell.vue';
 import EntityCreator from './EntityCreator.vue';
@@ -215,10 +222,27 @@ const isReadOnly = gateReadOnly;
 const writeMode = gateWriteMode;
 
 const newName = ref('');
+const nameInputEl = ref(null);
 const tip = ref('');
 const tipKind = ref('ok');
 const selectedId = ref('');
 const creatorOpen = ref(false);
+
+/**
+ * 面板一挂载就把焦点放进「项目名称」输入框。
+ *
+ * 为什么必须这样（用户实测反馈：打开面板后**点不进**这个输入框，乱点一通才偶然能输入）：
+ * 面板是 `defineAsyncComponent` + `v-if` 挂载的，从点工具栏按钮到 DOM 出现之间有加载窗口，
+ * 这期间的点击落到底下的画布/世界选择视图上（用户看到的就是「点不了」）。
+ * 自动聚焦让这个入口**不依赖点击**：面板一出现就能直接打字。同理 `.pp-name-row` 整行可点。
+ */
+onMounted(() => { nextTick(() => nameInputEl.value?.focus?.()); });
+
+/** 点「项目名称」这一行的空白处也聚焦输入框（扩大命中区；点到按钮时不抢焦点） */
+function focusNameInput(e) {
+  if (e && e.target && e.target.tagName === 'BUTTON') return;
+  nameInputEl.value?.focus?.();
+}
 
 // 实体树交互状态（改名 / 删除 / 拖动改父级）
 const editingId = ref('');          // 正在内联改名的行
@@ -365,6 +389,19 @@ async function doSave() {
 async function doBackup() {
   const res = await proj.backupNow();
   setTip(res && res.backedUp ? '已备份到 <项目文件>.backups/' : (res.error || '备份失败'), res && res.backedUp ? 'ok' : 'err');
+}
+
+/**
+ * Git 快照（显式触发，从不自动提交）。
+ * ⚠️ 司天**不会**替用户 `git init`：把整个项目目录变成仓库要额外维护一套仓库与提交历史，
+ *    属用户自己的选择（后期也可以装 Obsidian/司天 的 git 备份插件）。目录不是 git 仓库时，
+ *    主进程返回 skipped + 原因，这里原样告诉用户「怎么才能用」。
+ */
+async function doGitSnapshot() {
+  const res = await proj.gitSnapshot('司天快照');
+  if (res && res.success) setTip('已提交一次 git 快照', 'ok');
+  else if (res && res.skipped) setTip(`${res.reason} —— 如需 git 备份：在项目目录里自行 git init（司天不会自动初始化仓库）`, 'err');
+  else setTip((res && res.error) || 'Git 快照失败', 'err');
 }
 
 async function doReveal() {
@@ -598,6 +635,8 @@ refresh();
   align-items: center;
 }
 .pp-row.wrap { flex-wrap: wrap; }
+/* 「项目名称」整行都是点击区（面板刚打开时用户不用精确点中 24px 高的输入框） */
+.pp-name-row { cursor: text; }
 .pp-input {
   flex: 1;
   min-width: 0;
@@ -608,7 +647,13 @@ refresh();
   border: 1px solid var(--planet-btn-border);
   border-radius: var(--radius-sm);
 }
-.pp-input:focus { outline: none; border-color: var(--planet-text-link); }
+/* 聚焦必须**看得见**：浅色卡面上只改 border 颜色太弱（用户会以为没点中）→ 加深色描边 */
+.pp-input:focus {
+  outline: 2px solid #2f5fd0;
+  outline-offset: 1px;
+  border-color: #2f5fd0;
+  background: #ffffff;
+}
 .pp-btn {
   padding: 4px 9px;
   font-size: 12px;
