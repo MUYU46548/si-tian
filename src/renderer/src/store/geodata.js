@@ -13,6 +13,7 @@ import { createInteriorModule } from './geodataModules/interior';
 import { createAreaEditingModule } from './geodataModules/areaEditing';
 import { createSpaceEditingModule, normalizeSpaceMarkers, normalizeFleetCards } from './geodataModules/spaceEditing';
 import { createScenarioEditingModule } from './geodataModules/scenarioEditing';
+import { createProvinceEditingModule } from './geodataModules/provinceEditing';
 // 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
 // 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
 import { setCanvasAdapter, getProjectSink } from './canvasBridge';
@@ -88,6 +89,12 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 各模块通过 ctx 拿到所需的 refs/函数引用（ref 传引用保持响应式）
   // 注意：scenarioEditingModule 必须在 searchModule 之前创建（search 需要引用 scenarios）
   const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap });
+  // Phase 3：省份「归属标签网格」（笔刷/套索/自动省界）。省份定义表就是 baseMaps[key].terrain，
+  // 所以这里只借用 scenarioEditing 的 baseMaps ref，不另建第二套表。
+  const provinceEditingModule = createProvinceEditingModule({
+    execute, baseMaps: scenarioEditingModule.baseMaps, scheduleAutoSaveScenarios,
+    guardWrite, isReadOnly: gateIsReadOnly,
+  });
   const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });
@@ -1618,5 +1625,6 @@ export const useGeodataStore = defineStore('geodata', () => {
     ...areaEditingModule,
     ...spaceEditingModule,
     ...scenarioEditingModule,
+    ...provinceEditingModule,
   };
 });

@@ -115,6 +115,48 @@
           @click="setTool('road')"
           title="道路 (J) — 两点连线，自动生成沿等高线路径"
         ><Icon name="git-branch" :size="15"/></button>
+        <button
+          :class="{ active: tool === 'provinceBrush' }"
+          @click="setTool('provinceBrush')"
+          title="省份笔刷 (Q) — 按住涂抹划归所选省份；省界由格归属自动重算（一次拖动 = 一条撤销）"
+        ><Icon name="brush" :size="15"/></button>
+        <button
+          :class="{ active: tool === 'provinceLasso' }"
+          @click="setTool('provinceLasso')"
+          title="自由轮廓 (L) — 按住画一圈，圈内所有格整批划归（不用描点）"
+        ><Icon name="pen-tool" :size="15"/></button>
+      </div>
+      <!-- Phase 3 省份网格：笔刷/套索设置 -->
+      <div class="tool-group brush-settings" v-if="tool === 'provinceBrush' || tool === 'provinceLasso'">
+        <label>省份：</label>
+        <select v-model.number="provBrushTarget" class="brush-biome-select" title="要划归的目标省份">
+          <option v-for="(p, i) in provinceTargets" :key="p.id" :value="i + 1">{{ p.name || ('省份 ' + (i + 1)) }}</option>
+        </select>
+        <template v-if="tool === 'provinceBrush'">
+          <label class="check-label">
+            工具
+            <select v-model="provBrushTool" class="brush-biome-select" title="归属笔刷 / 抹除 / 平滑">
+              <option v-for="t in provinceBrush.PROVINCE_TOOLS.filter(t => t.key !== 'lasso')" :key="t.key" :value="t.key">{{ t.label }}</option>
+            </select>
+          </label>
+          <label class="check-label" title="笔刷半径（格）">
+            半径
+            <input type="range" v-model.number="provBrushRadius" min="1" max="20" step="1" class="brush-slider" />
+            {{ provBrushRadius }} 格
+          </label>
+          <label class="check-label" title="笔刷强度">
+            强度
+            <input type="range" v-model.number="provBrushStrength" min="0.3" max="1" step="0.1" class="brush-slider" />
+          </label>
+        </template>
+        <button @click="addGridProvince" title="新建一个「纯网格省份」（无轮廓，边界由格归属自动提取）"><Icon name="plus" :size="13"/> 新建省份</button>
+        <button @click="clearGridOwnership" title="把所有格清成无主（省份定义保留）——演示「海陆来自导入、省份由司天切」"><Icon name="refresh-cw" :size="13"/> 清空归属</button>
+        <label class="check-label" title="用格渲染省份（关掉则沿用多边形渲染）">
+          <input type="checkbox" v-model="showProvinceMesh" /> 网格视图
+        </label>
+        <label class="check-label" title="显示无主格（海域 / 未划归）">
+          <input type="checkbox" v-model="provMeshNoStar" /> 无主格
+        </label>
       </div>
       <!-- 笔刷设置 -->
       <div class="tool-group brush-settings" v-if="['height','biome','culture','religion'].includes(tool)">
@@ -279,6 +321,10 @@
       <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
       <span v-if="snapFeedback" class="snap-feedback" :class="{ edge: snapFeedback === '吸附到边界' }">{{ snapFeedback }}</span>
       <span v-if="tool === 'vertex' && activeVertexIdx >= 0" class="draw-hint">切线手柄：拖拽圆点调曲率（Alt 临时直线）</span>
+      <span v-if="provinceHint" class="draw-hint">{{ provinceHint }}</span>
+      <span v-if="tool === 'provinceBrush' || tool === 'provinceLasso'" class="draw-hint">
+        {{ tool === 'provinceBrush' ? '省份笔刷：按住涂抹 → 整笔划归所选省份（省界自动重算）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
+      </span>
       <span v-if="baseMap?.source?.warnings?.length" class="layer-warn" :title="baseMap.source.warnings.join('\n')">
         <Icon name="alert-triangle" :size="13"/> {{ baseMap.source.warnings.length }} 条图层提示
       </span>
@@ -487,9 +533,21 @@ import {
   settledCount, eraIndexOfYear, findGap,
 } from '../utils/scenarioTimeline';
 import { useScenarioExport } from '../composables/useScenarioExport';
+import { useProvinceBrush } from '../composables/useProvinceBrush';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
+
+// Phase 3：省份「归属标签网格」——笔刷/套索 + 自动省界（数据在 store 的 provinceEditing 模块）
+const provinceBrush = useProvinceBrush();
+const { radius: provBrushRadius, strength: provBrushStrength, tool: provBrushTool,
+        targetIdx: provBrushTarget, showBorders: provMeshBorders, showNoStar: provMeshNoStar } = provinceBrush;
+const showProvinceMesh = ref(false);      // 网格编辑视图（开=用格渲染省份，关=沿用多边形渲染）
+let provStrokeActive = false;             // 涂抹中（快速档渲染）
+let provLassoActive = false;
+const provLassoPoints = ref([]);          // 套索轨迹（世界坐标）
+const provBrushPreview = ref(null);
+const provinceHint = ref('');             // 省份网格操作提示（状态栏）
 
 const canvas = ref(null);
 const canvasWrap = ref(null);
@@ -837,6 +895,16 @@ const statusText = computed(() => {
 
 function setTool(t) {
   tool.value = t;
+  // Phase 3：切到省份网格工具时自动开网格视图并保证网格就位（否则用户涂了看不见）
+  if (t === 'provinceBrush' || t === 'provinceLasso') {
+    showProvinceMesh.value = true;
+    store.ensureProvinceGrid(baseMapKey.value);
+    if (!provBrushTarget.value) provBrushTarget.value = 1;
+  }
+  provStrokeActive = false;
+  provLassoActive = false;
+  provLassoPoints.value = [];
+  provBrushPreview.value = null;
   drawPoints.value = [];
   splitStep.value = 0;
   splitPoints.value = [];
@@ -867,6 +935,7 @@ function updateCursor() {
   else if (tool.value === 'label') canvas.value.style.cursor = 'text';
   else if (tool.value === 'erase') canvas.value.style.cursor = 'not-allowed';
   else if (tool.value === 'height' || tool.value === 'biome') canvas.value.style.cursor = 'none';
+  else if (tool.value === 'provinceBrush' || tool.value === 'provinceLasso') canvas.value.style.cursor = 'crosshair';
   else canvas.value.style.cursor = 'default';
 }
 
@@ -1109,8 +1178,141 @@ function screenToWorld(sx, sy) {
 let isPanning = false;
 let panStart = { x: 0, y: 0 };
 
+// ═══════════════════════════════════════════
+// Phase 3：省份「归属标签网格」（笔刷 / 套索 / 自动省界）
+//   数据 = store.provinceEditing（按 baseMaps[key] 走 undo）；本处只做交互与渲染。
+// ═══════════════════════════════════════════
+const provinceTargets = computed(() => baseMap.value?.terrain || []);
+
+/** 当前视口的世界矩形（用于网格裁剪；屏幕坐标 = 相机变换，见 screenToWorld） */
+function viewWorldRect() {
+  const cvs = canvas.value;
+  if (!cvs) return null;
+  const a = screenToWorld(0, 0);
+  const b = screenToWorld(cvs.clientWidth, cvs.clientHeight);
+  return { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
+}
+
+function provinceMeshColorOf(idx) {
+  const prov = baseMap.value?.terrain?.[idx - 1];
+  if (!prov) return null;
+  return getProvinceColor(prov);      // 与多边形渲染同一套取色（势力染色在网格视图下依然生效）
+}
+
+/** 网格视图是否生效（开启 + 有网格数据） */
+const provinceMeshOn = computed(() => showProvinceMesh.value && !!baseMap.value?.terrain);
+
+function drawProvinceMesh(c) {
+  const entry = store.getProvinceGrid(baseMapKey.value);
+  if (!entry) return;
+  provinceBrush.drawProvinceGrid(c, {
+    key: baseMapKey.value,
+    labels: entry.labels,
+    grid: entry.grid,
+    zoom: cameraScale.value,
+    colorOf: provinceMeshColorOf,
+    viewRect: viewWorldRect(),
+    fast: provStrokeActive,
+  });
+}
+
+function provinceBrushOpts() {
+  return {
+    radius: provBrushRadius.value,
+    strength: provBrushStrength.value,
+    tool: provBrushTool.value,
+    target: provBrushTarget.value,
+  };
+}
+
+/** 笔刷预览圈（格数 × 格宽 → 世界半径）+ 套索轨迹（世界坐标，ctx 已带相机变换） */
+function drawProvinceBrushOverlay(c) {
+  const entry = store.getProvinceGrid(baseMapKey.value);
+  const cell = entry ? entry.grid.cell : 0;
+  const p = provBrushPreview.value;
+  if (p && tool.value === 'provinceBrush' && cell > 0) {
+    c.save();
+    c.strokeStyle = 'rgba(255,255,255,0.7)';
+    c.lineWidth = 1.2 / cameraScale.value;
+    c.beginPath();
+    c.arc(p.x, p.y, provBrushRadius.value * cell, 0, Math.PI * 2);
+    c.stroke();
+    c.restore();
+  }
+  const pts = provLassoPoints.value;
+  if (pts && pts.length > 1) {
+    c.save();
+    c.setLineDash([5 / cameraScale.value, 4 / cameraScale.value]);
+    c.strokeStyle = '#c4b5fd';
+    c.lineWidth = 1.6 / cameraScale.value;
+    c.beginPath();
+    pts.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)));
+    if (!provLassoActive) c.closePath();
+    c.stroke();
+    if (!provLassoActive) { c.fillStyle = 'rgba(196,181,253,.18)'; c.fill(); }
+    c.setLineDash([]);
+    c.restore();
+  }
+}
+
+function statusMsg(text) {
+  provinceHint.value = text;   // 省份网格操作提示（状态栏，与其它工具的 draw-hint 并列）
+}
+
+function addGridProvince() {
+  if (store.isReadOnly) { statusMsg(`新建省份已停用：${store.readOnlyReason}`); return; }
+  const res = store.addBrushProvince(baseMapKey.value, {});
+  if (!res || res.blocked) { statusMsg((res && res.message) || '新建省份失败'); return; }
+  provBrushTarget.value = res.idx;
+  showProvinceMesh.value = true;
+  provinceBrush.invalidateBorders();
+  statusMsg(`已新建「${res.name}」——按住涂抹即可给它划地（省界自动提取）`);
+  render();
+}
+
+function clearGridOwnership() {
+  if (store.isReadOnly) { statusMsg(`清空归属已停用：${store.readOnlyReason}`); return; }
+  const res = store.clearProvinceLabels(baseMapKey.value);
+  if (!res || res.blocked) { statusMsg((res && res.message) || '清空归属失败'); return; }
+  provinceBrush.invalidateBorders();
+  statusMsg(`已清空归属（${res.cleared} 格归无主）——现在可以重新切分省份`);
+  render();
+}
+
+function onProvinceMeshToggle() {
+  if (showProvinceMesh.value) store.ensureProvinceGrid(baseMapKey.value);
+  render();
+}
+
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
+
+  // Phase 3：省份网格 —— 笔刷落笔 / 套索起笔
+  if ((tool.value === 'provinceBrush' || tool.value === 'provinceLasso') && event.button === 0) {
+    // 只读态（未打开项目）：编辑入口不灰禁，但**不得产生任何改动** —— 直接说明原因与去处
+    if (store.isReadOnly) {
+      statusMsg(`省份编辑已停用：${store.readOnlyReason}`);
+      return;
+    }
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    store.ensureProvinceGrid(baseMapKey.value);
+    if (!provinceTargets.value.length) {
+      statusMsg('还没有省份：先点工具栏「新建省份」，再涂抹划地（省界会自动提取）');
+      return;
+    }
+    if (tool.value === 'provinceBrush') {
+      provStrokeActive = true;
+      store.beginProvinceStroke();
+      store.applyProvinceStroke(baseMapKey.value, { x: world.x, y: world.y, ...provinceBrushOpts() });
+      provinceBrush.invalidateBorders();
+    } else {
+      provLassoActive = true;
+      provLassoPoints.value = [world];
+    }
+    render();
+    return;
+  }
 
   // 笔刷工具：左键抬高 / 右键降低
   if (tool.value === 'height' && (event.button === 0 || event.button === 2)) {
@@ -1204,6 +1406,22 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
+  // Phase 3：省份笔刷涂抹 / 套索描轨迹
+  if (tool.value === 'provinceBrush' || tool.value === 'provinceLasso') {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    provBrushPreview.value = { x: world.x, y: world.y };
+    if (provStrokeActive) {
+      store.applyProvinceStroke(baseMapKey.value, { x: world.x, y: world.y, ...provinceBrushOpts() });
+      provinceBrush.invalidateBorders();
+    } else if (provLassoActive) {
+      const last = provLassoPoints.value[provLassoPoints.value.length - 1];
+      if (!last || Math.hypot(world.x - last.x, world.y - last.y) > 1e-6) provLassoPoints.value.push(world);
+    }
+    render();
+    return;
+  }
+
   // 笔刷预览更新
   if (['height', 'biome', 'culture', 'religion'].includes(tool.value)) {
     const rect = canvas.value.getBoundingClientRect();
@@ -1325,6 +1543,25 @@ function onMouseMove(event) {
 }
 
 function onMouseUp() {
+  if (provStrokeActive) {
+    provStrokeActive = false;
+    const label = provBrushTool.value === 'erase' ? '省份笔刷抹除'
+      : (provBrushTool.value === 'smooth' ? '省份笔刷平滑' : '省份笔刷划归');
+    const res = store.endProvinceStroke(label);
+    provinceBrush.invalidateBorders();
+    if (res) statusMsg(`${res.label}：改 ${res.changed} 格 · 整笔 = 1 条撤销`);
+    render();
+  }
+  if (provLassoActive) {
+    provLassoActive = false;
+    const poly = provLassoPoints.value;
+    provLassoPoints.value = [];
+    const res = store.applyProvinceLasso(baseMapKey.value, poly, provBrushTarget.value);
+    provinceBrush.invalidateBorders();
+    if (res && res.changed) statusMsg(`自由轮廓：圈入 ${res.changed} 格 → 整批划归（一笔成形，没有描点）`);
+    else statusMsg('自由轮廓：圈内没有格子（或已全部属于该省份）');
+    render();
+  }
   if (isPanning) {
     isPanning = false;
     updateCursor();
@@ -1665,6 +1902,8 @@ function onKeyDown(event) {
   else if (event.key === 'x' || event.key === 'X') setTool('split');
   else if (event.key === 'm' || event.key === 'M') setTool('merge');
   else if (event.key === 'p' || event.key === 'P') setTool('paint');
+  else if (event.key === 'q' || event.key === 'Q') setTool('provinceBrush');
+  else if (event.key === 'l' || event.key === 'L') setTool('provinceLasso');
   else if (event.key === 't' || event.key === 'T') setTool('label');
   else if (event.key === 'e' || event.key === 'E') setTool('erase');
   else if (event.key === 'h' || event.key === 'H') setTool('height');
@@ -2548,7 +2787,9 @@ function render() {
   if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
 
   if (showBiomes.value) drawBiomeBackground(ctx.value);
-  drawProvinces(ctx.value);
+  // Phase 3：网格视图（格 + 自动省界）取代多边形渲染；关掉则沿用原路径，行为不变
+  if (provinceMeshOn.value) drawProvinceMesh(ctx.value);
+  else drawProvinces(ctx.value);
 
   // 地形/温度/降水：半透明叠加在省份之上（验收：alpha ≈ 0.4，不影响点击选中）
   if (rasterLayer.value === 'height') drawRasterLayer(ctx.value, 'height', 0.45);
@@ -2575,9 +2816,10 @@ function render() {
     }
     ctx.restore();
   }
-  if (showBorders.value) drawProvinceBorders(ctx.value);
+  if (showBorders.value && !provinceMeshOn.value) drawProvinceBorders(ctx.value);
   drawVertexHandles(ctx.value);
   if (showBurgs.value) drawBurgs(ctx.value);
+  if (tool.value === 'provinceBrush' || tool.value === 'provinceLasso') drawProvinceBrushOverlay(ctx.value);
   drawPreviewOverlay(ctx.value);
   if (showLabels.value) drawLabels(ctx.value);
   drawReliefIcons(ctx.value);
@@ -3330,10 +3572,18 @@ function onHistoryJump() {
   render();
 }
 watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels], () => render());
+watch([showProvinceMesh, provMeshNoStar, provMeshBorders], () => { if (showProvinceMesh.value) store.ensureProvinceGrid(baseMapKey.value); render(); });
 
 // 切换底图 → 作废离屏栅格缓存（不同地图的网格数据不同）
 watch(baseMapKey, () => {
   rasterCache.clear();
+  // Phase 3：省份网格随底图切换（目标省份、省界缓存、套索态都要重置）
+  provBrushTarget.value = 1;
+  provStrokeActive = false;
+  provLassoActive = false;
+  provLassoPoints.value = [];
+  provinceBrush.invalidateBorders();
+  if (showProvinceMesh.value) store.ensureProvinceGrid(baseMapKey.value);
   render();
 });
 
