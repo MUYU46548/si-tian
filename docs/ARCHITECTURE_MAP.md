@@ -8,15 +8,16 @@
 > - 行为规则/陷阱不写在这里，去 AGENTS.md 速查节和 Hermes skill `sitian-development`。
 > - 体积红线：全文 ≤200 行。超了先删职责描述的冗余，不删文件行。
 
-## 锚点（2026-09-11 实测）
+## 锚点（2026-09-20 实测）
 
 | 锚点 | 期望值 |
 |---|---|
-| 结构清单文件数（脚本扫描） | 118 |
-| 测试用例数 | 20 |
+| 结构清单文件数（脚本扫描） | 155 |
+| 测试用例数 | 50 |
 | store 模块数（geodataModules/） | 6 |
-| App.vue 异步面板 | 19 |
-| 主进程 IPC handle | 30 |
+| App.vue 异步面板 | 20 |
+| 主进程 IPC handle | 35 |
+| 项目文件 IPC 通道 | 8 |
 | 版本（package.json） | 0.1.5 |
 
 ## 数据流
@@ -24,10 +25,10 @@
 ```
 Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
   └─ scripts/extract-data.js ──→ E:/图书馆/ROSA/.sitian/geodata.json + mapdata.json (坐标缓存)
-       └─ src/main/index.js (IPC: 28 个 handle, 读 vault/写缓存)
+       └─ src/main/index.js (IPC: 35 个 handle, 读 vault/写缓存)
             └─ src/preload/index.js (contextBridge → window.sitianAPI)
                  └─ renderer (Vue 3)
-                      ├─ App.vue: 七层视图路由 + 面包屑 + 12 个异步面板
+                      ├─ App.vue: 七层视图路由 + 面包屑 + 20 个异步面板
                       ├─ store/geodata.js (壳) + store/geodataModules/* (逻辑) + undo.js (历史栈)
                       └─ components/ (按视图层级装配) + composables/ (行星图绘制/交互/编辑器)
 ```
@@ -67,7 +68,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 2586 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 271 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
 | 145 | `src/renderer/src/components/BookmarkPanel.vue` | 书签面板 |
-| 29 | `src/renderer/src/components/BrandMark.vue` | （待补） |
+| 29 | `src/renderer/src/components/BrandMark.vue` | 品牌标志（土星环系剪影 SVG，几何与 build/icon.svg 同源，fill 走 currentColor 跟随父级） |
 | 63 | `src/renderer/src/components/CanvasSkeleton.vue` | 画布加载骨架屏 |
 | 235 | `src/renderer/src/components/ChangeLog.vue` | 更新日志面板 |
 | 247 | `src/renderer/src/components/ClusterPanel.vue` | 地点簇面板（框选成簇/解散/聚焦） |
@@ -76,7 +77,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 410 | `src/renderer/src/components/EntityCreator.vue` | 实体创建向导（C 方案分派式）：表单「名称/层级/父级」+ 层级按父级过滤（CHILD_LAYERS）+ 创建后结果卡片（分派步骤 + 「前往编辑」） |
 | 2033 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
 | 231 | `src/renderer/src/components/HistoryPanel.vue` | undo 历史面板 |
-| 170 | `src/renderer/src/components/Icon.vue` | （待补） |
+| 170 | `src/renderer/src/components/Icon.vue` | 内联 SVG 图标组件：模板 `v-if` 分支按名匹配，零外部依赖、继承 currentColor；引用名由 scripts/icon_check.py 校验 |
 | 1897 | `src/renderer/src/components/InteriorView.vue` | 建筑内部：楼层切换 + 家具放置 |
 | 269 | `src/renderer/src/components/KeyboardShortcuts.vue` | 快捷键说明面板 |
 | 117 | `src/renderer/src/components/LayerPanel.vue` | 图层可见性面板 |
@@ -123,19 +124,19 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 97 | `src/renderer/src/composables/useNodeNavigation.js` | 节点跳转定位 |
 | 78 | `src/renderer/src/composables/useObjectPanel.js` | 对象面板（聚焦/重命名/删除） |
 | 34 | `src/renderer/src/composables/usePanelManager.js` | 本地面板单开互斥 + 与 App 层浮层互斥 |
-| 426 | `src/renderer/src/composables/usePlanetHeightBrush.js` | （待补） |
+| 426 | `src/renderer/src/composables/usePlanetHeightBrush.js` | PlanetMap 高度图笔刷（抬高/降低/平滑 + 生物群系涂抹）：stroke 快照式「一次拖动 = 一条 undo」 |
 | 63 | `src/renderer/src/composables/usePromptDialog.js` | 对话框状态（替代 prompt()） |
 | 71 | `src/renderer/src/composables/useProvinceEditor.js` | 省份(地形块)属性编辑器 |
 | 116 | `src/renderer/src/composables/useProvinceSplitMerge.js` | 省份拆分（切割线）/合并（凸包） |
 | 228 | `src/renderer/src/composables/useReferenceImage.js` | 区域参考图 + 比例尺校准 |
 | 50 | `src/renderer/src/composables/useRegionEditor.js` | 区域属性编辑器 |
-| 238 | `src/renderer/src/composables/useReliefBrush.js` | （待补） |
+| 238 | `src/renderer/src/composables/useReliefBrush.js` | 地貌图标散布笔刷（左键散布/右键擦除/滚轮调间距），散布交由 utils/reliefIcons.js，一次拖动 = 一条 undo |
 | 92 | `src/renderer/src/composables/useRouteEditor.js` | 路线编辑（描点/虚线/偏移） |
 | 82 | `src/renderer/src/composables/useRuler.js` | 标尺/指北针/比例尺（localStorage 持久化） |
 | 385 | `src/renderer/src/composables/useScenarioExport.js` | 剧本导出/导入：SVG 矢量图 + PNG（由 SVG 光栅化，两者永远一致）+ scenarios.json 全量数据（含导出前体检与 merge/replace 导入） |
 | 59 | `src/renderer/src/composables/useSnapshotPanel.js` | 快照拍摄/恢复/删除 |
 | 53 | `src/renderer/src/composables/useStatusBar.js` | 状态栏逻辑 |
-| 355 | `src/renderer/src/composables/useTerrainCanvasBrush.js` | （待补） |
+| 355 | `src/renderer/src/composables/useTerrainCanvasBrush.js` | 画布地形涂色笔刷：与高度图**同一网格几何**（同格宽同原点），terrainGrid 持久化必须走普通数组 |
 | 46 | `src/renderer/src/composables/useTextEditor.js` | 文本标签编辑器 |
 | 35 | `src/renderer/src/composables/useTheme.js` | 主题切换 |
 | 38 | `src/renderer/src/composables/useZoomControls.js` | 缩放百分比联动 |
@@ -159,39 +160,39 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 610 | `src/renderer/src/utils/azgaar-parser.js` | Azgaar FMG .map 解析器：按内容嗅探定位各数据段（不写死行号）、grid 级高度/温度/降水数组、provincesBody/河流/道路 SVG 几何、文化/宗教/势力/城镇定义与 province→burg→culture 映射 |
 | 289 | `src/renderer/src/utils/canvasIcon.js` | Canvas 端矢量图标（Path2D 复刻 Icon.vue 几何 + 旧 emoji 数据回退） |
 | 44 | `src/renderer/src/utils/clipboard.js` | 复制/粘贴/克隆 |
-| 229 | `src/renderer/src/utils/contour.js` | （待补） |
-| 204 | `src/renderer/src/utils/deriveClient.js` | （待补） |
-| 212 | `src/renderer/src/utils/dirtyRect.js` | （待补） |
+| 229 | `src/renderer/src/utils/contour.js` | 离散标量场轮廓提取（marching squares 简化版）+ RDP 简化 + 凸包；生物群系/海岸线图层可视化用 |
+| 204 | `src/renderer/src/utils/deriveClient.js` | 派生计算的 Worker 客户端：单例生命周期 + 拷贝后再转移（不能转移主线程原数组）+ 防抖合并 + 失败降级同步 |
+| 212 | `src/renderer/src/utils/dirtyRect.js` | 笔刷脏矩形追踪：只清脏区 + 裁剪重绘，与全画布重绘逐像素等价（无接缝/残影） |
 | 113 | `src/renderer/src/utils/errorReport.js` | 全局错误捕获 + 主进程落盘 |
 | 295 | `src/renderer/src/utils/floodfill.js` | 泛洪填充（地形快速绘制） |
 | 685 | `src/renderer/src/utils/galaxyDrawing.js` | 星域图绘制全集（GalaxyMap 专用） |
 | 162 | `src/renderer/src/utils/geojson.js` | GeoJSON 导入导出 |
 | 464 | `src/renderer/src/utils/geometry.js` | 凸包/多边形拆分合并/点包含判定 |
-| 188 | `src/renderer/src/utils/heightMath.js` | （待补） |
+| 188 | `src/renderer/src/utils/heightMath.js` | 高度/温度/降水/生物群系派生**纯函数**（唯一事实源：主线程与 deriveWorker 共用，禁止在别处复制公式） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
-| 459 | `src/renderer/src/utils/labelStyles.js` | （待补） |
-| 238 | `src/renderer/src/utils/markerTypes.js` | （待补） |
-| 42 | `src/renderer/src/utils/normalizeId.js` | （待补） |
-| 260 | `src/renderer/src/utils/placement.js` | （待补） |
-| 151 | `src/renderer/src/utils/planetHeightMap.js` | （待补） |
-| 540 | `src/renderer/src/utils/projectSchema.js` | `.sitian` 结构定义 / 校验修复 / 版本迁移 / 就地 diff 快照环形缓冲（纯函数） |
-| 244 | `src/renderer/src/utils/reliefIcons.js` | （待补） |
-| 139 | `src/renderer/src/utils/rivers.js` | （待补） |
-| 69 | `src/renderer/src/utils/roadStyles.js` | （待补） |
+| 459 | `src/renderer/src/utils/labelStyles.js` | 标签样式预设系统：6 种内置预设 + 落盘/导入导出，改动后广播 sitian:label-styles-changed |
+| 238 | `src/renderer/src/utils/markerTypes.js` | 标记类型注册表（图标+颜色+中文名，可增删/排序/落盘）；旧 5 种类型保留为内置以兼容老地图 |
+| 42 | `src/renderer/src/utils/normalizeId.js` | 节点 id 规范化纯函数：scripts/extract-data.js 的**逐字符副本**（三处一致由 test_40 读盘比对） |
+| 260 | `src/renderer/src/utils/placement.js` | 智能放置算法（聚落选址 + A* 道路）：必须走空间哈希桶 + 二叉堆，禁双重全表循环（27k 格 = 7 亿次 hypot） |
+| 151 | `src/renderer/src/utils/planetHeightMap.js` | 由 terrain 多边形生成初始高度图（按 elevation 插值，无覆盖点取海平面）+ 高度图 CRUD |
+| 554 | `src/renderer/src/utils/projectSchema.js` | `.sitian` 结构定义 / 校验修复 / 版本迁移 / 就地 diff 快照环形缓冲（纯函数） |
+| 244 | `src/renderer/src/utils/reliefIcons.js` | 地貌图标**确定性**散布（整数哈希定抖动/旋转/尺寸，网格桶防重叠，单次笔刷有上限） |
+| 139 | `src/renderer/src/utils/rivers.js` | 河流编辑器核心算法：按高度自动排序成从高到低、拖拽禁止「逆流」、节点随存采样高度 |
+| 69 | `src/renderer/src/utils/roadStyles.js` | 道路样式预设（官道/道路/山路/小径）：style 优先于旧 route.color/dashed，老数据向后兼容 |
 | 44 | `src/renderer/src/utils/sampleData.js` | 示例数据 |
 | 381 | `src/renderer/src/utils/scenarioTimeline.js` | 剧本时间轴纯函数层（无 DOM/store 依赖）：势力谱系按省份重叠度贪心匹配、逐省易主年份、年份↔轨道轴向映射、EU4 斜线占领判定 |
 | 69 | `src/renderer/src/utils/selectionHandles.js` | 选择框手柄 |
-| 104 | `src/renderer/src/utils/settlement.js` | （待补） |
+| 104 | `src/renderer/src/utils/settlement.js` | 聚落规模/人口/文化归属：人口对数滑块（100~1e6）+ 分级阈值 + 图标尺寸派生 |
 | 73 | `src/renderer/src/utils/smartGuides.js` | 智能参考线 |
 | 229 | `src/renderer/src/utils/snap.js` | 网格吸附 |
 | 84 | `src/renderer/src/utils/stressTest.js` | 压测数据生成 |
 | 163 | `src/renderer/src/utils/svgExport.js` | 地图 → SVG 矢量序列化：path 曲线约定同 ScenarioMap 的 `traceShapePath`、斜线 pattern、文档组装与 SVG→PNG 光栅化 |
-| 118 | `src/renderer/src/utils/terrainBrush.js` | （待补） |
+| 118 | `src/renderer/src/utils/terrainBrush.js` | 地形笔刷引擎（8 种地形类型）：硬度幂函数衰减 + 快速移动时的速度插值补点 |
 | 39 | `src/renderer/src/utils/textMeasure.js` | 文本宽度测量 |
 | 666 | `src/renderer/src/utils/textures.js` | 程序化地形纹理 |
 | 51 | `src/renderer/src/utils/vault.js` | 库名解析：obsidian:// URI 的 vault 参数取自主进程配置（禁硬编码） |
-| 42 | `src/renderer/src/utils/viewport.js` | （待补） |
-| 59 | `src/renderer/src/workers/deriveWorker.js` | （待补） |
+| 42 | `src/renderer/src/utils/viewport.js` | 由 renderer.viewTransform 反解**视口**世界矩形（小地图遮罩用，必须区别于内容边界） |
+| 59 | `src/renderer/src/workers/deriveWorker.js` | 温度/降水/生物群系派生 Worker：复用 heightMath.deriveLayers 不复制公式（等价性由用例兜住） |
 <!-- GEN:END -->
 
-> 测试用例（27 个）在 `scripts/tests/cases/test_01~test_27`，职责见文件名：load/navigation/search/panels/terrain/texture/nodes/interactions/batch_import/system_detail/system_edit/space_entities/tree_jump/tool_cursor/detail_panel_tabs/planet_render_perf/moon_orbit/edit_enhancements/scenario/maplayer/brushes/r2_integrity/tooltip/r4_smart_tools/interior_room/zone_brush/cross_floor。
+> 测试用例在 `scripts/tests/cases/`（50 个，以 `ls scripts/tests/cases/test_*.py | wc -l` 为准），职责见文件名；另有 `scripts/tests/unit/*.js` Node 单测（主进程 I/O 与模块接线 —— CDP 用例里 sitianAPI 是 mock，测不到）。

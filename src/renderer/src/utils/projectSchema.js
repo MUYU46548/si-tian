@@ -22,6 +22,20 @@
 //   origin: 'project' | 'obsidian'   —— 该实体是司天内创建的，还是从 Obsidian 词条导入的
 //   sourcePath: string               —— origin='obsidian' 时的库内相对路径（导出来源，只读回溯用）
 //
+// 🔴 实体上还有一批**本模块不登记、但必须原样往返**的字段（此前头注释只登记了上面的标准字段，
+//    与实体真实形态不符 —— 注释欠账，2026-09-20 补齐）：
+//   · 提取器写入：`wikilinks`（本仓真实数据 120/121 带）、`placeType`（117/121 带）、`draft`（1/121）
+//   · 七层编辑器写入：`population` / `cultureId` / `sizeScale` / `locked` / `description` …
+//   这些是**画布侧的编辑数据**，不属于项目结构契约，但丢了**一个字都不会报错、能力静默退化**：
+//   丢 placeType → 聚落/地点图标与配色退化；丢 wikilinks → 搜索「提及」整块消失；
+//   丢 population → 聚落图标不按人口分级。
+//   契约边界（改动前先读这两条）：
+//     · 本模块天然透传 —— `validateProject` 用 `{ ...value, … }` 展开，未知字段一律原样保留。
+//       **禁止**把它改成白名单挑拣，否则一打开项目就静默丢数据。
+//     · 唯一的"已知字段"判定点在 `store/geodata.js`：`ENTITY_SHAPE_KEYS` 白名单 + `entityExtras()`。
+//       新增此类字段**不需要动本模块**，只需确认它没被加进 `ENTITY_SHAPE_KEYS`。
+//     · 例外：`draft` 由 `sourcePath` 派生，不随实体往返（见 `entityToNode`）。
+//
 // 为什么快照用「就地 diff 环形缓冲」而不是整份 JSON 拷贝：
 //   地图数据是 MB 级（实测 mapdata.json ~2MB）。50 份整拷贝 = 100MB 级别，不可接受。
 //   所以 snapshots 只存 SNAPSHOT_DIFF_KEYS（entities/scenarios/hyperlanes/meta，KB 级）的差异：
