@@ -75,16 +75,9 @@ def run(cdp):
         return False, '进入编辑模式失败'
     time.sleep(0.6)
 
-    # 拦截保存载荷（mock 的 saveMapData 不落盘，这里只做载荷断言）
-    cdp.eval("""(() => {
-      window.__savedPayloads = [];
-      const api = window.sitianAPI;
-      if (api && !api.__brushSaveHooked) {
-        api.saveMapData = async (key, data) => { window.__savedPayloads.push({ key, data }); return { success: true }; };
-        api.__brushSaveHooked = true;
-      }
-      return 'ok';
-    })()""")
+    # 保存载荷来源：Phase 2.4 接线后 mapData 落盘去向 = **项目文件**（不再走 legacy IPC）。
+    # harness 已在每个用例前打开基线项目并挂好 projectSave 记录（window.__savedProject），
+    # 这里用 window.__probe 读真实落盘载荷（不再 hook api.saveMapData —— 它现在根本不会被调用）。
 
     cx, cy = _world_center(cdp)
     if cx is None:
@@ -128,22 +121,22 @@ def run(cdp):
 
     # ── 2. 保存载荷：普通数组 + 可 JSON 往返 ───────────────────────────
     _log('terrain painted ok, waiting autosave')
-    time.sleep(1.4)  # scheduleAutoSaveMap 防抖 800ms
+    time.sleep(1.4)  # scheduleAutoSaveMap 防抖 800ms → 项目侧再防抖 800ms
+    cdp.eval("window.__probe.flushProject()")
     payload = _js_obj(cdp, """(() => {
-      const list = window.__savedPayloads || [];
-      const last = list[list.length - 1];
-      if (!last) return JSON.stringify({ n: 0 });
-      const g = last.data.terrainGrid;
+      const p = window.__probe.lastMapPayload('乐园星');
+      if (!p) return JSON.stringify({ n: 0 });
+      const g = p.data.terrainGrid;
       return JSON.stringify({
-        n: list.length, key: last.key,
+        n: (window.__savedProject || []).length, key: p.key,
         isArray: Array.isArray(g), len: g ? g.length : 0,
         painted: g ? g.filter(v => v !== 255).length : 0,
-        hasOrigin: typeof last.data.gridOriginX === 'number' && typeof last.data.gridOriginY === 'number',
-        hasCell: last.data.cellWorldSize,
+        hasOrigin: typeof p.data.gridOriginX === 'number' && typeof p.data.gridOriginY === 'number',
+        hasCell: p.data.cellWorldSize,
       });
     })()""")
     if payload.get('n', 0) <= 0:
-        return False, '涂抹后没有触发保存（__savedPayloads 为空）'
+        return False, '涂抹后没有触发项目文件落盘（__savedProject 里没有带地图的载荷）'
     if not payload.get('isArray'):
         return False, f'保存载荷里 terrainGrid 不是普通数组（JSON 往返后会丢失 length）：{payload}'
     if payload.get('painted', 0) <= 0:

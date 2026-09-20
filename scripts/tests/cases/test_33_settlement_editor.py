@@ -168,20 +168,7 @@ def run(cdp):
     if not pid:
         return False, '取不到聚落所属行星 id'
 
-    cdp.eval("""(() => {
-      window.__savedMap = [];
-      const api = window.sitianAPI;
-      if (api && !api.__settleMapHooked) {
-        api.saveMapData = async (key, data) => { window.__savedMap.push({ key, data }); return { success: true }; };
-        api.__settleMapHooked = true;
-      }
-      window.__savedGeo = [];
-      if (api && !api.__settleGeoHooked) {
-        api.saveGeodata = async (data) => { window.__savedGeo.push(data); return { success: true }; };
-        api.__settleGeoHooked = true;
-      }
-      return 'ok';
-    })()""")
+    # 保存载荷来源：接线后 geodata/mapdata 落盘去向 = 项目文件（harness 已挂好 projectSave 记录 + __probe）
 
     # 走 UI：点「＋ 新建文化」（真实入口，顺带验证 mapData 懒加载）
     cdp.eval("window.prompt = () => '测试文化';")
@@ -251,28 +238,28 @@ def run(cdp):
     if not culture_set.get('swatch'):
         return False, '选中文化后未显示文化主色色块'
 
-    # ── 5. 持久化：geodata 载荷含 population，mapdata 载荷含 cultures ────
+    # ── 5. 持久化：项目实体含 population、项目地图含 cultures ───────────
     time.sleep(1.6)
+    _j(cdp, "window.__probe.flushProject()")
     persisted = _j(cdp, f"""(() => {{
-      const geo = window.__savedGeo || [];
-      const map = window.__savedMap || [];
-      const lastGeo = geo[geo.length - 1];
-      const lastMap = map[map.length - 1];
-      const n = lastGeo ? (lastGeo.nodes || []).find(x => x.id === '{town["id"]}') : null;
-      const cs = lastMap ? ((lastMap.data.cultures) || []) : [];
+      const recs = window.__savedProject || [];
+      const proj = window.__probe.lastProject();
+      const mp = window.__probe.lastMapPayload('{pid}');
+      const n = proj ? (proj.entities || {{}})['{town["id"]}'] : null;
+      const cs = mp ? ((mp.data.cultures) || []) : [];
       return JSON.stringify({{
-        geoN: geo.length, mapN: map.length,
+        geoN: recs.length, mapN: mp ? recs.length : 0,
         pop: n ? n.population : null,
         cultureId: n ? n.cultureId : null,
         cultures: cs.map(c => c.name),
       }});
     }})()""")
     if persisted.get('geoN', 0) <= 0:
-        return False, '改人口后没有触发 geodata 保存'
+        return False, '改人口后没有触发项目文件落盘'
     if persisted.get('pop') != 500000 or persisted.get('cultureId') != culture_id:
-        return False, f'节点人口/文化未进入保存载荷：{persisted}'
+        return False, f'节点人口/文化未进入项目实体：{persisted}'
     if persisted.get('mapN', 0) <= 0 or '测试文化' not in (persisted.get('cultures') or []):
-        return False, f'文化列表未进入 mapdata 保存载荷：{persisted}'
+        return False, f'文化列表未进入项目地图载荷：{persisted}'
 
     # ── 6. Burg Editor 窗口 ────────────────────────────────────────────
     cdp.eval("document.querySelector('[data-testid=\"open-burg-editor\"]').click()")

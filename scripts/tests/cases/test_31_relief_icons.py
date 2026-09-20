@@ -194,16 +194,7 @@ def run(cdp):
     if len(panel.get('types') or []) != 4:
         return False, f'类型按钮应 4 个，实际 {panel.get("types")}'
 
-    # 拦截保存载荷
-    cdp.eval("""(() => {
-      window.__savedPayloads = [];
-      const api = window.sitianAPI;
-      if (api && !api.__reliefSaveHooked) {
-        api.saveMapData = async (key, data) => { window.__savedPayloads.push({ key, data }); return { success: true }; };
-        api.__reliefSaveHooked = true;
-      }
-      return 'ok';
-    })()""")
+    # 保存载荷来源：接线后 mapData 落盘去向 = 项目文件（harness 已挂好 projectSave 记录 + __probe）
 
     cx, cy = _world_center(cdp)
     if cx is None:
@@ -297,22 +288,22 @@ def run(cdp):
     if _icons(cdp)['n'] != before_erase:
         return False, f'擦除撤销未复原（{_icons(cdp)["n"]} ≠ {before_erase}）'
 
-    # ── 8. 保存载荷含 reliefIcons ──────────────────────────────────────
-    time.sleep(1.4)  # 自动保存防抖 800ms
+    # ── 8. 保存载荷含 reliefIcons（落盘去向 = 项目文件） ────────────────
+    time.sleep(1.4)  # 自动保存防抖 800ms → 项目侧再防抖 800ms
+    _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, """(() => {
-      const list = window.__savedPayloads || [];
-      const last = list[list.length - 1];
-      if (!last) return JSON.stringify({ n: 0 });
-      const r = last.data.reliefIcons;
+      const p = window.__probe.lastMapPayload('乐园星');
+      if (!p) return JSON.stringify({ n: 0 });
+      const r = p.data.reliefIcons;
       return JSON.stringify({
-        n: list.length,
+        n: (window.__savedProject || []).length,
         isArray: Array.isArray(r),
         len: r ? r.length : 0,
         roundTrip: r ? JSON.parse(JSON.stringify(r)).length : 0,
       });
     })()""")
     if payload.get('n', 0) <= 0:
-        return False, '地貌图标编辑后没有触发保存'
+        return False, '地貌图标编辑后没有触发项目文件落盘'
     if not payload.get('isArray') or payload.get('roundTrip') != payload.get('len'):
         return False, f'保存载荷里 reliefIcons 不是可 JSON 往返的数组：{payload}'
 

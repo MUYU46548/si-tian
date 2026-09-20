@@ -54,7 +54,11 @@ GATE_JS = """(async () => {
 
   // 三模式常量
   same('WRITE_MODES', G.WRITE_MODES, ['project', 'legacy', 'readonly']);
-  ck('默认模式由常量推导', G.describeWriteGate().mode === (G.READONLY_WITHOUT_PROJECT ? 'readonly' : 'legacy'), G.describeWriteGate());
+  // 「无项目」默认模式由常量推导：用 resetWriteMode()（closeProject 走的同一条路）验证契约，
+  // 不能读当前 mode —— 用例跑在 harness 基线项目里，当前 mode 是 'project'。
+  G.resetWriteMode();
+  same('无项目默认模式由常量推导', G.describeWriteGate().mode, G.READONLY_WITHOUT_PROJECT ? 'readonly' : 'legacy');
+  ck('终态：无项目 = 只读', G.READONLY_WITHOUT_PROJECT === true && G.isReadOnly.value === true, G.describeWriteGate());
 
   // 非法模式被拒且不改状态
   const before = G.describeWriteGate().mode;
@@ -90,7 +94,7 @@ GATE_JS = """(async () => {
   same('清单 id 连续', list.map(x => x.id), [1,2,3,4,5,6,7,8,9,10,11]);
   ck('每条含 file/marker/what', list.every(x => x.file && x.marker && x.what && typeof x.guarded === 'boolean'));
 
-  G.setWriteMode('legacy', '用例复位');
+  G.setWriteMode('project', '用例复位（harness 基线项目已打开）');
   return JSON.stringify({ fails: fails, callsites: list });
 })()"""
 
@@ -154,19 +158,28 @@ GUARD_JS = """(async () => {
   same('只读态自动保存未触发 IPC', total(), 0);
 
   // ---- 切回可写：同样的调用必须真正落盘 ----
-  G.setWriteMode('legacy', '');
+  // ⚠️ 决策 1 终态下「无项目」只有只读一条路 → 可写态只能在**已打开项目**时出现
+  //    （harness 已打开基线项目，所以 mode 必须与画布事实源一致：'project'）。
+  //    'legacy' 只是历史模式，本用例不再用它伪造可写态 —— 那会造出生产不存在的状态。
+  G.setWriteMode('project', '');
+  const savesBefore = (window.__savedProject || []).length;
   const w1 = await s.saveGeodata();
   ck('可写态 saveGeodata 放行', !(w1 && w1.ok === false), w1);
-  same('可写态 IPC 被调用 1 次', calls.saveGeodata, 1);
+  same('项目模式：画布保存走项目文件，不再写知识库缓存（无双写）', calls.saveGeodata, 0);
+  await window.__probe.flushProject();
+  ck('画布保存真的落到项目文件', (window.__savedProject || []).length > savesBefore,
+     (window.__savedProject || []).length);
   await LS.saveToVault();
   ck('可写态配置写入放行', calls.setSitianConfig > beforeCfg, calls.setSitianConfig);
 
   // ---- 只读/可写来回切换（闸门不是单向开关）----
   G.setWriteMode('readonly', '');
+  const savesBeforeRo = (window.__savedProject || []).length;
   const r5 = await s.saveGeodata();
   ck('再次只读仍拒绝', r5 && r5.ok === false, r5);
-  same('再次只读 IPC 不增长', calls.saveGeodata, 1);
-  G.setWriteMode('legacy', '');
+  await new Promise(r => setTimeout(r, 300));
+  same('只读态不再新增项目落盘', (window.__savedProject || []).length, savesBeforeRo);
+  G.setWriteMode('project', '');
 
   return JSON.stringify({ fails: fails, calls: calls });
 })()""".replace('@STORE@', STORE)

@@ -216,7 +216,8 @@ const draggingId = ref('');         // 拖动中的实体（HTML5 DnD）
 const dropTargetId = ref('');
 const pendingDelete = ref(null);    // { id, name, kids } —— 两段式删除确认（不用原生 confirm：headless 下会被自动拒绝）
 
-const canCreate = computed(() => !!newName.value.trim() && !isReadOnly.value);
+const canCreate = computed(() => !!newName.value.trim());   // 项目文件的新建不受「世界观数据落盘」闸门管辖：
+                                                            // 无项目=只读时若也灰禁，就永远打不开第一个项目（死锁）
 
 const statusLine = computed(() => {
   if (proj.isOpen) {
@@ -226,7 +227,7 @@ const statusLine = computed(() => {
     if (st === 'error') return `保存失败：${proj.lastError || '未知错误'}`;
     return proj.dirty ? '有未保存改动' : '已是最新';
   }
-  if (isReadOnly.value) return '只读：未打开项目，编辑与保存已停用';
+  if (isReadOnly.value) return '只读：编辑已停用（在上面新建项目，或从下方打开已有项目）';
   return `未打开项目（写模式：${writeMode.value} — 当前编辑仍写入知识库缓存）`;
 });
 

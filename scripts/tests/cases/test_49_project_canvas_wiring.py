@@ -39,10 +39,19 @@ JS = r"""(async () => {
   const store = document.querySelector('#app').__vue_app__._instance.setupState.store;
   const proj = useProjectStore(pinia);
 
-  // ---- a) 无项目：事实源是知识库 ----
+  // ---- a) 无项目：事实源是知识库 + 只读（决策 1 终态） ----
+  // harness 每个用例前都会打开基线项目（终态下「无项目 = 只读」，用例必须跑在有项目的状态）。
+  // 本用例守的正是「关闭项目 → 回到知识库工作态」这条往返，所以先把基线项目关掉作为起点
+  // —— 关闭动作本身就是要断言的行为（含写模式回到只读）。
+  const G = await import('/src/store/writeGate.js');
+  const hadHarness = proj.isOpen === true;
+  ck('用例起点：harness 基线项目已打开（事实源=项目）',
+     hadHarness && store.canvasSource === 'project', { open: proj.isOpen, src: store.canvasSource });
+  if (hadHarness) { proj.closeProject(); await tick(400); }
   const vaultNodesBefore = store.nodes.length;
-  ck('初始画布来自知识库（vault）', store.canvasSource === 'vault', store.canvasSource);
-  ck('初始画布有 Obsidian 节点', vaultNodesBefore > 0, vaultNodesBefore);
+  same('关闭项目后事实源回到知识库', store.canvasSource, 'vault');
+  ck('关闭项目后画布有 Obsidian 节点（不是空画布）', vaultNodesBefore > 0, vaultNodesBefore);
+  ck('无项目 = 只读（决策 1 终态）', store.isReadOnly === true && G.isReadOnly.value === true, G.describeWriteGate());
   ck('画布桥已注册', describeCanvasBridge().attached === true, describeCanvasBridge());
 
   // ---- b) 新建项目 → 画布切到项目文件 ----

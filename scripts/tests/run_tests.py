@@ -28,6 +28,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests'))
 from lib.cdp import find_page_ws, wait_for  # noqa: E402
+from lib.helpers import open_harness_project  # noqa: E402
 
 DEV_PORT = 5180
 CDP_PORT = 9222
@@ -261,6 +262,24 @@ def teardown_mock():
         shutil.rmtree(MOCK_DATA_DIR, ignore_errors=True)
 
 
+def _harness_open(cdp, first=False):
+    """打开 harness 基线项目（见 lib/helpers.py 说明）。
+
+    决策 1 终态（READONLY_WITHOUT_PROJECT=true）下「无项目 = 只读」，而绝大多数用例都要落盘写，
+    所以每个用例重载后都必须在**打开的项目**状态下跑。项目用当前知识库内容播种（mock 内存，零污染）。
+    """
+    try:
+        ok, info = open_harness_project(cdp)
+    except Exception as e:
+        print(f'  ⚠️ harness 基线项目打开异常（用例可能因只读态失败）：{e}')
+        return
+    if not ok:
+        print(f'  ⚠️ harness 基线项目打开失败（用例可能因只读态失败）：{info}')
+    elif first:
+        print(f'  · harness 基线项目：实体 {info.get("seededEntities")} / 画布节点 {info.get("nodes")} / '
+              f'航道 {info.get("hyperlanes")} / 地图 {info.get("maps")}（事实源 {info.get("source")}）')
+
+
 def load_case(path):
     spec = importlib.util.spec_from_file_location(
         os.path.splitext(os.path.basename(path))[0], path)
@@ -387,6 +406,8 @@ def main():
                      timeout=30, desc='首个用例前数据就绪')
         except Exception:
             print('  ⚠️ 首个用例前置数据未就绪（30s 内 store.nodes 仍为 0）')
+        # 首个用例前打开 harness 基线项目（决策 1 终态：无项目 = 只读，用例必须跑在有项目的状态）
+        _harness_open(cdp, first=True)
         passed, failed = 0, []
         if not unit['ok']:
             failed.append(('unit:test_project_io', unit['detail']))
@@ -418,6 +439,7 @@ def main():
                              timeout=30, desc='用例前数据就绪')
                 except Exception:
                     print('  ⚠️ 前置数据未就绪（30s 内 store.nodes 仍为 0，冷启动抖动？）')
+                _harness_open(cdp)
                 time.sleep(0.5)
             except Exception:
                 pass

@@ -16,7 +16,8 @@
 
 本用例守：
   a) 入口可用：工具栏「项目」按钮 → 面板出现 → 再点关闭（不是死按钮）
-  b) 未打开项目时的空态文案（不误导：当前仍写知识库缓存，接线后才变只读）
+  b) 未打开项目时的空态文案（决策 1 终态：无项目 = 只读 —— 文案写清现状 + 去处；
+     且只读态下「新建」按钮仍必须可用，否则永远打不开第一个项目 = 死锁）
   c) 面板内新建项目 → 状态条 + 项目列表 + 实体/快照区就位
   d) 向导：分派说明随层级变化（region / galaxy / city 三种文案必须不同且有层级特征词）
   e) 层级下拉按父级过滤（顶层=全量 12；父级 world → 仅 star_domain 且自动切换）
@@ -68,6 +69,14 @@ PANEL_JS = r"""(async () => {
   const pinia = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia;
   const { useProjectStore } = await import('/src/store/projectStore.js');
   const ps = useProjectStore(pinia);
+  const W = await import('/src/store/writeGate.js');
+
+  // harness 每个用例前会打开基线项目（决策 1 终态：无项目 = 只读，用例得有项目才可写）。
+  // 本用例守的就是面板的**空态**，所以先关掉它 —— 顺带验证「关闭 → 无项目 → 只读」的终态，
+  // 以及「只读态下「新建」按钮必须仍可用」（否则永远打不开第一个项目 = 死锁）。
+  if (ps.isOpen) { ps.closeProject(); await tick(300); }
+  ck('用例起点：无项目 + 只读（决策 1 终态）', ps.isOpen === false && W.isReadOnly.value === true,
+     { open: ps.isOpen, gate: W.describeWriteGate() });
   const ent = (nm) => Object.values(ps.entities).find(e => (e.name || '') === nm) || null;
   const entId = (nm) => { const e = ent(nm); return e ? e.id : null; };
   const entCount = () => Object.keys(ps.entities).length;
@@ -108,10 +117,12 @@ PANEL_JS = r"""(async () => {
   ck('点击后面板出现', !!q('.project-panel'));
   if (!q('.project-panel')) return JSON.stringify({ fails: fails, aborted: '面板未渲染（懒加载 chunk 失败？）' });
 
-  // ---- b) 空态 ----
+  // ---- b) 空态（决策 1 终态：无项目 = 只读 —— 文案要写清现状 + 去处，不能只说「停用」）----
   await tick();
   same('空态项目名', text('.pp-status-name'), '未打开项目');
-  ck('空态说明写清当前写模式', /未打开项目（写模式：/.test(text('.pp-status-sub') || ''), text('.pp-status-sub'));
+  const sub = text('.pp-status-sub') || '';
+  ck('空态说明写清只读现状', /只读/.test(sub), sub);
+  ck('空态说明给出可行去处（新建 / 打开项目）', /新建/.test(sub) && /打开/.test(sub), sub);
   ck('实体区空态提示', (text('.pp-section .pp-empty') || '').length > 0);
   ck('实体区空态提示先打开项目', document.body.innerHTML.indexOf('点「+ 新建实体」开始') < 0);
 
@@ -253,9 +264,14 @@ PANEL_JS = r"""(async () => {
   ck('向导关闭', !q('.ec-overlay'));
 
   // ---- 实体树：行数 / 缩进 / 计数 ----
+  const treeDump = () => JSON.stringify({
+    rows: panelRows().map(r => ({ n: rowName(r), pad: r.style.paddingLeft, cls: r.className })),
+    ents: Object.values(ps.entities).map(e => ({ id: e.id, p: e.parentId, l: e.layer })),
+    tree: ps.entityTree.map(t => ({ id: t.id, kids: (t.children || []).map(c => c.id) })),
+  });
   same('实体树行数', panelRows().length, 3);
   ck('树显示层级徽标', panelRows().every(r => !!r.querySelector('.pp-badge')));
-  ck('子实体缩进更深', rowPad('北星域') > rowPad('独立星域'), [rowPad('北星域'), rowPad('独立星域')]);
+  ck('子实体缩进更深', rowPad('北星域') > rowPad('独立星域'), treeDump());
   const entityLabel = qa('.project-panel .pp-label')
     .map(el => el.textContent.replace(/\s+/g, ' ').trim())
     .find(t => t.startsWith('实体（'));

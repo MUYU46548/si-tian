@@ -284,10 +284,16 @@ export const useGeodataStore = defineStore('geodata', () => {
   /**
    * 校验并清理节点数据，防止异常坐标导致渲染错误
    * 返回 { nodes: 清理后的节点数组, violations: 层级越级违规数 }（B1）
+   *
+   * @param {Array} rawNodes 要校验的节点
+   * @param {Set<string>} [knownIds] 额外可见的节点 id 集合 —— 「增量新增」时必须传：
+   *   只校验新增节点时，它们的父级（既有节点）不在 rawNodes 里，会误判为「parentId 不存在」而置空
+   *   （实测：项目面板新建的实体在画布上被摘掉父子关系，实体树缩进全变成 0 级）。
    */
-  function validateNodes(rawNodes) {
+  function validateNodes(rawNodes, knownIds = null) {
     const COORD_MIN = -10000;
     const COORD_MAX = 10000;
+    const idVisible = (id) => rawNodes.some(n => n.id === id) || (knownIds ? knownIds.has(id) : false);
 
     const cleaned = rawNodes.map(node => {
       const coord = node.coordinate || {};
@@ -307,7 +313,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       }
 
       // 校验 parentId 是否存在
-      if (node.parentId && !rawNodes.some(n => n.id === node.parentId)) {
+      if (node.parentId && !idVisible(node.parentId)) {
         console.warn(`[Geodata] 节点 "${node.name}" 的 parentId "${node.parentId}" 不存在`);
         node.parentId = null;
       }
@@ -1343,10 +1349,34 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   const numOrNull = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
 
+  /** 实体结构的「已知字段」；之外的字段是画布侧的编辑数据，必须随实体一起往返。 */
+  const ENTITY_SHAPE_KEYS = new Set([
+    'id', 'name', 'layer', 'layerLabel', 'parentId', 'tags', 'coordinate',
+    'origin', 'sourcePath', 'uuid', 'createdAt', 'updatedAt',
+  ]);
+
+  /**
+   * 取出实体上「项目 schema 不认识」的字段（placeType / wikilinks / population / cultureId /
+   * sizeScale / locked …）。
+   *
+   * 🔴 为什么必须显式往返：这些字段丢了**不会报任何错**，只会让项目模式下的能力静默退化 ——
+   *   丢 `placeType` → 行星图/区域图上聚落与地点的图标、配色全部退化；
+   *   丢 `population` → 聚落图标不按人口分级；丢 `wikilinks` → 搜索的「提及」命中整块消失。
+   *   本仓真实数据（ROSA 121 节点）里 117 个带 placeType、120 个带 wikilinks，一开项目就全丢。
+   */
+  function entityExtras(e) {
+    const out = {};
+    for (const [k, v] of Object.entries(e || {})) {
+      if (!ENTITY_SHAPE_KEYS.has(k)) out[k] = v;
+    }
+    return out;
+  }
+
   /** 项目实体 → 画布节点（GeoNode 同形；项目实体没有 Obsidian 词条 → sourcePath 为空即 draft） */
   function entityToNode(e) {
     const c = (e && e.coordinate) || {};
     return {
+      ...entityExtras(e),               // placeType / wikilinks / population …（先铺，后面用标准字段覆盖）
       id: e.id,
       name: e.name,
       layer: e.layer,
@@ -1354,7 +1384,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       parentId: e.parentId || null,
       tags: Array.isArray(e.tags) ? [...e.tags] : [],
       sourcePath: e.sourcePath || '',
-      wikilinks: [],
+      wikilinks: Array.isArray(e.wikilinks) ? [...e.wikilinks] : [],
       coordinate: { x: numOrNull(c.x), y: numOrNull(c.y) },
       uuid: e.uuid || '',
       origin: e.origin || 'project',
@@ -1365,7 +1395,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   /** 画布节点 → 项目实体（走 schema 的 createEntity 保证形状统一；显式传 id/uuid 不重新生成） */
   function nodeToProjectEntity(n, now) {
-    return createProjectEntity({
+    const entity = createProjectEntity({
       id: n.id,
       name: n.name,
       layer: n.layer,
@@ -1377,6 +1407,12 @@ export const useGeodataStore = defineStore('geodata', () => {
       uuid: n.uuid || '',
       now,
     });
+    // 画布侧的编辑字段原样带走（见 entityExtras 的说明）。`draft` 由 sourcePath 派生，不落库。
+    for (const [k, v] of Object.entries(n)) {
+      if (k === 'draft' || k in entity) continue;
+      entity[k] = v;
+    }
+    return entity;
   }
 
   /** 画布 → 项目文件载荷（唯一写者仍是 projectStore；本函数只产出，不落盘） */
@@ -1423,32 +1459,50 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   /**
+   * 实体 → 画布节点上「可被项目侧覆盖」的字段集（与 entityToNode 同形，但**不含坐标** —— 坐标以画布为准）。
+   */
+  function entityNodeFields(e) {
+    const fields = entityToNode(e);
+    delete fields.coordinate;
+    return fields;
+  }
+
+  /**
    * 项目侧实体变更 → 同步画布（按 id 双向补齐：项目里改名的更新画布节点、新增的补进画布、
    * 已删除的从画布移除）。**坐标以画布为准**（项目实体里的坐标可能落后于用户刚拖动的值）。
    * 由 projectStore 在 entities 变化时调用（含 undo/redo —— 否则撤销后画布会与项目脱节，
    * 下一次画布保存会把撤销结果覆盖掉）。
+   *
+   * 🔴 两个不变量，都踩过（症状全是静默的）：
+   *   ① **就地更新，绝不重建节点对象**。本函数挂在「项目实体变化」的 watch 上，而**画布每次保存
+   *      都会改项目实体** → 调用频率极高。若重建对象，`store.selectedNode` / `currentPlanet` /
+   *      AreaMap 的本地选中…… 一切按**对象引用**持有的「当前节点」立刻变成脱离数组的旧对象：
+   *      · 详情面板显示陈旧数据（实测：文化下拉选中后色块不出现）；
+   *      · 转正按钮更狠 —— `promoteDraft` 里 `changeNodeId(n.id, newId)` 之后写
+   *        `updateNode(n.id, {sourcePath})` 靠的是「n 是同一个对象、id 已被就地改掉」，
+   *        对象一旦脱钩，`updateNode` 就打在**已不存在的旧 id** 上 → sourcePath 静默没回填。
+   *   ② 新增节点才走 `validateNodes`（旧节点进画布时已校验过；重建它们等于放弃 ①）。
    */
   function refreshEntitiesFromProject(entities) {
     const byId = new Map(Object.values(entities || {}).map(e => [e.id, e]));
-    const out = [];
+    const kept = [];
     for (const n of nodes.value) {
       const e = byId.get(n.id);
       if (!e) continue;                     // 项目里已删除 → 画布同步移除
       byId.delete(n.id);
-      out.push({
-        ...n,
-        name: e.name,
-        layer: e.layer,
-        layerLabel: e.layerLabel || layerLabels[e.layer] || e.layer,
-        parentId: e.parentId || null,
-        tags: Array.isArray(e.tags) ? [...e.tags] : [],
-        sourcePath: e.sourcePath || '',
-        uuid: e.uuid || n.uuid || '',
-        draft: !e.sourcePath,
-      });
+      const next = entityNodeFields(e);
+      for (const k of Object.keys(n)) {
+        if (k === 'coordinate') continue;   // 坐标以画布为准，本函数不碰（entityNodeFields 已摘掉它）
+        if (!(k in next)) delete n[k];      // 实体上已没有的字段也要跟着消失（否则留下陈旧值）
+      }
+      Object.assign(n, next);
+      kept.push(n);
     }
-    for (const e of byId.values()) out.push(entityToNode(e));   // 项目里新增 → 画布补上
-    nodes.value = validateNodes(out).nodes;
+    const added = [...byId.values()].map(entityToNode);   // 项目里新增 → 画布补上
+    // ⚠️ 新增节点单独校验时必须把既有节点 id 一并告知（knownIds），否则它们的父级「看不见」
+    //    会被判成「parentId 不存在」而置空 —— 实体树层级会整片塌成 0 级（实测踩过）。
+    const knownIds = new Set([...kept.map(n => n.id), ...added.map(n => n.id)]);
+    nodes.value = added.length ? [...kept, ...validateNodes(added, knownIds).nodes] : kept;
     return { ok: true, nodes: nodes.value.length };
   }
 

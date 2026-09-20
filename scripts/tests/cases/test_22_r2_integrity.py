@@ -11,7 +11,7 @@
   d) mapdata 旧 key 清理的运行时前提 —— saveMapDataImmediate 不得直写无世界前缀 key
      （静态断言：函数体必须经由 saveMapData 前缀化路径，防止旧 key 复活）
 """
-import sys, os, time, json
+import sys, os, time, json, re
 import urllib.parse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
@@ -29,6 +29,14 @@ def _j(cdp, expr):
         except ValueError:
             return v
     return v
+
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+
+def _read(rel):
+    with open(os.path.join(ROOT, rel), 'r', encoding='utf-8') as f:
+        return f.read()
 
 
 def do_search(cdp, text):
@@ -176,27 +184,43 @@ def run(cdp):
     if got_vault != '测试库A':
         return False, f'URI 的 vault 未跟随当前库名（硬编码？）得到 {got_vault!r} url={url}'
 
-    # ============ d) 旧 key 不复活：saveMapDataImmediate 必须写世界前缀化 key ============
+    # ============ d) 旧 key 不复活（落盘去向已改项目文件） ============
+    # ⚠️ Phase 2.4 接线 + 决策 1 终态后，`saveMapData` 不再走 legacy IPC（写盘去向 = 项目文件），
+    #    所以「写盘 key 必须带世界前缀」这条断言改为守两件事（都在等价的不变量上）：
+    #      ① 运行时：项目模式下 saveMapDataImmediate **绝不**直写知识库缓存（IPC 零调用）——
+    #         不写知识库就谈不上旧 key 复活；且数据确实进了项目文件。
+    #      ② 源码：saveMapDataImmediate 的函数体必须经由 saveMapData（legacy 路径的前缀化入口），
+    #         不得自己拼 key 直写。
     keycheck = _j(cdp, f"""(async () => {{
       const s = {APP_STORE};
       const pid = '乐园星';
-      const expect = s.getMapDataKey(pid);
       const data = await s.loadMapData(pid);
       if (!data) return JSON.stringify({{ err: 'no-mapdata' }});
+      let ipcCalls = 0;
       const real = window.sitianAPI.saveMapData;
-      window.__savedKey = null;
-      window.sitianAPI.saveMapData = async (k) => {{ window.__savedKey = k; return {{ success: true }}; }};
+      window.sitianAPI.saveMapData = async (k) => {{ ipcCalls += 1; return {{ success: true }}; }};
       s.saveMapDataImmediate(pid);
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 900));
+      await window.__probe.flushProject();          // 项目侧防抖落盘 → 断言真实落盘内容
       window.sitianAPI.saveMapData = real;
-      return JSON.stringify({{ expect, savedKey: window.__savedKey, terrain: (data.terrain || []).length }});
+      const saved = window.__probe.lastMapPayload(pid);
+      const expect = s.getMapDataKey(pid);
+      return JSON.stringify({{
+        ipcCalls, expect, terrain: (data.terrain || []).length,
+        savedTerrain: saved ? ((saved.data.terrain || []).length) : -1,
+        savedKey: saved ? saved.key : null,
+      }});
     }})()""")
     if not isinstance(keycheck, dict) or 'expect' not in keycheck:
         return False, f'旧 key 复活检查链路异常 {keycheck}'
-    if keycheck['savedKey'] != keycheck['expect']:
-        return False, f'saveMapDataImmediate 写盘 key 异常 {keycheck}'
-    if '/' not in (keycheck['savedKey'] or ''):
-        return False, f'写盘 key 未带世界前缀（会重新制造旧 key） {keycheck}'
+    if keycheck.get('ipcCalls') != 0:
+        return False, f'项目模式下仍写知识库缓存（会重新制造旧 key）：{keycheck}'
+    if keycheck.get('savedTerrain') != keycheck.get('terrain'):
+        return False, f'saveMapDataImmediate 在项目模式下没有把地图落进项目文件（数据丢了）：{keycheck}'
+    geo_src = _read('src/renderer/src/store/geodata.js')
+    m = re.search(r'function saveMapDataImmediate\([^)]*\)\s*\{(.*?)\n  \}', geo_src, re.S)
+    if not m or 'saveMapData(' not in m.group(1):
+        return False, 'saveMapDataImmediate 未经由 saveMapData（legacy 直写会重新制造无世界前缀的旧 key）'
 
     # 清场：撤销转正 + 删除暂存节点
     cdp.eval(f"(() => {{ const s = {APP_STORE}; const n = s.nodes.find(x => x.name === '暂存测试地点'); if (n) s.removeNode(n.id); s.clearSelection(); return 'clean'; }})()")
@@ -204,4 +228,5 @@ def run(cdp):
 
     return True, ('搜索覆盖 wikilinks（白芝原→哈伦的住所/卡莉的工作室，带提及徽标）+ 名称直配优先 + '
                   'draft 转正入口与 sourcePath 回填 + obsidian URI 库名动态化（测试库A）+ '
-                  f'saveMapDataImmediate 写盘 key={keycheck["savedKey"]}（带世界前缀，旧 key 不复活）全通过')
+                  f'saveMapDataImmediate 项目模式 IPC 零调用（知识库 key={keycheck["expect"]} 不会被复活）、'
+                  '数据确实进项目文件、源码仍经由 saveMapData 前缀化路径')

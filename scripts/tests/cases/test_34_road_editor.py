@@ -115,16 +115,7 @@ def run(cdp):
     cdp.eval("document.querySelector('[data-testid=\"road-style-highway\"]').click()")
     time.sleep(0.3)
 
-    # 拦截保存载荷
-    cdp.eval("""(() => {
-      window.__savedMap = [];
-      const api = window.sitianAPI;
-      if (api && !api.__roadMapHooked) {
-        api.saveMapData = async (key, data) => { window.__savedMap.push({ key, data }); return { success: true }; };
-        api.__roadMapHooked = true;
-      }
-      return 'ok';
-    })()""")
+    # 保存载荷来源：接线后 mapData 落盘去向 = 项目文件（harness 已挂好 projectSave 记录 + __probe）
 
     picks = _land_points(cdp, count=2, gap=150)
     if not isinstance(picks, dict) or len(picks.get('points') or []) < 2:
@@ -203,18 +194,18 @@ def run(cdp):
     if undone.get('style') != 'highway' or undone.get('dashed'):
         return False, f'切换样式 undo 未回退（应回到 highway 实线）：{undone}'
 
-    # ── 5. 持久化 ──────────────────────────────────────────────────────
+    # ── 5. 持久化（落盘去向 = 项目文件） ───────────────────────────────
     time.sleep(1.6)
+    _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, f"""(() => {{
-      const list = window.__savedMap || [];
-      const last = list[list.length - 1];
-      if (!last) return JSON.stringify({{ n: 0 }});
-      const r = (last.data.routes || []).find(x => x.id === '{sel["id"]}');
-      const round = JSON.parse(JSON.stringify(last.data)).routes.find(x => x.id === '{sel["id"]}');
-      return JSON.stringify({{ n: list.length, style: r ? r.style : null, roundTrip: round ? round.style : null }});
+      const p = window.__probe.lastMapPayload('乐园星');
+      if (!p) return JSON.stringify({{ n: 0 }});
+      const r = (p.data.routes || []).find(x => x.id === '{sel["id"]}');
+      const round = JSON.parse(JSON.stringify(p.data)).routes.find(x => x.id === '{sel["id"]}');
+      return JSON.stringify({{ n: (window.__savedProject || []).length, style: r ? r.style : null, roundTrip: round ? round.style : null }});
     }})()""")
     if payload.get('n', 0) <= 0:
-        return False, '生成道路后没有触发保存'
+        return False, '生成道路后没有触发项目文件落盘'
     if payload.get('style') != 'highway' or payload.get('roundTrip') != 'highway':
         return False, f'道路样式未进入保存载荷/JSON 往返丢失：{payload}'
 

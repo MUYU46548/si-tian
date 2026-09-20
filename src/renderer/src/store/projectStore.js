@@ -468,6 +468,12 @@ export const useProjectStore = defineStore('project', () => {
     const incoming = {};
     for (const raw of (list || [])) {
       const e = createEntityShape({ ...raw, existingIds: Object.keys(entities.value) });
+      // schema 之外的编辑字段（placeType / wikilinks / population …）一并保留 ——
+      // 导入知识库实体时丢掉它们同样不报错，只会让图标/搜索「提及」静默退化（见 geodata 的 entityExtras）
+      for (const [k, v] of Object.entries(raw || {})) {
+        if (k === 'draft' || k in e) continue;
+        e[k] = v;
+      }
       incoming[e.id] = e;
     }
     const before = { ...project.value.entities };

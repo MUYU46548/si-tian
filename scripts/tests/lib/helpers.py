@@ -23,6 +23,108 @@ def ensure_data_ready(cdp, timeout=45):
         pass
 
 
+# ─────────────────────────────────────────────────────────────
+# 基线项目（决策 1 终态的回归基线）
+#   2026-09-20 起 `READONLY_WITHOUT_PROJECT = true`：无项目 = 只读，任何落盘写都被拒绝。
+#   45+ 个用例依赖落盘写（笔刷/道路/河流/剧本/区域/建筑…），所以 harness 在每个用例前
+#   **用当前知识库工作态播种一个 mock 项目并打开**（走真实的 projectStore.openProject →
+#   geodata.applyProjectToCanvas 链路），让用例跑在生产等价的状态下：
+#     事实源 = 项目文件、写模式 = 'project'（可写）、画布内容 = 知识库数据。
+#   项目只存在于 `window.__projects`（mock 内存），**不落盘 → 对真实库零污染**。
+#   ⚠️ 播种走 `exportCanvasToProject()`（生产同一份转换代码），不是手工造 JSON ——
+#      否则「实体 ⇄ 节点」的字段丢失/归一化问题会被 harness 掩盖。
+# ─────────────────────────────────────────────────────────────
+HARNESS_PROJECT_PATH = 'mock/projects/harness-baseline.sitian'
+HARNESS_PROJECT_NAME = 'harness 基线项目'
+
+OPEN_HARNESS_JS = r"""(async () => {
+  const app = document.querySelector('#app').__vue_app__;
+  if (!app) return JSON.stringify({ ok: false, error: 'no-app' });
+  const pinia = app.config.globalProperties.$pinia;
+  const store = app._instance.setupState.store;
+  const { useProjectStore } = await import('/src/store/projectStore.js');
+  const { createEmptyProject } = await import('/src/utils/projectSchema.js');
+  const proj = useProjectStore(pinia);
+  const filePath = '__PATH__';
+
+  // 记录「项目文件落盘」载荷（projectSave 是项目文件的唯一写 IPC）
+  window.__savedProject = window.__savedProject || [];
+  if (!window.sitianAPI.__projectSaveHooked) {
+    const orig = window.sitianAPI.projectSave;
+    window.sitianAPI.projectSave = async (p) => {
+      window.__savedProject.push(p);
+      return orig ? orig(p) : { success: true, filePath: p && p.filePath };
+    };
+    window.sitianAPI.__projectSaveHooked = true;
+  }
+
+  // 用例可用的探针（读真实落盘内容，不经过业务代码）
+  window.__probe = {
+    harnessProjectPath: filePath,
+    lastProject() {
+      const l = window.__savedProject || [];
+      return l.length ? (l[l.length - 1] || {}).project || null : null;
+    },
+    lastMapPayload(planetId) {
+      const l = window.__savedProject || [];
+      for (let i = l.length - 1; i >= 0; i--) {
+        const md = l[i] && l[i].project && l[i].project.maps ? l[i].project.maps.mapData : null;
+        if (!md) continue;
+        const k = Object.keys(md).find(kk => kk === planetId || kk.endsWith('/' + planetId));
+        if (k) return { key: k, data: md[k] };
+      }
+      return null;
+    },
+    projectFile() { return (window.__projects || {})[filePath] || null; },
+    flushProject: async () => { await proj.flushSave(); await new Promise(r => setTimeout(r, 150)); return true; },
+  };
+
+  if (proj.isOpen && store.canvasSource === 'project') {
+    return JSON.stringify({ ok: true, skipped: true, nodes: store.nodes.length });
+  }
+  // 用当前知识库工作态播种项目（实体树 / 航道 / 地图 / 编辑器容器 / 剧本）
+  const payload = store.exportCanvasToProject();
+  const draft = createEmptyProject({ name: '__NAME__' });
+  draft.entities = payload.entities || {};
+  draft.hyperlanes = payload.hyperlanes || [];
+  draft.maps = payload.maps || {};
+  if (payload.scenarios) draft.scenarios = payload.scenarios;
+  window.__projects = window.__projects || {};
+  window.__projectCalls = window.__projectCalls || [];
+  window.__projects[filePath] = JSON.parse(JSON.stringify(draft));
+  const r = await proj.openProject(filePath);
+  return JSON.stringify({
+    ok: !!(r && r.success === true),
+    error: (r && r.error) || '',
+    seededEntities: Object.keys(draft.entities).length,
+    nodes: store.nodes.length,
+    hyperlanes: store.hyperlanes.length,
+    maps: Object.keys(store.mapData || {}).length,
+    source: store.canvasSource,
+    filePath: proj.filePath,
+  });
+})()"""
+
+
+def open_harness_project(cdp):
+    """打开 harness 基线项目（幂等）。返回 (ok, info)。失败不抛错 —— 由用例的断言给出失败原因。"""
+    expr = OPEN_HARNESS_JS.replace('__PATH__', HARNESS_PROJECT_PATH).replace('__NAME__', HARNESS_PROJECT_NAME)
+    v = cdp.eval(expr)
+    if isinstance(v, str) and v.startswith('{'):
+        try:
+            info = json.loads(v)
+        except ValueError:
+            return False, {'error': f'harness 项目返回值非 JSON：{v[:200]}'}
+        return bool(info.get('ok')), info
+    return False, {'error': f'harness 项目求值异常：{str(v)[:200]}'}
+
+
+def ensure_case_state(cdp):
+    """用例开始前的统一状态：数据就绪 + harness 基线项目已打开（写模式 = project）。"""
+    ensure_data_ready(cdp)
+    return open_harness_project(cdp)
+
+
 def store(cdp):
     """注意：不要序列化整个 Pinia store（proxy 返回空 {}）。用 view_level/node_count 等具体函数"""
     return None

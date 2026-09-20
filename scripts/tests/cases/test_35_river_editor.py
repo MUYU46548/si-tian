@@ -155,15 +155,7 @@ def run(cdp):
     if mode.get('mode') != 'river' or not mode.get('panel'):
         return False, f'Shift+R 未进入河流模式 / 面板未渲染：{mode}'
 
-    cdp.eval("""(() => {
-      window.__savedMap = [];
-      const api = window.sitianAPI;
-      if (api && !api.__riverMapHooked) {
-        api.saveMapData = async (key, data) => { window.__savedMap.push({ key, data }); return { success: true }; };
-        api.__riverMapHooked = true;
-      }
-      return 'ok';
-    })()""")
+    # 保存载荷来源：接线后 mapData 落盘去向 = 项目文件（harness 已挂好 projectSave 记录 + __probe）
 
     hl = _hi_lo(cdp)
     if not isinstance(hl, dict) or not hl.get('lo') or not hl.get('hi'):
@@ -317,21 +309,21 @@ def run(cdp):
         return False, f'线宽未写入河流：{width_now}'
 
     time.sleep(1.6)
+    _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, f"""(() => {{
-      const list = window.__savedMap || [];
-      const last = list[list.length - 1];
-      if (!last) return JSON.stringify({{ n: 0 }});
-      const r = (last.data.rivers || []).find(x => x.id === '{rid}');
-      const round = JSON.parse(JSON.stringify(last.data)).rivers.find(x => x.id === '{rid}');
+      const p = window.__probe.lastMapPayload('乐园星');
+      if (!p) return JSON.stringify({{ n: 0 }});
+      const r = (p.data.rivers || []).find(x => x.id === '{rid}');
+      const round = JSON.parse(JSON.stringify(p.data)).rivers.find(x => x.id === '{rid}');
       return JSON.stringify({{
-        n: list.length,
+        n: (window.__savedProject || []).length,
         pts: r ? r.nodes.length : 0,
         hasH: r ? r.nodes.every(p => Number.isFinite(p.h)) : false,
         roundTrip: round ? round.nodes.length : 0,
       }});
     }})()""")
     if payload.get('n', 0) <= 0:
-        return False, '河流编辑后没有触发保存'
+        return False, '河流编辑后没有触发项目文件落盘'
     if payload.get('pts', 0) < 2 or not payload.get('hasH') or payload.get('roundTrip') != payload.get('pts'):
         return False, f'河流未正确落盘（含高度、可 JSON 往返）：{payload}'
 

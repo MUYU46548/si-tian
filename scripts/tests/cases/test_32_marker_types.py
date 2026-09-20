@@ -265,28 +265,19 @@ def run(cdp):
     if mk.get('icon') != danger_def.get('icon') or mk.get('color') != danger_def.get('color'):
         return False, f'标记未继承 danger 类型的图标/颜色（标记 {mk}，类型 {danger_def}）'
 
-    # ── 5. 单点覆盖后保存不丢 ──────────────────────────────────────────
-    cdp.eval("""(() => {
-      window.__savedPayloads = [];
-      const api = window.sitianAPI;
-      if (api && !api.__mtSaveHooked) {
-        api.saveMapData = async (key, data) => { window.__savedPayloads.push({ key, data }); return { success: true }; };
-        api.__mtSaveHooked = true;
-      }
-      return 'ok';
-    })()""")
+    # ── 5. 单点覆盖后保存不丢（落盘去向 = 项目文件） ────────────────────
     _j(cdp, f"(() => {{ {STORE}.updateMarker('乐园星', '{mk['id']}', {{ color: '#00FF00' }}); return 'ok'; }})()")
     time.sleep(1.5)
+    _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, f"""(() => {{
-      const list = window.__savedPayloads || [];
-      const last = list[list.length - 1];
-      if (!last) return JSON.stringify({{ n: 0 }});
-      const m = (last.data.markers || []).find(x => x.id === '{mk["id"]}');
-      const round = JSON.parse(JSON.stringify(last.data)).markers.find(x => x.id === '{mk["id"]}');
-      return JSON.stringify({{ n: list.length, color: m ? m.color : null, roundTripColor: round ? round.color : null }});
+      const p = window.__probe.lastMapPayload('乐园星');
+      if (!p) return JSON.stringify({{ n: 0 }});
+      const m = (p.data.markers || []).find(x => x.id === '{mk["id"]}');
+      const round = JSON.parse(JSON.stringify(p.data)).markers.find(x => x.id === '{mk["id"]}');
+      return JSON.stringify({{ n: (window.__savedProject || []).length, color: m ? m.color : null, roundTripColor: round ? round.color : null }});
     }})()""")
     if payload.get('n', 0) <= 0:
-        return False, '覆盖颜色后没有触发保存'
+        return False, '覆盖颜色后没有触发项目文件落盘'
     if payload.get('color') != '#00FF00' or payload.get('roundTripColor') != '#00FF00':
         return False, f'单点覆盖未进入保存载荷/JSON 往返丢失：{payload}'
 

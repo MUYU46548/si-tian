@@ -32,20 +32,26 @@
 //
 // ── 三种模式 ────────────────────────────────────────────────────────────
 //   'project'  已打开项目文件 → 允许写（写进项目文件）
-//   'legacy'   无项目 + 兼容模式 → 允许写（沿用 Obsidian 缓存链路，**接线前的现状**）
+//   'legacy'   无项目 + 兼容模式 → 允许写（沿用 Obsidian 缓存链路）
 //   'readonly' 无项目 + 严格模式 → 拒绝一切落盘写（决策 1 的终态）
 //
-// ⚠️ 当前 `READONLY_WITHOUT_PROJECT = false`（无项目 → 'legacy'，行为与接线前一致）。
-//    翻成 true 必须与「projectStore 接线 + 测试 harness 自动开 mock 项目」同时落地：
-//    45 个既有回归用例都跑在「无项目态」且依赖写盘，单独翻默认值会让基线当场全红。
-//    翻转点 = Phase 2.4。
+// ✅ 终态已落地：`READONLY_WITHOUT_PROJECT = true`（2026-09-20，决策 1 收尾）。
+//    无项目 = 只读：画布仍可浏览知识库数据（事实源 'vault'），但任何落盘写都被 `guardWrite()`
+//    拒绝，UI 入口同步灰禁 + 给出「新建或打开项目后即可继续编辑」的能力说明。
+//    随之而来的两条纪律（都踩过或差点踩到）：
+//      ① **项目文件的生命周期操作不受本闸门管辖** —— 新建 / 打开 / 保存 / 备份项目文件
+//         是「项目文件写」，不是「世界观数据落盘写」。若把 ProjectPanel 的「新建」也灰禁，
+//         就会形成死锁：没有项目 → 只读 → 禁新建 → 永远没有项目（第一个项目打不开）。
+//      ② **回归基线必须跑在「已打开项目」状态** —— 45+ 个用例依赖落盘写。
+//         harness 在每个用例前用当前知识库内容播种一个 mock 项目并打开（不落盘、零污染），
+//         见 `scripts/tests/run_tests.py` 的 `open_harness_project()`。
 
 import { ref, computed } from 'vue';
 
 export const WRITE_MODES = ['project', 'legacy', 'readonly'];
 
-/** 无项目时是否强制只读。Phase 2.4 接线后翻 true（届时同步更新 harness）。 */
-export const READONLY_WITHOUT_PROJECT = false;
+/** 无项目时是否强制只读（决策 1 终态，2026-09-20 翻开）。 */
+export const READONLY_WITHOUT_PROJECT = true;
 
 export const WRITE_BLOCKED_HINT = '只读：未打开项目文件，编辑与保存已停用（新建或打开项目后即可继续编辑）';
 export const READONLY_BADGE = '只读 · 未打开项目';
