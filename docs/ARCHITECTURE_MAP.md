@@ -48,7 +48,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
 | 115 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
-| 342 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
+| 388 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
 | 467 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
 | 296 | `scripts/tests/unit/test_main_module_wiring.js` | Node 单元测试：主进程**模块接线不变式**（index.js 里用到的本地模块导出必须已解构 / 解构了必须真导出）+ config.js 的 loadConfig 读回校验（漏解构只在 IPC 被调用时抛 ReferenceError，启动不报错） |
 | 323 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
@@ -84,11 +84,11 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 298 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
 | 3773 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
-| 799 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
+| 844 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 300 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 4204 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 4353 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 464 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
 | 624 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
 | 1509 | `src/renderer/src/components/SettingsPanel.vue` | 设置面板（选库/关闭行为/窗口模式） |
@@ -99,7 +99,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 128 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
 | 130 | `src/renderer/src/components/TreeNavigation.vue` | 树形导航面板 |
 | 407 | `src/renderer/src/components/UpdateNotification.vue` | 更新可用提示 |
-| 323 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
+| 333 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
 | 93 | `src/renderer/src/components/ZoomControls.vue` | 缩放控件 |
 | 2163 | `src/renderer/src/composables/planetDrawing.js` | 行星图 Canvas 绘制全集（createPlanetDrawing getState 工厂） |
 | 219 | `src/renderer/src/composables/planetHitTest.js` | 行星图命中检测 |
@@ -124,7 +124,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 34 | `src/renderer/src/composables/usePanelManager.js` | 本地面板单开互斥 + 与 App 层浮层互斥 |
 | 426 | `src/renderer/src/composables/usePlanetHeightBrush.js` | PlanetMap 高度图笔刷（抬高/降低/平滑 + 生物群系涂抹）：stroke 快照式「一次拖动 = 一条 undo」 |
 | 63 | `src/renderer/src/composables/usePromptDialog.js` | 对话框状态（替代 prompt()） |
-| 133 | `src/renderer/src/composables/useProvinceBrush.js` | 省份笔刷状态 + 画布渲染（Phase 3）：格用 roundRect+blur 消体素感、省界走缓存（提取+Chaikin 后按版本号复用）；只渲染不改数据 |
+| 135 | `src/renderer/src/composables/useProvinceBrush.js` | 省份笔刷状态 + 画布渲染（Phase 3）：格用 roundRect+blur 消体素感、省界走缓存（提取+Chaikin 后按版本号复用）；只渲染不改数据 |
 | 71 | `src/renderer/src/composables/useProvinceEditor.js` | 省份(地形块)属性编辑器 |
 | 116 | `src/renderer/src/composables/useProvinceSplitMerge.js` | 省份拆分（切割线）/合并（凸包） |
 | 228 | `src/renderer/src/composables/useReferenceImage.js` | 区域参考图 + 比例尺校准 |
