@@ -83,6 +83,11 @@ OPEN_HARNESS_JS = r"""(async () => {
     return JSON.stringify({ ok: true, skipped: true, nodes: store.nodes.length });
   }
   // 用当前知识库工作态播种项目（实体树 / 航道 / 地图 / 编辑器容器 / 剧本）
+  // ⚠️ 先补齐懒加载的行星地图：项目模式下 loadMapData 不再回退知识库缓存
+  //    （Phase 2.5 消除两套事实源），漏了这一步用例会看到「项目里没有行星图」。
+  if (typeof store.loadAllMapDataForExport === 'function') {
+    try { await store.loadAllMapDataForExport(); } catch (e) { console.warn('[harness] 预加载行星地图失败', e); }
+  }
   const payload = store.exportCanvasToProject();
   const draft = createEmptyProject({ name: '__NAME__' });
   draft.entities = payload.entities || {};

@@ -30,6 +30,17 @@
           />
           <button class="pp-btn primary" :disabled="!canCreate" @click="doCreate">新建</button>
         </div>
+        <div class="pp-row">
+          <button
+            class="pp-btn"
+            :disabled="!canCreate || !vaultSeed.available || seeding"
+            :title="vaultSeed.hint"
+            @click="doCreateFromVault"
+          >{{ seeding ? '导入中…' : '新建并导入知识库内容' }}</button>
+        </div>
+        <div class="pp-hint pp-seed">
+          {{ vaultSeed.hint }}
+        </div>
         <div class="pp-hint">
           目录：<span class="pp-path" :title="proj.projectDir">{{ proj.projectDir || '（默认：我的文档 / SiTianProjects）' }}</span>
           <button class="link-btn" @click="pickDir">更改…</button>
@@ -191,6 +202,7 @@ import PanelShell from './PanelShell.vue';
 import EntityCreator from './EntityCreator.vue';
 import { useProjectStore } from '../store/projectStore';
 import { isReadOnly as gateReadOnly, writeMode as gateWriteMode } from '../store/writeGate';
+import { describeCanvasBridge } from '../store/canvasBridge';
 
 // ⚠️ 挂载语义：本面板由 App.vue 用 `v-if="panelsStore.isOpen('project')"` 控制**挂载**，
 //    所以**不要**再传 `open` —— PanelShell 的 `open` 默认 true，传了反而会因父级未传值而默认 false
@@ -218,6 +230,25 @@ const pendingDelete = ref(null);    // { id, name, kids } —— 两段式删除
 
 const canCreate = computed(() => !!newName.value.trim());   // 项目文件的新建不受「世界观数据落盘」闸门管辖：
                                                             // 无项目=只读时若也灰禁，就永远打不开第一个项目（死锁）
+
+const seeding = ref(false);
+
+/**
+ * 「新建并导入知识库内容」的可用性与说明。
+ * 走画布桥的 describe()（本面板不直接依赖 geodata，test_48 有静态断言守），
+ * ⚠️ canvasBridge 是命令式注册表、自身不响应式 → 显式依赖 proj.isOpen 触发重算。
+ */
+const vaultSeed = computed(() => {
+  void proj.isOpen;
+  const d = describeCanvasBridge();
+  const available = d.attached === true && d.source === 'vault' && (d.nodes || 0) > 0;
+  let hint;
+  if (!d.attached) hint = '画布桥未就绪，暂不能导入知识库内容';
+  else if (d.source !== 'vault') hint = '已打开项目 —— 先关闭项目，才能以知识库为基底新建';
+  else if (available) hint = `以当前知识库为基底：${d.nodes} 个词条 / ${d.hyperlanes || 0} 条航道 / ${d.maps || 0} 张行星图（导入可用 Ctrl+Z 撤销）`;
+  else hint = '当前知识库里没有可导入的内容';
+  return { available, hint };
+});
 
 const statusLine = computed(() => {
   if (proj.isOpen) {
@@ -285,6 +316,25 @@ async function doCreate() {
     await refresh();
   } else {
     setTip(res.error || '新建失败', 'err');
+  }
+}
+
+/** 以当前知识库为基底新建项目（实体树 / 航道 / 地图 / 编辑器容器 / 剧本一并带进来） */
+async function doCreateFromVault() {
+  if (!canCreate.value || seeding.value) return;
+  seeding.value = true;
+  try {
+    const res = await proj.createProjectFromVault({ name: newName.value.trim() });
+    if (res.success) {
+      const s = res.seeded || {};
+      newName.value = '';
+      setTip(`已新建「${proj.meta.name}」并导入知识库：${s.entities || 0} 个词条 / ${s.hyperlanes || 0} 条航道 / ${s.maps || 0} 张行星图（Ctrl+Z 可撤销导入）`, 'ok');
+      await refresh();
+    } else {
+      setTip(res.error || '导入知识库失败', 'err');
+    }
+  } finally {
+    seeding.value = false;
   }
 }
 
@@ -585,6 +635,13 @@ refresh();
 .pp-hint, .pp-path {
   color: var(--planet-text-secondary);
   font-size: 11px;
+}
+/* 「新建并导入知识库内容」的说明：要写清「会导入什么」，不能只留一个按钮 */
+.pp-seed {
+  white-space: normal;
+  line-height: 1.5;
+  margin: 4px 0 2px;
+  color: #1c4fa1;
 }
 .pp-path {
   word-break: break-all;

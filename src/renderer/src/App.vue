@@ -139,6 +139,14 @@
         <button @click="reextract" title="重新提取"><Icon name="refresh" :size="15"/></button>
         <button @click="saveData" :disabled="!dirty" title="保存"><Icon name="save" :size="15"/></button>
         <button @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/></button>
+        <!-- 只读徽标（决策 1 终态）：状态栏只在画布视图出现，世界/选择视图必须靠这里常驻提示，
+             否则用户只会在「点了没反应」时才发现自己处于只读（点它直接去项目面板 = 给出去处）。 -->
+        <button
+          v-if="isReadOnly"
+          class="readonly-badge"
+          :title="readonlyTitle"
+          @click="panelsStore.toggle('project')"
+        >{{ READONLY_BADGE }}</button>
         <span class="toolbar-divider"></span>
         <button v-if="store.viewLevel !== 'world'" @click="toggleLayersPanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }"><Icon name="layers" :size="15"/></button>
         <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }"><Icon name="bookmark" :size="15"/></button>
@@ -293,7 +301,7 @@ import { iconSvg } from './utils/iconSvg';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from './store/geodata';
 // 单一写闸门：清缓存等落盘写统一过 guardWrite（只读态拒绝）
-import { guardWrite } from './store/writeGate';
+import { guardWrite, isReadOnly, writeModeReason as readOnlyReason, READONLY_BADGE } from './store/writeGate';
 import { usePanelsStore } from './store/panels';
 import { createSampleWorld } from './utils/sampleData';
 import WorldSelector from './components/WorldSelector.vue';
@@ -398,6 +406,14 @@ watch(() => panelsStore.openPanelId, (id) => {
 const undoTooltip = computed(() => {
   const label = store.undoLabel;
   return label ? `撤销: ${label} (Ctrl+Z)` : '撤销 (Ctrl+Z)';
+});
+
+// 只读徽标 title（决策 1 终态）：状态原因 + **能力说明 + 去处**。
+// 能力不减纪律：任何「不可用」提示都必须说明去哪恢复，否则用户只看到一句「已停用」。
+const readonlyTitle = computed(() => {
+  const base = String(readOnlyReason.value || '只读');
+  const hint = base.indexOf('打开项目后即可继续编辑') >= 0 ? '' : '；新建或打开项目后即可继续编辑';
+  return `${base}${hint}（点击打开项目面板）`;
 });
 
 // 面包屑点击星域：单系地图/行星地图/区域地图/建筑内部 → 返回域内恒星系总览（system 视图）
@@ -1563,6 +1579,25 @@ async function clearCoordinateCache() {
   align-items: center;
   min-width: 280px;
   justify-content: flex-end;
+}
+
+/* 只读徽标（决策 1 终态）：与状态栏 sb-readonly 同一套配色语义（--warning），
+   但必须常驻工具栏 —— 世界/选择视图没有状态栏，用户在那里最需要知道「现在只能读」。
+   点击可达去处（项目面板），不是死标。 */
+.toolbar-actions .readonly-badge {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--warning, #d29922);
+  background: color-mix(in srgb, var(--warning, #d29922) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #d29922) 45%, transparent);
+}
+.toolbar-actions .readonly-badge:hover {
+  background: color-mix(in srgb, var(--warning, #d29922) 26%, transparent);
 }
 
 /* 图层按钮呼吸光圈（高频功能视觉指引） */

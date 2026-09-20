@@ -171,6 +171,65 @@ export const useProjectStore = defineStore('project', () => {
     return adopt(res.project ? res : { ...res, project: draft });
   }
 
+  /**
+   * 以当前知识库工作态为基底新建项目（「从知识库导入」）—— 终态下把既有内容带进项目文件的唯一路径。
+   *
+   * 🔴 顺序不能反：载荷必须在 `createProject` **之前**取。`adopt()` 会立刻
+   * `adapter.applyProject()` 把画布换成空项目，之后画布上就导不出知识库内容了。
+   * 顺带先跑 `prepareExport()` 补齐懒加载的行星地图（否则导出的 maps 是空的）。
+   */
+  async function createProjectFromVault({ name = '未命名项目', dir = '' } = {}) {
+    const adapter = getCanvasAdapter();
+    if (!adapter || adapter.source() !== 'vault' || typeof adapter.exportCanvas !== 'function') {
+      return { success: false, error: '当前画布不是知识库状态（已打开项目？）——先关闭项目再导入' };
+    }
+    if (typeof adapter.prepareExport === 'function') {
+      try {
+        await adapter.prepareExport();
+      } catch (err) {
+        console.warn('[project] 导入前预加载行星地图失败（继续，maps 可能不全）:', err);
+      }
+    }
+    const payload = adapter.exportCanvas();
+    const created = await createProject({ name, dir });
+    if (!created.success) return created;
+    const seeded = seedFromPayload(payload);
+    if (!seeded.success) return { ...created, success: false, error: seeded.error };
+    return { ...created, seeded: seeded.counts };
+  }
+
+  /** 把一个画布载荷并进当前项目（实体树 / 航道 / 地图 / 编辑器容器 / 剧本），一条 undo。不落盘。 */
+  function seedFromPayload(payload = {}) {
+    if (!project.value) return { success: false, error: '没有打开的项目' };
+    const before = project.value;
+    const base = {
+      ...project.value,
+      entities: {},
+      hyperlanes: [],
+      maps: {},
+      scenarios: { version: 2, baseMaps: {}, scenarios: {} },
+    };
+    const after = mergeCanvasPayload(base, payload);
+    execute({
+      type: 'project-import-from-vault',
+      label: '从知识库导入',
+      category: 'property',
+      undo: () => { project.value = before; dirty.value = true; scheduleAutoSave(); },
+      redo: () => { project.value = after; dirty.value = true; scheduleAutoSave(); },
+    });
+    // 地图 / 剧本 / 编辑器容器不在 watch(entities) 的同步范围内 → 显式让画布重新装载一次
+    const adapter = getCanvasAdapter();
+    if (adapter && typeof adapter.applyProject === 'function') adapter.applyProject(project.value);
+    return {
+      success: true,
+      counts: {
+        entities: Object.keys((after && after.entities) || {}).length,
+        hyperlanes: ((after && after.hyperlanes) || []).length,
+        maps: Object.keys(((after && after.maps) || {}).mapData || {}).length,
+      },
+    };
+  }
+
   async function openProject(path = '') {
     const a = api();
     if (!a || !a.projectOpen) return { success: false, error: API_MISSING };
@@ -499,7 +558,7 @@ export const useProjectStore = defineStore('project', () => {
     // computed
     isOpen, meta, entities, entityList, entityTree, entityCount, snapshots, stats,
     // project CRUD
-    createProject, openProject, saveProject, scheduleAutoSave, flushSave, closeProject,
+    createProject, createProjectFromVault, seedFromPayload, openProject, saveProject, scheduleAutoSave, flushSave, closeProject,
     refreshProjectList, chooseProjectDir, revealProject, backupNow, gitSnapshot, restoreProjectSnapshot,
     // entity CRUD
     getEntity, childrenOf, descendantsOf, parentCandidates, createEntity, updateEntity,

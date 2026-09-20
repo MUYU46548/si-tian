@@ -574,6 +574,11 @@ export const useGeodataStore = defineStore('geodata', () => {
       // 内存缓存命中直接返回（批次A3：避免每次进入行星视图都重走 IPC+JSON 解析；
       // 清除坐标缓存时 App 侧会整体重置 mapData，不会供旧数据）
       if (mapData.value[planetId]) return mapData.value[planetId];
+      // Phase 2.5：项目模式下**不回退知识库缓存** —— 项目就是唯一事实源。
+      // 否则「项目里没有这张行星图」会从知识库缓存回填，下一次保存又把它写进项目文件
+      // （静默把知识库数据灌进项目 = 两套事实源混流，正是接线要消灭的形态）。
+      // 需要把知识库的行星图带进项目，走「新建项目时以知识库为基底」（projectStore.createProjectFromVault）。
+      if (canvasSourceRef.value === 'project') return null;
       const key = getMapDataKey(planetId);
       const result = await window.sitianAPI.getMapData(key);
       let data = result.success ? result.data : null;
@@ -1533,6 +1538,27 @@ export const useGeodataStore = defineStore('geodata', () => {
     return { ok: true, source: 'project' };
   }
 
+  /**
+   * 「以知识库为基底新建项目」前的地图补齐：行星地图是按需懒加载的，
+   * 不补齐的话 `exportCanvasToProject()` 会把空 maps 导出去（新项目里行星图全丢）。
+   * 只在知识库态调用（项目态下 loadMapData 不回退知识库缓存）。
+   */
+  async function loadAllMapDataForExport() {
+    if (canvasSourceRef.value === 'project') return { ok: false, error: '画布已是项目态，无需（也不应）从知识库补齐' };
+    const targets = nodes.value.filter(n => n.layer === 'planet' || n.layer === 'moon');
+    let loaded = 0;
+    for (const n of targets) {
+      if (mapData.value[n.id]) continue;
+      try {
+        const d = await loadMapData(n.id);
+        if (d) loaded += 1;
+      } catch (e) {
+        console.warn('[Geodata] 预加载行星地图失败：', n.id, e);
+      }
+    }
+    return { ok: true, planets: targets.length, loaded, maps: Object.keys(mapData.value).length };
+  }
+
   // 注册适配器：projectStore 在 打开/保存/关闭 项目 时回调这里
   setCanvasAdapter({
     source: () => canvasSourceRef.value,
@@ -1540,10 +1566,14 @@ export const useGeodataStore = defineStore('geodata', () => {
     releaseProject: releaseProjectFromCanvas,
     refreshEntities: refreshEntitiesFromProject,
     exportCanvas: exportCanvasToProject,
+    // 「以知识库为基底新建项目」前的异步准备（补齐懒加载的行星地图）—— 唯一异步适配器方法
+    prepareExport: loadAllMapDataForExport,
     describe: () => ({
       attached: true,
       source: canvasSourceRef.value,
       nodes: nodes.value.length,
+      hyperlanes: hyperlanes.value.length,
+      maps: Object.keys(mapData.value).length,
       hasVaultSnapshot: !!vaultSnapshot,
     }),
   });
@@ -1581,6 +1611,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       // 项目文件接线（Phase 2.4）：画布事实源 + 画布↔项目 同步（测试与 UI 都读这里）
       canvasSource: canvasSourceRef, applyProjectToCanvas, releaseProjectFromCanvas,
       refreshEntitiesFromProject, exportCanvasToProject, syncCanvasToProject,
+      loadAllMapDataForExport,
     ...searchModule,
     ...mapDataEditingModule,
     ...interiorModule,
