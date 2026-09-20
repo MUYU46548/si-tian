@@ -981,6 +981,7 @@ import { useContextMenu } from '../composables/useContextMenu';
 import { createProvinceByFloodFill } from '../utils/floodfill';
 import { generateRoadPath, findOptimalBurgPosition, findNearestGridPoint } from '../utils/placement';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
+import { validateRegionTrace } from '../utils/regionTrace';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
@@ -2200,9 +2201,43 @@ function confirmClear() {
 }
 
 // ===== 路线草稿/描点绘制（2026-09-05 回填自 8c1962d，拆分时丢失）=====
+
+/**
+ * 区域「可绘制范围」多边形（Phase 2.6）。
+ * = 行星地图边界：工具栏「行星地图边界」显式设定数字时才有固定范围；
+ *   `auto` 模式下边界随内容增长（worldBounds 是内容的包围盒），不存在「画到范围外」这回事
+ *   → 返回空数组表示**跳过**落地内检查（宁可不判，也不产生莫名其妙的拒绝）。
+ */
+function regionTraceContainers() {
+  const preset = Number(canvasSizePreset.value);
+  if (!(preset > 0)) return [];
+  return [[
+    { x: -preset, y: -preset }, { x: preset, y: -preset },
+    { x: preset, y: preset }, { x: -preset, y: preset },
+  ]];
+}
+
+/**
+ * 区域落库前统一校验（Phase 2.6）：闭环保形简化 → 离屏校验「落地内 + 不重叠」。
+ * @returns {{ ok:boolean, points:Array }} ok=false 时调用方应把 message 写到状态栏并放弃本次绘制
+ */
+function checkRegionTrace(points, { simplify = true } = {}) {
+  const check = validateRegionTrace({
+    points,
+    containers: regionTraceContainers(),
+    siblings: currentMapData.value?.regions || [],
+    simplify,
+  });
+  if (check.ok && check.warnings.length) setStatus({ toolLabel: check.warnings[0] });
+  if (!check.ok) setStatus({ toolLabel: check.message });
+  return check;
+}
+
 function finishDrawing() {
-  const simplified = simplifyPath(currentPath.value, 2);
   const isRegion = interactionMode.value === 'region';
+  // 区域走闭环管道（closedRing + 闭环 RDP 在 validateRegionTrace 内，容差随尺寸缩放）；
+  // 地形沿用既有的开曲线简化，行为一行不变。
+  const simplified = isRegion ? currentPath.value.slice() : simplifyPath(currentPath.value, 2);
   const type = isRegion ? 'region' : selectedTerrain.value;
   const typeLabel = isRegion
     ? '区域'
@@ -2211,7 +2246,14 @@ function finishDrawing() {
   const count = isRegion
     ? (currentMapData.value?.regions?.length || 0) + 1
     : (currentMapData.value?.terrain?.filter(t => t.type === type).length || 0) + 1;
-  const finalPoints = getMirroredPath(simplified);
+  let finalPoints = getMirroredPath(simplified);
+
+  // Phase 2.6：区域先过「落地内 + 不重叠」的离屏校验，不通过就丢弃本次绘制（原因写到状态栏）
+  if (isRegion) {
+    const check = checkRegionTrace(finalPoints);
+    if (!check.ok) return;
+    finalPoints = check.points;
+  }
 
   // 重叠检测（2026-08-16）：新地形与已有地形重叠 > 5% 时确认，避免互相覆盖
   if (!isRegion && finalPoints.length >= 3) {
@@ -2259,6 +2301,15 @@ function finishPointDrawing() {
   // 对称模式：原路径 + 镜像路径合并
   const finalPoly = { ...poly, points: getMirroredPath(poly.points) };
   if (finalPoly.type === 'region') {
+    // Phase 2.6：点描出来的区域同样过「落地内 + 不重叠」。
+    // 这里 simplify=false —— 点描的顶点是用户刻意摆的，RDP 会把有意画的细节削掉。
+    const check = checkRegionTrace(finalPoly.points, { simplify: false });
+    if (!check.ok) {
+      drawingPolygon.value = null;
+      renderer.requestRender();
+      return;
+    }
+    finalPoly.points = check.points;
     store.addRegion(props.planet.id, finalPoly);
   } else {
     // 重叠检测（2026-08-16）：新地形与已有地形重叠 > 5% 时确认

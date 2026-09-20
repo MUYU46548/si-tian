@@ -13,7 +13,7 @@
 | 锚点 | 期望值 |
 |---|---|
 | 结构清单文件数（脚本扫描） | 155 |
-| 测试用例数 | 50 |
+| 测试用例数 | 51 |
 | store 模块数（geodataModules/） | 6 |
 | App.vue 异步面板 | 20 |
 | 主进程 IPC handle | 35 |
@@ -65,7 +65,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 159 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
 | 1834 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
 | 633 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
-| 2586 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
+| 2607 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 271 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
 | 145 | `src/renderer/src/components/BookmarkPanel.vue` | 书签面板 |
 | 29 | `src/renderer/src/components/BrandMark.vue` | 品牌标志（土星环系剪影 SVG，几何与 build/icon.svg 同源，fill 走 currentColor 跟随父级） |
@@ -85,7 +85,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 391 | `src/renderer/src/components/ObjectListPanel.vue` | 对象列表面板 |
 | 298 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
-| 3722 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
+| 3773 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 799 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
@@ -176,6 +176,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 260 | `src/renderer/src/utils/placement.js` | 智能放置算法（聚落选址 + A* 道路）：必须走空间哈希桶 + 二叉堆，禁双重全表循环（27k 格 = 7 亿次 hypot） |
 | 151 | `src/renderer/src/utils/planetHeightMap.js` | 由 terrain 多边形生成初始高度图（按 elevation 插值，无覆盖点取海平面）+ 高度图 CRUD |
 | 554 | `src/renderer/src/utils/projectSchema.js` | `.sitian` 结构定义 / 校验修复 / 版本迁移 / 就地 diff 快照环形缓冲（纯函数） |
+| 258 | `src/renderer/src/utils/regionTrace.js` | 区域勾轮廓管线（Phase 2.6）：闭环 RDP 简化（容差随尺寸缩放）+ 离屏 canvas 光栅化校验「落地内 + 不重叠」，通过才落库 |
 | 244 | `src/renderer/src/utils/reliefIcons.js` | 地貌图标**确定性**散布（整数哈希定抖动/旋转/尺寸，网格桶防重叠，单次笔刷有上限） |
 | 139 | `src/renderer/src/utils/rivers.js` | 河流编辑器核心算法：按高度自动排序成从高到低、拖拽禁止「逆流」、节点随存采样高度 |
 | 69 | `src/renderer/src/utils/roadStyles.js` | 道路样式预设（官道/道路/山路/小径）：style 优先于旧 route.color/dashed，老数据向后兼容 |
@@ -195,4 +196,4 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 59 | `src/renderer/src/workers/deriveWorker.js` | 温度/降水/生物群系派生 Worker：复用 heightMath.deriveLayers 不复制公式（等价性由用例兜住） |
 <!-- GEN:END -->
 
-> 测试用例在 `scripts/tests/cases/`（50 个，以 `ls scripts/tests/cases/test_*.py | wc -l` 为准），职责见文件名；另有 `scripts/tests/unit/*.js` Node 单测（主进程 I/O 与模块接线 —— CDP 用例里 sitianAPI 是 mock，测不到）。
+> 测试用例在 `scripts/tests/cases/`（51 个，以 `ls scripts/tests/cases/test_*.py | wc -l` 为准），职责见文件名；另有 `scripts/tests/unit/*.js` Node 单测（主进程 I/O 与模块接线 —— CDP 用例里 sitianAPI 是 mock，测不到）。

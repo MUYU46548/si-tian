@@ -325,6 +325,7 @@ import { guardWrite } from '../store/writeGate';
 import { useLayersStore } from '../store/layers';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { pointsBBox, bboxInViewport, pointInViewport, pointInPolygon, convexHull, simplifyPath } from '../utils/geometry';
+import { validateRegionTrace } from '../utils/regionTrace';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -1698,11 +1699,24 @@ function finishZoneDrawing() {
     zoneDraftPoints.value = [];
     return;
   }
+  // Phase 2.6：拖拽勾出的区域块先过「闭环简化 + 不重叠」。
+  // 区域地图没有固定边界（可绘制范围随底图变化）→ 只判重叠，不判落地内。
+  const check = validateRegionTrace({
+    points: zoneDraftPoints.value,
+    siblings: areaZones.value || [],
+  });
+  if (!check.ok) {
+    setStatus({ toolLabel: check.message });
+    zoneDraftPoints.value = [];
+    renderer.requestRender();
+    return;
+  }
+  if (check.warnings.length) setStatus({ toolLabel: check.warnings[0] });
   const zone = {
     id: `zone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name: '',
     color: zoneColor.value,
-    points: [...zoneDraftPoints.value],
+    points: check.points,
     parentId: props.areaNode.id,
     createdAt: new Date().toISOString(),
   };
@@ -1733,6 +1747,13 @@ function finishZoneBrush() {
   let hull = convexHull(ring);
   if (!hull || hull.length < 3) { renderer.requestRender(); return; }
   hull = simplifyPath(hull, Math.max(1, r * 0.15));
+  // Phase 2.6：涂抹出的区域块同样不得压到已有区域（simplify=false —— 凸包+简化已就位，只补重叠判定）
+  const check = validateRegionTrace({ points: hull, siblings: areaZones.value || [], simplify: false });
+  if (!check.ok) {
+    setStatus({ toolLabel: check.message });
+    renderer.requestRender();
+    return;
+  }
   const zone = {
     id: `zone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name: `笔刷区域 ${(areaZones.value?.length || 0) + 1}`,
