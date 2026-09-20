@@ -308,6 +308,13 @@ JS_WIRING = r"""
   sc.setTool('provinceLasso');
   ok('切到自由轮廓', sc.tool === 'provinceLasso' && sc.provBrushTool === sc.provBrushTool);
   ok('目标省份列表可读', Array.isArray(sc.provinceTargets));
+  // 🔴 布局守卫（2026-09-20 存量 bug）：全屏视图组件必须**单根**，否则 height:100%+flex:1 链断，
+  // 画布只剩 <canvas> 固有高度 150px（症状就是「历史剧本打开只有工具栏，地图看不到」）
+  const main = document.querySelector('.main-content');
+  const kids = main ? main.children.length : -1;
+  ok('全屏视图在 .main-content 下只有一个根', kids === 1, kids + ' 个根（≥2 = 根容器提前闭合）');
+  const cvsH = sc.canvas ? Math.round(sc.canvas.getBoundingClientRect().height) : -1;
+  ok('画布真的撑开了（不是 canvas 固有 150px）', cvsH > 150, cvsH + 'px');
   // 工具栏按钮存在（用 title 定位，不用图标文本）
   const btns = Array.from(document.querySelectorAll('.scenario-toolbar button'));
   const hasBrush = btns.some(b => (b.getAttribute('title') || '').includes('省份笔刷'));

@@ -266,7 +266,6 @@
         <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/></button>
         <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/></button>
       </div>
-    </div>
 
     <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代） -->
     <scenario-timeline
@@ -516,6 +515,7 @@
         </div>
       </div>
     </div>
+  </div>
 </template>
 
 <script setup>
@@ -1654,7 +1654,13 @@ function fitToView() {
   const padding = 40;
   const bw = maxX - minX || 1;
   const bh = maxY - minY || 1;
-  cameraScale.value = Math.min((w - padding * 2) / bw, (h - padding * 2) / bh);
+  // 🔴 scale 必须夹到正数：窗口很小时 (w - padding*2) 或 (h - padding*2) 会是负数
+  //    → 之前会算出**负 cameraScale**，而 `3 / cameraScale` 这类绘制半径立刻变成负数，
+  //      Canvas 抛 IndexSizeError，整个 render 管线崩掉（2026-09-20 实测：历史剧本打开的
+  //      小窗口下必崩，并且抛错在渲染路径里会把后续交互一起拖死）。
+  //    下限取 0.02（约 1 世界单位 = 0.02px），宁可视口偏远也不允许 ≤0。
+  const rawScale = Math.min((w - padding * 2) / bw, (h - padding * 2) / bh);
+  cameraScale.value = Math.max(0.02, rawScale || 0.02);
   cameraX.value = padding + (w - padding * 2 - bw * cameraScale.value) / 2 - minX * cameraScale.value;
   cameraY.value = padding + (h - padding * 2 - bh * cameraScale.value) / 2 - minY * cameraScale.value;
   render();
@@ -3621,6 +3627,8 @@ watch(baseMap, () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* 小窗口（或工具栏两行展开）时内容会超出——允许滚动，别把画布挤成 0 高 */
+  overflow: auto;
   background: #0f1a2e;
 }
 
@@ -3781,6 +3789,9 @@ watch(baseMap, () => {
 
 .scenario-canvas-wrap {
   flex: 1;
+  /* 小窗口下不许被工具栏/时间轴挤扁：<canvas> 高度为 0 会让任何像素读取直接抛
+     IndexSizeError（实测：getImageData 源高 0）。低于此高度时整块视图改为可滚动。 */
+  min-height: 200px;
   position: relative;
   overflow: hidden;
 }
