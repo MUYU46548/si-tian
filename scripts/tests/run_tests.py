@@ -107,6 +107,30 @@ MOCK_SCRIPT = """<script>
         saveMapData: async () => ({ success: true }),
         saveScenarios: async () => ({ success: true }),
         loadScenarios: async () => ({ success: true, data: { version: 2, baseMaps: {}, scenarios: {} } }),
+        // ===== 一键同步（git）：内存态 mock，不调用真实 git（真实验证在 unit/test_git_sync.js）=====
+        gitSyncStatus: async (dir) => {
+          const st = (window.__gitState || {})[dir] || {};
+          return { success: true, isRepo: !!st.isRepo, remote: st.remote || '', branch: 'main',
+                   dirty: st.dirty || 0, lastCommit: st.lastCommit || '', lastCommitAt: '' };
+        },
+        gitSyncConfigure: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'configure', dir: p && p.dir, remoteUrl: p && p.remoteUrl });
+          window.__gitState = window.__gitState || {};
+          window.__gitState[p.dir] = { ...(window.__gitState[p.dir] || {}), isRepo: true, remote: p.remoteUrl };
+          return { success: true, dir: p.dir, remoteUrl: p.remoteUrl, created: true };
+        },
+        gitSyncCredential: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          // 只记录「被调过 + 是否带了令牌」，**不记录令牌内容**（mock 也不碰明文）
+          window.__gitCalls.push({ op: 'credential', hasToken: !!(p && p.token) });
+          return { success: true, host: 'mock', username: 'git' };
+        },
+        gitSyncNow: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'sync', dir: p && p.dir });
+          return { success: true, changed: 0, branch: 'main' };
+        },
         // ===== .sitian 项目文件（Phase 1）：内存态，不落盘 → 对真实数据零污染 =====
         projectCreate: async (payload) => {
           const p = payload || {};

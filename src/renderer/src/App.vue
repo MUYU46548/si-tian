@@ -139,6 +139,7 @@
         <button @click="reextract" title="重新提取"><Icon name="refresh" :size="15"/></button>
         <button @click="saveData" :disabled="!dirty" title="保存"><Icon name="save" :size="15"/></button>
         <button @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/></button>
+        <button @click="panelsStore.toggle('git-sync')" :class="{ active: panelsStore.isOpen('git-sync') }" title="同步到远程仓库（一键推送到你自己的 git 仓库）"><Icon name="cloud" :size="15"/></button>
         <!-- 只读徽标（决策 1 终态）：状态栏只在画布视图出现，世界/选择视图必须靠这里常驻提示，
              否则用户只会在「点了没反应」时才发现自己处于只读（点它直接去项目面板 = 给出去处）。 -->
         <button
@@ -266,6 +267,11 @@
     <layer-panel />
     <history-panel v-if="panelsStore.isOpen('history')" @close="panelsStore.close('history')" />
     <project-panel v-if="panelsStore.isOpen('project')" @close="panelsStore.close('project')" />
+    <git-sync-panel
+      v-if="panelsStore.isOpen('git-sync')"
+      @close="panelsStore.close('git-sync')"
+      @open-project="openProjectFromSync"
+    />
     <about-panel ref="aboutPanelRef" />
     <batch-import-panel ref="batchImportPanelRef" />
     <settings-panel ref="settingsPanelRef" />
@@ -335,6 +341,8 @@ const BookmarkPanel = defineAsyncComponent(() => import('./components/BookmarkPa
 const HistoryPanel = defineAsyncComponent(() => import('./components/HistoryPanel.vue'));
 // Phase 2.1：项目面板（项目文件操作 + 实体浏览器 + 快照回滚）。EntityCreator 随该 chunk 一起加载。
 const ProjectPanel = defineAsyncComponent(() => import('./components/ProjectPanel.vue'));
+// 一键同步到远程仓库（git）：傻瓜式推送（填一次地址 → 点「立即同步」）
+const GitSyncPanel = defineAsyncComponent(() => import('./components/GitSyncPanel.vue'));
 import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
 import { useLayersStore } from './store/layers';
 // 退出前落盘（数据安全）：中立注册表 —— App 不直接 import 任何 store 实现，只驱动 flushAll()
@@ -1225,6 +1233,12 @@ onMounted(async () => {
 
 function closeAppPanels() {
   panelsStore.closeAll();
+}
+
+/** 同步面板 → 项目面板（面板里「还没有可同步的目录」时的去处） */
+function openProjectFromSync() {
+  panelsStore.close('git-sync');
+  panelsStore.toggle('project');
 }
 
 onUnmounted(() => {

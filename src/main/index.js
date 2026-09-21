@@ -12,6 +12,7 @@ const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, ge
 const { createTray, destroyTray, getIsQuitting, setIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const { registerProjectHandlers } = require('./handlers/projectHandler');
+const { registerGitSyncHandlers } = require('./handlers/gitSyncHandler');
 const log = require('electron-log');
 
 let mainWindow;
@@ -310,6 +311,19 @@ registerProjectHandlers({
   getDefaultProjectDir: () => path.join(app.getPath('documents'), 'SiTianProjects'),
   getLastProjectPath,
   setLastProjectPath,
+});
+
+// ===== 一键同步到远程仓库（git）=====
+// 「傻瓜式」：用户填一次仓库地址 → 点「立即同步」，不需要敲任何 git 命令。
+// git 调用全在 handlers/gitSyncHandler.js（该文件顶层不 require electron →
+// 单测能用本地 bare 仓库当远程做**真实 git 端到端**，无需网络与凭证）。
+// 默认同步目录 = 最近项目文件所在目录（渲染层也可显式传 dir）。
+registerGitSyncHandlers({
+  ipcMain,
+  getDefaultSyncDir: () => {
+    const last = getLastProjectPath();
+    return last ? path.dirname(last) : '';
+  },
 });
 
 // ===== .sitian/config/*.json 通用读写（P0-2 标签样式预设 / P1-4 标记类型）=====
