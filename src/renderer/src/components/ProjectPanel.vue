@@ -120,14 +120,15 @@
               class="pp-node-row"
               :class="{
                 sel: selectedId === row.id,
+                multi: selectedIds.length > 1 && selectedIds.includes(row.id),
                 drop: dropTargetId === row.id,
                 dragging: draggingId === row.id,
                 forbid: !!draggingId && !canDropInto(row.id),
               }"
               :style="{ paddingLeft: (8 + row.depth * 14) + 'px' }"
               :draggable="editingId !== row.id"
-              title="拖动到别的行可改父级；双击名称可改名"
-              @click="select(row)"
+              title="拖动到别的行可改父级；双击名称可改名；Ctrl/⌘ 点击可多选"
+              @click="select(row, $event)"
               @dragstart="onDragStart(row, $event)"
               @dragover.prevent="onDragOver(row)"
               @dragleave="onDragLeave(row)"
@@ -151,6 +152,16 @@
                 <button class="icon-btn" title="删除（含子实体）" @click.stop="askDelete(row)"><Icon name="trash" :size="12" /></button>
               </span>
             </div>
+          </div>
+          <div v-if="selectedIds.length > 1" class="pp-batch" data-testid="pp-batch-bar">
+            <span class="pp-batch-count">已选 {{ selectedIds.length }} 个</span>
+            <select v-model="batchParentId" class="pp-parent" title="选择目标父级">
+              <option value="">（顶层）</option>
+              <option v-for="e in batchParentOptions" :key="e.id" :value="e.id">{{ e.name }}（{{ e.layerLabel }}）</option>
+            </select>
+            <button class="pp-btn primary" @click="doBatchMove">移到此父级</button>
+            <button class="pp-btn" @click="clearMulti">取消多选</button>
+            <div class="pp-batch-hint">把散落的设施/地点一次归入城市或区域（一条 undo）</div>
           </div>
           <div v-if="pendingDelete" class="pp-confirm">
             <span class="pp-confirm-text">
@@ -209,7 +220,7 @@ import PanelShell from './PanelShell.vue';
 import EntityCreator from './EntityCreator.vue';
 import { useProjectStore } from '../store/projectStore';
 import { isReadOnly as gateReadOnly, writeMode as gateWriteMode } from '../store/writeGate';
-import { describeCanvasBridge } from '../store/canvasBridge';
+import { describeCanvasBridge, gotoEntity } from '../store/canvasBridge';
 
 // ⚠️ 挂载语义：本面板由 App.vue 用 `v-if="panelsStore.isOpen('project')"` 控制**挂载**，
 //    所以**不要**再传 `open` —— PanelShell 的 `open` 默认 true，传了反而会因父级未传值而默认 false
@@ -226,6 +237,10 @@ const nameInputEl = ref(null);
 const tip = ref('');
 const tipKind = ref('ok');
 const selectedId = ref('');
+// 多选（2026-09-21）：Ctrl/⌘ 点击加选 → 出现「批量改父级」操作条。
+// 用途：把散落在行星下的设施/地点一次性归入城市或区域（用户反馈「建筑物散落在行星地图上」）。
+const selectedIds = ref([]);
+const batchParentId = ref('');
 const creatorOpen = ref(false);
 
 /**
@@ -421,9 +436,49 @@ function doClose() {
 // 三个操作全部走 `projectStore`（内部走 undo.js 的 execute），因此都可用 Ctrl+Z 撤销，
 // 且本组件不碰 IPC / 文件系统（接线属 Phase 2.4）。
 
-function select(row) {
-  selectedId.value = row.id;
+function select(row, ev) {
+  const additive = !!(ev && (ev.ctrlKey || ev.metaKey));
+  if (additive) {
+    const list = selectedIds.value.includes(row.id)
+      ? selectedIds.value.filter(id => id !== row.id)
+      : [...selectedIds.value, row.id];
+    selectedIds.value = list;
+    selectedId.value = list.includes(row.id) ? row.id : (list[list.length - 1] || '');
+  } else {
+    selectedIds.value = [row.id];
+    selectedId.value = row.id;
+  }
   pendingDelete.value = null;
+}
+
+function clearMulti() {
+  selectedIds.value = selectedId.value ? [selectedId.value] : [];
+  batchParentId.value = '';
+}
+
+/** 批量改父级的候选父级：对所有选中实体取「合法父级」的交集 */
+const batchParentOptions = computed(() => {
+  if (selectedIds.value.length < 2) return [];
+  let cand = null;
+  for (const id of selectedIds.value) {
+    const ids = proj.parentCandidates(id).map(e => e.id);
+    cand = cand === null ? new Set(ids) : new Set([...cand].filter(x => ids.includes(x)));
+  }
+  return cand ? proj.entityList.filter(e => cand.has(e.id)) : [];
+});
+
+/** 批量改父级（一条 undo）：把选中的多个实体挂到同一父级下 */
+function doBatchMove() {
+  const ids = selectedIds.value.slice();
+  if (ids.length < 2) return;
+  const target = batchParentId.value;
+  const targetName = target ? (proj.getEntity(target)?.name || target) : '顶层';
+  const res = proj.moveEntities(ids, target || null);
+  if (!res.success) return setTip(res.error || '批量改父级失败', 'err');
+  const moved = (res.moved || []).length;
+  setTip(moved
+    ? `已把 ${moved} 个实体移到「${targetName}」（Ctrl+Z 可撤销）`
+    : `这 ${ids.length} 个实体已经在「${targetName}」下了`, 'ok');
 }
 
 function startRename(row) {
@@ -537,12 +592,19 @@ function onGoto(entity) {
   pendingDelete.value = null;
   if (!entity) return;
   selectedId.value = entity.id;
+  selectedIds.value = [entity.id];
   nextTick(() => {
     const row = document.querySelector('.project-panel .pp-node-row.sel');
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   });
-  setTip(`已选中「${entity.name}」：可在下方改父级、用行内铅笔改名或删除；`
-    + `画布落位与边界绘制等接线（Phase 2.4 / 2.6）后再从这里直达。`, 'ok');
+  // 直达画布：项目面板不 import geodata（test_48 静态守），经 canvasBridge 的注册口请求画布切视图
+  const nav = gotoEntity(entity.id);
+  if (nav && nav.ok) {
+    setTip(`已选中「${entity.name}」并把画布切到${nav.viewLabel || nav.view}：可在下方改父级、用行内铅笔改名或删除`, 'ok');
+  } else {
+    setTip(`已选中「${entity.name}」（画布未能定位：${(nav && nav.error) || '未知原因'}）`
+      + '；可在下方改父级、用行内铅笔改名或删除', 'err');
+  }
 }
 
 function doRestore(s) {
@@ -744,6 +806,21 @@ refresh();
 }
 .pp-node-row:hover { background: var(--planet-btn-hover); }
 .pp-node-row.sel { background: rgba(74, 144, 217, 0.16); }
+/* 多选（Ctrl/⌘ 点击）：比单选更明显的整体高亮，方便确认「要归位的是哪几个」 */
+.pp-node-row.multi { background: rgba(47, 95, 208, 0.14); box-shadow: inset 2px 0 0 #2f5fd0; }
+.pp-batch {
+  margin: 6px 0 0;
+  padding: 8px;
+  border: 1px solid #2f5fd0;
+  border-radius: 5px;
+  background: rgba(47, 95, 208, 0.06);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.pp-batch-count { font-size: 11px; color: #1c4fa1; font-weight: 600; }
+.pp-batch-hint { flex-basis: 100%; font-size: 10px; color: #1c4fa1; opacity: 0.85; }
 .pp-node-row.dragging { opacity: 0.45; }
 .pp-node-row.drop { outline: 1px solid var(--planet-text-link); background: rgba(74, 144, 217, 0.22); }
 .pp-node-row.forbid { cursor: no-drop; }

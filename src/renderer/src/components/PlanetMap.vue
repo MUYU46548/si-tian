@@ -27,7 +27,8 @@
         </p>
       </div>
       <div class="header-actions" v-if="!editMode">
-        <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制地形/区域/标记/路线/文本等"><Icon name="pencil" :size="14"/> 编辑地图</button>
+        <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
+                :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：绘制地形/区域/标记/路线/文本等'"><Icon name="pencil" :size="14"/> 编辑地图</button>
         <template v-if="autoRegions.length > 0">
           <button class="adopt-btn" @click="adoptAutoRegions" title="将自动生成的区域边界转为正式区域，可继续编辑">
             <Icon name="sparkles" :size="13"/> 采用自动区域 ({{ autoRegions.length }})
@@ -383,7 +384,8 @@
         <div class="empty-map-icon"><Icon name="map" :size="34"/></div>
         <div class="empty-map-title">这张行星地图还是空的</div>
         <div class="empty-map-desc">点击「编辑地图」开始绘制省份、标记地点、规划路线</div>
-        <button class="adopt-btn edit-entry-btn" @click="enterEditMode"><Icon name="pencil" :size="14"/> 编辑地图</button>
+        <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
+                :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：绘制地形/区域/标记/路线/文本等'"><Icon name="pencil" :size="14"/> 编辑地图</button>
       </div>
       <cluster-panel
         :planet="props.planet"
@@ -2024,6 +2026,8 @@ function duplicateSelection() { copySelection(); pasteClipboard(); }
 
 // ===== 拆分时丢失的编辑模式与工具函数（2026-09-05 回填自 8c1962d）=====
 function enterEditMode() {
+  // 只读态（无项目）：内存编辑同样被拦 —— 改了不落盘 = 静默丢数据（拒绝理由由全局提示条给出）
+  if (!guardWrite('进入编辑模式').ok) return;
   editMode.value = true;
   interactionMode.value = 'draw';
   drawMode.value = true;

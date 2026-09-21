@@ -6,7 +6,7 @@
   · 实体创建走 **C 方案「分派式向导」**——表单填「名称/层级/父级」，创建后按层级走不同的
     落位/绘制流程；画布交互一律复用各视图现有工具，不在弹窗里再造一套画布。
   · region 层级的边界用**专用自由绘制工具**（沿用 v7 原型）→ 向导里对应「按住拖动勾轮廓 + 离屏校验」的说明。
-  · building 不纳入向导（沿用区域地图现有入口）。
+  · building 已纳入向导（2026-09-21 决策反转：原本只能在区域地图里建 → 两条入口不一致）。
 
 用户决策（2026-09-19，本轮）：
   · 面板位置的现状（右上 340px）保持；
@@ -20,14 +20,14 @@
      且只读态下「新建」按钮仍必须可用，否则永远打不开第一个项目 = 死锁）
   c) 面板内新建项目 → 状态条 + 项目列表 + 实体/快照区就位
   d) 向导：分派说明随层级变化（region / galaxy / city 三种文案必须不同且有层级特征词）
-  e) 层级下拉按父级过滤（顶层=全量 12；父级 world → 仅 star_domain 且自动切换）
+  e) 层级下拉按父级过滤（顶层=全量 13；父级 world → 仅 star_domain 且自动切换）
   f) 创建实体 → **结果卡片**（成功文案 + 该层级步骤 + 「前往编辑」）→ 点「前往编辑」关向导并在面板选中该实体
   g) 实体树改名（走 undo：撤销后名字还原）
   h) 实体树删除（两段式确认：先出现确认条，取消不删、确认才删）
   i) 实体树拖动改父级（拖到别的行=挂到它下面；拖到「顶层」条=回到根；拖到自己后代=拒绝且不写入）
   j) 详情区父级下拉改父级（拖动之外的等价入口，且不含自身）
   k) 保存 → 快照区出现一条 + 状态条「已保存」；关闭面板 → 面板消失
-  l) 静态：面板是懒加载 chunk、不引用 geodata（接线属 Phase 2.4，本阶段不得偷跑）；向导不含 building
+  l) 静态：面板是懒加载 chunk、不引用 geodata（接线属 Phase 2.4，本阶段不得偷跑）；向导含 building
 
 ⚠️ 测试写法提醒（本次踩过）：
   · **不要缓存 DOM 引用**：向导/面板会被 v-if 卸载重建，缓存的元素会变成脱离文档的旧节点，
@@ -181,8 +181,8 @@ PANEL_JS = r"""(async () => {
   if (!q('.ec-overlay')) return JSON.stringify({ fails: fails, aborted: '向导未渲染' });
   ck('向导标题', text('.ec-title') === '新建实体');
   ck('层级下拉/父级下拉可定位', !!layerEl() && !!parentEl());
-  same('未选父级时层级全量可选（12）', (layerVals() || []).length, 12);
-  ck('层级选项不含 building', !(layerVals() || []).includes('building'), layerVals());
+  same('未选父级时层级全量可选（13）', (layerVals() || []).length, 13);
+  ck('层级选项包含 building（与区域地图的建筑工具一致）', (layerVals() || []).includes('building'), layerVals());
   const cityTxt = await setLayer('city');
   const galaxyTxt = await setLayer('galaxy');
   const regionTxt = await setLayer('region');
@@ -191,7 +191,7 @@ PANEL_JS = r"""(async () => {
   ck('region 分派提到自由绘制', regionTxt.indexOf('自由绘制') >= 0, regionTxt);
   ck('region 分派含离屏校验说明', regionTxt.indexOf('离屏') >= 0, regionTxt);
   ck('三种层级的分派文案互不相同', new Set([cityTxt, galaxyTxt, regionTxt]).size === 3);
-  ck('创建前有「接线后打通」的说明（不假装已可用）', (text('.ec-note') || '').indexOf('接线') >= 0, text('.ec-note'));
+  ck('创建前说明「前往编辑会把画布切到对应视图」', (text('.ec-note') || '').indexOf('前往编辑') >= 0, text('.ec-note'));
 
   // ---- e) 创建第一个实体（world，顶层）----
   await fillName('测试世界');
@@ -203,7 +203,7 @@ PANEL_JS = r"""(async () => {
   ck('创建后出现结果卡片', !!q('.ec-card-done'));
   ck('卡片成功文案含实体名', (cardText() || '').indexOf('测试世界') >= 0, cardText());
   ck('卡片内含该层级（world）的分派步骤', cardSteps().indexOf('世界卡片') >= 0, cardSteps());
-  ck('卡片含「接线后打通」说明（不假装已可用）', (text('.ec-card-done .ec-note') || '').indexOf('接线') >= 0, text('.ec-card-done .ec-note'));
+  ck('卡片说明「前往编辑直达画布」', (text('.ec-card-done .ec-note') || '').indexOf('前往编辑') >= 0, text('.ec-card-done .ec-note'));
   const gotoBtn = btnIn('.ec-btn', '前往编辑');
   ck('卡片按钮文案是「前往编辑」', !!gotoBtn);
   ck('全页面不再出现「前往落位」字样', document.body.innerHTML.indexOf('前往落位') < 0);
@@ -257,7 +257,7 @@ PANEL_JS = r"""(async () => {
   ck('第三个实体创建成功', (cardText() || '').indexOf('北星域') >= 0, cardText());
   ck('挂到父级下的实体 parentId 正确', ent('北星域').parentId === worldId, ent('北星域').parentId);
   await setParent('');
-  same('父级清空后层级恢复全量 12', (layerVals() || []).length, 12);
+  same('父级清空后层级恢复全量 13', (layerVals() || []).length, 13);
 
   btnIn('.ec-btn', '关闭').click();
   await tick(300);
@@ -407,8 +407,11 @@ def sub_static(cdp):
 
     ec = _read('src/renderer/src/components/EntityCreator.vue')
     creatable = ec.split('const CREATABLE')[1].split('];')[0]
-    if "'building'" in creatable:
-        bad.append('EntityCreator 的可创建层级里出现了 building（用户已确认不纳入）')
+    # 2026-09-21 决策反转：建筑只能在区域地图里建 → 入口不一致，向导补上 building（与区域地图一致）
+    if "'building'" not in creatable:
+        bad.append('EntityCreator 的可创建层级里缺少 building（与区域地图的建筑工具不一致）')
+    if "'building'" not in ec.split('const CHILD_LAYERS')[1].split('};')[0]:
+        bad.append('EntityCreator 的 CHILD_LAYERS 缺少 building 的合法父级（region/city/town/village）')
     if 'CHILD_LAYERS' not in ec:
         bad.append('EntityCreator 缺少层级父子表（层级下拉无法按父级过滤）')
     for token in ('前往编辑', "emit('goto'", 'gotoEdit'):
@@ -419,7 +422,8 @@ def sub_static(cdp):
     if bad:
         return False, '；'.join(bad)
     return True, ('面板为懒加载 chunk、入口齐全；两个新组件均不引用 geodata/sitianAPI（接线属 Phase 2.4）；'
-                  '向导不含 building、层级过滤表与结果卡片（前往编辑）齐全，且面板已接改名/删除/拖动改父级')
+                  '向导含 building（与区域地图一致）、层级过滤表与结果卡片（前往编辑）齐全，'
+                  '且面板已接改名/删除/拖动改父级/多选批量改父级')
 
 
 def run(cdp):

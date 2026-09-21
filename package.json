@@ -10,6 +10,7 @@
     "build": "vite build --config vite.config.js",
     "extract-data": "node scripts/extract-data.js",
     "migrate-mapdata-keys": "node scripts/migrate-mapdata-keys.js",
+    "clean-cache-junk": "node scripts/clean-cache-junk.js",
     "audit-coverage": "node scripts/audit-coverage.js",
     "test": "python scripts/tests/run_tests.py",
     "dist": "npm run build && electron-builder",

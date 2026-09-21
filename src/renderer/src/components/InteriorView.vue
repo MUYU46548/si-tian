@@ -36,7 +36,8 @@
       </div>
       <div class="header-actions">
         <template v-if="!editMode">
-          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：放置/拖拽家具"><Icon name="pencil" :size="14"/> 编辑地图</button>
+          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
+                  :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：放置/拖拽家具'"><Icon name="pencil" :size="14"/> 编辑地图</button>
         </template>
       </div>
     </div>
@@ -280,8 +281,11 @@
 <script setup>
 import { drawIconOrEmoji } from '../utils/canvasIcon';
 import Icon from './Icon.vue';
-import { ref, computed, watch, onMounted, onUnmounted, reactive } from 'vue';
+import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
+// 单一写闸门（2026-09-21 补齐）：只读态下「进入编辑模式」也要拦 —— 内部视图的楼层/家具改动
+// 曾经可以照改内存、但不会落盘（静默丢数据）。
+import { guardWrite } from '../store/writeGate';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import EagleEye from './EagleEye.vue';
@@ -1208,6 +1212,8 @@ function redo() {
 
 // ===== 编辑模式 =====
 function enterEditMode() {
+  // 只读态（无项目）：内存编辑同样被拦 —— 改了不落盘 = 静默丢数据（拒绝理由由全局提示条给出）
+  if (!guardWrite('进入编辑模式').ok) return;
   editMode.value = true;
   interactionMode.value = 'pan';
 }

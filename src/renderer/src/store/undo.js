@@ -1,5 +1,7 @@
 // store/undo.js — 通用撤销/重做历史，所有编辑器共用（E2 重构：线性历史数组 + 指针）
 import { ref, computed } from 'vue';
+// 单一写闸门：只读态（无项目）下内存编辑同样拒绝，见 execute() 注释
+import { guardWrite } from './writeGate';
 
 // 命令结构
 // {
@@ -47,7 +49,15 @@ export function getHistoryByType(category) {
 }
 
 // 执行新命令（redo 是唯一写入点——调用前不要手动改数据，避免双写）
+// 🔴 只读态（无项目）：内存编辑同样拒绝（2026-09-21）——
+//    改内存但不落盘 = 用户以为改成了、其实什么都没保存，比报错更坏。
+//    拒绝时不碰数据、不进历史（零副作用），并通过 guardWrite 留下回音供 UI 提示。
+//    ⚠️ 项目文件的生命周期操作（新建/打开/恢复快照）都在切到 project 模式之后才写内存，
+//       因此不需要、也**不允许**在这里开后门（保持单一判定点）。
 export function execute(command) {
+  const label = (command && command.label) || '编辑数据';
+  const gate = guardWrite(label);
+  if (!gate.ok) return gate;
   command.timestamp = Date.now();
   // 合并连续相同类型操作（如笔刷拖拽）：保留最旧的 undo，用新的 redo 覆盖，避免堆栈爆炸
   if (command.merge && pointer.value >= 0) {

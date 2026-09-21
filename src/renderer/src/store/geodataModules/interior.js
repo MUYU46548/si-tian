@@ -2,6 +2,8 @@
 // ctx: { execute, scheduleAutoSave }
 // 注意：interiorData ref 由本模块持有，geodata.js 通过返回值取用（load/saveGeodata、selectBuilding 等）
 import { ref } from 'vue';
+// 内存编辑闸门：本模块有 3 个「不走 execute()」的直接写，只读态必须同样拦（改了不落盘 = 静默丢数据）
+import { guardWrite } from '../writeGate';
 
 export function createInteriorModule(ctx) {
   const { execute, scheduleAutoSave } = ctx;
@@ -11,6 +13,7 @@ export function createInteriorModule(ctx) {
 
   // 添加楼层到建筑
   function addFloor(buildingId, floorName = '', position = 0) {
+    if (!guardWrite('添加楼层').ok) return null;
     if (!interiorData.value[buildingId]) {
       interiorData.value[buildingId] = { buildingId, floors: [] };
     }
@@ -266,6 +269,7 @@ export function createInteriorModule(ctx) {
 
   // ===== 参考图底图 =====
   function updateInteriorReferenceImage(buildingId, refImage) {
+    if (!guardWrite('更新内部参考图').ok) return null;
     if (!interiorReferenceImages.value[buildingId]) {
       interiorReferenceImages.value[buildingId] = [];
     }
@@ -280,6 +284,7 @@ export function createInteriorModule(ctx) {
   }
 
   function removeInteriorReferenceImage(buildingId, refId) {
+    if (!guardWrite('移除内部参考图').ok) return null;
     if (!interiorReferenceImages.value[buildingId]) return;
     interiorReferenceImages.value[buildingId] = interiorReferenceImages.value[buildingId].filter(r => r.id !== refId);
     scheduleAutoSave();

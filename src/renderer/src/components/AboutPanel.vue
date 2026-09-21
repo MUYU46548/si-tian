@@ -151,7 +151,7 @@
       </div>
 
       <div class="about-footer">
-        <span class="copyright">© 2026 暮雨 · 绒花计划 (ROSA)</span>
+        <span class="copyright">© 2026 暮雨 · 绒花计划</span>
         <span class="license">MIT License</span>
         <div class="footer-actions">
           <button class="update-btn" @click="checkForUpdates">检查更新</button>

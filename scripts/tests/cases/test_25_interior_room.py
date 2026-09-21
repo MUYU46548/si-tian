@@ -10,6 +10,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
+from lib.helpers import ensure_test_building
 
 IV = "document.querySelector('.interior-container').__vueParentComponent.setupState"
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -57,17 +58,9 @@ def furniture_of_floor(cdp, building_id, floor_id):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    # 进入建筑内部（真实数据里有 1 个 building 节点「测试建筑」）
-    setup = _j(cdp, f"""(() => {{
-      const s = {STORE};
-      const b = s.nodes.find(n => n.layer === 'building');
-      if (!b) return JSON.stringify({{ err: 'no-building' }});
-      s.selectBuilding(b);
-      return JSON.stringify({{ id: b.id, name: b.name, level: s.viewLevel }});
-    }})()""")
-    if not isinstance(setup, dict) or 'id' not in setup:
-        return False, f'未找到建筑节点 {setup}'
-    if setup['level'] != 'interior':
+    # 进入建筑内部（用例自带 fixture：真实库里已不再保留测试残留节点「测试建筑」）
+    okb, setup = ensure_test_building(cdp)
+    if not okb:
         return False, f'未进入建筑内部视图 {setup}'
     wait_for(cdp, f"!!{CANVAS}", desc='内部画布挂载')
     time.sleep(0.5)

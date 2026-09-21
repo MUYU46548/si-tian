@@ -301,7 +301,7 @@ import { iconSvg } from './utils/iconSvg';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from './store/geodata';
 // 单一写闸门：清缓存等落盘写统一过 guardWrite（只读态拒绝）
-import { guardWrite, isReadOnly, writeModeReason as readOnlyReason, READONLY_BADGE } from './store/writeGate';
+import { guardWrite, isReadOnly, writeModeReason as readOnlyReason, READONLY_BADGE, lastRejection } from './store/writeGate';
 import { usePanelsStore } from './store/panels';
 import { createSampleWorld } from './utils/sampleData';
 import WorldSelector from './components/WorldSelector.vue';
@@ -352,6 +352,20 @@ const scenarioMode = ref(false);
 const statusText = ref('');
 // 状态类型：ok | err —— 驱动状态栏图标（替代原先在文案里内嵌的对错符号）
 const statusKind = ref('');
+
+// 写闸门拒绝回音（2026-09-21）：只读态下任何被拦的写操作都要在状态栏说清「为什么没反应 + 去哪儿」
+// ——覆盖落盘写（11 条入口）与内存编辑（execute / 参考图 / 剧本导入…），见 store/writeGate.js。
+// 绝不静默：只拦不提示 = 用户以为点了没反应（本项目踩过）。
+let rejectionTimer = null;
+watch(lastRejection, (r) => {
+  if (!r) return;
+  statusText.value = r.message;
+  statusKind.value = 'err';
+  if (rejectionTimer) clearTimeout(rejectionTimer);
+  rejectionTimer = setTimeout(() => {
+    if (statusKind.value === 'err') { statusText.value = ''; statusKind.value = ''; }
+  }, 5000);
+});
 const searchBar = ref(null);
 const galaxyMapRef = ref(null);
 const systemViewRef = ref(null);

@@ -1,6 +1,8 @@
 // store/geodataModules/areaEditing.js — 区域地图编辑数据（区域多边形/道路/标记/文本）
 // ctx: { execute, scheduleAutoSave }
 import { ref } from 'vue';
+// 内存编辑闸门：区域参考图两条路径不走 execute()，只读态必须同样拦
+import { guardWrite } from '../writeGate';
 
 export function createAreaEditingModule(ctx) {
   const { execute, scheduleAutoSave } = ctx;
@@ -194,6 +196,7 @@ export function createAreaEditingModule(ctx) {
 
   // ===== 参考图底图（P2 多图）=====
   function updateAreaReferenceImage(areaId, refImage) {
+    if (!guardWrite('更新区域参考图').ok) return null;
     if (!areaReferenceImages.value[areaId]) {
       areaReferenceImages.value[areaId] = [];
     }
@@ -208,6 +211,7 @@ export function createAreaEditingModule(ctx) {
   }
 
   function removeAreaReferenceImage(areaId, refId) {
+    if (!guardWrite('移除区域参考图').ok) return null;
     if (!areaReferenceImages.value[areaId]) return;
     areaReferenceImages.value[areaId] = areaReferenceImages.value[areaId].filter(r => r.id !== refId);
     scheduleAutoSave();

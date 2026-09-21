@@ -1,5 +1,7 @@
 // store/geodataModules/mapDataEditing.js — mapData 域 CRUD（地形/区域/路线/文本/标记/参考图/快照/地点簇）
 // ctx: { mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap }
+// 内存编辑闸门：参考图 3 条 + 河流懒建不走 execute()，只读态必须同样拦
+import { guardWrite } from '../writeGate';
 export function createMapDataEditingModule(ctx) {
   const { mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap } = ctx;
 
@@ -471,6 +473,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== 参考图底图（P2 多图：referenceImages 数组，按 id 更新兼容 active 语义）=====
   function updateReferenceImage(planetId, refImage) {
+    if (!guardWrite('更新参考图').ok) return null;
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
@@ -492,6 +495,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeReferenceImageById(planetId, refId) {
+    if (!guardWrite('移除参考图').ok) return null;
     const map = mapData.value[planetId];
     if (!map?.referenceImages) return;
     map.referenceImages = map.referenceImages.filter(r => r.id !== refId);
@@ -500,6 +504,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function clearReferenceImage(planetId) {
+    if (!guardWrite('清除参考图').ok) return null;
     if (!mapData.value[planetId]) return;
     delete mapData.value[planetId].referenceImage;
     mapData.value[planetId].updatedAt = new Date().toISOString();
@@ -713,6 +718,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== P1-1 河流图层（节点带 h 高度，供流向校验）=====
   function ensureRivers(planetId) {
+    if (!guardWrite('创建河流图层').ok) return null;
     if (!mapData.value[planetId]) return null;
     if (!Array.isArray(mapData.value[planetId].rivers)) mapData.value[planetId].rivers = [];
     return mapData.value[planetId].rivers;

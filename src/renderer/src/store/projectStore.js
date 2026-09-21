@@ -482,6 +482,45 @@ export const useProjectStore = defineStore('project', () => {
     return updateEntity(id, { parentId: newParentId || null });
   }
 
+  /**
+   * 批量改父级（**一条** undo）：把多个实体挂到同一父级下。
+   * 用途：把散落在行星下的设施/地点一次性归入城市或区域（用户反馈「建筑物散落在行星图上」）。
+   * 校验：目标父级存在；不得把实体移到自己或自己的后代下（防循环）；已在目标下的实体跳过。
+   * @returns {{ success: boolean, moved?: string[], unchanged?: string[], error?: string }}
+   */
+  function moveEntities(ids, newParentId) {
+    if (!project.value) return { success: false, error: '没有打开的项目' };
+    const list = Array.from(new Set((ids || []).filter(Boolean)));
+    if (!list.length) return { success: false, error: '没有选中实体' };
+    const target = newParentId || null;
+    if (target && !entities.value[target]) return { success: false, error: `目标父实体「${target}」不存在` };
+
+    const unchanged = [];
+    for (const id of list) {
+      const e = entities.value[id];
+      if (!e) return { success: false, error: `实体「${id}」不存在` };
+      if ((e.parentId || null) === target) { unchanged.push(id); continue; }
+      if (target && (target === id || forbiddenParentIds(entities.value, id).includes(target))) {
+        return { success: false, error: `不能把「${e.name}」移到自己或自己的后代下（会形成循环）` };
+      }
+    }
+    const moved = list.filter(id => !unchanged.includes(id));
+    if (!moved.length) return { success: true, moved: [], unchanged };
+
+    const before = { ...project.value.entities };
+    const after = { ...project.value.entities };
+    const stamp = new Date().toISOString();
+    for (const id of moved) after[id] = { ...after[id], parentId: target, updatedAt: stamp };
+    execute({
+      type: 'project-move-entities',
+      label: `批量改父级（${moved.length} 个实体 → ${target ? before[target].name : '顶层'}）`,
+      category: 'property',
+      undo: () => { project.value = { ...project.value, entities: before }; dirty.value = true; scheduleAutoSave(); },
+      redo: () => { project.value = { ...project.value, entities: after }; dirty.value = true; scheduleAutoSave(); },
+    });
+    return { success: true, moved, unchanged };
+  }
+
   function setEntityCoordinate(id, x, y) {
     const nx = (typeof x === 'number' && isFinite(x)) ? x : null;
     const ny = (typeof y === 'number' && isFinite(y)) ? y : null;
@@ -562,7 +601,7 @@ export const useProjectStore = defineStore('project', () => {
     refreshProjectList, chooseProjectDir, revealProject, backupNow, gitSnapshot, restoreProjectSnapshot,
     // entity CRUD
     getEntity, childrenOf, descendantsOf, parentCandidates, createEntity, updateEntity,
-    renameEntity, deleteEntity, moveEntity, setEntityCoordinate, previewEntityId, importEntities,
+    renameEntity, deleteEntity, moveEntity, moveEntities, setEntityCoordinate, previewEntityId, importEntities,
     // 画布接线（Phase 2.4）：geodata 在 project 模式下把画布状态同步进来
     syncFromCanvas, mergeCanvasPayload,
     // hyperlanes

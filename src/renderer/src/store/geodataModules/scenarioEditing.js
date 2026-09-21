@@ -4,6 +4,8 @@
 
 
 import { ref } from 'vue';
+// 内存编辑闸门：本模块有 2 个「不走 execute()」的直接写（剧本导入 / .map 图层同步），只读态必须同样拦
+import { guardWrite } from '../writeGate';
 import {
   brushFalloff, deriveLayers, SEA_LEVEL,
 } from '../../utils/heightMath';
@@ -808,7 +810,7 @@ export function createScenarioEditingModule(ctx) {
     const addedMaps = Object.keys(nextMaps).filter(k => !snapMaps[k]).length;
     const addedScen = Object.keys(nextScen).filter(k => !snapScen[k]).length;
 
-    execute({
+    const gate = execute({
       type: 'import-scenarios',
       label: mode === 'replace' ? '导入剧本（替换）' : '导入剧本（合并）',
       undo: () => {
@@ -820,6 +822,8 @@ export function createScenarioEditingModule(ctx) {
         scenarios.value = nextScen;
       },
     });
+    // 只读态：execute 被闸门拒绝 → 绝不回报「导入成功」（否则用户看到「导入完成」却什么都没进来）
+    if (gate && gate.ok === false) return { success: false, error: gate.error };
 
     saveScenarios();
     return {
@@ -1000,6 +1004,7 @@ export function createScenarioEditingModule(ctx) {
   // ============================================================
   
   function importFromScenariosJson(data) {
+    if (!guardWrite('导入剧本').ok) return null;
     if (data.baseMaps) {
       baseMaps.value = { ...baseMaps.value, ...data.baseMaps };
     }
@@ -1014,6 +1019,7 @@ export function createScenarioEditingModule(ctx) {
    * 供 PlanetMap 渲染参考图层使用
    */
   function importPlanetLayerData(planetId, data) {
+    if (!guardWrite('导入 .map 图层').ok) return;
     if (!planetId || !data) return;
     const map = mapData.value?.[planetId];
     if (!map) return;

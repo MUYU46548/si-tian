@@ -26,7 +26,8 @@
       </div>
       <div class="header-actions">
         <template v-if="!editMode">
-          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" title="进入编辑模式：绘制区域/道路/标记等"><Icon name="pencil" :size="14"/> 编辑地图</button>
+          <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
+                  :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：绘制区域/道路/标记等'"><Icon name="pencil" :size="14"/> 编辑地图</button>
         </template>
       </div>
     </div>
@@ -1932,6 +1933,8 @@ function redo() {
 }
 
 function enterEditMode() {
+  // 只读态（无项目）：内存编辑同样被拦 —— 改了不落盘 = 静默丢数据（拒绝理由由全局提示条给出）
+  if (!guardWrite('进入编辑模式').ok) return;
   editMode.value = true;
   interactionMode.value = 'pan';
 }

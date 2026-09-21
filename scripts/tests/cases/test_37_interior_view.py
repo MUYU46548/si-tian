@@ -17,6 +17,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
+from lib.helpers import ensure_test_building
 
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
 IV = "document.querySelector('.interior-container').__vueParentComponent.setupState"
@@ -40,7 +41,12 @@ def goto_interior_view(cdp, building_name=None):
     """导航到建筑内部（模拟从区域地图点击建筑节点下钻）。
 
     返回 { id, name, level, canvas }；失败返回 {'err': ...}
+    ⚠️ 建筑 fixture：真实库缓存里已不再保留测试残留节点「测试建筑」（2026-09-21 清理），
+       所以这里必须**自己保证有建筑**（缺则现场建一个），否则用例会退化成对真实数据的隐式依赖。
     """
+    okb, _b = ensure_test_building(cdp)
+    if not okb:
+        return {'err': 'building-fixture-failed', 'info': str(_b)[:200]}
     return _j(cdp, f"""(() => {{
       const s = {STORE};
       const bs = s.nodes.filter(n => n.layer === 'building');

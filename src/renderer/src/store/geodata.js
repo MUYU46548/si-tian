@@ -16,7 +16,7 @@ import { createScenarioEditingModule } from './geodataModules/scenarioEditing';
 import { createProvinceEditingModule } from './geodataModules/provinceEditing';
 // 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
 // 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
-import { setCanvasAdapter, getProjectSink } from './canvasBridge';
+import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge';
 // 纯函数：实体的规范化构造（保证写进项目文件的实体形状统一；不引入任何 IO）
 import { createEntity as createProjectEntity } from '../utils/projectSchema';
 
@@ -651,6 +651,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   function updateNodePosition(id, x, y) {
+    if (!guardWrite('移动节点').ok) return;
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.coordinate.x = x;
@@ -661,6 +662,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   // 切换节点锁定（锁定后不可拖拽/微调）
   function toggleNodeLock(id) {
+    if (!guardWrite('锁定节点').ok) return;
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       node.locked = !node.locked;
@@ -753,6 +755,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   function updateAllCoordinates(updatedNodes) {
+    if (!guardWrite('批量移动节点').ok) return;
     updatedNodes.forEach(updated => {
       const node = nodes.value.find(n => n.id === updated.id);
       if (node) {
@@ -798,6 +801,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   function removeNode(nodeId) {
+    if (!guardWrite('删除节点').ok) return null;
     const idx = nodes.value.findIndex(n => n.id === nodeId);
     if (idx === -1) return null;
 
@@ -842,6 +846,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   function updateNode(nodeId, updates) {
+    if (!guardWrite('编辑节点').ok) return null;
     const node = nodes.value.find(n => n.id === nodeId);
     if (!node) return null;
 
@@ -989,6 +994,7 @@ export const useGeodataStore = defineStore('geodata', () => {
    *   冲突（目标 id 已存在）时返回 success:false —— 调用方应降级为「只回填 sourcePath，id 不变」，不阻断转正。
    */
   function changeNodeId(oldId, newId) {
+    if (!guardWrite('节点 id 变更').ok) return { success: false, reason: '只读：未打开项目文件' };
     const node = nodes.value.find(n => n.id === oldId);
     if (!node) return { success: false, reason: '节点不存在' };
     if (!newId) return { success: false, reason: '目标 id 为空' };
@@ -1566,6 +1572,60 @@ export const useGeodataStore = defineStore('geodata', () => {
     return { ok: true, planets: targets.length, loaded, maps: Object.keys(mapData.value).length };
   }
 
+  /**
+   * 面板 → 画布的「聚焦某实体」（2026-09-21）：把画布切到该实体所在的视图并选中它。
+   * 由 `canvasBridge.setGotoHandler` 调用（面板/向导禁止 import geodata）。
+   * 视图链：world → domain → system → system_detail → planet → area → interior。
+   */
+  const VIEW_LABELS = {
+    world: '世界卡片', domain: '星域图', system: '恒星系视图', system_detail: '单恒星系',
+    planet: '行星表面', area: '区域地图', interior: '建筑内部',
+  };
+
+  function focusEntityOnCanvas(nodeId) {
+    const n = nodes.value.find(x => x.id === nodeId);
+    if (!n) return { ok: false, error: '该实体还不在画布上（项目与画布可能尚未同步）' };
+    const byId = new Map(nodes.value.map(x => [x.id, x]));
+    const chain = [];
+    const seen = new Set();
+    let cur = n;
+    while (cur && !seen.has(cur.id)) { seen.add(cur.id); chain.unshift(cur); cur = cur.parentId ? byId.get(cur.parentId) : null; }
+    const firstOf = (layer) => chain.find(x => x.layer === layer);
+    const world = firstOf('world');
+    const domain = firstOf('star_domain');
+    const system = firstOf('galaxy');
+    const planet = n.layer === 'planet' ? n : firstOf('planet');
+    const region = firstOf('region');
+
+    if (world) currentWorld.value = world;
+    if (domain) currentDomain.value = domain;
+
+    if (n.layer === 'building') {
+      if (planet) selectPlanet(planet);
+      if (region) selectArea(region);
+      selectBuilding(n);
+    } else if (region) {
+      if (planet) selectPlanet(planet);
+      selectArea(region);
+      if (n.layer !== 'region') selectedNode.value = n;
+    } else if (planet) {
+      if (system) currentSystem.value = system;
+      selectPlanet(planet);
+      if (n.layer !== 'planet') selectedNode.value = n;
+    } else if (system) {
+      selectSystem(system);
+      selectedNode.value = n;
+    } else if (domain) {
+      selectDomain(domain);
+      selectedNode.value = n;
+    } else if (world) {
+      selectWorld(world);
+    } else {
+      return { ok: false, error: '该实体没有所属世界，无法在画布上定位' };
+    }
+    return { ok: true, view: viewLevel.value, viewLabel: VIEW_LABELS[viewLevel.value] || viewLevel.value, name: n.name };
+  }
+
   // 注册适配器：projectStore 在 打开/保存/关闭 项目 时回调这里
   setCanvasAdapter({
     source: () => canvasSourceRef.value,
@@ -1585,6 +1645,9 @@ export const useGeodataStore = defineStore('geodata', () => {
     }),
   });
 
+  // 注册「聚焦实体」实现：项目面板/实体向导的「前往编辑」经此把画布切到对应视图
+  setGotoHandler(focusEntityOnCanvas);
+
   return {
     nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, currentArea, viewLevel,
     selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode, isWikilinkMatch,
@@ -1600,6 +1663,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     // 单一写闸门状态（Phase 2）：UI 侧据此做灰禁与「只读」提示
     isReadOnly: gateIsReadOnly, writeMode: gateWriteMode, readOnlyReason: gateWriteModeReason,
     writeBlockedHint: WRITE_BLOCKED_HINT,
+    // 面板 → 画布的聚焦入口（canvasBridge 注册的实现；也直接暴露给测试）
+    focusEntityOnCanvas,
     loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
     saveStatus,
     FACTION_COLORS, getFactionColor,

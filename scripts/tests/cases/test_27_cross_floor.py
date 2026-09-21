@@ -10,6 +10,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
+from lib.helpers import ensure_test_building
 
 IV = "document.querySelector('.interior-container').__vueParentComponent.setupState"
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -28,16 +29,9 @@ def _j(cdp, expr):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    # 进入建筑内部并准备两层 + 3 件家具（全部在同一个 eval 内完成，避免跨 eval 交互态丢失）
-    prep = _j(cdp, f"""(async () => {{
-      const s = {STORE};
-      const el = document.querySelector('.interior-container');
-      const b = s.nodes.find(n => n.layer === 'building');
-      if (!b) return JSON.stringify({{ err: 'no-building' }});
-      s.selectBuilding(b);
-      return JSON.stringify({{ id: b.id }});
-    }})()""")
-    if not isinstance(prep, dict) or 'id' not in prep:
+    # 进入建筑内部（用例自带 fixture：真实库已不再保留测试残留节点「测试建筑」）
+    okb, prep = ensure_test_building(cdp)
+    if not okb:
         return False, f'未找到建筑节点 {prep}'
     bid = prep['id']
     wait_for(cdp, "!!document.querySelector('.interior-container .canvas-wrapper canvas')", desc='内部画布')

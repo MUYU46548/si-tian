@@ -58,7 +58,7 @@
             <li v-for="(s, i) in dispatchSteps" :key="i">{{ s }}</li>
           </ol>
           <div class="ec-note">
-            落位与画边界在「接线」完成后与画布打通（Phase 2.4 / 2.6）；当前先落库为项目实体。
+            点「前往编辑」会把画布切到该实体所在的视图（区域 → 区域地图绘制边界，地点 → 行星表面落位，建筑 → 建筑内部）。
           </div>
         </div>
 
@@ -71,7 +71,7 @@
               <li v-for="(s, i) in created.steps" :key="i">{{ s }}</li>
             </ol>
             <div class="ec-note">
-              落位与画边界在「接线」完成后与画布打通（Phase 2.4 / 2.6）；当前先落库为项目实体。
+              点「前往编辑」会把画布切到该实体所在的视图（区域 → 区域地图绘制边界，地点 → 行星表面落位，建筑 → 建筑内部）。
             </div>
           </div>
           <div class="ec-card-actions">
@@ -114,11 +114,12 @@ const emit = defineEmits(['close', 'goto']);
 const proj = useProjectStore();
 const nameInput = ref(null);
 
-// 可创建层级：排除 building（沿用区域地图现有入口，用户已确认）与 unknown
+// 可创建层级：与区域地图的「建筑」工具保持一致（2026-09-21 用户反馈：建筑只能在区域地图里建
+// → 两条入口不一致）。building 的合法父级仍是 region / city / town / village（见 CHILD_LAYERS）。
 const CREATABLE = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon',
-  'region', 'city', 'town', 'village', 'facility', 'location'];
+  'region', 'city', 'town', 'village', 'facility', 'location', 'building'];
 
-// 层级父子关系（与 ROSA 地理系统层级一致，用于「按已选父级过滤层级下拉」）
+// 层级父子关系（与知识库地理系统层级一致，用于「按已选父级过滤层级下拉」）
 const CHILD_LAYERS = {
   world: ['star_domain'],
   star_domain: ['galaxy'],
@@ -197,6 +198,8 @@ const DISPATCH = {
   village: ['创建后在行星表面点选落位（自动吸附到陆地）。'],
   facility: ['创建后在行星表面或区域地图点选落位。'],
   location: ['创建后在行星表面或区域地图点选落位。'],
+  building: ['创建后在所属区域地图里点选落位（也可直接用区域地图的「建筑」工具）。',
+    '进入内部：选中建筑 → 「建筑内部」，可加楼层、放家具（房间模板一键铺整间）。'],
 };
 
 const dispatchSteps = computed(() => DISPATCH[layer.value] || ['落位方式待定：建议改选具体层级。']);
@@ -211,7 +214,7 @@ function reset() {
   nextTick(() => nameInput.value?.focus());
 }
 
-/** 结果卡片上的「前往编辑」：把新实体交回面板（选中 + 可改名/改父级/删除） */
+/** 结果卡片上的「前往编辑」：把新实体交回面板（选中）+ 请求画布切到该实体所在的视图 */
 function gotoEdit() {
   if (!created.value) return;
   emit('goto', created.value.entity);

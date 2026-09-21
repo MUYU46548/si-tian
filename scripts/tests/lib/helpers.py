@@ -176,6 +176,54 @@ def open_test_base_map(cdp, key='用例底图', name=None):
     return False, {'error': f'底图 fixture 求值异常：{str(v)[:200]}'}
 
 
+# ─────────────────────────────────────────────────────────────
+# 建筑 fixture（用例自带，**不依赖真实库里的残留节点**）
+#   历史遗留：真实库缓存里曾有 1 个测试产物节点「测试建筑」，用例 25 一直靠它进建筑内部
+#   （测试对真实数据的隐式依赖）。2026-09-21 清理该节点后改为用例自带 fixture：
+#   有建筑就用，没有就自建一个（挂到首个城市下，无城市则挂到首个行星下）。
+# ─────────────────────────────────────────────────────────────
+ENSURE_TEST_BUILDING_JS = r"""(() => {
+  const s = PLACEHOLDER_STORE;
+  let b = s.nodes.find(n => n.layer === 'building');
+  let created = false;
+  if (!b) {
+    const parent = s.nodes.find(n => n.layer === 'city') || s.nodes.find(n => n.layer === 'planet');
+    const id = 'fixture_building_' + Date.now();
+    s.addNode({ id, name: '用例建筑', layer: 'building', layerLabel: '建筑',
+                parentId: parent ? parent.id : null, tags: [], sourcePath: '',
+                coordinate: { x: 0, y: 0 }, draft: true });
+    b = s.nodes.find(x => x.id === id);
+    created = true;
+  }
+  if (!b) return JSON.stringify({ err: 'fixture-failed' });
+  s.selectBuilding(b);
+  return JSON.stringify({
+    id: b.id, name: b.name, created,
+    parentId: b.parentId, level: s.viewLevel,
+  });
+})()"""
+
+
+def ensure_test_building(cdp):
+    """用例自带的建筑 fixture：返回 (ok, info)。
+
+    已有建筑节点则直接选中；没有（真实库清理测试残留后）则自建一个并选中。
+    ok = 已找到/建出建筑 **且** 已进入 interior 视图。
+    """
+    expr = ENSURE_TEST_BUILDING_JS.replace(
+        'PLACEHOLDER_STORE',
+        "document.querySelector('#app').__vue_app__._instance.setupState.store")
+    v = cdp.eval(expr)
+    if isinstance(v, str) and v.startswith('{'):
+        try:
+            info = json.loads(v)
+        except ValueError:
+            return False, {'error': f'建筑 fixture 返回非 JSON：{v[:200]}'}
+        ok = bool(info.get('id')) and info.get('level') == 'interior'
+        return ok, info
+    return False, {'error': f'建筑 fixture 求值异常：{str(v)[:200]}'}
+
+
 def store(cdp):
     """注意：不要序列化整个 Pinia store（proxy 返回空 {}）。用 view_level/node_count 等具体函数"""
     return None

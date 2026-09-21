@@ -61,7 +61,7 @@ export function installDevFallback() {
         return { success: true, data: geodata };
       } catch (e) {
         console.warn(`[SiTian dev] 读不到 ${DEV_DATA.geodata}：${e.message}。`
-          + '把 E:/图书馆/ROSA/.sitian/ 下的 geodata.json + mapdata.json 复制到 '
+          + '把知识库 .sitian/ 目录下的 geodata.json + mapdata.json 复制到 '
           + 'src/renderer/dev-data/ 即可在浏览器里预览；需要写入请用 npm run dev:watch。');
         return { success: false, error: e.message };
       }

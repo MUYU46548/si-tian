@@ -41,10 +41,36 @@ export function canvasSource() {
   return adapter && typeof adapter.source === 'function' ? adapter.source() : 'vault';
 }
 
+// ── 第三条注册口（2026-09-21）：面板 → 画布的「聚焦某实体」请求 ───────────────
+// 背景：项目面板/实体向导不允许 import geodata（test_46/test_48 静态守），但「前往编辑」
+// 需要把画布切到该实体所在的视图。所以沿用同一套注册表模式：geodata 注册实现，面板只发请求。
+let gotoHandler = null;
+
+/** 由 geodata 在 setup 时注册（重复注册覆盖旧的，便于 HMR） */
+export function setGotoHandler(fn) {
+  gotoHandler = typeof fn === 'function' ? fn : null;
+  return gotoHandler;
+}
+
+/**
+ * 请求画布定位到某实体（id 或实体对象）。
+ * @returns {{ ok: boolean, view?: string, viewLabel?: string, name?: string, error?: string }}
+ */
+export function gotoEntity(entityOrId) {
+  const id = typeof entityOrId === 'string' ? entityOrId : (entityOrId && entityOrId.id);
+  if (!id) return { ok: false, error: '缺少实体 id' };
+  if (!gotoHandler) return { ok: false, error: '画布尚未就绪（geodata 未装载）' };
+  try {
+    return gotoHandler(id) || { ok: true };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
 /** 调试/测试用 */
 export function describeCanvasBridge() {
   const base = adapter && typeof adapter.describe === 'function'
     ? adapter.describe()
     : { attached: false, source: 'vault' };
-  return { ...base, projectSink: !!(sink && typeof sink.syncFromCanvas === 'function') };
+  return { ...base, projectSink: !!(sink && typeof sink.syncFromCanvas === 'function'), gotoHandler: !!gotoHandler };
 }
