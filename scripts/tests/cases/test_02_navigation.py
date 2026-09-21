@@ -13,7 +13,7 @@ def run(cdp):
     wait_for(cdp, "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
              timeout=45, desc='地理数据加载')
 
-    # 世界 → 星域总览（选中第一个有星域子节点的世界，避免空壳世界如"伏夜提加"）
+    # 世界 → 星域总览（选中第一个有星域子节点的世界，避免空壳世界如"寂原"）
     world_id = select_world_with_domains(cdp)
     import time; time.sleep(0.8)
     level = view_level(cdp)
@@ -26,7 +26,7 @@ def run(cdp):
         return False, f'selectDomain 未进入 system ({nav})'
 
     # 恒星系 → 行星地图（直接导航）
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航到行星失败 ({r})'
 

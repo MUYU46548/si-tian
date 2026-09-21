@@ -18,6 +18,8 @@ import { setWriteMode, resetWriteMode } from './writeGate';
 // 画布接线（Phase 2.4）：打开/保存/关闭项目时驱动 geodata 侧切换事实源。
 // 反向依赖也是经本注册表（geodata 不 import 本文件），无循环。
 import { getCanvasAdapter, setProjectSink } from './canvasBridge';
+// 退出前落盘（数据安全）：注册到中立注册表（App 只跟注册表打交道，不 import 本 store）
+import { registerFlush } from './quitFlush';
 import {
   createEmptyProject,
   createEntity as createEntityShape,
@@ -285,7 +287,29 @@ export const useProjectStore = defineStore('project', () => {
     return { success: true, skipped: true };
   }
 
-  function closeProject() {
+  /**
+   * 关闭项目。**先落盘、再还原**（2026-09-21 数据安全加固）。
+   *
+   * 原实现直接 `releaseProject() + 清空` —— 若此刻 `dirty`（保存失败、或正处在 800ms 自动保存窗口里），
+   * 未落盘的手绘改动被**静默丢弃**：画布回到知识库态，用户看不出刚刚那些编辑去哪了。
+   * 现在：dirty → 先 flush；**保存失败则拒绝关闭**（项目保持打开、内存数据不丢），由调用方提示去处。
+   * `{ force: true }` 供确知可丢弃的场景（如切库）使用。
+   */
+  async function closeProject({ force = false } = {}) {
+    let saved = false;
+    if (!force && project.value && dirty.value) {
+      const res = await flushSave();
+      if (!res || res.success !== true) {
+        const why = (res && res.error) || lastError.value || '未知错误';
+        lastError.value = why;
+        setSaveStatus('error', 5000);
+        return {
+          success: false,
+          error: `还有未保存的改动，且保存失败（${why}）—— 项目**未关闭**，数据仍在内存里；请重试保存（工具栏「项目」→ 保存）或先「备份」再关`,
+        };
+      }
+      saved = true;
+    }
     // Phase 2.4：先让画布回到知识库工作态（恢复打开项目前的留底），再清项目内存态
     const adapter = getCanvasAdapter();
     if (adapter && typeof adapter.releaseProject === 'function') {
@@ -298,7 +322,14 @@ export const useProjectStore = defineStore('project', () => {
     setSaveStatus('idle');
     // 回到「无项目」默认模式：READONLY_WITHOUT_PROJECT=true 时即切换为只读（决策 1）
     resetWriteMode('项目已关闭');
+    return { success: true, saved };
   }
+
+  // 退出前落盘（数据安全承诺）：只有项目处于 dirty 才写（priority 10 = 排在画布之后）。
+  registerFlush('project', async () => {
+    if (!project.value || !dirty.value) return { success: true, skipped: true };
+    return flushSave();
+  }, 10);
 
   // ===== 文件系统侧（列表 / 目录 / 备份 / 定位）=====
   async function refreshProjectList(dir = '') {

@@ -34,21 +34,21 @@ def _seed(cdp):
     return cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
-      if (!s.baseMaps['德斯特星']) s.addBaseMap('德斯特星', { name: '德斯特星' });
-      s.baseMaps['德斯特星'].terrain.length = 0;
+      if (!s.baseMaps['云陇大陆']) s.addBaseMap('云陇大陆', { name: '云陇大陆' });
+      s.baseMaps['云陇大陆'].terrain.length = 0;
       const mk = (id, x0) => ({ id, name: '省' + id.slice(-1).toUpperCase(),
         points: [{x:x0,y:150},{x:x0+140,y:150},{x:x0+140,y:290},{x:x0,y:290}],
         biome: 'temperate', coast: true });
-      ['prov_a','prov_b'].forEach((id, i) => s.addBaseProvince('德斯特星', mk(id, 200 + i*200)));
+      ['prov_a','prov_b'].forEach((id, i) => s.addBaseProvince('云陇大陆', mk(id, 200 + i*200)));
       const P = (id, name, color) => ({ id, name, color });
-      s.createScenario('德斯特星/甲时代', {
-        ownerKey: '德斯特星', name: '甲时代', order: 1,
+      s.createScenario('云陇大陆/甲时代', {
+        ownerKey: '云陇大陆', name: '甲时代', order: 1,
         era: { roman: 'Ⅰ', label: '甲', startYear: '2000', endYear: '2010' },
         polities: [P('A1','甲国','#c23b3b')],
         ownership: { prov_a:'A1', prov_b:'A1' },
       });
-      s.createScenario('德斯特星/乙时代', {
-        ownerKey: '德斯特星', name: '乙时代', order: 2,
+      s.createScenario('云陇大陆/乙时代', {
+        ownerKey: '云陇大陆', name: '乙时代', order: 2,
         era: { roman: 'Ⅱ', label: '乙', startYear: '2010', endYear: '2020' },
         polities: [P('B1','乙国','#4a90d9'), P('B2','乙南','#e6a23c')],
         ownership: { prov_a:'B1', prov_b:'B2' },
@@ -63,7 +63,7 @@ def run(cdp):
     if r != 'ok':
         return False, f'进入剧本模式失败: {r}'
     # 底图 fixture：司天不再默认建/选示例底图（见 helpers.open_test_base_map 说明）
-    bm_ok, bm_info = open_test_base_map(cdp, '德斯特星')
+    bm_ok, bm_info = open_test_base_map(cdp, '云陇大陆')
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
     if _seed(cdp) != 2:
@@ -117,7 +117,7 @@ def run(cdp):
     time.sleep(0.35)
     after = json.loads(cdp.eval(f"""(() => {{
       const s = {SM};
-      const pol = s.store.scenarios['德斯特星/乙时代'].polities.find(p => p.id === 'B2');
+      const pol = s.store.scenarios['云陇大陆/乙时代'].polities.find(p => p.id === 'B2');
       const badge = document.querySelector('[data-testid="tl-era-1"] .tl-badge');
       return JSON.stringify({{
         successorOf: pol.successorOf,
@@ -136,7 +136,7 @@ def run(cdp):
     un = json.loads(cdp.eval(f"""(() => {{
       const s = {SM};
       s.store.undo();
-      const pol = s.store.scenarios['德斯特星/乙时代'].polities.find(p => p.id === 'B2');
+      const pol = s.store.scenarios['云陇大陆/乙时代'].polities.find(p => p.id === 'B2');
       return JSON.stringify({{successorOf: pol.successorOf ?? null, changed: s.timeline.eraChg[1].changed}});
     }})()"""))
     if un['successorOf'] is not None or un['changed'] != ['prov_b']:
@@ -157,12 +157,12 @@ def run(cdp):
       input.value = '2015';
       input.dispatchEvent(new Event('change', {{bubbles:true}}));
       await new Promise(r => setTimeout(r, 200));
-      const written = s.store.scenarios['德斯特星/乙时代'].changeYears;
+      const written = s.store.scenarios['云陇大陆/乙时代'].changeYears;
       const effYear = s.timeline.eraChg[1].year.prov_b;
       const clearBtn = document.querySelector('[data-testid="slp-cyclear-prov_b"]');
       if (clearBtn) clearBtn.click();
       await new Promise(r => setTimeout(r, 200));
-      const cleared = s.store.scenarios['德斯特星/乙时代'].changeYears;
+      const cleared = s.store.scenarios['云陇大陆/乙时代'].changeYears;
       const backYear = s.timeline.eraChg[1].year.prov_b;
       return JSON.stringify({{autoYear, written, effYear, cleared, backYear,
                              hadClearBtn: !!clearBtn}});

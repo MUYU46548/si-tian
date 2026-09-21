@@ -17,6 +17,8 @@ import { createProvinceEditingModule } from './geodataModules/provinceEditing';
 // 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
 // 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
 import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge';
+// 退出前落盘（数据安全）：注册到中立注册表，App 退出时统一调用（App 不直接碰 store）
+import { registerFlush } from './quitFlush';
 // 纯函数：实体的规范化构造（保证写进项目文件的实体形状统一；不引入任何 IO）
 import { createEntity as createProjectEntity } from '../utils/projectSchema';
 
@@ -522,6 +524,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 模块级可变状态：自动保存定时器（geodata 域持有，经 ctx 以函数引用方式供各子模块调度）
   let autoSaveTimer = null;
   let autoSaveMapTimer = null;
+  // 待保存的行星集合：flush 时用它把「还在防抖窗口里」的地图改动真正写掉。
+  // 🔴 原 flushSave 只是 clearTimeout —— **清掉定时器等于把改动直接扔掉**（退出/关闭时丢手绘）。
+  const pendingMapIds = new Set();
 
   function scheduleAutoSave() {
     if (!autoSaveEnabled.value) return;
@@ -536,16 +541,29 @@ export const useGeodataStore = defineStore('geodata', () => {
   function scheduleAutoSaveMap(planetId) {
     if (!autoSaveEnabled.value) return;
     if (gateIsReadOnly.value) return;
+    if (planetId) pendingMapIds.add(planetId);
     if (autoSaveMapTimer) clearTimeout(autoSaveMapTimer);
     autoSaveMapTimer = setTimeout(async () => {
-      if (mapData.value[planetId]) {
-        await saveMapData(planetId, mapData.value[planetId]);
+      const ids = [...pendingMapIds];
+      pendingMapIds.clear();
+      for (const id of ids) {
+        if (mapData.value[id]) await saveMapData(id, mapData.value[id]);
       }
       autoSaveMapTimer = null;
     }, AUTO_SAVE_DELAY);
   }
 
+  /**
+   * 把「还没落盘的改动」立刻写完（退出 / 关闭项目 / 切库前调用）。
+   * ⚠️ 三条链路都要真的保存：地理数据、行星地图（防抖窗口内的）、剧本。
+   *    只 clearTimeout 不保存 = 静默丢改动（曾经的实现就是这样，用户手绘时间直接蒸发）。
+   */
   async function flushSave() {
+    if (scenarioSaveTimer) {
+      clearTimeout(scenarioSaveTimer);
+      scenarioSaveTimer = null;
+      try { await saveScenarios(); } catch (e) { console.warn('[flush] 保存剧本失败:', e); }
+    }
     if (autoSaveTimer) {
       clearTimeout(autoSaveTimer);
       autoSaveTimer = null;
@@ -555,7 +573,18 @@ export const useGeodataStore = defineStore('geodata', () => {
       clearTimeout(autoSaveMapTimer);
       autoSaveMapTimer = null;
     }
+    const ids = [...pendingMapIds];
+    pendingMapIds.clear();
+    for (const id of ids) {
+      try {
+        if (mapData.value[id]) await saveMapData(id, mapData.value[id]);
+      } catch (e) { console.warn('[flush] 保存行星地图失败:', id, e); }
+    }
   }
+
+  // 退出前落盘（数据安全承诺）：主进程 quit 前会调 quitFlush.flushAll()，
+  // 这里把画布侧未落盘的改动写完（priority 0 = 先于项目落盘执行）。
+  registerFlush('geodata', async () => { await flushSave(); return { success: true }; }, 0);
 
   // ===== 地图数据持久化 =====
   // 多世界坐标缓存隔离（P2-2）：写盘 key = worldId/planetId（如 幻境/乐园星），

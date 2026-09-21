@@ -84,7 +84,7 @@ def run(cdp):
         return False, f'未知 style 未回落到自身颜色：{styles["unknown"]}'
 
     # ── 2. 进入行星 + Shift+J 道路模式 ──────────────────────────────────
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container .canvas-wrapper canvas')", desc='行星画布挂载')
@@ -123,7 +123,7 @@ def run(cdp):
     pts = picks['points']
 
     before = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       return (md.routes || []).length;
     }})()""")
 
@@ -138,7 +138,7 @@ def run(cdp):
     elapsed = time.time() - t0
 
     road = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const rs = md.routes || [];
       const r = rs[rs.length - 1];
       return JSON.stringify({{
@@ -166,7 +166,7 @@ def run(cdp):
     # ── 4. 选中后切样式 = 一条 undo ────────────────────────────────────
     sel = _j(cdp, f"""(() => {{
       const pm = {PM};
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.routes || [])[md.routes.length - 1];
       pm.selectedRoute = r;
       return JSON.stringify({{ id: r.id, style: r.style }});
@@ -177,7 +177,7 @@ def run(cdp):
     cdp.eval("document.querySelector('[data-testid=\"road-style-trail\"]').click()")
     time.sleep(0.5)
     changed = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.routes || []).find(x => x.id === '{sel["id"]}');
       return JSON.stringify({{ style: r.style, color: r.color, dashed: r.dashed }});
     }})()""")
@@ -187,7 +187,7 @@ def run(cdp):
     _j(cdp, f"(() => {{ {STORE}.undo(); return 'ok'; }})()")
     time.sleep(0.4)
     undone = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.routes || []).find(x => x.id === '{sel["id"]}');
       return JSON.stringify({{ style: r.style, color: r.color, dashed: r.dashed }});
     }})()""")
@@ -198,7 +198,7 @@ def run(cdp):
     time.sleep(1.6)
     _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, f"""(() => {{
-      const p = window.__probe.lastMapPayload('乐园星');
+      const p = window.__probe.lastMapPayload('曜川星');
       if (!p) return JSON.stringify({{ n: 0 }});
       const r = (p.data.routes || []).find(x => x.id === '{sel["id"]}');
       const round = JSON.parse(JSON.stringify(p.data)).routes.find(x => x.id === '{sel["id"]}');
@@ -210,7 +210,7 @@ def run(cdp):
         return False, f'道路样式未进入保存载荷/JSON 往返丢失：{payload}'
 
     # 收尾
-    cdp.eval(f"(() => {{ const s = {STORE}; s.removeRoute('乐园星', '{sel['id']}'); return 'ok'; }})()")
+    cdp.eval(f"(() => {{ const s = {STORE}; s.removeRoute('曜川星', '{sel['id']}'); return 'ok'; }})()")
     _j(cdp, f"(() => {{ {PM}.setInteractionMode('pan'); return 'ok'; }})()")
     return True, (
         f'道路编辑器通过：4 种样式绘制参数两两不同（{styles["unique"]} 个唯一签名）；无 style 旧数据仍走自身 color/dashed；'

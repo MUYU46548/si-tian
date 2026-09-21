@@ -25,8 +25,8 @@ AREA_EL = "document.querySelector('.area-map-container')"
 AM = AREA_EL + ".__vueParentComponent.setupState"
 CANVAS = "document.querySelector('.area-map-container .canvas-wrapper canvas')"
 
-# 现有真实库中 乐园星 下的区域节点（geodata：庆云岛 / 两城流域）
-DEFAULT_AREA = '庆云岛'
+# 现有真实库中 曜川星 下的区域节点（geodata：青螺岛 / 双溪流域）
+DEFAULT_AREA = '青螺岛'
 
 
 def _j(cdp, expr):

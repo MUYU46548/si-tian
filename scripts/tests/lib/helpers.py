@@ -132,7 +132,7 @@ def ensure_case_state(cdp):
 
 # ─────────────────────────────────────────────────────────────
 # 底图 fixture（用例自带，**不依赖产品默认值**）
-#   2026-09-20 起司天不再硬编码/凭空注入任何示例底图（曾默认叫「德斯特星」—— 那是暮雨自用剧本名，
+#   2026-09-20 起司天不再硬编码/凭空注入任何示例底图（曾默认叫「云陇大陆」—— 那是暮雨自用剧本名，
 #   已按用户决策移除：新项目打开剧本模式就是「还没有底图」）。所以凡需要底图的用例必须自己声明：
 #   建一张 + 让 ScenarioMap 选中它。否则 store.baseMaps 为空、组件 baseMapKey 为 ''，
 #   时间轴/谱系/像素断言全部会看到空数据（「底图未加载 / eraChg = [] / eras: 0」）。
@@ -242,9 +242,9 @@ def planet_map(cdp):
     return cdp.eval("(() => { const el = document.querySelector('.planet-map-container'); return el ? el.__vueParentComponent.setupState : null; })()")
 
 
-def goto_planet(cdp, planet_name='乐园星'):
+def goto_planet(cdp, planet_name='曜川星'):
     """直接导航到指定行星地图（世界→星域→星系→行星）。
-    自底向上锚定：优先取有星域子节点的世界（避免取到空壳世界如"伏夜提加"，
+    自底向上锚定：优先取有星域子节点的世界（避免取到空壳世界如"寂原"，
     否则其 star_domain/galaxy 查找返回 undefined，抛 TypeError）。"""
     ensure_data_ready(cdp)
     expr = f"""(() => {{

@@ -88,21 +88,21 @@ def _seed(cdp):
     return cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
-      if (!s.baseMaps['德斯特星']) s.addBaseMap('德斯特星', { name: '德斯特星' });
-      s.baseMaps['德斯特星'].terrain.length = 0;
+      if (!s.baseMaps['云陇大陆']) s.addBaseMap('云陇大陆', { name: '云陇大陆' });
+      s.baseMaps['云陇大陆'].terrain.length = 0;
       const mk = (id, x0) => ({ id, name: '',          // 空名 → 不画省名，避免文字像素干扰采样
         points: [{x:x0,y:200},{x:x0+240,y:200},{x:x0+240,y:440},{x:x0,y:440}],
         biome: 'temperate', coast: true });
-      ['prov_a','prov_b'].forEach((id, i) => s.addBaseProvince('德斯特星', mk(id, 300 + i*400)));
+      ['prov_a','prov_b'].forEach((id, i) => s.addBaseProvince('云陇大陆', mk(id, 300 + i*400)));
       const P = (id, name, color) => ({ id, name, color });
-      s.createScenario('德斯特星/甲时代', {
-        ownerKey: '德斯特星', name: '甲时代', order: 1,
+      s.createScenario('云陇大陆/甲时代', {
+        ownerKey: '云陇大陆', name: '甲时代', order: 1,
         era: { roman: 'Ⅰ', label: '甲', startYear: '2000', endYear: '2010' },
         polities: [P('A1','甲国','#c23b3b')],
         ownership: { prov_a:'A1', prov_b:'A1' },
       });
-      s.createScenario('德斯特星/乙时代', {
-        ownerKey: '德斯特星', name: '乙时代', order: 2,
+      s.createScenario('云陇大陆/乙时代', {
+        ownerKey: '云陇大陆', name: '乙时代', order: 2,
         era: { roman: 'Ⅱ', label: '乙', startYear: '2010', endYear: '2020' },
         polities: [P('B1','乙国','#4a90d9'), P('B2','乙南','#e6a23c')],
         ownership: { prov_a:'B1', prov_b:'B2' },
@@ -121,7 +121,7 @@ def run(cdp):
     if r != 'ok':
         return False, f'进入剧本模式失败: {r}'
     # 底图 fixture：司天不再默认建/选示例底图（见 helpers.open_test_base_map 说明）
-    bm_ok, bm_info = open_test_base_map(cdp, '德斯特星')
+    bm_ok, bm_info = open_test_base_map(cdp, '云陇大陆')
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
     if _seed(cdp) != 2:

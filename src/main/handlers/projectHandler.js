@@ -22,6 +22,12 @@ const { execFile } = require('child_process');
 const PROJECT_EXT = '.sitian';
 const BACKUP_KEEP = 10;
 
+// 会话基线：每次「打开项目」时把文件原样复制一份，固定文件名、覆盖式（永远只有 1 份）。
+// 为什么必须要它：快照轮转（BACKUP_KEEP=10）会被高频自动保存迅速刷光 —— 打开项目大改一场后，
+// 备份目录里剩的全是最近几分钟的状态，「打开时的样子」永久丢失。基线不参与轮转，专门兜这一层。
+// （用户原话：没有数据安全承诺的系统，投进去的手绘时间是无担保贷款。）
+const BASELINE_TAG = '.session-baseline' + PROJECT_EXT;
+
 // 与 `src/main/index.js` 的 sanitizeFileName（batch-import-notes 用）共用同一套非法字符表。
 // ⚠️ 清洗顺序与 index.js 相反：**先替换非法字符、再取 basename**。
 //    index.js 先 basename 是因为它处理的只是一个词条名；项目名里用户可能写 `世界/子项目`，
@@ -92,13 +98,39 @@ async function makeBackup(filePath, keep = BACKUP_KEEP) {
   const dest = await uniquePath(path.join(dir, `${base}-${stamp()}.sitian`));
   await fs.copyFile(filePath, dest);
   // 轮转：只保留最近 keep 份
+  // ⚠️ 排除会话基线（BASELINE_TAG）：它是「打开时状态」的唯一留底，绝不能被轮转删掉。
   try {
-    const all = (await fs.readdir(dir)).filter(f => f.endsWith(PROJECT_EXT)).sort();
+    const all = (await fs.readdir(dir))
+      .filter(f => f.endsWith(PROJECT_EXT) && !f.endsWith(BASELINE_TAG))
+      .sort();
     for (const f of all.slice(0, Math.max(0, all.length - keep))) {
       await fs.unlink(path.join(dir, f)).catch(() => {});
     }
   } catch (e) { /* 轮转失败不影响备份本身 */ }
   return { backedUp: true, backupPath: dest, backupDir: dir };
+}
+
+/** 会话基线文件路径：`<name>.sitian.backups/<name>.session-baseline.sitian` */
+function sessionBaselinePath(filePath) {
+  const dir = backupDirFor(filePath);
+  const base = path.basename(filePath, PROJECT_EXT);
+  return path.join(dir, `${base}${BASELINE_TAG}`);
+}
+
+/**
+ * 写入/覆盖「会话基线」= 当前磁盘上项目文件的副本（打开项目时调用）。
+ * 覆盖式（恒定 1 份）、不参与轮转 → 「本次会话开始前的数据」永远可回滚。
+ */
+async function makeSessionBaseline(filePath) {
+  try {
+    await fs.access(filePath);
+  } catch (e) {
+    return { backedUp: false, reason: 'no-existing-file' };
+  }
+  const dest = sessionBaselinePath(filePath);
+  await ensureDir(path.dirname(dest));
+  await fs.copyFile(filePath, dest);
+  return { backedUp: true, baselinePath: dest, backupDir: path.dirname(dest) };
 }
 
 /** 原子写：先写 .tmp-<ts> 再 rename（rename 在同一卷上是原子的） */
@@ -278,8 +310,14 @@ function registerProjectHandlers(deps) {
         target = res.filePaths[0];
       }
       const read = await readProjectFile(target);
+      // 数据安全：打开时留一份「会话基线」（覆盖式，1 份，不参与轮转）
+      //   → 本次会话里无论自动保存刷了多少次，「打开时的样子」永远能取回。
+      let baseline = { backedUp: false };
+      try {
+        baseline = await makeSessionBaseline(target);
+      } catch (e) { /* 基线失败不阻塞打开 */ }
       await setLastProjectPath(target);
-      return ok({ ...read, dir: path.dirname(target) });
+      return ok({ ...read, dir: path.dirname(target), baselinePath: baseline.baselinePath || null });
     } catch (err) {
       return fail(err);
     }
@@ -356,11 +394,14 @@ function registerProjectHandlers(deps) {
 module.exports = {
   PROJECT_EXT,
   BACKUP_KEEP,
+  BASELINE_TAG,
   ILLEGAL_CHARS,
   sanitizeFileName,
   isProjectPath,
   backupDirFor,
   makeBackup,
+  sessionBaselinePath,
+  makeSessionBaseline,
   atomicWriteJson,
   writeProjectFile,
   readProjectFile,

@@ -21,7 +21,7 @@ def run(cdp):
     # 错误收集器：渲染管线内的未捕获异常（含 ReferenceError）都会落进 window.__errs
     cdp.eval("(() => { window.__errs = []; window.addEventListener('error', e => window.__errs.push(String(e.message))); return 'ok'; })()")
 
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container canvas')", desc='行星画布挂载')

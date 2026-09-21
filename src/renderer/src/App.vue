@@ -337,6 +337,8 @@ const HistoryPanel = defineAsyncComponent(() => import('./components/HistoryPane
 const ProjectPanel = defineAsyncComponent(() => import('./components/ProjectPanel.vue'));
 import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
 import { useLayersStore } from './store/layers';
+// 退出前落盘（数据安全）：中立注册表 —— App 不直接 import 任何 store 实现，只驱动 flushAll()
+import { flushAll } from './store/quitFlush';
 import { useTheme } from './composables/useTheme';
 import { useBookmarks } from './composables/useBookmarks';
 import { measurePerformance, cleanupTestNodes } from './utils/stressTest';
@@ -1205,6 +1207,20 @@ onMounted(async () => {
     window.sitianAPI.backupSitianCache().catch(() => {});
   }
   document.addEventListener('click', handleClickOutside);
+
+  // 退出前落盘（数据安全承诺）：主进程在真正 quit 前会等这里回执（2.5s 超时则直接放行）。
+  // 画布未落盘的编辑（含还在防抖窗口里的行星地图/剧本）与 dirty 的项目文件都在这里写完。
+  window.sitianAPI?.onFlushBeforeQuit?.(async (reason) => {
+    try {
+      const results = await flushAll(reason);
+      const bad = results.filter(r => r.ok === false);
+      if (bad.length) console.warn('[quit] 有改动未能落盘:', bad);
+    } catch (err) {
+      console.warn('[quit] 退出前落盘异常:', err);
+    } finally {
+      try { window.sitianAPI?.notifyFlushDone?.(); } catch (e) { /* noop */ }
+    }
+  });
 });
 
 function closeAppPanels() {
@@ -1223,10 +1239,11 @@ onUnmounted(() => {
 });
 
 function handleBeforeUnload(e) {
+  // ⚠️ 刻意**不**再 preventDefault：在 Electron 里阻止 beforeunload = 窗口静默关不掉
+  //    （不会弹对话框，用户只能去任务管理器强杀）—— 那比丢数据更糟。
+  //    未落盘的改动改由「主进程 quit 前 flush」保障（main/index.js 的 before-quit → quitFlush）。
   if (dirty.value) {
-    e.preventDefault();
-    e.returnValue = '您有未保存的编辑，确定要离开吗？';
-    return e.returnValue;
+    console.warn('[quit] 仍有未落盘的画布改动：已交给退出前 flush 处理');
   }
 }
 

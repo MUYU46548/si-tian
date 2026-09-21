@@ -1,0 +1,3393 @@
+{
+ "nodes": [
+  {
+   "id": "寂原",
+   "name": "寂原",
+   "layer": "world",
+   "layerLabel": "世界",
+   "parentId": null,
+   "tags": [
+    "地理系统",
+    "寂原"
+   ],
+   "sourcePath": "合成数据/world/寂原.md",
+   "wikilinks": [
+    "霁岐记",
+    "潮汐界",
+    "澜岐记",
+    "墨岐记",
+    "霜岐记",
+    "潮汐界",
+    "炽岐记",
+    "隐岐记"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": 231
+   },
+   "uuid": "c83425c8-e762-5fab-e925-0e10672e0187"
+  },
+  {
+   "id": "潮汐界",
+   "name": "潮汐界",
+   "layer": "world",
+   "layerLabel": "世界",
+   "parentId": null,
+   "tags": [
+    "地理系统",
+    "潮汐界"
+   ],
+   "sourcePath": "合成数据/world/潮汐界.md",
+   "wikilinks": [
+    "朔岐记",
+    "潮汐界基础年表",
+    "砚岐记",
+    "翡岐记",
+    "流岚之境",
+    "穹岐记",
+    "寂原",
+    "炽岐记",
+    "霁岐记",
+    "潮汐界文明",
+    "榆岐记",
+    "霜垣哨",
+    "潮汐界基础年表",
+    "燎岐记",
+    "岑岐记",
+    "漪岐记"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 813,
+    "y": 286
+   },
+   "uuid": "625f033c-6ef0-b166-141c-79717a977573"
+  },
+  {
+   "id": "归岚星域",
+   "name": "归岚星域",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "潮汐界",
+   "tags": [
+    "归岚星域",
+    "地理系统",
+    "星域"
+   ],
+   "sourcePath": "合成数据/star_domain/归岚星域.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": 131
+   },
+   "uuid": "397c419a-ab22-0ca6-0645-215577739396"
+  },
+  {
+   "id": "霁川",
+   "name": "霁川",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "陶土界",
+   "tags": [
+    "地理系统",
+    "星域",
+    "霁川"
+   ],
+   "sourcePath": "合成数据/star_domain/霁川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 864,
+    "y": 184
+   },
+   "uuid": "ad911bff-d7b4-4eb0-af33-0dafce0894f3"
+  },
+  {
+   "id": "澜川",
+   "name": "澜川",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "陶土界",
+   "tags": [
+    "地理系统",
+    "星域",
+    "澜川"
+   ],
+   "sourcePath": "合成数据/star_domain/澜川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 917,
+    "y": 311
+   },
+   "uuid": "1103b36b-2bc4-828c-33a0-b51faef69789"
+  },
+  {
+   "id": "墨川",
+   "name": "墨川",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "陶土界",
+   "tags": [
+    "地理系统",
+    "星域",
+    "墨川"
+   ],
+   "sourcePath": "合成数据/star_domain/墨川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 864,
+    "y": 438
+   },
+   "uuid": "437158f2-9ae0-4042-b251-a15d04d42d56"
+  },
+  {
+   "id": "霜川",
+   "name": "霜川",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "潮汐界",
+   "tags": [
+    "地理系统",
+    "星域",
+    "霜川"
+   ],
+   "sourcePath": "合成数据/star_domain/霜川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": 491
+   },
+   "uuid": "29679638-7613-1312-554c-d994181d3c47"
+  },
+  {
+   "id": "炽川",
+   "name": "炽川",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "陶土界",
+   "tags": [
+    "地理系统",
+    "星域",
+    "炽川"
+   ],
+   "sourcePath": "合成数据/star_domain/炽川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 610,
+    "y": 438
+   },
+   "uuid": "2ea03f17-bffd-5f09-4951-29b2191876c8"
+  },
+  {
+   "id": "隐川",
+   "name": "隐川",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "潮汐界",
+   "tags": [
+    "地理系统",
+    "星域",
+    "隐川"
+   ],
+   "sourcePath": "合成数据/star_domain/隐川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 557,
+    "y": 311
+   },
+   "uuid": "27ab37b3-470b-6d91-4edf-5af9262b9866"
+  },
+  {
+   "id": "朔川",
+   "name": "朔川",
+   "layer": "star_domain",
+   "layerLabel": "星域",
+   "parentId": "潮汐界",
+   "tags": [
+    "地理系统",
+    "星域",
+    "朔川"
+   ],
+   "sourcePath": "合成数据/star_domain/朔川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 610,
+    "y": 184
+   },
+   "uuid": "7b323e35-36d4-985b-0f97-29fc5c00ccd2"
+  },
+  {
+   "id": "曜川星系",
+   "name": "曜川星系",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "归岚星域",
+   "tags": [
+    "曜川星系",
+    "地理系统",
+    "星系",
+    "衡佑"
+   ],
+   "sourcePath": "合成数据/galaxy/曜川星系.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": 31
+   },
+   "uuid": "f733aeb0-6192-7c23-42a0-f771869c6e9f"
+  },
+  {
+   "id": "砚川",
+   "name": "砚川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "澜川",
+   "tags": [
+    "模板文件"
+   ],
+   "sourcePath": "合成数据/galaxy/砚川.md",
+   "wikilinks": [
+    "岚岐记",
+    "砾岐记"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 833,
+    "y": 48
+   },
+   "uuid": "39855329-3a4f-81a8-183b-c9eef6a6b2de"
+  },
+  {
+   "id": "翡川",
+   "name": "翡川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "霜川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "翡川",
+    "XA-86"
+   ],
+   "sourcePath": "合成数据/galaxy/翡川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 917,
+    "y": 97
+   },
+   "uuid": "2d89606f-5411-93de-01bc-02311d7bbbd5"
+  },
+  {
+   "id": "穹川",
+   "name": "穹川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "澜川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "穹川"
+   ],
+   "sourcePath": "合成数据/galaxy/穹川.md",
+   "wikilinks": [
+    "槐岐记",
+    "眠岐记",
+    "岚岐记",
+    "烬岐记"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 979,
+    "y": 171
+   },
+   "uuid": "3ea99bc3-0cb8-5622-2546-767a3425efd4"
+  },
+  {
+   "id": "榆川",
+   "name": "榆川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "澜川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "榆川"
+   ],
+   "sourcePath": "合成数据/galaxy/榆川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 1013,
+    "y": 262
+   },
+   "uuid": "7900c6d9-bd5f-f0f1-482e-3477234df52d"
+  },
+  {
+   "id": "燎川",
+   "name": "燎川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "霜川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "燎川"
+   ],
+   "sourcePath": "合成数据/galaxy/燎川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 1013,
+    "y": 360
+   },
+   "uuid": "0c95083d-7b07-9c32-93ea-c3d4fd1e219b"
+  },
+  {
+   "id": "岑川",
+   "name": "岑川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "隐川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "岑川"
+   ],
+   "sourcePath": "合成数据/galaxy/岑川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 979,
+    "y": 451
+   },
+   "uuid": "a95fe552-77e7-f547-90ce-bdfa424eb579"
+  },
+  {
+   "id": "漪川",
+   "name": "漪川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "墨川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "漪川"
+   ],
+   "sourcePath": "合成数据/galaxy/漪川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 917,
+    "y": 525
+   },
+   "uuid": "49d867c1-cdd5-e736-946c-a1e08cf37495"
+  },
+  {
+   "id": "岚川",
+   "name": "岚川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "炽川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "岚川"
+   ],
+   "sourcePath": "合成数据/galaxy/岚川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 833,
+    "y": 574
+   },
+   "uuid": "4ba3b294-65de-2b6e-7621-2e5271095ecb"
+  },
+  {
+   "id": "砾川",
+   "name": "砾川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "朔川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "砾川"
+   ],
+   "sourcePath": "合成数据/galaxy/砾川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": 591
+   },
+   "uuid": "40fef1a5-6063-472f-e2b4-eb06bd6722e6"
+  },
+  {
+   "id": "槐川",
+   "name": "槐川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "霁川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "槐川"
+   ],
+   "sourcePath": "合成数据/galaxy/槐川.md",
+   "wikilinks": [
+    "岚岐记",
+    "槐岐记"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 641,
+    "y": 574
+   },
+   "uuid": "620ef0b8-ba3d-06fb-2130-0f11e0767aa9"
+  },
+  {
+   "id": "眠川",
+   "name": "眠川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "墨川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "眠川"
+   ],
+   "sourcePath": "合成数据/galaxy/眠川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 557,
+    "y": 525
+   },
+   "uuid": "a97d4d83-cb1d-f853-5f4c-108f16da8900"
+  },
+  {
+   "id": "烬川",
+   "name": "烬川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "霜川",
+   "tags": [
+    "场景地点",
+    "星系",
+    "烬川"
+   ],
+   "sourcePath": "合成数据/galaxy/烬川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 495,
+    "y": 451
+   },
+   "uuid": "b3b17ff7-d5cf-edef-5b57-2404e0dd5553"
+  },
+  {
+   "id": "沧川",
+   "name": "沧川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "霜川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "沧川"
+   ],
+   "sourcePath": "合成数据/galaxy/沧川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 461,
+    "y": 360
+   },
+   "uuid": "ec3c51d2-5397-cf90-8e64-900e7369443d"
+  },
+  {
+   "id": "沅川",
+   "name": "沅川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "朔川",
+   "tags": [
+    "地理系统",
+    "沅川",
+    "星域"
+   ],
+   "sourcePath": "合成数据/galaxy/沅川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 461,
+    "y": 262
+   },
+   "uuid": "e51af6a7-972c-de2f-8373-6094a4d8e694"
+  },
+  {
+   "id": "潞川",
+   "name": "潞川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "隐川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "潞川"
+   ],
+   "sourcePath": "合成数据/galaxy/潞川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 495,
+    "y": 171
+   },
+   "uuid": "d9d233a7-66aa-8234-366f-2df4830321f1"
+  },
+  {
+   "id": "珉川",
+   "name": "珉川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "归岚星域",
+   "tags": [
+    "地理系统",
+    "珉川",
+    "星系"
+   ],
+   "sourcePath": "合成数据/galaxy/珉川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 557,
+    "y": 97
+   },
+   "uuid": "2488f04c-400c-3c8e-dc35-f0b9ce92a9a3"
+  },
+  {
+   "id": "瑄川",
+   "name": "瑄川",
+   "layer": "galaxy",
+   "layerLabel": "星系",
+   "parentId": "澜川",
+   "tags": [
+    "地理系统",
+    "星系",
+    "瑄川"
+   ],
+   "sourcePath": "合成数据/galaxy/瑄川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 641,
+    "y": 48
+   },
+   "uuid": "82729971-dbdc-3ce4-5ab5-8f45346983e0"
+  },
+  {
+   "id": "曜川星",
+   "name": "曜川星",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "曜川星系",
+   "tags": [
+    "曜川星",
+    "地理系统",
+    "行星",
+    "衡佑Ⅲ"
+   ],
+   "sourcePath": "合成数据/planet/曜川星.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": -169
+   },
+   "uuid": "6f30c239-54aa-650b-2355-4db19a4358cd"
+  },
+  {
+   "id": "篷川",
+   "name": "篷川",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "岚川",
+   "tags": [
+    "地理系统",
+    "行星"
+   ],
+   "sourcePath": "合成数据/planet/篷川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 1046,
+    "y": -57
+   },
+   "uuid": "eae5d9a2-095a-70b8-c36c-67df9b52ba8f"
+  },
+  {
+   "id": "叙川",
+   "name": "叙川",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "沅川",
+   "tags": [
+    "地理系统",
+    "叙川",
+    "行星"
+   ],
+   "sourcePath": "合成数据/planet/叙川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 1210,
+    "y": 228
+   },
+   "uuid": "c6bd0386-5e9a-4eb1-78ba-bfb54b513e3d"
+  },
+  {
+   "id": "昙川",
+   "name": "昙川",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "榆川",
+   "tags": [
+    "地理系统",
+    "行星",
+    "昙川"
+   ],
+   "sourcePath": "合成数据/planet/昙川.md",
+   "wikilinks": [
+    "沧岐记",
+    "沅垣哨"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 1153,
+    "y": 551
+   },
+   "uuid": "f29fec4c-0cc8-f334-ca4d-c917d2a38e75"
+  },
+  {
+   "id": "沧屿",
+   "name": "沧屿",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "曜川星系",
+   "tags": [
+    "卫星",
+    "地理系统",
+    "沧屿",
+    "行星",
+    "衡佑Ⅲa"
+   ],
+   "sourcePath": "合成数据/planet/沧屿.md",
+   "wikilinks": [
+    "曜川星"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 901,
+    "y": 762
+   },
+   "uuid": "29eed501-86aa-422a-473c-aa38ef275150"
+  },
+  {
+   "id": "岩川",
+   "name": "岩川",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "砾川",
+   "tags": [
+    "地理系统",
+    "寂静沙海",
+    "岩川",
+    "行星",
+    "岩川文明"
+   ],
+   "sourcePath": "合成数据/planet/岩川.md",
+   "wikilinks": [
+    "沅岐记",
+    "岩川文明"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 573,
+    "y": 762
+   },
+   "uuid": "72b5a24b-dfb7-9a8b-84d8-a40c3116a207"
+  },
+  {
+   "id": "棹川",
+   "name": "棹川",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "瑄川",
+   "tags": [
+    "地理系统",
+    "行星",
+    "卫星"
+   ],
+   "sourcePath": "合成数据/planet/棹川.md",
+   "wikilinks": [
+    "潞垣哨"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 321,
+    "y": 551
+   },
+   "uuid": "33ba7d2f-cf8d-3809-f58f-dcb5a32a996a"
+  },
+  {
+   "id": "筠川",
+   "name": "筠川",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "燎川",
+   "tags": [
+    "地理系统",
+    "行星",
+    "筠川"
+   ],
+   "sourcePath": "合成数据/planet/筠川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 264,
+    "y": 228
+   },
+   "uuid": "eb2a9f5b-0483-ea97-ee5c-22bf827fb3bc"
+  },
+  {
+   "id": "泊川",
+   "name": "泊川",
+   "layer": "planet",
+   "layerLabel": "行星",
+   "parentId": "烬川",
+   "tags": [
+    "地理系统",
+    "泊川",
+    "行星"
+   ],
+   "sourcePath": "合成数据/planet/泊川.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 428,
+    "y": -57
+   },
+   "uuid": "31e81cb4-0942-981a-d178-6374bf0c2618"
+  },
+  {
+   "id": "熹川哨",
+   "name": "熹川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "熹川哨",
+    "创世祭坛",
+    "场景地点",
+    "祭坛",
+    "祭坛广场"
+   ],
+   "sourcePath": "合成数据/facility/熹川哨.md",
+   "wikilinks": [
+    "岩屿哨",
+    "翡岐记",
+    "穹岐记",
+    "潞岐记",
+    "岩屿哨"
+   ],
+   "placeType": "宗教",
+   "coordinate": {
+    "x": 737,
+    "y": -869
+   },
+   "uuid": "33bae55a-732e-d4eb-ec17-d0e7d317bf9e"
+  },
+  {
+   "id": "苇塘镇",
+   "name": "苇塘镇",
+   "layer": "town",
+   "layerLabel": "城镇",
+   "parentId": "曜川星",
+   "tags": [
+    "丰竹",
+    "苇塘镇",
+    "场景地点",
+    "青螺岛"
+   ],
+   "sourcePath": "合成数据/town/苇塘镇.md",
+   "wikilinks": [],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": -569
+   },
+   "uuid": "07a050b5-1c8c-25f5-714c-70d92c5fec6d"
+  },
+  {
+   "id": "澹川哨",
+   "name": "澹川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "澹川哨",
+    "人偶"
+   ],
+   "sourcePath": "合成数据/facility/澹川哨.md",
+   "wikilinks": [],
+   "placeType": "工业",
+   "coordinate": {
+    "x": 844,
+    "y": -864
+   },
+   "uuid": "30c988b2-91ea-5820-5fae-db4d54bbbde8"
+  },
+  {
+   "id": "珩川哨",
+   "name": "珩川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "珩川哨",
+    "公共服务大厅"
+   ],
+   "sourcePath": "合成数据/facility/珩川哨.md",
+   "wikilinks": [
+    "珉岐记",
+    "瑄岐记",
+    "篷屿哨"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 951,
+    "y": -849
+   },
+   "uuid": "1081686f-e435-df96-9004-8de6b292031b"
+  },
+  {
+   "id": "麓川哨",
+   "name": "麓川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "麓川哨",
+    "场景地点",
+    "酒楼"
+   ],
+   "sourcePath": "合成数据/facility/麓川哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "篷岐记"
+   ],
+   "placeType": "商业",
+   "coordinate": {
+    "x": 1055,
+    "y": -825
+   },
+   "uuid": "05574d01-76ac-9a14-2804-e64aae08e010"
+  },
+  {
+   "id": "拾光小筑",
+   "name": "拾光小筑",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "拾光小筑",
+    "哈伦·苏尔登·兰开斯特"
+   ],
+   "sourcePath": "合成数据/facility/拾光小筑.md",
+   "wikilinks": [
+    "澜垣哨",
+    "瑄岐记",
+    "叠翠原",
+    "瑄岐记",
+    "叠翠原",
+    "叙岐记"
+   ],
+   "placeType": "居住",
+   "coordinate": {
+    "x": 1157,
+    "y": -792
+   },
+   "uuid": "242d8040-014d-a853-fc10-132a8dffce5c"
+  },
+  {
+   "id": "泠川哨",
+   "name": "泠川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "泠川哨"
+   ],
+   "sourcePath": "合成数据/facility/泠川哨.md",
+   "wikilinks": [
+    "岩屿哨",
+    "昙岐记",
+    "穹岐记",
+    "翡岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1256,
+    "y": -749
+   },
+   "uuid": "5ebc25b7-ba9c-9cc4-2b75-9e0c81dc25d4"
+  },
+  {
+   "id": "渠川哨",
+   "name": "渠川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "渠川哨",
+    "渠川哨遗址"
+   ],
+   "sourcePath": "合成数据/facility/渠川哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "燎屿哨",
+    "岑屿哨",
+    "岩岐记"
+   ],
+   "placeType": "宗教",
+   "coordinate": {
+    "x": 1350,
+    "y": -697
+   },
+   "uuid": "be3ccb82-1043-cf34-6e45-106e60327897"
+  },
+  {
+   "id": "屿川哨",
+   "name": "屿川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星系",
+   "tags": [
+    "场景地点",
+    "屿川哨",
+    "监狱"
+   ],
+   "sourcePath": "合成数据/facility/屿川哨.md",
+   "wikilinks": [
+    "曜川星系"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1439,
+    "y": -637
+   },
+   "uuid": "d4f413a7-69a3-bcc0-a33b-0716f9f10f40"
+  },
+  {
+   "id": "枢川哨",
+   "name": "枢川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "咖啡厅",
+    "场景地点",
+    "枢川哨",
+    "魔法使自律委员会"
+   ],
+   "sourcePath": "合成数据/facility/枢川哨.md",
+   "wikilinks": [],
+   "placeType": "商业",
+   "coordinate": {
+    "x": 1523,
+    "y": -569
+   },
+   "uuid": "a45b575d-eedc-75a9-0d97-7d2e10540b5c"
+  },
+  {
+   "id": "沅川哨",
+   "name": "沅川哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星系",
+   "tags": [
+    "场景地点",
+    "沅川哨"
+   ],
+   "sourcePath": "合成数据/facility/沅川哨.md",
+   "wikilinks": [],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1599,
+    "y": -494
+   },
+   "uuid": "97d587b7-da20-6669-5de0-f102e6559715"
+  },
+  {
+   "id": "霁屿哨",
+   "name": "霁屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "医院",
+    "场景地点",
+    "霁屿哨",
+    "心理诊所"
+   ],
+   "sourcePath": "合成数据/facility/霁屿哨.md",
+   "wikilinks": [
+    "眠岐记",
+    "屿屿哨",
+    "潞屿哨",
+    "潮汐界设定集2025",
+    "眠岐记",
+    "穹岐记",
+    "翡岐记",
+    "棹岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1669,
+    "y": -413
+   },
+   "uuid": "67550ed7-e561-c667-0b7f-5b3917f964fd"
+  },
+  {
+   "id": "青螺岛",
+   "name": "青螺岛",
+   "layer": "region",
+   "layerLabel": "区域",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "岛屿",
+    "青螺岛"
+   ],
+   "sourcePath": "合成数据/region/青螺岛.md",
+   "wikilinks": [
+    "筠岐记",
+    "苇塘镇"
+   ],
+   "placeType": "自然",
+   "coordinate": {
+    "x": 737,
+    "y": -369
+   },
+   "uuid": "601a1286-8fd8-75d1-ec85-658e6f1bcaae"
+  },
+  {
+   "id": "澜屿哨",
+   "name": "澜屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星系",
+   "tags": [
+    "场景地点",
+    "澜屿哨",
+    "空间站"
+   ],
+   "sourcePath": "合成数据/facility/澜屿哨.md",
+   "wikilinks": [
+    "泊岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1731,
+    "y": -325
+   },
+   "uuid": "480e5235-1c48-ba27-c43f-fc244ae8b0ef"
+  },
+  {
+   "id": "墨屿哨",
+   "name": "墨屿哨",
+   "layer": "location",
+   "layerLabel": "地点",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "墨屿哨",
+    "湖泊"
+   ],
+   "sourcePath": "合成数据/location/墨屿哨.md",
+   "wikilinks": [
+    "霜垣哨"
+   ],
+   "placeType": "自然",
+   "coordinate": {
+    "x": 737,
+    "y": -969
+   },
+   "uuid": "b555e5e4-33e0-ff43-efae-356830a2a975"
+  },
+  {
+   "id": "霜屿哨",
+   "name": "霜屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "广播站",
+    "霜屿哨"
+   ],
+   "sourcePath": "合成数据/facility/霜屿哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "槐屿哨",
+    "炽屿哨"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1785,
+    "y": -232
+   },
+   "uuid": "1c21f28c-0af3-c486-554e-fd35b1a21007"
+  },
+  {
+   "id": "炽屿哨",
+   "name": "炽屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "炽屿哨"
+   ],
+   "sourcePath": "合成数据/facility/炽屿哨.md",
+   "wikilinks": [
+    "熹岐记",
+    "潮汐界设定集2025"
+   ],
+   "placeType": "皇室",
+   "coordinate": {
+    "x": 1830,
+    "y": -134
+   },
+   "uuid": "6f9fba00-59d2-1932-c303-0d191cf02cfe"
+  },
+  {
+   "id": "隐屿哨",
+   "name": "隐屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "#隐屿哨",
+    "#朔屿哨",
+    "学校"
+   ],
+   "sourcePath": "合成数据/facility/隐屿哨.md",
+   "wikilinks": [
+    "隐屿哨（消歧义）",
+    "隐屿哨（组织）",
+    "澹岐记",
+    "瑄岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1866,
+    "y": -33
+   },
+   "uuid": "58aa5f9d-c201-b15a-b3c9-4bbb8cd7787e"
+  },
+  {
+   "id": "朔屿哨",
+   "name": "朔屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "启蒙联合会",
+    "场景地点",
+    "朔屿哨"
+   ],
+   "sourcePath": "合成数据/facility/朔屿哨.md",
+   "wikilinks": [
+    "珩岐记"
+   ],
+   "placeType": "居住",
+   "coordinate": {
+    "x": 1892,
+    "y": 71
+   },
+   "uuid": "c78bce42-a402-3aea-9e0e-ca1c10bcc506"
+  },
+  {
+   "id": "砚屿哨",
+   "name": "砚屿哨",
+   "layer": "city",
+   "layerLabel": "城市",
+   "parentId": "沧屿",
+   "tags": [
+    "场景地点",
+    "城市",
+    "城邦",
+    "月兔",
+    "砚屿哨"
+   ],
+   "sourcePath": "合成数据/city/砚屿哨.md",
+   "wikilinks": [
+    "砚屿哨（消歧义）",
+    "砚屿哨（城邦）"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": -469
+   },
+   "uuid": "9026dabe-4183-5672-2f8d-1f53440d9273"
+  },
+  {
+   "id": "翡屿哨",
+   "name": "翡屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "穹屿哨",
+   "tags": [
+    "翡屿哨",
+    "密室",
+    "场景地点",
+    "砚屿哨",
+    "月面大结界"
+   ],
+   "sourcePath": "合成数据/facility/翡屿哨.md",
+   "wikilinks": [
+    "穹屿哨",
+    "麓岐记",
+    "泠岐记",
+    "穹岐记",
+    "穹屿哨",
+    "砚屿哨",
+    "渠岐记"
+   ],
+   "placeType": "皇室",
+   "coordinate": {
+    "x": 1909,
+    "y": 177
+   },
+   "uuid": "4cb6308b-0bf9-a58e-9252-3200ea77236b"
+  },
+  {
+   "id": "穹屿哨",
+   "name": "穹屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "沧屿",
+   "tags": [
+    "场景地点",
+    "夏宫",
+    "宫殿",
+    "砚屿哨",
+    "穹屿哨"
+   ],
+   "sourcePath": "合成数据/facility/穹屿哨.md",
+   "wikilinks": [],
+   "placeType": "皇室",
+   "coordinate": {
+    "x": 1917,
+    "y": 284
+   },
+   "uuid": "988ba61f-d584-4292-885c-5c7e9a49a9bb"
+  },
+  {
+   "id": "榆屿哨",
+   "name": "榆屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "榆屿哨",
+    "岩屿哨"
+   ],
+   "sourcePath": "合成数据/facility/榆屿哨.md",
+   "wikilinks": [],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1914,
+    "y": 392
+   },
+   "uuid": "582ed877-c1c5-7a81-39f9-db89eac31a3f"
+  },
+  {
+   "id": "燎屿哨",
+   "name": "燎屿哨",
+   "layer": "location",
+   "layerLabel": "地点",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "燎屿哨"
+   ],
+   "sourcePath": "合成数据/location/燎屿哨.md",
+   "wikilinks": [
+    "渠川哨",
+    "岩岐记",
+    "屿岐记",
+    "穹岐记",
+    "枢岐记",
+    "翡岐记"
+   ],
+   "placeType": "自然",
+   "coordinate": {
+    "x": 1954,
+    "y": -85
+   },
+   "uuid": "f2f2d9f6-6471-262e-1f55-d1e0c257275d"
+  },
+  {
+   "id": "岑屿哨",
+   "name": "岑屿哨",
+   "layer": "location",
+   "layerLabel": "地点",
+   "parentId": "曜川星",
+   "tags": [
+    "双溪流域",
+    "场景地点",
+    "岑屿哨"
+   ],
+   "sourcePath": "合成数据/location/岑屿哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "槐屿哨",
+    "枢屿哨"
+   ],
+   "placeType": "自然",
+   "coordinate": {
+    "x": 1489,
+    "y": 1347
+   },
+   "uuid": "2a89067c-e13b-2536-b503-5095ea0d420b"
+  },
+  {
+   "id": "漪屿哨",
+   "name": "漪屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "漪屿哨"
+   ],
+   "sourcePath": "合成数据/facility/漪屿哨.md",
+   "wikilinks": [],
+   "placeType": "皇室",
+   "coordinate": {
+    "x": 1902,
+    "y": 498
+   },
+   "uuid": "e60be8dc-451c-5a7b-4fe5-195c8ed839be"
+  },
+  {
+   "id": "岚屿哨",
+   "name": "岚屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "柳月",
+    "岚屿哨"
+   ],
+   "sourcePath": "合成数据/facility/岚屿哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "沅岐记",
+    "霁峦记"
+   ],
+   "placeType": "商业",
+   "coordinate": {
+    "x": 1880,
+    "y": 603
+   },
+   "uuid": "0971ca04-cae3-aa9d-50b2-23318ffe735c"
+  },
+  {
+   "id": "砾屿哨",
+   "name": "砾屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "砾屿哨",
+    "超市"
+   ],
+   "sourcePath": "合成数据/facility/砾屿哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "02 砾屿哨LOGO",
+    "穹岐记",
+    "翡岐记"
+   ],
+   "placeType": "商业",
+   "coordinate": {
+    "x": 1849,
+    "y": 706
+   },
+   "uuid": "d72dc585-7430-c48f-fd06-e3a0936b31e3"
+  },
+  {
+   "id": "槐屿哨",
+   "name": "槐屿哨",
+   "layer": "city",
+   "layerLabel": "城市",
+   "parentId": "曜川星",
+   "tags": [
+    "双溪流域",
+    "曜川星",
+    "场景地点",
+    "城市",
+    "槐屿哨"
+   ],
+   "sourcePath": "合成数据/city/槐屿哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "穹岐记",
+    "翡岐记",
+    "澜峦记",
+    "墨峦记",
+    "潞岐记",
+    "霜峦记",
+    "澜垣哨",
+    "枢屿哨"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 1517,
+    "y": 311
+   },
+   "uuid": "44ef0210-0b84-db3d-9727-1d4ce34b7955"
+  },
+  {
+   "id": "眠屿哨",
+   "name": "眠屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "眠屿哨",
+    "餐厅"
+   ],
+   "sourcePath": "合成数据/facility/眠屿哨.md",
+   "wikilinks": [
+    "澜垣哨"
+   ],
+   "placeType": "商业",
+   "coordinate": {
+    "x": 1808,
+    "y": 806
+   },
+   "uuid": "8e1f5c7a-5ab3-6426-4db5-2592ed4aa2e1"
+  },
+  {
+   "id": "烬屿哨",
+   "name": "烬屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "烬屿哨"
+   ],
+   "sourcePath": "合成数据/facility/烬屿哨.md",
+   "wikilinks": [
+    "枢岐记",
+    "枢岐记",
+    "翡岐记",
+    "穹岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1759,
+    "y": 901
+   },
+   "uuid": "48e9e7bc-81e2-d733-96f2-e54735dbc958"
+  },
+  {
+   "id": "沧屿哨",
+   "name": "沧屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "沧屿哨"
+   ],
+   "sourcePath": "合成数据/facility/沧屿哨.md",
+   "wikilinks": [
+    "岩屿哨",
+    "熹川哨",
+    "篷岐记",
+    "翡岐记",
+    "穹岐记",
+    "炽峦记",
+    "棹岐记"
+   ],
+   "placeType": "商业",
+   "coordinate": {
+    "x": 1701,
+    "y": 991
+   },
+   "uuid": "7f7c9fef-b3c2-5082-06f5-0fbb400ab366"
+  },
+  {
+   "id": "沅屿哨",
+   "name": "沅屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "焕净柑",
+    "生命之树",
+    "沅屿哨"
+   ],
+   "sourcePath": "合成数据/facility/沅屿哨.md",
+   "wikilinks": [
+    "隐峦记",
+    "穹岐记",
+    "朔峦记",
+    "砚峦记",
+    "翡岐记"
+   ],
+   "placeType": "宗教",
+   "coordinate": {
+    "x": 1635,
+    "y": 1076
+   },
+   "uuid": "052e3700-4285-4041-ed23-cbe5ba455c48"
+  },
+  {
+   "id": "潞屿哨",
+   "name": "潞屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "潞屿哨"
+   ],
+   "sourcePath": "合成数据/facility/潞屿哨.md",
+   "wikilinks": [
+    "穹岐记",
+    "翡岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1562,
+    "y": 1155
+   },
+   "uuid": "237b3ce8-6a6f-8024-4871-23737b46bc2a"
+  },
+  {
+   "id": "珉屿哨",
+   "name": "珉屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "珉屿哨",
+    "皇家魔法学院",
+    "建筑",
+    "学校"
+   ],
+   "sourcePath": "合成数据/facility/珉屿哨.md",
+   "wikilinks": [
+    "澜垣哨"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1482,
+    "y": 1226
+   },
+   "uuid": "b1e39586-b5c3-f6ff-0090-6d828da79554"
+  },
+  {
+   "id": "瑄屿哨",
+   "name": "瑄屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星系",
+   "tags": [
+    "场景地点",
+    "审讯室",
+    "瑄屿哨",
+    "熹屿哨"
+   ],
+   "sourcePath": "合成数据/facility/瑄屿哨.md",
+   "wikilinks": [
+    "屿川哨"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1395,
+    "y": 1290
+   },
+   "uuid": "5849b00d-7263-acb1-6f36-90125f01a423"
+  },
+  {
+   "id": "篷屿哨",
+   "name": "篷屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "篷屿哨",
+    "建筑",
+    "AI管理所"
+   ],
+   "sourcePath": "合成数据/facility/篷屿哨.md",
+   "wikilinks": [
+    "翡峦记",
+    "穹峦记",
+    "熹屿哨（组织）",
+    "翡岐记",
+    "熹屿哨",
+    "珩川哨"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1304,
+    "y": 1346
+   },
+   "uuid": "27d3eafe-9d8e-1677-e19a-df590dce1af7"
+  },
+  {
+   "id": "叙屿哨",
+   "name": "叙屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "叙屿哨",
+    "米尔事件",
+    "米尔"
+   ],
+   "sourcePath": "合成数据/facility/叙屿哨.md",
+   "wikilinks": [],
+   "placeType": "居住",
+   "coordinate": {
+    "x": 1207,
+    "y": 1393
+   },
+   "uuid": "22940198-cfc1-2db0-1001-13f9d644c577"
+  },
+  {
+   "id": "昙屿哨",
+   "name": "昙屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "图书馆",
+    "场景地点",
+    "昙屿哨"
+   ],
+   "sourcePath": "合成数据/facility/昙屿哨.md",
+   "wikilinks": [
+    "昙屿哨（消歧义）",
+    "昙屿哨（组织）",
+    "穹岐记",
+    "翡岐记",
+    "槐岐记",
+    "榆峦记",
+    "燎峦记",
+    "澜垣哨",
+    "岩屿哨",
+    "熹屿哨（组织）",
+    "岑峦记",
+    "漪峦记",
+    "岚峦记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 1107,
+    "y": 1432
+   },
+   "uuid": "75dab67f-0c3c-ed4d-dd8d-0987d4a60635"
+  },
+  {
+   "id": "岩屿哨",
+   "name": "岩屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "神殿",
+    "岩屿哨",
+    "风灵神殿",
+    "皇宫"
+   ],
+   "sourcePath": "合成数据/facility/岩屿哨.md",
+   "wikilinks": [
+    "岩屿哨（组织）",
+    "澜垣哨",
+    "棹屿哨",
+    "翡岐记",
+    "霜垣哨",
+    "墨峦记",
+    "潞岐记",
+    "砾峦记",
+    "澜垣哨",
+    "槐峦记",
+    "眠峦记",
+    "烬峦记",
+    "沧峦记",
+    "榆屿哨",
+    "熹川哨",
+    "沅峦记"
+   ],
+   "placeType": "皇室",
+   "coordinate": {
+    "x": 1003,
+    "y": 1461
+   },
+   "uuid": "44f8d62f-bb0c-845d-27da-165b81e4c7fe"
+  },
+  {
+   "id": "棹屿哨",
+   "name": "棹屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "地下室",
+    "棹屿哨",
+    "地宫"
+   ],
+   "sourcePath": "合成数据/facility/棹屿哨.md",
+   "wikilinks": [
+    "潞峦记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": 898,
+    "y": 1480
+   },
+   "uuid": "20dc251c-a871-72ff-8cac-88699414d0f6"
+  },
+  {
+   "id": "筠屿哨",
+   "name": "筠屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "沧屿",
+   "tags": [
+    "场景地点",
+    "筠屿哨",
+    "面包店"
+   ],
+   "sourcePath": "合成数据/facility/筠屿哨.md",
+   "wikilinks": [
+    "棹岐记"
+   ],
+   "placeType": "商业",
+   "coordinate": {
+    "x": 791,
+    "y": 1490
+   },
+   "uuid": "95d78259-4da5-b650-f386-f1db5182151a"
+  },
+  {
+   "id": "泊屿哨",
+   "name": "泊屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "广场",
+    "泊屿哨"
+   ],
+   "sourcePath": "合成数据/facility/泊屿哨.md",
+   "wikilinks": [],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 683,
+    "y": 1490
+   },
+   "uuid": "9467167e-3235-1e5e-8f88-2c7ed82229b2"
+  },
+  {
+   "id": "熹屿哨",
+   "name": "熹屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "熹屿哨"
+   ],
+   "sourcePath": "合成数据/facility/熹屿哨.md",
+   "wikilinks": [
+    "熹屿哨（消歧义）",
+    "熹屿哨（组织）"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 576,
+    "y": 1480
+   },
+   "uuid": "e66b93a6-5861-d7f9-ea3e-87f7e20befb8"
+  },
+  {
+   "id": "澹屿哨",
+   "name": "澹屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "澹屿哨",
+    "地下室",
+    "霜垣哨"
+   ],
+   "sourcePath": "合成数据/facility/澹屿哨.md",
+   "wikilinks": [
+    "珉峦记",
+    "岩屿哨",
+    "潮汐界设定集2025",
+    "瑄峦记",
+    "澹屿哨"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 471,
+    "y": 1461
+   },
+   "uuid": "8e766cef-3fa8-e972-0c32-c61c07ac8107"
+  },
+  {
+   "id": "珩屿哨",
+   "name": "珩屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "太空电梯",
+    "珩屿哨"
+   ],
+   "sourcePath": "合成数据/facility/珩屿哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "翡岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": 367,
+    "y": 1432
+   },
+   "uuid": "31ccaba1-d3bc-1eef-7048-d3bcce05de21"
+  },
+  {
+   "id": "麓屿哨",
+   "name": "麓屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "城堡",
+    "麓屿哨"
+   ],
+   "sourcePath": "合成数据/facility/麓屿哨.md",
+   "wikilinks": [
+    "岑屿哨",
+    "翡岐记",
+    "穹岐记",
+    "岩屿哨",
+    "霜垣哨"
+   ],
+   "placeType": "皇室",
+   "coordinate": {
+    "x": 267,
+    "y": 1393
+   },
+   "uuid": "d0513790-1b54-c39a-b327-207d2ebe207a"
+  },
+  {
+   "id": "泠屿哨",
+   "name": "泠屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "工厂",
+    "废弃工厂",
+    "泠屿哨"
+   ],
+   "sourcePath": "合成数据/facility/泠屿哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "篷峦记",
+    "穹岐记",
+    "霜峦记"
+   ],
+   "placeType": "工业",
+   "coordinate": {
+    "x": 170,
+    "y": 1346
+   },
+   "uuid": "860ea359-bc0a-d35a-44fe-cf493b3cd153"
+  },
+  {
+   "id": "渠屿哨",
+   "name": "渠屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "宫殿",
+    "渠屿哨"
+   ],
+   "sourcePath": "合成数据/facility/渠屿哨.md",
+   "wikilinks": [
+    "槐屿哨"
+   ],
+   "placeType": "宗教",
+   "coordinate": {
+    "x": 79,
+    "y": 1290
+   },
+   "uuid": "72816c6e-a4f2-c748-0627-e939d33e4af4"
+  },
+  {
+   "id": "屿屿哨",
+   "name": "屿屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "露汐",
+    "屿屿哨"
+   ],
+   "sourcePath": "合成数据/facility/屿屿哨.md",
+   "wikilinks": [
+    "霁屿哨",
+    "眠岐记"
+   ],
+   "placeType": "居住",
+   "coordinate": {
+    "x": -8,
+    "y": 1226
+   },
+   "uuid": "332baeba-c516-f1ff-52c2-52fb22c378f9"
+  },
+  {
+   "id": "枢屿哨",
+   "name": "枢屿哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "地下铁路",
+    "场景地点",
+    "枢屿哨"
+   ],
+   "sourcePath": "合成数据/facility/枢屿哨.md",
+   "wikilinks": [
+    "槐屿哨",
+    "岩屿哨",
+    "岑屿哨",
+    "霜峦记",
+    "霁峦记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -88,
+    "y": 1155
+   },
+   "uuid": "816521e7-ba08-d476-699a-9ae0869a65fe"
+  },
+  {
+   "id": "霁垣哨",
+   "name": "霁垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "地下铁路",
+    "场景地点",
+    "霁垣哨"
+   ],
+   "sourcePath": "合成数据/facility/霁垣哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "枢屿哨"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -161,
+    "y": 1076
+   },
+   "uuid": "a86756d5-02a2-49ca-d42f-233d8735eb05"
+  },
+  {
+   "id": "澜垣哨",
+   "name": "澜垣哨",
+   "layer": "city",
+   "layerLabel": "城市",
+   "parentId": "曜川星",
+   "tags": [
+    "双溪流域",
+    "曜川星",
+    "场景地点",
+    "城市",
+    "澜垣哨"
+   ],
+   "sourcePath": "合成数据/city/澜垣哨.md",
+   "wikilinks": [
+    "榆岐记",
+    "翡岐记",
+    "穹岐记",
+    "霜垣哨",
+    "潞岐记"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": 737,
+    "y": 1091
+   },
+   "uuid": "922b240a-d51d-434f-864d-e757ea2c139a"
+  },
+  {
+   "id": "墨垣哨",
+   "name": "墨垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "万风圣所",
+    "场景地点",
+    "御风核心",
+    "墨垣哨"
+   ],
+   "sourcePath": "合成数据/facility/墨垣哨.md",
+   "wikilinks": [
+    "澜垣哨",
+    "岑屿哨",
+    "叙峦记"
+   ],
+   "placeType": "宗教",
+   "coordinate": {
+    "x": -227,
+    "y": 991
+   },
+   "uuid": "b73a489c-d304-f657-5f8e-4b063929e1e2"
+  },
+  {
+   "id": "霜垣哨",
+   "name": "霜垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "曜川星",
+   "tags": [
+    "场景地点",
+    "小屋",
+    "霜垣哨"
+   ],
+   "sourcePath": "合成数据/facility/霜垣哨.md",
+   "wikilinks": [
+    "墨屿哨",
+    "翡岐记",
+    "穹岐记",
+    "砾岐记",
+    "岩屿哨"
+   ],
+   "placeType": "居住",
+   "coordinate": {
+    "x": -285,
+    "y": 901
+   },
+   "uuid": "d46b6f4f-0152-f26b-6d84-4aa5fc030e4d"
+  },
+  {
+   "id": "炽垣哨",
+   "name": "炽垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "筠川",
+   "tags": [
+    "场景地点",
+    "炽垣哨",
+    "花园"
+   ],
+   "sourcePath": "合成数据/facility/炽垣哨.md",
+   "wikilinks": [
+    "昙峦记",
+    "昙峦记",
+    "瑄岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -334,
+    "y": 806
+   },
+   "uuid": "4419f4e9-b30b-ed6c-a702-b47ab8faa8c3"
+  },
+  {
+   "id": "隐垣哨",
+   "name": "隐垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "岑川",
+   "tags": [
+    "凤凰同盟",
+    "隐垣哨",
+    "场景地点"
+   ],
+   "sourcePath": "合成数据/facility/隐垣哨.md",
+   "wikilinks": [
+    "岩峦记",
+    "棹峦记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": -375,
+    "y": 706
+   },
+   "uuid": "bfbb16cd-6d9c-9b21-65f1-3475133d989c"
+  },
+  {
+   "id": "朔垣哨",
+   "name": "朔垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "泊川",
+   "tags": [
+    "场景地点",
+    "泊川"
+   ],
+   "sourcePath": "合成数据/facility/朔垣哨.md",
+   "wikilinks": [
+    "筠峦记"
+   ],
+   "placeType": "工业",
+   "coordinate": {
+    "x": -406,
+    "y": 603
+   },
+   "uuid": "e7cb77ec-984d-9847-beb5-c50db5cc9fea"
+  },
+  {
+   "id": "砚垣哨",
+   "name": "砚垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "沧川",
+   "tags": [
+    "砚垣哨",
+    "场景地点",
+    "太空工厂"
+   ],
+   "sourcePath": "合成数据/facility/砚垣哨.md",
+   "wikilinks": [],
+   "placeType": "工业",
+   "coordinate": {
+    "x": -428,
+    "y": 498
+   },
+   "uuid": "3a612b9d-9eb7-6084-8f82-f51b43ac9015"
+  },
+  {
+   "id": "翡垣哨",
+   "name": "翡垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "叙川",
+   "tags": [
+    "场景地点",
+    "翡垣哨",
+    "建筑（地下室）",
+    "去蕊工程",
+    "地下防空洞",
+    "去蕊工程遗址"
+   ],
+   "sourcePath": "合成数据/facility/翡垣哨.md",
+   "wikilinks": [],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -440,
+    "y": 392
+   },
+   "uuid": "3afbf687-f4f1-1c61-704b-ac600bab8ff1"
+  },
+  {
+   "id": "穹垣哨",
+   "name": "穹垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "潞川",
+   "tags": [
+    "场景地点",
+    "穹垣哨",
+    "边境缓冲区"
+   ],
+   "sourcePath": "合成数据/facility/穹垣哨.md",
+   "wikilinks": [],
+   "placeType": "居住",
+   "coordinate": {
+    "x": -443,
+    "y": 284
+   },
+   "uuid": "0826cb69-e4f7-3de8-039a-5ff15eb0290d"
+  },
+  {
+   "id": "榆垣哨",
+   "name": "榆垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "潞川",
+   "tags": [
+    "传送门",
+    "场景地点",
+    "榆垣哨"
+   ],
+   "sourcePath": "合成数据/facility/榆垣哨.md",
+   "wikilinks": [],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": -435,
+    "y": 177
+   },
+   "uuid": "cc4784dc-1ae6-3eba-8ad0-ab66534605bb"
+  },
+  {
+   "id": "缄默工坊",
+   "name": "缄默工坊",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "珉川",
+   "tags": [
+    "场景地点",
+    "缄默工坊"
+   ],
+   "sourcePath": "合成数据/facility/缄默工坊.md",
+   "wikilinks": [
+    "叠翠原",
+    "瑄岐记",
+    "泊峦记",
+    "珉岐记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -418,
+    "y": 71
+   },
+   "uuid": "acc1c93e-140c-10be-8cd2-c4cf1305f33c"
+  },
+  {
+   "id": "燎垣哨",
+   "name": "燎垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "珉川",
+   "tags": [
+    "场景地点",
+    "燎垣哨",
+    "空间站"
+   ],
+   "sourcePath": "合成数据/facility/燎垣哨.md",
+   "wikilinks": [],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -392,
+    "y": -33
+   },
+   "uuid": "30a3702e-8733-5f56-e823-64dacadf4be8"
+  },
+  {
+   "id": "岑垣哨",
+   "name": "岑垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": null,
+   "tags": [
+    "模板文件"
+   ],
+   "sourcePath": "合成数据/facility/岑垣哨.md",
+   "wikilinks": [
+    "熹峦记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -356,
+    "y": -134
+   },
+   "uuid": "c57bf4ef-906f-c3fd-e9f2-794e17e7ec4a"
+  },
+  {
+   "id": "流岚之境",
+   "name": "流岚之境",
+   "layer": "location",
+   "layerLabel": "地点",
+   "parentId": "潮汐界",
+   "tags": [
+    "场景地点",
+    "流岚之境",
+    "里世界"
+   ],
+   "sourcePath": "合成数据/location/流岚之境.md",
+   "wikilinks": [
+    "穹岐记",
+    "砚岐记",
+    "翡岐记",
+    "潮汐界",
+    "穹岐记",
+    "翡岐记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": -15,
+    "y": 1347
+   },
+   "uuid": "5525d969-8aba-d041-1c54-82a6f7ed32cf"
+  },
+  {
+   "id": "漪垣哨",
+   "name": "漪垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "岚垣哨",
+   "tags": [
+    "场景地点",
+    "时间钟楼"
+   ],
+   "sourcePath": "合成数据/facility/漪垣哨.md",
+   "wikilinks": [
+    "澹峦记",
+    "珩峦记",
+    "岚垣哨",
+    "麓峦记"
+   ],
+   "placeType": "公共",
+   "coordinate": {
+    "x": -311,
+    "y": -232
+   },
+   "uuid": "74b7041b-b4c3-ac7e-e983-a35d7de86260"
+  },
+  {
+   "id": "岚垣哨",
+   "name": "岚垣哨",
+   "layer": "city",
+   "layerLabel": "城市",
+   "parentId": null,
+   "tags": [
+    "场景地点",
+    "爱丽娜",
+    "岚垣哨"
+   ],
+   "sourcePath": "合成数据/city/岚垣哨.md",
+   "wikilinks": [
+    "澹峦记",
+    "漪垣哨",
+    "麓峦记"
+   ],
+   "placeType": null,
+   "coordinate": {
+    "x": -43,
+    "y": 311
+   },
+   "uuid": "4fddf6ee-e616-7a3a-8a9d-4e0cf9275787"
+  },
+  {
+   "id": "砾垣哨",
+   "name": "砾垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": null,
+   "tags": [
+    "场景地点",
+    "砾垣哨",
+    "神殿",
+    "第一次砾垣哨之战",
+    "第二次砾垣哨之战"
+   ],
+   "sourcePath": "合成数据/facility/砾垣哨.md",
+   "wikilinks": [],
+   "placeType": "宗教",
+   "coordinate": {
+    "x": -257,
+    "y": -325
+   },
+   "uuid": "945cf849-90df-7960-b2ee-3b49917813c8"
+  },
+  {
+   "id": "槐垣哨",
+   "name": "槐垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "眠川",
+   "tags": [
+    "场景地点",
+    "槐垣哨",
+    "中立区"
+   ],
+   "sourcePath": "合成数据/facility/槐垣哨.md",
+   "wikilinks": [
+    "翡岐记",
+    "泠峦记",
+    "穹岐记",
+    "渠峦记",
+    "熹岐记",
+    "砾岐记",
+    "槐岐记",
+    "烬岐记",
+    "叙峦记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": -195,
+    "y": -413
+   },
+   "uuid": "47aa0d4c-34fa-0ad1-2758-aa8da3adb85f"
+  },
+  {
+   "id": "眠垣哨",
+   "name": "眠垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "砚川",
+   "tags": [
+    "场景地点",
+    "眠垣哨",
+    "霞泷剑肃嶂剑封印地",
+    "遗迹"
+   ],
+   "sourcePath": "合成数据/facility/眠垣哨.md",
+   "wikilinks": [
+    "屿峦记",
+    "枢峦记",
+    "穹岐记",
+    "翡岐记",
+    "砾岐记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": -125,
+    "y": -494
+   },
+   "uuid": "e4b414f6-69c2-63da-e632-81d1f14dbff2"
+  },
+  {
+   "id": "烬垣哨",
+   "name": "烬垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "漪川",
+   "tags": [
+    "场景地点",
+    "漪川咖啡屋",
+    "咖啡厅"
+   ],
+   "sourcePath": "合成数据/facility/烬垣哨.md",
+   "wikilinks": [
+    "泠峦记",
+    "翡岐记",
+    "穹岐记"
+   ],
+   "placeType": "商业",
+   "coordinate": {
+    "x": -49,
+    "y": -569
+   },
+   "uuid": "3ab65ec8-63aa-2f05-5efc-1c89fb8d061f"
+  },
+  {
+   "id": "沧垣哨",
+   "name": "沧垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "篷川",
+   "tags": [
+    "场景地点",
+    "沧垣哨",
+    "建筑",
+    "神殿"
+   ],
+   "sourcePath": "合成数据/facility/沧垣哨.md",
+   "wikilinks": [
+    "沅峦记",
+    "沅峦记",
+    "穹岐记",
+    "翡岐记",
+    "砾岐记",
+    "熹岐记",
+    "烬岐记",
+    "泠峦记",
+    "叙峦记"
+   ],
+   "placeType": "宗教",
+   "coordinate": {
+    "x": 35,
+    "y": -637
+   },
+   "uuid": "fe8b7a59-76fd-a8e9-ae93-98272ed10fd1"
+  },
+  {
+   "id": "沅垣哨",
+   "name": "沅垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "昙川",
+   "tags": [
+    "场景地点",
+    "沅垣哨"
+   ],
+   "sourcePath": "合成数据/facility/沅垣哨.md",
+   "wikilinks": [
+    "穹岐记",
+    "沧岐记",
+    "翡岐记",
+    "砾岐记",
+    "熹岐记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": 124,
+    "y": -697
+   },
+   "uuid": "171d1248-f174-72d2-954f-c75b09383d68"
+  },
+  {
+   "id": "潞垣哨",
+   "name": "潞垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "棹川",
+   "tags": [
+    "场景地点",
+    "潞垣哨",
+    "谐律者文明遗迹",
+    "地下遗迹",
+    "建筑"
+   ],
+   "sourcePath": "合成数据/facility/潞垣哨.md",
+   "wikilinks": [
+    "霁湄记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": 218,
+    "y": -749
+   },
+   "uuid": "0afe64d6-f27c-6d13-a7b4-d8a5fddea25b"
+  },
+  {
+   "id": "珉垣哨",
+   "name": "珉垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": null,
+   "tags": [
+    "场景地点",
+    "建筑（遗迹）",
+    "珉垣哨",
+    "恒星轨道站"
+   ],
+   "sourcePath": "合成数据/facility/珉垣哨.md",
+   "wikilinks": [
+    "澜湄记",
+    "熹岐记",
+    "砾岐记",
+    "穹岐记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": 317,
+    "y": -792
+   },
+   "uuid": "041bdfb8-95ff-9e13-0ce8-2aad3aca0929"
+  },
+  {
+   "id": "瑄垣哨",
+   "name": "瑄垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "漪川",
+   "tags": [
+    "场景地点",
+    "军械库",
+    "瑄垣哨之盟",
+    "瑄垣哨"
+   ],
+   "sourcePath": "合成数据/facility/瑄垣哨.md",
+   "wikilinks": [
+    "瑄垣哨之盟",
+    "翡岐记",
+    "穹岐记",
+    "泠峦记",
+    "砾岐记",
+    "熹岐记",
+    "墨湄记"
+   ],
+   "placeType": "工业",
+   "coordinate": {
+    "x": 419,
+    "y": -825
+   },
+   "uuid": "dc6a5860-f74c-91bc-a4be-4d4fb58cec31"
+  },
+  {
+   "id": "篷垣哨",
+   "name": "篷垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "潞川",
+   "tags": [
+    "场景地点",
+    "移动设施",
+    "篷垣哨",
+    "飞船",
+    "异常"
+   ],
+   "sourcePath": "合成数据/facility/篷垣哨.md",
+   "wikilinks": [
+    "潞川",
+    "霜湄记",
+    "穹岐记",
+    "翡岐记",
+    "潞川",
+    "炽湄记"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": 523,
+    "y": -849
+   },
+   "uuid": "221fb0a2-6e8c-e7a0-efc8-ce628d7b6ed8"
+  },
+  {
+   "id": "叙垣哨",
+   "name": "叙垣哨",
+   "layer": "facility",
+   "layerLabel": "设施",
+   "parentId": "漪川",
+   "tags": [
+    "场景地点",
+    "移动设施",
+    "叙垣哨",
+    "飞船",
+    "战舰"
+   ],
+   "sourcePath": "合成数据/facility/叙垣哨.md",
+   "wikilinks": [
+    "翡岐记",
+    "岚岐记",
+    "穹岐记",
+    "熹岐记",
+    "砾岐记",
+    "烬岐记",
+    "槐岐记",
+    "泠峦记",
+    "霜峦记",
+    "漪川"
+   ],
+   "placeType": "特殊",
+   "coordinate": {
+    "x": 630,
+    "y": -864
+   },
+   "uuid": "5ca93a6b-7a48-280c-835c-cd17a297f233"
+  },
+  {
+   "id": "昙垣哨",
+   "name": "昙垣哨",
+   "layer": "location",
+   "layerLabel": "地点",
+   "parentId": null,
+   "tags": [
+    "场景地点",
+    "异质空间",
+    "昙垣哨"
+   ],
+   "sourcePath": "合成数据/location/昙垣哨.md",
+   "wikilinks": [
+    "叙岐记",
+    "瑄岐记",
+    "叙岐记",
+    "瑄岐记",
+    "隐湄记"
+   ],
+   "placeType": "自然",
+   "coordinate": {
+    "x": -480,
+    "y": -85
+   },
+   "uuid": "ee41d0aa-9862-c164-72c1-14cac1df4207"
+  },
+  {
+   "id": "雪岭界",
+   "name": "雪岭界",
+   "layer": "world",
+   "layerLabel": "世界",
+   "parentId": null,
+   "tags": [
+    "世界"
+   ],
+   "sourcePath": "合成数据/world/雪岭界.md",
+   "wikilinks": [],
+   "coordinate": {
+    "x": 690,
+    "y": 376
+   },
+   "uuid": "a2e6321c-c3ff-eb11-5504-b22b3897bf91"
+  },
+  {
+   "id": "陶土界",
+   "name": "陶土界",
+   "layer": "world",
+   "layerLabel": "世界",
+   "parentId": null,
+   "tags": [
+    "世界"
+   ],
+   "sourcePath": "合成数据/world/陶土界.md",
+   "wikilinks": [],
+   "coordinate": {
+    "x": 661,
+    "y": 286
+   },
+   "uuid": "929e4976-a957-6b05-4e55-da087b9dcb6b"
+  },
+  {
+   "id": "双溪流域",
+   "name": "双溪流域",
+   "layer": "region",
+   "layerLabel": "区域",
+   "parentId": "曜川星",
+   "tags": [
+    "双溪流域"
+   ],
+   "sourcePath": "合成数据/region/双溪流域.md",
+   "wikilinks": [],
+   "coordinate": {
+    "x": 737,
+    "y": 991
+   },
+   "uuid": "aeb29468-8334-efbf-ecb9-10748d60f99e"
+  }
+ ],
+ "hyperlanes": [
+  {
+   "id": "auto_曜川星系_砚川",
+   "fromId": "曜川星系",
+   "toId": "砚川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_曜川星系_翡川",
+   "fromId": "曜川星系",
+   "toId": "翡川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_曜川星系_穹川",
+   "fromId": "曜川星系",
+   "toId": "穹川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_曜川星系_榆川",
+   "fromId": "曜川星系",
+   "toId": "榆川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_曜川星系_沅川",
+   "fromId": "曜川星系",
+   "toId": "沅川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_曜川星系_潞川",
+   "fromId": "曜川星系",
+   "toId": "潞川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_曜川星系_珉川",
+   "fromId": "曜川星系",
+   "toId": "珉川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_曜川星系_瑄川",
+   "fromId": "曜川星系",
+   "toId": "瑄川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砚川_翡川",
+   "fromId": "砚川",
+   "toId": "翡川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砚川_穹川",
+   "fromId": "砚川",
+   "toId": "穹川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砚川_榆川",
+   "fromId": "砚川",
+   "toId": "榆川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砚川_燎川",
+   "fromId": "砚川",
+   "toId": "燎川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砚川_潞川",
+   "fromId": "砚川",
+   "toId": "潞川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砚川_珉川",
+   "fromId": "砚川",
+   "toId": "珉川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砚川_瑄川",
+   "fromId": "砚川",
+   "toId": "瑄川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_翡川_穹川",
+   "fromId": "翡川",
+   "toId": "穹川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_翡川_榆川",
+   "fromId": "翡川",
+   "toId": "榆川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_翡川_燎川",
+   "fromId": "翡川",
+   "toId": "燎川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_翡川_岑川",
+   "fromId": "翡川",
+   "toId": "岑川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_翡川_珉川",
+   "fromId": "翡川",
+   "toId": "珉川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_翡川_瑄川",
+   "fromId": "翡川",
+   "toId": "瑄川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_穹川_榆川",
+   "fromId": "穹川",
+   "toId": "榆川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_穹川_燎川",
+   "fromId": "穹川",
+   "toId": "燎川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_穹川_岑川",
+   "fromId": "穹川",
+   "toId": "岑川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_穹川_漪川",
+   "fromId": "穹川",
+   "toId": "漪川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_穹川_瑄川",
+   "fromId": "穹川",
+   "toId": "瑄川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_榆川_燎川",
+   "fromId": "榆川",
+   "toId": "燎川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_榆川_岑川",
+   "fromId": "榆川",
+   "toId": "岑川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_榆川_漪川",
+   "fromId": "榆川",
+   "toId": "漪川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_榆川_岚川",
+   "fromId": "榆川",
+   "toId": "岚川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_燎川_岑川",
+   "fromId": "燎川",
+   "toId": "岑川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_燎川_漪川",
+   "fromId": "燎川",
+   "toId": "漪川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_燎川_岚川",
+   "fromId": "燎川",
+   "toId": "岚川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_燎川_砾川",
+   "fromId": "燎川",
+   "toId": "砾川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岑川_漪川",
+   "fromId": "岑川",
+   "toId": "漪川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岑川_岚川",
+   "fromId": "岑川",
+   "toId": "岚川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岑川_砾川",
+   "fromId": "岑川",
+   "toId": "砾川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岑川_槐川",
+   "fromId": "岑川",
+   "toId": "槐川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_漪川_岚川",
+   "fromId": "漪川",
+   "toId": "岚川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_漪川_砾川",
+   "fromId": "漪川",
+   "toId": "砾川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_漪川_槐川",
+   "fromId": "漪川",
+   "toId": "槐川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_漪川_眠川",
+   "fromId": "漪川",
+   "toId": "眠川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岚川_砾川",
+   "fromId": "岚川",
+   "toId": "砾川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岚川_槐川",
+   "fromId": "岚川",
+   "toId": "槐川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岚川_眠川",
+   "fromId": "岚川",
+   "toId": "眠川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_岚川_烬川",
+   "fromId": "岚川",
+   "toId": "烬川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砾川_槐川",
+   "fromId": "砾川",
+   "toId": "槐川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砾川_眠川",
+   "fromId": "砾川",
+   "toId": "眠川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砾川_烬川",
+   "fromId": "砾川",
+   "toId": "烬川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_砾川_沧川",
+   "fromId": "砾川",
+   "toId": "沧川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_槐川_眠川",
+   "fromId": "槐川",
+   "toId": "眠川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_槐川_烬川",
+   "fromId": "槐川",
+   "toId": "烬川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_槐川_沧川",
+   "fromId": "槐川",
+   "toId": "沧川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_槐川_沅川",
+   "fromId": "槐川",
+   "toId": "沅川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_眠川_烬川",
+   "fromId": "眠川",
+   "toId": "烬川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_眠川_沧川",
+   "fromId": "眠川",
+   "toId": "沧川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_眠川_沅川",
+   "fromId": "眠川",
+   "toId": "沅川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_眠川_潞川",
+   "fromId": "眠川",
+   "toId": "潞川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_烬川_沧川",
+   "fromId": "烬川",
+   "toId": "沧川",
+   "type": "local",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_烬川_沅川",
+   "fromId": "烬川",
+   "toId": "沅川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_烬川_潞川",
+   "fromId": "烬川",
+   "toId": "潞川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_烬川_珉川",
+   "fromId": "烬川",
+   "toId": "珉川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_沧川_沅川",
+   "fromId": "沧川",
+   "toId": "沅川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_沧川_潞川",
+   "fromId": "沧川",
+   "toId": "潞川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_沧川_珉川",
+   "fromId": "沧川",
+   "toId": "珉川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_沧川_瑄川",
+   "fromId": "沧川",
+   "toId": "瑄川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_沅川_潞川",
+   "fromId": "沅川",
+   "toId": "潞川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_沅川_珉川",
+   "fromId": "沅川",
+   "toId": "珉川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_沅川_瑄川",
+   "fromId": "沅川",
+   "toId": "瑄川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_潞川_珉川",
+   "fromId": "潞川",
+   "toId": "珉川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_潞川_瑄川",
+   "fromId": "潞川",
+   "toId": "瑄川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  },
+  {
+   "id": "auto_珉川_瑄川",
+   "fromId": "珉川",
+   "toId": "瑄川",
+   "type": "cross_domain",
+   "auto": true,
+   "controlPoints": []
+  }
+ ],
+ "domainBorderOverrides": {},
+ "interiorData": {},
+ "areaZones": {},
+ "areaRoutes": {},
+ "areaMarkers": {},
+ "areaTextLabels": {},
+ "areaReferenceImages": {},
+ "spaceMarkers": [],
+ "fleetCards": [],
+ "updatedAt": "2026-09-08T04:54:00.239Z"
+}

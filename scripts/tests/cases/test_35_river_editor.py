@@ -62,7 +62,7 @@ def _hi_lo(cdp):
 
 def _rivers(cdp):
     return _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const rs = md.rivers || [];
       return JSON.stringify({{ n: rs.length, list: rs.map(r => ({{
         id: r.id, name: r.name, width: r.width,
@@ -132,7 +132,7 @@ def run(cdp):
         return False, f'按流量分级线宽未生效：{calc["widths"]}'
 
     # ── 2. 进入行星 + Shift+R 河流模式 ─────────────────────────────────
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container .canvas-wrapper canvas')", desc='行星画布挂载')
@@ -201,7 +201,7 @@ def run(cdp):
     # ── 5. 选中 + 往高处拖下游节点（必须被约束） ───────────────────────
     rid = river['id']
     sel = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.rivers || []).find(x => x.id === '{rid}');
       if (!r) return JSON.stringify({{ err: 'gone' }});
       const pm = {PM};
@@ -221,7 +221,7 @@ def run(cdp):
     _drag(cdp, [[down_node['x'], down_node['y']], [hi['x'], hi['y']]])
     time.sleep(0.8)
     dragged = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.rivers || []).find(x => x.id === '{rid}');
       if (!r) return JSON.stringify({{ err: 'gone' }});
       const ns = r.nodes;
@@ -244,7 +244,7 @@ def run(cdp):
     # 往低处拖（合法）→ 位置应真的变了
     # 注意：必须从节点**当前**位置按下（第一次拖拽已把节点 clamp 到别处，按原坐标会打空）
     low_target = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.rivers || []).find(x => x.id === '{rid}');
       const pm = {PM};
       const node = r.nodes[r.nodes.length - 1];
@@ -271,7 +271,7 @@ def run(cdp):
     _drag(cdp, [[low_target['from']['x'], low_target['from']['y']], [low_target['to']['x'], low_target['to']['y']]])
     time.sleep(0.7)
     moved = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.rivers || []).find(x => x.id === '{rid}');
       const p = r.nodes[r.nodes.length - 1];
       return JSON.stringify({{ h: Math.round(p.h * 100) / 100, hs: r.nodes.map(n => Math.round(n.h * 100) / 100) }});
@@ -283,7 +283,7 @@ def run(cdp):
     _j(cdp, f"(() => {{ {STORE}.undo(); return 'ok'; }})()")
     time.sleep(0.5)
     undone_hs = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.rivers || []).find(x => x.id === '{rid}');
       return JSON.stringify({{ hs: r.nodes.map(n => Math.round(n.h * 100) / 100) }});
     }})()""")
@@ -301,7 +301,7 @@ def run(cdp):
     })()""")
     time.sleep(0.6)
     width_now = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const r = (md.rivers || []).find(x => x.id === '{rid}');
       return JSON.stringify({{ width: r.width }});
     }})()""")
@@ -311,7 +311,7 @@ def run(cdp):
     time.sleep(1.6)
     _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, f"""(() => {{
-      const p = window.__probe.lastMapPayload('乐园星');
+      const p = window.__probe.lastMapPayload('曜川星');
       if (!p) return JSON.stringify({{ n: 0 }});
       const r = (p.data.rivers || []).find(x => x.id === '{rid}');
       const round = JSON.parse(JSON.stringify(p.data)).rivers.find(x => x.id === '{rid}');
@@ -337,7 +337,7 @@ def run(cdp):
     if _rivers(cdp)['n'] != base_n + 1:
         return False, '删除河流 undo 未复原'
 
-    _j(cdp, f"(() => {{ const md = {STORE}.mapData['乐园星'] || {{}}; const s = {PM}; if (s.selectedRiver) {{ md.rivers = md.rivers.filter(r => r.id !== '{rid}'); s.selectedRiver = null; }} s.setInteractionMode('pan'); return 'ok'; }})()")
+    _j(cdp, f"(() => {{ const md = {STORE}.mapData['曜川星'] || {{}}; const s = {PM}; if (s.selectedRiver) {{ md.rivers = md.rivers.filter(r => r.id !== '{rid}'); s.selectedRiver = null; }} s.setInteractionMode('pan'); return 'ok'; }})()")
     return True, (
         f'河流编辑器通过：排序算法 {calc["order"]}、逆流 {calc["violationsBefore"]}→{calc["violationsAfter"]} 对；'
         f'往高处拖被 clamp 到 {calc["clampedUp"]["h"]:.1f}（≤ 上游 50）、往低处不拦截；'

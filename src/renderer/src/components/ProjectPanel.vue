@@ -424,12 +424,23 @@ async function doReveal() {
   if (!res || !res.success) setTip((res && res.error) || '定位失败', 'err');
 }
 
-function doClose() {
-  proj.closeProject();
+/**
+ * 关闭项目。**先保存、再关闭**（数据安全）：
+ * 未落盘的改动若被静默丢弃，用户无从知道那些手绘时间去哪了 —— 所以
+ * ① 有改动 → 先保存（projectStore 内部 flush），保存成功才关；
+ * ② 保存失败 → **拒绝关闭**并把原因显示出来（数据仍在内存，可重试保存 / 先备份）。
+ */
+async function doClose() {
+  setTip('正在保存并关闭…');
+  const res = await proj.closeProject();
+  if (!res || res.success !== true) {
+    setTip((res && res.error) || '关闭失败（未保存的改动已保留）', 'err');
+    return;
+  }
   selectedId.value = '';
   cancelRename();
   pendingDelete.value = null;
-  setTip('项目已关闭', 'ok');
+  setTip(res.saved ? '已保存并关闭项目' : '项目已关闭', 'ok');
 }
 
 // ── 实体树：选中 / 改名 / 删除 / 拖动改父级 ────────────────────────────────

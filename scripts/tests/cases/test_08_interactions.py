@@ -45,7 +45,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     import time
 
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.5)
@@ -72,7 +72,7 @@ def run(cdp):
     orig = json.loads(cdp.eval("JSON.stringify(window.__t_orig)"))
     dx, dy = 120, 80
     # P2 起 place 拖拽接 E5 磁吸（与 marker/text 一致，test_18 步骤 1/9 覆盖），
-    # 乐园星对象密集，落点易被吸到候选轴上——本用例断言精确位移，先关闭磁吸
+    # 曜川星对象密集，落点易被吸到候选轴上——本用例断言精确位移，先关闭磁吸
     set_pm_state(cdp, "pm.smartGuidesEnabled = false; return 'ok';")
     drag_canvas_polyline(cdp, [(orig['x'], orig['y']), (orig['x'] + dx, orig['y'] + dy)])
     time.sleep(0.4)
@@ -133,7 +133,7 @@ def run(cdp):
       if (ps.length < 3) return 'no-places';
       const xs = ps.map(p => p.coordinate.x), ys = ps.map(p => p.coordinate.y);
       const box = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-      // 沿左下对角线找空白起点（避开 province/place 命中——乐园星 13 个地形面）
+      // 沿左下对角线找空白起点（避开 province/place 命中——曜川星 13 个地形面）
       let start = null;
       for (let i = 0; i < 50; i++) {
         const x = box.minX - 80 - i * 100;

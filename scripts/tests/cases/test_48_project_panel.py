@@ -74,7 +74,7 @@ PANEL_JS = r"""(async () => {
   // harness 每个用例前会打开基线项目（决策 1 终态：无项目 = 只读，用例得有项目才可写）。
   // 本用例守的就是面板的**空态**，所以先关掉它 —— 顺带验证「关闭 → 无项目 → 只读」的终态，
   // 以及「只读态下「新建」按钮必须仍可用」（否则永远打不开第一个项目 = 死锁）。
-  if (ps.isOpen) { ps.closeProject(); await tick(300); }
+  if (ps.isOpen) { await ps.closeProject(); await tick(300); }
   ck('用例起点：无项目 + 只读（决策 1 终态）', ps.isOpen === false && W.isReadOnly.value === true,
      { open: ps.isOpen, gate: W.describeWriteGate() });
   const ent = (nm) => Object.values(ps.entities).find(e => (e.name || '') === nm) || null;

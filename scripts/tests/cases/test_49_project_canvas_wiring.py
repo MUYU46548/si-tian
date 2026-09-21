@@ -47,7 +47,7 @@ JS = r"""(async () => {
   const hadHarness = proj.isOpen === true;
   ck('用例起点：harness 基线项目已打开（事实源=项目）',
      hadHarness && store.canvasSource === 'project', { open: proj.isOpen, src: store.canvasSource });
-  if (hadHarness) { proj.closeProject(); await tick(400); }
+  if (hadHarness) { await proj.closeProject(); await tick(400); }
   const vaultNodesBefore = store.nodes.length;
   same('关闭项目后事实源回到知识库', store.canvasSource, 'vault');
   ck('关闭项目后画布有 Obsidian 节点（不是空画布）', vaultNodesBefore > 0, vaultNodesBefore);
@@ -134,7 +134,7 @@ JS = r"""(async () => {
   ck('拒绝原因给出可行做法（先关闭项目）', re && String(re.error || '').indexOf('关闭项目') >= 0, re && re.error);
 
   // ---- h) 关闭项目 → 画布恢复知识库工作态 ----
-  proj.closeProject();
+  await proj.closeProject();
   await tick(400);
   same('关闭项目后事实源回到知识库', store.canvasSource, 'vault');
   same('画布节点数恢复为打开前的值', store.nodes.length, vaultNodesBefore);

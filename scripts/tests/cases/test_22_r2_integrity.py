@@ -63,31 +63,31 @@ def run(cdp):
     ensure_data_ready(cdp)
 
     # ============ a) 搜索覆盖正文 wikilinks ============
-    # 「白芝原」不是任何节点的名称，只作为 wikilink 出现在 哈伦的住所 / 卡莉的工作室 正文中
-    do_search(cdp, '白芝原')
+    # 「叠翠原」不是任何节点的名称，只作为 wikilink 出现在 拾光小筑 / 缄默工坊 正文中
+    do_search(cdp, '叠翠原')
     res = read_results(cdp)
     if not isinstance(res, list) or len(res) == 0:
         return False, f'wikilink 搜索无结果 {res}'
     names = {r['name'] for r in res}
-    if not names.issubset({'哈伦的住所', '卡莉的工作室'}):
+    if not names.issubset({'拾光小筑', '缄默工坊'}):
         return False, f'wikilink 命中集合异常 {sorted(names)}'
     if not all(r['mention'] for r in res):
         return False, f'wikilink 结果未标记「提及」 {res}'
 
     # 名称直配优先：搜一个自身即节点名的词，第 1 条（current）必须是直配（无「提及」徽标）
-    do_search(cdp, '净土星域')
+    do_search(cdp, '归岚星域')
     res2 = read_results(cdp)
     if not isinstance(res2, list) or len(res2) == 0:
         return False, f'直配搜索无结果 {res2}'
     cur = [r for r in res2 if r['current']]
     if not cur:
         return False, f'无 current 结果 {res2}'
-    if cur[0]['name'] != '净土星域':
+    if cur[0]['name'] != '归岚星域':
         return False, f'第 1 条应是名称直配节点 (实际 {cur[0]})'
     if any(r['mention'] for r in cur):
         return False, f'第 1 条不应是「提及」命中 {cur[0]}'
-    # 同一查询里，自身即命中的 净土星域 不得被标成提及
-    own = [r for r in res2 if r['name'] == '净土星域']
+    # 同一查询里，自身即命中的 归岚星域 不得被标成提及
+    own = [r for r in res2 if r['name'] == '归岚星域']
     if own and own[0]['mention']:
         return False, f'名称直配节点被误标为「提及」 {own[0]}'
 
@@ -98,7 +98,7 @@ def run(cdp):
     # ============ b) draft 转正入口 ============
     made = _j(cdp, f"""(() => {{
       const s = {APP_STORE};
-      const planet = s.nodes.find(n => n.name === '乐园星');
+      const planet = s.nodes.find(n => n.name === '曜川星');
       const id = 'test_draft_' + Date.now();
       s.addNode({{ id, name: '暂存测试地点', layer: 'city', parentId: planet ? planet.id : null,
         tags: [], sourcePath: '', coordinate: {{ x: 10, y: 10 }}, draft: true }});
@@ -162,7 +162,7 @@ def run(cdp):
       window.sitianAPI.openExternal = async (u) => {{ window.__opened = u; return {{ success: true }}; }};
       window.sitianAPI.getVaultPath = async () => 'E:/图书馆/测试库A';
       const s = {APP_STORE};
-      const n = s.nodes.find(x => x.name === '乐园星系');
+      const n = s.nodes.find(x => x.name === '曜川星系');
       if (!n || !n.sourcePath) return JSON.stringify({{ err: 'no-node-with-sourcePath' }});
       s.selectNode(n);
       await new Promise(r => setTimeout(r, 150));
@@ -193,7 +193,7 @@ def run(cdp):
     #         不得自己拼 key 直写。
     keycheck = _j(cdp, f"""(async () => {{
       const s = {APP_STORE};
-      const pid = '乐园星';
+      const pid = '曜川星';
       const data = await s.loadMapData(pid);
       if (!data) return JSON.stringify({{ err: 'no-mapdata' }});
       let ipcCalls = 0;
@@ -226,7 +226,7 @@ def run(cdp):
     cdp.eval(f"(() => {{ const s = {APP_STORE}; const n = s.nodes.find(x => x.name === '暂存测试地点'); if (n) s.removeNode(n.id); s.clearSelection(); return 'clean'; }})()")
     time.sleep(0.3)
 
-    return True, ('搜索覆盖 wikilinks（白芝原→哈伦的住所/卡莉的工作室，带提及徽标）+ 名称直配优先 + '
+    return True, ('搜索覆盖 wikilinks（叠翠原→拾光小筑/缄默工坊，带提及徽标）+ 名称直配优先 + '
                   'draft 转正入口与 sourcePath 回填 + obsidian URI 库名动态化（测试库A）+ '
                   f'saveMapDataImmediate 项目模式 IPC 零调用（知识库 key={keycheck["expect"]} 不会被复活）、'
                   '数据确实进项目文件、源码仍经由 saveMapData 前缀化路径')

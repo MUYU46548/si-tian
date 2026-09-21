@@ -298,7 +298,7 @@ STORE_JS = """(async () => {
   const ls = await s.refreshProjectList('mock/projects');
   ck('refreshProjectList 成功', ls.success === true && ls.items.length >= 1, ls);
   same('列表读到实体数', ls.items[0].entityCount, 4);
-  s.closeProject();
+  await s.closeProject();
   ck('closeProject', s.isOpen === false && s.filePath === '');
   // ⚠️ saveProject 是 async —— 漏 await 会拿到 Promise 上的 undefined（.success === false 恒假）
   const noProjectCreate = s.createEntity({ name: 'x' });

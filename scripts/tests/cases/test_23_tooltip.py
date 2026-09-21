@@ -65,7 +65,7 @@ def read_tip(cdp):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, f"!!{CANVAS}", desc='行星画布挂载')

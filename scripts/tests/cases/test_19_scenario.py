@@ -52,24 +52,24 @@ def _add_test_province(cdp, prov_id='test_prov_1'):
     return cdp.eval(f"""(() => {{
       const app = document.querySelector('#app').__vue_app__;
       const s = app._instance.setupState.store;
-      s.addBaseProvince('德斯特星', {{
+      s.addBaseProvince('云陇大陆', {{
         id: '{prov_id}',
         name: '测试省份',
         points: [{{x:100,y:100}}, {{x:200,y:100}}, {{x:200,y:200}}, {{x:100,y:200}}],
         biome: 'temperate',
         coast: true
       }});
-      return s.baseMaps['德斯特星'].terrain.length;
+      return s.baseMaps['云陇大陆'].terrain.length;
     }})()""")
 
 
-def _create_test_scenario(cdp, scenario_id='德斯特星/测试时代'):
+def _create_test_scenario(cdp, scenario_id='云陇大陆/测试时代'):
     """通过 store API 创建测试剧本"""
     return cdp.eval(f"""(() => {{
       const app = document.querySelector('#app').__vue_app__;
       const s = app._instance.setupState.store;
       s.createScenario('{scenario_id}', {{
-        ownerKey: '德斯特星',
+        ownerKey: '云陇大陆',
         name: '测试时代',
         era: {{ roman: 'Ⅰ', label: '测试', startYear: '2000', endYear: '2010' }},
         polities: [
@@ -81,7 +81,7 @@ def _create_test_scenario(cdp, scenario_id='德斯特星/测试时代'):
     }})()""")
 
 
-def _set_ownership(cdp, scenario_id='德斯特星/测试时代', prov_id='test_prov_1', polity_id='p1'):
+def _set_ownership(cdp, scenario_id='云陇大陆/测试时代', prov_id='test_prov_1', polity_id='p1'):
     """通过 store API 指派势力"""
     return cdp.eval(f"""(() => {{
       const app = document.querySelector('#app').__vue_app__;
@@ -103,7 +103,7 @@ def run(cdp):
         return False, 'ScenarioMap 组件未挂载'
 
     # 底图 fixture：司天不再默认建/选任何示例底图（见 helpers.open_test_base_map 说明）
-    bm_ok, bm_info = open_test_base_map(cdp, '德斯特星')
+    bm_ok, bm_info = open_test_base_map(cdp, '云陇大陆')
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
     
@@ -125,9 +125,9 @@ def run(cdp):
     # Step 5: 验证数据完整性
     data = cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
-      const sc = s.scenarios['德斯特星/测试时代'];
+      const sc = s.scenarios['云陇大陆/测试时代'];
       return JSON.stringify({
-        provCount: s.baseMaps['德斯特星'].terrain.length,
+        provCount: s.baseMaps['云陇大陆'].terrain.length,
         scCount: Object.keys(s.scenarios).length,
         owner: sc.ownership['test_prov_1'],
         polityName: sc.polities.find(p => p.id === 'p1').name,
@@ -168,9 +168,9 @@ def run(cdp):
     verify = cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       return JSON.stringify({
-        provCount: s.baseMaps['德斯特星']?.terrain?.length || 0,
+        provCount: s.baseMaps['云陇大陆']?.terrain?.length || 0,
         scCount: Object.keys(s.scenarios).length,
-        owner: s.scenarios['德斯特星/测试时代']?.ownership?.test_prov_1
+        owner: s.scenarios['云陇大陆/测试时代']?.ownership?.test_prov_1
       });
     })()""")
     
@@ -185,11 +185,11 @@ def run(cdp):
     # Step 9: 测试继承
     inherit_count = cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
-      s.inheritScenario('德斯特星/第二时代', '德斯特星/测试时代', {
+      s.inheritScenario('云陇大陆/第二时代', '云陇大陆/测试时代', {
         name: '第二时代',
         era: { roman: 'Ⅱ', label: '第二', startYear: '2010', endYear: '2020' }
       });
-      const newSc = s.scenarios['德斯特星/第二时代'];
+      const newSc = s.scenarios['云陇大陆/第二时代'];
       return JSON.stringify({
         inherited: newSc.ownership['test_prov_1'],
         order: newSc.order,

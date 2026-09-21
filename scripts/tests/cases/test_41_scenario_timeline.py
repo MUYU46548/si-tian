@@ -49,34 +49,34 @@ def _seed(cdp):
         points: [{x:x0,y:y0},{x:x0+120,y:y0},{x:x0+120,y:y0+120},{x:x0,y:y0+120}],
         biome: 'temperate', coast: true,
       });
-      if (!s.baseMaps['德斯特星']) s.addBaseMap('德斯特星', { name: '德斯特星' });
-      const bm = s.baseMaps['德斯特星'];
+      if (!s.baseMaps['云陇大陆']) s.addBaseMap('云陇大陆', { name: '云陇大陆' });
+      const bm = s.baseMaps['云陇大陆'];
       bm.terrain.length = 0;
       ['prov_a','prov_b','prov_c'].forEach((id, i) => {
-        s.addBaseProvince('德斯特星', mk(id, 200 + i * 160, 200));
+        s.addBaseProvince('云陇大陆', mk(id, 200 + i * 160, 200));
       });
 
       const P = (id, name, color) => ({ id, name, color });
-      s.createScenario('德斯特星/甲时代', {
-        ownerKey: '德斯特星', name: '甲时代', order: 1,
+      s.createScenario('云陇大陆/甲时代', {
+        ownerKey: '云陇大陆', name: '甲时代', order: 1,
         era: { roman: 'Ⅰ', label: '甲', startYear: '2000', endYear: '2010' },
         polities: [P('A1','甲国','#c23b3b')],
         ownership: { prov_a:'A1', prov_b:'A1', prov_c:'A1' },
       });
-      s.createScenario('德斯特星/乙时代', {
-        ownerKey: '德斯特星', name: '乙时代', order: 2,
+      s.createScenario('云陇大陆/乙时代', {
+        ownerKey: '云陇大陆', name: '乙时代', order: 2,
         era: { roman: 'Ⅱ', label: '乙', startYear: '2010', endYear: '2020' },
         polities: [P('B1','乙国','#4a90d9'), P('B2','乙南','#e6a23c')],
         ownership: { prov_a:'B1', prov_b:'B2', prov_c:'B1' },
       });
-      s.createScenario('德斯特星/丙时代', {
-        ownerKey: '德斯特星', name: '丙时代', order: 3,
+      s.createScenario('云陇大陆/丙时代', {
+        ownerKey: '云陇大陆', name: '丙时代', order: 3,
         era: { roman: 'Ⅲ', label: '丙', startYear: '2020', endYear: '2030' },
         polities: [P('C1','丙国','#5b8c5a'), P('C2','丙南','#8e44ad'), P('C3','丙西','#d4a857')],
         ownership: { prov_a:'C1', prov_b:'C2', prov_c:'C3' },
       });
       return JSON.stringify({
-        provCount: s.baseMaps['德斯特星'].terrain.length,
+        provCount: s.baseMaps['云陇大陆'].terrain.length,
         scCount: Object.keys(s.scenarios).length,
       });
     })()""")
@@ -88,7 +88,7 @@ def run(cdp):
     if r != 'ok':
         return False, f'进入剧本模式失败: {r}'
     # 底图 fixture：司天不再默认建/选示例底图（见 helpers.open_test_base_map 说明）
-    bm_ok, bm_info = open_test_base_map(cdp, '德斯特星')
+    bm_ok, bm_info = open_test_base_map(cdp, '云陇大陆')
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
 

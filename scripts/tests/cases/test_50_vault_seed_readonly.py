@@ -46,7 +46,7 @@ def run(cdp):
       const M = await import('/src/store/projectStore.js');
       const W = await import('/src/store/writeGate.js');
       const p = M.useProjectStore({PINIA});
-      if (p.isOpen) p.closeProject();
+      if (p.isOpen) await p.closeProject();
       await new Promise(r => setTimeout(r, 400));
       const s = {STORE};
       return JSON.stringify({{ open: p.isOpen, mode: W.writeMode.value, src: s.canvasSource,
@@ -171,9 +171,9 @@ def run(cdp):
       const s = {STORE};
       const md = JSON.parse(JSON.stringify((p.project.maps || {{}}).mapData || {{}}));
       const keys = Object.keys(md);
-      delete md['乐园星'];
+      delete md['曜川星'];
       p.project = {{ ...p.project, maps: {{ ...(p.project.maps || {{}}), mapData: md }} }};
-      delete s.mapData['乐园星'];              // 画布内存里也清掉，强制走一次 loadMapData
+      delete s.mapData['曜川星'];              // 画布内存里也清掉，强制走一次 loadMapData
       // 计数桩：知识库缓存读取通道被调用了几次（项目模式下必须是 0）
       window.__getMapDataCalls = 0;
       if (!window.sitianAPI.__getMapDataHooked) {{
@@ -189,13 +189,13 @@ def run(cdp):
     if stripped.get('left', 0) != 0:
         return False, f'前置失败：项目里的行星图没被清干净 {stripped}'
 
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.2)
     leak = _j(cdp, f"""(() => {{
       const s = {STORE};
-      const md = s.mapData['乐园星'];
+      const md = s.mapData['曜川星'];
       return JSON.stringify({{
         ipcCalls: window.__getMapDataCalls || 0,
         hasMap: !!md,
@@ -213,7 +213,7 @@ def run(cdp):
       const M = await import('/src/store/projectStore.js');
       const W = await import('/src/store/writeGate.js');
       const p = M.useProjectStore({PINIA});
-      p.closeProject();
+      await p.closeProject();
       await new Promise(r => setTimeout(r, 500));
       const s = {STORE};
       return JSON.stringify({{ open: p.isOpen, src: s.canvasSource, mode: W.writeMode.value,
@@ -224,13 +224,13 @@ def run(cdp):
     if back.get('mode') != 'readonly' or not back.get('badge'):
         return False, f'关闭项目后应重新只读且徽标可见：{back}'
 
-    r2 = goto_planet(cdp, '乐园星')
+    r2 = goto_planet(cdp, '曜川星')
     if r2 != 'planet':
         return False, f'关闭项目后导航行星失败 ({r2})'
     time.sleep(1.2)
     vault_read = _j(cdp, f"""(() => {{
       const s = {STORE};
-      const md = s.mapData['乐园星'];
+      const md = s.mapData['曜川星'];
       return JSON.stringify({{ hasMap: !!md, terrain: md ? (md.terrain || []).length : -1 }});
     }})()""", 'vault-read')
     if not vault_read.get('hasMap') or vault_read.get('terrain', 0) <= 0:

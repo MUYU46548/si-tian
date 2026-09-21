@@ -11,7 +11,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     import time
 
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.5)

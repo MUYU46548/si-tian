@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 17：卫星轨道（批次D5）
-链路：进入 乐园星系 单系视图 + 编辑模式 → 添加第二颗行星
+链路：进入 曜川星系 单系视图 + 编辑模式 → 添加第二颗行星
       → 右键行星「设为卫星…」→ 选母行星
       → 断言 layer=moon + parentId=母行星 + planetLayouts 出现 isMoon 锚定项（绕母星小轨道）
       → 右键卫星「↩ 取消卫星」→ 恢复 planet + 独立轨道槽 → undo 一路回溯恢复 moon 态
@@ -63,10 +63,10 @@ def add_planet_via_button(cdp, type_label='行星'):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    # a) 进入 乐园星系 单系视图 + 编辑模式（右键菜单仅编辑模式开放）
+    # a) 进入 曜川星系 单系视图 + 编辑模式（右键菜单仅编辑模式开放）
     nav = cdp.eval(f"""(() => {{
       const s = {APP_STORE};
-      const sys = s.nodes.find(n => n.id === '乐园星系');
+      const sys = s.nodes.find(n => n.id === '曜川星系');
       if (!sys) return 'no-sys';
       let cur = s.nodes.find(n => n.id === sys.parentId);
       while (cur && cur.layer !== 'world') cur = s.nodes.find(n => n.id === cur.parentId);
@@ -82,15 +82,15 @@ def run(cdp):
     cdp.eval(f"{DETAIL_ST}.toggleEditMode()")
     time.sleep(0.3)
 
-    # a2) 添加第二颗行星（乐园星系默认仅 1 颗行星，需先添加才能测试「设为卫星」）
+    # a2) 添加第二颗行星（曜川星系默认仅 1 颗行星，需先添加才能测试「设为卫星」）
     added = add_planet_via_button(cdp, '行星')
     if not isinstance(added, dict) or 'id' not in added:
         return False, f'添加第二颗行星失败 ({added})'
-    if added['after'] != added['before'] + 1 or added['parentId'] != '乐园星系':
+    if added['after'] != added['before'] + 1 or added['parentId'] != '曜川星系':
         return False, f'添加行星后计数/属性异常 ({added})'
     time.sleep(0.3)
 
-    # 系内至少两颗行星（乐园星 + 刚添加的行星）；优先选名字带「月/卫星」的还原用户场景
+    # 系内至少两颗行星（曜川星 + 刚添加的行星）；优先选名字带「月/卫星」的还原用户场景
     names = _js_obj(cdp, f"""(() => JSON.stringify({DETAIL_ST}.planetLayouts
       .filter(p => !p.isMoon).map(p => p.displayName || p.name)))()""")
     if not isinstance(names, list) or len(names) < 2:
@@ -188,9 +188,9 @@ def run(cdp):
     restored = _js_obj(cdp, f"""(() => {{
       const s = {APP_STORE};
       const node = s.nodes.find(n => (n.displayName || n.name) === '{moon_name}');
-      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: '乐园星系' }});
+      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: '曜川星系' }});
     }})()""")
-    if not isinstance(restored, dict) or restored.get('layer') != 'planet' or restored.get('parentId') != '乐园星系':
+    if not isinstance(restored, dict) or restored.get('layer') != 'planet' or restored.get('parentId') != '曜川星系':
         return False, f'取消卫星未恢复独立轨道 {restored}'
 
     # f) undo 一次（撤销「取消卫星」）→ 回到 moon 态；再 undo 一次 → 回到初始独立行星
@@ -208,9 +208,9 @@ def run(cdp):
     final = _js_obj(cdp, f"""(() => {{
       const s = {APP_STORE};
       const node = s.nodes.find(n => (n.displayName || n.name) === '{moon_name}');
-      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: '乐园星系' }});
+      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: '曜川星系' }});
     }})()""")
-    if not isinstance(final, dict) or final.get('layer') != 'planet' or final.get('parentId') != '乐园星系':
+    if not isinstance(final, dict) or final.get('layer') != 'planet' or final.get('parentId') != '曜川星系':
         return False, f'undo×2 未回到初始独立行星 {final}'
 
     # g) 清场：undo 移除添加的行星 → redo×3 恢复到测试前的独立行星（与初始一致）

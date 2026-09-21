@@ -32,6 +32,16 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   getCloseQuitsApp: () => ipcRenderer.invoke('get-close-quits-app'),
   setCloseQuitsApp: (v) => ipcRenderer.invoke('set-close-quits-app', v),
 
+  // 退出前落盘（数据安全）：主进程在真正 quit 前发 'app-flush-before-quit'，
+  // 渲染层写完未落盘的改动后回 'app-flush-done'（主进程另有 2.5s 超时兜底）。
+  onFlushBeforeQuit: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const h = (_e, reason) => cb(reason);
+    ipcRenderer.on('app-flush-before-quit', h);
+    return () => ipcRenderer.removeListener('app-flush-before-quit', h);
+  },
+  notifyFlushDone: () => ipcRenderer.send('app-flush-done'),
+
   // 当前激活的底图键（P0 持久化）
   getCurrentBaseMapKey: () => ipcRenderer.invoke('get-current-basemap-key'),
   setCurrentBaseMapKey: (key) => ipcRenderer.invoke('set-current-basemap-key', key),

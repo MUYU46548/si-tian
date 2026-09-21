@@ -5,13 +5,20 @@
 
 用法（在 SiTian 项目根目录）：
     python scripts/tests/run_tests.py [用例名...]
+    python scripts/tests/run_tests.py --real-data      # 对着真实知识库跑（默认用仓库内合成 fixture）
 
 流程：
-    1. 备份 index.html + 注入 mock sitianAPI + 复制真实数据到 mock-data/
+    1. 备份 index.html + 注入 mock sitianAPI + 准备 mock 数据（默认 = 合成 fixture）
     2. 启动 Vite dev server（5180）+ Edge headless（9222）
     3. 顺序执行 scripts/tests/cases/test_*.py（每个导出 run(cdp) -> (bool, detail)）
     4. 汇总报告（✅/❌ + 失败详情）
     5. 清理：还原 index.html、删除 mock-data、杀进程、释放端口
+
+数据源（2026-09-21 解耦）：
+    默认用 `scripts/tests/fixtures/vault-fixture/*.json` —— **合成 fixture**，由
+    `scripts/tests/fixtures/make_vault_fixture.py` 从真实库「派生 + 脱敏」（结构同构、内容全替换）。
+    这样「用户改自己的世界观数据」不再让用例变红，公开仓库里也不出现任何真实专名/真实地图几何。
+    要验证「真实数据能不能加载」时显式加 --real-data（或 SITIAN_TEST_REAL_VAULT=1）。
 
 注意：mock 的 saveMapData 不写盘 → 测试对真实 .sitian/ 数据零污染。
 """
@@ -38,6 +45,7 @@ MOCK_DATA_DIR = os.path.join(ROOT, 'src', 'renderer', 'mock-data')
 # 例：python scripts/tests/run_tests.py --vault D:/MyVault --edge "C:/path/to/msedge.exe"
 VAULT = os.environ.get('SITIAN_VAULT', r'E:/图书馆/ROSA')
 EDGE_EXE = os.environ.get('SITIAN_EDGE_EXE', r'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+USE_REAL_VAULT = os.environ.get('SITIAN_TEST_REAL_VAULT') == '1'
 _args = sys.argv[1:]
 _case_names = []
 _i = 0
@@ -46,10 +54,25 @@ while _i < len(_args):
         VAULT = _args[_i + 1]; _i += 2
     elif _args[_i] == '--edge' and _i + 1 < len(_args):
         EDGE_EXE = _args[_i + 1]; _i += 2
+    elif _args[_i] == '--real-data':
+        USE_REAL_VAULT = True; _i += 1
     else:
         _case_names.append(_args[_i]); _i += 1
 REAL_GEODATA = os.path.join(VAULT, '.sitian', 'geodata.json').replace('\\', '/')
 REAL_MAPDATA = os.path.join(VAULT, '.sitian', 'mapdata.json').replace('\\', '/')
+# 合成 fixture（与真实库解耦的默认数据源）
+FIXTURE_DIR = os.path.join(ROOT, 'scripts', 'tests', 'fixtures', 'vault-fixture')
+
+
+def data_source():
+    """返回 (geodata_src, mapdata_src, 人类可读的来源标签)。"""
+    if not USE_REAL_VAULT:
+        g = os.path.join(FIXTURE_DIR, 'geodata.json')
+        m = os.path.join(FIXTURE_DIR, 'mapdata.json')
+        if os.path.exists(g) and os.path.exists(m):
+            return g, m, f'合成 fixture（{FIXTURE_DIR}）'
+        print('  ⚠️ 未找到合成 fixture（scripts/tests/fixtures/vault-fixture/）→ 回退真实库')
+    return REAL_GEODATA, REAL_MAPDATA, f'真实库（{VAULT}）'
 
 MOCK_SCRIPT = """<script>
     window.__SITIAN_MOCK__ = true;
@@ -77,7 +100,7 @@ MOCK_SCRIPT = """<script>
         getGeodata: async () => ({ success: true, data: geodata }),
         reextractGeodata: async () => ({ success: true }),
         saveGeodata: async () => ({ success: true }),
-        getVaultPath: async () => 'E:/图书馆/ROSA',
+        getVaultPath: async () => 'E:/合成测试库',
         selectVaultPath: async () => ({ success: false, canceled: true }),
         setVaultPath: async () => ({ success: false, canceled: true }),
         getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
@@ -242,11 +265,13 @@ def free_port(port):
 
 
 def setup_mock():
-    """备份 index.html、注入 mock、复制数据"""
+    """备份 index.html、注入 mock、准备 mock 数据（默认合成 fixture）"""
     shutil.copy(INDEX_HTML, INDEX_HTML + '.bak')
     os.makedirs(MOCK_DATA_DIR, exist_ok=True)
-    shutil.copy(REAL_GEODATA, os.path.join(MOCK_DATA_DIR, 'geodata.json'))
-    shutil.copy(REAL_MAPDATA, os.path.join(MOCK_DATA_DIR, 'mapdata.json'))
+    geodata_src, mapdata_src, src_label = data_source()
+    shutil.copy(geodata_src, os.path.join(MOCK_DATA_DIR, 'geodata.json'))
+    shutil.copy(mapdata_src, os.path.join(MOCK_DATA_DIR, 'mapdata.json'))
+    print(f'  · 回归数据源：{src_label}')
     with open(INDEX_HTML, 'r', encoding='utf-8') as f:
         html = f.read()
     html = html.replace('<div id="app"></div>', MOCK_SCRIPT + '\n  <div id="app"></div>')

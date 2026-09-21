@@ -198,7 +198,7 @@ def run(cdp):
     time.sleep(0.4)
 
     # ── 4. 画布：新建标记继承类型 ──────────────────────────────────────
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container .canvas-wrapper canvas')", desc='行星画布挂载')
@@ -235,7 +235,7 @@ def run(cdp):
     if not isinstance(pt, dict) or 'x' not in pt:
         return False, f'视口内找不到陆地落点 {pt}'
     before_n = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       return (md.markers || []).length;
     }})()""")
     _j(cdp, f"(() => {{ {PM}.markerEditor.selectedMarkerType.value = 'danger'; return 'ok'; }})()")
@@ -244,7 +244,7 @@ def run(cdp):
         return False, f'标记落点超出视口 {pt}'
     time.sleep(0.8)
     created = _j(cdp, f"""(() => {{
-      const md = {STORE}.mapData['乐园星'] || {{}};
+      const md = {STORE}.mapData['曜川星'] || {{}};
       const ms = md.markers || [];
       const m = ms[ms.length - 1];
       return JSON.stringify({{
@@ -266,11 +266,11 @@ def run(cdp):
         return False, f'标记未继承 danger 类型的图标/颜色（标记 {mk}，类型 {danger_def}）'
 
     # ── 5. 单点覆盖后保存不丢（落盘去向 = 项目文件） ────────────────────
-    _j(cdp, f"(() => {{ {STORE}.updateMarker('乐园星', '{mk['id']}', {{ color: '#00FF00' }}); return 'ok'; }})()")
+    _j(cdp, f"(() => {{ {STORE}.updateMarker('曜川星', '{mk['id']}', {{ color: '#00FF00' }}); return 'ok'; }})()")
     time.sleep(1.5)
     _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, f"""(() => {{
-      const p = window.__probe.lastMapPayload('乐园星');
+      const p = window.__probe.lastMapPayload('曜川星');
       if (!p) return JSON.stringify({{ n: 0 }});
       const m = (p.data.markers || []).find(x => x.id === '{mk["id"]}');
       const round = JSON.parse(JSON.stringify(p.data)).markers.find(x => x.id === '{mk["id"]}');

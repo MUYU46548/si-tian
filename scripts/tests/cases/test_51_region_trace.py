@@ -179,7 +179,7 @@ def run(cdp):
     print(f"    [a-c] 简化 {pure_summary}；界外拒绝 → {obj['outsideMsg']}；重叠拒绝 → {obj['overlapMsg']}")
 
     # ── 进入行星地图 ──
-    level = H.goto_planet(cdp, '乐园星')
+    level = H.goto_planet(cdp, '曜川星')
     if level != 'planet':
         return False, f'导航行星失败（viewLevel={level}）'
     H.enter_edit(cdp)

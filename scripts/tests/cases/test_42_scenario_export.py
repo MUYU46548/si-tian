@@ -35,21 +35,21 @@ def _seed(cdp):
     return cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
-      if (!s.baseMaps['德斯特星']) s.addBaseMap('德斯特星', { name: '德斯特星' });
-      s.baseMaps['德斯特星'].terrain.length = 0;
+      if (!s.baseMaps['云陇大陆']) s.addBaseMap('云陇大陆', { name: '云陇大陆' });
+      s.baseMaps['云陇大陆'].terrain.length = 0;
       const mk = (id, x0) => ({ id, name: '省' + id.slice(-1).toUpperCase(),
         points: [{x:x0,y:150},{x:x0+140,y:150},{x:x0+140,y:290},{x:x0,y:290}],
         biome: 'temperate', coast: true });
-      ['prov_a','prov_b'].forEach((id, i) => s.addBaseProvince('德斯特星', mk(id, 200 + i*200)));
+      ['prov_a','prov_b'].forEach((id, i) => s.addBaseProvince('云陇大陆', mk(id, 200 + i*200)));
       const P = (id, name, color) => ({ id, name, color });
-      s.createScenario('德斯特星/甲时代', {
-        ownerKey: '德斯特星', name: '甲时代', order: 1,
+      s.createScenario('云陇大陆/甲时代', {
+        ownerKey: '云陇大陆', name: '甲时代', order: 1,
         era: { roman: 'Ⅰ', label: '甲', startYear: '2000', endYear: '2010' },
         polities: [P('A1','甲国','#c23b3b')],
         ownership: { prov_a:'A1', prov_b:'A1' },
       });
-      s.createScenario('德斯特星/乙时代', {
-        ownerKey: '德斯特星', name: '乙时代', order: 2,
+      s.createScenario('云陇大陆/乙时代', {
+        ownerKey: '云陇大陆', name: '乙时代', order: 2,
         era: { roman: 'Ⅱ', label: '乙', startYear: '2010', endYear: '2020' },
         polities: [P('B1','乙国','#4a90d9'), P('B2','乙南','#e6a23c')],
         ownership: { prov_a:'B1', prov_b:'B2' },
@@ -64,7 +64,7 @@ def run(cdp):
     if r != 'ok':
         return False, f'进入剧本模式失败: {r}'
     # 底图 fixture：司天不再默认建/选示例底图（见 helpers.open_test_base_map 说明）
-    bm_ok, bm_info = open_test_base_map(cdp, '德斯特星')
+    bm_ok, bm_info = open_test_base_map(cdp, '云陇大陆')
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
     n = _seed(cdp)
@@ -88,7 +88,7 @@ def run(cdp):
         bytes: rec.text.length, parseErr,
         maps: Object.keys(parsed?.baseMaps || {{}}),
         scenarios: Object.keys(parsed?.scenarios || {{}}),
-        hasOwnership: !!parsed?.scenarios?.['德斯特星/乙时代']?.ownership,
+        hasOwnership: !!parsed?.scenarios?.['云陇大陆/乙时代']?.ownership,
         hasVersion: parsed?.version !== undefined,
         status: s.exportStatus,
         changedPerEra: s.timeline.eraChg.map(e => e.changed),
@@ -98,7 +98,7 @@ def run(cdp):
         return False, f'JSON 导出未走到 IPC: {exp}'
     if exp['parseErr']:
         return False, f'导出的 JSON 无法解析: {exp["parseErr"]}'
-    if exp['kind'] != 'json' or exp['maps'] != ['德斯特星'] or len(exp['scenarios']) != 2:
+    if exp['kind'] != 'json' or exp['maps'] != ['云陇大陆'] or len(exp['scenarios']) != 2:
         return False, f'导出载荷结构不符: {exp}'
     if not exp['hasOwnership'] or not exp['hasVersion']:
         return False, f'导出载荷缺 ownership/version: {exp}'
@@ -153,7 +153,7 @@ def run(cdp):
         scenarios: {{ 'x/空剧本': {{ id:'x/空剧本', name:'空剧本', ownerKey:'缺失底图',
                                    polities: [], ownership: {{}}, era: {{}} }} }},
       }});
-      const good = s.store.auditScenariosPayload(s.store.exportScenariosPayload('德斯特星'));
+      const good = s.store.auditScenariosPayload(s.store.exportScenariosPayload('云陇大陆'));
       return JSON.stringify({{ badCount: bad.length, bad, goodCount: good.length }});
     }})()"""))
     if audit['badCount'] < 3:
@@ -167,9 +167,9 @@ def run(cdp):
       const before = Object.keys(s.store.scenarios).length;
       const payload = {{
         version: 1,
-        baseMaps: {{ '德斯特星': s.store.exportScenariosPayload('德斯特星').baseMaps['德斯特星'] }},
+        baseMaps: {{ '云陇大陆': s.store.exportScenariosPayload('云陇大陆').baseMaps['云陇大陆'] }},
         scenarios: {{
-          '德斯特星/新增时代': {{ id:'德斯特星/新增时代', ownerKey:'德斯特星', name:'新增时代', order: 3,
+          '云陇大陆/新增时代': {{ id:'云陇大陆/新增时代', ownerKey:'云陇大陆', name:'新增时代', order: 3,
             era: {{ roman:'Ⅲ', label:'丙', startYear:'2020', endYear:'2030' }},
             polities: [{{id:'C1',name:'丙国',color:'#5b8c5a'}}],
             ownership: {{ prov_a:'C1', prov_b:'C1' }} }},
@@ -177,10 +177,10 @@ def run(cdp):
       }};
       const r = s.store.importScenariosPayload(payload, {{ mode:'merge' }});
       const after = Object.keys(s.store.scenarios).length;
-      const hasNew = !!s.store.scenarios['德斯特星/新增时代'];
+      const hasNew = !!s.store.scenarios['云陇大陆/新增时代'];
       s.store.undo();
       const afterUndo = Object.keys(s.store.scenarios).length;
-      const gone = !s.store.scenarios['德斯特星/新增时代'];
+      const gone = !s.store.scenarios['云陇大陆/新增时代'];
       return JSON.stringify({{before, after, afterUndo, hasNew, gone, r}});
     }})()"""))
     if not (merge['after'] == merge['before'] + 1 == 3 and merge['hasNew']):
@@ -195,7 +195,7 @@ def run(cdp):
       const payload = {{
         version: 1, baseMaps: {{}},
         scenarios: {{
-          '德斯特星/替换时代': {{ id:'德斯特星/替换时代', ownerKey:'德斯特星', name:'替换时代', order: 1,
+          '云陇大陆/替换时代': {{ id:'云陇大陆/替换时代', ownerKey:'云陇大陆', name:'替换时代', order: 1,
             era: {{ roman:'Ⅰ', label:'甲', startYear:'1000', endYear:'1100' }},
             polities: [{{id:'Z1',name:'周一',color:'#8e44ad'}}],
             ownership: {{ prov_a:'Z1', prov_b:'Z1' }} }},
@@ -207,7 +207,7 @@ def run(cdp):
       const restored = Object.keys(s.store.scenarios).length;
       return JSON.stringify({{before, after, restored, r}});
     }})()"""))
-    if rep['after'] != ['德斯特星/替换时代']:
+    if rep['after'] != ['云陇大陆/替换时代']:
         return False, f'replace 导入未整体替换: {rep}'
     if rep['restored'] != rep['before']:
         return False, f'replace 导入不是一条 undo: {rep}'

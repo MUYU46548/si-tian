@@ -6,7 +6,7 @@
   a) 项目面板「新建项目」输入框：面板一打开就自动聚焦（不依赖点击）、占位文字不再硬编码 ROSA、
      聚焦有可见描边、行内间隙点击也能聚焦、能真的输入并让「新建」变可用
   b) 「Git 快照」按钮在位，且 title/回执说明了「司天不会自动初始化 git 仓库」（目录非仓库时给去处）
-  c) 新建的空项目：剧本模式**不再**凭空造出「德斯特星」空底图（那曾把自用剧本名硬编码进产品），
+  c) 新建的空项目：剧本模式**不再**凭空造出「云陇大陆」空底图（那曾把自用剧本名硬编码进产品），
      而是显示「还没有底图」提示；真正落笔时才懒建「底图 N」
   d) 世界选择空态卡片：三个按钮不再溢出卡片边界（宽/窄窗口都断言）
   e) 渲染护栏：绘制路径全部走 px()（裸「数字 / cameraScale」清零、坐标变换仍用真实 scale）；
@@ -90,8 +90,8 @@ JS_SCENARIO_EMPTY = r"""(() => {
   if (!sc) return JSON.stringify({ fails: ['ScenarioMap 未挂载'] });
   const keys = Object.keys(s.baseMaps || {});
   ok('空项目里没有任何底图', keys.length === 0, JSON.stringify(keys));
-  same('baseMapKey 为空（不再默认德斯特星）', sc.baseMapKey, '');
-  ok('没有凭空造出「德斯特星」', !keys.includes('德斯特星'), JSON.stringify(keys));
+  same('baseMapKey 为空（不再默认云陇大陆）', sc.baseMapKey, '');
+  ok('没有凭空造出「云陇大陆」', !keys.includes('云陇大陆'), JSON.stringify(keys));
   ok('画布给出「还没有底图」提示', !!document.querySelector('[data-testid="scenario-empty-hint"]'));
   ok('状态栏提示未加载底图', String(sc.statusText).includes('未加载底图'), sc.statusText);
 
@@ -146,7 +146,7 @@ JS_SRC = r"""(() => {
   ok('裸「数字 / cameraScale」已清零', raw === 0, raw);
   ok('坐标变换仍用真实 scale', /\(sx - cameraX\.value\) \/ cameraScale\.value/.test(txt));
   ok('渲染护栏在位', /renderPaused/.test(txt) && /function resumeRender/.test(txt));
-  ok('不再硬编码默认底图德斯特星', !/ref\('德斯特星'\)/.test(txt));
+  ok('不再硬编码默认底图云陇大陆', !/ref\('云陇大陆'\)/.test(txt));
   return JSON.stringify({ fails, pxUses, rawDiv: raw });
 })()"""
 

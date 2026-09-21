@@ -37,7 +37,7 @@ def run(cdp):
         const selects = panel.querySelectorAll('select');
         const setVal = (el, v) => { el.value = v; el.dispatchEvent(new Event('change')); };
         if (selects.length >= 2) {
-          setVal(selects[0], '幻境');
+          setVal(selects[0], '潮汐界');
           setVal(selects[1], 'location');
         }
         const ta = panel.querySelector('textarea');

@@ -199,7 +199,7 @@ def run(cdp):
 
     # 6. 端到端：行星地图上真的用品红画出了城镇标签
     #    注意：标签有 LOD 闸门（s.lodRef > 0.4，需 zoom > 0.7），zoomFit 后 scale 往往很小 → 必须先聚焦放大
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container .canvas-wrapper canvas')", desc='行星画布挂载')
@@ -240,7 +240,7 @@ def run(cdp):
           const ctx = c.getContext('2d');
           ctx.fillStyle = '#1a2a3a';
           ctx.fillRect(0, 0, 300, 60);
-          mod.drawStyledLabel(ctx, '丰竹镇', 150, 30, mod.getPreset('town'), { align: 'center', baseline: 'middle' });
+          mod.drawStyledLabel(ctx, '苇塘镇', 150, 30, mod.getPreset('town'), { align: 'center', baseline: 'middle' });
           const d = ctx.getImageData(0, 0, 300, 60).data;
           let n = 0, sample = null;
           for (let i = 0; i < d.length; i += 4) {

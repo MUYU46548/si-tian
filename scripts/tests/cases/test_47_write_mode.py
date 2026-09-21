@@ -263,7 +263,7 @@ WIRING_JS = """(async () => {
   ck('project 模式可写', G.canWrite() === true);
   ck('原因含项目名', G.writeModeReason.value.indexOf('gate测试项目') >= 0, G.writeModeReason.value);
 
-  s.closeProject();
+  await s.closeProject();
   const expect = G.READONLY_WITHOUT_PROJECT ? 'readonly' : 'legacy';
   same('关闭项目 → 回到无项目默认模式', G.describeWriteGate().mode, expect);
   same('默认模式与常量一致', G.describeWriteGate().mode, expect);
@@ -351,7 +351,7 @@ UI_JS = r"""(async () => {
   const proj = useProjectStore(pinia);
   const store = document.querySelector('#app').__vue_app__._instance.setupState.store;
 
-  if (proj.isOpen) proj.closeProject();
+  if (proj.isOpen) await proj.closeProject();
   await tick(300);
   W.setWriteMode('readonly', '测试只读');
   await tick(200);

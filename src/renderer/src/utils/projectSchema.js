@@ -350,16 +350,36 @@ export function migrateProject(raw) {
   if (compareVersion(from, PROJECT_VERSION) > 0) {
     return { ok: false, project: null, from, to: PROJECT_VERSION, steps, problems: [`项目文件版本 ${from} 高于当前支持的 ${PROJECT_VERSION}`] };
   }
-  let cur = deepClone(raw);
+  // 🔴 迁移/校验**任何一步抛错都必须变成「拒绝加载」，绝不能让异常冒泡上去：
+  //    异常冒出去 = 加载中断 = 画布空 = 用户以为文件坏了（更糟：接着一存就覆盖磁盘上的好数据）。
+  //    拒绝加载时磁盘文件一个字节都不动，用户随时能用备份/基线回退。
+  let cur = null;
+  try {
+    cur = deepClone(raw);
+  } catch (err) {
+    return { ok: false, project: null, from, to: PROJECT_VERSION, steps, problems: [`项目文件无法解析（${(err && err.message) || err}）`] };
+  }
   if (compareVersion(from, PROJECT_VERSION) < 0) {
     for (const ver of Object.keys(MIGRATIONS).sort(compareVersion)) {
       if (compareVersion(ver, from) <= 0) continue;
-      cur = MIGRATIONS[ver](cur);
+      try {
+        cur = MIGRATIONS[ver](cur);
+      } catch (err) {
+        return {
+          ok: false, project: null, from, to: PROJECT_VERSION, steps,
+          problems: [`从 ${from} 迁移到 ${ver} 失败：${(err && err.message) || err}（已拒绝加载，磁盘文件未被改动）`],
+        };
+      }
       cur.version = ver;
       steps.push(`迁移至 ${ver}`);
     }
   }
-  const validated = validateProject(cur);
+  let validated = null;
+  try {
+    validated = validateProject(cur);
+  } catch (err) {
+    return { ok: false, project: null, from, to: PROJECT_VERSION, steps, problems: [`项目内容校验异常：${(err && err.message) || err}（已拒绝加载，磁盘文件未被改动）`] };
+  }
   return { ok: validated.ok, project: validated.project, from, to: PROJECT_VERSION, steps, problems: validated.problems };
 }
 

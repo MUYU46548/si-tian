@@ -61,7 +61,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     import time
 
-    r = goto_planet(cdp, '乐园星')
+    r = goto_planet(cdp, '曜川星')
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.2)
@@ -299,7 +299,7 @@ def run(cdp):
         if not cdp.eval("!!document.querySelector('.inline-text-edit')"):
             return False, 'P1: 前置内联编辑覆盖层未出现'
         set_pm_state(cdp, """
-          const other = pm.store.nodes.find(n => n.layer === 'planet' && n.name !== '乐园星');
+          const other = pm.store.nodes.find(n => n.layer === 'planet' && n.name !== '曜川星');
           if (!other) return 'no-other';
           pm.store.selectPlanet(other);
           return 'ok';
@@ -315,15 +315,15 @@ def run(cdp):
         """) or '{}')
         if cleared.get('marker') or cleared.get('multi', 1) != 0 or cleared.get('overlay'):
             return False, f'P1: 切换行星后状态未清空 {cleared}'
-        # 切回乐园星（恢复清理上下文）
+        # 切回曜川星（恢复清理上下文）
         set_pm_state(cdp, """
-          const home = pm.store.nodes.find(n => n.layer === 'planet' && n.name === '乐园星');
+          const home = pm.store.nodes.find(n => n.layer === 'planet' && n.name === '曜川星');
           pm.store.selectPlanet(home);
           return 'ok';
         """)
         time.sleep(1.0)
         if not _marker(cdp, 't18_mkA'):
-            return False, 'P1: 切回乐园星后标记 A 丢失'
+            return False, 'P1: 切回曜川星后标记 A 丢失'
 
         # ============ 9. P2：批量组复制/粘贴 ============
         set_pm_state(cdp, """

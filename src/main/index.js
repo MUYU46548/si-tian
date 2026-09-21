@@ -148,7 +148,44 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+// 🔴 退出前落盘（数据安全承诺）：把「还没写进磁盘的改动」写完再退。
+// 拦截点选 `before-quit`：**所有退出路径**（托盘退出 / Ctrl+Q / 点 × 且 closeQuitsApp / 内部 IPC 触发）
+// 都会经过它 —— 一处改动覆盖全部入口，不必逐个调用点去改（漏一个就是一条静默丢数据的路）。
+// 渲染层无响应时 **2.5s 超时放行**：「退不掉」比「丢最后 800ms」更糟（用户会去任务管理器强杀，那才真丢）。
+const FLUSH_BEFORE_QUIT_MS = 2500;
+let quitFlushDone = false;
+
+function flushRendererBeforeQuit() {
+  return new Promise((resolve) => {
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents) return resolve('no-window');
+    let settled = false;
+    const onDone = () => finish('flushed');
+    const finish = (why) => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeListener('app-flush-done', onDone);
+      resolve(why);
+    };
+    ipcMain.once('app-flush-done', onDone);
+    try {
+      mainWindow.webContents.send('app-flush-before-quit', 'quit');
+    } catch (e) {
+      return finish('send-failed');
+    }
+    setTimeout(() => finish('timeout'), FLUSH_BEFORE_QUIT_MS);
+  });
+}
+
+app.on('before-quit', (event) => {
+  if (!quitFlushDone) {
+    quitFlushDone = true;
+    event.preventDefault();
+    flushRendererBeforeQuit().finally(() => {
+      setIsQuitting(true);
+      app.quit();
+    });
+    return;
+  }
   stopWatcher();
   destroyTray();
 });
