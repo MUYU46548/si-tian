@@ -16,6 +16,7 @@
 判定一律走显式布尔，不用「没有报错就算过」（CDP 用例的假绿陷阱）。
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -146,8 +147,9 @@ def run(cdp):
         static.append('preload 未暴露退出前落盘通道（onFlushBeforeQuit / notifyFlushDone）')
     if 'flushAll' not in app_src:
         static.append('App.vue 未驱动 quitFlush.flushAll（渲染层不会落盘）')
-    if 'projectStore' in app_src:
-        static.append('App.vue 直接引用了 projectStore（应只经中立注册表 quitFlush）')
+    # 🔴 只认 import 语句：子串判据会被注释里的同名说明文字误伤（2026-09-22 真踩）
+    if re.search(r"from\s+['\"][^'\"]*projectStore['\"]|import\s*\(\s*['\"][^'\"]*projectStore['\"]", app_src):
+        static.append('App.vue 直接 import 了 projectStore（应只经中立注册表 quitFlush / canvasBridge）')
 
     if fails or static:
         return False, ('数据安全契约未达成：' + '；'.join(fails + static))

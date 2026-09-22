@@ -67,10 +67,40 @@ export function gotoEntity(entityOrId) {
   }
 }
 
+// ── 第四条注册口（2026-09-22）：App/面板 → 「把知识库内容导入当前项目」 ────────
+// 背景：用户建了空项目后**没有任何入口**把知识库的既有内容带进来
+// （「新建并导入知识库内容」只覆盖新建那条路；「重新提取」在项目态被正确拒绝）。
+// 与 gotoHandler 同款：projectStore 注册实现，App.vue 只发请求（App 禁止 import projectStore）。
+let importHandler = null;
+
+/** 由 projectStore 在 setup 时注册 */
+export function setImportHandler(fn) {
+  importHandler = typeof fn === 'function' ? fn : null;
+  return importHandler;
+}
+
+/**
+ * 把知识库内容**合并**进当前项目（不覆盖已有内容，一条 undo）。
+ * @returns {Promise<{success:boolean, merged?:object, error?:string}>}
+ */
+export async function importFromVault(opts = {}) {
+  if (!importHandler) return { success: false, error: '导入未就绪（projectStore 未装载）' };
+  try {
+    return (await importHandler(opts)) || { success: false, error: '导入无返回' };
+  } catch (e) {
+    return { success: false, error: String((e && e.message) || e) };
+  }
+}
+
 /** 调试/测试用 */
 export function describeCanvasBridge() {
   const base = adapter && typeof adapter.describe === 'function'
     ? adapter.describe()
     : { attached: false, source: 'vault' };
-  return { ...base, projectSink: !!(sink && typeof sink.syncFromCanvas === 'function'), gotoHandler: !!gotoHandler };
+  return {
+    ...base,
+    projectSink: !!(sink && typeof sink.syncFromCanvas === 'function'),
+    gotoHandler: !!gotoHandler,
+    importHandler: !!importHandler,
+  };
 }

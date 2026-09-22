@@ -17,7 +17,7 @@ import { execute } from './undo';
 import { setWriteMode, resetWriteMode } from './writeGate';
 // 画布接线（Phase 2.4）：打开/保存/关闭项目时驱动 geodata 侧切换事实源。
 // 反向依赖也是经本注册表（geodata 不 import 本文件），无循环。
-import { getCanvasAdapter, setProjectSink } from './canvasBridge';
+import { getCanvasAdapter, setProjectSink, setImportHandler } from './canvasBridge';
 // 退出前落盘（数据安全）：注册到中立注册表（App 只跟注册表打交道，不 import 本 store）
 import { registerFlush } from './quitFlush';
 import {
@@ -105,6 +105,10 @@ export const useProjectStore = defineStore('project', () => {
   // 注册「画布 → 项目」入水口（geodata 的 saveGeodata/saveMapData/saveScenarios 会调它）
   setProjectSink({ syncFromCanvas });
 
+  // 注册「把知识库内容导入当前项目」实现（canvasBridge 第四条注册口）：
+  // App.vue / 面板 只发请求，不 import 本 store（App 有静态闸门守这条）
+  setImportHandler(importFromVault);
+
   function api() {
     return (typeof window !== 'undefined' && window.sitianAPI) ? window.sitianAPI : null;
   }
@@ -137,6 +141,108 @@ export const useProjectStore = defineStore('project', () => {
       adapter.applyProject(project.value);
     }
     return { success: true, problems: migrated.problems, steps: migrated.steps };
+  }
+
+  /** 让画布重新装载当前项目（maps / 剧本 / 编辑器容器不在 watch(entities) 的同步范围内） */
+  function applyProjectToCanvasNow() {
+    const adapter = getCanvasAdapter();
+    if (adapter && typeof adapter.applyProject === 'function') adapter.applyProject(project.value);
+  }
+
+  /**
+   * 把知识库载荷**合并**进项目（只补缺、绝不覆盖项目里已有的东西）。
+   * 与 seedFromPayload 的区别：seedFromPayload 是「以载荷为基底重建」（新建项目时用），
+   * 本函数是「往已有项目里补」—— 直接用 seedFromPayload 会把用户已经画好的内容清掉。
+   * @returns {{next: object, merged: object}}
+   */
+  function mergeVaultPayload(base, payload = {}) {
+    const next = { ...base };
+
+    const entities = { ...(base.entities || {}) };
+    let addedEntities = 0;
+    for (const [id, e] of Object.entries(payload.entities || {})) {
+      if (entities[id]) continue;                 // 已存在 → 保留项目里的版本
+      entities[id] = e;
+      addedEntities += 1;
+    }
+    next.entities = entities;
+
+    const lanes = [...(base.hyperlanes || [])];
+    const seenLane = new Set(lanes.map(l => l && l.id));
+    let addedLanes = 0;
+    for (const l of (payload.hyperlanes || [])) {
+      if (!l || seenLane.has(l.id)) continue;
+      lanes.push(l); seenLane.add(l.id); addedLanes += 1;
+    }
+    next.hyperlanes = lanes;
+
+    const maps = { ...(base.maps || {}) };
+    const md = { ...(maps.mapData || {}) };
+    let addedMaps = 0;
+    for (const [k, v] of Object.entries((payload.maps && payload.maps.mapData) || {})) {
+      if (md[k]) continue;                        // 项目里已有这张行星图 → 不动
+      md[k] = v; addedMaps += 1;
+    }
+    maps.mapData = md;
+    const ed = { ...(maps.editor || {}) };
+    for (const [k, v] of Object.entries((payload.maps && payload.maps.editor) || {})) {
+      if (ed[k] === undefined) ed[k] = v;
+    }
+    maps.editor = ed;
+    next.maps = maps;
+
+    const cur = base.scenarios || { version: 2, baseMaps: {}, scenarios: {} };
+    const ps = payload.scenarios || {};
+    const baseMaps = { ...(cur.baseMaps || {}) };
+    let addedBaseMaps = 0;
+    for (const [k, v] of Object.entries(ps.baseMaps || {})) {
+      if (!baseMaps[k]) { baseMaps[k] = v; addedBaseMaps += 1; }
+    }
+    const scenarios = { ...(cur.scenarios || {}) };
+    let addedScenarios = 0;
+    for (const [k, v] of Object.entries(ps.scenarios || {})) {
+      if (!scenarios[k]) { scenarios[k] = v; addedScenarios += 1; }
+    }
+    next.scenarios = { version: 2, baseMaps, scenarios };
+
+    return { next, merged: { entities: addedEntities, hyperlanes: addedLanes, maps: addedMaps, baseMaps: addedBaseMaps, scenarios: addedScenarios } };
+  }
+
+  /**
+   * 「导入知识库内容」（2026-09-22，用户实测反馈）：
+   * 用户新建了空项目后**没有任何入口**把知识库既有内容带进来 —— 「新建并导入知识库内容」只覆盖新建那条路，
+   * 而「重新提取」在项目态被正确拒绝（两套事实源混流）。本函数补上唯一的缺口：
+   * 项目态下从打开项目时的知识库留底（`vaultSnapshot`，经适配器 `exportVaultPayload`）取数，
+   * **只补缺不覆盖**，一条 undo，导入后立刻把项目重新装载到画布。
+   */
+  async function importFromVault({ includeMaps = true } = {}) {
+    if (!project.value) return { success: false, error: '没有打开的项目' };
+    const adapter = getCanvasAdapter();
+    if (!adapter || typeof adapter.exportVaultPayload !== 'function') {
+      return { success: false, error: '画布桥未就绪，无法读取知识库内容' };
+    }
+    let payload = null;
+    try {
+      payload = await adapter.exportVaultPayload({ includeMaps });
+    } catch (err) {
+      return { success: false, error: `读取知识库内容失败：${(err && err.message) || err}` };
+    }
+    if (!payload) {
+      return { success: false, error: '取不到知识库内容（打开项目时知识库里没有数据）：请先关闭项目、确认知识库能正常显示，再重开项目' };
+    }
+    const { next, merged } = mergeVaultPayload(project.value, payload);
+    const total = merged.entities + merged.hyperlanes + merged.maps;
+    if (total === 0) return { success: true, merged, nothingNew: true };
+
+    const before = project.value;
+    execute({
+      type: 'project-import-from-vault',
+      label: `导入知识库内容（${merged.entities} 个词条）`,
+      category: 'property',
+      undo: () => { project.value = before; dirty.value = true; applyProjectToCanvasNow(); scheduleAutoSave(); },
+      redo: () => { project.value = next; dirty.value = true; applyProjectToCanvasNow(); scheduleAutoSave(); },
+    });
+    return { success: true, merged };
   }
 
   /**
@@ -629,6 +735,7 @@ export const useProjectStore = defineStore('project', () => {
     isOpen, meta, entities, entityList, entityTree, entityCount, snapshots, stats,
     // project CRUD
     createProject, createProjectFromVault, seedFromPayload, openProject, saveProject, scheduleAutoSave, flushSave, closeProject,
+    importFromVault, mergeVaultPayload,
     refreshProjectList, chooseProjectDir, revealProject, backupNow, gitSnapshot, restoreProjectSnapshot,
     // entity CRUD
     getEntity, childrenOf, descendantsOf, parentCandidates, createEntity, updateEntity,

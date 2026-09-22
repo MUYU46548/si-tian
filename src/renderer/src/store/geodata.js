@@ -1464,24 +1464,103 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   /** 画布 → 项目文件载荷（唯一写者仍是 projectStore；本函数只产出，不落盘） */
   function exportCanvasToProject() {
+    return buildProjectPayload({
+      nodes: nodes.value,
+      hyperlanes: hyperlanes.value,
+      mapData: mapData.value,
+      editor: readEditorContainers(),
+      scenarios: scenarioEditingModule ? {
+        baseMaps: scenarioEditingModule.baseMaps.value,
+        scenarios: scenarioEditingModule.scenarios.value,
+      } : null,
+    });
+  }
+
+  /**
+   * 由「一组画布状态」构建项目载荷（实体形状与 exportCanvasToProject 完全一致）。
+   * 抽成纯函数是为了让**知识库快照**能走同一条构造路径 —— 项目态下画布已被项目内容替换，
+   * 知识库内容只存在于 vaultSnapshot，不能靠读 nodes.value 拿到（2026-09-22）。
+   */
+  function buildProjectPayload(state) {
     const now = new Date().toISOString();
     const entities = {};
-    for (const n of nodes.value) entities[n.id] = nodeToProjectEntity(n, now);
+    for (const n of (state.nodes || [])) entities[n.id] = nodeToProjectEntity(n, now);
     return {
       entities,
-      hyperlanes: JSON.parse(JSON.stringify(hyperlanes.value)),
+      hyperlanes: JSON.parse(JSON.stringify(state.hyperlanes || [])),
       // maps 不进快照（体积），另有整文件备份兜底；editor 放这里也一样（快照回滚不覆盖编辑器容器，
       // 这条限制写在 projectSchema 的头部注释里）
       maps: {
-        mapData: JSON.parse(JSON.stringify(mapData.value, jsonSafeReplacer)),
-        editor: readEditorContainers(),
+        mapData: JSON.parse(JSON.stringify(state.mapData || {}, jsonSafeReplacer)),
+        editor: JSON.parse(JSON.stringify(state.editor || {}, jsonSafeReplacer)),
       },
-      scenarios: scenarioEditingModule ? {
+      scenarios: state.scenarios ? {
         version: 2,
-        baseMaps: JSON.parse(JSON.stringify(scenarioEditingModule.baseMaps.value, jsonSafeReplacer)),
-        scenarios: JSON.parse(JSON.stringify(scenarioEditingModule.scenarios.value, jsonSafeReplacer)),
+        baseMaps: JSON.parse(JSON.stringify(state.scenarios.baseMaps || {}, jsonSafeReplacer)),
+        scenarios: JSON.parse(JSON.stringify(state.scenarios.scenarios || {}, jsonSafeReplacer)),
       } : undefined,
     };
+  }
+
+  /** 快照里的节点列表（项目态下用它推 worldId，不能用 nodes.value —— 那是项目自己的节点） */
+  function worldIdInList(list, nodeId) {
+    const visited = new Set();
+    let cur = (list || []).find(n => n.id === nodeId);
+    while (cur && cur.id && !visited.has(cur.id)) {
+      visited.add(cur.id);
+      if (cur.layer === 'world') return cur.id;
+      cur = (list || []).find(n => n.id === cur.parentId);
+    }
+    return '';
+  }
+
+  /**
+   * 知识库内容的「项目载荷」——**与当前画布事实源无关**（2026-09-22，用户实测反馈）。
+   *
+   * 背景：用户新建了一个项目（空的），却发现没有任何入口把知识库的 120 个词条带进来
+   * ——「新建并导入知识库内容」只覆盖「新建」这一条路，已存在的项目没有任何入口；
+   * 而「重新提取」在项目态被正确拒绝（两套事实源混流），于是用户卡在「项目里空空的」。
+   *
+   * 做法：项目态下从 `vaultSnapshot`（打开项目时留下的知识库工作态）重建同形载荷；
+   * 知识库态下直接用当前画布。`includeMaps` 时按需读知识库**缓存**补齐行星地图
+   * —— 这是唯一一处允许项目态读知识库缓存的地方（显式导入 ≠ 静默回退，见 loadMapData 的注解）。
+   */
+  async function exportVaultPayload({ includeMaps = true } = {}) {
+    const inVault = canvasSourceRef.value === 'vault';
+    const state = inVault ? {
+      nodes: nodes.value,
+      hyperlanes: hyperlanes.value,
+      mapData: mapData.value,
+      editor: readEditorContainers(),
+      scenarios: scenarioEditingModule ? {
+        baseMaps: scenarioEditingModule.baseMaps.value,
+        scenarios: scenarioEditingModule.scenarios.value,
+      } : null,
+    } : vaultSnapshot;
+    if (!state || !(state.nodes || []).length) return null;
+
+    const payload = buildProjectPayload(state);
+    if (!includeMaps) return payload;
+
+    // 补齐行星地图：按快照里的层级关系推 key（worldId/planetId），与 loadMapData 的 key 规则一致
+    const targets = (state.nodes || []).filter(n => n.layer === 'planet' || n.layer === 'moon');
+    for (const n of targets) {
+      if (payload.maps.mapData[n.id]) continue;
+      const w = worldIdInList(state.nodes, n.id);
+      const key = w ? `${w}/${n.id}` : n.id;
+      try {
+        let res = await window.sitianAPI.getMapData(key);
+        let data = res && res.success ? res.data : null;
+        if (!data && key !== n.id) {   // 兼容迁移：旧 key（纯 planetId）
+          const legacy = await window.sitianAPI.getMapData(n.id);
+          if (legacy && legacy.success && legacy.data) data = legacy.data;
+        }
+        if (data) payload.maps.mapData[n.id] = JSON.parse(JSON.stringify(data, jsonSafeReplacer));
+      } catch (e) {
+        console.warn('[Geodata] 导入时读取知识库行星图失败：', n.id, e);
+      }
+    }
+    return payload;
   }
 
   /** 打开/新建项目后调用：把画布切到项目文件 */
@@ -1662,6 +1741,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     releaseProject: releaseProjectFromCanvas,
     refreshEntities: refreshEntitiesFromProject,
     exportCanvas: exportCanvasToProject,
+    // 知识库内容载荷（项目态下由 vaultSnapshot 重建）—— 「导入知识库内容」的唯一取数口
+    exportVaultPayload,
     // 「以知识库为基底新建项目」前的异步准备（补齐懒加载的行星地图）—— 唯一异步适配器方法
     prepareExport: loadAllMapDataForExport,
     describe: () => ({
@@ -1671,6 +1752,10 @@ export const useGeodataStore = defineStore('geodata', () => {
       hyperlanes: hyperlanes.value.length,
       maps: Object.keys(mapData.value).length,
       hasVaultSnapshot: !!vaultSnapshot,
+      // 快照里的知识库规模：面板据此告诉用户「能导入多少」（项目态下 nodes 是项目自己的）
+      vaultNodes: vaultSnapshot ? (vaultSnapshot.nodes || []).length : 0,
+      vaultHyperlanes: vaultSnapshot ? (vaultSnapshot.hyperlanes || []).length : 0,
+      vaultMaps: vaultSnapshot ? Object.keys(vaultSnapshot.mapData || {}).length : 0,
     }),
   });
 
@@ -1711,7 +1796,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       getBuildingsInArea,
       // 项目文件接线（Phase 2.4）：画布事实源 + 画布↔项目 同步（测试与 UI 都读这里）
       canvasSource: canvasSourceRef, applyProjectToCanvas, releaseProjectFromCanvas,
-      refreshEntitiesFromProject, exportCanvasToProject, syncCanvasToProject,
+      refreshEntitiesFromProject, exportCanvasToProject, exportVaultPayload, syncCanvasToProject,
       loadAllMapDataForExport,
     ...searchModule,
     ...mapDataEditingModule,

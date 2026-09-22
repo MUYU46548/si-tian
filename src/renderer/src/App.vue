@@ -211,11 +211,13 @@
           :locations="store.locations"
           :read-only="isReadOnly"
           :read-only-hint="readonlyTitle"
+          :project-open="canvasIsProject"
           @select="store.selectWorld"
           @create-world="handleCreateWorld"
           @delete-world="handleDeleteWorld"
           @reextract="reextract"
           @open-vault="openVaultFromToolbar"
+          @import-from-vault="doImportFromVault"
           @load-sample="handleLoadSampleWorld"
           @open-scenarios="enterScenarioMode"
         />
@@ -329,6 +331,8 @@
 import { iconSvg } from './utils/iconSvg';
 // 打开知识库本体（用户需求：一键可达的「打开 Obsidian 知识库」入口）
 import { openVault } from './utils/vault';
+// 导入知识库内容：App 只跟注册表打交道（不 import projectStore）
+import { importFromVault } from './store/canvasBridge';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from './store/geodata';
 // 单一写闸门：清缓存等落盘写统一过 guardWrite（只读态拒绝）
@@ -478,11 +482,12 @@ const canReextract = computed(() => !isReadOnly.value && !canvasIsProject.value)
 const reextractTitle = computed(() => {
   if (isReadOnly.value) {
     return `重新提取（已停用）：${readOnlyReason.value}；它要重写知识库坐标缓存，`
-      + '请先在项目面板「以知识库为基底新建项目」或打开已有项目';
+      + '请先在项目面板「以知识库为基底新建项目」或打开已有项目，再用面板里的「导入知识库内容」把数据带进来';
   }
   if (canvasIsProject.value) {
     return '重新提取（已停用）：当前画布数据来自项目文件，重提取会让知识库数据与项目数据混流。'
-      + '如需重新从知识库拉取，请先在项目面板关闭当前项目';
+      + '要把知识库内容带进项目，请用项目面板的「导入知识库内容」（只补缺、可撤销）；'
+      + '若要从零重建，先在项目面板关闭当前项目';
   }
   return '重新提取（把知识库最新内容读进来）';
 });
@@ -502,6 +507,24 @@ async function openVaultFromToolbar() {
   }
   statusText.value = res.how === 'obsidian' ? '已请求 Obsidian 打开知识库' : '已在文件管理器中定位知识库目录';
   statusKind.value = 'ok';
+}
+
+/**
+ * 「导入知识库内容」（2026-09-22 用户实测）：把知识库既有内容合并进**当前项目**。
+ * App 不 import projectStore（静态闸门），所以走 canvasBridge 的注册口。
+ */
+async function doImportFromVault() {
+  const res = await importFromVault();
+  if (res && res.success) {
+    const m = (res && res.merged) || {};
+    statusText.value = res.nothingNew
+      ? '项目里已经有知识库的全部内容了，无需重复导入'
+      : `已导入知识库内容：${m.entities || 0} 个词条 / ${m.hyperlanes || 0} 条航道 / ${m.maps || 0} 张行星图（Ctrl+Z 可撤销）`;
+    statusKind.value = 'ok';
+    return;
+  }
+  statusText.value = (res && res.error) || '导入知识库内容失败';
+  statusKind.value = 'err';
 }
 
 // 面包屑点击星域：单系地图/行星地图/区域地图/建筑内部 → 返回域内恒星系总览（system 视图）

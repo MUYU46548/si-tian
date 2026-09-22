@@ -364,10 +364,12 @@ def sub_static(cdp):
         if token not in bridge:
             bad.append(f'canvasBridge.js 缺少 {token}')
 
-    # 旧「Phase 1 未接线」遗留断言：geodata/App 不得直接引用 projectStore（已由上面的方向不变式覆盖）
+    # 旧「Phase 1 未接线」遗留断言：App 不得**直接 import** projectStore（应经 canvasBridge 注册表）。
+    # 🔴 判据必须是 import 语句，不能是子串 —— 注释里写「不 import projectStore」这种说明文字会误报
+    #    （2026-09-22 真踩：给 App.vue 加了一句解释性注释，两条静态断言同时变红，看着像功能回归）。
     for rel in ('src/renderer/src/App.vue',):
-        if 'projectStore' in _read(rel):
-            bad.append(f'{rel} 直接引用了 projectStore（应经面板/组件，勿在 App 里直连）')
+        if re.search(r"from\s+['\"][^'\"]*projectStore['\"]|import\s*\(\s*['\"][^'\"]*projectStore['\"]", _read(rel)):
+            bad.append(f'{rel} 直接 import 了 projectStore（应经 canvasBridge 注册表，勿在 App 里直连）')
 
     # main 注册 + 通道名与 preload 一一对应
     if 'registerProjectHandlers' not in _read('src/main/index.js'):

@@ -396,21 +396,26 @@ onMounted(async () => {
 .gs-body {
   padding: 12px 14px 16px;
   overflow-y: auto;
-  color: #2d3436;
+  /* ⚠️ 面板底色是 PanelShell 的 var(--panel-bg)（暗色主题下是深色）→
+     直接坐在面板底色上的文字必须用主题变量；写死的深色在暗色主题下 = 深底深字（用户实测"难以阅读"）。
+     反之，自带浅色底的块（.gs-warn / .gs-tip-line / .gs-danger-section / .gs-pill）继续用深色字，两个主题都可读。 */
+  color: var(--text-primary);
   font-size: 12.5px;
   line-height: 1.65;
 }
 .gs-lead {
   margin: 0 0 12px;
-  color: #4a5257;
+  color: var(--text-secondary);
 }
-.gs-lead b { color: #1c4fa1; }
+.gs-lead b { color: var(--accent); }
 
 .gs-empty {
+  /* 自带浅色底：内部沿用深色字，两个主题都读得清 */
   border: 1px dashed #cfd6da;
   border-radius: 8px;
   padding: 14px;
   text-align: left;
+  background: #f7f9fb;
 }
 .gs-empty-title { font-weight: 600; color: #b3261e; margin-bottom: 6px; }
 .gs-empty-body { color: #4a5257; margin-bottom: 10px; }
@@ -422,7 +427,7 @@ onMounted(async () => {
 .gs-section:first-of-type { border-top: none; }
 .gs-label {
   font-weight: 600;
-  color: #1c4fa1;
+  color: var(--accent);
   margin-bottom: 5px;
 }
 .gs-path {
@@ -444,18 +449,18 @@ onMounted(async () => {
 }
 .gs-pill.ok { background: #e7f4ec; color: #1b6b3a; }
 .gs-pill.warn { background: #fdf1e7; color: #b3261e; }
-.gs-dim { color: #6b7378; font-size: 11.5px; }
+.gs-dim { color: var(--text-secondary); font-size: 11.5px; }
 .gs-last { margin-top: 4px; }
 
 .gs-input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #d4dade;
+  border: 1px solid var(--input-border, #d4dade);
   border-radius: 6px;
   padding: 7px 9px;
   font-size: 12.5px;
-  color: #2d3436;
-  background: #fff;
+  color: var(--text-primary, #2d3436);
+  background: var(--input-bg, #fff);
   outline: none;
 }
 .gs-input:focus { border-color: #1c4fa1; box-shadow: 0 0 0 2px rgba(28, 79, 161, 0.15); }
@@ -487,7 +492,7 @@ onMounted(async () => {
 }
 .gs-adv summary {
   cursor: pointer;
-  color: #2f5fd0;
+  color: var(--accent);
   font-weight: 600;
 }
 .gs-adv-body { padding-top: 8px; }
@@ -538,6 +543,8 @@ onMounted(async () => {
 .gs-tip code {
   font-family: Consolas, Menlo, monospace;
   font-size: 11px;
+  /* ⚠️ 这枚 code 自带浅色底 → 文字必须是深色：用主题变量（暗色下是浅色字）会变成浅底浅字（实测对比度 1.4） */
+  color: #2d3436;
   background: #f1f4f7;
   border-radius: 3px;
   padding: 0 3px;

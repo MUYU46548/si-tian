@@ -15,6 +15,9 @@
       <h2>这里还没有世界</h2>
       <p>从 Obsidian 库提取地理节点，加载示例世界观，或创建一个空世界开始绘制。</p>
       <div class="empty-actions">
+        <!-- 已打开项目但项目是空的（2026-09-22 用户实测）：这里原来的「从 Obsidian 重新提取」在项目态
+             被正确拒绝（两套事实源混流），用户就卡在"项目里空空的" → 项目态下把首要动作换成导入。 -->
+        <button v-if="projectOpen" class="create-btn" data-testid="import-from-vault-empty" @click="$emit('import-from-vault')"><Icon name="folder-open" :size="14"/> 导入知识库内容</button>
         <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
         <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
         <button class="vault-btn" data-testid="open-vault-empty" @click="$emit('open-vault')"><Icon name="book" :size="14"/> 打开 Obsidian 知识库</button>
@@ -73,9 +76,11 @@ const props = defineProps({
   // 只读态（无项目）：用于灰禁「从 Obsidian 重新提取」并给出能力说明 + 去处
   readOnly: { type: Boolean, default: false },
   readOnlyHint: { type: String, default: '' },
+  // 已打开项目（画布事实源 = 项目文件）：空态时把首要动作换成「导入知识库内容」
+  projectOpen: { type: Boolean, default: false },
 });
 
-defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault']);
+defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault', 'import-from-vault']);
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {

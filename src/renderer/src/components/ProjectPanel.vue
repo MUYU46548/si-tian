@@ -66,6 +66,19 @@
             <button class="pp-btn danger" @click="doClose">关闭</button>
           </template>
         </div>
+        <!-- 「导入知识库内容」（2026-09-22 用户实测反馈）：
+             新建的空项目此前**没有任何入口**把知识库既有内容带进来（「新建并导入知识库内容」只管新建那条路，
+             而「重新提取」在项目态被正确拒绝）→ 用户卡在"项目里空空的"。这里补上唯一的缺口。 -->
+        <div v-if="proj.isOpen" class="pp-row">
+          <button
+            class="pp-btn primary"
+            data-testid="import-from-vault"
+            :disabled="!vaultImport.available || importing"
+            :title="vaultImport.hint"
+            @click="doImportFromVault"
+          >{{ importing ? '导入中…' : '导入知识库内容' }}</button>
+        </div>
+        <div v-if="proj.isOpen" class="pp-hint" data-testid="import-hint">{{ vaultImport.hint }}</div>
         <div v-if="proj.isOpen" class="pp-hint pp-file">
           文件：<span class="pp-path" :title="proj.filePath">{{ proj.filePath }}</span>
         </div>
@@ -271,6 +284,7 @@ const canCreate = computed(() => !!newName.value.trim());   // 项目文件的�
                                                             // 无项目=只读时若也灰禁，就永远打不开第一个项目（死锁）
 
 const seeding = ref(false);
+const importing = ref(false);
 
 /**
  * 「新建并导入知识库内容」的可用性与说明。
@@ -286,6 +300,25 @@ const vaultSeed = computed(() => {
   else if (d.source !== 'vault') hint = '已打开项目 —— 先关闭项目，才能以知识库为基底新建';
   else if (available) hint = `以当前知识库为基底：${d.nodes} 个词条 / ${d.hyperlanes || 0} 条航道 / ${d.maps || 0} 张行星图（导入可用 Ctrl+Z 撤销）`;
   else hint = '当前知识库里没有可导入的内容';
+  return { available, hint };
+});
+
+/**
+ * 「导入知识库内容」的可用性与说明（2026-09-22）。
+ * 项目态下画布是项目自己的节点，所以可用性看的是**打开项目时留下的知识库留底**（vaultNodes）。
+ * 同样只经 canvasBridge 描述（本面板不直接依赖 geodata，test_48 有静态断言守）。
+ */
+const vaultImport = computed(() => {
+  void proj.isOpen;
+  const d = describeCanvasBridge();
+  const available = !!proj.isOpen && d.attached === true && d.hasVaultSnapshot === true && (d.vaultNodes || 0) > 0;
+  let hint;
+  if (!proj.isOpen) hint = '先新建或打开一个项目，才能把知识库内容导入进来';
+  else if (!d.attached) hint = '画布桥未就绪，暂不能导入知识库内容';
+  else if (!d.hasVaultSnapshot) hint = '这次打开项目时知识库是空的（没有留底）—— 先关闭项目，确认知识库有内容后再打开';
+  else if ((d.vaultNodes || 0) === 0) hint = '这次打开项目时知识库是空的（没有留底）—— 先关闭项目，确认知识库有内容后再打开';
+  else hint = `把知识库现有内容合并进当前项目：约 ${d.vaultNodes} 个词条 / ${d.vaultHyperlanes || 0} 条航道 / ${d.vaultMaps || 0} 张行星图`
+    + '（只补缺、不覆盖项目里已有的；导入可用 Ctrl+Z 撤销）';
   return { available, hint };
 });
 
@@ -374,6 +407,28 @@ async function doCreateFromVault() {
     }
   } finally {
     seeding.value = false;
+  }
+}
+
+/** 「导入知识库内容」：把知识库（打开项目时的留底）合并进**当前**项目，一条 undo */
+async function doImportFromVault() {
+  if (!vaultImport.available || importing.value) return;
+  importing.value = true;
+  try {
+    const res = await proj.importFromVault();
+    if (res.success && res.nothingNew) {
+      setTip('项目里已经有知识库的全部内容了，无需重复导入', 'ok');
+    } else if (res.success) {
+      const m = res.merged || {};
+      setTip(`已导入：${m.entities || 0} 个词条 / ${m.hyperlanes || 0} 条航道 / ${m.maps || 0} 张行星图`
+        + `${(m.baseMaps || m.scenarios) ? ` / ${m.baseMaps || 0} 张底图 / ${m.scenarios || 0} 个剧本` : ''}`
+        + '（Ctrl+Z 可撤销导入）', 'ok');
+      await refresh();
+    } else {
+      setTip(res.error || '导入知识库内容失败', 'err');
+    }
+  } finally {
+    importing.value = false;
   }
 }
 
