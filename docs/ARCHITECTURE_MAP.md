@@ -48,12 +48,13 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 60 | `scripts/icon_check.py` | 图标一致性校验（引用名是否都在 Icon.vue 中定义） |
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
-| 414 | `scripts/tests/fixtures/make_vault_fixture.py` | （待补） |
+| 427 | `scripts/tests/fixtures/make_vault_fixture.py` | （待补） |
 | 115 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
 | 436 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
-| 549 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
+| 570 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
 | 186 | `scripts/tests/unit/test_git_credential_store.js` | （待补） |
 | 402 | `scripts/tests/unit/test_git_sync.js` | （待补） |
+| 209 | `scripts/tests/unit/test_grid_outline.js` | （待补） |
 | 296 | `scripts/tests/unit/test_main_module_wiring.js` | Node 单元测试：主进程**模块接线不变式**（index.js 里用到的本地模块导出必须已解构 / 解构了必须真导出）+ config.js 的 loadConfig 读回校验（漏解构只在 IPC 被调用时抛 ReferenceError，启动不报错） |
 | 357 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
 | 80 | `scripts/tools_migrate_planetdrawing.py` | 一次性迁移工具（planetDrawing 拆分） |
@@ -67,7 +68,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 248 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
 | 179 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 1980 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
+| 2007 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
 | 633 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
 | 2610 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 271 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
@@ -80,7 +81,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 417 | `src/renderer/src/components/EagleEye.vue` | 鹰眼小地图 |
 | 413 | `src/renderer/src/components/EntityCreator.vue` | 实体创建向导（C 方案分派式）：表单「名称/层级/父级」+ 层级按父级过滤（CHILD_LAYERS）+ 创建后结果卡片（分派步骤 + 「前往编辑」） |
 | 2033 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
-| 545 | `src/renderer/src/components/GitSyncPanel.vue` | （待补） |
+| 552 | `src/renderer/src/components/GitSyncPanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/HistoryPanel.vue` | undo 历史面板 |
 | 178 | `src/renderer/src/components/Icon.vue` | 内联 SVG 图标组件：模板 `v-if` 分支按名匹配，零外部依赖、继承 currentColor；引用名由 scripts/icon_check.py 校验 |
 | 1903 | `src/renderer/src/components/InteriorView.vue` | 建筑内部：楼层切换 + 家具放置 |
@@ -91,7 +92,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 298 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
 | 3811 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
-| 932 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
+| 987 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 300 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
@@ -106,9 +107,9 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 128 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
 | 130 | `src/renderer/src/components/TreeNavigation.vue` | 树形导航面板 |
 | 407 | `src/renderer/src/components/UpdateNotification.vue` | 更新可用提示 |
-| 375 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
+| 380 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
 | 93 | `src/renderer/src/components/ZoomControls.vue` | 缩放控件 |
-| 2163 | `src/renderer/src/composables/planetDrawing.js` | 行星图 Canvas 绘制全集（createPlanetDrawing getState 工厂） |
+| 2165 | `src/renderer/src/composables/planetDrawing.js` | 行星图 Canvas 绘制全集（createPlanetDrawing getState 工厂） |
 | 219 | `src/renderer/src/composables/planetHitTest.js` | 行星图命中检测 |
 | 698 | `src/renderer/src/composables/planetInteractions.js` | 行星图交互回调（createPlanetInteractions getState 工厂） |
 | 56 | `src/renderer/src/composables/spaceBackground.js` | 深空背景绘制（GalaxyMap 专用） |
@@ -142,14 +143,14 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 385 | `src/renderer/src/composables/useScenarioExport.js` | 剧本导出/导入：SVG 矢量图 + PNG（由 SVG 光栅化，两者永远一致）+ scenarios.json 全量数据（含导出前体检与 merge/replace 导入） |
 | 59 | `src/renderer/src/composables/useSnapshotPanel.js` | 快照拍摄/恢复/删除 |
 | 53 | `src/renderer/src/composables/useStatusBar.js` | 状态栏逻辑 |
-| 355 | `src/renderer/src/composables/useTerrainCanvasBrush.js` | 画布地形涂色笔刷：与高度图**同一网格几何**（同格宽同原点），terrainGrid 持久化必须走普通数组 |
+| 425 | `src/renderer/src/composables/useTerrainCanvasBrush.js` | 画布地形涂色笔刷：与高度图**同一网格几何**（同格宽同原点），terrainGrid 持久化必须走普通数组 |
 | 46 | `src/renderer/src/composables/useTextEditor.js` | 文本标签编辑器 |
 | 35 | `src/renderer/src/composables/useTheme.js` | 主题切换 |
 | 38 | `src/renderer/src/composables/useZoomControls.js` | 缩放百分比联动 |
 | 116 | `src/renderer/src/dev-standalone.js` | DEV-only 浏览器兜底：无 Electron preload 时从 `/dev-data/*.json` 只读装载，写操作一律返回失败（绝不制造「已保存」假象）；生产构建被摇掉 |
 | 30 | `src/renderer/src/main.js` | renderer 入口 |
-| 76 | `src/renderer/src/store/canvasBridge.js` | 画布↔项目文件**唯一接线点**（Phase 2.4）：双向注册表 —— geodata 注册画布适配器（applyProject/releaseProject/refreshEntities/exportCanvas），projectStore 注册入水口（syncFromCanvas）。两个 store 不互相 import（防循环依赖与两套事实源） |
-| 1724 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 6 个 geodataModules + 视图导航 + 项目↔画布接线（画布适配器注册；项目模式下行星图不回退知识库缓存） |
+| 106 | `src/renderer/src/store/canvasBridge.js` | 画布↔项目文件**唯一接线点**（Phase 2.4）：双向注册表 —— geodata 注册画布适配器（applyProject/releaseProject/refreshEntities/exportCanvas），projectStore 注册入水口（syncFromCanvas）。两个 store 不互相 import（防循环依赖与两套事实源） |
+| 1809 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 6 个 geodataModules + 视图导航 + 项目↔画布接线（画布适配器注册；项目模式下行星图不回退知识库缓存） |
 | 241 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 309 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 892 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
@@ -159,7 +160,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 180 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
 | 39 | `src/renderer/src/store/panels.js` | App 层浮层互斥 |
-| 643 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
+| 750 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
 | 43 | `src/renderer/src/store/quitFlush.js` | （待补） |
 | 155 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 178 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
@@ -176,6 +177,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 685 | `src/renderer/src/utils/galaxyDrawing.js` | 星域图绘制全集（GalaxyMap 专用） |
 | 162 | `src/renderer/src/utils/geojson.js` | GeoJSON 导入导出 |
 | 464 | `src/renderer/src/utils/geometry.js` | 凸包/多边形拆分合并/点包含判定 |
+| 250 | `src/renderer/src/utils/gridOutline.js` | 栅格标签网格 → 平滑矢量闭合轮廓（**纯函数**：CSR 边界走链 + 共线塌缩 + 闭环 RDP + Chaikin；地形涂色/生物群系的反马赛克渲染靠它，回归 test_59 + Node 单测） |
 | 188 | `src/renderer/src/utils/heightMath.js` | 高度/温度/降水/生物群系派生**纯函数**（唯一事实源：主线程与 deriveWorker 共用，禁止在别处复制公式） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
 | 459 | `src/renderer/src/utils/labelStyles.js` | 标签样式预设系统：6 种内置预设 + 落盘/导入导出，改动后广播 sitian:label-styles-changed |
@@ -199,7 +201,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 163 | `src/renderer/src/utils/svgExport.js` | 地图 → SVG 矢量序列化：path 曲线约定同 ScenarioMap 的 `traceShapePath`、斜线 pattern、文档组装与 SVG→PNG 光栅化 |
 | 118 | `src/renderer/src/utils/terrainBrush.js` | 地形笔刷引擎（8 种地形类型）：硬度幂函数衰减 + 快速移动时的速度插值补点 |
 | 39 | `src/renderer/src/utils/textMeasure.js` | 文本宽度测量 |
-| 666 | `src/renderer/src/utils/textures.js` | 程序化地形纹理 |
+| 245 | `src/renderer/src/utils/textures.js` | 程序化地形纹理 |
 | 137 | `src/renderer/src/utils/vault.js` | 库名解析：obsidian:// URI 的 vault 参数取自主进程配置（禁硬编码） |
 | 42 | `src/renderer/src/utils/viewport.js` | 由 renderer.viewTransform 反解**视口**世界矩形（小地图遮罩用，必须区别于内容边界） |
 | 59 | `src/renderer/src/workers/deriveWorker.js` | 温度/降水/生物群系派生 Worker：复用 heightMath.deriveLayers 不复制公式（等价性由用例兜住） |

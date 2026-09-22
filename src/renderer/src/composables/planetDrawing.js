@@ -457,11 +457,13 @@ function drawTerrain(ctx) {
 
     // 程序化纹理（P2-4）：LOD 高时叠加细节增强 EU4 省份质感；低缩放纯色省性能
     // 拖拽（fastMode）不跳过纹理：pattern 是缓存的一次 fill，成本低（2026-08-16 用户反馈拖拽时纹理消失）
+    // ⚠️ alpha 由 0.7 降到 0.45（2026-09-22）：textures.js 已改为大尺度柔和底纹，
+    //    再按旧强度叠会把「柔和」压成「脏」。调纹理观感时联动看 textures.js 的配方。
     if (s.lodRef > 0.55) {
       const pattern = getTexturePattern(poly.type, terrainColor, ctx);
       if (pattern) {
         ctx.fillStyle = pattern;
-        ctx.globalAlpha = 0.7;
+        ctx.globalAlpha = 0.45;
         ctx.fill();
         ctx.globalAlpha = 1;
       }

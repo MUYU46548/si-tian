@@ -16,6 +16,7 @@
 
 import { ref, toRaw, watch } from 'vue';
 import { TerrainBrush, TERRAIN_TYPES } from '../utils/terrainBrush';
+import { buildLabelOutlines } from '../utils/gridOutline';
 import { beginGridSnapshot, endGridStroke } from '../store/undo';
 import { brushSegmentRect } from '../utils/dirtyRect';
 
@@ -25,6 +26,14 @@ const EXTRA_CELLS = 16;       // 地形涂色区比高度图数据区四周各�
 const MAX_COLS = 512;
 const MAX_ROWS = 512;
 const DEFAULT_EXTENT = 1200;  // 无地形数据时的兜底覆盖半径
+
+// ===== 有机轮廓渲染参数（替代「逐格 roundRect + 5 档噪点」的马赛克画法）=====
+const OUTLINE_EPS_CELLS = 0.75;      // RDP 容差，**以格为单位**（格宽会变，固定世界单位阈值会失效）
+const OUTLINE_CHAIKIN_ITERS = 2;     // 圆角细分次数
+const OUTLINE_MIN_AREA_CELLS = 0.5;  // 小于半格的碎块不画（纯噪声）
+const OUTLINE_MIN_THROTTLE_MS = 50;  // 涂抹中轮廓重算的最小间隔
+// ⚠️ 不要在这里再叠「纸感颗粒 / 噪点瓦片」：任何逐像素级的随机变化，在真实缩放下
+//    都会被读成细密马赛克（这正是本次要修的东西）。要质感就做**大尺度**明暗。
 
 export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
   const terrainBrushSize = ref(6); // 笔刷直径（单位：格）
@@ -42,6 +51,14 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
 
   let gridOriginX = 0;
   let gridOriginY = 0;
+
+  // 轮廓渲染缓存状态（声明放在最前，避免 setup 期 TDZ：几何函数会调用 markOutlineDirty）
+  let outlineRevision = 0;     // 每次涂抹/重采样/换行星自增
+  let outlineBuiltRev = -1;    // 已建缓存对应的 revision
+  let outlineForce = false;    // 下次绘制必须重建（起笔、抬手）
+  let outlineCache = null;     // Map<label, Array<{pts, bbox}>>
+  let outlineBuildCost = 0;    // 上次重建耗时（用于自适应节流）
+  let outlineBuiltAt = 0;
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const unwrap = (v) => (v && typeof v === 'object') ? toRaw(toRaw(v)) : v;
@@ -152,6 +169,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     cellWorldSize.value = g.cell;
     gridOriginX = g.originX;
     gridOriginY = g.originY;
+    markOutlineDirty(true); // 几何/数据变了 → 轮廓缓存作废
   }
 
   function initTerrainGrid() {
@@ -205,6 +223,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
       terrainGrid.value, gridWidth.value, gridHeight.value,
       wx - gridOriginX, wy - gridOriginY, cellWorldSize.value,
     );
+    markOutlineDirty();
   }
 
   function startTerrainBrush(wx, wy) {
@@ -215,6 +234,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     beginGridSnapshot(terrainGrid.value, 'terrain-paint', `涂色地形（${TERRAIN_TYPES[terrainBrushType.value]?.name || '橡皮擦'}）`);
     syncBrush();
     paintAt(wx, wy);
+    markOutlineDirty(true); // 起笔立即重建一次：否则第一笔要等节流窗口才出现在画布上
     updateBrushPreview(wx, wy);
     markBrushDirty(null, { x: wx, y: wy });
     renderer.requestRender();
@@ -230,6 +250,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     );
     lastBrushX.value = wx;
     lastBrushY.value = wy;
+    markOutlineDirty();
     updateBrushPreview(wx, wy);
     markBrushDirty(prev, { x: wx, y: wy });
     renderer.requestRender();
@@ -238,6 +259,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
   function endTerrainBrush() {
     if (!isTerrainBrushing.value) return;
     isTerrainBrushing.value = false;
+    markOutlineDirty(true); // 抬手落定：轮廓必须与最终格数据完全一致
     endGridStroke(terrainGrid.value, saveTerrainGrid);
   }
 
@@ -265,56 +287,98 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
   }
 
   // ===== 渲染（世界坐标：onRender 传入的 ctx 已带 camera transform） =====
+  //
+  // 🔴 为什么不再逐格画：逐格 roundRect + 5 档噪点抖动，在真实缩放下（1 格 ≈ 2~3 屏幕像素）
+  // 渲染出来的就是一片细密马赛克（用户实测原话「依然是马赛克方块填色，不是自然的笔刷」）。
+  // 现在改为「栅格 → 矢量」：拿格边界抽平滑闭合环（utils/gridOutline：共线塌缩 + RDP + Chaikin），
+  // 再一次性 fill。同色描边把相邻区域之间因圆角内收产生的细缝一起堵掉。
+  function markOutlineDirty(force = false) {
+    outlineRevision++;
+    if (force) outlineForce = true;
+  }
+
+  function rebuildOutlines() {
+    if (!terrainGrid.value) { outlineCache = null; return; }
+    const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    outlineCache = buildLabelOutlines(terrainGrid.value, gridWidth.value, gridHeight.value, {
+      cell: cellWorldSize.value,
+      ox: gridOriginX,
+      oy: gridOriginY,
+      eps: OUTLINE_EPS_CELLS,
+      chaikinIters: OUTLINE_CHAIKIN_ITERS,
+      outside: EMPTY_TERRAIN,
+      ignore: [EMPTY_TERRAIN],
+      minAreaCells: OUTLINE_MIN_AREA_CELLS,
+    });
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    outlineBuildCost = now - t0;
+    outlineBuiltAt = now;
+    outlineBuiltRev = outlineRevision;
+    outlineForce = false;
+  }
+
   function drawTerrainGridToCtx(ctx) {
     if (!terrainGridEnabled.value || !terrainGrid.value) return;
-    const grid = terrainGrid.value;
-    const cols = gridWidth.value, rows = gridHeight.value;
-    const cell = cellWorldSize.value;
 
-    let c0 = 0, c1 = cols - 1, r0 = 0, r1 = rows - 1;
+    // 重建闸门：轮廓重算是 O(格数)（真实库 3.9 万格实测 ~17ms），未变更则复用；
+    // 涂抹中按「上次耗时的 2.5 倍」自适应节流，抬手/起笔强制重建。
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const stale = outlineForce || outlineBuiltRev !== outlineRevision || !outlineCache;
+    if (stale && !(isTerrainBrushing.value && !outlineForce
+      && now - outlineBuiltAt < Math.max(OUTLINE_MIN_THROTTLE_MS, outlineBuildCost * 2.5))) {
+      rebuildOutlines();
+    }
+    const outlines = outlineCache;
+    if (!outlines || !outlines.size) return;
+
+    // 视口世界矩形 → 逐环剔除
+    let vminX = -Infinity, vminY = -Infinity, vmaxX = Infinity, vmaxY = Infinity;
     const cvs = canvas?.value;
     if (cvs && cvs.clientWidth > 0) {
       const a = renderer.screenToWorld(0, 0);
       const b = renderer.screenToWorld(cvs.clientWidth, cvs.clientHeight);
-      const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
-      const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
-      c0 = clamp(Math.floor((minX - gridOriginX) / cell) - 1, 0, cols - 1);
-      c1 = clamp(Math.ceil((maxX - gridOriginX) / cell) + 1, 0, cols - 1);
-      r0 = clamp(Math.floor((minY - gridOriginY) / cell) - 1, 0, rows - 1);
-      r1 = clamp(Math.ceil((maxY - gridOriginY) / cell) + 1, 0, rows - 1);
+      vminX = Math.min(a.x, b.x); vmaxX = Math.max(a.x, b.x);
+      vminY = Math.min(a.y, b.y); vmaxY = Math.max(a.y, b.y);
     }
 
-    // P0-C: 圆角 + 轻模糊，柔化格子体素感
-    const zoom = renderer.viewTransform?.scale || 1;
-    const roundR = cell * 0.22;
-    const blurPx = 1.4 / zoom;
-    ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
-
-    // 按「地形类型 × 噪点档」批量成路径再一次性 fill（逐格 fillStyle+fillRect 是拖拽卡顿主因）
-    for (let t = 0; t < TERRAIN_TYPES.length; t++) {
-      const type = TERRAIN_TYPES[t];
+    const cell = cellWorldSize.value;
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const [label, loops] of outlines) {
+      const type = TERRAIN_TYPES[label];
       if (!type) continue;
-      for (let nb = 0; nb < 5; nb++) {
-        const noise = nb - 2;
-        ctx.beginPath();
-        let any = false;
-        for (let row = r0; row <= r1; row++) {
-          const rowBase = row * cols;
-          for (let col = c0; col <= c1; col++) {
-            if (grid[rowBase + col] !== t) continue;
-            if (((col * 7 + row * 13) % 5) - 2 !== noise) continue;
-            ctx.roundRect(gridOriginX + col * cell, gridOriginY + row * cell, cell, cell, roundR);
-            any = true;
-          }
-        }
-        if (!any) continue;
-        ctx.fillStyle = `rgb(${clamp(type.base[0] + noise, 0, 255)},${clamp(type.base[1] + noise, 0, 255)},${clamp(type.base[2] + noise, 0, 255)})`;
-        ctx.fill();
+      ctx.beginPath();
+      let any = false;
+      for (const lp of loops) {
+        const b = lp.bbox;
+        if (b[2] < vminX || b[0] > vmaxX || b[3] < vminY || b[1] > vmaxY) continue;
+        const pts = lp.pts;
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+        any = true;
       }
+      if (!any) continue;
+      const color = `rgb(${type.base[0]},${type.base[1]},${type.base[2]})`;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      // 同色描边 ≈ 外扩半线宽：既柔化轮廓，也堵住相邻区域圆角内收留下的细缝
+      ctx.lineWidth = cell * 0.9;
+      ctx.stroke();
+      ctx.fill('evenodd');
     }
-    ctx.filter = 'none';
+    ctx.restore();
     ctx.beginPath(); // 收尾清空路径，避免污染后续绘制
   }
+
+  /** 供用例/诊断读：上次轮廓重建耗时与环数 */
+  function outlineStats() {
+    let loops = 0, pts = 0;
+    if (outlineCache) for (const list of outlineCache.values()) for (const l of list) { loops++; pts += l.pts.length; }
+    return { cost: outlineBuildCost, loops, pts, rev: outlineBuiltRev };
+  }
+
 
   function clearTerrainBrush() {
     isTerrainBrushing.value = false;
@@ -324,7 +388,11 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
   }
 
   watch([terrainBrushSize, terrainBrushHardness, terrainBrushType], syncBrush);
-  watch(() => props.planet?.id, () => { terrainGridEnabled.value = false; terrainGrid.value = null; });
+  watch(() => props.planet?.id, () => {
+    terrainGridEnabled.value = false;
+    terrainGrid.value = null;
+    markOutlineDirty(true);
+  });
 
   return {
     terrainBrushSize,
@@ -343,6 +411,8 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     moveTerrainBrush,
     endTerrainBrush,
     drawTerrainGridToCtx,
+    outlineStats,
+    invalidateTerrainOutline: markOutlineDirty,
     clearTerrainBrush,
     clearBrushPreview,
     updateBrushPreview,

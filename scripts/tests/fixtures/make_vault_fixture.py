@@ -244,16 +244,29 @@ def synth_map(planet_key, planet_name, cells_x=207, cells_y=130, spacing=14.4, s
                            'y': int(round(region_c[1] + rr * math.sin(ang)))})
 
     # 涂色层（terrainGrid）：比高度图各外扩 16 格（EXTRA_CELLS）——与真数据同构。
-    # 预置一部分涂色（确定性）而不是全空：画布颜色丰富度用例（test_06）要求画面有纹理层次，
-    # 全空会让「唯一颜色数」掉到阈值以下（实测 26 < 30）。
+    # 🔴 必须是**连续有机色块**，不能是逐格随机撒点：真实库实测 935 格 / 仅 6 个连通分量
+    #   （373/296/147/78/40 格的大块 + 1 个单格）。早先写成 `rnd.random() < 0.35` 随机撒点，
+    #   造出 8207 格 / 6863 个碎块 —— 任何渲染方式都只会得到一片雪花噪点，
+    #   于是「地形绘制观感」类断言全都在拿假数据下结论（2026-09-22 实测踩到）。
     tg_w, tg_h = cells_x + 32, cells_y + 32
     tgrid = [255] * (tg_w * tg_h)
-    for j in range(tg_h):
-        for i in range(tg_w):
-            hi, hj = i - 16, j - 16
-            if 0 <= hi < cells_x and 0 <= hj < cells_y:
-                if h[hj * cells_x + hi] >= 20 and rnd.random() < 0.35:
-                    tgrid[j * tg_w + i] = rnd.randint(1, 8)
+    land_cells = [(i, j) for j in range(cells_y) for i in range(cells_x) if h[j * cells_x + i] >= 20]
+    if land_cells:
+        blob_count = 7
+        for b in range(blob_count):
+            ccx, ccy = land_cells[rnd.randrange(len(land_cells))]
+            ttype = 1 + (b % 6)                      # 1..6（TERRAIN_TYPES 索引范围是 0..7）
+            rad = 7 + rnd.random() * 14
+            ring = 2 * math.pi * b / blob_count       # 各块主方向错开，避免都朝同一侧鼓
+            for dj in range(-int(rad) - 3, int(rad) + 4):
+                for di in range(-int(rad) - 3, int(rad) + 4):
+                    ii, jj = ccx + di, ccy + dj
+                    if not (0 <= ii < cells_x and 0 <= jj < cells_y):
+                        continue
+                    ang = math.atan2(dj, di)
+                    rr = rad * (1 + 0.28 * math.sin(3 * ang + ring) + 0.14 * math.sin(5 * ang))
+                    if math.hypot(di, dj) <= rr:
+                        tgrid[(jj + 16) * tg_w + (ii + 16)] = ttype
 
     return {
         'planetId': planet_name,
