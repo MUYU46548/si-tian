@@ -17,8 +17,18 @@ import { RELIEF_TYPES, RELIEF_TYPE_MAP, buildReliefGrid, queryReliefGridRect } f
 import { settlementRadius } from '../utils/settlement';
 import { roadDrawParams } from '../utils/roadStyles';
 import { RIVER_COLOR, RIVER_DEFAULT_WIDTH } from '../utils/rivers';
+import { buildLabelOutlines } from '../utils/gridOutline';
 
-const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（批量绘制时按编码分桶）
+const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（图例/着色按编码索引）
+
+// ===== 高度图（生物群系）轮廓参数 =====
+// 与地形涂色层（useTerrainCanvasBrush）同一套「栅格 → 矢量轮廓」做法，参数也取一致：
+// eps / minAreaCells 以**格**为单位（格宽会变，固定世界单位阈值会失效）。
+const HM_OUTLINE_EPS_CELLS = 0.75;
+const HM_OUTLINE_CHAIKIN_ITERS = 2;
+const HM_OUTLINE_MIN_AREA_CELLS = 0.5;
+// 同色描边 ≈ 外扩半个线宽：堵住相邻区块圆角内收留下的细缝（与地形层同手法，取小一点避免压到邻块）
+const HM_OUTLINE_SEAM_CELLS = 0.6;
 
 // ===== 样式常量（从 PlanetMap.vue 迁移） =====
 const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
@@ -331,54 +341,102 @@ function drawBackground(ctx, w, h) {
 }
 
 // ===== 高度图渲染（P3 阶段 3） =====
+//
+// 🔴 曾经的实现是「逐格 roundRect + ctx.filter = blur(1.4/zoom) + 13 个分桶各 fill 一次」——
+//    这正是上一轮「行星地形反马赛克」只改了 terrainGrid、**漏掉的另一半**：
+//    · 可见区内每一格都要进一次 roundRect（真实库 207×130，缩放下每帧数千格）；
+//    · 13 个分桶各一次 fill，而画布滤镜（ctx.filter）会让每一次 fill 都重新做一遍整层模糊；
+//    用户实测原话：「群系（高度）笔刷一画就卡，是整个司天卡死的级别……约二十秒后地图上出现
+//    神秘草绿色方块」——草绿色方块就是这一堆圆角格（草地色）终于画完的样子。
+//    现在与地形涂色层同一套做法：格边界抽平滑闭合环（utils/gridOutline）→ 缓存 → 一次 fill，
+//    彻底去掉逐格绘制与画布滤镜。
+let hmOutlineKey = '';
+let hmOutlines = null;
+let hmOutlineCost = 0;
+let hmOutlineLoops = 0;
+
+/** 双 FNV-1a：27k 字节一遍约 0.05ms，比「每帧重建轮廓」便宜两个数量级 */
+function hashLabels(a) {
+  let h1 = 2166136261, h2 = 2166136261 ^ 0x9e3779b9;
+  for (let i = 0; i < a.length; i++) {
+    const v = a[i];
+    h1 = Math.imul(h1 ^ v, 16777619);
+    h2 = Math.imul(h2 ^ (v + 0x5bd1e995), 2246822519);
+  }
+  return (h1 >>> 0).toString(36) + '.' + (h2 >>> 0).toString(36) + '.' + a.length;
+}
+
+/** 生物群系网格 → 平滑闭合环（带内容哈希缓存：涂抹就地改数组也能被识别） */
+function heightmapOutlines(hm) {
+  const grid = hm.grid;
+  const key = hashLabels(hm.biome) + '|' + grid.cellsX + 'x' + grid.cellsY + '|' + (grid.spacing || 14.4);
+  if (key === hmOutlineKey && hmOutlines) return hmOutlines;
+  const spacing = grid.spacing || 14.4;
+  const first = grid.points[0];
+  const ox = (Array.isArray(first) ? first[0] : first.x) - spacing / 2;
+  const oy = (Array.isArray(first) ? first[1] : first.y) - spacing / 2;
+  const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  hmOutlines = buildLabelOutlines(hm.biome, grid.cellsX, grid.cellsY, {
+    cell: spacing, ox, oy,
+    eps: HM_OUTLINE_EPS_CELLS,
+    chaikinIters: HM_OUTLINE_CHAIKIN_ITERS,
+    outside: -1,              // 网格外框 = 无标签（等价于「这里没有群系」）
+    ignore: [],
+    minAreaCells: HM_OUTLINE_MIN_AREA_CELLS,
+  });
+  const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  hmOutlineCost = now - t0;
+  hmOutlineLoops = 0;
+  for (const list of hmOutlines.values()) hmOutlineLoops += list.length;
+  hmOutlineKey = key;
+  return hmOutlines;
+}
+
+/** 供用例/诊断读：上次轮廓重建耗时与环数 */
+function heightmapOutlineStats() {
+  return { cost: hmOutlineCost, loops: hmOutlineLoops, labels: hmOutlines ? hmOutlines.size : 0 };
+}
+
 function drawHeightmap(ctx) {
   const s = getState();
-  const hm = toRaw(toRaw(s.currentMapData))?.heightmap; // 原始对象：每帧读数千格坐标/群系，逐格走响应式代理是纯开销
-
+  const hm = toRaw(toRaw(s.currentMapData))?.heightmap; // 原始对象：每帧读数万格群系，逐格走响应式代理是纯开销
   if (!hm || !hm.h || !hm.grid) return;
   const pts = hm.grid.points;
   const count = hm.h.length;
   if (!count || pts.length !== count) return; // 数据损坏（历史版本 JSON 往返丢失 length）→ 不画
-  const spacing = hm.grid.spacing || 14.4;
   const biome = hm.biome;
+  if (!biome || biome.length !== count) return;
   const vp = s.viewport;
   if (!vp) return;
-  const half = spacing / 2;
-  // 网格原点取真实首点坐标（曾按世界原点 0 反推下标 → 视口裁剪失效、整张网格每量重绘）
-  const first = pts[0];
-  const originX = Array.isArray(first) ? first[0] : first.x;
-  const originY = Array.isArray(first) ? first[1] : first.y;
-  const minI = Math.max(0, Math.floor((vp.minX - half - originX) / spacing));
-  const maxI = Math.min(hm.grid.cellsX - 1, Math.ceil((vp.maxX + half - originX) / spacing));
-  const minJ = Math.max(0, Math.floor((vp.minY - half - originY) / spacing));
-  const maxJ = Math.min(hm.grid.cellsY - 1, Math.ceil((vp.maxY + half - originY) / spacing));
-  if (maxI < minI || maxJ < minJ) return;
+  const spacing = hm.grid.spacing || 14.4;
+
+  const outlines = heightmapOutlines(hm);
+  if (!outlines || !outlines.size) return;
+
   ctx.globalAlpha = 0.7;
-  // P0-C: 圆角 + 轻模糊，柔化格子体素感
-  const zoom = s.zoom || 1;
-  const roundR = spacing * 0.22; // 格子 22% 圆角
-  const blurPx = 1.4 / zoom;     // 屏幕空间 ~1.4px 模糊（抵消 zoom 影响）
-  ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
-  // 按生物群系批量成路径再一次性 fill（逐格 fillStyle+fillRect 是笔刷拖拽时的主要开销）
-  for (let b = 0; b < BIOME_BUCKETS; b++) {
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const [b, loops] of outlines) {
     ctx.beginPath();
     let any = false;
-    for (let j = minJ; j <= maxJ; j++) {
-      const rowBase = j * hm.grid.cellsX;
-      for (let i = minI; i <= maxI; i++) {
-        const idx = rowBase + i;
-        if (idx >= count || biome[idx] !== b) continue;
-        const px = Array.isArray(pts[idx]) ? pts[idx][0] : pts[idx].x;
-        const py = Array.isArray(pts[idx]) ? pts[idx][1] : pts[idx].y;
-        ctx.roundRect(px - half, py - half, spacing, spacing, roundR);
-        any = true;
-      }
+    for (const lp of loops) {
+      const bb = lp.bbox;
+      // 视口剔除（世界坐标）：环的包围盒与可见矩形不相交就整环跳过
+      if (bb[2] < vp.minX || bb[0] > vp.maxX || bb[3] < vp.minY || bb[1] > vp.maxY) continue;
+      const p = lp.pts;
+      ctx.moveTo(p[0].x, p[0].y);
+      for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+      ctx.closePath();
+      any = true;
     }
     if (!any) continue;
-    ctx.fillStyle = biomeColor(biomeKeyFromIndex(b));
-    ctx.fill();
+    const color = biomeColor(biomeKeyFromIndex(b));
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = spacing * HM_OUTLINE_SEAM_CELLS;
+    ctx.stroke();
+    ctx.fill('evenodd');
   }
-  ctx.filter = 'none';
   ctx.beginPath(); // 收尾清空路径，避免污染后续绘制（fill() 会填充累积的路径）
   ctx.globalAlpha = 1;
 }
@@ -1862,6 +1920,7 @@ function getContrastColor(hex) {
     drawSelectedHighlight,
     drawSelectionHandles,
     drawHeightmap,
+    heightmapOutlineStats,
     drawHeightBrushPreview,
     drawTerrainBrushPreview,
     drawPoliticalBorders,

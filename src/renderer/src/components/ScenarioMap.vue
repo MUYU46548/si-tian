@@ -545,6 +545,7 @@ import {
 } from '../utils/scenarioTimeline';
 import { useScenarioExport } from '../composables/useScenarioExport';
 import { useProvinceBrush } from '../composables/useProvinceBrush';
+import { simplifyClosedTrace } from '../utils/regionTrace';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -1274,9 +1275,11 @@ function drawProvinceBrushOverlay(c) {
     c.setLineDash([px(5), px(4)]);
     c.strokeStyle = '#c4b5fd';
     c.lineWidth = px(1.6);
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
     c.beginPath();
-    pts.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)));
-    if (!provLassoActive) c.closePath();
+    // 平滑轨迹（中点二次曲线）：手绘一圈就应该是曲线，逐点 lineTo 会读成「描点连线」
+    tracePath(c, pts, !provLassoActive);
     c.stroke();
     if (!provLassoActive) { c.fillStyle = 'rgba(196,181,253,.18)'; c.fill(); }
     c.setLineDash([]);
@@ -1384,6 +1387,24 @@ function onMouseDown(event) {
     return;
   }
 
+  // 「绘制」工具：按住拖动 = 自由绘制（原型 v7 的手感）。轨迹太短（其实只是单击）则不接管，
+  // 仍由 onClick 的描点分支落一个顶点 —— 两条路径并存，能力不减。
+  if (tool.value === 'draw' && event.button === 0) {
+    if (store.isReadOnly) {
+      statusMsg(`绘制已停用：${store.readOnlyReason}（新建/打开项目后即可编辑）`);
+      return;
+    }
+    // 上一笔成型后若「那次 click 没送到」（松手点落在画布外），这里顺手清掉残留标记，
+    // 免得下一次单击描点被静默吞掉（click 必定先于下一次 mousedown）
+    suppressDrawClick = false;
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    freeTrace = [world];
+    freeTraceActive = true;
+    render();
+    return;
+  }
+
   // 笔刷工具：左键抬高 / 右键降低
   if (tool.value === 'height' && (event.button === 0 || event.button === 2)) {
     isBrushing = true;
@@ -1476,6 +1497,19 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
+  // 「绘制」工具的自由绘制采样：按**屏幕像素**间距取样（世界单位随缩放差几十倍，
+  // 用世界阈值会在大缩放时采得过密、小缩放时采得过疏）
+  if (freeTraceActive && tool.value === 'draw') {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    const last = freeTrace[freeTrace.length - 1];
+    if (!last || Math.hypot(world.x - last.x, world.y - last.y) > px(2)) {
+      freeTrace.push(world);
+      render();
+    }
+    return;
+  }
+
   // Phase 3：省份笔刷涂抹 / 套索描轨迹
   if (tool.value === 'provinceBrush' || tool.value === 'provinceLasso') {
     const rect = canvas.value.getBoundingClientRect();
@@ -1613,6 +1647,17 @@ function onMouseMove(event) {
 }
 
 function onMouseUp() {
+  if (freeTraceActive) {
+    freeTraceActive = false;
+    const pts = freeTrace || [];
+    freeTrace = null;
+    // 够长才算「一笔成型」；否则让随后的 click 走描点分支（落一个顶点）
+    if (pts.length >= FREE_TRACE_MIN_POINTS) {
+      suppressDrawClick = true;
+      if (!commitFreeTrace(pts)) suppressDrawClick = false;
+    }
+    render();
+  }
   if (provStrokeActive) {
     provStrokeActive = false;
     const label = provBrushTool.value === 'erase' ? '省份笔刷抹除'
@@ -1781,6 +1826,8 @@ function onCanvasClick(event) {
   }
 
   if (tool.value === 'draw') {
+    // 自由绘制刚一笔成型（见 onMouseUp）→ 紧随的 click 不再落顶点
+    if (suppressDrawClick) { suppressDrawClick = false; return; }
     // 绘制顶点吸附：P0-T2 省份边界 > P0-T3 网格；Shift 临时禁用（验收：阈劀10px）
     const snapped = resolveSnapPoint(world, event.shiftKey);
     drawPoints.value = [...drawPoints.value, { x: snapped.x, y: snapped.y }];
@@ -2012,6 +2059,39 @@ function finishDraw() {
   });
   drawPoints.value = [];
   render();
+}
+
+// ── 「绘制」工具的**按住拖动自由绘制**（原型 v7 的手感）─────────────────────
+//
+// 用户实测：「绘制功能有退化为早期版本描点连线模拟器的风险，我之前测的手动绘制原型不是
+// 已经很好用了吗？……这和原型里流畅的手绘体验完全不一样。」
+// 描点（单击加顶点）是必要的精确手段，保留；但**按住拖动**要能像手绘一样一笔成型：
+//   按住 → 采样轨迹（屏幕像素间距）→ 松手 → 闭环 RDP 保形简化（utils/regionTrace，
+//   与「区域勾轮廓」同一套：旋转到离质心最远点当锚点，容差 = 包围盒 span 的 2%~5%）
+//   → 直接落成省份多边形（不做凸包、不栅格化，保原始形状）。
+// 两条路径共用同一份省份数据模型（terrain[] 多边形），不新增第二套事实源。
+const FREE_TRACE_MIN_POINTS = 10;   // 少于这个采样数 = 用户只是点了一下（交给描点分支）
+let freeTrace = null;
+let freeTraceActive = false;
+let suppressDrawClick = false;      // 一笔成型后紧随的 click 不要再落顶点
+
+/** 自由绘制轨迹 → 省份（轨迹太短则放弃，仍由描点分支处理） */
+function commitFreeTrace(pts) {
+  if (!ensureBaseMap()) return false;
+  const simplified = simplifyClosedTrace(pts);
+  if (!simplified || simplified.length < 3) {
+    statusMsg('自由绘制：轨迹太短，没有成型（按住沿轮廓拖一圈再松手）');
+    return false;
+  }
+  const id = `prov_${Date.now()}`;
+  store.addBaseProvince(baseMapKey.value, {
+    id,
+    name: `新省份 ${(baseMap.value?.terrain?.length || 0) + 1}`,
+    points: withBezierControls(simplified.map(p => ({ x: p.x, y: p.y }))),
+  });
+  provinceBrush.invalidateBorders();
+  statusMsg(`自由绘制：轨迹 ${pts.length} 点 → 简化为 ${simplified.length} 点，一笔成型`);
+  return true;
 }
 
 function finishRiverDraft() {
@@ -3167,8 +3247,35 @@ function getProvinceColor(prov) {
   return prov.biomeColor || '#bccda0';
 }
 
+/** 把轨迹画成**平滑**路径（中点二次曲线）：手绘的观感就是曲线，逐点 lineTo 会变成「描点连线」 */
+function tracePath(c, pts, close) {
+  if (!pts || pts.length < 2) return false;
+  c.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i].x + pts[i + 1].x) / 2;
+    const my = (pts[i].y + pts[i + 1].y) / 2;
+    c.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+  }
+  const last = pts[pts.length - 1];
+  c.lineTo(last.x, last.y);
+  if (close) c.closePath();
+  return true;
+}
+
 function drawPreviewOverlay() {
   const c = ctx.value;
+  // 「绘制」工具的自由绘制实时轨迹（一笔跟着走，松手才简化成型）
+  if (freeTraceActive && freeTrace && freeTrace.length > 1) {
+    c.save();
+    c.strokeStyle = '#c4b5fd';
+    c.lineWidth = px(1.8);
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    c.beginPath();
+    tracePath(c, freeTrace, false);
+    c.stroke();
+    c.restore();
+  }
   if (tool.value === 'draw' && drawPoints.value.length > 0) {
     c.strokeStyle = '#7c3aed';
     c.fillStyle = 'rgba(124, 58, 237, 0.15)';

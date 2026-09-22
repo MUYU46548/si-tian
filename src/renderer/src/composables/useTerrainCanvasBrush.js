@@ -17,7 +17,7 @@
 import { ref, toRaw, watch } from 'vue';
 import { TerrainBrush, TERRAIN_TYPES } from '../utils/terrainBrush';
 import { buildLabelOutlines } from '../utils/gridOutline';
-import { beginGridSnapshot, endGridStroke } from '../store/undo';
+import { execute } from '../store/undo';
 import { brushSegmentRect } from '../utils/dirtyRect';
 
 const DEFAULT_SPACING = 14.4; // 与 heightMath / 高度图保持同一格宽
@@ -35,7 +35,7 @@ const OUTLINE_MIN_THROTTLE_MS = 50;  // 涂抹中轮廓重算的最小间隔
 // ⚠️ 不要在这里再叠「纸感颗粒 / 噪点瓦片」：任何逐像素级的随机变化，在真实缩放下
 //    都会被读成细密马赛克（这正是本次要修的东西）。要质感就做**大尺度**明暗。
 
-export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
+export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorldBounds }) {
   const terrainBrushSize = ref(6); // 笔刷直径（单位：格）
   const terrainBrushHardness = ref(0.5);
   const terrainBrushType = ref(2); // 默认草地
@@ -51,6 +51,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
 
   let gridOriginX = 0;
   let gridOriginY = 0;
+  let strokeSnapshot = null; // 本笔的 {grid, geom, label}：几何也可能被扩，撤销要能一起还原
 
   // 轮廓渲染缓存状态（声明放在最前，避免 setup 期 TDZ：几何函数会调用 markOutlineDirty）
   let outlineRevision = 0;     // 每次涂抹/重采样/换行星自增
@@ -91,29 +92,75 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     return { minX, minY, maxX, maxY };
   }
 
-  // 目标几何：优先与高度图网格同粒度、同原点（外扩 EXTRA_CELLS 圈），否则由地形包围盒推导
+  // 目标几何：与高度图同粒度、同原点（像素对齐，铁律 89），范围取**并集**：
+  //   ① 高度图数据区  ② 地图可见范围（worldBounds：地形/区域/路线/标记/文本/地点坐标）
+  //   ③ 已落盘的涂色数据范围
+  // 🔴 只按高度图定范围会在地图上留下「画不进去的真空区」（用户实测原话：「似乎无法越过某条
+  //    隐藏界限，在画布某些区域无法绘制，形成明显的真空区」）——真实库 `乐园星` 的
+  //    高度图只覆盖 843→-1029，而地图内容一直排到 y=1629：底部 555m 的条带**看得见却涂不上**。
+  function paintedBounds(md) {
+    const raw = md?.terrainGrid;
+    const cols = md?.gridWidth, rows = md?.gridHeight, cell = md?.cellWorldSize;
+    const ox = md?.gridOriginX, oy = md?.gridOriginY;
+    const ok = raw && typeof raw.length === 'number' && cols * rows === raw.length
+      && Number.isInteger(cols) && Number.isInteger(rows)
+      && typeof cell === 'number' && cell > 0 && typeof ox === 'number' && typeof oy === 'number';
+    if (!ok) return null;
+    let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+    for (let r = 0; r < rows; r++) {
+      const base = r * cols;
+      for (let c = 0; c < cols; c++) {
+        if (raw[base + c] === EMPTY_TERRAIN) continue;
+        if (c < minC) minC = c;
+        if (c > maxC) maxC = c;
+        if (r < minR) minR = r;
+        if (r > maxR) maxR = r;
+      }
+    }
+    if (!isFinite(minC)) return null;
+    return {
+      minX: ox + minC * cell, minY: oy + minR * cell,
+      maxX: ox + (maxC + 1) * cell, maxY: oy + (maxR + 1) * cell,
+    };
+  }
+
   function targetGeometry(md) {
     const hmGrid = unwrap(md?.heightmap)?.grid;
     const hmPts = hmGrid ? (unwrap(hmGrid.points) || hmGrid.points) : null;
-    if (hmPts && hmPts.length > 0 && Number.isInteger(hmGrid.cellsX) && Number.isInteger(hmGrid.cellsY)) {
-      const cell = hmGrid.spacing || DEFAULT_SPACING;
-      return {
-        cell,
-        originX: ptX(hmPts[0]) - EXTRA_CELLS * cell,
-        originY: ptY(hmPts[0]) - EXTRA_CELLS * cell,
-        cols: clamp(hmGrid.cellsX + EXTRA_CELLS * 2, 8, MAX_COLS),
-        rows: clamp(hmGrid.cellsY + EXTRA_CELLS * 2, 8, MAX_ROWS),
-        grid: null,
-      };
-    }
+    const hasHm = !!(hmPts && hmPts.length > 0
+      && Number.isInteger(hmGrid.cellsX) && Number.isInteger(hmGrid.cellsY));
+    const cell = hasHm ? (hmGrid.spacing || DEFAULT_SPACING) : DEFAULT_SPACING;
+
     const b = terrainBounds(md);
-    const cell = DEFAULT_SPACING;
-    const originX = Math.floor(b.minX / cell) * cell - EXTRA_CELLS * cell;
-    const originY = Math.floor(b.minY / cell) * cell - EXTRA_CELLS * cell;
+    let minX = b.minX, minY = b.minY, maxX = b.maxX, maxY = b.maxY;
+    if (hasHm) {
+      const h0 = ptX(hmPts[0]), v0 = ptY(hmPts[0]);
+      minX = Math.min(minX, h0);
+      minY = Math.min(minY, v0);
+      maxX = Math.max(maxX, h0 + (hmGrid.cellsX - 1) * cell);
+      maxY = Math.max(maxY, v0 + (hmGrid.cellsY - 1) * cell);
+    }
+    const wb = getWorldBounds ? getWorldBounds() : null;
+    if (wb && Number.isFinite(wb.minX) && Number.isFinite(wb.maxX)) {
+      minX = Math.min(minX, wb.minX); minY = Math.min(minY, wb.minY);
+      maxX = Math.max(maxX, wb.maxX); maxY = Math.max(maxY, wb.maxY);
+    }
+    const pb = paintedBounds(md);
+    if (pb) {
+      minX = Math.min(minX, pb.minX); minY = Math.min(minY, pb.minY);
+      maxX = Math.max(maxX, pb.maxX); maxY = Math.max(maxY, pb.maxY);
+    }
+
+    // 原点对齐到「与高度图同相位」的格点：否则地形格与高度图格会差半个格，两套笔刷的
+    // 像素不再对齐（铁律 89 的「两团不同规格的像素打架」）。无高度图时以 0 为锚点。
+    const ax = hasHm ? ptX(hmPts[0]) : 0;
+    const ay = hasHm ? ptY(hmPts[0]) : 0;
+    const originX = ax + (Math.floor((minX - ax) / cell) - EXTRA_CELLS) * cell;
+    const originY = ay + (Math.floor((minY - ay) / cell) - EXTRA_CELLS) * cell;
     return {
       cell, originX, originY,
-      cols: clamp(Math.ceil((b.maxX - originX) / cell) + EXTRA_CELLS, 8, MAX_COLS),
-      rows: clamp(Math.ceil((b.maxY - originY) / cell) + EXTRA_CELLS, 8, MAX_ROWS),
+      cols: clamp(Math.ceil((maxX - originX) / cell) + EXTRA_CELLS, 8, MAX_COLS),
+      rows: clamp(Math.ceil((maxY - originY) / cell) + EXTRA_CELLS, 8, MAX_ROWS),
       grid: null,
     };
   }
@@ -226,12 +273,69 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     markOutlineDirty();
   }
 
+  // ===== 覆盖范围按需扩张 =====
+  //
+  // 🔴 网格是定长 TypedArray，笔刷的 paint() 会把列/行下标 clamp 进 [0, cols-1] —— 落在网格外
+  //    的落点**静默无效**，用户看到的就是「有一条看不见的墙，怎么涂都涂不上」。所以每个落点先
+  //    确保「落点 ± 笔刷半径」在网格内：不够就把网格按世界坐标重采样扩出去（已涂内容不丢），
+  //    扩张后的几何记进本笔的撤销快照里（撤销要能还原**几何**，不只是像素）。
+  function snapshotGeometry() {
+    return {
+      cell: cellWorldSize.value, originX: gridOriginX, originY: gridOriginY,
+      cols: gridWidth.value, rows: gridHeight.value,
+    };
+  }
+
+  function applySnapshot(snap) {
+    terrainGrid.value = Uint8Array.from(snap.grid);
+    cellWorldSize.value = snap.geom.cell;
+    gridOriginX = snap.geom.originX;
+    gridOriginY = snap.geom.originY;
+    gridWidth.value = snap.geom.cols;
+    gridHeight.value = snap.geom.rows;
+    markOutlineDirty(true);
+    saveTerrainGrid();
+    renderer.requestRender();
+  }
+
+  /** @returns {boolean} 是否真的扩了 */
+  function ensureCoverage(wx, wy) {
+    if (!terrainGrid.value) return false;
+    const cell = cellWorldSize.value;
+    const r = brushWorldRadius() + cell;
+    const curMinX = gridOriginX, curMinY = gridOriginY;
+    const curMaxX = gridOriginX + gridWidth.value * cell;
+    const curMaxY = gridOriginY + gridHeight.value * cell;
+    if (wx - r >= curMinX && wx + r <= curMaxX && wy - r >= curMinY && wy + r <= curMaxY) return false;
+
+    const anchorX = gridOriginX, anchorY = gridOriginY;
+    const originX = anchorX + (Math.floor((Math.min(wx - r, curMinX) - anchorX) / cell) - EXTRA_CELLS) * cell;
+    const originY = anchorY + (Math.floor((Math.min(wy - r, curMinY) - anchorY) / cell) - EXTRA_CELLS) * cell;
+    const cols = clamp(Math.ceil((Math.max(wx + r, curMaxX) - originX) / cell) + EXTRA_CELLS, 8, MAX_COLS);
+    const rows = clamp(Math.ceil((Math.max(wy + r, curMaxY) - originY) / cell) + EXTRA_CELLS, 8, MAX_ROWS);
+    if (cols === gridWidth.value && rows === gridHeight.value
+      && Math.abs(originX - curMinX) < 1e-6 && Math.abs(originY - curMinY) < 1e-6) return false; // 到上限了
+
+    const geom = { cell, originX, originY, cols, rows };
+    geom.grid = resampleInto(terrainGrid.value,
+      { cols: gridWidth.value, rows: gridHeight.value, cell, originX: curMinX, originY: curMinY }, geom);
+    applyGeometry(geom);   // 已涂内容按世界坐标重采样保留
+    return true;
+  }
+
   function startTerrainBrush(wx, wy) {
     if (!terrainGrid.value) return;
+    // 🔴 快照必须在**扩网格之前**取：一笔的撤销要连几何一起还原，否则画布会留下扩张后的网格
+    //    （用户视角：我只涂了一笔然后撤销，网格却永久变大了）。onMouseUp 的 after 快照含扩张结果。
+    strokeSnapshot = {
+      grid: Uint8Array.from(terrainGrid.value),
+      geom: snapshotGeometry(),
+      label: `涂色地形（${TERRAIN_TYPES[terrainBrushType.value]?.name || '橡皮擦'}）`,
+    };
+    ensureCoverage(wx, wy);
     isTerrainBrushing.value = true;
     lastBrushX.value = wx;
     lastBrushY.value = wy;
-    beginGridSnapshot(terrainGrid.value, 'terrain-paint', `涂色地形（${TERRAIN_TYPES[terrainBrushType.value]?.name || '橡皮擦'}）`);
     syncBrush();
     paintAt(wx, wy);
     markOutlineDirty(true); // 起笔立即重建一次：否则第一笔要等节流窗口才出现在画布上
@@ -243,6 +347,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
   function moveTerrainBrush(wx, wy) {
     if (!isTerrainBrushing.value || !terrainGrid.value) return;
     const prev = { x: lastBrushX.value, y: lastBrushY.value };
+    ensureCoverage(wx, wy);
     terrainBrush.paintInterpolated(
       terrainGrid.value, gridWidth.value, gridHeight.value,
       lastBrushX.value - gridOriginX, lastBrushY.value - gridOriginY,
@@ -260,7 +365,19 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     if (!isTerrainBrushing.value) return;
     isTerrainBrushing.value = false;
     markOutlineDirty(true); // 抬手落定：轮廓必须与最终格数据完全一致
-    endGridStroke(terrainGrid.value, saveTerrainGrid);
+    const before = strokeSnapshot;
+    strokeSnapshot = null;
+    if (!before) return;
+    const after = { grid: Uint8Array.from(terrainGrid.value), geom: snapshotGeometry() };
+    const label = before.label;
+    // execute 内部立即调 redo()：这里 redo 只是把「当前已是的结果」再写一遍（幂等），
+    // 与既有 stroke 写法一致（铁律 §undo：数据修改必须落在 redo 回调里）。
+    execute({
+      type: 'terrain-paint',
+      label,
+      undo: () => applySnapshot(before),
+      redo: () => applySnapshot(after),
+    });
   }
 
   function saveTerrainGrid() {
@@ -410,6 +527,12 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas }) {
     startTerrainBrush,
     moveTerrainBrush,
     endTerrainBrush,
+    ensureCoverage,
+    /** 网格几何（用例/诊断用；应用内部一律走闭包变量） */
+    gridGeometry: () => ({
+      cell: cellWorldSize.value, originX: gridOriginX, originY: gridOriginY,
+      cols: gridWidth.value, rows: gridHeight.value,
+    }),
     drawTerrainGridToCtx,
     outlineStats,
     invalidateTerrainOutline: markOutlineDirty,

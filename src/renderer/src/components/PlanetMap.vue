@@ -1700,7 +1700,12 @@ const provinceSplitMerge = useProvinceSplitMerge({ store, props, emit, renderer,
 const planetHeightBrush = usePlanetHeightBrush({ store, renderer, currentMapData });
 
 // ===== 画布地形笔刷 composable =====
-const terrainCanvasBrush = useTerrainCanvasBrush({ store, props, renderer, canvas });
+// `getWorldBounds` 让涂色网格的范围能覆盖**整张地图**（地形/区域/路线/标记/文本/地点坐标），
+// 否则地图上会留下「看得见却涂不上」的真空区（详见 useTerrainCanvasBrush 的 targetGeometry）
+const terrainCanvasBrush = useTerrainCanvasBrush({
+  store, props, renderer, canvas,
+  getWorldBounds: () => worldBounds.value,
+});
 
 // ===== P0-1 地貌图标笔刷 composable =====
 const reliefBrush = useReliefBrush({ store, currentMapData, renderer });

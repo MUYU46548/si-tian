@@ -3,12 +3,18 @@
 // 只做两件事：① 持有笔刷参数与套索轨迹；② 把「归属标签网格」画出来（格 + 自动省界）。
 // 数据写入一律走 store 的 provinceEditing 模块（一笔 = 一条 undo），本文件不改数据。
 //
-// 渲染技法沿用铁律 87：格用 roundRect + 屏幕空间 blur 消体素感；blur 必须按 1/zoom 补偿，
-// 画完必须 `ctx.filter = 'none'`（否则后面的省界/标签全糊）。onRender 的 ctx 已带相机变换
-// （铁律 77）→ 这里一律用**世界坐标**绘制，线宽/圆角按 zoom 折算。
+// 🔴 渲染走「栅格 → 矢量轮廓」，与地形涂色层（useTerrainCanvasBrush）同一套做法：
+//    旧实现是逐格 roundRect + 屏幕空间 blur（铁律 87 的消体素感技法），但在省份网格上
+//    副作用很明显 —— 用户实测原话：「自由轮廓视图下这个让人产生密集恐惧症的恶心视图」：
+//    圆角格之间留下的缝隙连成一张深色网格、每个四角交汇处都露出一个「点」，
+//    整屏就是密密麻麻的格子+点阵。现在把格边界抽成平滑闭合环（utils/gridOutline）后
+//    每个省份只画一遍 fill，缝隙与点阵一起消失，顺带省掉逐格成本。
+//
+// onRender 的 ctx 已带相机变换（铁律 77）→ 这里一律用**世界坐标**绘制，线宽/圆角按 zoom 折算。
 
 import { ref } from 'vue';
 import { extractBorders, chaikin } from '../utils/provinceGrid';
+import { buildLabelOutlines } from '../utils/gridOutline';
 
 export const PROVINCE_TOOLS = [
   { key: 'paint', label: '归属笔刷', hint: '按住涂抹 → 整笔划归所选省份（一次拖动 = 一条撤销）' },
@@ -23,6 +29,12 @@ const FALLBACK_PALETTE = [
   '#2ecc71', '#8e44ad', '#3498db', '#e74c3c', '#16a085', '#f39c12', '#7f8c8d', '#2980b9',
 ];
 
+// 轮廓参数（以**格**为单位：格宽会变，固定世界单位阈值会失效 —— 与地形层同约定）
+const EPS_FULL = 0.75;
+const EPS_FAST = 1.2;
+const MIN_AREA_FULL = 0.5;
+const MIN_AREA_FAST = 1.5;
+
 export function useProvinceBrush() {
   const radius = ref(5);          // 半径（格）
   const strength = ref(0.8);      // 强度 0~1
@@ -32,11 +44,12 @@ export function useProvinceBrush() {
   const showBorders = ref(true);
   const showNoStar = ref(false);
 
-  // 省界缓存：只跟「网格 + 版本号」走（提取 + 平滑 ~2ms，但不能每帧重算）
+  // 省界 / 轮廓缓存：只跟「网格 + 版本号」走（提取 + 平滑 ~2ms，但不能每帧重算）
   let borderToken = 0;
   const cache = { key: null, token: -1, chains: [], segs: 0 };
+  const cellCache = { key: null, token: -1, fast: false, outlines: null, loops: 0, pts: 0, cost: 0 };
 
-  /** 数据变了以后必须调一次（否则省界还是旧的） */
+  /** 数据变了以后必须调一次（否则省界与省域轮廓还是旧的） */
   function invalidateBorders() { borderToken++; }
 
   function borderChains(key, labels, grid) {
@@ -49,66 +62,93 @@ export function useProvinceBrush() {
     return cache.chains;
   }
 
+  /** 归属格 → 每个省份的平滑闭合环（世界坐标，带缓存） */
+  function provinceOutlines(key, labels, grid, fast) {
+    if (cellCache.key === key && cellCache.token === borderToken && cellCache.fast === fast && cellCache.outlines) {
+      return cellCache.outlines;
+    }
+    const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const outlines = buildLabelOutlines(labels, grid.cols, grid.rows, {
+      cell: grid.cell, ox: grid.ox, oy: grid.oy,
+      eps: fast ? EPS_FAST : EPS_FULL,
+      chaikinIters: fast ? 0 : 2,
+      outside: 0,            // 网格外框 = 无主
+      ignore: [0],           // 无主格不参与轮廓
+      minAreaCells: fast ? MIN_AREA_FAST : MIN_AREA_FULL,
+    });
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    cellCache.key = key;
+    cellCache.token = borderToken;
+    cellCache.fast = fast;
+    cellCache.outlines = outlines;
+    cellCache.cost = now - t0;
+    cellCache.loops = 0;
+    cellCache.pts = 0;
+    for (const list of outlines.values()) for (const lp of list) { cellCache.loops++; cellCache.pts += lp.pts.length; }
+    return outlines;
+  }
+
+  /** 供用例/诊断读：轮廓缓存状态 */
+  function meshStats() {
+    return {
+      labels: cellCache.outlines ? cellCache.outlines.size : 0,
+      loops: cellCache.loops, pts: cellCache.pts,
+      cost: Math.round(cellCache.cost * 100) / 100, fast: cellCache.fast,
+    };
+  }
+
   /**
-   * 画网格 + 省界。世界坐标绘制（ctx 已带相机变换）。
+   * 画网格（省域色块 + 自动省界）。世界坐标绘制（ctx 已带相机变换）。
    * @param {CanvasRenderingContext2D} ctx
    * @param {object} o { key, labels, grid, zoom, colorOf, viewRect, fast }
    *   colorOf(idx) → 颜色串（idx 为 0 时不调用）；viewRect = {minX,minY,maxX,maxY} 世界矩形（视口裁剪）
-   *   fast = true 时走快速档（关圆角与模糊，涂抹期保帧预算）
+   *   fast = true 时走快速档（跳圆角/平滑，涂抹期保帧预算）
    */
   function drawProvinceGrid(ctx, { key, labels, grid, zoom = 1, colorOf, viewRect = null, fast = false } = {}) {
     if (!labels || !grid) return;
     const { cols, rows, cell, ox, oy } = grid;
-    const cellScreen = cell * zoom;
-    const quality = !fast && cellScreen >= 2.5;
-    const roundR = quality ? Math.min(cell * 0.22, 4 / Math.max(zoom, 1e-6)) : 0;
-    const saved = ctx.filter;
 
-    // 视口裁剪范围（格坐标）
-    let c0 = 0, c1 = cols - 1, r0 = 0, r1 = rows - 1;
-    if (viewRect) {
-      c0 = Math.max(0, Math.floor((viewRect.minX - ox) / cell) - 1);
-      c1 = Math.min(cols - 1, Math.ceil((viewRect.maxX - ox) / cell) + 1);
-      r0 = Math.max(0, Math.floor((viewRect.minY - oy) / cell) - 1);
-      r1 = Math.min(rows - 1, Math.ceil((viewRect.maxY - oy) / cell) + 1);
-    }
+    // 视口裁剪范围（世界坐标；缺省=全图）
+    const vw = viewRect || { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Infinity };
 
     if (showCells.value) {
-      if (quality) ctx.filter = `blur(${(1.4 / Math.max(1, zoom)).toFixed(2)}px)`;
-      // 取色兜底：colorOf 拿不到颜色也必须画出来（素描成透明 = 用户以为涂抹没生效）
+      // 取色兜底：colorOf 拿不到颜色也必须画出来（涂成透明 = 用户以为涂抹没生效）
       const pick = (idx) => (colorOf && colorOf(idx)) || FALLBACK_PALETTE[(idx - 1) % FALLBACK_PALETTE.length];
-      // 无主格（海域/未划归）：整片一个颜色，一次 fill
+
+      // ① 无主格底色：整块一次 fill（旧实现逐格 rect，格子多时纯浪费）
       if (showNoStar.value) {
+        ctx.save();
         ctx.fillStyle = 'rgba(18, 34, 52, 0.55)';
+        ctx.fillRect(ox, oy, cols * cell, rows * cell);
+        ctx.restore();
+      }
+
+      // ② 有主格：整省一遍平滑轮廓 fill（同色描边堵掉圆角内收的细缝）
+      const outlines = provinceOutlines(key, labels, grid, !!fast);
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      for (const [idx, loops] of outlines) {
         ctx.beginPath();
-        for (let r = r0; r <= r1; r++) {
-          for (let c = c0; c <= c1; c++) {
-            if (labels[r * cols + c]) continue;
-            const X = ox + c * cell, Y = oy + r * cell;
-            if (quality) ctx.roundRect(X, Y, cell, cell, roundR); else ctx.rect(X, Y, cell, cell);
-          }
+        let any = false;
+        for (const lp of loops) {
+          const bb = lp.bbox;
+          if (bb[2] < vw.minX || bb[0] > vw.maxX || bb[3] < vw.minY || bb[1] > vw.maxY) continue;
+          const p = lp.pts;
+          ctx.moveTo(p[0].x, p[0].y);
+          for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+          ctx.closePath();
+          any = true;
         }
-        ctx.fill();
+        if (!any) continue;
+        const color = pick(idx);
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = cell * 0.5;
+        ctx.stroke();
+        ctx.fill('evenodd');
       }
-      // 有主格：按「连续同序号」分批（一行内成批 → 少切 fillStyle）
-      let last = -1;
-      for (let r = r0; r <= r1; r++) {
-        last = -1;
-        for (let c = c0; c <= c1; c++) {
-          const v = labels[r * cols + c];
-          if (v !== last) {
-            if (last > 0) { ctx.fillStyle = pick(last); ctx.fill(); }
-            ctx.beginPath();
-            last = v;
-          }
-          if (v > 0) {
-            const X = ox + c * cell, Y = oy + r * cell;
-            if (quality) ctx.roundRect(X, Y, cell, cell, roundR); else ctx.rect(X, Y, cell, cell);
-          }
-        }
-        if (last > 0) { ctx.fillStyle = pick(last); ctx.fill(); }
-      }
-      ctx.filter = saved || 'none';
+      ctx.restore();
     }
 
     if (showBorders.value) {
@@ -116,7 +156,7 @@ export function useProvinceBrush() {
       ctx.strokeStyle = 'rgba(8, 14, 24, 0.78)';
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
-      ctx.lineWidth = Math.max(1 / Math.max(zoom, 1e-6), quality ? cell * 0.18 : cell * 0.12);
+      ctx.lineWidth = Math.max(1 / Math.max(zoom, 1e-6), cell * 0.18);
       ctx.beginPath();
       for (const ch of chains) {
         for (let i = 0; i < ch.length; i++) {
@@ -131,5 +171,6 @@ export function useProvinceBrush() {
   return {
     radius, strength, tool, targetIdx, showCells, showBorders, showNoStar,
     PROVINCE_TOOLS, invalidateBorders, borderChains, drawProvinceGrid,
+    provinceOutlines, meshStats,
   };
 }

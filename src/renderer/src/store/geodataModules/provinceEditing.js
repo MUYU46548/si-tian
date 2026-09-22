@@ -23,6 +23,7 @@ import {
   gridFromProvinces, rasterizeProvinces, serializeLabels, normalizeStoredGrid,
   stampBrush, lassoCells, renumberAfterDelete, countOwned, usedIndices, cellAt, gridCellCount,
 } from '../../utils/provinceGrid';
+import { toRaw } from 'vue';
 
 export function createProvinceEditingModule(ctx) {
   const { execute, baseMaps, scheduleAutoSaveScenarios } = ctx;
@@ -47,6 +48,28 @@ export function createProvinceEditingModule(ctx) {
   function provincesOf(key) {
     const m = bm(key);
     return (m && Array.isArray(m.terrain)) ? m.terrain : [];
+  }
+
+  /**
+   * 去响应式的省份定义表 —— **只用于热循环**（栅格化 / 包围盒推导）。
+   *
+   * 🔴 为什么必须这么写：`rasterizeProvinces` 是 O(格数 × 点数) 的双重循环，
+   *    逐点读 `points[i].x` 时若对象是 Vue 响应式代理，每次读都要过一层 proxy trap。
+   *    CDP 实测（6 个省份 / 3600 点 / 3124 格）：走代理 **838.6ms**，同一份数据去代理后
+   *    只要几十毫秒 —— 真实库 desite 是 21 省 / 25930 点，量级差一个数量级就是「卡死几十秒」。
+   *    两层 toRaw：容器与被元素都可能是代理（`{...m, terrain}` 这种展开会把代理原样带走）。
+   */
+  function rawProvinces(key) {
+    const list = toRaw(provincesOf(key));
+    if (!Array.isArray(list)) return [];
+    return list.map((p) => {
+      const rp = toRaw(p);
+      if (!rp || typeof rp !== 'object') return rp;
+      const pts = toRaw(rp.points);
+      if (!Array.isArray(pts)) return rp;
+      const rawPts = pts.map((q) => (q && typeof q === 'object') ? toRaw(q) : q);
+      return { ...rp, points: rawPts };
+    });
   }
 
   /** 把 labels 写回 store（整体替换对象 → 保证响应式；并调度落盘） */
@@ -82,8 +105,9 @@ export function createProvinceEditingModule(ctx) {
       cache[key] = stored;
       return cache[key];
     }
-    const grid = gridFromProvinces(provinces);
-    const labels = rasterizeProvinces(provinces, grid);
+    const raw = rawProvinces(key);              // 热循环必须去响应式（见 rawProvinces 注释）
+    const grid = gridFromProvinces(raw);
+    const labels = rasterizeProvinces(raw, grid);
     cache[key] = { grid, labels };
     commit(key);          // 只读态下 commit 直接返回 → 网格只在内存里（只读 ≠ 看不了）
     return cache[key];
@@ -97,11 +121,11 @@ export function createProvinceEditingModule(ctx) {
   /** 按省份多边形重新栅格化（导入底图 / 手工改了多边形之后调） */
   function rebuildProvinceGrid(key) {
     if (isRO()) return blocked('重建省份网格');
-    const provinces = provincesOf(key);
     if (!bm(key)) return null;
     const before = cache[key] ? { grid: cache[key].grid, labels: new Uint8Array(cache[key].labels) } : null;
-    const grid = gridFromProvinces(provinces);
-    const labels = rasterizeProvinces(provinces, grid);
+    const raw = rawProvinces(key);              // 热循环必须去响应式（见 rawProvinces 注释）
+    const grid = gridFromProvinces(raw);
+    const labels = rasterizeProvinces(raw, grid);
     cache[key] = { grid, labels };
     execute({
       type: 'province-grid-rebuild',

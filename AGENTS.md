@@ -21,7 +21,7 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（58 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（60 用例；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
   - 该命令会先跑 `scripts/tests/unit/*.js`（4 个 Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
@@ -63,6 +63,9 @@
   ① **地形涂色网格**：`useTerrainCanvasBrush.drawTerrainGridToCtx` 原来逐格 `roundRect` + 5 档噪点抖动再 `blur(1.4/zoom)`；真实缩放下 1 格只有 2~3 屏幕像素 → 整屏被读成细密马赛克。现改为 **`utils/gridOutline.js`（纯函数，Node 可测）把格边界抽成平滑闭合环**：CSR 扁平邻接（计数→前缀和→填边，**别用 Map<string,number[]>**：40k 格走链 56ms vs 5ms）→ 共线塌缩 → 闭环 RDP（容差 **以格为单位** 0.75）→ Chaikin 2 轮 → `fill('evenodd')`；**同色描边 `lineWidth = cell*0.9`** 堵掉圆角内收留下的细缝。轮廓缓存带 revision，起笔/抬手强制重建、涂抹中按「上次耗时 ×2.5」自适应节流（3.9 万格实测 6~12ms）。
   ② **地形多边形纹理** `utils/textures.js`：原来是 64×64 瓦片里撒上百个 `Math.random()` 小圆点/短线（草叶/树冠/砂粒/碎石），alpha 0.7 平铺 → 1~3px 的斑点整屏铺开同样是马赛克，且**每次重建纹理颜色都在变**（文件头却写着「全部确定性」）。现重写为「低频 fbm 底噪 + 少量大半径柔光斑 + 极淡带状起伏」，全部走确定性 PRNG，`drawTerrain` 叠加强度 0.7 → **0.45**。
   **三条纪律**：① **任何平铺纹理里都不许加逐像素级随机元素**（叠在色块上就是马赛克；要质感就加大尺度、低对比的明暗层次 —— 我第一版加的「纸感噪点瓦片」同属此类，已删）；② **测试 fixture 的涂色网格必须是连续色块**（`make_vault_fixture.py` 原来 `rnd.random() < 0.35` 随机撒点 → 8207 格碎成 6863 块，任何渲染都只是雪花噪点，观感类断言全在拿假数据下结论；真实库实测 935 格 / 仅 6 个连通分量）；③ **静态源码判据必须先剥注释**（`textures.js` 注释里写着「旧实现用 `Math.random()`」，子串判据当场把自己的注释判成违规 —— 与 §126/§139.9 同一个坑的第三次）。
+- **🔴 反马赛克第二轮：同一套配方还在另外三处（2026-09-22 用户实测，回归 test_60）**: 用户三条 —— ① 地形笔刷「无法越过某条隐藏界限……形成明显的真空区」② 群系（高度）笔刷「一画就卡……约二十秒后地图上出现神秘草绿色方块」③ 历史剧本底图「很卡…绘制有退化为描点连线模拟器的风险…自由轮廓视图下让人产生密集恐惧症」。CDP 量化归因：① 涂色网格范围 = **高度图 + 16 格**，而 `worldBounds`（地形∪区域∪路线∪标记∪文本∪**地点坐标**）更大 —— 真实库只盖 **87.7%**，底部 555m 看得见涂不上，且落点在网格外时 `TerrainBrush.paint` 的下标 clamp 让整笔**静默无效**；② `planetDrawing.drawHeightmap` 仍是上一轮只改 terrainGrid 时**漏掉的另一半**（逐格 `roundRect` + `ctx.filter = blur(1.4/zoom)` + 13 分桶各一次 fill —— 画布滤镜每次 fill 都要整层重做），而 `interactionMode === 'height'` 会**强制显示**该层（中位帧 66ms，关掉该层 33ms）；③ `rasterizeProvinces` 走 Vue 响应式代理做 O(格数×点数) 热循环（6 省 3600 点实测 **838.6ms**），省份网格逐格 roundRect → 圆角格的缝隙连成深色网格、四角露出「点」= 那个密集恐惧症视图。
+  **修法与实测**：涂色网格范围取**并集**（高度图 ∪ worldBounds ∪ 已涂内容，原点对齐高度图相位）+ `ensureCoverage()` 越界自动扩网格（按世界坐标重采样保留已涂；**快照必须在扩张之前取**，一条 undo 连几何与像素一起还原；不能再用 `beginGridSnapshot/endGridStroke` —— 长度变了 `grid.set(before)` 会抛 RangeError）；高度图渲染改 `buildLabelOutlines` + **内容哈希缓存**（双 FNV-1a 扫 27k 字节 ≈0.05ms，能识别就地涂抹）→ 源码零 roundRect / 零 ctx.filter，中位帧 66 → **33ms**；省份网格同样走矢量轮廓 + 栅格化前两层 `toRaw` → 838.6 → **34.6ms**；「绘制」工具补**按住拖动一笔成型**（`simplifyClosedTrace` 闭环 RDP → 省份多边形），单击仍是描点（一笔成型后紧随的 `click` 必须吞掉）。
+  **纪律**：① 修「渲染配方」类问题要**按配方 grep**（`ctx.filter` / `roundRect` / `Math.random` / 逐格 fillRect 会成批复制到多个图层）；② **定长 TypedArray + 下标 clamp = 看不见的墙** —— 凡「在网格上涂抹」的功能都必须能自动扩网格或给出可见边界（静默 no-op 最坏，用户会以为笔坏了）；③ 热循环里不许读响应式代理（`toRaw(toRaw(x))`，本项目第四次踩）；④ 用例探针别缓存数组引用（`applySnapshot` 会整体替换 `terrainGrid.value`，缓存旧引用会把修复判成无效）；⑤ 静态判据的分段标记别用注释（`_code_only()` 已把注释行剥掉，`partition('// ===== …')` 必然落空）。
 - **剧本标记的 icon/color 必须随数据往返（2026-09-22 修）**: `scenarioEditing.addScenarioMarker` 原来只存 `id/x/y/name/type`，**丢掉 icon/color** → 画布按 `m.icon` 渲染，于是「选了标记类型但图标/颜色永远不变」（预设形同装饰）。现已带上 icon/color，渲染端另按 `type` 兜底解析（导入的旧数据只带 `type` 也能显示正确图标）。
 - **「调用后给用户回成功」的函数必须看返回值（2026-09-22）**: 「重新提取」在**只读态与已打开项目态都必须灰禁 + title 写清去处**（只读态 → 项目面板「以知识库为基底新建项目」；项目态 → 先关闭项目）。旧实现两个情形都放行，被拒后**照样打印「已更新 N 个节点」= 谎报成功**（用户报「点了没有任何反应」的真因）；设置面板改库路径后的 alert 同样曾谎报。
 - **一键可达的「打开知识库」（2026-09-22）**: `utils/vault.js#openVault()` 三级兜底（`obsidian://open?vault=<库名>` → 打不开退化为资源管理器定位库目录 → 都没有则提示去设置选库）。入口三处：主工具栏 `book` 图标、世界视图「打开知识库」按钮、设置面板「打开 Obsidian 知识库 / 打开知识库文件夹」。用户原话：「连我都不知道去哪里打开知识库」。
@@ -82,7 +85,7 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 59 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 60 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 7 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 21 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 35 | `grep -c "ipcMain.handle" src/main/index.js` |
