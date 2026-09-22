@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const matter = require('gray-matter');
@@ -13,6 +13,7 @@ const { createTray, destroyTray, getIsQuitting, setIsQuitting } = require('./tra
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const { registerProjectHandlers } = require('./handlers/projectHandler');
 const { registerGitSyncHandlers } = require('./handlers/gitSyncHandler');
+const { createCredentialStore } = require('./gitCredentialStore');
 const log = require('electron-log');
 
 let mainWindow;
@@ -318,8 +319,23 @@ registerProjectHandlers({
 // git 调用全在 handlers/gitSyncHandler.js（该文件顶层不 require electron →
 // 单测能用本地 bare 仓库当远程做**真实 git 端到端**，无需网络与凭证）。
 // 默认同步目录 = 最近项目文件所在目录（渲染层也可显式传 dir）。
+//
+// 令牌保管（2026-09-22 加固）：放在 userData 下的应用自有凭据文件，用 Electron safeStorage 加密
+// （Windows = DPAPI，绑定当前用户）。推送/拉取用之直接喂给 git —— 不再依赖系统凭据管理器"取不取得回来"。
+const gitCredentialStore = createCredentialStore({
+  dir: app.getPath('userData'),
+  encrypt: (s) => {
+    try { return safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(s).toString('base64') : null; }
+    catch (e) { return null; }
+  },
+  decrypt: (s) => {
+    try { return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(String(s), 'base64')) : null; }
+    catch (e) { return null; }
+  },
+});
 registerGitSyncHandlers({
   ipcMain,
+  credentialStore: gitCredentialStore,
   getDefaultSyncDir: () => {
     const last = getLastProjectPath();
     return last ? path.dirname(last) : '';

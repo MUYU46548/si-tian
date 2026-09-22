@@ -55,7 +55,7 @@ JS = r"""(async () => {
   ck('画布桥已注册', describeCanvasBridge().attached === true, describeCanvasBridge());
 
   // ---- b) 新建项目 → 画布切到项目文件 ----
-  Array.from(document.querySelectorAll('button')).find(b => (b.getAttribute('title') || '').startsWith('项目')).click();
+  Array.from(document.querySelectorAll('button')).find(b => (b.getAttribute('title') || '').indexOf('.sitian') >= 0).click();
   for (let i = 0; i < 40 && !q('.project-panel'); i++) await tick(100);
   ck('项目面板打开', !!q('.project-panel'));
   if (!q('.project-panel')) return JSON.stringify({ fails: fails, aborted: '面板未渲染' });

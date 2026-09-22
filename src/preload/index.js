@@ -68,11 +68,14 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   loadScenarios: () => ipcRenderer.invoke('load-scenarios'),
 
   // ===== 一键同步到远程仓库（git）=====
-  // 「傻瓜式」：状态 / 存地址 / 存令牌 / 立即同步 —— 渲染层看不到任何 git 细节（逻辑在主进程）
+  // 「傻瓜式」：状态 / 存地址 / 存令牌 / 测连接 / 立即同步 / 从远程恢复 —— 渲染层看不到任何 git 细节（逻辑在主进程）
   gitSyncStatus: (dir) => ipcRenderer.invoke('git-sync-status', dir),
   gitSyncConfigure: (payload) => ipcRenderer.invoke('git-sync-configure', payload),
   gitSyncCredential: (payload) => ipcRenderer.invoke('git-sync-credential', payload),
+  gitSyncForget: (payload) => ipcRenderer.invoke('git-sync-forget', payload),
+  gitSyncTest: (payload) => ipcRenderer.invoke('git-sync-test', payload),
   gitSyncNow: (payload) => ipcRenderer.invoke('git-sync-now', payload),
+  gitSyncPull: (payload) => ipcRenderer.invoke('git-sync-pull', payload),
 
   // ===== .sitian 项目文件（Phase 1：独立运行基础）=====
   // 文件格式/校验/快照见 renderer 的 utils/projectSchema.js；主进程只管路径与落盘。

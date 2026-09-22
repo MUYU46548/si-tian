@@ -106,7 +106,7 @@ PANEL_JS = r"""(async () => {
 
   // ---- a) 入口：工具栏按钮真实可用 ----
   const btn = Array.from(document.querySelectorAll('button'))
-    .find(b => (b.getAttribute('title') || '').startsWith('项目'));
+    .find(b => (b.getAttribute('title') || '').indexOf('.sitian') >= 0);
   ck('工具栏存在「项目」入口', !!btn, btn ? btn.getAttribute('title') : 'not-found');
   if (!btn) return JSON.stringify({ fails: fails, aborted: '无项目入口，后续步骤跳过' });
   ck('入口 title 说明是 .sitian 项目文件', String(btn.getAttribute('title')).indexOf('.sitian') >= 0, btn.getAttribute('title'));

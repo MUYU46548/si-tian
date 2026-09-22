@@ -210,7 +210,13 @@
             </div>
           </div>
           <div class="data-actions">
-            <button class="data-btn" @click="reextractData">
+            <button class="data-btn" @click="openVaultNow" title="在 Obsidian 里打开当前知识库（打不开时自动改为在文件管理器中打开库目录）">
+              <Icon name="book" :size="14"/> 打开 Obsidian 知识库
+            </button>
+            <button class="data-btn" @click="openVaultFolder" title="在文件管理器中打开知识库根目录">
+              <Icon name="folder" :size="14"/> 打开知识库文件夹
+            </button>
+            <button class="data-btn" @click="reextractData" :disabled="canReextractBlocked" :title="canReextractBlocked ? reextractBlockedHint : '把知识库最新内容读进来'">
               <Icon name="refresh" :size="14"/> 重新提取数据
             </button>
             <button class="data-btn" @click="validateData">
@@ -234,7 +240,7 @@
           <h3>配置管理</h3>
           <div class="data-actions">
             <button class="data-btn" @click="exportSettings" title="将当前设置导出为 JSON 文件（便于备份或多机同步）">
-              <Icon name="upload" :size="14"/> 导出设置
+              <Icon name="export" :size="14"/> 导出设置
             </button>
             <button class="data-btn" @click="triggerImportSettings" title="从 JSON 文件导入设置（仅覆盖可识别的设置项）">
               <Icon name="download" :size="14"/> 导入设置
@@ -410,7 +416,7 @@
                 <Icon name="refresh" :size="14"/> 重置选中预设
               </button>
               <button class="data-btn" @click="exportLabelPresets" title="导出全部预设为 JSON">
-                <Icon name="upload" :size="14"/> 导出预设 JSON
+                <Icon name="export" :size="14"/> 导出预设 JSON
               </button>
               <button class="data-btn" @click="triggerImportPresets" title="从 JSON 导入预设（仅覆盖可识别字段）">
                 <Icon name="download" :size="14"/> 导入预设 JSON
@@ -505,7 +511,7 @@
                 <Icon name="plus" :size="14"/> 新建类型
               </button>
               <button class="data-btn" @click="exportTypes" title="导出全部类型为 JSON">
-                <Icon name="upload" :size="14"/> 导出类型 JSON
+                <Icon name="export" :size="14"/> 导出类型 JSON
               </button>
               <button class="data-btn" @click="triggerImportTypes" title="从 JSON 导入类型">
                 <Icon name="download" :size="14"/> 导入类型 JSON
@@ -547,8 +553,11 @@ import {
   exportMarkerTypes, importMarkerTypes,
 } from '../utils/markerTypes';
 import { useGeodataStore } from '../store/geodata';
+import { useProjectStore } from '../store/projectStore';
 // 单一写闸门状态：只读态下涉及落盘写的按钮灰禁（并给出原因，能力说明不减）
 import { isReadOnly as gateReadOnly, writeModeReason as gateReason } from '../store/writeGate';
+// 「打开知识库」三级兜底（Obsidian → 资源管理器 → 提示去设路径）
+import { openVault, revealVault } from '../utils/vault';
 
 const isOpen = ref(false);
 
@@ -876,6 +885,26 @@ function reextractData() {
   window.dispatchEvent(new CustomEvent('sitian:reextract'));
 }
 
+// 重新提取的可用性：只读态 / 已打开项目（画布事实源=项目文件）两种情形都必须灰禁，
+// 并在 title 里写清原因与去处 —— 只拦不灰禁＝点完才被拒（坏交互）。
+const proj = useProjectStore();
+const canReextractBlocked = computed(() => gateReadOnly.value || proj.isOpen);
+const reextractBlockedHint = computed(() => (gateReadOnly.value
+  ? `${gateReason.value}；重新提取会重写知识库坐标缓存 —— 请先在项目面板新建或打开项目`
+  : '当前画布数据来自项目文件：重提取会让知识库数据与项目数据混流，请先关闭项目再提取'));
+
+/** 打开 Obsidian 知识库（打不开则退化为在资源管理器里定位库目录） */
+async function openVaultNow() {
+  const res = await openVault();
+  if (!res.ok) alert('取不到知识库路径：请先在「知识库路径」里选择你的 Obsidian 库目录');
+}
+
+/** 在资源管理器中打开知识库目录 */
+async function openVaultFolder() {
+  const res = await revealVault();
+  if (!res.ok) alert('取不到知识库路径：请先在「知识库路径」里选择你的 Obsidian 库目录');
+}
+
 // ===== 知识库路径（2026-08-16 可配置化） =====
 const vaultPath = ref('');
 
@@ -891,9 +920,11 @@ async function chooseVaultPath() {
     const result = await window.sitianAPI.selectVaultPath();
     if (result?.success) {
       vaultPath.value = result.path;
-      // 库路径已变更 → 重新提取数据
+      // 库路径已变更 → 重新提取数据（只读/项目态会被闸门拒绝，此时不能谎报「已重新提取」）
       window.dispatchEvent(new CustomEvent('sitian:reextract'));
-      setTimeout(() => alert('知识库路径已更新，数据已重新提取'), 300);
+      setTimeout(() => alert(canReextractBlocked.value
+        ? '知识库路径已更新。当前未打开项目（只读）或画布来自项目文件，数据未重新提取 —— 打开/新建项目后再点「重新提取数据」。'
+        : '知识库路径已更新，数据已重新提取'), 300);
     } else if (result?.error) {
       alert(result.error);
     }

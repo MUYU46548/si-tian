@@ -39,6 +39,10 @@
     <template v-else-if="name === 'info'"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></template>
     <template v-else-if="name === 'refresh'"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></template>
     <template v-else-if="name === 'upload'"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></template>
+    <!-- 导出（把内容送出去：方框 + 指向右上方的箭头）——
+         语义区别：download = 箭头向下落进托盘（拉取/下载，如导出菜单的历史用法），
+         export = 从方框里送出去。用户反馈「导出用下载图标语义有误」，导出类按钮一律用它。 -->
+    <template v-else-if="name === 'export'"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="12" y2="12"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></template>
     <template v-else-if="name === 'eye'"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></template>
     <template v-else-if="name === 'zoom-in'"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></template>
     <template v-else-if="name === 'move'"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></template>
@@ -150,6 +154,10 @@
     <template v-else-if="name === 'waves'"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9 5c1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1 2.5 0 2.5-2 4.5-2 1.3 0 1.7.5 2.5 1 .8.5 1.2 1 2.5 1"/></template>
     <template v-else-if="name === 'cactus'"><path d="M9 22V9a3 3 0 0 1 6 0v13"/><path d="M9 14H7a2 2 0 0 1-2-2v-2"/><path d="M15 11h2a2 2 0 0 1 2 2v2"/><path d="M5 22h14"/></template>
     <template v-else-if="name === 'rock'"><path d="M2 19h20l-3-8-5-4-4 3-4-2-4 6z"/><path d="M11 7l4 3"/></template>
+    <!-- 剧本（ScenarioMap）预设图标：地貌与标记的矢量替代品（替换原 emoji 字面量） -->
+    <template v-else-if="name === 'desert'"><path d="M3 18c3-3 6-3 9 0s6 3 9 0"/><path d="M3 13c3-3 6-3 9 0s6 3 9 0"/><path d="M17 4a2 2 0 1 0 0.01 0z"/></template>
+    <template v-else-if="name === 'palm'"><path d="M12 22V10"/><path d="M12 10c-3 0-5-1.5-6-4"/><path d="M12 10c3 0 5-1.5 6-4"/><path d="M12 10c-1-3-1-5 0-7"/><path d="M12 10c2-2 4-2.5 5-2"/></template>
+    <template v-else-if="name === 'ruins'"><path d="M3 21h18"/><path d="M6 21V9h4v12"/><path d="M14 21V13h4v8"/></template>
   </svg>
 </template>
 

@@ -36,6 +36,9 @@
               </span>
               <span class="gs-dim">分支 {{ status.branch || 'main' }}</span>
               <span class="gs-dim">待同步 {{ status.dirty }} 项</span>
+              <span :class="['gs-pill', hasToken ? 'ok' : 'warn']" data-testid="token-state">
+                {{ hasToken ? '令牌已保存' : '未保存令牌' }}
+              </span>
             </template>
             <span v-else class="gs-dim">这个目录还没建成仓库（第一次同步会自动建）</span>
           </div>
@@ -58,9 +61,48 @@
           />
           <div class="gs-row">
             <button class="gs-btn" :disabled="busy || !remoteUrl" @click="saveRemote">{{ busy === 'save' ? '保存中…' : '保存并连接' }}</button>
-            <span class="gs-dim">私有仓库也能用（填一次令牌，见下方）</span>
+            <button class="gs-btn" :disabled="busy || !remoteUrl" data-testid="test-connection" @click="testConnection">{{ busy === 'test' ? '检查中…' : '测试连接' }}</button>
+          </div>
+          <div class="gs-dim gs-tip">
+            地址里带了令牌（<code>https://token@github.com/…</code>）也没关系：保存时会自动抽出令牌、
+            不在仓库配置里留明文。
           </div>
         </div>
+
+        <!-- 令牌（折叠）：默认展开条件 = 还没保存令牌时 -->
+        <details class="gs-adv" :open="!hasToken">
+          <summary>需要登录？（私有仓库 / 提示需要令牌时填这里）</summary>
+          <div class="gs-adv-body">
+            <div class="gs-dim gs-token-state" data-testid="token-detail">
+              {{ hasToken
+                ? `已保存令牌${status && status.tokenUsername ? '（用户名 ' + status.tokenUsername + '）' : ''} —— 推送时直接使用，不需要再填`
+                : '尚未保存令牌' }}
+            </div>
+            <div class="gs-label">用户名</div>
+            <input v-model.trim="user" class="gs-input" type="text" spellcheck="false" placeholder="GitHub 用户名" />
+            <div class="gs-label">访问令牌（不是密码）</div>
+            <input
+              v-model="token"
+              class="gs-input"
+              type="password"
+              autocomplete="new-password"
+              spellcheck="false"
+              placeholder="粘贴 token，保存后本窗口不再显示"
+              @keyup.enter="saveToken"
+            />
+            <div class="gs-row">
+              <button class="gs-btn" :disabled="busy === 'token' || !token" @click="saveToken">
+                {{ busy === 'token' ? '保存中…' : '保存令牌' }}
+              </button>
+              <button v-if="hasToken" class="gs-btn gs-btn-ghost" :disabled="busy === 'forget'" @click="forgetToken">清除令牌</button>
+            </div>
+            <div class="gs-dim gs-tip">
+              GitHub 令牌在「Settings → Developer settings → Personal access tokens」生成：
+              经典令牌勾 <b>repo</b>；细粒度令牌勾 <b>Contents: Read and write</b> 并把该仓库加入授权列表。
+              令牌加密保存在本机、不回显、不写日志、不写进仓库配置。
+            </div>
+          </div>
+        </details>
 
         <!-- 一键同步 -->
         <div class="gs-section">
@@ -72,33 +114,32 @@
           </div>
         </div>
 
-        <!-- 令牌（折叠） -->
-        <details class="gs-adv">
-          <summary>需要登录？（私有仓库 / 提示需要令牌时填这里）</summary>
-          <div class="gs-adv-body">
-            <div class="gs-label">用户名</div>
-            <input v-model.trim="user" class="gs-input" type="text" spellcheck="false" placeholder="GitHub 用户名" />
-            <div class="gs-label">访问令牌（不是密码）</div>
-            <input
-              v-model="token"
-              class="gs-input"
-              type="password"
-              spellcheck="false"
-              placeholder="粘贴 token，保存后本窗口不再显示"
-              @keyup.enter="saveToken"
-            />
-            <div class="gs-row">
-              <button class="gs-btn" :disabled="busy === 'token' || !token" @click="saveToken">
-                {{ busy === 'token' ? '保存中…' : '保存令牌' }}
-              </button>
-              <span class="gs-dim">存进系统凭据管理器，不写进仓库配置文件</span>
+        <!-- 从远程恢复（拉取）：破坏性操作，必须有警告 + 二次确认 -->
+        <div class="gs-section gs-danger-section">
+          <div class="gs-label gs-danger-label">从远程恢复（拉取）</div>
+          <button class="gs-btn gs-btn-danger" :disabled="busy || !canSync" data-testid="pull-btn" @click="preparePull">
+            {{ busy === 'pull' ? '处理中…' : '读取远程版本…' }}
+          </button>
+          <div class="gs-warn">
+            ⚠️ 恢复会<b>把本地改成与远程一致</b>：本地未同步的改动会被远端版本覆盖。
+            为防意外，司天会先自动（1）保存、（2）在本地留一个<b>带名字的快照</b>（只在本机、不会被推送）、
+            （3）额外备份项目文件 —— 恢复完成的提示里会告诉你这个名字，内容随时可找回。
+            两台设备同时改同一个项目时，先在这台同步再恢复。
+          </div>
+
+          <!-- 二次确认条（不用原生 confirm：headless 下测不到，且会打断用户） -->
+          <div v-if="pullPlan" class="gs-confirm" data-testid="pull-confirm">
+            <div class="gs-confirm-text">
+              远程有 <b>{{ pullPlan.behind === null ? '一批' : pullPlan.behind }}</b> 项新内容
+              <template v-if="pullPlan.dirty > 0">；本地还有 <b>{{ pullPlan.dirty }}</b> 项未同步改动（会被覆盖）</template>。
+              确认恢复？
             </div>
-            <div class="gs-dim gs-tip">
-              GitHub 令牌在「Settings → Developer settings → Personal access tokens」生成，
-              勾 <b>repo</b> 权限即可。司天只把它交给系统凭据管理器，不会回显、不会写日志。
+            <div class="gs-row">
+              <button class="gs-btn gs-btn-danger" :disabled="busy === 'pull'" @click="confirmPull">确认恢复</button>
+              <button class="gs-btn gs-btn-ghost" @click="pullPlan = null">取消</button>
             </div>
           </div>
-        </details>
+        </div>
       </template>
 
       <div v-if="tipText" :class="['gs-tip-line', tipKind]">{{ tipText }}</div>
@@ -136,6 +177,8 @@ const loading = ref(false);
 const busy = ref('');
 const tipText = ref('');
 const tipKind = ref('ok');
+/** 拉取的二次确认计划（非空 = 显示确认条） */
+const pullPlan = ref(null);
 
 const dir = computed(() => {
   // ⚠️ 没有打开的项目 = 没有可同步目录：不能只看 projectDir（它在关闭项目后仍保留上次的目录，
@@ -146,6 +189,8 @@ const dir = computed(() => {
   return fp ? fp.replace(/[\\/][^\\/]+$/, '') : '';
 });
 const canSync = computed(() => !!(status.value && status.value.isRepo && status.value.remote));
+/** 令牌是否已保存（主进程回答，渲染层只拿布尔值；令牌本身永不过界） */
+const hasToken = computed(() => !!(status.value && status.value.hasToken));
 
 function setTip(text, kind = 'ok') {
   tipText.value = text;
@@ -181,10 +226,31 @@ async function refresh() {
 async function saveRemote() {
   if (!dir.value || !remoteUrl.value) return;
   busy.value = 'save';
+  pullPlan.value = null;
   try {
     const res = await window.sitianAPI?.gitSyncConfigure?.({ dir: dir.value, remoteUrl: remoteUrl.value });
-    if (res && res.success) setTip('已保存仓库地址', 'ok');
-    else setTip((res && res.error) || '保存失败', 'err');
+    if (res && res.success) {
+      // 主进程会把地址里内嵌的凭据抽出来，所以我们显示的是干净地址
+      if (res.remoteUrl) remoteUrl.value = res.remoteUrl;
+      setTip(res.note ? `已保存仓库地址（${res.note}）` : '已保存仓库地址', 'ok');
+    } else {
+      setTip((res && res.error) || '保存失败', 'err');
+    }
+  } finally {
+    busy.value = '';
+    await refresh();
+  }
+}
+
+/** 测试连接：立刻验证地址 + 令牌能不能用（用户最需要的确定性反馈） */
+async function testConnection() {
+  if (!dir.value) return;
+  busy.value = 'test';
+  setTip('正在访问远程仓库…', 'ok');
+  try {
+    const res = await window.sitianAPI?.gitSyncTest?.({ dir: dir.value, remoteUrl: remoteUrl.value });
+    if (res && res.success) setTip(res.note || '连接成功', 'ok');
+    else setTip((res && res.error) || '连接失败', 'err');
   } finally {
     busy.value = '';
     await refresh();
@@ -213,16 +279,97 @@ async function saveToken() {
   busy.value = 'token';
   try {
     const res = await window.sitianAPI?.gitSyncCredential?.({
-      remoteUrl: remoteUrl.value, username: user.value, token: token.value,
+      dir: dir.value, remoteUrl: remoteUrl.value, username: user.value, token: token.value,
     });
     if (res && res.success) {
       token.value = '';           // 不回显：保存后立刻清空
-      setTip('令牌已保存到系统凭据管理器', 'ok');
+      setTip(res.note || '令牌已保存', res.persistent === false ? 'err' : 'ok');
     } else {
       setTip((res && res.error) || '令牌保存失败', 'err');
     }
   } finally {
     busy.value = '';
+    await refresh();
+  }
+}
+
+async function forgetToken() {
+  busy.value = 'forget';
+  try {
+    const res = await window.sitianAPI?.gitSyncForget?.({ remoteUrl: remoteUrl.value });
+    setTip(res && res.success ? '已清除本机保存的令牌' : ((res && res.error) || '清除失败'), res && res.success ? 'ok' : 'err');
+  } finally {
+    busy.value = '';
+    await refresh();
+  }
+}
+
+/**
+ * 第一步：只探测（主进程 fetch 后回报差异，不改工作区），拿到差异再给用户确认。
+ */
+async function preparePull() {
+  if (!dir.value) return;
+  busy.value = 'pull';
+  setTip('正在读取远程版本…', 'ok');
+  try {
+    const res = await window.sitianAPI?.gitSyncPull?.({ dir: dir.value, confirm: false });
+    if (res && res.success && res.pulled === false) {
+      pullPlan.value = null;
+      setTip(res.message || '远程没有新内容，本地不必恢复', 'ok');
+    } else if (res && res.needsConfirm) {
+      pullPlan.value = { behind: (res.behind === undefined ? null : res.behind), ahead: res.ahead || 0, dirty: res.dirty || 0 };
+      setTip(res.error || '远程有新内容，请确认后恢复', 'err');
+    } else {
+      pullPlan.value = null;
+      setTip((res && res.error) || '读取远程版本失败', 'err');
+    }
+  } finally {
+    busy.value = '';
+    await refresh();
+  }
+}
+
+/**
+ * 第二步（用户已确认）：真正恢复。
+ * 🔴 顺序是安全的关键：
+ *   ① flushSave —— 先把内存改动落盘（否则恢复后可能被内存里的旧状态写回）
+ *   ② backupNow —— 项目文件额外留一份（`.backups/`，不进 git）
+ *   ③ 主进程 reset --hard（主进程侧还会先把本地状态提交进 git 历史）
+ *   ④ openProject(filePath) 重新装载 —— 必须做：否则画布上还是旧数据，下一次自动保存会把旧数据写回去
+ */
+async function confirmPull() {
+  if (!dir.value) return;
+  busy.value = 'pull';
+  const filePath = proj.filePath;
+  try {
+    const flush = await proj.flushSave();
+    if (flush && flush.success === false) {
+      setTip(`本地还有改动没保存成功，已中止恢复：${flush.error}`, 'err');
+      return;
+    }
+    try { await proj.backupNow(); } catch (e) { /* 额外备份失败不阻断（主进程 reset 前还会提交一次本地状态） */ }
+
+    const res = await window.sitianAPI?.gitSyncPull?.({ dir: dir.value, confirm: true });
+    if (!res || !res.success) {
+      setTip((res && res.error) || '恢复失败', 'err');
+      return;
+    }
+    const files = Array.isArray(res.changedFiles) ? res.changedFiles.length : 0;
+
+    const reopened = filePath ? await proj.openProject(filePath) : null;
+    if (filePath && (!reopened || reopened.success !== true)) {
+      setTip(`已恢复到远程版本（更新 ${files} 个文件），但重新载入项目失败：`
+        + `${(reopened && reopened.error) || '未知原因'}｜请在「项目」面板手动打开：${filePath}`, 'err');
+    } else {
+      const rescue = res.rescueBranch
+        ? `；恢复前的本地内容已留底（本地快照 ${res.rescueBranch}，不会被推送上去）`
+        : '';
+      setTip(`已从远程恢复${files ? `（更新 ${files} 个文件）` : ''}${rescue}，项目已重新载入`, 'ok');
+    }
+    pullPlan.value = null;
+  } finally {
+    busy.value = '';
+    await refresh();
   }
 }
 
@@ -354,4 +501,45 @@ onMounted(async () => {
 }
 .gs-tip-line.ok { background: #e7f4ec; color: #1b6b3a; }
 .gs-tip-line.err { background: #fdecea; color: #b3261e; }
+
+/* 从远程恢复（拉取）：破坏性操作用危险色独立成块，避免和「同步」混在一起误点 */
+.gs-danger-section {
+  margin-top: 4px;
+  border: 1px solid #f3c8c3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fdf7f6;
+}
+.gs-danger-label { color: #b3261e !important; }
+.gs-btn-danger {
+  background: #fff;
+  border-color: #b3261e;
+  color: #b3261e;
+}
+.gs-btn-danger:hover:not(:disabled) { background: #fdecea; }
+.gs-warn {
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: #8a4b45;
+  background: #fdecea;
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+.gs-warn b { color: #b3261e; }
+.gs-confirm {
+  margin-top: 9px;
+  border-top: 1px dashed #e2b3ae;
+  padding-top: 9px;
+}
+.gs-confirm-text { font-size: 12px; color: #8a4b45; margin-bottom: 7px; }
+.gs-confirm-text b { color: #b3261e; }
+.gs-token-state { margin-bottom: 8px; }
+.gs-tip code {
+  font-family: Consolas, Menlo, monospace;
+  font-size: 11px;
+  background: #f1f4f7;
+  border-radius: 3px;
+  padding: 0 3px;
+}
 </style>

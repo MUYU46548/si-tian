@@ -936,6 +936,11 @@ export function createScenarioEditingModule(ctx) {
       y: marker.y,
       name: marker.name || '',
       type: marker.type || 'default',
+      // 🔴 icon / color 必须带上：ScenarioMap 放置标记时按「预设类型」取图标与颜色，
+      //    而画布用 m.icon / m.color 渲染 —— 只存 type 的话图标与颜色全部落回兜底值，
+      //    用户看到的永远是同一个图标（"选了类型但没变化"，2026-09-22 修）。
+      icon: marker.icon || '',
+      color: marker.color || '',
     };
     
     execute({

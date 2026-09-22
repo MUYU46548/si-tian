@@ -39,7 +39,20 @@
         </template>
       </div>
     </div>
-    
+
+    <!-- 视图级动作条（非编辑模式）：地点簇 / 对象 / 快照 / 导出
+         ⚠️ 必须**在流内**（此前是 position:absolute;top:12px;right:16px + z-index:5），
+         与 .map-header 右侧的「编辑地图 / 采用自动区域 / 重新生成」同处右上角 →
+         后者被整片压住、完全不可见也点不到（用户反馈「行星图无法编辑地图」的真因，2026-09-22 实测命中栈确认）。
+         不要在流内恢复绝对定位；下面的 .view-actions 样式也不再设 position。 -->
+    <div v-if="!editMode" class="view-actions">
+      <button class="adopt-btn" @click="openPlanetPanel('cluster')" title="地点簇大纲"><Icon name="folder-open" :size="13"/> 地点簇</button>
+      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="13"/> 对象</button>
+      <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="13"/> 快照</button>
+      <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="export" :size="13"/> 导出全图</button>
+      <button class="adopt-btn" @click="exportFullMapSVG" title="导出全图 SVG 矢量图" data-testid="export-full-svg-view"><Icon name="layers" :size="13"/> 导出 SVG</button>
+    </div>
+
     <!-- 编辑选项栏 -->
     <div v-if="editMode" class="edit-toolbar-wrap">
       <div class="edit-toolbar">
@@ -194,7 +207,7 @@
           <button :class="{ active: rulerVisible }" @click="rulerVisible = !rulerVisible" title="显示/隐藏画布边缘标尺"><Icon name="ruler" :size="13"/> 标尺</button>
           <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="显示/隐藏指北针"><Icon name="compass" :size="13"/> 指北针</button>
           <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="显示/隐藏比例尺"><Icon name="ruler" :size="13"/> 比例尺</button>
-          <button @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="upload" :size="13"/> 导出全图</button>
+          <button @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="export" :size="13"/> 导出全图</button>
           <button @click="exportFullMapSVG" title="导出全图 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-full-svg"><Icon name="layers" :size="13"/> 导出 SVG</button>
         </div>
         
@@ -207,14 +220,7 @@
       </div>
     </div>
     
-    <!-- 非编辑模式的导出按钮 -->
-    <div v-if="!editMode" class="view-actions">
-      <button class="adopt-btn" @click="openPlanetPanel('cluster')" title="地点簇大纲"><Icon name="folder-open" :size="13"/> 地点簇</button>
-      <button class="adopt-btn" :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="13"/> 对象</button>
-      <button class="adopt-btn" :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="13"/> 快照</button>
-      <button class="adopt-btn" @click="exportFullMapPNG" title="导出全图高清 PNG"><Icon name="upload" :size="13"/> 导出全图</button>
-      <button class="adopt-btn" @click="exportFullMapSVG" title="导出全图 SVG 矢量图" data-testid="export-full-svg-view"><Icon name="layers" :size="13"/> 导出 SVG</button>
-    </div>
+    <!-- 非编辑模式的导出按钮已上移到视图级动作条（见 .map-header 之后） -->
     
     <!-- 导出状态提示 -->
     <div v-if="exportStatus" class="export-status"><Icon name="info" :size="12" style="margin-right:5px"/>{{ exportStatus }}</div>
@@ -2961,6 +2967,29 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+/* Azgaar 参考图层条（不随编辑模式隐藏，位置在编辑工具栏之外）
+   ⚠️ 此前这些按钮只有 `:class="{ active: ... }"`、非激活态 class 为空 → 浏览器**默认按钮样式**
+   （灰底 + 2px outset 边框），与周围工具栏格格不入（用户反馈「部分按钮风格不统一，疑似默认样式」）。
+   这里把 .edit-toolbar button 那套视觉语言复制过来统一；不给它加呼吸动画（图层开关是常驻状态）。 */
+.azgaar-layers {
+  padding: 0 16px 8px;
+}
+.azgaar-layers button {
+  padding: 6px 12px;
+  border: 1px solid var(--planet-btn-border);
+  border-radius: var(--radius-sm);
+  background: var(--planet-btn-bg);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--planet-text);
+}
+.azgaar-layers button:hover { background: var(--planet-btn-hover); }
+.azgaar-layers button.active {
+  background: var(--planet-btn-active-bg);
+  border-color: var(--planet-btn-active-border);
+  color: white;
+}
+
 /* 工具栏分组（P0-1）：组间用分隔线 + 留白建立视觉层级 */
 .toolbar-group {
   display: flex;
@@ -3653,12 +3682,17 @@ canvas {
   color: white !important;
 }
 
-/* 非编辑模式导出按钮 */
+/* 视图级动作条（非编辑模式）：地点簇 / 对象 / 快照 / 导出
+   🔴 必须留在**文档流**内 —— 曾经的 position:absolute;top:12px;right:16px 会与
+   .map-header 右侧的「编辑地图 / 采用自动区域 / 重新生成」重叠（同行同右边界必然撞），
+   且因 DOM 顺序在后而把后者整片盖住 = 编辑入口完全不可见、点不到。 */
 .view-actions {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 16px 8px;
 }
 .view-actions .adopt-btn {
   background: var(--planet-btn-bg);

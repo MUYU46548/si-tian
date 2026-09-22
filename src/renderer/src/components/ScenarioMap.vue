@@ -203,7 +203,7 @@
 
       <div class="tool-group">
         <button @click="fitToView" title="适应画布 (F)">⊞</button>
-        <button @click="exportPNG" title="导出 PNG 图片"><Icon name="download" :size="15"/></button>
+        <button @click="exportPNG" title="导出 PNG 图片"><Icon name="export" :size="15"/></button>
         <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': store.saveStatus.value === 'saving' }">
           <Icon v-if="store.saveStatus.value === 'saving'" name="loader" :size="15"/>
           <Icon v-else-if="store.saveStatus.value === 'saved'" name="check-circle" :size="15"/>
@@ -262,7 +262,7 @@
       <div class="tool-group" title="导出">
         <button @click="exportScenarioPNG()" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/></button>
         <button @click="exportScenarioSVG()" title="导出当前剧本/年份为 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-svg"><Icon name="layers" :size="15"/></button>
-        <button @click="exportScenariosJson({ scope: 'current' })" title="导出当前底图的剧本数据（scenarios.json）" data-testid="export-json"><Icon name="upload" :size="15"/></button>
+        <button @click="exportScenariosJson({ scope: 'current' })" title="导出当前底图的剧本数据（scenarios.json）" data-testid="export-json"><Icon name="export" :size="15"/></button>
         <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/></button>
         <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/></button>
       </div>
@@ -535,6 +535,7 @@ import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 import { generateRoadPath } from '../utils/placement';
+import { drawIconOrEmoji } from '../utils/canvasIcon';
 import HistoryPanel from './HistoryPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
@@ -752,15 +753,18 @@ const availableReligions = computed(() => {
 const autoRivers = ref([]);          // {x,y}[] 生成的河流路径
 
 // Relief icons (P1-T1 山脉/树木/沙漠等自然特征)
+// ⚠️ icon 存的是**矢量图标名**（Icon.vue + canvasIcon.js 双端同名），不再是 emoji 字面量：
+//    emoji 会随系统字体变形、无法主题化，且用户明确要求统一画风（2026-09-22）。
+//    用户历史数据里的 emoji 仍由 drawIconOrEmoji 的 fillText 回退兜住（向后兼容）。
 const RELIEF_ICONS = [
-  { id: 'mountain', name: '山脉', icon: '⛰️', color: '#8B7355' },
-  { id: 'forest', name: '森林', icon: '🌲', color: '#228B22' },
-  { id: 'desert', name: '沙漠', icon: '🏜️', color: '#EDC9AF' },
-  { id: 'volcano', name: '火山', icon: '🌋', color: '#FF4500' },
-  { id: 'lake', name: '湖泊', icon: '💧', color: '#4A90D9' },
-  { id: 'cactus', name: '仙人掌', icon: '🌵', color: '#5F7A4A' },
-  { id: 'palm', name: '棕榈', icon: '🌴', color: '#228B22' },
-  { id: 'snow', name: '雪地', icon: '❄️', color: '#F0F8FF' },
+  { id: 'mountain', name: '山脉', icon: 'mountain', color: '#8B7355' },
+  { id: 'forest', name: '森林', icon: 'tree', color: '#228B22' },
+  { id: 'desert', name: '沙漠', icon: 'desert', color: '#EDC9AF' },
+  { id: 'volcano', name: '火山', icon: 'flame', color: '#FF4500' },
+  { id: 'lake', name: '湖泊', icon: 'droplet', color: '#4A90D9' },
+  { id: 'cactus', name: '仙人掌', icon: 'cactus', color: '#5F7A4A' },
+  { id: 'palm', name: '棕榈', icon: 'palm', color: '#228B22' },
+  { id: 'snow', name: '雪地', icon: 'snowflake', color: '#F0F8FF' },
 ];
 
 const selectedReliefIcon = ref('mountain');
@@ -778,14 +782,15 @@ const ROAD_STYLES = [
 const selectedRoadStyle = ref('road');
 
 // 标记类型系统（P1-T5 多种标记类型）
+// ⚠️ 同上：icon 是矢量图标名（双端同名），不是 emoji
 const MARKER_TYPES = [
-  { id: 'city', name: '城市', icon: '🏰', color: '#ffd700' },
-  { id: 'port', name: '港口', icon: '⚓', color: '#4A90D9' },
-  { id: 'battlefield', name: '战场', icon: '⚔️', color: '#f87171' },
-  { id: 'ruin', name: '遗迹', icon: '🏛️', color: '#a78bfa' },
-  { id: 'resource', name: '资源', icon: '💎', color: '#34d399' },
-  { id: 'danger', name: '危险', icon: '☠️', color: '#f87171' },
-  { id: 'custom', name: '自定义', icon: '📍', color: '#94a3b8' },
+  { id: 'city', name: '城市', icon: 'castle', color: '#ffd700' },
+  { id: 'port', name: '港口', icon: 'anchor', color: '#4A90D9' },
+  { id: 'battlefield', name: '战场', icon: 'swords', color: '#f87171' },
+  { id: 'ruin', name: '遗迹', icon: 'ruins', color: '#a78bfa' },
+  { id: 'resource', name: '资源', icon: 'gem', color: '#34d399' },
+  { id: 'danger', name: '危险', icon: 'skull', color: '#f87171' },
+  { id: 'custom', name: '自定义', icon: 'map-pin', color: '#94a3b8' },
 ];
 
 const selectedMarkerType = ref('city');
@@ -3442,7 +3447,8 @@ function drawReliefIcons(c) {
   c.textBaseline = 'middle';
   for (const r of reliefIcons.value) {
     if (r.x < minX || r.x > maxX || r.y < minY || r.y > maxY) continue;
-    c.fillText(r.icon, r.x, r.y);
+    // 矢量图标名走 Path2D；用户历史数据里的 emoji 由 drawIconOrEmoji 内部 fillText 兜住
+    drawIconOrEmoji(c, r.icon, r.x, r.y, Math.max(14, px(18)), r.color || '#FFFFFF');
   }
   c.textAlign = 'start';
   c.textBaseline = 'alphabetic';
@@ -3460,8 +3466,11 @@ function drawScenarioMarkers(c) {
   c.textBaseline = 'middle';
   for (const m of selectedScenario.value.markers) {
     if (m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
-    // 图标
-    c.fillText(m.icon || '📍', m.x, m.y);
+    // 图标（矢量；历史数据里的 emoji 由内部 fillText 兜住）
+    // 图标/颜色缺省时按「标记类型」补 —— 导入的数据往往只带 type，不补会全变成同一个兜底图标
+    const typeDef = MARKER_TYPES.find(t => t.id === m.type);
+    drawIconOrEmoji(c, m.icon || (typeDef && typeDef.icon) || 'map-pin', m.x, m.y,
+      Math.max(12, px(16)), m.color || (typeDef && typeDef.color) || '#FFFFFF');
     // 名称标签
     c.font = `${Math.max(10, px(11))}px "PingFang SC", sans-serif`;
     c.fillStyle = m.color || '#e2e8f0';

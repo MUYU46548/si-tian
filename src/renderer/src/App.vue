@@ -136,10 +136,11 @@
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
         <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)"><Icon name="history" :size="15"/></button>
-        <button @click="reextract" title="重新提取"><Icon name="refresh" :size="15"/></button>
-        <button @click="saveData" :disabled="!dirty" title="保存"><Icon name="save" :size="15"/></button>
+        <button @click="reextract" :disabled="!canReextract" :title="reextractTitle"><Icon name="refresh" :size="15"/></button>
+        <button @click="saveData" :disabled="!dirty || isReadOnly" title="保存"><Icon name="save" :size="15"/></button>
         <button @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/></button>
         <button @click="panelsStore.toggle('git-sync')" :class="{ active: panelsStore.isOpen('git-sync') }" title="同步到远程仓库（一键推送到你自己的 git 仓库）"><Icon name="cloud" :size="15"/></button>
+        <button @click="openVaultFromToolbar" :title="vaultButtonTitle"><Icon name="book" :size="15"/></button>
         <!-- 只读徽标（决策 1 终态）：状态栏只在画布视图出现，世界/选择视图必须靠这里常驻提示，
              否则用户只会在「点了没反应」时才发现自己处于只读（点它直接去项目面板 = 给出去处）。 -->
         <button
@@ -152,7 +153,7 @@
         <button v-if="store.viewLevel !== 'world'" @click="toggleLayersPanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }"><Icon name="layers" :size="15"/></button>
         <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }"><Icon name="bookmark" :size="15"/></button>
         <span class="toolbar-divider"></span>
-        <button @click="panelsStore.toggle('export')" title="导出"><Icon name="download" :size="15"/></button>
+        <button @click="panelsStore.toggle('export')" title="导出"><Icon name="export" :size="15"/></button>
         <span class="toolbar-divider"></span>
         <button @click="settingsPanelRef?.open()" title="设置"><Icon name="settings" :size="15"/></button>
         <button @click="aboutPanelRef?.open()" title="帮助 (F1)">?</button>
@@ -163,6 +164,25 @@
         <span class="status"><Icon v-if="statusKind === 'ok'" name="check-circle" :size="12" style="margin-right:4px"/><Icon v-else-if="statusKind === 'err'" name="x-circle" :size="12" style="margin-right:4px"/>{{ statusText }}</span>
       </div>
     </header>
+
+    <!-- 只读态常驻提示条（用户实测反馈 2026-09-22）：
+         「进入只读后除顶部小字外无任何提示，按钮却像能点」→ 顶部小徽标不够，
+         这里给一条**全宽、大字、可点**的横幅（只在只读态渲染，是文档流内的元素，
+         因此不会像绝对定位那样压住任何视图自己的按钮）。
+         文案三段式：现状（只读·未打开项目）+ 影响（编辑与保存已停用）+ 去处（点它去项目面板）。 -->
+    <div
+      v-if="isReadOnly"
+      class="readonly-notice"
+      role="status"
+      data-testid="readonly-notice"
+      :title="readonlyTitle"
+      @click="panelsStore.toggle('project')"
+    >
+      <Icon name="lock" :size="16" />
+      <span class="rn-main">只读模式 · 未打开项目 —— 编辑与保存已停用</span>
+      <span class="rn-sub">当前画布内容读自知识库，不会被改动；打开或新建项目后即可继续编辑</span>
+      <span class="rn-go">去项目面板 →</span>
+    </div>
 
     <!-- 导出菜单 -->
     <div v-if="panelsStore.isOpen('export')" class="export-menu" @click.self="panelsStore.close('export')">
@@ -189,10 +209,13 @@
           :galaxies="store.galaxies"
           :planets="store.planets"
           :locations="store.locations"
+          :read-only="isReadOnly"
+          :read-only-hint="readonlyTitle"
           @select="store.selectWorld"
           @create-world="handleCreateWorld"
           @delete-world="handleDeleteWorld"
           @reextract="reextract"
+          @open-vault="openVaultFromToolbar"
           @load-sample="handleLoadSampleWorld"
           @open-scenarios="enterScenarioMode"
         />
@@ -304,6 +327,8 @@
 
 <script setup>
 import { iconSvg } from './utils/iconSvg';
+// 打开知识库本体（用户需求：一键可达的「打开 Obsidian 知识库」入口）
+import { openVault } from './utils/vault';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from './store/geodata';
 // 单一写闸门：清缓存等落盘写统一过 guardWrite（只读态拒绝）
@@ -437,8 +462,47 @@ const undoTooltip = computed(() => {
 const readonlyTitle = computed(() => {
   const base = String(readOnlyReason.value || '只读');
   const hint = base.indexOf('打开项目后即可继续编辑') >= 0 ? '' : '；新建或打开项目后即可继续编辑';
-  return `${base}${hint}（点击打开项目面板）`;
+  // 以「只读」开头：title 是「这个元素是什么」的说明，不该以状态原因开头（原因可能是「项目已关闭」）
+  return `只读：${base}${hint}（点击打开项目面板）`;
 });
+
+// 「重新提取」的可用性与说明（三段式：原因 + 影响 + 去处）
+//   ① 只读态（无项目）：重提取是"落盘写"，会被闸门拒绝
+//   ② 已打开项目：画布事实源是项目文件，重提取会把知识库数据倒进画布（两套事实源混流）
+// 两种情形都灰禁 + 在 title 里写清去哪儿恢复，避免"点了才发现被拒"。
+const canvasIsProject = computed(() => store.canvasSource === 'project');
+const canReextract = computed(() => !isReadOnly.value && !canvasIsProject.value);
+// ⚠️ 三段文案**都必须以「重新提取」开头**：状态原因是动态的（关闭项目后是「项目已关闭」），
+// 直接拿它开头会让 title 变成以「项目」开头的句子 —— 按 title 前缀找「项目面板」入口的调用方
+// （用例 / 未来的帮助检索）会挑中这个按钮，表现为「点了项目按钮面板不出现」（2026-09-22 实测踩到）。
+const reextractTitle = computed(() => {
+  if (isReadOnly.value) {
+    return `重新提取（已停用）：${readOnlyReason.value}；它要重写知识库坐标缓存，`
+      + '请先在项目面板「以知识库为基底新建项目」或打开已有项目';
+  }
+  if (canvasIsProject.value) {
+    return '重新提取（已停用）：当前画布数据来自项目文件，重提取会让知识库数据与项目数据混流。'
+      + '如需重新从知识库拉取，请先在项目面板关闭当前项目';
+  }
+  return '重新提取（把知识库最新内容读进来）';
+});
+
+const vaultButtonTitle = computed(() => '打开 Obsidian 知识库（打不开时自动改为在文件管理器中打开库目录）');
+
+/**
+ * 打开知识库本体（用户需求 2026-09-22：给一个「打开 Obsidian 知识库」的按钮，
+ * 不再让用户自己猜知识库在哪）。三级兜底见 utils/vault.js#openVault。
+ */
+async function openVaultFromToolbar() {
+  const res = await openVault();
+  if (!res.ok) {
+    statusText.value = '先设置知识库路径：设置 → 数据管理 → 知识库路径';
+    statusKind.value = 'err';
+    return;
+  }
+  statusText.value = res.how === 'obsidian' ? '已请求 Obsidian 打开知识库' : '已在文件管理器中定位知识库目录';
+  statusKind.value = 'ok';
+}
 
 // 面包屑点击星域：单系地图/行星地图/区域地图/建筑内部 → 返回域内恒星系总览（system 视图）
 function handleBreadcrumbDomain() {
@@ -1309,9 +1373,17 @@ function handlePerfKeydown(e) {
 
 async function reextract() {
   statusText.value = '正在重新提取...';
-  await store.reextract();
+  const res = await store.reextract();
+  // ⚠️ 必须看返回值：只读态 / 已打开项目时 reextract 会**拒绝执行**（gate 或事实源冲突），
+  // 旧实现忽略返回值照样打印「已更新 N 个节点」= 谎报成功（用户实测「点了没有任何反应」的真因）。
+  if (res && res.ok === false) {
+    statusText.value = res.error || '重新提取被拒绝';
+    statusKind.value = 'err';
+    return;
+  }
   dirty.value = false;
   statusText.value = `已更新 ${store.nodes.length} 个节点`;
+  statusKind.value = 'ok';
 }
 
 async function saveData() {
@@ -1648,6 +1720,39 @@ async function clearCoordinateCache() {
 /* 图层按钮呼吸光圈（高频功能视觉指引） */
 .toolbar-actions button[title*="图层面板"] {
   animation: layer-pulse 3s ease-in-out infinite;
+}
+
+/* 只读态常驻提示条：全宽、大字、可点（详见模板注释）
+   颜色语义与工具栏只读徽标一致（--warning），但字号明显更大 —— 「小字提示」已被用户明确否掉。 */
+.readonly-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--warning, #d29922);
+  background: color-mix(in srgb, var(--warning, #d29922) 15%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--warning, #d29922) 45%, transparent);
+}
+.readonly-notice:hover {
+  background: color-mix(in srgb, var(--warning, #d29922) 26%, transparent);
+}
+.readonly-notice .rn-main {
+  font-size: 15px;
+  font-weight: 700;
+}
+.readonly-notice .rn-sub {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.readonly-notice .rn-go {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
 }
 
 @keyframes layer-pulse {

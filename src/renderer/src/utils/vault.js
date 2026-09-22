@@ -80,3 +80,58 @@ export async function openObsidianUri(target) {
   const result = await window.sitianAPI?.openExternal?.(uri);
   return result ?? false;
 }
+
+/** 当前知识库根目录（主进程 userData/config.json 的 vaultPath） */
+export async function getVaultPath() {
+  try {
+    return (await window.sitianAPI?.getVaultPath?.()) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * 打开知识库本体 —— 用户需求（2026-09-22）：
+ * 「连我都不知道去哪里打开知识库」→ 任何视图都要有一键可达的入口。
+ *
+ * 三级兜底，保证「点了必有反应」：
+ *   ① obsidian://open?vault=<库名>（在 Obsidian 里打开这个库）
+ *   ② 打不开（没装 Obsidian / 协议未注册）→ 在资源管理器里定位库目录
+ *   ③ 连库路径都取不到 → 返回 { ok:false }，调用方给出「先去设置里选知识库」的提示
+ * @returns {Promise<{ok: boolean, how?: 'obsidian'|'folder', path?: string}>}
+ */
+export async function openVault() {
+  const path = await getVaultPath();
+  await refreshVaultName();
+  const name = getVaultName();
+  if (name) {
+    try {
+      const res = await window.sitianAPI?.openExternal?.(`obsidian://open?vault=${encodeURIComponent(name)}`);
+      // 主进程成功时返回 { success: true }；协议未注册会返回 { success:false }
+      if (res && res.success !== false) return { ok: true, how: 'obsidian', path };
+    } catch (e) {
+      // 落到文件夹兜底
+    }
+  }
+  if (path) {
+    try {
+      await window.sitianAPI?.revealInExplorer?.(path);
+      return { ok: true, how: 'folder', path };
+    } catch (e) {
+      // 继续往下返回失败
+    }
+  }
+  return { ok: false };
+}
+
+/** 在资源管理器中定位知识库目录（用于「打开文件夹」按钮） */
+export async function revealVault() {
+  const path = await getVaultPath();
+  if (!path) return { ok: false };
+  try {
+    await window.sitianAPI?.revealInExplorer?.(path);
+    return { ok: true, path };
+  } catch (e) {
+    return { ok: false, path };
+  }
+}

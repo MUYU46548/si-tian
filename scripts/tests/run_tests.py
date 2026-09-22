@@ -111,7 +111,8 @@ MOCK_SCRIPT = """<script>
         gitSyncStatus: async (dir) => {
           const st = (window.__gitState || {})[dir] || {};
           return { success: true, isRepo: !!st.isRepo, remote: st.remote || '', branch: 'main',
-                   dirty: st.dirty || 0, lastCommit: st.lastCommit || '', lastCommitAt: '' };
+                   dirty: st.dirty || 0, lastCommit: st.lastCommit || '', lastCommitAt: '',
+                   hasToken: !!st.hasToken, tokenUsername: st.hasToken ? 'mockuser' : '' };
         },
         gitSyncConfigure: async (p) => {
           window.__gitCalls = window.__gitCalls || [];
@@ -124,7 +125,39 @@ MOCK_SCRIPT = """<script>
           window.__gitCalls = window.__gitCalls || [];
           // 只记录「被调过 + 是否带了令牌」，**不记录令牌内容**（mock 也不碰明文）
           window.__gitCalls.push({ op: 'credential', hasToken: !!(p && p.token) });
-          return { success: true, host: 'mock', username: 'git' };
+          window.__gitState = window.__gitState || {};
+          const st = window.__gitState[p && p.dir] || {};
+          window.__gitState[p && p.dir] = { ...st, hasToken: !!(p && p.token) };
+          return { success: true, host: 'mock', username: 'git', persistent: true,
+                   note: '令牌已加密保存在本机（推送时直接使用，不再依赖系统凭据管理器）' };
+        },
+        gitSyncForget: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'forget', hasToken: false });
+          window.__gitState = window.__gitState || {};
+          const st = window.__gitState[p && p.dir] || {};
+          window.__gitState[p && p.dir] = { ...st, hasToken: false };
+          return { success: true, host: 'mock' };
+        },
+        gitSyncTest: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'test', dir: p && p.dir, remoteUrl: p && p.remoteUrl });
+          // 内存态 mock：真实验证在 unit/test_git_sync.js（本地 bare 仓库当远程）
+          const st = (window.__gitState || {})[p && p.dir] || {};
+          if (!st.remote) return { success: false, error: '还没有填远程仓库地址' };
+          return { success: true, host: 'example.com', heads: 0, note: '连接成功（远端仓库目前是空的，正好用来首次推送）' };
+        },
+        gitSyncPull: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'pull', dir: p && p.dir, confirm: !!(p && p.confirm) });
+          const st = (window.__gitState || {})[p && p.dir] || {};
+          if (!p || !p.confirm) {
+            if (st.pullBehind === 0) return { success: true, pulled: false, behind: 0, message: '远程没有新内容，本地不必恢复' };
+            return { success: false, needsConfirm: true, behind: st.pullBehind === undefined ? 2 : st.pullBehind,
+                     ahead: 0, dirty: st.dirty || 0, error: '远程有新内容：恢复会把本地改成与远端一致' };
+          }
+          return { success: true, pulled: true, behind: 2, ahead: 0, changedFiles: ['绒花计划.sitian'],
+                   branch: 'main', localSnapshot: true, rescueBranch: 'sitian-rescue-mock' };
         },
         gitSyncNow: async (p) => {
           window.__gitCalls = window.__gitCalls || [];
@@ -311,6 +344,25 @@ def teardown_mock():
         shutil.rmtree(MOCK_DATA_DIR, ignore_errors=True)
 
 
+# 回归视口：**显式设置**，不要用 headless 的默认 756×441。
+# 为什么（2026-09-22 实测）：默认视口下 App 工具栏会折成 3 行（占 180px），画布只剩 ~100px 高，
+# 于是「视口内找一块陆地」这类用例直接找不到候选点（test_24 报 ch:101 / points:[]）、
+# 依赖画布几何的点击用例也贴边失败（test_08）。默认视口比真实窗口小得多，跑出来的失败不代表产品问题，
+# 反而会掩盖真问题（也会让"给用户看的截图"失真，见 skill §121）。
+TEST_VIEWPORT = (1280, 800)
+
+
+def apply_viewport(cdp):
+    """把页面视口固定成 TEST_VIEWPORT（每次重载后都要重设：override 绑在 page target 上）。"""
+    try:
+        cdp.send('Emulation.setDeviceMetricsOverride', {
+            'width': TEST_VIEWPORT[0], 'height': TEST_VIEWPORT[1],
+            'deviceScaleFactor': 1, 'mobile': False,
+        })
+    except Exception as e:
+        print(f'  ⚠️ 设置回归视口失败（将用默认视口跑，几何类用例可能误红）：{e}')
+
+
 def _harness_open(cdp, first=False):
     """打开 harness 基线项目（见 lib/helpers.py 说明）。
 
@@ -439,6 +491,7 @@ def main():
         # 首个用例前必须导航（Edge 新 profile 停在 about:blank / 首启页）
         cdp.navigate()
         wait_for(cdp, "!!document.querySelector('.app-layout')", desc='首次导航')
+        apply_viewport(cdp)
         # 首启引导层（.onboarding-overlay）会挡住数据加载：此时 store.nodes 恒为 0，
         # 第一个用例必然看到空数据（test_01 历史上因此红）。先把首启标记写掉再重载。
         try:
@@ -478,6 +531,7 @@ def main():
             try:
                 cdp.navigate()
                 wait_for(cdp, "!!document.querySelector('.app-layout')", desc='重载')
+                apply_viewport(cdp)
                 # 用例前统一等数据就绪：mock 是异步注入的（geodata + 2MB mapdata），
                 # 只等 .app-layout 会让下一个用例的首个断言撞上空 store，报「no-world /
                 # 树节点未渲染 / 地理数据加载超时」这类**假失败**（历史上曾据此误判

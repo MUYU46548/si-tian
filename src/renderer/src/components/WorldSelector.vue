@@ -7,17 +7,29 @@
       </div>
       <div class="header-actions">
         <button class="scenario-btn" @click="$emit('open-scenarios')" title="历史剧本"><Icon name="history" :size="14"/> 历史剧本</button>
+        <button class="vault-btn" data-testid="open-vault" @click="$emit('open-vault')" title="打开 Obsidian 知识库（打不开时自动改为在文件管理器中打开库目录）"><Icon name="book" :size="14"/> 打开知识库</button>
         <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
       </div>
     </div>
     <div v-if="worlds.length === 0" class="empty-state">
       <h2>这里还没有世界</h2>
-      <p>从 Obsidian 库提取地理节点，加载示例世界观体验，或创建一个空世界开始绘制。</p>
+      <p>从 Obsidian 库提取地理节点，加载示例世界观，或创建一个空世界开始绘制。</p>
       <div class="empty-actions">
         <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
         <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
-        <button class="extract-btn" @click="$emit('reextract')"><Icon name="refresh" :size="14"/> 从 Obsidian 重新提取</button>
+        <button class="vault-btn" data-testid="open-vault-empty" @click="$emit('open-vault')"><Icon name="book" :size="14"/> 打开 Obsidian 知识库</button>
+        <!-- 只读态下「重新提取」是落盘写、必然被拒 → 灰禁 + 说明去处（只拦不灰禁＝点完才被拒，坏交互） -->
+        <button
+          class="extract-btn"
+          data-testid="reextract"
+          :disabled="readOnly"
+          :title="readOnly ? readOnlyHint : '把知识库最新内容读进来'"
+          @click="$emit('reextract')"
+        ><Icon name="refresh" :size="14"/> 从 Obsidian 重新提取</button>
       </div>
+      <p v-if="readOnly" class="empty-readonly-hint">
+        {{ readOnlyHint }}
+      </p>
     </div>
     <div v-else class="world-grid">
       <div
@@ -58,9 +70,12 @@ const props = defineProps({
   galaxies: { type: Array, default: () => [] },
   planets: { type: Array, default: () => [] },
   locations: { type: Array, default: () => [] },
+  // 只读态（无项目）：用于灰禁「从 Obsidian 重新提取」并给出能力说明 + 去处
+  readOnly: { type: Boolean, default: false },
+  readOnlyHint: { type: String, default: '' },
 });
 
-defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios']);
+defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault']);
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {
@@ -112,7 +127,10 @@ function getLocationCount(worldId) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* 🔴 不要用 justify-content: center —— 内容比容器高时（小窗口 / 卡片多）flex 居中会把**顶部裁掉**，
+     而且滚也滚不到（实测：756×441 下「打开知识库 / 历史剧本 / 新建世界」那一行 y = -20，完全够不着）。
+     改用「flex-start + 首尾 auto 外距」的标准手法：有富余时垂直居中，超出时从头排布且可滚动。 */
+  justify-content: flex-start;
   height: 100%;
   padding: 40px;
   overflow-y: auto;
@@ -122,6 +140,8 @@ function getLocationCount(worldId) {
     radial-gradient(ellipse at 60% 40%, rgba(40, 90, 100, 0.12) 0%, transparent 50%),
     var(--app-bg);
 }
+.world-selector > .header-row { margin-top: auto; }
+.world-selector > :last-child { margin-bottom: auto; }
 
 /* 星尘（确定性伪元素，与星图背景一致） */
 .world-selector::before {
@@ -243,6 +263,28 @@ function getLocationCount(worldId) {
   white-space: nowrap;
 }
 .extract-btn:hover { background: var(--btn-bg-hover); }
+
+/* 「打开知识库」按钮：与 create-btn 同规格，用中性/信息色区分（不是创建动作） */
+.vault-btn {
+  padding: 8px 18px;
+  border: 1px solid var(--toolbar-border);
+  border-radius: var(--radius-md);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.vault-btn:hover { background: var(--btn-bg-hover); }
+
+/* 只读态说明（空状态卡片内）：正文级字号，说明「为什么被禁 + 去哪儿」 */
+.empty-readonly-hint {
+  margin: 2px 0 0 !important;
+  font-size: 12.5px !important;
+  color: var(--warning, #d29922) !important;
+  line-height: 1.6;
+}
 
 .world-card {
   position: relative;
