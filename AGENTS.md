@@ -51,6 +51,14 @@
   🔴 **令牌由应用自己保管并直接喂给 git（2026-09-22 事故修复）**：旧实现只把令牌交给 `git credential approve`（系统凭据管理器）→ **「存进去了 ≠ 推送时取得回来」**（取决于应用进程里那个 git 的 helper 配置），失败表现恰好就是用户「我明明填了令牌，却还说需要登录」。现在：`safeStorage`（Windows=DPAPI）加密落 `userData/git-credentials.json`；推送/拉取用**临时 credential helper + 环境变量**注入（`-c credential.helper= -c credential.helper=!f(){ … $SITIAN_GIT_TOKEN … }`）—— 令牌不进 argv、不进 `.git/config`、不依赖凭据管理器；系统凭据管理器降级为**附加**写入。拿不到加密能力时**只留会话内存、绝不写明文**。
   其余硬约束：① 所有 git 调用带 `GIT_TERMINAL_PROMPT=0`（缺凭证立刻失败，不挂死 UI）；② 错误人话化且**区分「令牌被拒」（401/403/Authentication failed）与「压根没找到凭据」**——两者指引完全不同（旧实现混为一谈，把"权限不足"也说成"去填令牌"）；③ `sanitize()` 抹掉回渲染层的任何令牌与 URL 内嵌凭据；④ 地址里内嵌的令牌（`https://token@…`）保存时**自动抽出**，不在 `.git/config` 留明文；⑤ 推送失败不丢数据（commit 已在本地）；⑥ 「测试连接」（`ls-remote`）给确定性反馈。同步时自动写 `.gitignore` 忽略 `*.sitian.tmp-*` 与 `*.backups/`。
   🔴 **「从远程恢复」的安全设计**：非 `confirm` 调用**只 fetch 探测**（回报 behind/ahead/dirty，**不动工作区**）→ 用户确认后：先把本地内容 `add+commit` 并**打一个带名字的救援分支** `sitian-rescue-<ts>`（只提交是不够的：`reset --hard` 之后那条提交变成悬空对象，普通用户找不回来）→ 再 `reset --hard FETCH_HEAD`；渲染层随后必须 `openProject(filePath)` **重新装载**，否则画布上还是旧数据、下一次自动保存会把旧数据写回去。分支名不一致（本地 master / 远端 main）或远程为空时给结论而不是报错。单测断言「探测阶段不动工作区」「救援分支上有本地独有文件」「救援分支没被推到远端」。
+- **🔴 省份编辑收官（P1~P4，2026-09-23；回归 test_63/64/65 + Node 单测）**: 上一段（P0 第二块）之后的后半程 ——
+  ① **自由绘制 = 默认工具**（`tool` 初值 `'draw'`）：按住沿轮廓拖一圈 → 抬手建省（≥15 采样点且面积≠0 才建），名字「省份 N」、颜色按 `PROVINCE_PALETTE` 轮转、抬手吸附海岸线骨架（**Shift = 不吸附**）、**一个省一条 undo**；空底图上直接画就能建省（不必先「新建省份」）。单击仍是描点。
+  ② **变更归属 / 分割 / 合并 / 点击填充只作用于多边形**：涂抹期在内部网格上算，抬手 `reprojectRings` 写回多边形（只重算被碰到的省，其余保留高保真轮廓）。
+  ③ 🔴 **分割必须保住身份**：`splitProvinceShape` 给两半生成**新 id**，store 必须把**留在原位序号那一半的 id 换回原省 id**（`id: orig.id`），否则时间轴上「这个省」的身份断掉（`ownership[provinceId]` 成孤儿、转正/易主全脱钩）。「侧符号」（`shiftKey`）决定**哪一半留在原位**，不是决定 id 归谁。同毫秒两次拆分曾撞 id（`prov_<ts>_a/b`）→ makeId 带模块计数器；`mergeProvinces` 对 ids 去重。
+  ④ 🔴 **面积守恒要用净面积**：`provinceArea` 是**毛面积**（各环绝对值相加）→ 有洞的省把洞的面积**加**上去。挖洞/套索写回后「总面积 +12%」不是数据错、是量法错。`provinceNetArea`（按 `ringSigns` 带符号求和）才是真实陆地面积。
+  ⑤ **P3 工具栏按任务分层**：主行 = 返回 / 选择 / 自由绘制 / 变更归属 / 顶点编辑 / 更多 = **恰好 6 个可见控件**（test_65 守）；其余 14 个工具 + 吸附 + 图层 + 底图全进默认收起的 `.toolbar-more`（41 个控件，**逐项点击验证真能切工具** = 「能力一个都不减」）；省份选项行 `.province-row` 随工具出现（`provinceRowVisible`），不在默认 6 个之内。
+  ⑥ **P4 海洋分区**：`kind: 'sea'` → 水面色 `SEA_FILL` + **淡虚线海界** `SEA_EDGE`（实线=陆地省界、虚线=水域，一眼可分）；`getProvinceColor` **最先判海域**（海不参与归属着色）；势力油漆桶点在海域上 → 状态栏说明 + 不写 ownership（海区不进时间轴/谱系）。
+  ⑦ 🔴 **写 UI 用例的两条硬纪律**（test_65 一次踩齐）：Vue 的 DOM 更新是**异步**的（`nextTick`）—— 点完按钮立刻查 DOM 必然查不到，探针必须 `async` + `await tick()`（`cdp.eval` 带 `awaitPromise` 才拿得到返回值）；**点击类断言必须先把 `baseMapKey` 切到用例自己的底图** —— 画布只画当前底图，否则点击查的是另一张图的省份，「海域点不出归属」会因为 `prov=null` 而**假绿**（对照组「陆地该记下」才把它揪出来）。探针里 `querySelector` 为 null 时要**带回现场**（DOM 子元素/状态）而不是就地抛异常。
 - **区域勾轮廓管线（Phase 2.6，2026-09-20）**: `utils/regionTrace.js`（纯函数 + 离屏 canvas 光栅化）= 勾完轮廓落库前的统一关口：**闭环保形简化**（`simplifyClosedTrace`，RDP 旋转到「离质心最远点」当锚点，容差 = span 的 2%~5% —— **固定 eps 在世界单位下什么都削不掉**：行星图 1px ≈ 3~5 世界单位，实测 eps=2 时 200 点只降到 111 点，改成 span 比例后 200→16）+ **离屏光栅校验**（`validateRegionTrace` → `traceStats`：把轮廓与「可绘制范围 / 兄弟区域」各填一张掩膜逐像素求交，算 `insideRatio` / `overlapRatio`）。**判定顺序 = 先重叠、后范围**（重叠 > 5% 拒绝并点名 + 带百分比；范围外 < 50% 拒绝），两个拒绝都只写状态栏**不动数据**。接线：PlanetMap 区域模式的自由绘制 + 点击描点两条落库路径、AreaMap 区域拖拽 + 笔刷两条路径。⚠️ 三条设计约束：① 「落地内」只在行星**显式设了地图边界**（`canvasSizePreset > 0`）时才硬判，`auto` 下边界随内容增长（没有「画到范围外」这回事）→ `containers` 传空 = 跳过，**宁可不判也不误拒**；② 自由绘制 `simplify: true`，点击描点 / 笔刷 `simplify: false`（顶点是用户刻意摆的，RDP 会削掉有意画的细节）；③ 真实数据里 `mapData[planet].terrain` 是**稀疏小块**（44 块 / 769 点，不是一整块大陆），既有「区域 1」只有 7% 落在 terrain 内 → **绝不能拿 terrain 当可绘制范围**，否则把用户正常画的区域全拒了。回归用例 test_51
 - **省份「归属标签网格」（Phase 3，2026-09-20）**: `utils/provinceGrid.js`（纯函数：多边形→格归属/差异边→省界链→Chaikin/笔刷与套索差量/重编号/序列化自愈）+ `store/geodataModules/provinceEditing.js` + `composables/useProvinceBrush.js`，ScenarioMap 接 Q（省份笔刷）/L（自由轮廓）工具与子工具栏。三条硬约束：① **序号 = `baseMaps[key].terrain[]` 下标 + 1**，不另建省份定义表（两套表 = 两套事实源）；② **涂抹期不碰响应式**（数据在模块内 `Uint8Array`，抬手 diff 成**一条** undo 并整体替换 baseMaps[key]）；③ **删除省份必须两步**：自身格置 0 + 序号 > idx 的减 1，且记**整表快照**（只做减 1 会把被删省份的地盘白送给顶替它序号的省）。**网格视图默认关**（该开关已在 P0 第二块删除，见下条）→ 既有多边形渲染与观感一行不变。🔴 **只读态（无项目）**：编辑入口不灰禁，但每个写操作先过 `guardWrite`、被拒即「什么都没发生」（不改 store、不改内存标签），**懒建网格也只进内存缓存**；只读 ≠ 看不了（网格与省界照常渲染）。回归用例 test_52
 - **🔴 省份几何 = 多环实体 + 渲染单一路径（P0 第二块，2026-09-23，回归 test_62 + Node 单测）**: 用户三条投诉（丑东西 / 圈不着 / 功能打架）的数据层归因与修法 ——
@@ -95,7 +103,7 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 62 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 65 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 7 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 21 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 35 | `grep -c "ipcMain.handle" src/main/index.js` |
