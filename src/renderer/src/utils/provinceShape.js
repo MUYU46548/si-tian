@@ -192,6 +192,22 @@ export function provinceArea(prov) {
 }
 
 /**
+ * 省份的**净面积**（洞减掉、飞地加上）= 用户眼里「这块地有多大」。
+ *
+ * 🔴 与 `provinceArea`（各环绝对值之和）的区别：带洞的省份 gross 会把洞的面积也算进去
+ *    （100×100 外框 + 20×20 洞 → gross 10400、net 10000）。凡是「面积守恒 / 面积比较」的
+ *    断言与显示都必须用 net，否则一出现洞就把洞算成两份地。
+ */
+export function provinceNetArea(prov) {
+  const rings = provinceRings(prov);
+  if (!rings.length) return 0;
+  const signs = ringSigns(prov);
+  let a = 0;
+  for (let i = 0; i < rings.length; i++) a += (signs[i] || 1) * Math.abs(signedArea(rings[i].points));
+  return a;
+}
+
+/**
  * 环的**嵌套符号**（+1 = 实心外环 / -1 = 洞）。
  *
  * 🔴 为什么必须有它：多环省份有两种完全不同的语义 ——
@@ -374,9 +390,11 @@ function splitRingByLine(points, a, b) {
  * 每个环独立切割后按侧归并：一个环若没被切到，整环归到质心所在的一侧。
  * @returns {{a:object, b:object}|null} null = 切割无效（线没穿过多边形 / 每侧不足 3 点）
  */
+let splitSeq = 0;   // 同一毫秒内连拆多次也要拿到不同 id（否则 id 撞车 → 后续按 id 找省找错人）
+
 export function splitProvinceShape(prov, p1, p2, opts = {}) {
   if (!prov || !p1 || !p2) return null;
-  const mkId = opts.makeId || ((s) => `prov_${Date.now()}_${s}`);
+  const mkId = opts.makeId || ((s) => `prov_${Date.now().toString(36)}_${s}${++splitSeq}`);
   const rings = provinceRings(prov);
   if (!rings.length) return null;
 

@@ -12,7 +12,7 @@
 import sys, os, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import ensure_data_ready, open_test_base_map
+from lib.helpers import ensure_data_ready, open_test_base_map, open_toolbar_more
 
 SM = "document.querySelector('.scenario-map-container').__vueParentComponent.setupState"
 
@@ -71,6 +71,8 @@ def run(cdp):
     time.sleep(0.4)
 
     # ---------- 1. 打开面板 ----------
+    # P3 起「谱系」入口收在「更多」里（默认只露 6 个主控件）→ 先展开再点
+    open_toolbar_more(cdp)
     panel = json.loads(cdp.eval("""(() => {
       const btn = document.querySelector('[data-testid="open-lineage"]');
       if (!btn) return JSON.stringify({err:'no-button'});

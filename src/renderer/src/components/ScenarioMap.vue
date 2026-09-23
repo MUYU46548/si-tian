@@ -2,125 +2,44 @@
   <div class="scenario-map-container">
     <!-- 顶栏：工具 + 模式切换 -->
     <div class="scenario-toolbar">
-      <!-- 第 1 行：主工具（选择 / 绘制 / 顶点 / 拆分 / 合并 / 油漆桶 / 河流 / 地貌 / 地名） -->
-      <div class="toolbar-row">
-      <button @click="$emit('exit')" title="返回世界选择" class="back-btn">← 返回</button>
-      <div class="tool-group">
-        <button 
-          :class="{ active: tool === 'select' }" 
+      <!-- 第 1 行：**按任务分层的 4 个主工具** + 「更多」（P3）
+           默认可见控件 = 6 个（返回 / 选择 / 自由绘制 / 变更归属 / 顶点编辑 / 更多），
+           其余工具与开关全部收进「更多」—— 能力一个都不减，只是不再糊在一排里。 -->
+      <div class="toolbar-row primary-row">
+        <button @click="$emit('exit')" title="返回世界选择" class="back-btn">← 返回</button>
+        <button
+          :class="{ active: tool === 'select' }"
           @click="setTool('select')"
           title="选择 (V) — 拖动平移画布，点击选中省份"
         ><Icon name="hand" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'draw' }" 
+        <button
+          :class="{ active: tool === 'draw' }"
           @click="setTool('draw')"
-          title="绘制省份 (B) — 点击添加顶点，双击完成"
+          title="自由绘制 (B，默认) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架"
         ><Icon name="pencil" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'vertex' }" 
+        <button
+          :class="{ active: tool === 'provinceBrush' }"
+          @click="setTool('provinceBrush')"
+          title="变更归属 (Q) — 按住涂抹把格子划归所选省份（省界自动重算）"
+        ><Icon name="brush" :size="15"/></button>
+        <button
+          :class="{ active: tool === 'vertex' }"
           @click="setTool('vertex')"
-          title="顶点编辑 (G) — 拖拽省份顶点调整形状，点击边插入顶点"
+          title="顶点编辑 (G) — 拖拽顶点改形状；多环省份在右侧属性面板切换活动环"
         >⬡</button>
-        <button 
-          :class="{ active: tool === 'split' }" 
-          @click="setTool('split')"
-          title="拆分省份 (X) — 点击两个点定义分割线"
-        ><Icon name="scissors" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'merge' }" 
-          @click="setTool('merge')"
-          title="合并省份 (M) — 依次点击两个省份"
-        >⊕</button>
-        <button 
-          :class="{ active: tool === 'paint' }" 
-          @click="setTool('paint')"
-          title="势力油漆桶 (P) — 点击省份指派势力"
-        ><Icon name="palette" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'river' }" 
-          @click="setTool('river')"
-          title="河流编辑器 (W) — 手动绘制河流路径"
-        ><Icon name="droplets" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'relief' }" 
-          @click="setTool('relief')"
-          title="Relief 图标 (I) — 放置山脉/树木/沙漠等自然特征"
-        ><Icon name="mountain" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'label' }" 
-          @click="setTool('label')"
-          title="历史地名 (T) — 点击放置文字标记"
-        ><Icon name="tag" :size="15"/></button>
-        <select v-if="tool === 'label'" v-model="selectedLabelPreset" class="brush-biome-select" title="标签样式预设">
-          <option v-for="preset in LABEL_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
-        </select>
-        <select v-if="tool === 'relief'" v-model="selectedReliefIcon" class="brush-biome-select" title="Relief 图标">
-          <option v-for="icon in RELIEF_ICONS" :key="icon.id" :value="icon.id">{{ icon.name }}</option>
-        </select>
-        <select v-if="tool === 'road'" v-model="selectedRoadStyle" class="brush-biome-select" title="道路样式">
-          <option v-for="style in ROAD_STYLES" :key="style.id" :value="style.id">{{ style.name }}</option>
-        </select>
-        <select v-if="tool === 'marker'" v-model="selectedMarkerType" class="brush-biome-select" title="标记类型">
-          <option v-for="type in MARKER_TYPES" :key="type.id" :value="type.id">{{ type.name }}</option>
-        </select>
-        <button 
-          :class="{ active: tool === 'erase' }" 
-          @click="setTool('erase')"
-          title="删除 (E) — 点击省份删除"
-        ><Icon name="trash" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'height' }" 
-          @click="setTool('height')"
-          title="高度笔刷 (H) — 左键抬高/右键降低地形"
-        ><Icon name="trending-up" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'biome' }" 
-          @click="setTool('biome')"
-          title="生物群系笔刷 (N) — 涂抹生物群系"
-        ><Icon name="palette" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'burg' }" 
-          @click="setTool('burg')"
-          title="智能聚落 (U) — 点击放置，自动贴合地形"
-        ><Icon name="home" :size="15"/></button>
-        <select v-if="tool === 'burg'" v-model="selectedBurgSize" class="brush-biome-select" title="聚落规模">
-          <option v-for="size in BURG_SIZES" :key="size.id" :value="size.id">{{ size.name }}</option>
-        </select>
-        <button 
-          :class="{ active: tool === 'river' }" 
-          @click="generateAndShowRivers"
-          title="自动生成河流 — 沿高度梯度从高地流向海洋"
-        ><Icon name="waves" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'derive' }" 
-          @click="deriveLayers"
-          title="重算派生图层 — 基于高度重算温度/降水/生物群系"
-        ><Icon name="refresh-cw" :size="15"/></button>
-      </div>
-        <button 
-          :class="{ active: tool === 'culture' }" 
-          @click="setTool('culture')"
-          title="文化笔刷 (C) — 涂抹文化区域"
-        ><Icon name="users" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'religion' }" 
-          @click="setTool('religion')"
-          title="宗教笔刷 (R) — 涂抹宗教区域"
-        ><Icon name="church" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'marker' }" 
-          @click="setTool('marker')"
-          title="标记 (K) — 点击放置标记"
-        ><Icon name="map-pin" :size="15"/></button>
-        <button 
-          :class="{ active: tool === 'road' }" 
-          @click="setTool('road')"
-          title="道路 (J) — 两点连线，自动生成沿等高线路径"
-        ><Icon name="git-branch" :size="15"/></button>
+        <button
+          class="more-toggle"
+          :class="{ active: moreOpen, 'has-advanced': advancedToolActive }"
+          @click="moreOpen = !moreOpen"
+          title="更多 — 拆分 / 合并 / 点击填充 / 河流 / 地貌 / 地名 / 擦除 / 高度 / 群系 / 聚落 / 文化 / 宗教 / 标记 / 道路，以及吸附与底图"
+        ><Icon name="chevron-down" :size="13"/> 更多</button>
+        <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
       </div>
 
       <!-- 第 2 行：省份 —— 几何只有一个来源（多边形）；网格只是涂抹时的中间层 -->
-      <div class="toolbar-row">
+      <!-- 「变更归属」的省份选项：选到省份类工具（或自己打开「更多」）才出现 ——
+           默认那 6 个可见控件里没有它（见 P3 / test_65）。 -->
+      <div class="toolbar-row province-row" v-if="provinceRowVisible">
         <label class="row-label">省份：</label>
         <button
           :class="{ active: tool === 'provinceBrush' }"
@@ -174,6 +93,108 @@
       </div>
       </div>
 
+      <!-- 「更多」（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
+      <div v-if="moreOpen" class="toolbar-more">
+        <div class="toolbar-row">
+          <label class="row-label">高级工具：</label>
+          <div class="tool-group">
+                            <button 
+                :class="{ active: tool === 'split' }" 
+                @click="setTool('split')"
+                title="拆分省份 (X) — 点击两个点定义分割线"
+              ><Icon name="scissors" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'merge' }" 
+                @click="setTool('merge')"
+                title="合并省份 (M) — 依次点击两个省份"
+              >⊕</button>
+                  <button 
+                :class="{ active: tool === 'erase' }" 
+                @click="setTool('erase')"
+                title="删除 (E) — 点击省份删除"
+              ><Icon name="trash" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'height' }" 
+                @click="setTool('height')"
+                title="高度笔刷 (H) — 左键抬高/右键降低地形"
+              ><Icon name="trending-up" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'biome' }" 
+                @click="setTool('biome')"
+                title="生物群系笔刷 (N) — 涂抹生物群系"
+              ><Icon name="palette" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'river' }" 
+                @click="setTool('river')"
+                title="河流编辑器 (W) — 手动绘制河流路径"
+              ><Icon name="droplets" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'river' }" 
+                @click="generateAndShowRivers"
+                title="自动生成河流 — 沿高度梯度从高地流向海洋"
+              ><Icon name="waves" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'relief' }" 
+                @click="setTool('relief')"
+                title="Relief 图标 (I) — 放置山脉/树木/沙漠等自然特征"
+              ><Icon name="mountain" :size="15"/></button>
+                  <select v-if="tool === 'relief'" v-model="selectedReliefIcon" class="brush-biome-select" title="Relief 图标">
+                <option v-for="icon in RELIEF_ICONS" :key="icon.id" :value="icon.id">{{ icon.name }}</option>
+              </select>
+                  <button 
+                :class="{ active: tool === 'paint' }" 
+                @click="setTool('paint')"
+                title="势力油漆桶 (P) — 点击省份指派势力"
+              ><Icon name="palette" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'culture' }" 
+                @click="setTool('culture')"
+                title="文化笔刷 (C) — 涂抹文化区域"
+              ><Icon name="users" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'religion' }" 
+                @click="setTool('religion')"
+                title="宗教笔刷 (R) — 涂抹宗教区域"
+              ><Icon name="church" :size="15"/></button>
+                  <button 
+                :class="{ active: tool === 'burg' }" 
+                @click="setTool('burg')"
+                title="智能聚落 (U) — 点击放置，自动贴合地形"
+              ><Icon name="home" :size="15"/></button>
+                  <select v-if="tool === 'burg'" v-model="selectedBurgSize" class="brush-biome-select" title="聚落规模">
+                <option v-for="size in BURG_SIZES" :key="size.id" :value="size.id">{{ size.name }}</option>
+              </select>
+                  <button 
+                :class="{ active: tool === 'label' }" 
+                @click="setTool('label')"
+                title="历史地名 (T) — 点击放置文字标记"
+              ><Icon name="tag" :size="15"/></button>
+                  <select v-if="tool === 'label'" v-model="selectedLabelPreset" class="brush-biome-select" title="标签样式预设">
+                <option v-for="preset in LABEL_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+              </select>
+                  <button 
+                :class="{ active: tool === 'marker' }" 
+                @click="setTool('marker')"
+                title="标记 (K) — 点击放置标记"
+              ><Icon name="map-pin" :size="15"/></button>
+                  <select v-if="tool === 'marker'" v-model="selectedMarkerType" class="brush-biome-select" title="标记类型">
+                <option v-for="type in MARKER_TYPES" :key="type.id" :value="type.id">{{ type.name }}</option>
+              </select>
+                  <button 
+                :class="{ active: tool === 'road' }" 
+                @click="setTool('road')"
+                title="道路 (J) — 两点连线，自动生成沿等高线路径"
+              ><Icon name="git-branch" :size="15"/></button>
+                  <select v-if="tool === 'road'" v-model="selectedRoadStyle" class="brush-biome-select" title="道路样式">
+                <option v-for="style in ROAD_STYLES" :key="style.id" :value="style.id">{{ style.name }}</option>
+              </select>
+                  <button 
+                :class="{ active: tool === 'derive' }" 
+                @click="deriveLayers"
+                title="重算派生图层 — 基于高度重算温度/降水/生物群系"
+              ><Icon name="refresh-cw" :size="15"/></button>
+          </div>
+        </div>
       <!-- 第 3 行：地形/群系等笔刷设置 + 底图与视图操作 -->
       <div class="toolbar-row">
       <!-- 笔刷设置 -->
@@ -293,6 +314,7 @@
         <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/></button>
       </div>
       </div>
+      </div>   <!-- /.toolbar-more -->
     </div>
 
     <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代） -->
@@ -408,7 +430,7 @@
     <!-- 省份属性面板 -->
     <div v-if="selectedProvince && showProps" class="province-props">
       <div class="props-header">
-        <input v-model="selectedProvince.name" @input="onProvinceNameChange" class="props-name" />
+        <input ref="provNameInput" v-model="selectedProvince.name" @input="onProvinceNameChange" class="props-name" />
         <button @click="showProps = false" class="props-close"><Icon name="x" :size="13"/></button>
       </div>
       <div class="props-row">
@@ -587,7 +609,7 @@
 
 <script setup>
 import Icon from './Icon.vue';
-import { ref, onMounted, onUnmounted, watch, computed, toRaw } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed, toRaw, nextTick } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
@@ -630,7 +652,15 @@ const provinceHint = ref('');             // 省份网格操作提示（状态�
 
 const canvas = ref(null);
 const canvasWrap = ref(null);
-const tool = ref('select');
+const tool = ref('draw');   // P1：自由绘制为默认工具（见 PROVINCE_PALETTE 旁的说明）
+// P3：工具栏按任务分层 —— 默认只有 6 个可见控件，其余收进「更多」（能力不减）
+const moreOpen = ref(false);
+const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'river', 'relief', 'label',
+  'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
+const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
+// 「变更归属」的省份选项：选到这类工具（或用户自己打开「更多」）就显示
+const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex']);
+const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value));
 const viewMode = ref('base');
 const baseMapKey = ref('');   // 空 = 当前项目还没有底图（onMounted 里解析：上次的 → 项目里第一张 → 空）
 const selectedScenario = ref(null);
@@ -907,6 +937,21 @@ const colorMode = ref('default');    // default | culture | religion
 const activeVertexIdx = ref(-1);
 // Alt 临时直线（P0-T1）；不参与响应式，只在绘制时读取
 let altStraight = false;
+
+// P1：**自由绘制 = 默认工具** —— 空底图上打开就能画（不再需要先「新建省份」）。
+// 精确定点（描点）是同一个工具里的第二条路径（单击落顶点），选择/移动另在工具栏。
+
+// P1：新建省份的色板轮转（确定性 —— 颜色不随机，测试可断言、用户可预期）
+const PROVINCE_PALETTE = [
+  '#9ec9a8', '#c9b48a', '#a99ac9', '#c99a9a', '#8fb8c9',
+  '#c9c48a', '#b8a4c9', '#8ac9bb', '#c9a88f', '#a4b8c9',
+];
+function nextProvinceColor(count) { return PROVINCE_PALETTE[count % PROVINCE_PALETTE.length]; }
+
+// P4：海域（kind='sea'）有自己的视觉 —— 淡色水面 + **淡虚线海界**（虚线是「这是水域」的约定），
+// 且**不参与势力归属着色**（海不是谁的领土）。
+const SEA_FILL = 'rgba(74, 118, 158, 0.42)';
+const SEA_EDGE = 'rgba(206, 228, 244, 0.75)';
 
 // 海岸线吸附（P0-T2）
 const snapToEdgeEnabled = ref(true);
@@ -1849,7 +1894,7 @@ function onMouseMove(event) {
   render();
 }
 
-function onMouseUp() {
+function onMouseUp(event) {
   if (freeTraceActive) {
     freeTraceActive = false;
     const pts = freeTrace || [];
@@ -1857,7 +1902,7 @@ function onMouseUp() {
     // 够长才算「一笔成型」；否则让随后的 click 走描点分支（落一个顶点）
     if (pts.length >= FREE_TRACE_MIN_POINTS) {
       suppressDrawClick = true;
-      if (!commitFreeTrace(pts)) suppressDrawClick = false;
+      if (!commitFreeTrace(pts, !!(event && event.shiftKey))) suppressDrawClick = false;
     }
     render();
   }
@@ -2049,7 +2094,7 @@ function onCanvasClick(event) {
   }
 
   if (tool.value === 'split') {
-    handleSplitClick(world);
+    handleSplitClick(world, event.shiftKey);
     return;
   }
 
@@ -2077,6 +2122,12 @@ function onCanvasClick(event) {
 
   if (tool.value === 'paint' && selectedPolity.value) {
     const prov = findProvinceAt(world.x, world.y);
+    if (prov && prov.kind === 'sea') {
+      // P4：海域不进剧本归属 —— 时间轴 / 谱系都不该出现一片海
+      statusMsg('这是海域（kind=sea）：海域不参与势力归属 —— 要不要先在右侧属性面板把它改成陆地？');
+      render();
+      return;
+    }
     if (prov) {
       // 把时间轴当前年份一并记为**显式易主年份** ——
       // 「拖到某年再上色 = 该年易主」，这是 changeYear 最自然的录入路径
@@ -2266,11 +2317,11 @@ function finishDraw() {
   const conformed = skeleton.length ? conformToSkeleton(rawPts, skeleton, SNAP_EDGE_THRESHOLD) : rawPts;
   // ② P0-T1 验收：新绘制省份自动生成平滑贝塞尔曲线（控制点 = 相邻顶点连线的 1/3）
   const points = withBezierControls(conformed);
-  store.addBaseProvince(baseMapKey.value, {
-    id,
-    name: `新省份 ${baseMap.value?.terrain?.length + 1 || 1}`,
-    points,
-  });
+  const count = baseMap.value?.terrain?.length || 0;
+  const name = `新省份 ${count + 1}`;
+  const prov = { id, name, kind: 'land', color: nextProvinceColor(count), points };
+  store.addBaseProvince(baseMapKey.value, prov);
+  focusNewProvince(id, prov);
   drawPoints.value = [];
   render();
 }
@@ -2289,8 +2340,20 @@ let freeTrace = null;
 let freeTraceActive = false;
 let suppressDrawClick = false;      // 一笔成型后紧随的 click 不要再落顶点
 
+/** 新建省份的公共收尾：选中它 + 打开属性面板并把光标放进名字框（P1「名字输入」） */
+const provNameInput = ref(null);
+function focusNewProvince(id, fallback) {
+  const found = (baseMap.value?.terrain || []).find((q) => q.id === id) || fallback;
+  if (found) selectedProvince.value = found;
+  showProps.value = true;
+  nextTick(() => {
+    const el = provNameInput.value;
+    if (el && typeof el.focus === 'function') { el.focus(); if (el.select) el.select(); }
+  });
+}
+
 /** 自由绘制轨迹 → 省份（轨迹太短则放弃，仍由描点分支处理） */
-function commitFreeTrace(pts) {
+function commitFreeTrace(pts, shiftKey) {
   if (!ensureBaseMap()) return false;
   const simplified = simplifyClosedTrace(pts);
   if (!simplified || simplified.length < 3) {
@@ -2298,20 +2361,27 @@ function commitFreeTrace(pts) {
     return false;
   }
   const id = `prov_${Date.now()}`;
-  // 贴共享边界骨架（相邻省零缝）：整段插顶点，而不是只吸端点
-  const skeleton = buildSkeleton(baseMap.value?.terrain || []);
+  const count = baseMap.value?.terrain?.length || 0;
+  // 贴共享边界骨架（相邻省零缝）：整段插顶点，而不是只吸端点。
+  // **Shift = 旁路吸附**（用户要摆自己的顶点就别动它 —— 与描点路径同一套按键约定）
+  const skeleton = shiftKey ? [] : buildSkeleton(baseMap.value?.terrain || []);
   const conformed = skeleton.length
     ? conformToSkeleton(simplified.map(q => ({ x: q.x, y: q.y })), skeleton, SNAP_EDGE_THRESHOLD)
     : simplified;
-  store.addBaseProvince(baseMapKey.value, {
+  const name = `新省份 ${count + 1}`;
+  const prov = {
     id,
-    name: `新省份 ${(baseMap.value?.terrain?.length || 0) + 1}`,
+    name,
     kind: 'land',
+    color: nextProvinceColor(count),
     points: withBezierControls(conformed.map(q => ({ x: q.x, y: q.y }))),
-  });
+  };
+  store.addBaseProvince(baseMapKey.value, prov);
   provinceBrush.invalidateBorders();
-  statusMsg(`自由绘制：轨迹 ${pts.length} 点 → 简化为 ${simplified.length} 点`
-    + `（贴骨架后 ${conformed.length} 点），一笔成型`);
+  focusNewProvince(id, prov);          // 建完即选中 + 名字框待改（P1）
+  statusMsg(`已建「${name}」：轨迹 ${pts.length} 点 → 简化 ${simplified.length} 点`
+    + (shiftKey ? '（Shift：未吸附骨架）' : `（贴骨架后 ${conformed.length} 点）`)
+    + ' —— 右侧可改名，一次绘制 = 1 条撤销');
   return true;
 }
 
@@ -2323,11 +2393,11 @@ function finishRiverDraft() {
   }
 }
 
-function handleSplitClick(world) {
+function handleSplitClick(world, shiftKey) {
   if (splitStep.value === 0) {
     splitPoints.value = [world];
     splitStep.value = 1;
-    statusMsg('拆分：再点第二个点定义切割线');
+    statusMsg('拆分：再点第二个点定义切割线（按住 Shift = 让另一侧保留原序号）');
     render();
     return;
   }
@@ -2341,14 +2411,16 @@ function handleSplitClick(world) {
     (q) => provinceRings(q).length
       && (pointInProvince(p1.x, p1.y, q) || pointInProvince(p2.x, p2.y, q)));
   if (!target) { statusMsg('拆分：两个点要落在同一个省份上'); render(); return; }
-  const res = store.splitProvince(baseMapKey.value, target.id, p1, p2);
+  const res = store.splitProvince(baseMapKey.value, target.id, p1, p2, { side: shiftKey ? -1 : 1 });
   if (!res || res.blocked || res.rejected) {
     statusMsg((res && res.message) || '拆分失败：切割线没有穿过这个省份（两点要落在它两侧）');
     render();
     return;
   }
   provinceBrush.invalidateBorders();
-  statusMsg(`已把「${target.name}」拆成两块（原省保留序号，新省在表尾）—— 一次拆分 = 1 条撤销`);
+  const which = res.side === -1 ? '另一侧' : '起始侧（a）';
+  statusMsg(`已把「${target.name}」拆成两块：${which}保留原序号「${target.name}」，`
+    + '另一半追加到表尾 — 一次拆分 = 1 条撤销（按住 Shift 可换边）');
   render();
 }
 
@@ -3334,7 +3406,14 @@ function drawProvinces(c) {
     // 网格派生的边界由相邻两省各自平滑（Chaikin 在共享弧的两端邻域不同），交界处最多差
     // 零点几像素 —— 同色 1px 描边是最省事的收敛办法（恰好覆盖在边界上，观感不变）。
     // 仅对不透明色描边：半透明色描上去会变成一条可见的深色轮廓线（不是我们要的）。
-    if (isOpaqueColor(fillCol)) {
+    if (rp.kind === 'sea') {
+      // P4：海界 = **淡虚线**（实线是陆地省界，虚线一眼区分水陆；海陆交界处两者贴合 = 严丝合缝）
+      c.setLineDash([px(6), px(4)]);
+      c.strokeStyle = SEA_EDGE;
+      c.lineWidth = px(1.2);
+      c.stroke();
+      c.setLineDash([]);
+    } else if (isOpaqueColor(fillCol)) {
       c.strokeStyle = fillCol;
       c.lineWidth = px(1);
       c.stroke();
@@ -3442,6 +3521,9 @@ function drawVertexHandles(c) {
 }
 
 function getProvinceColor(prov) {
+  // P4：海域**不参与归属着色**（海不是谁的领土）→ 永远用水面色，与剧本/时间轴无关
+  if (prov && prov.kind === 'sea') return SEA_FILL;
+
   // P1-T5：文化/宗教着色（颜色取自 .map 的 cultures/religions 定义，归属来自 province → burg → culture）
   if (colorMode.value === 'culture' && prov.cultureColor) return prov.cultureColor;
   if (colorMode.value === 'religion' && prov.religionColor) return prov.religionColor;
@@ -3468,6 +3550,9 @@ function getProvinceColor(prov) {
       return polity?.color || '#4a5568';
     }
   }
+
+  // 省份**自有色**（P1：新建省份按色板轮转给色）—— 这是用户的显式选择，优先于群系/默认色
+  if (prov.color) return prov.color;
 
   // 生物群系图层开启时按群系染色
   if (showBiomes.value && prov.biome && BIOME_COLORS[prov.biome]) return BIOME_COLORS[prov.biome];
@@ -4143,6 +4228,18 @@ watch(baseMap, () => {
 }
 /* 整行为空（该行的控件都被 v-if 关掉）→ 不留空档 */
 .toolbar-row:not(:has(> *)) { display: none; }
+
+/* P3：按任务分层 —— 主行只放 4 个任务工具 + 「更多」；高级工具与开关收在 .toolbar-more 里。
+   ⚠️ 不要把这些控件再摊回主行：主行的可见控件数由 test_65 守着（≤6）。 */
+.primary-row { gap: 4px; }
+.more-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; }
+.more-toggle.has-advanced { box-shadow: inset 0 0 0 1px var(--accent); }
+.toolbar-more {
+  display: flex; flex-direction: column; gap: 2px;
+  border-top: 1px solid var(--border, #2a3038);
+  max-height: 42vh; overflow-y: auto;
+}
+.toolbar-more .toolbar-row { background: transparent; }
 
 .row-label {
   color: #94a3b8;

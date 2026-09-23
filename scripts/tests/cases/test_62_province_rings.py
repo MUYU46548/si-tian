@@ -18,6 +18,7 @@
   d 点击填充：面积闸门拒绝 + **零副作用**；小区域填充成功且可撤销
   e 分割 / 合并：一条 undo 内改几何 + 网格作废重建；合并走精确并集（不是凸包）
   f UI：工具栏 5 行 `.toolbar-row`（不再有 tool-group 掉到容器层）；无「网格视图」复选框；
+     展开「更多」后：≥4 行 .toolbar-row、tool-group 全在工具栏内、省份笔刷/自由轮廓/点击填充入口在位；
      属性面板有「类型（陆地/海域）」与「编辑环」
 """
 import json
@@ -359,8 +360,16 @@ JS_UI = r"""
   // 后面十几组控件全成了 .scenario-map-container 的直接子元素 → 只有第一行有工具栏底色）
   const bar = document.querySelector('.scenario-toolbar');
   ok('工具栏存在', !!bar);
-  const rows = bar ? Array.from(bar.children).filter(el => el.classList.contains('toolbar-row')) : [];
-  ok('工具栏分层：≥ 4 行 .toolbar-row', rows.length >= 4, rows.length);
+  // P3：高级工具/吸附/图层/底图收进「更多」（默认只露 6 个主控件，由 test_65 守）→ 先展开再数。
+  // ⚠️ 必须先点、再 await 一拍：Vue 的 DOM 更新是异步的。
+  const moreBtn = Array.from(document.querySelectorAll('.scenario-toolbar button'))
+    .find((b) => (b.title || '').includes('更多'));
+  ok('工具栏有「更多」按钮（默认收起）', !!moreBtn);
+  if (moreBtn && !document.querySelector('.toolbar-more')) moreBtn.click();
+  await wait(150);
+  ok('点开「更多」后面板出现', !!document.querySelector('.toolbar-more'));
+  const rows = bar ? Array.from(bar.querySelectorAll('.toolbar-row')) : [];
+  ok('工具栏分层：展开「更多」后 ≥ 4 行 .toolbar-row', rows.length >= 4, rows.length);
   const container = document.querySelector('.scenario-map-container');
   const stray = container ? Array.from(container.children).filter(el => el.classList.contains('tool-group')) : [];
   ok('没有 tool-group 掉到容器层（工具栏提前闭合的存量 bug）', stray.length === 0, stray.length);

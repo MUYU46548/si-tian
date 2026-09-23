@@ -7,6 +7,32 @@ import json
 import time
 
 
+def open_toolbar_more(cdp, settle=0.4):
+    """展开司天剧本工具栏的「更多」（P3 起高级工具/吸附/图层/底图默认收起）。
+
+    幂等：已展开直接返回 True。点完必须等一拍 —— **Vue 的 DOM 更新是异步的**（nextTick），
+    立刻查 `.toolbar-more` / 省份行必然是空的（test_52/62/43 都曾因此假红）。
+    """
+    cdp.eval(
+        "(() => { const b = Array.from(document.querySelectorAll('.scenario-toolbar button'))"
+        ".find((x) => (x.title || '').includes('更多'));"
+        " if (b && !document.querySelector('.toolbar-more')) b.click(); return 'ok'; })()"
+    )
+    time.sleep(settle)
+    return bool(cdp.eval("!!document.querySelector('.toolbar-more')"))
+
+
+def close_toolbar_more(cdp, settle=0.3):
+    """收起「更多」（把工具栏还原成默认 6 个可见控件的状态）。幂等。"""
+    cdp.eval(
+        "(() => { const b = Array.from(document.querySelectorAll('.scenario-toolbar button'))"
+        ".find((x) => (x.title || '').includes('更多'));"
+        " if (b && document.querySelector('.toolbar-more')) b.click(); return 'ok'; })()"
+    )
+    time.sleep(settle)
+    return not cdp.eval("!!document.querySelector('.toolbar-more')")
+
+
 def ensure_data_ready(cdp, timeout=45):
     """等 mock 数据就绪再断言。
 

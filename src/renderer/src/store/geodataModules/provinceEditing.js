@@ -426,19 +426,32 @@ export function createProvinceEditingModule(ctx) {
 
   /**
    * 沿切割线把省份一分为二（**保留多环与 land/sea**）。
-   * 原省占原位（序号不变 → 标签继续有效），新省追加到表尾（新序号原本无主）。
+   * 默认原省占原位（序号不变 → 标签继续有效），新省追加到表尾（新序号原本无主）。
+   *
+   * **侧符号（P2）**：`side`（+1 / -1）决定**哪一半占原位序号** ——
+   * 序号决定「时间轴 / 归属里那条历史的省还是不是这块地」，所以用户必须能选边：
+   * 默认 a 侧留原位，`side:-1` 则 b 侧留原位（另一侧拿新序号）。
+   *
    * 网格按新多边形重建（几何变化很大，增量改格没有意义）。
    */
-  function splitProvince(key, provinceId, p1, p2) {
+  function splitProvince(key, provinceId, p1, p2, { side = 1 } = {}) {
     if (isRO()) return blocked('分割省份');
     const terrain = provincesOf(key);
     const idx = terrain.findIndex((p) => p.id === provinceId);
     if (idx < 0) return null;
-    const res = splitProvinceShape(terrain[idx], p1, p2, { makeId: (s) => `prov_${Date.now()}_${s}` });
+    const res = splitProvinceShape(terrain[idx], p1, p2);
     if (!res) return { rejected: 'no-cut', message: '切割线没有穿过这个省份（两点要落在它的两侧）' };
 
+    // 🔴 占原位的那一半必须**连 id 一起继承**：省份 id 是它在时间轴 / 归属 / 引用里的身份，
+    //    换了 id 等于「那块地换了一个省」—— 历史归属会整段对不上（这类静默错数据最难发现）。
+    const keepA = side >= 0;
+    const orig = terrain[idx];
+    const keptPick = keepA ? res.a : res.b;
+    const otherPick = keepA ? res.b : res.a;
+    const atIndex = { ...keptPick, id: orig.id, name: orig.name || keptPick.name };   // 占原位序号的那一半
+    const appended = { ...otherPick, id: otherPick.id, name: otherPick.name };        // 追加到表尾的新省（新 id / 新名）
     const before = terrain;
-    const after = terrain.map((p, i) => (i === idx ? res.a : p)).concat([res.b]);
+    const after = terrain.map((p, i) => (i === idx ? atIndex : p)).concat([appended]);
     const apply = (next) => {
       invalidateProvinceGrid(key);          // 几何换了 → 网格按新多边形重建（签名检查也会兜住）
       setTerrain(key, next, { save: false });
@@ -450,7 +463,10 @@ export function createProvinceEditingModule(ctx) {
       undo: () => apply(before),
       redo: () => apply(after),
     });
-    return { a: res.a, b: res.b, index: idx + 1, newIndex: after.length };
+    return {
+      a: res.a, b: res.b, index: idx + 1, newIndex: after.length,
+      side: keepA ? 1 : -1, keptId: atIndex.id, appendedId: appended.id,
+    };
   }
 
   /**
@@ -460,7 +476,8 @@ export function createProvinceEditingModule(ctx) {
    */
   function mergeProvinces(key, provinceIds, { name = '' } = {}) {
     if (isRO()) return blocked('合并省份');
-    const ids = (provinceIds || []).filter(Boolean);
+    let ids = (provinceIds || []).filter(Boolean);
+    ids = Array.from(new Set(ids));      // 去重：同一个省被选两次不该算「两个」（否则合并静默失败）
     if (ids.length < 2) return { rejected: 'too-few', message: '至少选择两个省份才能合并' };
     const terrain = provincesOf(key);
     const picked = terrain.filter((p) => ids.includes(p.id));

@@ -380,7 +380,10 @@ def run(cdp):
     store_summary = (f'笔刷一笔 = 一条 undo（改 {obj["brushChanged"]} 格）、自由轮廓一笔改 {obj["lassoChanged"]} 格')
 
     # g) 接线：ScenarioMap 工具/按钮在位
+    # P3：省份笔刷/自由轮廓/点击填充等入口都在「变更归属」组与「更多」里 → 先展开工具栏
+    H.open_toolbar_more(cdp)
     obj2, err = _j(cdp, JS_WIRING.replace('PLACEHOLDER_SC', SC), desc='ScenarioMap 接线')
+    H.close_toolbar_more(cdp)
     if obj2 is None:
         return False, f'接线检查求值失败：{err}'
     if obj2['fails']:
