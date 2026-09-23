@@ -69,6 +69,7 @@
 - **剧本标记的 icon/color 必须随数据往返（2026-09-22 修）**: `scenarioEditing.addScenarioMarker` 原来只存 `id/x/y/name/type`，**丢掉 icon/color** → 画布按 `m.icon` 渲染，于是「选了标记类型但图标/颜色永远不变」（预设形同装饰）。现已带上 icon/color，渲染端另按 `type` 兜底解析（导入的旧数据只带 `type` 也能显示正确图标）。
 - **「调用后给用户回成功」的函数必须看返回值（2026-09-22）**: 「重新提取」在**只读态与已打开项目态都必须灰禁 + title 写清去处**（只读态 → 项目面板「以知识库为基底新建项目」；项目态 → 先关闭项目）。旧实现两个情形都放行，被拒后**照样打印「已更新 N 个节点」= 谎报成功**（用户报「点了没有任何反应」的真因）；设置面板改库路径后的 alert 同样曾谎报。
 - **一键可达的「打开知识库」（2026-09-22）**: `utils/vault.js#openVault()` 三级兜底（`obsidian://open?vault=<库名>` → 打不开退化为资源管理器定位库目录 → 都没有则提示去设置选库）。入口三处：主工具栏 `book` 图标、世界视图「打开知识库」按钮、设置面板「打开 Obsidian 知识库 / 打开知识库文件夹」。用户原话：「连我都不知道去哪里打开知识库」。
+- **🔴 底图编辑（ScenarioMap）的进入性能与「空白陷阱」（P-0 实测 + 修复，2026-09-22，回归 test_61）**: 实测真实库 `desite`（21 省 / 25930 点）：点「历史剧本」→ 113~148ms 同步 JS + 挂载期 367~446ms 长任务（rAF 停摆 381~449ms）；**首帧用的是未适屏相机 (0,0,1) = 画布几乎空白**（非背景像素 7%），适屏帧要等 `setTimeout` 才来 → 用户观感「打开就卡住/空白，滚一下才出现」。修法与四条纪律：① **先算镜位再画第一帧**（`onMounted` 里 `fitToView()` 取代早期的裸 `render()`），布局定稿期（时间轴占位）允许再适屏一次，用户一交互就交还控制权（`initialFitPending`）；② 🔴 **底图数据晚到必须能自动选中**——`baseMapKey` 原本只在 `onMounted` 解析一次，key 为空时 `baseMap` 恒 undefined ⇒ 任何 watch 都不触发 ⇒ **画布永久空白**（只读态被闸门拒绝后就是这个形态）→ 补 `watch(availableBaseMaps)`；③ 🔴 **渲染路径必须 `toRaw`**：`drawProvinces / traceShapePath / 小地图` 每帧对 25930 个顶点走 Vue 响应式代理读取，单帧 **94ms**（profiler：响应式 get 27% / traceShapePath 18% / 每帧重画小地图 16%）——改 `rawTerrain()/rawPointsOf()` + 小地图离屏缩略图缓存后单帧 **0.8ms**、平移 20 步 **1906ms → 16ms**；④ **省份网格懒建必须异步**（`scheduleProvinceGrid`，旧实现 `setTool()` 现场栅格化 170~368ms），等待期 `provinceMeshOn` 为 false → 退回多边形渲染，绝不留白；配套 `provinceGridRev` 让「网格就绪」能触发 `provinceMeshOn` 重算（`getProvinceGrid` 不是响应式的）。⚠️ 该文件的 `vx/vy` 读的是 `p.x ?? p[0]`，判「画布有没有内容」不能只看 `nonBg`：**空画布（只有底网格）实测 colors≈46 / nonBg≈328**，有省份时 ≥100/≥600 —— 判据太松会让性能断言量到一个空画布。
 - **只读态的显著提示（2026-09-22）**: 「无项目 = 只读」下，工具栏小徽标不够（用户实测「除顶部小字外无任何提示，按钮却像能点」）→ 另加**全宽大字提示条**（`App.vue` 的 `.readonly-notice`，15px 加粗 + 可点直达项目面板 + 三段式文案：现状 / 影响 / 去处），它是**文档流内的元素**（不是浮层），因此不会像绝对定位那样压住任何视图自己的按钮。回归 test_57。
 - **只读一致性与「归位 / 前往编辑」（2026-09-21 修复轮，回归 test_54）**: ① **内存编辑闸门**见「单一写闸门」条目（execute + 先改后判函数首行 + 直接写三处，共 `MEMORY_WRITE_CALLSITES` 7 条契约）② **建筑入口统一**：`EntityCreator.CREATABLE` 含 `building`（合法父级 region/city/town/village），与区域地图的「建筑」工具一致 ③ **批量归位**：`projectStore.moveEntities(ids, parentId)`（一条 undo、已在目标下跳过、循环被拒）+ ProjectPanel 实体树 Ctrl/⌘ 多选 → 「移到此父级」——修的是**数据层级**（本库 facility 69 个里 48 个直接挂行星），行星图渲染规则本来就只画直接子级 ④ **面板 → 画布走 canvasBridge 第三条注册口**：`setGotoHandler / gotoEntity`，geodata 注册 `focusEntityOnCanvas`（按祖先链切 world/domain/system/planet/area/interior 并选中）；面板仍禁止 import geodata（test_46/48 静态守）
 - **图标系统**: `src/renderer/src/components/Icon.vue`（152 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 emoji（含 ScenarioMap 的 15 个地貌/标记预设：**预设里存图标名，不存 emoji 字面量**，双端各自渲染；旧数据里的 emoji 仍由 `drawIconOrEmoji` 的 fillText 兜底）；`python scripts/icon_check.py` 校验引用名均有定义
@@ -85,7 +86,7 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 60 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 61 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | store 模块数 | 7 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 21 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 35 | `grep -c "ipcMain.handle" src/main/index.js` |

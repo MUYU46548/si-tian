@@ -306,10 +306,21 @@
     <!-- 画布 -->
     <div class="scenario-canvas-wrap" ref="canvasWrap">
       <canvas ref="canvas"></canvas>
-      <!-- 项目里还没有底图：说清现状 + 去处（不是「点了没反应」） -->
+      <!-- 没有可用底图：说清现状 + 差异 + 去处（不是「点了没反应」）
+           P-0 实测：只读态（未打开项目）时底图导入被写闸门拒绝 → 底图永远进不来，
+           此时画布是空的，用户必须知道原因是「没开项目」而不是「程序卡住了」。 -->
       <div v-if="!baseMap" class="scenario-empty-hint" data-testid="scenario-empty-hint">
-        <p class="eh-title">这个项目里还没有底图</p>
-        <p class="eh-line">用上方「+」导入 Azgaar .map 底图，或直接选一个绘制/笔刷工具开始画（会自动新建一张空底图）。</p>
+        <template v-if="store.isReadOnly">
+          <p class="eh-title">只读：没有可用底图</p>
+          <p class="eh-line">
+            当前未打开项目，剧本与底图不会载入，也不会保存。
+            先到工具栏「项目」面板新建或打开一个项目，再回到这里绘制。
+          </p>
+        </template>
+        <template v-else>
+          <p class="eh-title">这个项目里还没有底图</p>
+          <p class="eh-line">用上方「+」导入 Azgaar .map 底图，或直接选一个绘制/笔刷工具开始画（会自动新建一张空底图）。</p>
+        </template>
       </div>
     </div>
 
@@ -530,7 +541,7 @@
 
 <script setup>
 import Icon from './Icon.vue';
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed, toRaw } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
@@ -683,6 +694,10 @@ const snapMarker = ref(null);        // { x, y } 最近吸附点，用于十字�
 let snapMarkerTimer = null;
 let lastFitKey = '';                 // 自动适屏：上次适配的底图键
 let lastFitCount = 0;                // 自动适屏：上次适配时的省份数
+// 首次进入的「适屏收尾」：布局还在定稿（时间轴占位会让画布变矮）期间允许重新适屏，
+// 用户一旦交互（滚轮/按下）就交还控制权，绝不跟用户抢镜头。
+let initialFitPending = false;
+let settleFitTimer = null;
 
 // 笔刷状态（v2 高度图编辑）
 const brushRadius = ref(80);         // 世界坐标像素
@@ -928,7 +943,9 @@ function setTool(t) {
   // Phase 3：切到省份网格工具时自动开网格视图并保证网格就位（否则用户涂了看不见）
   if (t === 'provinceBrush' || t === 'provinceLasso') {
     showProvinceMesh.value = true;
-    store.ensureProvinceGrid(baseMapKey.value);
+    // 🔴 网格懒建**不能同步**：21 省现场栅格化实测 170~368ms 主线程冻结（P-0 实测，
+    //    用户观感就是「一打开省份工具就卡」）。改成下一帧再做，期间画布照画多边形。
+    scheduleProvinceGrid();
     if (!provBrushTarget.value) provBrushTarget.value = 1;
   }
   provStrokeActive = false;
@@ -1185,6 +1202,31 @@ function resolvePoints(prov) {
   return prov.points;
 }
 
+// ─────────────────────────────────────────────────────────────
+// 绘制用的「去响应式」几何（P-0 实测：单帧 94ms 的主因）
+//   `baseMap.value.terrain` 是 Pinia ref 里的对象 → 走 `.value` 读到的每个省份/顶点都是
+//   Vue 响应式代理；drawProvinces / traceShapePath / 小地图每帧对 25930 个顶点做属性读取，
+//   CPU profiler 里「Vue 响应式 get 陷阱」占 27%、`reactive()` 占 6%，`vx/vy` 占 9%。
+//   渲染是纯读场景，取 toRaw 后的原始数组即可（toRaw 是 WeakMap 查表，可忽略成本）。
+//   ⚠️ 只在**绘制**路径用；命中检测、编辑、store 写入仍走原来的响应式引用（避免脱钩）。
+// ─────────────────────────────────────────────────────────────
+function rawTerrain() {
+  const t = baseMap.value?.terrain;
+  return t ? toRaw(t) : null;
+}
+
+/** 原始（无代理）顶点数组；拖拽预览用的是普通对象，直接返回 */
+function rawPointsOf(prov) {
+  if (dragPreview.value && dragPreview.value.provId === prov.id) return dragPreview.value.points;
+  const pts = toRaw(prov).points;          // raw 对象上取到的是原始数组，不再创建代理
+  return Array.isArray(pts) ? pts : (pts || []);
+}
+
+/** 原始省份对象（供绘制期读取 id/颜色等标量字段，同样避免代理陷阱） */
+function rawProvOf(prov) {
+  return toRaw(prov);
+}
+
 /** 选中省份始终指向 store 中的最新对象（updateBaseProvince 会生成新对象） */
 function currentProvince() {
   const sp = selectedProvince.value;
@@ -1229,8 +1271,38 @@ function provinceMeshColorOf(idx) {
   return getProvinceColor(prov);      // 与多边形渲染同一套取色（势力染色在网格视图下依然生效）
 }
 
-/** 网格视图是否生效（开启 + 有网格数据） */
-const provinceMeshOn = computed(() => showProvinceMesh.value && !!baseMap.value?.terrain);
+// 🔴 省份网格是懒建的，`store.getProvinceGrid()` **不是响应式**（模块内普通缓存 Map）：
+//    网格「刚就绪 / 被重建 / 换底图失效」都必须显式 +1，否则 provinceMeshOn 会一直缓存 false。
+const provinceGridRev = ref(0);
+let provinceGridTimer = null;
+
+/**
+ * 异步准备省份网格（幂等）。
+ * 为什么不能同步：21 省 25930 点现场栅格化实测 170~368ms（P-0），同步做就是「一开省份工具就卡」。
+ * 期间 provinceMeshOn 为 false → 画布照常画多边形，绝不留白。
+ */
+function scheduleProvinceGrid() {
+  const key = baseMapKey.value;
+  if (!key) return;
+  if (store.getProvinceGrid(key)) { provinceGridRev.value++; return; }
+  if (provinceGridTimer) return;
+  statusMsg('正在准备省份网格…');
+  provinceGridTimer = setTimeout(() => {
+    provinceGridTimer = null;
+    if (!showProvinceMesh.value) return;
+    const t0 = performance.now();
+    store.ensureProvinceGrid(baseMapKey.value);
+    provinceGridRev.value++;
+    if (provinceMeshOn.value) statusMsg(`省份网格已就绪（${Math.round(performance.now() - t0)}ms）`);
+    render();
+  }, 0);
+}
+
+/** 网格视图是否生效（开启 + 有省份 + 网格已就绪）——网格没就绪时退回多边形渲染（单一路径不空白） */
+const provinceMeshOn = computed(() => {
+  provinceGridRev.value;    // 故意读一下：网格就绪/失效要触发重算（见上方说明）
+  return showProvinceMesh.value && !!baseMap.value?.terrain && !!store.getProvinceGrid(baseMapKey.value);
+});
 
 function drawProvinceMesh(c) {
   const entry = store.getProvinceGrid(baseMapKey.value);
@@ -1350,12 +1422,13 @@ function clearGridOwnership() {
 }
 
 function onProvinceMeshToggle() {
-  if (showProvinceMesh.value) store.ensureProvinceGrid(baseMapKey.value);
+  if (showProvinceMesh.value) scheduleProvinceGrid();
   render();
 }
 
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
+  initialFitPending = false;      // 用户开始操作 → 不再自动抢镜头（见 onMounted 的适屏收尾）
 
   // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会「点了没反应」）
   if (CREATES_CONTENT_TOOLS.has(tool.value) && !ensureBaseMap()) return;
@@ -1724,6 +1797,7 @@ function onCanvasMouseLeave() {
 }
 
 function onWheel(event) {
+  initialFitPending = false;         // 用户开始操作 → 不再自动抢镜头
   // 笔刷工具下：滚轮调半径，Shift+滚轮调强度
   if (tool.value === 'height' || tool.value === 'biome') {
     event.preventDefault();
@@ -2787,15 +2861,41 @@ const showMinimap = ref(true);
 const MINIMAP_SIZE = 150;
 const minimapViewportDragging = false;
 
-function getMinimapWorldBounds() {
-  const terrain = baseMap.value?.terrain;
+// 🔴 小地图缓存（P-0 实测：`drawMinimap` + `getMinimapWorldBounds` 每帧两次全量遍历
+//    25930 个顶点，占单帧 CPU 的 16%）。现在几何只在「换图 / 数据变更」时重算一次，
+//    缩略图烘到离屏 canvas，每帧只 drawImage + 画视口框。
+let minimapRev = 0;
+let minimapCache = { key: '', entry: null };
+
+/** 省份几何/底图变化时作废小地图缓存（由 watch 调用） */
+function invalidateMinimap() {
+  minimapRev++;
+}
+
+/** 缩略图局部坐标系（0,0 起算，与屏幕上的摆放位置无关） */
+function minimapGeo(bounds) {
+  const mw = MINIMAP_SIZE;
+  const mh = MINIMAP_SIZE;
+  const spanX = bounds.maxX - bounds.minX || 1;
+  const spanY = bounds.maxY - bounds.minY || 1;
+  const scale = Math.min((mw - 4) / spanX, (mh - 4) / spanY);
+  return {
+    scale,
+    offX: 2 + ((mw - 4) - spanX * scale) / 2,
+    offY: 2 + ((mh - 4) - spanY * scale) / 2,
+  };
+}
+
+function computeMinimapBounds() {
+  const terrain = rawTerrain();
   if (!terrain?.length) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const prov of terrain) {
-    if (!prov.points) continue;
-    for (const p of prov.points) {
-      const px = p.x || p[0] || 0;
-      const py = p.y || p[1] || 0;
+    const pts = rawPointsOf(prov);
+    if (!pts || !pts.length) continue;
+    for (const p of pts) {
+      const px = vx(p);
+      const py = vy(p);
       if (px < minX) minX = px;
       if (py < minY) minY = py;
       if (px > maxX) maxX = px;
@@ -2806,54 +2906,69 @@ function getMinimapWorldBounds() {
   return { minX, minY, maxX, maxY };
 }
 
+function buildMinimapThumb(bounds, geo) {
+  const cv = document.createElement('canvas');
+  cv.width = MINIMAP_SIZE;
+  cv.height = MINIMAP_SIZE;
+  const g = cv.getContext('2d');
+  g.fillStyle = 'rgba(15,26,46,0.85)';
+  g.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+  const terrain = rawTerrain();
+  if (terrain) {
+    g.fillStyle = 'rgba(148,163,184,0.4)';
+    for (const prov of terrain) {
+      const pts = rawPointsOf(prov);
+      if (!pts || pts.length < 3) continue;
+      g.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const sx = geo.offX + (vx(pts[i]) - bounds.minX) * geo.scale;
+        const sy = geo.offY + (vy(pts[i]) - bounds.minY) * geo.scale;
+        if (i === 0) g.moveTo(sx, sy);
+        else g.lineTo(sx, sy);
+      }
+      g.closePath();
+      g.fill();
+    }
+  }
+  return cv;
+}
+
+function getMinimapEntry() {
+  const key = `${baseMapKey.value}|${minimapRev}|${MINIMAP_SIZE}`;
+  if (minimapCache.key === key) return minimapCache.entry;
+  const bounds = computeMinimapBounds();
+  let entry = null;
+  if (bounds) {
+    const geo = minimapGeo(bounds);
+    entry = { bounds, geo, thumb: buildMinimapThumb(bounds, geo) };
+  }
+  minimapCache = { key, entry };
+  return entry;
+}
+
 function drawMinimap(c) {
   if (!showMinimap.value) return;
-  const bounds = getMinimapWorldBounds();
-  if (!bounds) return;
-  const { minX, minY, maxX, maxY } = bounds;
+  const entry = getMinimapEntry();
+  if (!entry) return;
+  const { bounds, geo, thumb } = entry;
   const mw = MINIMAP_SIZE;
   const mh = MINIMAP_SIZE;
   const pad = 12;
   const mx = canvas.value.width - mw - pad;
   const my = canvas.value.height - mh - pad;
-  const scaleX = (mw - 4) / (maxX - minX || 1);
-  const scaleY = (mh - 4) / (maxY - minY || 1);
-  const scale = Math.min(scaleX, scaleY);
-  const offX = mx + 2 + ((mw - 4) - (maxX - minX) * scale) / 2;
-  const offY = my + 2 + ((mh - 4) - (maxY - minY) * scale) / 2;
 
   c.save();
-  c.fillStyle = 'rgba(15,26,46,0.85)';
+  c.drawImage(thumb, mx, my);
   c.strokeStyle = 'rgba(148,163,184,0.5)';
   c.lineWidth = 1;
-  c.fillRect(mx, my, mw, mh);
   c.strokeRect(mx, my, mw, mh);
-
-  const terrain = baseMap.value?.terrain;
-  if (terrain) {
-    c.fillStyle = 'rgba(148,163,184,0.4)';
-    for (const prov of terrain) {
-      if (!prov.points || prov.points.length < 3) continue;
-      c.beginPath();
-      for (let i = 0; i < prov.points.length; i++) {
-        const px = prov.points[i].x || prov.points[i][0];
-        const py = prov.points[i].y || prov.points[i][1];
-        const sx = offX + (px - minX) * scale;
-        const sy = offY + (py - minY) * scale;
-        if (i === 0) c.moveTo(sx, sy);
-        else c.lineTo(sx, sy);
-      }
-      c.closePath();
-      c.fill();
-    }
-  }
 
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(canvas.value.width, canvas.value.height);
-  const vx1 = offX + (tl.x - minX) * scale;
-  const vy1 = offY + (tl.y - minY) * scale;
-  const vx2 = offX + (br.x - minX) * scale;
-  const vy2 = offY + (br.y - minY) * scale;
+  const vx1 = mx + geo.offX + (tl.x - bounds.minX) * geo.scale;
+  const vy1 = my + geo.offY + (tl.y - bounds.minY) * geo.scale;
+  const vx2 = mx + geo.offX + (br.x - bounds.minX) * geo.scale;
+  const vy2 = my + geo.offY + (br.y - bounds.minY) * geo.scale;
   c.strokeStyle = '#ffd700';
   c.lineWidth = 1.5;
   c.strokeRect(vx1, vy1, vx2 - vx1, vy2 - vy1);
@@ -3101,8 +3216,8 @@ function drawProvinces(c) {
   const year = tlYear.value;
   const scenarioMode = viewMode.value === 'scenario' && tl.scenarios.length > 0;
 
-  baseMap.value.terrain.forEach(prov => {
-    const points = resolvePoints(prov);
+  rawTerrain().forEach(prov => {
+    const points = rawPointsOf(prov);
     if (!points || points.length < 3) return;
     c.fillStyle = getProvinceColor(prov);
     c.beginPath();
@@ -3154,10 +3269,10 @@ function drawProvinces(c) {
 
 function drawProvinceBorders(c) {
   if (!baseMap.value?.terrain) return;
-  baseMap.value.terrain.forEach(prov => {
+  rawTerrain().forEach(prov => {
     const isSelected = selectedProvince.value?.id === prov.id;
     const isMergeTarget = mergeProvId.value === prov.id;
-    const points = resolvePoints(prov);
+    const points = rawPointsOf(prov);
     if (!points || points.length < 3) return;
     c.strokeStyle = isMergeTarget ? '#ffd700' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)');
     c.lineWidth = isSelected ? px(1.5) : px(0.6);
@@ -3591,7 +3706,10 @@ function handleResize() {
   if (!canvas.value || !canvasWrap.value) return;
   canvas.value.width = canvasWrap.value.clientWidth;
   canvas.value.height = canvasWrap.value.clientHeight;
-  render();
+  // 首次进入期间布局仍在定稿（时间轴面板占位会让画布变矮）→ 重新适屏，别留一个错的镜位；
+  // 用户已经开始操作后就只重绘，不动镜头。
+  if (initialFitPending) fitToView();
+  else render();
 }
 
 // ═══════════════════════════════════════════
@@ -3765,15 +3883,25 @@ onMounted(async () => {
   window.addEventListener('click', () => { contextMenu.value.show = false; });
   window.addEventListener('sitian:history-jump', onHistoryJump);
 
-  render();
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(wrap);
 
   lastFitKey = baseMapKey.value;
   lastFitCount = baseMap.value?.terrain?.length || 0;
+  // 🔴 先算镜位、再画第一帧（P-0 实测）：不这么做，首帧用的是未适屏相机 (0,0,1)，
+  //    画布上只有底网格（非背景像素 7%），适屏帧要等 setTimeout(100) 才来 ——
+  //    用户观感就是「打开底图编辑卡住 / 画布空白，滚一下才出现」。
   if (baseMap.value?.terrain?.length) {
-    setTimeout(fitToView, 100);
+    fitToView();               // fitToView 内部已 render()
+  } else {
+    render();
   }
+  // 布局定稿（时间轴面板占位会让画布变矮）后再补一次适屏；用户一交互就交给用户
+  initialFitPending = true;
+  settleFitTimer = setTimeout(() => {
+    settleFitTimer = null;
+    if (initialFitPending) fitToView();
+  }, 250);
 
   // 时间轴游标落到第一个剧本（数据可能刚由 scenarios.json 异步载入）
   resetTimelineToStart();
@@ -3782,6 +3910,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect();
+  if (settleFitTimer) { clearTimeout(settleFitTimer); settleFitTimer = null; }
+  if (provinceGridTimer) { clearTimeout(provinceGridTimer); provinceGridTimer = null; }
   if (tlRafId != null) { cancelAnimationFrame(tlRafId); tlRafId = null; }
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
@@ -3801,19 +3931,38 @@ function onHistoryJump() {
   render();
 }
 watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels], () => render());
-watch([showProvinceMesh, provMeshNoStar, provMeshBorders], () => { if (showProvinceMesh.value) store.ensureProvinceGrid(baseMapKey.value); render(); });
+// 网格视图开关：网格没就绪时异步补建（见 scheduleProvinceGrid），期间画布退回多边形渲染
+watch([showProvinceMesh, provMeshNoStar, provMeshBorders], () => {
+  if (showProvinceMesh.value) scheduleProvinceGrid();
+  render();
+});
 
 // 切换底图 → 作废离屏栅格缓存（不同地图的网格数据不同）
 watch(baseMapKey, () => {
   rasterCache.clear();
+  invalidateMinimap();               // 换图 → 小地图缩略图与包围盒都要重算
   // Phase 3：省份网格随底图切换（目标省份、省界缓存、套索态都要重置）
   provBrushTarget.value = 1;
   provStrokeActive = false;
   provLassoActive = false;
   provLassoPoints.value = [];
   provinceBrush.invalidateBorders();
-  if (showProvinceMesh.value) store.ensureProvinceGrid(baseMapKey.value);
+  provinceGridRev.value++;           // 网格引用随底图切换变化，必须让 provinceMeshOn 重算
+  if (showProvinceMesh.value) scheduleProvinceGrid();
   render();
+});
+
+// 🔴 底图数据可能**晚于组件挂载**到达：只读态（未打开项目）下底图导入被写闸门拒绝、
+//    项目里暂时没有底图后再「导入知识库内容」、外部导入 scenarios.json……
+//    而 baseMapKey 只在 onMounted 解析一次 → key 停在 '' ⇒ baseMap 恒 undefined
+//    ⇒ watch(baseMap) 永不触发 ⇒ 画布永久空白（P-0 实测：注入真实载荷后 0 帧重绘，
+//    连按 F 都没用，因为 fitToView 在「没有省份」时直接 return）。
+//    数据到了必须自动选中一张，「打开就空白」不能再靠用户重启/重进。
+watch(availableBaseMaps, (list) => {
+  if (!list.length) return;
+  if (!baseMapKey.value || !store.baseMaps?.[baseMapKey.value]) {
+    baseMapKey.value = list[0].id;   // watch(baseMapKey) 会负责作废缓存 + 适屏 + 重绘
+  }
 });
 
 // 关闭城镇图层时同时收起悬停/选中态（避免残留浮层）
@@ -3841,6 +3990,7 @@ watch(baseMap, () => {
     const fresh = baseMap.value?.terrain?.find(p => p.id === sp.id);
     if (fresh && fresh !== sp) selectedProvince.value = fresh;
   }
+  invalidateMinimap();          // 几何变了 → 小地图缩略图与包围盒作废（否则省界改了缩略图不动）
   render();
 }, { deep: true });
 </script>
