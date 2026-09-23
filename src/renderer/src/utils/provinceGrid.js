@@ -13,7 +13,8 @@
 // 本模块是**纯函数**（不碰 store / DOM / 响应式），所以 Node 侧也能读；网格几何与高度图
 // 共用同一套约定（origin 由内容包围盒推导并持久化，绝不跟随视口 —— 铁律 81）。
 
-import { polygonArea, pointInPolygon } from './geometry';
+import { pointInPolygon } from './geometry';
+import { provinceRings, rasterizeProvinceShapes } from './provinceShape';
 
 export const DEFAULT_GRID_CELL = 14.4;
 
@@ -62,44 +63,20 @@ export function makeGrid(bounds, { cell = DEFAULT_GRID_CELL, extraCells = 4 } = 
   return { cell, ox, oy, cols, rows };
 }
 
-/** 由省份定义表推导网格（无内容时退回默认范围） */
+/** 由省份定义表推导网格（无内容时退回默认范围）。多环省份的每一个环都参与包围盒。 */
 export function gridFromProvinces(provinces, opts = {}) {
   const pts = [];
-  for (const p of provinces || []) if (p && Array.isArray(p.points)) pts.push(...p.points);
+  for (const p of provinces || []) for (const r of provinceRings(p)) pts.push(...r.points);
   return makeGrid(pts.length ? bboxOf(pts) : null, opts);
 }
 
 /**
- * 多边形 → 归属序号：格中心 even-odd 射线法。
- * **按面积降序、命中即停**：大省先落，小省不覆盖已有归属 —— 否则小多边形会在
- * 大多边形上啃出一个个洞（导入的 FMG 数据里小省多得多）。
- * 每多边形先做包围盒预筛，不进渲染循环（一次性）。
+ * 多边形 → 归属序号：格中心在省份内（**多环 / 带洞口径**，见 utils/provinceShape.js）。
+ * 实现已收口到 `rasterizeProvinceShapes` —— 单一实现，Node 单元测试直接覆盖。
  * @returns {Uint8Array}
  */
 export function rasterizeProvinces(provinces, grid) {
-  const { cols, rows, cell, ox, oy } = grid;
-  const labels = new Uint8Array(cols * rows);
-  const order = (provinces || [])
-    .map((p, i) => ({ idx: i + 1, pts: (p && p.points) || [], area: Math.abs(polygonArea((p && p.points) || [])) }))
-    .filter(o => o.pts.length >= 3 && o.area > 0)
-    .sort((a, b) => b.area - a.area);
-
-  for (const o of order) {
-    const bb = bboxOf(o.pts);
-    if (!bb) continue;
-    const c0 = Math.max(0, Math.floor((bb.minX - ox) / cell));
-    const c1 = Math.min(cols - 1, Math.floor((bb.maxX - ox) / cell));
-    const r0 = Math.max(0, Math.floor((bb.minY - oy) / cell));
-    const r1 = Math.min(rows - 1, Math.floor((bb.maxY - oy) / cell));
-    for (let r = r0; r <= r1; r++) {
-      for (let c = c0; c <= c1; c++) {
-        const i = r * cols + c;
-        if (labels[i]) continue;
-        if (pointInPolygon(ox + (c + 0.5) * cell, oy + (r + 0.5) * cell, o.pts)) labels[i] = o.idx;
-      }
-    }
-  }
-  return labels;
+  return rasterizeProvinceShapes(provinces, grid);
 }
 
 /**

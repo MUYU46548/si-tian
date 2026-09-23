@@ -214,13 +214,26 @@ SC_FIXTURE = r"""
 })()
 """
 
+# ⚠️ 网格现在是**内部中间层**（P0 第二块删掉了「网格视图」开关）：它只在**涂抹进行中**
+# 叠一层即时反馈。所以量它必须真的进入一次涂抹 —— 而且要走**真鼠标**（mousedown）：
+# `provStrokeActive` 是组件里的普通 let，探针改不动，只有真事件才能把它置真。
 SC_MESH = r"""
 (() => {
   const sc = __SC__;
+  const canvasEl = document.querySelector('.scenario-map-container canvas');
+  const r = canvasEl.getBoundingClientRect();
+  const mk = (t, sx, sy) => new MouseEvent(t, { clientX: r.left + sx, clientY: r.top + sy, bubbles: true, cancelable: true, button: 0 });
+  const cx = canvasEl.clientWidth / 2, cy = canvasEl.clientHeight / 2;
+  sc.setTool('provinceBrush');
+  canvasEl.dispatchEvent(mk('mousedown', cx, cy));      // 涂抹开始（网格中间层此刻才画）
+  canvasEl.dispatchEvent(mk('mousemove', cx + 6, cy + 6));
   const t0 = performance.now();
   sc.render();
   const ms = performance.now() - t0;
-  return JSON.stringify({ meshRenderMs: Math.round(ms * 100) / 100, stats: sc.provinceBrush.meshStats() });
+  const stats = sc.provinceBrush.meshStats();
+  const on = sc.provinceMeshOn;
+  canvasEl.dispatchEvent(mk('mouseup', cx + 6, cy + 6));
+  return JSON.stringify({ meshRenderMs: Math.round(ms * 100) / 100, stats, meshOn: on });
 })()
 """
 
@@ -427,13 +440,15 @@ def run(cdp):
     time.sleep(0.8)
     cdp.eval(SC + ".setTool('provinceBrush'); 'ok'")
     time.sleep(0.6)
-    mesh = _js(cdp, SC_MESH.replace('__SC__', SC))
+    mesh = _js(cdp, SC_MESH.replace('__SC__', SC).replace('__STORE__', STORE))
     if 'ERR' in mesh:
         fails.append(f'网格渲染探针失败：{mesh["ERR"]}')
     else:
+        if not mesh.get('meshOn'):
+            fails.append('涂抹中网格中间层未就绪（provinceMeshOn 为假）')
         if mesh['stats']['loops'] <= 0:
-            fails.append('省份网格轮廓环数为 0（网格视图画不出东西）')
-        notes.append(f'C: 网格单帧 {mesh["meshRenderMs"]}ms / 轮廓 {mesh["stats"]["loops"]} 环 '
+            fails.append('涂抹中网格轮廓环数为 0（内部中间层画不出东西）')
+        notes.append(f'C: 涂抹中网格单帧 {mesh["meshRenderMs"]}ms / 轮廓 {mesh["stats"]["loops"]} 环 '
                      f'{mesh["stats"]["pts"]} 点（重建 {mesh["stats"]["cost"]}ms）')
 
     # 自由绘制（一笔成型）+ 描点仍在

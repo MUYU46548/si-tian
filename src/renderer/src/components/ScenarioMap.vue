@@ -2,6 +2,8 @@
   <div class="scenario-map-container">
     <!-- 顶栏：工具 + 模式切换 -->
     <div class="scenario-toolbar">
+      <!-- 第 1 行：主工具（选择 / 绘制 / 顶点 / 拆分 / 合并 / 油漆桶 / 河流 / 地貌 / 地名） -->
+      <div class="toolbar-row">
       <button @click="$emit('exit')" title="返回世界选择" class="back-btn">← 返回</button>
       <div class="tool-group">
         <button 
@@ -115,6 +117,11 @@
           @click="setTool('road')"
           title="道路 (J) — 两点连线，自动生成沿等高线路径"
         ><Icon name="git-branch" :size="15"/></button>
+      </div>
+
+      <!-- 第 2 行：省份 —— 几何只有一个来源（多边形）；网格只是涂抹时的中间层 -->
+      <div class="toolbar-row">
+        <label class="row-label">省份：</label>
         <button
           :class="{ active: tool === 'provinceBrush' }"
           @click="setTool('provinceBrush')"
@@ -125,10 +132,14 @@
           @click="setTool('provinceLasso')"
           title="自由轮廓 (L) — 按住画一圈，圈内所有格整批划归（不用描点）"
         ><Icon name="pen-tool" :size="15"/></button>
-      </div>
-      <!-- Phase 3 省份网格：笔刷/套索设置 -->
-      <div class="tool-group brush-settings" v-if="tool === 'provinceBrush' || tool === 'provinceLasso'">
-        <label>省份：</label>
+        <button
+          :class="{ active: tool === 'provinceFill' }"
+          @click="setTool('provinceFill')"
+          title="点击填充 (O) — 点一下把所在封闭区域整块划归；有面积闸门（超过全图 25% 直接拒绝，避免一下填满整块大陆/海洋）"
+        ><Icon name="droplet" :size="15"/></button>
+      <!-- Phase 3 省份网格：笔刷 / 自由轮廓 / 点击填充 设置 -->
+      <div class="tool-group brush-settings" v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)">
+        <label>划归到：</label>
         <select v-model.number="provBrushTarget" class="brush-biome-select" title="要划归的目标省份">
           <option v-for="(p, i) in provinceTargets" :key="p.id" :value="i + 1">{{ p.name || ('省份 ' + (i + 1)) }}</option>
         </select>
@@ -151,13 +162,20 @@
         </template>
         <button @click="addGridProvince" title="新建一个「纯网格省份」（无轮廓，边界由格归属自动提取）"><Icon name="plus" :size="13"/> 新建省份</button>
         <button @click="clearGridOwnership" title="把所有格清成无主（省份定义保留）——演示「海陆来自导入、省份由司天切」"><Icon name="refresh-cw" :size="13"/> 清空归属</button>
-        <label class="check-label" title="用格渲染省份（关掉则沿用多边形渲染）">
-          <input type="checkbox" v-model="showProvinceMesh" /> 网格视图
-        </label>
+        <!-- 🔴 不再有「网格视图」开关：画布永远画多边形（= 存下来/导出的那个几何）；
+             网格只在涂抹进行中作为即时反馈叠一层，抬手即写回多边形 -->
+        <span class="row-hint" :class="{ ready: provinceMeshOn }"
+              title="省份几何只有多边形一个来源；网格是涂抹时的中间层，抬手时把结果写回多边形">
+          网格{{ provinceMeshOn ? '已就绪' : '准备中…' }}
+        </span>
         <label class="check-label" title="显示无主格（海域 / 未划归）">
           <input type="checkbox" v-model="provMeshNoStar" /> 无主格
         </label>
       </div>
+      </div>
+
+      <!-- 第 3 行：地形/群系等笔刷设置 + 底图与视图操作 -->
+      <div class="toolbar-row">
       <!-- 笔刷设置 -->
       <div class="tool-group brush-settings" v-if="['height','biome','culture','religion'].includes(tool)">
         <label>笔刷：</label>
@@ -226,6 +244,10 @@
           <input type="checkbox" v-model="snapToEdgeEnabled" /> 海岸线吸附
         </label>
       </div>
+      </div>
+
+      <!-- 第 4 行：图层显示 / 底图图层 / 着色 -->
+      <div class="toolbar-row">
       <div class="tool-group">
         <label>图层：</label>
         <label class="check-label"><input type="checkbox" v-model="showBiomes" /> 生物群系</label>
@@ -254,6 +276,10 @@
           <option value="religion">宗教</option>
         </select>
       </div>
+      </div>
+
+      <!-- 第 5 行：剧本与导入导出 -->
+      <div class="toolbar-row">
       <div class="tool-group">
         <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/></button>
         <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/></button>
@@ -266,6 +292,8 @@
         <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/></button>
         <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/></button>
       </div>
+      </div>
+    </div>
 
     <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代） -->
     <scenario-timeline
@@ -410,8 +438,26 @@
         <label>海岸：</label>
         <input type="checkbox" v-model="selectedProvince.coast" @change="onProvinceCoastChange" />
       </div>
+      <div class="props-row">
+        <label>类型：</label>
+        <select v-model="selectedProvince.kind" @change="onProvinceKindChange"
+                title="海域省份用海色渲染；陆地/海域是省份级属性（岛与飞地另见「环」）">
+          <option value="land">陆地</option>
+          <option value="sea">海域</option>
+        </select>
+      </div>
+      <!-- 多环实体：飞地 / 洞都是独立的环。顶点编辑作用于**活动环**，这里切换 -->
+      <div class="props-row" v-if="provinceRings(selectedProvince).length > 1">
+        <label>编辑环：</label>
+        <select v-model.number="activeRingIdx">
+          <option v-for="(r, i) in provinceRings(selectedProvince)" :key="i" :value="i">
+            {{ i === 0 ? '主环' : ('环 ' + (i + 1)) }}{{ r.fromGrid ? '（网格派生）' : '' }}
+          </option>
+        </select>
+      </div>
       <div class="props-stats">
-        顶点数: {{ selectedProvince.points?.length || 0 }}
+        环数: {{ provinceRings(selectedProvince).length }} ·
+        顶点数: {{ currentRingVertexCount }}（活动环）
       </div>
     </div>
 
@@ -557,6 +603,12 @@ import {
 import { useScenarioExport } from '../composables/useScenarioExport';
 import { useProvinceBrush } from '../composables/useProvinceBrush';
 import { simplifyClosedTrace } from '../utils/regionTrace';
+// P0 第二块：省份几何的**唯一表示**（多环实体）与其配套纯函数 —— 渲染/命中/分割/合并/骨架吸附
+// 全部走这一层，画布里不再自己实现多边形算法（旧实现里那份凸包合并就是「吃掉邻居省份」的根因）。
+import {
+  provinceRings, smoothRing, pointInProvince, provinceBBox, shapePatch,
+  buildSkeleton, conformToSkeleton,
+} from '../utils/provinceShape';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -565,7 +617,11 @@ const layers = useLayersStore();
 const provinceBrush = useProvinceBrush();
 const { radius: provBrushRadius, strength: provBrushStrength, tool: provBrushTool,
         targetIdx: provBrushTarget, showBorders: provMeshBorders, showNoStar: provMeshNoStar } = provinceBrush;
-const showProvinceMesh = ref(false);      // 网格编辑视图（开=用格渲染省份，关=沿用多边形渲染）
+// 🔴 P0 第二块：**渲染单一路径**。画布永远画省份多边形（= 存下来/导出的那个几何），网格退为
+//    内部中间层 —— 只在**涂抹进行中**叠一层即时反馈（labels 变了，多边形要等抬手才重算）。
+//    原先的「网格视图」开关已删除：「格渲染 ↔ 多边形渲染」二选一意味着用户看到的与存下来的
+//    可能不是同一个几何，这正是「丑东西 / 功能打架」的来源。
+const provinceGridReady = ref(false);     // 网格是否就绪（异步补建完成；只用于提示与即时反馈）
 let provStrokeActive = false;             // 涂抹中（快速档渲染）
 let provLassoActive = false;
 const provLassoPoints = ref([]);          // 套索轨迹（世界坐标）
@@ -940,9 +996,8 @@ const statusText = computed(() => {
 
 function setTool(t) {
   tool.value = t;
-  // Phase 3：切到省份网格工具时自动开网格视图并保证网格就位（否则用户涂了看不见）
-  if (t === 'provinceBrush' || t === 'provinceLasso') {
-    showProvinceMesh.value = true;
+  // Phase 3：切到省份网格工具时异步把网格准备好（否则用户涂了看不见）
+  if (PROVINCE_GRID_TOOLS.has(t)) {
     // 🔴 网格懒建**不能同步**：21 省现场栅格化实测 170~368ms 主线程冻结（P-0 实测，
     //    用户观感就是「一打开省份工具就卡」）。改成下一帧再做，期间画布照画多边形。
     scheduleProvinceGrid();
@@ -982,7 +1037,7 @@ function updateCursor() {
   else if (tool.value === 'label') canvas.value.style.cursor = 'text';
   else if (tool.value === 'erase') canvas.value.style.cursor = 'not-allowed';
   else if (tool.value === 'height' || tool.value === 'biome') canvas.value.style.cursor = 'none';
-  else if (tool.value === 'provinceBrush' || tool.value === 'provinceLasso') canvas.value.style.cursor = 'crosshair';
+  else if (PROVINCE_GRID_TOOLS.has(tool.value)) canvas.value.style.cursor = 'crosshair';
   else canvas.value.style.cursor = 'default';
 }
 
@@ -1199,7 +1254,7 @@ function clearSnapMarker(delay = 0) {
 /** 拖拽中返回临时预览点集，避免渲染读到未提交的修改 */
 function resolvePoints(prov) {
   if (dragPreview.value && dragPreview.value.provId === prov.id) return dragPreview.value.points;
-  return prov.points;
+  return ringPointsOf(prov);        // 顶点编辑作用于**活动环**（多环省份可在属性面板切换）
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1225,6 +1280,63 @@ function rawPointsOf(prov) {
 /** 原始省份对象（供绘制期读取 id/颜色等标量字段，同样避免代理陷阱） */
 function rawProvOf(prov) {
   return toRaw(prov);
+}
+
+/**
+ * 环的渲染顶点。
+ * · **网格派生的环**（`fromGrid`，由归属格轮廓重算出来的）→ Chaikin 平滑，消掉格点台阶
+ *   （这正是「马赛克 / 台阶边」的收敛点；网格只作为中间层，落库的是平滑后的折线）。
+ * · **手绘 / 描点 / 带贝塞尔控制点的环** → 原样（顶点是用户刻意摆的，平滑会削掉有意的形状）。
+ */
+function ringPointsForRender(ring) {
+  if (!ring || !Array.isArray(ring.points)) return null;
+  if (!ring.fromGrid) return ring.points;
+  // 手工加过贝塞尔控制点的环一律原样（用户刻意摆的曲率，平滑会削掉）
+  for (const q of ring.points) if (q && (q.controlOut || q.controlIn)) return ring.points;
+  return smoothRing(ring.points, 2);
+}
+
+/**
+ * 描一个省份的**所有环**的路径（多环实体 = 主环 + 洞 / 飞地；顺序无关）。
+ * 用 evenodd 填充口径与命中判定 `pointInProvince` 完全一致 —— 洞真的会空、飞地真的会画。
+ * @returns {boolean} 是否描出了至少一个环
+ */
+function traceProvincePath(c, prov) {
+  const rings = provinceRings(prov);
+  let any = false;
+  for (const r of rings) {
+    const pts = ringPointsForRender(r);
+    if (!pts || pts.length < 3) continue;
+    traceShapePath(c, pts, true);
+    any = true;
+  }
+  return any;
+}
+
+/** 活动环的顶点（顶点编辑作用于「活动环」；多环省份可在属性面板切换环） */
+const activeRingIdx = ref(0);
+function ringPointsOf(prov, idx = activeRingIdx.value) {
+  const rings = provinceRings(prov);
+  const r = rings[idx] || rings[0];
+  return r ? r.points : null;
+}
+
+/** 把「活动环」的新顶点写回省份（主环 → points；额外环 → extraRings[i-1]），返回可 merge 的补丁 */
+function writeRingPoints(prov, idx, points) {
+  const rings = provinceRings(prov).map((r) => ({ points: r.points, kind: r.kind, fromGrid: r.fromGrid }));
+  if (!rings.length) return null;
+  // 与 ringPointsOf 同口径：越界一律落到主环（否则手柄画在环 0、写回却被丢弃 = 静默 no-op）
+  const i = idx >= 0 && idx < rings.length ? idx : 0;
+  rings[i] = { ...rings[i], points };   // 形状被手工改过 → 不再是网格派生的，去掉 fromGrid
+  const patch = shapePatch(rings);
+  // fromGrid 显式给出：手工改过的环不再算「网格派生」→ 渲染端不再对它做平滑
+  return { kind: patch.kind || 'land', points: patch.points, extraRings: patch.extraRings, fromGrid: !!patch.fromGrid };
+}
+
+/** 省份的全部环的顶点数组（去响应式）——多环感知的度量 / 小地图 都走它 */
+function rawRingPointsList(prov) {
+  const rp = toRaw(prov);
+  return provinceRings(rp).map((r) => toRaw(r.points)).filter((pts) => Array.isArray(pts) && pts.length);
 }
 
 /** 选中省份始终指向 store 中的最新对象（updateBaseProvince 会生成新对象） */
@@ -1284,24 +1396,31 @@ let provinceGridTimer = null;
 function scheduleProvinceGrid() {
   const key = baseMapKey.value;
   if (!key) return;
-  if (store.getProvinceGrid(key)) { provinceGridRev.value++; return; }
+  if (store.getProvinceGrid(key)) { provinceGridReady.value = true; provinceGridRev.value++; return; }
   if (provinceGridTimer) return;
   statusMsg('正在准备省份网格…');
   provinceGridTimer = setTimeout(() => {
     provinceGridTimer = null;
-    if (!showProvinceMesh.value) return;
     const t0 = performance.now();
     store.ensureProvinceGrid(baseMapKey.value);
+    provinceGridReady.value = !!store.getProvinceGrid(baseMapKey.value);
     provinceGridRev.value++;
-    if (provinceMeshOn.value) statusMsg(`省份网格已就绪（${Math.round(performance.now() - t0)}ms）`);
+    if (provinceGridReady.value) {
+      statusMsg(`省份网格已就绪（${Math.round(performance.now() - t0)}ms）——涂抹抬手时省界自动重算`);
+    }
     render();
   }, 0);
 }
 
-/** 网格视图是否生效（开启 + 有省份 + 网格已就绪）——网格没就绪时退回多边形渲染（单一路径不空白） */
+/**
+ * 省份网格是否可用（有省份 + 网格已就绪）。
+ * ⚠️ 它**不再决定主渲染路径**（渲染永远是多边形）—— 只用于「涂抹即时反馈」与提示。
+ * `provinceGridRev` 是必需的：`store.getProvinceGrid()` 是模块内普通缓存（非响应式），
+ * 网格「刚就绪 / 被重建 / 换底图失效」都必须显式 +1，否则这个计算属性会一直缓存旧值。
+ */
 const provinceMeshOn = computed(() => {
-  provinceGridRev.value;    // 故意读一下：网格就绪/失效要触发重算（见上方说明）
-  return showProvinceMesh.value && !!baseMap.value?.terrain && !!store.getProvinceGrid(baseMapKey.value);
+  provinceGridRev.value;
+  return !!baseMap.value?.terrain && !!store.getProvinceGrid(baseMapKey.value);
 });
 
 function drawProvinceMesh(c) {
@@ -1368,8 +1487,11 @@ function statusMsg(text) {
 // ⚠️ 名字绝不借用任何真实剧本名（曾硬编码「德斯特星」= 拿暮雨自用剧本当示例，已移除）。
 const CREATES_CONTENT_TOOLS = new Set([
   'draw', 'height', 'biome', 'culture', 'religion', 'burg', 'river', 'relief',
-  'label', 'marker', 'road', 'provinceBrush', 'provinceLasso',
+  'label', 'marker', 'road', 'provinceBrush', 'provinceLasso', 'provinceFill',
 ]);
+
+/** 依赖「省份归属网格」的工具（落笔前要确保网格就位；也是 tools 图层/提示的判定依据） */
+const PROVINCE_GRID_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill']);
 
 /** 空底图命名：底图 1 / 底图 2 …（避开已有名字） */
 function nextBaseMapName() {
@@ -1406,7 +1528,7 @@ function addGridProvince() {
   const res = store.addBrushProvince(baseMapKey.value, {});
   if (!res || res.blocked) { statusMsg((res && res.message) || '新建省份失败'); return; }
   provBrushTarget.value = res.idx;
-  showProvinceMesh.value = true;
+  scheduleProvinceGrid();
   provinceBrush.invalidateBorders();
   statusMsg(`已新建「${res.name}」——按住涂抹即可给它划地（省界自动提取）`);
   render();
@@ -1421,11 +1543,6 @@ function clearGridOwnership() {
   render();
 }
 
-function onProvinceMeshToggle() {
-  if (showProvinceMesh.value) scheduleProvinceGrid();
-  render();
-}
-
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
   initialFitPending = false;      // 用户开始操作 → 不再自动抢镜头（见 onMounted 的适屏收尾）
@@ -1433,8 +1550,8 @@ function onMouseDown(event) {
   // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会「点了没反应」）
   if (CREATES_CONTENT_TOOLS.has(tool.value) && !ensureBaseMap()) return;
 
-  // Phase 3：省份网格 —— 笔刷落笔 / 套索起笔
-  if ((tool.value === 'provinceBrush' || tool.value === 'provinceLasso') && event.button === 0) {
+  // Phase 3：省份网格 —— 笔刷落笔 / 套索起笔 / 点击填充
+  if (PROVINCE_GRID_TOOLS.has(tool.value) && event.button === 0) {
     // 只读态（未打开项目）：编辑入口不灰禁，但**不得产生任何改动** —— 直接说明原因与去处
     if (store.isReadOnly) {
       statusMsg(`省份编辑已停用：${store.readOnlyReason}`);
@@ -1445,6 +1562,18 @@ function onMouseDown(event) {
     store.ensureProvinceGrid(baseMapKey.value);
     if (!provinceTargets.value.length) {
       statusMsg('还没有省份：先点工具栏「新建省份」，再涂抹划地（省界会自动提取）');
+      return;
+    }
+    if (tool.value === 'provinceFill') {
+      const res = store.fillProvinceRegion(baseMapKey.value, { x: world.x, y: world.y }, provBrushTarget.value);
+      if (res && res.blocked) statusMsg(res.message);
+      else if (res && res.rejected) statusMsg(res.message || '点击填充被拒绝');
+      else if (res && res.changed) {
+        provinceBrush.invalidateBorders();
+        statusMsg(`点击填充：${res.cells} 格归「${provinceTargets.value[provBrushTarget.value - 1]?.name || ''}」`
+          + '（一次点击 = 1 条撤销；省界已重算）');
+      } else statusMsg((res && res.message) || '这一块没有可填充的格子');
+      render();
       return;
     }
     if (tool.value === 'provinceBrush') {
@@ -1522,7 +1651,7 @@ function onMouseDown(event) {
       const world = screenToWorld(sx, sy);
       const prov = currentProvince();
       const threshold = px(8);
-      const points = prov && prov.points ? resolvePoints(prov) : null;
+      const points = prov && provinceRings(prov).length ? resolvePoints(prov) : null;
       if (points) {
         // P0-T1：切线手柄命中（仅当前选中顶点）
         const ai = activeVertexIdx.value;
@@ -1551,9 +1680,10 @@ function onMouseDown(event) {
             activeVertexIdx.value = i;
             // 旧数据没有控制点：首次选中顶点时自动生成平滑切线（走 undo 栈）
             if (!p.controlIn && !p.controlOut) {
-              store.updateBaseProvince(baseMapKey.value, prov.id, {
-                points: withBezierControls(resolvePoints(prov).map(q => ({ x: vx(q), y: vy(q) }))),
-              });
+              store.updateBaseProvince(baseMapKey.value, prov.id, writeRingPoints(
+                prov, activeRingIdx.value,
+                withBezierControls(resolvePoints(prov).map(q => ({ x: vx(q), y: vy(q) }))),
+              ));
               showSnapFeedback('已生成贝塞尔切线');
             }
             render();
@@ -1584,7 +1714,7 @@ function onMouseMove(event) {
   }
 
   // Phase 3：省份笔刷涂抹 / 套索描轨迹
-  if (tool.value === 'provinceBrush' || tool.value === 'provinceLasso') {
+  if (PROVINCE_GRID_TOOLS.has(tool.value)) {
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     provBrushPreview.value = { x: world.x, y: world.y };
@@ -1763,7 +1893,9 @@ function onMouseUp() {
     draggingHandle.value = null;
     dragPreview.value = null;
     if (preview && preview.provId === provId) {
-      store.updateBaseProvince(baseMapKey.value, provId, { points: preview.points });
+      const prov = baseMap.value?.terrain?.find(p => p.id === provId);
+      const patch = prov ? writeRingPoints(prov, activeRingIdx.value, preview.points) : null;
+      if (patch) store.updateBaseProvince(baseMapKey.value, provId, patch);
     }
     render();
     updateCursor();
@@ -1777,7 +1909,9 @@ function onMouseUp() {
     clearSnapMarker();
     // 拖拽结束后一次性写入 store：redo 写坐标、undo 回滚到拖拽前
     if (preview && preview.provId === provId) {
-      store.updateBaseProvince(baseMapKey.value, provId, { points: preview.points });
+      const prov = baseMap.value?.terrain?.find(p => p.id === provId);
+      const patch = prov ? writeRingPoints(prov, activeRingIdx.value, preview.points) : null;
+      if (patch) store.updateBaseProvince(baseMapKey.value, provId, patch);
     }
     render();
     updateCursor();
@@ -1891,7 +2025,7 @@ function onCanvasClick(event) {
     // 选中省份（顶点/手柄命中已在 mousedown 处理）
     const prov = findProvinceAt(world.x, world.y);
     if (prov) {
-      if (selectedProvince.value?.id !== prov.id) activeVertexIdx.value = -1;
+      if (selectedProvince.value?.id !== prov.id) { activeVertexIdx.value = -1; activeRingIdx.value = 0; }
       selectedProvince.value = prov;
       showProps.value = true;
     }
@@ -2101,6 +2235,7 @@ function onKeyDown(event) {
   else if (event.key === 'p' || event.key === 'P') setTool('paint');
   else if (event.key === 'q' || event.key === 'Q') setTool('provinceBrush');
   else if (event.key === 'l' || event.key === 'L') setTool('provinceLasso');
+  else if (event.key === 'o' || event.key === 'O') setTool('provinceFill');
   else if (event.key === 't' || event.key === 'T') setTool('label');
   else if (event.key === 'e' || event.key === 'E') setTool('erase');
   else if (event.key === 'h' || event.key === 'H') setTool('height');
@@ -2124,8 +2259,13 @@ function onKeyUp(event) {
 
 function finishDraw() {
   const id = `prov_${Date.now()}`;
-  // P0-T1 验收：新绘制省份自动生成平滑贝塞尔曲线（控制点 = 相邻顶点连线的 1/3）
-  const points = withBezierControls(drawPoints.value.map(p => ({ x: p.x, y: p.y })));
+  // ① 先贴**共享边界骨架**（P0 第二块）：相邻省份的轮廓走同一条线 → 零缝。
+  //    只吸端点会在两省之间斜切一条缝，`conformToSkeleton` 是「整段插中间顶点」。
+  const rawPts = drawPoints.value.map(p => ({ x: p.x, y: p.y }));
+  const skeleton = buildSkeleton(baseMap.value?.terrain || []);
+  const conformed = skeleton.length ? conformToSkeleton(rawPts, skeleton, SNAP_EDGE_THRESHOLD) : rawPts;
+  // ② P0-T1 验收：新绘制省份自动生成平滑贝塞尔曲线（控制点 = 相邻顶点连线的 1/3）
+  const points = withBezierControls(conformed);
   store.addBaseProvince(baseMapKey.value, {
     id,
     name: `新省份 ${baseMap.value?.terrain?.length + 1 || 1}`,
@@ -2158,13 +2298,20 @@ function commitFreeTrace(pts) {
     return false;
   }
   const id = `prov_${Date.now()}`;
+  // 贴共享边界骨架（相邻省零缝）：整段插顶点，而不是只吸端点
+  const skeleton = buildSkeleton(baseMap.value?.terrain || []);
+  const conformed = skeleton.length
+    ? conformToSkeleton(simplified.map(q => ({ x: q.x, y: q.y })), skeleton, SNAP_EDGE_THRESHOLD)
+    : simplified;
   store.addBaseProvince(baseMapKey.value, {
     id,
     name: `新省份 ${(baseMap.value?.terrain?.length || 0) + 1}`,
-    points: withBezierControls(simplified.map(p => ({ x: p.x, y: p.y }))),
+    kind: 'land',
+    points: withBezierControls(conformed.map(q => ({ x: q.x, y: q.y }))),
   });
   provinceBrush.invalidateBorders();
-  statusMsg(`自由绘制：轨迹 ${pts.length} 点 → 简化为 ${simplified.length} 点，一笔成型`);
+  statusMsg(`自由绘制：轨迹 ${pts.length} 点 → 简化为 ${simplified.length} 点`
+    + `（贴骨架后 ${conformed.length} 点），一笔成型`);
   return true;
 }
 
@@ -2180,58 +2327,60 @@ function handleSplitClick(world) {
   if (splitStep.value === 0) {
     splitPoints.value = [world];
     splitStep.value = 1;
+    statusMsg('拆分：再点第二个点定义切割线');
     render();
-  } else {
-    const p1 = splitPoints.value[0];
-    const p2 = world;
-    const terrain = baseMap.value?.terrain || [];
-    let targetProv = null;
-    for (const prov of terrain) {
-      if (prov.points && prov.points.length > 2) {
-        if (isPointInPolygon(p1.x, p1.y, prov.points) || isPointInPolygon(p2.x, p2.y, prov.points)) {
-          targetProv = prov;
-          break;
-        }
-      }
-    }
-    if (targetProv) {
-      const newProvs = splitProvinceByLine(targetProv, p1, p2);
-      if (newProvs) {
-        store.splitBaseProvince(baseMapKey.value, targetProv.id, newProvs[0], newProvs[1]);
-      }
-    }
-    splitStep.value = 0;
-    splitPoints.value = [];
-    render();
+    return;
   }
+  const p1 = splitPoints.value[0];
+  const p2 = world;
+  splitStep.value = 0;
+  splitPoints.value = [];
+  if (store.isReadOnly) { statusMsg(`拆分已停用：${store.readOnlyReason}`); render(); return; }
+  // 目标省份：两点之一落在它里面即可（多环 / 带洞口径由纯函数层统一）
+  const target = (baseMap.value?.terrain || []).find(
+    (q) => provinceRings(q).length
+      && (pointInProvince(p1.x, p1.y, q) || pointInProvince(p2.x, p2.y, q)));
+  if (!target) { statusMsg('拆分：两个点要落在同一个省份上'); render(); return; }
+  const res = store.splitProvince(baseMapKey.value, target.id, p1, p2);
+  if (!res || res.blocked || res.rejected) {
+    statusMsg((res && res.message) || '拆分失败：切割线没有穿过这个省份（两点要落在它两侧）');
+    render();
+    return;
+  }
+  provinceBrush.invalidateBorders();
+  statusMsg(`已把「${target.name}」拆成两块（原省保留序号，新省在表尾）—— 一次拆分 = 1 条撤销`);
+  render();
 }
 
 function handleMergeClick(world) {
   const prov = findProvinceAt(world.x, world.y);
-  if (!prov) return;
+  if (!prov) { statusMsg('合并：请点中省份'); return; }
   if (mergeStep.value === 0) {
     mergeProvId.value = prov.id;
     mergeStep.value = 1;
+    statusMsg(`合并：已选中「${prov.name}」，再点第二个省份`);
     render();
-  } else {
-    if (mergeProvId.value && mergeProvId.value !== prov.id) {
-      const terrain = baseMap.value?.terrain || [];
-      const provA = terrain.find(p => p.id === mergeProvId.value);
-      const provB = prov;
-      if (provA && provB) {
-        const hull = convexHull([...provA.points, ...provB.points]);
-        const id = `prov_${Date.now()}`;
-        store.mergeBaseProvinces(baseMapKey.value, [mergeProvId.value, provB.id], {
-          id,
-          name: `${provA.name}+${provB.name}`,
-          points: hull.map(p => ({ x: p.x || p[0], y: p.y || p[1] })),
-        });
-      }
-    }
-    mergeStep.value = 0;
-    mergeProvId.value = null;
-    render();
+    return;
   }
+  if (store.isReadOnly) { statusMsg(`合并已停用：${store.readOnlyReason}`); return; }
+  if (mergeProvId.value && mergeProvId.value !== prov.id) {
+    const terrain = baseMap.value?.terrain || [];
+    const provA = terrain.find(q => q.id === mergeProvId.value);
+    // 🔴 合并走**精确并集**（共边抵消；环真的穿过时才退回栅格），不再是凸包 ——
+    //    凸包会把两个省之间的凹陷与邻居省份一起吞掉（用户实测「合并吃掉邻居」的根因）。
+    const res = store.mergeProvinces(baseMapKey.value, [mergeProvId.value, prov.id], {
+      name: `${provA?.name || ''}+${prov.name}`,
+    });
+    if (res && (res.blocked || res.rejected)) statusMsg(res.message || '合并失败');
+    else if (res) {
+      provinceBrush.invalidateBorders();
+      statusMsg(`已合并（${res.method === 'raster' ? '栅格并集' : '共边抵消'}，${res.loops} 环）`
+        + '—— 不会吃掉邻居；一次合并 = 1 条撤销');
+    }
+  }
+  mergeStep.value = 0;
+  mergeProvId.value = null;
+  render();
 }
 
 // ═══════════════════════════════════════════
@@ -2262,9 +2411,15 @@ function ctxDuplicateProvince() {
   if (!selectedProvince.value) return;
   const prov = selectedProvince.value;
   const offset = px(20);
-  const newPoints = prov.points.map(p => ({ x: (p.x || p[0]) + offset, y: (p.y || p[1]) + offset }));
+  const rings = provinceRings(prov).map((r) => ({
+    kind: r.kind,
+    points: r.points.map(q => ({ x: vx(q) + offset, y: vy(q) + offset })),
+  }));
   const id = `prov_${Date.now()}`;
-  store.addBaseProvince(baseMapKey.value, { id, name: prov.name + ' 副本', points: newPoints, biome: prov.biome, culture: prov.culture });
+  store.addBaseProvince(baseMapKey.value, {
+    id, name: prov.name + ' 副本', ...shapePatch(rings),
+    biome: prov.biome, culture: prov.culture,
+  });
   render();
   contextMenu.value.show = false;
 }
@@ -2298,6 +2453,21 @@ function onProvinceCultureChange() {
   }
 }
 
+function onProvinceKindChange() {
+  const prov = selectedProvince.value;
+  if (!prov) return;
+  store.updateBaseProvince(baseMapKey.value, prov.id, { kind: prov.kind === 'sea' ? 'sea' : 'land' });
+  provinceBrush.invalidateBorders();
+  render();
+}
+
+/** 活动环的顶点数（属性面板显示；顶点编辑只作用于活动环） */
+const currentRingVertexCount = computed(() => {
+  const prov = currentProvince();
+  const pts = prov ? ringPointsOf(prov) : null;
+  return pts ? pts.length : 0;
+});
+
 function onProvinceCoastChange() {
   if (selectedProvince.value) {
     store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { coast: selectedProvince.value.coast });
@@ -2308,81 +2478,18 @@ function onProvinceCoastChange() {
 // 几何工具
 // ═══════════════════════════════════════════
 function findProvinceAt(x, y) {
-  if (!baseMap.value?.terrain) return null;
-  for (const prov of baseMap.value.terrain) {
-    if (prov.points && isPointInPolygon(x, y, prov.points)) {
-      return prov;
-    }
+  const terrain = baseMap.value?.terrain;
+  if (!terrain) return null;
+  for (const prov of terrain) {
+    if (!provinceRings(prov).length) continue;
+    // 多环 / 带洞口径统一走纯函数层（evenodd）：洞真的点不中、飞地真的点得中
+    if (pointInProvince(x, y, prov)) return prov;
   }
   return null;
 }
 
-function isPointInPolygon(px, py, points) {
-  let inside = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const xi = points[i].x || points[i][0];
-    const yi = points[i].y || points[i][1];
-    const xj = points[j].x || points[j][0];
-    const yj = points[j].y || points[j][1];
-    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
 
-function splitProvinceByLine(prov, p1, p2) {
-  const points = prov.points.map(p => ({ x: p.x || p[0], y: p.y || p[1] }));
-  const side = [];
-  for (const p of points) {
-    const cross = (p2.x - p1.x) * (p.y - p1.y) - (p2.y - p1.y) * (p.x - p1.x);
-    side.push(cross >= 0 ? 1 : -1);
-  }
-  const poly1 = [];
-  const poly2 = [];
-  for (let i = 0; i < points.length; i++) {
-    const j = (i + 1) % points.length;
-    if (side[i] >= 0) poly1.push(points[i]);
-    else poly2.push(points[i]);
-    if (side[i] !== side[j]) {
-      const denom = (points[j].x - points[i].x) * (p1.y - p2.y) - (points[j].y - points[i].y) * (p1.x - p2.x);
-      if (Math.abs(denom) > 1e-10) {
-        const t = ((p1.x - points[i].x) * (p1.y - p2.y) - (p1.y - points[i].y) * (p1.x - p2.x)) / denom;
-        if (t >= 0 && t <= 1) {
-          const ix = points[i].x + t * (points[j].x - points[i].x);
-          const iy = points[i].y + t * (points[j].y - points[i].y);
-          poly1.push({ x: ix, y: iy });
-          poly2.push({ x: ix, y: iy });
-        }
-      }
-    }
-  }
-  if (poly1.length < 3 || poly2.length < 3) return null;
-  return [
-    { id: `prov_${Date.now()}_a`, name: prov.name + ' (A)', points: poly1 },
-    { id: `prov_${Date.now()}_b`, name: prov.name + ' (B)', points: poly2 },
-  ];
-}
 
-function convexHull(points) {
-  const pts = points.map(p => ({ x: p.x || p[0], y: p.y || p[1] })).filter(p => isFinite(p.x) && isFinite(p.y));
-  if (pts.length < 3) return pts;
-  pts.sort((a, b) => a.x - b.x || a.y - b.y);
-  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
-  const lower = [];
-  for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
-    lower.push(p);
-  }
-  const upper = [];
-  for (const p of pts.reverse()) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
-    upper.push(p);
-  }
-  upper.pop();
-  lower.pop();
-  return lower.concat(upper);
-}
 
 // ═══════════════════════════════════════════
 // 导入
@@ -2891,15 +2998,15 @@ function computeMinimapBounds() {
   if (!terrain?.length) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const prov of terrain) {
-    const pts = rawPointsOf(prov);
-    if (!pts || !pts.length) continue;
-    for (const p of pts) {
-      const px = vx(p);
-      const py = vy(p);
-      if (px < minX) minX = px;
-      if (py < minY) minY = py;
-      if (px > maxX) maxX = px;
-      if (py > maxY) maxY = py;
+    for (const pts of rawRingPointsList(prov)) {      // 多环：飞地 / 洞都要进包围盒
+      for (const p of pts) {
+        const px = vx(p);
+        const py = vy(p);
+        if (px < minX) minX = px;
+        if (py < minY) minY = py;
+        if (px > maxX) maxX = px;
+        if (py > maxY) maxY = py;
+      }
     }
   }
   if (!isFinite(minX)) return null;
@@ -2917,17 +3024,18 @@ function buildMinimapThumb(bounds, geo) {
   if (terrain) {
     g.fillStyle = 'rgba(148,163,184,0.4)';
     for (const prov of terrain) {
-      const pts = rawPointsOf(prov);
-      if (!pts || pts.length < 3) continue;
-      g.beginPath();
-      for (let i = 0; i < pts.length; i++) {
-        const sx = geo.offX + (vx(pts[i]) - bounds.minX) * geo.scale;
-        const sy = geo.offY + (vy(pts[i]) - bounds.minY) * geo.scale;
-        if (i === 0) g.moveTo(sx, sy);
-        else g.lineTo(sx, sy);
+      for (const pts of rawRingPointsList(prov)) {
+        if (!pts || pts.length < 3) continue;
+        g.beginPath();
+        for (let i = 0; i < pts.length; i++) {
+          const sx = geo.offX + (vx(pts[i]) - bounds.minX) * geo.scale;
+          const sy = geo.offY + (vy(pts[i]) - bounds.minY) * geo.scale;
+          if (i === 0) g.moveTo(sx, sy);
+          else g.lineTo(sx, sy);
+        }
+        g.closePath();
+        g.fill();
       }
-      g.closePath();
-      g.fill();
     }
   }
   return cv;
@@ -3096,9 +3204,10 @@ function renderFrame() {
   if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
 
   if (showBiomes.value) drawBiomeBackground(ctx.value);
-  // Phase 3：网格视图（格 + 自动省界）取代多边形渲染；关掉则沿用原路径，行为不变
-  if (provinceMeshOn.value) drawProvinceMesh(ctx.value);
-  else drawProvinces(ctx.value);
+  // 🔴 渲染单一路径：**永远画省份多边形**（存下来 / 导出的就是它）。
+  //    涂抹进行中额外叠一层网格即时反馈（labels 已变，多边形要等抬手才重算）。
+  drawProvinces(ctx.value);
+  if ((provStrokeActive || provLassoActive) && provinceMeshOn.value) drawProvinceMesh(ctx.value);
 
   // 地形/温度/降水：半透明叠加在省份之上（验收：alpha ≈ 0.4，不影响点击选中）
   if (rasterLayer.value === 'height') drawRasterLayer(ctx.value, 'height', 0.45);
@@ -3125,10 +3234,10 @@ function renderFrame() {
     }
     ctx.restore();
   }
-  if (showBorders.value && !provinceMeshOn.value) drawProvinceBorders(ctx.value);
+  if (showBorders.value) drawProvinceBorders(ctx.value);
   drawVertexHandles(ctx.value);
   if (showBurgs.value) drawBurgs(ctx.value);
-  if (tool.value === 'provinceBrush' || tool.value === 'provinceLasso') drawProvinceBrushOverlay(ctx.value);
+  if (PROVINCE_GRID_TOOLS.has(tool.value)) drawProvinceBrushOverlay(ctx.value);
   drawPreviewOverlay(ctx.value);
   if (showLabels.value) drawLabels(ctx.value);
   drawReliefIcons(ctx.value);
@@ -3194,19 +3303,14 @@ function drawBiomeBackground(ctx) {
   });
 }
 
-/** 点集包围盒（EU4 斜线裁剪用；每省每次调用只算一次边界） */
-function boundsOfPoints(points) {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of points) {
-    const x = vx(p), y = vy(p);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  return { minX, minY, maxX, maxY };
+
+/** 颜色是否不透明（同色描边前的判据：半透明色描边会变成可见的深色轮廓线） */
+function isOpaqueColor(col) {
+  if (typeof col !== 'string') return false;
+  const m = col.match(/^rgba?\(([^)]+)\)$/i);
+  if (!m) return true;                       // #rrggbb / 命名色 / hsl() → 当作不透明
+  const parts = m[1].split(',').map((s) => s.trim());
+  return parts.length < 4 || Number(parts[3]) >= 1;
 }
 
 function drawProvinces(c) {
@@ -3217,20 +3321,30 @@ function drawProvinces(c) {
   const scenarioMode = viewMode.value === 'scenario' && tl.scenarios.length > 0;
 
   rawTerrain().forEach(prov => {
-    const points = rawPointsOf(prov);
-    if (!points || points.length < 3) return;
-    c.fillStyle = getProvinceColor(prov);
+    const rp = rawProvOf(prov);
+    if (!rp || !provinceRings(rp).length) return;
+    const fillCol = getProvinceColor(rp);
+    c.fillStyle = fillCol;
     c.beginPath();
-    // P0-T1：有控制点时走贝塞尔曲线；Alt 时退化直线
-    traceShapePath(c, points, true);
+    // 多环实体：一条路径覆盖所有环；evenodd 与命中口径（pointInProvince）一致 → 洞真空、飞地真画
+    traceProvincePath(c, rp);
     c.closePath();
-    c.fill();
+    c.fill('evenodd');
+    // 同色描边（~1px）：抹掉相邻省份之间的**亚像素缝**。
+    // 网格派生的边界由相邻两省各自平滑（Chaikin 在共享弧的两端邻域不同），交界处最多差
+    // 零点几像素 —— 同色 1px 描边是最省事的收敛办法（恰好覆盖在边界上，观感不变）。
+    // 仅对不透明色描边：半透明色描上去会变成一条可见的深色轮廓线（不是我们要的）。
+    if (isOpaqueColor(fillCol)) {
+      c.strokeStyle = fillCol;
+      c.lineWidth = px(1);
+      c.stroke();
+    }
 
     // EU4 式斜线占领：底色刻意是**旧主**色（上面刚填的），斜线用**新主**色。
     // 两方本色即可表达「谁占了谁的」，不需要引入任何新色相。
-    if (scenarioMode && tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, year)) {
-      const newCol = polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[prov.id]);
-      const b = boundsOfPoints(points);
+    if (scenarioMode && tlDiffMode.value === 'eu4' && isStriped(tl, k, rp.id, year)) {
+      const newCol = polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[rp.id]);
+      const b = provinceBBox(rp);
       const dy = b.maxY - b.minY;
       const step = px(8.5);
       c.save();
@@ -3249,17 +3363,17 @@ function drawProvinces(c) {
       c.lineWidth = px(1.4);
       c.strokeStyle = newCol;
       c.beginPath();
-      traceShapePath(c, points, true);
+      traceProvincePath(c, rp);
       c.closePath();
       c.stroke();
       c.restore();
     } else if (scenarioMode && tlDiffMode.value === 'outline'
-               && k > 0 && (tl.eraChg[k]?.changed || []).includes(prov.id)) {
+               && k > 0 && (tl.eraChg[k]?.changed || []).includes(rp.id)) {
       c.save();
       c.lineWidth = px(2);
       c.strokeStyle = '#ffffff';
       c.beginPath();
-      traceShapePath(c, points, true);
+      traceProvincePath(c, rp);
       c.closePath();
       c.stroke();
       c.restore();
@@ -3272,12 +3386,12 @@ function drawProvinceBorders(c) {
   rawTerrain().forEach(prov => {
     const isSelected = selectedProvince.value?.id === prov.id;
     const isMergeTarget = mergeProvId.value === prov.id;
-    const points = rawPointsOf(prov);
-    if (!points || points.length < 3) return;
+    const rp = rawProvOf(prov);
+    if (!rp || !provinceRings(rp).length) return;
     c.strokeStyle = isMergeTarget ? '#ffd700' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)');
     c.lineWidth = isSelected ? px(1.5) : px(0.6);
     c.beginPath();
-    traceShapePath(c, points, true);
+    traceProvincePath(c, rp);
     c.closePath();
     c.stroke();
   });
@@ -3931,9 +4045,9 @@ function onHistoryJump() {
   render();
 }
 watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels], () => render());
-// 网格视图开关：网格没就绪时异步补建（见 scheduleProvinceGrid），期间画布退回多边形渲染
-watch([showProvinceMesh, provMeshNoStar, provMeshBorders], () => {
-  if (showProvinceMesh.value) scheduleProvinceGrid();
+// 网格显示选项：变了就重绘（网格只作为涂抹反馈；主渲染永远是多边形）
+watch([provMeshNoStar, provMeshBorders], () => {
+  if (PROVINCE_GRID_TOOLS.has(tool.value)) scheduleProvinceGrid();
   render();
 });
 
@@ -3948,7 +4062,8 @@ watch(baseMapKey, () => {
   provLassoPoints.value = [];
   provinceBrush.invalidateBorders();
   provinceGridRev.value++;           // 网格引用随底图切换变化，必须让 provinceMeshOn 重算
-  if (showProvinceMesh.value) scheduleProvinceGrid();
+  provinceGridReady.value = false;
+  if (PROVINCE_GRID_TOOLS.has(tool.value)) scheduleProvinceGrid();
   render();
 });
 
@@ -4005,15 +4120,44 @@ watch(baseMap, () => {
   background: #0f1a2e;
 }
 
+/* 🔴 工具栏是**多行**结构（P0 第二块重整）：原来 `.scenario-toolbar` 在第 128 行就被提前
+   `</div>` 闭合，后面十几组控件全都掉到容器层 → 只有第一行有工具栏底色，其余几行是裸的
+   （「工具看着挤在一起 / 分不清哪排管什么」的真因）。现在：工具栏 = 竖直列，每行一个
+   `.toolbar-row`（自动换行、有底色与分隔），行内才是 `.tool-group`。 */
 .scenario-toolbar {
   display: flex;
-  gap: 12px;
-  padding: 8px 12px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px;
   background: #1e293b;
   border-bottom: 1px solid #334155;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
 }
+
+.toolbar-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 34px;
+}
+/* 整行为空（该行的控件都被 v-if 关掉）→ 不留空档 */
+.toolbar-row:not(:has(> *)) { display: none; }
+
+.row-label {
+  color: #94a3b8;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.row-hint {
+  color: #94a3b8;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px dashed #475569;
+  border-radius: 10px;
+}
+.row-hint.ready { color: #86efac; border-color: #3f6212; }
 
 .back-btn {
   padding: 6px 12px;

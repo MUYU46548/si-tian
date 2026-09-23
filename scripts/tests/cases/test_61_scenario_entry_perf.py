@@ -218,7 +218,6 @@ WIDE_FIXTURE = r"""
 SWITCH_BASEMAP = r"""JSON.stringify((() => {
   const sc = __SC__, s = __STORE__;
   sc.setTool('select');
-  sc.showProvinceMesh = false;
   sc.baseMapKey = __KEY__;
   return { key: sc.baseMapKey, terrain: sc.baseMap ? sc.baseMap.terrain.length : null,
            meshOn: sc.provinceMeshOn, gridReady: !!s.getProvinceGrid(sc.baseMapKey) };
@@ -256,7 +255,8 @@ SET_TOOL = r"""JSON.stringify((() => {
   const t0 = performance.now();
   sc.setTool('provinceBrush');
   const ms = performance.now() - t0;
-  return { ms: Math.round(ms * 10) / 10, mesh: sc.showProvinceMesh,
+  return { ms: Math.round(ms * 10) / 10, ready: !!sc.provinceGridReady,
+           meshUsable: !!sc.provinceMeshOn,
            gridReadyNow: !!s.getProvinceGrid(sc.baseMapKey) };
 })())"""
 
@@ -395,8 +395,11 @@ def run(cdp):
                 if tool['ms'] >= SETTOOL_LIMIT:
                     fails.append(f"setTool('provinceBrush') 同步耗时 {tool['ms']}ms ≥ {SETTOOL_LIMIT}ms"
                                  f"（旧实现现场栅格化 170~368ms）")
-                if not tool['mesh']:
-                    fails.append('切到省份笔刷后没有开网格视图')
+                # 网格是**异步**补建的：同步返回时必须还没就绪（就绪了说明又变成现场栅格化）
+                if tool['gridReadyNow']:
+                    fails.append('切到省份笔刷时网格已同步就绪 → 又回到「开工具即冻结」的老路')
+                if 'ready' not in tool:
+                    fails.append('缺 provinceGridReady 探针（网格异步就绪状态不可观测）')
                 px_wait = _js(cdp, PIX)
                 if 'ERR' not in px_wait and (px_wait.get('nonBg', 0) < 400 or px_wait.get('colors', 0) < 60):
                     fails.append(f'网格尚未就绪时画布变空了（非背景像素 {px_wait.get("nonBg")}，'
@@ -412,7 +415,12 @@ def run(cdp):
                 if not ready:
                     fails.append('省份网格异步补建后 2s 内仍未就绪（网格视图会一直显示多边形）')
                 if mesh_on is not True:
-                    fails.append(f'网格就绪后 provinceMeshOn 仍为 {mesh_on} → 网格视图打不开（响应式未触发）')
+                    fails.append(f'网格就绪后 provinceMeshOn 仍为 {mesh_on} → 涂抹反馈不可用（响应式未触发）')
+                # 🔴 渲染单一路径：网格就绪**不应改变**画布内容（多边形才是渲染来源）
+                px_after = _js(cdp, PIX)
+                if 'ERR' not in px_after and (px_after.get('nonBg', 0) < 400 or px_after.get('colors', 0) < 60):
+                    fails.append(f'网格就绪后画布反而空了（非背景像素 {px_after.get("nonBg")}，'
+                                 f'{px_after.get("colors")} 色）→ 网格又被当成渲染来源')
                 notes.append(f"setTool('provinceBrush') 同步 {tool['ms']}ms（旧实现 170~368ms），"
                              f"异步就绪={ready}，就绪后 meshOn={mesh_on}")
 

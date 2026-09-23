@@ -303,7 +303,12 @@ JS_WIRING = r"""
   ok('存在省份笔刷工具分支', typeof sc.setTool === 'function');
   sc.setTool('provinceBrush');
   ok('切到省份笔刷', sc.tool === 'provinceBrush', sc.tool);
-  ok('自动开网格视图', sc.showProvinceMesh === true, String(sc.showProvinceMesh));
+  // P0 第二块：**渲染单一路径** —— 「网格视图」开关已删除（画布永远画多边形，网格只是
+  // 涂抹时的中间层）。这条断言反过来守：谁把开关加回来就红。
+  ok('「网格视图」开关已删除（渲染单一路径）',
+     sc.showProvinceMesh === undefined && sc.provinceMeshOn !== undefined,
+     String(sc.showProvinceMesh) + ' / meshOn=' + String(sc.provinceMeshOn));
+  ok('切到省份工具后异步补建网格（不现场栅格化）', typeof sc.scheduleProvinceGrid === 'function');
   ok('笔刷参数就位', sc.provBrushRadius > 0 && !!sc.provBrushTool, sc.provBrushRadius + '/' + sc.provBrushTool);
   sc.setTool('provinceLasso');
   ok('切到自由轮廓', sc.tool === 'provinceLasso' && sc.provBrushTool === sc.provBrushTool);
