@@ -1377,6 +1377,9 @@ function handleKeydown(e) {
 watch(currentFurniture, () => {
   renderer.requestRender();
 });
+
+// 对外暴露 `renderer` / `canvas`：App 的视口书签（R5）需要取相机与聚焦（见 PlanetMap 同名注释）
+defineExpose({ canvas, renderer });
 </script>
 
 <style scoped>

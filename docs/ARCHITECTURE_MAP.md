@@ -13,7 +13,7 @@
 | 锚点 | 期望值 |
 |---|---|
 | 结构清单文件数（脚本扫描） | 155 |
-| 测试用例数 | 73 |
+| 测试用例数 | 74 |
 | store 模块数（geodataModules/） | 6 |
 | App.vue 异步面板 | 20 |
 | 主进程 IPC handle | 35（含 project-* 8） |
@@ -73,11 +73,11 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 285 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
 | 182 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 2170 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
+| 2366 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
 | 633 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
-| 2627 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
+| 2630 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 271 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
-| 145 | `src/renderer/src/components/BookmarkPanel.vue` | 书签面板 |
+| 173 | `src/renderer/src/components/BookmarkPanel.vue` | 书签面板 |
 | 29 | `src/renderer/src/components/BrandMark.vue` | 品牌标志（土星环系剪影 SVG，几何与 build/icon.svg 同源，fill 走 currentColor 跟随父级） |
 | 63 | `src/renderer/src/components/CanvasSkeleton.vue` | 画布加载骨架屏 |
 | 235 | `src/renderer/src/components/ChangeLog.vue` | 更新日志面板 |
@@ -89,15 +89,15 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 552 | `src/renderer/src/components/GitSyncPanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/HistoryPanel.vue` | undo 历史面板 |
 | 178 | `src/renderer/src/components/Icon.vue` | 内联 SVG 图标组件：模板 `v-if` 分支按名匹配，零外部依赖、继承 currentColor；引用名由 scripts/icon_check.py 校验 |
-| 1908 | `src/renderer/src/components/InteriorView.vue` | 建筑内部：楼层切换 + 家具放置 |
+| 1911 | `src/renderer/src/components/InteriorView.vue` | 建筑内部：楼层切换 + 家具放置 |
 | 269 | `src/renderer/src/components/KeyboardShortcuts.vue` | 快捷键说明面板 |
 | 117 | `src/renderer/src/components/LayerPanel.vue` | 图层可见性面板 |
 | 2216 | `src/renderer/src/components/NodeDetailPanel.vue` | 节点详情（正文/层级迁移/定位；含 space_marker、fleet_card 伪节点适配） |
 | 391 | `src/renderer/src/components/ObjectListPanel.vue` | 对象列表面板 |
 | 304 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
-| 3937 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
-| 1028 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
+| 3942 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
+| 1031 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 300 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
@@ -122,7 +122,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 150 | `src/renderer/src/composables/useAutoRegions.js` | 基于 region 子地点凸包自动生成区域边界 + 迷雾 |
 | 187 | `src/renderer/src/composables/useBatchArrange.js` | 批量排列（网格/圆形/对齐/分布/移入区域） |
 | 120 | `src/renderer/src/composables/useBatchSelection.js` | 多选/框选 + 批量属性应用 |
-| 66 | `src/renderer/src/composables/useBookmarks.js` | 书签逻辑 |
+| 78 | `src/renderer/src/composables/useBookmarks.js` | 书签逻辑 |
 | 778 | `src/renderer/src/composables/useCanvasRenderer.js` | 渲染引擎：viewTransform/rAF/拖拽平移模式切换 |
 | 181 | `src/renderer/src/composables/useClusterEditor.js` | 地点簇编辑器 |
 | 61 | `src/renderer/src/composables/useContextMenu.js` | 右键菜单状态 |
@@ -154,7 +154,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 116 | `src/renderer/src/dev-standalone.js` | DEV-only 浏览器兜底：无 Electron preload 时从 `/dev-data/*.json` 只读装载，写操作一律返回失败（绝不制造「已保存」假象）；生产构建被摇掉 |
 | 30 | `src/renderer/src/main.js` | renderer 入口 |
 | 127 | `src/renderer/src/store/canvasBridge.js` | 画布↔项目文件**唯一接线点**（Phase 2.4）：双向注册表 —— geodata 注册画布适配器（applyProject/releaseProject/refreshEntities/exportCanvas），projectStore 注册入水口（syncFromCanvas）。两个 store 不互相 import（防循环依赖与两套事实源） |
-| 1864 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 6 个 geodataModules + 视图导航 + 项目↔画布接线（画布适配器注册；项目模式下行星图不回退知识库缓存） |
+| 1954 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 6 个 geodataModules + 视图导航 + 项目↔画布接线（画布适配器注册；项目模式下行星图不回退知识库缓存） |
 | 241 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 318 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 961 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
@@ -164,7 +164,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 185 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
 | 39 | `src/renderer/src/store/panels.js` | App 层浮层互斥 |
-| 891 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
+| 921 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
 | 43 | `src/renderer/src/store/quitFlush.js` | （待补） |
 | 155 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 205 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
@@ -214,4 +214,4 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 59 | `src/renderer/src/workers/deriveWorker.js` | 温度/降水/生物群系派生 Worker：复用 heightMath.deriveLayers 不复制公式（等价性由用例兜住） |
 <!-- GEN:END -->
 
-> 测试用例在 `scripts/tests/cases/`（73 个，以 `ls scripts/tests/cases/test_*.py | wc -l` 为准），职责见文件名；另有 `scripts/tests/unit/*.js` Node 单测（主进程 I/O 与模块接线 —— CDP 用例里 sitianAPI 是 mock，测不到）。
+> 测试用例在 `scripts/tests/cases/`（74 个，以 `ls scripts/tests/cases/test_*.py | wc -l` 为准），职责见文件名；另有 `scripts/tests/unit/*.js` Node 单测（主进程 I/O 与模块接线 —— CDP 用例里 sitianAPI 是 mock，测不到）。

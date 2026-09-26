@@ -2869,6 +2869,11 @@ onUnmounted(() => {
   if (highlightTimer) clearTimeout(highlightTimer);
   focusHighlight.clearFocusHighlightTimer();
 });
+
+// ⚠️ 对外暴露 `renderer` / `canvas`：App 的视口书签（R5）与「当前视图导出」都要靠它取相机。
+// 此前**没有 defineExpose** → App 里 `ref="planetMapRef"` 拿到的是空对象（模板 ref 能绑上，
+// 但没有可读属性）→ 行星图 / 区域图 / 建筑内部三层的书签**静默失效**（点了没反应也不报错）。
+defineExpose({ canvas, renderer });
 </script>
 
 <style scoped>

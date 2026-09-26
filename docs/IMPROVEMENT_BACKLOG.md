@@ -2,7 +2,7 @@
 
 > **本轮已修 18 项**（P0 2 项 / P1 8 项 / P2 4 项 / 文档 1 项 / 死代码 4 个文件）。
 > 剩 4 项是**功能缺口**（不是 bug），已单列在末尾待定优先级。
-> 回归基线：**73 用例** + 10 个 Node 单测文件（2026-09-26 起；`test_73` 历史剧本势力标注 / `test_71` 参考图导出几何 / `test_72` 滚轮契约）。
+> 回归基线：**74 用例** + 10 个 Node 单测文件（2026-09-26 起；`test_74` P0 三条缺口修复 / `test_73` 历史剧本势力标注 / `test_71` 参考图导出几何 / `test_72` 滚轮契约）。
 
 ---
 
@@ -128,9 +128,9 @@
 | R2 | **建筑内部补齐**：墙体与房间边界 / 门窗 / 家具尺寸显式编辑 / 导出 PNG | 同 R1（同上 4 次） | `InteriorView.vue` 有楼层 / 家具 / 跨层复制移动 / 旋转 / 网格吸附 / 参考图；**无墙体、无门窗、无尺寸显式编辑、无导出** |
 | R3 | **「简化模式」开关**（只进行星地图层级、可逆、不动数据） | 2026-09-22「用户提到是『后续计划』—— 是否本轮就做」；`ROADMAP_NEXT` C8 | **全仓零实现**（`简化模式` / `simpleMode` 无命中） |
 | R4 | **退出前落盘真机演练** | 2026-09-20 / 09-21 / 09-22 三次记为「未测」 | 护栏 + 回执链路已实现且有单测；**从未在真机「改完直接关窗」场景演练过** |
-| R5 | **书签在 planet / area / interior 静默失效**（另：不按项目隔离 / 上限 20 / 无最近访问） | `ROADMAP_NEXT` C2 + C3 | `App.vue#getActiveRenderer()` 仍只认 domain / system / system_detail 三层；`handleAddBookmark` / `handleBookmarkNavigate` 取不到 renderer 就 `return`（**静默**，用户点了没反应也没提示）；3 处调用点未变 |
-| R6 | **「导出配置」不可移植** | `ROADMAP_NEXT` C5；09-24 修了一半 | 09-24 已补 `mapData / areaZones / areaRoutes / areaMarkers / areaTextLabels / interiorData`；**但 `nodes` 仍只导 `{id,name,layer,coordinate,tags}`，无 `parentId`** → 层级丢失；导入端用 `store.nodes.find(...)` **只更新已存在节点、不新建实体** |
-| R7 | **删除节点不清孤儿数据** | `ROADMAP_NEXT` C6 | `geodata.js#removeNode` 体内无 `mapData` / `areaZones` / `interiorData` 清理；`projectStore` 删实体同样没有 |
+| R5 ✅ **已修 2026-09-26** | **书签在 planet / area / interior 静默失效**（另：不按项目隔离 / 上限 20 / 无最近访问） | 修法：`PlanetMap` / `AreaMap` / `InteriorView` 补 `defineExpose({canvas, renderer})` + App 补声明三个模板 ref + `getActiveRenderer()` 覆盖六层；书签新增**锚点实体 id**（跨层先 `focusEntityOnCanvas` 再套相机）；任何不成立的分支都给**状态栏可见原因**（不再裸 `return`）；面板标出「异层」书签。回归 `test_74` f1。**遗留**：C3 的项目隔离 / 上限 / 最近访问未做 |
+| R6 ✅ **已修 2026-09-26** | **「导出配置」不可移植** | 导出载荷抽出 `buildMapConfig()` 并补 `parentId` + 全部编辑侧字段（走 `entityExtras`，唯一白名单）；导入端**新建缺失实体**（原来只 `find` 更新坐标 = 换机导入什么都没有却说"已导入"），层级按 `parentId` 复原、形状走 `store.entityToNode()` 单源。回归 `test_74` f2（**真实载荷往返**） |
+| R7 ✅ **已修 2026-09-26** | **删除节点不清孤儿数据** | 画布路径 `removeNode` 连带清 `mapData`/`domainBorderOverrides`/`areaZones·Routes·Markers·TextLabels·ReferenceImages`/`interiorData`/`interiorReferenceImages`（容器清单 `ORPHAN_DATA_CONTAINERS` 单源），undo 逐值回灌；项目路径 `deleteEntity` 通过画布适配器新增的 `pruneData`/`mergeData` 清**画布活副本**（只删项目文件会被下一次保存写回）并把清理份数写进回执。回归 `test_74` f3a/f3b |
 | R8 | **鹰眼小地图与主画布表示不一致** | 09-24 本清单顺带记录 | `PlanetMap.vue:1323 eagleEyeElements` 仍从 `currentMapData.terrain[]` 取多边形；M2 第二步后主画布已改高度图驱动 |
 | R9 | **GalaxyMap 多选拖拽（提示与实现矛盾）** | 09-24 本清单缺口 19 | `isDraggingMultiple` 有声明、被读（`:1342` / `:1430`），但**全仓无 `= true` 赋值** → 分支永不进入；`:10` 的提示文案仍在承诺「拖拽恒星编辑坐标」 |
 | R10 | **历史剧本进入世界后没有重开入口** | 09-24 本清单缺口 21 | `open-scenarios` 只由 `WorldSelector` 发出（`App.vue:228`），世界内（domain/system/…）无入口 |
@@ -149,13 +149,26 @@
 → 对策不是「更努力地记住」，而是**给它们挂上属于某一轮的验收**：
 每条要么指定轮次，要么明确写下"本轮接受不做"（并留触发条件）。
 只登记、不挂验收的条目，一定会一直躺在这里。
+**2026-09-26 首次照此执行**：P0 三条（R5/R6/R7）被明确挂进本轮验收并已落地 —— 见下方「P0 三条的落地记录」。
 
 ### 建议优先级（2026-09-26）
 
-- **P0（并入下一轮，都是小改 + 静默失败类）**：R5 书签三层限制 · R6 导出配置补 `parentId` 且导入端新建缺失实体 · R7 删除节点清孤儿数据
+- **P0（并入下一轮，都是小改 + 静默失败类）**：~~R5 书签三层限制 · R6 导出配置补 `parentId` 且导入端新建缺失实体 · R7 删除节点清孤儿数据~~ → ✅ **三条已于 2026-09-26 落地**（回归 `test_74`，五枚反向探针一枚一验）
 - **P1（战略主线，见 `ROADMAP_NEXT`）**：A4a 一键重算派生 → A3 文化/宗教笔刷 → Tiled JSON 互通（D1 已定 v2）
 - **P2（暮雨点名的两条链路，工作量大）**：R1 城镇地图 · R2 建筑内部
 - **P3（低成本顺手）**：R3 · R8 · R9 · R10 · R11 · R12 · R13 · R14（R4 是一次人工演练，随时可做）
+
+### P0 三条的落地记录（2026-09-26）
+
+| 条目 | 关键改动 | 反向验证（各一枚、互不掩盖） |
+|---|---|---|
+| R5 | 三层视图 `defineExpose` + App 声明 ref + 六层 `getActiveRenderer` + 书签锚点 + 全部出口有可见回音 | 探针 P1（行星层 renderer 置 null）→ 3 条具名失败 |
+| R6 | `buildMapConfig()` 抽出 + `parentId` + `entityExtras` 全字段 + 导入端新建实体（`entityToNode` 单源） | 探针 P2（导出 parentId 恒 null）→ 先被 f0 守卫抓到；**并因此发现测试漏洞**：原断言只查「键存在」+ 导入用的是**手写配置** → 改为「取真值 + 真实载荷往返」后才真正闭合 |
+| R7 | 画布 `removeNode` 连带清 + `ORPHAN_DATA_CONTAINERS` 单源；项目 `deleteEntity` 经画布适配器 `pruneData`/`mergeData` 清活副本并回执份数 | 探针 P3（画布不清）→ 2 条；P4a（项目只暂存不删）→ 1 条；P4b（只清不还）→ 1 条。**互补半边分开装**：P4a/P4b 各自只亮自己那条 |
+
+**本轮新增的两条方法论**（都值得复用）：
+1. **「有键就算过」是假断言。** `hasOwnProperty('parentId')` 在 `parentId: null` 时照样为真 —— 凡是「字段必须带上」的断言，必须**断言取值**，最好直接把**真实导出载荷**喂回导入端做往返（手写夹具会替被测代码圆谎）。
+2. **两条删除路径不要共用一份夹具。** 串在一起时，前一段的 `removeNode`/`undo` 会经防抖保存把中间态推给项目，后一段的 `descendantsOf` 拿到的是被改过的父子关系 → 红的是测试自己。
 
 ---
 

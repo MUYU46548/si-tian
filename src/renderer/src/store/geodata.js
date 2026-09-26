@@ -862,12 +862,23 @@ export const useGeodataStore = defineStore('geodata', () => {
       .filter(n => n.parentId === nodeId)
       .map(c => ({ id: c.id, parentId: c.parentId }));
 
+    // R7（2026-09-26）：**孤儿数据**——挂在被删节点 id 名下的地图 / 区域级 / 建筑内部 / 边界覆盖 / 参考图。
+    // 旧实现只删节点与航道 → 删掉行星后它的 `mapData` 永远留在项目文件里（重建同名 id 的行星会
+    // 「继承」上一张地图，而且不报错）；删掉区域/建筑同理。这里连同 undo 一起处理。
+    // ⚠️ 只按**节点 id 键**清理，不碰 `scenarios[*].ownership`（其键是省份 id，见 idKeyedDataDicts 注释）。
+    const orphanDicts = idKeyedDataDicts()
+      .filter(d => d && Object.prototype.hasOwnProperty.call(d, nodeId))
+      .map(d => ({ dict: d, value: d[nodeId] }));
+    const deleteOrphans = () => orphanDicts.forEach(o => { delete o.dict[nodeId]; });
+    const restoreOrphans = () => orphanDicts.forEach(o => { o.dict[nodeId] = o.value; });
+
     nodes.value.splice(idx, 1);
     hyperlanes.value = hyperlanes.value.filter(h => h.fromId !== nodeId && h.toId !== nodeId);
     childBackup.forEach(cb => {
       const child = nodes.value.find(n => n.id === cb.id);
       if (child) child.parentId = null;
     });
+    deleteOrphans();
 
     execute({
       type: 'remove-node',
@@ -880,6 +891,7 @@ export const useGeodataStore = defineStore('geodata', () => {
           if (child) child.parentId = cb.parentId;
         });
         hyperlanes.value.push(...relatedHyperlanes);
+        restoreOrphans();
       },
       redo: () => {
         nodes.value = nodes.value.filter(n => n.id !== nodeId);
@@ -888,6 +900,7 @@ export const useGeodataStore = defineStore('geodata', () => {
           const child = nodes.value.find(n => n.id === cb.id);
           if (child) child.parentId = null;
         });
+        deleteOrphans();
       },
     });
     scheduleAutoSave();
@@ -1025,19 +1038,82 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   // 以节点 id 为「字典键」的容器集合（改名而非改字段值）
+  /**
+   * 「以节点 id 为**字典键**的数据容器」的**唯一清单**（名字 → 取当前 ref 值）。
+   * 删节点 / 删实体时要连带清掉它们名下那份数据；名字同时用于「清出来暂存 → 撤销时灌回」。
+   *
+   * 与 `idRefDicts()` 的区别（**这不是重复清单，是刻意分成两个用途**）：
+   *   · 本清单 = **数据容器**，键就是节点 id；
+   *   · `idRefDicts()` = 本清单 ∪ `scenarios[*].ownership`，用于**改 id 时的引用级联**。
+   * ⚠️ 删除路径**不能**直接用 `idRefDicts()`：`ownership` 的键是**省份 id**（`province_N`），
+   *    不是节点 id —— 两者只是恰好都叫 "id"，按节点 id 去删会误删省份归属。
+   */
+  const ORPHAN_DATA_CONTAINERS = [
+    ['mapData', () => mapData.value],
+    ['domainBorderOverrides', () => domainBorderOverrides.value],
+    ['areaZones', () => areaZones.value],
+    ['areaRoutes', () => areaRoutes.value],
+    ['areaMarkers', () => areaMarkers.value],
+    ['areaTextLabels', () => areaTextLabels.value],
+    ['areaReferenceImages', () => areaReferenceImages.value],
+    ['interiorData', () => interiorData.value],
+    ['interiorReferenceImages', () => interiorReferenceImages.value],
+  ];
+
+  function idKeyedDataDicts() {
+    return ORPHAN_DATA_CONTAINERS.map(([, get]) => get());
+  }
+
   function idRefDicts() {
-    const dicts = [
-      mapData.value,
-      domainBorderOverrides.value,
-      areaZones.value, areaRoutes.value, areaMarkers.value, areaTextLabels.value, areaReferenceImages.value,
-      interiorData.value, interiorReferenceImages.value,
-    ];
+    const dicts = idKeyedDataDicts();
     const sc = scenarios.value || {};
     for (const key of Object.keys(sc)) {
       const item = sc[key];
       if (item && item.ownership && typeof item.ownership === 'object') dicts.push(item.ownership);
     }
     return dicts;
+  }
+
+  /**
+   * R7：清掉这些 id 名下的**孤儿数据**（行星地图 / 区域级数据 / 建筑内部 / 边界覆盖 / 参考图），
+   * 并把清掉的内容**原样返回**，供调用方暂存 —— 撤销时用 `mergeOrphanData` 灌回。
+   *
+   * 供**项目侧**删除实体时调用：项目态下画布才是 `mapData` / `editor` 的**活副本**，
+   * 只在项目文件里删是没用的 —— 下一次「画布 → 项目」保存会把画布那份**原样写回去**
+   * （表现为「删了行星，地图过一会儿又回来了」）。
+   *
+   * @returns {Object<string, Object<string, any>>} 形如 `{ mapData: { 行星id: {...} }, interiorData: {…} }`
+   */
+  function pruneOrphanDataFor(ids) {
+    const list = Array.from(new Set((ids || []).filter(Boolean)));
+    const removed = {};
+    if (!list.length) return removed;
+    for (const [name, get] of ORPHAN_DATA_CONTAINERS) {
+      const dict = get();
+      if (!dict || typeof dict !== 'object') continue;
+      for (const id of list) {
+        if (Object.prototype.hasOwnProperty.call(dict, id)) {
+          if (!removed[name]) removed[name] = {};
+          removed[name][id] = dict[id];
+          delete dict[id];
+        }
+      }
+    }
+    return removed;
+  }
+
+  /** R7：把 `pruneOrphanDataFor` 清出来的内容灌回画布（撤销路径）。逐键合并，不整体替换容器对象。 */
+  function mergeOrphanData(payload) {
+    if (!payload || typeof payload !== 'object') return 0;
+    let n = 0;
+    for (const [name, get] of ORPHAN_DATA_CONTAINERS) {
+      const src = payload[name];
+      if (!src || typeof src !== 'object') continue;
+      const dict = get();
+      if (!dict || typeof dict !== 'object') continue;
+      for (const [id, v] of Object.entries(src)) { dict[id] = v; n += 1; }
+    }
+    return n;
   }
 
   /**
@@ -1795,6 +1871,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     releaseProject: releaseProjectFromCanvas,
     refreshEntities: refreshEntitiesFromProject,
     exportCanvas: exportCanvasToProject,
+    // R7：项目侧删除实体 → 清掉该 id 名下的孤儿数据（并把内容回传给调用方暂存）；
+    // 撤销 → `mergeData` 把暂存内容灌回画布。**两半必须成对**：只清不还 = 撤销后数据消失
+    // （而且因为画布是活副本，下一次保存还会把"数据已没了"写进项目文件）。
+    pruneData: pruneOrphanDataFor,
+    mergeData: mergeOrphanData,
     // 知识库内容载荷（项目态下由 vaultSnapshot 重建）—— 「导入知识库内容」的唯一取数口
     exportVaultPayload,
     // 「以知识库为基底新建项目」前的异步准备（补齐懒加载的行星地图）—— 唯一异步适配器方法
@@ -1833,6 +1914,15 @@ export const useGeodataStore = defineStore('geodata', () => {
     writeBlockedHint: WRITE_BLOCKED_HINT,
     // 面板 → 画布的聚焦入口（canvasBridge 注册的实现；也直接暴露给测试）
     focusEntityOnCanvas,
+    // R7：孤儿数据清理 / 回灌（项目侧删除实体时用；见各自注释）
+    pruneOrphanDataFor, mergeOrphanData,
+    idKeyedDataDicts,
+    // 实体「已知形状之外的字段」提取（placeType / wikilinks / population / uuid …）。
+    // R6：导出地图配置时用它一次性带走全部编辑侧字段 —— 白名单只有 ENTITY_SHAPE_KEYS 一份，
+    // 不再由调用方手抄字段名（手抄必漏，漏了不报错、只让图标配色退化 / 搜索「提及」消失）。
+    entityExtras,
+    // R6：实体 → 画布节点的**唯一构造入口**（项目装载与「导入地图配置」共用同一份形状定义）
+    entityToNode,
     loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
     saveStatus,
     statusRevision,

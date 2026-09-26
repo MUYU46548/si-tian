@@ -608,7 +608,10 @@ function confirmDelete() {
   const res = proj.deleteEntity(pd.id, { cascade: true });
   if (res.success) {
     if (selectedId.value === pd.id) selectedId.value = '';
-    setTip(`已删除「${pd.name}」${pd.kids ? `及 ${pd.kids} 个子实体` : ''}（Ctrl+Z 可撤销）`, 'ok');
+    // R7：连带清掉的地图 / 区域 / 建筑内部数据要**说出来**（静默删数据是本项目最忌讳的一类）
+    const cleaned = res.cleanedData
+      ? `，并清理了它名下的 ${res.cleanedData} 份地图/区域/内部数据` : '';
+    setTip(`已删除「${pd.name}」${pd.kids ? `及 ${pd.kids} 个子实体` : ''}${cleaned}（Ctrl+Z 可撤销）`, 'ok');
   } else {
     setTip(res.error || '删除失败', 'err');
   }

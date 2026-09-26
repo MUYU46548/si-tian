@@ -744,14 +744,44 @@ export const useProjectStore = defineStore('project', () => {
     const after = make();
     const prevEntities = { ...project.value.entities };
     const prevHyper = project.value.hyperlanes || [];
+
+    // ── R7（2026-09-26）：孤儿数据 ─────────────────────────────────────────
+    // 项目态下**画布才是 `mapData` / `editor` 的活副本** → 只删项目文件里的没用，
+    // 下一次「画布 → 项目」保存会把画布那份原样写回去（症状：「删了行星，地图过一会儿又回来了」）。
+    // 所以：redo 时让画布**清掉**这些 id 名下的数据，并把清出来的内容**暂存在本命令的闭包里**；
+    // undo 时原样灌回。两半成对，撤销后数据不丢。
+    const adapter = getCanvasAdapter();
+    let stashedOrphanData = null;
+    const pruneOrphanData = () => {
+      stashedOrphanData = (adapter && typeof adapter.pruneData === 'function')
+        ? adapter.pruneData(doomed) : null;
+    };
+    const restoreOrphanData = () => {
+      if (stashedOrphanData && adapter && typeof adapter.mergeData === 'function') {
+        adapter.mergeData(stashedOrphanData);
+      }
+      stashedOrphanData = null;
+    };
+
     execute({
       type: 'project-delete-entity',
       label: `删除实体「${before[id].name}」${doomed.length > 1 ? `（含 ${doomed.length - 1} 个子实体）` : ''}`,
       category: 'property',
-      undo: () => { project.value = { ...project.value, entities: prevEntities, hyperlanes: prevHyper }; dirty.value = true; scheduleAutoSave(); },
-      redo: () => { project.value = { ...project.value, entities: after.entities, hyperlanes: after.hyperlanes }; dirty.value = true; scheduleAutoSave(); },
+      undo: () => {
+        project.value = { ...project.value, entities: prevEntities, hyperlanes: prevHyper };
+        restoreOrphanData();
+        dirty.value = true; scheduleAutoSave();
+      },
+      redo: () => {
+        project.value = { ...project.value, entities: after.entities, hyperlanes: after.hyperlanes };
+        pruneOrphanData();
+        dirty.value = true; scheduleAutoSave();
+      },
     });
-    return { success: true, deleted: doomed, orphaned: orphans.map(o => o.id) };
+    // 命令的首次执行 = redo（execute 内部会调）→ 此刻暂存内容已就位，报告清理了几份
+    const cleaned = stashedOrphanData
+      ? Object.entries(stashedOrphanData).reduce((n, [, v]) => n + Object.keys(v).length, 0) : 0;
+    return { success: true, deleted: doomed, orphaned: orphans.map(o => o.id), cleanedData: cleaned };
   }
 
   function moveEntity(id, newParentId) {

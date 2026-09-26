@@ -8,12 +8,17 @@
         v-for="(bm, index) in bookmarks"
         :key="bm.id"
         class="bookmark-item"
-        :class="{ current: index === currentIndex }"
+        :class="{ current: index === currentIndex, foreign: isForeign(bm) }"
+        :title="isForeign(bm) ? '这条书签记于其他层级，点击会先切到那个视图再套用相机' : '点击跳转到这个视口'"
         @click="$emit('navigate', bm)"
       >
         <div class="bookmark-info">
           <span class="bookmark-name">{{ bm.name }}</span>
-          <span class="bookmark-meta">{{ bm.viewLevel }} · {{ formatDate(bm.createdAt) }}</span>
+          <span class="bookmark-meta">
+            {{ bm.viewLevel }} · {{ formatDate(bm.createdAt) }}
+            <!-- R5：异层书签**事先可见**（旧版点了没反应才知道），点击后会先切视图 -->
+            <span v-if="isForeign(bm)" class="level-badge" data-testid="bm-foreign-badge">异层</span>
+          </span>
         </div>
         <button class="remove-btn" @click.stop="$emit('remove', bm.id)">×</button>
       </div>
@@ -31,9 +36,15 @@ import PanelShell from './PanelShell.vue';
 const props = defineProps({
   bookmarks: { type: Array, default: () => [] },
   currentIndex: { type: Number, default: -1 },
+  // R5：当前视图层级 —— 用来标出"异层"书签（点它会先切视图，不是就地套相机）
+  currentLevel: { type: String, default: '' },
 });
 
 defineEmits(['close', 'navigate', 'add', 'remove', 'clear']);
+
+function isForeign(bm) {
+  return !!props.currentLevel && bm.viewLevel !== props.currentLevel;
+}
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -94,6 +105,23 @@ function formatDate(iso) {
 .bookmark-meta {
   font-size: 10px;
   color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* R5：异层书签 —— 用左侧竖线 + 徽标区分，不靠颜色单独表意 */
+.bookmark-item.foreign {
+  border-left: 2px solid var(--color-border-warning, #BA7517);
+}
+
+.level-badge {
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  color: var(--text-warning, #854F0B);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .remove-btn {

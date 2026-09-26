@@ -96,14 +96,14 @@
 
 | # | 断点 | 证据 |
 |---|---|---|
-| C1 | 搜索**只覆盖节点**，不搜地图对象（地形多边形名 / 标记名 / 区域名 / 浮动文本 / 地点簇） | `search.js:56-90` |
-| C2 | 书签在 planet/area/interior **静默失效**（`getActiveRenderer()` 只认 3 层） | `App.vue:560-569`、`:154` |
-| C3 | 书签不按项目隔离、上限 20、无「最近访问」 | `useBookmarks.js:30-45` |
-| C4 | **撤销栈是全局单例、上限 100、从不按项目清空** —— 长会话后"撤不动了"且无提示；关闭项目后 Ctrl+Z 可能把旧项目对象回滚回来 | `undo.js:19-21,74-82`；全仓无 `clearHistory` 调用 |
-| C5 | **「导出配置」不可移植** —— 丢 `parentId`（层级），导入端只更新已存在节点的坐标、不新建实体 | `App.vue:1014-1020`、`:1060-1065` |
-| C6 | 删除节点**不清孤儿数据**（`mapData[planetId]` / `areaZones[regionId]` / `interiorData[buildingId]`） | `geodata.js:841-884`；`projectStore.js:609-639` |
+| C1 | 搜索**只覆盖节点**，不搜地图对象（地形多边形名 / 标记名 / 区域名 / 浮动文本 / 地点簇） | `search.js:56-90` —— 已补 `scenario-label` / `scenario-marker` 两类，其余仍缺（R12） |
+| C2 ✅ **已修 2026-09-26（R5）** | 书签在 planet/area/interior **静默失效**（`getActiveRenderer()` 只认 3 层） | 三层视图补 `defineExpose` + App 声明 ref + 六层覆盖 + 书签锚点跨层跳转 + 出口全给可见原因；回归 `test_74` f1 |
+| C3 | 书签不按项目隔离、上限 20、无「最近访问」 | `useBookmarks.js` —— **未做**（本轮只收了「静默失效」那条） |
+| C4 | **撤销栈是全局单例、上限 100、从不按项目清空** | `undo.js:19-21,74-82` —— 跨项目串味已在 P3 修（`adopt`/`closeProject` 清栈）；**上限 100 仍无用户提示**，且「撤不动了」不告诉用户 |
+| C5 ✅ **已修 2026-09-26（R6）** | **「导出配置」不可移植** —— 丢 `parentId`（层级），导入端只更新已存在节点、不新建实体 | `buildMapConfig()` 补 `parentId` + 编辑侧全字段；导入端新建缺失实体（`entityToNode` 单源）；回归 `test_74` f2（真实载荷往返） |
+| C6 ✅ **已修 2026-09-26（R7）** | 删除节点**不清孤儿数据**（`mapData[planetId]` / `areaZones[regionId]` / `interiorData[buildingId]`） | 画布 `removeNode` 连带清 + undo 回灌；项目 `deleteEntity` 经适配器 `pruneData`/`mergeData` 清画布活副本；回归 `test_74` f3a/f3b |
 | C7 | 导出制图要素**分裂在两种格式**：PNG 有指北针+比例尺无图例；SVG 有图例+标题无比例尺/指北针 | `useFullMapExport.js:142/183` vs `:404/421` |
-| C8 | 无用户可控「简化模式」（LOD 全自动） | 蓝图 §5.2；`PlanetMap.vue:1297` |
+| C8 | 无用户可控「简化模式」（LOD 全自动） | 蓝图 §5.2；`PlanetMap.vue:1297` —— 同 R3，**全仓零实现** |
 
 ---
 
@@ -117,6 +117,7 @@
 4. **A8（历史剧本势力标注）+ A5（政治 = 势力 Tag）** —— 同一件事的两端：A5 定语义、A8 做渲染。
 5. **D1：Tiled JSON 导入导出（v2）** —— 补上四件套第 4 件，唯一可对外宣称「四件套齐全」的凭证。
 6. **C 批（规模化）** —— 世界变大前不紧急，但 C4（撤销栈）与 C6（孤儿数据）有数据一致性风险，可提前。
+   → **2026-09-26 已提前落地 C2 / C5 / C6 三条**（= `IMPROVEMENT_BACKLOG.md` §四 的 R5/R6/R7，P0 清单），回归 `test_74`。
 7. 制图输出（C7）—— 到"要发布成品图"时再做。
 
 ---

@@ -318,6 +318,7 @@
       v-if="panelsStore.isOpen('bookmarks')"
       :bookmarks="bookmarks"
       :current-index="currentIndex"
+      :current-level="store.viewLevel"
       @close="panelsStore.close('bookmarks')"
       @navigate="handleBookmarkNavigate"
       @add="handleAddBookmark"
@@ -419,6 +420,12 @@ const searchBar = ref(null);
 const galaxyMapRef = ref(null);
 const systemViewRef = ref(null);
 const systemDetailRef = ref(null);
+// R5：这三层此前**只在模板里写了 ref 名、脚本里没有声明** —— `<script setup>` 下模板 ref
+// 必须绑到声明的变量上，否则 ref 永远是 null（不报错，只是取不到）。
+// 配套：三个组件补了 `defineExpose({ canvas, renderer })`（原先一个都没暴露）。
+const planetMapRef = ref(null);
+const areaMapRef = ref(null);
+const interiorViewRef = ref(null);
 const perfVisible = ref(false);
 const perfStats = ref({});
 const aboutPanelRef = ref(null);
@@ -561,18 +568,31 @@ let cleanupNodeRemoved = null;
 let perfUpdateTimer = null;
 
 // 获取当前活动的 renderer ref
+// 获取当前活动的 renderer（相机 / 聚焦 / 性能统计 + 视口书签）
+// ⚠️ R5（2026-09-26）：原来只认 domain / system / system_detail 三层，行星 / 区域 / 建筑内部
+// 一律返回 null → 调用方（书签）静默 `return`，用户表现为「点了没反应」。
+// 现在覆盖**全部六层有画布的视图**（world 是选择页、无画布）。
+// 前置条件：PlanetMap / AreaMap / InteriorView 必须 `defineExpose({ canvas, renderer })`。
 function getActiveRenderer() {
-  if (store.viewLevel === 'domain') {
-    return galaxyMapRef.value?.renderer;
-  } else if (store.viewLevel === 'system') {
-    return systemViewRef.value?.renderer;
-  } else if (store.viewLevel === 'system_detail') {
-    return systemDetailRef.value?.renderer;
+  if (scenarioMode.value) {
+    // 历史剧本是独立画布（ScenarioMap），不走这套六层导航；它有自己的导出/工具条
+    return null;
   }
+  if (store.viewLevel === 'world') return null;
+  if (store.viewLevel === 'domain') return galaxyMapRef.value?.renderer || null;
+  if (store.viewLevel === 'system') return systemViewRef.value?.renderer || null;
+  if (store.viewLevel === 'system_detail') return systemDetailRef.value?.renderer || null;
+  if (store.viewLevel === 'planet') return planetMapRef.value?.renderer || null;
+  if (store.viewLevel === 'area') return areaMapRef.value?.renderer || null;
+  if (store.viewLevel === 'interior') return interiorViewRef.value?.renderer || null;
   return null;
 }
 
-// 获取当前活动的 canvas ref
+// 获取当前活动的 canvas ref —— ⚠️ **刻意保持三层**（domain / system / system_detail）。
+// 它与 `getActiveRenderer()` 不是同一件事：这个只服务「当前视图整图导出」，而那条导出链
+// 只在三层实现过（见下方 `viewExportSupported` / VIEW_EXPORT_HINT）。
+// 行星 / 区域 / 建筑内部若在这里返回 canvas，会让导出函数拿到一张它处理不了的画布
+// —— 按钮虽然仍然置灰，但函数级守卫就失效了（双保险变单保险）。
 function getActiveCanvas() {
   if (store.viewLevel === 'domain') {
     return galaxyMapRef.value?.canvas;
@@ -1004,24 +1024,31 @@ function handleImportGeoJSON() {
   input.click();
 }
 
-function handleExportMapConfig() {
-  // ⚠️ 导出字段必须与 handleImportMapConfig 的读取**对齐**（2026-09-24 修）：
-  //    导入端会读 mapData / areaZones / interiorData，而旧导出端只写 nodes + hyperlanes
-  //    → 「导出后再导入」会**静默丢掉**行星地图、区域多边形/道路/标记/文本、建筑内部数据。
-  //    深拷贝：去响应式代理（IPC/JSON 需要）+ TypedArray 兜底（见 jsonSafeReplacer）。
-  const config = {
+/**
+ * 构建「地图配置」载荷（**纯构造，不落盘/不下载**）。
+ *
+ * 抽成独立函数是为了让「导出 → 导入」能**真的走一个往返**（回归 test_74）：
+ * 载荷构造留在 `handleExportMapConfig` 里面时，用例只能自己手写一份配置去喂导入端 ——
+ * 那样**导出端漏字段永远测不出来**（实测：把 `parentId` 改成恒 null，手写配置的用例照样全绿）。
+ *
+ * ⚠️ 字段必须与 `handleImportMapConfig` 的读取**对齐**（2026-09-24 修）：导入端会读
+ *    mapData / areaZones / interiorData，旧导出端只写 nodes + hyperlanes → 「导出后再导入」
+ *    会**静默丢掉**行星地图、区域多边形/道路/标记/文本、建筑内部数据。
+ * 深拷贝：去响应式代理（IPC/JSON 需要）+ TypedArray 兜底（见 jsonSafeReplacer）。
+ */
+function buildMapConfig() {
+  return {
     version: '1.0.0',
     exportedAt: new Date().toISOString(),
     viewLevel: store.viewLevel,
     currentWorld: store.currentWorld?.id || null,
     currentDomain: store.currentDomain?.id || null,
-    nodes: store.nodes.map(n => ({
-      id: n.id,
-      name: n.name,
-      layer: n.layer,
-      coordinate: n.coordinate,
-      tags: n.tags,
-    })),
+    // R6（2026-09-26）：`parentId` 是**层级**，旧导出漏了它 → 「导出 → 在另一台机器导入」后
+    //    实体树会整片塌成 0 级（父子关系全丢），而且不报错。
+    //    形状刻意与项目文件的实体形状对齐（`nodeToProjectEntity`）：编辑侧字段走 `entityExtras`
+    //    一次性带走，`draft` 不入配置（它由 sourcePath 派生）—— 导入端用 `store.entityToNode()`
+    //    还原，两侧形状只有一份定义。
+    nodes: store.nodes.map(configNodeOf),
     hyperlanes: store.hyperlanes,
     mapData: JSON.parse(JSON.stringify(store.mapData || {}, jsonSafeReplacer)),
     areaZones: JSON.parse(JSON.stringify(store.areaZones || {}, jsonSafeReplacer)),
@@ -1030,7 +1057,11 @@ function handleExportMapConfig() {
     areaTextLabels: JSON.parse(JSON.stringify(store.areaTextLabels || {}, jsonSafeReplacer)),
     interiorData: JSON.parse(JSON.stringify(store.interiorData || {}, jsonSafeReplacer)),
   };
-  
+}
+
+function handleExportMapConfig() {
+  const config = buildMapConfig();
+
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1041,6 +1072,26 @@ function handleExportMapConfig() {
   
   panelsStore.close('export');
   statusText.value = '地图配置已导出';
+}
+
+/** R6：画布节点 → 可移植配置里的实体（形状与项目文件的实体一致；`draft` 不进配置，由 sourcePath 派生） */
+function configNodeOf(n) {
+  const extras = store.entityExtras(n);
+  delete extras.draft;
+  return {
+    ...extras,
+    id: n.id,
+    name: n.name,
+    layer: n.layer,
+    layerLabel: n.layerLabel || n.layer,
+    parentId: n.parentId ?? null,
+    tags: Array.isArray(n.tags) ? [...n.tags] : [],
+    coordinate: { x: n.coordinate?.x ?? null, y: n.coordinate?.y ?? null },
+    origin: n.origin || 'canvas',
+    sourcePath: n.sourcePath || '',
+    uuid: n.uuid || '',
+    createdAt: n.createdAt || '',
+  };
 }
 
 function handleImportMapConfig() {
@@ -1077,6 +1128,7 @@ function handleImportMapConfig() {
       const clone = (v) => JSON.parse(JSON.stringify(v || {}, jsonSafeReplacer));
       const before = {
         coords: new Map(store.nodes.map(n => [n.id, n.coordinate])),
+        parents: new Map(store.nodes.map(n => [n.id, n.parentId])),
         hyperlaneIds: new Set(store.hyperlanes.map(h => h.id)),
         mapData: clone(store.mapData),
         areaZones: clone(store.areaZones),
@@ -1086,12 +1138,56 @@ function handleImportMapConfig() {
         interiorData: clone(store.interiorData),
       };
 
-      const applyImport = () => {
-        // 节点坐标（只更新已存在的节点；导入端不新建实体，故不会有键增减）
-        config.nodes.forEach(importedNode => {
-          const existingNode = store.nodes.find(n => n.id === importedNode.id);
-          if (existingNode) existingNode.coordinate = importedNode.coordinate;
+      // ── R6：导入端**新建缺失实体**（旧实现只 `find` 更新已存在节点的坐标 → 换台机器导入后
+      //    实体根本没进来，提示却照打「已导入 N 个节点」= 假成功）。
+      //    层级靠 `parentId` 复原；父级在**本次导入集合内**也算有效（两趟：先算 id 全集，再落库）。
+      const seenCfgId = new Set();
+      const importNodes = (config.nodes || []).filter(n => {
+        if (!n || !n.id || !n.layer || seenCfgId.has(n.id)) return false;   // 缺字段 / 重复 id → 跳过
+        seenCfgId.add(n.id);
+        return true;
+      });
+      const existingIds = new Set(store.nodes.map(n => n.id));
+      const knownIds = new Set([...existingIds, ...importNodes.map(n => n.id)]);
+      /** 节点要落到画布上的样子 —— 与「项目 → 画布」共用同一份形状定义 */
+      const toNode = (n) => {
+        const node = store.entityToNode(n);
+        node.parentId = (n.parentId && n.parentId !== n.id && knownIds.has(n.parentId)) ? n.parentId : null;
+        node.coordinate = {
+          x: Number.isFinite(n.coordinate?.x) ? n.coordinate.x : 0,
+          y: Number.isFinite(n.coordinate?.y) ? n.coordinate.y : 0,
+        };
+        return node;
+      };
+      const newNodes = importNodes.filter(n => !existingIds.has(n.id)).map(toNode);
+
+      const applyImportNodes = () => {
+        // 已有节点：只更新坐标与层级（不重建对象 —— 按引用持有的选中态会脱钩，项目踩过）
+        for (const n of importNodes) {
+          const existing = store.nodes.find(x => x.id === n.id);
+          if (!existing) continue;
+          if (Number.isFinite(n.coordinate?.x) && Number.isFinite(n.coordinate?.y)) {
+            existing.coordinate = { x: n.coordinate.x, y: n.coordinate.y };
+          }
+          if (n.parentId && n.parentId !== existing.id && knownIds.has(n.parentId)) {
+            existing.parentId = n.parentId;
+          }
+        }
+        for (const nn of newNodes) store.nodes.push(nn);
+      };
+      const undoImportNodes = () => {
+        const createdIds = new Set(newNodes.map(n => n.id));
+        for (let i = store.nodes.length - 1; i >= 0; i--) {
+          if (createdIds.has(store.nodes[i].id)) store.nodes.splice(i, 1);
+        }
+        store.nodes.forEach(n => {
+          if (before.coords.has(n.id)) n.coordinate = before.coords.get(n.id);
+          if (before.parents.has(n.id)) n.parentId = before.parents.get(n.id);
         });
+      };
+
+      const applyImport = () => {
+        applyImportNodes();
         // 航道（只补缺）
         config.hyperlanes.forEach(importedH => {
           if (!store.hyperlanes.some(h => h.id === importedH.id)) store.hyperlanes.push(importedH);
@@ -1117,7 +1213,7 @@ function handleImportMapConfig() {
         Object.entries(snapshot).forEach(([k, v]) => { target[k] = v; });
       };
       const restoreBefore = () => {
-        store.nodes.forEach(n => { if (before.coords.has(n.id)) n.coordinate = before.coords.get(n.id); });
+        undoImportNodes();
         for (let i = store.hyperlanes.length - 1; i >= 0; i--) {
           if (!before.hyperlaneIds.has(store.hyperlanes[i].id)) store.hyperlanes.splice(i, 1);
         }
@@ -1137,7 +1233,9 @@ function handleImportMapConfig() {
         redo: applyImport,
       });
 
-      statusText.value = `已导入 ${config.nodes.length} 个节点和 ${config.hyperlanes.length} 条航道（Ctrl+Z 可撤销）`;
+      statusText.value = `已导入 ${config.nodes.length} 个节点`
+        + (newNodes.length ? `（其中新建 ${newNodes.length} 个）` : '')
+        + `和 ${config.hyperlanes.length} 条航道（Ctrl+Z 可撤销）`;
       statusKind.value = 'ok';
       dirty.value = true;
     } catch (err) {
@@ -1253,64 +1351,162 @@ function handleDeleteWorld(world) {
   setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 4000);
 }
 
-// ===== 书签管理 =====
+// ===== 书签管理（R5，2026-09-26 修）=====
+//
+// 旧实现的三个问题，全在「点了没反应」这条线上：
+//   ① `getActiveRenderer()` 只认三层 → 行星 / 区域 / 建筑内部拿到 null 就 `return`
+//      （**静默**：不跳转、不提示、不报错）；那三层也没被组件暴露出来。
+//   ② 后面那段「切换视图级别」用 `backToXxx()` —— 那是**往回退一层**，与书签记录的层级不是同一件事
+//      （书签记 planet，`backToSystem()` 退到的是 system）。它排在 `if (!renderer) return` 之后，
+//      实际一次都没跑到过。
+//   ③ 图层状态被记下来了却**从没应用过**（`addBookmark` 存了 layerState，App 里没读）。
+//
+// 现在：书签额外记一个**锚点实体 id**（该视图此刻"站在"哪个实体上）。层级不同就先
+// `focusEntityOnCanvas(anchorId)` 把视图切过去，再套相机；任何一步不成立都给**可见原因**。
+//
+// 层级 → 锚点节点的映射（与 store 的导航语义对齐；注意 `selectWorld` 落到的是 **domain** 层，
+// `selectDomain` 落到 **system** 层 —— 命名是历史包袱，锚点必须按"focus 后会到哪一层"来选）：
+//   domain → 世界节点 · system → 星域节点 · system_detail → 恒星系节点 · 其余 → 自身
+const BOOKMARK_LEVEL_TEXT = {
+  world: '世界选择页',
+  domain: '星域总览',
+  system: '域内恒星系总览',
+  system_detail: '恒星系详情',
+  planet: '行星地图',
+  area: '区域地图',
+  interior: '建筑内部',
+};
+
+function levelText(lv) {
+  return BOOKMARK_LEVEL_TEXT[lv] || lv || '未知层级';
+}
+
+/** 当前视图"站在"哪个实体上（书签锚点；取不到则返回 null） */
+function currentAnchorId() {
+  switch (store.viewLevel) {
+    case 'domain': return store.currentWorld?.id || null;
+    case 'system': return store.currentDomain?.id || null;
+    case 'system_detail': return store.currentSystem?.id || null;
+    case 'planet': return store.currentPlanet?.id || null;
+    case 'area': return store.currentArea?.id || null;
+    case 'interior': return store.currentBuilding?.id || null;
+    default: return null;
+  }
+}
+
+// 状态栏回音（书签相关的一次性提示；后一条消息不会被前一条的定时器误清）
+let bookmarkStatusTimer = null;
+function bookmarkStatus(text, kind = '') {
+  statusText.value = text;
+  statusKind.value = kind;
+  if (bookmarkStatusTimer) clearTimeout(bookmarkStatusTimer);
+  bookmarkStatusTimer = setTimeout(() => {
+    if (statusText.value === text) { statusText.value = ''; statusKind.value = ''; }
+  }, 6000);
+}
 
 function handleAddBookmark() {
   const renderer = getActiveRenderer();
-  if (!renderer) return;
-  
+  if (!renderer) {
+    bookmarkStatus(scenarioMode.value
+      ? '历史剧本没有视口书签（书签服务的是六层地图视图）'
+      : `「${levelText(store.viewLevel)}」没有可记录的画布 —— 先进入星域总览或更下层`, 'err');
+    return;
+  }
+
   const vt = renderer.getViewTransform();
-  const layerState = layersStore.layers;
-  addBookmark(`书签 ${bookmarks.value.length + 1}`, vt, store.viewLevel, layerState);
-  statusText.value = '书签已添加';
+  addBookmark(
+    `书签 ${bookmarks.value.length + 1}`,
+    vt,
+    store.viewLevel,
+    layersStore.layers,
+    null,
+    currentAnchorId(),
+  );
+  bookmarkStatus(`书签已添加（${levelText(store.viewLevel)}）`, 'ok');
+}
+
+/** 把书签的相机套到 renderer 上（viewTransform 存的是 translate，focusOn 要的是世界中心） */
+function applyBookmarkCamera(renderer, bm) {
+  const s = bm.viewTransform?.scale || 1;
+  renderer.focusOn(-(bm.viewTransform?.x || 0) / s, -(bm.viewTransform?.y || 0) / s, s);
+}
+
+/** 恢复书签记录时的图层可见性（旧版记了却没用过） */
+function applyBookmarkLayers(bm) {
+  if (!bm.layerState) return;
+  Object.entries(bm.layerState).forEach(([view, layers]) => {
+    Object.entries(layers || {}).forEach(([layerId, cfg]) => {
+      if (layersStore.layers[view]?.[layerId] && cfg && typeof cfg.visible === 'boolean') {
+        layersStore.layers[view][layerId].visible = cfg.visible;
+      }
+    });
+  });
 }
 
 function handleBookmarkNavigate(bm) {
-  const renderer = getActiveRenderer();
-  if (!renderer) return;
-  
-  renderer.focusOn(
-    -bm.viewTransform.x / bm.viewTransform.scale,
-    -bm.viewTransform.y / bm.viewTransform.scale,
-    bm.viewTransform.scale
-  );
-  
-  // 恢复图层状态
-  if (bm.layerState) {
-    Object.entries(bm.layerState).forEach(([view, layers]) => {
-      Object.entries(layers).forEach(([layerId, cfg]) => {
-        if (layersStore.layers[view]?.[layerId]) {
-          layersStore.layers[view][layerId].visible = cfg.visible;
-        }
-      });
-    });
+  if (!bm || !bm.viewTransform) {
+    bookmarkStatus('这条书签的数据不完整，无法跳转', 'err');
+    return;
   }
-  
-  // 切换视图级别
-  if (bm.viewLevel && bm.viewLevel !== store.viewLevel) {
-    if (bm.viewLevel === 'domain') {
-      store.backToDomain();
-    } else if (bm.viewLevel === 'system') {
-      store.backToSystem();
-    } else if (bm.viewLevel === 'system_detail') {
-      if (store.currentSystem) store.selectSystem(store.currentSystem);
-      else store.backToSystem();
-    } else if (bm.viewLevel === 'planet') {
-      store.backToSystem();
+
+  // ── 同层：直接用当前画布（最常见路径，不碰视图导航）──
+  if (bm.viewLevel === store.viewLevel) {
+    const renderer = getActiveRenderer();
+    if (!renderer) {
+      bookmarkStatus(`书签属于「${levelText(bm.viewLevel)}」，但当前没有可用的画布`, 'err');
+      return;
     }
+    applyBookmarkCamera(renderer, bm);
+    applyBookmarkLayers(bm);
+    bookmarkStatus(`已跳转到书签（${levelText(bm.viewLevel)}）`, 'ok');
+    panelsStore.close('bookmarks');
+    return;
   }
-  
+
+  // ── 跨层：先按锚点把视图切过去 ──
+  if (!bm.anchorId) {
+    bookmarkStatus(
+      `这条书签记于「${levelText(bm.viewLevel)}」，但没记录定位锚点（早期版本的书签）——`
+      + '请切到那一层重新添加', 'err');
+    return;
+  }
+
+  const r = store.focusEntityOnCanvas?.(bm.anchorId);
+  if (!r || !r.ok) {
+    bookmarkStatus(`无法跳转到书签：${(r && r.error) || '定位失败'}`, 'err');
+    return;
+  }
+
+  // 视图是 `v-if` + 异步组件，切换后画布要等一拍才就绪 → nextTick 再套相机
+  nextTick(() => {
+    const renderer = getActiveRenderer();
+    if (!renderer) {
+      bookmarkStatus(`已切到「${levelText(store.viewLevel)}」，但该视图的画布尚未就绪`, 'err');
+      return;
+    }
+    applyBookmarkCamera(renderer, bm);
+    applyBookmarkLayers(bm);
+    if (bm.viewLevel !== store.viewLevel) {
+      // 锚点只能定位到实体，落点层级与书签层级不一致时**如实说明**，不假装成功
+      bookmarkStatus(
+        `书签记于「${levelText(bm.viewLevel)}」，已切到「${levelText(store.viewLevel)}」`
+        + '（层级不同，相机按原比例套用）', 'warn');
+    } else {
+      bookmarkStatus(`已跳转到书签（${levelText(bm.viewLevel)}）`, 'ok');
+    }
+  });
   panelsStore.close('bookmarks');
 }
 
 function handleRemoveBookmark(id) {
   removeBookmark(id);
-  statusText.value = '书签已删除';
+  bookmarkStatus('书签已删除');
 }
 
 function handleClearBookmarks() {
   clearAll();
-  statusText.value = '所有书签已清除';
+  bookmarkStatus('所有书签已清除');
 }
 
 // 暴露到全局
