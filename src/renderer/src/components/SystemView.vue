@@ -57,6 +57,8 @@ import Icon from './Icon.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
+// 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
+import { fadedAlpha } from '../utils/entityStatus';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { planetOrbitLayout, getPlanetColor, getPlanetRadius, sortPlanetsByOrbit } from '../composables/systemOrbit';
@@ -417,6 +419,14 @@ function drawSystemStar(ctx, system) {
   const isHovered = hoveredNode && hoveredNode.id === system.id;
   const isSource = editMode.value && dragSourceNode && dragSourceNode.id === system.id;
   const isTarget = editMode.value && targetNode && targetNode.id === system.id;
+
+  // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
+  // 命中匹配 / 悬停 / 选中 / 拖拽中不淡化（你正在关注或操作它 → 「编辑优先于装饰」）。
+  // ⚠️ 本函数**无中途 return**，所以 save/restore 可包住整个函数体。
+  const fade = fadedAlpha(system.status, {
+    focused: matched || isHovered || isSource || isTarget || selectedSystemId.value === system.id,
+  });
+  if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
   
   if (renderer.isFastMode() && !matched && !isHovered) {
     ctx.fillStyle = '#ffd700';
@@ -474,6 +484,8 @@ function drawSystemStar(ctx, system) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+
+  if (fade < 1) ctx.restore();   // 与函数开头的 save 配对（叙事状态淡化）
 }
 
 function drawSystemPlanets(ctx, system) {
@@ -481,6 +493,10 @@ function drawSystemPlanets(ctx, system) {
     const matched = store.isNodeMatched(planet.id);
     const isCurrent = store.isCurrentMatch(planet.id);
     const isHovered = hoveredNode && hoveredNode.id === planet.id;
+
+    // 叙事状态淡化（2026-09-24）：同 drawSystemStar；命中匹配 / 悬停时不淡化
+    const fade = fadedAlpha(planet.status, { focused: matched || isHovered });
+    if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
     
     if (matched) {
       ctx.fillStyle = isCurrent ? '#ffd700' : '#ffaa00';
@@ -510,6 +526,8 @@ function drawSystemPlanets(ctx, system) {
       ctx.textAlign = 'center';
       ctx.fillText(planet.displayName || planet.name, planet.x, planet.y + getPlanetRadius(planet.layer) + pFont * 1.2);
     }
+
+    if (fade < 1) ctx.restore();   // 与上面的 save 配对（叙事状态淡化）
   });
 }
 
@@ -714,6 +732,17 @@ watch(() => [props.systems, props.planets, props.locations], () => {
 watch(() => [store.searchResults, store.searchMatchIndex], () => {
   renderer.requestRender();
 }, { deep: true });
+
+// 叙事状态变更 → 重绘（2026-09-24）。
+// ⚠️ 必须走这个指纹：`updateNode` 是 `Object.assign(node, …)` **就地改字段** —— 既不换数组引用、
+//    也不换节点对象，所以基于「数组/对象引用」的浅 watch 全都捕捉不到 status 变化。
+// ⚠️ `systemLayouts` 是本地缓存（由 applyLayout 重建、status 为拷贝值），所以这里必须重建，
+//    不能只 requestRender。（上面的 props deep watch 其实覆盖了同一条路径，这里是显式声明 +
+//    防止 props 来源变化后静默失效。）
+watch(() => store.statusRevision, () => {
+  applyLayout();
+  renderer.requestRender();
+});
 
 // ===== 编辑模式切换 =====
 function toggleEditMode() {

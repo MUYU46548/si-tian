@@ -57,6 +57,8 @@ import Icon from './Icon.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
+// 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
+import { fadedAlpha } from '../utils/entityStatus';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { planetOrbitLayout, ORBIT_RING_START, ORBIT_RING_STEP, getPlanetColor, getPlanetRadius, getStarRadius, getStarColor, sortPlanetsByOrbit } from '../composables/systemOrbit';
@@ -161,6 +163,10 @@ const systemBodies = computed(() => {
 });
 
 const planetLayouts = computed(() => {
+  // 叙事状态淡化（2026-09-24）：本 computed 把节点**展开成布局副本**（`{...planet, x, y}`），
+  // 副本里的 status 是拷贝值。而 `updateNode` 就地改字段不换引用 → computed 不会重算 →
+  // 画布永远画旧状态。显式依赖这个指纹，让副本随状态一起刷新。
+  void store.statusRevision;
   if (!props.system) return [];
   const sysCoord = props.system.coordinate;
   // 第一轮：恒星直接子行星，轨道顺序按标准化命名罗马数字（衡佑Ⅲ < 津廊Ⅵ），无数字保持原序
@@ -772,6 +778,11 @@ function drawStar(ctx) {
   // B1: 光谱类型配色（默认 G 型，与之前金色一致，向后兼容）
   const starColor = getStarColor(primary?.starType);
 
+  // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
+  // 命中匹配时不淡化（你正在看它 → 「编辑优先于装饰」）。本函数无中途 return。
+  const fade = fadedAlpha((primary || props.system).status, { focused: matched });
+  if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
+
   // B3：双星系统 — 主恒星居中，子恒星绕行（预留：仅渲染子恒星标记，暂不实现质心轨道）
   const binaryStars = bodies.binaryStars;
   if (binaryStars.length > 0) {
@@ -831,6 +842,8 @@ function drawStar(ctx) {
   ctx.font = `bold ${font}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.fillText(starName.value || props.system.displayName || props.system.name, 0, font * 1.9);
+
+  if (fade < 1) ctx.restore();   // 与函数开头的 save 配对（叙事状态淡化）
 }
 
 function drawPlanets(ctx) {
@@ -839,6 +852,10 @@ function drawPlanets(ctx) {
     const matched = store.isNodeMatched(planet.id);
     const isCurrent = store.isCurrentMatch(planet.id);
     const isHovered = hoveredPlanetId === planet.id;
+
+    // 叙事状态淡化（2026-09-24）：同 drawStar；命中匹配 / 悬停时不淡化
+    const fade = fadedAlpha(planet.status, { focused: matched || isHovered });
+    if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
 
     // 卫星：绕母行星的虚线小轨道 + 小号天体（批次D5）
     if (planet.isMoon) {
@@ -892,6 +909,8 @@ function drawPlanets(ctx) {
       ctx.textAlign = 'center';
       ctx.fillText(planet.displayName || planet.name, planet.x, planet.y + r + pFont * 1.2);
     }
+
+    if (fade < 1) ctx.restore();   // 与上面的 save 配对（叙事状态淡化）
   }
 }
 
@@ -1166,7 +1185,9 @@ onUnmounted(() => {
 });
 
 // 切换恒星系（箭头跳转/面包屑切换）或数据变化时重绘；换系后重新自适应视野
-watch(() => [props.system?.id, store.currentSystemPlanets, store.hyperlanes, store.searchResults, store.searchMatchIndex, store.spaceMarkers, store.fleetCards], () => {
+// `props.system` 整个对象（而不是只 `.id`）：叙事状态淡化（2026-09-24）需要覆盖**恒星自身**的 status ——
+// 只监听 id 的话，恒星状态改了画布不会重绘。
+watch(() => [props.system, store.currentSystemPlanets, store.hyperlanes, store.searchResults, store.searchMatchIndex, store.spaceMarkers, store.fleetCards], () => {
   if (props.system?.id !== fitSystemId) {
     fitSystemId = props.system?.id || null;
     fitSystem();

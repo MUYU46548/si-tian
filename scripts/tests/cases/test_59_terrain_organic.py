@@ -53,10 +53,19 @@ def _uniq(cdp):
 
 
 def _set_layers(cdp, grid, layer):
+    """`layer` = **地形多边形**是否显示。
+
+    M2/A2 第二步随动：`terrain[]` 已降为**可选覆盖物** —— 有高度图的行星上，「地形」总开关
+    现在渲染的是**高度图**，多边形只在「多边形」图层打开时出现。本用例测的是**多边形本身**
+    的有机轮廓/纹理质量，所以：
+      · 关掉「地形」总开关（不让高度图盖在上面）
+      · 用「多边形」图层控制开关 → 此时多边形是唯一地形显示 = **实色不透明，与从前一致**
+    """
     return cdp.eval(f"""(() => {{
       const pm = {PM};
       pm.terrainCanvasBrush.terrainGridEnabled.value = {str(grid).lower()};
-      if (pm.layers.layers.planet['terrain'].visible !== {str(layer).lower()}) pm.layers.toggleLayer('planet', 'terrain');
+      if (pm.layers.layers.planet['terrain'].visible) pm.layers.toggleLayer('planet', 'terrain');
+      if (pm.layers.layers.planet['terrainPolygons'].visible !== {str(layer).lower()}) pm.layers.toggleLayer('planet', 'terrainPolygons');
       pm.renderer.requestRender();
       return 'ok';
     }})()""")
@@ -133,8 +142,14 @@ def run(cdp):
 
     try:
         dcode = _code_only(_read_src('src/renderer/src/composables/planetDrawing.js'))
-        if 'ctx.globalAlpha = 0.45;' not in dcode:
-            fails.append('地形纹理叠加强度未回落到 0.45（大尺度柔纹不该再按旧强度叠）')
+        # M2/A2 第二步：多边形可能以**半透明覆盖物**身份出现（叠在高度图上），
+        # 纹理叠加强度必须随整体 alpha 一起缩放 —— 基准仍是 0.45。
+        # ⚠️ 判据要求「乘以 alpha」，不是「等于 0.45」：只写裸 0.45 时，
+        #    覆盖物淡下去了、纹理却还是原强度 → 覆盖物看起来比底色"更实"（观感不一致）。
+        if 'ctx.globalAlpha = 0.45 * alpha;' not in dcode:
+            fails.append('地形纹理叠加强度未随 alpha 缩放（基准应保持 0.45）')
+        if 'ctx.globalAlpha = 0.45;' in dcode:
+            fails.append('地形纹理叠加强度写成了裸 0.45（覆盖物半透明时纹理会比底色更实）')
     except OSError as e:
         fails.append(f'读不到 planetDrawing.js（{e}）')
 

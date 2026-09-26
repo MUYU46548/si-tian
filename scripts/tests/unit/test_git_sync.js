@@ -21,6 +21,23 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const H = require(path.join(ROOT, 'src', 'main', 'handlers', 'gitSyncHandler.js'));
 
+// 🔴 测试必须**完全隔离用户的全局 git 配置**（2026-09-24 修，实测踩到）：
+//    `git credential approve / fill` 会去用**用户系统里配置的凭据助手** —— Windows 上通常是
+//    Git Credential Manager，它会弹出「Credential Helper Selector」GUI 窗口**打断用户**，
+//    还可能把测试用的假令牌写进用户的凭据库。
+//    做法：把 `GIT_CONFIG_GLOBAL` 指到测试自己的临时配置（含提交必需的 user.name/email），
+//    再用 `GIT_CONFIG_NOSYSTEM=1` 忽略系统级配置 —— 本进程后续所有 git 调用都不再碰用户环境。
+//    注：`gitSyncHandler.runGit` 的 env 是 `{ ...process.env, ... }`，所以在这里改即全局生效。
+const TEST_GITCONFIG = path.join(os.tmpdir(), `sitian-test-gitconfig-${process.pid}`);
+try {
+  fs.writeFileSync(
+    TEST_GITCONFIG,
+    '[user]\n\tname = SiTian Test\n\temail = test@sitian.local\n[init]\n\tdefaultBranch = main\n'
+  );
+} catch (e) { /* 写不了就让 git 自身失败，用例会如实报红 */ }
+process.env.GIT_CONFIG_GLOBAL = TEST_GITCONFIG;
+process.env.GIT_CONFIG_NOSYSTEM = '1';
+
 const results = [];
 function check(name, fn) {
   return Promise.resolve()
@@ -222,7 +239,10 @@ async function main() {
     assert(r.stdout.includes('password=' + TOKEN), `git 没取到令牌：${r.stdout.slice(0, 120)}`);
     assert(r.stdout.includes('username=muyu'), `用户名没传对：${r.stdout.slice(0, 120)}`);
     // 无令牌时不该注入 helper（否则会拿空密码去撞验证，走到 "Authentication failed" 而非"缺令牌"）
-    eq(H.credentialArgs(null).length, 0, '无令牌时应不注入 helper');
+    // 🔴 无令牌时**必须仍然清空**系统 credential helper（而不是返回空参数）——
+    //    否则 git 会落到系统凭据助手（Windows 上是 GCM，会弹 GUI 窗口打断用户）。
+    const resetArgs = H.credentialArgs(null);
+    eq(resetArgs.join(' '), '-c credential.helper=', '无令牌时应只清空系统 helper（不得落到系统 GCM，也不得注入令牌）');
     return '令牌经环境变量进入 git，不进 argv';
   });
 
@@ -390,6 +410,8 @@ async function main() {
   }
 
   await fsp.rm(TMP, { recursive: true, force: true }).catch(() => {});
+  // 顺手清掉为「隔离用户全局 git 配置」建的临时配置文件
+  await fsp.rm(TEST_GITCONFIG, { force: true }).catch(() => {});
   return failed.length ? 1 : 0;
 }
 
@@ -398,5 +420,6 @@ main()
   .catch(async (err) => {
     console.error('单元测试运行器异常:', err);
     await fsp.rm(TMP, { recursive: true, force: true }).catch(() => {});
+    await fsp.rm(TEST_GITCONFIG, { force: true }).catch(() => {});
     process.exit(1);
   });

@@ -12,7 +12,7 @@
 
 import { ref, computed, watch } from 'vue';
 import { defineStore } from 'pinia';
-import { execute } from './undo';
+import { execute, clearHistory } from './undo';
 // 单一写闸门（Phase 2）：打开项目 = 切到 'project' 写模式；关闭 = 回到无项目默认模式
 import { setWriteMode, resetWriteMode } from './writeGate';
 // 画布接线（Phase 2.4）：打开/保存/关闭项目时驱动 geodata 侧切换事实源。
@@ -20,6 +20,9 @@ import { setWriteMode, resetWriteMode } from './writeGate';
 import { getCanvasAdapter, setProjectSink, setImportHandler } from './canvasBridge';
 // 退出前落盘（数据安全）：注册到中立注册表（App 只跟注册表打交道，不 import 本 store）
 import { registerFlush } from './quitFlush';
+// B5（2026-09-24）：保存状态同步到底部**常驻**状态栏 —— 项目面板可能是关着的，
+// 用户不能只在打开面板时才知道落盘失败。
+import { setSaveState } from '../composables/useStatusBar';
 import {
   createEmptyProject,
   createEntity as createEntityShape,
@@ -29,6 +32,7 @@ import {
   restoreSnapshot as restoreSnapshotState,
   snapshotSummaries,
   snapshotState,
+  snapshotStateWithHeavy,
   projectStats,
   entityIdFromName,
   forbiddenParentIds,
@@ -113,8 +117,34 @@ export const useProjectStore = defineStore('project', () => {
     return (typeof window !== 'undefined' && window.sitianAPI) ? window.sitianAPI : null;
   }
 
+  // 保存状态 → 状态栏文案（B5）。'idle' 表示无待显示信息。
+  const SAVE_STATE_TEXT = {
+    saving: { kind: 'busy', text: '正在保存…' },
+    saved: { kind: 'ok', text: '已保存' },
+    staged: { kind: 'warn', text: '已交给项目，待写入' },
+    error: { kind: 'err', text: '保存失败' },
+  };
+
+  /**
+   * 更新保存状态。
+   * 🔴 同时同步到**底部常驻状态栏**（B5，2026-09-24）：项目面板可能关着，
+   *    用户在行星图里连着画几小时时完全看不出落盘失败。
+   * ⚠️ `error` **不自动消失**（旧实现给 5s TTL，失败提示一闪而过等于没提示）——
+   *    由下一次成功保存（'saved'/'idle'）来清。
+   */
   function setSaveStatus(status, ttl = 0) {
     saveStatus.value = status;
+    try {
+      const s = SAVE_STATE_TEXT[status];
+      setSaveState(s
+        ? {
+          ...s,
+          title: status === 'error'
+            ? (lastError.value || '未知原因')
+            : (lastSavedAt.value ? `最后保存：${lastSavedAt.value}` : ''),
+        }
+        : null);
+    } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
     if (ttl > 0) {
       setTimeout(() => { if (saveStatus.value === status) saveStatus.value = 'idle'; }, ttl);
     }
@@ -135,12 +165,31 @@ export const useProjectStore = defineStore('project', () => {
     lastError.value = '';
     // 有项目 → 允许写（写进项目文件）
     setWriteMode('project', `已打开项目：${migrated.project.meta.name}`);
+    // 🔴 P3（2026-09-25）：**接管项目时清空 undo 栈**。
+    //    undo 命令的 undo/redo 闭包捕获的是「它当时操作的那个数据对象」（上一个项目 / 知识库态的
+    //    `nodes.value`、`baseMaps.value`…）。不清栈就会出现「在新项目里按 Ctrl+Z，把上一个项目
+    //    （或知识库工作态）的形状回滚进来」—— 而画布此刻画的是新项目的数据，用户看到的是一次
+    //    无法解释的改动（文档 P3 记的正是这条）。
+    //    ⚠️ 只放在这里，**不要**下沉到 geodata 的 `applyProjectToCanvas`：那个函数还被
+    //    `seedFromPayload`（导入知识库内容）复用来「重新装载一次画布」，放在那里会把刚入栈的
+    //    导入命令一起清掉 —— 「导入 = 一条 undo」立刻失效（test_50 实测抓到）。
+    clearHistory();
     // Phase 2.4 接线：画布切到项目文件（实体树/航道/地图/剧本），并保留关闭时的回退留底
     const adapter = getCanvasAdapter();
     if (adapter && typeof adapter.applyProject === 'function') {
       adapter.applyProject(project.value);
     }
-    return { success: true, problems: migrated.problems, steps: migrated.steps };
+    // 🔴 主进程的告警必须传出来（2026-09-24）：典型是「会话基线未能创建」——
+    //    静默吞掉会让用户以为有回滚点。App.vue 不能 import 本 store（静态闸门），
+    //    所以经全局事件转达（沿用 sitian:label-styles-changed 那套）。
+    if (payload.baselineWarning) {
+      try {
+        window.dispatchEvent(new CustomEvent('sitian:project-warning', {
+          detail: { message: payload.baselineWarning },
+        }));
+      } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
+    }
+    return { success: true, problems: migrated.problems, steps: migrated.steps, baselineWarning: payload.baselineWarning || null };
   }
 
   /** 让画布重新装载当前项目（maps / 剧本 / 编辑器容器不在 watch(entities) 的同步范围内） */
@@ -338,6 +387,29 @@ export const useProjectStore = defineStore('project', () => {
     };
   }
 
+  /**
+   * 启动时恢复上次打开的项目（B4，2026-09-24）。
+   *
+   * 背景：每次启动都从「无项目 = 只读」开始，老用户每天第一件事都是去项目面板开项目。
+   * ⚠️ 这里**只负责尝试**：没有记录 / 文件已被删除或移动 / 解析失败，一律返回失败，
+   *    由调用方静默回落到只读 —— **绝不阻塞启动**（启动期报错是最糟的用户体验）。
+   */
+  async function restoreLastProject() {
+    const a = api();
+    if (!a || !a.projectGetLastPath) return { success: false, reason: 'no-api' };
+    let p = '';
+    try {
+      const r = await a.projectGetLastPath();
+      p = (r && r.success && r.path) || '';
+      if (!p) return { success: false, reason: (r && r.missing) ? 'missing' : 'none' };
+    } catch (e) {
+      return { success: false, reason: 'ipc-failed' };
+    }
+    const res = await openProject(p);
+    if (res && res.success) return { success: true, path: p };
+    return { success: false, reason: (res && res.error) || 'open-failed', path: p };
+  }
+
   async function openProject(path = '') {
     const a = api();
     if (!a || !a.projectOpen) return { success: false, error: API_MISSING };
@@ -361,16 +433,29 @@ export const useProjectStore = defineStore('project', () => {
         ? mergeCanvasPayload(project.value, adapter.exportCanvas())
         : project.value;
       const withSnapshot = pushSnapshot(merged, { label, keep });
+      // 🔴 竞态守卫（2026-09-24）：`await` 期间用户可能继续编辑 —— `syncFromCanvas` 会把
+      //    `project.value` 换成**新对象**并置 `dirty = true`。若返回后无条件回写 `withSnapshot`
+      //    并清 dirty，那批新编辑会被旧快照覆盖、且此后 `scheduleAutoSave` 看到 dirty=false 不再保存
+      //    = 静默丢数据（画布突然回退到保存前）。所以先记下「落盘时的项目引用」，
+      //    返回后只在**未被改动**时才确认；已改动则保留新态、维持 dirty 并立刻重排一次保存。
+      const snapshotOf = project.value;
       const res = await a.projectSave({ filePath: filePath.value, project: withSnapshot });
       if (!res || !res.success) throw new Error((res && res.error) || '写入失败');
+      lastSavedAt.value = new Date().toISOString();
+      if (project.value !== snapshotOf) {
+        // 保存期间有新编辑：以内存为准，稍后再落一次盘（本次写入的内容已成为历史）
+        dirty.value = true;
+        setSaveStatus('saving');
+        scheduleAutoSave();
+        return { success: true, bytes: res.bytes, backupPath: res.backupPath, superseded: true };
+      }
       project.value = withSnapshot;
       dirty.value = false;
-      lastSavedAt.value = new Date().toISOString();
       setSaveStatus('saved', 3000);
       return { success: true, bytes: res.bytes, backupPath: res.backupPath };
     } catch (err) {
       lastError.value = err.message || String(err);
-      setSaveStatus('error', 5000);
+      setSaveStatus('error');   // B5：失败态不自动消失，由下次成功保存来清
       return { success: false, error: lastError.value };
     }
   }
@@ -408,7 +493,7 @@ export const useProjectStore = defineStore('project', () => {
       if (!res || res.success !== true) {
         const why = (res && res.error) || lastError.value || '未知错误';
         lastError.value = why;
-        setSaveStatus('error', 5000);
+        setSaveStatus('error');   // B5：失败态不自动消失，由下次成功保存来清
         return {
           success: false,
           error: `还有未保存的改动，且保存失败（${why}）—— 项目**未关闭**，数据仍在内存里；请重试保存（工具栏「项目」→ 保存）或先「备份」再关`,
@@ -428,6 +513,8 @@ export const useProjectStore = defineStore('project', () => {
     setSaveStatus('idle');
     // 回到「无项目」默认模式：READONLY_WITHOUT_PROJECT=true 时即切换为只读（决策 1）
     resetWriteMode('项目已关闭');
+    // P3（2026-09-25）：关闭项目后「撤销」不该回退到项目内的编辑 —— 那些闭包指向已下线的数据对象
+    clearHistory();
     return { success: true, saved };
   }
 
@@ -483,7 +570,9 @@ export const useProjectStore = defineStore('project', () => {
     const res = restoreSnapshotState(project.value, index);
     if (!res.ok) return res;
     const keys = includeMaps ? [...SNAPSHOT_DIFF_KEYS, 'maps'] : SNAPSHOT_DIFF_KEYS;
-    const before = snapshotState(project.value, keys);
+    // ⚠️ before 必须用**含重字段**的那份：快照不管理高度图/参考图（体积），
+    //    若这里用裁剪过的 snapshotState，一次「回滚 + 撤销」就会把地形吃掉。
+    const before = snapshotStateWithHeavy(project.value, keys);
     const after = { ...before, ...res.state };
     execute({
       type: 'project-restore-snapshot',
@@ -551,6 +640,56 @@ export const useProjectStore = defineStore('project', () => {
       },
     });
     return { success: true, entity };
+  }
+
+  /**
+   * 批量创建实体（B7，2026-09-24）—— **一条 undo**。
+   *
+   * 为什么必须批量化：`createEntity` 逐条调会生成 N 条 undo 记录 ——
+   * 用户粘 30 个城市名，要按 30 次 Ctrl+Z 才能撤回；而真实建世界观本来就是「一次建一批」。
+   * 语义：**每行一个名称**；空行忽略；与已有实体同名的**跳过并回报**（不静默吞掉）。
+   * @param {string[]} names
+   * @param {{parentId?: string|null, layer?: string}} opts
+   */
+  function createEntities(names = [], { parentId = null, layer = '' } = {}) {
+    if (!project.value) return { success: false, error: '没有打开的项目' };
+    const wanted = (Array.isArray(names) ? names : []).map(n => String(n || '').trim()).filter(Boolean);
+    if (!wanted.length) return { success: false, error: '没有可创建的名称（每行一个）' };
+    if (!layer) return { success: false, error: '请先选择层级' };
+    if (parentId && !entities.value[parentId]) return { success: false, error: `父实体「${parentId}」不存在` };
+
+    const existingIds = Object.keys(entities.value);
+    const usedNames = new Set(Object.values(entities.value).map(e => e.name));
+    const created = [];
+    const skipped = [];
+    for (const nm of wanted) {
+      if (usedNames.has(nm)) { skipped.push(`${nm}（同名已存在）`); continue; }
+      const entity = createEntityShape({ name: nm, layer, parentId, existingIds });
+      existingIds.push(entity.id);
+      usedNames.add(nm);
+      created.push(entity);
+    }
+    if (!created.length) return { success: true, created, skipped, nothingNew: true };
+
+    execute({
+      type: 'project-add-entities',
+      label: `批量新建 ${created.length} 个实体`,
+      category: 'property',
+      undo: () => {
+        const ids = new Set(created.map(c => c.id));
+        const rest = {};
+        Object.entries(project.value.entities).forEach(([k, v]) => { if (!ids.has(k)) rest[k] = v; });
+        project.value = { ...project.value, entities: rest };
+        dirty.value = true; scheduleAutoSave();
+      },
+      redo: () => {
+        const next = { ...project.value.entities };
+        created.forEach(c => { next[c.id] = c; });
+        project.value = { ...project.value, entities: next };
+        dirty.value = true; scheduleAutoSave();
+      },
+    });
+    return { success: true, created, skipped };
   }
 
   function updateEntity(id, patch = {}) {
@@ -731,6 +870,8 @@ export const useProjectStore = defineStore('project', () => {
   return {
     // state
     project, filePath, projectDir, availableProjects, saveStatus, lastSavedAt, lastError, dirty,
+    restoreLastProject,
+    createEntities,
     // computed
     isOpen, meta, entities, entityList, entityTree, entityCount, snapshots, stats,
     // project CRUD

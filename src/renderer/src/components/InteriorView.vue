@@ -57,9 +57,14 @@
         </button>
       </div>
       <div class="floor-actions">
-        <button class="floor-btn" @click="addFloor" title="添加楼层"><Icon name="plus" :size="13"/> 楼层</button>
-        <button class="floor-btn" @click="renameFloor" :disabled="floors.length <= 1" title="重命名楼层"><Icon name="pencil" :size="13"/> 命名</button>
-        <button class="floor-btn danger" @click="removeFloor" :disabled="floors.length <= 1" title="删除当前楼层"><Icon name="trash" :size="13"/> 删除</button>
+        <!-- ⚠️ 本栏**不受 editMode 控制**（楼层切换在浏览态也要用），所以只读灰禁必须写在这里：
+             否则只读态下这三个按钮照常可点 → 改内存但永不落盘 = 用户以为删掉了、重启又回来 -->
+        <button class="floor-btn" @click="addFloor" :disabled="store.isReadOnly"
+                :title="store.isReadOnly ? store.readOnlyReason : '添加楼层'"><Icon name="plus" :size="13"/> 楼层</button>
+        <button class="floor-btn" @click="renameFloor" :disabled="store.isReadOnly || floors.length <= 1"
+                :title="store.isReadOnly ? store.readOnlyReason : '重命名楼层'"><Icon name="pencil" :size="13"/> 命名</button>
+        <button class="floor-btn danger" @click="removeFloor" :disabled="store.isReadOnly || floors.length <= 1"
+                :title="store.isReadOnly ? store.readOnlyReason : '删除当前楼层'"><Icon name="trash" :size="13"/> 删除</button>
       </div>
     </div>
 

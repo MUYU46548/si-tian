@@ -279,6 +279,23 @@
             <Icon name="castle" :size="13"/> Burg Editor（规模 / 人口 / 文化）
           </button>
         </div>
+        <!-- 叙事状态（2026-09-24）：用户决策「毁灭只是叙事状态，不是数据删除」——
+             状态只影响**怎么显示**（画布/列表淡化），坐标 / 地图 / 剧本数据一律完整保留。
+             清空数据才是真的毁掉历史地图，所以这里绝不联动任何删除。 -->
+        <div class="prop-field" data-testid="entity-status-field">
+          <label>叙事状态</label>
+          <select
+            class="status-select"
+            :value="currentStatus"
+            :disabled="store.isReadOnly"
+            :title="statusHint"
+            @change="onStatusChange($event.target.value)"
+          >
+            <option v-for="s in statusChoices" :key="s.id" :value="s.id">{{ s.label }}</option>
+          </select>
+          <p class="status-hint">{{ statusHint }}</p>
+        </div>
+
         <div class="prop-field">
           <label>标签</label>
           <div class="tag-editor">
@@ -778,6 +795,21 @@ function goBackToNode() {
     const prevNode = nodeHistory.value.pop();
     store.selectNode(prevNode);
   }
+}
+
+// ── 叙事状态（2026-09-24）────────────────────────────────────────────────────
+// 决策：**毁灭只是叙事状态**，不是数据删除。实体可以保留（用状态标记），也可以根本不建
+// （那种情况走「剧本底图自持高度图」，见 docs/A1_DATA_MODEL_DECISION.md 第六节）。
+import { statusOptions, resolveStatus, statusMeta } from '../utils/entityStatus';
+
+const statusChoices = statusOptions();
+const currentStatus = computed(() => resolveStatus(node.value && node.value.status));
+const statusHint = computed(() => statusMeta(node.value && node.value.status).hint);
+
+/** 走 updateNode（通用 patch + 一条 undo）——与其它属性编辑同一条路径 */
+function onStatusChange(next) {
+  if (!node.value) return;
+  store.updateNode(node.value.id, { status: resolveStatus(next) });
 }
 
 // 标签搜索
@@ -2165,4 +2197,20 @@ function updateCoordinate(axis, value) {
 }
 .promote-notice.ok { background: rgba(92, 184, 92, 0.14); color: #3f7d3f; }
 .promote-notice.warn { background: rgba(230, 126, 34, 0.16); color: #a85a12; }
+/* 叙事状态（2026-09-24） */
+.status-select {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--input-bg, var(--btn-bg));
+  color: var(--text-primary);
+}
+.status-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
 </style>

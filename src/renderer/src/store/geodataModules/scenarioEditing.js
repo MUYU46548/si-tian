@@ -3,9 +3,18 @@
 // 所有 mutation 走 execute（redo 内写入，防双写铁律）
 
 
-import { ref } from 'vue';
+import { ref, toRaw } from 'vue';
 // 内存编辑闸门：本模块有 2 个「不走 execute()」的直接写（剧本导入 / .map 图层同步），只读态必须同样拦
 import { guardWrite } from '../writeGate';
+
+// ── A1/M1（2026-09-24）：高度图归属访问 ──────────────────────────────────────
+// 规则与理由见 utils/heightmapAccess.js 与 docs/A1_DATA_MODEL_DECISION.md。
+// ⚠️ 纪律：本模块内**任何**高度图读写都必须经 getHeightmapFor / commitHeightmap ——
+//    直接摸 `baseMaps.value[k].heightmap` 在底图绑定行星后会读到/写到一份**没人看的数据**（静默分裂）。
+import {
+  boundPlanetId, resolveHeightmap, hasGrid,
+  planBindBaseMapToPlanet, planUnbindBaseMap, buildGridFromTerrain,
+} from '../../utils/heightmapAccess';
 import {
   brushFalloff, deriveLayers, SEA_LEVEL,
 } from '../../utils/heightMath';
@@ -31,6 +40,290 @@ export function createScenarioEditingModule(ctx) {
   // BaseMaps CRUD（全走 execute，undo 支持）
   // ============================================================
   
+  // ══ 高度图归属访问（A1/M1，2026-09-24）══════════════════════════════════════
+  // 决策：**以行星的高度图为单一真源，剧本底图按 planetId 绑定"代理"过去**（不复制）。
+  // 未绑定 → 用底图自己那份（自建底图 / 旧项目，行为与从前完全一致）。
+
+  /** 取该底图**实际使用**的高度图（绑定行星 → 行星那份；否则 → 底图自己那份）。 */
+  function getHeightmapFor(baseMapKey) {
+    return resolveHeightmap(baseMaps.value[baseMapKey], mapData.value).heightmap;
+  }
+
+  /** 该底图绑定到的行星 id（没绑定 → null）。 */
+  function getBoundPlanetId(baseMapKey) {
+    return boundPlanetId(baseMaps.value[baseMapKey]);
+  }
+
+  /**
+   * **哪些底图正绑定到这颗行星**（A1/R4，2026-09-25）。
+   *
+   * 用途：行星侧在高度图损坏时会用「地形多边形的 `elevation` 估值」**重建**它
+   * （`usePlanetHeightBrush.ensureHeightmap`）。绑定之后那份数据是**共享的** ——
+   * 重建不是行星自己的私事，它会把共用这份地形的剧本一起改掉。
+   * 所以重建的提示必须点名受影响的底图，否则用户只会看到「剧本的地形怎么变了」。
+   */
+  function getBaseMapsBoundToPlanet(planetId) {
+    if (!planetId) return [];
+    const out = [];
+    for (const [key, bm] of Object.entries(baseMaps.value || {})) {
+      if (bm && boundPlanetId(bm) === planetId) out.push({ key, name: bm.name || key });
+    }
+    return out;
+  }
+
+  /**
+   * 写入该底图的高度图 —— **绑定了行星就写行星那份**。
+   *
+   * 🔴 为什么必须有这个函数：底图侧原来的写入模式是「整体替换 baseMap 对象」
+   *    （`{ ...baseMap, heightmap: {...} }`），**天然与"共享引用"冲突** —— 一写就把引用换掉了。
+   *    绑定之后若还这么写，就会写到一份**无人读取的副本**上（静默分裂：用户以为改了，画布不变）。
+   *    所以：绑定后的读与写都必须落在行星那份上，二者必须**同时**走本模块。
+   *
+   * 注：底图侧（self）不在此处排自动保存 —— 由调用方的 `saveScenarios()` 负责（保持原行为）。
+   */
+  function commitHeightmap(baseMapKey, nextHeightmap, { touch = true } = {}) {
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return { owner: 'none' };
+    const pid = boundPlanetId(bm);
+    // `touch=false` 供 undo 使用：撤销回填不打时间戳 —— 与 M1b 之前「undo 闭包里不写 updatedAt」逐字段一致。
+    const stamp = touch ? { updatedAt: new Date().toISOString() } : {};
+    if (pid) {
+      const planet = mapData.value[pid];
+      if (planet) {
+        mapData.value[pid] = { ...planet, heightmap: nextHeightmap, ...stamp };
+        scheduleAutoSaveMap(pid);   // 绑定后落盘归行星侧管
+        return { owner: 'planet', planetId: pid, dangling: false };
+      }
+      // 🔴 **悬空绑定**（行星已被删除 / 改名而未级联）：与 `resolveHeightmap` 的 dangling 口径保持一致 ——
+      //    回落到底图自身写入。**绝不静默 return**：那等于把用户刚涂的一笔直接丢掉，且没有任何反馈
+      //    （底图侧那份在绑定期被 delete 掉了，所以必须在这里把 newHeightmap 落到底图侧）。
+      baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...bm, heightmap: nextHeightmap, ...stamp } };
+      return { owner: 'self', planetId: pid, dangling: true };
+    }
+    baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...bm, heightmap: nextHeightmap, ...stamp } };
+    return { owner: 'self', planetId: null, dangling: false };
+  }
+
+  /**
+   * 为底图创建高度图网格 —— **未绑定行星时的"从零开始画"入口**（A1，2026-09-24）。
+   *
+   * 🔴 为什么必须有这个入口：底图的高度图此前**只有 `.map` 导入一条来源**
+   *    （全仓 `ScenarioMap.vue` / 本文件里没有任何创建 heightmap 的代码）。
+   *    后果是：用户新建一张底图后，高度笔刷 / 群系 / 文化 / 宗教 / 一键派生**全部**因为
+   *    `!hasGrid(hm)` 而直接 return —— 表现为「工具点了没反应」，而且几乎没有反馈。
+   *    这也正是「剧情上已毁灭、不打算再建行星的星球」唯一可走的路径：
+   *    **不绑定行星，底图自己持有一份高度图**（不是兼容兜底，是一等场景）。
+   *
+   * 范围：优先按底图已有地形的包围盒外扩；空底图给一个默认方框（之后用笔刷涂即可）。
+   */
+  function createBaseMapHeightmap(baseMapKey, { spacing, margin } = {}) {
+    if (!guardWrite('创建底图高度图').ok) return { ok: false, error: '只读：未打开项目' };
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return { ok: false, error: '底图不存在' };
+    if (boundPlanetId(bm)) {
+      return { ok: false, error: '该底图已绑定行星 —— 高度图由行星侧提供，请到行星地图里编辑（或先解绑）' };
+    }
+    if (hasGrid(getHeightmapFor(baseMapKey))) return { ok: false, error: '该底图已有高度图了' };
+
+    const grid = buildGridFromTerrain(bm.terrain || [], spacing || 14.4, margin == null ? 2 : margin);
+    const count = grid.points.length;
+    const before = bm.heightmap || null;
+    const after = {
+      grid,
+      h: new Float32Array(count),
+      temp: new Float32Array(count),
+      prec: new Float32Array(count),
+      biome: new Uint8Array(count),
+    };
+
+    execute({
+      type: 'create-basemap-heightmap',
+      label: `为底图创建高度图（${grid.cellsX}×${grid.cellsY}）`,
+      undo: () => { commitHeightmap(baseMapKey, before); },
+      redo: () => { commitHeightmap(baseMapKey, after); },
+    });
+    saveScenarios();
+    return { ok: true, cells: count, cellsX: grid.cellsX, cellsY: grid.cellsY };
+  }
+
+  /**
+   * 把底图绑定到行星（A1/M1）。含**一次性迁移**；两边都有高度图时**拒绝**并回报冲突
+   * （绝不静默选一边丢掉另一边 —— 那可能是用户几小时的手工地形）。
+   */
+  function bindBaseMapToPlanet(baseMapKey, planetId) {
+    if (!guardWrite('绑定底图到行星').ok) return { ok: false, error: '只读：未打开项目' };
+    const bm = baseMaps.value[baseMapKey];
+    const plan = planBindBaseMapToPlanet(bm, planetId, mapData.value, baseMaps.value);
+    if (!plan.ok) return plan;
+    const migratePid = plan.migrate ? plan.migrate.planetId : null;
+    execute({
+      type: 'bind-basemap-planet',
+      label: '底图绑定到行星',
+      undo: () => {
+        if (migratePid && mapData.value[migratePid]) {
+          const { heightmap: _dropped, ...rest } = mapData.value[migratePid];
+          mapData.value[migratePid] = rest;   // 迁移的那份退回底图侧
+        }
+        baseMaps.value = { ...baseMaps.value, [baseMapKey]: bm };
+      },
+      redo: () => {
+        if (migratePid && mapData.value[migratePid]) {
+          mapData.value[migratePid] = {
+            ...mapData.value[migratePid],
+            heightmap: plan.migrate.heightmap,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        baseMaps.value = { ...baseMaps.value, [baseMapKey]: plan.nextBaseMap };
+      },
+    });
+    saveScenarios();
+    if (migratePid) scheduleAutoSaveMap(migratePid);
+    return { ok: true, migrated: !!plan.migrate };
+  }
+
+  /** 解绑（行星侧那份保持不动；底图侧从"没有高度图"开始，由 ensure 懒创建） */
+  function unbindBaseMap(baseMapKey) {
+    if (!guardWrite('解除底图与行星的绑定').ok) return { ok: false, error: '只读：未打开项目' };
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return { ok: false, error: '底图不存在' };
+    const plan = planUnbindBaseMap(bm);
+    execute({
+      type: 'unbind-basemap-planet',
+      label: '解除底图与行星的绑定',
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: bm }; },
+      redo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: plan.nextBaseMap }; },
+    });
+    saveScenarios();
+    return { ok: true };
+  }
+
+  // ══ M1c「导入并冻结」（2026-09-25）══════════════════════════════════════════
+  // 🔴 为什么必须有这条路径（而不是让大家都用「跟随行星」）：
+  //    「跟随」= 共用同一份数据 → 行星后来怎么改，剧本跟着变。这对**正在与行星同步构建的
+  //    当代地图**是对的；但对**历史存档剧本**是灾难 —— 存档要的就是「冻住」。
+  //    A1 文档最初否掉「复制」方案，理由是「复制即双源、漂移必然回归」；那条判断在**同步构建**
+  //    场景下成立，在**存档**场景下恰恰相反：漂移才是要防的，冻结才是目的。
+  //    用户决策（2026-09-25）：**两种模式并存，冻结为默认，跟随需显式选择。**
+
+  /**
+   * 深拷贝一份高度图（冻结导入用）。
+   *
+   * ⚠️ 必须逐数组复制：直接引用会让「副本」与行星那份共享同一个 TypedArray ——
+   *    之后在剧本里涂山照样会改到行星（看起来像绑定了，却没有任何绑定的提示）。
+   * ⚠️ 不复制 `_spatialIndex`（运行期缓存，与 grid 绑定，用时会按需重建）。
+   */
+  function cloneHeightmapForFreeze(hm) {
+    const n = hm.h ? hm.h.length : 0;
+    const out = {
+      grid: JSON.parse(JSON.stringify(hm.grid)),
+      h: new Float32Array(hm.h || new Float32Array(n)),
+      temp: new Float32Array((hm.temp && hm.temp.length === n) ? hm.temp : new Float32Array(n)),
+      prec: new Float32Array((hm.prec && hm.prec.length === n) ? hm.prec : new Float32Array(n)),
+      biome: new Uint8Array((hm.biome && hm.biome.length === n) ? hm.biome : new Uint8Array(n)),
+    };
+    if (hm.culture && hm.culture.length === n) out.culture = new Uint8Array(hm.culture);
+    if (hm.religion && hm.religion.length === n) out.religion = new Uint8Array(hm.religion);
+    return out;
+  }
+
+  /** 删除底图自持的 heightmap 字段（冻结导入的 undo 用：原本没有就该回到「没有」，而不是留个 null） */
+  function dropHeightmap(baseMapKey) {
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return;
+    const next = { ...bm };
+    delete next.heightmap;
+    baseMaps.value = { ...baseMaps.value, [baseMapKey]: next };
+  }
+
+  /** 写/清「这份地形冻结自行星 X」的**标注**（纯展示，不是真相、不是引用 —— 真相只有 planetId） */
+  function setFrozenNotice(baseMapKey, frozen) {
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return;
+    const next = { ...bm };
+    if (frozen) next.terrainFrozenFrom = frozen;
+    else delete next.terrainFrozenFrom;
+    baseMaps.value = { ...baseMaps.value, [baseMapKey]: next };
+  }
+
+  /**
+   * 把行星当前的高度图**复制**一份到底图 —— M1c 的「导入并冻结」。
+   *
+   * @param {string} baseMapKey
+   * @param {string} planetId
+   * @param {{ force?: boolean, planetName?: string }} [opts]
+   *   `force`：底图已有地形时是否确认覆盖（默认 false → 返回 conflict 由 UI 问一次）
+   *   `planetName`：仅用于展示标注（UI 侧本来就有行星列表，不必让 store 反查节点）
+   */
+  function importHeightmapFromPlanet(baseMapKey, planetId, { force = false, planetName = '' } = {}) {
+    if (!guardWrite('导入行星地形（冻结）').ok) return { ok: false, error: '只读：未打开项目' };
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return { ok: false, error: '底图不存在' };
+    if (!planetId) return { ok: false, error: '没有指定要导入的行星' };
+    if (boundPlanetId(bm)) {
+      return {
+        ok: false,
+        error: '该底图正在「跟随」行星 —— 已经是同一份地形了，不需要再导入；'
+             + '想改成独立副本，请先「解绑」再导入',
+      };
+    }
+    const planet = mapData.value[planetId];
+    if (!planet || !hasGrid(planet.heightmap)) {
+      return { ok: false, error: `行星「${planetName || planetId}」还没有地形可导入（先到行星地图里画一张或导入）` };
+    }
+    if (hasGrid(bm.heightmap) && !force) {
+      return {
+        ok: false,
+        conflict: true,
+        conflictKind: 'basemap-has-terrain',
+        error: '这张底图已经有自己的地形了 —— 导入会把它**覆盖**成行星的副本（原地形将丢失）。确认覆盖吗？',
+      };
+    }
+
+    const before = bm.heightmap || null;
+    const beforeNotice = bm.terrainFrozenFrom || null;
+    const after = cloneHeightmapForFreeze(planet.heightmap);
+    const afterNotice = { name: planetName || planetId, at: new Date().toISOString() };
+
+    execute({
+      type: 'import-planet-terrain',
+      label: '从行星导入地形（冻结）',
+      undo: () => {
+        if (before) commitHeightmap(baseMapKey, before, { touch: false });
+        else dropHeightmap(baseMapKey);
+        setFrozenNotice(baseMapKey, beforeNotice);
+      },
+      redo: () => {
+        commitHeightmap(baseMapKey, after);
+        setFrozenNotice(baseMapKey, afterNotice);
+      },
+    });
+    saveScenarios();
+    return {
+      ok: true,
+      cells: after.grid.count,
+      cellsX: after.grid.cellsX,
+      cellsY: after.grid.cellsY,
+      frozenFrom: afterNotice.name,
+    };
+  }
+
+  /** 这份底图的「地形来源」状态（UI 显示用；真相仍是 `planetId` 与 `heightmap`） */
+  function describeBaseMapTerrain(baseMapKey) {
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return { mode: 'none' };
+    const pid = boundPlanetId(bm);
+    if (pid) {
+      // 悬空绑定（行星已不存在）要点出来 —— 否则用户只看到「地形空了」，不知道是绑定失效
+      const dangling = !mapData.value[pid];
+      return { mode: 'following', planetId: pid, dangling };
+    }
+    if (hasGrid(bm.heightmap)) {
+      return { mode: 'frozen', from: bm.terrainFrozenFrom || null };
+    }
+    return { mode: 'empty' };
+  }
+
   function addBaseMap(baseMapKey, baseMap) {
     const newMap = {
       id: baseMapKey,
@@ -707,6 +1000,64 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
+  /**
+   * 修改势力的显示信息（`name` / `abbr` / `color`），走 undo。
+   *
+   * A8（2026-09-26 暮雨定案）：「自定义显示的势力名称」的**唯一写入口**。
+   * `abbr` = 可选简称 —— 缩小到只画势力名时优先用它；没填回落全名。
+   * **绝不自动截断**：机器截断会造出「大明帝国 → 大明」这类看着合理、实则臆造的名字。
+   *
+   * ⚠️ 走 `execute()` 而非裸写 —— `execute` 就是内存写的总闸门（只读态拒绝在这里生效）。
+   *    所以本函数**不需要**补 `guardWrite`、也**不该**登记进 `MEMORY_WRITE_CALLSITES`
+   *    （该表只收「自己改内存」与「先改内存后 execute」两类，见 `writeGate.js` 注释）。
+   * ⚠️ 撤销必须**显式回填旧值**（照采集期记录的对象整体写回），不做反向推断 —— 与
+   *    `changeNodeId` 同一条纪律：改名的补丁不可逆，推断必然漏。
+   */
+  function updatePolity(scenarioId, polityId, patch = {}) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { success: false, reason: 'no-scenario' };
+    const list = scenario.polities || [];
+    const idx = list.findIndex(p => p.id === polityId);
+    if (idx < 0) return { success: false, reason: 'no-polity' };
+
+    const before = { ...list[idx] };
+    const next = { ...before };
+    for (const k of ['name', 'abbr', 'color']) {
+      if (patch[k] === undefined) continue;
+      const raw = patch[k];
+      const v = typeof raw === 'string' ? raw.trim() : raw;
+      // name 是必填：清空视为「没输入」，保留原名（不留无名势力 → 标签整条消失且无法解释）
+      if (k === 'name' && (v === '' || v === null)) continue;
+      if (v === '' || v === null) { delete next[k]; continue; }
+      next[k] = v;
+    }
+
+    const changed = ['name', 'abbr', 'color'].some((k) => before[k] !== next[k]);
+    if (!changed) return { success: true, changed: false };
+
+    const apply = (target, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const arr = (cur.polities || []).slice();
+      const at = arr.findIndex(p => p.id === polityId);
+      if (at < 0) return;
+      arr[at] = target;
+      const nextSc = { ...cur, polities: arr };
+      if (touch) nextSc.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
+    };
+
+    execute({
+      type: 'update-polity',
+      label: '修改势力名称',
+      undo: () => apply(before, false),   // touch=false：撤销不打 updatedAt（与改动前逐字段一致）
+      redo: () => apply(next, true),
+    });
+
+    saveScenarios();
+    return { success: true, changed: true };
+  }
+
   /** 显式设置/清除某省的易主年份（走 undo）。year=null 表示删除显式值（回到自动推算） */
   function setProvinceChangeYear(scenarioId, provinceId, year) {
     const scenario = scenarios.value[scenarioId];
@@ -1084,12 +1435,17 @@ export function createScenarioEditingModule(ctx) {
   // ============================================================
 
   function applyHeightBrush(baseMapKey, cx, cy, radius, strength, mode) {
-    const baseMap = baseMaps.value[baseMapKey];
-    if (!baseMap?.heightmap?.grid?.points) return;
+    // ⚠️ 本函数**先改内存、后 execute**（涂抹期直接写 baseMaps）→ 只读态必须守函数首行，
+    //    否则「拒绝」发生在数据已经改完之后（改了不落盘 = 静默丢数据）
+    if (!guardWrite('高度笔刷').ok) return;
+    if (!hasGrid(getHeightmapFor(baseMapKey))) return;
 
-    const hm = baseMap.heightmap;
+    const hm = getHeightmapFor(baseMapKey);
     const grid = hm.grid;
-    const pts = grid.points;
+    // 热循环去响应式（2026-09-24）：`pts` 来自 baseMaps 的响应式对象，逐点读 `.x/.y`
+    // 每次都要过 proxy trap；smooth 模式还会对每个命中格再全量扫一遍 pts（O(n²) 读）。
+    // toRaw 只影响**读**的路径，写入仍走本地的 `newH` 副本 + 后续响应式赋值，语义不变。
+    const pts = toRaw(grid.points);
     const spacing = grid.spacing || 14.4;
     const newH = new Float32Array(hm.h);
 
@@ -1183,43 +1539,36 @@ export function createScenarioEditingModule(ctx) {
       label: mode === 'raise' ? '抬高地形' : mode === 'lower' ? '降低地形' : '平滑地形',
       merge: (prev) => prev.type === 'height-brush' && prev.mode === mode && prev.baseMapKey === baseMapKey,
       undo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            heightmap: { ...hm, h: oldH, temp: oldTemp, prec: oldPrec, biome: oldBiome },
-          },
-        };
+        // A1/M1b：改走 commitHeightmap —— 绑定行星时写行星那份，未绑定时写底图自己那份（与原表达式等价）。
+        // touch:false 与改动前一致（原 undo 不打 updatedAt）
+        commitHeightmap(baseMapKey, { ...hm, h: oldH, temp: oldTemp, prec: oldPrec, biome: oldBiome }, { touch: false });
       },
       redo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            heightmap: {
-              ...hm,
-              h: new Float32Array(newH),
-              temp: derived.temperature,
-              prec: derived.precipitation,
-              biome: derived.biome,
-            },
-            updatedAt: new Date().toISOString(),
-          },
-        };
+        commitHeightmap(baseMapKey, {
+          ...hm,
+          h: new Float32Array(newH),
+          temp: derived.temperature,
+          prec: derived.precipitation,
+          biome: derived.biome,
+        });
         // P2-4：异步派生挂在 redo 内 —— execute() 首帧与后续 redo 都会走到，
         // 所以「撤销后再重做」同样能拿回正确派生值（否则重做会留下陈旧图层）。
         if (canDefer) {
           const epoch = (deriveEpoch[baseMapKey] = (deriveEpoch[baseMapKey] || 0) + 1);
           scheduleDerive(newH, (res) => {
             if (!res || deriveEpoch[baseMapKey] !== epoch) return; // 已被更新的命令取代
-            const cur = baseMaps.value[baseMapKey] && baseMaps.value[baseMapKey].heightmap;
+            const cur = getHeightmapFor(baseMapKey);
             if (!cur || !cur.h || cur.h.length !== res.n) return;
             // 派生数组直接回写（不进 undo 栈：它是 h 的纯函数、可随时重算；
             // undo/redo 闭包里各自持有自己那一代的值，回写只影响"当前"这一代）
             cur.temp = res.temperature;
             cur.prec = res.precipitation;
             cur.biome = res.biome;
-            scheduleAutoSaveScenarios();
+            // R5：落盘通道必须按归属分流 —— 绑定行星后这份数据住在 mapData[pid]，
+            //    排剧本保存等于没保存（行星侧要等下一次别的写动作才落盘 → 派生图层静默丢失）
+            const ownerPid = boundPlanetId(baseMaps.value[baseMapKey]);
+            if (ownerPid) scheduleAutoSaveMap(ownerPid);
+            else scheduleAutoSaveScenarios();
           });
         }
       },
@@ -1237,11 +1586,14 @@ export function createScenarioEditingModule(ctx) {
   };
 
   function applyBiomeBrush(baseMapKey, cx, cy, radius, biomeKey) {
-    const baseMap = baseMaps.value[baseMapKey];
-    if (!baseMap?.heightmap?.grid?.points) return;
+    // ⚠️ 本函数**先改内存、后 execute**（涂抹期直接写 baseMaps）→ 只读态必须守函数首行，
+    //    否则「拒绝」发生在数据已经改完之后（改了不落盘 = 静默丢数据）
+    if (!guardWrite('生物群系笔刷').ok) return;
+    if (!hasGrid(getHeightmapFor(baseMapKey))) return;
 
-    const hm = baseMap.heightmap;
-    const pts = hm.grid.points;
+    const hm = getHeightmapFor(baseMapKey);
+    // 这里的循环是**全量遍历** pts（每次涂抹 O(n) 次 proxy 读）→ toRaw 收益最明显（2026-09-24）
+    const pts = toRaw(hm.grid.points);
     const oldBiome = hm.biome ? new Uint8Array(hm.biome) : new Uint8Array(pts.length);
     const newBiome = new Uint8Array(oldBiome);
     const idx = BIOME_KEY_INDEX[biomeKey] ?? 0;
@@ -1262,25 +1614,8 @@ export function createScenarioEditingModule(ctx) {
       biomeKey,
       label: '生物群系笔刷',
       merge: (prev) => prev.type === 'biome-brush' && prev.biomeKey === biomeKey && prev.baseMapKey === baseMapKey,
-      undo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            heightmap: { ...hm, biome: oldBiome },
-          },
-        };
-      },
-      redo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            heightmap: { ...hm, biome: new Uint8Array(newBiome) },
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      },
+      undo: () => { commitHeightmap(baseMapKey, { ...hm, biome: oldBiome }, { touch: false }); },
+      redo: () => { commitHeightmap(baseMapKey, { ...hm, biome: new Uint8Array(newBiome) }); },
     };
     execute(cmd);
 
@@ -1331,10 +1666,9 @@ export function createScenarioEditingModule(ctx) {
 }
 
 function applyCultureBrush(baseMapKey, cx, cy, radius, cultureKey) {
-  const baseMap = baseMaps.value[baseMapKey];
-  if (!baseMap?.heightmap?.grid?.points) return;
+  if (!hasGrid(getHeightmapFor(baseMapKey))) return;
 
-  const hm = baseMap.heightmap;
+  const hm = getHeightmapFor(baseMapKey);
   const pts = hm.grid.points;
   const oldCultures = hm.culture ? new Uint8Array(hm.culture) : new Uint8Array(pts.length);
   const newCultures = new Uint8Array(oldCultures);
@@ -1356,34 +1690,16 @@ function applyCultureBrush(baseMapKey, cx, cy, radius, cultureKey) {
     cultureKey,
     label: '文化笔刷',
     merge: (prev) => prev.type === 'culture-brush' && prev.cultureKey === cultureKey && prev.baseMapKey === baseMapKey,
-    undo: () => {
-      baseMaps.value = {
-        ...baseMaps.value,
-        [baseMapKey]: {
-          ...baseMap,
-          heightmap: { ...hm, culture: oldCultures },
-        },
-      };
-    },
-    redo: () => {
-      baseMaps.value = {
-        ...baseMaps.value,
-        [baseMapKey]: {
-          ...baseMap,
-          heightmap: { ...hm, culture: new Uint8Array(newCultures) },
-          updatedAt: new Date().toISOString(),
-        },
-      };
-    },
+    undo: () => { commitHeightmap(baseMapKey, { ...hm, culture: oldCultures }, { touch: false }); },
+    redo: () => { commitHeightmap(baseMapKey, { ...hm, culture: new Uint8Array(newCultures) }); },
   });
   saveScenarios();
 }
 
 function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
-  const baseMap = baseMaps.value[baseMapKey];
-  if (!baseMap?.heightmap?.grid?.points) return;
+  if (!hasGrid(getHeightmapFor(baseMapKey))) return;
 
-  const hm = baseMap.heightmap;
+  const hm = getHeightmapFor(baseMapKey);
   const pts = hm.grid.points;
   const oldReligions = hm.religion ? new Uint8Array(hm.religion) : new Uint8Array(pts.length);
   const newReligions = new Uint8Array(oldReligions);
@@ -1405,33 +1721,21 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     religionKey,
     label: '宗教笔刷',
     merge: (prev) => prev.type === 'religion-brush' && prev.religionKey === religionKey && prev.baseMapKey === baseMapKey,
-    undo: () => {
-      baseMaps.value = {
-        ...baseMaps.value,
-        [baseMapKey]: {
-          ...baseMap,
-          heightmap: { ...hm, religion: oldReligions },
-        },
-      };
-    },
-    redo: () => {
-      baseMaps.value = {
-        ...baseMaps.value,
-        [baseMapKey]: {
-          ...baseMap,
-          heightmap: { ...hm, religion: new Uint8Array(newReligions) },
-          updatedAt: new Date().toISOString(),
-        },
-      };
-    },
+    undo: () => { commitHeightmap(baseMapKey, { ...hm, religion: oldReligions }, { touch: false }); },
+    redo: () => { commitHeightmap(baseMapKey, { ...hm, religion: new Uint8Array(newReligions) }); },
   });
   saveScenarios();
 }
 
   function getHeightAt(baseMapKey, worldX, worldY) {
-    const baseMap = baseMaps.value[baseMapKey];
-    const spacing = baseMap.heightmap.grid.spacing || 14.4;
-    const h = baseMap.heightmap.h;
+    // 🐞 旧实现漏了 `pts` 的定义就直接 `pts[i]` —— 一旦本函数被调用即 ReferenceError
+    //    （而且没有任何 UI 回执）。这里补上定义，并加网格存在性防御（2026-09-24 修）。
+    const hmSelf = getHeightmapFor(baseMapKey);
+    const grid = hmSelf?.grid;
+    const pts = grid?.points;
+    if (!Array.isArray(pts) || pts.length === 0) return null;
+    const spacing = grid.spacing || 14.4;
+    const h = hmSelf.h;
     let bestI = -1;
     let bestD = Infinity;
     for (let i = 0; i < pts.length; i++) {
@@ -1443,9 +1747,9 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     if (bestI < 0 || bestD > spacing) return null;
     return {
       h: h[bestI],
-      temp: baseMap.heightmap.temp?.[bestI],
-      prec: baseMap.heightmap.prec?.[bestI],
-      biome: baseMap.heightmap.biome?.[bestI],
+      temp: hmSelf.temp?.[bestI],
+      prec: hmSelf.prec?.[bestI],
+      biome: hmSelf.biome?.[bestI],
     };
   }
 
@@ -1455,8 +1759,8 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
 
   function generateRivers(baseMapKey) {
     const baseMap = baseMaps.value[baseMapKey];
-    if (!baseMap?.heightmap?.grid?.points) return [];
-    const hm = baseMap.heightmap;
+    if (!hasGrid(getHeightmapFor(baseMapKey))) return [];
+    const hm = getHeightmapFor(baseMapKey);
     const pts = hm.grid.points;
     const n = pts.length;
     const rivers = [];
@@ -1499,9 +1803,8 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
   }
 
   function deriveAllLayers(baseMapKey) {
-    const baseMap = baseMaps.value[baseMapKey];
-    if (!baseMap?.heightmap?.grid?.points) return null;
-    const hm = baseMap.heightmap;
+    if (!hasGrid(getHeightmapFor(baseMapKey))) return null;
+    const hm = getHeightmapFor(baseMapKey);
     const pts = hm.grid.points;
     const oldTemp = hm.temp ? new Float32Array(hm.temp) : null;
     const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
@@ -1511,38 +1814,30 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     execute({
       type: 'derive-layers',
       label: '重算派生图层',
-      undo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            heightmap: { ...hm, temp: oldTemp, prec: oldPrec, biome: oldBiome },
-          },
-        };
-      },
-      redo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            heightmap: { ...hm, temp: derived.temperature, prec: derived.precipitation, biome: derived.biome },
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      },
+      undo: () => { commitHeightmap(baseMapKey, { ...hm, temp: oldTemp, prec: oldPrec, biome: oldBiome }, { touch: false }); },
+      redo: () => { commitHeightmap(baseMapKey, { ...hm, temp: derived.temperature, prec: derived.precipitation, biome: derived.biome }); },
     });
     saveScenarios();
     return derived;
   }
 
   return {
-    baseMaps, scenarios,
+    baseMaps,
+    getHeightmapFor,
+    commitHeightmap,
+    createBaseMapHeightmap,
+    getBoundPlanetId,
+    getBaseMapsBoundToPlanet,
+    bindBaseMapToPlanet,
+    unbindBaseMap,
+    importHeightmapFromPlanet,
+    describeBaseMapTerrain, scenarios,
     addBaseMap, removeBaseMap, addBaseProvince, updateBaseProvince, removeBaseProvince,
     splitBaseProvince, mergeBaseProvinces,
     addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
     createScenario, updateScenario, removeScenario, inheritScenario,
     setOwnership, clearOwnership, batchSetOwnership,
-    setPolityLineage, setProvinceChangeYear,
+    setPolityLineage, setProvinceChangeYear, updatePolity,
     exportScenariosPayload, auditScenariosPayload, importScenariosPayload, removeAllScenarios,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,

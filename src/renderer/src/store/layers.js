@@ -29,8 +29,13 @@ export const useLayersStore = defineStore('layers', () => {
       fleetCards: { visible: true, label: '部队卡片', order: 4 },  // B7：太空舰队/行星军（信息卡片）
     },
     planet: {
+      // 「地形」= 地形**总开关**，内容由数据驱动（M2/A2 第二步）：
+      //   有高度图 → 高度图是主表示；没有高度图（旧多边形地图）→ 多边形照旧。
+      //   判定见 `utils/terrainRepresentation.js`（渲染 / 命中 / 导出三处共用同一份）。
       terrain: { visible: true, label: '地形', order: 0 },
-      heightmap: { visible: false, label: '高度图（生物群系）', order: 0.5 },
+      // 多边形覆盖物：高度图驱动之后，`terrain[]` 退为**可选**叠加层（默认关）。
+      // 打开时半透明叠在高度图上，便于对照；编辑多边形时会自动亮起（见 PlanetMap 的编辑态判定）。
+      terrainPolygons: { visible: false, label: '地形多边形（覆盖物）', order: 0.5 },
       terrainLabels: { visible: true, label: '地形名称', order: 1 },
       elevation: { visible: false, label: '海拔', order: 2 },
       climate: { visible: false, label: '气候', order: 3 },

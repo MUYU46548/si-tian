@@ -2,9 +2,13 @@
 // 全图导出：PNG（离屏 canvas 重绘全部对象，2x 缩放）+ SVG（矢量，可进设计工具继续加工）
 
 import { ref } from 'vue';
+import { hasHeightmapContent } from '../utils/terrainRepresentation';
 import {
   serializeSvg, svgPathD, svgPath, svgRect, svgTextEl, svgCircleEl, svgImageEl,
   svgLine, escXml, stamp,
+  // A7：参考底图的 SVG 几何**只有一份实现**（旋转单位/翻转/宽高互换），
+  // 与画布 `planetDrawing.drawReferenceImage` 对齐；两处导出共用，避免第三次分叉
+  refImageSvgGroup, refImageWorldBounds,
 } from '../utils/svgExport';
 
 // 与 planetDrawing 的同名表保持一致（SVG 导出要复刻画布配色）
@@ -14,7 +18,9 @@ const PLACE_TYPE_COLORS = {
 };
 const NODE_COLORS = { city: '#5B8DEF', town: '#4ECDC4', village: '#4ECDC4', location: '#95E1D3', facility: '#B8A6D9' };
 
-export function useFullMapExport({ store, props, emit, renderer, currentMapData, layers, drawing, referenceImage, places, provinceEditor, markerEditor, lodRef, ruler }) {
+// `terrainRep` / `heightmapRasterKind` 由 PlanetMap 传入 —— 保证导出与画布读**同一份**
+// 地形表示判定（`utils/terrainRepresentation.js`），而不是在这里再写一套 if。
+export function useFullMapExport({ store, props, emit, renderer, currentMapData, layers, drawing, referenceImage, places, provinceEditor, markerEditor, lodRef, ruler, terrainRep, heightmapRasterKind }) {
   const exportStatus = ref('');
 
   // 选择"漂亮"步长（1/2/5×10^n）
@@ -53,15 +59,16 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
         elements.push({ x: place.coordinate.x, y: place.coordinate.y });
       }
     }
-    // 参考图
-    const refImg = referenceImage.referenceImage;
-    if (refImg && refImg.width) {
-      const w = refImg.width * (refImg.scale || 1);
-      const h = refImg.height * (refImg.scale || 1);
-      elements.push(
-        { x: refImg.offsetX - w / 2, y: refImg.offsetY - h / 2 },
-        { x: refImg.offsetX + w / 2, y: refImg.offsetY + h / 2 }
-      );
+    // 参考图（A7 修正三处）
+    // ① 此前读 `referenceImage.referenceImage` —— 那是 computed **ref 对象**，`.width` 恒为
+    //    undefined → 这个分支是**死代码**，参考图从来没进过导出边界；
+    // ② 只取"当前激活的一张"，而画布画的是**全部**（P2 多图后导出没跟上）；
+    // ③ 未考虑旋转 —— 90/270 时包围盒要宽高互换，否则旋转过的底图会被裁掉一角。
+    const refImgs = referenceImage?.referenceImages?.value || [];
+    for (const r of refImgs) {
+      const bb = refImageWorldBounds(r);
+      if (!bb) continue;
+      elements.push({ x: bb.minX, y: bb.minY }, { x: bb.maxX, y: bb.maxY });
     }
 
     if (elements.length === 0) {
@@ -123,7 +130,20 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
     // 参考图
     drawing.drawReferenceImage(ctx);
 
-    if (layers.isVisible('planet', 'terrain')) drawing.drawTerrain(ctx);
+    // 地形表示（M2/A2 第二步）：与画布**同一份判定**。
+    // 🔴 本轮之前这里**只有 `drawTerrain`** —— 高度图驱动的行星导出后地形是**空的**：
+    //    导出图与画布不一致，属既存缺陷，本次随「terrain 降为覆盖物」一并修掉。
+    //    ⚠️ 高度图必须 `{ full: true }`：默认的视口剔除是**屏幕**优化，导出时会把
+    //    屏幕外的地形整块丢掉（不报错，只是悄悄缺一大片）。
+    {
+      const rep = terrainRep.value;
+      const kind = heightmapRasterKind.value;
+      if (rep.drawHeightmap) {
+        if (kind === 'biome') drawing.drawHeightmap(ctx, rep.heightmapAlpha, { full: true });
+        else drawing.drawHeightmapRaster(ctx, kind, rep.heightmapAlpha);
+      }
+      if (rep.drawPolygons) drawing.drawTerrain(ctx, { alpha: rep.polygonAlpha });
+    }
     if (layers.isVisible('planet', 'elevation')) drawing.drawElevation(ctx);
     if (layers.isVisible('planet', 'climate')) drawing.drawClimate(ctx);
     if (layers.isVisible('planet', 'precipitation')) drawing.drawPrecipitation(ctx);
@@ -258,6 +278,36 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
     return n ? { x: x / n, y: y / n } : null;
   }
 
+  /**
+   * 把高度图渲染成一张位图，供 SVG **内联**（高度图本质是栅格数据，矢量格式里只能以位图承载，
+   * 与参考底图同一手法）。用 `drawing` 的同一套绘制函数画 → 与画布观感一致，
+   * 而不是"另写一个 SVG 版高度图"（那又会分叉）。
+   * 长边设上限，避免超大世界观把 SVG 撑成几十 MB（也防离屏画布 OOM）。
+   */
+  function renderHeightmapBitmap(bounds) {
+    const hm = currentMapData.value?.heightmap;
+    if (!hasHeightmapContent(hm)) return null;
+    const kind = heightmapRasterKind.value;
+    const W0 = Math.max(1, bounds.maxX - bounds.minX);
+    const H0 = Math.max(1, bounds.maxY - bounds.minY);
+    const MAX_SIDE = 4096;
+    const scale = Math.min(2, MAX_SIDE / Math.max(W0, H0));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(W0 * scale));
+    c.height = Math.max(1, Math.ceil(H0 * scale));
+    const cx = c.getContext('2d');
+    cx.save();
+    cx.translate(-bounds.minX * scale, -bounds.minY * scale);
+    cx.scale(scale, scale);
+    const oldLod = lodRef.value;
+    lodRef.value = 1;
+    if (kind === 'biome') drawing.drawHeightmap(cx, 1, { full: true });
+    else drawing.drawHeightmapRaster(cx, kind, 1);
+    lodRef.value = oldLod;
+    cx.restore();
+    return { dataUrl: c.toDataURL('image/png'), x: bounds.minX, y: bounds.minY, w: W0, h: H0 };
+  }
+
   function buildFullMapSVG({ legend = true, title = true } = {}) {
     const bounds = computeFullBounds();
     const W = Math.ceil(bounds.maxX - bounds.minX);
@@ -270,29 +320,42 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
     body.push(`<g transform="translate(${Math.round(-bounds.minX)},${Math.round(-bounds.minY)})">`);
 
     // 参考底图（数据 URL 内联，光栅化时无需外部资源）
-    const ri = referenceImage.referenceImage;
-    if (ri && ri.dataUrl && ri.width) {
-      const w = ri.width * (ri.scale || 1);
-      const h = ri.height * (ri.scale || 1);
-      const rot = (ri.rotation || 0) * 180 / Math.PI;
-      body.push(`<g transform="translate(${Math.round(ri.offsetX || 0)},${Math.round(ri.offsetY || 0)}) ` +
-        `rotate(${Math.round(rot)}) translate(${Math.round(-w / 2)},${Math.round(-h / 2)})">`);
-      body.push(svgImageEl(0, 0, w, h, ri.dataUrl, { opacity: ri.opacity ?? 0.6 }));
-      body.push('</g>');
+    // A7：此前这里有两处错 —— `referenceImage.referenceImage` 是 computed ref（死代码：
+    // 参考图从未被导出过），且把 `rotation`（**象限索引 0..3**）当弧度换算（`* 180/π`）。
+    // 现在循环**全部**参考图，几何统一走 `refImageSvgGroup`（与画布逐字一致）。
+    const svgRefs = referenceImage?.referenceImages?.value || [];
+    for (const r of svgRefs) {
+      const g = refImageSvgGroup(r);
+      if (g) body.push(g);
     }
 
-    // 地形多边形
-    if (vis('terrain')) {
-      for (const poly of md.terrain || []) {
-        const pts = poly.points || [];
-        if (pts.length < 3) continue;
-        const d = svgPathD(pts, { closed: true });
-        if (!d) continue;
-        const col = (provinceEditor?.terrainTypes || []).find((t) => t.type === poly.type)?.color || '#A3C4BC';
-        body.push(svgPath(d, {
-          fill: col, 'fill-opacity': 0.92, stroke: 'rgba(0,0,0,0.28)', 'stroke-width': 0.8,
-          'stroke-linejoin': 'round',
-        }));
+    // 地形（M2/A2 第二步）：与画布同一份判定 —— 有高度图则以高度图为主表示，多边形是覆盖物。
+    {
+      const rep = terrainRep.value;
+      // 主表示：高度图（内联位图）。与画布用同一套 `drawing` 绘制，观感一致。
+      if (rep.drawHeightmap) {
+        const bmp = renderHeightmapBitmap(bounds);
+        if (bmp) {
+          body.push(svgImageEl(bmp.x, bmp.y, bmp.w, bmp.h, bmp.dataUrl,
+            rep.heightmapAlpha < 1 ? { opacity: +rep.heightmapAlpha.toFixed(3) } : undefined));
+        }
+      }
+      // 覆盖物 / 旧地图主表示：多边形（真矢量 path，可进设计工具继续加工）
+      if (rep.drawPolygons) {
+        const pa = +rep.polygonAlpha.toFixed(3);
+        for (const poly of md.terrain || []) {
+          const pts = poly.points || [];
+          if (pts.length < 3) continue;
+          const d = svgPathD(pts, { closed: true });
+          if (!d) continue;
+          const col = (provinceEditor?.terrainTypes || []).find((t) => t.type === poly.type)?.color || '#A3C4BC';
+          body.push(svgPath(d, {
+            fill: col, 'fill-opacity': +(pa * 0.92).toFixed(3),
+            stroke: `rgba(0,0,0,${+(0.28 * Math.min(1, pa + 0.35)).toFixed(3)})`,
+            'stroke-width': 0.8,
+            'stroke-linejoin': 'round',
+          }));
+        }
       }
     }
 

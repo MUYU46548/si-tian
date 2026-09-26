@@ -448,7 +448,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     const gate = guardWrite('保存地理数据');
     if (!gate.ok) return gate;
     // Phase 2.4：已打开项目 → 落盘去向是项目文件（projectStore 是项目文件的唯一写者）
-    if (canvasSourceRef.value === 'project') return syncCanvasToProject('保存地理数据');
+    // ⚠️ 同上：只承诺「已推给 projectStore」，不承诺已落盘（staged/persisted 显式标明）。
+    if (canvasSourceRef.value === 'project') {
+      const r = syncCanvasToProject('保存地理数据');
+      return { success: r.ok !== false, source: 'project', staged: true, persisted: false, reason: r.reason };
+    }
     // 深拷贝去除 Vue reactive Proxy，否则 Electron IPC 会报 "An object could not be cloned"
     const data = JSON.parse(JSON.stringify({
       nodes: nodes.value,
@@ -468,21 +472,35 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   // ===== 剧本地图持久化（独立文件 scenarios.json）=====
-  const saveStatus = ref('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+  const saveStatus = ref('idle'); // 'idle' | 'saving' | 'staged' | 'saved' | 'error'
+
+  /**
+   * 叙事状态变更指纹（2026-09-24）。
+   *
+   * 🔴 为什么必须显式给信号：`updateNode` 是 `Object.assign(node, updates)` —— **就地改字段**，
+   *    既不换 `nodes` 数组引用、也不换节点对象。于是所有「监听数组 / 对象引用」的浅 watch
+   *    都不会触发 —— 状态改了，画布上的淡化却不生效（用户只会以为功能没做）。
+   *    这里提供一个单调递增的重绘信号，由各画布 watch。
+   * ⚠️ undo / redo 也会就地回填 status，所以两处都要 ++，否则**撤销后淡化不还原**。
+   */
+  const statusRevision = ref(0);
   let saveStatusTimer = null;
 
   async function saveScenarios() {
     if (!scenarioEditingModule) return;
     const gate = guardWrite('保存剧本');
     if (!gate.ok) return gate;
-    // Phase 2.4：已打开项目 → 剧本随项目文件落盘（同一份 saveStatus 反馈照旧给用户）
+    // Phase 2.4：已打开项目 → 剧本随项目文件落盘
+    // ⚠️ 项目态**不得宣称 'saved'**（2026-09-24 修）：这里只是把改动推给 projectStore，
+    //    真正的落盘由 projectStore 的 800ms 防抖自动保存完成（成败由 projectStore.saveStatus 表达）。
+    //    旧实现在此直接设 'saved' = **谎报成功**：状态栏说「已保存」时数据还在内存里。
     if (canvasSourceRef.value === 'project') {
       saveStatus.value = 'saving';
       const r = syncCanvasToProject('保存剧本');
-      saveStatus.value = r.ok ? 'saved' : 'error';
+      saveStatus.value = r.ok ? 'staged' : 'error';   // staged = 已交给项目，等待落盘
       if (saveStatusTimer) clearTimeout(saveStatusTimer);
       saveStatusTimer = setTimeout(() => {
-        if (saveStatus.value === 'saved') saveStatus.value = 'idle';
+        if (saveStatus.value === 'staged') saveStatus.value = 'idle';
       }, 3000);
       return r;
     }
@@ -642,9 +660,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     const gate = guardWrite('保存行星地图');
     if (!gate.ok) return gate;
     // Phase 2.4：已打开项目 → 地图数据落进项目文件（mapData 已在内存态更新，这里只触发项目侧落盘）
+    // ⚠️ 返回值只承诺「已推给 projectStore」，**不承诺已落盘**（落盘由 projectStore 的 800ms 防抖完成）——
+    //    旧实现恒返回 `{success:true}`，调用方会误判成「已写入磁盘」（2026-09-24 修）。
     if (canvasSourceRef.value === 'project') {
-      syncCanvasToProject(`保存行星地图 ${planetId || ''}`.trim());
-      return { success: true, source: 'project' };
+      const r = syncCanvasToProject(`保存行星地图 ${planetId || ''}`.trim());
+      return { success: r.ok !== false, source: 'project', staged: true, persisted: false };
     }
     try {
       // 深拷贝去除 Vue reactive Proxy（仅用于 IPC 传输）。
@@ -883,6 +903,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     for (const key of Object.keys(updates)) {
       oldState[key] = node[key];
     }
+    // 叙事状态变更 → 递增重绘指纹（见 statusRevision 的说明）。
+    // undo / redo 都要 ++：两者都是**就地回填**，不会换引用 —— 漏了就会「撤销后淡化不还原」。
+    const touchedStatus = Object.prototype.hasOwnProperty.call(updates, 'status');
+    const bumpStatus = () => { if (touchedStatus) statusRevision.value++; };
+
     Object.assign(node, updates);
     execute({
       type: 'update-node',
@@ -890,9 +915,11 @@ export const useGeodataStore = defineStore('geodata', () => {
       category: 'property',
       undo: () => {
         Object.assign(node, oldState);
+        bumpStatus();
       },
       redo: () => {
         Object.assign(node, updates);
+        bumpStatus();
       },
     });
     scheduleAutoSave();
@@ -1047,6 +1074,13 @@ export const useGeodataStore = defineStore('geodata', () => {
     collectIdRefSlots(areaReferenceImages.value, oldId, slots, seen);
     collectIdRefSlots(interiorData.value, oldId, slots, seen);
     collectIdRefSlots(interiorReferenceImages.value, oldId, slots, seen);
+    // A1/M1b（2026-09-25）：底图的**绑定字段** `baseMaps[k].planetId` 是「以节点 id 为值」的引用，必须跟随改名 ——
+    // 否则行星改名（转正 / 改名）后绑定就会悬空，而绑定迁移时底图侧那份 heightmap 已被 `delete`
+    // → 底图表现为「空地图」（数据还在 mapData[旧id] 里，只是没人指得到）。
+    // ⚠️ 只采集**值槽**：baseMaps 的**键**刻意不列入（键语义混用，既可能是行星名称又可能是 id，见 idRefDicts 上方注释）。
+    if (scenarioEditingModule) {
+      collectIdRefSlots(scenarioEditingModule.baseMaps.value, oldId, slots, seen);
+    }
 
     const dicts = idRefDicts();
     const keyHits = dicts.filter(d => d && Object.prototype.hasOwnProperty.call(d, oldId));
@@ -1243,7 +1277,9 @@ export const useGeodataStore = defineStore('geodata', () => {
     viewLevel.value = 'interior';
     selectedNode.value = null;
     // 初始化建筑的内部数据结构（如不存在）
-    if (!interiorData.value[buildingNode.id]) {
+    // ⚠️ **只守这一段**：上面的视图导航（currentBuilding / viewLevel）在只读态必须照常工作
+    //    （只读 ≠ 看不了），但懒建容器是**写内存** —— 不守就会在只读态留下永不落盘的空楼层容器。
+    if (!interiorData.value[buildingNode.id] && guardWrite('初始化建筑内部数据').ok) {
       interiorData.value[buildingNode.id] = {
         buildingId: buildingNode.id,
         floors: [],
@@ -1316,15 +1352,26 @@ export const useGeodataStore = defineStore('geodata', () => {
     }
   }
 
+  /**
+   * 知识库词条更新事件 → 画布。
+   *
+   * 🔴 项目态必须整条拦掉（2026-09-24 修）：项目打开时画布的**事实源是项目文件**，
+   *    知识库的增删改若照常注入画布，就成了两套事实源混流 —— 下一次画布保存会经
+   *    `syncCanvasToProject` 把知识库内容写进 `.sitian` 项目文件，并覆盖用户在项目里改过的实体。
+   *    主进程 watcher 在项目态**不会停**（打开项目不重启 watcher），所以必须在入口判。
+   * @returns {boolean} 是否真的应用到了画布（false = 因项目态被忽略，调用方据此给回音）
+   */
   function handleNodeUpdated(node) {
+    if (canvasSourceRef.value === 'project') return false;
     if (isDragging) {
       // 拖拽期间暂存更新，避免打断用户操作
       const idx = pendingNodeUpdates.findIndex(n => n.id === node.id);
       if (idx !== -1) pendingNodeUpdates[idx] = node;
       else pendingNodeUpdates.push(node);
-      return;
+      return true;
     }
     applyNodeUpdate(node);
+    return true;
   }
 
   function applyNodeUpdate(node) {
@@ -1337,8 +1384,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     }
   }
 
+  /** 知识库词条删除事件 → 画布。项目态同样整条拦掉（理由见 `handleNodeUpdated`）。 */
   function handleNodeRemoved(nodeId) {
+    if (canvasSourceRef.value === 'project') return false;
     nodes.value = nodes.value.filter(n => n.id !== nodeId);
+    return true;
   }
 
   // ===== 项目文件接线（Phase 2.4）=============================================
@@ -1580,6 +1630,10 @@ export const useGeodataStore = defineStore('geodata', () => {
       scenarioEditingModule.scenarios.value = sc.scenarios ? JSON.parse(JSON.stringify(sc.scenarios)) : {};
     }
     canvasSourceRef.value = 'project';
+    // ⚠️ **不要在这里清 undo 栈**（P3 的清理点在 projectStore 的项目生命周期里，2026-09-25）。
+    //    本函数不只服务「打开项目」—— `seedFromPayload`（导入知识库内容）末尾也会调它
+    //    「重新装载一次画布」。若在这里 clearHistory()，刚 push 进栈的导入命令会被清掉，
+    //    「导入 = 一条可撤销命令」立刻失效（test_50 实测抓到）。
     backToWorld();   // 别停在项目里不存在的节点上
     return { ok: true, source: 'project', nodes: nodes.value.length, hyperlanes: hyperlanes.value.length };
   }
@@ -1781,6 +1835,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     focusEntityOnCanvas,
     loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
     saveStatus,
+    statusRevision,
     FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,
       addNode, removeNode, updateNode, changeNodeId, reparentNode, reparentNodes,

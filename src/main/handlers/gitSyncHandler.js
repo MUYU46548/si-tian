@@ -137,10 +137,21 @@ function humanize(res, fallback = '操作失败') {
 
 // ===== 凭据注入 =====
 
-/** `-c credential.helper=` 先清空继承来的 helper，再接上我们自己的（令牌走环境变量） */
+/**
+ * `-c credential.helper=` 先清空继承来的 helper，再接上我们自己的（令牌走环境变量）。
+ *
+ * 🔴 **无令牌时也必须清空**（2026-09-24 修，用户实测被 GUI 弹窗打断）：
+ *    旧实现 `cred === null → return []`，于是任何「**还没填令牌就访问远程**」的路径
+ *    （典型：点「测试连接」，或 `remoteHeads`）都会让 git 去用**系统配置的凭据助手** ——
+ *    Windows 上通常是 Git Credential Manager，它会弹出一个
+ *    「Credential Helper Selector」GUI 窗口打断用户。
+ *    ⚠️ `GIT_TERMINAL_PROMPT=0` 只挡得住**终端**输入，**挡不住外部 GUI 助手**。
+ *    清空后 git 会直接失败，由 `humanize()` 给出「请先填令牌」的人话提示 —— 这才是正确交互。
+ */
 function credentialArgs(cred) {
-  if (!cred || !cred.token) return [];
-  return ['-c', 'credential.helper=', '-c', `credential.helper=${CREDENTIAL_HELPER}`];
+  const reset = ['-c', 'credential.helper='];
+  if (!cred || !cred.token) return reset;
+  return [...reset, '-c', `credential.helper=${CREDENTIAL_HELPER}`];
 }
 
 function credentialEnv(cred) {

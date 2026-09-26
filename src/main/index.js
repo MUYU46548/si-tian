@@ -159,14 +159,14 @@ let quitFlushDone = false;
 
 function flushRendererBeforeQuit() {
   return new Promise((resolve) => {
-    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents) return resolve('no-window');
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents) return resolve({ why: 'no-window' });
     let settled = false;
-    const onDone = () => finish('flushed');
-    const finish = (why) => {
+    const onDone = (_e, payload) => finish('flushed', payload);
+    const finish = (why, payload) => {
       if (settled) return;
       settled = true;
       ipcMain.removeListener('app-flush-done', onDone);
-      resolve(why);
+      resolve({ why, payload });
     };
     ipcMain.once('app-flush-done', onDone);
     try {
@@ -182,7 +182,36 @@ app.on('before-quit', (event) => {
   if (!quitFlushDone) {
     quitFlushDone = true;
     event.preventDefault();
-    flushRendererBeforeQuit().finally(() => {
+    flushRendererBeforeQuit().then(({ payload }) => {
+      // 🔴 落盘失败必须让用户**看见**（2026-09-24 修）：旧实现只把失败写进渲染层的
+      //    `console.warn`，窗口随即关闭 —— 用户以为「已正常退出、改动已保存」，实际未落盘。
+      //    退出前是唯一能触达用户的时机，所以用**原生对话框**（不依赖渲染层是否还活着），
+      //    并给出「留在窗口」这个出口（数据还在内存里，用户可以导出为文件）。
+      const failed = (payload && Array.isArray(payload.failed)) ? payload.failed : [];
+      if (failed.length) {
+        let choice = 0;
+        try {
+          choice = dialog.showMessageBoxSync({
+            type: 'warning',
+            buttons: ['仍然退出（放弃未保存的改动）', '留在窗口'],
+            defaultId: 1,
+            cancelId: 1,
+            noLink: true,
+            title: '有改动未能保存',
+            message: `退出前保存失败，${failed.length} 项改动可能丢失。`,
+            detail: failed.map(f => `· ${f.name}${f.error ? '：' + f.error : ''}`).join('\n')
+              + '\n\n选择「留在窗口」可返回手动处理（例如把改动导出为文件）。',
+          });
+        } catch (e) { choice = 0; }
+        if (choice === 1) {
+          quitFlushDone = false;   // 允许下次退出重新走拦截
+          setIsQuitting(false);
+          try {
+            if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+          } catch (e) { /* noop */ }
+          return;
+        }
+      }
       setIsQuitting(true);
       app.quit();
     });

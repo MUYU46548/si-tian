@@ -104,6 +104,36 @@ function parseMdFile(filePath) {
   }
 }
 
+// ── 叙事状态（2026-09-24）────────────────────────────────────────────────────
+// `status` 是**笔记侧字段**：用户在 Obsidian frontmatter 里写，司天只读、不回写
+// （方向与 `coordinate` 相反 —— 那个是司天写进笔记、提取时读回）。
+// ⚠️ 别名表与 src/renderer/src/utils/entityStatus.js 的 ENTITY_STATUSES **必须一致**，
+//    由 scripts/tests/unit/test_entity_status.js 读源码比对守卫（两处 CJS 副本也要逐项相同）。
+// 接受 `status`（推荐，与 `coordinate` 同为机器字段）与 `状态`（中文别名，迁就中文库里手写）。
+const STATUS_ALIASES = {
+  // 机器 id
+  active: 'active', destroyed: 'destroyed', ruined: 'ruined', sealed: 'sealed', lost: 'lost', unknown: 'unknown',
+  // 中文 label（entityStatus 里的 label）
+  '存在': 'active', '已毁灭': 'destroyed', '已荒废': 'ruined', '已封印': 'sealed', '已失联': 'lost', '状态未知': 'unknown',
+  // 中文短标签（entityStatus 里的 short，用于徽标）
+  '毁灭': 'destroyed', '荒废': 'ruined', '封印': 'sealed', '失联': 'lost', '未知': 'unknown',
+};
+
+/**
+ * 从 frontmatter 读「叙事状态」→ 归一化为状态 id；读不出就返回 **null（视作未设置）**。
+ * 字段本身仍会落在节点上（值为 null），与既有 `placeType` 同一风格。
+ *
+ * 为什么认不出要返回 null 而不是原样带着：脏值在渲染侧虽会被 `resolveStatus` 回落成 active，
+ * 但它会被**原样写进项目文件并长期留存**（重提取也带回来）—— 用户之后看到更困惑。
+ * `active` 同样返回 null：「显式写了存在」与「没写」的行为完全等价（渲染侧 `resolveStatus` 会把 null 也当 active）。
+ */
+function readFrontmatterStatus(fm) {
+  const raw = fm && (fm.status != null ? fm.status : fm['状态']);
+  if (raw == null) return null;
+  const id = STATUS_ALIASES[String(raw).trim()];
+  return id && id !== 'active' ? id : null;
+}
+
 function extractSingleFile(filePath) {
   const parsed = parseMdFile(filePath);
   if (!parsed) return null;
@@ -119,7 +149,8 @@ function extractSingleFile(filePath) {
   return {
     id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer,
     parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
-    coordinate: { x: null, y: null }
+    coordinate: { x: null, y: null },
+    status: readFrontmatterStatus(parsed.frontmatter),
   };
 }
 
@@ -150,7 +181,12 @@ function updateNodeInCache(node) {
     const preservedCoord = (existingCoord && existingCoord.x !== null && existingCoord.y !== null)
       ? existingCoord
       : node.coordinate;
-    data.nodes[idx] = { ...node, coordinate: preservedCoord };
+    // ⚠️ 必须**先铺开旧节点再盖新字段**（2026-09-24 修）：
+    //    旧写法 `{ ...node, coordinate }` 只保留坐标 —— 而 `extractSingleFile` 不产出
+    //    `placeType` / `uuid` 等**编辑器侧字段**，于是「在 Obsidian 里改一个字」就会把它们从缓存里抹掉
+    //    （表现为图标配色退化、uuid 消失 —— 全是静默的，不报错）。
+    //    正确语义：文件变更只更新**笔记侧字段**，编辑器侧字段原样保留。
+    data.nodes[idx] = { ...data.nodes[idx], ...node, coordinate: preservedCoord };
   } else {
     data.nodes.push(node);
   }
@@ -245,4 +281,5 @@ function stopWatcher() {
   }
 }
 
-module.exports = { startWatcher, stopWatcher, setVaultPath, getVaultPath };
+// STATUS_ALIASES / readFrontmatterStatus 一并导出：test_entity_status 要读它与前端的注册表比对（防漂移）
+module.exports = { startWatcher, stopWatcher, setVaultPath, getVaultPath, STATUS_ALIASES, readFrontmatterStatus };

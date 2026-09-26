@@ -93,6 +93,27 @@ export async function importFromVault(opts = {}) {
 }
 
 /** 调试/测试用 */
+/**
+ * 启动时恢复上次打开的项目（B4，2026-09-24）。
+ *
+ * 为什么放在这里而不是 App.vue：App.vue 有一条静态闸门 —— **不得 import `projectStore`**
+ * （test_46 守；只有面板/组件才连项目 store）。而项目 store 是 Pinia **惰性实例化**的：
+ * 没有 `useProjectStore()` 被调用就不会创建 → 启动期必须有一个中立入口按需把它拉起来。
+ * 用**动态 import** 同时避开了循环依赖与启动开销（没人要项目就不加载那一坨）。
+ */
+export async function restoreLastProject() {
+  try {
+    const mod = await import('./projectStore');
+    const store = mod.useProjectStore();
+    if (store && typeof store.restoreLastProject === 'function') {
+      return await store.restoreLastProject();
+    }
+  } catch (e) {
+    console.warn('[canvasBridge] 恢复上次项目失败（忽略，保持只读）:', e);
+  }
+  return { success: false, reason: 'unavailable' };
+}
+
 export function describeCanvasBridge() {
   const base = adapter && typeof adapter.describe === 'function'
     ? adapter.describe()

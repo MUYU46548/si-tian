@@ -85,6 +85,56 @@ export const svgImageEl = (x, y, w, h, href, o = {}) =>
   `<image ${attr({ x, y, width: w, height: h, href, preserveAspectRatio: 'none', ...o })}/>`;
 
 /**
+ * 参考底图 → SVG `<g>` 组（内联位图 + 旋转 / 翻转 / 90° 宽高互换）。
+ *
+ * 🔴 **几何必须与画布绘制（`planetDrawing.drawReferenceImage`）逐字一致**，
+ *    否则「导出的底图角度、占位和画布不一样」—— 而这类不一致**不会报错**。
+ *    画布侧的约定（三处视图 AreaMap / InteriorView / PlanetMap 都一样）：
+ *      · `rotation` 是**象限索引 0/1/2/3**（不是弧度！）→ 角度 = `rot × 90`
+ *      · 90/270 时**交换绘制宽高**（`drawW/drawH`）—— 保持用户校准好的占位框
+ *      · `flipH` 在 `rotate` **之后**镜像（顺序不能换）
+ *
+ * ⚠️ 抽出这一处的直接原因：此前两处导出各写一份，且都写成
+ *    `rotation * 180 / Math.PI`（把象限索引当弧度）→ 转 1 次导出成 57°，
+ *    还都漏了 `flipH` 与宽高互换。
+ *
+ * @param {object} r 参考图记录（`{ dataUrl, width, height, scale, rotation, flipH, offsetX, offsetY, opacity }`）
+ * @returns {string} 可 push 进 SVG body 的片段（无有效尺寸时返回空串）
+ */
+export function refImageSvgGroup(r) {
+  if (!r || !r.dataUrl) return '';
+  const w = (r.width || 0) * (r.scale || 1);
+  const h = (r.height || 0) * (r.scale || 1);
+  if (!w || !h) return '';
+  const rot = (((r.rotation || 0) % 4) + 4) % 4;      // 归一化到 0..3（负数也安全）
+  const drawW = rot % 2 === 0 ? w : h;
+  const drawH = rot % 2 === 0 ? h : w;
+  const cx = r.offsetX ?? 0;
+  const cy = r.offsetY ?? 0;
+  const flip = r.flipH ? ' scale(-1,1)' : '';
+  return `<g transform="translate(${num(cx)},${num(cy)}) rotate(${num(rot * 90)})${flip}">`
+    + svgImageEl(-drawW / 2, -drawH / 2, drawW, drawH, r.dataUrl, { opacity: r.opacity ?? 0.6 })
+    + '</g>';
+}
+
+/**
+ * 参考底图在**世界坐标**下的包围盒（已含旋转 —— 90/270 时宽高互换）。
+ * 导出算边界时必须用它，否则旋转过的底图会被裁掉一角。
+ */
+export function refImageWorldBounds(r) {
+  if (!r) return null;
+  const w = (r.width || 0) * (r.scale || 1);
+  const h = (r.height || 0) * (r.scale || 1);
+  if (!w || !h) return null;
+  const rot = (((r.rotation || 0) % 4) + 4) % 4;
+  const bw = rot % 2 === 0 ? w : h;
+  const bh = rot % 2 === 0 ? h : w;
+  const cx = r.offsetX ?? 0;
+  const cy = r.offsetY ?? 0;
+  return { minX: cx - bw / 2, minY: cy - bh / 2, maxX: cx + bw / 2, maxY: cy + bh / 2 };
+}
+
+/**
  * 斜线纹理图案（EU4 式占领）。
  * 同一颜色只生成一次 def；fill 用 `url(#id)`。
  */

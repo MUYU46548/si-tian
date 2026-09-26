@@ -20,6 +20,8 @@
 import { ref, toRaw } from 'vue';
 import { execute } from '../store/undo';
 import { brushSegmentRect } from '../utils/dirtyRect';
+// 不静默覆盖（2026-09-24）：高度图被重建时必须让用户看见
+import { setSaveState } from './useStatusBar';
 import {
   SEA_LEVEL, BIOME_KEYS,
   temperatureAtIndex, precipitationAtIndex, biomeIndex, brushFalloff,
@@ -81,6 +83,39 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
    * 历史坑：TypedArray 经 JSON 往返后退化为 {0:..}（无 length），
    * 直接 new Float32Array(obj) 得到空数组 → 笔刷涂不出任何东西。
    */
+  /**
+   * 高度图被**重建**时的回音（2026-09-24）。
+   * 「重建」= 用 `terrain[]` 多边形按 `elevation` 估值重算一份高度 —— 会覆盖用户涂过的地形，
+   * 且原数据不可恢复。以前完全静默，用户只会看到「山不见了」而不知道该怪谁。
+   */
+  /**
+   * 绑定到当前行星的底图（A1/R4，2026-09-25）。
+   * 绑定 = 剧本与行星**共用同一份高度图**，所以「行星侧重建高度图」不是行星的私事 ——
+   * 它会把共用这份地形的剧本一起改掉。重建前必须点名，否则用户只会看到「剧本的地形怎么变了」。
+   */
+  function boundBaseMaps(id) {
+    try {
+      return (store.getBaseMapsBoundToPlanet && store.getBaseMapsBoundToPlanet(id)) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function reportHeightmapRebuilt(boundTo) {
+    const users = Array.isArray(boundTo) ? boundTo : [];
+    const shared = users.length
+      ? `；⚠️ 这张高度图还被 ${users.length} 张剧本底图共用（${users.map(u => u.name).join('、')}），它们的地形会一起被改变`
+      : '';
+    console.warn('[heightmap] 高度图网格/数组损坏，已按「地形多边形」重建 —— 之前涂抹的高度无法恢复' + shared);
+    try {
+      setSaveState({
+        kind: 'warn',
+        text: '高度图已重建',
+        title: '原高度图网格损坏，已按地形多边形重建 —— 之前涂抹的高度无法恢复' + shared,
+      });
+    } catch (e) { /* 非浏览器环境忽略 */ }
+  }
+
   function ensureHeightmap() {
     const id = planetId();
     if (!id || !store.mapData?.[id]) return null;
@@ -92,9 +127,14 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
       && grid.cellsX * grid.cellsY === grid.points.length;
 
     if (!gridOk) {
+      // 🔴 **不静默覆盖**（2026-09-24）：`md.heightmap` 已存在却要重建 = 用「地形多边形」重算高度，
+      //    等于把用户涂过的高度换成多边形的估值。旧实现完全无声 —— 用户只会觉得「我的山没了」，
+      //    甚至以为是别处把数据弄丢的。首次初始化（本来就没有 heightmap）不算覆盖，不提示。
+      const overwriting = !!md.heightmap;
       const rebuilt = buildFromTerrain(rawEntry()?.terrain || []);
       md.heightmap = rebuilt;
       indexCache = null;
+      if (overwriting) reportHeightmapRebuilt(boundBaseMaps(id));
       return rebuilt;
     }
 
@@ -118,6 +158,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
         const rebuilt = buildFromTerrain(rawEntry()?.terrain || [], toRaw(grid));
         md.heightmap = rebuilt;
         indexCache = null;
+        reportHeightmapRebuilt(boundBaseMaps(id));   // h 已不可用 → 同样是覆盖（见上）
         return rebuilt;
       }
     } else if (!(hm.h instanceof Float32Array)) {

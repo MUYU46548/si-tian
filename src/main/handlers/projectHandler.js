@@ -312,12 +312,23 @@ function registerProjectHandlers(deps) {
       const read = await readProjectFile(target);
       // 数据安全：打开时留一份「会话基线」（覆盖式，1 份，不参与轮转）
       //   → 本次会话里无论自动保存刷了多少次，「打开时的样子」永远能取回。
+      // ⚠️ 基线失败**不阻塞打开**，但也**不能静默**（2026-09-24 修）：用户会以为有回滚点，
+      //    等 10 份轮转备份把它刷掉后就永久失去「打开时的样子」→ 必须把告警带回渲染层。
       let baseline = { backedUp: false };
+      let baselineWarning = '';
       try {
         baseline = await makeSessionBaseline(target);
-      } catch (e) { /* 基线失败不阻塞打开 */ }
+      } catch (e) {
+        baselineWarning = `会话基线未能创建（${(e && e.message) || e}）：「打开时的样子」没有留底，本次会话不可回滚到打开时状态`;
+        console.warn('[project] 会话基线创建失败:', e);
+      }
       await setLastProjectPath(target);
-      return ok({ ...read, dir: path.dirname(target), baselinePath: baseline.baselinePath || null });
+      return ok({
+        ...read,
+        dir: path.dirname(target),
+        baselinePath: baseline.baselinePath || null,
+        baselineWarning: baselineWarning || null,
+      });
     } catch (err) {
       return fail(err);
     }
@@ -331,6 +342,20 @@ function registerProjectHandlers(deps) {
       const res = await writeProjectFile(target, payload.project || {});
       await setLastProjectPath(target);
       return ok(res);
+    } catch (err) {
+      return fail(err);
+    }
+  });
+
+  // 上次打开的项目路径（B4，2026-09-24）—— 供启动时自动恢复。
+  // ⚠️ 只回报「文件确实还在」的路径：否则渲染层会为一个已删除/已移动的项目反复报错，
+  //    而这条路径是**启动时**用的，报错会发生在用户还没做任何事的时候。
+  ipcMain.handle('project-get-last-path', async () => {
+    try {
+      const last = getLastProjectPath();
+      if (!last) return ok({ path: null });
+      if (!(await fileExists(last))) return ok({ path: null, missing: last });
+      return ok({ path: last });
     } catch (err) {
       return fail(err);
     }

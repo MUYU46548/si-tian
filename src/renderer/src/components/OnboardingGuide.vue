@@ -52,10 +52,15 @@ async function chooseVault() {
     const result = await window.sitianAPI.selectVaultPath();
     if (result?.canceled) return;
     if (result?.success) {
-      vaultMsg.value = `已选择知识库：${result.path}，正在重新提取数据…`;
-      // 触发 App.vue 监听的 reextract 事件（自动重扫 + 刷新地图）
-      window.dispatchEvent(new Event('sitian:reextract'));
-      close();
+      // 🔴 旧实现派发 `sitian:reextract` —— 那是**落盘写**，在「无项目 = 只读」下必被写闸门拒绝：
+      //    用户选完知识库什么也拿不到，只看到一句「重新提取被拒绝」（2026-09-24 修，B3）。
+      //    正确路径是「以知识库为基底**新建项目**」（终态下把既有内容带进项目的唯一路径）。
+      //    引导层不直连 projectStore（架构闸门），因此把用户送到项目面板的那个按钮上。
+      vaultMsg.value = `已选择知识库：${result.path}。`
+        + '请点右下角「开始使用」，然后在项目面板点「新建并导入知识库内容」，把库里的词条带进来。';
+      window.dispatchEvent(new Event('sitian:open-project-panel'));
+      // 不自动 close()（旧实现会把这句提示一起关掉，用户根本来不及看）；跳到末步便于一键结束
+      currentStep.value = steps.length - 1;
     } else if (result?.error) {
       vaultError.value = true;
       vaultMsg.value = result.error;
@@ -70,6 +75,7 @@ async function chooseVault() {
 }
 
 const steps = [
+  { title: '先建一个项目', desc: '司天把你的编辑保存在项目文件（.sitian）里；没有项目时是只读浏览模式 —— 在「项目」面板新建或打开项目即可开始编辑' },
   { title: '浏览世界观', desc: '从世界卡片开始，逐级探索星域、星系总览和单系地图' },
   { title: '下钻行星与区域', desc: '单系地图点击行星进入行星地图，再点击聚落进入区域地图与建筑内部' },
   { title: '查看与编辑', desc: '点击节点查看百科式详情，进入编辑模式拖拽坐标、添加天体' },

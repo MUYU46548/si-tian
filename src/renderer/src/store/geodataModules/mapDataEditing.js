@@ -7,6 +7,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== 地形多边形 CRUD =====
   function addTerrainPolygon(planetId, polygon) {
+    if (!guardWrite('添加地形多边形').ok) return;
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
@@ -26,6 +27,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeTerrainPolygon(planetId, polygonId) {
+    if (!guardWrite('删除地形多边形').ok) return;
     if (!mapData.value[planetId]) return;
     const idx = mapData.value[planetId].terrain.findIndex(t => t.id === polygonId);
     if (idx === -1) return;
@@ -101,6 +103,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function updateControlPoint(planetId, polygonId, cpIndex, newPos) {
+    if (!guardWrite('调整控制点').ok) return;
     if (!mapData.value[planetId]) return;
     const polygon = mapData.value[planetId].terrain.find(t => t.id === polygonId);
     if (!polygon || !polygon.controlPoints || cpIndex >= polygon.controlPoints.length) return;
@@ -121,6 +124,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== 区域多边形 CRUD =====
   function addRegion(planetId, region) {
+    if (!guardWrite('添加区域').ok) return;
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
@@ -143,6 +147,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeRegion(planetId, regionId) {
+    if (!guardWrite('删除区域').ok) return;
     if (!mapData.value[planetId]?.regions) return;
     const idx = mapData.value[planetId].regions.findIndex(r => r.id === regionId);
     if (idx === -1) return;
@@ -163,6 +168,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function updateRegion(planetId, regionId, updates, oldSnapshot = null) {
+    if (!guardWrite('更新区域').ok) return;
     if (!mapData.value[planetId]?.regions) return;
     const region = mapData.value[planetId].regions.find(r => r.id === regionId);
     if (!region) return;
@@ -192,6 +198,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function updateTerrainPolygon(planetId, polygonId, updates, oldSnapshot = null) {
+    if (!guardWrite('更新地形多边形').ok) return;
     if (!mapData.value[planetId]) return;
     const polygon = mapData.value[planetId].terrain.find(t => t.id === polygonId);
     if (!polygon) return;
@@ -222,6 +229,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== 路线 CRUD =====
   function addRoute(planetId, route) {
+    if (!guardWrite('添加路线').ok) return;
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
@@ -244,6 +252,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeRoute(planetId, routeId) {
+    if (!guardWrite('删除路线').ok) return;
     if (!mapData.value[planetId]?.routes) return;
     const idx = mapData.value[planetId].routes.findIndex(r => r.id === routeId);
     if (idx === -1) return;
@@ -264,6 +273,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function updateRoute(planetId, routeId, updates, oldSnapshot = null) {
+    if (!guardWrite('更新路线').ok) return;
     if (!mapData.value[planetId]?.routes) return;
     const route = mapData.value[planetId].routes.find(r => r.id === routeId);
     if (!route) return;
@@ -294,6 +304,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== 浮动文本标签 CRUD =====
   function addTextLabel(planetId, label) {
+    if (!guardWrite('添加文本标签').ok) return;
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
@@ -316,6 +327,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeTextLabel(planetId, labelId) {
+    if (!guardWrite('删除文本标签').ok) return;
     if (!mapData.value[planetId]?.textLabels) return;
     const idx = mapData.value[planetId].textLabels.findIndex(l => l.id === labelId);
     if (idx === -1) return;
@@ -336,6 +348,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function updateTextLabel(planetId, labelId, updates, oldSnapshot = null) {
+    if (!guardWrite('更新文本标签').ok) return;
     if (!mapData.value[planetId]?.textLabels) return;
     const label = mapData.value[planetId].textLabels.find(l => l.id === labelId);
     if (!label) return;
@@ -366,6 +379,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== 标记 CRUD（带 undo） =====
   function addMarker(planetId, marker) {
+    if (!guardWrite('添加标记').ok) return;
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
@@ -388,6 +402,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeMarker(planetId, markerId) {
+    if (!guardWrite('删除标记').ok) return;
     if (!mapData.value[planetId]?.markers) return;
     const idx = mapData.value[planetId].markers.findIndex(m => m.id === markerId);
     if (idx === -1) return;
@@ -408,6 +423,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function updateMarker(planetId, markerId, updates, oldSnapshot = null) {
+    if (!guardWrite('更新标记').ok) return;
     if (!mapData.value[planetId]?.markers) return;
     const marker = mapData.value[planetId].markers.find(m => m.id === markerId);
     if (!marker) return;
@@ -439,6 +455,7 @@ export function createMapDataEditingModule(ctx) {
   // E7 批量属性/位置更新：一次 execute 合并多个对象的修改（单条 undo 步骤）
   // entries: [{ kind: 'marker'|'textLabel', id, updates: {...}, old: {...} }]
   function batchUpdateMapObjects(planetId, entries) {
+    if (!guardWrite('批量更新地图对象').ok) return;
     const data = mapData.value[planetId];
     if (!data) return;
     const applied = [];
@@ -513,6 +530,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== 地图版本快照（P2）=====
   function addMapSnapshot(planetId, name = '') {
+    if (!guardWrite('添加地图快照').ok) return null;
     const map = mapData.value[planetId];
     if (!map) return null;
     // 深拷贝当前地图数据（排除 snapshots 自身避免递归）
@@ -532,6 +550,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeMapSnapshot(planetId, snapshotId) {
+    if (!guardWrite('删除地图快照').ok) return;
     const map = mapData.value[planetId];
     if (!map?.snapshots) return;
     map.snapshots = map.snapshots.filter(s => s.id !== snapshotId);
@@ -565,6 +584,7 @@ export function createMapDataEditingModule(ctx) {
   // ===== 地点簇 CRUD =====
   // cluster: { id, name, memberIds: [nodeId...], color, collapsed }
   function addCluster(planetId, cluster) {
+    if (!guardWrite('添加地点簇').ok) return;
     if (!mapData.value[planetId]) {
       mapData.value[planetId] = { planetId, version: 1, terrain: [], regions: [], markers: [] };
     }
@@ -587,6 +607,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function removeCluster(planetId, clusterId) {
+    if (!guardWrite('删除地点簇').ok) return;
     if (!mapData.value[planetId]?.clusters) return;
     const idx = mapData.value[planetId].clusters.findIndex(c => c.id === clusterId);
     if (idx === -1) return;
@@ -607,6 +628,7 @@ export function createMapDataEditingModule(ctx) {
   }
 
   function updateCluster(planetId, clusterId, updates) {
+    if (!guardWrite('更新地点簇').ok) return;
     if (!mapData.value[planetId]?.clusters) return;
     const cluster = mapData.value[planetId].clusters.find(c => c.id === clusterId);
     if (!cluster) return;
@@ -677,6 +699,7 @@ export function createMapDataEditingModule(ctx) {
    * @param {Array<string>} removedIds 本次拖动擦除的图标 id
    */
   function applyReliefStroke(planetId, added = [], removedIds = []) {
+    if (!guardWrite('绘制地貌').ok) return;
     if (!mapData.value[planetId]) return;
     if (!Array.isArray(mapData.value[planetId].reliefIcons)) {
       mapData.value[planetId].reliefIcons = [];
@@ -703,6 +726,50 @@ export function createMapDataEditingModule(ctx) {
   }
 
   /** 清空全部地貌图标（单条 undo） */
+  /** 「清空地图内容」会被重置的字段；**其余字段一律原样保留**（见下方说明） */
+  const CLEARED_CONTENT_KEYS = ['terrain', 'regions', 'markers', 'routes', 'textLabels', 'clusters'];
+
+  /**
+   * 清空行星地图的**内容**（省份 / 区域 / 路线 / 标记 / 文本 / 地点簇）。
+   *
+   * 🔴 2026-09-24 修两处问题（原实现在 `PlanetMap.vue#confirmClear` 里**整体替换 mapData 对象**）：
+   *  ① **不再丢非地面数据**：旧实现只列了 7 个键，整体替换会连带丢掉 `heightmap` / `terrainGrid`
+   *     （及其 `gridWidth/gridHeight/gridOriginX/gridOriginY/cellWorldSize`）/ `azgaarProvinces…` /
+   *     `rivers` / `cultures` / `reliefIcons` / `referenceImages` / `snapshots` ——
+   *     用户点「清空省份」，实际被删的是**整张地图的所有非地面数据**，而提示语一个字都没提（谎报范围）。
+   *     现在只重置上面 6 个数组，其余键原样保留。
+   *  ② **走写闸门 + undo 栈**：旧实现两者都绕 —— 只读态下照改内存（永不落盘 = 静默假成功），
+   *     可写态下真的不可撤销（提示语自己都写着"不可撤销"）。现在只读态被守卫拒绝，
+   *     可写态**一次 Ctrl+Z 可整体还原**。
+   */
+  function clearPlanetContent(planetId) {
+    if (!guardWrite('清空行星地图内容').ok) return { success: false, readOnly: true };
+    const md = mapData.value[planetId];
+    if (!md) return { success: false, error: '该行星还没有地图数据' };
+    const before = {};
+    CLEARED_CONTENT_KEYS.forEach(k => { before[k] = md[k]; });
+
+    execute({
+      type: 'clear-planet-content',
+      label: '清空省份 / 区域 / 路线 / 标记 / 文本 / 地点簇',
+      category: 'property',
+      undo: () => {
+        const m = mapData.value[planetId];
+        if (!m) return;
+        CLEARED_CONTENT_KEYS.forEach(k => { m[k] = before[k]; });
+        m.updatedAt = new Date().toISOString();
+      },
+      redo: () => {
+        const m = mapData.value[planetId];
+        if (!m) return;
+        CLEARED_CONTENT_KEYS.forEach(k => { m[k] = []; });   // 每次都新建数组，避免多次 redo 复用同一引用
+        m.updatedAt = new Date().toISOString();
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+    return { success: true };
+  }
+
   function clearReliefIcons(planetId) {
     if (!mapData.value[planetId]?.reliefIcons?.length) return;
     const before = mapData.value[planetId].reliefIcons.slice();
@@ -801,6 +868,7 @@ export function createMapDataEditingModule(ctx) {
 
   // ===== P1-3 文化列表（行星级共享数据，供聚落"文化归属"下拉使用）=====
   function addCulture(planetId, culture) {
+    if (!guardWrite('添加文化').ok) return;
     if (!mapData.value[planetId]) return null;
     if (!Array.isArray(mapData.value[planetId].cultures)) mapData.value[planetId].cultures = [];
     const list = mapData.value[planetId].cultures;
@@ -881,6 +949,7 @@ export function createMapDataEditingModule(ctx) {
     moveClusterMembers,
     applyReliefStroke,
     clearReliefIcons,
+    clearPlanetContent,
     addCulture,
     removeCulture,
     updateCulture,

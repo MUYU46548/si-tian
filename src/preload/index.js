@@ -40,7 +40,8 @@ contextBridge.exposeInMainWorld('sitianAPI', {
     ipcRenderer.on('app-flush-before-quit', h);
     return () => ipcRenderer.removeListener('app-flush-before-quit', h);
   },
-  notifyFlushDone: () => ipcRenderer.send('app-flush-done'),
+  // payload.failed 非空 = 有改动未能落盘 → 主进程会弹原生对话框告知（渲染层控制台用户看不到）
+  notifyFlushDone: (payload) => ipcRenderer.send('app-flush-done', payload || { failed: [] }),
 
   // 当前激活的底图键（P0 持久化）
   getCurrentBaseMapKey: () => ipcRenderer.invoke('get-current-basemap-key'),
@@ -83,6 +84,8 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   projectOpen: (filePath) => ipcRenderer.invoke('project-open', filePath),
   projectSave: (payload) => ipcRenderer.invoke('project-save', payload),
   projectList: (dir) => ipcRenderer.invoke('project-list', dir),
+  /** 上次打开的项目路径（B4）：启动时自动恢复用；文件已不存在时返回 { path: null, missing } */
+  projectGetLastPath: () => ipcRenderer.invoke('project-get-last-path'),
   projectPickDir: () => ipcRenderer.invoke('project-pick-dir'),
   projectReveal: (filePath) => ipcRenderer.invoke('project-reveal', filePath),
   projectBackupNow: (filePath) => ipcRenderer.invoke('project-backup-now', filePath),

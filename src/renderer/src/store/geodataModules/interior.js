@@ -2,7 +2,10 @@
 // ctx: { execute, scheduleAutoSave }
 // 注意：interiorData ref 由本模块持有，geodata.js 通过返回值取用（load/saveGeodata、selectBuilding 等）
 import { ref } from 'vue';
-// 内存编辑闸门：本模块有 3 个「不走 execute()」的直接写，只读态必须同样拦（改了不落盘 = 静默丢数据）
+// 内存编辑闸门：本模块有 7 个「不经 undo 守卫」的写点，只读态必须同样拦（改了不落盘 = 静默丢数据）：
+//   addFloor / removeFloor / updateFloor（楼层，直接改内存）
+//   removeFurniture（直接改内存）/ updateFurniture（先改内存后 execute）
+//   updateInteriorReferenceImage / removeInteriorReferenceImage（参考图）
 import { guardWrite } from '../writeGate';
 
 export function createInteriorModule(ctx) {
@@ -32,6 +35,7 @@ export function createInteriorModule(ctx) {
 
   // 移除楼层
   function removeFloor(buildingId, floorId) {
+    if (!guardWrite('移除楼层').ok) return;
     const data = interiorData.value[buildingId];
     if (!data) return;
     const idx = data.floors.findIndex(f => f.id === floorId);
@@ -44,6 +48,7 @@ export function createInteriorModule(ctx) {
 
   // 更新楼层属性
   function updateFloor(buildingId, floorId, updates) {
+    if (!guardWrite('更新楼层').ok) return;
     const data = interiorData.value[buildingId];
     if (!data) return;
     const floor = data.floors.find(f => f.id === floorId);
@@ -180,6 +185,7 @@ export function createInteriorModule(ctx) {
 
   // 移除家具
   function removeFurniture(buildingId, floorId, furnitureId) {
+    if (!guardWrite('移除家具').ok) return;
     const data = interiorData.value[buildingId];
     if (!data) return;
     const floor = data.floors.find(f => f.id === floorId);
@@ -190,6 +196,9 @@ export function createInteriorModule(ctx) {
 
   // 更新家具属性（支持 undo：传 oldSnapshot 记录变更前的值）
   function updateFurniture(buildingId, floorId, furnitureId, updates, oldSnapshot = null) {
+    // ⚠️ 本函数**先改内存、后 execute**（Object.assign 在 execute 之前）→ 必须守函数首行，
+    //    否则只读态下「拒绝」发生在数据已经改完之后（test_54 点名的危险形态）
+    if (!guardWrite('更新家具').ok) return;
     const data = interiorData.value[buildingId];
     if (!data) return;
     const floor = data.floors.find(f => f.id === floorId);

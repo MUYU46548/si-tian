@@ -227,7 +227,7 @@ async function main() {
   });
 
   // ── 8. IPC 注册：借假 ipcMain 走一遍全链路 ────────────────────────────────
-  await check('registerProjectHandlers 注册 8 个通道并可端到端调用', async () => {
+  await check('registerProjectHandlers 注册全部通道并可端到端调用', async () => {
     const handlers = new Map();
     const fakeIpc = { handle: (name, fn) => handlers.set(name, fn) };
     let lastPath = '';
@@ -248,10 +248,17 @@ async function main() {
       setLastProjectPath: async (p) => { lastPath = p; return p; },
     });
 
+    // 通道清单：正向（都应注册）+ 反向（不得有未登记的通道）。
+    // 2026-09-24：原来用 `eq(handlers.size, expected.length)` 判「预期之外」—— 那是**数条数**，
+    // 新增通道时只会得到一句「注册了预期之外的通道」，看不出该如何处置。改成集合差并写明动作。
     const expected = ['project-create', 'project-open', 'project-save', 'project-list',
-      'project-pick-dir', 'project-reveal', 'project-backup-now', 'project-git-snapshot'];
+      'project-pick-dir', 'project-reveal', 'project-backup-now', 'project-git-snapshot',
+      // B4（2026-09-24）：启动时恢复上次项目 —— 只回报「文件确实还在」的路径
+      'project-get-last-path'];
     for (const ch of expected) assert(handlers.has(ch), `未注册通道 ${ch}`);
-    eq(handlers.size, expected.length, '注册了预期之外的通道');
+    const unregistered = [...handlers.keys()].filter(c => !expected.includes(c));
+    assert(unregistered.length === 0,
+      `注册了未登记的通道（请把它们补进本用例的 expected 列表）：${unregistered.join(', ')}`);
 
     // create
     const created = await handlers.get('project-create')(null, { name: 'IPC测试', dir: DIR, project: sampleProject('IPC测试') });
@@ -265,6 +272,18 @@ async function main() {
     const saved = await handlers.get('project-save')(null, { filePath: created.filePath, project: sampleProject('IPC测试-改') });
     eq(saved.success, true, `save 失败：${saved.error}`);
     eq(JSON.parse(await fsp.readFile(created.filePath, 'utf-8')).meta.name, 'IPC测试-改', 'save 未写入新内容');
+
+    // get-last-path（B4）：刚保存过 → 应回报该路径
+    const lastRes = await handlers.get('project-get-last-path')(null);
+    eq(lastRes.success, true, `get-last-path 失败：${lastRes.error}`);
+    eq(lastRes.path, created.filePath, 'get-last-path 未回报上次项目路径');
+    // 文件不存在时只回报 missing —— 渲染层据此**静默回落只读**，而不是对着一个不存在的项目报错
+    lastPath = path.join(DIR, '已经不存在了.sitian');
+    const missingRes = await handlers.get('project-get-last-path')(null);
+    eq(missingRes.success, true, 'get-last-path（文件缺失）不应报错');
+    eq(missingRes.path, null, '文件缺失时不应回报路径');
+    eq(missingRes.missing, lastPath, '未回报 missing 原路径');
+    lastPath = created.filePath;   // 还原，供后续 open 用例使用
 
     // open（不给路径 → 走 dialog）
     dialogPick = created.filePath;

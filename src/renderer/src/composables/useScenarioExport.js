@@ -5,8 +5,10 @@
 // 也不需要复制一遍画布的绘制管线。
 import { ref } from 'vue';
 import {
-  serializeSvg, svgPathD, svgPath, svgRect, svgTextEl, svgCircleEl, svgImageEl,
+  serializeSvg, svgPathD, svgPath, svgRect, svgTextEl, svgCircleEl,
   hatchPatternDef, boundsOf, rasterizeSvg, escXml, stamp,
+  // A7：参考底图几何的唯一实现（象限索引 → 90° 步进 / flipH / 宽高互换）
+  refImageSvgGroup,
 } from '../utils/svgExport';
 import {
   currentOwnerRef, isStriped, polityColor, settledCount,
@@ -66,17 +68,16 @@ export function useScenarioExport({
     body.push(`<g transform="translate(${Math.round(tx)},${Math.round(ty)})">`);
 
     // 参考底图（数据 URL 直接内联，SVG 光栅化时无需外部资源）
+    // A7：几何统一走 `refImageSvgGroup`（象限索引 → 90° 步进 / flipH / 宽高互换），
+    // 与行星侧导出、与画布绘制**同一份实现**；此前这里把 rotation 当弧度换算
+    //（`* 180/π`），转 1 次会导出成 57°。
+    // ⚠️ 既存事实：剧本侧画布（ScenarioMap）**当前不渲染参考图**，这里导出属"导出的东西
+    //    画布上看不见"。保留该能力（底图是用户自备素材，导出带上更有用），但不对齐画布 ——
+    //    若日后 ScenarioMap 加上参考图渲染，必须改回"读同一个来源"。
     const refs = baseMap.value?.referenceImages || [];
     for (const r of refs) {
-      if (!r?.dataUrl) continue;
-      const w = (r.width || 0) * (r.scale || 1);
-      const h = (r.height || 0) * (r.scale || 1);
-      if (!w || !h) continue;
-      const cx = r.offsetX ?? 0, cy = r.offsetY ?? 0;
-      const rot = (r.rotation || 0) * 180 / Math.PI;
-      body.push(`<g transform="translate(${Math.round(cx)},${Math.round(cy)}) rotate(${Math.round(rot)}) translate(${Math.round(-w / 2)},${Math.round(-h / 2)})">`);
-      body.push(svgImageEl(0, 0, w, h, r.dataUrl, { opacity: r.opacity ?? 0.6 }));
-      body.push('</g>');
+      const g = refImageSvgGroup(r);
+      if (g) body.push(g);
     }
 
     // 网格

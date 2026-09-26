@@ -105,6 +105,8 @@ import Icon from './Icon.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
+// 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
+import { fadedAlpha } from '../utils/entityStatus';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -968,7 +970,13 @@ function drawGalaxyNodes(ctx, lod) {
     if (matched) starColor = isCurrent ? '#ffd700' : '#ffaa00';
     
     const baseRadius = matched ? 11 : 9;
-    
+
+    // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
+    // 匹配命中 / 拖拽高亮时不淡化（你正在操作它）。
+    // ⚠️ 下方 lod 分支有一个**中途 return** —— save 之后必须在那里先 restore，否则 alpha 会泄漏。
+    const fade = fadedAlpha(galaxy.status, { focused: isHighlighted || matched });
+    if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
+
     if (lod < 0.35) {
       ctx.fillStyle = starColor;
       ctx.shadowColor = starColor;
@@ -977,6 +985,7 @@ function drawGalaxyNodes(ctx, lod) {
       ctx.arc(galaxy.x, galaxy.y, baseRadius + 2, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
+      if (fade < 1) ctx.restore();   // ← 中途 return 前必须收尾
       return;
     }
     
@@ -1063,6 +1072,8 @@ function drawGalaxyNodes(ctx, lod) {
       ctx.fillStyle = isHighlighted ? starColor : 'rgba(230, 240, 255, 0.95)';
       ctx.fillText(text, galaxy.x, labelY);
     }
+
+    if (fade < 1) ctx.restore();   // 与上面的 save 配对（叙事状态淡化）
   });
 }
 
@@ -1627,6 +1638,16 @@ watch([() => props.galaxies, () => props.domains], () => {
 });
 
 watch(visibleHyperlanes, () => {
+  renderer.requestRender();
+});
+
+// 叙事状态变更 → 重绘（2026-09-24）。
+// ⚠️ 必须走这个指纹：`updateNode` 是 `Object.assign(node, …)` **就地改字段** —— 既不换数组引用、
+//    也不换节点对象，所以基于「数组/对象引用」的浅 watch 全都捕捉不到 status 变化。
+// 这里 extra 要重建布局：`galaxyNodes` 是**本地副本**（`{...galaxy, x, y}` 展开而来），
+// 副本里的 status 是拷贝时的旧值 —— 只 requestRender 会一直画旧状态。
+watch(() => store.statusRevision, () => {
+  applyStableLayout();
   renderer.requestRender();
 });
 

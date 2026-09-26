@@ -12,7 +12,10 @@ export function createPlanetHitTest(getState) {
 
 function hitTest(wx, wy) {
   const s = getState();
-  if (!s.layers.isEditable('planet', 'terrain') && 
+  // M2/A2 第二步：`terrain[]` 降为**可选覆盖物**后，"可命中"不再等同于"图层开着"，
+  // 而是**"多边形确实被画在画布上"**（`terrainHit` 由 PlanetMap 按同一份判定算出：
+  // 有高度图时只有显式打开覆盖物 / 正在编辑多边形时才为真）。
+  if (!s.terrainHit && 
       !s.layers.isEditable('planet', 'markers') && 
       !s.layers.isEditable('planet', 'places') &&
       !s.layers.isEditable('planet', 'regions')) return null;
@@ -53,7 +56,8 @@ function hitTest(wx, wy) {
     }
   }
   
-  if (s.layers.isEditable('planet', 'terrain') && s.currentMapData) {
+  // 看得见才点得到（判定见 PlanetMap 的 `terrainHit`）
+  if (s.terrainHit && s.currentMapData) {
     for (let i = s.currentMapData.terrain.length - 1; i >= 0; i--) {
       const poly = s.currentMapData.terrain[i];
       if (pointInPolygon(wx, wy, poly.points)) {

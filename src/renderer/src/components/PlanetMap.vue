@@ -129,11 +129,25 @@
                 <option v-for="(color, key) in BIOME_COLORS" :key="key" :value="key">{{ key }}</option>
               </select>
             </template>
+            <span class="toolbar-label">着色</span>
+            <select
+              v-model="heightmapRasterKind"
+              class="brush-biome-select"
+              data-testid="heightmap-raster-kind"
+              title="高度图显示方式：群系（矢量轮廓，默认）/ 陆海底色 / 海拔 / 温度 / 降水（栅格 —— 与剧本底图图层同一套配色与实现）"
+            >
+              <option value="biome">群系</option>
+              <option value="landsea">陆海底色</option>
+              <option value="height">海拔</option>
+              <option value="temp">温度</option>
+              <option value="prec">降水</option>
+            </select>
             <span class="toolbar-label">半径</span>
             <input type="range" v-model.number="planetHeightBrush.brushRadius.value" min="20" max="300" step="10" class="brush-slider" />
             <span class="toolbar-label">强度</span>
             <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
           </div>
+          <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调强度</div>
         </template>
 
         <template v-if="interactionMode === 'terrain'">
@@ -150,6 +164,7 @@
             <input type="range" v-model.number="terrainBrushHardness" min="0" max="1" step="0.05" class="brush-slider" />
             <span class="toolbar-label">↗ 按住拖动涂抹地形</span>
           </div>
+          <div class="brush-wheel-hint">滚轮调大小 · Shift+滚轮调硬度</div>
         </template>
 
         <div class="toolbar-group" title="绘制辅助">
@@ -212,7 +227,8 @@
         </div>
         
         <div class="toolbar-group" title="图层可见性">
-          <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="切换地形图层显示">▣ 地形</button>
+          <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="地形总开关：有高度图时以高度图为主表示，没有高度图时显示地形多边形">▣ 地形</button>
+          <button :class="{ active: layers.isVisible('planet', 'terrainPolygons') }" @click="layers.toggleLayer('planet', 'terrainPolygons')" title="地形多边形（覆盖物）：有高度图时默认隐藏，打开后**半透明**叠在高度图上，便于对照两者" data-testid="layer-terrain-polygons">▦ 多边形</button>
           <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示"><Icon name="mountain" :size="13"/> 地名</button>
           <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
           <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）"><Icon name="more-horizontal" :size="13"/> 更多</button>
@@ -947,6 +963,7 @@ import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { DirtyRectTracker, brushSegmentRect } from '../utils/dirtyRect';
 import { createPlanetDrawing } from '../composables/planetDrawing';
 import { createPlanetHitTest } from '../composables/planetHitTest';
+import { resolveTerrainRepresentation } from '../utils/terrainRepresentation';
 import { createPlanetInteractions } from '../composables/planetInteractions';
 import { useProvinceEditor } from '../composables/useProvinceEditor';
 import { useRegionEditor } from '../composables/useRegionEditor';
@@ -1142,6 +1159,13 @@ const hoveredVertex = ref(null);
 const selectedRegion = ref(null);
 const regionColor = ref('#FF6B6B');
 const interactionMode = ref('pan');
+// M2/A2（2026-09-25）：高度图的**显示方案**。
+//   · 'biome'（默认）= 原有的矢量群系着色（`drawHeightmap`：平滑闭合环 + 反马赛克）
+//   · 其余四种 = `drawHeightmapRaster` 走 `utils/heightmapRaster.js` ——
+//     **与 ScenarioMap 底图图层同一套配色与实现**（M2 的目标：同一份高度图，两个视图一个观感）
+// 为什么默认不改：矢量那套是为解决「逐格绘制 + 画布滤镜卡死」重写的（见 planetDrawing 352 行），
+// 群系着色信息量也更大；栅格是**补上**「与剧本视图对齐」的那一档选择，不是替代。
+const heightmapRasterKind = ref('biome');
 const dragObject = ref(null);
 const dragRegionAnchor = ref(null);
 const isSpacebarDown = ref(false);
@@ -1183,6 +1207,25 @@ const currentMapData = computed(() => {
   if (!props.planet) return null;
   return store.mapData[props.planet.id] || { planetId: props.planet.id, version: 1, terrain: [], regions: [], markers: [], routes: [], textLabels: [] };
 });
+
+// ===== 地形表示（M2/A2 第二步）=====
+// 数据驱动：有高度图 → 高度图是**地形主表示**，`terrain[]` 退为可选覆盖物；
+// 没有高度图（自建底图 / 旧多边形地图）→ 多边形照旧是主表示（**零行为变更**，兼容性底线）。
+// ⚠️ 图层开关是全局单例，而「有没有高度图」是每颗行星各自的 —— 所以只能数据驱动判定，
+//    不能靠改某个开关的默认值。判定与命中检测 / 导出（PNG·SVG）**共用同一份**：
+//    `utils/terrainRepresentation.js`
+const terrainRep = computed(() => resolveTerrainRepresentation({
+  heightmap: currentMapData.value?.heightmap,
+  terrainVisible: layers.isVisible('planet', 'terrain'),
+  polygonsVisible: layers.isVisible('planet', 'terrainPolygons'),
+  // 正在画/移多边形 → 强制显示，否则「看不见也点不到」
+  editing: editMode.value && (interactionMode.value === 'draw' || interactionMode.value === 'move'),
+  // 高度笔刷进行中强制显示高度图（涂了必须看得见）
+  forceHeightmap: editMode.value && interactionMode.value === 'height',
+}));
+// 多边形命中 = 正在被渲染（`drawPolygons`）且总开关未锁定。
+// 「降为覆盖物」的必然推论：**看得见才点得到** —— 关掉图层后不该还能点中它。
+const terrainHit = computed(() => terrainRep.value.drawPolygons && !layers.isLocked('planet', 'terrain'));
 
 // Azgaar .map 参考数据是否可用
 const hasAzgaarData = computed(() => {
@@ -1298,7 +1341,15 @@ function onRender(ctx, w, h) {
   drawing.drawBackground(ctx, w, h);
   drawing.drawReferenceImage(ctx);
   if (fogMode.value) drawing.drawFog(ctx, w, h);
-  if (layers.isVisible('planet', 'terrain')) drawing.drawTerrain(ctx);
+  // 地形表示（M2/A2 第二步）：**数据驱动** —— 有高度图则以高度图为主表示，多边形退为可选覆盖物。
+  // ⚠️ 这里与命中检测 / 导出三处必须读同一份判定（`utils/terrainRepresentation.js`）；
+  //    各写一套 `if` 就是「改一处另两处不变」的又一个双源，而且不会报错。
+  const rep = terrainRep.value;
+  if (rep.drawHeightmap) {
+    if (heightmapRasterKind.value === 'biome') drawing.drawHeightmap(ctx, rep.heightmapAlpha);
+    else drawing.drawHeightmapRaster(ctx, heightmapRasterKind.value, rep.heightmapAlpha);
+  }
+  if (rep.drawPolygons) drawing.drawTerrain(ctx, { alpha: rep.polygonAlpha });
   if (layers.isVisible('planet', 'elevation')) drawing.drawElevation(ctx);
   if (layers.isVisible('planet', 'climate')) drawing.drawClimate(ctx);
   if (layers.isVisible('planet', 'precipitation')) drawing.drawPrecipitation(ctx);
@@ -1316,13 +1367,6 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('planet', 'markers')) drawing.drawMarkers(ctx);
   if (layers.isVisible('planet', 'clusters')) drawing.drawClusters(ctx);
   if (layers.isVisible('planet', 'textLabels')) drawing.drawTextLabels(ctx);
-  // 高度图渲染（P3 阶段 3）：生物群系色块
-  // 默认关闭（否则整屏半透明色块像"遮罩"），但高度笔刷进行中强制显示 —— 否则涂了看不见
-  if (layers.isVisible('planet', 'heightmap')
-    || (editMode.value && (interactionMode.value === 'height'))) {
-    drawing.drawHeightmap(ctx);
-  }
-
   // Azgaar .map 参考图层（C → A → B → D）
   if (layers.isVisible('planet', 'politicalBorders')) {
     drawing.drawPoliticalBorders(ctx);
@@ -1338,7 +1382,11 @@ function onRender(ctx, w, h) {
   }
 
   // 画布地形笔刷网格渲染（P3 验证通过的原型集成）
-  if (layers.isVisible('planet', 'terrain') && terrainGridEnabled.value) {
+  // M2/A2 第二步：涂色网格属于「地形显示」的一部分 —— 它有**自己的**开关（`terrainGridEnabled`），
+  // 所以只要地形有显示（高度图 或 多边形覆盖物）就画，而不是死绑在「地形」总开关上。
+  // （死绑的后果：关掉总开关改看多边形覆盖物时，涂色层凭空消失。）
+  if ((layers.isVisible('planet', 'terrain') || layers.isVisible('planet', 'terrainPolygons'))
+      && terrainGridEnabled.value) {
     terrainCanvasBrush.drawTerrainGridToCtx(ctx);
   }
 
@@ -1355,6 +1403,7 @@ function onRender(ctx, w, h) {
 const ctxMenu = useContextMenu();
 const hitTestModule = createPlanetHitTest(() => ({
   layers, currentMapData: currentMapData.value, places: places.value,
+  terrainHit: terrainHit.value,
   selectedProvince: selectedProvince.value, selectedRegion: selectedRegion.value,
   selectedRoute: selectedRoute.value, selectedMarker: selectedMarker.value,
   selectedTextLabel: selectedTextLabel.value, editMode: editMode.value,
@@ -1710,14 +1759,59 @@ const terrainCanvasBrush = useTerrainCanvasBrush({
 // ===== P0-1 地貌图标笔刷 composable =====
 const reliefBrush = useReliefBrush({ store, currentMapData, renderer });
 
-// 滚轮调散布间距（捕获阶段拦截，避免同时触发画布缩放）
+// 笔刷类工具的**统一滚轮契约**（A6）—— 与剧本视图（`ScenarioMap.onWheel`）对齐：
+//   · 滚轮 = 笔刷半径 / 大小
+//   · Shift + 滚轮 = 强度 / 硬度
+//   · **上滚增大**（`deltaY < 0`）
+// 必须用捕获阶段（模板上的 `@wheel.capture`）拦截，否则同一次滚轮会**同时**触发画布缩放。
+// 范围与步进取各笔刷**滑块自身的 min/max/step**（不另立一套数字，避免"滚轮能调出滑块调不出的值"）。
 function onWrapperWheel(e) {
-  if (!editMode.value || interactionMode.value !== 'relief') return;
-  e.preventDefault();
-  e.stopPropagation();
-  const spacing = reliefBrush.adjustSpacing(e.deltaY > 0 ? 1 : -1);
-  setStatus({ toolLabel: `地貌笔刷 · 间距 ${spacing}` });
-  renderer.requestRender();
+  if (!editMode.value) return;
+  const up = e.deltaY < 0;
+  const d = up ? 1 : -1;
+  const mode = interactionMode.value;
+
+  const clampStep = (v, step, min, max) => Math.min(max, Math.max(min, v + d * step));
+
+  if (mode === 'height') {
+    e.preventDefault();
+    e.stopPropagation();
+    const b = planetHeightBrush;
+    if (e.shiftKey) {
+      b.brushStrength.value = +clampStep(b.brushStrength.value, 0.5, 0.5, 10).toFixed(2);
+      setStatus({ toolLabel: `高度笔刷 · 强度 ${b.brushStrength.value}` });
+    } else {
+      b.brushRadius.value = clampStep(b.brushRadius.value, 10, 20, 300);
+      setStatus({ toolLabel: `高度笔刷 · 半径 ${b.brushRadius.value}` });
+    }
+    renderer.requestRender();
+    return;
+  }
+
+  if (mode === 'terrain') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.shiftKey) {
+      terrainBrushHardness.value = +clampStep(terrainBrushHardness.value, 0.05, 0, 1).toFixed(2);
+      setStatus({ toolLabel: `地形笔刷 · 硬度 ${terrainBrushHardness.value}` });
+    } else {
+      terrainBrushSize.value = clampStep(terrainBrushSize.value, 1, 1, 30);
+      setStatus({ toolLabel: `地形笔刷 · 大小 ${terrainBrushSize.value} 格` });
+    }
+    renderer.requestRender();
+    return;
+  }
+
+  if (mode === 'relief') {
+    e.preventDefault();
+    e.stopPropagation();
+    const spacing = reliefBrush.adjustSpacing(up ? -1 : 1);
+    setStatus({ toolLabel: `地貌笔刷 · 间距 ${spacing}` });
+    renderer.requestRender();
+    return;
+  }
+  // 其余模式（pan/move/draw/region/marker/route/settle/text/cluster/river/political）不拦截：
+  // 滚轮留给画布缩放 —— 与从前一致。
 }
 
 // R 切换地貌笔刷（Shift+R 留给河流编辑器）；Esc 取消当前笔迹
@@ -1767,6 +1861,8 @@ const focusHighlight = useFocusHighlight({ renderer });
 const fullMapExport = useFullMapExport({
   store, props, emit, renderer, currentMapData, layers,
   drawing, referenceImage, places, provinceEditor, markerEditor, lodRef, ruler,
+  // M2/A2 第二步：导出与画布读**同一份**地形表示判定，否则「导出图 ≠ 画布」会再次分叉
+  terrainRep, heightmapRasterKind,
 });
 
 // ===== 解构 composables 到组件作用域 =====
@@ -2193,17 +2289,25 @@ function saveMap() {
 }
 
 function confirmClear() {
-  if (confirm('确定要清空所有省份、区域、路线、标记、文本和地点簇吗？此操作不可撤销。')) {
-    store.mapData[props.planet.id] = {
-      planetId: props.planet.id,
-      version: 1,
-      terrain: [],
-      regions: [],
-      markers: [],
-      routes: [],
-      textLabels: [],
-      clusters: [],
-    };
+  // 🔴 2026-09-24 重写：旧实现**整体替换** `store.mapData[id]`（只列 7 个键）→ 连带丢掉
+  //    heightmap / terrainGrid / azgaar* / rivers / cultures / reliefIcons / referenceImages / snapshots，
+  //    而提示语只提"省份、区域、路线、标记、文本和地点簇" = **谎报范围**；
+  //    同时它绕开写闸门与 undo 栈（只读态照改内存、可写态真的不可撤销）。
+  //    现在：走 store 的受守卫方法（clearPlanetContent），一条 undo，且只清内容、不碰其余数据。
+  if (store.isReadOnly) {
+    saveStatus.value = '清空被拒绝：还没有打开项目（新建或打开项目后即可编辑）';
+    saveStatusKind.value = 'err';
+    snapshotPanel.clearSaveStatusTimer();
+    snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 5000);
+    return;
+  }
+  if (confirm('清空省份、区域、路线、标记、文本与地点簇？\n\n高度图、涂色网格、河流、文化、地貌图标、参考图与地图快照都会保留。\n此操作可用 Ctrl+Z 撤销。')) {
+    const r = store.clearPlanetContent(props.planet.id);
+    if (r && r.success === false) {
+      saveStatus.value = r.error || '清空失败';
+      saveStatusKind.value = 'err';
+      return;
+    }
     selectedProvince.value = null;
     selectedRegion.value = null;
     selectedMarker.value = null;
@@ -2714,6 +2818,14 @@ function zoomFit() {
 
 // ===== 地图数据加载 =====
 watch(() => store.mapData[props.planet?.id], () => { renderer.requestRender(); }, { deep: true });
+
+// 叙事状态变更 → 重绘（2026-09-24）。
+// `places` 是 computed 只做 filter（元素即 store 的响应式对象，不拷贝）→ 绘制时读到最新 status，
+// 只需一次 requestRender。用指纹而不是 `watch(places)`：节点是**就地改字段**，浅 watch 不会触发。
+watch(() => store.statusRevision, () => { renderer.requestRender(); });
+// M2/A2（2026-09-25）：切换高度图**着色方案**必须触发重绘。
+// 漏了这条的后果是「下拉改了、画布没反应」——test_69 的像素断言实测抓到过（diffPixels: 0）。
+watch(heightmapRasterKind, () => { renderer.requestRender(); });
 
 watch(() => props.planet?.id, async (id) => {
   if (!id) return;
@@ -3586,6 +3698,15 @@ canvas {
   color: var(--planet-text-secondary);
   margin: 0 2px;
   align-self: center;
+}
+
+/* A6：滚轮手势提示（笔刷参数区下方） */
+.brush-wheel-hint {
+  font-size: 10px;
+  color: var(--planet-text-secondary);
+  opacity: 0.75;
+  margin: 2px 0 2px 2px;
+  letter-spacing: 0.2px;
 }
 
 /* 线型/字号选择行 */

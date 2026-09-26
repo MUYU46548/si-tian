@@ -18,6 +18,9 @@ import { settlementRadius } from '../utils/settlement';
 import { roadDrawParams } from '../utils/roadStyles';
 import { RIVER_COLOR, RIVER_DEFAULT_WIDTH } from '../utils/rivers';
 import { buildLabelOutlines } from '../utils/gridOutline';
+import { fadedAlpha } from '../utils/entityStatus';
+// M2/A2（2026-09-25）：高度图**栅格**渲染与 ScenarioMap 共用同一份实现与配色
+import { createRasterCache } from '../utils/heightmapRaster';
 
 const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（图例/着色按编码索引）
 
@@ -397,7 +400,36 @@ function heightmapOutlineStats() {
   return { cost: hmOutlineCost, loops: hmOutlineLoops, labels: hmOutlines ? hmOutlines.size : 0 };
 }
 
-function drawHeightmap(ctx) {
+// ── 高度图**栅格**渲染（M2/A2，2026-09-25）────────────────────────────────────
+// 与 ScenarioMap 共用 `utils/heightmapRaster.js` 的构建逻辑与配色。
+//
+// 为什么**保留**下面那套矢量轮廓：它做的是「生物群系着色 + 反马赛克」（buildLabelOutlines
+// 平滑闭合环，见 352 行那段踩坑记录），仍是 `biome` 方案的实现；栅格是**新增的另一档配色**
+// （陆海底色 / 海拔 / 温度 / 降水），让两个视图对同一份高度图给出同一套观感。默认仍走 biome
+// → 零行为变更（`heightmap` 图层本来就默认关闭，只有编辑高度时强制显示）。
+//
+// 缓存失效用**内容指纹**（复用轮廓缓存的 hashLabels）：涂抹时 h 变了指纹就变 → 自动重建，
+// 不需要任何外部 clear 调用（ScenarioMap 的栅格缓存只在切底图时清，涂抹期间是陈旧的）。
+const hmRasterCache = createRasterCache();
+
+function drawHeightmapRaster(ctx, kind, alpha) {
+  const s = getState();
+  const hm = toRaw(toRaw(s.currentMapData))?.heightmap;
+  if (!hm || !hm.h || !hm.grid) return;
+  if (!hm.h.length) return;
+  const key = kind + '|' + hashLabels(hm.h);
+  const r = hmRasterCache.get(key, hm, kind);
+  if (!r) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  // alpha 由调用方按「主表示 or 叠加」决定（见 utils/terrainRepresentation.js）：
+  // 主表示时不透明（否则透出画布背景），与多边形叠加时半透明（两者都要看得见）。
+  ctx.globalAlpha = (typeof alpha === 'number') ? alpha : 0.85;
+  ctx.drawImage(r.canvas, r.minX, r.minY, r.w, r.h);
+  ctx.restore();
+}
+
+function drawHeightmap(ctx, alpha, opts) {
   const s = getState();
   const hm = toRaw(toRaw(s.currentMapData))?.heightmap; // 原始对象：每帧读数万格群系，逐格走响应式代理是纯开销
   if (!hm || !hm.h || !hm.grid) return;
@@ -406,14 +438,18 @@ function drawHeightmap(ctx) {
   if (!count || pts.length !== count) return; // 数据损坏（历史版本 JSON 往返丢失 length）→ 不画
   const biome = hm.biome;
   if (!biome || biome.length !== count) return;
+  // ⚠️ 视口剔除是**屏幕**优化：导出全图时必须关掉（`opts.full`），否则导出图里只有
+  //    当前屏幕视口那一块地形 —— 这类缺陷不会报错，只是导出的图悄悄缺了一大片。
+  const cull = !(opts && opts.full);
   const vp = s.viewport;
-  if (!vp) return;
+  if (cull && !vp) return;
   const spacing = hm.grid.spacing || 14.4;
 
   const outlines = heightmapOutlines(hm);
   if (!outlines || !outlines.size) return;
 
-  ctx.globalAlpha = 0.7;
+  // 同上：主表示不透明 / 叠加半透明，由调用方给出
+  ctx.globalAlpha = (typeof alpha === 'number') ? alpha : 0.7;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   for (const [b, loops] of outlines) {
@@ -422,7 +458,7 @@ function drawHeightmap(ctx) {
     for (const lp of loops) {
       const bb = lp.bbox;
       // 视口剔除（世界坐标）：环的包围盒与可见矩形不相交就整环跳过
-      if (bb[2] < vp.minX || bb[0] > vp.maxX || bb[3] < vp.minY || bb[1] > vp.maxY) continue;
+      if (cull && (bb[2] < vp.minX || bb[0] > vp.maxX || bb[3] < vp.minY || bb[1] > vp.maxY)) continue;
       const p = lp.pts;
       ctx.moveTo(p[0].x, p[0].y);
       for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
@@ -488,10 +524,13 @@ function niceStepForScale(raw) {
   return n * pow;
 }
 
-function drawTerrain(ctx) {
+function drawTerrain(ctx, opts) {
   const s = getState(); // 每次渲染取最新状态
   const terrain = s.currentMapData?.terrain || [];
   const vp = s.viewport;
+  // M2/A2 第二步：`terrain[]` 退为**可选覆盖物** → 调用方可给一个整体不透明度，
+  // 让它半透明叠在高度图上（两者同时可见）。不传 = 1 = 与从前逐像素一致。
+  const alpha = (opts && typeof opts.alpha === 'number') ? opts.alpha : 1;
 
   terrain.forEach(poly => {
     if (!poly.points || poly.points.length < 3) return;
@@ -507,9 +546,9 @@ function drawTerrain(ctx) {
     }
     ctx.closePath();
     
-    // 填充（不透明实色：地形"唯一值"，后画的地形直接覆盖先画的，无透明度叠加）
+    // 填充（实色：地形"唯一值"，后画的地形直接覆盖先画的，无透明度叠加）
     ctx.fillStyle = terrainColor;
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = alpha;
     ctx.fill();
     ctx.globalAlpha = 1;
 
@@ -521,7 +560,7 @@ function drawTerrain(ctx) {
       const pattern = getTexturePattern(poly.type, terrainColor, ctx);
       if (pattern) {
         ctx.fillStyle = pattern;
-        ctx.globalAlpha = 0.45;
+        ctx.globalAlpha = 0.45 * alpha;
         ctx.fill();
         ctx.globalAlpha = 1;
       }
@@ -530,7 +569,9 @@ function drawTerrain(ctx) {
     // 边界线
     ctx.strokeStyle = isSelected ? '#FFD700' : darkenColor(terrainColor, 20);
     ctx.lineWidth = isSelected ? 3 : 1.5;
+    ctx.globalAlpha = alpha;
     ctx.stroke();
+    ctx.globalAlpha = 1;
   });
 }
 
@@ -843,6 +884,14 @@ function drawPlaces(ctx) {
     const x = place.coordinate?.x || 0;
     const y = place.coordinate?.y || 0;
     if (!pointInViewport(x, y, vp, 120)) return;
+    // 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的聚落 —— **降视觉权重，不隐藏、不删数据**。
+    // 选中或悬停时不淡化：「编辑优先于装饰」，你正在看它就别弄模糊。
+    // ⚠️ 本函数体内**没有** globalAlpha 硬编码，所以 save/restore 只需包住整个回调；
+    //    若将来有人加了中途 `return`，必须在其之前 restore（否则 alpha 会泄漏到后续绘制）。
+    const fade = fadedAlpha(place.status, {
+      focused: (s.selectedPlaceIds && s.selectedPlaceIds.has(place.id)) || s.hoveredNode?.id === place.id,
+    });
+    if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
     const color = getPlaceColor(place);
     // P1-3：聚落图标按人口分级放大（无 population 的旧数据保持原尺寸）
     const radius = settlementRadius(getNodeRadius(place.layer), place.population) * (Number(place.sizeScale) || 1);
@@ -958,6 +1007,8 @@ function drawPlaces(ctx) {
       ctx.fillText(badgeText, badgeX + badgeIcon + badgeGap, badgeY);
       ctx.textAlign = 'center';
     }
+
+    if (fade < 1) ctx.restore();   // 与上面的 save 配对（叙事状态淡化）
   });
 }
 
@@ -1920,6 +1971,7 @@ function getContrastColor(hex) {
     drawSelectedHighlight,
     drawSelectionHandles,
     drawHeightmap,
+    drawHeightmapRaster,
     heightmapOutlineStats,
     drawHeightBrushPreview,
     drawTerrainBrushPreview,

@@ -50,28 +50,90 @@ def _prelude():
     return PRELUDE.replace('STORE_E', STORE).replace('PINIA_E', PINIA)
 
 
+def _function_body(src, fn):
+    """截取指定函数的函数体（括号配对；跳过字符串与行注释）。找不到返回 None。
+
+    为什么要这么麻烦：旧校验按**文件**判「出现过 guardWrite(」——
+    一个文件里只要有一个守卫，整行就算通过，同文件里其余裸奔的写函数永远查不出来。
+    现在必须精确到**函数体**，才能发现「同文件内漏守」（2026-09-24 修，实测踩到过）。
+    """
+    import re
+    m = re.search(r'\n[ \t]*(?:export\s+)?(?:async\s+)?function\s+' + re.escape(fn) + r'\s*\(', src)
+    if not m:
+        return None
+    i = src.find('{', m.end() - 1)
+    if i < 0:
+        return None
+    depth = 0
+    j = i
+    instr = None
+    incomment = False
+    while j < len(src):
+        c = src[j]
+        if incomment:
+            if c == '\n':
+                incomment = False
+        elif instr:
+            if c == '\\':
+                j += 2
+                continue
+            if c == instr:
+                instr = None
+        else:
+            if c in ('"', "'", '`'):
+                instr = c
+            elif c == '/' and j + 1 < len(src) and src[j + 1] == '/':
+                incomment = True
+            elif c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    return src[i + 1:j]
+        j += 1
+    return None
+
+
 def sub_source_contract(cdp):
-    """a) 内存写入口清单：每条 guarded 条目在对应文件里真存在 guardWrite 标记"""
+    """a) 内存写入口清单：**逐函数**断言守卫存在（按文件判 = 漏报型假绿，2026-09-24 改）"""
+    import re
     gate = _read('src/renderer/src/store/writeGate.js')
     if 'MEMORY_WRITE_CALLSITES' not in gate:
         return False, 'writeGate 缺少内存写入口清单 MEMORY_WRITE_CALLSITES'
-    # 解析清单条目（file / marker）
-    import re
-    rows = re.findall(r"\{\s*id:\s*\d+,\s*file:\s*'([^']+)',\s*marker:\s*'([^']+)'", gate)
-    if len(rows) < 5:
-        return False, f'内存写入口清单条目过少（{len(rows)}）'
+    # 逐条解析：file + fns 数组（可跨行）
+    entries = re.findall(r"\{\s*id:\s*\d+,\s*file:\s*'([^']+)',\s*fns:\s*\[([^\]]*)\]", gate, re.S)
+    if len(entries) < 5:
+        return False, f'内存写入口清单条目过少（{len(entries)}）'
     bad = []
-    for rel, marker in rows:
+    total = 0
+    for rel, fns_raw in entries:
+        if not os.path.exists(os.path.join(ROOT, rel)):
+            bad.append(f'{rel} 不存在')
+            continue
         src = _read(rel)
-        if marker not in src:
-            bad.append(f'{rel} 未见守卫标记 {marker!r}')
+        fns = re.findall(r"'([^']+)'", fns_raw)
+        if not fns:
+            bad.append(f'{rel} 的 fns 为空')
+            continue
+        for fn in fns:
+            total += 1
+            body = _function_body(src, fn)
+            if body is None:
+                bad.append(f'{rel} 找不到函数 {fn}()')
+            elif 'guardWrite(' not in body and 'blocked(' not in body:
+                bad.append(f'{rel} 的 {fn}() 函数体内没有 guardWrite/blocked（只读态会改内存但永不落盘）')
     if bad:
         return False, '；'.join(bad)
-    # execute 是内存写的总闸门：它自己必须过 guardWrite
+    # execute 是内存写的总闸门：不仅要过 guardWrite，还必须**发生在任何写入之前**
     undo_src = _read('src/renderer/src/store/undo.js')
     if 'guardWrite(' not in undo_src:
         return False, 'undo.js 的 execute() 没有过 guardWrite（内存编辑闸门缺失）'
-    return True, f'内存写入口清单 {len(rows)} 条，守卫标记齐全'
+    exec_body = _function_body(undo_src, 'execute') or ''
+    pos_gate = exec_body.find('guardWrite(')
+    pos_redo = exec_body.find('.redo()')
+    if pos_gate < 0 or (pos_redo >= 0 and pos_gate > pos_redo):
+        return False, 'undo.js 的 execute() 在调用 redo 之后才判 guardWrite（拒绝时数据已改）'
+    return True, f'内存写入口 {len(entries)} 条 / {total} 个函数逐一断言守卫，全部命中'
 
 
 def sub_readonly_zero_effect(cdp):

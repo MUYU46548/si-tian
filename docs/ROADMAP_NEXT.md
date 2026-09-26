@@ -1,0 +1,129 @@
+# 司天：下一步方向（2026-09-24）
+
+> 本文回答「为什么核心功能依然薄弱、离投入实际使用还差什么」。**不是 bug 清单**（那在 `IMPROVEMENT_BACKLOG.md`），而是**能力布局与可用性的结构调整**。
+> 对照基准：`docs/SITIAN_V2_BLUEPRINT.md`（自己的五阶段纲领）+ Azgaar FMG（其自称的主要参考）。
+
+---
+
+## 一句话诊断
+
+**不是功能少，是能力放错了层。**
+
+阶段 1/2/3 的成果（高度图笔刷、温度/降水/群系派生、智能聚落与沿等高线道路、河流生成）**都已经做出来了 —— 但堆在 `ScenarioMap`（历史剧本底图）上**；而你真正要日常使用的 `PlanetMap`（行星主编辑器）**仍停在"手绘多边形"的几何编辑模型**（蓝图阶段 5 完成度 ≈ 0）。
+
+更麻烦的是：两者**各持一份高度图、互不相通** —— `baseMaps[key].heightmap`（剧本）与 `mapData[planetId].heightmap`（行星）是两份数据，`.map` 导入时甚至**不复制高度图**（`scenarioEditing.js:1026` 只传 provinces/states/cultures/religions）。后果：在剧本底图涂的山，到行星图看不见；行星图涂的高度，回剧本又没了。
+
+这解释了你长期反馈的"还是马赛克 / 几何编辑器"—— **不是笔刷实现不好，是数据模型选错了位置**。
+⚠️ 推论：**在这个结构修好之前加新功能，会各自长成第三套事实源**。
+
+---
+
+## 决策记录（2026-09-26，暮雨拍板）
+
+三条决策来自外部市场扫描终稿《司天发展方向建议_20260926_v1.4终稿.md》的遗留确认项。**注意：该报告对司天的现状描述（v0.1.0 / 三层视图）落后代码约四个月**，其「#1 优先（地点层级树 + 三尺度）」在报告付印时**已经完成**（七层视图链 + 逐层进入返回），所以它的排期不能直接照抄。
+
+| # | 决策 | 内容 |
+|---|---|---|
+| D1 | **Tiled JSON 互通排期 = v2**（不是 v3） | 依据：四件套（2D 编辑器 × 事实源 × 层级下钻 × 开放格式）里开放格式是**唯一完全空白**的一件（全仓无 Tiled/LDtk 实现），而层级树已完工、工期腾得出来；代价是两个映射函数（导出 + 导入），收益是接入 Tiled/Azgaar/Watabou 生态 |
+| D2 | **A5「政治」语义 = 手动标记的势力（Tag）名称** | 否定「编辑 `azgaarProvinces` 顶点」路线。见 A5 / A8 |
+| D3 | **报告 §7-1「Phase 2 待拍板决策点 ×2」不销账，保留观察** | 暮雨：隔壁方寸等项目都出现过「我提过好几次但一直没做」的东西 → 议题丢失 ≠ 议题失效。**不猜内容、不删条目**，等其重新提供议题 |
+
+---
+
+## 方向 A：把 PlanetMap 提升到「主编辑器」应有的水平 ★最高优先
+
+这是"核心功能薄弱"的正解，其余都是辅助。
+
+> **▶ 已定型**：A1 的数据流向与分步计划见 **`docs/A1_DATA_MODEL_DECISION.md`**（选「行星为单一真源 + 剧本按 `planetId` 绑定代理」，不复制）。
+> **已完成的前置**：拆除两处会阻碍 A1 的数据毁伤 —— `confirmClear` 谎报范围并连带删除非地面数据、`ensureHeightmap` 静默覆盖用户高度。
+> **进度**：**M1 已完成**（数据层：访问器 + 绑定 + 读取点统一）—— 新增 `utils/heightmapAccess.js`（纯函数，单测 12/12）与 `getHeightmapFor` / `commitHeightmap` / `bindBaseMapToPlanet` / `unbindBaseMap`；`scenarioEditing` 的读取点已全部切换（未绑定 → 零行为变更）。
+> **M1b 已完成（2026-09-25）** —— 5 个写入入口（`applyHeightBrush` / `applyBiomeBrush` / `applyCultureBrush` / `applyReligionBrush` / `deriveAllLayers`，undo+redo 共 10 处）全部改走 `commitHeightmap`；同批修掉两条绑定前的隐患：`changeNodeId` 补 `baseMaps[*].planetId` **值槽**级联（不补则行星改名后绑定悬空 → 底图表现为「空地图」）、派生 Worker 异步回写的落盘通道**按归属分流**（写进 `mapData` 却排剧本保存 = 不落盘）。另：`commitHeightmap` 的**悬空绑定回落**（旧实现 `if (!planet) return;` = 静默吞掉这次编辑）。回归 `test_67`（源码静态守卫 + 未绑定 / 绑定 / id 级联 / 悬空 四态，含反向探针）。
+> **R2 / R4 / R5′（一半）/ R1 全部已修（2026-09-25）** —— 「历史剧本 = 一次施工永久存档，强行绑到行星上有风险」这句质疑**成立**，据此查出的 4 条风险已全数落地并各带反向探针：**R2 一星一图**（拒绝第二张底图绑同一行星）、**R4**（行星侧重建高度图时点名受影响的剧本）、**R5′ 的一半**（跨项目撤销串味 = 文档 P3，`adopt`/`closeProject` 清栈）、**R1**（快照不再装高度图：实测满 50 份 **38.23 MB → 4.7 KB**，回滚时保留当前地形、UI 明示；地形保护交给既有「整文件备份 10 份」）。详见 `docs/A1_DATA_MODEL_DECISION.md` §八。
+> **M2（= A2）第一步已完成（2026-09-25）**：抽出 `utils/heightmapRaster.js` —— ScenarioMap 与 PlanetMap 现在**共用同一套栅格配色**（此前同一份高度图两套算法/配色 = 观感分裂）；PlanetMap 新增「着色」档位（群系=默认 / 陆海底色 / 海拔 / 温度 / 降水），默认仍走原矢量群系 → 零行为变更。回归 `test_69`（源码守卫 + 切档像素变化 / 切回逐像素复原）。
+> **M2（= A2）第二步已完成（2026-09-25）**：`terrain[]` 降为**可选覆盖物** —— 地形改由高度图驱动（有高度图 → 高度图主表示、多边形默认不画；**无高度图 → 照旧多边形、照旧不透明**，兼容底线）。新增 `utils/terrainRepresentation.js`＝**渲染 / 命中 / 导出三处共用的唯一判定**（三处各写一套 `if` 就是新的双源）；同批修掉两条真缺陷：**导出链此前完全没有高度图**、**导出按屏幕视口剔除导致地形整块缺失**。回归 `test_70`（像素 + 命中 + 导出三段）、随动 `test_45` / `test_59`、Node 单测 13 条。详见 `docs/A1_DATA_MODEL_DECISION.md` §十一。
+> **M3 已开工（2026-09-25）**：**A6 统一滚轮手感** ✅、**A7 参考图导出几何** ✅（各带用例 `test_72` / `test_71`，含反向验证）。
+> **A8 已完成（2026-09-26）**：历史剧本「势力标注」—— 自定义势力名/简称（`updatePolity` 走 undo）+ EU4 式三档标注（放大省名 / 中档势力名 / 缩小简称）+ 省份详情给全名。分级判定的**唯一实现**是新模块 `utils/polityLabels.js`（Node 可测），渲染与导出两处接线。回归 `test_73`（劫持 `fillText` 记录真实绘制文本）+ Node 单测 `test_polity_labels.js`。
+> **下一步 = M3 剩余三项**（实测范围，2026-09-25）：
+>  · **A4a 一键重算派生（行星侧）** —— 小：`deriveLayers` 是纯函数、`deriveAllLayers` 已是「按归属分流写」的成熟实现，行星侧缺的只是一个以 `planetId` 为入口的包装（`commitHeightmap` 在绑定态本来就写行星那份）+ 按钮 + `scheduleAutoSaveMap`。
+>  · **A4b 自动生成河流** —— **中偏大，不是移植而是重写**：剧本侧 `generateRivers` 是 **O(n²) 双重全表循环**（`while` 内层 `for j < n` 扫全部格），行星高度图有 **26910 格** → 直接搬会卡死（项目纪律：27k 格禁用双重全表循环，须走空间哈希桶）。
+>  · **A3 文化/宗教笔刷** —— **最大**：数据前置已就绪（`mapData[pid].cultures` 有 CRUD、`heightmap.culture/religion` 是每格 Uint8Array），但行星侧缺 ① 笔刷写入（可参照 `scenarioEditing.applyCultureBrush`）② 按 `culture/religion` 的**渲染**（现在只画 Azgaar 参考数据）③ UI 模式与选色。
+>  · **A5 政治编辑** —— **需要产品决策**：`interactionMode='political'` 目前只改 `drawPoliticalBorders` 的**渲染样式**，**没有命中也没有编辑实现**（`planetHitTest` 无 political 分支）→ 按钮是个**假入口**（点了什么也做不了）。自建世界的「政治」语义到底是编辑 `azgaarProvinces` 顶点、还是把剧本侧的势力/归属搬到行星侧、还是干脆收起该入口 —— 待定。
+> **并行已完成**：**实体「叙事状态」**（用户决策：毁灭只是叙事状态，实体可留可不建）——
+> `utils/entityStatus.js`（6 状态，脏值回落 active）+ 详情面板下拉 + 项目面板徽标；
+> 「不建实体 → 底图自持高度图」那条路由 `createBaseMapHeightmap` 打通。
+> **画布淡化已接线（2026-09-24，本轮完成）**：5 个视图 / 7 个绘制入口 —— GalaxyMap `drawGalaxyNodes`（含低 LOD 分支）/ SystemView `drawSystemStar`+`drawSystemPlanets` / SystemDetailView `drawStar`+`drawPlanets` / PlanetMap `planetDrawing.drawPlaces` / AreaMap `drawNodes`。
+> 约定：`FADED_ALPHA = 0.45`；**`focused`（选中/悬停/匹配/拖拽中）优先于淡化**（编辑优先于装饰）；`save`/`restore` 成对（GalaxyMap 的 lod 分支有中途 `return`，save:restore = 1:2）。
+> ⚠️ 根因坑：`updateNode` 是 `Object.assign` **就地改字段** → 基于引用的浅 watch 捕捉不到，且三个视图画的是**布局副本** → 另设 `store.statusRevision` 指纹（**undo/redo 双递增**）驱动重绘，持副本者重建副本。
+> 守卫：`test_entity_status`（10 条，含"绘制入口都调 fadedAlpha"与"画布都接指纹"两条接线断言）。
+> **frontmatter 提取已完成（2026-09-24）**：在词条里写 `status: destroyed`（或 `状态: 已毁灭`）即可，`extract-data.js` / `vault-watcher.js` 各自归一化；别名表三处一致由 `test_entity_status` 守卫；`test_49` 另加「编辑状态 → 项目实体 → 项目文件 + 撤销还原」端到端断言。
+> **像素级证据已补（2026-09-25，test_66）**：采三帧（active → destroyed → active），断言「淡化后画布变得显著且局部」+「**改回后逐像素复原（diff === 0）**」，差异区中心落在节点上（实测 539.5 vs 画布中心 540）。反向验证：把 `FADED_ALPHA` 改成 `1` 立即报 `diffPixels: 0`。至此状态功能的验证闭合：纯函数 → 接线守卫 → 真像素。
+
+| # | 要做的事 | 现状证据 | 为什么是要害 |
+|---|---|---|---|
+| A1 | **高度图单一事实源** —— 让行星与剧本共用一份地形数据（或明确单向派生） | `baseMaps[key].heightmap` vs `mapData[planetId].heightmap`；`scenarioEditing.js:1026` | 两份数据 = 两套世界观，用户在两边各画一半、互相看不见 |
+| A2 ✅ **已完成 2026-09-25（两步）** | **PlanetMap 地形改为高度图驱动**，多边形退为可选覆盖物 | **第一步**：`utils/heightmapRaster.js` 跨视图共享栅格配色；**第二步**：`utils/terrainRepresentation.js` 三处共用判定 + `terrainPolygons` 覆盖物图层 + 命中/导出随动（`test_69` / `test_70`） | 这是"手绘几何编辑器"观感的**唯一根因**（蓝图阶段 5 的目标） |
+| A3 | **PlanetMap 补文化 / 宗教笔刷** | `PlanetMap.vue:347-360` 的 `interactionMode` 有 height/terrain/relief/river/political，**无 culture/religion**；而两者在 ScenarioMap 已实现（`scenarioEditing.js:~1345/1394`） | 文化/宗教是 FMG 的核心生产力工具，主编辑器没有 |
+| A4 | **PlanetMap 补「一键重算派生」与「自动生成河流」** | 派生按钮/自动河流只在 ScenarioMap（`ScenarioMap.vue:191/133`）；PlanetMap 靠笔刷逐点内联算（`usePlanetHeightBrush.js:351`） | 改完一大片高度却无法一键把气候/河网铺出来 |
+| A5 | **政治编辑 = 手动标记的「势力（Tag）名称」**（2026-09-26 暮雨定案） | 旧状：`PlanetMap.vue:360` 的 `v-if="hasAzgaarData"` + `interactionMode='political'` 只改 `drawPoliticalBorders` 的**渲染样式**，无命中无编辑 = **假入口**。新语义否定「编辑 `azgaarProvinces` 顶点」这条路线 | 「政治」不再等于 Azgaar 省份几何编辑，而是**用户自建的势力标签**；`v-if="hasAzgaarData"` 这层门应当拆掉（自建世界同样有势力）。落地见 A8 |
+| A8 ✅ **已完成 2026-09-26** | **历史剧本「势力标注」**：自定义势力名 + EU4 式分级标签 | 旧状：`scenarios[k].polities[] = {id,name,color}` 已有归属与配色，但**画布上从不渲染势力名**（`drawLabels` 只画用户手放文本）；polity 无 CRUD（只能改谱系）、无简称字段。**已落地**：`utils/polityLabels.js`（分级/聚合/文本的唯一实现）+ `scenarioEditing.updatePolity` + ScenarioMap 三档渲染与内联编辑；回归 `test_73` | 势力名是历史剧本的**主要读物**：放大看省名、缩小看势力名（可简称），全名只在点开省份详情时给 —— 参考 EU4 |
+| A6 ✅ **已完成 2026-09-25** | **统一笔刷手感**：滚轮=半径、Shift+滚轮=强度 | `PlanetMap.onWrapperWheel` 扩到 height/terrain/relief 三模式统一契约（步进/范围取自滑块自身；非笔刷模式不拦截）；回归 `test_72`（3 枚探针） | 同一应用两种手感，蓝图 §4.1 的统一契约未落实 |
+| A7 ✅ **已完成 2026-09-25** | **参考图旋转单位 bug** | 实测是**四处**错且第一处是死代码（读 computed ref → 参考图从未被导出）、只导一张、象限当弧度、漏 flipH/宽高互换；已抽 `svgExport.refImageSvgGroup/refImageWorldBounds` 单源，两处导出共用；回归 `test_71`（3 枚探针） | 参考图一旦旋转，导出图角度不可信 |
+
+**取舍**：A1/A2 是重构级工作量，但它顺手能消掉一批"马赛克/真空区"类投诉的根因 —— 比继续给多边形模型打补丁划算。
+
+---
+
+## 方向 B：打通「能开始用」 —— ✅ 已完成（2026-09-24）
+
+原本的断点是「新人 5 分钟进不去编辑」。全部已修：
+
+| # | 断点 | 修法 | 状态 |
+|---|---|---|---|
+| B1 | 空态主按钮（新建世界 / 加载示例）在只读态必被拒，UI 却承诺成功 | 只读态直接拒绝 + 明确去处（不再打印「已创建 / 已加载」） | ✅ |
+| B2 | 空态**没有「新建项目」按钮** —— 唯一能脱离只读的入口在工具栏一个图标里 | `WorldSelector` 空态按只读/可写**分成两组**：只读态给「新建项目（从这里开始）」「打开已有项目」两个一等按钮；header 的「＋新建世界」在只读态自动变为「＋新建项目」 | ✅ |
+| B3 | 首次引导选完知识库 → 触发 `reextract` → 被写闸门拒绝（选完库数据进不来） | 不再派发 `reextract`；改为把用户送到项目面板并指明「新建并导入知识库内容」；引导首步新增「先建一个项目」 | ✅ |
+| B4 | **启动不自动打开上次项目** —— 老用户每天第一件事都是去面板开项目 | 新增 `project-get-last-path` IPC（只回报**文件确实还在**的路径）+ `canvasBridge.restoreLastProject()`（动态 import，避开 App 的静态闸门）；一切失败**静默回落只读**，绝不阻塞启动 | ✅ |
+| B5 | **自动保存失败只有项目面板里看得见**（5s 自清；状态栏无保存状态） | `useStatusBar` 新增 `saveState`，项目落盘状态**常驻**底部状态栏（ok/warn/err/busy 四档）；**失败不自动消失**，由下次成功保存来清 | ✅ |
+| B6 | 工具栏「保存」不判返回值、恒报「已保存」（项目态实为 `staged`） | 按返回值区分：失败报错且**不清 dirty**；项目态如实说「已交给项目，正在写入磁盘…」 | ✅ |
+| B7 | **无法批量建实体** —— 一次一个；「批量导入笔记」因 `reextract` 在项目态被拒而回流不进项目 | `EntityCreator` 加**单个/批量**切换（每行一个名称）+ `projectStore.createEntities()`（**一条 undo**、同名跳过并列出）；一次粘 30 个城市名 = 一次操作 | ✅ |
+| B8 | 导入地图配置**绕开写闸门 + 不进 undo** | 先补 `guardWrite`，再重写为「算好结果 → 交给 `execute` 的 redo 落库」，整次导入 = 一条 undo（Ctrl+Z 可整体撤回）；恢复走**逐键**而非整体替换容器对象 | ✅ |
+
+**验证**：全量 65/65 通过；`test_46` 的 IPC 通道数断言由「写死 8」改为**下限守卫**（新增通道不再假红）。
+
+---
+
+## 方向 C：规模化与可移植（世界变大之后会撞墙）
+
+| # | 断点 | 证据 |
+|---|---|---|
+| C1 | 搜索**只覆盖节点**，不搜地图对象（地形多边形名 / 标记名 / 区域名 / 浮动文本 / 地点簇） | `search.js:56-90` |
+| C2 | 书签在 planet/area/interior **静默失效**（`getActiveRenderer()` 只认 3 层） | `App.vue:560-569`、`:154` |
+| C3 | 书签不按项目隔离、上限 20、无「最近访问」 | `useBookmarks.js:30-45` |
+| C4 | **撤销栈是全局单例、上限 100、从不按项目清空** —— 长会话后"撤不动了"且无提示；关闭项目后 Ctrl+Z 可能把旧项目对象回滚回来 | `undo.js:19-21,74-82`；全仓无 `clearHistory` 调用 |
+| C5 | **「导出配置」不可移植** —— 丢 `parentId`（层级），导入端只更新已存在节点的坐标、不新建实体 | `App.vue:1014-1020`、`:1060-1065` |
+| C6 | 删除节点**不清孤儿数据**（`mapData[planetId]` / `areaZones[regionId]` / `interiorData[buildingId]`） | `geodata.js:841-884`；`projectStore.js:609-639` |
+| C7 | 导出制图要素**分裂在两种格式**：PNG 有指北针+比例尺无图例；SVG 有图例+标题无比例尺/指北针 | `useFullMapExport.js:142/183` vs `:404/421` |
+| C8 | 无用户可控「简化模式」（LOD 全自动） | 蓝图 §5.2；`PlanetMap.vue:1297` |
+
+---
+
+## 建议的推进顺序
+
+1. ~~**B 批（首次可用性）**~~ —— ✅ **已完成（2026-09-24）**。
+2. ~~**A1 + A2（高度图单一事实源 + PlanetMap 数据驱动）**~~ —— ✅ **已完成（2026-09-25，M1~M2 两步）**，含 R1~R5 五条前置风险与 M1c 双模式。
+3. **A4a（一键重算派生，行星侧）→ A3（文化/宗教笔刷）** ← **下一步就是这里**（2026-09-26 定的队列）。
+   A4a 是「`deriveAllLayers` 已经成熟、只缺一个 `planetId` 入口」的小活；A3 是主编辑器最后一块缺口。
+   A4b（自动河流）**不是移植而是重写**（现存 O(n²)，27k 格直接搬会卡死）。
+4. **A8（历史剧本势力标注）+ A5（政治 = 势力 Tag）** —— 同一件事的两端：A5 定语义、A8 做渲染。
+5. **D1：Tiled JSON 导入导出（v2）** —— 补上四件套第 4 件，唯一可对外宣称「四件套齐全」的凭证。
+6. **C 批（规模化）** —— 世界变大前不紧急，但 C4（撤销栈）与 C6（孤儿数据）有数据一致性风险，可提前。
+7. 制图输出（C7）—— 到"要发布成品图"时再做。
+
+---
+
+## 附：本轮补掉的两处上轮遗漏
+
+- **导入地图配置绕开写闸门**：`App.vue:1053` 已补 `guardWrite`（仅消除只读态"静默假成功"；**进 undo 栈部分待做**）。
+- **空态两个主按钮谎报成功**：`handleCreateWorld` / `handleLoadSampleWorld` 只读态不再打印「已创建 / 已加载」，改为明确拒绝 + 直接送你去项目面板。
+
+*整理：企鹅 · 2026-09-24 · 证据路径均可复验*

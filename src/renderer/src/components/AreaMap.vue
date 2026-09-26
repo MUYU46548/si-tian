@@ -324,6 +324,8 @@ import { useGeodataStore } from '../store/geodata';
 // 单一写闸门：转正会新建 .md → 属落盘写，只读态必须拦（Phase 2.4 接线）
 import { guardWrite } from '../store/writeGate';
 import { useLayersStore } from '../store/layers';
+// 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
+import { fadedAlpha } from '../utils/entityStatus';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { pointsBBox, bboxInViewport, pointInViewport, pointInPolygon, convexHull, simplifyPath } from '../utils/geometry';
 import { validateRegionTrace } from '../utils/regionTrace';
@@ -1032,6 +1034,10 @@ function drawNodes(ctx, vp) {
     const isSelected = selectedNode.value?.id === node.id;
     const isMultiSelected = selectedNodeIds.value.includes(node.id);
     const isDraft = node.draft === true;
+    // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
+    // 单选 / 多选时不淡化（你正在操作它 → 「编辑优先于装饰」）。本函数无中途 return。
+    const fade = fadedAlpha(node.status, { focused: isSelected || isMultiSelected });
+    if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
     const color = getNodeColor(node.layer);
 
     ctx.fillStyle = color;
@@ -1073,6 +1079,8 @@ function drawNodes(ctx, vp) {
         });
       }
     }
+
+    if (fade < 1) ctx.restore();   // 与上面的 save 配对（叙事状态淡化）
   });
 }
 
@@ -2076,6 +2084,15 @@ function handleKeydown(e) {
 }
 
 watch(areaPlaces, () => {
+  renderer.requestRender();
+});
+
+// 叙事状态变更 → 重绘（2026-09-24）。
+// ⚠️ 必须走这个指纹：`updateNode` 是 `Object.assign(node, …)` **就地改字段** —— 既不换数组引用、
+//    也不换节点对象，所以基于「数组/对象引用」的浅 watch 全都捕捉不到 status 变化。
+// `areaPlaces` 的元素是 store 里的响应式对象本身（computed 只做 filter，不拷贝），
+// 绘制时读到的就是最新 status → 这里只 requestRender 即可。
+watch(() => store.statusRevision, () => {
   renderer.requestRender();
 });
 

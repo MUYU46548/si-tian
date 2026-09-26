@@ -37,12 +37,25 @@ def run(cdp):
       const pm = document.querySelector('.planet-map-container').__vueParentComponent.setupState;
       const r = pm.buildFullMapSVG();
       const t = r.svg;
+      // M2/A2 第二步：有高度图时地形由**高度图**驱动（SVG 里以内联位图承载），
+      // 多边形退为**可选覆盖物**（默认关）→ 要验地形 path 就显式打开它。
+      const peek = (layer) => {
+        pm.layers.toggleLayer('planet', layer);
+        const u = pm.buildFullMapSVG().svg;
+        pm.layers.toggleLayer('planet', layer);
+        return u;
+      };
+      const polyOn = peek('terrainPolygons');
+      const restored = pm.buildFullMapSVG().svg;
       return JSON.stringify({
         w: r.width, h: r.height, bytes: t.length,
         isXml: t.startsWith('<?xml'),
         hasViewBox: /viewBox="0 0 \\d+ \\d+"/.test(t),
         hasBg: t.includes('fill="#1a2a3a"'),
         pathCount: (t.match(/<path /g) || []).length,
+        imageCount: (t.match(/<image /g) || []).length,
+        polyPathCount: (polyOn.match(/<path /g) || []).length,
+        restoredPathCount: (restored.match(/<path /g) || []).length,
         hasClose: t.includes('</svg>'),
         terrainCount: (pm.currentMapData.terrain || []).length,
         placesCount: (pm.places || []).length,
@@ -57,27 +70,43 @@ def run(cdp):
         return False, f'SVG 缺 viewBox/背景: {built}'
     if built['terrainCount'] < 1:
         return False, f'该行星没有地形多边形，用例前提不成立: {built}'
-    if built['pathCount'] < built['terrainCount']:
-        return False, f'地形 path 数少于多边形数（{built["pathCount"]} < {built["terrainCount"]}）: {built}'
+    # M2/A2 第二步：该行星有高度图 → 地形由高度图驱动，SVG 里以内联位图承载。
+    # （本轮之前导出链里**根本没有高度图** —— 导出的图与画布不一致，属既存缺陷。）
+    if built['imageCount'] < 1:
+        return False, f'默认导出缺高度图（内联位图）: {built}'
+    # 多边形已退为覆盖物：默认不画 → 打开后才出现足量地形 path
+    if built['polyPathCount'] < built['terrainCount']:
+        return False, (f'打开多边形覆盖物后地形 path 仍少于多边形数'
+                       f'（{built["polyPathCount"]} < {built["terrainCount"]}）: {built}')
+    if not (built['polyPathCount'] > built['pathCount']):
+        return False, f'打开覆盖物后 path 数未增加（默认 {built["pathCount"]}）: {built}'
+    if built['restoredPathCount'] != built['pathCount']:
+        return False, f'关回覆盖物后导出未复原: {built}'
     if not built['colored']:
         return False, f'SVG 没有填充色: {built}'
     if not built['hasLegend']:
         return False, f'SVG 缺地形图例: {built}'
 
-    # ---------- 3. 图层开关被尊重 ----------
+    # ---------- 3. 图层开关被尊重（M2/A2 第二步：开关对象改为「多边形覆盖物」）----------
+    # ⚠️ 有高度图的行星上，「地形」总开关现在管的是**高度图**（位图，不是 path），
+    #    地形 path 由「多边形(覆盖物)」图层控制 —— 所以这条断言必须跟着换开关对象，
+    #    否则它测的其实是"高度图有没有被关掉"，与"地形 path"无关（会变成假绿/假红）。
     off = json.loads(cdp.eval("""(() => {
       const pm = document.querySelector('.planet-map-container').__vueParentComponent.setupState;
-      const before = (pm.buildFullMapSVG().svg.match(/<path /g) || []).length;
-      pm.layers.toggleLayer('planet', 'terrain');
-      const after = (pm.buildFullMapSVG().svg.match(/<path /g) || []).length;
-      pm.layers.toggleLayer('planet', 'terrain');   // 还原
-      const restored = (pm.buildFullMapSVG().svg.match(/<path /g) || []).length;
-      return JSON.stringify({before, after, restored});
+      const count = (t) => (t.match(/<path /g) || []).length;
+      pm.layers.toggleLayer('planet', 'terrainPolygons');
+      const on = count(pm.buildFullMapSVG().svg);
+      pm.layers.toggleLayer('planet', 'terrainPolygons');
+      const offv = count(pm.buildFullMapSVG().svg);
+      pm.layers.toggleLayer('planet', 'terrainPolygons');
+      const restored = count(pm.buildFullMapSVG().svg);
+      pm.layers.toggleLayer('planet', 'terrainPolygons');   // 还原到默认（关）
+      return JSON.stringify({on, off: offv, restored});
     })()"""))
-    if not (off['after'] < off['before']):
-        return False, f'关掉地形图层后 SVG 仍输出地形 path: {off}'
-    if off['restored'] != off['before']:
-        return False, f'还原图层后未恢复: {off}'
+    if not (off['on'] > off['off']):
+        return False, f'打开多边形覆盖物后 SVG 地形 path 未增加: {off}'
+    if off['restored'] != off['on']:
+        return False, f'覆盖物图层状态不稳定（开关一次未复现）: {off}'
 
     # ---------- 4. 经 IPC 导出 ----------
     saved = json.loads(cdp.eval("""(async () => {
@@ -101,6 +130,7 @@ def run(cdp):
         return False, f'导出内容过小: {saved}'
 
     return True, (f'入口 {entry["count"]} 个 → SVG {built["w"]}x{built["h"]}px / {built["bytes"]}B'
-                  f' / {built["pathCount"]} path（地形 {built["terrainCount"]}）'
-                  f' → 图层开关生效({off["before"]}→{off["after"]}→{off["restored"]})'
+                  f' / 高度图位图 {built["imageCount"]} 张'
+                  f' / 覆盖物关 {built["pathCount"]} path → 开 {built["polyPathCount"]}'
+                  f'（地形 {built["terrainCount"]}）'
                   f' → 经 IPC 落盘 {saved["bytes"]}B')

@@ -128,6 +128,29 @@ JS = r"""(async () => {
   ck('区域数据随项目落盘', !!(editor && editor.areaZones && editor.areaZones['接线测试区']),
      editor ? Object.keys(editor.areaZones || {}) : null);
 
+  // ---- f3) 叙事状态：编辑 → 项目实体 → 项目文件 + 撤销还原（2026-09-24）----
+  // 用户决策：「毁灭只是叙事状态，不是数据删除」—— 状态必须与坐标**同等地**随项目落盘，
+  // 且撤销后画布要跟着还原（本用例顺带守住 statusRevision 指纹 —— 少了它画布不会重绘）。
+  const rev0 = store.statusRevision;
+  store.updateNode('画布地点', { status: 'destroyed' });
+  same('设 status 后指纹恰好 +1（画布重绘信号；一次编辑只该 +1）', store.statusRevision, rev0 + 1);
+  await tick(120);
+  await store.flushSave();
+  await tick(250);
+  const stEnt = proj.getEntity('画布地点');
+  same('status 同步到项目实体（画布→项目）', stEnt && stEnt.status, 'destroyed');
+  await proj.flushSave();
+  await tick(300);
+  const doc3 = (window.__projects || {})[proj.filePath] || null;
+  const ent3 = doc3 ? (doc3.entities || {})['画布地点'] : null;
+  same('status 随项目文件真的落盘（不只是内存态）', ent3 && ent3.status, 'destroyed');
+
+  undo();
+  await tick(300);
+  same('撤销后节点 status 回到原值（原本没有该字段 → undefined）',
+       store.nodes.find(n => n.id === '画布地点').status, undefined);
+  same('撤销同样递增指纹（否则"撤销后画布淡化不还原"）', store.statusRevision, rev0 + 2);
+
   // ---- g) 项目打开时 reextract 被拒 ----
   const re = await store.reextract();
   ck('已打开项目时重提取被拒绝', re && re.ok === false, re);

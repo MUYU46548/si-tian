@@ -161,7 +161,7 @@
         <button @click="changeLogRef?.open()" title="变更日志"><Icon name="clipboard" :size="15"/></button>
         <button @click="validateDataIntegrity" title="数据检查"><Icon name="search" :size="15"/></button>
         <button @click="toggleTheme" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`"><Icon :name="currentTheme === 'dark' ? 'moon' : 'sun'" :size="15"/></button>
-        <span class="status"><Icon v-if="statusKind === 'ok'" name="check-circle" :size="12" style="margin-right:4px"/><Icon v-else-if="statusKind === 'err'" name="x-circle" :size="12" style="margin-right:4px"/>{{ statusText }}</span>
+        <span class="status"><Icon v-if="statusKind === 'ok'" name="check-circle" :size="12" style="margin-right:4px"/><Icon v-else-if="statusKind === 'err'" name="x-circle" :size="12" style="margin-right:4px"/><Icon v-else-if="statusKind === 'warn'" name="info" :size="12" style="margin-right:4px"/>{{ statusText }}</span>
       </div>
     </header>
 
@@ -186,8 +186,14 @@
 
     <!-- 导出菜单 -->
     <div v-if="panelsStore.isOpen('export')" class="export-menu" @click.self="panelsStore.close('export')">
-      <button @click="handleExportPNG">导出 PNG (当前视图)</button>
-      <button @click="handleExportSVG">导出 SVG (当前视图)</button>
+      <!-- ⚠️ 「当前视图」整图导出只在 galaxy / system / system_detail 三层可用（PlanetMap 与
+           ScenarioMap 各有自己的导出工具栏）。不可用时**置灰 + 说明去处**，而不是点了静默 return
+           —— 用户实测「点了没反应」（2026-09-24 修）。 -->
+      <button :disabled="!viewExportSupported" :title="viewExportSupported ? '' : VIEW_EXPORT_HINT"
+              @click="handleExportPNG">导出 PNG (当前视图)</button>
+      <button :disabled="!viewExportSupported"
+              :title="viewExportSupported ? '位图封装成的 SVG（非矢量，不能进 Illustrator 二次编辑）' : VIEW_EXPORT_HINT"
+              @click="handleExportSVG">导出 SVG (当前视图，位图封装)</button>
       <button @click="handleExportFullPNG">导出 PNG (全图)</button>
       <div class="export-divider"></div>
       <button @click="handleExportMapConfig">导出地图配置 (JSON)</button>
@@ -220,6 +226,8 @@
           @import-from-vault="doImportFromVault"
           @load-sample="handleLoadSampleWorld"
           @open-scenarios="enterScenarioMode"
+          @create-project="handleCreateProject"
+          @open-project="handleOpenProject"
         />
 
         <scenario-map
@@ -332,9 +340,11 @@ import { iconSvg } from './utils/iconSvg';
 // 打开知识库本体（用户需求：一键可达的「打开 Obsidian 知识库」入口）
 import { openVault } from './utils/vault';
 // 导入知识库内容：App 只跟注册表打交道（不 import projectStore）
-import { importFromVault } from './store/canvasBridge';
+import { importFromVault, restoreLastProject } from './store/canvasBridge';
+// B8（2026-09-24）：导入地图配置也要进 undo 栈 —— 数据修改一律放 redo 回调内（项目 undo 纪律）
+import { execute } from './store/undo';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
-import { useGeodataStore } from './store/geodata';
+import { useGeodataStore, jsonSafeReplacer } from './store/geodata';
 // 单一写闸门：清缓存等落盘写统一过 guardWrite（只读态拒绝）
 import { guardWrite, isReadOnly, writeModeReason as readOnlyReason, READONLY_BADGE, lastRejection } from './store/writeGate';
 import { usePanelsStore } from './store/panels';
@@ -576,9 +586,20 @@ function getActiveCanvas() {
 
 // 导出功能已内联实现，无需 useMapExport
 
+// 「当前视图」整图导出只覆盖 galaxy / system / system_detail 三层
+// （PlanetMap 与 ScenarioMap 各有自己的导出工具栏）。不可用时按钮置灰 + 说明去处，
+// 而不是点了静默 return —— 用户实测「点了没反应」（2026-09-24 修）。
+const VIEW_EXPORT_HINT = '当前层级没有整图导出：行星地图与历史剧本请用各自工具栏的导出按钮';
+const viewExportSupported = computed(() => ['domain', 'system', 'system_detail'].includes(store.viewLevel));
+
 async function handleExportPNG() {
   const canvas = getActiveCanvas();
-  if (!canvas) return;
+  if (!canvas) {
+    statusText.value = VIEW_EXPORT_HINT;
+    statusKind.value = 'warn';
+    panelsStore.close('export');
+    return;
+  }
 
   showExportProgress('正在导出 PNG...');
 
@@ -613,7 +634,12 @@ async function handleExportPNG() {
 
 async function handleExportSVG() {
   const canvas = getActiveCanvas();
-  if (!canvas) return;
+  if (!canvas) {
+    statusText.value = VIEW_EXPORT_HINT;
+    statusKind.value = 'warn';
+    panelsStore.close('export');
+    return;
+  }
 
   showExportProgress('正在导出 SVG...');
   await new Promise(r => requestAnimationFrame(r));
@@ -978,7 +1004,12 @@ function handleImportGeoJSON() {
   input.click();
 }
 
-function handleExportMapConfig() {  const config = {
+function handleExportMapConfig() {
+  // ⚠️ 导出字段必须与 handleImportMapConfig 的读取**对齐**（2026-09-24 修）：
+  //    导入端会读 mapData / areaZones / interiorData，而旧导出端只写 nodes + hyperlanes
+  //    → 「导出后再导入」会**静默丢掉**行星地图、区域多边形/道路/标记/文本、建筑内部数据。
+  //    深拷贝：去响应式代理（IPC/JSON 需要）+ TypedArray 兜底（见 jsonSafeReplacer）。
+  const config = {
     version: '1.0.0',
     exportedAt: new Date().toISOString(),
     viewLevel: store.viewLevel,
@@ -992,6 +1023,12 @@ function handleExportMapConfig() {  const config = {
       tags: n.tags,
     })),
     hyperlanes: store.hyperlanes,
+    mapData: JSON.parse(JSON.stringify(store.mapData || {}, jsonSafeReplacer)),
+    areaZones: JSON.parse(JSON.stringify(store.areaZones || {}, jsonSafeReplacer)),
+    areaRoutes: JSON.parse(JSON.stringify(store.areaRoutes || {}, jsonSafeReplacer)),
+    areaMarkers: JSON.parse(JSON.stringify(store.areaMarkers || {}, jsonSafeReplacer)),
+    areaTextLabels: JSON.parse(JSON.stringify(store.areaTextLabels || {}, jsonSafeReplacer)),
+    interiorData: JSON.parse(JSON.stringify(store.interiorData || {}, jsonSafeReplacer)),
   };
   
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
@@ -1013,7 +1050,17 @@ function handleImportMapConfig() {
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    
+
+    // 🔴 导入会直接改写世界观数据 → 必须先过写闸门（2026-09-24 补，本函数原 89 行里 guardWrite 一次都没有）。
+    //    旧实现直接给 store 的各个容器赋值：只读态下「已导入 N 个节点」的提示照打，
+    //    但 scheduleAutoSave 在只读态直接返回 → **数据永不落盘**（静默假成功），且不进 undo 栈。
+    const gate = guardWrite('导入地图配置');
+    if (!gate.ok) {
+      statusText.value = gate.error;
+      statusKind.value = 'err';
+      return;
+    }
+
     try {
       const text = await file.text();
       const config = JSON.parse(text);
@@ -1023,47 +1070,75 @@ function handleImportMapConfig() {
         return;
       }
       
-      // 导入节点坐标
-      config.nodes.forEach(importedNode => {
-        const existingNode = store.nodes.find(n => n.id === importedNode.id);
-        if (existingNode) {
-          existingNode.coordinate = importedNode.coordinate;
+      // 🔴 整次导入 = **一条 undo**（B8，2026-09-24）。
+      //    既有实现直接给 store 的各个容器赋值：既绕写闸门（只读态静默假成功）、也不进 undo 栈
+      //    （Ctrl+Z 撤不掉）。现在改成「先把导入后应该是什么样算好，再交给 execute 的 redo 落库」——
+      //    **绝不先手动改 store**（那是双写，撤销会错位）。
+      const clone = (v) => JSON.parse(JSON.stringify(v || {}, jsonSafeReplacer));
+      const before = {
+        coords: new Map(store.nodes.map(n => [n.id, n.coordinate])),
+        hyperlaneIds: new Set(store.hyperlanes.map(h => h.id)),
+        mapData: clone(store.mapData),
+        areaZones: clone(store.areaZones),
+        areaRoutes: clone(store.areaRoutes),
+        areaMarkers: clone(store.areaMarkers),
+        areaTextLabels: clone(store.areaTextLabels),
+        interiorData: clone(store.interiorData),
+      };
+
+      const applyImport = () => {
+        // 节点坐标（只更新已存在的节点；导入端不新建实体，故不会有键增减）
+        config.nodes.forEach(importedNode => {
+          const existingNode = store.nodes.find(n => n.id === importedNode.id);
+          if (existingNode) existingNode.coordinate = importedNode.coordinate;
+        });
+        // 航道（只补缺）
+        config.hyperlanes.forEach(importedH => {
+          if (!store.hyperlanes.some(h => h.id === importedH.id)) store.hyperlanes.push(importedH);
+        });
+        // 地图数据 / 区域 / 建筑内部 / 区域级道路·标记·文本（字段与导出端对齐）
+        if (config.mapData) {
+          Object.entries(config.mapData).forEach(([planetId, data]) => {
+            store.mapData[planetId] = data;
+            store.scheduleAutoSaveMap(planetId);
+          });
         }
-      });
-      
-      // 导入航道
-      config.hyperlanes.forEach(importedH => {
-        const exists = store.hyperlanes.some(h => h.id === importedH.id);
-        if (!exists) {
-          store.hyperlanes.push(importedH);
+        if (config.areaZones) Object.entries(config.areaZones).forEach(([k, v]) => { store.areaZones[k] = v; });
+        if (config.areaRoutes) Object.entries(config.areaRoutes).forEach(([k, v]) => { store.areaRoutes[k] = v; });
+        if (config.areaMarkers) Object.entries(config.areaMarkers).forEach(([k, v]) => { store.areaMarkers[k] = v; });
+        if (config.areaTextLabels) Object.entries(config.areaTextLabels).forEach(([k, v]) => { store.areaTextLabels[k] = v; });
+        if (config.interiorData) Object.entries(config.interiorData).forEach(([k, v]) => { store.interiorData[k] = v; });
+        store.scheduleAutoSave();
+      };
+
+      // 逐键恢复（不整体替换容器对象 —— 那会让按引用持有的选中态脱钩，项目踩过这个坑）
+      const restoreMap = (target, snapshot) => {
+        Object.keys(target).forEach(k => { if (!(k in snapshot)) delete target[k]; });
+        Object.entries(snapshot).forEach(([k, v]) => { target[k] = v; });
+      };
+      const restoreBefore = () => {
+        store.nodes.forEach(n => { if (before.coords.has(n.id)) n.coordinate = before.coords.get(n.id); });
+        for (let i = store.hyperlanes.length - 1; i >= 0; i--) {
+          if (!before.hyperlaneIds.has(store.hyperlanes[i].id)) store.hyperlanes.splice(i, 1);
         }
+        restoreMap(store.mapData, before.mapData);
+        restoreMap(store.areaZones, before.areaZones);
+        restoreMap(store.areaRoutes, before.areaRoutes);
+        restoreMap(store.areaMarkers, before.areaMarkers);
+        restoreMap(store.areaTextLabels, before.areaTextLabels);
+        restoreMap(store.interiorData, before.interiorData);
+        store.scheduleAutoSave();
+      };
+
+      execute({
+        type: 'import-map-config',
+        label: `导入地图配置（${config.nodes.length} 节点 / ${config.hyperlanes.length} 航道）`,
+        undo: restoreBefore,
+        redo: applyImport,
       });
 
-      // 导入地图数据（地形、区域、标记等）
-      if (config.mapData) {
-        Object.entries(config.mapData).forEach(([planetId, data]) => {
-          store.mapData[planetId] = data;
-          store.scheduleAutoSaveMap(planetId);
-        });
-      }
-
-      // 导入区域多边形
-      if (config.areaZones) {
-        Object.entries(config.areaZones).forEach(([areaId, zones]) => {
-          store.areaZones[areaId] = zones;
-        });
-        store.scheduleAutoSave();
-      }
-
-      // 导入建筑内部数据
-      if (config.interiorData) {
-        Object.entries(config.interiorData).forEach(([buildingId, data]) => {
-          store.interiorData[buildingId] = data;
-        });
-        store.scheduleAutoSave();
-      }
-      
-      statusText.value = `已导入 ${config.nodes.length} 个节点和 ${config.hyperlanes.length} 条航道`;
+      statusText.value = `已导入 ${config.nodes.length} 个节点和 ${config.hyperlanes.length} 条航道（Ctrl+Z 可撤销）`;
+      statusKind.value = 'ok';
       dirty.value = true;
     } catch (err) {
       alert('导入失败: ' + err.message);
@@ -1106,6 +1181,14 @@ function cleanupStressTest() {
 // ===== 世界管理（WorldSelector） =====
 
 function handleCreateWorld() {
+  // ⚠️ 只读态（无项目）下 addNode 会被写闸门拒绝 —— 旧实现不看返回值、照样打印「已创建」= 谎报成功。
+  //    2026-09-24 修：先判只读 → 给出去处（去项目面板建/开项目），而不是让用户对着"假成功"发呆。
+  if (isReadOnly.value) {
+    statusText.value = '新建世界被拒绝：还没有打开项目 —— 先新建或打开项目，再回来建世界';
+    statusKind.value = 'warn';
+    panelsStore.toggle('project');
+    return;
+  }
   const id = `world_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   store.addNode({
     id,
@@ -1122,6 +1205,13 @@ function handleCreateWorld() {
 }
 
 function handleLoadSampleWorld() {
+  // ⚠️ 同上：只读态下 20+ 个 addNode 全会被拒，旧实现仍打印「已加载示例世界观」= 谎报成功。
+  if (isReadOnly.value) {
+    statusText.value = '加载示例被拒绝：还没有打开项目 —— 先新建或打开项目，再回来加载示例';
+    statusKind.value = 'warn';
+    panelsStore.toggle('project');
+    return;
+  }
   const sample = createSampleWorld();
   // 批量添加示例节点
   for (const node of sample.nodes) {
@@ -1238,24 +1328,43 @@ onMounted(async () => {
     // 加载失败必须显式暴露：否则界面只是「空地图」，用户与测试都看不出原因
     // （历史上 preload/ mock 未就绪时正是这样静默留在 0 节点）
     statusText.value = `数据加载失败：${e?.message || e}`;
-    statusKind.value = 'error';
+    statusKind.value = 'err';   // 曾误写 'error'（模板只认 ok/err/warn）→ 该提示长期无图标
     window.sitianAPI?.reportError?.({ message: String(e?.message || e), stack: e?.stack, component: 'App.onMounted' });
   } finally {
     // 数据就绪（或加载失败）后关闭启动 splash（批次A10，finally 保证不会卡在加载画面）
     window.__sitianSplash?.set?.(100, '就绪');
     nextTick(() => window.__sitianSplash?.close?.());
   }
+  // 启动时恢复上次打开的项目（B4，2026-09-24）：没有记录 / 文件已被删除或移动 / 解析失败，
+  // 一律**静默回落只读**并说明原因 —— 启动期绝不因为"上次那个项目找不到了"而卡住或报错。
+  try {
+    const r = await restoreLastProject();
+    if (r && r.success) {
+      statusText.value = `已恢复上次的项目：${String(r.path).split(/[\\/]/).pop()}`;
+      statusKind.value = 'ok';
+    } else if (r && r.reason === 'missing') {
+      statusText.value = '上次打开的项目文件已不存在（可能被移动或删除）—— 已回到只读浏览';
+      statusKind.value = 'warn';
+    }
+  } catch (e) { /* 静默：恢复失败不能影响启动 */ }
+
   window.addEventListener('keydown', handleGlobalKeydown);
   window.addEventListener('keydown', handlePerfKeydown);
 
-  // Vault 监听事件
+  // Vault 监听事件（项目态下画布事实源是项目文件，store 侧会拦掉这些事件并返回 false → 给用户回音）
   cleanupNodeUpdated = window.sitianAPI.onNodeUpdated((data) => {
-    store.handleNodeUpdated(data.node);
-    statusText.value = `已更新: ${data.node.name}`;
+    const applied = store.handleNodeUpdated(data.node);
+    statusText.value = applied === false
+      ? '知识库已变更（当前打开的是项目，画布不受影响；如需带入请用「导入知识库内容」）'
+      : `已更新: ${data.node.name}`;
+    statusKind.value = applied === false ? 'warn' : 'ok';
   });
   cleanupNodeRemoved = window.sitianAPI.onNodeRemoved((data) => {
-    store.handleNodeRemoved(data.nodeId);
-    statusText.value = `已删除节点`;
+    const applied = store.handleNodeRemoved(data.nodeId);
+    statusText.value = applied === false
+      ? '知识库已变更（当前打开的是项目，画布不受影响）'
+      : `已删除节点`;
+    statusKind.value = applied === false ? 'warn' : 'ok';
   });
 
   // 性能面板定时更新
@@ -1296,6 +1405,16 @@ onMounted(async () => {
   });
   // PlanetMap 本地面板打开时，关闭 App 层浮层面板（面板互斥）
   window.addEventListener('sitian:panel-open', closeAppPanels);
+  // 引导/空态把用户送到项目面板（B2/B3）
+  window.addEventListener('sitian:open-project-panel', handleOpenProjectPanel);
+  // 项目侧告警（如「会话基线未能创建」= 失去回滚点）→ 状态栏提醒，别让它静默
+  window.addEventListener('sitian:project-warning', (e) => {
+    const msg = e?.detail?.message;
+    if (!msg) return;
+    statusText.value = msg;
+    statusKind.value = 'warn';
+    setTimeout(() => { if (statusText.value === msg) { statusText.value = ''; statusKind.value = ''; } }, 12000);
+  });
 
   // 启动时静默备份 .sitian/ 缓存（P1-2 数据安全；主进程已自动备份，这里兜底确认）
   if (window.sitianAPI?.backupSitianCache) {
@@ -1306,20 +1425,49 @@ onMounted(async () => {
   // 退出前落盘（数据安全承诺）：主进程在真正 quit 前会等这里回执（2.5s 超时则直接放行）。
   // 画布未落盘的编辑（含还在防抖窗口里的行星地图/剧本）与 dirty 的项目文件都在这里写完。
   window.sitianAPI?.onFlushBeforeQuit?.(async (reason) => {
+    let failed = [];
     try {
       const results = await flushAll(reason);
-      const bad = results.filter(r => r.ok === false);
-      if (bad.length) console.warn('[quit] 有改动未能落盘:', bad);
+      failed = results
+        .filter(r => r.ok === false)
+        .map(r => ({ name: r.name, error: r.error || (r.result && r.result.error) || '' }));
+      if (failed.length) console.warn('[quit] 有改动未能落盘:', failed);
     } catch (err) {
       console.warn('[quit] 退出前落盘异常:', err);
-    } finally {
-      try { window.sitianAPI?.notifyFlushDone?.(); } catch (e) { /* noop */ }
+      failed = [{ name: 'flushAll', error: (err && err.message) || String(err) }];
     }
+    // 🔴 必须把失败一并回执给主进程（2026-09-24 修）：主进程据此弹**原生对话框**。
+    //    旧实现只 console.warn 就照常退出 —— 窗口随即关闭，用户以为「已正常退出、改动已保存」，
+    //    实际未落盘；这是唯一能触达用户的时机（渲染层可能已经不可见了）。
+    try { window.sitianAPI?.notifyFlushDone?.({ failed }); } catch (e) { /* noop */ }
   });
 });
 
 function closeAppPanels() {
   panelsStore.closeAll();
+}
+
+/**
+ * 把用户送到「项目」面板（B2/B3，2026-09-24）。
+ * 为什么不在这里直接新建/打开项目：App.vue 有一条静态闸门 —— **不得 import projectStore**
+ * （只有面板/组件才连项目 store）。所以 App 只负责"送人过去"，执行者仍是面板。
+ */
+function handleOpenProjectPanel() {
+  if (!panelsStore.isOpen('project')) panelsStore.toggle('project');
+}
+
+/** 只读态下的「新建项目」：面板才是执行者 */
+function handleCreateProject() {
+  handleOpenProjectPanel();
+  statusText.value = '在项目面板填个名字点「新建」即可（或点「新建并导入知识库内容」把现有词条一并带进来）';
+  statusKind.value = 'warn';
+}
+
+/** 只读态下的「打开项目」 */
+function handleOpenProject() {
+  handleOpenProjectPanel();
+  statusText.value = '在项目面板点「打开项目…」选择 .sitian 文件';
+  statusKind.value = 'warn';
 }
 
 /** 同步面板 → 项目面板（面板里「还没有可同步的目录」时的去处） */
@@ -1335,6 +1483,7 @@ onUnmounted(() => {
   cleanupNodeRemoved?.();
   if (perfUpdateTimer) clearInterval(perfUpdateTimer);
   window.removeEventListener('sitian:panel-open', closeAppPanels);
+  window.removeEventListener('sitian:open-project-panel', handleOpenProjectPanel);
   document.removeEventListener('click', handleClickOutside);
   window.removeEventListener('beforeunload', handleBeforeUnload);
 });
@@ -1410,9 +1559,23 @@ async function reextract() {
 }
 
 async function saveData() {
-  await store.saveGeodata();
+  // ⚠️ 必须**按返回值**说话（2026-09-24 修，B6）：项目态下 `saveGeodata()` 只是把改动**推给 projectStore**，
+  //    真正的落盘由它的 800ms 防抖自动保存完成（返回 `staged:true / persisted:false`）。
+  //    旧实现不看返回值、无条件打印「已保存」并把 dirty 清掉 = 谎报成功。
+  const r = await store.saveGeodata();
+  if (r && r.success === false) {
+    statusText.value = `保存失败：${r.error || '未知原因'}`;
+    statusKind.value = 'err';
+    return;                     // 失败时**不清 dirty** —— 还有未落盘的改动，用户必须能看出来
+  }
   dirty.value = false;
-  statusText.value = '已保存';
+  if (r && r.staged) {
+    statusText.value = '已交给项目，正在写入磁盘…';
+    statusKind.value = 'warn';
+  } else {
+    statusText.value = '已保存';
+    statusKind.value = 'ok';
+  }
 }
 
 // ===== 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳 =====

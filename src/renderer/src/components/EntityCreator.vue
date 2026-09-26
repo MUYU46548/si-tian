@@ -2,13 +2,21 @@
   <div class="ec-overlay" @click.self="$emit('close')">
     <div class="ec-card" role="dialog" aria-label="新建实体">
       <header class="ec-head">
-        <span class="ec-title">新建实体</span>
+        <span class="ec-title">{{ batchMode ? '批量新建实体' : '新建实体' }}</span>
+        <!-- 单个 / 批量 切换（B7，2026-09-24）：真实建世界观是「一次建一批」（粘 30 个城市名），
+             逐个建 = 30 次操作 + 30 条 undo 记录。 -->
+        <div class="ec-mode" role="tablist">
+          <button class="ec-mode-btn" :class="{ active: !batchMode }" role="tab"
+                  data-testid="ec-mode-single" @click="batchMode = false">单个</button>
+          <button class="ec-mode-btn" :class="{ active: batchMode }" role="tab"
+                  data-testid="ec-mode-batch" @click="batchMode = true">批量</button>
+        </div>
         <button class="ec-x" title="关闭" @click="$emit('close')">×</button>
       </header>
 
       <div class="ec-body">
         <!-- 表单 -->
-        <div class="ec-field">
+        <div v-if="!batchMode" class="ec-field">
           <label>名称</label>
           <input
             ref="nameInput"
@@ -18,6 +26,20 @@
             @keydown.enter="create"
           />
           <span class="ec-id" :title="'实体 id（由名称规范化，重名自动加序号）'">id: {{ previewId || '—' }}</span>
+        </div>
+
+        <!-- 批量模式：每行一个名称（B7） -->
+        <div v-else class="ec-field">
+          <label>名称（每行一个）</label>
+          <textarea
+            ref="batchInput"
+            v-model="batchNames"
+            class="ec-input ec-textarea"
+            rows="6"
+            data-testid="ec-batch-names"
+            placeholder="每行一个名称，例如：&#10;青崖城&#10;落雁关&#10;碧水镇"
+          ></textarea>
+          <span class="ec-id">将创建 {{ batchCount }} 个实体 · 与已有实体同名的会自动跳过并列出</span>
         </div>
 
         <div class="ec-field">
@@ -38,12 +60,12 @@
           </select>
         </div>
 
-        <div class="ec-field">
+        <div v-if="!batchMode" class="ec-field">
           <label>标签</label>
           <input v-model="tagsText" class="ec-input" placeholder="逗号分隔，可留空" />
         </div>
 
-        <div class="ec-field">
+        <div v-if="!batchMode" class="ec-field">
           <label>坐标</label>
           <div class="ec-coord">
             <input v-model="coordX" class="ec-input small" placeholder="x（可留空）" />
@@ -52,7 +74,7 @@
         </div>
 
         <!-- 分派计划：C 方案的核心 —— 创建后按层级走不同的落位/绘制流程（创建前作为预告） -->
-        <div v-if="!created" class="ec-dispatch">
+        <div v-if="!batchMode && !created" class="ec-dispatch">
           <div class="ec-dispatch-title">创建后</div>
           <ol>
             <li v-for="(s, i) in dispatchSteps" :key="i">{{ s }}</li>
@@ -63,7 +85,7 @@
         </div>
 
         <!-- 创建结果卡片（用户决策 2026-09-19）：结果 + 该层级的分派流程 + 「前往编辑」 -->
-        <div v-if="created" class="ec-card-done">
+        <div v-if="!batchMode && created" class="ec-card-done">
           <div class="ec-result ok">已创建「{{ created.entity.name }}」（id: {{ created.entity.id }}，层级 {{ created.entity.layerLabel }}）</div>
           <div class="ec-dispatch">
             <div class="ec-dispatch-title">下一步</div>
@@ -81,13 +103,29 @@
         </div>
 
         <div v-if="result && !result.ok" class="ec-result err">{{ result.text }}</div>
+
+        <!-- 批量结果（B7）：新建了哪些、跳过了哪些都要摊开说（不静默吞同名） -->
+        <div v-if="batchMode && batchResult" class="ec-card-done">
+          <div class="ec-result ok">
+            已创建 {{ batchResult.created.length }} 个实体（层级 {{ LAYER_LABELS[layer] || layer }}，一次 Ctrl+Z 可整体撤销）
+          </div>
+          <div v-if="batchResult.skipped.length" class="ec-result err">
+            跳过 {{ batchResult.skipped.length }} 个：{{ batchResult.skipped.join('、') }}
+          </div>
+          <div class="ec-card-actions">
+            <button class="ec-btn" @click="resetBatch">再建一批</button>
+          </div>
+        </div>
+        <div v-if="batchMode && batchError" class="ec-result err">{{ batchError }}</div>
       </div>
 
       <footer class="ec-foot">
         <span class="ec-parent-hint">{{ parentHint }}</span>
         <button class="ec-btn" @click="$emit('close')">关闭</button>
         <button class="ec-btn" :disabled="!created" @click="reset">清空重填</button>
-        <button class="ec-btn primary" :disabled="!name.trim()" @click="create">创建</button>
+        <button v-if="!batchMode" class="ec-btn primary" :disabled="!name.trim()" @click="create">创建</button>
+        <button v-else class="ec-btn primary" data-testid="ec-batch-create"
+                :disabled="!batchCount" @click="createBatch">批量创建{{ batchCount ? ` ${batchCount} 个` : '' }}</button>
       </footer>
     </div>
   </div>
@@ -141,6 +179,43 @@ const coordX = ref('');
 const coordY = ref('');
 const result = ref(null);       // 仅承载失败信息
 const created = ref(null);      // { entity, steps } —— 创建成功后的结果卡片数据
+
+// ===== 批量创建（B7，2026-09-24）=====
+// 动机：真实建世界观是「一次建一批」（粘 30 个城市名）。逐个建 = 30 次操作 + 30 条 undo 记录；
+//       而「批量导入笔记」那条路写的是 Obsidian .md，还得靠 reextract 才能回流 ——
+//       在项目态被正确拒绝（两套事实源混流）→ 规模化建实体实际是死的。
+// 语义：每行一个名称；空行忽略；与已有实体同名的跳过并**明确列出**（不静默吞）。
+const batchMode = ref(false);
+const batchInput = ref(null);
+const batchNames = ref('');
+const batchResult = ref(null);  // { created: [], skipped: [] }
+const batchError = ref('');
+
+const batchCount = computed(() => batchNames.value.split('\n').map(t => t.trim()).filter(Boolean).length);
+
+// 切换模式时把焦点交给该模式的输入（与面板一致：不依赖点击落点的时序）
+watch(batchMode, () => {
+  nextTick(() => { (batchMode.value ? batchInput.value : nameInput.value)?.focus?.(); });
+});
+
+function createBatch() {
+  batchError.value = '';
+  batchResult.value = null;
+  const res = proj.createEntities(batchNames.value.split('\n'), {
+    layer: layer.value,
+    parentId: parentId.value || null,
+  });
+  if (!res.success) { batchError.value = res.error || '批量创建失败'; return; }
+  batchResult.value = { created: res.created || [], skipped: res.skipped || [] };
+  if (res.nothingNew) batchError.value = '没有新建任何实体：这些名称都与已有实体重名';
+}
+
+function resetBatch() {
+  batchNames.value = '';
+  batchResult.value = null;
+  batchError.value = '';
+  nextTick(() => batchInput.value?.focus?.());
+}
 
 const previewId = computed(() => (name.value.trim() ? proj.previewEntityId(name.value.trim()) : ''));
 
@@ -410,4 +485,32 @@ watch(() => props.open, (v) => { if (v) nextTick(() => nameInput.value?.focus())
 .ec-btn:hover:not(:disabled) { background: var(--planet-btn-hover, #1e3044); }
 .ec-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .ec-btn.primary:not(:disabled) { color: #1c4fa1; border-color: #3a6b8f; }
+/* ===== 批量模式（B7，2026-09-24）===== */
+.ec-mode {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 10px;
+}
+.ec-mode-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--panel-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  border-radius: 6px;
+}
+.ec-mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* 批量名称输入：多行 + 可纵向拉伸 */
+.ec-textarea {
+  resize: vertical;
+  min-height: 96px;
+  font-family: inherit;
+  line-height: 1.5;
+}
 </style>

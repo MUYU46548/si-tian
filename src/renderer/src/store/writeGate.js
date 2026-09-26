@@ -130,32 +130,59 @@ export function guardWrite(action = '写操作') {
   return { ok: true };
 }
 
-// ── 内存编辑闸门（2026-09-21 补齐）────────────────────────────────────────
-// 「落盘写」之外还有一类写：**内存编辑**（画布上的笔刷/多边形/家具/剧本染色…）。
+// ── 内存编辑闸门（2026-09-21 补齐；2026-09-24 改为**函数级**契约）──────────────
+// 「落盘写」之外还有一类写：**内存编辑**（画布上的笔刷 / 多边形 / 家具 / 剧本染色…）。
 // 它们在只读态下曾经可以照改内存 —— 改动看起来生效（画布变了、列表多了），
 // 但永远不会落盘 = 静默丢数据，比直接报错更坏。处置与落盘写一致：拒绝 + 提示去处。
 //
-// 入口清单（可执行契约，`scripts/tests/cases/test_54_memory_write_gate.py` 读源码校验）：
-//   | # | 文件 | 内存写入路径 | 形态 |
-//   |---|------|-------------|------|
-//   | 1 | store/undo.js          | execute()（所有走 undo 栈的编辑） | ✅ 守卫 |
-//   | 2 | store/geodata.js       | 节点 CRUD / 坐标 / 锁定 / id 变更（这些先改内存再调 execute，必须在函数首行守卫） | ✅ 守卫 |
-//   | 3 | store/geodataModules/interior.js       | addFloor / updateInteriorReferenceImage / removeInteriorReferenceImage | ✅ 守卫 |
-//   | 4 | store/geodataModules/areaEditing.js    | updateAreaReferenceImage / removeAreaReferenceImage | ✅ 守卫 |
-//   | 5 | store/geodataModules/mapDataEditing.js | updateReferenceImage / clearReferenceImage / ensureRivers | ✅ 守卫 |
-//   | 6 | store/geodataModules/scenarioEditing.js| importFromScenariosJson / importPlanetLayerData | ✅ 守卫 |
-//   | 7 | store/geodataModules/provinceEditing.js| commit / setTerrain 等 6 个写操作 | ✅ 守卫（Phase 3） |
-//   ⚠️ 新增任何「直接改世界观数据、不走 execute()」的 store 函数，必须补 guard + 登记上行。
-//   ⚠️ **先改内存、再 execute 的函数**（如 updateNode/removeNode）尤其危险：只守 execute 时，
-//      拒绝发生在数据已经改完之后 —— 表现就是「只读态点一下，名字还是变了」（test_54 抓到）。
+// 🔴 **为什么必须按「函数」登记（2026-09-24 修，本文件最重要的变更）**：
+//    旧清单是**文件级**的（条目里只写 `marker: 'guardWrite('`），测试只判
+//    「这个文件里出现过 guardWrite(」—— 于是**一个文件里只要有一个守卫，整行就算通过**，
+//    同文件里其余裸奔的写函数**永远查不出来**（漏报型假绿，比误报隐蔽得多）。
+//    实测代价：`interior.js` 13 个函数只有 3 个有守卫、`mapDataEditing.js` 有 26 处
+//    「先改内存后 execute」，全部隐形；`test_47`/`test_54` 却双双全绿。
+//    现在条目登记到 `fns: [...]`，测试**截取每个函数体**后逐个断言。
+//
+// 清单只登记「**自己不守就会出事**」的两类函数：
+//   ① 直接改世界观数据、不走 `execute()` 的裸写；
+//   ② **先改内存、后 `execute()`** 的函数 —— 只守 execute 时，拒绝发生在数据已经改完之后。
+// 靠 `execute()` 间接守卫的函数**不在此登记**（execute 本身是 id=1 条目）。
+// ⚠️ 新增任何「直接改世界观数据」的函数，必须补 `guardWrite` + 登记到本表。
+// ⚠️ 校验口径：函数体内出现 `guardWrite(` **或** `blocked(`（省份模块用 blocked() 统一包装）。
 export const MEMORY_WRITE_CALLSITES = [
-  { id: 1, file: 'src/renderer/src/store/undo.js', marker: 'guardWrite(', what: 'execute', guarded: true },
-  { id: 2, file: 'src/renderer/src/store/geodata.js', marker: 'guardWrite(', what: '节点 CRUD/坐标/锁定/id 变更', guarded: true },
-  { id: 3, file: 'src/renderer/src/store/geodataModules/interior.js', marker: 'guardWrite(', what: 'addFloor/参考图', guarded: true },
-  { id: 4, file: 'src/renderer/src/store/geodataModules/areaEditing.js', marker: 'guardWrite(', what: '区域参考图', guarded: true },
-  { id: 5, file: 'src/renderer/src/store/geodataModules/mapDataEditing.js', marker: 'guardWrite(', what: '行星参考图/河流懒建', guarded: true },
-  { id: 6, file: 'src/renderer/src/store/geodataModules/scenarioEditing.js', marker: 'guardWrite(', what: '剧本导入', guarded: true },
-  { id: 7, file: 'src/renderer/src/store/geodataModules/provinceEditing.js', marker: 'guardWrite(', what: '省份网格写操作', guarded: true },
+  { id: 1, file: 'src/renderer/src/store/undo.js',
+    fns: ['execute'],
+    what: '所有走 undo 栈的编辑（内存写总闸门）' },
+  { id: 2, file: 'src/renderer/src/store/geodata.js',
+    fns: ['updateNode', 'removeNode', 'updateNodePosition', 'toggleNodeLock', 'updateAllCoordinates', 'changeNodeId'],
+    what: '节点 CRUD / 坐标 / 锁定 / id 变更（先改内存后 execute → 必须守函数首行）' },
+  { id: 3, file: 'src/renderer/src/store/geodata.js',
+    fns: ['selectBuilding'],
+    what: '建筑内部容器懒建（只守懒建那一段；视图导航在只读态照常工作）' },
+  { id: 4, file: 'src/renderer/src/store/geodataModules/interior.js',
+    fns: ['addFloor', 'removeFloor', 'updateFloor', 'removeFurniture', 'updateFurniture',
+          'updateInteriorReferenceImage', 'removeInteriorReferenceImage'],
+    what: '楼层 / 家具 / 参考图' },
+  { id: 5, file: 'src/renderer/src/store/geodataModules/areaEditing.js',
+    fns: ['updateAreaReferenceImage', 'removeAreaReferenceImage'],
+    what: '区域参考图' },
+  { id: 6, file: 'src/renderer/src/store/geodataModules/mapDataEditing.js',
+    fns: ['addTerrainPolygon', 'removeTerrainPolygon', 'updateControlPoint',
+          'addRegion', 'removeRegion', 'updateRegion', 'updateTerrainPolygon',
+          'addRoute', 'removeRoute', 'updateRoute',
+          'addTextLabel', 'removeTextLabel', 'updateTextLabel',
+          'addMarker', 'removeMarker', 'updateMarker', 'batchUpdateMapObjects',
+          'updateReferenceImage', 'removeReferenceImageById', 'clearReferenceImage',
+          'addMapSnapshot', 'removeMapSnapshot',
+          'addCluster', 'removeCluster', 'updateCluster',
+          'applyReliefStroke', 'ensureRivers', 'addCulture'],
+    what: '行星地图对象 CRUD / 参考图 / 快照 / 河流 / 文化' },
+  { id: 7, file: 'src/renderer/src/store/geodataModules/scenarioEditing.js',
+    fns: ['importFromScenariosJson', 'importPlanetLayerData', 'applyHeightBrush', 'applyBiomeBrush'],
+    what: '剧本导入 + 涂抹笔刷（先改内存后 execute）' },
+  { id: 8, file: 'src/renderer/src/store/geodataModules/provinceEditing.js',
+    fns: ['rebuildProvinceGrid', 'applyProvinceLasso', 'removeProvinceWithGrid', 'clearProvinceLabels'],
+    what: '省份网格写操作（统一经 blocked() 包装）' },
 ];
 
 // ── 拒绝回音（供 App.vue 提示用户「为什么点了没反应 / 改哪儿去了」）─────────

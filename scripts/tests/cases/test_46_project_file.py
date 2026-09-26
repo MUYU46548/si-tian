@@ -153,6 +153,43 @@ SCHEMA_JS = """(async () => {
   ck('第 0 份带 base', p.snapshots[0].base !== undefined);
   ck('后续份只有 patch', p.snapshots[1].base === undefined && typeof p.snapshots[1].patch === 'object');
 
+  // ---- ★ 快照不管理重字段（A1/R1，2026-09-25）----
+  //   背景：高度图单份 1263 KB，而 `diffWalk` 对数组是**整体替换** → 每涂一笔整份进 patch，
+  //   满 50 份 = 38.23 MB（实测），而项目正文才 1.33 MB。所以 SNAPSHOT_HEAVY_FIELDS
+  //   （heightmap / terrainGrid / referenceImages）被 snapshotState 剔除。
+  //   ⚠️ 关键的一半在**回滚**：`restoreProjectSnapshot` 是整体替换 `scenarios`，
+  //      若不把当前值补回来，一次回滚就会把用户几小时的地形删掉（且无报错）。
+  {
+    const hugeHm = {
+      grid: { points: [[0,0],[1,0],[0,1],[1,1]], spacing: 1, cellsX: 2, cellsY: 2, count: 4 },
+      h: [1,2,3,4], temp: [1,2,3,4], prec: [1,2,3,4], biome: [0,1,2,3], marker: 'HEAVY',
+    };
+    let h = S.createEmptyProject({ name: 'heavy' });
+    h.scenarios = { version: 2, baseMaps: { k1: { id: 'k1', name: '甲', heightmap: hugeHm, terrain: [{ id: 't1' }] } }, scenarios: {} };
+    h = S.pushSnapshot(h, { label: '带高度图' });
+
+    ck('★ 高度图不进快照（体积）', JSON.stringify(h.snapshots).indexOf('HEAVY') < 0,
+       JSON.stringify(h.snapshots).slice(0, 140));
+    same('快照里仍保留 baseMap 的轻字段', h.snapshots[0].base.scenarios.baseMaps.k1.name, '甲');
+    same('快照里仍保留省份多边形（结构性数据，量级可接受）',
+         h.snapshots[0].base.scenarios.baseMaps.k1.terrain.length, 1);
+
+    // 改名后再保存 → 回滚到第一份：名字要回来，**高度图必须还在**
+    let h2 = { ...h, scenarios: { ...h.scenarios, baseMaps: { k1: { ...h.scenarios.baseMaps.k1, name: '改名后' } } } };
+    h2 = S.pushSnapshot(h2, { label: '改名' });
+    const rs = S.restoreSnapshot(h2, 0);
+    ck('回滚成功', rs.ok === true, rs);
+    same('回滚恢复了轻字段（名字）', rs.state.scenarios.baseMaps.k1.name, '甲');
+    ck('★ 回滚**保留**了快照不管理的高度图（不补回来 = 回滚删数据）',
+       !!(rs.state.scenarios.baseMaps.k1.heightmap) && rs.state.scenarios.baseMaps.k1.heightmap.marker === 'HEAVY',
+       rs.state.scenarios.baseMaps.k1.heightmap ? 'ok' : 'MISSING');
+
+    ck('snapshotStateWithHeavy 含重字段（供回滚的 before，undo 才不会吃掉地形）',
+       !!(S.snapshotStateWithHeavy(h2).scenarios.baseMaps.k1.heightmap), null);
+    ck('snapshotState（默认）不含重字段',
+       !(S.snapshotState(h2).scenarios.baseMaps.k1.heightmap), null);
+  }
+
   // ---- keep 参数 ----
   let q = S.createEmptyProject({ name: 'keep' });
   for (let i = 0; i < 6; i++) { q = { ...q, meta: { ...q.meta, name: 'n' + i } }; q = S.pushSnapshot(q, { keep: 3 }); }
@@ -380,7 +417,8 @@ def sub_static(cdp):
         bad.append('projectHandler 顶层依赖 electron（Node 单元测试会跑不起来）')
     preload = _read('src/preload/index.js')
     for api in ('projectCreate', 'projectOpen', 'projectSave', 'projectList',
-                'projectPickDir', 'projectReveal', 'projectBackupNow', 'projectGitSnapshot'):
+                'projectPickDir', 'projectReveal', 'projectBackupNow', 'projectGitSnapshot',
+                'projectGetLastPath'):
         if api not in preload:
             bad.append(f'preload 未暴露 {api}')
 
@@ -388,8 +426,11 @@ def sub_static(cdp):
     ch_preload = set(re.findall(r"ipcRenderer\.invoke\('(project-[^']+)'", preload))
     if ch_handler != ch_preload:
         bad.append(f'通道名不一致 handler={sorted(ch_handler)} preload={sorted(ch_preload)}')
-    if len(ch_handler) != 8:
-        bad.append(f'注册通道数异常：{len(ch_handler)}（期望 8）')
+    # 下限守卫（**不写死条数**）：双向一致性已由上面的「集合相等」保证，
+    # 这里只防「通道被整体删空 / 改名成非 project- 前缀」这类塌方。
+    # 2026-09-24：原来写死 `!= 8`，新增 project-get-last-path 后必然假红 —— 数条数不是它的职责。
+    if len(ch_handler) < 8:
+        bad.append(f'注册通道数异常：{len(ch_handler)}（不应少于 8）')
 
     # LAYER_LABELS 防漂移（与 geodata.js 的 layerLabels 必须同键同值）
     def label_map(src, marker):
@@ -409,7 +450,7 @@ def sub_static(cdp):
 
     if bad:
         return False, '；'.join(bad)
-    return True, ('preload 8 个 API ↔ 主进程 8 个通道一一对应；projectHandler 无 electron 顶层依赖；'
+    return True, (f'preload {len(ch_preload)} 个 API ↔ 主进程 {len(ch_handler)} 个通道一一对应；projectHandler 无 electron 顶层依赖；'
                   'layerLabels 两处一致；Phase 2.4 接线方向正确（geodata ↔ projectStore 只经 canvasBridge，'
                   '两侧适配器齐全、App 不直连 projectStore）')
 

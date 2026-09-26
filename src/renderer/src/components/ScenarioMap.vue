@@ -238,6 +238,56 @@
           </option>
         </select>
         <button @click="triggerMapImport" title="导入新底图"><Icon name="plus" :size="15"/></button>
+        <!-- A1（2026-09-24）：底图的高度图此前**只有 .map 导入**一条来源 —— 新建的底图里
+             高度/群系/文化/宗教笔刷与一键派生全都「点了没反应」（没有网格 → 直接 return）。
+             这个按钮补上「从零开始画」，同时它也是「剧情上已毁灭、不打算再建行星的星球」
+             唯一可走的路径：**不绑定行星，底图自己持有一份高度图**。 -->
+        <button
+          v-if="baseMapCanCreateHeightmap"
+          data-testid="basemap-create-heightmap"
+          title="为这张底图创建高度图网格（创建后即可用高度 / 群系 / 文化 / 宗教笔刷与一键派生）"
+          @click="createBaseMapHeightmap"
+        ><Icon name="layers" :size="15"/></button>
+      </div>
+
+      <!-- 地形来源（M1c，2026-09-25）—— 底图的地形有两种来源，取舍完全不同，必须显式选：
+             冻结导入 = 复制一份独立副本 → 历史存档剧本（行星后来怎么改都不影响它）
+             跟随行星 = 共用同一份数据   → 当代地图（两边互相影响）
+           真相在 store（planetId 字段 / 底图自持的 heightmap），这里只管展示与触发。 -->
+      <div v-if="baseMapKey" class="tool-group" data-testid="basemap-terrain-source">
+        <label>地形：</label>
+        <span
+          data-testid="basemap-terrain-mode"
+          :title="terrainModeTitle"
+          :style="{ fontSize: '11px', padding: '1px 6px', border: '1px solid currentColor', borderRadius: '3px', opacity: 0.85, whiteSpace: 'nowrap' }"
+        >{{ terrainModeLabel }}</span>
+        <select
+          v-model="pickPlanetId"
+          class="basemap-select"
+          :disabled="terrainInfo.mode === 'following'"
+          title="选择地形来源行星"
+        >
+          <option value="">选行星…</option>
+          <option v-for="p in availablePlanets" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+        <button
+          data-testid="basemap-freeze-import"
+          :disabled="!pickPlanetId || terrainInfo.mode === 'following'"
+          title="把该行星当前的地形**复制一份**到这张底图（副本独立：之后行星怎么改都不影响它，它也改不到行星）—— 适合历史存档剧本"
+          @click="freezeTerrainFromPlanet"
+        >冻结导入</button>
+        <button
+          data-testid="basemap-bind-planet"
+          :disabled="!pickPlanetId || terrainInfo.mode === 'following'"
+          title="让这张底图**跟随**该行星的地形（共用同一份：在剧本里涂山会改到行星，反之亦然）—— 适合与行星同步构建的当代地图。历史存档请改用「冻结导入」"
+          @click="bindTerrainToPlanet"
+        >跟随</button>
+        <button
+          v-if="terrainInfo.mode === 'following'"
+          data-testid="basemap-unbind"
+          title="解除跟随（行星那份不受影响；本底图回到「没有地形」，可再用「冻结导入」拿一份副本）"
+          @click="unbindTerrainFromPlanet"
+        >解绑</button>
       </div>
 
       <div class="tool-group">
@@ -275,6 +325,7 @@
         <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
+        <label class="check-label" title="EU4 式分级标注：放大看省名，缩小看势力名（可简称）"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
         <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
       <div class="tool-group">
@@ -351,6 +402,21 @@
         @click="selectPolity(null)"
         title="清除归属"
       ><Icon name="x" :size="14"/></div>
+      <!-- A8：选中势力后可改「显示名称 / 简称」—— .map 带来的是 FMG 国名，用户要换成自己世界的叫法。
+           简称只在缩小档使用（放大档与中档都用全名），留空即回落全名。 -->
+      <div v-if="selectedPolity" class="polity-editor" data-testid="polity-editor">
+        <label>名称
+          <input :value="selectedPolity.name || ''" @change="onPolityNameChange"
+                 :disabled="store.isReadOnly" data-testid="polity-name-input" />
+        </label>
+        <label>简称
+          <input :value="selectedPolity.abbr || ''" @change="onPolityAbbrChange"
+                 placeholder="留空用全名" :disabled="store.isReadOnly" data-testid="polity-abbr-input" />
+        </label>
+        <span class="polity-editor-hint" title="地图标注随缩放自动改档（放大省名 / 中档势力名 / 缩小简称）">
+          标注档位：{{ { province: '省名', polity: '势力名', abbr: '简称' }[polityLabelTierNow] }}
+        </span>
+      </div>
     </div>
 
     <!-- 画布 -->
@@ -383,7 +449,8 @@
         <button class="rg-btn" @click="resumeRender">继续渲染</button>
       </span>
       <span>缩放: {{ (cameraScale * 100).toFixed(0) }}%</span>
-      <span v-if="selectedProvince" class="selected-province">已选：{{ selectedProvince.name }}（{{ selectedProvince.biome || '未分类' }}）</span>
+      <!-- A8：点开省份详情才给势力**全名**（地图上缩小时只画简称，全名到这里查） -->
+      <span v-if="selectedProvince" class="selected-province">已选：{{ selectedProvince.name }}（{{ selectedProvince.biome || '未分类' }}）<template v-if="selectedProvincePolity"> · 势力：<b class="polity-fullname" :style="{ color: selectedProvincePolity.color || undefined }" data-testid="province-polity-name">{{ selectedProvincePolity.name }}</b><template v-if="selectedProvincePolity.abbr">（简称 {{ selectedProvincePolity.abbr }}）</template></template></span>
       <span v-if="drawPoints.length > 0" class="draw-hint">绘制中: {{ drawPoints.length }} 个点 (双击完成, Esc 取消)</span>
       <span v-if="splitStep > 0" class="draw-hint">拆分: 点击第 {{ splitStep + 1 }} 个点</span>
       <span v-if="mergeStep > 0" class="draw-hint">合并: 点击第 {{ mergeStep + 1 }} 个省份</span>
@@ -615,6 +682,7 @@ import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 import { generateRoadPath } from '../utils/placement';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
+import { buildHeightmapRaster } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
 import HistoryPanel from './HistoryPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
@@ -625,6 +693,13 @@ import {
 import { useScenarioExport } from '../composables/useScenarioExport';
 import { useProvinceBrush } from '../composables/useProvinceBrush';
 import { simplifyClosedTrace } from '../utils/regionTrace';
+// A8（2026-09-26）：历史剧本「势力标注」—— 分级判定 / 领土聚合 / 标签文本全是纯函数，
+// 放在 utils 里以便 Node 侧直接测（渲染里只剩「取数据 + 调 drawStyledLabel」）。
+import {
+  polityLabelTier, aggregateTerritories, ringAreaCentroid, labelTextFor, labelFitsOnScreen,
+  POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE, LABEL_MIN_AREA_PX,
+} from '../utils/polityLabels';
+import { drawStyledLabel } from '../utils/labelStyles';
 // P0 第二块：省份几何的**唯一表示**（多环实体）与其配套纯函数 —— 渲染/命中/分割/合并/骨架吸附
 // 全部走这一层，画布里不再自己实现多边形算法（旧实现里那份凸包合并就是「吃掉邻居省份」的根因）。
 import {
@@ -662,9 +737,127 @@ const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
 const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex']);
 const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value));
 const viewMode = ref('base');
+// ── 底图高度图（A1，2026-09-24）──────────────────────────────────────────────
+// 底图的高度图此前只有「.map 导入」一条来源 → 新建的底图用不了任何高度类工具（静默 return）。
+/** 当前底图绑定到的行星 id（绑定了则高度图归行星侧，底图不该再自建） */
+/** 当前底图绑定到的行星 id（绑定了则高度图归行星侧，底图不该再自建） */
+const baseMapBoundPlanet = computed(() => (baseMapKey.value ? store.getBoundPlanetId(baseMapKey.value) : null));
+/** 当前底图是否已有可用高度图网格 */
+const baseMapHasHeightmap = computed(() => {
+  if (!baseMapKey.value) return false;
+  const hm = store.getHeightmapFor(baseMapKey.value);
+  return !!(hm && hm.grid && Array.isArray(hm.grid.points) && hm.grid.points.length > 0);
+});
+/** 是否显示「创建高度图」按钮：已选底图 + 未绑定行星 + 还没有网格 */
+const baseMapCanCreateHeightmap = computed(() =>
+  !!baseMapKey.value && !baseMapBoundPlanet.value && !baseMapHasHeightmap.value);
+
+// ── 地形来源（M1c，2026-09-25）────────────────────────────────────────────────
+// 用户决策：「历史剧本 = 一次施工永久存档」，强行绑到行星上会有风险（改行星会连带改剧本）。
+// 所以两种模式并存、**冻结为默认**：
+//   · 冻结导入 → 复制一份独立副本（互不影响）→ 历史存档
+//   · 跟随行星 → 共用同一份（互相影响）      → 当代、与行星同步构建的地图
+// 真相仍在 store（`planetId` 字段 / 底图自持的 `heightmap`），本组件只做展示与触发。
+const pickPlanetId = ref('');
+const availablePlanets = computed(() =>
+  (store.nodes || [])
+    .filter(n => n.layer === 'planet')
+    .map(n => ({ id: n.id, name: n.name || n.id })));
+
+const terrainInfo = computed(() =>
+  (baseMapKey.value ? store.describeBaseMapTerrain(baseMapKey.value) : { mode: 'none' }));
+
+function planetNameById(id) {
+  return availablePlanets.value.find(p => p.id === id)?.name || id;
+}
+
+const terrainModeLabel = computed(() => {
+  const t = terrainInfo.value;
+  if (t.mode === 'following') {
+    return t.dangling ? `跟随：${planetNameById(t.planetId)}（已失效）` : `跟随：${planetNameById(t.planetId)}`;
+  }
+  if (t.mode === 'frozen') return t.from ? `冻结自 ${t.from.name}` : '独立地形';
+  if (t.mode === 'empty') return '无地形';
+  return '—';
+});
+
+const terrainModeTitle = computed(() => {
+  const t = terrainInfo.value;
+  if (t.mode === 'following') {
+    return t.dangling
+      ? '这张底图跟随的行星已不存在（绑定失效）—— 建议「解绑」后改用「冻结导入」'
+      : `地形与「${planetNameById(t.planetId)}」共用同一份：在剧本里编辑会改到那颗行星，行星改地形也会改到这里`;
+  }
+  if (t.mode === 'frozen') {
+    return t.from
+      ? `独立副本，冻结自「${t.from.name}」（${String(t.from.at || '').slice(0, 16).replace('T', ' ')}）—— 之后行星改地形不会影响它`
+      : '这张底图自持一份独立地形（不跟随任何行星）';
+  }
+  if (t.mode === 'empty') {
+    return '这张底图还没有地形：可用「冻结导入」从行星复制一份，或点底图旁的图层按钮从零创建';
+  }
+  return '';
+});
+
+/** 冻结导入：把行星当前地形**复制**一份（副本独立） */
+function freezeTerrainFromPlanet() {
+  const pid = pickPlanetId.value;
+  if (!pid) return;
+  const name = planetNameById(pid);
+  let r = store.importHeightmapFromPlanet(baseMapKey.value, pid, { planetName: name });
+  if (r && r.conflict) {
+    if (!window.confirm(r.error)) { statusMsg('已取消导入（保留了原地形）'); return; }
+    r = store.importHeightmapFromPlanet(baseMapKey.value, pid, { force: true, planetName: name });
+  }
+  if (!r || r.ok === false) { statusMsg((r && r.error) || '导入地形失败'); return; }
+  statusMsg(`已冻结导入「${name}」的地形（${r.cellsX}×${r.cellsY}，${r.cells} 格）—— 这是独立副本，之后行星改地形不会影响它`);
+  renderer.requestRender();
+}
+
+/** 跟随行星：共用同一份（会二次确认，并提示存档场景应改用冻结导入） */
+function bindTerrainToPlanet() {
+  const pid = pickPlanetId.value;
+  if (!pid) return;
+  const name = planetNameById(pid);
+  const okGo = window.confirm(
+    `让「${baseMapKey.value}」跟随「${name}」的地形？\n\n`
+    + '跟随 = 两边共用同一份：在剧本里涂山会改到行星，行星改地形也会改到这张剧本。\n\n'
+    + '如果这是要长期存档的历史剧本，请改用「冻结导入」（复制一份、互不影响）。'
+  );
+  if (!okGo) return;
+  const r = store.bindBaseMapToPlanet(baseMapKey.value, pid);
+  if (!r || r.ok === false) { statusMsg((r && r.error) || '跟随失败'); return; }
+  statusMsg(`已跟随「${name}」的地形 —— 现在两边是同一份：在剧本里编辑会改到那颗行星`);
+  renderer.requestRender();
+}
+
+/** 解绑：行星那份不动，本底图回到「没有地形」 */
+function unbindTerrainFromPlanet() {
+  const okGo = window.confirm(
+    '解除跟随？\n\n行星那份地形不受影响；这张底图会回到「没有地形」（可再用「冻结导入」拿一份独立副本）。'
+  );
+  if (!okGo) return;
+  const r = store.unbindBaseMap(baseMapKey.value);
+  if (!r || r.ok === false) { statusMsg((r && r.error) || '解绑失败'); return; }
+  statusMsg('已解除跟随 —— 行星那份没动；可用「冻结导入」从行星拿一份独立副本');
+  renderer.requestRender();
+}
 const baseMapKey = ref('');   // 空 = 当前项目还没有底图（onMounted 里解析：上次的 → 项目里第一张 → 空）
 const selectedScenario = ref(null);
+// ⚠️ 势力对象必须随数据**自愈重指向**：`updatePolity`（改名/简称）、撤销、导入都会整体替换
+//    `polities` 数组 → 持有旧对象会让「改完名界面还显示旧名」，而且**不报错**。
+//    这里刻意用「可写 ref + 刷新 watch」，而**不是** computed：
+//    computed 只读，任何 `selectedPolity.value = x` 都会**静默失效** ——
+//    实测其代价是 test_65 的 `sc.selectedPolity = …` 被无声吞掉（写失败却不报错）。
+//    同理 `selectedScenario` 也是「可写 ref + 刷新 watch」，两处保持一致。
 const selectedPolity = ref(null);
+watch(() => selectedScenario.value?.polities, (list) => {
+  const cur = selectedPolity.value;
+  if (!cur) return;
+  if (!list) { selectedPolity.value = null; return; }
+  // 势力被删 → 清空选中（不留悬空引用）；否则指向同一个 id 的最新对象
+  selectedPolity.value = list.find((p) => p.id === cur.id) || null;
+});
 const ctx = ref(null);
 const showScenarioManager = ref(false);
 const showLayerPanel = ref(false);
@@ -738,6 +931,9 @@ const showBiomes = ref(true);
 const showBorders = ref(true);
 const showLabels = ref(true);
 const showBurgs = ref(true);
+// A8：势力名/省名的分级标注（默认开 —— 势力名是历史剧本的主要读物）。
+// 与 showLabels 分开：showLabels 管的是用户**手放**的浮动文本，两者是不同性质的东西。
+const showPolityLabels = ref(true);
 
 // 摄像机（pan/zoom）
 const cameraX = ref(0);
@@ -963,12 +1159,9 @@ let snapFeedbackTimer = null;
 const rasterCache = new Map();
 
 // 分层设色盘（低→高；海洋/陆地分段）
-const HYPSO_WATER = ['#12314f', '#1d4a70', '#2b6b93', '#3f8fb0', '#63b0c9'];
-const HYPSO_LAND = ['#6f9f5a', '#8fb063', '#c3c46c', '#d8bf7a', '#b59468', '#8f7a5c', '#d9d2c6'];
-const TEMP_RAMP = ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#fee090', '#fdae61', '#f46d43', '#d73027'];
-const PREC_RAMP = ['#fff7bc', '#fee391', '#fec44f', '#c7e9b4', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8'];
-const LAND_BASE_COLOR = [220, 216, 207];   // #dcd8cf 无主省份本色
-const SEA_BASE_COLOR = [201, 214, 228];    // #c9d6e4 海洋底
+// 色带与陆海底色（HYPSO_WATER/LAND、TEMP_RAMP、PREC_RAMP、LAND/SEA_BASE_COLOR）
+// 2026-09-25 已迁到 `utils/heightmapRaster.js` —— 见文件上方说明。此处不再保留副本，
+// 避免「改了一处配色、另一个视图没变」这种又一处双源。
 
 // 右键菜单
 const contextMenu = ref({ show: false, x: 0, y: 0, provId: null });
@@ -1100,7 +1293,37 @@ function selectScenario(s) {
 }
 
 function selectPolity(p) {
-  selectedPolity.value = p;
+  selectedPolity.value = p || null;
+}
+
+// ── A8：势力显示信息（名称 / 简称）的编辑入口 ──────────────────────────────
+// 「自定义显示的势力名称」是暮雨的原话诉求：.map 导入带来的是 FMG 的国家名，
+// 用户要把它改成自己世界观里的叫法（并可另给一个缩小档用的简称）。
+function updateSelectedPolity(patch, okText) {
+  const polity = selectedPolity.value;
+  const sc = selectedScenario.value;
+  if (!polity || !sc) return;
+  const r = store.updatePolity(sc.id, polity.id, patch);
+  if (!r || !r.success) {
+    statusMsg(r && r.reason === 'no-polity' ? '势力已不存在（可能被删除）' : '修改势力失败');
+    return;
+  }
+  if (!r.changed) return;    // 没实质改动 → 不入 undo 栈、不提示
+  statusMsg(okText);
+  render();
+}
+
+function onPolityNameChange(e) {
+  const polity = selectedPolity.value;
+  if (!polity) return;
+  const v = String(e.target.value || '').trim();
+  if (!v) { e.target.value = polity.name || ''; statusMsg('势力名不能为空'); return; }
+  updateSelectedPolity({ name: v }, `势力已改名：${v}`);
+}
+
+function onPolityAbbrChange(e) {
+  const v = String(e.target.value || '').trim();
+  updateSelectedPolity({ abbr: v || null }, v ? `势力简称：${v}` : '已清除简称（缩小档回落全名）');
 }
 
 const showLineagePanel = ref(false);
@@ -1161,7 +1384,7 @@ function onSetChangeYear({ scenarioId, provinceId, year }) {
 function onTimelineSelectScenario(s) {
   if (s && selectedScenario.value?.id !== s.id) {
     selectedScenario.value = s;
-    selectedPolity.value = null;
+    selectedPolity.value = null;   // 跨剧本 polity id 全新，留着必然落空
   }
   render();
 }
@@ -1228,7 +1451,7 @@ watch(tlEra, (k) => {
   const s = timeline.value.scenarios[k];
   if (s && selectedScenario.value?.id !== s.id) {
     selectedScenario.value = s;
-    selectedPolity.value = null;
+    selectedPolity.value = null;   // 同上：polity id 跨剧本不通用
   }
   render();
 });
@@ -2566,6 +2789,23 @@ function findProvinceAt(x, y) {
 // ═══════════════════════════════════════════
 // 导入
 // ═══════════════════════════════════════════
+/**
+ * 为当前底图创建高度图网格（A1，2026-09-24）。
+ *
+ * 底图的高度图此前**只有 `.map` 导入**一条来源 → 新建的底图里高度 / 群系 / 文化 / 宗教笔刷
+ * 与一键派生全部因为「没有网格」直接 return，用户看到的是「工具点了没反应」。
+ * 创建后这些工具即可使用；范围按底图已有地形的包围盒外扩（空底图给默认方框）。
+ */
+function createBaseMapHeightmap() {
+  const r = store.createBaseMapHeightmap(baseMapKey.value);
+  if (!r || r.ok === false) {
+    statusMsg((r && r.error) || '创建高度图失败');
+    return;
+  }
+  statusMsg(`已创建高度图网格 ${r.cellsX}×${r.cellsY}（${r.cells} 格）—— 现在可以用高度 / 群系 / 文化笔刷了`);
+  renderer.requestRender();
+}
+
 async function triggerMapImport() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -2763,107 +3003,21 @@ function resolveSnapPoint(world, shiftKey) {
 
 // ══════════════════════════════════════
 // 底图数据图层（P1-T1 地形 / P1-T2 温度降水 / 陆海底色）
+// ⚠️ 2026-09-25（M2/A2）：逐格上色与色带已抽到 `utils/heightmapRaster.js` ——
+//    PlanetMap 此前另有一套矢量轮廓渲染，同一份高度图两个视图两个观感。
+//    颜色与阈值**逐字**搬过去，本视图行为不变；改配色请改共享模块（两边同时生效）。
 // ══════════════════════════════════════
-function hexToRgb(hex) {
-  const h = hex.charAt(0) === '#' ? hex.slice(1) : hex;
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-
-const HYPSO_WATER_RGB = HYPSO_WATER.map(hexToRgb);
-const HYPSO_LAND_RGB = HYPSO_LAND.map(hexToRgb);
-const TEMP_RGB = TEMP_RAMP.map(hexToRgb);
-const PREC_RGB = PREC_RAMP.map(hexToRgb);
-
-function clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
-
-/** 色带采样（线性插值，返回 [r,g,b]） */
-function sampleRamp(rgbList, t) {
-  const u = clamp01(t);
-  if (u <= 0) return rgbList[0];
-  if (u >= 1) return rgbList[rgbList.length - 1];
-  const f = u * (rgbList.length - 1);
-  const i = Math.floor(f);
-  const k = f - i;
-  const a = rgbList[i];
-  const b = rgbList[i + 1] || a;
-  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
-}
-
-/** 网格单元 → 颜色（kind: landsea | height | temp | prec） */
-function cellColor(kind, i, hm) {
-  if (kind === 'landsea') {
-    return hm.h[i] >= 20 ? LAND_BASE_COLOR : SEA_BASE_COLOR;
-  }
-  if (kind === 'temp') {
-    return sampleRamp(TEMP_RGB, (hm.temp[i] + 40) / 60);   // 实测范围 -40…20 °C
-  }
-  if (kind === 'prec') {
-    return sampleRamp(PREC_RGB, hm.prec[i] / 100);        // FMG 降水标尺 0…100
-  }
-  const h = hm.h[i];
-  return h < 20
-    ? sampleRamp(HYPSO_WATER_RGB, h / 19)
-    : sampleRamp(HYPSO_LAND_RGB, (h - 20) / 80);
-}
-
-function fillPixelBlock(data, w, h, x0, y0, x1, y1, rgb) {
-  let ix0 = Math.floor(x0), iy0 = Math.floor(y0);
-  let ix1 = Math.ceil(x1), iy1 = Math.ceil(y1);
-  if (ix0 < 0) ix0 = 0;
-  if (iy0 < 0) iy0 = 0;
-  if (ix1 > w) ix1 = w;
-  if (iy1 > h) iy1 = h;
-  const r = rgb[0] | 0, g = rgb[1] | 0, b = rgb[2] | 0;
-  for (let y = iy0; y < iy1; y++) {
-    let p = (y * w + ix0) * 4;
-    for (let x = ix0; x < ix1; x++) {
-      data[p] = r; data[p + 1] = g; data[p + 2] = b; data[p + 3] = 255;
-      p += 4;
-    }
-  }
-}
 
 /**
- * 把网格数据预渲染为离屏图层（红线：大数据量必须预渲染，不逐帧重绘）。
- * 每个网格单元画一个 spacing × spacing 的方块——网格点在 spacing/2 内抖动，方块拼接即完整覆盖。
+ * 当前底图的高度图栅格（M2/A2，2026-09-25）。
+ *
+ * 构建逻辑已抽到 `utils/heightmapRaster.js`：同一份高度图以前有两个视图两套渲染算法与配色，
+ * 现在是同一套。本函数只负责「用哪一份高度图」（底图当前的那份）。
+ *
+ * 红线不变：大数据量必须预渲染，不逐帧重绘（几万格逐格画 = 每帧几十毫秒）。
  */
 function buildCellRaster(kind) {
-  const hm = baseMap.value?.heightmap;
-  const pts = hm?.grid?.points;
-  if (!hm || !pts || !pts.length) return null;
-  const values = kind === 'temp' ? hm.temp : kind === 'prec' ? hm.prec : hm.h;
-  if (!values || !values.length) return null;
-
-  const spacing = hm.grid.spacing || 14.4;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (let i = 0; i < pts.length; i++) {
-    const x = pts[i][0], y = pts[i][1];
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-  const pad = spacing;
-  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-  const w = Math.max(1, Math.ceil(maxX - minX));
-  const h = Math.max(1, Math.ceil(maxY - minY));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const rc = canvas.getContext('2d');
-  const img = rc.createImageData(w, h);
-  const data = img.data;
-  const half = spacing / 2;
-
-  for (let i = 0; i < pts.length && i < values.length; i++) {
-    const rgb = cellColor(kind, i, hm);
-    const cx = pts[i][0] - minX;
-    const cy = pts[i][1] - minY;
-    fillPixelBlock(data, w, h, cx - half, cy - half, cx + half, cy + half, rgb);
-  }
-  rc.putImageData(img, 0, 0);
-  return { canvas, minX, minY, w, h };
+  return buildHeightmapRaster(baseMap.value?.heightmap, kind);
 }
 
 function getRaster(kind) {
@@ -3312,6 +3466,8 @@ function renderFrame() {
   if (PROVINCE_GRID_TOOLS.has(tool.value)) drawProvinceBrushOverlay(ctx.value);
   drawPreviewOverlay(ctx.value);
   if (showLabels.value) drawLabels(ctx.value);
+  // A8：势力标注画在用户浮动文本之后（势力名是底层读物，不该被浮字压住）
+  drawPolityLabels(ctx.value);
   drawReliefIcons(ctx.value);
   drawScenarioMarkers(ctx.value);
 
@@ -3840,6 +3996,159 @@ function drawBurgTooltip(c) {
   c.fillText(sub, tx + 9, ty + 28);
 }
 
+// ─────────────────────────────────────────────────────────────
+// A8：势力标注（EU4 式分级）—— 放大看省名，缩小只留势力名（可简称），全名点开省份详情才给
+// ─────────────────────────────────────────────────────────────
+
+// 分级依据 = 「视口可见世界宽度 ÷ 地图世界宽度」。
+// ⚠️ 刻意**不用绝对 cameraScale**：它依赖数据量纲（FMG 导入 ≈1 量级、合成 fixture ≈0.2 量级），
+//    换一份数据阈值就整体失准 —— 表现为「同一档位在一份数据里全画省名、另一份里全画简称」。
+// 缓存只按 `terrain` 数组**引用**失效（编辑一律替换数组）→ 每帧不再重扫 25930 个顶点。
+let _mapSizeCache = { src: null, w: 0, h: 0 };
+function mapWorldSize() {
+  const terrain = baseMap.value?.terrain;
+  if (!terrain || !terrain.length) return { w: 0, h: 0 };
+  if (_mapSizeCache.src === terrain) return _mapSizeCache;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const prov of terrain) {
+    for (const ring of provinceRings(toRaw(prov))) {
+      for (const p of (ring.points || [])) {
+        const x = Array.isArray(p) ? p[0] : p && p.x;
+        const y = Array.isArray(p) ? p[1] : p && p.y;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  _mapSizeCache = {
+    src: terrain,
+    w: isFinite(minX) ? Math.max(1, maxX - minX) : 0,
+    h: isFinite(minY) ? Math.max(1, maxY - minY) : 0,
+  };
+  return _mapSizeCache;
+}
+
+/** 视口可见世界宽度 ÷ 地图世界宽度（无数据时回落 1 = 中档，绝不返回 NaN） */
+function mapVisibleRatio() {
+  const { w } = mapWorldSize();
+  const cvsW = canvas.value?.width || canvas.value?.clientWidth || 0;
+  const scale = Math.max(cameraScale.value, MIN_CAMERA_SCALE);
+  if (!w || !cvsW) return 1;
+  return (cvsW / scale) / w;
+}
+
+/** 当前档位（暴露给模板/用例；判定本体在 utils/polityLabels.js） */
+const polityLabelTierNow = computed(() => polityLabelTier(mapVisibleRatio()));
+
+/**
+ * 当前选中省份所属势力 —— 「全名只在点开省份详情时给」那条诉求的落点
+ * （地图上缩小时只画简称，全名要能查到）。
+ */
+const selectedProvincePolity = computed(() => {
+  if (viewMode.value !== 'scenario') return null;
+  const prov = selectedProvince.value;
+  if (!prov) return null;
+  const { ownerRefOf, polityOfEra } = polityLabelSources();
+  const ref = ownerRefOf(prov.id);
+  if (!ref || !ref.owner) return null;
+  return polityOfEra(ref.era, ref.owner);
+});
+
+/**
+ * 势力标注的**归属查询**：必须与 `getProvinceColor` 走同一口径
+ * （含「演变铺开」与 EU4 斜线占领的旧主底色），否则会出现「颜色是甲、名字写乙」。
+ * 势力对象还必须在 **owner 所属的那个剧本**里查 —— 真实数据每个剧本的 polity id 全新
+ * （`pol_ou → pol_li`），跨剧本查会落空 → 标签整片消失（颜色那条路径已因此踩过一次）。
+ */
+function polityLabelSources() {
+  const tl = timeline.value;
+  const k = tlEra.value;
+  const year = tlYear.value;
+  if (tl.scenarios.length) {
+    const ownerRefOf = (pid) => {
+      if (tlDiffMode.value === 'eu4' && isStriped(tl, k, pid, year)) {
+        return { owner: tl.scenarios[k - 1]?.ownership?.[pid], era: k - 1 };
+      }
+      return currentOwnerRef(tl, k, pid, year);
+    };
+    return { ownerRefOf, polityOfEra: (era, owner) => tl.scenarios[era]?.polities?.find(p => p.id === owner) || null };
+  }
+  const sc = selectedScenario.value;
+  return {
+    ownerRefOf: (pid) => ({ owner: sc?.ownership?.[pid], era: -1 }),
+    polityOfEra: (_era, owner) => sc?.polities?.find(p => p.id === owner) || null,
+  };
+}
+
+function drawPolityLabels(c) {
+  if (!showPolityLabels.value) return;
+  if (viewMode.value !== 'scenario') return;
+  const terrain = rawTerrain();
+  if (!terrain || !terrain.length) return;
+
+  const scale = cameraScale.value;
+  const tier = polityLabelTierNow.value;
+  const { ownerRefOf, polityOfEra } = polityLabelSources();
+
+  // 视口裁剪（标签是屏幕空间的，画在屏幕外纯属浪费 measureText）
+  const tl0 = screenToWorld(0, 0);
+  const br0 = screenToWorld(canvas.value.width, canvas.value.height);
+  const pad = px(40);
+  const inView = (x, y) => x >= tl0.x - pad && x <= br0.x + pad && y >= tl0.y - pad && y <= br0.y + pad;
+
+  // ── 放大档：省名 ──
+  // ⚠️ 海域判据取**环的 kind**（与 `drawProvinces` 里 `rp.kind === 'sea'` 同口径）：
+  //    `kind` 是省份级字段、由 `provinceRings` 归一后下发到环上，直接读 `prov.kind`
+  //    在「只有环上带 kind」的数据里会漏判 → 海面被挂上名字。
+  // ⚠️ 只取**主环**（`rings[0]`）算面积与形心：多环省份里洞与飞地面积很小，
+  //    对标签落点的贡献远小于主陆，把它算进来反而会把名字往边界推。
+  if (tier === 'province') {
+    for (const prov of terrain) {
+      if (!prov) continue;
+      const name = String(prov.name || '').trim();
+      if (!name) continue;
+      const rings = provinceRings(prov);
+      if (!rings.length || rings[0].kind === 'sea') continue;
+      const pts = ringPointsForRender(rings[0]);
+      if (!pts || pts.length < 3) continue;
+      const { area, cx, cy } = ringAreaCentroid(pts);
+      if (!labelFitsOnScreen(area, scale, LABEL_MIN_AREA_PX.province)) continue;
+      if (!inView(cx, cy)) continue;
+      drawStyledLabel(c, name, cx, cy, PROVINCE_LABEL_STYLE, { screenScale: scale });
+    }
+    return;
+  }
+
+  // ── 中/小档：势力名 / 简称（领土聚合 → 面积加权质心）──
+  const items = [];
+  for (const prov of terrain) {
+    if (!prov) continue;
+    const ref = ownerRefOf(prov.id);
+    if (!ref || !ref.owner) continue;
+    const rings = provinceRings(prov);
+    if (!rings.length || rings[0].kind === 'sea') continue;
+    const pts = ringPointsForRender(rings[0]);
+    if (!pts || pts.length < 3) continue;
+    items.push({ key: `${ref.era}|${ref.owner}`, points: pts });
+  }
+  const agg = aggregateTerritories(items, (it) => it.key);
+  for (const [key, st] of agg) {
+    if (!labelFitsOnScreen(st.area, scale, LABEL_MIN_AREA_PX.polity)) continue;
+    if (!inView(st.cx, st.cy)) continue;
+    const sep = key.indexOf('|');
+    const era = Number(key.slice(0, sep));
+    const owner = key.slice(sep + 1);
+    const text = labelTextFor(polityOfEra(era, owner), tier);
+    if (!text) continue;
+    // 选中势力高亮：与色板/状态栏的「已选势力」呼应，方便确认自己正在改谁
+    const highlight = !!selectedPolity.value && selectedPolity.value.id === owner;
+    drawStyledLabel(c, text, st.cx, st.cy, POLITY_LABEL_STYLE, { screenScale: scale, highlight });
+  }
+}
+
 function drawLabels(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.labels) return;
   selectedScenario.value.labels.forEach(label => {
@@ -4021,6 +4330,8 @@ async function exportPNG() {
   drawProvinces(ctx);
   if (showBurgs.value) drawBurgs(ctx);
   drawLabels(ctx);
+  // A8：导出必须与画布一致（M2/A2 的教训：导出各写一套 → 导出的东西画布上看不见，且不报错）
+  drawPolityLabels(ctx);
   ctx.font = '14px "PingFang SC", sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   const scenarioName = selectedScenario?.value?.name || '未命名剧本';
@@ -4129,7 +4440,7 @@ function onHistoryJump() {
   }
   render();
 }
-watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels], () => render());
+watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPolityLabels], () => render());
 // 网格显示选项：变了就重绘（网格只作为涂抹反馈；主渲染永远是多边形）
 watch([provMeshNoStar, provMeshBorders], () => {
   if (PROVINCE_GRID_TOOLS.has(tool.value)) scheduleProvinceGrid();
@@ -4398,6 +4709,42 @@ watch(baseMap, () => {
 }
 
 .polity-swatch:hover .polity-name { display: block; }
+
+/* A8：势力显示信息编辑（深色条上的内联编辑，配色跟色板一致） */
+.polity-editor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid #334155;
+  flex-wrap: wrap;
+}
+
+.polity-editor label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.polity-editor input {
+  width: 110px;
+  padding: 3px 6px;
+  background: #0f1a2e;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.polity-editor input:focus { outline: none; border-color: #ffd700; }
+.polity-editor input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.polity-editor-hint { color: #64748b; font-size: 11px; }
+
+.polity-fullname { font-weight: 600; }
 
 .polity-swatch.clear { background: #475569; border-color: #64748b; }
 

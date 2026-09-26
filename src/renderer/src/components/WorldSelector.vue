@@ -8,18 +8,32 @@
       <div class="header-actions">
         <button class="scenario-btn" @click="$emit('open-scenarios')" title="历史剧本"><Icon name="history" :size="14"/> 历史剧本</button>
         <button class="vault-btn" data-testid="open-vault" @click="$emit('open-vault')" title="打开 Obsidian 知识库（打不开时自动改为在文件管理器中打开库目录）"><Icon name="book" :size="14"/> 打开知识库</button>
-        <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
+        <button v-if="readOnly" class="create-btn" data-testid="create-project-header" :title="readOnlyHint"
+                @click="$emit('create-project')">＋ 新建项目</button>
+        <button v-else class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
       </div>
     </div>
     <div v-if="worlds.length === 0" class="empty-state">
       <h2>这里还没有世界</h2>
       <p>从 Obsidian 库提取地理节点，加载示例世界观，或创建一个空世界开始绘制。</p>
       <div class="empty-actions">
-        <!-- 已打开项目但项目是空的（2026-09-22 用户实测）：这里原来的「从 Obsidian 重新提取」在项目态
-             被正确拒绝（两套事实源混流），用户就卡在"项目里空空的" → 项目态下把首要动作换成导入。 -->
-        <button v-if="projectOpen" class="create-btn" data-testid="import-from-vault-empty" @click="$emit('import-from-vault')"><Icon name="folder-open" :size="14"/> 导入知识库内容</button>
-        <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
-        <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
+        <!-- 🔴 只读态（无项目）：**一切编辑入口都会被写闸门拒绝** —— 所以首要动作必须换成
+             「新建/打开项目」。旧空态只给了「新建世界 / 加载示例」，两者在只读态必被拒
+             （用户点完只看到一句拒绝），而真正的起点（项目面板）根本不在这个页面上，新人无从下手。
+             2026-09-24 修：只读态与可写态**分成两组**，避免把走不通的按钮摆在最显眼的位置。 -->
+        <template v-if="readOnly">
+          <button class="create-btn" data-testid="create-project-empty" :title="readOnlyHint"
+                  @click="$emit('create-project')"><Icon name="plus" :size="14"/> 新建项目（从这里开始）</button>
+          <button class="vault-btn" data-testid="open-project-empty"
+                  @click="$emit('open-project')"><Icon name="folder-open" :size="14"/> 打开已有项目</button>
+        </template>
+        <template v-else>
+          <!-- 已打开项目但项目是空的（2026-09-22 用户实测）：这里原来的「从 Obsidian 重新提取」在项目态
+               被正确拒绝（两套事实源混流），用户就卡在"项目里空空的" → 项目态下把首要动作换成导入。 -->
+          <button v-if="projectOpen" class="create-btn" data-testid="import-from-vault-empty" @click="$emit('import-from-vault')"><Icon name="folder-open" :size="14"/> 导入知识库内容</button>
+          <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
+          <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
+        </template>
         <button class="vault-btn" data-testid="open-vault-empty" @click="$emit('open-vault')"><Icon name="book" :size="14"/> 打开 Obsidian 知识库</button>
         <!-- 只读态下「重新提取」是落盘写、必然被拒 → 灰禁 + 说明去处（只拦不灰禁＝点完才被拒，坏交互） -->
         <button
@@ -80,7 +94,7 @@ const props = defineProps({
   projectOpen: { type: Boolean, default: false },
 });
 
-defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault', 'import-from-vault']);
+defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault', 'import-from-vault', 'create-project', 'open-project']);
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {

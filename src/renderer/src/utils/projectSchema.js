@@ -45,6 +45,16 @@
 //     所以缓冲恒定是「1 份 base + ≤keep 份 diff」。
 //   重量级 `maps` **不进快照** —— 它另有兜底：projectHandler 每次落盘的整文件备份（保留 10 份）。
 //   需要把 maps 也纳入快照时，调用方显式传 keys（并自行承担体积）。
+//
+// 🔴 2026-09-25 修正（A1/R1）：「entities/scenarios 是 KB 级」这个假设**是错的**。
+//   `diffWalk` 对数组是**整体替换**，而 `scenarios.baseMaps[*].heightmap` 里躺着四个
+//   26910 长度的数组（实测单份 1263 KB）→ **每涂一笔就有 1.26 MB 进 patch**，满 50 份 = **38.23 MB**
+//   （实测；同期项目正文才 1.33 MB）。所以现在：
+//     · `snapshotState` 剔除 `SNAPSHOT_HEAVY_FIELDS`（heightmap / terrainGrid / referenceImages）→ 满 50 份 ≈ 10 KB；
+//     · `restoreSnapshot` 回滚时把它们从**当前项目**补回（不补 = 回滚删数据）；
+//     · 这些字段的保护交给 projectHandler 的**整文件备份 10 份**（含完整内容，实测足够）。
+//   副作用（有意为之）：快照回滚**不再恢复**地形/参考图 —— 这在绑定行星前后**行为一致**，
+//   不会出现「绑定了就突然不能回滚地形」这种状态相关的意外。
 
 import { normalizeId } from './normalizeId';
 
@@ -387,8 +397,65 @@ export function migrateProject(raw) {
 // 就地 diff / 回放 / 快照环形缓冲
 // ============================================================
 
-// 取出项目中被快照覆盖的那部分状态
+// 快照**不管理**的重字段（体积考量；A1/R1，2026-09-25）
+//   「编辑器密集型产物」：一次涂抹 / 换图就是整份重写，进快照会让**每一份 patch 都带上一整份**。
+//   实测：单个行星的高度图 1263 KB（h/temp/prec/biome 各 26910 个元素 + grid.points）——
+//   而 `diffWalk` 对数组是**整体替换**，所以「涂一笔」= 整份数组进 patch，满 50 份 = 38.23 MB。
+export const SNAPSHOT_HEAVY_FIELDS = ['heightmap', 'terrainGrid', 'referenceImages'];
+
+/**
+ * 快照方向：从 `scenarios` 里剔除重字段（返回新对象，不改入参）。
+ * 只处理 `scenarios.baseMaps[*]` —— 顶层其它键（entities/hyperlanes/meta）没有这类字段，
+ * 而 `maps` 本来就不在 SNAPSHOT_DIFF_KEYS 里。
+ */
+function stripHeavyFromValue(key, value) {
+  if (key !== 'scenarios' || !isPlainObject(value) || !isPlainObject(value.baseMaps)) return value;
+  const baseMaps = {};
+  for (const [k, bm] of Object.entries(value.baseMaps)) {
+    if (!isPlainObject(bm)) { baseMaps[k] = bm; continue; }
+    const clean = { ...bm };
+    for (const f of SNAPSHOT_HEAVY_FIELDS) delete clean[f];
+    baseMaps[k] = clean;
+  }
+  return { ...value, baseMaps };
+}
+
+/**
+ * 回滚方向：把**当前项目**里的重字段补回快照结果。
+ *
+ * 🔴 这是本机制最容易写错的一步：快照既然不含这些字段，回滚自然也不恢复它们 ——
+ *    但 `restoreProjectSnapshot` 是**整体替换** `scenarios` 键，不补回来就等于「回滚删数据」
+ *    （用户的几小时地形会在一瞬间消失，且没有任何报错）。有 test_46 守卫。
+ */
+function carryHeavyIntoValue(key, restored, current) {
+  if (key !== 'scenarios' || !isPlainObject(restored)) return restored;
+  const cur = (isPlainObject(current) && isPlainObject(current.baseMaps)) ? current.baseMaps : {};
+  const baseMaps = {};
+  for (const [k, bm] of Object.entries(restored.baseMaps || {})) {
+    const curBm = isPlainObject(cur[k]) ? cur[k] : null;
+    if (!isPlainObject(bm) || !curBm) { baseMaps[k] = bm; continue; }
+    const merged = { ...bm };
+    for (const f of SNAPSHOT_HEAVY_FIELDS) {
+      if (merged[f] === undefined && curBm[f] !== undefined) merged[f] = curBm[f];
+    }
+    baseMaps[k] = merged;
+  }
+  return { ...restored, baseMaps };
+}
+
+// 取出项目中被快照覆盖的那部分状态（**已剔除重字段**，见 SNAPSHOT_HEAVY_FIELDS）
 export function snapshotState(project, keys = SNAPSHOT_DIFF_KEYS) {
+  const out = {};
+  for (const k of keys) out[k] = stripHeavyFromValue(k, deepClone(project ? project[k] : undefined));
+  return out;
+}
+
+/**
+ * 取「**含**重字段」的当前状态 —— 专门给回滚的 `before` 用。
+ * undo 闭包必须能原样还原当时的项目（包括快照不管理的那些字段），否则一次「回滚 + 撤销」
+ * 就会把地形吃掉。
+ */
+export function snapshotStateWithHeavy(project, keys = SNAPSHOT_DIFF_KEYS) {
   const out = {};
   for (const k of keys) out[k] = deepClone(project ? project[k] : undefined);
   return out;
@@ -532,9 +599,15 @@ export function restoreSnapshot(project, index) {
   if (!Number.isInteger(i) || i < 0 || i >= snapshots.length) {
     return { ok: false, error: `快照下标越界：${index}（共 ${snapshots.length} 份）` };
   }
+  const replayed = replayTo(snapshots, i);
+  // 把快照**不管理**的重字段（高度图等）从当前项目补回来 —— 见 carryHeavyIntoValue 的说明。
+  const state = {};
+  for (const k of Object.keys(replayed)) {
+    state[k] = carryHeavyIntoValue(k, replayed[k], project ? project[k] : undefined);
+  }
   return {
     ok: true,
-    state: replayTo(snapshots, i),
+    state,
     at: snapshots[i].at,
     label: snapshots[i].label,
   };

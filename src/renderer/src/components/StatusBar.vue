@@ -3,6 +3,15 @@
     <span class="sb-item sb-view">{{ state.viewLabel }}</span>
     <!-- 单一写闸门（Phase 2）：无项目只读态必须常驻可见，否则用户会以为「保存坏了」 -->
     <span v-if="isReadOnly" class="sb-item sb-readonly" :title="readOnlyReason">{{ READONLY_BADGE }}</span>
+    <!-- 保存状态（B5，2026-09-24）：常驻可见，失败**不自动消失** —— 项目面板可能关着，
+         「画了几小时的东西到底存没存」必须在任何时候一眼看到 -->
+    <span
+      v-if="state.saveState"
+      class="sb-item sb-save"
+      :class="'sb-save-' + state.saveState.kind"
+      :data-testid="'save-state-' + state.saveState.kind"
+      :title="state.saveState.title || ''"
+    >{{ state.saveState.text }}</span>
     <span v-if="state.toolLabel" class="sb-item">工具：{{ state.toolLabel }}</span>
     <span class="sb-item sb-coord" :title="'鼠标世界坐标'">{{ coordText }}</span>
     <span v-if="state.zoom != null" class="sb-item sb-zoom">缩放 {{ Math.round(state.zoom) }}%</span>
@@ -62,6 +71,28 @@ const readOnlyReason = writeModeReason;
   background: color-mix(in srgb, var(--warning, #d29922) 14%, transparent);
   font-weight: 600;
   cursor: help;
+}
+/* 保存状态（B5）：ok/warn/err/busy 四档；err 用高对比红，不自动消失 */
+.sb-save {
+  padding: 0 8px;
+  border-radius: 9px;
+  font-weight: 600;
+  cursor: help;
+}
+.sb-save-ok {
+  color: #3fb950;
+  background: color-mix(in srgb, #3fb950 14%, transparent);
+}
+.sb-save-warn {
+  color: var(--warning, #d29922);
+  background: color-mix(in srgb, var(--warning, #d29922) 14%, transparent);
+}
+.sb-save-err {
+  color: #f85149;
+  background: color-mix(in srgb, #f85149 18%, transparent);
+}
+.sb-save-busy {
+  color: var(--text-tertiary);
 }
 .sb-spacer {
   flex: 1;

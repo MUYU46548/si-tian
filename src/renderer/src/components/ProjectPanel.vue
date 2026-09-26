@@ -160,6 +160,14 @@
                 @click.stop
               />
               <span v-else class="pp-node-name" @dblclick.stop="startRename(row)">{{ row.name }}</span>
+              <!-- 叙事状态徽标（2026-09-24）：**只对非 active 显示** —— 满屏「存在」是噪音。
+                   背景：用户决策「毁灭只是叙事状态，不是数据删除」，实体保留 + 状态标记。 -->
+              <span
+                v-if="hasNonDefaultStatus(row)"
+                class="pp-status-badge"
+                :title="rowStatusHint(row)"
+                data-testid="pp-status-badge"
+              >{{ rowStatusBadge(row) }}</span>
               <span v-if="editingId !== row.id" class="pp-row-actions">
                 <button class="icon-btn" title="改名" @click.stop="startRename(row)"><Icon name="pencil" :size="12" /></button>
                 <button class="icon-btn" title="删除（含子实体）" @click.stop="askDelete(row)"><Icon name="trash" :size="12" /></button>
@@ -202,6 +210,12 @@
       <!-- 快照 -->
       <div v-if="proj.isOpen" class="pp-section">
         <div class="pp-label">快照（最近 50 份，保存时自动生成）</div>
+        <!-- 快照范围必须写明（A1/R1，2026-09-25）：高度图等重字段**不进快照**（一份 1.2 MB，
+             每涂一笔就整份进 patch → 满 50 份 38 MB）。回滚不恢复它们，但也不会删掉它们。 -->
+        <div data-testid="snapshot-scope-note" style="font-size: 11px; line-height: 1.5; color: #4a5568; margin: 2px 0 6px;">
+          快照记的是实体 / 航道 / 剧本结构；<b>不含地形高度图与参考图</b>（体积考量）。
+          地形另有「备份」按钮的整文件副本（保留 10 份），回滚不会改动它。
+        </div>
         <div v-if="!proj.snapshots.length" class="pp-empty">还没有快照：保存一次即可生成第一份</div>
         <div v-for="s in recentSnapshots" :key="s.index" class="pp-item">
           <div class="pp-item-main">
@@ -547,6 +561,17 @@ function doBatchMove() {
     : `这 ${ids.length} 个实体已经在「${targetName}」下了`, 'ok');
 }
 
+// ── 叙事状态徽标（2026-09-24）────────────────────────────────────────────────
+// 用户决策：毁灭只是叙事状态，实体保留 + 状态标记（不建实体的情况走「底图自持高度图」）。
+// 只对非 active 显示徽标：正常状态满屏标一遍是噪音。
+import { resolveStatus, statusBadge, statusMeta, DEFAULT_STATUS } from '../utils/entityStatus';
+
+function hasNonDefaultStatus(row) {
+  return !!(row && resolveStatus(row.status) !== DEFAULT_STATUS);
+}
+function rowStatusBadge(row) { return statusBadge(row && row.status); }
+function rowStatusHint(row) { return statusMeta(row && row.status).hint; }
+
 function startRename(row) {
   editingId.value = row.id;
   editName.value = row.name;
@@ -675,7 +700,7 @@ function onGoto(entity) {
 
 function doRestore(s) {
   const res = proj.restoreProjectSnapshot(s.index);
-  setTip(res.success ? `已回滚到「${s.label || '快照 ' + (s.index + 1)}」（可用 Ctrl+Z 撤销）` : (res.error || '回滚失败'),
+  setTip(res.success ? `已回滚到「${s.label || '快照 ' + (s.index + 1)}」（可用 Ctrl+Z 撤销；地形高度图不在快照范围内，未被改动）` : (res.error || '回滚失败'),
     res.success ? 'ok' : 'err');
 }
 
@@ -983,5 +1008,21 @@ refresh();
   display: inline-block;
   width: 46px;
   color: var(--planet-text-secondary);
+}
+/* 叙事状态徽标（2026-09-24）
+   ⚠️ 类名必须与既有的 `.pp-status`（当前项目状态区，见模板第 16 行）**错开** ——
+      同名会让我的 padding/边框/背景套到那个区块上，把 `.pp-status-sub` 的对比度打下去（test_58 抓到）。
+   ⚠️ 面板是**浅色卡面**：强调色必须用深色 —— 浅色系在白底上对比度只有 1.4~1.6 = 看不见 */
+.pp-status-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #8a4b00;
+  background: rgba(210, 153, 34, 0.18);
+  border: 1px solid rgba(210, 153, 34, 0.45);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 </style>
