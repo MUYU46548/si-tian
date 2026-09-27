@@ -41,12 +41,13 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 210 | `scripts/audit-coverage.js` | 提取覆盖率审计（只读）：范围内成节点率 + 缺口清单 + 范围外分布，--write-report 落 96 事务管理/ |
 | 219 | `scripts/clean-cache-junk.js` | .sitian 缓存历史垃圾清理（空名地形 / 空壳底图 / 测试残留节点）：dry-run 报告 + --apply 备份/存档/删除，删除前逐项自检（引用 / 包围盒 / 子节点） |
 | 103 | `scripts/emoji_audit.py` | emoji 审计（按文件聚合 + 行号上下文） |
-| 975 | `scripts/extract-data.js` | Obsidian → geodata.json 提取（LAYER_ORDER/增量缓存/UUID/孤儿检测/mergeUserCreatedNodes） |
+| 992 | `scripts/extract-data.js` | Obsidian → geodata.json 提取（LAYER_ORDER/增量缓存/UUID/孤儿检测/mergeUserCreatedNodes） |
 | 102 | `scripts/gen_architecture_map.py` | 再生成本清单（--check 自检模式） |
 | 100 | `scripts/generate-icons.py` | 图标生成 |
 | 237 | `scripts/generate_icon.py` | 图标生成 |
 | 60 | `scripts/icon_check.py` | 图标一致性校验（引用名是否都在 Icon.vue 中定义） |
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
+| 340 | `scripts/migrate-vault-attrs.js` | **A-1 存量机器属性搬家**（默认 dry-run）：把笔记 frontmatter 的「层级 / 上层挂靠 / 地点类型」搬进 `.sitian`。只补空、不覆盖项目已有值（冲突只报告）、补 parentId 前校验父实体、写前备份 + 反向档；笔记只读。逻辑层 `parseArgs` / `runMigration` 可被用例直调（本仓 node 无法 spawn node） |
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
 | 427 | `scripts/tests/fixtures/make_vault_fixture.py` | （待补） |
 | 115 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
@@ -58,6 +59,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 209 | `scripts/tests/unit/test_grid_outline.js` | （待补） |
 | 225 | `scripts/tests/unit/test_heightmap_access.js` | （待补） |
 | 296 | `scripts/tests/unit/test_main_module_wiring.js` | Node 单元测试：主进程**模块接线不变式**（index.js 里用到的本地模块导出必须已解构 / 解构了必须真导出）+ config.js 的 loadConfig 读回校验（漏解构只在 IPC 被调用时抛 ReferenceError，启动不报错） |
+| 404 | `scripts/tests/unit/test_migrate_attrs.js` | Node 单元测试：A-1 搬家工具的纯函数（认亲归一化 / 只补空 / 冲突不覆盖 / 父实体校验）+ **真落盘端到端**（dry-run 不写、apply 补属性并落备份与反向档、笔记未动）+ 跨实现 `normalizeRelPath` 逐字符一致性守卫 |
 | 218 | `scripts/tests/unit/test_polity_labels.js` | Node 单元测试：历史剧本势力标注的分级判定 / 面积形心（含退化环不许出 NaN）/ 面积加权聚合 / 文本选择（abbr 无则回落全名、绝不截断）/ 屏上面积门槛，9 条 |
 | 376 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
 | 440 | `scripts/tests/unit/test_province_shape.js` | （待补） |

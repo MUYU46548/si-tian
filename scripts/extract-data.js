@@ -897,6 +897,23 @@ async function extractGeodata(targetVault, options = {}) {
 }
 
 /**
+ * 库内相对路径归一化：统一分隔符为 `/`、去掉 `./` 前缀与首尾空白、压掉重复斜杠。
+ *
+ * ⚠️ 这是**跨进程边界共享的约定**（A-0/A-1 起）：vault 侧的 `sourcePath`、项目实体里的
+ * `sourcePath`、以及断线检测（`utils/vaultRelink.js`）与搬家脚本（`migrate-vault-attrs.js`）
+ * 都按它比对。renderer 是 ESM、不能 require 本文件，故那边是**逐字符副本**
+ * （与 normalizeId 同一套办法）；`scripts/tests/unit/test_vault_relink.js` 会读盘比对两份源码，
+ * 改一处漏改另一处会立刻变红。
+ *
+ * 为什么必须归一化：Windows 上 `path.relative` 给反斜杠（`03 设定\02 场景地点\x.md`），
+ * 而手工/其它平台来的路径可能是正斜杠 —— 不归一化则「同一篇笔记」会被判成两篇。
+ */
+function normalizeRelPath(p) {
+  if (!p) return '';
+  return String(p).replace(/\\/g, '/').replace(/^\.\/+/, '').trim().replace(/\/{2,}/g, '/');
+}
+
+/**
  * 只读列出「提取范围内」的笔记（不解析内容、不碰任何缓存、不落盘）。
  *
  * 用途（R15 / A-0 断线检测）：项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流），
@@ -921,7 +938,7 @@ function listScannedNotes(targetVault) {
     if (SCAN_EXCLUDED_BASENAMES.has(base)) return;
     let st;
     try { st = fs.statSync(fullPath); } catch (e) { return; }   // 读不到就跳过（竞态/权限），不抛
-    const rel = path.relative(vaultPath, fullPath).split(path.sep).join('/');
+    const rel = normalizeRelPath(path.relative(vaultPath, fullPath));
     const cut = rel.lastIndexOf('/');
     out.push({
       sourcePath: rel,
@@ -949,7 +966,7 @@ function listScannedNotes(targetVault) {
   return out;
 }
 
-module.exports = { extractGeodata, listScannedNotes, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus };
+module.exports = { extractGeodata, listScannedNotes, normalizeRelPath, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus };
 
 if (require.main === module) {
   (async () => {
