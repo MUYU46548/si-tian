@@ -47,7 +47,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 237 | `scripts/generate_icon.py` | 图标生成 |
 | 60 | `scripts/icon_check.py` | 图标一致性校验（引用名是否都在 Icon.vue 中定义） |
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
-| 340 | `scripts/migrate-vault-attrs.js` | **A-1 存量机器属性搬家**（默认 dry-run）：把笔记 frontmatter 的「层级 / 上层挂靠 / 地点类型」搬进 `.sitian`。只补空、不覆盖项目已有值（冲突只报告）、补 parentId 前校验父实体、写前备份 + 反向档；笔记只读。逻辑层 `parseArgs` / `runMigration` 可被用例直调（本仓 node 无法 spawn node） |
+| 341 | `scripts/migrate-vault-attrs.js` | **A-1 存量机器属性搬家**（默认 dry-run）：把笔记 frontmatter 的「层级 / 上层挂靠 / 地点类型」搬进 `.sitian`。只补空、不覆盖项目已有值（冲突只报告）、补 parentId 前校验父实体、写前备份 + 反向档；笔记只读。逻辑层 `parseArgs` / `runMigration` 可被用例直调（本仓 node 无法 spawn node） |
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
 | 427 | `scripts/tests/fixtures/make_vault_fixture.py` | （待补） |
 | 115 | `scripts/tests/lib/cdp.py` | Edge CDP 连接封装（测试基础设施） |
@@ -167,7 +167,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 185 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
 | 39 | `src/renderer/src/store/panels.js` | App 层浮层互斥 |
-| 1005 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
+| 1020 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
 | 43 | `src/renderer/src/store/quitFlush.js` | （待补） |
 | 155 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 205 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |

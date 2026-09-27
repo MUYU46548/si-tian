@@ -16,6 +16,8 @@
   c) 导入是**一条 undo**（Ctrl+Z 能整体撤销）且**不覆盖**项目里已有的实体
   d) 面板文字在**亮色与暗色两套主题**下都达到对比度底线（WCAG 小字 4.5）
   e) 静态：canvasBridge 有第四个注册口（导入）、App/面板不经 geodata 直连
+  f) **机器属性读优先级（A-2，2026-09-27）**：已有实体的 `layer` / `parentId` / `placeType`
+     以**项目为准** —— 纯函数 `mergeVaultPayload` 与「重复导入」两条路径都不许用笔记值覆盖它们
 """
 import json
 import os
@@ -223,6 +225,57 @@ def run(cdp):
     })()""" % APP), '重复导入不覆盖')
     if keep.get('name') != '我改过的名字':
         return False, f'重复导入把项目里已有实体覆盖了（应只补缺）：{keep}'
+
+    # ── c3) 机器属性同样不被覆盖（A-2，2026-09-27）＝ 搬家协议定的「读优先级」──────────
+    # 背景：报告定案「结构归司天（.sitian），内容归笔记」→ 已有实体的 layer / parentId / placeType
+    #   以**项目为准**；笔记里的 `层级` / `上层区域` / `地点类型` 只在**该实体第一次进项目**时当初始值。
+    #   ⚠️ 不许改成「先查新、缺失回落旧」—— 并存观察期里旧值会在新值缺失时**静默顶替**。
+    # 两层判据：① 纯函数 mergeVaultPayload 喂一份**故意冲突**的载荷 → 项目值必须逐一原样；
+    #           ② 端到端：在项目里改这三项（模拟用户在司天界面改过）→ 重复导入 → 仍是我改的。
+    attrs = _j(cdp.eval("""(async () => {
+      const app = %s;
+      const pinia = app.config.globalProperties.$pinia;
+      const M = await import('/src/store/projectStore.js');
+      const proj = M.useProjectStore(pinia);
+      const id = Object.keys(proj.entities)[0];
+      const before = JSON.parse(JSON.stringify(proj.entities[id]));
+
+      // ① 纯函数层：同一 id 的载荷里带着**不同**的机器属性（含一个不存在的父级）
+      const probe = { entities: { [id]: { ...before, layer: 'galaxy', layerLabel: '星系',
+                                          parentId: '不存在的父级', placeType: '宗教' } } };
+      const mergedRes = proj.mergeVaultPayload(proj.project, probe);
+      // ⚠️ 断言必须瞄**合并结果**（mergedRes.next），不是 proj.entities ——
+      //    mergeVaultPayload 是**纯函数**、本来就不会动 proj；瞄 proj 的话，
+      //    「用载荷覆盖已有实体」这个缺陷照样绿（实测：探针 B 就这样溜过去一次，
+      //    只覆盖 layer 时整条用例仍是绿的）。契约的产物是 next，判据就得瞄 next。
+      const kept = JSON.parse(JSON.stringify(mergedRes.next.entities[id]));
+      const merged = mergedRes.merged;
+
+      // ② 端到端：先在项目里改这三项，再重复导入
+      proj.updateEntity(id, { layer: 'town', layerLabel: '城镇', placeType: '商业' });
+      await new Promise(r => setTimeout(r, 250));
+      await proj.importFromVault();
+      await new Promise(r => setTimeout(r, 500));
+      const after = JSON.parse(JSON.stringify(proj.entities[id]));
+
+      // 还原，别把改动留给后续步骤
+      proj.updateEntity(id, { layer: before.layer, layerLabel: before.layerLabel, placeType: before.placeType });
+      await new Promise(r => setTimeout(r, 250));
+
+      return JSON.stringify({
+        mergedEntities: merged.entities,
+        src: [before.layer, before.parentId, before.placeType],
+        kept: [kept.layer, kept.parentId, kept.placeType],
+        after: [after.layer, after.placeType],
+      });
+    })()""" % APP), '机器属性不被覆盖')
+    if attrs.get('mergedEntities') != 0:
+        return False, f'载荷里同 id 的实体被算成"新增"了（只补缺的判据就是这一句）：{attrs}'
+    if attrs.get('kept') != attrs.get('src'):
+        return False, (f'★ 纯函数 mergeVaultPayload 用载荷覆盖了已有实体的机器属性'
+                       f'（读优先级必须「项目为准」）：src={attrs.get("src")} kept={attrs.get("kept")}')
+    if attrs.get('after') != ['town', '商业']:
+        return False, (f'★ 重复导入把用户在司天里改过的机器属性覆盖了（应按项目为准）：{attrs.get("after")}')
 
     # ── d) 面板存在 + 说明文案 + 暗色/亮色可读性 ──────────────────────────────
     if not _open_project_panel(cdp):

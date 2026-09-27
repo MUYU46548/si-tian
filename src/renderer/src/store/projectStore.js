@@ -204,6 +204,21 @@ export const useProjectStore = defineStore('project', () => {
    * 把知识库载荷**合并**进项目（只补缺、绝不覆盖项目里已有的东西）。
    * 与 seedFromPayload 的区别：seedFromPayload 是「以载荷为基底重建」（新建项目时用），
    * 本函数是「往已有项目里补」—— 直接用 seedFromPayload 会把用户已经画好的内容清掉。
+   *
+   * 🔴 **本函数就是搬家协议定的「读优先级」**（A-2，2026-09-27 定案）：
+   *    已有实体的机器属性（`layer` / `parentId` / `placeType`）**以项目文件为准**；
+   *    笔记里的 `层级` / `上层区域` / `地点类型` 只在**该实体第一次进项目**时当初始值。
+   *    之后用户再改笔记里的字段，司天**不再采纳**（项目态下知识库的 add/unlink/change 事件
+   *    同样被整条拦掉，见 geodata 的 `handleNodeUpdated`）—— 两处行为加起来才是完整语义。
+   *
+   *    ⚠️ **不许改成「先查新、缺失回落旧」**：并存观察期里旧值会在新值缺失时**静默顶替**，
+   *    与 A1/M1b 的「一读行星那份 / 一写自己那份」是同一个静默分裂形态。
+   *    判据在 `scripts/tests/cases/test_58_import_from_vault.py` 的机器属性段（c3）。
+   *
+   *    ⚠️ **「新笔记的首次进料」必须继续读字段 + 目录/后缀推断** —— 报告 ⑤「发现机制照旧」
+   *    不能砍：发布场景里别人的笔记**根本没有**这些字段（暮雨 2026-09-27：「用户的笔记里
+   *    根本不一定有这些字段，实际中就是当作没有处理」），只能靠推断兜住。
+   *
    * @returns {{next: object, merged: object}}
    */
   function mergeVaultPayload(base, payload = {}) {
