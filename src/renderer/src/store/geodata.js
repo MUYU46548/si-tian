@@ -1689,6 +1689,34 @@ export const useGeodataStore = defineStore('geodata', () => {
     return payload;
   }
 
+  /**
+   * 只读列出**当前磁盘上**知识库里的笔记清单（R15 / A-0 断线检测，2026-09-27）。
+   *
+   * 与 `exportVaultPayload` 的区别（别混）：
+   *   · `exportVaultPayload` = 打开项目那一刻的知识库**留底**（带内容，用于导入）
+   *   · 本函数               = 现在库里**有什么笔记**（只有路径/名字，无内容）→ 判断"实体指向的笔记还在不在"
+   * 项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流），所以笔记改名只能靠这条主动对账发现。
+   *
+   * ⚠️ 拿不到 API（纯浏览器 / 单测环境）时**如实回报失败**，绝不静默返回空数组 ——
+   *    空数组会让调用方以为"库里一篇笔记都没有"，把全部实体误报成断线。
+   */
+  async function listVaultNotes() {
+    const a = (typeof window !== 'undefined' && window.sitianAPI) ? window.sitianAPI : null;
+    if (!a || typeof a.listVaultNotes !== 'function') {
+      return { success: false, error: '笔记清单 API 不可用（请用 Electron 运行）', notes: [] };
+    }
+    try {
+      const res = await a.listVaultNotes();
+      if (!res || !res.success) {
+        return { success: false, error: (res && res.error) || '读取笔记清单失败', notes: [] };
+      }
+      const notes = Array.isArray(res.notes) ? res.notes : [];
+      return { success: true, vault: res.vault || '', notes, count: res.count || notes.length };
+    } catch (e) {
+      return { success: false, error: String((e && e.message) || e), notes: [] };
+    }
+  }
+
   /** 打开/新建项目后调用：把画布切到项目文件 */
   function applyProjectToCanvas(project) {
     if (!project) return { ok: false, error: '没有项目' };
@@ -1878,6 +1906,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     mergeData: mergeOrphanData,
     // 知识库内容载荷（项目态下由 vaultSnapshot 重建）—— 「导入知识库内容」的唯一取数口
     exportVaultPayload,
+    // R15/A-0：**当前**库里的笔记清单（只读）—— 项目态下知识库事件被拦，笔记改名靠它主动对账
+    listVaultNotes,
     // 「以知识库为基底新建项目」前的异步准备（补齐懒加载的行星地图）—— 唯一异步适配器方法
     prepareExport: loadAllMapDataForExport,
     describe: () => ({
@@ -1916,6 +1946,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     focusEntityOnCanvas,
     // R7：孤儿数据清理 / 回灌（项目侧删除实体时用；见各自注释）
     pruneOrphanDataFor, mergeOrphanData,
+    // R15/A-0：当前知识库笔记清单（只读；断线检测用，也直接暴露给用例）
+    listVaultNotes,
     idKeyedDataDicts,
     // 实体「已知形状之外的字段」提取（placeType / wikilinks / population / uuid …）。
     // R6：导出地图配置时用它一次性带走全部编辑侧字段 —— 白名单只有 ENTITY_SHAPE_KEYS 一份，

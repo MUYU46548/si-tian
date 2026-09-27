@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('ele
 const path = require('path');
 const fs = require('fs').promises;
 const matter = require('gray-matter');
-const { extractGeodata } = require('../../scripts/extract-data');
+const { extractGeodata, listScannedNotes } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
 // ⚠️ 本行是**唯一的 config 导入点**：config.js 里任何在此处被用到的导出都必须一并解构，
 //    漏掉不会报错，只会在 handler 被调用时抛 `ReferenceError: xxx is not defined`（实测事故：
@@ -648,6 +648,26 @@ ipcMain.handle('batch-import-notes', async (event, payload) => {
     return { success: true, targetDir, created, skipped, errors };
   } catch (err) {
     return { success: false, error: err.message, created, skipped, errors };
+  }
+});
+
+// IPC: 列出知识库笔记清单（**只读**，供「笔记改名 → 断线检测」对账）
+//
+// 为什么需要这条通道：项目态下知识库的 add/unlink 事件在渲染层被整条拦掉（防两套事实源混流，
+// 见 geodata 的 `handleNodeUpdated`）→ 用户在 Obsidian 里改名，司天既不知道、也不提示，
+// 下次「导入知识库内容」就把新名当新实体补进来、旧实体成孤儿（R15，2026-09-27 稽核）。
+//
+// 🔴 扫描实现**复用提取器的 `listScannedNotes`**，不在这里另写一套目录常量：
+//    两份口径漂移会让「断线」误报（把正常笔记说成丢了），比不检测更坏。
+//    `scripts/tests/cases/test_75_*` 守卫直接读本文件，确认没有第二份 walk 实现。
+ipcMain.handle('list-vault-notes', async () => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径', notes: [] };
+    const notes = listScannedNotes(vault);
+    return { success: true, vault, notes, count: notes.length };
+  } catch (err) {
+    return { success: false, error: err.message, notes: [] };
   }
 });
 

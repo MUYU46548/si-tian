@@ -896,7 +896,60 @@ async function extractGeodata(targetVault, options = {}) {
   };
 }
 
-module.exports = { extractGeodata, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus };
+/**
+ * 只读列出「提取范围内」的笔记（不解析内容、不碰任何缓存、不落盘）。
+ *
+ * 用途（R15 / A-0 断线检测）：项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流），
+ * 笔记改名因此**无声无息**；主进程借此把「当前库里的笔记清单」交给渲染层，
+ * 与项目实体的 `sourcePath` 对账（检测实现在 `utils/vaultRelink.js`）。
+ *
+ * 🔴 必须与 `extractGeodata` 共用同一份 `SCAN_SCOPE` 与排除规则 —— 这里若另写一套目录常量，
+ *    「断线」就会误报（把正常存在的笔记说成丢了），那比不检测更坏。
+ *    `test_75` 守卫直接读本文件与主进程源码，确认扫描只有这一份实现。
+ *
+ * @param {string} [targetVault] 库根目录；省略则用模块级 `vaultPath`
+ * @returns {Array<{sourcePath:string,name:string,dir:string,mtimeMs:number,size:number}>}
+ *          `sourcePath` 统一用 `/` 分隔（Windows 上的 `path.relative` 会给反斜杠，
+ *          而项目实体里的 sourcePath 也可能两种都有 → 比对侧会再归一化一次）
+ */
+function listScannedNotes(targetVault) {
+  if (targetVault) vaultPath = targetVault;
+  const out = [];
+  if (!vaultPath) return out;
+  const pushFile = (fullPath) => {
+    const base = path.basename(fullPath, '.md');
+    if (SCAN_EXCLUDED_BASENAMES.has(base)) return;
+    let st;
+    try { st = fs.statSync(fullPath); } catch (e) { return; }   // 读不到就跳过（竞态/权限），不抛
+    const rel = path.relative(vaultPath, fullPath).split(path.sep).join('/');
+    const cut = rel.lastIndexOf('/');
+    out.push({
+      sourcePath: rel,
+      name: base,
+      dir: cut === -1 ? '' : rel.slice(0, cut),
+      mtimeMs: Math.round(st.mtimeMs || 0),
+      size: st.size || 0,
+    });
+  };
+  const walk = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const entry of entries) {
+      // 与 scanGeoSystem 同一条排除：`_` / `.` 开头（模板、隐藏文件）不是地理实体
+      if (entry.name.startsWith('_') || entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.md$/i.test(entry.name)) continue;
+      pushFile(full);
+    }
+  };
+  walk(geoSystemPath());
+  walk(locationsPath());
+  try { if (fs.existsSync(indexPath())) pushFile(indexPath()); } catch (e) { /* 索引可选 */ }
+  return out;
+}
+
+module.exports = { extractGeodata, listScannedNotes, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus };
 
 if (require.main === module) {
   (async () => {

@@ -101,6 +101,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 读取 Obsidian 笔记内容
   readObsidianNote: (sourcePath) => ipcRenderer.invoke('read-obsidian-note', sourcePath),
 
+  // 列出知识库笔记清单（只读）：项目态下知识库事件被拦，笔记改名要靠它做断线检测对账
+  listVaultNotes: () => ipcRenderer.invoke('list-vault-notes'),
+
   // 在文件管理器中显示
   revealInExplorer: (fullPath) => ipcRenderer.invoke('reveal-in-explorer', fullPath),
 

@@ -23,6 +23,8 @@ import { registerFlush } from './quitFlush';
 // B5（2026-09-24）：保存状态同步到底部**常驻**状态栏 —— 项目面板可能是关着的，
 // 用户不能只在打开面板时才知道落盘失败。
 import { setSaveState } from '../composables/useStatusBar';
+// R15/A-0（2026-09-27）：笔记改名断线检测与重连 —— 纯函数与候选打分在 utils/vaultRelink.js
+import { detectBrokenLinks, normalizeRelPath, baseNameOf } from '../utils/vaultRelink';
 import {
   createEmptyProject,
   createEntity as createEntityShape,
@@ -292,6 +294,86 @@ export const useProjectStore = defineStore('project', () => {
       redo: () => { project.value = next; dirty.value = true; applyProjectToCanvasNow(); scheduleAutoSave(); },
     });
     return { success: true, merged };
+  }
+
+  /**
+   * 检测「笔记改名 / 移动」造成的断线（R15 / A-0，2026-09-27）。**只读，不改任何数据。**
+   *
+   * 为什么项目态必须主动检测：项目打开后，知识库的 add/unlink 事件在渲染层被整条拦掉
+   * （防两套事实源混流，见 geodata 的 `handleNodeUpdated`）→ 用户在 Obsidian 里改名，
+   * 司天既不知道、也不提示；下次「导入知识库内容」就把新名当新实体补进来、旧实体成孤儿。
+   * 这条检测把那个洞显式化：**断线清单 + 可解释的候选**（理由由 utils/vaultRelink.js 给出）。
+   *
+   * @returns {Promise<{success:boolean, checked?:number, dangling?:Array, unclaimed?:Array,
+   *                    suggestions?:Object, clean?:boolean, error?:string}>}
+   */
+  async function scanBrokenLinks() {
+    if (!project.value) return { success: false, error: '没有打开的项目' };
+    const adapter = getCanvasAdapter();
+    if (!adapter || typeof adapter.listVaultNotes !== 'function') {
+      return { success: false, error: '画布桥未就绪，读不到知识库笔记清单' };
+    }
+    const res = await adapter.listVaultNotes();
+    if (!res || !res.success) {
+      return { success: false, error: (res && res.error) || '读取知识库笔记清单失败' };
+    }
+    const result = detectBrokenLinks({
+      entities: Object.values(project.value.entities || {}),
+      notes: res.notes || [],
+    });
+    return { success: true, vault: res.vault || '', ...result };
+  }
+
+  /**
+   * 重连：把断线实体的**来源笔记**改指到新路径（R15 / A-0）。**id 保持不变。**
+   *
+   * 🔴 为什么 id 必须不变：坐标 `coordinate`、`mapData[planetId]`、`areaZones[regionId]`、
+   *    `interiorData[buildingId]` …这些编辑成果**全部按 id 索引**。改 id 就得走 `changeNodeId`
+   *    做级联迁移（9 个容器 + 4 个字典键，任一处漏登记就是幽灵引用）；而重连的语义本来就是
+   *    「同一个地点，换了篇笔记在写它」—— **身份没变**，所以只改来源、不动身份，编辑成果天然全保留。
+   *
+   * 与 `renameEntity` 的区别：那个改的是司天里**显示的名字**，这个改的是**认亲依据**。
+   * 与本函数配套的另一半是「加回来」：被改名的旧路径若还留着笔记，它只会出现在「无主」清单里，
+   * 由用户决定是重连回去还是当新笔记导入 —— 机器不替人做这个决定。
+   */
+  function relinkEntity(id, { sourcePath = '', name = '' } = {}) {
+    if (!project.value) return { success: false, error: '没有打开的项目' };
+    const before = entities.value[id];
+    if (!before) return { success: false, error: `实体「${id}」不存在` };
+    const nextPath = normalizeRelPath(sourcePath);
+    if (!nextPath) return { success: false, error: '缺少目标笔记路径' };
+    if (normalizeRelPath(before.sourcePath) === nextPath) {
+      return { success: false, error: '这篇笔记就是它当前的来源，无需重连' };
+    }
+    // 目标已被别的实体占用 → 拒绝（保持一对一；否则两个实体指向同一篇笔记，下次导入必然又乱）
+    const holder = Object.values(entities.value).find(
+      (e) => e.id !== id && normalizeRelPath(e.sourcePath) === nextPath,
+    );
+    if (holder) {
+      return { success: false, error: `该笔记已经连到「${holder.name}」`, conflictId: holder.id };
+    }
+    const nextName = String(name || '').trim() || baseNameOf(nextPath) || before.name;
+    const from = { ...before };
+    // ⚠️ `id: before.id` 是**刻意显式写出来**的（虽然 `...before` 已含 id）：
+    //    重连最容易被误改成"顺手把 id 也换成新名字派生的 id"，而那样做就要级联迁移全部编辑成果。
+    //    test_75 的 f0 守卫据此断言「重连不改 id」。
+    const to = { ...before, id: before.id, sourcePath: nextPath, name: nextName, origin: 'obsidian', updatedAt: new Date().toISOString() };
+    // ⚠️ 只改 `project.value.entities` —— 画布同步由本 store 的 `watch(entities)` 统一推送
+    //    （既有的 sync flush 通道）。这里**不要**调 `applyProjectToCanvasNow()`：
+    //    那会整体重装画布并 `backToWorld()`，把正在行星图上干活的用户踢回世界选择页。
+    const write = (fields) => {
+      project.value = { ...project.value, entities: { ...project.value.entities, [id]: fields } };
+      dirty.value = true;
+      scheduleAutoSave();
+    };
+    execute({
+      type: 'relink-note',
+      label: `重连笔记「${nextName}」`,
+      category: 'property',
+      undo: () => write(from),
+      redo: () => write(to),
+    });
+    return { success: true, id, name: nextName, from: from.sourcePath, to: nextPath };
   }
 
   /**
@@ -907,6 +989,8 @@ export const useProjectStore = defineStore('project', () => {
     // project CRUD
     createProject, createProjectFromVault, seedFromPayload, openProject, saveProject, scheduleAutoSave, flushSave, closeProject,
     importFromVault, mergeVaultPayload,
+    // R15/A-0：笔记改名断线检测 + 重连（id 不变 → 编辑成果保留）
+    scanBrokenLinks, relinkEntity,
     refreshProjectList, chooseProjectDir, revealProject, backupNow, gitSnapshot, restoreProjectSnapshot,
     // entity CRUD
     getEntity, childrenOf, descendantsOf, parentCandidates, createEntity, updateEntity,

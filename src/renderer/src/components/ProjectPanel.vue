@@ -82,6 +82,48 @@
         <div v-if="proj.isOpen" class="pp-hint pp-file">
           文件：<span class="pp-path" :title="proj.filePath">{{ proj.filePath }}</span>
         </div>
+
+        <!-- 笔记改名 → 断线检测与重连（R15 / A-0，2026-09-27）
+             项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流）→ 用户在 Obsidian 里
+             改名/移动笔记，司天既不知道也不提示；下次「导入知识库内容」会把新名当新实体补进来、
+             旧实体成孤儿。这里把它**显式化**：查一次 → 给出可读理由 → 点一下重连。
+             重连保持实体 id 不变，所以坐标与编辑成果（地图/区域/建筑内部）天然全部保留。 -->
+        <div v-if="proj.isOpen" class="pp-row">
+          <button
+            class="pp-btn"
+            data-testid="check-broken-links"
+            :disabled="scanning"
+            title="对账「项目实体指向的笔记」与「库里现有的笔记」，找出被改名 / 移动的笔记"
+            @click="doScanBrokenLinks"
+          >{{ scanning ? '检查中…' : '检查笔记改名' }}</button>
+          <span
+            v-if="brokenScan && brokenScan.clean"
+            class="pp-broken-clean"
+            data-testid="broken-clean"
+          >未发现断线（{{ brokenScan.notes }} 篇笔记全部对得上）</span>
+        </div>
+
+        <div v-if="brokenScan && !brokenScan.clean" class="pp-broken" data-testid="broken-list">
+          <div class="pp-hint">
+            发现 <b>{{ brokenScan.dangling.length }}</b> 处断线：这些实体指向的笔记已不在库里（改名 / 移动 / 删除）
+          </div>
+          <div v-for="d in brokenScan.dangling" :key="d.id" class="pp-broken-item" :data-testid="'broken-' + d.id">
+            <div class="pp-broken-head">
+              <span class="pp-badge">{{ d.name }}</span>
+              <span class="pp-path" :title="d.sourcePath">{{ d.sourcePath }}</span>
+            </div>
+            <div v-if="(brokenScan.suggestions[d.id] || []).length" class="pp-broken-cand">
+              <select v-model="relinkChoice[d.id]" :data-testid="'relink-select-' + d.id">
+                <option v-for="c in brokenScan.suggestions[d.id]" :key="c.sourcePath" :value="c.sourcePath">
+                  {{ c.name }}（{{ describeCand(c) }}）{{ c.recommended ? ' — 推荐' : '' }}
+                </option>
+              </select>
+              <button class="pp-btn primary" :data-testid="'relink-' + d.id" @click="doRelink(d)">重连</button>
+            </div>
+            <div v-else class="pp-hint">库里没有无主笔记可以重连（笔记可能已被删除，或改名后的笔记还没建）</div>
+          </div>
+        </div>
+
         <div v-if="tip" class="pp-tip" :class="tipKind">{{ tip }}</div>
       </div>
 
@@ -248,6 +290,8 @@ import EntityCreator from './EntityCreator.vue';
 import { useProjectStore } from '../store/projectStore';
 import { isReadOnly as gateReadOnly, writeMode as gateWriteMode } from '../store/writeGate';
 import { describeCanvasBridge, gotoEntity } from '../store/canvasBridge';
+// R15/A-0：候选**理由**的措辞与检测实现同源（避免 UI 与计算各写一套说法）
+import { describeCandidate } from '../utils/vaultRelink';
 
 // ⚠️ 挂载语义：本面板由 App.vue 用 `v-if="panelsStore.isOpen('project')"` 控制**挂载**，
 //    所以**不要**再传 `open` —— PanelShell 的 `open` 默认 true，传了反而会因父级未传值而默认 false
@@ -299,6 +343,11 @@ const canCreate = computed(() => !!newName.value.trim());   // 项目文件的�
 
 const seeding = ref(false);
 const importing = ref(false);
+
+// ── R15/A-0：笔记改名断线检测（2026-09-27）──────────────────────────────
+const scanning = ref(false);
+const brokenScan = ref(null);        // proj.scanBrokenLinks() 的只读结果；null = 还没查过
+const relinkChoice = ref({});        // { [entityId]: sourcePath } —— 每条断线当前选中的候选
 
 /**
  * 「新建并导入知识库内容」的可用性与说明。
@@ -444,6 +493,61 @@ async function doImportFromVault() {
   } finally {
     importing.value = false;
   }
+}
+
+/**
+ * 查一次断线（R15/A-0）。**只读**：不改任何数据，只把对账结果摆出来。
+ *
+ * 检查后**立刻回一句话**（「未发现断线」也算回音）—— 静默是这条缺陷的本体：
+ * 旧行为是"改名之后什么都不说"，所以修复的第一半必须是**每次检查都有可见结论**。
+ *
+ * @param {{silent?: boolean}} opts silent=true 时只刷新清单、**不动提示条**
+ *   （重连成功后要留着重连回执，不能被这次重查的「发现 N 处断线」盖掉 —— 实测踩到）
+ */
+async function doScanBrokenLinks({ silent = false } = {}) {
+  if (scanning.value) return;
+  scanning.value = true;
+  try {
+    const res = await proj.scanBrokenLinks();
+    if (!res.success) {
+      brokenScan.value = null;
+      if (!silent) setTip(res.error || '断线检查失败', 'err');
+      return;
+    }
+    brokenScan.value = res;
+    // 默认选中：推荐项优先，否则分最高的一条（分数已由纯函数排好序）
+    const pick = {};
+    for (const d of res.dangling) {
+      const list = res.suggestions[d.id] || [];
+      const best = list.find(c => c.recommended) || list[0];
+      if (best) pick[d.id] = best.sourcePath;
+    }
+    relinkChoice.value = pick;
+    if (silent) return;
+    if (res.clean) setTip(`未发现断线：${res.notes} 篇笔记全部对得上`, 'ok');
+    else setTip(`发现 ${res.dangling.length} 处断线，确认候选后点「重连」`, 'warn');
+  } finally {
+    scanning.value = false;
+  }
+}
+
+/** 把一条断线重连到选中的笔记（id 不变 → 坐标与编辑成果保留），完成后刷新清单并保留回执 */
+async function doRelink(d) {
+  const target = relinkChoice.value[d.id];
+  if (!target) return;
+  const res = proj.relinkEntity(d.id, { sourcePath: target });
+  if (res.success) {
+    // 先静默重查（把刚处理掉的那条从清单里去掉），再写回执 —— 顺序反了回执就被覆盖
+    await doScanBrokenLinks({ silent: true });
+    setTip(`已把「${d.name}」重连到 ${res.to}（id 与坐标、地图/区域/建筑内部数据都保留；Ctrl+Z 可撤销）`, 'ok');
+  } else {
+    setTip(res.error || '重连失败', 'err');
+  }
+}
+
+/** 候选理由文案（走纯函数单源，UI 不另写一套措辞） */
+function describeCand(c) {
+  return describeCandidate(c);
 }
 
 async function openExisting() {
@@ -856,6 +960,42 @@ refresh();
 }
 .pp-tip.ok { color: #1b6b3a; border-color: #2e6b48; background: rgba(46, 204, 113, 0.10); }
 .pp-tip.err { color: #b3261e; border-color: #8f4a3a; background: rgba(231, 76, 60, 0.10); }
+.pp-tip.warn { color: #8a5a00; border-color: #8a6a2a; background: rgba(230, 180, 60, 0.12); }
+
+/* ── R15/A-0：笔记改名断线清单 ─────────────────────────────────────────
+   每条断线 = 一块（实体名 + 原路径 + 候选下拉 + 「重连」按钮）。
+   候选的**理由**直接写在下拉选项文本里（措辞与纯函数同源），不另加小字 —— 面板本来就窄。 */
+.pp-broken-clean { font-size: 11.5px; color: #1b6b3a; }
+.pp-broken {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #d29922;
+  border-radius: var(--radius-sm);
+  background: rgba(210, 153, 34, 0.10);
+}
+.pp-broken-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border-left: 3px solid #d29922;
+  border-radius: var(--radius-sm);
+  background: var(--planet-btn-bg);
+}
+.pp-broken-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pp-broken-cand { display: flex; gap: 6px; align-items: center; }
+.pp-broken-cand select {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 5px;
+  font-size: 11.5px;
+  color: var(--planet-text);
+  background: var(--planet-btn-bg);
+  border: 1px solid var(--planet-btn-border);
+  border-radius: var(--radius-sm);
+}
 .pp-empty {
   color: var(--planet-text-secondary);
   font-size: 11.5px;

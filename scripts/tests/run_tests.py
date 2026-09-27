@@ -232,6 +232,12 @@ MOCK_SCRIPT = """<script>
           return { success: true, path: '/mock/' + ((opts && opts.defaultName) || 'export.txt') };
         },
         readObsidianNote: async () => ({ success: true, data: { frontmatter: { publish: true, tags: ['测试'], 层级: '星系' }, content: '测试笔记正文。', wikilinks: [] } }),
+        // 断线检测（R15/A-0）：库里的笔记清单。**用例通过 window.__vaultNotes 注入**，
+        // 默认空数组（真实主进程会扫库；mock 不碰文件系统）。
+        listVaultNotes: async () => {
+          const notes = Array.isArray(window.__vaultNotes) ? window.__vaultNotes : [];
+          return { success: true, vault: 'E:/合成测试库', notes: notes.map(n => ({ ...n })), count: notes.length };
+        },
         revealInExplorer: async () => ({ success: true }),
         openExternal: async () => ({ success: true }),
         onNodeUpdated: () => () => {},
