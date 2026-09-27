@@ -197,7 +197,8 @@ function renderReport({ projectPath, srcLabel, entityCount, plan, limit }) {
   L.push('');
   L.push(`  待补属性  ${plan.patches.length} 处    ${fmtCounts(countByField(plan.patches))}`);
   L.push(`  已一致    ${plan.already} 处`);
-  L.push(`  冲突      ${plan.conflicts.length} 处    ${fmtCounts(countByField(plan.conflicts))}（**不改动**，见下）`);
+  // 「见下」只在真有冲突时写 —— 0 条时还写「见下」而下面空着，读起来像出错
+  L.push(`  冲突      ${plan.conflicts.length} 处    ${fmtCounts(countByField(plan.conflicts))}${plan.conflicts.length ? '（**不改动**，见下）' : ''}`);
   L.push(`  父级缺失  ${plan.parentMissing.length} 处（笔记给的父实体不在项目里 → 跳过）`);
   L.push(`  认不到    ${plan.unmatchedEntities.length} 个实体（来源笔记不在库里 → 先跑「检查笔记改名」重连）`);
 
