@@ -21,6 +21,8 @@ import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge
 import { registerFlush } from './quitFlush';
 // 纯函数：实体的规范化构造（保证写进项目文件的实体形状统一；不引入任何 IO）
 import { createEntity as createProjectEntity } from '../utils/projectSchema';
+// 地点类型枚举单源（A-3）：搜索筛选 / 详情面板 / 项目面板共用一份，组件里不许再抄 `['自然', …]`
+import { PLACE_TYPES } from '../utils/placeTypes';
 
 const AUTO_SAVE_DELAY = 800;
 
@@ -220,10 +222,14 @@ export const useGeodataStore = defineStore('geodata', () => {
     return order.filter(l => layers.has(l));
   });
 
-  // 当前 vault 中存在的地点类型（第二维度过滤选项）
+  // 当前 vault 中存在的地点类型（第二维度过滤选项）。
+  // 枚举单源 utils/placeTypes.js（A-3）；**枚举外的现存值也放进来** —— 笔记手写的第 9 种类型
+  // 若不进筛选选项，用户永远筛不出来（静默不可达，与下拉吞值同族）。
   const availablePlaceTypes = computed(() => {
-    const types = new Set(nodes.value.map(n => n.placeType).filter(Boolean));
-    return ['自然', '宗教', '皇室', '商业', '工业', '居住', '公共', '特殊'].filter(t => types.has(t));
+    const present = [...new Set(nodes.value.map(n => n.placeType).filter(Boolean))];
+    const inEnum = PLACE_TYPES.filter(t => present.includes(t));
+    const outEnum = present.filter(t => !PLACE_TYPES.includes(t));
+    return [...inEnum, ...outEnum];
   });
 
   const layerLabels = {

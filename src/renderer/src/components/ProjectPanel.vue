@@ -162,6 +162,26 @@
         <div v-if="!proj.isOpen" class="pp-empty">打开项目后可在这里浏览实体树</div>
         <div v-else-if="!proj.entityCount" class="pp-empty">还没有实体。点「+ 新建实体」开始。</div>
         <template v-else>
+          <!-- 只看空白（A-3 补刀②）：**按层级判空白** —— 真 ROSA 实测 placeType 空 45 个里 39 个是
+               宇宙层（本就不携带该字段）、parentId 空 9 个里 4 个是 world（本就该顶层）；
+               不分层就过滤 = 用户点开「类型为空」看到 39 行无意义噪音，过滤器等于没做。
+               空白口径的唯一实现在 utils/placeTypes.js（matchesGap），这里只负责显示。 -->
+          <div class="pp-gap-row">
+            <select
+              v-model="gapMode"
+              class="pp-gap-filter"
+              data-testid="gap-filter"
+              :disabled="isReadOnly"
+              :title="isReadOnly ? READONLY_REASON : '只显示「该填却没填」的实体；空白口径按层级判定（utils/placeTypes.js）'"
+            >
+              <option v-for="m in GAP_MODES" :key="m.value" :value="m.value">
+                {{ m.label }}{{ m.value === 'all' ? '' : '（' + gapCount(m.value) + '）' }}
+              </option>
+            </select>
+            <span v-if="gapMode !== 'all'" class="pp-gap-count" data-testid="gap-count">
+              显示 {{ visibleRows.length }} / {{ flatTree.length }}
+            </span>
+          </div>
           <div
             v-if="draggingId"
             class="pp-drop-root"
@@ -170,8 +190,9 @@
           >松开以移到顶层</div>
           <div class="pp-tree">
             <div
-              v-for="row in flatTree"
+              v-for="row in visibleRows"
               :key="row.id"
+              :data-id="row.id"
               class="pp-node-row"
               :class="{
                 sel: selectedId === row.id,
@@ -210,11 +231,32 @@
                 :title="rowStatusHint(row)"
                 data-testid="pp-status-badge"
               >{{ rowStatusBadge(row) }}</span>
+              <!-- 地点类型下拉（A-3 中文点选糙版 + 补刀①）：
+                   显示条件 = 该填的层级（facility/location/region）**或**已带值的行；
+                   选项 = 8 枚举 ∪ 当前值（placeTypeOptions 单源）—— 只给 8 枚举的话，
+                   笔记手写的第 9 种值一打开下拉就静默消失（与 A-2 防的静默覆盖同族）。
+                   改动走 proj.updateEntity（undo 栈 + 落 .sitian），不直接改内存。 -->
+              <select
+                v-if="showsPlaceTypeControl(row)"
+                class="pp-type"
+                :data-testid="'place-type-' + row.id"
+                :value="row.placeType || ''"
+                :disabled="isReadOnly"
+                :title="isReadOnly ? READONLY_REASON : '地点类型（决定图标配色）；改动写进 .sitian，Ctrl+Z 可撤销'"
+                @click.stop
+                @change="onPlaceTypeChange(row, $event)"
+              >
+                <option value="">未设置</option>
+                <option v-for="t in placeTypeOptions(row.placeType)" :key="t" :value="t">{{ t }}</option>
+              </select>
               <span v-if="editingId !== row.id" class="pp-row-actions">
                 <button class="icon-btn" title="改名" @click.stop="startRename(row)"><Icon name="pencil" :size="12" /></button>
                 <button class="icon-btn" title="删除（含子实体）" @click.stop="askDelete(row)"><Icon name="trash" :size="12" /></button>
               </span>
             </div>
+          </div>
+          <div v-if="gapMode !== 'all' && !visibleRows.length" class="pp-empty" data-testid="gap-empty">
+            没有符合条件的实体（这项空白已经填完了）
           </div>
           <div v-if="selectedIds.length > 1" class="pp-batch" data-testid="pp-batch-bar">
             <span class="pp-batch-count">已选 {{ selectedIds.length }} 个</span>
@@ -290,6 +332,9 @@ import EntityCreator from './EntityCreator.vue';
 import { useProjectStore } from '../store/projectStore';
 import { isReadOnly as gateReadOnly, writeMode as gateWriteMode } from '../store/writeGate';
 import { describeCanvasBridge, gotoEntity } from '../store/canvasBridge';
+// A-3 中文点选糙版：地点类型的枚举 / 选项 / 空白过滤**只有一份实现**（utils/placeTypes.js），
+// 本组件与 NodeDetailPanel、geodata 都从那里取 —— 组件里再写一份 `['自然', '宗教', …]` 就是第二套事实源。
+import { GAP_MODES, matchesGap, placeTypeOptions, showsPlaceTypeControl } from '../utils/placeTypes';
 // R15/A-0：候选**理由**的措辞与检测实现同源（避免 UI 与计算各写一套说法）
 import { describeCandidate } from '../utils/vaultRelink';
 
@@ -410,6 +455,40 @@ const flatTree = computed(() => {
 });
 
 const selectedEntity = computed(() => (selectedId.value ? proj.getEntity(selectedId.value) : null));
+
+// ── 只看空白（A-3）＋ 行内类型下拉 ──────────────────────────────────────────
+// 空白口径（matchesGap）在 utils/placeTypes.js 单源；这里只做显示与写入。
+const gapMode = ref('all');
+const READONLY_REASON = '只读：当前没有打开项目 —— 先在上方「新建项目」或「打开已有项目」再编辑';
+
+const visibleRows = computed(() =>
+  (gapMode.value === 'all' ? flatTree.value : flatTree.value.filter(r => matchesGap(r, gapMode.value))));
+
+/** 过滤器选项后面括号里的计数（不含 all —— 那个数字随时都在，写成「全部」即可） */
+function gapCount(mode) {
+  if (mode === 'all') return flatTree.value.length;
+  return flatTree.value.filter(r => matchesGap(r, mode)).length;
+}
+
+/**
+ * 行内改地点类型：**只走 proj.updateEntity**（undo 栈 + 落 .sitian），绝不直接改内存 ——
+ * 直接改内存 = 撤不掉、且与「项目为准」的读优先级打架。
+ * 失败（只读 / 实体不存在）时回滚下拉显示并把原因说出来，不静默。
+ */
+function onPlaceTypeChange(row, ev) {
+  const next = ev.target.value || null;
+  const prev = row.placeType || null;
+  if (next === prev) return;
+  const res = proj.updateEntity(row.id, { placeType: next });
+  if (!res.success) {
+    ev.target.value = prev || '';
+    setTip(res.error || '设置地点类型失败', 'err');
+    return;
+  }
+  setTip(next
+    ? `已把「${row.name}」的地点类型设为「${next}」（写入 .sitian，Ctrl+Z 可撤销）`
+    : `已清除「${row.name}」的地点类型（Ctrl+Z 可撤销）`, 'ok');
+}
 
 // 选中实体的合法父级候选（`parentCandidates` 已排除自身与全部后代 —— 防循环）
 const parentOptionsForSelected = computed(() =>
@@ -1168,4 +1247,40 @@ refresh();
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* ── A-3 中文点选糙版：行内类型下拉 + 只看空白过滤 ─────────────────────────
+   面板是浅色卡面：控件底色用主题变量、文字继承 planet 文本色（与 .pp-parent 同一套） */
+.pp-gap-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+}
+.pp-gap-filter {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--planet-text);
+  background: var(--planet-btn-bg);
+  border: 1px solid var(--planet-btn-border);
+  border-radius: var(--radius-sm);
+  padding: 1px 3px;
+}
+.pp-gap-count {
+  font-size: 10px;
+  color: var(--planet-text-secondary);
+  white-space: nowrap;
+}
+.pp-type {
+  flex: 0 1 auto;
+  min-width: 44px;
+  max-width: 88px;
+  font-size: 10.5px;
+  color: var(--planet-text);
+  background: var(--planet-btn-bg);
+  border: 1px solid var(--planet-btn-border);
+  border-radius: var(--radius-sm);
+  padding: 0 2px;
+}
+.pp-type:disabled,
+.pp-gap-filter:disabled { opacity: 0.55; cursor: not-allowed; }
 </style>

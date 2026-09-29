@@ -252,21 +252,29 @@ def run(cdp):
       const merged = mergedRes.merged;
 
       // ② 端到端：先在项目里改这三项，再重复导入
-      proj.updateEntity(id, { layer: 'town', layerLabel: '城镇', placeType: '商业' });
+      // 补刀③（2026-09-28 在线审查）：端到端此前只查 layer/placeType、没查 parentId（纯函数层查了）——
+      // 载荷构建侧若在 parentId 上分化，纯函数层是绿的、真导入却会把挂靠顶掉。补一个断言成本≈0。
+      // 目标父级必须**存在且不是 id 自己/后代**（否则被 updateEntity 的防循环校验拒绝 → 装置假绿）。
+      const isDescOfId = (e) => { let p = e; while (p) { if (p.id === id) return true; p = p.parentId ? proj.entities[p.parentId] : null; } return false; };
+      const target = proj.entityList.find(e => e.id !== id && !isDescOfId(e) && e.id !== (before.parentId || null)) || null;
+      const targetId = target ? target.id : null;
+      proj.updateEntity(id, { layer: 'town', layerLabel: '城镇', placeType: '商业', parentId: targetId });
       await new Promise(r => setTimeout(r, 250));
       await proj.importFromVault();
       await new Promise(r => setTimeout(r, 500));
       const after = JSON.parse(JSON.stringify(proj.entities[id]));
 
       // 还原，别把改动留给后续步骤
-      proj.updateEntity(id, { layer: before.layer, layerLabel: before.layerLabel, placeType: before.placeType });
+      proj.updateEntity(id, { layer: before.layer, layerLabel: before.layerLabel,
+                              placeType: before.placeType, parentId: before.parentId || null });
       await new Promise(r => setTimeout(r, 250));
 
       return JSON.stringify({
         mergedEntities: merged.entities,
         src: [before.layer, before.parentId, before.placeType],
         kept: [kept.layer, kept.parentId, kept.placeType],
-        after: [after.layer, after.placeType],
+        after: [after.layer, after.placeType, after.parentId],
+        targetId,
       });
     })()""" % APP), '机器属性不被覆盖')
     if attrs.get('mergedEntities') != 0:
@@ -274,8 +282,9 @@ def run(cdp):
     if attrs.get('kept') != attrs.get('src'):
         return False, (f'★ 纯函数 mergeVaultPayload 用载荷覆盖了已有实体的机器属性'
                        f'（读优先级必须「项目为准」）：src={attrs.get("src")} kept={attrs.get("kept")}')
-    if attrs.get('after') != ['town', '商业']:
-        return False, (f'★ 重复导入把用户在司天里改过的机器属性覆盖了（应按项目为准）：{attrs.get("after")}')
+    if attrs.get('after') != ['town', '商业', attrs.get('targetId')]:
+        return False, (f'★ 重复导入把用户在司天里改过的机器属性覆盖了（应按项目为准）：'
+                       f'期望 [town, 商业, {attrs.get("targetId")}] 实际 {attrs.get("after")}')
 
     # ── d) 面板存在 + 说明文案 + 暗色/亮色可读性 ──────────────────────────────
     if not _open_project_panel(cdp):

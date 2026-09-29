@@ -231,7 +231,9 @@
           <label>地点类型</label>
           <select :value="node.placeType || ''" @change="updatePlaceType($event.target.value)">
             <option value="">未设置（回落默认样式）</option>
-            <option v-for="t in placeTypes" :key="t" :value="t">{{ t }}</option>
+            <!-- 选项 = 8 枚举 ∪ 当前值（placeTypeOptions）：只给 8 枚举会把笔记手写的第 9 种值
+                 静默显示成「未设置」，用户一动下拉就把它抹掉（A-3 补刀①） -->
+            <option v-for="t in placeTypeOptions(node.placeType)" :key="t" :value="t">{{ t }}</option>
           </select>
         </div>
         <div class="prop-field" v-if="isStarNode">
@@ -451,9 +453,9 @@ const editableLayers = [
   { value: 'unknown', label: '未知' },
 ];
 
-// 地点类型（第二维度，与提取脚本一致）
-const placeTypes = ['自然', '宗教', '皇室', '商业', '工业', '居住', '公共', '特殊'];
-const isPlaceNode = computed(() => ['facility', 'location', 'region'].includes(node.value?.layer));
+// 地点类型（第二维度，与提取脚本一致）—— 枚举与层级口径**单源**在 utils/placeTypes.js（A-3）
+import { PLACE_TYPE_LAYERS, placeTypeOptions } from '../utils/placeTypes';
+const isPlaceNode = computed(() => !!node.value && PLACE_TYPE_LAYERS.includes(node.value.layer));
 const isStarNode = computed(() => node.value?.layer === 'star');
 
 // 恒星光谱类型（与 systemOrbit.js 共用，B1）
