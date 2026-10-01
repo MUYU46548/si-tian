@@ -13,9 +13,19 @@ import {
 import {
   currentOwnerRef, isStriped, polityColor, settledCount,
 } from '../utils/scenarioTimeline';
+import {
+  // 多环省份（洞/飞地）+ 「网格派生的环要不要 Chaikin」—— 与画布同一份实现
+  provinceRings, ringPointsForRender,
+} from '../utils/provinceShape';
+import {
+  // 配色单一来源（省份色板 / 海域填充与海界 / 陆界）—— 与画布共用一份
+  SEA_FILL, SEA_EDGE, BORDER_COLOR,
+} from '../utils/scenarioPalette';
+import { polityLabelTier, ringAreaCentroid } from '../utils/polityLabels';
+// 剧本标签「该写哪些字、写在哪」的唯一判定 —— 画布与 SVG 导出共用
+import { collectScenarioLabels } from '../utils/scenarioLabels';
 
 const LABEL_COLOR = '#3c4150';
-const BORDER_COLOR = '#8d8a82';
 
 export function useScenarioExport({
   store, baseMap, timeline, currentEra, currentYear, diffMode, provinceNames, layerFlags,
@@ -27,16 +37,9 @@ export function useScenarioExport({
     if (ms > 0) setTimeout(() => { if (exportStatus.value === msg) exportStatus.value = ''; }, ms);
   }
 
-  function centroid(points) {
-    let x = 0, y = 0, n = 0;
-    for (const p of points || []) {
-      const px = p.x !== undefined ? p.x : p[0];
-      const py = p.y !== undefined ? p.y : p[1];
-      if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
-      x += px; y += py; n++;
-    }
-    return n ? { x: x / n, y: y / n } : null;
-  }
+  // ⚠️ 这里原先有个 `centroid()`（算术平均）只服务省名落点 —— 已删除：
+  //    落点改为 `ringAreaCentroid`（面积加权，与画布同口径）。算术平均会把长条省的名字拽偏，
+  //    而且两份"形心"实现就是下一个「改一处另一处不变」。
 
   /**
    * 构建当前剧本/年份的 SVG。
@@ -51,7 +54,11 @@ export function useScenarioExport({
     const terrain = baseMap.value?.terrain || [];
     if (!terrain.length) throw new Error('当前底图没有省份多边形');
 
-    const polys = terrain.map((p) => p.points || []).filter((p) => p.length >= 3);
+    // 包围盒按**所有环**（含洞/飞地）算：只按主环算会把飞地裁掉一角
+    const ringCache = terrain.map((p) => provinceRings(p)
+      .map((r) => ({ kind: r.kind, points: ringPointsForRender(r) }))
+      .filter((r) => r.points && r.points.length >= 3));
+    const polys = ringCache.flat().map((r) => r.points);
     const b = boundsOf(polys);
     const pad = 40;
     const W = Math.ceil((b.maxX - b.minX) + pad * 2);
@@ -96,17 +103,31 @@ export function useScenarioExport({
     }
 
     // 省份填充 + EU4 斜线占领
-    for (const prov of terrain) {
-      const pts = prov.points || [];
-      if (pts.length < 3) continue;
-      const d = svgPathD(pts, { closed: true });
+    // 🔴 2026-10-01「导出与画布同源」三件事：
+    //   ① 多环省份要把**所有环**拼进一条 path + `fill-rule="evenodd"` —— 旧实现只画
+    //      `prov.points`（主环），洞会被填实、飞地直接丢（画布走 `traceProvincePath` + evenodd）。
+    //   ② 海域（`kind === 'sea'`）用 `SEA_FILL` —— 旧实现照样按归属上色/回落灰，
+    //      导出图里水陆分不开（画布在 `getProvinceColor` 里**最先**判海域）。
+    //   ③ 网格派生的环走 `ringPointsForRender`（与画布同一条 Chaikin 规则）。
+    for (let i = 0; i < terrain.length; i++) {
+      const prov = terrain[i];
+      const rings = ringCache[i];
+      if (!rings.length) continue;
+      const d = rings.map((r) => svgPathD(r.points, { closed: true })).filter(Boolean).join(' ');
       if (!d) continue;
+
+      // 海域不参与势力归属（海不是谁的领土）→ 画水面，且不参与斜线占领
+      if (rings[0].kind === 'sea') {
+        body.push(svgPath(d, { fill: SEA_FILL, 'fill-rule': 'evenodd', stroke: 'none' }));
+        continue;
+      }
+
       // 与画布同规则：EU4 斜线占领时底色=旧主；其他模式底色=当前实际持有者
       const ref = (diffMode.value === 'eu4' && isStriped(tl, k, prov.id, year))
         ? { owner: tl.scenarios[k - 1].ownership?.[prov.id], era: k - 1 }
         : currentOwnerRef(tl, k, prov.id, year);
       const col = polityColor(tl.scenarios[ref.era], ref.owner);
-      body.push(svgPath(d, { fill: col, 'fill-opacity': 0.72, stroke: 'none' }));
+      body.push(svgPath(d, { fill: col, 'fill-rule': 'evenodd', 'fill-opacity': 0.72, stroke: 'none' }));
 
       if (diffMode.value === 'eu4' && isStriped(tl, k, prov.id, year)) {
         const newCol = polityColor(s, s.ownership?.[prov.id]);
@@ -115,7 +136,7 @@ export function useScenarioExport({
           hatchIds[newCol] = r.id;
           defs.push(r.def);
         }
-        body.push(svgPath(d, { fill: `url(#${hatchIds[newCol]})`, stroke: 'none' }));
+        body.push(svgPath(d, { fill: `url(#${hatchIds[newCol]})`, 'fill-rule': 'evenodd', stroke: 'none' }));
         body.push(svgPath(d, {
           fill: 'none', stroke: newCol, 'stroke-width': 1.4, 'stroke-linejoin': 'round',
         }));
@@ -126,30 +147,69 @@ export function useScenarioExport({
       }
     }
 
-    // 边界
+    // 边界：陆地省界（实线）+ 海域海界（淡虚线 —— 与画布 `SEA_EDGE` 同一约定，水陆一眼可分）
     if (flags.borders !== false) {
-      const ds = [];
-      for (const prov of terrain) {
-        if ((prov.points || []).length < 3) continue;
-        ds.push(svgPathD(prov.points, { closed: true }));
+      const landDs = [], seaDs = [];
+      for (const rings of ringCache) {
+        for (const r of rings) {
+          const d = svgPathD(r.points, { closed: true });
+          if (!d) continue;
+          (r.kind === 'sea' ? seaDs : landDs).push(d);
+        }
       }
-      body.push(svgPath(ds.join(' '), {
-        fill: 'none', stroke: BORDER_COLOR, 'stroke-width': 0.6, opacity: 0.6,
-      }));
+      if (landDs.length) {
+        body.push(svgPath(landDs.join(' '), {
+          fill: 'none', stroke: BORDER_COLOR, 'stroke-width': 0.6, opacity: 0.6,
+        }));
+      }
+      if (seaDs.length) {
+        body.push(svgPath(seaDs.join(' '), {
+          fill: 'none', stroke: SEA_EDGE, 'stroke-width': 0.9, 'stroke-dasharray': '6 4', opacity: 0.85,
+        }));
+      }
     }
 
-    // 省名（跳过无名省份，避免「(未命名)」刷屏）
+    // 省名（跳过无名 / FMG 自动名，避免「(未命名)」「Province 12」刷屏）
+    // 落点改用**面积加权形心**（与画布 `ringAreaCentroid` 同口径；算术平均会把长条省的名字拽偏）
     if (flags.labels !== false) {
-      for (const prov of terrain) {
+      for (let i = 0; i < terrain.length; i++) {
+        const prov = terrain[i];
         const nm = prov.name || provinceNames.value?.[prov.id];
         if (!nm || /^Province\s*\d*$/i.test(nm) || /^feature_/i.test(nm)) continue;
-        const c = centroid(prov.points);
-        if (!c) continue;
-        body.push(svgTextEl(c.x, c.y, nm, {
+        const r0 = ringCache[i][0];
+        if (!r0 || r0.kind === 'sea') continue;
+        const { cx, cy } = ringAreaCentroid(r0.points);
+        if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+        body.push(svgTextEl(cx, cy, nm, {
           fill: LABEL_COLOR, 'font-size': 11, 'font-family': 'Microsoft YaHei, sans-serif',
           'text-anchor': 'middle', 'dominant-baseline': 'middle', opacity: 0.85,
         }));
       }
+    }
+
+    // 势力名（A8）：**与画布同一份判定**（`utils/scenarioLabels.js`）——
+    // 整图导出等价于画布缩到「全球可见」那一档（`polityLabelTier(1)` → 中档 = 势力名）。
+    // 此前 SVG **完全没有这一层**：真实数据 21 个省份名里 20 个是 FMG 的 `Province N`，
+    // 会被上面那条过滤器整片跳过 → 导出的图一个字都没有（"拿 SVG 当版图"最致命的一条）。
+    const labels = collectScenarioLabels({
+      provinces: terrain.map((prov, i) => ({
+        id: prov.id, name: prov.name,
+        rings: ringCache[i][0] ? [ringCache[i][0]] : [],
+      })),
+      tier: polityLabelTier(1),
+      scale: 1,                                  // SVG 用户空间 = 世界单位（≈ 1 屏幕像素/世界单位）
+      ownerRefOf: (pid) => ((diffMode.value === 'eu4' && isStriped(tl, k, pid, year))
+        ? { owner: tl.scenarios[k - 1]?.ownership?.[pid], era: k - 1 }
+        : currentOwnerRef(tl, k, pid, year)),
+      polityOfEra: (era, owner) => tl.scenarios[era]?.polities?.find((p) => p.id === owner) || null,
+    });
+    for (const lb of labels) {
+      if (lb.kind !== 'polity') continue;        // 省名那一层上面单独画（带 FMG 自动名过滤）
+      body.push(svgTextEl(lb.x, lb.y, lb.text, {
+        fill: '#F7F3E8', 'font-size': 15, 'font-family': 'serif', 'font-weight': 'bold',
+        stroke: '#1B2130', 'stroke-width': 3, 'paint-order': 'stroke',
+        'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      }));
     }
 
     // 剧本标签 / 标记

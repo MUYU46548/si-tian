@@ -56,8 +56,9 @@ def source_gates():
         ('.toolbar-more {', '「更多」面板样式'),
         ('class="more-toggle"', '「更多」按钮'),
         # ── P4 ──
-        ("const SEA_FILL = 'rgba(", '海面色常量'),
-        ("const SEA_EDGE = 'rgba(", '海界色常量'),
+        # 海色/海界常量 2026-10-01 移入 `utils/scenarioPalette.js`（画布与 SVG 导出共用一份）；
+        # 组件这边只守「引了单源 + 用法没变」，常量本体在下面单独查单源文件。
+        ("from '../utils/scenarioPalette'", '组件引用配色单源'),
         ("if (prov && prov.kind === 'sea') return SEA_FILL;", '海域不吃归属色（最先判）'),
         ('c.setLineDash([px(6), px(4)])', '海界 = 淡虚线'),
         ("if (prov && prov.kind === 'sea') {", '势力油漆桶跳过海域'),
@@ -67,6 +68,15 @@ def source_gates():
     for needle, label in checks:
         if needle not in sc:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
+    # 单源里必须真有那两个常量（否则「引了单源」是假接线）
+    pal = _code_only(_read('src/renderer/src/utils/scenarioPalette.js'))
+    for needle, label in (("export const SEA_FILL = 'rgba(", '海面色常量（单源）'),
+                          ("export const SEA_EDGE = 'rgba(", '海界色常量（单源）')):
+        if needle not in pal:
+            fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
+    for needle in ("const SEA_FILL = 'rgba(", "const SEA_EDGE = 'rgba("):
+        if needle in sc:
+            fails.append(f'ScenarioMap 又抄了一份 {needle.strip()}（配色单源被破坏）')
     # 14 个高级工具入口必须都还在（能力一个都不减）
     legacy = ['split', 'merge', 'paint', 'river', 'relief', 'label', 'erase', 'height', 'biome',
               'burg', 'culture', 'religion', 'marker', 'road']

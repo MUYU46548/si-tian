@@ -400,8 +400,14 @@
         class="polity-swatch clear"
         :class="{ active: !selectedPolity }"
         @click="selectPolity(null)"
-        title="清除归属"
+        title="清除归属：选中它之后用油漆桶点省份 = 把该省的势力归属清空"
       ><Icon name="x" :size="14"/></div>
+      <!-- 新建势力（2026-10-01）：此前 polities **只能由 Azgaar .map 导入带进来** ——
+           自建底图 + 自建剧本 = 势力功能整块不可用（色板空、油漆桶点了没反应）。
+           现在＋按钮新建（走 store.addPolity = 一条 undo），选中后可改名/简称/配色/删除。 -->
+      <button class="polity-add" data-testid="add-polity" :disabled="store.isReadOnly"
+              :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '新建一个势力（自定义名称与配色，可撤销）'"
+              @click="onAddPolity"><Icon name="plus" :size="13"/> 势力</button>
       <!-- A8：选中势力后可改「显示名称 / 简称」—— .map 带来的是 FMG 国名，用户要换成自己世界的叫法。
            简称只在缩小档使用（放大档与中档都用全名），留空即回落全名。 -->
       <div v-if="selectedPolity" class="polity-editor" data-testid="polity-editor">
@@ -413,6 +419,15 @@
           <input :value="selectedPolity.abbr || ''" @change="onPolityAbbrChange"
                  placeholder="留空用全名" :disabled="store.isReadOnly" data-testid="polity-abbr-input" />
         </label>
+        <label>配色
+          <input type="color" :value="selectedPolity.color || '#888888'"
+                 :disabled="store.isReadOnly" data-testid="polity-color-input"
+                 title="势力配色（地图填充、色板、导出图例三处同源）"
+                 @change="onPolityColorChange" />
+        </label>
+        <button class="polity-del" data-testid="polity-delete" :disabled="store.isReadOnly"
+                :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '删除该势力（连带清掉它占着的省份归属，可撤销）'"
+                @click="onDeletePolity">删除势力</button>
         <span class="polity-editor-hint" title="地图标注随缩放自动改档（放大省名 / 中档势力名 / 缩小简称）">
           标注档位：{{ { province: '省名', polity: '势力名', abbr: '简称' }[polityLabelTierNow] }}
         </span>
@@ -494,15 +509,22 @@
       </div>
     </div>
 
-    <!-- 省份属性面板 -->
+    <!-- 省份属性面板
+         🔴 2026-10-01：五个字段全部从 `v-model` 改成 `:value` + `@change` ——
+         `v-model="selectedProvince.name"` 是**直接改 store 里的对象**（selectedProvince
+         就是 terrain[] 里的那个活对象）：① 绕开 `guardWrite`（只读态照改内存）；
+         ② `updateBaseProvince` 采集的 `oldProv` 已被改过 → **撤销把新值当成旧值还原**
+         （改名/群系/文化/海岸/类型五项的 undo 全是空转）；③ 文本输入挂在 `@input` 上，
+         每敲一个字符 = 一条 undo + 一次落盘，100 条上限会把更早的几何操作静默挤出栈。
+         现在：值来自事件、写只走 store（`updateBaseProvince` = 一条 undo + 写闸门）。 -->
     <div v-if="selectedProvince && showProps" class="province-props">
       <div class="props-header">
-        <input ref="provNameInput" v-model="selectedProvince.name" @input="onProvinceNameChange" class="props-name" />
+        <input ref="provNameInput" :value="selectedProvince.name || ''" @change="onProvinceNameChange" class="props-name" />
         <button @click="showProps = false" class="props-close"><Icon name="x" :size="13"/></button>
       </div>
       <div class="props-row">
         <label>生物群系：</label>
-        <select v-model="selectedProvince.biome" @change="onProvinceBiomeChange">
+        <select :value="selectedProvince.biome || ''" @change="onProvinceBiomeChange">
           <option value="">未分类</option>
           <option value="ocean">海洋</option>
           <option value="hot_desert">热沙漠</option>
@@ -521,15 +543,15 @@
       </div>
       <div class="props-row">
         <label>文化：</label>
-        <input v-model="selectedProvince.culture" @input="onProvinceCultureChange" placeholder="文化名称" />
+        <input :value="selectedProvince.culture || ''" @change="onProvinceCultureChange" placeholder="文化名称" />
       </div>
       <div class="props-row">
         <label>海岸：</label>
-        <input type="checkbox" v-model="selectedProvince.coast" @change="onProvinceCoastChange" />
+        <input type="checkbox" :checked="!!selectedProvince.coast" @change="onProvinceCoastChange" />
       </div>
       <div class="props-row">
         <label>类型：</label>
-        <select v-model="selectedProvince.kind" @change="onProvinceKindChange"
+        <select :value="selectedProvince.kind === 'sea' ? 'sea' : 'land'" @change="onProvinceKindChange"
                 title="海域省份用海色渲染；陆地/海域是省份级属性（岛与飞地另见「环」）">
           <option value="land">陆地</option>
           <option value="sea">海域</option>
@@ -696,16 +718,19 @@ import { simplifyClosedTrace } from '../utils/regionTrace';
 // A8（2026-09-26）：历史剧本「势力标注」—— 分级判定 / 领土聚合 / 标签文本全是纯函数，
 // 放在 utils 里以便 Node 侧直接测（渲染里只剩「取数据 + 调 drawStyledLabel」）。
 import {
-  polityLabelTier, aggregateTerritories, ringAreaCentroid, labelTextFor, labelFitsOnScreen,
-  POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE, LABEL_MIN_AREA_PX,
+  polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
 } from '../utils/polityLabels';
 import { drawStyledLabel } from '../utils/labelStyles';
+// 剧本标签的**唯一判定**（省名 / 势力名 / 简称三档该写什么字、写在哪）—— 与 SVG 导出共用
+import { collectScenarioLabels } from '../utils/scenarioLabels';
 // P0 第二块：省份几何的**唯一表示**（多环实体）与其配套纯函数 —— 渲染/命中/分割/合并/骨架吸附
 // 全部走这一层，画布里不再自己实现多边形算法（旧实现里那份凸包合并就是「吃掉邻居省份」的根因）。
 import {
-  provinceRings, smoothRing, pointInProvince, provinceBBox, shapePatch,
-  buildSkeleton, conformToSkeleton,
+  provinceRings, pointInProvince, provinceBBox, shapePatch,
+  buildSkeleton, conformToSkeleton, ringPointsForRender,
 } from '../utils/provinceShape';
+// 配色单一来源（2026-10-01）：省份色板 / 海域填充与海界 / 陆界 —— 画布与 SVG 导出共用一份
+import { PROVINCE_PALETTE, nextProvinceColor, SEA_FILL, SEA_EDGE } from '../utils/scenarioPalette';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -727,6 +752,17 @@ const provinceHint = ref('');             // 省份网格操作提示（状态�
 
 const canvas = ref(null);
 const canvasWrap = ref(null);
+
+// ── 高分屏清晰度（2026-10-01）────────────────────────────────────────────────
+// 其余 6 个画布视图（Galaxy/System/SystemDetail/Planet/Area/Interior）共用
+// `useCanvasRenderer` 的 DPR 缩放（canvas.width = CSS 宽 × devicePixelRatio + ctx.scale）；
+// 只有剧本画布自己写 `canvas.width = clientWidth` → 在 150%/200% 缩放的屏上是**位图放大**
+// = 天然发虚（而导出反而更清晰，于是「看起来不如位图」的锅落在了矢量路线头上）。
+// 🔴 纪律：画布尺寸在**绘制/命中/布局**里一律读 `cw()` / `ch()`（CSS 像素空间），
+//    不要再读 `canvas.width` —— 那是设备像素；只有 resize / 导出建离屏画布时才碰它。
+let canvasDpr = 1;
+const cw = () => (canvas.value ? canvas.value.width / canvasDpr : 0);
+const ch = () => (canvas.value ? canvas.value.height / canvasDpr : 0);
 const tool = ref('draw');   // P1：自由绘制为默认工具（见 PROVINCE_PALETTE 旁的说明）
 // P3：工具栏按任务分层 —— 默认只有 6 个可见控件，其余收进「更多」（能力不减）
 const moreOpen = ref(false);
@@ -1138,16 +1174,10 @@ let altStraight = false;
 // 精确定点（描点）是同一个工具里的第二条路径（单击落顶点），选择/移动另在工具栏。
 
 // P1：新建省份的色板轮转（确定性 —— 颜色不随机，测试可断言、用户可预期）
-const PROVINCE_PALETTE = [
-  '#9ec9a8', '#c9b48a', '#a99ac9', '#c99a9a', '#8fb8c9',
-  '#c9c48a', '#b8a4c9', '#8ac9bb', '#c9a88f', '#a4b8c9',
-];
-function nextProvinceColor(count) { return PROVINCE_PALETTE[count % PROVINCE_PALETTE.length]; }
+// 定义已移到 `utils/scenarioPalette.js`（画布 / SVG 导出 / 省界网格三处共用一份）。
 
 // P4：海域（kind='sea'）有自己的视觉 —— 淡色水面 + **淡虚线海界**（虚线是「这是水域」的约定），
-// 且**不参与势力归属着色**（海不是谁的领土）。
-const SEA_FILL = 'rgba(74, 118, 158, 0.42)';
-const SEA_EDGE = 'rgba(206, 228, 244, 0.75)';
+// 且**不参与势力归属着色**（海不是谁的领土）。着色常量同样在 `utils/scenarioPalette.js`。
 
 // 海岸线吸附（P0-T2）
 const snapToEdgeEnabled = ref(true);
@@ -1319,6 +1349,49 @@ function onPolityNameChange(e) {
   const v = String(e.target.value || '').trim();
   if (!v) { e.target.value = polity.name || ''; statusMsg('势力名不能为空'); return; }
   updateSelectedPolity({ name: v }, `势力已改名：${v}`);
+}
+
+/**
+ * 新建势力（2026-10-01）：补上「势力只能靠 .map 导入带进来」这个缺口 ——
+ * 自建底图 + 自建剧本时 polities 为空，色板空空、油漆桶点了静默无反应。
+ * 名称用 prompt（与 label/marker 的录入方式一致，不新造一套内联编辑）。
+ */
+function onAddPolity() {
+  const sc = selectedScenario.value;
+  if (!sc) { statusMsg('先选一个剧本，再新建势力'); return; }
+  if (store.isReadOnly) { statusMsg(`新建势力已停用：${store.readOnlyReason || '只读'}`); return; }
+  const name = prompt('新势力名称：', `势力 ${(sc.polities || []).length + 1}`);
+  if (name === null) return;                     // 取消
+  const r = store.addPolity(sc.id, { name });
+  if (!r || !r.success) { statusMsg('新建势力失败'); return; }
+  // 选中新势力：接着就能直接油漆桶上色（不是"建完了还得自己找"）
+  const created = (store.scenarios?.[sc.id]?.polities || []).find(p => p.id === r.id) || null;
+  selectedPolity.value = created;
+  statusMsg(`已新建势力：${r.name}（选中它，用油漆桶 P 点省份即可指派）`);
+  render();
+}
+
+function onPolityColorChange(e) {
+  const v = String(e.target.value || '').trim();
+  if (!v) return;
+  updateSelectedPolity({ color: v }, `势力配色已改为 ${v}`);
+}
+
+function onDeletePolity() {
+  const polity = selectedPolity.value;
+  const sc = selectedScenario.value;
+  if (!polity || !sc) return;
+  // 二次确认必须**点名影响面**：删势力会连带清掉它占着的省份归属（一条 undo 可整体还原）
+  const owned = Object.values(sc.ownership || {}).filter(pid => pid === polity.id).length;
+  const msg = owned
+    ? `删除势力「${polity.name}」？\n\n它当前占着 ${owned} 个省份 —— 这些省的归属会一并清空（画布上变灰）。\n可用 Ctrl+Z 整体撤回。`
+    : `删除势力「${polity.name}」？\n\n它当前没有占任何省份。可用 Ctrl+Z 撤回。`;
+  if (!confirm(msg)) return;
+  const r = store.removePolity(sc.id, polity.id);
+  if (!r || !r.success) { statusMsg('删除势力失败'); return; }
+  selectedPolity.value = null;
+  statusMsg(`已删除势力「${r.name}」（连带清空 ${r.affected} 个省的归属，可 Ctrl+Z 撤回）`);
+  render();
 }
 
 function onPolityAbbrChange(e) {
@@ -1551,18 +1624,10 @@ function rawProvOf(prov) {
 }
 
 /**
- * 环的渲染顶点。
- * · **网格派生的环**（`fromGrid`，由归属格轮廓重算出来的）→ Chaikin 平滑，消掉格点台阶
- *   （这正是「马赛克 / 台阶边」的收敛点；网格只作为中间层，落库的是平滑后的折线）。
- * · **手绘 / 描点 / 带贝塞尔控制点的环** → 原样（顶点是用户刻意摆的，平滑会削掉有意的形状）。
+ * 环的渲染顶点 —— 实现已移到 `utils/provinceShape.js#ringPointsForRender`
+ * （2026-10-01：SVG 导出必须与画布用**同一条**平滑规则，否则涂抹改过的省在导出图里
+ *  台阶感更重、与画布不一致；两份实现就是"改一处另一处不变"的经典双源）。
  */
-function ringPointsForRender(ring) {
-  if (!ring || !Array.isArray(ring.points)) return null;
-  if (!ring.fromGrid) return ring.points;
-  // 手工加过贝塞尔控制点的环一律原样（用户刻意摆的曲率，平滑会削掉）
-  for (const q of ring.points) if (q && (q.controlOut || q.controlIn)) return ring.points;
-  return smoothRing(ring.points, 2);
-}
 
 /**
  * 描一个省份的**所有环**的路径（多环实体 = 主环 + 洞 / 飞地；顺序无关）。
@@ -2282,8 +2347,12 @@ function onCanvasClick(event) {
 
   if (tool.value === 'erase') {
     const prov = findProvinceAt(world.x, world.y);
-    if (prov && confirm(`确定删除省份「${prov.name}」？`)) {
-      store.removeBaseProvince(baseMapKey.value, prov.id);
+    if (prov && confirm(`确定删除省份「${prov.name}」？\n\n该省在各剧本里的势力归属与易主年份会一并清空（可用 Ctrl+Z 整体撤回）。`)) {
+      if (store.isReadOnly) { statusMsg(`删除省份已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+      const r = store.removeBaseProvince(baseMapKey.value, prov.id);
+      statusMsg(r && r.cascadedScenarios
+        ? `已删除省份「${prov.name}」（连带清理 ${r.cascadedScenarios} 个剧本里的归属键，可 Ctrl+Z 撤回）`
+        : `已删除省份「${prov.name}」`);
       render();
     }
     return;
@@ -2343,7 +2412,7 @@ function onCanvasClick(event) {
 
   if (viewMode.value !== 'scenario' || !selectedScenario.value) return;
 
-  if (tool.value === 'paint' && selectedPolity.value) {
+  if (tool.value === 'paint') {
     const prov = findProvinceAt(world.x, world.y);
     if (prov && prov.kind === 'sea') {
       // P4：海域不进剧本归属 —— 时间轴 / 谱系都不该出现一片海
@@ -2352,10 +2421,26 @@ function onCanvasClick(event) {
       return;
     }
     if (prov) {
-      // 把时间轴当前年份一并记为**显式易主年份** ——
-      // 「拖到某年再上色 = 该年易主」，这是 changeYear 最自然的录入路径
-      store.setOwnership(selectedScenario.value.id, prov.id, selectedPolity.value.id, Math.round(tlYear.value));
+      if (selectedPolity.value) {
+        // 把时间轴当前年份一并记为**显式易主年份** ——
+        // 「拖到某年再上色 = 该年易主」，这是 changeYear 最自然的录入路径
+        store.setOwnership(selectedScenario.value.id, prov.id, selectedPolity.value.id, Math.round(tlYear.value));
+        statusMsg(`「${prov.name}」→ ${selectedPolity.value.name}`);
+      } else {
+        // 色板上的「✕ 清除归属」过去只是 `selectPolity(null)`：title 承诺"清除归属"，
+        // 行为却是"取消选中"，再点省份则因旧条件 `&& selectedPolity.value` 而**静默无反应**
+        // （而 store 里 `clearOwnership` 明明已实现、还带 undo —— 全仓零调用 = 死入口）。
+        // 现在：没选势力 + 油漆桶 = 真的清除该省的归属，与 title 一致。
+        const had = !!(selectedScenario.value.ownership || {})[prov.id];
+        if (!had) { statusMsg(`「${prov.name}」本来就没有势力归属`); return; }
+        store.clearOwnership(selectedScenario.value.id, prov.id, Math.round(tlYear.value));
+        statusMsg(`已清除「${prov.name}」的势力归属（可 Ctrl+Z 撤回）`);
+      }
       render();
+    } else {
+      statusMsg(selectedPolity.value
+        ? `没点到省份 —— 油漆桶只对省份多边形生效（当前已选势力：${selectedPolity.value.name}）`
+        : '没点到省份；另外：「✕ 清除归属」模式下油漆桶点省份 = 清空该省归属，想指派请先点一个势力色块');
     }
   } else if (tool.value === 'label') {
     const text = prompt('输入地名：');
@@ -2669,8 +2754,16 @@ function handleMergeClick(world) {
     if (res && (res.blocked || res.rejected)) statusMsg(res.message || '合并失败');
     else if (res) {
       provinceBrush.invalidateBorders();
-      statusMsg(`已合并（${res.method === 'raster' ? '栅格并集' : '共边抵消'}，${res.loops} 环）`
-        + '—— 不会吃掉邻居；一次合并 = 1 条撤销');
+      if (res.method === 'raster') {
+        // 规模超精确并集上限 → `mergeProvinceShapes` **静默**退回 220×220 栅格并集
+        // （真实库 21 省 / 25930 点已越过该阈值）。以前只说"栅格并集"，
+        // 用户看不出这是**降级**（边界被重采样成粗轮廓）。
+        statusMsg(`已合并，但精度降级：省份规模超过精确并集上限 → 边界按栅格重采样（${res.loops} 环，比原轮廓粗）。`
+          + '不满意可 Ctrl+Z 撤回，改用「变更归属」笔刷把格子划归同一省');
+      } else {
+        statusMsg(`已合并（共边抵消，${res.loops} 环）`
+          + '—— 不会吃掉邻居；一次合并 = 1 条撤销');
+      }
     }
   }
   mergeStep.value = 0;
@@ -2684,9 +2777,10 @@ function handleMergeClick(world) {
 function ctxRenameProvince() {
   const name = prompt('省份名称：', selectedProvince.value?.name);
   if (name && selectedProvince.value) {
-    selectedProvince.value.name = name;
-    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { name });
-    render();
+    // 不要再写 `selectedProvince.value.name = name`（直改 store 活对象 → 绕守卫 + 撤销空转）
+    const v = String(name).trim();
+    if (!v) { statusMsg('省份名不能为空'); contextMenu.value.show = false; return; }
+    provinceWrite({ name: v }, `省份已改名：${v}`);
   }
   contextMenu.value.show = false;
 }
@@ -2695,9 +2789,7 @@ function ctxChangeBiome() {
   const biomes = Object.keys(BIOME_COLORS);
   const biome = prompt(`生物群系（${biomes.join('/')}）：`, selectedProvince.value?.biome || '');
   if (biome && selectedProvince.value) {
-    selectedProvince.value.biome = biome;
-    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { biome });
-    render();
+    provinceWrite({ biome });
   }
   contextMenu.value.show = false;
 }
@@ -2706,8 +2798,11 @@ function ctxDuplicateProvince() {
   if (!selectedProvince.value) return;
   const prov = selectedProvince.value;
   const offset = px(20);
+  // 🔴 `fromGrid` 必须跟着走：丢了它，渲染端会认为这是"手绘环"→ **不做 Chaikin 平滑**
+  //    （手绘/贝塞尔环故意不平滑），于是"复制一个网格派生的省"得到一个马赛克台阶省。
   const rings = provinceRings(prov).map((r) => ({
     kind: r.kind,
+    fromGrid: !!r.fromGrid,
     points: r.points.map(q => ({ x: vx(q) + offset, y: vy(q) + offset })),
   }));
   const id = `prov_${Date.now()}`;
@@ -2720,39 +2815,64 @@ function ctxDuplicateProvince() {
 }
 
 function ctxDeleteProvince() {
-  if (selectedProvince.value && confirm(`确定删除省份「${selectedProvince.value.name}」？`)) {
-    store.removeBaseProvince(baseMapKey.value, selectedProvince.value.id);
-    selectedProvince.value = null;
-    showProps.value = false;
-    render();
+  const prov = selectedProvince.value;
+  if (!prov) { contextMenu.value.show = false; return; }
+  if (!confirm(`确定删除省份「${prov.name}」？\n\n该省在各剧本里的势力归属与易主年份会一并清空（可用 Ctrl+Z 整体撤回）。`)) {
+    contextMenu.value.show = false;
+    return;
   }
+  if (store.isReadOnly) {
+    statusMsg(`删除省份已停用：${store.readOnlyReason || '只读：未打开项目'}`);
+    contextMenu.value.show = false;
+    return;
+  }
+  const r = store.removeBaseProvince(baseMapKey.value, prov.id);
+  statusMsg(r && r.cascadedScenarios
+    ? `已删除省份「${prov.name}」（连带清理 ${r.cascadedScenarios} 个剧本里的归属键，可 Ctrl+Z 撤回）`
+    : `已删除省份「${prov.name}」`);
+  selectedProvince.value = null;
+  showProps.value = false;
+  render();
   contextMenu.value.show = false;
 }
 
-function onProvinceNameChange() {
-  if (selectedProvince.value) {
-    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { name: selectedProvince.value.name });
-  }
-}
-
-function onProvinceBiomeChange() {
-  if (selectedProvince.value) {
-    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { biome: selectedProvince.value.biome });
-    render();
-  }
-}
-
-function onProvinceCultureChange() {
-  if (selectedProvince.value) {
-    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { culture: selectedProvince.value.culture });
-  }
-}
-
-function onProvinceKindChange() {
+// ── 省份属性面板的写入口（2026-10-01 重写）──────────────────────────────────
+// 旧实现在模板上用 `v-model` 直改 store 里的活对象，再调 `updateBaseProvince`：
+// 撤销拿到的"旧值"其实已经是新值（空转），且只读态绕开守卫照改内存。
+// 现在一律：**值来自事件 → 写只走 store**（一条 undo + 写闸门），并给只读态回音。
+function provinceWrite(updates, okText) {
   const prov = selectedProvince.value;
   if (!prov) return;
-  store.updateBaseProvince(baseMapKey.value, prov.id, { kind: prov.kind === 'sea' ? 'sea' : 'land' });
+  if (store.isReadOnly) { statusMsg(`编辑省份已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+  store.updateBaseProvince(baseMapKey.value, prov.id, updates);
+  if (okText) statusMsg(okText);
+  render();
+}
+
+function onProvinceNameChange(e) {
+  const prov = selectedProvince.value;
+  if (!prov) return;
+  const v = String(e.target.value || '').trim();
+  if (!v) { e.target.value = prov.name || ''; statusMsg('省份名不能为空'); return; }
+  provinceWrite({ name: v }, `省份已改名：${v}`);
+}
+
+function onProvinceBiomeChange(e) {
+  provinceWrite({ biome: String(e.target.value || '') });
+}
+
+function onProvinceCultureChange(e) {
+  provinceWrite({ culture: String(e.target.value || '') });
+}
+
+function onProvinceKindChange(e) {
+  const kind = e.target.value === 'sea' ? 'sea' : 'land';
+  const prov = selectedProvince.value;
+  if (!prov) return;
+  if (store.isReadOnly) { statusMsg(`编辑省份已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+  store.updateBaseProvince(baseMapKey.value, prov.id, { kind });
   provinceBrush.invalidateBorders();
+  statusMsg(kind === 'sea' ? '已改为海域（不参与势力归属）' : '已改为陆地');
   render();
 }
 
@@ -2763,10 +2883,8 @@ const currentRingVertexCount = computed(() => {
   return pts ? pts.length : 0;
 });
 
-function onProvinceCoastChange() {
-  if (selectedProvince.value) {
-    store.updateBaseProvince(baseMapKey.value, selectedProvince.value.id, { coast: selectedProvince.value.coast });
-  }
+function onProvinceCoastChange(e) {
+  provinceWrite({ coast: !!e.target.checked });
 }
 
 // ═══════════════════════════════════════════
@@ -3055,7 +3173,7 @@ function drawRivers(c) {
   const list = baseMap.value?.rivers;
   if (!list || !list.length) return;
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
 
@@ -3089,7 +3207,7 @@ function drawRoutes(c) {
   const list = baseMap.value?.routes;
   if (!list || !list.length) return;
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
 
@@ -3118,7 +3236,7 @@ function drawRoutes(c) {
 function drawRiverPaths(c) {
   if (!riverPaths.value.length) return;
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
   c.save();
@@ -3153,8 +3271,8 @@ function drawCultureLegend(c) {
   for (const r of shown) maxW = Math.max(maxW, c.measureText(r.name || '').width);
   const boxW = Math.min(250, maxW + 34);
   const boxH = shown.length * rowH + 12;
-  const bx = canvas.value.width - boxW - 12;
-  const by = canvas.value.height - boxH - 12;
+  const bx = cw() - boxW - 12;
+  const by = ch() - boxH - 12;
 
   c.save();
   c.fillStyle = 'rgba(15,26,46,0.86)';
@@ -3288,8 +3406,8 @@ function drawMinimap(c) {
   const mw = MINIMAP_SIZE;
   const mh = MINIMAP_SIZE;
   const pad = 12;
-  const mx = canvas.value.width - mw - pad;
-  const my = canvas.value.height - mh - pad;
+  const mx = cw() - mw - pad;
+  const my = ch() - mh - pad;
 
   c.save();
   c.drawImage(thumb, mx, my);
@@ -3298,7 +3416,7 @@ function drawMinimap(c) {
   c.strokeRect(mx, my, mw, mh);
 
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   const vx1 = mx + geo.offX + (tl.x - bounds.minX) * geo.scale;
   const vy1 = my + geo.offY + (tl.y - bounds.minY) * geo.scale;
   const vx2 = mx + geo.offX + (br.x - bounds.minX) * geo.scale;
@@ -3342,7 +3460,7 @@ function drawDataChart(c) {
   const boxW = 220;
   const boxH = labels.length * 22 + 50;
   const bx = 12;
-  const by = canvas.value.height - boxH - 12;
+  const by = ch() - boxH - 12;
 
   c.save();
   c.fillStyle = 'rgba(15,26,46,0.9)';
@@ -3416,8 +3534,11 @@ function resumeRender() {
 function renderFrame() {
   if (!ctx.value) return;
   const cvs = canvas.value;
-  const w = cvs.width;
-  const h = cvs.height;
+  const w = cw();
+  const h = ch();
+  // DPR：**每帧显式设基准变换**，不依赖 resize 时设一次 —— save/restore 失衡或别处
+  // setTransform 都会把它抹掉（本仓真的发生过 ctx.filter 配方类问题成批复现的现象）。
+  ctx.value.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
   ctx.value.clearRect(0, 0, w, h);
 
   ctx.value.save();
@@ -3482,7 +3603,7 @@ function renderFrame() {
 
 function drawBackground(ctx) {
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   ctx.fillStyle = '#1a2a3a';
   ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
 
@@ -3514,8 +3635,8 @@ function drawBiomeBackground(ctx) {
   if (!biomes || !biomes.length) return;
   
   // 绘制生物群系图例（右下角）
-  const legendX = screenToWorld(canvas.value.width - 150, canvas.value.height - 300).x;
-  const legendY = screenToWorld(canvas.value.width - 150, canvas.value.height - 300).y;
+  const legendX = screenToWorld(cw() - 150, ch() - 300).x;
+  const legendY = screenToWorld(cw() - 150, ch() - 300).y;
   ctx.font = `${11}px "PingFang SC", sans-serif`;
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(legendX - 5, legendY - 15, 140, biomes.length * 18 + 20);
@@ -3921,7 +4042,7 @@ function drawBurgs(c) {
   if (!list.length) return;
   // 视口裁剪：只画可见范围（含边距）
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   const pad = px(24);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
   const dotR = px(2.5);
@@ -3978,7 +4099,7 @@ function drawBurgTooltip(c) {
   const h = 36;
   let tx = sx + 12;
   let ty = sy - h - 6;
-  if (tx + w > canvas.value.width) tx = sx - w - 12;
+  if (tx + w > cw()) tx = sx - w - 12;
   if (ty < 0) ty = sy + 12;
   c.fillStyle = 'rgba(15,26,46,0.94)';
   c.strokeStyle = b.capital ? '#ffd700' : '#475569';
@@ -4034,7 +4155,7 @@ function mapWorldSize() {
 /** 视口可见世界宽度 ÷ 地图世界宽度（无数据时回落 1 = 中档，绝不返回 NaN） */
 function mapVisibleRatio() {
   const { w } = mapWorldSize();
-  const cvsW = canvas.value?.width || canvas.value?.clientWidth || 0;
+  const cvsW = cw() || canvas.value?.clientWidth || 0;
   const scale = Math.max(cameraScale.value, MIN_CAMERA_SCALE);
   if (!w || !cvsW) return 1;
   return (cvsW / scale) / w;
@@ -4095,57 +4216,34 @@ function drawPolityLabels(c) {
 
   // 视口裁剪（标签是屏幕空间的，画在屏幕外纯属浪费 measureText）
   const tl0 = screenToWorld(0, 0);
-  const br0 = screenToWorld(canvas.value.width, canvas.value.height);
+  const br0 = screenToWorld(cw(), ch());
   const pad = px(40);
   const inView = (x, y) => x >= tl0.x - pad && x <= br0.x + pad && y >= tl0.y - pad && y <= br0.y + pad;
 
-  // ── 放大档：省名 ──
-  // ⚠️ 海域判据取**环的 kind**（与 `drawProvinces` 里 `rp.kind === 'sea'` 同口径）：
-  //    `kind` 是省份级字段、由 `provinceRings` 归一后下发到环上，直接读 `prov.kind`
-  //    在「只有环上带 kind」的数据里会漏判 → 海面被挂上名字。
-  // ⚠️ 只取**主环**（`rings[0]`）算面积与形心：多环省份里洞与飞地面积很小，
-  //    对标签落点的贡献远小于主陆，把它算进来反而会把名字往边界推。
-  if (tier === 'province') {
-    for (const prov of terrain) {
-      if (!prov) continue;
-      const name = String(prov.name || '').trim();
-      if (!name) continue;
-      const rings = provinceRings(prov);
-      if (!rings.length || rings[0].kind === 'sea') continue;
-      const pts = ringPointsForRender(rings[0]);
-      if (!pts || pts.length < 3) continue;
-      const { area, cx, cy } = ringAreaCentroid(pts);
-      if (!labelFitsOnScreen(area, scale, LABEL_MIN_AREA_PX.province)) continue;
-      if (!inView(cx, cy)) continue;
-      drawStyledLabel(c, name, cx, cy, PROVINCE_LABEL_STYLE, { screenScale: scale });
-    }
-    return;
-  }
-
-  // ── 中/小档：势力名 / 简称（领土聚合 → 面积加权质心）──
-  const items = [];
+  // 「该写哪些字、写在哪」由 `utils/scenarioLabels.js` 统一判定（**SVG 导出共用同一份**）——
+  // 这里只负责：把省份准备成环顶点（含渲染口径的平滑）、把结论画出来。
+  // ⚠️ 只取主环（rings[0]）平滑：标签只需要一个落点，全环平滑在大省份上是白付 Chaikin 成本。
+  const provinces = [];
   for (const prov of terrain) {
     if (!prov) continue;
-    const ref = ownerRefOf(prov.id);
-    if (!ref || !ref.owner) continue;
-    const rings = provinceRings(prov);
-    if (!rings.length || rings[0].kind === 'sea') continue;
-    const pts = ringPointsForRender(rings[0]);
-    if (!pts || pts.length < 3) continue;
-    items.push({ key: `${ref.era}|${ref.owner}`, points: pts });
+    const r0 = provinceRings(prov)[0];
+    provinces.push({
+      id: prov.id,
+      name: prov.name,
+      rings: r0 ? [{ kind: r0.kind, points: ringPointsForRender(r0) }] : [],
+    });
   }
-  const agg = aggregateTerritories(items, (it) => it.key);
-  for (const [key, st] of agg) {
-    if (!labelFitsOnScreen(st.area, scale, LABEL_MIN_AREA_PX.polity)) continue;
-    if (!inView(st.cx, st.cy)) continue;
-    const sep = key.indexOf('|');
-    const era = Number(key.slice(0, sep));
-    const owner = key.slice(sep + 1);
-    const text = labelTextFor(polityOfEra(era, owner), tier);
-    if (!text) continue;
+
+  const labels = collectScenarioLabels({
+    provinces, tier, scale, ownerRefOf, polityOfEra,
+    highlightOwnerId: selectedPolity.value?.id || null,
+  });
+
+  for (const lb of labels) {
+    if (!inView(lb.x, lb.y)) continue;
+    const style = lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE;
     // 选中势力高亮：与色板/状态栏的「已选势力」呼应，方便确认自己正在改谁
-    const highlight = !!selectedPolity.value && selectedPolity.value.id === owner;
-    drawStyledLabel(c, text, st.cx, st.cy, POLITY_LABEL_STYLE, { screenScale: scale, highlight });
+    drawStyledLabel(c, lb.text, lb.x, lb.y, style, { screenScale: scale, highlight: lb.highlight });
   }
 }
 
@@ -4168,7 +4266,7 @@ function drawLabels(c) {
 function drawReliefIcons(c) {
   if (!reliefIcons.value.length) return;
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   const pad = px(30);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
   const fontSize = Math.max(12, px(16));
@@ -4187,7 +4285,7 @@ function drawReliefIcons(c) {
 function drawScenarioMarkers(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.markers?.length) return;
   const tl = screenToWorld(0, 0);
-  const br = screenToWorld(canvas.value.width, canvas.value.height);
+  const br = screenToWorld(cw(), ch());
   const pad = px(30);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
   const fontSize = Math.max(12, px(14));
@@ -4212,8 +4310,14 @@ function drawScenarioMarkers(c) {
 
 function handleResize() {
   if (!canvas.value || !canvasWrap.value) return;
-  canvas.value.width = canvasWrap.value.clientWidth;
-  canvas.value.height = canvasWrap.value.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvasWrap.value.clientWidth;
+  const h = canvasWrap.value.clientHeight;
+  canvasDpr = dpr;
+  canvas.value.width = Math.round(w * dpr);
+  canvas.value.height = Math.round(h * dpr);
+  canvas.value.style.width = w + 'px';
+  canvas.value.style.height = h + 'px';
   // 首次进入期间布局仍在定稿（时间轴面板占位会让画布变矮）→ 重新适屏，别留一个错的镜位；
   // 用户已经开始操作后就只重绘，不动镜头。
   if (initialFitPending) fitToView();
@@ -4320,8 +4424,9 @@ async function exportPNG() {
   const cvs = canvas.value;
   const scale = 2;
   const offscreen = document.createElement('canvas');
-  offscreen.width = cvs.width * scale;
-  offscreen.height = cvs.height * scale;
+  // DPR 之后 cvs.width 是设备像素 → 离屏画布必须按 **CSS 尺寸** 建，否则导出被放大 DPR 倍
+  offscreen.width = Math.round(cw() * scale);
+  offscreen.height = Math.round(ch() * scale);
   const ctx = offscreen.getContext('2d');
   ctx.scale(scale, scale);
   ctx.translate(cameraX.value, cameraY.value);
@@ -4337,7 +4442,7 @@ async function exportPNG() {
   const scenarioName = selectedScenario?.value?.name || '未命名剧本';
   const eraLabel = selectedScenario?.value?.era?.roman || '';
   const watermark = eraLabel ? `${eraLabel} · ${scenarioName}` : scenarioName;
-  ctx.fillText(watermark, 10, cvs.height / scale - 10);
+  ctx.fillText(watermark, 10, ch() - 10);
   offscreen.toBlob(async (blob) => {
     if (!blob) return;
     const reader = new FileReader();
@@ -4360,8 +4465,16 @@ let resizeObserver = null;
 onMounted(async () => {
   const cvs = canvas.value;
   const wrap = canvasWrap.value;
-  cvs.width = wrap.clientWidth;
-  cvs.height = wrap.clientHeight;
+  {
+    const dpr = window.devicePixelRatio || 1;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    canvasDpr = dpr;
+    cvs.width = Math.round(w * dpr);
+    cvs.height = Math.round(h * dpr);
+    cvs.style.width = w + 'px';
+    cvs.style.height = h + 'px';
+  }
   ctx.value = cvs.getContext('2d');
 
   // P0: 恢复上次使用的底图键（全局配置）——但只在**当前项目里确实存在**这张底图时才用
@@ -4741,6 +4854,41 @@ watch(baseMap, () => {
 
 .polity-editor input:focus { outline: none; border-color: #ffd700; }
 .polity-editor input:disabled { opacity: 0.55; cursor: not-allowed; }
+/* 取色器不能继承上面那条 110px 文本输入宽度（原生 color 输入要小方块） */
+.polity-editor input[type="color"] {
+  width: 34px;
+  height: 24px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+/* 新建势力 / 删除势力（2026-10-01）：与色板同一套深色条观感 */
+.polity-add,
+.polity-del {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #1e293b;
+  border: 1px dashed #64748b;
+  border-radius: 4px;
+  color: #cbd5e1;
+  font-size: 11px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+
+.polity-add:hover:not(:disabled) { border-color: #ffd700; color: #ffd700; }
+
+.polity-del {
+  border-style: solid;
+  border-color: #7f3b3b;
+  color: #f0a8a8;
+  margin-left: 4px;
+}
+
+.polity-del:hover:not(:disabled) { border-color: #f85149; color: #f85149; }
+.polity-add:disabled,
+.polity-del:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .polity-editor-hint { color: #64748b; font-size: 11px; }
 

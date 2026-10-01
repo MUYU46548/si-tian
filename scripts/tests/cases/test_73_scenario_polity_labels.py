@@ -137,18 +137,28 @@ def sub_source_guards(cdp):
     # ③ 组件里不许自己实现「档位 → 文本」（必须在纯函数里）
     if _re.search(r"(?:tier|polityLabelTierNow)\s*===\s*'abbr'", sm):
         bad.append("ScenarioMap 自己写了档位→文本的分支（应调用 labelTextFor）")
+    # 🔴 2026-10-01：标签判定抽到 `utils/scenarioLabels.js`（画布 + PNG + **SVG 导出**三处共用）。
+    #   判据随之升级 —— 不再是「组件函数体里出现了这两个调用」，而是
+    #   ① 单源模块里真有 文本选择 / 领土聚合；② 画布与**导出链**都调 collectScenarioLabels。
+    labels_mod = _code_only(_read('src/renderer/src/utils/scenarioLabels.js'))
+    export_mod = _code_only(_read('src/renderer/src/composables/useScenarioExport.js'))
+    for sym in ['labelTextFor(', 'aggregateTerritories(', 'ringAreaCentroid(']:
+        if sym not in labels_mod:
+            bad.append(f'utils/scenarioLabels.js 缺少 {sym}（标签判定单源不完整）')
     body = _function_body(sm, 'drawPolityLabels')
     if body is None:
         bad.append('ScenarioMap 找不到 drawPolityLabels()（渲染函数改名后守卫要同步）')
     else:
-        if 'labelTextFor(' not in body:
-            bad.append('drawPolityLabels 里没有 labelTextFor（文本选择被写回了组件？）')
-        if 'aggregateTerritories(' not in body:
-            bad.append('drawPolityLabels 里没有 aggregateTerritories（领土聚合被写回了组件？）')
+        if 'collectScenarioLabels(' not in body:
+            bad.append('drawPolityLabels 没走 collectScenarioLabels（画布又自己算了一套标签）')
         if 'drawStyledLabel(' not in body:
             bad.append('drawPolityLabels 没有走统一文本渲染入口 drawStyledLabel')
+    if 'collectScenarioLabels(' not in export_mod:
+        bad.append('导出链没接 collectScenarioLabels（导出的图会没有势力名 —— A8 的主要读物）')
+    if "from '../utils/scenarioLabels'" not in sm:
+        bad.append('ScenarioMap 没有引用 utils/scenarioLabels（判定被写回了组件？）')
 
-    return (False, '；'.join(bad)) if bad else (True, '分级判定单源 / 两处渲染入口都接 / 无阈值回流组件')
+    return (False, '；'.join(bad)) if bad else (True, '分级判定单源（含导出链共 3 处接线）/ 无阈值回流组件')
 
 
 # ══════════════════════════════════════════════════════════════════

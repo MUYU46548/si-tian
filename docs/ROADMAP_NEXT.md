@@ -169,4 +169,41 @@
 - **导入地图配置绕开写闸门**：`App.vue:1053` 已补 `guardWrite`（仅消除只读态"静默假成功"；**进 undo 栈部分待做**）。
 - **空态两个主按钮谎报成功**：`handleCreateWorld` / `handleLoadSampleWorld` 只读态不再打印「已创建 / 已加载」，改为明确拒绝 + 直接送你去项目面板。
 
+
+---
+
+## 2026-10-01：历史剧本链加固（三路审计 → 四块落地）
+
+> 来源：暮雨「历史剧本够不够好用 / 省份还会不会出问题 / 势力能不能新建 / 能不能做 EU4 式逐年切片」四问 →
+> 三路并行只读审计（势力写入口 / 省份链 / 时间轴与导出链）。**已落地**见 `AGENTS.md` 的
+> 「历史剧本链加固」条目与回归 `test_77`（5 段 + 7 枚反向探针）。
+
+### 本轮已做
+1. **势力增删**（此前只能改名）：`addPolity` / `removePolity`（各一条 undo，删除连带清
+   `ownership` / `changeYears` 并回报受影响省数）+ 色板「＋ 势力」「删除势力」「取色器」；
+   `clearOwnership` 从死入口接活（「✕ 清除归属」+ 油漆桶 = 真清归属）。
+2. **删省级联**：`removeBaseProvince` 同一条 undo 里清掉该省在各剧本的归属与易主年份 + 回执点名份数。
+3. **导出与画布同源**：SVG 补 多环 `evenodd` / 海域色与虚线海界 / 势力名标签（`collectScenarioLabels`）/
+   面积加权省名落点 / `ringPointsForRender` 平滑。
+4. **画布 DPR** + 省份属性面板写路径重做（值来自事件、写只走 store、undo 不再空转）。
+5. **三处单源**：`utils/scenarioPalette.js`、`ringPointsForRender`（并入 `provinceShape`）、
+   `utils/scenarioLabels.js`。
+
+### 仍未做（本轮明确接受不做，留触发条件）
+- **`batchSetOwnership` 仍无入口**（批量指派需要一个「省份多选」交互，属新功能；现在只能一省一点）。
+- **`removeProvinceWithGrid` 仍是死代码**（带重编号的删除实现；现在靠 `shapeSignature` 自愈兜住
+  「删省后网格按多边形重建」这一步，代价是未参与删除的省边界会被重采样一次）。
+- **省份链没有重叠闸门 / 套索无面积上限**：可以画出互相压叠的省（命中按 terrain 序返回第一个命中的，
+  于是"点得到的是视觉上被压在下面的那个"），套索也能一口吞掉全图（闸门只管"点一下"）。
+- **`mergeProvinceShapes` 的规模上限是静默降级**（`work > maxWork → 栅格并集`，真实库 21 省 / 25930 点
+  已越线；本轮只把状态栏文案改成显式「精度降级」，算法未动）。
+- **逐年切片导出**：数据侧（ownership + era + changeYears + 谱系 + isStriped/baseOwnerRef）已经能算
+  任意年份的状态，单帧 SVG 也已与画布同源；**缺** ① `buildScenarioSVG` 参数化 `(k, year)` ② 主进程
+  「选目录 + 批量写 N 张」IPC（现在两个保存通道都是一次一个模态框）③ 变化年索引（真实数据 12 剧本
+  → 约 11 个变化点，而不是 3488 帧）。**动画/GIF 建议不做**（本仓无编码器），出 PNG 帧序列 + `frames.json`
+  交给外部 ffmpeg。
+- 🔴 **日期可信度是观感之外的真问题**：真实库 `changeYears` 总条目 = **0**（所有易主日期都是
+  `computeEraChanges` 在 era 区间内均匀铺开的合成值），且模型限制「一个剧本内一省最多易主一次」。
+  要做 EU4 式切片，先补**日期录入**。
+
 *整理：企鹅 · 2026-09-24 · 证据路径均可复验*

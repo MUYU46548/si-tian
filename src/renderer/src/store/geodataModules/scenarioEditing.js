@@ -463,7 +463,45 @@ export function createScenarioEditingModule(ctx) {
     
     const oldProv = baseMap.terrain.find(p => p.id === provinceId);
     if (!oldProv) return;
-    
+
+    // 🔴 级联（2026-10-01）：`scenarios[*].ownership` 的**键就是省份 id**（不是节点 id ——
+    //    见 `idRefDicts()` 的注释），`changeYears` 同理。删省不摘这两个键 = 留下指向
+    //    不存在省份的孤儿键：画布上看不见（渲染按 `terrain` 遍历），却仍参与 `groupMap`
+    //    分组、`summarizeLineages` 的省列表与谱系继承的重叠度计算 → 观感是「势力继承
+    //    关系莫名断裂/粘连」。与 R7「删节点清孤儿数据」同一条纪律：**级联必须同一条 undo**。
+    const cascadeBefore = {};
+    for (const [scId, sc] of Object.entries(scenarios.value || {})) {
+      if (!sc || sc.ownerKey !== baseMapKey) continue;
+      const own = sc.ownership || {};
+      const cy = sc.changeYears || {};
+      const hasOwner = Object.prototype.hasOwnProperty.call(own, provinceId);
+      const hasCY = Object.prototype.hasOwnProperty.call(cy, provinceId);
+      if (hasOwner || hasCY) {
+        cascadeBefore[scId] = { hasOwner, owner: own[provinceId], hasCY, changeYear: cy[provinceId] };
+      }
+    }
+    const applyCascade = (mode) => {
+      const ids = Object.keys(cascadeBefore);
+      if (!ids.length) return;
+      const next = { ...scenarios.value };
+      for (const scId of ids) {
+        const sc = next[scId];
+        if (!sc) continue;
+        const ownership = { ...(sc.ownership || {}) };
+        const changeYears = { ...(sc.changeYears || {}) };
+        const rec = cascadeBefore[scId];
+        if (mode === 'remove') {
+          delete ownership[provinceId];
+          delete changeYears[provinceId];
+        } else {
+          if (rec.hasOwner) ownership[provinceId] = rec.owner;
+          if (rec.hasCY) changeYears[provinceId] = rec.changeYear;
+        }
+        next[scId] = { ...sc, ownership, changeYears };
+      }
+      scenarios.value = next;
+    };
+
     execute({
       type: 'remove-province',
       label: '删除省份',
@@ -475,6 +513,7 @@ export function createScenarioEditingModule(ctx) {
             terrain: [...baseMaps.value[baseMapKey].terrain, oldProv],
           },
         };
+        applyCascade('restore');
       },
       redo: () => {
         baseMaps.value = {
@@ -485,10 +524,12 @@ export function createScenarioEditingModule(ctx) {
             updatedAt: new Date().toISOString(),
           },
         };
+        applyCascade('remove');
       },
     });
     
     saveScenarios();
+    return { success: true, cascadedScenarios: Object.keys(cascadeBefore).length };
   }
 
   function splitBaseProvince(baseMapKey, originalId, poly1, poly2) {
@@ -1056,6 +1097,108 @@ export function createScenarioEditingModule(ctx) {
 
     saveScenarios();
     return { success: true, changed: true };
+  }
+
+  // ── 势力的增删（2026-10-01）──────────────────────────────────────────────
+  // 此前这条链只有 `updatePolity`（改名/简称）一个写入口，`polities` **只能由 Azgaar .map
+  // 导入带进来**（`azgaar-parser.js` 的 states → polities，id = FMG 的 state 序号）。
+  // 后果：自建底图 + 自建剧本 = `polities: []` → 势力色板空空、油漆桶点了什么都不发生
+  // （旧实现里那个分支没有 else，属于**静默无反应**）。删除同样没有 → 错导入的 FMG
+  // 国名永久留在地图与谱系里，唯一的"取消"手段是逐省用别的势力盖掉。
+  //
+  // 纪律（与本文件其余写入口一致）：走 `execute()`（= 内存写总闸门，只读态自动拒绝），
+  // **撤销显式回填旧值**、不做反向推断；删势力必须**连带清反向索引**（见 `removePolity`）。
+  let politySeq = 0;
+  /** polity id 只需**本剧本内**唯一（跨剧本 id 本来就不通用，见 scenarioTimeline 头部注释） */
+  function makePolityId() {
+    politySeq += 1;
+    return `pol_${Date.now().toString(36)}_${politySeq}`;
+  }
+  /** 新建势力的默认配色（FMG 导入的势力自带 color，自建时按序轮转，避免撞色成一片） */
+  const POLITY_PALETTE = ['#c94f4f', '#4f7fc9', '#4fa96b', '#c9a24f', '#8a5fc9', '#4fb3c9', '#c95f9e', '#7f8c8d'];
+
+  function addPolity(scenarioId, { name = '', color = '', abbr = '' } = {}) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { success: false, reason: 'no-scenario' };
+    const list = scenario.polities || [];
+    const id = makePolityId();
+    const finalName = String(name || '').trim() || `势力 ${list.length + 1}`;
+    const finalColor = color || POLITY_PALETTE[list.length % POLITY_PALETTE.length];
+    const polity = { id, name: finalName, color: finalColor };
+    if (String(abbr || '').trim()) polity.abbr = String(abbr).trim();
+
+    const before = JSON.parse(JSON.stringify(list));
+    const next = [...list, polity];
+
+    const apply = (arr, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const nextSc = { ...cur, polities: arr };
+      if (touch) nextSc.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
+    };
+
+    execute({
+      type: 'add-polity',
+      label: `新建势力：${finalName}`,
+      undo: () => apply(before, false),
+      redo: () => apply(next, true),
+    });
+
+    saveScenarios();
+    return { success: true, id, name: finalName, color: finalColor };
+  }
+
+  /**
+   * 删除势力（走 undo）。
+   *
+   * 🔴 **必须连带清反向索引**：`ownership` 的值就是 polityId（键是省份 id），
+   *    `changeYears` 同理按省份 id 记显式易主年份。只把 polity 从数组里摘掉，
+   *    那些省的归属会指向一个不存在的势力 —— 画布上回落 `#4a5568` 灰、
+   *    标签因 `labelTextFor(null) === ''` 被**静默跳过**（一片没名字的灰块），
+   *    而时间轴 / 谱系照样给它留槽位。与 R7「删节点清孤儿数据」同一条纪律。
+   *
+   * 返回 `affected`（受影响的省数）供 UI 二次确认时点名。
+   */
+  function removePolity(scenarioId, polityId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { success: false, reason: 'no-scenario' };
+    const list = scenario.polities || [];
+    const target = list.find(p => p.id === polityId);
+    if (!target) return { success: false, reason: 'no-polity' };
+
+    const beforePolities = JSON.parse(JSON.stringify(list));
+    const beforeOwnership = JSON.parse(JSON.stringify(scenario.ownership || {}));
+    const beforeChangeYears = JSON.parse(JSON.stringify(scenario.changeYears || {}));
+    const nextPolities = list.filter(p => p.id !== polityId);
+
+    const affected = Object.entries(beforeOwnership)
+      .filter(([, pid]) => pid === polityId)
+      .map(([provId]) => provId);
+    const nextOwnership = { ...beforeOwnership };
+    const nextChangeYears = { ...beforeChangeYears };
+    for (const provId of affected) {
+      delete nextOwnership[provId];
+      delete nextChangeYears[provId];
+    }
+
+    const apply = (polities, ownership, changeYears, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const nextSc = { ...cur, polities, ownership, changeYears };
+      if (touch) nextSc.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
+    };
+
+    execute({
+      type: 'remove-polity',
+      label: `删除势力：${target.name || polityId}`,
+      undo: () => apply(beforePolities, beforeOwnership, beforeChangeYears, false),
+      redo: () => apply(nextPolities, nextOwnership, nextChangeYears, true),
+    });
+
+    saveScenarios();
+    return { success: true, affected: affected.length, affectedProvinceIds: affected, name: target.name || polityId };
   }
 
   /** 显式设置/清除某省的易主年份（走 undo）。year=null 表示删除显式值（回到自动推算） */
@@ -1837,7 +1980,7 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
     createScenario, updateScenario, removeScenario, inheritScenario,
     setOwnership, clearOwnership, batchSetOwnership,
-    setPolityLineage, setProvinceChangeYear, updatePolity,
+    setPolityLineage, setProvinceChangeYear, updatePolity, addPolity, removePolity,
     exportScenariosPayload, auditScenariosPayload, importScenariosPayload, removeAllScenarios,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,

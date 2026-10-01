@@ -44,10 +44,14 @@ def _js(cdp, src):
 
 
 def _palette():
-    """从源码里取省份色板（单一事实源，别在用例里抄一份）。"""
+    """从**单一事实源**里取省份色板（2026-10-01 起在 `utils/scenarioPalette.js`）。
+
+    ⚠️ 别在用例里抄一份色板，也别再回组件里找 —— 那条判据会随「单源搬家」假红
+    （本仓的守卫要跟着单源的位置走，见 AGENTS.md「导出与画布同源」条目）。
+    """
     import re
-    src = _read('src/renderer/src/components/ScenarioMap.vue')
-    i = src.index('const PROVINCE_PALETTE = [')
+    src = _read('src/renderer/src/utils/scenarioPalette.js')
+    i = src.index('export const PROVINCE_PALETTE = Object.freeze([')
     j = src.index(']', i)
     return re.findall(r"'(#[0-9a-fA-F]{3,8})'", src[i:j])
 
@@ -68,8 +72,9 @@ def source_gates():
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
     checks = [
         ("const tool = ref('draw')", '默认工具 = 自由绘制（P1）'),
-        ('const PROVINCE_PALETTE = [', '省份色板（P1 色板轮转）'),
-        ('function nextProvinceColor(', '色板轮转函数'),
+        # 色板常量已移入 utils/scenarioPalette.js（单源）；组件这边只守「引了它、没抄一份」
+        ("from '../utils/scenarioPalette'", '组件引用配色单源（不许再抄一份色板）'),
+        ('nextProvinceColor(', '色板轮转函数（来自单源）'),
         ('function commitFreeTrace(pts, shiftKey)', '自由绘制受理 shiftKey'),
         ('const skeleton = shiftKey ? [] : buildSkeleton(', 'Shift = 旁路骨架吸附'),
         ('function focusNewProvince(', '新建后选中 + 名字输入聚焦'),
@@ -79,6 +84,12 @@ def source_gates():
     for needle, label in checks:
         if needle not in sc:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
+    # 单源那边必须还真的有那份色板（否则「引了单源」是假接线）
+    pal = _code_only(_read('src/renderer/src/utils/scenarioPalette.js'))
+    if 'export const PROVINCE_PALETTE' not in pal:
+        fails.append('源码闸门缺失：配色单源里的省份色板（utils/scenarioPalette.js）')
+    if "const PROVINCE_PALETTE = [" in sc:
+        fails.append('ScenarioMap 又抄了一份省份色板（单源被破坏）')
     # 旧行为必须消失：新建省份不能再用「弹窗问名字」阻塞画布
     if 'prompt(' in sc.split('function commitFreeTrace')[1].split('function ')[0]:
         fails.append('自由绘制仍在用 prompt 弹窗问名字（P1 改为建完即选中 + 名字框聚焦）')

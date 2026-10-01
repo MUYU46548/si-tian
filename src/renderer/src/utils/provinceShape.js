@@ -345,6 +345,23 @@ export function smoothProvinceRings(prov, iters = 2) {
   return provinceRings(prov).map((r) => smoothRing(r.points, iters));
 }
 
+/**
+ * 环的**渲染顶点**：该环怎么画，全应用只有一个判定（画布、PNG 导出、SVG 导出、标签落点共用）。
+ *
+ * · **网格派生的环**（`fromGrid`，由归属格轮廓重算出来的）→ Chaikin 平滑，消掉格点台阶
+ *   （这正是「马赛克 / 台阶边」的收敛点；网格只作为中间层，落库的是平滑后的折线）。
+ * · **手绘 / 描点 / 带贝塞尔控制点的环** → 原样（顶点是用户刻意摆的，平滑会削掉有意的形状）。
+ *
+ * 2026-10-01 从 `ScenarioMap.vue` 移到这里：SVG 导出当时直接画 `prov.points`，
+ * 于是"涂抹改过的省"在导出图里台阶感更重 —— 同一件事两份实现 = 改一处另一处不变。
+ */
+export function ringPointsForRender(ring) {
+  if (!ring || !Array.isArray(ring.points)) return null;
+  if (!ring.fromGrid) return ring.points;
+  for (const q of ring.points) if (q && (q.controlOut || q.controlIn)) return ring.points;
+  return smoothRing(ring.points, 2);
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // 四、分割（侧符号分类）
 // ══════════════════════════════════════════════════════════════════════════
