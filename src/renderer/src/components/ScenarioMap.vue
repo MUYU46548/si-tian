@@ -383,6 +383,28 @@
       @open-lineage="showLineagePanel = true"
     />
 
+    <!-- 省份多选批量条（2026-10-02）：选中 ≥1 个省时出现，把「一次一批」接上 batchSetOwnership -->
+    <div v-if="hasMultiSelection" class="province-batch-bar" data-testid="province-batch-bar">
+      <span class="pbb-count" data-testid="pbb-count">已选 <b>{{ selectedProvinceIds.length }}</b> 省</span>
+      <span class="pbb-sep"></span>
+      <button class="pbb-primary" data-testid="pbb-assign"
+              :disabled="store.isReadOnly || !selectedPolity"
+              :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
+                : (selectedPolity ? `把这 ${selectedProvinceIds.length} 个省一次指派给「${selectedPolity.name}」（一条撤销）`
+                  : '先在上面的色板里选一个势力，再点这里批量指派')"
+              @click="onBatchAssign">指派给{{ selectedPolity ? `「${selectedPolity.name}」` : '…' }}</button>
+      <button class="pbb-btn" data-testid="pbb-clear"
+              :disabled="store.isReadOnly"
+              :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '把这些省的势力归属清空（一条撤销）'"
+              @click="onBatchClear">清除归属</button>
+      <button class="pbb-btn" data-testid="pbb-select-land"
+              title="选中当前底图的全部陆地省（海域不参与势力归属，不会入选）"
+              @click="onSelectAllLand">全选陆地省</button>
+      <button class="pbb-btn" data-testid="pbb-cancel" title="取消多选（Esc 同效）"
+              @click="clearProvinceSelection">取消选择</button>
+      <span class="pbb-hint">Ctrl/⌘ 点击省份可加选/减选；普通点击回到单选</span>
+    </div>
+
     <!-- 势力色板（剧本模式） -->
     <div v-if="viewMode === 'scenario' && selectedScenario" class="polity-palette">
       <span class="palette-title">势力：</span>
@@ -1215,6 +1237,33 @@ const contextMenu = ref({ show: false, x: 0, y: 0, provId: null });
 const showProps = ref(false);
 const selectedProvince = ref(null);
 
+// ── 省份多选（2026-10-02）────────────────────────────────────────────────────
+// 用途：一次把多个省指派给同一个势力（`store.batchSetOwnership` —— 此前是零调用的死入口）。
+// 交互刻意只绑「选择」工具 + Ctrl/⌘ 点击：Ctrl/⌘ 在组件内原本完全空闲（全局只被 App.vue 的
+// 撤销占用），而 Shift 在这个组件里已被三处语义占满（禁吸附 / 决定拆分哪半 / 滚轮第二轴）。
+// 多选**不进导出**（与选中描边同一策略：那是编辑期的辅助，不是图面内容）。
+const selectedProvinceIds = ref([]);
+const multiSelectSet = computed(() => new Set(selectedProvinceIds.value));
+/** 批量条是否显示（有选中就显示；指派按钮另看有没有选势力） */
+const hasMultiSelection = computed(() => selectedProvinceIds.value.length > 0);
+const selectedLandProvinces = computed(() => (baseMap.value?.terrain || [])
+  .filter(p => p && p.kind !== 'sea').map(p => p.id));
+
+function toggleProvinceSelection(id) {
+  const list = selectedProvinceIds.value;
+  selectedProvinceIds.value = list.includes(id) ? list.filter(x => x !== id) : [...list, id];
+}
+function clearProvinceSelection() {
+  if (selectedProvinceIds.value.length) selectedProvinceIds.value = [];
+}
+/** 底图/省份表变了就剔除已经不存在的 id（否则批量条会拿幽灵 id 去写归属） */
+function pruneProvinceSelection() {
+  if (!selectedProvinceIds.value.length) return;
+  const alive = new Set((baseMap.value?.terrain || []).map(p => p.id));
+  const next = selectedProvinceIds.value.filter(id => alive.has(id));
+  if (next.length !== selectedProvinceIds.value.length) selectedProvinceIds.value = next;
+}
+
 // 生物群系颜色
 const BIOME_COLORS = {
   ocean: '#2E86AB',
@@ -1487,6 +1536,48 @@ function onSetPolityLineage({ scenarioId, polityId, successorOf }) {
 /** 面板里的输入被拒（越界年份等）：拒绝必须有回音 —— 静默吞掉等于用户以为改成功了 */
 function onPanelReject({ what = '输入', reason = '' } = {}) {
   statusMsg(`${what}未写入：${reason || '不合法'}`);
+}
+
+// ── 省份多选 → 批量归属（2026-10-02 接活 batchSetOwnership）─────────────────
+// 回执必须点名「改了几省 / 跳过了什么」：批量操作最怕"点了没反应"或"悄悄漏掉几个"。
+function batchEcho(r, verb) {
+  if (!r || r.success === false) { statusMsg(`${verb}失败：${r?.reason || '未知原因'}`); return; }
+  if (r.noop) { statusMsg(`${verb}：没有需要改动的省份${r.skippedSea ? `（跳过 ${r.skippedSea} 个海域省）` : ''}`); return; }
+  const parts = [`${verb}：${r.changed || r.cleared} 省`];
+  if (r.skippedSea) parts.push(`跳过 ${r.skippedSea} 个海域省`);
+  if (r.skippedMissing) parts.push(`跳过 ${r.skippedMissing} 个不存在的省`);
+  parts.push('可 Ctrl+Z 撤回');
+  statusMsg(parts.join(' · '));
+}
+
+function onBatchAssign() {
+  if (store.isReadOnly) { statusMsg(`批量指派已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+  if (!selectedPolity.value) { statusMsg('批量指派：先在上面的色板里选一个势力'); return; }
+  if (!selectedScenario.value) { statusMsg('批量指派：先在时间轴上选一个剧本'); return; }
+  const r = store.batchSetOwnership(
+    selectedScenario.value.id,
+    selectedProvinceIds.value.slice(),
+    selectedPolity.value.id,
+    Math.round(tlYear.value),
+  );
+  batchEcho(r, `已指派给「${selectedPolity.value.name}」`);
+  render();
+}
+
+function onBatchClear() {
+  if (store.isReadOnly) { statusMsg(`批量清除归属已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+  if (!selectedScenario.value) { statusMsg('批量清除归属：先在时间轴上选一个剧本'); return; }
+  const r = store.batchSetOwnership(
+    selectedScenario.value.id, selectedProvinceIds.value.slice(), null,
+  );
+  batchEcho(r, '已清除归属');
+  render();
+}
+
+function onSelectAllLand() {
+  selectedProvinceIds.value = selectedLandProvinces.value.slice();
+  statusMsg(`已选中当前底图的 ${selectedProvinceIds.value.length} 个陆地省（海域不参与归属，未入选）`);
+  render();
 }
 
 function onSetChangeYear({ scenarioId, provinceId, year }) {
@@ -2472,8 +2563,19 @@ function onCanvasClick(event) {
       openBurgEditor(burg);
     } else {
       const prov = findProvinceAt(world.x, world.y);
-      selectedProvince.value = prov;
-      showProps.value = !!prov;
+      // Ctrl/⌘ + 点击 = 把该省加进/移出多选集合（批量指派的入口）
+      if (prov && (event.ctrlKey || event.metaKey)) {
+        toggleProvinceSelection(prov.id);
+        selectedProvince.value = prov;
+        showProps.value = true;
+        statusMsg(selectedProvinceIds.value.includes(prov.id)
+          ? `已加入多选：「${prov.name}」（共 ${selectedProvinceIds.value.length} 省；用下面的批量条指派）`
+          : `已移出多选：「${prov.name}」（还剩 ${selectedProvinceIds.value.length} 省）`);
+      } else {
+        if (selectedProvinceIds.value.length) clearProvinceSelection();   // 普通点击 = 回到单选
+        selectedProvince.value = prov;
+        showProps.value = !!prov;
+      }
     }
     render();
     return;
@@ -2643,6 +2745,7 @@ function onKeyDown(event) {
     draggingHandle.value = null;
     activeVertexIdx.value = -1;
     clearSnapMarker();
+    clearProvinceSelection();      // Esc 也取消多选（批量条的「取消选择」同效）
     render();
   }
   // P0-T1：Alt 临时直线段（按下即重绘，松开恢复曲线）
@@ -3859,13 +3962,17 @@ function drawProvinces(c) {
 
 function drawProvinceBorders(c) {
   if (!baseMap.value?.terrain) return;
+  const multi = multiSelectSet.value;
   rawTerrain().forEach(prov => {
     const isSelected = selectedProvince.value?.id === prov.id;
+    const isMulti = multi.has(prov.id);
     const isMergeTarget = mergeProvId.value === prov.id;
     const rp = rawProvOf(prov);
     if (!rp || !provinceRings(rp).length) return;
-    c.strokeStyle = isMergeTarget ? '#ffd700' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)');
-    c.lineWidth = isSelected ? px(1.5) : px(0.6);
+    // 多选描边用**青色 + 更粗**：单选是白色 1.5px，两者叠在一起时也得看得出"这几个是批量对象"
+    c.strokeStyle = isMergeTarget ? '#ffd700'
+      : (isMulti ? '#22d3ee' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)'));
+    c.lineWidth = isMulti ? px(2.5) : (isSelected ? px(1.5) : px(0.6));
     c.beginPath();
     traceProvincePath(c, rp);
     c.closePath();
@@ -4671,6 +4778,7 @@ function onHistoryJump() {
     const fresh = baseMap.value?.terrain?.find(p => p.id === sp.id);
     if (fresh && fresh !== sp) selectedProvince.value = fresh;
   }
+  pruneProvinceSelection();     // 省份表变了 → 多选集合里已不存在的 id 必须剔除
   render();
 }
 watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPolityLabels], () => render());
@@ -4889,6 +4997,29 @@ watch(baseMap, () => {
 .tl-status b { color: #e2e8f0; font-variant-numeric: tabular-nums; }
 .tl-warn { color: #fbbf24; }
 .export-msg { color: #a78bfa; }
+
+/* 省份多选批量条（2026-10-02）：与色板同一条视觉带，只在有选中时出现 */
+.province-batch-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #10233a;
+  border-bottom: 1px solid #1e5f7a;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.pbb-count b { color: #22d3ee; font-variant-numeric: tabular-nums; }
+.pbb-sep { width: 1px; height: 16px; background: #1e5f7a; margin: 0 4px; }
+.pbb-primary, .pbb-btn {
+  background: #1e293b; border: 1px solid #475569; color: #cbd5e1;
+  border-radius: 5px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-family: inherit;
+}
+.pbb-primary { background: rgba(34, 211, 238, 0.18); border-color: #22d3ee; color: #a5f3fc; }
+.pbb-primary:hover:not(:disabled), .pbb-btn:hover:not(:disabled) { background: #334155; }
+.pbb-primary:disabled, .pbb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pbb-hint { color: #64748b; font-size: 10px; margin-left: 4px; }
 
 .polity-palette {
   display: flex;

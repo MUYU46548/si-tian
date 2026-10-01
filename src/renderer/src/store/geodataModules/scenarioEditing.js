@@ -997,41 +997,96 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
+  /**
+   * 批量指派 / 批量清归属（**一条 undo**）—— 省份多选的落库口（2026-10-02 接活）。
+   *
+   * 此前这里是**零调用的死入口**，且有三处语义不完整（都已补齐，逐条都有回归断言）：
+   *   ① `polityId` 为假值时旧实现写 `ownership[id] = null` —— **留键**。而 `clearOwnership` 是
+   *      `delete` 真删键，`groupMap` / 谱系重叠度判的是「键在不在」，于是"清空"会留下
+   *      一堆指向 `null` 的孤儿键（画布看不出、谱系统计却算进去）。现在统一成**真删键**，
+   *      并连带清该省的 `changeYears`（与 `clearOwnership` 同口径）。
+   *   ② **海域必须跳过**：单省油漆桶在 UI 侧拒 sea（海不参与势力归属、不进时间轴/谱系），
+   *      批量若照写就会出现「有些海莫名其妙有了归属」。跳过并回报数量。
+   *   ③ 空 / 无改动时**不压栈**（旧实现照样 execute + save = 无操作噪音）。
+   * 另加**回执**（`changed` / `cleared` / `skippedSea` / `skippedMissing`）供 UI 点名。
+   *
+   * @param {string} scenarioId
+   * @param {string[]} provinceIds 省份 id 列表（自动去重；不存在的 id 计入 skippedMissing）
+   * @param {string|null} polityId 假值 = 清归属（删键）
+   * @param {number} [changeYear] 有限数字才写显式易主年份
+   * @returns {{success:boolean, changed?:number, cleared?:number, skippedSea?:number,
+   *            skippedMissing?:number, noop?:boolean, affected?:number, reason?:string}}
+   */
   function batchSetOwnership(scenarioId, provinceIds, polityId, changeYear) {
     const scenario = scenarios.value[scenarioId];
-    if (!scenario) return;
+    if (!scenario) return { success: false, reason: 'no-scenario' };
 
-    const oldOwnership = { ...scenario.ownership };
-    const oldChangeYears = { ...(scenario.changeYears || {}) };
-    const newOwnership = { ...scenario.ownership };
-    provinceIds.forEach(id => { newOwnership[id] = polityId; });
+    // 省份表：用来判「存在」与「是不是海域」（ownerKey → baseMaps[key].terrain）
+    const terrain = baseMaps.value?.[scenario.ownerKey]?.terrain || [];
+    const byId = new Map(terrain.map(p => [p.id, p]));
+
+    const beforeOwnership = { ...(scenario.ownership || {}) };
+    const beforeChangeYears = { ...(scenario.changeYears || {}) };
+    const nextOwnership = { ...beforeOwnership };
+    const nextChangeYears = { ...beforeChangeYears };
+
+    const clearing = !polityId;
     const writeCY = typeof changeYear === 'number' && Number.isFinite(changeYear);
-    const newChangeYears = { ...oldChangeYears };
-    if (writeCY) provinceIds.forEach(id => { newChangeYears[id] = changeYear; });
+    const seen = new Set();
+    let changed = 0;
+    let cleared = 0;
+    let skippedSea = 0;
+    let skippedMissing = 0;
+
+    for (const rawId of (provinceIds || [])) {
+      if (!rawId || seen.has(rawId)) continue;
+      seen.add(rawId);
+      const prov = byId.get(rawId);
+      if (!prov) { skippedMissing++; continue; }
+      if (prov.kind === 'sea') { skippedSea++; continue; }
+      const had = Object.prototype.hasOwnProperty.call(beforeOwnership, rawId);
+      if (clearing) {
+        if (!had) continue;                       // 本来就没归属 → 不算改动
+        delete nextOwnership[rawId];
+        delete nextChangeYears[rawId];
+        cleared++;
+      } else {
+        if (beforeOwnership[rawId] === polityId && (!writeCY || beforeChangeYears[rawId] === changeYear)) {
+          continue;                               // 值没变 → 不算改动
+        }
+        nextOwnership[rawId] = polityId;
+        if (writeCY) nextChangeYears[rawId] = changeYear;
+        changed++;
+      }
+    }
+
+    if (!changed && !cleared) {
+      return {
+        success: true, changed: 0, cleared: 0, skippedSea, skippedMissing,
+        noop: true, affected: 0,
+      };
+    }
+
+    const apply = (ownership, changeYears, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const next = { ...cur, ownership, changeYears };
+      if (touch) next.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: next };
+    };
 
     execute({
       type: 'batch-ownership',
-      label: '批量指派',
-      undo: () => {
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: { ...scenarios.value[scenarioId], ownership: oldOwnership, changeYears: oldChangeYears },
-        };
-      },
-      redo: () => {
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            ownership: newOwnership,
-            changeYears: newChangeYears,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      },
+      label: clearing ? `批量清除归属（${cleared} 省）` : `批量指派（${changed} 省）`,
+      undo: () => apply(beforeOwnership, beforeChangeYears, false),
+      redo: () => apply(nextOwnership, nextChangeYears, true),
     });
 
     saveScenarios();
+    return {
+      success: true, changed, cleared, skippedSea, skippedMissing,
+      affected: changed + cleared, polityId: polityId || null, changeYear: writeCY ? changeYear : null,
+    };
   }
 
   // ============================================================
