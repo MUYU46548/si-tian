@@ -281,7 +281,15 @@
           <div><span class="pp-k">层级</span>{{ selectedEntity.layerLabel }}（{{ selectedEntity.layer }}）</div>
           <div class="pp-parent-row">
             <span class="pp-k">父级</span>
-            <select class="pp-parent" :value="selectedEntity.parentId || ''" @change="onParentChange($event)">
+            <!-- 父级挂靠同样是写入口（走 proj.updateEntity → undo + 落 .sitian）：只读态必须灰禁
+                 并给出去处，与行内类型下拉 / 空白过滤器同一口径（A-3；2026-10-01 摘取在线版增量）。 -->
+            <select
+              class="pp-parent"
+              :value="selectedEntity.parentId || ''"
+              :disabled="isReadOnly"
+              :title="isReadOnly ? READONLY_REASON : '更改挂靠父级（可撤销）；列表行也可直接拖动'"
+              @change="onParentChange($event)"
+            >
               <option value="">（顶层）</option>
               <option v-for="e in parentOptionsForSelected" :key="e.id" :value="e.id">{{ e.name }}（{{ e.layerLabel }}）</option>
             </select>

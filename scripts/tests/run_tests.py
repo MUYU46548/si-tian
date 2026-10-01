@@ -45,6 +45,24 @@ MOCK_DATA_DIR = os.path.join(ROOT, 'src', 'renderer', 'mock-data')
 # 例：python scripts/tests/run_tests.py --vault D:/MyVault --edge "C:/path/to/msedge.exe"
 VAULT = os.environ.get('SITIAN_VAULT', r'E:/图书馆/ROSA')
 EDGE_EXE = os.environ.get('SITIAN_EDGE_EXE', r'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+
+# 跨平台（2026-09-30，A-3 模式 B 回归时补）：非 Windows 且未显式指定浏览器时，
+# 自动探测本机可用内核 —— Edge > Chromium > Playwright 自带 chromium / headless shell。
+# Windows 路径与行为**零改动**（默认值仍走上面的 msedge.exe）。
+if os.name != 'nt' and not os.environ.get('SITIAN_EDGE_EXE'):
+    import glob as _glob
+    _pw = os.path.expanduser('~/.cache/ms-playwright')
+    _cands = [
+        '/opt/microsoft/msedge/msedge',
+        '/usr/bin/microsoft-edge-stable', '/usr/bin/microsoft-edge',
+        '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome-stable',
+    ] + sorted(_glob.glob(os.path.join(_pw, 'chromium-*', 'chrome-linux*', 'chrome')), reverse=True) \
+      + sorted(_glob.glob(os.path.join(_pw, 'chromium_headless_shell-*', '*', 'chrome-headless-shell*')), reverse=True)
+    for _c in _cands:
+        if os.path.exists(_c):
+            EDGE_EXE = _c
+            break
+    del _glob, _pw, _cands
 USE_REAL_VAULT = os.environ.get('SITIAN_TEST_REAL_VAULT') == '1'
 _args = sys.argv[1:]
 _case_names = []
@@ -469,8 +487,10 @@ def main():
 
         print('2/5 启动 Vite dev server...')
         free_port(DEV_PORT)
+        # 跨平台（2026-09-30）：Windows 沿用 cmd /c npm；posix 直跑 npm（无 cmd 壳）
+        _dev_cmd = ['cmd', '/c', 'npm', 'run', 'dev'] if os.name == 'nt' else ['npm', 'run', 'dev']
         dev = subprocess.Popen(
-            ['cmd', '/c', 'npm', 'run', 'dev'], cwd=ROOT,
+            _dev_cmd, cwd=ROOT,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         handles.append(ProcessHandle(dev, 'dev'))
         if not wait_port(DEV_PORT):
@@ -480,6 +500,9 @@ def main():
         free_port(CDP_PORT)
         edge = subprocess.Popen([
             EDGE_EXE, '--headless=new', '--disable-gpu',
+            # 跨平台（2026-09-30）：容器 /dev/shm 常只有 64MB，不开此旗标会 SIGBUS 假死
+            #（Windows 上无害，保持常开以免两套旗标漂移）
+            '--disable-dev-shm-usage',
             '--remote-debugging-port=%d' % CDP_PORT,
             '--remote-allow-origins=*',
             '--user-data-dir=%s' % os.path.join(ROOT, '.test-edge-profile'),
