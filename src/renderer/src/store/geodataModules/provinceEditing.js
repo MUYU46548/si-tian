@@ -235,6 +235,50 @@ export function createProvinceEditingModule(ctx) {
     return { grid, owned: countOwned(labels) };
   }
 
+  /**
+   * 删除省份后**就地重编号**缓存网格（2026-10-02 接活）。
+   *
+   * 为什么需要它：`removeBaseProvince`（在 scenarioEditing）只换 terrain 数组 → 形状签名失配 →
+   * 下次用网格时**整表重新栅格化**（真实库 21 省 / 25930 点实测 170~368ms 的主线程停顿），
+   * 而且用户涂过的格子会被重采样一次。这里把「自身格置 0 + 序号 > idx 的减 1」就地做完并盖上
+   * **新签名**，网格保持有效 → **省掉那次重建**。
+   *
+   * 🔴 **不 `execute`**：调用方的删除命令要把这一步包进**同一条 undo**（test_77 f2 断言
+   * 「一条 undo 把省份 + ownership + changeYears 一起还原」；这里再压一条会把它拆成两条）。
+   * 因此重编号动过的格子要交回**整表快照**（差量还原不了 —— 动的是别的省份的格）。
+   * 签名不符（这份网格本来就是别的几何派生的）→ 不硬改，交给既有的自愈重建。
+   * @returns {{snapshot:Uint8Array, cleared:number, renumbered:number}|{skipped:string}}
+   */
+  function shiftProvinceGridForDelete(key, deletedIdx) {
+    const entry = cache[key];
+    if (!entry) return { skipped: 'no-grid' };
+    // ⚠️ 必须在**调用方换掉 terrain 之前**调：签名校验比的是「当前 terrain」，
+    //    换完再调必然是 stale（首版实测 gridShifted:false、网格被白白作废）。
+    if (entry.shape !== terrainShape(key)) return { skipped: 'stale' };
+    const snapshot = new Uint8Array(entry.labels);
+    const { cleared, renumbered } = renumberAfterDelete(entry.labels, deletedIdx + 1);
+    return { snapshot, cleared, renumbered };     // 不 stamp：等调用方写好新 terrain 再由 stampProvinceGrid 盖
+  }
+
+  /** 给当前网格盖上与**当前 terrain** 相符的签名并落盘（不 execute —— 属于调用方的命令） */
+  function stampProvinceGrid(key) {
+    const entry = cache[key];
+    if (!entry) return { skipped: 'no-grid' };
+    stampShape(key);
+    commit(key);
+    return { stamped: true };
+  }
+
+  /** 撤销删除：把整表快照灌回网格（调用方要**先**把 terrain 还原，这里才会盖对签名） */
+  function restoreProvinceGrid(key, snapshot) {
+    const entry = cache[key];
+    if (!entry || !snapshot) return { skipped: 'no-grid' };
+    entry.labels.set(snapshot);
+    stampShape(key);
+    commit(key);
+    return { restored: snapshot.length };
+  }
+
   // ============================================================
   // 网格 → 多边形（写回）：渲染的唯一来源是多边形
   // ============================================================
@@ -576,6 +620,9 @@ export function createProvinceEditingModule(ctx) {
       merged: mergedProv, removed: picked.length - 1,
       method: merged.method, loops: merged.loops,
       area: merged.shape.points.length,
+      // 规模量纲一并回报：UI 才能说「超阈 N 倍」而不是含糊的"降级"（2026-10-02）
+      work: merged.work, edges: merged.edges, nodes: merged.nodes, maxWork: merged.maxWork,
+      overflow: merged.overflow, pairsTested: merged.pairsTested, crossScanSkipped: merged.crossScanSkipped,
     };
   }
 
@@ -613,6 +660,14 @@ export function createProvinceEditingModule(ctx) {
   /**
    * 删除省份（**重编号安全**）：labels 里所有 > idx 的序号减 1，并把 terrain 数组同步缩短。
    * 🔴 整表快照：重编号改动的是「别的省份的格子」，差量还原不了。
+   *
+   * ⚠️ 2026-10-02 修掉一条**撤销静默失效**：旧实现的 `apply` 闭包捕获了**当时的** `entry`
+   *    （`ensureProvinceGrid` 的返回值），而 `commit()` 读的是 `cache[key]`。删除之后再发生
+   *    重建/换底图（`cache[key]` 换成新对象）时，`entry.labels.set(...)` 写进**孤儿对象**，
+   *    `commit` 却把当前（未回灌的）标签落盘 → 撤销"看着执行了、数据没变"。
+   *    现在一律在 apply **内部**重新取 `cache[key]`（与 `rebuildProvinceGrid` 的写法一致）。
+   *    ⚠️ 产品代码**零调用**（删除走 `removeBaseProvince` + `shiftProvinceGridForDelete`），
+   *    这条只服务 test_52 与将来的批量删除入口。
    */
   function removeProvinceWithGrid(key, provinceId) {
     if (isRO()) return blocked('删除省份');
@@ -627,9 +682,10 @@ export function createProvinceEditingModule(ctx) {
     if (afterLabels) cleared = renumberAfterDelete(afterLabels, idx + 1).cleared;
 
     const apply = (terrain, labels) => {
-      if (entry && labels) { entry.labels.set(labels); }
-      setTerrain(key, terrain, { save: false });       // 内部会 stampShape
-      if (entry && labels) commit(key, { save: false });
+      const cur = cache[key];                            // ← 就地取，不认捕获的那个
+      if (cur && labels) cur.labels.set(labels);
+      setTerrain(key, terrain, { save: false });         // 内部会 stampShape
+      if (cache[key] && labels) commit(key, { save: false });
       scheduleAutoSaveScenarios();
     };
     execute({
@@ -648,7 +704,8 @@ export function createProvinceEditingModule(ctx) {
     if (!entry) return null;
     const before = new Uint8Array(entry.labels);
     const after = new Uint8Array(entry.labels.length);
-    const apply = (snap) => { entry.labels.set(snap); commit(key); };
+    // 同 removeProvinceWithGrid：apply 里重新取 cache[key]（换底图后不能写孤儿 entry）
+    const apply = (snap) => { const cur = cache[key]; if (cur) cur.labels.set(snap); commit(key); };
     execute({
       type: 'clear-province-labels',
       label: '清空省份归属',
@@ -682,6 +739,8 @@ export function createProvinceEditingModule(ctx) {
     beginProvinceStroke, applyProvinceStroke, endProvinceStroke, applyProvinceLasso,
     fillProvinceRegion, splitProvince, mergeProvinces,
     addBrushProvince, removeProvinceWithGrid, clearProvinceLabels,
+    // 删除省级联用（**不 execute**：由删除命令把这一步包进同一条 undo）
+    shiftProvinceGridForDelete, restoreProvinceGrid, stampProvinceGrid,
     provinceGridStats, provinceRingStats,
   };
 }

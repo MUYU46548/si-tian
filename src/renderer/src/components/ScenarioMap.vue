@@ -2959,10 +2959,12 @@ function handleMergeClick(world) {
     else if (res) {
       provinceBrush.invalidateBorders();
       if (res.method === 'raster') {
-        // 规模超精确并集上限 → `mergeProvinceShapes` **静默**退回 220×220 栅格并集
-        // （真实库 21 省 / 25930 点已越过该阈值）。以前只说"栅格并集"，
-        // 用户看不出这是**降级**（边界被重采样成粗轮廓）。
-        statusMsg(`已合并，但精度降级：省份规模超过精确并集上限 → 边界按栅格重采样（${res.loops} 环，比原轮廓粗）。`
+        // 规模超精确并集上限 → `mergeProvinceShapes` 退回栅格并集（真实库 21 省 / 25930 点已越线）。
+        // 2026-10-02：把**量纲**摆出来（超阈几倍 / 测了几对环）—— 只说"精度降级"用户没法判断
+        // 是数据太大还是算法太笨；超阈时相交扫描也被跳过（原本那轮 O(n²) 扫描才是卡顿主因）。
+        const times = res.maxWork ? (res.work / res.maxWork) : 0;
+        const scale = times >= 1 ? `超阈 ${times.toFixed(1)} 倍（${res.edges} 边 × ${res.nodes} 结点）` : '规模超限';
+        statusMsg(`已合并，但精度降级：${scale} → 边界按栅格重采样（${res.loops} 环，比原轮廓粗）。`
           + '不满意可 Ctrl+Z 撤回，改用「变更归属」笔刷把格子划归同一省');
       } else {
         statusMsg(`已合并（共边抵消，${res.loops} 环）`

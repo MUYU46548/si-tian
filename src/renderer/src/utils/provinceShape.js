@@ -506,7 +506,7 @@ function splitEdgesAtNodes(edges, quantum) {
  * Voronoi 顶点 → 这条路径覆盖绝大多数真实数据。
  * @returns {Array<Array<{x:number,y:number}>>} 环列表（可能多个 = 多环/飞地，也可能为空）
  */
-export function unionRingsByCancellation(rings, { quantum = 1e-6, minArea = 1e-9, maxWork = 2e7 } = {}) {
+export function unionRingsByCancellation(rings, { quantum = 1e-6, minArea = 1e-9, maxWork = 2e7, stats = null } = {}) {
   const edges = [];
   for (const r of rings || []) {
     const pts = dedupeRing((r && r.points) || r);
@@ -519,11 +519,13 @@ export function unionRingsByCancellation(rings, { quantum = 1e-6, minArea = 1e-9
       edges.push({ a, b, ka: QKEY(a.x, a.y, quantum), kb: QKEY(b.x, b.y, quantum), used: false });
     }
   }
-  if (!edges.length) return [];
+  if (!edges.length) { if (stats) Object.assign(stats, { edges: 0, nodes: 0, work: 0, maxWork, overflow: false }); return []; }
 
   const nodeCount = new Set();
   for (const e of edges) { nodeCount.add(e.ka); nodeCount.add(e.kb); }
   const work = edges.length * nodeCount.size;
+  // 把量纲交回调用方（`mergeProvinceShapes` 要把它写进返回值，UI 才能说「超阈 N 倍」而不是一句"降级"）
+  if (stats) Object.assign(stats, { edges: edges.length, nodes: nodeCount.size, work, maxWork, overflow: work > maxWork });
   if (work > maxWork) return [];                       // 规模过大 → 交给栅格兜底（调用方会看到空数组）
   const split = work > edges.length ? splitEdgesAtNodes(edges, quantum) : edges;
 
@@ -687,7 +689,8 @@ export function unionRingsByRaster(rings, { maxDim = 220 } = {}) {
 /**
  * 合并多个省份为**多环实体**（取代旧的「凸包合并」——凸包会把邻省的凹口一起吞掉，
  * 用户实测原话「丑东西」）。
- * @returns {{ shape:object, method:'cancel'|'raster', loops:number }}
+ * @returns {{ shape:object, method:'cancel'|'raster', loops:number, work:number, edges:number,
+ *            nodes:number, maxWork:number, overflow:boolean, pairsTested:number, crossScanSkipped:boolean }}
  */
 export function mergeProvinceShapes(provinces, opts = {}) {
   const list = (provinces || []).filter((p) => p && provinceRings(p).length);
@@ -697,16 +700,39 @@ export function mergeProvinceShapes(provinces, opts = {}) {
   if (rings.length === 1) {
     const only = list.find((p) => provinceRings(p).some((r) => r.points === rings[0].points)) || list[0];
     const r0 = orientedRings(only)[0];
-    return { shape: { points: r0.points, extraRings: undefined, kind: r0.kind }, method: 'cancel', loops: 1 };
+    return {
+      shape: { points: r0.points, extraRings: undefined, kind: r0.kind }, method: 'cancel', loops: 1,
+      work: 0, edges: 0, nodes: 0, maxWork: opts.maxWork || 2e7, overflow: false,
+      pairsTested: 0, crossScanSkipped: false,
+    };
   }
 
   // ① 先试精确共边抵消；若两环真的穿过 → 该结果不成立，退回栅格
-  let loops = unionRingsByCancellation(rings);
+  const cost = {};
+  let loops = unionRingsByCancellation(rings, {
+    maxWork: Number.isFinite(opts.maxWork) ? opts.maxWork : 2e7,
+    stats: cost,
+  });
   let method = 'cancel';
+
+  // ② 相交扫描（决定要不要退回栅格）。两处省钱（2026-10-02，真实库实测的真实瓶颈）：
+  //    · `work > maxWork` 时**直接跳过整轮扫描** —— 反正必走栅格，扫了也是白扫。
+  //      旧实现照扫：真实库前两大省（10525 × 10071 点）≈ 1.06e8 次内层迭代 = 合并卡顿的主因。
+  //    · 先过**包围盒**：bbox 不相交的两个环不可能真穿过，而 `ringsProperlyCross` 每次都
+  //      重新 `dedupeRing` 两个环 —— 不相邻的省对占绝大多数，这一步几乎全免。
+  const overflow = !!cost.overflow;
   let crossed = false;
-  for (let i = 0; i < rings.length && !crossed; i++) {
-    for (let j = i + 1; j < rings.length; j++) {
-      if (ringsProperlyCross(rings[i].points, rings[j].points)) { crossed = true; break; }
+  let pairsTested = 0;
+  let crossScanSkipped = overflow;
+  if (!overflow) {
+    const boxes = rings.map((r) => bboxOfRaw(r.points));
+    outer:
+    for (let i = 0; i < rings.length; i++) {
+      for (let j = i + 1; j < rings.length; j++) {
+        if (!boxesOverlapRaw(boxes[i], boxes[j])) continue;
+        pairsTested++;
+        if (ringsProperlyCross(rings[i].points, rings[j].points)) { crossed = true; break outer; }
+      }
     }
   }
   if (crossed || !loops.length) {
@@ -717,7 +743,29 @@ export function mergeProvinceShapes(provinces, opts = {}) {
 
   const baseKind = rings.every((r) => r.kind === RING_KIND_SEA) ? RING_KIND_SEA : RING_KIND_LAND;
   const shaped = loops.map((pts) => ({ points: pts, kind: baseKind }));
-  return { shape: shapePatch(shaped), method, loops: loops.length };
+  return {
+    shape: shapePatch(shaped), method, loops: loops.length,
+    work: cost.work || 0, edges: cost.edges || 0, nodes: cost.nodes || 0,
+    maxWork: cost.maxWork || 0, overflow, pairsTested, crossScanSkipped,
+    crossed,
+  };
+}
+
+function bboxOfRaw(points) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points || []) {
+    if (!p) continue;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function boxesOverlapRaw(a, b) {
+  if (!a || !b) return true;
+  return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
 }
 
 // ══════════════════════════════════════════════════════════════════════════

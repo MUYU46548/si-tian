@@ -25,7 +25,12 @@ import {
 import { measureProvinceOverlap, describeOverlap } from '../../utils/provinceOverlap';
 
 export function createScenarioEditingModule(ctx) {
-  const { execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap } = ctx;
+  const {
+    execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap,
+    // 省份网格联动的**延迟注入槽**（geodata.js 在 provinceEditing 造好之后填进来 ——
+    // 两个模块的创建顺序是 scenario 先、province 后，不能直接互相 import，否则就是循环依赖）
+    provinceGridOps,
+  } = ctx;
 
   const baseMaps = ref({});
   const scenarios = ref({});
@@ -540,34 +545,66 @@ export function createScenarioEditingModule(ctx) {
       scenarios.value = next;
     };
 
+    // 删除时的**序号**：撤销要放回原位（不是追加到表尾）。
+    //   🔴 为什么必须原位：归属标签网格的序号 = terrain 下标 + 1。网格的重编号/回灌按序号对齐，
+    //   把省份挪到表尾会让「回灌的标签」指向别的省份（几何集合虽相同，语义全错）。
+    //   顺带也让 `terrain` 顺序在 undo 后与删除前逐项一致。
+    const idx = (baseMap.terrain || []).findIndex(p => p.id === provinceId);
+    const removeTerrain = (terrain) => ({
+      ...baseMaps.value,
+      [baseMapKey]: {
+        ...baseMaps.value[baseMapKey],
+        terrain,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    const insertAt = (terrain, prov, at) => {
+      const next = terrain.slice();
+      next.splice(at < 0 ? next.length : at, 0, prov);
+      return next;
+    };
+    // 网格：删除后**就地重编号**（省掉整表重新栅格化）；撤销时把整表快照灌回去。
+    //   不 execute —— 这一步必须和上面的 terrain/级联同属**一条** undo（test_77 f2）。
+    const gridOps = provinceGridOps || {};
+    let gridSnapshot = null;
+
     execute({
       type: 'remove-province',
       label: '删除省份',
       undo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            terrain: [...baseMaps.value[baseMapKey].terrain, oldProv],
-          },
-        };
+        const cur = baseMaps.value[baseMapKey];
+        if (!cur) return;
+        baseMaps.value = removeTerrain(insertAt(cur.terrain || [], oldProv, idx));
         applyCascade('restore');
+        if (gridSnapshot && typeof gridOps.restore === 'function') {
+          try { gridOps.restore(baseMapKey, gridSnapshot); } catch (e) { /* 网格是派生数据：失败只影响性能，不阻断撤销 */ }
+        }
       },
       redo: () => {
-        baseMaps.value = {
-          ...baseMaps.value,
-          [baseMapKey]: {
-            ...baseMaps.value[baseMapKey],
-            terrain: baseMaps.value[baseMapKey].terrain.filter(p => p.id !== provinceId),
-            updatedAt: new Date().toISOString(),
-          },
-        };
+        const cur = baseMaps.value[baseMapKey];
+        if (!cur) return;
+        // ① **先**按旧 terrain 校验并重编号网格（签名此刻仍相符），② 再换 terrain，
+        //    ③ 最后盖上与新 terrain 相符的签名 —— 顺序错了就会判成 stale（白作废一次网格）。
+        if (typeof gridOps.shiftForDelete === 'function') {
+          try {
+            const g = gridOps.shiftForDelete(baseMapKey, idx);
+            gridSnapshot = (g && g.snapshot) ? g.snapshot : null;
+          } catch (e) { gridSnapshot = null; }
+        }
+        baseMaps.value = removeTerrain((cur.terrain || []).filter(p => p.id !== provinceId));
         applyCascade('remove');
+        if (gridSnapshot && typeof gridOps.stamp === 'function') {
+          try { gridOps.stamp(baseMapKey); } catch (e) { /* 网格是派生数据：失败只影响性能 */ }
+        }
       },
     });
-    
+
     saveScenarios();
-    return { success: true, cascadedScenarios: Object.keys(cascadeBefore).length };
+    return {
+      success: true,
+      cascadedScenarios: Object.keys(cascadeBefore).length,
+      gridShifted: !!gridSnapshot,
+    };
   }
 
   function splitBaseProvince(baseMapKey, originalId, poly1, poly2) {

@@ -401,6 +401,56 @@ async function main() {
     return '3 / 16 / cap 生效';
   });
 
+  // ── 9b. 合并的规模量纲与两处省钱（2026-10-02）─────────────────────────────
+  check('合并回报规模量纲：work / edges / nodes / maxWork / overflow（UI 才能说「超阈 N 倍」）', () => {
+    const a = { id: 'a', points: sq(0, 0, 100, 100) };
+    const b = { id: 'b', points: sq(100, 0, 100, 100) };
+    const m = mergeProvinceShapes([a, b]);
+    assert(m.method === 'cancel', `小规模应走精确并集：${m.method}`);
+    assert(m.overflow === false, '小规模不该标 overflow');
+    assert(m.edges === 8, `边数应为 8（两环各 4 边）：${m.edges}`);
+    assert(m.nodes === 6, `结点数应为 6（共边共享两端点）：${m.nodes}`);
+    assert(m.work === 48, `work = edges × nodes = 48：${m.work}`);
+    assert(m.maxWork === 2e7, `默认阈值 2e7：${m.maxWork}`);
+    return `${m.edges} 边 × ${m.nodes} 结点 = ${m.work}（阈值 ${m.maxWork}）`;
+  });
+
+  check('合并：包围盒不相交的环对**不进**昂贵扫描（pairsTested 可观测）', () => {
+    const far1 = { id: 'f1', points: sq(0, 0, 10, 10) };
+    const far2 = { id: 'f2', points: sq(1000, 1000, 10, 10) };
+    const m = mergeProvinceShapes([far1, far2]);
+    assert(m, '合并应成功');
+    assert(m.pairsTested === 0, `bbox 不相交 → 一对都不该测（实际 ${m.pairsTested}）`);
+    // 对照：真正相邻（bbox 相交）的环对必须被测到
+    const near1 = { id: 'n1', points: sq(0, 0, 100, 100) };
+    const near2 = { id: 'n2', points: sq(50, 50, 100, 100) };
+    const m2 = mergeProvinceShapes([near1, near2]);
+    assert(m2.pairsTested === 1, `bbox 相交 → 应测 1 对（实际 ${m2.pairsTested}）`);
+    return '远离 0 对 / 相邻 1 对';
+  });
+
+  check('合并：规模超阈时**跳过整轮相交扫描**（旧实现照扫 = 真实库卡顿主因）', () => {
+    // 两个大环：每个 6002 边 → work ≈ 12004 × 12004 ≫ 阈值
+    const ring = (x0) => {
+      const pts = [];
+      for (let k = 0; k <= 3000; k++) pts.push({ x: x0 + Math.sin(k / 40) * 200, y: k });
+      for (let k = 3000; k >= 0; k--) pts.push({ x: x0 + 300 + Math.sin(k / 40) * 200, y: k });
+      return pts;
+    };
+    const big1 = { id: 'big1', points: ring(0) };
+    const big2 = { id: 'big2', points: ring(150) };
+    const t0 = Date.now();
+    const m = mergeProvinceShapes([big1, big2], { maxWork: 1e6 });   // 阈值调小，缩短用例耗时
+    const dt = Date.now() - t0;
+    assert(m, '超阈也要给出结果（栅格兜底）');
+    assert(m.overflow === true, `应标 overflow：work=${m.work} / maxWork=${m.maxWork}`);
+    assert(m.crossScanSkipped === true, '超阈时必须跳过相交扫描');
+    assert(m.pairsTested === 0, `跳过了就不该有被测对（实际 ${m.pairsTested}）`);
+    assert(m.method === 'raster', `超阈应走栅格：${m.method}`);
+    assert(dt < 4000, `耗时 ${dt}ms，应可控`);
+    return `work=${m.work} ≫ ${m.maxWork} → 跳过扫描，栅格 ${m.loops} 环，${dt}ms`;
+  });
+
   // ── 9. 性能（真实库规模）────────────────────────────────────────────────
   check('性能：21 省 × ~1200 点并集（共边抵消）< 400ms', () => {
     // 造一条 21 段的网格状邻接省份带（共边全部精确重合）

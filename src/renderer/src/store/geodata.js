@@ -92,13 +92,23 @@ export const useGeodataStore = defineStore('geodata', () => {
   // ===== 领域子模块组装 =====
   // 各模块通过 ctx 拿到所需的 refs/函数引用（ref 传引用保持响应式）
   // 注意：scenarioEditingModule 必须在 searchModule 之前创建（search 需要引用 scenarios）
-  const scenarioEditingModule = createScenarioEditingModule({ execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap });
+  // 删除省份要顺带**就地重编号**网格（省掉整表重新栅格化的主线程停顿），但网格属于
+  // provinceEditing —— 它在这之后才创建。用一个**延迟注入的槽**接上：槽对象先给 scenarioEditing，
+  // 造好 provinceEditing 后再填函数（不做模块间 import，避免循环依赖）。
+  const provinceGridOps = {};
+  const scenarioEditingModule = createScenarioEditingModule({
+    execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap,
+    provinceGridOps,
+  });
   // Phase 3：省份「归属标签网格」（笔刷/套索/自动省界）。省份定义表就是 baseMaps[key].terrain，
   // 所以这里只借用 scenarioEditing 的 baseMaps ref，不另建第二套表。
   const provinceEditingModule = createProvinceEditingModule({
     execute, baseMaps: scenarioEditingModule.baseMaps, scheduleAutoSaveScenarios,
     guardWrite, isReadOnly: gateIsReadOnly,
   });
+  provinceGridOps.shiftForDelete = provinceEditingModule.shiftProvinceGridForDelete;
+  provinceGridOps.restore = provinceEditingModule.restoreProvinceGrid;
+  provinceGridOps.stamp = provinceEditingModule.stampProvinceGrid;
   const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });
