@@ -2272,8 +2272,14 @@ function onMouseUp(event) {
     provLassoPoints.value = [];
     const res = store.applyProvinceLasso(baseMapKey.value, poly, provBrushTarget.value);
     provinceBrush.invalidateBorders();
-    if (res && res.changed) statusMsg(`自由轮廓：圈入 ${res.changed} 格 → 整批划归（一笔成形，没有描点）`);
-    else statusMsg('自由轮廓：圈内没有格子（或已全部属于该省份）');
+    // 拒绝分支必须排在「changed」之前 —— 与点击填充同一条协议（{rejected, message}）
+    if (res && res.blocked) statusMsg(res.message);
+    else if (res && res.rejected) statusMsg(res.message || '自由轮廓被拒绝');
+    else if (res && res.changed) {
+      const simp = res.simplified && res.simplified.to < res.simplified.from
+        ? `（轨迹 ${res.simplified.from} → ${res.simplified.to} 点）` : '';
+      statusMsg(`自由轮廓：圈入 ${res.inside} 格 / 实际划归 ${res.changed} 格${simp} → 整批划归（一笔成形，没有描点）`);
+    } else statusMsg('自由轮廓：圈内没有格子（或已全部属于该省份）');
     render();
   }
   if (isPanning) {
@@ -2691,9 +2697,11 @@ function finishDraw() {
   const count = baseMap.value?.terrain?.length || 0;
   const name = `新省份 ${count + 1}`;
   const prov = { id, name, kind: 'land', color: nextProvinceColor(count), points };
-  store.addBaseProvince(baseMapKey.value, prov);
-  focusNewProvince(id, prov);
+  // 描点路径同样走压叠闸门（两条建省路径必须同一套判定 —— 只守一条 = 另一条照样压上去）
+  const created = addProvinceWithOverlapGate(prov);
   drawPoints.value = [];
+  if (!created) { render(); return; }
+  focusNewProvince(id, prov);
   render();
 }
 
@@ -2747,13 +2755,43 @@ function commitFreeTrace(pts, shiftKey) {
     color: nextProvinceColor(count),
     points: withBezierControls(conformed.map(q => ({ x: q.x, y: q.y }))),
   };
-  store.addBaseProvince(baseMapKey.value, prov);
+  if (!addProvinceWithOverlapGate(prov)) return true;
   provinceBrush.invalidateBorders();
   focusNewProvince(id, prov);          // 建完即选中 + 名字框待改（P1）
   statusMsg(`已建「${name}」：轨迹 ${pts.length} 点 → 简化 ${simplified.length} 点`
     + (shiftKey ? '（Shift：未吸附骨架）' : `（贴骨架后 ${conformed.length} 点）`)
     + ' —— 右侧可改名，一次绘制 = 1 条撤销');
   return true;
+}
+
+/**
+ * 新建省份的**统一落库口**（含压叠闸门）—— 描点 / 自由绘制两条路径共用。
+ *
+ * 判定在 store（`addBaseProvince` → `utils/provinceOverlap.js`，单源），这里只负责**问人**：
+ *   被拦 → 把「压了多少、压在谁身上」摆出来 → 用户确认才带 `allowOverlap` 重试。
+ * 为什么是「问」而不是「硬拒」：确实会有人照着一张更大的范围重画，硬拒会让他无路可走；
+ * 但**默默压上去**更坏 —— 压叠会让点选、归属上色、势力标签三处互相打架。
+ * @returns {object|null} null = 没建成（被拦且用户放弃 / 其它拒绝）
+ */
+function addProvinceWithOverlapGate(prov) {
+  const r = store.addBaseProvince(baseMapKey.value, prov);
+  if (r && r.rejected === 'overlap') {
+    const pct = Math.round((r.ratio || 0) * 100);
+    const names = (r.offenders || []).slice(0, 3).map(o => o.name).join('、');
+    if (!confirm(`${r.message}\n\n压叠 ${pct}%${names ? `（${names}）` : ''}。仍要在这里创建吗？\n`
+      + '（创建后可用顶点编辑调整，或用橡皮删除）')) {
+      statusMsg(`已取消创建：「${prov.name}」压在已有省份上（${pct}%）`);
+      return null;
+    }
+    const r2 = store.addBaseProvince(baseMapKey.value, prov, { allowOverlap: true });
+    statusMsg(`已按确认创建「${prov.name}」——与已有省份压叠 ${pct}%，记得稍后调整`);
+    return r2;
+  }
+  if (r && r.success === false) {
+    statusMsg(`新建省份失败：${r.message || r.rejected || '未知原因'}`);
+    return null;
+  }
+  return r;
 }
 
 function finishRiverDraft() {
@@ -2860,7 +2898,12 @@ function ctxChangeBiome() {
 function ctxDuplicateProvince() {
   if (!selectedProvince.value) return;
   const prov = selectedProvince.value;
-  const offset = px(20);
+  // 偏移量取「包围盒 span 的 5%，但不小于 20 屏幕像素」——旧实现固定 `px(20)`：
+  // 该省的边界在屏幕上只有几个像素的位移，副本几乎**完全压在原省身上**（看不见、点不到、
+  // 又要过压叠闸门），"复制省份"等于没复制。现在至少挪开可见的一段。
+  const bb = provinceBBox(prov);
+  const span = bb ? Math.max(bb.maxX - bb.minX, bb.maxY - bb.minY) : 0;
+  const offset = Math.max(px(20), span * 0.05);
   // 🔴 `fromGrid` 必须跟着走：丢了它，渲染端会认为这是"手绘环"→ **不做 Chaikin 平滑**
   //    （手绘/贝塞尔环故意不平滑），于是"复制一个网格派生的省"得到一个马赛克台阶省。
   const rings = provinceRings(prov).map((r) => ({
@@ -2869,10 +2912,14 @@ function ctxDuplicateProvince() {
     points: r.points.map(q => ({ x: vx(q) + offset, y: vy(q) + offset })),
   }));
   const id = `prov_${Date.now()}`;
-  store.addBaseProvince(baseMapKey.value, {
+  // 复制是**明确的用户动作**（本来就要一个副本），且已挪开可见距离 → 不再过压叠闸门
+  const r = store.addBaseProvince(baseMapKey.value, {
     id, name: prov.name + ' 副本', ...shapePatch(rings),
     biome: prov.biome, culture: prov.culture,
-  });
+  }, { allowOverlap: true });
+  statusMsg(r && r.success === false
+    ? `复制省份失败：${r.message || r.rejected}`
+    : `已复制「${prov.name}」→「${prov.name} 副本」（偏移 ${Math.round(offset)} 世界单位，可 Ctrl+Z 撤回）`);
   render();
   contextMenu.value.show = false;
 }
@@ -2953,10 +3000,20 @@ function onProvinceCoastChange(e) {
 // ═══════════════════════════════════════════
 // 几何工具
 // ═══════════════════════════════════════════
+/**
+ * 命中测试：**自顶向下**（数组末尾 = 画得最上面）。
+ *
+ * 🔴 2026-10-02 修正：此前是正序遍历「第一个命中就返回」，而 `drawProvinces` 是正序 fill
+ * （数组靠后的盖在上面）→ 两个省压叠时点中的是**视觉上被压在下面**的那个（越叠越明显）。
+ * 两者口径必须相反才自洽：画 = 后面的在上，命中 = 从后面往前找。
+ * 新省创建侧另有压叠闸门（`utils/provinceOverlap.js`），这条是「已经压叠了也要点得准」。
+ */
 function findProvinceAt(x, y) {
   const terrain = baseMap.value?.terrain;
   if (!terrain) return null;
-  for (const prov of terrain) {
+  for (let i = terrain.length - 1; i >= 0; i--) {
+    const prov = terrain[i];
+    if (!prov) continue;
     if (!provinceRings(prov).length) continue;
     // 多环 / 带洞口径统一走纯函数层（evenodd）：洞真的点不中、飞地真的点得中
     if (pointInProvince(x, y, prov)) return prov;

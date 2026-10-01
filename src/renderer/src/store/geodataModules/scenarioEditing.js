@@ -21,6 +21,8 @@ import {
 import {
   scheduleDerive, isWorkerAvailable, getAsyncThreshold, getDeriveStats,
 } from '../../utils/deriveClient';
+// 新建省份的压叠度量（纯函数，Node 有单测）—— 判定单源，store 只做策略
+import { measureProvinceOverlap, describeOverlap } from '../../utils/provinceOverlap';
 
 export function createScenarioEditingModule(ctx) {
   const { execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap } = ctx;
@@ -377,10 +379,26 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
-  function addBaseProvince(baseMapKey, province) {
+  /**
+   * 新建省份。
+   *
+   * 🔴 **压叠闸门（2026-10-02）**：省份之间没有任何排他约束，画一个压住邻居的新省完全合法，
+   *    而画布按 terrain 数组序依次 fill → 数组靠后的盖在上面。后果是三重的：命中口径与
+   *    视觉不一致（「点中的是被压在下面的那个」，命中侧另修 `findProvinceAt` 自顶向下）、
+   *    归属上色看不出谁是谁、势力标签的面积加权质心被拽到别人的地界里。
+   *
+   * 判定在纯函数层 `utils/provinceOverlap.js`（Node 可测），这里只做**策略**：
+   *   · 默认度量，超过阈值 → 返回 `{success:false, rejected:'overlap', …}` 且**零副作用**
+   *     （与点击填充的面积闸门同一协议：`{rejected, message}` + 不动数据）；
+   *   · 用户确认后由调用方带 `{ allowOverlap: true }` 重试（UI 负责弹确认）；
+   *   · 批量/程序化路径（导入、复制省份、`addBrushProvince`）显式 `{ checkOverlap: false }`。
+   *
+   * @returns {{success:true,id:string,overlap?:object}|{success:false,rejected:string,message:string}}
+   */
+  function addBaseProvince(baseMapKey, province, opts = {}) {
     const baseMap = baseMaps.value[baseMapKey];
-    if (!baseMap) return;
-    
+    if (!baseMap) return { success: false, rejected: 'no-basemap', message: '底图不存在' };
+
     const newProv = {
       id: province.id || `prov_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: province.name || 'New Province',
@@ -391,7 +409,26 @@ export function createScenarioEditingModule(ctx) {
       coast: province.coast ?? true,
       ...province,
     };
-    
+
+    let overlap = null;
+    if (opts.checkOverlap !== false && !opts.allowOverlap) {
+      try {
+        overlap = measureProvinceOverlap(newProv, baseMap.terrain || [], {
+          ratio: opts.overlapShare,
+          skipId: newProv.id,
+        });
+      } catch (e) {
+        overlap = null;              // 度量失败绝不能挡住建省（宁可不判也不误拒）
+      }
+      if (overlap && overlap.blocked) {
+        return {
+          success: false, rejected: 'overlap', overlap,
+          ratio: overlap.ratio, offenders: overlap.offenders,
+          message: describeOverlap(overlap),
+        };
+      }
+    }
+
     execute({
       type: 'add-province',
       label: '绘制省份',
@@ -415,8 +452,9 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
-    
+
     saveScenarios();
+    return { success: true, id: newProv.id, overlap: overlap && overlap.total ? overlap : null };
   }
 
   function updateBaseProvince(baseMapKey, provinceId, updates) {

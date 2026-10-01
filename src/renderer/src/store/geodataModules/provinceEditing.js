@@ -34,18 +34,29 @@
 
 import {
   gridFromProvinces, rasterizeProvinces, serializeLabels, normalizeStoredGrid,
-  stampBrush, lassoCells, renumberAfterDelete, countOwned, usedIndices, cellAt, gridCellCount,
+  stampBrush, lassoCells, lassoInsideCount, renumberAfterDelete, countOwned, usedIndices, cellAt, gridCellCount,
 } from '../../utils/provinceGrid';
 import {
   shapeSignature, ringsFromLabels, shapePatch, floodRegion, cellsArea,
   normalizeProvince, splitProvinceShape, mergeProvinceShapes, provinceRings,
 } from '../../utils/provinceShape';
+// 套索采样点简化：鼠标 mousemove 每动一次落一点（去重阈值 1e-6 世界单位 ≈ 必落）
+// → 长按拖一大圈会有上千点，而 lassoCells 是 O(bbox 格 × 顶点数) → 不简化会卡住主线程。
+// 复用区域勾轮廓那条管线里的同一个实现（旋转到最远点做锚点的闭环保形简化）。
+import { simplifyClosedTrace } from '../../utils/regionTrace';
 import { toRaw } from 'vue';
 
 /** 点击填充的规模上限（格）。超过即视为「整块陆地 / 海洋」→ 拒绝，让人改用笔刷。 */
 export const MAX_FILL_CELLS = 60000;
 /** 点击填充的面积闸门：命中区域超过网格总格数的这个比例 → 拒绝 */
 export const FILL_AREA_SHARE = 0.25;
+/**
+ * 自由轮廓（套索）的面积闸门与格数上限（2026-10-02）。
+ * 套索是**刻意画**出来的，所以阈值比「点一下」宽松（允许圈半个图）；但「一口吞掉全图」
+ * 几乎总是误操作（想整块陆地/海洋），而且一次写几万格 + 全网格重投影会明显卡顿。
+ */
+export const LASSO_AREA_SHARE = 0.5;
+export const MAX_LASSO_CELLS = 60000;
 
 export function createProvinceEditingModule(ctx) {
   const { execute, baseMaps, scheduleAutoSaveScenarios } = ctx;
@@ -331,13 +342,58 @@ export function createProvinceEditingModule(ctx) {
     return { changed: entries.length, label, reprojected };
   }
 
-  /** 自由轮廓：一笔整批划归（同样写回多边形） */
-  function applyProvinceLasso(key, worldPoly, target, label = '自由轮廓划归') {
+  /**
+   * 自由轮廓：一笔整批划归（同样写回多边形）。
+   *
+   * 🔴 三条闸门（2026-10-02）—— 此前这里是三类工具里**唯一裸奔**的一条：
+   *   ① **目标合法性**：`target = 0`（上方省份下拉没选）会把圈内整片格子**静默擦成无主**
+   *      （`stampBrush` / `fillProvinceRegion` 都有这条校验，套索漏了）；
+   *   ② **采样点简化**：`mousemove` 每次落一点，圈一大片会有上千点 → O(格 × 顶点) 卡主线程；
+   *   ③ **圈入量闸门**：与点击填充同一协议（`{rejected, message}` + **零副作用**），但阈值宽松
+   *      （套索是刻意画的）：圈入 > 全图 `LASSO_AREA_SHARE`（一半）或 > `MAX_LASSO_CELLS` 格 → 拒。
+   *      ⚠️ 判定用 `lassoInsideCount`（几何圈入量），**不能**用 `lassoCells().length` 当分子 ——
+   *      后者跳过「本来就属于 target」的格，「把整张图圈给占着大半张图的省」会得到很小的差量。
+   */
+  function applyProvinceLasso(key, worldPoly, target, label = '自由轮廓划归', opts = {}) {
     if (isRO()) return blocked('自由轮廓划归');
+    const maxShare = opts.maxShare ?? LASSO_AREA_SHARE;
+    const maxCells = opts.maxCells ?? MAX_LASSO_CELLS;
+    const provs = provincesOf(key);
+    if (!(target >= 1 && target <= provs.length)) {
+      return { changed: 0, rejected: 'no-target', message: '请先在上方选择要划归到的省份' };
+    }
+    const raw = (worldPoly || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
+    if (raw.length < 3) {
+      return { changed: 0, rejected: 'too-few-points', message: '轮廓至少要有 3 个点（贴着地面拖一圈再松手）' };
+    }
+    const poly = simplifyClosedTrace(raw);
     const entry = ensureProvinceGrid(key);
     if (!entry) return null;
-    const changed = lassoCells(entry.labels, entry.grid, worldPoly, target);
-    if (!changed.length) return { changed: 0, label, reprojected: 0 };
+
+    // 圈入量闸门（在**改任何格之前**判：拒绝必须零副作用）
+    const total = gridCellCount(entry.grid);
+    const { inside } = lassoInsideCount(entry.labels, entry.grid, poly);
+    if (!inside) return { changed: 0, label, reprojected: 0, inside: 0, simplified: { from: raw.length, to: poly.length } };
+    const share = total ? inside / total : 0;
+    if (inside > maxCells) {
+      return {
+        changed: 0, rejected: 'too-big', inside, share,
+        message: `圈入的格子超过 ${maxCells}（约 ${Math.round(share * 100)}% 的全图）`
+          + '——多半是整块陆地或海洋，请改用「变更归属」笔刷分次涂',
+      };
+    }
+    if (share > maxShare) {
+      return {
+        changed: 0, rejected: 'area-gate', inside, share,
+        message: `这一次圈住了全图 ${Math.round(share * 100)}%（超过 ${Math.round(maxShare * 100)}%）`
+          + '——多半是圈歪了或想整块陆地，请改小轮廓，或用「变更归属」笔刷分次涂',
+      };
+    }
+
+    const changed = lassoCells(entry.labels, entry.grid, poly, target);
+    if (!changed.length) {
+      return { changed: 0, label, reprojected: 0, inside, simplified: { from: raw.length, to: poly.length } };
+    }
     const labels = entry.labels;
     const entries = changed.map(([i, old]) => [i, old, labels[i]]);
     const touched = new Set();
@@ -356,7 +412,11 @@ export function createProvinceEditingModule(ctx) {
       undo: () => apply(1, beforeTerrain),
       redo: () => apply(2, nextTerrain),
     });
-    return { changed: entries.length, label, reprojected: nextTerrain === beforeTerrain ? 0 : touched.size };
+    return {
+      changed: entries.length, label, inside, share,
+      simplified: { from: raw.length, to: poly.length },
+      reprojected: nextTerrain === beforeTerrain ? 0 : touched.size,
+    };
   }
 
   /**

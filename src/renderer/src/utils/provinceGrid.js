@@ -230,6 +230,34 @@ export function lassoCells(labels, grid, worldPoly, target = 0) {
 }
 
 /**
+ * 套索圈内**总格数**（只读，不改 labels）—— 面积闸门的分母/分子。
+ *
+ * 为什么不能拿 `lassoCells().length` 当「圈了多大」：它跳过 `labels[i] === target` 的格，
+ * 于是「把整张图圈给本来就占着大半张图的那个省」会得到一个很小的差量 → 闸门形同虚设。
+ * 判定必须用**几何圈入量**，与「改了哪些格」分开。
+ * @returns {{inside:number, bboxCells:number}}
+ */
+export function lassoInsideCount(labels, grid, worldPoly) {
+  const pts = (worldPoly || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
+  if (pts.length < 3) return { inside: 0, bboxCells: 0 };
+  const { cols, rows, cell, ox, oy } = grid;
+  const bb = bboxOf(pts);
+  const c0 = Math.max(0, Math.floor((bb.minX - ox) / cell));
+  const c1 = Math.min(cols - 1, Math.floor((bb.maxX - ox) / cell));
+  const r0 = Math.max(0, Math.floor((bb.minY - oy) / cell));
+  const r1 = Math.min(rows - 1, Math.floor((bb.maxY - oy) / cell));
+  let inside = 0;
+  let bboxCells = 0;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      bboxCells++;
+      if (pointInPolygon(ox + (c + 0.5) * cell, oy + (r + 0.5) * cell, pts)) inside++;
+    }
+  }
+  return { inside, bboxCells };
+}
+
+/**
  * 删除某省份后的重编号（**就地**改 labels），两步缺一不可：
  *   ① 被删省份**自己的格置无主**（0）—— 否则它们会「继承」给顶替它序号的那个省份，
  *      等于把地盘白送给邻居（原型实测：漏这步时删完省份地图上那块地还在，只是换了主人）；
