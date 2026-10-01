@@ -70,33 +70,61 @@
       <!-- Tab 2：易主年份 -->
       <div v-else class="slp-body">
         <p class="slp-note">
-          未显式指定时，易主年份按「本剧本内均匀铺开」推算。在时间轴上任一年份用油漆桶上色，
-          也会自动写入该年的显式值。清空即回到推算。
+          未显式指定时，易主年份按「本剧本内均匀铺开」推算（<b>合成值</b>，不是史料）。
+          在时间轴上任一年份用油漆桶上色，也会自动写入该年的显式值。清空即回到推算。
         </p>
         <div v-if="!yearRows.length" class="slp-empty">当前剧本没有谱系变化省份。</div>
-        <table v-else class="slp-table">
-          <thead>
-            <tr><th>省份</th><th>旧主</th><th>新主</th><th>易主年份</th><th></th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in yearRows" :key="r.pid" :class="{ 'is-explicit': r.explicit }">
-              <td>{{ r.name }}</td>
-              <td><span class="slp-dot" :style="{ background: r.oldColor }"></span>{{ r.oldName }}</td>
-              <td><span class="slp-dot" :style="{ background: r.newColor }"></span>{{ r.newName }}</td>
-              <td>
-                <input class="slp-input" type="number" :value="r.year"
-                       :data-testid="`slp-cy-${r.pid}`"
-                       @change="onYearChange(r, $event.target.value)" />
-              </td>
-              <td>
-                <button v-if="r.explicit" class="slp-mini" title="清除显式值，回到自动推算"
-                        :data-testid="`slp-cyclear-${r.pid}`"
-                        @click="emit('set-change-year', { scenarioId: r.scenarioId, provinceId: r.pid, year: null })">自动</button>
-                <span v-else class="slp-auto">自动</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <template v-else>
+          <!-- 录入进度 + 批量操作（2026-10-02）：逐个改是 N 条 undo，且「这一代都定在某年」要写 N 遍 -->
+          <div class="slp-bulk">
+            <span class="slp-stat" data-testid="slp-cy-stat">
+              本剧本 <b>{{ yearRows.length }}</b> 省易主：显式
+              <b :class="{ warn: explicitCount === 0 }">{{ explicitCount }}</b> / 自动推算
+              <b :class="{ warn: yearRows.length - explicitCount > 0 }">{{ yearRows.length - explicitCount }}</b>
+              <span class="slp-range">（区间 {{ eraRange.start }} ~ {{ eraRange.end }}）</span>
+            </span>
+            <span class="slp-spacer"></span>
+            <span class="slp-bulklabel">批量：</span>
+            <input class="slp-input" type="number" v-model="bulkYear"
+                   :placeholder="String(eraRange.start)" data-testid="slp-cy-bulk-input" />
+            <button class="slp-mini" data-testid="slp-cy-bulk-set"
+                    :disabled="!bulkYearValid"
+                    :title="bulkYearValid ? `把本剧本全部 ${yearRows.length} 个变化省的易主年份设为该值（一条 undo）` : bulkInvalidReason"
+                    @click="applyBulkSet">统一设为该年</button>
+            <button class="slp-mini" data-testid="slp-cy-bulk-snap"
+                    title="把当前自动推算的年份固化成显式值（之后可逐个微调；一条 undo）"
+                    @click="applyBulkSnap">固化推算值</button>
+            <button class="slp-mini" data-testid="slp-cy-bulk-clear"
+                    :disabled="!explicitCount"
+                    title="清空本剧本全部显式年份，回到自动推算（一条 undo）"
+                    @click="applyBulkClear">全部清空</button>
+          </div>
+          <table class="slp-table">
+            <thead>
+              <tr><th>省份</th><th>旧主</th><th>新主</th><th>易主年份</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in yearRows" :key="r.pid" :class="{ 'is-explicit': r.explicit }">
+                <td>{{ r.name }}</td>
+                <td><span class="slp-dot" :style="{ background: r.oldColor }"></span>{{ r.oldName }}</td>
+                <td><span class="slp-dot" :style="{ background: r.newColor }"></span>{{ r.newName }}</td>
+                <td>
+                  <input class="slp-input" type="number" :value="r.year"
+                         :class="{ bad: !!r.warn }" :title="r.warn || ''"
+                         :data-testid="`slp-cy-${r.pid}`"
+                         @change="onYearChange(r, $event)" />
+                  <span v-if="r.warn" class="slp-bad" :data-testid="`slp-cywarn-${r.pid}`">{{ r.warn }}</span>
+                </td>
+                <td>
+                  <button v-if="r.explicit" class="slp-mini" title="清除显式值，回到自动推算"
+                          :data-testid="`slp-cyclear-${r.pid}`"
+                          @click="emit('set-change-year', { scenarioId: r.scenarioId, provinceId: r.pid, year: null })">自动</button>
+                  <span v-else class="slp-auto">自动</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
       </div>
 
       <div class="slp-foot">
@@ -114,6 +142,8 @@
 import { ref, computed } from 'vue';
 import Icon from './Icon.vue';
 import { groupMap } from '../utils/scenarioTimeline';
+// 易主年份的合法性判定 / 体检**唯一实现**（与导出链、与用例共用一份；组件里不许再写一套区间比较）
+import { validateChangeYear, changeDateStats } from '../utils/scenarioSlices';
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -123,9 +153,10 @@ const props = defineProps({
   provinceNames: { type: Object, default: () => ({}) },
 });
 
-const emit = defineEmits(['close', 'set-polity-lineage', 'set-change-year']);
+const emit = defineEmits(['close', 'set-polity-lineage', 'set-change-year', 'set-change-years-bulk', 'reject']);
 
 const tab = ref('lineage');
+const bulkYear = ref('');
 
 const eraList = computed(() => props.timeline.scenarios.map((_, k) => k));
 
@@ -179,6 +210,7 @@ const yearRows = computed(() => {
     const find = (sc, id) => (sc.polities || []).find((p) => p.id === id);
     ctx.old = find(prev, oldPol);
     ctx.new = find(s, newPol);
+    const check = validateChangeYear(tl, k, e.year[pid]);
     return {
       pid,
       scenarioId: s.id,
@@ -189,18 +221,71 @@ const yearRows = computed(() => {
       newColor: ctx.new?.color || '#4a5568',
       year: e.year[pid],
       explicit: !!e.explicit[pid],
+      // 只有「显式录入且越界」才提示 —— 合成值必然落在区间内，不必刷屏
+      warn: (!check.ok && e.explicit[pid]) ? check.reason : '',
     };
   }).sort((a, b) => a.year - b.year || a.name.localeCompare(b.name));
 });
 
-function onYearChange(r, v) {
-  const n = Number(v);
+const explicitCount = computed(() => yearRows.value.filter((r) => r.explicit).length);
+
+const eraRange = computed(() => {
+  const y = props.timeline.years?.[props.currentEra] || { start: 0, end: 0 };
+  return y;
+});
+
+const bulkYearValid = computed(() => validateChangeYear(props.timeline, props.currentEra, bulkYear.value).ok);
+const bulkInvalidReason = computed(() => {
+  const v = validateChangeYear(props.timeline, props.currentEra, bulkYear.value);
+  return v.ok ? '' : (v.reason || '年份不合法');
+});
+
+function applyBulkSet() {
+  if (!bulkYearValid.value || !yearRows.value.length) return;
+  const y = Number(bulkYear.value);
+  const patch = {};
+  for (const r of yearRows.value) patch[r.pid] = y;
+  emit('set-change-years-bulk', { scenarioId: yearRows.value[0].scenarioId, patch, what: '统一设为该年' });
+}
+
+/** 固化推算值：把当前**生效**的年份（含合成值）写成显式，之后可逐个微调 */
+function applyBulkSnap() {
+  if (!yearRows.value.length) return;
+  const patch = {};
+  for (const r of yearRows.value) patch[r.pid] = r.year;
+  emit('set-change-years-bulk', { scenarioId: yearRows.value[0].scenarioId, patch, what: '固化推算值' });
+}
+
+/** 清空：全部回到自动推算（只对有显式值的省发出，避免空转 undo） */
+function applyBulkClear() {
+  const rows = yearRows.value.filter((r) => r.explicit);
+  if (!rows.length) return;
+  const patch = {};
+  for (const r of rows) patch[r.pid] = null;
+  emit('set-change-years-bulk', { scenarioId: rows[0].scenarioId, patch, what: '全部清空' });
+}
+
+function onYearChange(r, ev) {
+  const raw = ev && ev.target ? ev.target.value : ev;
+  const n = Number(raw);
+  // 🔴 校验在**发出去之前**：越界年份不写库（写进去就是越界数据，切片会照它出帧）。
+  //    拒绝时把输入框**退回显示库里那个值** —— 只拦不还原的话，框里留着用户输的脏值，
+  //    看上去像"已经改成了 1999"（实际没写），是比直接报错更坏的一种静默。
+  const check = validateChangeYear(props.timeline, props.currentEra, n);
+  if (!check.ok) {
+    if (ev && ev.target) ev.target.value = String(r.year);
+    emit('reject', { what: `「${r.name}」的易主年份`, reason: check.reason || '年份不合法' });
+    return;
+  }
   emit('set-change-year', {
     scenarioId: r.scenarioId,
     provinceId: r.pid,
     year: Number.isFinite(n) ? n : null,
   });
 }
+
+/** 面板自用的体检（供 Tab 头部/调试：显式 vs 合成）；与导出对话框同一份实现 */
+const dates = computed(() => changeDateStats(props.timeline));
 </script>
 
 <style scoped>
@@ -252,6 +337,20 @@ function onYearChange(r, v) {
 .slp-body { overflow-y: auto; padding: 10px 14px; flex: 1; }
 .slp-note { margin: 0 0 10px; font-size: 11px; color: #94a3b8; line-height: 1.6; }
 .slp-empty { padding: 24px; text-align: center; color: #64748b; }
+
+/* 日期录入进度 + 批量条（2026-10-02） */
+.slp-bulk {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 8px; margin-bottom: 8px; border-radius: 6px;
+  background: #16233a; border: 1px solid #1e293b; font-size: 11px;
+}
+.slp-stat { color: #94a3b8; }
+.slp-stat b { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.slp-stat b.warn { color: #fcd34d; }
+.slp-range { color: #64748b; }
+.slp-bulklabel { color: #64748b; }
+.slp-bad { display: inline-block; margin-left: 6px; color: #fcd34d; font-size: 10px; }
+.slp-input.bad { border-color: #b45309; }
 
 .slp-era { margin-bottom: 16px; }
 .slp-era-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }

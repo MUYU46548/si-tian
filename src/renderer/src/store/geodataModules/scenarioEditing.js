@@ -823,7 +823,11 @@ export function createScenarioEditingModule(ctx) {
   function inheritScenario(newScenarioId, baseScenarioId, overrides = {}) {
     const base = scenarios.value[baseScenarioId];
     const now = new Date().toISOString();
-    
+
+    // ⚠️ 刻意**不**继承 `changeYears`（2026-10-02 复核后维持原行为）：易主年份的语义是
+    //    「该省在**本剧本年代区间内**哪一年换的主」。继承来的日期一律落在**上一个**剧本的区间里，
+    //    对新剧本而言按定义就是越界数据（`utils/scenarioSlices.js#changeDateStats` 会把它标出来）。
+    //    与其造一批越界日期，不如让新剧本走自动推算，由用户在「势力谱系管理 → 易主年份」里录真值。
     const newScenario = {
       id: newScenarioId,
       ownerKey: base?.ownerKey || overrides.ownerKey,
@@ -1231,6 +1235,60 @@ export function createScenarioEditingModule(ctx) {
     });
 
     saveScenarios();
+  }
+
+  /**
+   * 批量写 / 清易主年份（**一条 undo**）—— 日期录入的批量入口。
+   *
+   * 为什么必须有批量口：`computeEraChanges` 在缺显式值时会**均匀铺开**一个合成年份。
+   * 一个一个改（`setProvinceChangeYear`）会出现：① N 个省 = N 条 undo（`MAX_HISTORY=100`
+   * 会把更早的几何操作静默挤出栈）；② 「把这一代都定在某年」这类操作要写 N 遍。
+   *
+   * @param {string} scenarioId
+   * @param {Record<string, number|null>} patch 省份 id → 年份；null / 非有限数字 = **删除**显式值
+   * @returns {{success:boolean, changed?:number, cleared?:number, noop?:boolean, reason?:string}}
+   */
+  function setChangeYears(scenarioId, patch) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { success: false, reason: 'no-scenario' };
+
+    const before = { ...(scenario.changeYears || {}) };
+    const next = { ...before };
+    let changed = 0;
+    let cleared = 0;
+    for (const [pid, y] of Object.entries(patch || {})) {
+      const write = typeof y === 'number' && Number.isFinite(y);
+      const had = Object.prototype.hasOwnProperty.call(before, pid);
+      if (write) {
+        if (before[pid] === y) continue;      // 值没变就不算改动
+        next[pid] = y;
+        changed++;
+      } else {
+        if (!had) continue;                   // 本来就没有显式值 → 没什么可清
+        delete next[pid];
+        cleared++;
+      }
+    }
+    if (!changed && !cleared) return { success: true, changed: 0, cleared: 0, noop: true };
+
+    // 整表快照式 undo（与 removePolity 同形）：重编号改的是「别的键」，差量还原不了
+    const apply = (changeYears, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const nextSc = { ...cur, changeYears };
+      if (touch) nextSc.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
+    };
+
+    execute({
+      type: 'set-change-years',
+      label: `批量设置易主年份（改 ${changed} / 清 ${cleared} 省）`,
+      undo: () => apply(before, false),
+      redo: () => apply(next, true),
+    });
+
+    saveScenarios();
+    return { success: true, changed, cleared };
   }
 
   // ============================================================
@@ -1980,7 +2038,7 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
     createScenario, updateScenario, removeScenario, inheritScenario,
     setOwnership, clearOwnership, batchSetOwnership,
-    setPolityLineage, setProvinceChangeYear, updatePolity, addPolity, removePolity,
+    setPolityLineage, setProvinceChangeYear, setChangeYears, updatePolity, addPolity, removePolity,
     exportScenariosPayload, auditScenariosPayload, importScenariosPayload, removeAllScenarios,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,

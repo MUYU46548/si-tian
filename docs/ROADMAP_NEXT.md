@@ -197,13 +197,21 @@
   于是"点得到的是视觉上被压在下面的那个"），套索也能一口吞掉全图（闸门只管"点一下"）。
 - **`mergeProvinceShapes` 的规模上限是静默降级**（`work > maxWork → 栅格并集`，真实库 21 省 / 25930 点
   已越线；本轮只把状态栏文案改成显式「精度降级」，算法未动）。
-- **逐年切片导出**：数据侧（ownership + era + changeYears + 谱系 + isStriped/baseOwnerRef）已经能算
-  任意年份的状态，单帧 SVG 也已与画布同源；**缺** ① `buildScenarioSVG` 参数化 `(k, year)` ② 主进程
-  「选目录 + 批量写 N 张」IPC（现在两个保存通道都是一次一个模态框）③ 变化年索引（真实数据 12 剧本
-  → 约 11 个变化点，而不是 3488 帧）。**动画/GIF 建议不做**（本仓无编码器），出 PNG 帧序列 + `frames.json`
-  交给外部 ffmpeg。
-- 🔴 **日期可信度是观感之外的真问题**：真实库 `changeYears` 总条目 = **0**（所有易主日期都是
-  `computeEraChanges` 在 era 区间内均匀铺开的合成值），且模型限制「一个剧本内一省最多易主一次」。
-  要做 EU4 式切片，先补**日期录入**。
+
+### 2026-10-02：逐年切片导出 + 易主日期录入（上一轮遗留四问之一，已完成）
+
+> 触发：暮雨「暂不推送，继续做未完成内容」。见 `AGENTS.md` 的同名条目与回归 `test_78`
+> （4 段 + Node 单测 `test_scenario_slices.js` / `test_export_frames.js`）。
+
+1. **日期可信度先摆到台面上**：真实库 `changeYears` 显式条目 = 0（全是 `computeEraChanges` 在本剧本
+   区间内均匀铺开的**合成值**）。新增 `utils/scenarioSlices.js#changeDateStats()`，切片对话框第一条就是
+   「N/M 个易主年份是自动铺开的合成值，不是史料」。
+2. **日期录入补三件**：`validateChangeYear()` = 区间判定唯一实现（越界**写不进库** + 输入框退回原值 +
+   状态栏点名原因）；面板批量条「统一设为该年 / 固化推算值 / 全部清空」；store `setChangeYears()` 一条 undo。
+3. **切片链**：`collectSliceFrames()` 变化年索引（帧 = 剧本起点 + 每次易主，同年合并）→
+   `buildScenarioSVG({ era, year })` 参数化 → `handlers/exportFramesHandler.js` 一次选目录写 N 帧 +
+   `frames.json` → `ScenarioSliceExport.vue` 对话框。
+4. **动画/GIF 仍然不做**（本仓无编码器）：出 PNG/SVG 帧序列 + 清单，交外部 ffmpeg。
+   ⚠️ 仍未做：**一年内多次易主**（模型限制「一剧本一省最多易主一次」）与**批量导入外部年表**。
 
 *整理：企鹅 · 2026-09-24 · 证据路径均可复验*

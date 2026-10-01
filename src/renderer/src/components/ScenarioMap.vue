@@ -360,6 +360,8 @@
       <div class="tool-group" title="导出">
         <button @click="exportScenarioPNG()" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/></button>
         <button @click="exportScenarioSVG()" title="导出当前剧本/年份为 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-svg"><Icon name="layers" :size="15"/></button>
+        <button @click="showSliceExport = true" data-testid="open-slice-export"
+                title="逐年切片导出（每个状态变化的年份一张图 + frames.json 清单，可交 ffmpeg 合成）"><Icon name="film" :size="15"/></button>
         <button @click="exportScenariosJson({ scope: 'current' })" title="导出当前底图的剧本数据（scenarios.json）" data-testid="export-json"><Icon name="export" :size="15"/></button>
         <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/></button>
         <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/></button>
@@ -656,6 +658,19 @@
       @close="showLineagePanel = false"
       @set-polity-lineage="onSetPolityLineage"
       @set-change-year="onSetChangeYear"
+      @set-change-years-bulk="onSetChangeYearsBulk"
+      @reject="onPanelReject"
+    />
+
+    <!-- 逐年切片导出（EU4 式帧序列）：一次选目录写 N 帧 + frames.json -->
+    <scenario-slice-export
+      :open="showSliceExport"
+      :timeline="timeline"
+      :province-names="provinceNameMap"
+      :status="exportStatus"
+      :busy="sliceExportBusy"
+      @close="showSliceExport = false"
+      @run="onRunSliceExport"
     />
 
     <!-- 聚落编辑器面板 -->
@@ -708,6 +723,8 @@ import { buildHeightmapRaster } from '../utils/heightmapRaster';   // M2/A2：�
 import HistoryPanel from './HistoryPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
+// 逐年切片导出对话框（2026-10-02）：帧索引/日期体检走 utils/scenarioSlices.js，落盘走主进程一次选目录
+import ScenarioSliceExport from './ScenarioSliceExport.vue';
 import {
   buildTimeline, currentOwnerRef, isStriped, polityColor,
   settledCount, eraIndexOfYear, findGap,
@@ -1437,7 +1454,26 @@ const scenarioExport = useScenarioExport({
   provinceNames: provinceNameMap,
   layerFlags: () => ({ labels: showLabels.value, borders: showBorders.value }),
 });
-const { exportStatus, exportScenarioPNG, exportScenarioSVG, exportScenariosJson, pickScenariosJson } = scenarioExport;
+const {
+  exportStatus, exportScenarioPNG, exportScenarioSVG, exportScenariosJson, pickScenariosJson,
+  exportSliceFrames,
+} = scenarioExport;
+
+// ——— 逐年切片导出（EU4 式帧序列）———
+const showSliceExport = ref(false);
+const sliceExportBusy = ref(false);
+async function onRunSliceExport({ png = false, scale = 2 } = {}) {
+  if (sliceExportBusy.value) return;
+  sliceExportBusy.value = true;
+  try {
+    const r = await exportSliceFrames({ png, scale });
+    // 失败/取消的回音由 exportStatus 承担（对话框里也显示同一份），这里只补一条可点名的结论
+    if (r && r.success === false && !r.canceled) statusMsg(`切片导出失败：${r.error || '未知错误'}`);
+    else if (r && r.canceled) statusMsg('已取消切片导出');
+  } finally {
+    sliceExportBusy.value = false;
+  }
+}
 
 function importScenariosJson(mode) {
   return pickScenariosJson({ mode });
@@ -1448,8 +1484,35 @@ function onSetPolityLineage({ scenarioId, polityId, successorOf }) {
   render();
 }
 
+/** 面板里的输入被拒（越界年份等）：拒绝必须有回音 —— 静默吞掉等于用户以为改成功了 */
+function onPanelReject({ what = '输入', reason = '' } = {}) {
+  statusMsg(`${what}未写入：${reason || '不合法'}`);
+}
+
 function onSetChangeYear({ scenarioId, provinceId, year }) {
   store.setProvinceChangeYear(scenarioId, provinceId, year);
+  render();
+}
+
+/**
+ * 批量设置易主年份（面板的「统一设为该年 / 固化推算值 / 全部清空」）—— 一条 undo。
+ * 回执必须点名改了几省、清了几省（否则用户不知道这次批量到底动了什么）。
+ */
+function onSetChangeYearsBulk({ scenarioId, patch, what = '批量设置易主年份' }) {
+  if (store.isReadOnly) {
+    statusMsg(`只读：${store.readOnlyReason || '未打开项目'} —— ${what}未写入`);
+    return;
+  }
+  const r = store.setChangeYears(scenarioId, patch);
+  if (!r || r.success === false) {
+    statusMsg(`${what}失败：${r?.reason || '未知原因'}`);
+    return;
+  }
+  if (r.noop) {
+    statusMsg(`${what}：没有需要改动的年份`);
+  } else {
+    statusMsg(`${what}：改 ${r.changed} 省${r.cleared ? ` / 清 ${r.cleared} 省` : ''}（可 Ctrl+Z 撤回）`);
+  }
   render();
 }
 

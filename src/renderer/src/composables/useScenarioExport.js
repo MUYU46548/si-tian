@@ -24,6 +24,10 @@ import {
 import { polityLabelTier, ringAreaCentroid } from '../utils/polityLabels';
 // 剧本标签「该写哪些字、写在哪」的唯一判定 —— 画布与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
+// 逐年切片的帧索引 / 日期体检 / 帧命名（纯函数，画布与导出共用一份判定）
+import {
+  collectSliceFrames, changeDateStats, sliceFrameName, MAX_SLICE_FRAMES,
+} from '../utils/scenarioSlices';
 
 const LABEL_COLOR = '#3c4150';
 
@@ -42,14 +46,20 @@ export function useScenarioExport({
   //    而且两份"形心"实现就是下一个「改一处另一处不变」。
 
   /**
-   * 构建当前剧本/年份的 SVG。
+   * 构建**指定剧本 / 指定年份**的 SVG（省略 era/year 时 = 当前时间轴状态）。
    * 画布逻辑与 ScenarioMap.render 对齐：底色 → 省份 → EU4 斜线 → 边界 → 名称 → 标签/标记 → 图例。
+   *
+   * 🔴 2026-10-02 参数化 `(era, year)`（逐年切片导出要用）：此前它只读注入的
+   *    `currentEra`/`currentYear` 两个 ref → 想导出「另一年」只能先改时间轴游标再导出
+   *    （批量出帧会边导边动用户的时间轴，且无法并行/回放）。参数化后**帧序列与当前游标无关**。
+   *    默认值保持原行为（不传 = 当前），既有调用与用例一行不改。
    */
-  function buildScenarioSVG({ legend = true, title = true, grid = true } = {}) {
+  function buildScenarioSVG({ legend = true, title = true, grid = true, era, year: yearOpt } = {}) {
     const tl = timeline.value;
     if (!tl || !tl.scenarios.length) throw new Error('没有剧本可导出');
-    const k = currentEra.value;
-    const year = currentYear.value;
+    const k = Number.isInteger(era) ? era : currentEra.value;
+    const year = Number.isFinite(yearOpt) ? yearOpt : currentYear.value;
+    if (!(k >= 0 && k < tl.scenarios.length)) throw new Error(`剧本序号超出范围：${k}`);
     const s = tl.scenarios[k];
     const terrain = baseMap.value?.terrain || [];
     if (!terrain.length) throw new Error('当前底图没有省份多边形');
@@ -343,6 +353,138 @@ export function useScenarioExport({
     }
   }
 
+  // ===== 逐年切片（EU4 式帧序列）=====
+
+  /**
+   * 构建整批切片帧（**不落盘**）：一次把每个「状态真的变了」的年份渲染成一张图。
+   *
+   * 为什么先整批构建再交给主进程写：主进程只该管「选目录 + 写文件」，渲染与几何
+   * 在渲染层做一次就是一份实现。也让用例能拦在 IPC 这一层断言整批内容。
+   *
+   * @returns {Promise<{files:Array, manifest:Object, stats:Object, warnings:string[]}>}
+   */
+  async function buildSliceFrames({ png = false, scale = 2, onProgress } = {}) {
+    const tl = timeline.value;
+    let model;
+    try {
+      model = collectSliceFrames(tl);           // 帧索引只算一次（与对话框共用同一份判定）
+    } catch (e) {
+      throw new Error(`切片索引失败：${e.message}`);
+    }
+    const frames = model.frames;
+    if (!frames.length) throw new Error('没有可导出的帧（还没有剧本，或剧本没有年代区间）');
+    if (frames.length > MAX_SLICE_FRAMES) {
+      throw new Error(`需要 ${frames.length} 帧，超过上限 ${MAX_SLICE_FRAMES} —— 先合并/精简剧本，或分批导出`);
+    }
+
+    const warnings = [];
+    const dates = changeDateStats(tl);
+    if (dates.synthesized > 0) {
+      warnings.push(`${dates.synthesized}/${dates.total} 个易主年份是**自动铺开的合成值**（未录入真实日期），`
+        + '导出的是「按现有剧本推出来的时间轴」，不是史料');
+    }
+    if (dates.outOfRange.length) {
+      warnings.push(`${dates.outOfRange.length} 个易主年份落在本剧本年代区间之外（帧仍会出，但年份本身该修）`);
+    }
+
+    const files = [];
+    let size = null;
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+      if (onProgress) onProgress(i + 1, frames.length, f);
+      const built = buildScenarioSVG({ era: f.era, year: f.year });
+      if (!size) size = { width: built.width, height: built.height };
+      if (png) {
+        files.push({ name: sliceFrameName(i, f, 'png'), dataUrl: await rasterizeSvg(built.svg, scale) });
+      } else {
+        files.push({ name: sliceFrameName(i, f, 'svg'), text: built.svg });
+      }
+    }
+
+    const s = tl.scenarios[Math.max(0, Math.min(frames[frames.length - 1].era, tl.scenarios.length - 1))];
+    const manifest = {
+      version: 1,
+      kind: 'scenario-slices',
+      generatedAt: new Date().toISOString(),
+      baseMap: { id: baseMap.value?.id || '', name: baseMap.value?.name || '' },
+      format: png ? 'png' : 'svg',
+      scale: png ? scale : 1,
+      frameSize: size,
+      frameCount: frames.length,
+      dateStats: {
+        total: dates.total, explicit: dates.explicit, synthesized: dates.synthesized,
+        outOfRange: dates.outOfRange.length,
+      },
+      // 每帧「第几年 / 哪个剧本 / 哪些省易主」—— 交给外部 ffmpeg 或做字幕都要它
+      frames: frames.map((f, i) => ({
+        index: i + 1,
+        file: files[i] ? files[i].name : '',
+        year: f.year,
+        era: f.era,
+        eraName: tl.scenarios[f.era]?.name || '',
+        kind: f.kind,
+        changed: f.changed.slice(),
+        changedNames: f.changed.map((pid) => provinceNames.value?.[pid] || pid),
+        explicitCount: Object.keys(f.explicit || {}).length,
+        outOfRange: !!f.outOfRange,
+      })),
+      warnings,
+      scenarioId: s?.id || '',
+    };
+    return { files, manifest, stats: { ...model.stats, dates }, warnings };
+  }
+
+  /**
+   * 逐年切片导出（选一次目录 → 批量写 N 帧 + frames.json）。
+   * 失败/取消都给可见回音；浏览器回退模式退化为逐个下载（并说明）。
+   */
+  async function exportSliceFrames({ png = false, scale = 2 } = {}) {
+    try {
+      setStatus('正在生成切片帧…', 0);
+      const bundle = await buildSliceFrames({
+        png, scale,
+        onProgress: (i, n, f) => setStatus(`正在生成第 ${i}/${n} 帧（${f.year} 年）…`, 0),
+      });
+      // 目录名用「首个剧本名 + 年份跨度」：一批切片本来就跨多个剧本，
+      // 只写某一个剧本名会让人以为这批只覆盖那一代（曾写成 frames[0].era → 甲时代 + 乙时代的帧）
+      const first = bundle.manifest.frames[0] || {};
+      const last = bundle.manifest.frames[bundle.manifest.frames.length - 1] || {};
+      const firstEra = timeline.value.scenarios[first.era || 0];
+      const dirName = `sitian-slices-${safeName(firstEra?.name)}`
+        + `-${first.year}_${last.year}-${stamp()}`;
+
+      if (window.sitianAPI?.exportScenarioFrames) {
+        setStatus(`正在写入 ${bundle.files.length} 个文件…`, 0);
+        const r = await window.sitianAPI.exportScenarioFrames({
+          dirName, files: bundle.files, manifest: bundle.manifest,
+        });
+        if (r?.success) {
+          setStatus(`已导出 ${r.count} 帧到 ${r.dir}（含 frames.json 清单，可直接交给 ffmpeg）`, 12000);
+        } else if (r?.canceled) {
+          setStatus('已取消切片导出', 3000);
+        } else {
+          setStatus(`切片导出失败：${r?.error || '未知错误'}`, 8000);
+        }
+        return { ...r, frames: bundle.files.length, warnings: bundle.warnings };
+      }
+
+      // 浏览器回退：没有目录写入能力 → 逐个下载
+      for (const f of bundle.files) {
+        const a = document.createElement('a');
+        if (f.text) a.href = URL.createObjectURL(new Blob([f.text], { type: 'image/svg+xml' }));
+        else a.href = f.dataUrl;
+        a.download = f.name;
+        a.click();
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      setStatus(`已逐个下载 ${bundle.files.length} 帧（浏览器回退模式，没有 frames.json）`, 6000);
+      return { success: true, frames: bundle.files.length, browserFallback: true, warnings: bundle.warnings };
+    } catch (e) {
+      setStatus(`切片导出失败：${e.message}`, 8000);
+      return { success: false, error: e.message };
+    }
+  }
+
   // ===== scenarios.json =====
 
   async function exportScenariosJson({ scope = 'current' } = {}) {
@@ -438,6 +580,8 @@ export function useScenarioExport({
     exportStatus,
     setStatus,
     buildScenarioSVG,
+    buildSliceFrames,
+    exportSliceFrames,
     exportScenarioSVG,
     exportScenarioPNG,
     exportScenariosJson,

@@ -13,6 +13,8 @@ const { createTray, destroyTray, getIsQuitting, setIsQuitting } = require('./tra
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const { registerProjectHandlers } = require('./handlers/projectHandler');
 const { registerGitSyncHandlers } = require('./handlers/gitSyncHandler');
+// 逐年切片批量落盘（顶层不 require electron 的纯文件层 → 可被 Node 单测直接调用）
+const { writeFrames } = require('./handlers/exportFramesHandler');
 const { createCredentialStore } = require('./gitCredentialStore');
 const log = require('electron-log');
 
@@ -886,6 +888,25 @@ ipcMain.handle('save-text-file', async (event, { text, defaultName, kind }) => {
     }
     await fs.writeFile(result.filePath, typeof text === 'string' ? text : String(text ?? ''), 'utf8');
     return { success: true, path: result.filePath, bytes: Buffer.byteLength(String(text ?? ''), 'utf8') };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: 逐年切片批量导出 —— **一次选目录，写 N 帧 + frames.json 清单**（2026-10-02）
+// 为什么不是「多调几次 save-text-file」：那两个通道每次调用都弹一个模态保存框，
+// 11 帧 = 用户按 11 次「保存」。批次落盘逻辑全在 handlers/exportFramesHandler.js（可单测）。
+ipcMain.handle('export-scenario-frames', async (event, payload = {}) => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择逐年切片的导出目录（会在其中新建一个子目录）',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || !result.filePaths.length) {
+      return { success: false, canceled: true };
+    }
+    const r = await writeFrames(result.filePaths[0], payload);
+    return r;
   } catch (err) {
     return { success: false, error: err.message };
   }

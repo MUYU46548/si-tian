@@ -94,6 +94,8 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 导出文件（保存对话框 + 写入）
   saveExportFile: (options) => ipcRenderer.invoke('save-export-file', options),
   saveTextFile: (options) => ipcRenderer.invoke('save-text-file', options),
+  // 逐年切片：一次选目录 + 批量写 N 帧 + frames.json（主进程侧见 handlers/exportFramesHandler.js）
+  exportScenarioFrames: (options) => ipcRenderer.invoke('export-scenario-frames', options),
 
   // 创建 Obsidian 笔记（从 draft 节点创建）
   createObsidianNote: (payload) => ipcRenderer.invoke('create-obsidian-note', payload),

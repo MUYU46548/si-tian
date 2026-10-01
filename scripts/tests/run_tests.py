@@ -249,6 +249,20 @@ MOCK_SCRIPT = """<script>
           window.__LAST_TEXT_EXPORT__ = opts || null;
           return { success: true, path: '/mock/' + ((opts && opts.defaultName) || 'export.txt') };
         },
+        exportScenarioFrames: async (payload) => {
+          // 逐年切片批量导出：**累积**记录（与 saveTextFile 的「只记最后一次」不同 ——
+          // 批量是一次调用带 N 个文件，用例要断言的是整批内容与清单）
+          window.__FRAMES_EXPORTS__ = window.__FRAMES_EXPORTS__ || [];
+          window.__FRAMES_EXPORTS__.push(payload || null);
+          window.__LAST_FRAMES_EXPORT__ = payload || null;
+          const files = (payload && payload.files) || [];
+          return {
+            success: true, dir: 'mock/slices/' + ((payload && payload.dirName) || 'sitian-slices'),
+            count: files.length, bytes: files.reduce((a, f) => a + String((f && f.text) || '').length, 0),
+            files: files.map((f) => f && f.name),
+            manifestPath: 'mock/slices/frames.json',
+          };
+        },
         readObsidianNote: async () => ({ success: true, data: { frontmatter: { publish: true, tags: ['测试'], 层级: '星系' }, content: '测试笔记正文。', wikilinks: [] } }),
         // 断线检测（R15/A-0）：库里的笔记清单。**用例通过 window.__vaultNotes 注入**，
         // 默认空数组（真实主进程会扫库；mock 不碰文件系统）。
