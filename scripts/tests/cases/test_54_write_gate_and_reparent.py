@@ -56,12 +56,42 @@ def _function_body(src, fn):
     为什么要这么麻烦：旧校验按**文件**判「出现过 guardWrite(」——
     一个文件里只要有一个守卫，整行就算通过，同文件里其余裸奔的写函数永远查不出来。
     现在必须精确到**函数体**，才能发现「同文件内漏守」（2026-09-24 修，实测踩到过）。
+
+    ⚠️ 2026-10-02 修一处**误报**：旧实现是 `src.find('{', m.end() - 1)` —— 只要参数表里出现
+    对象字面量（如 `opts = {}` 或解构默认值），它就把**参数表里那个 `{`** 当函数体起点，
+    于是配对立刻闭合、截出来的是空串 → 明明有守卫也报「没有 guardWrite/blocked」。
+    实测踩到：给 `applyProvinceLasso` 加第 5 参 `opts = {}` 后 test_54 a 段立刻红。
+    正确做法：先跳过**参数表**（圆括号配对，同样跳过字符串），再找参数表之后的第一个 `{`。
     """
     import re
     m = re.search(r'\n[ \t]*(?:export\s+)?(?:async\s+)?function\s+' + re.escape(fn) + r'\s*\(', src)
     if not m:
         return None
-    i = src.find('{', m.end() - 1)
+    # 跳过参数表：从 '(' 开始做圆括号配对
+    k = src.find('(', m.end() - 1)
+    if k < 0:
+        return None
+    depth_p = 0
+    instr_p = None
+    while k < len(src):
+        c = src[k]
+        if instr_p:
+            if c == '\\':
+                k += 2
+                continue
+            if c == instr_p:
+                instr_p = None
+        else:
+            if c in ('"', "'", '`'):
+                instr_p = c
+            elif c == '(':
+                depth_p += 1
+            elif c == ')':
+                depth_p -= 1
+                if depth_p == 0:
+                    break
+        k += 1
+    i = src.find('{', k + 1)
     if i < 0:
         return None
     depth = 0

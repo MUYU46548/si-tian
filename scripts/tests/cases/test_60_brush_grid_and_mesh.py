@@ -426,6 +426,12 @@ def run(cdp):
         fails.append(f'剧本模式未挂载：{e}')
         return False, ' | '.join(fails)
     time.sleep(1.5)
+    # 🔴 2026-10-02：新建省份现在带**压叠闸门**（新省压住已有省 >25% 时弹确认，见 test_79）。
+    #    本用例这一段的自由绘制/描点**刻意画在 6 个合成省份上面** → 会弹确认；
+    #    headless 下没人点它 → **渲染进程被模态对话框阻塞** → CDP 命令永不返回
+    #    （实测症状就是「异常: Connection timed out」，而不是某条断言红）。
+    #    所以这里按本仓惯例先把 confirm/prompt 打桩（用例要测「取消」时再单独覆盖）。
+    cdp.eval("window.confirm = () => true; window.prompt = (m, d) => d;")
 
     fx = _js(cdp, SC_FIXTURE.replace('__STORE__', STORE).replace('__SC__', SC))
     if 'ERR' in fx:

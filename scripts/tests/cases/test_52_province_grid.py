@@ -103,6 +103,9 @@ JS_STORE = r"""
   if (!base) return JSON.stringify({ fails: ['底图 ' + KEY + ' 不存在'] });
 
   // mock 底图可能没有任何省份 → 注入 3 个面积不同的测试省份（大/中/小，中省在大省内部）
+  // ⚠️ 这里**刻意让中省完全落在大省内部**（本用例测的是「标签网格」，嵌套是它的前提）。
+  //    2026-10-02 起 `addBaseProvince` 默认带**压叠闸门**（新省压住已有省 >25% 会拒绝，等 UI 确认），
+  //    程序化造数必须显式跳过 —— 否则中省静默建不出来，后面所有序号/target 断言整体错位。
   const rects = [
     [{x:0,y:0},{x:400,y:0},{x:400,y:300},{x:0,y:300}],
     [{x:60,y:60},{x:340,y:60},{x:340,y:240},{x:60,y:240}],
@@ -111,7 +114,8 @@ JS_STORE = r"""
   let injected = 0;
   while (s.baseMaps[KEY].terrain.length < 3 && injected < 3) {
     const pts = rects[injected].map(q => ({ ...q }));
-    s.addBaseProvince(KEY, { id: 'prov_case52_' + injected, name: '用例52省' + (injected + 1), points: pts, biome: 'temperate', coast: false });
+    s.addBaseProvince(KEY, { id: 'prov_case52_' + injected, name: '用例52省' + (injected + 1), points: pts, biome: 'temperate', coast: false },
+      { checkOverlap: false });
     injected++;
   }
   const nProv = s.baseMaps[KEY].terrain.length;
