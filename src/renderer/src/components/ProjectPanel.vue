@@ -260,11 +260,14 @@
           </div>
           <div v-if="selectedIds.length > 1" class="pp-batch" data-testid="pp-batch-bar">
             <span class="pp-batch-count">已选 {{ selectedIds.length }} 个</span>
-            <select v-model="batchParentId" class="pp-parent" title="选择目标父级">
+            <!-- 批量改父级同样是写入口（一条 undo + 落 .sitian）：只读态必须灰禁，
+                 与详情面板父级下拉 / 行内类型下拉 / 空白过滤器同口径（A-3 收尾，待决①）。 -->
+            <select v-model="batchParentId" class="pp-parent" :disabled="isReadOnly"
+                    :title="isReadOnly ? READONLY_REASON : '选择目标父级'">
               <option value="">（顶层）</option>
               <option v-for="e in batchParentOptions" :key="e.id" :value="e.id">{{ e.name }}（{{ e.layerLabel }}）</option>
             </select>
-            <button class="pp-btn primary" @click="doBatchMove">移到此父级</button>
+            <button class="pp-btn primary" :disabled="isReadOnly" @click="doBatchMove">移到此父级</button>
             <button class="pp-btn" @click="clearMulti">取消多选</button>
             <div class="pp-batch-hint">把散落的设施/地点一次归入城市或区域（一条 undo）</div>
           </div>

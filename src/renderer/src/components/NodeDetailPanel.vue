@@ -145,16 +145,21 @@
           <div v-for="h in relatedHyperlanes.slice(0, 6)" :key="h.id" class="relation-link hyperlane-link">
             <span class="relation-icon"><Icon name="route" :size="13"/></span>
             <span class="relation-name">{{ getNodeName(h.fromId === node.id ? h.toId : h.fromId) }}</span>
+            <!-- 航道类型 / 删除同样是写入口（走 store → saveGeodata → guardWrite）：与上方
+                 层级迁移下拉同口径灰禁并给原因（A-3 收尾，待决① C）。 -->
             <select
               class="hyperlane-type-select"
               :value="h.type"
-              :title="`航道类型：${hyperlaneTypeLabels[h.type] || h.type}`"
+              :disabled="store.isReadOnly"
+              :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : `航道类型：${hyperlaneTypeLabels[h.type] || h.type}`"
               @change="updateHyperlaneType(h, $event.target.value)"
               @click.stop
             >
               <option v-for="t in hyperlaneTypes" :key="t.value" :value="t.value">{{ t.label }}</option>
             </select>
-            <button class="hyperlane-remove" @click.stop="removeHyperlane(h.id)" title="删除航道">×</button>
+            <button class="hyperlane-remove" :disabled="store.isReadOnly"
+                    :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '删除航道'"
+                    @click.stop="removeHyperlane(h.id)">×</button>
           </div>
         </div>
       </section>
@@ -173,7 +178,11 @@
             class="reparent-search-input"
             placeholder="搜索节点名称或层级..."
           />
-          <select :value="node.parentId ?? ''" @change="handleReparent($event.target.value || null)">
+          <!-- 挂靠迁移同样是写入口（走 store → saveGeodata → guardWrite）：无项目只读态
+               画布仍可浏览 vault 数据、本面板可达，须与叙事状态下拉同口径灰禁并给原因。 -->
+          <select :value="node.parentId ?? ''" :disabled="store.isReadOnly"
+                  :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '修改上级节点归属'"
+                  @change="handleReparent($event.target.value || null)">
             <option value="">无（顶层 — 直接挂载于行星/星系下）</option>
             <option
               v-for="candidate in filteredParentCandidates"
@@ -1782,6 +1791,13 @@ function updateCoordinate(axis, value) {
   border-color: var(--accent);
 }
 
+/* 只读灰禁要看得见：上面的 color: var(--accent) 会盖掉浏览器的 disabled 默认灰
+   （A-3 收尾，待决① C） */
+.hyperlane-type-select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .hyperlane-remove {
   flex-shrink: 0;
   background: none;
@@ -1796,6 +1812,14 @@ function updateCoordinate(axis, value) {
 
 .hyperlane-remove:hover {
   color: #f85149;
+}
+
+/* 同款：只读态不该还在悬停时变红（看起来能删）（A-3 收尾，待决① C） */
+.hyperlane-remove:disabled,
+.hyperlane-remove:disabled:hover {
+  opacity: 0.4;
+  color: var(--text-tertiary);
+  cursor: default;
 }
 
 .relation-more {

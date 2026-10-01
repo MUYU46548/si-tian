@@ -18,6 +18,8 @@
   e) 源码契约：writeGate 里的 11 条落盘入口清单，标记 guarded 的必须在对应文件里真有守卫
   f) 只读态 UI 灰禁（Phase 2.4）：转正 / 批量导入 / 清缓存 三处入口必须灰禁 + 给出原因
      （只拦不灰禁 = 用户点完才被拒，属坏交互；能力说明必须保留）
+  g) 「改父级类写入口」只读门控（A-3 收尾，待决① A/B/C）：批量改父级条 / 层级迁移下拉 /
+     航道类型下拉 / 航道删除按钮 —— 源码契约（剥注释）+ 层级迁移那一处的真 DOM 灰禁
 """
 import sys, os, json, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -368,6 +370,18 @@ UI_JS = r"""(async () => {
   ck('灰禁按钮带原因（不是静默失效）', !!promoteBtn && /只读/.test(promoteBtn.getAttribute('title') || ''),
      promoteBtn && promoteBtn.getAttribute('title'));
 
+  // 1b) 关系 tab：层级迁移下拉（A-3 收尾，待决① B —— 无项目只读态真实可达的一处）
+  const relTab = qa('.detail-tab-btn').find(b => (b.textContent || '').indexOf('关系') >= 0);
+  ck('详情面板有关系 tab', !!relTab);
+  if (relTab) { relTab.click(); await tick(250); }
+  const repSel = q('.reparent-control select');
+  ck('关系 tab 出现层级迁移下拉', !!repSel);
+  ck('只读态层级迁移下拉灰禁', !!repSel && repSel.disabled === true, repSel && repSel.disabled);
+  ck('层级迁移灰禁带原因', !!repSel && /只读/.test(repSel.getAttribute('title') || ''),
+     repSel && repSel.getAttribute('title'));
+  // 航道类型 / 删除按钮：本用例的 draft 没有关联航道，渲染不出来 ——
+  // 那两处由源码契约段（g）守，不在这里造数据（造出来的假绿更贵）
+
   // 2) 批量导入面板
   window.dispatchEvent(new CustomEvent('sitian:open-batch-import'));
   await tick(500);
@@ -411,6 +425,64 @@ def sub_readonly_ui(cdp):
     return True, '转正 / 批量导入 / 清缓存 三处入口在只读态均灰禁且给出原因说明'
 
 
+# ─────────────────────────────────────────────────────────────
+# g) 「改父级类写入口」的只读灰禁（A-3 收尾，待决① A/B/C）
+#    批量改父级条 / 层级迁移下拉 / 航道类型下拉 / 航道删除按钮：四处同样是写入口
+#    （走 store → 一条 undo → 落 .sitian），只读态必须与同文件兄弟控件同口径灰禁
+#    并给出去处说明 —— 只拦不灰禁 = 用户点完才被一句拒绝打发，属坏交互。
+#    「批量条」要「有项目 + 多选两项」才渲染，UI 用例里造齐代价高且容易假绿，
+#    故三处按**源码契约**守：判据先剥注释（注释里写着「只读灰禁」不等于真灰禁了）。
+# ─────────────────────────────────────────────────────────────
+GATING_ENTRIES = [
+    # (文件, 段落起点, 段落终点, disabled 绑定原文, 至少几处, 写入口名)
+    ('src/renderer/src/components/ProjectPanel.vue',
+     'data-testid="pp-batch-bar"', 'pp-batch-hint', ':disabled="isReadOnly"', 2,
+     '批量改父级条（目标父级下拉 + 移到此父级按钮）'),
+    ('src/renderer/src/components/NodeDetailPanel.vue',
+     'class="reparent-control"', 'reparent-hint', ':disabled="store.isReadOnly"', 1,
+     '层级迁移下拉'),
+    ('src/renderer/src/components/NodeDetailPanel.vue',
+     'class="hyperlane-type-select"', '</select>', ':disabled="store.isReadOnly"', 1,
+     '航道类型下拉'),
+    ('src/renderer/src/components/NodeDetailPanel.vue',
+     'class="hyperlane-remove"', '</button>', ':disabled="store.isReadOnly"', 1,
+     '航道删除按钮'),
+]
+
+
+def _strip_comments(src):
+    """剥掉模板 / 脚本注释 —— 注释里出现「只读 / 灰禁」字样不算数（防假绿，同 test_76 f0）。"""
+    src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
+    src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
+    return re.sub(r'(?m)//[^\n]*', '', src)
+
+
+def sub_gating_source(cdp):
+    bad, cache = [], {}
+    for rel, start, end, marker, least, what in GATING_ENTRIES:
+        if rel not in cache:
+            try:
+                cache[rel] = _strip_comments(_read(rel))
+            except OSError as e:
+                bad.append(f'{rel} 读不到（{e}）')
+                cache[rel] = ''
+        body = cache[rel]
+        i = body.find(start)
+        if i < 0:
+            bad.append(f'找不到{what}（起点标记 {start}）')
+            continue
+        j = body.find(end, i)
+        seg = body[i:(j if j > 0 else i + 600)]
+        n = seg.count(marker)
+        if n < least:
+            bad.append(f'{what} 只有 {n} 处 {marker}（期望 ≥{least}）')
+        if '只读' not in seg and 'READONLY_REASON' not in seg:
+            bad.append(f'{what} 灰禁了但没给原因（能力不减：入口要说明去处）')
+    if bad:
+        return False, '改父级类写入口门控缺失：' + '；'.join(bad)
+    return True, f'{len(GATING_ENTRIES)} 处改父级类写入口都有只读门控 + 原因说明（判据已剥注释）'
+
+
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     wait_for(cdp, f"{STORE}.nodes.length > 0", timeout=45, desc='地理数据加载')
@@ -421,7 +493,8 @@ def run(cdp):
                      ('c 只读徽标', sub_badge),
                      ('d projectStore 联动', sub_wiring),
                      ('e 入口清单源码契约', sub_callsite_contract),
-                     ('f 只读态 UI 灰禁', sub_readonly_ui)):
+                     ('f 只读态 UI 灰禁', sub_readonly_ui),
+                     ('g 改父级类写入口门控', sub_gating_source)):
         try:
             ok, detail = fn(cdp)
         except Exception as e:
