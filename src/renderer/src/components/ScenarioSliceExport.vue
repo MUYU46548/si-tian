@@ -12,51 +12,67 @@
 
       <div class="sse-body">
         <p class="sse-note">
-          每一帧 = 一个<strong>状态发生变化</strong>的年份（剧本起点 + 每次易主），同一年只出一张。
-          导出后目录里会有 <code>frames.json</code> 清单（帧序 / 年份 / 剧本 / 易主省份），
+          每一帧 = 一个<strong>状态发生变化</strong>的<strong>日期</strong>，由两类来源组成：
+          <strong>切片点</strong>（你在时间轴上存的命名时间点，默认必出）∪
+          <strong>自动帧</strong>（剧本起点 + 每次易主）。同一日期只出一张。
+          导出后目录里会有 <code>frames.json</code> 清单（帧序 / 日期 / 剧本 / 易主省份 / 来源），
           可直接交给外部 <code>ffmpeg</code> 合成视频 —— 本应用不做动画编码。
         </p>
 
         <!-- 日期可信度：合成值必须摆在最前面，不许拿"好看的时间轴"冒充史料 -->
         <div v-if="dates.synthesized > 0" class="sse-warn" data-testid="slice-date-warn">
-          <strong>{{ dates.synthesized }}/{{ dates.total }}</strong> 个易主年份是
+          <strong>{{ dates.synthesized }}/{{ dates.total }}</strong> 个易主日期是
           <strong>自动铺开的合成值</strong>（没有录入真实日期）—— 导出的时间轴是按剧本推出来的，
-          不是史料。可到「势力谱系管理 → 易主年份」逐个录入真值。
+          不是史料。可到「势力谱系管理 → 易主日期」逐个录入真值（支持精确到月日）。
         </div>
         <div v-if="dates.outOfRange.length" class="sse-warn" data-testid="slice-range-warn">
-          有 <strong>{{ dates.outOfRange.length }}</strong> 个易主年份落在本剧本年代区间之外
-          （帧仍会出，但年份本身该修）：
+          有 <strong>{{ dates.outOfRange.length }}</strong> 个易主日期落在本剧本年代区间之外
+          （帧仍会出，但日期本身该修）：
           <span class="sse-dim">{{ outOfRangeText }}</span>
         </div>
         <div v-if="!dates.synthesized && dates.total" class="sse-ok" data-testid="slice-date-ok">
-          全部 {{ dates.total }} 个易主年份都来自显式录入。
+          全部 {{ dates.total }} 个易主日期都来自显式录入。
+        </div>
+        <div v-if="dates.multiPerProvince.length" class="sse-ok" data-testid="slice-multi-warn">
+          有 <strong>{{ dates.multiPerProvince.length }}</strong> 个省在同一个剧本内
+          <strong>多次易主</strong>（月日精度支持）—— 每一次都会单独出一帧。
+        </div>
+        <div v-if="!slicePoints.length" class="sse-dim-block" data-testid="slice-nopoint-hint">
+          还没有切片点 —— 在时间轴上把游标拖到想导的那天，点「存为切片点」即可命名保存。
         </div>
 
         <div class="sse-row">
           <span class="sse-kv">帧数 <b data-testid="slice-frame-count">{{ frames.length }}</b></span>
+          <span class="sse-kv">切片点 <b data-testid="slice-point-count">{{ slicePoints.length }}</b></span>
           <span class="sse-kv">剧本 <b>{{ timeline.scenarios.length }}</b></span>
-          <span class="sse-kv">年代跨度 <b>{{ stats.firstYear }} ~ {{ stats.lastYear }}</b></span>
+          <span class="sse-kv">年代跨度 <b>{{ stats.firstText }} ~ {{ stats.lastText }}</b></span>
           <span class="sse-kv">易主 <b>{{ stats.changeCount }}</b> 次</span>
         </div>
 
         <div v-if="frames.length > MAX_SLICE_FRAMES" class="sse-warn">
-          帧数超过上限 {{ MAX_SLICE_FRAMES }} —— 请先合并剧本（当前是一年一帧就会变成逐帧动画）。
+          帧数超过上限 {{ MAX_SLICE_FRAMES }} —— 请先合并剧本（当前是一天一帧就会变成逐帧动画）。
         </div>
 
         <div class="sse-list" data-testid="slice-frame-list">
           <table class="sse-table">
             <thead>
-              <tr><th>#</th><th>年份</th><th>剧本</th><th>本帧易主</th><th>日期来源</th></tr>
+              <tr><th>#</th><th>日期</th><th>剧本</th><th>本帧易主</th><th>来源</th><th>日期来源</th></tr>
             </thead>
             <tbody>
-              <tr v-for="(f, i) in frames.slice(0, 400)" :key="i"
-                  :class="{ 'is-change': f.kind !== 'era', 'is-out': f.outOfRange }">
+              <tr v-for="(f, i) in frames.slice(0, 400)" :key="f.dateKey"
+                  :class="{ 'is-change': f.changed.length > 0, 'is-bookmark': f.sources.includes(bookmarkSrc), 'is-out': f.outOfRange }"
+                  :data-testid="`slice-frame-${i}`" :data-kind="f.kind">
                 <td class="sse-num">{{ i + 1 }}</td>
-                <td class="sse-num">{{ f.year }}</td>
+                <td class="sse-num" :data-testid="`slice-frame-date-${i}`">{{ formatDate(f.date) }}</td>
                 <td>{{ timeline.scenarios[f.era]?.name || f.era }}</td>
                 <td>
                   <span v-if="!f.changed.length" class="sse-dim">（剧本起点）</span>
                   <span v-else>{{ changedText(f) }}</span>
+                </td>
+                <td class="sse-src">
+                  <span v-if="f.sources.includes(bookmarkSrc)" class="sse-pill-bm">切片点{{ f.label ? `「${f.label}」` : '' }}</span>
+                  <span v-if="f.sources.includes(eraSrc)" class="sse-pill-era">起点</span>
+                  <span v-if="f.sources.includes(changeSrc)" class="sse-pill-ch">易主</span>
                 </td>
                 <td>
                   <span v-if="!f.changed.length" class="sse-dim">—</span>
@@ -95,14 +111,17 @@
 <script setup>
 // 逐年切片导出对话框：**纯展示 + 事件**。
 // 帧索引与日期体检都来自纯函数层 `utils/scenarioSlices.js`（与导出链、与用例同一份判定），
-// 这里不重算「哪些年份要出帧」——重算就是第二个事实源。
+// 这里不重算「哪些日期要出帧」——重算就是第二个事实源。
 import { computed, ref } from 'vue';
 import Icon from './Icon.vue';
-import { collectSliceFrames, changeDateStats, MAX_SLICE_FRAMES } from '../utils/scenarioSlices';
+import { collectSliceFrames, changeDateStats, MAX_SLICE_FRAMES, FRAME_SOURCE } from '../utils/scenarioSlices';
+import { formatDate } from '../utils/scenarioDates';
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   timeline: { type: Object, required: true },
+  /** 切片点书签（项目级）：默认必出的帧来源 */
+  slicePoints: { type: Array, default: () => [] },
   provinceNames: { type: Object, default: () => ({}) },
   status: { type: String, default: '' },
   busy: { type: Boolean, default: false },
@@ -113,11 +132,22 @@ const emit = defineEmits(['close', 'run']);
 const png = ref(false);
 const scale = ref(2);
 
+// 来源标记常量（模板里要比对；从纯函数层取，别在模板里写字符串字面量）
+const bookmarkSrc = FRAME_SOURCE.BOOKMARK;
+const eraSrc = FRAME_SOURCE.ERA;
+const changeSrc = FRAME_SOURCE.CHANGE;
+
 const model = computed(() => {
   try {
-    return collectSliceFrames(props.timeline);
+    return collectSliceFrames(props.timeline, props.slicePoints);
   } catch (_) {
-    return { frames: [], stats: { frameCount: 0, eraCount: 0, changeCount: 0, firstYear: 0, lastYear: 0 } };
+    return {
+      frames: [],
+      stats: {
+        frameCount: 0, eraCount: 0, changeCount: 0, bookmarkCount: 0,
+        firstYear: 0, lastYear: 0, firstText: '', lastText: '',
+      },
+    };
   }
 });
 const frames = computed(() => model.value.frames);
@@ -126,7 +156,7 @@ const dates = computed(() => changeDateStats(props.timeline));
 
 const outOfRangeText = computed(() => dates.value.outOfRange
   .slice(0, 6)
-  .map((d) => `${provinceNames.value[d.provinceId] || d.provinceId} ${d.year} ∉ [${d.start},${d.end}]`)
+  .map((d) => `${provinceNames.value[d.provinceId] || d.provinceId} ${d.text || d.year} ∉ [${d.start},${d.end}]`)
   .join('；') + (dates.value.outOfRange.length > 6 ? ` …（另有 ${dates.value.outOfRange.length - 6} 条）` : ''));
 
 function changedText(f) {
@@ -169,6 +199,15 @@ function explicitCount(f) {
   background: rgba(21, 128, 61, 0.18); border: 1px solid rgba(34, 197, 94, 0.4); color: #86efac;
 }
 .sse-dim { color: #64748b; }
+.sse-dim-block {
+  margin: 0 0 8px; padding: 7px 9px; border-radius: 6px; font-size: 11px; line-height: 1.6;
+  background: rgba(30, 41, 59, 0.6); border: 1px dashed #334155; color: #94a3b8;
+}
+.sse-src { white-space: nowrap; }
+.sse-pill-bm { color: #fcd34d; margin-right: 4px; }
+.sse-pill-era { color: #94a3b8; margin-right: 4px; }
+.sse-pill-ch { color: #c4b5fd; }
+.sse-table tr.is-bookmark td { background: rgba(251, 191, 36, 0.10); }
 .sse-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; color: #94a3b8; }
 .sse-kv b { color: #e2e8f0; font-variant-numeric: tabular-nums; }
 .sse-list { max-height: 320px; overflow-y: auto; border: 1px solid #1e293b; border-radius: 6px; }

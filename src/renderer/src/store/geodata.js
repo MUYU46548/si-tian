@@ -526,6 +526,8 @@ export const useGeodataStore = defineStore('geodata', () => {
         version: 2,
         baseMaps: scenarioEditingModule.baseMaps.value,
         scenarios: scenarioEditingModule.scenarios.value,
+        // 切片书签（项目级）：与剧本容器平行，不带上它 = 保存一次就丢书签
+        slicePoints: scenarioEditingModule.slicePoints.value,
         updatedAt: new Date().toISOString()
       }));
       await window.sitianAPI.saveScenarios(data);
@@ -1532,6 +1534,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       scenarios: scenarioEditingModule ? {
         baseMaps: JSON.parse(JSON.stringify(scenarioEditingModule.baseMaps.value, jsonSafeReplacer)),
         scenarios: JSON.parse(JSON.stringify(scenarioEditingModule.scenarios.value, jsonSafeReplacer)),
+        slicePoints: JSON.parse(JSON.stringify(scenarioEditingModule.slicePoints.value)),
       } : null,
     };
   }
@@ -1614,6 +1617,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       scenarios: scenarioEditingModule ? {
         baseMaps: scenarioEditingModule.baseMaps.value,
         scenarios: scenarioEditingModule.scenarios.value,
+        slicePoints: scenarioEditingModule.slicePoints.value,
       } : null,
     });
   }
@@ -1640,6 +1644,8 @@ export const useGeodataStore = defineStore('geodata', () => {
         version: 2,
         baseMaps: JSON.parse(JSON.stringify(state.scenarios.baseMaps || {}, jsonSafeReplacer)),
         scenarios: JSON.parse(JSON.stringify(state.scenarios.scenarios || {}, jsonSafeReplacer)),
+        // 切片书签是**项目级**（与剧本容器平行）—— 不带上它 = 保存一次就把用户建的书签丢了
+        slicePoints: JSON.parse(JSON.stringify(state.scenarios.slicePoints || [])),
       } : undefined,
     };
   }
@@ -1677,6 +1683,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       scenarios: scenarioEditingModule ? {
         baseMaps: scenarioEditingModule.baseMaps.value,
         scenarios: scenarioEditingModule.scenarios.value,
+        slicePoints: scenarioEditingModule.slicePoints.value,
       } : null,
     } : vaultSnapshot;
     if (!state || !(state.nodes || []).length) return null;
@@ -1746,8 +1753,14 @@ export const useGeodataStore = defineStore('geodata', () => {
     writeEditorContainers((project.maps && project.maps.editor) || {});
     if (scenarioEditingModule) {
       const sc = project.scenarios || {};
-      scenarioEditingModule.baseMaps.value = sc.baseMaps ? JSON.parse(JSON.stringify(sc.baseMaps)) : {};
-      scenarioEditingModule.scenarios.value = sc.scenarios ? JSON.parse(JSON.stringify(sc.scenarios)) : {};
+      // 🔴 一律走 `applyScenarioState`（**唯一的日期迁移入口**）：它会跑 `normalizeScenarioDates`
+      //    把旧 `changeYears` 转成 `changeEvents`，并带上切片书签。
+      //    在这里自己写 `scenarios.value = sc.scenarios` 就是漏掉迁移的经典写法 ——
+      //    症状是「载入旧项目后易主日期全成了推算值」，不报错（纯函数与用例都守不住这条）。
+      scenarioEditingModule.applyScenarioState(
+        { baseMaps: sc.baseMaps, scenarios: sc.scenarios, slicePoints: sc.slicePoints },
+        { fresh: true },
+      );
     }
     canvasSourceRef.value = 'project';
     // ⚠️ **不要在这里清 undo 栈**（P3 的清理点在 projectStore 的项目生命周期里，2026-09-25）。
@@ -1816,8 +1829,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     mapData.value = snap.mapData;
     if (snap.editor) writeEditorContainers(snap.editor);
     if (scenarioEditingModule && snap.scenarios) {
-      scenarioEditingModule.baseMaps.value = snap.scenarios.baseMaps;
-      scenarioEditingModule.scenarios.value = snap.scenarios.scenarios;
+      // 同样走统一装载口：知识库快照里的剧本也可能是**迁移前**的形状
+      scenarioEditingModule.applyScenarioState(
+        { baseMaps: snap.scenarios.baseMaps, scenarios: snap.scenarios.scenarios, slicePoints: snap.scenarios.slicePoints },
+        { fresh: true },
+      );
     }
     backToWorld();
     return { ok: true, restored: true };

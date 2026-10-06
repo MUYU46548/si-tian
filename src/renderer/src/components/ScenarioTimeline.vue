@@ -10,6 +10,13 @@
         <div v-for="(t, i) in ticks" :key="'t' + i" class="tl-tickline" :style="{ left: tickPct(t) + '%' }"></div>
         <div v-for="(t, i) in ticks" :key="'tl' + i" class="tl-tick" :style="{ left: tickPct(t) + '%' }">{{ t }}</div>
 
+        <!-- 切片点书签（月日精度）：在轨道上标出来，用户才看得见「我存过哪些时间点」 -->
+        <div v-for="sp in pointMarks" :key="sp.id" class="tl-bookmark"
+             :class="{ 'is-on': sp.onCursor }"
+             :style="{ left: sp.pct + '%' }"
+             :title="`切片点：${sp.label}（${sp.text}）`"
+             :data-testid="`tl-bookmark-${sp.id}`"></div>
+
         <div
           v-for="b in blocks"
           :key="b.key"
@@ -62,7 +69,11 @@
                 @click="emit('update:diffMode', 'off')">关</button>
       </span>
 
-      <button data-testid="tl-lineage" title="势力谱系管理（可视化纠正 successorOf / 显式易主年份）"
+      <button data-testid="tl-save-slice-point"
+              title="把当前日期存为一个命名的切片点（切片导出会默认带上它；月日精度）"
+              @click="emit('save-slice-point')"><Icon name="bookmark" :size="13"/> 存为切片点</button>
+
+      <button data-testid="tl-lineage" title="势力谱系管理（可视化纠正 successorOf / 显式易主日期）"
               @click="emit('open-lineage')"><Icon name="git-branch" :size="13"/> 谱系</button>
     </div>
   </div>
@@ -73,7 +84,8 @@
 // 纯展示组件：所有状态由父级（ScenarioMap）持有，通过多个 v-model 同步。
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import Icon from './Icon.vue';
-import { yearToU, uToYear, eraIndexOfYear, axisTicks } from '../utils/scenarioTimeline';
+import { yearToU, uToYear, eraIndexOfYear, axisTicks, dateToYearValue } from '../utils/scenarioTimeline';
+import { formatDate } from '../utils/scenarioDates';
 
 const props = defineProps({
   timeline: { type: Object, required: true },
@@ -82,11 +94,13 @@ const props = defineProps({
   axisMode: { type: String, default: 'year' },
   diffMode: { type: String, default: 'eu4' },
   playing: { type: Boolean, default: false },
+  /** 切片点书签（项目级，store 持有）：只用于在轨道上画标记，不参与任何判定 */
+  slicePoints: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
   'update:year', 'update:era', 'update:axisMode', 'update:diffMode', 'update:playing',
-  'select-scenario', 'open-lineage',
+  'select-scenario', 'open-lineage', 'save-slice-point',
 ]);
 
 const railWrap = ref(null);
@@ -106,6 +120,23 @@ function tickPct(y) {
 }
 
 const playheadPct = computed(() => yearToU(props.timeline, props.year, props.axisMode) * 100);
+
+/**
+ * 切片点在轨道上的位置（0..100）。
+ * ⚠️ 位置必须与播放头**同一口径**（`yearToU`）—— 各算一套就会出现「标记画在这里、
+ *    游标拖动到这里却是另一年」这种只有对齐时才发现的不一致。
+ */
+const pointMarks = computed(() => (props.slicePoints || []).map((p) => {
+  const v = dateToYearValue({ y: p.y, m: p.m ?? null, d: p.d ?? null });
+  return {
+    id: p.id,
+    label: p.label || formatDate(p),
+    text: formatDate(p),
+    pct: yearToU(props.timeline, v, props.axisMode) * 100,
+    // 「游标正停在这个切片点上」——同年同日才算，月日不同就是不同时刻
+    onCursor: Math.abs(v - props.year) < 1e-6,
+  };
+}));
 
 const blocks = computed(() => {
   const tl = props.timeline;
@@ -410,6 +441,22 @@ defineExpose({ fitLabels, eraIndexOfYear });
   width: 1px;
   background: rgba(148, 163, 184, 0.15);
 }
+
+/* 切片点书签：轨道上的小菱形。金色 = 用户自己标的时间点，与紫色的时代块区分开 */
+.tl-bookmark {
+  position: absolute;
+  top: -3px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  background: #fbbf24;
+  border: 1px solid #0f172a;
+  transform: rotate(45deg);
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 3;
+}
+.tl-bookmark.is-on { background: #fde68a; box-shadow: 0 0 5px rgba(251, 191, 36, 0.9); }
 
 .tl-playhead {
   position: absolute;

@@ -6,8 +6,9 @@
   ① **势力只能改名，不能新建/删除** —— `polities` 只有 Azgaar `.map` 导入一条来路，
      自建底图 + 自建剧本 = `polities: []` → 色板空空、油漆桶点了**静默无反应**；
      删除同样没有 → 错导入的 FMG 国名永久留在地图与谱系里。
-  ② 删省份**不级联** `scenarios[*].ownership` / `changeYears`（键就是省份 id）→ 孤儿键
-     看不见却参与 `groupMap` 分组与谱系继承的重叠度 → 「势力继承莫名断裂」。
+  ② 删省份**不级联** `scenarios[*].ownership` / `changeEvents`（键就是省份 id；2026-10-05
+     月日精度后旧键 `changeYears` 已由 `utils/scenarioDates.js#normalizeScenarioDates` 读时迁移）
+     → 孤儿键看不见却参与 `groupMap` 分组与谱系继承的重叠度 → 「势力继承莫名断裂」。
   ③ SVG 导出**与画布不同源**：只画主环（洞被填实、飞地丢）、海域照样按归属上色、
      没有势力名标签（而真实数据 21 个省份名里 20 个是 `Province N`，会被过滤器跳过）
      → 导出的 SVG 是一张**没有字的色块图**。
@@ -21,8 +22,8 @@
      属性面板不许再用 `v-model="selectedProvince.x"`、势力增删已接线且删除带级联、
      剧本画布有 DPR 缩放。
   f1 势力 CRUD 行为：自建剧本（零势力）→ `addPolity` → undo/redo → 指派 + 改色 →
-     `removePolity` **连带清 ownership/changeYears**并回报受影响省数 → undo 整体还原 → redo 再清。
-  f2 删省级联行为：`removeBaseProvince` 清掉该省在各剧本里的归属与易主年份 + 回报份数，
+     `removePolity` **连带清 ownership/changeEvents**并回报受影响省数 → undo 整体还原 → redo 再清。
+  f2 删省级联行为：`removeBaseProvince` 清掉该省在各剧本里的归属与易主日期 + 回报份数，
      undo 把省份与两个键一起还原（**同一条 undo**）。
   f3 导出与画布同源：真导出 SVG，断言 ① 势力名文本进了图（此前完全没有）
      ② 海域填充色 = `SEA_FILL` 且海界是虚线 ③ 多环省份的**洞**也进了 path
@@ -108,8 +109,9 @@ def sub_source_guards(cdp):
 
     idx = se.find('function removeBaseProvince')
     seg = se[idx:idx + 3200] if idx >= 0 else ''
-    if 'ownership' not in seg or 'changeYears' not in seg:
-        bad.append('removeBaseProvince 没有级联清 ownership/changeYears（孤儿键会永久随项目往返）')
+    # 🔴 月日精度（2026-10-05）：级联清的第二个键由 `changeYears` 改名 `changeEvents`
+    if 'ownership' not in seg or 'changeEvents' not in seg:
+        bad.append('removeBaseProvince 没有级联清 ownership/changeEvents（孤儿键会永久随项目往返）')
 
     if 'devicePixelRatio' not in sm or 'setTransform(canvasDpr' not in sm:
         bad.append('剧本画布没有 DPR 缩放（高分屏下是位图放大 = 发虚）')
@@ -162,11 +164,19 @@ CRUD_JS = r"""(async () => {
   ck('redo 恢复新建', (s.scenarios[SC].polities || []).length === 1);
 
   // ③ 指派 + 改色（改色此前有 store 能力、无 UI；这里同时守 store 侧）
-  s.setOwnership(SC, 'p77a', pid, 1050);
+  // 🔴 月日精度（2026-10-05）：第 4 参是**日期对象** `{y,m,d}` —— 不再接受裸年份
+  //    （`scenarioDates.normalizeDate` 对非对象一律 null → 裸年份会被判「日期无法识别」
+  //      并且**整条命令被拒**，连 ownership 都不会写；见报告里的源码疑点）。
+  s.setOwnership(SC, 'p77a', pid, { y: 1050, m: null, d: null });
   const r2 = s.updatePolity(SC, pid, { color: '#123456' });
   ck('updatePolity 改色落库', !!(r2 && r2.success) && s.scenarios[SC].polities[0].color === '#123456', r2);
   ck('指派写进了 ownership', s.scenarios[SC].ownership['p77a'] === pid);
-  ck('显式易主年份一并记下', s.scenarios[SC].changeYears['p77a'] === 1050, s.scenarios[SC].changeYears);
+  // `changeEvents` 不在剧本默认形状里（没写过就没这个键）→ 一律走这个取值口
+  const evOf = () => (((s.scenarios[SC].changeEvents || {})['p77a']) || []);
+  ck('显式易主日期一并记下（changeEvents；月/日为 null = 只到年）',
+     evOf().length === 1 && evOf()[0].y === 1050 && evOf()[0].m === null && evOf()[0].d === null,
+     s.scenarios[SC].changeEvents);
+  ck('日期事件带 owner（谁在这一天接手）', evOf()[0].owner === pid, evOf());
 
   // ④ 删除势力：必须连带清反向索引
   const r3 = s.removePolity(SC, pid);
@@ -175,14 +185,16 @@ CRUD_JS = r"""(async () => {
   ck('受影响省数被点名（UI 二次确认要用它）', r3 && r3.affected === 1, r3);
   ck('ownership 孤儿键已清（不留指向不存在势力的 id）',
      s.scenarios[SC].ownership['p77a'] === undefined, s.scenarios[SC].ownership);
-  ck('changeYears 同步清掉', s.scenarios[SC].changeYears['p77a'] === undefined, s.scenarios[SC].changeYears);
+  ck('changeEvents 同步清掉（不留指向已删省份/无主事件的孤儿键）',
+     (s.scenarios[SC].changeEvents || {})['p77a'] === undefined, s.scenarios[SC].changeEvents);
 
-  // ⑤ 删除也是一条 undo（整体还原：势力 + 归属 + 年份 一起回来）
+  // ⑤ 删除也是一条 undo（整体还原：势力 + 归属 + 日期 一起回来）
   s.undo();
   ck('undo 还原势力', (s.scenarios[SC].polities || []).length === 1
      && s.scenarios[SC].polities[0].id === pid, s.scenarios[SC].polities);
   ck('undo 还原归属', s.scenarios[SC].ownership['p77a'] === pid, s.scenarios[SC].ownership);
-  ck('undo 还原易主年份', s.scenarios[SC].changeYears['p77a'] === 1050, s.scenarios[SC].changeYears);
+  ck('undo 还原易主日期', evOf().length === 1 && evOf()[0].y === 1050,
+     (s.scenarios[SC].changeEvents || {})['p77a']);
   s.redo();
   ck('redo 再次清空（两半都清）', (s.scenarios[SC].polities || []).length === 0
      && s.scenarios[SC].ownership['p77a'] === undefined);
@@ -199,7 +211,7 @@ def sub_polity_crud(cdp):
     fails = res.get('fails') or []
     if fails:
         return False, '势力 CRUD 断言失败 ' + str(len(fails)) + ' 项：' + '；'.join(fails[:8])
-    return True, ('自建剧本（零势力）可新建 → undo/redo → 指派+改色 → 删除连带清 ownership/changeYears '
+    return True, ('自建剧本（零势力）可新建 → undo/redo → 指派+改色 → 删除连带清 ownership/changeEvents '
                   '并回报受影响省数 → undo 整体还原')
 
 
@@ -214,27 +226,30 @@ CASCADE_JS = r"""(async () => {
   const SC = KEY + '/自建';
   const prov = () => (s.baseMaps[KEY].terrain || []).find(p => p.id === 'p77a');
 
-  // 自备前提：一个势力占着 p77a 并带显式易主年份（f1 的结束态是"已删势力"，
+  // 自备前提：一个势力占着 p77a 并带显式易主日期（f1 的结束态是"已删势力"，
   // 不依赖上一步的残留状态 —— 步骤间耦合会让红的是测试自己）
   let pol = (s.scenarios[SC].polities || [])[0];
   if (!pol) { const rp = s.addPolity(SC, { name: '甲国' }); pol = { id: rp.id }; }
-  s.setOwnership(SC, 'p77a', pol.id, 1050);
+  s.setOwnership(SC, 'p77a', pol.id, { y: 1050, m: null, d: null });
 
+  const evOf = () => (((s.scenarios[SC].changeEvents || {})['p77a']) || []);
   ck('前置：省份在册', !!prov());
-  ck('前置：该省有归属 + 易主年份', s.scenarios[SC].ownership['p77a'] !== undefined
-     && s.scenarios[SC].changeYears['p77a'] !== undefined, s.scenarios[SC].ownership);
+  ck('前置：该省有归属 + 易主日期', s.scenarios[SC].ownership['p77a'] !== undefined
+     && evOf().length === 1 && evOf()[0].y === 1050, s.scenarios[SC].changeEvents);
 
   const r = s.removeBaseProvince(KEY, 'p77a');
   ck('省份已从 terrain 移除', !prov());
   ck('级联：ownership 键已清', s.scenarios[SC].ownership['p77a'] === undefined, s.scenarios[SC].ownership);
-  ck('级联：changeYears 键已清', s.scenarios[SC].changeYears['p77a'] === undefined, s.scenarios[SC].changeYears);
+  ck('级联：changeEvents 键已清', (s.scenarios[SC].changeEvents || {})['p77a'] === undefined,
+     s.scenarios[SC].changeEvents);
   ck('级联：别的省的归属不受影响', s.scenarios[SC].ownership['p77b'] === undefined);
   ck('回执点名清理了几个剧本', !!(r && r.cascadedScenarios === 1), r);
 
   s.undo();
   ck('undo 还原省份', !!prov());
   ck('undo 一并还原归属（级联必须同一条 undo）', s.scenarios[SC].ownership['p77a'] !== undefined, s.scenarios[SC].ownership);
-  ck('undo 一并还原易主年份', s.scenarios[SC].changeYears['p77a'] !== undefined, s.scenarios[SC].changeYears);
+  ck('undo 一并还原易主日期', evOf().length === 1 && evOf()[0].y === 1050,
+     (s.scenarios[SC].changeEvents || {})['p77a']);
 
   return JSON.stringify({ fails });
 })()"""
@@ -248,7 +263,7 @@ def sub_province_cascade(cdp):
     fails = res.get('fails') or []
     if fails:
         return False, '删省级联断言失败 ' + str(len(fails)) + ' 项：' + '；'.join(fails[:8])
-    return True, '删省份连带清 ownership/changeYears（各剧本）+ 回报份数；一条 undo 把省份与两个键一起还原'
+    return True, '删省份连带清 ownership/changeEvents（各剧本）+ 回报份数；一条 undo 把省份与两个键一起还原'
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -283,7 +298,9 @@ EXPORT_JS = r"""(async () => {
   SM.baseMapKey = KEY;
   SM.selectedScenario = s.scenarios[SC];
   SM.tlEra = 0;
-  SM.tlYear = 1050;
+  // 🔴 月日精度（2026-10-05）：时间轴游标真源是 `tlDate`（`{y,m,d}`）；
+  //    `tlYear` 已是**只读 computed**（写它只会得到一条 Vue 警告，游标纹丝不动）。
+  SM.tlDate = { y: 1050, m: null, d: null };
   SM.tlDiffMode = 'off';
   await tick(300);
 
@@ -369,13 +386,55 @@ def sub_panel_write_path(cdp):
     return True, '群系下拉 change → store 落值 → undo 真有还原（不是空转）'
 
 
-def run(cdp):
-    ensure_data_ready(cdp)
+def _enter_scenario_mode(cdp):
+    """点「历史剧本」进入剧本模式。
+
+    ⚠️ 为什么不是「查一次就点」（2026-10-05 实测踩到）：harness 的 `wait_for` 把
+    `cdp.eval` 的 `{'__err__': …}` 当成**真值** —— 应用尚未挂载时表达式抛错会被当作
+    「已就绪」，于是探针可能在「文档正在导航 / `#app` 还没 mount」的窗口里跑，
+    症状就是 `no-btn`（与用例逻辑无关，且只在 harness 抖动时出现）。
+    这里改成**轮询等按钮出现**（最多 ~10s），仍然没有才把现场带回去。
+    """
+    for _ in range(20):
+        r = cdp.eval("""(() => {
+          const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__;
+          if (!app || !app._instance) return 'not-ready';
+          const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('历史剧本'));
+          if (!b) return 'no-btn';
+          b.click(); return 'ok';
+        })()""")
+        if r == 'ok':
+            return 'ok'
+        if r == 'no-btn':
+            break                     # 应用在跑但没有这个按钮 → 真异常，立刻带现场
+        time.sleep(0.5)
     r = cdp.eval("""(() => {
+      const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__;
+      if (!app || !app._instance) return 'no-btn';
       const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('历史剧本'));
       if (!b) return 'no-btn';
       b.click(); return 'ok';
     })()""")
+    if r == 'ok':
+        return 'ok'
+    # 查空时**带回现场**（本仓纪律）：只有 'no-btn' 是查不出原因的
+    diag = cdp.eval("""(() => {
+      const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__;
+      const s = app && app._instance ? app._instance.setupState.store : null;
+      return JSON.stringify({
+        level: s ? s.viewLevel : null,
+        nodes: s ? s.nodes.length : -1,
+        hasSelector: !!document.querySelector('.world-selector'),
+        buttons: Array.from(document.querySelectorAll('button')).slice(0, 14)
+          .map(x => (x.textContent || '').trim().slice(0, 12)),
+      });
+    })()""")
+    return f'{r} | 现场: {diag}'
+
+
+def run(cdp):
+    ensure_data_ready(cdp)
+    r = _enter_scenario_mode(cdp)
     if r != 'ok':
         return False, f'进入剧本模式失败: {r}'
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", desc='ScenarioMap 挂载', timeout=8)

@@ -28,6 +28,7 @@ import { collectScenarioLabels } from '../utils/scenarioLabels';
 import {
   collectSliceFrames, changeDateStats, sliceFrameName, MAX_SLICE_FRAMES,
 } from '../utils/scenarioSlices';
+import { formatDate, dateToken } from '../utils/scenarioDates';
 
 const LABEL_COLOR = '#3c4150';
 
@@ -46,19 +47,24 @@ export function useScenarioExport({
   //    而且两份"形心"实现就是下一个「改一处另一处不变」。
 
   /**
-   * 构建**指定剧本 / 指定年份**的 SVG（省略 era/year 时 = 当前时间轴状态）。
+   * 构建**指定剧本 / 指定日期**的 SVG（省略 era/date/year 时 = 当前时间轴状态）。
    * 画布逻辑与 ScenarioMap.render 对齐：底色 → 省份 → EU4 斜线 → 边界 → 名称 → 标签/标记 → 图例。
    *
    * 🔴 2026-10-02 参数化 `(era, year)`（逐年切片导出要用）：此前它只读注入的
    *    `currentEra`/`currentYear` 两个 ref → 想导出「另一年」只能先改时间轴游标再导出
    *    （批量出帧会边导边动用户的时间轴，且无法并行/回放）。参数化后**帧序列与当前游标无关**。
    *    默认值保持原行为（不传 = 当前），既有调用与用例一行不改。
+   * 🔴 2026-10-05 再加 `date`（月日精度）：同一年内 6 月前后归属不同，只给年份
+   *    会把「1444-11-11」导成「1444-01-01」的状态（图与时间点不符）。
+   *    **`date` 优先，`year` 仅作兼容**（裸年份 = 该年 1 月 1 日）。
    */
-  function buildScenarioSVG({ legend = true, title = true, grid = true, era, year: yearOpt } = {}) {
+  function buildScenarioSVG({ legend = true, title = true, grid = true, era, date: dateOpt, year: yearOpt } = {}) {
     const tl = timeline.value;
     if (!tl || !tl.scenarios.length) throw new Error('没有剧本可导出');
     const k = Number.isInteger(era) ? era : currentEra.value;
-    const year = Number.isFinite(yearOpt) ? yearOpt : currentYear.value;
+    const at = dateOpt
+      ? { y: dateOpt.y, m: dateOpt.m ?? null, d: dateOpt.d ?? null }
+      : (Number.isFinite(yearOpt) ? { y: yearOpt, m: null, d: null } : currentYear.value);
     if (!(k >= 0 && k < tl.scenarios.length)) throw new Error(`剧本序号超出范围：${k}`);
     const s = tl.scenarios[k];
     const terrain = baseMap.value?.terrain || [];
@@ -133,13 +139,13 @@ export function useScenarioExport({
       }
 
       // 与画布同规则：EU4 斜线占领时底色=旧主；其他模式底色=当前实际持有者
-      const ref = (diffMode.value === 'eu4' && isStriped(tl, k, prov.id, year))
+      const ref = (diffMode.value === 'eu4' && isStriped(tl, k, prov.id, at))
         ? { owner: tl.scenarios[k - 1].ownership?.[prov.id], era: k - 1 }
-        : currentOwnerRef(tl, k, prov.id, year);
+        : currentOwnerRef(tl, k, prov.id, at);
       const col = polityColor(tl.scenarios[ref.era], ref.owner);
       body.push(svgPath(d, { fill: col, 'fill-rule': 'evenodd', 'fill-opacity': 0.72, stroke: 'none' }));
 
-      if (diffMode.value === 'eu4' && isStriped(tl, k, prov.id, year)) {
+      if (diffMode.value === 'eu4' && isStriped(tl, k, prov.id, at)) {
         const newCol = polityColor(s, s.ownership?.[prov.id]);
         if (!hatchIds[newCol]) {
           const r = hatchPatternDef(newCol, { id: `occ-${Object.keys(hatchIds).length}` });
@@ -208,9 +214,9 @@ export function useScenarioExport({
       })),
       tier: polityLabelTier(1),
       scale: 1,                                  // SVG 用户空间 = 世界单位（≈ 1 屏幕像素/世界单位）
-      ownerRefOf: (pid) => ((diffMode.value === 'eu4' && isStriped(tl, k, pid, year))
+      ownerRefOf: (pid) => ((diffMode.value === 'eu4' && isStriped(tl, k, pid, at))
         ? { owner: tl.scenarios[k - 1]?.ownership?.[pid], era: k - 1 }
-        : currentOwnerRef(tl, k, pid, year)),
+        : currentOwnerRef(tl, k, pid, at)),
       polityOfEra: (era, owner) => tl.scenarios[era]?.polities?.find((p) => p.id === owner) || null,
     });
     for (const lb of labels) {
@@ -243,10 +249,10 @@ export function useScenarioExport({
 
     // 标题块（左上）
     if (title) {
-      const { settled, total } = settledCount(tl, k, year);
+      const { settled, total } = settledCount(tl, k, at);
       const lines = [
         `${s.name}`,
-        `${tl.years[k].start} ~ ${tl.years[k].end} · 当前 ${Math.round(year)}`,
+        `${tl.years[k].start} ~ ${tl.years[k].end} · 当前 ${formatDate(at)}`,
         `${baseMap.value?.name || baseMap.value?.id || ''} · ${terrain.length} 省`,
       ];
       if (k > 0) lines.push(`易主 ${settled}/${total} 省已落定`);
@@ -268,7 +274,7 @@ export function useScenarioExport({
       const occupied = {};
       for (const prov of terrain) {
         // 图例统计的是**当前实际持有者**（斜线占领态下底色是旧主，但归属已转移）
-        const o = currentOwnerRef(tl, k, prov.id, year).owner;
+        const o = currentOwnerRef(tl, k, prov.id, at).owner;
         if (o) occupied[o] = (occupied[o] || 0) + 1;
       }
       const lw = 178;
@@ -355,6 +361,11 @@ export function useScenarioExport({
 
   // ===== 逐年切片（EU4 式帧序列）=====
 
+  /** 目录名里的日期段：用与帧名同一套 token（负数年 `n` 前缀、无分隔符） */
+  function dateSlug(frame) {
+    return dateToken(frame?.date || { y: frame?.year, m: null, d: null });
+  }
+
   /**
    * 构建整批切片帧（**不落盘**）：一次把每个「状态真的变了」的年份渲染成一张图。
    *
@@ -363,11 +374,13 @@ export function useScenarioExport({
    *
    * @returns {Promise<{files:Array, manifest:Object, stats:Object, warnings:string[]}>}
    */
-  async function buildSliceFrames({ png = false, scale = 2, onProgress } = {}) {
+  async function buildSliceFrames({ png = false, scale = 2, onProgress, slicePoints } = {}) {
     const tl = timeline.value;
     let model;
     try {
-      model = collectSliceFrames(tl);           // 帧索引只算一次（与对话框共用同一份判定）
+      // 帧索引只算一次（与对话框共用同一份判定）；书签帧默认必出 → 必须把切片点传进去，
+      // 否则「我在对话框里看到 8 帧、导出来 5 帧」（书签帧被吞）= 同屏两个数字对不上
+      model = collectSliceFrames(tl, slicePoints);
     } catch (e) {
       throw new Error(`切片索引失败：${e.message}`);
     }
@@ -380,11 +393,14 @@ export function useScenarioExport({
     const warnings = [];
     const dates = changeDateStats(tl);
     if (dates.synthesized > 0) {
-      warnings.push(`${dates.synthesized}/${dates.total} 个易主年份是**自动铺开的合成值**（未录入真实日期），`
+      warnings.push(`${dates.synthesized}/${dates.total} 个易主日期是**自动铺开的合成值**（未录入真实日期），`
         + '导出的是「按现有剧本推出来的时间轴」，不是史料');
     }
     if (dates.outOfRange.length) {
-      warnings.push(`${dates.outOfRange.length} 个易主年份落在本剧本年代区间之外（帧仍会出，但年份本身该修）`);
+      warnings.push(`${dates.outOfRange.length} 个易主日期落在本剧本年代区间之外（帧仍会出，但日期本身该修）`);
+    }
+    if (dates.multiPerProvince.length) {
+      warnings.push(`${dates.multiPerProvince.length} 个省在同一个剧本内多次易主 —— 每一次各出一帧`);
     }
 
     const files = [];
@@ -392,7 +408,9 @@ export function useScenarioExport({
     for (let i = 0; i < frames.length; i++) {
       const f = frames[i];
       if (onProgress) onProgress(i + 1, frames.length, f);
-      const built = buildScenarioSVG({ era: f.era, year: f.year });
+      // 🔴 传 `date`（不是 year）：月日精度下同一年可能有多个帧状态，
+      //    只给年份会让「1444-11-11」渲染成「1444-01-01」的状态（图与时间点不符）。
+      const built = buildScenarioSVG({ era: f.era, date: f.date, year: f.year });
       if (!size) size = { width: built.width, height: built.height };
       if (png) {
         files.push({ name: sliceFrameName(i, f, 'png'), dataUrl: await rasterizeSvg(built.svg, scale) });
@@ -415,14 +433,21 @@ export function useScenarioExport({
         total: dates.total, explicit: dates.explicit, synthesized: dates.synthesized,
         outOfRange: dates.outOfRange.length,
       },
-      // 每帧「第几年 / 哪个剧本 / 哪些省易主」—— 交给外部 ffmpeg 或做字幕都要它
+      // 每帧「哪一天 / 哪个剧本 / 哪些省易主 / 为什么存在」—— 交给外部 ffmpeg 或做字幕都要它
       frames: frames.map((f, i) => ({
         index: i + 1,
         file: files[i] ? files[i].name : '',
+        // 月日精度：日期是主键，year 保留给只认年份的外部工具（ffmpeg 字幕模板等）
+        date: { y: f.date?.y ?? f.year, m: f.date?.m ?? null, d: f.date?.d ?? null },
+        dateText: formatDate(f.date),
         year: f.year,
         era: f.era,
         eraName: tl.scenarios[f.era]?.name || '',
         kind: f.kind,
+        // 帧来源：bookmark（切片点，默认必出）/ era（剧本起点）/ change（易主）
+        sources: Array.isArray(f.sources) ? f.sources.slice() : [],
+        bookmarkIds: Array.isArray(f.bookmarkIds) ? f.bookmarkIds.slice() : [],
+        label: f.label || '',
         changed: f.changed.slice(),
         changedNames: f.changed.map((pid) => provinceNames.value?.[pid] || pid),
         explicitCount: Object.keys(f.explicit || {}).length,
@@ -438,20 +463,20 @@ export function useScenarioExport({
    * 逐年切片导出（选一次目录 → 批量写 N 帧 + frames.json）。
    * 失败/取消都给可见回音；浏览器回退模式退化为逐个下载（并说明）。
    */
-  async function exportSliceFrames({ png = false, scale = 2 } = {}) {
+  async function exportSliceFrames({ png = false, scale = 2, slicePoints } = {}) {
     try {
       setStatus('正在生成切片帧…', 0);
       const bundle = await buildSliceFrames({
-        png, scale,
-        onProgress: (i, n, f) => setStatus(`正在生成第 ${i}/${n} 帧（${f.year} 年）…`, 0),
+        png, scale, slicePoints,
+        onProgress: (i, n, f) => setStatus(`正在生成第 ${i}/${n} 帧（${formatDate(f.date)}）…`, 0),
       });
-      // 目录名用「首个剧本名 + 年份跨度」：一批切片本来就跨多个剧本，
+      // 目录名用「首个剧本名 + 日期跨度」：一批切片本来就跨多个剧本，
       // 只写某一个剧本名会让人以为这批只覆盖那一代（曾写成 frames[0].era → 甲时代 + 乙时代的帧）
       const first = bundle.manifest.frames[0] || {};
       const last = bundle.manifest.frames[bundle.manifest.frames.length - 1] || {};
       const firstEra = timeline.value.scenarios[first.era || 0];
       const dirName = `sitian-slices-${safeName(firstEra?.name)}`
-        + `-${first.year}_${last.year}-${stamp()}`;
+        + `-${dateSlug(first)}_${dateSlug(last)}-${stamp()}`;
 
       if (window.sitianAPI?.exportScenarioFrames) {
         setStatus(`正在写入 ${bundle.files.length} 个文件…`, 0);

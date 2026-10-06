@@ -225,3 +225,76 @@
    ⚠️ 仍未做：**一年内多次易主**（模型限制「一剧本一省最多易主一次」）与**批量导入外部年表**。
 
 *整理：企鹅 · 2026-09-24 · 证据路径均可复验*
+
+---
+
+## 2026-10-05：月日精度 + 切片点书签（历史剧本可用化的第二件）
+
+> 来源：《司天-月日精度与切片书签-执行单-20261005》（全栈开发下达，暮雨拍板「切片点要到月日」）
+> 基线 `f709191`（81/81 回归绿）。
+
+### 为什么做这件（而不是继续堆功能）
+
+上一轮（2026-10-02）做出了「逐年切片导出」，但**切片的时间点仍然只能到年**，而且
+`changeYears` 是**一省一剧本一个年单值** —— 两件真实需求都装不下：
+① EU4 bookmark 式切片点（人指定 + 有名字 + 精确到月日）；② 同省同年多次易主
+（一代之内换了两次主人，历史里很常见）。这一轮把数据模型一次改到位。
+
+### 本轮已做
+
+1. **数据模型：年单值 → 日期列表**（破坏性，但读时迁移）
+   - `scenario.changeEvents[pid] = [{ y, m, d, owner }, …]`（**按日期升序**，同省同年多次合法）；
+     `m`/`d` 可为 `null`，语义 = 该年 1 月 1 日。旧键 `changeYears` 由
+     `utils/scenarioDates.js#normalizeScenarioDates()` **读时迁移**（**幂等**，新旧并存时新键优先），
+     保存只写新键、**不双写**。
+   - 🔴 **迁移只有一个入口**：`scenarioEditing.applyScenarioState()`。三个装载口
+     （打开项目 / 知识库快照还原 / 剧本导入）全部改走它 —— 漏一处就是
+     「我明明录过易主日期，时间轴上却全是合成值」这种不报错的静默失效。
+   - 剧本边界（`startYear`/`endYear`）**保持年精度**（执行单 §0.4 明确要求：月日只进易主事件与切片点）。
+2. **日期比较 / 校验 / 格式化的唯一实现**：`cmpDate` / `dateKey` / `formatDate` / `dateToken`
+   全在 `utils/scenarioDates.js`；`validateChangeDate(InRange)` 在 `utils/scenarioSlices.js`。
+   任何一处自己写 `m || 1` 就是第二事实源，会在边界（闰年 2-29、只到年）暴露。
+3. **归属查询改为吃日期**：`currentOwnerRef` / `baseOwnerRef` / `isStriped` / `settledCount`
+   现在收 `{y,m,d}`。**新增第三种状态**：某省在本剧本有事件、但查询日期早于第一条易主日
+   → 仍是**上一代**的主（旧实现只有年份，所以只有「旧主/新主」两态）。
+4. **切片点书签（新能力）**：项目级 `slicePoints`（`{id,label,y,m,d}`），
+   `addSlicePoint` / `renameSlicePoint` / `updateSlicePoint` / `removeSlicePoint` 各**一条 undo**；
+   时间轴轨道上画书签标记 + 「存为切片点」按钮。区间归属**运行时判定、不落盘**。
+5. **切片对话框重构**：帧来源 = **书签帧（默认必出）∪ 自动帧（剧本起点 + 每次易主）**，
+   **按日期合并**（同一时间点只出一张图）；每帧带 `date` / `sources` / `bookmarkIds` / `label`。
+6. **帧名与清单带日期**：`frame_0001_era03_14441111.svg`（年月日补零；月日缺省补 `00`、
+   负数年 `n` 前缀 —— 文件名里不出现 `-` 与路径分隔符）；`frames.json` 每帧加
+   `date` / `dateText` / `sources` / `bookmarkIds` / `label`，保留 `year` 供只认年份的外部工具用。
+7. **时间轴游标改为日期**：`ScenarioMap` 的 `tlYear`（ref）→ `tlDate`（`{y,m,d}` ref），
+   `tlYear` 降为**只读 computed**；播放的年内插值按**天数**线性。组件契约保持
+   `ScenarioTimeline.year: Number`（月日只由父级持有），轨道拖拽回来时月日归 `null`。
+
+### 🔴 这一轮被用例抓出的两个**真 bug**（都是月日精度的连带影响）
+
+1. **`currentOwnerRef` 漏了「一条都没落定」分支** —— 有事件、但查询日期早于第一条易主日时，
+   它直接返回**本剧本**的归属 → 「6 月易主、查 5 月」返回新主（外观与「已易主」计数都错半年）。
+   纯函数用例 e1 抓到（期望旧主、实际新主）。
+2. **`collectSliceFrames` 的「是不是起点帧」只比年份** —— 同一年里任何一次**年中**易主
+   都会被标成 `mixed`（起点 + 易主），来源标记与对话框文案跟着错。纯函数用例 t5 抓到
+   （「3-04 帧是纯易主帧」得到 `mixed`）。
+
+### 仍未做（明确接受不做）
+
+- **月日精度不扩展**到剧本边界、动画内嵌、ffmpeg、年表批量导入、vault 集成
+  （执行单 §4 明确范围外）。
+- **顶点编辑造成的压叠**与**框选（marquee）多选**（2026-10-01 起的 backlog，本轮未动）。
+
+### 方法论沉淀（供后人少踩）
+
+- 🔴 **别拿 `buildTimeline` 驱动的夹具去断言日期行为**：`changed`（谁算易主）取决于
+  `computeLineage` 的「按省份重叠度贪心继承」，而那条规则会**把新一代的势力配到旧势力上**
+  （不看谁先谁后），于是「甲国改名叫丙国」被判成"继承"→ 不进 `changed`；
+  平局还由 `localeCompare`（依赖 ICU 排序）裁决。本轮为此写了**五版夹具**才稳。
+  最终做法：日期逻辑用**手搓时间轴模型**（只喂 `byProvince`）测，谱系那一层交给既有用例。
+- **`test_78` 的读取口径要随动**：旧的 `e.year[pid]` 已删，改读 `e.byProvince[pid]` /
+  `e.lastDate[pid]`；`setChangeYears` / `setProvinceChangeYear` / `validateChangeYear`
+  三个名字全部换新（`setChangeEvents(Bulk)` / `validateChangeDate`）。
+- **PowerShell 不要用来改 UTF-8 源码**（本轮实测把 `scenarioSlices.js` 的中文注释打成乱码，
+  只能整文件重写）。改文本文件一律走编辑工具。
+
+*整理：企鹅 · 2026-10-05 · 证据路径均可复验*

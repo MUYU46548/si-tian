@@ -23,6 +23,14 @@ import {
 } from '../../utils/deriveClient';
 // 新建省份的压叠度量（纯函数，Node 有单测）—— 判定单源，store 只做策略
 import { measureProvinceOverlap, describeOverlap } from '../../utils/provinceOverlap';
+// ── 月日精度（2026-10-05）：易主日期的规整 / 比较 / 校验 ──────────────────────
+// 🔴 `changeYears[pid] = 1993` → `changeEvents[pid] = [{y,m,d,owner}, …]` 的迁移**唯一实现**
+//    在 `utils/scenarioDates.js`。本模块只做「何时搬」与「搬到哪」，绝不自己写第二套日期逻辑：
+//    自己写一份 `m || 1` 就会出现「入库 1-1、比较按 null」这类只在边界暴露的静默不一致。
+import {
+  normalizeScenarioDict, normalizeDate, cmpDate, dateKey,
+} from '../../utils/scenarioDates';
+import { validateChangeDateInRange } from '../../utils/scenarioSlices';
 
 export function createScenarioEditingModule(ctx) {
   const {
@@ -507,20 +515,23 @@ export function createScenarioEditingModule(ctx) {
     const oldProv = baseMap.terrain.find(p => p.id === provinceId);
     if (!oldProv) return;
 
-    // 🔴 级联（2026-10-01）：`scenarios[*].ownership` 的**键就是省份 id**（不是节点 id ——
-    //    见 `idRefDicts()` 的注释），`changeYears` 同理。删省不摘这两个键 = 留下指向
-    //    不存在省份的孤儿键：画布上看不见（渲染按 `terrain` 遍历），却仍参与 `groupMap`
+    // 🔴 级联（2026-10-01，2026-10-05 随月日精度改名）：`scenarios[*].ownership` 的**键就是省份 id**
+    //    （不是节点 id —— 见 `idRefDicts()` 的注释），`changeEvents` 同理。删省不摘这两个键 =
+    //    留下指向不存在省份的孤儿键：画布上看不见（渲染按 `terrain` 遍历），却仍参与 `groupMap`
     //    分组、`summarizeLineages` 的省列表与谱系继承的重叠度计算 → 观感是「势力继承
     //    关系莫名断裂/粘连」。与 R7「删节点清孤儿数据」同一条纪律：**级联必须同一条 undo**。
     const cascadeBefore = {};
     for (const [scId, sc] of Object.entries(scenarios.value || {})) {
       if (!sc || sc.ownerKey !== baseMapKey) continue;
       const own = sc.ownership || {};
-      const cy = sc.changeYears || {};
+      const ev = sc.changeEvents || {};
       const hasOwner = Object.prototype.hasOwnProperty.call(own, provinceId);
-      const hasCY = Object.prototype.hasOwnProperty.call(cy, provinceId);
-      if (hasOwner || hasCY) {
-        cascadeBefore[scId] = { hasOwner, owner: own[provinceId], hasCY, changeYear: cy[provinceId] };
+      const hasEV = Object.prototype.hasOwnProperty.call(ev, provinceId);
+      if (hasOwner || hasEV) {
+        cascadeBefore[scId] = {
+          hasOwner, owner: own[provinceId],
+          hasEV, events: ev[provinceId] ? JSON.parse(JSON.stringify(ev[provinceId])) : undefined,
+        };
       }
     }
     const applyCascade = (mode) => {
@@ -531,16 +542,16 @@ export function createScenarioEditingModule(ctx) {
         const sc = next[scId];
         if (!sc) continue;
         const ownership = { ...(sc.ownership || {}) };
-        const changeYears = { ...(sc.changeYears || {}) };
+        const changeEvents = { ...(sc.changeEvents || {}) };
         const rec = cascadeBefore[scId];
         if (mode === 'remove') {
           delete ownership[provinceId];
-          delete changeYears[provinceId];
+          delete changeEvents[provinceId];
         } else {
           if (rec.hasOwner) ownership[provinceId] = rec.owner;
-          if (rec.hasCY) changeYears[provinceId] = rec.changeYear;
+          if (rec.hasEV) changeEvents[provinceId] = rec.events;
         }
-        next[scId] = { ...sc, ownership, changeYears };
+        next[scId] = { ...sc, ownership, changeEvents };
       }
       scenarios.value = next;
     };
@@ -899,10 +910,11 @@ export function createScenarioEditingModule(ctx) {
     const base = scenarios.value[baseScenarioId];
     const now = new Date().toISOString();
 
-    // ⚠️ 刻意**不**继承 `changeYears`（2026-10-02 复核后维持原行为）：易主年份的语义是
-    //    「该省在**本剧本年代区间内**哪一年换的主」。继承来的日期一律落在**上一个**剧本的区间里，
-    //    对新剧本而言按定义就是越界数据（`utils/scenarioSlices.js#changeDateStats` 会把它标出来）。
-    //    与其造一批越界日期，不如让新剧本走自动推算，由用户在「势力谱系管理 → 易主年份」里录真值。
+    // ⚠️ 刻意**不**继承 `changeEvents`（2026-10-02 定，2026-10-05 随月日精度维持原行为）：
+    //    易主日期的语义是「该省在**本剧本年代区间内**哪一天换的主」。继承来的日期一律落在
+    //    **上一个**剧本的区间里，对新剧本而言按定义就是越界数据
+    //    （`utils/scenarioSlices.js#changeDateStats` 会把它标出来）。
+    //    与其造一批越界日期，不如让新剧本走自动推算，由用户在「势力谱系管理 → 易主日期」里录真值。
     const newScenario = {
       id: newScenarioId,
       ownerKey: base?.ownerKey || overrides.ownerKey,
@@ -936,48 +948,111 @@ export function createScenarioEditingModule(ctx) {
   }
 
   // ============================================================
-  // Ownership（EU4 省份染色）
+  // Ownership（EU4 省份染色）—— 月日精度（2026-10-05）
   // ============================================================
-  
+  //
+  // 数据形状（现行）：
+  //   `scenario.ownership[pid]`   = 该省在本剧本快照里的归属（= 本剧本**结束**时的状态）
+  //   `scenario.changeEvents[pid]`= [{ y, m, d, owner }, …]（**按日期升序**，同省同年可多条）
+  // m/d 为 null 语义 = 该年 1 月 1 日。旧键 `changeYears` 由 `normalizeScenarioDates` 迁移。
+
   /**
-   * 指派势力。可选 changeYear：把「易主年份」一并记为显式值 ——
-   * 这是 changeYear 最自然的录入路径：把游标拖到某年再上色 = 该年易主。
+   * 该省在本剧本内的易主事件（升序副本）。**没有**时返回空数组（不写空键）。
+   * 所有写入口都走它 —— 「读一份、改、写回」三处各写一遍 = 迟早有一处忘排序。
    */
-  function setOwnership(scenarioId, provinceId, polityId, changeYear) {
+  function eventsOf(scenario, provinceId) {
+    const raw = scenario?.changeEvents?.[provinceId];
+    return Array.isArray(raw) ? raw.map(e => ({ y: e.y, m: e.m ?? null, d: e.d ?? null, owner: e.owner ?? null })) : [];
+  }
+
+  /** 把事件列表塞回剧本（空数组 = 删键，不留空壳） */
+  function putEvents(changeEvents, provinceId, list) {
+    if (Array.isArray(list) && list.length) changeEvents[provinceId] = list;
+    else delete changeEvents[provinceId];
+  }
+
+  /** 在某省的易主列表里按**日期**定位（月日精度：同日即同一条） */
+  function findEventIndex(list, date) {
+    const k = dateKey(date);
+    return list.findIndex(e => dateKey(e) === k);
+  }
+
+  /** 当前剧本的年代区间（数字）；缺失/非法时返回 null（调用方据此跳过校验，宁可少判不误拒） */
+  function eraRangeOf(scenario) {
+    const a = Number(scenario?.era?.startYear);
+    const b = Number(scenario?.era?.endYear);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return { start: a, end: b };
+  }
+
+  /** 日期合法性（校验实现单源在 scenarioSlices；区间取自剧本自身） */
+  function checkDateInEra(scenario, date) {
+    const r = eraRangeOf(scenario);
+    if (!r) return { ok: true };                       // 区间缺失 → 不拦（宁可不判也不误拒）
+    return validateChangeDateInRange(date, r.start, r.end);
+  }
+
+  /**
+   * 指派势力。可选 `changeDate`（`{y,m,d}` 或裸年份）：把「易主日期」一并记为显式值 ——
+   * 这是日期最自然的录入路径：把游标拖到某日再上色 = 该日易主。
+   *
+   * 语义（月日精度后明确下来）：
+   *   · 该日**已有**事件 → 只更新它的 owner（同一时刻不会有两个主人）；
+   *   · 没有 → 追加一条（同省同年多次易主因此天然成立）。
+   */
+  function setOwnership(scenarioId, provinceId, polityId, changeDate) {
     const scenario = scenarios.value[scenarioId];
-    if (!scenario) return;
+    if (!scenario) return { success: false, reason: 'no-scenario' };
+
+    // 🔴 越界日期**写不进库**（与面板内联提示同一份判定）：用户拖到剧本区间外再上色
+    //    会造出一条必然 outOfRange 的显式事件 —— 切片对话框会把它当「数据该修」列出来。
+    //    宁可这次不记日期（并回报原因），也不要写一条自己都知道是错的数据。
+    const date = normalizeDate(changeDate);
+    if (changeDate !== undefined && changeDate !== null && changeDate !== '' && !date) {
+      return { success: false, reason: '日期无法识别（需要年份）' };
+    }
+    if (date) {
+      const chk = checkDateInEra(scenario, date);
+      if (!chk.ok) return { success: false, reason: chk.reason };
+    }
 
     const oldOwner = scenario.ownership?.[provinceId] || null;
-    const oldCY = scenario.changeYears?.[provinceId];
-    const hadOldCY = oldCY !== undefined;
-    const writeCY = typeof changeYear === 'number' && Number.isFinite(changeYear);
+    const oldEvents = eventsOf(scenario, provinceId);
 
     execute({
       type: 'set-ownership',
-      label: writeCY ? '指派势力（含易主年份）' : '指派势力',
+      label: date ? '指派势力（含易主日期）' : '指派势力',
       undo: () => {
         const sc = scenarios.value[scenarioId];
-        const changeYears = { ...(sc.changeYears || {}) };
-        if (hadOldCY) changeYears[provinceId] = oldCY; else delete changeYears[provinceId];
+        const changeEvents = { ...(sc.changeEvents || {}) };
+        if (oldEvents.length) changeEvents[provinceId] = oldEvents;
+        else delete changeEvents[provinceId];
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
             ...sc,
             ownership: { ...sc.ownership, [provinceId]: oldOwner },
-            changeYears,
+            changeEvents,
           },
         };
       },
       redo: () => {
         const sc = scenarios.value[scenarioId];
-        const changeYears = { ...(sc.changeYears || {}) };
-        if (writeCY) changeYears[provinceId] = changeYear;
+        const changeEvents = { ...(sc.changeEvents || {}) };
+        if (date) {
+          const list = eventsOf(sc, provinceId);
+          const at = findEventIndex(list, date);
+          const rec = { y: date.y, m: date.m, d: date.d, owner: polityId ?? null };
+          if (at >= 0) list[at] = rec; else list.push(rec);
+          list.sort(cmpDate);
+          putEvents(changeEvents, provinceId, list);
+        }
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
             ...sc,
             ownership: { ...sc.ownership, [provinceId]: polityId },
-            changeYears,
+            changeEvents,
             updatedAt: new Date().toISOString(),
           },
         };
@@ -985,46 +1060,56 @@ export function createScenarioEditingModule(ctx) {
     });
 
     saveScenarios();
+    return { success: true };
   }
 
-  function clearOwnership(scenarioId, provinceId, changeYear) {
+  function clearOwnership(scenarioId, provinceId, changeDate) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return;
 
     const oldOwner = scenario.ownership?.[provinceId];
     if (!oldOwner) return;
 
-    const oldCY = scenario.changeYears?.[provinceId];
-    const hadOldCY = oldCY !== undefined;
-    const writeCY = typeof changeYear === 'number' && Number.isFinite(changeYear);
+    const oldEvents = eventsOf(scenario, provinceId);
+    const date = normalizeDate(changeDate);
+    const writeDate = !!date;
 
     execute({
       type: 'clear-ownership',
       label: '清除归属',
       undo: () => {
         const sc = scenarios.value[scenarioId];
-        const changeYears = { ...(sc.changeYears || {}) };
-        if (hadOldCY) changeYears[provinceId] = oldCY; else delete changeYears[provinceId];
+        const changeEvents = { ...(sc.changeEvents || {}) };
+        if (oldEvents.length) changeEvents[provinceId] = oldEvents;
+        else delete changeEvents[provinceId];
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
             ...sc,
             ownership: { ...sc.ownership, [provinceId]: oldOwner },
-            changeYears,
+            changeEvents,
           },
         };
       },
       redo: () => {
         const sc = scenarios.value[scenarioId];
         const { [provinceId]: _, ...rest } = sc.ownership;
-        const changeYears = { ...(sc.changeYears || {}) };
-        if (writeCY) changeYears[provinceId] = changeYear;
+        const changeEvents = { ...(sc.changeEvents || {}) };
+        if (writeDate) {
+          // 清归属仍要记「何时易主（到无主）」—— 时间轴上「这一年这块地没人了」是真事件
+          const list = eventsOf(sc, provinceId);
+          const at = findEventIndex(list, date);
+          const rec = { y: date.y, m: date.m, d: date.d, owner: null };
+          if (at >= 0) list[at] = rec; else list.push(rec);
+          list.sort(cmpDate);
+          changeEvents[provinceId] = list;
+        }
         scenarios.value = {
           ...scenarios.value,
           [scenarioId]: {
             ...sc,
             ownership: rest,
-            changeYears,
+            changeEvents,
             updatedAt: new Date().toISOString(),
           },
         };
@@ -1041,7 +1126,7 @@ export function createScenarioEditingModule(ctx) {
    *   ① `polityId` 为假值时旧实现写 `ownership[id] = null` —— **留键**。而 `clearOwnership` 是
    *      `delete` 真删键，`groupMap` / 谱系重叠度判的是「键在不在」，于是"清空"会留下
    *      一堆指向 `null` 的孤儿键（画布看不出、谱系统计却算进去）。现在统一成**真删键**，
-   *      并连带清该省的 `changeYears`（与 `clearOwnership` 同口径）。
+   *      并连带清该省的 `changeEvents`（与 `clearOwnership` 同口径）。
    *   ② **海域必须跳过**：单省油漆桶在 UI 侧拒 sea（海不参与势力归属、不进时间轴/谱系），
    *      批量若照写就会出现「有些海莫名其妙有了归属」。跳过并回报数量。
    *   ③ 空 / 无改动时**不压栈**（旧实现照样 execute + save = 无操作噪音）。
@@ -1050,11 +1135,11 @@ export function createScenarioEditingModule(ctx) {
    * @param {string} scenarioId
    * @param {string[]} provinceIds 省份 id 列表（自动去重；不存在的 id 计入 skippedMissing）
    * @param {string|null} polityId 假值 = 清归属（删键）
-   * @param {number} [changeYear] 有限数字才写显式易主年份
+   * @param {object|number} [changeDate] `{y,m,d}`（或裸年份）才写显式易主日期
    * @returns {{success:boolean, changed?:number, cleared?:number, skippedSea?:number,
    *            skippedMissing?:number, noop?:boolean, affected?:number, reason?:string}}
    */
-  function batchSetOwnership(scenarioId, provinceIds, polityId, changeYear) {
+  function batchSetOwnership(scenarioId, provinceIds, polityId, changeDate) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return { success: false, reason: 'no-scenario' };
 
@@ -1063,12 +1148,13 @@ export function createScenarioEditingModule(ctx) {
     const byId = new Map(terrain.map(p => [p.id, p]));
 
     const beforeOwnership = { ...(scenario.ownership || {}) };
-    const beforeChangeYears = { ...(scenario.changeYears || {}) };
+    const beforeChangeEvents = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
     const nextOwnership = { ...beforeOwnership };
-    const nextChangeYears = { ...beforeChangeYears };
+    const nextChangeEvents = JSON.parse(JSON.stringify(beforeChangeEvents));
 
     const clearing = !polityId;
-    const writeCY = typeof changeYear === 'number' && Number.isFinite(changeYear);
+    const date = normalizeDate(changeDate);
+    const writeDate = !!date;
     const seen = new Set();
     let changed = 0;
     let cleared = 0;
@@ -1085,14 +1171,23 @@ export function createScenarioEditingModule(ctx) {
       if (clearing) {
         if (!had) continue;                       // 本来就没归属 → 不算改动
         delete nextOwnership[rawId];
-        delete nextChangeYears[rawId];
+        delete nextChangeEvents[rawId];
         cleared++;
       } else {
-        if (beforeOwnership[rawId] === polityId && (!writeCY || beforeChangeYears[rawId] === changeYear)) {
-          continue;                               // 值没变 → 不算改动
-        }
+        const list = Array.isArray(nextChangeEvents[rawId])
+          ? nextChangeEvents[rawId].map(e => ({ ...e })) : [];
+        const at = writeDate ? findEventIndex(list, date) : -1;
+        const alreadySame = beforeOwnership[rawId] === polityId
+          && (!writeDate || (at >= 0 && list[at].owner === polityId));
+        if (alreadySame) continue;                // 值没变 → 不算改动
         nextOwnership[rawId] = polityId;
-        if (writeCY) nextChangeYears[rawId] = changeYear;
+        if (writeDate) {
+          // 同日在 → 改 owner；不在 → 追加（同省同年多次易主）
+          const rec = { y: date.y, m: date.m, d: date.d, owner: polityId ?? null };
+          if (at >= 0) list[at] = rec; else list.push(rec);
+          list.sort(cmpDate);
+          putEvents(nextChangeEvents, rawId, list);
+        }
         changed++;
       }
     }
@@ -1104,10 +1199,10 @@ export function createScenarioEditingModule(ctx) {
       };
     }
 
-    const apply = (ownership, changeYears, touch) => {
+    const apply = (ownership, changeEvents, touch) => {
       const cur = scenarios.value[scenarioId];
       if (!cur) return;
-      const next = { ...cur, ownership, changeYears };
+      const next = { ...cur, ownership, changeEvents };
       if (touch) next.updatedAt = new Date().toISOString();
       scenarios.value = { ...scenarios.value, [scenarioId]: next };
     };
@@ -1115,14 +1210,15 @@ export function createScenarioEditingModule(ctx) {
     execute({
       type: 'batch-ownership',
       label: clearing ? `批量清除归属（${cleared} 省）` : `批量指派（${changed} 省）`,
-      undo: () => apply(beforeOwnership, beforeChangeYears, false),
-      redo: () => apply(nextOwnership, nextChangeYears, true),
+      undo: () => apply(beforeOwnership, beforeChangeEvents, false),
+      redo: () => apply(nextOwnership, nextChangeEvents, true),
     });
 
     saveScenarios();
     return {
       success: true, changed, cleared, skippedSea, skippedMissing,
-      affected: changed + cleared, polityId: polityId || null, changeYear: writeCY ? changeYear : null,
+      affected: changed + cleared, polityId: polityId || null,
+      date: date ? { y: date.y, m: date.m, d: date.d } : null,
     };
   }
 
@@ -1287,7 +1383,7 @@ export function createScenarioEditingModule(ctx) {
    * 删除势力（走 undo）。
    *
    * 🔴 **必须连带清反向索引**：`ownership` 的值就是 polityId（键是省份 id），
-   *    `changeYears` 同理按省份 id 记显式易主年份。只把 polity 从数组里摘掉，
+   *    `changeEvents` 同理按省份 id 记显式易主日期。只把 polity 从数组里摘掉，
    *    那些省的归属会指向一个不存在的势力 —— 画布上回落 `#4a5568` 灰、
    *    标签因 `labelTextFor(null) === ''` 被**静默跳过**（一片没名字的灰块），
    *    而时间轴 / 谱系照样给它留槽位。与 R7「删节点清孤儿数据」同一条纪律。
@@ -1303,23 +1399,23 @@ export function createScenarioEditingModule(ctx) {
 
     const beforePolities = JSON.parse(JSON.stringify(list));
     const beforeOwnership = JSON.parse(JSON.stringify(scenario.ownership || {}));
-    const beforeChangeYears = JSON.parse(JSON.stringify(scenario.changeYears || {}));
+    const beforeChangeEvents = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
     const nextPolities = list.filter(p => p.id !== polityId);
 
     const affected = Object.entries(beforeOwnership)
       .filter(([, pid]) => pid === polityId)
       .map(([provId]) => provId);
     const nextOwnership = { ...beforeOwnership };
-    const nextChangeYears = { ...beforeChangeYears };
+    const nextChangeEvents = JSON.parse(JSON.stringify(beforeChangeEvents));
     for (const provId of affected) {
       delete nextOwnership[provId];
-      delete nextChangeYears[provId];
+      delete nextChangeEvents[provId];
     }
 
-    const apply = (polities, ownership, changeYears, touch) => {
+    const apply = (polities, ownership, changeEvents, touch) => {
       const cur = scenarios.value[scenarioId];
       if (!cur) return;
-      const nextSc = { ...cur, polities, ownership, changeYears };
+      const nextSc = { ...cur, polities, ownership, changeEvents };
       if (touch) nextSc.updatedAt = new Date().toISOString();
       scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
     };
@@ -1327,98 +1423,246 @@ export function createScenarioEditingModule(ctx) {
     execute({
       type: 'remove-polity',
       label: `删除势力：${target.name || polityId}`,
-      undo: () => apply(beforePolities, beforeOwnership, beforeChangeYears, false),
-      redo: () => apply(nextPolities, nextOwnership, nextChangeYears, true),
+      undo: () => apply(beforePolities, beforeOwnership, beforeChangeEvents, false),
+      redo: () => apply(nextPolities, nextOwnership, nextChangeEvents, true),
     });
 
     saveScenarios();
     return { success: true, affected: affected.length, affectedProvinceIds: affected, name: target.name || polityId };
   }
 
-  /** 显式设置/清除某省的易主年份（走 undo）。year=null 表示删除显式值（回到自动推算） */
-  function setProvinceChangeYear(scenarioId, provinceId, year) {
-    const scenario = scenarios.value[scenarioId];
-    if (!scenario) return;
-
-    const oldCY = scenario.changeYears?.[provinceId];
-    const hadOldCY = oldCY !== undefined;
-    const write = typeof year === 'number' && Number.isFinite(year);
-
-    execute({
-      type: 'set-change-year',
-      label: '设置易主年份',
-      undo: () => {
-        const sc = scenarios.value[scenarioId];
-        const changeYears = { ...(sc.changeYears || {}) };
-        if (hadOldCY) changeYears[provinceId] = oldCY; else delete changeYears[provinceId];
-        scenarios.value = { ...scenarios.value, [scenarioId]: { ...sc, changeYears } };
-      },
-      redo: () => {
-        const sc = scenarios.value[scenarioId];
-        const changeYears = { ...(sc.changeYears || {}) };
-        if (write) changeYears[provinceId] = year; else delete changeYears[provinceId];
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: { ...sc, changeYears, updatedAt: new Date().toISOString() },
-        };
-      },
-    });
-
-    saveScenarios();
-  }
-
   /**
-   * 批量写 / 清易主年份（**一条 undo**）—— 日期录入的批量入口。
+   * 显式设置 / 清除某省的易主**日期列表**（走 undo）—— 易主日期面板的单省入口。
    *
-   * 为什么必须有批量口：`computeEraChanges` 在缺显式值时会**均匀铺开**一个合成年份。
-   * 一个一个改（`setProvinceChangeYear`）会出现：① N 个省 = N 条 undo（`MAX_HISTORY=100`
-   * 会把更早的几何操作静默挤出栈）；② 「把这一代都定在某年」这类操作要写 N 遍。
-   *
-   * @param {string} scenarioId
-   * @param {Record<string, number|null>} patch 省份 id → 年份；null / 非有限数字 = **删除**显式值
-   * @returns {{success:boolean, changed?:number, cleared?:number, noop?:boolean, reason?:string}}
+   * @param {Array|null} list 完整的事件列表（`[{y,m,d,owner}]`）；null/空数组 = **删除显式值**
+   *                          （该省回到「按谱系变化推算」的合成日期）
+   * 为什么整列表替换而不是「逐条增删」：面板上用户可能一次改日期 + 改归属，
+   * 拆成多条命令会让「一条 undo 撤回这次编辑」失效。列表本身是个位数，整表快照不心疼。
    */
-  function setChangeYears(scenarioId, patch) {
+  function setChangeEvents(scenarioId, provinceId, list) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return { success: false, reason: 'no-scenario' };
 
-    const before = { ...(scenario.changeYears || {}) };
-    const next = { ...before };
-    let changed = 0;
-    let cleared = 0;
-    for (const [pid, y] of Object.entries(patch || {})) {
-      const write = typeof y === 'number' && Number.isFinite(y);
-      const had = Object.prototype.hasOwnProperty.call(before, pid);
-      if (write) {
-        if (before[pid] === y) continue;      // 值没变就不算改动
-        next[pid] = y;
-        changed++;
-      } else {
-        if (!had) continue;                   // 本来就没有显式值 → 没什么可清
-        delete next[pid];
-        cleared++;
-      }
-    }
-    if (!changed && !cleared) return { success: true, changed: 0, cleared: 0, noop: true };
+    const before = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
+    const next = JSON.parse(JSON.stringify(before));
+    const old = eventsOf(scenario, provinceId);
 
-    // 整表快照式 undo（与 removePolity 同形）：重编号改的是「别的键」，差量还原不了
-    const apply = (changeYears, touch) => {
+    const cleaned = [];
+    for (const raw of (Array.isArray(list) ? list : [])) {
+      if (raw === null || raw === undefined) continue;
+      const n = normalizeDate(raw);
+      if (!n) return { success: false, reason: '日期无法识别（需要年份）' };
+      const chk = checkDateInEra(scenario, n);
+      if (!chk.ok) return { success: false, reason: chk.reason };
+      const owner = (raw && raw.owner !== undefined && raw.owner !== null) ? String(raw.owner) : null;
+      const at = findEventIndex(cleaned, n);
+      const rec = { y: n.y, m: n.m, d: n.d, owner };
+      if (at >= 0) cleaned[at] = rec; else cleaned.push(rec);
+    }
+    cleaned.sort(cmpDate);
+    putEvents(next, provinceId, cleaned);
+
+    const same = JSON.stringify(old) === JSON.stringify(cleaned);
+    if (same) return { success: true, changed: 0, removed: 0, noop: true };
+
+    const apply = (changeEvents, touch) => {
       const cur = scenarios.value[scenarioId];
       if (!cur) return;
-      const nextSc = { ...cur, changeYears };
+      const nextSc = { ...cur, changeEvents };
       if (touch) nextSc.updatedAt = new Date().toISOString();
       scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
     };
 
     execute({
-      type: 'set-change-years',
-      label: `批量设置易主年份（改 ${changed} / 清 ${cleared} 省）`,
+      type: 'set-change-events',
+      label: cleaned.length ? `设置易主日期（${cleaned.length} 条）` : '清除易主日期（回到自动推算）',
       undo: () => apply(before, false),
       redo: () => apply(next, true),
     });
 
     saveScenarios();
-    return { success: true, changed, cleared };
+    return { success: true, changed: cleaned.length, removed: old.length };
+  }
+
+  /**
+   * 批量写 / 清易主日期（**一条 undo**）—— 日期录入的批量入口。
+   *
+   * 为什么必须有批量口：`computeEraChanges` 在缺显式值时会在区间内**均匀铺开**一个合成日期。
+   * 一个一个改（`setChangeEvents`）会出现：① N 个省 = N 条 undo（`MAX_HISTORY=100`
+   * 会把更早的几何操作静默挤出栈）；② 「把这一代都定在某日」这类操作要写 N 遍。
+   *
+   * @param {string} scenarioId
+   * @param {Record<string, object|number|Array|null>} patch 省 id → 日期（`{y,m,d}` / 裸年份 /
+   *        事件数组）；null = **删除**显式值（回到自动推算）
+   * @returns {{success:boolean, changed?:number, cleared?:number, noop?:boolean, reason?:string}}
+   */
+  function setChangeEventsBulk(scenarioId, patch) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { success: false, reason: 'no-scenario' };
+
+    const before = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
+    const next = JSON.parse(JSON.stringify(before));
+    let changed = 0;
+    let cleared = 0;
+    const rejected = [];
+    for (const [pid, raw] of Object.entries(patch || {})) {
+      const had = Object.prototype.hasOwnProperty.call(before, pid);
+      if (raw === null || raw === undefined) {
+        if (!had) continue;                   // 本来就没有显式值 → 没什么可清
+        delete next[pid];
+        cleared++;
+        continue;
+      }
+      // 允许 {y,m,d} / 裸年份 / 数组（数组 = 整列表替换，支持同省多条）
+      const list = Array.isArray(raw) ? raw : [raw];
+      const cleaned = [];
+      let bad = '';
+      for (const item of list) {
+        const n = normalizeDate(item);
+        if (!n) { bad = '日期无法识别（需要年份）'; break; }
+        const chk = checkDateInEra(scenario, n);
+        if (!chk.ok) { bad = chk.reason; break; }
+        const owner = (item && item.owner !== undefined && item.owner !== null) ? String(item.owner) : null;
+        const at = findEventIndex(cleaned, n);
+        const rec = { y: n.y, m: n.m, d: n.d, owner };
+        if (at >= 0) cleaned[at] = rec; else cleaned.push(rec);
+      }
+      if (bad) { rejected.push({ provinceId: pid, reason: bad }); continue; }
+      cleaned.sort(cmpDate);
+      if (JSON.stringify(before[pid] || null) === JSON.stringify(cleaned.length ? cleaned : null)) continue;
+      putEvents(next, pid, cleaned);
+      changed++;
+    }
+    if (!changed && !cleared) {
+      return { success: true, changed: 0, cleared: 0, noop: true, rejected };
+    }
+
+    // 整表快照式 undo（与 removePolity 同形）：改的是「别的键」，差量还原不了
+    const apply = (changeEvents, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const nextSc = { ...cur, changeEvents };
+      if (touch) nextSc.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
+    };
+
+    execute({
+      type: 'set-change-events-bulk',
+      label: `批量设置易主日期（改 ${changed} / 清 ${cleared} 省）`,
+      undo: () => apply(before, false),
+      redo: () => apply(next, true),
+    });
+
+    saveScenarios();
+    return { success: true, changed, cleared, rejected };
+  }
+
+  // ============================================================
+  // 切片书签（slicePoints）—— 项目级「人指定的时间点」（2026-10-05）
+  // ============================================================
+  //
+  // 为什么放在这里而不是新建一个 store：书签是**时间轴上的点**，与剧本同一份语义
+  // （日期、区间归属都由 scenarioTimeline/scenarioDates 判定）。
+  // 🔴 区间归属**不落盘**（运行时由 `eraIndexOfYear` 判），避免「剧本边界改了、书签上的
+  //    区间却还是旧的」这种静默不一致。
+  //
+  // 存储位置：`slicePoints` 是**顶层 ref**（不进 scenarios 字典）—— 因为 scenarios 字典
+  // 的键是「底图 key/剧本名」，把书签混进去会被画布与导出链当成一个剧本遍历。
+  // 落盘由 geodata 的载荷构造带上（见 `exportCanvasToProject`）。
+
+  const slicePoints = ref([]);
+
+  /** 规整并写回（脏值/乱序一律在这一处收口） */
+  function sanitizeSlicePoints(list) {
+    const out = [];
+    const seen = new Set();
+    for (const p of (Array.isArray(list) ? list : [])) {
+      if (!p || typeof p !== 'object') continue;
+      const n = normalizeDate(p.date && typeof p.date === 'object' ? p.date : { y: p.y ?? p.year, m: p.m, d: p.d });
+      if (!n) continue;
+      const id = String(p.id || '');
+      if (id && seen.has(id)) continue;                 // 同 id 只留第一条
+      if (id) seen.add(id);
+      out.push({
+        id,
+        label: typeof p.label === 'string' ? p.label : '',
+        y: n.y, m: n.m, d: n.d,
+      });
+    }
+    out.sort((a, b) => cmpDate(a, b) || String(a.id).localeCompare(String(b.id)));
+    return out;
+  }
+
+  function nextSlicePointId() {
+    // 与 makeId 同法：时间戳 + 模块内计数器（同毫秒连续两次也撞不上）
+    return `sp_${Date.now().toString(36)}_${(slicePointSeq++).toString(36)}`;
+  }
+  let slicePointSeq = 0;
+
+  /** 替换整表（走 undo）—— 所有增删改都经它，保证「一条 undo 撤回一次编辑」 */
+  function commitSlicePoints(next, label) {
+    const before = JSON.parse(JSON.stringify(slicePoints.value || []));
+    const after = sanitizeSlicePoints(next);
+    if (JSON.stringify(before) === JSON.stringify(after)) {
+      return { success: true, noop: true, count: after.length };
+    }
+    execute({
+      type: 'slice-points',
+      label,
+      undo: () => { slicePoints.value = JSON.parse(JSON.stringify(before)); },
+      redo: () => { slicePoints.value = JSON.parse(JSON.stringify(after)); },
+    });
+    saveScenarios();
+    return { success: true, count: after.length };
+  }
+
+  /**
+   * 新增切片点。`date` 可给 `{y,m,d}` 或裸年份；`label` 空则显示时退回日期文本。
+   * @returns {{success:boolean, id?:string, reason?:string}}
+   */
+  function addSlicePoint(date, label = '') {
+    if (!guardWrite('新增切片点').ok) return { success: false, reason: 'readonly' };
+    const n = normalizeDate(date);
+    if (!n) return { success: false, reason: '日期无法识别（需要年份）' };
+    const id = nextSlicePointId();
+    const next = [...(slicePoints.value || []), { id, label: String(label || ''), y: n.y, m: n.m, d: n.d }];
+    const r = commitSlicePoints(next, `新增切片点${label ? '：' + label : ''}`);
+    return { ...r, id };
+  }
+
+  /** 改名（日期不动）。空 label = 退回显示日期文本 */
+  function renameSlicePoint(id, label) {
+    if (!guardWrite('重命名切片点').ok) return { success: false, reason: 'readonly' };
+    const key = String(id || '');
+    if (!key) return { success: false, reason: 'no-id' };
+    const list = slicePoints.value || [];
+    if (!list.some(p => p.id === key)) return { success: false, reason: 'not-found' };
+    const next = list.map(p => (p.id === key ? { ...p, label: String(label || '') } : p));
+    return commitSlicePoints(next, `重命名切片点：${label || '（改回日期）'}`);
+  }
+
+  /** 改日期（走它就必须重新校验：区间归属是运行时判的，越界日期要让用户看见） */
+  function updateSlicePoint(id, date) {
+    if (!guardWrite('修改切片点日期').ok) return { success: false, reason: 'readonly' };
+    const key = String(id || '');
+    const n = normalizeDate(date);
+    if (!key) return { success: false, reason: 'no-id' };
+    if (!n) return { success: false, reason: '日期无法识别（需要年份）' };
+    const list = slicePoints.value || [];
+    if (!list.some(p => p.id === key)) return { success: false, reason: 'not-found' };
+    const next = list.map(p => (p.id === key ? { ...p, y: n.y, m: n.m, d: n.d } : p));
+    return commitSlicePoints(next, '修改切片点日期');
+  }
+
+  function removeSlicePoint(id) {
+    if (!guardWrite('删除切片点').ok) return { success: false, reason: 'readonly' };
+    const key = String(id || '');
+    const list = slicePoints.value || [];
+    const target = list.find(p => p.id === key);
+    if (!target) return { success: false, reason: 'not-found' };
+    const next = list.filter(p => p.id !== key);
+    const r = commitSlicePoints(next, `删除切片点：${target.label || '（未命名）'}`);
+    return { ...r, label: target.label || '' };
   }
 
   // ============================================================
@@ -1482,12 +1726,21 @@ export function createScenarioEditingModule(ctx) {
 
     const snapMaps = JSON.parse(JSON.stringify(baseMaps.value || {}));
     const snapScen = JSON.parse(JSON.stringify(scenarios.value || {}));
+    const snapPts = JSON.parse(JSON.stringify(slicePoints.value || []));
+    // 🔴 导入的剧本可能是**旧格式**（外部包/老备份）→ 必须过迁移，否则这份数据一进来
+    //    就被当成「没有显式日期」，全部退回合成值。
+    const inScenMigrated = inScen ? normalizeScenarioDatesDict(JSON.parse(JSON.stringify(inScen))) : null;
     const nextMaps = mode === 'replace'
       ? JSON.parse(JSON.stringify(inMaps || {}))
       : { ...snapMaps, ...JSON.parse(JSON.stringify(inMaps || {})) };
     const nextScen = mode === 'replace'
-      ? JSON.parse(JSON.stringify(inScen || {}))
-      : { ...snapScen, ...JSON.parse(JSON.stringify(inScen || {})) };
+      ? JSON.parse(JSON.stringify(inScenMigrated || {}))
+      : { ...snapScen, ...JSON.parse(JSON.stringify(inScenMigrated || {})) };
+    // 书签随包往返：替换 = 用包里的（没有就清空）；合并 = 追加去重
+    const inPts = Array.isArray(data.slicePoints) ? data.slicePoints : null;
+    const nextPts = mode === 'replace'
+      ? sanitizeSlicePoints(inPts || [])
+      : sanitizeSlicePoints([...snapPts, ...(inPts || [])]);
 
     const addedMaps = Object.keys(nextMaps).filter(k => !snapMaps[k]).length;
     const addedScen = Object.keys(nextScen).filter(k => !snapScen[k]).length;
@@ -1498,10 +1751,12 @@ export function createScenarioEditingModule(ctx) {
       undo: () => {
         baseMaps.value = snapMaps;
         scenarios.value = snapScen;
+        slicePoints.value = snapPts;
       },
       redo: () => {
         baseMaps.value = nextMaps;
         scenarios.value = nextScen;
+        slicePoints.value = nextPts;
       },
     });
     // 只读态：execute 被闸门拒绝 → 绝不回报「导入成功」（否则用户看到「导入完成」却什么都没进来）
@@ -1513,6 +1768,7 @@ export function createScenarioEditingModule(ctx) {
       mode,
       baseMaps: Object.keys(nextMaps).length,
       scenarios: Object.keys(nextScen).length,
+      slicePoints: nextPts.length,
       addedMaps,
       addedScenarios: addedScen,
     };
@@ -1692,12 +1948,8 @@ export function createScenarioEditingModule(ctx) {
   
   function importFromScenariosJson(data) {
     if (!guardWrite('导入剧本').ok) return null;
-    if (data.baseMaps) {
-      baseMaps.value = { ...baseMaps.value, ...data.baseMaps };
-    }
-    if (data.scenarios) {
-      scenarios.value = { ...scenarios.value, ...data.scenarios };
-    }
+    // 外部 .json 可能是旧格式 → 走统一装载口（内部已含迁移）
+    applyScenarioState(data, { fresh: false });
     saveScenarios();
   }
 
@@ -1758,7 +2010,58 @@ export function createScenarioEditingModule(ctx) {
 
   function loadScenarioState(data) {
     if (data.baseMaps) baseMaps.value = data.baseMaps;
-    if (data.scenarios) scenarios.value = data.scenarios;
+    if (data.scenarios) scenarios.value = normalizeScenarioDatesDict(data.scenarios);
+  }
+
+  // ============================================================
+  // 装载口（**唯一的日期迁移入口**）
+  // ============================================================
+  //
+  // 🔴 为什么必须有这个函数：`changeYears` → `changeEvents` 的兼容是**读时迁移**，
+  //    于是「要不要迁移」取决于**入口有没有想起来**。入口有三类，各自最容易漏：
+  //      ① 打开项目（geodata.applyProjectToCanvas）
+  //      ② 快照回滚 / 知识库快照还原（vaultSnapshot 里存的是旧格式）
+  //      ③ 撤销栈回放（旧命令闭包捕获的是迁移**之前**的对象）
+  //    漏掉任何一处，症状都是同一句：「我明明录过易主日期，时间轴上却全是合成值」（不报错）。
+  //    所以装载一律走这里，而不是在各处各写一遍 normalize。
+  //
+  // ⚠️ `list` 可能是**数组**（时间轴）也可能是**字典**（项目文件里的 scenarios）——
+  //    `normalizeScenarioDict` 保持同形往返。无改动的条目**保持原引用**
+  //    （避免整表换新对象 → 触发无谓重渲染 / 让「就地改字段」的纪律失效）。
+
+  /** 剧本字典/数组 → 迁移后的同形结果（带迁移点名） */
+  function normalizeScenarioDatesDict(list) {
+    return normalizeScenarioDict(list).scenarios;
+  }
+
+  /**
+   * 装载整份剧本状态（底图 + 剧本 + 切片书签）。
+   * @param {{baseMaps?:object, scenarios?:object, slicePoints?:Array}} data
+   * @param {{fresh?:boolean}} opts `fresh:true` = 整体替换（打开项目）；否则合并（导入 .json）
+   */
+  function applyScenarioState(data, { fresh = false } = {}) {
+    if (!data || typeof data !== 'object') return { ok: false, error: '没有剧本数据' };
+    if (data.baseMaps) {
+      baseMaps.value = fresh ? data.baseMaps : { ...baseMaps.value, ...data.baseMaps };
+    }
+    if (data.scenarios) {
+      const migrated = normalizeScenarioDatesDict(data.scenarios);
+      scenarios.value = fresh ? migrated : { ...scenarios.value, ...migrated };
+    }
+    // 切片点是**项目级**：整体替换语义下必须跟着走（否则切项目会串味），
+    // 合并语义下追加（导入外部剧本包时把对方书签也带进来，UI 会显示数量）
+    if (data.slicePoints !== undefined) {
+      const pts = sanitizeSlicePoints(data.slicePoints);
+      slicePoints.value = fresh ? pts : sanitizeSlicePoints([...(slicePoints.value || []), ...pts]);
+    } else if (fresh) {
+      slicePoints.value = [];
+    }
+    return {
+      ok: true,
+      baseMaps: Object.keys(baseMaps.value || {}).length,
+      scenarios: Object.keys(scenarios.value || {}).length,
+      slicePoints: (slicePoints.value || []).length,
+    };
   }
 
   // ============================================================
@@ -2168,7 +2471,12 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
     addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
     createScenario, updateScenario, removeScenario, inheritScenario,
     setOwnership, clearOwnership, batchSetOwnership,
-    setPolityLineage, setProvinceChangeYear, setChangeYears, updatePolity, addPolity, removePolity,
+    setPolityLineage, setChangeEvents, setChangeEventsBulk, updatePolity, addPolity, removePolity,
+    // 切片书签（项目级时间点）：CRUD 各走一条 undo；区间归属运行时判定、不落盘
+    slicePoints, sanitizeSlicePoints,
+    addSlicePoint, renameSlicePoint, updateSlicePoint, removeSlicePoint,
+    // 项目装载/快照回放/导入的**统一迁移口**（内部已带 normalizeScenarioDates，绝不要另写一份）
+    applyScenarioState,
     exportScenariosPayload, auditScenariosPayload, importScenariosPayload, removeAllScenarios,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,

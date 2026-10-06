@@ -14,8 +14,8 @@
 本用例覆盖：
   f0 源码守卫：批量写口走 execute + 有回执 + 清空走真删键 + 海域跳过 + 空操作不入栈；
      ScenarioMap 有 selectedProvinceIds / Ctrl·⌘ 加选 / 批量条三个 testid / 全选陆地省。
-  f1 store 行为：3 个省（2 陆 + 1 海）→ 批量指派（含易主年份）→ 海域被跳过后回报 →
-     一条 undo 全还原；`polityId=null` → 真删键 + 连带清 changeYears；重复 id 去重；
+  f1 store 行为：3 个省（2 陆 + 1 海）→ 批量指派（含易主**日期** `{y,m,d}`）→ 海域被跳过后回报 →
+     一条 undo 全还原；`polityId=null` → 真删键 + 连带清 `changeEvents`；重复 id 去重；
      不存在的 id 计入 skippedMissing；**同值重复指派 = noop 且不多压一条 undo**。
   f2 真鼠标多选：Ctrl+点击加选两个省 → 批量条显示「已选 2 省」→ 点「指派」→ 归属落库 +
      状态栏点名；再 Ctrl+点击同一个省 = 减选；普通点击 = 回单选并清空多选。
@@ -72,6 +72,14 @@ def sub_source_guards(cdp):
             bad.append(f'batchSetOwnership 缺 {sym}（{why}）')
     if 'null' in seg and 'delete nextOwnership[' not in seg:
         bad.append('清空路径疑似仍写 null')
+    # 🔴 月日精度（2026-10-05）：第 4 参由裸年份改成日期对象 `{y,m,d}`；
+    #    回执里的 `changeYear` 已改名 `date`（UI 要用它点名这次易主的**哪一天**）
+    if re.search(r'\bchangeYear\b', seg):
+        bad.append('batchSetOwnership 回执还在用旧字段名 changeYear（已改名 date）')
+    if 'date:' not in seg:
+        bad.append('batchSetOwnership 回执没给 date（UI 无法点名这次易主的日期）')
+    if 'normalizeDate(changeDate)' not in seg:
+        bad.append('batchSetOwnership 没把第 4 参规整成日期（月日精度下裸值会静默丢掉月日）')
 
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
     for sym, why in (('selectedProvinceIds', '缺少多选状态'),
@@ -110,11 +118,12 @@ SEED_JS = r"""
   s.createScenario(SC, { ownerKey: KEY, name: '甲时代', order: 1,
     era: { roman: 'I', label: '甲', startYear: '1000', endYear: '1100' },
     polities: [{ id: 'A1', name: '甲国', color: '#c23b3b' }, { id: 'A2', name: '乙国', color: '#4a90d9' }],
-    ownership: {}, changeYears: {} });
+    ownership: {}, changeEvents: {} });
   SM.baseMapKey = KEY;
   if (typeof SM.onBaseMapChange === 'function') SM.onBaseMapChange();
   s.rebuildProvinceGrid(KEY);
-  SM.tlEra = 0; SM.tlYear = 1050;
+  // 🔴 月日精度（2026-10-05）：游标真源是 `tlDate`（`tlYear` 已是只读 computed）
+  SM.tlEra = 0; SM.tlDate = { y: 1050, m: null, d: null };
   SM.selectedScenario = s.scenarios[SC];
   SM.selectedPolity = s.scenarios[SC].polities[0];
   SM.cameraScale = 1; SM.cameraX = 0; SM.cameraY = 0;
@@ -139,7 +148,11 @@ STORE_JS = r"""(async () => {
   const KEY = __KEY__, SC = __SC__;
   const seed = () => { __SEED__ };
   const own = () => (s.scenarios[SC].ownership || {});
-  const cys = () => (s.scenarios[SC].changeYears || {});
+  // `changeEvents` 不在剧本默认形状里（没写过就没这个键）→ 一律走这个取值口
+  const ces = () => (s.scenarios[SC].changeEvents || {});
+  const evOf = (pid) => (ces()[pid] || []);
+  // 月日精度（2026-10-05）：第 4 参是**日期对象** `{y,m,d}`（裸年份会被 normalizeDate 判非法）
+  const D1050 = { y: 1050, m: null, d: null };
   const undoStepsToEmpty = () => {
     let n = 0;
     while (n < 12 && s.baseMaps[KEY] && (s.baseMaps[KEY].terrain || []).length) { s.undo(); n++; }
@@ -150,18 +163,23 @@ STORE_JS = r"""(async () => {
   await tick(150);
   ck('前置：3 个省（2 陆 1 海）在册', s.baseMaps[KEY].terrain.length === 3, s.baseMaps[KEY].terrain.length);
 
-  // ① 批量指派：两个陆地省，含易主年份；海域必须被跳过
-  const r1 = s.batchSetOwnership(SC, ['p80a', 'p80b', 'p80sea', 'p80b'], 'A1', 1050);
+  // ① 批量指派：两个陆地省，含易主日期；海域必须被跳过
+  const r1 = s.batchSetOwnership(SC, ['p80a', 'p80b', 'p80sea', 'p80b'], 'A1', D1050);
   ck('批量指派成功', !!(r1 && r1.success === true), r1);
   ck('两个陆地省都写进 ownership（重复 id 已去重）',
      own().p80a === 'A1' && own().p80b === 'A1' && r1.changed === 2, { own: own(), r: r1 });
   ck('海域被跳过并回报', r1.skippedSea === 1 && own().p80sea === undefined, r1);
-  ck('易主年份一并写入', cys().p80a === 1050 && cys().p80b === 1050, cys());
+  ck('易主日期一并写入（changeEvents：月/日 null = 只到年）',
+     evOf('p80a').length === 1 && evOf('p80a')[0].y === 1050
+     && evOf('p80a')[0].m === null && evOf('p80a')[0].d === null
+     && evOf('p80b').length === 1 && evOf('p80b')[0].y === 1050, ces());
   ck('回执给出 affected', r1.affected === 2, r1);
+  ck('回执的日期字段叫 date（旧的 changeYear 名字已随月日精度删除）',
+     !!(r1.date && r1.date.y === 1050 && r1.date.m === null) && r1.changeYear === undefined, r1);
 
   s.undo();
   ck('**一条** undo 把两个省一起还原', own().p80a === undefined && own().p80b === undefined
-     && cys().p80a === undefined, { own: own(), cys: cys() });
+     && !Object.prototype.hasOwnProperty.call(ces(), 'p80a'), { own: own(), ces: ces() });
   s.redo();
   ck('redo 再落一次', own().p80a === 'A1' && own().p80b === 'A1');
 
@@ -169,13 +187,13 @@ STORE_JS = r"""(async () => {
   //    「撤空 terrain 需要几步」会把中途那些不改 terrain 的命令也算进去，所以判据必须是
   //    两条支路的**步数之差**，而不是拿它跟「只有 seed」的基线比（那样必然多一步而假红）。
   const stepsRealOnly = (() => {
-    seed(); s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', 1050);
+    seed(); s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', D1050);
     return undoStepsToEmpty();
   })();
   seed();
   await tick(150);
-  s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', 1050);
-  const r2 = s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', 1050);
+  s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', D1050);
+  const r2 = s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', D1050);
   ck('同值重复指派 = noop', !!(r2 && r2.noop === true && r2.changed === 0), r2);
   const stepsWithNoop = undoStepsToEmpty();
   notes.noop = { stepsRealOnly, stepsWithNoop };
@@ -184,28 +202,28 @@ STORE_JS = r"""(async () => {
   // ③ 清空归属：必须**真删键**（不能留 null 孤儿键）
   seed();
   await tick(150);
-  s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', 1050);
+  s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', D1050);
   const r3 = s.batchSetOwnership(SC, ['p80a', 'p80b'], null);
   ck('清空成功且回报 cleared=2', !!(r3 && r3.success === true && r3.cleared === 2), r3);
   ck('键被真删（不是留 null）',
      !Object.prototype.hasOwnProperty.call(own(), 'p80a')
      && !Object.prototype.hasOwnProperty.call(own(), 'p80b'), own());
-  ck('易主年份跟着清', !Object.prototype.hasOwnProperty.call(cys(), 'p80a'), cys());
+  ck('易主日期跟着清', !Object.prototype.hasOwnProperty.call(ces(), 'p80a'), ces());
   s.undo();
   ck('清空也是一条 undo', own().p80a === 'A1' && own().p80b === 'A1', own());
 
   // ④ 不存在的 id 计入 skippedMissing；海+不存在+陆地混在一起时陆地照写
   seed();
   await tick(150);
-  const r4 = s.batchSetOwnership(SC, ['p80a', 'ghost', 'p80sea'], 'A2', 1010);
+  const r4 = s.batchSetOwnership(SC, ['p80a', 'ghost', 'p80sea'], 'A2', { y: 1010, m: null, d: null });
   ck('混入不存在 id → 只写存在的陆地省', own().p80a === 'A2' && r4.changed === 1, { own: own(), r: r4 });
   ck('不存在与海域分别计数', r4.skippedMissing === 1 && r4.skippedSea === 1, r4);
   ck('换势力 = 新的指派（不是 noop）', r4.noop !== true);
 
   // ⑤ 空数组 / 只给海域 → noop（没有可改的东西就不该压栈）
-  const r5 = s.batchSetOwnership(SC, [], 'A2', 1000);
+  const r5 = s.batchSetOwnership(SC, [], 'A2', { y: 1000, m: null, d: null });
   ck('空数组 = noop', r5 && r5.noop === true, r5);
-  const r6 = s.batchSetOwnership(SC, ['p80sea'], 'A2', 1000);
+  const r6 = s.batchSetOwnership(SC, ['p80sea'], 'A2', { y: 1000, m: null, d: null });
   ck('只给海域 = noop + 回报跳过', r6 && r6.noop === true && r6.skippedSea === 1, r6);
   return JSON.stringify({ fails, notes });
 })()"""
@@ -395,13 +413,55 @@ def sub_readonly(cdp):
     return True, '只读态批量条禁用且带原因、点了不改数据'
 
 
-def run(cdp):
-    ensure_data_ready(cdp)
+def _enter_scenario_mode(cdp):
+    """点「历史剧本」进入剧本模式。
+
+    ⚠️ 为什么不是「查一次就点」（2026-10-05 实测踩到）：harness 的 `wait_for` 把
+    `cdp.eval` 的 `{'__err__': …}` 当成**真值** —— 应用尚未挂载时表达式抛错会被当作
+    「已就绪」，于是探针可能在「文档正在导航 / `#app` 还没 mount」的窗口里跑，
+    症状就是 `no-btn`（与用例逻辑无关，且只在 harness 抖动时出现）。
+    这里改成**轮询等按钮出现**（最多 ~10s），仍然没有才把现场带回去。
+    """
+    for _ in range(20):
+        r = cdp.eval("""(() => {
+          const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__;
+          if (!app || !app._instance) return 'not-ready';
+          const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('历史剧本'));
+          if (!b) return 'no-btn';
+          b.click(); return 'ok';
+        })()""")
+        if r == 'ok':
+            return 'ok'
+        if r == 'no-btn':
+            break                     # 应用在跑但没有这个按钮 → 真异常，立刻带现场
+        time.sleep(0.5)
     r = cdp.eval("""(() => {
+      const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__;
+      if (!app || !app._instance) return 'no-btn';
       const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('历史剧本'));
       if (!b) return 'no-btn';
       b.click(); return 'ok';
     })()""")
+    if r == 'ok':
+        return 'ok'
+    # 查空时**带回现场**（本仓纪律）：只有 'no-btn' 是查不出原因的
+    diag = cdp.eval("""(() => {
+      const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__;
+      const s = app && app._instance ? app._instance.setupState.store : null;
+      return JSON.stringify({
+        level: s ? s.viewLevel : null,
+        nodes: s ? s.nodes.length : -1,
+        hasSelector: !!document.querySelector('.world-selector'),
+        buttons: Array.from(document.querySelectorAll('button')).slice(0, 14)
+          .map(x => (x.textContent || '').trim().slice(0, 12)),
+      });
+    })()""")
+    return f'{r} | 现场: {diag}'
+
+
+def run(cdp):
+    ensure_data_ready(cdp)
+    r = _enter_scenario_mode(cdp)
     if r != 'ok':
         return False, f'进入剧本模式失败: {r}'
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", desc='ScenarioMap 挂载', timeout=8)

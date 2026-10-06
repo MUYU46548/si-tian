@@ -16,7 +16,7 @@
 """
 import sys, os, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from lib.cdp import wait_for
+from lib.cdp import wait_for, eval_json
 from lib.helpers import ensure_data_ready, open_test_base_map
 
 
@@ -37,9 +37,9 @@ def _enter_scenario_mode(cdp):
     return 'ok'
 
 
-def _seed(cdp):
-    """注入 3 个省 + 3 个剧本的确定性数据集（mock saveScenarios 不落盘）"""
-    return cdp.eval("""(() => {
+def _seed_js(cdp):
+    """注入 3 个省 + 3 个剧本的确定性数据集（mock saveScenarios 不落盘）—— 返回 JS 源"""
+    return """(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       // 清空剧本（保留底图），保证从干净状态推谱系
       for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
@@ -79,7 +79,7 @@ def _seed(cdp):
         provCount: s.baseMaps['云陇大陆'].terrain.length,
         scCount: Object.keys(s.scenarios).length,
       });
-    })()""")
+    })()"""
 
 
 def run(cdp):
@@ -92,13 +92,19 @@ def run(cdp):
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
 
-    seed = json.loads(_seed(cdp))
+    # ⚠️ 这个探针返回的是 {provCount, scCount} 而**不是** {fails} —— 必须显式声明 required，
+    #    否则 eval_json 会按默认的 ('fails',) 判「缺字段」而把一次**成功**的造数报成失败
+    #    （文案还写成「疑似异常被当成通过」，方向正好相反）。
+    seed_ok, seed = eval_json(cdp, _seed_js(cdp), required=('provCount', 'scCount'),
+                              desc='注入 3 省 + 3 剧本')
+    if not seed_ok:
+        return False, f'数据注入探针失败: {seed}'
     if seed['provCount'] != 3 or seed['scCount'] != 3:
         return False, f'数据注入失败: {seed}'
     time.sleep(0.4)   # 等 computed 重算 + 组件渲染
 
     # ---------- 1. 谱系匹配 + 变化年份 ----------
-    tl = cdp.eval(f"""(() => {{
+    tl_ok, tl = eval_json(cdp, f"""(() => {{
       const s = {_sm(cdp)};
       const t = s.timeline;
       return JSON.stringify({{
@@ -108,8 +114,10 @@ def run(cdp):
         lineages: t.lineages.length,
         stats: t.stats,
       }});
-    }})()""")
-    tl = json.loads(tl)
+    }})()""", required=('eraChg', 'years', 'minYear', 'maxYear', 'lineages', 'stats'),
+        desc='时间轴模型')
+    if not tl_ok:
+        return False, f'时间轴模型探针失败: {tl}'
     expect = [[], ['prov_b'], ['prov_c']]
     if tl['eraChg'] != expect:
         return False, f'谱系匹配结果不符: 期望 {expect}，实得 {tl["eraChg"]}'
@@ -119,7 +127,7 @@ def run(cdp):
         return False, f'年代范围错误: {tl["minYear"]}~{tl["maxYear"]}'
 
     # ---------- 2. 组件在位 ----------
-    dom = json.loads(cdp.eval("""(() => {
+    dom_ok, dom = eval_json(cdp, """(() => {
       const root = document.querySelector('[data-testid="scenario-timeline"]');
       if (!root) return JSON.stringify({mounted:false});
       const st = root.__vueParentComponent?.setupState;
@@ -129,19 +137,26 @@ def run(cdp):
         gapBlocks: root.querySelectorAll('.tl-block.is-gap').length,
         playhead: !!root.querySelector('[data-testid="tl-playhead"]'),
         controls: ['tl-play','tl-prev','tl-next','tl-axis-year','tl-axis-equal',
-                   'tl-diff-eu4','tl-diff-outline','tl-diff-off','tl-lineage']
+                   'tl-diff-eu4','tl-diff-outline','tl-diff-off','tl-lineage',
+                   // 月日精度新增：把当前日期存为切片点（切片导出默认必出的帧来源）
+                   'tl-save-slice-point']
                   .filter(t => root.querySelector(`[data-testid="${t}"]`)).length,
       });
-    })()"""))
+    })()""", required=('mounted',), desc='时间轴组件 DOM')
+    if not dom_ok:
+        return False, f'时间轴 DOM 探针失败: {dom}'
     if not dom['mounted']:
         return False, '时间轴组件未挂载'
-    if dom['blocks'] != 3:
-        return False, f'轨道块数错误（应为 3 个剧本）: {dom["blocks"]}'
-    if not dom['playhead'] or dom['controls'] != 9:
+    if dom.get('blocks') != 3:
+        return False, f'轨道块数错误（应为 3 个剧本）: {dom.get("blocks")}'
+    if not dom.get('playhead') or dom.get('controls') != 10:
         return False, f'轨道/控制条元素缺失: {dom}'
 
     # ---------- 3. 拖动游标 ----------
-    drag = json.loads(cdp.eval("""(() => {
+    # ⚠️ 月日精度（2026-10-05）：游标真源是 `tlDate`（`{y,m,d}` ref），`tlYear` 已降为**只读 computed**
+    #    （`dateToYearValue(tlDate)`）。所以这里读年份、同时把 tlDate 带回来断言「月日归 null」——
+    #    轨道表达的是「到某一年」，保留旧月日会让「拖到 2003 年」实际停在 2003-06-01（用户看不见却影响归属判定）。
+    drag_ok, drag = eval_json(cdp, """(() => {
       const root = document.querySelector('[data-testid="scenario-timeline"]');
       const wrap = root.querySelector('.tl-railwrap');
       const rail = root.querySelector('.tl-rail');
@@ -149,36 +164,55 @@ def run(cdp):
       const sm = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
       const mk = (t, x) => new PointerEvent(t, {clientX:x, clientY:r.top+r.height/2,
                                                 bubbles:true, pointerId:1});
+      const snapDate = () => ({y: sm.tlDate.y, m: sm.tlDate.m, d: sm.tlDate.d});
       const before = Math.round(sm.tlYear);
       wrap.dispatchEvent(mk('pointerdown', r.left + r.width*0.1));
-      const at10 = Math.round(sm.tlYear);
+      const at10 = Math.round(sm.tlYear); const d10 = snapDate();
       wrap.dispatchEvent(mk('pointermove', r.left + r.width*0.5));
-      const at50 = Math.round(sm.tlYear);
+      const at50 = Math.round(sm.tlYear); const d50 = snapDate();
       wrap.dispatchEvent(mk('pointerup', r.left + r.width*0.5));
-      return JSON.stringify({before, at10, at50});
-    })()"""))
+      return JSON.stringify({before, at10, at50, d10, d50});
+    })()""", required=('before', 'at10', 'at50', 'd10', 'd50'), desc='拖动游标')
+    if not drag_ok:
+        return False, f'拖动游标探针失败: {drag}'
     # 按年比例轴：u=0.1 → 2000+3=2003；u=0.5 → 2015
     if not (drag['at10'] < drag['at50']):
         return False, f'拖动游标年份未单调变化: {drag}'
     if abs(drag['at10'] - 2003) > 1 or abs(drag['at50'] - 2015) > 1:
         return False, f'按年比例轴映射不准: {drag}（期望 2003 / 2015）'
+    for key, year_key in (('d10', 'at10'), ('d50', 'at50')):
+        want_date = {'y': drag[year_key], 'm': None, 'd': None}
+        if drag[key] != want_date:
+            return False, f'轨道拖动后 tlDate 应为 {want_date}（月日归 null），实得 {drag[key]}'
+    # 状态栏日期文本（`tl-status` 里的 `tl-date`）：只到年时**只显示年**（显示成 2015-01-01
+    # 会把「只录到年」谎报成精确日期）
+    dt_ok, dt = eval_json(cdp, """(() => {
+      const el = document.querySelector('[data-testid="tl-date"]');
+      return JSON.stringify({text: el ? el.textContent.trim() : ''});
+    })()""", required=('text',), desc='状态栏日期文本')
+    if not dt_ok:
+        return False, f'状态栏日期文本探针失败: {dt}'
+    if dt['text'] != str(drag['at50']):
+        return False, f'状态栏日期文本不符: {dt["text"]!r}（应为只到年的 {drag["at50"]}）'
 
     # ---------- 4. 点时代块跳剧本 ----------
-    jump = json.loads(cdp.eval("""(() => {
+    jump_ok, jump = eval_json(cdp, """(() => {
       const s = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
       const blk = document.querySelector('[data-testid="tl-era-2"]');
       if (!blk) return JSON.stringify({err:'no-block'});
       blk.click();
       return JSON.stringify({era: s.tlEra, year: Math.round(s.tlYear),
                              selected: s.selectedScenario?.name});
-    })()"""))
+    })()""", required=('era', 'year', 'selected'), desc='点时代块跳剧本')
+    if not jump_ok:
+        return False, f'点时代块跳剧本探针失败: {jump}'
     if jump.get('era') != 2 or jump.get('year') != 2020:
         return False, f'点时代块未跳转: {jump}'
     if jump.get('selected') != '丙时代':
         return False, f'点时代块未同步选中剧本: {jump}'
 
     # ---------- 5. 键盘（连续真实按键序列；不在中途强设 state，避开 prop 传播时序） ----------
-    kb = json.loads(cdp.eval("""(async () => {
+    kb_ok, kb = eval_json(cdp, """(async () => {
       const s = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
       const wait = () => new Promise(r => setTimeout(r, 90));
       const snap = () => ({era: s.tlEra, year: Math.round(s.tlYear)});
@@ -194,7 +228,10 @@ def run(cdp):
       fire('ArrowLeft', true);  await wait(); const shiftDown = snap();
       fire('End'); await wait(); const end = snap();
       return JSON.stringify({home, r1, r2, r3overrun, l1, shiftUp, shiftDown, end});
-    })()"""))
+    })()""", required=('home', 'r1', 'r2', 'r3overrun', 'l1', 'shiftUp', 'shiftDown', 'end'),
+        desc='键盘导航')
+    if not kb_ok:
+        return False, f'键盘导航探针失败: {kb}'
     want = {
         'home': {'era': 0, 'year': 2000},
         'r1': {'era': 1, 'year': 2010},
@@ -210,10 +247,13 @@ def run(cdp):
             return False, f'键盘 {k} 不符：期望 {exp}，实得 {kb.get(k)}（全部={kb}）'
 
     # ---------- 6. 播放 ----------
-    played = json.loads(cdp.eval("""(async () => {
+    played_ok, played = eval_json(cdp, """(async () => {
       const s = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
-      s.tlEra = 0; s.tlYear = 2000; s.tlPlaying = false;
+      // 🔴 游标真源是 tlDate（月日精度）；`s.tlYear = 2000` 在旧模型里是赋值、现在是往
+      //    **只读 computed** 上写 → Vue 只打一条 warn，值不变（静默无效）。必须写 tlDate。
+      s.tlEra = 0; s.tlDate = { y: 2000, m: null, d: null }; s.tlPlaying = false;
       await new Promise(r => setTimeout(r, 60));
+      const startYear = Math.round(s.tlYear);
       const btn = document.querySelector('[data-testid="tl-play"]');
       const labelBefore = btn.textContent.trim();
       btn.click();
@@ -222,15 +262,20 @@ def run(cdp):
       const midYear = Math.round(s.tlYear);
       btn.click();
       const stopped = s.tlPlaying;
-      return JSON.stringify({labelBefore, playingNow, midYear, stopped});
-    })()"""))
+      return JSON.stringify({startYear, labelBefore, playingNow, midYear, stopped});
+    })()""", required=('startYear', 'labelBefore', 'playingNow', 'midYear', 'stopped'),
+        desc='播放')
+    if not played_ok:
+        return False, f'播放探针失败: {played}'
+    if played['startYear'] != 2000:
+        return False, f'播放前未把游标设到 2000（tlDate 写入无效？）: {played}'
     if not played['playingNow'] or played['stopped']:
         return False, f'播放按钮未切换 tlPlaying: {played}'
     if played['midYear'] <= 2000:
         return False, f'播放中游标未前进: {played}'
 
     # ---------- 7. 轴向切换 ----------
-    axes = json.loads(cdp.eval("""(() => {
+    axes_ok, axes = eval_json(cdp, """(() => {
       const s = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
       const root = document.querySelector('[data-testid="scenario-timeline"]');
       document.querySelector('[data-testid="tl-axis-equal"]').click();
@@ -239,7 +284,9 @@ def run(cdp):
       const yr = {mode: s.tlAxisMode, blocks: root.querySelectorAll('.tl-block').length,
                   gaps: root.querySelectorAll('.tl-block.is-gap').length};
       return JSON.stringify({eq, yr});
-    })()"""))
+    })()""", required=('eq', 'yr'), desc='轴向切换')
+    if not axes_ok:
+        return False, f'轴向切换探针失败: {axes}'
     if axes['eq']['mode'] != 'equal' or axes['eq']['blocks'] != 3:
         return False, f'等宽轴错误: {axes}'
     if axes['yr']['mode'] != 'year' or axes['yr']['blocks'] != 3 or axes['yr']['gaps'] != 0:

@@ -12,7 +12,7 @@
 """
 import sys, os, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from lib.cdp import wait_for
+from lib.cdp import wait_for, eval_json
 from lib.helpers import ensure_data_ready, open_test_base_map
 
 SM = "document.querySelector('.scenario-map-container').__vueParentComponent.setupState"
@@ -83,9 +83,10 @@ def _enter(cdp):
     return 'ok'
 
 
-def _seed(cdp):
-    """两省两块：甲时代 A1 独占；乙时代 prov_a→B1（不变谱系）/ prov_b→B2（新谱系 → 易主）"""
-    return cdp.eval("""(() => {
+def _seed_js(cdp):
+    """两省两块：甲时代 A1 独占；乙时代 prov_a→B1（不变谱系）/ prov_b→B2（新谱系 → 易主）
+    —— 返回 JS 源（判定一律走 eval_json，见 lib/cdp.py 的说明）"""
+    return """(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
       if (!s.baseMaps['云陇大陆']) s.addBaseMap('云陇大陆', { name: '云陇大陆' });
@@ -107,12 +108,18 @@ def _seed(cdp):
         polities: [P('B1','乙国','#4a90d9'), P('B2','乙南','#e6a23c')],
         ownership: { prov_a:'B1', prov_b:'B2' },
       });
-      return Object.keys(s.scenarios).length;
-    })()""")
+      return JSON.stringify({scenarios: Object.keys(s.scenarios).length});
+    })()"""
 
 
 def _census(cdp, prov):
-    return json.loads(cdp.eval(f"JSON.stringify(window.__census('{prov}'))"))
+    """像素普查。`required=None` 是刻意的：`__census` 的**合法**返回里就有 `{err:'no-canvas'|'no-prov'|'off-screen'}`
+    （判据是 err 而不是缺字段）。但 JS 抛异常（`__err__`）必须在这里翻成显式的失败 —— 见 lib/cdp.py 的 eval_json 说明。"""
+    ok, obj = eval_json(cdp, f"JSON.stringify(window.__census('{prov}'))", required=None,
+                        desc=f'像素普查 {prov}')
+    if not ok:
+        return {'err': f'普查探针失败：{obj}'}
+    return obj if isinstance(obj, dict) else {'err': f'普查返回非对象：{obj}'}
 
 
 def run(cdp):
@@ -124,40 +131,62 @@ def run(cdp):
     bm_ok, bm_info = open_test_base_map(cdp, '云陇大陆')
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
-    if _seed(cdp) != 2:
-        return False, '数据注入失败'
+    seed_ok, seed = eval_json(cdp, _seed_js(cdp), required=('scenarios',), desc='注入 2 省 + 2 剧本')
+    if not seed_ok:
+        return False, f'数据注入探针失败: {seed}'
+    if seed['scenarios'] != 2:
+        return False, f'数据注入失败: {seed}'
     cdp.eval(CENSUS)
     time.sleep(0.3)
 
     # 适屏 + 定位到乙时代
-    setup = json.loads(cdp.eval(f"""(() => {{
+    # 🔴 月日精度（2026-10-05）：游标真源是 `tlDate`（`{y,m,d}` ref），`tlYear` 已降为**只读 computed**
+    #    （`dateToYearValue(tlDate)`）。旧写法 `s.tlYear = 2020` 现在只会换来一条 Vue warn：值不变。
+    setup_ok, setup = eval_json(cdp, f"""(async () => {{
       const s = {SM};
       s.fitToView();
       s.tlDiffMode = 'eu4';
-      s.tlYear = 2020;                    // 乙时代末年 → prov_b 的易主已落定
-      return JSON.stringify({{diffMode: s.tlDiffMode}});
-    }})()"""))
+      s.tlDate = {{ y: 2020, m: null, d: null }};   // 乙时代末年 → prov_b 的易主已落定
+      // ⚠️ `tlEra` 是 `watch(tlDate.y)` 的派生（Vue watcher 默认 flush:'pre' = 异步）→
+      //    写完 tlDate **立刻**读 tlEra 会拿到旧值（首版实测 era:0）。必须等一个 tick。
+      await new Promise(r => setTimeout(r, 80));
+      return JSON.stringify({{diffMode: s.tlDiffMode, year: Math.round(s.tlYear), era: s.tlEra}});
+    }})()""", required=('diffMode', 'year', 'era'), desc='适屏 + 定位到乙时代')
+    if not setup_ok:
+        return False, f'定位游标探针失败: {setup}'
     time.sleep(0.5)
     if setup.get('diffMode') != 'eu4':
         return False, f'变化图层未设为 eu4: {setup}'
+    if setup.get('year') != 2020 or setup.get('era') != 1:
+        return False, f'游标未落到乙时代末年 2020（tlDate 写入无效？）: {setup}'
 
-    pre = json.loads(cdp.eval(f"""(() => {{
+    pre_ok, pre = eval_json(cdp, f"""(() => {{
       const s = {SM};
+      const ev = s.timeline.eraChg[1].lastDate.prov_b;
       return JSON.stringify({{era: s.tlEra, year: Math.round(s.tlYear),
-                              changeYear: s.timeline.eraChg[1].year.prov_b,
+                              changeDate: {{ y: ev.y, m: ev.m, d: ev.d }},
+                              explicit: !!ev.explicit, synthesized: !!ev.synthesized,
                               changed: s.timeline.eraChg[1].changed}});
-    }})()"""))
+    }})()""", required=('era', 'year', 'changeDate', 'changed'), desc='用例前提')
+    if not pre_ok:
+        return False, f'前提探针失败: {pre}'
     if pre['era'] != 1:
         return False, f'游标未落在乙时代: {pre}'
     if pre['changed'] != ['prov_b']:
         return False, f'用例前提不成立（应只有 prov_b 易主）: {pre}'
+    if not pre['changeDate'].get('y'):
+        return False, f'用例前提不成立（prov_b 缺易主日期）: {pre}'
 
     # ---------- 1. 落定前：只有旧主色 ----------
-    before = json.loads(cdp.eval(f"""(() => {{
+    # 「落定前」= 查询日期早于**该省最后一条易主日期**（月日精度下是日期比较，不再是「年份 -1」）
+    before_ok, before = eval_json(cdp, f"""(() => {{
       const s = {SM};
-      s.tlYear = s.timeline.eraChg[1].year.prov_b - 1;
-      return JSON.stringify({{year: Math.round(s.tlYear)}});
-    }})()"""))
+      const ev = s.timeline.eraChg[1].lastDate.prov_b;
+      s.tlDate = {{ y: ev.y - 1, m: null, d: null }};
+      return JSON.stringify({{year: Math.round(s.tlYear), changeDate: {{y: ev.y, m: ev.m, d: ev.d}}}});
+    }})()""", required=('year', 'changeDate'), desc='落定前定位')
+    if not before_ok:
+        return False, f'落定前定位探针失败: {before}'
     time.sleep(0.45)
     b = _census(cdp, 'prov_b')
     if b.get('err'):
@@ -171,11 +200,13 @@ def run(cdp):
     # ---------- 2. 落定后：旧主底色 + 新主斜线**共存** ----------
     # 注意：斜线以 0.92 不透明度叠上去，像素≈纯新主色，所以「共存」的判据是
     # 旧主色与新主色**同时大量存在**，而不是去找一个中间混合色。
-    after = json.loads(cdp.eval(f"""(() => {{
+    after_ok, after = eval_json(cdp, f"""(() => {{
       const s = {SM};
-      s.tlYear = 2020;
+      s.tlDate = {{ y: 2020, m: null, d: null }};
       return JSON.stringify({{year: Math.round(s.tlYear)}});
-    }})()"""))
+    }})()""", required=('year',), desc='落定后定位')
+    if not after_ok:
+        return False, f'落定后定位探针失败: {after}'
     time.sleep(0.45)
     a = _census(cdp, 'prov_b')
     if a.get('err'):
@@ -195,11 +226,13 @@ def run(cdp):
         return False, f'未易主省不应出现旧主色: {u}'
 
     # ---------- 4. 关掉变化图层：只剩新主色 ----------
-    off = json.loads(cdp.eval(f"""(() => {{
+    off_ok, off = eval_json(cdp, f"""(() => {{
       const s = {SM};
       s.tlDiffMode = 'off';
       return JSON.stringify({{mode: s.tlDiffMode}});
-    }})()"""))
+    }})()""", required=('mode',), desc='关掉变化图层')
+    if not off_ok:
+        return False, f'关图层探针失败: {off}'
     time.sleep(0.45)
     o = _census(cdp, 'prov_b')
     if o.get('err'):
@@ -210,11 +243,13 @@ def run(cdp):
         return False, f'关图层后不应残留旧主底色: {o}'
 
     # ---------- 5. 白描边模式也能用（同一 API） ----------
-    ol = json.loads(cdp.eval(f"""(() => {{
+    ol_ok, ol = eval_json(cdp, f"""(() => {{
       const s = {SM};
       s.tlDiffMode = 'outline';
       return JSON.stringify({{mode: s.tlDiffMode}});
-    }})()"""))
+    }})()""", required=('mode',), desc='白描边模式')
+    if not ol_ok:
+        return False, f'白描边模式探针失败: {ol}'
     time.sleep(0.4)
     if ol.get('mode') != 'outline':
         return False, f'白描边模式未切到: {ol}'

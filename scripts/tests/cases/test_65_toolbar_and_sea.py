@@ -192,10 +192,12 @@ JS_SEA = r""" (async () => {
   await tick(150);
 
   // 合成底图上没有现成剧本 —— 自己播一个（否则这条断言只能 skip，skip = 没测）
+  // 月日精度（2026-10-05）：显式易主日期的新键是 `changeEvents`（旧 `changeYears` 只由
+  // `normalizeScenarioDates` 读时迁移）—— 用例造数不该再喂旧键。
   s.createScenario('scen_case65', {
     id: 'scen_case65', name: '用例65剧本', ownerKey: KEY, order: 1,
     polities: [{ id: 'pol_case65', name: '用例65势力', color: '#8b2f2f' }],
-    ownership: {}, changeYears: {},
+    ownership: {}, changeEvents: {},
   });
   const scenRef = () => s.getScenario('scen_case65');
   {

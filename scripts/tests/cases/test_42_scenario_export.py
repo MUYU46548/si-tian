@@ -11,7 +11,7 @@
 """
 import sys, os, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from lib.cdp import wait_for
+from lib.cdp import wait_for, eval_json
 from lib.helpers import ensure_data_ready, open_test_base_map
 
 SM = "document.querySelector('.scenario-map-container').__vueParentComponent.setupState"
@@ -30,9 +30,9 @@ def _enter(cdp):
     return 'ok'
 
 
-def _seed(cdp):
-    """2 省 + 2 剧本；乙时代 prov_b 易主（B2 是新谱系）→ eraChg=[['prov_b']]"""
-    return cdp.eval("""(() => {
+def _seed_js(cdp):
+    """2 省 + 2 剧本；乙时代 prov_b 易主（B2 是新谱系）→ eraChg=[['prov_b']]（返回 JS 源）"""
+    return """(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
       for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
       if (!s.baseMaps['云陇大陆']) s.addBaseMap('云陇大陆', { name: '云陇大陆' });
@@ -54,8 +54,8 @@ def _seed(cdp):
         polities: [P('B1','乙国','#4a90d9'), P('B2','乙南','#e6a23c')],
         ownership: { prov_a:'B1', prov_b:'B2' },
       });
-      return Object.keys(s.scenarios).length;
-    })()""")
+      return JSON.stringify({scenarios: Object.keys(s.scenarios).length});
+    })()"""
 
 
 def run(cdp):
@@ -67,16 +67,19 @@ def run(cdp):
     bm_ok, bm_info = open_test_base_map(cdp, '云陇大陆')
     if not bm_ok:
         return False, f'底图 fixture 未就位: {bm_info}'
-    n = _seed(cdp)
-    if n != 2:
-        return False, f'数据注入失败: {n}'
+    seed_ok, seed = eval_json(cdp, _seed_js(cdp), required=('scenarios',), desc='注入 2 省 + 2 剧本')
+    if not seed_ok:
+        return False, f'数据注入探针失败: {seed}'
+    if seed['scenarios'] != 2:
+        return False, f'数据注入失败: {seed}'
     time.sleep(0.4)
 
     # ---------- 1. 导出 scenarios.json ----------
-    exp = json.loads(cdp.eval(f"""(async () => {{
+    exp_ok, exp = eval_json(cdp, f"""(async () => {{
       const s = {SM};
       window.__LAST_TEXT_EXPORT__ = null;
-      s.tlYear = 2010;                       // 落在乙时代起点
+      // 月日精度：游标真源是 tlDate（tlYear 已是只读 computed，赋值静默无效）
+      s.tlDate = {{ y: 2010, m: null, d: null }};    // 落在乙时代起点
       await new Promise(r => setTimeout(r, 60));
       await s.exportScenariosJson({{ scope: 'current' }});
       const rec = window.__LAST_TEXT_EXPORT__;
@@ -86,6 +89,7 @@ def run(cdp):
       return JSON.stringify({{
         kind: rec.kind, defaultName: rec.defaultName,
         bytes: rec.text.length, parseErr,
+        yearNow: Math.round(s.tlYear), eraNow: s.tlEra,
         maps: Object.keys(parsed?.baseMaps || {{}}),
         scenarios: Object.keys(parsed?.scenarios || {{}}),
         hasOwnership: !!parsed?.scenarios?.['云陇大陆/乙时代']?.ownership,
@@ -93,11 +97,15 @@ def run(cdp):
         status: s.exportStatus,
         changedPerEra: s.timeline.eraChg.map(e => e.changed),
       }});
-    }})()"""))
-    if exp.get('err'):
-        return False, f'JSON 导出未走到 IPC: {exp}'
+    }})()""", required=('kind', 'defaultName', 'bytes', 'yearNow', 'eraNow', 'maps',
+                        'scenarios', 'hasOwnership', 'hasVersion', 'status', 'changedPerEra'),
+        desc='导出 scenarios.json')
+    if not exp_ok:
+        return False, f'JSON 导出探针失败（不是"没走到 IPC"就是 JS 抛异常）: {exp}'
     if exp['parseErr']:
         return False, f'导出的 JSON 无法解析: {exp["parseErr"]}'
+    if exp['yearNow'] != 2010 or exp['eraNow'] != 1:
+        return False, f'游标未落到乙时代 2010（tlDate 写入无效？）: {exp}'
     if exp['kind'] != 'json' or exp['maps'] != ['云陇大陆'] or len(exp['scenarios']) != 2:
         return False, f'导出载荷结构不符: {exp}'
     if not exp['hasOwnership'] or not exp['hasVersion']:
@@ -108,11 +116,11 @@ def run(cdp):
         return False, '导出后未给出状态提示（静默导出 = 用户以为没导出）'
 
     # ---------- 2. 导出 SVG（EU4 斜线应落成 <pattern>） ----------
-    svg = json.loads(cdp.eval(f"""(async () => {{
+    svg_ok, svg = eval_json(cdp, f"""(async () => {{
       const s = {SM};
       window.__LAST_TEXT_EXPORT__ = null;
       s.tlDiffMode = 'eu4';
-      s.tlYear = 2020;                       // 乙时代末年 → prov_b 的易主已落定
+      s.tlDate = {{ y: 2020, m: null, d: null }};   // 乙时代末年 → prov_b 的易主已落定
       await new Promise(r => setTimeout(r, 60));
       await s.exportScenarioSVG();
       const rec = window.__LAST_TEXT_EXPORT__;
@@ -120,6 +128,7 @@ def run(cdp):
       const t = rec.text;
       return JSON.stringify({{
         kind: rec.kind, defaultName: rec.defaultName, bytes: t.length,
+        yearNow: Math.round(s.tlYear), eraNow: s.tlEra,
         isXml: t.startsWith('<?xml'),
         hasSvg: t.includes('<svg'), hasClose: t.includes('</svg>'),
         pathCount: (t.match(/<path /g) || []).length,
@@ -129,9 +138,14 @@ def run(cdp):
         hasLegend: t.includes('势力'), hasTitle: t.includes('乙时代'),
         stripes: s.timeline.eraChg[1].changed,
       }});
-    }})()"""))
-    if svg.get('err'):
-        return False, f'SVG 导出未走到 IPC: {svg}'
+    }})()""", required=('kind', 'defaultName', 'bytes', 'yearNow', 'eraNow', 'isXml', 'hasSvg',
+                        'hasClose', 'pathCount', 'patternCount', 'hatchRef', 'colorA',
+                        'hasLegend', 'hasTitle', 'stripes'),
+        desc='导出 SVG')
+    if not svg_ok:
+        return False, f'SVG 导出探针失败（不是"没走到 IPC"就是 JS 抛异常）: {svg}'
+    if svg['yearNow'] != 2020 or svg['eraNow'] != 1:
+        return False, f'游标未落到乙时代末年 2020（tlDate 写入无效？）: {svg}'
     if not (svg['isXml'] and svg['hasSvg'] and svg['hasClose']):
         return False, f'SVG 文档结构不完整: {svg}'
     if svg['pathCount'] < 2:
@@ -146,7 +160,7 @@ def run(cdp):
         return False, f'SVG 缺标题/图例块（导出物应自解释）: {svg}'
 
     # ---------- 3. 导出前体检 ----------
-    audit = json.loads(cdp.eval(f"""(() => {{
+    audit_ok, audit = eval_json(cdp, f"""(() => {{
       const s = {SM};
       const bad = s.store.auditScenariosPayload({{
         baseMaps: {{}},
@@ -155,14 +169,16 @@ def run(cdp):
       }});
       const good = s.store.auditScenariosPayload(s.store.exportScenariosPayload('云陇大陆'));
       return JSON.stringify({{ badCount: bad.length, bad, goodCount: good.length }});
-    }})()"""))
+    }})()""", required=('badCount', 'goodCount'), desc='导出前体检')
+    if not audit_ok:
+        return False, f'导出前体检探针失败: {audit}'
     if audit['badCount'] < 3:
         return False, f'体检未识别残缺载荷: {audit}'
     if audit['goodCount'] != 0:
         return False, f'完整体检不应有警告: {audit}'
 
     # ---------- 4. 导入 merge（一条 undo） ----------
-    merge = json.loads(cdp.eval(f"""(() => {{
+    merge_ok, merge = eval_json(cdp, f"""(() => {{
       const s = {SM};
       const before = Object.keys(s.store.scenarios).length;
       const payload = {{
@@ -182,14 +198,17 @@ def run(cdp):
       const afterUndo = Object.keys(s.store.scenarios).length;
       const gone = !s.store.scenarios['云陇大陆/新增时代'];
       return JSON.stringify({{before, after, afterUndo, hasNew, gone, r}});
-    }})()"""))
+    }})()""", required=('before', 'after', 'afterUndo', 'hasNew', 'gone'),
+        desc='导入 merge')
+    if not merge_ok:
+        return False, f'merge 导入探针失败: {merge}'
     if not (merge['after'] == merge['before'] + 1 == 3 and merge['hasNew']):
         return False, f'merge 导入未新增剧本: {merge}'
     if merge['afterUndo'] != merge['before'] or not merge['gone']:
         return False, f'merge 导入不是一条 undo（undo 后未回滚）: {merge}'
 
     # ---------- 5. 导入 replace（清空后导入，同样一条 undo） ----------
-    rep = json.loads(cdp.eval(f"""(() => {{
+    rep_ok, rep = eval_json(cdp, f"""(() => {{
       const s = {SM};
       const before = Object.keys(s.store.scenarios).length;
       const payload = {{
@@ -206,7 +225,9 @@ def run(cdp):
       s.store.undo();
       const restored = Object.keys(s.store.scenarios).length;
       return JSON.stringify({{before, after, restored, r}});
-    }})()"""))
+    }})()""", required=('before', 'after', 'restored'), desc='导入 replace')
+    if not rep_ok:
+        return False, f'replace 导入探针失败: {rep}'
     if rep['after'] != ['云陇大陆/替换时代']:
         return False, f'replace 导入未整体替换: {rep}'
     if rep['restored'] != rep['before']:

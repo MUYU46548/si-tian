@@ -370,17 +370,23 @@
       </div>   <!-- /.toolbar-more -->
     </div>
 
-    <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代） -->
+    <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代）
+         ⚠️ 组件契约仍是 `year: Number`（轨道位置与播放是年尺度），**月日只由父级 tlDate 持有**；
+            从轨道拖/点回来时只给得到年 → 月日归 null（= 该年 1 月 1 日），这是刻意的：
+            轨道拖拽表达的本来就是「到某一年」，要精确到日请用切片点或面板录入。 -->
     <scenario-timeline
       v-if="timeline.years.length"
       :timeline="timeline"
-      v-model:year="tlYear"
+      :year="tlYear"
+      :slice-points="slicePoints"
       v-model:era="tlEra"
       v-model:axis-mode="tlAxisMode"
       v-model:diff-mode="tlDiffMode"
       v-model:playing="tlPlaying"
+      @update:year="onTimelineSetYear"
       @select-scenario="onTimelineSelectScenario"
       @open-lineage="showLineagePanel = true"
+      @save-slice-point="onSaveSlicePoint"
     />
 
     <!-- 省份多选批量条（2026-10-02）：选中 ≥1 个省时出现，把「一次一批」接上 batchSetOwnership -->
@@ -507,7 +513,7 @@
       <span v-if="selectedBurg" class="selected-burg">城镇：{{ selectedBurg.name }}（人口 {{ formatPopulation(selectedBurg.population) }}）</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
       <span v-if="timeline.years.length" class="tl-status" data-testid="tl-status">
-        年份 <b>{{ Math.round(tlYear) }}</b>
+        日期 <b data-testid="tl-date">{{ tlDateText }}</b>
         <template v-if="tlEra > 0"> · 本剧本 <b>{{ tlSettled.settled }}</b>/{{ tlSettled.total }} 省已易主</template>
         <template v-if="tlAxisMode === 'year' && tlInGap"> · <span class="tl-warn">空位（沿用 {{ timeline.scenarios[tlEra].name }}）</span></template>
       </span>
@@ -679,8 +685,8 @@
       :province-names="provinceNameMap"
       @close="showLineagePanel = false"
       @set-polity-lineage="onSetPolityLineage"
-      @set-change-year="onSetChangeYear"
-      @set-change-years-bulk="onSetChangeYearsBulk"
+      @set-change-date="onSetChangeDate"
+      @set-change-dates-bulk="onSetChangeDatesBulk"
       @reject="onPanelReject"
     />
 
@@ -688,6 +694,7 @@
     <scenario-slice-export
       :open="showSliceExport"
       :timeline="timeline"
+      :slice-points="slicePoints"
       :province-names="provinceNameMap"
       :status="exportStatus"
       :busy="sliceExportBusy"
@@ -750,6 +757,7 @@ import ScenarioSliceExport from './ScenarioSliceExport.vue';
 import {
   buildTimeline, currentOwnerRef, isStriped, polityColor,
   settledCount, eraIndexOfYear, findGap,
+  dateToYearValue, formatDate,
 } from '../utils/scenarioTimeline';
 import { useScenarioExport } from '../composables/useScenarioExport';
 import { useProvinceBrush } from '../composables/useProvinceBrush';
@@ -1468,21 +1476,37 @@ function onPolityAbbrChange(e) {
 const showLineagePanel = ref(false);
 
 // ═══════════════════════════════════════════
-// 时间轴（P1）：按年比例轴 + EU4 斜线占领
+// 时间轴（P1）：月日精度游标 + EU4 斜线占领
 // ═══════════════════════════════════════════
-// 状态与 ScenarioTimeline 组件双向绑定；播放为一帧一剧本推进（3488 年按年播需 4 分钟）
+// 🔴 游标真源是 **tlDate**（`{y,m,d}`，月日可缺省 = 该年 1 月 1 日），不是 tlYear。
+//    为什么不用「浮点年份 + 月日另存」：两处状态 = 迟早不一致（滑动改一个、日期录入改另一个）。
+//    `tlYear` 只作为**只读派生**给轨道/播放用（`dateToYearValue` 供年内插值）。
+//    年 = 剧本边界的唯一判据（边界仍是年精度，见《月日精度与切片书签》执行单 §0.4），
+//    月日只进易主事件与切片点。
 const tlEra = ref(0);
-const tlYear = ref(0);
+const tlDate = ref({ y: 0, m: null, d: null });
+/** 播放时的**年内进度**（0..1）。只服务 rAF 插值，不参与任何判定 —— 不落进 tlDate 就不会有第二个真源。 */
+let tlPlayT = 0;
 const tlAxisMode = ref('year');   // year | equal
 const tlDiffMode = ref('eu4');    // eu4 | outline | off
 const tlPlaying = ref(false);
 
-/** 时间轴模型（谱系匹配 + 逐省变化年份 + 年代区间/断层）——纯函数，见 utils/scenarioTimeline.js */
+/** 游标年份（只读派生）—— 轨道位置 / 播放 / 旧调用点用 */
+const tlYear = computed(() => dateToYearValue(tlDate.value));
+/** 游标年份（整数）—— 状态栏显示与「上色即易主」的显式日期用 */
+const tlYearInt = computed(() => (Number.isFinite(tlDate.value?.y) ? tlDate.value.y : 0));
+/** 状态栏日期文本（只到年时只显示年，不谎报 1 月 1 日） */
+const tlDateText = computed(() => formatDate(tlDate.value));
+
+/** 时间轴模型（谱系匹配 + 逐省变化日期 + 年代区间/断层）——纯函数，见 utils/scenarioTimeline.js */
 const timeline = computed(() => buildTimeline(sortedScenarios.value || []));
 
-const tlSettled = computed(() => settledCount(timeline.value, tlEra.value, tlYear.value));
+const tlSettled = computed(() => settledCount(timeline.value, tlEra.value, tlDate.value));
 const tlInGap = computed(() => (tlAxisMode.value === 'year'
-  ? !!findGap(timeline.value, tlYear.value) : false));
+  ? !!findGap(timeline.value, tlDate.value.y) : false));
+
+/** 切片点书签（项目级，store 持有）：给时间轴画标记 + 给切片对话框当帧来源 */
+const slicePoints = computed(() => store.slicePoints || []);
 
 /** 省 id → 名称（P2 面板与导出用） */
 const provinceNameMap = computed(() => {
@@ -1515,7 +1539,7 @@ async function onRunSliceExport({ png = false, scale = 2 } = {}) {
   if (sliceExportBusy.value) return;
   sliceExportBusy.value = true;
   try {
-    const r = await exportSliceFrames({ png, scale });
+    const r = await exportSliceFrames({ png, scale, slicePoints: slicePoints.value });
     // 失败/取消的回音由 exportStatus 承担（对话框里也显示同一份），这里只补一条可点名的结论
     if (r && r.success === false && !r.canceled) statusMsg(`切片导出失败：${r.error || '未知错误'}`);
     else if (r && r.canceled) statusMsg('已取消切片导出');
@@ -1558,7 +1582,7 @@ function onBatchAssign() {
     selectedScenario.value.id,
     selectedProvinceIds.value.slice(),
     selectedPolity.value.id,
-    Math.round(tlYear.value),
+    tlDate.value,
   );
   batchEcho(r, `已指派给「${selectedPolity.value.name}」`);
   render();
@@ -1580,30 +1604,90 @@ function onSelectAllLand() {
   render();
 }
 
-function onSetChangeYear({ scenarioId, provinceId, year }) {
-  store.setProvinceChangeYear(scenarioId, provinceId, year);
-  render();
+/**
+ * 单省易主日期（面板的「年-月-日」三格或「自动」按钮）—— 月日精度后是**整列表替换**。
+ * `date = null` → 清除该省全部显式日期（回到自动推算）。
+ * @param {{scenarioId:string, provinceId:string, date:object|null, done?:Function}} p
+ *   `done` 由面板传入：无论成败都回调，让面板把输入框草稿清掉（成败都要显示库里真值）。
+ */
+function onSetChangeDate({ scenarioId, provinceId, date, done }) {
+  try {
+    if (store.isReadOnly) {
+      statusMsg(`只读：${store.readOnlyReason || '未打开项目'} —— 易主日期未写入`);
+      return;
+    }
+    // `date = null` 走「整列表清空」；单条日期则保留同剧本里其它事件（面板只编辑生效的那一条）
+    const sc = store.scenarios?.[scenarioId];
+    const existing = Array.isArray(sc?.changeEvents?.[provinceId])
+      ? sc.changeEvents[provinceId].map(e => ({ y: e.y, m: e.m ?? null, d: e.d ?? null, owner: e.owner ?? null }))
+      : [];
+    let list;
+    if (!date) {
+      list = [];
+    } else if (existing.length <= 1) {
+      list = [{ ...date, owner: sc?.ownership?.[provinceId] ?? null }];
+    } else {
+      // 有历史多条事件（同省多次易主）：替换**同一天**那条，或在末尾追加
+      const key = `${date.y}-${String(date.m ?? 1).padStart(2, '0')}-${String(date.d ?? 1).padStart(2, '0')}`;
+      const at = existing.findIndex(e => `${e.y}-${String(e.m ?? 1).padStart(2, '0')}-${String(e.d ?? 1).padStart(2, '0')}` === key);
+      list = existing.slice();
+      const rec = { ...date, owner: sc?.ownership?.[provinceId] ?? null };
+      if (at >= 0) list[at] = rec; else list.push(rec);
+    }
+    const r = store.setChangeEvents(scenarioId, provinceId, list);
+    if (!r || r.success === false) {
+      statusMsg(`易主日期未写入：${r?.reason || '未知原因'}`);
+      return;
+    }
+    if (r.noop) statusMsg('易主日期没有变化');
+    else if (!date) statusMsg('已清除该省的显式易主日期（回到自动推算）');
+    else statusMsg(`易主日期已设为 ${formatDate(date)}${r.changed > 1 ? `（本剧本内共 ${r.changed} 条事件）` : ''}（可 Ctrl+Z 撤回）`);
+    render();
+  } finally {
+    if (typeof done === 'function') done();
+  }
 }
 
 /**
- * 批量设置易主年份（面板的「统一设为该年 / 固化推算值 / 全部清空」）—— 一条 undo。
+ * 批量设置易主日期（面板的「统一设为该日 / 固化推算值 / 全部清空」）—— 一条 undo。
  * 回执必须点名改了几省、清了几省（否则用户不知道这次批量到底动了什么）。
  */
-function onSetChangeYearsBulk({ scenarioId, patch, what = '批量设置易主年份' }) {
+function onSetChangeDatesBulk({ scenarioId, patch, what = '批量设置易主日期' }) {
   if (store.isReadOnly) {
     statusMsg(`只读：${store.readOnlyReason || '未打开项目'} —— ${what}未写入`);
     return;
   }
-  const r = store.setChangeYears(scenarioId, patch);
+  const r = store.setChangeEventsBulk(scenarioId, patch);
   if (!r || r.success === false) {
     statusMsg(`${what}失败：${r?.reason || '未知原因'}`);
     return;
   }
-  if (r.noop) {
-    statusMsg(`${what}：没有需要改动的年份`);
+  if (r.rejected?.length) {
+    // 部分省日期非法（越界/月日脏值）→ 点名说出，别让用户以为全都写进去了
+    const p = r.rejected[0];
+    statusMsg(`${what}：${r.rejected.length} 省被拒（例：${p.provinceId} ${p.reason}）`
+      + `${r.changed ? `；其余 ${r.changed} 省已写入` : ''}`);
+  } else if (r.noop) {
+    statusMsg(`${what}：没有需要改动的日期`);
   } else {
     statusMsg(`${what}：改 ${r.changed} 省${r.cleared ? ` / 清 ${r.cleared} 省` : ''}（可 Ctrl+Z 撤回）`);
   }
+  render();
+}
+
+/** 把当前游标存为切片点（带默认名 = 日期文本），走 store 的一条 undo */
+function onSaveSlicePoint() {
+  if (store.isReadOnly) {
+    statusMsg(`只读：${store.readOnlyReason || '未打开项目'} —— 切片点未保存`);
+    return;
+  }
+  if (!timeline.value.years.length) { statusMsg('还没有剧本，无法存切片点'); return; }
+  const d = tlDate.value;
+  const label = prompt('切片点名称（留空则显示日期）', formatDate(d));
+  if (label === null) return;                       // 取消
+  const r = store.addSlicePoint({ y: d.y, m: d.m, d: d.d }, label || '');
+  if (!r || r.success === false) { statusMsg(`切片点未保存：${r?.reason || '未知原因'}`); return; }
+  statusMsg(`已存切片点「${label || formatDate(d)}」（${formatDate(d)}）—— 切片导出会默认带上它（可 Ctrl+Z 撤回）`);
   render();
 }
 
@@ -1616,32 +1700,67 @@ function onTimelineSelectScenario(s) {
   render();
 }
 
+/**
+ * 轨道拖拽/点击/键盘给了「年」→ 写回 tlDate。
+ * 🔴 月日**归 null**（= 该年 1 月 1 日）而不是保留旧月日：轨道表达的是「到某一年」，
+ *    保留 6 月 1 日会让「拖到 1045 年」实际停在 1045-06-01 —— 用户看不见、却影响归属判定。
+ *    要精确到日请走「存为切片点」或谱系面板的日期录入。
+ */
+function onTimelineSetYear(y) {
+  const n = Number(y);
+  if (!Number.isFinite(n)) return;
+  const yy = Math.round(n);
+  if (tlDate.value.y === yy && tlDate.value.m === null && tlDate.value.d === null) return;
+  tlDate.value = { y: yy, m: null, d: null };
+  render();
+}
+
 // ——— 播放：一帧一剧本，剧本内年份线性扫过，跨剧本自动跳过年份断层 ———
 const TL_ERA_MS = 1300;
 let tlRafId = null;
 let tlLastT = 0;
-let tlPlayT = 0;
 
+/** 该年在该月的天数（播放插值用；与 scenarioDates 同口径，闰年照算） */
+function daysInMonthOf(y, m) {
+  const v = Math.abs(y);
+  const feb = (v % 4 === 0 && v % 100 !== 0) || v % 400 === 0 ? 29 : 28;
+  return [31, feb, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+}
+
+// ⚠️ `tlPlayT` 在模块顶部声明（时间轴区域）—— 播放环与 watch 都要用，别在这里再 let 一次（重复声明会静默遮蔽）
 function tlFrame(t) {
   const dt = Math.min(64, t - tlLastT);
   tlLastT = t;
   if (!tlPlaying.value) { tlRafId = null; return; }
   const n = timeline.value.years.length;
+  if (!n) { tlPlaying.value = false; tlRafId = null; return; }
   tlPlayT += dt / TL_ERA_MS;
+  // 一帧一剧本推进：年内进度走完就跳下一个剧本（3488 年按年播需 4 分钟，所以不按年播）
   while (tlPlayT >= 1) {
-    tlPlayT -= 1;
     if (tlEra.value >= n - 1) {
-      tlEra.value = n - 1;
-      tlYear.value = timeline.value.years[n - 1].end;
       tlPlaying.value = false;
       tlPlayT = 0;
+      tlDate.value = { y: timeline.value.years[n - 1].end, m: null, d: null };
       break;
     }
+    tlPlayT -= 1;
     tlEra.value += 1;
   }
   if (tlPlaying.value) {
     const y = timeline.value.years[tlEra.value];
-    tlYear.value = y.start + tlPlayT * (y.end - y.start);
+    // 年内插值按**天数**线性（执行单 §1.3）：先把进度换成「年内第几天」，再落到月日
+    const days = Math.max(1, y.end - y.start);
+    const dayOfYear = Math.min(365, Math.max(1, Math.round(tlPlayT * days * 365.25 / days) + 1));
+    let rest = Math.min(dayOfYear, 365);
+    let m = 1;
+    let d = 1;
+    for (; m <= 12; m++) {
+      const dim = daysInMonthOf(y.start, m);
+      if (rest <= dim) { d = rest; break; }
+      rest -= dim;
+    }
+    if (m > 12) { m = 12; d = 31; }
+    tlDate.value = { y: y.start, m, d };
   }
   render();
   if (tlPlaying.value) tlRafId = requestAnimationFrame(tlFrame);
@@ -1652,26 +1771,29 @@ watch(tlPlaying, (v) => {
   if (!v) return;
   const n = timeline.value.years.length;
   if (!n) { tlPlaying.value = false; return; }
+  const cur = tlDate.value.y;
+  const last = timeline.value.years[n - 1];
   // 已播到末尾则从头开始
-  if (tlEra.value >= n - 1 && tlYear.value >= timeline.value.years[n - 1].end) {
+  if (tlEra.value >= n - 1 && cur >= last.end) {
     tlEra.value = 0;
-    tlYear.value = timeline.value.years[0].start;
+    tlDate.value = { y: timeline.value.years[0].start, m: null, d: null };
+  } else {
+    // 从「当前剧本起点 + 年内进度」续播；月日归零，避免播放中途从 6 月 1 日开始插值
+    const y = timeline.value.years[tlEra.value];
+    tlPlayT = Math.max(0, Math.min(1,
+      (tlDate.value.y - y.start) / Math.max(1, y.end - y.start)));
+    tlDate.value = { y: y.start, m: null, d: null };
   }
-  const y = timeline.value.years[tlEra.value];
-  tlPlayT = Math.max(0, Math.min(1, (tlYear.value - y.start) / Math.max(1, y.end - y.start)));
   tlLastT = performance.now();
   if (tlRafId == null) tlRafId = requestAnimationFrame(tlFrame);
 });
 
-// 时间轴的**唯一真源是 year**：era 必须由 year 派生。
+// 时间轴的**唯一真源是 tlDate**：era 必须由它的**年**派生。
 // 否则拖动游标后 era 不跟着变 → 地图仍按旧剧本的归属渲染、HUD 的「已易主」也是错的。
-watch(tlYear, (y) => {
-  const tl = timeline.value;
-  if (!tl.years.length) return;
-  const k = eraIndexOfYear(tl, y);
-  if (k !== tlEra.value) tlEra.value = k;
-  render();
-});
+// 🔴 注册点必须在 **onMounted 里**（见 onMounted 末尾）：在 setup 期直接
+//    `watch(() => tlDate.value.y, …)` 会在组件挂载前**触发一次 render()** —— 那一帧用的是
+//    还没适屏的相机 (0,0,1)，于是「首帧 = 空画布」（test_61 实测帧序：
+//    t=1059 空帧 → t=1067 才适屏）。与本文件 `watch(sortedScenarios…)` 同一条纪律。
 
 // era 变化 → 编辑目标（selectedScenario）跟着走
 watch(tlEra, (k) => {
@@ -1699,7 +1821,10 @@ onMounted(() => {
     // 剧本是异步载入的（scenarios.json）：数据到了就切政治视图，否则时间轴拖动看不出效果
     if (list.length && viewMode.value !== 'scenario') viewMode.value = 'scenario';
     const tl = timeline.value;
-    if (tlYear.value < tl.minYear || tlYear.value > tl.maxYear) tlYear.value = tl.minYear;
+    const cur = tlDate.value;
+    if (!tl.years.length || cur.y < tl.minYear || cur.y > tl.maxYear) {
+      tlDate.value = { y: tl.minYear, m: null, d: null };
+    }
     render();
   }, { deep: false });
 
@@ -1710,9 +1835,9 @@ onMounted(() => {
 /** 初始化/切换底图后把游标落到第一个剧本 */
 function resetTimelineToStart() {
   const tl = timeline.value;
-  if (!tl.years.length) { tlEra.value = 0; tlYear.value = 0; return; }
+  if (!tl.years.length) { tlEra.value = 0; tlDate.value = { y: 0, m: null, d: null }; return; }
   tlEra.value = 0;
-  tlYear.value = tl.years[0].start;
+  tlDate.value = { y: tl.years[0].start, m: null, d: null };
   // 进入剧本模块时默认就是「政治视图」——否则省份按生物群系着色，时间轴等于白拖
   if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
 }
@@ -2593,10 +2718,16 @@ function onCanvasClick(event) {
     }
     if (prov) {
       if (selectedPolity.value) {
-        // 把时间轴当前年份一并记为**显式易主年份** ——
-        // 「拖到某年再上色 = 该年易主」，这是 changeYear 最自然的录入路径
-        store.setOwnership(selectedScenario.value.id, prov.id, selectedPolity.value.id, Math.round(tlYear.value));
-        statusMsg(`「${prov.name}」→ ${selectedPolity.value.name}`);
+        // 把时间轴当前**日期**一并记为显式易主日期 ——
+        // 「拖到某日再上色 = 该日易主」，这是易主日期最自然的录入路径（月日精度：现在就带上月日）
+        const wr = store.setOwnership(
+          selectedScenario.value.id, prov.id, selectedPolity.value.id, tlDate.value,
+        );
+        if (wr && wr.success === false) {
+          statusMsg(`「${prov.name}」归属已改，但易主日期没记：${wr.reason}`);
+        } else {
+          statusMsg(`「${prov.name}」→ ${selectedPolity.value.name}（易主日期 ${tlDateText.value}）`);
+        }
       } else {
         // 色板上的「✕ 清除归属」过去只是 `selectPolity(null)`：title 承诺"清除归属"，
         // 行为却是"取消选中"，再点省份则因旧条件 `&& selectedPolity.value` 而**静默无反应**
@@ -2604,7 +2735,7 @@ function onCanvasClick(event) {
         // 现在：没选势力 + 油漆桶 = 真的清除该省的归属，与 title 一致。
         const had = !!(selectedScenario.value.ownership || {})[prov.id];
         if (!had) { statusMsg(`「${prov.name}」本来就没有势力归属`); return; }
-        store.clearOwnership(selectedScenario.value.id, prov.id, Math.round(tlYear.value));
+        store.clearOwnership(selectedScenario.value.id, prov.id, tlDate.value);
         statusMsg(`已清除「${prov.name}」的势力归属（可 Ctrl+Z 撤回）`);
       }
       render();
@@ -3891,7 +4022,9 @@ function drawProvinces(c) {
   if (!baseMap.value?.terrain) return;
   const tl = timeline.value;
   const k = tlEra.value;
-  const year = tlYear.value;
+  // 🔴 归属查询必须吃**日期**（月日精度）：同一年内 6 月前后归主不同，
+  //    传年份只能整年切 → 外观与「已易主」计数都会与真实状态差半年。
+  const at = tlDate.value;
   const scenarioMode = viewMode.value === 'scenario' && tl.scenarios.length > 0;
 
   rawTerrain().forEach(prov => {
@@ -3923,7 +4056,7 @@ function drawProvinces(c) {
 
     // EU4 式斜线占领：底色刻意是**旧主**色（上面刚填的），斜线用**新主**色。
     // 两方本色即可表达「谁占了谁的」，不需要引入任何新色相。
-    if (scenarioMode && tlDiffMode.value === 'eu4' && isStriped(tl, k, rp.id, year)) {
+    if (scenarioMode && tlDiffMode.value === 'eu4' && isStriped(tl, k, rp.id, at)) {
       const newCol = polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[rp.id]);
       const b = provinceBBox(rp);
       const dy = b.maxY - b.minY;
@@ -4039,14 +4172,19 @@ function getProvinceColor(prov) {
   if (viewMode.value === 'scenario') {
     const tl = timeline.value;
     const k = tlEra.value;
+    // 🔴 本函数自己取日期，**不要**依赖调用方作用域里的 `at`：它被 `drawProvinces`（有 `at`）
+    //    之外的多条路径调用（导出、色板预览等），靠外层变量就是一个 `ReferenceError`，
+    //    而渲染路径里的异常会被 render 护栏吞成「连续 3 帧失败 → 暂停渲染」——
+    //    症状是**整块画布空白**（test_41/44/61/73 一次全红），而不是某条断言红。
+    const at = tlDate.value;
     if (tl.scenarios.length) {
       // ⚠️ 底色随变化图层模式切换：
       //   EU4 斜线占领 → 底色刻意保持**旧主**色（新主由斜线表达，两方本色）
       //   其他模式    → 底色 = **当前实际**持有者（关掉图层就该看到真实归属）
       // 颜色必须在 owner 所属的那个剧本里查（旧主 id 属于上一个剧本，跨剧本查会落到灰）
-      const ref = (tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, tlYear.value))
+      const ref = (tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, at))
         ? { owner: tl.scenarios[k - 1].ownership?.[prov.id], era: k - 1 }
-        : currentOwnerRef(tl, k, prov.id, tlYear.value);
+        : currentOwnerRef(tl, k, prov.id, at);
       return polityColor(tl.scenarios[ref.era], ref.owner);
     }
     // 时间轴不可用（剧本缺年份等）时退回选中剧本的静态归属
@@ -4416,13 +4554,13 @@ const selectedProvincePolity = computed(() => {
 function polityLabelSources() {
   const tl = timeline.value;
   const k = tlEra.value;
-  const year = tlYear.value;
+  const at = tlDate.value;
   if (tl.scenarios.length) {
     const ownerRefOf = (pid) => {
-      if (tlDiffMode.value === 'eu4' && isStriped(tl, k, pid, year)) {
+      if (tlDiffMode.value === 'eu4' && isStriped(tl, k, pid, at)) {
         return { owner: tl.scenarios[k - 1]?.ownership?.[pid], era: k - 1 };
       }
-      return currentOwnerRef(tl, k, pid, year);
+      return currentOwnerRef(tl, k, pid, at);
     };
     return { ownerRefOf, polityOfEra: (era, owner) => tl.scenarios[era]?.polities?.find(p => p.id === owner) || null };
   }
@@ -4758,6 +4896,19 @@ onMounted(async () => {
   // 时间轴游标落到第一个剧本（数据可能刚由 scenarios.json 异步载入）
   resetTimelineToStart();
   setTimeout(resetTimelineToStart, 300);
+
+  // 🔴 游标监听必须**在这里**注册（不能在 setup 顶层）：顶层 watch 会在挂载前求值一次并
+  //    触发 render()，那一帧用的是未适屏相机 (0,0,1) →「首帧 = 空画布」（test_61 抓到的帧序：
+  //    t=1059 空帧 → t=1067 才适屏）。与上面 `watch(sortedScenarios…)` 同一条纪律。
+  watch(() => tlDate.value.y, (yy) => {
+    const tl = timeline.value;
+    if (!tl.years.length) return;
+    const k = eraIndexOfYear(tl, yy);
+    if (k !== tlEra.value) tlEra.value = k;
+    render();
+  });
+  // 月日变化也要重绘（同一年内 6 月前后归属不同，底色/标签随之切换）
+  watch(() => [tlDate.value.m, tlDate.value.d], () => { render(); });
 });
 
 onUnmounted(() => {

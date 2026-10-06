@@ -44,6 +44,12 @@
 
 ### 安装与运行
 
+司天现已支持开箱即用的**桌面端**，您可以直接从Release中下载最新版。
+
+安装包未做代码签名，Windows SmartScreen可能提示"未知发布者"，选“仍要运行”即可。为了您的设备安全，强烈建议只从官方供应渠道下载本应用，并核对哈希值，使用可靠杀毒软件进行安全扫描。
+
+[GitHub下载](https://github.com/MUYU46548/si-tian/releases/latest)
+
 ```bash
 npm install
 
