@@ -41,6 +41,8 @@ import {
   LAYER_LABELS,
   LAYER_ORDER,
   SNAPSHOT_DIFF_KEYS,
+  // 跨 IPC 载荷的统一下载口（去 Vue 代理 / TypedArray 兜底）—— 见下方 saveProject 注释
+  toIpcPlain,
 } from '../utils/projectSchema';
 
 const AUTO_SAVE_DELAY = 800;
@@ -517,11 +519,36 @@ export const useProjectStore = defineStore('project', () => {
     return adopt(res);
   }
 
+  /**
+   * 保存失败必须**看得见**（2026-10-06，T2 真机定位）。
+   *
+   * 旧实现只写 `lastError` + 状态栏 —— 但 `StatusBar.vue` 的根节点是 `v-if="state.visible"`，
+   * **世界选择页（没有画布）里那条"保存失败"根本不在 DOM 中**。于是「导入过 → 看着有内容 →
+   * 重开是空的」这套观感里，用户从头到尾**看不到任何报错**。
+   * 这里复用 App.vue 已监听的全局告警通道（`sitian:project-warning`，与「会话基线未能创建」同路），
+   * 任何视图下都能提示。同时落一条 `console.error`：真机演练/诊断脚本的日志里能直接抓到。
+   */
+  function reportSaveFailure(message) {
+    const text = String(message || '未知原因');
+    try { console.error('[project] 保存失败:', text); } catch (e) { /* 非浏览器环境忽略 */ }
+    try {
+      window.dispatchEvent(new CustomEvent('sitian:project-warning', {
+        detail: { message: `项目保存失败：${text} —— 改动仍在内存里，未写入磁盘；请先解决再关闭窗口` },
+      }));
+    } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
+  }
+
   /** 保存项目（先追加一份快照，再落盘；主进程另存整文件备份） */
   async function saveProject({ label = '', keep } = {}) {
     if (!project.value) return { success: false, error: '没有打开的项目' };
     const a = api();
-    if (!a || !a.projectSave) return { success: false, error: API_MISSING };
+    if (!a || !a.projectSave) {
+      // ⚠️ 旧实现这里**直接 return**（既不设 error 状态、也不提示）—— 属于静默失败，一并补上回音
+      lastError.value = API_MISSING;
+      setSaveStatus('error');
+      reportSaveFailure(lastError.value);
+      return { success: false, error: API_MISSING };
+    }
     setSaveStatus('saving');
     try {
       // Phase 2.4：落盘前把画布当前状态并进项目（画布是用户看到的真相，项目文件必须与之一致）
@@ -536,7 +563,14 @@ export const useProjectStore = defineStore('project', () => {
       //    = 静默丢数据（画布突然回退到保存前）。所以先记下「落盘时的项目引用」，
       //    返回后只在**未被改动**时才确认；已改动则保留新态、维持 dirty 并立刻重排一次保存。
       const snapshotOf = project.value;
-      const res = await a.projectSave({ filePath: filePath.value, project: withSnapshot });
+      // 🔴 IPC 边界（2026-10-06 真机定位，T2）：**不能直接传 `project.value`**。
+      //    `project.value` 是 Vue 的深响应式代理，`ipcRenderer.invoke` 用 V8 ValueSerializer，
+      //    **遇 Proxy 一律抛 "An object could not be cloned."** → 每一次保存都失败（连空项目也存不下），
+      //    于是 `.sitian` 文件永远停在新建时的空壳，用户重开当然是空的。
+      //    项目文件本来就是 JSON（主进程就是 `JSON.stringify(project)` 写盘），所以这里先把载荷
+      //    降级成"将要写进文件的那一份值"：既越过克隆边界，也保证内存与磁盘同形。
+      //    同一坑在 `saveGeodata`/`saveMapData`/`saveScenarios` 早已处理，**只有这条路漏了**。
+      const res = await a.projectSave({ filePath: filePath.value, project: toIpcPlain(withSnapshot) });
       if (!res || !res.success) throw new Error((res && res.error) || '写入失败');
       lastSavedAt.value = new Date().toISOString();
       if (project.value !== snapshotOf) {
@@ -553,6 +587,7 @@ export const useProjectStore = defineStore('project', () => {
     } catch (err) {
       lastError.value = err.message || String(err);
       setSaveStatus('error');   // B5：失败态不自动消失，由下次成功保存来清
+      reportSaveFailure(lastError.value);
       return { success: false, error: lastError.value };
     }
   }

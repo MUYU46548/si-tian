@@ -102,7 +102,51 @@ const MIGRATIONS = {};
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * JSON.stringify 的 TypedArray 兜底（**单一事实源**）。
+ *
+ * 🔴 为什么必须（两条独立的坑，都在真机上吃过）：
+ *   ① `ipcRenderer.invoke` 用 V8 ValueSerializer 序列化载荷，**遇到 Vue 的 reactive 代理一律抛
+ *      "An object could not be cloned."**（而 `JSON.stringify` 会正常读穿代理）。
+ *      所以任何跨 IPC 的载荷都必须先过一遍 JSON 往返。
+ *      本项目最严重的一次数据事故（2026-10-06 真机定位，T2）正是漏了这一步：`projectStore.saveProject`
+ *      直接传 `project.value`（Vue 深响应式代理）→ **每一次项目保存都失败，连空项目都存不下**，
+ *      失败只写进 `lastError`，而那条提示在世界选择页根本不在 DOM 里 → 表现为
+ *      「导入过、看着有内容、重开是空的」。`saveGeodata`/`saveMapData`/`saveScenarios` 早就这么做了
+ *      （见 `store/geodata.js` 的注释），**只有「项目文件」这一条落盘路漏了**。
+ *   ② 结构化克隆/深拷贝之后 `Float32Array` 会退化成 `{"0":..}`（无 length），读回
+ *      `new Float32Array(obj)` 即空数组 → 高度图 / 地形网格静默丢失。浮点保留 3 位小数以控体积。
+ *
+ * ⚠️ `store/geodata.js` 现在从这里**再导出**同一个实现（App.vue 与 test_21 仍从 geodata 取）。
+ *    不许在别处再抄一份 —— 抄一份必然出现"改一处、另几处不变"的静默分裂。
+ */
+export function jsonSafeReplacer(key, value) {
+  if (ArrayBuffer.isView(value) && typeof value.length === 'number') {
+    const out = new Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      const n = value[i];
+      out[i] = typeof n === 'number' ? Math.round(n * 1000) / 1000 : n;
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * 把任意（可能含 Vue 代理的）值降级为**可跨 IPC / 可落盘**的纯 JSON 值。
+ * 见 `jsonSafeReplacer` 的长注释 —— 这是所有跨进程载荷的统一下载口。
+ * 注意 `undefined`/`null` 会归一成 `{}`（`JSON.stringify(undefined)` 返回 undefined，
+ * 直接 `JSON.parse` 会抛）。
+ */
+export function toIpcPlain(value) {
+  if (value === undefined || value === null) return {};
+  return JSON.parse(JSON.stringify(value, jsonSafeReplacer));
+}
+
 // 深拷贝（项目数据只含 JSON-safe 值；structuredClone 优先，退化 JSON 往返）
+// ⚠️ 注意：`project.value` 里全是 Vue 代理 → `structuredClone` 分支**必然抛错**再退 JSON
+//    （见 deepClone 的 catch）。这里保留 structuredClone 是为了保住 TypedArray 的原生类型
+//    （JSON 往返会把 Float32Array 变成普通对象），所以**不要**图省事改成纯 JSON。
 export function deepClone(value) {
   if (value === undefined) return undefined;
   try {

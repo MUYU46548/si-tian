@@ -251,11 +251,22 @@ MOCK_SCRIPT = """<script>
           window.__projects = window.__projects || {};
           window.__projectCalls = window.__projectCalls || [];
           if (!p.filePath) return { success: false, error: 'no-path' };
-          window.__projects[p.filePath] = JSON.parse(JSON.stringify(p.project || {}));
+          // 🔴 必须模拟真实 IPC 边界（2026-10-06）：renderer→main 的载荷要过 V8 ValueSerializer，
+          //    遇到 Vue 的 reactive 代理会抛 "An object could not be cloned."。
+          //    mock 若只做 JSON 往返（它恰好能读穿代理），就永远测不到“载荷不可序列化”——
+          //    这正是当年 84 用例全绿、而真机上项目保存**一次都没成功**的原因。
+          //    ⚠️ 别把这一步删成 JSON.parse(JSON.stringify(...))。
+          let cloned;
+          try {
+            cloned = structuredClone(p.project || {});
+          } catch (e) {
+            return { success: false, error: String((e && e.message) || e) };
+          }
+          window.__projects[p.filePath] = JSON.parse(JSON.stringify(cloned));
           window.__projectCalls.push({ op: 'save', filePath: p.filePath });
           return {
             success: true, filePath: p.filePath,
-            bytes: JSON.stringify(p.project || {}).length,
+            bytes: JSON.stringify(cloned).length,
             backupPath: p.filePath + '.backups/mock.sitian',
           };
         },

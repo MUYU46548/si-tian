@@ -26,20 +26,12 @@ import { PLACE_TYPES } from '../utils/placeTypes';
 
 const AUTO_SAVE_DELAY = 800;
 
-// JSON.stringify 的 TypedArray 兜底：结构化克隆/深拷贝后 Float32Array 会变成
-// {"0":..}（无 length），读回 new Float32Array(obj) 即空数组 → 高度图/地形网格静默丢失。
-// 缓存的浮点保留 3 位小数以控制 mapdata.json 体积。
-export function jsonSafeReplacer(key, value) {
-  if (ArrayBuffer.isView(value) && typeof value.length === 'number') {
-    const out = new Array(value.length);
-    for (let i = 0; i < value.length; i++) {
-      const n = value[i];
-      out[i] = typeof n === 'number' ? Math.round(n * 1000) / 1000 : n;
-    }
-    return out;
-  }
-  return value;
-}
+// JSON.stringify 的 TypedArray 兜底：单一事实源已挪到 `utils/projectSchema.js`
+// （2026-10-06：项目文件落盘口漏了同一步导致"保存永远失败"，故提升为共享纯函数）。
+// 这里**再导出**同一实现，App.vue / test_21 / 本文件内部继续照旧引用，实现只有一份。
+import { jsonSafeReplacer } from '../utils/projectSchema';
+
+export { jsonSafeReplacer };
 
 // 层级深度顺序（B1 越级校验用）——与 scripts/extract-data.js 的 LAYER_ORDER 保持同步，
 // 两处同步修改；renderer 侧不直接 import 提取脚本（Node 脚本无法进浏览器 bundle）
