@@ -12,7 +12,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import goto_planet
+from lib.helpers import A, goto_planet
 
 
 def run(cdp):
@@ -21,7 +21,7 @@ def run(cdp):
     # 错误收集器：渲染管线内的未捕获异常（含 ReferenceError）都会落进 window.__errs
     cdp.eval("(() => { window.__errs = []; window.addEventListener('error', e => window.__errs.push(String(e.message))); return 'ok'; })()")
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container canvas')", desc='行星画布挂载')

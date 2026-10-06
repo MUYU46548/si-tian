@@ -12,6 +12,7 @@
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from lib.helpers import A  # noqa: E402
 from lib.cdp import wait_for
 
 
@@ -37,7 +38,7 @@ def run(cdp):
     # a) 进入 曜川星系 单系视图（沿 parentId 上溯所属世界 → selectWorld → enterSystemDetail）
     nav = cdp.eval(f"""(() => {{
       const s = {APP_STORE};
-      const sys = s.nodes.find(n => n.id === '曜川星系');
+      const sys = s.nodes.find(n => n.id === __alias('曜川星系'));
       if (!sys) return 'no-sys';
       let cur = s.nodes.find(n => n.id === sys.parentId);
       while (cur && cur.layer !== 'world') cur = s.nodes.find(n => n.id === cur.parentId);
@@ -132,7 +133,7 @@ def run(cdp):
     spot = rc['spot']
     if marker['count'] != 1 or marker['compCount'] != 1:
         return False, f'太空标记计数异常 {marker}'
-    if not (m['systemId'] == '曜川星系' and m['type'] == 'resource' and m['label'] == '银矿带'):
+    if not (m['systemId'] == A('曜川星系') and m['type'] == 'resource' and m['label'] == '银矿带'):
         return False, f'太空标记数据形状异常 {m}'
     if abs(m['x'] - round(spot['x'])) > 0.51 or abs(m['y'] - round(spot['y'])) > 0.51:
         return False, f'太空标记未落在右键位置 {m} (期望 {spot})'
@@ -191,7 +192,7 @@ def run(cdp):
     c = card['card']
     if card['count'] != 1 or card['compCount'] != 1:
         return False, f'部队卡片计数异常 {card}'
-    if not (c['systemId'] == '曜川星系' and c['kind'] == 'army'
+    if not (c['systemId'] == A('曜川星系') and c['kind'] == 'army'
             and c['name'] == '第七行星军' and c['faction'] == '蓝镜帝国'):
         return False, f'部队卡片数据形状异常 {c}'
 
@@ -311,9 +312,9 @@ def run(cdp):
     b1 = _js_obj(cdp, f"""(() => {{
       const s = {APP_STORE};
       // 注入自引用父级个案（不污染真实数据：注入后立即验证）
-      const nodes = s.nodes.map(n => n.name === '流岚之境' ? {{ ...n, parentId: n.id }} : n);
+      const nodes = s.nodes.map(n => n.name === __alias('流岚之境') ? {{ ...n, parentId: n.id }} : n);
       const v = s.validateNodes(nodes);
-      const selfLoop = v.nodes.find(n => n.name === '流岚之境');
+      const selfLoop = v.nodes.find(n => n.name === __alias('流岚之境'));
       return JSON.stringify({{
         total: nodes.length,
         violations: v.violations,

@@ -18,7 +18,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for  # noqa: E402
-from lib.helpers import goto_planet, enter_edit, set_pm_state, drag_canvas_polyline  # noqa: E402
+from lib.helpers import A, drag_canvas_polyline, enter_edit, goto_planet, set_pm_state  # noqa: E402
 
 PM = "document.querySelector('.planet-map-container').__vueParentComponent.setupState"
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -67,7 +67,7 @@ def run(cdp):
     wait_for(cdp, f"{STORE}.nodes.length > 0", timeout=45, desc='地理数据加载')  # 冷启动时 mock 数据（2MB mapdata）是异步注入的
     _log('app + geodata ready')
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 (goto_planet → {r})'
     time.sleep(1.2)
@@ -124,7 +124,7 @@ def run(cdp):
     time.sleep(1.4)  # scheduleAutoSaveMap 防抖 800ms → 项目侧再防抖 800ms
     cdp.eval("window.__probe.flushProject()")
     payload = _js_obj(cdp, """(() => {
-      const p = window.__probe.lastMapPayload('曜川星');
+      const p = window.__probe.lastMapPayload(__alias('曜川星'));
       if (!p) return JSON.stringify({ n: 0 });
       const g = p.data.terrainGrid;
       return JSON.stringify({

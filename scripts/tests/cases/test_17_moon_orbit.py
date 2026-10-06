@@ -8,6 +8,7 @@
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from lib.helpers import A  # noqa: E402
 from lib.cdp import wait_for
 
 APP_STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -66,7 +67,7 @@ def run(cdp):
     # a) 进入 曜川星系 单系视图 + 编辑模式（右键菜单仅编辑模式开放）
     nav = cdp.eval(f"""(() => {{
       const s = {APP_STORE};
-      const sys = s.nodes.find(n => n.id === '曜川星系');
+      const sys = s.nodes.find(n => n.id === __alias('曜川星系'));
       if (!sys) return 'no-sys';
       let cur = s.nodes.find(n => n.id === sys.parentId);
       while (cur && cur.layer !== 'world') cur = s.nodes.find(n => n.id === cur.parentId);
@@ -86,7 +87,7 @@ def run(cdp):
     added = add_planet_via_button(cdp, '行星')
     if not isinstance(added, dict) or 'id' not in added:
         return False, f'添加第二颗行星失败 ({added})'
-    if added['after'] != added['before'] + 1 or added['parentId'] != '曜川星系':
+    if added['after'] != added['before'] + 1 or added['parentId'] != A('曜川星系'):
         return False, f'添加行星后计数/属性异常 ({added})'
     time.sleep(0.3)
 
@@ -188,9 +189,9 @@ def run(cdp):
     restored = _js_obj(cdp, f"""(() => {{
       const s = {APP_STORE};
       const node = s.nodes.find(n => (n.displayName || n.name) === '{moon_name}');
-      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: '曜川星系' }});
+      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: __alias('曜川星系') }});
     }})()""")
-    if not isinstance(restored, dict) or restored.get('layer') != 'planet' or restored.get('parentId') != '曜川星系':
+    if not isinstance(restored, dict) or restored.get('layer') != 'planet' or restored.get('parentId') != A('曜川星系'):
         return False, f'取消卫星未恢复独立轨道 {restored}'
 
     # f) undo 一次（撤销「取消卫星」）→ 回到 moon 态；再 undo 一次 → 回到初始独立行星
@@ -208,9 +209,9 @@ def run(cdp):
     final = _js_obj(cdp, f"""(() => {{
       const s = {APP_STORE};
       const node = s.nodes.find(n => (n.displayName || n.name) === '{moon_name}');
-      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: '曜川星系' }});
+      return JSON.stringify({{ layer: node.layer, parentId: node.parentId, sysId: __alias('曜川星系') }});
     }})()""")
-    if not isinstance(final, dict) or final.get('layer') != 'planet' or final.get('parentId') != '曜川星系':
+    if not isinstance(final, dict) or final.get('layer') != 'planet' or final.get('parentId') != A('曜川星系'):
         return False, f'undo×2 未回到初始独立行星 {final}'
 
     # g) 清场：undo 移除添加的行星 → redo×3 恢复到测试前的独立行星（与初始一致）

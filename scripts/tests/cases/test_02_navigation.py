@@ -4,7 +4,7 @@
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import view_level, goto_planet, select_world_with_domains
+from lib.helpers import A, goto_planet, select_world_with_domains, view_level
 
 
 def run(cdp):
@@ -26,7 +26,7 @@ def run(cdp):
         return False, f'selectDomain 未进入 system ({nav})'
 
     # 恒星系 → 行星地图（直接导航）
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航到行星失败 ({r})'
 

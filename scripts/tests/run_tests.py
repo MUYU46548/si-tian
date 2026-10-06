@@ -36,7 +36,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests'))
 from lib.cdp import find_page_ws, wait_for  # noqa: E402
-from lib.helpers import open_harness_project  # noqa: E402
+from lib.helpers import open_harness_project, set_real_data  # noqa: E402
 
 DEV_PORT = 5180
 CDP_PORT = 9222
@@ -77,10 +77,25 @@ while _i < len(_args):
         USE_REAL_VAULT = True; _i += 1
     else:
         _case_names.append(_args[_i]); _i += 1
+# 告知 harness 数据源：A()/__alias 在真实数据下把 fixture 专名解析成真实名
+set_real_data(USE_REAL_VAULT)
+
 REAL_GEODATA = os.path.join(VAULT, '.sitian', 'geodata.json').replace('\\', '/')
 REAL_MAPDATA = os.path.join(VAULT, '.sitian', 'mapdata.json').replace('\\', '/')
 # 合成 fixture（与真实库解耦的默认数据源）
 FIXTURE_DIR = os.path.join(ROOT, 'scripts', 'tests', 'fixtures', 'vault-fixture')
+
+
+def alias_map_json():
+    """注入页面的别名表（JSON 字面量）。
+
+    合成 fixture 模式 → `{}`（恒等，用例行为零变化）；`--real-data` → fixture 名 → 真实名。
+    """
+    if not USE_REAL_VAULT:
+        return '{}'
+    sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests', 'fixtures'))
+    from name_map import FIXTURE_TO_REAL  # noqa: E402
+    return json.dumps(FIXTURE_TO_REAL, ensure_ascii=False)
 
 
 def data_source():
@@ -118,6 +133,13 @@ def disclaimer_ack_key_expr():
 
 MOCK_SCRIPT = """<script>
     window.__SITIAN_MOCK__ = true;
+    // ===== fixture 专名 → 当前数据源名 的别名（2026-10-06）=====
+    // 用例里写的是合成 fixture 的名字（曜川星…）。--real-data 下数据源是真实库，那些名字不存在
+    // → 集体假红（19 个失败里 17 个是它）。用例改用 __alias('曜川星') 取名字：
+    //   合成 fixture 模式 → 表为空，恒等（行为零变化）；--real-data → 解析成真实名。
+    // 表本体在 scripts/tests/fixtures/make_vault_fixture.py（唯一实现），由 harness 注入。
+    window.__ALIAS__ = __ALIAS_MAP__;
+    window.__alias = function (n) { return (window.__ALIAS__ && window.__ALIAS__[n]) || n; };
     // ===== 免责声明（UI 基座试点，test_83 守）=====
     // 回归基线默认视为「已确认当前版本条款」—— 否则首启阻断层（模态 + 拦截点击）
     // 会盖住整个界面，所有点击类用例一起变红（"一起红"的假失败最难定位）。
@@ -420,6 +442,7 @@ def setup_mock():
     with open(INDEX_HTML, 'r', encoding='utf-8') as f:
         html = f.read()
     mock = MOCK_SCRIPT.replace('__DISCLAIMER_ACK_EXPR__', disclaimer_ack_key_expr() or "'__no_disclaimer_seed__'")
+    mock = mock.replace('__ALIAS_MAP__', alias_map_json())
     html = html.replace('<div id="app"></div>', mock + '\n  <div id="app"></div>')
     with open(INDEX_HTML, 'w', encoding='utf-8') as f:
         f.write(html)

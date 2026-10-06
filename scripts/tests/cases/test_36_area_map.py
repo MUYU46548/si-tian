@@ -18,6 +18,7 @@
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from lib.helpers import A  # noqa: E402
 from lib.cdp import wait_for
 
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -26,7 +27,7 @@ AM = AREA_EL + ".__vueParentComponent.setupState"
 CANVAS = "document.querySelector('.area-map-container .canvas-wrapper canvas')"
 
 # 现有真实库中 曜川星 下的区域节点（geodata：青螺岛 / 双溪流域）
-DEFAULT_AREA = '青螺岛'
+DEFAULT_AREA = A('青螺岛')
 
 
 def _j(cdp, expr):

@@ -23,7 +23,7 @@ def run(cdp):
     # 选中曜川星系（galaxy，有行星子节点）
     clicked = q(cdp, """
       const names = Array.from(document.querySelectorAll('.tree-navigation .tree-node .node-name'));
-      const el = names.find(n => n.textContent.trim() === '曜川星系');
+      const el = names.find(n => n.textContent.trim() === __alias('曜川星系'));
       if (!el) return 'no-node';
       el.closest('.tree-node').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       return 'ok';
@@ -87,7 +87,7 @@ def run(cdp):
     # 5) 切换节点 → tab 重置回概览
     q(cdp, """
       const names = Array.from(document.querySelectorAll('.tree-navigation .tree-node .node-name'));
-      const el = names.find(n => n.textContent.trim() === '归岚星域');
+      const el = names.find(n => n.textContent.trim() === __alias('归岚星域'));
       if (el) el.closest('.tree-node').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       return 'ok';
     """)

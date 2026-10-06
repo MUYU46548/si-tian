@@ -14,6 +14,7 @@
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from lib.helpers import A  # noqa: E402
 from lib.cdp import wait_for, eval_json
 from lib import helpers as H
 
@@ -179,7 +180,7 @@ def run(cdp):
     print(f"    [a-c] 简化 {pure_summary}；界外拒绝 → {obj['outsideMsg']}；重叠拒绝 → {obj['overlapMsg']}")
 
     # ── 进入行星地图 ──
-    level = H.goto_planet(cdp, '曜川星')
+    level = H.goto_planet(cdp, A('曜川星'))
     if level != 'planet':
         return False, f'导航行星失败（viewLevel={level}）'
     H.enter_edit(cdp)

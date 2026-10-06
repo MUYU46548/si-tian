@@ -23,7 +23,7 @@ zoom=0.2 时 1px 误差 = 5 世界单位。所有拖拽/点击点先经 quantize
 import sys, os, json, time, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import (goto_planet, enter_edit, confirm_yes, fit_world,
+from lib.helpers import (A, goto_planet, confirm_yes, enter_edit, fit_world,
                          set_pm_state, drag_canvas_polyline, dblclick_canvas_at_world,
                          quantize_world_pts)
 
@@ -61,7 +61,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     import time
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.2)
@@ -299,7 +299,7 @@ def run(cdp):
         if not cdp.eval("!!document.querySelector('.inline-text-edit')"):
             return False, 'P1: 前置内联编辑覆盖层未出现'
         set_pm_state(cdp, """
-          const other = pm.store.nodes.find(n => n.layer === 'planet' && n.name !== '曜川星');
+          const other = pm.store.nodes.find(n => n.layer === 'planet' && n.name !== __alias('曜川星'));
           if (!other) return 'no-other';
           pm.store.selectPlanet(other);
           return 'ok';
@@ -317,7 +317,7 @@ def run(cdp):
             return False, f'P1: 切换行星后状态未清空 {cleared}'
         # 切回曜川星（恢复清理上下文）
         set_pm_state(cdp, """
-          const home = pm.store.nodes.find(n => n.layer === 'planet' && n.name === '曜川星');
+          const home = pm.store.nodes.find(n => n.layer === 'planet' && n.name === __alias('曜川星'));
           pm.store.selectPlanet(home);
           return 'ok';
         """)

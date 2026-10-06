@@ -34,6 +34,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from lib.helpers import A  # noqa: E402
 from lib.cdp import wait_for  # noqa: E402
 from lib import helpers as H  # noqa: E402
 
@@ -344,7 +345,7 @@ def run(cdp):
         fails.append(f'读不到 ScenarioMap.vue（{e}）')
 
     # ── A/B. 行星地图 ───────────────────────────────────────────────────────
-    r = H.goto_planet(cdp, '曜川星')
+    r = H.goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.2)

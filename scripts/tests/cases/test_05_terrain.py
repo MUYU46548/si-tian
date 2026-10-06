@@ -4,14 +4,14 @@
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import goto_planet, enter_edit, terrain_count, terrain_names
+from lib.helpers import A, enter_edit, goto_planet, terrain_count, terrain_names
 
 
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     import time
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.5)

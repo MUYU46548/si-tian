@@ -19,7 +19,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import goto_planet, enter_edit
+from lib.helpers import A, enter_edit, goto_planet
 
 PM = "document.querySelector('.planet-map-container').__vueParentComponent.setupState"
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -385,7 +385,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     wait_for(cdp, f"{STORE}.nodes.length > 0", timeout=45, desc='地理数据加载')
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 (goto_planet → {r})'
     time.sleep(1.0)

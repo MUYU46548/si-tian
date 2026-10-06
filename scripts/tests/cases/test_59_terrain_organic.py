@@ -25,7 +25,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for  # noqa: E402
-from lib.helpers import goto_planet, enter_edit, set_pm_state, drag_canvas_polyline  # noqa: E402
+from lib.helpers import A, drag_canvas_polyline, enter_edit, goto_planet, set_pm_state  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
@@ -160,7 +160,7 @@ def run(cdp):
         fails.append(f'读不到 gridOutline.js（{e}）')
 
     # ── 导航到行星 + 编辑模式 ──────────────────────────────────────────────
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.2)

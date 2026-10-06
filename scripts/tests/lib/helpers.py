@@ -4,7 +4,37 @@
 测试辅助函数（阶段 2 回归测试基线）
 """
 import json
+import os
+import sys
 import time
+
+# ── fixture 专名解析（2026-10-06）───────────────────────────────────────────
+# 用例里写的是**合成 fixture 的名字**（曜川星 / 归岚星域 …）。`--real-data` 下数据源换成真实库，
+# 那些名字不存在 → 用例集体假红（19 个失败里 17 个是它）。所以统一走本函数取名字：
+#   合成 fixture 模式 → 原样返回（行为零变化）；--real-data → 解析成真实库里的对应名字。
+# 表本体在 fixtures/make_vault_fixture.py（唯一实现），见 fixtures/name_map.py。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'fixtures'))
+from name_map import FIXTURE_TO_REAL, KNOWN_FIXTURE_NAMES  # noqa: E402
+
+#: 由 run_tests.py 按 --real-data 设置（见 set_real_data）
+REAL_DATA = False
+
+
+def set_real_data(flag):
+    """声明本次回归的数据源是否为真实库（决定 A() 是否做名字解析）。"""
+    global REAL_DATA
+    REAL_DATA = bool(flag)
+    return REAL_DATA
+
+
+def A(name):
+    """把用例里的 **fixture 专名** 解析成「当前数据源里的名字」。
+
+    只在 `--real-data` 下做替换；默认（合成 fixture）恒等 —— 所以既有用例的行为零变化。
+    页面内等价物是 `window.__alias(name)`（由 MOCK_SCRIPT 注入同一张表），
+    两份都源自 fixtures/name_map.py，`test_86` 读盘守卫它们不漂移。
+    """
+    return FIXTURE_TO_REAL.get(name, name) if REAL_DATA else name
 
 
 def open_toolbar_more(cdp, settle=0.4):

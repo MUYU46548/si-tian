@@ -12,7 +12,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import goto_planet, enter_edit, click_canvas_at_world
+from lib.helpers import A, click_canvas_at_world, enter_edit, goto_planet
 
 PM = "document.querySelector('.planet-map-container').__vueParentComponent.setupState"
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -104,7 +104,7 @@ def sink_land_spot(cdp, radius=45, sink_h=5):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container .canvas-wrapper canvas')", desc='行星画布挂载')
@@ -208,7 +208,7 @@ def run(cdp):
     time.sleep(0.4)
 
     # ============ b) 自动寻路 ============
-    routes_before = _j(cdp, f"""JSON.stringify({{ n: (({STORE}.mapData['曜川星'] || {{}}).routes || []).length }})""")
+    routes_before = _j(cdp, f"""JSON.stringify({{ n: (({STORE}.mapData[__alias('曜川星')] || {{}}).routes || []).length }})""")
     _j(cdp, f"(() => {{ {PM}.setInteractionMode('route'); {PM}.autoRoadEnabled = true; return 'ok'; }})()")
     time.sleep(0.3)
     click_canvas_at_world(cdp, pts[0]['x'], pts[0]['y'])   # 起点
@@ -218,7 +218,7 @@ def run(cdp):
     time.sleep(0.2)
     road = _j(cdp, f"""(() => {{
       const s = {STORE};
-      const md = s.mapData['曜川星'] || {{}};
+      const md = s.mapData[__alias('曜川星')] || {{}};
       const rs = md.routes || [];
       const r0 = rs[rs.length - 1];
       return JSON.stringify({{
@@ -248,7 +248,7 @@ def run(cdp):
         return False, f'自动寻路耗时 {elapsed:.1f}s —— placement 性能退化（应为 <3s）'
     _j(cdp, f"(() => {{ {STORE}.undo(); return 'ok'; }})()")
     time.sleep(0.4)
-    undone = _j(cdp, f"""JSON.stringify({{ n: (({STORE}.mapData['曜川星'] || {{}}).routes || []).length }})""")
+    undone = _j(cdp, f"""JSON.stringify({{ n: (({STORE}.mapData[__alias('曜川星')] || {{}}).routes || []).length }})""")
     if undone['n'] != routes_before['n']:
         return False, f'道路 undo 未回退 {undone}'
 

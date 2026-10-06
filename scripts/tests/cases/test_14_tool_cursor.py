@@ -4,7 +4,7 @@
 import sys, os, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import goto_planet, enter_edit, set_pm_state
+from lib.helpers import A, enter_edit, goto_planet, set_pm_state
 
 
 def canvas_cursor(cdp):
@@ -14,7 +14,7 @@ def canvas_cursor(cdp):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     time.sleep(1.2)

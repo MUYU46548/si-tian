@@ -10,7 +10,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import view_level
+from lib.helpers import A, view_level
 
 
 def _js_obj(cdp, expr):
@@ -27,7 +27,7 @@ def run(cdp):
     # a) 进入 曜川星系 单系视图（沿 parentId 上溯所属世界 → selectWorld → enterSystemDetail）
     nav = cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
-      const sys = s.nodes.find(n => n.id === '曜川星系');
+      const sys = s.nodes.find(n => n.id === __alias('曜川星系'));
       if (!sys) return 'no-sys';
       let cur = s.nodes.find(n => n.id === sys.parentId);
       while (cur && cur.layer !== 'world') cur = s.nodes.find(n => n.id === cur.parentId);
@@ -90,7 +90,7 @@ def run(cdp):
       c.dispatchEvent(mk(p.x, p.y, 'mousedown'));
       c.dispatchEvent(mk(p.x + 80, p.y + 50, 'mousemove'));
       c.dispatchEvent(mk(p.x + 80, p.y + 50, 'mouseup'));
-      const base = store.nodes.find(n => n.id === '曜川星系').coordinate;
+      const base = store.nodes.find(n => n.id === __alias('曜川星系')).coordinate;
       // 期望值：按同一整数量化反算落点世界坐标，再叠加系坐标基准
       const endW = st.renderer.screenToWorld(
         Math.trunc(r.left + toSX(p.x + 80)) - r.left,
@@ -144,7 +144,7 @@ def run(cdp):
       opt.click();
       await new Promise(r => setTimeout(r, 80));
       const added = store.nodes[store.nodes.length - 1];
-      const base = store.nodes.find(n => n.id === '曜川星系').coordinate;
+      const base = store.nodes.find(n => n.id === __alias('曜川星系')).coordinate;
       // 与组件 createBody 相同的轨道槽公式：pIdx = 现有行星数（2 颗 → 第 3 槽）
       const pIdx = sysBefore;
       const orbit = Math.floor(pIdx / 3) + 1, pos = pIdx % 3;
@@ -162,7 +162,7 @@ def run(cdp):
     a = add['added']
     if add['after'] != add['before'] + 1 or add['sysAfter'] != add['sysBefore'] + 1:
         return False, f'添加后计数异常 {add}'
-    if not (a['layer'] == 'planet' and a['parentId'] == '曜川星系' and a['tags'][:2] == ['新创建', '卫星'] and a['userMoved']):
+    if not (a['layer'] == 'planet' and a['parentId'] == A('曜川星系') and a['tags'][:2] == ['新创建', '卫星'] and a['userMoved']):
         return False, f'新天体属性异常 {a}'
     if abs(a['coord']['x'] - add['expect']['x']) > 0.51 or abs(a['coord']['y'] - add['expect']['y']) > 0.51:
         return False, f'新天体未落轨道槽公式位 {a["coord"]} (期望 {add["expect"]})'
@@ -230,14 +230,14 @@ def run(cdp):
     if not isinstance(ctx_add, dict) or 'coord' not in ctx_add:
         return False, f'原地添加链路异常 {ctx_add}'
     base = cdp.eval("""(() => {
-      const n = document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.find(nn => nn.id === '曜川星系');
+      const n = document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.find(nn => nn.id === __alias('曜川星系'));
       return JSON.stringify({ x: n.coordinate.x, y: n.coordinate.y });
     })()""")
     b = json.loads(base)
     spot = spot_info['spot']
     if ctx_add['after'] != spot_info['nodesBefore'] + 1:
         return False, f'原地添加计数异常 {ctx_add}'
-    if ctx_add['tags'][:2] != ['新创建', '空间站'] or ctx_add['parentId'] != '曜川星系':
+    if ctx_add['tags'][:2] != ['新创建', '空间站'] or ctx_add['parentId'] != A('曜川星系'):
         return False, f'原地添加属性异常 {ctx_add}'
     if abs(ctx_add['coord']['x'] - (b['x'] + spot['x'])) > 0.51 or abs(ctx_add['coord']['y'] - (b['y'] + spot['y'])) > 0.51:
         return False, f'原地添加坐标换算异常 {ctx_add["coord"]} (期望 base{b} + spot{spot})'

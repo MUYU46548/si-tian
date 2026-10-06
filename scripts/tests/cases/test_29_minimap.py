@@ -16,7 +16,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for  # noqa: E402
-from lib.helpers import goto_planet, enter_edit, ensure_data_ready  # noqa: E402
+from lib.helpers import A, ensure_data_ready, enter_edit, goto_planet  # noqa: E402
 
 PM = "document.querySelector('.planet-map-container').__vueParentComponent.setupState"
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -64,7 +64,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     ensure_data_ready(cdp)
 
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 (goto_planet → {r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container .canvas-wrapper canvas')", desc='行星画布挂载')

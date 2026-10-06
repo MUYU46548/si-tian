@@ -6,7 +6,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for
-from lib.helpers import view_level
+from lib.helpers import A, view_level
 
 
 def setup_state(cdp, selector):
@@ -46,7 +46,7 @@ def run(cdp):
     # 2. GalaxyMap 点击"曜川星系"恒星亮点 → 应直接下钻单系视图（跳过域总览）
     star = cdp.eval("""(() => {
       const st = document.querySelector('.galaxy-map-container').__vueParentComponent.setupState;
-      const g = st.galaxyNodes.find(n => n.id === '曜川星系');
+      const g = st.galaxyNodes.find(n => n.id === __alias('曜川星系'));
       return g ? JSON.stringify({ x: g.x, y: g.y }) : 'no-star';
     })()""")
     if star == 'no-star':
@@ -77,7 +77,7 @@ def run(cdp):
       });
     })()""")
     st = json.loads(state)
-    if not (st['system'] == '曜川星系' and st['domain'] and st['planets'] >= 1 and st['mounted']):
+    if not (st['system'] == A('曜川星系') and st['domain'] and st['planets'] >= 1 and st['mounted']):
         return False, f'单系视图状态异常 {state}'
 
     # 3. B5 邻系箭头：基于真实 hyperlanes 邻接渲染
@@ -96,7 +96,7 @@ def run(cdp):
       const ps = el.__vueParentComponent.setupState.planetLayouts.map(p => p.name);
       return JSON.stringify(ps);
     })()""")
-    if json.loads(order)[:2] != ['曜川星', '沧屿']:
+    if json.loads(order)[:2] != [A('曜川星'), A('沧屿')]:
         return False, f'行星轨道顺序异常 ({order})'
 
     # 3c. 邻系跳转面板：完整列表（含画布未显示的）+ 点击跳转
@@ -163,8 +163,8 @@ def run(cdp):
     # 5. 行星下钻 + 智能返回（行星地图返回按钮 → 回到来源单系视图）
     nav = cdp.eval("""(() => {
       const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
-      const w = s.nodes.find(n => n.id === '曜川星系');
-      const p = s.nodes.find(n => n.name === '曜川星');
+      const w = s.nodes.find(n => n.id === __alias('曜川星系'));
+      const p = s.nodes.find(n => n.name === __alias('曜川星'));
       if (!w || !p) return 'no-data';
       s.enterSystemDetail(w); s.selectPlanet(p);
       return s.viewLevel;
@@ -176,7 +176,7 @@ def run(cdp):
     time.sleep(0.5)
     back_lv = view_level(cdp)
     back_sys = cdp.eval("document.querySelector('#app').__vue_app__._instance.setupState.store.currentSystem.id")
-    if not (back_lv == 'system_detail' and back_sys == '曜川星系'):
+    if not (back_lv == 'system_detail' and back_sys == A('曜川星系')):
         return False, f'行星返回未回到单系视图 ({back_lv}, {back_sys})'
 
     # 6. 面包屑星域段 → 域总览（system 级保留）；再 backToDomain → domain

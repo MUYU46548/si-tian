@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for  # noqa: E402
-from lib.helpers import goto_planet, enter_edit, ensure_data_ready  # noqa: E402
+from lib.helpers import A, ensure_data_ready, enter_edit, goto_planet  # noqa: E402
 
 PM = "document.querySelector('.planet-map-container').__vueParentComponent.setupState"
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
@@ -161,7 +161,7 @@ def run(cdp):
         return False, f'图标重叠（最近间距 {det["minPair"]} < 14）—— 未做不重叠约束'
 
     # ── 2. 进入行星 + 编辑模式 + 地貌笔刷 ──────────────────────────────
-    r = goto_planet(cdp, '曜川星')
+    r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
     wait_for(cdp, "!!document.querySelector('.planet-map-container .canvas-wrapper canvas')", desc='行星画布挂载')
@@ -292,7 +292,7 @@ def run(cdp):
     time.sleep(1.4)  # 自动保存防抖 800ms → 项目侧再防抖 800ms
     _j(cdp, "window.__probe.flushProject()")
     payload = _j(cdp, """(() => {
-      const p = window.__probe.lastMapPayload('曜川星');
+      const p = window.__probe.lastMapPayload(__alias('曜川星'));
       if (!p) return JSON.stringify({ n: 0 });
       const r = p.data.reliefIcons;
       return JSON.stringify({

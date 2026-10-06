@@ -3,6 +3,7 @@
 """用例 13：树导航双击跳转（批次A4）—— 单击=选中开面板（不跳视图），双击=下钻对应视图"""
 import sys, os, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from lib.helpers import A  # noqa: E402
 from lib.cdp import wait_for
 
 
@@ -29,35 +30,35 @@ def run(cdp):
     wait_for(cdp, "document.querySelectorAll('.tree-navigation .tree-node').length > 0", desc='树节点渲染')
 
     # 1) 单击星域节点：仅选中开详情面板，不跳视图
-    if not act_on_node(cdp, '归岚星域', 'click'):
+    if not act_on_node(cdp, A('归岚星域'), 'click'):
         return False, '树上未找到星域节点 归岚星域'
     time.sleep(0.5)
     st = tree_state(cdp)
-    if st['level'] != 'world' or st['selected'] != '归岚星域' or not st['panel']:
+    if st['level'] != 'world' or st['selected'] != A('归岚星域') or not st['panel']:
         return False, f'单击应只选中不跳转 ({json.dumps(st, ensure_ascii=False)})'
 
     # 2) 双击星域节点 → system 视图 + 面板保持打开（选中恢复）
-    if not act_on_node(cdp, '归岚星域', 'dblclick'):
+    if not act_on_node(cdp, A('归岚星域'), 'dblclick'):
         return False, '双击星域节点失败'
     time.sleep(0.8)
     st = tree_state(cdp)
-    if st['level'] != 'system' or st['domain'] != '归岚星域' or not st['panel']:
+    if st['level'] != 'system' or st['domain'] != A('归岚星域') or not st['panel']:
         return False, f'双击星域应下钻 system 且面板保留 ({json.dumps(st, ensure_ascii=False)})'
 
     # 3) 双击恒星系节点 → system_detail 视图（enterSystemDetail 补齐面包屑）
-    if not act_on_node(cdp, '曜川星系', 'dblclick'):
+    if not act_on_node(cdp, A('曜川星系'), 'dblclick'):
         return False, '树上未找到星系节点 曜川星系'
     time.sleep(0.8)
     st = tree_state(cdp)
-    if st['level'] != 'system_detail' or st['system'] != '曜川星系' or st['domain'] != '归岚星域':
+    if st['level'] != 'system_detail' or st['system'] != A('曜川星系') or st['domain'] != A('归岚星域'):
         return False, f'双击星系应下钻 system_detail 且面包屑完整 ({json.dumps(st, ensure_ascii=False)})'
 
     # 4) 双击行星节点 → planet 视图
-    if not act_on_node(cdp, '曜川星', 'dblclick'):
+    if not act_on_node(cdp, A('曜川星'), 'dblclick'):
         return False, '树上未找到行星节点 曜川星'
     time.sleep(1.0)
     st = tree_state(cdp)
-    if st['level'] != 'planet' or st['planet'] != '曜川星':
+    if st['level'] != 'planet' or st['planet'] != A('曜川星'):
         return False, f'双击行星应下钻 planet ({json.dumps(st, ensure_ascii=False)})'
 
     return True, '树导航单击选中/双击下钻（星域→system·星系→system_detail·行星→planet）正常'
