@@ -270,19 +270,53 @@ def planet_map(cdp):
 
 def goto_planet(cdp, planet_name='曜川星'):
     """直接导航到指定行星地图（世界→星域→星系→行星）。
+
     自底向上锚定：优先取有星域子节点的世界（避免取到空壳世界如"寂原"，
-    否则其 star_domain/galaxy 查找返回 undefined，抛 TypeError）。"""
+    否则其 star_domain/galaxy 查找返回 undefined，抛 TypeError）。
+
+    🔴 名字找不到时**按结构兜底**（2026-10-06 加）：
+    `planet_name` 的默认值 `曜川星` 是**合成 fixture** 里的名字。真实知识库（`--real-data`）
+    的行星不叫这个（实测真实库有 `乐园星 / 余白 / 克索斯星…`，且**没有** `曜川星`）
+    → 旧实现直接返回 `no-planet`，于是**二十多个用例在真实数据上集体变红**，
+    看上去像「司天在真实库上跑不起来」，其实只是测试把 fixture 的专名写死了。
+    现在：先按名字找（**合成数据路径完全不变**，名字先命中）；找不到再退到
+    「自底向上、四层链路贯通的任意一颗行星」。这样 `--real-data` 才是一个有意义的闸门。
+    """
     ensure_data_ready(cdp)
     expr = f"""(() => {{
       const app = document.querySelector('#app').__vue_app__;
       const s = app._instance.setupState.store;
       const nodes = s.nodes;
-      // 找有星域子节点的世界
-      let w = nodes.find(n => n.layer === 'world' && nodes.some(c => c.layer === 'star_domain' && c.parentId === n.id));
-      if (!w) w = nodes.find(n => n.layer === 'world'); // 兜底
-      const d = nodes.find(n => n.layer === 'star_domain' && n.parentId === w.id);
-      const g = nodes.find(n => n.layer === 'galaxy' && n.parentId === d.id);
-      const p = nodes.find(n => n.name === '{planet_name}' && n.layer === 'planet');
+      const byId = (id) => nodes.find(n => n.id === id);
+      const chainOf = (planet) => {{
+        const g = byId(planet.parentId);
+        const d = g ? byId(g.parentId) : null;
+        const w = d ? byId(d.parentId) : null;
+        return {{ w, d, g }};
+      }};
+      const named = nodes.find(n => n.name === '{planet_name}' && n.layer === 'planet');
+      let w, d, g, p;
+      if (named) {{
+        // —— 原路径（合成数据走这条，行为逐字不变）——
+        w = nodes.find(n => n.layer === 'world' && nodes.some(c => c.layer === 'star_domain' && c.parentId === n.id));
+        if (!w) w = nodes.find(n => n.layer === 'world'); // 兜底
+        d = nodes.find(n => n.layer === 'star_domain' && n.parentId === w.id);
+        g = nodes.find(n => n.layer === 'galaxy' && n.parentId === d.id);
+        p = named;
+      }} else {{
+        // —— 兜底：不认专名，只认结构（真实库走这条）——
+        p = nodes.find(n => {{
+          if (n.layer !== 'planet') return false;
+          const c = chainOf(n);
+          return !!(c.w && c.d && c.g
+            && c.w.layer === 'world' && c.d.layer === 'star_domain' && c.g.layer === 'galaxy');
+        }});
+        if (!p) p = nodes.find(n => n.layer === 'planet');
+        if (!p) return 'no-planet';
+        const c = chainOf(p);
+        w = c.w; d = c.d; g = c.g;
+        if (!w || !d || !g) return 'no-planet-chain';
+      }}
       if (!p) return 'no-planet';
       s.selectWorld(w); s.selectDomain(d); s.selectSystem(g); s.selectPlanet(p);
       return s.viewLevel;

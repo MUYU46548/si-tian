@@ -1381,10 +1381,15 @@ function handleLoadSampleWorld() {
 // ===== 剧本地图模式 =====
 
 async function enterScenarioMode() {
-  // Load scenarios from disk
+  // 从**知识库缓存**（<库>/.sitian/scenarios.json）载入剧本。
+  // 🔴 必须走 `fillMissingOnly`（只补缺）：项目态下画布事实源是项目文件，
+  //    库里同名的剧本 / 底图**不许**覆盖项目里已经编辑过的那一份 ——
+  //    旧实现走默认的「新值赢」合并，紧接着 `saveScenarios()` 把覆盖结果推给项目并落盘，
+  //    于是「每次启动后第一次点『历史剧本』」都会把用户的剧本与底图编辑**静默回退**。
+  //    「同 key 覆盖」留给用户在剧本工具栏明确按下的「导入剧本数据（合并：同 key 覆盖）」。
   const result = await window.sitianAPI.loadScenarios();
   if (result?.success && result.data) {
-    store.importFromScenariosJson(result.data);
+    store.importFromScenariosJson(result.data, { fillMissingOnly: true });
   }
   scenarioMode.value = true;
 }

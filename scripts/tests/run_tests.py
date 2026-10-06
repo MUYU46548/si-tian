@@ -157,7 +157,13 @@ MOCK_SCRIPT = """<script>
         getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
         saveMapData: async () => ({ success: true }),
         saveScenarios: async () => ({ success: true }),
-        loadScenarios: async () => ({ success: true, data: { version: 2, baseMaps: {}, scenarios: {} } }),
+        // 默认空 → 保持既有用例行为不变；并记调用次数供 test_84 断言「确实读了库」。
+        // test_84 会在点击「历史剧本」之前塞 window.__scenarioVaultStub，用来验证
+        // 「知识库 → 画布的隐式载入必须只补缺、不许覆盖项目里已有的剧本与底图」。
+        loadScenarios: async () => {
+          window.__scenarioLoadCalls = (window.__scenarioLoadCalls || 0) + 1;
+          return { success: true, data: window.__scenarioVaultStub || { version: 2, baseMaps: {}, scenarios: {} } };
+        },
         // ===== 一键同步（git）：内存态 mock，不调用真实 git（真实验证在 unit/test_git_sync.js）=====
         gitSyncStatus: async (dir) => {
           const st = (window.__gitState || {})[dir] || {};

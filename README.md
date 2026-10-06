@@ -75,7 +75,7 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 | `npm run migrate-mapdata-keys` | 清理 mapdata 旧 key（默认 dry-run，`-- --apply` 才写盘） |
 | `npm run migrate-vault-attrs` | 存量笔记的机器属性（层级 / 上层挂靠 / 地点类型）搬进项目文件（默认 dry-run 出清点表，`-- --apply` 才写盘；**只补空、不覆盖**，跑前请先关闭该项目） |
 | `npm run clean-cache-junk` | 清理 `.sitian` 缓存垃圾（空名地形 / 空壳底图 / 测试残留节点；默认 dry-run，删前自检引用与包围盒） |
-| `npm run test` | 回归测试（83 个 CDP 用例 + 18 个 Node 单元测试，见下） |
+| `npm run test` | 回归测试（84 个 CDP 用例 + 18 个 Node 单元测试，见下） |
 | `python scripts/gen_architecture_map.py` | 再生成 `docs/ARCHITECTURE_MAP.md` 的清单节（`--check` 自检） |
 | `python scripts/emoji_audit.py` / `python scripts/icon_check.py` | emoji 审计 / 图标名一致性校验 |
 
@@ -183,7 +183,7 @@ python scripts/tests/run_tests.py test_48    # 只跑某个用例
 1. **Node 单元测试**（`scripts/tests/unit/*.js`，跑在 CDP 用例之前）：主进程真实文件 I/O（`.sitian` 原子写 / 备份轮转 / 路径守卫）与主进程模块接线不变式。CDP 用例里 `window.sitianAPI` 是 mock，**主进程落盘在 CDP 层零覆盖**，所以这层必须存在。
 2. **CDP 用例**（`scripts/tests/cases/test_*.py`，Edge headless 驱动真实 Vite dev server + mock 数据）：导航、编辑、面板、渲染性能、剧本时间轴、项目文件、**项目↔画布接线**等端到端行为。
 
-判定口径：**CDP 用例全绿（当前 83 个）+ Node 单元测试（当前 18 个文件）全通过 = 基线完整**。
+判定口径：**CDP 用例全绿（当前 84 个）+ Node 单元测试（当前 18 个文件）全通过 = 基线完整**。
 
 > 回归测试的 mock 会在页面加载前写入「已确认免责声明」的 ack（键名与版本号从
 > `utils/disclaimer.js` 解析注入），否则首启阻断层会盖住整个界面、几十个用例一起变红。

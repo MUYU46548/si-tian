@@ -1946,11 +1946,21 @@ export function createScenarioEditingModule(ctx) {
   // Import/Load
   // ============================================================
   
-  function importFromScenariosJson(data) {
+  /**
+   * 剧本数据 → 画布（外部 `.json` 与知识库缓存两条来源共用）。
+   * @param {object} data
+   * @param {{fillMissingOnly?:boolean}} opts 见 `applyScenarioState`。
+   *   🔴 **隐式**载入（进入「历史剧本」时读知识库缓存）必须传 `true`：
+   *      默认的「新值赢」合并会覆盖项目里已有的剧本与底图（静默丢编辑）。
+   */
+  function importFromScenariosJson(data, opts = {}) {
     if (!guardWrite('导入剧本').ok) return null;
     // 外部 .json 可能是旧格式 → 走统一装载口（内部已含迁移）
-    applyScenarioState(data, { fresh: false });
-    saveScenarios();
+    const r = applyScenarioState(data, { fresh: false, ...opts });
+    // 只有真的改了内存才排保存：隐式载入在「无事可补」时是纯 no-op，
+    // 不该把项目标脏、更不该触发一次写盘 + 备份轮转。
+    if (r && r.ok && r.changed !== false) saveScenarios();
+    return r;
   }
 
   /**
@@ -2035,29 +2045,75 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * 装载整份剧本状态（底图 + 剧本 + 切片书签）。
+   * 装载整份剧本状态（底图 + 剧本 + 切片书签）—— **所有剧本数据的唯一装载口**。
+   *
    * @param {{baseMaps?:object, scenarios?:object, slicePoints?:Array}} data
-   * @param {{fresh?:boolean}} opts `fresh:true` = 整体替换（打开项目）；否则合并（导入 .json）
+   * @param {{fresh?:boolean, fillMissingOnly?:boolean}} opts 三种语义，**必须显式选一种**：
+   *   · `fresh:true`      —— 整体替换（打开项目 / 知识库快照还原）。内存被入参完全接管。
+   *   · `fillMissingOnly` —— **内存里已有的优先，只补缺**（知识库 → 画布的**隐式**载入）。
+   *   · 两者都不给         —— 合并且**新值赢**（`{...旧, ...新}`）。这是**显式**导入
+   *     外部剧本包（`.json`）的既有语义，按钮 title 就写着「合并：同 key 覆盖」。
+   *
+   * 🔴 `fillMissingOnly` 的存在理由（2026-10-06 修的**真缺陷**，不是洁癖）：
+   *   `App.enterScenarioMode()` 在打开「历史剧本」时会从**知识库缓存**
+   *   （`<库>/.sitian/scenarios.json`）载入并走合并。项目态下画布事实源是**项目文件**，
+   *   而那条路径用的是「新值赢」的合并 → 库里同名的剧本与底图会**整体替换**项目里那一份，
+   *   紧接着 `saveScenarios()` 把覆盖结果推给项目并落盘 =
+   *   **用户一进「历史剧本」就把自己的剧本/底图编辑静默回退**（每次启动后第一次进入都会回退一次）。
+   *   隐式载入的语义只能是「补缺」；要覆盖必须由用户在剧本工具栏**明确按下**导入按钮。
+   *
+   * ⚠️ 无改动时**保持原引用**（`fillMissingOnly` 分支无事可补就不换对象）——
+   *    调用方据此判断「要不要排一次保存」，避免每次进「历史剧本」都把项目标脏 + 触发写盘与备份轮转。
    */
-  function applyScenarioState(data, { fresh = false } = {}) {
+  function applyScenarioState(data, { fresh = false, fillMissingOnly = false } = {}) {
     if (!data || typeof data !== 'object') return { ok: false, error: '没有剧本数据' };
+    const prevBaseMaps = baseMaps.value;
+    const prevScenarios = scenarios.value;
+    const prevSlicePoints = slicePoints.value;
+
     if (data.baseMaps) {
-      baseMaps.value = fresh ? data.baseMaps : { ...baseMaps.value, ...data.baseMaps };
+      if (fresh) {
+        baseMaps.value = data.baseMaps;
+      } else if (fillMissingOnly) {
+        const missing = Object.keys(data.baseMaps).filter((k) => !(k in (baseMaps.value || {})));
+        if (missing.length) {
+          baseMaps.value = { ...baseMaps.value, ...Object.fromEntries(missing.map((k) => [k, data.baseMaps[k]])) };
+        }
+      } else {
+        baseMaps.value = { ...baseMaps.value, ...data.baseMaps };
+      }
     }
     if (data.scenarios) {
       const migrated = normalizeScenarioDatesDict(data.scenarios);
-      scenarios.value = fresh ? migrated : { ...scenarios.value, ...migrated };
+      if (fresh) {
+        scenarios.value = migrated;
+      } else if (fillMissingOnly) {
+        const missing = Object.keys(migrated).filter((k) => !(k in (scenarios.value || {})));
+        if (missing.length) {
+          scenarios.value = { ...scenarios.value, ...Object.fromEntries(missing.map((k) => [k, migrated[k]])) };
+        }
+      } else {
+        scenarios.value = { ...scenarios.value, ...migrated };
+      }
     }
-    // 切片点是**项目级**：整体替换语义下必须跟着走（否则切项目会串味），
-    // 合并语义下追加（导入外部剧本包时把对方书签也带进来，UI 会显示数量）
-    if (data.slicePoints !== undefined) {
-      const pts = sanitizeSlicePoints(data.slicePoints);
-      slicePoints.value = fresh ? pts : sanitizeSlicePoints([...(slicePoints.value || []), ...pts]);
-    } else if (fresh) {
-      slicePoints.value = [];
+    // 切片点是**项目级**：
+    //  · 整体替换语义下必须跟着走（否则切项目会串味）；没有该字段则清空；
+    //  · 合并语义下追加（显式导入外部剧本包时把对方书签也带进来，UI 会显示数量）；
+    //  · `fillMissingOnly`（知识库隐式载入）**一律不碰** —— 书签的家是项目文件，不是知识库缓存。
+    if (!fillMissingOnly) {
+      if (data.slicePoints !== undefined) {
+        const pts = sanitizeSlicePoints(data.slicePoints);
+        slicePoints.value = fresh ? pts : sanitizeSlicePoints([...(slicePoints.value || []), ...pts]);
+      } else if (fresh) {
+        slicePoints.value = [];
+      }
     }
     return {
       ok: true,
+      // 调用方用它决定「要不要排一次保存」：只有引用变了才算真的改了内存
+      changed: baseMaps.value !== prevBaseMaps
+        || scenarios.value !== prevScenarios
+        || slicePoints.value !== prevSlicePoints,
       baseMaps: Object.keys(baseMaps.value || {}).length,
       scenarios: Object.keys(scenarios.value || {}).length,
       slicePoints: (slicePoints.value || []).length,
