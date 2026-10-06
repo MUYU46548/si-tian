@@ -33,7 +33,12 @@ def find_page_ws(port=CDP_PORT, timeout=30):
 
 class CDP:
     def __init__(self, ws_url=None, port=CDP_PORT):
-        self.ws = websocket.create_connection(ws_url or find_page_ws(port), timeout=15)
+        # suppress_origin=True：Chromium 111+ 默认**拒绝带 Origin 的 DevTools WebSocket 握手**
+        # （websocket-client 会自动带一个 http://127.0.0.1:<port>）。Edge 不在意，但
+        # Electron 直接回 403 Forbidden —— 表现为「连不上 CDP」，排查起来很像环境坏了。
+        # Origin 头对本地 CDP 毫无用途，直接不发即可（比给 Electron 加 --remote-allow-origins 稳）。
+        self.ws = websocket.create_connection(
+            ws_url or find_page_ws(port), timeout=15, suppress_origin=True)
         self.mid = 0
 
     def send(self, method, params=None):

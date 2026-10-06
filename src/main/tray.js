@@ -81,6 +81,21 @@ function destroyTray() {
   }
 }
 
+/**
+ * 取当前托盘实例（可能为 null）。
+ *
+ * 🔴 为什么必须走这个 getter，而不是在 index.js 里直接写 `if (tray)`：
+ *    `tray` 是**本模块的私有变量**，`index.js` 的 `require('./tray')` 只解构了
+ *    `{ createTray, destroyTray, getIsQuitting, setIsQuitting }` —— 那边写 `tray`
+ *    就是一个**未声明标识符**。实测：点 × 关窗时 `main/index.js:107` 的 `if (tray)`
+ *    抛 `ReferenceError: tray is not defined`（主进程 uncaughtException，每次点 × 都抛），
+ *    **「已最小化到托盘」的气泡提示永远不弹** —— 而托盘是用户唯一能把窗口找回来的入口，
+ *    提示失灵 = 用户以为程序把自己关了。2026-10-06 由真机演练（`scripts/tests/drill_quit_flush.py`）抓到。
+ */
+function getTray() {
+  return tray;
+}
+
 function getIsQuitting() {
   return isQuitting;
 }
@@ -89,4 +104,4 @@ function setIsQuitting(value) {
   isQuitting = value;
 }
 
-module.exports = { createTray, destroyTray, getIsQuitting, setIsQuitting };
+module.exports = { createTray, destroyTray, getTray, getIsQuitting, setIsQuitting };

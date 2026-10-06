@@ -78,6 +78,7 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 | `npm run test` | 回归测试（84 个 CDP 用例 + 18 个 Node 单元测试，见下） |
 | `python scripts/gen_architecture_map.py` | 再生成 `docs/ARCHITECTURE_MAP.md` 的清单节（`--check` 自检） |
 | `python scripts/emoji_audit.py` / `python scripts/icon_check.py` | emoji 审计 / 图标名一致性校验 |
+| `python scripts/tests/drill_quit_flush.py` | **退出前落盘真机演练**（起真实应用，改完立刻退出并读盘核对；会短暂开一个真实窗口） |
 
 ### 首次启动
 

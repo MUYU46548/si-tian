@@ -9,7 +9,7 @@ const { startWatcher, stopWatcher } = require('./vault-watcher');
 //    getCurrentBaseMapKey/setCurrentBaseMapKey 漏解构 → 打开历史剧本必报错）。
 //    scripts/tests/unit/test_main_module_wiring.js 会读本源码守住这条不变式。
 const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp, getCurrentBaseMapKey, setCurrentBaseMapKey, getLastProjectPath, setLastProjectPath } = require('./config');
-const { createTray, destroyTray, getIsQuitting, setIsQuitting } = require('./tray');
+const { createTray, destroyTray, getTray, getIsQuitting, setIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const { registerProjectHandlers } = require('./handlers/projectHandler');
 const { registerGitSyncHandlers } = require('./handlers/gitSyncHandler');
@@ -104,9 +104,13 @@ mainWindow.on('close', (event) => {
   }
   event.preventDefault();
   mainWindow.hide();
-  if (tray) {
+  // ⚠️ 必须 `getTray()`：`tray` 是 tray.js 的模块私有变量，本文件里直接写 `tray`
+  //    是**未声明标识符** → 每次点 × 都抛 ReferenceError（主进程 uncaughtException），
+  //    气泡提示永远不弹（2026-10-06 真机演练抓到，见 tray.js 的 getTray 注释）。
+  const trayRef = getTray();
+  if (trayRef) {
     try {
-      tray.displayBalloon({
+      trayRef.displayBalloon({
         title: 'SiTian 已最小化到托盘',
         content: '左键双击恢复 · 右键菜单可退出 · 快捷键 Ctrl+Q 彻底关闭',
         iconType: 'info',
