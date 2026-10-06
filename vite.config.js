@@ -1,9 +1,19 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import path from 'path';
+// UI 基座（试点，2026-10-06）：Tailwind 只出 utilities 层，配置见仓库根 tailwind.config.js
+import tailwindcss from 'tailwindcss';
 
 export default defineConfig({
   plugins: [vue()],
+  // 🔴 这里显式给 Tailwind 指定配置文件**绝对路径**，不依赖 postcss-load-config 的
+  //    向上查找（Vite 的 root 是 src/renderer，而配置在仓库根 —— 靠隐式查找太脆）。
+  //    只用 utilities 层：入口 src/renderer/src/assets/tailwind.css 里没有 @tailwind base。
+  css: {
+    postcss: {
+      plugins: [tailwindcss({ config: path.resolve(__dirname, 'tailwind.config.js') })],
+    },
+  },
   base: './',
   root: path.resolve(__dirname, 'src/renderer'),
   build: {

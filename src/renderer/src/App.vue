@@ -308,7 +308,7 @@
     <about-panel ref="aboutPanelRef" />
     <batch-import-panel ref="batchImportPanelRef" />
     <settings-panel ref="settingsPanelRef" />
-    <onboarding-guide />
+    <onboarding-guide ref="onboardingGuideRef" />
     <recovery-panel />
     <keyboard-shortcuts ref="keyboardShortcutsRef" />
     <change-log ref="changeLogRef" />
@@ -333,6 +333,16 @@
       <div class="perf-row">平均: <b>{{ perfStats.avgFrameTime?.toFixed(2) || 0 }}ms</b></div>
       <div class="perf-row">峰值: <b>{{ perfStats.peakFrameTime?.toFixed(2) || 0 }}ms</b></div>
     </div>
+
+    <!-- 免责声明（UI 基座试点）：首启强制确认 + 随时可查。
+         ⚠️ 位置必须在 .app-layout 内：shadcn 组件靠 .theme-* 上的 CSS 变量继承取色。 -->
+    <disclaimer-dialog
+      :open="disclaimerOpen"
+      :mode="disclaimerMode"
+      @update:open="handleDisclaimerOpenChange"
+      @accept="handleDisclaimerAccept"
+      @decline="handleDisclaimerDecline"
+    />
   </div>
 </template>
 
@@ -383,6 +393,8 @@ const HistoryPanel = defineAsyncComponent(() => import('./components/HistoryPane
 const ProjectPanel = defineAsyncComponent(() => import('./components/ProjectPanel.vue'));
 // 一键同步到远程仓库（git）：傻瓜式推送（填一次地址 → 点「立即同步」）
 const GitSyncPanel = defineAsyncComponent(() => import('./components/GitSyncPanel.vue'));
+// 免责声明（UI 基座试点）：首启强制确认 + 关于/设置面板随时可查
+const DisclaimerDialog = defineAsyncComponent(() => import('./components/DisclaimerDialog.vue'));
 import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
 import { useLayersStore } from './store/layers';
 // 退出前落盘（数据安全）：中立注册表 —— App 不直接 import 任何 store 实现，只驱动 flushAll()
@@ -390,6 +402,8 @@ import { flushAll } from './store/quitFlush';
 import { useTheme } from './composables/useTheme';
 import { useBookmarks } from './composables/useBookmarks';
 import { measurePerformance, cleanupTestNodes } from './utils/stressTest';
+// 免责声明：确认状态与文案都在 utils/disclaimer.js（文案单一事实源）
+import { hasAckedDisclaimer, ackDisclaimer } from './utils/disclaimer';
 import Icon from './components/Icon.vue';
 
 const store = useGeodataStore();
@@ -434,6 +448,46 @@ const settingsPanelRef = ref(null);
 const keyboardShortcutsRef = ref(null);
 const changeLogRef = ref(null);
 const updateNotificationRef = ref(null);
+const onboardingGuideRef = ref(null);
+
+// ===== 免责声明（2026-10-06 UI 基座试点）=====
+// 首启阻断必须在 loadGeodata() **之前**决定（放在之后会出现
+// 「splash 淡出 → 闪一下主界面 → 才盖上来」，见 docs/PROPOSAL_DISCLAIMER_AND_UI.md §1.4）。
+const disclaimerOpen = ref(false);
+const disclaimerMode = ref('gate'); // 'gate' 首启阻断 | 'view' 随时查看
+const isDisclaimerGateOpen = computed(() => disclaimerOpen.value && disclaimerMode.value === 'gate');
+
+function openDisclaimerView() {
+  disclaimerMode.value = 'view';
+  disclaimerOpen.value = true;
+}
+
+function handleDisclaimerOpenChange(v) {
+  // 阻断态不允许被外部关掉（reka-ui 的 Esc/点外点已被组件拦住，这里是双保险）
+  if (!v && isDisclaimerGateOpen.value) return;
+  disclaimerOpen.value = v;
+}
+
+function handleDisclaimerAccept(payload) {
+  const at = payload && payload.at ? new Date(payload.at) : new Date();
+  const persisted = ackDisclaimer(undefined, at);
+  disclaimerOpen.value = false;
+  window.__sitianDisclaimerGate = false;
+  if (!persisted) {
+    // 写不进 localStorage（隐私模式/配额满）也要说清：否则用户以为「下次不用再点了」
+    statusText.value = '免责声明已确认（本次会话内有效：无法写入本地记录）';
+    statusKind.value = 'warn';
+  }
+  // 首启时接着走新手引导 —— 引导被声明阻断过，这里补一次（见 OnboardingGuide 的守卫）
+  if (!localStorage.getItem('sitian-first-run-complete')) {
+    nextTick(() => onboardingGuideRef.value?.open());
+  }
+}
+
+function handleDisclaimerDecline() {
+  // 「不同意并退出」：走窗口关闭路径（与点 × 一致；主进程 before-quit 仍会尝试落盘未保存改动）
+  window.close();
+}
 
 // 面包屑下拉菜单状态
 const dropdowns = reactive({
@@ -1516,6 +1570,12 @@ window.cleanupStressTest = cleanupStressTest;
 onMounted(async () => {
   statusText.value = '正在加载数据...';
   initTheme();
+  // 免责声明：未确认**当前版本**条款 → 立刻阻断（必须在数据加载与新手引导之前）
+  if (!hasAckedDisclaimer()) {
+    window.__sitianDisclaimerGate = true;
+    disclaimerMode.value = 'gate';
+    disclaimerOpen.value = true;
+  }
   window.__sitianSplash?.set?.(65, '正在加载世界数据…');
   try {
     await store.loadGeodata();
@@ -1603,6 +1663,8 @@ onMounted(async () => {
   window.addEventListener('sitian:panel-open', closeAppPanels);
   // 引导/空态把用户送到项目面板（B2/B3）
   window.addEventListener('sitian:open-project-panel', handleOpenProjectPanel);
+  // 免责声明入口（关于面板 / 设置面板共用同一通道）
+  window.addEventListener('sitian:open-disclaimer', openDisclaimerView);
   // 项目侧告警（如「会话基线未能创建」= 失去回滚点）→ 状态栏提醒，别让它静默
   window.addEventListener('sitian:project-warning', (e) => {
     const msg = e?.detail?.message;
@@ -1694,6 +1756,16 @@ function handleBeforeUnload(e) {
 }
 
 function handleGlobalKeydown(e) {
+  // 免责声明阻断态：Esc 与 F1 一律吞掉。弹窗自己已拦住「Esc 关闭」，
+  // 这里再挡一次是为了不让全局 Escape 去 closeAll() 别的面板、
+  // 也不让 F1 在模态后面把关于面板打开（两层浮层同屏）。
+  if (isDisclaimerGateOpen.value) {
+    if (e.key === 'Escape' || e.key === 'F1') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+  }
   // 输入类元素聚焦时，除 F1/Escape 外全部让路：
   // 修复搜索框/重命名框里打 l/m 误开面板、Ctrl+Z 撤的是地图数据而非文字
   const t = e.target;

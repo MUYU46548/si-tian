@@ -1,0 +1,130 @@
+/* ============================================================
+ * 司天 UI 基座（试点）—— Tailwind utilities-only 入口
+ * ============================================================
+ *
+ * 🔴 这里**只有** utilities 层。绝不加 `@tailwind base` / `@tailwind components`：
+ *    base 层 = preflight，会引入全局 line-height 与 `ol,ul{list-style:none}`，
+ *    直接打坏 Markdown 正文列表与所有面板的行高（详见
+ *    docs/PROPOSAL_DISCLAIMER_AND_UI.md §2.3 R1/R2）。
+ *
+ * 司天的 token 定义在 App.vue 的 `.theme-dark` / `.theme-light`（scoped），
+ * 靠 CSS 自定义属性的**继承**下发给全部子元素 —— 所以下面这两条规则
+ * **刻意不带 scoped、也刻意不回写 App.vue**：它们只是把司天的取值
+ * 映射成 shadcn 的变量名，作用在同一个 `.theme-dark` 元素上，随继承一起下发。
+ *
+ * ⚠️ 配套纪律：用到本文件的组件**不要 teleport 到 body**（R7）——
+ *    一旦出了 `.app-layout`，`.theme-*` 上的变量就断了，组件会拿不到颜色。
+ *    shadcn 的 Dialog 组件在本仓是**就地渲染**（不套 DialogPortal），就是这个原因。
+ */
+@tailwind utilities;
+
+/* ---------- 司天主题 token → shadcn-vue 语义变量名（R7 处置） ---------- */
+.theme-dark {
+  --ui-background: #0d1117;
+  --ui-foreground: #e2e8f0;
+  --ui-card: #161b22;
+  --ui-card-foreground: #e2e8f0;
+  --ui-popover: #161b22;
+  --ui-popover-foreground: #e2e8f0;
+  --ui-primary: #58a6ff;
+  --ui-primary-foreground: #0d1117;
+  --ui-secondary: #21262d;
+  --ui-secondary-foreground: #c9d1d9;
+  --ui-muted: #21262d;
+  --ui-muted-foreground: #8b949e;
+  --ui-accent: #21262d;
+  --ui-accent-foreground: #e2e8f0;
+  --ui-destructive: #f85149;
+  --ui-destructive-foreground: #ffffff;
+  --ui-border: #30363d;
+  --ui-input: #30363d;
+  --ui-ring: #58a6ff;
+}
+
+.theme-light {
+  --ui-background: #ffffff;
+  --ui-foreground: #1f2328;
+  --ui-card: #ffffff;
+  --ui-card-foreground: #1f2328;
+  --ui-popover: #ffffff;
+  --ui-popover-foreground: #1f2328;
+  --ui-primary: #0969da;
+  --ui-primary-foreground: #ffffff;
+  --ui-secondary: #f6f8fa;
+  --ui-secondary-foreground: #1f2328;
+  --ui-muted: #f6f8fa;
+  --ui-muted-foreground: #8c959f;
+  --ui-accent: #eaeef2;
+  --ui-accent-foreground: #1f2328;
+  --ui-destructive: #cf222e;
+  --ui-destructive-foreground: #ffffff;
+  --ui-border: #d0d7de;
+  --ui-input: #d0d7de;
+  --ui-ring: #0969da;
+}
+
+/* ---------- preflight 缺席时的 border 修补（R4 同族） ----------
+ * preflight 里那条 `*, ::before, ::after { border-width:0; border-style:solid }`
+ * 被整层关掉了。后果：`class="border"` 只给到 `border-width:1px`，
+ * 而 `border-style` 保持浏览器默认的 `none` → **边框不可见，且不报错**。
+ * 处置：只给「确实带了 border 类」的元素补 border-style，绝不写 `*` 选择器
+ * （那等于把 preflight 从后门请回来，R6 的「双 reset 双源」重演）。
+ * 撞车审计：全仓既有标记没有任何元素使用这些类名（提交说明附审计输出）。
+ */
+.border,
+.border-t,
+.border-b,
+.border-l,
+.border-r,
+.border-x,
+.border-y {
+  border-style: solid;
+}
+
+/* ---------- 对话框定位 + 进出场动画 ----------
+ * 1) 定位放在这里而不是组件里：组件根元素是 reka-ui 的组件链，
+ *    scoped 样式能不能落到真实 DOM 根上依赖 Vue 的作用域继承，不如显式属性钩子确定。
+ *    `inset:0 + margin:auto` = 居中，**刻意不用 translate** —— 进场动画要用 transform:scale，
+ *    两者同时用 transform 会互相覆盖（表现为「动画结束瞬间位置跳一下」）。
+ * 2) shadcn 官方靠 `tailwindcss-animate` 提供 animate-in/out；这里只为一个 Dialog
+ *    多引一个依赖不划算，直接用 `data-state` 写 CSS（reka-ui 会自动带 open|closed）。
+ * 3) z-index：高于全仓既有浮层（AboutPanel 1000 / 卸载确认 1100）——
+ *    免责声明是启动阻断层，不能被别的面板盖住。
+ */
+[data-sitian-dialog-overlay] {
+  z-index: 1200;
+}
+[data-sitian-dialog-content] {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  max-height: 86vh;
+  max-width: 92vw;
+  z-index: 1201;
+  border-radius: var(--radius-xl);
+}
+
+[data-sitian-dialog-overlay][data-state='open'] {
+  animation: sitian-fade-in 0.15s ease-out;
+}
+[data-sitian-dialog-overlay][data-state='closed'] {
+  animation: sitian-fade-out 0.12s ease-in;
+}
+[data-sitian-dialog-content][data-state='open'] {
+  animation: sitian-zoom-in 0.16s ease-out;
+}
+[data-sitian-dialog-content][data-state='closed'] {
+  animation: sitian-zoom-out 0.12s ease-in;
+}
+
+@keyframes sitian-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sitian-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sitian-zoom-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes sitian-zoom-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}

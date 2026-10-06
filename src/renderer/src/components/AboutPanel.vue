@@ -18,7 +18,7 @@
           <h3>关于</h3>
           <p class="description">
             世界观地理可视化编辑器，为 Obsidian 知识库设计的星图工具。
-            以 Stellaris 风格的五层视图呈现地理层级，支持 Markdown 附加可编辑坐标元数据，
+            以 Stellaris 风格的多层下钻视图（世界 → 星域 → 星系 → 行星 → 区域 → 建筑内部）呈现地理层级，支持 Markdown 附加可编辑坐标元数据，
             实现画布与笔记的双向同步。
           </p>
         </section>
@@ -146,6 +146,24 @@
             <span class="tech-tag">Vite 5</span>
             <span class="tech-tag">Canvas 2D</span>
             <span class="tech-tag">marked</span>
+            <span class="tech-tag">Tailwind CSS</span>
+            <span class="tech-tag">reka-ui</span>
+          </div>
+        </section>
+
+        <!-- 免责声明入口（UI 基座试点：shadcn-vue Button + Tailwind utilities） -->
+        <section class="about-section">
+          <h3><Icon name="shield" :size="16" style="margin-right:6px"/>免责声明</h3>
+          <p class="description">
+            司天是**完全本地**的桌面工具：不接入云端 AI、没有账号、没有遥测，仅「检查更新」与
+            「你自配的 Git 同步」两处联网。完整条款共 13 节，其中
+            第 3 节（内容合规责任）与第 6 节（数据安全与备份）尤其建议逐字阅读。
+          </p>
+          <div class="disclaimer-row">
+            <Button variant="outline" size="sm" data-testid="about-open-disclaimer" @click="openDisclaimer">
+              查看免责声明
+            </Button>
+            <span class="disclaimer-state" data-testid="about-disclaimer-state">{{ disclaimerState }}</span>
           </div>
         </section>
       </div>
@@ -181,10 +199,28 @@
 import { ref, computed } from 'vue';
 import Icon from './Icon.vue';
 import BrandMark from './BrandMark.vue';
+// UI 基座试点（2026-10-06）：关于面板是选型的试点落点 —— 只引无配色依赖的
+// shadcn-vue 组件（Button），配色走 tailwind.config.js 映射到司天 token。
+import { Button } from './ui/button';
+import { DISCLAIMER_VERSION, ackedDisclaimerAt } from '../utils/disclaimer';
 
 const isOpen = ref(false);
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
 const copiedVersion = ref(false);
+
+// 免责声明：关于面板只负责「入口 + 当前确认状态」，弹窗本体在 App.vue（唯一实例，
+// 首启阻断与随时查看共用，避免两份实现漂移）。
+function openDisclaimer() {
+  window.dispatchEvent(new CustomEvent('sitian:open-disclaimer'));
+}
+
+const disclaimerState = computed(() => {
+  const at = ackedDisclaimerAt();
+  if (!at) return `当前条款 v${DISCLAIMER_VERSION} · 本机尚未记录确认`;
+  const d = new Date(at);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `已确认 v${DISCLAIMER_VERSION} · ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+});
 
 // 点击复制版本号（clipboard API 在 Electron 渲染进程可用；execText 兜底）
 async function copyVersion() {
@@ -249,6 +285,21 @@ defineExpose({ open, close });
 </script>
 
 <style scoped>
+/* 免责声明入口（试点）：布局用司天自己的 scoped CSS，
+   只把「按钮本体」交给 shadcn-vue —— 试点范围刻意收窄，降低回归面。 */
+.disclaimer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.disclaimer-state {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
 .about-overlay {
   position: fixed;
   inset: 0;

@@ -25,6 +25,7 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -92,8 +93,40 @@ def data_source():
         print('  ⚠️ 未找到合成 fixture（scripts/tests/fixtures/vault-fixture/）→ 回退真实库')
     return REAL_GEODATA, REAL_MAPDATA, f'真实库（{VAULT}）'
 
+# 免责声明 ack 键的来源（唯一事实源 = 产品源码，不在这里写死）
+DISCLAIMER_SRC = os.path.join(ROOT, 'src', 'renderer', 'src', 'utils', 'disclaimer.js')
+
+
+def disclaimer_ack_key_expr():
+    """从 `utils/disclaimer.js` 解析出 ack 键的构造表达式（前缀 + 版本），交给页面执行。
+
+    🔴 为什么不在这里写死 `'sitian_disclaimer_ack_v1.0.0'`：
+       产品升 `DISCLAIMER_VERSION` 时，写死的键会**静默失配** —— 于是每个用例都被
+       首启阻断层盖住，几十个用例**一起红**，看起来像「大回归」而不是「一行键名过期」。
+       解析失败返回 None（用例会照常跑，只是首启层会挡住 —— 由 test_83 之外的现象暴露）。
+    """
+    try:
+        src = open(DISCLAIMER_SRC, encoding='utf-8').read()   # 本文件没 import io，别用 io.open
+        pre = re.search(r'DISCLAIMER_ACK_KEY\s*=\s*`([^`$]*)\$\{DISCLAIMER_VERSION\}`', src)
+        ver = re.search(r"DISCLAIMER_VERSION\s*=\s*'([^']+)'", src)
+        if pre and ver:
+            return "'%s' + '%s'" % (pre.group(1), ver.group(1))
+    except Exception:
+        pass
+    return None
+
+
 MOCK_SCRIPT = """<script>
     window.__SITIAN_MOCK__ = true;
+    // ===== 免责声明（UI 基座试点，test_83 守）=====
+    // 回归基线默认视为「已确认当前版本条款」—— 否则首启阻断层（模态 + 拦截点击）
+    // 会盖住整个界面，所有点击类用例一起变红（"一起红"的假失败最难定位）。
+    // 🔴 键名与版本号由 harness 从 src/renderer/src/utils/disclaimer.js 解析后注入（见上），
+    //    不在这里写死。test_83 用 sessionStorage 的跳过开关清掉该键并重载，专门验证阻断行为。
+    (function () {
+      try { if (sessionStorage.getItem('__sitian_skip_disclaimer_seed') === '1') return; } catch (e) {}
+      try { localStorage.setItem(__DISCLAIMER_ACK_EXPR__, '2026-01-01T00:00:00.000Z'); } catch (e) {}
+    })();
     // ⚠️ 必须**同步**安装 sitianAPI（同步 XHR 阻塞解析）：
     // 本 <script> 之后的 <script type="module"> 是 defer 执行，只要这里的安装是同步的，
     // 应用 mount 时 sitianAPI 必然已存在。历史 bug：原来用 async fetch → 若 fetch 解析
@@ -369,7 +402,8 @@ def setup_mock():
     print(f'  · 回归数据源：{src_label}')
     with open(INDEX_HTML, 'r', encoding='utf-8') as f:
         html = f.read()
-    html = html.replace('<div id="app"></div>', MOCK_SCRIPT + '\n  <div id="app"></div>')
+    mock = MOCK_SCRIPT.replace('__DISCLAIMER_ACK_EXPR__', disclaimer_ack_key_expr() or "'__no_disclaimer_seed__'")
+    html = html.replace('<div id="app"></div>', mock + '\n  <div id="app"></div>')
     with open(INDEX_HTML, 'w', encoding='utf-8') as f:
         f.write(html)
 

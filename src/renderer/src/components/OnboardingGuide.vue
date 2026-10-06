@@ -84,6 +84,9 @@ const steps = [
 ];
 
 function open() {
+  // 免责声明阻断期间不要抢屏：两层浮层同屏 = 声明被盖住 = 「没读过就进去了」。
+  // App.vue 在用户同意后会清掉该标记并主动调一次 open() 补上引导。
+  if (typeof window !== 'undefined' && window.__sitianDisclaimerGate) return;
   // 检查是否首次使用
   const isFirstRun = !localStorage.getItem('sitian-first-run-complete');
   if (isFirstRun) {

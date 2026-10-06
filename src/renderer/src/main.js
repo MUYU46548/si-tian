@@ -1,3 +1,6 @@
+// UI 基座（试点）：Tailwind utilities-only 入口 + 司天→shadcn 变量映射。
+// 必须在 App.vue 之前引入，保证工具类在样式表中的顺序稳定。
+import './assets/tailwind.css';
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';

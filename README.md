@@ -21,6 +21,8 @@
 - **项目文件（`.sitian`）**：项目面板（新建 / 打开 / 保存 / 备份 / 定位 / 关闭）+ 实体树（改名 / 删除 / 拖动改父级）+ 实体创建向导（按层级自动过滤层级、创建后给出结果卡片）+ 快照回滚（1 份基准 + ≤50 份增量 diff）；**打开项目即切换画布事实源**，项目侧与画布侧双向同步（撤销/重做同样同步）
 - **数据安全**：知识库缓存自动备份（同一时间戳算一批，保留最近 10 批）、项目文件磁盘备份（10 份）、撤销 / 重做栈、写前完整性校验
 - **系统集成**：系统托盘（最小化到托盘 / 单实例锁）、亮色 / 暗色主题、可配置动画 / FPS / 纹理、自动更新（GitHub Releases）
+- **免责声明（13 节）**：首次启动强制阅读并确认（滚动到底才可勾选、Esc 与点遮罩都关不掉、可「不同意并退出」）；条款声明了本软件的联网范围（仅「检查更新」与用户自配的 Git 同步两处）与数据安全边界，并**如实写明内置的自动保存 / 写前备份 / 会话基线 / 原子写盘等机制均不构成「数据不会丢」的保证**。随时可在「关于（F1）→ 免责声明」或「设置 → 通用 → 免责声明」重看；条款升版本后会再次要求确认
+- **UI 基座（试点）**：Tailwind CSS 3（只出 utilities 层，不引 preflight） + shadcn-vue 组件源码（Button / Dialog / Card，基于 reka-ui），配色映射到司天主题 token；首个落地用例就是免责声明弹窗（真锁模态：焦点陷阱 + `aria-modal`）
 
 ## 技术栈
 
@@ -32,6 +34,7 @@
 | 前端画布 | 原生 Canvas 2D（无外部渲染库） |
 | 数据格式 | Markdown + YAML frontmatter + JSON 缓存层（`.sitian/`） |
 | 图标 | 内联 SVG 组件（`Icon.vue`）+ Canvas 矢量适配（`canvasIcon.js`），无 emoji |
+| UI 基座 | Tailwind CSS 3（utilities-only，**不引 preflight**）+ shadcn-vue 源码组件（`components/ui/`，基于 reka-ui） |
 
 ## 快速开始
 
@@ -70,7 +73,9 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 | `npm run extract-data` | 从知识库提取地理节点到 `<vault>/.sitian/geodata.json` |
 | `npm run audit-coverage` | 提取覆盖率审计（只读；`-- --write-report` 落报告） |
 | `npm run migrate-mapdata-keys` | 清理 mapdata 旧 key（默认 dry-run，`-- --apply` 才写盘） |
-| `npm run test` | 回归测试（48 个 CDP 用例 + Node 单元测试，见下） |
+| `npm run migrate-vault-attrs` | 存量笔记的机器属性（层级 / 上层挂靠 / 地点类型）搬进项目文件（默认 dry-run 出清点表，`-- --apply` 才写盘；**只补空、不覆盖**，跑前请先关闭该项目） |
+| `npm run clean-cache-junk` | 清理 `.sitian` 缓存垃圾（空名地形 / 空壳底图 / 测试残留节点；默认 dry-run，删前自检引用与包围盒） |
+| `npm run test` | 回归测试（83 个 CDP 用例 + 18 个 Node 单元测试，见下） |
 | `python scripts/gen_architecture_map.py` | 再生成 `docs/ARCHITECTURE_MAP.md` 的清单节（`--check` 自检） |
 | `python scripts/emoji_audit.py` / `python scripts/icon_check.py` | emoji 审计 / 图标名一致性校验 |
 
@@ -79,6 +84,9 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 1. 启动应用 → **设置面板**（工具栏齿轮，或托盘图标右键）配置 Obsidian 知识库路径
 2. 应用会提取地理数据并生成画布布局（缓存写进 `<vault>/.sitian/`）
 3. 想脱库使用：工具栏「项目」→ 新建 `.sitian` 项目文件
+
+> 第一次启动会先弹出**免责声明**（13 节）：需要向下滚动读完、勾选同意后才能进入。
+> 点「不同意并退出」会关闭窗口。同意后可随时在「关于（F1）」或「设置 → 通用」里重看。
 
 ## 项目文件（`.sitian`）
 
@@ -175,7 +183,11 @@ python scripts/tests/run_tests.py test_48    # 只跑某个用例
 1. **Node 单元测试**（`scripts/tests/unit/*.js`，跑在 CDP 用例之前）：主进程真实文件 I/O（`.sitian` 原子写 / 备份轮转 / 路径守卫）与主进程模块接线不变式。CDP 用例里 `window.sitianAPI` 是 mock，**主进程落盘在 CDP 层零覆盖**，所以这层必须存在。
 2. **CDP 用例**（`scripts/tests/cases/test_*.py`，Edge headless 驱动真实 Vite dev server + mock 数据）：导航、编辑、面板、渲染性能、剧本时间轴、项目文件、**项目↔画布接线**等端到端行为。
 
-判定口径：**CDP 用例全绿（当前 49 个）+ Node 单元测试全通过 = 基线完整**。
+判定口径：**CDP 用例全绿（当前 83 个）+ Node 单元测试（当前 18 个文件）全通过 = 基线完整**。
+
+> 回归测试的 mock 会在页面加载前写入「已确认免责声明」的 ack（键名与版本号从
+> `utils/disclaimer.js` 解析注入），否则首启阻断层会盖住整个界面、几十个用例一起变红。
+> `test_83_disclaimer` 用 `sessionStorage` 的跳过开关清掉该 ack 并重载，专门验证阻断行为。
 
 > 用例断言纪律：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，判定一律走 `lib/cdp.py` 的 `eval_json()`；「没有报错字段就算通过」会造成静默假绿。
 
@@ -191,6 +203,22 @@ python scripts/tests/run_tests.py test_48    # 只跑某个用例
 
 - **[Azgaar Fantasy Map Generator](https://azgaar.github.io/Fantasy-Map-Generator/)** — `.map` 格式解析与海陆 / 轮廓数据的来源
 - **[Vue.js](https://vuejs.org/)** / **[Electron](https://www.electronjs.org/)** / **[Pinia](https://pinia.vuejs.org/)** / **[Vite](https://vitejs.dev/)** — 前端与桌面壳
+
+## 免责声明
+
+应用内提供**完整的 13 节免责声明**（文案单一事实源：`src/renderer/src/utils/disclaimer.js`）。
+
+- **首启强制确认**：滚动到底才可勾选 → 才能点「同意并继续」；Esc 与点击遮罩都不会关闭；
+  另有「不同意并退出」。这是「知情同意」真正有证据力的部分。
+- **随时可查**：关于面板（F1）→ 免责声明；设置 → 通用 → 免责声明。
+- **版本化**：条款实质变更时提升 `DISCLAIMER_VERSION`，下次启动全员重新确认
+  （刻意不使用应用版本号 —— 发版 ≠ 条款变更）。
+- **诚实口径**：第 2 节写明本软件**完全本地**（不含大语言模型、不接入云端 AI、无账号、无遥测，
+  仅「检查更新」与「用户自配的 Git 同步」两处联网）；第 6 节如实列出内置的数据保护机制，
+  并明确**这些都不构成「数据不会丢失或损坏」的保证**，同时给出风险清单与自行备份建议。
+
+> 第 12 节（适用法律与争议解决）**保留占位符** `【待定：司法辖区】` —— 在填写完成前，
+> 该条不构成对争议解决方式的有效约定。
 
 ## 许可证
 

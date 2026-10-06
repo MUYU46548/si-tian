@@ -65,6 +65,15 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <span class="setting-name">免责声明</span>
+              <span class="setting-desc">许可、内容合规责任与数据安全条款（共 13 节）</span>
+            </div>
+            <Button variant="outline" size="sm" data-testid="settings-open-disclaimer" @click="openDisclaimer">
+              查看
+            </Button>
+          </div>
         </section>
 
         <!-- 视图设置 -->
@@ -541,6 +550,8 @@
 
 <script setup>
 import Icon from './Icon.vue';
+// UI 基座试点（2026-10-06）：设置面板「通用」段的免责声明入口复用 shadcn-vue Button
+import { Button } from './ui/button';
 import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import {
   labelPresets, getPreset, updatePreset, resetAllPresets, removePreset,
@@ -560,6 +571,11 @@ import { isReadOnly as gateReadOnly, writeModeReason as gateReason } from '../st
 import { openVault, revealVault } from '../utils/vault';
 
 const isOpen = ref(false);
+
+// 免责声明入口：弹窗本体在 App.vue（与首启强制确认共用同一个实例）
+function openDisclaimer() {
+  window.dispatchEvent(new CustomEvent('sitian:open-disclaimer'));
+}
 
 // ===== 分页（P0-2 标签样式 / P1-4 标记类型）=====
 const TABS = [
