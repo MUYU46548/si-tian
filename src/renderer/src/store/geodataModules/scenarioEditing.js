@@ -1830,38 +1830,47 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
-  function removeScenarioLabel(scenarioId, labelId) {
+  function removeScenarioLabel(scenarioId, labelRef) {
     const scenario = scenarios.value[scenarioId];
-    if (!scenario) return;
-    
-    const oldLabel = (scenario.labels || []).find(l => l.id === labelId);
-    if (!oldLabel) return;
-    
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    const list = scenario.labels || [];
+    // 🔴 2026-10-07：`labelRef` 可以是 **id**（司天新建的条目都带 id）或 **下标**。
+    //    为什么必须有下标这条路：FMG `.map` 导入的标签只有 `{x,y,text,size,color}` ——
+    //    **没有 id**（见 `utils/azgaar-parser.js` 的 labels 构造）。按 id 匹配时
+    //    `undefined === undefined` 会命中的是**任意第一条无 id 的标签** → 点第 3 条删掉第 1 条，
+    //    而且不报错。这是本项目最讨厌的一类静默错删，故此处显式分派。
+    const idx = typeof labelRef === 'number' ? labelRef : list.findIndex(l => l.id === labelRef);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) return { ok: false, reason: 'no-target' };
+    const oldLabel = list[idx];
+    // 撤销必须**放回原位**（`splice` 到 idx，不是 push 到表尾）：标签顺序就是渲染层叠顺序，
+    // 追加到末尾会让"撤销后这一条压到别人上面"，与改动前不逐字段一致。
+    const spliceBack = () => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const arr = [...(cur.labels || [])];
+      arr.splice(Math.min(idx, arr.length), 0, oldLabel);
+      scenarios.value = { ...scenarios.value, [scenarioId]: { ...cur, labels: arr } };
+    };
     execute({
       type: 'remove-label',
       label: '删除地名',
-      undo: () => {
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            labels: [...(scenarios.value[scenarioId].labels || []), oldLabel],
-          },
-        };
-      },
+      undo: () => { spliceBack(); },
       redo: () => {
+        const cur = scenarios.value[scenarioId];
+        if (!cur) return;
+        const arr = [...(cur.labels || [])];
+        const at = arr.indexOf(oldLabel);
+        if (at >= 0) arr.splice(at, 1);
+        else if (arr[idx] === oldLabel) arr.splice(idx, 1);
         scenarios.value = {
           ...scenarios.value,
-          [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            labels: (scenarios.value[scenarioId].labels || []).filter(l => l.id !== labelId),
-            updatedAt: new Date().toISOString(),
-          },
+          [scenarioId]: { ...cur, labels: arr, updatedAt: new Date().toISOString() },
         };
       },
     });
-    
+
     saveScenarios();
+    return { ok: true, removed: oldLabel };
   }
 
   function addScenarioMarker(scenarioId, marker) {
@@ -1908,38 +1917,43 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
-  function removeScenarioMarker(scenarioId, markerId) {
+  function removeScenarioMarker(scenarioId, markerRef) {
     const scenario = scenarios.value[scenarioId];
-    if (!scenario) return;
-    
-    const oldMarker = (scenario.markers || []).find(m => m.id === markerId);
-    if (!oldMarker) return;
-    
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    const list = scenario.markers || [];
+    // `markerRef` = id 或下标 —— 理由同 `removeScenarioLabel`：FMG 导入的 markers
+    // 只有 `{x,y,name,type}`，**没有 id**，按 id 匹配会误删第一条无 id 的标记。
+    const idx = typeof markerRef === 'number' ? markerRef : list.findIndex(m => m.id === markerRef);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) return { ok: false, reason: 'no-target' };
+    const oldMarker = list[idx];
+    // 撤销放回**原位**（标记顺序 = 绘制层叠顺序）
+    const spliceBack = () => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const arr = [...(cur.markers || [])];
+      arr.splice(Math.min(idx, arr.length), 0, oldMarker);
+      scenarios.value = { ...scenarios.value, [scenarioId]: { ...cur, markers: arr } };
+    };
     execute({
       type: 'remove-marker',
       label: '删除标记',
-      undo: () => {
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            markers: [...(scenarios.value[scenarioId].markers || []), oldMarker],
-          },
-        };
-      },
+      undo: () => { spliceBack(); },
       redo: () => {
+        const cur = scenarios.value[scenarioId];
+        if (!cur) return;
+        const arr = [...(cur.markers || [])];
+        const at = arr.indexOf(oldMarker);
+        if (at >= 0) arr.splice(at, 1);
+        else if (arr[idx] === oldMarker) arr.splice(idx, 1);
         scenarios.value = {
           ...scenarios.value,
-          [scenarioId]: {
-            ...scenarios.value[scenarioId],
-            markers: (scenarios.value[scenarioId].markers || []).filter(m => m.id !== markerId),
-            updatedAt: new Date().toISOString(),
-          },
+          [scenarioId]: { ...cur, markers: arr, updatedAt: new Date().toISOString() },
         };
       },
     });
-    
+
     saveScenarios();
+    return { ok: true, removed: oldMarker };
   }
 
   // ============================================================

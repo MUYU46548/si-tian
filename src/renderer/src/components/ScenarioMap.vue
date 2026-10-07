@@ -603,7 +603,7 @@
     </div>
 
     <!-- 剧本管理对话框 -->
-    <div v-if="showScenarioManager" class="modal-overlay" @click.self="showScenarioManager = false">
+    <div v-if="showScenarioManager" class="modal-overlay" @click.self="closeScenarioManager">
       <div class="modal-dialog scenario-manager">
         <h3>剧本管理</h3>
         <div class="scenario-list">
@@ -611,11 +611,34 @@
             <span class="item-era">{{ s.era?.roman || '·' }}</span>
             <span class="item-name">{{ s.name }}</span>
             <span class="item-years">{{ s.era?.startYear || '?' }} – {{ s.era?.endYear || '?' }}</span>
-            <button class="item-delete" @click="deleteScenario(s)" title="删除"><Icon name="trash" :size="15"/></button>
+            <button class="item-edit" data-testid="scenario-edit" :disabled="store.isReadOnly"
+                    :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
+                      : '编辑剧本信息（名称 / 罗马数字 / 时代标签 / 起止年 / 描述）—— 不改动已录的省份归属与易主日期'"
+                    @click="startEditScenario(s)"><Icon name="edit" :size="15"/></button>
+            <button class="item-delete" data-testid="scenario-delete" :disabled="store.isReadOnly"
+                    :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '删除剧本'"
+                    @click="deleteScenario(s)"><Icon name="trash" :size="15"/></button>
+          </div>
+        </div>
+        <!-- 标注 / 标记管理（2026-10-07）：`removeScenarioLabel` / `removeScenarioMarker` 此前是
+             零调用的死入口 —— 地名与标记「只能加不能删」（只有一次性的撤销兜底）。
+             作用域 = 当前剧本（画布上正显示的那一份）。 -->
+        <div class="scenario-annos" data-testid="scenario-annotations">
+          <h4>「{{ selectedScenario?.name || '（未选剧本）' }}」的标注与标记</h4>
+          <div v-if="!annoRows.length" class="anno-empty">
+            还没有地名或标记 —— 用工具栏「更多」里的「地名 (T)」「标记 (K)」在地图上放置
+          </div>
+          <div v-for="row in annoRows" :key="row.key" class="anno-row" :data-testid="'anno-' + row.kind">
+            <span class="anno-kind">{{ row.kind === 'label' ? '地名' : '标记' }}</span>
+            <span class="anno-text">{{ row.text }}</span>
+            <button class="anno-del" data-testid="anno-del" :disabled="store.isReadOnly"
+                    :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
+                      : ('删除' + (row.kind === 'label' ? '地名' : '标记') + '「' + row.text + '」（可撤销）')"
+                    @click="deleteAnnotation(row)"><Icon name="x" :size="12"/></button>
           </div>
         </div>
         <div class="new-scenario-form">
-          <h4>新建剧本</h4>
+          <h4>{{ editingScenarioId ? '编辑剧本' : '新建剧本' }}</h4>
           <div class="form-row">
             <label>名称：</label>
             <input v-model="newScenario.name" placeholder="如：第一时代·黑暗时代" />
@@ -645,8 +668,14 @@
             <input type="checkbox" v-model="newScenario.inherit" />
           </div>
           <div class="form-actions">
-            <button @click="createNewScenario" :disabled="!newScenario.name">创建</button>
-            <button @click="showScenarioManager = false">关闭</button>
+            <button v-if="editingScenarioId" data-testid="scenario-save-edit"
+                    @click="saveEditScenario" :disabled="store.isReadOnly || !newScenario.name">保存</button>
+            <button v-else data-testid="scenario-create" @click="createNewScenario" :disabled="!newScenario.name">创建</button>
+            <button v-if="editingScenarioId" data-testid="scenario-cancel-edit" @click="cancelEditScenario">取消编辑</button>
+            <button v-else @click="closeScenarioManager">关闭</button>
+          </div>
+          <div v-if="editingScenarioId" class="edit-hint">
+            正在编辑既有剧本 —— 保存只改上面这些字段，省份归属 / 易主日期 / 标注 / 标记全部保留
           </div>
         </div>
       </div>
@@ -754,6 +783,9 @@ import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // 逐年切片导出对话框（2026-10-02）：帧索引/日期体检走 utils/scenarioSlices.js，落盘走主进程一次选目录
 import ScenarioSliceExport from './ScenarioSliceExport.vue';
+// 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报「区间外易主日期」，
+// 不另写一套口径（两套口径漂移 = 面板说没事、时间轴悄悄不显示）。
+import { changeDateStats } from '../utils/scenarioSlices';
 import {
   buildTimeline, currentOwnerRef, isStriped, polityColor,
   settledCount, eraIndexOfYear, findGap,
@@ -2610,18 +2642,41 @@ function fitToView() {
 // ═══════════════════════════════════════════
 // 鼠标交互
 // ═══════════════════════════════════════════
+
+/**
+ * 打开省份右键菜单（**唯一实现**）。
+ *
+ * 🔴 2026-10-07 修：此前只有 `onCanvasClick` 里的 `event.button === 2` 分支会开这个菜单，
+ *    而 **浏览器对右键根本不派发 `click`**（只派发 `contextmenu` / `auxclick`）——
+ *    当时唯一的 contextmenu 监听器只写了 `e.preventDefault()` → 真机上**右键菜单整片打不开**。
+ *    该菜单里的四条失效后果（据实说，别夸大）：
+ *      · 「重命名」「更改生物群系」 —— 属性面板另有入口（改名输入框 / 群系下拉）；
+ *      · 「删除」                   —— 「更多 → 删除 (E)」工具另有入口（点击省份即删）；
+ *      · 「复制省份」               —— **此前只有这个菜单有**（唯一真正独有的能力）。
+ *    即便如此，一个"点了没反应"的右键仍是真缺陷（用户第一反应就是右键）。
+ *    ⚠️ 之所以长期没被发现：测试里自己 `dispatchEvent(new MouseEvent('click', {button:2}))`
+ *    就能把菜单"打开"，于是源码/行为守卫双双为真 —— **合成事件比真实浏览器更宽松**
+ *    （`test_88` 现在只用真实 `contextmenu` 事件做判据）。
+ *    现在入口是真正的 `contextmenu` 监听器；`click` 分支保留（合成事件仍可用，行为不变）。
+ */
+function openProvinceContextMenu(event) {
+  const rect = canvas.value.getBoundingClientRect();
+  const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+  const prov = findProvinceAt(world.x, world.y);
+  if (!prov) return false;
+  selectedProvince.value = prov;
+  contextMenu.value = {
+    show: true,
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+    provId: prov.id,
+  };
+  return true;
+}
+
 function onCanvasClick(event) {
   if (event.button === 2) {
-    // 右键菜单
-    const rect = canvas.value.getBoundingClientRect();
-    const sx = event.clientX - rect.left;
-    const sy = event.clientY - rect.top;
-    const world = screenToWorld(sx, sy);
-    const prov = findProvinceAt(world.x, world.y);
-    if (prov) {
-      selectedProvince.value = prov;
-      contextMenu.value = { show: true, x: event.clientX - rect.left, y: event.clientY - rect.top, provId: prov.id };
-    }
+    openProvinceContextMenu(event);
     return;
   }
   
@@ -3358,13 +3413,117 @@ function createNewScenario() {
 }
 
 function deleteScenario(s) {
-  if (confirm(`确定删除剧本「${s.name}」？`)) {
-    store.removeScenario(s.id);
-    if (selectedScenario.value?.id === s.id) {
-      selectedScenario.value = sortedScenarios.value[0] || null;
-    }
-    render();
+  if (!confirm(`确定删除剧本「${s.name}」？`)) return;
+  store.removeScenario(s.id);
+  if (selectedScenario.value?.id === s.id) {
+    selectedScenario.value = sortedScenarios.value[0] || null;
   }
+  render();
+}
+
+// ═══════════════════════════════════════════
+// 剧本元信息编辑（2026-10-07）
+// ═══════════════════════════════════════════
+// 🔴 `updateScenario` 此前是**零调用的死入口**：剧本的 名称 / 罗马数字 / 时代标签 /
+//    **起止年** 建完就改不了 —— 年份填错只能「删剧本重建」，而重建会连带丢掉
+//    ownership / changeEvents / 标注 / 标记（那是真丢数据）。这里复用新建表单做编辑。
+const editingScenarioId = ref(null);
+
+function scenarioFormBlank() {
+  return { name: '', roman: '', label: '', startYear: '', endYear: '', description: '', inherit: true };
+}
+
+function scenarioToForm(s) {
+  return {
+    name: s.name || '',
+    roman: s.era?.roman || '',
+    label: s.era?.label || '',
+    startYear: s.era?.startYear != null ? String(s.era.startYear) : '',
+    endYear: s.era?.endYear != null ? String(s.era.endYear) : '',
+    description: s.description || '',
+    inherit: false,   // 编辑既有剧本时没有「继承上一时代」的语义
+  };
+}
+
+function startEditScenario(s) {
+  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
+  editingScenarioId.value = s.id;
+  newScenario.value = scenarioToForm(s);
+}
+
+function cancelEditScenario() {
+  editingScenarioId.value = null;
+  newScenario.value = scenarioFormBlank();
+}
+
+function closeScenarioManager() {
+  cancelEditScenario();
+  showScenarioManager.value = false;
+}
+
+function saveEditScenario() {
+  const id = editingScenarioId.value;
+  if (!id) return;
+  const f = newScenario.value;
+  const name = String(f.name || '').trim();
+  if (!name) { statusMsg('剧本名称不能为空'); return; }
+  const before = store.getScenario ? store.getScenario(id) : null;
+  if (!before) { statusMsg('该剧本已不存在（可能已被删除）'); cancelEditScenario(); return; }
+  const oldStart = String(before.era?.startYear ?? '');
+  const oldEnd = String(before.era?.endYear ?? '');
+  store.updateScenario(id, {
+    name,
+    era: { roman: f.roman || '', label: f.label || '', startYear: f.startYear || '', endYear: f.endYear || '' },
+    description: f.description || '',
+  });
+  cancelEditScenario();
+  // 🔴 收窄区间可能让**已录的易主日期落到区间外**（时间轴与切片都不再显示它们）——
+  //    "改坏了自己却看不出来"是最坏的一类。这里复用切片对话框同一份体检函数，不另写口径。
+  if (oldStart !== String(f.startYear || '') || oldEnd !== String(f.endYear || '')) {
+    const st = changeDateStats(timeline.value);
+    const n = (st.outOfRange || []).length;
+    statusMsg(n
+      ? `剧本「${name}」已保存 —— 注意：新区间下有 ${n} 条易主日期落在区间外，时间轴/切片不会显示`
+      : `剧本「${name}」已保存（区间已更新，没有易主日期落到区间外）`);
+  } else {
+    statusMsg(`剧本「${name}」已保存`);
+  }
+}
+
+// ═══════════════════════════════════════════
+// 标注 / 标记的删除（2026-10-07）
+// ═══════════════════════════════════════════
+// 此前 `removeScenarioLabel` / `removeScenarioMarker` 是零调用的死入口
+// → 地名与标记「只能加不能删」（只有一次性的撤销兜底）。
+// ⚠️ FMG `.map` 导入的标注/标记**没有 id** → 一律带上下标，交 store 按「id 或下标」解析；
+//    否则 `undefined === undefined` 命中同类型第一条（点第 3 条删掉第 1 条，且不报错）。
+const annoRows = computed(() => {
+  const s = selectedScenario.value;
+  if (!s) return [];
+  const out = [];
+  (s.labels || []).forEach((l, i) => {
+    out.push({ kind: 'label', ref: (l && l.id != null) ? l.id : i, key: 'label_' + i, text: (l && l.text) || '（空地名）' });
+  });
+  (s.markers || []).forEach((m, i) => {
+    out.push({ kind: 'marker', ref: (m && m.id != null) ? m.id : i, key: 'marker_' + i, text: (m && m.name) || '（未命名标记）' });
+  });
+  return out;
+});
+
+function deleteAnnotation(row) {
+  const sid = selectedScenario.value?.id;
+  if (!sid || !row) return;
+  const what = row.kind === 'label' ? '地名' : '标记';
+  if (!confirm(`确定删除${what}「${row.text}」？`)) return;
+  const r = row.kind === 'label'
+    ? store.removeScenarioLabel(sid, row.ref)
+    : store.removeScenarioMarker(sid, row.ref);
+  if (!r || r.ok === false) {
+    statusMsg(`删除${what}失败（${(r && r.reason) || '未知原因'}）`);
+    return;
+  }
+  statusMsg(`已删除${what}「${row.text}」（可撤销）`);
+  render();
 }
 
 // ═══════════════════════════════════════════
@@ -4867,7 +5026,8 @@ onMounted(async () => {
   cvs.addEventListener('click', onCanvasClick);
   cvs.addEventListener('dblclick', onCanvasDblClick);
   cvs.addEventListener('wheel', onWheel, { passive: false });
-  cvs.addEventListener('contextmenu', (e) => e.preventDefault());
+  // 右键菜单的**真入口**（2026-10-07）：只 preventDefault 不开菜单 = 省份右键功能整片点不到
+  cvs.addEventListener('contextmenu', (e) => { e.preventDefault(); openProvinceContextMenu(e); });
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('click', () => { contextMenu.value.show = false; });
@@ -5531,6 +5691,52 @@ watch(baseMap, () => {
 }
 
 .item-delete:hover { opacity: 1; }
+
+/* 剧本条：编辑按钮与删除同形（2026-10-07） */
+.item-edit {
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.item-edit:hover { opacity: 1; }
+.item-edit:disabled, .item-delete:disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* 标注 / 标记管理（2026-10-07）—— 此前这两个写口是死入口，条目只能加不能删 */
+.scenario-annos {
+  border-top: 1px solid #334155;
+  padding-top: 12px;
+  margin-bottom: 16px;
+}
+.scenario-annos h4 { margin: 0 0 8px; font-size: 13px; color: #cbd5e1; }
+.anno-empty { font-size: 12px; color: #64748b; line-height: 1.5; }
+.anno-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.anno-kind {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #a78bfa;
+  border: 1px solid #4c1d95;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.anno-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anno-del {
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.55;
+  color: inherit;
+}
+.anno-del:hover { opacity: 1; }
+.anno-del:disabled { opacity: 0.25; cursor: not-allowed; }
+
+.edit-hint { margin-top: 8px; font-size: 11px; color: #94a3b8; line-height: 1.5; }
 
 .new-scenario-form {
   border-top: 1px solid #334155;
