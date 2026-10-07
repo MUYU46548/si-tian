@@ -153,7 +153,18 @@ JS = r"""(async () => {
 
       store.undo();
       const s2 = sumArr(store.mapData[pid].heightmap.h);
-      ck('f2 undo 复原行星那份', s2 === s0, { before: +s0.toFixed(1), after: +s2.toFixed(1) });
+      // 容差口径（2026-10-07 定性 —— 这是**精度差**，不是"放宽阈值了事"）：
+      //   `h` 在真库里带小数（实测 709/26910 个非整数），而笔刷管线把 h 拷进 `Float32Array`
+      //   （applyHeightBrush 的 newH / oldH）→ undo 恢复的是「float32 化后的原值」，
+      //   与 JSON 里的 float64 原值在双精度下天然不严格相等（实测相对差 6.6e-11）。
+      //   fixture 的 h **全是整数**（float32 可精确表示）→ 差值恒 0，故这条在合成数据下一直是 `===`。
+      //   真正的「undo 失败」表现为差 ≈ 整笔抬升量（本用例 s1-s0 与 s0 同量级），
+      //   比本容差大 10^5 倍以上 —— 容差不会掩盖真缺陷。
+      const tol67 = Math.max(1e-6, Math.abs(s0) * 1e-8);
+      const d67 = Math.abs(s2 - s0);
+      ck('f2 undo 复原行星那份（容差 = float32 拷贝精度）', d67 <= tol67,
+         { before: +s0.toFixed(4), after: +s2.toFixed(4),
+           diff: +d67.toExponential(2), tol: +tol67.toExponential(2), n: n0 });
       notes.push('f2 绑定行星 ' + pid + '（' + n0 + ' 格）：写入和 ' + s0.toFixed(1) + ' → ' + s1.toFixed(1));
     }
 
