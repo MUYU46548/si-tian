@@ -168,7 +168,7 @@ docs/                        # 架构地图与设计文档（ARCHITECTURE_MAP.md
 | 快捷键速查 | `Ctrl/Cmd + ?` |
 | 拖拽画布 | `空格 + 拖动` |
 
-编辑模式下还有大量单键工具（选择 / 绘制 / 顶点 / 拆分 / 合并 / 油漆桶 / 各类笔刷 / 河流 / 道路 / 标记…），完整列表见应用内 **快捷键速查** 面板。
+编辑模式下还有大量单键工具（选择 / 绘制 / 顶点 / 拆分 / 合并 / 油漆桶 / 各类笔刷 / 河流 / 道路 / 标记…），完整列表见应用内 **快捷键速查** 面板。行星地图编辑态另有 `Shift + C`（文化笔刷）与 `Shift + G`（宗教笔刷）—— 涂抹期间滚轮调半径、`Shift + 滚轮` 调硬度，一次拖动等于一条撤销。
 
 ## 开发
 
@@ -184,7 +184,7 @@ python scripts/tests/run_tests.py test_48    # 只跑某个用例
 1. **Node 单元测试**（`scripts/tests/unit/*.js`，跑在 CDP 用例之前）：主进程真实文件 I/O（`.sitian` 原子写 / 备份轮转 / 路径守卫）与主进程模块接线不变式。CDP 用例里 `window.sitianAPI` 是 mock，**主进程落盘在 CDP 层零覆盖**，所以这层必须存在。
 2. **CDP 用例**（`scripts/tests/cases/test_*.py`，Edge headless 驱动真实 Vite dev server + mock 数据）：导航、编辑、面板、渲染性能、剧本时间轴、项目文件、**项目↔画布接线**等端到端行为。
 
-判定口径：**CDP 用例全绿（当前 88 个）+ Node 单元测试（当前 18 个文件）全通过 = 基线完整**。
+判定口径：**CDP 用例全绿（当前 89 个）+ Node 单元测试（当前 19 个文件）全通过 = 基线完整**。
 
 > 回归测试的 mock 会在页面加载前写入「已确认免责声明」的 ack（键名与版本号从
 > `utils/disclaimer.js` 解析注入），否则首启阻断层会盖住整个界面、几十个用例一起变红。
@@ -203,6 +203,8 @@ python scripts/tests/run_tests.py test_48    # 只跑某个用例
 ## 致谢
 
 - **[Azgaar Fantasy Map Generator](https://azgaar.github.io/Fantasy-Map-Generator/)** — `.map` 格式解析与海陆 / 轮廓数据的来源
+- **[pdx-map-editor](https://github.com/Nianjiujiang/pdx-map-editor)**（永夜廿九，MIT）— 地图涂色交互的**设计参考**：「吸管取色 → 涂色刷」的键位模型，以及撤销栈按**差量 patch** 入栈、回放后重算派生集合的思路。
+  ⚠️ **仅借鉴设计思路，未复制任何代码**；上游的 P 社地图数据与世界内容一律不进入本仓库（数据版权归 Paradox Interactive）。详见 [`版权与许可证.md`](版权与许可证.md) 「设计参考」一节
 - **[Vue.js](https://vuejs.org/)** / **[Electron](https://www.electronjs.org/)** / **[Pinia](https://pinia.vuejs.org/)** / **[Vite](https://vitejs.dev/)** — 前端与桌面壳
 
 ## 免责声明

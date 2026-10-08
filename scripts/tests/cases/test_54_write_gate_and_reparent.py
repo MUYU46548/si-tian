@@ -19,7 +19,7 @@
   d) moveEntities：批量改父级一条 undo、已在目标下则跳过、把自己移到自己后代下被拒
   e) focusEntityOnCanvas / canvasBridge.gotoEntity：行星 → planet、区域 → area、建筑 → interior
 """
-import sys, os, json
+import sys, os, json, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for, eval_json
 from lib.helpers import ensure_case_state
@@ -164,6 +164,66 @@ def sub_source_contract(cdp):
     if pos_gate < 0 or (pos_redo >= 0 and pos_gate > pos_redo):
         return False, 'undo.js 的 execute() 在调用 redo 之后才判 guardWrite（拒绝时数据已改）'
     return True, f'内存写入口 {len(entries)} 条 / {total} 个函数逐一断言守卫，全部命中'
+
+
+# ── 反向校验：是写口却**没登记**（2026-10-08 补）──────────────────────────────
+# 为什么必须有：上面那条只回答「登记了 ⇒ 必须有守卫」。于是「新增写口忘了登记」永远不上报 ——
+# 这正是本项目的**结构性漏网**：2026-10-08 用同一套规则干跑，实测漏了 18 个
+# （文化/宗教笔刷、底图绑定/迁移、切片点 4 个、省份笔刷族 5 个、清空行星内容、重算派生…），
+# 其中 `applyCultureBrush` / `applyReligionBrush` / `deriveAllLayers` 连首行守卫都没有。
+#
+# 判据：函数体出现 `guardWrite(` / `blocked(` / `commitHeightmap(` ⇒ 它**就是**写口
+#   （作者显式想过只读态，或在写共享高度图）⇒ 必须在契约里。
+# 为什么用这三个信号而不是「赋值给 baseMaps.value / mapData.value」：后者会把
+#   `execute()` 内部 redo 的写入也算进来 —— 那类函数是**安全**的（拒绝发生在 redo 之前），
+#   全算进来会得到 27 个"候选"、需要一张很长的白名单，等于把闸门变成摆设。
+WRITE_SIGNAL = re.compile(r'guardWrite\(|blocked\(|commitHeightmap\(')
+FUNC_START = re.compile(r'\n\s*(?:async\s+)?function\s+(\w+)\s*\(')
+
+# 允许不登记的名字（必须逐条给理由）
+REVERSE_ALLOW = {
+    # `blocked(action)` 本身就是 provinceEditing 的**守卫包装原语**（函数体里就是 guardWrite）。
+    # 它不是"某个写口"，而是那个模块所有写口共用的守卫实现 —— 登记它等于登记一个空壳。
+    'blocked',
+}
+
+
+def sub_source_contract_reverse(cdp):
+    """a2) 反向：凡函数体出现 guardWrite/blocked/commitHeightmap，就必须登记在契约里"""
+    gate = _read('src/renderer/src/store/writeGate.js')
+    per_file = {}
+    # 表一：内存写入口（**函数级** fns）—— 只有这些文件才按函数名校验
+    for rel, fns_raw in re.findall(
+            r"\{\s*id:\s*\d+,\s*file:\s*'([^']+)',\s*fns:\s*\[([^\]]*)\]", gate, re.S):
+        per_file.setdefault(rel, set()).update(re.findall(r"'([^']+)'", fns_raw))
+    scope = set(per_file)
+    # 表二：落盘入口（**文件级**，`what` 就是函数名）—— 只用来"销账"，
+    # 不扩大校验范围：组件里的入口函数（handleImportMapConfig / enterEditMode / persist…）
+    # 的登记粒度就是**整文件**，按函数名要求它们登记是不成立的。
+    for rel, what in re.findall(
+            r"\{\s*id:\s*\d+,\s*file:\s*'([^']+)',\s*marker:\s*[^,]+,\s*what:\s*'([^']+)'", gate):
+        per_file.setdefault(rel, set()).add(what)
+
+    bad, checked = [], 0
+    for rel in sorted(scope):
+        registered = per_file[rel]
+        if not os.path.exists(os.path.join(ROOT, rel)):
+            bad.append(f'{rel} 不存在')
+            continue
+        src = _read(rel)
+        for m in FUNC_START.finditer(src):
+            name = m.group(1)
+            nxt = FUNC_START.search(src, m.end())
+            body = src[m.end(): nxt.start() if nxt else len(src)]
+            if not WRITE_SIGNAL.search(body):
+                continue
+            checked += 1
+            if name in registered or name in REVERSE_ALLOW:
+                continue
+            bad.append(f'{rel} 的 {name}() 是写口（含 guardWrite/blocked/commitHeightmap）却没登记进契约')
+    if bad:
+        return False, '；'.join(bad)
+    return True, f'反向校验：{len(per_file)} 个文件里共 {checked} 个写口，**全部**已登记'
 
 
 def sub_readonly_zero_effect(cdp):
@@ -410,6 +470,10 @@ def run(cdp):
     ok, msg = sub_source_contract(cdp)
     if not ok:
         return False, f'[a] 源码契约：{msg}'
+
+    ok, msg = sub_source_contract_reverse(cdp)
+    if not ok:
+        return False, f'[a2] 源码契约（反向 / 未登记写口）：{msg}'
 
     ok, msg = sub_readonly_zero_effect(cdp)
     if not ok:

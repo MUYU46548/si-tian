@@ -26,6 +26,9 @@ import {
   SEA_LEVEL, BIOME_KEYS,
   temperatureAtIndex, precipitationAtIndex, biomeIndex, brushFalloff,
 } from '../utils/heightMath';
+// A3（2026-10-08）：文化/宗教是**可选通道层**（首次涂抹才建），落盘读回是普通数组 →
+// 统一成 Uint8Array 的口径在 `utils/heightmapChannels.js`（单一实现，勿在这里再写一份）
+import { CHANNEL_KEYS, normalizeChannel } from '../utils/heightmapChannels';
 
 const DEFAULT_SPACING = 14.4;
 const ELEV_MAP = { '深海': 5, '浅海': 15, '平原': 30, '丘陵': 50, '高原': 70, '山地': 85, '高山': 95 };
@@ -167,6 +170,14 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
       hm.temp = new Float32Array(hm.temp);
       hm.prec = new Float32Array(hm.prec);
       hm.biome = new Uint8Array(hm.biome);
+    }
+
+    // A3（2026-10-08）：文化/宗教通道（可选项）—— 长度对得上就归一化，对不上就丢掉
+    // （丢掉是安全的：它由笔刷按需重建零值；留着错长度的数组会让笔刷画出错位的文化）
+    for (const ch of CHANNEL_KEYS) {
+      if (!hm[ch]) continue;
+      const norm = normalizeChannel(hm[ch], count);
+      if (norm) hm[ch] = norm; else delete hm[ch];
     }
     return hm;
   }

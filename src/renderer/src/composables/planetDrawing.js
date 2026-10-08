@@ -20,7 +20,8 @@ import { RIVER_COLOR, RIVER_DEFAULT_WIDTH } from '../utils/rivers';
 import { buildLabelOutlines } from '../utils/gridOutline';
 import { fadedAlpha } from '../utils/entityStatus';
 // M2/A2（2026-09-25）：高度图**栅格**渲染与 ScenarioMap 共用同一份实现与配色
-import { createRasterCache } from '../utils/heightmapRaster';
+import { createRasterCache, buildChannelPalette } from '../utils/heightmapRaster';
+import { CHANNEL_KEYS } from '../utils/heightmapChannels';
 
 const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（图例/着色按编码索引）
 
@@ -412,13 +413,42 @@ function heightmapOutlineStats() {
 // 不需要任何外部 clear 调用（ScenarioMap 的栅格缓存只在切底图时清，涂抹期间是陈旧的）。
 const hmRasterCache = createRasterCache();
 
+/** 文化/宗教档的调色板指纹 —— 改一个文化的颜色也必须让栅格缓存失效 */
+function paletteFingerprint(palette) {
+  if (!palette) return '';
+  let out = '';
+  for (let i = 0; i < palette.length; i++) {
+    const c = palette[i];
+    out += (c ? c[0] + ',' + c[1] + ',' + c[2] : '') + ';';
+  }
+  return out;
+}
+
+/**
+ * 文化/宗教档的调色板来源：行星自己的元数据列表（`mapData[pid].cultures` / `.religions`）。
+ * 通道值 = **位置**（1 起），与 `utils/heightmapChannels.js` 的口径一致。
+ */
+function channelPaletteOf(md, kind) {
+  if (kind === 'culture') return buildChannelPalette(md && md.cultures);
+  if (kind === 'religion') return buildChannelPalette(md && md.religions);
+  return null;
+}
+
 function drawHeightmapRaster(ctx, kind, alpha) {
   const s = getState();
-  const hm = toRaw(toRaw(s.currentMapData))?.heightmap;
+  const md = toRaw(toRaw(s.currentMapData));
+  const hm = md && md.heightmap;
   if (!hm || !hm.h || !hm.grid) return;
   if (!hm.h.length) return;
-  const key = kind + '|' + hashLabels(hm.h);
-  const r = hmRasterCache.get(key, hm, kind);
+  const isChannel = CHANNEL_KEYS.indexOf(kind) >= 0;
+  // 通道档还没有数据（一次都没涂过）→ 不画。
+  // ⚠️ 不画而不是画成一片"无主底色"：后者会用一个假色块盖住地形，用户以为数据丢了。
+  if (isChannel && (!hm[kind] || !hm[kind].length)) return;
+  const palette = channelPaletteOf(md, kind);
+  // 缓存失效用内容指纹：h 变了（涂高度）或通道变了（涂文化）或调色板变了（改颜色）都要重建
+  const key = kind + '|' + hashLabels(hm.h)
+    + (isChannel ? '|' + hashLabels(hm[kind]) + '|' + paletteFingerprint(palette) : '');
+  const r = hmRasterCache.get(key, hm, kind, palette ? { palette } : undefined);
   if (!r) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;

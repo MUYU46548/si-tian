@@ -2340,96 +2340,103 @@ export function createScenarioEditingModule(ctx) {
 
   // ── 高度查询：取最近网格点 ──
   function addBaseMapBurg(baseMapKey, burg) {
-  const baseMap = baseMaps.value[baseMapKey];
-  if (!baseMap) return;
+    // 2026-10-08（B0）：补首行守卫 + 登记契约（此前是未登记写口）
+    if (!guardWrite('放置聚落').ok) return;
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap) return;
 
-  execute({
-    type: 'add-burg',
-    label: '放置聚落',
-    undo: () => {
-      baseMaps.value = {
-        ...baseMaps.value,
-        [baseMapKey]: {
-          ...baseMap,
-          burgs: (baseMap.burgs || []).filter(b => b.id !== burg.id),
-        },
-      };
-    },
-    redo: () => {
-      baseMaps.value = {
-        ...baseMaps.value,
-        [baseMapKey]: {
-          ...baseMap,
-          burgs: [...(baseMap.burgs || []), burg],
-          updatedAt: new Date().toISOString(),
-        },
-      };
-    },
-  });
-  saveScenarios();
-}
-
-function applyCultureBrush(baseMapKey, cx, cy, radius, cultureKey) {
-  if (!hasGrid(getHeightmapFor(baseMapKey))) return;
-
-  const hm = getHeightmapFor(baseMapKey);
-  const pts = hm.grid.points;
-  const oldCultures = hm.culture ? new Uint8Array(hm.culture) : new Uint8Array(pts.length);
-  const newCultures = new Uint8Array(oldCultures);
-  const idx = parseInt(cultureKey, 10) || 0;
-
-  for (let i = 0; i < pts.length; i++) {
-    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
-    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
-    const dist = Math.hypot(px - cx, py - cy);
-    if (dist >= radius) continue;
-    const falloff = brushFalloff(radius, dist);
-    if (falloff < 0.1) continue;
-    newCultures[i] = idx;
+    execute({
+      type: 'add-burg',
+      label: '放置聚落',
+      undo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMap,
+            burgs: (baseMap.burgs || []).filter(b => b.id !== burg.id),
+          },
+        };
+      },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...baseMap,
+            burgs: [...(baseMap.burgs || []), burg],
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    saveScenarios();
   }
 
-  execute({
-    type: 'culture-brush',
-    baseMapKey,
-    cultureKey,
-    label: '文化笔刷',
-    merge: (prev) => prev.type === 'culture-brush' && prev.cultureKey === cultureKey && prev.baseMapKey === baseMapKey,
-    undo: () => { commitHeightmap(baseMapKey, { ...hm, culture: oldCultures }, { touch: false }); },
-    redo: () => { commitHeightmap(baseMapKey, { ...hm, culture: new Uint8Array(newCultures) }); },
-  });
-  saveScenarios();
-}
+  function applyCultureBrush(baseMapKey, cx, cy, radius, cultureKey) {
+    // ⚠️ 2026-10-08（B0）：本函数此前**既没有首行守卫、也没登记进写口契约** ——
+    //    它是靠 `execute()` 的总闸门兜住的（功能没坏，但契约表看不见它，属结构性漏网）。
+    //    补首行守卫的理由与 applyHeightBrush 一致：涂抹期的准备动作不该发生在拒绝之后。
+    if (!guardWrite('文化笔刷').ok) return;
+    const hm = getHeightmapFor(baseMapKey);
+    if (!hasGrid(hm)) return;
 
-function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
-  if (!hasGrid(getHeightmapFor(baseMapKey))) return;
+    const pts = hm.grid.points;
+    const oldCultures = hm.culture ? new Uint8Array(hm.culture) : new Uint8Array(pts.length);
+    const newCultures = new Uint8Array(oldCultures);
+    const idx = parseInt(cultureKey, 10) || 0;
 
-  const hm = getHeightmapFor(baseMapKey);
-  const pts = hm.grid.points;
-  const oldReligions = hm.religion ? new Uint8Array(hm.religion) : new Uint8Array(pts.length);
-  const newReligions = new Uint8Array(oldReligions);
-  const idx = parseInt(religionKey, 10) || 0;
+    for (let i = 0; i < pts.length; i++) {
+      const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+      const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+      const dist = Math.hypot(px - cx, py - cy);
+      if (dist >= radius) continue;
+      const falloff = brushFalloff(radius, dist);
+      if (falloff < 0.1) continue;
+      newCultures[i] = idx;
+    }
 
-  for (let i = 0; i < pts.length; i++) {
-    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
-    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
-    const dist = Math.hypot(px - cx, py - cy);
-    if (dist >= radius) continue;
-    const falloff = brushFalloff(radius, dist);
-    if (falloff < 0.1) continue;
-    newReligions[i] = idx;
+    execute({
+      type: 'culture-brush',
+      baseMapKey,
+      cultureKey,
+      label: '文化笔刷',
+      merge: (prev) => prev.type === 'culture-brush' && prev.cultureKey === cultureKey && prev.baseMapKey === baseMapKey,
+      undo: () => { commitHeightmap(baseMapKey, { ...hm, culture: oldCultures }, { touch: false }); },
+      redo: () => { commitHeightmap(baseMapKey, { ...hm, culture: new Uint8Array(newCultures) }); },
+    });
+    saveScenarios();
   }
 
-  execute({
-    type: 'religion-brush',
-    baseMapKey,
-    religionKey,
-    label: '宗教笔刷',
-    merge: (prev) => prev.type === 'religion-brush' && prev.religionKey === religionKey && prev.baseMapKey === baseMapKey,
-    undo: () => { commitHeightmap(baseMapKey, { ...hm, religion: oldReligions }, { touch: false }); },
-    redo: () => { commitHeightmap(baseMapKey, { ...hm, religion: new Uint8Array(newReligions) }); },
-  });
-  saveScenarios();
-}
+  function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
+    if (!guardWrite('宗教笔刷').ok) return;   // 同上（2026-10-08，B0）
+    const hm = getHeightmapFor(baseMapKey);
+    if (!hasGrid(hm)) return;
+
+    const pts = hm.grid.points;
+    const oldReligions = hm.religion ? new Uint8Array(hm.religion) : new Uint8Array(pts.length);
+    const newReligions = new Uint8Array(oldReligions);
+    const idx = parseInt(religionKey, 10) || 0;
+
+    for (let i = 0; i < pts.length; i++) {
+      const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+      const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+      const dist = Math.hypot(px - cx, py - cy);
+      if (dist >= radius) continue;
+      const falloff = brushFalloff(radius, dist);
+      if (falloff < 0.1) continue;
+      newReligions[i] = idx;
+    }
+
+    execute({
+      type: 'religion-brush',
+      baseMapKey,
+      religionKey,
+      label: '宗教笔刷',
+      merge: (prev) => prev.type === 'religion-brush' && prev.religionKey === religionKey && prev.baseMapKey === baseMapKey,
+      undo: () => { commitHeightmap(baseMapKey, { ...hm, religion: oldReligions }, { touch: false }); },
+      redo: () => { commitHeightmap(baseMapKey, { ...hm, religion: new Uint8Array(newReligions) }); },
+    });
+    saveScenarios();
+  }
 
   function getHeightAt(baseMapKey, worldX, worldY) {
     // 🐞 旧实现漏了 `pts` 的定义就直接 `pts[i]` —— 一旦本函数被调用即 ReferenceError
@@ -2507,6 +2514,7 @@ function applyReligionBrush(baseMapKey, cx, cy, radius, religionKey) {
   }
 
   function deriveAllLayers(baseMapKey) {
+    if (!guardWrite('重算派生图层').ok) return null;   // 2026-10-08（B0）：补首行守卫 + 登记契约
     if (!hasGrid(getHeightmapFor(baseMapKey))) return null;
     const hm = getHeightmapFor(baseMapKey);
     const pts = hm.grid.points;

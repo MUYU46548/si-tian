@@ -185,3 +185,37 @@ export function planUnbindBaseMap(baseMap) {
   delete next[BASEMAP_PLANET_KEY];
   return { ok: true, nextBaseMap: next };
 }
+
+/**
+ * 取离 `(x, y)` 最近的网格点下标 —— **纯函数，单一实现**（2026-10-08）。
+ *
+ * 为什么抽出来：这个"最近点"在项目里已经是第三次被写（`scenarioEditing.getHeightAt`、
+ * 各处笔刷的空间索引、现在的吸管拾取）。各写一份的代价不是报错，而是**口径漂移** ——
+ * 有人用 `Math.hypot` 有人用平方距离、有人卡 `spacing` 有人卡 `spacing*1.5`，
+ * 于是「吸管吸到的格子」与「笔刷刷到的格子」慢慢不是同一格。
+ *
+ * @param {{points: Array, spacing?: number}} grid 网格（`heightmap.grid`）
+ * @param {number} x 世界坐标
+ * @param {number} y 世界坐标
+ * @param {number} [maxDist] 超出这个距离视为没命中（缺省 = `spacing`，与 getHeightAt 原口径一致）
+ * @returns {number} 命中下标；未命中返回 -1
+ */
+export function nearestIndexAt(grid, x, y, maxDist) {
+  const pts = grid && grid.points;
+  if (!Array.isArray(pts) || pts.length === 0) return -1;
+  const limit = (typeof maxDist === 'number' && maxDist > 0)
+    ? maxDist
+    : (grid.spacing || DEFAULT_GRID_SPACING);
+  let bestI = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const px = Array.isArray(p) ? p[0] : p.x;
+    const py = Array.isArray(p) ? p[1] : p.y;
+    const dx = px - x;
+    const dy = py - y;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; bestI = i; }
+  }
+  return (bestI >= 0 && bestD <= limit * limit) ? bestI : -1;
+}

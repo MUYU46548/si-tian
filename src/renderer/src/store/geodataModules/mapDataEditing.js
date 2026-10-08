@@ -866,56 +866,73 @@ export function createMapDataEditingModule(ctx) {
     scheduleAutoSaveMap(planetId);
   }
 
-  // ===== P1-3 文化列表（行星级共享数据，供聚落"文化归属"下拉使用）=====
-  function addCulture(planetId, culture) {
-    if (!guardWrite('添加文化').ok) return;
+  // ===== P1-3 文化 / 宗教列表（行星级共享数据）=====
+  //  · 文化：供聚落「文化归属」下拉（`NodeDetailPanel`）
+  //  · 宗教：供行星侧宗教笔刷的取色与命名（2026-10-08，A3）
+  // 两份列表**结构完全同构**（`[{id,name,color,note}]`），所以写路径只实现一次、用 `listKey` 参数化
+  // —— 复制三份的下场是「改一处另两处不变」，而这正是本项目反复吃亏的模式。
+  // ⚠️ 契约登记按**函数名**，所以守卫落在下面三个具名内部函数的首行；
+  //    对外的 `addCulture` / `addReligion` 等 6 个只是薄转发（供既有调用点与 UI 使用）。
+  function addChannelListItem(listKey, planetId, item) {
+    const what = listKey === 'cultures' ? '文化' : '宗教';
+    if (!guardWrite('添加' + what).ok) return null;
     if (!mapData.value[planetId]) return null;
-    if (!Array.isArray(mapData.value[planetId].cultures)) mapData.value[planetId].cultures = [];
-    const list = mapData.value[planetId].cultures;
-    const item = { id: culture.id, name: culture.name, color: culture.color, note: culture.note || '' };
+    if (!Array.isArray(mapData.value[planetId][listKey])) mapData.value[planetId][listKey] = [];
+    const entry = { id: item.id, name: item.name, color: item.color, note: item.note || '' };
     execute({
-      type: 'add-culture',
-      label: '新建文化',
+      type: 'add-' + listKey,
+      label: '新建' + what,
       category: 'property',
-      undo: () => { mapData.value[planetId].cultures = mapData.value[planetId].cultures.filter(c => c.id !== item.id); },
-      redo: () => { if (!mapData.value[planetId].cultures.some(c => c.id === item.id)) mapData.value[planetId].cultures.push(item); },
+      undo: () => { mapData.value[planetId][listKey] = mapData.value[planetId][listKey].filter(c => c.id !== entry.id); },
+      redo: () => { if (!mapData.value[planetId][listKey].some(c => c.id === entry.id)) mapData.value[planetId][listKey].push(entry); },
     });
     scheduleAutoSaveMap(planetId);
-    return item;
+    return entry;
   }
 
-  function removeCulture(planetId, cultureId) {
-    const list = mapData.value[planetId]?.cultures;
+  function removeChannelListItem(listKey, planetId, itemId) {
+    const what = listKey === 'cultures' ? '文化' : '宗教';
+    if (!guardWrite('删除' + what).ok) return;
+    const list = mapData.value[planetId]?.[listKey];
     if (!Array.isArray(list)) return;
     const before = list.slice();
-    const after = before.filter(c => c.id !== cultureId);
+    const after = before.filter(c => c.id !== itemId);
     if (after.length === before.length) return;
     execute({
-      type: 'remove-culture',
-      label: '删除文化',
+      type: 'remove-' + listKey,
+      label: '删除' + what,
       category: 'property',
-      undo: () => { mapData.value[planetId].cultures = before.slice(); },
-      redo: () => { mapData.value[planetId].cultures = after.slice(); },
+      undo: () => { mapData.value[planetId][listKey] = before.slice(); },
+      redo: () => { mapData.value[planetId][listKey] = after.slice(); },
     });
     scheduleAutoSaveMap(planetId);
   }
 
-  function updateCulture(planetId, cultureId, patch) {
-    const list = mapData.value[planetId]?.cultures;
+  function updateChannelListItem(listKey, planetId, itemId, patch) {
+    const what = listKey === 'cultures' ? '文化' : '宗教';
+    if (!guardWrite('编辑' + what).ok) return;
+    const list = mapData.value[planetId]?.[listKey];
     if (!Array.isArray(list)) return;
-    const idx = list.findIndex(c => c.id === cultureId);
+    const idx = list.findIndex(c => c.id === itemId);
     if (idx < 0) return;
     const old = { ...list[idx] };
     const next = { ...old, ...patch };
     execute({
-      type: 'update-culture',
-      label: '编辑文化',
+      type: 'update-' + listKey,
+      label: '编辑' + what,
       category: 'property',
-      undo: () => { mapData.value[planetId].cultures = mapData.value[planetId].cultures.map(c => (c.id === cultureId ? old : c)); },
-      redo: () => { mapData.value[planetId].cultures = mapData.value[planetId].cultures.map(c => (c.id === cultureId ? next : c)); },
+      undo: () => { mapData.value[planetId][listKey] = mapData.value[planetId][listKey].map(c => (c.id === itemId ? old : c)); },
+      redo: () => { mapData.value[planetId][listKey] = mapData.value[planetId][listKey].map(c => (c.id === itemId ? next : c)); },
     });
     scheduleAutoSaveMap(planetId);
   }
+
+  function addCulture(planetId, culture) { return addChannelListItem('cultures', planetId, culture); }
+  function removeCulture(planetId, cultureId) { return removeChannelListItem('cultures', planetId, cultureId); }
+  function updateCulture(planetId, cultureId, patch) { return updateChannelListItem('cultures', planetId, cultureId, patch); }
+  function addReligion(planetId, religion) { return addChannelListItem('religions', planetId, religion); }
+  function removeReligion(planetId, religionId) { return removeChannelListItem('religions', planetId, religionId); }
+  function updateReligion(planetId, religionId, patch) { return updateChannelListItem('religions', planetId, religionId, patch); }
 
   return {
     addTerrainPolygon,
@@ -953,6 +970,9 @@ export function createMapDataEditingModule(ctx) {
     addCulture,
     removeCulture,
     updateCulture,
+    addReligion,
+    removeReligion,
+    updateReligion,
     setRouteStyle,
     addRiver,
     removeRiver,

@@ -136,11 +136,7 @@
               data-testid="heightmap-raster-kind"
               title="高度图显示方式：群系（矢量轮廓，默认）/ 陆海底色 / 海拔 / 温度 / 降水（栅格 —— 与剧本底图图层同一套配色与实现）"
             >
-              <option value="biome">群系</option>
-              <option value="landsea">陆海底色</option>
-              <option value="height">海拔</option>
-              <option value="temp">温度</option>
-              <option value="prec">降水</option>
+              <option v-for="o in RASTER_KIND_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
             </select>
             <span class="toolbar-label">半径</span>
             <input type="range" v-model.number="planetHeightBrush.brushRadius.value" min="20" max="300" step="10" class="brush-slider" />
@@ -165,6 +161,44 @@
             <span class="toolbar-label">↗ 按住拖动涂抹地形</span>
           </div>
           <div class="brush-wheel-hint">滚轮调大小 · Shift+滚轮调硬度</div>
+        </template>
+
+        <!-- A3（2026-10-08）文化 / 宗教逐格笔刷。着色下拉与高度面板共用 RASTER_KIND_OPTIONS，
+             下拉本身在两处渲染同一份 ref —— 只在其中一个模式里出现，不会同时存在两个 testid -->
+        <template v-if="interactionMode === 'culture' || interactionMode === 'religion'">
+          <div class="toolbar-group toolbar-group-sub">
+            <span class="toolbar-label">{{ interactionMode === 'culture' ? '文化' : '宗教' }}</span>
+            <select
+              :value="planetChannelBrush.valueByChannel.value[interactionMode]"
+              @change="onChannelValueChange($event)"
+              class="brush-biome-select"
+              data-testid="channel-value"
+              title="要涂的文化 / 宗教（条目来自该行星的文化·宗教表，可在聚落详情面板改名改色）"
+            >
+              <option v-for="o in channelOptions" :key="o.value" :value="o.value">{{ o.name }}</option>
+            </select>
+            <button @click="planetChannelBrush.createEntry(interactionMode)" title="新建一条文化 / 宗教（自动轮转取色）" data-testid="channel-add"><Icon name="plus" :size="13"/></button>
+            <button
+              :class="{ active: planetChannelBrush.pickMode.value === interactionMode }"
+              @click="planetChannelBrush.armPick(interactionMode)"
+              title="吸管 — 点一下地图上已有的文化 / 宗教，把它的值取回笔刷（取完直接涂）"
+              data-testid="channel-picker"
+            ><Icon name="target" :size="13"/> 吸管</button>
+            <span class="toolbar-label">着色</span>
+            <select
+              v-model="heightmapRasterKind"
+              class="brush-biome-select"
+              data-testid="heightmap-raster-kind"
+              title="高度图显示方式：群系（矢量轮廓，默认）/ 陆海底色 / 海拔 / 温度 / 降水 / 文化 / 宗教（栅格 —— 与剧本底图图层同一套配色与实现）"
+            >
+              <option v-for="o in RASTER_KIND_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+            <span class="toolbar-label">半径</span>
+            <input type="range" v-model.number="planetChannelBrush.brushRadius.value" min="20" max="300" step="10" class="brush-slider" />
+            <span class="toolbar-label">硬度</span>
+            <input type="range" v-model.number="planetChannelBrush.brushHardness.value" min="0" max="0.9" step="0.05" class="brush-slider" />
+          </div>
+          <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调硬度 · 一次拖动 = 一条撤销（Ctrl+Z）</div>
         </template>
 
         <div class="toolbar-group" title="绘制辅助">
@@ -371,6 +405,8 @@
         <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
         <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度 / 群系笔刷（14.4m 格，改高度自动派生温度降水群系）"><Icon name="trending-up" :size="15"/></button>
         <button :class="{ active: interactionMode === 'terrain' }" @click="setInteractionMode('terrain')" title="地形涂色笔刷（同 14.4m 格，直接铺地表类型：海洋/草地/森林…）"><Icon name="brush" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'culture' }" @click="setInteractionMode('culture')" title="文化笔刷 (Shift+C) — 拖动涂抹文化区域；滚轮调半径、Shift+滚轮调硬度；一次拖动 = 一条撤销" data-testid="tool-culture"><Icon name="users" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'religion' }" @click="setInteractionMode('religion')" title="宗教笔刷 (Shift+G) — 拖动涂抹宗教区域；一次拖动 = 一条撤销" data-testid="tool-religion"><Icon name="church" :size="15"/></button>
         <button :class="{ active: interactionMode === 'relief' }" @click="setInteractionMode('relief')" title="地貌图标笔刷 (R) — 左键拖动散布山脉/树木/沙漠/岩石，右键拖动擦除，滚轮调间距"><Icon name="mountain" :size="15"/></button>
         <button :class="{ active: interactionMode === 'river' }" @click="setInteractionMode('river')" title="河流编辑器 (Shift+R) — 连续点击描点、双击完成（自动按高度从高到低排序），拖节点保持流向"><Icon name="waves" :size="15"/></button>
         <button v-if="hasAzgaarData" :class="{ active: interactionMode === 'political' }" @click="setInteractionMode('political')" title="编辑政治实体边界"><Icon name="flag" :size="15"/></button>
@@ -989,6 +1025,7 @@ import {
 } from '../utils/rivers';
 import { useProvinceSplitMerge } from '../composables/useProvinceSplitMerge';
 import { usePlanetHeightBrush } from '../composables/usePlanetHeightBrush';
+import { usePlanetChannelBrush } from '../composables/usePlanetChannelBrush';
 import { useAutoRegions } from '../composables/useAutoRegions';
 import { useZoomControls } from '../composables/useZoomControls';
 import { useRuler } from '../composables/useRuler';
@@ -1166,6 +1203,17 @@ const interactionMode = ref('pan');
 // 为什么默认不改：矢量那套是为解决「逐格绘制 + 画布滤镜卡死」重写的（见 planetDrawing 352 行），
 // 群系着色信息量也更大；栅格是**补上**「与剧本视图对齐」的那一档选择，不是替代。
 const heightmapRasterKind = ref('biome');
+// 着色方案的**唯一选项表**（高度面板与文化/宗教面板共用；写两处必然漂移：
+// 加一档只改一处 → 另一个面板里那档就是"看不见的"）
+const RASTER_KIND_OPTIONS = [
+  { value: 'biome', label: '群系' },
+  { value: 'landsea', label: '陆海底色' },
+  { value: 'height', label: '海拔' },
+  { value: 'temp', label: '温度' },
+  { value: 'prec', label: '降水' },
+  { value: 'culture', label: '文化' },
+  { value: 'religion', label: '宗教' },
+];
 const dragObject = ref(null);
 const dragRegionAnchor = ref(null);
 const isSpacebarDown = ref(false);
@@ -1220,8 +1268,12 @@ const terrainRep = computed(() => resolveTerrainRepresentation({
   polygonsVisible: layers.isVisible('planet', 'terrainPolygons'),
   // 正在画/移多边形 → 强制显示，否则「看不见也点不到」
   editing: editMode.value && (interactionMode.value === 'draw' || interactionMode.value === 'move'),
-  // 高度笔刷进行中强制显示高度图（涂了必须看得见）
-  forceHeightmap: editMode.value && interactionMode.value === 'height',
+  // 高度笔刷进行中强制显示高度图（涂了必须看得见）—— A3：文化/宗教同属"涂了必须看得见"
+  forceHeightmap: editMode.value && (
+    interactionMode.value === 'height'
+    || interactionMode.value === 'culture'
+    || interactionMode.value === 'religion'
+  ),
 }));
 // 多边形命中 = 正在被渲染（`drawPolygons`）且总开关未锁定。
 // 「降为覆盖物」的必然推论：**看得见才点得到** —— 关掉图层后不该还能点中它。
@@ -1395,6 +1447,10 @@ function onRender(ctx, w, h) {
   drawing.drawSelectionHandles(ctx);
   // 笔刷预览（最上层）
   if (editMode.value && interactionMode.value === 'height') drawing.drawHeightBrushPreview(ctx);
+  // A3：文化 / 宗教笔刷也画预览圈（复用同一渲染通道，见 usePlanetChannelBrush 的 previewSink）
+  if (editMode.value && (interactionMode.value === 'culture' || interactionMode.value === 'religion')) {
+    drawing.drawHeightBrushPreview(ctx);
+  }
   if (editMode.value && interactionMode.value === 'terrain') drawing.drawTerrainBrushPreview(ctx);
   if (focusHighlightNode.value) focusHighlight.drawFocusHighlight(ctx, focusHighlightNode.value);
 }
@@ -1492,6 +1548,8 @@ const getState = () => ({
   hitTestVertex: (wx, wy) => hitTestModule.hitTestVertex(wx, wy),
   captureVertexSnapshot, snapPoint, snapDrawPoint, store,
   planetHeightBrush, heightTool: heightTool.value,
+  // A3：文化 / 宗教逐格笔刷（交互层 composable；数据层是 store.channelBrush）
+  channelBrush: planetChannelBrush,
   terrainCanvasBrush, terrainGridEnabled: terrainGridEnabled.value,
   // P0-1 Relief 笔刷：拖动中绘制层优先用 reliefLiveIcons（含本次新增/擦除的实时效果）
   reliefBrush,
@@ -1748,6 +1806,29 @@ const provinceSplitMerge = useProvinceSplitMerge({ store, props, emit, renderer,
 // ===== 高度图笔刷 composable =====
 const planetHeightBrush = usePlanetHeightBrush({ store, renderer, currentMapData });
 
+// ===== A3（2026-10-08）文化 / 宗教逐格笔刷 =====
+// 与高度笔刷并列的一支：数据层在 `store/geodataModules/channelBrush.js`（抬手 diff），
+// 这里只负责半径/硬度/当前值/预览/吸管。`onStatus` 复用组件的状态栏提示。
+const planetChannelBrush = usePlanetChannelBrush({
+  store, renderer, currentMapData,
+  onStatus: (text) => setStatus({ toolLabel: text }),
+  previewSink: planetHeightBrush,     // 预览圈复用高度笔刷那条渲染通道
+});
+
+/** 当前模式下要显示的下拉选项（`<select>` 的 v-model 落在 composable 的 valueByChannel 上，
+ *  所以用 :value + @change 而不是 v-model —— 嵌套 ref 直接 v-model 绑不到） */
+const channelOptions = computed(() => (
+  interactionMode.value === 'religion' ? planetChannelBrush.religionOptions.value
+    : planetChannelBrush.cultureOptions.value
+));
+
+function onChannelValueChange(e) {
+  const v = e.target.value;
+  if (interactionMode.value === 'religion') planetChannelBrush.setValue('religion', v);
+  else planetChannelBrush.setValue('culture', v);
+  renderer.requestRender();
+}
+
 // ===== 画布地形笔刷 composable =====
 // `getWorldBounds` 让涂色网格的范围能覆盖**整张地图**（地形/区域/路线/标记/文本/地点坐标），
 // 否则地图上会留下「看得见却涂不上」的真空区（详见 useTerrainCanvasBrush 的 targetGeometry）
@@ -1802,6 +1883,23 @@ function onWrapperWheel(e) {
     return;
   }
 
+  // A3：文化 / 宗教笔刷（与高度笔刷同一手感：滚轮 = 半径，Shift+滚轮 = 硬度）
+  if (mode === 'culture' || mode === 'religion') {
+    e.preventDefault();
+    e.stopPropagation();
+    const b = planetChannelBrush;
+    const label = mode === 'culture' ? '文化笔刷' : '宗教笔刷';
+    if (e.shiftKey) {
+      b.brushHardness.value = +clampStep(b.brushHardness.value, 0.05, 0, 0.9).toFixed(2);
+      setStatus({ toolLabel: `${label} · 硬度 ${b.brushHardness.value}` });
+    } else {
+      b.brushRadius.value = clampStep(b.brushRadius.value, 10, 20, 300);
+      setStatus({ toolLabel: `${label} · 半径 ${b.brushRadius.value}` });
+    }
+    renderer.requestRender();
+    return;
+  }
+
   if (mode === 'relief') {
     e.preventDefault();
     e.stopPropagation();
@@ -1834,6 +1932,13 @@ function onReliefKeydown(e) {
     e.preventDefault();
   } else if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) {
     setInteractionMode(interactionMode.value === 'relief' ? 'pan' : 'relief');
+    e.preventDefault();
+  } else if (e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+    // A3：文化笔刷（与 Shift+R 河流 / Shift+J 道路同一套"Shift 直达"约定）
+    setInteractionMode('culture');
+    e.preventDefault();
+  } else if (e.shiftKey && (e.key === 'G' || e.key === 'g')) {
+    setInteractionMode('religion');
     e.preventDefault();
   } else if (e.key === 'Escape' && reliefBrush.isReliefBrushing.value) {
     reliefBrush.cancelStroke();
@@ -2826,6 +2931,17 @@ watch(() => store.statusRevision, () => { renderer.requestRender(); });
 // M2/A2（2026-09-25）：切换高度图**着色方案**必须触发重绘。
 // 漏了这条的后果是「下拉改了、画布没反应」——test_69 的像素断言实测抓到过（diffPixels: 0）。
 watch(heightmapRasterKind, () => { renderer.requestRender(); });
+
+// A3（2026-10-08）文化 / 宗教模式：进入时自动切到对应着色（否则「涂了看不见」），
+// 并保证列表里有可涂条目；离开时**中止**未提交的笔画（半截编辑不该留在画布上）。
+watch(interactionMode, (mode, prev) => {
+  if (mode === 'culture' || mode === 'religion') {
+    if (heightmapRasterKind.value !== mode) heightmapRasterKind.value = mode;
+    if (prev !== mode) planetChannelBrush.ensureList(mode);
+  } else if (prev === 'culture' || prev === 'religion') {
+    planetChannelBrush.cancel();
+  }
+});
 
 watch(() => props.planet?.id, async (id) => {
   if (!id) return;

@@ -98,6 +98,16 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
     return false; // 抑制平移
   }
 
+  // A3（2026-10-08）文化 / 宗教逐格笔刷：吸管待命时先取色，否则起笔
+  if ((mode === 'culture' || mode === 'religion') && s.editMode) {
+    if (s.channelBrush.pickMode.value) {
+      s.channelBrush.pick(s.channelBrush.pickMode.value, wx, wy);
+    } else {
+      s.channelBrush.begin(mode, wx, wy);
+    }
+    return false; // 抑制平移
+  }
+
   // 画布地形笔刷模式
   if (mode === 'terrain' && s.editMode) {
     // 懒初始化：组件挂载时地图数据可能还没加载完
@@ -310,6 +320,12 @@ function onDragMove(wx, wy, dragInfo) {
     return;
   }
 
+  // A3：文化 / 宗教笔刷拖动（未起笔时也更新预览圈，便于先看半径再落笔）
+  if ((mode === 'culture' || mode === 'religion') && s.editMode) {
+    s.channelBrush.move(mode, wx, wy);
+    return;
+  }
+
   // 移动工具：marker/textLabel/region 本地平移（松手一次提交，避免 undo 栈爆炸；网格吸附对齐）
   if (mode === 'move' && s.dragObject) {
     const obj = s.dragObject;
@@ -484,6 +500,12 @@ function onDragEnd(wx, wy, dragInfo) {
     s.planetHeightBrush.isBrushing.value = false;
     s.planetHeightBrush.clearBrushPreview();
     actions.endHeightStroke();
+    return;
+  }
+
+  // A3：文化 / 宗教笔刷松手 —— 整笔压成一条 undo 并落盘（数据层唯一写口）
+  if ((mode === 'culture' || mode === 'religion') && s.editMode) {
+    s.channelBrush.end();
     return;
   }
 

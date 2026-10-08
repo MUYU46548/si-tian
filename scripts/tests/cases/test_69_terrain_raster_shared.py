@@ -227,7 +227,7 @@ JS_PIXEL = r"""(async () => {
   // UI 选项齐全（用户能自己切到每一档）
   {
     const vals = Array.from(sel.options).map(o => o.value);
-    const want = ['biome', 'landsea', 'height', 'temp', 'prec'];
+    const want = ['biome', 'landsea', 'height', 'temp', 'prec', 'culture', 'religion'];
     ck('f2 UI：着色下拉选项齐全', JSON.stringify(vals) === JSON.stringify(want), vals);
   }
 

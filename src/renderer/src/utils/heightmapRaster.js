@@ -14,6 +14,13 @@
 //
 // ⚠️ 颜色与阈值**逐字**取自 ScenarioMap 的既有实现（2026-09-25 抽取时刻），
 //    抽取初衷是零行为变更 —— 要改配色请改这里，两个视图会同时变（这正是抽出的目的）。
+//
+// 2026-10-08：新增 `culture` / `religion` 两档（行星侧文化/宗教笔刷的"看得见"环节）。
+//    这两档与上面几档不同：颜色**不是**色带采样，而是来自每颗行星自己的
+//    `cultures` / `religions` 元数据（下标 → 颜色），所以要由调用方传 `palette`。
+//    颜色定义与「无主」底色的口径在 `utils/heightmapChannels.js`（单一实现）。
+
+import { CHANNEL_KEYS, CHANNEL_UNASSIGNED_HEX } from './heightmapChannels';
 
 // ── 陆海底色（无主省份本色 / 海洋底）───────────────────────────────────────
 export const LAND_BASE_COLOR = [220, 216, 207];   // #dcd8cf
@@ -38,6 +45,30 @@ const HYPSO_LAND_RGB = HYPSO_LAND.map(hexToRgb);
 const TEMP_RGB = TEMP_RAMP.map(hexToRgb);
 const PREC_RGB = PREC_RAMP.map(hexToRgb);
 
+/** 通道（文化/宗教）「无主」的底色 */
+const CHANNEL_UNASSIGNED_RGB = hexToRgb(CHANNEL_UNASSIGNED_HEX);
+
+/**
+ * 把「下标 → 颜色」的列表编成调色板（`palette[v]` = `[r,g,b]`）。
+ *
+ * 🔴 下标是**位置**（1 起），不是条目的 `id` —— 行星侧 `mapData[pid].cultures` 的 `id` 是
+ *    `Date.now()`（见 `utils/heightmapChannels.js#nextChannelIndex` 的说明）。
+ *
+ * ⚠️ 缺色/坏色**不跳过条目**、只有真解析不出来才回落底色 —— 跳过会让下标整体错位，
+ *    于是"第 3 号文化"画成"第 4 号文化的颜色"，且不报错（比缺色难查得多）。
+ *
+ * @param {Array<{id:number,color:string}>} list 元数据列表（`mapData[pid].cultures` 等）
+ */
+export function buildChannelPalette(list) {
+  const pal = [CHANNEL_UNASSIGNED_RGB];
+  const items = Array.isArray(list) ? list : [];
+  for (let i = 0; i < items.length && i + 1 <= 255; i++) {
+    const hex = String((items[i] && items[i].color) || '');
+    pal[i + 1] = /^#?[0-9a-fA-F]{6}$/.test(hex) ? hexToRgb(hex) : CHANNEL_UNASSIGNED_RGB;
+  }
+  return pal;
+}
+
 function clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
 
 /** 色带采样（线性插值，返回 [r,g,b]） */
@@ -53,8 +84,8 @@ export function sampleRamp(rgbList, t) {
   return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
 }
 
-/** 网格单元 → 颜色（kind: landsea | height | temp | prec） */
-export function cellColor(kind, i, hm) {
+/** 网格单元 → 颜色（kind: landsea | height | temp | prec | culture | religion） */
+export function cellColor(kind, i, hm, palette) {
   if (kind === 'landsea') {
     return hm.h[i] >= RASTER_SEA_LEVEL ? LAND_BASE_COLOR : SEA_BASE_COLOR;
   }
@@ -63,6 +94,12 @@ export function cellColor(kind, i, hm) {
   }
   if (kind === 'prec') {
     return sampleRamp(PREC_RGB, hm.prec[i] / 100);         // FMG 降水标尺 0…100
+  }
+  if (CHANNEL_KEYS.indexOf(kind) >= 0) {
+    // 文化/宗教：颜色来自行星自己的元数据调色板；无主（0）或调色板缺失 → 底色
+    const arr = hm[kind];
+    const v = arr ? (arr[i] | 0) : 0;
+    return (palette && palette[v]) || CHANNEL_UNASSIGNED_RGB;
   }
   const h = hm.h[i];
   return h < RASTER_SEA_LEVEL
@@ -95,14 +132,19 @@ export function fillPixelBlock(data, w, h, x0, y0, x1, y1, rgb) {
  * 每个网格单元画一个 spacing × spacing 的方块 —— 网格点在 spacing/2 内抖动，方块拼接即完整覆盖。
  *
  * @param {object} hm 高度图（`{ h, temp, prec, grid:{points,spacing} }`）
- * @param {'landsea'|'height'|'temp'|'prec'} kind 配色方案
+ * @param {'landsea'|'height'|'temp'|'prec'|'culture'|'religion'} kind 配色方案
+ * @param {{palette?: Array<[number,number,number]>}} [opts] `culture`/`religion` 档必须给调色板
  * @returns {{canvas: HTMLCanvasElement, minX: number, minY: number, w: number, h: number}|null}
  *   调用方用 `ctx.drawImage(r.canvas, r.minX, r.minY, r.w, r.h)` 贴到**世界坐标**上。
  */
-export function buildHeightmapRaster(hm, kind) {
+export function buildHeightmapRaster(hm, kind, opts) {
+  const palette = (opts && opts.palette) || null;
   const pts = hm?.grid?.points;
   if (!hm || !pts || !pts.length) return null;
-  const values = kind === 'temp' ? hm.temp : kind === 'prec' ? hm.prec : hm.h;
+  const values = kind === 'temp' ? hm.temp
+    : kind === 'prec' ? hm.prec
+      : (CHANNEL_KEYS.indexOf(kind) >= 0) ? hm[kind]
+        : hm.h;
   if (!values || !values.length) return null;
 
   const spacing = hm.grid.spacing || 14.4;
@@ -128,7 +170,7 @@ export function buildHeightmapRaster(hm, kind) {
   const half = spacing / 2;
 
   for (let i = 0; i < pts.length && i < values.length; i++) {
-    const rgb = cellColor(kind, i, hm);
+    const rgb = cellColor(kind, i, hm, palette);
     const cx = pts[i][0] - minX;
     const cy = pts[i][1] - minY;
     fillPixelBlock(data, w, h, cx - half, cy - half, cx + half, cy + half, rgb);
@@ -148,10 +190,10 @@ export function createRasterCache() {
   const store = new Map();
   return {
     /** 取（未命中则构建并缓存）。`hm` 由调用方提供，保证「哪一份高度图」由调用方决定 */
-    get(key, hm, kind) {
+    get(key, hm, kind, opts) {
       const hit = store.get(key);
       if (hit) return hit;
-      const built = buildHeightmapRaster(hm, kind);
+      const built = buildHeightmapRaster(hm, kind, opts);
       if (built) store.set(key, built);
       return built;
     },

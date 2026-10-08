@@ -14,6 +14,7 @@ import { createAreaEditingModule } from './geodataModules/areaEditing';
 import { createSpaceEditingModule, normalizeSpaceMarkers, normalizeFleetCards } from './geodataModules/spaceEditing';
 import { createScenarioEditingModule } from './geodataModules/scenarioEditing';
 import { createProvinceEditingModule } from './geodataModules/provinceEditing';
+import { createChannelBrushModule } from './geodataModules/channelBrush';
 // 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
 // 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
 import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge';
@@ -109,6 +110,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   const mapDataEditingModule = createMapDataEditingModule({
     mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap,
   });
+  // A3（2026-10-08）：高度图**逐格通道笔刷**（文化 / 宗教）—— 行星主编辑器补齐文化/宗教涂抹能力。
+  // 走「抬手 diff」模式（见模块头注释），与本仓 provinceEditing 的省份笔刷同一套手感与粒度。
+  const channelBrushModule = createChannelBrushModule({ mapData, execute, scheduleAutoSaveMap });
 
   // 从模块解构常用 state（保持原 store 内引用）
   const {
@@ -2001,6 +2005,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       loadAllMapDataForExport,
     ...searchModule,
     ...mapDataEditingModule,
+    ...channelBrushModule,
     ...interiorModule,
     ...areaEditingModule,
     ...spaceEditingModule,

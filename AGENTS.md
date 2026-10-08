@@ -205,7 +205,13 @@
 - **P0/P1 编辑器模块**（2026-09-15 落地，全部有回归用例 test_28~test_35）: `utils/labelStyles.js`（标签样式预设 + `drawStyledLabel` 统一文本渲染）、`utils/reliefIcons.js`（地貌图标确定性散布 + 网格桶）、`utils/markerTypes.js`（标记类型注册表）、`utils/settlement.js`（人口对数滑块/分级/半径）、`utils/roadStyles.js`（道路样式）、`utils/rivers.js`（河流流向排序/拖拽 clamp）、`utils/viewport.js`（视口世界矩形，小地图遮罩用）；`composables/useReliefBrush.js`
 - **历史剧本时间轴**（2026-09-17 落地，回归用例 test_41~test_45）: `utils/scenarioTimeline.js`（**纯函数**：势力谱系按省份重叠度贪心匹配 + 逐省易主年份 + 年份/轨道轴向映射；无 DOM 依赖，可单独在 Node 里跑）、`components/ScenarioTimeline.vue`（按年比例/等宽双轴向轨道 + 游标拖动 + 键盘 + 播放）、`components/ScenarioLineagePanel.vue`（P2 谱系纠正面板）、`composables/useScenarioExport.js`（SVG/PNG/scenarios.json 导出导入）。**出口**：`utils/svgExport.js`（SVG 序列化，曲线约定同 `traceShapePath`；PNG 由 SVG 光栅化而来，两者永远一致）+ `save-text-file` IPC
 - **剧本时间轴的两条硬约束**：① `era.startYear/endYear` 是**字符串且可为负**（`'-1350'`→`'2138'`），任何算术先 `Number()`；② **每个剧本的 polity id 都是全新的**（`pol_ou`→`pol_li`），直接比 id 会得出「每代 100% 省份全变」→ 必须先做谱系匹配。详见 skill `obsidian/sitian-development`
-- **交互模式全集**: pan / move / draw / region / marker / route（含自动寻路=道路编辑器，Shift+J）/ settle / text / cluster / height / terrain / political / **relief（R）** / **river（Shift+R）**
+- **交互模式全集**: pan / move / draw / region / marker / route（含自动寻路=道路编辑器，Shift+J）/ settle / text / cluster / height / terrain / political / **relief（R）** / **river（Shift+R）** / **culture（Shift+C）** / **religion（Shift+G）**
+- **A3 行星侧文化 / 宗教笔刷（2026-10-08，回归 test_89 + Node 单测 `test_heightmap_channels.js`）**: 行星主编辑器此前**没有**文化/宗教笔刷（`interactionMode` 无 culture/religion；`drawCultureReligionRegions` 画的只是 Azgaar 导入的参考数据）—— 现在补齐「涂抹 → 渲染 → 吸管」整条链。**分层（别混）**：数据层 `store/geodataModules/channelBrush.js`（写口契约 id 9）、交互层 `composables/usePlanetChannelBrush.js`（半径/硬度/当前值/预览/吸管）、渲染层 `utils/heightmapRaster.js` 的新档位 `culture`/`religion` + `buildChannelPalette`。四条必须记住的口径：
+  - 🔴 **通道值 = 列表位置（1 起），不是元数据的 `id`** —— 行星侧 `mapData[pid].cultures` 的 `id` 是 `Date.now()`（`NodeDetailPanel.createCulture` 就是这么写的），时间戳塞进 `Uint8Array` 会被截成低 8 位 → 两个文化抢同一下标、颜色名字全乱且**不报错**。上限 255。
+  - 🔴 **抬手 diff 才是本项目的手感标准**，别照抄外部的 `patches[]`、也别照抄本仓剧本侧的「每次 mousemove 都 execute + merge」：`beginChannelStroke`（首行守卫）→ `applyChannelStroke`（就地改数组 + 每格首见记旧值，**不 execute、不落盘**）→ `endChannelStroke`（整笔压成**一条** undo + 落盘）。实测一次拖动改 34 格 → undo 栈 **+1**。**就地改数组、绝不换引用**（画布/用例持有同一引用）。
+  - **通道数组三态归一**：落盘 `jsonSafeReplacer` 会把 TypedArray 变普通数组；历史上还有结构化克隆后的 `{0:..}`（**无 length**）。`utils/heightmapChannels.js#normalizeChannel` 是唯一实现（能救就救，救不了返回 null 而不是悄悄造零值）；`usePlanetHeightBrush.ensureHeightmap` 在装载时调用它。
+  - **新增着色档必须只改一处**：下拉选项表 = `PlanetMap.vue` 的 `RASTER_KIND_OPTIONS`（高度面板与文化/宗教面板共用）；硬编码 `<option>` 会在两个面板各写一份 → 必然漂移（test_89 f0 静态守）。
+- **写口契约的反向校验（2026-10-08，test_54 a2）**: 原校验只回答「登记了 ⇒ 必须有守卫」→ **「新增写口忘了登记」永不上报**（结构性漏网）。实测一次性揪出 18 个未登记写口（文化/宗教笔刷、底图绑定/迁移、切片点 4 个、省份笔刷族 5 个、清空行星内容、重算派生…），其中 `applyCultureBrush` / `applyReligionBrush` / `deriveAllLayers` / `addBaseMapBurg` 连首行守卫都没有 —— 已全部补守卫 + 登记（契约 9 条 / 76 个函数）。规则：**函数体出现 `guardWrite(`/`blocked(`/`commitHeightmap(` ⇒ 它就算写口 ⇒ 必须登记**（白名单只放守卫包装原语 `blocked`）。⚠️ 校验范围只含 `MEMORY_WRITE_CALLSITES`（函数级）里列出的文件；`WRITE_CALLSITES`（文件级）里的组件入口（`enterEditMode`/`persist`…）登记粒度是整文件，按函数名要求它们登记是不成立的。
 - **新增全局事件**: `sitian:label-styles-changed` / `sitian:marker-types-changed`（画布监听后 `requestRender`，不依赖深度 watch）
 - **节点 id 连续性（Draft 转正）**: `store.changeNodeId(oldId,newId)` 是「节点 id 变更 + 引用级联」的唯一入口（入 undo 栈，undo 闭包**显式记录**旧值不做反向推断）。引用清单（值槽 / 数组槽 / 字典键）在 `store/geodata.js` 内以注释 + `ID_REF_VALUE_FIELDS`/`ID_REF_ARRAY_FIELDS` 白名单登记，**新增任何以节点 id 为值或为键的结构必须同步登记**。`utils/normalizeId.js` 是 `scripts/extract-data.js` 的逐字符副本（三处一致由 test_40 用例守卫，改一处必改三处）
 - **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > HANDOFF.md / ROADMAP.md（严重滞后，仅作历史参考）
@@ -214,8 +220,9 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 77 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| store 模块数 | 7 | `ls src/renderer/src/store/geodataModules/` |
+| 测试用例数 | 89 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| Node 单测文件数 | 19 | `ls scripts/tests/unit/*.js \| wc -l` |
+| store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 21 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 36 | `grep -c "ipcMain.handle" src/main/index.js` |
 | 项目文件 IPC 通道数 | 9 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
