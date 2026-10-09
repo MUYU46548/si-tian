@@ -140,17 +140,32 @@ export const useProjectStore = defineStore('project', () => {
     saveStatus.value = status;
     try {
       const s = SAVE_STATE_TEXT[status];
+      const errText = String(lastError.value || '未知原因');
       setSaveState(s
         ? {
           ...s,
+          // 🔴 失败原因必须**写进文字**，不能只放在 title（2026-10-09，暮雨实测：
+          //    「保存失败就是保存失败，我没看到其他内容」）—— 底部状态栏只显示 4 个字，
+          //    而浏览器原生 tooltip 要悬停 1 秒才出，等于没有。
+          text: status === 'error'
+            ? `保存失败：${errText.length > 60 ? errText.slice(0, 60) + '…' : errText}`
+            : s.text,
           title: status === 'error'
-            ? (lastError.value || '未知原因')
+            ? errText
             : (lastSavedAt.value ? `最后保存：${lastSavedAt.value}` : ''),
         }
         : null);
     } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
     if (ttl > 0) {
-      setTimeout(() => { if (saveStatus.value === status) saveStatus.value = 'idle'; }, ttl);
+      setTimeout(() => {
+        if (saveStatus.value !== status) return;
+        saveStatus.value = 'idle';
+        // 🔴 必须**同步清全局 saveState**（2026-10-09）：旧实现只改 ref，而 `setSaveState`
+        //    只在 setSaveStatus 里调 —— TTL 到期这条路径不经过它。结果底部状态栏**永远停在
+        //    「已保存」**（陈旧绿标）：用户以为"刚存过"，其实早过了 3 秒，此后任何视图看到的
+        //    都是一个与真实 saveStatus 不符的状态。
+        try { setSaveState(null); } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
+      }, ttl);
     }
   }
 

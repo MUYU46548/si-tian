@@ -58,8 +58,23 @@ function createTray(mainWindow) {
     {
       label: '退出',
       click: () => {
-        isQuitting = true;
-        app.quit();
+        // 2026-10-09：与 Ctrl+Q 对齐 —— 不再直接退，先把请求交给渲染层弹确认框
+        // （`app-confirm-quit` 会回来调 app.quit()）。
+        // 为什么托盘也要问：**「退出前问一句」要么处处有、要么处处没有** ——
+        // 只在 Ctrl+Q 上问、托盘上不问，用户学到的是「司天退出不用确认」，反而更危险。
+        // 兜底：渲染层不可达（正在关闭 / 已崩）→ 退回直接退，绝不把用户卡在退不掉的状态。
+        const win = mainWindow;
+        if (!win || win.isDestroyed() || !win.webContents) {
+          isQuitting = true;
+          app.quit();
+          return;
+        }
+        try {
+          win.webContents.send('app-request-quit', 'tray');
+        } catch (e) {
+          isQuitting = true;
+          app.quit();
+        }
       },
     },
   ]);

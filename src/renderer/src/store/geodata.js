@@ -487,6 +487,18 @@ export const useGeodataStore = defineStore('geodata', () => {
   const saveStatus = ref('idle'); // 'idle' | 'saving' | 'staged' | 'saved' | 'error'
 
   /**
+   * 最近一次保存失败的**原因**（2026-10-09）。
+   *
+   * 🔴 为什么必须存下来：原来 `saveStatus === 'error'` 只表达"失败了"，原因当场丢掉 ——
+   *    用户屏幕上只有四个字「保存失败」，既不知道发生了什么，也不知道该怎么办
+   *    （暮雨实测：「保存失败就是保存失败，我没看到其他内容」）。
+   *    现在与 `projectStore.lastError` 对齐：失败留下原因，下一次成功保存才清。
+   * ⚠️ 同时**取消了 error 的 5s 自动回 idle**：一闪而过的失败提示等于没提示
+   *    （projectStore 的 setSaveStatus 注释里早已写明这条，画布侧当时漏了）。
+   */
+  const lastSaveError = ref('');
+
+  /**
    * 叙事状态变更指纹（2026-09-24）。
    *
    * 🔴 为什么必须显式给信号：`updateNode` 是 `Object.assign(node, updates)` —— **就地改字段**，
@@ -509,7 +521,15 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (canvasSourceRef.value === 'project') {
       saveStatus.value = 'saving';
       const r = syncCanvasToProject('保存剧本');
-      saveStatus.value = r.ok ? 'staged' : 'error';   // staged = 已交给项目，等待落盘
+      if (r.ok) {
+        lastSaveError.value = '';
+        saveStatus.value = 'staged';   // staged = 已交给项目，等待落盘
+      } else {
+        // ⚠️ 这个分支以前把 `r.error` 就地丢掉了 —— 用户只看到「保存失败」四个字
+        lastSaveError.value = r.error || '项目接线未就绪（projectStore 未装载）';
+        saveStatus.value = 'error';
+      }
+      // 「已交给项目」是瞬时态，3s 后回落；**error 不设 TTL**（见 lastSaveError 说明）
       if (saveStatusTimer) clearTimeout(saveStatusTimer);
       saveStatusTimer = setTimeout(() => {
         if (saveStatus.value === 'staged') saveStatus.value = 'idle';
@@ -527,17 +547,18 @@ export const useGeodataStore = defineStore('geodata', () => {
         updatedAt: new Date().toISOString()
       }));
       await window.sitianAPI.saveScenarios(data);
+      lastSaveError.value = '';
       saveStatus.value = 'saved';
       if (saveStatusTimer) clearTimeout(saveStatusTimer);
       saveStatusTimer = setTimeout(() => {
         if (saveStatus.value === 'saved') saveStatus.value = 'idle';
       }, 3000);
     } catch (err) {
+      lastSaveError.value = (err && err.message) || String(err) || '未知原因';
       saveStatus.value = 'error';
+      // ⚠️ 刻意**不设 TTL**（2026-10-09 与 projectStore 对齐）：旧实现 5s 后自动回 idle，
+      //    失败提示一闪而过。现在常驻，由下一次成功保存来清。
       if (saveStatusTimer) clearTimeout(saveStatusTimer);
-      saveStatusTimer = setTimeout(() => {
-        if (saveStatus.value === 'error') saveStatus.value = 'idle';
-      }, 5000);
     }
   }
 
@@ -1985,6 +2006,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     entityToNode,
     loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
     saveStatus,
+    lastSaveError,
     statusRevision,
     FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,

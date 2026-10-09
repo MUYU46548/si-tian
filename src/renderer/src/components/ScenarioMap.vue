@@ -293,9 +293,11 @@
       <div class="tool-group">
         <button @click="fitToView" title="适应画布 (F)">⊞</button>
         <button @click="exportPNG" title="导出 PNG 图片"><Icon name="export" :size="15"/></button>
-        <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': store.saveStatus.value === 'saving' }">
-          <Icon v-if="store.saveStatus.value === 'saving'" name="loader" :size="15"/>
-          <Icon v-else-if="store.saveStatus.value === 'saved'" name="check-circle" :size="15"/>
+        <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': saveDisplay.kind === 'saving' }"
+                data-testid="scenario-save-btn">
+          <Icon v-if="saveDisplay.kind === 'saving'" name="loader" :size="15"/>
+          <Icon v-else-if="saveDisplay.kind === 'saved'" name="check-circle" :size="15"/>
+          <Icon v-else-if="saveDisplay.kind === 'error'" name="x-circle" :size="15"/>
           <Icon v-else name="save" :size="15"/>
         </button>
       </div>
@@ -567,11 +569,17 @@
       </span>
       <span v-if="exportStatus" class="export-msg" data-testid="export-msg"><Icon name="info" :size="13"/> {{ exportStatus }}</span>
       <span v-if="selectedPolity" class="selected-polity">已选势力：<span class="polity-dot" :style="{ background: selectedPolity.color }"></span>{{ selectedPolity.name }}</span>
-      <span class="save-status" :class="store.saveStatus.value">
-        <template v-if="store.saveStatus.value === 'saving'"><Icon name="loader" :size="13"/> 保存中...</template>
-        <template v-else-if="store.saveStatus.value === 'saved'"><Icon name="check-circle" :size="13"/> 已保存</template>
-        <template v-else-if="store.saveStatus.value === 'error'"><Icon name="x-circle" :size="13"/> 保存失败</template>
-        <template v-else><Icon name="save" :size="13"/> 自动保存</template>
+      <!-- 保存状态：两条链合并显示（见 script 的 saveDisplay）。
+           失败时**把原因写进文字本身** —— 暮雨实测「只有四个字『保存失败』」；
+           本状态栏原先连 title 都没有，靠悬停根本看不到原因。 -->
+      <span class="save-status" :class="saveDisplay.kind"
+            :title="saveDisplay.title || saveDisplay.text"
+            data-testid="scenario-save-status">
+        <Icon v-if="saveDisplay.kind === 'saving'" name="loader" :size="13"/>
+        <Icon v-else-if="saveDisplay.kind === 'saved'" name="check-circle" :size="13"/>
+        <Icon v-else-if="saveDisplay.kind === 'error'" name="x-circle" :size="13"/>
+        <Icon v-else name="save" :size="13"/>
+        {{ saveDisplay.text }}
       </span>
     </div>
 
@@ -819,7 +827,7 @@
 
 <script setup>
 import Icon from './Icon.vue';
-import { ref, onMounted, onUnmounted, watch, computed, toRaw, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed, toRaw, nextTick, unref } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
@@ -858,9 +866,57 @@ import {
 } from '../utils/provinceShape';
 // 配色单一来源（2026-10-01）：省份色板 / 海域填充与海界 / 陆界 —— 画布与 SVG 导出共用一份
 import { PROVINCE_PALETTE, nextProvinceColor, SEA_FILL, SEA_EDGE } from '../utils/scenarioPalette';
+// 全局状态栏单例：projectStore 把「.sitian 真正落盘」的成败写在这里（见 saveDisplay）
+import { useStatusBarState } from '../composables/useStatusBar';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
+
+// ── 保存状态显示（2026-10-09 重做）───────────────────────────────────────────
+// 🔴 历史剧本里**有两条保存链**，旧实现只显示了其中一半：
+//    · geodata（`store.saveStatus`）—— 把画布改动推给项目 / 直接写 scenarios.json
+//    · projectStore（写在全局 `useStatusBar` 的 `saveState` 里）—— **真正把 .sitian 写进磁盘**
+//    只盯前者的两个坏结果：① 项目落盘失败时这里毫无反应（用户以为存好了）；
+//    ② 项目态下 geodata 只到 'staged'，这里**永远显示不出「已保存」**（用户不知道到底存没存）。
+//    所以项目侧的失败优先级最高 —— 那才代表「数据没进磁盘」。
+// 🔴 另外失败必须**把原因写进文字**：暮雨实测「保存失败就是保存失败，我没看到其他内容」——
+//    这个状态栏原本连 title 都没有，靠悬停 hint 本来就看不到。
+const sbState = useStatusBarState();
+/** 失败原因在状态栏的截断长度（放不下长错误；全文走 title + 控制台日志） */
+const SAVE_ERR_MAX = 60;
+
+const saveDisplay = computed(() => {
+  // 🔴 geodata 是 Pinia **setup store** → 它 return 的 ref 已被 Pinia 自动解包
+  //    （同仓反例：`store.slicePoints` 就是普通数组）。所以这里**不能**写 `.value` ——
+  //    旧代码的 `store.saveStatus.value` 恒为 undefined，导致状态栏 `:class` 一直是空、
+  //    保存按钮图标也从不变化（这条路径从来就没反映过真实状态）。
+  //    用 Vue 的 `unref`：对「ref」与「已解包的值」两种形态都安全。
+  const g = unref(store.saveStatus);
+  const s = sbState.saveState;          // 由 projectStore 写（只有它写）
+  const gErr = unref(store.lastSaveError) || '';
+  const cut = (t) => {
+    const full = String(t || '未知原因');
+    return { text: full.length > SAVE_ERR_MAX ? full.slice(0, SAVE_ERR_MAX) + '…' : full, title: full };
+  };
+  // ① 项目落盘失败最重：画布上看到的改动没进磁盘
+  if (s && s.kind === 'err') {
+    const c = cut(s.title);
+    return { kind: 'error', text: `保存失败：${c.text}`, title: `保存失败：${c.title}` };
+  }
+  // ② 剧本侧失败（推给项目这一步 / scenarios.json 写入）
+  if (g === 'error') {
+    const c = cut(gErr);
+    return { kind: 'error', text: `保存失败：${c.text}`, title: `保存失败：${c.title}` };
+  }
+  // ③ 进行中
+  if (s && s.kind === 'warn') return { kind: 'saving', text: s.text || '已交给项目，待写入' };
+  if (s && s.kind === 'busy') return { kind: 'saving', text: '保存中…' };
+  if (g === 'saving') return { kind: 'saving', text: '保存中…' };
+  // ④ 成功
+  if (s && s.kind === 'ok') return { kind: 'saved', text: s.text || '已保存' };
+  if (g === 'saved') return { kind: 'saved', text: '已保存' };
+  return { kind: 'idle', text: '自动保存' };
+});
 
 // Phase 3：省份「归属标签网格」——笔刷/套索 + 自动省界（数据在 store 的 provinceEditing 模块）
 const provinceBrush = useProvinceBrush();
@@ -5718,10 +5774,21 @@ watch(baseMap, () => {
   display: inline-block;
 }
 
-.save-status { margin-left: auto; }
+/* 保存状态：失败原因可能很长 → 限宽 + 省略号（全文在 title 里）。
+   ⚠️ span 是 inline，text-overflow 需要 inline-block 才生效。 */
+.save-status {
+  margin-left: auto;
+  display: inline-block;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
 .save-status.saved { color: #4ade80; }
-.save-status.error { color: #f87171; }
+.save-status.error { color: #f87171; font-weight: 600; }
 .save-status.saving { color: #fbbf24; }
+.save-status.idle { color: #94a3b8; }
 
 /* 右键菜单 */
 .context-menu {
