@@ -136,7 +136,10 @@
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
         <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)"><Icon name="history" :size="15"/></button>
-        <button @click="reextract" :disabled="!canReextract" :title="reextractTitle"><Icon name="refresh" :size="15"/></button>
+        <!-- 「重新提取」：项目态**隐藏** —— 画布事实源=项目文件，重提取必被事实源冲突拒绝（点完才报错的坏交互）；
+             要把库内容带进项目请走项目面板「导入知识库内容」。只读态保留（灰禁 + title 说明去处）。
+             ⚠️ 只读态必须仍存在且 disabled（test_57 ⑤ 按 title 含「重新提取」找它），所以只加 v-if、不动 disabled。 -->
+        <button v-if="!canvasIsProject" @click="reextract" :disabled="!canReextract" :title="reextractTitle"><Icon name="refresh" :size="15"/></button>
         <button @click="saveData" :disabled="!dirty || isReadOnly" title="保存"><Icon name="save" :size="15"/></button>
         <button @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/></button>
         <button @click="panelsStore.toggle('git-sync')" :class="{ active: panelsStore.isOpen('git-sync') }" title="同步到远程仓库（一键推送到你自己的 git 仓库）"><Icon name="cloud" :size="15"/></button>

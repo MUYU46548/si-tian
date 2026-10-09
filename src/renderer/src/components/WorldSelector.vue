@@ -29,14 +29,18 @@
         </template>
         <template v-else>
           <!-- 已打开项目但项目是空的（2026-09-22 用户实测）：这里原来的「从 Obsidian 重新提取」在项目态
-               被正确拒绝（两套事实源混流），用户就卡在"项目里空空的" → 项目态下把首要动作换成导入。 -->
-          <button v-if="projectOpen" class="create-btn" data-testid="import-from-vault-empty" @click="$emit('import-from-vault')"><Icon name="folder-open" :size="14"/> 导入知识库内容</button>
+               被正确拒绝（两套事实源混流），用户就卡在"项目里空空的" → 项目态下把首要动作换成导入，
+               并加 `import-primary` 让它与「加载示例 / 新建世界」区分开（2026-10-09：入口要显眼）。 -->
+          <button v-if="projectOpen" class="create-btn import-primary" data-testid="import-from-vault-empty" @click="$emit('import-from-vault')"><Icon name="folder-open" :size="14"/> 导入知识库内容</button>
           <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
           <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
         </template>
         <button class="vault-btn" data-testid="open-vault-empty" @click="$emit('open-vault')"><Icon name="book" :size="14"/> 打开 Obsidian 知识库</button>
-        <!-- 只读态下「重新提取」是落盘写、必然被拒 → 灰禁 + 说明去处（只拦不灰禁＝点完才被拒，坏交互） -->
+        <!-- 只读态下「重新提取」是落盘写、必然被拒 → 灰禁 + 说明去处（只拦不灰禁＝点完才被拒，坏交互）。
+             项目态（projectOpen）下**直接隐藏**：此时画布事实源=项目文件，重提取必被拒；
+             该情形首要是上面的「导入知识库内容」。 -->
         <button
+          v-if="!projectOpen"
           class="extract-btn"
           data-testid="reextract"
           :disabled="readOnly"
@@ -46,6 +50,9 @@
       </div>
       <p v-if="readOnly" class="empty-readonly-hint">
         {{ readOnlyHint }}
+      </p>
+      <p v-else-if="projectOpen" class="empty-import-hint" data-testid="empty-import-hint">
+        项目是空的？知识库里的既有内容可用上面的「导入知识库内容」一次性带进来 —— 只补缺、不覆盖，一条撤销可回退。
       </p>
     </div>
     <div v-else class="world-grid">
@@ -302,6 +309,23 @@ function getLocationCount(worldId) {
   margin: 2px 0 0 !important;
   font-size: 12.5px !important;
   color: var(--warning, #d29922) !important;
+  line-height: 1.6;
+}
+
+/* 项目态空项目：「导入知识库内容」提为首要动作 —— 同 create-btn 规格，加粗 + 强调环与并列项区分。
+   不反转配色，避免亮/暗主题下文字对比度失控。 */
+.empty-actions .import-primary {
+  font-weight: 600;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+.empty-actions .import-primary:hover { background: rgba(88, 166, 255, 0.28); }
+
+/* 项目态空项目说明行：正文级字号，指明唯一入口与语义（只补缺 / 可撤销） */
+.empty-import-hint {
+  margin: 2px 0 0 !important;
+  font-size: 12.5px !important;
+  color: var(--text-tertiary) !important;
   line-height: 1.6;
 }
 

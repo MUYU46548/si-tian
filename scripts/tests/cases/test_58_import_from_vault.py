@@ -153,6 +153,30 @@ def run(cdp):
     if not ws.get('inViewport'):
         return False, '「导入知识库内容」按钮不在视口内（看不见等于没有）'
 
+    # ── a2) 反向守卫（2026-10-09）：项目态下「重新提取」入口必须**不出现** ──────
+    # 项目态下画布事实源=项目文件，重提取必被事实源冲突拒绝（
+    # `geodata.reextract` → '已打开项目…'）→ 若入口仍在且可点 = 「点了才发现没用」的坏交互。
+    # 三处入口（工具栏 / 世界视图空态 / 设置面板）已统一：项目态隐藏或灰禁并改指「导入知识库内容」。
+    # ⚠️ 只读态（无项目）保留工具栏按钮且 disabled（test_57 ⑤ 依赖），因此这里只断言"项目态不存在"。
+    ro = _j(cdp.eval("""(() => {
+      const bar = Array.from(document.querySelectorAll('.toolbar-actions button'))
+        .filter(b => (b.getAttribute('title') || '').indexOf('重新提取') >= 0);
+      const wsBtn = document.querySelector('.world-selector .extract-btn');
+      const hint = document.querySelector('[data-testid="empty-import-hint"]');
+      return JSON.stringify({
+        toolbarReextract: bar.length,
+        wsReextract: !!wsBtn,
+        hintExists: !!hint,
+        hintText: hint ? (hint.textContent || '').trim() : '',
+      });
+    })()"""), '项目态死按钮反向守卫')
+    if ro.get('toolbarReextract'):
+        return False, '项目态下工具栏仍显示「重新提取」（点了必被拒 = 坏交互，应隐藏）'
+    if ro.get('wsReextract'):
+        return False, '项目态下世界视图仍显示「从 Obsidian 重新提取」（死按钮，应隐藏、只留导入入口）'
+    if not ro.get('hintExists') or '导入' not in (ro.get('hintText') or ''):
+        return False, f'项目态空项目没有「导入知识库内容」引导说明：{ro}'
+
     # ── b) 点它 → 真的导入（实体进项目 + 节点上画布） ─────────────────────────
     before = _j(cdp.eval("""(async () => {
       const app = %s;

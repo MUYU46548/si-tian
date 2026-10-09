@@ -907,7 +907,7 @@ const proj = useProjectStore();
 const canReextractBlocked = computed(() => gateReadOnly.value || proj.isOpen);
 const reextractBlockedHint = computed(() => (gateReadOnly.value
   ? `${gateReason.value}；重新提取会重写知识库坐标缓存 —— 请先在项目面板新建或打开项目`
-  : '当前画布数据来自项目文件：重提取会让知识库数据与项目数据混流，请先关闭项目再提取'));
+  : '当前画布数据来自项目文件：要把知识库内容带进项目，请用项目面板的「导入知识库内容」（只补缺、可撤销）'));
 
 /** 打开 Obsidian 知识库（打不开则退化为在资源管理器里定位库目录） */
 async function openVaultNow() {
