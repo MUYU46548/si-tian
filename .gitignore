@@ -3,7 +3,8 @@ node_modules/
 
 # Build output
 dist/
-release/
+# release*/ 而非 release/：electron-builder 换输出目录时会建 release-xxx/（如 release-green/）
+release*/
 
 # Cache
 .cache/
