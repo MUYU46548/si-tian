@@ -1071,6 +1071,7 @@ const heightTool = ref('raise');
 const BIOME_COLORS = {
   ocean: '#2E86AB', hot_desert: '#E9C46A', cold_desert: '#B5B887',
   savanna: '#D2D082', grassland: '#C8D68F', tropical_seasonal: '#B6D95D',
+  temperate: '#5FA85C',   // 司天默认群系（scenarioEditing 的 `|| 'temperate'`），表里原先漏了它
   temperate_deciduous: '#29BC56', tropical_rainforest: '#7DCB35',
   temperate_rainforest: '#409C43', taiga: '#4B6B32', tundra: '#96784B',
   glacier: '#D5E7EB', wetland: '#0B9131',

@@ -1437,6 +1437,10 @@ const BIOME_COLORS = {
   savanna: '#D2D082',
   grassland: '#C8D68F',
   tropical_seasonal: '#B6D95D',
+  // 🔴 `temperate` 是司天自己的**默认群系**（`scenarioEditing.js` 里 `biome || 'temperate'`），
+  //    但本表原先没有它 → 查不到色 → 省份落兜底色（2026-10-09 实测：暮雨导入的底图
+  //    整块大陆都显示成兜底色，看着像"没上色"）。表必须覆盖所有会被写进去的群系名。
+  temperate: '#5FA85C',
   temperate_deciduous: '#29BC56',
   tropical_rainforest: '#7DCB35',
   temperate_rainforest: '#409C43',
@@ -3237,8 +3241,14 @@ function addProvinceWithOverlapGate(prov) {
   if (r && r.rejected === 'overlap') {
     const pct = Math.round((r.ratio || 0) * 100);
     const names = (r.offenders || []).slice(0, 3).map(o => o.name).join('、');
-    if (!confirm(`${r.message}\n\n压叠 ${pct}%${names ? `（${names}）` : ''}。仍要在这里创建吗？\n`
-      + '（创建后可用顶点编辑调整，或用橡皮删除）')) {
+    // 🔴 压叠率很高时，**「再建一个」根本不是正解** —— 说明这块地已被一个省占满
+    //    （真实案例：导入的底图把整块大陆做成一个省，用户在图里画哪儿都 100% 压叠，
+    //    连试几次都只能点「确定」硬压，然后以为「司天不能画省份」）。
+    //    这时该引导他去**拆分**那个大省，而不是批准又一次叠罗汉。
+    const tip = pct >= 80
+      ? '（这块地已被一个省占满 —— 更合适的做法是用「拆分」(X) 把它切开，而不是叠一个新省上去）'
+      : '（创建后可用「改形状」(G) 调整，或用「删除」(E) 去掉）';
+    if (!confirm(`${r.message}\n\n压叠 ${pct}%${names ? `（${names}）` : ''}。仍要在这里创建吗？\n${tip}`)) {
       statusMsg(`已取消创建：「${prov.name}」压在已有省份上（${pct}%）`);
       return null;
     }

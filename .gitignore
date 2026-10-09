@@ -64,6 +64,9 @@ docs/项目概况报告_2026-08-29.md
 sitian-architecture.html
 sitian-architecture.json
 
+# 诊断用临时产物（从真实项目数据画出来的预览图，含用户数据，禁止提交）
+docs/_*
+
 # LOGO 选型临时产物（finals、variants、scans、backups、比较 HTML、atlas）
 build/logo-concepts/
 
