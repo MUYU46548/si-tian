@@ -11,22 +11,22 @@
           :class="{ active: tool === 'select' }"
           @click="setTool('select')"
           title="选择 (V，默认) — 拖动平移画布，点击选中省份"
-        ><Icon name="hand" :size="15"/></button>
+        ><Icon name="hand" :size="15"/>选择</button>
         <button
           :class="{ active: tool === 'draw' }"
           @click="setTool('draw')"
-          title="自由绘制 (B) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架"
-        ><Icon name="pencil" :size="15"/></button>
+          title="画省份 · 自由绘制 (B) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架"
+        ><Icon name="pencil" :size="15"/>画省份</button>
         <button
           :class="{ active: tool === 'provinceBrush' }"
           @click="setTool('provinceBrush')"
           title="变更归属 (Q) — 按住涂抹把格子划归所选省份（省界自动重算）"
-        ><Icon name="brush" :size="15"/></button>
+        ><Icon name="brush" :size="15"/>改归属</button>
         <button
           :class="{ active: tool === 'vertex' }"
           @click="setTool('vertex')"
           title="顶点编辑 (G) — 拖拽顶点改形状；多环省份在右侧属性面板切换活动环"
-        >⬡</button>
+        >⬡改形状</button>
         <button
           class="more-toggle"
           :class="{ active: moreOpen, 'has-advanced': advancedToolActive }"
@@ -45,17 +45,17 @@
           :class="{ active: tool === 'provinceBrush' }"
           @click="setTool('provinceBrush')"
           title="省份笔刷 (Q) — 按住涂抹划归所选省份；省界由格归属自动重算（一次拖动 = 一条撤销）"
-        ><Icon name="brush" :size="15"/></button>
+        ><Icon name="brush" :size="15"/>涂归属</button>
         <button
           :class="{ active: tool === 'provinceLasso' }"
           @click="setTool('provinceLasso')"
           title="自由轮廓 (L) — 按住画一圈，圈内所有格整批划归（不用描点）"
-        ><Icon name="pen-tool" :size="15"/></button>
+        ><Icon name="pen-tool" :size="15"/>圈选</button>
         <button
           :class="{ active: tool === 'provinceFill' }"
           @click="setTool('provinceFill')"
           title="点击填充 (O) — 点一下把所在封闭区域整块划归；有面积闸门（超过全图 25% 直接拒绝，避免一下填满整块大陆/海洋）"
-        ><Icon name="droplet" :size="15"/></button>
+        ><Icon name="droplet" :size="15"/>点填</button>
       <!-- Phase 3 省份网格：笔刷 / 自由轮廓 / 点击填充 设置 -->
       <div class="tool-group brush-settings" v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)">
         <label>划归到：</label>
@@ -102,42 +102,42 @@
                 :class="{ active: tool === 'split' }" 
                 @click="setTool('split')"
                 title="拆分省份 (X) — 点击两个点定义分割线"
-              ><Icon name="scissors" :size="15"/></button>
+              ><Icon name="scissors" :size="15"/>拆分</button>
                   <button 
                 :class="{ active: tool === 'merge' }" 
                 @click="setTool('merge')"
                 title="合并省份 (M) — 依次点击两个省份"
-              >⊕</button>
+              >⊕合并</button>
                   <button 
                 :class="{ active: tool === 'erase' }" 
                 @click="setTool('erase')"
                 title="删除 (E) — 点击省份删除"
-              ><Icon name="trash" :size="15"/></button>
+              ><Icon name="trash" :size="15"/>删除</button>
                   <button 
                 :class="{ active: tool === 'height' }" 
                 @click="setTool('height')"
                 title="高度笔刷 (H) — 左键抬高/右键降低地形"
-              ><Icon name="trending-up" :size="15"/></button>
+              ><Icon name="trending-up" :size="15"/>高度</button>
                   <button 
                 :class="{ active: tool === 'biome' }" 
                 @click="setTool('biome')"
                 title="生物群系笔刷 (N) — 涂抹生物群系"
-              ><Icon name="palette" :size="15"/></button>
+              ><Icon name="palette" :size="15"/>群系</button>
                   <button 
                 :class="{ active: tool === 'river' }" 
                 @click="setTool('river')"
                 title="河流编辑器 (W) — 手动绘制河流路径"
-              ><Icon name="droplets" :size="15"/></button>
+              ><Icon name="droplets" :size="15"/>河流</button>
                   <button 
                 :class="{ active: tool === 'river' }" 
                 @click="generateAndShowRivers"
                 title="自动生成河流 — 沿高度梯度从高地流向海洋"
-              ><Icon name="waves" :size="15"/></button>
+              ><Icon name="waves" :size="15"/>自动河流</button>
                   <button 
                 :class="{ active: tool === 'relief' }" 
                 @click="setTool('relief')"
                 title="Relief 图标 (I) — 放置山脉/树木/沙漠等自然特征"
-              ><Icon name="mountain" :size="15"/></button>
+              ><Icon name="mountain" :size="15"/>地貌</button>
                   <select v-if="tool === 'relief'" v-model="selectedReliefIcon" class="brush-biome-select" title="Relief 图标">
                 <option v-for="icon in RELIEF_ICONS" :key="icon.id" :value="icon.id">{{ icon.name }}</option>
               </select>
@@ -145,22 +145,22 @@
                 :class="{ active: tool === 'paint' }" 
                 @click="setTool('paint')"
                 title="势力油漆桶 (P) — 点击省份指派势力"
-              ><Icon name="palette" :size="15"/></button>
+              ><Icon name="palette" :size="15"/>势力</button>
                   <button 
                 :class="{ active: tool === 'culture' }" 
                 @click="setTool('culture')"
                 title="文化笔刷 (C) — 涂抹文化区域"
-              ><Icon name="users" :size="15"/></button>
+              ><Icon name="users" :size="15"/>文化</button>
                   <button 
                 :class="{ active: tool === 'religion' }" 
                 @click="setTool('religion')"
                 title="宗教笔刷 (R) — 涂抹宗教区域"
-              ><Icon name="church" :size="15"/></button>
+              ><Icon name="church" :size="15"/>宗教</button>
                   <button 
                 :class="{ active: tool === 'burg' }" 
                 @click="setTool('burg')"
                 title="智能聚落 (U) — 点击放置，自动贴合地形"
-              ><Icon name="home" :size="15"/></button>
+              ><Icon name="home" :size="15"/>聚落</button>
                   <select v-if="tool === 'burg'" v-model="selectedBurgSize" class="brush-biome-select" title="聚落规模">
                 <option v-for="size in BURG_SIZES" :key="size.id" :value="size.id">{{ size.name }}</option>
               </select>
@@ -168,7 +168,7 @@
                 :class="{ active: tool === 'label' }" 
                 @click="setTool('label')"
                 title="历史地名 (T) — 点击放置文字标记"
-              ><Icon name="tag" :size="15"/></button>
+              ><Icon name="tag" :size="15"/>地名</button>
                   <select v-if="tool === 'label'" v-model="selectedLabelPreset" class="brush-biome-select" title="标签样式预设">
                 <option v-for="preset in LABEL_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
               </select>
@@ -176,7 +176,7 @@
                 :class="{ active: tool === 'marker' }" 
                 @click="setTool('marker')"
                 title="标记 (K) — 点击放置标记"
-              ><Icon name="map-pin" :size="15"/></button>
+              ><Icon name="map-pin" :size="15"/>标记</button>
                   <select v-if="tool === 'marker'" v-model="selectedMarkerType" class="brush-biome-select" title="标记类型">
                 <option v-for="type in MARKER_TYPES" :key="type.id" :value="type.id">{{ type.name }}</option>
               </select>
@@ -184,7 +184,7 @@
                 :class="{ active: tool === 'road' }" 
                 @click="setTool('road')"
                 title="道路 (J) — 两点连线，自动生成沿等高线路径"
-              ><Icon name="git-branch" :size="15"/></button>
+              ><Icon name="git-branch" :size="15"/>道路</button>
                   <select v-if="tool === 'road'" v-model="selectedRoadStyle" class="brush-biome-select" title="道路样式">
                 <option v-for="style in ROAD_STYLES" :key="style.id" :value="style.id">{{ style.name }}</option>
               </select>
@@ -192,7 +192,7 @@
                 :class="{ active: tool === 'derive' }" 
                 @click="deriveLayers"
                 title="重算派生图层 — 基于高度重算温度/降水/生物群系"
-              ><Icon name="refresh-cw" :size="15"/></button>
+              ><Icon name="refresh-cw" :size="15"/>重算派生</button>
           </div>
         </div>
       <!-- 第 3 行：地形/群系等笔刷设置 + 底图与视图操作 -->
@@ -307,6 +307,10 @@
           <option value="base">底图编辑</option>
           <option value="scenario">剧本模式</option>
         </select>
+        <!-- 🔴 两个模式**工具栏是同一套**，用户看不出差别（暮雨实测：「根本看不懂」）。
+             它们真正的区别在**着色与图层**：底图编辑按群系看自然面貌，剧本模式按势力看政治版图。
+             一句话写在旁边，省得用户来回切着猜。 -->
+        <span class="row-hint" data-testid="view-mode-hint" :title="viewModeHint">{{ viewModeHint }}</span>
       </div>
       <div class="tool-group">
         <label>吸附：</label>
@@ -961,6 +965,15 @@ const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
 const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex']);
 const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value));
 const viewMode = ref('base');
+/**
+ * 当前模式在做什么 —— 一句话说明。
+ * 🔴 为什么必须显式写出来：两个模式的**工具栏完全相同**（同一套 setTool），
+ *    差别只体现在着色与图层上（见各 viewMode 判定点）。用户切来切去只能靠猜
+ *    （暮雨实测：「搞了半天依然没搞懂」）。
+ */
+const viewModeHint = computed(() => (viewMode.value === 'scenario'
+  ? '改政治版图：势力归属 / 易主 —— 省份按势力着色'
+  : '改自然面貌：地形高度 / 群系 / 河流 —— 省份按群系着色'));
 // ── 底图高度图（A1，2026-09-24）──────────────────────────────────────────────
 // 底图的高度图此前只有「.map 导入」一条来源 → 新建的底图用不了任何高度类工具（静默 return）。
 /** 当前底图绑定到的行星 id（绑定了则高度图归行星侧，底图不该再自建） */
@@ -5424,7 +5437,10 @@ watch(baseMap, () => {
 }
 
 .tool-group button {
-  width: 32px;
+  /* 2026-10-09：按钮从「纯图标」改为「图标 + 文字」——
+     暮雨实测「上面一堆工具但是根本看不懂」。固定 32px 方块保留为**最小**尺寸，
+     有文字时自动撑开（横排规则见 .scenario-toolbar button）。 */
+  min-width: 32px;
   height: 32px;
   border: 1px solid #475569;
   background: #334155;
@@ -6209,5 +6225,24 @@ watch(baseMap, () => {
 .burg-editor-actions button.burg-save-btn {
   background: #5b21b6;
   border-color: #7c3aed;
+}
+
+/* ── 工具栏可读性（2026-10-09）───────────────────────────────────────────────
+   暮雨实测：「上面一堆工具但是根本看不懂」—— 根因是所有工具按钮**只有图标没有文字**，
+   名字只藏在 title 里（要悬停 1 秒才出）。这里统一改成「图标 + 文字」横排。
+   ⚠️ 用 min-width 而非 width：无文字的按钮仍旧是 32×32 方块，观感不变。 */
+.scenario-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  min-width: 32px;
+  height: 32px;
+  white-space: nowrap;
+  /* ⚠️ 关掉 preflight 后 <button> 不吃继承：字体必须显式写，
+     否则按钮文字会用浏览器 UA 默认字体（与面板其余部分不一致）。 */
+  font-family: inherit;
+  font-size: 12px;
 }
 </style>
