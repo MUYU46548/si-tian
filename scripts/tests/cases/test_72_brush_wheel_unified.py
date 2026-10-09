@@ -58,6 +58,12 @@ def _static_guard():
 
     if 'brush-wheel-hint' not in src:
         problems.append('缺少滚轮手势提示（用户不知道有这组手势）')
+
+    # 🔴 Ctrl/⌘+滚轮必须**放行给画布缩放**（2026-10-09 暮雨实测：「鼠标滚轮锁死只能调画笔半径」）。
+    #    原来各笔刷分支无条件 preventDefault + stopPropagation，且没有修饰键分支 → 一进画笔就缩不了图。
+    seg = src.split('function onWrapperWheel')[1][:500] if 'function onWrapperWheel' in src else ''
+    if 'e.ctrlKey || e.metaKey' not in seg:
+        problems.append('onWrapperWheel 缺 Ctrl/⌘+滚轮 逃生口（进了画笔模式就再也缩放不了图）')
     return problems
 
 
@@ -81,10 +87,10 @@ JS_MAIN = r"""(async () => {
   if (!wrap) return JSON.stringify({ fails, notes });
 
   // 真事件：派发到 wrapper（模板绑的是捕获阶段）
-  const wheel = async (deltaY, shift) => {
+  const wheel = async (deltaY, shift, ctrl) => {
     const r = wrap.getBoundingClientRect();
     wrap.dispatchEvent(new WheelEvent('wheel', {
-      deltaY, shiftKey: !!shift, bubbles: true, cancelable: true,
+      deltaY, shiftKey: !!shift, ctrlKey: !!ctrl, bubbles: true, cancelable: true,
       clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
     }));
     await tick(120);
@@ -119,6 +125,14 @@ JS_MAIN = r"""(async () => {
   ck('f1 ★ 连续上滚夹在上限 300', HB.brushRadius.value === 300, { now: HB.brushRadius.value });
   HB.brushRadius.value = r0;                   // 还原到用例开始时
   await tick(120);
+
+  // ---------- f1 ★ Ctrl+滚轮 = 画布缩放（画笔模式的逃生口，2026-10-09）----------
+  // 判据是「半径**一个都不动**」：没有逃生口时 Ctrl+上滚会走普通分支把半径 +10，
+  // 所以这条断言能真正区分「放行了」和「被吃掉」。
+  const cR = HB.brushRadius.value;
+  await wheel(-100, false, true);
+  ck('f1 ★ Ctrl+滚轮放出画笔（半径不动，滚轮交给画布缩放）',
+     HB.brushRadius.value === cR, { now: HB.brushRadius.value, expect: cR });
 
   // ---------- f1 地形笔刷：滚轮 = 大小 / Shift = 硬度 ----------
   pm.setInteractionMode('terrain');
@@ -180,5 +194,6 @@ def run(cdp):
         return False, f'A6 断言失败 {len(fails)} 项：' + '；'.join(fails[:10])
 
     return True, ('滚轮契约与剧本视图一致（滚轮=半径/大小、Shift+滚轮=强度/硬度、上滚增大）；'
-                  '步进与范围取自滑块自身；边界夹住；非笔刷模式不拦截'
+                  '步进与范围取自滑块自身；边界夹住；非笔刷模式不拦截；'
+                  'Ctrl+滚轮放出给画布缩放（画笔模式的逃生口）'
                   + ('；' + '；'.join(notes) if notes else ''))

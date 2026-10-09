@@ -143,7 +143,7 @@
             <span class="toolbar-label">强度</span>
             <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
           </div>
-          <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调强度</div>
+          <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调强度 · Ctrl+滚轮缩放 · 空格+拖动平移</div>
         </template>
 
         <template v-if="interactionMode === 'terrain'">
@@ -160,7 +160,7 @@
             <input type="range" v-model.number="terrainBrushHardness" min="0" max="1" step="0.05" class="brush-slider" />
             <span class="toolbar-label">↗ 按住拖动涂抹地形</span>
           </div>
-          <div class="brush-wheel-hint">滚轮调大小 · Shift+滚轮调硬度</div>
+          <div class="brush-wheel-hint">滚轮调大小 · Shift+滚轮调硬度 · Ctrl+滚轮缩放 · 空格+拖动平移</div>
         </template>
 
         <!-- A3（2026-10-08）文化 / 宗教逐格笔刷。着色下拉与高度面板共用 RASTER_KIND_OPTIONS，
@@ -198,7 +198,7 @@
             <span class="toolbar-label">硬度</span>
             <input type="range" v-model.number="planetChannelBrush.brushHardness.value" min="0" max="0.9" step="0.05" class="brush-slider" />
           </div>
-          <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调硬度 · 一次拖动 = 一条撤销（Ctrl+Z）</div>
+          <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调硬度 · Ctrl+滚轮缩放 · 空格+拖动平移 · 一次拖动 = 一条撤销（Ctrl+Z）</div>
         </template>
 
         <div class="toolbar-group" title="绘制辅助">
@@ -1848,6 +1848,11 @@ const reliefBrush = useReliefBrush({ store, currentMapData, renderer });
 // 范围与步进取各笔刷**滑块自身的 min/max/step**（不另立一套数字，避免"滚轮能调出滑块调不出的值"）。
 function onWrapperWheel(e) {
   if (!editMode.value) return;
+  // 🔴 Ctrl/⌘ + 滚轮 = **画布缩放**（画笔模式也放行），必须在下面各分支 preventDefault 之前返回。
+  //    原来滚轮在 height/terrain/culture/religion/relief 五个模式里被彻底吃掉（preventDefault +
+  //    stopPropagation，且没有修饰键分支）→ 一进画笔就再也缩放不了图（2026-10-09 暮雨实测：
+  //    「鼠标滚轮锁死只能调画笔半径」）。「滚轮=半径」仍是默认手感，这里只是补一个逃生口。
+  if (e.ctrlKey || e.metaKey) return;
   const up = e.deltaY < 0;
   const d = up ? 1 : -1;
   const mode = interactionMode.value;
