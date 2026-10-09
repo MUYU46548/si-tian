@@ -224,11 +224,39 @@ class App:
 
 
 def ctrl_q(cdp):
+    """按 Ctrl+Q —— 2026-10-09 起这只是**第一步**：主进程会把退出请求交回渲染层弹确认框，
+    必须再点「退出司天」才真退。要用完整动作请调 quit_via_ctrl_q()。"""
     for t in ('rawKeyDown', 'keyUp'):
         cdp.send('Input.dispatchKeyEvent', {
             'type': t, 'modifiers': 2, 'key': 'q', 'code': 'KeyQ',
             'windowsVirtualKeyCode': 81, 'nativeVirtualKeyCode': 81,
         })
+
+
+def quit_via_ctrl_q(cdp, confirm_timeout=10):
+    """Ctrl+Q 两段式退出的**完整动作**：按键 → 等退出确认框 → 点「退出司天」。
+
+    🔴 为什么必须有这一步（2026-10-09 交互改动）：Ctrl+Q 不再一路直退，主进程只发
+       'app-request-quit'，由渲染层弹确认框，用户选「退出司天」才回 'app-confirm-quit'。
+       本演练若不点确认框 → 进程一直活着 → wait_exit 超时 → 会**误报**「Ctrl+Q 退不掉」，
+       看上去像产品缺陷，实际是演练没跟上交互。返回 False 表示没走完确认动作。
+    """
+    from lib.cdp import wait_for
+    ctrl_q(cdp)
+    try:
+        wait_for(cdp, "!!document.querySelector('.prompt-dialog')", timeout=confirm_timeout,
+                 desc='退出确认框弹出')
+    except Exception:
+        return False
+    # 「留在窗口」排在第一位（防误触），所以要按文字找「退出」
+    r = cdp.eval("""(() => {
+      const b = Array.from(document.querySelectorAll('.prompt-choice'))
+        .find(x => (x.textContent || '').includes('退出'));
+      if (!b) return 'no-btn';
+      b.click();
+      return 'ok';
+    })()""")
+    return r == 'ok'
 
 
 def click_import_and_wait_applied(cdp, timeout=45):
@@ -761,7 +789,8 @@ def run_phase_scenario(proj):
            '删除返回：%s ｜ 磁盘已无该名=%s' % (json.dumps(r, ensure_ascii=False), ok))
 
         # ⑤ 收尾：正常退出一次（顺带验证剧本改动也走「退出前落盘」那条链）
-        ctrl_q(cdp)
+        # 2026-10-09：Ctrl+Q 改为两段式（确认框），演练必须点掉它
+        quit_via_ctrl_q(cdp)
         exited = app.wait_exit(40)
         ck('p4', 'Ctrl+Q 正常退出（退出链必须干净）', exited, 'alive=%s' % app.alive())
 
@@ -786,7 +815,7 @@ def run_phase(ph, proj):
                n == 0, '磁盘实体=%d（应为 0）' % n)
 
         elif ph == 'p2':
-            ctrl_q(app.cdp)
+            quit_via_ctrl_q(app.cdp)
             exited = app.wait_exit(40)
             ck('p2', 'Ctrl+Q 让进程真的退出了', exited, 'alive=%s' % app.alive())
             time.sleep(1.5)
@@ -802,7 +831,7 @@ def run_phase(ph, proj):
             n = entity_count(proj)
             ck('p3', '点 × 之后改动仍会落盘（不存在丢数据的窗口）', n > 0, '磁盘实体=%d' % n)
             if app.alive():
-                ctrl_q(app.cdp)
+                quit_via_ctrl_q(app.cdp)
                 app.wait_exit(25)
             ck('p3', '随后 Ctrl+Q 能正常收尾', not app.alive(), 'alive=%s' % app.alive())
 

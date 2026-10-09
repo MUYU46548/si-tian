@@ -10,12 +10,12 @@
         <button
           :class="{ active: tool === 'select' }"
           @click="setTool('select')"
-          title="选择 (V) — 拖动平移画布，点击选中省份"
+          title="选择 (V，默认) — 拖动平移画布，点击选中省份"
         ><Icon name="hand" :size="15"/></button>
         <button
           :class="{ active: tool === 'draw' }"
           @click="setTool('draw')"
-          title="自由绘制 (B，默认) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架"
+          title="自由绘制 (B) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架"
         ><Icon name="pencil" :size="15"/></button>
         <button
           :class="{ active: tool === 'provinceBrush' }"
@@ -483,6 +483,54 @@
           <p class="eh-line">用上方「+」导入 Azgaar .map 底图，或直接选一个绘制/笔刷工具开始画（会自动新建一张空底图）。</p>
         </template>
       </div>
+
+      <!-- ══ 历史剧本站首：剧本列表常驻左栏（2026-10-09）═══════════════════════════
+           暮雨实测「根本找不到在哪选剧本 / 上一剧本·下一剧本语义不清」——根因是
+           「选择历史时期」这件事在司天只有一个**图标按钮藏在工具栏『更多』里**（打开是弹窗），
+           而 EU4 里它是进游戏就摆在左边的列表。
+           本面板把那份列表提出来常驻，并把「点一条」定义成**选时期**的完整动作：
+           切剧本 + 地图跳到该时期起始年 + 时间轴游标同步（见 selectScenarioAt）。
+           ⚠️ 与「上一剧本/下一剧本」的分工：那两个是**按顺序推进**（翻页），
+              这个列表是**选择**（跳转）—— 两种语义都留，别互相取代。 -->
+      <div class="scenario-list-panel" data-testid="scenario-list-panel">
+        <div class="slp-head">
+          <span class="slp-title">历史剧本</span>
+          <span class="slp-hint">选一条，地图切到该时期</span>
+          <button class="slp-toggle" data-testid="slp-toggle"
+                  :title="showScenarioList ? '收起列表（腾出画布）' : '展开剧本列表'"
+                  @click="showScenarioList = !showScenarioList">
+            <Icon :name="showScenarioList ? 'chevron-left' : 'chevron-right'" :size="13"/>
+          </button>
+        </div>
+        <template v-if="showScenarioList">
+          <div v-if="!sortedScenarios.length" class="slp-empty" data-testid="slp-empty">
+            还没有剧本 —— 打开下方「新建 / 管理剧本…」创建第一个时期。<br />
+            <b>一个剧本 = 一个时间点的版图快照</b>（谁占了哪些省）。
+          </div>
+          <div v-else class="slp-list">
+            <div v-for="(s, i) in sortedScenarios" :key="s.id"
+                 class="slp-item"
+                 :class="{ active: selectedScenario?.id === s.id }"
+                 :data-testid="'scenario-list-item-' + i"
+                 :title="`切到「${s.name}」——地图跳到 ${s.era?.startYear || '?'} 年并同步时间轴`"
+                 @click="selectScenarioAt(s)">
+              <div class="slp-row1">
+                <span class="slp-era">{{ s.era?.roman || '·' }}</span>
+                <span class="slp-name">{{ s.name }}</span>
+              </div>
+              <div class="slp-row2">
+                <span class="slp-years">{{ s.era?.startYear || '?' }} – {{ s.era?.endYear || '?' }}</span>
+                <span class="slp-meta">{{ scenarioMeta(s) }}</span>
+              </div>
+            </div>
+          </div>
+          <button class="slp-manage" data-testid="slp-manage"
+                  title="新建 / 编辑 / 删除剧本，以及管理当前剧本的地名与标记"
+                  @click="showScenarioManager = true">
+            <Icon name="file-text" :size="13"/> 新建 / 管理剧本…
+          </button>
+        </template>
+      </div>
     </div>
 
     <!-- 状态栏 -->
@@ -842,7 +890,12 @@ const canvasWrap = ref(null);
 let canvasDpr = 1;
 const cw = () => (canvas.value ? canvas.value.width / canvasDpr : 0);
 const ch = () => (canvas.value ? canvas.value.height / canvasDpr : 0);
-const tool = ref('draw');   // P1：自由绘制为默认工具（见 PROVINCE_PALETTE 旁的说明）
+// 默认工具 = **选择**（2026-10-09 改，原为 draw）。
+// 🔴 为什么翻转：暮雨实测「打开历史剧本，本能想拖动地图查看，却意外触发绘制机制，
+//    弹窗问『仍要在这里创建吗』」—— 拖拽查看是任何地图编辑器的第一直觉动作，
+//    默认停在「自由绘制」等于把最常用的动作变成最危险的误触。想画省份显式按 B / 点工具栏。
+//    （原 P1 让 draw 当默认是为了「新建项目进来就能画」，代价是误触；两害相权，先保不误伤。）
+const tool = ref('select');
 // P3：工具栏按任务分层 —— 默认只有 6 个可见控件，其余收进「更多」（能力不减）
 const moreOpen = ref(false);
 const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'river', 'relief', 'label',
@@ -975,6 +1028,8 @@ watch(() => selectedScenario.value?.polities, (list) => {
 });
 const ctx = ref(null);
 const showScenarioManager = ref(false);
+/** 「历史剧本」常驻左栏是否展开（收起后只留一条标题栏，腾出画布空间） */
+const showScenarioList = ref(true);
 const showLayerPanel = ref(false);
 const showHistoryPanel = ref(false);
 // 底图列表（P1 切换底图）
@@ -1249,7 +1304,8 @@ const activeVertexIdx = ref(-1);
 // Alt 临时直线（P0-T1）；不参与响应式，只在绘制时读取
 let altStraight = false;
 
-// P1：**自由绘制 = 默认工具** —— 空底图上打开就能画（不再需要先「新建省份」）。
+// 自由绘制（B）：**2026-10-09 起不再是默认工具**（默认翻成「选择」= 拖拽平移，
+// 见上方 `const tool` 处的说明）。它仍是「建省」的唯一入口：空底图上打开就能画（不必先「新建省份」）。
 // 精确定点（描点）是同一个工具里的第二条路径（单击落顶点），选择/移动另在工具栏。
 
 // P1：新建省份的色板轮转（确定性 —— 颜色不随机，测试可断言、用户可预期）
@@ -1421,6 +1477,12 @@ function onModeChange() {
       selectScenario(sortedScenarios.value[0]);
     }
   }
+  // 🔴 切模式后必须重绘（2026-10-09 修）：旧实现只在「首次进入剧本模式（selectedScenario 为空）」
+  //    时经 selectScenario 顺带 render 一次 —— 第二次切回来 `selectedScenario` 已有值，
+  //    一个 render 都不会走，画面停留在上一次的底图态。
+  //    用户观感：「切了模式没反应，得用鼠标在画布上点一下才更新」（暮雨实测）。
+  //    render() 幂等：上面若已 selectScenario，这里重复一次无害。
+  render();
 }
 
 function selectScenario(s) {
@@ -1730,6 +1792,45 @@ function onTimelineSelectScenario(s) {
     selectedPolity.value = null;   // 跨剧本 polity id 全新，留着必然落空
   }
   render();
+}
+
+/**
+ * 剧本列表条目的一句话摘要（EU4 那张「选择历史时期」列表里的第二行）。
+ * 势力数 = 本剧本定义的势力数；省数 = 本剧本 ownership 里**真有归属**的省份数
+ * （值为空/缺失 = 无主，不计入 —— 地图上显示灰，不该被算成"这个势力的地盘"）。
+ */
+function scenarioMeta(s) {
+  const polities = (s?.polities || []).length;
+  const own = s?.ownership || {};
+  const owned = Object.keys(own).filter((pid) => own[pid]).length;
+  return `${polities} 势力 · ${owned} 省`;
+}
+
+/**
+ * 「选择历史时期」：点列表一条 = **切剧本 + 地图跳到该时期起始年 + 时间轴游标同步**。
+ *
+ * 🔴 为什么必须三件事一起做（而不是只改 selectedScenario）：
+ *    ① 只改 selectedScenario → 地图着色不动（游标还在旧年份）→ 看着像"设置项"不是"时期选择器"；
+ *    ② 只改游标 → 编辑目标（势力色板 / 归属写入落到哪个剧本）还停在旧剧本 → **写错地方**。
+ *    三件一起才是 EU4 里「点一条，地图变成那一年的世界」这个动作的完整语义。
+ * 年份取 `timeline.years[idx].start`（而非 `s.era.startYear`）：与轨道、播放同一口径，
+ * 避免"列表说 2044、游标落到 2043"这种只有对齐时才发现的不一致。
+ */
+function selectScenarioAt(s) {
+  const idx = sortedScenarios.value.findIndex((x) => x && s && x.id === s.id);
+  if (idx < 0) return false;
+  tlPlaying.value = false;
+  tlEra.value = idx;
+  const start = timeline.value?.years?.[idx]?.start;
+  if (Number.isFinite(start)) tlDate.value = { y: start, m: null, d: null };
+  if (selectedScenario.value?.id !== s.id) {
+    selectedScenario.value = s;
+    selectedPolity.value = null;
+  }
+  // 从底图编辑里点列表 = 想去看/改政治版图 → 顺带切到剧本模式（否则改了看不见）
+  if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
+  render();
+  return true;
 }
 
 /**
@@ -5478,6 +5579,83 @@ watch(baseMap, () => {
   display: block;
   cursor: grab;
 }
+
+/* ── 历史剧本站首：常驻左栏（2026-10-09）────────────────────────────────────
+   浮在画布左侧（不动 flex 布局：多一个 flex 兄弟会改分配比例，风险大）。
+   可收起（只留标题条）。深色系与 .polity-palette / 状态栏同族。
+   ⚠️ 按钮必须显式写 color —— 关掉 preflight 后 <button> 会落回浏览器 UA 的
+   buttontext（Windows 浅色系统 ≈ 近黑），深底上会黑底黑字。 */
+.scenario-list-panel {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 236px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(23, 32, 51, 0.94);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.slp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid #2b3a52;
+}
+.slp-title { color: #e2e8f0; font-size: 12px; font-weight: 600; }
+.slp-hint { color: #64748b; font-size: 10px; flex: 1; }
+.slp-toggle {
+  background: transparent;
+  border: 1px solid #475569;
+  color: #94a3b8;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 1px 4px;
+  display: inline-flex;
+  align-items: center;
+}
+.slp-toggle:hover { background: #334155; color: #e2e8f0; }
+.slp-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.slp-item {
+  padding: 5px 7px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  cursor: pointer;
+  background: rgba(30, 41, 59, 0.6);
+}
+.slp-item:hover { background: #334155; border-color: #64748b; }
+.slp-item.active { background: rgba(124, 58, 237, 0.22); border-color: #7c3aed; }
+.slp-row1 { display: flex; align-items: baseline; gap: 5px; }
+.slp-era { color: #94a3b8; font-size: 10px; min-width: 12px; }
+.slp-name { color: #e2e8f0; font-size: 12px; }
+.slp-item.active .slp-name { color: #fff; font-weight: 600; }
+.slp-row2 { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
+.slp-years { color: #94a3b8; font-size: 10px; font-variant-numeric: tabular-nums; }
+.slp-meta { color: #64748b; font-size: 10px; margin-left: auto; }
+.slp-empty { color: #94a3b8; font-size: 11px; line-height: 1.7; padding: 6px 2px; }
+.slp-empty b { color: #cbd5e1; }
+.slp-manage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.slp-manage:hover { background: #334155; }
 
 /* 「还没有底图」空态提示：居中、不拦事件（绝不挡住画布交互） */
 .scenario-empty-hint {

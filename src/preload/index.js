@@ -43,6 +43,16 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // payload.failed 非空 = 有改动未能落盘 → 主进程会弹原生对话框告知（渲染层控制台用户看不到）
   notifyFlushDone: (payload) => ipcRenderer.send('app-flush-done', payload || { failed: [] }),
 
+  // Ctrl+Q 退出确认（2026-10-09）：主进程收到 Ctrl+Q 后不再直接退，改发 'app-request-quit'
+  // 让渲染层判断「有没有未保存的改动」并弹确认框；用户选「退出司天」后才调 confirmQuit()。
+  onRequestQuit: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const h = (_e, reason) => cb(reason);
+    ipcRenderer.on('app-request-quit', h);
+    return () => ipcRenderer.removeListener('app-request-quit', h);
+  },
+  confirmQuit: () => ipcRenderer.send('app-confirm-quit'),
+
   // 当前激活的底图键（P0 持久化）
   getCurrentBaseMapKey: () => ipcRenderer.invoke('get-current-basemap-key'),
   setCurrentBaseMapKey: (key) => ipcRenderer.invoke('set-current-basemap-key', key),

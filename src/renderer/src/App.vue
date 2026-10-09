@@ -399,6 +399,8 @@ const GitSyncPanel = defineAsyncComponent(() => import('./components/GitSyncPane
 // 免责声明（UI 基座试点）：首启强制确认 + 关于/设置面板随时可查
 const DisclaimerDialog = defineAsyncComponent(() => import('./components/DisclaimerDialog.vue'));
 import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
+// 退出确认（2026-10-09）：Ctrl+Q 的「要不要退」由渲染层用这个模态问用户
+import { usePromptDialog } from './composables/usePromptDialog';
 import { useLayersStore } from './store/layers';
 // 退出前落盘（数据安全）：中立注册表 —— App 不直接 import 任何 store 实现，只驱动 flushAll()
 import { flushAll } from './store/quitFlush';
@@ -622,6 +624,7 @@ function handlePlanetBack() {
 }
 let cleanupNodeUpdated = null;
 let cleanupNodeRemoved = null;
+let cleanupRequestQuit = null;
 let perfUpdateTimer = null;
 
 // 获取当前活动的 renderer ref
@@ -1631,6 +1634,25 @@ onMounted(async () => {
     statusKind.value = applied === false ? 'warn' : 'ok';
   });
 
+  // Ctrl+Q 退出确认（2026-10-09）：主进程不再直接退，改为问渲染层（见 main/index.js 的
+  // before-input-event）。用户点「退出司天」才回执 confirmQuit；点「留在窗口」/ Esc /
+  // 点遮罩（PromptDialog 的 @click.self=cancel）= 什么都不做，留在窗口。
+  // ⚠️ 选项顺序刻意把「留在窗口」放第一：防误触 —— 回车或习惯性点第一个不该是破坏性动作。
+  cleanupRequestQuit = window.sitianAPI.onRequestQuit?.(async () => {
+    const { askChoice } = usePromptDialog();
+    const choice = await askChoice({
+      title: '退出「司天」',
+      label: dirty.value
+        ? '还有未保存的改动。退出前会再尝试落盘一次；若落盘失败会另行提示。'
+        : '当前没有未保存的改动。',
+      options: [
+        { key: 'stay', label: '留在窗口' },
+        { key: 'quit', label: '退出司天' },
+      ],
+    });
+    if (choice && choice.key === 'quit') window.sitianAPI.confirmQuit?.();
+  });
+
   // 性能面板定时更新
   perfUpdateTimer = setInterval(() => {
     if (perfVisible.value) {
@@ -1747,6 +1769,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handlePerfKeydown);
   cleanupNodeUpdated?.();
   cleanupNodeRemoved?.();
+  cleanupRequestQuit?.();
   if (perfUpdateTimer) clearInterval(perfUpdateTimer);
   window.removeEventListener('sitian:panel-open', closeAppPanels);
   window.removeEventListener('sitian:open-project-panel', handleOpenProjectPanel);

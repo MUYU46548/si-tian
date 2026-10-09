@@ -170,6 +170,11 @@ MOCK_SCRIPT = """<script>
       }
       const noop = () => () => {};
       window.sitianAPI = {
+        // Ctrl+Q 退出确认（2026-10-09 新增能力）：mock 不真退，只记调用次数。
+        // 真实的两段式退出链（before-input-event → 'app-request-quit' → 渲染层确认 →
+        // 'app-confirm-quit'）在真机演练 drill_quit_flush.py 里验，这里只保证 App.vue 挂载不炸。
+        onRequestQuit: noop,
+        confirmQuit: () => { window.__confirmQuitCalls = (window.__confirmQuitCalls || 0) + 1; },
         getGeodata: async () => ({ success: true, data: geodata }),
         reextractGeodata: async () => ({ success: true }),
         saveGeodata: async () => ({ success: true }),

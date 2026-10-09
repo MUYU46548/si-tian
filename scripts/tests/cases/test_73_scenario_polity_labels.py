@@ -123,8 +123,13 @@ def sub_source_guards(cdp):
             bad.append(f'polityLabels.js 缺少 {sym}')
     if "from '../utils/polityLabels'" not in sm:
         bad.append('ScenarioMap 没有引用 utils/polityLabels（分级判定被写回了组件？）')
-    # 组件里不许再写一套阈值（「两套判定」唯一可判据的形态）
-    if '0.35' in sm:
+    # 组件里不许再写一套阈值（「两套判定」唯一可判据的形态）。
+    # 🔴 判据必须**先剥掉 <style> 块**：`0.35` 在 CSS 里是极常见的透明度
+    #    （`box-shadow: ... rgba(0, 0, 0, 0.35)`），那不是档位阈值。
+    #    裸子串匹配会被任何 alpha / 字号误伤 —— 2026-10-09 给剧本左栏加个面板阴影就撞红了一次
+    #    （省名档阈值本来就只可能出现在脚本/模板里，样式块与它无关）。
+    sm_logic = _re.sub(r'<style[\s\S]*?</style>', '', sm)
+    if '0.35' in sm_logic:
         bad.append('ScenarioMap 里出现了省名档阈值字面量 0.35（判定应只在 polityLabels.js）')
     if _re.search(r'visibleRatio\s*[<>]=?\s*[0-9]', sm):
         bad.append('ScenarioMap 里出现了对 visibleRatio 的裸阈值比较（应调用 polityLabelTier）')

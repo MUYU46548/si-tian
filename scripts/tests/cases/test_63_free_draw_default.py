@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 63：P1 —— 自由绘制＝默认工具 + 落笔建省（空底图可画 / 名字 / 色板轮转 / 骨架吸附 + Shift 旁路）
+"""用例 63：自由绘制**不再是默认工具**（2026-10-09 反转）+ 落笔建省（空底图可画 / 名字 / 色板轮转 / 骨架吸附 + Shift 旁路）
+
+⚠️ 2026-10-09 变更：默认工具从 `draw` 翻成 `select`。
+   原因：暮雨实测「打开历史剧本，本能想拖动地图查看，却意外触发绘制、弹出『仍要在这里创建吗』」——
+   拖拽查看是任何地图编辑器的第一直觉动作，默认停在『自由绘制』等于把最常用动作变成最危险误触。
+   本用例此后守的判据是「默认**不是** draw」：想画省份必须显式选工具（B / 点工具栏）。
 
 对应验收行（P1）：
   ① 一圈 → 1 个省（名字 / 颜色正确、1 条 undo）
@@ -71,7 +76,7 @@ def source_gates():
     fails, notes = [], []
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
     checks = [
-        ("const tool = ref('draw')", '默认工具 = 自由绘制（P1）'),
+        ("const tool = ref('select')", '默认工具 = 选择（2026-10-09 反转：拖拽=平移，不误触建省）'),
         # 色板常量已移入 utils/scenarioPalette.js（单源）；组件这边只守「引了它、没抄一份」
         ("from '../utils/scenarioPalette'", '组件引用配色单源（不许再抄一份色板）'),
         ('nextProvinceColor(', '色板轮转函数（来自单源）'),
@@ -137,7 +142,7 @@ def build_probe(pal):
   notes.canvas = W + 'x' + H;
 
   // ── ① 默认工具 + 空底图（删掉全部底图 = 用户刚建完项目的样子）────────────
-  ok('默认工具 = 自由绘制', sc.tool === 'draw', sc.tool);
+  ok('默认工具 = 选择（不是 draw）', sc.tool === 'select', sc.tool);
   const had = Object.keys(s.baseMaps || {{}}).length;
   s.baseMaps = {{}};
   sc.baseMapKey = '';

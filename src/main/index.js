@@ -119,12 +119,18 @@ mainWindow.on('close', (event) => {
   }
 });
 
-// Ctrl+Q 彻底退出（无论当前状态如何）
+// Ctrl+Q 退出 —— **先问渲染层**（2026-10-09 改）
+// 旧实现直接 `setIsQuitting(true) + app.quit()`：一个「按了就退、没有任何确认」的隐藏快捷键
+// （暮雨实测：根本不知道它存在，担心误触丢数据）。`before-quit` 的 flush 是**兜底**不是**确认** ——
+// 它只在落盘失败时才吭声；落盘成功时用户什么都看不见，窗口就没了。
+// 现在：决定权交回渲染层（只有它知道 dirty / 有没有未保存改动），
+// 它弹完确认框、用户选了「退出司天」后才调 `app-confirm-quit`，我们才真退。
 mainWindow.webContents.on('before-input-event', (event, input) => {
   if (input.control && input.key.toLowerCase() === 'q') {
-    setIsQuitting(true);
-    app.quit();
     event.preventDefault();
+    try {
+      mainWindow.webContents.send('app-request-quit', 'ctrl-q');
+    } catch (e) { /* 渲染层已不可达（正在关闭）→ 忽略：用户可再按一次，或走托盘「退出」 */ }
   }
 });
 
@@ -183,6 +189,13 @@ function flushRendererBeforeQuit() {
     setTimeout(() => finish('timeout'), FLUSH_BEFORE_QUIT_MS);
   });
 }
+
+// 渲染层确认退出（Ctrl+Q 的第二步，2026-10-09）：见上面 before-input-event 的说明。
+// 模块级注册一次（不放 createWindow 里 —— 那里每次建窗会重复挂 listener）。
+ipcMain.on('app-confirm-quit', () => {
+  setIsQuitting(true);
+  app.quit();
+});
 
 app.on('before-quit', (event) => {
   if (!quitFlushDone) {
