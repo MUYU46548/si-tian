@@ -120,8 +120,44 @@
 
 ---
 
-## 七、待暮雨确认
+## 七、实施记录（批 1，2026-10-09 已落地）
 
-1. 截图 2 当时用的**着色档**是哪个？（`biome` 已走矢量，理论上不该是方块 → 疑为 `landsea/height/culture/religion` 或 ScenarioMap 底图，据此可精准定位）
-2. 连续场接受哪种观感：**平滑渐变**（2a）还是**清晰分层**（2b）？
-3. 批 1 是否即刻开工（可独立于批 2）。
+暮雨拍板：**连续场要平滑渐变**（"哪怕 MC 的生物群系也是渐变的"）+ **可以开工批 1**。
+
+### 实际做法（与初稿的差异 + 理由）
+
+初稿批 1 写的是"culture/religion 走矢量环"。实施时改成了**更小、更统一**的一招：
+**在共享的 `heightmapRaster` 里做子格双线性上采样**，一次覆盖全部六档 + ScenarioMap 底图 + 导出链。
+
+理由：
+1. 暮雨明确要的是**渐变**，不是矢量硬边 —— 双线性混色正合口径，矢量环反而是另一种观感；
+2. 一处改、三处（PlanetMap / ScenarioMap / 导出）同时生效，不用给 culture/religion 再造一条渲染支线；
+3. **记忆反而更省**：输出边长 ≈ `w·SS/spacing`，面积只有旧实现的 `(SS/spacing)² ≈ 1/13`。
+
+### 改动清单
+
+| 文件 | 改动 |
+|---|---|
+| `utils/heightmapRaster.js` | 新增 `RASTER_SMOOTH`（默认 `true`）/ `RASTER_SUBSAMPLE = 4`；`buildHeightmapRaster` 分两档：**平滑档** `buildSmoothRaster`（格 RGB → 子格双线性）/ **方块档** `buildBlockRaster`（旧实现原样保留）；`opts.smooth:false` 可取回旧观感（用例对照用） |
+| `composables/planetDrawing.js` | `drawHeightmapRaster` 绘制端 `imageSmoothingEnabled = RASTER_SMOOTH` + `quality='high'`（源画布是格级分辨率，必须插值放大） |
+| `components/ScenarioMap.vue` | `drawRasterLayer` 同上 |
+| `scripts/tests/cases/test_69` | f1 拆成**方块档判纯度**（landsea 精确二色 / height 多色）+ **平滑档判渐变**（画布边长 < 世界尺寸、过渡色严格多于方块档） |
+
+🔴 **两条实现纪律**：① 必须插值**格 RGB**，不能插值通道值再取色 —— 分类场的值是下标，插值下标会得到"不存在的类别"且不报错；
+② 平滑档只在 `cellsX×cellsY === 数据长度` 时启用，不自洽（历史数据）自动退回方块档 —— 下标错位会整体偏色且不报错。
+
+### 仍待做（批 2）
+
+- 若要再提一档质量：提高 `RASTER_SUBSAMPLE`（4 → 6/8）或改等值带（2b）；
+- `ScenarioMap` 底图缓存的失效时机仍是"切底图时清"（涂抹期间陈旧）—— 既有行为，未改；
+- 多边形地形（`mapData.terrain`）是矢量平涂，不属本方案。
+
+---
+
+## 八、原始待确认（已答复，留档）
+
+1. ~~截图 2 用的是哪个着色档？~~ → 暮雨：**"绘制省份"**；实测代码：该视图的前景是**省份多边形**（`baseMap.terrain[]`，UI 层名就叫「省份」），
+   而"拼豆"来自其下的**底图栅格**（`landsea` / `height` / `temp` / `prec`）—— 与本次修复一致。
+2. ~~连续场要平滑渐变还是清晰分层？~~ → **平滑渐变**（已按 2a 实施）。
+3. ~~批 1 是否开工？~~ → 已开工并落地。
+

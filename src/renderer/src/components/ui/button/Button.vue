@@ -5,6 +5,11 @@
 //   ② 不加 `border`（preflight 关掉了，border-style 需要 shim 才可见）；
 //   ③ 不用 `/90` 这类透明度修饰符 —— Tailwind 对「值是 CSS 变量」的颜色算不出 alpha，
 //      会静默退化成不透明；hover 改用 `opacity-90`，效果等价且确定。
+//   ④ `outline` / `ghost` 变体**显式写 `text-foreground`**。官方 shadcn 靠 preflight 里的
+//      `button { color: inherit }` 拿到前景色；本仓 preflight 关闭（R1/R2）→ 这条复位缺席，
+//      `<button>` 落回浏览器 UA 的 `buttontext`（Windows 浅色系统 = 近黑），
+//      而 outline 底色是深色的 `--ui-background` → **黑底黑字，悬停才可见**
+//      （2026-10-09 暮雨实测；test_83 量到对比度 1.11）。显式写前景色即修，且不引复位。
 import { computed } from 'vue';
 import { Primitive } from 'reka-ui';
 import { cva } from 'class-variance-authority';
@@ -17,9 +22,9 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-primary text-primary-foreground hover:opacity-90',
         destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
-        outline: 'border border-solid border-input bg-background hover:bg-accent hover:text-accent-foreground',
+        outline: 'border border-solid border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-accent',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
+        ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

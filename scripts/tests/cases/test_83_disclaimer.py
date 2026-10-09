@@ -205,7 +205,36 @@ G1_JS = r"""(() => {
   const ae = document.activeElement;
   if (!ae || !dlg.contains(ae)) fails.push('初始焦点不在弹窗内（焦点陷阱没生效）');
 
-  return JSON.stringify({ fails, secs });
+  // ── 底部按钮对比度（2026-10-09 暮雨实测：「不同意并退出」黑底黑字，鼠标放上去才看见）──
+  // 根因：preflight 关闭 → 缺 `button { color: inherit }` → <button> 落回 UA 的 buttontext
+  //（Windows 浅色系统 = 近黑），而 outline 变体底色是深色 --ui-background → 黑底黑字。
+  // 判据与 test_58 的 CONTRAST_JS 同款：逐层合成背景 + WCAG 小字阈值 4.5。
+  const parse = (bg) => { const m = /rgba?\(([^)]+)\)/.exec(bg || ''); if (!m) return null;
+    const p = m[1].split(',').map(parseFloat); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+  const bgOf = (el) => { const st = []; let n = el;
+    while (n) { const c = parse(getComputedStyle(n).backgroundColor); if (c && c.a > 0) { st.push(c); if (c.a >= 0.999) break; } n = n.parentElement; }
+    let base = [255, 255, 255];
+    for (const c of st.reverse()) base = [0, 1, 2].map(i => base[i] * (1 - c.a) + [c.r, c.g, c.b][i] * c.a);
+    return base; };
+  const lum = (rgb) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]); };
+  const ratio = (fg, bg) => { const a = lum(fg), b = lum(bg); const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05); };
+  const contrast = {};
+  for (const [name, sel] of [['decline', '[data-testid="disclaimer-decline"]'],
+                             ['accept', '[data-testid="disclaimer-accept"]']]) {
+    const el = q(sel);
+    if (!el) continue;
+    const m = /rgba?\(([^)]+)\)/.exec(getComputedStyle(el).color || '');
+    const fg = m ? m[1].split(',').map(parseFloat).slice(0, 3) : null;
+    contrast[name] = fg ? Math.round(ratio(fg, bgOf(el)) * 100) / 100 : null;
+  }
+  for (const [name, v] of Object.entries(contrast)) {
+    if (v !== null && v < 4.5) {
+      fails.push(`「${name}」按钮对比度 ${v} < 4.5（小字阈值）—— 文字与底色太近，悬停才可见`);
+    }
+  }
+
+  return JSON.stringify({ fails, secs, contrast });
 })()"""
 
 
@@ -219,7 +248,8 @@ def sub_gate_blocks(cdp):
         return False, res
     if res['fails']:
         return False, '首启阻断断言失败：' + '；'.join(res['fails'])
-    return True, f"弹窗阻断 + role=dialog / aria-modal=true + 勾选框禁用 + 13 节渲染 + 焦点在弹窗内"
+    return True, (f"弹窗阻断 + role=dialog / aria-modal=true + 勾选框禁用 + 13 节渲染 + 焦点在弹窗内"
+                  f" + 底部按钮对比度 {res.get('contrast')}")
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -777,7 +777,7 @@ import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 import { generateRoadPath } from '../utils/placement';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
-import { buildHeightmapRaster } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
+import { buildHeightmapRaster, RASTER_SMOOTH } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
 import HistoryPanel from './HistoryPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
@@ -3667,7 +3667,10 @@ function drawRasterLayer(c, kind, alpha) {
   if (!r) return;
   c.save();
   c.globalAlpha = alpha;
-  c.imageSmoothingEnabled = false;
+  // 平滑档（RASTER_SMOOTH，2026-10-09 反「拼豆」）：源画布是格级分辨率，靠插值放大成渐变。
+  // 方块档是 1 世界单位 1 像素并 1:1 贴回，插值与否无差别。
+  c.imageSmoothingEnabled = RASTER_SMOOTH;
+  c.imageSmoothingQuality = 'high';
   c.drawImage(r.canvas, r.minX, r.minY, r.w, r.h);
   c.restore();
 }

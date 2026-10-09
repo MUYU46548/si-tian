@@ -98,20 +98,35 @@ JS_PURE = r"""(async () => {
 
   if (built.landsea && built.height) {
     const uniq = (r) => {
-      const d = r.canvas.getContext('2d').getImageData(0, 0, r.w, r.h).data;
+      // 用**画布自身**尺寸取样：两档的 canvas.width 不同（平滑档是格级分辨率），写 r.w 会读到越界透明像素
+      const cv = r.canvas;
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
       const s = new Set();
       for (let i = 0; i < d.length; i += 4) {
-        // ⚠️ 必须跳过透明像素：栅格按包围盒外扩 pad 建画布，边角没被方块覆盖 → alpha=0、
-        //    RGB 读出来是 (0,0,0)。把它算进去会让「landsea 只有两色」变成 3 色（实测踩到）。
+        // ⚠️ 必须跳过透明像素：栅格按包围盒外扩 pad 建画布，边角没被覆盖 → alpha=0、RGB 读出 (0,0,0)。
+        //    把它算进去会让「landsea 只有两色」变成 3 色（实测踩到）。
         if (d[i + 3] === 0) continue;
         s.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
       }
       return s;
     };
-    const seaUniq = uniq(built.landsea);
-    const hygUniq = uniq(built.height);
-    ck('f1 ★ landsea 只有两种颜色（陆 / 海）', seaUniq.size === 2, { colors: seaUniq.size });
-    ck('f1 ★ height 是多色色带（配色真的接上了，不是空图）', hygUniq.size >= 3, { colors: hygUniq.size });
+    // 「配色真的接上了」用**方块档**判：精确二色 / 多色是那一档的性质。
+    // 平滑档（2026-10-09 起为默认）会把边界混成过渡色，颜色数天然多于 2 —— 见下面单独断言。
+    const blk = (k) => M.buildHeightmapRaster(hm, k, { smooth: false });
+    const seaUniq = uniq(blk('landsea'));
+    const hygUniq = uniq(blk('height'));
+    ck('f1 ★ 方块档 landsea 只有两种颜色（陆 / 海）', seaUniq.size === 2, { colors: seaUniq.size });
+    ck('f1 ★ 方块档 height 是多色色带（配色真的接上了，不是空图）', hygUniq.size >= 3, { colors: hygUniq.size });
+
+    // ★ 平滑档（反「拼豆」）：① 画布是**子格分辨率**（比世界尺寸小，靠绘制端插值放大）；
+    //    ② 陆海边界因此出现**过渡色**（渐变），颜色数严格多于方块档。
+    const smL = built.landsea;
+    ck('f1 ★ 平滑档画布为子格分辨率（边长远小于世界尺寸）',
+       smL.canvas.width > 0 && smL.canvas.width < smL.w,
+       { cw: smL.canvas.width, ch: smL.canvas.height, w: smL.w, h: smL.h });
+    const smUniq = uniq(smL);
+    ck('f1 ★ 平滑档出现过渡色（陆海边界渐变而非常数硬边）',
+       smUniq.size > seaUniq.size, { smooth: smUniq.size, block: seaUniq.size });
   }
 
   // 缓存工厂：同 key 复用、clear 后重建

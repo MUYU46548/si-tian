@@ -20,7 +20,7 @@ import { RIVER_COLOR, RIVER_DEFAULT_WIDTH } from '../utils/rivers';
 import { buildLabelOutlines } from '../utils/gridOutline';
 import { fadedAlpha } from '../utils/entityStatus';
 // M2/A2（2026-09-25）：高度图**栅格**渲染与 ScenarioMap 共用同一份实现与配色
-import { createRasterCache, buildChannelPalette } from '../utils/heightmapRaster';
+import { createRasterCache, buildChannelPalette, RASTER_SMOOTH } from '../utils/heightmapRaster';
 import { CHANNEL_KEYS } from '../utils/heightmapChannels';
 
 const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（图例/着色按编码索引）
@@ -451,7 +451,10 @@ function drawHeightmapRaster(ctx, kind, alpha) {
   const r = hmRasterCache.get(key, hm, kind, palette ? { palette } : undefined);
   if (!r) return;
   ctx.save();
-  ctx.imageSmoothingEnabled = false;
+  // 平滑档输出的是**格级分辨率**画布，靠这里的插值放大成渐变（反「拼豆」，2026-10-09）；
+  // 方块档是 1 世界单位 1 像素、1:1 贴回，插值与否无差别（关掉更省）。
+  ctx.imageSmoothingEnabled = RASTER_SMOOTH;
+  ctx.imageSmoothingQuality = 'high';
   // alpha 由调用方按「主表示 or 叠加」决定（见 utils/terrainRepresentation.js）：
   // 主表示时不透明（否则透出画布背景），与多边形叠加时半透明（两者都要看得见）。
   ctx.globalAlpha = (typeof alpha === 'number') ? alpha : 0.85;

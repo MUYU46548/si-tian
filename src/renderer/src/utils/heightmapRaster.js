@@ -35,6 +35,25 @@ export const PREC_RAMP = ['#fff7bc', '#fee391', '#fec44f', '#c7e9b4', '#7fcdbb',
 /** 海平面阈值（与 heightMath.SEA_LEVEL 同口径；此处用字面量以保持抽取时的一致性） */
 export const RASTER_SEA_LEVEL = 20;
 
+/**
+ * 平滑档（反「拼豆」，2026-10-09）—— 每格再细分成 SS×SS 个子像素做**双线性上采样**。
+ *
+ * 为什么需要它：旧实现每格画一个实心 `spacing×spacing` 方块（1 世界单位 = 1 像素），
+ * 放大后就是马赛克。⚠️ 只在绘制端开 `imageSmoothingEnabled` **救不了** —— 旧画布是
+ * 1 px/世界单位、按 1:1 贴回世界坐标，浏览器根本不触发插值。
+ *
+ * 做法：① 先在**格分辨率**上算好每格的 RGB；② 再按 SS 倍细分输出，
+ * 每个子像素对「格 RGB」做双线性采样。连续场（h/temp/prec）与分类场
+ * （biome/culture/religion/landsea）共用这一条路 —— 分类场混色即得渐变边界。
+ *
+ * ⚠️ 必须插值**格 RGB**，不能插值通道值再取色：分类场的值是下标，
+ *    插值下标会得到"不存在的类别"，而且不报错（比缺色难查得多）。
+ * ⚠️ 顺带更省内存：输出边长 ≈ `w·SS/spacing`，面积只有旧实现的 `(SS/spacing)²` ≈ 1/13。
+ */
+export const RASTER_SUBSAMPLE = 4;
+/** 平滑档默认开关（false = 回到旧的逐格方块观感；同时影响两视图与导出全图） */
+export const RASTER_SMOOTH = true;
+
 export function hexToRgb(hex) {
   const h = hex.charAt(0) === '#' ? hex.slice(1) : hex;
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
@@ -129,16 +148,24 @@ export function fillPixelBlock(data, w, h, x0, y0, x1, y1, rgb) {
  * 把高度图预渲染成一张离屏图层。
  *
  * 红线：大数据量必须预渲染，不逐帧重绘（几万格逐格画 = 每帧几十毫秒）。
- * 每个网格单元画一个 spacing × spacing 的方块 —— 网格点在 spacing/2 内抖动，方块拼接即完整覆盖。
+ * 两条输出档（`RASTER_SMOOTH` 决定默认走哪条；调用方可显式覆盖）：
+ *   · **平滑档**（默认）：格 RGB → 子格双线性上采样，画布为格级分辨率，绘制端插值放大 → 渐变海岸。
+ *   · **方块档**：每格一个实心 `spacing×spacing` 方块，1 世界单位 = 1 像素（旧观感，放大即马赛克）。
  *
- * @param {object} hm 高度图（`{ h, temp, prec, grid:{points,spacing} }`）
+ * ⚠️ 两种档的 `canvas.width/height` 不同，但 `w/h`（世界单位）一致 →
+ *    调用端统一用 `ctx.drawImage(r.canvas, r.minX, r.minY, r.w, r.h)`，无需分支。
+ *
+ * @param {object} hm 高度图（`{ h, temp, prec, grid:{cellsX,cellsY,points,spacing} }`）
  * @param {'landsea'|'height'|'temp'|'prec'|'culture'|'religion'} kind 配色方案
- * @param {{palette?: Array<[number,number,number]>}} [opts] `culture`/`religion` 档必须给调色板
+ * @param {{palette?: Array<[number,number,number]>, smooth?: boolean}} [opts]
+ *        `culture`/`religion` 档必须给调色板；`smooth:false` 取回方块档（用例对照用）
  * @returns {{canvas: HTMLCanvasElement, minX: number, minY: number, w: number, h: number}|null}
  *   调用方用 `ctx.drawImage(r.canvas, r.minX, r.minY, r.w, r.h)` 贴到**世界坐标**上。
  */
 export function buildHeightmapRaster(hm, kind, opts) {
   const palette = (opts && opts.palette) || null;
+  // 平滑档：默认取 RASTER_SMOOTH；调用方可显式传 {smooth:false} 取回旧观感（用例对照）。
+  const smooth = opts && opts.smooth !== undefined ? !!opts.smooth : RASTER_SMOOTH;
   const pts = hm?.grid?.points;
   if (!hm || !pts || !pts.length) return null;
   const values = kind === 'temp' ? hm.temp
@@ -161,6 +188,77 @@ export function buildHeightmapRaster(hm, kind, opts) {
   const w = Math.max(1, Math.ceil(maxX - minX));
   const h = Math.max(1, Math.ceil(maxY - minY));
 
+  // 平滑档只在「网格维度与数据长度严格自洽」时启用；不自洽（历史数据）自动退回方块档，
+  // 宁可方块也不要画错（下标一旦错位，颜色会整体偏移且不报错）。
+  const cols = hm.grid.cellsX | 0, rows = hm.grid.cellsY | 0;
+  if (smooth && cols > 0 && rows > 0 && cols * rows === values.length && pts.length === values.length) {
+    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h);
+  }
+  return buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h);
+}
+
+/**
+ * 平滑档：格分辨率 RGB → 子格双线性上采样。
+ * 输出画布边长 ≈ `w·SS/spacing`（不是 1 世界单位 1 像素），由绘制端插值放大。
+ */
+function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h) {
+  const ox = p0[0] - spacing / 2, oy = p0[1] - spacing / 2;   // 格 (0,0) 的左上角
+  const n = cols * rows;
+
+  // ① 格分辨率 RGB（每个格子一次 cellColor）
+  const cellRgb = new Uint8Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const c = cellColor(kind, i, hm, palette);
+    cellRgb[i * 3] = c[0] | 0;
+    cellRgb[i * 3 + 1] = c[1] | 0;
+    cellRgb[i * 3 + 2] = c[2] | 0;
+  }
+
+  // ② 子格双线性上采样
+  const ppu = RASTER_SUBSAMPLE / spacing;   // 输出像素 / 世界单位
+  const cw = Math.max(1, Math.ceil(w * ppu));
+  const ch = Math.max(1, Math.ceil(h * ppu));
+  const canvas = document.createElement('canvas');
+  canvas.width = cw;
+  canvas.height = ch;
+  const rc = canvas.getContext('2d');
+  const img = rc.createImageData(cw, ch);
+  const data = img.data;
+
+  const cMax = cols - 1, rMax = rows - 1;
+  for (let sy = 0; sy < ch; sy++) {
+    const wy = minY + (sy + 0.5) / ppu;
+    let fr = (wy - oy) / spacing - 0.5;
+    if (fr < 0) fr = 0; else if (fr > rMax) fr = rMax;
+    const r0 = Math.floor(fr);
+    const r1 = r0 < rMax ? r0 + 1 : r0;
+    const tr = fr - r0;
+    const rowA = r0 * cols * 3, rowB = r1 * cols * 3;
+    let p = sy * cw * 4;
+    for (let sx = 0; sx < cw; sx++) {
+      const wx = minX + (sx + 0.5) / ppu;
+      let fc = (wx - ox) / spacing - 0.5;
+      if (fc < 0) fc = 0; else if (fc > cMax) fc = cMax;
+      const c0 = Math.floor(fc);
+      const c1 = c0 < cMax ? c0 + 1 : c0;
+      const tc = fc - c0;
+      const i00 = rowA + c0 * 3, i01 = rowA + c1 * 3;
+      const i10 = rowB + c0 * 3, i11 = rowB + c1 * 3;
+      for (let k = 0; k < 3; k++) {
+        const top = cellRgb[i00 + k] + (cellRgb[i01 + k] - cellRgb[i00 + k]) * tc;
+        const bot = cellRgb[i10 + k] + (cellRgb[i11 + k] - cellRgb[i10 + k]) * tc;
+        data[p + k] = top + (bot - top) * tr;   // Uint8ClampedArray 自带夹取
+      }
+      data[p + 3] = 255;
+      p += 4;
+    }
+  }
+  rc.putImageData(img, 0, 0);
+  return { canvas, minX, minY, w, h };
+}
+
+/** 方块档（旧观感）：每格画一个实心 spacing×spacing 方块，1 世界单位 = 1 像素 */
+function buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h) {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
