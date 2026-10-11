@@ -253,8 +253,15 @@ async function main() {
     // 新增通道时只会得到一句「注册了预期之外的通道」，看不出该如何处置。改成集合差并写明动作。
     const expected = ['project-create', 'project-open', 'project-save', 'project-list',
       'project-pick-dir', 'project-reveal', 'project-backup-now', 'project-git-snapshot',
+      // 🔴 2026-10-11：`project-git-snapshot` 此前**只在 preload 暴露、主进程从未注册**
+      //    （ProjectPanel 的「司天快照」按钮在真机上必然抛 No handler registered）。
+      //    本轮补注册后，它才真正出现在 handlers 里 —— 也就是说**这条正向断言此前是假绿的**：
+      //    它写在 expected 里，却因为 handlers 集合来自真实注册表而"顺带"通过检查，
+      //    真正抓出漏接的是新加的「IPC 通道名双向对齐」单测（preload invoke ↔ 主进程 handle）。
       // B4（2026-09-24）：启动时恢复上次项目 —— 只回报「文件确实还在」的路径
-      'project-get-last-path'];
+      'project-get-last-path',
+      // 原始底图来源备份（2026-10-11）：导入 `.map` 时把原文留一份到项目备份目录
+      'basemap-source-save', 'basemap-source-list', 'project-current-path'];
     for (const ch of expected) assert(handlers.has(ch), `未注册通道 ${ch}`);
     const unregistered = [...handlers.keys()].filter(c => !expected.includes(c));
     assert(unregistered.length === 0,

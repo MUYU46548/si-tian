@@ -102,7 +102,22 @@ def source_gates():
         if needle not in se:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
 
-    notes.append('源码闸门 6 项' + ('全过' if not fails else f'缺 {len(fails)}'))
+    # 🔴 导入时把原始 `.map` 原文留底（2026-10-11）—— 这条链**跨三层**，缺一环就静默失效：
+    #    组件调用 → preload 暴露 → 主进程注册并真写盘（主进程侧由 Node 单测守）。
+    for needle, label in [
+        ('async function backupMapSourceFile(', '组件：留底函数（唯一实现）'),
+        ('api.saveBaseMapSource(', '组件：真的调用留底 IPC'),
+        ('api.projectCurrentPath(', '组件：问主进程要当前项目路径（不引 projectStore）'),
+        ('backupMapSourceFile(file.name, text)', '组件：导入时在解析之前就留底'),
+        ('+ srcNote', '组件：把"已留底/留底失败"写进回执（不静默）'),
+    ]:
+        if needle not in sc:
+            fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
+    pl = _code_only(_read('src/preload/index.js'))
+    if "invoke('basemap-source-save'" not in pl:
+        fails.append('源码闸门缺失：preload 未暴露 basemap-source-save')
+
+    notes.append('源码闸门 12 项' + ('全过' if not fails else f'缺 {len(fails)}'))
     return fails, notes
 
 

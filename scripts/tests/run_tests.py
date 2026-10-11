@@ -331,6 +331,18 @@ MOCK_SCRIPT = """<script>
         projectReveal: async (filePath) => ({ success: true, filePath: filePath }),
         projectBackupNow: async () => ({ success: true, backedUp: true, backupPath: 'mock/x.sitian' }),
         projectGitSnapshot: async () => ({ success: false, skipped: true, reason: 'mock 环境非 git 仓库' }),
+        // 🔴 原始底图来源备份（2026-10-11）：mock 里要**如实回报成功**，
+        //    否则「导入后状态栏有没有说"已留底"」这类断言会在 mock 层被静默跳过。
+        //    真实落盘在 scripts/tests/unit/test_basemap_source_backup.js 里测（那里有真文件系统）。
+        projectCurrentPath: async () => ({ success: true, filePath: 'mock/项目.sitian', exists: true }),
+        saveBaseMapSource: async (payload) => ({
+          success: true,
+          path: 'mock/项目.sitian.backups/basemap-sources/' + String(payload?.name || 'basemap.map'),
+          bytes: String(payload?.text || '').length,
+          dir: 'mock/项目.sitian.backups/basemap-sources',
+          pruned: 0,
+        }),
+        listBaseMapSources: async () => ({ success: true, dir: 'mock/项目.sitian.backups/basemap-sources', files: [] }),
         backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
         batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
         createObsidianNote: async (payload) => {

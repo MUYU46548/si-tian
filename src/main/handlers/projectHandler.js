@@ -28,6 +28,12 @@ const BACKUP_KEEP = 10;
 // （用户原话：没有数据安全承诺的系统，投进去的手绘时间是无担保贷款。）
 const BASELINE_TAG = '.session-baseline' + PROJECT_EXT;
 
+// 原始底图来源（用户导入的 `.map`）备份：放在项目备份目录下的这个子目录里。
+// 保留份数比项目备份多几份 —— `.map` 是**只读的原始素材**（几 MB，变化频率远低于项目文件），
+// 而它是"地形/河流/道路能否重新导入"的唯一凭据，宁可多留（成本是几 MB 磁盘）。
+const BASE_MAP_SRC_DIR = 'basemap-sources';
+const BASE_MAP_SRC_KEEP = 10;
+
 // 与 `src/main/index.js` 的 sanitizeFileName（batch-import-notes 用）共用同一套非法字符表。
 // ⚠️ 清洗顺序与 index.js 相反：**先替换非法字符、再取 basename**。
 //    index.js 先 basename 是因为它处理的只是一个词条名；项目名里用户可能写 `世界/子项目`，
@@ -275,6 +281,94 @@ async function gitSnapshot({ filePath, message = '司天快照' }) {
  *           getDefaultProjectDir: () => string, getLastProjectPath?: () => string,
  *           setLastProjectPath?: (p: string) => any }} deps
  */
+/**
+ * 🔴 **原始底图来源备份（2026-10-11）** —— 补一个真实造成过损失的缺口。
+ *
+ * 事故形态：暮雨的 `desite` 底图建于 2026-09-10，当时解析器还读不出高度图/河流/道路，
+ * 于是那些数据**从来没进过项目**；等到想补时，唯一的来源是**用户自己还留着的那份
+ * 生成器导出**（`desite.map`，4.3MB）。而司天此前**只备份自己的项目文件**
+ * （`<名>.sitian.backups/` 轮转 10 份 + 会话基线），**从不留用户导入的 `.map`** ——
+ * 那份文件一旦丢了，地形/河流/道路就永久无法恢复（只能去生成器重新做一张，
+ * 而新图的海岸线与现有几百块省份边界并不一致）。
+ *
+ * 所以：**导入 `.map` 时顺手把它原样存一份**，与项目文件放在同一个备份目录下。
+ * 三条设计约束：
+ *   · **原样字节**（不做任何解析/重编码）：它是"再次导入/刷新"的唯一凭据，改了就不是凭据了；
+ *   · **原子写**（先 `.tmp-<ts>` 再 rename）+ **轮转**（只留最近 keep 份）——
+ *     与项目文件备份同一套纪律，不另立一套；
+ *   · **文件名清洗 + 固定后缀**：用户给的文件名可能带路径分隔符/非法字符，
+ *     落盘前过 `sanitizeFileName`（与项目名同一张非法字符表）。
+ *
+ * ⚠️ 目录里只放 `.map`，与项目备份的 `*.sitian` 混放但**互不干扰**：
+ *    项目备份的轮转按 `PROJECT_EXT` 过滤，本函数的轮转按 `.map` 过滤（各扫各的）。
+ *
+ * @param {string} projectFilePath 当前项目文件（用它定位备份目录）
+ * @param {{name?:string, text?:string}} payload `text` = `.map` 的完整原文
+ * @returns {{success:true, path:string, bytes:number, dir:string, pruned:number}}
+ */
+async function saveBaseMapSource(projectFilePath, payload = {}) {
+  assertProjectPath(projectFilePath);
+  const text = typeof payload.text === 'string' ? payload.text : '';
+  if (!text) throw new Error('底图来源内容为空，拒绝写入（不产生空备份）');
+  const rawName = sanitizeFileName(payload.name || 'basemap.map');
+  const baseName = rawName.toLowerCase().endsWith('.map') ? rawName : `${rawName}.map`;
+  const dir = path.join(backupDirFor(projectFilePath), BASE_MAP_SRC_DIR);
+  await ensureDir(dir);
+  const dest = await uniquePath(path.join(dir, baseName));
+  const tmp = `${dest}.tmp-${Date.now()}`;
+  await fs.writeFile(tmp, text, 'utf-8');
+  try {
+    await fs.rename(tmp, dest);
+  } catch (e) {
+    await fs.unlink(tmp).catch(() => {});
+    throw e;
+  }
+  // 轮转：只保留最近 BASE_MAP_SRC_KEEP 份 `.map`。
+  // 🔴 **必须按 mtime 排序，不能按文件名** —— 首版用 `.sort()` 按名字排，于是
+  //    「刚写进去的 `reverse.map`」因为字母序靠前被当成"最旧"删掉（单测 e3 当场抓到：
+  //    ENOENT，刚留的底还没用就没了）。文件名（`desite.map` / `旧版.map` / `x-2.map`）
+  //    与写入先后**没有任何关系**，只有 mtime 是真相。
+  let pruned = 0;
+  try {
+    const names = (await fs.readdir(dir)).filter(f => f.toLowerCase().endsWith('.map'));
+    const withTime = [];
+    for (const f of names) {
+      const full = path.join(dir, f);
+      const st = await fs.stat(full).catch(() => null);
+      withTime.push({ full, mtime: st ? st.mtimeMs : 0 });
+    }
+    withTime.sort((a, b) => a.mtime - b.mtime);            // 最旧的在前
+    for (const it of withTime.slice(0, Math.max(0, withTime.length - BASE_MAP_SRC_KEEP))) {
+      await fs.unlink(it.full).catch(() => {});
+      pruned++;
+    }
+  } catch (e) { /* 轮转失败不影响备份本身 */ }
+  return { success: true, path: dest, bytes: Buffer.byteLength(text, 'utf8'), dir, pruned };
+}
+
+/** 列出已备份的原始底图来源（给 UI 显示"我能从哪几份 .map 恢复"） */
+async function listBaseMapSources(projectFilePath) {
+  assertProjectPath(projectFilePath);
+  const dir = path.join(backupDirFor(projectFilePath), BASE_MAP_SRC_DIR);
+  try {
+    const files = (await fs.readdir(dir)).filter(f => f.toLowerCase().endsWith('.map'));
+    const out = [];
+    for (const f of files) {
+      const st = await fs.stat(path.join(dir, f)).catch(() => null);
+      out.push({
+        name: f,
+        path: path.join(dir, f),
+        bytes: st ? st.size : 0,
+        mtime: st ? st.mtime.toISOString() : null,
+      });
+    }
+    out.sort((a, b) => String(b.mtime).localeCompare(String(a.mtime)));
+    return { success: true, dir, files: out };
+  } catch (e) {
+    return { success: true, dir, files: [] };
+  }
+}
+
 function registerProjectHandlers(deps) {
   const {
     ipcMain, dialog, shell,
@@ -403,6 +497,23 @@ function registerProjectHandlers(deps) {
     }
   });
 
+  /**
+   * 🔴 只读：主进程侧「当前项目路径」的**权威回答**（2026-10-11）。
+   * 为什么要它：底图来源备份发生在 `ScenarioMap` 的导入流程里，而那个组件**不该**为了
+   * 一个路径去 import projectStore（组件与 store 的接线越少越好，且 geodata 侧已有
+   * 「只经 canvasBridge」的纪律）。主进程本来就通过 `setLastProjectPath` 记着这个值
+   * （每次新建/打开都会写），所以直接问它即可 —— 也顺带避免了"渲染层记住了陈旧路径"。
+   * 只读、不写盘、不改配置。
+   */
+  ipcMain.handle('project-current-path', async () => {
+    try {
+      const p = getLastProjectPath() || '';
+      return ok({ filePath: p, exists: p ? await fileExists(p) : false });
+    } catch (err) {
+      return fail(err);
+    }
+  });
+
   // 手动备份
   ipcMain.handle('project-backup-now', async (event, filePath) => {
     try {
@@ -413,10 +524,31 @@ function registerProjectHandlers(deps) {
     }
   });
 
-  // Git 快照（仅在项目目录是 git 仓库时生效）
+  // 🔴 Git 快照（补注册，2026-10-11）：`gitSnapshot()` 一直存在且已导出、
+  //    preload 也一直暴露着 `projectGitSnapshot`，但**这个通道从来没注册过** ——
+  //    `ProjectPanel.vue` 的「司天快照」按钮在真机上必然抛
+  //    `Error: No handler registered for 'project-git-snapshot'`（只在被点时才炸）。
+  //    CDP 用例里 `window.sitianAPI` 是 mock，这条漏接在那层**永远看不见**；
+  //    抓出它的是新加的「IPC 通道名双向对齐」单测（preload invoke ↔ 主进程 handle）。
   ipcMain.handle('project-git-snapshot', async (event, payload = {}) => {
     try {
       return ok(await gitSnapshot(payload));
+    } catch (err) {
+      return fail(err);
+    }
+  });
+
+  // 🔴 原始底图来源备份（2026-10-11）：导入 `.map` 时把原文留一份（见 saveBaseMapSource 头注）
+  ipcMain.handle('basemap-source-save', async (event, payload = {}) => {
+    try {
+      return ok(await saveBaseMapSource(payload.projectPath, payload));
+    } catch (err) {
+      return fail(err);
+    }
+  });
+  ipcMain.handle('basemap-source-list', async (event, payload = {}) => {
+    try {
+      return ok(await listBaseMapSources(payload.projectPath));
     } catch (err) {
       return fail(err);
     }
@@ -427,6 +559,8 @@ module.exports = {
   PROJECT_EXT,
   BACKUP_KEEP,
   BASELINE_TAG,
+  BASE_MAP_SRC_DIR,
+  BASE_MAP_SRC_KEEP,
   ILLEGAL_CHARS,
   sanitizeFileName,
   isProjectPath,
@@ -441,5 +575,7 @@ module.exports = {
   listProjectFiles,
   isGitRepo,
   gitSnapshot,
+  saveBaseMapSource,
+  listBaseMapSources,
   registerProjectHandlers,
 };

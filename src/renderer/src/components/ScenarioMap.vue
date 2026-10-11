@@ -4077,6 +4077,36 @@ function createBaseMapHeightmap() {
   render();
 }
 
+/**
+ * 🔴 把导入的 `.map` **原文**留一份（2026-10-11）。
+ *
+ * 为什么：司天此前只备份自己的项目文件，**从不留用户导入的 `.map`** —— 而那份文件是
+ * "地形 / 河流 / 道路能否重新导入"的**唯一凭据**。真实损失：`desite` 底图建于 2026-09-10，
+ * 当时解析器读不出高度图，等想补时唯一来源就是用户自己还留着的那份导出；那份一丢就没救了。
+ *
+ * 三条纪律：
+ *   · **原文**（`text` 原样字节，不重编码）—— 改了就不是凭据；
+ *   · **绝不阻断导入**：备份失败只在状态栏留一句，导入照走（数据安全功能不该变成新的失败点）；
+ *   · **只读态也备份**：这不改世界观数据，只是留素材（与写闸门管辖范围无关）。
+ * @returns {Promise<string>} 给状态栏用的一句话（'' = 没备份/无需提）
+ */
+async function backupMapSourceFile(fileName, text) {
+  const api = window.sitianAPI;
+  if (!api?.saveBaseMapSource || !api?.projectCurrentPath) return '';
+  try {
+    const cur = await api.projectCurrentPath();
+    const projectPath = (cur && cur.success && cur.filePath) || '';
+    if (!projectPath) return '（未留底图来源：当前没有已落盘的项目文件）';
+    const r = await api.saveBaseMapSource({ projectPath, name: fileName, text });
+    if (r && r.success) {
+      return `；原始 .map 已留底（${(r.bytes / 1048576).toFixed(1)}MB → 项目备份目录的 basemap-sources/）`;
+    }
+    return `（原始 .map 留底失败：${(r && r.error) || '未知原因'}）`;
+  } catch (e) {
+    return `（原始 .map 留底失败：${e.message}）`;
+  }
+}
+
 async function triggerMapImport(opts = {}) {
   const refreshOnly = !!(opts && opts.refreshOnly);
   const input = document.createElement('input');
@@ -4087,6 +4117,8 @@ async function triggerMapImport(opts = {}) {
     if (!file) return;
     try {
       const text = await file.text();
+      // 先留底（在任何解析/写入之前）—— 解析失败也该留下这份素材
+      const srcNote = await backupMapSourceFile(file.name, text);
       const parsed = parseMapFile(text);
       const name = file.name.replace(/\.map$/, '').replace(/\s*\d{4}-\d{2}-\d{2}.*$/, '');
       const json = buildScenariosJson(parsed, name, '当前');
@@ -4118,6 +4150,7 @@ async function triggerMapImport(opts = {}) {
         if (r && r.ok && r.changed) {
           statusMsg(`已刷新底图数据：${r.message}`
             + (r.blocked?.length ? ` ⚠️ ${r.blocked.map(b => b.message).join(' ')}` : '')
+            + srcNote
             + '（可用 Ctrl+Z 撤回）');
           baseMapKey.value = name;
           // 刷新后画布上要能立刻看见：默认切到「地形高度」档（高度图刚到，用户就是为它来的）
@@ -4187,7 +4220,8 @@ async function triggerMapImport(opts = {}) {
         parts.push(`这张底图还缺：${missing.join(' / ')} —— 可用工具栏「刷新底图数据」从另一份 .map 补`);
       }
       if (warns.length) parts.push(`解析提示（${warns.length} 条）：${warns.slice(0, 2).join('；')}`);
-      statusMsg(parts.join('、').replace(/、地形高度图/, '；地形高度图'));
+      // 「原始 .map 已留底 / 留底失败」并入同一句回执（备份失败也要看得见，不能静默）
+      statusMsg(parts.join('、').replace(/、地形高度图/, '；地形高度图') + srcNote);
     } catch (err) {
       alert('导入失败: ' + err.message);
     }

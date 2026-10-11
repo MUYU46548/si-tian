@@ -271,6 +271,40 @@ async function main() {
     return '5 个配置键读回一致 + 写盘保留其它键';
   });
 
+  // ── 4) 🔴 IPC 通道名双向对齐（preload 的 invoke ↔ 主进程的 handle）───────
+  // 为什么需要它：`test_main_module_wiring` 原来只查「解构 ↔ 导出」一致性 ——
+  // 那只覆盖"模块接线"，**覆盖不到通道名**。而 handler 忘了注册 / 通道名拼错时，
+  // 渲染层调用会抛 `Error: No handler registered for 'x'`，**只在那个按钮被点时才炸**，
+  // 平静时期一片绿。本轮加 `basemap-source-save` / `basemap-source-list` /
+  // `project-current-path` 三个通道，正好用这条守卫证明它们真的注册上了。
+  await check('IPC 通道名双向对齐（preload 里 invoke 的，主进程必须有 handle）', async () => {
+    const preloadSrc = await fsp.readFile(
+      path.join(ROOT, 'src', 'preload', 'index.js'), 'utf-8');
+    const invoked = new Set();
+    for (const m of preloadSrc.matchAll(/ipcRenderer\.invoke\(\s*'([^']+)'/g)) invoked.add(m[1]);
+    assert(invoked.size > 20, `从 preload 里只解析出 ${invoked.size} 个通道，解析大概坏了`);
+
+    const mainDir = path.join(ROOT, 'src', 'main');
+    const mainFiles = [];
+    const walk = async (d) => {
+      for (const e of await fsp.readdir(d, { withFileTypes: true })) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) await walk(full);
+        else if (e.name.endsWith('.js')) mainFiles.push(full);
+      }
+    };
+    await walk(mainDir);
+    let mainSrc = '';
+    for (const f of mainFiles) mainSrc += await fsp.readFile(f, 'utf-8');
+    const handled = new Set();
+    for (const m of mainSrc.matchAll(/ipcMain\.handle\(\s*'([^']+)'/g)) handled.add(m[1]);
+
+    const unregistered = [...invoked].filter(c => !handled.has(c));
+    assert(unregistered.length === 0,
+      `这些通道 preload 会 invoke，但主进程没有 ipcMain.handle（点了才炸）：\n    ${unregistered.join('\n    ')}`);
+    return `invoke ${invoked.size} 个通道，handle ${handled.size} 个，全部对得上`;
+  });
+
   // ── 汇总 ───────────────────────────────────────────────────────────────
   const failed = results.filter(r => !r.ok);
   console.log('=== 主进程模块接线单元测试（Node）===');

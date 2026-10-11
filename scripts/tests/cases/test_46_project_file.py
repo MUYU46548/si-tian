@@ -418,19 +418,32 @@ def sub_static(cdp):
     preload = _read('src/preload/index.js')
     for api in ('projectCreate', 'projectOpen', 'projectSave', 'projectList',
                 'projectPickDir', 'projectReveal', 'projectBackupNow', 'projectGitSnapshot',
-                'projectGetLastPath'):
+                'projectGetLastPath', 'projectCurrentPath',
+                'saveBaseMapSource', 'listBaseMapSources'):
         if api not in preload:
             bad.append(f'preload 未暴露 {api}')
 
     ch_handler = set(re.findall(r"ipcMain\.handle\('([^']+)'", handler))
-    ch_preload = set(re.findall(r"ipcRenderer\.invoke\('(project-[^']+)'", preload))
-    if ch_handler != ch_preload:
-        bad.append(f'通道名不一致 handler={sorted(ch_handler)} preload={sorted(ch_preload)}')
+    # 🔴 2026-10-11：原来写成 `invoke('(project-[^']+)'` + **集合相等** —— 只要主进程注册了
+    #    任何非 `project-` 前缀的通道（本轮的 `basemap-source-save/-list`）就必然假红。
+    #    改成**按前缀族分别对齐**：每个族内部仍要求集合相等（这才是"漏注册/漏暴露"的判据），
+    #    但加新族不会再撞到「数条数」式的假红。
+    families = {
+        'project-': r"ipcRenderer\.invoke\('(project-[^']+)'",
+        'basemap-source-': r"ipcRenderer\.invoke\('(basemap-source-[^']+)'",
+    }
+    for family, pat in families.items():
+        want = set(re.findall(pat, preload))
+        if not want:
+            continue
+        have = {c for c in ch_handler if c.startswith(family)}
+        if have != want:
+            bad.append(f'通道族 {family} 名不一致 handler={sorted(have)} preload={sorted(want)}')
     # 下限守卫（**不写死条数**）：双向一致性已由上面的「集合相等」保证，
     # 这里只防「通道被整体删空 / 改名成非 project- 前缀」这类塌方。
     # 2026-09-24：原来写死 `!= 8`，新增 project-get-last-path 后必然假红 —— 数条数不是它的职责。
-    if len(ch_handler) < 8:
-        bad.append(f'注册通道数异常：{len(ch_handler)}（不应少于 8）')
+    if len({c for c in ch_handler if c.startswith('project-')}) < 8:
+        bad.append('注册的 project-* 通道数异常（不应少于 8）')
 
     # LAYER_LABELS 防漂移（与 geodata.js 的 layerLabels 必须同键同值）
     def label_map(src, marker):
@@ -450,7 +463,9 @@ def sub_static(cdp):
 
     if bad:
         return False, '；'.join(bad)
-    return True, (f'preload {len(ch_preload)} 个 API ↔ 主进程 {len(ch_handler)} 个通道一一对应；projectHandler 无 electron 顶层依赖；'
+    return True, (f'通道族对齐：project-* {len([c for c in ch_handler if c.startswith("project-")])} 个'
+                  f' / basemap-source-* {len([c for c in ch_handler if c.startswith("basemap-source-")])} 个'
+                  f'，主进程共 {len(ch_handler)} 个通道；projectHandler 无 electron 顶层依赖；'
                   'layerLabels 两处一致；Phase 2.4 接线方向正确（geodata ↔ projectStore 只经 canvasBridge，'
                   '两侧适配器齐全、App 不直连 projectStore）')
 
