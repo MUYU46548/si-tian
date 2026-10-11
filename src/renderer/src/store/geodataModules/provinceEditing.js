@@ -46,6 +46,7 @@ import {
   ringToXY, provinceToMulti, multiToShape, isEmptyMulti,
   traceBrushRings, ringsToMulti, unionMulti, differenceMulti, intersectsMulti, rdpSimplify,
   multiBBox as boolMultiBBox, multiNetArea, countMultiPoints, robustOp, splitProvinceByPolyline,
+  pointInMulti,   // F：海岸线重建里判"这个省是否整块都在陆地内部"（可整省跳过）
 } from '../../utils/polygonBool';
 // B 方案（批量铺底）：Voronoi 播种 + 区域探针（纯几何，Node 有单测）
 import {
@@ -717,6 +718,200 @@ export function createProvinceEditingModule(ctx) {
     return stroke.path.length;
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 用新 .map 的海岸线重建现有省份的外环（F，2026-10-11）
+  //
+  // 要解决的问题（暮雨实测）：现有底图的省份边界是**退化轮廓**（原始 10525 点被简化成 778 点、
+  // 而省份本身只有几十个点），地图上的海岸线又糙又不对；而生成器导出的新 .map 里有**完整海岸线**。
+  // 但直接"重导为新底图"会把几百块省份与归属全丢掉 —— 他要的是**换掉海岸线那一段**，不作废省份。
+  //
+  // 做法（复用既有几何单源，不新写一套）：
+  //   新陆地 = ∪ 新 .map 的 `landFeatures`（parser 已给，实测 desite.map 20 块 / 最大 10525 点）
+  //   每个省 = 省 ∩ 新陆地
+  // 四条性质：
+  //   ① 只动**跨过海岸线**的省 —— 完全落在陆地内部的省 `∩` 之后逐点不变（布尔是精确的），
+  //      所以内陆边界与相邻关系不受影响；
+  //   ② 相邻省**仍然无缝**（对每个省取同一个 L 的交集，划分关系被保持）；
+  //   ③ 海岸线那一段换成新 .map 的**原顶点**（不是重采样出来的）；
+  //   ④ 一整次 = 一条 undo；如实回报「变了几个省 / 面积增减 / 有没有省被清空」。
+  //
+  // ⚠️ 依赖：必须在 parser 之前读到的 `landFeatures` 上做（`buildScenariosJson` 已经把它们
+  //    带进 `baseMaps[key].landFeatures`）。老底图没有这个字段 → 明确拒绝，并告诉用户去选一份 .map。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 海岸线重建的安全闸门：面积变化超过这个比例就拒绝（多半是拿错了 .map） */
+  const COASTLINE_MAX_AREA_DRIFT = 0.6;
+
+  /**
+   * 把一批陆地轮廓并成一个 MultiPolygon（= 新的"陆地"范围）。
+   * 纯几何，独立出来便于单测；`features` 支持 `{points:[{x,y}]}` 或 ring 数组两种形状。
+   */
+  function buildLandMulti(features) {
+    const multis = [];
+    for (const f of features || []) {
+      const pts = Array.isArray(f) ? f : (f && f.points);
+      if (!Array.isArray(pts) || pts.length < 3) continue;
+      const ring = pts.map((q) => (Array.isArray(q) ? [q[0], q[1]] : [q.x, q.y]))
+        .filter((q) => Number.isFinite(q[0]) && Number.isFinite(q[1]));
+      if (ring.length < 3) continue;
+      if (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1]) {
+        ring.push([ring[0][0], ring[0][1]]);
+      }
+      const m = ringsToMulti([ring]);
+      if (m.length) multis.push(m);
+    }
+    if (!multis.length) return null;
+    if (multis.length === 1) return multis[0];
+    // 分块并（一次并 20 块会触发退化几何抛错，见 robustOp 那条记录）
+    let acc = multis[0];
+    for (let i = 1; i < multis.length; i++) {
+      const r = robustOp(polygonClipping, 'union', acc, multis[i]);
+      if (r.multi) acc = r.multi;
+    }
+    return acc;
+  }
+
+  /**
+   * 用给定的陆地轮廓重建省份海岸线（**只裁不加**）。
+   *
+   * @param {Array} features 新 .map 的 `landFeatures`
+   * @param {{maxDrift?:number, onProgress?:Function, yieldEvery?:number, token?:object}} [opts]
+   */
+  async function rebuildCoastline(key, features, opts = {}) {
+    if (isRO()) return blocked('重建海岸线');
+    const terrain = provincesOf(key);
+    if (!terrain.length) return { ok: false, rejected: 'no-provinces', message: '这张底图还没有省份' };
+    const land = buildLandMulti(features);
+    if (!land) {
+      return {
+        ok: false, rejected: 'no-land',
+        message: '这份数据里没有可用的陆地轮廓（海岸线）—— 请选一份生成器导出的 .map；'
+          + '老底图里没有这个字段',
+      };
+    }
+    const landBox = multiBBox(land);
+    const landArea = Math.abs(multiNetArea(land));
+
+    const before = terrain.map((p) => ({ id: p.id, area: Math.abs(multiNetArea(provinceToMulti(p))) }));
+    const beforeTotal = before.reduce((n, b) => n + b.area, 0);
+
+    const report = (done, total) => {
+      if (typeof opts.onProgress === 'function') {
+        try { opts.onProgress({ phase: 'coast', done, total, message: `正在重建海岸线 ${done} / ${total} 个省…` }); } catch (e) { /* 回调不该影响主流程 */ }
+      }
+    };
+    const yieldEvery = opts.yieldEvery != null ? opts.yieldEvery : 8;
+    const cancelled = () => !!(opts.token && opts.token.cancelled);
+    const yieldToPaint = () => new Promise((r) => {
+      const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+      raf(() => r());
+    });
+
+    const next = [];
+    let changed = 0, emptied = 0, skippedInside = 0, grew = 0, shrank = 0;
+    let afterTotal = 0;
+    const detail = [];
+    for (let i = 0; i < terrain.length; i++) {
+      const p = terrain[i];
+      const base = provinceToMulti(p);
+      const box = provinceBBox(p);
+      // 完全不与陆地相交的省（飞地 / 海域）→ 原样保留（不裁）
+      if (!box || !landBox || !bboxHit(box, landBox)) { next.push(p); afterTotal += before[i].area; continue; }
+      // 完全落在陆地内部 → 布尔之后逐点不变，直接跳过省一次大运算（**纯优化**，不影响结果）。
+      // ⚠️ 不能用"点在边界上"判（`pointInMulti` 对边界点行为不可依赖）：这里判的是
+      //    「省的包围盒完全在**放大一圈**的陆地包围盒内」——保守，宁可多算几个省也不误跳。
+      const pad = Math.max((box.maxX - box.minX), (box.maxY - box.minY)) * 0.01;
+      const insideBox = box.minX >= landBox.minX + pad && box.maxX <= landBox.maxX - pad
+        && box.minY >= landBox.minY + pad && box.maxY <= landBox.maxY - pad;
+      if (insideBox) {
+        next.push(p); afterTotal += before[i].area; skippedInside++;
+        continue;
+      }
+      const clipped = polygonClipping.intersection(base, land);
+      const empty = isEmptyMulti(clipped);
+      const patch = empty ? { points: [], extraRings: undefined, kind: kindOf(p), fromGrid: false }
+        : multiToShape(clipped, kindOf(p));
+      const a2 = empty ? 0 : Math.abs(multiNetArea(clipped));
+      afterTotal += a2;
+      const a1 = before[i].area;
+      const d = a2 - a1;
+      if (empty) { emptied++; changed++; detail.push({ id: p.id, name: p.name, removed: true, delta: -a1 }); }
+      else if (Math.abs(d) > Math.max(1e-6, a1 * 1e-9)) {
+        changed++;
+        if (d > 0) grew++; else shrank++;
+        detail.push({ id: p.id, name: p.name, delta: d });
+      }
+      next.push(normalizeProvince({ ...p, ...patch }));
+
+      if (yieldEvery > 0 && (i + 1) % yieldEvery === 0) {
+        report(i + 1, terrain.length);
+        await yieldToPaint();
+        if (cancelled()) return { ok: false, rejected: 'cancelled', message: '已取消：海岸线未改动' };
+        if (!bm(key)) return { ok: false, rejected: 'changed', message: '底图在过程中被换掉了，已放弃（数据未改动）' };
+      }
+    }
+
+    // 安全闸门：面积漂移过大 → 拒绝且零副作用（多半是选错了 .map）
+    const maxDrift = opts.maxDrift != null ? opts.maxDrift : COASTLINE_MAX_AREA_DRIFT;
+    const drift = beforeTotal > 0 ? (afterTotal - beforeTotal) / beforeTotal : 0;
+    if (Math.abs(drift) > maxDrift) {
+      return {
+        ok: false, rejected: 'area-gate', drift,
+        message: `这次重建会让省份总面积变化 ${(drift * 100).toFixed(1)}%（超过 ${(maxDrift * 100).toFixed(0)}% 闸门）`
+          + '——看起来像选错了 .map（换了另一张地图的海岸线）。数据未改动',
+      };
+    }
+    if (!changed) {
+      return { ok: true, changed: 0, message: '省份边界与新海岸线已经一致，无需重建', drift, landArea };
+    }
+
+    execute({
+      type: 'rebuild-coastline',
+      label: '按新海岸线重建省份外环',
+      undo: () => setTerrain(key, terrain),
+      redo: () => setTerrain(key, next),
+    });
+    return {
+      ok: true,
+      changed,
+      emptied,
+      grew,
+      shrank,
+      skippedInside,
+      drift,
+      landArea,
+      landBox,
+      beforeTotal,
+      afterTotal,
+      // 逐省前后面积（只留变化最大的 20 个）—— 诊断"到底裁掉了谁"时靠它，不靠猜
+      perProvince: before.map((b, i) => ({
+        id: b.id,
+        before: b.area,
+        after: Math.abs(multiNetArea(provinceToMulti(next[i]))),
+      })).filter((x) => Math.abs(x.after - x.before) > Math.max(1e-6, x.before * 1e-9))
+        .sort((a, b) => Math.abs(b.after - b.before) - Math.abs(a.after - a.before)).slice(0, 20),
+      detail: detail.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 20),
+      message: `已按新海岸线重建 ${changed} 个省的边界`
+        + `（面积 ${drift >= 0 ? '+' : ''}${(drift * 100).toFixed(2)}%`
+        + `${skippedInside ? `，${skippedInside} 个内陆省逐点未动` : ''}`
+        + `${emptied ? `，⚠️ ${emptied} 个省被清空` : ''}）`,
+    };
+  }
+
+  /** 从当前底图已存的 `landFeatures` 重建（导入 .map 时 parser 已把它带进来） */
+  function rebuildCoastlineFromBaseMap(key, opts = {}) {
+    const m = bm(key);
+    const feats = (m && Array.isArray(m.landFeatures)) ? m.landFeatures : [];
+    if (!feats.length) {
+      return Promise.resolve({
+        ok: false, rejected: 'no-land',
+        message: '这张底图里没有陆地轮廓数据 —— 老底图没有这个字段；'
+          + '请点「地形/数据」区的刷新按钮选一份生成器导出的 .map',
+      });
+    }
+    return rebuildCoastline(key, feats, opts);
+  }
+
   /** 把一组 region ops 讲成人话（供状态栏："并入 X、从 Y 挖去"） */
   function describeRegionOps(key, ops) {
     if (!ops || !ops.length) return '';
@@ -968,6 +1163,122 @@ export function createProvinceEditingModule(ctx) {
     if (!res) return { rejected: 'no-cut', message: '这条折线没有把这个省份切成两块（折线要横穿它，两端可以落在省外）' };
     const r = commitSplit(key, idx, res, side, `折线切割「${terrain[idx].name || provinceId}」`);
     return { ...r, snapped: !!res.snapped, cutPoints: res.cutPoints, runs: res.runs };
+  }
+
+  /**
+   * 折线在某个省**内部**的那一段（沿用笔迹走向；没穿进去则 null）。
+   *
+   * 做法：逐段取**中点**判"在不在这个省里"（顶点可能正落在边界上 ⇒ 中点更稳），
+   * 把连续落在内部的段收成 run、取最长的一段；两端再沿切向**外扩半个段长**，
+   * 保证端点落在省外（延长本来就是 `splitProvinceByPolyline` 的前提）。
+   */
+  function extractInsideSegment(polyline, prov) {
+    if (!Array.isArray(polyline) || polyline.length < 2) return null;
+    const inside = [];
+    for (let i = 1; i < polyline.length; i++) {
+      const mx = (polyline[i - 1].x + polyline[i].x) / 2;
+      const my = (polyline[i - 1].y + polyline[i].y) / 2;
+      inside.push(pointInProvince(mx, my, prov));
+    }
+    let bestFrom = -1, bestTo = -1, from = -1;
+    for (let i = 0; i <= inside.length; i++) {
+      if (i < inside.length && inside[i]) { if (from < 0) from = i; continue; }
+      if (from >= 0) {
+        if (bestFrom < 0 || (i - from) > (bestTo - bestFrom)) { bestFrom = from; bestTo = i; }
+        from = -1;
+      }
+    }
+    if (bestFrom < 0) return null;
+    const a = { x: polyline[bestFrom].x, y: polyline[bestFrom].y };
+    const b = { x: polyline[bestTo].x, y: polyline[bestTo].y };
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!(len > 1e-9)) return null;
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    const pad = Math.max(len * 0.5, 1e-3);
+    return {
+      from: { x: a.x - ux * pad, y: a.y - uy * pad },
+      to: { x: b.x + ux * pad, y: b.y + uy * pad },
+      points: polyline.slice(bestFrom, bestTo + 1).map((p) => ({ x: p.x, y: p.y })),
+    };
+  }
+
+  /** 折线穿过了哪些省（按折线上出现的先后顺序返回下标；判据 = 段中点在省里） */
+  function provincesCrossedByPolyline(key, polyline) {
+    const terrain = rawProvinces(key);
+    const hits = [];
+    for (let i = 1; i < polyline.length; i++) {
+      const mx = (polyline[i - 1].x + polyline[i].x) / 2;
+      const my = (polyline[i - 1].y + polyline[i].y) / 2;
+      for (let j = 0; j < terrain.length; j++) {
+        const p = terrain[j];
+        if (!provinceRings(p).length) continue;
+        if (!pointInProvince(mx, my, p)) continue;
+        if (hits.indexOf(j) < 0) hits.push(j);
+      }
+    }
+    return hits;
+  }
+
+  /**
+   * **一次切多块**：一条折线横穿几个省，就把这几个省都切开。
+   *
+   * 为什么现在可以（原先"一次只切一个"的理由已不成立）：单省切分只改 `terrain[idx]` +
+   * **表尾追加**新省 ⇒ 既有下标一个都不动，逐个切互不干扰。每个省用的是
+   * 「折线**在它内部**的那一段」而不是整条折线 —— 否则延长段会替邻居做决定，
+   * 那正是当初要防的事。
+   *
+   * ⚠️ **undo 粒度**：每个省一条 undo（复用 `commitSplit`，不另造批量命令）——
+   *    切了 N 个省就要按 N 次 Ctrl+Z，回执里如实写明。
+   */
+  function splitProvincesAlong(key, polyline, { side = 1, maxProvinces = 24 } = {}) {
+    if (isRO()) return blocked('折线切割');
+    if (!provincesOf(key).length) return { ok: false, changed: 0, results: [], skipped: [], message: '这张底图还没有省份' };
+    const pts = (Array.isArray(polyline) ? polyline : []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (pts.length < 2) return { ok: false, changed: 0, results: [], skipped: [], message: '折线至少要两个点' };
+
+    const crossed = provincesCrossedByPolyline(key, pts);
+    if (!crossed.length) {
+      return { ok: false, changed: 0, results: [], skipped: [], rejected: 'no-cut', message: '这条折线没有横穿任何省份（要真的穿过去，不能只贴着边走）' };
+    }
+    if (crossed.length > maxProvinces) {
+      return {
+        ok: false, changed: 0, results: [], skipped: [], rejected: 'too-many', count: crossed.length,
+        message: `这条折线横穿了 ${crossed.length} 个省（超过上限 ${maxProvinces}）—— `
+          + '多半是画歪了或想切整块大陆；请缩短折线，或分几笔切',
+      };
+    }
+
+    const results = [];
+    const skipped = [];
+    for (let n = crossed.length - 1; n >= 0; n--) {
+      const idx = crossed[n];
+      const prov = provincesOf(key)[idx];
+      if (!prov) { skipped.push({ idx: idx + 1, reason: 'gone' }); continue; }
+      const seg = extractInsideSegment(pts, rawProvinces(key)[idx]);
+      if (!seg) { skipped.push({ idx: idx + 1, name: prov.name, reason: 'no-inside' }); continue; }
+      const r = splitProvinceAlong(key, prov.id, seg.points, { side });
+      if (!r) { skipped.push({ idx: idx + 1, name: prov.name, reason: 'no-cut' }); continue; }
+      if (r.rejected || r.blocked) {
+        skipped.push({ idx: idx + 1, name: prov.name, reason: r.rejected || 'blocked', message: r.message });
+        continue;
+      }
+      results.push({ idx: idx + 1, name: prov.name, keptId: r.keptId, appendedId: r.appendedId, cutPoints: r.cutPoints });
+    }
+
+    if (!results.length) {
+      return { ok: false, changed: 0, results, skipped, rejected: 'no-cut', message: '这几刀都没成功（折线可能贴着边界走，没能真正横穿）' };
+    }
+    return {
+      ok: true,
+      changed: results.length,
+      results,
+      skipped,
+      crossed: crossed.length,
+      side,
+      message: `已切开 ${results.length} 个省`
+        + (skipped.length ? `（跳过 ${skipped.length} 个）` : '')
+        + ` —— 每个省一条撤销，要按 ${results.length} 次 Ctrl+Z 逐个回退`,
+    };
   }
 
   /**
@@ -1502,6 +1813,10 @@ export function createProvinceEditingModule(ctx) {
     beginProvinceStroke, applyProvinceStroke, endProvinceStroke, applyProvinceLasso,
     // E（2026-10-11）：描轮廓 —— 笔迹围住的那块地并进目标省、从邻省挖掉（邻省自动重算）
     resolveOutlineRegion, applyProvinceOutline,
+    // C（0.2.6）：折线切割「一次切多块」——按折线在各国内的局部段逐个切（每个省一条 undo）
+    splitProvincesAlong,
+    // F（2026-10-11）：用新 .map 的海岸线重建现有省份的外环（只裁不加，一条 undo）
+    rebuildCoastline, rebuildCoastlineFromBaseMap, buildLandMulti,
     fillProvinceRegion, splitProvince, splitProvinceAlong, mergeProvinces, batchSubdivide,
     previewSplitAlong, planBatchSeeds,
     addBrushProvince, removeProvinceWithGrid, clearProvinceLabels,

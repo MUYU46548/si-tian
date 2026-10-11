@@ -343,6 +343,18 @@
                   '省份边界（' + provinceCount + ' 块）与归属记录一个字都不会动'"
           @click="triggerMapImport({ refreshOnly: true })"
         ><Icon name="refresh" :size="15"/></button>
+        <!-- F（0.2.6）：用新 .map 的海岸线重建现有省份外环 —— 只换海岸那一段，不作废省份。
+             为什么需要它：生成器原始海岸线 10525 点，导出时被简化成 778 点，落到底图上
+             每个省只剩几十个点（地图上那条海岸线又糙又不对）；而"重导为新底图"会把
+             几百块省份与归属全丢掉。这个按钮走的是第三条路：**省 ∩ 新陆地**。 -->
+        <button
+          data-testid="basemap-rebuild-coastline"
+          class="has-advanced"
+          :title="baseMapHasLandFeatures
+            ? '用新 .map 的海岸线重建省份外环 — 只换海岸那一段；内陆省逐点不动、相邻省仍无缝、一整次 = 一条撤销'
+            : '用新 .map 的海岸线重建省份外环（这张底图里没有陆地轮廓数据，会先让你选一份 .map）'"
+          @click="triggerCoastlineRebuild"
+        ><Icon name="mountain" :size="15"/></button>
         <!-- A1（2026-09-24）：底图的高度图此前**只有 .map 导入**一条来源 —— 新建的底图里
              高度/群系/文化/宗教笔刷与一键派生全都「点了没反应」（没有网格 → 直接 return）。
              这个按钮补上「从零开始画」，同时它也是「剧情上已毁灭、不打算再建行星的星球」
@@ -3713,12 +3725,37 @@ function finishPolySplit() {
   const pts = polySplitPoints.value.slice();
   if (pts.length < 2) { statusMsg('折线切割：至少需要两个点'); return; }
   if (store.isReadOnly) { statusMsg(`折线切割已停用：${store.readOnlyReason}`); return; }
-  const target = polySplitTarget.value;
-  if (!target) {
-    statusMsg('折线切割：没找到要切的省份 —— 折线要穿过某个省的边界');
+  const keepStart = polySplitKeepStart.value;
+
+  // 🔴 0.2.6：一次切**多块**（原先一刀一个省，切四五百块太慢）。
+  //    每个省只用「折线在它内部的那一段」，所以延长段不会替邻居做决定（详见 store 注释）。
+  const multi = store.splitProvincesAlong(baseMapKey.value, pts, { side: keepStart ? 1 : -1 });
+  if (multi && multi.ok && multi.changed > 0) {
+    clearPolySplit();
+    provinceBrush.invalidateBorders();
+    if (selectedProvince.value && !(baseMap.value?.terrain || []).some((p) => p.id === selectedProvince.value.id)) {
+      selectedProvince.value = null;
+    }
+    const names = (multi.results || []).map((r) => r.name || ('省份 ' + r.idx)).slice(0, 6).join('、');
+    statusMsg(`已沿折线切开 ${multi.changed} 个省：${names}${multi.changed > 6 ? ' …' : ''}`
+      + `（${keepStart ? '绿色' : '橙色'}那半保留原省份身份；`
+      + `${(multi.skipped || []).length ? `跳过 ${multi.skipped.length} 个；` : ''}`
+      + `每个省一条撤销，要按 ${multi.changed} 次 Ctrl+Z）`);
+    render();
     return;
   }
-  const keepStart = polySplitKeepStart.value;
+  if (multi && multi.rejected && multi.rejected !== 'no-cut') {
+    statusMsg(`折线切割：${multi.message}`);
+    render();
+    return;
+  }
+
+  // 回落到**单省**路径：折线只擦过某个省的边（没真正横穿）时，单省那条能给出更准的话
+  const target = polySplitTarget.value;
+  if (!target) {
+    statusMsg((multi && multi.message) || '折线切割：没找到要切的省份 —— 折线要穿过某个省的边界');
+    return;
+  }
   const res = store.splitProvinceAlong(baseMapKey.value, target.id, pts, { side: keepStart ? 1 : -1 });
   if (!res || res.blocked || res.rejected) {
     statusMsg((res && res.message) || '折线切割失败');
@@ -4177,8 +4214,90 @@ function describeBaseMapMissing(bm, bundle) {
   return missing;
 }
 
-/** 当前底图还缺哪些底图级数据（没缺 → 刷新按钮不出现） */
-const basemapDataMissing = computed(() => {
+/**
+ * F（0.2.6）：用新 .map 的海岸线重建省份外环。
+ *
+ * 数据来源两条路：① 这张底图里已经存了 `landFeatures`（导入 .map 时 parser 带进来的）→ 直接用；
+ * ② 没有（老底图）→ 让用户选一份 .map，**只借它的海岸线**，不动省份与归属。
+ * 落库只在 store（`rebuildCoastline`）—— 几何与闸门单源，组件只负责问人与翻译结果。
+ */
+async function triggerCoastlineRebuild() {
+  if (store.isReadOnly) { statusMsg(`重建海岸线已停用：${store.readOnlyReason}`); return; }
+  if (!(baseMap.value?.terrain || []).length) { statusMsg('重建海岸线：这张底图还没有省份'); return; }
+  const stored = (baseMap.value?.landFeatures || []);
+  const runWith = async (features, srcLabel) => {
+    const before = (baseMap.value?.terrain || []).length;
+    const r = await store.rebuildCoastline(baseMapKey.value, features, {
+      token: batchCancelToken || undefined,
+    });
+    provinceBrush.invalidateBorders();
+    if (!r || r.ok === false) {
+      statusMsg(`重建海岸线：${(r && r.message) || '失败'}（省份 ${
+        (baseMap.value?.terrain || []).length} 块一字未动）`);
+      render();
+      return;
+    }
+    if (!r.changed) { statusMsg(`重建海岸线：${r.message}`); render(); return; }
+    const worst = (r.detail || []).slice(0, 3)
+      .map((d) => `${d.name || d.id}${d.removed ? '（被清空）' : ` ${d.delta >= 0 ? '+' : ''}${Math.round(d.delta)}`}`)
+      .join('、');
+    statusMsg(`重建海岸线完成（来源：${srcLabel}）：省份 ${before} 块不变，`
+      + `改了 ${r.changed} 个省的边界${worst ? `（变化最大：${worst}）` : ''}`
+      + `${r.skippedInside ? `；${r.skippedInside} 个内陆省逐点未动` : ''}`
+      + `；面积 ${r.drift >= 0 ? '+' : ''}${(r.drift * 100).toFixed(2)}% —— 一整次 = 一条撤销`);
+    render();
+  };
+
+  if (stored.length) {
+    const totalPts = stored.reduce((n, f) => n + ((f.points || []).length), 0);
+    if (!confirm(`用这张底图里已存的陆地轮廓重建省份外环？\n\n`
+      + `· 陆地轮廓：${stored.length} 块 / 合计 ${totalPts} 点\n`
+      + `· 做法：每个省 = 省 ∩ 新陆地 —— **只换海岸那一段**\n`
+      + `· 内陆省逐点不动；相邻省仍无缝；海岸线换成新数据的原顶点\n`
+      + `· 一整次 = 一条 Ctrl+Z；面积漂移过大（多半选错图）会被拒绝\n\n继续？`)) {
+      statusMsg('重建海岸线：已取消');
+      return;
+    }
+    await runWith(stored, '底图内已存的海岸线');
+    return;
+  }
+
+  // 老底图：让用户选一份 .map，只借它的海岸线
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.map';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = parseMapFile(text);
+      const feats = parsed.landFeatures || [];
+      if (!feats.length) {
+        statusMsg('重建海岸线：这份 .map 里没有陆地轮廓（生成器导出时海岸线图层可能是空的）—— 数据未改动');
+        return;
+      }
+      const totalPts = feats.reduce((n, f) => n + ((f.points || []).length), 0);
+      if (!confirm(`用「${file.name}」的海岸线重建省份外环？\n\n`
+        + `· 这份文件里的陆地轮廓：${feats.length} 块 / 合计 ${totalPts} 点\n`
+        + `· **只借它的海岸线** —— 省份、归属、易主记录都不作废\n`
+        + `· 做法：每个省 = 省 ∩ 新陆地；内陆省逐点不动、相邻省仍无缝\n`
+        + `· 一整次 = 一条 Ctrl+Z；面积漂移过大（多半选错图）会被拒绝\n\n继续？`)) {
+        statusMsg('重建海岸线：已取消（数据未改动）');
+        return;
+      }
+      await runWith(feats, file.name);
+    } catch (err) {
+      alert('重建海岸线失败: ' + err.message);
+    }
+  };
+  input.click();
+}
+
+/** 当前底图里有没有**陆地轮廓**（海岸线数据）—— 决定重建按钮走"直接用"还是"先选 .map" */
+const baseMapHasLandFeatures = computed(() => ((baseMap.value?.landFeatures) || []).length > 0);
+
+/** 当前底图还缺哪些底图级数据（没缺 → 刷新按钮不出现） */const basemapDataMissing = computed(() => {
   const bm = baseMap.value;
   if (!bm) return [];
   const out = [];

@@ -141,6 +141,7 @@ export const GUIDE_SECTIONS = [
       ] },
       { t: 'warn', v: '「精修：折线切割」里那句"沿着山脊走"**要求图上看得见山脊**。看不到山脉时别硬描 —— 先按上面把高度图补上；参考图层（河流/道路/城镇）也一样，补完才有东西可参照。' },
       { t: 'tip', v: '画河流：工具栏「更多」→「河流 (W)」，在画布上逐点点击、双击收口；画出的河会落在底图上（Ctrl+Z 可撤销，重开应用也还在）。画道路：「更多」→「道路 (J)」，点起点再点终点，路径会沿地形自动走出来。' },
+      { t: 'tip', v: '🔴 **海岸线太糙 / 对不上**？用「更多 → 山脉图标那个按钮」**重建省份外环**：它拿一份生成器导出的 `.map` 里的海岸线，把每个省按「省 ∩ 新陆地」重算一次。内陆省**逐点不动**、相邻省**仍无缝**、省份与归属**一个都不作废**，一整次 = 一条 Ctrl+Z。原来的草图丢了也没关系 —— 换一份新导出的 `.map` 就行（选择器会先让你挑文件）。' },
     ],
     cite: 'store/geodataModules/scenarioEditing.js updateBaseMapData / buildBaseMapFromBundle、utils/azgaar-parser.js、回归 test_94 / test_95',
   },
@@ -159,11 +160,13 @@ export const GUIDE_SECTIONS = [
       ] },
       { t: 'warn', v: '画布上会同时画出切开后的两半：**绿色那一半保留原来的省份身份**（名字、归属、时间轴都跟着它）。要换另一半保留身份，按住 Shift 再切开。' },
       { t: 'list', v: [
-        '一次只切一个省 —— 这是刻意的：跨省连切时延长段会蹭到邻居，误切比多切更坏。',
+        '🔴 **一条折线可以一次切开多个省**（0.2.6）：横穿几个省就切几个。每个省只用「折线在它**内部**的那一段」，所以两端延长出去的部分**不会替邻居做决定**。',
+        'undo 粒度：**每个省一条撤销** —— 切了 5 个省就要按 5 次 Ctrl+Z 逐个回退（状态栏会写明切了几个）。',
+        '画歪了会拒绝：横穿超过 24 个省时明确报错（多半是想切整块大陆），请缩短折线或分几笔。',
         '切完两边都保留原顶点精度，海岸线不受影响。',
       ] },
     ],
-    cite: 'utils/polygonBool.js splitProvinceByPolyline、docs/SCENARIO_GUIDE.md',
+    cite: 'utils/polygonBool.js splitProvinceByPolyline、provinceEditing.splitProvincesAlong、回归 test_92/99',
   },
 
   {

@@ -111,7 +111,7 @@ async function main() {
     }
     const all = JSON.stringify(GUIDE_SECTIONS);
     // 这些是 0.2.4 之后用户最常问的几件事，手册必须正面回答（不靠"看仓库文档"）
-    for (const tok of ['一键切分', '折线切割', '压叠', '清空全部剧本', '只读', 'Ctrl+Z', '快照', '描轮廓']) {
+    for (const tok of ['一键切分', '折线切割', '压叠', '清空全部剧本', '只读', 'Ctrl+Z', '快照', '描轮廓', '重建省份外环']) {
       assert(all.includes(tok), `手册里没有提到「${tok}」`);
     }
     return `10 个必备章节 + 8 个必备词在场`;
