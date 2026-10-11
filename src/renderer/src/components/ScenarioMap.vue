@@ -956,6 +956,12 @@ import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 import { generateRoadPath } from '../utils/placement';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
 import { buildHeightmapRaster, RASTER_SMOOTH } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
+// 两个**不同**判据，别再混（2026-10-11 踩过）：
+//   · `hasGrid`（heightmapAccess）= "能否开始用笔刷编辑"（有点即可；历史数据里存在只有点没有 h 的高度图）
+//   · `hasHeightmapContent`（terrainRepresentation）= "有没有**地形内容**"（点与 h 都要有）
+// 状态栏/缺项诊断要的是后者；用前者会把空壳报成"有地形"（暮雨那张纯色扁平图的困惑来源）。
+import { hasGrid } from '../utils/heightmapAccess';
+import { hasHeightmapContent } from '../utils/terrainRepresentation';
 import HistoryPanel from './HistoryPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
@@ -1161,12 +1167,15 @@ const viewModeHint = computed(() => (viewMode.value === 'scenario'
 /** 当前底图绑定到的行星 id（绑定了则高度图归行星侧，底图不该再自建） */
 /** 当前底图绑定到的行星 id（绑定了则高度图归行星侧，底图不该再自建） */
 const baseMapBoundPlanet = computed(() => (baseMapKey.value ? store.getBoundPlanetId(baseMapKey.value) : null));
-/** 当前底图是否已有可用高度图网格 */
+/** 当前底图是否已有可用高度图网格（判据 = `hasGrid`：笔刷/派生的"能用"口径） */
 const baseMapHasHeightmap = computed(() => {
   if (!baseMapKey.value) return false;
-  const hm = store.getHeightmapFor(baseMapKey.value);
-  return !!(hm && hm.grid && Array.isArray(hm.grid.points) && hm.grid.points.length > 0);
+  return hasGrid(store.getHeightmapFor(baseMapKey.value));
 });
+/** 当前底图是否已有**地形内容**（空壳高度图不算）—— 用于状态栏与「缺什么」诊断 */
+const baseMapHasTerrainContent = computed(() =>
+  hasHeightmapContent(store.getHeightmapFor ? store.getHeightmapFor(baseMapKey.value) : null));
+
 /** 是否显示「创建高度图」按钮：已选底图 + 未绑定行星 + 还没有网格 */
 const baseMapCanCreateHeightmap = computed(() =>
   !!baseMapKey.value && !baseMapBoundPlanet.value && !baseMapHasHeightmap.value);
@@ -4031,6 +4040,30 @@ async function triggerMapImport(opts = {}) {
           ownership: parsed.ownership,
         });
       }
+
+      // 🔴 导入结果必须**当场说清**（B2 的"明确可诊断"，2026-10-11）：
+      //    解析器早就把「未解析到 cells.h（高度图不可用）」这类问题收进 `warnings` 了，
+      //    但导入路径一个字都不报 —— 用户只会看到"地图是纯色扁平的"，
+      //    然后去找一个根本不存在的显示开关。这就是他这次的实际经历。
+      const newBm = store.baseMaps?.[name];
+      const srcBundle = json.baseMaps?.[name];
+      const missing = newBm ? describeBaseMapMissing(newBm, srcBundle) : [];
+      const warns = parsed.warnings || [];
+      // 「源文件里压根没有高度图」是另一回事（不是"这张底图缺"，而是"这份 .map 没带"）——
+      // 两种都要说，而且要说成不同的话，否则用户会以为"刷新一下就有了"。
+      const srcHasTerrain = Array.isArray(srcBundle?.heightmap?.h) && srcBundle.heightmap.h.length > 0;
+      const parts = [`已导入「${name}」：省份 ${(newBm?.terrain || []).length} 块`];
+      if (srcHasTerrain) parts.push('高度图 有');
+      parts.push(`河流 ${(newBm?.rivers || []).length} 条`, `道路 ${(newBm?.routes || []).length} 条`);
+      if (!srcHasTerrain) {
+        parts.push('地形高度图 ⚠️ **这份 .map 里就没有**（导出时未包含 cells.h）'
+          + ' —— 所以地图会是纯色扁平图，这不是显示开关的问题');
+      }
+      if (missing.length) {
+        parts.push(`这张底图还缺：${missing.join(' / ')} —— 可用工具栏「刷新底图数据」从另一份 .map 补`);
+      }
+      if (warns.length) parts.push(`解析提示（${warns.length} 条）：${warns.slice(0, 2).join('；')}`);
+      statusMsg(parts.join('、').replace(/、地形高度图/, '；地形高度图'));
     } catch (err) {
       alert('导入失败: ' + err.message);
     }
@@ -4046,7 +4079,11 @@ function describeBaseMapMissing(bm, bundle) {
   if (!bm) return [];
   const missing = [];
   const bound = store.getBoundPlanetId ? store.getBoundPlanetId(bm.id) : (bm.planetId || null);
-  if (bundle?.heightmap && !bm.heightmap && !bound) missing.push('地形高度图');
+  // ⚠️ 判"这张底图有没有地形"必须用**地形内容**口径（`hasHeightmapContent`），不能只看
+  //    `heightmap` 这个键在不在、也不能用 `hasGrid`（后者是"能否开始用笔刷编辑"，
+  //    会放过"有点、无 h"的空壳 —— 那正是把纯色图报成"有地形"的原因；test_96 守）。
+  const bundleHasTerrain = hasHeightmapContent(bundle?.heightmap);
+  if (bundleHasTerrain && !hasHeightmapContent(bm.heightmap) && !bound) missing.push('地形高度图');
   if ((bundle?.rivers || []).length && !(bm.rivers || []).length) missing.push('河流');
   if ((bundle?.routes || []).length && !(bm.routes || []).length) missing.push('道路');
   if ((bundle?.burgs || []).length && !(bm.burgs || []).length) missing.push('城镇');
@@ -4059,7 +4096,9 @@ const basemapDataMissing = computed(() => {
   if (!bm) return [];
   const out = [];
   const bound = baseMapBoundPlanet.value;
-  if (!bm.heightmap && !bound) out.push('地形高度图');
+  // 与 describeBaseMapMissing 同口径（`hasHeightmapContent`）：空壳高度图算"缺"
+  const hasTerrain = baseMapHasTerrainContent.value;
+  if (!hasTerrain && !bound) out.push('地形高度图');
   if (!(bm.rivers || []).length) out.push('河流');
   if (!(bm.routes || []).length) out.push('道路');
   return out;
@@ -4539,7 +4578,9 @@ function drawCultureLegend(c) {
 const layerAvailability = computed(() => {
   const hm = baseMap.value?.heightmap;
   return {
-    cells: hm?.grid?.points?.length || 0,
+    // 🔴 只报**有地形内容**的格数（2026-10-11）：空壳高度图（有点、无 h）此前会被报成
+    //    「N 网格」，于是用户看到纯色扁平图 + 状态栏说"有网格"，只能去找一个不存在的显示开关。
+    cells: hasHeightmapContent(hm) ? (hm?.grid?.points?.length || 0) : 0,
     temp: (hm?.temp?.length || 0) > 0,
     prec: (hm?.prec?.length || 0) > 0,
     rivers: (baseMap.value?.rivers?.length || 0),

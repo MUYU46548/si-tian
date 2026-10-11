@@ -184,6 +184,13 @@ async function main() {
     eq(typeof ACC.planBindBaseMapToPlanet, 'function', 'planBindBaseMapToPlanet');
     eq(ACC.hasGrid({ grid: { points: [[0, 0]] } }), true, 'hasGrid 有网格点 = true');
     eq(ACC.hasGrid({ grid: { points: [] } }), false, 'hasGrid 空点集 = false');
+    // 🔴 2026-10-11 反向纪律（试过、被全量回归打回，写在这里防复辟）：
+    //    **不要**把 hasGrid 收紧成"必须有 h"。本仓既有 fixture（test_39/67/68）用的是
+    //    「只有网格点、没有 h」的历史高度图，收紧后 resolveHeightmap 返回 null →
+    //    笔刷 / 派生 / 绑定全线 `Cannot read properties of null (reading 'h')`。
+    //    「有没有**地形内容**」是另一个问题，判据在 `terrainRepresentation.hasHeightmapContent`。
+    eq(ACC.hasGrid({ grid: { points: [[0, 0]], h: [] } }), true,
+       'hasGrid 只判"能否开始编辑"（历史数据里有点无 h 也存在）—— 收窄会被打回');
   });
 
   // ── 输出 ─────────────────────────────────────────────────────────────────

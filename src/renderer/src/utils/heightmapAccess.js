@@ -65,6 +65,14 @@ export function resolveHeightmap(baseMap, mapDataById) {
 /**
  * 高度图是否可以安全地开始编辑（有网格点）。
  * 与 `resolveHeightmap` 配套使用，避免每个调用点各写一遍同样的三层判空。
+ *
+ * ⚠️ **不要把它收紧成"必须有 h"**（2026-10-11 试过、被全量回归打回）：
+ *    本仓既有 fixture（`test_39` / `test_67` / `test_68`）用的是**只有网格点、没有 h 的历史高度图**
+ *    —— 那种形状在真实数据里也存在（旧版本写过）。收紧会让 `resolveHeightmap` 返回 null，
+ *    于是笔刷 / 派生 / 绑定全线 `Cannot read properties of null (reading 'h')`。
+ *    「**有没有地形**」（用于"缺项诊断"与状态栏）是**另一个问题**，判据在
+ *    `utils/heightmapRaster.buildHeightmapRaster`（空高度 → 返回 null，不画错）与
+ *    `utils/terrainRepresentation.hasHeightmapContent`；解析器也不再产出空壳（见 azgaar-parser）。
  */
 export function hasGrid(heightmap) {
   return !!(heightmap && heightmap.grid && Array.isArray(heightmap.grid.points) && heightmap.grid.points.length > 0);

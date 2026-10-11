@@ -477,7 +477,7 @@ export function createScenarioEditingModule(ctx) {
       burgs: Array.isArray(b.burgs) ? b.burgs : [],
       rivers: normalizeBaseMapRivers(b.rivers),
       routes: normalizeBaseMapRoutes(b.routes),
-      ...(b.heightmap ? { heightmap: b.heightmap } : {}),
+      ...((b.heightmap && (b.heightmap.h || []).length) ? { heightmap: b.heightmap } : {}),
       referenceImages: [],
       ...(b.source ? { source: b.source } : {}),
       createdAt: now,

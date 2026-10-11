@@ -567,6 +567,12 @@ export function buildScenariosJson(parsed, mapName, scenarioName) {
     color: p.color,
   }));
 
+  // 🔴（2026-10-11，test_96 抓到）：**没有高度值时不要把 heightmap 塞进产物**。
+  //    解析器在文件里读不到 `cells.h` 时会造出 `{ grid:{points:[…]}, h:[] }` 这种空壳，
+  //    一旦原样写进 baseMap，下游（渲染 / 状态栏 / 缺项判定）就会把它当成"有地形"，
+  //    用户看到一张纯色扁平图却查不出原因。宁可不给这个键 —— 缺项就能被明确点出来。
+  const hmOut = (parsed.heightmap && (parsed.heightmap.h || []).length) ? parsed.heightmap : null;
+
   return {
     version: 2,
     baseMaps: {
@@ -578,7 +584,7 @@ export function buildScenariosJson(parsed, mapName, scenarioName) {
         burgs: parsed.burgs || [],
         rivers: parsed.rivers || [],
         routes: parsed.routes || [],
-        heightmap: parsed.heightmap,
+        ...(hmOut ? { heightmap: hmOut } : {}),
         referenceImages: [],
         source: {
           version: parsed.version || '',
