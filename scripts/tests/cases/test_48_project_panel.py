@@ -350,8 +350,12 @@ PANEL_JS = r"""(async () => {
   ck('状态条显示已保存', statusSeen.v.indexOf('已保存') >= 0, statusSeen.v);
   ck('mock 收到 save 调用', (window.__projectCalls || []).some(c => c.op === 'save'), window.__projectCalls);
   ck('保存后 dirty 归位', ps.dirty === false, ps.dirty);
-  ck('快照区出现', document.body.innerHTML.indexOf('快照（最近 50 份') >= 0);
+  ck('快照区出现', document.body.innerHTML.indexOf('快照（保留最近 50 份') >= 0);
   ck('快照条目出现（手动保存）', document.body.innerHTML.indexOf('手动保存') >= 0);
+  // 🔴 2026-10-09 加：快照列表必须**全量可滚动**，不许再 `slice(-5)` 截断。
+  //    真事故：26 份快照里，靠前的「14:33」那份才是完好版本，UI 只给 5 条 → 用户找不到，
+  //    只能拿废图继续用。守卫：滚动容器存在 + 源码里不许再出现 `slice(-5)`。
+  ck('快照列表可滚动容器就位', !!q('.pp-snapshot-list'), '');
 
   // ---- 关闭面板（入口可逆）----
   q('.project-panel .close-btn').click();

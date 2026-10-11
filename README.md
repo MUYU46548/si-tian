@@ -72,13 +72,15 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 | `npm run dist` / `dist:dir` | 打 Windows 安装包 / 仅解压目录（输出 `release/`） |
 | `npm run extract-data` | 从知识库提取地理节点到 `<vault>/.sitian/geodata.json` |
 | `npm run audit-coverage` | 提取覆盖率审计（只读；`-- --write-report` 落报告） |
+| `npm run audit-project-size` | **项目体积审计（只读）**：正文 / 各顶层键 / 快照 / `.backups` 各占多少，并点名"哪条路径被重复存了很多份"（默认挑默认目录里最大的 `.sitian`；`-- --all` 列全部） |
 | `npm run migrate-mapdata-keys` | 清理 mapdata 旧 key（默认 dry-run，`-- --apply` 才写盘） |
 | `npm run migrate-vault-attrs` | 存量笔记的机器属性（层级 / 上层挂靠 / 地点类型）搬进项目文件（默认 dry-run 出清点表，`-- --apply` 才写盘；**只补空、不覆盖**，跑前请先关闭该项目） |
 | `npm run clean-cache-junk` | 清理 `.sitian` 缓存垃圾（空名地形 / 空壳底图 / 测试残留节点；默认 dry-run，删前自检引用与包围盒） |
-| `npm run test` | 回归测试（88 个 CDP 用例 + 18 个 Node 单元测试，见下） |
+| `npm run test` | 回归测试（93 个 CDP 用例 + 24 个 Node 单元测试，见下） |
 | `python scripts/gen_architecture_map.py` | 再生成 `docs/ARCHITECTURE_MAP.md` 的清单节（`--check` 自检） |
 | `python scripts/emoji_audit.py` / `python scripts/icon_check.py` | emoji 审计 / 图标名一致性校验 |
-| `python scripts/tests/drill_quit_flush.py` | **真机演练**：P1~P3 退出前落盘（强杀 / Ctrl+Q / 点 ×）＋ **P4 剧本基础操作**（建省 / 拖边界 / 右键删省 / 剧本增改删，每步读盘核对）；起真实应用与真实项目，会短暂开一个真实窗口 |
+| `python scripts/tests/drill_quit_flush.py` | **真机演练**：P1~P3 退出前落盘（强杀 / Ctrl+Q / 点 ×）＋ **P4 剧本基础操作**（建省 / 拖边界 / 右键删省 / 剧本增改删，每步读盘核对）；起真实应用与真实项目，会短暂开一个真实窗口。⚠️ P1~P3 要求**空项目**，有内容的项目请用 `--phase p4` |
+| `python scripts/tests/drill_package_smoke.py` | **打包产物冒烟**：在 `release-inst/win-unpacked/resources/app.asar`（安装包里的同一份代码）上走「进历史剧本 → 返回世界选择」，断言卸载钩子不抛错（0.2.3 的 `provinceGridTimer` 崩溃只在卸载时发生）。带阳性对照（故意抛错验证探测器真的会响）；userData 隔离到临时目录，真实项目与日志零改动 |
 
 ### 首次启动
 
@@ -96,10 +98,10 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 - **项目面板**：新建 / 打开 / 保存 / 备份 / 定位文件 / 关闭；列出目录内所有 `.sitian`；显示最近 5 份快照并可一键回滚（回滚走撤销栈）
 - **实体树**：按父子缩进显示，支持**改名**（双击或行内铅笔）、**删除**（两段式确认，默认连带子实体）、**拖动改父级**（拖到某行 = 挂到它脚下，拖到顶部投放条 = 回到顶层；拖到自己或自己的后代会被拒绝）
 - **实体创建向导**：填「名称 / 层级 / 父级」，层级下拉会**按父级自动过滤**（如父级是「世界」时只能建「星域」）；创建完成后给出**结果卡片**（该层级的下一步流程 + 「前往编辑」）
-- **快照机制**：1 份基准 + ≤50 份增量 diff（`maps` 不入快照，另有磁盘整文件备份 10 份兜底）
+- **快照机制**：1 份基准 + ≤50 份增量 diff，**份数与体积双上限**（50 份 且 3 MB，超了从最旧的丢、最新那份永远保留；`maps` 不入快照，另有磁盘整文件备份 10 份兜底）
 
 > **阶段说明**：项目文件与画布**已接线**——打开项目后画布上的增删改直接写进项目文件，实体树与画布是同一套数据；关闭项目即恢复打开前的知识库工作态。
-> 仍是「无项目 → 写知识库缓存（legacy）」的兼容模式：「无项目必须只读」的严格闸门已就位（11 条落盘入口全部带守卫 + 只读态 UI 灰禁），但默认值翻转为只读需要一次跨用例的测试基线改造（把既有用例的落盘断言改到项目路径上），尚未执行。
+> **无项目 = 只读已经翻开**（`READONLY_WITHOUT_PROJECT = true`）：11 条落盘入口全部带守卫 + 只读态 UI 灰禁（带能力说明），内存编辑也经 `undo.execute` / geodata 函数首行收口。把库内容带进项目的**唯一**路径是项目面板的「新建并导入知识库内容」；「从 Obsidian 重新提取」在任何可达状态下都不生效（无项目时被只读拦、项目态下是两套事实源混流）。
 
 ## 底图与剧本数据（Azgaar FMG，可选）
 
@@ -181,10 +183,10 @@ python scripts/tests/run_tests.py test_48    # 只跑某个用例
 
 两层基线，缺一不可：
 
-1. **Node 单元测试**（`scripts/tests/unit/*.js`，跑在 CDP 用例之前）：主进程真实文件 I/O（`.sitian` 原子写 / 备份轮转 / 路径守卫）与主进程模块接线不变式。CDP 用例里 `window.sitianAPI` 是 mock，**主进程落盘在 CDP 层零覆盖**，所以这层必须存在。
-2. **CDP 用例**（`scripts/tests/cases/test_*.py`，Edge headless 驱动真实 Vite dev server + mock 数据）：导航、编辑、面板、渲染性能、剧本时间轴、项目文件、**项目↔画布接线**等端到端行为。
+1. **Node 单元测试**（`scripts/tests/unit/*.js`，跑在 CDP 用例之前）：主进程真实文件 I/O（`.sitian` 原子写 / 备份轮转 / 路径守卫 / **紧凑落盘**）、主进程模块接线不变式，以及**纯函数与静态守卫**（矢量布尔、Voronoi、省份压叠、快照体积与实体时间戳、免责声明、**全仓「引用未声明标识符」扫描**、**应用内手册骨架**）。CDP 用例里 `window.sitianAPI` 是 mock，**主进程落盘在 CDP 层零覆盖**，所以这层必须存在。
+2. **CDP 用例**（`scripts/tests/cases/test_*.py`，Edge headless 驱动真实 Vite dev server + mock 数据）：导航、编辑、面板、渲染性能、剧本时间轴、项目文件、**项目↔画布接线**、**顶点压叠闸门与剧本清理**等端到端行为。
 
-判定口径：**CDP 用例全绿（当前 89 个）+ Node 单元测试（当前 19 个文件）全通过 = 基线完整**。
+判定口径：**CDP 用例全绿（当前 93 个）+ Node 单元测试（当前 24 个文件）全通过 = 基线完整**。
 
 > 回归测试的 mock 会在页面加载前写入「已确认免责声明」的 ack（键名与版本号从
 > `utils/disclaimer.js` 解析注入），否则首启阻断层会盖住整个界面、几十个用例一起变红。

@@ -89,23 +89,32 @@ def sub_source_guards(cdp):
         bad.append('geodata.js 没把网格助手注入槽（槽会一直是空的）')
 
     ps = _code_only(_read('src/renderer/src/utils/provinceShape.js'))
+    # `mergeProvinceShapes` 保留为**纯函数参考实现**（有 Node 单测），量纲字段自然还在；
+    # 但它已不再被产品代码调用（见下）。
     for sym, why in (('crossScanSkipped', '超阈时没标记「跳过相交扫描」'),
-                     ('pairsTested', '没回报实际测了几对环'),
-                     ('boxesOverlapRaw', '相交扫描缺包围盒预筛')):
+                     ('pairsTested', '没回报实际测了几对环')):
         if sym not in ps:
             bad.append(f'provinceShape 合并{why}')
 
     pei = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
-    if 'maxWork: merged.maxWork' not in pei:
-        bad.append('mergeProvinces 没把规模量纲回报给 UI')
+    # 🔴 P2（2026-10-09）：合并改**布尔精确并集** —— `maxWork`/`overflow`/`raster` 这套
+    #    "超阈降级"的量纲概念整体消失（布尔没有阈值）。旧守卫要求回报量纲，现在**反转为**
+    #    「不许再出现降级路径」。
+    for sym in ('unionMulti', 'polygonClipping'):
+        if sym not in pei:
+            bad.append(f'mergeProvinces 没走布尔精确并集（缺 {sym}）')
+    if 'maxWork' in pei or "'raster'" in pei:
+        bad.append('provinceEditing 仍有「超阈降级到栅格」的残留（P2 后应完全消失）')
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
-    if '超阈' not in sm:
-        bad.append('合并降级文案仍没有量纲（用户看不出超了多少倍）')
+    if '布尔精确并集' not in sm:
+        bad.append('合并文案没说明走的是布尔精确并集（用户看不出会不会降精度）')
+    if '精度降级' in sm:
+        bad.append('合并文案仍提「精度降级」→ 该分支应已删除')
 
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
     return True, ('删除级联网格（不额外压栈 + 省份回原位）+ 两个旧函数修掉孤儿写入 + '
-                  '合并回报量纲与跳过扫描 + UI 文案带倍数')
+                  '合并走布尔精确并集（无阈值、无栅格降级）+ UI 文案说明')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -220,7 +229,7 @@ def sub_delete(cdp):
 
 
 # ══════════════════════════════════════════════════════════════════
-# f2 合并量纲 + 跳过扫描
+# f2 合并：布尔精确并集（无阈值、无降级）
 # ══════════════════════════════════════════════════════════════════
 MERGE_JS = r"""(async () => {
   const fails = [], notes = {};
@@ -229,33 +238,29 @@ MERGE_JS = r"""(async () => {
   const s = __STORE__, SM = __SM__;
   const KEY = __KEY__;
 
-  // ① 小规模：共边抵消，且真测了 1 对环
+  // ① 小规模：布尔精确并集
   __SEED__
   await tick(200);
   const ok1 = s.mergeProvinces(KEY, ['p81a', 'p81b']);
   ck('小规模合并不被拒', !!(ok1 && !ok1.rejected), ok1);
-  ck('小规模走精确并集', ok1.method === 'cancel', ok1 && ok1.method);
-  ck('小规模回报量纲（work/edges/nodes/maxWork）',
-     ok1.work > 0 && ok1.edges > 0 && ok1.nodes > 0 && ok1.maxWork === 20000000, ok1);
-  ck('小规模未超阈', ok1.overflow === false, ok1 && ok1.overflow);
-  ck('相邻环对被真的测过（pairsTested = 1）', ok1.pairsTested === 1, ok1 && ok1.pairsTested);
+  ck('合并方法 = 布尔并集（bool）', ok1.method === 'bool', ok1 && ok1.method);
+  ck('回报规模（点数 / 环数）', ok1.points >= 3 && ok1.loops >= 1, ok1);
   s.undo();
   await tick(150);
 
-  // ② 超阈：走栅格 + 跳过整轮相交扫描
+  // ② 🔴 P2：**没有阈值、没有降级** —— 上万点的省照样走精确布尔。
+  //    旧实现 `unionRingsByCancellation` 有 maxWork=2e7，真实库前两大省（10525×10071 点）
+  //    → overflow → 退回 `unionRingsByRaster(maxDim=220)`，把上万点重采样成 220 分辨率轮廓。
   __SEEDBIG__
   await tick(300);
   const t0 = Date.now();
   const ok2 = s.mergeProvinces(KEY, ['b81a', 'b81b']);
   const dt = Date.now() - t0;
-  ck('超阈合并给出结果', !!(ok2 && !ok2.rejected), ok2);
-  ck('超阈走栅格并集', ok2.method === 'raster', ok2 && ok2.method);
-  ck('回报 overflow + 量纲', ok2.overflow === true && ok2.work > ok2.maxWork,
-     { work: ok2.work, maxWork: ok2.maxWork, overflow: ok2.overflow });
-  ck('**跳过**相交扫描（旧实现照扫 = 真实库卡顿主因）',
-     ok2.crossScanSkipped === true && ok2.pairsTested === 0, { skip: ok2.crossScanSkipped, pairs: ok2.pairsTested });
-  ck('耗时可控（跳过扫描后不该出现秒级停顿）', dt < 4000, dt + 'ms');
-  notes.merge = { work: ok2.work, maxWork: ok2.maxWork, dt: dt, pairs: ok2.pairsTested };
+  ck('上万点的省合并给出结果', !!(ok2 && !ok2.rejected), ok2);
+  ck('🔴 大点数合并仍走布尔（**没有栅格降级**）', ok2.method === 'bool', ok2 && ok2.method);
+  ck('🔴 结果点数与输入同量级（没被重采样成几百点）', ok2.points > 500, ok2 && ok2.points);
+  ck('耗时可控（布尔是 O(n log n)，不该出现秒级停顿）', dt < 10000, dt + 'ms');
+  notes.merge = { method: ok2.method, points: ok2.points, dt: dt };
   return JSON.stringify({ fails, notes });
 })()"""
 

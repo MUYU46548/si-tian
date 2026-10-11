@@ -249,6 +249,26 @@ export function convexHull(points) {
 }
 
 /**
+ * 对称绘制：把一个点沿对称轴镜像。
+ *
+ * 🔴 这是「对称绘制」这条能力**唯一**的镜像数学实现（2026-10-11 抽出）。
+ *    抽出来的原因不是洁癖：此前 `PlanetMap.vue` 里有一份局部 `mirrorPoint`，
+ *    而绘图层 `composables/planetDrawing.js` 里直接引用了**同名但不在作用域里的**
+ *    `mirrorPoint`（`s.currentPath.map(mirrorPoint)`）—— 那是个未声明标识符，
+ *    一打开「对称绘制」画路径/描点就 `ReferenceError`（由 test_93 的静态守卫抓出）。
+ *    两份实现还各自可能漂移：镜像轴语义（axis='y' 指"左右镜像"，镜像的是 x 坐标）必须只有一处定义。
+ *
+ * @param {{x:number,y:number}} p
+ * @param {'x'|'y'} axis  'y' = 左右镜像（竖轴对称轴 x=offset）；'x' = 上下镜像（横轴对称轴 y=offset）
+ * @param {number} offset 对称轴位置（世界坐标）
+ */
+export function mirrorPointAcross(p, axis = 'y', offset = 0) {
+  const off = Number.isFinite(offset) ? offset : 0;
+  if (axis === 'y') return { x: 2 * off - p.x, y: p.y };
+  return { x: p.x, y: 2 * off - p.y };
+}
+
+/**
  * 多边形中心（顶点平均）
  */
 export function polygonCenter(points) {

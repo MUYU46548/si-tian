@@ -1,61 +1,77 @@
-// store/geodataModules/provinceEditing.js — 省份「归属标签网格」store 模块（Phase 3 + P0 第二块）
+// store/geodataModules/provinceEditing.js — 省份编辑 store 模块（**P2 矢量级归属**，2026-10-09）
 //
 // ctx: { execute, baseMaps, scheduleAutoSaveScenarios, guardWrite, isReadOnly }
 //   `baseMaps` 是 scenarioEditing 模块持有的 ref（省份定义表就住在 baseMaps[key].terrain 里）。
 //
-// ── P0 第二块后的分工（**几何只有一个来源**）─────────────────────────────────
-//   · **多边形（`terrain[].points` + `extraRings`）是省份几何的事实源**，画布只渲染它
-//     （渲染单一路径 —— 旧的「网格视图」开关已删除，见 ScenarioMap）。
-//   · **网格（`provinceLabels`）退为内部中间层**：笔刷/套索/点击填充的输入面，
-//     涂抹抬手时把结果**投影回多边形**（`reprojectRings`），随后网格与多边形互相自洽。
-//   · 投影只重算**被涂抹到的省份**（`touched`）：没被碰过的省保留导入时的高保真轮廓
-//     （把整表按格重采样会把 FMG 的精细边界一次性降级成格点台阶）。
-//   · 🔴 网格**唯一性**由「形状签名」保证：`provinceLabels.shape` 存的是各省多边形的
-//     指纹（`shapeSignature`）。签名不符 ⇒ 存的网格是别的几何派生出来的，直接按多边形重建。
-//     这样就不需要在十几个「改了多边形」的调用点手工作废缓存 —— 漏一个就是静默错数据。
+// ── P2 之后的分工（**只有一个几何表示：多边形**）─────────────────────────────
+//   · **多边形（`terrain[].points` + `extraRings`）是省份的唯一事实源**，画布只渲染它。
+//   · 涂抹（笔刷 / 套索 / 点填） = 对多边形做**布尔运算**（并集 / 差集），完全不经网格：
+//       - 笔刷 / 套索 → 笔迹多边形 → 目标省 `union`、相交省 `difference`（`applyRegionToTerrain`）
+//       - 点填       → 「把点击处那个省整块给目标省」（复用 `mergeProvinces`）
+//   · 几何算法在 `utils/polygonBool.js`（纯转换 + 注入式布尔引擎，Node 有单测）。
+//
+// 🔴 **为什么必须删掉旧的「网格 → 多边形写回」**：旧实现（`reprojectRings`）在抬手时把
+//    「归属格轮廓」反向写成多边形 —— 精度上限 = 一个格子一条边（`DEFAULT_GRID_CELL = 14.4`
+//    世界单位）→ 10525 点的真实海岸线**一次涂抹就变 ~22 点**。这是用户实测「一绘制整张图
+//    就退化、很丑」的根因。详见 `docs/SCENARIO_PROVINCE_FIX_PLAN.md`。
+//
+// ⚠️ **`provinceLabels` 网格（下方 ensure/rebuild/clear/remove 一族）保留但已"退役"**：
+//    它不再参与任何编辑或渲染，只为**兼容旧项目里的存量数据**与既有用例而留着。
+//    新代码**不要**再往它里面写东西 —— 它一旦重新成为几何来源，退化就会回来。
 //
 // 🔴 **只读态（无项目）下的纪律**：画布编辑入口暂不灰禁，但**绝不能产生意外改动** ——
-//   本模块的每个写操作都先过 `guardWrite`，被拒时返回「什么都没发生」（不写 baseMaps、
-//   不改内存里的 labels，连懒建网格都只进内存缓存不落 store）。这样「看着能画」也不会
-//   留下任何会污染知识库/项目文件的状态。UI 侧另给一句能力说明（见 ScenarioMap）。
+//   本模块的每个写操作都先过 `guardWrite`，被拒时返回「什么都没发生」。这样「看着能画」
+//   也不会留下任何会污染知识库/项目文件的状态。UI 侧另给一句能力说明（见 ScenarioMap）。
 //
-// 设计要点（为什么这样分）：
-//   · **不另建省份定义表**：`labels` 的值 = `terrain[]` 下标 + 1。两套表 = 两套事实源，
-//     迟早漂移（本项目已经在「项目文件 / 知识库缓存」上付过一次代价）。
-//   · **涂抹期不碰响应式**：一笔拖动有几十次落点、每次改几百格。逐次写响应式对象会拖垮
-//     帧预算（铁律 84 同类问题）→ 涂抹期只改模块内缓存的 Uint8Array，抬手时才 diff 成
-//     **一条** undo 命令并同步进 store。画布由调用方 `requestRender()` 重绘。
-//   · 🔴 **会重编号的操作（删除省份 / 清空归属 / 重建网格）必须记整表快照**：删除时
-//     `labels[i] > idx` 的格子会被减 1，动的是「未被删除的格子」，差量记录还原不了。
-//   · 重建/懒建网格是**派生数据归一化**，不是用户编辑 → 不进 undo 栈（与 PlanetMap 的
-//     `ensureHeightmap` / `initTerrainGrid` 同策略），但改动要落盘。
-//   · **分割 / 合并也在这里**（P0 第二块）：它们同时改多边形与网格，必须是一条 undo；
-//     几何算法本身在纯函数层 `utils/provinceShape.js`（Node 有单测）。
+// 设计要点：
+//   · **不另建省份定义表**：`labels` 的值 = `terrain[]` 下标 + 1（仅网格时代遗留）。
+//   · **涂抹期不碰数据**：一笔拖动只累积轨迹点，抬手时才做一次布尔并压成**一条** undo 命令。
+//   · 🔴 **会重编号的操作（删除省份 / 清空归属）必须记整表快照**：删除时 `labels[i] > idx`
+//     的格子会被减 1，动的是「未被删除的格子」，差量记录还原不了。
+//   · **分割 / 合并也在这里**：分割走多边形直线裁剪（`splitProvinceShape`），
+//     合并走布尔并集（`unionMulti`）—— 都已**不再经网格**。
 
 import {
   gridFromProvinces, rasterizeProvinces, serializeLabels, normalizeStoredGrid,
-  stampBrush, lassoCells, lassoInsideCount, renumberAfterDelete, countOwned, usedIndices, cellAt, gridCellCount,
+  renumberAfterDelete, countOwned, usedIndices, gridCellCount,
 } from '../../utils/provinceGrid';
 import {
-  shapeSignature, ringsFromLabels, shapePatch, floodRegion, cellsArea,
-  normalizeProvince, splitProvinceShape, mergeProvinceShapes, provinceRings,
+  shapeSignature, shapePatch, normalizeProvince, splitProvinceShape, provinceRings, provinceBBox, pointInProvince,
 } from '../../utils/provinceShape';
+// 🔴 P2（2026-10-09）：归属改**矢量级** —— 涂抹 = 对多边形做并集/差集，不再经格点轮廓反向覆盖。
+//    `polygon-clipping` 是**纯 default 导出**（`export { index as default }`）→ 必须 default import；
+//    写成 `import * as pc` 会得到 `{ default: {…} }`，`pc.union` 是 undefined（静默失效）。
+import polygonClipping from 'polygon-clipping';
+import {
+  ringToXY, provinceToMulti, multiToShape, isEmptyMulti,
+  traceBrushRings, ringsToMulti, unionMulti, differenceMulti, intersectsMulti, rdpSimplify,
+  multiBBox as boolMultiBBox, multiNetArea, countMultiPoints, robustOp, splitProvinceByPolyline,
+} from '../../utils/polygonBool';
+// B 方案（批量铺底）：Voronoi 播种 + 区域探针（纯几何，Node 有单测）
+import {
+  voronoiCells, autoSeedsInRegion, makeRegionProbe, ringBBox,
+} from '../../utils/voronoiBatch';
+import { nextProvinceColor } from '../../utils/scenarioPalette';
 // 套索采样点简化：鼠标 mousemove 每动一次落一点（去重阈值 1e-6 世界单位 ≈ 必落）
-// → 长按拖一大圈会有上千点，而 lassoCells 是 O(bbox 格 × 顶点数) → 不简化会卡住主线程。
-// 复用区域勾轮廓那条管线里的同一个实现（旋转到最远点做锚点的闭环保形简化）。
+// → 长按拖一大圈会有上千点。矢量布尔虽是 O(n log n)，但上千点仍不值得 → 复用同一条简化管线。
 import { simplifyClosedTrace } from '../../utils/regionTrace';
 import { toRaw } from 'vue';
 
-/** 点击填充的规模上限（格）。超过即视为「整块陆地 / 海洋」→ 拒绝，让人改用笔刷。 */
-export const MAX_FILL_CELLS = 60000;
-/** 点击填充的面积闸门：命中区域超过网格总格数的这个比例 → 拒绝 */
-export const FILL_AREA_SHARE = 0.25;
 /**
- * 自由轮廓（套索）的面积闸门与格数上限（2026-10-02）。
- * 套索是**刻意画**出来的，所以阈值比「点一下」宽松（允许圈半个图）；但「一口吞掉全图」
- * 几乎总是误操作（想整块陆地/海洋），而且一次写几万格 + 全网格重投影会明显卡顿。
+ * 套索的**面积闸门**：轮廓包围盒占「全部省份包围盒」的比例上限。
+ * 套索是**刻意画**出来的，所以阈值宽松（允许圈半个图）；但「一口吞掉全图」几乎总是误操作。
+ * 🔴 P2 起语义变了：旧值按「格数」衡量并搭 `MAX_LASSO_CELLS`；矢量模型下没有格子，
+ *    改为**面积占比**（`applyProvinceLasso` 仍保证「拒绝 = 零副作用」）。
  */
 export const LASSO_AREA_SHARE = 0.5;
+/**
+ * ⚠️ **已退役（P2）**：格点时代的闸门常量。
+ * `applyRegionToTerrain` / `mergeProvinces` 都是**精确布尔**（不存在"一口吞掉整片海"的机制），
+ * 点击填充的语义也已改成「吞并点击处的那个省份」。保留导出只为不打断旧用例的 import；
+ * **新代码不要再用**（保留它们当"闸门"= 把栅格思维带回来）。
+ */
+export const MAX_FILL_CELLS = 60000;
+export const FILL_AREA_SHARE = 0.25;
 export const MAX_LASSO_CELLS = 60000;
 
 export function createProvinceEditingModule(ctx) {
@@ -63,6 +79,11 @@ export function createProvinceEditingModule(ctx) {
   const guardWrite = ctx.guardWrite || (() => ({ ok: true }));
   const isReadOnly = ctx.isReadOnly || { value: false };
   const isRO = () => !!(isReadOnly && isReadOnly.value);
+  /**
+   * 剧本容器（**批量铺底要迁移归属/易主**，见 `batchSubdivide`）。
+   * ⚠️ 只在「批量切分」这一条链上读它 —— 省份几何本身仍然只住 `baseMaps[key].terrain`。
+   */
+  const scenarios = ctx.scenarios || { value: {} };
 
   /** 只读态统一拒绝：返回「什么都没发生」的结果 */
   function blocked(action) {
@@ -70,9 +91,9 @@ export function createProvinceEditingModule(ctx) {
     return { blocked: true, readOnly: true, changed: 0, message: gate.error || `${action}被拒绝（只读）` };
   }
 
-  /** 涂抹期活数据（非响应式）：key → { grid, labels, shape } */
+  /** 涂抹期活数据（非响应式）：key → { grid, labels, shape } —— 网格已退役，仅为旧数据兼容保留 */
   const cache = {};
-  /** 当前这一笔：{ key, cells: Map<index, oldValue> } */
+  /** 当前这一笔：{ key, path:[{x,y}], tool, target, radius }（矢量语义下只记轨迹，不碰数据） */
   let stroke = null;
 
   const bm = (key) => (baseMaps.value || {})[key] || null;
@@ -280,33 +301,98 @@ export function createProvinceEditingModule(ctx) {
   }
 
   // ============================================================
-  // 网格 → 多边形（写回）：渲染的唯一来源是多边形
+  // 涂抹 → 多边形（**矢量布尔**）：归属的唯一表示是多边形
   // ============================================================
+  //
+  // 🔴 P2（2026-10-09）**删掉了旧的 `reprojectRings`** —— 它把「归属格轮廓」反向写回多边形，
+  //    精度上限 = 一个格子一条边（`DEFAULT_GRID_CELL = 14.4` 世界单位）→ 10525 点的真实海岸线
+  //    一次涂抹就变 ~22 点（用户实测「退化 / 恶心」的根因，见 docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
+  //    现在：笔迹 → 多边形 → 对目标省 union、对相交省 difference。
+  //    **几何只可能变精细，永不被格点重采样。**
 
   /**
-   * 用当前网格重算「被碰到的省份」的多边形，返回新的 terrain 数组（无改动给 null）。
-   * @param {Set<number>|null} touched 1-based 省份序号；null = 全部
+   * MultiPolygon 的世界包围盒（预筛用；null = 空）。
+   * 🔴 唯一实现已上移到 `utils/polygonBool.js`（`multiBBox`）：批量铺底那侧也要用它，
+   *    两处各写一份 = 迟早一处改了另一处没改（本项目在高度图 / 参考图 / 势力名上各付过一次代价）。
    */
-  function reprojectRings(key, entry, touched) {
-    if (!entry) return null;
-    if (touched && !touched.size) return null;
-    const byLabel = ringsFromLabels(entry.labels, entry.grid);
+  const multiBBox = boolMultiBBox;
+
+  const bboxHit = (a, b) => !!a && !!b
+    && !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
+
+  /** 省份 kind 归一（'sea' 只有海域省才写） */
+  const kindOf = (p) => (p && p.kind === 'sea' ? 'sea' : 'land');
+
+  /**
+   * 把一块几何（笔迹轮廓 / 套索多边形）**并进目标省**、并从其他相交省里**挖掉**。
+   *
+   * @param {Array} brushRings Ring 列表（每项 = [[x,y],…] 闭合）
+   * @param {number} targetIdx 1-based 目标省序号；**0 = 只挖不并**（等价「抹除」）
+   * @returns {{ terrain:Array, ops:Array<{id,op,emptied?}> }|null} null = 什么都没碰到
+   *
+   * 性能：先按**包围盒**预筛（真实数据里通常只剩 1~3 个省），再用 `intersectsMulti` 真判相交 ——
+   *   对 10525 点的省做一次差集是几十毫秒量级，不能对每个省无脑跑。
+   */
+  function applyRegionToTerrain(key, brushRings, targetIdx, opts = {}) {
     const terrain = provincesOf(key);
+    if (!terrain.length) return null;
+    let brushMulti = ringsToMulti(brushRings);
+    if (!brushMulti.length) return null;
+    let bb = multiBBox(brushMulti);
+
+    // 🔴 **锁定海岸线**（默认开；2026-10-09 暮雨要求）：
+    //    「海岸线就应该只靠专门的底图编辑调整，平时维持锁定状态」。
+    //    做法：把笔迹**裁剪到「已有省份的并集」之内** —— 涂抹只能在大陆内部易手，
+    //    永远不会往海面 / 空白区扩张（旧行为：笔迹压到海岸线上，轮廓就跟着被改掉）。
+    //    ⚠️ 连带效果：新建省份（空省，不在并集里）也只能**从已有大陆里挖一块**，
+    //    不会再画出一块悬在海上、与大陆无关的地。
+    if (opts.lockCoast !== false) {
+      const near = [];
+      for (const p of terrain) {
+        const pbox = provinceBBox(p);
+        if (!pbox || !bboxHit(pbox, bb)) continue;
+        const m = provinceToMulti(p);
+        if (m.length) near.push(m);
+      }
+      if (!near.length) return null;                       // 附近没有任何省份 → 不动（不扩张海岸线）
+      const covered = near.length === 1 ? near[0] : unionMulti(polygonClipping, near[0], near.slice(1));
+      const clipped = polygonClipping.intersection(brushMulti, covered);
+      if (isEmptyMulti(clipped)) return null;              // 笔迹全在省外 → 什么都不做
+      brushMulti = clipped;
+      const bb2 = multiBBox(brushMulti);
+      if (bb2) bb = bb2;                                   // 裁剪后包围盒更准（预筛更省）
+    }
+
+    const ops = [];
     let changed = false;
+
     const next = terrain.map((p, i) => {
       const idx = i + 1;
-      if (touched && !touched.has(idx)) return p;
-      const loops = byLabel.get(idx) || [];
-      const kind = p.kind === 'sea' ? 'sea' : 'land';
-      // 🔴 `fromGrid: true`：这些环是从归属格轮廓提取的（带格点台阶），渲染端据此做 Chaikin
-      //    平滑；不标记 → 画布上就是「马赛克台阶边」（用户投诉「丑东西」的几何来源）。
-      const patch = loops.length
-        ? shapePatch(loops.map((pts) => ({ points: pts, kind, fromGrid: true })))
-        : { points: [], extraRings: undefined, fromGrid: false };
+      const kind = kindOf(p);
+
+      // 🔴 目标省**不做包围盒预筛**：涂/圈在别人地盘上、与目标省并不相邻时，它本来就该
+      //    长出一块「飞地」。预筛一挡，这一笔就变成「从原省挖掉、却没人接」＝**凭空少一块地**
+      //    （实跑抓到：套索划给不相邻的省 → 总面积少了一整块）。
+      if (idx === targetIdx) {
+        const merged = unionMulti(polygonClipping, provinceToMulti(p), [brushMulti]);
+        changed = true;
+        ops.push({ id: p.id, op: 'union' });
+        return normalizeProvince({ ...p, ...multiToShape(merged, kind) });
+      }
+
+      const pbox = provinceBBox(p);
+      if (!pbox || !bboxHit(pbox, bb)) return p;                 // 其他省：包围盒不相交 → 整省跳过
+      const base = provinceToMulti(p);
+      if (!base.length) return p;
+      if (!intersectsMulti(polygonClipping, base, brushMulti)) return p;   // 真不相交 → 跳过差集
+      const cut = differenceMulti(polygonClipping, base, [brushMulti]);    // 相交省：差集
+      const patch = multiToShape(cut, kind);
       changed = true;
+      ops.push({ id: p.id, op: 'difference', emptied: !patch.points.length });
       return normalizeProvince({ ...p, ...patch });
     });
-    return changed ? next : null;
+
+    return changed ? { terrain: next, ops } : null;
   }
 
   /** 写 terrain（新数组 → 响应式）+ 同步签名 */
@@ -329,204 +415,250 @@ export function createProvinceEditingModule(ctx) {
   }
 
   // ============================================================
-  // 笔刷 / 套索（一笔 = 一条 undo，含多边形写回）
+  // 笔刷 / 套索（一笔 = 一条 undo；**矢量布尔**，不经网格）
   // ============================================================
 
   function beginProvinceStroke() {
-    stroke = { key: null, cells: new Map() };
-  }
-
-  /** 一次落点（内部按格 dab）；涂抹期调用，不压栈 */
-  function applyProvinceStroke(key, { x, y, radius = 4, strength = 0.8, tool = 'paint', target = 0 } = {}) {
-    if (isRO()) { blocked('省份笔刷划归'); return 0; }   // 只读：连内存里的格都不动
-    const entry = ensureProvinceGrid(key);
-    if (!entry) return 0;
-    // 划归必须有目标省份（还没有省份时先「新建省份」）—— 否则会写出指向不存在省份的标签
-    if (tool === 'paint' && (target < 1 || target > provincesOf(key).length)) return 0;
-    if (!stroke || stroke.key !== key) stroke = { key, cells: new Map() };
-    const { c, r } = cellAt(entry.grid, x, y);
-    const changed = stampBrush(entry.labels, entry.grid, { c, r, radius, strength, tool, target });
-    for (const [i, old] of changed) if (!stroke.cells.has(i)) stroke.cells.set(i, old);
-    return changed.length;
+    stroke = { key: null, path: [], tool: 'paint', target: 0, radius: 60 };
   }
 
   /**
-   * 抬手：把整笔压成一条 undo（**labels 差量 + 被碰省份的多边形写回**）。
-   * `cells` 里存的是**整笔开始前**的旧值（`Map` 首见即记），redo 时写入抬手瞬间的新值。
-   * 🔴 labels 必须**就地修改**（同一个 Uint8Array 引用）：外部（画布/用例）持有的是这个引用，
-   *    换新数组会让它们读到旧数据（本项目已踩过「重建对象导致引用脱钩」的坑，见 AGENTS.md）。
-   * @returns {{ changed:number, label:string, reprojected:number }|null}
+   * 一次落点：**只累积轨迹**（不碰任何数据）。
+   *
+   * 🔴 与旧实现的关键差别：旧版每个 mousemove 都往格子里 stamp，抬手再按格轮廓重投影几何；
+   *    现在落点只记「笔走过哪里」，抬手时一次性把轨迹变成多边形再做布尔 ——
+   *    **涂抹期零几何运算**，帧预算与「抬手 diff」的手感与 `channelBrush` 一致。
+   * @param radius 笔刷半径（**世界单位**；不再以"格"计 —— 网格已不是归属的表示）
    */
-  function endProvinceStroke(label = '省份笔刷') {
+  function applyProvinceStroke(key, { x, y, radius = 60, strength = 0.8, tool = 'paint', target = 0 } = {}) {
+    if (isRO()) { blocked('省份笔刷划归'); return 0; }   // 只读：连轨迹都不记
+    if (!bm(key)) return 0;
+    const r = Number.isFinite(radius) && radius > 0 ? radius : 60;
+    if (!stroke || stroke.key !== key) stroke = { key, path: [], tool, target, radius: r };
+    stroke.tool = tool; stroke.target = target; stroke.radius = r;
+    const last = stroke.path[stroke.path.length - 1];
+    // 采样过滤：与上一点距离不足 0.35r 不落点（否则拖一屏会累积上千点）
+    if (!last || Math.hypot(last.x - x, last.y - y) >= r * 0.35) stroke.path.push({ x, y });
+    return stroke.path.length;
+  }
+
+  /** 把一组 region ops 讲成人话（供状态栏："并入 X、从 Y 挖去"） */
+  function describeRegionOps(key, ops) {
+    if (!ops || !ops.length) return '';
+    const list = provincesOf(key);
+    return ops.map((o) => {
+      const p = list.find((q) => q.id === o.id);
+      const name = (p && p.name) || o.id;
+      return o.op === 'union' ? `并入「${name}」` : `从「${name}」挖去${o.emptied ? '（已清空）' : '一块'}`;
+    }).join('、');
+  }
+
+  /**
+   * 抬手：把整笔压成**一条 undo**。
+   * @returns {{ changed:number, label:string, ops:Array, detail:string }|null}
+   */
+  function endProvinceStroke(label = '省份笔刷', opts = {}) {
     const s = stroke;
     stroke = null;
-    if (!s || !s.cells.size) return null;
+    if (!s || !s.path.length) return null;
     const key = s.key;
-    const entry = cache[key];
-    if (!entry) return null;
-    const labels = entry.labels;
-    const entries = [...s.cells.entries()].map(([i, old]) => [i, old, labels[i]]);
-    const touched = new Set();
-    for (const [, old, now] of entries) { if (old) touched.add(old); if (now) touched.add(now); }
-    const beforeTerrain = provincesOf(key);
-    const nextTerrain = reprojectRings(key, entry, touched) || beforeTerrain;
-    const reprojected = nextTerrain === beforeTerrain ? 0 : touched.size;
+    // 🔴 只读态第二道门：`applyProvinceStroke` 已经不记轨迹，这里是防御性的 ——
+    //    本模块的每个写操作都必须能回答「只读态下会不会改内存 / 落盘」（test_54 的写口契约）。
+    if (isRO()) return blocked(label);
+    if (!bm(key)) return null;
 
-    const apply = (idx, terrain) => {
-      for (const e of entries) labels[e[0]] = e[idx];
-      setTerrain(key, terrain, { save: false });
-      commit(key);
-    };
+    // 「平滑」在矢量语义下 = 对边界做 RDP 简化（格点时代那个"3×3 邻域众数"已无对象）
+    if (s.tool === 'smooth') return smoothProvinceBoundary(key, s, label);
+
+    const target = s.tool === 'erase' ? 0 : (s.target || 0);
+    if (target === 0 && s.tool !== 'erase') {
+      return { changed: 0, label, ops: [], detail: '没有选中目标省份（先在工具栏选一个省）' };
+    }
+    const brushRings = traceBrushRings(s.path, s.radius);
+    const before = provincesOf(key);
+    const res = applyRegionToTerrain(key, brushRings, target, opts);
+    if (!res) return { changed: 0, label, ops: [], detail: '这一笔没有碰到任何省份' };
+
     execute({
       type: 'province-brush',
       label,
-      undo: () => apply(1, beforeTerrain),
-      redo: () => apply(2, nextTerrain),
+      undo: () => setTerrain(key, before),
+      redo: () => setTerrain(key, res.terrain),
     });
-    return { changed: entries.length, label, reprojected };
+    return { changed: res.ops.length, label, ops: res.ops, detail: describeRegionOps(key, res.ops) };
+  }
+
+  /** 「平滑」工具：RDP 简化目标省边界（容差 = 笔刷半径的 15%） */
+  function smoothProvinceBoundary(key, s, label) {
+    const terrain = provincesOf(key);
+    const idx = (s.target || 0) - 1;
+    if (idx < 0 || !terrain[idx]) return { changed: 0, label, ops: [], detail: '没有选中目标省份' };
+    const tol = (s.radius || 60) * 0.15;
+    const p = terrain[idx];
+    const rings = provinceRings(p);
+    const before = terrain;
+    const kept = rings
+      .map((r) => ({ points: rdpSimplify(r.points, tol), kind: r.kind }))
+      .filter((r) => r.points.length >= 3);
+    if (!kept.length) return { changed: 0, label, ops: [], detail: '简化后没有有效边界' };
+    const patch = shapePatch(kept);
+    const after = before.map((q, i) => (i === idx ? normalizeProvince({ ...q, ...patch }) : q));
+    const ptsBefore = rings.reduce((n, r) => n + r.points.length, 0);
+    const ptsAfter = kept.reduce((n, r) => n + r.points.length, 0);
+    if (ptsAfter >= ptsBefore) return { changed: 0, label, ops: [], detail: '边界已经足够简洁' };
+    execute({
+      type: 'province-smooth',
+      label,
+      undo: () => setTerrain(key, before),
+      redo: () => setTerrain(key, after),
+    });
+    return { changed: 1, label, ops: [{ id: p.id, op: 'smooth' }], detail: `边界顶点 ${ptsBefore} → ${ptsAfter}` };
   }
 
   /**
-   * 自由轮廓：一笔整批划归（同样写回多边形）。
+   * 自由轮廓（套索）：圈出的多边形 → **并进目标省 / 从相交省挖掉**（矢量布尔）。
    *
-   * 🔴 三条闸门（2026-10-02）—— 此前这里是三类工具里**唯一裸奔**的一条：
-   *   ① **目标合法性**：`target = 0`（上方省份下拉没选）会把圈内整片格子**静默擦成无主**
-   *      （`stampBrush` / `fillProvinceRegion` 都有这条校验，套索漏了）；
-   *   ② **采样点简化**：`mousemove` 每次落一点，圈一大片会有上千点 → O(格 × 顶点) 卡主线程；
-   *   ③ **圈入量闸门**：与点击填充同一协议（`{rejected, message}` + **零副作用**），但阈值宽松
-   *      （套索是刻意画的）：圈入 > 全图 `LASSO_AREA_SHARE`（一半）或 > `MAX_LASSO_CELLS` 格 → 拒。
-   *      ⚠️ 判定用 `lassoInsideCount`（几何圈入量），**不能**用 `lassoCells().length` 当分子 ——
-   *      后者跳过「本来就属于 target」的格，「把整张图圈给占着大半张图的省」会得到很小的差量。
+   * 与旧实现的两点差别：
+   *   ① 不再有「格数闸门」——那是栅格概念；改为**面积闸门**（轮廓包围盒 > 全图包围盒的
+   *      `LASSO_AREA_SHARE` → 拒绝），仍然保证"拒绝必须零副作用"。
+   *   ② 目标合法性校验保留（`target = 0` 会把圈住的地静默擦成无主 —— 这是曾经的裸奔缺口）。
    */
   function applyProvinceLasso(key, worldPoly, target, label = '自由轮廓划归', opts = {}) {
     if (isRO()) return blocked('自由轮廓划归');
-    const maxShare = opts.maxShare ?? LASSO_AREA_SHARE;
-    const maxCells = opts.maxCells ?? MAX_LASSO_CELLS;
     const provs = provincesOf(key);
     if (!(target >= 1 && target <= provs.length)) {
       return { changed: 0, rejected: 'no-target', message: '请先在上方选择要划归到的省份' };
     }
-    const raw = (worldPoly || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
+    const raw = (worldPoly || []).filter((p) => p && isFinite(p.x) && isFinite(p.y));
     if (raw.length < 3) {
       return { changed: 0, rejected: 'too-few-points', message: '轮廓至少要有 3 个点（贴着地面拖一圈再松手）' };
     }
     const poly = simplifyClosedTrace(raw);
-    const entry = ensureProvinceGrid(key);
-    if (!entry) return null;
+    const ring = ringToXY(poly);
+    if (!ring) return { changed: 0, rejected: 'too-few-points', message: '轮廓退化（有效点不足 3 个）' };
 
-    // 圈入量闸门（在**改任何格之前**判：拒绝必须零副作用）
-    const total = gridCellCount(entry.grid);
-    const { inside } = lassoInsideCount(entry.labels, entry.grid, poly);
-    if (!inside) return { changed: 0, label, reprojected: 0, inside: 0, simplified: { from: raw.length, to: poly.length } };
-    const share = total ? inside / total : 0;
-    if (inside > maxCells) {
-      return {
-        changed: 0, rejected: 'too-big', inside, share,
-        message: `圈入的格子超过 ${maxCells}（约 ${Math.round(share * 100)}% 的全图）`
-          + '——多半是整块陆地或海洋，请改用「变更归属」笔刷分次涂',
-      };
+    // 面积闸门：套索包围盒 vs 全部省份的包围盒（零副作用 —— 在改任何东西之前判）
+    const maxShare = opts.maxShare ?? LASSO_AREA_SHARE;
+    const polyBox = multiBBox(ringsToMulti([ring]));
+    let all = null;
+    for (const p of provs) {
+      const b = provinceBBox(p);
+      if (!b) continue;
+      all = all
+        ? {
+          minX: Math.min(all.minX, b.minX), minY: Math.min(all.minY, b.minY),
+          maxX: Math.max(all.maxX, b.maxX), maxY: Math.max(all.maxY, b.maxY),
+        }
+        : { ...b };
     }
-    if (share > maxShare) {
-      return {
-        changed: 0, rejected: 'area-gate', inside, share,
-        message: `这一次圈住了全图 ${Math.round(share * 100)}%（超过 ${Math.round(maxShare * 100)}%）`
-          + '——多半是圈歪了或想整块陆地，请改小轮廓，或用「变更归属」笔刷分次涂',
-      };
+    if (polyBox && all) {
+      const w = Math.max(all.maxX - all.minX, 1e-6), h = Math.max(all.maxY - all.minY, 1e-6);
+      const share = ((polyBox.maxX - polyBox.minX) * (polyBox.maxY - polyBox.minY)) / (w * h);
+      if (share > maxShare) {
+        return {
+          changed: 0, rejected: 'area-gate', share,
+          message: `这一次圈住了全图约 ${Math.round(share * 100)}%（超过 ${Math.round(maxShare * 100)}%）`
+            + '——多半是圈歪了或想整块陆地，请改小轮廓，或用「涂归属」笔刷分次涂',
+        };
+      }
     }
 
-    const changed = lassoCells(entry.labels, entry.grid, poly, target);
-    if (!changed.length) {
-      return { changed: 0, label, reprojected: 0, inside, simplified: { from: raw.length, to: poly.length } };
+    const before = provincesOf(key);
+    const res = applyRegionToTerrain(key, [ring], target, opts);
+    if (!res) {
+      return { changed: 0, label, ops: [], simplified: { from: raw.length, to: poly.length }, detail: '这个轮廓没有覆盖到任何省份' };
     }
-    const labels = entry.labels;
-    const entries = changed.map(([i, old]) => [i, old, labels[i]]);
-    const touched = new Set();
-    for (const [, old, now] of entries) { if (old) touched.add(old); if (now) touched.add(now); }
-    const beforeTerrain = provincesOf(key);
-    const nextTerrain = reprojectRings(key, entry, touched) || beforeTerrain;
-
-    const apply = (idx, terrain) => {
-      for (const e of entries) labels[e[0]] = e[idx];
-      setTerrain(key, terrain, { save: false });
-      commit(key);
-    };
     execute({
       type: 'province-lasso',
       label,
-      undo: () => apply(1, beforeTerrain),
-      redo: () => apply(2, nextTerrain),
+      undo: () => setTerrain(key, before),
+      redo: () => setTerrain(key, res.terrain),
     });
     return {
-      changed: entries.length, label, inside, share,
+      changed: res.ops.length, label, ops: res.ops,
       simplified: { from: raw.length, to: poly.length },
-      reprojected: nextTerrain === beforeTerrain ? 0 : touched.size,
+      detail: describeRegionOps(key, res.ops),
     };
   }
 
   /**
-   * 点击填充（**面积闸门**）：把点击处**所在的封闭连通区域**整块划归目标省份。
+   * 点击填充：把**点击处所属的省份**整块并入目标省（矢量语义）。
    *
-   * 为什么必须有闸门：点一下就把「整片海 / 整块大陆」填成某省是这类工具最经典的灾难
-   * （用户点歪一格 → 全图变色，undo 都不知道该恢复到哪一步）。闸门两条：
-   *   ① 命中区域超过网格总面积的 `FILL_AREA_SHARE` → 拒绝（点名占比 + 建议用笔刷分次涂）；
-   *   ② 泛滥格数超过 `MAX_FILL_CELLS` → 直接不返回（视为不当使用）。
-   * @returns {{ changed:number, label:string, rejected?:string, message?:string }}
+   * 🔴 语义变更（P2）：格点时代它是「把点击处所在的**连通格子区域**整块划归」——
+   *    但"连通格子区域"只有栅格才存在。矢量模型下等价的、且更有用的语义是
+   *    **「把这一整块地给某个省」**：目标省吸收被点中的省（保留目标省自己的 id 与名字，
+   *    因为 id 是它在时间轴 / 势力归属里的身份）。
+   *    复用 `mergeProvinces`（精确并集 + 一条 undo），不再有"一点吞掉整片海"的风险 ——
+   *    吞并的对象是**一个有边界的省份**，不是无限的连通区域。
    */
-  function fillProvinceRegion(key, { x, y }, target, opts = {}) {
+  function fillProvinceRegion(key, { x, y }, target) {
     if (isRO()) return blocked('点击填充');
-    const maxShare = opts.maxShare ?? FILL_AREA_SHARE;
-    const entry = ensureProvinceGrid(key);
-    if (!entry) return { changed: 0, rejected: 'no-grid', message: '底图没有可用的省份网格' };
     const provs = provincesOf(key);
     if (!(target >= 1 && target <= provs.length)) {
       return { changed: 0, rejected: 'no-target', message: '请先在上方选择要填充到的省份' };
     }
-    const { c, r } = cellAt(entry.grid, x, y);
-    const cells = floodRegion(entry.labels, entry.grid, c, r, { cap: Math.min(MAX_FILL_CELLS, gridCellCount(entry.grid)) });
-    if (!cells.length) {
-      const cap = Math.min(MAX_FILL_CELLS, gridCellCount(entry.grid));
+    const hitIdx = provs.findIndex((p) => provinceRings(p).length && pointInProvince(x, y, p));
+    if (hitIdx < 0) {
       return {
-        changed: 0, rejected: 'too-big',
-        message: `这里连成一片的区域超过 ${cap} 格（多半是整块陆地或海洋）——请改用笔刷分次涂抹`,
+        changed: 0, rejected: 'no-province',
+        message: '这里没有省份（点在空白或海洋上）——先用「画省份」画一块，或点到别的省份上',
       };
     }
-    const total = gridCellCount(entry.grid);
-    const share = cells.length / total;
-    if (share > maxShare) {
-      return {
-        changed: 0, rejected: 'area-gate',
-        message: `这个区域占全图 ${Math.round(share * 100)}%（超过 ${Math.round(maxShare * 100)}%）——`
-          + '多半是整块陆地或海洋，请改用笔刷分次涂抹',
-      };
-    }
-    const labels = entry.labels;
-    const entries = [];
-    for (const i of cells) if (labels[i] !== target) entries.push([i, labels[i]]);
-    if (!entries.length) return { changed: 0, message: '这一块已经属于该省份' };
-    // 目标省 + 被覆盖掉的原归属省都要写回多边形（它们的地盘变了）
-    const touched = new Set([target]);
-    for (const e of entries) if (e[1]) touched.add(e[1]);
-    const beforeTerrain = provincesOf(key);
-    const nextTerrain = reprojectRings(key, entry, touched) || beforeTerrain;
-    for (const e of entries) labels[e[0]] = target;
-
-    const apply = (idx, terrain) => {
-      for (let k = 0; k < entries.length; k++) labels[entries[k][0]] = idx ? target : entries[k][1];
-      setTerrain(key, terrain, { save: false });
-      commit(key);
+    if (hitIdx + 1 === target) return { changed: 0, message: '这一块已经属于该省份' };
+    const targetProv = provs[target - 1];
+    const hitProv = provs[hitIdx];
+    const res = mergeProvinces(key, [targetProv.id, hitProv.id], { name: targetProv.name });
+    if (!res || res.blocked || res.rejected) return res || { changed: 0, message: '填充失败' };
+    return {
+      changed: 2,
+      label: `点击填充：「${hitProv.name || hitProv.id}」并入「${targetProv.name || targetProv.id}」`,
+      swallowed: hitProv.name || hitProv.id,
+      into: targetProv.name || targetProv.id,
     };
-    execute({
-      type: 'province-fill',
-      label: `点击填充 ${cells.length} 格`,
-      undo: () => apply(0, beforeTerrain),
-      redo: () => apply(1, nextTerrain),
-    });
-    return { changed: entries.length, cells: cells.length, area: cellsArea(cells, entry.grid), label: `点击填充 ${cells.length} 格` };
   }
 
   // ============================================================
-  // 分割 / 合并（几何在纯函数层；这里只管「一条 undo + 网格作废」）
+  // 分割 / 折线切割 / 合并（几何在纯函数层；这里只管「一条 undo + 网格作废」）
   // ============================================================
+
+  /**
+   * 把「切成两半」的结果落成**一条 undo**（直线分割与折线切割共用）。
+   *
+   * 🔴 占原位的那一半必须**连 id 一起继承**：省份 id 是它在时间轴 / 归属 / 引用里的身份，
+   *    换了 id 等于「那块地换了一个省」—— 历史归属会整段对不上（这类静默错数据最难发现）。
+   *    `side`（+1 / -1）决定**哪一半占原位序号**：序号决定「时间轴 / 归属里那条历史的省
+   *    还是不是这块地」，所以用户必须能选边。
+   *
+   * ⚠️ 本函数**不含** `guardWrite`/`blocked`：它自己不改任何数据，写入全在 `execute` 的
+   *    redo 回调里（`execute` 内部先过闸门）。写口契约（test_54）因此不登记它 —— 登记了反而
+   *    会让「函数首行守卫」那条判据把一次**只读**操作算成写口。
+   */
+  function commitSplit(key, idx, res, side, label) {
+    const terrain = provincesOf(key);
+    const keepA = side >= 0;
+    const orig = terrain[idx];
+    const keptPick = keepA ? res.a : res.b;
+    const otherPick = keepA ? res.b : res.a;
+    const atIndex = { ...keptPick, id: orig.id, name: orig.name || keptPick.name };   // 占原位序号的那一半
+    const appended = { ...otherPick, id: otherPick.id, name: otherPick.name };        // 追加到表尾的新省（新 id / 新名）
+    const before = terrain;
+    const after = terrain.map((p, i) => (i === idx ? atIndex : p)).concat([appended]);
+    const apply = (next) => {
+      invalidateProvinceGrid(key);          // 几何换了 → 网格按新多边形重建（签名检查也会兜住）
+      setTerrain(key, next, { save: false });
+      scheduleAutoSaveScenarios();
+    };
+    execute({
+      type: 'province-split',
+      label,
+      undo: () => apply(before),
+      redo: () => apply(after),
+    });
+    return {
+      a: res.a, b: res.b, index: idx + 1, newIndex: after.length,
+      side: keepA ? 1 : -1, keptId: atIndex.id, appendedId: appended.id,
+    };
+  }
 
   /**
    * 沿切割线把省份一分为二（**保留多环与 land/sea**）。
@@ -545,38 +677,35 @@ export function createProvinceEditingModule(ctx) {
     if (idx < 0) return null;
     const res = splitProvinceShape(terrain[idx], p1, p2);
     if (!res) return { rejected: 'no-cut', message: '切割线没有穿过这个省份（两点要落在它的两侧）' };
-
-    // 🔴 占原位的那一半必须**连 id 一起继承**：省份 id 是它在时间轴 / 归属 / 引用里的身份，
-    //    换了 id 等于「那块地换了一个省」—— 历史归属会整段对不上（这类静默错数据最难发现）。
-    const keepA = side >= 0;
-    const orig = terrain[idx];
-    const keptPick = keepA ? res.a : res.b;
-    const otherPick = keepA ? res.b : res.a;
-    const atIndex = { ...keptPick, id: orig.id, name: orig.name || keptPick.name };   // 占原位序号的那一半
-    const appended = { ...otherPick, id: otherPick.id, name: otherPick.name };        // 追加到表尾的新省（新 id / 新名）
-    const before = terrain;
-    const after = terrain.map((p, i) => (i === idx ? atIndex : p)).concat([appended]);
-    const apply = (next) => {
-      invalidateProvinceGrid(key);          // 几何换了 → 网格按新多边形重建（签名检查也会兜住）
-      setTerrain(key, next, { save: false });
-      scheduleAutoSaveScenarios();
-    };
-    execute({
-      type: 'province-split',
-      label: `分割省份「${terrain[idx].name || provinceId}」`,
-      undo: () => apply(before),
-      redo: () => apply(after),
-    });
-    return {
-      a: res.a, b: res.b, index: idx + 1, newIndex: after.length,
-      side: keepA ? 1 : -1, keptId: atIndex.id, appendedId: appended.id,
-    };
+    return commitSplit(key, idx, res, side, `分割省份「${terrain[idx].name || provinceId}」`);
   }
 
   /**
-   * 合并若干省份为一个**多环实体**（共边抵销的精确并集，取代旧的凸包合并）。
-   * 结果替换第一个省份的位置（其余删除）→ 表变短 ⇒ 之后的序号整体减，标签必须重编号，
-   * 所以合并后网格整体重建（与删除省份同样记整表快照的语义，但重建更直接）。
+   * 沿**折线**把省份切成两半（A 方案：`splitProvinceShape` 只能切直线，见 polygonBool 头注）。
+   * 与直线分割共用 `commitSplit` —— 「哪一半继承原 id」的规则只此一处。
+   */
+  function splitProvinceAlong(key, provinceId, polyline, { side = 1 } = {}) {
+    if (isRO()) return blocked('折线切割');
+    const terrain = provincesOf(key);
+    const idx = terrain.findIndex((p) => p.id === provinceId);
+    if (idx < 0) return { rejected: 'not-found', message: '要切的省份已不存在' };
+    const res = splitProvinceByPolyline(polygonClipping, rawProvinces(key)[idx], polyline);
+    if (!res) return { rejected: 'no-cut', message: '这条折线没有把这个省份切成两块（折线要横穿它，两端可以落在省外）' };
+    const r = commitSplit(key, idx, res, side, `折线切割「${terrain[idx].name || provinceId}」`);
+    return { ...r, snapped: !!res.snapped, cutPoints: res.cutPoints, runs: res.runs };
+  }
+
+  /**
+   * 合并若干省份为一个**多环实体** —— 多边形布尔**精确并集**。
+   *
+   * 🔴 P2 换掉了 `mergeProvinceShapes`（共边抵消）：它有 `maxWork = 2e7` 上限，
+   *    真实库前两大省（10525 × 10071 点）→ work ≈ 1.06e8 → overflow → 退回
+   *    `unionRingsByRaster(maxDim=220)` → 上万点的省被重采样成 220 分辨率轮廓
+   *    （这是用户实测的**第二处**"退化"，与涂归属那条链独立）。
+   *    布尔引擎没有这个上限，且对**不共边 / 部分重叠 / 带洞**一律正确
+   *    （`mergeProvinceShapes` 仍留在 provinceShape.js 里并被单测覆盖，作为纯参考实现）。
+   *
+   * 结果替换第一个省份的位置（其余删除）→ 表变短；`labels` 旧序号由既有自愈逻辑接管。
    */
   function mergeProvinces(key, provinceIds, { name = '' } = {}) {
     if (isRO()) return blocked('合并省份');
@@ -586,19 +715,25 @@ export function createProvinceEditingModule(ctx) {
     const terrain = provincesOf(key);
     const picked = terrain.filter((p) => ids.includes(p.id));
     if (picked.length < 2) return { rejected: 'not-found', message: '要合并的省份已不存在' };
-    const merged = mergeProvinceShapes(picked);
-    if (!merged) return { rejected: 'no-geometry', message: '这些省份还没有几何（先涂抹出轮廓再合并）' };
+    const withGeom = picked.filter((p) => provinceRings(p).length);
+    if (!withGeom.length) return { rejected: 'no-geometry', message: '这些省份还没有几何（先涂抹出轮廓再合并）' };
+
+    const kind = withGeom.every((p) => kindOf(p) === 'sea') ? 'sea' : 'land';
+    const merged = unionMulti(
+      polygonClipping,
+      provinceToMulti(withGeom[0]),
+      withGeom.slice(1).map((p) => provinceToMulti(p)),
+    );
+    if (isEmptyMulti(merged)) return { rejected: 'no-geometry', message: '合并后的几何为空' };
+    const patch = multiToShape(merged, kind);
 
     const keepId = picked[0].id;
+    // 占原位的那一份**连 id 一起继承**：id 是它在时间轴 / 势力归属 / 引用里的身份
     const mergedProv = normalizeProvince({
       ...picked[0],
       id: keepId,
       name: name || picked.map((p) => p.name).filter(Boolean).join('+') || '合并省份',
-      kind: merged.shape.kind || picked[0].kind || 'land',
-      ...shapePatch((merged.shape.extraRings || []).length
-        ? [{ points: merged.shape.points, kind: merged.shape.kind || 'land' },
-           ...merged.shape.extraRings]
-        : [{ points: merged.shape.points, kind: merged.shape.kind || 'land' }]),
+      ...patch,
     });
     const before = terrain;
     const after = terrain
@@ -607,8 +742,7 @@ export function createProvinceEditingModule(ctx) {
 
     const apply = (next) => {
       invalidateProvinceGrid(key);
-      setTerrain(key, next, { save: false });
-      scheduleAutoSaveScenarios();
+      setTerrain(key, next);
     };
     execute({
       type: 'province-merge',
@@ -618,13 +752,318 @@ export function createProvinceEditingModule(ctx) {
     });
     return {
       merged: mergedProv, removed: picked.length - 1,
-      method: merged.method, loops: merged.loops,
-      area: merged.shape.points.length,
-      // 规模量纲一并回报：UI 才能说「超阈 N 倍」而不是含糊的"降级"（2026-10-02）
-      work: merged.work, edges: merged.edges, nodes: merged.nodes, maxWork: merged.maxWork,
-      overflow: merged.overflow, pairsTested: merged.pairsTested, crossScanSkipped: merged.crossScanSkipped,
+      method: 'bool',
+      loops: 1 + (patch.extraRings ? patch.extraRings.length : 0),
+      points: patch.points.length,
+      mergedCount: picked.length,
     };
   }
+
+  // ============================================================
+  // B 方案：**批量铺底**（Voronoi 一次切出 N 块）
+  // ============================================================
+  //
+  // 暮雨的最终目标：一张底图上「少说也要切四五百块省份」。`splitProvince` 一次只切一刀，
+  // 切 400 块 = 400 次精确点击 —— 不可行。这里把「播种 N 个点 → Voronoi → 与陆地求交」
+  // 做成一次动作。
+  //
+  // 🔴 三条不许违反的约束：
+  //   ① **不动海岸线**：每个 cell 都与「目标省的并集」求交，切出来的边界里，
+  //      海岸那一段就是**原多边形的原顶点**（布尔交集不是重采样）→ 海岸线逐点保留。
+  //   ② **不丢归属**：旧省要被删掉，如果只是删，12 个剧本里 20 条归属键就成了孤儿
+  //      （画布上看不见、却仍参与 groupMap / 谱系重叠度计算）。所以每个新省**承接**
+  //      它落点所在旧省的 `ownership` / `changeEvents`，且这一切**同属一条 undo**。
+  //   ③ **不静默失败**：进度、跳过的块数、引擎兜底吸附次数、覆盖率都要如实回报。
+
+  /** 深拷贝一份「易主记录」（可能是数组/对象；结构化克隆在 Electron 与 Node 都在） */
+  function cloneEvents(ev) {
+    if (ev === undefined || ev === null) return ev;
+    try { return JSON.parse(JSON.stringify(ev)); } catch (e) { return ev; }
+  }
+
+  /**
+   * 解析批量铺底的**目标省**（只读，不写任何东西）。
+   * 默认 = 全部有几何的陆地省；`provinceIds` 给定时只认这几个。
+   */
+  function resolveBatchTargets(key, provinceIds) {
+    const all = provincesOf(key);
+    if (!all.length) {
+      return { error: { ok: false, rejected: 'no-province', message: '这张底图还没有省份 —— 先用「自由绘制 (B)」画一块大陆，再铺底' } };
+    }
+    const wanted = (provinceIds && provinceIds.length)
+      ? all.filter((p) => provinceIds.includes(p.id))
+      : all.filter((p) => kindOf(p) !== 'sea');
+    const targets = wanted.filter((p) => provinceRings(p).length);
+    if (!targets.length) {
+      return { error: { ok: false, rejected: 'no-geometry', message: '目标省份还没有边界 —— 先画/涂出轮廓再铺底' } };
+    }
+    return { targets, targetIds: targets.map((p) => p.id) };
+  }
+
+  /**
+   * 目标省 → 铺底范围（并集）+ 区域探针。
+   * 只有一个目标省时**不做并集**（真实底图上「整块大陆就是一个省」是最常见的情形，
+   * 而 10525 点自并要 1 秒多 —— 没必要白花）。
+   */
+  function buildBatchRegion(key, targets) {
+    const raw = rawProvinces(key).filter((p) => targets.some((t) => t.id === p.id));
+    let region = null;
+    if (raw.length === 1) {
+      region = provinceToMulti(raw[0]);
+    } else {
+      const multis = raw.map((p) => provinceToMulti(p)).filter((x) => x.length);
+      if (!multis.length) return { error: { ok: false, rejected: 'no-geometry', message: '目标省份没有有效几何' } };
+      const u = robustOp(polygonClipping, 'union', multis[0], ...multis.slice(1));
+      if (!u.multi) return { error: { ok: false, rejected: 'bool-failed', message: `范围合并失败：${u.error}` } };
+      region = u.multi;
+    }
+    if (isEmptyMulti(region)) return { error: { ok: false, rejected: 'no-geometry', message: '目标范围是空的' } };
+    const probe = makeRegionProbe(region);
+    if (!probe) return { error: { ok: false, rejected: 'no-geometry', message: '目标范围是空的' } };
+    return {
+      region, probe,
+      regionArea: multiNetArea(region),
+      regionBox: multiBBox(region),
+      regionPoints: countMultiPoints(region),
+    };
+  }
+
+  /**
+   * **只读**：折线切割的两块几何预览（画布要实时显示"切完长什么样"）。
+   * ⚠️ 只算不写 —— 真正的写入在 `splitProvinceAlong` 里（一条 undo）。
+   */
+  function previewSplitAlong(key, provinceId, polyline) {
+    const terrain = provincesOf(key);
+    const idx = terrain.findIndex((p) => p.id === provinceId);
+    if (idx < 0) return null;
+    const res = splitProvinceByPolyline(polygonClipping, rawProvinces(key)[idx], polyline);
+    if (!res) return null;
+    return {
+      a: provinceToMulti(res.a), b: provinceToMulti(res.b),
+      aArea: res.aArea, bArea: res.bArea, cutPoints: res.cutPoints,
+    };
+  }
+
+  /**
+   * **只读**：批量铺底的播种（算出 N 个落在范围内、分布均匀的种子点）。
+   * 自动播种必须在**范围内部**撒点 —— 否则一半种子落在海里，切出来只有一半块数。
+   */
+  function planBatchSeeds(key, { provinceIds = null, count = 400, seed = 1, jitter = 0.62 } = {}) {
+    const t = resolveBatchTargets(key, provinceIds);
+    if (t.error) return t.error;
+    const r = buildBatchRegion(key, t.targets);
+    if (r.error) return r.error;
+    const auto = autoSeedsInRegion(r.regionBox, r.probe, count, { seed, jitter });
+    return {
+      ok: true, seeds: auto.seeds, attempt: auto.attempt, requested: auto.requested,
+      targets: t.targets.length, targetIds: t.targetIds,
+      regionPoints: r.regionPoints,
+    };
+  }
+
+  /** 采集要改的剧本（只认 `ownerKey === 底图 key`，与 `removeBaseProvince` 同口径） */
+  function collectOwnershipBefore(key) {
+    const before = {};
+    for (const [scId, sc] of Object.entries(scenarios.value || {})) {
+      if (!sc || sc.ownerKey !== key) continue;
+      const own = sc.ownership || {};
+      const ev = sc.changeEvents || {};
+      const touchedIds = Object.keys(own).length + Object.keys(ev).length;
+      if (!touchedIds) continue;
+      before[scId] = { ownership: { ...own }, changeEvents: { ...ev } };
+    }
+    return before;
+  }
+
+  /**
+   * 归属迁移：新省承接「它的落点所在旧省」的归属与易主记录；旧省的键**删掉**。
+   * @param before `collectOwnershipBefore` 的结果
+   * @param link   `[{ newId, srcId }]`
+   */
+  function buildOwnershipAfter(before, targetIds, link) {
+    const after = {};
+    for (const [scId, rec] of Object.entries(before)) {
+      const own = { ...rec.ownership };
+      const ev = { ...rec.changeEvents };
+      let touched = false;
+      for (const { newId, srcId } of link) {
+        if (!srcId) continue;
+        if (Object.prototype.hasOwnProperty.call(own, srcId)) { own[newId] = own[srcId]; touched = true; }
+        if (Object.prototype.hasOwnProperty.call(ev, srcId)) { ev[newId] = cloneEvents(ev[srcId]); touched = true; }
+      }
+      for (const id of targetIds) {
+        if (Object.prototype.hasOwnProperty.call(own, id)) { delete own[id]; touched = true; }
+        if (Object.prototype.hasOwnProperty.call(ev, id)) { delete ev[id]; touched = true; }
+      }
+      if (touched) after[scId] = { ownership: own, changeEvents: ev };
+    }
+    return after;
+  }
+
+  /** 把归属快照写回 store（不 execute —— 必须与 terrain 同属一条 undo） */
+  function applyOwnership(snapshot) {
+    if (!snapshot) return;
+    const ids = Object.keys(snapshot);
+    if (!ids.length) return;
+    const next = { ...scenarios.value };
+    for (const scId of ids) {
+      const sc = next[scId];
+      if (!sc) continue;
+      next[scId] = { ...sc, ownership: snapshot[scId].ownership, changeEvents: snapshot[scId].changeEvents };
+    }
+    scenarios.value = next;
+  }
+
+  /**
+   * 批量铺底：把 `provinceIds`（默认全部陆地省）的地盘按 Voronoi 一次切成 N 块。
+   *
+   * @param {object} opts
+   *   · `provinceIds` 目标省 id（null / 空 = 全部有几何的陆地省）
+   *   · `sites`       手动播种（`[{x,y}]`）；给了就不再自动播种
+   *   · `count`       自动播种的目标块数（默认 400）
+   *   · `seed`        随机种子（同种子同结果）
+   *   · `jitter`      抖动强度 0~0.95（0 = 规整方格）
+   *   · `onProgress`  `({phase, done, total, message}) => void`（分批让出主线程时回调）
+   * @returns 汇总（created / removed / skipped / failed / coverage / points …）
+   */
+  async function batchSubdivide(key, opts = {}) {
+    if (isRO()) return blocked('批量铺底');
+    const {
+      provinceIds = null, sites = null, count = 400, seed = 1, jitter = 0.62,
+      onProgress = null, yieldEvery = 6,
+    } = opts;
+    const report = (phase, done, total, message) => {
+      if (typeof onProgress === 'function') { try { onProgress({ phase, done, total, message }); } catch (e) { /* 回调不该影响主流程 */ } }
+    };
+    const m = bm(key);
+    if (!m) return { ok: false, rejected: 'no-basemap', message: '底图不存在' };
+    const t = resolveBatchTargets(key, provinceIds);
+    if (t.error) return t.error;
+    const targets = t.targets;
+    const targetIds = t.targetIds;
+
+    const t0 = Date.now();
+
+    // ① 区域 = 目标省的并集（只有一个省时不必并，省掉一次大扫描）
+    report('region', 0, 1, targetIds.length === 1 ? '准备范围…' : `合并 ${targetIds.length} 个省份的范围…`);
+    const r0 = buildBatchRegion(key, targets);
+    if (r0.error) return r0.error;
+    const region = r0.region, probe = r0.probe;
+    const regionArea = r0.regionArea, regionBox = r0.regionBox;
+    await Promise.resolve();
+
+    // ② 播种
+    let seedPts = Array.isArray(sites) && sites.length ? sites.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : null;
+    let seedInfo = { attempt: 0, requested: count };
+    if (!seedPts) {
+      report('seeds', 0, 1, `正在大陆里播 ${Math.round(count)} 个点…`);
+      const auto = autoSeedsInRegion(regionBox, probe, count, { seed, jitter });
+      seedPts = auto.seeds;
+      seedInfo = { attempt: auto.attempt, requested: auto.requested };
+      await Promise.resolve();
+    }
+    if (!seedPts.length) {
+      return { ok: false, rejected: 'no-seed', message: '没能播下任何种子（范围太小或形状太碎）' };
+    }
+
+    // ③ Voronoi → 逐块与范围求交
+    report('cells', 0, seedPts.length, `正在切分 ${seedPts.length} 块…`);
+    const { rings } = voronoiCells(seedPts, regionBox);
+    const cells = [];
+    let outside = 0, skipped = 0, failed = 0, snapped = 0, inner = 0, clipped = 0;
+    let cellArea = 0, cellPoints = 0;
+    const failures = [];
+    for (let i = 0; i < rings.length; i++) {
+      const ring = rings[i];
+      if (!ring) { skipped++; continue; }
+      const box = ringBBox(ring);
+      let mp = null;
+      if (probe.edgeNear(box)) {
+        const r = robustOp(polygonClipping, 'intersection', region, [[ring]]);
+        if (!r.multi) { failed++; failures.push({ i, error: r.error }); }
+        else if (isEmptyMulti(r.multi)) outside++;
+        else { mp = r.multi; clipped++; if (r.snapped) snapped++; }
+      } else if (probe.inside(ring[0][0], ring[0][1])) {
+        mp = [[ring]];                              // 整块都在范围内 → 凸 cell 原样即省份
+        inner++;
+      } else {
+        outside++;                                  // 整块落在海里/空白
+      }
+      if (mp) {
+        cellArea += multiNetArea(mp);
+        const pts = countMultiPoints(mp);
+        cellPoints += pts;
+        cells.push({ index: i, site: seedPts[i], mp, points: pts });
+      }
+      if (yieldEvery > 0 && (i + 1) % yieldEvery === 0) {
+        report('cells', i + 1, rings.length, `已切分 ${i + 1} / ${rings.length} 块…`);
+        await new Promise((r) => setTimeout(r, 0));   // 让出主线程（UI 才能刷进度）
+        if (!bm(key)) return { ok: false, rejected: 'changed', message: '底图在切分过程中被换掉了，已放弃（数据未改动）' };
+      }
+    }
+    if (!cells.length) {
+      return {
+        ok: false, rejected: 'empty', message: '没有切出任何一块（范围内的种子点太少 —— 提高块数或先确认省份边界）',
+        skipped, outside, failed,
+      };
+    }
+
+    // ④ 落库（新省 + 归属迁移，同一条 undo）
+    report('commit', cells.length, cells.length, '正在写入省份…');
+    const terrainNow = provincesOf(key);
+    if (!terrainNow.some((p) => p.id === targetIds[0])) {
+      return { ok: false, rejected: 'changed', message: '底图在切分过程中变化了，已放弃（数据未改动）' };
+    }
+    const stamp = Date.now().toString(36);
+    const remaining = terrainNow.length - targets.length;
+    const link = [];
+    const newProvs = cells.map((c, i) => {
+      const id = `prov_batch_${stamp}_${i}`;
+      // 归属来源 = 新省「落点」所在的旧省（种子点必定在范围内；边界上兜底用 cell 内一点）
+      let src = targets.find((p) => pointInProvince(c.site.x, c.site.y, p));
+      if (!src) src = targets.find((p) => pointInProvince(c.mp[0][0][0], c.mp[0][0][1], p));
+      link.push({ newId: id, srcId: src ? src.id : null });
+      return normalizeProvince({
+        id,
+        name: `新省份 ${remaining + i + 1}`,
+        kind: 'land',
+        color: nextProvinceColor(remaining + i),
+        biome: '', culture: '', coast: false,
+        ...multiToShape(c.mp, 'land'),
+      });
+    });
+
+    const idset = new Set(targetIds);
+    const terrainBefore = terrainNow;
+    const terrainAfter = terrainNow.filter((p) => !idset.has(p.id)).concat(newProvs);
+    const ownBefore = collectOwnershipBefore(key);
+    const ownAfter = buildOwnershipAfter(ownBefore, targetIds, link);
+
+    const applyTerrain = (terrain) => { invalidateProvinceGrid(key); setTerrain(key, terrain, { save: false }); };
+    execute({
+      type: 'province-batch-subdivide',
+      label: `批量铺底：${targets.length} 省 → ${newProvs.length} 块`,
+      undo: () => { applyTerrain(terrainBefore); applyOwnership(ownBefore); scheduleAutoSaveScenarios(); },
+      redo: () => { applyTerrain(terrainAfter); applyOwnership(ownAfter); scheduleAutoSaveScenarios(); },
+    });
+
+    return {
+      ok: true,
+      created: newProvs.length,
+      removed: targets.length,
+      targetIds,
+      newIds: newProvs.map((p) => p.id),
+      skipped, outside, failed, snapped, inner, clipped,
+      failures: failures.slice(0, 5),
+      coverage: regionArea > 0 ? cellArea / regionArea : 0,
+      regionArea, cellArea, cellPoints,
+      regionPoints: r0.regionPoints,
+      seeds: seedPts.length, seedAttempt: seedInfo.attempt,
+      ownershipMigrated: Object.keys(ownAfter).length,
+      elapsedMs: Date.now() - t0,
+    };
+  }
+
 
   // ============================================================
   // 省份定义表（新增 / 删除 / 清空）—— 与 terrain[] 同步
@@ -640,11 +1079,12 @@ export function createProvinceEditingModule(ctx) {
     const province = normalizeProvince({
       id: `prov_grid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: name || `省份 ${idx}`,
-      points: [],                 // 涂出来的省份没有轮廓 —— 边界由 labels 提取（抬手时写回）
+      points: [],                 // 空省：还没有几何，等「涂归属」把笔迹并进来
       kind: 'land',
       color: color || '#8b7355',
       biome: '', culture: '', coast: false,
-      fromGrid: true,
+      // ⚠️ 不再写 `fromGrid: true`：空省没有几何，那个标记无意义；一旦带上它，
+      //    任何后来写回几何的路径都会被渲染端当成「格点派生」而 Chaikin 平滑（点 ×4 + 改形状）。
     });
     const before = provinces;
     const after = [...provinces, province];
@@ -697,22 +1137,40 @@ export function createProvinceEditingModule(ctx) {
     return { removed: provinces[idx].name || provinceId, cleared, ownedAfter: afterLabels ? countOwned(afterLabels) : 0 };
   }
 
-  /** 清空归属（所有格 → 无主），省份定义表保留 —— 演示「海陆从 FMG 来、省份由司天切」 */
+  /**
+   * 重置省界：把所有省份的**几何**清空（省份条目保留），一条 undo。
+   *
+   * 🔴 P2 语义变更：旧实现清的是**归属格**（`labels`）。矢量模型下格子已退役，
+   *    同一个按钮必须动**几何**才有意义 —— 否则用户点了画面毫无变化（"按了没反应"）。
+   *    函数名保留（`provinceLabels` 时代的历史名），只为不打断既有调用点与用例。
+   */
   function clearProvinceLabels(key) {
-    if (isRO()) return blocked('清空省份归属');
-    const entry = ensureProvinceGrid(key);
-    if (!entry) return null;
-    const before = new Uint8Array(entry.labels);
-    const after = new Uint8Array(entry.labels.length);
-    // 同 removeProvinceWithGrid：apply 里重新取 cache[key]（换底图后不能写孤儿 entry）
-    const apply = (snap) => { const cur = cache[key]; if (cur) cur.labels.set(snap); commit(key); };
+    if (isRO()) return blocked('重置省界');
+    const before = provincesOf(key);
+    if (!before.length) return { cleared: 0 };
+    let n = 0;
+    for (const p of before) if (provinceRings(p).length) n++;
+    if (!n) return { cleared: 0 };
+    const after = before.map((p) => normalizeProvince({
+      ...p, points: [], extraRings: undefined, fromGrid: false,
+    }));
+    // 退役的网格也一并清掉（防止旧客户端/旧代码把它又当成几何来源）——
+    // 🔴 必须把 labels 也纳入**同一条 undo**：只清不回滚 = "撤销看着执行了、网格还是空的"。
+    const entry = cache[key];
+    const labelSnap = entry ? new Uint8Array(entry.labels) : null;
+    const zeroSnap = labelSnap ? new Uint8Array(labelSnap.length) : null;
+    const apply = (terrain, snap) => {
+      setTerrain(key, terrain);
+      const cur = cache[key];
+      if (cur && snap && cur.labels.length === snap.length) { cur.labels.set(snap); commit(key); }
+    };
     execute({
-      type: 'clear-province-labels',
-      label: '清空省份归属',
-      undo: () => apply(before),
-      redo: () => apply(after),
+      type: 'clear-province-shapes',
+      label: '重置省界',
+      undo: () => apply(before, labelSnap),
+      redo: () => apply(after, zeroSnap),
     });
-    return { cells: before.length, cleared: countOwned(before) };
+    return { cleared: n };
   }
 
   /** 统计（状态栏/用例用） */
@@ -737,7 +1195,8 @@ export function createProvinceEditingModule(ctx) {
   return {
     ensureProvinceGrid, getProvinceGrid, rebuildProvinceGrid, invalidateProvinceGrid,
     beginProvinceStroke, applyProvinceStroke, endProvinceStroke, applyProvinceLasso,
-    fillProvinceRegion, splitProvince, mergeProvinces,
+    fillProvinceRegion, splitProvince, splitProvinceAlong, mergeProvinces, batchSubdivide,
+    previewSplitAlong, planBatchSeeds,
     addBrushProvince, removeProvinceWithGrid, clearProvinceLabels,
     // 删除省级联用（**不 execute**：由删除命令把这一步包进同一条 undo）
     shiftProvinceGridForDelete, restoreProvinceGrid, stampProvinceGrid,

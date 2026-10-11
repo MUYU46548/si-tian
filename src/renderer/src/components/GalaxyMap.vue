@@ -1259,7 +1259,10 @@ const renderer = useCanvasRenderer(canvas, {
       const hit = hitTestHyperlane(wx, wy);
       if (hit?.controlPointIndex !== undefined) {
         draggedControlPoint = { hyperlaneId: hit.hyperlane.id, cpIndex: hit.controlPointIndex, startX: wx, startY: wy };
-        panSuppressed = true;
+        // 🔴 这里原有一句 `panSuppressed = true;` —— 该变量**全文件只有这两处赋值、没有任何读取**
+        //    （由 test_93 的静态守卫抓出）。模块作用域是严格模式，赋值一个未声明标识符会当场
+        //    `ReferenceError`，即「一拖航道控制点就报错」。抑制平移的语义已经由紧邻的
+        //    `return false`（= 本组件接管这次拖动）完整表达，所以删除死赋值而不是补声明。
         return false;
       }
       
@@ -1271,7 +1274,6 @@ const renderer = useCanvasRenderer(canvas, {
           const dy = wy - mid.y;
           if (dx * dx + dy * dy < 12 * 12) {
             draggedHyperlaneMidpoint = { hyperlaneId: hit.hyperlane.id, startX: wx, startY: wy };
-            panSuppressed = true;
             return false;
           }
         }

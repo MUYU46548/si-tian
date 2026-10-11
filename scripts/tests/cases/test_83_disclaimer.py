@@ -437,6 +437,83 @@ def sub_view_mode(cdp):
     return True, f"关于面板入口（{res.get('state')}）+ 查看模式带关闭 / 无勾选框 / Esc 可关（与强制模式相反）"
 
 
+def sub_guide_entry(cdp):
+    """g6 使用手册（2026-10-11）：入口在关于面板里，点开真能看到内容、能搜、能切章、Esc 能关。
+
+    为什么挂在同一个用例里：暮雨的原话就是「右上角问号点进去是关于，司天内没有教程」——
+    手册的**入口**与免责声明的入口是同一块面板（AboutPanel），一起改一起守最省事。
+    判据不写死节数（加一节不该让用例变红），只要求"TOC 与内容都不是空的、搜索真的在筛"。
+    """
+    # 前一段结束时关于面板已关（点了关闭按钮）→ 重新用 F1 打开
+    cdp.eval("(() => { const b = document.querySelector('.about-overlay');"
+             " if (!b) window.dispatchEvent(new KeyboardEvent('keydown',"
+             " { key: 'F1', code: 'F1', keyCode: 112, which: 112, bubbles: true, cancelable: true }));"
+             " return 'ok'; })()")
+    try:
+        wait_for(cdp, "!!document.querySelector('.about-overlay')", desc='关于面板打开', timeout=8)
+    except RuntimeError as e:
+        return False, f'F1 没打开关于面板：{e}'
+    time.sleep(0.4)
+
+    ok, res = eval_json(cdp, """(async () => {
+      const fails = [];
+      const q = (s) => document.querySelector(s);
+      const qa = (s) => Array.from(document.querySelectorAll(s));
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms || 80));
+      const btn = q('[data-testid="about-open-guide"]');
+      if (!btn) return JSON.stringify({ fails: ['关于面板里没有「使用手册」入口'] });
+      btn.click();
+      await wait(400);
+      const ov = q('[data-testid="guide-overlay"]');
+      if (!ov) return JSON.stringify({ fails: ['点了「使用手册」没打开手册'] });
+      // 关于面板必须同时关掉（两层浮层同屏会互相压住）
+      if (q('.about-overlay')) fails.push('打开手册时关于面板没关（两层浮层同屏）');
+      const toc = qa('[data-testid^="guide-toc-"]');
+      if (toc.length < 10) fails.push('手册章节太少：' + toc.length);
+      const title = q('[data-testid="guide-title"]');
+      const first = title ? (title.textContent || '') : '';
+      if (!first) fails.push('手册内容区没有标题');
+      // 搜「铺底」→ 应把批量铺底那一节筛出来，且标题真的换了
+      const box = q('[data-testid="guide-search"]');
+      if (!box) fails.push('没有搜索框');
+      else {
+        box.value = '铺底';
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait(200);
+        const hit = qa('[data-testid^="guide-toc-"]');
+        if (!hit.length || hit.length >= toc.length) {
+          fails.push('搜索没有起到筛选作用：' + hit.length + '/' + toc.length);
+        }
+        if (!q('[data-testid="guide-toc-province-batch"]')) fails.push('搜「铺底」没命中「批量铺底」一节');
+        const t2 = q('[data-testid="guide-title"]');
+        if (!t2 || !/铺底/.test(t2.textContent || '')) fails.push('搜索后内容区没跟着切：' + (t2 ? t2.textContent : '无'));
+        // 清空恢复全量
+        box.value = '';
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait(150);
+        if (qa('[data-testid^="guide-toc-"]').length !== toc.length) fails.push('清空搜索后没恢复全量章节');
+      }
+      // 点另一节 → 标题要切
+      const other = q('[data-testid="guide-toc-keys"]');
+      if (other) {
+        other.click();
+        await wait(200);
+        const t3 = q('[data-testid="guide-title"]');
+        if (!t3 || !/快捷键/.test(t3.textContent || '')) fails.push('点章节没切换内容：' + (t3 ? t3.textContent : '无'));
+      } else fails.push('没有「快捷键」一节（TOC 不完整）');
+      // Esc 关闭（手册自带 keydown，必须能关；关不掉 = 用户被卡在浮层里）
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+      await wait(300);
+      if (q('[data-testid="guide-overlay"]')) fails.push('Esc 关不掉手册');
+      return JSON.stringify({ fails, sections: toc.length, firstTitle: first.slice(0, 24) });
+    })()""", desc='使用手册入口', required=('fails',))
+    if not ok:
+        return False, res
+    if res['fails']:
+        return False, '使用手册断言失败：' + '；'.join(res['fails'])
+    return True, f"入口可开（{res.get('sections')} 节，首节「{res.get('firstTitle')}」）+ 搜索筛选 + 切章 + Esc 可关"
+
+
 # ══════════════════════════════════════════════════════════════════
 def run(cdp):
     ensure_data_ready(cdp)
@@ -447,7 +524,8 @@ def run(cdp):
                          ('g2 不可绕过', sub_cannot_bypass),
                          ('g3 滚到底→同意', sub_scroll_then_accept),
                          ('g4 不再重弹', sub_no_regate),
-                         ('g5 随时可查', sub_view_mode)):
+                         ('g5 随时可查', sub_view_mode),
+                         ('g6 使用手册', sub_guide_entry)):
             try:
                 ok, detail = fn(cdp)
             except Exception as e:

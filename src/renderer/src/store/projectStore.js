@@ -38,6 +38,9 @@ import {
   projectStats,
   entityIdFromName,
   forbiddenParentIds,
+  // 2026-10-11 体积/时间戳：画布实体表合并时保住 createdAt/updatedAt（否则每次保存
+  // 都把 120 个实体标脏 → 快照全是噪音，见该函数注释）
+  preserveEntityTimestamps,
   LAYER_LABELS,
   LAYER_ORDER,
   SNAPSHOT_DIFF_KEYS,
@@ -424,7 +427,10 @@ export const useProjectStore = defineStore('project', () => {
   function mergeCanvasPayload(project, payload = {}) {
     if (!payload || (!payload.entities && !payload.hyperlanes && !payload.maps && !payload.scenarios)) return project;
     const next = { ...project };
-    if (payload.entities) next.entities = { ...payload.entities };
+    // 🔴 实体表**不能直接替换**（2026-10-11）：画布导出的实体带的是"导出时刻"的时间戳，
+    //    整体替换 = 每次保存把 120 个实体的 createdAt/updatedAt 全改一遍（实测每次 240 条 diff）。
+    //    `preserveEntityTimestamps` 只在内容真的变了时才接受新时间戳。
+    if (payload.entities) next.entities = preserveEntityTimestamps(project.entities, payload.entities);
     if (payload.hyperlanes) next.hyperlanes = payload.hyperlanes;
     if (payload.maps) next.maps = { ...(project.maps || {}), ...payload.maps };   // mapData + editor 逐键合并
     if (payload.scenarios) next.scenarios = payload.scenarios;

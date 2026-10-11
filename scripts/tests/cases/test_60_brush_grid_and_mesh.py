@@ -232,7 +232,7 @@ SC_MESH = r"""
   sc.render();
   const ms = performance.now() - t0;
   const stats = sc.provinceBrush.meshStats();
-  const on = sc.provinceMeshOn;
+  const on = typeof sc.provinceMeshOn;   // P2：网格中间层已删 → 期望 'undefined'
   canvasEl.dispatchEvent(mk('mouseup', cx + 6, cy + 6));
   return JSON.stringify({ meshRenderMs: Math.round(ms * 100) / 100, stats, meshOn: on });
 })()
@@ -451,12 +451,13 @@ def run(cdp):
     if 'ERR' in mesh:
         fails.append(f'网格渲染探针失败：{mesh["ERR"]}')
     else:
-        if not mesh.get('meshOn'):
-            fails.append('涂抹中网格中间层未就绪（provinceMeshOn 为假）')
-        if mesh['stats']['loops'] <= 0:
-            fails.append('涂抹中网格轮廓环数为 0（内部中间层画不出东西）')
-        notes.append(f'C: 涂抹中网格单帧 {mesh["meshRenderMs"]}ms / 轮廓 {mesh["stats"]["loops"]} 环 '
-                     f'{mesh["stats"]["pts"]} 点（重建 {mesh["stats"]["cost"]}ms）')
+        # 🔴 P2（2026-10-09）反转：涂抹期间**不再叠「格点中间层」**（格点已退役）。
+        #    旧断言把"涂抹时能画出网格轮廓"当成正确行为 —— 而那层格点正是用户说的
+        #    "密集恐惧症的恶心视图"，更是 10525 点海岸线退化成 ~22 点的根因。
+        if mesh.get('meshOn') != 'undefined':
+            fails.append('P2 后组件仍暴露 provinceMeshOn（网格中间层没删干净）')
+        notes.append(f'C: P2 — 涂抹期不再渲染格点中间层（单帧 {mesh["meshRenderMs"]}ms）；'
+                     f'边界由抬手时的**矢量布尔**决定')
 
     # 自由绘制（一笔成型）+ 描点仍在
     fd = _js(cdp, FREE_DRAW.replace('__SC__', SC))

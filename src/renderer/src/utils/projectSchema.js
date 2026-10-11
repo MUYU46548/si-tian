@@ -62,6 +62,18 @@ export const PROJECT_VERSION = '1.0.0';
 export const PROJECT_EXT = '.sitian';
 export const SNAPSHOT_KEEP = 50;
 
+// 快照环形缓冲的**体积上限**（2026-10-11 体积裁剪）。
+//
+// 为什么只限份数不够：`diffWalk` 对数组是**整体替换**，而 `scenarios.baseMaps[*].terrain`
+//   是上万点的省份多边形数组 —— 动一个省 = 约 700 KB 进 patch。实测暮雨的项目：
+//   25 份快照 = 7.68 MB，占整个项目正文（10.3 MB 紧凑）的 **75%**；正文另加缩进后 39.9 MB。
+//   份数上限 50 在这种量级下等于没有上限（50 × 700 KB = 35 MB）。
+// 判据：保留份数的同时，总字节超上限就**从最旧的丢**（折进 base，见 dropOldestSnapshot，
+//   「1 份 base + N 份 diff」的不变式不破）。**最新那一份永远保留** —— 丢它等于丢当前状态。
+// 代价（如实写在这里）：极致连切几百块时，能回滚的**地形**步数会少于 50 份（可能只剩个位数）。
+//   项目的另一条恢复路径（关闭司天后用 `.backups/` 里的整文件备份覆盖）不受此限。
+export const SNAPSHOT_MAX_BYTES = 3 * 1024 * 1024;
+
 // 快照覆盖的顶层键（不含 maps：MB 级，另有磁盘整文件备份兜底）
 export const SNAPSHOT_DIFF_KEYS = ['meta', 'entities', 'hyperlanes', 'scenarios'];
 
@@ -204,6 +216,12 @@ export function createEntity(input = {}) {
   const {
     id, name, layer = 'unknown', parentId = null, tags = [], coordinate = null,
     origin = 'project', sourcePath = '', existingIds = [], now = '', uuid = '',
+    // 🔴 `createdAt` / `updatedAt` 必须**可以传入**（2026-10-11）：画布→项目这条路上
+    //    `nodeToProjectEntity` 原来只传 `now`，于是**每一次保存**都把全部实体的
+    //    `createdAt` 改写成"现在"（暮雨的项目：项目建于 2026-09-22，120 个实体的 createdAt
+    //    却全是保存那一刻）。这不只是"看着不对" —— 它让每次自动保存都产出 240 条 diff
+    //    （120 实体 × 两个时间戳），快照里全是噪音、也把真正有用的地形快照挤出去。
+    createdAt = '', updatedAt = '',
   } = input;
   const ts = now || new Date().toISOString();
   const x = coordinate && typeof coordinate.x === 'number' && isFinite(coordinate.x) ? coordinate.x : null;
@@ -222,8 +240,8 @@ export function createEntity(input = {}) {
     origin,
     sourcePath: sourcePath || '',
     uuid: uuid || randomId(),
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: createdAt || ts,
+    updatedAt: updatedAt || ts,
   };
 }
 
@@ -244,6 +262,48 @@ export function forbiddenParentIds(entities, entityId) {
     }
   }
   return [...out];
+}
+
+/**
+ * 合并「画布导出的实体表」时**保住时间戳**（2026-10-11）。
+ *
+ * 背景（真事故）：`mergeCanvasPayload` 是整体替换 `entities`，而画布侧的实体由
+ * `nodeToProjectEntity(n, now)` 生成 —— 它原来只传 `now`，于是**每次保存**都把所有实体的
+ * `createdAt` / `updatedAt` 改写成保存那一刻。暮雨的项目实测：项目建于 2026-09-22，
+ * 120 个实体的 `createdAt` 全变成 2026-10-11；同时每次自动保存都产出 **240 条 diff**
+ * （快照里全是噪音，还把有用的地形快照挤出 50 份窗口）。
+ *
+ * 语义（两条分开，别混）：
+ *   · `createdAt` 是**事实**：只要旧实体有值，一律沿用（画布不携带它时更不该被"现在"覆盖）。
+ *   · `updatedAt` 是**推断**：除时间戳外的内容逐字段一致 ⇒ 这次导出没有真的改动它 ⇒ 沿用旧值；
+ *     内容真的变了 ⇒ 用新值（= 导出时刻）。
+ *
+ * @param {object} prev 项目里已有的实体表
+ * @param {object} next 画布导出的实体表
+ * @returns {object} 合并后的实体表（新对象，不改入参）
+ */
+export function preserveEntityTimestamps(prev, next) {
+  const before = isPlainObject(prev) ? prev : {};
+  const out = {};
+  for (const [id, e] of Object.entries(next || {})) {
+    const old = before[id];
+    if (!isPlainObject(old) || !isPlainObject(e)) { out[id] = e; continue; }
+    const merged = { ...e };
+    if (old.createdAt) merged.createdAt = old.createdAt;
+    if (old.updatedAt && entityContentEqual(old, e)) merged.updatedAt = old.updatedAt;
+    out[id] = merged;
+  }
+  return out;
+}
+
+/** 两个实体在「除两个时间戳之外」是否逐字段一致（preserveEntityTimestamps 的判据） */
+function entityContentEqual(a, b) {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  for (const k of keys) {
+    if (k === 'createdAt' || k === 'updatedAt') continue;
+    if (!deepEqual(a ? a[k] : undefined, b ? b[k] : undefined)) return false;
+  }
+  return true;
 }
 
 /**
@@ -505,7 +565,8 @@ export function snapshotStateWithHeavy(project, keys = SNAPSHOT_DIFF_KEYS) {
   return out;
 }
 
-function deepEqual(a, b) {
+// 深比较（导出给 `preserveEntityTimestamps` 与 store 侧复用 —— 单一实现，别再写第二份）
+export function deepEqual(a, b) {
   if (a === b) return true;
   if (typeof a !== typeof b) return false;
   if (a === null || b === null) return false;
@@ -611,12 +672,29 @@ export function countChanges(patch) {
 }
 
 /**
+ * 快照缓冲的**实际字节数**（紧凑 JSON 口径，与落盘一致）。
+ * UI / 审计脚本 / 用例共用这一处口径，别各自 `JSON.stringify` 一遍。
+ */
+export function snapshotBytes(snapshots) {
+  return JSON.stringify(Array.isArray(snapshots) ? snapshots : []).length;
+}
+
+/**
  * 追加一份快照（返回新 project，不改入参）。落盘前调用。
+ *
+ * 两条 2026-10-11 的裁剪纪律（都是为了"体积"这个真实瓶颈）：
+ *   ① **空补丁不留快照**：与上一份逐字段一致 ⇒ 直接返回**原对象**（调用方可用引用相等判断"没动"）。
+ *      否则每次自动保存都堆一份只有时间戳变化的快照，把 50 份窗口用光（见 preserveEntityTimestamps）。
+ *   ② **份数 + 字节双上限**：超过 `maxBytes` 就从最旧的丢（折进 base），但**永远保留最新那一份**。
+ *
  * @param {object} project
- * @param {{ label?: string, at?: string, keep?: number, keys?: string[] }} [opts]
+ * @param {{ label?: string, at?: string, keep?: number, keys?: string[], maxBytes?: number }} [opts]
  */
 export function pushSnapshot(project, opts = {}) {
-  const { label = '', at = '', keep = SNAPSHOT_KEEP, keys = SNAPSHOT_DIFF_KEYS } = opts;
+  const {
+    label = '', at = '', keep = SNAPSHOT_KEEP, keys = SNAPSHOT_DIFF_KEYS,
+    maxBytes = SNAPSHOT_MAX_BYTES,
+  } = opts;
   const snapshots = (project.snapshots || []).map(s => ({ ...s }));
   const state = snapshotState(project, keys);
   const ts = at || new Date().toISOString();
@@ -626,10 +704,16 @@ export function pushSnapshot(project, opts = {}) {
   } else {
     const prevState = replayTo(snapshots, snapshots.length - 1);
     const patch = diffStates(prevState, state, keys);
+    // ① 没有任何改动 → 不留空快照（原对象返回，引用不变）
+    if (!patch.set.length && !patch.del.length) return project;
     snapshots.push({ at: ts, label, patch, changes: countChanges(patch) });
   }
 
   while (snapshots.length > Math.max(1, keep)) dropOldestSnapshot(snapshots);
+  // ② 体积上限（`> 1` 保证最新那份不会被丢）
+  if (maxBytes > 0) {
+    while (snapshots.length > 1 && snapshotBytes(snapshots) > maxBytes) dropOldestSnapshot(snapshots);
+  }
   return { ...project, snapshots };
 }
 
@@ -685,7 +769,7 @@ export function projectStats(project) {
   };
 }
 
-/** 序列化（统一缩进；主进程负责写盘） */
+/** 序列化（**紧凑**：与主进程落盘口径一致 —— 缩进会占 74% 体积，见 projectHandler.atomicWriteJson） */
 export function serializeProject(project) {
-  return JSON.stringify(project, null, 2);
+  return JSON.stringify(project);
 }

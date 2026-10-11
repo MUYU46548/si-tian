@@ -70,6 +70,13 @@ function createTray(mainWindow) {
           return;
         }
         try {
+          // 🔴 2026-10-09 修（暮雨实测：**最小化到托盘后点退出，点多少遍都没反应**）：
+          //    渲染层的确认框（`askChoice`）弹在**隐藏的窗口**里 → 用户什么都看不见，
+          //    只能"重新打开窗口"才看到那个不知何时弹出的确认框。
+          //    修法：先把窗口亮出来并聚焦，再发请求 —— 确认框才落在用户眼前。
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
           win.webContents.send('app-request-quit', 'tray');
         } catch (e) {
           isQuitting = true;

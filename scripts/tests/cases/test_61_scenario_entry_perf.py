@@ -220,7 +220,7 @@ SWITCH_BASEMAP = r"""JSON.stringify((() => {
   sc.setTool('select');
   sc.baseMapKey = __KEY__;
   return { key: sc.baseMapKey, terrain: sc.baseMap ? sc.baseMap.terrain.length : null,
-           meshOn: sc.provinceMeshOn, gridReady: !!s.getProvinceGrid(sc.baseMapKey) };
+           meshOn: typeof sc.provinceMeshOn, gridReady: !!s.getProvinceGrid(sc.baseMapKey) };
 })())"""
 
 FRAME_COST = r"""JSON.stringify((() => {
@@ -255,8 +255,9 @@ SET_TOOL = r"""JSON.stringify((() => {
   const t0 = performance.now();
   sc.setTool('provinceBrush');
   const ms = performance.now() - t0;
-  return { ms: Math.round(ms * 10) / 10, ready: !!sc.provinceGridReady,
-           meshUsable: !!sc.provinceMeshOn,
+  // P2：网格中间层已删 —— 这两个字段保留成 typeof 探针（用来**证伪**"还有这个暴露面"）
+  return { ms: Math.round(ms * 10) / 10, ready: typeof sc.provinceGridReady,
+           meshUsable: typeof sc.provinceMeshOn,
            gridReadyNow: !!s.getProvinceGrid(sc.baseMapKey) };
 })())"""
 
@@ -276,8 +277,10 @@ def run(cdp):
                 fails.append(f'小地图缓存缺失（{tok}）→ 每帧两次全量遍历 25930 点')
         if 'getMinimapWorldBounds' in code:
             fails.append('旧的小地图包围盒函数还在（每帧全量遍历）→ 应已由 getMinimapEntry 的缓存取代')
-        if 'scheduleProvinceGrid' not in code:
-            fails.append('省份网格未改异步（scheduleProvinceGrid）→ 打开省份工具仍会冻结 170~368ms')
+        # 🔴 P2（2026-10-09）反转：`scheduleProvinceGrid` 必须**不存在** ——
+        #    "异步补建网格"这一步随网格退役整体消失；打开省份工具现在是**零构造成本**。
+        if 'scheduleProvinceGrid' in code:
+            fails.append('省份工具仍在补建归属网格（scheduleProvinceGrid）→ P2 后应该完全不建')
         if 'watch(availableBaseMaps' not in code:
             fails.append('底图数据晚到时不会自动选中（缺 watch(availableBaseMaps)）→ 画布永久空白')
         if 'fitToView();' not in code:
@@ -395,34 +398,28 @@ def run(cdp):
                 if tool['ms'] >= SETTOOL_LIMIT:
                     fails.append(f"setTool('provinceBrush') 同步耗时 {tool['ms']}ms ≥ {SETTOOL_LIMIT}ms"
                                  f"（旧实现现场栅格化 170~368ms）")
-                # 网格是**异步**补建的：同步返回时必须还没就绪（就绪了说明又变成现场栅格化）
+                # 🔴 P2（2026-10-09）反转：切到省份工具**不许**再构建归属网格 ——
+                #    同步/异步都不许（旧实现现场栅格化 170~368ms 冻结；改异步后仍要花一次）。
+                #    矢量模型下涂抹只记轨迹、抬手才做布尔 → **入口零构造成本**。
                 if tool['gridReadyNow']:
-                    fails.append('切到省份笔刷时网格已同步就绪 → 又回到「开工具即冻结」的老路')
-                if 'ready' not in tool:
-                    fails.append('缺 provinceGridReady 探针（网格异步就绪状态不可观测）')
+                    fails.append('切到省份笔刷时立刻就有网格 → 又回到现场栅格化')
                 px_wait = _js(cdp, PIX)
                 if 'ERR' not in px_wait and (px_wait.get('nonBg', 0) < 400 or px_wait.get('colors', 0) < 60):
-                    fails.append(f'网格尚未就绪时画布变空了（非背景像素 {px_wait.get("nonBg")}，'
-                                 f'{px_wait.get("colors")} 色）→ 应退回多边形渲染')
-                ready = False
-                for _ in range(14):
-                    time.sleep(0.15)
-                    g = _js(cdp, "JSON.stringify(!!%s.getProvinceGrid('case61_wide'))" % STORE)
-                    if g is True:
-                        ready = True
-                        break
-                mesh_on = _js(cdp, 'JSON.stringify(' + SC + '.provinceMeshOn)')
-                if not ready:
-                    fails.append('省份网格异步补建后 2s 内仍未就绪（网格视图会一直显示多边形）')
-                if mesh_on is not True:
-                    fails.append(f'网格就绪后 provinceMeshOn 仍为 {mesh_on} → 涂抹反馈不可用（响应式未触发）')
-                # 🔴 渲染单一路径：网格就绪**不应改变**画布内容（多边形才是渲染来源）
+                    fails.append(f'打开省份工具后画布变空了（非背景像素 {px_wait.get("nonBg")}，'
+                                 f'{px_wait.get("colors")} 色）→ 应始终渲染多边形')
+                time.sleep(0.8)
+                g = _js(cdp, "JSON.stringify(!!%s.getProvinceGrid('case61_wide'))" % STORE)
+                if g is True:
+                    fails.append('P2 后省份工具仍在异步补建归属网格（getProvinceGrid 非空）')
+                mesh_on = _js(cdp, 'JSON.stringify(typeof ' + SC + '.provinceMeshOn)')
+                if mesh_on != 'undefined':
+                    fails.append(f'P2 后组件仍暴露 provinceMeshOn（{mesh_on}）→ 网格层没删干净')
                 px_after = _js(cdp, PIX)
                 if 'ERR' not in px_after and (px_after.get('nonBg', 0) < 400 or px_after.get('colors', 0) < 60):
-                    fails.append(f'网格就绪后画布反而空了（非背景像素 {px_after.get("nonBg")}，'
-                                 f'{px_after.get("colors")} 色）→ 网格又被当成渲染来源')
-                notes.append(f"setTool('provinceBrush') 同步 {tool['ms']}ms（旧实现 170~368ms），"
-                             f"异步就绪={ready}，就绪后 meshOn={mesh_on}")
+                    fails.append(f'打开省份工具后画布变空了（非背景像素 {px_after.get("nonBg")}，'
+                                 f'{px_after.get("colors")} 色）')
+                notes.append(f"setTool('provinceBrush') 同步 {tool['ms']}ms（旧实现 170~368ms）；"
+                             f"P2 — 不建网格，meshOn={mesh_on}")
 
     # ── e. 帧成本 / 平移（21 省 25200 点，与真实库同规模）─────────────────────
     #    注意：case c 已经把 baseMaps 清空过，这里必须重新播种并**核对真的切过去了**

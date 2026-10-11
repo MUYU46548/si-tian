@@ -98,6 +98,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   const provinceEditingModule = createProvinceEditingModule({
     execute, baseMaps: scenarioEditingModule.baseMaps, scheduleAutoSaveScenarios,
     guardWrite, isReadOnly: gateIsReadOnly,
+    // 批量铺底（B）要把旧省的**归属 / 易主记录**迁给新省 —— 键就是省份 id，
+    // 不迁移就会在 12 个剧本里留下指向不存在省份的孤儿键（画布上看不见却仍参与分组与谱系计算）。
+    scenarios: scenarioEditingModule.scenarios,
   });
   provinceGridOps.shiftForDelete = provinceEditingModule.shiftProvinceGridForDelete;
   provinceGridOps.restore = provinceEditingModule.restoreProvinceGrid;
@@ -1599,6 +1602,10 @@ export const useGeodataStore = defineStore('geodata', () => {
       origin: e.origin || 'project',
       draft: !e.sourcePath,            // 无词条 = 暂存节点（虚线边框 + 可转正）
       createdAt: e.createdAt || '',
+      // 🔴 `updatedAt` 也必须往返（2026-10-11）：漏了它，画布→项目那条路就只剩"现在"一个值可用，
+      //    于是每次保存都把全部实体的 `updatedAt` 改写成保存时刻（120 实体 = 每次 120 条无用 diff）。
+      //    两个时间戳一起带，`preserveEntityTimestamps` 才有得可比、可沿用。
+      updatedAt: e.updatedAt || '',
     };
   }
 
@@ -1615,6 +1622,11 @@ export const useGeodataStore = defineStore('geodata', () => {
       sourcePath: n.sourcePath || '',
       uuid: n.uuid || '',
       now,
+      // 🔴 时间戳随实体往返（2026-10-11）。`createdAt` 缺省才用 now；`updatedAt` 同理 ——
+      //    真正的"要不要沿用旧 updatedAt"由 projectStore 的 `mergeCanvasPayload`
+      //    （`preserveEntityTimestamps`）判定，那里才同时看得到"项目里的旧值"。
+      createdAt: n.createdAt || '',
+      updatedAt: n.updatedAt || '',
     });
     // 画布侧的编辑字段原样带走（见 entityExtras 的说明）。`draft` 由 sourcePath 派生，不落库。
     for (const [k, v] of Object.entries(n)) {

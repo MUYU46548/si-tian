@@ -698,13 +698,27 @@ def run_phase_scenario(proj):
         ck('p4', '懒建的底图/省份真的落进了项目文件', ok,
            '底图=%r ｜ 项目里现有底图：%s' % (key, list(project_scenarios(doc)[0])[:3]))
         n_before = len(province_names_in(doc, key))
+        names_before = set(province_names_in(doc, key))   # 建省前的名字集合（判定"真的是新的"）
 
         # ① 创建省份边界（自由绘制「一笔成型」）
+        # 🔴 必须先**显式选中绘制工具**（2026-10-11 修，演练脚本跟不上交互的又一例）：
+        #    默认工具在 8b8c8fe 从 `draw` 改成了 `select`，于是这段 DRAW_JS 变成
+        #    「拖一下 + 点一下」= **只是选中了画布上已有的某个省**，`.props-name` 照样非空
+        #    → 断言"拿到新省名"假绿；接着 SCAN/拆分全作用在**那个既存省**上
+        #    （真实项目上正好是 10525 点的 `Province 2`）→ 大几何切割把渲染进程卡住
+        #    → 15s CDP 读超时，整段演练崩在 WebSocketTimeoutException 而不是给结论。
+        #    片段用 '自由绘制 (B)'：'画省份' 也唯一，但带上快捷键与源码 title 逐字一致，最稳。
+        ck('p4', '切到「画省份 · 自由绘制」工具', select_tool(cdp, '自由绘制 (B)') == 'ok', '')
+        time.sleep(0.3)
         r = jsobj(cdp, DRAW_JS)
         ck('p4', '自由绘制一笔成型，并拿到新省名', bool(r.get('ok') and r.get('name')), '省名=%r' % r.get('name'))
         if not r.get('ok') or not r.get('name'):
             return
         pname = r['name']
+        # 🔴 「拿到名字」不等于「建出来了」：上面那个假绿就是靠这条兜住的 ——
+        #    新省名必须在**建省前**那份名单里不存在。
+        ck('p4', '🔴 新省名在建省前不存在（拿到的名字不是"选中的旧省"）',
+           pname not in names_before, '省名=%r ｜ 建省前已有 %d 个省' % (pname, n_before))
         ok, doc = wait_disk(proj, lambda d: len(province_names_in(d, key)) == n_before + 1)
         ck('p4', '🔴 新建省份**已落盘**（terrain %d → %d）' % (n_before, n_before + 1), ok,
            '磁盘省份数=%d' % len(province_names_in(doc, key)))
@@ -714,7 +728,14 @@ def run_phase_scenario(proj):
         #    而顶点手柄拖拽要靠 8px 命中，真机上没有 store 可查，稳定性差。
         # ⚠️ 片段必须唯一：'选择' 会先命中**「返回世界选择」**（title 里含"选择"且排在最前）
         #    → 一次点击直接退出剧本视图（画布没了，后面全错）。必须写 '选择 (V)'。
-        ck('p4', '切到「选择」工具', select_tool(cdp, '选择 (V)') == 'ok', '')
+        # ⚠️ 片段必须唯一且**与源码 title 逐字对得上**：
+        #    · '选择' 会先命中「返回世界选择」（排在最前）→ 一次点击直接退出剧本视图（画布没了，后面全错）；
+        #    · 2026-10-11 又发现 `'选择 (V)'` 也已失配 —— 源码 title 是「选择 (V**，默认**) — 拖动平移画布…」，
+        #      中间是全角逗号，`"选择 (V，默认)".includes("选择 (V)")` 为 **false** → 点了不中 ('no-btn')，
+        #      于是这段"切工具"一直是失败的（后面靠点击命中刚好没炸，属于运气）。
+        #      改用 title 里的一句话 `'拖动平移画布'`：唯一、且不依赖快捷键括号的写法。
+        sel = select_tool(cdp, '拖动平移画布')
+        ck('p4', '切到「选择」工具（按 title 里的"拖动平移画布"找）', sel == 'ok', 'select_tool → %r' % sel)
         time.sleep(0.3)
         scan = jsobj(cdp, SCAN_JS.replace('WANT_NAME', json.dumps(pname)))
         ck('p4', '在画布上定位到刚建的省份（取命中点质心）', bool(scan.get('ok')),
@@ -732,14 +753,23 @@ def run_phase_scenario(proj):
            '磁盘省份数=%d；画布提示=%s' % (len(province_names_in(doc2, key)), sp.get('hint')))
 
         # 撤销这条拆分（Ctrl+Z 也是纯 UI 路径；顺带证明撤销同样落盘）
+        # 🔴 发 Ctrl+Z 之前**必须先把焦点从输入框挪开**（2026-10-11 修）：
+        #    App.vue 的全局快捷键第一句就是 `if (typing) return;` —— 焦点在 input/textarea 里时
+        #    Ctrl+Z **有意**不接管（否则在文本框里按撤销会去撤地图，那是更坏的 bug）。
+        #    而上一段刚读过 `.props-name`（属性面板的省份名输入框），焦点很可能正停在那儿 →
+        #    演练实测「Ctrl+Z 后磁盘仍是 23」就是这个原因，不是撤销坏了。
+        cdp.eval("(() => { const a = document.activeElement; if (a && a.blur) a.blur(); return 'ok'; })()")
+        time.sleep(0.2)
         if ok:
             ctrl_z(cdp)
             ok2, doc3 = wait_disk(proj, lambda d: len(province_names_in(d, key)) == n_before + 1)
             ck('p4', '🔴 Ctrl+Z 撤销拆分**已落盘**（回到 %d）' % (n_before + 1), ok2,
-               '磁盘省份数=%d' % len(province_names_in(doc3, key)))
+               '磁盘省份数=%d；状态栏=%s' % (len(province_names_in(doc3, key)),
+                                        cdp.eval("(document.querySelector('.status-text')||{}).textContent || ''")))
 
         # ③ 删除省份：真右键 → 菜单 → 删除（走的就是本轮刚修好的 contextmenu 入口）
-        select_tool(cdp, '选择 (V)')
+        #    片段同样用 title 里的整句（'选择 (V)' 已失配，见上）
+        select_tool(cdp, '拖动平移画布')
         time.sleep(0.4)
         rescan = jsobj(cdp, SCAN_JS.replace('WANT_NAME', json.dumps(pname)))
         if not rescan.get('ok'):

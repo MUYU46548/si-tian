@@ -208,19 +208,35 @@ app.on('before-quit', (event) => {
       //    并给出「留在窗口」这个出口（数据还在内存里，用户可以导出为文件）。
       const failed = (payload && Array.isArray(payload.failed)) ? payload.failed : [];
       if (failed.length) {
+        // 🔴 2026-10-09 修（真事故：暮雨实测「托盘里的退出退不掉」）：
+        //    原来是无父窗口的 `dialog.showMessageBoxSync({...})` —— 它是**同步阻塞**的，
+        //    而原生模态框若落在主窗口后面 / 屏幕外 / 窗口正藏在托盘里，用户**看不到也点不到**，
+        //    主进程就卡在这一句上，表现就是「点了退出毫无反应、也退不掉」（只能去任务管理器）。
+        //    修法：先确保主窗口可见并聚焦，再把它作为**父窗口**传入（模态、居中在其上）。
+        const parentWin = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
+        try {
+          if (parentWin) {
+            if (parentWin.isMinimized()) parentWin.restore();
+            parentWin.show();
+            parentWin.focus();
+          }
+        } catch (e) { /* noop */ }
+        const dlgOpts = {
+          type: 'warning',
+          buttons: ['仍然退出（放弃未保存的改动）', '留在窗口'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+          title: '有改动未能保存',
+          message: `退出前保存失败，${failed.length} 项改动可能丢失。`,
+          detail: failed.map(f => `· ${f.name}${f.error ? '：' + f.error : ''}`).join('\n')
+            + '\n\n选择「留在窗口」可返回手动处理（例如把改动导出为文件）。',
+        };
         let choice = 0;
         try {
-          choice = dialog.showMessageBoxSync({
-            type: 'warning',
-            buttons: ['仍然退出（放弃未保存的改动）', '留在窗口'],
-            defaultId: 1,
-            cancelId: 1,
-            noLink: true,
-            title: '有改动未能保存',
-            message: `退出前保存失败，${failed.length} 项改动可能丢失。`,
-            detail: failed.map(f => `· ${f.name}${f.error ? '：' + f.error : ''}`).join('\n')
-              + '\n\n选择「留在窗口」可返回手动处理（例如把改动导出为文件）。',
-          });
+          choice = parentWin
+            ? dialog.showMessageBoxSync(parentWin, dlgOpts)
+            : dialog.showMessageBoxSync(dlgOpts);
         } catch (e) { choice = 0; }
         if (choice === 1) {
           quitFlushDone = false;   // 允许下次退出重新走拦截

@@ -105,11 +105,18 @@ def _source_gate():
             fails.append(f'ScenarioMap 未接多环几何层：{tok}')
     if 'convexHull' in sc:
         fails.append('凸包合并还在（会把两个省之间的凹陷与邻居一起吞掉）→ 必须走精确并集')
-    for tok in ('reprojectRings', 'shapeSignature', 'fromGrid', 'fillProvinceRegion', 'splitProvince', 'mergeProvinces'):
+    # 🔴 P2（2026-10-09）**反向守卫**：`reprojectRings` 必须不存在 —— 它就是「把格点轮廓
+    #    反向写成多边形」的元凶（10525 点海岸线一次涂抹变 ~22 点）。旧版本这条守卫写的是
+    #    「缺件检查」（tok not in pe），等于**把退化行为当成正确行为**来守 → 91 用例全绿
+    #    而用户数据被毁。见 docs/SCENARIO_PROVINCE_FIX_PLAN.md。
+    if 'reprojectRings' in pe:
+        fails.append('`reprojectRings` 又回来了 → 涂归属会再次把高精度多边形降级成格点轮廓')
+    if 'fromGrid: true' in pe:
+        fails.append('provinceEditing 仍在写 fromGrid:true（格点派生几何的标记）→ 退化路径复活')
+    for tok in ('applyRegionToTerrain', 'shapeSignature', 'fillProvinceRegion',
+                'splitProvince', 'mergeProvinces', 'polygonClipping'):
         if tok not in pe:
             fails.append(f'provinceEditing 缺件：{tok}')
-    if 'opts.maxShare ?? FILL_AREA_SHARE' not in pe:
-        fails.append('点击填充没走默认面积闸门（FILL_AREA_SHARE）')
 
     # ③ 工具栏分层：CSS 里有行容器
     if '.toolbar-row' not in sc:
@@ -222,13 +229,11 @@ JS_STORE = r"""
   const s = PLACEHOLDER_STORE;
   const P = await import('/src/utils/provinceShape.js');
   const MOD = await import('/src/store/geodataModules/provinceEditing.js');
-  const sum = (a) => { let n = 0; for (let i = 0; i < a.length; i++) n += a[i]; return n; };
 
-  // 闸门常量（面积闸门是「一点填满整块大陆」的唯一防线）
-  same('面积闸门常量 = 25%', MOD.FILL_AREA_SHARE, 0.25);
-  ok('填充规模上限 ≥ 2 万格', MOD.MAX_FILL_CELLS >= 20000, MOD.MAX_FILL_CELLS);
+  // ① 套索面积闸门常量还在（P2 起按**包围盒占比**判，不再是"格数"）
+  same('套索面积闸门 = 50%', MOD.LASSO_AREA_SHARE, 0.5);
 
-  // ── 播种：一张自带的合成底图（左半 / 右半两个相邻矩形省）───────────────
+  // ── 播种：左半 / 右半两个相邻矩形省 ────────────────────────────────────
   const KEY = 'case62_map';
   const MK = (id, name, x0, x1) => ({
     id, name, kind: 'land',
@@ -237,109 +242,108 @@ JS_STORE = r"""
   s.baseMaps = Object.assign({}, s.baseMaps, { [KEY]: {
     id: KEY, name: '用例62底图', terrain: [MK('t62a', '用例62甲', 0, 100), MK('t62b', '用例62乙', 100, 200)],
   }});
-  const seeded = s.rebuildProvinceGrid(KEY);
-  ok('播种：两省栅格化出网格', seeded && seeded.owned > 0, JSON.stringify(seeded));
-  const entry = s.getProvinceGrid(KEY) || s.ensureProvinceGrid(KEY);
-  const total = entry.grid.cols * entry.grid.rows;
-  // 注意：网格按省份包围盒 + extraCells 四周留边 → 覆盖率必然远小于 100%（本例 ≈ 30%）
-  ok('播种：网格覆盖底图主体', entry.labels && seeded.owned > total * 0.25, seeded.owned + '/' + total);
+  const areaOf = (i) => Math.round(P.provinceNetArea(s.baseMaps[KEY].terrain[i]));
+  const A0 = areaOf(0), B0 = areaOf(1);
 
-  // ① 涂抹抬手 → 结果**写回多边形**（渲染唯一来源），并带上多环 / fromGrid 标记
+  // ② 涂归属（**矢量布尔**）：目标省并集、相交省差集 —— 不是把格点轮廓写回去
   s.beginProvinceStroke();
-  // 在**甲的地盘内部**涂一小块（不碰到乙的正文）→ 它应当成为乙的一块「飞地」（额外环）。
-  // 半径故意小：半径一大就和乙的正文连成一片，测不到多环（本用例第一版就踩了这个）。
-  const dabs = s.applyProvinceStroke(KEY, { x: 45, y: 60, radius: 2, strength: 1, tool: 'paint', target: 2 });
-  const stroke = s.endProvinceStroke('用例62涂抹');
-  ok('涂抹：有格被改', dabs > 0, dabs);
-  ok('涂抹：抬手返回结果', !!stroke && stroke.changed > 0, JSON.stringify(stroke));
+  s.applyProvinceStroke(KEY, { x: 50, y: 60, radius: 10, tool: 'paint', target: 2 });
+  s.applyProvinceStroke(KEY, { x: 60, y: 60, radius: 10, tool: 'paint', target: 2 });
+  const stroke = s.endProvinceStroke('用例62涂归属');
+  ok('涂归属：抬手返回结果', !!stroke && stroke.changed > 0, JSON.stringify(stroke));
+  const ops = (stroke && stroke.ops) || [];
+  ok('涂归属：目标省 union', ops.some(o => o.op === 'union'), JSON.stringify(ops));
+  ok('涂归属：相交省 difference', ops.some(o => o.op === 'difference'), JSON.stringify(ops));
+  ok('涂归属：目标省面积变大', areaOf(1) > B0, B0 + ' → ' + areaOf(1));
+  ok('涂归属：相交省面积变小', areaOf(0) < A0, A0 + ' → ' + areaOf(0));
+
+  // ③ 🔴 精度不降级（**本用例的存在理由**）：不许出现 fromGrid 的格点派生几何
   const provB = s.baseMaps[KEY].terrain[1];
-  ok('写回：多边形非空（不再只有网格）', Array.isArray(provB.points) && provB.points.length >= 3, (provB.points || []).length);
-  same('写回：标记网格派生（渲染端据此平滑）', provB.fromGrid, true);
-  ok('写回：多环实体（涂到别人地盘 = 飞地）', P.provinceRings(provB).length >= 2, P.provinceRings(provB).length);
-  ok('写回：另一省也被重算（共享边界）', !!s.baseMaps[KEY].terrain[0].points);
+  ok('几何：fromGrid 不为 true（不是格点派生）', provB.fromGrid !== true, String(provB.fromGrid));
+  ok('几何：多边形非空', Array.isArray(provB.points) && provB.points.length >= 3, (provB.points || []).length);
 
-  // ② 相邻两省的环共享边界顶点（零缝的数据保证）
-  const rings = (i) => P.provinceRings(s.baseMaps[KEY].terrain[i]);
-  const k2 = (p) => Math.round(p.x) + ',' + Math.round(p.y);
-  let sharedMax = 0;
-  for (const r1 of rings(0)) {
-    const s1 = new Set(r1.points.map(k2));
-    for (const r2 of rings(1)) sharedMax = Math.max(sharedMax, r2.points.filter(p => s1.has(k2(p))).length);
+  // ④ 🔴 高精度保护：1000 点的省被涂抹后，顶点数**只增不减**（旧实现会掉到几十）
+  const HD = 'case62_hd';
+  const madePts = [];
+  for (let i = 0; i < 1000; i++) {
+    const a = (i / 1000) * Math.PI * 2;
+    madePts.push({ x: 500 + Math.cos(a) * 100, y: 500 + Math.sin(a) * 100 });
   }
-  ok('相邻省共享边界顶点（零缝）', sharedMax >= 2, sharedMax);
+  s.baseMaps = Object.assign({}, s.baseMaps, { [HD]: {
+    id: HD, name: '用例62高精度', terrain: [
+      { id: 'hd1', name: '高精度甲', kind: 'land', points: madePts },
+      { id: 'hd2', name: '高精度乙', kind: 'land',
+        points: [{x:700,y:400},{x:800,y:400},{x:800,y:600},{x:700,y:600}] },
+    ],
+  }});
+  // 用**总点数**（主环 + 额外环）：在内部挖洞会产生 extraRings，只看主环会误判成「点数变少」
+  const hdCount = () => P.provinceRings(s.baseMaps[HD].terrain[0]).reduce((n, r) => n + r.points.length, 0);
+  const hdBefore = hdCount();
+  s.beginProvinceStroke();
+  s.applyProvinceStroke(HD, { x: 595, y: 500, radius: 8, tool: 'erase', target: 0 });
+  s.endProvinceStroke('用例62抹除');
+  const hdAfter = hdCount();
+  // 判据是**不降级**（不是逐点相等）：布尔运算会清理少量共线/极近顶点（实测量级 ~0.4%），
+  // 而旧实现是 1000 → 22/65（格子边界）。所以守「同量级 + 远高于格点量级」。
+  ok('🔴 高精度保护：1000 点省被涂抹后仍在同量级（不降级成格点轮廓）',
+     hdAfter >= hdBefore * 0.9 && hdAfter >= 200, hdBefore + ' → ' + hdAfter);
+  s.undo();                                   // 撤销这次抹除（否则会顶掉下面「涂归属的 undo」断言）
+  delete s.baseMaps[HD];
+  s.baseMaps = Object.assign({}, s.baseMaps);
 
-  // ③ 一条 undo：labels 与多边形**一起**回滚 / 重做
-  const ptsAfterStroke = JSON.stringify(s.baseMaps[KEY].terrain[1].points);
-  const sumAfterStroke = sum(entry.labels);
+  // ⑤ 一条 undo：多边形回滚 / 重做
+  const ptsAfter = JSON.stringify(s.baseMaps[KEY].terrain[1].points);
   s.undo();
-  ok('undo：labels 回滚', sum(entry.labels) !== sumAfterStroke);
-  ok('undo：多边形一起回滚', JSON.stringify(s.baseMaps[KEY].terrain[1].points) !== ptsAfterStroke);
+  ok('undo：多边形回滚', JSON.stringify(s.baseMaps[KEY].terrain[1].points) !== ptsAfter);
+  same('undo：目标省面积回到原值', areaOf(1), B0);
   s.redo();
-  same('redo：多边形回到写回结果', JSON.stringify(s.baseMaps[KEY].terrain[1].points), ptsAfterStroke);
-  same('redo：labels 回到写回结果', sum(entry.labels), sumAfterStroke);
+  same('redo：多边形回到涂归属的结果', JSON.stringify(s.baseMaps[KEY].terrain[1].points), ptsAfter);
 
-  // ④ 面积闸门：拒绝 + **零副作用**（改不了数据才算真的拒绝）
-  const beforeData = JSON.stringify(s.baseMaps[KEY].provinceLabels.data);
-  const beforeLabels = sum(entry.labels);
-  const gated = s.fillProvinceRegion(KEY, { x: 5, y: 5 }, 2, { maxShare: 0.01 });
-  same('面积闸门：超限被拒', gated && gated.rejected, 'area-gate');
-  ok('面积闸门：给出人话原因与去处', !!gated.message && gated.message.indexOf('笔刷') >= 0, gated.message);
-  same('面积闸门：零副作用（网格未变）', sum(entry.labels), beforeLabels);
-  same('面积闸门：零副作用（落盘载荷未变）', JSON.stringify(s.baseMaps[KEY].provinceLabels.data), beforeData);
+  // ⑥ 套索面积闸门：拒绝 + **零副作用**
+  const areaBeforeLasso = areaOf(0);
+  const gated = s.applyProvinceLasso(KEY, [
+    { x: -500, y: -500 }, { x: 900, y: -500 }, { x: 900, y: 900 }, { x: -500, y: 900 },
+  ], 2, '用例62套索', { maxShare: 0.01 });
+  ok('套索闸门：超限被拒', !!(gated && gated.rejected), JSON.stringify(gated));
+  ok('套索闸门：给出人话原因', !!(gated.message && gated.message.indexOf('圈') >= 0), gated.message);
+  same('套索闸门：零副作用', areaOf(0), areaBeforeLasso);
 
-  // ⑤ 小区域填充（**默认闸门**）：点中那块飞地 → 区域够小 → 放行；再一条 undo 还原
-  const beforeFill = sum(entry.labels);
-  const filled = s.fillProvinceRegion(KEY, { x: 45, y: 60 }, 1);
-  ok('小区域填充成功（默认闸门放行）', filled && filled.changed > 0, JSON.stringify(filled));
-  ok('小区域填充：真的改了网格', sum(entry.labels) !== beforeFill);
+  // ⑦ 点击填充（矢量语义）：吞并点击处的那个省
+  const beforeCount = s.baseMaps[KEY].terrain.length;
+  // ⚠️ 不能点 (50,60) —— 那一带已被上面的「涂归属」划给了乙，会返回「已属于该省份」
+  const filled = s.fillProvinceRegion(KEY, { x: 10, y: 20 }, 2);
+  ok('点填：吞并成功', !!(filled && filled.changed), JSON.stringify(filled));
+  same('点填：省份数 -1', s.baseMaps[KEY].terrain.length, beforeCount - 1);
   s.undo();
-  same('小区域填充：一条 undo 还原', sum(entry.labels), beforeFill);
+  same('点填：一条 undo 还原省份数', s.baseMaps[KEY].terrain.length, beforeCount);
 
-  // ⑥ 合并：精确并集（不是凸包）+ 一条 undo
+  // ⑧ 合并：**精确布尔并集**（既不是凸包，也不是栅格兜底）
   const ids = s.baseMaps[KEY].terrain.map(p => p.id);
   const merged = s.mergeProvinces(KEY, ids, { name: '用例62合并' });
-  ok('合并：成功', merged && merged.merged, JSON.stringify(merged && { m: merged.method, l: merged.loops }));
-  same('合并：方法 = 共边抵消（非凸包）', merged && merged.method, 'cancel');
+  ok('合并：成功', !!(merged && merged.merged), JSON.stringify(merged && { m: merged.method, l: merged.loops }));
+  same('合并：方法 = 布尔并集', merged && merged.method, 'bool');
   same('合并：省份数变 1', s.baseMaps[KEY].terrain.length, 1);
-  const mergedArea = P.provinceArea(s.baseMaps[KEY].terrain[0]);
-  ok('合并：面积 ≈ 两省之和（200×120）', Math.abs(mergedArea - 24000) < 4000, Math.round(mergedArea));
+  const mergedArea = areaOf(0);
+  ok('合并：面积 ≈ 两省之和', Math.abs(mergedArea - 24000) < 4000, Math.round(mergedArea));
   s.undo();
   same('合并：undo 还原省份数', s.baseMaps[KEY].terrain.length, 2);
   s.redo();
   same('合并：redo 回到 1 省', s.baseMaps[KEY].terrain.length, 1);
 
-  // ⑦ 分割：一条 undo + 网格作废重建
+  // ⑨ 分割：多边形**直线裁剪**（不经网格）+ 一条 undo
   const only = s.baseMaps[KEY].terrain[0];
   const split = s.splitProvince(KEY, only.id, { x: 100, y: -10 }, { x: 100, y: 130 });
-  ok('分割：成功', split && split.a && split.b, JSON.stringify(split && { i: split.index, n: split.newIndex }));
+  ok('分割：成功', !!(split && split.a && split.b), JSON.stringify(split && { i: split.index, n: split.newIndex }));
   same('分割：省份数变 2', s.baseMaps[KEY].terrain.length, 2);
-  const gridAfterSplit = s.ensureProvinceGrid(KEY);
-  // 网格按**新几何**重建（长度自洽 + 有归属即可；包围盒变化会让 cols/rows 与旧网格不同，
-  // 所以不能拿旧网格的 total 去比）
-  ok('分割：网格按新几何重建',
-     !!gridAfterSplit && gridAfterSplit.labels.length === gridAfterSplit.grid.cols * gridAfterSplit.grid.rows
-       && s.provinceGridStats(KEY).owned > 0,
-     gridAfterSplit ? gridAfterSplit.labels.length + '/' + (gridAfterSplit.grid.cols * gridAfterSplit.grid.rows) : 'null');
   s.undo();
   same('分割：undo 还原省份数', s.baseMaps[KEY].terrain.length, 1);
   s.undo();
   same('分割：再 undo 回到 2 省（合并前）', s.baseMaps[KEY].terrain.length, 2);
 
-  // ⑦ 网格自愈（几何指纹）：几何变了 → 网格必须按多边形重建（漏掉这条 = 静默错数据）
-  const gA = s.ensureProvinceGrid(KEY);
-  const snapA = Array.from(gA.labels);
-  const moved = s.baseMaps[KEY].terrain.map((q) => ({ ...q }));
-  moved[0] = { ...moved[0], points: moved[0].points.map((q, i) => (i === 0 ? { x: q.x + 37, y: q.y - 21 } : q)) };
-  s.baseMaps = { ...s.baseMaps, [KEY]: { ...s.baseMaps[KEY], terrain: moved } };
-  const gB = s.ensureProvinceGrid(KEY);
-  let driftB = 0;
-  for (let i = 0; i < snapA.length; i++) if (snapA[i] !== gB.labels[i]) driftB++;
-  ok('自愈：几何变了 → 网格必重建', driftB > 0, '相同格 ' + (snapA.length - driftB) + '/' + snapA.length);
-
   // 收场
   delete s.baseMaps[KEY];
   s.baseMaps = Object.assign({}, s.baseMaps);
-  return JSON.stringify({ fails, seeded: seeded.owned, total, sharedMax,
+  return JSON.stringify({ fails, A0, B0, hdBefore, hdAfter,
     strokeChanged: stroke ? stroke.changed : -1, mergedArea: Math.round(mergedArea) });
 })()
 """
@@ -459,10 +463,10 @@ def run(cdp):
         return False, 'UI 检查失败：' + '；'.join(ui['fails'])
 
     return True, (
-        f'省份多环实体通过（合成底图 {st["seeded"]}/{st["total"]} 格）：'
-        f'涂抹抬手把网格结果写回多边形（改 {st["strokeChanged"]} 格、fromGrid 标记、飞地成额外环）、'
-        f'相邻省共享 {st["sharedMax"]} 个边界顶点（零缝）、labels 与多边形一起撤销/重做；'
-        f'面积闸门拒绝并零副作用、小区域填充可撤销；合并走共边抵消（面积 {st["mergedArea"]}）、'
+        f'省份**矢量几何**通过（涂料/套索/点填 = 多边形布尔；初始面积 {st["A0"]}/{st["B0"]}）：'
+        f'涂归属 union + difference（{st["strokeChanged"]} 处几何变化）、精度不降级（fromGrid 不为 true）、'
+        f'1000 点省涂抹后顶点 {st["hdBefore"]} → {st["hdAfter"]}（只增不减）；'
+        f'套索面积闸门拒绝并零副作用、点填吞并可撤销；合并走**布尔并集**（面积 {st["mergedArea"]}）、'
         f'分割一条 undo；纯函数层：洞真空 / 飞地真画 / 环→栅格 {pure["drift"]} 漂移、骨架共享 {pure["shared"]} 顶点；'
         f'UI：工具栏 {ui["rows"]} 行 {ui["groups"]} 组（无 tool-group 掉出）、无「网格视图」开关、'
         f'属性面板含「类型 / 编辑环」'

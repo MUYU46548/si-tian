@@ -79,16 +79,18 @@ def sub_source_guards(cdp):
         bad.append('addBaseProvince 没走 execute（一条 undo 是它的存在理由）')
 
     pe = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
-    for sym in ['LASSO_AREA_SHARE', 'MAX_LASSO_CELLS', 'lassoInsideCount', 'simplifyClosedTrace']:
+    for sym in ['LASSO_AREA_SHARE', 'MAX_LASSO_CELLS', 'simplifyClosedTrace', 'polygonClipping']:
         if sym not in pe:
             bad.append(f'provinceEditing 缺少 {sym}（套索闸门/简化没接）')
     lasso = pe[pe.find('function applyProvinceLasso'):pe.find('function applyProvinceLasso') + 3200]
     if "rejected: 'no-target'" not in lasso:
         bad.append('套索没校验目标省份（target=0 会把圈内格子静默擦成无主）')
-    if 'area-gate' not in lasso or 'too-big' not in lasso:
-        bad.append('套索缺面积/格数闸门（与点击填充同一协议）')
-    if 'lassoInsideCount' not in lasso:
-        bad.append('套索闸门没用 lassoInsideCount（用 lassoCells().length 会漏判「圈给大省」）')
+    # 🔴 P2（2026-10-09）：套索闸门改**面积占比**（矢量模型没有「格数」这个概念）。
+    #    旧两条判据（'too-big' 格数上限 / `lassoInsideCount` 圈入量）随网格一起退役。
+    if 'area-gate' not in lasso:
+        bad.append('套索缺面积闸门（area-gate）')
+    if 'provinceBBox' not in lasso:
+        bad.append('套索闸门没算轮廓/全图包围盒（面积占比的分子分母）')
 
     pg = _code_only(_read('src/renderer/src/utils/provinceGrid.js'))
     if 'export function lassoInsideCount' not in pg:
@@ -393,18 +395,16 @@ LASSO_JS = r"""(async () => {
   ck('拒绝时零副作用', snap() === before);
   ck('拒绝文案给出占比与去处', /%/.test(r1.message || '') && /笔刷/.test(r1.message || ''), r1.message);
 
-  // ③ 两条阈值都可注入（与点击填充同一套 opts 约定，用例才能锁住两侧）
-  const r2 = s.applyProvinceLasso(KEY, box(350, 130, 490, 270), 1, '测试', { maxCells: 3 });
-  ck('格数上限可注入且生效（too-big）', !!(r2 && r2.rejected === 'too-big'), r2);
+  // ③ 面积阈值可注入（P2 起矢量模型只剩这一条闸门；"格数上限"随网格一起退役）
   const r3 = s.applyProvinceLasso(KEY, box(350, 130, 490, 270), 1, '测试', { maxShare: 0.0001 });
   ck('面积阈值可注入且生效（area-gate）', !!(r3 && r3.rejected === 'area-gate'), r3);
-  ck('两条注入式拒绝都零副作用', snap() === before);
+  ck('注入式拒绝零副作用', snap() === before);
 
   // ④ 正常小套索：圈住乙省一角划归甲省 → 照常生效 + 回报圈入量
   const r4 = s.applyProvinceLasso(KEY, box(350, 130, 490, 270), 1);
   ck('小套索生效（圈的是乙省的地，划给甲省）', !!(r4 && r4.changed > 0), r4);
-  ck('回报圈入格数（闸门判据与「改了几格」分开）', r4 && r4.inside >= r4.changed, r4);
-  ck('写回多边形（reprojected > 0）', !!(r4 && r4.reprojected > 0), r4 && r4.reprojected);
+  ck('回报改到的省份（union / difference 分开列）', !!(r4 && r4.ops && r4.ops.length > 0), r4 && r4.ops);
+  ck('矢量布尔真的并进了目标省（union）', !!(r4 && r4.ops.some(o => o.op === 'union')), r4 && r4.ops);
   s.undo();
   ck('一条 undo 还原（几何也回滚）', snap() === before);
 

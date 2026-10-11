@@ -131,79 +131,71 @@ JS_STORE = r"""
   ok('栅格化后有主格', s.provinceGridStats(KEY).owned > 0, s.provinceGridStats(KEY).owned);
   const owned0 = s.provinceGridStats(KEY).owned;
 
-  // c) 一笔涂抹 = 一条 undo
-  const before = owned0;
-  const cx = entry.grid.ox + (entry.grid.cols / 2) * entry.grid.cell;
-  const cy = entry.grid.oy + (entry.grid.rows / 2) * entry.grid.cell;
-  const cellIdx = Math.floor(entry.grid.rows / 2) * entry.grid.cols + Math.floor(entry.grid.cols / 2);
-  const preStroke = entry.labels[cellIdx];
-  const target = preStroke === 3 ? 4 : 3;          // 保证这一笔真的改变该格
-  s.beginProvinceStroke();
-  for (let k = 0; k < 6; k++) s.applyProvinceStroke(KEY, { x: cx + k * entry.grid.cell, y: cy, radius: 4, strength: 1, tool: 'paint', target });
-  const brush = s.endProvinceStroke('测试划归');
-  ok('笔刷产生改动', brush && brush.changed > 0, JSON.stringify(brush));
-  same('涂抹改变了目标格', entry.labels[cellIdx], target);
-  s.undo();
-  same('一条 undo 撤销整笔', entry.labels[cellIdx], preStroke);
-  s.redo();
-  same('redo 落回新值', entry.labels[cellIdx], target);
+  const P = await import('/src/utils/provinceShape.js');
 
-  // 无目标省份 → 不写脏标签
+  // c) 🔴 P2 反转：涂抹**不再改归属网格**（网格已退役），改为精确布尔改多边形
+  const sumLabels = () => { let n = 0; for (let i = 0; i < entry.labels.length; i++) n += entry.labels[i]; return n; };
+  const labels0 = sumLabels();
+  const ptsB0 = (s.baseMaps[KEY].terrain[1].points || []).length;
+  const areaB0 = P.provinceNetArea(s.baseMaps[KEY].terrain[1]);
+  s.beginProvinceStroke();
+  // 涂在 **1 号省的地盘**上（x=30 在 0..400 内、又在 2 号省的 60..340 之外）→ 2 号省才会变大
+  s.applyProvinceStroke(KEY, { x: 30, y: 150, radius: 20, strength: 1, tool: 'paint', target: 2 });
+  const brush = s.endProvinceStroke('测试涂归属');
+  ok('涂归属产生改动', brush && brush.changed > 0, JSON.stringify(brush));
+  same('🔴 涂抹不再改归属网格（网格已退役）', sumLabels(), labels0);
+  ok('涂归属改了多边形（2 号省面积变大）',
+     P.provinceNetArea(s.baseMaps[KEY].terrain[1]) > areaB0,
+     Math.round(P.provinceNetArea(s.baseMaps[KEY].terrain[1])) + ' vs ' + Math.round(areaB0));
+  s.undo();
+  same('一条 undo 撤销整笔（多边形回滚）', (s.baseMaps[KEY].terrain[1].points || []).length, ptsB0);
+  s.redo();
+
+  // 无目标省份 → 不产生任何改动
   const emptyKey = '__case52_empty__';
   s.baseMaps = { ...s.baseMaps, [emptyKey]: { id: emptyKey, name: '空底图', terrain: [], referenceImages: [] } };
   const e = s.ensureProvinceGrid(emptyKey);
   s.beginProvinceStroke();
-  const wrote = s.applyProvinceStroke(emptyKey, { x: e.grid.ox + 10, y: e.grid.oy + 10, radius: 3, strength: 1, tool: 'paint', target: 1 });
-  s.endProvinceStroke('无目标');
-  same('无省份时不写标签', wrote, 0);
+  s.applyProvinceStroke(emptyKey, { x: e.grid.ox + 10, y: e.grid.oy + 10, radius: 20, strength: 1, tool: 'paint', target: 1 });
+  const emptyRes = s.endProvinceStroke('无目标');
+  same('无省份时不产生改动', (emptyRes && emptyRes.changed) || 0, 0);
   same('无省份时网格仍全无主', e.labels.reduce((a, v) => a + (v ? 1 : 0), 0), 0);
 
-  // d) 自由轮廓：圈内整批划归 + 一条 undo
-  const g2 = entry.grid;
+  // d) 自由轮廓（套索）：矢量布尔 + 一条 undo（不再动网格）
   const poly = [];
   for (let i = 0; i < 24; i++) {
     const a = i / 24 * Math.PI * 2;
-    poly.push({ x: cx + Math.cos(a) * g2.cell * 5, y: cy + Math.sin(a) * g2.cell * 5 });
+    poly.push({ x: 200 + Math.cos(a) * 50, y: 150 + Math.sin(a) * 50 });
   }
-  const idxsBefore = entry.labels.slice();
-  const lasso = s.applyProvinceLasso(KEY, poly, 3);
+  const sumBefore = sumLabels();
+  const lasso = s.applyProvinceLasso(KEY, poly, 1);
   ok('套索产生改动', lasso && lasso.changed > 0, JSON.stringify(lasso));
-  ok('套索落值', entry.labels[cellIdx] === 3, entry.labels[cellIdx]);
+  ok('套索回报 union 到目标省', !!(lasso.ops || []).some(o => o.op === 'union'), JSON.stringify(lasso.ops));
+  same('🔴 套索不再改归属网格', sumLabels(), sumBefore);
   s.undo();
-  same('套索一条 undo', entry.labels[cellIdx], idxsBefore[cellIdx]);
-  s.redo();
 
-  // e) 新建省份 → 删除省份（重编号安全）
+  // e) 新建省份（空省）→ 涂出几何 → 删除省份（网格重编号 API 仍安全）
   const added = s.addBrushProvince(KEY, {});
   ok('新建省份', added && added.idx === nProv + 1, JSON.stringify(added));
   same('terrain 增长', s.baseMaps[KEY].terrain.length, nProv + 1);
-  // 给新省份涂一块地
-  const newIdx = added.idx;
+  same('新建时是空省（没有几何）', (s.baseMaps[KEY].terrain[added.idx - 1].points || []).length, 0);
   s.beginProvinceStroke();
-  const off = 20;
-  for (let k = 0; k < 4; k++) s.applyProvinceStroke(KEY, { x: g2.ox + off * g2.cell + k * g2.cell, y: g2.oy + off * g2.cell, radius: 3, strength: 1, tool: 'paint', target: newIdx });
+  s.applyProvinceStroke(KEY, { x: 470, y: 60, radius: 25, strength: 1, tool: 'paint', target: added.idx });
   s.endProvinceStroke('新省份划归');
-  let used = s.provinceGridStats(KEY).used;
-  ok('新省份有归属格', used.includes(newIdx), JSON.stringify(used));
-  // 删除 2 号省 → 3/4/... 全部减 1，且不留越界标签
+  ok('新省份涂出了几何', P.provinceRings(s.baseMaps[KEY].terrain[added.idx - 1]).length > 0, '');
   const del = s.removeProvinceWithGrid(KEY, s.baseMaps[KEY].terrain[1].id);
   ok('删除省份', !!del, 'null');
-  const maxLabel = entry.labels.reduce((a, v) => Math.max(a, v), 0);
-  ok('删除后无越界标签', maxLabel <= s.baseMaps[KEY].terrain.length, maxLabel + ' > ' + s.baseMaps[KEY].terrain.length);
   same('terrain 缩短', s.baseMaps[KEY].terrain.length, nProv);
-  s.undo();
-  same('撤销删除后 terrain 还原', s.baseMaps[KEY].terrain.length, nProv + 1);
-  same('撤销删除后 maxLabel 还原', entry.labels.reduce((a, v) => Math.max(a, v), 0), newIdx);
-  s.redo();
 
-  // f) 清空归属 + 还原；重建网格
+  // f) 重置省界（清几何；网格 API 仍可用 —— 只是不再参与编辑）
   const cleared = s.clearProvinceLabels(KEY);
-  ok('清空归属', cleared && cleared.cleared > 0, JSON.stringify(cleared));
-  same('清空后无主', s.provinceGridStats(KEY).owned, 0);
-  s.undo();
-  same('清空一条 undo 还原', s.provinceGridStats(KEY).owned, cleared.cleared);
+  ok('重置省界', cleared && cleared.cleared > 0, JSON.stringify(cleared));
+  ok('重置后所有省几何为空',
+     s.baseMaps[KEY].terrain.every(p => (p.points || []).length === 0),
+     JSON.stringify(s.baseMaps[KEY].terrain.map(p => (p.points || []).length)));
+  s.undo();   // 撤销「重置省界」→ 几何回来，网格重建才有东西可栅格化
   const rebuilt = s.rebuildProvinceGrid(KEY);
-  ok('重建网格', rebuilt && rebuilt.owned > 0, JSON.stringify(rebuilt));
+  ok('重建网格（退役但仍可用）', rebuilt && rebuilt.owned > 0, JSON.stringify(rebuilt));
 
   // 收场：把本用例造出来的省份与网格退回（delete + 撤销栈留在组件里，用例结束即重载）
   s.undo();                                    // 撤销 rebuild
@@ -286,13 +278,16 @@ JS_READONLY = r"""
   // 恢复可写 → 同一落点、同一目标，这次必须真的改
   G.setWriteMode('project', '用例恢复（harness 基线项目已打开）');
   same('恢复可写', G.canWrite(), true);
+  // 🔴 P2：恢复可写后要验的是**几何**（多边形布尔），不再是归属格
+  const geoBefore = JSON.stringify(s.baseMaps[KEY].terrain.map(p => p.points));
   s.beginProvinceStroke();
-  const again = s.applyProvinceStroke(KEY, { x: cx, y: cy, radius: 4, strength: 1, tool: 'paint', target: roTarget });
+  const again = s.applyProvinceStroke(KEY, { x: cx, y: cy, radius: 30, strength: 1, tool: 'paint', target: roTarget });
   const againRes = s.endProvinceStroke('恢复可写');
   ok('恢复可写后笔刷生效', again > 0 && againRes && againRes.changed > 0, again + '/' + JSON.stringify(againRes));
-  same('恢复可写后该格真的改了', entry.labels[roIdx], roTarget);
+  ok('恢复可写后**几何**真的改了（多边形布尔）',
+     JSON.stringify(s.baseMaps[KEY].terrain.map(p => p.points)) !== geoBefore, '');
   s.undo();
-  same('撤销后回到原值', entry.labels[roIdx], roPre);
+  same('撤销后几何还原', JSON.stringify(s.baseMaps[KEY].terrain.map(p => p.points)), geoBefore);
 
   return JSON.stringify({ fails, owned0, terrain0 });
 })()
@@ -307,12 +302,14 @@ JS_WIRING = r"""
   ok('存在省份笔刷工具分支', typeof sc.setTool === 'function');
   sc.setTool('provinceBrush');
   ok('切到省份笔刷', sc.tool === 'provinceBrush', sc.tool);
-  // P0 第二块：**渲染单一路径** —— 「网格视图」开关已删除（画布永远画多边形，网格只是
-  // 涂抹时的中间层）。这条断言反过来守：谁把开关加回来就红。
-  ok('「网格视图」开关已删除（渲染单一路径）',
-     sc.showProvinceMesh === undefined && sc.provinceMeshOn !== undefined,
-     String(sc.showProvinceMesh) + ' / meshOn=' + String(sc.provinceMeshOn));
-  ok('切到省份工具后异步补建网格（不现场栅格化）', typeof sc.scheduleProvinceGrid === 'function');
+  // 🔴 P2（2026-10-09）：**多边形是唯一几何表示** —— 网格（含「网格视图」开关、异步补建）
+  //    整体退役。这三条反过来守：谁把格点层加回来就红。
+  ok('P2：没有「网格视图」开关（只有多边形一个渲染路径）',
+     sc.showProvinceMesh === undefined, String(sc.showProvinceMesh));
+  ok('P2：不再暴露 provinceMeshOn（格点中间层已删）',
+     typeof sc.provinceMeshOn === 'undefined', String(sc.provinceMeshOn));
+  ok('P2：不再有 scheduleProvinceGrid（打开省份工具零构造成本）',
+     typeof sc.scheduleProvinceGrid === 'undefined', String(sc.scheduleProvinceGrid));
   ok('笔刷参数就位', sc.provBrushRadius > 0 && !!sc.provBrushTool, sc.provBrushRadius + '/' + sc.provBrushTool);
   sc.setTool('provinceLasso');
   ok('切到自由轮廓', sc.tool === 'provinceLasso' && sc.provBrushTool === sc.provBrushTool);

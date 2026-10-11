@@ -26,12 +26,21 @@
         <!-- 快速开始 -->
         <section class="about-section">
           <h3><Icon name="book" :size="16" style="margin-right:6px"/>快速开始</h3>
+          <!-- 🔴 2026-10-11：这段文案此前停在「五层视图 + 数据全在 Obsidian」的时代 ——
+               既没提项目文件（终态下无项目 = 只读，不建项目什么都改不了），也没提剧本/省份。
+               暮雨的原话是「司天内没有教程…很简陋没什么用」。手册本体在 GuidePanel（14 节，
+               可搜索），这里只留一个入口 + 四句话，别再把两处文案各写一份。 -->
+          <div class="guide-entry">
+            <Button variant="outline" size="sm" data-testid="about-open-guide" @click="openGuide">
+              <Icon name="book" :size="14" style="margin-right:4px"/>打开使用手册
+            </Button>
+            <span class="guide-entry-hint">{{ guideCount }} 节操作说明 · 可搜索 · 也能按 F1 后从这里进</span>
+          </div>
           <ul class="guide-list">
-            <li><b>五层视图导航</b>：世界卡片 → 星域地图 → 域内星系总览 → 单系详情 → 行星地图</li>
-            <li><b>区域与建筑</b>：行星地图中点击聚落进入区域地图，再下钻建筑内部</li>
-            <li><b>点击节点</b>：查看百科卡片式详情面板</li>
-            <li><b>编辑模式</b>：各视图均支持编辑地图，自动保存到 JSON 缓存</li>
-            <li><b>撤销/重做</b>：Ctrl+Z / Ctrl+Y 全程可回溯</li>
+            <li><b>先建项目</b>：编辑都写进项目文件（<code>.sitian</code>）；没有项目时是<b>只读浏览</b>，画布改不动</li>
+            <li><b>七层视图</b>：世界 → 星域 → 星系总览 → 单系详情 → 行星 → 区域 → 建筑内部</li>
+            <li><b>历史剧本</b>：世界选择页的「历史剧本」进去画省份、排时间轴、导出切片</li>
+            <li><b>撤销/重做</b>：Ctrl+Z / Ctrl+Y 全程可回溯（一整批切分也只算一条）</li>
           </ul>
         </section>
 
@@ -203,8 +212,11 @@ import BrandMark from './BrandMark.vue';
 // shadcn-vue 组件（Button），配色走 tailwind.config.js 映射到司天 token。
 import { Button } from './ui/button';
 import { DISCLAIMER_VERSION, ackedDisclaimerAt } from '../utils/disclaimer';
+// 节数从手册本体取（不要在这里写死数字 —— 加一节手册就会让这句话变成假话）
+import { guideStats } from '../utils/userGuide';
 
 const isOpen = ref(false);
+const guideCount = guideStats().sections;
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
 const copiedVersion = ref(false);
 
@@ -212,6 +224,13 @@ const copiedVersion = ref(false);
 // 首启阻断与随时查看共用，避免两份实现漂移）。
 function openDisclaimer() {
   window.dispatchEvent(new CustomEvent('sitian:open-disclaimer'));
+}
+
+// 使用手册（2026-10-11）：同样只负责入口，手册本体在 GuidePanel.vue（App 持有的唯一实例）。
+// 先关掉关于面板再开手册 —— 两层浮层同屏会互相压住（本仓在免责声明那一轮踩过同样的坑）。
+function openGuide(section) {
+  close();
+  window.dispatchEvent(new CustomEvent('sitian:open-guide', { detail: { section: section || '' } }));
 }
 
 const disclaimerState = computed(() => {
@@ -392,6 +411,25 @@ defineExpose({ open, close });
   list-style: none;
   padding: 0;
   margin: 0;
+}
+
+/* 使用手册入口（2026-10-11）：按钮 + 一行说明，说明里写清「能搜、多少节」，
+   否则用户不会点开一个不知道有什么的东西 */
+.guide-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.guide-entry-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.guide-list code {
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.16);
 }
 
 .guide-list li {

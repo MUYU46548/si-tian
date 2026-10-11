@@ -137,7 +137,14 @@ async function makeSessionBaseline(filePath) {
 async function atomicWriteJson(filePath, project) {
   await ensureDir(path.dirname(filePath));
   const tmp = `${filePath}.tmp-${Date.now()}`;
-  const text = JSON.stringify(project, null, 2);
+  // 🔴 **紧凑 JSON（2026-10-11 体积裁剪）**：此前是 `JSON.stringify(project, null, 2)`。
+  //    实测暮雨的真实项目：正文 39853484 字节 → 紧凑后 10302398 字节 = **缩进占 74%**。
+  //    原因很具体：`scenarios.baseMaps[*].terrain[].points` 是 `[{x,y},…]` 的**上万点数组**，
+  //    每点两行缩进 → 一个省的海岸线就是几十万行。项目文件是机器管理的产物，
+  //    「人能读」换不来 4 倍体积，而体积直接决定**每次自动保存要写多少字节**（低配机的瓶颈）。
+  //    代价（如实记录）：git 侧的一行 = 整个文件，`.sitian` 的 diff 不再逐行可读。
+  //    若要恢复可读缩进，只改这一行；不要再在别处另写一份序列化（`serializeProject` 是给测试用的）。
+  const text = JSON.stringify(project);
   await fs.writeFile(tmp, text, 'utf-8');
   try {
     await fs.rename(tmp, filePath);

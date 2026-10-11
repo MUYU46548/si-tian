@@ -344,6 +344,13 @@ const props = defineProps({
   areaNode: { type: Object, default: null },
 });
 
+// 🔴 `emit` 此前**全文件没有声明**，而 2119 / 2166 两处 `emit('dirty', true)` 会直接
+//    `ReferenceError`（模块作用域是严格模式，不是"静默写全局"）。App.vue 上
+//    `<area-map @back @select-node @dirty>` 三个监听器是早就写好的 —— 说明声明是漏掉了，
+//    于是「区域视图里改完东西」不会把 dirty 传上去（该存盘的状态可能一直停在"干净"）。
+//    三个事件一次补齐：只声明 'dirty' 会让另外两个监听器变成落到根元素的 attrs。
+const emit = defineEmits(['back', 'select-node', 'dirty']);
+
 const store = useGeodataStore();
 const layers = useLayersStore();
 

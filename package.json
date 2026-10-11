@@ -1,6 +1,6 @@
 {
   "name": "sitian",
-  "version": "0.1.9",
+  "version": "0.2.4",
   "description": "世界观动态构建系统 — 绒花计划",
   "main": "src/main/index.js",
   "scripts": {
@@ -13,6 +13,7 @@
     "migrate-vault-attrs": "node scripts/migrate-vault-attrs.js",
     "clean-cache-junk": "node scripts/clean-cache-junk.js",
     "audit-coverage": "node scripts/audit-coverage.js",
+    "audit-project-size": "node scripts/audit-project-size.js",
     "test": "python scripts/tests/run_tests.py",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
@@ -35,6 +36,7 @@
     "gray-matter": "^4.0.3",
     "marked": "^18.0.9",
     "pinia": "^2.1.7",
+    "polygon-clipping": "^0.15.7",
     "vue": "^3.4.0"
   },
   "devDependencies": {

@@ -304,20 +304,30 @@
 
       <!-- 快照 -->
       <div v-if="proj.isOpen" class="pp-section">
-        <div class="pp-label">快照（最近 50 份，保存时自动生成）</div>
+        <div class="pp-label">快照（保留最近 50 份 · 保存时自动生成）</div>
         <!-- 快照范围必须写明（A1/R1，2026-09-25）：高度图等重字段**不进快照**（一份 1.2 MB，
              每涂一笔就整份进 patch → 满 50 份 38 MB）。回滚不恢复它们，但也不会删掉它们。 -->
         <div data-testid="snapshot-scope-note" style="font-size: 11px; line-height: 1.5; color: #4a5568; margin: 2px 0 6px;">
-          快照记的是实体 / 航道 / 剧本结构；<b>不含地形高度图与参考图</b>（体积考量）。
+          快照记的是实体 / 航道 / 剧本结构（<b>含省份边界多边形</b> —— 切省切坏了可以直接回滚）；
+          <b>不含地形高度图与参考图</b>（体积考量）。
           地形另有「备份」按钮的整文件副本（保留 10 份），回滚不会改动它。
         </div>
+        <div v-if="snapshotSizeText" data-testid="snapshot-size-note"
+             style="font-size: 11px; line-height: 1.5; color: #4a5568; margin: 0 0 6px;">
+          {{ snapshotSizeText }}
+        </div>
         <div v-if="!proj.snapshots.length" class="pp-empty">还没有快照：保存一次即可生成第一份</div>
-        <div v-for="s in recentSnapshots" :key="s.index" class="pp-item">
-          <div class="pp-item-main">
-            <div class="pp-item-name">{{ s.label || ('快照 ' + (s.index + 1)) }}</div>
-            <div class="pp-item-sub">{{ fmtTime(s.at) }} · {{ s.changes }} 处改动</div>
+        <!-- 🔴 2026-10-09 修：原来只列最近 5 条 → 更早的快照在 UI 里**根本点不到**
+             （真事故：26 份快照里，靠前的「14:33」那份才是完好版本，用户找不到只能干看着废图）。
+             现在全量倒序 + 容器滚动（最新在最上）。 -->
+        <div v-else class="pp-snapshot-list">
+          <div v-for="s in allSnapshots" :key="s.index" class="pp-item">
+            <div class="pp-item-main">
+              <div class="pp-item-name">{{ s.label || ('快照 ' + (s.index + 1)) }}</div>
+              <div class="pp-item-sub">{{ fmtTime(s.at) }} · {{ s.changes }} 处改动</div>
+            </div>
+            <button class="link-btn" title="回滚到这份快照（可撤销）" @click="doRestore(s)">恢复</button>
           </div>
-          <button class="link-btn" title="回滚到这份快照（可撤销）" @click="doRestore(s)">恢复</button>
         </div>
       </div>
     </div>
@@ -348,6 +358,8 @@ import { describeCanvasBridge, gotoEntity } from '../store/canvasBridge';
 import { GAP_MODES, matchesGap, placeTypeOptions, showsPlaceTypeControl } from '../utils/placeTypes';
 // R15/A-0：候选**理由**的措辞与检测实现同源（避免 UI 与计算各写一套说法）
 import { describeCandidate } from '../utils/vaultRelink';
+// 体积口径的唯一实现（2026-10-11）：快照字节数 / 体积上限都从 schema 取，面板不自己算一遍
+import { snapshotBytes, SNAPSHOT_MAX_BYTES, SNAPSHOT_KEEP } from '../utils/projectSchema';
 
 // ⚠️ 挂载语义：本面板由 App.vue 用 `v-if="panelsStore.isOpen('project')"` 控制**挂载**，
 //    所以**不要**再传 `open` —— PanelShell 的 `open` 默认 true，传了反而会因父级未传值而默认 false
@@ -505,8 +517,24 @@ function onPlaceTypeChange(row, ev) {
 const parentOptionsForSelected = computed(() =>
   selectedEntity.value ? proj.parentCandidates(selectedEntity.value.id) : []);
 
-// 只显示最近 5 条快照（面板高度有限；完整列表属 Phase 2 后续）
-const recentSnapshots = computed(() => proj.snapshots.slice(-5).reverse());
+// 🔴 2026-10-09 修：原来 `slice(-5)` 只给 5 条 —— 更早的快照在 UI 里**无法访问**。
+//    真事故：26 份快照里，从末尾数第 6 条靠前的「14:33」那份才是完好版本，用户找不到 →
+//    只能拿废图继续用。现在**全量倒序**（最新在最上），高度由容器滚动承载；
+//    保留上限（KEEP=50）仍由主进程 `pushSnapshot` 控制。
+const allSnapshots = computed(() => proj.snapshots.slice().reverse());
+// 快照体积回执（2026-10-11）：体积这件事**必须让用户看得见** —— 暮雨的项目曾达 39.9 MB
+// 正文 + 356 MB 备份，而界面上没有任何地方提过一个字。上限与口径都从 schema 取。
+const snapshotSizeText = computed(() => {
+  const snaps = proj.snapshots || [];
+  if (!snaps.length) return '';
+  const bytes = snapshotBytes(snaps);
+  const used = (bytes / 1048576).toFixed(2);
+  const cap = (SNAPSHOT_MAX_BYTES / 1048576).toFixed(0);
+  const over = bytes > SNAPSHOT_MAX_BYTES
+    ? `　⚠️ 已超过 ${cap} MB：下次保存会自动丢掉最旧的几份（最新那份永远保留）`
+    : '';
+  return `本文件快照共 ${snaps.length} 份 / ${used} MB（上限 ${SNAPSHOT_KEEP} 份 且 ${cap} MB）${over}`;
+});
 
 function setTip(text, kind = 'ok') {
   tip.value = text;
@@ -1113,6 +1141,8 @@ refresh();
   text-overflow: ellipsis;
 }
 .pp-item-sub { color: var(--planet-text-secondary); font-size: 10.5px; }
+/* 快照列表：全量时可滚动 —— 面板高度有限，但**不许再靠截断**来解决（见 allSnapshots 注释） */
+.pp-snapshot-list { max-height: 300px; overflow-y: auto; overscroll-behavior: contain; }
 .pp-warn { color: #a06b00; font-weight: 700; }
 .pp-tree {
   border: 1px solid var(--planet-btn-border);

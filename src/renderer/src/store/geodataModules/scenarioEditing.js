@@ -393,6 +393,33 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
+   * 压叠**预检**（只读，不写任何数据）—— 给「顶点编辑」用（2026-10-11）。
+   *
+   * 为什么放在 store 而不是组件里直接调度量函数：
+   *   本仓有一条硬纪律（`test_79` f0 源码守卫会判红）—— **判定必须在 store / 纯函数层单源**，
+   *   `ScenarioMap.vue` 里连 `measureProvinceOverlap` 这个函数名都不许出现。组件只负责"问人"。
+   * 顶点编辑与新建省份的差别只在**时机**：新建是"先量后建"，顶点是"拖完了、还没落库时量一次"。
+   *
+   * @param {string} baseMapKey
+   * @param {object} province 候选省份（可以是还没落库的 `{...prov, ...patch}`）
+   * @param {{ skipId?: string, ratio?: number }} [opts] `skipId` 必须传被编辑省份自己的 id
+   *        —— 不排除自己 = 自己压自己 100%，那样每次拖顶点都会被拦。
+   * @returns {object|null} 度量结果（`utils/provinceOverlap.measureProvinceOverlap` 的形状）
+   */
+  function previewProvinceOverlap(baseMapKey, province, opts = {}) {
+    const baseMap = baseMaps.value[baseMapKey];
+    if (!baseMap || !province) return null;
+    try {
+      return measureProvinceOverlap(province, baseMap.terrain || [], {
+        ratio: opts.ratio,
+        skipId: opts.skipId,
+      });
+    } catch (e) {
+      return null;                  // 度量失败绝不能挡住用户的编辑（宁可不判也不误拒）
+    }
+  }
+
+  /**
    * 新建省份。
    *
    * 🔴 **压叠闸门（2026-10-02）**：省份之间没有任何排他约束，画一个压住邻居的新省完全合法，
@@ -2545,6 +2572,8 @@ export function createScenarioEditingModule(ctx) {
     importHeightmapFromPlanet,
     describeBaseMapTerrain, scenarios,
     addBaseMap, removeBaseMap, addBaseProvince, updateBaseProvince, removeBaseProvince,
+    // 压叠预检（只读）：顶点编辑在**落库前**量一次，判定单源仍在纯函数层
+    previewProvinceOverlap,
     splitBaseProvince, mergeBaseProvinces,
     addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
     createScenario, updateScenario, removeScenario, inheritScenario,

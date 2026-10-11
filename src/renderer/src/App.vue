@@ -309,6 +309,9 @@
       @open-project="openProjectFromSync"
     />
     <about-panel ref="aboutPanelRef" />
+    <!-- 使用手册（2026-10-11）：暮雨的原话是「司天内没有教程」——
+         文档一直在 docs/ 里，但他只有 exe，看不到仓库。入口挂在「关于」面板里（他唯一会点的地方）。 -->
+    <guide-panel ref="guidePanelRef" />
     <batch-import-panel ref="batchImportPanelRef" />
     <settings-panel ref="settingsPanelRef" />
     <onboarding-guide ref="onboardingGuideRef" />
@@ -382,6 +385,8 @@ const ScenarioMap = defineAsyncComponent(() => import('./components/ScenarioMap.
 
 // 低频面板动态导入：减少初始 bundle
 const AboutPanel = defineAsyncComponent(() => import('./components/AboutPanel.vue'));
+// 使用手册：体量与关于面板同量级（纯展示 + 搜索），异步加载不拖首屏
+const GuidePanel = defineAsyncComponent(() => import('./components/GuidePanel.vue'));
 const BatchImportPanel = defineAsyncComponent(() => import('./components/BatchImportPanel.vue'));
 const SettingsPanel = defineAsyncComponent(() => import('./components/SettingsPanel.vue'));
 const OnboardingGuide = defineAsyncComponent(() => import('./components/OnboardingGuide.vue'));
@@ -448,6 +453,7 @@ const interiorViewRef = ref(null);
 const perfVisible = ref(false);
 const perfStats = ref({});
 const aboutPanelRef = ref(null);
+const guidePanelRef = ref(null);
 const batchImportPanelRef = ref(null);
 const settingsPanelRef = ref(null);
 const keyboardShortcutsRef = ref(null);
@@ -1695,6 +1701,12 @@ onMounted(async () => {
   window.addEventListener('sitian:open-project-panel', handleOpenProjectPanel);
   // 免责声明入口（关于面板 / 设置面板共用同一通道）
   window.addEventListener('sitian:open-disclaimer', openDisclaimerView);
+  // 使用手册入口（关于面板「使用手册」按钮 / 引导末步共用同一通道）
+  // 用事件而不是 ref 直连：关于面板是异步组件、与 App 之间没有 prop 通道，
+  // 本仓同类入口（open-project-panel / open-disclaimer / focus-node）也都是这条约定。
+  window.addEventListener('sitian:open-guide', (e) => {
+    guidePanelRef.value?.open((e && e.detail && e.detail.section) || '');
+  });
   // 项目侧告警（如「会话基线未能创建」= 失去回滚点）→ 状态栏提醒，别让它静默
   window.addEventListener('sitian:project-warning', (e) => {
     const msg = e?.detail?.message;

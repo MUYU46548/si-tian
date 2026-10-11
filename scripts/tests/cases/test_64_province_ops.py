@@ -52,9 +52,12 @@ def source_gates():
         (se, 'const keptPick = keepA ? res.a : res.b;', 'store：侧符号真的换「哪一半占原位」'),
         (se, 'id: orig.id, name: orig.name', 'store：占原位的一半**继承原 id/名字**（身份不换人）'),
         (se, 'side: keepA ? 1 : -1', 'store：回报实际生效的侧'),
-        (se, 'const nextTerrain = reprojectRings(key, entry, touched)', '套索/填充写回多边形（不走网格渲染）'),
-        (se, 'opts.maxShare ?? FILL_AREA_SHARE', '填充默认面积闸门'),
-        (se, 'mergeProvinceShapes(', '合并走精确并集（纯函数层）'),
+        # 🔴 P2（2026-10-09）反转：这三条整体改判 —— 不再是"把网格结果写回多边形"，
+        #    而是**直接对多边形做布尔**；`FILL_AREA_SHARE` 那套格数闸门随网格退役
+        #    （套索改用面积闸门 LASSO_AREA_SHARE）。
+        (se, 'applyRegionToTerrain', '涂归属/套索直接改多边形（矢量布尔）'),
+        (se, 'polygonClipping', '接的是多边形布尔引擎（不是格点重提取）'),
+        (se, 'LASSO_AREA_SHARE', '套索面积闸门（矢量版）'),
         (sc, 'handleSplitClick(world, shiftKey)', '组件：拆分工具读 Shift'),
         (sc, 'side: shiftKey ? -1 : 1', '组件：Shift = 换边保留序号'),
     ]
@@ -64,7 +67,7 @@ def source_gates():
     # 凸包合并必须已消失（会把两省之间的凹陷连同邻居一起吞掉）
     for src, name in ((se, 'provinceEditing.js'), (sc, 'ScenarioMap.vue')):
         if 'convexHull' in src.lower():
-            fails.append(f'{name} 里还残留凸包实现（合并必须走共边抵消）')
+            fails.append(f'{name} 里还残留凸包实现（合并必须走精确布尔并集）')
     notes.append(f'源码闸门 {len(checks)} 项' + ('全过' if not fails else '有缺'))
     return fails, notes
 
@@ -145,7 +148,7 @@ JS = r"""(() => {
   const areaOfB = area(A()[1]);
   const mg = s.mergeProvinces(KEY, ['c64a', 'c64b'], { name: '用例64合' });
   ok('③ 合并成功', mg && mg.method, JSON.stringify(mg && { m: mg.method, loops: mg.loops }));
-  ok('③ 合并走共边抵消', mg && mg.method === 'cancel', mg && mg.method);
+  ok('③ 合并走精确布尔并集（P2：不再是共边抵消）', mg && mg.method === 'bool', mg && mg.method);
   ok('③ 合并后 1 个省', A().length === 1, A().length);
   const mArea = area(A()[0]), mVerts = verts(A()[0]);
   ok('③ 面积 = 两块之和（没吃掉邻居 / 没有翻倍）',
@@ -159,9 +162,11 @@ JS = r"""(() => {
   const lasso = [{ x: 20, y: 20 }, { x: 60, y: 20 }, { x: 60, y: 60 }, { x: 20, y: 60 }];
   const ls = s.applyProvinceLasso(KEY, lasso, 2);
   ok('④ 套索受理', ls && ls.changed > 0, JSON.stringify(ls));
-  ok('④ 套索把结果写回多边形', ls && ls.reprojected > 0, ls && ls.reprojected);
-  const touchedIds = A().filter((p) => p.fromGrid);
-  ok('④ 写回的环带 fromGrid 标记', touchedIds.length > 0, touchedIds.length);
+  ok('④ 套索改了多边形（矢量布尔）', ls && ls.changed > 0, ls && ls.changed);
+  // 🔴 P2 反转：布尔结果是**矢量**，绝不能带 fromGrid（那是"格点派生"的标记，
+  //    带上就会被渲染端 Chaikin 平滑 → 10525 点的省被 ×4 膨胀）
+  const touchedIds = A().filter((p) => p.fromGrid === true);
+  ok('④ 布尔结果不带 fromGrid（不是格点派生）', touchedIds.length === 0, touchedIds.length);
   const lassoArea = totalArea();
   ok('④ 总面积不变（只换归属，不改面积）', near(lassoArea, baseArea, baseArea * 0.05),
      Math.round(lassoArea) + ' vs ' + Math.round(baseArea));
@@ -201,17 +206,16 @@ JS = r"""(() => {
   notes.seq = seq.join(' → ');
   notes.after5 = Math.round(totalArea()) + ' / ' + totalVerts();
 
-  // ── ⑥ 点击填充：默认闸门（>25% 全图）拒绝 + 零副作用 ─────────────────────
+  // ── ⑥ 点击填充（P2 矢量语义）：点空白 → 明确拒绝且零副作用；点自己 → 无操作 ──
   const gateIds = A().map((p) => p.id);
   const mg2 = s.mergeProvinces(KEY, gateIds, { name: '用例64闸门' });
   ok('⑥ 前置：合并成一大块', mg2 && A().length === 1, A().length + ' ids=' + gateIds.join('/'));
-  s.ensureProvinceGrid(KEY);        // 预热：别把「网格重建」当成填充的副作用
-  const labelsBefore = labelsData();
   const ptsBeforeFill = snapPts();
-  const big = s.fillProvinceRegion(KEY, { x: 100, y: 60 }, 1);
-  ok('⑥ 填充超阈值被拒（默认 25% 闸门）', big && big.rejected === 'area-gate', JSON.stringify(big));
-  ok('⑥ 拒绝时零副作用（网格未变）', labelsData() === labelsBefore);
+  const blank = s.fillProvinceRegion(KEY, { x: 99999, y: 99999 }, 1);
+  ok('⑥ 点在空白处被明确拒绝（no-province）', blank && blank.rejected === 'no-province', JSON.stringify(blank));
   ok('⑥ 拒绝时零副作用（几何未变）', snapPts() === ptsBeforeFill);
+  const sameHit = s.fillProvinceRegion(KEY, { x: 100, y: 60 }, 1);
+  ok('⑥ 点在自己身上 → 无操作', !sameHit.rejected && !sameHit.changed, JSON.stringify(sameHit));
   s.undo();
 
   // 收场

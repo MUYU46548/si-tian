@@ -1,14 +1,13 @@
-// composables/useProvinceBrush.js — 省份笔刷 / 套索的状态 + 画布渲染（Phase 3）
+// composables/useProvinceBrush.js — 省份笔刷 / 套索的状态 + 画布预览（Phase 3 → P2）
 //
-// 只做两件事：① 持有笔刷参数与套索轨迹；② 把「归属标签网格」画出来（格 + 自动省界）。
+// 只做两件事：① 持有笔刷参数与套索轨迹；② 画笔迹预览圈 / 套索轨迹。
 // 数据写入一律走 store 的 provinceEditing 模块（一笔 = 一条 undo），本文件不改数据。
 //
-// 🔴 渲染走「栅格 → 矢量轮廓」，与地形涂色层（useTerrainCanvasBrush）同一套做法：
-//    旧实现是逐格 roundRect + 屏幕空间 blur（铁律 87 的消体素感技法），但在省份网格上
-//    副作用很明显 —— 用户实测原话：「自由轮廓视图下这个让人产生密集恐惧症的恶心视图」：
-//    圆角格之间留下的缝隙连成一张深色网格、每个四角交汇处都露出一个「点」，
-//    整屏就是密密麻麻的格子+点阵。现在把格边界抽成平滑闭合环（utils/gridOutline）后
-//    每个省份只画一遍 fill，缝隙与点阵一起消失，顺带省掉逐格成本。
+// 🔴 P2（2026-10-09）**网格渲染已退役**：`drawProvinceGrid` / `provinceOutlines` / `borderChains` /
+//    `meshStats` 这四支不再被调用（保留仅为不打断既有 import 与用例）。原因：把「归属格」
+//    画到画布上是用户口中"密集恐惧症的恶心视图"的直接来源，而格点本身又是 10525 点海岸线
+//    退化成 ~22 点的根因（见 docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
+//    现在画布只渲染**省份多边形**（ScenarioMap 的 `drawProvinces`）+ 这里的笔迹预览。
 //
 // onRender 的 ctx 已带相机变换（铁律 77）→ 这里一律用**世界坐标**绘制，线宽/圆角按 zoom 折算。
 
@@ -17,10 +16,10 @@ import { extractBorders, chaikin } from '../utils/provinceGrid';
 import { buildLabelOutlines } from '../utils/gridOutline';
 
 export const PROVINCE_TOOLS = [
-  { key: 'paint', label: '归属笔刷', hint: '按住涂抹 → 整笔划归所选省份（一次拖动 = 一条撤销）' },
-  { key: 'erase', label: '抹除', hint: '按住涂抹 → 涂回「无主」（海域/未划归）' },
-  { key: 'smooth', label: '平滑', hint: '按住涂抹 → 按 3×3 邻域众数修毛边' },
-  { key: 'lasso', label: '自由轮廓', hint: '按住画一圈 → 圈内所有格整批划归（一笔成形，不用描点）' },
+  { key: 'paint', label: '涂归属', hint: '按住涂抹 → 把笔迹并进所选省份（一次拖动 = 一条撤销）' },
+  { key: 'erase', label: '抹除', hint: '按住涂抹 → 从沿途各省挖掉笔迹（回到无主）' },
+  { key: 'smooth', label: '平滑', hint: '按住涂抹 → 简化目标省份的边界（去掉多余顶点）' },
+  { key: 'lasso', label: '自由轮廓', hint: '按住画一圈 → 圈内整块划归（一笔成形，不用描点）' },
 ];
 
 /** 取色失败时的兜底色板（保证「有主的格一定看得见」—— 渲染成透明=用户以为没生效） */
@@ -36,7 +35,7 @@ const MIN_AREA_FULL = 0.5;
 const MIN_AREA_FAST = 1.5;
 
 export function useProvinceBrush() {
-  const radius = ref(5);          // 半径（格）
+  const radius = ref(70);         // 半径（**世界单位**；P2 前是"格"，网格退役后改口径）
   const strength = ref(0.8);      // 强度 0~1
   const tool = ref('paint');
   const targetIdx = ref(1);

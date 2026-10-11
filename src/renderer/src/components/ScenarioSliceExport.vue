@@ -156,7 +156,11 @@ const dates = computed(() => changeDateStats(props.timeline));
 
 const outOfRangeText = computed(() => dates.value.outOfRange
   .slice(0, 6)
-  .map((d) => `${provinceNames.value[d.provinceId] || d.provinceId} ${d.text || d.year} ∉ [${d.start},${d.end}]`)
+  // 🔴 这里原写 `provinceNames.value[…]` —— 那是**未声明标识符**（props 已在 120 行用
+  //    `const props = defineProps(...)` 取出，`provinceNames` 这个名字全文件不存在），
+  //    一执行就 `ReferenceError`。触发条件是「易主日期落在时间窗之外」——
+  //    正是用户在切片对话框最需要看到的那句提示。由 test_93 的静态守卫抓出。
+  .map((d) => `${props.provinceNames[d.provinceId] || d.provinceId} ${d.text || d.year} ∉ [${d.start},${d.end}]`)
   .join('；') + (dates.value.outOfRange.length > 6 ? ` …（另有 ${dates.value.outOfRange.length - 6} 条）` : ''));
 
 function changedText(f) {

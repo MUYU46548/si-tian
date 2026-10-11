@@ -1042,7 +1042,7 @@ import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../
 import { useContextMenu } from '../composables/useContextMenu';
 import { createProvinceByFloodFill } from '../utils/floodfill';
 import { generateRoadPath, findOptimalBurgPosition, findNearestGridPoint } from '../utils/placement';
-import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath } from '../utils/geometry';
+import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath, mirrorPointAcross } from '../utils/geometry';
 import { validateRegionTrace } from '../utils/regionTrace';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
@@ -2114,7 +2114,10 @@ function snapToNearestEdge(p, threshold = 12) {
 function snapDrawPoint(p) { const edge = snapToNearestEdge(p); if (edge !== p) { edgeSnapPreview.value = edge; return edge; } edgeSnapPreview.value = null; return snapPoint(p); }
 
 // ===== 对称绘制 =====
-function mirrorPoint(p) { if (!mirrorMode.value) return p; if (mirrorAxis.value === 'y') return { x: 2 * mirrorAxisOffset.value - p.x, y: p.y }; return { x: p.x, y: 2 * mirrorAxisOffset.value - p.y }; }
+// 镜像数学在 `utils/geometry.mirrorPointAcross`（**唯一实现**）：绘图层
+// （composables/planetDrawing.js 的镜像预览）也直接用它 —— 此前绘图层引的是本文件里这个名字，
+// 而它在那个模块的作用域之外（未声明标识符）。这里只保留「组件态 → 纯函数参数」的适配。
+function mirrorPoint(p) { if (!mirrorMode.value) return p; return mirrorPointAcross(p, mirrorAxis.value, mirrorAxisOffset.value); }
 function getMirroredPath(points) { if (!mirrorMode.value || points.length < 2) return points; const mirrored = points.map(mirrorPoint).reverse(); return [...points, ...mirrored]; }
 
 // ===== 切换交互模式 =====

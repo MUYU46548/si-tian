@@ -35,6 +35,18 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests'))
+
+# 🔴 控制台编码（2026-10-11 修）：本编排器的每一条结论都带 ✅/❌，而 Windows 控制台默认是
+#    GBK（cp936）—— 于是**单测失败时**那一句 `print(f'... ❌ {detail}')` 自己抛
+#    UnicodeEncodeError，整个编排器在"报告失败"这一步崩掉，用户看到的是 traceback 而不是结论
+#    （实测：本机没设 PYTHONIOENCODING 时必现）。这与「失败必须看得见」直接冲突，所以在这里
+#    显式把标准输出降级成 utf-8 + errors='replace'：坏字符只损坏那一行，不能吃掉整轮结果。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 from lib.cdp import find_page_ws, wait_for  # noqa: E402
 from lib.helpers import open_harness_project, set_real_data  # noqa: E402
 

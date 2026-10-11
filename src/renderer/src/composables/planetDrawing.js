@@ -7,7 +7,7 @@
  */
 import { drawCanvasIcon, drawIconOrEmoji } from '../utils/canvasIcon';
 import { getTexturePattern } from '../utils/textures';
-import { pointsBBox, bboxInViewport, pointInViewport } from '../utils/geometry';
+import { pointsBBox, bboxInViewport, pointInViewport, convexHull, mirrorPointAcross } from '../utils/geometry';
 import { getHandlePositions, ROTATE_STEM_PX, ROTATE_R_PX, SCALE_SIZE_PX } from '../utils/selectionHandles';
 import { toRaw } from 'vue';
 import { biomeColor, biomeKeyFromIndex, BIOME_KEYS } from '../utils/heightMath';
@@ -1727,7 +1727,7 @@ function drawEditHelpers(ctx) {
     
     // 对称镜像路径预览（P2）：金色虚线
     if (s.mirrorMode && s.currentPath.length >= 2) {
-      const mp = s.currentPath.map(mirrorPoint);
+      const mp = s.currentPath.map(p => mirrorPointAcross(p, s.mirrorAxis, s.mirrorAxisOffset));
       ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 4]);
@@ -1806,7 +1806,7 @@ function drawEditHelpers(ctx) {
     
     // 描点模式对称镜像预览（P2）
     if (s.mirrorMode && pts.length >= 2) {
-      const mp = pts.map(mirrorPoint);
+      const mp = pts.map(p => mirrorPointAcross(p, s.mirrorAxis, s.mirrorAxisOffset));
       ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 4]);
