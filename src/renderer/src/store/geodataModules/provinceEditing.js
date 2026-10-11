@@ -930,11 +930,31 @@ export function createProvinceEditingModule(ctx) {
     if (isRO()) return blocked('批量铺底');
     const {
       provinceIds = null, sites = null, count = 400, seed = 1, jitter = 0.62,
-      onProgress = null, yieldEvery = 6,
+      onProgress = null, yieldEvery = 4, token = null,
     } = opts;
     const report = (phase, done, total, message) => {
       if (typeof onProgress === 'function') { try { onProgress({ phase, done, total, message }); } catch (e) { /* 回调不该影响主流程 */ } }
     };
+    /**
+     * 🔴 让出主线程并**保证浏览器画出去一帧**（C，2026-10-11）。
+     *
+     * 旧实现是 `await new Promise(r => setTimeout(r, 0))` —— 它只把控制权交回**定时器队列**，
+     * 浏览器并不因此插进一次渲染：一次 rAF 里排的定时器回调会在下一次绘制之前被清空。
+     * 暮雨实测的现象正是这条：进度提示「卡在 414 很久」（跨 400→414 的一段一直在算，
+     * 中间一声不响），而如果切的是**屏幕上的**进度条，症状会更明显。
+     * rAF 让出的语义就是「等下一帧」—— 一帧一个批次，进度真的会动。
+     *
+     * 同时把「取消」检查放在这里：用户在遮罩上点取消 → 立即返回，**不落库、不压 undo**。
+     */
+    const yieldToPaint = () => new Promise((r) => {
+      const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+      raf(() => r());
+    });
+    const cancelled = () => !!(token && token.cancelled);
+    const abort = () => ({
+      ok: false, rejected: 'cancelled',
+      message: '已取消：这一批切分被放弃，省份与归属都没改动（可以重新播种再来）',
+    });
     const m = bm(key);
     if (!m) return { ok: false, rejected: 'no-basemap', message: '底图不存在' };
     const t = resolveBatchTargets(key, provinceIds);
@@ -950,17 +970,18 @@ export function createProvinceEditingModule(ctx) {
     if (r0.error) return r0.error;
     const region = r0.region, probe = r0.probe;
     const regionArea = r0.regionArea, regionBox = r0.regionBox;
-    await Promise.resolve();
+    await yieldToPaint();
+    if (cancelled()) return abort();
 
     // ② 播种
     let seedPts = Array.isArray(sites) && sites.length ? sites.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : null;
     let seedInfo = { attempt: 0, requested: count };
     if (!seedPts) {
       report('seeds', 0, 1, `正在大陆里播 ${Math.round(count)} 个点…`);
+      await yieldToPaint();                       // 先把"正在播种"画出去，再干重活
       const auto = autoSeedsInRegion(regionBox, probe, count, { seed, jitter });
       seedPts = auto.seeds;
       seedInfo = { attempt: auto.attempt, requested: auto.requested };
-      await Promise.resolve();
     }
     if (!seedPts.length) {
       return { ok: false, rejected: 'no-seed', message: '没能播下任何种子（范围太小或形状太碎）' };
@@ -968,11 +989,16 @@ export function createProvinceEditingModule(ctx) {
 
     // ③ Voronoi → 逐块与范围求交
     report('cells', 0, seedPts.length, `正在切分 ${seedPts.length} 块…`);
+    await yieldToPaint();
+    if (cancelled()) return abort();
     const { rings } = voronoiCells(seedPts, regionBox);
     const cells = [];
     let outside = 0, skipped = 0, failed = 0, snapped = 0, inner = 0, clipped = 0;
     let cellArea = 0, cellPoints = 0;
     const failures = [];
+    // 让出节奏：默认 4 块一次（真实底图单块布尔 ~38ms → 约 150ms 一次，帧率与进度观感都够）。
+    // 调用方显式给 `yieldEvery: 0` 时不让出（用例里的合成小数据要可预期的同步语义）。
+    const every = yieldEvery > 0 ? yieldEvery : 0;
     for (let i = 0; i < rings.length; i++) {
       const ring = rings[i];
       if (!ring) { skipped++; continue; }
@@ -995,9 +1021,10 @@ export function createProvinceEditingModule(ctx) {
         cellPoints += pts;
         cells.push({ index: i, site: seedPts[i], mp, points: pts });
       }
-      if (yieldEvery > 0 && (i + 1) % yieldEvery === 0) {
+      if (every > 0 && (i + 1) % every === 0) {
         report('cells', i + 1, rings.length, `已切分 ${i + 1} / ${rings.length} 块…`);
-        await new Promise((r) => setTimeout(r, 0));   // 让出主线程（UI 才能刷进度）
+        await yieldToPaint();                       // 等下一帧（进度提示真的会动）
+        if (cancelled()) return abort();
         if (!bm(key)) return { ok: false, rejected: 'changed', message: '底图在切分过程中被换掉了，已放弃（数据未改动）' };
       }
     }
@@ -1009,7 +1036,10 @@ export function createProvinceEditingModule(ctx) {
     }
 
     // ④ 落库（新省 + 归属迁移，同一条 undo）
+    if (cancelled()) return abort();
     report('commit', cells.length, cells.length, '正在写入省份…');
+    await yieldToPaint();                       // 让"正在写入"先画出去（落库这一下也是同步的）
+    if (cancelled()) return abort();
     const terrainNow = provincesOf(key);
     if (!terrainNow.some((p) => p.id === targetIds[0])) {
       return { ok: false, rejected: 'changed', message: '底图在切分过程中变化了，已放弃（数据未改动）' };

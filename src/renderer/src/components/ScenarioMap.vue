@@ -157,6 +157,13 @@
                 title="真的切下去：会替换掉范围内的旧省份，归属与易主记录自动继承；一整批 = 一条撤销（Ctrl+Z 可整批撤回）">
           <Icon name="grid" :size="13"/> 一键切分
         </button>
+        <!-- C（2026-10-11）：切分期间必须有出路。500 块的逐块布尔实测 19s，中途用户在画布上
+             乱点只会把事件排到队列里、回来一起执行（越点越卡）—— 所以忙时既**遮住画布**，
+             也给一个**取消**（取消 = 放弃这一批，落盘与内存都不动，可重来）。 -->
+        <button v-if="batchBusy" @click="cancelBatchSubdivide()" data-testid="voronoi-cancel"
+                class="batch-cancel" title="取消这一批切分（当前进度会被丢弃，省份与归属都不会改动）">
+          <Icon name="x" :size="13"/> 取消
+        </button>
         <span class="row-hint" :class="{ ready: !batchBusy }" data-testid="voronoi-status">{{ batchStatus }}</span>
       </div>
       </div>
@@ -305,7 +312,19 @@
             {{ bm.name }} ({{ bm.count }}省)
           </option>
         </select>
-        <button @click="triggerMapImport" title="导入新底图"><Icon name="plus" :size="15"/></button>
+        <button @click="triggerMapImport" title="导入 .map 底图 —— 若同名底图已存在，只补数据、不动你已切好的省份"><Icon name="plus" :size="15"/></button>
+        <!-- B2（2026-10-11）：给**已经在用**的底图补 FMG 数据（高度图 / 河流 / 道路 / 城镇）。
+             真实缘由：`desite` 是 2026-09-10 那次导入建的，而当时解析器只读 SVG 省份多边形，
+             高度图/河流/道路根本没被读出来 —— 今天解析器能读全（实测 9975 格高度 + 160 河 + 496 路），
+             但没有任何入口能把它们补进一张已经切了几百块省份的底图（重导 = 覆盖，绝不可行）。 -->
+        <button
+          v-if="basemapDataMissing.length"
+          data-testid="basemap-refresh-data"
+          class="has-advanced"
+          :title="`刷新底图数据 — 这张底图还缺：${basemapDataMissing.join(' / ')}。选一个 FMG .map 文件补齐，` +
+                  '省份边界（' + provinceCount + ' 块）与归属记录一个字都不会动'"
+          @click="triggerMapImport({ refreshOnly: true })"
+        ><Icon name="refresh" :size="15"/></button>
         <!-- A1（2026-09-24）：底图的高度图此前**只有 .map 导入**一条来源 —— 新建的底图里
              高度/群系/文化/宗教笔刷与一键派生全都「点了没反应」（没有网格 → 直接 return）。
              这个按钮补上「从零开始画」，同时它也是「剧情上已毁灭、不打算再建行星的星球」
@@ -541,6 +560,22 @@
     <!-- 画布 -->
     <div class="scenario-canvas-wrap" ref="canvasWrap">
       <canvas ref="canvas"></canvas>
+      <!-- C（2026-10-11）：批量铺底进行中的**遮罩**。
+           为什么必须有它（不是装饰）：切 500 块 = 逐块多边形布尔，实测 ~19s 全在主线程上；
+           这段时间里用户在画布上点/拖，事件只是排队 → 回来一起执行，观感是「越点越卡」，
+           而且用户会以为程序死了。遮罩做两件事：① 吃掉所有指针事件（不让操作排队）；
+           ② 明确告诉他"在算什么、算到第几块、可以取消"。 -->
+      <div v-if="batchBusy" class="scenario-busy-overlay" data-testid="scenario-busy-overlay">
+        <div class="busy-card">
+          <Icon name="loader" :size="22" class="busy-spin"/>
+          <div class="busy-title">正在切分省份…</div>
+          <div class="busy-sub" data-testid="busy-progress">{{ batchStatus || '准备中' }}</div>
+          <div class="busy-hint">期间画布不响应是正常的（正在算几何）；不想等就点「取消」，省份与归属都不会改动。</div>
+          <button class="busy-cancel" @click="cancelBatchSubdivide()" data-testid="busy-cancel">
+            <Icon name="x" :size="13"/> 取消切分
+          </button>
+        </div>
+      </div>
       <!-- 没有可用底图：说清现状 + 差异 + 去处（不是「点了没反应」）
            P-0 实测：只读态（未打开项目）时底图导入被写闸门拒绝 → 底图永远进不来，
            此时画布是空的，用户必须知道原因是「没开项目」而不是「程序卡住了」。 -->
@@ -1052,6 +1087,8 @@ const batchSeedValue = ref(1);          // 随机种子（「换一批」= +1）
 const batchSeeds = ref([]);             // 种子点（自动播种或手动点）
 const batchBusy = ref(false);
 const batchStatus = ref('先「自动播种」，或在画布上点几下放种子');
+/** C：当前这一批切分的取消令牌（`{cancelled:boolean}`）—— 与 store 之间唯一的取消通道 */
+let batchCancelToken = null;
 const batchTargets = computed(() => {
   const terr = baseMap.value?.terrain || [];
   if (batchScope.value === 'selection' && selectedProvinceIds.value.length) {
@@ -1479,7 +1516,6 @@ const selectedMarkerType = ref('city');
 
 // 河流编辑器（P1-T2 手动编辑河流路径）
 const riverDraft = ref([]); // {x, y}[] 当前绘制中的河流路径
-const riverPaths = ref([]); // {x, y}[][] 已完成的河流路径
 const LABEL_PRESETS = [
   { id: 'default', name: '默认', font: '12px "PingFang SC"', color: '#e2e8f0', stroke: 'rgba(0,0,0,0.7)', strokeWidth: 3 },
   { id: 'title', name: '标题', font: 'bold 18px "PingFang SC"', color: '#ffd700', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 },
@@ -3183,15 +3219,15 @@ function onCanvasClick(event) {
               color: style.color,
             };
             if (!baseMapData.routes) baseMapData.routes = [];
-            baseMapData.routes.push(newRoute);
-            store.baseMaps = {
-              ...store.baseMaps,
-              [baseMapKey.value]: {
-                ...baseMapData,
-                routes: [...baseMapData.routes],
-                updatedAt: new Date().toISOString(),
-              },
-            };
+            // D（2026-10-11）：**改走 store**。旧实现是手搓 `store.baseMaps = {...}` ——
+            // 那条路（① 不进撤销栈 ② 不触发 scheduleAutoSaveScenarios，只能"碰巧"赶上别的保存）
+            // 实测后果：画完的路可能既撤不掉也可能不落盘，且绕过了只读态写闸门。
+            const wr = store.addBaseMapRoute(baseMapKey.value, newRoute);
+            if (wr && wr.ok) {
+              statusMsg(`已画一条道路（${roadPoints.length} 个点，共 ${wr.count} 条）—— Ctrl+Z 可撤销`);
+            } else {
+              statusMsg(`道路没画上：${(wr && wr.message) || '未知原因'}`);
+            }
           }
         }
       }
@@ -3449,11 +3485,22 @@ function addProvinceWithOverlapGate(prov) {
 }
 
 function finishRiverDraft() {
-  if (riverDraft.value.length >= 2) {
-    riverPaths.value.push([...riverDraft.value]);
-    riverDraft.value = [];
-    render();
+  if (riverDraft.value.length < 2) { riverDraft.value = []; return; }
+  const pts = riverDraft.value.map((p) => ({ x: p.x, y: p.y }));
+  riverDraft.value = [];
+  // D（2026-10-11）：**必须走 store**。旧实现只 push 进组件本地 `riverPaths` ——
+  // 那条路既不进撤销栈、也不落盘（重开应用河就没了，且一声不响）。
+  // 线宽按点数分级（与行星侧河流同一口径：越长的河越宽），有高度图时顺带记落差。
+  const r = store.addBaseMapRiver(baseMapKey.value, {
+    points: pts,
+    width: Math.max(0.4, Math.min(1.6, 0.3 + pts.length * 0.05)),
+  });
+  if (r && r.ok) {
+    statusMsg(`已画一条河流（${pts.length} 个点，共 ${r.count} 条）—— 落在底图上，Ctrl+Z 可撤销`);
+  } else {
+    statusMsg(`河流没画上：${(r && r.message) || '未知原因'}`);
   }
+  render();
 }
 
 function handleSplitClick(world, shiftKey) {
@@ -3675,20 +3722,26 @@ async function runBatchSubdivide() {
     + `用 ${seeds.length} 个种子点切分（其中 ${seeds.length - inside} 个落在范围外会被忽略）。\n\n`
     + '· 范围内的旧省份会被替换成新块（归属 / 易主记录自动继承给新块）\n'
     + '· 海岸线不会被动到（每块都与陆地边界精确求交）\n'
-    + '· 一整批只算一次撤销，Ctrl+Z 可整批撤回\n\n继续？')) {
+    + '· 一整批只算一次撤销，Ctrl+Z 可整批撤回\n'
+    + '· 过程中画布会短暂不响应（正在算几何），可以点「取消切分」放弃这一批 —— 不改动任何数据\n\n继续？')) {
     statusMsg('批量铺底：已取消');
     return;
   }
   batchBusy.value = true;
   batchStatus.value = '正在切分…';
+  // C（2026-10-11）：取消令牌 —— 组件与 store 之间只传一个 `{cancelled}`，store 在每个让出点
+  // （rAF 帧）检查一次；取消时 store **不落库、不压 undo**，所以"取消"是真正无副作用的。
+  const token = { cancelled: false };
+  batchCancelToken = token;
   try {
     const r = await store.batchSubdivide(baseMapKey.value, {
-      ...o, sites: seeds,
+      ...o, sites: seeds, token,
       onProgress: (pr) => { batchStatus.value = pr.message || pr.phase; },
     });
     if (!r || r.ok === false) {
+      const wasCancelled = !!(r && r.rejected === 'cancelled');
       batchStatus.value = (r && r.message) || '切分失败';
-      statusMsg(`批量铺底失败：${batchStatus.value}`);
+      statusMsg(wasCancelled ? `批量铺底：${batchStatus.value}` : `批量铺底失败：${batchStatus.value}`);
     } else {
       const pct = r.coverage != null ? Math.round(r.coverage * 100) : null;
       batchStatus.value = `已切出 ${r.created} 块（替换 ${r.removed} 省，用时 ${(r.elapsedMs / 1000).toFixed(1)}s`
@@ -3705,9 +3758,18 @@ async function runBatchSubdivide() {
     statusMsg(`批量铺底异常：${(err && err.message) || err}`);
   } finally {
     batchBusy.value = false;
+    batchCancelToken = null;
     provinceBrush.invalidateBorders();
     render();
   }
+}
+
+/** C：取消这一批切分（store 在下一个帧让出点返回 `rejected:'cancelled'`，数据一行不改） */
+function cancelBatchSubdivide() {
+  if (!batchBusy.value) { statusMsg('批量铺底：当前没有在跑的切分'); return; }
+  if (batchCancelToken) batchCancelToken.cancelled = true;
+  batchStatus.value = '正在取消…（等当前这一块算完；不会写入任何数据）';
+  statusMsg('批量铺底：已请求取消 —— 省界与归属都不会改变');
 }
 
 // ═══════════════════════════════════════════
@@ -3882,7 +3944,8 @@ function createBaseMapHeightmap() {
   render();
 }
 
-async function triggerMapImport() {
+async function triggerMapImport(opts = {}) {
+  const refreshOnly = !!(opts && opts.refreshOnly);
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.map';
@@ -3894,6 +3957,54 @@ async function triggerMapImport() {
       const parsed = parseMapFile(text);
       const name = file.name.replace(/\.map$/, '').replace(/\s*\d{4}-\d{2}-\d{2}.*$/, '');
       const json = buildScenariosJson(parsed, name, '当前');
+      const bundle = json.baseMaps?.[name];
+
+      // ── 已有同名底图：**只补数据，绝不覆盖**（B2，2026-10-11）─────────────────
+      // 🔴 为什么必须分这条路：`importFromScenariosJson` 的合并语义是「同 key 整体替换」
+      //     —— 拿它去"补高度图"会把用户已切好的几百块省份、归属、易主记录一起盖掉。
+      //     真实场景：`desite` 底图现在有 415 块省份，而它建图时（2026-09-10）解析器
+      //     还读不出高度图/河流/道路 → 用户需要的是"给这张图补上"，不是"重画一张"。
+      if (bundle && store.baseMaps?.[name]) {
+        const srcStats = parsed.stats || {};
+        const missing = describeBaseMapMissing(store.baseMaps[name], bundle);
+        if (!missing.length) {
+          statusMsg(`「${name}」的底图数据已经齐了（高度图 / 河流 / 道路 / 城镇都有），无需刷新`);
+          return;
+        }
+        if (!confirm(`「${name}」这张底图已经存在了。\n\n`
+          + `可以把它缺的底图级数据补上：${missing.join(' / ')}\n`
+          + `文件里带着：${srcStats.cells || 0} 格高度、${srcStats.rivers || 0} 条河流、`
+          + `${srcStats.routes || 0} 条道路、${srcStats.burgs || 0} 个城镇。\n\n`
+          + `· 你已切好的 ${(store.baseMaps[name].terrain || []).length} 块省份边界、归属与易主记录**一个字都不会动**\n`
+          + `· 这张底图**已经有的**数据不会被覆盖（只补缺）\n`
+          + `· 一整次刷新 = 一条 Ctrl+Z\n\n继续刷新？`)) {
+          statusMsg('刷新底图数据：已取消（底图与省份均未改动）');
+          return;
+        }
+        const r = store.updateBaseMapData(name, bundle);
+        if (r && r.ok && r.changed) {
+          statusMsg(`已刷新底图数据：${r.message}`
+            + (r.blocked?.length ? ` ⚠️ ${r.blocked.map(b => b.message).join(' ')}` : '')
+            + '（可用 Ctrl+Z 撤回）');
+          baseMapKey.value = name;
+          // 刷新后画布上要能立刻看见：默认切到「地形高度」档（高度图刚到，用户就是为它来的）
+          if (r.added.heightmap) rasterLayer.value = 'height';
+          render();
+        } else {
+          statusMsg(`刷新底图数据：${(r && r.message) || '没有可补的数据'}`);
+        }
+        return;
+      }
+
+      if (refreshOnly && !store.baseMaps?.[name]) {
+        // 走「刷新」入口却选了一个新名字的底图 → 不能悄悄新建（那会多出一张空底图）
+        if (!confirm(`这张底图（${name}）还不存在。「刷新」只给已有底图补数据，不会新建底图。\n\n`
+          + '改成「导入为新底图」？')) {
+          statusMsg('刷新底图数据：已取消（没有新建底图）');
+          return;
+        }
+      }
+
       store.importFromScenariosJson(json);
       baseMapKey.value = name;
       // 持久化当前底图键（P0）
@@ -3926,6 +4037,34 @@ async function triggerMapImport() {
   };
   input.click();
 }
+
+/**
+ * 底图级"缺什么"清单（渲染/提示共用；判定口径与 store 的 `updateBaseMapData` 一致）。
+ * ⚠️ 绑定了行星的底图**不算缺高度图** —— 那时高度图的家在行星侧，底图侧本来就不该有。
+ */
+function describeBaseMapMissing(bm, bundle) {
+  if (!bm) return [];
+  const missing = [];
+  const bound = store.getBoundPlanetId ? store.getBoundPlanetId(bm.id) : (bm.planetId || null);
+  if (bundle?.heightmap && !bm.heightmap && !bound) missing.push('地形高度图');
+  if ((bundle?.rivers || []).length && !(bm.rivers || []).length) missing.push('河流');
+  if ((bundle?.routes || []).length && !(bm.routes || []).length) missing.push('道路');
+  if ((bundle?.burgs || []).length && !(bm.burgs || []).length) missing.push('城镇');
+  return missing;
+}
+
+/** 当前底图还缺哪些底图级数据（没缺 → 刷新按钮不出现） */
+const basemapDataMissing = computed(() => {
+  const bm = baseMap.value;
+  if (!bm) return [];
+  const out = [];
+  const bound = baseMapBoundPlanet.value;
+  if (!bm.heightmap && !bound) out.push('地形高度图');
+  if (!(bm.rivers || []).length) out.push('河流');
+  if (!(bm.routes || []).length) out.push('道路');
+  return out;
+});
+const provinceCount = computed(() => (baseMap.value?.terrain || []).length);
 
 function manualSave() {
   store.saveScenarios();
@@ -4265,8 +4404,11 @@ function polylineInView(pts, minX, minY, maxX, maxY) {
 }
 
 function drawRivers(c) {
-  const list = baseMap.value?.rivers;
-  if (!list || !list.length) return;
+  // D（2026-10-11）：**只画导入的**（FMG 参考图层）。手画的（id 前缀 `river_`）由
+  // `drawRiverPaths` 负责 —— 两边都画就会把同一份数据画两遍（线宽叠加、观感更粗），
+  // 这是拆分"导入/手画"两条渲染路时最容易漏的一处。
+  const list = (baseMap.value?.rivers || []).filter((r) => r && String(r.id || '').indexOf('river_') !== 0);
+  if (!list.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(cw(), ch());
   const pad = px(40);
@@ -4329,7 +4471,10 @@ function drawRoutes(c) {
 }
 
 function drawRiverPaths(c) {
-  if (!riverPaths.value.length) return;
+  // D（2026-10-11）：手画的河现在住在 store（`baseMap.rivers`，id 前缀 `river_`），
+  // 不再有"组件本地数组"这条平行事实源 —— 那正是"画完重开就没"的根因。
+  const list = (baseMap.value?.rivers || []).filter((r) => r && String(r.id || '').indexOf('river_') === 0);
+  if (!list.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(cw(), ch());
   const pad = px(40);
@@ -4338,9 +4483,11 @@ function drawRiverPaths(c) {
   c.lineCap = 'round';
   c.lineJoin = 'round';
   c.strokeStyle = '#5d97bb';
-  for (const path of riverPaths.value) {
+  for (const r of list) {
+    const path = r.points || [];
     if (path.length < 2) continue;
-    c.lineWidth = Math.max(1, px(2));
+    if (!polylineInView(path, minX, minY, maxX, maxY)) continue;
+    c.lineWidth = Math.max(1, px(1 + (r.width || 0.4) * 2));
     c.beginPath();
     c.moveTo(path[0].x, path[0].y);
     for (let i = 1; i < path.length; i++) c.lineTo(path[i].x, path[i].y);
@@ -5574,17 +5721,14 @@ function openBurgEditor(burg) {
 
 function saveBurgEditor() {
   if (!editingBurg.value) return;
-  const burg = baseMap.value?.burgs?.find(b => b.id === editingBurg.value.id);
-  if (burg) {
-    Object.assign(burg, editingBurg.value);
-    store.baseMaps = {
-      ...store.baseMaps,
-      [baseMapKey.value]: {
-        ...baseMap.value,
-        burgs: [...baseMap.value.burgs],
-        updatedAt: new Date().toISOString(),
-      },
-    };
+  // D（2026-10-11）：原先这里 `Object.assign(burg, …)` + 手搓 `store.baseMaps = {...}` ——
+  // 直改 store 活对象 = 绕开写闸门与撤销栈，而且"改了内存但没排保存"，
+  // 只能碰巧赶上别的落盘（与手画道路同款缺陷）。现在走 store 的一条 undo。
+  const r = store.updateBaseMapBurg(baseMapKey.value, editingBurg.value.id, editingBurg.value);
+  if (r && r.ok) {
+    statusMsg(r.changed ? `已更新聚落「${editingBurg.value.name || ''}」` : '聚落没有改动');
+  } else {
+    statusMsg(`聚落没改成：${(r && r.message) || '未知原因'}`);
   }
   burgEditorOpen.value = false;
   editingBurg.value = null;
@@ -6148,6 +6292,62 @@ watch(baseMap, () => {
   display: block;
   cursor: grab;
 }
+
+/* ── 批量铺底进行中的遮罩（C，2026-10-11）────────────────────────────────────
+   两个职责：① 吃掉所有指针事件 —— 切 500 块的逐块布尔实测 ~19s，用户在画布上点的每一下
+   都只会排队、回来一起执行（观感 = 越点越卡、像死机）；② 明确说清"在算什么 + 能取消"。 */
+.scenario-busy-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 17, 28, 0.55);
+  cursor: progress;
+}
+
+.scenario-busy-overlay .busy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 22px;
+  border-radius: 8px;
+  background: rgba(22, 32, 48, 0.96);
+  border: 1px solid #3b4d66;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: #e2e8f0;
+  max-width: 420px;
+  text-align: center;
+}
+
+.scenario-busy-overlay .busy-spin { animation: sitian-busy-spin 1s linear infinite; color: #67e8f9; }
+@keyframes sitian-busy-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  /* 动效敏感用户：不转，但**必须还看得见"在忙"** —— 所以保留图标与文字，只停动画 */
+  .scenario-busy-overlay .busy-spin { animation: none; }
+}
+
+.scenario-busy-overlay .busy-title { font-size: 14px; font-weight: 600; }
+.scenario-busy-overlay .busy-sub { font-size: 12px; color: #93e6f5; font-variant-numeric: tabular-nums; }
+.scenario-busy-overlay .busy-hint { font-size: 11px; line-height: 1.6; color: #9aa7b8; }
+.scenario-busy-overlay .busy-cancel,
+.batch-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #ffd9d9;
+  background: rgba(120, 30, 40, 0.5);
+  border: 1px solid #a3474f;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.scenario-busy-overlay .busy-cancel:hover,
+.batch-cancel:hover { background: rgba(150, 40, 52, 0.65); }
 
 /* ── 历史剧本站首：常驻左栏（2026-10-09）────────────────────────────────────
    浮在画布左侧（不动 flex 布局：多一个 flex 兄弟会改分配比例，风险大）。

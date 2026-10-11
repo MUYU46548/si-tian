@@ -108,6 +108,22 @@ def source_gates():
         if tok not in pe:
             fails.append(f'批量铺底缺少如实回报字段：{tok}')
 
+    # a④：切分期间必须"看得见 + 能取消"（C，2026-10-11）——
+    #     真实反馈：「提示已切出 415 块，实际上在 414 卡了很久」并「到处乱点，更卡」。
+    #     判据两条：① 让出主线程必须是**等下一帧**（rAF），不是 setTimeout(0)
+    #     （后者只回定时器队列，浏览器不保证插进一次渲染 → 进度形同不动）；
+    #     ② 取消通道必须存在（store 收 token + 组件有取消按钮/遮罩）。
+    if 'yieldToPaint = (' not in pe:
+        fails.append('源码闸门缺失：store 没有 yieldToPaint（主线程让出应集中在唯一一处）')
+    if 'requestAnimationFrame' not in pe:
+        fails.append('🔴 让出主线程用的是 setTimeout 而非 requestAnimationFrame —— 进度提示不会真的刷新（实测症状：卡在某个数字很久）')
+    for tok in ('token = null', "rejected: 'cancelled'", 'cancelled()'):
+        if tok not in pe:
+            fails.append(f'批量铺底缺少取消通道：{tok}')
+    for tok in ('function cancelBatchSubdivide(', 'data-testid="scenario-busy-overlay"', 'data-testid="busy-cancel"'):
+        if tok not in sc:
+            fails.append(f'组件缺少"忙时可见/可取消"：{tok}')
+
     notes.append(f'源码闸门 20 项' + ('全过' if not fails else f'缺 {len(fails)}'))
     return fails, notes
 
@@ -224,7 +240,7 @@ JS = r""" (async () => {
     for (let j = 1; j <= 4; j++) for (let i = 1; i <= 3; i++) sites.push({ x: i * 40, y: j * 24 });
     const phases = [];
     const r = await s.batchSubdivide(KEY, {
-      provinceIds: ['c92a'], sites, seed: 1, jitter: 0,
+      provinceIds: ['c92a'], sites, seed: 1, jitter: 0, yieldEvery: 0,
       onProgress: (p) => phases.push(p.phase),
     });
     ok('d1 批量铺底成功', !!(r && r.ok), JSON.stringify(r && { rej: r.rejected, msg: r.message }));
@@ -282,6 +298,40 @@ JS = r""" (async () => {
     ok('e5 目标省不存在 → 明确拒绝', empty && empty.ok === false && !!empty.rejected, JSON.stringify(empty));
     const noProv = await s.batchSubdivide('case92-no-such-basemap', { sites: [{ x: 1, y: 1 }] });
     ok('e6 底图不存在 → 明确拒绝', noProv && noProv.ok === false, JSON.stringify(noProv));
+  }
+
+  // ══ f) 取消通道（C，2026-10-11）：取消 → 明确回执 + **零副作用** ══════════════
+  {
+    // ⚠️ 段 d 收尾把这个剧本删了（`delete s.scenarios[SCID]`）→ 这里自己重建一份，
+    //    不要跨块引用（首版实测：`SCID is not defined`，块级 const 出了块就没了）。
+    const SCID2 = KEY + '/取消剧本';
+    s.scenarios = { ...s.scenarios, [SCID2]: {
+      id: SCID2, name: '用例92取消剧本', ownerKey: KEY,
+      ownership: { c92a: 'pol_keep' },
+      changeEvents: { c92a: [{ year: 100, polityId: 'pol_keep' }] },
+      polities: [], labels: [], markers: [],
+    } };
+    const terrainBefore = JSON.stringify(R());
+    const ownBefore = JSON.stringify(s.scenarios[SCID2].ownership);
+    const token = { cancelled: false };
+    const sites2 = [];
+    for (let j = 1; j <= 6; j++) for (let i = 1; i <= 3; i++) sites2.push({ x: i * 40, y: j * 20 });
+    let cancelAt = 0;
+    const rc = await s.batchSubdivide(KEY, {
+      provinceIds: ['c92a'], sites: sites2, seed: 2, jitter: 0.3, token, yieldEvery: 2,
+      onProgress: (p) => {
+        cancelAt += 1;
+        if (p.phase === 'cells' && p.done >= 4) token.cancelled = true;   // 切到一半点「取消」
+      },
+    });
+    ok('f1 取消后被拒绝（rejected=cancelled）并有可读说明',
+       !!(rc && rc.ok === false && rc.rejected === 'cancelled' && rc.message),
+       JSON.stringify(rc && { ok: rc.ok, rej: rc.rejected, msg: String(rc.message || '').slice(0, 40) }));
+    ok('f2 🔴 取消后省份几何一字未动（没落库）', JSON.stringify(R()) === terrainBefore,
+       R().length + ' 省');
+    ok('f3 取消后归属一字未动', JSON.stringify(s.scenarios[SCID2].ownership) === ownBefore);
+    notes.cancel = '在处理到 ' + cancelAt + ' 次进度回调时取消 → ' + (rc && rc.rejected);
+    delete s.scenarios[SCID2];
   }
 
   delete s.baseMaps[KEY];

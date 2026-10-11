@@ -196,6 +196,12 @@ MOCK_SCRIPT = """<script>
         getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
         saveMapData: async () => ({ success: true }),
         saveScenarios: async () => ({ success: true }),
+        // 「当前底图键」持久化（产品在导入 .map / 切换底图后调它）。mock 里必须存在：
+        // ScenarioMap 用的是 `window.sitianAPI?.setCurrentBaseMapKey` 可选调用，缺了不会报错，
+        // 但**导入路径的后半段会被静默截断**（`?.` 不炸，只是什么都不发生）——
+        // 用例若想断言「导入后确实把当前底图记下来了」，就得先有这个口子。
+        setCurrentBaseMapKey: async () => ({ success: true }),
+        getCurrentBaseMapKey: async () => ({ success: true, key: '' }),
         // 默认空 → 保持既有用例行为不变；并记调用次数供 test_84 断言「确实读了库」。
         // test_84 会在点击「历史剧本」之前塞 window.__scenarioVaultStub，用来验证
         // 「知识库 → 画布的隐式载入必须只补缺、不许覆盖项目里已有的剧本与底图」。

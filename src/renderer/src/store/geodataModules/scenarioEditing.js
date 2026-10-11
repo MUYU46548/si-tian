@@ -392,6 +392,212 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 底图数据刷新（B2，2026-10-11）：把 FMG `.map` 里的**底图级数据**补进一张已存在的底图
+  //
+  // 为什么需要它（真实事故，不是设想）：暮雨的 `desite` 底图是 **2026-09-10** 那次导入建的，
+  // 而当时那版解析器**只会读 SVG 里的省份多边形**（`git show d07c1d1`：返回对象只有
+  // terrain / polities / ownership / labels / markers）—— 高度图、河流、道路、城镇
+  // **根本没有被读出来**（parser 直到 `1c2a4d2` 才具备网格数据能力）。
+  // 于是那份底图里 `heightmap` 从来没有存在过：地图是纯色扁平图、"沿山脊精修"无从下手、
+  // 河流道路一条都没有 —— 而**今天的解析器完全能读出这些**（实测 desite.map：
+  // 9975 格高度、98 种取值、160 条河流、496 条道路）。
+  //
+  // 所以问题不是"数据丢了"，而是**没有路把新数据补进一张已经在用的底图**：
+  // `.map` 导入走的 `applyScenarioState` 是「同 key 整体替换」，会把用户攒下的省份边界、
+  // 归属、易主记录一起覆盖掉 —— 那条路绝不能用来"补数据"。
+  //
+  // 🔴 三条不许违反：
+  //   ① **绝不动 `terrain` / `provinceLabels` / `planetId`** —— 已切好的省份（`desite` 现在
+  //      415 块）与归属是用户几小时的活，刷新只加不改；这一点是本函数存在的全部理由。
+  //   ② **只补缺**：目标底图已有的字段（哪怕是一份旧高度图）不覆盖；要换高度图是另一个
+  //      显式动作（`importHeightmapFromPlanet({force:true})` / 重切），不藏在"刷新"里。
+  //   ③ **绑定了行星的底图不许写底图侧高度图** —— 高度图的家在行星侧（A1/M1b），
+  //      在底图侧再写一份就是"读行星那份 / 写自己那份"的静默分裂。此时**明确拒绝**并指路。
+  //
+  // @param {string} baseMapKey 目标底图
+  // @param {object} bundle      FMG 产物（`buildScenariosJson(json).baseMaps[名字]` 那个对象）
+  // @param {{groups?:string[], sourceNote?:string}} [opts] groups 缺省 = 全部可补项
+  // @returns {{ok:true,...}|{ok:false,rejected:string,message:string}}
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 河流归一：画布 `drawRivers` 读的是 `{ points:[{x,y}], width, discharge }` */
+  function normalizeBaseMapRivers(list, startAt = 0) {
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((r, i) => {
+      if (!r) return;
+      const pts = (r.points || r.nodes || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (pts.length < 2) return;
+      const rw = Number(r.width);
+      out.push({
+        id: String(r.id || `river_fmg_${startAt + i}`),
+        name: r.name || '',
+        points: pts.map((p) => ({ x: p.x, y: p.y })),
+        // ⚠️ `undefined` 会让 `drawRivers` 的 `(r.width || 0.2)` 走默认值；写 null 也一样。
+        width: Number.isFinite(rw) ? rw : undefined,
+        discharge: Number.isFinite(Number(r.discharge)) ? Number(r.discharge) : undefined,
+      });
+    });
+    return out;
+  }
+
+  /** 道路归一：`drawRoutes` 读 `{ points:[{x,y}], group, color, width, dash }` */
+  function normalizeBaseMapRoutes(list, startAt = 0) {
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((r, i) => {
+      if (!r) return;
+      const pts = (r.points || r.nodes || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (pts.length < 2) return;
+      const w = Number(r.width);
+      out.push({
+        id: String(r.id || `route_fmg_${startAt + i}`),
+        group: r.group || 'roads',
+        name: r.name || '',
+        points: pts.map((p) => ({ x: p.x, y: p.y })),
+        ...(r.color ? { color: r.color } : {}),
+        ...(Number.isFinite(w) ? { width: w } : {}),
+        ...(Array.isArray(r.dash) ? { dash: r.dash } : {}),
+      });
+    });
+    return out;
+  }
+
+  /**
+   * 空底图上直接把 FMG 数据装成一张新底图（.map 导入的"该走"，与 refresh 的"补数据"分开）。
+   * 只有 `terrain` 来自 bundle —— 那正是"新底图"的省份。
+   */
+  function buildBaseMapFromBundle(baseMapKey, bundle, name) {
+    const now = new Date().toISOString();
+    const b = bundle || {};
+    return {
+      id: baseMapKey,
+      name: name || baseMapKey,
+      terrain: Array.isArray(b.terrain) ? b.terrain : [],
+      landFeatures: Array.isArray(b.landFeatures) ? b.landFeatures : [],
+      burgs: Array.isArray(b.burgs) ? b.burgs : [],
+      rivers: normalizeBaseMapRivers(b.rivers),
+      routes: normalizeBaseMapRoutes(b.routes),
+      ...(b.heightmap ? { heightmap: b.heightmap } : {}),
+      referenceImages: [],
+      ...(b.source ? { source: b.source } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  function updateBaseMapData(baseMapKey, bundle, opts = {}) {
+    if (!guardWrite('刷新底图数据').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许写入' };
+    const target = baseMaps.value[baseMapKey];
+    if (!target) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    if (!bundle || typeof bundle !== 'object') return { ok: false, rejected: 'no-source', message: '没有可刷新的数据源' };
+
+    const has = (k) => target[k] !== undefined && target[k] !== null;
+    const src = {
+      heightmap: bundle.heightmap || null,
+      rivers: normalizeBaseMapRivers(bundle.rivers, 0),
+      routes: normalizeBaseMapRoutes(bundle.routes, 0),
+      burgs: Array.isArray(bundle.burgs) ? bundle.burgs : [],
+      source: bundle.source || null,
+      landFeatures: Array.isArray(bundle.landFeatures) ? bundle.landFeatures : [],
+    };
+
+    // 底图级"可补项"：只补缺（②）
+    const plan = {
+      heightmap: !!(src.heightmap && !has('heightmap')),
+      rivers: !!(src.rivers.length && !(target.rivers || []).length),
+      routes: !!(src.routes.length && !(target.routes || []).length),
+      burgs: !!(src.burgs.length && !(target.burgs || []).length),
+      landFeatures: !!(src.landFeatures.length && !(target.landFeatures || []).length),
+    };
+    // 纯信息字段（合并语义，不进"可补组"清单）
+    const metaAdd = {};
+    if (src.source && !has('source')) metaAdd.source = src.source;
+    if (Array.isArray(bundle.referenceImages) && bundle.referenceImages.length && !(target.referenceImages || []).length) {
+      // 刻意不搬参考图：那是一张被用户校准过的图，不属于"底图数据"
+    }
+
+    const requested = Array.isArray(opts.groups) && opts.groups.length ? opts.groups : Object.keys(plan);
+    const blocked = [];
+    if (requested.includes('heightmap') && plan.heightmap) {
+      const bound = getBoundPlanetId(baseMapKey);
+      if (bound) {
+        plan.heightmap = false;
+        blocked.push({
+          group: 'heightmap',
+          reason: 'basemap-bound-to-planet',
+          message: `这张底图绑定了行星「${bound}」，高度图的家在行星侧 —— 刷新底图数据不会往底图写第二份。`
+            + '要地形请用「地形：跟随该行星」或「冻结导入」（工具栏「更多 → 地形」）。',
+        });
+      }
+    }
+
+    const metaAddable = Object.keys(metaAdd);
+    const anyPlan = Object.keys(plan).some((k) => plan[k]) || metaAddable.length > 0 || blocked.length > 0;
+    if (!anyPlan) {
+      return {
+        ok: true,
+        changed: false,
+        baseMapKey,
+        added: { heightmap: false, rivers: 0, routes: 0, burgs: 0, landFeatures: 0 },
+        skipped: { rivers: src.rivers.length, routes: src.routes.length, burgs: src.burgs.length },
+        blocked: [],
+        message: '这张底图的底图级数据已经齐了（高度图 / 河流 / 道路 / 城镇都已有），无需刷新',
+      };
+    }
+
+    const after = { ...target };
+    if (plan.heightmap) after.heightmap = src.heightmap;
+    if (plan.rivers) after.rivers = src.rivers;
+    if (plan.routes) after.routes = src.routes;
+    if (plan.burgs) after.burgs = src.burgs;
+    if (plan.landFeatures) after.landFeatures = src.landFeatures;
+    for (const k of metaAddable) after[k] = metaAdd[k];
+    after.updatedAt = new Date().toISOString();
+
+    const added = {
+      heightmap: plan.heightmap,
+      rivers: plan.rivers ? src.rivers.length : 0,
+      routes: plan.routes ? src.routes.length : 0,
+      burgs: plan.burgs ? src.burgs.length : 0,
+      landFeatures: plan.landFeatures ? src.landFeatures.length : 0,
+    };
+
+    execute({
+      type: 'refresh-basemap-data',
+      label: `刷新底图数据：${baseMapKey}`,
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: target }; },
+      redo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: after }; },
+    });
+
+    saveScenarios();
+    return {
+      ok: true,
+      changed: true,
+      baseMapKey,
+      added,
+      // 如实交代"源里有、但没补进去"的部分（目标已有 → 刻意不覆盖）
+      skipped: {
+        rivers: plan.rivers ? 0 : src.rivers.length,
+        routes: plan.routes ? 0 : src.routes.length,
+        burgs: plan.burgs ? 0 : src.burgs.length,
+      },
+      kept: {
+        terrain: (target.terrain || []).length,
+        provinceLabels: !!target.provinceLabels,
+        planetId: target.planetId || null,
+      },
+      blocked,
+      message: `已刷新「${baseMapKey}」的底图数据：`
+        + [
+          added.heightmap ? '高度图' : '',
+          added.rivers ? `${added.rivers} 条河流` : '',
+          added.routes ? `${added.routes} 条道路` : '',
+          added.burgs ? `${added.burgs} 个城镇` : '',
+        ].filter(Boolean).join(' / ')
+        + `（省份边界 ${(target.terrain || []).length} 块一字未动）`,
+    };
+  }
+
   /**
    * 压叠**预检**（只读，不写任何数据）—— 给「顶点编辑」用（2026-10-11）。
    *
@@ -2398,6 +2604,187 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 底图侧的河流 / 道路 CRUD（D，2026-10-11）
+  //
+  // 为什么必须补这一层（都是实测出来的，不是"顺手重构"）：
+  //   ① **手画的河从来没落过盘**：组件里 `finishRiverDraft` 只把路径 push 进一个**组件本地数组**
+  //      (`riverPaths`)，全仓没有任何一处把它写进 store —— 重开应用河就没了，还不报错。
+  //   ② **手画的路绕过了 undo 与自动保存**：组件直接 `store.baseMaps = {...}`（手搓替换），
+  //      这既不在撤销栈里，也不触发 `scheduleAutoSaveScenarios`，只能"碰巧"赶上别的保存。
+  //   ③ 底图侧原本只有 `addBaseMapBurg` 一个"非省份"写口；河流/道路是同一类数据，该同一套规矩。
+  //
+  // 🔴 纪律：与省份编辑同源 —— 全部经 `execute()`（redo 内写、undo 回滚），首行 `guardWrite`。
+  //    这样只读态被拦、Ctrl+Z 生效、落盘由 `saveScenarios()` 统一调度。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 往底图加一条河流（points 为世界坐标点列；至少 2 点） */
+  function addBaseMapRiver(baseMapKey, river) {
+    if (!guardWrite('绘制河流').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许写入河流' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const pts = ((river && river.points) || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (pts.length < 2) return { ok: false, rejected: 'too-few-points', message: '河流至少要 2 个点' };
+    const list = bm0.rivers || [];
+    const item = {
+      id: (river && river.id) || `river_${Date.now().toString(36)}_${list.length}`,
+      name: (river && river.name) || `河流 ${list.length + 1}`,
+      points: pts.map((p) => ({ x: p.x, y: p.y })),
+      ...(Number.isFinite(Number(river && river.width)) ? { width: Number(river.width) } : {}),
+      ...(Number.isFinite(Number(river && river.discharge)) ? { discharge: Number(river.discharge) } : {}),
+    };
+    const before = bm0;
+    execute({
+      type: 'add-basemap-river',
+      label: item.name,
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: before }; },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: { ...before, rivers: [...(before.rivers || []), item], updatedAt: new Date().toISOString() },
+        };
+      },
+    });
+    saveScenarios();
+    return { ok: true, id: item.id, count: list.length + 1 };
+  }
+
+  /** 删一条河流（按 id；找不到 → 明确回执，不静默） */
+  function removeBaseMapRiver(baseMapKey, riverId) {
+    if (!guardWrite('删除河流').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改河流' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const list = bm0.rivers || [];
+    const idx = list.findIndex((r) => r && r.id === riverId);
+    if (idx < 0) {
+      return { ok: false, rejected: 'not-found', message: `这条河流不在这张底图上（id=${riverId}）—— 列表可能已经变了，请刷新后重试` };
+    }
+    const removed = list[idx];
+    execute({
+      type: 'remove-basemap-river',
+      label: `删除${removed.name || '河流'}`,
+      undo: () => {
+        const cur = baseMaps.value[baseMapKey] || {};
+        const next = [...(cur.rivers || [])];
+        next.splice(Math.min(idx, next.length), 0, removed);      // 放回**原位**（渲染层叠顺序）
+        baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...cur, rivers: next } };
+      },
+      redo: () => {
+        const cur = baseMaps.value[baseMapKey] || {};
+        if (!cur.rivers || !cur.rivers.some((r) => r && r.id === riverId)) return;   // 幂等：已不在则不动
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: { ...cur, rivers: cur.rivers.filter((r) => !(r && r.id === riverId)), updatedAt: new Date().toISOString() },
+        };
+      },
+    });
+    saveScenarios();
+    return { ok: true, removed: removed.name || riverId };
+  }
+
+  /** 往底图加一条道路（样式由调用方给：color / width / dash / group） */
+  function addBaseMapRoute(baseMapKey, route) {
+    if (!guardWrite('绘制道路').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许写入道路' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const pts = ((route && route.points) || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (pts.length < 2) return { ok: false, rejected: 'too-few-points', message: '道路至少要 2 个点' };
+    const list = bm0.routes || [];
+    const item = {
+      id: (route && route.id) || `road_${Date.now().toString(36)}_${list.length}`,
+      group: (route && route.group) || 'roads',
+      name: (route && route.name) || `道路 ${list.length + 1}`,
+      points: pts.map((p) => ({ x: p.x, y: p.y })),
+      ...(route && route.style ? { style: route.style } : {}),
+      ...(route && route.color ? { color: route.color } : {}),
+      ...(Number.isFinite(Number(route && route.width)) ? { width: Number(route.width) } : {}),
+      ...(route && Array.isArray(route.dash) ? { dash: route.dash } : {}),
+    };
+    const before = bm0;
+    execute({
+      type: 'add-basemap-route',
+      label: item.name,
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: before }; },
+      redo: () => {
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: { ...before, routes: [...(before.routes || []), item], updatedAt: new Date().toISOString() },
+        };
+      },
+    });
+    saveScenarios();
+    return { ok: true, id: item.id, count: list.length + 1 };
+  }
+
+  /** 删一条道路（按 id；找不到 → 明确回执） */
+  function removeBaseMapRoute(baseMapKey, routeId) {
+    if (!guardWrite('删除道路').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改道路' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const list = bm0.routes || [];
+    const idx = list.findIndex((r) => r && r.id === routeId);
+    if (idx < 0) {
+      return { ok: false, rejected: 'not-found', message: `这条道路不在这张底图上（id=${routeId}）` };
+    }
+    const removed = list[idx];
+    execute({
+      type: 'remove-basemap-route',
+      label: `删除${removed.name || '道路'}`,
+      undo: () => {
+        const cur = baseMaps.value[baseMapKey] || {};
+        const next = [...(cur.routes || [])];
+        next.splice(Math.min(idx, next.length), 0, removed);
+        baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...cur, routes: next } };
+      },
+      redo: () => {
+        const cur = baseMaps.value[baseMapKey] || {};
+        if (!cur.routes || !cur.routes.some((r) => r && r.id === routeId)) return;
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: { ...cur, routes: cur.routes.filter((r) => !(r && r.id === routeId)), updatedAt: new Date().toISOString() },
+        };
+      },
+    });
+    saveScenarios();
+    return { ok: true, removed: removed.name || routeId };
+  }
+
+  /** 改一个聚落（D 同批补口：聚落编辑此前也是组件直改 store，绕开撤销与落盘调度） */
+  function updateBaseMapBurg(baseMapKey, burgId, patch) {
+    if (!guardWrite('编辑聚落').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改聚落' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const list = bm0.burgs || [];
+    const idx = list.findIndex((b) => b && b.id === burgId);
+    if (idx < 0) return { ok: false, rejected: 'not-found', message: `这个聚落不在这张底图上（id=${burgId}）` };
+    const old = list[idx];
+    const next = { ...old, ...(patch || {}), id: old.id };
+    if (JSON.stringify(next) === JSON.stringify(old)) return { ok: true, changed: false };
+    const before = bm0;
+    const mkAfter = () => {
+      const cur = baseMaps.value[baseMapKey] || before;
+      return {
+        ...cur,
+        burgs: (cur.burgs || []).map((b) => (b && b.id === burgId ? next : b)),
+        updatedAt: new Date().toISOString(),
+      };
+    };
+    execute({
+      type: 'update-burg',
+      label: `编辑聚落 ${old.name || ''}`.trim(),
+      undo: () => {
+        const cur = baseMaps.value[baseMapKey] || before;
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: { ...cur, burgs: (cur.burgs || []).map((b) => (b && b.id === burgId ? old : b)) },
+        };
+      },
+      redo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: mkAfter() }; },
+    });
+    saveScenarios();
+    return { ok: true, changed: true };
+  }
+
   function applyCultureBrush(baseMapKey, cx, cy, radius, cultureKey) {
     // ⚠️ 2026-10-08（B0）：本函数此前**既没有首行守卫、也没登记进写口契约** ——
     //    它是靠 `execute()` 的总闸门兜住的（功能没坏，但契约表看不见它，属结构性漏网）。
@@ -2572,6 +2959,11 @@ export function createScenarioEditingModule(ctx) {
     importHeightmapFromPlanet,
     describeBaseMapTerrain, scenarios,
     addBaseMap, removeBaseMap, addBaseProvince, updateBaseProvince, removeBaseProvince,
+    // 底图级数据（高度图 / 河流 / 道路 / 城镇）的装载与**只补缺刷新**（B2，2026-10-11）
+    buildBaseMapFromBundle, updateBaseMapData,
+    // 底图侧河流 / 道路 CRUD（D，2026-10-11）：此前手画的河从不落盘、手画的路绕过 undo
+    addBaseMapRiver, removeBaseMapRiver, addBaseMapRoute, removeBaseMapRoute,
+    updateBaseMapBurg,
     // 压叠预检（只读）：顶点编辑在**落库前**量一次，判定单源仍在纯函数层
     previewProvinceOverlap,
     splitBaseProvince, mergeBaseProvinces,

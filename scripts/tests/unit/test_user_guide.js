@@ -117,6 +117,17 @@ async function main() {
     return `10 个必备章节 + 7 个必备词在场`;
   });
 
+  await check('手册里不许出现真实项目/隔壁项目的专名（示例一律虚构）', () => {
+    // 产品是面向公开的（README 也这么写），手册又是**随包发布**的文案 ——
+    // 把暮雨自己的项目名、隔壁「绒花墨坊」的名字写进示例，等于把私人素材塞进公开包。
+    // 这一条与 test_86（fixture 专名）同一性质：**白名单/黑名单都得有人守**，否则改文案时必然漂回来。
+    const all = JSON.stringify(GUIDE_SECTIONS);
+    const forbidden = ['绒花计划', '绒花墨坊', '德斯特星', '瓯王朝', '乐园星'];
+    const hit = forbidden.filter((w) => all.includes(w));
+    assert(hit.length === 0, `手册示例里出现真实专名：${hit.join('、')}（请换成虚构示例，如「示例世界」）`);
+    return `${forbidden.length} 个专名一个都没出现`;
+  });
+
   await check('反向探针：骨架校验对坏数据必须变红（否则本文件是空转）', () => {
     const good = [{ id: 'a', title: 'A', keywords: ['k'], cite: 'x', blocks: [{ t: 'p', v: '正文' }, { t: 'list', v: ['一条'] }] }];
     assert(skeletonProblems(good).length === 0, '合法样本不该报问题');
