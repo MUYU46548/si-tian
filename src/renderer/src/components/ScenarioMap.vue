@@ -31,7 +31,7 @@
           class="more-toggle"
           :class="{ active: moreOpen, 'has-advanced': advancedToolActive }"
           @click="moreOpen = !moreOpen"
-          title="更多 — 拆分 / 合并 / 点击填充 / 河流 / 地貌 / 地名 / 擦除 / 高度 / 群系 / 聚落 / 文化 / 宗教 / 标记 / 道路，以及吸附与底图"
+          title="更多 — 拆分 / 合并 / 点击填充 / 描轮廓 / 河流 / 地貌 / 地名 / 擦除 / 高度 / 群系 / 聚落 / 文化 / 宗教 / 标记 / 道路，以及吸附与底图"
         ><Icon name="chevron-down" :size="13"/> 更多</button>
         <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
       </div>
@@ -67,7 +67,25 @@
           @click="setTool('voronoi')"
           title="批量铺底 (A) — 在陆地范围内播 N 个点，一次性按 Voronoi 切成 N 块省份：共边无缝、不动海岸线、归属与易主记录自动继承给新块、一整批 = 一条撤销"
         ><Icon name="grid" :size="15"/>批量铺底</button>
-      <!-- P2 省份（矢量级）：笔刷 / 自由轮廓 / 点填 设置 -->
+        <!-- E（2026-10-11）：用户要的"线跟着笔走、相邻省自动重算" ——
+             手势与「画省份」相同（按住拖一圈），但做的是**改已有边界**而不是新建省。 -->
+        <button
+          :class="{ active: tool === 'outline' }"
+          data-testid="province-outline-btn"
+          @click="setTool('outline')"
+          title="描轮廓 (Y) — 按住贴着要改的那条边界拖一圈、松手：笔迹**围住的那块地**改判给**贴着描的那个邻省**，被碰到的邻省**自动重算边界**（共边无缝、不压叠）；未碰到的边界一个点都不动（海岸线保住）；一笔 = 一条撤销。想让它归原主（只修形状）就关掉下面那个勾"
+        ><Icon name="pen-tool" :size="15"/>描轮廓</button>
+      <!-- ═══ 描轮廓（E）：区域 = 笔迹围出的那块；默认**改判给贴得最紧的邻省** ═══ -->
+      <div class="tool-group brush-settings" v-if="tool === 'outline'" data-testid="outline-settings">
+        <span class="row-hint"
+              title="这套语义是「先并给目标省、再从被碰到的省挖掉」：贴着边界描时基本无缝；区域若探进别省地盘，那块地会两省各留一份（会如实提示百分比）">
+          沿边界拖一圈 → 松手改判
+        </span>
+        <label class="check-label" data-testid="outline-to-neighbor"
+               title="开（默认）：围住的那块地改判给**贴着描的那个邻省**——这是「把这块地划过去」。关：归**它原本所属的省**（等于原地修形状，通常看不出变化）">
+          <input type="checkbox" v-model="outlineToNeighbor" /> 改判给邻省
+        </label>
+      </div>
       <div class="tool-group brush-settings" v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)">
         <label>划归到：</label>
         <select v-model.number="provBrushTarget" class="brush-biome-select" title="要划归的目标省份">
@@ -664,6 +682,9 @@
       <span v-if="tool === 'provinceBrush' || tool === 'provinceLasso'" class="draw-hint">
         {{ tool === 'provinceBrush' ? '省份笔刷：按住涂抹 → 整笔划归所选省份（省界自动重算）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
       </span>
+      <span v-if="tool === 'outline'" class="draw-hint" data-testid="outline-hint">
+        描轮廓：按住**贴着要改的那条边界**拖一圈再松手 —— 围住的那块地改判给它原本主要所属的省，邻省自动重算；松手前的虚线是收口边
+      </span>
       <span v-if="baseMap?.source?.warnings?.length" class="layer-warn" :title="baseMap.source.warnings.join('\n')">
         <Icon name="alert-triangle" :size="13"/> {{ baseMap.source.warnings.length }} 条图层提示
       </span>
@@ -1063,6 +1084,13 @@ const provinceHint = ref('');             // 省份操作提示（状态栏）
 // 🔴 锁定海岸线（默认开，2026-10-09 暮雨要求）：涂归属 / 圈选只在已有省份范围内生效，
 //    笔迹被裁剪到「已有省份的并集」之内 → 海岸线不会被涂抹改掉（改它请走底图编辑）。
 const lockCoast = ref(true);
+/**
+ * 描轮廓的改判方向（E，2026-10-11）。
+ * 默认**开** = 围住的那块地改判给「贴着描的那个邻省」——
+ * 因为围住的地本来就在**原主**手里，不换主的话这一笔必然看不出变化
+ * （首版就是按"区域里占比最高的省"选的，结果 targetIdx 恒等于原主、只有 union 没有 difference）。
+ */
+const outlineToNeighbor = ref(true);
 
 // ── 折线切割（A，2026-10-11）────────────────────────────────────────────────
 // 现状只有「拆分 (X)」= 两点**直线**切一刀。要沿着海岸 / 山脊 / 历史边界切，
@@ -1150,7 +1178,7 @@ const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'rive
   'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
 const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
 // 「变更归属」的省份选项：选到这类工具（或用户自己打开「更多」）就显示
-const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex', 'polySplit', 'voronoi']);
+const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex', 'polySplit', 'voronoi', 'outline']);
 const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value));
 const viewMode = ref('base');
 /**
@@ -1726,6 +1754,7 @@ function updateCursor() {
   else if (tool.value === 'split') canvas.value.style.cursor = 'cell';
   else if (tool.value === 'polySplit') canvas.value.style.cursor = 'crosshair';
   else if (tool.value === 'voronoi') canvas.value.style.cursor = 'crosshair';
+  else if (tool.value === 'outline') canvas.value.style.cursor = 'crosshair';   // E：描轮廓（与画省份同一手势）
   else if (tool.value === 'merge') canvas.value.style.cursor = 'pointer';
   else if (tool.value === 'paint') canvas.value.style.cursor = 'copy';
   else if (tool.value === 'label') canvas.value.style.cursor = 'text';
@@ -2540,14 +2569,20 @@ function onMouseDown(event) {
 
   // 「绘制」工具：按住拖动 = 自由绘制（原型 v7 的手感）。轨迹太短（其实只是单击）则不接管，
   // 仍由 onClick 的描点分支落一个顶点 —— 两条路径并存，能力不减。
-  if (tool.value === 'draw' && event.button === 0) {
+  // 「描轮廓」（E，2026-10-11）复用**同一条采样**（同一个手势，只是松手后做的事不同）：
+  //   画省份 = 新建一个省；描轮廓 = 把围住的这块地从邻省手里改到目标省。
+  if ((tool.value === 'draw' || tool.value === 'outline') && event.button === 0) {
     if (store.isReadOnly) {
-      statusMsg(`绘制已停用：${store.readOnlyReason}（新建/打开项目后即可编辑）`);
+      statusMsg(`${tool.value === 'outline' ? '描轮廓' : '绘制'}已停用：${store.readOnlyReason}（新建/打开项目后即可编辑）`);
       return;
     }
     // 上一笔成型后若「那次 click 没送到」（松手点落在画布外），这里顺手清掉残留标记，
     // 免得下一次单击描点被静默吞掉（click 必定先于下一次 mousedown）
     suppressDrawClick = false;
+    if (tool.value === 'outline' && !(baseMap.value?.terrain || []).length) {
+      statusMsg('描轮廓：这张底图还没有省份 —— 先用「画省份」或「批量铺底」切出块来');
+      return;
+    }
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     freeTrace = [world];
@@ -2656,9 +2691,9 @@ function onMouseMove(event) {
     render();
     return;
   }
-  // 「绘制」工具的自由绘制采样：按**屏幕像素**间距取样（世界单位随缩放差几十倍，
+  // 「绘制」/「描轮廓」的自由绘制采样：按**屏幕像素**间距取样（世界单位随缩放差几十倍，
   // 用世界阈值会在大缩放时采得过密、小缩放时采得过疏）
-  if (freeTraceActive && tool.value === 'draw') {
+  if (freeTraceActive && (tool.value === 'draw' || tool.value === 'outline')) {
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     const last = freeTrace[freeTrace.length - 1];
@@ -2813,7 +2848,10 @@ function onMouseUp(event) {
     // 够长才算「一笔成型」；否则让随后的 click 走描点分支（落一个顶点）
     if (pts.length >= FREE_TRACE_MIN_POINTS) {
       suppressDrawClick = true;
-      if (!commitFreeTrace(pts, !!(event && event.shiftKey))) suppressDrawClick = false;
+      const okTrace = tool.value === 'outline'
+        ? commitOutlineTrace(pts)
+        : commitFreeTrace(pts, !!(event && event.shiftKey));
+      if (!okTrace) suppressDrawClick = false;
     }
     render();
   }
@@ -3306,6 +3344,7 @@ function onKeyDown(event) {
   if (event.key === 'v' || event.key === 'V') setTool('select');
   else if (event.key === 'b' || event.key === 'B') setTool('draw');
   else if (event.key === 'g' || event.key === 'G') setTool('vertex');
+  else if (event.key === 'y' || event.key === 'Y') setTool('outline');   // E：描轮廓（Y 未被占用）
   else if (event.key === 'x' || event.key === 'X') setTool('split');
   else if (event.key === 'm' || event.key === 'M') setTool('merge');
   else if (event.key === 'p' || event.key === 'P') setTool('paint');
@@ -3382,8 +3421,56 @@ function focusNewProvince(id, fallback) {
 }
 
 /** 自由绘制轨迹 → 省份（轨迹太短则放弃，仍由描点分支处理） */
-function commitFreeTrace(pts, shiftKey) {
+/**
+ * 描轮廓落库（E，2026-10-11）：把笔迹**围住的那块地**从邻省手里改到目标省。
+ *
+ * 语义与「画省份」的区别（同一个手势，两件事）：
+ *   · 画省份 = 新建一个省（区域是笔迹**描出的轮廓**）
+ *   · 描轮廓 = 改已有省份的边界（区域是笔迹**围出的闭合形状**，目标省 = 区域里占比最高的那个）
+ * 落库只在 store（`applyProvinceOutline`）—— 判定与几何**单源**，组件只负责翻译结果。
+ * @returns {boolean} 是否算"这一笔已经成型"（false → 让随后的 click 走描点分支）
+ */
+function commitOutlineTrace(pts) {
   if (!ensureBaseMap()) return false;
+  const simplified = simplifyClosedTrace(pts);
+  if (!simplified || simplified.length < 3) {
+    statusMsg('描轮廓：轨迹太短，围不出形状（贴着要改的那条边界拖一圈再松手）');
+    return false;
+  }
+  const path = simplified.map((q) => ({ x: q.x, y: q.y }));
+  const res = store.applyProvinceOutline(baseMapKey.value, path, {
+    lockCoast: lockCoast.value,
+    toNeighbor: outlineToNeighbor.value,
+  });
+  provinceBrush.invalidateBorders();
+  // 拒绝分支排在 changed 之前 —— 与套索/点击填充同一条协议（{rejected, message}）
+  if (res && res.rejected) {
+    statusMsg(`描轮廓：${res.message}`);
+    return true;
+  }
+  if (res && res.changed > 0) {
+    const list = baseMap.value?.terrain || [];
+    const target = list[res.targetIdx - 1];
+    const owner = list[res.ownerIdx - 1];
+    // 🔴 如实说明三件事：**从谁改判给谁**、**真正搬动了多少地**、以及"这块地上本来就有压叠"（若有）。
+    //    搬动量用 `transferArea`（= 邻省失去的量，逐字节一致）而不是"笔迹围住的面积" ——
+    //    区域跨边界时两者不同，报后者会让用户以为搬过去了一整块。
+    statusMsg(`描轮廓：${res.detail || '已改边界'}`
+      + `（笔迹 ${pts.length} 点 → 简化 ${path.length} 点；围住 ${Math.round(res.area || 0)}、`
+      + `实际搬动 ${Math.round(res.transferArea || 0)}${
+        res.switched && owner && target ? `：「${owner.name}」→「${target.name}」` : '（未换主）'}`
+      + (res.neighborIdx ? `，贴着「${(list[res.neighborIdx - 1] || {}).name || ('省份 ' + res.neighborIdx)}」描` : '')
+      + (res.preOverlap > 1 ? `；⚠️ 这块地上本来就有别省压着约 ${Math.round(res.preOverlap)}（原有压叠，不是这一笔造成的）` : '')
+      + '）—— 邻省已自动重算，一笔 = 1 条撤销');
+    if (target) { selectedProvince.value = target; showProps.value = true; }
+  } else {
+    statusMsg(`描轮廓：${(res && res.message) || '这一描没有改变任何边界'}`);
+  }
+  render();
+  return true;
+}
+
+function commitFreeTrace(pts, shiftKey) {  if (!ensureBaseMap()) return false;
   const simplified = simplifyClosedTrace(pts);
   if (!simplified || simplified.length < 3) {
     statusMsg('自由绘制：轨迹太短，没有成型（按住沿轮廓拖一圈再松手）');
@@ -5233,13 +5320,27 @@ function drawPreviewOverlay() {
   // 「绘制」工具的自由绘制实时轨迹（一笔跟着走，松手才简化成型）
   if (freeTraceActive && freeTrace && freeTrace.length > 1) {
     c.save();
-    c.strokeStyle = '#c4b5fd';
+    // 描轮廓用**另一种颜色**（青色）—— 与画省份的紫色区分，用户一眼知道这一笔是"改边界"
+    c.strokeStyle = tool.value === 'outline' ? '#22d3ee' : '#c4b5fd';
     c.lineWidth = px(1.8);
     c.lineJoin = 'round';
     c.lineCap = 'round';
     c.beginPath();
     tracePath(c, freeTrace, false);
     c.stroke();
+    // E：描轮廓额外画**收口弦**（起点→终点）—— 那条弦就是"围住这块地"的最后一条边，
+    // 用户必须看得见它，否则不知道自己这一圈围出的到底是什么形状（松手即落库，来不及后悔）。
+    if (tool.value === 'outline' && freeTrace.length > 2) {
+      const a = freeTrace[0], b = freeTrace[freeTrace.length - 1];
+      c.setLineDash([px(5), px(4)]);
+      c.strokeStyle = 'rgba(34, 211, 238, 0.65)';
+      c.lineWidth = px(1.3);
+      c.beginPath();
+      c.moveTo(b.x, b.y);
+      c.lineTo(a.x, a.y);
+      c.stroke();
+      c.setLineDash([]);
+    }
     c.restore();
   }
   if (tool.value === 'draw' && drawPoints.value.length > 0) {

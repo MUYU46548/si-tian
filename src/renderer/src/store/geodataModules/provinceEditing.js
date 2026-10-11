@@ -73,6 +73,11 @@ export const LASSO_AREA_SHARE = 0.5;
 export const MAX_FILL_CELLS = 60000;
 export const FILL_AREA_SHARE = 0.25;
 export const MAX_LASSO_CELLS = 60000;
+/**
+ * 描轮廓的**面积闸门**：笔迹围住的面积 / 全部省份包围盒面积 的上限。
+ * 超出几乎总是误操作（比如描到一半松手、把半个大陆圈进来）→ 拒绝且**零副作用**。
+ */
+export const OUTLINE_AREA_SHARE_DEFAULT = 0.5;
 
 export function createProvinceEditingModule(ctx) {
   const { execute, baseMaps, scheduleAutoSaveScenarios } = ctx;
@@ -393,6 +398,276 @@ export function createProvinceEditingModule(ctx) {
     });
 
     return changed ? { terrain: next, ops } : null;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 描轮廓（E，2026-10-11）：用户**沿边界描一圈** → 被围住那块地并进目标省、  // 从它原来所属的省挖掉（相邻省自动重算）。这就是"线跟着笔走、邻居自己更新"。
+  //
+  // 与既有三条路的分工（**别混**）：
+  //   · 顶点编辑：拖一个点（只改被拖那一个省，会压叠/留缝）
+  //   · 省份笔刷：**粗带**扫过就划归（`traceBrushRings` 生成胶囊带）
+  //   · 套索：圈目标地**从未知省手里抢过来**（区域 = 圈，目标 = 用户先选的那个省）
+  //   · 描轮廓（本函数）：区域 = **笔迹自己围出的那块**，目标 = 围住区域里的那个省
+  // 🔴 为什么不是"把描出的线直接当新边界"：那是"用一串离散点替换整条环"，
+  //    对真实底图（10525 点海岸线）必然把海岸线一起重采样 —— 本项目踩过（见文件头 P2 说明）。
+  //    布尔语义下**未碰到的边界一个点都不动**，海岸线天然保住。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 把一个点集按"落在哪个候选省里"计数（描轮廓用来判定**改判给谁**）。
+   * ⚠️ 只读，不写任何数据。用**原始笔迹点**（未简化的）—— 笔迹密集，靠近边界的那几个
+   * 点会把"贴着谁描"如实反映出来。
+   */
+  function countPointsInside(key, pts, candidates) {
+    const counts = new Map();
+    for (const p of candidates) counts.set(p.id, 0);
+    for (const q of pts) {
+      for (const p of candidates) {
+        if (pointInProvince(q.x, q.y, p)) counts.set(p.id, (counts.get(p.id) || 0) + 1);
+      }
+    }
+    return counts;
+  }
+
+  /**
+   * 把**一条闭合笔迹**变成"要把哪块地交给谁"。
+   *
+   * 🔴 目标省的默认取向（2026-10-11 实测纠偏，**这一条最容易想反**）：
+   *    「围住的那块地」本来就在**原主**手里，所以"区域里占比最高的省"**永远**是原主 ——
+   *    而用户描一条边界，想要的恰恰是**改判给邻省**。首版就是按"占比最高"选的，
+   *    结果 `targetIdx` 恒等于原主 → 只有 union、没有 difference，画面纹丝不动
+   *    （test_97 c 段当场抓到：`{"t":1,"cov":1,"area":3000,"out":0}`）。
+   *    现在的规则：
+   *      · `opts.targetIdx` 显式给了 → 用它（用户在下拉里选的那个省）
+   *      · `opts.toNeighbor === false` → 归**原主**（"把这块划回给它自己"= 修形状，不是换主）
+   *      · 默认 → 判给**笔迹贴得最紧的那个邻省**（数原始笔迹点落在谁里面最多）；
+   *        一个邻省都没碰到（完全围在原主内部）→ 归原主（此时改判等于原地不动，
+   *        要"切一块出去"应当用拆分；这条也如实回报出去）
+   *
+   * @returns {{ ring:Array, area:number, ownerIdx:number, targetIdx:number, switched:boolean }|{rejected:string,...}|null}
+   */
+  function resolveOutlineRegion(key, path, opts = {}) {
+    const terrain = provincesOf(key);
+    if (!terrain.length) return null;
+    const raw = Array.isArray(path) ? path.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
+    if (raw.length < 3) return null;
+    // 闭合：把最后一个点连回第一个点。描轮廓的手感就是"描一圈"，
+    // 起点与终点之间的那段弦由笔迹两端直接相连（UI 会画出来）。
+    let ring = rdpSimplify(raw.map((p) => ({ x: p.x, y: p.y })), opts.tol || 0).map((p) => [p.x, p.y]);
+    if (ring.length < 3) return null;
+    ring.push([ring[0][0], ring[0][1]]);          // 显式闭合（布尔引擎要求首尾相同）
+    const regionMulti = ringsToMulti([ring]);
+    if (!regionMulti.length) return null;
+    const area = Math.abs(multiNetArea(regionMulti));
+    if (!(area > 0)) return null;
+
+    // 面积闸门（与套索**同一套回报口径**：`rejected:'area-gate'` + `share` + 可读文案，
+    // 拒绝时零副作用 —— 在改任何东西之前判）
+    const share = opts.maxShare != null ? opts.maxShare : OUTLINE_AREA_SHARE_DEFAULT;
+    let allBox = null;
+    for (const p of terrain) {
+      const b = provinceBBox(p);
+      if (!b) continue;
+      allBox = allBox ? {
+        minX: Math.min(allBox.minX, b.minX), minY: Math.min(allBox.minY, b.minY),
+        maxX: Math.max(allBox.maxX, b.maxX), maxY: Math.max(allBox.maxY, b.maxY),
+      } : { ...b };
+    }
+    const total = allBox ? Math.abs((allBox.maxX - allBox.minX) * (allBox.maxY - allBox.minY)) : 0;
+    if (share > 0 && total > 0 && area / total > share) {
+      return { rejected: 'area-gate', share: area / total, area, ring };
+    }
+
+    const rbox = multiBBox(regionMulti);
+    // 原主 = 「这块地的多大比例是它的」最高者（区域跨省时按占比，不按绝对面积）
+    let owner = -1, ownerShare = 0, ownerInter = 0;
+    const near = [];
+    for (let i = 0; i < terrain.length; i++) {
+      const p = terrain[i];
+      const b = provinceBBox(p);
+      if (!b || !rbox || !bboxHit(b, rbox)) continue;
+      const m = provinceToMulti(p);
+      if (!m.length) continue;
+      const inter = polygonClipping.intersection(m, regionMulti);
+      if (isEmptyMulti(inter)) continue;
+      const a = Math.abs(multiNetArea(inter));
+      near.push({ idx: i + 1, prov: p, inside: a });
+      const s = area > 0 ? a / area : 0;
+      if (s > ownerShare) { ownerShare = s; owner = i; ownerInter = a; }
+    }
+    if (owner < 0) return { rejected: 'no-target', area, ring };
+
+    // 邻省 = 笔迹点落进去最多的那些（原主之外）
+    const others = near.filter((n) => n.idx !== owner + 1);
+    const counts = countPointsInside(key, raw, others.map((n) => n.prov));
+    let neighborIdx = -1, neighborHits = 0;
+    for (const n of others) {
+      const c = counts.get(n.prov.id) || 0;
+      if (c > neighborHits) { neighborHits = c; neighborIdx = n.idx; }
+    }
+    const explicit = opts.targetIdx && opts.targetIdx > 0 ? opts.targetIdx : 0;
+    const wantOwner = opts.toNeighbor === false;
+    let targetIdx = owner + 1;
+    let switched = false;
+    if (explicit) {
+      targetIdx = explicit;
+      switched = explicit !== owner + 1;
+    } else if (!wantOwner && neighborIdx > 0) {
+      targetIdx = neighborIdx;
+      switched = true;
+    }
+    return {
+      ring, area, regionMulti,
+      ownerIdx: owner + 1,
+      targetIdx,
+      switched,
+      ownerShare,
+      coveredRatio: ownerShare,           // 兼容旧字段名（= 原主占比）
+      neighborIdx: neighborIdx > 0 ? neighborIdx : null,
+      neighborHits,
+      touched: near.map((n) => n.idx),
+    };
+  }
+
+  /**
+   * 描轮廓落库：区域并进目标省、从其他相交省挖掉（**一整笔 = 一条 undo**）。
+   * @param {Array<{x,y}>} path 笔迹（世界坐标）
+   */
+  function applyProvinceOutline(key, path, opts = {}) {
+    if (isRO()) return blocked('描轮廓');
+    const terrain = provincesOf(key);
+    if (!terrain.length) return { changed: 0, message: '这张底图还没有省份' };
+    const resolved = resolveOutlineRegion(key, path, opts);
+    if (!resolved) return { changed: 0, message: '这条笔迹围不出有效形状（至少要画出一圈）' };
+    if (resolved.rejected === 'area-gate') {
+      return {
+        changed: 0, rejected: 'area-gate', share: resolved.share,
+        message: `这条笔迹围住了全图约 ${Math.round((resolved.share || 0) * 100)}% 的地（超过闸门）`
+          + '——多半是描到一半松手、或想把整块大陆圈进来。请只沿要改的那一条边界描一圈',
+      };
+    }
+    if (resolved.rejected === 'no-target') {
+      return { changed: 0, rejected: 'no-target', message: '没围住任何省份（描的圈要落在陆地上）' };
+    }
+    const targetIdx = opts.targetIdx && opts.targetIdx > 0 ? opts.targetIdx : resolved.targetIdx;
+    const res = applyOutlineToTerrain(key, resolved.ring, targetIdx, opts);
+    if (!res) return { changed: 0, rejected: 'no-effect', message: '这一描没有改变任何边界（可能正好与现有边界重合，或整块地本来就属于目标省）' };
+
+    // 如实回报：**有没有别的省也压在这块被转移的地上**（无新增压叠的自证）。
+    // 🔴 一定要拿**运算后**的 `res.terrain` 去比 —— 首版比的是运算前的旧数组，
+    //    于是目标省（它现在当然含着这块地）被算成"压叠"、量出来正好等于转移量
+    //    （test_97 当场量出 1428.57 = transfer），看起来像几何错了，其实是度量写错了。
+    let preOverlap = 0;
+    for (let i = 0; i < res.terrain.length; i++) {
+      if (i === targetIdx - 1) continue;
+      const m = provinceToMulti(res.terrain[i]);
+      if (!m.length) continue;
+      const inter = polygonClipping.intersection(m, res.transferMulti);
+      if (isEmptyMulti(inter)) continue;
+      preOverlap = Math.max(preOverlap, Math.abs(multiNetArea(inter)));
+    }
+
+    execute({
+      type: 'province-outline',
+      label: opts.label || '描轮廓',
+      undo: () => setTerrain(key, terrain),
+      redo: () => setTerrain(key, res.terrain),
+    });
+    return {
+      changed: res.ops.length,
+      ops: res.ops,
+      targetIdx,
+      // 原主 / 是否换主（UI 要据此说人话："从「甲」改判给「乙」"）
+      ownerIdx: resolved.ownerIdx,
+      switched: !!resolved.switched,
+      neighborIdx: resolved.neighborIdx || null,
+      detail: describeRegionOps(key, res.ops),
+      area: resolved.area,
+      coveredRatio: resolved.coveredRatio,
+      // 真正搬动的面积（= 目标省净得的面积 = 邻省们失去的面积，逐字节一致）
+      transferArea: res.transferArea,
+      preOverlap,
+      regionMulti: resolved.regionMulti,
+    };
+  }
+
+  /**
+   * 🔴 描轮廓专用的落库几何（E，2026-10-11）：**按 transfer 做精确划分**，而不是"先并后挖"。
+   *
+   * 为什么不能直接用 `applyRegionToTerrain`（首版就是那样，test_97 c 段量出数字才看出来）：
+   *   那条路是「先给目标省并上 region、再从被碰到的省挖掉 region」。区域跨过边界时，
+   *   目标省拿到的其实只有 `region ∩ 目标省`（并集里已经有的部分不变），而邻省被挖掉的是
+   *   `region ∩ 邻省` —— 用户**描出来的那块并没有整块过去**：
+   *   实测 3000 的区域只搬过去 1429（乙涨 1429、甲掉 1429，各自守恒但"意图没实现"）。
+   *
+   * 这里的定义（transfer = 区域 − 目标省原有地）满足四条，正是改边界该有的性质：
+   *   ① 目标是**净得**（transfer 与目标省不相交 → 并集严格变大）；
+   *   ② 邻省只失去**被转移的那部分**（transfer ⊆ region，所以不会多挖）；
+   *   ③ 面积**精确守恒**（转移量与邻省减少量逐字节一致）；
+   *   ④ 不可能产生新压叠（转移量要么归目标、要么留在原地，是**划分**不是叠加）。
+   * ⚠️ `applyRegionToTerrain`（笔刷 / 套索 / 批量）**保持原样不动** —— 那三条路的语义
+   *    是"把这一带划给它"（并集 + 差集），改成划分会动到 test_79/80/92 的既有断言。
+   */
+  function applyOutlineToTerrain(key, ring, targetIdx, opts = {}) {
+    const terrain = provincesOf(key);
+    if (!terrain.length) return null;
+    const target = terrain[targetIdx - 1];
+    if (!target) return null;
+    let regionMulti = ringsToMulti([ring]);
+    if (!regionMulti.length) return null;
+    const kind = kindOf(target);
+
+    if (opts.lockCoast !== false) {
+      const bb = multiBBox(regionMulti);
+      const near = [];
+      for (const p of terrain) {
+        const pbox = provinceBBox(p);
+        if (!pbox || !bb || !bboxHit(pbox, bb)) continue;
+        const m = provinceToMulti(p);
+        if (m.length) near.push(m);
+      }
+      if (!near.length) return null;
+      const covered = near.length === 1 ? near[0] : unionMulti(polygonClipping, near[0], near.slice(1));
+      const clipped = polygonClipping.intersection(regionMulti, covered);
+      if (isEmptyMulti(clipped)) return null;
+      regionMulti = clipped;
+    }
+
+    // transfer = 区域 − 目标省原有地（= 目标省这一笔真正**新得到**的地）
+    // 🔴 层数不能错：`differenceMulti(clip, baseMulti, cutMultis)` 的 `cutMultis` 是
+    //    **MultiPolygon 的列表**（`[multiA, multiB]`），不是 `[polygon]`。
+    //    写成 `[provinceToMulti(p)]` 时基元是 `[[ring]]`、与乘法器期望的 `[[[ring]]]` 差一层 →
+    //    引擎"减了个寂寞"，转移块仍与目标省原有地重叠（test_97 的 `preOverlap` 当场量出 1428.57）。
+    const differenceFromBase = (base, cutMulti) => (
+      (base && base.length && cutMulti && cutMulti.length)
+        ? polygonClipping.difference(base, cutMulti)
+        : base
+    );
+    const targetBase = provinceToMulti(target);
+    const transfer = targetBase.length ? differenceFromBase(regionMulti, targetBase) : regionMulti;
+    const transferArea = isEmptyMulti(transfer) ? 0 : Math.abs(multiNetArea(transfer));
+    if (!(transferArea > 0)) return null;                    // 区域全在目标省里 → 没有可转移的地
+
+    const ops = [];
+    let changed = false;
+    const next = terrain.map((p, i) => {
+      if (i === targetIdx - 1) {
+        const merged = unionMulti(polygonClipping, provinceToMulti(p), [transfer]);
+        changed = true;
+        ops.push({ id: p.id, op: 'union' });
+        return normalizeProvince({ ...p, ...multiToShape(merged, kind) });
+      }
+      const base = provinceToMulti(p);
+      if (!base.length) return p;
+      if (!intersectsMulti(polygonClipping, base, transfer)) return p;   // 不相交 → 整省跳过
+      const cut = differenceMulti(polygonClipping, base, [transfer]);
+      const patch = multiToShape(cut, kind);
+      changed = true;
+      ops.push({ id: p.id, op: 'difference', emptied: !patch.points.length });
+      return normalizeProvince({ ...p, ...patch });
+    });
+    if (!changed) return null;
+    return { terrain: next, ops, transferArea, transferMulti: transfer };
   }
 
   /** 写 terrain（新数组 → 响应式）+ 同步签名 */
@@ -1225,6 +1500,8 @@ export function createProvinceEditingModule(ctx) {
   return {
     ensureProvinceGrid, getProvinceGrid, rebuildProvinceGrid, invalidateProvinceGrid,
     beginProvinceStroke, applyProvinceStroke, endProvinceStroke, applyProvinceLasso,
+    // E（2026-10-11）：描轮廓 —— 笔迹围住的那块地并进目标省、从邻省挖掉（邻省自动重算）
+    resolveOutlineRegion, applyProvinceOutline,
     fillProvinceRegion, splitProvince, splitProvinceAlong, mergeProvinces, batchSubdivide,
     previewSplitAlong, planBatchSeeds,
     addBrushProvince, removeProvinceWithGrid, clearProvinceLabels,

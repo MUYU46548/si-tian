@@ -191,7 +191,7 @@ export const MEMORY_WRITE_CALLSITES = [
   { id: 8, file: 'src/renderer/src/store/geodataModules/provinceEditing.js',
     fns: ['applyProvinceStroke', 'endProvinceStroke', 'applyProvinceLasso', 'fillProvinceRegion',
           'splitProvince', 'splitProvinceAlong', 'mergeProvinces', 'batchSubdivide',
-          'addBrushProvince', 'clearProvinceLabels',
+          'addBrushProvince', 'clearProvinceLabels', 'applyProvinceOutline',
           'removeProvinceWithGrid', 'rebuildProvinceGrid'],
     what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；统一经 blocked() 包装）' },
   { id: 9, file: 'src/renderer/src/store/geodataModules/channelBrush.js',
