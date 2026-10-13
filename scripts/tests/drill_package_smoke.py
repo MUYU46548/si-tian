@@ -43,12 +43,22 @@ import subprocess
 import sys
 import time
 
+# 🔴 控制台编码（2026-10-13 修）：本脚本每条结论都带 ✅/❌，而 Windows 控制台默认 GBK（cp936）——
+#    **失败时**那句 `print('  ❌ ' + name)` 自己抛 UnicodeEncodeError，整个演练在"报告失败"这一步崩掉，
+#    人看到的是 traceback 而不是结论（与 run_tests.py 同款病灶，同款修法）。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests'))
 from lib.cdp import CDP, find_page_ws, wait_for  # noqa: E402
 
 EXE = os.path.join(ROOT, 'release-inst', 'win-unpacked', 'SiTian.exe')
 ASAR = os.path.join(ROOT, 'release-inst', 'win-unpacked', 'resources', 'app.asar')
+FRESH_ASAR = os.path.join(ROOT, 'release', 'win-unpacked', 'resources', 'app.asar')
 DEV_ELECTRON = os.path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
 # exe  = 直接跑 SiTian.exe（最真，但本环境里它以 0x80000003 秒退）
 # asar = 用开发版 electron 二进制加载**同一个 app.asar**（启动路径已知可用）
@@ -58,6 +68,25 @@ REAL_CFG = os.path.join(os.environ.get('APPDATA', ''), 'SiTian', 'config.json')
 TMP = os.path.join(os.environ.get('TEMP', ROOT), 'sitian-pkg-smoke-%d' % int(time.time()))
 
 RESULT = {'fails': [], 'notes': {}}
+
+
+def stale_asar_warning():
+    """release-inst 是**手工搬运**的暂存目录：不刷新就会拿旧版本当"打包产物"验。
+
+    2026-10-13 实测踩到：`release-inst/.../app.asar` 停在 0.2.4（10-11 16:47），
+    而 release/ 已经到 0.2.9 —— 这条链**看着全绿，验的却是三个版本前的包**。
+    """
+    try:
+        if not os.path.exists(FRESH_ASAR):
+            return None
+        a, b = os.path.getmtime(ASAR), os.path.getmtime(FRESH_ASAR)
+    except Exception:
+        return None
+    if a < b - 1:
+        return ('release-inst 里的 app.asar 比 release/ 的旧 %.0f 分钟 —— '
+                '本次验的不是最新构建；先 `robocopy release\\win-unpacked release-inst\\win-unpacked /MIR`'
+                % ((b - a) / 60))
+    return None
 
 
 def ck(name, cond, detail=''):
@@ -102,6 +131,10 @@ def main():
             return 2
         launch = [EXE]
     print('被测 app.asar：' + ASAR)
+    warn = stale_asar_warning()
+    if warn:
+        print('  ⚠️ ' + warn)
+        RESULT['notes']['staleAsar'] = warn
     os.makedirs(TMP, exist_ok=True)
     cfg = json.load(open(REAL_CFG, encoding='utf-8'))
     proj = cfg.get('lastProjectPath') or ''

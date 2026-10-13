@@ -1,6 +1,6 @@
 {
   "name": "sitian",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "世界观动态构建系统 — 绒花计划",
   "main": "src/main/index.js",
   "scripts": {
@@ -61,7 +61,10 @@
     },
     "files": [
       "dist/**/*",
-      "build/**/*",
+      "build/*.ico",
+      "build/*.icns",
+      "build/*.png",
+      "build/icon-manifest.json",
       "src/main/**/*",
       "src/preload/**/*",
       "scripts/**/*",

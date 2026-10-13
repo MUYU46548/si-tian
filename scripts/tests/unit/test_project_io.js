@@ -261,7 +261,8 @@ async function main() {
       // B4（2026-09-24）：启动时恢复上次项目 —— 只回报「文件确实还在」的路径
       'project-get-last-path',
       // 原始底图来源备份（2026-10-11）：导入 `.map` 时把原文留一份到项目备份目录
-      'basemap-source-save', 'basemap-source-list', 'project-current-path'];
+      // 2026-10-13：补 `basemap-source-read`（只读读回 —— 「从留底恢复」用）
+      'basemap-source-save', 'basemap-source-list', 'basemap-source-read', 'project-current-path'];
     for (const ch of expected) assert(handlers.has(ch), `未注册通道 ${ch}`);
     const unregistered = [...handlers.keys()].filter(c => !expected.includes(c));
     assert(unregistered.length === 0,

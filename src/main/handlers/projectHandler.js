@@ -369,6 +369,45 @@ async function listBaseMapSources(projectFilePath) {
   }
 }
 
+/**
+ * 读回一份**已留底**的原始底图来源（只读；2026-10-13）。
+ *
+ * 为什么需要它：`saveBaseMapSource` 从 0.2.8 起把导入过的 `.map` 原文留在了
+ * `<项目>.sitian.backups/basemap-sources/`，但**只有"列清单"没有"读回来"** ——
+ * 于是那批留底在 UI 上等于不存在（"恢复"只能靠用户自己去资源管理器里翻目录、再走一遍
+ * 文件选择器）。备份**读不回来**就不算备份。
+ *
+ * 纪律（与 save 侧对称）：
+ *   · **只读**：不写、不改、不动 mtime；
+ *   · **只能读 basemap-sources 里的 `.map`**：名字过 `sanitizeFileName`（消掉目录层级），
+ *     **再加一道 resolve 后仍在留底目录内的校验** —— 消毒是"不产生层级"，
+ *     这道是"即使将来消毒规则被改松，也不许读出去"；
+ *   · 找不到就**明确报错**（不返回空串让上层以为读到了一份空底图）。
+ */
+async function readBaseMapSource(projectFilePath, name) {
+  assertProjectPath(projectFilePath);
+  const safe = sanitizeFileName(name || '');
+  if (!safe || !safe.toLowerCase().endsWith('.map')) {
+    throw new Error(`只允许读回 basemap-sources 里的 .map 留底（收到：${name}）`);
+  }
+  const dir = path.join(backupDirFor(projectFilePath), BASE_MAP_SRC_DIR);
+  const full = path.join(dir, safe);
+  if (path.dirname(path.resolve(full)) !== path.resolve(dir)) {
+    throw new Error(`留底文件名不合法：${name}`);
+  }
+  const st = await fs.stat(full).catch(() => null);
+  if (!st || !st.isFile()) throw new Error(`留底文件不存在：${safe}`);
+  const text = await fs.readFile(full, 'utf-8');
+  return {
+    success: true,
+    name: safe,
+    path: full,
+    bytes: Buffer.byteLength(text, 'utf8'),
+    mtime: st.mtime.toISOString(),
+    text,
+  };
+}
+
 function registerProjectHandlers(deps) {
   const {
     ipcMain, dialog, shell,
@@ -553,6 +592,14 @@ function registerProjectHandlers(deps) {
       return fail(err);
     }
   });
+  // 只读：把一份留底读回渲染层（"从留底恢复"用）
+  ipcMain.handle('basemap-source-read', async (event, payload = {}) => {
+    try {
+      return ok(await readBaseMapSource(payload.projectPath, payload.name));
+    } catch (err) {
+      return fail(err);
+    }
+  });
 }
 
 module.exports = {
@@ -577,5 +624,6 @@ module.exports = {
   gitSnapshot,
   saveBaseMapSource,
   listBaseMapSources,
+  readBaseMapSource,
   registerProjectHandlers,
 };

@@ -334,15 +334,43 @@ MOCK_SCRIPT = """<script>
         // 🔴 原始底图来源备份（2026-10-11）：mock 里要**如实回报成功**，
         //    否则「导入后状态栏有没有说"已留底"」这类断言会在 mock 层被静默跳过。
         //    真实落盘在 scripts/tests/unit/test_basemap_source_backup.js 里测（那里有真文件系统）。
+        // 2026-10-13：save/list/read 三者改成**有状态**（`window.__MOCK_BMSRC`）——
+        //    「留底 → 列清单 → 读回 → 当底图导入」整条恢复链才能在 mock 层真跑（test_101）。
         projectCurrentPath: async () => ({ success: true, filePath: 'mock/项目.sitian', exists: true }),
-        saveBaseMapSource: async (payload) => ({
-          success: true,
-          path: 'mock/项目.sitian.backups/basemap-sources/' + String(payload?.name || 'basemap.map'),
-          bytes: String(payload?.text || '').length,
-          dir: 'mock/项目.sitian.backups/basemap-sources',
-          pruned: 0,
-        }),
-        listBaseMapSources: async () => ({ success: true, dir: 'mock/项目.sitian.backups/basemap-sources', files: [] }),
+        saveBaseMapSource: async (payload) => {
+          window.__MOCK_BMSRC = window.__MOCK_BMSRC || {};
+          const nm = String((payload && payload.name) || 'basemap.map');
+          const text = String((payload && payload.text) || '');
+          window.__MOCK_BMSRC[nm] = { text, at: Date.now() };
+          return {
+            success: true,
+            path: 'mock/项目.sitian.backups/basemap-sources/' + nm,
+            bytes: text.length,
+            dir: 'mock/项目.sitian.backups/basemap-sources',
+            pruned: 0,
+          };
+        },
+        listBaseMapSources: async () => {
+          const m = window.__MOCK_BMSRC || {};
+          const files = Object.keys(m).map((n) => ({
+            name: n,
+            path: 'mock/项目.sitian.backups/basemap-sources/' + n,
+            bytes: m[n].text.length,
+            mtime: new Date(m[n].at).toISOString(),
+          })).sort((a, b) => String(b.mtime).localeCompare(String(a.mtime)));
+          return { success: true, dir: 'mock/项目.sitian.backups/basemap-sources', files };
+        },
+        // 只读：读回一份留底原文（找不到 → **明确失败**，不回空串让上层以为读到一份空底图）
+        readBaseMapSource: async (payload) => {
+          const nm = String((payload && payload.name) || '');
+          const rec = (window.__MOCK_BMSRC || {})[nm];
+          if (!rec) return { success: false, error: '留底文件不存在：' + nm };
+          return {
+            success: true, name: nm,
+            path: 'mock/项目.sitian.backups/basemap-sources/' + nm,
+            bytes: rec.text.length, mtime: new Date(rec.at).toISOString(), text: rec.text,
+          };
+        },
         backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
         batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
         createObsidianNote: async (payload) => {

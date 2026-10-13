@@ -259,6 +259,82 @@ async function main() {
     return '逐字节比对真的会抓出差异';
   });
 
+  // ── f) 读回（2026-10-13「从留底恢复」补的只读通道）────────────────────────
+  //   为什么单独守：留底**读不回来**就不算备份。0.2.8 只做了 save + list，
+  //   于是那批 `.map` 在界面上等于不存在（用户只能自己去资源管理器翻目录）。
+  await check('f1 读回的与写进去的逐字节相同（含 CRLF / 中文 / 长行）', async () => {
+    const text = fakeMapText('readback') + '第二行中文🌏\r\n';
+    const w = await H.saveBaseMapSource(projPath, { name: 'readback.map', text });
+    const r = await H.readBaseMapSource(projPath, 'readback.map');
+    eq(r.success, true, 'success');
+    assert(r.text === text, '读回内容与写入不一致');
+    eq(r.bytes, Buffer.byteLength(text, 'utf8'), 'bytes');
+    eq(r.path, w.path, 'path 指向的不是同一份');
+    assert(typeof r.mtime === 'string' && r.mtime.length > 0, '缺 mtime');
+    return `${r.bytes} 字节，${path.basename(r.path)}`;
+  });
+
+  await check('f2 🔴 只读：读一次不改变内容与 mtime', async () => {
+    const before = await fsp.stat(path.join(srcDir, 'readback.map'));
+    const r1 = await H.readBaseMapSource(projPath, 'readback.map');
+    await new Promise((res) => setTimeout(res, 15));
+    const after = await fsp.stat(path.join(srcDir, 'readback.map'));
+    eq(after.mtimeMs, before.mtimeMs, 'mtime 被改了（说明不是只读）');
+    eq(after.size, before.size, '文件大小变了');
+    const r2 = await H.readBaseMapSource(projPath, 'readback.map');
+    assert(r1.text === r2.text, '两次读回内容不同');
+    return `mtime 未变（${new Date(before.mtimeMs).toISOString()}）`;
+  });
+
+  await check('f3 非 .map / 空名字被拒（不返回内容）', async () => {
+    const cases = ['', null, undefined, 'readback.txt', '项目.sitian'];
+    const threw = [];
+    for (const nm of cases) {
+      let msg = '';
+      let leaked = false;
+      try {
+        const r = await H.readBaseMapSource(projPath, nm);
+        leaked = !!(r && r.text);
+      } catch (e) { msg = e.message; }
+      assert(msg, `名字 ${JSON.stringify(nm)} 没被拒`);
+      assert(!leaked, `名字 ${JSON.stringify(nm)} 把内容读出来了`);
+      threw.push(msg.slice(0, 24));
+    }
+    return `${cases.length} 种都被拒`;
+  });
+
+  await check('f4 🔴 路径逃逸被挡（消毒 + resolve 双闸门），且绝不读到目录外', async () => {
+    // 在留底目录外放一个"诱饵"，确认任何写法都读不到它
+    const bait = path.join(DIR, 'evil.map');
+    await fsp.writeFile(bait, 'DIRECTORY-ESCAPE-BAIT', 'utf-8');
+    const attempts = ['../evil.map', '..\\..\\evil.map', '../../evil.map', path.join('..', 'evil.map')];
+    const results = [];
+    for (const a of attempts) {
+      let text = null, msg = '';
+      try { const r = await H.readBaseMapSource(projPath, a); text = r && r.text; } catch (e) { msg = e.message; }
+      assert(text !== 'DIRECTORY-ESCAPE-BAIT', `逃逸成功读到了目录外的文件：${a}`);
+      results.push(`${a} → ${msg ? '拒绝' : '未读到'}`);
+    }
+    // 反证：诱饵确实存在（否则上面的断言是空转）
+    eq(await fsp.readFile(bait, 'utf-8'), 'DIRECTORY-ESCAPE-BAIT', '诱饵不在（探针空转）');
+    return results.join('；');
+  });
+
+  await check('f5 不存在的名字明确报错（不回空串）', async () => {
+    let msg = '', got = null;
+    try { got = await H.readBaseMapSource(projPath, '从来没留过.map'); } catch (e) { msg = e.message; }
+    assert(/不存在/.test(msg), `没有给出"不存在"：${msg}`);
+    assert(got === null, `不该有返回值：${JSON.stringify(got)}`);
+    return msg;
+  });
+
+  await check('f6 非项目路径被拒（路径守卫与 save 侧一致）', async () => {
+    let msg = '';
+    try { await H.readBaseMapSource(path.join(DIR, '不是项目.txt'), 'readback.map'); } catch (e) { msg = e.message; }
+    assert(/不是司天项目文件/.test(msg), `没有命中路径守卫：${msg}`);
+    return msg;
+  });
+
   // ── 汇总 ───────────────────────────────────────────────────────────────
   const failed = results.filter(r => !r.ok);
   console.log('=== 原始底图来源备份单元测试（Node）===');

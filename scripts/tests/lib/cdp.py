@@ -114,6 +114,43 @@ def eval_json(cdp, expr, required=('fails',), desc=''):
     return True, obj
 
 
+def fetch_string(cdp, len_expr, slice_expr, chunk=524288, desc='', max_bytes=96 * 1024 * 1024):
+    """把一个**长字符串**从页面分块取回（典型用途：PNG 导出的 base64 dataUrl）。
+
+    🔴 为什么要分块（2026-10-13 新增）：`CDP` 客户端的读超时是 **15s**，而 `Runtime.evaluate`
+    一次把几 MB 的字符串经 WebSocket 传回来会直接撞超时（表现为 `WebSocketTimeoutException`，
+    不是任何一条有意义的断言）。真实 415 省底图的 PNG dataUrl 量级在 10MB 上下，必炸。
+    所以：先读 `.length`，再按 ~512KB 切片逐段取回，Python 侧拼好并**校验总长度**。
+
+    :param len_expr: 求值为字符串长度的 JS 表达式
+    :param slice_expr: `(i, j) -> JS 表达式`（返回 `s.slice(i, j)`）
+    :param chunk: 每次取回的字符数（base64 字符，不是字节）
+    :returns: 拼好的字符串
+    :raises RuntimeError: 任何一段取不回、返回非字符串、或拼回长度不符
+    """
+    total = cdp.eval(len_expr)
+    if isinstance(total, dict) and '__err__' in total:
+        raise RuntimeError(f'{desc}: 读长度求值异常 {str(total["__err__"])[:200]}')
+    if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+        raise RuntimeError(f'{desc}: 长度不是非负整数：{total!r}')
+    if total > max_bytes:
+        raise RuntimeError(f'{desc}: 字符串过大（{total} > {max_bytes} 上限），疑似取错了对象')
+    parts, i = [], 0
+    while i < total:
+        j = min(i + chunk, total)
+        piece = cdp.eval(slice_expr(i, j))
+        if isinstance(piece, dict) and '__err__' in piece:
+            raise RuntimeError(f'{desc}: 分块 [{i},{j}) 求值异常 {str(piece["__err__"])[:200]}')
+        if not isinstance(piece, str):
+            raise RuntimeError(f'{desc}: 分块 [{i},{j}) 返回非字符串（{type(piece).__name__}）')
+        parts.append(piece)
+        i = j
+    out = ''.join(parts)
+    if len(out) != total:
+        raise RuntimeError(f'{desc}: 拼回长度不符（{len(out)} != {total}）')
+    return out
+
+
 def skip_onboarding(cdp):
     """跳过首次引导（Onboarding overlay 全屏拦截点击）"""
     cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.trim() === '跳过'); if (b) b.click(); return !!b; })()")

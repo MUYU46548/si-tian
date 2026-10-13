@@ -419,7 +419,7 @@ def sub_static(cdp):
     for api in ('projectCreate', 'projectOpen', 'projectSave', 'projectList',
                 'projectPickDir', 'projectReveal', 'projectBackupNow', 'projectGitSnapshot',
                 'projectGetLastPath', 'projectCurrentPath',
-                'saveBaseMapSource', 'listBaseMapSources'):
+                'saveBaseMapSource', 'listBaseMapSources', 'readBaseMapSource'):
         if api not in preload:
             bad.append(f'preload 未暴露 {api}')
 

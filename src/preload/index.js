@@ -106,6 +106,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   //    而那份文件是"地形/河流/道路能否重新导入"的唯一凭据（真实丢过一轮，见 handler 头注）。
   saveBaseMapSource: (payload) => ipcRenderer.invoke('basemap-source-save', payload),
   listBaseMapSources: (payload) => ipcRenderer.invoke('basemap-source-list', payload),
+  // 只读：把一份留底**读回来**（2026-10-13「从留底恢复」）。
+  // 为什么补：留底只有"列清单"没有"读回来"时，UI 上等于不存在 —— 备份读不回来就不算备份。
+  readBaseMapSource: (payload) => ipcRenderer.invoke('basemap-source-read', payload),
   /** 只读：主进程侧「当前项目路径」（权威）—— 组件不必为拿路径去引 projectStore */
   projectCurrentPath: () => ipcRenderer.invoke('project-current-path'),
 

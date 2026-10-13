@@ -70,6 +70,9 @@ docs/_*
 # LOGO 选型临时产物（finals、variants、scans、backups、比较 HTML、atlas）
 build/logo-concepts/
 
+# P0「第一张图」证据图（从真实 415 省项目导出的 PNG 与应用截图，含用户地图数据，禁止提交）
+build/p0-first-map/
+
 # 遗留临时文件（MSYS / Electron 生成）
 NUL
 # 根目录下的 index.html 是 src/renderer/index.html 的旧副本，不再使用

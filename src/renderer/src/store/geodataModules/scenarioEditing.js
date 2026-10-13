@@ -2749,14 +2749,52 @@ export function createScenarioEditingModule(ctx) {
     return { ok: true, removed: removed.name || routeId };
   }
 
-  /** 改一个聚落（D 同批补口：聚落编辑此前也是组件直改 store，绕开撤销与落盘调度） */
-  function updateBaseMapBurg(baseMapKey, burgId, patch) {
+  /**
+   * 改一个聚落（D 同批补口：聚落编辑此前也是组件直改 store，绕开撤销与落盘调度）
+   *
+   * @param {object} [opts]
+   * @param {Array} [opts.materialize] 这个 id 在底图上**还不存在**时，先把这批聚落落进来再改
+   *   （2026-10-13「旧数据里的聚落」）。为什么需要：早期 `.map` 导入只把首都写进**剧本 markers**，
+   *   底图侧根本没有 `burgs`，组件于是把 markers 派生出来当城镇**显示** —— 用户看得见、点得开编辑器，
+   *   一按保存却报「这个聚落不在这张底图上」，等于**改不了**（2026-10-11 轮 1 留下的尾巴）。
+   *
+   *   🔴 与编辑**同一条 undo**：拆成两次 `execute` 后 Ctrl+Z 只退一半 —— 名字回退了、
+   *      多出来的城镇还在（"半吊子状态"比不做更坏）。所以登记与改写在同一个 redo 里。
+   */
+  function updateBaseMapBurg(baseMapKey, burgId, patch, opts = {}) {
     if (!guardWrite('编辑聚落').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改聚落' };
     const bm0 = baseMaps.value[baseMapKey];
     if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
     const list = bm0.burgs || [];
     const idx = list.findIndex((b) => b && b.id === burgId);
-    if (idx < 0) return { ok: false, rejected: 'not-found', message: `这个聚落不在这张底图上（id=${burgId}）` };
+    if (idx < 0) {
+      const seeds = (Array.isArray(opts.materialize) ? opts.materialize : []).filter((b) => b && b.id);
+      if (!seeds.length) return { ok: false, rejected: 'not-found', message: `这个聚落不在这张底图上（id=${burgId}）` };
+      const ids = new Set(seeds.map((b) => String(b.id)));
+      const patched = seeds.map((b) => (String(b.id) === String(burgId)
+        ? { ...b, ...(patch || {}), id: b.id }
+        : { ...b }));
+      const mkAfter = () => {
+        const cur = baseMaps.value[baseMapKey] || bm0;
+        // 幂等：同名 id 先剔除再追加（重复点保存不会越攒越多）
+        const kept = (cur.burgs || []).filter((b) => b && !ids.has(String(b.id)));
+        return { ...cur, burgs: [...kept, ...patched], updatedAt: new Date().toISOString() };
+      };
+      execute({
+        type: 'promote-legacy-burgs',
+        label: `登记旧数据里的 ${seeds.length} 个聚落`,
+        undo: () => {
+          const cur = baseMaps.value[baseMapKey] || bm0;
+          baseMaps.value = {
+            ...baseMaps.value,
+            [baseMapKey]: { ...cur, burgs: (cur.burgs || []).filter((b) => !(b && ids.has(String(b.id)))) },
+          };
+        },
+        redo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: mkAfter() }; },
+      });
+      saveScenarios();
+      return { ok: true, changed: true, materialized: seeds.length };
+    }
     const old = list[idx];
     const next = { ...old, ...(patch || {}), id: old.id };
     if (JSON.stringify(next) === JSON.stringify(old)) return { ok: true, changed: false };

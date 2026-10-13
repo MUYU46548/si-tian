@@ -79,6 +79,10 @@ def source_gates():
         (sc, 'store.updateBaseMapBurg(', '组件：改聚落走 store'),
         (wg, "'addBaseMapRiver'", '写口契约：河流已登记'),
         (wg, "'addBaseMapRoute'", '写口契约：道路已登记'),
+        # 2026-10-13：旧数据里的聚落（markers 派生）必须能被编辑 —— 整批登记 + 同一条 undo
+        (se, 'promote-legacy-burgs', 'store：登记旧聚落的命令（与编辑同一条 undo）'),
+        (se, 'opts.materialize', 'store：改聚落支持"就地登记"这一路'),
+        (sc, 'materialize: legacySeeds', '组件：旧数据聚落整批登记后再应用编辑'),
     ]:
         if needle not in src:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
@@ -90,7 +94,7 @@ def source_gates():
     if 'riverPaths' in sc:
         fails.append('🔴 组件里仍有本地 `riverPaths`（手画的河会再次"画完就丢"）')
 
-    notes.append('源码闸门 10 项 + 2 条红线' + ('全过' if not fails else f'缺 {len(fails)}'))
+    notes.append('源码闸门 13 项 + 2 条红线' + ('全过' if not fails else f'缺 {len(fails)}'))
     return fails, notes
 
 
@@ -187,6 +191,44 @@ def run(cdp):
        (s.baseMaps[KEY].burgs || [])[0].name === '用例城', JSON.stringify((s.baseMaps[KEY].burgs || [])[0]));
     s.redo();
     ok('b6 redo 再改回新名', (s.baseMaps[KEY].burgs || [])[0].name === '改名后');
+
+    // 🔴 b7 旧数据里的聚落（2026-10-13，2026-10-11 轮 1 留下的尾巴）
+    //    早期 `.map` 导入只把首都写进**剧本 markers**，底图侧没有 `burgs` → 组件把 markers
+    //    派生出来当城镇显示（看得见、点得开编辑器），可一按保存就报「这个聚落不在这张底图上」＝
+    //    **用户改不了**。现在第一次编辑时把整批登记成真城镇，并与这次编辑共用**一条 undo**。
+    s.baseMaps = { ...s.baseMaps, [KEY]: { ...s.baseMaps[KEY], burgs: [] } };
+    const seeds = [
+      { id: 'marker_0', name: '旧都甲', x: 10, y: 10, capital: 1, population: 0 },
+      { id: 'marker_1', name: '旧都乙', x: 30, y: 30, capital: 1, population: 0 },
+    ];
+    const legacy = s.updateBaseMapBurg(KEY, 'marker_0',
+      { ...seeds[0], name: '旧都甲·新', population: 500 }, { materialize: seeds });
+    ok('b7 登记成功且回报 materialized=2',
+       !!(legacy && legacy.ok && legacy.materialized === 2), JSON.stringify(legacy));
+    ok('b7 🔴 整批都登记了（只登记被编辑的那个会让其余几个从地图上消失）',
+       (s.baseMaps[KEY].burgs || []).length === 2
+       && (s.baseMaps[KEY].burgs || []).some((b) => b.id === 'marker_1'),
+       JSON.stringify((s.baseMaps[KEY].burgs || []).map((b) => b.id)));
+    ok('b7 被编辑的那个带着新值', (() => {
+      const b = (s.baseMaps[KEY].burgs || []).find((x) => x.id === 'marker_0');
+      return !!b && b.name === '旧都甲·新' && b.population === 500;
+    })(), JSON.stringify((s.baseMaps[KEY].burgs || []).find((x) => x.id === 'marker_0')));
+    const again = s.updateBaseMapBurg(KEY, 'marker_0', { name: '旧都甲·新' }, { materialize: seeds });
+    ok('b7 再存一次不重复登记（幂等）',
+       !!(again && again.ok) && (s.baseMaps[KEY].burgs || []).length === 2,
+       JSON.stringify({ n: (s.baseMaps[KEY].burgs || []).length, r: again }));
+    s.undo();
+    ok('b7 🔴 一条 undo 把「登记 + 编辑」一起退回（拆两条会留下半吊子状态）',
+       (s.baseMaps[KEY].burgs || []).length === 0,
+       JSON.stringify((s.baseMaps[KEY].burgs || []).map((b) => b.id)));
+    s.redo();
+    ok('b7 redo 整批回来', (s.baseMaps[KEY].burgs || []).length === 2);
+    s.baseMaps = { ...s.baseMaps, [KEY]: { ...s.baseMaps[KEY], burgs: [] } };
+    ok('b7 没有种子时仍明确报 not-found（不许静默）',
+       (() => {
+         const x = s.updateBaseMapBurg(KEY, 'marker_9', { name: 'x' });
+         return !!(x && x.ok === false && x.rejected === 'not-found');
+       })());
   }
 
   // ══ c) 端到端：组件入口 → store → 项目文件载荷 ════════════════════════════

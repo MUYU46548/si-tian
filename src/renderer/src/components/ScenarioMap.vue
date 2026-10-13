@@ -331,6 +331,15 @@
           </option>
         </select>
         <button @click="triggerMapImport" title="导入 .map 底图 —— 若同名底图已存在，只补数据、不动你已切好的省份"><Icon name="plus" :size="15"/></button>
+        <!-- 0.2.9（2026-10-13）：**从留底恢复** —— 导入过的 .map 原文一直留在
+             `<项目>.sitian.backups/basemap-sources/`（0.2.8 起），但此前只有"列清单"没有入口，
+             用户在界面上够不着（只能自己去资源管理器翻目录）。备份读不回来就不算备份。 -->
+        <button
+          data-testid="basemap-source-restore"
+          class="has-advanced"
+          title="从留底恢复底图 —— 列出项目备份目录里留存的原始 .map（导入时自动留底），选一份重新导入；同名底图只补缺，省份与归属不动"
+          @click="openSourceRestore"
+        ><Icon name="history" :size="15"/></button>
         <!-- B2（2026-10-11）：给**已经在用**的底图补 FMG 数据（高度图 / 河流 / 道路 / 城镇）。
              真实缘由：`desite` 是 2026-09-10 那次导入建的，而当时解析器只读 SVG 省份多边形，
              高度图/河流/道路根本没被读出来 —— 今天解析器能读全（实测 9975 格高度 + 160 河 + 496 路），
@@ -975,6 +984,41 @@
           <button @click="saveBurgEditor" class="burg-save-btn">保存</button>
           <button @click="closeBurgEditor">取消</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 从留底恢复（0.2.9，2026-10-13）：留底目录里的原始 .map 清单 + 逐份恢复。
+         只读入口：读清单/读原文都不改世界观数据；「用这份恢复」走的是与「导入 .map」**同一条**链。 -->
+    <div v-if="sourceRestoreOpen" class="bmsrc-panel" data-testid="basemap-source-panel">
+      <div class="bmsrc-header">
+        <span>从留底恢复底图</span>
+        <button class="bmsrc-close" data-testid="basemap-source-close" title="关闭" @click="sourceRestoreOpen = false"><Icon name="x" :size="13"/></button>
+      </div>
+      <div class="bmsrc-body">
+        <div v-if="sourceRestoreLoading" class="bmsrc-hint">正在读取清单…</div>
+        <div v-else-if="!sourceRestoreFiles.length" class="bmsrc-hint" data-testid="basemap-source-empty">
+          这里还没有留底的 .map —— 每次导入 .map 时，原文会自动留一份在项目备份目录里
+        </div>
+        <template v-else>
+          <div class="bmsrc-hint">
+            共 {{ sourceRestoreFiles.length }} 份（导入 .map 时自动留底，最近 10 份）。
+            恢复 = 拿它走一遍「导入 .map」：同名底图**只补缺**，你已切好的省份与归属不会被覆盖。
+          </div>
+          <div
+            v-for="f in sourceRestoreFiles"
+            :key="f.name"
+            class="bmsrc-row"
+            :data-testid="'basemap-source-row-' + f.name"
+          >
+            <div class="bmsrc-meta">
+              <span class="bmsrc-name" :title="f.path">{{ f.name }}</span>
+              <span class="bmsrc-sub">{{ fmtSrcBytes(f.bytes) }} · {{ fmtSrcTime(f.mtime) }}</span>
+            </div>
+            <button class="bmsrc-use" :disabled="sourceRestoreBusy" @click="restoreFromSource(f)">用这份恢复</button>
+          </div>
+        </template>
+        <div class="bmsrc-dir" v-if="sourceRestoreDir" :title="sourceRestoreDir">{{ sourceRestoreDir }}</div>
+        <div v-if="sourceRestoreMsg" class="bmsrc-msg" data-testid="basemap-source-msg">{{ sourceRestoreMsg }}</div>
       </div>
     </div>
   </div>
@@ -4107,18 +4151,117 @@ async function backupMapSourceFile(fileName, text) {
   }
 }
 
+// ── 从留底恢复（2026-10-13）────────────────────────────────────────────────
+// 留底从 0.2.8 起就一直在写，但**只有"列清单"没有入口** —— 用户在界面上根本够不着，
+// 那批 `.map` 等于不存在（只能自己去资源管理器翻目录）。**备份读不回来就不算备份。**
+const sourceRestoreOpen = ref(false);
+const sourceRestoreFiles = ref([]);
+const sourceRestoreDir = ref('');
+const sourceRestoreLoading = ref(false);
+const sourceRestoreBusy = ref(false);
+const sourceRestoreMsg = ref('');
+
+function fmtSrcBytes(n) {
+  const b = Number(n) || 0;
+  if (b >= 1048576) return `${(b / 1048576).toFixed(1)}MB`;
+  if (b >= 1024) return `${(b / 1024).toFixed(0)}KB`;
+  return `${b}B`;
+}
+
+function fmtSrcTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 打开留底清单（**只读**：只问项目路径与文件名清单，不动任何世界观数据） */
+async function openSourceRestore() {
+  sourceRestoreOpen.value = true;
+  sourceRestoreMsg.value = '';
+  sourceRestoreFiles.value = [];
+  sourceRestoreDir.value = '';
+  sourceRestoreLoading.value = true;
+  try {
+    const api = window.sitianAPI;
+    if (!api?.listBaseMapSources || !api?.projectCurrentPath) {
+      sourceRestoreMsg.value = '这个运行环境读不到留底（缺少 IPC）';
+      return;
+    }
+    const cur = await api.projectCurrentPath();
+    const projectPath = (cur && cur.success && cur.filePath) || '';
+    if (!projectPath) {
+      // 留底与项目文件放在一起 —— 没有已落盘的项目就没有留底目录
+      sourceRestoreMsg.value = '当前没有已落盘的项目文件 —— 留底与项目放在一起，所以现在读不到';
+      return;
+    }
+    const r = await api.listBaseMapSources({ projectPath });
+    if (!r || r.success === false) {
+      sourceRestoreMsg.value = `读清单失败：${(r && r.error) || '未知原因'}`;
+      return;
+    }
+    sourceRestoreFiles.value = Array.isArray(r.files) ? r.files : [];
+    sourceRestoreDir.value = r.dir || '';
+  } catch (e) {
+    sourceRestoreMsg.value = `读清单失败：${e.message}`;
+  } finally {
+    sourceRestoreLoading.value = false;
+  }
+}
+
+/**
+ * 用某一份留底走一遍导入链。
+ * 🔴 **不重复留底**（`__fromBackup`）：这一份本身就是留底，再写一份只会多占轮转位、
+ *    把更早的版本挤掉。其余行为与"选文件导入"完全同一条链（同名底图只补缺）。
+ */
+async function restoreFromSource(f) {
+  if (sourceRestoreBusy.value) return;
+  if (store.isReadOnly) {
+    sourceRestoreMsg.value = `只读：${store.readOnlyReason || '未打开项目'}`;
+    return;
+  }
+  sourceRestoreBusy.value = true;
+  sourceRestoreMsg.value = `正在读回 ${f.name}…`;
+  try {
+    const api = window.sitianAPI;
+    const cur = await api.projectCurrentPath();
+    const projectPath = (cur && cur.success && cur.filePath) || '';
+    const r = await api.readBaseMapSource({ projectPath, name: f.name });
+    if (!r || r.success === false) {
+      sourceRestoreMsg.value = `读回失败：${(r && r.error) || '未知原因'}`;
+      return;
+    }
+    // 导入链里可能弹确认框：先放开按钮，免得看着像卡死
+    sourceRestoreBusy.value = false;
+    await triggerMapImport({
+      source: { name: r.name, text: async () => r.text, __fromBackup: true },
+    });
+    sourceRestoreMsg.value = `已按留底「${r.name}」（${fmtSrcBytes(r.bytes)}）走完导入链 —— `
+      + '同名底图只补缺，你已切好的省份与归属不会被覆盖；详细结果见底部状态栏';
+  } catch (e) {
+    sourceRestoreMsg.value = `恢复失败：${e.message}`;
+  } finally {
+    sourceRestoreBusy.value = false;
+  }
+}
+
 async function triggerMapImport(opts = {}) {
   const refreshOnly = !!(opts && opts.refreshOnly);
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.map';
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
+  // 🔴 2026-10-13：「拿到一份 .map 之后」的处理体 = **唯一实现**，两条入口共用 ——
+  //    ① 用户选文件（下面建 input）；② 「从留底恢复」（`opts.source` = basemap-sources 里的原文）。
+  //    刻意不另写一条导入链：两条入口一旦分叉，「只有一条会留底 / 只有一条会补缺」
+  //    这类静默不一致迟早发生（本仓已踩过多次"两份实现"）。
+  const handle = async (file) => {
     if (!file) return;
     try {
       const text = await file.text();
-      // 先留底（在任何解析/写入之前）—— 解析失败也该留下这份素材
-      const srcNote = await backupMapSourceFile(file.name, text);
+      // 先留底（在任何解析/写入之前）—— 解析失败也该留下这份素材。
+      // ⚠️ 「从留底恢复」进来的这一份**不再留底**：它本身就是那份留底，
+      //    再写一份只会多占一个轮转位（`name-2.map`）、把更早的版本挤掉。
+      const srcNote = file.__fromBackup
+        ? '（用的就是项目备份目录里的留底，未重复留底）'
+        : await backupMapSourceFile(file.name, text);
       const parsed = parseMapFile(text);
       const name = file.name.replace(/\.map$/, '').replace(/\s*\d{4}-\d{2}-\d{2}.*$/, '');
       const json = buildScenariosJson(parsed, name, '当前');
@@ -4226,6 +4369,12 @@ async function triggerMapImport(opts = {}) {
       alert('导入失败: ' + err.message);
     }
   };
+  // 「从留底恢复」：把留底原文按 `{ name, text() }` 的形状喂进同一条链（不经过文件选择器）
+  if (opts.source) return handle(opts.source);
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.map';
+  input.onchange = (e) => handle(e.target.files[0]);
   input.click();
 }
 
@@ -6019,9 +6168,27 @@ function saveBurgEditor() {
   // D（2026-10-11）：原先这里 `Object.assign(burg, …)` + 手搓 `store.baseMaps = {...}` ——
   // 直改 store 活对象 = 绕开写闸门与撤销栈，而且"改了内存但没排保存"，
   // 只能碰巧赶上别的落盘（与手画道路同款缺陷）。现在走 store 的一条 undo。
-  const r = store.updateBaseMapBurg(baseMapKey.value, editingBurg.value.id, editingBurg.value);
+  //
+  // 🔴 2026-10-13「旧数据里的聚落」：早期 `.map` 导入只把首都写进**剧本 markers**，
+  //    底图侧没有 `burgs` —— 上面那个 computed 会把 markers 派生成城镇**显示**出来，
+  //    于是这些点看得见、点得开编辑器，一保存却报「这个聚落不在这张底图上」＝ 改不了。
+  //    现在第一次编辑它们时，把**整批**登记成真城镇再应用这次编辑：
+  //      · 只登记被编辑的那一个 → `burgs` 一旦非空，派生回退分支就不再兜底，
+  //        其余几个会**从地图上凭空消失**（用户会以为"保存把我的城镇弄没了"）；
+  //      · 整批登记 + 本次编辑 = **同一条 undo**（store 侧保证），Ctrl+Z 一并退回。
+  const legacySeeds = (baseMap.value?.burgs || []).length ? [] : burgs.value.map((b) => ({ ...b }));
+  const isLegacy = legacySeeds.some((b) => String(b.id) === String(editingBurg.value.id));
+  const r = store.updateBaseMapBurg(
+    baseMapKey.value, editingBurg.value.id, editingBurg.value,
+    isLegacy ? { materialize: legacySeeds } : {},
+  );
   if (r && r.ok) {
-    statusMsg(r.changed ? `已更新聚落「${editingBurg.value.name || ''}」` : '聚落没有改动');
+    if (r.materialized) {
+      statusMsg(`这些聚落以前只存在旧版数据里（剧本标注）—— 已把 ${r.materialized} 个登记成底图上的城镇，`
+        + `并保存了这次编辑「${editingBurg.value.name || ''}」（Ctrl+Z 可一并撤回）`);
+    } else {
+      statusMsg(r.changed ? `已更新聚落「${editingBurg.value.name || ''}」` : '聚落没有改动');
+    }
   } else {
     statusMsg(`聚落没改成：${(r && r.message) || '未知原因'}`);
   }
@@ -7240,6 +7407,111 @@ watch(baseMap, () => {
 .burg-editor-actions button.burg-save-btn {
   background: #5b21b6;
   border-color: #7c3aed;
+}
+
+/* 从留底恢复面板（0.2.9）—— 与聚落编辑器同一套观感，独立命名便于单独立样式 */
+.bmsrc-panel {
+  position: absolute;
+  top: 100px;
+  right: 16px;
+  width: 340px;
+  max-height: 60%;
+  display: flex;
+  flex-direction: column;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 12px;
+  padding: 16px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.bmsrc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.bmsrc-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.bmsrc-close:hover { color: #e2e8f0; }
+
+.bmsrc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.bmsrc-hint,
+.bmsrc-msg {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.bmsrc-msg { color: #cbd5e1; }
+
+.bmsrc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.bmsrc-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.bmsrc-name {
+  font-size: 12px;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bmsrc-sub {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.bmsrc-use {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid #7c3aed;
+  background: #5b21b6;
+  color: #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.bmsrc-use:disabled { opacity: 0.5; cursor: default; }
+
+.bmsrc-dir {
+  font-size: 10px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── 工具栏可读性（2026-10-09）───────────────────────────────────────────────
