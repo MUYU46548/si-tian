@@ -192,8 +192,10 @@ export const MEMORY_WRITE_CALLSITES = [
     fns: ['applyProvinceStroke', 'endProvinceStroke', 'applyProvinceLasso', 'fillProvinceRegion',
           'splitProvince', 'splitProvinceAlong', 'splitProvincesAlong', 'mergeProvinces', 'batchSubdivide',
           'addBrushProvince', 'clearProvinceLabels', 'applyProvinceOutline', 'rebuildCoastline',
-          'removeProvinceWithGrid', 'rebuildProvinceGrid'],
-    what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；统一经 blocked() 包装）' },
+          'removeProvinceWithGrid', 'rebuildProvinceGrid',
+          // P1（2026-10-13）：顶点拖动 = 目标省 + 共边邻省一起改（一次手势 = 一条 undo）
+          'updateProvincesBatch'],
+    what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；顶点拖动的批量形状写；统一经 blocked() 包装）' },
   { id: 9, file: 'src/renderer/src/store/geodataModules/channelBrush.js',
     fns: ['beginChannelStroke', 'endChannelStroke'],
     what: '高度图逐格通道笔刷（文化/宗教）：落笔（涂抹期就改内存数组）与抬手提交各一个守卫' },

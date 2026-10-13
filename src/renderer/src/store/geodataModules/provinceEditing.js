@@ -691,6 +691,55 @@ export function createProvinceEditingModule(ctx) {
   }
 
   // ============================================================
+  // P1（2026-10-13）：顶点编辑 —— **一批**省份的形状一起改（一次拖动 = 一条 undo）
+  // ============================================================
+
+  /**
+   * 把若干省份的形状补丁**作为一条命令**写下去。
+   *
+   * 为什么必须是一条：拖动共边顶点时，动的是「目标省 + 跟着走的邻省」两到三家，
+   * 而在用户心里那是**一件事**。若沿用 `updateBaseProvince`（一次一个省），
+   * 拖一下要按 N 次 Ctrl+Z 才退得回去 —— 与 0.2.7 折线切割"每省一条 undo"同类；
+   * 那次的结论是**如实告诉用户**，但形状微调比切分频繁得多，如实告知也没法用，所以做成一条。
+   *
+   * undo 用**整表快照**（`setTerrain(key, terrain0)`）：与描轮廓/合并同一条路 ——
+   * 差量还原在"几个省的环同时变了"时最容易漏（本项目「撤销看着执行了、数据没变」踩过两次）。
+   *
+   * @param {Array<{id:string, patch:object}>} patches 每个 = 「改哪个省 + 它的补丁」
+   * @param {{label?:string}} [opts]
+   * @returns {{changed:number, message?:string, rejected?:string}}
+   */
+  function updateProvincesBatch(key, patches, opts = {}) {
+    const label = (opts && opts.label) || '编辑省界';
+    if (isRO()) return blocked(label);
+    if (!bm(key)) return { changed: 0, rejected: 'no-basemap', message: `底图不存在：${key}` };
+    const terrain0 = provincesOf(key);
+    if (!terrain0.length) return { changed: 0, rejected: 'empty', message: '这张底图还没有省份' };
+    // 同一省份出现多次 → 合并补丁（后写的字段赢），不产生两条命令
+    const byId = new Map();
+    for (const p of (patches || [])) {
+      if (!p || !p.id || !p.patch) continue;
+      byId.set(p.id, { ...(byId.get(p.id) || {}), ...p.patch });
+    }
+    if (!byId.size) return { changed: 0, message: '没有要改的省份' };
+    let changed = 0;
+    const next = terrain0.map((p) => {
+      const patch = byId.get(p.id);
+      if (!patch) return p;
+      changed++;
+      return normalizeProvince({ ...p, ...patch });
+    });
+    if (!changed) return { changed: 0, rejected: 'not-found', message: '这些省份不在该底图上（id 对不上）' };
+    execute({
+      type: 'province-shape-batch',
+      label,
+      undo: () => setTerrain(key, terrain0),
+      redo: () => setTerrain(key, next),
+    });
+    return { changed };
+  }
+
+  // ============================================================
   // 笔刷 / 套索（一笔 = 一条 undo；**矢量布尔**，不经网格）
   // ============================================================
 
@@ -1818,6 +1867,8 @@ export function createProvinceEditingModule(ctx) {
     // F（2026-10-11）：用新 .map 的海岸线重建现有省份的外环（只裁不加，一条 undo）
     rebuildCoastline, rebuildCoastlineFromBaseMap, buildLandMulti,
     fillProvinceRegion, splitProvince, splitProvinceAlong, mergeProvinces, batchSubdivide,
+    // P1（2026-10-13）：顶点编辑 —— 目标省 + 跟随的邻省形状一起改（一次拖动 = 一条 undo）
+    updateProvincesBatch,
     previewSplitAlong, planBatchSeeds,
     addBrushProvince, removeProvinceWithGrid, clearProvinceLabels,
     // 删除省级联用（**不 execute**：由删除命令把这一步包进同一条 undo）

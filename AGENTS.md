@@ -22,9 +22,9 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**101 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**102 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**25 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**26 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -72,7 +72,7 @@
 - **🔴 剧本视图的省份右键菜单在真机上打不开（2026-10-07 修；回归 `test_88`）**: `contextMenu.value = { show: true … }` 只出现在 `onCanvasClick` 的 `if (event.button === 2)` 分支里，而**浏览器对右键根本不派发 `click`**（只派发 `contextmenu` / `auxclick`）——当时唯一的 contextmenu 监听器是 `(e) => e.preventDefault()`，**只拦不弹** → 真机上右键菜单整片打不开。**失效后果据实说（别夸大）**：菜单里「重命名」「更改生物群系」在属性面板另有入口、「删除」在「更多 → 删除 (E)」工具另有入口，**真正只剩这个菜单有的能力是「复制省份」**；但"右键点了没反应"仍是真缺陷（用户第一反应就是右键）。修法：抽出唯一实现 `openProvinceContextMenu(event)`（保留 `preventDefault`，否则会同时弹浏览器原生菜单），注册到**真正的 `contextmenu` 监听器**；`click{button:2}` 分支保留给合成事件（行为不变）。⚠️ **为什么长期没被发现**：CDP 用例里自己 `dispatchEvent(new MouseEvent('click', {button:2}))` 就能把菜单"打开"——**合成事件比真实浏览器宽松**，行为断言与源码守卫双双为真；`test_88` 因此**只用真实 `contextmenu` 事件**做判据（反向验证：把监听器退回「只 preventDefault」→ f0+f1 双红，报的正是「真机上右键功能整片点不到」）。
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
 - **大文件警告**: **ScenarioMap.vue ≈5356 行（全仓最大，2026-09-23 起）**，PlanetMap.vue 约 3943 行（22 个 composables 的装配体），AreaMap / GalaxyMap / InteriorView / NodeDetailPanel / SettingsPanel 均 >1500 行——**读片段勿整读**。行星图绘制与交互逻辑在 `composables/planetDrawing.js`、`planetInteractions.js`、`planetHitTest.js`
-- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程侧**：`.sitian` 原子写/备份轮转/会话基线/路径守卫 + `index.js` 模块接线不变式 + `config.js` 读回校验 + **git 同步/拉取真端到端**（本地 bare 仓库当远程）+ **令牌加密保管**（假加密注入：磁盘无明文、跨实例可取回）——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘、主进程接线与 git）；② `scripts/tests/cases/` **101 个** CDP 用例（Edge 驱动），全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例；**每个用例前还会打开 harness 基线项目**（决策 1 终态下无项目=只读，用例必须跑在有项目的状态，见写闸门条目）。**数据源与真实库解耦（2026-09-21）**：默认读 `scripts/tests/fixtures/vault-fixture/*.json`（合成 fixture，带「不得残留真实专名」硬闸门），用例只依赖 fixture
+- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程侧**：`.sitian` 原子写/备份轮转/会话基线/路径守卫 + `index.js` 模块接线不变式 + `config.js` 读回校验 + **git 同步/拉取真端到端**（本地 bare 仓库当远程）+ **令牌加密保管**（假加密注入：磁盘无明文、跨实例可取回）——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘、主进程接线与 git）；② `scripts/tests/cases/` **102 个** CDP 用例（Edge 驱动），全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例；**每个用例前还会打开 harness 基线项目**（决策 1 终态下无项目=只读，用例必须跑在有项目的状态，见写闸门条目）。**数据源与真实库解耦（2026-09-21）**：默认读 `scripts/tests/fixtures/vault-fixture/*.json`（合成 fixture，带「不得残留真实专名」硬闸门），用例只依赖 fixture
 - **项目面板 + 实体向导（Phase 2.1/2.2/2.3，2026-09-18/19）**: `components/ProjectPanel.vue`（工具栏「项目」按钮 → `panelsStore.toggle('project')`；项目新建/打开/保存/备份/关闭 + **「新建并导入知识库内容」**（终态下把既有内容带进项目的唯一路径，走 `projectStore.createProjectFromVault`，一条 undo）+ 实体树（改名 / 两段式删除 / 拖动改父级 / 详情区父级下拉，全部经 projectStore 走 undo）+ 快照回滚）+ `components/EntityCreator.vue`（**C 方案分派式向导**：表单「名称/层级/父级」→ 层级按父级过滤（`CHILD_LAYERS`）→ 创建后**结果卡片**（该层级分派步骤 + 「前往编辑」）；画布交互复用各视图现有工具）。两者只依赖 projectStore（面板另可读 canvasBridge 的 `describe()` 做导入说明），不引用 geodata/sitianAPI（test_48 静态断言守）。⚠️ 挂载语义：面板由 `v-if="panelsStore.isOpen('project')"` 控制挂载，**不要**给 PanelShell 传 `open`（默认 true；传了会因父级未传值而默认 false → 面板静默空白），`title` 是 PanelShell 必填 prop。⚠️ 面板/向导是**浅色卡面**（`--planet-editor-bg` 两套主题都是白）：文字强调色必须用深色（`#1c4fa1`/`#1b6b3a`/`#b3261e`/`#2f5fd0`），浅色系在白底上对比度只有 1.4~1.6 = 看不见
 - **单一写闸门（Phase 2，2026-09-18；终态 2026-09-20 落地）**: `store/writeGate.js` = 世界观数据**落盘写**的唯一判定入口（`guardWrite()` + `isReadOnly`）。三模式 `project` / `legacy` / `readonly`，对应决策「有项目文件用项目、无项目回退 Obsidian，但**无项目必须只读**」——该终态已翻开：`READONLY_WITHOUT_PROJECT = true`。**11 条落盘入口全部已守 + 只读态 UI 灰禁已落**，test_47 读源码校验（含只读灰禁子测试）。两条伴随纪律：① **项目文件的生命周期操作（新建/打开/保存/备份）不受本闸门管辖** —— 否则「无项目 → 只读 → 禁新建」死锁，第一个项目永远打不开（ProjectPanel 的「新建」必须保持可用）；② **回归基线必须跑在「已打开项目」态**：`run_tests.py` 每个用例前用当前知识库内容播种并打开一个 mock 基线项目（`lib/helpers.py#open_harness_project`，含 `window.__probe` 探针），既有落盘断言一律改读**项目文件**而非 legacy IPC。🔴 **内存编辑也已收口（2026-09-21）**：闸门原来只守上面 11 条**落盘入口**，画布编辑（行星笔刷 / 区域 / 内部家具 / 剧本染色与导入）在只读态仍能改内存 → 改动看起来生效却永不落盘 = 静默丢数据。现在三层收口：`undo.js#execute()` 过 `guardWrite`（覆盖所有走 undo 栈的编辑）+ **「先改内存再 execute」的 geodata 节点函数（updateNode/removeNode/坐标/锁定/id 变更）在函数首行守卫**（只守 execute 时拒绝发生在数据已改之后）+ 不走 execute 的直接写（内部 addFloor/参考图、河流懒建、剧本导入）逐个补守卫；被拒时 `writeGate.lastRejection` → App.vue 状态栏提示去处。契约清单 `MEMORY_WRITE_CALLSITES` 由 test_54 读源码校验
   - 🔴 **契约已改为「函数级」（2026-09-24，本文件最重要的近期变更）**：旧清单是**文件级**的（条目只写 `marker: 'guardWrite('`），测试只判「这个文件里出现过 `guardWrite(`」→ **一个文件里只要有一个守卫，整行就算通过**，同文件里其余裸奔的写函数**永远查不出来**（漏报型假绿，比误报隐蔽得多）。实测代价：`interior.js` 13 个函数只有 3 个有守卫、`mapDataEditing.js` 有 26 处「先改内存后 execute」，而 `test_47`/`test_54` 双双全绿。现在条目登记到 `fns: [...]`（**8 条 / 53 个函数**），`test_54` 用 `_function_body()` 截取**每个函数体**后逐个断言 `guardWrite(` 或 `blocked(`。
@@ -346,6 +346,31 @@ interface GeoNode {
   一保存却报"不在这张底图上"＝**改不了**。`updateBaseMapBurg(key, id, patch, { materialize })` 在找不到 id 时把
   **整批**登记成真 burg 再应用这次编辑，且与编辑**共用一条 undo**（拆两条 = "名字退了、城镇还在"的半吊子状态）。
   ⚠️ 只登记被编辑的那一个 → `burgs` 一旦非空，组件的 markers 派生回退分支就不再兜底，**其余城镇会从地图上消失**。
+- **0.3.0「P1 顶点编辑」：框选多选 + 相邻省共享边界重算（2026-10-13；回归 `test_102` + Node `test_vertex_sharing.js` + 真实演练 `drill_p1_vertex_marquee.py`）**：
+  v1.9 头号开发件。暮雨在两方案里拍了**甲**：拖动共边顶点时**邻省的同位顶点跟着一起走** ——
+  边界线整体移动（A 缩多少 B 就涨多少），**无缝、无压叠、不碰别的省**，且**一次拖动 = 一条 Ctrl+Z**。
+  - **做法**：省份的"共边"在数据里就是**两端坐标恰好相同**（网格派生 / FMG 导入 / 骨架吸附三处都如此），
+    所以 `utils/vertexSharing.js`（纯函数）按**坐标量化格**（`VERTEX_QUANTUM = 1e-3`）建全底图索引 →
+    `findLinkedVertices` 找出邻省同位顶点 → **差量平移**（`shiftPoints`，不是写同一个绝对坐标：
+    两侧本来就有 1e-9 级尾差时，各自动各自的分量，重合关系不会被磨掉）。**不做任何布尔运算** ——
+    本仓在布尔路径上踩过的坑（留缝/压叠/退化抛错）在这条路上一个都不会遇到。
+  - **写口**：新增 `provinceEditing.updateProvincesBatch`（一次手势 = **一条**命令，整表快照 undo；
+    已登记进 `MEMORY_WRITE_CALLSITES` id 8）。旧的 `updateBaseProvince`（一次一个省）保留给老路径。
+  - **框选**：`Shift + 空白处拖动`（**刻意不占用普通拖动** —— 顶点模式下拖空白仍是平移，手感不变；
+    与 PlanetMap 的框选手势一致）。选中集是**活动环上的下标**，所以换省份/换环必须清空
+    （watch 里做了）—— 不清就会"拖这个省、改那个省"。
+  - 🔴 **真实数据实测（415 省 / 27067 点）**：共边顶点 **2332 个**（858 个共享簇）→ 前提成立；
+    建索引 **34.6ms**（按 terrain 引用缓存，一次拖动建一次）；一次拖动**联动 8 个省**；
+    全图净面积漂移 **0.03 / 634574**；一次 Ctrl+Z 全还原。
+    ⚠️ **真实共边顶点并非逐位相同**（858 簇里只有 **25 簇** bit-exact，其余差 ~1e-12，SVG 解析/JSON 往返的尾差）——
+    所以判据写的是"**缝没有变大**（残差 ≤1e-9 世界单位）"，不是"严格相等"；差量联动正是为这种数据设计的。
+  - 🔴 **两个只在写测试时才暴露的坑**：① `buildLinkedPreview` 首版对同一条环的每个联动顶点各算一次
+    `shiftPoints` 然后**覆盖**同组结果 → 整条环只有最后一个顶点动（test_102 当场量出"4 个同位顶点只动了 1 个"）。
+    **必须先按环把位移累积起来再整体平移一次**。② 真实数据下 `terrain` 数组每次写入都会换引用，
+    探针里缓存成常量会读到旧数组 → "拖动改了数据"永远判否（假红）。
+  - **仍未做**：一侧有点、另一侧没点的**共边段**配不到同位顶点（那段拖了会留缝）。
+    可行性评估 `docs/P1_BATCH_BOUNDARY_OPS.md`：只有「共享边两侧同时重采样」值得做下一件，
+    整体平移/缩放、批量简化、批量吸附、拉直/平滑都不建议单独做（会必然违反"无缝"或只是整理类需求）。
 - 其余 60+ 条陷阱见 Hermes skill `sitian-development`（含 composable 接线、getState 解包、SFC 标签丢失、发布验收、测试环境），本文件不重复
 
 ## 术语表 (Glossary)

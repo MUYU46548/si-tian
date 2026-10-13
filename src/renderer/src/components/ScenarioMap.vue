@@ -25,7 +25,7 @@
         <button
           :class="{ active: tool === 'vertex' }"
           @click="setTool('vertex')"
-          title="顶点编辑 (G) — 拖拽顶点改形状；多环省份在右侧属性面板切换活动环"
+          title="顶点编辑 (G) — 拖拽顶点改形状；Shift+拖动可框选一批顶点（拖共边顶点时，相邻省份的共享边界自动跟着一起走，无缝无压叠）；多环省份在右侧属性面板切换活动环"
         >⬡改形状</button>
         <button
           class="more-toggle"
@@ -695,7 +695,8 @@
       <span v-if="drawPoints.length > 0" class="draw-hint">绘制中: {{ drawPoints.length }} 个点 (双击完成, Esc 取消)</span>
       <span v-if="splitStep > 0" class="draw-hint">拆分: 点击第 {{ splitStep + 1 }} 个点</span>
       <span v-if="mergeStep > 0" class="draw-hint">合并: 点击第 {{ mergeStep + 1 }} 个省份</span>
-      <span v-if="vertexEditMode" class="draw-hint">顶点编辑：拖拽顶点 | 点击边插入 | 右键顶点删除</span>
+      <span v-if="vertexEditMode" class="draw-hint" data-testid="vertex-hint">顶点编辑：拖拽顶点 | Shift+拖动框选一批（拖共边顶点时邻省边界跟着走） | 点击边插入 | 右键顶点删除</span>
+      <span v-if="vertexEditMode && vertexSelection.length" class="draw-hint" data-testid="vertex-sel-hint">已选中 {{ vertexSelection.length }} 个顶点（Esc 取消）</span>
       <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
       <span v-if="snapFeedback" class="snap-feedback" :class="{ edge: snapFeedback === '吸附到边界' }">{{ snapFeedback }}</span>
       <span v-if="tool === 'vertex' && activeVertexIdx >= 0" class="draw-hint">切线手柄：拖拽圆点调曲率（Alt 临时直线）</span>
@@ -1073,6 +1074,11 @@ import {
 import { PROVINCE_PALETTE, nextProvinceColor, SEA_FILL, SEA_EDGE } from '../utils/scenarioPalette';
 // B 方案（批量铺底）：画布里要**实时预览** Voronoi 边界，所以直接复用纯几何层（与 store 同一份实现）
 import { voronoiCells } from '../utils/voronoiBatch';
+// P1（2026-10-13）顶点编辑：**共边顶点**的配对与联动 —— 拖动共边上的顶点时，邻省的同位顶点
+// 一起走（方案甲：边界整体移动、无缝无压叠；只认坐标不认拓扑，不做布尔运算）。
+import {
+  buildCoincidentIndex, findLinkedVertices, shiftPoints, verticesInBox,
+} from '../utils/vertexSharing';
 // 全局状态栏单例：projectStore 把「.sitian 真正落盘」的成败写在这里（见 saveDisplay）
 import { useStatusBarState } from '../composables/useStatusBar';
 
@@ -1481,7 +1487,18 @@ const draggingVertex = ref(null); // { provId, vertexIdx }
 const draggingHandle = ref(null); // { provId, vertexIdx, which: 'in'|'out' }（P0-T1 切线手柄）
 const hoveredVertex = ref(null);
 // 拖拽中的临时顶点（仅做渲染预览，不写 store → undo 快照保持正确）
-const dragPreview = ref(null); // { provId, points }
+// `linked` = 跟随一起移动的邻省环（P1）：`[{ provId, ringIdx, points }]`，同样只做预览
+const dragPreview = ref(null); // { provId, points, linked?: Array<{provId, ringIdx, points}> }
+
+// ── P1（2026-10-13）顶点多选与共边联动 ────────────────────────────────────────
+// vertexSelection：**活动环上**被框选的顶点下标（顶点编辑始终作用于"活动环"，见 ringPointsOf）
+const vertexSelection = ref([]);
+// vertexMarquee：框选矩形（世界坐标；Shift+空白处拖动起框）
+const vertexMarquee = ref(null); // { x0, y0, x1, y1 }
+let vertexMarqueeStart = null;
+// 一次拖动的联动上下文（在 mousedown 时算一次，mousemove 复用 —— 每帧重算索引会拖垮帧预算）
+let vertexLinkCtx = null; // { built, links, basePoints, refProvIdx, refRingIdx }
+
 
 // 网格吸附（P0-T3）
 const GRID_STEP = 50;                // 世界坐标网格间距，与 drawBackground 网格线一致
@@ -1790,6 +1807,11 @@ function setTool(t) {
   mergeProvId.value = null;
   vertexEditMode.value = (t === 'vertex');
   draggingVertex.value = null;
+  // P1：换工具就丢掉顶点框选与联动上下文（否则换回顶点工具时会带着一批看不见的选中顶点）
+  vertexSelection.value = [];
+  vertexMarquee.value = null;
+  vertexMarqueeStart = null;
+  vertexLinkCtx = null;
   draggingHandle.value = null;
   activeVertexIdx.value = -1;
   dragPreview.value = null;
@@ -2415,16 +2437,27 @@ function ringPointsOf(prov, idx = activeRingIdx.value) {
   return r ? r.points : null;
 }
 
-/** 把「活动环」的新顶点写回省份（主环 → points；额外环 → extraRings[i-1]），返回可 merge 的补丁 */
-function writeRingPoints(prov, idx, points) {
+/**
+ * 把**多个环**的新顶点一次性写回省份（P1：顶点拖动可能同时牵涉一个省的另一个环 ——
+ * 例如洞环与外环共用一个顶点）。
+ * @param {Map<number, Array>} ringChanges ringIdx → 新顶点数组
+ */
+function writeRingsPatch(prov, ringChanges) {
   const rings = provinceRings(prov).map((r) => ({ points: r.points, kind: r.kind, fromGrid: r.fromGrid }));
   if (!rings.length) return null;
-  // 与 ringPointsOf 同口径：越界一律落到主环（否则手柄画在环 0、写回却被丢弃 = 静默 no-op）
-  const i = idx >= 0 && idx < rings.length ? idx : 0;
-  rings[i] = { ...rings[i], points };   // 形状被手工改过 → 不再是网格派生的，去掉 fromGrid
+  for (const [idx, points] of ringChanges) {
+    // 与 ringPointsOf 同口径：越界一律落到主环（否则手柄画在环 0、写回却被丢弃 = 静默 no-op）
+    const i = idx >= 0 && idx < rings.length ? idx : 0;
+    rings[i] = { ...rings[i], points };   // 形状被手工改过 → 不再是网格派生的，去掉 fromGrid
+  }
   const patch = shapePatch(rings);
   // fromGrid 显式给出：手工改过的环不再算「网格派生」→ 渲染端不再对它做平滑
   return { kind: patch.kind || 'land', points: patch.points, extraRings: patch.extraRings, fromGrid: !!patch.fromGrid };
+}
+
+/** 把「活动环」的新顶点写回省份（主环 → points；额外环 → extraRings[i-1]），返回可 merge 的补丁 */
+function writeRingPoints(prov, idx, points) {
+  return writeRingsPatch(prov, new Map([[idx, points]]));
 }
 
 /** 省份的全部环的顶点数组（去响应式）——多环感知的度量 / 小地图 都走它 */
@@ -2716,6 +2749,8 @@ function onMouseDown(event) {
           const dx = vx(p) - world.x;
           const dy = vy(p) - world.y;
           if (Math.sqrt(dx * dx + dy * dy) < threshold) {
+            // P1：点中的顶点若已在选中集里 → **整组一起搬**；点中别的 → 单选它（旧行为）
+            if ((vertexSelection.value || []).indexOf(i) < 0) vertexSelection.value = [i];
             draggingVertex.value = { provId: prov.id, vertexIdx: i };
             activeVertexIdx.value = i;
             // 旧数据没有控制点：首次选中顶点时自动生成平滑切线（走 undo 栈）
@@ -2726,10 +2761,22 @@ function onMouseDown(event) {
               ));
               showSnapFeedback('已生成贝塞尔切线');
             }
+            // 联动上下文**在这之后**取：上面那次切线写入会换掉省份对象，
+            // 早取会拿到没有控制点的旧点集，拖动预览就会把切线丢掉。
+            vertexLinkCtx = beginVertexLinkContext(currentProvince() || prov, i);
             render();
             canvas.value.style.cursor = 'grabbing';
             return;
           }
+        }
+        // P1：Shift + 空白处拖动 = **框选一批顶点**（与 PlanetMap 的框选手势一致）。
+        // 刻意不占用普通拖动 —— 顶点模式下拖空白仍然是平移，手感不变。
+        if (event.shiftKey) {
+          vertexMarqueeStart = world;
+          vertexMarquee.value = { x0: world.x, y0: world.y, x1: world.x, y1: world.y };
+          canvas.value.style.cursor = 'crosshair';
+          render();
+          return;
         }
       }
     }
@@ -2740,6 +2787,16 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
+  // P1：框选顶点（Shift + 空白处拖动）—— 只画框，不碰数据；抬手时才算命中了哪些顶点
+  if (vertexMarqueeStart) {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    vertexMarquee.value = {
+      x0: vertexMarqueeStart.x, y0: vertexMarqueeStart.y, x1: world.x, y1: world.y,
+    };
+    render();
+    return;
+  }
   // A：折线切割的橡皮筋（只画一段虚线，不做布尔 —— 预览的布尔只在"点了一个点"后算一次）
   if (tool.value === 'polySplit') {
     const rect = canvas.value.getBoundingClientRect();
@@ -2857,15 +2914,21 @@ function onMouseMove(event) {
       const snapped = resolveSnapPoint(world, event.shiftKey);
       if (snapped.snapped) setSnapMarker(snapped.x, snapped.y, snapped.kind);
       // 只更新临时预览，不写 store（拖拽结束再一次性提交，保证 undo 可回滚）
+      //
+      // P1（2026-10-13）：**按下时是哪几个顶点被选中，就整组一起平移**；
+      // 选中里那些与邻省共边的顶点，邻省的同位顶点按同一 Δ 跟走（方案甲）。
+      // 基准点取 `mousedown` 那一刻的快照（`vertexLinkCtx.basePoints`）——
+      // 不能用 `resolvePoints()`，拖动中它返回的就是上一帧的预览，会把位移累加。
+      const base = (vertexLinkCtx && vertexLinkCtx.provId === provId)
+        ? vertexLinkCtx.basePoints
+        : resolvePoints(prov);
+      const baseP = base[vertexIdx];
+      const delta = { x: snapped.x - vx(baseP), y: snapped.y - vy(baseP) };
+      const sel = effectiveVertexSelection(vertexIdx);
       dragPreview.value = {
         provId,
-        points: resolvePoints(prov).map((p, i) => {
-          if (i !== vertexIdx) return p;
-          const next = { x: snapped.x, y: snapped.y };
-          if (p.controlIn) next.controlIn = p.controlIn;
-          if (p.controlOut) next.controlOut = p.controlOut;
-          return next;
-        }),
+        points: shiftPoints(base, sel.map((i) => ({ idx: i, dx: delta.x, dy: delta.y }))),
+        linked: buildLinkedPreview(prov, delta),
       };
       render();
     }
@@ -2897,6 +2960,31 @@ function onMouseMove(event) {
 }
 
 function onMouseUp(event) {
+  // P1：框选收口 —— 命中的顶点进选中集（不做任何写入）
+  if (vertexMarqueeStart) {
+    const box = vertexMarquee.value;
+    vertexMarqueeStart = null;
+    vertexMarquee.value = null;
+    const prov = currentProvince();
+    const points = prov ? resolvePoints(prov) : null;
+    if (prov && points && box) {
+      const picked = verticesInBox(points, box).filter((i) => i >= 0 && i < points.length);
+      vertexSelection.value = picked;
+      if (picked.length) {
+        const terrain = baseMap.value?.terrain || [];
+        const found = findLinkedVertices(
+          terrain, { provIdx: provIdxOf(prov), ringIdx: activeRingIdx.value }, picked, coincidentIndexFor(terrain),
+        );
+        statusMsg(`框选到 ${picked.length} 个顶点`
+          + (found.sharedCount ? `，其中 ${found.sharedCount} 个与邻省共边 —— 拖动它们时邻省的边界会跟着一起走` : '（都不与邻省共边，拖动只改这一个省）')
+          + '；Esc 取消选择');
+      } else {
+        statusMsg('框选：框里没有顶点（要框住紫色圆点）');
+      }
+    }
+    render();
+    return;
+  }
   if (freeTraceActive) {
     freeTraceActive = false;
     const pts = freeTrace || [];
@@ -2964,15 +3052,37 @@ function onMouseUp(event) {
     draggingVertex.value = null;
     dragPreview.value = null;
     clearSnapMarker();
+    const linkCtx = vertexLinkCtx;
+    vertexLinkCtx = null;
     // 拖拽结束后一次性写入 store：redo 写坐标、undo 回滚到拖拽前
     if (preview && preview.provId === provId) {
       const prov = baseMap.value?.terrain?.find(p => p.id === provId);
       const patch = prov ? writeRingPoints(prov, activeRingIdx.value, preview.points) : null;
-      // 🔴 压叠闸门（2026-10-11 收口「顶点编辑造成的压叠不在任何闸门范围内」）：
+      // P1（2026-10-13）：跟随移动的邻省补丁 —— 与目标省**同一条命令**（一次拖动 = 一条 undo）
+      const linkedPatches = collectLinkedPatches(preview);
+      // ① 邻省先过闸门：它们只会"涨"，但仍可能涨到**第三个**省身上（罕见）。
+      //    顺序不能反 —— 目标省那道闸门会当场回一句「已应用顶点移动」，
+      //    先过后拒会留下自相矛盾的两句话。
+      const linkedOk = !linkedPatches.length || confirmVertexBatchOverlap(linkedPatches);
+      // ② 目标省的压叠闸门（2026-10-11 收口「顶点编辑造成的压叠不在任何闸门范围内」）：
       //    判据放在**写之前** —— 拖到一半弹窗更坏（手还在拖），但写完之后再问就得靠撤销兜底；
       //    在抬手这一帧先量、问过再写，用户说"不"就什么都不发生，形状原地保持拖动前。
-      if (patch && confirmVertexMoveOverlap(prov, { ...prov, ...patch })) {
-        store.updateBaseProvince(baseMapKey.value, provId, patch);
+      if (linkedOk && patch && confirmVertexMoveOverlap(prov, { ...prov, ...patch })) {
+        const patches = [{ id: provId, patch }]
+          .concat(linkedPatches.map((x) => ({ id: x.provId, patch: x.patch })));
+        const movedCount = (linkCtx && linkCtx.selection.length) || 1;
+        const r = store.updateProvincesBatch(baseMapKey.value, patches, {
+          label: patches.length > 1
+            ? `移动 ${movedCount} 个顶点（共边邻省 ${patches.length - 1} 个跟随）`
+            : `移动 ${movedCount} 个顶点`,
+        });
+        if (r && r.changed && patches.length > 1) {
+          statusMsg(`已移动 ${movedCount} 个顶点：${patches.length - 1} 个邻省的共边跟着一起走（边界整体移动，`
+            + '无缝无压叠）—— 一次 Ctrl+Z 一并撤回'
+            + (linkCtx && linkCtx.truncated ? ' ⚠️ 共边顶点过多，只联动了前 24 个' : ''));
+        } else if (r && r.changed === 0 && r.message) {
+          statusMsg(`省界没改成：${r.message}`);
+        }
       }
     }
     render();
@@ -3366,6 +3476,11 @@ function onKeyDown(event) {
     dragPreview.value = null;
     draggingHandle.value = null;
     activeVertexIdx.value = -1;
+    // P1：Esc 同时退出顶点框选（否则框选的顶点会一直跟着下一次拖动）
+    vertexSelection.value = [];
+    vertexMarquee.value = null;
+    vertexMarqueeStart = null;
+    vertexLinkCtx = null;
     polySplitPoints.value = [];
     polySplitHover.value = null;
     polySplitPreview.value = null;
@@ -3568,6 +3683,151 @@ function commitFreeTrace(pts, shiftKey) {  if (!ensureBaseMap()) return false;
  */
 /** 顶点拖动让压叠"恶化"多少才值得问一句（低于它视为既有压叠，不打扰） */
 const VERTEX_OVERLAP_WORSEN_MARGIN = 0.05;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P1（2026-10-13）顶点多选 + 共边联动（方案甲：边界整体移动）
+//
+// 用户要的是"框选一批顶点 → 拖动 → 邻省边界自动重算、不串省"。实现路子：
+//   省份的"共边"在数据里就是**两端坐标恰好相同**（网格派生 / FMG 导入 / 骨架吸附三处都如此），
+//   所以让邻省的**同位顶点跟着平移同样的 Δ**，边界线就整体移动了 ——
+//   A 缩多少 B 就涨多少，**无缝、无压叠，且不需要任何布尔运算**。
+//   配对判定在 `utils/vertexSharing.js`（纯函数 + Node 单测），这里只做编排。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 这次拖动实际搬哪些顶点：拖动的那一个若在选中集里 → 整组；否则只有它自己 */
+function effectiveVertexSelection(vertexIdx) {
+  const sel = vertexSelection.value || [];
+  return sel.indexOf(vertexIdx) >= 0 ? sel.slice() : [vertexIdx];
+}
+
+/**
+ * 共边索引的**按需缓存**：键是 `terrain` 数组本身。
+ * 每次 store 写入都会换数组引用（`setTerrain` / `updateProvincesBatch` 都是新数组），
+ * 所以引用相等 = 几何没变 → 复用；引用变了自然失效，不需要额外的手工失效点。
+ */
+let vertexIndexCache = null;   // { terrain, built }
+function coincidentIndexFor(terrain) {
+  if (vertexIndexCache && vertexIndexCache.terrain === terrain) return vertexIndexCache.built;
+  const built = buildCoincidentIndex(terrain);
+  vertexIndexCache = { terrain, built };
+  return built;
+}
+
+function provIdxOf(prov) {
+  const terrain = baseMap.value?.terrain || [];
+  return terrain.findIndex((p) => p.id === prov.id);
+}
+
+/** mousedown 时算一次共边索引与联动表（mousemove 里复用 —— 每帧重算索引会拖垮帧预算） */
+function beginVertexLinkContext(prov, vertexIdx) {
+  const terrain = baseMap.value?.terrain || [];
+  const provIdx = provIdxOf(prov);
+  if (provIdx < 0) return null;
+  const selection = effectiveVertexSelection(vertexIdx);
+  const built = coincidentIndexFor(terrain);
+  const found = findLinkedVertices(terrain, { provIdx, ringIdx: activeRingIdx.value }, selection, built);
+  return {
+    provId: prov.id,
+    provIdx,
+    ringIdx: activeRingIdx.value,
+    selection,
+    basePoints: resolvePoints(prov).map((p) => {
+      const q = { x: vx(p), y: vy(p) };
+      if (p && p.controlIn) q.controlIn = { ...p.controlIn };
+      if (p && p.controlOut) q.controlOut = { ...p.controlOut };
+      return q;
+    }),
+    links: found.links,
+    truncated: found.truncated,
+    sharedCount: found.sharedCount,
+  };
+}
+
+/**
+ * 跟随邻省的**预览**（只画不改）：按 `provId` 分组，一组里可以带多个环。
+ *
+ * 🔴 必须先**按环把位移累积起来、再整体 `shiftPoints` 一次** —— 首版写成
+ *    "每个联动顶点各算一次整环的 shiftPoints，然后覆盖同组结果"，于是同一条环上
+ *    只有**最后一个**顶点动、其余全部原地不动（test_102 当场量出 B 的 4 个同位顶点只动了 1 个）。
+ *    这不是预览问题：落库走的是同一份预览，所以它同时是**数据**问题。
+ *
+ * @returns {Array<{provId:string, rings:Array<{ringIdx:number, points:Array}>}>}
+ */
+function buildLinkedPreview(prov, delta) {
+  const ctx = vertexLinkCtx;
+  if (!ctx || !ctx.links.length || ctx.provId !== prov.id) return [];
+  const terrain = baseMap.value?.terrain || [];
+  const groups = new Map();   // provId → { rings: Map<ringIdx, moves[]> }
+  for (const l of ctx.links) {
+    const p = terrain[l.provIdx];
+    if (!p) continue;
+    let g = groups.get(p.id);
+    if (!g) { g = { rings: new Map() }; groups.set(p.id, g); }
+    let moves = g.rings.get(l.ringIdx);
+    if (!moves) { moves = []; g.rings.set(l.ringIdx, moves); }
+    // 差量 = 参考顶点的位移 + 两侧本来的偏差（本仓纪律：差量平移，不写同一个绝对坐标）
+    moves.push({ idx: l.vertexIdx, dx: delta.x + l.dx, dy: delta.y + l.dy });
+  }
+  const out = [];
+  for (const [provId, g] of groups) {
+    const p = terrain.find((x) => x.id === provId);
+    if (!p) continue;
+    const rings = provinceRings(p);
+    const ringsOut = [];
+    for (const [ringIdx, moves] of g.rings) {
+      const ring = rings[ringIdx] || rings[0];
+      if (!ring) continue;
+      ringsOut.push({ ringIdx, points: shiftPoints(ring.points, moves) });
+    }
+    if (ringsOut.length) out.push({ provId, rings: ringsOut });
+  }
+  return out;
+}
+
+/** 把预览变成可落库的补丁（一个省一个补丁，多环合并到同一次写） */
+function collectLinkedPatches(preview) {
+  const out = [];
+  const terrain = baseMap.value?.terrain || [];
+  for (const g of ((preview && preview.linked) || [])) {
+    const prov = terrain.find((p) => p.id === g.provId);
+    if (!prov) continue;
+    const changes = new Map(g.rings.map((r) => [r.ringIdx, r.points]));
+    const patch = writeRingsPatch(prov, changes);
+    if (patch) out.push({ provId: g.provId, patch, prov });
+  }
+  return out;
+}
+
+/**
+ * 多省版压叠闸门（P1）：跟随的邻省走**同一度量、同一"只对恶化发问"**口径。
+ * 它们只会涨，仍可能涨到第三个省身上；**一家被拒 → 整次拖动都不落库**（不留半截）。
+ */
+function confirmVertexBatchOverlap(entries) {
+  const worsened = [];
+  for (const e of (entries || [])) {
+    const after = { ...e.prov, ...e.patch };
+    const res = store.previewProvinceOverlap(baseMapKey.value, after, { skipId: e.prov.id });
+    if (!res || !res.blocked) continue;
+    const prev = store.previewProvinceOverlap(baseMapKey.value, e.prov, { skipId: e.prov.id });
+    const prevRatio = (prev && prev.ok) ? prev.ratio : 0;
+    const delta = res.ratio - prevRatio;
+    if (delta <= VERTEX_OVERLAP_WORSEN_MARGIN) continue;
+    const names = (res.offenders || []).slice(0, 3)
+      .map((o) => `${o.name}${o.kind === 'sea' ? '（海域）' : ''}`).join('、');
+    worsened.push({ name: e.prov.name || e.prov.id, pct: Math.round(res.ratio * 100), prevPct: Math.round(prevRatio * 100), names });
+  }
+  if (!worsened.length) return true;
+  const lines = worsened.slice(0, 4).map((w) => `「${w.name}」压叠 ${w.pct}%（拖动前 ${w.prevPct}%）${w.names ? `：${w.names}` : ''}`).join('\n');
+  const okApply = window.confirm(
+    `这次拖动会让跟随移动的邻省压到别的省身上：\n\n${lines}\n\n`
+    + '压叠会让点选、归属上色和势力标签互相打架。\n\n'
+    + '点「确定」= 应用这次移动；点「取消」= 放弃（目标省与邻省都保持拖动前，什么都不写）。'
+  );
+  if (okApply) return true;
+  statusMsg(`已放弃这次顶点移动（会让 ${worsened.length} 个邻省压到别人身上）`);
+  return false;
+}
+
 
 /**
  * 顶点编辑的**压叠闸门**（2026-10-11）。
@@ -5431,47 +5691,94 @@ function drawProvinceBorders(c) {
 }
 
 function drawVertexHandles(c) {
-  if (!vertexEditMode.value || !selectedProvince.value) return;
-  const prov = currentProvince();
-  const points = prov ? resolvePoints(prov) : null;
-  if (!points) return;
-  const r = px(4);
-  const hR = px(3.5);
-  const active = activeVertexIdx.value;
+  // P1：跟随移动的邻省环要在**任何情况下**都画出来（它是"边界整体移动"的唯一视觉证据），
+  // 所以放在最前面、且不依赖"当前选中省"是否还存在。
+  const linked = (dragPreview.value && dragPreview.value.linked) || [];
+  if (linked.length) {
+    c.save();
+    c.setLineDash([px(5), px(4)]);
+    c.lineWidth = px(2);
+    c.strokeStyle = '#f59e0b';
+    for (const g of linked) {
+      for (const r of g.rings) {
+        if (!r.points || r.points.length < 3) continue;
+        c.beginPath();
+        r.points.forEach((p, i) => {
+          const x = vx(p), y = vy(p);
+          if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+        });
+        c.closePath();
+        c.stroke();
+      }
+    }
+    c.restore();
+  }
 
-  // P0-T1：仅对当前选中顶点画切线手柄（大省份全画会遮满屏幕）
-  if (active >= 0 && active < points.length && !altStraight) {
-    const p = points[active];
-    const cx = vx(p), cy = vy(p);
-    const out = p.controlOut;
-    const inn = p.controlIn;
-    if (out || inn) {
-      c.save();
-      c.setLineDash([px(3), px(3)]);
-      c.strokeStyle = 'rgba(167,139,250,0.8)';
-      c.lineWidth = px(1);
-      if (out) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + out.x, cy + out.y); c.stroke(); }
-      if (inn) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + inn.x, cy + inn.y); c.stroke(); }
-      c.setLineDash([]);
-      c.fillStyle = '#38bdf8';
-      c.strokeStyle = '#ffffff';
-      if (out) { c.beginPath(); c.arc(cx + out.x, cy + out.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
-      if (inn) { c.beginPath(); c.arc(cx + inn.x, cy + inn.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
-      c.restore();
+  if (vertexEditMode.value && selectedProvince.value) {
+    const prov = currentProvince();
+    const points = prov ? resolvePoints(prov) : null;
+    if (points) {
+      const r = px(4);
+      const hR = px(3.5);
+      const active = activeVertexIdx.value;
+      const selected = vertexSelection.value || [];
+
+      // P0-T1：仅对当前选中顶点画切线手柄（大省份全画会遮满屏幕）
+      if (active >= 0 && active < points.length && !altStraight) {
+        const p = points[active];
+        const cx = vx(p), cy = vy(p);
+        const out = p.controlOut;
+        const inn = p.controlIn;
+        if (out || inn) {
+          c.save();
+          c.setLineDash([px(3), px(3)]);
+          c.strokeStyle = 'rgba(167,139,250,0.8)';
+          c.lineWidth = px(1);
+          if (out) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + out.x, cy + out.y); c.stroke(); }
+          if (inn) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + inn.x, cy + inn.y); c.stroke(); }
+          c.setLineDash([]);
+          c.fillStyle = '#38bdf8';
+          c.strokeStyle = '#ffffff';
+          if (out) { c.beginPath(); c.arc(cx + out.x, cy + out.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
+          if (inn) { c.beginPath(); c.arc(cx + inn.x, cy + inn.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
+          c.restore();
+        }
+      }
+
+      points.forEach((p, i) => {
+        const sx = vx(p);
+        const sy = vy(p);
+        // P1：框选中的顶点用青色（与省份多选的描边同色系），正在拖的是金色，当前激活的是粉色
+        const isSel = selected.indexOf(i) >= 0;
+        c.fillStyle = draggingVertex.value?.vertexIdx === i
+          ? '#ffd700'
+          : (i === active ? '#f472b6' : (isSel ? '#22d3ee' : '#a78bfa'));
+        c.strokeStyle = '#fff';
+        c.lineWidth = px(1);
+        c.beginPath();
+        c.arc(sx, sy, isSel ? r * 1.25 : r, 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+      });
     }
   }
 
-  points.forEach((p, i) => {
-    const px = vx(p);
-    const py = vy(p);
-    c.fillStyle = draggingVertex.value?.vertexIdx === i ? '#ffd700' : (i === active ? '#f472b6' : '#a78bfa');
-    c.strokeStyle = '#fff';
-    c.lineWidth = px(1);
-    c.beginPath();
-    c.arc(px, py, r, 0, Math.PI * 2);
-    c.fill();
-    c.stroke();
-  });
+  // P1：框选矩形（世界坐标 → 屏幕；虚线，不参与任何导出与命中）
+  const box = vertexMarquee.value;
+  if (box) {
+    const x0 = vx({ x: Math.min(box.x0, box.x1), y: 0 });
+    const y0 = vy({ x: 0, y: Math.min(box.y0, box.y1) });
+    const x1 = vx({ x: Math.max(box.x0, box.x1), y: 0 });
+    const y1 = vy({ x: 0, y: Math.max(box.y0, box.y1) });
+    c.save();
+    c.fillStyle = 'rgba(34,211,238,0.12)';
+    c.strokeStyle = '#22d3ee';
+    c.lineWidth = px(1.5);
+    c.setLineDash([px(4), px(3)]);
+    c.fillRect(x0, y0, x1 - x0, y1 - y0);
+    c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    c.restore();
+  }
 }
 
 function getProvinceColor(prov) {
@@ -6380,8 +6687,16 @@ watch(baseMapKey, () => {
   render();
 });
 
-// 🔴 底图数据可能**晚于组件挂载**到达：只读态（未打开项目）下底图导入被写闸门拒绝、
-//    项目里暂时没有底图后再「导入知识库内容」、外部导入 scenarios.json……
+// P1（2026-10-13）：换省份 / 换活动环就丢掉顶点框选 —— 框选存的是**活动环上的下标**，
+// 换了省或换了环之后那些下标指向的是别的顶点（不丢就会"拖这个省、改那个省"）。
+watch([() => selectedProvince.value?.id, activeRingIdx], () => {
+  if (vertexSelection.value.length) vertexSelection.value = [];
+  vertexMarquee.value = null;
+  vertexMarqueeStart = null;
+  vertexLinkCtx = null;
+});
+
+// 🔴 底图数据可能**晚于组件挂载**到达：只读态（未打开项目）下底图导入被写闸门拒绝、//    项目里暂时没有底图后再「导入知识库内容」、外部导入 scenarios.json……
 //    而 baseMapKey 只在 onMounted 解析一次 → key 停在 '' ⇒ baseMap 恒 undefined
 //    ⇒ watch(baseMap) 永不触发 ⇒ 画布永久空白（P-0 实测：注入真实载荷后 0 帧重绘，
 //    连按 F 都没用，因为 fitToView 在「没有省份」时直接 return）。
