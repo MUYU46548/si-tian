@@ -67,6 +67,10 @@ sitian-architecture.json
 # 诊断用临时产物（从真实项目数据画出来的预览图，含用户数据，禁止提交）
 docs/_*
 
+# 观感存档图（从真实 desite.map / 真实库渲染出来的截图，含用户地图数据，禁止提交；
+# 与 build/p0-first-map、build/p1-vertex-marquee 同口径 —— 文档引用这些路径时按"本地证据"读）
+docs/assets/
+
 # LOGO 选型临时产物（finals、variants、scans、backups、比较 HTML、atlas）
 build/logo-concepts/
 
