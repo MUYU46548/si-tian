@@ -342,6 +342,8 @@ export function createProvinceEditingModule(ctx) {
   function applyRegionToTerrain(key, brushRings, targetIdx, opts = {}) {
     const terrain = provincesOf(key);
     if (!terrain.length) return null;
+    // 几何兜底时的**人话回音**（不静默降级，也不炸整笔）—— 见下面的装配处
+    let geomWarn = '';
     let brushMulti = ringsToMulti(brushRings);
     if (!brushMulti.length) return null;
     let bb = multiBBox(brushMulti);
@@ -361,8 +363,29 @@ export function createProvinceEditingModule(ctx) {
         if (m.length) near.push(m);
       }
       if (!near.length) return null;                       // 附近没有任何省份 → 不动（不扩张海岸线）
-      const covered = near.length === 1 ? near[0] : unionMulti(polygonClipping, near[0], near.slice(1));
-      const clipped = polygonClipping.intersection(brushMulti, covered);
+      // 🔴 2026-10-17 第八修（用户真机崩溃：圈选批量删河直接抛异常）：
+      //    `unionMulti` / 下面的 `intersection` 原来都是**裸调** `polygonClipping`。
+      //    手画笔迹的自交环会让引擎抛 `Unable to complete output ring …`，
+      //    于是整笔操作炸掉（异常一路冒到 `window.onerror`）。
+      //    现在：`unionMulti` 自己带兜底（先自交净化→再逐个并→失败回报），
+      //    `intersection` 走 `robustOp`（失败时吸附坐标重算，仍失败则当"没碰到"处理，
+      //    而不是把整笔操作炸掉）。
+      const covered = near.length === 1
+        ? near[0]
+        : unionMulti(polygonClipping, near[0], near.slice(1), {
+          onFail: (info) => { geomWarn = (geomWarn || '') + (geomWarn ? '；' : '') + info.label; },
+        });
+      const interRes = robustOp(polygonClipping, 'intersection', brushMulti, covered);
+      if (!interRes.multi) {
+        // 兜底：几何退化到算不了。**明确回报**（不静默、也不炸整笔）
+        return {
+          changed: 0, rejected: 'geometry-failed',
+          message: `这块笔迹的轮廓自交了，几何引擎算不出来（${String(interRes.error || '').slice(0, 80)}）。`
+            + ' 请把圈画得简单一些再试，或用「变更归属」涂一笔。',
+        };
+      }
+      if (interRes.snapped) geomWarn = (geomWarn || '') + (geomWarn ? '；' : '') + '轮廓已吸附坐标后重算';
+      const clipped = interRes.multi;
       if (isEmptyMulti(clipped)) return null;              // 笔迹全在省外 → 什么都不做
       brushMulti = clipped;
       const bb2 = multiBBox(brushMulti);
@@ -380,7 +403,10 @@ export function createProvinceEditingModule(ctx) {
       //    长出一块「飞地」。预筛一挡，这一笔就变成「从原省挖掉、却没人接」＝**凭空少一块地**
       //    （实跑抓到：套索划给不相邻的省 → 总面积少了一整块）。
       if (idx === targetIdx) {
-        const merged = unionMulti(polygonClipping, provinceToMulti(p), [brushMulti]);
+        // 并集也走兜底（`unionMulti` 内部：自交净化 → 逐个并 → 失败回报，不抛）
+        const merged = unionMulti(polygonClipping, provinceToMulti(p), [brushMulti], {
+          onFail: (info) => { geomWarn = (geomWarn || '') + (geomWarn ? '；' : '') + info.label; },
+        });
         changed = true;
         ops.push({ id: p.id, op: 'union' });
         return normalizeProvince({ ...p, ...multiToShape(merged, kind) });
@@ -390,15 +416,21 @@ export function createProvinceEditingModule(ctx) {
       if (!pbox || !bboxHit(pbox, bb)) return p;                 // 其他省：包围盒不相交 → 整省跳过
       const base = provinceToMulti(p);
       if (!base.length) return p;
-      if (!intersectsMulti(polygonClipping, base, brushMulti)) return p;   // 真不相交 → 跳过差集
-      const cut = differenceMulti(polygonClipping, base, [brushMulti]);    // 相交省：差集
-      const patch = multiToShape(cut, kind);
+      // 🔴 这几个也**逐个兜底**：任何一个几何退化都不该让整笔操作炸掉
+      //    （用户实测就是"圈选批量操作直接报错"，异常一路冒到 window.onerror）。
+      const interHit = robustOp(polygonClipping, 'intersection', base, brushMulti);
+      if (!interHit.multi || isEmptyMulti(interHit.multi)) return p;   // 算不出/真不相交 → 跳过差集
+      const cutRes = robustOp(polygonClipping, 'difference', base, brushMulti);
+      if (!cutRes.multi) { geomWarn = (geomWarn || '') + (geomWarn ? '；' : '') + `差集失败(${p.name || idx})`; return p; }
+      const patch = multiToShape(cutRes.multi, kind);
       changed = true;
       ops.push({ id: p.id, op: 'difference', emptied: !patch.points.length });
       return normalizeProvince({ ...p, ...patch });
     });
 
-    return changed ? { terrain: next, ops } : null;
+    if (!changed) return null;
+    // `geomWarn` 随结果回传：调用方把它并进用户可见的回执（不静默降级）
+    return { terrain: next, ops, ...(geomWarn ? { geomWarn } : {}) };
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -489,7 +521,12 @@ export function createProvinceEditingModule(ctx) {
       if (!b || !rbox || !bboxHit(b, rbox)) continue;
       const m = provinceToMulti(p);
       if (!m.length) continue;
-      const inter = polygonClipping.intersection(m, regionMulti);
+      // 🔴 2026-10-17 第八修：几何调用一律走兜底（`robustOp` 失败时吸附重算，仍失败则
+      //    当"没相交"跳过这一步）。裸调会在自交环上抛 `Unable to complete output ring`
+      //    并把整笔操作炸到 `window.onerror`（用户实测："圈选批量删除直接报错"）。
+      const interRes = robustOp(polygonClipping, 'intersection', m, regionMulti);
+      if (!interRes.multi) continue;
+      const inter = interRes.multi;
       if (isEmptyMulti(inter)) continue;
       const a = Math.abs(multiNetArea(inter));
       near.push({ idx: i + 1, prov: p, inside: a });
@@ -563,7 +600,10 @@ export function createProvinceEditingModule(ctx) {
       if (i === targetIdx - 1) continue;
       const m = provinceToMulti(res.terrain[i]);
       if (!m.length) continue;
-      const inter = polygonClipping.intersection(m, res.transferMulti);
+      // 几何兜底（同 §第八修）：算不出就当"没重叠"——这只影响一个**度量**，不该炸操作
+      const interRes = robustOp(polygonClipping, 'intersection', m, res.transferMulti);
+      if (!interRes.multi) continue;
+      const inter = interRes.multi;
       if (isEmptyMulti(inter)) continue;
       preOverlap = Math.max(preOverlap, Math.abs(multiNetArea(inter)));
     }
@@ -628,8 +668,12 @@ export function createProvinceEditingModule(ctx) {
         if (m.length) near.push(m);
       }
       if (!near.length) return null;
-      const covered = near.length === 1 ? near[0] : unionMulti(polygonClipping, near[0], near.slice(1));
-      const clipped = polygonClipping.intersection(regionMulti, covered);
+      const covered = near.length === 1
+        ? near[0]
+        : unionMulti(polygonClipping, near[0], near.slice(1));
+      const clipRes = robustOp(polygonClipping, 'intersection', regionMulti, covered);
+      if (!clipRes.multi) return null;   // 兜底也失败了：这笔操作不动（而不是炸）
+      const clipped = clipRes.multi;
       if (isEmptyMulti(clipped)) return null;
       regionMulti = clipped;
     }
@@ -639,11 +683,12 @@ export function createProvinceEditingModule(ctx) {
     //    **MultiPolygon 的列表**（`[multiA, multiB]`），不是 `[polygon]`。
     //    写成 `[provinceToMulti(p)]` 时基元是 `[[ring]]`、与乘法器期望的 `[[[ring]]]` 差一层 →
     //    引擎"减了个寂寞"，转移块仍与目标省原有地重叠（test_97 的 `preOverlap` 当场量出 1428.57）。
-    const differenceFromBase = (base, cutMulti) => (
-      (base && base.length && cutMulti && cutMulti.length)
-        ? polygonClipping.difference(base, cutMulti)
-        : base
-    );
+    const differenceFromBase = (base, cutMulti) => {
+      if (!(base && base.length && cutMulti && cutMulti.length)) return base;
+      // 几何兜底：差集失败时**退还 base**（宁可"这一块没减掉"，也不炸整笔）
+      const r = robustOp(polygonClipping, 'difference', base, cutMulti);
+      return r.multi || base;
+    };
     const targetBase = provinceToMulti(target);
     const transfer = targetBase.length ? differenceFromBase(regionMulti, targetBase) : regionMulti;
     const transferArea = isEmptyMulti(transfer) ? 0 : Math.abs(multiNetArea(transfer));
@@ -876,7 +921,14 @@ export function createProvinceEditingModule(ctx) {
         next.push(p); afterTotal += before[i].area; skippedInside++;
         continue;
       }
-      const clipped = polygonClipping.intersection(base, land);
+      // 几何兜底：算不出就**保留原省不动**（不炸；这是"重建海岸线"的批量操作，
+      // 一个省算不出来不该让整批失败）
+      const clipRes = robustOp(polygonClipping, 'intersection', base, land);
+      if (!clipRes.multi) {
+        next.push(p); afterTotal += before[i].area; skippedInside++;
+        continue;
+      }
+      const clipped = clipRes.multi;
       const empty = isEmptyMulti(clipped);
       const patch = empty ? { points: [], extraRings: undefined, kind: kindOf(p), fromGrid: false }
         : multiToShape(clipped, kindOf(p));

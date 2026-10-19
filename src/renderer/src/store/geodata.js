@@ -24,6 +24,9 @@ import { registerFlush } from './quitFlush';
 import { createEntity as createProjectEntity } from '../utils/projectSchema';
 // 地点类型枚举单源（A-3）：搜索筛选 / 详情面板 / 项目面板共用一份，组件里不许再抄 `['自然', …]`
 import { PLACE_TYPES } from '../utils/placeTypes';
+// 手势闸门（第十九修·一）：人在拖的时候自动保存顺延 —— 那一下 519ms 的主线程占住
+// 正是"松手后/拖动中卡一顿"的来源。口径与上限见该文件头注释。
+import { createSaveDeferrer, SAVE_DEFER_RETRY_MS } from '../utils/interactionGate';
 
 const AUTO_SAVE_DELAY = 800;
 
@@ -567,19 +570,29 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   // 防抖保存剧本（笔刷拖拽时避免频繁写盘）
   let scenarioSaveTimer = null;
+  // 手势闸门（第十九修·一）：拖笔期间到点的保存一律顺延，抬手 + 静默窗口后再补
+  const scenarioSaveDeferrer = createSaveDeferrer();
+  function runScenarioAutoSave() {
+    scenarioSaveTimer = null;
+    if (scenarioSaveDeferrer.check() === 'wait') {
+      scenarioSaveTimer = setTimeout(runScenarioAutoSave, SAVE_DEFER_RETRY_MS);
+      return;
+    }
+    saveScenarios();
+  }
   function scheduleAutoSaveScenarios() {
     if (gateIsReadOnly.value) return;
     if (scenarioSaveTimer) clearTimeout(scenarioSaveTimer);
-    scenarioSaveTimer = setTimeout(() => {
-      scenarioSaveTimer = null;
-      saveScenarios();
-    }, 300);
+    scenarioSaveTimer = setTimeout(runScenarioAutoSave, 300);
   }
 
   // ===== 自动保存 =====
   // 模块级可变状态：自动保存定时器（geodata 域持有，经 ctx 以函数引用方式供各子模块调度）
   let autoSaveTimer = null;
   let autoSaveMapTimer = null;
+  // 手势闸门的顺延状态（每链一份：景况不同、上限各自计）
+  const autoSaveDeferrer = createSaveDeferrer();
+  const mapSaveDeferrer = createSaveDeferrer();
   // 待保存的行星集合：flush 时用它把「还在防抖窗口里」的地图改动真正写掉。
   // 🔴 原 flushSave 只是 clearTimeout —— **清掉定时器等于把改动直接扔掉**（退出/关闭时丢手绘）。
   const pendingMapIds = new Set();
@@ -588,10 +601,17 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (!autoSaveEnabled.value) return;
     if (gateIsReadOnly.value) return; // 只读态：不起自动保存定时器（落盘必被拒，省无谓的定时器与报错）
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(async () => {
-      await saveGeodata();
-      autoSaveTimer = null;
-    }, AUTO_SAVE_DELAY);
+    autoSaveTimer = setTimeout(runAutoSave, AUTO_SAVE_DELAY);
+  }
+
+  // 手势闸门（第十九修·一）：到点先问"人手还在画布上吗"，在就顺延（上限 5s，见 interactionGate.js）
+  function runAutoSave() {
+    autoSaveTimer = null;
+    if (autoSaveDeferrer.check() === 'wait') {
+      autoSaveTimer = setTimeout(runAutoSave, SAVE_DEFER_RETRY_MS);
+      return;
+    }
+    saveGeodata();
   }
 
   function scheduleAutoSaveMap(planetId) {
@@ -599,14 +619,20 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (gateIsReadOnly.value) return;
     if (planetId) pendingMapIds.add(planetId);
     if (autoSaveMapTimer) clearTimeout(autoSaveMapTimer);
-    autoSaveMapTimer = setTimeout(async () => {
-      const ids = [...pendingMapIds];
-      pendingMapIds.clear();
-      for (const id of ids) {
-        if (mapData.value[id]) await saveMapData(id, mapData.value[id]);
-      }
-      autoSaveMapTimer = null;
-    }, AUTO_SAVE_DELAY);
+    autoSaveMapTimer = setTimeout(runAutoSaveMap, AUTO_SAVE_DELAY);
+  }
+
+  function runAutoSaveMap() {
+    autoSaveMapTimer = null;
+    if (mapSaveDeferrer.check() === 'wait') {
+      autoSaveMapTimer = setTimeout(runAutoSaveMap, SAVE_DEFER_RETRY_MS);
+      return;
+    }
+    const ids = [...pendingMapIds];
+    pendingMapIds.clear();
+    for (const id of ids) {
+      if (mapData.value[id]) saveMapData(id, mapData.value[id]);
+    }
   }
 
   /**
@@ -761,12 +787,14 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 模块级可变状态：节点拖拽起始坐标捕获（节点域持有）
   let dragStartCoord = null;
   let dragStartId = null;
+  let dragStartUserMoved = false;
 
   function beginNodePositionCapture(id) {
     const node = nodes.value.find(n => n.id === id);
     if (node) {
       dragStartId = id;
       dragStartCoord = { x: node.coordinate.x, y: node.coordinate.y };
+      dragStartUserMoved = !!node.userMoved;   // 撤销要连这个一起还原（见 endNodePositionCapture）
     }
   }
 
@@ -776,23 +804,29 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (!node) { dragStartId = null; dragStartCoord = null; return; }
     const endCoord = { x: node.coordinate.x, y: node.coordinate.y };
     const startCoord = { ...dragStartCoord };
+    const startUserMoved = dragStartUserMoved;
     const nodeId = dragStartId;
     // 标记为用户手动放置的坐标，布局重算时优先保留
     node.userMoved = true;
     execute({
       type: 'move-node',
       label: '移动节点',
+      // 🔴 `userMoved` 必须**一起**进 undo/redo（2026-10-18 第十一修）：
+      //    它原先写在命令外面 —— 撤销只把坐标还原，`userMoved` 仍是 true，
+      //    于是"撤销之后节点跳到那个从没显示过的旧坐标上"（拖动一个从未摆过的节点时最明显：
+      //    撤销后它从环形位置瞬移到提取器留下的遗留坐标）。判据见 test_116 f5。
       undo: () => {
         const n = nodes.value.find(nn => nn.id === nodeId);
-        if (n) { n.coordinate.x = startCoord.x; n.coordinate.y = startCoord.y; }
+        if (n) { n.coordinate.x = startCoord.x; n.coordinate.y = startCoord.y; n.userMoved = startUserMoved; }
       },
       redo: () => {
         const n = nodes.value.find(nn => nn.id === nodeId);
-        if (n) { n.coordinate.x = endCoord.x; n.coordinate.y = endCoord.y; }
+        if (n) { n.coordinate.x = endCoord.x; n.coordinate.y = endCoord.y; n.userMoved = true; }
       },
     });
     dragStartId = null;
     dragStartCoord = null;
+    dragStartUserMoved = false;
     scheduleAutoSave();
   }
 
@@ -805,7 +839,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     for (const id of ids) {
       const node = nodes.value.find(n => n.id === id);
       if (node && node.coordinate && node.coordinate.x !== null && node.coordinate.y !== null) {
-        dragStartMap.set(id, { x: node.coordinate.x, y: node.coordinate.y });
+        // `userMoved` 一起留底：撤销要回到"拖之前的样子"（否则坐标回去了、布局仍按旧的 userMoved 显示）
+        dragStartMap.set(id, { x: node.coordinate.x, y: node.coordinate.y, userMoved: !!node.userMoved });
       }
     }
   }
@@ -827,13 +862,13 @@ export const useGeodataStore = defineStore('geodata', () => {
       undo: () => {
         for (const [id, coord] of startMap) {
           const n = nodes.value.find(nn => nn.id === id);
-          if (n && n.coordinate) { n.coordinate.x = coord.x; n.coordinate.y = coord.y; }
+          if (n && n.coordinate) { n.coordinate.x = coord.x; n.coordinate.y = coord.y; n.userMoved = !!coord.userMoved; }
         }
       },
       redo: () => {
         for (const [id, coord] of endMap) {
           const n = nodes.value.find(nn => nn.id === id);
-          if (n && n.coordinate) { n.coordinate.x = coord.x; n.coordinate.y = coord.y; }
+          if (n && n.coordinate) { n.coordinate.x = coord.x; n.coordinate.y = coord.y; n.userMoved = true; }
         }
       },
     });
@@ -1280,6 +1315,8 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   function removeHyperlane(id) {
+    // 先改内存后 execute → 必须守函数首行（只守 execute 时，拒绝发生在数组已经 splice 之后）
+    if (!guardWrite('删除航道').ok) return;
     const idx = hyperlanes.value.findIndex(h => h.id === id);
     if (idx === -1) return;
 
@@ -1299,8 +1336,10 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   function updateHyperlane(id, updates) {
+    // 先改内存（Object.assign）后 execute → 必须守函数首行
+    if (!guardWrite('更新航道').ok) return null;
     const h = hyperlanes.value.find(h => h.id === id);
-    if (!h) return;
+    if (!h) return null;
 
     const oldUpdates = {};
     for (const key of Object.keys(updates)) {
@@ -1318,6 +1357,51 @@ export const useGeodataStore = defineStore('geodata', () => {
       },
     });
     scheduleAutoSave();
+    return h;
+  }
+
+  /**
+   * **星域势力边界的覆盖点（唯一写口）**。
+   *
+   * 为什么必须有它：组件原先直接写 `store.domainBorderOverrides[domainId] = points`
+   * （`GalaxyMap.setBorderPoints`）—— **没有闸门、没有 undo**：只读态拖边界顶点会**静默改内存**
+   * （改动看起来生效，直到保存时被拒），而且拖完撤不回来。
+   * 现在走 `execute()`：一次编辑 = **一条 undo**；撤销回到改动前的覆盖点（原先没有就删键，
+   * 而不是留一个空数组 —— 空数组会让 `getBorderPoints` 判为"有覆盖"从而不再走凸包）。
+   *
+   * @param {string} domainId
+   * @param {Array<{x:number,y:number}>|null} points `null` = 清除覆盖（回到自动凸包）
+   * @param {{preview?:boolean}} [opts] `preview:true` = **拖动期的起始快照**：只过闸门、**不进 undo 栈**
+   *   （否则"拖一个顶点"会变成两条撤销：一条给起始快照、一条给提交，用户按一次撤销看不出变化）。
+   *   拖动中的逐帧写落在这次 preview 建立的数组上；抬手时再走一次**非 preview** 的提交（一条 undo）。
+   * @returns {Array<{x:number,y:number}>|null} 被采纳的点（被拒时返回 null）
+   */
+  function setDomainBorderPoints(domainId, points, opts = {}) {
+    if (!guardWrite('编辑势力边界').ok) return null;
+    if (!domainId) return null;
+    const had = Object.prototype.hasOwnProperty.call(domainBorderOverrides.value, domainId);
+    const prev = had && Array.isArray(domainBorderOverrides.value[domainId])
+      ? domainBorderOverrides.value[domainId].map(p => ({ x: p.x, y: p.y })) : null;
+    const next = Array.isArray(points) && points.length
+      ? points.map(p => ({ x: p.x, y: p.y })) : null;
+    const apply = (val) => {
+      if (val) domainBorderOverrides.value[domainId] = val.map(p => ({ ...p }));
+      else delete domainBorderOverrides.value[domainId];
+    };
+    if (opts.preview) {
+      // 只写、不压栈：这是"这次拖动的起点"，不是一次编辑（撤销要回到拖动**之前**的覆盖状态）
+      apply(next);
+      return next;
+    }
+    apply(next);
+    execute({
+      type: 'set-domain-border',
+      label: '编辑势力边界',
+      undo: () => { apply(prev); },
+      redo: () => { apply(next); },
+    });
+    scheduleAutoSave();
+    return next;
   }
 
   function getHyperlaneById(id) {
@@ -2024,12 +2108,13 @@ export const useGeodataStore = defineStore('geodata', () => {
       updateNodePosition, updateAllCoordinates,
       addNode, removeNode, updateNode, changeNodeId, reparentNode, reparentNodes,
       addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
+      setDomainBorderPoints,
       selectNode, clearSelection, selectPlanetOrNode,
       performSearch, cycleSearchMatch, clearSearch, isNodeMatched, isCurrentMatch,
       undo, redo,
       selectWorld, selectDomain, selectSystem, enterSystemDetail, selectPlanet, selectArea, selectBuilding, backToWorld, backToDomain, backToSystem, backToPlanet, backToArea,
       handleNodeUpdated, handleNodeRemoved, setDragging,
-      scheduleAutoSave, scheduleAutoSaveMap, flushSave, autoSaveEnabled,
+      scheduleAutoSave, scheduleAutoSaveMap, scheduleAutoSaveScenarios, flushSave, autoSaveEnabled,
       loadMapData, saveMapData, getMapDataKey, saveMapDataImmediate,
       beginNodePositionCapture, endNodePositionCapture, beginMultiNodePositionCapture, endMultiNodePositionCapture, toggleNodeLock,
       getBuildingsInArea,

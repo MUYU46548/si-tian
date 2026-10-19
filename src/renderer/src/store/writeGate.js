@@ -177,17 +177,30 @@ export const MEMORY_WRITE_CALLSITES = [
           'addMapSnapshot', 'removeMapSnapshot',
           'addCluster', 'removeCluster', 'updateCluster',
           'applyReliefStroke', 'ensureRivers', 'clearPlanetContent',
+          // 2026-10-17：行星视图的 `.map` 导入写口（整批写入 = 一条撤销；8 个键以外一律不动）
+          'importPlanetMapBundle',
           'addChannelListItem', 'removeChannelListItem', 'updateChannelListItem'],
     what: '行星地图对象 CRUD / 参考图 / 快照 / 河流 / 文化·宗教列表 / 清空内容' },
   { id: 7, file: 'src/renderer/src/store/geodataModules/scenarioEditing.js',
     fns: ['importFromScenariosJson', 'importPlanetLayerData', 'applyHeightBrush', 'applyBiomeBrush',
           'applyCultureBrush', 'applyReligionBrush', 'deriveAllLayers',
           'createBaseMapHeightmap', 'bindBaseMapToPlanet', 'unbindBaseMap', 'importHeightmapFromPlanet',
+          // 2026-10-17 第八修·改向：按陆地轮廓推演地形并落库（走 `commitHeightmap` = 换高度图本体）
+          // ⚠️ 它是**新写口**，必须登记 —— 第一次跑全量时 `test_54` 把这条漏登记当场抓出来了
+          //    （判据是"文件里有 guardWrite 却没进契约"的反向扫描，正是为这种情况设的）。
+          'synthesizeBaseMapTerrain',
+          // P5（2026-10-14）：高度图分辨率 / 地形平滑 —— 两个都直接改高度图本体，必须守首行
+          'resampleBaseMapHeightmap', 'smoothBaseMapHeightmap',
           'addSlicePoint', 'renameSlicePoint', 'updateSlicePoint', 'removeSlicePoint',
           'addBaseMapBurg', 'updateBaseMapData',
-          'addBaseMapRiver', 'removeBaseMapRiver', 'addBaseMapRoute', 'removeBaseMapRoute',
+          'addBaseMapRiver', 'removeBaseMapRiver', 'updateBaseMapRiver',
+          'removeBaseMapRivers', 'applyBaseMapRiverPatches',
+          // 2026-10-18 第十八修·三：改/加/删**原子**一条撤销（河流橡皮擦断一条河、画支流时
+          // 「加河 + 在母河插拐点」）。新写口一律登记 —— test_54 的反向扫描会查"有守卫没登记"。
+          'applyBaseMapRiverEdit',
+          'addBaseMapRoute', 'removeBaseMapRoute',
           'updateBaseMapBurg'],
-    what: '剧本导入 + 涂抹笔刷 + 底图绑定/绑定迁移 + 切片点 + 聚落 + 底图级数据刷新（只补缺）+ 底图河流/道路' },
+    what: '剧本导入 + 涂抹笔刷 + 底图绑定/绑定迁移 + 高度图分辨率·平滑 + 切片点 + 聚落 + 底图级数据刷新（只补缺）+ 底图河流/道路' },
   { id: 8, file: 'src/renderer/src/store/geodataModules/provinceEditing.js',
     fns: ['applyProvinceStroke', 'endProvinceStroke', 'applyProvinceLasso', 'fillProvinceRegion',
           'splitProvince', 'splitProvinceAlong', 'splitProvincesAlong', 'mergeProvinces', 'batchSubdivide',
@@ -199,6 +212,13 @@ export const MEMORY_WRITE_CALLSITES = [
   { id: 9, file: 'src/renderer/src/store/geodataModules/channelBrush.js',
     fns: ['beginChannelStroke', 'endChannelStroke'],
     what: '高度图逐格通道笔刷（文化/宗教）：落笔（涂抹期就改内存数组）与抬手提交各一个守卫' },
+  // 2026-10-18 第十一修：三处**未登记的写口**补上（都是"先改内存后 execute"或直接改 store 数据）
+  { id: 10, file: 'src/renderer/src/store/geodata.js',
+    fns: ['removeHyperlane', 'updateHyperlane'],
+    what: '航道删除/更新（先 splice / Object.assign 再 execute → 必须守函数首行）' },
+  { id: 11, file: 'src/renderer/src/store/geodata.js',
+    fns: ['setDomainBorderPoints'],
+    what: '星域势力边界覆盖点的唯一写口（组件原先直写 store ref：无闸门、无 undo）' },
 ];
 
 // ── 拒绝回音（供 App.vue 提示用户「为什么点了没反应 / 改哪儿去了」）─────────

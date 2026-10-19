@@ -21,6 +21,9 @@ import {
 import {
   scheduleDerive, isWorkerAvailable, getAsyncThreshold, getDeriveStats,
 } from '../../utils/deriveClient';
+// 参考图层映射（provinces/states/cultures/religions → azgaar*）的唯一实现：
+// 行星视图的 `.map` 导入也用它，两处各写一份会让同一个 .map 在两处得到不同的 id 口径。
+import { buildAzgaarReferenceLayers } from '../../utils/planetMapBundle';
 // 新建省份的压叠度量（纯函数，Node 有单测）—— 判定单源，store 只做策略
 import { measureProvinceOverlap, describeOverlap } from '../../utils/provinceOverlap';
 // ── 月日精度（2026-10-05）：易主日期的规整 / 比较 / 校验 ──────────────────────
@@ -31,6 +34,26 @@ import {
   normalizeScenarioDict, normalizeDate, cmpDate, dateKey,
 } from '../../utils/scenarioDates';
 import { validateChangeDateInRange } from '../../utils/scenarioSlices';
+// ── 自动河流（2026-10-14 重写）──────────────────────────────────────────────
+// 🔴 算法与口径的**单一实现**在 `utils/riverTrace.js`（纯函数 + Node 单测）。
+//    本模块只做「取哪份高度图 / 把不算数的情况变成可读回执」——
+//    在这里再写一遍追踪逻辑，就是本项目反复踩的"两条实现慢慢不一样且不报错"。
+import { traceRivers } from '../../utils/riverTrace';
+// 陆地掩膜（省份多边形 → 射线法判定）：画布侧裁导入河、store 侧挡"海边起步"的源头都用它。
+// ⚠️ 掩膜按 terrain **引用**缓存 —— 真实底图 415 个环 / 24018 个顶点，每次点按钮重建一次
+//    就是白花的几十毫秒；而 terrain 一改就换引用，缓存不会陈旧。
+import { buildLandMask } from '../../utils/coastline';
+// 🔴 2026-10-17 第八修·改向（暮雨：「司天自身的编辑能力必须过硬，不要指望靠用户导出
+//    高度数据地图来救河流生成」）：**按陆地轮廓推演地形** —— 自建底图没有高度图时，
+//    自动河流不再直接拒绝，而是用这条推演结果当输入（只读、不写数据）。
+import { synthesizeHeightmapFromTerrain } from '../../utils/terrainSynthesis';
+// ── 高度图分辨率（2026-10-14）───────────────────────────────────────────────
+// 🔴 「地形模模糊糊」的**唯一**解药是把格子变密（每格有自己的高度），而这件事的算法、
+//    性能护栏、内存估算全在 `utils/heightmapResample.js`（纯函数 + Node 单测）。
+//    本模块只做「走 undo 落盘 + 回执」。**绝不**在这里现写一份插值。
+import {
+  resampleHeightmap, smoothHeightmapGrid, estimateResampleCost, fmtBytes,
+} from '../../utils/heightmapResample';
 
 export function createScenarioEditingModule(ctx) {
   const {
@@ -1074,6 +1097,9 @@ export function createScenarioEditingModule(ctx) {
       era: scenario.era || { roman: '', label: '', startYear: '', endYear: '' },
       order: scenario.order || Object.keys(scenarios.value).length + 1,
       description: scenario.description || '',
+      // hook = 卡片墙的钩子文案（1-2 句，ScenarioPicker 卡片上两行截断显示）。
+      // 与 description 分工：description 是长注记（编辑器属性区），hook 是给"选剧本"那一屏看的。
+      hook: scenario.hook || '',
       sourceNote: scenario.sourceNote || '',
       polities: scenario.polities || [],
       ownership: scenario.ownership || {},
@@ -2213,6 +2239,9 @@ export function createScenarioEditingModule(ctx) {
   /**
    * 将 Azgaar .map 中的政治/文化/宗教数据同步到指定行星的 mapData
    * 供 PlanetMap 渲染参考图层使用
+   *
+   * ⚠️ 字段映射（provinces → azgaarProvinces 等）在 `utils/planetMapBundle.buildAzgaarReferenceLayers`
+   *    —— 行星视图的 `.map` 导入也要同一份口径，两处各写一份就会「同一个 .map 在两处导出不同 id」。
    */
   function importPlanetLayerData(planetId, data) {
     if (!guardWrite('导入 .map 图层').ok) return;
@@ -2220,45 +2249,8 @@ export function createScenarioEditingModule(ctx) {
     const map = mapData.value?.[planetId];
     if (!map) return;
 
-    // 补充省份多边形（按政治实体/文化/宗教分组）
-    if (data.provinces && Array.isArray(data.provinces)) {
-      map.azgaarProvinces = data.provinces.map(p => ({
-        id: p.id,
-        name: p.name || '',
-        points: p.points || [],
-        stateId: p.stateId || 0,
-        cultureId: p.cultureId || 0,
-        religionId: p.religionId || 0,
-        color: p.color || p.stateColor || p.cultureColor || '#888888',
-      }));
-    }
-
-    // 补充政治实体数据
-    if (data.states && Array.isArray(data.states)) {
-      map.azgaarStates = data.states.map(s => ({
-        id: s.id || s.i,
-        name: s.name || ('State ' + (s.id || s.i)),
-        color: s.color || '#888888',
-      }));
-    }
-
-    // 补充文化数据
-    if (data.cultures && Array.isArray(data.cultures)) {
-      map.azgaarCultures = data.cultures.map(c => ({
-        id: c.id || c.i,
-        name: c.name || ('Culture ' + (c.id || c.i)),
-        color: c.color || '#888888',
-      }));
-    }
-
-    // 补充宗教数据
-    if (data.religions && Array.isArray(data.religions)) {
-      map.azgaarReligions = data.religions.map(r => ({
-        id: r.id || r.i,
-        name: r.name || ('Religion ' + (r.id || r.i)),
-        color: r.color || '#888888',
-      }));
-    }
+    const layers = buildAzgaarReferenceLayers(data);
+    for (const [k, v] of Object.entries(layers)) map[k] = v;
 
     // 触发响应式更新
     mapData.value = { ...mapData.value, [planetId]: { ...map } };
@@ -2601,7 +2593,11 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
-    saveScenarios();
+    // 🔴 2026-10-17 暮雨实测「点一下卡一下」：这里原来是**同步** `saveScenarios()` ——
+    //    每画/删一条河都全量 `JSON.parse(JSON.stringify(整个项目载荷))`（真实项目 415 省 +
+    //    2.7 万点 + 高度图 → 一次几百 ms 主线程阻塞）。高频小编辑一律走 300ms 防抖
+    //    （`scheduleAutoSaveScenarios`），退出前 `flushSave()` 会兜底真正落盘。
+    scheduleAutoSaveScenarios();
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -2645,7 +2641,7 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
-    saveScenarios();
+    scheduleAutoSaveScenarios();   // 防抖（高频小编辑；同 addBaseMapBurg 的注释）
     return { ok: true, id: item.id, count: list.length + 1 };
   }
 
@@ -2678,8 +2674,279 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
-    saveScenarios();
+    scheduleAutoSaveScenarios();   // 防抖 —— 连删多条时只做一次全量序列化（暮雨实测的卡顿源）
     return { ok: true, removed: removed.name || riverId };
+  }
+
+  /**
+   * **批量**删河（框选 / 多选之后一次删掉）—— 与 `removeBaseMapRiver` 同一条口径，
+   * 区别只有一个：**整批 = 一条撤销**（用户的心理模型是"我删了这次选中的 5 条"，
+   * 不是"5 步操作"；分成 5 条 undo 的话要按 5 次 Ctrl+Z 才能回来）。
+   *
+   * @param {string} baseMapKey
+   * @param {string[]} riverIds
+   * @returns {{ok:true,count:number,removed:string[],missing:string[]}|{ok:false,rejected:string,message:string}}
+   */
+  function removeBaseMapRivers(baseMapKey, riverIds) {
+    if (!guardWrite('删除河流').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改河流' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const ids = [...new Set((riverIds || []).filter((x) => typeof x === 'string' && x))];
+    if (!ids.length) return { ok: false, rejected: 'no-ids', message: '没有要删的河流（先框选或点选几条）' };
+    const list0 = bm0.rivers || [];
+    const wanted = new Set(ids);
+    const removed = list0.filter((r) => r && wanted.has(r.id));
+    const missing = ids.filter((id) => !list0.some((r) => r && r.id === id));
+    if (!removed.length) {
+      return { ok: false, rejected: 'not-found', message: '选中的河流都不在这张底图上（列表可能已经变了）' };
+    }
+    const before = bm0;
+    const removedIds = new Set(removed.map((r) => r.id));
+    execute({
+      type: 'remove-basemap-rivers',
+      label: `删除 ${removed.length} 条河流`,
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: before }; },
+      redo: () => {
+        const cur = baseMaps.value[baseMapKey] || {};
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...cur,
+            // 保序：按原列表顺序过滤（渲染层叠顺序 = 数组顺序，不能靠 Set 重排）
+            rivers: (cur.rivers || []).filter((r) => !(r && removedIds.has(r.id))),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    scheduleAutoSaveScenarios();
+    return { ok: true, count: removed.length, removed: removed.map((r) => r.name || r.id), missing };
+  }
+
+  /**
+   * **批量**改河（一次撤销）：`patches = [{ id, patch }]` —— 裁海岸线这类"一次动作改多条"用它。
+   * 语义与逐条 `updateBaseMapRiver` 一致（同样只认 `points`，同样走 `execute`），
+   * 但**整批一条 undo**，且 `changed` 为 false 时**一条栈都不压**（空操作不污染撤销栈）。
+   *
+   * @returns {{ok:true,changed:number,ids:string[]}|{ok:false,rejected:string,message:string}}
+   */
+  function applyBaseMapRiverPatches(baseMapKey, patches) {
+    if (!guardWrite('编辑河流').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改河流' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const list0 = bm0.rivers || [];
+    const byId = new Map(list0.filter((r) => r && r.id).map((r) => [r.id, r]));
+    const applied = [];
+    for (const p of patches || []) {
+      const old = p && byId.get(p.id);
+      if (!old) continue;
+      const next = { ...old, ...(p.patch || {}), id: old.id };
+      if (next.points && !Array.isArray(next.points)) continue;
+      if (next.points && next.points.length < 2) continue;      // 河至少要 2 点（与 add 同一口径）
+      applied.push({ id: old.id, before: old, after: next });
+    }
+    if (!applied.length) return { ok: true, changed: 0, ids: [] };
+    const before = bm0;
+    const appliedById = new Map(applied.map((a) => [a.id, a.after]));
+    execute({
+      type: 'patch-basemap-rivers',
+      label: `编辑 ${applied.length} 条河流`,
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: before }; },
+      redo: () => {
+        const cur = baseMaps.value[baseMapKey] || {};
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...cur,
+            rivers: (cur.rivers || []).map((r) => (r && appliedById.has(r.id) ? appliedById.get(r.id) : r)),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    scheduleAutoSaveScenarios();
+    return { ok: true, changed: applied.length, ids: applied.map((a) => a.id) };
+  }
+
+  /**
+   * **一次动作 = 一条撤销**的河流批量写口（改 / 加 / 删三样一起，原子）。
+   *
+   * 🔴 2026-10-18 第十八修·三补这个口，是为了两件**产品里真的发生**的事：
+   *   ① **河流橡皮**：擦断一条河 = 「改这条（留下的第一段）+ 加几条（其余段）+ 删掉没被擦到的…
+   *      不，是被擦干净的那些」。三个动作必须同进同退 —— 分成 3 条 undo 的话，用户按一次
+   *      Ctrl+Z 只回一半，画面变成"半擦"的怪状态（本仓在 `applyBaseMapRiverPatches` 的注释里
+   *      已经写明过这条心理模型：「我做了**一次**擦除」）。
+   *   ② **画支流**：此前是 `addBaseMapRiver` + `updateBaseMapRiver` **两条 undo**
+   *      （代码里诚实记着"要在数据层做成一条 undo 得加批量写口 —— 本轮没做"）。现在做了。
+   *
+   * 语义与逐条写口**逐字一致**（只认 `points`、`points` 少于 2 点不成立、`changed=0` 不压栈），
+   * 顺序也钉死：**先删 → 再改 → 最后加**（同一条河被擦断时，剩下的段使用原 id，
+   * 新段排到列表末尾；渲染层叠顺序 = 数组顺序，所以这个顺序是可见的，不能随意换）。
+   *
+   * @param {string} baseMapKey
+   * @param {{patches?:Array<{id:string,patch:object}>, adds?:Array<object>, removes?:string[]}} edit
+   * @returns {{ok:true,changed:number,updated:string[],added:string[],removed:string[]}
+   *          |{ok:false,rejected:string,message:string}}
+   */
+  function applyBaseMapRiverEdit(baseMapKey, edit = {}) {
+    if (!guardWrite('编辑河流').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改河流' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const list0 = bm0.rivers || [];
+    const byId = new Map(list0.filter((r) => r && r.id).map((r) => [r.id, r]));
+    const removeIds = [...new Set((edit.removes || []).filter((x) => typeof x === 'string' && byId.has(x)))];
+    const removeSet = new Set(removeIds);
+    const applied = [];
+    for (const p of edit.patches || []) {
+      const old = p && byId.get(p.id);
+      if (!old || removeSet.has(old.id)) continue;               // 同一条既删又改 → 删赢（避免僵尸）
+      const next = { ...old, ...(p.patch || {}), id: old.id };
+      if (next.points && !Array.isArray(next.points)) continue;
+      if (next.points && next.points.length < 2) continue;       // 与 add 同一口径：河至少 2 点
+      applied.push({ id: old.id, after: next });
+    }
+    const stamp = Date.now().toString(36);
+    const adds = [];
+    let n = 0;
+    for (const a of edit.adds || []) {
+      const pts = ((a && a.points) || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (pts.length < 2) continue;
+      n += 1;
+      adds.push({
+        id: (a && a.id) || `river_${stamp}_${list0.length + n}`,
+        name: (a && a.name) || `河流 ${list0.length + n}`,
+        points: pts.map((p) => ({ x: p.x, y: p.y })),
+        ...(Number.isFinite(Number(a && a.width)) ? { width: Number(a.width) } : {}),
+        ...(Number.isFinite(Number(a && a.discharge)) ? { discharge: Number(a.discharge) } : {}),
+      });
+    }
+    const changed = removeIds.length + applied.length + adds.length;
+    if (!changed) return { ok: true, changed: 0, updated: [], added: [], removed: [] };
+    const before = bm0;
+    const appliedById = new Map(applied.map((x) => [x.id, x.after]));
+    execute({
+      type: 'edit-basemap-rivers',
+      label: removeIds.length && !adds.length ? `擦除 ${removeIds.length + applied.length} 处河流` : `编辑 ${changed} 条河流`,
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: before }; },
+      redo: () => {
+        const cur = baseMaps.value[baseMapKey] || {};
+        const kept = (cur.rivers || []).filter((r) => !(r && removeSet.has(r.id)));
+        const mapped = kept
+          .map((r) => (r && appliedById.has(r.id) ? appliedById.get(r.id) : r))
+          .filter((r) => !(r && removeSet.has(r.id)));
+        // 幂等：已加过的（同 id）不重复加 —— redo 可能被连续调用
+        const have = new Set(mapped.filter((r) => r && r.id).map((r) => r.id));
+        const toAdd = adds.filter((a) => !have.has(a.id));
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...cur,
+            // 保序：删除/替换按原序过滤，新段追加在末尾（渲染层叠顺序 = 数组顺序）
+            rivers: [...mapped, ...toAdd],
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    scheduleAutoSaveScenarios();
+    return {
+      ok: true,
+      changed,
+      updated: applied.map((x) => x.id),
+      added: adds.map((x) => x.id),
+      removed: removeIds,
+    };
+  }
+
+  /**
+   * 改一条**已有**的手画河（节点移动 / 加拐点 / 删单个节点 / 改宽·名）。
+   *
+   * 🔴 2026-10-17 补这个写口的原因（与 `insertNodeBetween` 那次同源，属同一个缺口）：
+   *    底图侧此前只有 `add` 与 `remove` —— **没有 update**。于是「画完之后想微调」
+   *    在数据层根本没有出口：拖节点、加拐点、删一个点，全都只能「删掉整条重画」，
+   *    而重画会换 id/名字、丢掉调好的 width（这就是行星图早就有的 `updateRiver`）。
+   *
+   * 入口只有一条（`opts.removeNodeAt` 与 `patch.nodes` 互斥，见下方），
+   * 全部走 `execute()`：一次编辑 = 一条 undo，`undo` 恢复 `before` 整份河流列表快照。
+   *
+   * @param {string} baseMapKey
+   * @param {string} riverId
+   * @param {object} patch           要改的字段（**`points`** / width / name …）
+   * @param {{removeNodeAt?:number}} [opts]
+   * @returns {{ok:true,changed:boolean,nodeCount?:number}|{ok:false,rejected:string,message:string}}
+   *
+   * ⚠️ **字段名是 `points` 不是 `nodes`**：底图河的唯一载荷口径由
+   *    `normalizeBaseMapRivers` / `addBaseMapRiver` / `drawRiverPaths` 三方共同约定为
+   *    `{ points:[{x,y}], width?, discharge? }`（行星图那边才叫 `nodes`）。
+   *    传错的后果很隐蔽：**数据确实改了、画布一动不动**（渲染读的是 points）——
+   *    本函数因此显式把 `nodes` 归一到 `points`，两个名字进来都能用。
+   */
+  function updateBaseMapRiver(baseMapKey, riverId, patch, opts = {}) {
+    if (!guardWrite('编辑河流').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许改河流' };
+    const bm0 = baseMaps.value[baseMapKey];
+    if (!bm0) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${baseMapKey}` };
+    const list0 = bm0.rivers || [];
+    const idx = list0.findIndex((r) => r && r.id === riverId);
+    if (idx < 0) {
+      return { ok: false, rejected: 'not-found', message: `这条河流不在这张底图上（id=${riverId}）—— 列表可能已经变了，请刷新后重试` };
+    }
+    const old = list0[idx];
+    const next = { ...old, ...(patch || {}), id: old.id };
+    // 归一口径：进来的 `nodes` 一律落到 `points`（并抹掉另一个名字，避免"两份点列"）
+    if (next.nodes && !next.points) next.points = next.nodes;
+    delete next.nodes;
+    if (next.points && !Array.isArray(next.points)) {
+      return { ok: false, rejected: 'bad-points', message: 'points 必须是数组' };
+    }
+
+    // ── 删单个节点：与 patch.points 互斥（以 removeNodeAt 为准）────────────────
+    // 为什么删点要在 store 内算：删点必须**从当前点列算起**。组件侧若自己先算再传 points，
+    // 同一份数据就有两条算路（本项目反复踩过：改一处、另一处不变，且不报错）。
+    const removeAt = Number(opts && opts.removeNodeAt);
+    let removedPoint = null;
+    if (Number.isInteger(removeAt) && removeAt >= 0) {
+      const clean = (arr) => (arr || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+      const cur = clean(next.points || old.points);
+      const clamped = Math.min(removeAt, cur.length - 1);
+      removedPoint = cur[clamped];
+      const kept = cur.filter((_, i) => i !== clamped);
+      if (kept.length < 2) {
+        return { ok: false, rejected: 'too-few-points', message: '这条河只剩 2 个点了 —— 再删就不成一条河，请直接删整条（Delete）' };
+      }
+      next.points = kept;
+      // 线宽按**点数**分级（与 `addBaseMapRiver` 落库时同一口径）——
+      // 否则删点会让「越长越宽」悄悄失真
+      next.width = Math.max(0.4, Math.min(1.6, 0.3 + kept.length * 0.05));
+    }
+
+    if (JSON.stringify(next) === JSON.stringify(old)) return { ok: true, changed: false };
+
+    // 整份河流列表快照当撤销档：与 `updateBaseMapBurg` 同款 ——
+    // 「就地只改这一条」在 undo 时无法还原**位置**（数组顺序 = 渲染层叠顺序）
+    const before = bm0;
+    execute({
+      type: removeAt >= 0 ? 'remove-basemap-river-node' : 'update-basemap-river',
+      label: next.name || old.name || '编辑河流',
+      undo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: before }; },
+      redo: () => {
+        const cur = baseMaps.value[baseMapKey] || before;
+        baseMaps.value = {
+          ...baseMaps.value,
+          [baseMapKey]: {
+            ...cur,
+            rivers: (cur.rivers || []).map((r) => (r && r.id === riverId ? next : r)),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      },
+    });
+    scheduleAutoSaveScenarios();   // 防抖 —— 拖节点松手也是高频动作
+    return {
+      ok: true,
+      changed: true,
+      nodeCount: Array.isArray(next.points) ? next.points.length : undefined,
+      ...(removedPoint ? { removed: { x: removedPoint.x, y: removedPoint.y } } : {}),
+    };
   }
 
   /** 往底图加一条道路（样式由调用方给：color / width / dash / group） */
@@ -2712,7 +2979,7 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
-    saveScenarios();
+    scheduleAutoSaveScenarios();   // 防抖（同上）
     return { ok: true, id: item.id, count: list.length + 1 };
   }
 
@@ -2745,7 +3012,7 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
-    saveScenarios();
+    scheduleAutoSaveScenarios();   // 防抖（同上）
     return { ok: true, removed: removed.name || routeId };
   }
 
@@ -2792,7 +3059,7 @@ export function createScenarioEditingModule(ctx) {
         },
         redo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: mkAfter() }; },
       });
-      saveScenarios();
+      scheduleAutoSaveScenarios();   // 防抖（同上）
       return { ok: true, changed: true, materialized: seeds.length };
     }
     const old = list[idx];
@@ -2819,7 +3086,7 @@ export function createScenarioEditingModule(ctx) {
       },
       redo: () => { baseMaps.value = { ...baseMaps.value, [baseMapKey]: mkAfter() }; },
     });
-    saveScenarios();
+    scheduleAutoSaveScenarios();   // 防抖（同上）
     return { ok: true, changed: true };
   }
 
@@ -2920,49 +3187,227 @@ export function createScenarioEditingModule(ctx) {
   // River Generation (v2)
   // ============================================================
 
-  function generateRivers(baseMapKey) {
-    const baseMap = baseMaps.value[baseMapKey];
-    if (!hasGrid(getHeightmapFor(baseMapKey))) return [];
+  /** 陆地掩膜缓存（按 terrain 引用；同一份省集不可能"内容变了引用没变"） */
+  let landMaskCacheRef = null;
+  let landMaskCache = null;
+  function landMaskFor(terrain) {
+    if (landMaskCacheRef === terrain && landMaskCache) return landMaskCache;
+    landMaskCache = buildLandMask(terrain);
+    landMaskCacheRef = terrain;
+    return landMaskCache;
+  }
+
+  function generateRivers(baseMapKey, opts = {}) {
+    // 🔴 2026-10-14 重写：旧实现是「每个源头格全表扫描找最低邻居」= O(源头 × 格数 × 步数)。
+    //    真实底图实测量级（desite 9975 格 / 399 源头；行星 26910 格 / 281 源头，
+    //    单点全表 7.46 ms）→ **分钟级**，而它是同步跑的：点下按钮主线程就不再响应，
+    //    用户看到"毫无征兆直接卡住"。算法与口径全部搬到纯函数层 `utils/riverTrace.js`
+    //    （有独立的 Node 单测），这里只负责「取哪份高度图 + 注入陆地判定」。
+    //
+    // 🔴 2026-10-14 第二修（用户实测「河流依旧随机出海」）：把**陆地判定**注入追踪器，
+    //    源头必须离海 ≥ 2 格。高程是格心采样，海岸线从格子里穿过 → 一批泡在水里的格子
+    //    高度 ≥ 20，够高时就被当源头，河道从海边起步直接射进大洋。判定用省份多边形
+    //    （= 画布上真正画出来的陆地；`utils/coastline.js` 的同一份实现，掩膜按 terrain
+    //    引用缓存，不会每次点按钮都重建 415 个环的索引）。
     const hm = getHeightmapFor(baseMapKey);
-    const pts = hm.grid.points;
-    const n = pts.length;
-    const rivers = [];
-    const visited = new Set();
-
-    const sources = [];
-    for (let i = 0; i < n; i++) {
-      if (hm.h[i] > 60) sources.push(i);
-    }
-
-    for (const src of sources) {
-      if (visited.has(src)) continue;
-      const river = [src];
-      let current = src;
-      let steps = 0;
-      while (hm.h[current] >= SEA_LEVEL && steps < 200) {
-        visited.add(current);
-        const cx = Array.isArray(pts[current]) ? pts[current][0] : pts[current].x;
-        const cy = Array.isArray(pts[current]) ? pts[current][1] : pts[current].y;
-        let lowest = -1, lowestH = hm.h[current];
-        for (let j = 0; j < n; j++) {
-          if (j === current) continue;
-          const qx = Array.isArray(pts[j]) ? pts[j][0] : pts[j].x;
-          const qy = Array.isArray(pts[j]) ? pts[j][1] : pts[j].y;
-          const d = Math.hypot(qx - cx, qy - cy);
-          if (d < (hm.grid.spacing || 14.4) * 1.5 && hm.h[j] < lowestH) {
-            lowestH = hm.h[j];
-            lowest = j;
-          }
-        }
-        if (lowest < 0) break;
-        river.push(lowest);
-        current = lowest;
-        steps++;
+    let hmForTrace = hm;
+    let synthesized = null;
+    if (!hasGrid(hm)) {
+      // 🔴 2026-10-17 第八修·改向（暮雨原话：「司天自身的编辑能力必须过硬，
+      //    **不要指望靠用户导出高度数据地图来救河流生成**」）。
+      //    旧行为：`!hasGrid(hm)` → 直接 `no-heightmap` 拒绝。
+      //    后果：用户在司天里自己画了一块大陆（有省份多边形 = 有陆地），点「自动河流」
+      //    却被告知"没有地形"—— 等于核心能力只对**外部导入**的地图可用。
+      //    现在：**按陆地轮廓推演一份地形**（`utils/terrainSynthesis.js`）当作追踪输入。
+      //    ⚠️ 只读推演、**不写数据**（不碰 commitHeightmap / undo 栈）—— 用户没要求造地形，
+      //       就不该悄悄改他的底图；回执里如实说明"这是按轮廓推的"。
+      //    ⚠️ 想真正落库（进 undo、能被笔刷再编辑），走下面独立的
+      //       `synthesizeBaseMapTerrain()`，那是**显式**动作。
+      const terrain = baseMaps.value[baseMapKey]?.terrain;
+      const mask = Array.isArray(terrain) && terrain.length ? landMaskFor(terrain) : null;
+      synthesized = synthesizeHeightmapFromTerrain(terrain, {
+        isLand: mask ? mask.lookup : undefined,
+      });
+      if (!synthesized) {
+        return {
+          rivers: [], ok: false, reason: 'no-terrain',
+          message: '这张底图既没有地形高度图、也没有画好的陆地 —— 自动河流不知道从哪里流起。'
+            + ' 先用「自由绘制 / 套索」画出一块大陆，再点自动河流。',
+        };
       }
-      if (river.length > 3) rivers.push(river.map(i => ({ x: pts[i][0], y: pts[i][1] })));
+      hmForTrace = synthesized;
     }
+    const passed = { ...opts };
+    if (!passed.isLand) {
+      const terrain = baseMaps.value[baseMapKey]?.terrain;
+      if (Array.isArray(terrain) && terrain.length) passed.isLand = landMaskFor(terrain).lookup;
+    }
+    const r = traceRivers(hmForTrace, passed);
+    // `synthesized` 透传给 UI：回执必须说清"地形是按轮廓推的"，不能让人以为数据里有地形
+    return { ...r, ok: true, ...(synthesized ? { synthesized } : {}) };
+  }
 
-    return rivers;
+  /**
+   * **按陆地轮廓生成并落库一份地形高度图**（2026-10-17 第八修·改向）。
+   *
+   * 与 `generateRivers` 里那次"临时推演"的区别：这是**显式动作**，结果写进底图
+   * （走 `commitHeightmap` = 一条 undo），此后：
+   *   · 「底图图层 → 地形高度 / 陆海底色」能看见地形；
+   *   · 地形笔刷 / 平滑 / 分辨率调整 / 自动河流全都正常工作；
+   *   · 用户可以在推演结果上继续手改（推演只是个**起点**，不是最终答案）。
+   *
+   * 为什么需要它（暮雨 2026-10-17）：「不要指望靠用户导出高度数据地图来救河流生成」——
+   * 自建底图必须有本地起点：画完大陆 → 一键有地形 → 有河 → 再手调。
+   *
+   * @returns {{ok:boolean, reason?:string, message:string, cellCount?:number, spacing?:number}}
+   */
+  function synthesizeBaseMapTerrain(baseMapKey, opts = {}) {
+    if (!guardWrite('按轮廓生成地形').ok) return { ok: false, reason: 'readonly', message: '只读：未打开项目' };
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return { ok: false, reason: 'no-basemap', message: '先选一张底图' };
+    if (hasGrid(getHeightmapFor(baseMapKey)) && !opts.force) {
+      return {
+        ok: false, reason: 'has-terrain',
+        message: '这张底图已经有地形高度图了 —— 再生成会覆盖它（想覆盖请显式确认）。'
+          + ' 想从零重来，先「底图图层」里检查现有地形，或新建一张底图。',
+      };
+    }
+    const terrain = bm.terrain;
+    const mask = Array.isArray(terrain) && terrain.length ? landMaskFor(terrain) : null;
+    const syn = synthesizeHeightmapFromTerrain(terrain, {
+      isLand: mask ? mask.lookup : undefined,
+      cellSize: opts.cellSize,
+    });
+    if (!syn) {
+      return {
+        ok: false, reason: 'no-terrain',
+        message: '还没有画好的陆地 —— 先用「自由绘制 / 套索」画出一块大陆，再生成地形。',
+      };
+    }
+    const prev = getHeightmapFor(baseMapKey);
+    const had = hasGrid(prev);
+    // 🔴 2026-10-17 第八修·再修（用户实测：「现在地图上的改动全都无法撤销，撤销是灰色的」）：
+    //    第一版我在这里**直接调 `commitHeightmap`**，没有套 `execute()` ——
+    //    那是本项目明令禁止的写法（`undo.js` 的契约：数据修改必须发生在 redo 回调里）。
+    //    后果：这次写盘**不进 undo 栈**，而且它与 undo 栈里记录的"旧高度图"对不上，
+    //    用户随后就发现「撤销灰了、什么都没法撤」。
+    //    现在按 `smoothBaseMapHeightmap` 的同一套写法收口：
+    //      · `undo` 把**原来那份**（可能是 null）填回去，`touch:false` 不打时间戳；
+    //      · `redo` 写入推演结果；
+    //      · 之后 `saveScenarios()`。
+    execute({
+      type: 'synthesize-terrain',
+      label: '按轮廓生成地形',
+      undo: () => { commitHeightmap(baseMapKey, had ? prev : null, { touch: false }); },
+      redo: () => { commitHeightmap(baseMapKey, syn); },
+    });
+    saveScenarios();
+    // 回执要把**结构**也说清：v2 起推演地形不再是"坡面 + 噪声"，而是带山脉走向 / 高原面 / 裂谷。
+    // 用户看不到这句就会以为"还是老样子"（而这三样正是他点名要的）。
+    const st = syn.structure
+      ? `，含山脉走向 ${syn.structure.rangeAxisDeg}° / 裂谷 ${syn.structure.rifts} 条 / 高原面 ${syn.structure.plateauCells} 格`
+      : '';
+    return {
+      ok: true,
+      cellCount: syn.cellCount,
+      spacing: syn.effectiveCellSize,
+      had,
+      structure: syn.structure || null,
+      message: `已按陆地轮廓生成地形：${syn.cellCount} 格 / 格距 ${syn.effectiveCellSize}`
+        + `（最内陆 ${syn.maxInlandCells} 格）${st} —— 可用 Ctrl+Z 撤回，也可以拿地形笔刷继续改。`,
+    };
+  }
+
+  /**
+   * 🔴 **高度图分辨率**（P5，2026-10-14）—— 用户实测第 5、2 条：
+   *    「地形模模糊糊」/「高度图分辨率帮我调整。注意性能」。
+   *
+   * 为什么必须做：真实底图的源网格是 **133×75 / spacing 14.4**（FMG 生成的），画到
+   * 1900×1080 上**每格约 3.6 屏幕像素**，放大到 400% 时一格占满一屏。渲染侧其实已经在做
+   * 子格双线性（`heightmapRaster` 平滑档），但**每一格的颜色是固定的** → 放大就是马赛克。
+   * 唯一能真正改善的做法是让格子变密，即本函数。
+   *
+   * 三条纪律：
+   *   ① **走 `commitHeightmap`**（绑定行星时写行星那份）—— 直接替换 `baseMaps[k].heightmap`
+   *      就会在绑定态下"写进一份没人读的副本"（A1 的静默分裂，本项目踩过）；
+   *   ② **一条 undo**，且撤销打 `touch:false`（不把 `updatedAt` 改脏 —— 与撤销语义一致）；
+   *   ③ **先算账再动手**（`preview` 先给格数/内存/耗时档），超上限**拒绝**并给可行的倍数，
+   *      绝不"先分配 60MB 再说"。
+   *
+   * ⚠️ **分辨率不增加信息**：双线性放大只是让同一片地形被更细地表达（海岸线不再沿格子走
+   *    方块，河流追踪也能走得更细）。实测：1→2→4 倍时河条数 57→287→1089，而**最长河的世界
+   *    长度几乎不变（111→120→110）**。要真正"更长的大河"，只能换更高分辨率的**源数据**。
+   *
+   * @param {string} baseMapKey
+   * @param {number} factor 放大倍数（2~8）
+   * @param {{dryRun?:boolean}} [opts]
+   */
+  function resampleBaseMapHeightmap(baseMapKey, factor, opts = {}) {
+    const f = Math.round(Number(factor) || 0);
+    const hm = getHeightmapFor(baseMapKey);
+    if (!hasGrid(hm)) {
+      return { ok: false, reason: 'no-heightmap', message: '这张底图还没有地形高度图 —— 没有东西可以放大分辨率' };
+    }
+    const cost = estimateResampleCost(hm, f);
+    if (!cost.ok) return { ok: false, reason: 'cost', message: cost.message, cost };
+    if (opts.dryRun) return { ok: true, dryRun: true, cost, message: cost.message };
+
+    if (!guardWrite('调整高度图分辨率').ok) return { ok: false, reason: 'readonly', message: '只读：未打开项目' };
+    const rr = resampleHeightmap(hm, f);
+    if (!rr.ok) return { ok: false, reason: rr.reason, message: rr.message, cost };
+
+    // 绑定行星时，引用会换 → 画布侧的陆地掩膜/空间索引缓存必须自己认出"引用变了"
+    // （它们都按引用缓存，这里不需要额外做失效）。
+    execute({
+      type: 'resample-heightmap',
+      label: `高度图分辨率 ×${f}（${fmtBytes(cost.dstBytes)}）`,
+      undo: () => { commitHeightmap(baseMapKey, hm, { touch: false }); },
+      redo: () => { commitHeightmap(baseMapKey, rr.heightmap); },
+    });
+    saveScenarios();
+    return {
+      ok: true,
+      factor: f,
+      cells: rr.stats.dstCells,
+      cellsX: rr.heightmap.grid.cellsX,
+      cellsY: rr.heightmap.grid.cellsY,
+      spacing: rr.heightmap.grid.spacing,
+      bytes: cost.dstBytes,
+      message: `分辨率已改为 ${rr.heightmap.grid.cellsX}×${rr.heightmap.grid.cellsY}`
+        + `（${rr.stats.dstCells} 格 / 格距 ${rr.heightmap.grid.spacing.toFixed(2)} 世界单位，约 ${fmtBytes(cost.dstBytes)}）`,
+    };
+  }
+
+  /**
+   * 地形平滑（P5 配套）—— 「地形模模糊糊、一块一块」的另一半。
+   *
+   * ⚠️ 只平滑 `h`；`temp/prec/biome` 是**派生量**，平滑完地形应让用户自己点「重算派生图层」。
+   *    在这里顺手改气候/群系，会让"平滑地形"变成一次静默的气候改动（本项目最忌讳的那类）。
+   * ⚠️ 「双击平滑」那条老路径（`heightMath.smoothHeightmap`）是 O(n²) 且**零调用** ——
+   *    本轮不接它，接的是 `heightmapResample.smoothHeightmapGrid`（分离式盒滤波，O(n·半径)）。
+   */
+  function smoothBaseMapHeightmap(baseMapKey, { radius = 1, passes = 1 } = {}) {
+    if (!guardWrite('平滑地形').ok) return { ok: false, reason: 'readonly', message: '只读：未打开项目' };
+    const hm = getHeightmapFor(baseMapKey);
+    if (!hasGrid(hm)) return { ok: false, reason: 'no-heightmap', message: '这张底图还没有地形高度图' };
+    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const rr = smoothHeightmapGrid(hm, { radius, passes });
+    if (!rr.ok) return { ok: false, reason: rr.reason, message: rr.message };
+    execute({
+      type: 'smooth-heightmap',
+      label: `平滑地形（半径 ${rr.stats.radius} × ${rr.stats.passes} 次）`,
+      undo: () => { commitHeightmap(baseMapKey, hm, { touch: false }); },
+      redo: () => { commitHeightmap(baseMapKey, rr.heightmap); },
+    });
+    saveScenarios();
+    const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    return {
+      ok: true,
+      cells: rr.stats.cells,
+      elapsedMs: Math.round(t1 - t0),
+      message: `已平滑地形（半径 ${rr.stats.radius} 格 × ${rr.stats.passes} 次，${rr.stats.cells} 格，${Math.round(t1 - t0)} ms）`
+        + ` —— 气候/群系是派生量，需要的话请点「重算派生图层」`,
+    };
   }
 
   function deriveAllLayers(baseMapKey) {
@@ -3000,7 +3445,9 @@ export function createScenarioEditingModule(ctx) {
     // 底图级数据（高度图 / 河流 / 道路 / 城镇）的装载与**只补缺刷新**（B2，2026-10-11）
     buildBaseMapFromBundle, updateBaseMapData,
     // 底图侧河流 / 道路 CRUD（D，2026-10-11）：此前手画的河从不落盘、手画的路绕过 undo
-    addBaseMapRiver, removeBaseMapRiver, addBaseMapRoute, removeBaseMapRoute,
+    addBaseMapRiver, removeBaseMapRiver, updateBaseMapRiver,
+    removeBaseMapRivers, applyBaseMapRiverPatches, applyBaseMapRiverEdit,
+    addBaseMapRoute, removeBaseMapRoute,
     updateBaseMapBurg,
     // 压叠预检（只读）：顶点编辑在**落库前**量一次，判定单源仍在纯函数层
     previewProvinceOverlap,
@@ -3018,6 +3465,10 @@ export function createScenarioEditingModule(ctx) {
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
+    // 2026-10-17 第八修·改向：自建底图的**本地地形起点**（按陆地轮廓生成，落库进 undo）
+    synthesizeBaseMapTerrain,
+    // P5（2026-10-14）：高度图分辨率与平滑 —— 「地形模模糊糊」的入口
+    resampleBaseMapHeightmap, smoothBaseMapHeightmap, estimateResampleCost,
     getDeriveStats,
     addBaseMapBurg, applyCultureBrush, applyReligionBrush,
     getBaseMap, getScenario, getScenariosByOwner, getBaseMapsList, getAllScenarios,

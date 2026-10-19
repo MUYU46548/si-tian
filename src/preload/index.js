@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   reextractGeodata: () => ipcRenderer.invoke('reextract-geodata'),
   saveGeodata: (data) => ipcRenderer.invoke('save-geodata', data),
   getVaultPath: () => ipcRenderer.invoke('get-vault-path'),
+  // 🔴 知识库监听开关（2026-10-14 补暴露）：这两个 channel 在 `main/index.js:710/713`
+  //    **注册了很久但 preload 从来没暴露过** → 设置面板里那个「监听 Obsidian 文件变更
+  //    自动刷新」勾选框只写进 localStorage，主进程的 `vaultWatcherEnabled` 是硬编码 true，
+  //    于是**关了也照跑**（假开关），重启后勾选态也不还原。
+  //    与 projectHandler / gitSyncHandler 的暴露方式保持一致（invoke + 返回结构化结果）。
+  getWatcherStatus: () => ipcRenderer.invoke('get-watcher-status'),
+  setWatcherStatus: (enabled) => ipcRenderer.invoke('set-watcher-status', !!enabled),
   // 库路径可配置（2026-08-16）：选择目录 / 手动设置
   selectVaultPath: () => ipcRenderer.invoke('select-vault-path'),
   setVaultPath: (newPath) => ipcRenderer.invoke('set-vault-path', newPath),

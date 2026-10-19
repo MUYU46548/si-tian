@@ -22,9 +22,13 @@ import { getCanvasAdapter, setProjectSink, setImportHandler } from './canvasBrid
 import { registerFlush } from './quitFlush';
 // B5（2026-09-24）：保存状态同步到底部**常驻**状态栏 —— 项目面板可能是关着的，
 // 用户不能只在打开面板时才知道落盘失败。
-import { setSaveState } from '../composables/useStatusBar';
+// 2026-10-17 补：还要同步「有改动未落盘」（`dirty`）与最后落盘时间 ——
+// 只有 saveState 时，界面上看不出"上次保存成功之后又改了半小时"这件事。
+import { setSaveState, setSavePending, setSavedAt } from '../composables/useStatusBar';
 // R15/A-0（2026-09-27）：笔记改名断线检测与重连 —— 纯函数与候选打分在 utils/vaultRelink.js
 import { detectBrokenLinks, normalizeRelPath, baseNameOf } from '../utils/vaultRelink';
+// 手势闸门（第十九修·一）：人在拖的时候自动保存顺延（这条链正是那 519ms 的主因）
+import { createSaveDeferrer, SAVE_DEFER_RETRY_MS } from '../utils/interactionGate';
 import {
   createEmptyProject,
   createEntity as createEntityShape,
@@ -125,10 +129,12 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   // 保存状态 → 状态栏文案（B5）。'idle' 表示无待显示信息。
+  // 2026-10-17：文案改成分得清「已落盘 / 已交给项目 / 有改动待写入」三种 ——
+  //   旧的 `已保存` 与 `已交给项目，待写入` 混用了同一个「保存」词，用户没法判断数据在不在磁盘上。
   const SAVE_STATE_TEXT = {
-    saving: { kind: 'busy', text: '正在保存…' },
-    saved: { kind: 'ok', text: '已保存' },
-    staged: { kind: 'warn', text: '已交给项目，待写入' },
+    saving: { kind: 'busy', text: '正在写入磁盘…' },
+    saved: { kind: 'ok', text: '已保存到磁盘' },
+    staged: { kind: 'warn', text: '已交给项目，待写入磁盘…' },
     error: { kind: 'err', text: '保存失败' },
   };
 
@@ -171,6 +177,14 @@ export const useProjectStore = defineStore('project', () => {
       }, ttl);
     }
   }
+
+  // ===== 「有改动未落盘」与「最后落盘时间」→ 常驻状态栏（2026-10-17）=====
+  // 🔴 为什么不能只靠 setSaveStatus：它只在**某次保存尝试**时被调用。用户改完最后一个字之后的
+  //    800ms 窗口里、以及"改了但自动保存还没触发"的整段时间里，状态栏会停在**上一次的绿标**
+  //    「已保存到磁盘」—— 而那批改动根本还没进磁盘（正是「保存诚实」要消掉的那种乐观）。
+  //    `dirty` 是这件事唯一的真相，所以直接跟随它。
+  watch(dirty, (d) => { try { setSavePending(!!d); } catch (e) { /* Node 单测环境忽略 */ } }, { immediate: true });
+  watch(lastSavedAt, (t) => { try { setSavedAt(t || ''); } catch (e) { /* 同上 */ } }, { immediate: true });
 
   // 从主进程返回值装载项目（统一做「迁移 → 校验 → 装载」）
   function adopt(payload) {
@@ -614,12 +628,21 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   let autoSaveTimer = null;
+  // 手势闸门（第十九修·一）：这条链是那 519ms 的主因（buildProjectPayload 187ms + 快照 diff
+  // + toIpcPlain + IPC 克隆）。人在拖的时候一律顺延，抬手后立刻补 —— 见 utils/interactionGate.js
+  const autoSaveDeferrer = createSaveDeferrer();
+  function runProjectAutoSave() {
+    autoSaveTimer = null;
+    if (!dirty.value) { autoSaveDeferrer.reset(); return; }
+    if (autoSaveDeferrer.check() === 'wait') {
+      autoSaveTimer = setTimeout(runProjectAutoSave, SAVE_DEFER_RETRY_MS);
+      return;
+    }
+    saveProject({ label: '自动保存' });
+  }
   function scheduleAutoSave() {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(() => {
-      autoSaveTimer = null;
-      if (dirty.value) saveProject({ label: '自动保存' });
-    }, AUTO_SAVE_DELAY);
+    autoSaveTimer = setTimeout(runProjectAutoSave, AUTO_SAVE_DELAY);
   }
 
   async function flushSave() {

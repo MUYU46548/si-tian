@@ -2,6 +2,7 @@
 // ctx: { mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap }
 // 内存编辑闸门：参考图 3 条 + 河流懒建不走 execute()，只读态必须同样拦
 import { guardWrite } from '../writeGate';
+import { PLANET_IMPORT_KEYS } from '../../utils/planetMapBundle';
 export function createMapDataEditingModule(ctx) {
   const { mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap } = ctx;
 
@@ -770,6 +771,103 @@ export function createMapDataEditingModule(ctx) {
     return { success: true };
   }
 
+  // ===== 导入 `.map` 到本行星（2026-10-17）=====
+  /**
+   * 把一份解析好的 `.map` 装进**这颗行星自己的地图**（`mapData[planetId]`）。
+   *
+   * 为什么需要它：`.map` 导入此前只有剧本视图一条入口（装进**底图** `baseMaps[key]`），
+   * 行星视图（`mapData[pid]`，另一个容器）根本没有导入路径 —— 用户想在空行星上用自己那张
+   * Azgaar 地图起步，界面上做不到。行星空态因此只能引导「手动画」，而高度笔刷还提示
+   * 「先导入 Azgaar .map」，指向一个当刻看不见的入口（暮雨点名的「起步闭环」缺口）。
+   *
+   * 🔴 **只覆盖导入清单里的 8 个键**，其余（区域 / 标记 / 文本 / 地点簇 / 参考图 / 快照 /
+   *    地貌图标 / 涂色网格…）一律原样保留 —— `confirmClear` 当年「整体替换 mapData」
+   *    连带删掉这些数据的教训（2026-09-24）就在隔壁。
+   * 🔴 源里**没有高度图**时**不动**现有的高度图：不能因为导入一份没带 cells.h 的文件，
+   *    就把用户已经涂好的地形删掉（回执里由调用方说明"这份文件里没有"）。
+   * 🔴 一整次导入 = **一条撤销**（含逆序清理：本来没有的键撤销时要真的删掉，而不是留个 undefined）。
+   *
+   * @param {string} planetId
+   * @param {object} bundle `utils/planetMapBundle.buildPlanetMapBundle()` 的产物
+   * @returns {{ok:boolean, rejected?:string, message?:string, added?:object, removed?:object}}
+   */
+  function importPlanetMapBundle(planetId, bundle) {
+    if (!guardWrite('导入 .map 到行星地图').ok) {
+      return { ok: false, rejected: 'readonly', message: '只读态不允许写入（打开项目后可导入）' };
+    }
+    if (!planetId) return { ok: false, rejected: 'no-target', message: '没有指定行星' };
+    if (!bundle || typeof bundle !== 'object') {
+      return { ok: false, rejected: 'no-source', message: '没有可导入的数据' };
+    }
+    if (!mapData.value[planetId]) {
+      // 与 addTerrainPolygon 的懒建同形（只补缺，不覆盖已有）
+      mapData.value[planetId] = {
+        planetId, version: 1, terrain: [], regions: [], markers: [], routes: [], textLabels: [],
+      };
+    }
+    const md = mapData.value[planetId];
+
+    const before = {};
+    const had = {};
+    for (const k of PLANET_IMPORT_KEYS) {
+      had[k] = Object.prototype.hasOwnProperty.call(md, k);
+      before[k] = md[k];
+    }
+
+    const after = {};
+    for (const k of ['terrain', 'rivers', 'routes']) {
+      if (Array.isArray(bundle[k])) after[k] = bundle[k].slice();
+    }
+    // 没有高度图就保留现有的（见函数头）
+    if (bundle.heightmap) after.heightmap = bundle.heightmap;
+    for (const k of ['azgaarProvinces', 'azgaarStates', 'azgaarCultures', 'azgaarReligions']) {
+      if (Array.isArray(bundle[k])) after[k] = bundle[k].slice();
+    }
+    const keys = Object.keys(after);
+    if (!keys.length) return { ok: false, rejected: 'empty', message: '这份数据里没有可导入的内容' };
+
+    const removed = {
+      provinces: (md.terrain || []).length,
+      rivers: (md.rivers || []).length,
+      routes: (md.routes || []).length,
+      hadHeightmap: !!md.heightmap,
+    };
+
+    execute({
+      type: 'import-planet-map',
+      label: '导入 .map 到行星地图',
+      category: 'property',
+      undo: () => {
+        const m = mapData.value[planetId];
+        if (!m) return;
+        for (const k of keys) {
+          if (had[k]) m[k] = before[k];
+          else delete m[k];          // 本来没有 → 撤销就该真的没有
+        }
+        m.updatedAt = new Date().toISOString();
+      },
+      redo: () => {
+        const m = mapData.value[planetId];
+        if (!m) return;
+        for (const k of keys) m[k] = after[k];
+        m.updatedAt = new Date().toISOString();
+      },
+    });
+    scheduleAutoSaveMap(planetId);
+
+    return {
+      ok: true,
+      added: {
+        provinces: (after.terrain || []).length,
+        rivers: (after.rivers || []).length,
+        routes: (after.routes || []).length,
+        heightmap: !!after.heightmap,
+      },
+      removed,
+      keptHeightmap: !bundle.heightmap && !!md.heightmap,
+    };
+  }
+
   function clearReliefIcons(planetId) {
     if (!mapData.value[planetId]?.reliefIcons?.length) return;
     const before = mapData.value[planetId].reliefIcons.slice();
@@ -967,6 +1065,7 @@ export function createMapDataEditingModule(ctx) {
     applyReliefStroke,
     clearReliefIcons,
     clearPlanetContent,
+    importPlanetMapBundle,
     addCulture,
     removeCulture,
     updateCulture,
