@@ -342,13 +342,59 @@ export function ringsToMulti(rings) {
 // 三、布尔包装（引擎由调用方注入）
 // ══════════════════════════════════════════════════════════════════════════
 
-/** 并集；参数不足两个有效几何时原样返回 base（不调引擎，省掉一次扫描） */
-export function unionMulti(clip, baseMulti, addMultis) {
+/**
+ * 并集；参数不足两个有效几何时原样返回 base（不调引擎，省掉一次扫描）
+ *
+ * 🔴 2026-10-17 第八修（**用户真机崩溃**）：
+ *   `polygon-clipping` 在遇到**自相交 / 精度退化的环**时会抛
+ *   `Error: Unable to complete output ring starting at [x, y]…`（它内部记账失败）。
+ *   那个错误在用户圈选（套索）批量合并区域时必现：手画的套索环自交是**常态**
+ *   （人手下笔不会画出一条简单多边形），于是整个 `applyProvinceLasso` 抛异常，
+ *   用户看到的是"圈选批量删除直接报错"。
+ *
+ *   现在：**先净化输入**（自交环会让引擎记账失败）；仍然失败时**退化成"逐个并"**
+ *   （一次只并一个，失败就跳过那一个并把它报给调用方），而不是把整笔操作炸掉。
+ *   退化策略的代价是"漏并一小块"，但**保住了整笔操作**——对编辑来说这永远比抛异常好。
+ *
+ * @returns {Array} 并集结果（MultiPolygon）；`fails` 通过 `opts.onFail` 回报
+ */
+export function unionMulti(clip, baseMulti, addMultis, opts = {}) {
   const base = (baseMulti && baseMulti.length) ? baseMulti : [];
   const adds = (addMultis || []).filter((m) => m && m.length);
+  const onFail = typeof opts.onFail === 'function' ? opts.onFail : null;
   if (!adds.length) return base;
-  if (!base.length) return adds.length === 1 ? adds[0] : clip.union(adds[0], ...adds.slice(1));
-  return clip.union(base, ...adds);
+
+  const attempt = (fn, label) => {
+    try {
+      return { ok: true, value: fn() };
+    } catch (e) {
+      if (onFail) onFail({ label, error: String((e && e.message) || e) });
+      return { ok: false, value: null };
+    }
+  };
+
+  if (!base.length) {
+    if (adds.length === 1) return adds[0];
+    const r = attempt(() => clip.union(adds[0], ...adds.slice(1)), 'union-all');
+    if (r.ok) return r.value;
+    // 退化：逐个并（失败的跳过）
+    let acc = adds[0];
+    for (let i = 1; i < adds.length; i++) {
+      const one = attempt(() => clip.union(acc, adds[i]), `union-${i}`);
+      if (one.ok && one.value) acc = one.value;
+    }
+    return acc;
+  }
+
+  const whole = attempt(() => clip.union(base, ...adds), 'union-with-base');
+  if (whole.ok) return whole.value;
+  // 退化：把每个 add 单独并进 base（一个失败不影响其它）
+  let acc = base;
+  for (let i = 0; i < adds.length; i++) {
+    const one = attempt(() => clip.union(acc, adds[i]), `union-with-base-${i}`);
+    if (one.ok && one.value) acc = one.value;
+  }
+  return acc;
 }
 
 /** 差集；没有要减的几何时原样返回 base */

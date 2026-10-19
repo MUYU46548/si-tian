@@ -229,33 +229,18 @@ export function lassoCells(labels, grid, worldPoly, target = 0) {
   return changed;
 }
 
-/**
- * 套索圈内**总格数**（只读，不改 labels）—— 面积闸门的分母/分子。
- *
- * 为什么不能拿 `lassoCells().length` 当「圈了多大」：它跳过 `labels[i] === target` 的格，
- * 于是「把整张图圈给本来就占着大半张图的那个省」会得到一个很小的差量 → 闸门形同虚设。
- * 判定必须用**几何圈入量**，与「改了哪些格」分开。
- * @returns {{inside:number, bboxCells:number}}
- */
-export function lassoInsideCount(labels, grid, worldPoly) {
-  const pts = (worldPoly || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
-  if (pts.length < 3) return { inside: 0, bboxCells: 0 };
-  const { cols, rows, cell, ox, oy } = grid;
-  const bb = bboxOf(pts);
-  const c0 = Math.max(0, Math.floor((bb.minX - ox) / cell));
-  const c1 = Math.min(cols - 1, Math.floor((bb.maxX - ox) / cell));
-  const r0 = Math.max(0, Math.floor((bb.minY - oy) / cell));
-  const r1 = Math.min(rows - 1, Math.floor((bb.maxY - oy) / cell));
-  let inside = 0;
-  let bboxCells = 0;
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0; c <= c1; c++) {
-      bboxCells++;
-      if (pointInPolygon(ox + (c + 0.5) * cell, oy + (r + 0.5) * cell, pts)) inside++;
-    }
-  }
-  return { inside, bboxCells };
-}
+// 🔴 2026-10-16 删除 `lassoInsideCount`（退役死代码）。
+//
+// 它原本是**格数口径**的套索闸门分子（"圈进来的格数"）。P2（2026-10-09）矢量迁移后，
+// 套索闸门改判**面积占比**（`provinceEditing.applyProvinceLasso` 的 `area-gate` +
+// `LASSO_AREA_SHARE`）—— 矢量模型根本没有"格数"这个概念，所以它**从未再被调用过**。
+//
+// 为什么直接删而不是留着：它不只是死代码，**还有守卫在替它背书**
+//   —— `test_79:96` 当时断言 `'export function lassoInsideCount' in provinceGrid.js`，
+//   而 `AGENTS.md` 的套索段也还写着"闸门分子必须是几何圈入量（lassoInsideCount）"。
+//   三处一起构成"这个函数是活的"的假象，后来人按文档去改闸门就会改到一个没人调的函数上。
+//   （本项目第五次「零调用死入口」，且这次是**守卫在骗人**，比单纯死代码更坏。）
+// 现在 test_79 已**反转**成"它不许回来"，真正生效的 area-gate 仍被同一条用例守着。
 
 /**
  * 删除某省份后的重编号（**就地**改 labels），两步缺一不可：

@@ -345,6 +345,12 @@ export function smoothProvinceRings(prov, iters = 2) {
   return provinceRings(prov).map((r) => smoothRing(r.points, iters));
 }
 
+// ── 手画河的笔迹处理（2026-10-16，画河保底）────────────────────────────────────
+// 🔴 平滑/抽稀都从 `polylineSmooth.js` 拿（**唯一实现**）——
+//    这里**不** import `riverTrace`：那是整套追踪算法，而本模块在省份渲染热路径上
+//    （21 省 × 数千点逐帧），拖进来会白付首帧成本。见该模块头注释。
+export { smoothPolyline, decimatePolyline, smoothRiverNodes } from './polylineSmooth.js';
+
 /**
  * 环的**渲染顶点**：该环怎么画，全应用只有一个判定（画布、PNG 导出、SVG 导出、标签落点共用）。
  *
@@ -816,6 +822,73 @@ function arcBetween(line, ka, kb) {
   return len(fwd) <= len(bwd) ? fwd : bwd;
 }
 
+// ── 骨架顶点的**空间索引**（2026-10-18 第十八修）──────────────────────────────
+// 🔴 为什么必须有（CPU 采样实测，不是猜的）：`conformToSkeleton` 的第一步是
+//    「笔迹上每个点找最近的骨架顶点」，朴素写法是 **O(笔迹点数 × 骨架顶点数)**。
+//    真实 desite 底图 = 200 省 / **24018 个骨架顶点**；一笔 46 点的预览
+//    = 46 × 24018 ≈ **110 万次 `Math.hypot`**，而预览每 60ms 就重算一次。
+//    4 秒拖笔的采样里：`conformToSkeleton` 的最近点扫描 **590ms**（10.6%）
+//    + 它自己的 273ms（4.9%）+ 顶点读属性 54ms —— 合计 **~17% 的拖笔时间**。
+//    叠上 Vue 响应式代理（骨架若从**响应式**数组建，每次 `v.x` 都要过 get 陷阱：
+//    同一份采样里 `get` 574ms + `isReadonly` 138ms = **12.8%**）就更贵了，
+//    所以调用方还必须传 `toRaw` 后的地形（见 `ScenarioMap.skeletonForTerrain` 的调用点）。
+//
+// 口径：格子边长 = threshold。半径 ≤ threshold 的圆盘最多与「中心格 ±1」的 3×3 格相交，
+//       所以 3×3 邻域内必然含全部候选 —— 这是**完备性**，不是近似。
+// 并列（同距离）时的取舍必须与朴素实现**逐位一致**：朴素实现按「行序 → 顶点序」扫描、
+//       只在 `d < bd` 时替换 ⇒ 同距离取**先出现**的那个。索引里记 `seq` 并按其排序后
+//       复用同一段比较逻辑。（位姿不同但距离相同的两个顶点，"取哪个"是会被用例看见的：
+//       它决定插哪段弧、决定是否 `hit`。）
+const skeletonVertexIndex = new WeakMap();
+
+function buildSkeletonVertexIndex(skeleton, cell) {
+  const buckets = new Map();
+  let seq = 0;
+  for (const line of skeleton) {
+    for (const v of line) {
+      const k = Math.floor(v.x / cell) + ',' + Math.floor(v.y / cell);
+      let b = buckets.get(k);
+      if (!b) { b = []; buckets.set(k, b); }
+      b.push({ x: v.x, y: v.y, seq: seq++ });
+    }
+  }
+  return { cell, buckets };
+}
+
+function skeletonIndexFor(skeleton, threshold) {
+  const cell = threshold > 0 ? threshold : 1;
+  const hit = skeletonVertexIndex.get(skeleton);
+  if (hit && hit.cell === cell) return hit;
+  const built = buildSkeletonVertexIndex(skeleton, cell);
+  skeletonVertexIndex.set(skeleton, built);
+  return built;
+}
+
+/**
+ * 骨架顶点里离 `(x, y)` 最近的那一个（严格 `dist < threshold` 才算命中，否则返回 null）。
+ * 语义与「双循环扫全部骨架顶点」完全一致（含并列取舍）—— 见上方索引注释。
+ */
+export function nearestSkeletonVertex(x, y, skeleton, threshold) {
+  if (!skeleton || !skeleton.length || !(threshold > 0)) return null;
+  const idx = skeletonIndexFor(skeleton, threshold);
+  const cx = Math.floor(x / idx.cell), cy = Math.floor(y / idx.cell);
+  const cand = [];
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      const b = idx.buckets.get((cx + i) + ',' + (cy + j));
+      if (b) for (const v of b) cand.push(v);
+    }
+  }
+  if (!cand.length) return null;
+  cand.sort((a, b) => a.seq - b.seq);          // 与朴素扫描同序 → 并列取舍一致
+  let best = null, bd = threshold;
+  for (const v of cand) {
+    const d = Math.hypot(v.x - x, v.y - y);
+    if (d < bd) { bd = d; best = v; }
+  }
+  return best;
+}
+
 /**
  * 把手绘/描点的轮廓「贴」到既有边界骨架上：
  *   ① 顶点落在骨架顶点 threshold 内 → 直接换成骨架顶点（坐标完全相同 → 零缝）
@@ -830,13 +903,8 @@ export function conformToSkeleton(points, skeleton, threshold = 10, { maxDetour 
   if (src.length < 3 || !skeleton || !skeleton.length) return src;
 
   const snapped = src.map((p) => {
-    let best = null, bd = threshold;
-    for (const line of skeleton) {
-      for (const v of line) {
-        const d = Math.hypot(v.x - p.x, v.y - p.y);
-        if (d < bd) { bd = d; best = v; }
-      }
-    }
+    // 走空间索引（O(1) 查询）—— 逐位等价于原来的「扫全部骨架顶点」，见索引注释
+    const best = nearestSkeletonVertex(p.x, p.y, skeleton, threshold);
     return best ? { x: best.x, y: best.y, hit: true } : { x: p.x, y: p.y, hit: false };
   });
 

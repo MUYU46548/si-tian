@@ -48,6 +48,41 @@ export function buildGridIndex(grid) {
   return { spacing, cellSize, minX, minY, cellMap, count: pts.length };
 }
 
+/**
+ * 建索引（**按传入的桶边长**，而不是固定的 `spacing × 2`）。
+ *
+ * 为什么需要第二种桶边长：查询半径的语义各工具不同（笔刷是 `spacing × 2`，河流找邻居是
+ * `spacing × 1.5`）。桶越大 → 每次查询要扫的候选越多；桶越小 → 查询时要扫的桶越多。
+ * 桶边长约等于查询半径时最省。⚠️ 它与 `buildGridIndex` 的区别**只有桶边长**，
+ * 键的算法逐字相同（同一张网格建两种索引必须落在同一套格子里，否则"吸管吸到的格"
+ * 与"笔刷刷到的格"慢慢就不是同一格 —— 且不报错）。
+ *
+ * @param {{points:Array, spacing?:number}} grid
+ * @param {number} cellSize 桶边长（世界单位）
+ */
+export function buildGridIndexWithCellSize(grid, cellSize) {
+  const pts = grid && grid.points;
+  if (!Array.isArray(pts) || pts.length === 0) return null;
+  const spacing = (grid.spacing || DEFAULT_SPACING);
+  const size = Number.isFinite(cellSize) && cellSize > 0 ? cellSize : spacing * 2;
+
+  let minX = Infinity, minY = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const [px, py] = pointXY(pts[i]);
+    if (px < minX) minX = px;
+    if (py < minY) minY = py;
+  }
+
+  const cellMap = new Map();
+  for (let i = 0; i < pts.length; i++) {
+    const [px, py] = pointXY(pts[i]);
+    const key = Math.floor((px - minX) / size) + ',' + Math.floor((py - minY) / size);
+    const bucket = cellMap.get(key);
+    if (bucket) bucket.push(i); else cellMap.set(key, [i]);
+  }
+  return { spacing, cellSize: size, minX, minY, cellMap, count: pts.length };
+}
+
 /** 落点半径内的**候选**下标（未做距离过滤 —— 见文件头说明） */
 export function collectInRadius(index, worldX, worldY, radius) {
   if (!index) return [];

@@ -126,6 +126,62 @@ export function cellColor(kind, i, hm, palette) {
     : sampleRamp(HYPSO_LAND_RGB, (h - RASTER_SEA_LEVEL) / 80);
 }
 
+/**
+ * **山体阴影（hillshade）系数** —— 逐格的明暗乘子（1 = 不变，<1 阴面，>1 阳面）。
+ *
+ * 🔴 为什么加这个（2026-10-17 第七修，用户附了张真实世界地图：「地形怎么3D表现」）：
+ *    我们此前只有**分层设色**（hypsometric tint）—— 高度靠**颜色**表达。
+ *    真实地图让地形"立起来"靠的是**阴影**：同一颜色带上，朝光的坡亮、背光的坡暗。
+ *    只有设色时，一块高原和一片缓坡看上去是同一张平面纸（这正是"没有 3D 感"的成因）。
+ *
+ * 口径（一次算好、逐格一个乘子，渲染时按子像素双线性插值）：
+ *   · 坡向由**相邻格高差**求（中心差分 = 最省事且不引入方向偏差）；
+ *   · 光照方向 NW（`lx=-0.7, ly=-0.7`，屏幕 y 向下）—— 制图惯例：光从左上来，
+ *     山体的东南坡为阴面，读者对"凸起/凹陷"的判断不会反转（光从右下会整体反转，像挖的坑）；
+ *   · **除以本幅图的高度标准差**得到"陡峭度"：起伏大的地形自然出更多明暗，
+ *     平缓地形也不会被放大成噪声（第五次强调：按本分布归一化，绝对数字换个数据就失效）；
+ *   · **海格不参与**（水面是平的，给海面加阴影会像结了冰）。
+ *
+ * @param {ArrayLike<number>} h @param {number} cols @param {number} rows
+ * @param {{shade?:number}} [opts] `shade` = 强度（0 = 关闭，1 = 默认）
+ * @returns {Float32Array|null} 长度 cols*rows 的乘子表
+ */
+export function buildShadeMap(h, cols, rows, opts) {
+  const strength = opts && Number.isFinite(opts.shade) ? opts.shade : 1;
+  if (!h || !(cols > 1) || !(rows > 1) || h.length < cols * rows) return null;
+  if (!(strength > 0)) return null;
+
+  // 高度标准差：把"陡峭度"归一化到本幅图自己的量纲上
+  let sum = 0, sum2 = 0, n = 0;
+  for (let i = 0; i < cols * rows; i++) {
+    const v = h[i] || 0;
+    sum += v; sum2 += v * v; n++;
+  }
+  const mean = n ? sum / n : 0;
+  const std = n ? Math.sqrt(Math.max(0, sum2 / n - mean * mean)) : 0;
+  // 标准差为 0（完全平坦）→ 没有坡可投影，直接给"无阴影"
+  if (!(std > 1e-6)) return null;
+
+  const out = new Float32Array(cols * rows);
+  const NORM = 0.9;        // 每多少"个标准差"的高差算满坡（0.9 实测能出结构又不爆）
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      if ((h[i] || 0) < RASTER_SEA_LEVEL) { out[i] = 1; continue; }   // 海面不投影
+      const xl = x > 0 ? i - 1 : i, xr = x < cols - 1 ? i + 1 : i;
+      const yu = y > 0 ? i - cols : i, yd = y < rows - 1 ? i + cols : i;
+      // 相邻格若有海格，按"高度 0"处理会让海岸出现一圈黑边 → 用自身高度代替
+      const hv = (k) => ((h[k] || 0) < RASTER_SEA_LEVEL ? (h[i] || 0) : (h[k] || 0));
+      const dzdx = (hv(xr) - hv(xl)) / (2 * NORM * std);
+      const dzdy = (hv(yd) - hv(yu)) / (2 * NORM * std);
+      // 与 NW 光向点乘：坡朝向光 → 更亮
+      const shade = 1 + (dzdx * 0.7 + dzdy * 0.7) * strength;
+      out[i] = Math.max(0.55, Math.min(1.45, shade));
+    }
+  }
+  return out;
+}
+
 /** 在 ImageData 上填一个矩形色块（逐像素，避免 canvas 抗锯齿在网格缝隙留下亮线） */
 export function fillPixelBlock(data, w, h, x0, y0, x1, y1, rgb) {
   let ix0 = Math.floor(x0), iy0 = Math.floor(y0);
@@ -166,6 +222,10 @@ export function buildHeightmapRaster(hm, kind, opts) {
   const palette = (opts && opts.palette) || null;
   // 平滑档：默认取 RASTER_SMOOTH；调用方可显式传 {smooth:false} 取回旧观感（用例对照）。
   const smooth = opts && opts.smooth !== undefined ? !!opts.smooth : RASTER_SMOOTH;
+  // 🔴 山体阴影（2026-10-17 第七修）：`{shade:1}` 打开，默认**关**（零行为变更）。
+  //    只对"读地形的档"（高度 / 陆海底色）有意义 —— 温度/降水/文化那些是**专题图**，
+  //    给它们加阴影会把数值读成地形（那是错的口径）。
+  const shadeOn = !!(opts && opts.shade > 0) && (kind === 'height' || kind === 'landsea');
   const pts = hm?.grid?.points;
   if (!hm || !pts || !pts.length) return null;
   const values = kind === 'temp' ? hm.temp
@@ -192,7 +252,8 @@ export function buildHeightmapRaster(hm, kind, opts) {
   // 宁可方块也不要画错（下标一旦错位，颜色会整体偏移且不报错）。
   const cols = hm.grid.cellsX | 0, rows = hm.grid.cellsY | 0;
   if (smooth && cols > 0 && rows > 0 && cols * rows === values.length && pts.length === values.length) {
-    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h);
+    const shade = shadeOn ? buildShadeMap(hm.h, cols, rows, { shade: opts.shade }) : null;
+    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade);
   }
   return buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h);
 }
@@ -201,7 +262,7 @@ export function buildHeightmapRaster(hm, kind, opts) {
  * 平滑档：格分辨率 RGB → 子格双线性上采样。
  * 输出画布边长 ≈ `w·SS/spacing`（不是 1 世界单位 1 像素），由绘制端插值放大。
  */
-function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h) {
+function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h, shade) {
   const ox = p0[0] - spacing / 2, oy = p0[1] - spacing / 2;   // 格 (0,0) 的左上角
   const n = cols * rows;
 
@@ -244,10 +305,21 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
       const tc = fc - c0;
       const i00 = rowA + c0 * 3, i01 = rowA + c1 * 3;
       const i10 = rowB + c0 * 3, i11 = rowB + c1 * 3;
+      // 山体阴影：与颜色**共用同一套双线性权重**（各格一个乘子 → 同一段插值，不会错位）
+      let sh = 1;
+      if (shade) {
+        const s00 = shade[r0 * cols + c0], s01 = shade[r0 * cols + c1];
+        const s10 = shade[r1 * cols + c0], s11 = shade[r1 * cols + c1];
+        const stop = s00 + (s01 - s00) * tc;
+        const sbot = s10 + (s11 - s10) * tc;
+        sh = stop + (sbot - stop) * tr;
+      }
       for (let k = 0; k < 3; k++) {
         const top = cellRgb[i00 + k] + (cellRgb[i01 + k] - cellRgb[i00 + k]) * tc;
         const bot = cellRgb[i10 + k] + (cellRgb[i11 + k] - cellRgb[i10 + k]) * tc;
-        data[p + k] = top + (bot - top) * tr;   // Uint8ClampedArray 自带夹取
+        // 乘完**显式夹**到 0..255（在亮度域里夹比让 Uint8ClampedArray 事后夹更可控）
+        const v = (top + (bot - top) * tr) * sh;
+        data[p + k] = v < 0 ? 0 : v > 255 ? 255 : v;
       }
       data[p + 3] = 255;
       p += 4;
