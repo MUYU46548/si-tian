@@ -3,7 +3,7 @@
 为世界构建者设计的本地桌面应用（Electron 28），以 Obsidian 库（默认 `E:/图书馆/ROSA/`）为事实源之一，通过七层视图呈现世界观地理层级，为 Markdown 附加可编辑的坐标元数据，实现画布与笔记的双向同步。
 
 > **独立运行化（Phase 1 已落地 2026-09-18；Phase 2.4 接线 + 终态翻开 2026-09-20）**：司天另有一套自有项目文件（`.sitian`，JSON 单文件：实体树 + 剧本 + 地图 + 自动快照），目标是脱离知识库也能新建/编辑/保存世界观。
-> 接线已完成：**打开项目 → 画布事实源切到项目文件；关闭项目 → 还原打开前的知识库工作态**（`store/canvasBridge.js` 是唯一接线点）；**无项目 = 只读**（`READONLY_WITHOUT_PROJECT = true`，UI 已灰禁且灰禁带能力说明）。详见下方「单一写闸门」「项目↔画布接线」条目。
+> 接线已完成：**打开项目 → 画布事实源切到项目文件；关闭项目 → 还原打开前的知识库工作态**（`store/canvasBridge.js` 是唯一接线点）；**无项目 = 只读**（`READONLY_WITHOUT_PROJECT = true`，UI 已灰禁且灰禁带能力说明）。细节（写闸门 / 接线 / 快照 / 退出落盘）见 [`docs/agents-archive/project-save.md`](docs/agents-archive/project-save.md)。
 
 ## 技术栈 (Tech Stack)
 
@@ -22,9 +22,9 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**122 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**123 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**38 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**39 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -44,517 +44,68 @@
 
 ## 架构速查 (Quick Facts)
 
-> 本节 = 每次会话最高频问题的事实层，只放慢变量。行数等快变量在 `docs/ARCHITECTURE_MAP.md`，由脚本再生成，勿手改。
+> 只放**慢变量**（几个月才变一次的事实）。历史条目在 `docs/agents-archive/`（见文末索引）。
 
 - **七层视图链**（全部已实现）: world → domain → system → system_detail → planet → area → interior，对应组件 WorldSelector → GalaxyMap → SystemView → SystemDetailView → PlanetMap → AreaMap → InteriorView
-- **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 7 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / provinceEditing（省份归属标签网格）/ interior / search / spaceEditing
-- **A1/M1b：底图高度图写入统一（2026-09-25）**: `scenarioEditing.js` 的 5 个写入入口（`applyHeightBrush` / `applyBiomeBrush` / `applyCultureBrush` / `applyReligionBrush` / `deriveAllLayers`，各含 undo+redo）**全部改走 `commitHeightmap`** —— 底图侧原来的形态是「整体替换 baseMap 对象」（`baseMaps.value = { ...baseMaps.value, [k]: { ...baseMap, heightmap: {...hm} } }`），**一写就换引用**，与「共享同一份高度图」天然冲突：绑定行星后会变成「**读行星那份 / 写自己那份**」＝用户以为改了、画布却不变（静默分裂）。`commitHeightmap(key, hm, { touch })`：绑定态写 `mapData[pid]` 并排**行星侧**落盘（`scheduleAutoSaveMap`）；`touch:false` 供 undo 用（撤销不打 `updatedAt`，与改动前逐字段一致）；**悬空绑定回落到底图自身**（旧实现 `if (!planet) return;` = 静默吞掉这次编辑）。配套两条同批修复（`test_67` 守）：① `changeNodeId` 采集根补 `baseMaps` **值槽** —— `baseMaps[*].planetId` 是 id 引用，不级联则行星改名后绑定悬空，而绑定迁移时底图侧那份已被 `delete` → 底图表现为「空地图」（只采值、不采键，键语义混用见 `idRefDicts` 注释）；② 派生 Worker 异步回写的落盘通道**按归属分流**（写进 `mapData` 却排剧本保存 = 不落盘）。同批已修（各带反向探针）：**R2 一星一图**（`planBindBaseMapToPlanet` 加第 4 参 `allBaseMaps`，命中则 `conflictKind='planet-taken'` 拒绝并点名占用者）、**R4**（新增 `getBaseMapsBoundToPlanet` 反查 → 行星侧重建高度图时**点名**受影响的剧本，不再只报「高度图已重建」）、**P3 的一半**（`projectStore.adopt` / `closeProject` 清 undo 栈 —— 跨项目/跨事实源的撤销串味；⚠️ 只能放项目生命周期层，**不可**下沉到 `applyProjectToCanvas`：`seedFromPayload` 复用它重新装载画布，在那里清会把刚入栈的导入命令清掉，test_50 实测抓到）、**R1**（**快照不再装高度图**：`SNAPSHOT_HEAVY_FIELDS = ['heightmap','terrainGrid','referenceImages']` —— `snapshotState` 剔除、`restoreSnapshot` 从**当前项目**补回、新增 `snapshotStateWithHeavy` 供回滚的 `before`；满 50 份实测 **38.23 MB → 4.7 KB**，UI 已写明「快照不含地形高度图」；⚠️ 「剔除」与「补回」两半的探针**会互相掩盖**，必须一次一枚验证）。⚠️ **M1c 已开放双模式入口（2026-09-25）**，见下一条
-- **A1/M1c：剧本地形「冻结导入 / 跟随行星」双模式（2026-09-25）**: `scenarioEditing` 新增 `importHeightmapFromPlanet(baseMapKey, planetId, { force, planetName })` —— 把行星当前地形**深拷贝**一份到底图（`cloneHeightmapForFreeze`：逐数组 `new Float32Array(...)`，**绝不共享引用**，也不复制运行期 `_spatialIndex`），走 undo，并记**纯展示**标注 `terrainFrozenFrom = { name, at }`（非引用、非真相）；底图已有地形时返回 `conflict`（`conflictKind='basemap-has-terrain'`），`force:true` 才覆盖。另有 `describeBaseMapTerrain(key)` → `{ mode: 'following'|'frozen'|'empty'|'none', planetId?, dangling?, from? }` 供 UI 显示（`following` 且行星已不存在时给 `dangling`，提示解绑/改冻结）。**为什么两种模式并存**：跟随 = 共用同一份 → 行星改地形会连带改剧本（适合当代同步构建）；冻结 = 独立副本 → 双向互不影响（适合历史存档剧本）。A1 文档最初否掉「复制」方案的理由（「复制即双源、漂移必然回归」）在**同步构建**场景成立，在**存档**场景恰恰相反 —— 存档要的就是漂移不发生。UI 在 `ScenarioMap` 底图区（工具栏「更多」里）加「地形：<状态> + 选行星 + 冻结导入 / 跟随 / 解绑」，两个按钮的 `title` 写明取舍（「复制一份」vs「会改到行星」）。⚠️ **不做任何自动绑定**（`.map` 导入只推 provinces 到行星，从不设 `planetId`）。回归 `test_68`（冻结/跟随**互为反面**：同一句「在剧本涂山」，冻结下行星必须不变、跟随下必须变）
-- **M2/A2（渲染数据驱动）第一步：高度图栅格渲染跨视图共享（2026-09-25）**: 新增 **`utils/heightmapRaster.js`** —— 从 `ScenarioMap` 抽出的「高度图 + 配色 → 离屏 canvas」纯函数层（色带 `HYPSO_/TEMP_/PREC_` + `cellColor` + `fillPixelBlock` + `buildHeightmapRaster(hm, kind)` + `createRasterCache()` 工厂），**ScenarioMap 与 PlanetMap 现在共用同一套配色**（此前同一份高度图两个视图各有一套算法/配色 = 观感分裂 + 改一处另一处不变）。`ScenarioMap` 只保留「用哪份高度图」与「缓存失效时机」（它的栅格缓存只在切底图时清 → 涂抹期间是陈旧的，属既存行为，未改）；`PlanetMap` 新增 `drawHeightmapRaster(ctx, kind)`，缓存失效用**内容指纹** `hashLabels(hm.h)`（涂抹即失效，无需外部 clear）。UI：PlanetMap 高度笔刷参数区加「着色」下拉（`data-testid="heightmap-raster-kind"`，**只在高度模式渲染**），五档 `biome`（默认=原矢量群系着色，**零行为变更**）/`landsea`/`height`/`temp`/`prec`。⚠️ 两处**易漏接线**：① 切换档位必须 `watch(heightmapRasterKind) → requestRender()`，否则「下拉改了画布没反应」（test_69 像素断言抓到过 `diffPixels: 0`）；② `currentMapData` 在 **PlanetMap 的 setupState** 上，store 上没有（写成 `store.currentMapData` 恒 undefined → 装置断言假红）。回归 `test_69`（源码守卫「组件里不许留副本」+ 纯函数四色 + 切档像素变化/切回逐像素复原）
-- **M2/A2（渲染数据驱动）第二步：`terrain[]` 降为可选覆盖物、地形改由高度图驱动（2026-09-25）**: 新增 **`utils/terrainRepresentation.js`**（纯函数 `hasHeightmapContent` + `resolveTerrainRepresentation`）＝「这片地形该画什么」的**唯一判定**，**渲染 / 命中 / 导出三处共用**（各写一套 `if` 就是又一个「改一处另两处不变」的双源，而且不会报错）。规则：**有高度图 → 高度图是地形主表示**（多边形默认**不画**；`terrainPolygons` 图层显式打开后**半透明**叠加 `alpha 0.5`，此时高度图转半透明 `0.75` —— 两者都要看得见）；**没有高度图（自建底图 / 旧多边形地图）→ 多边形照旧是主表示、照旧不透明**（兼容性底线）。`layers.planet` 新增 `terrainPolygons`、**删除 `heightmap`**（职责被「地形」总开关吸收；它原本就没有 UI 入口）。涂色网格（`terrainGrid`）显示条件从「死绑 `terrain` 图层」改为**地形有显示即可**（否则关掉总开关改看覆盖物时涂色层凭空消失）。高度图渲染位置**从最后（所有元素之上）移到地形槽位** —— 那个位置正是「只能默认关着，否则像遮罩」的成因。同批修掉三条**真缺陷**：① **PNG/SVG 导出此前完全没有高度图**（`useFullMapExport` 只有 `drawTerrain`）→ 导出图与画布不一致；现在两侧读同一份判定，SVG 用**内联位图**承载高度图（栅格数据在矢量格式里只能如此，与参考底图同手法）；② **导出必须 `drawHeightmap(ctx, alpha, { full: true })`** —— 它的视口剔除是**屏幕**优化，导出时会把屏幕外的地形整块丢掉（不报错，只是悄悄缺一大片）；③ 高度图叠加不透明度**统一 0.75**（原先矢量 `0.7` / 栅格 `0.85` 两套取值）。命中随动：`planetHitTest` 改用 **`terrainHit`**（= `drawPolygons` 且未锁定）——「看得见才点得到」，关掉图层后点不中；编辑多边形（`draw`/`move`）与高度笔刷分别强制显示覆盖物 / 高度图，否则「看不见也点不到 / 涂了看不见」。回归 **`test_70`**（源码守卫三处共用且无残留旧 `if` + 像素「开覆盖物→画布变→关回**逐像素复原**」+ 命中开/关 + 导出含高度图位图与覆盖物 path）；随动 `test_45`（导出断言改挂覆盖物图层 + 新增「默认导出含高度图位图」）、`test_59`（图层控制改走覆盖物；纹理强度守卫改为要求 `0.45 * alpha`，因为覆盖物半透明时纹理不跟着淡就会显得比底色更实）、Node 单测 `test_terrain_representation.js`（13 条，含与 `heightmapAccess.hasGrid` 的**口径蕴含**关系）。⚠️ 反向验证 3 枚探针命中 **8 项且 f0/f1/f2/f3 四段各自说话**（累积式失败，非 fail-fast）
-- **M3/A7：参考底图的导出几何（2026-09-25）**: 新增 **`utils/svgExport.js` 的 `refImageSvgGroup(r)` / `refImageWorldBounds(r)`** —— 参考图 → SVG 组 与 世界包围盒的**唯一实现**，`useFullMapExport`（行星全图）与 `useScenarioExport`（剧本）两处共用。此前两处各写一份，实测有**四处**错，第一处让整段成为**死代码**：① 读 `referenceImage.referenceImage` —— 那是 computed **ref 对象**（不是值），`.width` 恒为 undefined → 分支永不进入，**参考图从来没有被导出过**（不报错，只是导出图与画布不一致）；② 只取「当前激活的一张」，而画布画的是**全部**（P2 多图之后导出没跟上）；③ 把 `rotation`（**象限索引 0/1/2/3**；画布用 `% 4` 再乘 90°）当弧度换算 `* 180 / Math.PI` → 转 1 次导出成 57°；④ 漏 `flipH` 与 90/270 的**宽高互换**。画布侧约定（AreaMap / InteriorView / PlanetMap 三处本来就一致且正确）：`rot = (rotation || 0) % 4` → `rotate(rot * π/2)`；`drawW = rot%2 ? h : w`；`flipH` 在 `rotate` **之后**镜像（顺序不能换）；90/270 交换绘制宽高是为了**保持用户校准好的占位框**。导出算边界也必须用**旋转后**的包围盒，否则旋转过的底图会被裁掉一角。回归 **`test_71`**（源码守卫「两处共用 + 不许再读 ref 对象 / 不许再把象限当弧度，**判据先剥注释**」+ 纯函数四值 + 端到端 SVG 几何：单图/多图/翻转/包围盒）。⚠️ 反向验证 3 枚探针命中 **10 项**，f1/f2 两段各自说话
-- **M3/A6：笔刷工具的统一滚轮契约（2026-09-25）**: `PlanetMap.onWrapperWheel` 从「只有地貌笔刷调间距」扩到**三个笔刷模式统一契约**（与 `ScenarioMap.onWheel` 对齐）：**滚轮 = 半径 / 大小；Shift+滚轮 = 强度 / 硬度；上滚增大**（`deltaY < 0`）。两条纪律：① 步进与范围**取自各笔刷滑块自身的 min/max/step**（高度 20-300/step 10、0.5-10/step 0.5；地形 1-30/step 1、0-1/step 0.05）—— 滚轮另立一套数字就会出现「滚轮能调出滑块调不出的值」这种静默不一致；② 必须用 **`@wheel.capture`**（捕获阶段）拦截，否则同一次滚轮会**同时**触发画布缩放。非笔刷模式（pan / draw / region / marker / route / …）**不拦截**，滚轮仍归画布缩放（与从前一致）。UI 加 `.brush-wheel-hint` 提示 —— 用户不知道有这组手势，等于没有。回归 **`test_72`**（真 `WheelEvent` 派发到 `.canvas-wrapper`：上滚/下滚、Shift 改强度而非半径、边界夹住、非笔刷模式不拦截）
-- **免责声明 + UI 基座试点（2026-10-06，方案 A）**: [`docs/PROPOSAL_DISCLAIMER_AND_UI.md`](docs/PROPOSAL_DISCLAIMER_AND_UI.md) 已落地。
-  - **文案单一事实源** `utils/disclaimer.js`：13 节全文 + 短版要点 + 版本化 ack（`DISCLAIMER_ACK_KEY = 'sitian_disclaimer_ack_v' + DISCLAIMER_VERSION`）。⚠️ **不要用 `package.json` 的版本号代替 `DISCLAIMER_VERSION`** —— 发版 ≠ 条款变更，混用会让「改个 bug 也逼所有人重新点同意」。改字只动这一个文件（组件零改动）。
-  - **UI**：`components/DisclaimerDialog.vue` 双模式（`gate` 首启阻断 / `view` 随时可查，同一实例由 `App.vue` 持有，避免两份实现漂移）；首次落地 shadcn-vue 源码组件 `components/ui/{button,dialog,card}/`。阻断三件套 = 滚到底才可勾选 + 勾选才能同意 + 「不同意并退出」。
-  - 🔴 **三条 reka-ui 事实（读源码实测，不是猜的）**：① `DialogContent` **不会**自动 portal（portal 是独立的 `DialogPortal` 组件）—— 我们**刻意不套它**，因为司天 token 挂在 App 根元素（scoped 的 `.theme-dark/.theme-light`），teleport 到 body 就拿不到颜色（R7）；② `trapFocus` **没给默认值**，不显式传就是 `false` → FocusScope 不做焦点陷阱（「Tab 困在弹窗内」是知情同意的证据力所在，必须显式传）；③ reka-ui 只给 `role="dialog"`，**不给 `aria-modal`** → 要自己写死（本仓此前 0 处 aria-modal，`test_83` 守）。
-  - 🔴 **首启挂载的三个必踩坑**：① 判定必须在 `await store.loadGeodata()` **之前**（之后会出现「splash 淡出 → 闪一下主界面 → 才盖上来」）；② `OnboardingGuide` 挂载 1s 后会自动弹出 → 必须加 `window.__sitianDisclaimerGate` 守卫并**在同意后主动补开一次引导**（两层浮层同屏 = 声明被盖住 = 没读过就进去了）；③ 阻断态要在全局 keydown 里**吞掉 Esc 与 F1**（弹窗自身已拦「Esc 关闭」，这层是防全局 Escape 去 `closeAll()`、防 F1 在模态后面开关于面板）。
-  - 🔴 **Tailwind 只出 utilities 层，不许引 base**：`tailwind.config.js` 的 `corePlugins.preflight=false` + `assets/tailwind.css` 只写 `@tailwind utilities`（**双保险**）。preflight 会带来 `html{line-height:1.5}`（R2：全仓本无全局行高，一引就整体漂移）与 `ol,ul{list-style:none}`（R1：`NodeDetailPanel` 的 `.markdown-body ul/ol` 没写 `list-style`，靠浏览器默认渲染列表符号 → 会直接消失）。**副作用要自己补**：preflight 缺席时 `class="border"` 只给宽度、`border-style` 仍是 `none`（边框不可见且不报错）→ `tailwind.css` 只对 `.border*` 这几类选择器补 `border-style: solid`，**绝不写 `*` 选择器**（那等于把 preflight 从后门请回来）。配色靠非 scoped 的 `.theme-dark/.theme-light` 把司天取值映射成 `--ui-*`（shadcn 的 `:root` + `html.dark` 体系与司天不接通，见 R7）。⚠️ **引 Tailwind 前必须重跑类名撞车审计**（既有标记里有没有人用了 `container`/`hidden`/`flex`/`border`… 这类单类名 utility）；本轮实测 **0 处撞车**。
-  - 🔴 **回归基线必须播种 ack**：`run_tests.py` 的 `MOCK_SCRIPT` 在页面加载前写入「已确认」记录（**键名与版本号从 `utils/disclaimer.js` 解析注入，不在测试里写死** —— 写死会在升版本时静默失配，几十个用例被阻断层一起挡住，表现为「大回归」）。`test_83` 用 `sessionStorage` 的跳过开关清掉 ack 再重载来验证阻断行为，**用例收尾必须清掉该开关并回写 ack**（sessionStorage 跨导航存活，不清会污染后续用例）。
-  - 回归 `test_83_disclaimer`（6 段：源码守卫 / 首启阻断 / Esc+点遮罩+全局 Escape 三条路径都关不掉 / 半程不解锁→滚到底→同意 / 已确认不重弹（删 ack 重弹作反证）/ 关于面板入口与查看模式）+ Node `test_disclaimer.js`（13 条：版本化 ack / 降级 / 13 节骨架 / **未成年人条款必须保留** / 第 12 节必须留占位符）。
-  - 随动：`版权与许可证.md` 升到 0.1.7 并补齐全部依赖（含 `lucide-vue-next` ISC、`class-variance-authority` Apache-2.0），免责声明第 9 节引用它 —— **改依赖必须同时改这两处**；`README.md` 同步用例数与命令表。
-- **🔴 地图编辑的卡顿：先量后修（2026-10-18 第十八修；回归 `test_121` + Node `test_skeleton_index.js`）**：暮雨原话「卡顿发生在方方面面，基本涉及地图编辑绘制的，画条线圈个地都要卡一卡……随便拖一条出来都要卡一阵，点节点又开始卡」。**先量**（真实 `docs/mockups/desite.map`：200 省 / 160 河 / 24018 骨架顶点 / 9975 格高度图）：
-  - 探针 `scripts/tests/tools/_probe_jank_real.py` + `_probe_jank_real.js`（⚠️ **不能用 `_lab.py run`**：整段 40s+ 会撞 CDP 15s 读超时 → 改成"页面里跑、Python 轮询 `window.__JANK`、超时重连续读"）；CPU 摊派 `_probe_cpu_profile.py`（CDP `Profiler` 按函数聚合自耗时）。
-  - 修前：省份自由绘制 **每事件 29.31ms / 帧 p50 44.5ms / p95 72.2ms / 27 帧超 33ms（≈22fps）**；河笔拖笔 3.42ms/p95 24.9；拖节点 9.32ms/p50 23.9。修后：**2.14 / 0.97 / 0.15 ms 每事件，三者帧 p50 全 16.7ms、p95 <18ms、零超 33ms**。
-  - CPU 采样把 29ms 摊开：**(program) 67%**（原生 canvas 光栅化，每帧重画整张地图）、`conformToSkeleton` 最近点扫描 590+273ms、Vue 响应式 `get` 陷阱 15%。
-  - **三条修法**：① 骨架最近顶点走**空间索引**（`provinceShape.js#nearestSkeletonVertex`：格子边长=threshold、3×3 邻域**完备**、并列按 `seq` 保持"取先出现"⇒ 与朴素双循环**逐位一致**；调用点同时改 `skeletonForTerrain(rawTerrain())` —— 骨架里躺着响应式代理时**每次读坐标都过 get 陷阱**）；② 自动河那段几何**按数据引用缓存**（`autoRiverPartsFor`：闸门/剪枝/成链/抽稀/裁岸线原来**每帧**重算，`render` 7.3→14.3ms，`pruneRiverNetwork` 一项 4.2ms；掩膜改走已缓存的 `getLandMask()`）；③ 🔴 **手势期「底图基帧」缓存**（`beginStrokeBase`/`buildStrokeBase`/`blitStrokeBase`）—— 按下时把「**没有草稿的那一帧**」渲进离屏画布，拖动期每帧只「贴图 + 画在动的浮层」。
-  - 🔴 **基帧缓存的三条口径（改这里前必读）**：① 只在**明确的高频手势**里启用（自由绘制/描轮廓/河笔/拖节点/顶点拖动/两种框选/折线切割；**涂抹与高度·群系·文化·宗教笔刷不启用** —— 它们每帧真的在改数据），抬手即丢；② 基帧只装「**草稿之下**的静态层」，草稿之上的四层（省名/势力名/浮雕/标记）与屏幕空间浮层照常逐帧画 ⇒ 贴图帧与全量帧**层叠顺序逐层相同、像素逐点相同**（`test_121` c 段：683640 个像素逐个比对，差异 **0**）；③ **相机一动立刻弃用并解甲**（否则"重建+贴图"比全量重画还贵一倍），另加 `watch` 安全阀：`terrain / rivers / heightmap / autoRivers / autoRiverSegments` 换引用就解甲。机械计数 `strokeBaseStats={builds,blits}` 让用例判"缓存真的在生效"（**不靠墙钟时间**）。
-  - ⚠️ 随动：`test_103` 的自动河渲染块锚点改成**不含 `!blitted` 前缀**的子串（加门控不该让判据失效）。
-- **🔴 手势期间的自动保存顺延（2026-10-19 第十九修·一；回归 `test_123` + Node `test_interaction_gate.js`）**：上一轮量出"一次编辑之后 800ms 防抖到点，主线程被整块占住 519ms；若那一刻人还在拖，最长帧 596ms"——**连续拖笔已修到 2ms/事件，手感仍然一顿，就是这一顿**。这次保存没有理由必须立刻发生（它是防抖保存，不是 Ctrl+S）。
-  - **修法**：`utils/interactionGate.js`（新增，纯状态机 + 每链一份 `createSaveDeferrer`）。四条保存链（地理 800ms / 行星图 800ms / 剧本 300ms / 项目 800ms）在**到点那一刻**先问「人手还在画布上吗」，在就顺延、抬手 + 60ms 静默后立刻补。
-  - 🔴 **三条口径（改这里前必读）**：① **只影响"自动"保存** —— 显式保存 / `flushSave()`（退出、关项目）/ Ctrl+S 一律不经闸门（数据安全 > 手感；`test_123` d 段判"手还按着也能立刻写盘"）；② **顺延有 5s 上限**（`SAVE_MAX_DEFER_MS`）：防"手势没配对"把保存饿死 → 到点强制写一次并记 `forced`；③ **抬手后 60ms 静默窗口**（mouseup 里还要提交这一笔：压叠闸门 → undo → 全量写口）。
-  - **接线点唯一**：`ScenarioMap.vue` 的 `onMouseDown` / `onMouseUp`（本组件**所有**编辑手势都从 mousedown 起笔，一处接线即全量生效）。配对靠 `canvasGateArmed` —— **不能在 `onMouseUp` 里无条件 end**：`mouseleave` 也走 `onMouseUp`，会刷一堆"没有 begin 的 end"；`onBeforeUnmount` 兜底收掉。
-  - **真实测量**（`_probe_save_gate_20261019.js`，真实 `desite.map`，编辑一条河后按住拖 2.6s）：**拖动中最长帧 596 → 18.5ms（0 帧 >50ms）**、期间不写盘（`defers=14`）；**抬手后 275ms / 1 帧**（顺延的保存补上，`savedAfterRelease=true`）。
-  - **那 275ms 的摊派**（`_probe_save_breakdown_20261019.js`）：`exportCanvasToProject` **85ms** + `pushSnapshot` **68.9ms** + `toIpcPlain` ~11–15ms + `project.value = …` 的 Vue 深响应式化（未量，估 ~100ms）。**下一件从这三处挑**，取舍与红线写在 `docs/SITIAN_HANDOFF_20261019.md` §2。
-  - ⚠️ **测试口径**：`test_123` 的 e 段（5s 上限）必须**拆两次 eval**（会撞 CDP 15s 读超时），且上限是"从**该保存到点**算起" → E1 之后要等 ~7.2s（800ms 防抖 + 5000ms + 余量）；`node scripts/tests/unit/test_interaction_gate.js`（12 条）**不按墙钟判**（`check(now)` 注入时刻 + 机械计数）。
-  - ⚠️ 顺带补导出：`scheduleAutoSaveScenarios` 从 geodata 顶层导出（此前只在模块 ctx 里，用例够不着）。
-- **🔴 河流：预览 = 落库 + 橡皮 + 「加河+改母河」一条撤销（2026-10-18 第十八修·三/四；回归 `test_122` + Node `test_river_erase.js`）**：暮雨原话「节点的设计是不是本来就有问题？有变成描点连线模拟器的风险。河流要不要尝试其他画法？应该更偏向手绘吗（**甚至有橡皮擦来擦除**）……应该优先参考现成各类绘图软件」。
-  - **预览 = 落库**：修前预览走 `smoothWhileDrawing(draft,1,18)` 且**宽度写死 `0.7`**、落库走「抽稀→按弧长压点数→Chaikin」+ 宽度 3.5 ⇒ 画的是细发丝、松手变成宽河，形状也不是同一条。现在两边共用 **`riverNodesFromDraft()`**（唯一几何链）+ 共用 `RIVER_WIDTH_DEFAULT`，`test_122` b 段按点比对（38 点 = 38 点，`JSON.stringify` 相等）。
-  - **橡皮**（工具 `riverErase` / **Shift+W** / 底图编辑行「橡皮」按钮；图标 `eraser` 已加进 `Icon.vue`）：按住抹过去就擦，**不需要先选中对象/挑节点/Delete**。几何在纯函数层 `utils/riverErase.js`（`erasePolylineByStroke` / `planRiverErase`）。🔴 **判定看"线的哪一段落在半径内"，不是"哪个节点落在里面"** —— 节点间距按屏幕像素定（30px），长河被 `RIVER_MAX_NODES`(72) 截住后间距可远超橡皮直径，只判节点会"擦过去没反应"；做法是按 `radius/2` **虚拟加密**再判，结果只保留「原节点 + 每段切口」（不漏、也不摊爆节点数）。边界**算留不算擦**（严格 `dist < radius`）；留下短于 2 点的段丢弃。半径 `RIVER_ERASE_RADIUS_PX = 18`（屏幕像素，画布上的轨迹与笔尖圈**用同一个常量**画）。**只擦手画的河**（`river_` 前缀；导入河/自动河不动，抹到就明确回一句，绝不静默）。擦断 → 第一段留原 id、其余段为新河（继承宽度）。
-  - **原子写口 `applyBaseMapRiverEdit(baseMapKey, {patches, adds, removes})`**（改/加/删一起、`execute` 只有一处、已登记 `writeGate`）：橡皮一次擦除 = **一条撤销**；顺带把「画支流」从**两条 undo** 变成一条（`addBaseMapRiver` + `updateBaseMapRiver` → 同一个口，`test_119` 行为不变）。
-  - ⚠️ 随动：`test_95` 组件画河闸门 `store.addBaseMapRiver(` → `store.applyBaseMapRiverEdit(`；`test_106` 预览闸门 → `riverNodesFromDraft` + `riverPreviewNodes()`。
-  - ⚠️ **踩过的两个坑**：① 出图脚本里"中途改相机"会让"预览=落库"这条不变量失效（`px()` 跟着相机走 → 预览 32 点 / 落库 72 点），出图前把相机按定就不要再动；② `headless` 下压叠闸门的 `window.confirm` 会**永久阻塞**（没有 dialog handler）—— 探针/用例量落库那条链前必须 `window.confirm = () => true`。
-  - 观感存档：`docs/assets/river-eraser-20261018/{01-preview-equals-landed,02-landed,03-erase-trail,04-erased-split}.png`（真实底图）。交接与欠账：`docs/SITIAN_HANDOFF_20261018_ROUND18.md`。
-- **🔴 剧本「隐式载入」会覆盖项目数据（2026-10-06 修，回归 `test_84`）**: `App.enterScenarioMode()`（世界选择页的「历史剧本」按钮）无条件 `sitianAPI.loadScenarios()`（读 **知识库缓存** `<库>/.sitian/scenarios.json`）再 `importFromScenariosJson(data)`，而后者走 `applyScenarioState(data, {fresh:false})` 的**默认合并 `{...旧, ...新}` = 新值赢**。项目态下画布事实源是**项目文件**，于是库里**同名的剧本与底图被整体替换**（用户改过的 `ownership` / `changeEvents` / 谱系 / 标注 / 标记，以及画过的省份、涂过的地形全没了），紧接着 `saveScenarios()` 把覆盖结果推给项目并落盘 = **不可逆**。触发时机还是最坏的那种：**每次启动后第一次点「历史剧本」**（`restoreLastProject()` 打开项目 → WorldSelector 上就摆着那个按钮）。**修法**：装载口加第三种显式语义 `fillMissingOnly`（**内存里已有的优先，只补缺**），隐式载入必须传它；「同 key 覆盖」保留给**显式**动作（剧本工具栏「导入剧本数据（合并：同 key 覆盖）」，按钮 title 就是这么写的）。配套两件：① `applyScenarioState` 回报 `changed`（引用是否真的变了）→ `importFromScenariosJson` **只在 `changed` 时排保存**，无事可补就纯 no-op（不再每次进「历史剧本」都把项目标脏 + 触发写盘与备份轮转）；② 补缺语义**一律不碰切片点**（书签的家是项目文件，不是知识库缓存）。⚠️ **三种语义必须显式选一种** —— 这是 A-2「读优先级单源」在剧本侧的落点，**默认值选错就是静默毁伤**。
-- **🔴 fixture 专名的解析（2026-10-06 收口）**: 用例里写的是**合成 fixture 的名字**（`曜川星` / `归岚星域` / `叠翠原`…），真实库没有它们 → 老实现下 `--real-data` **19 个失败里 17 个是这一条**（"看上去像司天在真实库上跑不起来"，其实只是测试把 fixture 的专名写死了）。现在统一写成 **`A('曜川星')`（Python 侧）/ `__alias('曜川星')`（页面 JS 文本）**，由 harness 按数据源解析：合成 fixture 模式**恒等**（85 → 86 个用例行为不变）、`--real-data` 换成真实库里的名字。对照表**唯一实现**在 `scripts/tests/fixtures/make_vault_fixture.py` 的 `KEY_NAMES` / `NON_NODE_TERMS`（= 当初生成 fixture 用的改名表），`fixtures/name_map.py` 只做反转，`lib/helpers.py` 的 `A()` 与 `MOCK_SCRIPT` 注入的 `window.__alias` 同源于它。批量改写用 `scripts/tests/tools/alias_fixture_names.py`（tokenize + f-string 两阶段，**幂等**；干跑不带参数、写盘加 `--apply`）。**`test_86` 守卫**：用例里再出现裸专名、或引用了未登记的 fixture 专名，立刻红。⚠️ **实测口径（2026-10-07 更新）**：`--real-data` 由 65/84 → **84/86**（`test_67` 已闭合）；残留 2 条**不是专名问题** —— `test_66`（几何假设：`focusOn` 居中，真实节点靠边被相机夹住）与 `test_06_texture`（真库 8 色 vs 合成 31 色，阈值 30）。**`test_67` 的定性**：不是真值漂移，是 **float32 精度差** —— 真库 `heightmap.h` **带小数**（乐园星 709/26910 非整数）、fixture 的 h **全是整数**，而笔刷管线把 h 拷进 `Float32Array`（`applyHeightBrush` 的 `newH`/`oldH`）→ undo 恢复的是「float32 化后的原值」，与 JSON 里的 float64 原值在双精度下差 4e-5（相对 6.6e-11）。断言已改为 `Math.abs(s2-s0) <= max(1e-6, |s0|*1e-8)` 并写明「真 undo 失败的偏差 ≈ 整笔抬升量，比容差大 1e5 倍」——**不是放宽阈值了事**。**纪律**：新用例取节点按 `layer` / 结构找，或走 `A()`/`__alias()`；**新增任何 fixture 专名必须登记进 `KEY_NAMES`**（否则 `test_86` 直接指出该补哪一行）。
-- **🔴 剧本「元信息不可改」+「标注/标记只能加不能删」（2026-10-07 修；回归 `test_87`）**: 把 `scenarioEditing.js` 的 66 个导出逐个对产品引用数了一遍，抓出三个**零调用的死入口**（本项目第四次出现这类缺口，前三次是 `clearOwnership` / `batchSetOwnership` / `removeProvinceWithGrid`）：
-  - `updateScenario` **连测试都没调用过** → 剧本的 名称 / 罗马数字 / 时代标签 / **起止年** 建完就改不了：年份填错只能「删剧本重建」，而重建会连带丢掉 `ownership` / `changeEvents` / 标注 / 标记（**那是真丢数据**）。现在剧本管理对话框每条加「编辑」，**复用新建表单**（标题与按钮切文案）；保存只走 `updateScenario`（`execute()` = 一条 undo），**已录内容一字不改**。⚠️ 改起止年要用切片对话框**同一份** `changeDateStats()` 报「新区间下有 N 条易主日期落到区间外」——区间收窄会让已录日期从时间轴上静默消失（"改坏了自己却看不出来"）。
-  - `removeScenarioLabel` / `removeScenarioMarker` 零调用 → 地名与标记「只能加不能删」（只有一次性的撤销兜底）。现在剧本管理对话框里有「当前剧本的标注与标记」清单 + 逐条删除。
-  - 🔴 **两个写口必须支持「id 或下标」双寻址**：FMG `.map` 导入的标注/标记**没有 id**（`utils/azgaar-parser.js` 只造 `{x,y,text,size,color}` / `{x,y,name,type}`），按 id 匹配时 `undefined === undefined` 会命中**同类型的第一条** → 「点第 3 条删掉第 1 条」且不报错。撤销也必须 `splice` 回**原位**（顺序 = 渲染层叠顺序），不能 push 到表尾。两处都返回 `{ok:false, reason}` 回执（不再静默 `return`）。
-- **🔴 剧本视图的省份右键菜单在真机上打不开（2026-10-07 修；回归 `test_88`）**: `contextMenu.value = { show: true … }` 只出现在 `onCanvasClick` 的 `if (event.button === 2)` 分支里，而**浏览器对右键根本不派发 `click`**（只派发 `contextmenu` / `auxclick`）——当时唯一的 contextmenu 监听器是 `(e) => e.preventDefault()`，**只拦不弹** → 真机上右键菜单整片打不开。**失效后果据实说（别夸大）**：菜单里「重命名」「更改生物群系」在属性面板另有入口、「删除」在「更多 → 删除 (E)」工具另有入口，**真正只剩这个菜单有的能力是「复制省份」**；但"右键点了没反应"仍是真缺陷（用户第一反应就是右键）。修法：抽出唯一实现 `openProvinceContextMenu(event)`（保留 `preventDefault`，否则会同时弹浏览器原生菜单），注册到**真正的 `contextmenu` 监听器**；`click{button:2}` 分支保留给合成事件（行为不变）。⚠️ **为什么长期没被发现**：CDP 用例里自己 `dispatchEvent(new MouseEvent('click', {button:2}))` 就能把菜单"打开"——**合成事件比真实浏览器宽松**，行为断言与源码守卫双双为真；`test_88` 因此**只用真实 `contextmenu` 事件**做判据（反向验证：把监听器退回「只 preventDefault」→ f0+f1 双红，报的正是「真机上右键功能整片点不到」）。
-- **🔴 剧本卡片墙 + 画省份「预览 = 落库」（2026-10-17 第 2~4 轮；回归 `test_111`/`test_112`/`test_113` + Node `test_scenario_cards.js`）**：
-  - **卡片墙**（`components/ScenarioPicker.vue`，EU4 式选剧本）：**必须 Teleport 到 body**（`position:fixed` 不够 —— `.main-content > *` 的入场动画带 `transform`，动画那 0.28s 里 fixed 的包含块被改写成 main-content，左侧导航树会露出）；缩略图 **Path2D 按底图缓存 + 逐张帧让出**；成品位图再按**内容签名**做**模块级**缓存（`scenarioThumb.js` 的 `bakedCache`，「进墙→改剧本→再进墙」不该重画）；命中缓存时**不让出帧**。**换剧本**入口 = 剧本列表头 `slp-picker`（沉浸条 `imb-picker`）→ `App.backToScenarioPicker()`；`← 返回` 语义仍是**离开剧本域**，不许合并。空态按「有没有底图」分流，编辑器空态补**真按钮** `empty-import-map` / `empty-new-basemap`（空态容器 `pointer-events:none`，按钮要逐个 `pointer-events:auto`）。⚠️ **态势面积**必须复用 `provinceAreaIndex`（`openingSituation(..., { areaOf })`）：逐条剧本现算同一份净面积实测 **1058.8ms → 3.6ms**。
-  - **河流线宽 = 屏幕像素口径，必须成对换算**：画布此处已 `ctx.scale(cameraScale)` → `lineWidth` 是世界单位，而 `basemapRiverWidthPx()` 返回屏幕像素。`drawRivers` 与 `drawSelectedRiverHighlight` 都过 `basemapRiverWidthWorld(r, cameraScale.value)`（增量仍用 `px()`）。改前实测 **1× 8px / 2× 11px / 4× 18px**（暮雨的「大白虫」），改后 **8/8/8**。自动河侧早就修对、自带河侧漏了 —— 又一次「同一能力两个消费者只接一个」。
-  - **画省份：预览 = 落库**（暮雨：「不要搞成描点连线模拟器」）。松手前画的以前是**手迹折线**、松手后落库的是另一条形状（简化 → 贴骨架 → 贝塞尔）→ 形状会"跳"。现在两者共用 `freeTraceRing(rawPts, { snap })`；预览画**闭合 + 贝塞尔 + 半透明填充**的地块 + 一条淡手感线。`test_113` 守：拖笔期间圈内**被着色**、**预览环与落库环逐点相同**、落库点数 < 手迹点数、每个顶点都有贝塞尔控制点。⚠️ 骨架**按 `terrain` 引用缓存**、预览形状**按 60ms 节流**（贴骨架是 O(点数×骨架点数)）；真实底图上「松手落库」会走「压叠闸门 → undo → 全量保存」重链，出图工具别为一张图去触发它。
-  - **出图与量尺**（临时件 `scripts/tests/tools/`）：`_shot_story_20261017.py`（合成地形，压测用）、`_shot_story_real_20261017.py`（**真实 `docs/mockups/desite.map` 走产品导入链**，看观感用这组）、`_shot_stats.py`（读 PNG 的像素读数）、`_probe_picker_perf.js`、`_probe_river_highlight.js`。⚠️ 出图前先关 **RecoveryPanel**（`z-index 1100` 全屏盖住）；⚠️ **给 `MouseEvent` 漏传坐标 = NaN → dispatchEvent 抛 non-finite**。
-  - 🔴 **本会话模型没有图像输入**：观感类结论 = **像素级数值判据（落进用例）+ 出图存档交人看**，不许把"读过代码"说成"看过画面"。
-- **🔴 河流编辑三件：多选 / 框选批量删 / 裁到海岸线（2026-10-17 第五轮；回归 `test_114`）**：
-  - **多选**：`selectedRiverIds`（整批）+ `selectedRiverId`（主选中 —— 拖节点/加拐点仍只作用于它）。
-    **Shift+点 = 加选/移出**；高亮**逐条画**（主选中暖白光晕、其余淡青细芯），以前只画一条 → 多选时其余几条毫无反馈。
-  - **框选批量删**：**Shift+拖动**出虚线框；判定必须**同时**含"顶点在框内"与"**线段穿过框**"（Liang–Barsky）——
-    河的点很稀疏，只判顶点的话"框住河身中部"一条都选不中（判据与视觉不一致）。批量删 = **一条撤销**
-    （写口 `removeBaseMapRivers`；`test_114` 判据：删 3 → 0，**一次** Ctrl+Z → 3 条全回）。
-  - **裁到海岸线**（按钮，两个入口都有文字）：只在他按下时裁 —— 有人就是要画进海里做三角洲。
-    陆地判定走 `makeRiverLandCheck(getLandMask())`（省份掩膜独占）+ `clipPolylineToCoast`（**同一份实现**，
-    不许在组件里另写一套）；写口 `applyBaseMapRiverPatches`（整批一条 undo）；整条在海里的**不自动删**，只在回执里点名。
-  - ⚠️ 两个写口都要登记进 `writeGate.js` 的 `MEMORY_WRITE_CALLSITES`（test_54 的反向校验会查"有守卫没登记"）。
-  - ⚠️ 写这类行为用例的两个坑（本轮都踩了）：① **选中一条河后工具栏会多一行**，画布整体下移 ——
-    每次点击都要**重新量** `canvas.getBoundingClientRect()`，用开头那份 rect 会让第二次点击落到河上方；
-    ② 框选起点必须离所有河 ≥ `RIVER_SELECT_HIT_PX`(24@1×)，否则按下瞬间先命中河、走成"Shift+点加选"。
-- **🔴 行星视图的 `.map` 导入 + 保存诚实（2026-10-17 第六轮；回归 `test_115` + Node `test_save_status_text.js` / `test_planet_map_bundle.js`）**：
-  - **起步闭环**：`.map` 导入此前**只有剧本视图**一条路（装进底图 `baseMaps[key]`），行星图看的是 `mapData[planetId]`（**另一个容器**）→ 空行星上想用自己的 Azgaar 地图起步，界面上做不到；而高度笔刷还提示「先导入 Azgaar .map」，指向一个**行星视图里不存在的入口**。现在：空态卡片里两个**真按钮**（`planet-import-map` / `planet-empty-draw`）+ 高度面板一个入口（`planet-import-map-height`）；落库走**新写口** `store.importPlanetMapBundle`（`mapDataEditing`，只覆盖 `PLANET_IMPORT_KEYS` 那 8 个键 —— **区域 / 标记 / 文本 / 地点簇 / 参考图 / 快照一律不动**，一整次导入 = **一条撤销**；源里没有高度图就**不删**现有高度图），已登记 `MEMORY_WRITE_CALLSITES`（test_54 反向校验也查）。
-  - **共用件（防"两份实现"）**：`utils/mapImportSource.js`（文件名→底图名 / 原文留底 / 读文本）＝ 行星与剧本的**唯一**实现；`utils/planetMapBundle.js`（纯函数映射）+ `buildAzgaarReferenceLayers`（**`scenarioEditing.importPlanetLayerData` 也改用它** —— 参考图层的 id 口径只许一份）。
-  - 🔴 **映射的三条硬口径**（写错都不报错，只会"导入了看不见"）：① 河流落 **`nodes`**（行星 `drawRivers` 读 nodes）、道路落 **`points`**；② 高度图**必须补齐四通道** h/temp/prec/biome —— 只给 `h` 会被 `ensureHeightmap` 判成派生层损坏，把文件里的温度/降水**静默换成估值**；③ 解析器的省份在 **`terrain`** 键（`provinces` 是 `importPlanetLayerData` 那条路的入参名），键名弄错 → 参考图层出空数组、「政治/文化」按钮点了没反应。
-  - **保存诚实**：`utils/saveStatusText.js`（`describeSaveAction` / `resolveSaveDisplay`）+ `composables/useSaveDisplay.js` ＝ 保存文案**唯一实现**，供 剧本保存 chip、行星保存横幅、**底部常驻状态栏** 三处共用。判据：`persisted === true` 才说「已保存到磁盘」；`staged` 只说「已交给项目，正在写入磁盘…」（**warn 色，不是绿标**）；`projectStore` 把 `dirty` 同步进状态栏（`setSavePending`）→「有改动待写入磁盘…」不会再被上一枚绿标盖住。
-  - 🔴 **顺带修掉一个真缺陷**：行星「保存地图」原来写 `snapshotPanel.saveStatusTimer.value = setTimeout(...)`，而该字段在 `useSnapshotPanel` 里是普通 `let`（composable 返回时已快照成 `null`）→ **每次点保存都抛 TypeError**，被 `.catch()` 接住显示「保存失败」（**即使其实成功了**）；更糟的是这个异常把"项目态只是 staged"的真问题一起盖住。现在横幅计时器是组件自己的 `bannerTimer` + `setBanner()`。
-  - ⚠️ 写这类用例的两个坑（本轮都踩了）：① 一条 eval 里串太多等待会撞 **CDP 15s 读超时**（症状是「Connection timed out」而不是某条断言红）→ 拆成多段 + Python 侧 `wait_for`；② `eval_json` 要求返回对象**必须有 `fails` 字段**，非断言探针也要带 `fails: []`（否则本身就是"假绿闸门"在报错）。
-  - **出图（`scripts/tests/tools/_shot_planet_20261017.py`，产物 `docs/assets/planet-20261017/`）**：真实 `desite.map` 走产品导入链（真按钮 + 真 `File`），五张图 = 空态 / 导入后 / 多边形覆盖 / staged 横幅 / persisted 横幅。⚠️ 两条出图纪律：① **别在渲染器背后直接改 `mapData`** —— 会留下旧像素（脏矩形局部重绘不重画未标记区域；实测逐层关图层、逐个摘绘制函数都摘不掉它，只有让组件重挂载才干净）；② 截图**连拍两张只留第二张**（headless 下第一张常是旧帧）。
-- **🔴 推演地形的结构：山脉走向 / 高原面 / 裂谷 +「路由层四个候选全被否定」（2026-10-18 第九修；Node `test_terrain_structure.js` 15 条）**：
-  - **先否定（有数，别再试）**：在真实 `desite` 底图（133×75 / 陆格 2876 / 高程量化到 0~100）上，
-    **平局打破 / 最小代价出流 / 双线性放大网格（2~8×）/ 放大＋分形细节** 四种口径对河网几何**都没有改善**
-    —— 判据用"与分辨率无关的**链节长度**"（每格到下一个汇流点/河口的**世界距离**）：中位 **26u 一位小数都不动**，
-    最小代价与哈希平局反而更碎（<20u 占比 26% → 35%/45%）。⚠️ **度量陷阱**：别用 `buildRiverPaths` 的链统计
-    比较分辨率 —— 它按流量截到 `maxPaths`（1200），细网格下只统计流量最高那批 → 中位链长被系统性拉高
-    （我先得出过"放大 3 倍就把短棍消掉了"的**假结论**）。完整数据：`docs/RIVER_ROUTING_NEGATIVE_RESULTS_20261018.md`。
-  - **真正的杠杆是"地形里有什么"**：`utils/terrainSynthesis.js` v2（`TERRAIN_SYNTHESIS_VERSION = 2`）在同一个骨架
-    （离岸距离场 + chamfer + priority-flood 填洼）上叠三样：① **各向异性脊线**（ridged multifractal，垂直走向频率
-    8.5 vs 沿走向 2.6 —— 两者相等就退化成碎丘）+ 次走向 0.12 + 域扭曲 0.16；② **高原面**（低频场**按 p62~p80 分位**圈地、
-    强混合 0.92、面内残差 0.015）；③ **裂谷**（1~2 条折线 + 距离剖面下切）。**默认开**，`structure:false` 只作对照组。
-  - 🔴 **三条踩过的硬口径**：① **高原掩膜必须按分位** —— 固定阈值 `smoothstep01(0.50,0.62,pf)` 实测圈住 **64% 陆地**
-    → 中位高度被抬到高原面上 = "处处是高原"= 没有高原；② **裂谷走向必须跟着山脉**（`axis ± 15°`）——
-    第一版随机取向后，结构张量量出的主导走向与 `rangeAxisDeg` 实测差 **49°**，走向判据直接失效；
-    ③ **裂谷落点要用 `spanY/spanX`**（归一化 `ny` 只到 aspect）—— 第一版把裂谷放到陆地**外面**（走廊 0 格），判据量的是空气。
-  - 🔴 **高度预算**：下游「源头高度闸门」是**绝对高度**（`TRACE_SOURCE_HEIGHT = 60`）。结构权重第一版把陆地均值
-    45.6 → **63.1**、**85% 的陆格在闸门之上**（一点自动河流 = 2400 个源头）。现值均值 42~44、>60 占 15~21%，有判据守。
-  - **判据的口径（四条，都带 v1 反向对照）**：各向异性在**高频残差**上算（原始高度上会被离岸放射趋势冲成各向同性，
-    且 v1 自己能刷出 17.8% 假值）；高原面看**最大连片平高块**（v1 缓坡肩也有 20~114 格 → 不许写"v1 必须为 0"，
-    要"≥180 格且 ≥2× v1"）；裂谷用**走廊带 vs 对照带的相对下切**（一刀切阈值会因"沿线渐变"假红）；
-    排水看**最长主河**与**汇流上界**。实测：各向异性 4~18% → **35~76%**；最长主河 737/870/779u → **1645/1941/1701u**；
-    汇流上界 333~430 → **1073~1329**；高原面 20~114 格 → **221~470 格**；裂谷下切 0.5~2.2 → **6.7~12.9** 单位。
-  - **接线**：默认开（产品按钮与"无高度图时的临时推演"都走它）；`synthesizeBaseMapTerrain` 的回执加一句结构自述
-    （走向/裂谷数/高原格数）——否则用户以为还是老样子。`structure:false` 口径**不带** `structure` 字段（用例 c5 守）。
-    观感存档：`docs/assets/terrain-structure-20261018/`（v1/v2 地形与水系各一张 SVG，纯 Node 生成，无依赖）。
-  - ⚠️ **本仓纪律（再次确认）**：**不许用 PowerShell 的 `Set-Content` 改源码** —— 会把 UTF-8 中文写成 ANSI（GBK），
-    下一次读就是乱码、`import` 直接报 `Illegal return statement`（本轮真实发生，靠探针留的临时副本才救回来）。
-    改文件一律走编辑工具；真要恢复，`%TEMP%/sitian-ts-*/terrainSynthesis.js` 是探针顺手留的干净副本。
-- **🔴 底图编辑模式（2026-10-18 第十七修；回归 `test_120` + 随动 `test_65`/`test_97`/`test_61`）**：
-  暮雨原话「我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，不要和日常的剧本编辑混在一起」。
-  修前：主行是日常动作（选择/画省份/改归属/改形状/更多），而「更多」里**同时**装着地理类
-  （河流/自动河流/道路/地貌/地名/标记/聚落/文化/宗教/高度/群系/裁到海岸线/着色档）与省份批量
-  （拆分/合并/点击填充/描轮廓/Voronoi/删除）——**编辑对象不同却在同一排按钮里**，这就是"混"。
-  - 落地：`basemapEditMode` + 顶部**模式条**（`data-testid="toolbar-modes"`，含 `basemap-edit-toggle`
-    与一句模式文案）+ 开模式后出现 `basemap-row`（`data-testid="basemap-row"`，10 个地理工具，
-    清单单源 `BASEMAP_TOOLS`，按钮带 `data-testid="basemap-tool-<id>"`）。
-  - 🔴 **零迁移的关键**：`setTool()` 里有门 —— **选到地理类工具自动开模式**（`BASEMAP_TOOL_IDS.has(t)`）。
-    既有 60+ 个直接 `setTool('river')` 的用例一字不改；切回省份类工具**不自动关**。
-    口径**只是分组与可见性**，不改工具语义（模式不是锁，锁起来只会制造"点了没反应"）。
-  - 🔴 **两个被守卫教回来的坑**：① 模式开关**不能放主行** —— `test_65`/`test_97` 硬守"主行可见控件 ≤6"，
-    放进去实测 7 个、两条同时红；现在它是**主行之上的模式条**（语义也更对：模式是状态不是工具），
-    并把 `test_65` 口径明确为"**排除模式条**之后 ≤6"（注释写明理由）。
-    ② **开模式不许顺带展开「更多」**（出图实测）：`setTool → toggleBasemapEditMode()`（内含 `moreOpen = true`）
-    会让"切一下工具"展开 42vh 面板、画布高度骤变，**把 `test_61` 的画布内容判空判红**；
-    而"只有人手动点才展开"也不行 —— 手动点开关时工具栏实测从 **~120px 撑到 ~470px**（画布被压一半，
-    `docs/assets/basemap-mode-20261018/` 前后两张图可见）。**现在开模式顺手收起「更多」**
-    （地理工具已在模式行里，进阶开关想用再点开），判据在 `test_120` c 段：开模式后「更多」**不许**展开。
-  - 判据 `test_120`（6 段）：默认无地理行 / 开关往返 / **直接 `setTool('river')` 必须自动开模式且行出现**
-    （零迁移）/ 日常工具可用且不关模式 / 收尾回日常。
-- **🔴 方寸联动：管道是间歇性的 + 确定能跑的客户端（2026-10-18）**：
-  - **管道会"消失"**：本轮两次探测结果相反（一次 `ENOENT`、一次连通）—— 原因是**方寸重启的空窗期**，
-    以及我们的 `_lab.py down` 用 `taskkill /PID /T /F`（`/T` 会连带杀进程树，
-    而方寸桌面版可能与被 kill 的进程同树）。⚠️ **别把一次 ENOENT 当成"桌面版没运行"**。
-    自检必须 `Test-Path -LiteralPath '\\.\pipe\tegula-mcp'`（**不带 `-LiteralPath` 是假阳性**，
-    它只判路径字符串形式）。
-  - **写入口已跑通**：新增 `scripts/tests/tools/fangcun_pipe.py`（Python 直连管道，读写通用，
-    `--list` / `--schema <tool>` / `--call <tool> '@args.json'`）。为什么不用 `desktop/dist/cli/tegula-mcp.js`：
-    那个 Node 桥在 PowerShell 下过管道/quote 时"没有输出"（实测），而我要的是确定能跑的东西。
-    ⚠️ 方寸只认一个 `initialize`；`notifications/initialized` 会回 `Method not found`（无害，别当失败）。
-  - **本轮已投递**：方寸任务「司天：下一阶段优先级＝历史剧本修至可用（第十五/十六修已交付…）」
-    （project=sitian，状态待办，id 形如 `司天下一阶段优先级历史剧本修至可用第十五-<hash>`）。
-  - **绒花墨坊"找不到桌面版"是另一回事**：方寸 `registry.yaml` 里它登记了服务 `NovelForge API : 8765`，
-    实测该端口**不通**（服务没跑）—— 与方寸桌面版无关。
-- **🔴 河流选中标记：那条"白线"＝选中光晕，已改成零遮挡轮廓（2026-10-18 第十六修；回归 `test_119` f 段 + `test_112` c 段 + Node `test_river_editor_nodes.js` 26 条）**：
-  - **暮雨原话**：「那一条白色的显然就算选中河流的光晕，但是太诡异太离谱了，**根本没办法正常绘图，把整条河都挡住**。
-    也许需要想想别的办法。**只要用户能编辑河流就行了，而不是点下去没反馈。**」
-  - **真因**：`drawSelectedRiverHighlight` 旧形态是**两遍加宽描边**（外层暖白 `rgba(255,244,200,0.30)` 宽 `baseW+3.5px`
-    + 内层亮芯 `rgba(223,243,255,0.95)` 宽 `baseW+1.2px`）⇒ 叠起来接近不透明，整条河被奶白色盖住。
-    **"点下去有反馈"与"能编辑"在设计上互斥了。** 判据（`_probe_river_selection_visibility.py`，量窗口内水色像素）：
-    修前 **0.009** → 现在细河 **0.68** / 宽河 **0.72~0.83**。
-  - 🔴 **两条踩过的弯路（别重走）**：① 我第一版改成"虚线轮廓"**照样盖住**，因为线宽是 `baseW + 1.6px`、
-    **中心仍在河道中心线上** ⇒ **轮廓不能靠"加粗的中心线"实现**，必须真算偏移几何（`offsetPolyline`，已下沉到 `riverRender.js`）；
-    ② 探针第一版把采样窗口算一次就复用，而**选中一条河会让工具栏多一行、画布高度变** ⇒ after 量到的是河旁边的空地
-    （假结论 0.009）。**每次测量都要重算窗口**（test_114 也踩过同一个坑）。
-  - **新形态**：沿河**两侧**各退开 `riverSelGapForWidth(basePx)` 像素画轮廓（主选中暖金、多选冷青）+ 节点手柄
-    （源头金/河口青/中间白）+ 两端短横杠；**空隙跟着河宽收窄**（细河 ~1px，固定 3.5px 会把 3.6px 宽的河吃掉一半）。
-  - ⚠️ **`test_112` 的 c 段判据被同步改了**：它原先找"暖白亮芯"—— 那**正是被投诉的那个东西**，已刻意删除，
-    再判它等于判"退回被投诉的形态"。现在按**色相**认标记 + 新增**水面可读性**判据（细河阈值 0.35，
-    因为"两侧各 1.4px 线 + 各 1px 空隙"≈5px 在 3.6px 宽的河上几何上就注定占一部分；判别看的是与 0.009 的量级差）。
-    同时把它的源码闸门从"每条 `lineWidth` 那**一行**必须有 `px(`"放宽成"**取值来自 `px()` 转换**"
-    （合法写法 `const w = px(CONST); c.lineWidth = w;` 会让旧闸门假红 —— 本轮实测）。
-  - **反向验证**：把选中标记整体关掉 → `test_119` f 段 **2 条具名红**「🔴 选中后一个选中色像素都没有（点下去没反馈）」。
-  - 产物：`docs/assets/river-selection-20261018/`（1×/4× 选中态）。
-- **~~⏳ 待拍板：底图编辑单开一个模式~~（已被第十七修取代，见上方「底图编辑模式」条目）**：
-  （留一行指针，免得有人照着旧条目去"等拍板"）
-  - **① 历史剧本不再是"盖在顶上的大图层"**：`<scenario-map>` 旧条件只有 `scenarioMode && !scenarioPickerVisible`
-    —— 只管"在不在剧本域"，**不管当前看的是哪一层**。用户在编辑器里双击导航树的行星 →
-    `jumpToNode` → `store.selectPlanet()` 把 `viewLevel` 改成 planet 而 `scenarioMode` 仍 true ⇒
-    **ScenarioMap 不卸 + PlanetMap 同时挂载**（两者都 `height:100%`、同在 `.main-content`、
-    模板里 ScenarioMap 在前）⇒ 行星地图看得见 0 像素、点不到一下（用户：「点导航栏双击几遍都出不来」）。
-    修法：`scenarioEditorVisible = scenarioMode && !scenarioPickerVisible && viewLevel === 'world'`
-    （**第一层 world 才是编辑器该出现的唯一层级**）+ `scenarioSteppedOut` 回程浮标
-    （`data-testid="scenario-return-chip"`，**必须左下角**：居中会压住画布正下方的缩放/平移控件，
-    实测 `elementFromPoint` 当场点到浮标 —— 与"盖住行星地图"是同一类缺陷）。
-    判据 `test_118`：`elementFromPoint(画布中心)` 修前命中 ScenarioMap 的 canvas、修后命中 PlanetMap 的 canvas；
-    反向验证 6 条具名红。⚠️ **卡片墙穿帮（Teleport + fixed 全屏）本轮实测已修好**，无可复现残留。
-  - **② 手画河"放大成发丝/空心铁轨"的真因＝宽度被除了两次缩放**：`drawOneHandRiver` 传
-    `toPx: (w) => px(w)`（`px(w) = w / cameraScale`），而画布在该处**已经** `scale(cameraScale)`。
-    实测（`scripts/tests/tools/_probe_rail_widths.py`，真实 desite 底图）水色像素 1×/2×/4×/8×/16×
-    = **6/6/6/6/8**（把 `river.width` 放大 10 倍：6/6/8，纹丝不动）—— 屏幕宽度与缩放完全无关。
-    修法两处：`toPx` 改**恒等**（宽度＝世界单位）+ `riverWidthsFor` 的屏幕下限**封顶**
-    （`RIVER_MIN_SCREEN_CAP_PX = 12`，世界硬下限 `RIVER_WORLD_FLOOR = 0.4` ——
-    ⚠️ **数值刻意避开 `test_73` 守卫的那个字面量，连注释里都别写出它**）；
-    `riverRender.drawCurvedRiver` 的岸线宽度**与水宽挂钩**（`water + min(bankPx, max(0.4, water*0.45))`）
-    —— 老写法 `water + bankPx` 里 `bankPx` 是屏幕常量，放大后那 1.1px 就是"两边各一条轨道"。
-    修后 16× 水色 **8 → 66px**（描边设备像素上界 134.5 = 8.4 世界单位 × 16）。
-  - **③ 支流可画了**：Shift + 在河身上拖出去 → 起点**吸附到河身**、记母河、落库时**在母河上插拐点**
-    （支流口与干流共享同一坐标）。🔴 **为什么必须给 Shift 这个无歧义触发**：节点命中容差 24 屏幕像素，
-    河又细 ⇒ **几乎整条河**都落在"节点"容差里，老顺序"节点优先"意味着**支流永远起不了笔**
-    （实测症状：状态栏显示「已移动第 10 个节点」而河身没动）。手势优先级＝顺序即语义：
-    ① Shift+河身→支流 ② 选中河的节点→拖动微调（既有能力一字不改）③ 河身（离节点远）→也当支流 ④ 空白→新河。
-  - **④ 「交叉怪物」结构性拦下**：松手时三道闸门（**丢弃 + 明说原因**，绝不静默吞掉用户的笔迹）：
-    穿回母河（交点 ≥2）／自交（打结）／横切（同一侧出去又绕回同一侧 ⇒ 同一条河被穿 ≥2 次）。
-    🔴 **这道闸门的口径迭代了三次，每次都被真实用例教回来**（别走回头路）：
-    ① "与任何已有河 ≥2 交点就拒" → 把搭桥/正当交汇也拒了（`test_95` 红）；
-    ② "同一条河 ≥2 交点才拒" → 仍误伤"穿过两条河各一次"的同一形状（`test_95` 又红）；
-    ③ "交点 ≥2 **且** 笔迹首尾在该河**同侧**" → ✅（真穿过去首尾必然异侧）。
-    另两个判据坑：**笔迹点数要够**（否则先撞"太短已丢弃"，回执里没有"交叉"字样 = 假红）；
-    **别强绑"回执具体是哪句话"**（那是措辞判据，不是行为判据）。
-  - **⑤ 测这类改动的两条硬纪律（本轮各踩一次）**：
-    ① **改完源码必须硬重载页面**（`cdp.navigate('…?bust=<ts>')`）—— Vite 的 HMR 是就地换模块，
-    `<script setup>` 里**已经闭包捕获的旧函数**仍指向旧实现；不重载时"改了三处、量出来的数字一位不动"；
-    ② **探针 JS 里 `const st = document.querySelector('#app')…` 会让 V8 当私有字段报
-    `Private field '#app' must be declared`** —— 一律套一层括号 `const st = (…)`。
-  - 判据：`test_118`（5 段）+ `test_119`（11 段）；反向验证：把 `<scenario-map>` 退回旧条件 → 6 条具名红；
-    把 `toPx` 退回 `px(w)` → 2 条具名红。
-  - ⚠️ **本轮明确没做**（别以为做完了）：用户问的"那一条白色的是什么玩意"（最可能是选中态高亮的暖白光晕
-    `rgba(255,244,200,0.30)`，**未在真机确认**）；支流的孤儿子河语义（删母河之后）；
-    "加河 + 改母河"合成**一条 undo**（现在两条）；星域编辑贴边整合/卡顿；行星地图空图误判/一键清空色块/选中文字描边。
-- **🔴 外部信息导入：司天不是没有能力（回答第十四轮第 10 条）**：`npm run extract-data`（Obsidian 库 →
-  `geodata.json`：七层节点/坐标/wikilinks）、`npm run audit-coverage`、`npm run migrate-vault-attrs`、
-  项目面板「新建并导入知识库内容」、行星/剧本的 `.map` 导入。真正的缺口是**没有实时订阅**（不监听库变化自动刷新）
-  与**没有反向写回**（提取只读）。
-- **🔴 与方寸联动：写入口现状 + 一条管道自检的假阳性（2026-10-18）**：
-  - **只读入口可用**：`cd <fangcun 仓库> && python tegula.py mcp`（stdio，14 个只读工具，
-    **不依赖桌面版**）—— 本轮用它读到了 `task-20261015-002`。
-  - **写入口（named pipe `\\.\pipe\tegula-mcp`）不可用**：本轮机器上 **方寸桌面版没在运行**
-    （`Get-Process` 无 fangcun/tegula；`Get-ChildItem \\.\pipe\` 里 0 个 tegula 管道）。
-    ⇒ 写操作只能走它，因此**无法从本机投递**（按接线卡边界，**禁止**绕过 MCP 去改 `task-data/*.md`：
-    会跳过乐观锁与审计）。决策记录先落在 `docs/SITIAN_HANDOFF_20261018_ROUND15.md` §4.5 的
-    「方寸决策记录（待投递）」。
-  - 🔴 **自检必须用 `Test-Path -LiteralPath`**：`Test-Path \\.\pipe\tegula-mcp`（不带 `-LiteralPath`）
-    返回 **True** 是**假阳性** —— PowerShell 只判"这个路径字符串形式合法"，**不去打开管道**。
-    本轮因此白追了一轮"CLI 没输出"（直连管道才看到真相：`ENOENT`；
-    探针 `scripts/tests/tools/_probe_fangcun_pipe.mjs`）。
-- **🔴 星系/星域视图的四个表现层 bug + 颜色拼 alpha 的静默缺陷（2026-10-18 第十修；回归 `test_116` + Node `test_color_util.js`）**：
-  - **① 坐标拖拽曾是死代码**：提示文案写着「拖拽恒星编辑坐标」，但 `GalaxyMap.onDragStart` **从不返回** `{mode:'node'}` →
-    `onDragMove/onDragEnd` 里那两条分支不可达、`isDraggingMultiple` 恒 false（**文案承诺了不存在的能力**）。
-    修法照 `SystemView` 的既有形态补「拖手 / 移动」两个浏览态工具（`data-testid="galaxy-move-tool"`，默认拖手防误触），
-    `move` 下拖恒星 → `store.beginNodePositionCapture` + `{mode:'node'}` → `onDragMove` 写 `updateNodePosition` →
-    `endNodePositionCapture()`（置 `userMoved` + 一条 undo）；多选（>1 选中）走 `beginMultiNodePositionCapture`。
-    🔴 **拖拽把 coordinate 设成"它画在的地方 + 位移"** —— 自动布局的恒星画在**布局坐标**上，与旧 coordinate 不同
-    （实测 (737,31) vs 画出来的 (95.5,-600.4)）；判据必须**先快照** `galaxyNodes` 里的 x/y（拖拽会就地改它，
-    拿它当基准会得出 Δ≡0 的假红 —— 本轮踩过）。
-  - **② 势力改色既不重绘也不落库**：`setFactionColor` 只写组件局部 ref、键还用 `domain.faction`（真实库该值
-    `undefined` → 所有星域共用一个键「undefined」= 改一个色改全部）。现在：`resolveDomainColor(domain)`
-    （override（**按 domain.id**）→ 节点 `factionColor` → 名字哈希）是**唯一取色口**，布局/边界/图例三处共用；
-    `input` 走 `previewFactionColor`（改内存 + **`applyStableLayout()`** + `requestRender()`，不落库），
-    `change` 走 `commitFactionColor`（`store.updateNode(id, {factionColor})` = 有闸门 + 一条 undo，被
-    `entityExtras()` 带进项目文件）。⚠️ **两句缺一不可**：只重绘不重排 = "画布变了颜色还是旧的"（渲染恒星读布局副本）；
-    只重排不重绘 = "拖了色板没反应"。判据分两条（预览后**布局快照**必须是新色 + 像素确实变），
-    且**快照要在 `input` 之后、`change` 之前读**（change 自己会重排，读晚了永远绿）。
-  - **③ 星域在编辑模式下不可命中**：`hitTest` 只返回 `galaxy`/`domain-label`/`boundary-vertex`，而 `domain-label`
-    被 `!editMode` 门控 → 编辑模式星域"看得见点不到"，`type === 'domain'` 的四处消费（锁定/选中/右键目标/删除菜单项）
-    全是死代码。现在编辑模式补「点落在势力边界多边形内 → `{type:'domain'}`」（`pointInPolygon` 射线法）。
-  - **④ 右键不看 editMode**：`GalaxyMap.onContextMenu` 与 `SystemView.onContextMenu` 首行补
-    `if (!editMode.value) return;`（照抄 `SystemDetailView.vue` 的既有闸门 —— **那一层早就修好了**，
-    文档若把"6 个 bug"整体挂在星系模块，对 system_detail 是**过期描述**）。判据必须用**真实 `contextmenu`**。
-  - 🔴 **顺带修掉一条静默颜色缺陷（`utils/colorUtil.js` = 唯一实现）**：星域边界写着 `border.color + '12'`
-    （8 位 hex 拼 alpha）—— 只对 6 位 hex 成立；而 `getFactionColor()` 对**不在硬编码表里的势力名**返回 `hsl(...)`
-    → `hsl(210, 70%, 60%)12` 是**非法 CSS**，赋给 `fillStyle`/`addColorStop` 被**静默忽略**（沿用上一个颜色 = 颜色串了，
-    不报错）。真实库的势力名必然不在表里 → 必然走到。现在一律 `withAlpha(color, '12')`（也吃小数）；`InteriorView`
-    的 `color + '33'` 一并改走它。Node `test_color_util.js` 8 条（含"拼接对 hsl 必须非法"的反向探针）。
-  - **本轮没做（据实说）**：**星域位置持久化**（`applyStableLayout` 星域永远按 index 环形现算，既不读也不写
-    `star_domain.coordinate`；要 `userMoved` 语义 + 旧数据迁移，属数据层）、**导出 PNG(全图) 与画布同源**
-    （`App.vue` 有第三套实现：坐标源/势力配色/凸包扩张/星云全不一样；`当前视图` 的两条导出是同源的）、
-    **`faction` 真写入路径**（只有表现层的 `factionColor`；提取器/建笔记/迁移都没有 `faction`）。
-    另发现三处**未登记的写口**：`GalaxyMap.setBorderPoints`（直写 `store.domainBorderOverrides`）、
-    `geodata.removeHyperlane` / `updateHyperlane`（先改内存后 execute 且**首行无 `guardWrite`**）—— 与 `test_54` 的
-    「函数级契约」同类缺口，留给下一轮。
-- **🔴 星域位置持久化 + `faction` 写入路径 + 三处未登记写口（2026-10-18 第十一修；回归 `test_116` 扩到 7 段）**：
-  - **星域位置持久化（上一轮 6 bug 的第 3 条）**：`applyStableLayout` 里星域原先**永远**按 index 环形现算
-    （`radius:350` 硬编码），既不读也不写 `star_domain.coordinate`。现在：
-    `(domain.userMoved || domain.id === draggingDomainId) && 有限 coordinate` 才采信。
-    🔴 **`userMoved` 这道门是安全阀**：提取器给**每个**星域都写了 `coordinate`（实测 fixture **8/8** 都有）
-    那是"文件夹扫描时的遗留值"、从没人摆过 —— 无条件采信会让**老项目一次性全部错位**（判据：初始布局
-    必须仍在环形上、且不等于遗留坐标）。`draggingDomainId` 是拖动期预览开关（拖动中还没写 `userMoved`）。
-  - **星域拖动接通**：移动工具下 `domain`（编辑态多边形命中）与 **`domain-label`（浏览态的名称标签 = 真正的手柄，
-    鼠标落在域中心命中的就是它）** 都能拖；拖动写 `coordinate`，松手 `endNodePositionCapture()` 置 `userMoved`（一条 undo）；
-    拖动中 `applyStableLayout()` → **该星域下未手动摆过的恒星跟着走**（整簇移动）。
-  - 🔴 **`userMoved` 必须一起进 undo/redo**（`geodata.js` 的 `endNodePositionCapture` / `endMultiNodePositionCapture`）：
-    原先它写在命令**外面** —— 撤销只还原坐标、`userMoved` 仍是 true → **撤销后节点瞬移到那个从没显示过的遗留坐标**
-    （拖动一个从未摆过的节点时最明显）。判据：一次 undo 后坐标回旧值 + `userMoved` 回旧值 + 重排回环形。
-  - **`faction` 写入路径（表现层这一半）**：此前**一个写口都没有**（提取器不产、建笔记不写、store 无 setter）
-    → `getFactionColor()` 恒走 `!faction → '#6b5b95'`，图例/画布/鹰眼/全图导出**全是同一个色**。现在图例里
-    每个星域有一个 `legend-faction-input`（占位「势力名」）：`change` → `commitFaction` → `store.updateNode(id, { faction })`
-    （有闸门 + **一条 undo**；同值 = 空操作不压栈）→ 配色经 `resolveDomainColor` 自动按名字分开（实测 `#6b5b95 → hsl(125,70%,60%)`，
-    画布 17655 像素变化）。`faction` 不在 `ENTITY_SHAPE_KEYS` 白名单 → 随 `entityExtras()` 进项目文件（不动 schema）。
-    ⚠️ 提取器读 frontmatter / 迁移 / 势力系统本身**仍未做**（见交接文档）。
-  - **三处未登记写口补齐**（`test_54` 的函数级契约同类缺口）：`geodata.removeHyperlane` / `updateHyperlane`
-    加函数首行 `guardWrite`（都是"先改内存后 execute"）；新增 `geodata.setDomainBorderPoints` ＝
-    **星域势力边界覆盖点的唯一写口**（组件原先直写 `store.domainBorderOverrides[id]`，无闸门无 undo →
-    只读态拖顶点会**静默改内存**）。`{ preview: true }` = 拖动期的起始快照（过闸门但**不压栈**，
-    否则"拖一个顶点"会变成两条撤销）；提交才 `execute`（一条 undo）。三者都登记进 `MEMORY_WRITE_CALLSITES`（id 10/11）。
-  - ⚠️ **已知毛边（据实说，未改）**：撤销一次移动后，**自动布局**的节点要等下一次重排才回到原位
-    （组件没有 watch 撤销栈；数据是对的，只是画面滞后到下次布局）。写用例时若要拿布局位置当基线，
-    **必须先 `applyStableLayout()` 规范化**，否则会拿到上次拖动留下的陈旧位置（本轮踩过这条假红）。
-- **🔴 导出 PNG(全图) 与画布同源（2026-10-18 第十二修；回归 `test_117` + Node `test_galaxy_layout.js` 14 条）**：
-  上一轮交接里 ④ 的**最后一条**（也是 6 个 bug 里唯一剩下的那个）：`App.vue#handleExportFullPNG` 是**第三套实现**，
-  与画布各写一份，**五处不一致且一条都不报错**：
-  - **① 坐标源**：导出读 `node.coordinate`，画布读布局坐标 → 自动布局的星系在导出里跑到"没人摆过的旧坐标"上；
-    更糟：**没有 coordinate 的节点被整块跳过**（`if (n.coordinate?.x === null) return;`）→ 导出图缺节点。
-  - **② 势力配色**：导出按名字哈希 `hsl()`，画布按 `resolveDomainColor()`（节点 `factionColor` 优先）。
-  - **③ 恒星颜色**：导出固定 `#ffd700`，画布用势力的 `factionColor`。
-  - **④ 凸包**：外扩 25 vs 50；星系数 < 3 时导出**直接 `continue`**（星域凭空消失）。
-  - **⑤ 航道配色**：导出 3 类、画布 4 类（丢"用户建的绿"）。
-  **修法**：新增 **`utils/galaxyLayout.js`（纯函数，唯一实现）** —— `FACTION_COLORS` / `getFactionColor` /
-  `resolveDomainColor` / `GALAXY_LAYOUT`（spacing 700、ring 0.9、galaxyBaseDist 100、step 60、angleOffset 0.3、
-  **hullPad 50**、circleSegments 12）/ `convexHull` / `expandHull` / `layoutDomains` / `layoutGalaxies` /
-  `factionBorders` / `hyperlaneColor`（4 类）/ `nodeRadius` / `nodeColor` / `STARFIELD`（星云谱，世界坐标固定）。
-  **画布（GalaxyMap）与导出（App.vue）都只调它**；`App.vue` 的 `convexHullForExport` / `getDomainColorForExport` /
-  本地 `getNodeColor` 与写死的星云常量、`GalaxyMap` 的本地 `convexHull` / `getBorderPoints` **全部删除**。
-  - 🔴 **导出图幅必须把布局位置算进去**：环上的星域在 `coordinate` 之外，只按 coordinate 取 bbox 会把它裁掉。
-  - ⚠️ **据实说的边界**：更深的层（planet / city / town / location）**不在星系视图的布局里**，仍按自己的
-    `coordinate` 画；背景星云只是"取同一条谱"（画布按世界坐标铺、导出按图幅裁），**不是逐像素同源** —— 这两条写进交接文档。
-  - **判据**（`test_117`）：**在导出期间插桩 `CanvasRenderingContext2D.prototype.arc`**，把记录到的节点圆心与
-    "用同一份共享函数算出来的期望位置"**逐点比对**（实测 108/108 全中；星域在 `(0,-630)` 环上、星系在 `(95.5,-600.4)` 簇内）；
-    再把导出的 PNG 抓下来做像素检查（**`#ffd700` 必须为 0**、星系色像素 > 0）。Node `test_galaxy_layout.js` 14 条守函数口径
-    （含两条反向口径：遗留坐标不许采信、星系数 < 3 不许消失）。
-  - **反向验证**：把导出临时改回"按 coordinate 画 + 星系固定金色" → **6 条具名红**
-    （「星域画在了遗留 coordinate (737,131) 上 —— 与画布不同源」「星系画在了自己的旧 coordinate 上」
-    「导出图里还有 8752 个 #ffd700 像素」）。
-  - ⚠️ 写这类用例的两个坑（本轮都踩了）：① **导出菜单默认不挂载**（`panelsStore.isOpen('export')`），
-    要先点工具栏「导出」按钮，且**点完等一拍**再查 DOM（Vue 异步）；② 导出是"同步绘制 + 异步 toBlob"，
-    图很大（本用例 **5468×5518**）→ 回调要好几百毫秒，**必须轮询等产物**（否则下一段拿不到 blob）。
+
+- **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 8 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / provinceEditing（省份归属标签网格）/ interior / search / spaceEditing / channelBrush（文化·宗教逐格通道笔刷）
+
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
-- **大文件警告**: **ScenarioMap.vue ≈5356 行（全仓最大，2026-09-23 起）**，PlanetMap.vue 约 3943 行（22 个 composables 的装配体），AreaMap / GalaxyMap / InteriorView / NodeDetailPanel / SettingsPanel 均 >1500 行——**读片段勿整读**。行星图绘制与交互逻辑在 `composables/planetDrawing.js`、`planetInteractions.js`、`planetHitTest.js`
-- **测试基线**: 两层。① `scripts/tests/unit/*.js` Node 单元测试（**主进程侧**：`.sitian` 原子写/备份轮转/会话基线/路径守卫 + `index.js` 模块接线不变式 + `config.js` 读回校验 + **git 同步/拉取真端到端**（本地 bare 仓库当远程）+ **令牌加密保管**（假加密注入：磁盘无明文、跨实例可取回）——CDP 用例里 `window.sitianAPI` 是 mock，测不到真实落盘、主进程接线与 git）；② `scripts/tests/cases/` **119 个** CDP 用例（Edge 驱动），全绿 + Node 层通过 = 迁移/重构完整。`run_tests.py` 把前者作为前置步骤，失败计 1 个失败用例；**每个用例前还会打开 harness 基线项目**（决策 1 终态下无项目=只读，用例必须跑在有项目的状态，见写闸门条目）。**数据源与真实库解耦（2026-09-21）**：默认读 `scripts/tests/fixtures/vault-fixture/*.json`（合成 fixture，带「不得残留真实专名」硬闸门），用例只依赖 fixture
-- **项目面板 + 实体向导（Phase 2.1/2.2/2.3，2026-09-18/19）**: `components/ProjectPanel.vue`（工具栏「项目」按钮 → `panelsStore.toggle('project')`；项目新建/打开/保存/备份/关闭 + **「新建并导入知识库内容」**（终态下把既有内容带进项目的唯一路径，走 `projectStore.createProjectFromVault`，一条 undo）+ 实体树（改名 / 两段式删除 / 拖动改父级 / 详情区父级下拉，全部经 projectStore 走 undo）+ 快照回滚）+ `components/EntityCreator.vue`（**C 方案分派式向导**：表单「名称/层级/父级」→ 层级按父级过滤（`CHILD_LAYERS`）→ 创建后**结果卡片**（该层级分派步骤 + 「前往编辑」）；画布交互复用各视图现有工具）。两者只依赖 projectStore（面板另可读 canvasBridge 的 `describe()` 做导入说明），不引用 geodata/sitianAPI（test_48 静态断言守）。⚠️ 挂载语义：面板由 `v-if="panelsStore.isOpen('project')"` 控制挂载，**不要**给 PanelShell 传 `open`（默认 true；传了会因父级未传值而默认 false → 面板静默空白），`title` 是 PanelShell 必填 prop。⚠️ 面板/向导是**浅色卡面**（`--planet-editor-bg` 两套主题都是白）：文字强调色必须用深色（`#1c4fa1`/`#1b6b3a`/`#b3261e`/`#2f5fd0`），浅色系在白底上对比度只有 1.4~1.6 = 看不见
-- **单一写闸门（Phase 2，2026-09-18；终态 2026-09-20 落地）**: `store/writeGate.js` = 世界观数据**落盘写**的唯一判定入口（`guardWrite()` + `isReadOnly`）。三模式 `project` / `legacy` / `readonly`，对应决策「有项目文件用项目、无项目回退 Obsidian，但**无项目必须只读**」——该终态已翻开：`READONLY_WITHOUT_PROJECT = true`。**11 条落盘入口全部已守 + 只读态 UI 灰禁已落**，test_47 读源码校验（含只读灰禁子测试）。两条伴随纪律：① **项目文件的生命周期操作（新建/打开/保存/备份）不受本闸门管辖** —— 否则「无项目 → 只读 → 禁新建」死锁，第一个项目永远打不开（ProjectPanel 的「新建」必须保持可用）；② **回归基线必须跑在「已打开项目」态**：`run_tests.py` 每个用例前用当前知识库内容播种并打开一个 mock 基线项目（`lib/helpers.py#open_harness_project`，含 `window.__probe` 探针），既有落盘断言一律改读**项目文件**而非 legacy IPC。🔴 **内存编辑也已收口（2026-09-21）**：闸门原来只守上面 11 条**落盘入口**，画布编辑（行星笔刷 / 区域 / 内部家具 / 剧本染色与导入）在只读态仍能改内存 → 改动看起来生效却永不落盘 = 静默丢数据。现在三层收口：`undo.js#execute()` 过 `guardWrite`（覆盖所有走 undo 栈的编辑）+ **「先改内存再 execute」的 geodata 节点函数（updateNode/removeNode/坐标/锁定/id 变更）在函数首行守卫**（只守 execute 时拒绝发生在数据已改之后）+ 不走 execute 的直接写（内部 addFloor/参考图、河流懒建、剧本导入）逐个补守卫；被拒时 `writeGate.lastRejection` → App.vue 状态栏提示去处。契约清单 `MEMORY_WRITE_CALLSITES` 由 test_54 读源码校验
-  - 🔴 **契约已改为「函数级」（2026-09-24，本文件最重要的近期变更）**：旧清单是**文件级**的（条目只写 `marker: 'guardWrite('`），测试只判「这个文件里出现过 `guardWrite(`」→ **一个文件里只要有一个守卫，整行就算通过**，同文件里其余裸奔的写函数**永远查不出来**（漏报型假绿，比误报隐蔽得多）。实测代价：`interior.js` 13 个函数只有 3 个有守卫、`mapDataEditing.js` 有 26 处「先改内存后 execute」，而 `test_47`/`test_54` 双双全绿。现在条目登记到 `fns: [...]`（**8 条 / 53 个函数**），`test_54` 用 `_function_body()` 截取**每个函数体**后逐个断言 `guardWrite(` 或 `blocked(`。
-  - 🔴 **判定口径：凡「先改内存、后 execute」的函数必须守函数首行** —— 只守 execute 时，拒绝发生在数据**已经改完之后**（本项目最隐蔽的一类静默丢数据）。已补：`interior.js` 的 removeFloor / updateFloor / removeFurniture / updateFurniture、`mapDataEditing.js` 的 26 处、`scenarioEditing.js` 的 applyHeightBrush / applyBiomeBrush、`geodata.js` 的 selectBuilding（**只守懒建那一段** —— 视图导航在只读态必须照常工作，只读 ≠ 看不了）。
-- **项目↔画布接线（Phase 2.4，2026-09-19）**: 打开项目 → **画布事实源切到项目文件**（实体树/航道/地图/剧本），关闭 → 恢复打开前的知识库工作态（`vaultSnapshot` 留底）。实现要点：`store/canvasBridge.js` 是唯一的接线点（**双向注册表**：geodata 注册画布适配器 `applyProject/releaseProject/refreshEntities/exportCanvas`；projectStore 注册入水口 `syncFromCanvas`），两个 store **禁止互相 import**（test_46 静态守，防循环依赖与两套事实源）；geodata 仍是唯一工作内存，七层视图与编辑器一行不改。⚠️ 两个必须记住的点：① `projectStore` 的 `watch(entities)` **必须 `flush: 'sync'`** —— 异步 flush 会让"面板刚建的实体还没推给画布"时被一次画布保存覆盖（真实数据丢失路径，test_46 抓到）；② 关闭项目时 watch 必须**先判画布仍在 project 态**，否则清空 project 会把刚还原的知识库节点清成 0。回归用例 test_49。**写闸门 11 条落盘入口已全部带守卫 + 只读态 UI 灰禁**（转正/批量导入/清缓存）。🔴 **三个静默数据毁伤（2026-09-20，终态翻开后 test_17/33/40/48 抓到，都已修）**：① **节点上 schema 之外的字段必须随实体往返** —— 真实数据 117/121 带 `placeType`、120/121 带 `wikilinks`，漏了不报错，只让图标配色退化、搜索「提及」整块消失（加 `ENTITY_SHAPE_KEYS` 白名单外的字段原样带走）；② **项目→画布的刷新必须「就地改字段」、绝不重建节点对象** —— 该函数挂在「项目实体变化」watch 上而画布每次保存都会改实体，重建对象会让 `store.selectedNode` 等一切按引用持有的「当前节点」脱钩：详情面板显示陈旧数据、**转正按钮失效**（`changeNodeId` 后就地改的 id 与 `updateNode` 查找的对象不再同一个）；③ **`validateNodes` 增量校验必须传 `knownIds`** —— 只校验新增节点时其父级（既有节点）不可见 → 误判「parentId 不存在」置空 → 实体树塌成 0 级，且下一次项目保存把这个 null 永久写进项目文件
-- **`.sitian` 项目文件（Phase 1，独立运行基础）**: 三层边界**只许单向依赖**——`utils/projectSchema.js`（**纯函数**：结构/校验修复/版本迁移/就地 diff 快照，Node 可读）← `store/projectStore.js`（内存态 + 实体 CRUD，走 `undo.js`）← `main/handlers/projectHandler.js`（只管路径/磁盘/备份，**顶层不 require electron** 以便 Node 测）。改文件结构只改 schema + 升 `PROJECT_VERSION` + 补 `MIGRATIONS`。默认项目目录：用户文档下的 `SiTianProjects`；快照 = 「1 份 base + ≤50 份 diff」（`maps` 不进快照，另有磁盘整文件备份 10 份兜底）。回归用例 test_46 + Node 单元测试
-- **🔴 数据安全承诺（2026-09-21，用户要求「破坏性更新只许破坏代码、不许破坏用户数据」）**: 六层护栏，全部有回归守卫（`test_55_data_safety` + Node 单测）——① **原子写**：先写 `.tmp-<ts>` 再 rename，断电不留半个 JSON；② **每次保存前备份**旧文件到 `<项目名>.sitian.backups/`（轮转 10 份）；③ **会话基线**：每次「打开项目」覆盖式留 1 份 `<名>.session-baseline.sitian`，**不参与轮转**（否则高频自动保存会把 10 份刷光，「打开时的样子」永久丢失）；④ **版本闸门**：项目文件 `version` 高于当前支持 → 拒绝加载（旧版司天不会用新格式覆写丢字段）；迁移/校验任何一步抛错都转成「拒绝加载」而非异常冒泡（磁盘一字节不动）；⑤ **关闭项目先落盘**：`closeProject()` dirty 时先 save，**保存失败则拒绝关闭**（项目保持打开、数据留内存），`{force:true}` 才强制关；⑥ **退出前落盘**：主进程 `before-quit` 拦截 → 渲染层 `quitFlush.flushAll()`（geodata 先推给项目、项目再落盘）→ 回执后才真退出，**2.5s 超时放行**（退不掉比丢 800ms 更糟）。⚠️ `geodata.flushSave()` 曾只 `clearTimeout` 不保存 → 防抖窗口（800ms）内的行星地图/剧本改动被静默丢弃，现已真写。App.vue 不直接 import 任何 store，只驱动中立注册表 `store/quitFlush.js`（test_46 静态守「App 不含 projectStore」）
-  - 🔴 **2026-09-24 新修的两条数据风险**：① **自动保存竞态** —— `saveProject()` 原在 `await a.projectSave()` **之后**无条件回写 `withSnapshot` 并清 `dirty`；await 窗口内用户继续编辑时 `syncFromCanvas` 会把 `project.value` 换成新对象并置 dirty，于是那批编辑被旧快照覆盖、且此后 `scheduleAutoSave` 见 dirty=false **不再保存**（= 静默丢最后一批编辑，画布突然回退）。现改为「先记落盘时的项目引用，返回后**仅在未被改动时**才确认写入，否则保留新态 + 维持 dirty + 立刻重排一次保存」。② **知识库 watcher 在项目态仍在改画布**（两套事实源混流）—— 主进程 watcher 打开项目时**不会停**（`main/index.js` 只在退出/切库路径停它），而 `geodata.handleNodeUpdated/handleNodeRemoved` 直改 `nodes.value`：项目开着时在 Obsidian 改词条 → 知识库节点注入项目画布 → 下一次保存经 `syncCanvasToProject` 写进 `.sitian`。现两个 handler 在 `canvasSourceRef === 'project'` 时直接 return false，由 App.vue 给状态栏回音（拒绝必须有回音）。
-  - 🔴 **退出前落盘失败必须让用户看见（2026-09-24）**：旧实现只在渲染层 `console.warn` 后就照常退出 —— 窗口随即关闭，用户以为「已正常退出、改动已保存」，实际未落盘。现在渲染层把失败清单经 `notifyFlushDone({failed})` 回执给主进程，主进程用**原生对话框**（不依赖渲染层是否还活着）告知并给「留在窗口」出口（数据还在内存里，用户可导出为文件）。另：打开项目时「会话基线」创建失败也不再静默 —— `projectHandler` 返回 `baselineWarning`，经 `sitian:project-warning` 事件到状态栏。
-- **一键同步到远程仓库（git，2026-09-21 / 2026-09-22 加固；回归 test_56 + Node 单测）**: 傻瓜式推送——用户填一次仓库地址 → 点「立即同步」，不敲任何 git 命令；反向另有「从远程恢复（拉取）」。`main/handlers/gitSyncHandler.js`（**顶层不 require electron** → 单测能用本地 bare 仓库当远程做**真实 git 端到端**）+ `main/gitCredentialStore.js`（令牌加密保管，同样顶层不依赖 electron）+ **7 个 IPC**（`git-sync-status/configure/credential/forget/test/now/pull`，preload 同名暴露）+ `components/GitSyncPanel.vue`（工具栏 `cloud` 图标 → `panelsStore.toggle('git-sync')`）。
-  🔴 **令牌由应用自己保管并直接喂给 git（2026-09-22 事故修复）**：旧实现只把令牌交给 `git credential approve`（系统凭据管理器）→ **「存进去了 ≠ 推送时取得回来」**（取决于应用进程里那个 git 的 helper 配置），失败表现恰好就是用户「我明明填了令牌，却还说需要登录」。现在：`safeStorage`（Windows=DPAPI）加密落 `userData/git-credentials.json`；推送/拉取用**临时 credential helper + 环境变量**注入（`-c credential.helper= -c credential.helper=!f(){ … $SITIAN_GIT_TOKEN … }`）—— 令牌不进 argv、不进 `.git/config`、不依赖凭据管理器；系统凭据管理器降级为**附加**写入。拿不到加密能力时**只留会话内存、绝不写明文**。
-  其余硬约束：① 所有 git 调用带 `GIT_TERMINAL_PROMPT=0`（缺凭证立刻失败，不挂死 UI）；② 错误人话化且**区分「令牌被拒」（401/403/Authentication failed）与「压根没找到凭据」**——两者指引完全不同（旧实现混为一谈，把"权限不足"也说成"去填令牌"）；③ `sanitize()` 抹掉回渲染层的任何令牌与 URL 内嵌凭据；④ 地址里内嵌的令牌（`https://token@…`）保存时**自动抽出**，不在 `.git/config` 留明文；⑤ 推送失败不丢数据（commit 已在本地）；⑥ 「测试连接」（`ls-remote`）给确定性反馈。同步时自动写 `.gitignore` 忽略 `*.sitian.tmp-*` 与 `*.backups/`。
-  🔴 **「从远程恢复」的安全设计**：非 `confirm` 调用**只 fetch 探测**（回报 behind/ahead/dirty，**不动工作区**）→ 用户确认后：先把本地内容 `add+commit` 并**打一个带名字的救援分支** `sitian-rescue-<ts>`（只提交是不够的：`reset --hard` 之后那条提交变成悬空对象，普通用户找不回来）→ 再 `reset --hard FETCH_HEAD`；渲染层随后必须 `openProject(filePath)` **重新装载**，否则画布上还是旧数据、下一次自动保存会把旧数据写回去。分支名不一致（本地 master / 远端 main）或远程为空时给结论而不是报错。单测断言「探测阶段不动工作区」「救援分支上有本地独有文件」「救援分支没被推到远端」。
-- **🔴 省份编辑收官（P1~P4，2026-09-23；回归 test_63/64/65 + Node 单测）**: 上一段（P0 第二块）之后的后半程 ——
-  ① **自由绘制 = 默认工具**（`tool` 初值 `'draw'`）：按住沿轮廓拖一圈 → 抬手建省（≥15 采样点且面积≠0 才建），名字「省份 N」、颜色按 `PROVINCE_PALETTE` 轮转、抬手吸附海岸线骨架（**Shift = 不吸附**）、**一个省一条 undo**；空底图上直接画就能建省（不必先「新建省份」）。单击仍是描点。
-  ② **变更归属 / 分割 / 合并 / 点击填充只作用于多边形**：涂抹期在内部网格上算，抬手 `reprojectRings` 写回多边形（只重算被碰到的省，其余保留高保真轮廓）。
-  ③ 🔴 **分割必须保住身份**：`splitProvinceShape` 给两半生成**新 id**，store 必须把**留在原位序号那一半的 id 换回原省 id**（`id: orig.id`），否则时间轴上「这个省」的身份断掉（`ownership[provinceId]` 成孤儿、转正/易主全脱钩）。「侧符号」（`shiftKey`）决定**哪一半留在原位**，不是决定 id 归谁。同毫秒两次拆分曾撞 id（`prov_<ts>_a/b`）→ makeId 带模块计数器；`mergeProvinces` 对 ids 去重。
-  ④ 🔴 **面积守恒要用净面积**：`provinceArea` 是**毛面积**（各环绝对值相加）→ 有洞的省把洞的面积**加**上去。挖洞/套索写回后「总面积 +12%」不是数据错、是量法错。`provinceNetArea`（按 `ringSigns` 带符号求和）才是真实陆地面积。
-  ⑤ **P3 工具栏按任务分层**：主行 = 返回 / 选择 / 自由绘制 / 变更归属 / 顶点编辑 / 更多 = **恰好 6 个可见控件**（test_65 守）；其余 14 个工具 + 吸附 + 图层 + 底图全进默认收起的 `.toolbar-more`（41 个控件，**逐项点击验证真能切工具** = 「能力一个都不减」）；省份选项行 `.province-row` 随工具出现（`provinceRowVisible`），不在默认 6 个之内。
-  ⑥ **P4 海洋分区**：`kind: 'sea'` → 水面色 `SEA_FILL` + **淡虚线海界** `SEA_EDGE`（实线=陆地省界、虚线=水域，一眼可分）；`getProvinceColor` **最先判海域**（海不参与归属着色）；势力油漆桶点在海域上 → 状态栏说明 + 不写 ownership（海区不进时间轴/谱系）。
-  ⑦ 🔴 **写 UI 用例的两条硬纪律**（test_65 一次踩齐）：Vue 的 DOM 更新是**异步**的（`nextTick`）—— 点完按钮立刻查 DOM 必然查不到，探针必须 `async` + `await tick()`（`cdp.eval` 带 `awaitPromise` 才拿得到返回值）；**点击类断言必须先把 `baseMapKey` 切到用例自己的底图** —— 画布只画当前底图，否则点击查的是另一张图的省份，「海域点不出归属」会因为 `prov=null` 而**假绿**（对照组「陆地该记下」才把它揪出来）。探针里 `querySelector` 为 null 时要**带回现场**（DOM 子元素/状态）而不是就地抛异常。
-  ⚠️ **2026-10-02 修正一处文档与代码不一致**：上述①里的「≥15 采样点」是文档笔误，代码常量 `FREE_TRACE_MIN_POINTS = 10`（`ScenarioMap.vue` 文件头即有说明）。以代码为准。
-- **省份压叠闸门 + 套索上限（2026-10-02；回归 test_79，5 段 + Node 单测 `test_province_overlap.js`）**: 2026-10-01 留下的两条「省份还会不会出问题」收口。
-  ① 🔴 **命中口径与视觉相反**（真缺陷）：`findProvinceAt` 原先**正序**返回第一个命中的省，而 `drawProvinces` 是正序 `fill`（数组靠后的盖在上面）→ 两省压叠时**点中的是视觉上被压在下面的那个**。现改为**自顶向下**（`for (i = len-1; i >= 0; i--)`）：画 = 后面的在上，命中 = 从后面往前找。非压叠数据零行为变化（只有一个省含该点）。
-  ② **新建省份的压叠闸门**：新模块 `utils/provinceOverlap.js`（纯函数，Node 单测）＝ 度量**唯一实现** —— 在候选省包围盒上铺 ≤40×40 采样格取格心，算「新省有多大比例落在别的省里」，点名占用者与百分比（洞不计入、海域也算分区、万点大省抽稀并标 `approx`）。`addBaseProvince(key, province, opts)` 只做**策略**：默认度量，超 `OVERLAP_REJECT_RATIO(0.25)` → 返回 `{success:false, rejected:'overlap', ratio, offenders, message}` 且**零副作用**（与点击填充同一协议）；UI 弹确认，确认后带 `{allowOverlap:true}` 重试；程序化路径（导入/脚本）带 `{checkOverlap:false}` 跳过。**为什么是「问」不是「硬拒」**：确实会有人照着一张更大范围重画；但默默压上去更坏（点选/上色/标签三处互相打架）。两条建省路径（描点 `finishDraw` + 自由绘制 `commitFreeTrace`）共用 `addProvinceWithOverlapGate()` —— 只守一条 = 另一条照样压上去。
-  ③ **套索三条闸门**（`applyProvinceLasso`，此前是三类工具里唯一裸奔的一条）：**目标合法性**（`target=0` 越界会把圈内整片**静默擦成无主** —— 探针实测一次擦掉 144 格并把几何 reproject 了）、**面积/格数上限**（`LASSO_AREA_SHARE=0.5` / `MAX_LASSO_CELLS=60000`，阈值可注入 `{maxShare,maxCells}`）、**采样点简化**（`simplifyClosedTrace`：2000 点轨迹 → 16 点，否则 O(格 × 顶点) 卡抬手那一帧）。🔴 **闸门分子必须是「几何圈入量」**（新纯函数 `lassoInsideCount`，只读）而**不是** `lassoCells().length` —— 后者跳过「本来就属于 target」的格，「把整张图圈给占着大半张图的省」会被漏判，而且改格会发生在闸门之前（探针 79D 实测：闸门全失效 + 零副作用断言全红）。
-  ④ 复制省份：偏移量从固定 `px(20)` 改成「包围盒 span 的 5%（不小于 20 屏幕像素）」—— 旧偏移下副本几乎完全压在原省身上（看不见、点不到），复制等于没复制；复制带 `allowOverlap:true`（明确动作 + 已挪开可见距离）。⚠️ **顶点编辑造成的压叠不在闸门范围内**（拖顶点是细粒度动作，拖到一半弹确认更坏）—— 这条写进文档，不装作已解决。
-  **反向验证 4 枚一枚一验**：闸门整体失效（`if (false && …)`）→ f2 五条具名红 + f3 五条红（含「撤空步数 3→4」这条幽灵命令判据；**f0 源码守卫不抓** —— 它只判字符串在场，行为层才抓得住）；命中退回正序 → f0 一条 + f3 一条红；套索目标校验失效 → f4 六条红（并复现「144 格被静默擦成无主」）；闸门分子换成差量 → f0 一条 + f4 四条红。
-  ⚠️ **全量回归（81 用例）抓出的三条连带影响 —— 一次只在单跑新用例时是看不见的**：
-  ① **程序化造数会被压叠闸门拦下**：`test_52` 的 fixture 刻意让「中省完全落在大省内部」（它测标签网格，嵌套是前提）→ 中省静默建不出来 → 后面 6 条断言（笔刷 target 越界返回 0、套索 `no-target`、删除后 maxLabel 2≠3）**整体错位**。修法是用例显式 `{ checkOverlap: false }` 并写明理由 —— **闸门是给用户用的，不是给造数用的**。
-  ② 🔴 **模态 `confirm` 会阻塞 headless 渲染进程**：`test_60` 的自由绘制段落**刻意画在 6 个合成省份上面** → 弹确认 → 没人点 → CDP 命令永不返回，症状是 **「异常: Connection timed out」而不是某条断言红**（这种失败最容易被误判成"环境抖动"）。凡「可能触发对话框」的用例都要先 `window.confirm = () => true`（本仓惯例，test_77/78/79 早就这么做）。
-  ③ **契约检查器的一处误报**：`test_54` 的 `_function_body()` 原来用 `src.find('{', …)` 找函数体起点 —— **参数表里只要有对象字面量**（本轮的 `opts = {}`）就会把参数表那个 `{` 当成起点，配对立刻闭合、截出空串 → 明明有 `blocked(` 也报「没有守卫」。已改成先做**参数表圆括号配对**再找 `{`，并验证「去掉守卫仍判 False」（不引入漏报）。
-- **省份多选 → 势力批量指派（2026-10-02；回归 test_80，4 段）**: `scenarioEditing.batchSetOwnership` 从**零调用的死入口**接活。
-  ① **三处语义补全**（都有回归断言）：🔴 `polityId` 假值原写 `ownership[id] = null`（**留键**），而 `clearOwnership` 是 `delete` 真删键 —— `groupMap` / 谱系重叠度判的是「键在不在」，于是"清空"会留下一堆指向 `null` 的孤儿键；现在统一真删键 + 连带清 `changeYears`。🔴 **海域跳过**（单省油漆桶在 UI 侧拒 sea，批量照写就会出现「有些海莫名其妙有了归属」），并回报 `skippedSea`；不存在的 id 计入 `skippedMissing`；重复 id 去重；**同值 / 空操作 = `noop` 且不压栈**（旧实现照样 execute + save）。另加回执 `{changed, cleared, affected, skippedSea, skippedMissing, noop}` 供 UI 点名。
-  ② **多选交互**：`selectedProvinceIds`（数组）+ `multiSelectSet`（O(1) 查表）；**Ctrl/⌘ + 点击**在「选择」工具下加选/减选（Ctrl/⌘ 在组件内原本完全空闲 —— 全局只被 App.vue 的撤销占用；**不用 Shift**：它在这个组件里已被三处语义占满：禁吸附 / 决定拆分哪半 / 滚轮第二轴）；普通点击回单选并清空多选；Esc 与「取消选择」同效。
-  ③ **批量条**（`data-testid="province-batch-bar"`，有选中才出现；**不进主行** —— `test_65` 硬断言主行 ≤6 个可见控件；title 也刻意不含那 14 个工具名子串，否则会劫持 test_65 的点击断言）：`pbb-count` / `pbb-assign`（指派给当前势力，未选势力或只读时禁用 + title 说明去处）/ `pbb-clear` / `pbb-select-land`（**全选陆地省，海域不入选**）/ `pbb-cancel`。多选描边在 `drawProvinceBorders`（青色 `#22d3ee` 2.5px，与单选白 1.5px 区分）—— ⚠️ 该遍受「省份边界」图层开关门控、且**不进任何导出**（多选是编辑期辅助，不是图面内容）。
-  ④ 省份表变化时 `pruneProvinceSelection()` 剔除已不存在的 id（否则批量条会拿幽灵 id 去写归属）。
-  **反向验证 3 枚一枚一验**：清空退回「写 null」→ f0 两条 + f1 两条红（现场 `{"p80a":null,"p80b":null}`）；海域跳过失效 → f1 **六条**红（海被写进归属 + 计数全错）；Ctrl/⌘ 加选失效 → f2 红（探针后续断言链中断，已按纪律把「查空带回现场」补上而不是抛异常）。⚠️ 方法论：判「noop 有没有多压一条 undo」**不能**拿「撤空 terrain 的步数」跟「只有 seed 的基线」比 —— 中途那些**不改 terrain 的真实命令**也会被计进去（首版实测 5 vs 6 假红）；判据必须是「同一串真实操作、只多插一发 noop」的两条支路步数之差。
-- **删除省份不再作废网格 + 合并超阈的量纲与真瓶颈（2026-10-02；回归 test_81，3 段 + `test_province_shape.js` 新增 3 条）**: 2026-10-01 留下的第四件。
-  ① 🔴 **删除省份原来会白白作废整张网格**：`removeBaseProvince` 只换 `terrain` 数组 → 形状签名失配 → 下次用网格时**整表重新栅格化**（真实库 21 省 / 25930 点实测 170~368ms 主线程停顿），用户涂过的格子还会被重采样一次。现在删除时**就地重编号**（自身格置 0、序号 > idx 的减 1）并盖上与新 terrain 相符的签名 → 网格保持有效，**省掉那次重建**。
-     🔴 **两处顺序陷阱（都实测踩过）**：重编号必须在**换 terrain 之前**做（签名校验比的是当前 terrain，换完再判必然 `stale` → 网格照样作废，首版实测 `gridShifted:false`）；盖签名必须在**换 terrain 之后**做（否则盖上的是旧签名）。所以助手拆成三步：`shiftProvinceGridForDelete`（校验+重编号，**不**盖签）/ `stampProvinceGrid`（盖签+落盘）/ `restoreProvinceGrid`（撤销回灌+盖签）。
-     🔴 **撤销必须把省份放回原位**（`insertAt(..., idx)`，不是追加到表尾）：标签序号 = `terrain` 下标 + 1，挪到表尾会让回灌的标签指向别的省份（几何集合虽相同、语义全错）。回灌用**整表快照**（重编号动的是别的省份的格，差量还原不了）。
-     🔴 **不额外压 undo**：三个助手都**不 `execute`** —— 它们由删除命令包进**同一条** undo（`test_77` f2 断言「一条 undo 把省份 + ownership + changeYears 一起还原」，多压一条就把它拆成两条）。模块间不 import：geodata 造好 provinceEditing 之后把函数填进 `provinceGridOps` **延迟注入槽**（scenarioEditing 先创建，直接 import 会成环）。
-     同批修掉两条**撤销静默失效**：`removeProvinceWithGrid` / `clearProvinceLabels` 的 apply 闭包原先捕获当时的 `entry`，而 `commit()` 读 `cache[key]` → 删除后若发生重建/换图，回灌写进**孤儿对象**、落盘的却是未回灌的标签（「撤销看着执行了、数据没变」）。现在 apply 内部一律重新取 `cache[key]`（与 `rebuildProvinceGrid` 写法一致）。
-  ② **`mergeProvinceShapes` 超阈的真瓶颈不是栅格化，是它之后照跑的 O(n²) 相交扫描**：`ringsProperlyCross` 每次都重新 `dedupeRing` 两个环，真实库前两大省（10525 × 10071 点）≈ **1.06e8 次内层迭代**。现在两处省钱：**超阈直接跳过整轮扫描**（反正必走栅格，扫了白扫）+ **包围盒预筛**（bbox 不相交的环不可能真穿过）。并把量纲回报出去（`work / edges / nodes / maxWork / overflow / pairsTested / crossScanSkipped`，`unionRingsByCancellation` 加 `stats` 出参而非改返回值）→ UI 文案从含糊的「精度降级」变成「**超阈 N 倍**（M 边 × K 结点）」。
-  **反向验证 3 枚一枚一验**：删省级联失效（不调 `shiftForDelete`）→ f1 **三条**红（`gridShifted:false` + 网格失效 + 逐格 diff 147）；撤销追加到表尾 → f1 一条红（现场 `["p81a","p81c","p81b"]` vs `["p81a","p81b","p81c"]`）；去掉包围盒预筛 → Node 单测一条红（远离的环对被测了 1 次）。⚠️ **诚实交代**：「超阈跳过整轮扫描」这条**没有**做反向验证 —— 把它关掉会让用例数据（2×12004 点）跑出小时级耗时，而那正是这条优化要解决的量级；该行为由 f2（`pairsTested === 0` + `crossScanSkipped` + 耗时上限）与 Node 单测共同断言，但「关掉它会慢成什么样」只在审计里用真实数据估过（≈1.06e8 次迭代），没在用例里复现。
-- **🔴 切四五百块省份：折线切割 + Voronoi 批量铺底（2026-10-11；回归 `test_92`，5 段 + Node 单测 `test_voronoi_batch.js` 24 条）**: 暮雨的目标是「以德斯特星底图为例，少说也要切四五百块省份」。旧实现只有「拆分 (X)」= 两点**直线**切一刀 → 切 400 块 = 400 次精确点击（不可行），且直线切不出沿山脊/海岸走的历史边界。本轮补两条路，**推荐 B 铺底 + A 精修**（EU4 自己也是"程序生成 + 手工调整"）：
-  - **A 折线切割 (`D`)**：`utils/polygonBool.js` 的 `cutRingForPolyline` + `splitProvinceByPolyline`。🔴 **折线的两侧不是凸集，"点在折线哪一侧"没有全局含义** —— 所以不走"按边分类"（直线版 `splitRingByLine` 的做法），而是：折线两端**沿切向延长** → 裁到「省包围盒外扩一圈」的矩形内 → 取最长那段 Q（两端落在矩形边上）→ **沿矩形边界从 Q 的终点走回起点**闭合成一个简单环 R → `intersection(省,R)` 与 `difference(省,R)` 就是两半。用"交集 + 差集"而不是"两个环各求一次交"：差集**按定义互补**，不会在折线上留发丝缝（留缝 = 两边都不属于 = 凭空丢地，本项目踩过）。端点在省外/省内都行（自动延长）。`side`/Shift 只决定**哪一半继承原 id**（身份 = 时间轴/归属的键），画布用绿/橙两色把这件事画出来。
-  - **B 批量铺底 (`A`)**：`utils/voronoiBatch.js`（`voronoiCells` / `autoSeedsInRegion` / `makeRegionProbe`）+ `provinceEditing.batchSubdivide`（**async**，默认每 4 块 `yieldToPaint()` 让出主线程 → 进度真的会刷新 + 忙时遮罩/可取消；⚠️ **2026-10-11 修正**：原先写的「每 6 块 `await setTimeout(0)`」是**错的让出方式** —— `setTimeout(0)` 只回定时器队列、浏览器不保证插进一次渲染，实测症状是「进度卡在某个数字很久」；详见下面「底图数据」条。写口契约 test_54 已登记）。🔴 **不用 Delaunay/d3**：cell 的定义本身就是「到本 seed 比到任何别的 seed 都近」= `∩_{j≠i} 半平面(i,j)`，逐点半平面裁剪直接得精确凸 cell（无外心/无共圆退化/无 Bowyer–Watson 裂缝），并用「cell ⊆ 圆(s,R)，dist ≥ 2R 的 site 切不到」做**精确**提前终止（实测 500 点 500 块 60ms）。**相邻 cell 共用同一段边**（逐位相同）→ 省份之间天然无缝。
-  - 🔴 **三条不许违反**：① **不动海岸线** —— 每块都与「目标省并集」求交，海岸那段就是**原多边形的原顶点**（真实底图实测 24921 点边界里 24960 个原顶点出现在结果里）；② **不丢归属** —— 旧省要被删，只删会在剧本里留下指向不存在省份的孤儿键（画布上看不见却仍参与 `groupMap` 与谱系重叠度）；现在每个新块**承接它落点所在旧省的 `ownership` / `changeEvents`**，且与 terrain **同一条 undo**（`applyOwnership(ownBefore/ownAfter)`）；③ **不静默失败** —— 进度 / 跳过的块数 / 覆盖率 / 引擎兜底吸附次数全部回报。
-  - 🔴 **性能与正确性的取舍（实测真实底图 21 省 / 25957 点）**：范围并集 110ms、播种 500 个 280ms、Voronoi 61ms，**逐块求交 19.2s**（500 块 = 274 块内陆原样 + 226 块贴海岸走引擎 + 0 失败 / 覆盖率 100%）。`makeRegionProbe` 的 `edgeNear`（区域边的均匀网格索引）**只多报不漏报**（边的包围盒 ⊇ 边本身）→ 「没有边靠近」⇒ 该块非全内即全外，一个内外判定即可定论，把引擎调用砍掉一半。9 秒级→19 秒级的差异来自「范围 = 21 省并集（24921 点）」vs「单省（10525 点）」—— **想快就只选需要重切的那几个省当范围**。⚠️ 已知未做：把区域按 tile 预裁到 cell 邻域（需正确处理洞的归属，收益约 3×）—— 本轮**刻意不做**：这类"局部子多边形"最容易引入本项目反复踩的静默几何错。
-  - `polygon-clipping@0.15.7` 是浮点扫描线实现，**退化几何会抛** `Unable to find segment #N … in SweepLine tree`（2026-10-11 实测：500 个 cell 一次性 `union` 必炸）。新增 `robustOp(clip, op, ...args)`：直接算 → 抛错则把坐标**吸附到 1e-3 世界单位**再算一次，并把 `snapped` 回报出去（**不静默**）。
-  - UI：两个工具都进 `.province-row`（默认收起，**主行仍是 6 个可见控件**，test_65 不回归；`PROVINCE_TOOLS` 加 `polySplit`/`voronoi` 让工具行常驻）。快捷键 `D` / `A`。预览：折线画橡皮筋 + 两半填色（只在**点了一个点之后**算一次布尔，30ms 防抖 —— 不能挂 mousemove）；铺底画种子点 + Voronoi 虚线（`batchPreviewCells` 是 computed，缓存住 400 块的 Voronoi；内外判定同样必须 computed，否则每帧千万级点内测试）。
-  - **反向验证 4 枚一枚一验（实测结果，不是设想）**：① 铺底前把范围 RDP 简化（tol=3）→ **全绿 = 探针无效**（振幅 ±2.5 的锯齿在 tol=3 下一个点都没削掉，几何其实没变）；改成 **tol=6** → **d4 + d6 + d8** 三条红（覆盖率 98.36% / 丢 29 个海岸点 / 面积 21245 vs 21600）。🔴 **教训：探针必须先自证「它真的改变了行为」**——"反向验证全绿"要能解释是「实现对了」还是「探针没打到」。② 不迁归属（`ownAfter = {}`）→ **d9 + d10 + d11** 红。③ undo 不还原归属 → **源码闸门 + d14** 红（现场 `{"own":12,"ev":12}`）。④ 把折线拉直成弦 → **c5b** 红（拐点没落在边界上）+ Node 单测同步红。另：④ 顺带暴露 `run_tests.py` 判「Node 单测失败理由」只认以 `===` 开头的摘要行 → 新单测失败时只显示「无输出」（**原因被吞**）→ 已把摘要行改成 `=== … ===` 格式。
-  - Node 单测覆盖纯几何：**铺满（0 缝）/ 不压叠 / 面积守恒 / 归属唯一（cell 内任一点到本 site 最近）/ 相邻 cell 逐位共边 / edgeNear 只多报不漏报 / 折线两侧互补**（24 条）。
-- **🔴 底图数据（高度图/河流/道路）的「只补缺刷新」+ 忙时遮罩与取消（2026-10-11；回归 `test_94` 5 段 / `test_95` 4 段）**: 傍晚一轮反馈拆出来的四条，全部有实测证据，**不是设想**：
-  - **根因：地图上没有地形，不是显示问题、也不是"数据丢了"** —— 暮雨的剧本底图 `desite` **建自 2026-09-10**（`d07c1d1`），而**当时那版解析器的返回对象只有 `terrain / polities / ownership / labels / markers`**（`git show d07c1d1:...azgaar-parser.js` 实测），高度图/河流/道路/城镇**根本没被读出来**（具备网格能力是 `1c2a4d2`）；因此这张底图的 `baseMaps.desite` 到今天仍然只有 `id/name/terrain/referenceImages/createdAt/updatedAt/provinceLabels`。而**今天的解析器完全读得出**：同一份 `docs/mockups/desite.map` 实测 **9975 格高度（98 种取值）/ 160 条河流 / 496 条道路 / 617 个城镇**。项目文件里"乐园星"那份高度图确实是平板（**22074/26910 格 = 20、3829 格 = 30、量程 15..100**），但**它与这张底图无关**（`desite` 没有绑定任何行星）。
-  - 🔴 **两条路必须分开，混用 = 毁数据**：`.map` 导入走的 `applyScenarioState` 是「**同 key 整体替换**」→ 拿它去"补高度图"会把用户已切好的**几百块省份 + 归属 + 易主记录一起盖掉**。因此新增 `scenarioEditing.updateBaseMapData(key, bundle, opts)`：**只补缺**（已有的字段一律不覆盖）、**绝不动 `terrain` / `provinceLabels` / `planetId`**、一整次刷新 = **一条 undo**、返回 `{added, skipped, kept, blocked, message}` 如实交代。配套 `buildBaseMapFromBundle` 给"新底图"用（两者分开，判据 test_94 d 段）。🔴 **绑定了行星的底图拒绝写底图侧高度图**（高度图的家在行星侧，A1/M1b）→ 返回 `blocked[{reason:'basemap-bound-to-planet'}]` 并指路「跟随 / 冻结导入」，**不是静默不写**。
-  - **UI**：底图那一组在缺数据时出现「刷新底图数据」按钮（`data-testid="basemap-refresh-data"`，`basemapDataMissing` 计算缺项）；`triggerMapImport` 遇到同名底图**不再静默替换**，改为「只补缺刷新」确认框。⚠️ 手册示例专名一律虚构（`绒花计划/德斯特星/瓯王朝` 已换成「示例世界/示例大陆/示例王朝」，`test_user_guide.js` 用**黑名单**守，同 test_86 性质）。
-  - 🔴 **批量铺底的让出方式错了**（真实症状：「提示已切出 415 块，实际在 414 卡很久」「到处乱点更卡」）：旧实现 `await new Promise(r => setTimeout(r, 0))` **只把控制权交回定时器队列，浏览器不保证插进一次渲染** → 进度提示形同不动。现在是 `yieldToPaint()`（`requestAnimationFrame`，语义就是"等下一帧"）+ 忙时**画布遮罩**（吃掉指针事件：卡住期间点的每一下都会排队、回来一起执行）+ **取消**（`token = {cancelled}`，在每个帧让出点检查；取消**不落库、不压 undo**）。默认 `yieldEvery` 6 → 4（真实底图单块布尔 ~38ms ⇒ 约 150ms 让出一次）。
-  - 🔴 **手画的水路原来根本不落盘**（三条独立缺陷，test_95 守）：① `finishRiverDraft` 只把路径 push 进**组件本地数组** `riverPaths`（全仓无人写 store）→ 重开应用河就没了；② 手画道路直接 `store.baseMaps = {...}` 手搓替换 → **既不在撤销栈、也不排自动保存**（只能碰巧赶上别的保存），还绕过只读闸门；③ 聚落编辑同款（`Object.assign` 直改 store 活对象 → 撤销把新值当旧值）。现在 store 侧补 `addBaseMapRiver / removeBaseMapRiver / addBaseMapRoute / removeBaseMapRoute / updateBaseMapBurg`（全部 `guardWrite` + `execute` + `saveScenarios`，删除的撤销 **splice 回原位** = 渲染层叠顺序；找不到 id 给 `{ok:false, rejected:'not-found', message}` 而不静默），组件侧一律改走 store。`drawRiverPaths` 改读 `baseMap.rivers` 里 id 前缀 `river_` 的那些（**不再有第二条事实源**；`test_95` 红线：组件里出现 `riverPaths` 或 `store.baseMaps = {` 即红）。
-  - 🔴 **两个"高度图判据"必须分清 —— 混用会出真事故（2026-10-11，`test_96` 抓到）**：
-    · `heightmapAccess.hasGrid(hm)` = **"能否开始用笔刷编辑"**（只要有网格点即可）。⚠️ **不许把它收紧成"必须有 h"** —— 本轮试过、被全量回归打回：既有 fixture（`test_39`/`test_67`/`test_68`）用的是**只有网格点、没有 `h` 的历史高度图**，收紧后 `resolveHeightmap` 返回 null → 笔刷 / 派生 / 绑定全线 `Cannot read properties of null (reading 'h')`。这条教训已写成 Node 单测里的**反向纪律**（`test_heightmap_channels.js`）。
-    · `terrainRepresentation.hasHeightmapContent(hm)` = **"有没有地形内容"**（点与 `h` 都要有）→ **状态栏与"缺什么"诊断必须用这个**。
-    · 事故形态：解析器读不到 `cells.h` 时造出 `{ grid:{points:[…]}, h:[] }` 这种**空壳高度图**，而状态栏用的是"有点就算"，于是把空壳报成「4 网格」→ 用户看到纯色扁平图、状态栏却说"有网格"，只能去找一个**根本不存在的显示开关**（正是暮雨那次困惑的形态）。
-    · 已修：`layerAvailability.cells` 改走 `hasHeightmapContent`（空壳报 0）；`describeBaseMapMissing` / `basemapDataMissing` 同口径；`azgaar-parser.buildScenariosJson` 与 `buildBaseMapFromBundle` 在**没有高度值时干脆不写 `heightmap` 键**（宁可不给，也不要一个会被误判成"有"的空壳）。
-    · ⚠️ 写测试数据时两个坑：① `h` 是**顶层**字段 —— `{ grid: { points: [[x,y],…] }, h: [高度,…] }`（本用例首版把 `h` 写进 `grid` 里，"实现坏了"的假象骗了我两轮）；② 两格相距 1 世界单位在间距 14.4 下算**退化**，`buildHeightmapRaster` 会返回 null（**这是保护，不是 bug**），自造数据要用正常坐标（如 0 与 100）。
-- **🔴 描轮廓：线跟着笔走、相邻省自动重算（E，2026-10-11；回归 `test_97`，5 段）**: 暮雨第 6 条原话「我没找到单独调整省份轮廓的地方……随心所欲描画轮廓，线跟着笔（鼠标）走，相邻省份自动重算更新轮廓」。既有四条路都不满足：顶点编辑一次只改一个点（拖出去与邻居压叠/留缝）、省份笔刷是**粗带**扫（`traceBrushRings` 生成胶囊带，手要"刷"）、套索是**从未知省手里抢**（目标 = 下拉里先选的省）、折线切割是"分"不是"改"。新增第五条：**区域 = 笔迹自己围出的那块**。
-  - 🔴 **目标省的默认取向最容易想反**（首版就反了，test_97 c 段量出数字才看出来）：围住的那块地本来就在**原主**手里，所以"区域里占比最高的省"**永远**是原主 —— 而用户描边界想要的是**改判给邻省**。首版照"占比最高"选，于是 `targetIdx` 恒等于原主 → 只有 `union`、没有 `difference`，**画面纹丝不动**（现场 `{"t":1,"cov":1,"area":3000,"out":0}`）。现在：`opts.targetIdx` 显式优先 → `toNeighbor:false` 归原主（只修形状）→ **默认判给"笔迹贴得最紧的那个邻省"**（数**原始笔迹点**落在谁里面最多；一个邻省都没碰到则回落到原主并如实标记 `switched:false`）。原主判定仍按**区域占比**（不是绝对面积：真实底图里省面积能差两个数量级，大省压到一角就会赢过真正被围住的小省）。
-  - 🔴 **落库几何不能用 `applyRegionToTerrain`（它只做"先并后挖"）**：那条路是「目标省 ∪ region，再从被碰到的省 − region」，区域跨边界时目标省实际只拿到 `region ∩ 目标省` —— **用户描出的那块并没有整块过去**（实测 3000 的区域只搬动 1429，各自守恒但意图没实现）。描轮廓专用 `applyOutlineToTerrain`：**`transfer = 区域 − 目标省原有地`**，再「目标 ∪ transfer / 其它 − transfer」。四条性质一次到手：① 目标**净得**；② 邻省只失去被转移的那部分（`transfer ⊆ region`，不会多挖）；③ 面积**精确守恒**（转移量 = 邻省减少量）；④ **不可能产生新压叠**（是**划分**不是叠加）。⚠️ `applyRegionToTerrain`（笔刷/套索/批量）**保持原样不动** —— 那三条路的语义就是"把这一带划给它"，改成划分会动 test_79/80/92 的既有断言。
-  - ⚠️ **两个自己踩的坑，都写进了 test_97 的判据**：① `differenceMulti(clip, baseMulti, cutMultis)` 的 `cutMultis` 是**MultiPolygon 的列表**（`provinceToMulti` 返回的就是一个 MultiPolygon）—— 写成 `[provinceToMulti(p)]` 就多套了一层、引擎"减了个寂寞"；② 量"有没有新增压叠"必须拿**运算后**的数组去比，拿运算前的旧数组比会把目标省自己（它现在当然含这块地）算成压叠、量出来正好等于转移量。
-  - UI：工具进 `.province-row`（**主行仍是 6 个可见控件**，test_65 不回归）、快捷键 `Y`、`cursor:crosshair`、设置区一个「改判给邻省」勾选（默认开）。画布实时轨迹用**青色**（画省份是紫色）+ 松手前画**收口弦**（虚线）—— 那条弦就是"围住这块地"的最后一条边，不画出来用户不知道自己围的是什么形状（松手即落库）。状态栏如实报「围住多少 / **实际搬动多少** / 从谁→谁 / 贴着谁描 / 原有压叠」。
-  - **反向验证（实测）**：把默认取向改回"占比最高"（即恒等于原主）→ 用例 c1/c1/c3×3/c5 共 6 条红（现场只有 `union`）；把 `transfer` 差集去掉 → c3 的"无新增压叠"红（`preOverlap` 1428.57 = 转移量）。
-  - ⚠️ **已知未做**：套索/笔刷仍是"先并后挖"语义（跨边界时会有压叠，`describeRegionOps` 只报改了谁）——本轮**刻意不动**它们（有既有断言与手感），要统一是另一件事。
-- **🔴 折线切割「一次切多块」+ 按新海岸线重建省份外环（0.2.6 收尾，2026-10-11；回归 `test_99` / `test_98`）**：
-  - **一次切多块（`splitProvincesAlong`）**：原先"一次只切一个省"是**刻意**的 —— 折线两端沿切向延长出来的那一段会替邻居做决定（误切比多切更坏）。这条限制可以绕开：**每个省只取「折线在它内部的那一段」**（`extractInsideSegment`：逐段取**中点**判在不在省里 → 收集最长 run → 两端沿切向外扩半段），延长段就只作用于它自己。加上单省切分只改 `terrain[idx]` + **表尾追加**新省（既有下标一个都不动），逐个切互不干扰。⚠️ **undo 粒度 = 每省一条**（复用 `commitSplit`，不另造批量命令）—— 切 N 个要按 N 次 Ctrl+Z，回执里如实写明。上限 `maxProvinces=24`（超出报 `too-many` 并给数）。🔴 **组件的折线收口必须真的走这个入口**（否则界面说"切开 N 块"、实际只切一块 = 假绿，`test_99` 源码闸门守这一条）。
-    - ⚠️ **两条实测踩坑**：① 折线端点**落在两省交界线上**时段中点判定会同时命中两块（y=80 那条交界线就中招）→ 判据要避开省界；② 断言不能按**下标**取"邻居省"——切完新省追加在表尾、下标整体错位（首版按 `T()[2]` 比，比到的其实是被切的那块 → 假红），要**按 id** 比。
-  - **海岸线重建（`rebuildCoastline`）**：生成器原始海岸线 10525 点、导出时被简化成 778 点，落到底图上每个省只剩几十点 → 地图上那条海岸线又糙又不对；而"重导为新底图"会把几百块省份与归属全丢掉。第三条路：**新陆地 = ∪ `landFeatures`（parser 已带进 `baseMaps[key].landFeatures`）→ 每个省 = 省 ∩ 新陆地**。四条性质：① 只动跨过海岸线的省（**内陆省逐点不动**；`insideBox` 只是保守跳过做优化，判据用"逐点未动"）；② 相邻省**仍无缝**（对每省取同一个 L 的交集）；③ 海岸那段换成新 .map 的**原顶点**；④ 一整次 = 一条 undo。安全闸门 `COASTLINE_MAX_AREA_DRIFT=0.6`：漂移超限 → `area-gate` + **零副作用**（多半选错 .map）；没有陆地轮廓 → `no-land` 并指路选 .map。实测真实 `docs/mockups/desite.map`：**20 块 / 1747 点 / 并集 20 块 / 面积 634002**（**所以这事不必等新导出**，新 .map 到了直接换文件用）。
-    - ⚠️ **期望值别用脑子算**："选错 .map"的用例必须让新陆地**真的盖住大部分省**才谈得上触发闸门 —— 取"右下角一小块"时另一个省的包围盒与陆地不相交、原样保留，面积只掉 49.5%（甲 10000 + 乙 100 = 10100 / 20000）。用回执里的 `perProvince`（逐省前后面积）**量**。
-  - UI：海岸线重建按钮在底图那一组（`data-testid="basemap-rebuild-coastline"`，山脉图标），有已存 `landFeatures` 就直接用、否则让用户选 `.map`；`triggerCoastlineRebuild` 只负责问人与翻译结果（几何与闸门全在 store）。
-- **🔴 原始底图来源备份 + 补注册一条从未生效的 IPC（0.2.8，2026-10-11）**: 起因是暮雨的一句话 ——「这反映出另一个问题：司天自身没办法备份用户的原始底图文件」。**他说得对，而且已经造成过真实损失**：`desite` 底图建于 2026-09-10（当时解析器读不出高度图/河流/道路），等到想补时，唯一来源是**他自己还留着的那份 `.map` 导出**；司天此前**只备份自己的项目文件**（`<名>.sitian.backups/` 轮转 10 份 + 会话基线），**从不留用户导入的 `.map`** —— 那份一丢，地形/河流/道路永久无法恢复（只能去生成器重做一张，而新图的海岸线与现有几百块省份边界并不一致）。
-  - **做法**：`projectHandler.saveBaseMapSource(projectPath, { name, text })` → 写到 `<项目>.sitian.backups/basemap-sources/<清洗后的名字>.map`。**原样字节**（它是"再次导入/刷新"的唯一凭据，改了就不是凭据）、**原子写**（`.tmp-<ts>` → rename）、**轮转保留 10 份**、`sanitizeFileName` 清洗（不产生目录层级）。`listBaseMapSources()` 供 UI 列"能从哪几份恢复"。IPC：`basemap-source-save` / `basemap-source-list` / **只读** `project-current-path`（主进程侧权威回答当前项目路径 —— 这样 `ScenarioMap` 不必为拿一个路径去 import projectStore）。
-  - 🔴 **轮转必须按 mtime、不能按文件名**：首版用 `.sort()` 按名字排，于是**刚写进去的 `reverse.map` 因字母序靠前被当成"最旧"删掉**（单测 e3 当场抓到 ENOENT：刚留的底还没用就没了）。文件名与写入先后**没有任何关系**。为此单测加了 **c1b 反证**（名字序与写入序完全相反）。
-  - 🔴 **顺手抓出一条从未生效的 IPC**：`project-git-snapshot`。`gitSnapshot()` 函数存在且已导出、preload 也一直暴露 `projectGitSnapshot`、`ProjectPanel.vue:707` 的「司天快照」按钮在调它 —— **但该 IPC 通道从未注册**，真机上点它必然抛 `No handler registered for 'project-git-snapshot'`。CDP 用例里 `window.sitianAPI` 是 mock，这层**永远看不见**；而 `test_project_io` 的"通道白名单"断言写的是"这个通道在不在 expected 列表里"、**不是"它有没有被注册"** → 漏注册一直假绿。本轮补注册，并新增**通用**守卫：**preload 里 `ipcRenderer.invoke` 的通道，主进程必须有 `ipcMain.handle`**（实测 54 invoke ↔ 56 handle 全部对齐；加在 `test_main_module_wiring.js`）。
-  - ⚠️ 组件侧三条纪律：备份在**解析之前**做（解析失败也该留下素材）；**备份失败绝不阻断导入**（只在状态栏留一句 —— 数据安全功能不该变成新的失败点）；**只读态也备份**（不改世界观数据，只是留素材）。
-  - 一次性修复脚本 `scripts/maint/repair_basemap_data.py`：照 `diag_t2_save.py` 的安全模式（跑前把项目与 `.map` 各复制一份到 `backups/repair-basemap-<ts>/`、真机 Electron + CDP 驱动**与按钮同一个 store 接口**、跑完显式 `saveProject()` 并等磁盘 mtime 变化、无论成败都杀自己拉起的进程并还原 `config.json`）。**实测效果（暮雨的真实项目）**：省份 415 → **415（未动）**；高度图 0 → **9975 格**；河流 0 → **160**；道路 0 → **496**；城镇 0 → **617**；海岸线重建只改了 **4** 个省（411 个内陆省逐点未动，漂移 −0.01% —— 说明那批省的沿海边界本来就贴着海岸线）。
-    - ⚠️ 该脚本首版把 `ROOT` 数错一层（在 `scripts/` 下照抄了 `scripts/tests/` 的三层写法）→ 报"找不到原始导出"；挪到 `scripts/maint/` 后必须回到三层。**改动它的位置时先重数那一行。**
-    - ⚠️ 顺手证实一件要说准的事：**"解析后的数据"其实一直有救**（它已经进了项目文件，而项目文件本身有 10 份轮转 + 会话基线）；缺的**只是那份原始 `.map`**。对用户要分清这两层，否则会夸大风险。
-  - **`test_46` 的通道对齐改成"按前缀族"而不是"全集相等"**：它原写 `invoke('(project-[^']+)')` 再与主进程 handler 全集判相等 → 主进程只要注册任何非 `project-` 前缀通道（本轮的 `basemap-source-*`）就必然假红。现在按前缀族分别对齐（族内仍要集合相等，那才是"漏注册/漏暴露"的判据），下限守卫只看 `project-*` 数量。`test_project_io` 的 `expected` 白名单是**故意**的（逼人登记新通道），加通道时要一起改。
-  - **`.map` 导入必须当场说清结果（同上，`test_96` 守）**：解析器早就把「未解析到 cells.h（高度图不可用）」收进 `warnings`，但导入路径一个字都不报（只有一个要悬停才看见的小徽章）。现在导入完成即回报：省份/河流/道路条数、**"这份 .map 里就没有地形高度图 → 所以是纯色扁平图，这不是显示开关的问题"**、以及"这张底图还缺什么（可用「刷新底图数据」从另一份 .map 补）"。⚠️ 读回音要认准 `provinceHint`（`statusMsg()` 的落点）；`statusText` 是工具条上那句**摘要** computed，两者不是一回事（首版读错 → 断言与现场无关）。
-  - ⚠️ **已知未做（如实登记）**：`desite` 的旧边界只有 21 个点（`features` 退化轮廓），补齐高度图后**海岸线与地形不会自动对齐** —— 现在有第三条路了：用「重建省份外环」把新 .map 的海岸线换上去（**不必**重导为新底图、不作废省份），见下面「折线切割一次切多块 + 海岸线重建」条。「描轮廓 + 相邻省自动重算」**已做**（`Y` 键，回归 `test_97`）。
-- **区域勾轮廓管线（Phase 2.6，2026-09-20）**: `utils/regionTrace.js`（纯函数 + 离屏 canvas 光栅化）= 勾完轮廓落库前的统一关口：**闭环保形简化**（`simplifyClosedTrace`，RDP 旋转到「离质心最远点」当锚点，容差 = span 的 2%~5% —— **固定 eps 在世界单位下什么都削不掉**：行星图 1px ≈ 3~5 世界单位，实测 eps=2 时 200 点只降到 111 点，改成 span 比例后 200→16）+ **离屏光栅校验**（`validateRegionTrace` → `traceStats`：把轮廓与「可绘制范围 / 兄弟区域」各填一张掩膜逐像素求交，算 `insideRatio` / `overlapRatio`）。**判定顺序 = 先重叠、后范围**（重叠 > 5% 拒绝并点名 + 带百分比；范围外 < 50% 拒绝），两个拒绝都只写状态栏**不动数据**。接线：PlanetMap 区域模式的自由绘制 + 点击描点两条落库路径、AreaMap 区域拖拽 + 笔刷两条路径。⚠️ 三条设计约束：① 「落地内」只在行星**显式设了地图边界**（`canvasSizePreset > 0`）时才硬判，`auto` 下边界随内容增长（没有「画到范围外」这回事）→ `containers` 传空 = 跳过，**宁可不判也不误拒**；② 自由绘制 `simplify: true`，点击描点 / 笔刷 `simplify: false`（顶点是用户刻意摆的，RDP 会削掉有意画的细节）；③ 真实数据里 `mapData[planet].terrain` 是**稀疏小块**（44 块 / 769 点，不是一整块大陆），既有「区域 1」只有 7% 落在 terrain 内 → **绝不能拿 terrain 当可绘制范围**，否则把用户正常画的区域全拒了。回归用例 test_51
-- **省份「归属标签网格」（Phase 3，2026-09-20）**: `utils/provinceGrid.js`（纯函数：多边形→格归属/差异边→省界链→Chaikin/笔刷与套索差量/重编号/序列化自愈）+ `store/geodataModules/provinceEditing.js` + `composables/useProvinceBrush.js`，ScenarioMap 接 Q（省份笔刷）/L（自由轮廓）工具与子工具栏。三条硬约束：① **序号 = `baseMaps[key].terrain[]` 下标 + 1**，不另建省份定义表（两套表 = 两套事实源）；② **涂抹期不碰响应式**（数据在模块内 `Uint8Array`，抬手 diff 成**一条** undo 并整体替换 baseMaps[key]）；③ **删除省份必须两步**：自身格置 0 + 序号 > idx 的减 1，且记**整表快照**（只做减 1 会把被删省份的地盘白送给顶替它序号的省）。**网格视图默认关**（该开关已在 P0 第二块删除，见下条）→ 既有多边形渲染与观感一行不变。🔴 **只读态（无项目）**：编辑入口不灰禁，但每个写操作先过 `guardWrite`、被拒即「什么都没发生」（不改 store、不改内存标签），**懒建网格也只进内存缓存**；只读 ≠ 看不了（网格与省界照常渲染）。回归用例 test_52
-- **🔴 下一轮排期定案：线 A 数据入口先于线 B 编辑能力（2026-09-27，`docs/ROADMAP_NEXT.md` D4~D8 + 「下一步队列」）**: 触发《司天 × Obsidian：机器属性搬家——最终定案报告》＋ 暮雨「**司天无 LLM**」身份级边界。**本轮不改产品代码**，只核验与排期。三条硬事实：① 🔴 **`docs/SITIAN_VAULT_SPEC.md` 曾对用户做假承诺**（原文「SiTian 使用 UUID 作为节点的稳定标识，重命名后 UUID 不变，地图关联保留」）—— 实测 `extract-data.js:139` `id = normalizeId(parsed.fileName)`、`:151` `uuid: generateUUID()` **每次提取现场新生成** → `initializeCoordinates:656` 的 uuid 匹配分支**恒 miss（死代码）**，真正生效的稳定键只有文件名派生的 id；**改名 = 静默变新实体**（坐标/编辑成果丢），且全仓 `重连|relink|断线|reconnect` **零命中**（无断线检测）→ 已按实况改写并标注原句为假承诺，登记为 `IMPROVEMENT_BACKLOG` §四 **R15/R16**。② **搬家工具比报告设想省力**：`scripts/add-layer-frontmatter.js` / `add-place-type-frontmatter.js` 已有 `--dry`（＝报告要的清点表）+ 纯文本行插入（不重序列化 YAML）+ 与 `extract-data.js` **同源规则表**（后缀 > tags > 正文「类别」> 关键词 > 兜底）→ **反向即搬家**，规则表不必重写。③ **A3 实况修正**：PlanetMap 已有 `layers.cultureReligion` 图层，但 `drawCultureReligionRegions`（`PlanetMap.vue:1379`）画的是 **Azgaar .map 参考数据**，用户自建那份**既无渲染也无笔刷**。**队列**：线 A = **A-0 断线检测/重连**（前置而非配套：钥匙以文件名为准后改名断链是必然）→ **A-1 迁移工具**（带反向档 + 清点）→ **A-2 读路径切换**（🔴 **读优先级必须单源**，禁止写成「先查新、缺失回落旧」—— 并存观察期里旧值会静默顶替，与 A1/M1b 的静默分裂同形态；**目录 / 文件名后缀推断必须保留**）→ ~~**A-3 中文点选糙版**（迁移后唯一写入入口）~~ ✅ **已完成 2026-09-29（线 A 四件收官）**；线 B 维持 **A4a → A3 → Tiled JSON(v2)**（**下一步 = A4a**）。「五断言对账」与「删除边界清单」**不占工期**（前者已用真实代码销账：报告对司天现状的描述落后代码约四个月 —— 0.1.7 非 0.1.0 / 七层视图已完成 / 回归 74 非 72 / `generateRivers` 仍 O(n²) / Tiled 零实现）
-- **中文点选糙版（A-3，2026-09-29；回归 test_76 + Node 单测 `test_place_types.js`，14 条）**: 搬家线收官件 —— 笔记里本来就没写的机器属性**只有这个界面能填**（报告⑥：搬家后设类型的唯一入口）。新增 `utils/placeTypes.js` = 8 枚举 / 层级口径 / 选项（**枚举 ∪ 当前值**）/ 空白过滤的**唯一实现**：项目面板实体列表**每行类型下拉**（只走 `proj.updateEntity` = undo + 落 `.sitian`，失败回滚显示并给原因，不直接改内存）+「只看空白」四档过滤（全部 / 类型为空 / 挂靠为空 / 任一为空，选项标出计数）。🔴 **空白必须按层级判**（2026-09-29 拿真 ROSA 缓存实测）：45 个类型空白里 **39 个是宇宙层**（world/star_domain/galaxy/planet 本就不携带该字段）、9 个 `parentId` 空里 4 个是 world（本就该顶层）—— 不分层就过滤 = 点开「类型为空」看到 39 行无意义噪音；已填 75 个**全在 8 枚举内**（枚举外 0，但兜底照做）。三处（ProjectPanel / NodeDetailPanel / geodata）共用单源、组件内联回抄由 test_76 f0 + 单测 t13 **剥注释后**静态守；CJS 提取脚本枚举按「复制 + 逐字符比对」守（同 normalizeId 手法）。**在线审查三条补刀全收**：① 下拉兜枚举外值（详情面板与搜索筛选同批修 —— 手写第 9 种值不进选项 = 永远筛不出来的静默不可达）② 只看空白过滤 ③ test_58 c3 端到端补 `parentId`（目标父级经防循环校验，非空转）。**反向验证 3 枚一枚一验**：丢 ∪ 兜底 → f1 两条红 + t4 红；过滤不分层 → f2 四条红（46 行 vs 应 2 行）+ t11 红；直接改内存 → f0 点名两条红。⚠️ 方法论：过滤的期望集合必须在用例里**独立重算** —— import 被测的 `matchesGap` 算期望 = 同义反复，「不分层」缺陷照样绿。**2026-10-01 复核清言在线版的平行实现（bundle `feat/a3-place-type-dropdown`，基线 `a46d1d5`）→ 代码不予采用，只摘两处增量**：在线版是从远端重做的较薄一版（空白过滤**不判层级** = 宇宙层 39 个噪音照收；`availablePlaceTypes` 走 `PLACE_TYPES.filter` 会**丢掉枚举外现存值** = 永远筛不出来的静默不可达；`test_58` 的 `parentId` 目标父级未过防循环校验 = 断言可能空转；类型下拉每行都出现，宇宙层也能设类型），真正的增量只有 ① `run_tests.py` **跨平台 harness**（posix 直跑 npm + 自动探测浏览器 + `--disable-dev-shm-usage`，Windows 行为零改动）与 ② **详情面板父级下拉只读灰禁**——两处已摘入本线。其分支留在本地 `review/a3-online` 备查，**未推送**（避免 GitHub 上出现两套同名 `test_76`）。**2026-10-01 待决①收尾（本轮 `fix(a3)` 提交）**：清言那份「改父级类写入口」补丁 A/B/C 全取 —— 批量改父级条 / 层级迁移下拉 / 航道类型+删除按钮补 `:disabled` + 原因（航道两处另补 `:disabled` 样式，否则元素上写死的 color 会盖掉浏览器默认灰 = 禁了看不出来）；`test_47` 加 f 段真 DOM 断言（关系 tab 的层级迁移下拉）+ **g 段源码契约**（四处门控，判据先剥注释）。
-- **历史剧本链加固：势力增删 / 删省级联 / 导出同源 / 画布 DPR（2026-10-01；回归 test_77，5 段）**: 三路只读审计查出的四类问题一次收口 ——
-  ① 🔴 **势力只能改名，不能新建/删除**（`polities` 只有 Azgaar `.map` 导入一条来路，自建底图 + 自建剧本 = `polities: []` → 色板空空，油漆桶因旧条件 `tool === 'paint' && selectedPolity` 而**静默无反应**；删除同样没有 → 错导入的 FMG 国名永久留在地图与谱系里）。现新增 `scenarioEditing.addPolity` / `removePolity`（各走 `execute()` = 一条 undo；**删除连带清 `ownership` / `changeYears` 并回报受影响省数**，二次确认点名影响面），色板加「＋ 势力」「删除势力」「取色器」（`data-testid` = add-polity / polity-delete / polity-color-input）；`clearOwnership`（此前**零调用的死入口**）接活 —— 色板「✕ 清除归属」+ 油漆桶点省份 = 真清归属，文案与行为终于一致。⚠️ **仍未接线**：`batchSetOwnership`（批量指派需要省份多选）与 `removeProvinceWithGrid`（带重编号的删除实现，仍是死代码 —— 现在靠 `shapeSignature` 自愈兜住）。
-  ② 🔴 **删省份不级联**：`removeBaseProvince` 原先只改 `terrain` → `scenarios[*].ownership` / `changeYears`（**键就是省份 id**）留下指向不存在省份的孤儿键；画布看不见（渲染按 terrain 遍历），却仍参与 `groupMap` 分组、`summarizeLineages` 的省列表与谱系继承的重叠度 → 观感是「势力继承莫名断裂/粘连」。现**同一条 undo** 里级联清理 + 回执点名清理了几个剧本。
-  ③ 🔴 **SVG 导出与画布不同源**：旧实现只画 `prov.points`（主环）→ 洞被填实、飞地直接丢；海域照样按归属上色/回落灰 → 水陆分不开；**完全没有势力名标签** —— 而真实数据 21 个省份名里 20 个是 FMG 的 `Province N`（被导出链的过滤器跳过）→ **导出的 SVG 是一张没有字的色块图**。现：多环全环 + `fill-rule="evenodd"`、海域 `SEA_FILL` + 虚线海界（`SEA_EDGE`）、**接上 `collectScenarioLabels`（与画布同一份判定，档位 = `polityLabelTier(1)`）**、省名落点改**面积加权形心**、网格派生的环走 `ringPointsForRender`。
-  ④ 🔴 **省份属性面板的写路径是反模式**：五个字段用 `v-model="selectedProvince.x"` **直改 store 活对象** → 绕开 `guardWrite`（只读态照改内存）+ 文本挂 `@input` 每敲一个字符一条 undo（`MAX_HISTORY=100` 静默把更早的几何操作挤出栈）+ `updateBaseProvince` 采集的 `oldProv` 已被污染 → **改名/群系/文化/海岸/类型的撤销全是空转**。现：值来自事件、写只走 store、只读态给回音；右键菜单的「重命名/改群系」同批改掉。
-  ⑤ **画布 DPR**：其余 6 个视图共用 `useCanvasRenderer` 的 `devicePixelRatio` 缩放，只有剧本画布自己写 `canvas.width = clientWidth` → 150%/200% 屏上是位图放大**发虚**（而导出反而更清晰，于是「矢量不如 EU4 位图」的锅落错了地方）。现 `canvasDpr` + **每帧 `setTransform(canvasDpr,…)`**（不依赖 resize 时设一次）+ 全部绘制/命中/布局读 `cw()` / `ch()`（CSS 像素空间），`exportPNG` 的离屏画布按 CSS 尺寸建。
-  ⑥ **三处单源**：`utils/scenarioPalette.js`（省份色板 / 海域填充与海界 / 陆界）、`ringPointsForRender` 移入 `utils/provinceShape.js`、`utils/scenarioLabels.js`（标签判定的唯一实现，画布与 SVG 共用）。
-  **反向验证 7 枚一枚一验**：源码级 4（画布 DPR 失效 / 导出退回只画主环 / 面板回 `v-model` / 海色写字面量）+ 行为级 3（删省级联失效 / 删势力不清反向索引 / 群系下拉回 `v-model`）—— 各自命中，还原后均回绿。⚠️ 方法论：**「v-model 绑到 store 活对象」是比「先改内存后 execute」更隐蔽的一类** —— 它连 undo 都一起废掉（`old` 与 `new` 是同一个对象），判据要瞄「撤销后是否真还原」，而不是「有没有走 execute」。
-- **逐年切片导出 + 易主日期录入（2026-10-02；回归 test_78，4 段 + Node 单测 `test_scenario_slices.js` / `test_export_frames.js`）**: 上一轮「能不能做 EU4 式切片」四问的收口。**先说真问题**：真实库 `changeYears` 显式条目 = **0**，所有易主日期都是 `computeEraChanges` 在本剧本区间内**均匀铺开**的合成值（确定性、看起来很像真的）→ 「切片很漂亮」与「日期是编的」可以同时成立而无人知道。
-  ① **日期体检**：新模块 `utils/scenarioSlices.js` 的 `changeDateStats()` 把「显式 / 合成 / 区间外」分开计数，切片对话框**第一条**就是「N/M 个易主年份是自动铺开的合成值，不是史料」。`validateChangeYear()` = 区间判定的**唯一实现**（面板内联 + 拒绝回执共用）：越界年份**写不进库**，且输入框**退回显示库里那个值**（只拦不还原 = 框里留着脏值、看着像改了，比直接报错更坏）。
-  ② **批量录入**：`setChangeYears(scenarioId, patch)`（**一条 undo**，整表快照式 —— 逐省写会把 `MAX_HISTORY=100` 静默挤空）+ 面板批量条「统一设为该年 / 固化推算值 / 全部清空」。⚠️ `inheritScenario` **刻意不继承** `changeYears`：继承来的日期按定义落在上一代区间里 = 一批越界数据（注释已写明，防后人"顺手修"）。
-  ③ **帧索引**：`collectSliceFrames(tl)` —— 帧 = **剧本起点**（时代交界处即使无易主也换名/换色，漏了就少一代底图）+ **每次易主**（同年合并）；`frame.era = eraIndexOfYear(year)`，与 `buildScenarioSVG(era, year)` 同一口径；`sliceFrameName()` = 渲染层造载荷与主进程落盘的**共同命名契约**。上限 `MAX_SLICE_FRAMES = 400`（超了该合并剧本，不是该逐帧动画）。
-  ④ **单帧导出参数化**：`buildScenarioSVG({ era, year, … })`（不传则取注入 ref → 既有调用与用例一行不改）。此前只读 `currentEra`/`currentYear` → 想导「另一年」只能先挪用户的时间轴游标。
-  ⑤ **批量落盘**：`main/handlers/exportFramesHandler.js`（**顶层不 require electron** → Node 单测可真落盘）+ IPC `export-scenario-frames`（**一次选目录**；旧的两个保存通道一次调用弹一个模态框 = 11 帧按 11 次「保存」）+ `frames.json` 清单（帧序/年份/剧本/易主省名/日期统计/尺寸）。🔴 同批纪律：文件名先消毒且**含路径分隔符或 `..` 整批拒绝**、先 `.tmp` 再 rename（原子写）、**同名子目录永不覆盖**（自动 `-2`/`-3`）、**整批校验通过才落盘**（不留半批）。浏览器回退 = 逐个下载并明说「没有 frames.json」。**动画/GIF 不做**（本仓无编码器）——出帧序列交外部 ffmpeg。
-  ⑥ UI：工具栏「更多 → 导出」的 `data-testid="open-slice-export"` → `ScenarioSliceExport.vue`（帧表 + 日期横幅 + SVG/PNG 与倍率 + `slice-export-run`）；`Icon.vue` 新增 `film`。
-  **反向验证 5 枚一枚一验**：参数化失效 → f0 + f2 两条具名红（「不同年份图不同」/「首帧用甲国色」）；面板区间校验失效 → f3 三条红（含「输入框留脏值」）；批量写退回逐省单写 → f3「一条 undo 一起还原」红；帧名守卫去掉 → Node t3 红；子目录不去重 → Node t2 红。⚠️ 两个坑写进了用例：**ScenarioMap 挂载后 300ms 还有一发 `setTimeout(resetTimelineToStart, 300)`**，探针必须等过它再设 `tlEra`/`tlYear`（否则读到 era 0）；`changeYears` **不在剧本默认形状里**（没写过就没这个键），断言一律 `(sc.changeYears || {})`。⚠️ 另一条方法论：**Node 单测里测 Promise 的 `check(name, fn)` 必须 `async` + `await`** —— 写成同步时 `fn()` 返回 Promise、断言失败抓不到，摘要还写着「全通过」（实测踩到：`ok: true` + detail `[object Promise]`）。
-- **🔴 月日精度 + 切片点书签（2026-10-05；回归 test_82，7 段 + Node 单测 `test_scenario_dates.js` 新增 22 条，`test_scenario_slices.js` 重写为 14 条）**: 《司天-月日精度与切片书签-执行单-20261005》的收口。**上一轮的硬伤**：切片时间点只能到**年**，且 `changeYears` 是「一省一剧本一个年单值」—— EU4 bookmark 式切片点（有名字、精确到月日）与「同省同年多次易主」两件真实需求都装不下。
-  ① 🔴 **数据模型（破坏性，读时迁移）**：`changeYears[pid] = 1993` → `changeEvents[pid] = [{ y, m, d, owner }, …]`（**按日期升序**，同省同年多次合法；`m`/`d` 可为 `null`，语义 = 该年 1 月 1 日）。迁移唯一实现 `utils/scenarioDates.js#normalizeScenarioDates()`：发现旧键就转、**删旧键**、对已是新格式的输入**保持原引用**（幂等）。新旧并存时**新键优先**（否则旧值静默覆盖新值）。保存只写新键、**不双写**。剧本边界（`startYear`/`endYear`）**刻意保持年精度**（执行单 §0.4：月日只进易主事件与切片点，防变更面无限扩大）。
-  ② 🔴 **迁移入口只有一个**：`scenarioEditing.applyScenarioState({baseMaps,scenarios,slicePoints}, {fresh})`。三个装载口全部改走它 —— **打开项目**（`geodata.applyProjectToCanvas`）、**知识库快照还原**（`releaseProjectFromCanvas`）、**剧本导入**（`importScenariosPayload` 会迁移传入载荷；`importFromScenariosJson` 直接调它）。🔴 漏任何一处，症状都是同一句「我明明录过易主日期，时间轴上却全是合成值」——**不报错**。`buildTimeline` 自己也过一遍 `normalizeScenarioDict` 作**防御网**（入口忘了迁移也不至于静默）。⚠️ `normalizeScenarioDict` **入参是数组还是字典要原样往返**（`buildTimeline` 手里是数组；一律返回字典会让下游 `[...scenarios]` 抛「不可迭代」——首版实测踩到）。
-  ③ **三个唯一实现**（任何一处自己写 `m || 1` 就是第二事实源）：`cmpDate`（比较，先年后月后日、缺省按 1 月 1 日）、`dateKey`/`dateToken`（键与帧名段）、`validateChangeDate(InRange)`（合法性：年守剧本区间、月 1-12、日按**真实月天数**含闰年）。`formatDate` 对「只到年」**只显示年**（显示成 `1993-01-01` 会把「只录到年」谎报成精确日期）；`dateToken` 的月日缺省补 `00`（补 `01` 会与真 1-1 同名同义）。
-  ④ **归属查询改为吃日期**（`currentOwnerRef` / `baseOwnerRef` / `isStriped` / `settledCount`，收 `{y,m,d}`，兼容裸数字年份 = 该年 1-1）。🔴 **新增第三种状态**：某省在本剧本**有事件、但查询日期早于第一条易主日** → 仍是**上一代**的主且 `era = k-1`（颜色必须去上一代查）。旧实现只有年份所以只有两态，漏了这一态就是「6 月易主、查 5 月返回新主」。
-  ⑤ **切片点书签（新能力）**：项目级 `slicePoints`（**顶层 ref，不进 `scenarios` 字典** —— 那个字典的键是「底图/剧本名」，混进去会被当剧本遍历）。`addSlicePoint` / `renameSlicePoint` / `updateSlicePoint` / `removeSlicePoint` 各**一条 undo**（整表快照式）；id 用 `sp_<ts36>_<seq36>`（同毫秒不撞）。**区间归属运行时判定、不落盘**（落盘就会出现「剧本边界改了、书签上的区间还是旧的」）。落盘走 `scenarios.slicePoints`（与剧本容器平行），payload 构造四处都要带上（`takeVaultSnapshot` / `exportCanvasToProject` / `exportVaultPayload` / `saveScenarios`）——**漏一处就是「保存一次丢书签」**。
-  ⑥ **帧索引 = 书签帧 ∪ 自动帧**：`collectSliceFrames(tl, slicePoints)`。书签帧**默认必出**；自动帧 = 剧本起点 + 每次易主；**按日期合并**（同一时间点只出一张图，`sources` 记录它为什么存在）。每帧带 `date` / `dateKey` / `sources` / `bookmarkIds` / `label`。
-  ⑦ **帧名与清单**：`sliceFrameName` → `frame_0001_era03_14441111.svg`（年月日补零、负数年 `n` 前缀、**文件名里不出现 `-` 与路径分隔符**）；`frames.json` 每帧加 `date` / `dateText` / `sources` / `bookmarkIds` / `label`，保留 `year` 供只认年份的外部工具。`buildScenarioSVG({ era, date, year })` —— **`date` 优先**（同一年内 6 月前后归属不同，只给年份会把 1444-11-11 导成 1444-01-01 的状态）。
-  ⑧ **时间轴游标改为日期**：`ScenarioMap` 的 `tlYear`（ref）→ `tlDate`（`{y,m,d}` ref），`tlYear` 降为**只读 computed**（`dateToYearValue`）。播放的年内插值按**天数**线性。**组件契约保持 `ScenarioTimeline.year: Number`**（月日只由父级持有）—— 轨道拖拽/点块/键盘回来时月日**归 `null`**（轨道表达的是「到某一年」；保留旧月日会让「拖到 1045 年」实际停在 1045-06-01，用户看不见却影响归属判定）。状态栏日期文本 = `tlDateText`（`data-testid="tl-date"`）。
-  🔴 **本轮被纯函数用例抓出的两个真 bug（都是月日精度的连带影响，不在原计划里）**：**(a)** `currentOwnerRef` 漏了「一条事件都没落定」的分支 → 有事件但查询日早于第一条易主日时直接返回**本剧本**归属 = 「6 月易主、5 月就是新主」（e1 抓到：期望旧主、实际新主）；**(b)** `collectSliceFrames` 判「是不是起点帧」**只比年份** → 同一年里任何**年中**易主都被标成 `mixed`（起点+易主），来源标记与对话框文案跟着错（t5 抓到：「3-04 帧是纯易主帧」得到 `mixed`）。两条都只有**手搓时间轴模型**的纯函数用例才抓得住。
-  🔴 **全量回归又抓出两个真 bug（都是「把 `tlYear` 机械替换成日期」留下的，一审时看不出来）**：**(c) `getProvinceColor` 里有个裸变量 `at`** —— 我把「按当前年份取归属」改成「按当前日期取归属」时，在 `drawProvinces` / `polityLabelSources` 里各加了 `const at = tlDate.value`，却漏了这个函数（它没有那个局部变量，却照样被改成了 `isStriped(tl, k, prov.id, at)`）→ 每次渲染抛 `ReferenceError: at is not defined` → **渲染护栏**连续 3 帧失败后 `renderPaused = true` → **整块画布空白**。症状极具误导性：`test_41/44/61/73` 四条**同时**红，各自报的却是「没有省名 / 没有旧主色像素 / 相机没适屏」这类**表症**，单看每条都像各自独立的功能回归。定位靠**抓 `renderError` + `e.stack`**（`renderError` 只存 message，栈是我临时加进诊断对象才拿到的）→ 栈直接点名 `getProvinceColor`。**纪律**：渲染路径里的 `ReferenceError` 会被护栏**吞成可视化症状**，所以「多个画布用例一起红」要**先读 `renderError`**，别一条条去查表症。**(d) `watch(() => tlDate.value.y, …)` 被放在 setup 顶层** —— Vue 的 `watch` 会**立即求值一次** getter，于是组件**挂载前**就 `render()` 了一帧，那一帧的相机还是未适屏的 `(0,0,1)` → `test_61` 记到的「首帧」就是空画布（实测帧序：`t=1059` 空帧 → `t=1067` 才适屏）。**修法是把这两个 watch 挪进 `onMounted`**（本文件里 `watch(sortedScenarios…)` 早有一条同名纪律，我当时读到了却没往「时序」上想，只当成 TDZ 问题）。⚠️ 同一条纪律的两种成因（TDZ / 挂载前触发）**症状不同**：TDZ 是直接抛错，这个是**静默多画一帧**。
-  ⚠️ **方法论（本轮最大的时间消耗，务必先读）**：**别拿 `buildTimeline` 驱动的夹具去断言日期行为**。`changed`（谁算易主）取决于 `computeLineage` 的「相邻剧本按**省份集合重叠度**贪心继承」，而那条规则会**把新一代的势力配到旧势力上**（不看谁先谁后）——于是「甲国改名叫丙国」被判成"继承"→ 谱系没变 → **不进 `changed`**（易主事件根本认不出来）；重叠度平局还由 `localeCompare`（**依赖 ICU 排序**）裁决。本轮为此写了**五版夹具**、`changed` 在 `[]` 与 `['c']` 之间来回翻，最后才定下来：**日期逻辑用手搓模型测，谱系那一层交给既有用例**（`test_41` / `test_scenario_slices` 的 `baseScenarios` 形状是已实证能产出非空 `changed` 的，要抄就抄它）。
-  ⚠️ **排查纪律（本轮另一大教训）**：**先拿 HEAD 做基线对照，再改代码**。`git stash push -u -- <源码路径>` 只藏源码、**留着改过的用例**，就能干净地回答「这是我引入的，还是本来就红的」。本轮靠它避免了把两个既有测试自身的缺陷（见下条）当成自己的回归来修。⚠️ 两个坑：`git stash pop` 在**栈顶不是你要的那条**时会**失败且被 `| Select-Object` 掩盖**（我因此一度以为源码丢了、虚惊一场）——stash 前后都要 `git stash list` 确认；`git stash pop` 的失败**不会**阻止同一命令行里后续语句执行。
-  ⚠️ **两个既有用例自身的缺陷（不是产品缺陷，但会伪装成回归）**：**(i)** `test_41` 的造数探针返回 `{provCount, scCount}` 而**不是** `{fails}`，却没给 `eval_json` 传 `required` → 默认判据 `('fails',)` → 把一次**成功**的造数报成「缺字段（疑似异常被当成通过）」，**文案方向正好相反**。**凡返回非 `{fails}` 形状的探针都必须显式传 `required`**。**(ii)** `test_73` 的「首帧」探针里插入过 `await import(...)`（我自己加的诊断）→ **在探针中途让出事件循环**，待处理的 ResizeObserver 回调趁机跑了 `fitToView()`，把探针刚设好的相机冲掉 → 表现为「三档全是同一档、标签一条都没画」的**假回归**。**探针里不要 `await`**；要观测组件内部状态就把它挂到 `setupState` 上（无副作用地读），别在探针里制造时序空隙。
-  ⚠️ **PowerShell 不要用来改写 UTF-8 源码**：本轮用 `(Get-Content -Raw) -replace ... | Set-Content` 改 `scenarioSlices.js`，把中文注释打成了乱码（UTF-8 多字节被按 ANSI 重编码），只能整文件重写。改文本文件一律走编辑工具。
-  **节点单测**：新增 `scripts/tests/unit/test_scenario_dates.js`（22 条：规整/比较/键/格式化/迁移幂等/新旧并存/区间与闰年/归属三态/迁移网）、`test_scenario_slices.js` 重写为 14 条（帧集合/书签帧/同日合并/书签规整/区间外/体检分账/日期校验/帧名）。⚠️ 两个测试基建坑：`fixExt` 正则要写成 `(?:\.js)?` 才能同时吃 `from './x'` 与 `from './x.js'`；**新增源码文件必须同步加进各测试的 `DEPS` 数组**（否则临时目录里 import 失败，且报错信息不指向根因）。
-- **搬家后的「读优先级」定案 + 守卫（A-2，2026-09-27；回归 test_58 新增机器属性段）**: 搬家线第三件。**先说结论：这一件几乎没有代码改动** —— 因为调研发现「项目优先」**早已成立**，只是隐式。三条证据：① `mergeVaultPayload` 是 `if (entities[id]) continue;`（只补缺）；② 渲染层**完全不读**笔记 frontmatter 做机器属性（只读来在详情面板折叠展示）；③ `handleNodeUpdated` / `handleNodeRemoved` 在项目态整条拦掉知识库事件。**实测**（拿暮雨 ROSA 的缓存模拟「导入后的项目」跑 A-1 dry-run）：可认亲 119/120、**待补 0 处**、已一致 304、冲突 0 → **「导入知识库内容」本身就是搬家**，A-1 在导入之后无事可做（它的真实角色是**核对器**：对「先导入、之后笔记又改过/加过」的增量场景）。同时暴露出两处**真空白**：`parentId` 空 **9** 个、`placeType` 空 **45** 个 —— 笔记里本来就没写，搬家补不了，**只有 A-3（中文点选界面）能填**。所以 A-2 落地为三件：① `projectStore.mergeVaultPayload` 的注释显式写明「**本函数就是搬家协议定的读优先级**」＋ 🔴 **不许改成「先查新、缺失回落旧」**（并存观察期里旧值会在新值缺失时静默顶替，与 A1/M1b 同一静默分裂形态）；② `test_58` 新增 **c3 段**两层判据（纯函数 `mergeVaultPayload` 喂故意冲突的载荷 → 合并结果必须保留项目值；端到端：在项目里改 `layer`/`placeType` → 重复导入 → 仍是我改的）；③ `docs/SITIAN_VAULT_SPEC.md` 对用户**说实话**：读优先级（「笔记字段是进门票，不是遥控器」）+ **删除边界清单三类**（删 `层级`/`上层区域`/`地点类型` · 留正文/`tags`/`类别`/`名称`/`别名` 等推断依据 · 退休不删 `coordinate`）。暮雨补的一条事实已写进注释：**发布场景里别人的笔记根本没有这些字段**（「实际中就是当作没有处理」）→ 目录/后缀推断**不能砍**。🔴 **本轮最大的教训（判据瞄错对象）**：c3 首版断言的是 `proj.entities[id]`（**副作用**），而 `mergeVaultPayload` 是**纯函数**、本来就不动 `proj` → 「用载荷覆盖已有实体」这个缺陷**照样绿**（探针 B 实测溜过去）。契约的产物是 `mergedRes.next`，**判据就得瞄 next**。修正后探针 B 精确命中（`src=['world',None,None] kept=['galaxy',None,None]`），且与 c2 的 name 断言互不干扰
-- **存量机器属性搬家（A-1，2026-09-27；Node 单测 `test_migrate_attrs.js`）**: 搬家线第二件。把笔记 frontmatter 承载的「层级 / 上层挂靠（`上层区域`）/ 地点类型」搬进项目文件（`.sitian`），让结构归司天、笔记只留内容。**形态刻意做成 CLI 脚本**（`scripts/migrate-vault-attrs.js`，默认 dry-run）——搬家是一次性动作，不是日常操作，所以不进 UI（UI 层是后面的 A-3 中文点选）。🔴 三条硬约束：① **绝不覆盖项目里已有的值**（项目文件是构建层权威，用户可能在司天界面改过）——只在项目侧**空**时补（`layer` 空/`unknown`、`parentId` 空、`placeType` 空），不一致一律进「冲突」清单交人判断；② **绝不动笔记**（只读，原字段原地不动 = 报告 ④ 的「后悔药级」保险）；③ **补 `parentId` 前必须校验父实体在项目里存在**，否则补出悬空引用 → 被项目校验静默置空（搬了个寂寞且看不出原因）。**实现要点**：认亲靠 `sourcePath` 归一化（复用 `extract-data.js` 的 `normalizeRelPath`，与 renderer `utils/vaultRelink.js` 是两份副本，由单测 t14 读盘比对守卫）；笔记侧属性来自**提取结果**（`extractGeodata` 或 `--from-cache` 读 `.sitian/geodata.json`）——这样「靠目录/后缀推断」的结果也能一起搬，而不是只搬显式字段；项目侧 IO **复用 `projectHandler`** 的 `readProjectFile` / `writeProjectFile`（内含备份轮转）/ `atomicWriteJson` / `backupDirFor`，不写第二份。**输出**：清点表（待补 / 已一致 / 冲突 / 父级缺失 / 认不到五类，带抽查明细）+ 反向档（`<项目>.sitian.backups/migrate-attrs-<ts>.json`，逐条记「哪个实体的哪个字段从什么改成什么」）。⚠️ 结构上刻意切成三层：`parseArgs`（纯解析）/ `runMigration`（逻辑层，可被直接调用）/ `main`（薄 CLI 外壳）—— 因为**本仓单测环境里 node 无法再 spawn 一个 node（EBUSY）**，端到端只能直调逻辑层，覆盖的仍是真落盘、只是不经进程边界。反向验证 4 枚一枚一验：A 无条件覆盖 → t3 + t12 红；B 不校验父实体 → t4 红；C 默认写盘 → t13 红；D 不落反向档 → t11 红
-- **笔记改名「断线检测 + 重连」（R15 / A-0，2026-09-27；回归 test_75 + Node 单测 `test_vault_relink.js`）**: `ROADMAP_NEXT` D5 定「搬家线以断线检测为前置」后的第一件。病根是**静默**：项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流，见 `handleNodeUpdated`）→ 用户在 Obsidian 里改名，司天**既不知道也不提示**；下次「导入知识库内容」把新名当新实体补进来、旧实体成孤儿（坐标与 `mapData`/`areaZones`/`interiorData` 全留在旧 id 上）。**认亲键 = `sourcePath`**，不是 uuid —— `extract-data.js:151` 的 uuid 是**每次提取现场新生成**的随机值，`initializeCoordinates` 里那条匹配分支恒 miss（死代码），这也是 `SITIAN_VAULT_SPEC.md` 原「UUID 稳定标识、改名不丢」那句假承诺的由来（已按实况改写，D8）。四处落地：① **纯函数 `utils/vaultRelink.js`**（`normalizeRelPath` / `dirOf` / `baseNameOf` / `commonSubstrLen` / `scoreCandidate` / `detectBrokenLinks` / `describeCandidate`）＝断线判定与候选打分的**唯一实现**：只读、确定性、**宁可少推不可乱推**（同目录 +60；名字最长公共**子串**按较短名占比 +0~30；互相包含 +10。`score ≥ 70` 且领先第二名 ≥ 15 才标「推荐」，**并列不推荐** —— 乱推一条比不推更坏，用户会照单全收）。② **主进程只读通道 `list-vault-notes`**：扫描复用 `extract-data.js` 的 `listScannedNotes`（与 `SCAN_SCOPE` / `SCAN_EXCLUDED_BASENAMES` / `geoSystemPath()` 同源 —— 两份扫描漂移会让「断线」误报，把正常笔记说成丢了，比不检测更坏）。③ **`projectStore.scanBrokenLinks()` / `relinkEntity(id, { sourcePath, name })`**：后者走 `execute()`（一条 undo），🔴 **id 保持不变** —— 坐标与 `mapData[planetId]` / `areaZones[regionId]` / `interiorData[buildingId]` 全按 id 索引，只改来源不动身份则天然全保留；改 id 就要走 `changeNodeId` 级联 9 个容器（任一处漏登记即幽灵引用）。目标已被别的实体占用 → **拒绝并点名**（保持一对一）。⚠️ 不要在这里调 `applyProjectToCanvasNow()`：它会整体重装画布并 `backToWorld()`，把正在行星图上干活的用户踢回世界选择页 —— 画布同步交给既有的 `watch(entities)` 通道。④ **项目面板**「检查笔记改名」区块（`data-testid` = `check-broken-links` / `broken-list` / `broken-clean` / `relink-<id>` / `relink-select-<id>`）：候选**理由**以「同目录 + 名字相近（公共 N 字）」的形式写在下拉里（给用户看的是理由，不是分数），每次检查都给可见结论（「未发现断线（N 篇全部对得上）」也算回音）。⚠️ 三个坑：**「先给回执再重查」会让成功回执被「发现 N 处断线」盖掉**（`doScanBrokenLinks({ silent: true })` 必须先跑，再写回执）；**用例注入的库清单必须覆盖项目全部实体**（只放一条 → 其余 119 个实体全被报成断线，首跑实测被噪声淹没）；**f0 守卫判据必须函数级**（`index.js` 里另有 2 处 `fs.readdir` 属备份目录/卸载目录，全文件级判据必然假红）。反向验证四枚，一枚一验，各自打在独立断言链上：探针 A 删掉检测（恒报 clean）→ 6 条 f1 具名失败；探针 B 重连顺手改 id → 3 条 f1 红（f0 不抓，行为层抓）；探针 U1 无主池不过滤「已被占用」→ Node 单测 t5 / t7 红；探针 C 主进程自写目录遍历 → f0 精确报出
-- **P0 三条「提过多次但从未实装」的收口（2026-09-26，= `IMPROVEMENT_BACKLOG.md` §四 的 R5/R6/R7，回归 test_74）**: 三条症状都是**静默**，逐条给出根因与修法。① **R5 视口书签**：`getActiveRenderer()` 只认 domain/system/system_detail 三层，行星/区域/建筑内部取到 null 就 `return`（点了没反应也没提示）；更前置的是那三个组件**一个都没 `defineExpose`**、App 模板里的 `ref="planetMapRef"` 也**没在脚本里声明**（`<script setup>` 下模板 ref 必须绑到声明变量，否则恒 null，且不报错）→ 三层视图补 `defineExpose({ canvas, renderer })` + App 声明三个 ref + 六层覆盖；书签新增**锚点实体 id**（跨层时先 `focusEntityOnCanvas(anchorId)` 把视图切过去再套相机；层级映射注意 `selectWorld` 落到的是 **domain** 层、`selectDomain` 落到 **system** 层，锚点必须按"focus 后会到哪一层"选）；所有不成立的分支一律给状态栏可见原因，面板标出「异层」书签。`getActiveCanvas()` **刻意保持三层** —— 它只服务「当前视图整图导出」，那条导出链只在三层实现过，放开会让函数级守卫失效。② **R6 「导出配置」不可移植**：导出只写 `{id,name,layer,coordinate,tags}`，**漏 `parentId`** → 导出再导入后实体树整片塌成 0 级；导入端用 `nodes.find()` **只更新已存在节点、不新建**（换台机器导入后什么都没有，提示却照打"已导入 N 个节点"）→ 载荷构造抽成 `buildMapConfig()`（**让用例能拿真实载荷做往返**）、补 `parentId` + 全部编辑侧字段（走 `entityExtras`，白名单只有 `ENTITY_SHAPE_KEYS` 一份）、导入端新建缺失实体且形状走 `store.entityToNode()` 单源、层级按 `parentId` 复原（父级在本次导入集合内也算有效）。③ **R7 删节点不清孤儿数据**：画布 `removeNode` 连带清 `mapData`/`domainBorderOverrides`/`areaZones·Routes·Markers·TextLabels·ReferenceImages`/`interiorData`/`interiorReferenceImages`（清单 `ORPHAN_DATA_CONTAINERS` 单源，与 `idRefDicts()` 分开 —— 后者含 `scenarios[*].ownership`，其键是**省份 id**，按节点 id 删会误删归属），undo 逐值回灌；项目面板删实体走画布适配器新增的 `pruneData`/`mergeData`：**项目态下画布才是 `mapData`/`editor` 的活副本**，只删项目文件会被下一次「画布 → 项目」保存原样写回（症状：「删了行星，地图过一会儿又回来了」），清理份数写进回执。⚠️ 两条测试方法论（本轮踩到）：**①「有键就算过」是假断言** —— `hasOwnProperty('parentId')` 在 `parentId: null` 时照样为真，凡"字段必须带上"的断言必须**断言取值**并最好用**真实导出载荷**喂回导入端（手写夹具会替被测代码圆谎：把导出改成恒 null 时手写版全绿）；**②两条删除路径不要共用一份夹具** —— 前一段的 `removeNode`/`undo` 会经防抖保存把中间态推给项目，后一段的 `descendantsOf` 拿到被改过的父子关系，红的是测试自己
-- **历史剧本「势力标注」（A8，2026-09-26 暮雨定案）**: 暮雨同时定了 **A5「政治」= 手动标记的势力（Tag）名称**（否定「编辑 `azgaarProvinces` 顶点」路线）。诉求原文：历史剧本要能**自定义显示的势力名称**；照《EU4》**分级** —— 放大看省名、缩小只看势力名（**可简称**）、**全名只在点开省份详情时给**。实现分三层：① **`utils/polityLabels.js`（纯函数，Node 可测）= 分级判定的唯一实现** —— `polityLabelTier(visibleRatio)`（**三档** province/polity/abbr）+ `ringAreaCentroid`（鞋带公式，顺逆时针同结果；**退化环必须返回有限形心**，NaN 会让 `fillText` 静默不画 = 名字凭空消失）+ `aggregateTerritories(items, keyOf)`（**面积加权质心**，不加权会被小碎省把标签拽到别的势力地界里）+ `labelTextFor`（**abbr 没填回落全名，绝不自动截断** —— 机器截断会造出「大明帝国→大明」这种看着合理实则臆造的名字）+ `labelFitsOnScreen` + 两个本地样式（与用户 label 预设**解耦**，预设被调成全透明时「势力名整片消失」是查不出来的）。② **分级依据刻意不用绝对 `cameraScale`，而用「视口可见世界宽度 ÷ 地图世界宽度」** —— 绝对 scale 依赖数据量纲（FMG 导入 ≈1 量级、合成 fixture ≈0.2 量级），换一份数据阈值就整体失准（表现为「一份数据里全画省名、另一份里全画简称」）。③ 数据层 `scenarioEditing.updatePolity(scenarioId, polityId, {name,abbr,color})` —— **势力显示信息的唯一写入口**，走 `execute()`（= 内存写总闸门，故**不需**补 `guardWrite`、**不该**登记进 `MEMORY_WRITE_CALLSITES`），undo 显式回填旧对象；`name` 必填（清空视为没输入，不留无名势力）、无实质改动返回 `changed:false` 不入栈。⚠️ **`selectedPolity` 必须是「可写 ref + 刷新 watch」自愈重指向，不能做 computed**：`updatePolity`/撤销/导入都会整体替换 `polities` 数组，存旧对象会让「改完名界面还显示旧名」且不报错；但**改成 computed 更糟** —— computed 只读，任何 `selectedPolity.value = x` 会**静默失效**（实测：test_65 的 `sc.selectedPolity = …` 被无声吞掉，整条用例红）。写法与 `selectedScenario` 的刷新 watch 保持一致。⚠️ 海域判据取**环的 kind**（`rings[0].kind === 'sea'`，与 `drawProvinces` 的 `rp.kind` 同口径），直接读 `prov.kind` 在「只有环上带 kind」的数据里会漏判 → 海面被挂上名字。渲染入口**两处接线**（`renderFrame` + `exportPNG` 离屏路径）。回归 **`test_73`**（f0 源码守卫「分级判定单源 / 无阈值回流组件 / 两处渲染入口都接」，f1 三档 + 单调，f2 **劫持 `fillText` 记录真实绘制文本**并按「放大档有省名无势力名 ↔ 中档有全名无省名 ↔ 缩小档是简称」**互为反面**断言，f3 改名落库 + 撤销重做 + 空名不写，f4 勾选框/内联编辑/**真实点击省份 → 状态栏给全名**）+ Node 单测 `test_polity_labels.js`（9 条）。⚠️ 两条探针教训：**①「画出来了」必须用正向断言** —— 只留「不该画」的负向断言时，断开渲染接线（探针 B）仍全绿（负向断言对「什么都没画」是盲的）；**② 简称断言必须精确相等** —— 「甲午」是「甲午王朝」的子串，用 `indexOf` 判据时「根本没走简称」也能通过（探针 C 实测只抓到一半，改 `hasExact` 后闭合）
-- **🔴 省份几何 = 多环实体 + 渲染单一路径（P0 第二块，2026-09-23，回归 test_62 + Node 单测）**: 用户三条投诉（丑东西 / 圈不着 / 功能打架）的数据层归因与修法 ——
-  ① **唯一表示**：`utils/provinceShape.js`（**纯函数**，Node 可测）给出多环视图 `provinceRings(p) = [{points, kind, fromGrid}]`；主环仍是 `p.points`（既有 30+ 处消费者不动），额外环在 `p.extraRings`，`p.kind` = land/sea。**洞 / 飞地用 evenodd 口径**，三处必须同口径：`pointInProvince`（命中）/ 画布 `fill('evenodd')`（渲染）/ `rasterizeProvinceShapes`（归属格）。
-  ② **渲染单一路径**：画布**永远画多边形**（= 存下来 / 导出的那个几何）；「网格视图」开关**已删除**，网格退为**内部中间层** —— 只在涂抹进行中叠一层即时反馈（`provinceMeshOn` 降级为「网格可用」的只读判断，另有 `provinceGridReady`）。
-  ③ **涂抹抬手把结果写回多边形**（`reprojectRings`）：只重算**被碰到的**省份（未被碰的保留导入时的高保真轮廓，整表按格重采样会把 FMG 精细边界一次性降级成台阶）；写回的环带 `fromGrid: true` → 渲染端 Chaikin 平滑消台阶（**手绘 / 贝塞尔环绝不平滑**，顶点是用户刻意摆的）。相邻两省同源同格 ⇒ **共享边界顶点（零缝）**，另加同色 1px 描边抹掉亚像素缝。
-  ④ 🔴 **网格自愈靠几何指纹**：`provinceLabels.shape` = `shapeSignature(terrain)`（WeakMap 按 terrain 数组记忆化）。签名不符 ⇒ 存的网格不是这套多边形派生的 ⇒ 按多边形重建。**不要在十几个「改了多边形」的调用点手工作废缓存** —— 漏一个就是静默错数据。
-  ⑤ **合并 = 精确并集**（共边抵消；环真穿过时才退回栅格），凸包实现已删除（凸包会把两省之间的凹陷连同邻居一起吞掉）；分割保留多环与 land/sea；两者都是**一条 undo** 并作废网格重建（序号语义变了就必须重建，不能增量改格）。
-  ⑥ **点击填充有面积闸门**：点中区域 > 全图 25%（`FILL_AREA_SHARE`）或 > 6 万格 → 拒绝 + 写明改用处。「点一下填满整块大陆」是这类工具的经典灾难。
-  ⑦ **骨架吸附**：`buildSkeleton(provinces, excludeId)` + `conformToSkeleton(points, skeleton, threshold)` = **沿骨架整段插中间顶点**（只吸端点会在两省之间斜切一条缝）；绘制工具落笔（描点完成 / 一笔成型）时贴骨架。
-  ⑧ **工具栏分层**：`.scenario-toolbar` 改竖直列 + 每行 `.toolbar-row`。原先它在**第 128 行就提前 `</div>` 闭合**，后面十几组控件全掉到 `.scenario-map-container` 层 → 只有第一行有工具栏底色（「控件挤成一坨、分不清哪排管什么」的真因）。属性面板另加「类型（陆地/海域）」与「编辑环」（多环省份的顶点编辑作用于**活动环**）。
-- **🔴 SFC 多根 = 全屏画布的 flex 链断（2026-09-20 修的存量 bug，症状是「历史剧本打开只有工具栏、地图看不到」）**: `ScenarioMap.vue` 根 `<div class="scenario-map-container">`（`display:flex; flex-direction:column; height:100%`）**提前闭合**在工具栏之后，导致 `.scenario-canvas-wrap`（`flex:1`）掉到容器**外面**、成了 `.main-content`（`display:block`）的兄弟 → flex 失效、画布只剩 `<canvas>` 固有高度 **150px**（实测 1400×150，非背景像素 257）。修法：把那个提前的 `</div>` 移到 `</template>` 之前（组件回到单根）。修后 1400×486、非背景像素 1569。**判定手法**（比读模板快）：DOM 里看 `.main-content` 的**子元素列表** —— 全屏视图组件应当只有 1 个孩子；≥2 个即"根容器提前闭合"。同类风险：任何靠 `height:100%` + `flex:1` 撑满的视图组件，根必须唯一
-- **画布的 px() 与渲染护栏（2026-09-20，ScenarioMap）**: 任何「屏幕像素长度 → 世界单位」的换算必须走 `px(v) = v / Math.max(cameraScale.value, 0.02)`（`MIN_CAMERA_SCALE = 0.02`）——**禁止裸 `N / cameraScale.value`**（48 处已改；`screenToWorld` 的两处除法必须保留原样，坐标变换要真实 scale）。裸除法在窗口矮/窄时可算出**负** `cameraScale` → 绘制半径变负 → Canvas 抛 `IndexSizeError`，而**一次 render 异常会拖死整页交互（实测连坐 12 个用例 CDP 超时）**。`render()` 已拆成「护栏壳 + `renderFrame()`」：异常 → 首帧报告一次 → 连续 3 帧仍失败 → `renderPaused = true`（此后直接 return）+ 状态栏「渲染已暂停：<msg> + 继续渲染」。回归守卫 test_52（源码零裸除法、负 scale 不崩）与 test_53（注入异常被捕获 → 3 帧后暂停 → 可恢复）
-- **面板/空态可用性（2026-09-20 用户实测 5 条，test_53）**: ① **async 面板的输入框必须自动聚焦**——面板走 `defineAsyncComponent` + `v-if` 挂载，从点工具栏按钮到 DOM 出现有加载窗口，这期间的点击落到底下的画布上，用户表现为「输入框点不进去」（headless 复现不出，别去调时序，改成不依赖点击的实现：`onMounted(() => nextTick(() => input.focus()))` + `.pp-name-row` 整行可点 + `:focus` 深色描边）。② **空态卡片里的按钮行必须 `flex-wrap`**（`.empty-actions`；WorldSelector 卡片 `max-width:560px`）——三个 nowrap 按钮 ≈460px 会溢出 420px 卡片。③ 🔴 **示例数据绝不硬编码真实自用数据**：`ScenarioMap` 的 `baseMapKey` 初值 `''`（按「上次用的且当前项目里存在 → 项目里第一张 → 空」解析），无底图给空态提示、**落笔才懒建**中性名「底图 N」；连带教训：产品里任何「为了好用而隐式造的数据」都会变成测试的隐式依赖（当时 6 个用例靠硬编码默认底图活着，去掉即集体变红），去掉它必须先把依赖显式化 → 用例自带 fixture `lib/helpers.py#open_test_base_map`
-- **🔴 「能开始用」批次（B1~B8，2026-09-24；用户反馈「核心功能依然薄弱、不足以投入实际使用」后先做的一批）**: 八项全落地 ——
-  ① **空态按只读 / 可写分组**：无项目时 `WorldSelector` 空态给「新建项目（从这里开始）/ 打开已有项目」一等按钮（此前唯一入口是工具栏一个图标，新人无从下手）；header 的「＋新建世界」在只读态自动变「＋新建项目」；**被写闸门拒绝的动作不再谎报成功**（`handleCreateWorld` / `handleLoadSampleWorld` 原来不看返回值就打印「已创建 / 已加载」）。
-  ② **首次引导不再撞拒绝**：`OnboardingGuide` 选完知识库原来派发 `sitian:reextract`（落盘写 → 无项目=只读下**必被拒**，用户选完库数据进不来）；改为把用户送到项目面板并指明「新建并导入知识库内容」，引导首步补「先建一个项目」。
-  ③ **启动恢复上次项目**：新增 IPC `project-get-last-path`（**只回报「文件确实还在」的路径**，否则回报 `missing`，渲染层据此静默回落只读）+ `canvasBridge.restoreLastProject()`。⚠️ 为什么绕 `canvasBridge`：App 有静态闸门（不得出现 `projectStore` 字样），而 projectStore 是 **Pinia 惰性实例化**（没人 `useProjectStore()` 就不会创建）→ 启动期必须有一个中立入口；用**动态 import** 顺带避开循环依赖与启动开销。**一切失败都静默回落只读，绝不阻塞启动**。
-  ④ **保存状态常驻底部状态栏**（`useStatusBar.saveState`，ok/warn/err/busy 四档）：以前落盘失败只在 `ProjectPanel.statusLine` 显示且 5s 自清 → 用户在行星图里连着画几小时**完全看不出**保存失败。现在 **`error` 不自动消失**，由下一次成功保存来清。
-  ⑤ **工具栏「保存」不再谎报**：按 `saveGeodata()` 的返回值区分 `staged`（项目态只是推给 projectStore）与已落盘；失败时**不清 dirty**。
-  ⑥ **批量建实体**：`EntityCreator` 加「单个 / 批量」切换（每行一个名称）+ `projectStore.createEntities()`（**一条 undo**、同名跳过并列出）—— 以前一次只能建一个，而「批量导入笔记」那条路写的是 .md、要靠 `reextract` 回流（项目态被拒）→ **规模化建实体实际是死的**。
-  ⑦ **导入地图配置进 undo 栈**：原来直接给 store 各容器赋值（绕写闸门 + 撤不掉），现在「先把导入后应该是什么样算好 → 交给 `execute` 的 redo 落库」，恢复走**逐键** `restoreMap()` 而非整体替换容器对象（整体替换会让按引用持有的选中态脱钩 —— 项目踩过这个坑）。
-  ⑧ **测试守卫同步**：`test_46` 与 `unit/test_project_io` 里**写死通道条数**的断言（`!= 8`、`size === expected.length`）改为**下限守卫 + 集合差报错** —— 数条数不是它们的职责，且新增通道必然假红（本轮真实踩到）。项目 IPC 通道锚点 8 → **9**。
-- **实体「叙事状态」+ 画布淡化（2026-09-24，回归 test_entity_status 10 条）**: 用户决策「**毁灭只是叙事状态，不是数据删除**」——实体可以保留（用状态标记），也可以根本不建（那种情况走「剧本底图自持高度图」，见 `docs/A1_DATA_MODEL_DECISION.md` 第六节）。`utils/entityStatus.js` 是纯函数注册表：`active`（默认）/ `destroyed` / `ruined` / `sealed` / `lost` / `unknown`，`resolveStatus` 对**一切脏值回落 active**（不能让脏值把正常星球显示成已毁灭）。两条硬约束：① **状态只影响显示，不影响数据是否存在** —— 任何状态都完整保留坐标/地图/剧本数据，绝不联动删除；② `active` 不显示徽标（满屏"存在"是噪音）。入口：`NodeDetailPanel`（下拉，走 `updateNode` 的 undo）、`ProjectPanel`（徽标，类名必须是 `.pp-status-badge` —— 与既有的 `.pp-status`（当前项目状态区）**同名会叠加样式**，曾把 `.pp-status-sub` 对比度打到 4.11 被 test_58 抓到）。⚠️ **`status` 刻意不进 `ENTITY_SHAPE_KEYS` 白名单**：`nodeToProjectEntity` 会把白名单外的字段原样往返，进了白名单反而触发"跳过已有字段"的判断 → **画布上改的状态会丢**。
-- **`status` 是「笔记侧字段」（2026-09-24，回归 test_entity_status）**: 用户在 Obsidian frontmatter 里写 `status: destroyed`（或中文别名 `状态: 已毁灭`，**两种键都认**），由 `scripts/extract-data.js` 与 `src/main/vault-watcher.js` 各自的 `readFrontmatterStatus()` 归一化成状态 id。**方向是单向的**：笔记是权威来源，司天只读、不回写 —— 与 `coordinate` 正好相反（那个是司天写进笔记、提取时读回，见 `readFrontmatterCoordinate` 的注释）。别名表在两个 CJS 文件里各有一份**逐字符副本**（照 `normalizeId` 的既有做法：复制 + 测试守卫，不强行共享模块 —— renderer / main / scripts 分属不同 bundle），`test_entity_status` **require 两边读源码比对**：任何一侧改了状态，三处（`utils/entityStatus.js` + 两个 CJS）必须同步，改名/加状态时它会把三处一起卡住。认不出的值 / 空值 / `active` 一律落成 `null`（视作未设置，与 `placeType` 同一风格）—— 脏值不许写进节点，因为它会被原样带进项目文件长期留存。⚠️ 顺带修掉 watcher 的一处**静默丢字段**：`updateNodeInCache` 原写作 `{ ...node, coordinate }`，而 `extractSingleFile` 不产出 `placeType` / `uuid` 等**编辑器侧字段** → 「在 Obsidian 里改一个字」就会把它们从缓存抹掉（表现为图标配色退化、uuid 消失，全程无报错）；已改为 `{ ...旧节点, ...新字段, coordinate }`（文件变更只更新笔记侧字段，编辑器侧原样保留）。
-- **🔴 画布淡化与「状态改了画布不重绘」的坑（2026-09-24）**: 淡化只覆盖**实体节点**（不是地图对象），5 个视图 7 个绘制入口 —— GalaxyMap `drawGalaxyNodes`（含低 LOD 分支）/ SystemView `drawSystemStar`+`drawSystemPlanets` / SystemDetailView `drawStar`+`drawPlanets` / PlanetMap `planetDrawing.drawPlaces` / AreaMap `drawNodes`。约定：`FADED_ALPHA = 0.45`（「看得出退后、仍读得清」）；**`focused`（选中/悬停/匹配/拖拽中）优先于淡化** —— 「编辑优先于装饰」；`save`/`restore` **必须成对**（GalaxyMap 的 lod 分支有中途 `return`，必须在那里先 restore，save:restore = 1:2，由单测文本计数守住）。⚠️ **根因坑**：`geodata#updateNode` 是 `Object.assign(node, updates)` **就地改字段** → 不换数组引用、不换节点对象 → 所有基于引用的浅 watch 捕捉不到 status 变化；而 GalaxyMap/SystemView/SystemDetailView 画的是**布局副本**（`{...node, x, y}`），连 store 改过都读不到。解法：store 暴露单调递增的 `statusRevision`，`updateNode` 在 **undo 与 redo 两处都递增**（漏了 = 撤销后淡化不还原）；各画布 watch 它，**持有副本的视图必须重建副本**，只 `requestRender` 会一直画旧状态。
-- **🔴 「导入知识库内容」= 空项目唯一的数据入口（2026-09-22 用户实测，回归 test_58）**: 用户建了空项目后卡在「项目里空空的」——**已存在的项目没有任何把知识库内容带进来的入口**（「新建并导入知识库内容」只管新建那条路；「重新提取」在项目态被正确拒绝，因为那是两套事实源混流）。链路：`geodata#exportVaultPayload`（项目态下从打开项目时的留底 `vaultSnapshot` 重建**同形载荷**，`includeMaps` 时按需读知识库缓存补行星地图 —— 这是唯一允许项目态读知识库缓存的地方）→ `projectStore#importFromVault`（**只补缺、绝不覆盖**项目里已有的实体/地图/剧本，一条 undo，导入后立刻 `applyProject` 重新装载画布，否则 maps/剧本/编辑器容器不会上画布）→ 入口三处：世界视图空态（首要按钮）、项目面板、`canvasBridge#setImportHandler`（App 走注册表，不 import projectStore）。⚠️ 判断可用性要看 `describe()` 的 `vaultNodes`（项目态下 `nodes` 是项目自己的节点，不是知识库的）。
-- **🔴 面板配色的铁律：坐在面板底色上的文字必须用主题变量，自带浅色底的块继续用深色字（2026-09-22 用户实测「暗色模式面板文字难以阅读」，回归 test_58）**: 面板底色是 `PanelShell` 的 `var(--panel-bg)`（暗色主题 = #161b22），而同期代码为了满足"浅色卡面"的对比度要求写死了深色字（`#2d3436`/`#1c4fa1`）→ **暗色主题下 = 深底深字**（实测 `.gs-body` 等一批元素对比度 1.2~1.4）。正确做法是按**元素自己的背景**决定用色：直接坐在面板底色上的（正文/标签/链接/次要说明）用 `var(--text-primary/secondary)` + `var(--accent)`；自带浅色底的块（提示条 / 危险区 / 药丸标签 / `code` 片段 / 白底按钮）**继续用显式深色字**。判据不要靠肉眼：用「逐层合成背景 + WCAG 比值」探针在两套主题下各扫一遍（小字 ≥4.5），并把它做成回归断言（本次实测修复后 同步面板 暗色 5.72 / 亮色 5.19，项目面板 4.73 / 5.24）。
-- **🔴 UI 可点性与样式统一（2026-09-22 用户实测 3 条 → 回归 test_57）**: ① **「编辑地图」被视图动作条整片盖住**（用户报「行星地图无法编辑」的真因）：`.view-actions` 曾 `position:absolute; top:12px; right:16px; z-index:5`，与 `.map-header` 里同样右对齐的「编辑地图 / 采用自动区域 / 重新生成」**必然重合**，且它在 DOM 里更靠后 → 那三个按钮**看不见也点不到**（截图实测：修复前界面上只剩 5 个按钮）。修法：动作条回到**文档流内的第二行**（`display:flex; justify-content:flex-end`），CSS 里写明「不要再改回绝对定位」。② **flex 居中 + 内容超高会把顶部裁掉且滚不到**：`.world-selector` 的 `justify-content:center` 在 756×441 下把顶部按钮行推到 **y=-20**（够不着）。修法：`justify-content: flex-start` + 首尾元素 `margin:auto`（有富余仍居中、超出则可滚）。同类风险：任何固定高度 + `overflow` + `justify-content:center` 的容器。③ **非激活态 class 为空 = 浏览器默认样式**：Azgaar 参考图层那组按钮只写了 `:class="{active:…}"`，非激活态 class 为空 → 灰底 + 2px outset 边框。判据用 computed style 的 `border-style: outset`（Chromium 默认按钮签名），test_57 全站扫描断言为 0。**手法铁律**：守「按钮真的点得到」必须用**命中测试**（元素中心点 `elementsFromPoint` 的最上层是不是它自己），「元素存在」是假绿；守「看不见的按钮」用 `getBoundingClientRect().top < 0` 扫描。
-- **🔴 地形绘制「反马赛克」（2026-09-22 用户实测，回归 test_59 + Node 单测）**: 用户原话「行星地图的绘制功能不太好，依然是马赛克方块填色（地形），不是自然的笔刷」。CDP 实测归因（scale=1.0、画布 900×600 唯一色数）：**全开 7458 → 关掉 `terrain` 层 717**，两个来源缺一不可 ——
-  ① **地形涂色网格**：`useTerrainCanvasBrush.drawTerrainGridToCtx` 原来逐格 `roundRect` + 5 档噪点抖动再 `blur(1.4/zoom)`；真实缩放下 1 格只有 2~3 屏幕像素 → 整屏被读成细密马赛克。现改为 **`utils/gridOutline.js`（纯函数，Node 可测）把格边界抽成平滑闭合环**：CSR 扁平邻接（计数→前缀和→填边，**别用 Map<string,number[]>**：40k 格走链 56ms vs 5ms）→ 共线塌缩 → 闭环 RDP（容差 **以格为单位** 0.75）→ Chaikin 2 轮 → `fill('evenodd')`；**同色描边 `lineWidth = cell*0.9`** 堵掉圆角内收留下的细缝。轮廓缓存带 revision，起笔/抬手强制重建、涂抹中按「上次耗时 ×2.5」自适应节流（3.9 万格实测 6~12ms）。
-  ② **地形多边形纹理** `utils/textures.js`：原来是 64×64 瓦片里撒上百个 `Math.random()` 小圆点/短线（草叶/树冠/砂粒/碎石），alpha 0.7 平铺 → 1~3px 的斑点整屏铺开同样是马赛克，且**每次重建纹理颜色都在变**（文件头却写着「全部确定性」）。现重写为「低频 fbm 底噪 + 少量大半径柔光斑 + 极淡带状起伏」，全部走确定性 PRNG，`drawTerrain` 叠加强度 0.7 → **0.45**。
-  **三条纪律**：① **任何平铺纹理里都不许加逐像素级随机元素**（叠在色块上就是马赛克；要质感就加大尺度、低对比的明暗层次 —— 我第一版加的「纸感噪点瓦片」同属此类，已删）；② **测试 fixture 的涂色网格必须是连续色块**（`make_vault_fixture.py` 原来 `rnd.random() < 0.35` 随机撒点 → 8207 格碎成 6863 块，任何渲染都只是雪花噪点，观感类断言全在拿假数据下结论；真实库实测 935 格 / 仅 6 个连通分量）；③ **静态源码判据必须先剥注释**（`textures.js` 注释里写着「旧实现用 `Math.random()`」，子串判据当场把自己的注释判成违规 —— 与 §126/§139.9 同一个坑的第三次）。
-- **🔴 反马赛克第二轮：同一套配方还在另外三处（2026-09-22 用户实测，回归 test_60）**: 用户三条 —— ① 地形笔刷「无法越过某条隐藏界限……形成明显的真空区」② 群系（高度）笔刷「一画就卡……约二十秒后地图上出现神秘草绿色方块」③ 历史剧本底图「很卡…绘制有退化为描点连线模拟器的风险…自由轮廓视图下让人产生密集恐惧症」。CDP 量化归因：① 涂色网格范围 = **高度图 + 16 格**，而 `worldBounds`（地形∪区域∪路线∪标记∪文本∪**地点坐标**）更大 —— 真实库只盖 **87.7%**，底部 555m 看得见涂不上，且落点在网格外时 `TerrainBrush.paint` 的下标 clamp 让整笔**静默无效**；② `planetDrawing.drawHeightmap` 仍是上一轮只改 terrainGrid 时**漏掉的另一半**（逐格 `roundRect` + `ctx.filter = blur(1.4/zoom)` + 13 分桶各一次 fill —— 画布滤镜每次 fill 都要整层重做），而 `interactionMode === 'height'` 会**强制显示**该层（中位帧 66ms，关掉该层 33ms）；③ `rasterizeProvinces` 走 Vue 响应式代理做 O(格数×点数) 热循环（6 省 3600 点实测 **838.6ms**），省份网格逐格 roundRect → 圆角格的缝隙连成深色网格、四角露出「点」= 那个密集恐惧症视图。
-  **修法与实测**：涂色网格范围取**并集**（高度图 ∪ worldBounds ∪ 已涂内容，原点对齐高度图相位）+ `ensureCoverage()` 越界自动扩网格（按世界坐标重采样保留已涂；**快照必须在扩张之前取**，一条 undo 连几何与像素一起还原；不能再用 `beginGridSnapshot/endGridStroke` —— 长度变了 `grid.set(before)` 会抛 RangeError）；高度图渲染改 `buildLabelOutlines` + **内容哈希缓存**（双 FNV-1a 扫 27k 字节 ≈0.05ms，能识别就地涂抹）→ 源码零 roundRect / 零 ctx.filter，中位帧 66 → **33ms**；省份网格同样走矢量轮廓 + 栅格化前两层 `toRaw` → 838.6 → **34.6ms**；「绘制」工具补**按住拖动一笔成型**（`simplifyClosedTrace` 闭环 RDP → 省份多边形），单击仍是描点（一笔成型后紧随的 `click` 必须吞掉）。
-  **纪律**：① 修「渲染配方」类问题要**按配方 grep**（`ctx.filter` / `roundRect` / `Math.random` / 逐格 fillRect 会成批复制到多个图层）；② **定长 TypedArray + 下标 clamp = 看不见的墙** —— 凡「在网格上涂抹」的功能都必须能自动扩网格或给出可见边界（静默 no-op 最坏，用户会以为笔坏了）；③ 热循环里不许读响应式代理（`toRaw(toRaw(x))`，本项目第四次踩）；④ 用例探针别缓存数组引用（`applySnapshot` 会整体替换 `terrainGrid.value`，缓存旧引用会把修复判成无效）；⑤ 静态判据的分段标记别用注释（`_code_only()` 已把注释行剥掉，`partition('// ===== …')` 必然落空）。
-- **剧本标记的 icon/color 必须随数据往返（2026-09-22 修）**: `scenarioEditing.addScenarioMarker` 原来只存 `id/x/y/name/type`，**丢掉 icon/color** → 画布按 `m.icon` 渲染，于是「选了标记类型但图标/颜色永远不变」（预设形同装饰）。现已带上 icon/color，渲染端另按 `type` 兜底解析（导入的旧数据只带 `type` 也能显示正确图标）。
-- **「调用后给用户回成功」的函数必须看返回值（2026-09-22）**: 「重新提取」在**只读态与已打开项目态都必须灰禁 + title 写清去处**（只读态 → 项目面板「以知识库为基底新建项目」；项目态 → 先关闭项目）。旧实现两个情形都放行，被拒后**照样打印「已更新 N 个节点」= 谎报成功**（用户报「点了没有任何反应」的真因）；设置面板改库路径后的 alert 同样曾谎报。
-- **一键可达的「打开知识库」（2026-09-22）**: `utils/vault.js#openVault()` 三级兜底（`obsidian://open?vault=<库名>` → 打不开退化为资源管理器定位库目录 → 都没有则提示去设置选库）。入口三处：主工具栏 `book` 图标、世界视图「打开知识库」按钮、设置面板「打开 Obsidian 知识库 / 打开知识库文件夹」。用户原话：「连我都不知道去哪里打开知识库」。
-- **🔴 底图编辑（ScenarioMap）的进入性能与「空白陷阱」（P-0 实测 + 修复，2026-09-22，回归 test_61）**: 实测真实库 `desite`（21 省 / 25930 点）：点「历史剧本」→ 113~148ms 同步 JS + 挂载期 367~446ms 长任务（rAF 停摆 381~449ms）；**首帧用的是未适屏相机 (0,0,1) = 画布几乎空白**（非背景像素 7%），适屏帧要等 `setTimeout` 才来 → 用户观感「打开就卡住/空白，滚一下才出现」。修法与四条纪律：① **先算镜位再画第一帧**（`onMounted` 里 `fitToView()` 取代早期的裸 `render()`），布局定稿期（时间轴占位）允许再适屏一次，用户一交互就交还控制权（`initialFitPending`）；② 🔴 **底图数据晚到必须能自动选中**——`baseMapKey` 原本只在 `onMounted` 解析一次，key 为空时 `baseMap` 恒 undefined ⇒ 任何 watch 都不触发 ⇒ **画布永久空白**（只读态被闸门拒绝后就是这个形态）→ 补 `watch(availableBaseMaps)`；③ 🔴 **渲染路径必须 `toRaw`**：`drawProvinces / traceShapePath / 小地图` 每帧对 25930 个顶点走 Vue 响应式代理读取，单帧 **94ms**（profiler：响应式 get 27% / traceShapePath 18% / 每帧重画小地图 16%）——改 `rawTerrain()/rawPointsOf()` + 小地图离屏缩略图缓存后单帧 **0.8ms**、平移 20 步 **1906ms → 16ms**；④ **省份网格懒建必须异步**（`scheduleProvinceGrid`，旧实现 `setTool()` 现场栅格化 170~368ms），等待期 `provinceMeshOn` 为 false → 退回多边形渲染，绝不留白；配套 `provinceGridRev` 让「网格就绪」能触发 `provinceMeshOn` 重算（`getProvinceGrid` 不是响应式的）。⚠️ 该文件的 `vx/vy` 读的是 `p.x ?? p[0]`，判「画布有没有内容」不能只看 `nonBg`：**空画布（只有底网格）实测 colors≈46 / nonBg≈328**，有省份时 ≥100/≥600 —— 判据太松会让性能断言量到一个空画布。
-- **只读态的显著提示（2026-09-22）**: 「无项目 = 只读」下，工具栏小徽标不够（用户实测「除顶部小字外无任何提示，按钮却像能点」）→ 另加**全宽大字提示条**（`App.vue` 的 `.readonly-notice`，15px 加粗 + 可点直达项目面板 + 三段式文案：现状 / 影响 / 去处），它是**文档流内的元素**（不是浮层），因此不会像绝对定位那样压住任何视图自己的按钮。回归 test_57。
-- **只读一致性与「归位 / 前往编辑」（2026-09-21 修复轮，回归 test_54）**: ① **内存编辑闸门**见「单一写闸门」条目（execute + 先改后判函数首行 + 直接写三处，共 `MEMORY_WRITE_CALLSITES` 7 条契约）② **建筑入口统一**：`EntityCreator.CREATABLE` 含 `building`（合法父级 region/city/town/village），与区域地图的「建筑」工具一致 ③ **批量归位**：`projectStore.moveEntities(ids, parentId)`（一条 undo、已在目标下跳过、循环被拒）+ ProjectPanel 实体树 Ctrl/⌘ 多选 → 「移到此父级」——修的是**数据层级**（本库 facility 69 个里 48 个直接挂行星），行星图渲染规则本来就只画直接子级 ④ **面板 → 画布走 canvasBridge 第三条注册口**：`setGotoHandler / gotoEntity`，geodata 注册 `focusEntityOnCanvas`（按祖先链切 world/domain/system/planet/area/interior 并选中）；面板仍禁止 import geodata（test_46/48 静态守）
+
 - **图标系统**: `src/renderer/src/components/Icon.vue`（152 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 emoji（含 ScenarioMap 的 15 个地貌/标记预设：**预设里存图标名，不存 emoji 字面量**，双端各自渲染；旧数据里的 emoji 仍由 `drawIconOrEmoji` 的 fillText 兜底）；`python scripts/icon_check.py` 校验引用名均有定义
+
 - **开发规则全集**: 60+ 条铁律与踩坑复盘（composable 接线、getState ref 解包、SFC 结构标签、发布验收等）在 Hermes skill `obsidian/sitian-development`，动代码前先加载；本文件不复制规则，防双源漂移
-- **P0/P1 编辑器模块**（2026-09-15 落地，全部有回归用例 test_28~test_35）: `utils/labelStyles.js`（标签样式预设 + `drawStyledLabel` 统一文本渲染）、`utils/reliefIcons.js`（地貌图标确定性散布 + 网格桶）、`utils/markerTypes.js`（标记类型注册表）、`utils/settlement.js`（人口对数滑块/分级/半径）、`utils/roadStyles.js`（道路样式）、`utils/rivers.js`（河流流向排序/拖拽 clamp）、`utils/viewport.js`（视口世界矩形，小地图遮罩用）；`composables/useReliefBrush.js`
-- **历史剧本时间轴**（2026-09-17 落地，回归用例 test_41~test_45）: `utils/scenarioTimeline.js`（**纯函数**：势力谱系按省份重叠度贪心匹配 + 逐省易主年份 + 年份/轨道轴向映射；无 DOM 依赖，可单独在 Node 里跑）、`components/ScenarioTimeline.vue`（按年比例/等宽双轴向轨道 + 游标拖动 + 键盘 + 播放）、`components/ScenarioLineagePanel.vue`（P2 谱系纠正面板）、`composables/useScenarioExport.js`（SVG/PNG/scenarios.json 导出导入）。**出口**：`utils/svgExport.js`（SVG 序列化，曲线约定同 `traceShapePath`；PNG 由 SVG 光栅化而来，两者永远一致）+ `save-text-file` IPC
-- **剧本时间轴的两条硬约束**：① `era.startYear/endYear` 是**字符串且可为负**（`'-1350'`→`'2138'`），任何算术先 `Number()`；② **每个剧本的 polity id 都是全新的**（`pol_ou`→`pol_li`），直接比 id 会得出「每代 100% 省份全变」→ 必须先做谱系匹配。详见 skill `obsidian/sitian-development`
+
 - **交互模式全集**: pan / move / draw / region / marker / route（含自动寻路=道路编辑器，Shift+J）/ settle / text / cluster / height / terrain / political / **relief（R）** / **river（Shift+R）** / **culture（Shift+C）** / **religion（Shift+G）**
-- **A3 行星侧文化 / 宗教笔刷（2026-10-08，回归 test_89 + Node 单测 `test_heightmap_channels.js`）**: 行星主编辑器此前**没有**文化/宗教笔刷（`interactionMode` 无 culture/religion；`drawCultureReligionRegions` 画的只是 Azgaar 导入的参考数据）—— 现在补齐「涂抹 → 渲染 → 吸管」整条链。**分层（别混）**：数据层 `store/geodataModules/channelBrush.js`（写口契约 id 9）、交互层 `composables/usePlanetChannelBrush.js`（半径/硬度/当前值/预览/吸管）、渲染层 `utils/heightmapRaster.js` 的新档位 `culture`/`religion` + `buildChannelPalette`。四条必须记住的口径：
-  - 🔴 **通道值 = 列表位置（1 起），不是元数据的 `id`** —— 行星侧 `mapData[pid].cultures` 的 `id` 是 `Date.now()`（`NodeDetailPanel.createCulture` 就是这么写的），时间戳塞进 `Uint8Array` 会被截成低 8 位 → 两个文化抢同一下标、颜色名字全乱且**不报错**。上限 255。
-  - 🔴 **抬手 diff 才是本项目的手感标准**，别照抄外部的 `patches[]`、也别照抄本仓剧本侧的「每次 mousemove 都 execute + merge」：`beginChannelStroke`（首行守卫）→ `applyChannelStroke`（就地改数组 + 每格首见记旧值，**不 execute、不落盘**）→ `endChannelStroke`（整笔压成**一条** undo + 落盘）。实测一次拖动改 34 格 → undo 栈 **+1**。**就地改数组、绝不换引用**（画布/用例持有同一引用）。
-  - **通道数组三态归一**：落盘 `jsonSafeReplacer` 会把 TypedArray 变普通数组；历史上还有结构化克隆后的 `{0:..}`（**无 length**）。`utils/heightmapChannels.js#normalizeChannel` 是唯一实现（能救就救，救不了返回 null 而不是悄悄造零值）；`usePlanetHeightBrush.ensureHeightmap` 在装载时调用它。
-  - **新增着色档必须只改一处**：下拉选项表 = `PlanetMap.vue` 的 `RASTER_KIND_OPTIONS`（高度面板与文化/宗教面板共用）；硬编码 `<option>` 会在两个面板各写一份 → 必然漂移（test_89 f0 静态守）。
-- **写口契约的反向校验（2026-10-08，test_54 a2）**: 原校验只回答「登记了 ⇒ 必须有守卫」→ **「新增写口忘了登记」永不上报**（结构性漏网）。实测一次性揪出 18 个未登记写口（文化/宗教笔刷、底图绑定/迁移、切片点 4 个、省份笔刷族 5 个、清空行星内容、重算派生…），其中 `applyCultureBrush` / `applyReligionBrush` / `deriveAllLayers` / `addBaseMapBurg` 连首行守卫都没有 —— 已全部补守卫 + 登记（契约 9 条 / 76 个函数）。规则：**函数体出现 `guardWrite(`/`blocked(`/`commitHeightmap(` ⇒ 它就算写口 ⇒ 必须登记**（白名单只放守卫包装原语 `blocked`）。⚠️ 校验范围只含 `MEMORY_WRITE_CALLSITES`（函数级）里列出的文件；`WRITE_CALLSITES`（文件级）里的组件入口（`enterEditMode`/`persist`…）登记粒度是整文件，按函数名要求它们登记是不成立的。
-- **新增全局事件**: `sitian:label-styles-changed` / `sitian:marker-types-changed`（画布监听后 `requestRender`，不依赖深度 watch）
-- **节点 id 连续性（Draft 转正）**: `store.changeNodeId(oldId,newId)` 是「节点 id 变更 + 引用级联」的唯一入口（入 undo 栈，undo 闭包**显式记录**旧值不做反向推断）。引用清单（值槽 / 数组槽 / 字典键）在 `store/geodata.js` 内以注释 + `ID_REF_VALUE_FIELDS`/`ID_REF_ARRAY_FIELDS` 白名单登记，**新增任何以节点 id 为值或为键的结构必须同步登记**。`utils/normalizeId.js` 是 `scripts/extract-data.js` 的逐字符副本（三处一致由 test_40 用例守卫，改一处必改三处）
+
 - **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > HANDOFF.md / ROADMAP.md（严重滞后，仅作历史参考）
+
+
+### 当前红线（跨模块、动手之前必须知道）
+
+- **无项目 = 只读**：一切落盘写必须过 `guardWrite()`；新增"直接改世界观数据"的函数必须登记进
+  `store/writeGate.js` 的 `MEMORY_WRITE_CALLSITES`（`test_47`/`test_54` 读源码反查）。
+- **画布 → 项目只有一个写者**（`projectStore`）：`geodata` 只产出载荷、不碰磁盘、不 import projectStore
+  （经 `store/canvasBridge.js` 通信，`test_46` 守）。
+- **保存诚实**：`persisted === true` 才说「已保存到磁盘」；项目态只到 `staged`
+  （`utils/saveStatusText.js` 是唯一实现）。
+- **数据安全优先于手感**：退出 / 关项目 / 显式保存一律绕过自动保存的手势闸门（`utils/interactionGate.js` 口径①）。
+- **同一能力只许一份实现**（画河几何、河宽换算、导出参考图、保存文案、`.map` 导入…）：
+  两份实现不会报错，只会"改一处另两处不变"。
+- **不要整读大文件**：`ScenarioMap.vue` / `PlanetMap.vue` 是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
+  （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。
+
+### 索引：历史条目去哪了
+
+`AGENTS.md` 只留**慢变量 + 红线 + 索引**；每一轮的"改了什么 / 踩了什么坑 / 判据是什么"
+按主题归档在 `docs/agents-archive/`（**原文未改**）。**需要细节时只读对应那一份**，不要通读全部：
+
+| 主题 | 什么时候读它 | 文件 |
+|---|---|---|
+| 卡顿与性能 | 帧间隔 / 基帧缓存 / 空间索引 / 自动保存占住主线程 / 测量方法 | [perf-jank](docs/agents-archive/perf-jank.md)（3 条） |
+| 河流与地形 | 河流画法与橡皮 / 河网路由 / 地形推演 / 高度图与笔刷 / 海岸线 | [map-river-terrain](docs/agents-archive/map-river-terrain.md)（12 条） |
+| 省份与顶点 | 省份绘制与布尔 / 顶点与共边 / 骨架吸附 / 框选与分割 | [map-province](docs/agents-archive/map-province.md)（10 条） |
+| 底图与导入导出 | .map 导入 / 参考图 / 标记与聚落 / 道路 / 导出 / 底图编辑模式 | [map-basemap](docs/agents-archive/map-basemap.md)（7 条） |
+| 项目文件与保存链 | 写闸门 / 快照 / 落盘与恢复 / 只读 / 备份 / 退出落盘 / git 同步 | [project-save](docs/agents-archive/project-save.md)（12 条） |
+| 剧本与时间轴 | 剧本装载语义 / 时间切片 / 态势 / 卡片墙 / 标注与事件 | [scenario](docs/agents-archive/scenario.md)（12 条） |
+| 视图层 | 星系·星域·行星·区域·室内 / 图层开关 / 拖拽与命中 / 画布单位与淡出 | [views](docs/agents-archive/views.md)（7 条） |
+| 知识库与数据 | 提取 / 迁移 / 坐标 / fixture 专名 / 笔记重连 / 实体 id | [vault-data](docs/agents-archive/vault-data.md)（10 条） |
+| UI 与测试工具 | UI 基座 / 免责声明 / 图标与配色 / 测试纪律 / 演练 / 方寸联动 | [ui-tooling](docs/agents-archive/ui-tooling.md)（11 条） |
+| 规划与决策 | 排期定案 / 批次收口 / 阶段性取舍（当时的判断，不是现状） | [misc](docs/agents-archive/misc.md)（2 条） |
+
+> 归档是**历史**（"当时为什么这么做"）；当下口径以代码 + 回归用例为准（下面「锚点」就是为此）。
+> 检索用 `grep -rn "<关键词>" docs/agents-archive/`，不要整读。
 
 ### 锚点（读文档后先核对 2-3 个，不符以代码为准）
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 89 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 19 | `ls scripts/tests/unit/*.js \| wc -l` |
+| 测试用例数 | 123 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| Node 单测文件数 | 39 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
-| App.vue 异步面板 | 21 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
-| IPC handle 数 | 36 | `grep -c "ipcMain.handle" src/main/index.js` |
-| 项目文件 IPC 通道数 | 9 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
+| App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
+| IPC handle 数 | 37 | `grep -c "ipcMain.handle" src/main/index.js` |
+| 项目文件 IPC 通道数 | 10 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
 | 同步 IPC 通道数 | 7 | `grep -c "ipcMain.handle('git-sync-" src/main/handlers/gitSyncHandler.js` |
 | 七层视图组件 | 7 个齐全 | `ls src/renderer/src/components/` |
 
@@ -610,52 +161,13 @@ interface GeoNode {
 
 - Vue 3 ref 嵌套属性直接赋值（`obj[key]=value`）会丢失响应式，必须创建新对象（`{...obj, [key]: value}`）
 - Canvas 绘制函数拆分时，辅助函数和样式常量必须随函数一起迁移，否则运行时 ReferenceError 导致渲染管线断裂
-- 🔴 **「引用未声明标识符」是一整类不会被任何旧闸门抓到的缺陷（2026-10-11）**：打包（vite/rollup/esbuild）**不报错**——未声明标识符在 JS 里合法，运行时才去全局找；CDP 用例也只在走到那条路径时才炸。0.2.3 的 `ReferenceError: provinceGridTimer is not defined`（`ScenarioMap.vue` 的 `onUnmounted` 里留着格点时代的陈旧引用）就是这么漏出去的，而用户一退出剧本视图就崩（用户机 `logs/main.log`：`[2026-10-11 15:18:31.889] [error] [renderer] provinceGridTimer is not defined { component: 'ScenarioMap' }`）。现在由 **`scripts/tests/unit/test_undefined_identifiers.js`** 全仓守（`@babel/parser` 扫 `src/renderer/src` / `src/main` / `src/preload` 的 187 个文件；判据 = 引用位置标识符 ∈ 文件内声明 ∪ 全局白名单，**刻意不区分作用域嵌套** = 宁可漏报不可误报；含两条自证反向探针）。它上线时**一次抓出 6 个真缺陷**（`ScenarioMap` 四处 `renderer.requestRender()` / `AreaMap` 漏了整个 `defineEmits` 导致 `@dirty` 永不触发 / `GalaxyMap` 只写不读的 `panSuppressed` / `ScenarioSliceExport` 的 `provinceNames.value` / `planetDrawing.js` 漏 import 的 `convexHull` 与跨模块引用的 `mirrorPoint`）。⚠️ 它依赖 `@babel/parser`（`@vue/compiler-sfc` 的传递依赖，**没进 package.json**，取不到时明确报错、不静默跳过）。
-  - 🔴 **两道既有闸门各自够不到它的一半，缺的那一半由 `scripts/tests/drill_package_smoke.py` 补**：93 个 CDP 用例跑在 **Vite dev server** 上（不是打包产物），而 `drill_quit_flush.py` **四个阶段都不离开剧本视图** → `ScenarioMap` 的卸载钩子在真机上一次都没被执行过。新脚本在**打包出来的 `app.asar`** 上走「进历史剧本 → 返回世界选择」，判据 = ①视图真的卸载了（否则是空转）②没有 `#sitian-error-overlay` ③应用自己的错误通道（electron-log）零写入。⚠️ **阳性对照实测：控制台钩子会漏**（故意抛一个未声明标识符，`console.error` 捕获不到，但 overlay 与主进程日志都响了）——**"没报错"的断言必须先证明探测器会响**，否则就是假绿。userData 隔离到临时目录 + 跑完核对真实项目 sha256 未变。
-- 🔴 **项目文件的体积有三个来源，改任何一个都要重新量（2026-10-11）**：① **缩进**——`JSON.stringify(project, null, 2)` 在真实项目上占 **74%**（38.09 MiB → 紧凑 9.91 MiB），落盘已改紧凑，代价是 git 侧 diff 不再逐行可读；② **快照**——`diffWalk` 对数组是**整体替换**，动一个省 = 2.6 万点多边形 ≈ 700 KB 进 patch，实测 25 份快照里 6.41 MB 是同一份 `terrain` 存了 11 遍，现由 `SNAPSHOT_MAX_BYTES = 3 MB`（与 50 份双上限，**最新那份永不丢**）兜住；③ **噪音 diff**——`createdAt`/`updatedAt` 曾被每次保存改写（120 实体 × 2 = 每次 240 条 diff，且实体的"创建时间"被刷成保存那一刻 = 真数据被改），现由 `preserveEntityTimestamps` + `createEntity` 接受显式时间戳守住。诊断工具：`npm run audit-project-size`（只读）。**在真实项目副本上实测：38.09 MiB → 5.06 MiB（快照 25 份 → 6 份），且最新一份仍精确可恢复。**
-- **0.2.9「收口批」：三件"在跑但没人守"的（2026-10-13；回归 `test_100` / `test_101` / `test_95` b7）**：
-  ① 🔴 **PNG 导出此前零回归覆盖**（`test_42` 只测 JSON 与 SVG；`grep export-png|exportScenarioPNG|rasterizeSvg scripts/` 零命中）。
-  现由 `test_100` 用**像素判据**守：真鼠标事件点 `[data-testid="export-png"]` → `lib/cdp.py` 的 `fetch_string()`
-  分块（512KB）取回 dataUrl → `lib/pngcheck.py`（Pillow）判「合法 PNG / 尺寸 == SVG 头 ×2 / 去重色 ≥4 /
-  各势力色有像素 / `LABEL_COLOR` 文字像素 / 状态栏有回音」，外加"关掉标注重导"与"连导两次一致"两条对照。
-  ⚠️ **导出按钮在 `.toolbar-more` 里**（模板 `v-if="moreOpen"`）—— 不先 `open_toolbar_more()` 按钮**根本不在 DOM**；
-  ⚠️ `buildScenarioSVG` **不是** setupState 顶层绑定（组件只解构了 `export*`），必须走 `SM.scenarioExport.buildScenarioSVG()`。
-  ② **「从留底恢复」**：0.2.8 的 `basemap-source-save` 只有 save+list、**没有读回通道** → 那批 `.map` 在界面上等于不存在
-  （**备份读不回来就不算备份**）。现补**只读** `basemap-source-read`（名字过 `sanitizeFileName`，**并**校验 resolve 后仍在
-  `basemap-sources/` 内 —— 消毒是"不产生层级"，这层是"即使消毒规则改松也不许读出去"）+ 底图组的**时钟图标**入口。
-  恢复走 `triggerMapImport({ source })` 的**同一条链**（`handle()` 是唯一实现，刻意不另写导入路径），靠 `file.__fromBackup`
-  **不重复留底**（否则每恢复一次就多吃一个轮转位、把更早的版本挤掉）。mock 侧 save/list/read 三者**有状态**
-  （`window.__MOCK_BMSRC`）—— 否则整条恢复链在 CDP 层没法真跑。
-  ③ **旧数据里的聚落**（早期导入只把首都写进剧本 markers、底图侧无 `burgs`）：那种城镇看得见、点得开编辑器，
-  一保存却报"不在这张底图上"＝**改不了**。`updateBaseMapBurg(key, id, patch, { materialize })` 在找不到 id 时把
-  **整批**登记成真 burg 再应用这次编辑，且与编辑**共用一条 undo**（拆两条 = "名字退了、城镇还在"的半吊子状态）。
-  ⚠️ 只登记被编辑的那一个 → `burgs` 一旦非空，组件的 markers 派生回退分支就不再兜底，**其余城镇会从地图上消失**。
-- **0.3.0「P1 顶点编辑」：框选多选 + 相邻省共享边界重算（2026-10-13；回归 `test_102` + Node `test_vertex_sharing.js` + 真实演练 `drill_p1_vertex_marquee.py`）**：
-  v1.9 头号开发件。暮雨在两方案里拍了**甲**：拖动共边顶点时**邻省的同位顶点跟着一起走** ——
-  边界线整体移动（A 缩多少 B 就涨多少），**无缝、无压叠、不碰别的省**，且**一次拖动 = 一条 Ctrl+Z**。
-  - **做法**：省份的"共边"在数据里就是**两端坐标恰好相同**（网格派生 / FMG 导入 / 骨架吸附三处都如此），
-    所以 `utils/vertexSharing.js`（纯函数）按**坐标量化格**（`VERTEX_QUANTUM = 1e-3`）建全底图索引 →
-    `findLinkedVertices` 找出邻省同位顶点 → **差量平移**（`shiftPoints`，不是写同一个绝对坐标：
-    两侧本来就有 1e-9 级尾差时，各自动各自的分量，重合关系不会被磨掉）。**不做任何布尔运算** ——
-    本仓在布尔路径上踩过的坑（留缝/压叠/退化抛错）在这条路上一个都不会遇到。
-  - **写口**：新增 `provinceEditing.updateProvincesBatch`（一次手势 = **一条**命令，整表快照 undo；
-    已登记进 `MEMORY_WRITE_CALLSITES` id 8）。旧的 `updateBaseProvince`（一次一个省）保留给老路径。
-  - **框选**：`Shift + 空白处拖动`（**刻意不占用普通拖动** —— 顶点模式下拖空白仍是平移，手感不变；
-    与 PlanetMap 的框选手势一致）。选中集是**活动环上的下标**，所以换省份/换环必须清空
-    （watch 里做了）—— 不清就会"拖这个省、改那个省"。
-  - 🔴 **真实数据实测（415 省 / 27067 点）**：共边顶点 **2332 个**（858 个共享簇）→ 前提成立；
-    建索引 **34.6ms**（按 terrain 引用缓存，一次拖动建一次）；一次拖动**联动 8 个省**；
-    全图净面积漂移 **0.03 / 634574**；一次 Ctrl+Z 全还原。
-    ⚠️ **真实共边顶点并非逐位相同**（858 簇里只有 **25 簇** bit-exact，其余差 ~1e-12，SVG 解析/JSON 往返的尾差）——
-    所以判据写的是"**缝没有变大**（残差 ≤1e-9 世界单位）"，不是"严格相等"；差量联动正是为这种数据设计的。
-  - 🔴 **两个只在写测试时才暴露的坑**：① `buildLinkedPreview` 首版对同一条环的每个联动顶点各算一次
-    `shiftPoints` 然后**覆盖**同组结果 → 整条环只有最后一个顶点动（test_102 当场量出"4 个同位顶点只动了 1 个"）。
-    **必须先按环把位移累积起来再整体平移一次**。② 真实数据下 `terrain` 数组每次写入都会换引用，
-    探针里缓存成常量会读到旧数组 → "拖动改了数据"永远判否（假红）。
-  - **仍未做**：一侧有点、另一侧没点的**共边段**配不到同位顶点（那段拖了会留缝）。
-    可行性评估 `docs/P1_BATCH_BOUNDARY_OPS.md`：只有「共享边两侧同时重采样」值得做下一件，
-    整体平移/缩放、批量简化、批量吸附、拉直/平滑都不建议单独做（会必然违反"无缝"或只是整理类需求）。
-- 其余 60+ 条陷阱见 Hermes skill `sitian-development`（含 composable 接线、getState 解包、SFC 标签丢失、发布验收、测试环境），本文件不重复
+
+> 具体的坑（每条都带"当时怎么被发现的 + 判据"）按主题归档在 `docs/agents-archive/`：
+> 例："引用未声明标识符"整类缺陷 → [ui-tooling](docs/agents-archive/ui-tooling.md)；
+> 项目文件体积三个来源 → [project-save](docs/agents-archive/project-save.md)；
+> 顶点共边的真实数据尾差 → [map-province](docs/agents-archive/map-province.md)。
+> 其余 60+ 条铁律与踩坑复盘（composable 接线、getState 解包、SFC 结构标签、发布验收等）
+> 在 Hermes skill `obsidian/sitian-development`，动代码前先加载；本文件不复制规则，防双源漂移。
 
 ## 术语表 (Glossary)
 
