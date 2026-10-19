@@ -109,10 +109,17 @@ JS_UI = r""" (async () => {
   sc.setTool('draw');
   sc.moreOpen = false;
   await tick();
-  const defControls = controls(bar);
+  // 🔴 2026-10-18 第十七修：ScenarioMap 顶部多了一条**模式条**（`[data-testid=toolbar-modes]`：
+  //    「底图编辑」开关 + 一句当前模式文案）。它是**状态指示**，不是工具控件 ——
+  //    把它算进"默认可见控件"会让这条纪律从"工具栏别堆控件"变成"别告诉用户现在在哪个模式"。
+  //    口径：**排除模式条**之后仍 ≤6（主行 `test_97` 仍逐个按钮数、等于 6，双保险）。
+  const modes = bar.querySelector('[data-testid=toolbar-modes]');
+  const defControls = controls(bar).filter((el) => !(modes && modes.contains(el)));
   notes.defaultControls = defControls.map((el) => (el.title || el.textContent || el.tagName).trim().slice(0, 10));
-  ok('P3：默认可见控件 ≤ 6', defControls.length <= 6,
-     defControls.length + ' 个：' + notes.defaultControls.join(' / '));
+  notes.excludedModeStrip = controls(bar).length - defControls.length;
+  ok('P3：默认可见控件 ≤ 6（不含模式条）', defControls.length <= 6,
+     defControls.length + ' 个：' + notes.defaultControls.join(' / ')
+     + '（另排除模式条 ' + notes.excludedModeStrip + ' 个）');
   ok('P3：「更多」默认收起（面板不在 DOM 里）', !document.querySelector('.toolbar-more'));
   ok('P3：moreOpen 初值为 false', sc.moreOpen === false);
 

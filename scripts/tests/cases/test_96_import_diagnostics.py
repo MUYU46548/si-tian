@@ -104,10 +104,18 @@ def source_gates():
 
     # 🔴 导入时把原始 `.map` 原文留底（2026-10-11）—— 这条链**跨三层**，缺一环就静默失效：
     #    组件调用 → preload 暴露 → 主进程注册并真写盘（主进程侧由 Node 单测守）。
+    # ⚠️ 2026-10-17：留底与命名搬进 `utils/mapImportSource.js`（行星视图也要同一份，
+    #    两处各写一份必然出现"只有一边留底 / 只有一边剥日期后缀"）。判据跟着实现搬家。
+    mis = _code_only(_read('src/renderer/src/utils/mapImportSource.js'))
     for needle, label in [
-        ('async function backupMapSourceFile(', '组件：留底函数（唯一实现）'),
-        ('api.saveBaseMapSource(', '组件：真的调用留底 IPC'),
-        ('api.projectCurrentPath(', '组件：问主进程要当前项目路径（不引 projectStore）'),
+        ('export async function backupMapSourceFile(', '共用件：留底函数（唯一实现）'),
+        ('api.saveBaseMapSource(', '共用件：真的调用留底 IPC'),
+        ('api.projectCurrentPath(', '共用件：问主进程要当前项目路径（不引 projectStore）'),
+        ('export function mapNameFromFileName(', '共用件：文件名 → 底图名'),
+    ]:
+        if needle not in mis:
+            fails.append(f'源码闸门缺失：{label}（mapImportSource 里找不到 `{needle}`）')
+    for needle, label in [
         ('backupMapSourceFile(file.name, text)', '组件：导入时在解析之前就留底'),
         ('+ srcNote', '组件：把"已留底/留底失败"写进回执（不静默）'),
     ]:

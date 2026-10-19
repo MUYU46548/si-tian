@@ -74,7 +74,12 @@ def source_gates():
         (se, 'function addBaseMapRoute(', 'store：加道路'),
         (se, 'function removeBaseMapRoute(', 'store：删道路'),
         (se, 'function updateBaseMapBurg(', 'store：改聚落'),
-        (sc, 'store.addBaseMapRiver(', '组件：画河流走 store'),
+        # ⚠️ 2026-10-18 第十八修·三：组件画河改走**原子写口** `applyBaseMapRiverEdit`
+        #    （「加河 + 在母河插拐点」= 一条撤销；橡皮擦断一条河也是它）。判据的**意思没变**：
+        #    手画的河必须经 store，不许再出现组件本地数组。
+        (sc, 'store.applyBaseMapRiverEdit(', '组件：画河流走 store（原子写口）'),
+        (se, 'function applyBaseMapRiverEdit(', 'store：原子写口（改/加/删合计一条撤销）'),
+        (wg, "'applyBaseMapRiverEdit'", '写口契约：原子写口已登记'),
         (sc, 'store.addBaseMapRoute(', '组件：画道路走 store'),
         (sc, 'store.updateBaseMapBurg(', '组件：改聚落走 store'),
         (wg, "'addBaseMapRiver'", '写口契约：河流已登记'),
@@ -91,8 +96,12 @@ def source_gates():
     if 'store.baseMaps = {' in sc:
         fails.append('🔴 组件里仍存在 `store.baseMaps = {...}` 手搓替换（绕开 undo 与自动保存调度）')
     # 🔴 红线：本地 riverPaths 这条平行事实源不许复活
-    if 'riverPaths' in sc:
-        fails.append('🔴 组件里仍有本地 `riverPaths`（手画的河会再次"画完就丢"）')
+    # ⚠️ 判据必须**精确到"声明/赋值的本地变量"**，不能裸匹配子串：
+    #    组件里合法地存在 `drawRiverPaths`（画河函数名）—— 裸子串匹配会把它一起判红。
+    #    （2026-10-17 实测：我把新纯函数模块命名为 `riverPaths.js` 时，这条判据误报过一次。）
+    import re as _re
+    if _re.search(r'\b(?:const|let|var)\s+riverPaths\b', sc):
+        fails.append('🔴 组件里又有 `const/let riverPaths` 本地数组（手画的河会再次"画完就丢"）')
 
     notes.append('源码闸门 13 项 + 2 条红线' + ('全过' if not fails else f'缺 {len(fails)}'))
     return fails, notes

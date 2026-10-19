@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 91：保存失败必须**说得出原因**（2026-10-09，暮雨实测反馈）
 
@@ -68,15 +68,37 @@ def source_gates():
     if "if (saveStatus.value === 'error') saveStatus.value = 'idle'" in g:
         fails.append('geodata 的 error 仍有 TTL 自动回 idle（一闪而过 = 没提示）')
 
+    # 2026-10-17：合成逻辑下沉到唯一实现（两链合并 / unref 读值 / 优先级都在这里）。
+    # 判据跟着实现搬家 —— 组件里再留第二份 computed 才是要防的事（见下一条）。
+    sd = _code_only(_read('src/renderer/src/composables/useSaveDisplay.js'))
+    for needle, label in [
+        ('unref(store.saveStatus)', '用 unref 读 store（Pinia setup store 会解包 ref）'),
+        ('unref(store.lastSaveError)', '失败原因也走 unref 读'),
+        ('saveState: sbState.saveState', '接 projectStore 写进全局状态栏的落盘状态'),
+        ('pending: !!sbState.savePending', '「有改动未落盘」也要进显示（只有 saveState 时看不出脏了）'),
+        ('resolveSaveDisplay(', '交给纯函数判定（可 Node 单测）'),
+    ]:
+        if needle not in sd:
+            fails.append(f'useSaveDisplay 缺：{label}（`{needle}`）')
+
+    st = _code_only(_read('src/renderer/src/utils/saveStatusText.js'))
+    for needle, label in [
+        ("if (s && s.kind === 'err')", '项目落盘失败优先级最高（那才代表数据没进磁盘）'),
+        ("if (canvas.status === 'error')", '画布侧失败也要有分支（连"交给项目"都没成）'),
+        ('if (project.pending)', '「有改动待写入磁盘」是独立一档（旧实现停在绿标）'),
+        ('r.persisted === true', 'persisted 才报「已保存到磁盘」'),
+        ('r.staged === true', 'staged 只说「已交给项目」（项目态不得谎报已落盘）'),
+    ]:
+        if needle not in st:
+            fails.append(f'saveStatusText 缺：{label}（`{needle}`）')
+
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
     for needle, label in [
-        ("import { useStatusBarState } from '../composables/useStatusBar'",
-         '接全局状态栏（projectStore 的落盘状态在这里）'),
-        ('const saveDisplay = computed', '两条保存链合并显示'),
+        ("import { useSaveDisplay } from '../composables/useSaveDisplay'",
+         '剧本视图必须用唯一实现（不许本地再写一份合成）'),
+        ('const saveDisplay = useSaveDisplay()', '剧本视图接上唯一实现'),
         ('data-testid="scenario-save-status"', '状态栏保存项挂 testid'),
         (':title="saveDisplay.title || saveDisplay.text"', '悬停给完整原因'),
-        ("s && s.kind === 'err'", 'saveDisplay 接了 projectStore 的 err'),
-        ('unref(store.saveStatus)', '用 unref 读 store（Pinia setup store 会解包 ref）'),
     ]:
         if needle not in sm:
             fails.append(f'ScenarioMap 缺：{label}（`{needle}`）')
@@ -84,14 +106,26 @@ def source_gates():
         fails.append('状态栏还在用无原因的旧文案「保存失败」')
     if 'store.saveStatus.value' in sm:
         fails.append('ScenarioMap 仍在写 `store.saveStatus.value`（Pinia 已解包 → 恒 undefined）')
+    if 'const saveDisplay = computed' in sm:
+        fails.append('ScenarioMap 又自己写了一份 saveDisplay computed（两套口径必然漂移）')
+
+    sb = _code_only(_read('src/renderer/src/components/StatusBar.vue'))
+    for needle, label in [
+        ('useSaveDisplay()', '底部常驻状态栏也走唯一实现'),
+        ("'save-state-' + saveChip.state", '保存 chip 的 testid 反映真实档位（含 staged）'),
+    ]:
+        if needle not in sb:
+            fails.append(f'StatusBar 缺：{label}（`{needle}`）')
 
     ps = _code_only(_read('src/renderer/src/store/projectStore.js'))
     if 'setSaveState(null);' not in ps:
         fails.append('projectStore 的 TTL 到期没清全局 saveState（底部会永远停在「已保存」）')
     if '`保存失败：${errText' not in ps:
         fails.append('projectStore 的失败文案没有把原因写进 text（只放 title 等于没提示）')
+    if 'setSavePending(!!d)' not in ps:
+        fails.append('projectStore 没有把 dirty 同步到状态栏（「有改动未落盘」必须可见）')
 
-    notes.append('源码闸门 14 项' + ('全过' if not fails else f'缺 {len(fails)} 项'))
+    notes.append('源码闸门 20 项' + ('全过' if not fails else f'缺 {len(fails)} 项'))
     return fails, notes
 
 
@@ -101,7 +135,8 @@ PROBE_JS = """(() => {
   const sb = sc.sbState;
   const fails = [], notes = {};
   const ok = (l, c, e) => { if (!c) fails.push(l + (e !== undefined ? ' (' + e + ')' : '')); };
-  const read = () => ({ kind: sc.saveDisplay.kind, text: String(sc.saveDisplay.text), title: String(sc.saveDisplay.title || '') });
+  const read = () => ({ state: sc.saveDisplay.state, kind: sc.saveDisplay.kind,
+                        text: String(sc.saveDisplay.text), title: String(sc.saveDisplay.title || '') });
 
   // ── 形态探测：Pinia setup store 会 unwrap ref（同仓两种写法都有先例，必须现场确认）──
   const st = store.saveStatus;
@@ -112,14 +147,14 @@ PROBE_JS = """(() => {
   sb.saveState = null;
   setG('idle'); setE('');
   notes.baseline = read();
-  ok('基线不是错误态', notes.baseline.kind !== 'error', JSON.stringify(notes.baseline));
+  ok('基线不是错误态', notes.baseline.state !== 'error', JSON.stringify(notes.baseline));
 
   // ① 剧本侧失败：原因必须出现在**文字**里（不只 title）
   setE('磁盘被占用（EBUSY）：无法重命名临时文件');
   setG('error');
   const g1 = read();
   notes.geodataErr = g1;
-  ok('① 剧本侧失败 → 状态栏变 error', g1.kind === 'error', g1.kind);
+  ok('① 剧本侧失败 → 状态栏变 error', g1.state === 'error', g1.state);
   ok('① 文字以「保存失败：」开头', g1.text.indexOf('保存失败：') === 0, g1.text);
   ok('① 失败原因出现在文字里（不是只有四个字）', /EBUSY/.test(g1.text), g1.text);
   ok('① title 给完整原因', /EBUSY/.test(g1.title), g1.title);
@@ -128,7 +163,7 @@ PROBE_JS = """(() => {
   sb.saveState = { kind: 'err', text: '保存失败', title: '写入 E:/x.sitian 失败：EACCES' };
   const g2 = read();
   notes.projectErr = g2;
-  ok('② 项目落盘失败时状态栏也是 error', g2.kind === 'error', g2.kind);
+  ok('② 项目落盘失败时状态栏也是 error', g2.state === 'error', g2.state);
   ok('② 项目侧原因压过剧本侧（优先级正确）', /EACCES/.test(g2.text) && !/EBUSY/.test(g2.text), g2.text);
 
   return JSON.stringify({ fails, notes });
@@ -148,7 +183,7 @@ RESET_JS = """(() => {
   const setE = (v) => { const x = store.lastSaveError; if (x && typeof x === 'object' && 'value' in x) x.value = v; else store.lastSaveError = v; };
   sb.saveState = null;
   setG('idle'); setE('');
-  return JSON.stringify({ ok: true, kind: sc.saveDisplay.kind });
+  return JSON.stringify({ ok: true, state: sc.saveDisplay.state });
 })()"""
 
 

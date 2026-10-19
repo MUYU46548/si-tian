@@ -145,6 +145,15 @@ def disclaimer_ack_key_expr():
 
 MOCK_SCRIPT = """<script>
     window.__SITIAN_MOCK__ = true;
+    // ===== 剧本卡片墙跳过开关（2026-10-17 P0）=====
+    // 产品默认：点「历史剧本」先见卡片墙（ScenarioPicker），点卡片才进编辑器。
+    // 30+ 个既有用例的路径是「点历史剧本 → ScenarioMap 直接挂载」——
+    // 注入本开关让 enterScenarioMode 跳过卡片墙（同免责声明种子的手法）。
+    // test_111（卡片墙自身）用 sessionStorage 开关关掉它并重载（跨导航存活，用例收尾必须清）。
+    (function () {
+      try { if (sessionStorage.getItem('__sitian_skip_picker_seed') === '1') return; } catch (e) {}
+      window.__SKIP_SCENARIO_PICKER = true;
+    })();
     // ===== fixture 专名 → 当前数据源名 的别名（2026-10-06）=====
     // 用例里写的是合成 fixture 的名字（曜川星…）。--real-data 下数据源是真实库，那些名字不存在
     // → 集体假红（19 个失败里 17 个是它）。用例改用 __alias('曜川星') 取名字：
@@ -496,6 +505,24 @@ def free_port(port):
 
 def setup_mock():
     """备份 index.html、注入 mock、准备 mock 数据（默认合成 fixture）"""
+    # 🔴 二次注入闸门（2026-10-17 加）：`index.html` 是**共享可变状态**，
+    #    而回归跑一次要十几分钟。如果同时还有另一个进程（诊断脚本 / 另一次回归）
+    #    也在用这套 mock，两边的 `.bak` 会互相覆盖 —— 收尾还原时把**注入了 mock 的
+    #    index.html 当成原始文件**存下来，于是 mock 永久留在工作区
+    #    （实测踩到：`git status` 里 index.html 多出 891 行注入脚本，
+    #    而 `.bak` 已经不存在了，谁也不知道原始文件在哪）。
+    #    宁可当场说清、也不要在十几分钟后留下一个被污染的工作区。
+    if os.path.exists(INDEX_HTML + '.bak'):
+        raise RuntimeError(
+            f'检测到上一次 mock 未收尾：{INDEX_HTML}.bak 还存在。\n'
+            f'  → 说明另有一次回归/诊断脚本正在跑（或上次异常退出）。\n'
+            f'  → 请等它结束；若确认没有在跑，先手工还原 index.html（`git checkout -- src/renderer/index.html`）'
+            f'并删掉 .bak 与 mock-data/，再重跑。')
+    with open(INDEX_HTML, 'r', encoding='utf-8') as f:
+        if 'window.__SITIAN_MOCK__' in f.read():
+            raise RuntimeError(
+                f'检测到 {INDEX_HTML} 里**已经**有 mock 注入（window.__SITIAN_MOCK__），但没有 .bak。\n'
+                f'  → 直接再注入会让原始文件永久丢失。请先 `git checkout -- src/renderer/index.html`。')
     shutil.copy(INDEX_HTML, INDEX_HTML + '.bak')
     os.makedirs(MOCK_DATA_DIR, exist_ok=True)
     geodata_src, mapdata_src, src_label = data_source()

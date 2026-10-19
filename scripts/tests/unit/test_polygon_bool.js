@@ -26,7 +26,7 @@ const { pathToFileURL } = require('url');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const SRC_DIR = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
-const DEPS = ['polygonBool.js', 'provinceShape.js', 'geometry.js', 'gridOutline.js'];
+const DEPS = ['polygonBool.js', 'provinceShape.js', 'polylineSmooth.js', 'geometry.js', 'gridOutline.js'];
 
 const results = [];
 function check(name, fn) {

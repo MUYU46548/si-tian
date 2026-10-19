@@ -81,7 +81,12 @@ def source_gates():
         ("from '../utils/scenarioPalette'", '组件引用配色单源（不许再抄一份色板）'),
         ('nextProvinceColor(', '色板轮转函数（来自单源）'),
         ('function commitFreeTrace(pts, shiftKey)', '自由绘制受理 shiftKey'),
-        ('const skeleton = shiftKey ? [] : buildSkeleton(', 'Shift = 旁路骨架吸附'),
+        # 2026-10-17 第四轮：贴骨架这段挪进了 `freeTraceRing(rawPts, { snap })`（预览与落库共用），
+        # 所以判据跟着落到「落库时把 shiftKey 翻成 snap」+「freeTraceRing 里 snap=false 直接返回」——
+        # 语义仍然是「Shift = 旁路骨架吸附」，只是实现位置变了。
+        ('freeTraceRing(pts, { snap: !shiftKey })', 'Shift = 旁路骨架吸附'),
+        ('if (!snap) return { ring: pts, simplified: pts.length, snapped: pts.length };',
+         'freeTraceRing 的不吸附分支'),
         ('function focusNewProvince(', '新建后选中 + 名字输入聚焦'),
         ('ref="provNameInput"', '属性面板名字框可聚焦（P1 名字输入）'),
         ('kind: \'land\'', '新省默认 kind=land'),

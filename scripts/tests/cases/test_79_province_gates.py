@@ -93,8 +93,15 @@ def sub_source_guards(cdp):
         bad.append('套索闸门没算轮廓/全图包围盒（面积占比的分子分母）')
 
     pg = _code_only(_read('src/renderer/src/utils/provinceGrid.js'))
-    if 'export function lassoInsideCount' not in pg:
-        bad.append('provinceGrid 缺少只读的 lassoInsideCount')
+    # 🔴 2026-10-16：这里原来断言 `'export function lassoInsideCount' in pg` —— **已反转**。
+    #    那条守卫在给一个**零生产调用的退役函数发"存活证明"**：`lassoInsideCount` 至今没有任何
+    #    调用点（P2 矢量迁移后套索闸门改判**面积占比**），而它只判"字符串在场、没有任何行为"。
+    #    后果是**后来人跟着它和 AGENTS.md 的旧描述去改闸门，会改到一个没人调的函数上**
+    #    （本项目第五次「零调用死入口」，且这次是**守卫在骗人**，比单纯死代码更坏）。
+    #    现在反向断言：它**不许**回来。真正生效的判据（area-gate）已在上面 90-93 行守着。
+    if 'export function lassoInsideCount' in pg:
+        bad.append('provinceGrid 里又出现了退役的 lassoInsideCount —— 它**零调用**，'
+                   '套索闸门分子早就是面积占比（area-gate）；死代码不许再被守卫背书')
 
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
     if 'i >= 0; i--' not in sm:

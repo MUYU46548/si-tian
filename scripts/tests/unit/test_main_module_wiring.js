@@ -302,7 +302,45 @@ async function main() {
     const unregistered = [...invoked].filter(c => !handled.has(c));
     assert(unregistered.length === 0,
       `这些通道 preload 会 invoke，但主进程没有 ipcMain.handle（点了才炸）：\n    ${unregistered.join('\n    ')}`);
-    return `invoke ${invoked.size} 个通道，handle ${handled.size} 个，全部对得上`;
+
+    // 🔴 反方向（2026-10-14 补，审计抓到的真缺陷）：
+    //    `ipcMain.handle('get-watcher-status')` / `'set-watcher-status'` 注册了很久，
+    //    但 preload **从来没暴露** → 渲染层的「Vault 监听」勾选框只写 localStorage，
+    //    主进程那个开关**根本没人能拨到**（假开关，关了也照跑）。
+    //    上面那条只查了「暴露了必须有注册」，查不到「注册了没人能调」这个反方向。
+    //    现在两个方向都守：注册的通道**必须**有 preload 暴露面。
+    //    （真要做纯内部通道，就在这里加白名单并写明理由 —— 目前 57/57 全部有暴露面。）
+    const notExposed = [...handled].filter(c => !invoked.has(c));
+    assert(notExposed.length === 0,
+      `这些通道主进程注册了 ipcMain.handle，但 preload 没有暴露（渲染层永远拨不到 = 假开关）：\n    ${notExposed.join('\n    ')}`);
+    return `invoke ${invoked.size} 个通道，handle ${handled.size} 个，**双向**全部对得上`;
+  });
+
+  // ── 5) 🔴 「Vault 监听」开关必须是**真开关**（2026-10-14）────────────────────
+  // 上面那条守卫保证「注册的通道都暴露了」；这条保证**暴露了真的被接上**。
+  // 两条是两件事：暴露面只是"拨得到"，还得有人拨。
+  // 判据（读源码，剥注释）：设置面板里的勾选框 change 处理必须调用 setWatcherStatus；
+  // 光有 `saveSettings`（只写 localStorage）就是本项目那次「假开关」的原样。
+  await check('Vault 监听开关：勾选框的 change 处理器必须真的拨到主进程', async () => {
+    const src = stripComments(await fsp.readFile(
+      path.join(ROOT, 'src', 'renderer', 'src', 'components', 'SettingsPanel.vue'), 'utf-8'));
+    assert(src.includes('data-testid="vault-watcher-toggle"'),
+      '设置面板里找不到「Vault 监听」勾选框（判据锚点失效，需同步更新本用例）');
+    const m = src.match(/function\s+onVaultWatcherChange\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    assert(m, '找不到 onVaultWatcherChange（勾选框的 change 处理器）');
+    // ⚠️ 这里曾经误判过一次：直接在 `onVaultWatcherChange` 里调 `setWatcherStatus` 与
+    //    「调 syncWatcherStatus（它内部再调）」**都对**。判据要认这两种写法，
+    //    否则会把正确的实现判红（假红和假绿一样坏）。
+    const reachesApi = /setWatcherStatus\s*\(/.test(m[1]) || /syncWatcherStatus\s*\(/.test(m[1]);
+    assert(reachesApi,
+      '🔴 勾选框的 change 处理器既没调 setWatcherStatus 也没调 syncWatcherStatus'
+      + ' —— 那就是"只写 localStorage 的假开关"（界面变了、主进程的 watcher 照跑）');
+    assert(/saveSettings\s*\(/.test(m[1]),
+      '勾选框没有存用户意图（saveSettings）—— 重启后勾选态会丢');
+    const sync = src.match(/async\s+function\s+syncWatcherStatus\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    assert(sync, '找不到 syncWatcherStatus（打开面板时的对齐逻辑）');
+    assert(/setWatcherStatus\s*\(/.test(sync[1]), 'syncWatcherStatus 没有真的推给主进程');
+    return '勾选框 → saveSettings（存意图）+ 拨到主进程（真开关）';
   });
 
   // ── 汇总 ───────────────────────────────────────────────────────────────
