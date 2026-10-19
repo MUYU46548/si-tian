@@ -7,11 +7,26 @@
           <h2>{{ world?.name }} — 星域总览</h2>
         </div>
         <p class="hint">
-          <span v-if="!editMode">点击恒星进入 · 滚动缩放 · 拖拽空白处平移 · 拖拽恒星编辑坐标</span>
+          <span v-if="!editMode">点击恒星进入 · 滚动缩放 · 拖拽空白处平移 · <b>「移动」工具下拖拽恒星或星域编辑坐标</b>（默认拖手模式防误触）</span>
           <span v-else class="edit-hint">编辑模式：拖拽恒星间创建航道 · 右键航道删除 · 拖拽边界顶点编辑势力范围 · 点击空白取消</span>
         </p>
       </div>
       <div class="header-actions">
+        <!-- 浏览态的两种拖拽语义（与 SystemView 同一形态）：默认拖手防误触，「移动」才改坐标。
+             这条 UI 以前根本不存在，而提示文案却写着"拖拽恒星编辑坐标"（骗人，见 §bug1）。 -->
+        <template v-if="!editMode">
+          <button
+            :class="{ active: interactionMode === 'pan' }"
+            @click="interactionMode = 'pan'"
+            title="拖手模式：拖拽空白处平移，恒星只选中不移动（防误触）"
+          ><Icon name="hand" :size="14"/> 拖手</button>
+          <button
+            :class="{ active: interactionMode === 'move' }"
+            @click="interactionMode = 'move'"
+            title="移动模式：拖拽恒星或星域调整坐标（位置会持久化；星域的恒星跟着走）"
+            data-testid="galaxy-move-tool"
+          ><Icon name="move" :size="14"/> 移动</button>
+        </template>
         <select 
           v-if="editMode"
           v-model="nextHyperlaneType" 
@@ -64,23 +79,38 @@
       </div>
     </div>
     
-    <!-- 势力图例 -->
+    <!-- 势力图例：色板改的是**星域自己的颜色**（落库到节点 factionColor），
+         所以键必须是 domain.id —— 老实现用 `domain.faction` 当键，真实库该值是 undefined，
+         于是所有星域共用一个键「undefined」：改一个色 = 改全部（见 §bug2）。 -->
     <div class="faction-legend">
       <span 
         v-for="domain in domains" 
         :key="domain.id"
         class="legend-item"
-        :style="{ '--faction-color': domain.factionColor || getFactionColor(domain.faction) }"
+        :style="{ '--faction-color': resolveDomainColor(domain) }"
       >
         <input 
           type="color" 
           class="legend-color-picker"
-          :value="getFactionColor(domain.faction)"
-          @input="setFactionColor(domain.faction, $event.target.value)"
+          :value="toHex6(resolveDomainColor(domain)) || '#6b5b95'"
+          @input="previewFactionColor(domain, $event.target.value)"
+          @change="commitFactionColor(domain, $event.target.value)"
           @click.stop
           title="点击修改势力颜色"
         />
         <span class="legend-dot"></span>
+        <!-- 势力名 = `faction` 字段的**唯一写入入口**（§faction 写入路径）。
+             它决定图例/画布/边界的默认配色（`getFactionColor` 按名字推色）：真实库原先**没有任何写入口**
+             → 所有星域都落在同一个默认色 #6b5b95，"势力区分"能力为零。 -->
+        <input
+          type="text"
+          class="legend-faction-input"
+          :value="domain.faction || ''"
+          placeholder="势力名"
+          title="所属势力（决定默认配色；留空 = 未归属）"
+          @change="commitFaction(domain, $event.target.value)"
+          @click.stop
+        />
         {{ domain.name }}
       </span>
     </div>
@@ -107,6 +137,13 @@ import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 // 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
 import { fadedAlpha } from '../utils/entityStatus';
+import { withAlpha, toHex6 } from '../utils/colorUtil';
+// 布局 / 凸包 / 配色 / 航道色：与「导出 PNG(全图)」**共用同一份实现**
+// （§bug 导出与画布不同源：这些原先在 App.vue 里各有一份，两边结果不一致且不报错）
+import {
+  getFactionColor, resolveDomainColor as resolveDomainColorShared,
+  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, STARFIELD,
+} from '../utils/galaxyLayout';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -227,9 +264,15 @@ let boxSelectStart = { x: 0, y: 0 };
 let boxSelectEnd = { x: 0, y: 0 };
 let isDraggingMultiple = false;
 let dragMultipleStart = { x: 0, y: 0 };
+// 正在被拖动的星域 id（拖动期让布局认它的实时坐标 —— 见 applyStableLayout 的注释）
+let draggingDomainId = null;
 
 // ===== 航道编辑状态 =====
 const editMode = ref(false);
+// 浏览态的拖拽语义：'pan'（默认，防误触）/ 'move'（拖恒星改坐标）。
+// 与 SystemView / SystemDetailView 同一套语义（那两处早就有，只有这里漏了 ——
+// 而提示文案却一直写着"拖拽恒星编辑坐标"，属"文案承诺了不存在的能力"）。
+const interactionMode = ref('pan');
 let dragSourceNode = null;
 let dragMousePos = { x: 0, y: 0 };
 let hoveredHyperlane = null;
@@ -271,23 +314,25 @@ const filteredGalaxyNodes = computed(() => {
 });
 
 // ===== 势力边界编辑 =====
-// 注意：直接访问 store.domainBorderOverrides 保持响应式（Pinia 自动解包 ref）
-function getBorderPoints(domainId) {
-  const overrides = store.domainBorderOverrides;
-  if (overrides && overrides[domainId]) {
-    return overrides[domainId];
-  }
-  return null;
-}
+// ⚠️ `getBorderPoints`（读覆盖点）已删：读取现在由 `utils/galaxyLayout.js#factionBorders` 统一做
+//    （`overrides` 传进去），组件里再留一个读口就是第二份口径。
 
-function setBorderPoints(domainId, points) {
-  store.domainBorderOverrides[domainId] = points;
-}
-
-function resetBorderOverride(domainId) {
-  if (store.domainBorderOverrides[domainId]) {
-    delete store.domainBorderOverrides[domainId];
+/**
+ * 提交边界覆盖点 —— **必须走 store 的唯一写口**（§2026-10-18 第十一修）。
+ *
+ * 旧写法是 `store.domainBorderOverrides[domainId] = points`（组件直接改 store 的 ref）：
+ * 没有闸门、没有 undo —— 只读态拖顶点会**静默改内存**（看着生效，保存时才被拒），而且撤不回来。
+ * 现在 `setDomainBorderPoints` 里有 `guardWrite` + `execute`（一条 undo），被拒时返回 null。
+ * @param {boolean} [preview] 拖动期的起始快照（过闸门但不进 undo 栈，见 store 里该函数的注释）
+ * @returns {boolean} 是否真的写入（false = 被拒/参数非法）
+ */
+function setBorderPoints(domainId, points, preview) {
+  const r = store.setDomainBorderPoints(domainId, points, preview ? { preview: true } : undefined);
+  if (!r) {
+    setStatus('编辑势力边界被拒：当前是只读态（打开项目后可编辑）', 'warn');
+    return false;
   }
+  return true;
 }
 
 // ===== 势力边界编辑状态 =====
@@ -298,202 +343,102 @@ const hoveredBoundaryVertex = ref(null);
 let animationTime = 0;
 
 // ===== 势力颜色 =====
-const FACTION_COLORS = {
-  '蓝镜帝国': '#4A90D9',
-  '绿野联邦': '#5CB85C',
-  '赤焰王国': '#E74C3C',
-  '紫晶商会': '#9B59B6',
-  '金辉共和国': '#F39C12',
-  '青霜联盟': '#1ABC9C',
-  '橙光同盟': '#E67E22',
-  '银月帝国': '#95A5A6',
-};
+// ⚠️ `FACTION_COLORS` / `getFactionColor` 现在只有一份实现（`utils/galaxyLayout.js`），
+//    import 在上面 —— 本组件与「导出 PNG(全图)」共用它（原先两处各有一份同形表）。
 
-function getFactionColor(faction) {
-  if (!faction) return '#6b5b95';
-  if (factionColorOverrides.value[faction]) return factionColorOverrides.value[faction];
-  if (FACTION_COLORS[faction]) return FACTION_COLORS[faction];
-  let hash = 0;
-  for (let i = 0; i < faction.length; i++) {
-    hash = faction.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 70%, 60%)`;
+/**
+ * **星域当前颜色的唯一解析口**（图例 / 布局 / 边界 / 鹰眼 / 导出五处共用）。
+ * 优先级：① 本组件内的即时预览覆盖（按 **domain.id** 存，见 §bug2 的「undefined 共用键」）
+ *        ② 节点自己持久化的 `factionColor`（用户改过色 → 落库 → 重开还在）
+ *        ③ 按势力名推的默认色（`FACTION_COLORS` 表 → 名字哈希 hsl）
+ *
+ * ⚠️ `factionColorOverrides` 是**运行期预览**，不是真相：真相在节点上（`store.updateNode`）。
+ *    它存在的唯一理由是 `input` 事件连续触发时别把 undo 栈刷爆（落库在 `change` 时做一次）。
+ */
+function resolveDomainColor(domain) {
+  return resolveDomainColorShared(domain, factionColorOverrides.value);
 }
 
-function setFactionColor(faction, color) {
-  factionColorOverrides.value[faction] = color;
+/** 预览（`input` 事件，频繁）：只改内存 + 重排 + 重绘，**不落库、不进 undo** */
+function previewFactionColor(domain, color) {
+  if (!domain) return;
+  factionColorOverrides.value[domain.id] = color;
+  // ⚠️ 这两句缺一不可，各有判据守：
+  //    · `applyStableLayout()` —— 渲染恒星读的是布局期副本（只重绘会让"画布变了、颜色还是旧的"）；
+  //    · `requestRender()` —— 不重绘就是"拖了色板没反应"。
+  //    （反向验证实测：抽掉任一句，`test_116` f2 的对应断言各自红。）
+  applyStableLayout();
+  renderer.requestRender();
 }
 
-// ===== 凸包算法（Graham Scan）=====
-function convexHull(points) {
-  if (points.length < 3) return points;
-  
-  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
-  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
-  
-  const lower = [];
-  for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-      lower.pop();
-    }
-    lower.push(p);
+/**
+ * 落库（`change` 事件，用户松开色板时一次）：走 `store.updateNode`（有 `guardWrite` + 一条 undo），
+ * 把 `factionColor` 写进节点 → 由 `entityExtras()` 原样带进项目文件（不必动 schema）。
+ *
+ * 🔴 为什么必须落库：老实现只写组件局部 ref —— 切走视图颜色就没了，
+ *    而且真实库里所有星域的 `faction` 都是 undefined → 图例/画布/鹰眼/导出全是同一个默认色
+ *    （`#6b5b95`），"势力区分"能力实际为零。
+ */
+function commitFactionColor(domain, color) {
+  if (!domain) return;
+  factionColorOverrides.value[domain.id] = color;
+  // `updateNode` 只在**被拒**或节点不存在时返回 null（成功返回节点本身）→ 拒绝必须有回音
+  const r = store.updateNode(domain.id, { factionColor: color });
+  if (!r) setStatus('改势力颜色没生效：当前是只读态，或这个星域节点不存在', 'warn');
+  applyStableLayout();
+  renderer.requestRender();
+  emit('dirty', true);
+}
+
+/**
+ * 写 `faction`（势力名）—— 这是**该字段的唯一写入路径**。
+ *
+ * 为什么必须在这里给入口：`faction` 此前**没有任何写口**（提取器不产、建笔记不写、store 无 setter），
+ * 于是 `getFactionColor()` 永远走 `!faction → '#6b5b95'` —— 图例/画布/鹰眼/全图导出**全是同一个默认色**，
+ * "势力区分"能力为零。现在从图例直接填名字：走 `updateNode`（有闸门 + **一条 undo**），
+ * 而 `faction` 不在 `ENTITY_SHAPE_KEYS` 白名单里 → 由 `entityExtras()` 原样进项目文件（不必动 schema）。
+ */
+function commitFaction(domain, value) {
+  if (!domain) return;
+  const next = String(value == null ? '' : value).trim();
+  const prev = domain.faction || '';
+  if (next === prev) return;                     // 同值 = 空操作，不压栈（与省份批量指派同一纪律）
+  const r = store.updateNode(domain.id, { faction: next || undefined });
+  if (!r) {
+    setStatus('改势力没生效：当前是只读态，或这个星域节点不存在', 'warn');
+    return;
   }
-  
-  const upper = [];
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const p = pts[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-      upper.pop();
-    }
-    upper.push(p);
-  }
-  
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
+  applyStableLayout();
+  renderer.requestRender();
+  emit('dirty', true);
 }
 
 // ===== 布局计算 =====
+// 具体数学在 `utils/galaxyLayout.js`（与「导出 PNG(全图)」共用同一份 —— §bug 导出与画布不同源）。
+// 本函数只负责：把"当前组件的输入"喂进去 + 把结果存进组件的布局副本。
 function applyStableLayout() {
-  const domainCount = props.domains.length;
-  const spacing = 700;
-  
-  domainNodes = props.domains.map((domain, idx) => {
-    const angle = (idx / Math.max(domainCount, 1)) * Math.PI * 2 - Math.PI / 2;
-    const radius = domainCount > 1 ? spacing * 0.9 : 0;
-    return {
-      ...domain,
-      x: domainCount > 1 ? Math.cos(angle) * radius : 0,
-      y: domainCount > 1 ? Math.sin(angle) * radius : 0,
-      factionColor: domain.factionColor || getFactionColor(domain.faction),
-      radius: 350
-    };
+  // 星域：只有 `userMoved`（或正在拖动）才采信 `coordinate`——遗留 coordinate 会让老项目全部错位（§bug3）
+  domainNodes = layoutDomains(props.domains, {
+    draggingId: draggingDomainId,
+    overrides: factionColorOverrides.value,
   });
-  
-  galaxyNodes.value = [];
-  const domainMap = new Map(domainNodes.map(d => [d.id, d]));
 
-  // 按 parentId 一次分组（O(n)，替代每星系 filter 的 O(n²)，批次A3 挂载期卡顿缓解）
-  const galaxiesByParent = new Map();
-  for (const g of props.galaxies) {
-    if (!galaxiesByParent.has(g.parentId)) galaxiesByParent.set(g.parentId, []);
-    galaxiesByParent.get(g.parentId).push(g);
-  }
-
-  for (const [pid, domainGalaxies] of galaxiesByParent) {
-    const parentDomain = domainMap.get(pid);
-    if (!parentDomain) continue;
-    const total = domainGalaxies.length;
-    domainGalaxies.forEach((galaxy, idx) => {
-      const angle = (idx / Math.max(total, 1)) * Math.PI * 2 + 0.3;
-      const dist = 100 + (idx % 4) * 60;
-      // 用户手动放置过的坐标优先保留，避免布局重算重置拖拽
-      const savedCoord = galaxy.userMoved && galaxy.coordinate?.x !== null && galaxy.coordinate?.x !== undefined;
-      let gx, gy;
-      if (savedCoord) {
-        // 校验：坐标必须落在该星域边界圆内，否则视为旧布局残留坐标（未随 domain 迁移），回落算法位置
-        const distToDomain = Math.hypot(galaxy.coordinate.x - parentDomain.x, galaxy.coordinate.y - parentDomain.y);
-        if (distToDomain <= parentDomain.radius) {
-          gx = galaxy.coordinate.x;
-          gy = galaxy.coordinate.y;
-        } else {
-          gx = parentDomain.x + Math.cos(angle) * dist;
-          gy = parentDomain.y + Math.sin(angle) * dist;
-        }
-      } else {
-        gx = parentDomain.x + Math.cos(angle) * dist;
-        gy = parentDomain.y + Math.sin(angle) * dist;
-      }
-      galaxyNodes.value.push({
-        ...galaxy,
-        x: gx,
-        y: gy,
-        domainId: galaxy.parentId,
-        factionColor: parentDomain.factionColor
-      });
-    });
-  }
+  // 星系：按 parentId 一次分组摆进各自星域（O(n)；原先每星系 filter 是 O(n²)）
+  galaxyNodes.value = layoutGalaxies(props.galaxies, domainNodes, {});
 }
 
-// ===== 计算势力边界（凸包）=====
+// ===== 计算势力边界（凸包 / 覆盖点 / 正多边形）=====
+// 同样走共享实现：**星系数 < 3 的星域也必须画**（导出原先在这里 `continue` → 星域凭空消失）
 function computeFactionBorders() {
-  const borders = [];
-  const domainGalaxyMap = new Map();
-  
-  for (const galaxy of galaxyNodes.value) {
-    if (!domainGalaxyMap.has(galaxy.domainId)) {
-      domainGalaxyMap.set(galaxy.domainId, []);
-    }
-    domainGalaxyMap.get(galaxy.domainId).push(galaxy);
-  }
-  
-  for (const domain of domainNodes) {
-    const galaxies = domainGalaxyMap.get(domain.id);
-    const override = getBorderPoints(domain.id);
-    
-    if (override) {
-      borders.push({
-        domainId: domain.id,
-        name: domain.name,
-        color: domain.factionColor,
-        points: override,
-        center: { x: domain.x, y: domain.y },
-      });
-      continue;
-    }
-    
-    if (!galaxies || galaxies.length < 3) {
-      const center = { x: domain.x, y: domain.y };
-      const radius = domain.radius || 200;
-      const circlePoints = [];
-      const segments = 12;
-      for (let i = 0; i < segments; i++) {
-        const angle = (i / segments) * Math.PI * 2;
-        circlePoints.push({
-          x: center.x + Math.cos(angle) * radius,
-          y: center.y + Math.sin(angle) * radius,
-        });
-      }
-      borders.push({
-        domainId: domain.id,
-        name: domain.name,
-        color: domain.factionColor,
-        points: circlePoints,
-        center,
-      });
-      continue;
-    }
-    
-    const points = galaxies.map(g => ({ x: g.x, y: g.y }));
-    const hull = convexHull(points);
-    
-    const center = { x: 0, y: 0 };
-    for (const p of hull) { center.x += p.x; center.y += p.y; }
-    center.x /= hull.length;
-    center.y /= hull.length;
-    
-    const expandedHull = hull.map(p => {
-      const dx = p.x - center.x;
-      const dy = p.y - center.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      return {
-        x: p.x + (dx / dist) * 50,
-        y: p.y + (dy / dist) * 50,
-      };
-    });
-    
-    borders.push({
-      domainId: domain.id,
-      name: domain.name,
-      color: domain.factionColor,
-      points: expandedHull,
-      center,
-    });
-  }
-  
-  return borders;
+  return factionBorders({
+    domainNodes,
+    galaxyNodes: galaxyNodes.value,
+    overrides: store.domainBorderOverrides,
+  });
 }
+
+// ===== 布局计算（旧实现已删：数学搬进 utils/galaxyLayout.js，见上）=====
+void 0;
 
 // ===== 命中测试 =====
 function hitTest(wx, wy) {
@@ -533,9 +478,34 @@ function hitTest(wx, wy) {
         }
       }
     }
+    // 🔴 星域本身必须**可命中**（§bug5）：`domain-label` 那条分支被 `!editMode` 门控，
+    //    而编辑模式下又只判边界顶点 → 星域在编辑模式里"看得见、点不到"，
+    //    连带 `type === 'domain'` 的四处消费（锁定判断 / 选中 / 右键目标 / 删除菜单项）**全是死代码**。
+    //    这里按"点落在势力边界多边形内"补一条 → 四处一起复活。
+    for (const border of borders) {
+      if (border.points.length >= 3 && pointInPolygon(wx, wy, border.points)) {
+        const d = domainNodes.find(dd => dd.id === border.domainId);
+        if (d) return { type: 'domain', node: d, border };
+      }
+    }
   }
   
   return null;
+}
+
+/**
+ * 点是否在多边形内（射线法；边界上的点按内处理）。
+ * ⚠️ 只读几何判定、只用于命中：星域边界是凸包或用户覆盖点（几十个点），
+ *    与 `utils/coastline.js#pointInRing` 同法；这里不参与任何数据写入。
+ */
+function pointInPolygon(x, y, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = points[i].x, yi = points[i].y;
+    const xj = points[j].x, yj = points[j].y;
+    if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
 }
 
 // ===== 当前视图可见航道 =====
@@ -646,14 +616,9 @@ function drawStarfield(ctx, w, h) {
   ctx.fillRect(-5000, -5000, 10000, 10000);
   
   // 2. 星云层 — 更多层、更低 opacity、有机分布
-  const nebulae = [
-    { x: 300, y: -200, r: 600, color: 'rgba(60, 90, 180, 0.06)' },
-    { x: -400, y: 300, r: 500, color: 'rgba(120, 60, 150, 0.05)' },
-    { x: 100, y: 400, r: 400, color: 'rgba(60, 150, 120, 0.04)' },
-    { x: -200, y: -350, r: 450, color: 'rgba(150, 100, 60, 0.04)' },
-    { x: 600, y: 100, r: 550, color: 'rgba(80, 120, 200, 0.05)' },
-    { x: -600, y: -100, r: 480, color: 'rgba(100, 80, 160, 0.04)' },
-  ];
+  // ⚠️ 星云谱取自 `utils/galaxyLayout.js` 的 `STARFIELD`（**世界坐标固定**）：导出 PNG(全图) 也取它，
+  //    原先导出按图幅重掷星云 → "导出的背景和屏幕上的背景是两片不同的星云"（§bug 导出与画布不同源）。
+  const nebulae = STARFIELD.nebulae;
   
   for (const neb of nebulae) {
     const nebGradient = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
@@ -741,7 +706,11 @@ function drawFactionBorders(ctx, lod) {
       ctx.lineTo(border.points[i].x, border.points[i].y);
     }
     ctx.closePath();
-    ctx.fillStyle = border.color + '12';
+    // 🔴 透明度一律走 `withAlpha`（**唯一实现**）：以前这里写的是 `border.color + '12'`，
+    //    只对 6 位 hex 成立；而 `getFactionColor()` 对**不在硬编码表里的势力名**返回 `hsl(...)`
+    //    → 拼出 `hsl(210, 70%, 60%)12` = **非法 CSS**，赋给 fillStyle/addColorStop 会被**静默忽略**
+    //    （沿用上一个颜色 = 星域颜色串了，且不报错）。真实库的势力名必然不在表里 → 必然走到。
+    ctx.fillStyle = withAlpha(border.color, '12');
     ctx.fill();
     ctx.restore();
     
@@ -749,9 +718,9 @@ function drawFactionBorders(ctx, lod) {
       border.center.x, border.center.y, 0,
       border.center.x, border.center.y, 400
     );
-    gradient.addColorStop(0, border.color + '35');
-    gradient.addColorStop(0.5, border.color + '22');
-    gradient.addColorStop(1, border.color + '10');
+    gradient.addColorStop(0, withAlpha(border.color, '35'));
+    gradient.addColorStop(0.5, withAlpha(border.color, '22'));
+    gradient.addColorStop(1, withAlpha(border.color, '10'));
     
     ctx.beginPath();
     ctx.moveTo(border.points[0].x, border.points[0].y);
@@ -762,7 +731,7 @@ function drawFactionBorders(ctx, lod) {
     ctx.fillStyle = gradient;
     ctx.fill();
     
-    ctx.strokeStyle = border.color + '60';
+    ctx.strokeStyle = withAlpha(border.color, '60');
     ctx.lineWidth = isEditing ? 8 : 5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -774,7 +743,7 @@ function drawFactionBorders(ctx, lod) {
     ctx.closePath();
     ctx.stroke();
     
-    ctx.strokeStyle = border.color + (isEditing ? 'FF' : 'CC');
+    ctx.strokeStyle = withAlpha(border.color, isEditing ? 'FF' : 'CC');
     ctx.lineWidth = isEditing ? 3.5 : 2.5;
     ctx.beginPath();
     ctx.moveTo(border.points[0].x, border.points[0].y);
@@ -799,7 +768,7 @@ function drawFactionBorders(ctx, lod) {
       const metrics = ctx.measureText(text);
       const padding = 10;
 
-      ctx.fillStyle = border.color + 'EE';
+      ctx.fillStyle = withAlpha(border.color, 'EE');
       ctx.beginPath();
       ctx.roundRect(
         cx - metrics.width / 2 - padding,
@@ -864,21 +833,19 @@ function drawHyperlanes(ctx) {
     const isUserCreated = !h.id.startsWith('auto_');
     
     // 单层静态样式：类型区分靠颜色 + 虚线样式，hover 提亮加粗
-    let color, lineWidth, dash = null;
-    
+    // ⚠️ 颜色取自 `utils/galaxyLayout.js` 的 `hyperlaneColor`（**唯一实现**）——
+    //    导出 PNG(全图) 也调它，否则"画布 4 类 / 导出 3 类"（§bug 导出与画布不同源）
+    const color = hyperlaneColor(h, { isDark: true, hovered: isHovered });
+    let lineWidth, dash = null;
     if (h.type === 'cross_domain') {
-      color = isHovered ? 'rgba(220, 170, 255, 1.0)' : 'rgba(190, 130, 255, 0.85)';
       lineWidth = isHovered ? 3 : 2;
       dash = [6, 6];
     } else if (h.type === 'hyperjump') {
-      color = isHovered ? 'rgba(255, 150, 150, 1.0)' : 'rgba(255, 120, 120, 0.85)';
       lineWidth = isHovered ? 3 : 2;
       dash = [10, 6];
     } else if (isUserCreated) {
-      color = isHovered ? 'rgba(120, 255, 210, 1.0)' : 'rgba(100, 240, 180, 0.85)';
       lineWidth = isHovered ? 2.5 : 2;
     } else {
-      color = isHovered ? 'rgba(150, 220, 255, 1.0)' : 'rgba(120, 200, 255, 0.75)';
       lineWidth = isHovered ? 2 : 1.8;
       dash = [5, 7];
     }
@@ -1241,6 +1208,17 @@ const renderer = useCanvasRenderer(canvas, {
       }
     }
     
+    // 浏览态光标反馈（与 SystemView 同语义）：移动工具下可拖的恒星显示 move，拖手模式显示 grab
+    if (!editMode.value && canvas.value) {
+      if (interactionMode.value === 'move' && hit?.type === 'galaxy') {
+        canvas.value.style.cursor = 'move';
+      } else if (interactionMode.value === 'move') {
+        canvas.value.style.cursor = 'default';
+      } else {
+        canvas.value.style.cursor = 'grab';
+      }
+    }
+
     if (hit?.type === 'boundary-vertex') {
       hoveredBoundaryVertex.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
       canvas.value.style.cursor = 'pointer';
@@ -1293,15 +1271,17 @@ const renderer = useCanvasRenderer(canvas, {
     }
     
     // 锁定节点不可拖拽（仍可选中）
-    if ((hit.type === 'galaxy' || hit.type === 'domain') && hit.node.locked) {
+    if ((hit.type === 'galaxy' || hit.type === 'domain' || hit.type === 'domain-label') && hit.node.locked) {
       return true;
     }
     
     if (editMode.value && hit.type === 'boundary-vertex') {
-      editingBoundary.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
+      // 先落"起始覆盖点"（走 store 唯一写口：只读态会被拒 → 这次编辑**根本不开始**，
+      // 而不是先把 override 写进内存、拖完才在保存时被拒）
       if (!store.domainBorderOverrides[hit.border.domainId]) {
-        setBorderPoints(hit.border.domainId, [...hit.border.points]);
+        if (!setBorderPoints(hit.border.domainId, [...hit.border.points], true)) return true;  // 被拒 = 归画布平移
       }
+      editingBoundary.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
       return false;
     }
     
@@ -1313,7 +1293,7 @@ const renderer = useCanvasRenderer(canvas, {
       }
       return true;
     } else {
-      // 普通模式：仅选中，不拖拽（防止误触改坐标）
+      // 浏览态：先按旧语义选中（防误触），是否**移动**由工具决定。
       if (hit.type === 'galaxy' || hit.type === 'domain') {
         if (!selectedNodeIds.value.has(hit.node.id)) {
           selectedNodeIds.value.clear();
@@ -1321,7 +1301,30 @@ const renderer = useCanvasRenderer(canvas, {
         }
         emit('select-node', hit.node);
       }
-      return true; // 允许平移
+      if (interactionMode.value === 'pan') return true;   // 拖手模式：本次拖动仍归画布平移
+      // 「移动」工具（§bug1 的接通）：拖恒星 / 星域 = 改坐标。
+      // ✅ 星域**现在也能拖**了（§bug3 落地）：拖动写 `coordinate` 并在松手时置 `userMoved`，
+      //    布局从此认它；星域的**恒星**由 `applyStableLayout` 按父星域位置重算（未手动摆过的会跟着走）。
+      // ⚠️ 浏览态下"星域的手柄"是它中心的**名称标签**（`domain-label`），编辑态才是 `domain`（多边形命中）——
+      //    两个都要接，否则鼠标落在域中心时拖动会走成平移。
+      const isDomainHandle = hit.type === 'domain' || hit.type === 'domain-label';
+      if (hit.type !== 'galaxy' && !isDomainHandle) return true;
+      if (!hit.node.coordinate || !Number.isFinite(hit.node.coordinate.x)) {
+        setStatus('这个节点还没有坐标，先「编辑地图」里点一次「完成编辑」让它落到布局上', 'info');
+        return true;
+      }
+      // 多选状态下的拖动 = 整批移动（一次 undo）—— 这也是 `isDraggingMultiple` 这条死分支的接活点
+      const ids = (selectedNodeIds.value.has(hit.node.id) && selectedNodeIds.value.size > 1)
+        ? [...selectedNodeIds.value] : [hit.node.id];
+      if (ids.length > 1) {
+        store.beginMultiNodePositionCapture(ids);
+        isDraggingMultiple = true;
+      } else {
+        store.beginNodePositionCapture(hit.node.id);
+      }
+      if (isDomainHandle) draggingDomainId = hit.node.id;
+      dragMultipleStart = { x: wx, y: wy };
+      return { mode: 'node', nodeId: hit.node.id };
     }
   },
   onDragMove: (wx, wy, dragInfo) => {
@@ -1388,6 +1391,15 @@ const renderer = useCanvasRenderer(canvas, {
         galaxy.x = wx;
         galaxy.y = wy;
         store.updateNodePosition(dragInfo.nodeId, wx, wy);
+        return;
+      }
+      // 星域拖动：写 store 坐标 → **重排**（它的恒星按父星域位置重算，于是整簇跟着走）
+      if (draggingDomainId === dragInfo.nodeId) {
+        store.updateNodePosition(dragInfo.nodeId, wx, wy);
+        applyStableLayout();
+        const dn = domainNodes.find(d => d.id === dragInfo.nodeId);
+        if (dn) { dn.x = wx; dn.y = wy; }   // 双保险：props 回流前也画在对的位置
+        renderer.requestRender();
       }
       return;
     }
@@ -1399,6 +1411,8 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onDragEnd: (wx, wy, dragInfo) => {
+    // 拖动期预览开关先清掉：此后布局一律以 `userMoved`（由 endNodePositionCapture 写入）为准
+    draggingDomainId = null;
     // 星域边界顶点拖拽结束：提交 override 并标记脏
     if (editingBoundary.value) {
       const domainId = editingBoundary.value.domainId;
@@ -1513,17 +1527,21 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onContextMenu: (wx, wy) => {
+    // 🔴 浏览态不许弹菜单（§bug6）：菜单里的「在此创建恒星 / 删除该节点 / 删除航道 / 删除控制点」
+    //    全是**写操作**。此前没有这道门 → 浏览态右键就能改数据（与「编辑地图」这个显式入口自相矛盾）。
+    //    写法照抄 `SystemDetailView.vue` 的既有闸门（那一层早就修好了，这里是漏网的之一）。
+    if (!editMode.value) return;
     const hit = hitTest(wx, wy);
     let target = null;
     if (hit?.type === 'galaxy' || hit?.type === 'domain') {
       target = { type: hit.type, node: hit.node };
     } else if (hit?.type === 'boundary-vertex') {
-      // 边界顶点右键 → 保留原编辑语义（进入顶点编辑）
+      // 边界顶点右键 → 保留原编辑语义（进入顶点编辑）；起始覆盖点同样走 store 写口（只读态被拒则不进入）
       if (editMode.value) {
-        editingBoundary.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
         if (!store.domainBorderOverrides[hit.border.domainId]) {
-          setBorderPoints(hit.border.domainId, [...hit.border.points]);
+          if (!setBorderPoints(hit.border.domainId, [...hit.border.points], true)) return;
         }
+        editingBoundary.value = { domainId: hit.border.domainId, vertexIndex: hit.vertexIndex };
       }
       return;
     } else {
@@ -1958,6 +1976,25 @@ defineExpose({ canvas, renderer });
   border-radius: 50%;
   background: var(--faction-color);
   box-shadow: 0 0 10px var(--faction-color), 0 0 20px var(--faction-color);
+}
+
+/* 势力名输入（`faction` 的唯一写入入口）—— 窄、透明底，不抢图例的视觉 */
+.legend-faction-input {
+  width: 68px;
+  padding: 1px 4px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--map-btn-text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+}
+.legend-faction-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+.legend-faction-input:focus {
+  outline: none;
+  border-color: var(--faction-color);
 }
 
 .filter-panel-galaxy {

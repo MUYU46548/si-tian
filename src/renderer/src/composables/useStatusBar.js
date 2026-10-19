@@ -13,6 +13,11 @@ const state = reactive({
   snap: '', // 吸附状态描述，空串隐藏
   // 保存状态（B5，2026-09-24）：{ kind: 'ok'|'warn'|'err'|'busy', text, title } | null
   saveState: null,
+  // 「有改动还没进磁盘」（= projectStore 的 dirty）与最后一次成功落盘的时间（2026-10-17）。
+  // 🔴 只有 saveState 是不够的：它只表达"某次保存尝试的结果"，表达不了
+  //    「上次保存成功之后用户又改了 20 分钟」—— 那正是「保存诚实」的缺口。
+  savePending: false,
+  savedAt: '',
 });
 
 /**
@@ -25,6 +30,19 @@ const state = reactive({
  */
 export function setSaveState(next) {
   state.saveState = next || null;
+}
+
+/**
+ * 「有改动还没进磁盘」标记（2026-10-17）—— 由 `store/projectStore` 跟随 `dirty` 写入。
+ * 语义：true = 内存里比磁盘新（自动保存窗口内也算 true，那是事实）。
+ */
+export function setSavePending(pending) {
+  state.savePending = !!pending;
+}
+
+/** 最后一次**成功落盘**的时间（ISO 串；供保存 chip 的 title 用） */
+export function setSavedAt(iso) {
+  state.savedAt = String(iso || '');
 }
 
 let throttleTimer = null;

@@ -295,6 +295,7 @@ import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import EagleEye from './EagleEye.vue';
 import { computeViewBounds } from '../utils/viewport';
+import { withAlpha } from '../utils/colorUtil';
 import { getPreset, drawStyledLabel } from '../utils/labelStyles';
 
 const props = defineProps({
@@ -754,7 +755,8 @@ function drawFurniture(ctx) {
 
     if (isArea) {
       // 区域类型：半透明填充 + 虚线边框 + 图标
-      ctx.fillStyle = color + '33';
+      // 半透明填充走 `withAlpha`（同 GalaxyMap 的边界层：字符串拼 alpha 对 hsl 是非法 CSS，会被静默忽略）
+      ctx.fillStyle = withAlpha(color, '33');
       ctx.fillRect(-item.width / 2, -item.height / 2, item.width, item.height);
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;

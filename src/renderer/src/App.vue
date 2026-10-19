@@ -233,9 +233,29 @@
           @open-project="handleOpenProject"
         />
 
-        <scenario-map
-          v-if="scenarioMode"
+        <scenario-picker
+          v-if="scenarioMode && scenarioPickerVisible"
+          @edit="handlePickerEdit"
           @exit="exitScenarioMode"
+        />
+
+        <!-- 🔴 剧本编辑器**必须**跟着层级一起卸下（2026-10-18 第十四修）。
+             旧条件只有 `scenarioMode && !scenarioPickerVisible`：用户在剧本编辑器里
+             双击左侧导航树的行星（`jumpToNode` → `store.selectPlanet`）时，`viewLevel`
+             变成 planet、`scenarioMode` 仍是 true → **ScenarioMap 不卸、PlanetMap 同时挂载**，
+             两者都是 `height: 100%`、都在 `.main-content` 里，逐个像素完全重叠，而
+             ScenarioMap 在模板里排在前面 → **行星地图整块被盖住、点不到**。
+             DOM 实测：scenarioBox=(200,127,1080,647)、planetBox=(200,774…) 同尺寸，
+             `elementFromPoint(画布中心)` 命中的是 ScenarioMap 的 canvas。
+             用户的原话就是「历史剧本整体是一个大号图层盖在顶上，想测行星地图点导航栏
+             双击几遍都出不来，点返回果然是被整个盖住了」。
+             ⚠️ 门必须挂在**剧本域第一层**（world）上，不能写成「scenarioMode 就显示」。 -->
+        <scenario-map
+          v-if="scenarioEditorVisible"
+          :initial-scenario-id="scenarioInitialId"
+          :open-manager="scenarioOpenManager"
+          @exit="exitScenarioMode"
+          @picker="backToScenarioPicker"
         />
         
         <galaxy-map
@@ -297,6 +317,16 @@
       </main>
     </div>
 
+    <!-- 剧本域「走开了」浮标（2026-10-18 第十四修）：用户在剧本编辑器里双击导航树去了
+         行星/区域/内部层 → 编辑器按层级卸下（否则会盖住行星地图）。此时必须给一条**显眼的回程**，
+         否则「去了行星地图就回不到剧本」= 另一种形式的"点了没反应"。
+         位置在状态栏正上方居中：不遮画布中心、不与左下工具条抢位。 -->
+    <div v-if="scenarioSteppedOut" class="scenario-return-chip" data-testid="scenario-return-chip">
+      <span class="src-text">已离开历史剧本编辑器（当前：{{ currentLevelLabel }}）</span>
+      <button class="src-btn" data-testid="scenario-return-btn" @click="returnToScenarioEditor">返回剧本编辑器</button>
+      <button class="src-btn ghost" data-testid="scenario-return-exit" @click="exitScenarioMode">退出剧本</button>
+    </div>
+
     <status-bar />
 
     <node-detail-panel />
@@ -354,6 +384,12 @@
 
 <script setup>
 import { iconSvg } from './utils/iconSvg';
+// 星系/星域视图的布局 + 凸包 + 配色 + 航道色：**与画布共用唯一实现**
+// （§bug 导出与画布不同源，2026-10-18 第十二修：原先 App.vue 自带第二套 convexHull / 配色 / 星云）
+import {
+  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, nodeColor, nodeRadius, STARFIELD,
+} from './utils/galaxyLayout';
+import { withAlpha } from './utils/colorUtil';
 // 打开知识库本体（用户需求：一键可达的「打开 Obsidian 知识库」入口）
 import { openVault } from './utils/vault';
 // 导入知识库内容：App 只跟注册表打交道（不 import projectStore）
@@ -382,6 +418,7 @@ const PlanetMap = defineAsyncComponent(() => import('./components/PlanetMap.vue'
 const AreaMap = defineAsyncComponent(() => import('./components/AreaMap.vue'));
 const InteriorView = defineAsyncComponent(() => import('./components/InteriorView.vue'));
 const ScenarioMap = defineAsyncComponent(() => import('./components/ScenarioMap.vue'));
+const ScenarioPicker = defineAsyncComponent(() => import('./components/ScenarioPicker.vue'));
 
 // 低频面板动态导入：减少初始 bundle
 const AboutPanel = defineAsyncComponent(() => import('./components/AboutPanel.vue'));
@@ -423,6 +460,43 @@ const { currentTheme, toggleTheme, initTheme } = useTheme();
 const { bookmarks, currentIndex, addBookmark, removeBookmark, clearAll } = useBookmarks();
 const dirty = ref(false);
 const scenarioMode = ref(false);
+// 剧本域内的两态（2026-10-17 P0 卡片墙）：卡片墙（选剧本）vs 编辑器。
+// scenarioMode 仍表示「在剧本域内」—— getActiveRenderer / 书签 / 世界选择页隐藏逻辑一行不改。
+const scenarioPickerVisible = ref(false);
+const scenarioInitialId = ref('');
+const scenarioOpenManager = ref(false);
+
+// ===== 剧本域与七层视图的**互斥**（2026-10-18 第十四修）=====
+//
+// 反馈原话：「历史剧本依旧整体是一个大号图层盖在顶上，想测行星地图点导航栏双击几遍都出不来，
+// 点返回果然是被整个盖住了。历史剧本我说过是一个**独立的模块**，不是盖在其他模块上面的遮罩。」
+//
+// 事实（DOM 实测，非读码推测）：旧条件 `scenarioMode && !scenarioPickerVisible` 只管
+// "在不在剧本域"，不管"当前看的是哪一层"。用户在剧本编辑器里双击导航树的行星 →
+// `jumpToNode` → `store.selectPlanet` 把 `viewLevel` 改成 planet、`scenarioMode` 仍为 true：
+// ① ScenarioMap **不卸**、② PlanetMap **同时挂载**，两者都 `height:100%` 且同在 `.main-content`，
+// 逐个像素完全重叠（200,127,1080,647 vs 200,774,1080,647 —— 后者是同一元素的第二次量取），
+// 而模板里 ScenarioMap 排在前面 ⇒ 行星地图**看得见 0 像素、点不到一下**。
+//
+// 所以剧本域的第一层（world）才是编辑器该出现的**唯一**层级：
+const scenarioEditorVisible = computed(
+  () => scenarioMode.value && !scenarioPickerVisible.value && store.viewLevel === 'world'
+);
+// 「走开了」= 还在剧本域，但编辑器被上面这道门卸下了 → 必须给回程浮标（见模板）。
+const scenarioSteppedOut = computed(
+  () => scenarioMode.value && !scenarioPickerVisible.value && store.viewLevel !== 'world'
+);
+const LEVEL_LABELS = {
+  domain: '星域总览', system: '星系总览', system_detail: '恒星系详情',
+  planet: '行星地图', area: '区域地图', interior: '建筑内部',
+};
+const currentLevelLabel = computed(() => LEVEL_LABELS[store.viewLevel] || store.viewLevel);
+/** 浮标「返回剧本编辑器」：回剧本域第一层（编辑器）。 */
+function returnToScenarioEditor() {
+  store.backToWorld();          // viewLevel='world' → scenarioEditorVisible 变真，编辑器挂回来
+  scenarioInitialId.value = ''; // 一次性载荷清干净（与 backToScenarioPicker 同一口径）
+  scenarioOpenManager.value = false;
+}
 const statusText = ref('');
 // 状态类型：ok | err —— 驱动状态栏图标（替代原先在文案里内嵌的对错符号）
 const statusKind = ref('');
@@ -784,9 +858,26 @@ async function handleExportFullPNG() {
   const hyperlanes = store.hyperlanes;
   if (nodes.length === 0) return;
   
-  const xs = nodes.map(n => n.coordinate?.x || 0).filter(x => x !== null);
-  const ys = nodes.map(n => n.coordinate?.y || 0).filter(y => y !== null);
-  
+  // 🔴 **星域与星系的位置/颜色必须与画布同源**（§bug 导出与画布不同源，2026-10-18 第十二修）：
+  //    这里不再读 `node.coordinate`，而是调 `utils/galaxyLayout.js` 的**同一份**布局函数
+  //    （`layoutDomains` / `layoutGalaxies` / `factionBorders` / `resolveDomainColor`）。
+  //    旧实现的三处后果：① 自动布局的星系在导出里跑到它那个"没人摆过的旧 coordinate"上；
+  //    ② 没有 coordinate 的节点被整块跳过（导出图缺节点）；③ 势力配色与画布不是同一种算法。
+  //    ⚠️ 更深的层（planet / city / town / location）**不在星系视图的布局里**，
+  //       仍按它们自己的 `coordinate` 画（这一条写进交接文档，不装作"全都同源了"）。
+  const domainNodes = layoutDomains(store.currentWorldDomains, {});
+  const galaxyNodes = layoutGalaxies(store.galaxies, domainNodes, {});
+  const galaxyById = new Map(galaxyNodes.map(g => [g.id, g]));
+  const domainById = new Map(domainNodes.map(d => [d.id, d]));
+
+  // 图幅：**必须把布局算出来的位置一起纳入**（否则环形上的星域会跑到画布外被裁掉）
+  const placed = [
+    ...nodes.filter(n => n.layer !== 'galaxy' && n.layer !== 'star_domain'),
+    ...domainNodes,
+    ...galaxyNodes,
+  ];
+  const xs = placed.map(n => n.coordinate?.x ?? n.x).filter(x => Number.isFinite(x));
+  const ys = placed.map(n => n.coordinate?.y ?? n.y).filter(y => Number.isFinite(y));
   if (xs.length === 0 || ys.length === 0) return;
   
   const minX = Math.min(...xs) - 150;
@@ -823,16 +914,13 @@ async function handleExportFullPNG() {
   }
   ctx.fillRect(minX, minY, width, height);
   
-  // 2. 星云 + 星尘（仅暗色主题，保证导出图有太空氛围）
+  // 2. 星云 + 星尘（仅暗色主题）：**取共享星云谱**（世界坐标固定，与画布同一条谱）
   if (isDark) {
-    const nebulae = [
-      { x: minX + width * 0.3, y: minY + height * 0.4, r: width * 0.25, color: 'rgba(70, 100, 190, 0.07)' },
-      { x: minX + width * 0.7, y: minY + height * 0.6, r: width * 0.2, color: 'rgba(140, 70, 170, 0.06)' },
-    ];
-    for (const neb of nebulae) {
+    for (const neb of STARFIELD.nebulae) {
+      if (neb.x + neb.r < minX || neb.x - neb.r > maxX || neb.y + neb.r < minY || neb.y - neb.r > maxY) continue;
       const g = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
       g.addColorStop(0, neb.color);
-      g.addColorStop(0.6, neb.color.replace('0.', '0.0'));
+      g.addColorStop(0.6, neb.color.replace(/[\d.]+\)$/, '0.0)'));
       g.addColorStop(1, 'transparent');
       ctx.fillStyle = g;
       ctx.fillRect(neb.x - neb.r, neb.y - neb.r, neb.r * 2, neb.r * 2);
@@ -847,42 +935,25 @@ async function handleExportFullPNG() {
     }
   }
   
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  
-  // 3. 势力边界（星域分组 → 星系凸包 → 半透明染色 + 边界线 + 星域名标签）
-  const domainGalaxyMap = new Map();
-  nodes.filter(n => n.layer === 'galaxy').forEach(g => {
-    if (g.coordinate?.x === null || g.coordinate?.x === undefined) return;
-    if (!domainGalaxyMap.has(g.parentId)) domainGalaxyMap.set(g.parentId, []);
-    domainGalaxyMap.get(g.parentId).push(g);
-  });
-  for (const [domainId, galaxies] of domainGalaxyMap) {
-    const domain = nodeMap.get(domainId);
-    if (!domain || galaxies.length < 3) continue;
-    const pts = galaxies.map(g => ({ x: g.coordinate.x, y: g.coordinate.y })).filter(p => p.x !== null && p.y !== null);
-    if (pts.length < 3) continue;
-    const hull = convexHullForExport(pts);
-    if (hull.length < 3) continue;
-    const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
-    const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
-    const expanded = hull.map(p => {
-      const dx = p.x - cx, dy = p.y - cy;
-      const dist = Math.hypot(dx, dy) || 1;
-      return { x: p.x + (dx / dist) * 25, y: p.y + (dy / dist) * 25 };
-    });
-    const color = getDomainColorForExport(domain.displayName || domain.name);
+  // 3. 势力边界：**共享 `factionBorders`**（覆盖点 / 星系数<3 的正多边形 / 凸包外扩 50 —— 与画布同值）
+  for (const border of factionBorders({
+    domainNodes, galaxyNodes, overrides: store.domainBorderOverrides,
+  })) {
+    if (!border.points || border.points.length < 3) continue;
+    const color = border.color;
+    const cx = border.center.x, cy = border.center.y;
     ctx.beginPath();
-    ctx.moveTo(expanded[0].x, expanded[0].y);
-    for (let i = 1; i < expanded.length; i++) ctx.lineTo(expanded[i].x, expanded[i].y);
+    ctx.moveTo(border.points[0].x, border.points[0].y);
+    for (let i = 1; i < border.points.length; i++) ctx.lineTo(border.points[i].x, border.points[i].y);
     ctx.closePath();
-    ctx.fillStyle = color.replace('hsl(', 'hsla(').replace(')', isDark ? ', 0.15)' : ', 0.10)');
+    ctx.fillStyle = withAlpha(color, isDark ? 0.15 : 0.10);
     ctx.fill();
     ctx.strokeStyle = color;
     ctx.lineWidth = 2.5;
     ctx.lineJoin = 'round';
     ctx.stroke();
     // 星域名标签（带衬底，保证可读）
-    const label = domain.displayName || domain.name;
+    const label = border.name;
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -895,16 +966,15 @@ async function handleExportFullPNG() {
     ctx.fillText(label, cx, cy + 1);
   }
   
-  // 4. 航道（分类型颜色 + 辉光，跨域虚线）
+  // 4. 航道（分类型颜色 + 辉光，跨域虚线）：颜色走共享 `hyperlaneColor`（**4 类**，含用户建的）
   hyperlanes.forEach(h => {
-    const from = nodeMap.get(h.fromId);
-    const to = nodeMap.get(h.toId);
-    if (!from || !to || from.coordinate?.x === null || to.coordinate?.x === null) return;
-    const color = h.type === 'cross_domain'
-      ? (isDark ? 'rgba(190, 130, 255, 0.75)' : 'rgba(110, 70, 200, 0.55)')
-      : h.type === 'hyperjump'
-        ? (isDark ? 'rgba(255, 120, 120, 0.7)' : 'rgba(200, 70, 70, 0.5)')
-        : (isDark ? 'rgba(120, 210, 255, 0.6)' : 'rgba(60, 140, 200, 0.5)');
+    // 两端**优先取布局位置**（星系在画布上画的就是它），没有才回落自己的 coordinate
+    const from = galaxyById.get(h.fromId) || domainById.get(h.fromId) || nodes.find(n => n.id === h.fromId);
+    const to = galaxyById.get(h.toId) || domainById.get(h.toId) || nodes.find(n => n.id === h.toId);
+    if (!from || !to) return;
+    const fp = posOf(from), tp = posOf(to);
+    if (!fp || !tp) return;
+    const color = hyperlaneColor(h, { isDark });
     ctx.save();
     ctx.shadowColor = color;
     ctx.shadowBlur = 8;
@@ -912,29 +982,36 @@ async function handleExportFullPNG() {
     ctx.lineWidth = h.type === 'cross_domain' ? 2.5 : 2;
     if (h.type === 'cross_domain') ctx.setLineDash([8, 5]);
     ctx.beginPath();
-    ctx.moveTo(from.coordinate.x, from.coordinate.y);
-    ctx.lineTo(to.coordinate.x, to.coordinate.y);
+    ctx.moveTo(fp.x, fp.y);
+    ctx.lineTo(tp.x, tp.y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
   });
   
   // 5. 节点 + 光晕 + 亮核 + 带衬底名称标签（导出可读性核心）
-  nodes.forEach(n => {
-    if (n.coordinate?.x === null || n.coordinate?.x === undefined) return;
-    const color = getNodeColor(n.layer);
-    const r = n.layer === 'world' ? 10 : n.layer === 'star_domain' ? 9 : n.layer === 'galaxy' ? 7 : 5;
+  //    ⚠️ 星系用**布局位置 + 势力色**（与画布一致）；更深的层按自己的 coordinate。
+  const drawList = [
+    ...nodes.filter(n => n.layer !== 'galaxy' && n.layer !== 'star_domain'),
+    ...domainNodes,
+    ...galaxyNodes,
+  ];
+  drawList.forEach(n => {
+    const p = posOf(n);
+    if (!p) return;
+    const color = nodeColor(n, { isDark });
+    const r = nodeRadius(n.layer);
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
     ctx.beginPath();
-    ctx.arc(n.coordinate.x, n.coordinate.y, r, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#ffffff';
     ctx.globalAlpha = 0.7;
     ctx.beginPath();
-    ctx.arc(n.coordinate.x - 1, n.coordinate.y - 1, r * 0.35, 0, Math.PI * 2);
+    ctx.arc(p.x - 1, p.y - 1, r * 0.35, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
     
@@ -946,10 +1023,10 @@ async function handleExportFullPNG() {
     const pad = 4;
     ctx.fillStyle = isDark ? 'rgba(8, 12, 22, 0.65)' : 'rgba(255, 255, 255, 0.75)';
     ctx.beginPath();
-    ctx.roundRect(n.coordinate.x + r + 4, n.coordinate.y - 7, m.width + pad * 2, 14, 3);
+    ctx.roundRect(p.x + r + 4, p.y - 7, m.width + pad * 2, 14, 3);
     ctx.fill();
     ctx.fillStyle = textColor;
-    ctx.fillText(label, n.coordinate.x + r + 4 + pad, n.coordinate.y + 1);
+    ctx.fillText(label, p.x + r + 4 + pad, p.y + 1);
   });
   
   tmpCanvas.toBlob(blob => {
@@ -965,41 +1042,14 @@ async function handleExportFullPNG() {
   panelsStore.close('export');
 }
 
-function getNodeColor(layer) {
-  const colors = {
-    world: '#d2a8ff', star_domain: '#7c7cff', galaxy: '#ffd700',
-    planet: '#5cb85c', city: '#f0ad4e', town: '#d9853b', location: '#888',
-  };
-  return colors[layer] || '#888';
-}
-
-// ===== 全图导出辅助（Stellaris 风格） =====
-
-function convexHullForExport(points) {
-  if (points.length < 3) return points;
-  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
-  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
-  const lower = [];
-  for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
-    lower.push(p);
+/** 取一个绘制对象的坐标：优先布局坐标（`x`/`y`），否则回落节点自己的 `coordinate` */
+function posOf(n) {
+  if (!n) return null;
+  if (Number.isFinite(n.x) && Number.isFinite(n.y)) return { x: n.x, y: n.y };
+  if (n.coordinate && Number.isFinite(n.coordinate.x) && Number.isFinite(n.coordinate.y)) {
+    return { x: n.coordinate.x, y: n.coordinate.y };
   }
-  const upper = [];
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const p = pts[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
-    upper.push(p);
-  }
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
-}
-
-function getDomainColorForExport(name) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 62%, 58%)`;
+  return null;
 }
 
 // ===== 导入/导出地图配置 =====
@@ -1403,11 +1453,44 @@ async function enterScenarioMode() {
   if (result?.success && result.data) {
     store.importFromScenariosJson(result.data, { fillMissingOnly: true });
   }
+  // 卡片墙（2026-10-17 P0）：先选剧本再进编辑器。
+  // harness 注入 `__SKIP_SCENARIO_PICKER` 时直达编辑器 —— 30+ 个既有用例的
+  // 「点历史剧本 → ScenarioMap 挂载」路径逐字不变（同免责声明种子的跳过开关手法）。
+  scenarioInitialId.value = '';
+  scenarioOpenManager.value = false;
+  scenarioPickerVisible.value = !window.__SKIP_SCENARIO_PICKER;
   scenarioMode.value = true;
+}
+
+/** 卡片墙选中一张卡 / 点「进入编辑器」/ 空态「新建剧本」 */
+function handlePickerEdit(payload) {
+  scenarioInitialId.value = payload?.scenarioId || '';
+  scenarioOpenManager.value = !!payload?.openManager;
+  scenarioPickerVisible.value = false;
+}
+
+/**
+ * 编辑器 → 卡片墙（P0-1，2026-10-17 第三轮）。
+ *
+ * 为什么不是把「返回」改成回卡片墙：`← 返回` 的语义是**离开剧本域**（去世界选择页），
+ * 与"换一个剧本继续编辑"是两件事 —— 混成一个按钮会出现"想回世界却被留在剧本域"。
+ * 所以由编辑器的「换剧本」按钮显式发 `picker` 事件，这里只切回卡片墙。
+ *
+ * 🔴 必须把 initialScenarioId / openManager **清干净**：它们是"本次进入要落到的剧本"的
+ *    一次性载荷。不清的话，用户从卡片墙回来、再点另一张卡时，ScenarioMap 可能读到上一轮
+ *    的残留（例如上次是「打开管理对话框」→ 这次点卡片也会莫名弹出对话框）。
+ */
+function backToScenarioPicker() {
+  scenarioInitialId.value = '';
+  scenarioOpenManager.value = false;
+  scenarioPickerVisible.value = true;
 }
 
 function exitScenarioMode() {
   scenarioMode.value = false;
+  scenarioPickerVisible.value = false;
+  scenarioInitialId.value = '';
+  scenarioOpenManager.value = false;
 }
 
 function handleDeleteWorld(world) {
@@ -1989,6 +2072,34 @@ async function clearCoordinateCache() {
   background: var(--app-bg);
   color: var(--text-primary);
 }
+
+/* 剧本域「走开了」浮标（2026-10-18 第十四修）：固定**左下角**（状态栏正上方）。
+   ⚠️ 两条都是踩过的坑：
+   ① 必须 fixed 而不是在流内 —— 它是"提醒 + 回程"，**不许**改变任何视图的高度
+      （在流内会挤掉画布高度 → 相机 fit 白算、行星地图又被压一截）；
+   ② 不能居中 —— 画布正下方是缩放/平移控件区（PlanetMap 等），浮标会**吃掉那些按钮的点击**
+      （本轮靠实测 elementFromPoint 发现，与"历史剧本盖住行星地图"是同一类缺陷）。 */
+.scenario-return-chip {
+  position: fixed;
+  left: 12px;
+  bottom: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 9px 6px 14px;
+  border-radius: 18px;
+  background: rgba(22, 27, 34, 0.96);
+  border: 1px solid #d4a72c;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  z-index: 1200;
+}
+.scenario-return-chip .src-text { font-size: 12.5px; color: #e6edf3; letter-spacing: .5px; }
+.scenario-return-chip .src-btn {
+  background: #1f6feb; border: 1px solid #1f6feb; color: #fff;
+  font-size: 12px; padding: 5px 14px; border-radius: 14px; cursor: pointer; letter-spacing: 1px;
+}
+.scenario-return-chip .src-btn.ghost { background: transparent; border-color: #484f58; color: #8b949e; }
+.scenario-return-chip .src-btn:hover { filter: brightness(1.18); }
 
 .theme-dark {
   --app-bg: #0d1117;

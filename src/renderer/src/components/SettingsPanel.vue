@@ -132,10 +132,15 @@
           <div class="setting-item">
             <div class="setting-info">
               <span class="setting-name">Vault 监听</span>
-              <span class="setting-desc">监听 Obsidian 文件变更自动刷新</span>
+              <span class="setting-desc">监听 Obsidian 文件变更自动刷新（下次打开本面板时生效；应用启动时会先按默认开启监听一段）</span>
             </div>
             <label class="toggle-switch">
-              <input type="checkbox" v-model="settings.vaultWatcher" @change="saveSettings" />
+              <input
+                type="checkbox"
+                v-model="settings.vaultWatcher"
+                data-testid="vault-watcher-toggle"
+                @change="onVaultWatcherChange"
+              />
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -838,7 +843,51 @@ function open() {
   loadWindowMode();
   loadCloseQuitsApp();
   loadVersion();
-  nextTick(renderPreview);
+  syncWatcherStatus();     // 把用户存的意图推给主进程（真相在 localStorage，主进程那个 true 只是默认值）  nextTick(renderPreview);
+}
+
+/**
+ * 把「监听知识库改动」这个开关与**主进程的真实状态**对齐。
+ *
+ * 🔴 为什么必须有这一步（2026-10-14，审计抓到的真缺陷）：
+ *   `main/index.js` 早就注册了 `get-watcher-status` / `set-watcher-status`，但
+ *   `src/preload/index.js` **从来没把这两个 channel 暴露给渲染层** → 这个勾选框只是往
+ *   localStorage 写了个布尔值，主进程的 `vaultWatcherEnabled`（`index.js:22`）是**硬编码
+ *   `true`、从不读配置** → 用户**关掉也照跑**（假开关），重启后勾选态也不还原。
+ *
+ * ⚠️ 时序上有个**如实交代**：主进程的 watcher 在窗口起来时就已经按默认值（true）启动了，
+ *   而渲染层要等设置面板打开才知道用户存的是 false —— 所以"用户上次关过"这件事在
+ *   **打开设置面板之前**仍然会多监听一段时间（本会话内一旦打开设置面板即被纠正）。
+ *   要彻底解决得让主进程在启动时读 config（属于 main 侧重构，不在本轮范围）。
+ */
+/**
+ * 用户拨动「Vault 监听」开关：**先存意图、再真的去开/关主进程的 watcher**。
+ *
+ * 🔴 旧写法只有 `@change="saveSettings"`（只写 localStorage）—— 见 `syncWatcherStatus()`
+ *    的注释：这是"勾选框是个假开关"的另一半。两半必须一起改，缺一半就是
+ *    「界面变了、行为没变」这种最难查的静默不一致。
+ */
+function onVaultWatcherChange() {
+  saveSettings();
+  syncWatcherStatus();
+}
+
+async function syncWatcherStatus() {
+  const api = window.sitianAPI;
+  if (!api?.setWatcherStatus) return;      // 旧 preload（未重建）：保持原行为，不假装成功
+  try {
+    // 🔴 **方向不能搞反**：真相是「用户存的意图」（`settings.vaultWatcher`，由
+    //    `loadSettings()` 从 localStorage 读回来）；主进程那个 `true` 只是**默认值**。
+    //    反过来"以主进程为准显示"会让每次打开设置面板都把用户关掉的开关又点亮
+    //    （"关了它自己又开了"）—— 那是比假开关更难解释的行为。
+    //    所以这里只做一件事：**把用户意图推给主进程**。
+    const r = await api.setWatcherStatus(!!settings.value.vaultWatcher);
+    if (r && r.success === false) {
+      console.warn('设置监听状态失败:', r.error || r);
+    }
+  } catch (e) {
+    console.warn('设置监听状态失败:', e);
+  }
 }
 
 function close() {

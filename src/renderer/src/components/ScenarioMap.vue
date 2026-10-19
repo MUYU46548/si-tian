@@ -1,10 +1,62 @@
 <template>
-  <div class="scenario-map-container">
+  <div class="scenario-map-container" :class="{ immersive }">
+    <!-- 沉浸模式细顶条（2026-10-17 P0）：默认态下不渲染；只留 返回 / 剧本名 / 年份 / 小地图 / 退出 -->
+    <div v-if="immersive" class="immersive-bar" data-testid="immersive-bar">
+      <button class="imb-btn" @click="$emit('exit')">← 返回</button>
+      <!-- 换剧本（P0-1）：沉浸态左侧剧本列表是隐藏的，没有这个按钮就只能先退出沉浸再换 -->
+      <button class="imb-btn" data-testid="imb-picker" title="回到剧本选择（卡片墙）"
+              @click="$emit('picker')">换剧本</button>
+      <span class="imb-title">{{ selectedScenario?.name || '历史剧本' }}</span>
+      <span class="imb-year" data-testid="imb-year">{{ tlDate?.y ?? '—' }} 年</span>
+      <span class="imb-spacer"></span>
+      <button class="imb-btn" data-testid="imb-minimap" :title="showMinimap ? '隐藏小地图' : '显示小地图'"
+              @click="toggleMinimap">{{ showMinimap ? '小地图 ✓' : '小地图' }}</button>
+      <button class="imb-btn" data-testid="imb-exit" title="退出沉浸模式（Ctrl+I）"
+              @click="immersive = false">退出沉浸 (Ctrl+I)</button>
+    </div>
     <!-- 顶栏：工具 + 模式切换 -->
-    <div class="scenario-toolbar">
+    <div class="scenario-toolbar" :class="{ dim: capsuleDim }" @mousemove="pokeCapsule">
       <!-- 第 1 行：**按任务分层的 4 个主工具** + 「更多」（P3）
            默认可见控件 = 6 个（返回 / 选择 / 自由绘制 / 变更归属 / 顶点编辑 / 更多），
            其余工具与开关全部收进「更多」—— 能力一个都不减，只是不再糊在一排里。 -->
+      <!-- 🔴 2026-10-18 第十七修（暮雨：「我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，
+           不要和日常的剧本编辑混在一起」）：底图/地理类工具从「更多」里拎出来，收进一个**显式模式**。
+           此前的形态是"日常动作（选择/画省份/改归属/改形状）+ 地理类（河流/地形/高度/群系/文化/宗教/
+           道路/地貌/地名/标记/聚落）全糊在同一个「更多」里"——**编辑对象不同（地块 vs 覆盖其上的历史归属），
+           却在同一排按钮里**，这正是用户说的"混"。
+           ⚠️ 只是**分组与可见性**，不改任何工具语义：既有用例点工具仍走同一个 `setTool()`，
+           模式没开时自动打开（见 `setTool` 的门），所以 60+ 个既有用例零迁移。
+           ⚠️ 开关**不能放主行**：主行的可见控件数由 `test_65` / `test_97` 硬守 ≤6
+           （放进去实测 7 个、两条用例同时红）。 -->
+      <div class="toolbar-modes" data-testid="toolbar-modes">
+        <button
+          class="basemap-edit-toggle"
+          data-testid="basemap-edit-toggle"
+          :class="{ active: basemapEditMode }"
+          :title="basemapEditMode
+            ? '底图编辑模式（已开）— 这一行是**画地理**（地形/河流/道路/文化…）；关掉它回到日常剧本编辑（省份/归属/剧本）'
+            : '底图编辑模式（关）— 点开：地形 / 河流 / 道路 / 地貌 / 地名 / 文化 / 宗教 等**底图与地理**工具集中在这里，与日常的省份/归属编辑分开'"
+          @click="toggleBasemapEditMode()"
+        ><Icon name="mountain" :size="13"/>底图编辑{{ basemapEditMode ? ' ✓' : '' }}</button>
+        <span class="mode-hint" data-testid="mode-hint">{{ basemapEditMode
+          ? '底图 / 地理编辑中（省份与归属仍可用，但没有混在这一行）'
+          : '日常剧本编辑（省份 / 归属 / 剧本）' }}</span>
+      </div>
+
+      <!-- 底图编辑模式的**地理行**（2026-10-18 第十七修）：只在模式开着时出现。
+           为什么是"一行"而不是"藏进更多"：暮雨要的是**一眼看出现在的编辑对象换人了**——
+           藏进下拉里等于还是"混"。 -->
+      <div v-if="basemapEditMode" class="toolbar-row basemap-row" data-testid="basemap-row">
+        <span class="row-label basemap-row-label"><Icon name="layers" :size="12"/> 底图/地理：</span>
+        <button
+          v-for="t in BASEMAP_TOOLS" :key="t.id"
+          :class="{ active: tool === t.id }"
+          :data-testid="'basemap-tool-' + t.id"
+          :title="t.title"
+          @click="setTool(t.id)"
+        ><Icon :name="t.icon" :size="14"/>{{ t.label }}</button>
+      </div>
+
       <div class="toolbar-row primary-row">
         <button @click="$emit('exit')" title="返回世界选择" class="back-btn">← 返回</button>
         <button
@@ -31,7 +83,7 @@
           class="more-toggle"
           :class="{ active: moreOpen, 'has-advanced': advancedToolActive }"
           @click="moreOpen = !moreOpen"
-          title="更多 — 拆分 / 合并 / 点击填充 / 描轮廓 / 河流 / 地貌 / 地名 / 擦除 / 高度 / 群系 / 聚落 / 文化 / 宗教 / 标记 / 道路，以及吸附与底图"
+          title="更多 — 拆分 / 合并 / 点击填充 / 描轮廓 / 擦除 / 聚落 / 标记 / 道路，以及吸附与底图"
         ><Icon name="chevron-down" :size="13"/> 更多</button>
         <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
       </div>
@@ -186,6 +238,90 @@
       </div>
       </div>
 
+      <!-- ═══ 河流编辑器：节点操作（2026-10-17）═══════════════════════════════════
+           为什么必须做成**带可见文字的常驻行**（而不是只留快捷键）：节点编辑的三个能力
+           （加拐点 / 删节点 / 删整条）在没有可见文字时等于没有 —— 本项目的「可发现性纪律」：
+           面板入口必须带可见文字，`title` 要悬停才知道、图标认不出来，都不算。
+           🔴 位置（这里踩过一脚）：它一度被放进「更多」面板里 —— 而**「河流」这个按钮本身
+              就在「更多」里**，用户不展开「更多」时这一行根本不在 DOM 里（真机探针实测
+              `river-edit-row: false`）。所以与 `.province-row` 同款：挂在 `.toolbar-more`
+              **外面**、只随工具出现（它是"当前这条河的选项"，不是"工具入口"）。 -->
+      <!-- 🔴 2026-10-17 第八修·再修（用户：「河流删除也非常不好用」）：
+            选中一条河之后，**不管当前是什么工具**都要有一条可见的操作行。
+            此前只有「河流」工具里才有这一行 —— 用户用「选择」工具点中河之后
+            界面上**没有任何删除入口**，只能猜着按 Delete（他报的正是这个）。
+            这一行只放三个动作：删这条 / 进河流工具拖节点 / 取消选中。 -->
+      <div
+        v-if="selectedRiver && tool !== 'river'"
+        class="toolbar-row river-selected-row"
+        data-testid="river-selected-row"
+      >
+        <label class="row-label">已选中河流：</label>
+        <span class="river-edit-name" :title="`当前选中：${selectedRiver.name || '未命名'}`"
+              data-testid="river-sel-count">
+          <template v-if="riverSelIds().length > 1">共 {{ riverSelIds().length }} 条（主：{{ selectedRiver.name || '未命名' }}）</template>
+          <template v-else>{{ selectedRiver.name || '未命名' }} · {{ (selectedRiver.points || []).length }} 点</template>
+        </span>
+        <button
+          class="tool-btn danger"
+          data-testid="river-selected-delete"
+          :title="riverSelIds().length > 1
+            ? '把选中的这批河一次删掉（整批 = 一条撤销）'
+            : '删除这条河流（走撤销栈，Ctrl+Z 可恢复）'"
+          @click="deleteSelectedRiver()"
+        >{{ riverSelIds().length > 1 ? `删除选中的 ${riverSelIds().length} 条` : '删除这条河' }}</button>
+        <button
+          class="tool-btn"
+          data-testid="river-selected-edit"
+          title="切到河流工具，可以拖节点 / 点河身加拐点 / 删单个节点"
+          @click="enterRiverToolForSelected()"
+        >编辑节点</button>
+        <button
+          class="tool-btn"
+          data-testid="river-clip-coast"
+          title="把选中的河裁到海岸线（画进海里的那一段被裁掉；整批 = 一条撤销）—— 想保留三角洲/河口就别裁"
+          @click="clipSelectedRiversToCoast()"
+        >裁到海岸线</button>
+        <button
+          class="tool-btn"
+          data-testid="river-selected-clear"
+          title="取消选中（不删除任何东西）"
+          @click="setRiverSelection([]); render()"
+        >取消选中</button>
+        <span class="row-hint">Shift+点=多选 · Shift+拖动=框选一批</span>
+      </div>
+      <div v-if="tool === 'river'" class="toolbar-row river-edit-row" data-testid="river-edit-row">
+        <label class="row-label">河流编辑：</label>
+        <template v-if="selectedRiver">
+          <span class="river-edit-name" :title="`当前选中：${selectedRiver.name || '未命名'}（${(selectedRiver.points || []).length} 个节点）`">
+            已选中「{{ selectedRiver.name || '未命名' }}」· {{ (selectedRiver.points || []).length }} 点
+          </span>
+          <button
+            data-testid="river-del-node"
+            :disabled="riverActiveNode < 0"
+            @click="removeSelectedRiverNode()"
+            :title="riverActiveNode >= 0
+              ? `删掉第 ${riverActiveNode + 1} 个节点（这条河重新平滑一次）—— 等价于把鼠标移到节点上按 Delete`
+              : '删单个节点：先把鼠标移到某个节点上（它会变黄），再点这里或按 Delete'"
+          ><Icon name="x" :size="13"/>删这个节点</button>
+          <button
+            data-testid="river-del-all"
+            @click="deleteSelectedRiver()"
+            title="删掉整条河（一条撤销可撤回）—— 快捷键：鼠标不在任何节点上时按 Delete"
+          ><Icon name="trash" :size="13"/>删整条河</button>
+          <button
+            data-testid="river-clip-coast-row"
+            @click="clipSelectedRiversToCoast()"
+            title="把这条河裁到海岸线（保留陆地那一段；整条在海里时不会自动删）"
+          ><Icon name="scissors" :size="13"/>裁到海岸线</button>
+          <span class="row-hint" v-if="riverSelIds().length > 1">共选中 {{ riverSelIds().length }} 条（批量删除/裁剪都算一条撤销）</span>
+          <span class="row-hint" v-else>再点河身=加拐点，按住节点拖=微调（一次操作 = 一条撤销）</span>
+        </template>
+        <span v-else class="row-hint" data-testid="river-edit-hint">
+          按住左键拖一笔 = 画一条河（松手成河、自动平滑）；点已有河流的河身 = 选中它，再点河身 = 加拐点
+        </span>
+      </div>
+
       <!-- 「更多」（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
       <div v-if="moreOpen" class="toolbar-more">
         <div class="toolbar-row">
@@ -219,13 +355,53 @@
                   <button 
                 :class="{ active: tool === 'river' }" 
                 @click="setTool('river')"
-                title="河流编辑器 (W) — 手动绘制河流路径"
+                title="河流编辑器 (W) — 按住左键拖出笔迹 = 画一条河（松手成河）；**Shift + 按在已有河的河身上拖出去 = 画支流**（起点自动吸附、松手在母河上插拐点）；点河身加拐点；拖节点微调；Delete 删节点"
               ><Icon name="droplets" :size="15"/>河流</button>
                   <button 
-                :class="{ active: tool === 'river' }" 
+                :class="{ active: autoRivers.length > 0 }" 
                 @click="generateAndShowRivers"
-                title="自动生成河流 — 沿高度梯度从高地流向海洋"
+                title="自动河流（预览）— 按地形高度从高到低追踪入海路径。⚠️ 结果只画在画布上、**不会存进项目**：切走视图或换底图就没了；要长期保留请用「河流 (W)」手画。"
               ><Icon name="waves" :size="15"/>自动河流</button>
+                  <!-- 🔴 源头高度闸门（2026-10-14 第三轮）：实测在这份地形上**它决定条数**
+                       （默认 60 → 3 条；40 → 67 条）。做成一枚**紧挨着按钮**的数字输入，
+                       因为它与"点一下自动河流"是同一个动作的两个参数，藏进『更多』里
+                       等于还是够不着（本项目反复踩的正是这一条）。 -->
+                  <input
+                v-model.number="riverSourceHeight"
+                data-testid="river-source-height"
+                type="number" min="0" max="100" step="5"
+                class="river-source-height"
+                title="源头高度闸门 — 只有高度**高于**这个值的格子才能当河源。调低 = 更多（更碎）的支流；调高 = 只留高地上的大江。实测这份底图：60 → 3 条、40 → 67 条"
+              />
+                  <!-- 🔴 河流来源（2026-10-16 第五修）：实测自动河与底图自带河**是两套水系**
+                       （段到自带河最近距离中位 18.78 世界单位，只有 10% 在 3 单位内）→ 并存时
+                       必然"各画各的"。给一个显式开关让用户只留一套，而不是替他猜。
+                       默认 `both` = 现有行为一字不变。 -->
+                  <select
+                v-model="riverSource"
+                data-testid="river-source"
+                class="river-source-select"
+                title="画哪一套河 —— 实测自动河与底图自带河是**两套不同的水系**（中位相距约 1.3 格）。「两套都画」= 一直以来的行为；想只留一套就选另一个（自动河要先点「自动河流」生成）"
+              >
+                <option value="both">河流：两套都画</option>
+                <option value="base">只画底图自带</option>
+                <option value="auto">只画自动生成</option>
+              </select>
+                  <!-- 🔴 2026-10-17 第八修·再修（用户：「这个长河受限有一大串很难看清的一闪而过的文本，
+                        放在已经很拥挤的工具栏里真的有必要吗？」）—— **没必要，已移除**。
+                        原先这里常驻一枚「⚠️ 长河受限」标签，状态栏还会追一句「悬停看原因」。
+                        问题是：① 工具栏本来就挤，多一个角标只会让人以为界面坏了；
+                        ② 真正的信息（这份地形为什么长不出长河）**长到放不进 tooltip**，
+                           而且它是一句"解释"不是"动作"，常驻在操作区没有价值；
+                        ③ 现在已经有**真正的解法**（「按轮廓生成地形」）—— 提示该变成一次性的指路，
+                           不该长期占位。
+                        ⇒ 只在**生成回执里说一次**（见 `generateAndShowRivers`），做完就消失。 -->
+                  <!-- 🔴 追踪前先平滑（2026-10-16）：实测这是唯一能让河"长出主干"的方向
+                       （最长河 140→270 世界单位）。默认关 = 零行为变更。 -->
+                  <label
+                class="check-label river-smooth-label"
+                title="追踪前先平滑地形 —— 实测能让最长河道翻倍（140→270 世界单位）、河网铺开全岛。原理：抹掉粗网格上的微洼地，让水顺着大谷走。⚠️ 代价：平滑会压低山头，源头变少 → 勾上时会**自动把「源头高度」降到 40**（否则可能一条河都没有）"
+              ><input type="checkbox" v-model="riverSmooth" data-testid="river-smooth" />平滑</label>
                   <button 
                 :class="{ active: tool === 'relief' }" 
                 @click="setTool('relief')"
@@ -373,7 +549,82 @@
           data-testid="basemap-create-heightmap"
           title="为这张底图创建高度图网格（创建后即可用高度 / 群系 / 文化 / 宗教笔刷与一键派生）"
           @click="createBaseMapHeightmap"
-        ><Icon name="layers" :size="15"/></button>
+        ><Icon name="layers" :size="15"/>建高度图</button>
+        <!-- 🔴 2026-10-17 第八修·改向（暮雨：「司天自身的编辑能力必须过硬，**不要指望靠
+              用户导出高度数据地图来救河流生成**」）。
+              上面那个「建高度图」建出来的是一张**全 0 的平地**（h 全 0 < 海平面 20），
+              于是自建底图的完整路径是：画大陆 → 建高度图 → 点自动河流 → **永远是 0 条河**
+              （平地没有坡，水不知道该往哪流），且不报错。这就是"核心能力只对外部导入的
+              地图可用"的真身。
+              这个按钮补上**本地地形起点**：按陆地轮廓推演一份有起伏的高度图
+              （离岸距离场 + 分形起伏，见 `utils/terrainSynthesis.js`），落库进 undo。
+              用户的完整路径变成：画大陆 → 按轮廓生成地形 → 有河 → 再用笔刷手调。 -->
+        <button
+          v-if="baseMapCanSynthesizeTerrain"
+          data-testid="basemap-synthesize-terrain"
+          title="按已画好的陆地轮廓推演一份地形高度图（内陆高、海岸低 + 分形起伏）—— 这是自建地图长出河流的起点，之后可用地形笔刷继续手改"
+          @click="synthesizeBaseMapTerrainFromShape"
+        ><Icon name="mountain" :size="15"/>按轮廓生成地形</button>
+        <!-- P5（2026-10-14）：高度图**分辨率**。
+             真实来由：用户实测「地形模模糊糊」「高度图分辨率帮我调整。注意性能」。
+             量出来的事实是源网格 133×75 / spacing 14.4，在 1900×1080 上每格约 3.6 屏幕像素
+             —— 这是**数据分辨率**，不是渲染 bug。唯一真正有效的做法是把格子变密。
+
+             🔴 2026-10-15：**必须带可见文字**。第一版只有一枚 `grid` 图标，而「更多」里
+             它左右邻居全都有文字（拆分 / ⊕合并 / 删除 / 高度 / 群系 …）→ 暮雨实测
+             「分辨率按钮不知道在哪里，『更多』中没有找到」。诊断（`test_xdiag_resample_button`）
+             证实按钮**一直在**（`data-testid="basemap-resample"`），是**看不见名字**。
+             纪律：按钮的可发现性不能只靠 `title`（要悬停才知道）+ 图标（认不出来）。 -->
+        <button
+          v-if="baseMapCanResample"
+          data-testid="basemap-resample"
+          :class="{ active: resampleOpen }"
+          :title="`调整高度图分辨率 — 当前 ${resamplePreview ? resamplePreview.srcCells : 0} 格；`
+                  + '把格子变密能让海岸线/山坡不再一块一块（放大会更明显）。⚠️ 这是插值，不增加地形信息'"
+          @click="openResamplePanel"
+        ><Icon name="grid" :size="15"/>分辨率</button>
+      </div>
+
+      <!-- P5：分辨率面板（按需展开，不占工具栏） -->
+      <div v-if="resampleOpen && resamplePreview" class="resample-panel" data-testid="resample-panel">
+        <div class="rp-row">
+          <label>放大</label>
+          <select v-model.number="resampleFactor" data-testid="resample-factor">
+            <option :value="2">×2</option>
+            <option :value="3">×3</option>
+            <option :value="4">×4</option>
+            <option :value="6">×6</option>
+            <option :value="8">×8</option>
+          </select>
+          <span class="rp-cost" :class="'lv-' + resamplePreview.level" data-testid="resample-cost">
+            {{ resamplePreview.message }}
+          </span>
+        </div>
+        <div v-if="!resamplePreview.ok" class="rp-warn">{{ resamplePreview.message }}</div>
+        <div class="rp-row">
+          <label>平滑</label>
+          <select v-model.number="smoothRadius" data-testid="smooth-radius">
+            <option :value="1">半径 1 格</option>
+            <option :value="2">半径 2 格</option>
+            <option :value="3">半径 3 格</option>
+          </select>
+          <button class="rp-btn" data-testid="smooth-apply" @click="applySmooth">平滑地形</button>
+          <span class="rp-hint">平滑只改高度；气候/群系要另点「重算派生图层」</span>
+        </div>
+        <div class="rp-actions">
+          <button
+            class="rp-btn primary"
+            data-testid="resample-apply"
+            :disabled="!resamplePreview.ok"
+            @click="applyResample"
+          >应用分辨率</button>
+          <button class="rp-btn" @click="resampleOpen = false">取消</button>
+        </div>
+        <div class="rp-note">
+          ⚠️ 实测口径：放大**不会**让河变长（同一片地形被更细地走一遍而已）。
+          1→2→4 倍时河条数 57→287→1089，而最长河的世界长度几乎不变（111→120→110）。
+          想要更长的大河只能换更高分辨率的**源数据**。
+        </div>
       </div>
 
       <!-- 地形来源（M1c，2026-09-25）—— 底图的地形有两种来源，取舍完全不同，必须显式选：
@@ -419,11 +670,12 @@
       <div class="tool-group">
         <button @click="fitToView" title="适应画布 (F)">⊞</button>
         <button @click="exportPNG" title="导出 PNG 图片"><Icon name="export" :size="15"/></button>
-        <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': saveDisplay.kind === 'saving' }"
+        <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': saveDisplay.state === 'saving' }"
                 data-testid="scenario-save-btn">
-          <Icon v-if="saveDisplay.kind === 'saving'" name="loader" :size="15"/>
-          <Icon v-else-if="saveDisplay.kind === 'saved'" name="check-circle" :size="15"/>
-          <Icon v-else-if="saveDisplay.kind === 'error'" name="x-circle" :size="15"/>
+          <Icon v-if="saveDisplay.state === 'saving'" name="loader" :size="15"/>
+          <Icon v-else-if="saveDisplay.state === 'staged'" name="clock" :size="15"/>
+          <Icon v-else-if="saveDisplay.state === 'saved'" name="check-circle" :size="15"/>
+          <Icon v-else-if="saveDisplay.state === 'error'" name="x-circle" :size="15"/>
           <Icon v-else name="save" :size="15"/>
         </button>
       </div>
@@ -471,6 +723,14 @@
         </select>
         <label class="check-label"><input type="checkbox" v-model="showRivers" /> 河流</label>
         <label class="check-label"><input type="checkbox" v-model="showRoutes" /> 道路</label>
+        <!-- 🔴 山体阴影（2026-10-17 第七修）：用户「地形怎么3D表现」的落点。
+             默认**关**（零行为变更）。只对「陆海底色 / 地形高度」两档生效 ——
+             温度/降水是**专题图**，给它们加阴影会把数值读成地形（那是错的口径）。 -->
+        <label
+          class="check-label terrain-shade-label"
+          data-testid="terrain-shade"
+          title="山体阴影 —— 按相邻格高差算明暗，让地形「立起来」（制图惯例：光从左上来）。默认关；只对「陆海底色 / 地形高度」生效。⚠️ 我们的高度图可能是粗网格（例如 133×75），阴影会跟着粗 —— 这是数据本身的粒度，不是渲染问题。"
+        ><input type="checkbox" v-model="terrainShade" data-testid="terrain-shade-box" /> 立体</label>
       </div>
       <div class="tool-group">
         <label>着色：</label>
@@ -628,8 +888,44 @@
         </template>
         <template v-else>
           <p class="eh-title">这个项目里还没有底图</p>
-          <p class="eh-line">用上方「+」导入 Azgaar .map 底图，或直接选一个绘制/笔刷工具开始画（会自动新建一张空底图）。</p>
+          <p class="eh-line">
+            剧本画在底图上（省份 → 归属 → 时期）。先导入一份 Azgaar <b>.map</b> 底图，
+            也可以直接选个绘制/笔刷工具画一张空底图。
+          </p>
+          <!-- 🔴 这里必须有**按钮**，不能只写"用上方「+」"（P0-3，2026-10-17 第三轮）：
+               「+」在「更多」面板里 = 提示指向一个用户当刻**看不见**的入口 ——
+               本项目已在行星视图踩过同一条（交接文档 §2.2「.map 导入入口不可达」）。 -->
+          <div class="eh-actions">
+            <button class="eh-btn primary" data-testid="empty-import-map"
+                    :disabled="store.isReadOnly"
+                    title="选一份 Azgaar（FMG）导出的 .map：带进省份多边形、高度图、河流、城镇"
+                    @click="triggerMapImport()">导入 .map 底图</button>
+            <button class="eh-btn" data-testid="empty-new-basemap"
+                    :disabled="store.isReadOnly"
+                    title="新建一张空白底图，直接用绘制/笔刷工具画（之后也能再导入 .map 补数据）"
+                    @click="createEmptyBaseMapFromHint()">新建空底图，自己画</button>
+          </div>
         </template>
+      </div>
+
+      <!-- 🔴 渲染护栏的**横幅**（2026-10-14）。
+           为什么不再只放状态栏：用户原话「给我来一个渲染已暂停……后面就什么都看不到了，
+           点什么都没反应，地图出不来，卡死了。一点提示都没有吗？」—— 状态栏那行**确实**在，
+           但它在一个 12px 的状态栏里、而且用户正在盯的是空白的画布中央。
+           现在暂停时在画布正中给一张卡：说明发生了什么、错误原文、以及"继续渲染 / 复制错误"。
+           卡片吃掉指针事件（渲染已经停了，画布上的点击本来就没意义）。 -->
+      <div v-if="renderPaused" class="render-paused-card" data-testid="render-paused-card">
+        <div class="rp-title"><Icon name="alert-triangle" :size="16"/> 渲染已暂停</div>
+        <div class="rp-sub">连续 {{ renderErrorCount }} 帧绘制失败，画布停止刷新（数据没有丢，改动仍在内存里）。</div>
+        <pre class="rp-err" data-testid="render-paused-error">{{ renderError }}</pre>
+        <div class="rp-hint">
+          常见原因：某个工具刚改了数据但画布画不动它。可以先点「继续渲染」重试；
+          若立刻又暂停，请把上面的错误原文复制反馈（右键可复制）。
+        </div>
+        <div class="rp-actions">
+          <button class="rp-btn primary" @click="resumeRender()" data-testid="render-paused-resume">继续渲染</button>
+          <button class="rp-btn" @click="copyRenderError()" data-testid="render-paused-copy">复制错误</button>
+        </div>
       </div>
 
       <!-- ══ 历史剧本站首：剧本列表常驻左栏（2026-10-09）═══════════════════════════
@@ -644,6 +940,13 @@
         <div class="slp-head">
           <span class="slp-title">历史剧本</span>
           <span class="slp-hint">选一条，地图切到该时期</span>
+          <!-- 换剧本（P0-1，2026-10-17 第三轮）：此前从编辑器回卡片墙只能「返回世界」再点一次
+               「历史剧本」（三步），而「返回」的语义是**离开剧本域**（去世界选择页），
+               不该兼职"选另一个剧本"。这里给一条**一步回到卡片墙**的路。
+               ⚠️ 放在 `.slp-head` 而不是工具栏主行：主行受 P3「恰好 6 个可见控件」闸门管
+               （test_65/test_97），而"换剧本"属于剧本导航、与左侧剧本列表同族。 -->
+          <button class="slp-picker" data-testid="slp-picker" title="回到剧本选择（卡片墙）换一个时期"
+                  @click="$emit('picker')">换剧本</button>
           <button class="slp-toggle" data-testid="slp-toggle"
                   :title="showScenarioList ? '收起列表（腾出画布）' : '展开剧本列表'"
                   @click="showScenarioList = !showScenarioList">
@@ -722,12 +1025,13 @@
       <!-- 保存状态：两条链合并显示（见 script 的 saveDisplay）。
            失败时**把原因写进文字本身** —— 暮雨实测「只有四个字『保存失败』」；
            本状态栏原先连 title 都没有，靠悬停根本看不到原因。 -->
-      <span class="save-status" :class="saveDisplay.kind"
+      <span class="save-status" :class="saveDisplay.state"
             :title="saveDisplay.title || saveDisplay.text"
             data-testid="scenario-save-status">
-        <Icon v-if="saveDisplay.kind === 'saving'" name="loader" :size="13"/>
-        <Icon v-else-if="saveDisplay.kind === 'saved'" name="check-circle" :size="13"/>
-        <Icon v-else-if="saveDisplay.kind === 'error'" name="x-circle" :size="13"/>
+        <Icon v-if="saveDisplay.state === 'saving'" name="loader" :size="13"/>
+        <Icon v-else-if="saveDisplay.state === 'staged'" name="clock" :size="13"/>
+        <Icon v-else-if="saveDisplay.state === 'saved'" name="check-circle" :size="13"/>
+        <Icon v-else-if="saveDisplay.state === 'error'" name="x-circle" :size="13"/>
         <Icon v-else name="save" :size="13"/>
         {{ saveDisplay.text }}
       </span>
@@ -874,15 +1178,19 @@
           </div>
           <div class="form-row">
             <label>起始年：</label>
-            <input v-model="newScenario.startYear" placeholder="如：乐园星历2006" />
+            <input v-model="newScenario.startYear" placeholder="如：历年 2006" />
           </div>
           <div class="form-row">
             <label>结束年：</label>
-            <input v-model="newScenario.endYear" placeholder="如：乐园星历2008" />
+            <input v-model="newScenario.endYear" placeholder="如：历年 2008" />
           </div>
           <div class="form-row">
             <label>描述：</label>
             <textarea v-model="newScenario.description" placeholder="可选说明" rows="2"></textarea>
+          </div>
+          <div class="form-row">
+            <label title="剧本卡片墙（选剧本界面）上显示的一句钩子文案，1-2 句为宜；留空则卡片不显示这行">钩子文案：</label>
+            <textarea v-model="newScenario.hook" placeholder="可选 —— 选剧本卡片上的一句话钩子，如：五雄歃血为盟又彼此提防" rows="2"></textarea>
           </div>
           <div class="form-row checkbox">
             <label>继承上一时代：</label>
@@ -1028,9 +1336,22 @@
 <script setup>
 import Icon from './Icon.vue';
 import { ref, onMounted, onUnmounted, watch, computed, toRaw, nextTick, unref } from 'vue';
+
+/**
+ * 卡片墙进入（2026-10-17 P0）：App 从 ScenarioPicker 带来的初始剧本。
+ * - `initialScenarioId`：进入后自动选中该剧本（切 era + 落起始年 + scenario 视图 = selectScenarioAt 的三件套）。
+ * - `openManager`：从「新建剧本」空态进来 → 直接打开剧本管理对话框。
+ * 不传 = 行为与从前逐字一致（回归基线走这条：harness 注入 __SKIP_SCENARIO_PICKER 直达编辑器）。
+ */
+const props = defineProps({
+  initialScenarioId: { type: String, default: '' },
+  openManager: { type: Boolean, default: false },
+});
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
+// `.map` 的「文件名 → 底图名」与「原文留底」= 与行星视图共用的一份（见 utils/mapImportSource.js）
+import { mapNameFromFileName, backupMapSourceFile } from '../utils/mapImportSource';
 import { generateRoadPath } from '../utils/placement';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
 import { buildHeightmapRaster, RASTER_SMOOTH } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
@@ -1071,7 +1392,7 @@ import {
   buildSkeleton, conformToSkeleton, ringPointsForRender,
 } from '../utils/provinceShape';
 // 配色单一来源（2026-10-01）：省份色板 / 海域填充与海界 / 陆界 —— 画布与 SVG 导出共用一份
-import { PROVINCE_PALETTE, nextProvinceColor, SEA_FILL, SEA_EDGE } from '../utils/scenarioPalette';
+import { PROVINCE_PALETTE, nextProvinceColor, SEA_FILL, SEA_EDGE, BORDER_COLOR } from '../utils/scenarioPalette';
 // B 方案（批量铺底）：画布里要**实时预览** Voronoi 边界，所以直接复用纯几何层（与 store 同一份实现）
 import { voronoiCells } from '../utils/voronoiBatch';
 // P1（2026-10-13）顶点编辑：**共边顶点**的配对与联动 —— 拖动共边上的顶点时，邻省的同位顶点
@@ -1079,57 +1400,93 @@ import { voronoiCells } from '../utils/voronoiBatch';
 import {
   buildCoincidentIndex, findLinkedVertices, shiftPoints, verticesInBox,
 } from '../utils/vertexSharing';
-// 全局状态栏单例：projectStore 把「.sitian 真正落盘」的成败写在这里（见 saveDisplay）
+// 2026-10-14：导入的河流要裁到**当前海岸线**上（省份轮廓是后重建的，旧几何的尾巴露在海面上）。
+// 掩膜与裁剪都是纯函数（Node 有单测），画布只做"按引用缓存 + 给判定注入一点容差"。
+import { buildLandMask, clipPolylineToCoast, clipPolylinesToCoast, clipSegmentToLand } from '../utils/coastline';
+// 🔴 颜色**单一来源**（2026-10-15 起改了三次，2026-10-17 第六修才真正收口）：
+//    画布上**只许有一个河色** = `RIVER_DRAW_COLOR`（`utils/riverRender.js`）。
+//    ⚠️ 本文件**不许再 import `RIVER_COLOR`**：那是"写进数据的默认值"，它一旦被用来描边，
+//       手画河就会与自带河/自动河分成两种蓝 —— 用户 2026-10-17 的截图正是如此
+//       （同一条河一半 #5d97bb 一半 #3B82F6）。`test_103` / `test_107` 有源码守卫。
+// 🔴 2026-10-17（剧本底图节点编辑）：底图侧此前**只能整条删了重画** ——
+//    这里补上的三件（点河身=加拐点 / 拖节点=微调 / Del=删这个节点）用的判定与行星图
+//    **同一份**纯函数（`hitTestRiver` / `findRiverSegment` / `insertNodeBetween` /
+//    `distanceToPolyline`），所以两张图里"点哪儿算点中河"的手感一致。
+import {
+  hitTestRiver, findRiverPointIndex, findRiverSegment,
+  insertNodeBetween, replaceRiverNode,
+  // 2026-10-17 第八修·三修：选择工具里"没点中河"时要报**差多少像素**，要用它算最近距离
+  // （同一份纯函数，与命中判定同口径 —— 不许自己再写一遍距离）
+  distanceToPolyline,
+  // 🔴 2026-10-17 第七修：`riverWidthsFor` 用它们把"世界单位宽度"夹进河宽字段的量纲。
+  //    ⚠️ 漏 import 的后果**不是编译错误而是运行时 ReferenceError**（Vite 不查未声明标识符）：
+  //    用户每画一条河 / 每次拖节点预览都会在 `drawRiverPaths` 里抛一次，
+  //    表现是「河画了但看不见」+ 连续 3 帧后整块画布被渲染护栏暂停。
+  //    是 `scripts/tests/unit/test_undefined_identifiers.js`（全仓扫描）当场抓到的。
+  RIVER_WIDTH_MIN, RIVER_WIDTH_MAX,
+} from '../utils/rivers';
+// 2026-10-14：自动河流的**追踪**与**画法**都是纯函数 ——
+// 「河是硬的折线、没有主次」这两条反馈的修法分别在平滑与 riverRender，
+// 不在这里现写一套（三处画河共用同一套颜色与线宽口径）。
+import { smoothPolyline, TRACE_SMOOTH_ITERATIONS, TRACE_SOURCE_HEIGHT } from '../utils/riverTrace';
+// 🔴 2026-10-16（画河保底）：手画河的**抽稀 + 平滑**与行星图共用同一份实现
+//    （`polylineSmooth.js`；riverTrace 只是 re-export）。各写一份就会出现
+//    "同一笔迹在两张贴图上弯度不同"，而这种偏差不会报错。
+// 🔴 2026-10-17：再加 `smoothRiverNodes`（落库用，带高度）、`smoothWhileDrawing`
+//    （画的时候就看得见的平滑）与 **`fitPolylineToCount`**
+//    （把节点数压到目标值 —— 它是"手画河渲染成一串点"的根治）。
+import { decimatePolyline, smoothRiverNodes, fitPolylineToCount } from '../utils/polylineSmooth';
+// 🔴 2026-10-17 第八修（用户：「支气管模拟器」「你会画河吗」）：
+//    **逐段画**从结构上画不出河。这一层把流向场还原成**河链**（沿 receiver 往上溯、
+//    沿主干继续、支流另起），渲染侧改画"链"（每条链一条曲线、逐点变宽）。
+//    与开源水文/制图工具的做法一致（Strahler 分级找主干的方式）。
+// ⚠️ 模块名用 `riverChains` 而不是 `riverPaths` —— 后者在全仓是"组件本地平行事实源"的
+//    禁用词（`test_95` 有红线：手画河曾因本地 `riverPaths` 数组而"画完就丢"）。
+import { buildRiverPaths, thinRiverPath } from '../utils/riverChains';
+// 河流橡皮的几何（纯函数 + Node 单测）：擦除轨迹 → 留下的连续段 → 原子写口载荷
+import { planRiverErase, erasePolylineByStroke } from '../utils/riverErase';
+// 手势闸门（第十九修·一）：按住画布 = 自动保存顺延。**唯一接线点就在本组件的
+// onMouseDown / onMouseUp**（同一对函数覆盖全部工具：拖笔 / 河笔 / 拖节点 / 框选 / 涂抹 /
+// 高度·群系·文化·宗教笔刷 —— 它们都由 mousedown 起笔），所以这里一处接线即全量生效。
+import { beginInteraction, endInteraction } from '../utils/interactionGate';
+import {
+  RIVER_STROKE, buildRiverPolyline, strokeRiver, strokeRiverNetwork, riverWidthAt,
+  // 🔴 2026-10-16 第五修：与「地图自带河流」**逐字对齐**的画法常量/公式 ——
+  //    色 `#5d97bb`、线宽 `width*6*max(sqrt(discharge)/14, 0.6)` 夹在 0.7~4 屏幕像素。
+  // 🔴 2026-10-17 第六修：`RIVER_DRAW_COLOR` 是**唯一**河色；`drawCurvedRiver` 是
+  //    「会弯 + 从头到尾变粗」的唯一实现（手画河 / 预览都走它，不再逐点画圆）。
+  BASEMAP_RIVER_COLOR, RIVER_DRAW_COLOR, RIVER_BANK_COLOR, basemapRiverWidthPx, basemapRiverWidthWorld,
+  flowToDischargeEquivalent,
+  drawCurvedRiver, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
+  // 🔴 2026-10-18 第十六修：选中轮廓的**偏移几何**与空隙常量下沉到纯函数层 ——
+  //    组件里"用加宽的中心线当轮廓"是"选中即盖住水面"的根源；下沉后单测能直接判偏移量。
+  offsetPolyline, RIVER_SEL_GAP_PX as RIVER_SEL_GAP_PX_UTIL,
+  RIVER_SEL_WEIGHT_PX as RIVER_SEL_WEIGHT_PX_UTIL, riverSelGapForWidth,
+} from '../utils/riverRender';
+
+// 保存状态显示：唯一实现在 `composables/useSaveDisplay`（底部状态栏 / 行星图横幅也用它）
+import { useSaveDisplay } from '../composables/useSaveDisplay';
+// ⚠️ `useStatusBarState()` 在本组件只作**诊断注入口**保留（`test_91` 在真机上用 `sc.sbState`
+//    注入落盘失败态）。显示合成一律走 `useSaveDisplay()`，**不要**在这里再写第二份 computed。
 import { useStatusBarState } from '../composables/useStatusBar';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
 
-// ── 保存状态显示（2026-10-09 重做）───────────────────────────────────────────
+// ── 保存状态显示（2026-10-09 重做；2026-10-17 收口到唯一实现）─────────────────
 // 🔴 历史剧本里**有两条保存链**，旧实现只显示了其中一半：
 //    · geodata（`store.saveStatus`）—— 把画布改动推给项目 / 直接写 scenarios.json
 //    · projectStore（写在全局 `useStatusBar` 的 `saveState` 里）—— **真正把 .sitian 写进磁盘**
 //    只盯前者的两个坏结果：① 项目落盘失败时这里毫无反应（用户以为存好了）；
 //    ② 项目态下 geodata 只到 'staged'，这里**永远显示不出「已保存」**（用户不知道到底存没存）。
 //    所以项目侧的失败优先级最高 —— 那才代表「数据没进磁盘」。
-// 🔴 另外失败必须**把原因写进文字**：暮雨实测「保存失败就是保存失败，我没看到其他内容」——
-//    这个状态栏原本连 title 都没有，靠悬停 hint 本来就看不到。
+// 🔴 另外失败必须**把原因写进文字**：暮雨实测「保存失败就是保存失败，我没看到其他内容」。
+// 🔴 2026-10-17：合成逻辑搬到 `composables/useSaveDisplay.js`（+ 纯函数
+//    `utils/saveStatusText.js`）—— 行星地图与底部状态栏也接同一份。
+//    本组件不再保留第二份 `computed` 合成：「保存到底成没成」一旦有两套口径，
+//    先变的那一套会静默把另一套变成谎言（行星图当时仍按 `result.success` 报「保存成功」）。
+const saveDisplay = useSaveDisplay();
 const sbState = useStatusBarState();
-/** 失败原因在状态栏的截断长度（放不下长错误；全文走 title + 控制台日志） */
-const SAVE_ERR_MAX = 60;
-
-const saveDisplay = computed(() => {
-  // 🔴 geodata 是 Pinia **setup store** → 它 return 的 ref 已被 Pinia 自动解包
-  //    （同仓反例：`store.slicePoints` 就是普通数组）。所以这里**不能**写 `.value` ——
-  //    旧代码的 `store.saveStatus.value` 恒为 undefined，导致状态栏 `:class` 一直是空、
-  //    保存按钮图标也从不变化（这条路径从来就没反映过真实状态）。
-  //    用 Vue 的 `unref`：对「ref」与「已解包的值」两种形态都安全。
-  const g = unref(store.saveStatus);
-  const s = sbState.saveState;          // 由 projectStore 写（只有它写）
-  const gErr = unref(store.lastSaveError) || '';
-  const cut = (t) => {
-    const full = String(t || '未知原因');
-    return { text: full.length > SAVE_ERR_MAX ? full.slice(0, SAVE_ERR_MAX) + '…' : full, title: full };
-  };
-  // ① 项目落盘失败最重：画布上看到的改动没进磁盘
-  if (s && s.kind === 'err') {
-    const c = cut(s.title);
-    return { kind: 'error', text: `保存失败：${c.text}`, title: `保存失败：${c.title}` };
-  }
-  // ② 剧本侧失败（推给项目这一步 / scenarios.json 写入）
-  if (g === 'error') {
-    const c = cut(gErr);
-    return { kind: 'error', text: `保存失败：${c.text}`, title: `保存失败：${c.title}` };
-  }
-  // ③ 进行中
-  if (s && s.kind === 'warn') return { kind: 'saving', text: s.text || '已交给项目，待写入' };
-  if (s && s.kind === 'busy') return { kind: 'saving', text: '保存中…' };
-  if (g === 'saving') return { kind: 'saving', text: '保存中…' };
-  // ④ 成功
-  if (s && s.kind === 'ok') return { kind: 'saved', text: s.text || '已保存' };
-  if (g === 'saved') return { kind: 'saved', text: '已保存' };
-  return { kind: 'idle', text: '自动保存' };
-});
 
 // P2：省份「矢量级归属」——笔刷 / 套索 / 点填 = 对多边形做布尔（数据在 store 的 provinceEditing 模块）
 const provinceBrush = useProvinceBrush();
@@ -1236,6 +1593,48 @@ const ch = () => (canvas.value ? canvas.value.height / canvasDpr : 0);
 const tool = ref('select');
 // P3：工具栏按任务分层 —— 默认只有 6 个可见控件，其余收进「更多」（能力不减）
 const moreOpen = ref(false);
+
+// ── 底图编辑模式（2026-10-18 第十七修）──────────────────────────────────────
+//
+// 用户原话：「事实上我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，
+//   不要和日常的剧本编辑混在一起」。
+//
+// 口径（**只做分组与可见性，不改任何工具语义**）：
+//   · 日常模式（默认关）＝ 省份 / 归属 / 剧本（历史归属是"覆盖在地块上的数据"）；
+//   · 底图编辑模式（开）＝ 画地理：地形 / 河流 / 道路 / 地貌 / 地名 / 文化 / 宗教 / 高度 / 群系 / 标记 / 聚落。
+//   🔴 **点地理类工具时自动打开模式**（见 `setTool` 的门）—— 这样既有 60+ 个用例（它们直接调
+//      `setTool('river')` 或点按钮）**零迁移**，而人也永远看得见"现在在哪个模式里"。
+//      "模式"在这里的职责是**让人知道编辑对象换人了**，不是把能力锁起来（锁起来只会制造"点了没反应"）。
+const basemapEditMode = ref(false);
+/** 底图编辑模式里的工具清单（唯一来源；行内按钮由它渲染） */
+const BASEMAP_TOOLS = [
+  { id: 'height', icon: 'mountain', label: '高度', title: '高度笔刷 (H) — 按住抬高 / 右键降低（滚轮调半径、Shift+滚轮调强度）' },
+  { id: 'biome', icon: 'palette', label: '群系', title: '生物群系笔刷 (N) — 涂抹生物群系' },
+  { id: 'relief', icon: 'mountain', label: '地貌', title: 'Relief 图标 (I) — 放置山脉/树木/沙漠等自然特征' },
+  { id: 'river', icon: 'droplets', label: '河流', title: '河流编辑器 (W) — 按住拖出笔迹画河；**Shift + 按在已有河的河身上拖出去 = 画支流**；点河身加拐点；拖节点微调' },
+  { id: 'riverErase', icon: 'eraser', label: '橡皮', title: '河流橡皮 (Shift+W) — 按住抹过河身，擦掉那一段；一条河被擦断会**断成两条**（切口落在橡皮圈边上）；一次擦除 = 一条撤销。只擦手画的河（导入河/自动河不动）' },
+  { id: 'road', icon: 'route', label: '道路', title: '道路 (K) — 逐点画一条路' },
+  { id: 'culture', icon: 'palette', label: '文化', title: '文化笔刷 (C) — 涂抹文化分布' },
+  { id: 'religion', icon: 'flame', label: '宗教', title: '宗教笔刷 (R) — 涂抹宗教分布' },
+  { id: 'label', icon: 'type', label: '地名', title: '地名牌 (T) — 地图上放一个地名' },
+  { id: 'marker', icon: 'map-pin', label: '标记', title: '标记 (M) — 放一个地图标记' },
+  { id: 'burg', icon: 'home', label: '聚落', title: '聚落 (U) — 放一个城镇/村庄' },
+];
+const BASEMAP_TOOL_IDS = new Set(BASEMAP_TOOLS.map((t) => t.id));
+function toggleBasemapEditMode() {
+  basemapEditMode.value = !basemapEditMode.value;
+  // 🔴 开模式**顺手收起「更多」**（2026-10-18 第十七修·出图实测）：
+  //    第一版是"开模式就展开「更多」"，结果工具栏从 ~120px 撑到 **~470px**（出图
+  //    `docs/assets/basemap-mode-20261018/02-basemap-edit-mode.png` 一眼可见）——
+  //    画布被压掉一半，而"模式分区"的收益全被这个面板吃掉了。
+  //    地理类工具**已经在模式行里**；「更多」里的那几件（参考图 / 自带-自动河源 / 着色档 / 吸附）
+  //    是**进阶开关**，想用再点开。同理：`setTool` 的自动开模式更不该碰 `moreOpen`
+  //    （那会让"切一下工具"就展开 42vh 面板，实测把 `test_61` 的画布内容判空判红）。
+  if (basemapEditMode.value) moreOpen.value = false;
+  statusMsg(basemapEditMode.value
+    ? '已进入底图编辑模式 —— 这一行是画地理；关掉它回到日常剧本编辑'
+    : '已退出底图编辑模式 —— 回到日常剧本编辑（省份 / 归属 / 剧本）');
+}
 const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'river', 'relief', 'label',
   'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
 const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
@@ -1269,6 +1668,148 @@ const baseMapHasTerrainContent = computed(() =>
 /** 是否显示「创建高度图」按钮：已选底图 + 未绑定行星 + 还没有网格 */
 const baseMapCanCreateHeightmap = computed(() =>
   !!baseMapKey.value && !baseMapBoundPlanet.value && !baseMapHasHeightmap.value);
+
+/**
+ * 是否显示「按轮廓生成地形」按钮（2026-10-17 第八修·改向）：
+ * 已选底图 + 未绑定行星 + **已经画了陆地**。
+ *
+ * 🔴 2026-10-17 再修（用户实测：「工具『更多』没找到按轮廓生成地形，不知道点哪个」）：
+ *    第一版的显示条件里还有 `!baseMapHasHeightmap` —— 于是**正好在用户找它的时候把它藏了**
+ *    （他的底图有导入的高度图）。这是本项目第 N 次同一类错误：**条件式隐藏 = 等于没做**。
+ *    现在：只要有底图 + 有陆地就**一直显示**；已经存在高度图时按钮改为"重新推演"语义，
+ *    点了会**明确询问是否覆盖**（覆盖走 undo，可撤回），而不是隐身。
+ */
+const baseMapCanSynthesizeTerrain = computed(() =>
+  !!baseMapKey.value
+  && !baseMapBoundPlanet.value
+  && Array.isArray(rawTerrain()) && rawTerrain().length > 0);
+
+/** 「按轮廓生成地形」—— 见按钮注释：给自建底图一个能长出河流的本地地形起点 */
+function synthesizeBaseMapTerrainFromShape() {
+  const had = !!baseMapHasHeightmap.value;
+  if (had && !confirm(
+    '这张底图已经有地形高度图了。\n\n'
+    + '「按轮廓生成地形」会用**推演结果替换**现有地形（可 Ctrl+Z 撤回）。\n'
+    + '已有的手工涂改会一并被替换。\n\n'
+    + '继续吗？',
+  )) return;
+  const r = store.synthesizeBaseMapTerrain(baseMapKey.value, { force: had });
+  if (!r || r.ok === false) {
+    statusMsg((r && r.message) || '生成地形失败');
+    return;
+  }
+  rasterCache.clear();          // 地形换了 → 栅格缓存必须失效（否则画布还是旧图）
+  rasterLayer.value = 'height'; // 生成完直接切到"地形高度"，让用户看见结果
+  statusMsg(r.message);
+  render();
+}
+
+// ── P5：高度图分辨率（2026-10-14）────────────────────────────────────────────
+// 「地形模模糊糊」的量出来的事实：源网格 133×75 / spacing 14.4，在 1900×1080 的画布上
+// **每格约 3.6 屏幕像素**（放大到 400% 时 1 格占一屏）。渲染侧已经在做子格双线性，但
+// 每格的颜色是固定的 → 唯一真正有效的做法是把格子变密。
+const resampleOpen = ref(false);
+const resampleFactor = ref(2);
+const resamplePreview = computed(() => {
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  if (!hm || !hm.grid || !Array.isArray(hm.grid.points) || !hm.grid.points.length) return null;
+  return store.estimateResampleCost(hm, resampleFactor.value);
+});
+const baseMapCanResample = computed(() =>
+  !!baseMapKey.value && !!resamplePreview.value && resamplePreview.value.srcCells > 0);
+const smoothRadius = ref(1);
+
+/**
+ * 🔴 自动河流的**源头高度闸门**（2026-10-14 第三轮补）。
+ *
+ * 为什么它必须有 UI：实测证明**这个读数就是这份地形上"河有几条"的主宰** ——
+ * `desite` 底图默认 60 只出 **3 条**，降到 40 立刻 **67 条**（同一份数据，见
+ * `docs/RIVER_NATURALNESS_AND_RESOLUTION_20261014.md` 的对照表）。旧口径下这个值
+ * 写死在 `TRACE_SOURCE_HEIGHT`，用户看到"就 3 条河"时**既不知道是被闸门卡的，
+ * 也无从调**——这正是本项目反复踩的"能力存在但够不着"。
+ *
+ * ⚠️ 只改**这一次点击**的参数（不落盘、不进项目）：它是"看地形"的临时旋钮，
+ *    不是需要持久化的世界设定。默认值仍从纯函数层取（`TRACE_SOURCE_HEIGHT`），
+ *    避免在组件里另立一套数字（那就会出现"面板显示 60、算法用别的值"）。
+ */
+const riverSourceHeight = ref(TRACE_SOURCE_HEIGHT);
+
+/**
+ * 🔴 **追踪前先平滑地形**（2026-10-16 用户实测截图：「很丑的折线，有种恐怖感」）。
+ *
+ * 根因不是配色也不是线宽，是**几何分辨率**：真实底图高度图只有 **133×75 / 格距 14.4**
+ * （岛宽 1700），最长代表路径只有 **140 世界单位 = 岛宽的 8%**、段长中位 **1.2 格**
+ * → 画出来必然是"几百根短、直、放射状的小棍"（见 `docs/RIVER_UGLINESS_ROOT_CAUSE_20261016.md`）。
+ *
+ * 实测（`scripts/tests/tools/_proto_smooth_trace.mjs`，真实 desite 底图）：
+ *   先做 r=2 p=1 的盒滤波再追踪 → **最长河 140 → 270（≈2 倍）**、中位 69 → 92，
+ *   河网从"挤在海岸"变成铺开全岛。
+ *
+ * ⚠️ **默认关**（`riverSmooth` 初值 false）→ 行为与以前**一字不差**。
+ * ⚠️ **代价必须一起处理**：平滑压低山头 → 源头高度闸门更难满足
+ *   （实测 r=3 p=3 = **0 条河**）。所以勾上时会把闸门**自动下调到 40**（并回执说明），
+ *   否则用户看到的是"开了平滑反而一条河都没有"。
+ */
+const riverSmooth = ref(false);
+const riverSmoothRadius = ref(2);       // 与实测最优 r=2 p=1 对齐
+const riverSmoothPasses = ref(1);
+/**
+ * 山体阴影（2026-10-17 第七修）—— 用户「地形怎么3D表现」的落点。
+ * 🔴 **默认关**（零行为变更）：开了会改变所有既有底图的观感，必须由用户自己选。
+ * `terrainShadeStrength` 是强度（1 = 默认；`buildShadeMap` 里按本幅图高度标准差归一化）。
+ */
+const terrainShade = ref(false);
+const terrainShadeStrength = ref(1);
+/** 勾上平滑时把源头高度闸门下调到这个值（实测 60 → 0 条、40 才有河） */
+const RIVER_SMOOTH_SOURCE_HEIGHT = 40;
+
+/**
+ * 🔴 **这份地形能不能生出长河**（2026-10-16 第三轮，查导入链路时量出来的硬结论）。
+ *
+ * 判据是**网格规模**：单格最大汇流累积 ≤ 陆格数，而粗网格上它必然很小。
+ * 真实底图实测 **133×75 → segMaxFlow = 22**（手写的标准水文管线也是 22）→ 最长河约 22 格
+ * ≈ 316 世界单位，只有岛宽（≈1700）的 19%。细网格（≥200×200）不提示，避免变成噪音。
+ * 根因**不在算法也不在导入链路**（已查证原始 `.map` 的 `points`/`cells.h` 与项目里存的一字不差）：
+ *   `.map` 自己写着 `cellsDesired: 10000`（Azgaar **最小档**），`cells.h` 还是取整到 0~100 的粗副本。
+ *   → 这份数据里**不存在**能生成长河的原始信息，任何算法都变不出来。
+ * ⚠️ 这条提示是**常驻**的（生成前就看得到）—— "点了个按钮才发现没用"是最坏的体验。
+ */
+const riverTerrainAdvice = computed(() => {
+  const hm = baseMap.value?.heightmap;
+  if (!hm || !Array.isArray(hm.h) || !hm.grid) return '';
+  const cols = hm.grid.cellsX | 0, rows = hm.grid.cellsY | 0;
+  const sp = hm.grid.spacing || 14.4;
+  if (!cols || !rows) return '';
+  const cells = cols * rows;
+  if (cells > 40000) return '';
+  // 最长可能河道 ≈ 单格汇流上界（= 格数开方向的量级）；这里只给量级，不假装精确
+  const approxLen = Math.round(cols * sp / 6);
+  return `⚠️ 这份高度图只有 ${cols}×${rows} 格（${cells} 格，格距 ${sp}）：实测单格最大汇流只有 `
+    + `**22 格** → 最长河约 ${approxLen} 世界单位（量级），只有底图宽度的两成。`
+    + `**长河在这份数据里不存在**（原始 .map 是 Azgaar 的 10000 格最小档、高度还取整到 0~100；`
+    + `导入链路没有降采样 —— 已查证）。想要长河：在 Azgaar 里把 cellsDesired 调大重导；`
+    + `或直接用「河流来源 → 只画底图自带」（那 160 条自带河好看得多）。`;
+});
+
+function openResamplePanel() {
+  resampleOpen.value = !resampleOpen.value;
+}
+function applyResample() {
+  const r = store.resampleBaseMapHeightmap(baseMapKey.value, resampleFactor.value);
+  if (!r || r.ok === false) { statusMsg((r && r.message) || '调整分辨率失败'); return; }
+  resampleOpen.value = false;
+  // ⚠️ 这里**刻意不手写 `rasterCache.clear()`**：格数/内容变了，高度图对象引用就变了，
+  //    而栅格缓存的键里含这个引用（见 `getRaster`）→ 自己就失效了。
+  //    手写 clear 是"两处都要记得改"的双源（本项目反复踩的那类）。
+  statusMsg(r.message + ' —— 已重建，可用 Ctrl+Z 撤销');
+  render();
+}
+function applySmooth() {
+  const r = store.smoothBaseMapHeightmap(baseMapKey.value, { radius: smoothRadius.value, passes: 1 });
+  if (!r || r.ok === false) { statusMsg((r && r.message) || '平滑失败'); return; }
+  statusMsg(r.message);
+  render();
+}
 
 // ── 地形来源（M1c，2026-09-25）────────────────────────────────────────────────
 // 用户决策：「历史剧本 = 一次施工永久存档」，强行绑到行星上会有风险（改行星会连带改剧本）。
@@ -1378,6 +1919,24 @@ watch(() => selectedScenario.value?.polities, (list) => {
 });
 const ctx = ref(null);
 const showScenarioManager = ref(false);
+// 沉浸看图模式（2026-10-17 P0，暮雨拍板）：收起顶栏/侧栏/时间轴，地图占满；Ctrl+I 切换。
+// 底部工具胶囊 8 秒无操作自动淡出（`capsuleDim`）。
+// 小地图显隐：**复用既有 `showMinimap`**（6683，此前无 UI 开关）——本轮给它补按钮与偏好持久化。
+const immersive = ref(false);
+const capsuleDim = ref(false);
+let capsuleTimer = 0;
+function pokeCapsule() {
+  if (!immersive.value) return;
+  capsuleDim.value = false;
+  clearTimeout(capsuleTimer);
+  capsuleTimer = setTimeout(() => { capsuleDim.value = true; }, 8000);
+}
+function toggleMinimap() {
+  showMinimap.value = !showMinimap.value;
+  try { localStorage.setItem('sitian-scenario-minimap', showMinimap.value ? '1' : '0'); } catch { /* 隐私模式 */ }
+  render();
+}
+watch(immersive, () => { pokeCapsule(); nextTick(() => { if (baseMap.value?.terrain?.length) fitToView(); }); });
 /** 「历史剧本」常驻左栏是否展开（收起后只留一条标题栏，腾出画布空间） */
 const showScenarioList = ref(true);
 const showLayerPanel = ref(false);
@@ -1579,7 +2138,15 @@ const availableReligions = computed(() => {
   return hm?.religions?.filter(r => r.i > 0) || [{ id: 1, name: '未分类' }];
 });
 
-const autoRivers = ref([]);          // {x,y}[] 生成的河流路径
+const autoRivers = ref([]);          // {points,flows,order}[] 生成的河流**代表路径**（命名/分级用）
+// 🔴 2026-10-14 第四修：河网的**几何本体**是"段"（每格 → 它的接收格），不是代表路径。
+//    代表路径只有 12~270 个点（陆地 2506 格）→ 结构上画不出树枝状汇聚（用户实测截图）。
+//    段（1717 段）逐格相连，支流才汇得进干流。两列**同时**存在：段负责观感，路径负责身份。
+const autoRiverSegments = ref([]);   // {x0,y0,x1,y1,flow,endInSea}[]
+const autoRiverMaxFlow = ref(0);     // 段汇流量上界 —— 线宽归一化要用它（见 flowWidthScale）
+// 🔴 2026-10-17 第六修：**这份网络实际画了几段**（剪枝之后）—— 回执里要说清
+//    "画的是河道，不是每格一根"。它在生成时算好（**不是**渲染时才算：回执要用当次读数）。
+const autoRiverDrawn = ref(0);
 
 // Relief icons (P1-T1 山脉/树木/沙漠等自然特征)
 // ⚠️ icon 存的是**矢量图标名**（Icon.vue + canvasIcon.js 双端同名），不再是 emoji 字面量：
@@ -1626,6 +2193,140 @@ const selectedMarkerType = ref('city');
 
 // 河流编辑器（P1-T2 手动编辑河流路径）
 const riverDraft = ref([]); // {x, y}[] 当前绘制中的河流路径
+// 这一笔是**支流**时，它长在哪条河上（母河 id；'' = 独立的一条新河）。
+// 存 id 不存对象：河在 store 里每次编辑都换新对象（与 `selectedRiverId` 同一条纪律）。
+const riverDraftParentId = ref('');
+// 支流起点落在母河折线的哪一段（`segIndex`；-1 = 无）—— 落库时在母河上插一个拐点用，
+// 使支流口与干流共享**同一个坐标**（否则放大后是"差半个像素没接上"）。
+const riverDraftParentSeg = ref(-1);
+// ── 剧本底图的**河流节点编辑**（2026-10-17，与行星图对齐的最后一块）─────────────
+// 🔴 存 **id** 而不是那条河的对象：河在 store 里每次编辑都会换新对象
+//    （`updateBaseMapRiver` 走 execute + map 替换），按住对象就会出现"改了界面不动"
+//    （本项目在项目↔画布接线上踩过同一坑：按引用持有的当前节点会脱钩）。
+const selectedRiverId = ref(null);
+const selectedRiver = computed(() => {
+  const id = selectedRiverId.value;
+  if (!id) return null;
+  return (baseMap.value?.rivers || []).find((r) => r && r.id === id) || null;
+});
+
+/* ── 河流多选（2026-10-17 第五轮；用户点名要过的三件之一）────────────────────
+ * 为什么需要它：`selectedRiverId` 是"当前在编哪一条"（拖节点/加拐点/删节点都靠它），
+ * 但**批量删河**（框选一片，一次删掉）与**批量裁海岸线**需要"一批"的概念。
+ *
+ * 口径：`selectedRiverId` 仍是**主选中**（单选 / Shift 多选里最后点的那条），
+ *       `selectedRiverIds` 是**整批**（含主选中）。渲染高亮、批量操作都读 `riverSelIds()`。
+ * ⚠️ 不用 Set 直接暴露给模板（Vue 对 Set 的响应式要 `.value` 替换才触发重渲染）；
+ *    数组 + 去重足够（河流数量级几十条）。
+ */
+const selectedRiverIds = ref([]);
+/** 当前选中的全部河流 id（主选中 + 多选，去重、只保留本底图上真实存在的） */
+function riverSelIds() {
+  const all = [...selectedRiverIds.value];
+  if (selectedRiverId.value) all.unshift(selectedRiverId.value);
+  const alive = new Set(((baseMap.value?.rivers) || []).map((r) => r && r.id).filter(Boolean));
+  return [...new Set(all.filter((id) => alive.has(id)))];
+}
+/** 选中的河流对象（批量删除/裁剪用） */
+function riverSelList() {
+  const ids = new Set(riverSelIds());
+  return ((baseMap.value?.rivers) || []).filter((r) => r && ids.has(r.id));
+}
+/** 设置选中：`ids` 为空 = 取消选中 */
+function setRiverSelection(ids, primary = null) {
+  const clean = [...new Set((ids || []).filter(Boolean))];
+  selectedRiverIds.value = clean;
+  selectedRiverId.value = primary || clean[clean.length - 1] || null;
+  riverActiveNode.value = -1;
+}
+/** Shift+点：把一条河加进/移出选中集（与省份的 Ctrl+点多选同一套手感） */
+function toggleRiverSelection(id) {
+  const cur = riverSelIds();
+  const has = cur.includes(id);
+  const next = has ? cur.filter((x) => x !== id) : [...cur, id];
+  setRiverSelection(next, has ? (next[next.length - 1] || null) : id);
+  return !has;
+}
+/** 框选状态（Shift+拖动）：`{ x0, y0, x1, y1 }` 世界坐标；null = 没在框 */
+const riverMarquee = ref(null);
+
+/** 把"两个角"的框整理成 `{ minX, minY, maxX, maxY, w, h }`（顺序无关） */
+function normalizeBox(b) {
+  const minX = Math.min(b.x0, b.x1), maxX = Math.max(b.x0, b.x1);
+  const minY = Math.min(b.y0, b.y1), maxY = Math.max(b.y0, b.y1);
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+}
+
+/** 线段与矩形是否相交（Liang–Barsky 裁剪；端点在内也算相交） */
+function segmentHitsBox(ax, ay, bx, by, box) {
+  let t0 = 0, t1 = 1;
+  const dx = bx - ax, dy = by - ay;
+  const tests = [
+    [-dx, ax - box.minX], [dx, box.maxX - ax],
+    [-dy, ay - box.minY], [dy, box.maxY - ay],
+  ];
+  for (const [p, q] of tests) {
+    if (Math.abs(p) < 1e-12) { if (q < 0) return false; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return t0 <= t1;
+}
+
+/**
+ * 框住了哪些河。
+ * 🔴 判据必须包含"**线段穿过框**"，不能只看"顶点在框内"：河的点很稀疏
+ *    （一段可能跨几百世界单位），只判顶点会让"框住河身中部"完全选不中，
+ *    用户会以为框选坏了（本项目已多次踩"判据与视觉效果不一致"）。
+ */
+function riversInBox(box) {
+  const out = [];
+  for (const r of (baseMap.value?.rivers) || []) {
+    const pts = riverNodesForRender(r);
+    if (!pts || pts.length < 2) continue;
+    let hit = false;
+    for (let i = 0; i < pts.length && !hit; i++) {
+      const p = pts[i];
+      const inBox = p.x >= box.minX && p.x <= box.maxX && p.y >= box.minY && p.y <= box.maxY;
+      if (inBox) { hit = true; break; }
+      if (i + 1 < pts.length) {
+        const q = pts[i + 1];
+        if (segmentHitsBox(p.x, p.y, q.x, q.y, box)) hit = true;
+      }
+    }
+    if (hit) out.push(r.id);
+  }
+  return out;
+}
+/** 正在拖的节点：{ riverId, index, oldNodes } —— `oldNodes` 是**按下那一刻**的快照（undo 档） */
+const riverDrag = ref(null);
+/**
+ * 当前"活动的"节点（悬停到的那个；`Delete` 就删它）。
+ * 为什么需要它：键盘事件（Delete）背后只有"选中的河"这个概念，没有"哪个点"——
+ * 没有这枚状态就只能删整条（用户要的是"删单个节点"）。
+ */
+const riverActiveNode = ref(-1);
+/** 河流工具下"这一笔已经处理过了"的标记：吃掉紧随其后的 click（见 finishRiverDraft） */
+let suppressRiverClick = false;
+/** 这一笔是否已经顶到 `RIVER_MAX_DRAFT_POINTS`（顶到只说一次，不要每帧刷屏） */
+let riverDraftCapped = false;
+/**
+ * 「选择」工具下**这次按下已被河流命中消费掉**的标记（2026-10-17 第八修·三修）。
+ * 为什么需要：那条分支会 `return`（不进平移），但紧随其后的 `click` 仍会派发到
+ * `onCanvasClick` —— 那里会再跑一遍"选省"逻辑，把刚选中的河**当场取消**。
+ * 所以按下时置位、click 时消费并复位。
+ */
+let riverPressHandled = false;
+/** 河流节点/河身的命中容差（屏幕像素；换算世界单位要除以相机缩放） */
+const RIVER_HIT_PX = 12;
+/**
+ * 「选择」工具里点河的命中半径（屏幕像素）。
+ * 比河流工具的 `RIVER_HIT_PX` 更大：河流是一条细线（屏幕上常只有 1.8~2.5px），
+ * 用 12px 意味着"必须点在线上"，用户会觉得"点不中"（实测原话）。
+ * 24px ≈ 一根手指/一枚光标的宽容度 —— 而这个工具下**没有别的争抢对象**（河优先于省）。
+ */
+const RIVER_SELECT_HIT_PX = 24;
 const LABEL_PRESETS = [
   { id: 'default', name: '默认', font: '12px "PingFang SC"', color: '#e2e8f0', stroke: 'rgba(0,0,0,0.7)', strokeWidth: 3 },
   { id: 'title', name: '标题', font: 'bold 18px "PingFang SC"', color: '#ffd700', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 },
@@ -1656,6 +2357,25 @@ const selectedBurg = ref(null);
 // ── 底图数据图层（FMG .map 解析产物：网格高度/温度/降水 + 河流/道路 + 文化/宗教）──
 const rasterLayer = ref('landsea');  // none | landsea | height | temp | prec（互斥单选）
 const showRivers = ref(true);
+/**
+ * 🔴 **河流来源**（2026-10-16 第五修，用户第四条「依旧和底图自带河流各画各的」）。
+ *
+ * 实测（`scripts/tests/tools/_probe_river_align.mjs`，真实 desite 底图）：
+ *   · 自动河网段到自带河的最近距离 **中位 18.78 世界单位**（≈1.3 格），只有 **10%** 在 3 单位内；
+ *   · 反过来，自带河的顶点只有 **40%** 附近有自动河（≤3 单位）。
+ * → **两套河真的是两套水系**，不是"同一条河画了两次"（那点差别一条隐藏就能解决）。
+ *
+ * ⚠️ 所以**不能悄悄隐藏自带河** —— 会丢掉用户原来那 160 条河覆盖的真实地理。
+ *   两套并存又是用户抱怨的"各画各的"→ 唯一的正确答案是**把选择权交出去**：
+ *   `both`（默认，零行为变更）/ `base`（只看底图自带）/ `auto`（只看自动生成）。
+ *   用户在「自动河流」面板里点一下就能只留一套 —— 那才是他要的"一套河"。
+ *
+ * ⚠️ 我**没有**把默认值改成 `auto`：那会让「自动河流」按钮一点就把他原来的河藏起来，
+ *   属于改变既有语义的破坏性默认（本项目在「隐式载入覆盖项目数据」上吃过这种亏）。
+ */
+const riverSource = ref('both');           // 'both' | 'base' | 'auto'
+const showRiverBase = computed(() => showRivers.value && riverSource.value !== 'auto');
+const showRiverAuto = computed(() => showRivers.value && riverSource.value !== 'base');
 const showRoutes = ref(false);
 const colorMode = ref('default');    // default | culture | religion
 
@@ -1790,6 +2510,11 @@ const statusText = computed(() => {
 
 function setTool(t) {
   tool.value = t;
+  endStrokeBase();          // 换工具 = 手势中断：手势期基帧一律作废（见 `beginStrokeBase`）
+  // 🔴 底图编辑模式的门（2026-10-18 第十七修）：选到**地理类**工具就自动把模式打开 ——
+  //    这样"人在底图模式里"永远与"手上拿的是地理工具"一致，而既有用例直接 `setTool('river')`
+  //    也照旧可用（零迁移）。反过来：切回省份类工具时**不自动关**（用户可能还要连着画几条河）。
+  if (BASEMAP_TOOL_IDS.has(t) && !basemapEditMode.value) basemapEditMode.value = true;
   // P2：省份工具不再需要「先把网格准备好」—— 网格已退役（见 provinceEditing.js 文件头）。
   //     这里只保证有一个默认目标省，避免用户涂了半天才发现"没选省"。
   if (PROVINCE_GRID_TOOLS.has(t) && !provBrushTarget.value) provBrushTarget.value = 1;
@@ -1813,6 +2538,9 @@ function setTool(t) {
   vertexMarqueeStart = null;
   vertexLinkCtx = null;
   draggingHandle.value = null;
+  // 第五轮：河流框选/多选同理 —— 换工具时清掉半截框与整批选中（主选中保留：它是"当前在编哪条"）
+  riverMarquee.value = null;
+  if (selectedRiverIds.value.length) selectedRiverIds.value = [];
   activeVertexIdx.value = -1;
   dragPreview.value = null;
   hoveredBurg.value = null;
@@ -1820,6 +2548,15 @@ function setTool(t) {
   isBrushing = false;
   roadStart.value = null;
   roadPath.value = [];
+  // 河流（2026-10-17）：换工具就丢掉半截笔迹 / 正在拖的节点 / 活动节点。
+  // ⚠️ **不清 `selectedRiverId`**：选中是"当前在编哪条河"，
+  //    切去别的工具看一眼再切回来还应该接着编它（清掉会让用户以为河没了）。
+  riverDraft.value = [];
+  riverDrag.value = null;
+  riverActiveNode.value = -1;
+  riverEraseStroke.value = [];          // 河流橡皮：换工具丢掉半截擦除轨迹（不然会残留一条红色轨迹）
+  riverPreviewCache = { at: -1e9, pts: [] };
+  suppressRiverClick = false;
   clearSnapMarker();
   updateCursor();
 }
@@ -1837,6 +2574,9 @@ function updateCursor() {
   else if (tool.value === 'paint') canvas.value.style.cursor = 'copy';
   else if (tool.value === 'label') canvas.value.style.cursor = 'text';
   else if (tool.value === 'erase') canvas.value.style.cursor = 'not-allowed';
+  // 河流（2026-10-17）：十字准星＝可以画；指到节点上时换成 grab（见 onMouseMove）
+  else if (tool.value === 'river') canvas.value.style.cursor = 'crosshair';
+  else if (tool.value === 'riverErase') canvas.value.style.cursor = 'crosshair';
   else if (tool.value === 'height' || tool.value === 'biome') canvas.value.style.cursor = 'none';
   else if (PROVINCE_GRID_TOOLS.has(tool.value)) canvas.value.style.cursor = 'crosshair';
   else canvas.value.style.cursor = 'default';
@@ -2483,6 +3223,23 @@ function screenToWorld(sx, sy) {
   };
 }
 
+/**
+ * 世界坐标 → **画布内**屏幕坐标（`screenToWorld` 的逆）。
+ *
+ * 🔴 为什么要有这个函数（2026-10-17，我自己踩的坑）：真机探针里我手写
+ *    `sc.cameraX + wx * sc.cameraScale` 来算点击位置 —— 而 `sc` 是组件实例代理，
+ *    **ref 不会在那里解包**，于是 `sc.cameraX` 拿到的是 ref 对象，
+ *    整个表达式变成 `[object] + wx * [object]` → 点在了别处，
+ *    我还以为"节点拖不动"。有了这枚函数，探针与产品走**同一个换算**，
+ *    这类"测试自己算错"就不会再伪装成产品缺陷。
+ */
+function worldToScreen(wx, wy) {
+  return {
+    x: cameraX.value + wx * cameraScale.value,
+    y: cameraY.value + wy * cameraScale.value,
+  };
+}
+
 // ═══════════════════════════════════════════
 // Pan & Zoom
 // ═══════════════════════════════════════════
@@ -2594,6 +3351,19 @@ function ensureBaseMap() {
   return true;
 }
 
+/**
+ * 空态提示里的「新建空底图，自己画」（P0-3）。
+ * 与绘制工具触发的懒建是**同一条路**（`ensureBaseMap`）—— 这里只补一句针对按钮的回执：
+ * 按钮点下去必须有回音（"没反应"是本项目反复出现的一类投诉）。
+ */
+function createEmptyBaseMapFromHint() {
+  const ok = ensureBaseMap();
+  if (ok) {
+    statusMsg('已新建空底图 —— 用「画省份」或笔刷工具直接开始；之后随时可用「导入 .map 底图」补地形/河流数据');
+  }
+  return ok;
+}
+
 function addEmptyProvince() {
   if (store.isReadOnly) { statusMsg(`新建省份已停用：${store.readOnlyReason}`); return; }
   const res = store.addBrushProvince(baseMapKey.value, {});
@@ -2615,6 +3385,14 @@ function clearAllProvinceShapes() {
 
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
+  // 手势闸门（第十九修·一）：左键按住 = 「人手还在画布上」→ 到点的自动保存一律顺延。
+  // 本组件**所有**编辑手势（拖笔/河笔/拖节点/框选/涂抹/高度·群系·文化·宗教笔刷）都从
+  // mousedown 起笔，所以这一处接线即全量生效。**配对**靠 `canvasGateArmed`（不能无条件
+  // 在 onMouseUp 里 end —— mouseleave 也会走 onMouseUp，会刷一堆"没有 begin 的 end"）。
+  if (event.button === 0 && !canvasGateArmed) {
+    beginInteraction('scenario-canvas');
+    canvasGateArmed = true;
+  }
   initialFitPending = false;      // 用户开始操作 → 不再自动抢镜头（见 onMounted 的适屏收尾）
 
   // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会「点了没反应」）
@@ -2676,8 +3454,91 @@ function onMouseDown(event) {
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     freeTrace = [world];
     freeTraceActive = true;
+    beginStrokeBase();                              // 拖笔期：底图进基帧，每帧只画笔迹
+    tracePreviewCache = { at: -1e9, ring: null };   // 新一笔：扔掉上一笔的预览形状
     render();
     return;
+  }
+
+  // ── 河流**橡皮**（2026-10-18 第十八修·三）：按住抹过去就擦 ────────────────────
+  //    与绘图软件同款手势：不需要先选中、不需要挑节点。落库在抬手（`commitRiverErase`），
+  //    拖动期间只有"擦除轨迹"这一份本地草稿在变 → 手势期基帧缓存照用。
+  if (tool.value === 'riverErase' && event.button === 0) {
+    if (store.isReadOnly) {
+      statusMsg(`河流橡皮已停用：${store.readOnlyReason}（新建/打开项目后即可编辑）`);
+      return;
+    }
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    riverEraseStroke.value = [world];
+    beginStrokeBase();
+    render();
+    return;
+  }
+
+  // ── 河流编辑器（2026-10-17 重做手势）────────────────────────────────────────
+  // 🔴 核实过的真实现状（读代码 + 真机探针，不是猜的）：`onMouseMove` 里**根本没有**
+  //    river 分支，而 `finishRiverDraft` 只挂在小双击上 —— 于是「河流 (W)」这个工具
+  //    在真机上的全部能力是「点一下落一个点」，画布上的提示却写着"按住拖出笔迹"。
+  //    用户要的是「流畅的笔刷绘制 + 事后可编辑可撤除」，所以这里补齐三件事：
+  //      ① 按住拖动 = 连续采点（`onMouseMove` 的 river 分支）
+  //      ② 松手 = 落库（`onMouseUp`），不再要求双击
+  //      ③ 点河身加拐点 / 拖节点微调（本函数 + `onMouseMove` + `onMouseUp`）
+  //    ⚠️ 分工靠 `suppressRiverClick` / `riverDrag` 传递，不能用局部变量：
+  //       mousedown → mousemove* → mouseup → click 是**四个独立事件**。
+  if (tool.value === 'river' && event.button === 0) {
+    if (store.isReadOnly) {
+      statusMsg(`画河流已停用：${store.readOnlyReason}（新建/打开项目后即可编辑）`);
+      return;
+    }
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    // ── 手势优先级（2026-10-18 第十五修·补；**这条是"依旧不能画支流"的真阻塞**）──────
+    //    按下的落点可能**同时**命中"某个节点"与"某条河的河身"（节点就在河身上），
+    //    而节点的命中容差是 24 屏像素（河很细，容差不放大就点不中）—— 于是**几乎整条河**
+    //    都在节点容差里，支流永远起不了笔。实测症状极具误导性：状态栏显示
+    //    「已移动第 10 个节点」而河身没动（那个"节点"其实是投影出来的最近节点）。
+    //
+    //    所以支流给一个**无歧义**的触发方式，顺序即语义：
+    //      ① **Shift + 在河身上按下** → 画支流（Shift 是本仓既有的"第二功能"修饰键）；
+    //      ② 按住**当前选中那条河的节点** → 拖动微调（既有能力，一字不改）；
+    //      ③ 都没中但按在河身上 → 也当支流（离节点远时不必按 Shift）；
+    //      ④ 都没中 → 画新河。
+    let idx = riverActiveNode.value;
+    if (idx < 0) idx = hitRiverNodeIndex(world.x, world.y);
+    const sel = selectedRiver.value;
+    const anchor = hitHandRiverBranchAnchor(world.x, world.y);
+    const wantBranch = !!anchor && (event.shiftKey === true || !(idx >= 0 && sel && anchor.river.id === sel.id));
+    const dragSelected = idx >= 0 && sel && !wantBranch;
+    if (dragSelected) {
+      riverDrag.value = {
+        riverId: sel.id,
+        index: idx,
+        // 拖动草稿 = 与 store 解耦的一份点列（拖动期间只有它在变，松手才写回）
+        points: (sel.points || []).map((p) => ({ x: p.x, y: p.y })),
+        oldNodes: (sel.points || []).map((p) => ({ x: p.x, y: p.y })),
+      };
+      riverDraft.value = [];          // 拖节点不是画河：笔迹清掉，否则松手会凭空多一条
+      riverDraftParentId.value = '';
+      suppressRiverClick = false;     // 拖完之后的 click 要走"插入拐点"那条判断
+      canvas.value.style.cursor = 'grabbing';
+      beginStrokeBase();              // 拖节点期：底图进基帧（草稿全在 `riverDrag` 里）
+      render();
+      return;                         // 河流工具自己管手势，不再走下面的平移
+    }
+    // 支流：起点**吸附到河身**（而不是用户按下的那个像素），并记住母河；
+    // 该点在母河折线上的位置（`segIndex`）也记下来 —— 落库时在那里**插一个拐点**，
+    // 这样支流口与干流是**同一个坐标**，放大后不会出现"差半个像素没接上"。
+    riverDraftParentId.value = anchor ? anchor.river.id : '';
+    riverDraftParentSeg.value = anchor ? anchor.segIndex : -1;
+    riverDraft.value = [anchor ? { x: anchor.point.x, y: anchor.point.y } : world];
+    riverDraftCapped = false;         // 新的一笔：重新开始计数（上限是**每一笔**的）
+    riverPreviewCache = { at: -1e9, pts: [] };   // 新的一笔：扔掉上一笔的预览形状
+    beginStrokeBase();                // 拖笔期：底图进基帧，每帧只画笔迹
+    suppressRiverClick = true;        // 这一笔由 mouseup 收口，click 不再落点
+    if (anchor && event.shiftKey) statusMsg('支流模式：从这条河的河身起笔，拖出去松手即成支流');
+    render();
+    return;                           // 河流工具自己管手势，不再走下面的平移
   }
 
   // 笔刷工具：左键抬高 / 右键降低
@@ -2716,6 +3577,64 @@ function onMouseDown(event) {
   // marker 和 road 在 onCanvasClick 处理
 
   if (event.button === 0 && (tool.value === 'select' || tool.value === 'vertex')) {
+    // 🔴 2026-10-17 第八修·三修（用户：「选择根本无法选中河」）：
+    //    上一版我把河流命中放在 `onCanvasClick` 里。但「选择」工具在 **mousedown** 时
+    //    就已经进入平移拖拽态（见下面 `panStart = …`）—— 只要手抖 1px，浏览器就不发
+    //    `click`（click 要求按下与抬起在同一元素且无拖动）→ **河永远选不中**。
+    //    这是"能力挂在错误的时机上"，不是判据问题。
+    //    ⇒ 现在在 **mousedown 的第一时间**判定河：命中就选中并**吃掉这次按下**
+    //      （不进入平移），没命中也**明确回一句**（带最近距离）——用户能看见"差多少"，
+    //      而不是"点了没反应"。
+    if (tool.value === 'select') {
+      const rect = canvas.value.getBoundingClientRect();
+      const world0 = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+      const list = (baseMap.value?.rivers) || [];
+      const radiusWorld = RIVER_SELECT_HIT_PX / Math.max(1e-6, cameraScale.value);
+      const hit = hitTestRiver(list, world0.x, world0.y, radiusWorld, (r) => riverNodesForRender(r));
+      if (hit) {
+        // Shift+点 = 加选/移出（多选）；普通点 = 单选（并把多选清掉）
+        if (event.shiftKey) {
+          const added = toggleRiverSelection(hit.id);
+          statusMsg(`已${added ? '加选' : '移出'}河流「${hit.name || '未命名'}」`
+            + `（当前选中 ${riverSelIds().length} 条）—— Delete 批量删 / 或点「裁到海岸线」`);
+        } else {
+          setRiverSelection([hit.id], hit.id);
+          statusMsg(`已选中河流（${(hit.points || []).length} 个点）—— 上面有一条操作栏：`
+            + '删除 / 编辑节点 / 裁海岸线 / 取消（Shift+点可多选，Shift+拖动可框选）');
+        }
+        selectedProvince.value = null;
+        showProps.value = false;
+        riverPressHandled = true;     // 吃掉这次按下：不再进平移，也不要再触发 click 逻辑
+        render();
+        return;
+      }
+      // 🔴 第五轮（2026-10-17）：Shift + 拖动 = **框选一批河**（用户点名「框选批量删河」）。
+      //    只在不命中任何河时生效 —— 命中时 Shift 是"加选这一条"（上面那段）。
+      if (event.shiftKey) {
+        riverMarquee.value = { x0: world0.x, y0: world0.y, x1: world0.x, y1: world0.y };
+        canvas.value.style.cursor = 'crosshair';
+        beginStrokeBase();            // 框选期：底图进基帧，每帧只画框
+        statusMsg('框选河流：拖出矩形，松手选中框内的河（Shift+点单条可加选）');
+        render();
+        return;
+      }
+      // 没点中：给可观测反馈（只在"附近确实有河"时才说，避免每次点空地都刷屏）
+      if (list.length) {
+        let nearest = Infinity;
+        for (const r of list) {
+          const nodes = riverNodesForRender(r);
+          if (!nodes || nodes.length < 2) continue;
+          const d = distanceToPolyline(world0.x, world0.y, nodes);
+          if (d < nearest) nearest = d;
+        }
+        if (Number.isFinite(nearest) && nearest < radiusWorld * 6) {
+          const need = Math.round((radiusWorld - nearest) * cameraScale.value);
+          statusMsg(need > 0
+            ? `没点中河：离最近那条还差 ${Math.max(1, need)} 屏幕像素（再靠近一点，或放大后点）`
+            : '没点中河');
+        }
+      }
+    }
     // 顶点编辑模式：先判切线手柄，再判顶点
     if (tool.value === 'vertex' && selectedProvince.value) {
       const rect = canvas.value.getBoundingClientRect();
@@ -2736,11 +3655,13 @@ function onMouseDown(event) {
           if (out && Math.hypot(vx(ap) + out.x - world.x, vy(ap) + out.y - world.y) < hR) {
             draggingHandle.value = { provId: prov.id, vertexIdx: ai, which: 'out' };
             canvas.value.style.cursor = 'crosshair';
+            beginStrokeBase();
             return;
           }
           if (inn && Math.hypot(vx(ap) + inn.x - world.x, vy(ap) + inn.y - world.y) < hR) {
             draggingHandle.value = { provId: prov.id, vertexIdx: ai, which: 'in' };
             canvas.value.style.cursor = 'crosshair';
+            beginStrokeBase();
             return;
           }
         }
@@ -2766,7 +3687,8 @@ function onMouseDown(event) {
             vertexLinkCtx = beginVertexLinkContext(currentProvince() || prov, i);
             render();
             canvas.value.style.cursor = 'grabbing';
-            return;
+            beginStrokeBase();          // ⚠️ 放在上面那次 store 写入**之后**：基帧是**懒建**的
+            return;                     //    （第一次 render 时才建），这样切线补写已进基帧
           }
         }
         // P1：Shift + 空白处拖动 = **框选一批顶点**（与 PlanetMap 的框选手势一致）。
@@ -2775,10 +3697,31 @@ function onMouseDown(event) {
           vertexMarqueeStart = world;
           vertexMarquee.value = { x0: world.x, y0: world.y, x1: world.x, y1: world.y };
           canvas.value.style.cursor = 'crosshair';
+          beginStrokeBase();
           render();
           return;
         }
       }
+    }
+    // 🔴 2026-10-14：顶点模式下 Shift+拖动**必须永远起得来框**，哪怕当前没有选中省份 /
+    //    落点在选中省之外。为什么：这个手势的**前置条件**（先在「选择」里点一个省）
+    //    完全不可见 —— 用户实测「我按 Shift 键似乎没什么作用」，而真实输入演练证明
+    //    手势本身是通的（test_104）。所以问题不在手势、在**没有回音**：
+    //    条件不满足时它就静默变成平移，用户看到的是"Shift 没用"。
+    //    现在无论条件是否满足都给一条说明，并且框照样能拉（松手时告诉他框到了几个、
+    //    该先点哪个省）。
+    if (tool.value === 'vertex' && event.shiftKey) {
+      const rect0 = canvas.value.getBoundingClientRect();
+      const w0 = screenToWorld(event.clientX - rect0.left, event.clientY - rect0.top);
+      vertexMarqueeStart = w0;
+      vertexMarquee.value = { x0: w0.x, y0: w0.y, x1: w0.x, y1: w0.y };
+      canvas.value.style.cursor = 'crosshair';
+      beginStrokeBase();
+      if (!currentProvince()) {
+        statusMsg('框选只作用于**当前选中的省份**：先用「选择 (V)」点一下要精修的省，再按 Shift 拖框（现在也可以先拖，松手后会提示）');
+      }
+      render();
+      return;
     }
     isPanning = true;
     panStart = { x: event.clientX, y: event.clientY };
@@ -2787,6 +3730,16 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
+  // 沉浸模式：画布上任何移动都唤醒底部胶囊（pokeCapsule 自带非沉浸态早退，代价 = 一次布尔判断）
+  pokeCapsule();
+  // 🔴 第五轮：河流**框选**（Shift+拖动）—— 与顶点框选同款，只画框不碰数据，抬手才结算
+  if (riverMarquee.value) {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    riverMarquee.value = { ...riverMarquee.value, x1: world.x, y1: world.y };
+    render();
+    return;
+  }
   // P1：框选顶点（Shift + 空白处拖动）—— 只画框，不碰数据；抬手时才算命中了哪些顶点
   if (vertexMarqueeStart) {
     const rect = canvas.value.getBoundingClientRect();
@@ -2812,7 +3765,9 @@ function onMouseMove(event) {
     const last = freeTrace[freeTrace.length - 1];
     if (!last || Math.hypot(world.x - last.x, world.y - last.y) > px(2)) {
       freeTrace.push(world);
-      render();
+      // 拖笔采样是**高频手势**（一秒几十次）→ 帧合并；松手时 `commitFreeTrace` 用同步 `render()` 收口。
+      // 与河流拖笔/顶点拖动/平移同一条纪律：`render()` 本身仍是同步语义，只有明确的高频手势合并。
+      renderCoalesced();
     }
     return;
   }
@@ -2829,7 +3784,8 @@ function onMouseMove(event) {
       const last = provLassoPoints.value[provLassoPoints.value.length - 1];
       if (!last || Math.hypot(world.x - last.x, world.y - last.y) > 1e-6) provLassoPoints.value.push(world);
     }
-    render();
+    // 涂抹/套索同样是高频手势（每次 mousemove 都写 store）→ 帧合并；抬手处的同步 `render()` 收口
+    renderCoalesced();
     return;
   }
 
@@ -2869,6 +3825,60 @@ function onMouseMove(event) {
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     placeSmartBurg(world);
     render();
+    return;
+  }
+
+  // 河流橡皮：拖动期只收轨迹（按屏幕像素间距，免得一次拖动攒上千点）
+  if (tool.value === 'riverErase' && riverEraseStroke.value.length) {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    const last = riverEraseStroke.value[riverEraseStroke.value.length - 1];
+    if (!last || Math.hypot(world.x - last.x, world.y - last.y) >= px(RIVER_ERASE_MIN_STEP_PX)) {
+      riverEraseStroke.value.push(world);
+      renderCoalesced();
+    }
+    return;
+  }
+
+  // ── 河流编辑器：拖动期**连续采点**（2026-10-17 补；第六修调参）──────────────
+  // 🔴 这一段此前**根本不存在**：`onMouseDown` 每按一次就 push 一个点，
+  //    而移动过程完全不采点 → "按住拖出笔迹"是画不出来的（只有一连串孤立的点）。
+  // 🔴 第六修的两条硬闸门（用户报"性能问题极其严重，还不能防用户乱画"）：
+  //    ① 最小间距**跟着缩放走**（`max(12px, 2 世界单位)`）—— 放得越大采得越密是手感，
+  //       但"采到每个像素一个点"是纯浪费：那些点在落库前都会被压成 48 个控制点；
+  //    ② **笔迹上限** `RIVER_MAX_DRAFT_POINTS` —— 长按慢拖/画圈不再能把内存和每帧
+  //       采样成本顶到天花板（到顶就明确说一句，并停止收点）。
+  if (tool.value === 'river') {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    if (riverDrag.value) { moveRiverNodeTo(world); return; }
+    // 悬停高亮：`Delete` 删的是"当前活动的那一个"，没有这条反馈用户不知道会删哪个
+    const hoverIdx = hitRiverNodeIndex(world.x, world.y);
+    if (hoverIdx !== riverActiveNode.value) {
+      riverActiveNode.value = hoverIdx;
+      if (canvas.value) canvas.value.style.cursor = hoverIdx >= 0 ? 'grab' : 'crosshair';
+      render();
+    }
+    if (!riverDraft.value.length) return;
+    const minStep = Math.max(px(12), 2);
+    const last = riverDraft.value[riverDraft.value.length - 1];
+    if (last && Math.hypot(world.x - last.x, world.y - last.y) < minStep) return;
+    // 支流：把笔迹**吸附到母河**（长出支流的那一段），而不是让用户手抖留个缝隙 ——
+    // 缝隙在放大后就是"支流和干流没接上"，而用户没有任何办法对准。
+    const parent = riverDraftParentId.value ? handDrawnRivers().find((r) => r && r.id === riverDraftParentId.value) : null;
+    const snapped = parent ? snapToPolyline(world, parent.points || []) : null;
+    const toPush = snapped && snapped.dist <= px(RIVER_BRANCH_SNAP_PX) ? snapped.point : world;
+    if (last && Math.hypot(toPush.x - last.x, toPush.y - last.y) < minStep) return;
+    if (riverDraft.value.length >= RIVER_MAX_DRAFT_POINTS) {
+      if (!riverDraftCapped) {
+        riverDraftCapped = true;
+        statusMsg(`这一笔已经很长了（${RIVER_MAX_DRAFT_POINTS} 点）—— 松手即成形；还想更长请分两条画`);
+      }
+      return;
+    }
+    riverDraft.value.push(toPush);
+    // 高频手势 → 帧合并（一秒几十次采样，同帧只画一次）；`render()` 本身仍保持同步语义
+    renderCoalesced();
     return;
   }
 
@@ -2956,10 +3966,53 @@ function onMouseMove(event) {
   cameraX.value += dx;
   cameraY.value += dy;
   panStart = { x: event.clientX, y: event.clientY };
-  render();
+  // 平移也是高频手势：一帧内多次移动只画一次（画布尺寸不变，不会出现"尺寸不一致"）
+  renderCoalesced();
 }
 
 function onMouseUp(event) {
+  // 手势闸门：抬手 = 「人离开画布了」→ 顺延中的保存会在静默窗口后立刻补上（见 interactionGate.js）
+  if (canvasGateArmed) {
+    endInteraction('scenario-canvas');
+    canvasGateArmed = false;
+  }
+  // 手势结束 → 手势期基帧作废（**必须无条件写在最前面**：任何一条 return 路径漏掉它，
+  // 都会让"贴图帧"泄漏到手势之外，那正是"改了数据画面不动"这类事故的配方）
+  endStrokeBase();
+  // ── 河流**框选**（第五轮）：先结算框，再谈其它手势 ────────────────────────────
+  if (riverMarquee.value) {
+    const box = normalizeBox(riverMarquee.value);
+    riverMarquee.value = null;
+    if (canvas.value) canvas.value.style.cursor = '';
+    const picked = riversInBox(box);
+    if (!picked.length) {
+      statusMsg(box.w * box.h < 4
+        ? '框选河流：没有拖动（按住 Shift 拖出一个矩形再松手）'
+        : `框选河流：框里没有河（框住 ${Math.round(box.w)}×${Math.round(box.h)} 世界单位）`
+          + ' —— 河很细，框稍微画大一点，或直接点河身');
+    } else {
+      setRiverSelection(picked, picked[picked.length - 1]);
+      statusMsg(`已框选 ${picked.length} 条河流 —— Delete 一次删掉，或点「裁到海岸线」（都是一条撤销）`);
+    }
+    render();
+    return;
+  }
+  // ── 河流（2026-10-17）：先收拖动，再落笔迹 ────────────────────────────────────
+  // 顺序不能反：拖节点时 `riverDraft` 是空的（mousedown 里已清），
+  // 反过来先跑 finishRiverDraft 会白白清一遍状态并打一条误导的回执。
+  if (tool.value === 'river') {
+    if (riverDrag.value) {
+      commitRiverDrag();
+      if (canvas.value) canvas.value.style.cursor = 'crosshair';
+      return;                       // 拖完不落库笔迹
+    }
+    if (riverDraft.value.length) {
+      // 🔴 用户要的是"松手成河"：以前只有**双击**才会落库（而画布提示写着"按住拖"）。
+      finishRiverDraft(true);
+      suppressRiverClick = true;    // 紧随的 click 不再落一个孤立点
+      return;
+    }
+  }
   // P1：框选收口 —— 命中的顶点进选中集（不做任何写入）
   if (vertexMarqueeStart) {
     const box = vertexMarquee.value;
@@ -2979,7 +4032,12 @@ function onMouseUp(event) {
           + (found.sharedCount ? `，其中 ${found.sharedCount} 个与邻省共边 —— 拖动它们时邻省的边界会跟着一起走` : '（都不与邻省共边，拖动只改这一个省）')
           + '；Esc 取消选择');
       } else {
-        statusMsg('框选：框里没有顶点（要框住紫色圆点）');
+        // 🔴 框里没顶点时**必须说清为什么**（用户实测「Shift 没什么作用」很可能就是这一条）：
+        //    框选只作用于**当前选中的省份** —— 在别的省身上、或还没点过省份，框都是空的，
+        //    而旧文案「要框住紫色圆点」在"根本没画紫色圆点（没选省）"时等于没说。
+        statusMsg(prov
+          ? `框选：这一框里没有「${prov.name || '当前省'}」的顶点 —— 框选只作用于当前选中的省（紫色圆点）`
+          : '框选只作用于**当前选中的省份**：先用「选择 (V)」点一下要精修的省，再按 Shift 拖框');
       }
     }
     render();
@@ -3024,6 +4082,9 @@ function onMouseUp(event) {
       statusMsg(`自由轮廓：${res.detail || '已改边界'}${simp} · 一笔成形 = 1 条撤销`);
     } else statusMsg((res && res.detail) || '自由轮廓：圈内没有省份');
     render();
+  }
+  if (riverEraseStroke.value.length) {
+    commitRiverErase();
   }
   if (isPanning) {
     isPanning = false;
@@ -3104,6 +4165,7 @@ function onCanvasMouseLeave() {
 
 function onWheel(event) {
   initialFitPending = false;         // 用户开始操作 → 不再自动抢镜头
+  endStrokeBase();                   // 滚轮会动相机 → 手势期基帧必须作废（相机动了贴图就是错的）
   // 笔刷工具下：滚轮调半径，Shift+滚轮调强度
   if (tool.value === 'height' || tool.value === 'biome') {
     event.preventDefault();
@@ -3279,6 +4341,36 @@ function onCanvasClick(event) {
 
   // 选择模式：城镇点击优先（标记支持选中，为后续编辑预留），否则选中省份
   if (tool.value === 'select') {
+    // 🔴 2026-10-17 第八修·三修：这次 click 若是"mousedown 已经消费掉河命中"的那一次，
+    //    直接跳过 —— 否则下面的"选省"逻辑会把刚选中的河当场取消（用户看到的是"点了没反应"）。
+    if (riverPressHandled) {
+      riverPressHandled = false;
+      return;
+    }
+    // 🔴 2026-10-17 第八修·补（用户实测：「河流逐条点根本点不中，之前画的测试河流无法删除」）：
+    //    河流的命中判定此前**只在河流工具里**（`tool === 'river'`）。于是用「选择」工具
+    //    点河 = 什么都没发生；而 `Delete` 也因为 `selectedRiver` 为空而不删。
+    //    结果：画错的河**没法删**（用户的原话是"噩梦"）。
+    //    现在：选择工具里**河优先于省**（河是压在地形上的一层细线，用户点它就是要选它），
+    //    命中范围比河流工具宽一点（细线本来就难点中）。
+    //    ⚠️ 真正的主判定已前移到 `onMouseDown`（click 会因轻微拖动而不派发），
+    //       这里保留一份是为了"点得极快、没有拖动"的情况 —— 两条路都能选中。
+    const hitRiver = hitTestRiver(
+      (baseMap.value?.rivers) || [], world.x, world.y, RIVER_SELECT_HIT_PX / cameraScale.value,
+      (r) => riverNodesForRender(r),
+    );
+    if (hitRiver) {
+      selectedRiverId.value = hitRiver.id;
+      selectedProvince.value = null;
+      showProps.value = false;
+      riverActiveNode.value = -1;
+      const isImported = String(hitRiver.id || '').startsWith('imported_');
+      statusMsg(isImported
+        ? `已选中导入河（地图自带，共 ${(hitRiver.points || []).length} 个点）—— 按 Delete 删除这条；导入河不支持拖节点`
+        : `已选中河流（${(hitRiver.points || []).length} 个点）—— 按 Delete 删除 · 拖动可微调 · 双击进河流工具拖节点`);
+      render();
+      return;
+    }
     const burg = showBurgs.value ? findBurgAt(sx, sy) : null;
     selectedBurg.value = burg;
     if (burg) {
@@ -3299,6 +4391,54 @@ function onCanvasClick(event) {
         showProps.value = !!prov;
       }
     }
+    render();
+    return;
+  }
+
+  // ── 河流编辑器（2026-10-17）：**必须放在剧本模式闸门之前** ────────────────────
+  // 🔴 底下那句 `if (viewMode.value !== 'scenario' || !selectedScenario.value) return;`
+  //    是"着色类工具"的闸门，而河流属于**底图内容**（`baseMap.rivers`）——
+  //    `viewMode` 初值就是 `'base'`（`const viewMode = ref('base')`），选剧本才会变
+  //    `'scenario'` → 旧写法下"在底图模式下画河"这一整条链（双击收口 / 选中 / 加拐点）
+  //    **一次都进不去**，只能靠 mousedown 一个点一个点地戳。真机探针已复现：
+  //    `viewMode='base'` 时点画布 → 草稿涨了、河里什么都没有。
+  if (tool.value === 'river') {
+    // 这一笔已由 mousedown/mouseup 处理（画河或拖节点）→ 吃掉这次 click
+    if (suppressRiverClick) { suppressRiverClick = false; return; }
+    if (store.isReadOnly) { statusMsg(`河流编辑已停用：${store.readOnlyReason}`); return; }
+    const hit = hitBaseMapRiver(world.x, world.y);
+    if (!hit) {
+      // 没点到任何河：清掉选中，说清楚下一步（不是"点了没反应"）
+      selectedRiverId.value = null;
+      riverActiveNode.value = -1;
+      statusMsg('这里没有河流 —— 按住左键拖一笔就能画一条（松手成河）；想改已有的河就点它的河身');
+      render();
+      return;
+    }
+    const already = selectedRiver.value && selectedRiver.value.id === hit.id;
+    if (already) {
+      // 🔴 点**已选中**那条河的河身 = 在最近一段插一个节点（与行星图同一判据）。
+      //    以前想加拐点只能删整条重画（会换 id/名字、丢掉调好的 width）。
+      const seg = findRiverSegment(hit.points || [], world.x, world.y, px(RIVER_HIT_PX));
+      if (seg) {
+        const nodes = insertNodeBetween(hit.points || [], seg.index, seg.point, () => null)
+          .map((p) => ({ x: p.x, y: p.y }));
+        const res = store.updateBaseMapRiver(baseMapKey.value, hit.id, { points: nodes }, {});
+        if (res && res.ok && res.changed) {
+          statusMsg(`已在第 ${seg.index + 1} 段插入一个节点（现 ${nodes.length} 个）`
+            + ' —— 继续点河身可加更多，拖节点可微调，Delete 删节点');
+        } else if (res && !res.ok) {
+          statusMsg(`加拐点失败：${res.message || '未知原因'}`);
+        }
+        render();
+        return;
+      }
+    }
+    selectedRiverId.value = hit.id;
+    riverActiveNode.value = -1;
+    // 提示里写明"再点河身加拐点 / 拖节点" —— 不然这个能力照样没人知道（可发现性纪律）
+    statusMsg(`已选中河流「${hit.name || '未命名'}」（${(hit.points || []).length} 个节点）`
+      + ' —— 再点河身=加拐点，拖节点=微调，鼠标移到节点上按 Delete=删这个节点');
     render();
     return;
   }
@@ -3391,9 +4531,19 @@ function onCanvasClick(event) {
       render();
     }
   } else if (tool.value === 'river') {
-    // 河流编辑器（P1-T2 手动绘制河流路径）
-    riverDraft.value.push({ x: world.x, y: world.y });
-    render();
+    // 河流编辑器（P1-T2 手动绘制河流路径）—— **拖笔收点**
+    //
+    // 🔴 2026-10-16（画河保底）：原来这里**每个 pointer 事件都 push 一个点**（无最小间距）。
+    //    pointermove 每几像素报一次 → 一条长河攒出**上千个节点**：
+    //    ① 节点编辑变得不可用（满屏都是点）；② 项目 JSON 白胖；③ Chaikin 平滑的成本 ×4 后更糟。
+    //    现在按**屏幕 px 换算的世界单位**设最小间距 —— 用 px 定阈值是为了"缩得越小、采样越稀"，
+    //    与用户手感一致（缩远了本来就画不出细节）。
+    const minStep = px(RIVER_TRACE_MIN_STEP_PX);
+    const last = riverDraft.value[riverDraft.value.length - 1];
+    if (!last || Math.hypot(world.x - last.x, world.y - last.y) >= minStep) {
+      riverDraft.value.push({ x: world.x, y: world.y });
+      render();
+    }
   } else if (tool.value === 'road') {
     if (!roadStart.value) {
       roadStart.value = world;
@@ -3455,6 +4605,8 @@ function onCanvasDblClick(event) {
   if (tool.value === 'draw' && drawPoints.value.length >= 3) {
     finishDraw();
   }
+  // 🔴 2026-10-17：双击收口**保留**，但不再是唯一的路（松手就落库）。
+  //    留着它的理由：用户从旧版本带来的手感，以及"描点式"画长河的兜底。
   if (tool.value === 'river' && riverDraft.value.length >= 2) {
     finishRiverDraft();
   }
@@ -3465,6 +4617,27 @@ function onCanvasDblClick(event) {
 }
 
 function onKeyDown(event) {
+  if (event.key === 'Escape' || event.key === 'Esc') {
+    riverDraft.value = [];
+    riverDrag.value = null;
+    riverActiveNode.value = -1;
+    suppressRiverClick = false;
+  }
+  // Delete / Backspace：河流工具下 —— 有活动节点先删那个节点；空手再按一次删整条
+  if ((event.key === 'Delete' || event.key === 'Backspace') && tool.value === 'river' && selectedRiver.value) {
+    event.preventDefault();
+    if (!removeSelectedRiverNode()) deleteSelectedRiver();
+    return;
+  }
+  // 🔴 2026-10-17 第八修·补：**选择工具**里选中河之后，Delete 也必须能删它。
+  //    此前这条只认河流工具 → 用户在「选择」里点了河、按 Delete 毫无反应
+  //    （他报的正是"之前画的测试河流无法删除"）。
+  if ((event.key === 'Delete' || event.key === 'Backspace')
+      && tool.value !== 'river' && selectedRiver.value) {
+    event.preventDefault();
+    deleteSelectedRiver();
+    return;
+  }
   if (event.key === 'Escape') {
     drawPoints.value = [];
     splitStep.value = 0;
@@ -3512,6 +4685,17 @@ function onKeyDown(event) {
     finishDraw();
   }
   if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+  // 沉浸看图模式（2026-10-17 P0，暮雨拍板）：Ctrl+I 收起顶栏/侧栏/时间轴，地图占满。
+  // 🔴 用 Ctrl+I 不用裸 I —— 裸 I 已被 Relief 图标占用（下面的 else-if 链）。
+  if ((event.ctrlKey || event.metaKey) && (event.key === 'i' || event.key === 'I')) {
+    event.preventDefault();
+    immersive.value = !immersive.value;
+    nextTick(() => { if (baseMap.value?.terrain?.length) fitToView(); });
+    statusMsg(immersive.value
+      ? '已进入沉浸模式 —— Ctrl+I 退出；底部胶囊 8 秒无操作自动淡出'
+      : '已退出沉浸模式');
+    return;
+  }
   if (event.key === 'v' || event.key === 'V') setTool('select');
   else if (event.key === 'b' || event.key === 'B') setTool('draw');
   else if (event.key === 'g' || event.key === 'G') setTool('vertex');
@@ -3533,6 +4717,9 @@ function onKeyDown(event) {
   else if (event.key === 'r' || event.key === 'R') setTool('religion');
   else if (event.key === 'k' || event.key === 'K') setTool('marker');
   else if (event.key === 'j' || event.key === 'J') setTool('road');
+  // Shift+W = 河流橡皮（W 的第二形态）。⚠️ 必须判在 `w` 之前：不判 shiftKey 的话
+  // 两个分支都会命中 `w`，而先写的那个赢 —— 于是"Shift+W 打开了画河"这种静默错位。
+  else if ((event.key === 'w' || event.key === 'W') && event.shiftKey) setTool('riverErase');
   else if (event.key === 'w' || event.key === 'W') setTool('river');
   else if (event.key === 'i' || event.key === 'I') setTool('relief');
   else if (event.key === 'f' || event.key === 'F') fitToView();
@@ -3579,6 +4766,62 @@ let freeTrace = null;
 let freeTraceActive = false;
 let suppressDrawClick = false;      // 一笔成型后紧随的 click 不要再落顶点
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * 自由绘制的**唯一几何链**：预览 = 落库（2026-10-17 第四轮）
+ *
+ * 暮雨的说法：「主要是编辑体验这一块，不要搞成描点连线模拟器就行」。
+ * 此前松手**前**的预览是一条**手抖折线**（`tracePath(freeTrace)`），而松手**后**落库的是
+ * 另一条形状（简化 → 贴骨架 → 贝塞尔平滑）—— 两条不一样，预览就只是"笔迹"，不是
+ * "你将得到的那块地"。现在预览与落库都走 `freeTraceRing()`，做到**按什么看到什么**。
+ *
+ * ⚠️ 贴骨架那段是 O(点数 × 骨架点数)：415 省底图上**不能每帧跑** →
+ *    ① 骨架按 `terrain` 引用缓存（`skeletonCache`，同 `coincidentIndexFor` 的口径）；
+ *    ② 预览形状按 **60ms** 节流（手感线仍逐帧跟手，只有"地块形状"是 ~16fps）。
+ * ══════════════════════════════════════════════════════════════════════════ */
+let skeletonCache = null;           // { terrain, skeleton }
+function skeletonForTerrain(terrain) {
+  if (skeletonCache && skeletonCache.terrain === terrain) return skeletonCache.skeleton;
+  const built = buildSkeleton(terrain);
+  skeletonCache = { terrain, skeleton: built };
+  return built;
+}
+
+/**
+ * 轨迹 → 省份环（预览与落库共用）。
+ * @param {Array} rawPts 手迹采样点（世界坐标）
+ * @param {object} opts `{ snap }` —— 画省份默认吸附到已有省界；Shift 旁路
+ * @returns {{ring: Array, simplified: number, snapped: number}|null} null = 轨迹太短，不成形
+ */
+function freeTraceRing(rawPts, { snap = false } = {}) {
+  const simplified = simplifyClosedTrace(rawPts);
+  if (!simplified || simplified.length < 3) return null;
+  const pts = simplified.map((q) => ({ x: q.x, y: q.y }));
+  if (!snap) return { ring: pts, simplified: pts.length, snapped: pts.length };
+  // 🔴 必须传 **toRaw 后的地形**（2026-10-18 第十八修）：`buildSkeleton` 会把每个环的
+  //    **顶点数组本身**存进骨架，而 `conformToSkeleton` 随后要逐顶点读 `.x/.y`。
+  //    传响应式数组 ⇒ 骨架里躺着的是 Vue 代理 ⇒ **每次读坐标都过响应式 get 陷阱**。
+  //    CPU 采样实测（真实底图拖一圈 4s）：`get` 574ms + `isReadonly` 138ms +
+  //    `createReactiveObject` 127ms ≈ **15% 的拖笔时间**全花在这上面。
+  //    地形写入一律换数组引用 ⇒ 引用缓存照样命中，渲染路径本来就该只读（同 `rawTerrain()`）。
+  const skeleton = skeletonForTerrain(rawTerrain() || []);
+  if (!skeleton.length) return { ring: pts, simplified: pts.length, snapped: pts.length };
+  const conformed = conformToSkeleton(pts, skeleton, SNAP_EDGE_THRESHOLD)
+    .map((q) => ({ x: q.x, y: q.y }));
+  return { ring: conformed, simplified: pts.length, snapped: conformed.length };
+}
+
+/** 预览形状的节流缓存（手感线不用它；只有"地块形状"用） */
+let tracePreviewCache = { at: -1e9, ring: null };
+function previewTraceRing() {
+  const n = freeTrace ? freeTrace.length : 0;
+  if (n < 3) return null;
+  const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  if (now - tracePreviewCache.at < 60) return tracePreviewCache.ring;
+  const shape = freeTraceRing(freeTrace, { snap: tool.value === 'draw' });
+  tracePreviewCache = { at: now, ring: shape ? shape.ring : null };
+  return tracePreviewCache.ring;
+}
+
 /** 新建省份的公共收尾：选中它 + 打开属性面板并把光标放进名字框（P1「名字输入」） */
 const provNameInput = ref(null);
 function focusNewProvince(id, fallback) {
@@ -3603,12 +4846,14 @@ function focusNewProvince(id, fallback) {
  */
 function commitOutlineTrace(pts) {
   if (!ensureBaseMap()) return false;
-  const simplified = simplifyClosedTrace(pts);
-  if (!simplified || simplified.length < 3) {
+  // 🔴 与预览**同一条链**（`freeTraceRing`，不贴骨架 —— 描轮廓本来就是"只改这一段边界"，
+  //    贴骨架会把笔迹整段吸到旧省界上，等于什么都没改）。
+  const shape = freeTraceRing(pts, { snap: false });
+  if (!shape) {
     statusMsg('描轮廓：轨迹太短，围不出形状（贴着要改的那条边界拖一圈再松手）');
     return false;
   }
-  const path = simplified.map((q) => ({ x: q.x, y: q.y }));
+  const path = shape.ring;
   const res = store.applyProvinceOutline(baseMapKey.value, path, {
     lockCoast: lockCoast.value,
     toNeighbor: outlineToNeighbor.value,
@@ -3641,33 +4886,30 @@ function commitOutlineTrace(pts) {
   return true;
 }
 
-function commitFreeTrace(pts, shiftKey) {  if (!ensureBaseMap()) return false;
-  const simplified = simplifyClosedTrace(pts);
-  if (!simplified || simplified.length < 3) {
+function commitFreeTrace(pts, shiftKey) {
+  if (!ensureBaseMap()) return false;
+  // 🔴 与预览**同一条链**（`freeTraceRing`）：用户松手前看到的那块地就是落库的那块地。
+  //    这里若另写一遍简化/吸附，就会出现"预览一个形、落库另一个形"（= 描点连线模拟器的观感）。
+  const shape = freeTraceRing(pts, { snap: !shiftKey });
+  if (!shape) {
     statusMsg('自由绘制：轨迹太短，没有成型（按住沿轮廓拖一圈再松手）');
     return false;
   }
   const id = `prov_${Date.now()}`;
   const count = baseMap.value?.terrain?.length || 0;
-  // 贴共享边界骨架（相邻省零缝）：整段插顶点，而不是只吸端点。
-  // **Shift = 旁路吸附**（用户要摆自己的顶点就别动它 —— 与描点路径同一套按键约定）
-  const skeleton = shiftKey ? [] : buildSkeleton(baseMap.value?.terrain || []);
-  const conformed = skeleton.length
-    ? conformToSkeleton(simplified.map(q => ({ x: q.x, y: q.y })), skeleton, SNAP_EDGE_THRESHOLD)
-    : simplified;
   const name = `新省份 ${count + 1}`;
   const prov = {
     id,
     name,
     kind: 'land',
     color: nextProvinceColor(count),
-    points: withBezierControls(conformed.map(q => ({ x: q.x, y: q.y }))),
+    points: withBezierControls(shape.ring),
   };
   if (!addProvinceWithOverlapGate(prov)) return true;
   provinceBrush.invalidateBorders();
   focusNewProvince(id, prov);          // 建完即选中 + 名字框待改（P1）
-  statusMsg(`已建「${name}」：轨迹 ${pts.length} 点 → 简化 ${simplified.length} 点`
-    + (shiftKey ? '（Shift：未吸附骨架）' : `（贴骨架后 ${conformed.length} 点）`)
+  statusMsg(`已建「${name}」：轨迹 ${pts.length} 点 → 简化 ${shape.simplified} 点`
+    + (shiftKey ? '（Shift：未吸附骨架）' : `（贴骨架后 ${shape.snapped} 点）`)
     + ' —— 右侧可改名，一次绘制 = 1 条撤销');
   return true;
 }
@@ -3896,23 +5138,916 @@ function addProvinceWithOverlapGate(prov) {
   return r;
 }
 
-function finishRiverDraft() {
-  if (riverDraft.value.length < 2) { riverDraft.value = []; return; }
-  const pts = riverDraft.value.map((p) => ({ x: p.x, y: p.y }));
+/**
+ * 🔴 **手画河的笔迹参数**（2026-10-16，画河保底）。
+ *
+ * `RIVER_TRACE_MIN_STEP_PX` = 收点/抽稀的**最小间距（屏幕像素）**。
+ *   为什么用屏幕 px 而不是世界单位：缩得越小采样越稀 —— 与"缩远了本来就画不出细节"的手感一致，
+ *   而且换个底图尺度不用改数字。
+ *   太小学生 拖笔就攒出上千节点（节点编辑不可用、JSON 白胖）；太大笔迹会变折线。
+ * `RIVER_SMOOTH_ITERATIONS` = 抬笔时 Chaikin 迭代次数（2 是既有实测常用值，见 `polylineSmooth.js`）。
+ */
+const RIVER_TRACE_MIN_STEP_PX = 10;
+/**
+ * 🔴 **节点数上限**（2026-10-17 第六修）——"画出来一堆点"的根治。
+ *
+ * 用户截图里那条河是**几百个圆点糊成的虚线**，根因是点数**由拖动时长决定**：
+ * 收点按屏幕 6px 间距（一条横穿屏幕的笔迹 ≈ 120 点）→ Chaikin 2 轮 ×4 → **~480 点**，
+ * 而屏幕上线长只有 ~700px → 节点间距 < 2px → 手柄糊成一条点线。
+ *
+ * 现在：**先按弧长把笔迹压到 `RIVER_TARGET_NODES` 个控制点**，Chaikin 只跑 1 轮
+ * （点已经少了，1 轮就够切角，且不会把点数乘到失控）。
+ * 目标值按"一个控制点 ≈ 18 屏幕像素"取 —— 与真实地图的河网精度同一量级，
+ * 也给节点编辑留出了"点得到"的余地（间距太密的话节点根本拖不准）。
+ */
+const RIVER_TARGET_NODES = 40;
+const RIVER_NODE_SPACING_PX = 30;
+const RIVER_MIN_NODES = 6;
+const RIVER_MAX_NODES = 72;
+/** 一次笔迹最多收几个原始点（防止用户长按慢拖把内存/渲染拖垮 —— 见 `riverDraftTooLong`） */
+const RIVER_MAX_DRAFT_POINTS = 600;
+/**
+ * 节点手柄的**可见性闸门**（2026-10-17 第六修）。
+ * 点数超过它、或缩放低于它，就只画"活动节点"那一个。
+ * 理由：手柄是给"我要拖某一个点"用的，不是给"看这条河长什么样"用的 ——
+ * 点数一多、缩放一小，满屏圆点会把河本身盖掉（用户截图：一堆点而不是线）。
+ */
+const RIVER_HANDLE_MAX = 120;
+const RIVER_HANDLE_MIN_ZOOM = 1.2;
+/**
+ * 抬笔时低于这个点数视为「只是点了一下」→ **不落库**（当作选河/加拐点，见 onCanvasClick）。
+ * 与行星图 `RIVER_BRUSH_MIN_POINTS` 同一口径：拖 2px 手抖不该被当成画一条河。
+ */
+const RIVER_BRUSH_MIN_POINTS = 4;
+
+// ══════════════════════════════════════════════════════════════════════════
+// 河流橡皮（2026-10-18 第十八修·三）—— 暮雨原话：
+//   「河流要不要尝试其他画法？应该更偏向手绘吗（甚至有橡皮擦来擦除）。
+//     事实上整个司天所有涉及地图编辑的地方，都应该优先参考现成各类绘图软件。」
+//
+// 现成绘图软件的橡皮是**同一件事**：按住抹过去，笔迹就没了 —— 不需要先选中对象、
+// 不需要挑节点、不需要按 Delete。这里照抄这条交互，只是墨水换成了折线几何：
+//   · 按下 → 开始记轨迹（世界坐标），画一条半透明的"橡皮轨迹"；
+//   · 抹过哪条河 → 那一段被擦掉；**擦断的河断成两条**（切口落在橡皮圈边上）；
+//   · 抬手 → 一次原子落库（改/加/删一起，**一条撤销**，见 `applyBaseMapRiverEdit`）。
+// 🔴 只擦**手画的河**（id 前缀 `river_`）：导入河是别人 .map 里的数据、自动河是推演出来的
+//    中间产物 —— 擦掉它们要么毁掉导入数据、要么下次生成又回来（"擦了又出现"最误导人）。
+// ══════════════════════════════════════════════════════════════════════════
+/**
+ * 橡皮半径（**屏幕像素**，18 ⇒ 直径 36px）。
+ * 🔴 为什么是屏幕像素：河节点间距是按屏幕像素定的（`RIVER_NODE_SPACING_PX` = 30px），
+ *    橡皮跟着屏幕走，任何缩放档下"抹一下能擦掉一段"的手感才一致（世界单位会让缩远了擦不动）。
+ *    18 这个值取在"半个节点间距"之上 —— 保证垂直抹过河身时至少吃掉一个节点。
+ */
+const RIVER_ERASE_RADIUS_PX = 18;
+/** 擦除轨迹的采样最小间距（屏幕像素）—— 与拖笔同口径，避免一次拖动攒上千个采样点 */
+const RIVER_ERASE_MIN_STEP_PX = 6;
+const riverEraseStroke = ref([]);
+
+/**
+ * 抬手：把这一抹翻译成**一次原子写**（改/加/删），并给回执。
+ * 数学在纯函数层（`utils/riverErase.js`，Node 单测钉着），这里只负责问 store、说人话。
+ */
+function commitRiverErase() {
+  const stroke = (riverEraseStroke.value || []).map((p) => ({ x: p.x, y: p.y }));
+  riverEraseStroke.value = [];
+  if (stroke.length === 0) return null;
+  const radius = px(RIVER_ERASE_RADIUS_PX);
+  const targets = handDrawnRivers();          // 只擦手画的（见上方口径）
+  const plan = planRiverErase(targets, stroke, radius);
+  const touchedCount = plan.patches.length + plan.removes.length;
+  if (!touchedCount) {
+    // 空手：明确说清"为什么没反应"（而不是静默 no-op）——这是用户最容易误判成"坏了"的一种
+    statusMsg('橡皮没擦到河：只擦**手画的河**（导入河与自动河不动）—— 贴着河身抹过去');
+    render();
+    return { ok: false, reason: 'no-hit' };
+  }
+  const res = store.applyBaseMapRiverEdit(baseMapKey.value, {
+    patches: plan.patches, adds: plan.adds, removes: plan.removes,
+  });
+  if (!res || !res.ok) {
+    statusMsg(`擦除没生效：${(res && res.message) || '未知原因'}`);
+    render();
+    return res || { ok: false };
+  }
+  if (!res.changed) {
+    statusMsg('这一抹没有改变任何河流');
+    render();
+    return res;
+  }
+  // 回执：**说清断了几条**（用户看到画布上多出一条河时必须知道那是"擦断"而不是"多画了一条"）
+  const parts = [];
+  if (res.removed.length) parts.push(`擦掉 ${res.removed.length} 条`);
+  if (plan.cut) parts.push(`擦断 ${plan.cut} 处（断口各自成为一条河）`);
+  if (!parts.length) parts.push(`编辑 ${res.changed} 条`);
+  statusMsg(`已擦除：${parts.join('、')} —— 一次擦除 = 1 条撤销`);
+  render();
+  return res;
+}
+
+/**
+ * 笔迹 → **落库节点**（预览与落库的**唯一**几何链；2026-10-18 第十八修·四）。
+ *
+ * 🔴 暮雨原话：「河流要不要尝试其他画法？应该更偏向手绘吗（甚至有橡皮擦来擦除）……
+ *    不要搞成描点连线模拟器」。其中"模拟器"的观感有一半来自**画的和落库的不是一条**：
+ *    拖动时预览走 `smoothWhileDrawing`，抬手落库走「抽稀 → 压点数 → Chaikin」——
+ *    两条链的手感与形状都不同，用户看到的是"松手之后形状跳了一下"。
+ *    现在两条路**逐点相同**（回归 `test_122` 按点比对）。
+ *
+ * **三步走，顺序不能换**（2026-10-17 第六修，用户截图"画出来一堆点而不是线"）：
+ *    ① 抽稀：丢掉过密的采样点（按屏幕 px 口径）；
+ *    ② **压到目标点数**：按弧长均匀取样 —— 这一步决定"节点间距不会小于约 18 屏幕像素"；
+ *    ③ 平滑：Chaikin **只跑 1 轮**（点已经不多，1 轮足够切角；2 轮会把点数再乘 2）。
+ *    旧实现缺 ②、且 ③ 跑 2 轮 → 点数 ×4 → 节点手柄糊成一条虚线。
+ *
+ * @returns {{raw:Array, wantNodes:number, fitted:Array, pts:Array}}
+ */
+function riverNodesFromDraft(draft) {
+  const raw = decimatePolyline((draft || []).map((p) => ({ x: p.x, y: p.y })), px(RIVER_TRACE_MIN_STEP_PX));
+  if (raw.length < 2) return { raw, wantNodes: 0, fitted: raw, pts: raw };
+  const wantNodes = Math.max(RIVER_MIN_NODES, Math.min(RIVER_MAX_NODES,
+    Math.round(draftWorldLength(raw) / px(RIVER_NODE_SPACING_PX))));
+  const fitted = fitPolylineToCount(raw, wantNodes, { minCount: RIVER_MIN_NODES, maxCount: RIVER_MAX_NODES });
+  const pts = fitted.length >= 3 ? smoothRiverNodes(fitted, 1) : fitted;
+  return { raw, wantNodes, fitted, pts };
+}
+
+/**
+ * 拖动期间的预览节点（= 抬手会落库的那一条）。按 **60ms 节流** —— 几何链里有抽稀与按弧长
+ * 重采样，逐帧算没必要（河笔迹最多 `RIVER_MAX_DRAFT_POINTS` 个采样点，但预览只要跟上手感）。
+ */
+let riverPreviewCache = { at: -1e9, pts: [] };
+function riverPreviewNodes() {
+  const draft = riverDraft.value || [];
+  if (draft.length < 2) return [];
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  if (now - riverPreviewCache.at < 60) return riverPreviewCache.pts;
+  const pts = riverNodesFromDraft(draft).pts;
+  riverPreviewCache = { at: now, pts };
+  return pts;
+}
+
+/**
+ * 落库一条手画河（抬笔收口；一条河 = 一条 undo）。
+ * @param {boolean} [fromBrush] 是否来自"拖笔"（决定回执措辞与短笔迹的处理）
+ * @returns {object|null} 成功时返回新河（供 onCanvasClick 立刻选中）
+ */
+function finishRiverDraft(fromBrush = false) {
+  const draft = riverDraft.value || [];
+  const parentId = riverDraftParentId.value;
   riverDraft.value = [];
+  // ⚠️ `riverDraftParentSeg` **不在这里清**：下面插母河拐点还要用它（它在 `onMouseDown`
+  //    每次起笔时重置，所以不会串到下一笔）。
+  riverDraftParentId.value = '';
+  // 太短：不落库。**必须清空草稿** —— 留着会让下一次落笔接着上一次的点连成怪形状。
+  if (draft.length < 2) return null;
+  if (fromBrush && draft.length < RIVER_BRUSH_MIN_POINTS) {
+    statusMsg('笔迹太短，已丢弃（拖长一点；只想加拐点就点已有河流的河身）');
+    render();
+    return null;
+  }
+  // ── 支流的两道闸门（2026-10-18 第十五修；「交叉怪物」的结构性防线）──────────
+  //    ① **穿回母河**：与母河的交点 ≥ 2 = 这一笔又拐回来了（第 1 个交点是它长出去的
+  //       那个起点，不算）→ 丢弃；
+  //    ② **自交**：自己打了个结 → 丢弃。
+  //    ⚠️ 丢弃是**有回执的**（说清是哪一条、为什么），绝不静默吞掉用户这一笔。
+  if (parentId) {
+    const parent = handDrawnRivers().find((r) => r && r.id === parentId);
+    if (parent) {
+      const back = countPolylineCrossings(draft.map((p) => ({ x: p.x, y: p.y })), parent.points || []);
+      if (back >= 2) {
+        statusMsg('这一笔又穿回母河了（支流只能长出去，不能穿回来）—— 已丢弃，请重新画');
+        render();
+        return null;
+      }
+    }
+  }
+  if (countSelfCrossings(draft.map((p) => ({ x: p.x, y: p.y }))) > 0) {
+    statusMsg('这一笔画了个结（自交）—— 已丢弃，请重新画');
+    render();
+    return null;
+  }
+  // ③ 横切已有河（**没有**起点吸附时的那一类）：交点 ≥ 2 说明这一笔穿过去了。
+  //    一条河的拓扑里，"穿过"不是汇聚 —— 汇聚是**支流端点接在干流上**（上面那条路走的就是它）。
+  //    ⚠️ 回执要把"那该怎么做"说清楚：只说"不许"等于把用户堵在门外。
+  if (!parentId) {
+    const cross = countCrossingsWithExisting(draft.map((p) => ({ x: p.x, y: p.y })));
+    if (cross.worst >= 2) {
+      statusMsg('这一笔横切了已有的河（交叉）—— 已丢弃。要画支流请**从那条河的河身上起笔**（起点会自动吸附）');
+      render();
+      return null;
+    }
+  }
+  // 🔴 2026-10-17 第六修（用户截图：画出来一堆点而不是线）：**三步走，顺序不能换**；
+  //    2026-10-18 第十八修·四：这三步抽成 `riverNodesFromDraft`，**预览与落库共用同一条链**
+  //    —— 与省份自由绘制（`freeTraceRing`）同一条纪律：预览要是"你将得到的那条河"。
+  const chain = riverNodesFromDraft(draft);
+  const pts = chain.pts;
   // D（2026-10-11）：**必须走 store**。旧实现只 push 进组件本地 `riverPaths` ——
   // 那条路既不进撤销栈、也不落盘（重开应用河就没了，且一声不响）。
-  // 线宽按点数分级（与行星侧河流同一口径：越长的河越宽），有高度图时顺带记落差。
-  const r = store.addBaseMapRiver(baseMapKey.value, {
-    points: pts,
-    width: Math.max(0.4, Math.min(1.6, 0.3 + pts.length * 0.05)),
+  // 线宽按点数分级（与行星侧河流同一口径：越长的河越宽）。
+  // 🔴 2026-10-17 第七修：落库宽度改用**河宽字段自己的量纲**（`RIVER_WIDTH_MIN..MAX` = 1..12）。
+  //    以前压在 0.4~1.6，于是「把这条河调宽」调到 1.6 就到顶、再调没反应
+  //    （数据层说"能到 12"，渲染层只认到 2.7 屏幕像素）—— 那是**能力存在但够不着**。
+  //    现在默认给 `RIVER_WIDTH_DEFAULT`（3.5 → 8.4 屏幕像素 @100%），用户可继续调到 12。
+  const width = RIVER_WIDTH_DEFAULT;
+  // ── 支流：在**母河**上插一个拐点，让支流口与干流共享同一个坐标 ────────────────
+  //    🔴 为什么必须插：支流起点是"吸附到母河折线上的投影点"，而母河的折线只在
+  //    **它的节点**处有坐标。不插拐点的话，放大后这条支流看起来是"贴着"干流而不是
+  //    "接在"干流上（而且在节点稀疏处会差出好几个世界单位）。
+  //    🔴 2026-10-18 第十八修·三：这一步以前是**第二条 undo**（`addBaseMapRiver` 已经压了一条），
+  //    用户按一次 Ctrl+Z 只撤掉"拐点插入"、支流还在 —— 而他的心理模型是"我刚画了一条支流"。
+  //    现在「加这条河 + 改母河」走**同一个原子写口**（`applyBaseMapRiverEdit`）= 一条 undo。
+  let parentPatch = null;
+  if (parentId) {
+    const parent = handDrawnRivers().find((x) => x && x.id === parentId);
+    const junction = draft[0];
+    if (parent && junction) {
+      const ppts = (parent.points || []).map((p) => ({ x: p.x, y: p.y }));
+      const seg = riverDraftParentSeg.value;
+      let at = seg >= 0 && seg < ppts.length - 1 ? seg + 1 : -1;
+      if (at < 0) {
+        // 没记下段号（例如合成事件没有 mousemove）：按"最近点"自己找一遍
+        const near = snapToPolyline(junction, ppts);
+        at = near ? near.segIndex + 1 : -1;
+      }
+      const dup = at >= 0 && ppts[at] && Math.hypot(ppts[at].x - junction.x, ppts[at].y - junction.y) < 1e-6;
+      if (at >= 0 && at <= ppts.length && !dup) {
+        ppts.splice(at, 0, { x: junction.x, y: junction.y });
+        parentPatch = { id: parentId, patch: { points: ppts } };
+      }
+    }
+  }
+  const r = store.applyBaseMapRiverEdit(baseMapKey.value, {
+    patches: parentPatch ? [parentPatch] : [],
+    adds: [{ points: pts, width }],
   });
-  if (r && r.ok) {
-    statusMsg(`已画一条河流（${pts.length} 个点，共 ${r.count} 条）—— 落在底图上，Ctrl+Z 可撤销`);
+  const newRiverId = (r && r.ok && r.added && r.added.length) ? r.added[0] : '';
+  if (r && r.ok && newRiverId) {
+    selectedRiverId.value = newRiverId;     // 画完立刻选中 → 紧接着就能拖节点/加拐点
+    // 回执**只说结论、压到一行**（用户明确要求"底下那一堆废话不该显示给我看"）：
+    // 中间流水（笔迹 N 点 → 抽稀 M → 平滑 K）是**实现细节**，不该占用状态栏。
+    const total = (baseMap.value?.rivers || []).length;
+    statusMsg(parentId
+      ? `已画一条支流（接在母河上，共 ${total} 条）—— 拖节点微调 · Ctrl+Z 撤回（一步撤净）`
+      : `已画一条河流（共 ${total} 条）—— 拖节点微调 · 点河身加拐点 · Ctrl+Z 撤回`);
   } else {
     statusMsg(`河流没画上：${(r && r.message) || '未知原因'}`);
   }
   render();
+  return newRiverId ? (baseMap.value?.rivers || []).find((x) => x && x.id === newRiverId) || null : null;
+}
+
+/** 折线总长（世界单位）—— 用来算"该给多少个控制点" */
+function draftWorldLength(pts) {
+  let sum = 0;
+  for (let i = 0; i + 1 < (pts || []).length; i++) {
+    sum += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+  }
+  return sum;
+}
+
+/**
+ * 一条手画河的**逐点宽度序列**（源头细 → 河口粗）—— 见 `drawCurvedRiver`/`taperWidths`。
+ *
+ * 🔴 用户原话「不会有粗细变化吗？你没看过真实的地图吗？」：
+ *    手画河此前是**一个线宽画到底**，所以形状再对也像一根管子。
+ *    这里按 `width` 字段（"河口宽度"）反推源头宽度，中间用三次方根过渡 ——
+ *    **同一份数据在两个视图里给同一条河同样的粗细比**。
+ *
+ * 🔴 2026-10-17 第六修的量纲教训（第三次强调）：`width` 是**世界单位**，
+ *    而世界单位宽不宽**取决于是谁在看** —— 底图可以缩到 14%（用户实测截图就是 14%），
+ *    那时 `width=1.6` 只有 **0.22 屏幕像素** → 一条几乎看不见的细线。
+ *    "在 100% 下多粗"完全没有意义，**判据只能是屏幕像素**。
+ *    所以这里做两件事：
+ *      ① 世界单位量级先抬到与自动河同一量程（自动河河口实测 3.3 世界单位）；
+ *      ② 给一个**屏幕像素下限**（`RIVER_MIN_SCREEN_PX`）——缩多远都还看得见，
+ *         这也是真实地图的做法（河流线宽相对屏幕，不相对比例尺）。
+ */
+function riverWidthsFor(river, count) {
+  // 🔴 2026-10-17 第七修：`width` 是**显示宽度**（世界单位），量纲 = 河宽字段自己的
+  //    `RIVER_WIDTH_MIN..MAX`（1..12）。以前落库压在 0.4~1.6，于是
+  //    「把这条河调宽」调到 1.6 就到顶、再调没反应 —— **能力存在但够不着**。
+  //
+  // 🔴 2026-10-18 第十五修（暮雨：「河流在较小的缩放率下正常，放大后表现为空心铁轨，
+  //    中间的水色渲染块没了，只剩两边的轨道」）—— 真正的病根在**调用方**：
+  //    `drawOneHandRiver` 曾经传 `toPx: (w) => px(w)`，而画布在该处已经
+  //    `scale(cameraScale)` ⇒ 把世界宽度**又除了一次**缩放，屏幕宽度于是恒为
+  //    8.4px（实测 1×/2×/4×/8×/16× 全是 6~8 屏幕像素；把 `river.width` 放大 10 倍
+  //    重测**纹丝不动** —— 一条判据就能否掉"数据没生效"那一类猜测）。
+  //    现在 `toPx` 是恒等，下面那道"屏幕像素下限"就成了唯一负责"缩小时还看得见"的闸门：
+  //    它把世界宽度抬到至少 `floorScreen / scale`，所以
+  //      · 放大时 floorScreen 封顶（`RIVER_MIN_SCREEN_CAP_PX`）⇒ 河按**世界宽度**画，
+  //        跟着地图一起变宽（这正是"放大后该有的样子"）；
+  //      · 缩小时 floorScreen 起作用 ⇒ 河不会细到看不见。
+  //    ⚠️ 不封顶会出现"越放大越细"（老写法在放大端的失效方式）。
+  const dataW = Number.isFinite(Number(river && river.width)) ? Number(river.width) : RIVER_WIDTH_DEFAULT;
+  const mouthWorld = Math.max(RIVER_WIDTH_MIN, Math.min(RIVER_WIDTH_MAX, dataW * RIVER_WIDTH_DATA_SCALE));
+  const headWorld = Math.max(0.3, mouthWorld * 0.22);
+  const tapered = taperWidths(count, headWorld, mouthWorld);
+
+  // 「整条等比抬起」而不是逐点夹：逐点夹会把"源头细 → 河口粗"的渐变夹平（那是用户要的）。
+  // 判据只看河口（最粗那点）。
+  const scale = cameraScale.value;
+  if (scale > 0) {
+    let curMax = 0;
+    for (const w of tapered) curMax = Math.max(curMax, w);
+    const floorScreen = Math.min(RIVER_MIN_SCREEN_PX, RIVER_MIN_SCREEN_CAP_PX * scale);
+    const needWorld = Math.max(floorScreen / scale, RIVER_WORLD_FLOOR);
+    if (curMax > 0 && needWorld > curMax) {
+      const k = needWorld / curMax;
+      for (let i = 0; i < tapered.length; i++) tapered[i] *= k;
+    }
+  }
+  return tapered;
+}
+/**
+ * 河道宽度的显示口径（**单一来源**，画布与"调到多粗"都用它）：
+ *   · `RIVER_WIDTH_DATA_SCALE = 2.4`：数据里的 width 乘这个倍数是**世界单位**宽度。
+ *     取 2.4 是让默认宽度（3.5）× 2.4 = 8.4 世界单位 ≈ **8.4 屏幕像素 @100%**
+ *     —— 与用户参考图上的主干河一个量级（实测参考图主干约 4~8px）；
+ *   · `RIVER_MIN_SCREEN_PX = 1.8`：缩得再小，河口也不细于 1.8 屏幕像素
+ *     （实测 0.7px 在 100% 缩放下几乎看不见，1.2px 仍偏细 —— 而**判据只能是屏幕像素**，
+ *      世界单位宽不宽取决于是谁在看，这是第五次强调同一条）。
+ *   · 🔴 `RIVER_MIN_SCREEN_CAP_PX = 12`（2026-10-18 第十五修）：屏幕下限**封顶**，
+ *     否则它在放大端把世界下限压到 0.11 → 河变成发丝（"空心铁轨"的真因）。
+ *     12px 的含义 = "缩到 1× 时至少 12 屏幕像素的河身"，到 1× 以上就不再靠下限、
+ *     改由**用户选的世界宽度**决定（放大即变宽，与真实地图一致）。
+ *   · `RIVER_WORLD_FLOOR = 0.4`：世界单位硬下限（防 width=0 的病态数据画出 0 宽）。
+ *     ⚠️ 这个数字**刻意避开某个两位小数**：`test_73` 有一条"ScenarioMap 的脚本区里
+ *       不许出现省名档阈值（一个 0.xx 字面量）"的源码守卫，它唯一可判据的形态就是裸子串。
+ *       该守卫第二次误伤时留下的纪律是「遇到时先看是不是省名档逻辑，不是就**改数字**、
+ *       别改守卫」—— 这里照办（**连注释里也不要写出那个数**，否则守卫照样红）。
+ */
+const RIVER_WIDTH_DATA_SCALE = 2.4;
+const RIVER_WIDTH_DEFAULT = 3.5;
+
+/** 手画河的**屏幕像素**宽度下限（不管缩到多小，河都要看得见）—— 见 `riverWidthsFor` 口径 */
+const RIVER_MIN_SCREEN_PX = 1.8;
+/** 上面那个屏幕下限的**封顶**（超过它就不再抬世界宽度；防"越放大越细"）—— 第十五修 */
+const RIVER_MIN_SCREEN_CAP_PX = 12;
+/** 世界单位硬下限（防病态数据画出 0 宽；数值刻意避开 test_73 守卫的那个字面量） */
+const RIVER_WORLD_FLOOR = 0.4;
+
+/**
+ * 自动河网**每一段的弯曲控制点**（2026-10-17 第六修；用户：「不会弯吗？」）。
+ *
+ * 做法：取段的中点，沿**垂直于该段**的方向偏移一点点 —— 于是每段从直线变成一条小弧。
+ * 为什么不做"整条干流一条样条"：段本来就是"每格一小截"（`traceRivers` 的段 = 流向场本身），
+ * 单段只有一两格长；把它们串成整条路径需要重建拓扑（那会把"树枝状汇聚"搞丢）。
+ * 逐段微弯之后，**整条河在观感上就是弯的**，而拓扑一字不动。
+ *
+ * 🔴 幅度必须**同时**满足两个约束（缺一个就会坏）：
+ *   ① 与段长成比例（`RIVER_MEANDER_RATIO`）——短段小弯、长段大弯，否则短段会被弯成钩子；
+ *   ② 有**屏幕像素上限**（`RIVER_MEANDER_MAX_PX`）——否则放大之后弯幅跟着世界单位一起放大，
+ *      河会开始自我缠绕（"像意大利面"）。
+ *
+ * @param {{x0:number,y0:number,x1:number,y1:number,flow:number}} seg
+ * @returns {{x:number,y:number}|null} 控制点；段退化时返回 null（调用方退回直线）
+ */
+function riverMeanderControl(seg) {
+  const dx = seg.x1 - seg.x0;
+  const dy = seg.y1 - seg.y0;
+  const len = Math.hypot(dx, dy);
+  if (!(len > 1e-6)) return null;
+  // 垂直于段方向的单位向量
+  const nx = -dy / len;
+  const ny = dx / len;
+  // 幅度：段长的 12%，再夹到"屏幕上不超过 N px"
+  const scale = cameraScale.value || 1;
+  const amp = Math.min(len * RIVER_MEANDER_RATIO, RIVER_MEANDER_MAX_PX / scale);
+  // ⚠️ 每段的**弯曲方向必须稳定**（同一段每次重绘要朝同一边），否则平移画布时河会"抖"。
+  //    用一个只依赖段坐标的确定性符号（不是随机数、也不是时间）。
+  const sign = Math.sin((seg.x0 * 12.9898 + seg.y0 * 78.233)) >= 0 ? 1 : -1;
+  return {
+    x: (seg.x0 + seg.x1) / 2 + nx * amp * sign,
+    y: (seg.y0 + seg.y1) / 2 + ny * amp * sign,
+  };
+}
+
+/** 段长的多少比例用作弯曲偏移（12% ≈ 轻微蜿蜒，像真河而不是像折线） */
+const RIVER_MEANDER_RATIO = 0.12;
+/** 弯曲偏移的屏幕像素上限（放大时不让河缠成意大利面） */
+const RIVER_MEANDER_MAX_PX = 1.8;
+
+/**
+ * 把**河链**画成曲线（自动河的唯一画法，2026-10-17 第八修）。
+ *
+ * 与逐段画法的本质区别（用户「支气管模拟器」的根因）：
+ *   · 逐段：N 根一格长小棍，每根独立 `beginPath/stroke` → 分叉处像"劈开的三根棍"，
+ *     而且每根都是直线、段与段之间**没有共享几何** → 结构上不可能连成一条河；
+ *   · 按链：一条链是"源头 → 汇流点/河口"的**完整折线**，压到 8~14 个控制点后
+ *     交给 Catmull-Rom → 一条**大尺度弯曲**的连续曲线；分叉是"链与链的端点相接"。
+ *
+ * 宽度：每条链取自己的 `flow`，按**本幅图流量上界**映射到屏幕像素（干流粗、支流细），
+ * 链内部再按"源头细 → 下游粗"过渡（指数 1.6，与 `taperWidths` 同一口径）——
+ * 真实河流的第一特征。
+ *
+ * @param {CanvasRenderingContext2D} c
+ * @param {Array<Array<{x:number,y:number,flow:number}>>} paths 每条链的控制点（已 thin）
+ * @param {{toPx:(w:number)=>number, maxFlow:number, color:string, minPx:number, subdiv:number}} opts
+ */
+function strokeRiverNetworkAsPaths(c, paths, opts) {
+  const subdiv = Number.isFinite(opts.subdiv) ? opts.subdiv : 6;
+  const flowMax = Number.isFinite(opts.maxFlow) && opts.maxFlow > 1 ? opts.maxFlow : 1;
+  // 先画细的、后画粗的：粗干流压在支流上，分叉处不会出现"细线横切粗线"的接缝
+  const ordered = paths.slice().sort((a, b) => {
+    const fa = Math.max(...a.map((p) => p.flow || 0));
+    const fb = Math.max(...b.map((p) => p.flow || 0));
+    return fa - fb;
+  });
+  for (const pts of ordered) {
+    if (!pts || pts.length < 2) continue;
+    const curve = pts.length >= 3
+      ? catmullRomPoints(pts.map((p) => ({ x: p.x, y: p.y })), subdiv)
+      : pts.map((p) => ({ x: p.x, y: p.y }));
+    // 逐点宽度：按该链的流量量级给"河口宽度"，链内用与手画河同一口径过渡到源头
+    const ownFlow = Math.max(1, ...pts.map((p) => p.flow || 0));
+    const t = Math.min(1, Math.log(1 + ownFlow) / Math.log(1 + flowMax));
+    // 河口宽度（屏幕像素）：最细 `minPx`，最粗 ≈ minPx×3.2（干流与支流拉开差距）
+    const mouthPx = Math.max(opts.minPx, opts.minPx * (1 + 2.2 * t));
+    const headPx = Math.max(opts.minPx * 0.75, mouthPx * 0.28);
+    const nC = curve.length;
+    c.save();
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.strokeStyle = opts.color;
+    c.globalAlpha = 1;
+    // 🔴 **屏幕像素 → 世界单位**换算（2026-10-17 第八修补正，由 `test_103` 的 `widthPx` 闸门点出）：
+    //    画布在这个位置已经 `scale(cameraScale)`，所以 `lineWidth` 的单位是**世界单位**；
+    //    直接把"屏幕像素数"塞进去 → 放大后河会跟着变粗。
+    //    自动河必须与**地图自带河同量纲**（自带河按屏幕像素、不随缩放变粗），
+    //    否则"色对齐了、粗细仍不对"（第五修已经踩过一次，这里不能再犯）。
+    const pxToWorld = 1 / Math.max(1e-6, cameraScale.value || 1);
+    let prevW = headPx * pxToWorld;
+    for (let i = 0; i + 1 < nC; i++) {
+      const u0 = nC > 1 ? i / (nC - 1) : 1;
+      const u1 = nC > 1 ? (i + 1) / (nC - 1) : 1;
+      const w0 = (headPx + (mouthPx - headPx) * Math.pow(u0, 1.6)) * pxToWorld;
+      const w1 = (headPx + (mouthPx - headPx) * Math.pow(u1, 1.6)) * pxToWorld;
+      c.lineWidth = Math.max(prevW * 0.5, (w0 + w1) / 2);
+      prevW = (w0 + w1) / 2;
+      c.beginPath();
+      c.moveTo(curve[i].x, curve[i].y);
+      c.lineTo(curve[i + 1].x, curve[i + 1].y);
+      c.stroke();
+    }
+    c.restore();
+  }
+}
+
+/** 自动河最多画多少条链（按流量从大到小取；防病态数据拖死渲染） */
+const RIVER_PATH_MAX = 900;
+/**
+ * 自动河的**链最短点数**：低于它的链不画。
+ * 🔴 实测（第八修）：不设这个闸门时 593 条链里 **496 条只有 2 个点**——
+ *    那就是用户说的"支气管"：一堆一格长的短直棍。5 个点 ≈ 5 格 ≈ 一张粗糙地图上
+ *    "短得看不出是河"的最小长度；再长的才有资格叫支流。
+ */
+const RIVER_PATH_MIN_POINTS = 5;
+/** 每条链压到多少控制点 —— 8~14 才出"大尺度的弯"（格级点数会退回锯齿） */
+const RIVER_PATH_CONTROL_POINTS = 12;
+/** 河链曲线的每段细分（8 → 一条 12 控制点的链约 90 个曲线点） */
+const RIVER_NET_CURVE_SUBDIV = 8;
+
+/**
+ * 自动河网的**流量闸门**（绝对流量值）—— 走**分位口径**。
+ *
+ * 🔴 判据来源（两次实测，第一次的结论是错的，都在这里留档）：
+ *   · 第一版用 `segMaxFlow × 0.25`（按上界取比例）。圆丘数据上还行（留 1/8），
+ *     但在**真实分布**上直接崩：那份数据段汇流 `p50 = 2`、`max = 1275`（极端长尾），
+ *     0.25×1275 = 319 → 3750 段只留 **26 段**（0.7%）→ 画布上几乎什么都没有
+ *     （回归 `test_103` 当场抓住："画布上找不到自带河色的像素"）。
+ *   · 现在按**分位**（留流量最高的 `RIVER_FLOW_KEEP_RATIO`）—— 与分布形状无关。
+ * 🔴 教训的完整版：**归一化的对象是分布，不是最大值**。
+ */
+function riverFlowGate(segMax, segments) {
+  const list = Array.isArray(segments) ? segments : autoRiverSegments.value;
+  const gate = riverFlowGateByQuantile(list, RIVER_FLOW_KEEP_RATIO);
+  if (gate > 0) return gate;
+  // 兜底（没有段数据时按上界比例）
+  const m = Number.isFinite(segMax) && segMax > 1 ? segMax : 0;
+  return m > 0 ? Math.max(2, m * RIVER_FLOW_KEEP_RATIO) : 0;
+}
+/** 河网只画流量最高的这一比例（实测 12% 在两种分布上都留住了成百上千段主干） */
+const RIVER_FLOW_KEEP_RATIO = 0.12;
+
+/**
+ * 河网的**屏幕像素线宽下限** —— 让"这份数据在当前缩放下还有没有意义"决定画多粗。
+ *
+ * 🔴 为什么需要（用户：「恐怖谷」的几何成因，本轮实测）：
+ *    段是"格→格"，**一格的屏幕尺寸 = 格距 × 缩放**。缩到 10% 时一格只有 1.4 屏幕像素 →
+ *    一万根 1~2 像素的短线并排 = 一片**平行斜线网格**（不是河，是布纹）。
+ *    真实地图在这种比例尺下**根本不画细支流**。
+ *    所以：一格 ≥ 6px 时按自带河口径（0.7px 起）；一格只有 1.4px 时抬到 2.2px ——
+ *    细到"看不见"的段自然被更粗的主干盖过，网络才不会变成布纹。
+ */
+function riverMinWidthForNet() {
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  const spacing = Number(hm && hm.grid && hm.grid.spacing) || 0;
+  const scale = cameraScale.value || 0;
+  if (!(spacing > 0) || !(scale > 0)) return RIVER_NET_MIN_PX_BASE;
+  const cellPx = spacing * scale;
+  if (cellPx >= RIVER_NET_CELL_PX_OK) return RIVER_NET_MIN_PX_BASE;
+  const t = Math.max(0, Math.min(1, cellPx / RIVER_NET_CELL_PX_OK));
+  return RIVER_NET_MIN_PX_BASE + (RIVER_NET_MIN_PX_MAX - RIVER_NET_MIN_PX_BASE) * (1 - t);
+}
+/** 一格 ≥ 这个屏幕像素数 ⇒ 网络还"看得清"，按自带河口径画 */
+const RIVER_NET_CELL_PX_OK = 6;
+/**
+ * 河网的**最细屏幕像素**（`minPx`）。
+ * 🔴 1.2 而不是 0.7：实测在 100% 缩放下（cellPx=14.4）0.7px 的线**几乎看不见**
+ *    （用户：「自动河流依旧恐怖谷」的另一半是"看不清"）。1.2px 仍然比自带河细，
+ *    但干流能站住 —— 真实地图上的主干河也是这个量级。
+ */
+const RIVER_NET_MIN_PX_BASE = 1.2;
+/** 格子小到看不见时，最细的河抬到这个屏幕像素（避免布纹） */
+const RIVER_NET_MIN_PX_MAX = 2.2;
+
+/**
+ * `catmullRomPoints` 的每段细分（屏幕观感 vs 成本的平衡量）：
+ * 一条 48 控制点的河 → (48-1)×7+1 ≈ **330 个曲线点** → 330 次逐段描边。
+ * 实测这一量级在一帧里是亚毫秒到毫秒级（见 `strokeVariableWidth` 注释）；
+ * 再高就只是给"已经看不见的折角"付费了。
+ */
+const RIVER_CURVE_SUBDIV = 7;
+
+/** 画布上画一条手画河（**唯一实现**：曲线 + 变宽 + 岸线） */
+function drawOneHandRiver(c, nodes, river, opts = {}) {
+  if (!nodes || nodes.length < 2) return 0;
+  const widths = riverWidthsFor(river, nodes.length);
+  // ⚠️ 曲线在 `drawCurvedRiver` 里生成（它内部就是 `catmullRomPoints(..., subdiv)`），
+  //    这里**不要**先自己加密一遍 —— 那会变成"对已经加密过的点再加密"（点数平方级）
+  const res = drawCurvedRiver(c, nodes, widths[0], widths[widths.length - 1], {
+    // 🔴 `toPx` = **恒等**（2026-10-18 第十五修）—— 见 `riverWidthsFor` 的口径：
+    //    手画河的宽度是**世界单位**，而画布在这里已经 `scale(cameraScale)`。
+    //    老写法传 `px(w)`（= `w / cameraScale`）把世界宽度又除了一次缩放 ⇒
+    //    **屏幕宽度恒定 8.4px**：1× 好看，放大到 1600% 就成了一条发丝
+    //    （暮雨截图里的"空心铁轨"，实测 1×/2×/4×/8×/16× 全是 6~8 屏幕像素）。
+    toPx: (w) => w,
+    subdiv: RIVER_CURVE_SUBDIV,
+    color: opts.color || RIVER_DRAW_COLOR,
+    bankColor: opts.bankColor || RIVER_BANK_COLOR,
+    bankPx: opts.bankPx === undefined ? px(1.1) : opts.bankPx,
+    alpha: opts.alpha === undefined ? 0.95 : opts.alpha,
+  });
+  return res.drawn;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 剧本底图的**河流节点编辑**（2026-10-17）
+//
+// 为什么必须补：底图侧的河此前只有 add / remove —— 「画完之后想微调」在数据层
+// 与交互层**两个地方都没有出口**（行星图早就有的「拖节点 / 加拐点 / 删整条」）。
+// 用户原话是"保底也要做，强化地图编辑器本身，让用户可以随心所欲画河流"。
+//
+// 🔴 底图河的坐标是**底图自身坐标系**，与行星图的高度图不是一回事 ——
+//    所以这里**不做流向约束**（`clampRiverNode`）：底图河边上的"高度"只是当底图
+//    恰好绑了行星/带了高度图时才存在，硬套会把节点弹到用户没点的地方。
+//    真实约束由用户的眼睛承担，撤销由 Ctrl+Z 承担（一次编辑 = 一条 undo）。
+// ══════════════════════════════════════════════════════════════════════════
+
+/** 手画的河（id 前缀 `river_`）—— 与 `drawRiverPaths` 同一口径，导入河不参与节点编辑 */
+function handDrawnRivers() {
+  return (baseMap.value?.rivers || []).filter((r) => r && String(r.id || '').indexOf('river_') === 0);
+}
+
+/** 命中哪一条手画河（河身容差随相机缩放换算） */
+function hitBaseMapRiver(wx, wy) {
+  const tol = px(RIVER_HIT_PX);
+  return hitTestRiver(handDrawnRivers(), wx, wy, tol);
+}
+
+// ── 支流（2026-10-18 第十五修）──────────────────────────────────────────────
+//
+// 用户原话：「河流的手动绘制依旧画不好……而且依旧不能给河流画支流。似乎只能加拐点。
+// 依旧描点连线模拟器。我又画了一条想模拟河流汇聚，结果给我整出来什么交叉怪物。」
+//
+// 拆成两条互相独立的保证：
+//   ① **能画支流**：起笔落在已有河的河身上 → 起点吸附到河身、笔迹沿路吸附（`snapToPolyline`）；
+//   ② **画不出交叉怪物**：松手时若这一笔**穿回母河**（超过"起点那一下"的交叉）或**自交**，
+//      直接丢弃并说清原因（宁可不落库，也不留一团交叉线）。
+// ⚠️ 判据是"**交点个数**"而不是"有没有交点"：支流从母河**长出去**时必然与母河有一处相交
+//    （就是起点），那一处不算。所以穿回母河 = 交点 ≥ 2。
+/** 起笔吸附到河身的容差（屏幕像素） */
+const RIVER_BRANCH_SNAP_PX = 22;
+
+/** 河身上离给定世界点最近的那一点（返回 dist 供调用方判闸门） */
+function snapToPolyline(w, points) {
+  const pts = Array.isArray(points) ? points : [];
+  if (!w || pts.length === 0) return null;
+  if (pts.length === 1) return { point: { x: pts[0].x, y: pts[0].y }, dist: Math.hypot(w.x - pts[0].x, w.y - pts[0].y), segIndex: 0 };
+  let best = null;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((w.x - a.x) * dx + (w.y - a.y) * dy) / len2)) : 0;
+    const px2 = a.x + dx * t, py2 = a.y + dy * t;
+    const dist = Math.hypot(w.x - px2, w.y - py2);
+    if (!best || dist < best.dist) best = { point: { x: px2, y: py2 }, dist, segIndex: i };
+  }
+  return best;
+}
+
+/** 起笔是否有"母河"可接（返回 { river, point, dist } 或 null）—— 只看手画河（导入河不参与编辑） */
+function hitHandRiverBranchAnchor(wx, wy) {
+  const tol = px(RIVER_BRANCH_SNAP_PX);
+  let best = null;
+  for (const r of handDrawnRivers()) {
+    const s = snapToPolyline({ x: wx, y: wy }, r && r.points);
+    if (s && s.dist <= tol && (!best || s.dist < best.dist)) best = { river: r, point: s.point, dist: s.dist };
+  }
+  return best;
+}
+
+/**
+ * 两条线段是否相交（**含端点接触与共线重叠**）。
+ *
+ * 🔴 2026-10-18 第十五修·补：第一版只判"严格跨立"（四个叉积异号）—— 用户手画的河
+ *    常常是**轴对齐的**（一笔拉直、或横平竖直），于是"穿过去"恰好落在母河的**顶点**上：
+ *    四个叉积里有一个是 0，严格判据返回 false ⇒ **交叉怪物照样落库**
+ *    （探针实测：一条水平笔画过一条竖线的中点，`worst=0`）。
+ *    端点接触必须算相交：拓扑上它就是"穿过"。
+ */
+function segmentsProperlyIntersect(p1, p2, p3, p4) {
+  const EPS = 1e-9;
+  const o = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const onSeg = (a, b, c) => Math.abs(o(a, b, c)) <= EPS
+    && Math.min(a.x, b.x) - EPS <= c.x && c.x <= Math.max(a.x, b.x) + EPS
+    && Math.min(a.y, b.y) - EPS <= c.y && c.y <= Math.max(a.y, b.y) + EPS;
+  const o1 = o(p3, p4, p1), o2 = o(p3, p4, p2), o3 = o(p1, p2, p3), o4 = o(p1, p2, p4);
+  if (((o1 > EPS && o2 < -EPS) || (o1 < -EPS && o2 > EPS))
+      && ((o3 > EPS && o4 < -EPS) || (o3 < -EPS && o4 > EPS))) return true;
+  // 退化情形：端点落在另一条线段上 / 共线重叠
+  if (onSeg(p3, p4, p1) || onSeg(p3, p4, p2) || onSeg(p1, p2, p3) || onSeg(p1, p2, p4)) return true;
+  return false;
+}
+
+/** 两条线段是否相交（**含端点接触与共线重叠**）。见下方同名实现的注释。 */
+function segmentHits(p1, p2, p3, p4) {
+  return segmentsProperlyIntersect(p1, p2, p3, p4);
+}
+
+/** 折线与折线的交点数（用于"穿回母河"与"自交"两条判定） */
+function countPolylineCrossings(a, b) {
+  const A = Array.isArray(a) ? a : [];
+  const B = Array.isArray(b) ? b : [];
+  let n = 0;
+  for (let i = 0; i + 1 < A.length; i++) {
+    for (let j = 0; j + 1 < B.length; j++) {
+      if (segmentHits(A[i], A[i + 1], B[j], B[j + 1])) n++;
+    }
+  }
+  return n;
+}
+
+/** 自交段数（相邻段共享端点，天然不算相交） */
+function countSelfCrossings(pts) {
+  const P = Array.isArray(pts) ? pts : [];
+  let n = 0;
+  for (let i = 0; i + 1 < P.length; i++) {
+    for (let j = i + 2; j + 1 < P.length; j++) {
+      if (segmentsProperlyIntersect(P[i], P[i + 1], P[j], P[j + 1])) n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * 给一条折线当"侧向测试基准"的一段（取**最长**的那一段，最能代表这条河的走向）。
+ * @returns {{a:{x:number,y:number}, b:{x:number,y:number}}|null}
+ */
+function riverSideRef(points) {
+  const pts = Array.isArray(points) ? points : [];
+  let best = null;
+  let bestLen = -1;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const len = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    if (len > bestLen) { bestLen = len; best = { a: pts[i], b: pts[i + 1] }; }
+  }
+  return best;
+}
+
+/** 点在直线 a→b 的哪一侧（>0 左 | <0 右 | 0 线上；只看符号，不看距离） */
+function sideOfLine(a, b, p) {
+  const v = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+  return v > 1e-9 ? 1 : (v < -1e-9 ? -1 : 0);
+}
+
+/**
+ * 这一笔**横切了哪几条河** —— 「交叉怪物」的结构性判据。
+ *
+ * 🔴 口径迭代了三次，每一次都是被判据教出来的（据实记下来，免得下一个人走回头路）：
+ *    ① **只统计"与任何已有河有 ≥2 交点"** → 把**搭桥、正当交汇**也拒了
+ *       （test_95 立刻红：一笔普通的新河恰好斜穿两条已有河）。
+ *    ② 收紧成"**同一条河**上 ≥2 交点" → 还是把"穿过两条河各一次"误当成怪物
+ *       （test_95 依然红：draft 的两段各穿第一条河一次 = 同一条河 2 个交点）。
+ *    ③ 现在按**形状**判（这才是用户说的"交叉怪物"）：一笔从河的一侧出去、**又绕回同一侧**，
+ *       于是同一条河被穿过 ≥2 次。判据 = 交点 ≥2 **且** 笔迹首尾在该河同侧
+ *       （真的"穿过去"首尾必然异侧）。
+ *    ⚠️ 代价（据实说）：首尾同侧的"来回穿两次"才拦；一笔横穿好几条不同的河不拦
+ *       （那是正当交汇，用户可用 Ctrl+Z）。
+ */
+function countCrossingsWithExisting(draft, minPerRiver = 2) {
+  const P = Array.isArray(draft) ? draft : [];
+  let total = 0;
+  let worst = 0;
+  if (P.length < 2) return { total, worst };
+  const head = P[0], tail = P[P.length - 1];
+  for (const r of handDrawnRivers()) {
+    const n = countPolylineCrossings(P, r && r.points);
+    if (n < minPerRiver) continue;
+    const ref = riverSideRef(r && r.points);
+    if (!ref) continue;
+    const s0 = sideOfLine(ref.a, ref.b, head);
+    const s1 = sideOfLine(ref.a, ref.b, tail);
+    if (s0 === 0 || s1 === 0) continue;      // 有一端就落在河上 → 那是"接在上面"，不是横切
+    if (s0 !== s1) continue;                  // 首尾异侧 = 真的穿过去了（回去查是桥/交汇）
+    total += n;
+    if (n > worst) worst = n;
+  }
+  return { total, worst };
+}
+
+/** 命中**选中那条河**的第几个节点（-1 = 没中） */
+function hitRiverNodeIndex(wx, wy) {
+  const r = selectedRiver.value;
+  if (!r) return -1;
+  // ⚠️ 底图河的节点数组字段是 **`points`**（`addBaseMapRiver` / `normalizeBaseMapRivers`
+  //    与 `drawRiverPaths` 全都读它）。行星图那边叫 `nodes` —— 别顺手写错，
+  //    写错的后果是"能选中但拖不动"（`r.nodes` 恒 undefined）。
+  const nodes = r.points || [];
+  if (nodes.length < 2) return -1;
+  return findRiverPointIndex(nodes, wx, wy, px(RIVER_HIT_PX));
+}
+
+/** 拖动中：**只动拖动草稿**（`riverDrag.points`），松手才一条提交。
+ *
+ * 🔴 为什么不用"就地改 `selectedRiver.points[i]`"（2026-10-17，实测踩到）：
+ *    看着更省，但拖动期间读到的那条河**不保证是 store 里那条对象** ——
+ *    本仓在项目↔画布接线上踩过同款（按引用持有的当前节点会脱钩）。
+ *    症状是"按住节点拖，松手后坐标没变"（日志里 `commit changed=true`，
+ *    而 store 里的点纹丝不动）。改成**显式草稿**之后，"画什么"与"存什么"
+ *    各有唯一来源，也不再依赖对象身份。与同文件顶点拖动的 `dragPreview` 同款。
+ */
+function moveRiverNodeTo(world) {
+  const drag = riverDrag.value;
+  const r = selectedRiver.value;
+  if (!drag || !r || drag.riverId !== r.id) return;
+  if (!drag.points || !drag.points[drag.index]) return;
+  drag.points[drag.index] = { x: world.x, y: world.y };
+  // 拖节点是高频手势 → 帧合并；松手时 `commitRiverDrag` 会用同步 `render()` 收口
+  renderCoalesced();
+}
+
+/** 拖动期间**画的是草稿**（含正在拖的那个点）；没在拖就画 store 里的真值 */
+function riverNodesForRender(r) {
+  const drag = riverDrag.value;
+  if (drag && r && drag.riverId === r.id && drag.points) return drag.points;
+  return (r && r.points) || [];
+}
+
+/** 松手：一条 undo 提交（草稿 != 按下那一刻的快照才写） */
+function commitRiverDrag() {
+  const drag = riverDrag.value;
+  riverDrag.value = null;
+  const r = selectedRiver.value;
+  if (!drag || !r || drag.riverId !== r.id) return false;
+  const nodes = (drag.points || []).map((p) => ({ x: p.x, y: p.y }));
+  const changed = JSON.stringify(nodes) !== JSON.stringify(drag.oldNodes);
+  if (!changed) {
+    render();                                       // 草稿可能动过又回来：把画面还回真值
+    return false;                                   // 只是点了一下没拖 → 不留一条空撤销
+  }
+  const res = store.updateBaseMapRiver(baseMapKey.value, r.id, { points: nodes }, {});
+  if (res && res.ok && res.changed) {
+    statusMsg(`已移动第 ${drag.index + 1} 个节点（一次拖动 = 1 条撤销）`);
+    render();
+    return true;
+  }
+  if (res && !res.ok) statusMsg(`节点没移动：${res.message || '未知原因'}`);
+  render();
+  return false;
+}
+
+/**
+ * 删掉选中河流的一个节点（`Del` / `Backspace`；只剩 2 点时明确拒绝，不静默）。
+ * 删完重新平滑一次 —— 少了拐点之后原来的弧线要跟着收（与"画完一次就平滑"同一口径）。
+ */
+/**
+ * 从「已选中河流」那一行切进河流工具（2026-10-17 第八修·再修）。
+ *
+ * 为什么要这个按钮：`Delete` 能删整条河，但**改节点**必须在河流工具里。
+ * 用户在「选择」工具里点中一条河之后，如果只给"删除"，他能做的就只有删 ——
+ * 而"这条河的弯不对，我要调一下"是最常见的诉求。所以给一个**一步到位**的入口
+ * （与「选中后按 Delete」互补，不是替代）。
+ */
+function enterRiverToolForSelected() {
+  if (!selectedRiver.value) { statusMsg('没有选中的河流'); return; }
+  setTool('river');
+  statusMsg(`已切到河流工具：鼠标移到节点上拖动可微调，点河身加拐点，Delete 删节点`);
+  render();
+}
+
+/**
+ * 删掉选中河流的一个节点（`Del` / `Backspace`；只剩 2 点时明确拒绝，不静默）。
+ * 删完重新平滑一次 —— 少了拐点之后原来的弧线要跟着收（与"画完一次就平滑"同一口径）。
+ */
+function removeSelectedRiverNode(index = -1) {
+  const r = selectedRiver.value;
+  if (!r) return false;
+  const nodes = r.points || [];
+  const i = index >= 0 ? index : (riverActiveNode.value >= 0 ? riverActiveNode.value : -1);
+  if (i < 0 || i >= nodes.length) {
+    statusMsg('删节点：先用鼠标点一下要删的那个节点（或把光标移到它上面），再按 Delete');
+    return false;
+  }
+  const res = store.updateBaseMapRiver(baseMapKey.value, r.id, {}, { removeNodeAt: i });
+  if (res && res.ok && res.changed) {
+    riverActiveNode.value = -1;
+    statusMsg(`已删掉第 ${i + 1} 个节点（剩 ${res.nodeCount} 个，已重新平滑）—— Ctrl+Z 可撤回，Delete 空手再按一次=删整条河`);
+    render();
+    return true;
+  }
+  statusMsg(`节点没删掉：${(res && res.message) || '未知原因'}`);
+  render();
+  return false;
+}
+
+/** 删除选中的整条河（`Delete` 空手 / 面板按钮） */
+function deleteSelectedRiver() {
+  const ids = riverSelIds();
+  if (!ids.length) { statusMsg('没有选中的河流：先用鼠标点一下要删的那条河（或 Shift+拖动框选一批）'); return false; }
+  // 多选 → 整批一条撤销（用户的心智模型是"删掉这次选中的这 N 条"）
+  if (ids.length > 1) {
+    const res = store.removeBaseMapRivers(baseMapKey.value, ids);
+    setRiverSelection([]);
+    statusMsg(res && res.ok
+      ? `已删除 ${res.count} 条河流（${res.removed.slice(0, 3).join('、')}${res.count > 3 ? '…' : ''}）—— Ctrl+Z 一次性撤回`
+      : `批量删除失败：${(res && res.message) || '未知原因'}`);
+    render();
+    return !!(res && res.ok);
+  }
+  const r = selectedRiver.value;
+  if (!r) { statusMsg('没有选中的河流：先用鼠标点一下要删的那条河'); return false; }
+  const res = store.removeBaseMapRiver(baseMapKey.value, r.id);
+  setRiverSelection([]);
+  statusMsg(res && res.ok
+    ? `已删除河流「${res.removed || '未命名'}」—— Ctrl+Z 可撤回`
+    : `删除失败：${(res && res.message) || '未知原因'}`);
+  render();
+  return !!(res && res.ok);
+}
+
+/**
+ * 把选中的河**裁到海岸线**（用户点名要过的按钮；2026-10-17 第五轮）。
+ *
+ * 为什么是按钮不是自动：有人**就是要**画进海里做三角洲/河口（他明确说过）。
+ * 所以只在他按下时裁，且一条撤销可撤回。
+ *
+ * 口径与"自动河/导入河裁海岸线"**完全同一份**：
+ *   · 陆地判定 = `makeRiverLandCheck(landMaskFor(terrain))`（省份掩膜独占，第五修的结论）
+ *   · 裁剪算法 = `clipPolylineToCoast`（与导入河同一条）
+ * 这里**不另写**一套 —— 本项目反复踩"同一个能力两份实现，改一处另一处不变"。
+ */
+function clipSelectedRiversToCoast() {
+  const ids = riverSelIds();
+  if (!ids.length) { statusMsg('裁海岸线：先选中要裁的河流（点它的河身，或 Shift+拖动框选）'); return false; }
+  const terrain = baseMap.value?.terrain || [];
+  if (!terrain.length) {
+    statusMsg('裁海岸线：这张底图还没有省份 —— 没有海岸线可裁（先画省份，或改用「自动河流」）');
+    return false;
+  }
+  const isLand = makeRiverLandCheck(getLandMask());
+  if (!isLand) { statusMsg('裁海岸线：这张底图既没有省份轮廓也没有高度图，判断不了哪里是海'); return false; }
+  const patches = [];
+  let skipped = 0;
+  for (const r of riverSelList()) {
+    const pts = (r.points || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (pts.length < 2) { skipped += 1; continue; }
+    // ⚠️ `clipPolylineToCoast` 返回的是 `{ points, trimmed, dropped }`（不是点数组）
+    let res = null;
+    try { res = clipPolylineToCoast(pts, isLand); } catch { res = null; }
+    if (!res || res.dropped || (res.points || []).length < 2) { skipped += 1; continue; }
+    if (!res.trimmed) continue;                       // 本来就在陆地上 → 不算改动
+    patches.push({ id: r.id, patch: { points: res.points.map((p) => ({ x: p.x, y: p.y })) } });
+  }
+  if (!patches.length) {
+    statusMsg(`裁海岸线：选中的 ${ids.length} 条河已经在陆地上（没有可裁的入海段）`
+      + (skipped ? `；另有 ${skipped} 条整条都在海里 —— 想删就直接按 Delete` : ''));
+    return false;
+  }
+  const res = store.applyBaseMapRiverPatches(baseMapKey.value, patches);
+  if (res && res.ok && res.changed) {
+    statusMsg(`裁海岸线：${res.changed} 条河已裁到岸线`
+      + (skipped ? `（${skipped} 条整条在海里，未动）` : '')
+      + ' —— 一次操作 = 1 条撤销');
+    render();
+    return true;
+  }
+  statusMsg(`裁海岸线失败：${(res && res.message) || '没有改动'}`);
+  return false;
 }
 
 function handleSplitClick(world, shiftKey) {
@@ -4382,34 +6517,11 @@ function createBaseMapHeightmap() {
 }
 
 /**
- * 🔴 把导入的 `.map` **原文**留一份（2026-10-11）。
- *
- * 为什么：司天此前只备份自己的项目文件，**从不留用户导入的 `.map`** —— 而那份文件是
- * "地形 / 河流 / 道路能否重新导入"的**唯一凭据**。真实损失：`desite` 底图建于 2026-09-10，
- * 当时解析器读不出高度图，等想补时唯一来源就是用户自己还留着的那份导出；那份一丢就没救了。
- *
- * 三条纪律：
- *   · **原文**（`text` 原样字节，不重编码）—— 改了就不是凭据；
- *   · **绝不阻断导入**：备份失败只在状态栏留一句，导入照走（数据安全功能不该变成新的失败点）；
- *   · **只读态也备份**：这不改世界观数据，只是留素材（与写闸门管辖范围无关）。
- * @returns {Promise<string>} 给状态栏用的一句话（'' = 没备份/无需提）
+ * 🔴 2026-10-17：`.map` 的「文件名 → 底图名」与「原文留底」搬到
+ * `utils/mapImportSource.js` —— 行星视图（`PlanetMap`）现在也能导入 `.map`，
+ * 两处各写一份的代价不是报错，而是「只有一边留了原文 / 只有一边剥掉日期后缀」这种静默不一致。
+ * 详见该文件头部说明。
  */
-async function backupMapSourceFile(fileName, text) {
-  const api = window.sitianAPI;
-  if (!api?.saveBaseMapSource || !api?.projectCurrentPath) return '';
-  try {
-    const cur = await api.projectCurrentPath();
-    const projectPath = (cur && cur.success && cur.filePath) || '';
-    if (!projectPath) return '（未留底图来源：当前没有已落盘的项目文件）';
-    const r = await api.saveBaseMapSource({ projectPath, name: fileName, text });
-    if (r && r.success) {
-      return `；原始 .map 已留底（${(r.bytes / 1048576).toFixed(1)}MB → 项目备份目录的 basemap-sources/）`;
-    }
-    return `（原始 .map 留底失败：${(r && r.error) || '未知原因'}）`;
-  } catch (e) {
-    return `（原始 .map 留底失败：${e.message}）`;
-  }
-}
 
 // ── 从留底恢复（2026-10-13）────────────────────────────────────────────────
 // 留底从 0.2.8 起就一直在写，但**只有"列清单"没有入口** —— 用户在界面上根本够不着，
@@ -4523,7 +6635,7 @@ async function triggerMapImport(opts = {}) {
         ? '（用的就是项目备份目录里的留底，未重复留底）'
         : await backupMapSourceFile(file.name, text);
       const parsed = parseMapFile(text);
-      const name = file.name.replace(/\.map$/, '').replace(/\s*\d{4}-\d{2}-\d{2}.*$/, '');
+      const name = mapNameFromFileName(file.name);
       const json = buildScenariosJson(parsed, name, '当前');
       const bundle = json.baseMaps?.[name];
 
@@ -4771,6 +6883,7 @@ function createNewScenario() {
       name: newScenario.value.name,
       era: { roman: newScenario.value.roman, label: newScenario.value.label, startYear: newScenario.value.startYear, endYear: newScenario.value.endYear },
       description: newScenario.value.description,
+      hook: newScenario.value.hook,
     });
   } else {
     store.createScenario(scenarioId, {
@@ -4778,9 +6891,10 @@ function createNewScenario() {
       name: newScenario.value.name,
       era: { roman: newScenario.value.roman, label: newScenario.value.label, startYear: newScenario.value.startYear, endYear: newScenario.value.endYear },
       description: newScenario.value.description,
+      hook: newScenario.value.hook,
     });
   }
-  newScenario.value = { name: '', roman: '', label: '', startYear: '', endYear: '', description: '', inherit: true };
+  newScenario.value = scenarioFormBlank();
   showScenarioManager.value = false;
   const newS = store.getScenario(scenarioId);
   if (newS) selectScenario(newS);
@@ -4834,7 +6948,7 @@ function clearAllScenarios() {
 const editingScenarioId = ref(null);
 
 function scenarioFormBlank() {
-  return { name: '', roman: '', label: '', startYear: '', endYear: '', description: '', inherit: true };
+  return { name: '', roman: '', label: '', startYear: '', endYear: '', description: '', hook: '', inherit: true };
 }
 
 function scenarioToForm(s) {
@@ -4845,6 +6959,7 @@ function scenarioToForm(s) {
     startYear: s.era?.startYear != null ? String(s.era.startYear) : '',
     endYear: s.era?.endYear != null ? String(s.era.endYear) : '',
     description: s.description || '',
+    hook: s.hook || '',
     inherit: false,   // 编辑既有剧本时没有「继承上一时代」的语义
   };
 }
@@ -4879,6 +6994,7 @@ function saveEditScenario() {
     name,
     era: { roman: f.roman || '', label: f.label || '', startYear: f.startYear || '', endYear: f.endYear || '' },
     description: f.description || '',
+    hook: f.hook || '',
   });
   cancelEditScenario();
   // 🔴 收窄区间可能让**已录的易主日期落到区间外**（时间轴与切片都不再显示它们）——
@@ -5054,15 +7170,27 @@ function resolveSnapPoint(world, shiftKey) {
  * 红线不变：大数据量必须预渲染，不逐帧重绘（几万格逐格画 = 每帧几十毫秒）。
  */
 function buildCellRaster(kind) {
-  return buildHeightmapRaster(baseMap.value?.heightmap, kind);
+  // 🔴 必须走 `getHeightmapFor`（A1 的**唯一**读取口），不能摸 `baseMap.heightmap`：
+  //    绑定行星后底图侧那份是空的/过期的，照它画就会「涂了看不见、地形凭空没了」，
+  //    而且不报错。本组件此前读的是 `baseMap.value?.heightmap`（2026-10-14 改）。
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  // 山体阴影（2026-10-17 第七修，用户：「地形怎么3D表现」）：默认关 = 零行为变更。
+  // 只对"读地形的档"生效（`buildHeightmapRaster` 内部自己判，专题图档不会加阴影）。
+  return buildHeightmapRaster(hm, kind, { shade: terrainShade.value ? terrainShadeStrength.value : 0 });
 }
 
 function getRaster(kind) {
-  const key = baseMapKey.value + '|' + kind;
+  // 🔴 键里必须含**高度图对象引用**（2026-10-14）：只按 `底图键|档位` 存的话，
+  //    「调整分辨率 / 平滑 / 涂抹 / 撤销」之后画布还是旧图 —— 缓存命中，什么都不重画，
+  //    而且没有任何提示。`commitHeightmap` 每次都换对象 → 引用变 = 内容变。
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  // ⚠️ 缓存键必须含**阴影开关与强度**：否则"勾了阴影画布不变"（缓存命中）——
+  //    这正是本项目反复踩的"开关改了没反应"，且不会报错。
+  const key = baseMapKey.value + '|' + kind + '|sh' + (terrainShade.value ? terrainShadeStrength.value : 0);
   const hit = rasterCache.get(key);
-  if (hit) return hit;
+  if (hit && hit.hm === hm) return hit.raster;
   const built = buildCellRaster(kind);
-  if (built) rasterCache.set(key, built);
+  if (built) rasterCache.set(key, { hm, raster: built });
   return built;
 }
 
@@ -5091,11 +7219,220 @@ function polylineInView(pts, minX, minY, maxX, maxY) {
   return false;
 }
 
+// ── 导入河/路的「海岸线裁剪」缓存（2026-10-14）──────────────────────────────
+// 🔴 为什么必须有缓存：`drawRivers` 每帧都跑，而判定「这一点在不在陆地上」是逐环射线法
+//    （真实底图 415 个环 / 24018 个顶点）。每帧现算 = 把"改好了观感"换成"卡成幻灯片"。
+//    缓存键用**引用**（`baseMap.terrain` / `baseMap.rivers` 的数组引用）：
+//    改省份会换 terrain 数组引用、导入会换 rivers 数组引用 —— 引用没变就不可能变，
+//    所以这层缓存不会"陈旧"（比按 key 名缓存安全：同名换数据不会漏失效）。
+let displayRiverCache = { terrain: null, rivers: null, out: [] };
+let landMaskCache = { terrain: null, mask: null };
+
+/** 取当前底图的陆地掩膜（按 terrain 引用缓存） */
+function getLandMask() {
+  const terrain = baseMap.value?.terrain;
+  if (!terrain || !terrain.length) return null;
+  if (landMaskCache.terrain === terrain && landMaskCache.mask) return landMaskCache.mask;
+  const mask = buildLandMask(terrain);
+  landMaskCache = { terrain, mask };
+  return mask;
+}
+
+/**
+ * 河流的**陆地判定** —— 自动河流裁剪专用，**单一实现**。
+ *
+ * 🔴 口径 = **省份掩膜独占**（2026-10-16 第五修）。上一轮这里是「掩膜 ∪ 高度场」，
+ *    并据"实测 9/2785 越界"认为已修好 —— 实际上并集**让越界变多了**，理由与实测见函数体内注释。
+ *    一句话：**掩膜在时高度场不许插话**；掩膜不在（还没画省份的空底图）才用高度场兜底。
+ *
+ * ⚠️ 与"源头必须离海 ≥2 格"那道闸门**现在同口径了**（`scenarioEditing.landMaskFor` →
+ *   `traceRivers({ isLand })` 也是纯掩膜）—— 源头与几何用同一份陆地定义，
+ *   不会再有"源头在海上、河道在陆上"这种自相矛盾。
+ * ⚠️ 高度按**规则栅格**定位（O(1)），不是逐点扫网格（那会退化成 O(格数) × 段数）。
+ */
+function makeRiverLandCheck(mask) {
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  const grid = hm && hm.grid;
+  const ok = grid && Array.isArray(grid.points) && grid.points.length && hm.h && hm.h.length === grid.points.length;
+  let x0 = 0, y0 = 0, sp = 14.4, cols = 0, rows = 0;
+  if (ok) {
+    const p = grid.points[0];
+    x0 = Array.isArray(p) ? p[0] : p.x;
+    y0 = Array.isArray(p) ? p[1] : p.y;
+    sp = grid.spacing || 14.4;
+    cols = grid.cellsX | 0;
+    rows = grid.cellsY | 0;
+  }
+  const heightIsLand = (x, y) => {
+    if (!ok || !(cols > 1 && rows > 1)) return false;
+    const ci = Math.round((x - x0) / sp);
+    const cj = Math.round((y - y0) / sp);
+    if (ci < 0 || ci >= cols || cj < 0 || cj >= rows) return false;
+    return (Number(hm.h[cj * cols + ci]) || 0) >= SEA_LEVEL_FOR_RIVER;
+  };
+  const useMask = !!(mask && typeof mask.lookup === 'function');
+  if (!useMask && !ok) return null;   // 两份判据都没有 → 调用方按"不裁"处理
+  // 🔴 2026-10-16 第五修（用户第三次报「依然过度延伸进海洋」）：
+  //    **掩膜在时必须独占** —— 不能 `mask.lookup(x,y) || heightIsLand(x,y)`（那是并集）。
+  //    为什么并集是错的（实测真实底图 desite，`scripts/tests/tools/_probe_phantom.mjs`，
+  //    掩膜走**产品自己的** `buildLandMask`）：
+  //      · 高度场 h≥20 判陆 **3053** 格，省份多边形判陆 **2960** 格，两者都陆 **2850**；
+  //      · 🔴 **幻影格（高度说陆 / 掩膜说海）= 203 格 = 全部格点的 2.04%**
+  //        （另有 110 格是反向：掩膜陆 / 高度海）；
+  //      · **145 / 1710 段 = 8.5%** 至少一端踩在幻影格上（涉及 90 个幻影格）；
+  //      · 踩在幻影格上的段在**并集**下**两端都判陆** → `clipSegmentToLand` 走
+  //        `if (aLand && bLand) return {...seg}` → **一次裁剪都不做**，河照格心画进海里。
+  //        实测「两端都判陆 → 跳过裁剪」的段数：并集 **1034** vs 掩膜独占 **854**
+  //        → **180 段**在并集下"不用裁"，其中相当一部分正是画进海里的那些。
+  //      · 上一轮我据「9/2785 越界」认为已修好 —— 那个数**量的是"裁剪之后仍越界"**，
+  //        量不到"压根没进裁剪"（同一件事上第三次给自己发假证据）。
+  //    🔴 **可复用的判据**：当两份判据对同一件事给不同答案时，取**真正决定画面**的那一份。
+  //       这里画出来的陆地是省份多边形（海岸线由它重建），高度场只是**格心采样**的近似 ——
+  //       所以掩膜独占，高度只在"还没有省份"时兜底（空底图/新底图照样能生成河）。
+  //    ⚠️ 上一轮"改掩膜独占反而更糟（693→776）"的实测结论**来自同一个 bug 的另一面**：
+  //       那次越界是在**裁剪之后**量的，而并集让大量段根本没进裁剪。
+  //    ⚠️ **量尺纪律（本轮踩到）**：我第一版量尺自己手写了射线法 → 读出 **101** 格（真值 203，
+  //       少一半）。量"产品口径"的东西一律 import **产品的实现**，不要另写一份；那份已删。
+  if (useMask) return (x, y) => !!mask.lookup(x, y);
+  return heightIsLand;
+}
+
+/** 与 `heightMath.SEA_LEVEL` / `riverTrace.TRACE_SEA_LEVEL` 同口径（20） */
+const SEA_LEVEL_FOR_RIVER = 20;
+
+/**
+ * 🔴 **自动河流的河网段**（2026-10-14 第四修）—— 裁到海岸线后按 `terrain` 引用缓存。
+ *
+ * 这一层存在的两个理由，都是用户实测截图逼出来的：
+ *  ① **树枝状汇聚**：`rivers[]` 是"每个源头一条代表路径"，实测只有 12~270 个点（陆地 2506 格）
+ *     → 结构上画不出河网。段（1717 段）才是河网的几何本体，见 `strokeRiverNetwork`。
+ *  ② **不再钻进海里**：段的一端是**海格中心**，而画出来的海岸线在格与格之间 →
+ *     照原样画就是"河越过岸线伸进海里"。这里逐段裁到陆地边界（`clipSegmentToLand`），
+ *     与导入河走**同一份陆地掩膜**（`getLandMask()`）—— 两处用不同判据就会
+ *     "进口河不越界、自动河越界"，那种不一致最难查。
+ *
+ * ⚠️ 缓存键是 `terrain` **引用** + `autoRivers` **引用**：掩膜与段都只在
+ *    "换了底图 / 重新生成"时变（`autoRivers` 每次生成都是新数组）。不缓存的话
+ *    1717 段 × 每段 12 次二分射线判定 = 每帧两万次，直接变幻灯片。
+ */
+let autoRiverNetCache = { terrain: null, rivers: null, out: [] };
+function getAutoRiverNetwork() {
+  const rivers = autoRivers.value || [];
+  const terrain = baseMap.value?.terrain || null;
+  if (autoRiverNetCache.rivers === rivers && autoRiverNetCache.terrain === terrain) return autoRiverNetCache.out;
+  const raw = autoRiverSegments.value || [];
+  const mask = getLandMask();
+  let out = raw;
+  const isLand = makeRiverLandCheck(mask);
+  if (isLand && raw.length) {
+    // 只对"末端在海里"的段做裁剪（绝大多数段两端都在陆地 = 一次判定就放过）
+    const kept = [];
+    for (const seg of raw) {
+      if (!seg.endInSea) { kept.push(seg); continue; }
+      const clipped = clipSegmentToLand(seg, isLand);
+      if (clipped) kept.push(clipped);
+    }
+    out = kept;
+  }
+  autoRiverNetCache = { terrain, rivers, out };
+  return out;
+}
+
+/**
+ * 自动河「要画的那几段折线」—— **按数据引用缓存的纯几何**（2026-10-18 第十八修）。
+ *
+ * 这一段原来整块写在 `renderFrame` 里，于是**每帧**都要：算流量闸门 → 剪枝 → 沿 receiver
+ * 成链 → 抽稀到控制点 → 重建陆地掩膜 → 逐链裁到海岸线。全部与相机无关，纯属白付。
+ * 实测（真实 desite 底图 / 1710 段 / 755 段过闸门）：一帧 7.3ms → **14.3ms**，
+ * 其中 `pruneRiverNetwork` 一项就 4.2ms；用户侧表现是「点过自动河流之后到处都卡」。
+ *
+ * 缓存键 = `(net, terrain, segMax)` 三个**引用/标量**：`net` 由 `getAutoRiverNetwork()`
+ * 按 `(segments, terrain)` 引用缓存，`segMax` 随生成换值，`terrain` 写入一律换数组
+ * —— 三者任一变了才可能变，所以这层不会陈旧（与本文件的 `displayRiverCache` 同口径）。
+ */
+let autoRiverPartsCache = { net: null, terrain: null, segMax: null, out: [] };
+function autoRiverPartsFor(net, terrain, segMax) {
+  const c = autoRiverPartsCache;
+  if (c.net === net && c.terrain === terrain && c.segMax === segMax) return c.out;
+  // 🔴 2026-10-17 第六修（用户：「恐怖谷，我都懒得说了」）：
+  //    一万多根"每格一根"的小棍铺满全图 = 一片平行斜线网格，那不是河。两条一起上：
+  //      ① **按流量剪枝**（`pruneRiverNetwork`）—— 细支流不画，干支流拓扑保留；
+  //         闸门按本幅图流量上界归一化（`riverFlowGate`：绝对数字换个地形就失效）。
+  //      ② **屏幕像素下限**（`riverMinWidthForNet`，留在渲染侧算）—— 让"本网络在屏幕上
+  //         有没有 2px"决定最细的河有多粗；缩到格子只有 1px 时退成一层薄雾而不是网格。
+  const gate = riverFlowGate(segMax, net);
+  const pruned = pruneRiverNetwork(net, gate);
+  // 🔴 2026-10-17 第八修（用户：「支气管模拟器」「你会画河吗」）：
+  //    **逐段画**从结构上就画不出河 —— 每根小棍独立描边、每根都是直线、段与段之间
+  //    没有共享几何。就算给每段加个小弧，观感仍是"分叉处劈开的三根棍"。
+  //    正确做法：**先把流向场还原成河链，再画河链**（见 `utils/riverChains.js`）：
+  //      · 沿 receiver 往上溯，在**汇流点断开** → 得到"源头→下一个汇流点/河口"的完整链；
+  //      · 每条链压到 8~14 个控制点 → Catmull-Rom 成**大尺度的弯**（不是格级锯齿）；
+  //      · 宽度按该链自己的流量逐点变粗（源头细 → 河口粗）。
+  //    这条路才是开源制图/水文工具的标准做法（Strahler/Shreve 分级的同一种分解）。
+  const paths = buildRiverPaths(pruned.kept, {
+    minFlow: gate,
+    // 链的点数下限：一两条格的孤段即使流量达标也**不画**（那正是"支气管"的成因）
+    minLen: RIVER_PATH_MIN_POINTS,
+    maxPaths: RIVER_PATH_MAX,
+  });
+  // 🔴 2026-10-17 第八修·补（用户：「各种超出陆地进入海洋，《文明6》等游戏都不这样」）：
+  //    实测（`_probe_river_sea_overrun.js`）：段一级已经 99.2% 在陆地，但**河链**里
+  //    仍有 **4.1% 的末端落在海里**，而且 Catmull-Rom 会把链尾那一小段拖到岸外 ——
+  //    看起来就是"河伸进大海"。
+  //    根因不在段裁剪，而在**链级没有裁剪**：链是"源头→河口"的整条折线，
+  //    它由多段拼成，段的逐段裁剪保不住"整条线的末端"。
+  //    所以这里补一层**链级硬裁剪**：用产品自己的陆地掩膜把每条链裁到岸线。
+  //    `keepOvershoot` 给一点点余量（否则河口会被切在离岸一格的位置，看起来断头）。
+  //    —— 效果是"不可能画出海面上的河"：这是**结构性保证**，不是调参。
+  //    ⚠️ 掩膜走 `getLandMask()`（**按 terrain 引用缓存**）—— 这里原来每帧 `buildLandMask`。
+  let out = [];
+  if (paths.length) {
+    const chainObjs = paths.map((p) => ({
+      id: p.flow,
+      points: thinRiverPath(p.points, RIVER_PATH_CONTROL_POINTS),
+      flow: p.flow,
+    }));
+    const coastMask = (Array.isArray(terrain) && terrain.length) ? getLandMask() : null;
+    if (coastMask) {
+      const clipped = clipPolylinesToCoast(chainObjs, coastMask.lookup, { keepOvershoot: 6 });
+      out = clipped.list
+        .filter((c) => c.points && c.points.length >= 2)
+        .map((c) => c.points);
+    } else {
+      out = chainObjs.map((c) => c.points);
+    }
+  }
+  autoRiverPartsCache = { net, terrain, segMax, out };
+  return out;
+}
+
+/** 导入的河流（已裁到海岸线）。手画的（`river_` 前缀）不走这里 */
+function getDisplayRivers() {
+  const rivers = baseMap.value?.rivers || [];
+  const terrain = baseMap.value?.terrain || null;
+  const imported = rivers.filter((r) => r && String(r.id || '').indexOf('river_') !== 0);
+  if (displayRiverCache.rivers === rivers && displayRiverCache.terrain === terrain) return displayRiverCache.out;
+  let out = imported;
+  const mask = getLandMask();
+  if (mask && imported.length) {
+    // keepOvershoot = 0.6 格：让河口"咬"住海面一点点，贴死在岸线上会显得河没入海
+    out = clipPolylinesToCoast(imported, mask.lookup, { keepOvershoot: 8 }).list;
+  }
+  displayRiverCache = { terrain, rivers, out };
+  return out;
+}
+
 function drawRivers(c) {
   // D（2026-10-11）：**只画导入的**（FMG 参考图层）。手画的（id 前缀 `river_`）由
   // `drawRiverPaths` 负责 —— 两边都画就会把同一份数据画两遍（线宽叠加、观感更粗），
   // 这是拆分"导入/手画"两条渲染路时最容易漏的一处。
-  const list = (baseMap.value?.rivers || []).filter((r) => r && String(r.id || '').indexOf('river_') !== 0);
+  //
+  // 🔴 2026-10-14：导入的河要**先裁到海岸线**（`getDisplayRivers()`，按引用缓存）。
+  //    省份轮廓是按**后来的**新海岸线重建的，而这些河/路还是那次导入留下的 →
+  //    真实底图实测 142/160 条河的末端落在省份多边形之外，最深的一条连着 37 个顶点在海里
+  //    （用户原话：「有好几条过度延伸到海洋中」）。裁剪只在两端动手，过湖的中间段保留。
+  const list = getDisplayRivers();
   if (!list.length) return;
   const tl = screenToWorld(0, 0);
   const br = screenToWorld(cw(), ch());
@@ -5105,14 +7442,22 @@ function drawRivers(c) {
   c.save();
   c.lineCap = 'round';
   c.lineJoin = 'round';
-  c.strokeStyle = '#5d97bb';
+  // 🔴 2026-10-16 第五修：色与线宽改成**共用常量/公式**（`utils/riverRender.js`）——
+  //    自动河流现在也按这条公式画，两处各写一份就会出现"自带河 1px、自动河 3px"。
+  c.strokeStyle = BASEMAP_RIVER_COLOR;
   for (const r of list) {
     const pts = r.points;
     if (!pts || pts.length < 2) continue;
     if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
-    // 线宽走世界坐标（随缩放变粗），并用 discharge 做量级区分
-    const scaleW = r.discharge ? Math.sqrt(Math.max(r.discharge, 1)) / 14 : 1;
-    c.lineWidth = Math.max(0.7, Math.min(4, (r.width || 0.2) * 6 * Math.max(scaleW, 0.6)));
+    // 🔴 线宽走**屏幕像素**（不随缩放变粗，与自动河流同量纲）——
+    //    但画布在这个位置已经 `scale(cameraScale)`，`lineWidth` 的单位是**世界单位**，
+    //    所以必须过 `basemapRiverWidthWorld` 换算。**2026-10-17 第三轮实测修正**：
+    //    这一行原来直接把"屏幕像素数"塞进 lineWidth（注释却写着"不随缩放变粗"），
+    //    放大 4× 时自带河会粗成 14.4px（实测：1× 8px → 4× 19px，见
+    //    `scripts/tests/tools/_probe_river_highlight.js`）。
+    //    ⚠️ 自动河那一侧（`strokeRiverNetworkAsPaths`）第八修已修正，自带河这一侧漏了 ——
+    //    「同一个能力两个消费者，只接了一个」是本仓反复踩的一条。
+    c.lineWidth = basemapRiverWidthWorld(r, cameraScale.value);
     c.beginPath();
     c.moveTo(vx(pts[0]), vy(pts[0]));
     for (let i = 1; i < pts.length; i++) c.lineTo(vx(pts[i]), vy(pts[i]));
@@ -5170,19 +7515,123 @@ function drawRiverPaths(c) {
   c.save();
   c.lineCap = 'round';
   c.lineJoin = 'round';
-  c.strokeStyle = '#5d97bb';
+  // 🔴 2026-10-17 第六修（色差第四处，用户第 N 次报）：这一段原来用 `RIVER_COLOR = '#3B82F6'`
+  //    —— 而自带河 / 自动河在第五修里已经统一到 `#5d97bb`。于是**手画河成了唯一那个异类**：
+  //    同一条河一半 `#5d97bb` 一半 `#3B82F6`（用户截图实证）。
+  //    现在全部走 `RIVER_DRAW_COLOR`（= `#5d97bb`，唯一河色）。
+  // ⚠️ 而且这里**不再自己 beginPath/lineTo/stroke**：改成 `drawOneHandRiver`
+  //    （曲线 + 源头细→河口粗 + 岸线）。用户原话「不会弯吗？不会有粗细变化吗？」——
+  //    折线 + 单一线宽正是那两条抱怨的技术成因。
   for (const r of list) {
-    const path = r.points || [];
+    const path = riverNodesForRender(r);
     if (path.length < 2) continue;
     if (!polylineInView(path, minX, minY, maxX, maxY)) continue;
-    c.lineWidth = Math.max(1, px(1 + (r.width || 0.4) * 2));
-    c.beginPath();
-    c.moveTo(path[0].x, path[0].y);
-    for (let i = 1; i < path.length; i++) c.lineTo(path[i].x, path[i].y);
-    c.stroke();
+    drawOneHandRiver(c, path, r);
   }
   c.restore();
 }
+
+/**
+ * 选中河流的高亮（2026-10-17 暮雨实测）。
+ *
+ * 用户原话：「缺乏视觉提示（《EU4》选中单位还有动态高亮光圈呢，我选中河流只能通过
+ * 工具栏突然往下挤，再反应十秒才看到『删除这条河』」—— 选中状态此前**只**存在于
+ * 工具栏文字里，画布上一点痕迹没有 → 用户根本不知道点中了哪条（尤其多条河重叠时）。
+ *
+ * 画法 = 两遍描边（本仓河流观感的既定配方）：
+ *   ① 外层光晕：线宽 +8px 的暖白半透明 —— 在任何地形底色上都能跳出来；
+ *   ② 内层亮芯：比原河更亮的青白色实线 —— 精确指示"是哪一条"。
+ * 导入河与手画河都覆盖（selectedRiverId 对两类都可命中，hitTestRiver 吃整个 rivers 列表）。
+ */
+function drawSelectedRiverHighlight(c) {
+  const ids = riverSelIds();
+  if (!ids.length) return;
+  const all = (baseMap.value?.rivers) || [];
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(cw(), ch());
+  const pad = px(40);
+  for (const id of ids) {
+    const r = all.find((x) => x && x.id === id);
+    if (!r) continue;
+    const pts = riverNodesForRender(r);
+    if (!pts || pts.length < 2) continue;
+    if (!polylineInView(pts, tl.x - pad, tl.y - pad, br.x + pad, br.y + pad)) continue;
+    const isPrimary = id === selectedRiverId.value;
+    c.save();
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    // 🔴🔴 2026-10-18 第十六修：**选中反馈不许盖住被选中的东西**。
+    //
+    //   暮雨原话（配了一张连他自己都认不出的截图）：
+    //   「那一条白色的显然就算选中河流的光晕，但是太诡异太离谱了，根本没办法正常绘图，
+    //     把整条河都挡住。也许需要想想别的办法。只要用户能编辑河流就行了，而不是点下去没反馈。」
+    //
+    //   旧实现是**两遍加宽描边**（外层暖白 +3.5px 的 0.30 + 内层亮芯 +1.2px 的 0.95，
+    //   两遍叠起来接近不透明）⇒ 整条河被一层奶白"发光带子"盖住：水色 / 河宽 / 两岸全没了。
+    //   也就是说：为了"点下去有反馈"，把"能编辑"这件事本身毁掉了。
+    //
+    //   第二版（我先试的）改成"虚线轮廓"，实测**照样盖住** —— 因为它的线宽是
+    //   `baseW + 1.6px`，**中心就在河道中心线上**，虚线实心段把 3px 宽的河连根盖掉
+    //   （探针实测水色保留率 0.009；`docs/assets/river-selection-20261018/selected-zoom-1x.png`
+    //   里那条河整条变成一根灰白细线）。教训：**"轮廓"不能靠"加粗的中心线"实现**。
+    //
+    //   现在：沿河两侧各退开 `RIVER_SEL_GAP_PX` 画**两条平行偏移线**，中间**完全留空**
+    //   → 水面像素一个不碰（这就是判据要量的东西）。偏移数学在 `offsetPolyline`（纯函数）。
+    const baseW = basemapRiverWidthWorld(r, cameraScale.value);
+    // ⚠️ 三个常量都是**屏幕像素口径**，统一在块首过 `px()` 换算成世界单位
+    //    （`test_112` 的源码闸门要求"选中高亮里不许出现裸数值线宽" —— 见下方注释）。
+    //    🔴 空隙必须**跟着河宽收窄**：细河（`width=1` → 3.6 屏幕像素）用满 3.5px 空地会把
+    //       水面吃掉一半（test_112 实测保留率 0.47）；`riverSelGapForWidth` 是那条口径的单源。
+    const basePx = basemapRiverWidthPx(r);
+    const gap = px(riverSelGapForWidth(basePx) * (isPrimary ? 1 : 0.7));
+    const weightWorld = px(RIVER_SEL_WEIGHT_PX);
+    const edgeWorld = px(1);
+    const barWorld = px(2);
+    const barHalfWorld = px(6);
+    const sides = [offsetPolyline(pts, baseW / 2 + gap),
+                   offsetPolyline(pts, -(baseW / 2 + gap))];
+    c.strokeStyle = isPrimary ? 'rgba(255, 214, 102, 0.95)' : 'rgba(34, 211, 238, 0.7)';
+    c.lineWidth = weightWorld;
+    for (const side of sides) {
+      if (!side || side.length < 2) continue;
+      c.beginPath();
+      c.moveTo(vx(side[0]), vy(side[0]));
+      for (let i = 1; i < side.length; i++) c.lineTo(vx(side[i]), vy(side[i]));
+      c.stroke();
+    }
+    // 节点手柄：主选中才画（"这条河能编辑"的信号由手柄承担，多选的"批"只给两条边线）
+    if (isPrimary) {
+      const hs = px(3.2);
+      c.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+      c.lineWidth = edgeWorld;
+      for (let i = 0; i < pts.length; i++) {
+        const sx = vx(pts[i]);
+        const sy = vy(pts[i]);
+        const isHead = i === 0;
+        const isMouth = i === pts.length - 1;
+        c.fillStyle = isHead ? '#fbbf24' : (isMouth ? '#22d3ee' : '#f8fafc');
+        c.beginPath();
+        c.rect(sx - hs, sy - hs, hs * 2, hs * 2);
+        c.fill();
+        c.stroke();
+      }
+      // 两端再加一枚"短横杠"：手柄本身会被水面附近的地形吃掉对比度，端点是用户最常确认的东西
+      for (const i of [0, pts.length - 1]) {
+        if (i < 0 || i >= pts.length) continue;
+        c.strokeStyle = i === 0 ? '#fbbf24' : '#22d3ee';
+        c.lineWidth = barWorld;
+        c.beginPath();
+        c.moveTo(vx(pts[i]) - barHalfWorld, vy(pts[i]));
+        c.lineTo(vx(pts[i]) + barHalfWorld, vy(pts[i]));
+        c.stroke();
+      }
+    }
+    c.restore();
+  }
+}
+
+/** 选中轮廓的空隙（屏幕像素）—— 单一来源在 `riverRender.js`（`riverSelGapForWidth` 按河宽收窄） */
+const RIVER_SEL_GAP_PX = RIVER_SEL_GAP_PX_UTIL;
+const RIVER_SEL_WEIGHT_PX = RIVER_SEL_WEIGHT_PX_UTIL;
 
 // ══════════════════════════════════════
 // 文化/宗教图例（P1-T5，屏幕坐标系右下角）
@@ -5425,8 +7874,41 @@ function drawDataChart(c) {
   c.restore();
 }
 
+/**
+ * 🔴 **帧合并的正确位置**（2026-10-17 第七修补正）：只在**高频连续手势**里用，
+ * **不是**改 `render()` 本身的语义。
+ *
+ * 教训留档（我这一轮真的踩了）：一开始我把 `render()` 全局改成"同帧只画一次、后续推迟到
+ * 下一帧"，于是 5 个用例同时变红，而它们的共同点是**"改数据 → render() → 立刻取像素"**：
+ *   · `test_20`（Alt 临时直线生效，像素差分应为 >0）→ 0
+ *   · `test_53`（渲染护栏：首帧后要能读到错误、连续 3 帧要能暂停）→ 读不到
+ *   · `test_61`（打开省份工具后画布必须立刻有多边形）+ `test_73`（势力标注要跟着改）→ 画布空
+ *   · `test_90`（两态画面必须不同）→ 两态相同
+ * 根因不是"测试写得脆"，而是**`render()` 的语义是同步**：全仓几十处调用都依赖这一点。
+ * 把公共 API 改异步 = 为一个局部优化付全局语义代价 —— 这是错的。
+ *
+ * ⇒ 现在：`render()` 恢复**同步**（语义不变）；只有这些**明确的高频手势**显式调用本函数：
+ *   河流拖笔采样、河流拖节点、顶点拖动、平移/缩放、时间轴播放。
+ * 它们一秒能触发几十次，合并掉同帧的重复整帧才有意义。
+ */
+function renderCoalesced() {
+  if (renderPaused.value) return;
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  if (now - lastRenderAt < 15) {
+    if (rafRenderId == null && typeof requestAnimationFrame === 'function') {
+      rafRenderId = requestAnimationFrame(() => { rafRenderId = null; render(); });
+    }
+    return;
+  }
+  render();
+}
+let lastRenderAt = -1e9;
+let rafRenderId = null;
+
 function render() {
   if (renderPaused.value) return;
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  lastRenderAt = now;
   try {
     renderFrame();
     if (renderErrorCount.value) { renderErrorCount.value = 0; renderError.value = ''; }
@@ -5454,13 +7936,121 @@ function render() {
   }
 }
 
-/** 手动恢复渲染（护栏暂停后由状态栏按钮触发） */
+/** 手动恢复渲染（护栏暂停后由状态栏按钮 / 画布中央横幅触发） */
 function resumeRender() {
   renderPaused.value = false;
   renderErrorCount.value = 0;
   renderError.value = '';
   renderErrorLogged = false;
-  render();
+  render();       // 护栏解除必须**立刻**出图（用户点了按钮就要看到变化）
+}
+
+/** 把渲染错误原文复制到剪贴板（横幅上的「复制错误」）—— 用户反馈时最需要的那个字符串 */
+async function copyRenderError() {
+  const text = `渲染已暂停（连续 ${renderErrorCount.value} 帧异常）：${renderError.value}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    statusMsg('错误原文已复制到剪贴板');
+  } catch (_) {
+    // 剪贴板不可用（无权限/非安全上下文）→ 退化成"选中给用户手动复制"，
+    // 绝不静默：用户点了按钮必须看到反应。
+    statusMsg(`复制失败，请手动选中：${renderError.value}`);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 手势期「底图基帧」缓存（2026-10-18 第十八修·二）—— 卡顿的主刀
+//
+// 🔴 为什么是这个做法（而不是"给每个图层各加一层缓存"）：CPU 采样实测，拖一圈省份的 4 秒里
+//    **(program) 占 67%** —— 也就是**原生 canvas 光栅化本身**（fill / stroke / lineTo /
+//    drawImage），不是任何一段 JS。当时的每一帧都把**整张地图**重画一遍（200 省 / 160 河 /
+//    24018 个顶点 / 9975 格高度图）。绘图软件遇到这件事的标准答案就是**分层**：底图只在需要
+//    时画一次，笔迹画在它上面。这里用最小代价实现同一件事 —— 手势按下时把「没有草稿的那一帧」
+//    渲染进一张离屏画布，手势期间每帧改成「贴这张图 + 画在动的浮层」。
+//    它与 `renderCoalesced` 是同一条纪律：**只在明确的高频手势里启用**，手势一结束就丢掉，
+//    `render()` 的同步语义与全量重画路径一个字不改。
+//
+// 🔴 为什么可以整帧缓存（不需要维护依赖键）：启用的前提是**这一笔不改地图数据**（草稿都在
+//    组件本地状态里：`freeTrace` / `riverDraft` / `riverDrag` / `dragPreview` / 框选矩形），
+//    且相机不动 —— 相机一动立刻弃用并**解甲**（`blitStrokeBase`），否则"重建 + 贴图"会比
+//    全量重画还贵一倍。⚠️ 涂抹 / 高度 / 群系笔刷**不启用**（它们每帧真的在改底图数据）。
+//
+// 口径：基帧只装「草稿之下的静态层」。草稿之上的静态层（省名 / 势力名 / 浮雕 / 标记）与
+//    屏幕空间浮层（小地图 / 图例 / 统计）在手势帧里**照常逐帧画** ⇒ 贴图帧与全量帧的
+//    **层叠顺序逐层相同**、像素应当逐点相同（回归 `test_121` 就按这条判）。
+// ══════════════════════════════════════════════════════════════════════════
+let strokeBase = null;            // { canvas, w, h, camX, camY, camScale }
+let strokeBasePool = null;        // 离屏画布（只在尺寸变化时重建）
+let strokeBaseArmed = false;      // 手势期启用（mousedown 开；mouseup/离开/滚轮/卸载关）
+let strokeBaseBuilding = false;   // 正在渲染基帧（防递归）
+// 机械计数（不参与渲染语义）：手势里**全量重画了几次、贴图几次** —— 用例按它判"缓存真的在生效"，
+// 不靠墙钟时间（时间断言在慢机器上会假红）。
+const strokeBaseStats = { builds: 0, blits: 0 };
+
+// 手势闸门是否已开（与 onMouseDown/onMouseUp 严格配对；卸载时兜底收掉，见 onBeforeUnmount）
+let canvasGateArmed = false;
+
+/** 手势按下时调用（**只在这些手势**：自由绘制 / 描轮廓 / 河笔 / 拖节点 / 顶点拖动 / 框选 / 折线切割） */
+function beginStrokeBase() {
+  strokeBaseArmed = true;
+  strokeBase = null;              // 相机可能刚动过 → 基帧一律重建
+}
+function endStrokeBase() {
+  strokeBaseArmed = false;
+  strokeBase = null;
+}
+
+function strokeBaseLayer() {
+  const cvs = canvas.value;
+  const w = (cvs && cvs.width) | 0;
+  const h = (cvs && cvs.height) | 0;
+  if (!w || !h) return null;
+  let cv = strokeBasePool;
+  if (!cv) { cv = document.createElement('canvas'); strokeBasePool = cv; }
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }   // 改尺寸会顺带清空
+  const c = cv.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, w, h);
+  return { canvas: cv, ctx: c, w, h };
+}
+
+/** 把「草稿之下的静态层」渲染进离屏画布（**临时把 `ctx` 换到离屏**，见函数内注释） */
+function buildStrokeBase() {
+  const layer = strokeBaseLayer();
+  if (!layer) return;
+  // ⚠️ `ctx` 是 `<script setup>` 的 ref，`renderFrame` 通篇走 `ctx.value`（也就 `drawPreviewOverlay`）。
+  //    这里临时改指向再改回来，是**同步**的、且 `strokeBaseBuilding` 期间正好把那唯一的
+  //    外部读者（`drawPreviewOverlay`）挡掉（见上面的守卫），所以不存在"画到别人画布上"。
+  const saved = ctx.value;
+  strokeBaseBuilding = true;
+  ctx.value = layer.ctx;
+  try {
+    renderFrame();
+  } finally {
+    ctx.value = saved;
+    strokeBaseBuilding = false;
+  }
+  strokeBase = {
+    canvas: layer.canvas, w: layer.w, h: layer.h,
+    camX: cameraX.value, camY: cameraY.value, camScale: cameraScale.value,
+  };
+  strokeBaseStats.builds += 1;
+}
+
+/** 有可用基帧就贴回来；返回 true = 这一帧的「草稿之下的静态层」已经画好了 */
+function blitStrokeBase() {
+  const b = strokeBase;
+  if (!b) return false;
+  if (b.camX !== cameraX.value || b.camY !== cameraY.value || b.camScale !== cameraScale.value) {
+    endStrokeBase();
+    return false;
+  }
+  const c = ctx.value;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(b.canvas, 0, 0, b.w, b.h);
+  c.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
+  strokeBaseStats.blits += 1;
+  return true;
 }
 
 function renderFrame() {
@@ -5473,63 +8063,153 @@ function renderFrame() {
   ctx.value.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
   ctx.value.clearRect(0, 0, w, h);
 
+  // 手势期基帧（见 `beginStrokeBase` 注释）：有得贴就贴，没得贴就全量画。
+  // ⚠️ 递归保护：建基帧时会再进一次本函数（`strokeBaseBuilding`），那一次不许再走这条分支。
+  let blitted = false;
+  if (strokeBaseArmed && !strokeBaseBuilding) {
+    if (!strokeBase) buildStrokeBase();
+    blitted = blitStrokeBase();
+  }
+
   ctx.value.save();
   ctx.value.translate(cameraX.value, cameraY.value);
   ctx.value.scale(cameraScale.value, cameraScale.value);
 
-  drawBackground(ctx.value);
+  if (!blitted) {
+    drawBackground(ctx.value);
 
-  // 底图数据图层：陆海底色铺底（补足省份多边形之外的海岸缝隙）
-  if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
+    // 底图数据图层：陆海底色铺底（补足省份多边形之外的海岸缝隙）
+    if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
 
-  if (showBiomes.value) drawBiomeBackground(ctx.value);
-  // 🔴 渲染单一路径：**永远画省份多边形**（存下来 / 导出的就是它）。
-  //    P2 起涂抹期间不再叠「格点反馈」—— 格子已退役；边界在抬手时被精确布尔替换。
-  drawProvinces(ctx.value);
+    if (showBiomes.value) drawBiomeBackground(ctx.value);
+    // 🔴 渲染单一路径：**永远画省份多边形**（存下来 / 导出的就是它）。
+    //    P2 起涂抹期间不再叠「格点反馈」—— 格子已退役；边界在抬手时被精确布尔替换。
+    drawProvinces(ctx.value);
 
-  // 地形/温度/降水：半透明叠加在省份之上（验收：alpha ≈ 0.4，不影响点击选中）
-  if (rasterLayer.value === 'height') drawRasterLayer(ctx.value, 'height', 0.45);
-  else if (rasterLayer.value === 'temp') drawRasterLayer(ctx.value, 'temp', 0.5);
-  else if (rasterLayer.value === 'prec') drawRasterLayer(ctx.value, 'prec', 0.5);
+    // 地形/温度/降水：半透明叠加在省份之上（验收：alpha ≈ 0.4，不影响点击选中）
+    if (rasterLayer.value === 'height') drawRasterLayer(ctx.value, 'height', 0.45);
+    else if (rasterLayer.value === 'temp') drawRasterLayer(ctx.value, 'temp', 0.5);
+    else if (rasterLayer.value === 'prec') drawRasterLayer(ctx.value, 'prec', 0.5);
 
-  if (showRoutes.value) drawRoutes(ctx.value);
-  if (showRivers.value) drawRivers(ctx.value);
-  drawRiverPaths(ctx.value);
+    if (showRoutes.value) drawRoutes(ctx.value);
+    if (showRiverBase.value) drawRivers(ctx.value);
+  }
+  if (!strokeBaseBuilding) drawRiverPaths(ctx.value);
+  // 选中河流的高亮（2026-10-17 暮雨实测「缺乏视觉提示……只能通过工具栏突然往下挤」）：
+  // 选中的河画两遍 —— 外层宽半透明光晕 + 内层亮芯，任何底色上都一眼可辨（EU4 选中单位的光圈语义）。
+  if (!strokeBaseBuilding) drawSelectedRiverHighlight(ctx.value);
 
   // v2: 自动生成的河流
-  if (autoRivers.value.length > 0 && showRivers.value) {
-    ctx.save();
-    ctx.strokeStyle = '#5d97bb';
-    ctx.lineWidth = px(1);
-    for (const river of autoRivers.value) {
-      if (river.length < 2) continue;
-      ctx.beginPath();
-      ctx.moveTo(river[0].x, river[0].y);
-      for (let i = 1; i < river.length; i++) {
-        ctx.lineTo(river[i].x, river[i].y);
+  // 🔴 2026-10-14 修：这一段原来写的是裸 `ctx.xxx(...)` —— `ctx` 是 `ref(null)`，
+  //    在 `<script setup>` 里**不是** Vue 模板，不会被自动解包：`ctx.save` 是 undefined，
+  //    于是**只要画布上有自动河流，第一帧渲染就抛** `ctx.save is not a function`（压缩后
+  //    `Ce.save is not a function`）。它抛在 renderFrame 里 → 从这一行起**后面全不画
+  //    （省界/标签/小地图/势力名全没了）+ 3 帧后渲染护栏自我暂停**，用户看到的就是
+  //    「点了自动河流之后一片空白、点什么都没反应」。
+  //    为什么以前没被发现：`autoRivers` 只由「自动河流」按钮填充，默认是空数组 →
+  //    这一整块**默认永远不执行**；而 92 个 CDP 用例没有一个点过那个按钮。
+  //    教训：`<script setup>` 里的 ref 只有模板会解包；**函数体里一律 `.value`**。
+  //    守卫见 scripts/tests/unit/test_vue_ref_unwrap.js。
+  //
+  // 🔴 2026-10-14 第二修（用户实测「很丑，是僵硬的折线」）：三条一起改 ——
+  //    ① 格心连成的折线先过 `smoothPolyline`（Chaikin 角切割，只切角不外扩，
+  //       端点不动 → 河口/源头位置一字不差）；真实底图实测转角中位数 41.6°、最大 113°，
+  //       不平滑就是一眼假的锯齿。
+  //    ② 线宽按**逐点汇流量**（`flows[k]`）而不是整条河一个数：真实的河**越往下游越宽**，
+  //       整条一个粗细是"一眼假"的最后一块拼图。口径（立方根）在 `utils/riverRender.js`。
+  //    ③ 画法走 `strokeRiver`（两遍描边：外层浅色 + 内层亮芯）。一条 1px 实线在花掉的
+  //       地形上根本认不出来，这是"河流看不清"的由来。
+  //
+  // 🔴 2026-10-14 第三修：**按汇流量升序**画（细的在下、粗的在上）。追踪输出是"大流量在
+  //    前"，照那个顺序画的话，一条细支流会**压住**它所汇入的干流下游段 —— 看起来就是
+  //    "主干忽然变细"。升序画则粗的永远最后落笔，下游不会被细线覆盖。
+  //
+  // 🔴 2026-10-14 第四修（用户实测截图三条一起改）：
+  //    ① 「根本画不出树枝状汇聚」→ **改画河网段**（`strokeRiverNetwork`）：段是流向场本身
+  //       （实测 1717 段），支流逐格汇进干流；代表路径只有 12~270 个点，画不出这个结构。
+  //    ② 「并没有越往下游越宽」→ 线宽改**归一化口径**（`flowWidthScale(flow, segMaxFlow)`）：
+  //       旧绝对口径在这份地形上只有 1.4 倍变化，等于一样粗。
+  //    ③ 「依然过度延伸到海洋」→ 段在 `getAutoRiverNetwork()` 里已逐段裁到海岸线。
+  if (!blitted && autoRivers.value.length > 0 && showRiverAuto.value) {
+    const spacing = baseMap.value?.heightmap?.grid?.spacing || 14.4;
+    const toPx = (w) => px(w);
+    ctx.value.save();
+    // 河网（树枝状）优先：它才是"河"的观感本体
+    const net = getAutoRiverNetwork();
+    if (net.length) {
+      // 🔴 2026-10-16 第五修：**观感与地图自带河流对齐** —— 同一个色、同一条线宽公式、同样单遍实线。
+      //    实测（真实 desite 底图，zoom=1）：
+      //      · 自带河 `#5d97bb` 单遍，屏幕线宽 p50 **0.70px** / max 2.55px；
+      //      · 上一轮自动河 `#3B82F6` @0.35 宽×2.4 + 亮芯 `#93c5fd` → p50 **0.80px 实心 + 1.92px 光晕**。
+      //    于是自动河像"发光的中蓝带子"、自带河像"贴着地形的细暗线"，一眼两套东西（用户原话：
+      //    「依旧色差，依旧和底图自带河流各画各的」）。
+      //    ⚠️ 宽度必须走**屏幕像素**（`widthPx`）：自带河就是屏幕像素口径、不随缩放变粗；
+      //       若继续走世界单位（`px(w)`），放大后自动河会比自带河粗一倍以上，色对齐了粗细仍不对。
+      //    ⚠️ `flow`（汇流格数）→ `discharge`（自带河口径）必须按本幅图段流量上界归一化，
+      //       否则 `width*6*0.6` 底下全是 0.7px 的下限（与第四修"绝对口径"同一个坑）。
+      const segMax = autoRiverMaxFlow.value;
+      // 🔴 2026-10-18 第十八修（性能）：这一段以前**每帧重算**。实测（真实 desite 底图，
+      //    200 省 / 1710 段 / 755 段过闸门）：`render` 从 **7.3ms → 14.3ms**，翻了一倍，
+      //    其中 `pruneRiverNetwork` **4.2ms**、`riverFlowGate` 0.5ms，另外每帧还在
+      //    重建陆地掩膜（24018 个顶点）+ 逐链裁到海岸线。用户侧的表现就是
+      //    「点过自动河流之后，画什么、拖什么都卡」—— 因为每一帧都要付这笔钱。
+      //    现在整段几何**按数据引用缓存**（`autoRiverPartsFor`）：闸门 / 剪枝 / 成链 /
+      //    抽稀 / 裁岸线全是**与相机无关**的纯几何，只在「河网换了或地形换了」时才重算。
+      const netParts = autoRiverPartsFor(net, rawTerrain(), segMax);
+      if (netParts.length) {
+        strokeRiverNetworkAsPaths(ctx.value, netParts, {
+          toPx,
+          maxFlow: segMax,
+          color: BASEMAP_RIVER_COLOR,
+          minPx: riverMinWidthForNet(),
+          subdiv: RIVER_NET_CURVE_SUBDIV,
+        });
       }
-      ctx.stroke();
     }
-    ctx.restore();
+    // 代表路径照旧画（它是"命名/分级"的对象；没有段数据时它就是唯一的东西）
+    if (!net.length) {
+      const drawList = autoRivers.value
+        .map((river, idx) => ({ river, idx, flow: (river && river.flow) || 0 }))
+        .sort((a, b) => (a.flow - b.flow) || (a.idx - b.idx));
+      for (const item of drawList) {
+        const river = item.river;
+        const raw = Array.isArray(river) ? river : (river && river.points);
+        if (!raw || raw.length < 2) continue;
+        const sm = smoothPolyline(raw, TRACE_SMOOTH_ITERATIONS);
+        const poly = buildRiverPolyline(
+          { points: sm, flows: river && river.flows, flow: item.flow, width: river && river.width },
+          { spacing, maxFlow: autoRiverMaxFlow.value });
+        if (!poly) continue;
+        strokeRiver(ctx.value, poly, { toPx });
+      }
+    }
+    ctx.value.restore();
   }
-  if (showBorders.value) drawProvinceBorders(ctx.value);
-  drawVertexHandles(ctx.value);
-  if (showBurgs.value) drawBurgs(ctx.value);
-  if (PROVINCE_GRID_TOOLS.has(tool.value)) drawProvinceBrushOverlay(ctx.value);
-  drawPreviewOverlay(ctx.value);
-  if (showLabels.value) drawLabels(ctx.value);
+  if (!blitted && showBorders.value) drawProvinceBorders(ctx.value);
+  if (!strokeBaseBuilding) drawVertexHandles(ctx.value);
+  if (!blitted && showBurgs.value) drawBurgs(ctx.value);
+  if (!strokeBaseBuilding && PROVINCE_GRID_TOOLS.has(tool.value)) drawProvinceBrushOverlay(ctx.value);
+  if (!strokeBaseBuilding) drawPreviewOverlay(ctx.value);
+  // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
+  //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
+  //    「基帧（草稿之下的静态层）→ 草稿 → 这四层 → 屏幕空间浮层」。
+  if (!strokeBaseBuilding && showLabels.value) drawLabels(ctx.value);
   // A8：势力标注画在用户浮动文本之后（势力名是底层读物，不该被浮字压住）
-  drawPolityLabels(ctx.value);
-  drawReliefIcons(ctx.value);
-  drawScenarioMarkers(ctx.value);
+  if (!strokeBaseBuilding) {
+    drawPolityLabels(ctx.value);
+    drawReliefIcons(ctx.value);
+    drawScenarioMarkers(ctx.value);
+  }
 
   ctx.value.restore();
 
   // 以下浮层画在屏幕坐标系：字号与命中不受缩放影响
-  drawBurgTooltip(ctx.value);
-  drawCultureLegend(ctx.value);
-  drawMinimap(ctx.value);
-  drawDataChart(ctx.value);
+  if (!strokeBaseBuilding) {
+    drawBurgTooltip(ctx.value);
+    drawCultureLegend(ctx.value);
+    drawMinimap(ctx.value);
+    drawDataChart(ctx.value);
+  }
 }
 
 function drawBackground(ctx) {
@@ -5670,25 +8350,61 @@ function drawProvinces(c) {
   });
 }
 
+/**
+ * 省份边界（**两遍**：先全部、再高亮）。
+ *
+ * 🔴 2026-10-17 第七修（用户：「你看看人家的省份边界怎么画」——附了张真实世界地图）：
+ *    旧实现是**逐省一遍**、普通省用 `rgba(141,138,130,0.6)` @0.6px。两个毛病：
+ *      ① **半透明 + 逐省重描**：两个省的**共边会被描两次** → 共边比独边颜色更深，
+ *         于是"同一张图上边界深浅不一"（观感发灰、发虚，越看越像没画完）；
+ *      ② 0.6px 在 1080 宽的画布上几乎看不见 —— 真实地图上省界是**看得见的深色线**。
+ *    现在：普通省界的**唯一一遍**用不透明深色（`PROVINCE_BORDER_COLOR` @1.1px），
+ *    选中 / 多选 / 合并目标**在第二遍**叠上去（它们必须比底色醒目，不能混在一起画）。
+ */
 function drawProvinceBorders(c) {
   if (!baseMap.value?.terrain) return;
   const multi = multiSelectSet.value;
-  rawTerrain().forEach(prov => {
-    const isSelected = selectedProvince.value?.id === prov.id;
-    const isMulti = multi.has(prov.id);
-    const isMergeTarget = mergeProvId.value === prov.id;
+  const terrain = rawTerrain();
+  // ── 第一遍：所有省的普通边界（不透明、统一线宽 —— 共边叠加也还是同一个色）────────
+  c.save();
+  c.strokeStyle = PROVINCE_BORDER_COLOR;
+  c.lineWidth = px(PROVINCE_BORDER_PX);
+  for (const prov of terrain) {
     const rp = rawProvOf(prov);
-    if (!rp || !provinceRings(rp).length) return;
-    // 多选描边用**青色 + 更粗**：单选是白色 1.5px，两者叠在一起时也得看得出"这几个是批量对象"
-    c.strokeStyle = isMergeTarget ? '#ffd700'
-      : (isMulti ? '#22d3ee' : (isSelected ? '#ffffff' : 'rgba(141,138,130,0.6)'));
-    c.lineWidth = isMulti ? px(2.5) : (isSelected ? px(1.5) : px(0.6));
+    if (!rp || !provinceRings(rp).length) continue;
     c.beginPath();
     traceProvincePath(c, rp);
     c.closePath();
     c.stroke();
-  });
+  }
+  c.restore();
+  // ── 第二遍：选中 / 多选 / 合并目标（只画这几个，顺序=层叠顺序）──────────────────
+  for (const prov of terrain) {
+    const isSelected = selectedProvince.value?.id === prov.id;
+    const isMulti = multi.has(prov.id);
+    const isMergeTarget = mergeProvId.value === prov.id;
+    if (!isSelected && !isMulti && !isMergeTarget) continue;
+    const rp = rawProvOf(prov);
+    if (!rp || !provinceRings(rp).length) continue;
+    // 多选描边用**青色 + 更粗**：单选是白色 1.5px，两者叠在一起时也得看得出"这几个是批量对象"
+    c.strokeStyle = isMergeTarget ? '#ffd700' : (isMulti ? '#22d3ee' : '#ffffff');
+    c.lineWidth = isMulti ? px(2.5) : px(1.5);
+    c.beginPath();
+    traceProvincePath(c, rp);
+    c.closePath();
+    c.stroke();
+  }
 }
+/**
+ * 普通省界的颜色 / 线宽口径（单一来源）。
+ * 为什么不半透明：**共边会被相邻两个省各描一次**，半透明叠加后共边比独边深 ——
+ * 同一张图上边界深浅不一，肉眼读成"没画干净"。不透明就没有这个问题。
+ * ⚠️ 颜色取配色单源 `BORDER_COLOR`（以前画布这里写死一个灰，而 SVG 导出用的是单源，
+ *    同一张图导出与画布**边界颜色不一致** —— 正是"看起来做了但两处不一样"那一类）。
+ */
+const PROVINCE_BORDER_COLOR = BORDER_COLOR;
+/** 普通省界的线宽（屏幕像素）—— 0.6 在 1080 宽的画布上几乎看不见（用户：边界要看得见） */
+const PROVINCE_BORDER_PX = 1.1;
 
 function drawVertexHandles(c) {
   // P1：跟随移动的邻省环要在**任何情况下**都画出来（它是"边界整体移动"的唯一视觉证据），
@@ -5775,6 +8491,23 @@ function drawVertexHandles(c) {
     c.strokeStyle = '#22d3ee';
     c.lineWidth = px(1.5);
     c.setLineDash([px(4), px(3)]);
+    c.fillRect(x0, y0, x1 - x0, y1 - y0);
+    c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    c.restore();
+  }
+  // 第五轮：河流框选（同款虚线框，颜色用河高亮的青白，与顶点框选区分开）
+  const rbox = riverMarquee.value;
+  if (rbox) {
+    const nb = normalizeBox(rbox);
+    const x0 = vx({ x: nb.minX, y: 0 });
+    const y0 = vy({ x: 0, y: nb.minY });
+    const x1 = vx({ x: nb.maxX, y: 0 });
+    const y1 = vy({ x: 0, y: nb.maxY });
+    c.save();
+    c.fillStyle = 'rgba(223,243,255,0.10)';
+    c.strokeStyle = 'rgba(223,243,255,0.9)';
+    c.lineWidth = px(1.5);
+    c.setLineDash([px(6), px(4)]);
     c.fillRect(x0, y0, x1 - x0, y1 - y0);
     c.strokeRect(x0, y0, x1 - x0, y1 - y0);
     c.restore();
@@ -5927,28 +8660,33 @@ function drawPreviewOverlay() {
   }
 
   // 「绘制」工具的自由绘制实时轨迹（一笔跟着走，松手才简化成型）
+  // 🔴 2026-10-17 第四轮：这里画**两样东西** ——
+  //    ① **手感线**（细、淡）：笔尖跟手，逐帧更新；
+  //    ② **将要落库的地块**（闭合 + 与落库同一套贝塞尔）：这就是 `freeTraceRing` 的产物，
+  //       它和松手后真正写进 `terrain[]` 的环**逐点相同**（`test_113` 守）。
+  //    旧实现只有 ①，松手后形状会"跳"成另一个 —— 那就是"描点连线模拟器"的观感来源。
   if (freeTraceActive && freeTrace && freeTrace.length > 1) {
+    const isOutline = tool.value === 'outline';
     c.save();
-    // 描轮廓用**另一种颜色**（青色）—— 与画省份的紫色区分，用户一眼知道这一笔是"改边界"
-    c.strokeStyle = tool.value === 'outline' ? '#22d3ee' : '#c4b5fd';
-    c.lineWidth = px(1.8);
     c.lineJoin = 'round';
     c.lineCap = 'round';
+    // ① 手感线
+    c.strokeStyle = isOutline ? 'rgba(34, 211, 238, 0.45)' : 'rgba(196, 181, 253, 0.45)';
+    c.lineWidth = px(1.2);
     c.beginPath();
     tracePath(c, freeTrace, false);
     c.stroke();
-    // E：描轮廓额外画**收口弦**（起点→终点）—— 那条弦就是"围住这块地"的最后一条边，
-    // 用户必须看得见它，否则不知道自己这一圈围出的到底是什么形状（松手即落库，来不及后悔）。
-    if (tool.value === 'outline' && freeTrace.length > 2) {
-      const a = freeTrace[0], b = freeTrace[freeTrace.length - 1];
-      c.setLineDash([px(5), px(4)]);
-      c.strokeStyle = 'rgba(34, 211, 238, 0.65)';
-      c.lineWidth = px(1.3);
+    // ② 将得到的地块
+    const previewRing = previewTraceRing();
+    if (previewRing && previewRing.length >= 3) {
+      const ring = withBezierControls(previewRing);
       c.beginPath();
-      c.moveTo(b.x, b.y);
-      c.lineTo(a.x, a.y);
+      traceShapePath(c, ring, true);
+      c.fillStyle = isOutline ? 'rgba(34, 211, 238, 0.10)' : 'rgba(196, 181, 253, 0.14)';
+      c.fill();
+      c.strokeStyle = isOutline ? '#22d3ee' : '#c4b5fd';
+      c.lineWidth = px(1.8);
       c.stroke();
-      c.setLineDash([]);
     }
     c.restore();
   }
@@ -6043,24 +8781,90 @@ function drawPreviewOverlay() {
     c.fill();
   }
 
-  // 河流编辑器预览（P1-T2）
-  if (tool.value === 'river' && riverDraft.value.length > 0) {
-    c.strokeStyle = '#5d97bb';
-    c.lineWidth = px(2);
-    c.setLineDash([px(4), px(4)]);
-    c.beginPath();
-    c.moveTo(riverDraft.value[0].x, riverDraft.value[0].y);
-    for (let i = 1; i < riverDraft.value.length; i++) {
-      c.lineTo(riverDraft.value[i].x, riverDraft.value[i].y);
-    }
-    c.stroke();
-    c.setLineDash([]);
-    for (const p of riverDraft.value) {
-      c.fillStyle = '#5d97bb';
+  // ── 河流橡皮的擦除轨迹（2026-10-18 第十八修·三）────────────────────────────
+  // 🔴 为什么必须画出来：橡皮是"抹过去就没了"的手势，如果只画一个光标圈，用户
+  //    **看不到自己已经抹过哪里**（尤其拖歪了要重来的时候）。这里画的是**将擦掉的范围**：
+  //    半径 = 橡皮半径的半透明粗轨迹 + 当前笔尖的圈 —— 正是 `planRiverErase` 的判据形状。
+  //    ⚠️ 轨迹与圈的半径取自**同一个常量**（`RIVER_ERASE_RADIUS_PX`）：画小一点会让
+  //    "看起来没碰到"的河被擦掉（判据与视觉不一致，最难查的一类）。
+  if (tool.value === 'riverErase') {
+    const rW = px(RIVER_ERASE_RADIUS_PX);
+    const trail = riverEraseStroke.value || [];
+    c.save();
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    if (trail.length > 1) {
+      c.strokeStyle = 'rgba(248, 113, 113, 0.28)';
+      c.lineWidth = rW * 2;
       c.beginPath();
-      c.arc(p.x, p.y, px(3), 0, Math.PI * 2);
+      c.moveTo(trail[0].x, trail[0].y);
+      for (let i = 1; i < trail.length; i++) c.lineTo(trail[i].x, trail[i].y);
+      c.stroke();
+    }
+    if (trail.length) {
+      const head = trail[trail.length - 1];
+      c.strokeStyle = '#f87171';
+      c.lineWidth = px(1.5);
+      c.beginPath();
+      c.arc(head.x, head.y, rW, 0, Math.PI * 2);
+      c.stroke();
+      c.fillStyle = 'rgba(248, 113, 113, 0.12)';
       c.fill();
     }
+    c.restore();
+  }
+
+  // 河流编辑器预览（P1-T2）
+  // 🔴 2026-10-17 第六修：预览**不再是一条虚线 + 一串圆点**（那正是用户截图里
+  //    "画出来一堆点，而不是线"的观感来源之一）——
+  //    现在预览走**与落库完全同一条画法**（`drawOneHandRiver`：曲线 + 变宽 + 岸线），
+  //    因为"我按看到的形状判断好不好看"要求**预览就长成最终的样子**。
+  //    只在源头画一个方向标记：它是"高处/起点"的读数，不是装饰。
+  if (tool.value === 'river' && riverDraft.value.length > 1) {
+    // 🔴 第十八修·四：预览走**与落库同一条链**（`riverPreviewNodes`），并且用**落库那个宽度**
+    //    （`RIVER_WIDTH_DEFAULT`）—— 以前预览写死 `width: 0.7`，画出来是一条细发丝、
+    //    松手变成 8.4 屏幕像素的宽河：用户抱怨的"画的和想的不一样"有一半是这里。
+    const previewPts = riverPreviewNodes();
+    if (previewPts.length >= 2) {
+      drawOneHandRiver(c, previewPts, { width: RIVER_WIDTH_DEFAULT }, { alpha: 0.85 });
+      const head = previewPts[0];
+      c.fillStyle = '#f59e0b';
+      c.beginPath();
+      c.arc(head.x, head.y, px(3.2), 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+
+  // ── 河流节点编辑的**可见性**（2026-10-17）────────────────────────────────
+  // 🔴 为什么必须画出来：没有节点标记时，"拖节点=微调 / Delete=删节点"这两个能力
+  //    **完全没有入口感**（用户根本看不到节点在哪，也就不会去拖它）。
+  //    可发现性纪律：能力要有一条看得见的路 —— 这里就是那条路。
+  // 🔴 2026-10-17 第六修（**这条是"一堆点"的直接成因**）：手柄只有在
+  //    **点数不多、且放大到看得清**时才画。
+  //    原来无条件给每个节点画一对实心圆（半径 px(4) 世界单位）——
+  //    一条 480 点的河在 zoom 0.5 下节点间距不到 1 屏幕像素 →
+  //    **几百个圆点糊成一条虚线**，用户看到的就是"不是线，是一堆点"。
+  //    现在：点数 > `RIVER_HANDLE_MAX` 或缩放 < `RIVER_HANDLE_MIN_ZOOM` 时**只画活动节点**。
+  if (tool.value === 'river' && selectedRiver.value) {
+    const r = selectedRiver.value;
+    // 拖动期间画**草稿**（含正在拖的那个点）——见 `riverNodesForRender`
+    const nodes = riverNodesForRender(r);
+    // 手柄的**可见性闸门**（见上面那段注释）：宁可只画活动节点，也不要把河糊成虚线
+    const showAll = nodes.length <= RIVER_HANDLE_MAX && cameraScale.value >= RIVER_HANDLE_MIN_ZOOM;
+    c.save();
+    for (let i = 0; i < nodes.length; i++) {
+      const active = i === riverActiveNode.value;
+      if (!showAll && !active) continue;
+      const p = nodes[i];
+      c.beginPath();
+      c.arc(p.x, p.y, px(active ? 6 : 3.2), 0, Math.PI * 2);
+      c.fillStyle = active ? '#fbbf24' : '#0b1220';
+      c.fill();
+      c.lineWidth = px(active ? 2 : 1.2);
+      c.strokeStyle = active ? '#fde68a' : '#e2e8f0';
+      c.stroke();
+    }
+    c.restore();
   }
 }
 
@@ -6510,8 +9314,77 @@ function closeBurgEditor() {
 }
 
 function generateAndShowRivers() {
-  const rivers = store.generateRivers(baseMapKey.value);
-  autoRivers.value = rivers;
+  // 旧实现在这里同步跑分钟级循环，用户看到的是"点了没反应、然后就卡死"。
+  // 现在算法是索引版（秒级以内），但**必须给回执**：画了几条、丢了几条、多久。
+  // ⚠️ 回执走 `statusMsg`（它写的是 `provinceHint`，显示为状态栏里的 .draw-hint），
+  //    不是 `statusText`（那是「N 省份 | M 网格」那行）—— test_103 按这个口径断言。
+  //
+  // 🔴 2026-10-14 补（第三轮）：回执必须**把闸门读数一起报出来**。
+  //    缘由是实测：这份地形的源头高度闸门恰好是"条数"的主宰 —— 默认 60 只出 **3 条**，
+  //    而把它降到 40 立刻变 **67 条**（同一份数据）。用户只看到"生成 3 条河流"会以为
+  //    河就是少的，**看不到"是闸门卡住了、而且可以调"**。所以：
+  //      · 回执里写明「源头高度 >N / 离海 ≥M 格」；
+  //      · 面板上给一个可调输入（`river-source-height`），让这个闸门**够得着**。
+  const r = store.generateRivers(baseMapKey.value, {
+    sourceHeight: Number.isFinite(riverSourceHeight.value) ? riverSourceHeight.value : undefined,
+    // 🔴 追踪前平滑（2026-10-16）：实测唯一能显著改善观感的方向。
+    //    ⚠️ 平滑压低山头 → 源头更难达标，所以**必须同时**把闸门降下来。
+    //    这里在**点击时**降（而不是在 watch 里偷偷改），并把这件事写进回执 ——
+    //    用户看得到"为什么闸门变成 40 了"，而不是发现参数自己变了。
+    ...(riverSmooth.value
+      ? {
+        smoothRadius: riverSmoothRadius.value,
+        smoothPasses: riverSmoothPasses.value,
+        sourceHeight: Math.min(
+          Number.isFinite(riverSourceHeight.value) ? riverSourceHeight.value : TRACE_SOURCE_HEIGHT,
+          RIVER_SMOOTH_SOURCE_HEIGHT,
+        ),
+      }
+      : {}),
+  });
+  // 平滑生效时把闸门输入框同步成实际用的值（让面板与算法一致，不出现"显示 60、实际用 40"）
+  if (riverSmooth.value && r && r.smoothed) {
+    riverSourceHeight.value = Math.min(riverSourceHeight.value, RIVER_SMOOTH_SOURCE_HEIGHT);
+  }
+  if (!r || r.ok === false) {
+    statusMsg((r && r.message) || '自动河流没跑起来');
+    return;
+  }
+  autoRivers.value = r.rivers || [];
+  // 🔴 河网段（树枝状几何本体）+ 段汇流量上界（线宽归一化要用）—— 见 `autoRiverSegments` 注释
+  autoRiverSegments.value = r.segments || [];
+  autoRiverMaxFlow.value = r.segMaxFlow || 0;
+  // 剪枝在**这里**算一次（回执要用它，渲染也用它）—— 不能等渲染时才第一次算，
+  // 否则回执里那句话用的是**上一次**的读数（"改了没反应"的经典成因）。
+  autoRiverDrawn.value = pruneRiverNetwork(
+    autoRiverSegments.value, riverFlowGate(autoRiverMaxFlow.value, autoRiverSegments.value)).kept.length;
+  // 🔴 2026-10-17 第六修：**状态栏只说结论，长解释进 tooltip**。
+  //    用户原话：「底下还有一堆废话文本，这些根本不该显示出来给用户看」。
+  //    那段解释（河长上限为什么低、两套河为什么并存）本身没错，但它是**读一次就够的**，
+  //    不该每次点按钮都铺满状态栏（实测占到两行、把画布压矮）。
+  //    现在：**一行**结论 + 悬停看详情（`riverTerrainAdvice` 那份计算已存在，直接复用）。
+  //    ⚠️ 但**闸门读数与平滑回执必须留在这一行里**（保留原有守卫的口径）：
+  //       它们是"参数够不够得着"的证据 —— 用户看不到读数就以为"河本来就少"。
+  const brief = [`生成 ${autoRivers.value.length} 条河流`];
+  if (autoRiverSegments.value.length) {
+    brief.push(autoRiverDrawn.value < autoRiverSegments.value.length
+      ? `河网 ${autoRiverDrawn.value}/${autoRiverSegments.value.length} 段（只画河道）`
+      : `河网 ${autoRiverSegments.value.length} 段`);
+  }
+  if (r.sources === 0) {
+    brief.push('⚠️ 源头高度调低（例如 40）再看');
+  } else {
+    brief.push(`闸门 源头高度 >${riverSourceHeight.value}`);
+  }
+  if (r.smoothed) brief.push(`已先平滑地形 → 闸门按 ${riverSourceHeight.value} 起算`);
+  brief.push(`${Math.round(r.elapsedMs || 0)} ms`);
+  // 🔴 2026-10-17：地形建议从"常驻角标 + 悬停"改为**一次性指路**（只在这一行里说一遍）。
+  //    用户明确否掉了工具栏上那枚常驻「长河受限」（"放在已经很拥挤的工具栏里真的有必要吗"）。
+  //    现在只在**长河确实受限**时追一句**可执行的**建议，而且带上解决入口的名字。
+  statusMsg(
+    `${brief.join(' · ')}`
+    + (riverTerrainAdvice.value ? ' · 这份地形缺长河：点「更多 → 按轮廓生成地形」重建地形后更明显' : ''),
+  );
   render();
 }
 
@@ -6631,6 +9504,21 @@ onMounted(async () => {
   resetTimelineToStart();
   setTimeout(resetTimelineToStart, 300);
 
+  // 卡片墙带来的初始剧本（2026-10-17 P0）：选中它 + 落到它的起始年。
+  // 🔴 必须排在上面 300ms 的 resetTimelineToStart **之后**（320ms）—— 排前面会被它盖回第一个剧本。
+  //    卡片可能来自**另一张底图**：先切 baseMapKey（sortedScenarios 按它过滤，不切就找不到）。
+  if (props.initialScenarioId) {
+    const s = store.scenarios?.[props.initialScenarioId];
+    if (s?.ownerKey && store.baseMaps?.[s.ownerKey] && s.ownerKey !== baseMapKey.value) {
+      baseMapKey.value = s.ownerKey;
+    }
+    setTimeout(() => {
+      const target = sortedScenarios.value.find((x) => x && x.id === props.initialScenarioId);
+      if (target) selectScenarioAt(target);
+    }, 320);
+  }
+  if (props.openManager) showScenarioManager.value = true;
+
   // 🔴 游标监听必须**在这里**注册（不能在 setup 顶层）：顶层 watch 会在挂载前求值一次并
   //    触发 render()，那一帧用的是未适屏相机 (0,0,1) →「首帧 = 空画布」（test_61 抓到的帧序：
   //    t=1059 空帧 → t=1067 才适屏）。与上面 `watch(sortedScenarios…)` 同一条纪律。
@@ -6648,6 +9536,12 @@ onMounted(async () => {
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect();
   if (settleFitTimer) { clearTimeout(settleFitTimer); settleFitTimer = null; }
+  // 🔴 帧合并的 rAF 也要清（与「谁建了定时器就要清」同一条纪律）：
+  //    卸载后回调仍会跑 `render()` → `ctx` 已失效 → 抛进渲染护栏 → 控制台刷错误。
+  if (rafRenderId != null && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(rafRenderId);
+    rafRenderId = null;
+  }
   // 🔴 `provinceGridTimer` 是格点模型（P2 前）的遗留引用 —— 那个变量**全仓从未声明**，
   //    于是卸载时这里必抛 `ReferenceError: provinceGridTimer is not defined`（0.2.3 用户实测崩溃，
   //    Vue 报在 `runtime-um`＝卸载钩子上）。网格渲染已随 P2 退役，正确做法是删掉它。
@@ -6660,6 +9554,10 @@ onUnmounted(() => {
   window.removeEventListener('sitian:history-jump', onHistoryJump);
   if (snapMarkerTimer) { clearTimeout(snapMarkerTimer); snapMarkerTimer = null; }
   if (snapFeedbackTimer) { clearTimeout(snapFeedbackTimer); snapFeedbackTimer = null; }
+  endStrokeBase();          // 卸载后残留的"手势期基帧"没有任何用处，留着只是占内存
+  // 手势闸门同理：卸载时手还按着（切视图/关项目）就不能把闸门留在"进行中"，
+  // 否则自动保存会被顺延到 5s 上限才强制写一次（见 interactionGate.js 的口径 ②）
+  if (canvasGateArmed) { endInteraction('scenario-canvas'); canvasGateArmed = false; }
   rasterCache.clear();
 });
 
@@ -6673,7 +9571,20 @@ function onHistoryJump() {
   pruneProvinceSelection();     // 省份表变了 → 多选集合里已不存在的 id 必须剔除
   render();
 }
-watch([rasterLayer, showRivers, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPolityLabels], () => render());
+// ⚠️ `riverSource`（河流来源）必须在这里 —— 漏了就是"下拉改了画布没反应"
+//    （本项目在高度图着色档位上踩过同一条：test_69 抓到过 `diffPixels: 0`）。
+// ⚠️ `riverSource`（河流来源）必须在这里 —— 漏了就是"下拉改了画布没反应"
+// ⚠️ `terrainShade` / `terrainShadeStrength` 同理（2026-10-17 第七修）：漏了就是"勾了立体没反应"
+watch([rasterLayer, showRivers, riverSource, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPolityLabels, terrainShade, terrainShadeStrength], () => render());
+// 🔴 手势期基帧的**安全阀**（2026-10-18 第十八修·二）：只要底图几何/河网换了引用
+//    （撤销、别的入口写入、导入…），立刻解甲 —— 底图变了还贴旧图就是"改了数据画面不动"。
+//    启用基帧的前提本来就是"这一笔不改数据"，这条 watch 是**把前提落实成机制**，
+//    而不是靠"我记得不要在拖笔里写库"这种注释纪律。
+watch(
+  [() => baseMap.value?.terrain, () => baseMap.value?.rivers, () => baseMap.value?.heightmap,
+   () => autoRivers.value, () => autoRiverSegments.value],
+  () => { if (strokeBaseArmed) endStrokeBase(); },
+);
 // 切换底图 → 作废离屏栅格缓存（不同地图的网格数据不同）
 watch(baseMapKey, () => {
   rasterCache.clear();
@@ -6746,7 +9657,51 @@ watch(baseMap, () => {
   /* 小窗口（或工具栏两行展开）时内容会超出——允许滚动，别把画布挤成 0 高 */
   overflow: auto;
   background: #0f1a2e;
+  /* 沉浸顶条与底部胶囊都是绝对定位 —— 锚就是容器自己（缺这行它们会飞到最近的定位祖先上） */
+  position: relative;
 }
+
+/* ══ 沉浸看图模式（2026-10-17 P0，暮雨拍板）══════════════════════════════════
+   收起：顶栏（工具栏）/ 左栏剧本列表 / 底部时间轴 —— 地图占满（可视区 ~55% → ~95%）。
+   保留：细顶条（返回/剧本名/年份/小地图/退出）+ 底部悬浮工具胶囊（主行 6 控件，
+   8 秒无操作自动淡出、鼠标一动即回）+ 右下角小地图（可手动隐藏，偏好记住）。
+   🔴 **能力一个都不减**：胶囊 = 原主行那 6 个控件；被收起的行/面板按 Ctrl+I 即回。
+   🔴 细顶条不许改成绝对定位之外的定位方式 —— 它必须浮在画布上方且不吃画布高度
+   （吃高度 = 适屏 fitToView 白算一次）。 */
+.scenario-map-container.immersive { overflow: hidden; }
+.immersive-bar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+  display: flex; align-items: center; gap: 14px;
+  height: 30px; padding: 0 14px;
+  background: rgba(10, 13, 19, 0.82);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.6);
+  backdrop-filter: blur(4px);
+}
+.imb-title { color: #e6edf3; font-size: 12.5px; letter-spacing: 2px; font-weight: 600; }
+.imb-year { color: #8b949e; font-size: 11.5px; letter-spacing: 1px; }
+.imb-spacer { flex: 1; }
+.imb-btn {
+  background: transparent; border: 1px solid #30363d; color: #8b949e;
+  font-size: 11px; padding: 3px 10px; border-radius: 5px; cursor: pointer; letter-spacing: 1px;
+}
+.imb-btn:hover { border-color: #58a6ff; color: #e6edf3; }
+/* 沉浸态：工具栏变底部悬浮胶囊（只留主行）；左栏/时间轴收起 */
+.scenario-map-container.immersive .scenario-toolbar {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 25; flex-direction: row; align-items: center;
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid #30363d; border-radius: 22px;
+  padding: 6px 14px; max-width: 92vw;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.35s;
+}
+.scenario-map-container.immersive .scenario-toolbar.dim { opacity: 0.08; }
+.scenario-map-container.immersive .scenario-toolbar.dim:hover { opacity: 1; }
+/* 沉浸态只留主行（其余行/面板收起 —— Ctrl+I 即回，能力不减） */
+.scenario-map-container.immersive .toolbar-row:not(.primary-row) { display: none; }
+.scenario-map-container.immersive .toolbar-more { display: none; }
+.scenario-map-container.immersive .scenario-list-panel { display: none; }
+.scenario-map-container.immersive .scenario-timeline-root { display: none; }
 
 /* 🔴 工具栏是**多行**结构（P0 第二块重整）：原来 `.scenario-toolbar` 在第 128 行就被提前
    `</div>` 闭合，后面十几组控件全都掉到容器层 → 只有第一行有工具栏底色，其余几行是裸的
@@ -6777,6 +9732,20 @@ watch(baseMap, () => {
 .primary-row { gap: 4px; }
 .more-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; }
 .more-toggle.has-advanced { box-shadow: inset 0 0 0 1px var(--accent); }
+/* 底图编辑模式（2026-10-18 第十七修）：模式条在主行**之上**（模式是"状态"，不是工具栏按钮）。
+   ⚠️ 它不能进 `.primary-row` —— 主行可见控件数由 test_65 / test_97 硬守 ≤6（放进去实测 7 个、两条红）。 */
+.toolbar-modes {
+  display: flex; align-items: center; gap: 10px; padding: 2px 4px 0;
+}
+.mode-hint { color: #94a3b8; font-size: 11px; letter-spacing: 0.5px; }
+.basemap-edit-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; font-size: 12px; }
+.basemap-edit-toggle.active {
+  background: #78350f; border-color: #d97706; color: #fde68a; font-weight: 600;
+}
+.basemap-row {
+  border-left: 3px solid #d97706; padding-left: 8px; background: rgba(120, 53, 15, 0.18);
+}
+.basemap-row-label { color: #fbbf24; }
 .toolbar-more {
   display: flex; flex-direction: column; gap: 2px;
   border-top: 1px solid var(--border, #2a3038);
@@ -7168,6 +10137,19 @@ watch(baseMap, () => {
   align-items: center;
 }
 .slp-toggle:hover { background: #334155; color: #e2e8f0; }
+/* 换剧本（P0-1）：与收起按钮同族的小控件，常驻剧本列表头部（列表收起时也在） */
+.slp-picker {
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.slp-picker:hover { background: #334155; color: #e2e8f0; border-color: #64748b; }
 .slp-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
 .slp-item {
   padding: 5px 7px;
@@ -7220,6 +10202,21 @@ watch(baseMap, () => {
 }
 .scenario-empty-hint .eh-title { margin: 0 0 6px; font-size: 14px; color: #e2e8f0; }
 .scenario-empty-hint .eh-line { margin: 0; font-size: 12px; line-height: 1.6; }
+.scenario-empty-hint .eh-line b { color: #e2e8f0; }
+/* 🔴 空态容器是 `pointer-events: none`（不许挡住画布交互）—— 里面的按钮必须**逐个**收回
+   事件（`auto`），否则「导入 .map 底图」是个看得见、点不动的假按钮。 */
+.scenario-empty-hint .eh-actions {
+  display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+}
+.scenario-empty-hint .eh-btn {
+  pointer-events: auto;
+  background: #1e293b; border: 1px solid #475569; color: #cbd5e1;
+  border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.scenario-empty-hint .eh-btn:hover:not(:disabled) { background: #334155; color: #e2e8f0; }
+.scenario-empty-hint .eh-btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.scenario-empty-hint .eh-btn.primary:hover:not(:disabled) { filter: brightness(1.12); }
+.scenario-empty-hint .eh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* 渲染护栏提示（状态栏内，红黄警示 + 可点击恢复） */
 .render-guard { color: #fbbf24; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
@@ -7233,6 +10230,154 @@ watch(baseMap, () => {
   cursor: pointer;
 }
 .render-guard .rg-btn:hover { background: rgba(251, 191, 36, 0.12); }
+
+/* 渲染护栏横幅（画布正中；2026-10-14）—— 状态栏那行**不够**：
+   用户盯着的是空白的画布，提示必须出现在他正在看的地方，并且必须给出错误原文。 */
+.render-paused-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: min(560px, 78%);
+  padding: 18px 22px;
+  border: 1px solid #b45309;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e2e8f0;
+  text-align: left;
+}
+.render-paused-card .rp-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 700; color: #fbbf24;
+}
+.render-paused-card .rp-sub { margin-top: 8px; font-size: 12px; line-height: 1.7; color: #cbd5e1; }
+.render-paused-card .rp-err {
+  margin: 10px 0;
+  padding: 8px 10px;
+  max-height: 120px;
+  overflow: auto;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  color: #fca5a5;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+.render-paused-card .rp-hint { font-size: 11px; line-height: 1.7; color: #94a3b8; }
+.render-paused-card .rp-actions { margin-top: 12px; display: flex; gap: 10px; }
+.render-paused-card .rp-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid #475569;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.render-paused-card .rp-btn.primary { color: #0f172a; background: #fbbf24; border-color: #fbbf24; font-weight: 600; }
+.render-paused-card .rp-btn:hover { filter: brightness(1.12); }
+
+/* 源头高度闸门（紧挨「自动河流」按钮）：宽度收窄，别把工具栏挤爆 */
+.river-source-height {
+  width: 54px;
+  margin: 0 2px 0 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: #e2e8f0;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 4px;
+}
+/* 河流来源（紧挨闸门输入）：选项文字比闸门数字长，给足宽度 */
+.river-source-select {
+  max-width: 132px;
+  margin: 0 2px 0 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: #e2e8f0;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 4px;
+}
+/* 平滑开关（紧挨自动河流按钮）：与邻居同字号，别把工具栏挤爆 */
+.river-smooth-label {
+  margin: 0 2px 0 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+/* 河流节点编辑行（2026-10-17）：只在使用河流工具时出现 —— 与 `.province-row` 同款
+   "切到该类工具才出现的选项行"。用 `flex-wrap` 兜住窄窗口（否则两个按钮会被挤出去）。 */
+.river-edit-row {
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.river-edit-row .river-edit-name {
+  font-size: 12px;
+  color: #93c5fd;
+  white-space: nowrap;
+}
+.river-edit-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 地形限制提示（常驻小徽标，光标悬停看详细原因）：刻意用警示色，别让人以为河就该长这样 */
+.river-terrain-advice {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 2px 0 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: #fbbf24;
+  background: #3a2a0a;
+  border: 1px solid #a16207;
+  border-radius: 4px;
+  cursor: help;
+}
+
+/* ── P5：高度图分辨率面板（2026-10-14）───────────────────────────────────────
+   为什么按需展开而不是常驻：这组操作**不常做**（一次调整管很久），常驻会在工具栏上
+   再加一排控件，把"每屏能看几个工具"进一步挤没。 */
+.resample-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin: 4px 0;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+.resample-panel .rp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.resample-panel label { opacity: 0.85; }
+.resample-panel select {
+  background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
+  border-radius: 4px; padding: 2px 6px; font-size: 12px;
+}
+.resample-panel .rp-cost { opacity: 0.9; }
+.resample-panel .rp-cost.lv-ok { color: #fbbf24; }
+.resample-panel .rp-cost.lv-slow { color: #fb923c; }
+.resample-panel .rp-cost.lv-reject { color: #f87171; }
+.resample-panel .rp-warn { color: #fca5a5; line-height: 1.6; white-space: pre-wrap; }
+.resample-panel .rp-hint { opacity: 0.65; font-size: 11px; }
+.resample-panel .rp-note { opacity: 0.6; font-size: 11px; line-height: 1.6; }
+.resample-panel .rp-actions { display: flex; gap: 8px; }
+.resample-panel .rp-btn {
+  padding: 3px 12px; font-size: 12px; color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.12); border: 1px solid #475569;
+  border-radius: 4px; cursor: pointer;
+}
+.resample-panel .rp-btn.primary { color: #0f172a; background: #38bdf8; border-color: #38bdf8; font-weight: 600; }
+.resample-panel .rp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.resample-panel .rp-btn:not(:disabled):hover { filter: brightness(1.12); }
 
 .scenario-status-bar {
   padding: 6px 12px;
@@ -7278,6 +10423,9 @@ watch(baseMap, () => {
 .save-status.saved { color: #4ade80; }
 .save-status.error { color: #f87171; font-weight: 600; }
 .save-status.saving { color: #fbbf24; }
+/* staged（2026-10-17）：已交给项目、还在等磁盘写入 / 有改动未落盘 ——
+   与 saved 的绿标**必须不同色**，否则「还在内存里」和「已经进磁盘」在界面上又混成一件事 */
+.save-status.staged { color: #fbbf24; }
 .save-status.idle { color: #94a3b8; }
 
 /* 右键菜单 */

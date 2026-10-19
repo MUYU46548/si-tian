@@ -1345,7 +1345,13 @@ function drawReliefIcons(ctx, overrideList = null) {
 function drawRivers(ctx) {
   const s = getState();
   const rivers = s.currentMapData?.rivers || [];
-  const draft = s.riverDraftPoints || [];
+  // 🔴 2026-10-17：草稿点列取 `riverDraftPreview`（**平滑后**的"正在画的河"）——
+  //    它同时覆盖"拖笔"与"描点"两条路。此前这里只读 `riverDraftPoints`，
+  //    于是**拖笔画河在屏幕上什么都看不到**（笔迹只进 riverBrushEnd，绘制层看不见）。
+  //    仍回落到 riverDraftPoints 是为了兼容外部只塞旧字段的调用方（如老用例）。
+  const draft = s.riverDraftPreview && s.riverDraftPreview.length
+    ? s.riverDraftPreview
+    : (s.riverDraftPoints || []);
   const vp = s.viewport;
 
   // 绘制中的河流草稿

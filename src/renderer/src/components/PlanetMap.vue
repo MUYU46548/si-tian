@@ -142,6 +142,16 @@
             <input type="range" v-model.number="planetHeightBrush.brushRadius.value" min="20" max="300" step="10" class="brush-slider" />
             <span class="toolbar-label">强度</span>
             <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
+            <!-- 补高度图的入口（2026-10-17）：自动寻路 / 智能聚落会说「无高度图数据」，
+                 而这句话曾经指向一个**行星视图里不存在**的入口。现在入口就在这个面板里。 -->
+            <button
+              data-testid="planet-import-map-height"
+              @click="triggerPlanetMapImport()"
+              :disabled="store.isReadOnly || mapImportBusy"
+              :title="store.isReadOnly
+                ? store.readOnlyReason
+                : '选一份 Azgaar（FMG）导出的 .map：把高度图（连同省份 / 河流 / 道路）装进这张行星地图'"
+            ><Icon name="upload" :size="13"/> 导入 .map</button>
           </div>
           <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调强度 · Ctrl+滚轮缩放 · 空格+拖动平移</div>
         </template>
@@ -437,13 +447,38 @@
         @navigate="handleEagleEyeNavigate"
       />
       <zoom-controls :renderer="renderer" :on-fit-all="fitAllContent" :on-fit-selection="fitSelection" />
-      <!-- 空地图引导 -->
-      <div v-if="!editMode && fogMode" class="empty-map-hint">
+      <!-- 空地图引导。
+           🔴 2026-10-17：这里必须给出**当刻就能点的起步入口**（暮雨点名要修的「起步闭环」）——
+           旧版只有一句"点击「编辑地图」开始绘制"，而高度笔刷还会提示"先导入 Azgaar .map"，
+           指向一个行星视图里根本不存在的入口。现在两条路都摆在这里：导入 .map / 从零画。 -->
+      <div v-if="!editMode && fogMode" class="empty-map-hint" data-testid="planet-empty-hint">
         <div class="empty-map-icon"><Icon name="map" :size="34"/></div>
         <div class="empty-map-title">这张行星地图还是空的</div>
-        <div class="empty-map-desc">点击「编辑地图」开始绘制省份、标记地点、规划路线</div>
-        <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
-                :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：绘制地形/区域/标记/路线/文本等'"><Icon name="pencil" :size="14"/> 编辑地图</button>
+        <div class="empty-map-desc">
+          导入一份 Azgaar（FMG）导出的 <b>.map</b> —— 会带进省份、地形高度图、河流与道路；<br />
+          或者直接从零手绘（先画省份，再用高度笔刷推演地形）。
+        </div>
+        <div class="empty-map-actions">
+          <button
+            class="adopt-btn empty-primary"
+            data-testid="planet-import-map"
+            @click="triggerPlanetMapImport()"
+            :disabled="store.isReadOnly || mapImportBusy"
+            :title="store.isReadOnly
+              ? store.readOnlyReason
+              : '选一份 Azgaar（FMG）导出的 .map：把省份 / 高度图 / 河流 / 道路装进这张行星地图（一整次导入 = 一条 Ctrl+Z 可撤回）'"
+          ><Icon name="upload" :size="14"/> 导入 .map 底图</button>
+          <button
+            class="adopt-btn"
+            data-testid="planet-empty-draw"
+            @click="enterEditMode"
+            :disabled="store.isReadOnly"
+            :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：绘制地形/区域/标记/路线/文本等'"
+          ><Icon name="pencil" :size="14"/> 从零开始画</button>
+        </div>
+        <div class="empty-map-note">
+          两个容器各存一份：这里导入的是<b>这张行星地图</b>；历史剧本侧的底图要在那边另行导入
+        </div>
       </div>
       <cluster-panel
         :planet="props.planet"
@@ -490,7 +525,8 @@
         <span class="zoom-value">%</span>
       </div>
       <!-- 保存状态横幅 -->
-      <div v-if="saveStatus" class="save-banner" :class="{ error: saveStatusKind === 'err' }"><Icon :name="saveStatusKind === 'err' ? 'x-circle' : saveStatusKind === 'busy' ? 'loader' : 'check-circle'" :size="13" style="margin-right:5px"/>{{ saveStatus }}</div>
+      <div v-if="saveStatus" class="save-banner" :class="{ error: saveStatusKind === 'err', warn: saveStatusKind === 'warn' }"
+           :data-testid="'planet-save-banner-' + (saveStatusKind || 'ok')"><Icon :name="saveStatusKind === 'err' ? 'x-circle' : saveStatusKind === 'busy' ? 'loader' : saveStatusKind === 'warn' ? 'clock' : 'check-circle'" :size="13" style="margin-right:5px"/>{{ saveStatus }}</div>
       <!-- 光标世界坐标 -->
       <div v-if="cursorCoord.visible" class="cursor-coords">X: {{ cursorCoord.x }} · Y: {{ cursorCoord.y }}</div>
       <!-- 画布边缘标尺 -->
@@ -1021,8 +1057,15 @@ import { ROAD_STYLES, ROAD_STYLE_KEYS, DEFAULT_ROAD_STYLE } from '../utils/roadS
 import {
   sampleNodes, normalizeRiverFlow, clampRiverNode, finalizeRiverNodes,
   findRiverPointIndex, clampRiverWidth, widthByFlow,
+  // 🔴 2026-10-16（保底项）：给已有河**加拐点**的两个依赖 —— 见 handleRiverClick
+  findRiverSegment, insertNodeBetween,
+  // 🔴 2026-10-17：点到折线的最短距离**下沉到纯函数层**（剧本底图的河身命中也用它）——
+  //    两处各写一份就会出现"两张图里点河身的手感不一样"，而这类偏差不会报错
+  distanceToPolyline, hitTestRiver,
   RIVER_DEFAULT_WIDTH, RIVER_WIDTH_MIN, RIVER_WIDTH_MAX,
 } from '../utils/rivers';
+// 🔴 2026-10-16（画河保底）：手画河的抽稀 + 带高度平滑（与剧本底图**共用同一份实现**）
+import { decimatePolyline, smoothRiverNodes, smoothWhileDrawing } from '../utils/polylineSmooth';
 import { useProvinceSplitMerge } from '../composables/useProvinceSplitMerge';
 import { usePlanetHeightBrush } from '../composables/usePlanetHeightBrush';
 import { usePlanetChannelBrush } from '../composables/usePlanetChannelBrush';
@@ -1044,6 +1087,16 @@ import { createProvinceByFloodFill } from '../utils/floodfill';
 import { generateRoadPath, findOptimalBurgPosition, findNearestGridPoint } from '../utils/placement';
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath, mirrorPointAcross } from '../utils/geometry';
 import { validateRegionTrace } from '../utils/regionTrace';
+// `.map` 导入（2026-10-17）：行星视图自己的起步入口。
+// ⚠️ 「文件名 → 底图名」「原文留底」与剧本视图**共用** utils/mapImportSource.js；
+//    「解析产物 → 行星容器」的映射在 utils/planetMapBundle.js（纯函数，Node 有单测）。
+import { parseMapFile } from '../utils/azgaar-parser';
+import { mapNameFromFileName, backupMapSourceFile, readMapSourceText } from '../utils/mapImportSource';
+import {
+  buildPlanetMapBundle, describePlanetImportReceipt, planetMapContentCounts,
+} from '../utils/planetMapBundle';
+// 保存回执的**唯一判定**：staged（只交给了项目）≠ persisted（真进磁盘）—— 见 utils/saveStatusText.js
+import { describeSaveAction } from '../utils/saveStatusText';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
@@ -1557,6 +1610,13 @@ const getState = () => ({
   // P1-1 河流编辑器
   selectedRiver: selectedRiver.value,
   riverDraftPoints: riverDraftPoints.value,
+  // 🔴 2026-10-17：**拖动中的笔迹预览**（平滑后）。
+  //    此前拖笔画河在画布上**什么都看不到** —— `riverBrushPath` 只进 `riverBrushEnd`
+  //    （落库那一刻才用），绘制层读的是 `riverDraftPoints`（描点式那条路）→
+  //    用户按住拖了半天，屏幕上一点反应都没有，松手才突然出现一条河。
+  //    现在两条路都经 `riverDraftPreview` 进绘制层：拖笔期间看得见、且**画的就是最终形状**
+  //    （`smoothWhileDrawing` 只平滑尾部窗口，与落库同一份 Chaikin）。
+  riverDraftPreview: riverDraftPreview.value,
   riverDrag: riverDrag.value,
   hitRiverPoint,
   beginRiverDrag,
@@ -1769,9 +1829,26 @@ const renderer = useCanvasRenderer(canvas, {
     const vt = renderer.viewTransform; const cvs = canvas.value; if (!cvs) return;
     ctxMenu.open(items, { x: wx * vt.scale + vt.x + cvs.clientWidth / 2, y: wy * vt.scale + vt.y + cvs.clientHeight / 2 }, cvs.parentElement);
   },
-  onDragStart: interactions.onDragStart,
-  onDragMove: interactions.onDragMove,
-  onDragEnd: interactions.onDragEnd,
+  // 🔴 2026-10-16（画河保底）：河流模式的**拖笔收点**包在既有 interactions 回调外面。
+  //    顺序很关键（读 `useCanvasRenderer` 确认过）：
+  //      onDragStart → onDragMove* → onDragEnd →（位移足够时抑制）onClick
+  //    所以在 onDragEnd 里决定"这是画河还是点击"，并把结果留在 `riverBrushDrawn` 给 onClick 看。
+  onDragStart: (wx, wy, button, shiftKey, ctrlKey, panTry) => {
+    const r = interactions.onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry);
+    // 只在"左键 + 河流模式 + 可编辑 + 没拖到节点"时接笔刷（拖节点优先，见 interactions 内部）
+    if (button === 0 && editMode.value && interactionMode.value === 'river' && !riverDrag.value) {
+      riverBrushStart(wx, wy);
+    }
+    return r;
+  },
+  onDragMove: (wx, wy, dragInfo) => {
+    if (riverBrushPath.value.length) riverBrushMove(wx, wy);
+    return interactions.onDragMove(wx, wy, dragInfo);
+  },
+  onDragEnd: (wx, wy, dragInfo) => {
+    if (riverBrushPath.value.length) riverBrushEnd();
+    return interactions.onDragEnd(wx, wy, dragInfo);
+  },
   onWheel: (e, newScale) => { zoomOnWheel(newScale); },
   drawMode, currentPath, interactionMode, isSpacebarDown,
 });
@@ -2385,21 +2462,148 @@ function smoothPolygonBoundary() {
   renderer.requestRender();
 }
 
+/**
+ * 保存/导入横幅的计时器 —— **本组件自己的**（2026-10-17 修一个真缺陷）。
+ *
+ * 🔴 旧代码写 `snapshotPanel.saveStatusTimer.value = setTimeout(…)`：那个字段在
+ *    `useSnapshotPanel` 里是普通 `let saveStatusTimer = null`，composable 返回时已经被
+ *    快照成 `null` → **`.value` 必然抛 TypeError**。而 saveMap 里这段在 `.then()` 内、
+ *    被 `.catch()` 接住 → 用户点「保存」，看到的是「保存失败」，即使保存其实成功了。
+ *    （更糟：这个异常把"项目态只是 staged"的真问题一起盖住了。）
+ * 现在统一走 setBanner：一个计时器、一条路径、失败也说得清。
+ */
+let bannerTimer = null;
+function setBanner(text, kind = 'ok', ms = 3000) {
+  saveStatus.value = text;
+  saveStatusKind.value = kind;
+  if (bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => { saveStatus.value = ''; bannerTimer = null; }, ms);
+}
+
 function saveMap() {
   // 异步保存 + 横幅反馈，避免用户无反馈狂点
-  saveStatus.value = '正在保存...';
-  saveStatusKind.value = 'busy';
+  setBanner('正在保存...', 'busy', 60000);
   store.saveMapData(props.planet.id, currentMapData.value).then(result => {
-    saveStatus.value = result?.success ? '保存成功' : '保存失败';
-    saveStatusKind.value = result?.success ? 'ok' : 'err';
-    snapshotPanel.clearSaveStatusTimer();
-    snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 3000);
-  }).catch(() => {
-    saveStatus.value = '保存失败';
-    saveStatusKind.value = 'err';
-    snapshotPanel.clearSaveStatusTimer();
-    snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 3000);
+    // 🔴 2026-10-17：文案必须按**返回值自己声明的语义**说。
+    //    项目态下 `saveMapData` 返回 `{ success: true, staged: true, persisted: false }`
+    //    —— 那只代表"已交给 projectStore"，真正的磁盘写入在它的 800ms 防抖里。
+    //    旧实现只看 `result.success` 就报「保存成功」= 在数据还没进磁盘时说它进了（谎报）。
+    const d = describeSaveAction(result);
+    setBanner(d.text, d.kind, 3000);
+  }).catch((err) => {
+    setBanner(`保存失败：${(err && err.message) || '未知原因'}`, 'err', 6000);
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 导入 `.map`（2026-10-17）：行星视图自己的「起步入口」
+//
+// 为什么必须在这里：`.map` 导入此前只有剧本视图一条路（装进**底图** baseMaps[key]），
+// 而行星图看的是 `mapData[planetId]` —— 另一个容器、此前没有任何导入路径。
+// 于是「空行星上想用自己那张 Azgaar 地图起步」在界面上做不到，而高度笔刷还会提示
+// 「先导入 Azgaar .map」——**指向一个当刻看不见的入口**（与剧本侧 0.2.9 修的是同一类问题）。
+//
+// 三个入口点（同一个函数）：空态主按钮、空态副按钮（data-testid 区分）、高度笔刷面板里的补数据按钮。
+// ⚠️ 落库写口是 `store.importPlanetMapBundle`（一整次导入 = 一条撤销；8 个键以外一律不动）。
+// ⚠️ 两个容器是**各存一份**（`mapData` ↔ `baseMaps` 的双向同步是已知未完成项）——
+//    回执里必须说清，不能让用户以为"导一次两边都有"。
+// ═══════════════════════════════════════════════════════════════════════════
+const mapImportBusy = ref(false);
+
+function _importBanner(text, kind = 'ok', ms = 6000) {
+  setBanner(text, kind, ms);
+}
+
+async function triggerPlanetMapImport() {
+  if (store.isReadOnly) {
+    _importBanner(`只读：${store.readOnlyReason || '打开项目后可导入'}`, 'err', 8000);
+    return;
+  }
+  if (mapImportBusy.value) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.map';
+  input.onchange = (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) importPlanetMapFile(f);
+  };
+  input.click();
+}
+
+/**
+ * 把一份 `.map` 装进**当前行星**的地图（`mapData[planetId]`）。
+ * @param {{name:string, text:()=>Promise<string>}} file 选文件得到的 File（或留底恢复的同形对象）
+ */
+async function importPlanetMapFile(file) {
+  if (!file || mapImportBusy.value) return;
+  mapImportBusy.value = true;
+  try {
+    const text = await readMapSourceText(file);
+    if (!text) {
+      _importBanner('导入失败：读不到文件内容', 'err', 8000);
+      return;
+    }
+    // 先留底（在任何解析/写入之前）—— 解析失败也该留下这份素材；失败不阻断
+    const srcNote = await backupMapSourceFile(file.name || 'map.map', text);
+    const parsed = parseMapFile(text);
+    const name = mapNameFromFileName(file.name) || '导入底图';
+    const bundle = buildPlanetMapBundle(parsed);
+    if (!bundle.stats.provinces && !bundle.heightmap && !bundle.stats.rivers) {
+      _importBanner(`「${name}」里没有可导入的内容（省份 / 高度图 / 河流都没有）—— 地图未改动`, 'err', 8000);
+      return;
+    }
+
+    // 行星上已有内容 → 覆盖前问一次（一整次导入 = 一条 Ctrl+Z，不是不可逆）
+    const cur = planetMapContentCounts(currentMapData.value);
+    const hasOld = cur.provinces + cur.rivers + cur.routes > 0 || cur.hasHeightmap;
+    if (hasOld) {
+      const oldBits = [
+        cur.provinces ? `省份 ${cur.provinces} 块` : '',
+        cur.rivers ? `河流 ${cur.rivers} 条` : '',
+        cur.routes ? `道路 ${cur.routes} 条` : '',
+        cur.hasHeightmap ? '高度图' : '',
+      ].filter(Boolean).join(' / ');
+      const go = confirm(
+        `本行星地图上已经有 ${oldBits}。\n\n`
+        + `导入「${name}」会用这份数据替换它们；`
+        + '区域、标记、文本、地点簇、参考底图、地貌图标与地图快照**都会保留**。\n'
+        + (bundle.heightmap ? '' : '这份 .map 里没有高度图 —— 现有高度图不会被删掉。\n')
+        + '一整次导入 = 一条 Ctrl+Z（可整体撤回）。\n\n继续？',
+      );
+      if (!go) {
+        _importBanner('导入已取消（地图未改动）', 'warn', 4000);
+        return;
+      }
+    }
+
+    const r = store.importPlanetMapBundle(props.planet.id, bundle);
+    if (!r || r.ok === false) {
+      _importBanner(`导入失败：${(r && r.message) || '写入口拒绝'}`, 'err', 8000);
+      return;
+    }
+
+    // 回执：说清"导入了什么 / 哪些没导 / 在哪个容器里"
+    // ⚠️ 横幅是**瞬时**的（12s 后消失），所以只放必要事实；长解释放 title。
+    const receipt = describePlanetImportReceipt(name, bundle) + srcNote
+      + '（本行星自己的地图；剧本侧要用同一份 .map 请那边再导一次 —— 两个容器各存一份）';
+    _importBanner(receipt, bundle.heightmap ? 'ok' : 'warn', 12000);
+    setStatus({ toolLabel: `已导入「${name}」：省份 ${bundle.stats.provinces} 块` });
+    emit('dirty', true);
+    // 地形刚到 → 直接切到「海拔」着色档，让用户当场看见（与剧本侧「刷新后切地形高度」同一口径）
+    if (bundle.heightmap) heightmapRasterKind.value = 'height';
+    // 整张地图被换掉 → 请求**全画布重绘**（渲染器默认按脏矩形局部重绘；
+    // 整批替换数据不属于"某个脏矩形"，不该让其它区域沿用上一帧）。
+    // ⚠️ 诚实交代：出图时实测过 markFullRedraw() 在 headless 下没能清掉"渲染器背后直接改 mapData"
+    //    留下的旧像素（那是出图工具绕过了 store；产品路径不这么干）。这里保留调用是因为意图正确，
+    //    但**不要**把它当成"清屏保证"——真正的保证是：改地图数据一律走 store 写口。
+    if (typeof renderer.markFullRedraw === 'function') renderer.markFullRedraw();
+    else renderer.requestRender();
+    setTimeout(() => { try { fitAllContent(); } catch (e) { /* 视图未就绪时忽略 */ } }, 60);
+  } catch (err) {
+    _importBanner(`导入失败：${(err && err.message) || err}`, 'err', 10000);
+  } finally {
+    mapImportBusy.value = false;
+  }
 }
 
 function confirmClear() {
@@ -2409,10 +2613,7 @@ function confirmClear() {
   //    同时它绕开写闸门与 undo 栈（只读态照改内存、可写态真的不可撤销）。
   //    现在：走 store 的受守卫方法（clearPlanetContent），一条 undo，且只清内容、不碰其余数据。
   if (store.isReadOnly) {
-    saveStatus.value = '清空被拒绝：还没有打开项目（新建或打开项目后即可编辑）';
-    saveStatusKind.value = 'err';
-    snapshotPanel.clearSaveStatusTimer();
-    snapshotPanel.saveStatusTimer.value = setTimeout(() => { saveStatus.value = ''; }, 5000);
+    setBanner('清空被拒绝：还没有打开项目（新建或打开项目后即可编辑）', 'err', 5000);
     return;
   }
   if (confirm('清空省份、区域、路线、标记、文本与地点簇？\n\n高度图、涂色网格、河流、文化、地貌图标、参考图与地图快照都会保留。\n此操作可用 Ctrl+Z 撤销。')) {
@@ -2429,7 +2630,9 @@ function confirmClear() {
     selectedTextLabel.value = null;
     clusterEditor.activeClusterId.value = null;
     emit('dirty', true);
-    renderer.requestRender();
+    // 整片内容消失 → 请求全画布重绘（同上：数据要走 store 写口，标记脏区由写口负责）
+    if (typeof renderer.markFullRedraw === 'function') renderer.markFullRedraw();
+    else renderer.requestRender();
   }
 }
 
@@ -2608,43 +2811,51 @@ function heightAt(wx, wy) {
   return idx >= 0 ? hm.h[idx] : null;
 }
 
-/** 点到折线的最短距离（河流命中测试） */
-function distanceToPolyline(px, py, nodes) {
-  let best = Infinity;
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i];
-    const b = nodes[i + 1];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const L = dx * dx + dy * dy;
-    let t = L === 0 ? 0 : ((px - a.x) * dx + (py - a.y) * dy) / L;
-    t = Math.max(0, Math.min(1, t));
-    best = Math.min(best, Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy)));
-  }
-  return best;
-}
-
-/** 命中的河流（自身坐标系阈值随缩放换算） */
+/**
+ * 命中的河流（自身坐标系阈值随缩放换算）。
+ * 🔴 2026-10-17：判定下沉到 `utils/rivers.js#hitTestRiver`（剧本底图共用一份）。
+ *    这里只负责**取哪份列表 + 容差怎么随缩放换算**。
+ */
 function hitRiver(wx, wy) {
-  const list = currentMapData.value?.rivers || [];
+  const list = (currentMapData.value?.rivers || []).filter((r) => r && r.nodes && r.nodes.length >= 2);
   const tol = 12 / (renderer.viewTransform.scale || 1);
-  let best = null;
-  let bestD = tol;
-  for (const r of list) {
-    if (!r.nodes || r.nodes.length < 2) continue;
-    const d = distanceToPolyline(wx, wy, r.nodes);
-    if (d <= bestD) { bestD = d; best = r; }
-  }
-  return best;
+  return hitTestRiver(list, wx, wy, tol, (r) => r.nodes);
 }
 
 /** P1-1：河流模式点击 —— 命中已有河流则选中；否则作为描点追加 */
 function handleRiverClick(wx, wy) {
+  // 🔴 2026-10-16（画河保底）：刚用笔刷画完一条河时，这次 click 是**同一次指针交互的尾巴**，
+  //    不该再插一个描点（否则"画完立刻多一个孤立点"）。标志位用完即清。
+  if (riverBrushDrawn.value) { riverBrushDrawn.value = false; return; }
   const hit = hitRiver(wx, wy);
   if (hit && riverDraftPoints.value.length === 0) {
+    // 🔴 2026-10-16（保底项）：**点已选中河流的河身 = 在那一段插一个节点**。
+    //    原来这里只有"选中"，想加拐点**只能删整条重画**（会换 id/名字、丢掉调好的 width）——
+    //    而 `insertNodeBetween` 早就写好了却零调用（第五次「零调用死入口」）。
+    //    现在接上：命中已选中的**同一条**河 → 在最近线段的投影处插点（一条 undo）。
+    if (selectedRiver.value && hit.id === selectedRiver.value.id) {
+      const tol = 14 / (renderer.viewTransform.scale || 1);
+      const seg = findRiverSegment(hit.nodes, wx, wy, tol);
+      if (seg) {
+        const oldNodes = JSON.parse(JSON.stringify(hit.nodes));
+        const nodes = insertNodeBetween(hit.nodes, seg.index, seg.point, heightAt);
+        store.updateRiver(props.planet.id, hit.id, { nodes }, { nodes: oldNodes });
+        const fresh = (currentMapData.value?.rivers || []).find((x) => x.id === hit.id);
+        if (fresh) selectedRiver.value = fresh;
+        emit('dirty', true);
+        setStatus({
+          toolLabel: `已在第 ${seg.index + 1} 段插入节点（现 ${nodes.length} 个）—— 继续点河身可加更多，拖节点可微调`,
+        });
+        renderer.requestRender();
+        return;
+      }
+    }
     selectedRiver.value = hit;
     riverWidth.value = hit.width || RIVER_DEFAULT_WIDTH;
-    setStatus({ toolLabel: `已选中河流「${hit.name || '未命名'}」（${hit.nodes.length} 个节点）— Delete 删除` });
+    // 提示里写明"再点河身加拐点" —— 不然这个能力照样没人知道（可发现性纪律）
+    setStatus({
+      toolLabel: `已选中河流「${hit.name || '未命名'}」（${hit.nodes.length} 个节点）— 再点河身=加拐点，拖节点=微调，Delete=删除`,
+    });
     renderer.requestRender();
     return;
   }
@@ -2732,6 +2943,91 @@ function hitRiverPoint(wx, wy) {
   return findRiverPointIndex(r.nodes, wx, wy, tol);
 }
 
+// ── 手画河：**拖笔收点**（2026-10-16，画河保底）────────────────────────────────
+//
+// 🔴 原来行星图河流模式**只能一次一个点地戳**（`handleRiverClick` 追加 `riverDraftPoints`）。
+//    用户要的是"流畅的笔刷绘制 + 事后可编辑可撤除"：按住拖出笔迹 → 抬笔成一条河。
+//
+// 与既有能力的**分工**（不冲突，靠 `riverBrushDrawn` 区分）：
+//   · 拖出**足够长**的笔迹 → 抬笔成河（抽稀 + Chaikin 平滑 + 按高度排序，一条 undo）
+//   · 只是**点一下**（没拖动）→ 走原来的 `handleRiverClick`（放描点 / 选中 / 加拐点）
+//   ⚠️ 用"抬笔时笔迹点数"判定，而不是"有没有发生 drag"：拖 2px 手抖不该被当成画河。
+const riverBrushPath = ref([]);
+const riverBrushDrawn = ref(false);
+/** 收点最小间距（屏幕像素）—— 与 ScenarioMap 同一口径（见那里的注释） */
+const RIVER_BRUSH_MIN_STEP_PX = 6;
+/** 抬笔时低于这个点数视为"只是点击"，交给 handleRiverClick */
+const RIVER_BRUSH_MIN_POINTS = 4;
+
+/**
+ * 绘制层该画的"正在画的河"（**唯一口径**）。
+ *
+ * 两条路都汇到这里，否则画布上必然有一条是瞎的：
+ *   · 拖笔（`riverBrushPath`）—— 只带 `{x,y}`，走 `smoothWhileDrawing`
+ *   · 描点（`riverDraftPoints`）—— 带 `{x,y,h}`，走 `smoothRiverNodes`
+ * ⚠️ 半径/线宽等视觉参数仍由绘制层决定；这里只管**点列**。
+ */
+const riverDraftPreview = computed(() => {
+  if (riverBrushPath.value.length > 1) {
+    return smoothWhileDrawing(riverBrushPath.value, 2, 12);
+  }
+  const draft = riverDraftPoints.value || [];
+  if (draft.length > 1) return smoothRiverNodes(draft, 2);
+  return [];
+});
+
+function riverBrushStart(wx, wy) {
+  riverBrushPath.value = [{ x: wx, y: wy, h: Number.isFinite(heightAt(wx, wy)) ? heightAt(wx, wy) : 0 }];
+  riverBrushDrawn.value = false;
+}
+
+function riverBrushMove(wx, wy) {
+  const path = riverBrushPath.value;
+  const last = path[path.length - 1];
+  const minStep = RIVER_BRUSH_MIN_STEP_PX / (renderer.viewTransform.scale || 1);
+  if (last && Math.hypot(wx - last.x, wy - last.y) < minStep) return false;
+  // 采样高度一起收：落库要靠它排序（"从高到低"），预览也就能显示源头/河口
+  const h = heightAt(wx, wy);
+  path.push({ x: wx, y: wy, h: Number.isFinite(h) ? h : (last ? last.h : 0) });
+  renderer.requestRender();
+  return true;
+}
+
+/** 抬笔：够长就落库（平滑后一条 undo），否则丢弃并交回点击逻辑 */
+function riverBrushEnd() {
+  const path = riverBrushPath.value;
+  riverBrushPath.value = [];
+  if (!path || path.length < RIVER_BRUSH_MIN_POINTS) return false;
+  // 抽稀 → 采样高度 → 平滑（共用 `polylineSmooth.js`，与剧本底图同一份实现）
+  // ⚠️ 收点时已采过 h，这里再采一次是**幂等**的（同一个点同一个高度图）——
+  //    留着是为了"抽稀后剩下的点也各自重新采样"，不要改成沿用邻居的 h。
+  const dec = decimatePolyline(path.map((p) => ({ x: p.x, y: p.y })), RIVER_BRUSH_MIN_STEP_PX / (renderer.viewTransform.scale || 1));
+  const nodes = finalizeRiverNodes(dec, heightAt);        // 采样 h + 去重 + 按高度排序
+  const smoothed = smoothRiverNodes(nodes, 2);
+  if (smoothed.length < 2) {
+    setStatus({ toolLabel: '笔迹太短，已丢弃' });
+    return false;
+  }
+  const river = {
+    id: `river_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: `河流 ${(currentMapData.value?.rivers?.length || 0) + 1}`,
+    width: clampRiverWidth(riverWidth.value),
+    nodes: smoothed,
+  };
+  store.addRiver(props.planet.id, river);
+  selectedRiver.value = river;
+  emit('dirty', true);
+  // ⚠️ 顺手关掉"只是点击"那条路：真实拖拽后 useCanvasRenderer 会抑制 onClick，
+  //    但**轻微移动**可能仍触发 —— 用标志位兜住，避免"画完又插了一个描点"。
+  riverBrushDrawn.value = true;
+  setStatus({
+    toolLabel: `已画一条河流（笔迹 ${path.length} 点 → 抽稀 ${dec.length} → 平滑 ${smoothed.length} 点）`
+      + ` — 拖节点可微调，点河身可加拐点，Ctrl+Z 可撤销`,
+  });
+  renderer.requestRender();
+  return true;
+}
+
 function beginRiverDrag(wx, wy, index) {
   const r = selectedRiver.value;
   if (!r) return false;
@@ -2788,7 +3084,7 @@ function applyRoadStyle(key) {
 function handleAutoRoadClick(wx, wy) {
   const hm = planetHeightBrush.ensureHeightmap();
   if (!hm || !hm.grid || !hm.grid.points || !hm.h) {
-    setStatus({ toolLabel: '无高度图数据：先导入 Azgaar .map，或切到高度笔刷涂抹一次' });
+    setStatus({ toolLabel: '无高度图数据：到高度笔刷面板点「导入 .map」补一份，或先用高度笔刷涂抹一笔' });
     return;
   }
   if (!roadStart.value) {
@@ -2839,7 +3135,7 @@ function handleAutoRoadClick(wx, wy) {
 function handleSmartSettle(wx, wy) {
   const hm = planetHeightBrush.ensureHeightmap();
   if (!hm || !hm.grid || !hm.grid.points || !hm.h) {
-    setStatus({ toolLabel: '无高度图数据：先导入 Azgaar .map，或切到高度笔刷涂抹一次' });
+    setStatus({ toolLabel: '无高度图数据：到高度笔刷面板点「导入 .map」补一份，或先用高度笔刷涂抹一笔' });
     return;
   }
   const best = findOptimalBurgPosition(hm.h, hm.grid, wx, wy);
@@ -3493,8 +3789,17 @@ defineExpose({ canvas, renderer });
 }
 .empty-map-icon { font-size: 34px; line-height: 1; }
 .empty-map-title { font-size: 15px; font-weight: 600; }
-.empty-map-desc { font-size: 12px; color: var(--text-tertiary); }
-.empty-map-hint .edit-entry-btn { margin-top: 4px; }
+.empty-map-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.6; }
+/* 起步入口（2026-10-17）：两个真按钮 + 一行"容器各存一份"的说明 */
+.empty-map-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+/* 主入口（导入）稍作强调；⚠️ 类名刻意**不含** `edit-entry-btn` —— 测试助手与
+   「进入编辑模式」都按那个类找按钮，混用会让"点导入"变成"进编辑" */
+.empty-map-actions .empty-primary {
+  border-color: var(--accent, #4a90d9);
+  color: var(--accent, #4a90d9);
+}
+.empty-map-note { font-size: 11px; color: var(--text-tertiary); line-height: 1.5; opacity: 0.85; }
+.empty-map-hint .edit-entry-btn { margin-top: 0; }
 
 canvas {
   display: block;
@@ -3576,10 +3881,20 @@ canvas {
   z-index: 26;
   box-shadow: var(--shadow-md);
   pointer-events: none;
+  /* 导入回执是多句说明（哪些导入了 / 哪些没导 / 两容器各存一份），必须允许换行 */
+  max-width: 76%;
+  white-space: normal;
+  line-height: 1.5;
+  text-align: left;
   animation: save-banner-in 0.18s ease-out;
 }
 .save-banner.error {
   background: rgba(248, 81, 73, 0.95);
+}
+/* staged / 提示态（2026-10-17）：**不能是绿的** —— 「已交给项目、还在等磁盘」与
+   「已保存到磁盘」在界面上必须是两种颜色（保存诚实的基本要求） */
+.save-banner.warn {
+  background: rgba(210, 153, 34, 0.95);
 }
 @keyframes save-banner-in {
   from { opacity: 0; transform: translateX(-50%) translateY(6px); }

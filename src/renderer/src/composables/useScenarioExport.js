@@ -175,7 +175,11 @@ export function useScenarioExport({
       }
       if (landDs.length) {
         body.push(svgPath(landDs.join(' '), {
-          fill: 'none', stroke: BORDER_COLOR, 'stroke-width': 0.6, opacity: 0.6,
+          // 🔴 2026-10-17 第七修：与**画布同口径**（`ScenarioMap` 的 `PROVINCE_BORDER_PX` /
+          //    不透明 `BORDER_COLOR`）。以前这里是 0.6px + opacity 0.6，而画布同一轮
+          //    也改成了"不透明 1.1px"—— 不同步就是"导出图比画布淡一半"那种
+          //    "两处各写一份"的老毛病（本项目在这上面栽过多次）。
+          fill: 'none', stroke: BORDER_COLOR, 'stroke-width': 1.1, opacity: 1,
         }));
       }
       if (seaDs.length) {

@@ -4,14 +4,17 @@
     <!-- 单一写闸门（Phase 2）：无项目只读态必须常驻可见，否则用户会以为「保存坏了」 -->
     <span v-if="isReadOnly" class="sb-item sb-readonly" :title="readOnlyReason">{{ READONLY_BADGE }}</span>
     <!-- 保存状态（B5，2026-09-24）：常驻可见，失败**不自动消失** —— 项目面板可能关着，
-         「画了几小时的东西到底存没存」必须在任何时候一眼看到 -->
+         「画了几小时的东西到底存没存」必须在任何时候一眼看到。
+         2026-10-17：文案不再直接读 `state.saveState`，而是走 `useSaveDisplay()`
+         —— 它把「已落盘 / 已交给项目 / 有改动未落盘 / 失败原因」合成一句（唯一实现），
+         和剧本工具条、行星图保存横幅同一份口径。 -->
     <span
-      v-if="state.saveState"
+      v-if="saveChip.state !== 'idle'"
       class="sb-item sb-save"
-      :class="'sb-save-' + state.saveState.kind"
-      :data-testid="'save-state-' + state.saveState.kind"
-      :title="state.saveState.title || ''"
-    >{{ state.saveState.text }}</span>
+      :class="'sb-save-' + saveChip.kind"
+      :data-testid="'save-state-' + saveChip.state"
+      :title="saveChip.title || ''"
+    >{{ saveChip.text }}</span>
     <span v-if="state.toolLabel" class="sb-item">工具：{{ state.toolLabel }}</span>
     <span class="sb-item sb-coord" :title="'鼠标世界坐标'">{{ coordText }}</span>
     <span v-if="state.zoom != null" class="sb-item sb-zoom">缩放 {{ Math.round(state.zoom) }}%</span>
@@ -24,6 +27,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useStatusBarState, formatWorldCoord } from '../composables/useStatusBar';
+import { useSaveDisplay } from '../composables/useSaveDisplay';
 import { isReadOnly, writeModeReason, READONLY_BADGE } from '../store/writeGate';
 
 // E11: 底部状态栏 — 数据由各画布经 useStatusBar 写入，本组件只读
@@ -31,6 +35,8 @@ import { isReadOnly, writeModeReason, READONLY_BADGE } from '../store/writeGate'
 
 const state = useStatusBarState();
 const coordText = computed(() => formatWorldCoord(state.mouseWorld?.x, state.mouseWorld?.y));
+// 保存 chip：`useSaveDisplay()` 是唯一实现（geodata 的两段保存 + projectStore 的 dirty 合成）
+const saveChip = useSaveDisplay();
 // 只读徽标的说明文案：写闸门给的人类可读原因（含「打开项目后即可编辑」的能力说明）
 const readOnlyReason = writeModeReason;
 </script>

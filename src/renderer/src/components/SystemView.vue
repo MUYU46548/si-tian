@@ -655,6 +655,10 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onContextMenu: (wx, wy) => {
+    // 🔴 浏览态不许弹菜单（§bug6）：菜单里的「创建 / 删除」全是写操作。
+    //    写法照抄 `SystemDetailView.vue:1143-1145` 的既有闸门（星系三层里那一层早就修好了，
+    //    GalaxyMap 与 SystemView 是漏网的）。
+    if (!editMode.value) return;
     const hit = hitTest(wx, wy);
     let target = null;
     if (hit?.type === 'star' || hit?.type === 'planet') {
