@@ -194,10 +194,22 @@ def run(cdp):
         fails.append(f"setTool('river') 后 tool={s3['tool']}（应为 river）")
     notes.append(f"d 零迁移：setTool('river') → 模式自动开={s3['mode']} / 行={s3['rowPresent']}")
 
-    # ── e 日常工具仍在主行；点它不关模式 ──
-    if '画省份' not in _ev(cdp, "(() => { const r = document.querySelector('.primary-row');"
-                                " return r ? r.textContent : ''; })()", '读主行'):
-        fails.append('主行里找不到「画省份」—— 日常工具被误伤')
+    # ── e 日常工具：模式关时主行不出现「画省份」（它属于底图编辑），但「涂归属」在 ──
+    _ev(cdp, "(() => { %s.basemapEditMode = false; %s.setTool('select'); return 'ok'; })()" % (SM, SM),
+        '显式关模式')
+    time.sleep(0.3)
+    off_row = _ev(cdp, "(() => { const r = document.querySelector('.primary-row');"
+                        " return r ? r.textContent : ''; })()", '读主行（模式关）')
+    if '画省份' in off_row:
+        fails.append('模式关时主行仍出现「画省份」—— 剧本视图与底图编辑没有分开')
+    if '涂归属' not in off_row:
+        fails.append('主行里找不到「涂归属」—— 剧本视图的核心动作不可见')
+    _ev(cdp, "(() => { %s.basemapEditMode = true; return 'ok'; })()" % SM, '开底图编辑')
+    time.sleep(0.3)
+    on_row = _ev(cdp, "(() => { const r = document.querySelector('.primary-row');"
+                       " return r ? r.textContent : ''; })()", '读主行（模式开）')
+    if '画省份' not in on_row:
+        fails.append('开底图编辑后主行没有「画省份」—— 底图能力被藏没了')
     _ev(cdp, "(() => { %s.setTool('provinceBrush'); return 'ok'; })()" % SM, '切日常工具')
     time.sleep(0.4)
     s4 = _state(cdp)

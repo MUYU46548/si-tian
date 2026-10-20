@@ -58,7 +58,7 @@ export function useScenarioExport({
    *    会把「1444-11-11」导成「1444-01-01」的状态（图与时间点不符）。
    *    **`date` 优先，`year` 仅作兼容**（裸年份 = 该年 1 月 1 日）。
    */
-  function buildScenarioSVG({ legend = true, title = true, grid = true, era, date: dateOpt, year: yearOpt } = {}) {
+  function buildScenarioSVG({ legend = true, title = true, scaleBar = true, grid = true, era, date: dateOpt, year: yearOpt } = {}) {
     const tl = timeline.value;
     if (!tl || !tl.scenarios.length) throw new Error('没有剧本可导出');
     const k = Number.isInteger(era) ? era : currentEra.value;
@@ -301,6 +301,29 @@ export function useScenarioExport({
           'text-anchor': 'end',
         }));
       });
+    }
+
+    // 比例尺（左下，P0 制图要素）：
+    //   剧本侧没有“真实公里”概念，这里用**世界单位**诚实标注；长度取全图跨度的 ~22%，
+    //   再收敛到 1/2/5×10^n，保证换底图时读数好认。SVG 用户空间 = 世界单位，故长度直接可用。
+    if (scaleBar) {
+      const span = Math.max(b.maxX - b.minX, b.maxY - b.minY) || 1;
+      const raw = span * 0.22;
+      const pow = 10 ** Math.floor(Math.log10(raw));
+      const norm = raw / pow;
+      const nice = norm >= 5 ? 5 : (norm >= 2 ? 2 : 1);
+      const barWorld = Math.max(1, nice * pow);
+      const sx = 24;
+      const sy = H - 28;
+      body.push(svgRect(sx - 10, sy - 22, Math.max(170, barWorld + 120), 34, {
+        fill: 'rgba(15,23,42,0.86)', stroke: '#334155', 'stroke-width': 1, rx: 6,
+      }));
+      body.push(`<line x1="${sx}" y1="${sy}" x2="${sx + barWorld}" y2="${sy}" stroke="#cbd5e1" stroke-width="2"/>`);
+      body.push(`<line x1="${sx}" y1="${sy - 5}" x2="${sx}" y2="${sy + 5}" stroke="#cbd5e1" stroke-width="2"/>`);
+      body.push(`<line x1="${sx + barWorld}" y1="${sy - 5}" x2="${sx + barWorld}" y2="${sy + 5}" stroke="#cbd5e1" stroke-width="2"/>`);
+      body.push(svgTextEl(sx, sy - 10, `比例尺 ${Math.round(barWorld)} 单位`, {
+        fill: '#94a3b8', 'font-size': 10, 'font-family': 'Microsoft YaHei, sans-serif',
+      }));
     }
 
     const svg = serializeSvg({ width: W, height: H, background: '#1a2a3a', defs, body });

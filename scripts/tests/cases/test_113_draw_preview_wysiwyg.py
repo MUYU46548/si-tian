@@ -74,8 +74,8 @@ def source_gates():
     # 预览必须画闭合地块 + 贝塞尔，而不是只有一条手迹线
     if 'previewTraceRing()' not in sm:
         fails.append('🔴 预览没走 previewTraceRing（仍是手迹折线 = 描点连线模拟器的观感）')
-    if 'withBezierControls(previewRing)' not in sm:
-        fails.append('🔴 预览的形状没套贝塞尔（看到的会是折线，落库却是曲线）')
+    if 'withBezierControls(previewRing)' in sm:
+        fails.append('🔴 T8：预览又套了贝塞尔控制点（看到的曲线 ≠ 数据多边形；布尔/命中按顶点算）')
     if 'traceShapePath(c, ring, true)' not in sm:
         fails.append('🔴 预览不是闭合路径（用户看不到"围出了哪块地"）')
     # 骨架缓存（415 省底图每帧 buildSkeleton 会拖死拖笔）
@@ -242,7 +242,7 @@ def run(cdp):
     if not isinstance(commit, dict) or commit.get('__err__'):
         return False, f'落库求值失败：{commit} ‖ ' + ' | '.join(fails)
     committed = commit.get('committedPoints') or []
-    notes.append(f"落库 {commit.get('committedLen')} 点（带贝塞尔 {commit.get('controlCount')}）")
+    notes.append(f"落库 {commit.get('committedLen')} 点（控制点 {commit.get('controlCount')}，T8 应为 0）")
     if commit.get('terrainCount') != 1:
         fails.append(f"🔴 松手后没有新建省份（terrain={commit.get('terrainCount')}）："
                      f"{str(commit.get('status'))[:120]}")
@@ -262,8 +262,9 @@ def run(cdp):
     if commit.get('committedLen', 0) and commit.get('committedLen') >= drag.get('rawPoints', 1):
         fails.append(f"🔴 落库环没有简化（{commit.get('committedLen')} ≥ 手迹 {drag.get('rawPoints')}）"
                      '—— 逐点连线 = 描点连线模拟器')
-    if commit.get('controlCount', 0) < max(1, (commit.get('committedLen') or 0) // 2):
-        fails.append(f"🔴 落库环多数顶点没有贝塞尔控制点（{commit.get('controlCount')}）—— 边界会是折线")
+    if commit.get('controlCount', 0) != 0:
+        fails.append(f"🔴 T8：落库环仍写了贝塞尔控制点（{commit.get('controlCount')}）"
+                     '—— 数据多边形与渲染边界分离，布尔/命中会与看到的不一致')
 
     if fails:
         return False, ' | '.join(fails) + ' ‖ ' + ' + '.join(notes)

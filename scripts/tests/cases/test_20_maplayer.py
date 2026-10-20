@@ -307,11 +307,10 @@ def run(cdp):
         ('P0-T2 远离边界不吸附（网格 (250,200)）',
          abs(fp.get('x', 0) - 250) < 0.01 and abs(fp.get('y', 0) - 200) < 0.01, fp),
         ('P0-T1 新省份已入库(共 2 个)', bz.get('total') == 2, bz.get('total')),
-        ('P0-T1 三个顶点全带切线', bool(bz.get('allHaveControls')), bz.get('allHaveControls')),
-        ('P0-T1 控制点 = 相邻顶点连线 1/3',
-         abs(co.get('x', 0) - exp.get('x', 0)) < 0.01 and abs(co.get('y', 0) - exp.get('y', 0)) < 0.01,
-         f'实际 {co} / 期望 {exp}'),
-        ('P0-T1 Alt 临时直线生效（像素差分>0）', u.get('altDiff', 0) > 0, u.get('altDiff')),
+        # T8（S0 实测）：自由绘制不再写贝塞尔控制点 —— 数据多边形 = 渲染边界 = 布尔/命中几何。
+        ('T8 新省份不写贝塞尔控制点（数据=渲染）', not bz.get('allHaveControls'), bz.get('allHaveControls')),
+        ('T8 controlOut 为空', not co or (co.get('x') in (None, 0) and co.get('y') in (None, 0)), co),
+        ('T8 无控制点时 Alt 不改变像素', u.get('altDiff', 0) <= 0, u.get('altDiff')),
     ]
     bad_ui = [c for c in ui_checks if not c[1]]
     if bad_ui:

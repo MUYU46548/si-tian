@@ -134,6 +134,24 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 列出知识库笔记清单（只读）：项目态下知识库事件被拦，笔记改名要靠它做断线检测对账
   listVaultNotes: () => ipcRenderer.invoke('list-vault-notes'),
 
+  // ===== 全库只读索引（D1，2026-10-19）=====
+  // 与 listVaultNotes 的分工：那个只列“扫描范围内的地图笔记”；这里索引全库 .md。
+  vaultIndexBuild: (opts) => ipcRenderer.invoke('vault-index-build', opts || {}),
+  vaultIndexStatus: () => ipcRenderer.invoke('vault-index-status'),
+  vaultIndexSearch: (query, limit) => ipcRenderer.invoke('vault-index-search', query, limit),
+  vaultEntityCandidates: (rules) => ipcRenderer.invoke('vault-entity-candidates', rules || {}),
+  vaultNoteRead: (relPath) => ipcRenderer.invoke('vault-note-read', relPath),
+  vaultNoteResolve: (name) => ipcRenderer.invoke('vault-note-resolve', name),
+  vaultNoteSearch: (query, limit) => ipcRenderer.invoke('vault-note-search', query, limit),
+  vaultAssetRead: (relPath, fromNote) => ipcRenderer.invoke('vault-asset-read', relPath, fromNote),
+  // 全库索引变更（主进程 watcher → 250ms 防抖 → 增量重建）。返回取消订阅函数。
+  onVaultIndexUpdated: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const h = (_e, summary) => cb(summary);
+    ipcRenderer.on('vault-index-updated', h);
+    return () => ipcRenderer.removeListener('vault-index-updated', h);
+  },
+
   // 在文件管理器中显示
   revealInExplorer: (fullPath) => ipcRenderer.invoke('reveal-in-explorer', fullPath),
 

@@ -249,6 +249,37 @@
           </div>
         </section>
 
+        <!-- 资料索引（D1）：全库只读索引 + 实体候选；不改笔记、不碰画布 -->
+        <section class="settings-section" data-testid="vault-index-section">
+          <h3>资料索引（全库只读）</h3>
+          <div class="setting-item">
+            <div class="setting-info">
+              <span class="setting-name">索引状态</span>
+              <span class="setting-desc">{{ vaultIndexStatusText }}</span>
+            </div>
+            <button class="vault-btn" @click="buildVaultIndex" :disabled="vaultIndexBusy"
+                    title="扫描全库 .md 建立只读索引（不改笔记、不碰画布）">
+              <Icon name="refresh" :size="14"/> {{ vaultIndexBusy ? '建立中…' : '重建索引' }}
+            </button>
+          </div>
+          <div v-if="vaultIndexError" class="index-error">{{ vaultIndexError }}</div>
+          <div v-if="vaultIndexTotal" class="index-summary">
+            <span>候选地图实体：<b>{{ vaultCandidates.length }}</b></span>
+            <span v-if="vaultHighCount">高置信 {{ vaultHighCount }}</span>
+            <button class="link-btn" @click="toggleVaultCandidates">{{ showVaultCandidates ? '收起' : '查看候选' }}</button>
+            <button class="link-btn" data-testid="open-note-search" @click="openNoteSearchPanel">全库搜索</button>
+          </div>
+          <div v-if="showVaultCandidates" class="vault-candidate-list">
+            <div v-for="c in vaultCandidates.slice(0, 40)" :key="c.path" class="vault-candidate">
+              <span class="vc-layer">{{ c.layerLabel || '未知' }}</span>
+              <span class="vc-title">{{ c.title }}</span>
+              <span class="vc-path">{{ c.path }}</span>
+            </div>
+            <p v-if="!vaultCandidates.length" class="setting-desc">没有候选；先重建索引。</p>
+          </div>
+          <p class="setting-desc">只读索引：不改笔记、不碰画布。阅读器 / 要素绑定在下一轮（D2）。</p>
+        </section>
+
         <!-- 配置管理（对外发布打磨 P1.2）：导出 / 导入 / 恢复默认 -->
         <section class="settings-section">
           <h3>配置管理</h3>
@@ -557,7 +588,8 @@
 import Icon from './Icon.vue';
 // UI 基座试点（2026-10-06）：设置面板「通用」段的免责声明入口复用 shadcn-vue Button
 import { Button } from './ui/button';
-import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { storeToRefs } from 'pinia';
 import {
   labelPresets, getPreset, updatePreset, resetAllPresets, removePreset,
   saveAsPreset, exportPresets, importPresets, describePreset,
@@ -570,10 +602,13 @@ import {
 } from '../utils/markerTypes';
 import { useGeodataStore } from '../store/geodata';
 import { useProjectStore } from '../store/projectStore';
+import { useVaultIndexStore } from '../store/vaultIndex';
 // 单一写闸门状态：只读态下涉及落盘写的按钮灰禁（并给出原因，能力说明不减）
 import { isReadOnly as gateReadOnly, writeModeReason as gateReason } from '../store/writeGate';
 // 「打开知识库」三级兜底（Obsidian → 资源管理器 → 提示去设路径）
 import { openVault, revealVault } from '../utils/vault';
+import { openNoteSearch } from '../utils/noteReader';
+import { usePromptDialog } from '../composables/usePromptDialog';
 
 const isOpen = ref(false);
 
@@ -649,8 +684,8 @@ function renderPreview() {
   }
 }
 
-function saveCurrentAsPreset() {
-  const name = window.prompt('新预设名称', `${activePreset.value?.name || '自定义'} 副本`);
+async function saveCurrentAsPreset() {
+  const name = await askText({ title: '新预设名称', defaultValue: `${activePreset.value?.name || '自定义'} 副本` });
   if (!name) return;
   const created = saveAsPreset(name, activePreset.value);
   activeKey.value = created.key;
@@ -734,8 +769,8 @@ function updateType(patch, persist = true) {
   }
 }
 
-function addType() {
-  const label = window.prompt('新标记类型名称', '新类型');
+async function addType() {
+  const label = await askText({ title: '新标记类型名称', defaultValue: '新类型' });
   if (!label) return;
   const created = addMarkerType({ label, icon: 'map-pin', color: '#95A5A6' });
   editingType.value = created.type;
@@ -953,10 +988,46 @@ function reextractData() {
 // 重新提取的可用性：只读态 / 已打开项目（画布事实源=项目文件）两种情形都必须灰禁，
 // 并在 title 里写清原因与去处 —— 只拦不灰禁＝点完才被拒（坏交互）。
 const proj = useProjectStore();
+const { askText } = usePromptDialog();
 const canReextractBlocked = computed(() => gateReadOnly.value || proj.isOpen);
 const reextractBlockedHint = computed(() => (gateReadOnly.value
   ? `${gateReason.value}；重新提取会重写知识库坐标缓存 —— 请先在项目面板新建或打开项目`
   : '当前画布数据来自项目文件：要把知识库内容带进项目，请用项目面板的「导入知识库内容」（只补缺、可撤销）'));
+
+// ===== 资料索引（D1）=====
+// 只读索引：扫描全库 .md（1,353 篇量级），不改笔记、不碰画布；候选必须人确认后才谈导入。
+const vaultIndexStore = useVaultIndexStore();
+const {
+  status: vaultIndexStatus, candidates: vaultCandidates,
+  error: vaultIndexError, busy: vaultIndexBusy,
+} = storeToRefs(vaultIndexStore);
+const showVaultCandidates = ref(false);
+let offIndexUpdates = null;
+const vaultIndexTotal = computed(() => (vaultIndexStatus.value?.stats?.total) || 0);
+const vaultHighCount = computed(() => vaultCandidates.value.filter((c) => c.confidence === 'high').length);
+const vaultIndexStatusText = computed(() => {
+  const st = vaultIndexStatus.value;
+  if (!st || !st.exists) return '尚未建立（只读扫描全库 .md，不改笔记）';
+  const kb = st.sizeBytes ? ` · ${(st.sizeBytes / 1024).toFixed(0)} KB` : '';
+  const at = st.builtAt ? new Date(st.builtAt).toLocaleString('zh-CN') : '';
+  return `${st.stats?.total || 0} 篇 · ${at}${kb}`;
+});
+
+async function buildVaultIndex() {
+  const res = await vaultIndexStore.build({});
+  if (res) showVaultCandidates.value = true;
+}
+
+async function toggleVaultCandidates() {
+  showVaultCandidates.value = !showVaultCandidates.value;
+  if (showVaultCandidates.value && !vaultCandidates.value.length) {
+    await vaultIndexStore.loadCandidates();
+  }
+}
+
+function openNoteSearchPanel() {
+  openNoteSearch();
+}
 
 /** 打开 Obsidian 知识库（打不开则退化为在资源管理器里定位库目录） */
 async function openVaultNow() {
@@ -1092,6 +1163,17 @@ onMounted(() => {
   loadVaultPath();
   loadVersion();
   nextTick(renderPreview);
+  // 资料索引状态（只读）：有索引就顺手把候选数读出来，没有就显示“尚未建立”
+  vaultIndexStore.refreshStatus().then(() => {
+    if (vaultIndexStore.exists) vaultIndexStore.loadCandidates();
+  });
+  // 库内改笔记 → 主进程增量重建 → 设置面板状态跟着更新（画布不动）
+  offIndexUpdates = vaultIndexStore.bindIndexUpdates();
+});
+
+onUnmounted(() => {
+  if (typeof offIndexUpdates === 'function') offIndexUpdates();
+  offIndexUpdates = null;
 });
 
 defineExpose({ open, close });
@@ -1525,6 +1607,67 @@ input:checked + .toggle-slider::before {
   border: 1px solid var(--input-border);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
+}
+
+/* 资料索引（D1）：全库只读索引 + 实体候选 */
+.index-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #e06c75;
+  word-break: break-all;
+}
+.index-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.index-summary b { color: var(--text-primary); }
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: #4a90d9;
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+.vault-candidate-list {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+}
+.vault-candidate {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.vault-candidate:last-child { border-bottom: none; }
+.vc-layer { flex: 0 0 40px; color: var(--text-tertiary); }
+.vc-title {
+  flex: 0 0 auto;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.vc-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
 }
 .vault-btn {
   padding: 6px 12px;

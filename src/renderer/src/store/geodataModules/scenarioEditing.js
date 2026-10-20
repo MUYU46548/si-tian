@@ -2628,6 +2628,10 @@ export function createScenarioEditingModule(ctx) {
       points: pts.map((p) => ({ x: p.x, y: p.y })),
       ...(Number.isFinite(Number(river && river.width)) ? { width: Number(river.width) } : {}),
       ...(Number.isFinite(Number(river && river.discharge)) ? { discharge: Number(river.discharge) } : {}),
+      // T7/H2：速度→宽度因子（可选数组，与 points 等长；导入河/自动河没有）
+      ...(Array.isArray(river && river.widthFactors)
+        ? { widthFactors: river.widthFactors.filter((x) => Number.isFinite(Number(x))).slice(0, 4000) }
+        : {}),
     };
     const before = bm0;
     execute({
@@ -2818,6 +2822,9 @@ export function createScenarioEditingModule(ctx) {
         points: pts.map((p) => ({ x: p.x, y: p.y })),
         ...(Number.isFinite(Number(a && a.width)) ? { width: Number(a.width) } : {}),
         ...(Number.isFinite(Number(a && a.discharge)) ? { discharge: Number(a.discharge) } : {}),
+        ...(Array.isArray(a && a.widthFactors)
+          ? { widthFactors: a.widthFactors.filter((x) => Number.isFinite(Number(x))).slice(0, 4000) }
+          : {}),
       });
     }
     const changed = removeIds.length + applied.length + adds.length;

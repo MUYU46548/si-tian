@@ -409,7 +409,8 @@ export function createProvinceEditingModule(ctx) {
         });
         changed = true;
         ops.push({ id: p.id, op: 'union' });
-        return normalizeProvince({ ...p, ...multiToShape(merged, kind) });
+        const patch = multiToShape(merged, kind);
+        return normalizeProvince({ ...p, ...patch, empty: !patch.points.length });
       }
 
       const pbox = provinceBBox(p);
@@ -425,7 +426,7 @@ export function createProvinceEditingModule(ctx) {
       const patch = multiToShape(cutRes.multi, kind);
       changed = true;
       ops.push({ id: p.id, op: 'difference', emptied: !patch.points.length });
-      return normalizeProvince({ ...p, ...patch });
+      return normalizeProvince({ ...p, ...patch, empty: !patch.points.length });
     });
 
     if (!changed) return null;
@@ -564,6 +565,12 @@ export function createProvinceEditingModule(ctx) {
       neighborIdx: neighborIdx > 0 ? neighborIdx : null,
       neighborHits,
       touched: near.map((n) => n.idx),
+      // D10：这一笔会碰到几个省（预览/闸门/回执都用它；S0 实测一笔 12 省就是这里）
+      affected: near.length,
+      affectedIds: near.map((n) => n.prov.id),
+      targetId: (terrain[targetIdx - 1] || {}).id || null,
+      ownerId: (terrain[owner] || {}).id || null,
+      neighborId: neighborIdx > 0 ? ((terrain[neighborIdx - 1] || {}).id || null) : null,
     };
   }
 
@@ -586,6 +593,20 @@ export function createProvinceEditingModule(ctx) {
     }
     if (resolved.rejected === 'no-target') {
       return { changed: 0, rejected: 'no-target', message: '没围住任何省份（描的圈要落在陆地上）' };
+    }
+    // D10 安全闸门（S0 实测：笔迹在边界密集处一笔碰到 12 个省、清空 3 个）：
+    // 默认最多影响 6 个省；超过就拒绝，由调用方**明确问人**后再带 allowMany 重试。
+    const maxAffected = Number.isFinite(opts.maxAffected) ? opts.maxAffected : 6;
+    if (!opts.allowMany && resolved.affected > maxAffected) {
+      const names = (resolved.affectedIds || []).slice(0, 6)
+        .map((id) => { const p = terrain.find((x) => x.id === id); return p ? p.name : id; })
+        .join('、');
+      return {
+        changed: 0, rejected: 'province-gate',
+        affected: resolved.affected, affectedIds: resolved.affectedIds,
+        message: `描轮廓会同时影响 ${resolved.affected} 个省（上限 ${maxAffected}）：${names}${resolved.affected > 6 ? ' 等' : ''}。`
+          + ' 请只贴着要改的那一条边界描；确实要一次改这么多，再点「仍要执行」。',
+      };
     }
     const targetIdx = opts.targetIdx && opts.targetIdx > 0 ? opts.targetIdx : resolved.targetIdx;
     const res = applyOutlineToTerrain(key, resolved.ring, targetIdx, opts);
@@ -618,6 +639,10 @@ export function createProvinceEditingModule(ctx) {
       changed: res.ops.length,
       ops: res.ops,
       targetIdx,
+      affected: resolved.affected,
+      affectedIds: resolved.affectedIds,
+      targetId: resolved.targetId,
+      ownerId: resolved.ownerId,
       // 原主 / 是否换主（UI 要据此说人话："从「甲」改判给「乙」"）
       ownerIdx: resolved.ownerIdx,
       switched: !!resolved.switched,
@@ -701,7 +726,8 @@ export function createProvinceEditingModule(ctx) {
         const merged = unionMulti(polygonClipping, provinceToMulti(p), [transfer]);
         changed = true;
         ops.push({ id: p.id, op: 'union' });
-        return normalizeProvince({ ...p, ...multiToShape(merged, kind) });
+        const patch = multiToShape(merged, kind);
+        return normalizeProvince({ ...p, ...patch, empty: !patch.points.length });
       }
       const base = provinceToMulti(p);
       if (!base.length) return p;
@@ -710,7 +736,7 @@ export function createProvinceEditingModule(ctx) {
       const patch = multiToShape(cut, kind);
       changed = true;
       ops.push({ id: p.id, op: 'difference', emptied: !patch.points.length });
-      return normalizeProvince({ ...p, ...patch });
+      return normalizeProvince({ ...p, ...patch, empty: !patch.points.length });
     });
     if (!changed) return null;
     return { terrain: next, ops, transferArea, transferMulti: transfer };

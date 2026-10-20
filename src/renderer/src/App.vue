@@ -1,7 +1,7 @@
 <template>
   <div class="app-layout" :class="`theme-${currentTheme}`">
-    <header class="toolbar">
-      <h1>SiTian</h1>
+    <header v-if="!scenarioPickerVisible" class="toolbar">
+      <h1 class="app-brand-title">司天</h1>
       <div class="toolbar-center">
         <search-bar ref="searchBar" />
       </div>
@@ -208,8 +208,8 @@
       </template>
     </div>
     
-    <div class="app-body">
-      <tree-navigation />
+    <div class="app-body" :class="{ 'scenario-picker-open': scenarioPickerVisible }">
+      <tree-navigation v-if="!scenarioPickerVisible" />
       <main class="main-content">
         <world-selector
           v-if="store.viewLevel === 'world' && !scenarioMode"
@@ -330,6 +330,9 @@
     <status-bar />
 
     <node-detail-panel />
+    <!-- 资料阅读器 / 全库搜索（D2）：自管理显隐，靠 CustomEvent 唤起，不占 App 状态 -->
+    <note-reader />
+    <note-search-panel />
     <layer-panel />
     <history-panel v-if="panelsStore.isOpen('history')" @close="panelsStore.close('history')" />
     <project-panel v-if="panelsStore.isOpen('project')" @close="panelsStore.close('project')" />
@@ -404,6 +407,8 @@ import { usePanelsStore } from './store/panels';
 import { createSampleWorld } from './utils/sampleData';
 import WorldSelector from './components/WorldSelector.vue';
 import NodeDetailPanel from './components/NodeDetailPanel.vue';
+import NoteReader from './components/NoteReader.vue';
+import NoteSearchPanel from './components/NoteSearchPanel.vue';
 import SearchBar from './components/SearchBar.vue';
 import TreeNavigation from './components/TreeNavigation.vue';
 import LayerPanel from './components/LayerPanel.vue';
@@ -2072,6 +2077,11 @@ async function clearCoordinateCache() {
   background: var(--app-bg);
   color: var(--text-primary);
 }
+
+/* 卡片墙是**独立模块**：打开时把全局工具栏和左侧导航从 DOM 卸下，
+   不靠 z-index/遮罩去“盖住”它们（那条路修过多次，仍会在滚动/层叠边界露底）。 */
+.app-body.scenario-picker-open { background: #0a0d13; }
+.app-body.scenario-picker-open .main-content { background: #0a0d13; }
 
 /* 剧本域「走开了」浮标（2026-10-18 第十四修）：固定**左下角**（状态栏正上方）。
    ⚠️ 两条都是踩过的坑：

@@ -10,6 +10,29 @@
     <div class="sp-bg"></div>
     <div class="sp-inner">
       <div class="sp-title">选择历史剧本</div>
+      <!-- 搜索 / 筛选 / 计数：12 个剧本时一屏放不下，必须能找；也让人一眼看到“不是只显示了 4 个” -->
+      <div v-if="cards.length" class="sp-toolbar">
+        <div class="sp-search-wrap">
+          <Icon name="search" :size="14" />
+          <input v-model="query" class="sp-search" data-testid="sp-search"
+                 placeholder="搜索剧本名 / 钩子 / 年代…" />
+          <button v-if="query" class="sp-clear" data-testid="sp-clear" title="清空搜索"
+                  @click="query = ''">×</button>
+        </div>
+        <select v-if="ownerOptions.length > 1" v-model="ownerFilter" class="sp-select" data-testid="sp-owner-filter">
+          <option value="">全部底图</option>
+          <option v-for="o in ownerOptions" :key="o.key" :value="o.key">{{ o.name }}</option>
+        </select>
+        <select v-model="sortBy" class="sp-select" data-testid="sp-sort">
+          <option value="year">按起始年</option>
+          <option value="name">按名称</option>
+          <option value="owned">按控制疆土</option>
+        </select>
+        <label class="sp-only">
+          <input type="checkbox" v-model="onlyOwned" /> 只看有开局归属
+        </label>
+        <span class="sp-count" data-testid="sp-count">共 {{ filteredCards.length }} / {{ cards.length }} 个剧本</span>
+      </div>
       <!-- 全局烘焙进度（2026-10-17 暮雨实测「进入的时候有点卡（且没有任何加载提示）」，
            二测反馈「可能位置太奇怪，我的期望是正中间或中下部」）：
            做成屏幕**中下部**的浮动胶囊（fixed 定位，不随卡片排布移动）——
@@ -46,7 +69,8 @@
       </div>
 
       <div v-else class="sp-cards" data-testid="sp-cards">
-        <div v-for="c in cards" :key="c.id"
+        <div v-if="!filteredCards.length" class="sp-no-match" data-testid="sp-no-match">没有匹配的剧本</div>
+        <div v-for="c in filteredCards" :key="c.id"
              class="sp-card" :class="{ featured: c.featured }"
              :data-testid="'sp-card-' + c.testId"
              @click="$emit('edit', { scenarioId: c.id })">
@@ -105,6 +129,7 @@
  *    （旧实现只有前者：纯新项目照做也建不出东西，"点了没反应"的观感又回来了）。
  */
 import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue';
+import Icon from './Icon.vue';
 import { useGeodataStore } from '../store/geodata.js';
 import { buildTimeline } from '../utils/scenarioTimeline.js';
 import { openingSituation, cardYearsText, cardHookText, provinceAreaIndex } from '../utils/scenarioCards.js';
@@ -166,6 +191,35 @@ const cards = computed(() => {
   return out;
 });
 
+// 搜索 / 筛选：卡片墙 12 条时一屏放不下；只做前端过滤，不改变底层剧本数据。
+const query = ref('');
+const onlyOwned = ref(false);
+const ownerFilter = ref('');
+const sortBy = ref('year');
+const ownerOptions = computed(() => {
+  const seen = new Map();
+  for (const c of cards.value) {
+    if (!seen.has(c.ownerKey)) {
+      seen.set(c.ownerKey, store.baseMaps?.[c.ownerKey]?.name || c.ownerKey || '未命名底图');
+    }
+  }
+  return [...seen].map(([key, name]) => ({ key, name }));
+});
+const filteredCards = computed(() => {
+  const q = String(query.value || '').trim().toLowerCase();
+  const list = cards.value.filter((c) => {
+    if (ownerFilter.value && c.ownerKey !== ownerFilter.value) return false;
+    if (onlyOwned.value && c.sitEmpty) return false;
+    if (!q) return true;
+    return `${c.name} ${c.hook} ${c.roman} ${c.years}`.toLowerCase().includes(q);
+  });
+  const out = list.slice();
+  if (sortBy.value === 'name') out.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'));
+  else if (sortBy.value === 'owned') out.sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0));
+  else out.sort((a, b) => (Number(a.years) || 0) - (Number(b.years) || 0));
+  return out;
+});
+
 /* ---- 逐张烘缩略图（帧让出；组件卸载即停） ---- */
 const canvasMap = new Map();   // cardId -> HTMLCanvasElement
 // 🔴 已烘完的卡片 id 集合必须是**响应式**的（reactive Set）——
@@ -220,19 +274,59 @@ onUnmounted(() => { dead = true; cancelAnimationFrame(rafId); });
   /* 🔴 fixed 不是 absolute（2026-10-17 暮雨实测：左下角露出 tree-navigation）——
      picker 原来是 `.main-content` 内的 absolute，而左侧导航树是 main-content 的**兄弟**节点，
      absolute 盖不住兄弟 → 卡片墙左边缘外露出世界选择页的导航栏。fixed 视口定位直接盖全屏。 */
-  position: fixed; inset: 0; z-index: 200;
-  display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; z-index: 5000;
+  display: flex; align-items: flex-start; justify-content: center;
   overflow: auto;
+  padding: 24px 0;
+  background: #0a0d13;
 }
 .sp-bg {
-  position: absolute; inset: 0;
+  /* 必须 fixed：picker 自身 overflow:auto，absolute 背景会跟着内容滚走，
+     滚到底部就露出后面的左侧导航/“SiTian”标题（暮雨 2026-10-19 二次实测）。 */
+  position: fixed; inset: 0;
   background: radial-gradient(1200px 500px at 50% -10%, #131a26 0%, #0a0d13 70%);
 }
-.sp-inner { position: relative; max-width: 1400px; width: 100%; padding: 30px 40px 40px; }
+.sp-inner { position: relative; max-width: 1400px; width: 100%; padding: 30px 40px 40px; margin: 0 auto; }
 .sp-title {
   text-align: center; color: #e6edf3; letter-spacing: 6px;
-  font-size: 17px; font-weight: 600; margin: 6px 0 26px;
+  font-size: 17px; font-weight: 600; margin: 6px 0 18px;
 }
+/* 搜索 / 筛选 / 计数（2026-10-19 暮雨实测：12 个剧本一屏放不下，且看不出到底有几个） */
+.sp-toolbar {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  flex-wrap: wrap; margin: 0 0 20px;
+}
+.sp-search-wrap {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 10px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 7px;
+  color: #8b949e;
+}
+.sp-search-wrap:focus-within { border-color: #58a6ff; }
+.sp-search {
+  width: min(300px, 52vw);
+  padding: 7px 0;
+  font-size: 12.5px;
+  color: #e6edf3;
+  background: transparent;
+  border: none;
+}
+.sp-search:focus { outline: none; }
+.sp-clear {
+  border: none; background: transparent; color: #8b949e; cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 0 2px;
+}
+.sp-clear:hover { color: #e6edf3; }
+.sp-select {
+  padding: 7px 8px; font-size: 12px;
+  color: #cbd5e1; background: #0d1117;
+  border: 1px solid #30363d; border-radius: 7px;
+}
+.sp-only { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9aa4b1; cursor: pointer; }
+.sp-count { font-size: 12px; color: #8b949e; }
+.sp-no-match { width: 100%; padding: 40px 0; text-align: center; color: #8b949e; font-size: 13px; }
 .sp-progress {
   position: fixed; left: 50%; bottom: 12vh; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px;

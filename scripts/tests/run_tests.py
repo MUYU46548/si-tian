@@ -414,6 +414,40 @@ MOCK_SCRIPT = """<script>
           const notes = Array.isArray(window.__vaultNotes) ? window.__vaultNotes : [];
           return { success: true, vault: 'E:/合成测试库', notes: notes.map(n => ({ ...n })), count: notes.length };
         },
+        // ===== 全库只读索引（D1）=====
+        // 主进程的真实扫描/解析在 unit/test_vault_index.js 里验（临时目录 + 真文件）；
+        // 这里只给 UI 一个稳定的内存态，用来守「设置面板的入口/按钮/候选列表」接线。
+        vaultIndexStatus: async () => ({
+          success: true, exists: true, root: 'E:/合成测试库',
+          builtAt: '2026-10-19T00:00:00.000Z', sizeBytes: 2048,
+          stats: { total: 120, byTop: { '03 设定': 80, '07 资料收藏': 40 }, hits: 0, misses: 120, parseErrors: 0 },
+        }),
+        vaultIndexBuild: async () => {
+          window.__viBuildCalls = (window.__viBuildCalls || 0) + 1;
+          return { success: true, total: 120, byTop: { '03 设定': 80 }, hits: 0, misses: 120, parseErrors: 0, elapsedMs: 3 };
+        },
+        vaultEntityCandidates: async () => ({
+          success: true, count: 2, byLayer: { city: 1, region: 1 },
+          candidates: [
+            { path: '03 设定/11 地理系统/行星/曜川星/霜寒城.md', title: '霜寒城', layer: 'city', layerLabel: '城市', confidence: 'high', reasons: ['有「层级」'], tags: [] },
+            { path: '03 设定/11 地理系统/行星/曜川星/北境.md', title: '北境', layer: 'region', layerLabel: '区域', confidence: 'medium', reasons: ['目录含层级词'], tags: [] },
+          ],
+        }),
+        vaultIndexSearch: async (q) => ({ success: true, results: [{ path: '03 设定/人物/艾琳.md', title: '艾琳', kind: 'lore', score: 80 }] }),
+        vaultNoteRead: async (p) => ({ success: true, data: { path: p, content: '# mock\\n\\n测试正文，指向[[北境]]，图：![[图.png]]', frontmatter: {}, wikilinks: ['北境'] } }),
+        vaultNoteResolve: async (name) => ({
+          success: true,
+          path: name === '北境' ? '03 设定/11 地理系统/行星/曜川星/北境.md' : '03 设定/11 地理系统/行星/曜川星/霜寒城.md',
+          candidates: [{ path: name === '北境' ? '03 设定/11 地理系统/行星/曜川星/北境.md' : '03 设定/11 地理系统/行星/曜川星/霜寒城.md', title: name }],
+        }),
+        vaultNoteSearch: async (q) => ({
+          success: true,
+          results: [{ path: '03 设定/01 人物/艾琳.md', title: '艾琳', kind: 'lore', score: 15, matchedIn: 'content', snippet: '风岬港的灯塔守。' }],
+        }),
+        vaultAssetRead: async (p) => ({
+          success: true,
+          data: { path: p, mime: 'image/png', size: 68, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' },
+        }),
         revealInExplorer: async () => ({ success: true }),
         openExternal: async () => ({ success: true }),
         onNodeUpdated: () => () => {},

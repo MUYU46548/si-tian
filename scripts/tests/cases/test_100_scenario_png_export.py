@@ -219,6 +219,8 @@ EXPORT_JS = r"""(async () => {
   notes.svgHasProvB = svgText.indexOf('乙省') >= 0;
   notes.svgHasLegend = svgText.indexOf('势力') >= 0 && svgText.indexOf('乙国') >= 0;
   notes.svgHasTitle = svgText.indexOf('乙时代') >= 0;
+  // P0 制图要素：比例尺（世界单位）。没有它，“第一张图”只能自用、不能交人。
+  notes.svgHasScaleBar = svgText.indexOf('比例尺') >= 0 && svgText.indexOf('单位') >= 0;
   notes.svgHasLabelColor = svgText.toUpperCase().indexOf('#3C4150') >= 0;
   return JSON.stringify({ fails, notes });
 })()"""
@@ -371,6 +373,8 @@ def run(cdp):
         fails.append('SVG 缺势力图例（「势力」+ 势力名）')
     if not notes1['svgHasTitle']:
         fails.append('SVG 缺剧本名标题')
+    if not notes1.get('svgHasScaleBar'):
+        fails.append('SVG 缺比例尺（P0：图例/比例尺/标题三件）')
     if notes1['svgTextCount'] <= 0:
         fails.append('SVG 里一个 <text> 都没有')
     if not notes1['svgHasLabelColor']:

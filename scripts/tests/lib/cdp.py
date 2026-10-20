@@ -15,16 +15,25 @@ CDP_PORT = 9222
 APP_URL = 'http://localhost:5180/'
 
 
-def find_page_ws(port=CDP_PORT, timeout=30):
-    """通过 /json 获取第一个 page target 的 webSocketDebuggerUrl"""
+def find_page_ws(port=CDP_PORT, timeout=30, prefer_prefix='http://localhost:5180'):
+    """通过 /json 获取第一个 page target 的 webSocketDebuggerUrl。
+
+    🔴 必须优先挑**应用页**（2026-10-19 实测）：Edge 在一次 PNG 导出后会打开
+    `edge://downloads-hub/`，且它会排在 `/json` 的第一个 —— 直接取第一个 page 会让
+    后续新建的 CDP 客户端连到下载页，表现为「用例超时/莫名其妙的空结果」。
+    先按 URL 前缀挑应用页，挑不到才退回第一个 page（保持旧行为）。
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(f'http://127.0.0.1:{port}/json') as resp:
                 targets = json.loads(resp.read().decode())
-            for t in targets:
-                if t.get('type') == 'page':
+            pages = [t for t in targets if t.get('type') == 'page']
+            for t in pages:
+                if str(t.get('url') or '').startswith(prefer_prefix):
                     return t['webSocketDebuggerUrl']
+            if pages:
+                return pages[0]['webSocketDebuggerUrl']
         except Exception:
             pass
         time.sleep(0.5)

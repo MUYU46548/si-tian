@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const matter = require('gray-matter');
 const { extractGeodata, listScannedNotes } = require('../../scripts/extract-data');
 const { startWatcher, stopWatcher } = require('./vault-watcher');
+const { startIndexWatcher } = require('./vaultIndexWatcher');
 // ⚠️ 本行是**唯一的 config 导入点**：config.js 里任何在此处被用到的导出都必须一并解构，
 //    漏掉不会报错，只会在 handler 被调用时抛 `ReferenceError: xxx is not defined`（实测事故：
 //    getCurrentBaseMapKey/setCurrentBaseMapKey 漏解构 → 打开历史剧本必报错）。
@@ -16,10 +17,34 @@ const { registerGitSyncHandlers } = require('./handlers/gitSyncHandler');
 // 逐年切片批量落盘（顶层不 require electron 的纯文件层 → 可被 Node 单测直接调用）
 const { writeFrames } = require('./handlers/exportFramesHandler');
 const { createCredentialStore } = require('./gitCredentialStore');
+// 全库只读索引（D1）：与提取器分工 —— 提取器决定“地图节点”，本模块回答“库里有什么”
+const vaultIndex = require('./vaultIndex');
 const log = require('electron-log');
 
 let mainWindow;
 let vaultWatcherEnabled = true;
+let indexWatcher = null;
+
+/**
+ * 全库索引监听（D2 / T6）：任何 `.md` 增删改 → 250ms 防抖 → 增量重建索引 →
+ * 发 `vault-index-updated` 给渲染层。**只更新资料索引，不碰画布**（画布写入仍只归 projectStore）。
+ */
+function restartIndexWatcher() {
+  try { if (indexWatcher) indexWatcher.close(); } catch (e) { /* ignore */ }
+  indexWatcher = null;
+  const vault = getVaultPath();
+  if (!vault) return;
+  try {
+    indexWatcher = startIndexWatcher(vault, (summary) => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('vault-index-updated', summary);
+      } catch (e) { /* 窗口已销毁：忽略 */ }
+    });
+  } catch (e) {
+    console.warn('[IndexWatcher] 启动失败（不影响主流程）:', (e && e.message) || e);
+    indexWatcher = null;
+  }
+}
 
 // TypedArray（Float32Array/Uint8Array…）经结构化克隆到达主进程后，JSON.stringify 会退化成
 // {"0":…}（无 length）→ 读回即废（高度图 h/biome、地形笔刷 grid 曾被静默清空）。
@@ -62,7 +87,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
-    title: 'SiTian — 世界观动态构建系统',
+    title: '司天 — 世界观动态构建系统',
     backgroundColor: '#0a0e18',
     // 窗口/任务栏图标（问题2）：打包后 exe 资源由 electron-builder 注入，
     // 开发与未打包运行时由此处提供；macOS 窗口图标由系统取 app bundle，无需设置
@@ -92,6 +117,8 @@ function createWindow() {
   if (vaultWatcherEnabled) {
     startWatcher(mainWindow, getVaultPath());
   }
+  // 资料索引监听（独立于画布 watcher：只重建只读索引）
+  restartIndexWatcher();
 
 // 窗口关闭拦截：默认（closeQuitsApp=false）点 × 时最小化到托盘，而非退出；
 // closeQuitsApp=true 时直接退出。退出方式：托盘菜单「退出」/ Alt+F4 / Ctrl+Q。
@@ -111,7 +138,7 @@ mainWindow.on('close', (event) => {
   if (trayRef) {
     try {
       trayRef.displayBalloon({
-        title: 'SiTian 已最小化到托盘',
+        title: '司天已最小化到托盘',
         content: '左键双击恢复 · 右键菜单可退出 · 快捷键 Ctrl+Q 彻底关闭',
         iconType: 'info',
       });
@@ -498,6 +525,8 @@ ipcMain.handle('set-vault-path', async (event, newPath) => {
       return { success: false, error: validation.error };
     }
     await setVaultPath(newPath);
+    // 换库后重启索引监听（旧库的 watcher 必须收掉，否则会往新库里写旧索引）
+    restartIndexWatcher();
     return { success: true, path: newPath };
   } catch (err) {
     return { success: false, error: err.message };
@@ -703,6 +732,111 @@ ipcMain.handle('list-vault-notes', async () => {
     return { success: true, vault, notes, count: notes.length };
   } catch (err) {
     return { success: false, error: err.message, notes: [] };
+  }
+});
+
+// ===== 全库只读索引 / 实体候选（D1，2026-10-19）=====
+// 🔴 与 list-vault-notes 的分工：那个只列“扫描范围内的地图笔记”（断线对账用）；
+//    这里索引**全库** .md（1,353 篇），只读、不写笔记、不碰画布。
+//    索引落 `<vault>/.sitian/note-index.json`（可删可重建）。
+ipcMain.handle('vault-index-build', async (event, opts) => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径' };
+    const options = {
+      forceFull: !!(opts && opts.forceFull),
+      scanDirs: Array.isArray(opts && opts.scanDirs) ? opts.scanDirs.filter((d) => typeof d === 'string') : undefined,
+      excludeDirs: Array.isArray(opts && opts.excludeDirs) ? opts.excludeDirs.filter((d) => typeof d === 'string') : undefined,
+    };
+    const { summary } = vaultIndex.buildIndex(vault, options);
+    return { success: true, ...summary };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('vault-index-status', async () => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径' };
+    return { success: true, ...vaultIndex.indexStatus(vault) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('vault-note-read', async (event, relPath) => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径' };
+    if (!relPath || typeof relPath !== 'string') return { success: false, error: '缺少笔记路径' };
+    // containment / 大小上限都在 vaultIndex 内做（主进程唯一入口，渲染层拿不到任意文件）
+    return { success: true, data: vaultIndex.readNote(vault, relPath) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('vault-index-search', async (event, query, limit) => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径' };
+    const idx = vaultIndex.loadIndex(vault);
+    if (!idx) return { success: false, error: '资料索引尚未建立（设置 → 资料索引 → 重建索引）', results: [] };
+    return { success: true, results: vaultIndex.searchIndex(idx, query, limit) };
+  } catch (err) {
+    return { success: false, error: err.message, results: [] };
+  }
+});
+
+ipcMain.handle('vault-entity-candidates', async (event, rules) => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径', candidates: [] };
+    const idx = vaultIndex.loadIndex(vault);
+    if (!idx) return { success: false, error: '资料索引尚未建立（设置 → 资料索引 → 重建索引）', candidates: [] };
+    const out = vaultIndex.discoverCandidates(idx, rules || {});
+    return { success: true, ...out };
+  } catch (err) {
+    return { success: false, error: err.message, candidates: [] };
+  }
+});
+
+// 阅读器：wikilink 目标 → 笔记路径（标题/别名/文件名/相对路径；重名给候选）
+ipcMain.handle('vault-note-resolve', async (event, name) => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径' };
+    const idx = vaultIndex.loadIndex(vault);
+    if (!idx) return { success: false, error: '资料索引尚未建立' };
+    return { success: true, ...vaultIndex.resolveNote(idx, name) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 阅读器：正文全文搜索（元数据命中优先，再按需读正文）
+ipcMain.handle('vault-note-search', async (event, query, limit) => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径', results: [] };
+    const idx = vaultIndex.loadIndex(vault);
+    if (!idx) return { success: false, error: '资料索引尚未建立（设置 → 资料索引 → 重建索引）', results: [] };
+    return { success: true, results: vaultIndex.searchIndexDeep(vault, idx, query, limit) };
+  } catch (err) {
+    return { success: false, error: err.message, results: [] };
+  }
+});
+
+// 阅读器：附件（图片）→ dataUrl；限库根、限 8MB
+ipcMain.handle('vault-asset-read', async (event, relPath, fromNote) => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径' };
+    if (!relPath || typeof relPath !== 'string') return { success: false, error: '缺少附件路径' };
+    return { success: true, data: vaultIndex.readAsset(vault, relPath, fromNote) };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 

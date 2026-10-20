@@ -26,6 +26,10 @@
                 :title="store.isReadOnly ? store.readOnlyReason : '暂存节点尚无 Obsidian 词条：创建笔记后即可在知识库中检索/双链'">
           <span class="btn-icon"><Icon name="file-text" :size="14"/></span> {{ promoting ? '创建中…' : '创建 Obsidian 笔记' }}
         </button>
+        <button v-if="!isDraftNode && node.sourcePath" class="action-btn" @click="openSourceInReader"
+                title="在司天内部读这篇笔记（双链也在应用内跳，不拉起 Obsidian）">
+          <span class="btn-icon"><Icon name="book" :size="14"/></span> 在资料阅读器中打开
+        </button>
         <button class="action-btn locate-btn" @click="focusOnMap" :disabled="!canFocusOnMap" title="镜头定位到该节点在地图上的位置">
           <span class="btn-icon"><Icon name="target" :size="14"/></span> 在地图上定位
         </button>
@@ -82,6 +86,24 @@
               {{ isContentExpanded ? '收起全文' : '展开全文' }}
             </button>
           </div>
+        </section>
+
+        <!-- 关联资料（D2）：主笔记 = sourcePath；附加笔记存项目文件，不写笔记 -->
+        <section v-if="!isDraftNode" class="linked-notes-section" data-testid="linked-notes">
+          <div class="section-header">
+            <span class="section-title">关联资料</span>
+            <button class="expand-btn" :disabled="store.isReadOnly" @click="notePickerOpen = true"
+                    title="把另一篇笔记挂到这个节点上（只存路径，不改笔记）">+ 绑定笔记</button>
+          </div>
+          <div v-if="linkedNotes.length" class="linked-note-list">
+            <div v-for="p in linkedNotes" :key="p" class="linked-note-row">
+              <a class="linked-note" :title="p" @click="openLinkedNote(p)">
+                <Icon name="file-text" :size="12"/> <span class="linked-note-path">{{ p }}</span>
+              </a>
+              <button class="linked-note-remove" :disabled="store.isReadOnly" title="解除绑定" @click="removeLinkedNote(p)">×</button>
+            </div>
+          </div>
+          <p v-else class="linked-note-empty">还没有附加笔记；主笔记就是该节点的词条。</p>
         </section>
       </template>
 
@@ -413,12 +435,24 @@
       </div>
     </div>
   </div>
+
+  <!-- 绑定附加笔记（D2）：主笔记 = sourcePath；附加笔记存项目文件，不写笔记 -->
+  <note-picker
+    :visible="notePickerOpen"
+    title="绑定附加资料"
+    :exclude-paths="linkedNoteExclude"
+    @pick="addLinkedNote"
+    @close="notePickerOpen = false"
+  />
 </div>
 </template>
 
 <script setup>
 import { iconSvg } from '../utils/iconSvg';
 import Icon from './Icon.vue';
+import NotePicker from './NotePicker.vue';
+import { openNote } from '../utils/noteReader';
+import { usePromptDialog } from '../composables/usePromptDialog';
 import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
@@ -436,6 +470,7 @@ import {
 marked.setOptions({ gfm: true, breaks: true });
 
 const store = useGeodataStore();
+const { askText } = usePromptDialog();
 const note = ref(null);
 const loading = ref(false);
 const isContentExpanded = ref(false);
@@ -445,6 +480,39 @@ const newTagInput = ref('');
 const reparentSearchQuery = ref('');
 
 const node = computed(() => store.selectedNode);
+
+// ===== 关联资料（D2）：主笔记 = sourcePath；附加笔记 = notePaths（项目字段，不写笔记）=====
+const notePickerOpen = ref(false);
+const linkedNotes = computed(() => {
+  const list = node.value && node.value.notePaths;
+  return Array.isArray(list) ? list.filter((p) => typeof p === 'string' && p) : [];
+});
+const linkedNoteExclude = computed(() => {
+  const main = node.value && node.value.sourcePath;
+  return [main, ...linkedNotes.value].filter(Boolean);
+});
+
+function openSourceInReader() {
+  if (node.value && node.value.sourcePath) openNote(node.value.sourcePath);
+}
+
+function openLinkedNote(path) {
+  if (path) openNote(path);
+}
+
+function addLinkedNote(path) {
+  if (!path || !node.value) return;
+  if (store.isReadOnly) return;
+  const next = [...linkedNotes.value, path];
+  store.updateNode(node.value.id, { notePaths: next });
+  notePickerOpen.value = false;
+}
+
+function removeLinkedNote(path) {
+  if (!node.value || store.isReadOnly) return;
+  const next = linkedNotes.value.filter((p) => p !== path);
+  store.updateNode(node.value.id, { notePaths: next });
+}
 
 // 可编辑层级列表（与 LAYER_ORDER 一致，排除 world 顶层容器避免误改）
 const editableLayers = [
@@ -605,7 +673,7 @@ function onSizeInput(value) {
 async function createCulture() {
   const pid = settlementPlanetId.value;
   if (!pid) { alert('请先在地图上进入该聚落所属的行星'); return; }
-  const name = window.prompt('文化名称', '新文化');
+  const name = await askText({ title: '文化名称', defaultValue: '新文化' });
   if (!name) return;
   // 关键：文化列表存在 mapData 里，而 mapData 是「进入行星视图才懒加载」的。
   // 从左侧树直接点开聚落详情时缓存可能为空 —— 先按需加载，否则写进去的文化会被当成
@@ -1440,6 +1508,60 @@ function updateCoordinate(axis, value) {
 /* ===== 正文区域 ===== */
 .content-section {
   margin-bottom: 16px;
+}
+
+/* 关联资料（D2） */
+.linked-notes-section {
+  margin-bottom: 16px;
+}
+.linked-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.linked-note-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.linked-note {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--btn-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.linked-note:hover {
+  border-color: #4a90d9;
+  color: var(--text-primary);
+}
+.linked-note-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.linked-note-remove {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.linked-note-remove:hover { color: #e06c75; }
+.linked-note-empty {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 
 .content-body {

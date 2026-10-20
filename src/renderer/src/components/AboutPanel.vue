@@ -5,7 +5,7 @@
         <div class="about-logo">
           <BrandMark class="logo-icon" :size="34" />
           <div class="logo-info">
-            <h2>SiTian</h2>
+            <h2>司天</h2>
             <span class="version" :title="'点击复制版本号'" style="cursor: pointer;" @click="copyVersion"><template v-if="copiedVersion"><Icon name="check" :size="12"/> 已复制</template><template v-else>v{{ appVersion }}</template></span>
           </div>
         </div>
@@ -182,15 +182,15 @@
         <span class="license">MIT License</span>
         <div class="footer-actions">
           <button class="update-btn" @click="checkForUpdates">检查更新</button>
-          <button class="uninstall-btn" @click="confirmUninstall">卸载 SiTian</button>
+          <button class="uninstall-btn" @click="confirmUninstall">卸载司天</button>
         </div>
       </div>
 
       <!-- 卸载确认模态（自定义，规避 Electron alert 限制） -->
       <div v-if="showUninstallConfirm" class="uninstall-modal-overlay" @click.self="showUninstallConfirm = false">
         <div class="uninstall-modal">
-          <h3>卸载 SiTian</h3>
-          <p>将打开系统卸载程序移除 SiTian 及其安装项。你的 Obsidian 知识库与笔记<strong>不会被删除</strong>。</p>
+          <h3>卸载司天</h3>
+          <p>将打开系统卸载程序移除司天及其安装项。你的 Obsidian 知识库与笔记<strong>不会被删除</strong>。</p>
           <p class="uninstall-hint" v-if="uninstallHint">{{ uninstallHint }}</p>
           <div class="uninstall-modal-actions">
             <button class="btn-cancel" @click="showUninstallConfirm = false">取消</button>
@@ -277,7 +277,7 @@ async function doUninstall() {
       // 开发模式或找不到卸载器：给出手动指引
       uninstallHint.value = result?.dev
         ? '当前为开发模式，未安装到系统，无需卸载。发布版中此按钮将启动系统卸载程序。'
-        : (result?.error || '未能定位卸载程序，请通过「设置 → 应用 → SiTian → 卸载」手动卸载。');
+        : (result?.error || '未能定位卸载程序，请通过「设置 → 应用 → 司天 → 卸载」手动卸载。');
       uninstalling.value = false;
     }
     // success=true 时主进程已打开卸载器，模态可保留或关闭均可

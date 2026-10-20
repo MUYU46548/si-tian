@@ -193,11 +193,22 @@ function scanLocations() {
 }
 
 // 索引文件行缓存（批次C3）：extractWorldsAndStars 与 worldStarMap 构建共用一次读取
+// 🔴 B0（S0 实测，2026-10-19）：索引文件**不是每个库都有**。旧实现裸 `readFileSync`，
+//    缺 `01 索引/地理系统索引.md` 时直接 ENOENT，把前面已经扫到的地理节点整次作废；
+//    用户换一个“不听话的库”就得到「数据加载失败」而不是「少了世界/星域索引」。
+//    现在：读不到就返回空行集，世界/星域由目录树 + frontmatter 推；单项缺失不再致命。
 let _indexLines = null;
 function getIndexLines() {
   if (_indexLines) return _indexLines;
-  const raw = fs.readFileSync(indexPath(), 'utf-8');
-  _indexLines = matter(raw).content.split('\n');
+  try {
+    const raw = fs.readFileSync(indexPath(), 'utf-8');
+    _indexLines = matter(raw).content.split('\n');
+  } catch (e) {
+    if (e && e.code !== 'ENOENT') {
+      console.warn('[提取] 读取地理系统索引失败（按无索引继续）:', e.message);
+    }
+    _indexLines = [];
+  }
   return _indexLines;
 }
 
@@ -966,7 +977,7 @@ function listScannedNotes(targetVault) {
   return out;
 }
 
-module.exports = { extractGeodata, listScannedNotes, normalizeRelPath, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus };
+module.exports = { extractGeodata, listScannedNotes, normalizeRelPath, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus, LAYER_KEYWORDS, LAYER_LABELS };
 
 if (require.main === module) {
   (async () => {

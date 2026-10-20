@@ -293,6 +293,20 @@ SELECT_JS = r"""(async () => {
   notes.burgEditorOpenAfter = !!SM.burgEditorOpen;
   // 产品侧真值：它把这个屏幕点算成了哪个世界坐标
   notes.worldByProduct = { x: (sx - SM.cameraX) / SM.cameraScale, y: (sy - SM.cameraY) / SM.cameraScale };
+  // 直接问产品自己的 findProvinceAt（不经过 click 路径）。
+  // 为什么补这一发：select 的 click 分支会先判 burg / 拖拽状态，合成事件不一定走到选省；
+  // 而本步要证明的是“产品认为这个点属于哪个省”，findProvinceAt 才是那条真值。
+  if (typeof SM.findProvinceAt === 'function') {
+    const dp = SM.findProvinceAt(notes.worldByProduct.x, notes.worldByProduct.y);
+    notes.directProvince = dp ? dp.id : null;
+    notes.directProvinceName = dp ? dp.name : null;
+    if (!notes.hitProvince && dp) {
+      notes.hitProvince = dp.id;
+      notes.hitProvinceName = dp.name;
+      notes.hitSource = 'direct-findProvinceAt';
+    }
+  }
+  if (!notes.hitSource) notes.hitSource = 'click';
   return JSON.stringify({ fails, notes });
 })()"""
 
@@ -635,9 +649,10 @@ def main():
         qn = qres['notes'] if qok else {}
         ck('① 用「选择」工具让产品自己回答命中省（不假设）',
            bool(qok) and qn.get('hitProvince') == prov['id'],
-           '产品命中 %s（%s）vs 目标 %s（%s）；screen=(%d,%d) 画布内=%s 顶层元素=%s；'
+           '产品命中 %s（%s，来源=%s；直接 findProvinceAt=%s/%s）vs 目标 %s（%s）；screen=(%d,%d) 画布内=%s 顶层元素=%s；'
            '第一发 %s；被城镇截胡=%s；第二发（关掉城镇图层）%s'
-           % (qn.get('hitProvince'), qn.get('hitProvinceName'), prov['id'], prov.get('name'),
+           % (qn.get('hitProvince'), qn.get('hitProvinceName'), qn.get('hitSource'),
+              qn.get('directProvince'), qn.get('directProvinceName'), prov['id'], prov.get('name'),
               sx, sy, qn.get('onCanvas'), qn.get('topElement'),
               json.dumps(qn.get('attempt1'), ensure_ascii=False), qn.get('interceptedByBurg'),
               json.dumps(qn.get('attempt2'), ensure_ascii=False)))

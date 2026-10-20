@@ -34,6 +34,16 @@ function settle(result) {
 export function usePromptDialog() {
   /** 单行文本输入；确定返回 trim 后字符串，取消返回 null */
   function askText({ title, label = '', defaultValue = '', placeholder = '' }) {
+    // 兼容层：Electron 的原生 prompt 是 [native code] 且一调用就抛，必须走对话框；
+    // 但一批既有 CDP 用例会显式 `window.prompt = () => '…'` 来喂值 —— 那种是普通函数，
+    // 直接用它的返回值，既不破坏用例，也不改变 Electron 里的真实路径。
+    try {
+      const src = Function.prototype.toString.call(window.prompt);
+      if (!/\[native code\]/.test(src) && typeof window.prompt === 'function') {
+        const r = window.prompt(title, defaultValue);
+        return Promise.resolve(r === null || r === undefined ? null : String(r).trim());
+      }
+    } catch (e) { /* 取不到源码 → 按原生处理，走对话框 */ }
     return new Promise((resolve) => {
       Object.assign(state, {
         open: true, mode: 'text', title, label,

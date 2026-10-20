@@ -1,0 +1,35 @@
+{
+  "purpose": "S0/T1-T2：验证「不听话的库」——乱目录、缺 frontmatter、跨目录重名、缺地理系统索引",
+  "notesTotal": 22,
+  "expect": {
+    "hardcodedScanHits": [
+      "03 设定/11 地理系统/星域/假星域.md",
+      "03 设定/02 场景地点/某个地点.md"
+    ],
+    "duplicateBasenames": [
+      "风岬港"
+    ],
+    "noFrontmatter": [
+      "README.md",
+      "无标题.md",
+      "散装/人物/艾琳.md",
+      "散装/组织/无名者.md",
+      "a/b/c/深林 副本.md",
+      "事件/第三纪元/风岬港大火.md",
+      "资料收藏/剪贴/一段剪报.md"
+    ],
+    "missingIndexFile": "01 索引/地理系统索引.md",
+    "wikilinks": {
+      "散装/人物/艾琳.md": [
+        "老陶",
+        "灰塔议会"
+      ],
+      "带附件/地图笔记.md": [
+        "图.png",
+        "风岬港",
+        "北境"
+      ]
+    },
+    "asset": "附件/图.png"
+  }
+}
