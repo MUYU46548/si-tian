@@ -294,7 +294,7 @@ JS_READONLY = r"""
 """
 
 JS_WIRING = r"""
-(() => {
+(async () => {
   const fails = [];
   const ok = (label, cond, extra) => { if (!cond) fails.push(label + (extra !== undefined ? ' (' + extra + ')' : '')); };
   const sc = PLACEHOLDER_SC;
@@ -322,11 +322,16 @@ JS_WIRING = r"""
   const cvsH = sc.canvas ? Math.round(sc.canvas.getBoundingClientRect().height) : -1;
   ok('画布真的撑开了（不是 canvas 固有 150px）', cvsH > 150, cvsH + 'px');
   // 工具栏按钮存在（用 title 定位，不用图标文本）
+  // 🔴 2026-10-20：几何笔刷（把笔迹并进某个省）改名为「改省界」并收进**底图编辑**行 ——
+  //    日常行只留「涂归属」（势力归属）。所以先开模式再查按钮（DOM 更新是异步的，等一拍）。
+  sc.basemapEditMode = true;
+  await new Promise(r => setTimeout(r, 0));
   const btns = Array.from(document.querySelectorAll('.scenario-toolbar button'));
-  const hasBrush = btns.some(b => (b.getAttribute('title') || '').includes('省份笔刷'));
+  const hasBrush = btns.some(b => (b.getAttribute('title') || '').includes('改省界'));
   const hasLasso = btns.some(b => (b.getAttribute('title') || '').includes('自由轮廓'));
-  ok('工具栏有省份笔刷按钮', hasBrush);
+  ok('工具栏有「改省界」按钮（几何笔刷）', hasBrush);
   ok('工具栏有自由轮廓按钮', hasLasso);
+  sc.basemapEditMode = false;
   return JSON.stringify({ fails, buttons: btns.length, nProv: sc.provinceTargets.length });
 })()
 """

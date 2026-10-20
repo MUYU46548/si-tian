@@ -150,6 +150,82 @@ export function offsetPolyline(pts, dist) {
 }
 
 /**
+ * **变宽丝带多边形**（2026-10-20 河流重做的核心）。
+ *
+ * 为什么不再用"中心线逐段描边"：
+ *   · 逐段 `stroke()` 的接头靠圆帽补，放大后是一串**珠子**；段与段的宽度突变时
+ *     会出现横向接缝 —— 这正是用户说的「铁轨 / 支气管 / 描点连线」观感；
+ *   · 一条 90 点的链要 90 次 beginPath+stroke（自动河网 900 链 = 8 万次/帧）。
+ * 一条**闭合多边形**（左岸正向 + 右岸反向）一次 `fill()` 画完：宽度连续、接头无缝、
+ * 调用次数 1。岸线再由**这一个多边形**的描边给出（不是两条平行线）。
+ *
+ * @param {Array<{x:number,y:number}>} pts 中心线（世界坐标）
+ * @param {number[]|number} widths 逐点宽度（世界单位，= 全宽）；单个数 = 等宽
+ * @returns {Array<{x:number,y:number}>} 闭合多边形顶点（未重复首点）
+ */
+export function variableRibbon(pts, widths) {
+  const src = Array.isArray(pts) ? pts.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
+  if (src.length < 2) return [];
+  const halfAt = (i) => {
+    const v = Array.isArray(widths) ? widths[Math.max(0, Math.min(widths.length - 1, i))] : widths;
+    return Number.isFinite(v) && v > 0 ? v / 2 : 0.05;
+  };
+  const left = [];
+  const right = [];
+  for (let i = 0; i < src.length; i++) {
+    const prev = src[i - 1] || src[i];
+    const next = src[i + 1] || src[i];
+    let tx = next.x - prev.x;
+    let ty = next.y - prev.y;
+    const len = Math.hypot(tx, ty);
+    if (!(len > 1e-9)) { tx = 1; ty = 0; } else { tx /= len; ty /= len; }
+    const nx = -ty;
+    const ny = tx;
+    const hw = halfAt(i);
+    left.push({ x: src[i].x + nx * hw, y: src[i].y + ny * hw });
+    right.push({ x: src[i].x - nx * hw, y: src[i].y - ny * hw });
+  }
+  return left.concat(right.reverse());
+}
+
+/**
+ * 把一条河画成**实心变宽丝带**（水面 + 一圈岸线）。
+ *
+ * 观感配方（与真实地图一致）：先按多边形描一遍更深的**岸线**（半宽在里、半宽在外），
+ * 再填水面 —— 填色盖住内侧那一半，留下一条细而贴合的边，而不是"两条平行铁轨"。
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Array<{x:number,y:number}>} pts 中心线（世界坐标；调用方负责先过曲线加密）
+ * @param {number[]|number} widths 逐点宽度（世界单位）
+ * @param {{color?:string, bankColor?:string, bankWidth?:number, alpha?:number}} opts
+ *        `bankWidth` = 岸线宽（世界单位，0 = 不画岸线）
+ * @returns {number} 画出的顶点数（0 = 没画）
+ */
+export function fillRiverRibbon(ctx, pts, widths, opts = {}) {
+  const poly = variableRibbon(pts, widths);
+  if (!ctx || poly.length < 3) return 0;
+  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 0.95;
+  const bankWidth = Number.isFinite(opts.bankWidth) ? opts.bankWidth : 0;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(poly[0].x, poly[0].y);
+  for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+  ctx.closePath();
+  if (bankWidth > 0) {
+    ctx.strokeStyle = opts.bankColor || '#3f6478';
+    ctx.lineWidth = bankWidth;
+    ctx.stroke();
+  }
+  ctx.fillStyle = opts.color || RIVER_DRAW_COLOR;
+  ctx.fill();
+  ctx.restore();
+  return poly.length;
+}
+
+/**
  * **按流量剪枝**：只留真正的河道，把"每格一根小棍"的密网格去掉。
  *
  * 🔴 为什么必须有（2026-10-17 第六修，用户：「自动河流依旧恐怖谷，我都懒得说了」）：
@@ -384,44 +460,47 @@ export function strokeVariableWidth(ctx, pts, widths, opts = {}) {
 export function drawCurvedRiver(ctx, controlPts, headWidth, mouthWidth, opts = {}) {
   const ctrl = Array.isArray(controlPts) ? controlPts.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
   if (!ctx || ctrl.length < 2) return { drawn: 0, curvePoints: 0 };
-  const toPx = typeof opts.toPx === 'function' ? opts.toPx : null;
-  if (!toPx) return { drawn: 0, curvePoints: 0 };
   const subdiv = Number.isFinite(opts.subdiv) ? opts.subdiv : 7;
   // 只有 2 个控制点：曲线等于直线（Catmull-Rom 需要 3 点才弯），直接落回原折线
-  const curve = ctrl.length >= 3 ? catmullRomPoints(ctrl, subdiv) : ctrl.map((p) => ({ x: p.x, y: p.y }));
-  const widths = taperWidths(curve.length, headWidth, mouthWidth);
-  const bankPx = Number.isFinite(opts.bankPx) ? opts.bankPx : 0.9;
-  let drawn = 0;
-  // ① 岸线：**同一批段、多描一遍更宽的深色**（比逐点算多边形便宜得多，观感一致）
-  if (bankPx > 0) {
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.globalAlpha = (Number.isFinite(opts.alpha) ? opts.alpha : 0.92) * 0.55;
-    ctx.strokeStyle = opts.bankColor || '#3f6478';
-    for (let i = 0; i + 1 < curve.length; i++) {
-      const w = (widths[i] + widths[i + 1]) / 2;
-      const water = Math.max(0.5, toPx(w));
-      // 🔴 2026-10-18 第十五修：岸线宽度**必须与水宽挂钩**。
-      //    老写法 `water + bankPx` 里 `bankPx` 是**屏幕像素常量**（`px(1.1)` 的世界值，
-      //    在放大后换算回屏幕仍是 1.1px）—— 放大时水宽按世界单位涨、岸线永远 1.1px：
-      //    水宽 60px 时那 1.1px 的深边框就是「两边各一条轨道、中间一块水色」的来源
-      //    （用户原话：「表现为空心铁轨，中间的水色渲染块没了，只剩两边的轨道」）。
-      //    现在封顶为水宽的 45%：小缩放时仍是一条可见的细边（0.9 左右），
-      //    放大后自动退成水面的**轮廓线**而不是粗边框。
-      ctx.lineWidth = water + Math.min(bankPx, Math.max(0.35, water * 0.45));
-      ctx.beginPath();
-      ctx.moveTo(curve[i].x, curve[i].y);
-      ctx.lineTo(curve[i + 1].x, curve[i + 1].y);
-      ctx.stroke();
-    }
-    ctx.restore();
+  const curve = (opts.curve === false || ctrl.length < 3)
+    ? ctrl.map((p) => ({ x: p.x, y: p.y }))
+    : catmullRomPoints(ctrl, subdiv);
+  // 逐点宽度：调用方给了 `widths`（手画河的 widthFactors / 自带河按 discharge）就用它，
+  // 否则按头→尾线性过渡（taperWidths）。
+  let widths;
+  if (Array.isArray(opts.widths) && opts.widths.length) {
+    const src = opts.widths;
+    widths = curve.map((_, i) => {
+      const u = curve.length > 1 ? (i / (curve.length - 1)) * (src.length - 1) : 0;
+      const i0 = Math.floor(u);
+      const i1 = Math.min(src.length - 1, i0 + 1);
+      const f = u - i0;
+      const a = Number(src[i0]);
+      const b = Number(src[i1]);
+      const va = Number.isFinite(a) && a > 0 ? a : 0.2;
+      const vb = Number.isFinite(b) && b > 0 ? b : 0.2;
+      return va + (vb - va) * f;
+    });
+  } else {
+    widths = taperWidths(curve.length, headWidth, mouthWidth);
   }
-  // ② 水面
-  drawn = strokeVariableWidth(ctx, curve, widths, {
-    toPx,
+  const bankWidth = Number.isFinite(opts.bankPx) ? opts.bankPx : 0.9;
+  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 0.92;
+  // 岸线宽：屏幕常量（调用方传的是 `px(1.1)` 世界值）与**水宽**取小 ——
+  // 放大时水宽按世界单位涨，岸线若仍是常量就会变成粗边框（第十五修踩过的"铁轨"成因）。
+  let maxW = 0;
+  for (const w of widths) if (Number.isFinite(w) && w > maxW) maxW = w;
+  const outline = bankWidth > 0 ? Math.min(bankWidth, Math.max(0.18, maxW * 0.35)) : 0;
+  // 🔴 2026-10-20 第十七修：**一条实心丝带**取代"逐段描边 + 外扩岸线"。
+  //    旧写法两遍逐段 stroke（岸线加宽、水面覆盖）在放大/缩小时都会露出
+  //    "两条平行边 + 中间一条缝"的骨架 = 用户反复说的「铁轨」。
+  //    现在一次闭合多边形：左岸正向 + 右岸反向 → 宽度连续、接头无缝；岸线是
+  //    这同一个多边形的描边（0 宽 = 不描），所以**结构上不可能再出现两条轨道**。
+  const drawn = fillRiverRibbon(ctx, curve, widths, {
     color: opts.color || RIVER_DRAW_COLOR,
-    alpha: Number.isFinite(opts.alpha) ? opts.alpha : 0.92,
+    bankColor: opts.bankColor || '#3f6478',
+    bankWidth: outline,
+    alpha,
   });
   return { drawn, curvePoints: curve.length };
 }

@@ -22,9 +22,9 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**123 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**131 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**39 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**43 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -60,6 +60,9 @@
 
 - **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > HANDOFF.md / ROADMAP.md（严重滞后，仅作历史参考）
 
+- **现行规划（2026-10-20 取舍）**: [docs/plan/SITIAN_THREE_MODULES_20261020.md](docs/plan/SITIAN_THREE_MODULES_20261020.md) ——
+  三模块顶层（星图 / 行星与细节 / 历史剧本）+ 资料层横切；"已有账本不重写"的结论与下一步队列。
+
 
 ### 当前红线（跨模块、动手之前必须知道）
 
@@ -72,6 +75,9 @@
 - **数据安全优先于手感**：退出 / 关项目 / 显式保存一律绕过自动保存的手势闸门（`utils/interactionGate.js` 口径①）。
 - **同一能力只许一份实现**（画河几何、河宽换算、导出参考图、保存文案、`.map` 导入…）：
   两份实现不会报错，只会"改一处另两处不变"。
+- **「涂归属」只改势力归属**（2026-10-20）：日常行的 `ownerBrush` = 给碰到的省改 `ownership`
+  （一笔一条 undo），**绝不碰省界多边形**；改省界形状是「底图编辑 → 改省界」（`provinceBrush`）。
+  两个同名按钮曾让用户以为在"生造省份"——不要再合并回去（`test_131` / `test_120` 守）。
 - **不要整读大文件**：`ScenarioMap.vue` / `PlanetMap.vue` 是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
   （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。
 
@@ -100,11 +106,11 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 123 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 39 | `ls scripts/tests/unit/*.js \| wc -l` |
+| 测试用例数 | 131 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| Node 单测文件数 | 43 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
-| IPC handle 数 | 37 | `grep -c "ipcMain.handle" src/main/index.js` |
+| IPC handle 数 | 45 | `grep -c "ipcMain.handle" src/main/index.js` |
 | 项目文件 IPC 通道数 | 10 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
 | 同步 IPC 通道数 | 7 | `grep -c "ipcMain.handle('git-sync-" src/main/handlers/gitSyncHandler.js` |
 | 七层视图组件 | 7 个齐全 | `ls src/renderer/src/components/` |

@@ -278,8 +278,15 @@ def source_gates():
     # 反向探针：换算必须真的**除以相机缩放**（只写个 `pxToWorld` 变量名不算数）
     if 'pxToWorld' in sc and not re.search(r'1\s*/\s*Math\.max\([^)]*cameraScale', sc):
         fails.append('🔴 `pxToWorld` 存在但没有真的除以 `cameraScale` —— 屏幕像素口径是假的')
-    if 'drawRivers' in sc and "c.strokeStyle = BASEMAP_RIVER_COLOR" not in sc:
+    # 🔴 2026-10-20 第十七修：自带河也改走 `drawCurvedRiver`（实心变宽丝带），
+    #    不再自己 `strokeStyle` 描裸折线。判据因此从"必须出现那一行 strokeStyle"
+    #    改成"必须用这个常量"；硬编码色值的反向探针原样保留（下一行）。
+    if 'drawRivers' in sc and 'BASEMAP_RIVER_COLOR' not in sc:
         fails.append('🔴 drawRivers（自带河）没有共用 BASEMAP_RIVER_COLOR —— 两处又各写一份色值')
+    # 🔴 2026-10-20 第十七修：**一条链 = 一个实心多边形**。逐段 beginPath/stroke 的画法
+    #    在放大后是"竹节/铁轨"（用户 N 次报的原话），且 900 链 ≈ 8 万次调用。
+    if 'fillRiverRibbon' not in sc:
+        fails.append('🔴 自动河没有走实心丝带（`fillRiverRibbon`）—— 逐段描边会让河长回「铁轨 / 竹节」')
     if "c.strokeStyle = '#5d97bb'" in sc:
         fails.append("🔴 ScenarioMap 里仍有写死的 '#5d97bb' —— 该走 BASEMAP_RIVER_COLOR 常量")
     if 'const scaleW = r.discharge ?' in sc:

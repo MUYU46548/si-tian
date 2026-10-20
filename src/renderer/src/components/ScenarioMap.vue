@@ -55,9 +55,19 @@
           :title="t.title"
           @click="setTool(t.id)"
         ><Icon :name="t.icon" :size="14"/>{{ t.label }}</button>
+        <!-- 「改省界」= 原先挂在日常行的那个几何笔刷（把笔迹并进所选省份）。
+             2026-10-20：它与「涂归属」同名不同义，用户实测「好像在生造省份」。
+             现在改名并收进底图编辑 —— 日常行只留**真的改归属**那一个。 -->
+        <button
+          :class="{ active: tool === 'provinceBrush' }"
+          data-testid="basemap-tool-provinceBrush"
+          title="改省界 (Shift+Q) — 按住涂抹，把笔迹并进下面「划归到」所选的那个省（**改的是省界形状，不是势力归属**）；相交的邻省会相应让出这块地。一笔 = 一条撤销。想改「这块地归哪个势力」请回日常行点「涂归属」"
+          @click="setTool('provinceBrush')"
+        ><Icon name="pencil" :size="14"/>改省界</button>
       </div>
 
       <div class="toolbar-row primary-row">
+
         <button @click="$emit('exit')" title="返回世界选择" class="back-btn">← 返回</button>
         <button
           :class="{ active: tool === 'select' }"
@@ -65,19 +75,22 @@
           title="选择 (V，默认) — 拖动平移画布，点击选中省份"
         ><Icon name="hand" :size="15"/>选择</button>
         <button
+          v-if="basemapEditMode"
           :class="{ active: tool === 'draw' }"
           @click="setTool('draw')"
-          title="画省份 · 自由绘制 (B) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架"
+          title="画省份 · 自由绘制 (B) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架（属于底图编辑）"
         ><Icon name="pencil" :size="15"/>画省份</button>
         <button
-          :class="{ active: tool === 'provinceBrush' }"
-          @click="setTool('provinceBrush')"
-          title="变更归属 (Q) — 按住涂抹把格子划归所选省份（省界自动重算）"
-        ><Icon name="brush" :size="15"/>改归属</button>
+          :class="{ active: tool === 'ownerBrush' }"
+          data-testid="owner-brush-btn"
+          @click="setTool('ownerBrush')"
+          title="涂归属 (Q) — 先在下面色板选一个势力，再按住在地图上涂：碰到哪些省就把哪些省的归属改成它（只改归属，不动省界）。一笔 = 一条撤销；按住 Alt 点一下 = 吸管（取该省当前的势力）"
+        ><Icon name="brush" :size="15"/>涂归属</button>
         <button
+          v-if="basemapEditMode"
           :class="{ active: tool === 'vertex' }"
           @click="setTool('vertex')"
-          title="顶点编辑 (G) — 拖拽顶点改形状；Shift+拖动可框选一批顶点（拖共边顶点时，相邻省份的共享边界自动跟着一起走，无缝无压叠）；多环省份在右侧属性面板切换活动环"
+          title="顶点编辑 (G) — 拖拽顶点改形状（属于底图编辑）；Shift+拖动可框选一批顶点"
         >⬡改形状</button>
         <button
           class="more-toggle"
@@ -93,11 +106,9 @@
            默认那 6 个可见控件里没有它（见 P3 / test_65）。 -->
       <div class="toolbar-row province-row" v-if="provinceRowVisible">
         <label class="row-label">省份：</label>
-        <button
-          :class="{ active: tool === 'provinceBrush' }"
-          @click="setTool('provinceBrush')"
-          title="省份笔刷 (Q) — 按住涂抹划归所选省份；省界由格归属自动重算（一次拖动 = 一条撤销）"
-        ><Icon name="brush" :size="15"/>涂归属</button>
+        <!-- 2026-10-20：这里原先还有第二个「涂归属」，点了却是**改省界几何**（把地并进某个省）。
+             两个同名按钮两种语义 = 用户实测「好像在生造省份」的直接来源。
+             现在这个几何笔刷只出现在「底图编辑」行、并改名「改省界」。 -->
         <button
           :class="{ active: tool === 'provinceLasso' }"
           @click="setTool('provinceLasso')"
@@ -138,26 +149,39 @@
           <input type="checkbox" v-model="outlineToNeighbor" /> 改判给邻省
         </label>
       </div>
+      <!-- ═══ 涂归属（2026-10-20 重做）：**只改势力归属，不动省界几何** ═══
+           旧的同名按钮是几何笔刷（把笔迹并进所选省份），用户实测「好像在生造省份」。
+           这一块是日常剧本编辑的主路径：选势力 → 按住涂 → 碰到的省一次改归属。 -->
+      <div class="tool-group brush-settings" v-if="tool === 'ownerBrush'" data-testid="owner-brush-settings">
+        <span class="row-label">涂归属：</span>
+        <span class="row-hint" data-testid="owner-brush-polity" :class="{ ready: !!selectedPolity }">
+          当前势力：
+          <b v-if="selectedPolity" :style="{ color: selectedPolity.color || undefined }">{{ selectedPolity.name }}</b>
+          <b v-else>未选 —— 先在下面色板点一个势力</b>
+        </span>
+        <label class="check-label" title="笔刷半径（屏幕像素）—— 画布缩放时手感一致；世界半径 = 像素 / 当前缩放">
+          半径
+          <input type="range" v-model.number="provBrushRadius" min="4" max="120" step="1" class="brush-slider" data-testid="owner-brush-radius" />
+          {{ provBrushRadius }}px
+        </label>
+        <span class="row-hint">按住涂（碰到哪些省就改哪些省）· 整笔 = 1 条撤销 · Alt+点 = 吸管</span>
+      </div>
       <div class="tool-group brush-settings" v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)">
         <label>划归到：</label>
         <select v-model.number="provBrushTarget" class="brush-biome-select" title="要划归的目标省份">
-          <option v-for="(p, i) in provinceTargets" :key="p.id" :value="i + 1">{{ p.name || ('省份 ' + (i + 1)) }}</option>
+          <option v-for="o in provinceTargetOptions" :key="o.p.id" :value="o.idx">{{ o.p.name || ('省份 ' + o.idx) }}</option>
         </select>
         <template v-if="tool === 'provinceBrush'">
           <label class="check-label">
             工具
-            <select v-model="provBrushTool" class="brush-biome-select" title="涂归属 / 抹除 / 平滑">
+            <select v-model="provBrushTool" class="brush-biome-select" title="改省界 / 抹除 / 平滑（改的是省界形状，不是势力归属）">
               <option v-for="t in provinceBrush.PROVINCE_TOOLS.filter(t => t.key !== 'lasso')" :key="t.key" :value="t.key">{{ t.label }}</option>
             </select>
           </label>
-          <label class="check-label" title="笔刷半径（世界单位）—— 可以调到很小，贴着海岸线画">
+          <label class="check-label" title="笔刷半径（屏幕像素）—— 画布缩放时手感一致；世界半径 = 像素 / 当前缩放">
             半径
-            <input type="range" v-model.number="provBrushRadius" min="1" max="400" step="1" class="brush-slider" />
-            {{ provBrushRadius }}
-          </label>
-          <label class="check-label" title="笔刷强度（「平滑」工具的有效强度）">
-            强度
-            <input type="range" v-model.number="provBrushStrength" min="0.3" max="1" step="0.1" class="brush-slider" />
+            <input type="range" v-model.number="provBrushRadius" min="1" max="200" step="1" class="brush-slider" />
+            {{ provBrushRadius }}px
           </label>
         </template>
         <!-- 🔴 锁定海岸线（默认开）：涂归属 / 圈选只在**已有省份范围内**易手，绝不扩张到海面 ——
@@ -166,7 +190,7 @@
                title="开启后：涂归属 / 圈选只在已有省份范围内生效，「不会改动海岸线」；要改海岸线请到「底图编辑」里做">
           <input type="checkbox" v-model="lockCoast" /> 锁定海岸线
         </label>
-        <button @click="addEmptyProvince" title="新建一个空省份 —— 用「涂归属」笔刷涂出它的地盘即可"><Icon name="plus" :size="13"/> 新建省份</button>
+        <button @click="addEmptyProvince" title="新建一个空省份 —— 用「底图编辑 → 改省界」笔刷涂出它的地盘即可"><Icon name="plus" :size="13"/> 新建省份</button>
         <button @click="clearAllProvinceShapes" title="清空所有省份的边界（一次撤销可回退）"><Icon name="refresh-cw" :size="13"/> 重置省界</button>
         <!-- 🔴 P2：边界是**矢量布尔**的结果（目标省并集 / 相交省差集），不经过任何格点 —— -->
         <!-- 旧版那层「格点即时反馈」已删除：格子是 10525 点海岸线被退化成 22 点的根因 -->
@@ -859,6 +883,19 @@
     <!-- 画布 -->
     <div class="scenario-canvas-wrap" ref="canvasWrap">
       <canvas ref="canvas"></canvas>
+      <!-- 浮动引导：absolute 不占布局，避免把本来就紧张的画布再压矮 -->
+      <div v-if="selectedScenario" class="scenario-onboarding" data-testid="scenario-onboarding">
+        <template v-if="!selectedPolity">
+          <span class="so-step">① 右侧选一个势力</span>
+          <button class="so-add" data-testid="onboarding-add-polity" @click="onAddPolity">＋ 新建势力</button>
+          <span class="so-step">② 点「涂归属」</span>
+          <span class="so-step">③ 在地图上涂</span>
+        </template>
+        <template v-else>
+          <span class="so-step">当前势力：<b>{{ selectedPolity.name }}</b></span>
+          <span class="so-step">点「涂归属」后在地图上按住涂；一笔 = 一条撤销</span>
+        </template>
+      </div>
       <!-- C（2026-10-11）：批量铺底进行中的**遮罩**。
            为什么必须有它（不是装饰）：切 500 块 = 逐块多边形布尔，实测 ~19s 全在主线程上；
            这段时间里用户在画布上点/拖，事件只是排队 → 回来一起执行，观感是「越点越卡」，
@@ -1004,8 +1041,11 @@
       <span v-if="snapFeedback" class="snap-feedback" :class="{ edge: snapFeedback === '吸附到边界' }">{{ snapFeedback }}</span>
       <span v-if="tool === 'vertex' && activeVertexIdx >= 0" class="draw-hint">切线手柄：拖拽圆点调曲率（Alt 临时直线）</span>
       <span v-if="provinceHint" class="draw-hint">{{ provinceHint }}</span>
+      <span v-if="tool === 'ownerBrush'" class="draw-hint" data-testid="owner-brush-hint">
+        涂归属：按住涂 → 碰到的省一次改成「{{ selectedPolity ? selectedPolity.name : '（未选势力）' }}」（只改归属，不动省界；整笔 = 1 条撤销）
+      </span>
       <span v-if="tool === 'provinceBrush' || tool === 'provinceLasso'" class="draw-hint">
-        {{ tool === 'provinceBrush' ? '省份笔刷：按住涂抹 → 整笔划归所选省份（省界自动重算）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
+        {{ tool === 'provinceBrush' ? '改省界：按住涂抹 → 整笔并进所选省份（改的是省界形状）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
       </span>
       <span v-if="tool === 'outline'" class="draw-hint" data-testid="outline-hint">
         描轮廓：按住**贴着要改的那条边界**拖一圈再松手 —— 围住的那块地改判给它原本主要所属的省，邻省自动重算；松手前的虚线是收口边
@@ -1375,8 +1415,12 @@ import {
   dateToYearValue, formatDate,
 } from '../utils/scenarioTimeline';
 import { useScenarioExport } from '../composables/useScenarioExport';
+import { usePromptDialog } from '../composables/usePromptDialog';
 import { useProvinceBrush } from '../composables/useProvinceBrush';
 import { simplifyClosedTrace } from '../utils/regionTrace';
+// T7（H1b）：perfect-freehand 的中心线稳定器 —— 自由绘制/描轮廓先平滑再简化，减少手抖折线
+import { smoothStrokePoints } from '../utils/strokeEngine';
+import { widthsBySpeed, resampleSeries } from '../utils/strokeMath';
 // A8（2026-09-26）：历史剧本「势力标注」—— 分级判定 / 领土聚合 / 标签文本全是纯函数，
 // 放在 utils 里以便 Node 侧直接测（渲染里只剩「取数据 + 调 drawStyledLabel」）。
 import {
@@ -1457,7 +1501,7 @@ import {
   //    「会弯 + 从头到尾变粗」的唯一实现（手画河 / 预览都走它，不再逐点画圆）。
   BASEMAP_RIVER_COLOR, RIVER_DRAW_COLOR, RIVER_BANK_COLOR, basemapRiverWidthPx, basemapRiverWidthWorld,
   flowToDischargeEquivalent,
-  drawCurvedRiver, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
+  drawCurvedRiver, fillRiverRibbon, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
   // 🔴 2026-10-18 第十六修：选中轮廓的**偏移几何**与空隙常量下沉到纯函数层 ——
   //    组件里"用加宽的中心线当轮廓"是"选中即盖住水面"的根源；下沉后单测能直接判偏移量。
   offsetPolyline, RIVER_SEL_GAP_PX as RIVER_SEL_GAP_PX_UTIL,
@@ -1509,7 +1553,7 @@ const lockCoast = ref(true);
  * 因为围住的地本来就在**原主**手里，不换主的话这一笔必然看不出变化
  * （首版就是按"区域里占比最高的省"选的，结果 targetIdx 恒等于原主、只有 union 没有 difference）。
  */
-const outlineToNeighbor = ref(true);
+const outlineToNeighbor = ref(false);
 
 // ── 折线切割（A，2026-10-11）────────────────────────────────────────────────
 // 现状只有「拆分 (X)」= 两点**直线**切一刀。要沿着海岸 / 山脊 / 历史边界切，
@@ -1639,7 +1683,7 @@ const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'rive
   'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
 const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
 // 「变更归属」的省份选项：选到这类工具（或用户自己打开「更多」）就显示
-const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex', 'polySplit', 'voronoi', 'outline']);
+const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex', 'polySplit', 'voronoi', 'outline', 'ownerBrush']);
 const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value));
 const viewMode = ref('base');
 /**
@@ -2519,6 +2563,10 @@ function setTool(t) {
   //     这里只保证有一个默认目标省，避免用户涂了半天才发现"没选省"。
   if (PROVINCE_GRID_TOOLS.has(t) && !provBrushTarget.value) provBrushTarget.value = 1;
   provStrokeActive = false;
+  // 涂归属：换工具 = 这一笔作废（不落库）—— 与几何笔刷同一条纪律
+  ownerStrokeActive = false;
+  ownerStrokeIds = new Set();
+  ownerLastSample = null;
   provLassoActive = false;
   provLassoPoints.value = [];
   provBrushPreview.value = null;
@@ -2578,6 +2626,7 @@ function updateCursor() {
   else if (tool.value === 'river') canvas.value.style.cursor = 'crosshair';
   else if (tool.value === 'riverErase') canvas.value.style.cursor = 'crosshair';
   else if (tool.value === 'height' || tool.value === 'biome') canvas.value.style.cursor = 'none';
+  else if (tool.value === 'ownerBrush') canvas.value.style.cursor = 'crosshair';
   else if (PROVINCE_GRID_TOOLS.has(tool.value)) canvas.value.style.cursor = 'crosshair';
   else canvas.value.style.cursor = 'default';
 }
@@ -2603,6 +2652,101 @@ function selectScenario(s) {
 
 function selectPolity(p) {
   selectedPolity.value = p || null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 涂归属（2026-10-20 重做）—— **只改势力归属，不动省界几何**
+//
+// 为什么重做：此前叫「涂归属」的按钮实际是**几何笔刷**（把笔迹并进所选省份，
+// 相交的邻省被挖掉）→ 用户实测「我不知道涂归属到底在干嘛，好像在生造省份」。
+// 而真正做对事的是「势力」油漆桶（点一次改一个省），但一次只能一个省，慢。
+//
+// 现在的语义：选一个势力 → 按住涂 → 笔刷**碰到哪些省**就把哪些省的归属改成它，
+// 抬手一次性落库（`batchSetOwnership` = 一条 undo）。不碰任何多边形：
+//   · 省界一个点都不变（用例判据：涂完 points 逐字节相同）；
+//   · 不触发多边形布尔（旧路径「松开卡几秒」的根因），也不重建省界缓存。
+//
+// 采样：每 `OWNER_BRUSH_SAMPLE_PX` 屏幕像素取一个点，每个采样点测
+// 圆心 + 上下左右 4 个偏移（≈ 半径 0.65）。拖动期只做**只读**命中，
+// 不写 store、不碰多边形 —— 抬手才一次性落库。
+// ══════════════════════════════════════════════════════════════════════════
+const OWNER_BRUSH_SAMPLE_PX = 3;
+let ownerStrokeActive = false;
+let ownerStrokeIds = new Set();
+let ownerLastSample = null;
+
+/** 笔刷半径（世界单位）—— 与几何笔刷同一口径：屏幕像素 / 缩放 */
+function ownerBrushWorldRadius() {
+  return provBrushRadius.value / Math.max(1e-6, cameraScale.value || 1);
+}
+
+/** 世界点 → 命中的陆地省 id 列表（海域不算：海不参与势力归属） */
+function ownerHitProvinceIds(wx, wy) {
+  const r = ownerBrushWorldRadius();
+  const offsets = [[0, 0], [0.65, 0], [-0.65, 0], [0, 0.65], [0, -0.65]];
+  const out = [];
+  const seen = new Set();
+  for (const [dx, dy] of offsets) {
+    const p = findProvinceAt(wx + dx * r, wy + dy * r);
+    if (!p || p.kind === 'sea') continue;
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    out.push(p.id);
+  }
+  return out;
+}
+
+/** 一次采样：把这笔新碰到的省并进 `ownerStrokeIds`（返回新增个数） */
+function ownerStrokeSample(wx, wy) {
+  let added = 0;
+  for (const id of ownerHitProvinceIds(wx, wy)) {
+    if (ownerStrokeIds.has(id)) continue;
+    ownerStrokeIds.add(id);
+    added++;
+  }
+  return added;
+}
+
+/**
+ * 吸管：取该省当前的势力并选中它（Alt+点击）。
+ * 找不到时返回 null —— 调用方负责说清「这个省本来没有归属」。
+ */
+function pickPolityAt(wx, wy) {
+  const prov = findProvinceAt(wx, wy);
+  if (!prov) return { prov: null, polity: null };
+  const owner = selectedScenario.value?.ownership?.[prov.id];
+  const polity = owner
+    ? (selectedScenario.value?.polities || []).find((p) => p.id === owner) || null
+    : null;
+  return { prov, polity };
+}
+
+/** 抬手：整笔一次落库（一条 undo）+ 一句点名回执 */
+function commitOwnerStroke() {
+  const ids = [...ownerStrokeIds];
+  ownerStrokeActive = false;
+  ownerStrokeIds = new Set();
+  ownerLastSample = null;
+  const sc = selectedScenario.value;
+  const pol = selectedPolity.value;
+  if (!ids.length) {
+    statusMsg('涂归属：这一笔没有碰到陆地省份 —— 试试把半径调大，或确认点在陆地上');
+    return null;
+  }
+  if (!sc) { statusMsg('涂归属：还没有选中剧本'); return null; }
+  if (!pol) { statusMsg('涂归属：没有选中的势力（先在下面色板点一个）'); return null; }
+  const res = store.batchSetOwnership(sc.id, ids, pol.id, tlDate.value);
+  if (!res || res.success === false) {
+    statusMsg(`涂归属失败：${(res && res.reason) || '未知原因'}`);
+    return res;
+  }
+  if (res.noop) {
+    statusMsg(`涂归属：这 ${ids.length} 个省本来就属于「${pol.name}」（${tlDateText.value}）`);
+  } else {
+    statusMsg(`涂归属：${res.affected} 个省份 → 「${pol.name}」（${tlDateText.value}）`
+      + `${res.skippedSea ? ` · 跳过 ${res.skippedSea} 片海` : ''} · 整笔 = 1 条撤销`);
+  }
+  return res;
 }
 
 // ── A8：势力显示信息（名称 / 简称）的编辑入口 ──────────────────────────────
@@ -2635,12 +2779,13 @@ function onPolityNameChange(e) {
  * 自建底图 + 自建剧本时 polities 为空，色板空空、油漆桶点了静默无反应。
  * 名称用 prompt（与 label/marker 的录入方式一致，不新造一套内联编辑）。
  */
-function onAddPolity() {
+async function onAddPolity() {
   const sc = selectedScenario.value;
   if (!sc) { statusMsg('先选一个剧本，再新建势力'); return; }
   if (store.isReadOnly) { statusMsg(`新建势力已停用：${store.readOnlyReason || '只读'}`); return; }
-  const name = prompt('新势力名称：', `势力 ${(sc.polities || []).length + 1}`);
+  const name = await askText({ title: '新势力名称', defaultValue: `势力 ${(sc.polities || []).length + 1}` });
   if (name === null) return;                     // 取消
+  if (!String(name).trim()) { statusMsg('势力名不能为空'); return; }
   const r = store.addPolity(sc.id, { name });
   if (!r || !r.success) { statusMsg('新建势力失败'); return; }
   // 选中新势力：接着就能直接油漆桶上色（不是"建完了还得自己找"）
@@ -2722,8 +2867,10 @@ const provinceNameMap = computed(() => {
   return m;
 });
 
-const scenarioExport = useScenarioExport({
-  store,
+// Electron 渲染进程不支持 window.prompt（"prompt() is and will not be supported"）。
+// 所有文本录入统一走 App 根部的 PromptDialog（单例状态 + Promise）。
+const { askText } = usePromptDialog();
+const scenarioExport = useScenarioExport({  store,
   baseMap,
   timeline,
   currentEra: tlEra,
@@ -2881,14 +3028,14 @@ function onSetChangeDatesBulk({ scenarioId, patch, what = '批量设置易主日
 }
 
 /** 把当前游标存为切片点（带默认名 = 日期文本），走 store 的一条 undo */
-function onSaveSlicePoint() {
+async function onSaveSlicePoint() {
   if (store.isReadOnly) {
     statusMsg(`只读：${store.readOnlyReason || '未打开项目'} —— 切片点未保存`);
     return;
   }
   if (!timeline.value.years.length) { statusMsg('还没有剧本，无法存切片点'); return; }
   const d = tlDate.value;
-  const label = prompt('切片点名称（留空则显示日期）', formatDate(d));
+  const label = await askText({ title: '切片点名称（留空则显示日期）', defaultValue: formatDate(d) });
   if (label === null) return;                       // 取消
   const r = store.addSlicePoint({ y: d.y, m: d.m, d: d.d }, label || '');
   if (!r || r.success === false) { statusMsg(`切片点未保存：${r?.reason || '未知原因'}`); return; }
@@ -3251,6 +3398,11 @@ let panStart = { x: 0, y: 0 };
 //   数据 = store.provinceEditing（按 baseMaps[key] 走 undo）；本处只做交互与渲染。
 // ═══════════════════════════════════════════
 const provinceTargets = computed(() => baseMap.value?.terrain || []);
+// D11：被挖空的省标 `empty:true` 后仍留在数组里（保持 id/索引稳定），但**不能**作为划归目标；
+// 选项带原始 1-based 下标，避免过滤后 targetIdx 与 terrain 下标错位。
+const provinceTargetOptions = computed(() => provinceTargets.value
+  .map((p, i) => ({ p, idx: i + 1 }))
+  .filter((o) => !o.p.empty));
 
 /** 当前视口的世界矩形（用于网格裁剪；屏幕坐标 = 相机变换，见 screenToWorld） */
 function viewWorldRect() {
@@ -3267,9 +3419,12 @@ function viewWorldRect() {
 //    （见 provinceEditing.js 文件头 / docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
 //    现在：涂抹期间画布只画笔迹预览（`drawProvinceBrushOverlay`），抬手时多边形被精确布尔替换。
 
+// H2：笔刷半径按**屏幕像素**存，换算成世界单位再交给几何（缩放时手感一致）
+const provBrushWorldRadius = computed(() => provBrushRadius.value / Math.max(1e-6, cameraScale.value || 1));
+
 function provinceBrushOpts() {
   return {
-    radius: provBrushRadius.value,
+    radius: provBrushWorldRadius.value,
     strength: provBrushStrength.value,
     tool: provBrushTool.value,
     target: provBrushTarget.value,
@@ -3279,12 +3434,45 @@ function provinceBrushOpts() {
 /** 笔刷预览圈（**世界半径** —— 不再乘格宽）+ 套索轨迹（世界坐标，ctx 已带相机变换） */
 function drawProvinceBrushOverlay(c) {
   const p = provBrushPreview.value;
+  if (p && tool.value === 'ownerBrush') {
+    // 涂归属：笔刷圈 + **这笔已经碰到的省**（半透明势力色）—— 抬手前就能看出会改哪些
+    const polColor = (selectedPolity.value && selectedPolity.value.color) || '#fbbf24';
+    if (ownerStrokeIds.size) {
+      const terr = baseMap.value?.terrain || [];
+      c.save();
+      c.globalAlpha = 0.45;
+      c.fillStyle = polColor;
+      for (const prov of terr) {
+        if (!prov || !ownerStrokeIds.has(prov.id)) continue;
+        const rings = provinceRings(prov);
+        if (!rings.length) continue;
+        c.beginPath();
+        for (const ring of rings) {
+          const pts = ring && ring.points;
+          if (!pts || pts.length < 2) continue;
+          c.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+          c.closePath();
+        }
+        c.fill('evenodd');
+      }
+      c.restore();
+    }
+    c.save();
+    c.strokeStyle = polColor;
+    c.lineWidth = px(1.4);
+    c.setLineDash([px(3), px(3)]);
+    c.beginPath();
+    c.arc(p.x, p.y, ownerBrushWorldRadius(), 0, Math.PI * 2);
+    c.stroke();
+    c.restore();
+  }
   if (p && tool.value === 'provinceBrush' && provBrushRadius.value > 0) {
     c.save();
     c.strokeStyle = 'rgba(255,255,255,0.7)';
     c.lineWidth = px(1.2);
     c.beginPath();
-    c.arc(p.x, p.y, provBrushRadius.value, 0, Math.PI * 2);
+    c.arc(p.x, p.y, provBrushWorldRadius.value, 0, Math.PI * 2);
     c.stroke();
     c.restore();
   }
@@ -3306,8 +3494,11 @@ function drawProvinceBrushOverlay(c) {
   }
 }
 
+/** 最近一次操作回执的时间（毫秒）—— 布局类提示不许覆盖它（见 handleResize） */
+let lastStatusAt = 0;
 function statusMsg(text) {
   provinceHint.value = text;   // 省份网格操作提示（状态栏，与其它工具的 draw-hint 并列）
+  lastStatusAt = Date.now();
 }
 
 // ── 底图懒建（Phase 3 收尾）─────────────────────────────────────────────
@@ -3397,6 +3588,34 @@ function onMouseDown(event) {
 
   // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会「点了没反应」）
   if (CREATES_CONTENT_TOOLS.has(tool.value) && !ensureBaseMap()) return;
+
+  // 涂归属（2026-10-20 重做）：只改**势力归属** —— 起笔只记省 id，抬手一次落库。
+  // 与下面 `PROVINCE_GRID_TOOLS` 那条几何笔刷路径**完全分开**：不调多边形布尔。
+  if (tool.value === 'ownerBrush' && event.button === 0) {
+    if (store.isReadOnly) { statusMsg(`涂归属已停用：${store.readOnlyReason}`); return; }
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    if (event.altKey) {
+      // 吸管：把该省当前的势力选成当前笔刷（"照着已有的涂"最常用）
+      const { prov, polity } = pickPolityAt(world.x, world.y);
+      if (!prov) statusMsg('吸管：这里没有省份');
+      else if (!polity) statusMsg(`吸管：「${prov.name || '这个省'}」目前没有势力归属`);
+      else { selectPolity(polity); statusMsg(`吸管：当前势力 = 「${polity.name}」`); }
+      render();
+      return;
+    }
+    if (!selectedPolity.value) {
+      statusMsg('涂归属：先在下面色板选一个势力（没选势力时这一笔不会改任何东西）');
+      return;
+    }
+    ownerStrokeActive = true;
+    ownerStrokeIds = new Set();
+    ownerLastSample = { x: world.x, y: world.y };
+    ownerStrokeSample(world.x, world.y);
+    provBrushPreview.value = { x: world.x, y: world.y };
+    render();
+    return;
+  }
 
   // P2：省份编辑 —— 笔刷落笔 / 套索起笔 / 点击填充（**矢量布尔**，不经网格）
   if (PROVINCE_GRID_TOOLS.has(tool.value) && event.button === 0) {
@@ -3772,6 +3991,22 @@ function onMouseMove(event) {
     return;
   }
 
+  // 涂归属（2026-10-20）：拖动期只做只读命中（不写 store）→ 抬手一次落库。
+  if (tool.value === 'ownerBrush') {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    provBrushPreview.value = { x: world.x, y: world.y };
+    if (ownerStrokeActive) {
+      const last = ownerLastSample;
+      if (!last || Math.hypot(world.x - last.x, world.y - last.y) >= px(OWNER_BRUSH_SAMPLE_PX)) {
+        ownerLastSample = { x: world.x, y: world.y };
+        ownerStrokeSample(world.x, world.y);
+      }
+    }
+    renderCoalesced();
+    return;
+  }
+
   // Phase 3：省份笔刷涂抹 / 套索描轨迹
   if (PROVINCE_GRID_TOOLS.has(tool.value)) {
     const rect = canvas.value.getBoundingClientRect();
@@ -4057,6 +4292,10 @@ function onMouseUp(event) {
     }
     render();
   }
+  if (ownerStrokeActive) {
+    commitOwnerStroke();
+    render();
+  }
   if (provStrokeActive) {
     provStrokeActive = false;
     const label = provBrushTool.value === 'erase' ? '省份笔刷抹除'
@@ -4258,8 +4497,7 @@ function openProvinceContextMenu(event) {
   return true;
 }
 
-function onCanvasClick(event) {
-  if (event.button === 2) {
+async function onCanvasClick(event) {  if (event.button === 2) {
     // 批量铺底：右键 = 去掉最近的种子点（这个工具下不需要省份右键菜单）
     if (tool.value === 'voronoi') {
       const rect = canvas.value.getBoundingClientRect();
@@ -4275,6 +4513,9 @@ function onCanvasClick(event) {
   const sx = event.clientX - rect.left;
   const sy = event.clientY - rect.top;
   const world = screenToWorld(sx, sy);
+
+  // 涂归属：写入已在 mouseup 完成 —— 紧随的 click 不再落到别的工具分支
+  if (tool.value === 'ownerBrush') return;
 
   if (tool.value === 'erase') {
     const prov = findProvinceAt(world.x, world.y);
@@ -4482,7 +4723,7 @@ function onCanvasClick(event) {
         : '没点到省份；另外：「✕ 清除归属」模式下油漆桶点省份 = 清空该省归属，想指派请先点一个势力色块');
     }
   } else if (tool.value === 'label') {
-    const text = prompt('输入地名：');
+    const text = await askText({ title: '输入地名' });
     if (text) {
       const preset = LABEL_PRESETS.find(p => p.id === selectedLabelPreset.value) || LABEL_PRESETS[0];
       store.addScenarioLabel(selectedScenario.value.id, {
@@ -4500,7 +4741,7 @@ function onCanvasClick(event) {
   } else if (tool.value === 'marker') {
     // 点击放置标记（P1-T5 标记类型系统）
     if (viewMode.value === 'scenario' && selectedScenario.value) {
-      const name = prompt('标记名称：');
+      const name = await askText({ title: '标记名称' });
       if (name) {
         const typeDef = MARKER_TYPES.find(t => t.id === selectedMarkerType.value) || MARKER_TYPES[0];
         store.addScenarioMarker(selectedScenario.value.id, {
@@ -4703,7 +4944,7 @@ function onKeyDown(event) {
   else if (event.key === 'x' || event.key === 'X') setTool('split');
   else if (event.key === 'm' || event.key === 'M') setTool('merge');
   else if (event.key === 'p' || event.key === 'P') setTool('paint');
-  else if (event.key === 'q' || event.key === 'Q') setTool('provinceBrush');
+  else if (event.key === 'q' || event.key === 'Q') setTool(event.shiftKey ? 'provinceBrush' : 'ownerBrush');
   else if (event.key === 'l' || event.key === 'L') setTool('provinceLasso');
   else if (event.key === 'o' || event.key === 'O') setTool('provinceFill');
   else if (event.key === 'd' || event.key === 'D') setTool('polySplit');
@@ -4739,8 +4980,9 @@ function finishDraw() {
   const rawPts = drawPoints.value.map(p => ({ x: p.x, y: p.y }));
   const skeleton = buildSkeleton(baseMap.value?.terrain || []);
   const conformed = skeleton.length ? conformToSkeleton(rawPts, skeleton, SNAP_EDGE_THRESHOLD) : rawPts;
-  // ② P0-T1 验收：新绘制省份自动生成平滑贝塞尔曲线（控制点 = 相邻顶点连线的 1/3）
-  const points = withBezierControls(conformed);
+  // ② T8：不再自动写贝塞尔控制点 —— 数据多边形 = 渲染边界 = 布尔/命中几何。
+  //    想要平滑轮廓时，用户点顶点（withBezierControls，/6 夹紧）显式加手柄。
+  const points = conformed;
   const count = baseMap.value?.terrain?.length || 0;
   const name = `新省份 ${count + 1}`;
   const prov = { id, name, kind: 'land', color: nextProvinceColor(count), points };
@@ -4793,7 +5035,14 @@ function skeletonForTerrain(terrain) {
  * @returns {{ring: Array, simplified: number, snapped: number}|null} null = 轨迹太短，不成形
  */
 function freeTraceRing(rawPts, { snap = false } = {}) {
-  const simplified = simplifyClosedTrace(rawPts);
+  // T7：先过 perfect-freehand 的中心线稳定器（streamline），再 RDP 简化。
+  // 预览与落库共用这一条链；稳定器对 100 点量级实测 p95 0.2ms（H1b spike）。
+  let src = rawPts;
+  try {
+    const stabilized = smoothStrokePoints(rawPts, { size: 1, thinning: 0, streamline: 0.4, smoothing: 0.5 });
+    if (stabilized.length >= 3) src = stabilized.map((p) => ({ x: p.x, y: p.y }));
+  } catch (e) { /* 引擎异常 → 退回原始手迹，绝不吞掉这一笔 */ }
+  const simplified = simplifyClosedTrace(src);
   if (!simplified || simplified.length < 3) return null;
   const pts = simplified.map((q) => ({ x: q.x, y: q.y }));
   if (!snap) return { ring: pts, simplified: pts.length, snapped: pts.length };
@@ -4854,10 +5103,22 @@ function commitOutlineTrace(pts) {
     return false;
   }
   const path = shape.ring;
-  const res = store.applyProvinceOutline(baseMapKey.value, path, {
+  let res = store.applyProvinceOutline(baseMapKey.value, path, {
     lockCoast: lockCoast.value,
     toNeighbor: outlineToNeighbor.value,
   });
+  // D10：影响面超过上限 → 先问人（不静默执行）。S0 实测一笔 12 省、清空 3 个。
+  if (res && res.rejected === 'province-gate') {
+    if (!window.confirm(`${res.message}\n\n仍要执行吗？`)) {
+      statusMsg(`描轮廓已取消：这一笔会影响 ${res.affected} 个省`);
+      return true;
+    }
+    res = store.applyProvinceOutline(baseMapKey.value, path, {
+      lockCoast: lockCoast.value,
+      toNeighbor: outlineToNeighbor.value,
+      allowMany: true,
+    });
+  }
   provinceBrush.invalidateBorders();
   // 拒绝分支排在 changed 之前 —— 与套索/点击填充同一条协议（{rejected, message}）
   if (res && res.rejected) {
@@ -4872,7 +5133,7 @@ function commitOutlineTrace(pts) {
     //    搬动量用 `transferArea`（= 邻省失去的量，逐字节一致）而不是"笔迹围住的面积" ——
     //    区域跨边界时两者不同，报后者会让用户以为搬过去了一整块。
     statusMsg(`描轮廓：${res.detail || '已改边界'}`
-      + `（笔迹 ${pts.length} 点 → 简化 ${path.length} 点；围住 ${Math.round(res.area || 0)}、`
+      + `（笔迹 ${pts.length} 点 → 简化 ${path.length} 点；影响 ${res.affected || 0} 省；围住 ${Math.round(res.area || 0)}、`
       + `实际搬动 ${Math.round(res.transferArea || 0)}${
         res.switched && owner && target ? `：「${owner.name}」→「${target.name}」` : '（未换主）'}`
       + (res.neighborIdx ? `，贴着「${(list[res.neighborIdx - 1] || {}).name || ('省份 ' + res.neighborIdx)}」描` : '')
@@ -4903,7 +5164,9 @@ function commitFreeTrace(pts, shiftKey) {
     name,
     kind: 'land',
     color: nextProvinceColor(count),
-    points: withBezierControls(shape.ring),
+    // T8：自由绘制**不再把贝塞尔控制点写进数据** —— 数据多边形 = 渲染边界 = 布尔/命中用的几何。
+    // 想要平滑轮廓时，用户点顶点（withBezierControls，/6 夹紧）显式加手柄。
+    points: shape.ring,
   };
   if (!addProvinceWithOverlapGate(prov)) return true;
   provinceBrush.invalidateBorders();
@@ -5343,6 +5606,12 @@ function finishRiverDraft(fromBrush = false) {
   //    —— 与省份自由绘制（`freeTraceRing`）同一条纪律：预览要是"你将得到的那条河"。
   const chain = riverNodesFromDraft(draft);
   const pts = chain.pts;
+  // T7（H1b→H2）：速度→宽度因子。没有时间戳，用采样间距当速度代理；
+  // 参考间距取**屏幕 6px 换算成世界单位**，这样不同缩放档下“快/慢”的判据一致。
+  // 存的是**相对因子**（0.65~1.55），用户调 `river.width` 时整条河仍会等比变宽。
+  const widthFactors = pts.length
+    ? resampleSeries(widthsBySpeed(draft, { base: 1, min: 0.65, max: 1.55, referenceGap: px(6) }), pts.length)
+    : null;
   // D（2026-10-11）：**必须走 store**。旧实现只 push 进组件本地 `riverPaths` ——
   // 那条路既不进撤销栈、也不落盘（重开应用河就没了，且一声不响）。
   // 线宽按点数分级（与行星侧河流同一口径：越长的河越宽）。
@@ -5380,7 +5649,7 @@ function finishRiverDraft(fromBrush = false) {
   }
   const r = store.applyBaseMapRiverEdit(baseMapKey.value, {
     patches: parentPatch ? [parentPatch] : [],
-    adds: [{ points: pts, width }],
+    adds: [{ points: pts, width, ...(widthFactors && widthFactors.length ? { widthFactors } : {}) }],
   });
   const newRiverId = (r && r.ok && r.added && r.added.length) ? r.added[0] : '';
   if (r && r.ok && newRiverId) {
@@ -5445,6 +5714,13 @@ function riverWidthsFor(river, count) {
   const mouthWorld = Math.max(RIVER_WIDTH_MIN, Math.min(RIVER_WIDTH_MAX, dataW * RIVER_WIDTH_DATA_SCALE));
   const headWorld = Math.max(0.3, mouthWorld * 0.22);
   const tapered = taperWidths(count, headWorld, mouthWorld);
+  // T7：手画河可带“速度→宽度因子”（相对值）；导入河/自动河没有这个字段 → 行为不变。
+  if (Array.isArray(river && river.widthFactors) && river.widthFactors.length === count) {
+    for (let i = 0; i < count; i++) {
+      const f = Number(river.widthFactors[i]);
+      if (Number.isFinite(f) && f > 0) tapered[i] *= Math.max(0.3, Math.min(2.5, f));
+    }
+  }
 
   // 「整条等比抬起」而不是逐点夹：逐点夹会把"源头细 → 河口粗"的渐变夹平（那是用户要的）。
   // 判据只看河口（最粗那点）。
@@ -5568,31 +5844,22 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
     const mouthPx = Math.max(opts.minPx, opts.minPx * (1 + 2.2 * t));
     const headPx = Math.max(opts.minPx * 0.75, mouthPx * 0.28);
     const nC = curve.length;
-    c.save();
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    c.strokeStyle = opts.color;
-    c.globalAlpha = 1;
-    // 🔴 **屏幕像素 → 世界单位**换算（2026-10-17 第八修补正，由 `test_103` 的 `widthPx` 闸门点出）：
-    //    画布在这个位置已经 `scale(cameraScale)`，所以 `lineWidth` 的单位是**世界单位**；
-    //    直接把"屏幕像素数"塞进去 → 放大后河会跟着变粗。
-    //    自动河必须与**地图自带河同量纲**（自带河按屏幕像素、不随缩放变粗），
-    //    否则"色对齐了、粗细仍不对"（第五修已经踩过一次，这里不能再犯）。
+    // 逐点宽度（世界单位）：屏幕像素 → 世界单位；链内按 1.6 次幂从源头过渡到河口
     const pxToWorld = 1 / Math.max(1e-6, cameraScale.value || 1);
-    let prevW = headPx * pxToWorld;
-    for (let i = 0; i + 1 < nC; i++) {
-      const u0 = nC > 1 ? i / (nC - 1) : 1;
-      const u1 = nC > 1 ? (i + 1) / (nC - 1) : 1;
-      const w0 = (headPx + (mouthPx - headPx) * Math.pow(u0, 1.6)) * pxToWorld;
-      const w1 = (headPx + (mouthPx - headPx) * Math.pow(u1, 1.6)) * pxToWorld;
-      c.lineWidth = Math.max(prevW * 0.5, (w0 + w1) / 2);
-      prevW = (w0 + w1) / 2;
-      c.beginPath();
-      c.moveTo(curve[i].x, curve[i].y);
-      c.lineTo(curve[i + 1].x, curve[i + 1].y);
-      c.stroke();
+    const widths = [];
+    for (let i = 0; i < nC; i++) {
+      const u = nC > 1 ? i / (nC - 1) : 1;
+      widths.push(Math.max(headPx * pxToWorld * 0.5, (headPx + (mouthPx - headPx) * Math.pow(u, 1.6)) * pxToWorld));
     }
-    c.restore();
+    // 🔴 2026-10-20 第十七修：一条链 = **一次闭合多边形 fill**（旧写法每 1~2px 一段
+    //    `beginPath/stroke`，900 链 × ~90 点 = 8 万次调用，既慢又长成"竹节"）。
+    //    宽度连续、分叉处由"先细后粗、粗压细"的排序保证。
+    fillRiverRibbon(c, curve, widths, {
+      color: opts.color,
+      bankColor: RIVER_BANK_COLOR,
+      bankWidth: Math.min(px(0.8), Math.max(0.15, mouthPx * pxToWorld * 0.3)),
+      alpha: 0.92,
+    });
   }
 }
 
@@ -5679,11 +5946,11 @@ function drawOneHandRiver(c, nodes, river, opts = {}) {
   // ⚠️ 曲线在 `drawCurvedRiver` 里生成（它内部就是 `catmullRomPoints(..., subdiv)`），
   //    这里**不要**先自己加密一遍 —— 那会变成"对已经加密过的点再加密"（点数平方级）
   const res = drawCurvedRiver(c, nodes, widths[0], widths[widths.length - 1], {
-    // 🔴 `toPx` = **恒等**（2026-10-18 第十五修）—— 见 `riverWidthsFor` 的口径：
-    //    手画河的宽度是**世界单位**，而画布在这里已经 `scale(cameraScale)`。
-    //    老写法传 `px(w)`（= `w / cameraScale`）把世界宽度又除了一次缩放 ⇒
-    //    **屏幕宽度恒定 8.4px**：1× 好看，放大到 1600% 就成了一条发丝
-    //    （暮雨截图里的"空心铁轨"，实测 1×/2×/4×/8×/16× 全是 6~8 屏幕像素）。
+    // 🔴 2026-10-20 第十七修：把**逐点宽度**整个交给渲染器（以前只传头尾两个数）——
+    //    `riverWidthsFor` 里已经算好的 `widthFactors`（速度→宽度）此前到不了画布：
+    //    内部 `taperWidths` 会按头→尾重新插值，把中段的因子抹平。
+    //    现在 `drawCurvedRiver` 用 `widths` 数组按曲线长度线性重采样。
+    widths,
     toPx: (w) => w,
     subdiv: RIVER_CURVE_SUBDIV,
     color: opts.color || RIVER_DRAW_COLOR,
@@ -6347,8 +6614,8 @@ function cancelBatchSubdivide() {
 // ═══════════════════════════════════════════
 // 右键菜单
 // ═══════════════════════════════════════════
-function ctxRenameProvince() {
-  const name = prompt('省份名称：', selectedProvince.value?.name);
+async function ctxRenameProvince() {
+  const name = await askText({ title: '省份名称', defaultValue: selectedProvince.value?.name || '' });
   if (name && selectedProvince.value) {
     // 不要再写 `selectedProvince.value.name = name`（直改 store 活对象 → 绕守卫 + 撤销空转）
     const v = String(name).trim();
@@ -6358,9 +6625,9 @@ function ctxRenameProvince() {
   contextMenu.value.show = false;
 }
 
-function ctxChangeBiome() {
+async function ctxChangeBiome() {
   const biomes = Object.keys(BIOME_COLORS);
-  const biome = prompt(`生物群系（${biomes.join('/')}）：`, selectedProvince.value?.biome || '');
+  const biome = await askText({ title: `生物群系（${biomes.join('/')}）`, defaultValue: selectedProvince.value?.biome || '' });
   if (biome && selectedProvince.value) {
     provinceWrite({ biome });
   }
@@ -7068,8 +7335,17 @@ function withBezierControls(points) {
     if (p.controlIn && p.controlOut) { out[i] = p; continue; }
     const prev = points[(i - 1 + n) % n];
     const next = points[(i + 1) % n];
-    const dx = (vx(next) - vx(prev)) / 3;
-    const dy = (vy(next) - vy(prev)) / 3;
+    // 🔴 T8（S0 实测）：旧实现用 (next-prev)/3，是标准 Catmull-Rom（/6）的两倍，
+    //    角上外鼓 6%~30%，且布尔/命中只按顶点算 → “看到的边界 ≠ 算到的边界”。
+    //    这里改 /6，并按相邻两段长度夹紧（不均匀 RDP 点也能兜住），仍保留手工顶点平滑能力。
+    let dx = (vx(next) - vx(prev)) / 6;
+    let dy = (vy(next) - vy(prev)) / 6;
+    const mag = Math.hypot(dx, dy);
+    const cap = Math.min(
+      Math.hypot(vx(p) - vx(prev), vy(p) - vy(prev)),
+      Math.hypot(vx(next) - vx(p), vy(next) - vy(p)),
+    ) / 3;
+    if (mag > 1e-9 && mag > cap) { dx *= cap / mag; dy *= cap / mag; }
     out[i] = { x: vx(p), y: vy(p), controlOut: { x: dx, y: dy }, controlIn: { x: -dx, y: -dy } };
   }
   return out;
@@ -7444,24 +7720,33 @@ function drawRivers(c) {
   c.lineJoin = 'round';
   // 🔴 2026-10-16 第五修：色与线宽改成**共用常量/公式**（`utils/riverRender.js`）——
   //    自动河流现在也按这条公式画，两处各写一份就会出现"自带河 1px、自动河 3px"。
-  c.strokeStyle = BASEMAP_RIVER_COLOR;
+  // 🔴 2026-10-20 第十七修（用户：「河流依然在给我玩铁轨」）：导入河此前是**一条裸折线描边**
+  //    —— 等宽、无曲线、无岸线，和自动河/手画河是两套画法（"同一能力两份实现"）。
+  //    现在三类河**全部**走 `drawCurvedRiver` → 实心变宽丝带：
+  //      · 曲线：Catmull-Rom（subdiv=2，导入点本来就密，只削折角）；
+  //      · 宽度：源头 0.62× → 河口 1×（`discharge` 定绝对值，与自动河同一条公式）；
+  //      · 岸线：多边形的描边（不是两条平行线）。
   for (const r of list) {
     const pts = r.points;
     if (!pts || pts.length < 2) continue;
     if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
-    // 🔴 线宽走**屏幕像素**（不随缩放变粗，与自动河流同量纲）——
-    //    但画布在这个位置已经 `scale(cameraScale)`，`lineWidth` 的单位是**世界单位**，
-    //    所以必须过 `basemapRiverWidthWorld` 换算。**2026-10-17 第三轮实测修正**：
-    //    这一行原来直接把"屏幕像素数"塞进 lineWidth（注释却写着"不随缩放变粗"），
-    //    放大 4× 时自带河会粗成 14.4px（实测：1× 8px → 4× 19px，见
-    //    `scripts/tests/tools/_probe_river_highlight.js`）。
-    //    ⚠️ 自动河那一侧（`strokeRiverNetworkAsPaths`）第八修已修正，自带河这一侧漏了 ——
-    //    「同一个能力两个消费者，只接了一个」是本仓反复踩的一条。
-    c.lineWidth = basemapRiverWidthWorld(r, cameraScale.value);
-    c.beginPath();
-    c.moveTo(vx(pts[0]), vy(pts[0]));
-    for (let i = 1; i < pts.length; i++) c.lineTo(vx(pts[i]), vy(pts[i]));
-    c.stroke();
+    // 线宽：屏幕像素口径（`basemapRiverWidthPx`），画布已 `scale(cameraScale)` → 世界单位。
+    // 2026-10-17 第三轮实测修正保留：直接把屏幕像素塞进 lineWidth 会让放大 4× 时粗到 19px。
+    const world = basemapRiverWidthWorld(r, cameraScale.value) * 1.25;
+    const n = pts.length;
+    const widths = [];
+    for (let i = 0; i < n; i++) {
+      const t = n > 1 ? i / (n - 1) : 1;
+      widths.push(world * (0.62 + 0.38 * t));
+    }
+    drawCurvedRiver(c, pts, widths[0], widths[n - 1], {
+      widths,
+      subdiv: 2,
+      color: BASEMAP_RIVER_COLOR,
+      bankColor: RIVER_BANK_COLOR,
+      bankPx: px(0.9),
+      alpha: 0.95,
+    });
   }
   c.restore();
 }
@@ -8188,7 +8473,7 @@ function renderFrame() {
   if (!blitted && showBorders.value) drawProvinceBorders(ctx.value);
   if (!strokeBaseBuilding) drawVertexHandles(ctx.value);
   if (!blitted && showBurgs.value) drawBurgs(ctx.value);
-  if (!strokeBaseBuilding && PROVINCE_GRID_TOOLS.has(tool.value)) drawProvinceBrushOverlay(ctx.value);
+  if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush')) drawProvinceBrushOverlay(ctx.value);
   if (!strokeBaseBuilding) drawPreviewOverlay(ctx.value);
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
@@ -8676,10 +8961,10 @@ function drawPreviewOverlay() {
     c.beginPath();
     tracePath(c, freeTrace, false);
     c.stroke();
-    // ② 将得到的地块
+    // ② 将得到的地块（T8：预览与落库同一几何，不再套贝塞尔控制点）
     const previewRing = previewTraceRing();
     if (previewRing && previewRing.length >= 3) {
-      const ring = withBezierControls(previewRing);
+      const ring = previewRing;
       c.beginPath();
       traceShapePath(c, ring, true);
       c.fillStyle = isOutline ? 'rgba(34, 211, 238, 0.10)' : 'rgba(196, 181, 253, 0.14)';
@@ -9197,6 +9482,7 @@ function drawScenarioMarkers(c) {
   c.textBaseline = 'alphabetic';
 }
 
+let smallCanvasWarned = false;
 function handleResize() {
   if (!canvas.value || !canvasWrap.value) return;
   const dpr = window.devicePixelRatio || 1;
@@ -9207,6 +9493,21 @@ function handleResize() {
   canvas.value.height = Math.round(h * dpr);
   canvas.value.style.width = w + 'px';
   canvas.value.style.height = h + 'px';
+  // T10（S0 实测画布被面板压到 541×200）：小于 700×400 时给一次可读提示，
+  // 不自动改布局（自动收面板会打断正在填的表单）；用户看到提示后自己收面板。
+  if ((w < 700 || h < 400) && !smallCanvasWarned) {
+    smallCanvasWarned = true;
+    // 🔴 2026-10-20：布局提示**不许覆盖刚发生的操作回执**（实测：导入完成的回执被
+    //    「画布只有 1065×200」顶掉 → 用户以为导入没发生 = 又一次"静默失败"）。
+    //    3 秒内的操作回执优先；纯布局提示自己可以被下一条布局提示覆盖。
+    const recentOp = Date.now() - lastStatusAt < 3000;
+    const prev = provinceHint.value || '';
+    if (!recentOp && (!prev || /^画布只有/.test(prev))) {
+      statusMsg(`画布只有 ${Math.round(w)}×${Math.round(h)} —— 侧栏/时间轴占得太多，收起面板再画会顺手很多`);
+    }
+  } else if (w >= 700 && h >= 400) {
+    smallCanvasWarned = false;
+  }
   // 首次进入期间布局仍在定稿（时间轴面板占位会让画布变矮）→ 重新适屏，别留一个错的镜位；
   // 用户已经开始操作后就只重绘，不动镜头。
   if (initialFitPending) fitToView();
@@ -9730,6 +10031,28 @@ watch(baseMap, () => {
 /* P3：按任务分层 —— 主行只放 4 个任务工具 + 「更多」；高级工具与开关收在 .toolbar-more 里。
    ⚠️ 不要把这些控件再摊回主行：主行的可见控件数由 test_65 守着（≤6）。 */
 .primary-row { gap: 4px; }
+/* 剧本视图引导条：先选势力 → 涂归属 → 地图上涂 */
+.scenario-onboarding {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 30;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  max-width: calc(100% - 20px);
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #cbd5e1;
+  background: rgba(13, 23, 40, 0.92);
+  border: 1px solid rgba(88, 166, 255, 0.38);
+  border-radius: 7px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+}
+.scenario-onboarding .so-step { white-space: nowrap; }
+.scenario-onboarding .so-step b { color: #f0f6fc; }
+.scenario-onboarding .so-add {
+  padding: 2px 9px; font-size: 12px;
+  background: #1f6feb; border: 1px solid #388bfd; border-radius: 6px; color: #fff; cursor: pointer;
+}
+.scenario-onboarding .so-add:hover { filter: brightness(1.12); }
 .more-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; }
 .more-toggle.has-advanced { box-shadow: inset 0 0 0 1px var(--accent); }
 /* 底图编辑模式（2026-10-18 第十七修）：模式条在主行**之上**（模式是"状态"，不是工具栏按钮）。

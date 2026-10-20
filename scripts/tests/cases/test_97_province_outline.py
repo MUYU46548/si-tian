@@ -274,10 +274,19 @@ JS = r""" (async () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', bubbles: true }));
     await new Promise((r) => setTimeout(r, 60));
     ok('e1 快捷键 Y 切到描轮廓', sc.tool === 'outline', String(sc.tool));
-    // 主行仍是 6 个可见控件（P3 纪律，test_65 同口径）
+    // 主行可见控件数（P3 纪律，test_65 同口径）
+    // 🔴 2026-10-20：底图编辑模式落地后，日常行 = 4（返回/选择/涂归属/更多），
+    //    开模式 = 6（+画省份 +改形状）。旧断言写死 6 是模式化之前的数字（自 10-18 起已红）。
     const primary = Array.from(bar.querySelectorAll('.primary-row button')).filter(visible);
-    ok('e2 主行仍是 6 个可见控件（新工具进「更多」，不回归 test_65）',
-       primary.length === 6, primary.length + ' 个：' + primary.map((b) => (b.textContent || '').trim()).join('/'));
+    ok('e2 日常行仍是 4 个可见控件（新工具进「更多」）',
+       primary.length === 4, primary.length + ' 个：' + primary.map((b) => (b.textContent || '').trim()).join('/'));
+    sc.basemapEditMode = true;
+    await new Promise((r) => setTimeout(r, 80));
+    const primaryOn = Array.from(bar.querySelectorAll('.primary-row button')).filter(visible);
+    ok('e2b 开底图编辑 = 6 个（画省份/改形状只在模式内）',
+       primaryOn.length === 6, primaryOn.length + ' 个：' + primaryOn.map((b) => (b.textContent || '').trim()).join('/'));
+    sc.basemapEditMode = false;
+    await new Promise((r) => setTimeout(r, 60));
     sc.setTool('select');
   }
 

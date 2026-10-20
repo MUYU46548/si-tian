@@ -16,7 +16,7 @@ import { extractBorders, chaikin } from '../utils/provinceGrid';
 import { buildLabelOutlines } from '../utils/gridOutline';
 
 export const PROVINCE_TOOLS = [
-  { key: 'paint', label: '涂归属', hint: '按住涂抹 → 把笔迹并进所选省份（一次拖动 = 一条撤销）' },
+  { key: 'paint', label: '改省界', hint: '按住涂抹 → 把笔迹并进所选省份（改的是**省界形状**，不是势力归属；一次拖动 = 一条撤销）' },
   { key: 'erase', label: '抹除', hint: '按住涂抹 → 从沿途各省挖掉笔迹（回到无主）' },
   { key: 'smooth', label: '平滑', hint: '按住涂抹 → 简化目标省份的边界（去掉多余顶点）' },
   { key: 'lasso', label: '自由轮廓', hint: '按住画一圈 → 圈内整块划归（一笔成形，不用描点）' },
@@ -35,8 +35,8 @@ const MIN_AREA_FULL = 0.5;
 const MIN_AREA_FAST = 1.5;
 
 export function useProvinceBrush() {
-  const radius = ref(70);         // 半径（**世界单位**；P2 前是"格"，网格退役后改口径）
-  const strength = ref(0.8);      // 强度 0~1
+  const radius = ref(26);         // 半径（**屏幕像素**，2026-10-19 H2：缩放时手感一致；世界半径 = px / cameraScale）
+  const strength = ref(0.8);      // 历史字段：矢量布尔没有软边，UI 已移除；保留以不打断既有调用/用例
   const tool = ref('paint');
   const targetIdx = ref(1);
   const showCells = ref(true);

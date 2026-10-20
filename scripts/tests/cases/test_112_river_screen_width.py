@@ -66,8 +66,10 @@ def source_gates():
     fails = []
     sm = _read(SMV)
     rr = _read(RRJ)
-    # a① 自带河：lineWidth 必须过世界单位换算（不许再直接塞屏幕像素数）
-    if 'c.lineWidth = basemapRiverWidthWorld(r, cameraScale.value);' not in sm:
+    # a① 自带河：宽度必须过世界单位换算（不许再直接塞屏幕像素数）
+    # 🔴 2026-10-20 第十七修：自带河也改走 `drawCurvedRiver` 丝带，不再自己写字面
+    #    `c.lineWidth = ...` —— 判据改成"真的调用了那个换算函数"（换算口径单源）。
+    if 'basemapRiverWidthWorld(r, cameraScale.value)' not in sm:
         fails.append('🔴 drawRivers 没把自带河线宽换算成世界单位 —— 放大后自带河会跟着变粗'
                      '（实测 1× 8px → 4× 19px）')
     # 反证：旧的错写法不许回来
@@ -160,9 +162,12 @@ JS_SETUP = r"""
   };
   aim(1);
   await tick(250);
-  window.__C112 = { sm, rv, cvs, rc, mid, aim, tick };
+  // 渲染用的曲线（与 drawRivers 的 subdiv 一致）—— 量宽度时要在**这条线**上取横截面
+  const RR0 = await import('/src/utils/riverRender.js');
+  const curve = RR0.catmullRomPoints(rv.points.map((p) => ({ x: p.x, y: p.y })), 2);
+  window.__C112 = { sm, rv, cvs, rc, mid, aim, tick, curve };
   return JSON.stringify({ ok: true, canvas: [Math.round(rc.width), Math.round(rc.height)],
-    riverWidthPx: (await import('/src/utils/riverRender.js')).basemapRiverWidthPx(rv) });
+    riverWidthPx: RR0.basemapRiverWidthPx(rv), curvePoints: curve.length });
 })()
 """
 
@@ -189,15 +194,33 @@ JS_RIVER_WIDTH = r"""
   for (const scale of [1, 2, 4]) {
     C.aim(scale);
     await tick(300);
-    const ws = [];
-    for (const i of [9, 11, 12, 13, 15]) {
-      const a = rv.points[i], b = rv.points[i + 1];
+    // 🔴 2026-10-20 第十七修：自带河现在也过 Catmull-Rom 平滑 + 丝带填充 ——
+    //    拿**原始折线**的中点去量，在锐弯处会偏离实际画的曲线（放大后更明显）。
+    //    这里改成量**渲染用的那条曲线**（与 drawRivers 同一 subdiv=2），
+    //    并且只取**当前视口内**的采样点 —— 放大后曲线大半在画布外，
+    //    把"画布外"当成"量不到 0 像素"是假的红（实测 4× 有 4/5 个点在画布外）。
+    const CURVE = C.curve;
+    const inView = [];
+    for (let i = 0; i + 1 < CURVE.length; i++) {
+      const a = CURVE[i], b = CURVE[i + 1];
+      const sx = sm.cameraX + ((a.x + b.x) / 2) * sm.cameraScale;
+      const sy = sm.cameraY + ((a.y + b.y) / 2) * sm.cameraScale;
+      if (sx < 40 || sy < 40 || sx > rc.width - 40 || sy > rc.height - 40) continue;
+      inView.push(i);
+    }
+    const picks = [];
+    if (inView.length >= 3) {
+      for (let k = 0; k < 5; k++) picks.push(inView[Math.floor((inView.length - 1) * k / 4)]);
+    }
+    const ws = picks.map((i) => {
+      const a = CURVE[i], b = CURVE[i + 1];
       const tx = b.x - a.x, ty = b.y - a.y;
       const L = Math.hypot(tx, ty) || 1;
-      ws.push(widthAt((a.x + b.x) / 2, (a.y + b.y) / 2, -ty / L, tx / L));
-    }
+      return widthAt((a.x + b.x) / 2, (a.y + b.y) / 2, -ty / L, tx / L);
+    });
     const sorted = ws.slice().sort((x, y) => x - y);
-    out['scale' + scale] = { samples: ws, median: sorted[Math.floor(sorted.length / 2)],
+    out['scale' + scale] = { samples: ws, picks, inView: inView.length,
+      median: ws.length ? sorted[Math.floor(sorted.length / 2)] : -1,
       echo: sm.cameraScale };
   }
   return JSON.stringify(out);

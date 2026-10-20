@@ -106,7 +106,9 @@ def source_gates():
     if 'RIVER_WORLD_FLOOR' not in sm:
         fails.append('🔴 缺少世界单位硬下限（width=0 的病态数据会画出 0 宽）')
     # a④ 岸线宽度必须与水宽挂钩（否则大缩放下 1.1px 的深边框就是"两条轨道"）
-    if 'water + Math.min(bankPx' not in rr:
+    # 🔴 2026-10-20 第十七修：河改画成**一条闭合丝带**后，"水宽 + 常量"的两遍描边没有了，
+    #    岸线变成同一个多边形的描边 → 判据改成"描边宽必须被水宽（maxW）夹住"。
+    if 'Math.min(bankWidth, Math.max(0.18, maxW * 0.35))' not in rr:
         fails.append('🔴 riverRender.drawCurvedRiver 的岸线宽度没有封顶到水宽的比例 —— '
                      '放大后会出现"两边轨道、中间一块水色"')
     return fails

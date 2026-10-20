@@ -383,10 +383,15 @@ JS_UI = r"""
   // 「网格视图」复选框已删除；「点击填充」入口在位
   const labels = Array.from(document.querySelectorAll('.scenario-toolbar label'));
   ok('「网格视图」复选框已删除', !labels.some(l => (l.textContent || '').indexOf('网格视图') >= 0));
+  // 🔴 2026-10-20：几何笔刷改名「改省界」并收进底图编辑行（日常行只留「涂归属」=势力归属）
+  sc.basemapEditMode = true;
+  await wait(150);
   const titles = Array.from(document.querySelectorAll('.scenario-toolbar button')).map(b => b.getAttribute('title') || '');
   ok('工具栏有「点击填充」按钮', titles.some(t => t.indexOf('点击填充') >= 0));
-  ok('工具栏有「省份笔刷 / 自由轮廓」按钮',
-     titles.some(t => t.indexOf('省份笔刷') >= 0) && titles.some(t => t.indexOf('自由轮廓') >= 0));
+  ok('工具栏有「改省界 / 自由轮廓」按钮',
+     titles.some(t => t.indexOf('改省界') >= 0) && titles.some(t => t.indexOf('自由轮廓') >= 0));
+  sc.basemapEditMode = false;
+  await wait(50);
 
   // 属性面板：多环省份 → 「类型」+「编辑环」
   sc.setTool('select');
