@@ -154,8 +154,9 @@
            这一块是日常剧本编辑的主路径：选势力 → 按住涂 → 碰到的省一次改归属。 -->
       <div class="tool-group brush-settings" v-if="tool === 'ownerBrush'" data-testid="owner-brush-settings">
         <span class="row-label">涂归属：</span>
-        <span class="row-hint" data-testid="owner-brush-polity" :class="{ ready: !!selectedPolity }">
-          <template v-if="selectedPolity">当前势力：
+        <span class="row-hint" data-testid="owner-brush-polity" :class="{ ready: !!selectedPolity || clearOwnerMode }">
+          <template v-if="clearOwnerMode">当前：<b>清除归属</b>（涂到的省变无主）</template>
+          <template v-else-if="selectedPolity">当前势力：
             <b :style="{ color: selectedPolity.color || undefined }">{{ selectedPolity.name }}</b>
           </template>
           <template v-else>当前势力：<b>未选</b>（点地图上方「势力：」里的色块）</template>
@@ -845,9 +846,10 @@
       </div>
       <div 
         class="polity-swatch clear"
-        :class="{ active: !selectedPolity }"
-        @click="selectPolity(null)"
-        title="清除归属：选中它之后用油漆桶点省份 = 把该省的势力归属清空"
+        :class="{ active: clearOwnerMode }"
+        data-testid="polity-clear"
+        @click="selectClearOwnership()"
+        title="清除归属：选中它之后，用「涂归属」涂过 / 用油漆桶点过的省份会变成**无主**（可 Ctrl+Z 撤回）"
       ><Icon name="x" :size="14"/></div>
       <!-- 新建势力（2026-10-01）：此前 polities **只能由 Azgaar .map 导入带进来** ——
            自建底图 + 自建剧本 = 势力功能整块不可用（色板空、油漆桶点了没反应）。
@@ -1034,7 +1036,8 @@
       <span v-if="tool === 'vertex' && activeVertexIdx >= 0" class="draw-hint">切线手柄：拖拽圆点调曲率（Alt 临时直线）</span>
       <span v-if="provinceHint" class="draw-hint">{{ provinceHint }}</span>
       <span v-if="tool === 'ownerBrush'" class="draw-hint" data-testid="owner-brush-hint">
-        涂归属：按住涂 → 碰到的省改成「{{ selectedPolity ? selectedPolity.name : '（未选）' }}」· 一笔一条撤销
+        <template v-if="clearOwnerMode">涂归属：按住涂 → 清空归属（无主）· 一笔一条撤销</template>
+        <template v-else>涂归属：按住涂 → 碰到的省改成「{{ selectedPolity ? selectedPolity.name : '（未选）' }}」· 一笔一条撤销</template>
       </span>
       <span v-if="tool === 'provinceBrush' || tool === 'provinceLasso'" class="draw-hint">
         {{ tool === 'provinceBrush' ? '改省界：按住涂抹 → 整笔并进所选省份（改的是省界形状）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
@@ -1946,6 +1949,15 @@ const selectedScenario = ref(null);
 //    实测其代价是 test_65 的 `sc.selectedPolity = …` 被无声吞掉（写失败却不报错）。
 //    同理 `selectedScenario` 也是「可写 ref + 刷新 watch」，两处保持一致。
 const selectedPolity = ref(null);
+/**
+ * 「清除归属」模式（2026-10-20）—— 色板上的 ✕。
+ *
+ * 为什么必须是一个**显式模式**：`selectedPolity = null` 同时表示"还没选"和"要清空"，
+ * 而涂归属在"没选"时会自动落到第一个势力（否则工具表现成"涂不了"）。两者混在一起，
+ * 用户点 ✕ 再涂反而会被涂上第一个势力。所以 ✕ = 一个独立的意图：
+ * 涂到的省**删掉 ownership 键**（真无主），油漆桶/涂归属都认它。
+ */
+const clearOwnerMode = ref(false);
 watch(() => selectedScenario.value?.polities, (list) => {
   const cur = selectedPolity.value;
   if (!cur) return;
@@ -2644,6 +2656,13 @@ function selectScenario(s) {
 
 function selectPolity(p) {
   selectedPolity.value = p || null;
+  if (p) clearOwnerMode.value = false;
+}
+
+/** 色板 ✕：进入「清除归属」模式（把涂到的省改成无主，而不是涂错颜色） */
+function selectClearOwnership() {
+  selectedPolity.value = null;
+  clearOwnerMode.value = true;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -2726,17 +2745,22 @@ function commitOwnerStroke() {
     return null;
   }
   if (!sc) { statusMsg('涂归属：还没有选中剧本'); return null; }
-  if (!pol) { statusMsg('涂归属：没有选中的势力（点地图上方「势力：」里的色块）'); return null; }
-  const res = store.batchSetOwnership(sc.id, ids, pol.id, tlDate.value);
+  const clearing = clearOwnerMode.value || !pol;
+  if (!clearing && !pol) { statusMsg('涂归属：没有选中的势力（点地图上方「势力：」里的色块）'); return null; }
+  const res = store.batchSetOwnership(sc.id, ids, clearing ? null : pol.id, tlDate.value);
   if (!res || res.success === false) {
     statusMsg(`涂归属失败：${(res && res.reason) || '未知原因'}`);
     return res;
   }
   if (res.noop) {
-    statusMsg(`涂归属：这 ${ids.length} 个省本来就属于「${pol.name}」（${tlDateText.value}）`);
+    statusMsg(clearing
+      ? `涂归属：这 ${ids.length} 个省本来就是无主`
+      : `涂归属：这 ${ids.length} 个省本来就属于「${pol.name}」（${tlDateText.value}）`);
   } else {
-    statusMsg(`涂归属：${res.affected} 个省份 → 「${pol.name}」（${tlDateText.value}）`
-      + `${res.skippedSea ? ` · 跳过 ${res.skippedSea} 片海` : ''} · 整笔 = 1 条撤销`);
+    statusMsg(clearing
+      ? `涂归属：清空 ${res.cleared} 个省的归属（无主）· 整笔 = 1 条撤销`
+      : `涂归属：${res.affected} 个省份 → 「${pol.name}」（${tlDateText.value}）`
+        + `${res.skippedSea ? ` · 跳过 ${res.skippedSea} 片海` : ''} · 整笔 = 1 条撤销`);
   }
   return res;
 }
@@ -3428,7 +3452,9 @@ function drawProvinceBrushOverlay(c) {
   const p = provBrushPreview.value;
   if (p && tool.value === 'ownerBrush') {
     // 涂归属：笔刷圈 + **这笔已经碰到的省**（半透明势力色）—— 抬手前就能看出会改哪些
-    const polColor = (selectedPolity.value && selectedPolity.value.color) || '#fbbf24';
+    const polColor = clearOwnerMode.value
+      ? '#94a3b8'
+      : ((selectedPolity.value && selectedPolity.value.color) || '#fbbf24');
     if (ownerStrokeIds.size) {
       const terr = baseMap.value?.terrain || [];
       c.save();
@@ -3596,7 +3622,7 @@ function onMouseDown(event) {
       render();
       return;
     }
-    if (!selectedPolity.value) {
+    if (!clearOwnerMode.value && !selectedPolity.value) {
       // 2026-10-20：没选势力时**不再静默不干活**（用户实测"涂归属什么都涂不了"就是这个态）。
       // 自动落到本剧本第一个势力，并说清"用的是谁、去哪换"——一笔一条撤销，画错了按 Ctrl+Z。
       const first = (selectedScenario.value?.polities || [])[0] || null;

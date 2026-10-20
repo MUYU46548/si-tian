@@ -196,6 +196,25 @@ def run(cdp):
     if '涂归属' not in guarded['hint']:
         fails.append(f"没选势力时没有可读回执：{guarded['hint']}")
 
+    # ── e4b 清除归属：点色板 ✕（独立模式）→ 涂到的省**删键**（真无主）──────────
+    okc = eval_json(cdp, """(() => {
+      const sm = %s;
+      const b = document.querySelector('[data-testid="polity-clear"]');
+      if (!b) return JSON.stringify({ fails: ['色板里没有「清除归属」色块'] });
+      b.click();
+      sm.setTool('ownerBrush');
+      return JSON.stringify({ fails: [], clear: sm.clearOwnerMode });
+    })()""" % SM, required=None, desc='点清除归属')
+    okc = okc[1] if isinstance(okc, tuple) and okc[0] else {}
+    if not okc.get('clear'):
+        fails.append('点色板 ✕ 没有进入「清除归属」模式 —— 涂归属会把它当成"没选势力"')
+    _drag(cdp, [b, {'x': b['x'] - 30, 'y': b['y']}])
+    cleared = _state(cdp, '清除归属之后')
+    if 'prov_b' in cleared['own']:
+        fails.append(f"清除归属没有删键（prov_b={cleared['own'].get('prov_b')}）—— 无主地画不出来")
+    if '清空' not in cleared['hint']:
+        fails.append(f"清除归属没有可读回执：{cleared['hint']}")
+
     # ── e5 几何笔刷只活在「底图编辑」行 ────────────────────────────────────────
     geo = eval_json(cdp, """(async () => {
       const sm = %s;

@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：河流「实心变宽丝带」（src/renderer/src/utils/riverRender.js）
+ * Node 单元测试：河流画法（src/renderer/src/utils/riverRender.js）
  *
- * 为什么单独守这一块（2026-10-20 第十七修）：
- *   用户对河流的最高频投诉是「铁轨 / 竹节 / 描点连线」。技术成因是**逐段描边**——
- *   每一小段一次 beginPath/stroke，接头靠圆帽补，段宽突变时出现横向接缝；放大后
- *   两条岸线 + 中间一条缝就是"铁轨"。
- *   修法是把一条河画成**一个闭合多边形**（左岸正向 + 右岸反向）+ 一次 fill。
- *   这个性质在 CDP 像素用例里只能"看着像"，在这里可以直接数调用次数。
+ * 2026-10-20 第十九修：河流唯一的画法是 `strokeTaperedLine`（中心线**分块描边**）。
+ * 上一版是"左右岸合成一个多边形再一次 fill"—— 实测真实项目 **90/90 条河都自交**
+ * （弯急处左右偏移互相穿过），nonzero 填充在交叠处抵消成洞 → 屏幕上就是
+ * 「两条边夹一条缝」，放大后更明显（用户截图）。
  *
- * 判据：
- *   ① 顶点数 = 2 × 中心线点数（左岸 + 右岸），且闭合多边形**不重复首点**；
- *   ② 等宽直线的丝带包围盒高度 = 宽度（不偏、不缩）；
- *   ③ 变宽（源头细 → 河口粗）时两侧偏移真的跟着变；
- *   ④ `fillRiverRibbon` 对一条 40 点河**只**调用一次 fill（不是 39 次 stroke）；
- *   ⑤ 退化输入（0/1 点、宽度非法）返回空，不抛异常。
+ * 本用例守的就是"结构上不可能出洞"：
+ *   ① 只描边、**一次 fill 都不调**（有 fill = 又回到多边形路线）；
+ *   ② 分块数 = chunks，块与块共享端点（圆帽接缝）；
+ *   ③ 宽度按块中点取值，块内恒定（不会出现锯齿状宽度跳变）；
+ *   ④ 退化输入不抛异常；
+ *   ⑤ 圆角器真的把拐角磨圆（平均转角下降）、端点不动。
  *
  * 用法：node scripts/tests/unit/test_river_ribbon.js
  */
@@ -54,15 +52,18 @@ function stubCtx() {
   };
 }
 
-function bbox(pts) {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of pts) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
+/** 折线的最大转角（度） */
+function maxTurn(pts) {
+  let m = 0;
+  for (let i = 1; i + 1 < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], c = pts[i + 1];
+    const v1 = Math.atan2(b.y - a.y, b.x - a.x);
+    const v2 = Math.atan2(c.y - b.y, c.x - b.x);
+    let d = Math.abs(v2 - v1);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    m = Math.max(m, d);
   }
-  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+  return (m * 180) / Math.PI;
 }
 
 function pickTmpRoot() {
@@ -81,10 +82,9 @@ function pickTmpRoot() {
 async function main() {
   const root = pickTmpRoot();
   if (!root) throw new Error('找不到可写的临时目录');
-  const tmp = fs.mkdtempSync(path.join(root, 'sitian-river-ribbon-'));
+  const tmp = fs.mkdtempSync(path.join(root, 'sitian-river-stroke-'));
   const IMPORT_RE = /from '\.\/([A-Za-z0-9_-]+)(\.js)?'/g;
   const fixExt = (src) => src.replace(IMPORT_RE, "from './$1.js'");
-  // 把 riverRender.js 的**本地依赖闭包**一起拷过去（它 import './rivers.js' 等）
   const seen = new Set();
   const queue = ['riverRender.js'];
   while (queue.length) {
@@ -100,64 +100,53 @@ async function main() {
   fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
   const RR = await import(pathToFileURL(path.join(tmp, 'riverRender.js')).href);
 
-  check('一：等宽直线 → 2N 个顶点，包围盒高度 = 宽度', () => {
-    const pts = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 100, y: 0 }];
-    const poly = RR.variableRibbon(pts, 4);
-    assert(poly.length === 6, `顶点数应为 6（2×3），实际 ${poly.length}`);
-    const bb = bbox(poly);
-    assert(Math.abs(bb.h - 4) < 1e-6, `直线丝带高度应 = 宽度 4，实际 ${bb.h}`);
-    assert(Math.abs(bb.w - 100) < 1e-6, `丝带长度应 = 100，实际 ${bb.w}`);
-    return `${poly.length} 点 / bbox ${bb.w.toFixed(1)}×${bb.h.toFixed(1)}`;
-  });
-
-  check('二：变宽（源头 1 → 河口 9）时两侧偏移真的跟着变', () => {
-    const pts = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 100, y: 0 }];
-    const poly = RR.variableRibbon(pts, [1, 5, 9]);
-    // 左岸前 3 点、右岸后 3 点（右岸已反向 → 最后一点对应源头）
-    const head = poly[0];
-    const mouth = poly[2];
-    const headH = Math.abs(head.y);
-    const mouthH = Math.abs(mouth.y);
-    assert(Math.abs(headH - 0.5) < 1e-6, `源头半宽应 = 0.5，实际 ${headH}`);
-    assert(Math.abs(mouthH - 4.5) < 1e-6, `河口半宽应 = 4.5，实际 ${mouthH}`);
-    return `源头 ${headH} → 河口 ${mouthH}`;
-  });
-
-  check('三：一条 40 点河只 fill 一次（不是 39 次 stroke）', () => {
+  check('一：分块描边 = chunks 次 stroke、**一次 fill 都没有**（结构上不可能出洞）', () => {
     const c = stubCtx();
     const pts = Array.from({ length: 40 }, (_, i) => ({ x: i * 10, y: Math.sin(i / 5) * 20 }));
-    const widths = pts.map((_, i) => 1 + i * 0.2);
-    const n = RR.fillRiverRibbon(c, pts, widths, { color: '#5d97bb', bankWidth: 0.8 });
-    assert(n > 0, '应画出顶点');
-    assert(c.calls.fill === 1, `fill 次数应为 1，实际 ${c.calls.fill}`);
-    assert(c.calls.stroke === 1, `岸线 stroke 次数应为 1（同一个多边形），实际 ${c.calls.stroke}`);
-    assert(c.calls.beginPath === 1, `beginPath 次数应为 1，实际 ${c.calls.beginPath}`);
-    assert(c.calls.moveTo === 1, `moveTo 次数应为 1，实际 ${c.calls.moveTo}`);
-    assert(c.calls.lineTo === n - 1, `lineTo 次数应 = 顶点数-1（首点 moveTo），应 ${n - 1}，实际 ${c.calls.lineTo}`);
-    return `${n} 点 / fill×${c.calls.fill} / stroke×${c.calls.stroke} / beginPath×${c.calls.beginPath}`;
+    const widths = pts.map((_, i) => 1 + i * 0.1);
+    const n = RR.strokeTaperedLine(c, pts, widths, { color: '#5d97bb', chunks: 8 });
+    assert(n === 8, `块数应为 8，实际 ${n}`);
+    assert(c.calls.stroke === 8, `stroke 次数应为 8，实际 ${c.calls.stroke}`);
+    assert(c.calls.fill === 0, `不该有 fill（多边形路线会自交出洞），实际 ${c.calls.fill}`);
+    assert(c.calls.closePath === 0, '不该 closePath（开放折线）');
+    assert(c.calls.beginPath === 8, `beginPath 次数应为 8，实际 ${c.calls.beginPath}`);
+    return `${n} 块 / stroke×${c.calls.stroke} / fill×${c.calls.fill}`;
   });
 
-  check('四：退化输入 → 空数组，不抛异常', () => {
-    assert(RR.variableRibbon([], 2).length === 0, '空点集应为空');
-    assert(RR.variableRibbon([{ x: 0, y: 0 }], 2).length === 0, '单点应为空');
-    const poly = RR.variableRibbon([{ x: 0, y: 0 }, { x: 10, y: 0 }], [0, NaN]);
-    assert(poly.length === 4, '非法宽度应回落到最小半宽而不是崩');
+  check('二：宽度取自块中点、块内恒定；首尾块分别接近头/尾宽度', () => {
     const c = stubCtx();
-    assert(RR.fillRiverRibbon(c, [], [], {}) === 0, '空输入不应画');
-    return `${poly.length} 点兜底`;
+    const pts = Array.from({ length: 33 }, (_, i) => ({ x: i * 10, y: 0 }));
+    const widths = pts.map((_, i) => 2 + i * 0.5);   // 2 → 18
+    RR.strokeTaperedLine(c, pts, widths, { chunks: 4 });
+    const ws = c.calls.lineWidth;
+    assert(ws.length === 4, `4 块应有 4 个 lineWidth，实际 ${ws.length}`);
+    assert(ws[0] >= 2 && ws[0] <= 8, `第一块宽度应靠近源头（2~8），实际 ${ws[0]}`);
+    assert(ws[3] >= 12 && ws[3] <= 18, `最后一块应靠近河口（12~18），实际 ${ws[3]}`);
+    assert(ws[0] < ws[1] && ws[1] < ws[2] && ws[2] < ws[3], `宽度必须单调递增：${ws.join(',')}`);
+    return `宽度 ${ws.map((x) => x.toFixed(1)).join(' → ')}`;
   });
 
-  check('五：折线拐角处两侧不交叉（法线取前后段平均）', () => {
-    // 90° 直角：如果按"单段法线"推，拐点两侧会各算一次 → 出现自交的蝴蝶结
-    const pts = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }];
-    const poly = RR.variableRibbon(pts, 6);
-    const bb = bbox(poly);
-    assert(bb.w <= 56 + 1e-6 && bb.h <= 56 + 1e-6, `拐角外扩不应超过半宽（${bb.w}×${bb.h}）`);
-    // 拐点（第 2 个中心点）两侧点 → 中点应仍在中心线上
-    const l = poly[1], r = poly[poly.length - 2];
-    assert(Math.abs((l.x + r.x) / 2 - 50) < 1e-6 && Math.abs((l.y + r.y) / 2) < 1e-6,
-      `拐点两侧的中点应 = 中心点 (50,0)，实际 (${(l.x + r.x) / 2},${(l.y + r.y) / 2})`);
-    return `bbox ${bb.w.toFixed(1)}×${bb.h.toFixed(1)}`;
+  check('三：退化输入（空/单点/非法宽度）不抛异常', () => {
+    const c = stubCtx();
+    assert(RR.strokeTaperedLine(c, [], [], {}) === 0, '空点集应为 0');
+    assert(RR.strokeTaperedLine(c, [{ x: 0, y: 0 }], 2, {}) === 0, '单点应为 0');
+    assert(RR.strokeTaperedLine(null, [{ x: 0, y: 0 }, { x: 1, y: 1 }], 2, {}) === 0, 'ctx 为空应为 0');
+    RR.strokeTaperedLine(c, [{ x: 0, y: 0 }, { x: 10, y: 0 }], [NaN, 0], { chunks: 1 });
+    assert(c.calls.lineWidth.every((w) => w >= 0.35), `非法宽度应回落到 ≥0.35，实际 ${c.calls.lineWidth.join(',')}`);
+    return `兜底宽度 ${c.calls.lineWidth[c.calls.lineWidth.length - 1]}`;
+  });
+
+  check('四：圆角器把拐角磨圆、端点不动', () => {
+    const raw = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }, { x: 0, y: 50 }];
+    const smooth = RR.smoothRiverLine(raw, 4);
+    assert(smooth.length > raw.length, `圆角后点数应增加：${raw.length} → ${smooth.length}`);
+    assert(smooth[0].x === 0 && smooth[0].y === 0, '起点必须不动');
+    const last = smooth[smooth.length - 1];
+    assert(last.x === 0 && last.y === 50, `终点必须不动，实际 (${last.x},${last.y})`);
+    const before = maxTurn(raw);
+    const after = maxTurn(smooth);
+    assert(after < before - 10, `最大转角应明显下降：${before.toFixed(0)}° → ${after.toFixed(0)}°`);
+    return `转角 ${before.toFixed(0)}° → ${after.toFixed(0)}° / ${raw.length} → ${smooth.length} 点`;
   });
 
   const failed = results.filter((r) => !r.ok);

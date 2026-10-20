@@ -150,42 +150,68 @@ export function offsetPolyline(pts, dist) {
 }
 
 /**
- * **变宽丝带多边形**（2026-10-20 河流重做的核心）。
+ * **变宽中心线**（分块描边）—— 河流唯一的画法（2026-10-20 第十九修）。
  *
- * 为什么不再用"中心线逐段描边"：
- *   · 逐段 `stroke()` 的接头靠圆帽补，放大后是一串**珠子**；段与段的宽度突变时
- *     会出现横向接缝 —— 这正是用户说的「铁轨 / 支气管 / 描点连线」观感；
- *   · 一条 90 点的链要 90 次 beginPath+stroke（自动河网 900 链 = 8 万次/帧）。
- * 一条**闭合多边形**（左岸正向 + 右岸反向）一次 `fill()` 画完：宽度连续、接头无缝、
- * 调用次数 1。岸线再由**这一个多边形**的描边给出（不是两条平行线）。
+ * 为什么不是"左岸+右岸合成一个多边形再 fill"（十八修的做法，已废弃）：
+ *   实测真实项目 30 条河 × 3 档宽度 = **90/90 都自交**（弯急处左右偏移互相穿过）。
+ *   自交多边形用 nonzero 填充会在交叠处**抵消成洞** —— 屏幕上就是"两条边夹一条缝"，
+ *   而且放大后更明显（用户截图正是如此）。这不是调参能修的，是几何结构问题。
  *
- * @param {Array<{x:number,y:number}>} pts 中心线（世界坐标）
- * @param {number[]|number} widths 逐点宽度（世界单位，= 全宽）；单个数 = 等宽
- * @returns {Array<{x:number,y:number}>} 闭合多边形顶点（未重复首点）
+ * 现在：把中心线按**弧长分块**（默认 16 块），每块用该块中点的宽度描一次
+ * （`lineCap:'round'` + `lineJoin:'round'`）。块与块共享端点 ⇒ 接缝被圆帽盖住；
+ * 块内宽度恒定、块间宽度差只有 ~0.2px ⇒ 看不出跳变。**结构上不可能出现洞**。
+ * 调用次数 = 每河 16 次（160 条河 ≈ 2.5k/帧），比逐段描边少一个数量级。
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Array<{x:number,y:number}>} pts 世界坐标中心线（已圆角/加密）
+ * @param {number[]|number} widths 逐点宽度（世界单位，= 全宽）
+ * @param {{color?:string, alpha?:number, chunks?:number, bankColor?:string, bankWidth?:number}} opts
+ * @returns {number} 画出的块数
  */
-export function variableRibbon(pts, widths) {
+export function strokeTaperedLine(ctx, pts, widths, opts = {}) {
   const src = Array.isArray(pts) ? pts.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
-  if (src.length < 2) return [];
-  const halfAt = (i) => {
+  if (!ctx || src.length < 2) return 0;
+  const chunks = Math.max(1, Math.min(
+    Number.isFinite(opts.chunks) ? Math.floor(opts.chunks) : 16,
+    src.length - 1,
+  ));
+  const wAt = (i) => {
     const v = Array.isArray(widths) ? widths[Math.max(0, Math.min(widths.length - 1, i))] : widths;
-    return Number.isFinite(v) && v > 0 ? v / 2 : 0.05;
+    return Number.isFinite(v) && v > 0 ? v : 0.35;
   };
-  const left = [];
-  const right = [];
-  for (let i = 0; i < src.length; i++) {
-    const prev = src[i - 1] || src[i];
-    const next = src[i + 1] || src[i];
-    let tx = next.x - prev.x;
-    let ty = next.y - prev.y;
-    const len = Math.hypot(tx, ty);
-    if (!(len > 1e-9)) { tx = 1; ty = 0; } else { tx /= len; ty /= len; }
-    const nx = -ty;
-    const ny = tx;
-    const hw = halfAt(i);
-    left.push({ x: src[i].x + nx * hw, y: src[i].y + ny * hw });
-    right.push({ x: src[i].x - nx * hw, y: src[i].y - ny * hw });
+  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 0.95;
+  const bankWidth = Number.isFinite(opts.bankWidth) ? opts.bankWidth : 0;
+  let drawn = 0;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let c = 0; c < chunks; c++) {
+    const i0 = Math.floor((c * (src.length - 1)) / chunks);
+    const i1 = Math.floor(((c + 1) * (src.length - 1)) / chunks);
+    if (i1 <= i0) continue;
+    const mid = Math.min(src.length - 1, Math.round((i0 + i1) / 2));
+    const w = Math.max(0.35, wAt(mid));
+    const trace = () => {
+      ctx.beginPath();
+      ctx.moveTo(src[i0].x, src[i0].y);
+      for (let i = i0 + 1; i <= i1; i++) ctx.lineTo(src[i].x, src[i].y);
+      ctx.stroke();
+    };
+    if (bankWidth > 0) {
+      // 岸线（默认关）：同一块先描深色、再描水色，水色盖住内侧
+      ctx.globalAlpha = alpha * 0.55;
+      ctx.strokeStyle = opts.bankColor || '#3f6478';
+      ctx.lineWidth = w + Math.min(bankWidth, Math.max(0.35, w * 0.45));
+      trace();
+    }
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = opts.color || RIVER_DRAW_COLOR;
+    ctx.lineWidth = w;
+    trace();
+    drawn++;
   }
-  return left.concat(right.reverse());
+  ctx.restore();
+  return drawn;
 }
 
 /**
@@ -226,40 +252,27 @@ export function smoothRiverLine(pts, samples = 4) {
 }
 
 /**
- * 把一条河画成**实心变宽丝带**（水面 + 一圈岸线）。
+ * 把一条河画成**实心变宽线**（水面；可选一圈岸线）。
  *
- * 观感配方（与真实地图一致）：先按多边形描一遍更深的**岸线**（半宽在里、半宽在外），
- * 再填水面 —— 填色盖住内侧那一半，留下一条细而贴合的边，而不是"两条平行铁轨"。
+ * ⚠️ 2026-10-20 第十九修：**不再走"多边形 fill"**（上一版的实现会自交 → 中间出洞）。
+ * 现在直接调 `strokeTaperedLine`（分块描边，结构上不可能有洞）。
+ * 岸线默认关（用户反复报的"两条边夹一条缝"里，深色岸线是那一半原因）。
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {Array<{x:number,y:number}>} pts 中心线（世界坐标；调用方负责先过曲线加密）
  * @param {number[]|number} widths 逐点宽度（世界单位）
- * @param {{color?:string, bankColor?:string, bankWidth?:number, alpha?:number}} opts
- *        `bankWidth` = 岸线宽（世界单位，0 = 不画岸线）
- * @returns {number} 画出的顶点数（0 = 没画）
+ * @param {{color?:string, bankColor?:string, bankWidth?:number, alpha?:number, chunks?:number}} opts
+ * @returns {number} 画出的块数（0 = 没画）
  */
 export function fillRiverRibbon(ctx, pts, widths, opts = {}) {
-  const poly = variableRibbon(pts, widths);
-  if (!ctx || poly.length < 3) return 0;
-  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 0.95;
-  const bankWidth = Number.isFinite(opts.bankWidth) ? opts.bankWidth : 0;
-  ctx.save();
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  ctx.globalAlpha = alpha;
-  ctx.beginPath();
-  ctx.moveTo(poly[0].x, poly[0].y);
-  for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
-  ctx.closePath();
-  if (bankWidth > 0) {
-    ctx.strokeStyle = opts.bankColor || '#3f6478';
-    ctx.lineWidth = bankWidth;
-    ctx.stroke();
-  }
-  ctx.fillStyle = opts.color || RIVER_DRAW_COLOR;
-  ctx.fill();
-  ctx.restore();
-  return poly.length;
+  // 名字保留（调用点与用例都按它找），实现已换成"描边"：
+  return strokeTaperedLine(ctx, pts, widths, {
+    color: opts.color,
+    alpha: opts.alpha,
+    bankColor: opts.bankColor,
+    bankWidth: opts.bankWidth,
+    chunks: opts.chunks,
+  });
 }
 
 /**
