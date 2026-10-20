@@ -74,6 +74,7 @@ STATE_JS = r"""
     geom: JSON.stringify((s.baseMaps[__KEY__].terrain || []).map(p => p.points)),
     tool: sm.tool,
     hint: String(sm.provinceHint || ''),
+    polity: sm.selectedPolity && sm.selectedPolity.name,
   });
 })()
 """
@@ -181,7 +182,7 @@ def run(cdp):
     if undone['geom'] != before['geom']:
         fails.append('撤销后省界与原来不一致')
 
-    # ── e4 没选势力时涂 = 一个省都不改 + 有回执 ────────────────────────────────
+    # ── e4 没选势力时涂：**自动落到本剧本第一个势力**并说清楚（不再静默不干活）──
     eval_json(cdp, """(() => {
       const sm = %s;
       sm.selectPolity(null);
@@ -190,9 +191,9 @@ def run(cdp):
     })()""" % SM, required=None, desc='清空势力')
     _drag(cdp, [c, {'x': c['x'] - 30, 'y': c['y']}])
     guarded = _state(cdp, '没选势力涂之后')
-    if guarded['own'].get('prov_c') != 'A1':
-        fails.append(f"没选势力时仍然改了归属（prov_c={guarded['own'].get('prov_c')}）")
-    if '势力' not in guarded['hint']:
+    if guarded.get('polity') != '甲国':
+        fails.append(f"没选势力时没有自动落到第一个势力（selected={guarded.get('polity')}）—— 工具会表现为「涂了没反应」")
+    if '涂归属' not in guarded['hint']:
         fails.append(f"没选势力时没有可读回执：{guarded['hint']}")
 
     # ── e5 几何笔刷只活在「底图编辑」行 ────────────────────────────────────────

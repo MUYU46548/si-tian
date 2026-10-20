@@ -84,7 +84,7 @@
           :class="{ active: tool === 'ownerBrush' }"
           data-testid="owner-brush-btn"
           @click="setTool('ownerBrush')"
-          title="涂归属 (Q) — 先在下面色板选一个势力，再按住在地图上涂：碰到哪些省就把哪些省的归属改成它（只改归属，不动省界）。一笔 = 一条撤销；按住 Alt 点一下 = 吸管（取该省当前的势力）"
+          title="涂归属 (Q) — 按住在地图上涂：碰到的省改成当前势力。一笔 = 一条撤销；Alt 点一下 = 吸管"
         ><Icon name="brush" :size="15"/>涂归属</button>
         <button
           v-if="basemapEditMode"
@@ -155,16 +155,17 @@
       <div class="tool-group brush-settings" v-if="tool === 'ownerBrush'" data-testid="owner-brush-settings">
         <span class="row-label">涂归属：</span>
         <span class="row-hint" data-testid="owner-brush-polity" :class="{ ready: !!selectedPolity }">
-          当前势力：
-          <b v-if="selectedPolity" :style="{ color: selectedPolity.color || undefined }">{{ selectedPolity.name }}</b>
-          <b v-else>未选 —— 先在下面色板点一个势力</b>
+          <template v-if="selectedPolity">当前势力：
+            <b :style="{ color: selectedPolity.color || undefined }">{{ selectedPolity.name }}</b>
+          </template>
+          <template v-else>当前势力：<b>未选</b>（点地图上方「势力：」里的色块）</template>
         </span>
-        <label class="check-label" title="笔刷半径（屏幕像素）—— 画布缩放时手感一致；世界半径 = 像素 / 当前缩放">
+        <label class="check-label" title="笔刷半径（屏幕像素）">
           半径
           <input type="range" v-model.number="provBrushRadius" min="4" max="120" step="1" class="brush-slider" data-testid="owner-brush-radius" />
           {{ provBrushRadius }}px
         </label>
-        <span class="row-hint">按住涂（碰到哪些省就改哪些省）· 整笔 = 1 条撤销 · Alt+点 = 吸管</span>
+        <span class="row-hint">按住涂 · 一笔一条撤销 · Alt 吸管</span>
       </div>
       <div class="tool-group brush-settings" v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)">
         <label>划归到：</label>
@@ -883,19 +884,10 @@
     <!-- 画布 -->
     <div class="scenario-canvas-wrap" ref="canvasWrap">
       <canvas ref="canvas"></canvas>
-      <!-- 浮动引导：absolute 不占布局，避免把本来就紧张的画布再压矮 -->
-      <div v-if="selectedScenario" class="scenario-onboarding" data-testid="scenario-onboarding">
-        <template v-if="!selectedPolity">
-          <span class="so-step">① 右侧选一个势力</span>
-          <button class="so-add" data-testid="onboarding-add-polity" @click="onAddPolity">＋ 新建势力</button>
-          <span class="so-step">② 点「涂归属」</span>
-          <span class="so-step">③ 在地图上涂</span>
-        </template>
-        <template v-else>
-          <span class="so-step">当前势力：<b>{{ selectedPolity.name }}</b></span>
-          <span class="so-step">点「涂归属」后在地图上按住涂；一笔 = 一条撤销</span>
-        </template>
-      </div>
+      <!-- 2026-10-20：删掉「① 右侧选一个势力 ② 点涂归属 ③ 在地图上涂」的浮动引导条。
+           理由（用户实测）：① 色板不在右侧（它在地图上方的「势力：」行），文案是错的；
+           ② 三步流程本身就是噪音——色板、工具、地图都在眼前，不需要一段解说占着画布。
+           工具自己的状态（当前势力 / 未选）已经在工具栏那一行里，不再重复。 -->
       <!-- C（2026-10-11）：批量铺底进行中的**遮罩**。
            为什么必须有它（不是装饰）：切 500 块 = 逐块多边形布尔，实测 ~19s 全在主线程上；
            这段时间里用户在画布上点/拖，事件只是排队 → 回来一起执行，观感是「越点越卡」，
@@ -973,7 +965,7 @@
            切剧本 + 地图跳到该时期起始年 + 时间轴游标同步（见 selectScenarioAt）。
            ⚠️ 与「上一剧本/下一剧本」的分工：那两个是**按顺序推进**（翻页），
               这个列表是**选择**（跳转）—— 两种语义都留，别互相取代。 -->
-      <div class="scenario-list-panel" data-testid="scenario-list-panel">
+      <div class="scenario-list-panel" :class="{ collapsed: !showScenarioList }" data-testid="scenario-list-panel">
         <div class="slp-head">
           <span class="slp-title">历史剧本</span>
           <span class="slp-hint">选一条，地图切到该时期</span>
@@ -1042,7 +1034,7 @@
       <span v-if="tool === 'vertex' && activeVertexIdx >= 0" class="draw-hint">切线手柄：拖拽圆点调曲率（Alt 临时直线）</span>
       <span v-if="provinceHint" class="draw-hint">{{ provinceHint }}</span>
       <span v-if="tool === 'ownerBrush'" class="draw-hint" data-testid="owner-brush-hint">
-        涂归属：按住涂 → 碰到的省一次改成「{{ selectedPolity ? selectedPolity.name : '（未选势力）' }}」（只改归属，不动省界；整笔 = 1 条撤销）
+        涂归属：按住涂 → 碰到的省改成「{{ selectedPolity ? selectedPolity.name : '（未选）' }}」· 一笔一条撤销
       </span>
       <span v-if="tool === 'provinceBrush' || tool === 'provinceLasso'" class="draw-hint">
         {{ tool === 'provinceBrush' ? '改省界：按住涂抹 → 整笔并进所选省份（改的是省界形状）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
@@ -1501,7 +1493,7 @@ import {
   //    「会弯 + 从头到尾变粗」的唯一实现（手画河 / 预览都走它，不再逐点画圆）。
   BASEMAP_RIVER_COLOR, RIVER_DRAW_COLOR, RIVER_BANK_COLOR, basemapRiverWidthPx, basemapRiverWidthWorld,
   flowToDischargeEquivalent,
-  drawCurvedRiver, fillRiverRibbon, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
+  drawCurvedRiver, fillRiverRibbon, smoothRiverLine, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
   // 🔴 2026-10-18 第十六修：选中轮廓的**偏移几何**与空隙常量下沉到纯函数层 ——
   //    组件里"用加宽的中心线当轮廓"是"选中即盖住水面"的根源；下沉后单测能直接判偏移量。
   offsetPolyline, RIVER_SEL_GAP_PX as RIVER_SEL_GAP_PX_UTIL,
@@ -2734,7 +2726,7 @@ function commitOwnerStroke() {
     return null;
   }
   if (!sc) { statusMsg('涂归属：还没有选中剧本'); return null; }
-  if (!pol) { statusMsg('涂归属：没有选中的势力（先在下面色板点一个）'); return null; }
+  if (!pol) { statusMsg('涂归属：没有选中的势力（点地图上方「势力：」里的色块）'); return null; }
   const res = store.batchSetOwnership(sc.id, ids, pol.id, tlDate.value);
   if (!res || res.success === false) {
     statusMsg(`涂归属失败：${(res && res.reason) || '未知原因'}`);
@@ -3605,8 +3597,15 @@ function onMouseDown(event) {
       return;
     }
     if (!selectedPolity.value) {
-      statusMsg('涂归属：先在下面色板选一个势力（没选势力时这一笔不会改任何东西）');
-      return;
+      // 2026-10-20：没选势力时**不再静默不干活**（用户实测"涂归属什么都涂不了"就是这个态）。
+      // 自动落到本剧本第一个势力，并说清"用的是谁、去哪换"——一笔一条撤销，画错了按 Ctrl+Z。
+      const first = (selectedScenario.value?.polities || [])[0] || null;
+      if (!first) {
+        statusMsg('涂归属：这个剧本还没有势力 —— 先在地图上方的「势力：」行点「＋ 势力」');
+        return;
+      }
+      selectPolity(first);
+      statusMsg(`涂归属：没选势力，先用「${first.name}」—— 点地图上方的色块可以换`);
     }
     ownerStrokeActive = true;
     ownerStrokeIds = new Set();
@@ -5856,8 +5855,8 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
     //    宽度连续、分叉处由"先细后粗、粗压细"的排序保证。
     fillRiverRibbon(c, curve, widths, {
       color: opts.color,
-      bankColor: RIVER_BANK_COLOR,
-      bankWidth: Math.min(px(0.8), Math.max(0.15, mouthPx * pxToWorld * 0.3)),
+      // 岸线 = 0：见 drawCurvedRiver 的说明（两条边夹一条缝的成因）
+      bankWidth: 0,
       alpha: 0.92,
     });
   }
@@ -5955,7 +5954,9 @@ function drawOneHandRiver(c, nodes, river, opts = {}) {
     subdiv: RIVER_CURVE_SUBDIV,
     color: opts.color || RIVER_DRAW_COLOR,
     bankColor: opts.bankColor || RIVER_BANK_COLOR,
-    bankPx: opts.bankPx === undefined ? px(1.1) : opts.bankPx,
+    // 🔴 2026-10-20：默认**不画岸线**（用户反复报的「两条边夹一条缝 / 铁轨」）。
+    //    需要堤岸的调用方显式传 bankPx。
+    bankPx: opts.bankPx === undefined ? 0 : opts.bankPx,
     alpha: opts.alpha === undefined ? 0.95 : opts.alpha,
   });
   return res.drawn;
@@ -7726,25 +7727,36 @@ function drawRivers(c) {
   //      · 曲线：Catmull-Rom（subdiv=2，导入点本来就密，只削折角）；
   //      · 宽度：源头 0.62× → 河口 1×（`discharge` 定绝对值，与自动河同一条公式）；
   //      · 岸线：多边形的描边（不是两条平行线）。
+  // 本幅图最宽的河（宽度归一化的参照）—— 一次扫描，160 条量级可忽略
+  let maxRiverWidth = 0;
   for (const r of list) {
-    const pts = r.points;
-    if (!pts || pts.length < 2) continue;
-    if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
-    // 线宽：屏幕像素口径（`basemapRiverWidthPx`），画布已 `scale(cameraScale)` → 世界单位。
-    // 2026-10-17 第三轮实测修正保留：直接把屏幕像素塞进 lineWidth 会让放大 4× 时粗到 19px。
-    const world = basemapRiverWidthWorld(r, cameraScale.value) * 1.25;
+    const w = Number(r && r.width);
+    if (Number.isFinite(w) && w > maxRiverWidth) maxRiverWidth = w;
+  }
+  for (const r of list) {
+    const raw = r.points;
+    if (!raw || raw.length < 2) continue;
+    if (!polylineInView(raw, minX, minY, maxX, maxY)) continue;
+    // 先圆角（中点二次曲线）再进样条：Catmull-Rom 是插值曲线，不圆角的话
+    // 导入数据里的直角在放大后原样保留 = 用户说的"折线/铁轨"。
+    const pts = smoothRiverLine(raw, 4);
+    // 线宽：屏幕像素口径（`basemapRiverWidthPx` 按本幅图 width 分布归一化），
+    // 画布已 `scale(cameraScale)` → 世界单位。
+    const world = basemapRiverWidthWorld(r, cameraScale.value, maxRiverWidth);
     const n = pts.length;
     const widths = [];
     for (let i = 0; i < n; i++) {
       const t = n > 1 ? i / (n - 1) : 1;
-      widths.push(world * (0.62 + 0.38 * t));
+      widths.push(world * (0.78 + 0.22 * t));
     }
     drawCurvedRiver(c, pts, widths[0], widths[n - 1], {
       widths,
+      // 已经切过角 → 样条只需要轻度加密
       subdiv: 2,
       color: BASEMAP_RIVER_COLOR,
-      bankColor: RIVER_BANK_COLOR,
-      bankPx: px(0.9),
+      // 🔴 不画岸线：中心线加宽再压深色 = 「两条边夹一条缝」的观感来源。
+      //    真实地图上细河本来就没有可见堤岸；水色与地形已经能分开。
+      bankPx: 0,
       alpha: 0.95,
     });
   }
@@ -10439,6 +10451,24 @@ watch(baseMap, () => {
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   overflow: hidden;
+}
+/* 🔴 2026-10-20：收起 = **整块收起**，不是只藏内容留一个 236×全高的空窗
+   （用户实测：「那个侧边栏的收起按钮根本不能正确收起整个侧边栏，只是隐藏剧本内容，
+   留下一个空窗占地方」）。收起后只剩一个 40px 的展开按钮，贴着左上角。 */
+.scenario-list-panel.collapsed {
+  width: 40px;
+  bottom: auto;
+  padding: 6px;
+}
+.scenario-list-panel.collapsed .slp-title,
+.scenario-list-panel.collapsed .slp-hint,
+.scenario-list-panel.collapsed .slp-picker {
+  display: none;
+}
+.scenario-list-panel.collapsed .slp-head {
+  padding: 0;
+  border-bottom: 0;
+  justify-content: center;
 }
 .slp-head {
   display: flex;

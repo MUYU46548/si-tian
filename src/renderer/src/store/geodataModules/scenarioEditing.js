@@ -1318,7 +1318,8 @@ export function createScenarioEditingModule(ctx) {
       },
     });
 
-    saveScenarios();
+    // 2026-10-20：与 batchSetOwnership 同口径 —— 油漆桶单击不再同步导出整份画布载荷
+    scheduleAutoSaveScenarios();
     return { success: true };
   }
 
@@ -1375,7 +1376,8 @@ export function createScenarioEditingModule(ctx) {
       },
     });
 
-    saveScenarios();
+    // 2026-10-20：同 batchSetOwnership —— 清归属也不再同步导出整份画布载荷
+    scheduleAutoSaveScenarios();
   }
 
   /**
@@ -1407,9 +1409,14 @@ export function createScenarioEditingModule(ctx) {
     const byId = new Map(terrain.map(p => [p.id, p]));
 
     const beforeOwnership = { ...(scenario.ownership || {}) };
-    const beforeChangeEvents = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
+    // 🔴 2026-10-20：**不再整表深拷 `changeEvents`**。真实 415 省项目里这个对象
+    //    序列化后是 MB 级，JSON.parse(JSON.stringify(...)) 一次要 100ms+ ——
+    //    用户按一下油漆桶/涂一笔就卡一下，卡的就是这一行。
+    //    只做浅拷贝 + 对**被碰到的省**单独克隆事件数组（下面 list.map 已经是新对象），
+    //    未碰到的省在 undo/redo 之间共享同一份引用是安全的（谁都不会原地改它）。
+    const beforeChangeEvents = { ...(scenario.changeEvents || {}) };
     const nextOwnership = { ...beforeOwnership };
-    const nextChangeEvents = JSON.parse(JSON.stringify(beforeChangeEvents));
+    const nextChangeEvents = { ...beforeChangeEvents };
 
     const clearing = !polityId;
     const date = normalizeDate(changeDate);
@@ -1473,7 +1480,11 @@ export function createScenarioEditingModule(ctx) {
       redo: () => apply(nextOwnership, nextChangeEvents, true),
     });
 
-    saveScenarios();
+    // 2026-10-20：走 300ms 合并的自动保存（与其它写口同一条路），而不是同步 saveScenarios()。
+    // 项目态下 saveScenarios → syncCanvasToProject 要导出并合并整份画布载荷，
+    // 415 省实测 **一次 100ms+** —— 每点一下油漆桶就卡一下，卡的就是这一下。
+    // 退出/显式保存仍走 flushSave（它会先把 scenarioSaveTimer 落掉），不丢改动。
+    scheduleAutoSaveScenarios();
     return {
       success: true, changed, cleared, skippedSea, skippedMissing,
       affected: changed + cleared, polityId: polityId || null,

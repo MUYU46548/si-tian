@@ -189,6 +189,43 @@ export function variableRibbon(pts, widths) {
 }
 
 /**
+ * **圆角折线**（中点二次曲线，开放折线）：把折线磨成真正的曲线。
+ *
+ * 为什么不是 Chaikin / 加 subdiv（2026-10-20 实测）：
+ *   · Catmull-Rom 是**插值**曲线 —— 必须穿过每个控制点，直角原样保留；
+ *   · Chaikin 只在切点处收角，段长差得大时收不动（实测 20 条真实河：
+ *     平均转角 176° → 102°，最大仍 137°）；
+ *   · 中点二次曲线（`tracePath` 同款）**不穿过**控制点，每个拐角都被抹成圆角，
+ *     这正是"河"该有的形状。端点保留（源头/河口位置不动）。
+ *
+ * @param {Array<{x:number,y:number}>} pts
+ * @param {number} [samples=4] 每个拐角的采样段数
+ * @returns {Array<{x:number,y:number}>}
+ */
+export function smoothRiverLine(pts, samples = 4) {
+  const src = Array.isArray(pts) ? pts.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
+  if (src.length < 3) return src.map((p) => ({ x: p.x, y: p.y }));
+  const n = Math.max(2, Math.min(8, Math.floor(samples) || 4));
+  const out = [{ x: src[0].x, y: src[0].y }];
+  let cur = out[0];
+  for (let i = 1; i < src.length - 1; i++) {
+    const c = src[i];
+    const b = { x: (src[i].x + src[i + 1].x) / 2, y: (src[i].y + src[i + 1].y) / 2 };
+    for (let s = 1; s <= n; s++) {
+      const t = s / n;
+      const mt = 1 - t;
+      out.push({
+        x: mt * mt * cur.x + 2 * mt * t * c.x + t * t * b.x,
+        y: mt * mt * cur.y + 2 * mt * t * c.y + t * t * b.y,
+      });
+    }
+    cur = out[out.length - 1];
+  }
+  out.push({ x: src[src.length - 1].x, y: src[src.length - 1].y });
+  return out;
+}
+
+/**
  * 把一条河画成**实心变宽丝带**（水面 + 一圈岸线）。
  *
  * 观感配方（与真实地图一致）：先按多边形描一遍更深的**岸线**（半宽在里、半宽在外），
@@ -536,16 +573,25 @@ export function flowToDischargeEquivalent(flow, maxFlow, range = BASEMAP_RIVER_D
  * ⚠️ 两处必须共用：各写一份就会出现"自带河 1px、自动河 3px"这种一眼可见但不报错的不一致
  *    （这正是用户报的观感问题的成因）。`test_river_coastline.js` 有守卫钉住两侧同式。
  */
-export function basemapRiverWidthPx(river) {
+export function basemapRiverWidthPx(river, maxWidth) {
+  // 🔴 2026-10-20 第十八修（用户：「河流依旧是两条边夹一条缝」）：
+  //    旧式 `width * 6 * max(sqrt(discharge)/14, 0.6)` 在这份真实数据上**根本没生效** ——
+  //    415 省底图的 160 条河 `width` 只有 0.03~0.26（p50 0.07），算出来 0.29px，
+  //    全被 0.7 的地板夹住 → **每条河都是 0.7px 的发丝**。发丝上再压一圈深色岸线，
+  //    就只剩"两条边夹一条缝"。
+  //    现在按**本幅图自己的 width 分布**归一化（与 flowWidthScale 同一条纪律：
+  //    归一化的对象是分布，不是某个绝对公式），最细 1.2px、主干 4.6px。
   const r = river || {};
-  const discharge = Number.isFinite(r.discharge) ? r.discharge : 1;
-  const scaleW = Math.max(Math.sqrt(Math.max(discharge, 1)) / 14, 0.6);
-  return Math.max(0.7, Math.min(4, (r.width || 0.2) * BASEMAP_RIVER_WIDTH_SCALE * scaleW));
+  const w = Number(r.width);
+  const width = Number.isFinite(w) && w > 0 ? w : 0;   // 缺数据 = 最细
+  const ref = Number.isFinite(maxWidth) && maxWidth > 0 ? maxWidth : 0.26;  // 实测 p100
+  const t = Math.max(0, Math.min(1, width / ref));
+  return Math.max(1.2, Math.min(4.6, 1.2 + 3.4 * Math.pow(t, 0.55)));
 }
 
 /** 自带河线宽（世界单位）—— 给 `strokeRiverNetwork` 的 `widthPx` 用（它按世界单位收宽度）。 */
-export function basemapRiverWidthWorld(river, pxPerWorld) {
-  const pxw = basemapRiverWidthPx(river);
+export function basemapRiverWidthWorld(river, pxPerWorld, maxWidth) {
+  const pxw = basemapRiverWidthPx(river, maxWidth);
   const k = Number.isFinite(pxPerWorld) && pxPerWorld > 0 ? pxPerWorld : 0;
   return k > 0 ? pxw / k : pxw;
 }

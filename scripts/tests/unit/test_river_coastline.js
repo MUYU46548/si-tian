@@ -471,29 +471,28 @@ async function main() {
   //     真实底图实测：自带河 #5d97bb 单遍，屏幕线宽 p50 0.70px / max 2.55px；
   //     上一轮自动河 #3B82F6 @0.35 宽×2.4 + 亮芯 #93c5fd → p50 0.80px 实心 + 1.92px 光晕。
   // ══════════════════════════════════════════════════════════════════════
-  check('🔴 自带河线宽公式：与真实底图量到的分布一致（88% 被夹在下界 0.7px）', () => {
+  check('🔴 自带河线宽公式：按本幅图 width 分布归一化（不再让 88% 的河卡在 0.7px 地板）', () => {
     const r = { width: 0.07, discharge: 96 };
-    const px = RR.basemapRiverWidthPx(r);
-    const world = RR.basemapRiverWidthWorld(r, 0.5);
+    const px = RR.basemapRiverWidthPx(r, 0.26);
+    const world = RR.basemapRiverWidthWorld(r, 0.5, 0.26);
     assert(Math.abs(world - px / 0.5) < 1e-9, `屏幕 ${px} / pxPerWorld 0.5 应等于世界 ${px / 0.5}，实际 ${world}`);
-    // 🔴 实测（真实 desite 底图 160 条河，`_probe_river_width.mjs`）：
-    //    min 0.70 / p25 0.70 / p50 0.70 / p75 0.70 / p90 0.74 / max 2.55
-    //    → **141/160 = 88% 被夹在 0.7px 下界**，只有极少数到 2.5px。
-    //    也就是说"自带河"在这份数据上本来就基本一样粗 —— 自动河不该比它更细变化。
-    assert(px === 0.7, `width 0.07 / discharge 96 实测落 0.7px 下界，实际 ${px}`);
-    const widest = RR.basemapRiverWidthPx({ width: 0.26, discharge: 523 });
-    assert(Math.abs(widest - 2.55) < 0.02, `实测最粗的一条（width 0.26 / discharge 523）应 2.55px，实际 ${widest}`);
-    assert(RR.basemapRiverWidthPx({ width: 0.001, discharge: 1 }) === 0.7, '极细的河夹到 0.7px 下界');
-    assert(RR.basemapRiverWidthPx({ width: 9, discharge: 99999 }) === 4, '极粗的河夹到 4px 上界');
-    // 量到的区分度：2.55 / 0.7 = 3.64×
-    assert(Math.abs(widest / px - 3.64) < 0.05, `实测区分度应约 3.64×，实际 ${widest / px}`);
-    return `分布 0.70(p50)~2.55(max) / ${(widest / px).toFixed(2)}×`;
+    // 🔴 2026-10-20 第十八修：真实数据 width 0.03~0.26（p50 0.07）。旧公式把它们全压到
+    //    0.7px 地板 = 每条河都是发丝，再压深色岸线就成了「两条边夹一条缝」。
+    //    现在归一化到 [1.2, 4.6]：中位 2.85、最细 1.2、最粗 4.6。
+    assert(Math.abs(px - 2.85) < 0.15, `width 0.07 / max 0.26 应 ≈2.85px，实际 ${px}`);
+    assert(RR.basemapRiverWidthPx({ width: 0.26, discharge: 523 }, 0.26) === 4.6, '最粗的一条应到 4.6px 上界');
+    assert(RR.basemapRiverWidthPx({ width: 0, discharge: 1 }, 0.26) === 1.2, '没有宽度的河夹到 1.2px 下界');
+    const tiny = RR.basemapRiverWidthPx({ width: 0.001, discharge: 1 }, 0.26);
+    assert(tiny > 1.2 && tiny < 1.6, `极细的河应仍在 1.2~1.6px，实际 ${tiny}`);
+    assert(RR.basemapRiverWidthPx({ width: 9, discharge: 99999 }, 0.26) === 4.6, '极粗的河夹到 4.6px 上界');
+    // 区分度：4.6 / 1.2 ≈ 3.8×（主干与支流一眼分得开）
+    return `p50 ${px.toFixed(2)}px / 区间 1.2–4.6px`;
   });
 
   check('🔴 反向探针：线宽若漏掉 sqrt(discharge) → 上面的量级断言必须能抓到', () => {
     // 旧式（自动河上一轮前的世界单位口径）在同样数据上会得到完全不同的值
     const bad = (r) => 0.55 + Math.cbrt(r.discharge || 1) * 0.75;
-    const good = RR.basemapRiverWidthPx({ width: 0.07, discharge: 96 });
+    const good = RR.basemapRiverWidthPx({ width: 0.07, discharge: 96 }, 0.26);
     assert(Math.abs(bad({ discharge: 96 }) - good) > 1,
       '探针本身失效了 —— 两种口径给出同一个数，那这条断言就没有判别力');
     return `旧口径 ${bad({ discharge: 96 }).toFixed(2)} vs 自带河口径 ${good.toFixed(2)}`;
@@ -506,11 +505,11 @@ async function main() {
     assert(a >= lo - 1e-6 && a <= hi + 1e-6, `flow=1 应落区间内，实际 ${a}`);
     assert(b >= lo - 1e-6 && b <= hi + 1e-6, `flow=max 应落区间内，实际 ${b}`);
     assert(b > a, `必须单调递增：${a} → ${b}`);
-    // ⚠️ 直接把 flow 当 discharge 会掉到 0.7px 下限（全网一样细）—— 这条就是防它
-    const naive = RR.basemapRiverWidthPx({ width: 0.1, discharge: 22 });
-    const mapped = RR.basemapRiverWidthPx({ width: 0.2, discharge: b });
-    assert(naive === 0.7, `把 flow 当 discharge 应掉到下限 0.7（这正是要避免的），实际 ${naive}`);
-    assert(mapped > naive + 0.5, `归一化后应有明显更粗的干流：${naive} → ${mapped}`);
+    // 🔴 2026-10-20：线宽不再吃 discharge，改吃 **width 字段的分布**（本幅图最宽那条归一化）。
+    //    这条反向探针改成守"宽度字段越大 → 图上线越粗"，且最细/最粗不被夹成同一个值。
+    const naive = RR.basemapRiverWidthPx({ width: 0.1, discharge: 22 }, 0.26);
+    const mapped = RR.basemapRiverWidthPx({ width: 0.2, discharge: b }, 0.26);
+    assert(mapped > naive + 0.3, `宽度字段翻倍应明显更粗：${naive} → ${mapped}`);
     return `flow 1→22 折合 discharge ${a.toFixed(0)}→${b.toFixed(0)}；线宽 ${naive.toFixed(2)} → ${mapped.toFixed(2)}px`;
   });
 
