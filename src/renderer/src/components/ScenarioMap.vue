@@ -5110,9 +5110,16 @@ function skeletonForTerrain(terrain) {
 function freeTraceRing(rawPts, { snap = false } = {}) {
   // T7：先过 perfect-freehand 的中心线稳定器（streamline），再 RDP 简化。
   // 预览与落库共用这一条链；稳定器对 100 点量级实测 p95 0.2ms（H1b spike）。
+  //
+  // 🔴 2026-10-21：`streamline` 从 0.4 降到 **0.2**。0.4 会把 90° 拐角**沿路径往回拉**
+  //    （实测 40 点方框：角点从 (378,127) 被拉到 (367,127)，再叠上 RDP 就变成 14 单位外的
+  //    一段圆弧），于是相邻省想贴上来时，最近骨架顶点已经超出 10 单位的吸附阈值 ——
+  //    test_63 的「两省共享边界顶点」从 2 个掉到 1 个（2026-10-19 换笔迹引擎后一直红）。
+  //    0.2 保留去抖，同时角点只内缩 ~4 单位（仍在阈值内）；实测共享顶点回到 2 个。
+  //    ⚠️ 别再调回 0.4：那是把"手感平滑"建在"边界对不上"上的取舍，已经付过一次账。
   let src = rawPts;
   try {
-    const stabilized = smoothStrokePoints(rawPts, { size: 1, thinning: 0, streamline: 0.4, smoothing: 0.5 });
+    const stabilized = smoothStrokePoints(rawPts, { size: 1, thinning: 0, streamline: 0.2, smoothing: 0.5 });
     if (stabilized.length >= 3) src = stabilized.map((p) => ({ x: p.x, y: p.y }));
   } catch (e) { /* 引擎异常 → 退回原始手迹，绝不吞掉这一笔 */ }
   const simplified = simplifyClosedTrace(src);
