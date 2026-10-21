@@ -274,7 +274,9 @@ onUnmounted(() => { dead = true; cancelAnimationFrame(rafId); });
   /* 🔴 fixed 不是 absolute（2026-10-17 暮雨实测：左下角露出 tree-navigation）——
      picker 原来是 `.main-content` 内的 absolute，而左侧导航树是 main-content 的**兄弟**节点，
      absolute 盖不住兄弟 → 卡片墙左边缘外露出世界选择页的导航栏。fixed 视口定位直接盖全屏。 */
-  position: fixed; inset: 0; z-index: 5000;
+  /* 🔴 2026-10-21 模块壳第二轮：顶栏现在**常驻**（模块页签要在卡片墙上也能点），
+     所以卡片墙从顶栏下沿开始铺，不再压住它。51px = 当前 .toolbar 的实测高度。 */
+  position: fixed; inset: 51px 0 0 0; z-index: 5000;
   display: flex; align-items: flex-start; justify-content: center;
   overflow: auto;
   padding: 24px 0;

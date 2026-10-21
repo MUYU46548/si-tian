@@ -63,14 +63,36 @@ def run(cdp):
              " el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()")
     wait_for(cdp, "document.querySelectorAll('.sp-card').length === 12", timeout=10, desc='清空恢复 12')
 
-    # 结构性判据：卡片墙打开时，左侧导航与全局工具栏必须**不在 DOM**，
-    # 而不是“被盖住”（暮雨反馈：遮罩/露底修过五次仍会露）。
+    # 结构性判据（2026-10-21 模块壳第二轮起）：
+    #   左侧导航必须**不在 DOM**（遮罩/露底修过五次仍会露）；
+    #   顶部栏则**必须常驻**——模块页签要在卡片墙上也能点（用户实测：
+    #   「点历史剧本后再也没有地方点世界观，最接近的是返回世界」）。
+    #   两者不矛盾的判据：卡片墙从顶栏下沿开始铺，且顶栏在它之上（点得到）。
     nav_gone = cdp.eval("!document.querySelector('.tree-navigation')")
-    toolbar_gone = cdp.eval("!document.querySelector('.toolbar')")
+    toolbar_present = cdp.eval("!!document.querySelector('.toolbar')")
     if not nav_gone:
         return False, '卡片墙打开时左侧导航仍在 DOM（仍是遮罩思路）'
-    if not toolbar_gone:
-        return False, '卡片墙打开时全局工具栏仍在 DOM（会从边缘露出来）'
+    if not toolbar_present:
+        return False, '卡片墙打开时顶部模块栏不在 DOM —— 用户只能从退出按钮离开'
+    lay = cdp.eval("""(() => {
+      const t = document.querySelector('.toolbar').getBoundingClientRect();
+      const p = document.querySelector('[data-testid="scenario-picker"]').getBoundingClientRect();
+      const sw = document.querySelector('[data-testid="module-switch"]');
+      const r = sw ? sw.getBoundingClientRect() : null;
+      const hit = r ? document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) : null;
+      return JSON.stringify({
+        toolbarBottom: Math.round(t.bottom), pickerTop: Math.round(p.top),
+        switchHit: hit ? (hit.closest('[data-testid="module-switch"]') ? 'switch' : String(hit.className)) : 'none',
+      });
+    })()""")
+    try:
+        L = json.loads(lay)
+    except Exception:
+        return False, f'模块栏布局探针失败：{lay[:200]}'
+    if L['pickerTop'] < L['toolbarBottom'] - 1:
+        return False, f"卡片墙压住了顶部栏（pickerTop={L['pickerTop']} < toolbarBottom={L['toolbarBottom']}）"
+    if L['switchHit'] != 'switch':
+        return False, f"卡片墙打开时模块页签点不到（命中的是 {L['switchHit']}）"
 
     # 盖住左侧导航：视口左侧中部点在 picker 内，而不是 tree-navigation
     cover = cdp.eval("(() => { const el = document.elementFromPoint(10, 300);"

@@ -1,6 +1,9 @@
 <template>
   <div class="app-layout" :class="`theme-${currentTheme}`">
-    <header v-if="!scenarioPickerVisible" class="toolbar">
+    <!-- 顶部栏常驻（2026-10-21 模块壳第二轮）：卡片墙打开时也保留 ——
+         用户实测「点历史剧本后再也没有地方点世界观，最接近的是返回世界」。
+         模块页签必须永远在手边，而不是藏在卡片墙的退出按钮里。 -->
+    <header class="toolbar">
       <h1 class="app-brand-title">司天</h1>
       <div class="toolbar-center">
         <search-bar ref="searchBar" />
@@ -2339,6 +2342,9 @@ async function clearCoordinateCache() {
   border-bottom: 1px solid var(--toolbar-border);
   gap: 16px;
   position: relative;
+  /* 🔴 必须高于卡片墙（.scenario-picker 的 z-index:5000）：否则模块页签在选择剧本时
+     又被整块盖住，用户只能从退出按钮离开（2026-10-21 实测反馈）。 */
+  z-index: 6000;
 }
 
 .toolbar h1 {
