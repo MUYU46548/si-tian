@@ -38,9 +38,9 @@ def _enter_scenario_mode(cdp):
 
 
 def _exit_scenario_mode(cdp):
-    """点击返回按钮退出剧本模式"""
+    """退出历史剧本模块（2026-10-21：走顶部模块页签；编辑器「返回」在底图编辑态只退子模式）"""
     return cdp.eval("""(() => {
-      const btn = Array.from(document.querySelectorAll('.back-btn')).find(b => b.textContent.includes('返回'));
+      const btn = document.querySelector('[data-testid=module-world]');
       if (!btn) return 'no-btn';
       btn.click();
       return 'ok';

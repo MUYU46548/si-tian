@@ -342,9 +342,11 @@ def run(cdp):
     # ── c. 底图数据「迟到」→ 必须自动选中 + 适屏 + 出内容 ────────────────────
     #    先在空底图状态进入剧本模式，再补数据（复刻只读被拒后补救 / 项目里后来才有底图）
     cdp.eval(STORE + ".baseMaps = {}; 'ok'")
+    # 2026-10-21：离开剧本走**模块页签**（编辑器左上角的「返回」现在先退底图编辑，
+    # 在底图编辑态点它不会再退出整个剧本 —— 用页签才是无条件退出模块）。
     cdp.eval("""(() => {
-      const b = Array.from(document.querySelectorAll('button')).find(x => (x.textContent || '').includes('返回'));
-      if (b) b.click(); return 'ok';
+      const b = document.querySelector('[data-testid=module-world]');
+      if (b) b.click(); return b ? 'ok' : 'no-module-world';
     })()""")
     time.sleep(0.6)
     cdp.eval(FRAME_HOOK)

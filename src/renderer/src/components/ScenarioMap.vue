@@ -2,7 +2,7 @@
   <div class="scenario-map-container" :class="{ immersive }">
     <!-- 沉浸模式细顶条（2026-10-17 P0）：默认态下不渲染；只留 返回 / 剧本名 / 年份 / 小地图 / 退出 -->
     <div v-if="immersive" class="immersive-bar" data-testid="immersive-bar">
-      <button class="imb-btn" @click="$emit('exit')">← 返回</button>
+      <button class="imb-btn" @click="onBackClick">{{ basemapEditMode ? '← 返回日常' : '← 退出剧本' }}</button>
       <!-- 换剧本（P0-1）：沉浸态左侧剧本列表是隐藏的，没有这个按钮就只能先退出沉浸再换 -->
       <button class="imb-btn" data-testid="imb-picker" title="回到剧本选择（卡片墙）"
               @click="$emit('picker')">换剧本</button>
@@ -68,7 +68,16 @@
 
       <div class="toolbar-row primary-row">
 
-        <button @click="$emit('exit')" title="返回世界选择" class="back-btn">← 返回</button>
+        <!-- 🔴 2026-10-21：这个按钮**先退子模式、再退模块**。
+             暮雨实测：在底图编辑里点左上角「← 返回」，以为是退底图编辑，结果整个历史剧本被退掉。
+             现在：底图编辑中 = 「← 返回日常」（只关底图编辑）；日常态 = 「← 退出剧本」（才离开模块）。
+             模块级退出还有顶部「世界观」页签，这里不再是唯一出口。 -->
+        <button @click="onBackClick" class="back-btn" data-testid="scenario-back-btn"
+                :title="basemapEditMode
+                  ? '退出底图编辑，回到日常编辑（不会离开历史剧本）'
+                  : '退出历史剧本，回到世界页（顶部「世界观」页签同样可以离开）'">
+          {{ basemapEditMode ? '← 返回日常' : '← 退出剧本' }}
+        </button>
         <button
           :class="{ active: tool === 'select' }"
           @click="setTool('select')"
@@ -1413,6 +1422,8 @@ const props = defineProps({
   initialScenarioId: { type: String, default: '' },
   openManager: { type: Boolean, default: false },
 });
+/** 模板里原来只有 `$emit`；现在「返回」需要按上下文分支，脚本侧也要能发事件 */
+const emit = defineEmits(['exit', 'picker']);
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
@@ -1693,8 +1704,7 @@ const BASEMAP_TOOLS = [
 ];
 const BASEMAP_TOOL_IDS = new Set(BASEMAP_TOOLS.map((t) => t.id));
 function toggleBasemapEditMode() {
-  basemapEditMode.value = !basemapEditMode.value;
-  // 🔴 开模式**顺手收起「更多」**（2026-10-18 第十七修·出图实测）：
+  basemapEditMode.value = !basemapEditMode.value;  // 🔴 开模式**顺手收起「更多」**（2026-10-18 第十七修·出图实测）：
   //    第一版是"开模式就展开「更多」"，结果工具栏从 ~120px 撑到 **~470px**（出图
   //    `docs/assets/basemap-mode-20261018/02-basemap-edit-mode.png` 一眼可见）——
   //    画布被压掉一半，而"模式分区"的收益全被这个面板吃掉了。
@@ -1705,6 +1715,25 @@ function toggleBasemapEditMode() {
   statusMsg(basemapEditMode.value
     ? '已进入底图编辑模式 —— 这一行是画地理；关掉它回到日常剧本编辑'
     : '已退出底图编辑模式 —— 回到日常剧本编辑（省份 / 归属 / 剧本）');
+}
+
+/**
+ * 左上角「返回」：**先退子模式，再退模块**（2026-10-21，暮雨实测误触）。
+ *
+ * 旧行为：底图编辑里点「← 返回」→ 直接 `exit`，整个历史剧本被退掉。
+ * 新行为：
+ *   · 底图编辑中 → 只关底图编辑，留在历史剧本（按钮显示「← 返回日常」）；
+ *   · 日常态   → 才退出历史剧本（按钮显示「← 退出剧本」）。
+ * 模块级退出另有顶部「世界观」页签，这里不再是唯一出口。
+ */
+function onBackClick() {
+  if (basemapEditMode.value) {
+    basemapEditMode.value = false;
+    statusMsg('已退出底图编辑 —— 回到日常剧本编辑（历史剧本还在；要离开请点「← 退出剧本」或顶部「世界观」）');
+    render();
+    return;
+  }
+  emit('exit');
 }
 const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'river', 'relief', 'label',
   'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
