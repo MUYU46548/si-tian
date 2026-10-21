@@ -17,7 +17,7 @@
     <!-- 顶栏：工具 + 模式切换 -->
     <div class="scenario-toolbar" :class="{ dim: capsuleDim }" @mousemove="pokeCapsule">
       <!-- 第 1 行：**按任务分层的 4 个主工具** + 「更多」（P3）
-           默认可见控件 = 6 个（返回 / 选择 / 自由绘制 / 变更归属 / 顶点编辑 / 更多），
+           默认可见控件 = 6 个（退出剧本 / 选择 / 自由绘制 / 涂归属 / 顶点编辑 / 更多），
            其余工具与开关全部收进「更多」—— 能力一个都不减，只是不再糊在一排里。 -->
       <!-- 🔴 2026-10-18 第十七修（暮雨：「我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，
            不要和日常的剧本编辑混在一起」）：底图/地理类工具从「更多」里拎出来，收进一个**显式模式**。
@@ -64,6 +64,11 @@
           title="改省界 (Shift+Q) — 按住涂抹，把笔迹并进下面「划归到」所选的那个省（**改的是省界形状，不是势力归属**）；相交的邻省会相应让出这块地。一笔 = 一条撤销。想改「这块地归哪个势力」请回日常行点「涂归属」"
           @click="setTool('provinceBrush')"
         ><Icon name="pencil" :size="14"/>改省界</button>
+        <!-- 2026-10-21：出口就在工作行末尾。用户「误进入底图编辑、又找不到退出口，
+             点左上角返回把整个剧本退了」——不能只靠顶栏那个按钮。 -->
+        <button class="basemap-exit" data-testid="basemap-exit"
+                title="退出底图编辑，回到日常剧本编辑（省份 / 归属 / 剧本）—— 不会离开历史剧本"
+                @click="toggleBasemapEditMode()">← 返回日常</button>
       </div>
 
       <div class="toolbar-row primary-row">
@@ -10358,6 +10363,16 @@ watch(baseMap, () => {
   border-left: 3px solid #d97706; padding-left: 8px; background: rgba(120, 53, 15, 0.18);
 }
 .basemap-row-label { color: #fbbf24; }
+/* 底图编辑行末尾的出口：一眼可见、与地理工具同一条行，避免用户去点左上角的模块级返回 */
+.basemap-exit {
+  margin-left: auto;
+  color: #fbbf24;
+  border: 1px solid rgba(217, 119, 6, 0.55);
+  background: rgba(120, 53, 15, 0.28);
+  border-radius: 4px;
+  padding: 2px 10px;
+}
+.basemap-exit:hover { background: rgba(120, 53, 15, 0.5); }
 .toolbar-more {
   display: flex; flex-direction: column; gap: 2px;
   border-top: 1px solid var(--border, #2a3038);
