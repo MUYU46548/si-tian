@@ -8,6 +8,7 @@
  *   ② 有事件且已落定 → 最后一条已落定事件；
  *   ③ 有事件但都没到 → 上一代终态（era 归 k-1）。
  * 另外：`initial + 事件` 应用到最后必须等于该代 `ownership`（终态快照可被重建）。
+ * era 0 按定案 A：第一条事件之前 = 无主。
  *
  * 用法：node scripts/tests/unit/test_scenario_ledger.js
  */
@@ -45,7 +46,7 @@ async function main() {
     {
       id: 's1', order: 1, era: { startYear: '2000', endYear: '2010' },
       polities: [{ id: 'A1', name: '甲', lineage: 'L1' }, { id: 'A2', name: '乙', lineage: 'L2' }],
-      ownership: { p1: 'A1', p2: 'A2', p3: 'A1', p4: 'A2' },
+      ownership: { p1: 'A2', p2: 'A2', p3: 'A1', p4: 'A2' },
       changeEvents: { p1: [{ y: 2005, m: 6, d: 1, owner: 'A2' }] },
     },
     {
@@ -105,13 +106,14 @@ async function main() {
     return `${rebuilt} 个省·代一致`;
   });
 
-  check('三：三态语义各自成立（无事件/已落定/未落定）', () => {
+  check('三：三态语义各自成立（无事件/已落定/未落定；era 0 定案 A）', () => {
     // s1 p3 无事件 → 本代快照 A1 全程
     assert(TL.ledgerOwnerAt(tl.ledger, 0, 'p3', { y: 2001 }).owner === 'A1', '无事件省应是本代快照');
-    // ⚠️ 已知缺口（B 的迁移决策，不是账本错）：computeEraChanges 对 era 0 不建 byProvince，
-    //    所以 s1 p1 的 2005 事件目前不影响回放 —— 账本忠实复刻现状。
-    assert(TL.ledgerOwnerAt(tl.ledger, 0, 'p1', { y: 2006 }).owner === 'A1',
-      'era 0 的事件当前被忽略（账本应与现状一致）');
+    // era 0（定案 A）：事件真的回放；第一条事件之前 = 无主
+    assert(TL.ledgerOwnerAt(tl.ledger, 0, 'p1', { y: 2005, m: 5, d: 31 }).owner === null,
+      'era 0 第一条事件之前应为无主（定案 A）');
+    assert(TL.ledgerOwnerAt(tl.ledger, 0, 'p1', { y: 2005, m: 6, d: 1 }).owner === 'A2',
+      'era 0 事件落定当天应为新主');
     // s2 p2：2015-06-01 前 = 本代初始（上一代终态 A2），之后 = B1
     const before = TL.ledgerOwnerAt(tl.ledger, 1, 'p2', { y: 2015, m: 5, d: 31 });
     assert(before.owner === 'A2', `未落定应上一代终态，实际 ${before.owner}`);
@@ -119,7 +121,7 @@ async function main() {
     const on = TL.ledgerOwnerAt(tl.ledger, 1, 'p2', { y: 2015, m: 6, d: 1 });
     assert(on.owner === 'B1', `落定当天应新主，实际 ${on.owner}`);
     assert(on.era === 1, `落定当天 era 应归 1，实际 ${on.era}`);
-    return '无事件 / 未落定 / 落定 三态都对（era 0 事件缺口已标注）';
+    return '无事件 / 未落定 / 落定 三态都对（era 0 定案 A）';
   });
 
   const failed = results.filter((r) => !r.ok);

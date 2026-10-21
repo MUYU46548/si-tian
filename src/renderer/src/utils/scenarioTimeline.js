@@ -192,19 +192,14 @@ export function computeEraChanges(scenarios, lineageOf, years) {
     const byProvince = {};
     const firstDate = {};
     const lastDate = {};
-    if (k === 0) return { changed, events: [], byProvince, firstDate, lastDate, explicit };
-
-    for (const pid of Object.keys(s.ownership || {})) {
-      const lin = lineageOf[k][s.ownership[pid]];
-      const prev = lineageOf[k - 1][sorted[k - 1].ownership?.[pid]];
-      if (lin !== prev) changed.push(pid);
-    }
-    changed.sort();
-
-    const y = years[k] || { start: 0, end: 0 };
-    const span = y.end - y.start;
     const src = s.changeEvents || {};
-    changed.forEach((pid, i) => {
+    // 🔴 2026-10-21（暮雨定案 A）：`changeEvents` 是**事实源**。
+    //    · era 0 的事件也回放；第一条事件之前 = **无主**（不是终态快照）；
+    //    · 谱系没变、但用户录了易主日期的省，也照样回放（以前只遍历 changed，事件被丢掉）。
+    //    ⚠️ 这会改变"第一条事件之前"的颜色（以前整段显示终态）—— 这是刻意的语义修正。
+    const explicitPids = Object.keys(src)
+      .filter((pid) => Array.isArray(src[pid]) && src[pid].length);
+    const build = (pid, i, total) => {
       const raw = Array.isArray(src[pid]) ? src[pid] : null;
       const list = [];
       if (raw && raw.length) {
@@ -221,8 +216,10 @@ export function computeEraChanges(scenarios, lineageOf, years) {
         }
       }
       if (!list.length) {
+        if (k === 0) return;   // era 0 不合成：没有谱系可推，事件就是全部
         // 合成值：与旧口径完全一致（区间内均匀铺开，只有年）→ 语义 = 该年 1 月 1 日
-        const yv = y.start + Math.round(((i + 1) / (changed.length + 1)) * span);
+        const y = years[k] || { start: 0, end: 0 };
+        const yv = y.start + Math.round(((i + 1) / (total + 1)) * (y.end - y.start));
         list.push({
           provinceId: pid, y: yv, m: null, d: null,
           owner: s.ownership?.[pid] ?? null, explicit: false, synthesized: true,
@@ -237,7 +234,26 @@ export function computeEraChanges(scenarios, lineageOf, years) {
       for (const ev of list) {
         if (ev.explicit) explicit[pid] = true;
       }
-    });
+    };
+
+    if (k === 0) {
+      // era 0：能力所及只有显式事件；没有事件的省继续由 ownership 快照表达
+      for (const pid of explicitPids) if ((s.ownership || {})[pid] !== undefined) changed.push(pid);
+      changed.sort();
+      changed.forEach((pid, i) => build(pid, i, changed.length));
+    } else {
+      for (const pid of Object.keys(s.ownership || {})) {
+        const lin = lineageOf[k][s.ownership[pid]];
+        const prev = lineageOf[k - 1][sorted[k - 1].ownership?.[pid]];
+        if (lin !== prev) changed.push(pid);
+      }
+      const seen = new Set(changed);
+      for (const pid of explicitPids) {
+        if (!seen.has(pid) && (s.ownership || {})[pid] !== undefined) { changed.push(pid); seen.add(pid); }
+      }
+      changed.sort();
+      changed.forEach((pid, i) => build(pid, i, changed.length));
+    }
 
     // 帧索引要的是「所有事件按日期排序」的扁平表（同一天多省合并由 scenarioSlices 负责）
     const events = [];
@@ -518,7 +534,15 @@ function asDate(v) {
  * ⚠️ 同一省可能有多条事件（同省同年多次易主）→ 取**最后一条已落定**的 owner。
  */
 export function currentOwnerRef(tl, k, pid, atDate) {
-  if (k <= 0) return { owner: tl.scenarios[0]?.ownership?.[pid], era: 0 };
+  if (k <= 0) {
+    // 🔴 2026-10-21 定案 A：era 0 的显式事件也回放；第一条事件之前 = **无主**。
+    const e0 = tl.eraChg && tl.eraChg[0];
+    if (e0 && e0.byProvince && e0.byProvince[pid]) {
+      const ev0 = lastEventAtOrBefore(e0.byProvince[pid], asDate(atDate));
+      return { owner: ev0 ? ev0.owner : null, era: 0 };
+    }
+    return { owner: tl.scenarios[0]?.ownership?.[pid], era: 0 };
+  }
   const e = tl.eraChg[k];
   const at = asDate(atDate);
   if (e && e.byProvince && e.byProvince[pid]) {

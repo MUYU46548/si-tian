@@ -229,15 +229,18 @@ era = { start, end,
   **4,968 个省·代终态重建 0 mismatch**（`scripts/tests/unit/test_scenario_ledger.js`）。
 - 这是**内存账本，不改盘上数据**；`buildTimeline` 每次重建时顺带产出（12 代 × 415 省量级可忽略）。
 
-**核对时发现的两个"事件还不是唯一事实源"的缺口**（v2 迁移前必须定，且都会改变回放行为）：
+**核对时发现的两个"事件还不是唯一事实源"的缺口 —— 已按定案 A 修掉（2026-10-21）**：
 
-1. **era 0 的事件被整体忽略** —— `computeEraChanges` 对 k=0 直接返回空 `byProvince`；
-   真实项目 era 0 有 **26 个省**存了 changeEvents，但回放里它们不生效（全程显示终态快照）。
-2. **谱系没变的省，显式事件被丢掉** —— `computeEraChanges` 只遍历 `changed`（谱系变化）；
-   某省在同一谱系内换 id、但用户录了易主日期时，事件被忽略。
+1. **era 0 的事件此前被整体忽略**（`computeEraChanges` 对 k=0 返回空 `byProvince`）：
+   真实项目 era 0 有 26 个省存了 changeEvents，回放里却不生效。
+2. **谱系没变的省，显式事件被丢掉**（只遍历 `changed`）。
 
-两条修法都会让"第一条事件之前"的归属变成**上一代/无主**（现在显示终态），
-这是产品语义选择，不是纯重构 —— 迁移前先和暮雨确认 era 0 的基线（无主 or 终态）。
+暮雨定案 **A：era 0 基线 = 无主**。现在：
+- `computeEraChanges` 在 era 0 也按显式事件建 `byProvince`（不合成），并把「谱系没变但有事件」的省并入 `changed`；
+- `currentOwnerRef(k=0)` 先查本代事件：第一条事件之前返回 **null（无主）**，之后返回新主；
+- `buildLedger` 的 `initial` 因此对 era 0 事件省 = null，`initial + 最后一条事件 = 快照`（真实数据 0 mismatch）。
+- ⚠️ 可见变化：era 0 里那 26 个省在各自第一条易主日之前会变白（无主），不再全程显示终态。
+
 
 
 
