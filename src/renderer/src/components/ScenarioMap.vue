@@ -3381,6 +3381,61 @@ function traceProvincePath(c, prov) {
   return any;
 }
 
+/**
+ * **省份 Path2D 缓存**（2026-10-21，编辑卡顿的第一刀）。
+ *
+ * 为什么：`drawProvinces` 每帧对 415 个省逐环 `beginPath/moveTo/lineTo/closePath` 再 fill，
+ * 顶点编辑/拖拽/笔刷的每一帧都要重付一次（415 省 ≈ 2.4 万顶点）。而**几何只在改省界时变**，
+ * 颜色/归属/日期只改 fillStyle —— 路径本身可以复用。
+ *
+ * 口径：
+ *   · 以 `prov` 对象为键（WeakMap），签名 = 每个环的 `points` 引用 + `fromGrid`；
+ *     顶点编辑换新数组 → 只让**那一个省**的缓存失效；
+ *   · `altStraight`（Alt 临时直线）单独一槽，不污染曲线槽；
+ *   · 路径用**世界坐标**（画布已 scale/translate）—— 缓存与相机无关；
+ *   · 平滑/贝塞尔的画法与 `traceShapePath` 逐字一致（否则省界会在有无缓存时长得不一样）。
+ */
+const provincePathCache = new WeakMap();
+function buildProvincePath(prov, straight) {
+  const rings = provinceRings(prov);
+  const path = new Path2D();
+  let any = false;
+  for (const r of rings) {
+    const pts = ringPointsForRender(r);
+    if (!pts || pts.length < 3) continue;
+    const n = pts.length;
+    path.moveTo(vx(pts[0]), vy(pts[0]));
+    for (let i = 1; i <= n; i++) {
+      const prev = pts[(i - 1) % n];
+      const cur = pts[i % n];
+      const o = prev.controlOut;
+      const k = cur.controlIn;
+      if (!straight && o && k) {
+        path.bezierCurveTo(vx(prev) + o.x, vy(prev) + o.y, vx(cur) + k.x, vy(cur) + k.y, vx(cur), vy(cur));
+      } else {
+        path.lineTo(vx(cur), vy(cur));
+      }
+    }
+    path.closePath();
+    any = true;
+  }
+  return any ? path : null;
+}
+function provincePathFor(prov, straight = false) {
+  const slot = straight ? 'straight' : 'curve';
+  let entry = provincePathCache.get(prov);
+  if (!entry) { entry = {}; provincePathCache.set(prov, entry); }
+  const hit = entry[slot];
+  // 快路径：只比**数据引用**（points / extraRings / rings），不再每帧跑 provinceRings + 建签名数组
+  // —— 415 省 × 每帧会白造 400+ 个数组，CPU 采样里 GC 占 72ms/20 帧。
+  if (hit && hit.pts === prov.points && hit.extra === prov.extraRings && hit.rings === prov.rings) {
+    return hit.path;
+  }
+  const path = buildProvincePath(prov, straight);
+  entry[slot] = { pts: prov.points, extra: prov.extraRings, rings: prov.rings, path };
+  return path;
+}
+
 /** 活动环的顶点（顶点编辑作用于「活动环」；多环省份可在属性面板切换环） */
 const activeRingIdx = ref(0);
 function ringPointsOf(prov, idx = activeRingIdx.value) {
@@ -7823,10 +7878,12 @@ function getDisplayRivers() {
   // 🔴 2026-10-21：`.map` 导入的河是「去 + 原路回」的闭合往返（160/160 实测），
   //    不折成中心线就会画成两条平行线（用户截图里的"从某个节点开始分支"）。
   //    在**显示列表**里折，不改用户数据；手画河（river_ 前缀）原样。
+  // 🔴 缓存检查必须在**折叠/裁剪之前**：160 条河的全点折叠是每帧 20~25ms（CPU 采样实测），
+  //    之前放在命中判断前 = 缓存白做。
+  if (displayRiverCache.rivers === rivers && displayRiverCache.terrain === terrain) return displayRiverCache.out;
   const imported = rivers
     .filter((r) => r && String(r.id || '').indexOf('river_') !== 0)
     .map((r) => ({ ...r, points: collapseReversedRiverPoints(r.points) }));
-  if (displayRiverCache.rivers === rivers && displayRiverCache.terrain === terrain) return displayRiverCache.out;
   let out = imported;
   const mask = getLandMask();
   if (mask && imported.length) {
@@ -8748,14 +8805,13 @@ function drawProvinces(c) {
 
   rawTerrain().forEach(prov => {
     const rp = rawProvOf(prov);
-    if (!rp || !provinceRings(rp).length) return;
+    // 路径按省缓存（Path2D）：几何不变时每帧只做 fill/stroke，不再重描 2.4 万个顶点
+    const path = provincePathFor(rp, altStraight);
+    if (!path) return;
     const fillCol = getProvinceColor(rp);
     c.fillStyle = fillCol;
-    c.beginPath();
     // 多环实体：一条路径覆盖所有环；evenodd 与命中口径（pointInProvince）一致 → 洞真空、飞地真画
-    traceProvincePath(c, rp);
-    c.closePath();
-    c.fill('evenodd');
+    c.fill(path, 'evenodd');
     // 同色描边（~1px）：抹掉相邻省份之间的**亚像素缝**。
     // 网格派生的边界由相邻两省各自平滑（Chaikin 在共享弧的两端邻域不同），交界处最多差
     // 零点几像素 —— 同色 1px 描边是最省事的收敛办法（恰好覆盖在边界上，观感不变）。
@@ -8765,12 +8821,12 @@ function drawProvinces(c) {
       c.setLineDash([px(6), px(4)]);
       c.strokeStyle = SEA_EDGE;
       c.lineWidth = px(1.2);
-      c.stroke();
+      c.stroke(path);
       c.setLineDash([]);
     } else if (isOpaqueColor(fillCol)) {
       c.strokeStyle = fillCol;
       c.lineWidth = px(1);
-      c.stroke();
+      c.stroke(path);
     }
 
     // EU4 式斜线占领：底色刻意是**旧主**色（上面刚填的），斜线用**新主**色。
@@ -8781,7 +8837,7 @@ function drawProvinces(c) {
       const dy = b.maxY - b.minY;
       const step = px(8.5);
       c.save();
-      c.clip();                       // 复用当前路径（fill 不会清空路径）
+      c.clip(path);                   // 复用缓存路径做裁剪
       c.globalAlpha = 0.92;
       c.strokeStyle = newCol;
       c.lineWidth = px(3.2);
@@ -8795,20 +8851,14 @@ function drawProvinces(c) {
       c.save();
       c.lineWidth = px(1.4);
       c.strokeStyle = newCol;
-      c.beginPath();
-      traceProvincePath(c, rp);
-      c.closePath();
-      c.stroke();
+      c.stroke(path);
       c.restore();
     } else if (scenarioMode && tlDiffMode.value === 'outline'
                && k > 0 && (tl.eraChg[k]?.changed || []).includes(rp.id)) {
       c.save();
       c.lineWidth = px(2);
       c.strokeStyle = '#ffffff';
-      c.beginPath();
-      traceProvincePath(c, rp);
-      c.closePath();
-      c.stroke();
+      c.stroke(path);
       c.restore();
     }
   });
@@ -8835,11 +8885,10 @@ function drawProvinceBorders(c) {
   c.lineWidth = px(PROVINCE_BORDER_PX);
   for (const prov of terrain) {
     const rp = rawProvOf(prov);
-    if (!rp || !provinceRings(rp).length) continue;
-    c.beginPath();
-    traceProvincePath(c, rp);
-    c.closePath();
-    c.stroke();
+    // 边界与填充共用同一份 Path2D 缓存：每帧不再重描 2.4 万顶点（2026-10-21）
+    const path = provincePathFor(rp, altStraight);
+    if (!path) continue;
+    c.stroke(path);
   }
   c.restore();
   // ── 第二遍：选中 / 多选 / 合并目标（只画这几个，顺序=层叠顺序）──────────────────
@@ -8849,14 +8898,12 @@ function drawProvinceBorders(c) {
     const isMergeTarget = mergeProvId.value === prov.id;
     if (!isSelected && !isMulti && !isMergeTarget) continue;
     const rp = rawProvOf(prov);
-    if (!rp || !provinceRings(rp).length) continue;
+    const path = provincePathFor(rp, altStraight);
+    if (!path) continue;
     // 多选描边用**青色 + 更粗**：单选是白色 1.5px，两者叠在一起时也得看得出"这几个是批量对象"
     c.strokeStyle = isMergeTarget ? '#ffd700' : (isMulti ? '#22d3ee' : '#ffffff');
     c.lineWidth = isMulti ? px(2.5) : px(1.5);
-    c.beginPath();
-    traceProvincePath(c, rp);
-    c.closePath();
-    c.stroke();
+    c.stroke(path);
   }
 }
 /**

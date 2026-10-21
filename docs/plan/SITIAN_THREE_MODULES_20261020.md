@@ -265,6 +265,24 @@ era = { start, end,
 - 至此 `ownership` 在语义上是缓存；下一步可以停写它（减小文件、避免第二事实源），
   或在编辑手感优先时先搁置（体感无差异，先不动更稳）。
 
+### 6. 编辑卡顿第一刀：省界 Path2D + 缓存命中顺序（2026-10-21）
+
+真机（真实 415 省项目，`scripts/tests/diag_edit_perf.py` / `diag_edit_profile.py`）：
+
+- **单帧 render：中位 29.2ms → 18.6ms（-36%）**，最慢 34 → 27.5ms。
+- 改动：
+  1. **省界 Path2D 缓存**（`provincePathFor`）：填充、省界、选中描边、EU4 裁剪共用一份路径；
+     几何只在改省界时换数组 → 命中时不再逐帧重描 2.4 万顶点。快路径只比 `points/extraRings/rings` 引用，
+     不再每帧跑 `provinceRings` 建签名数组（GC 从 72ms/20 帧降到 29ms）。
+  2. **`getDisplayRivers` 缓存检查提前**：原来看似有缓存，但 `collapseReversedRiverPoints`
+     在命中判断**之前**对 160 条河全点跑了一遍（25ms/帧）。
+  3. **标签形心按顶点数组缓存**（`ringAreaCentroid`）：415 省每帧重算面积+形心（22ms/20 帧→缓存命中）。
+- CPU 采样剩余热点（20 帧合计）：`(program)` 134ms、`lineTo` 46、GC 29、`drawBurgs` 27、
+  河道（`strokeTaperedLine`+`drawCurvedRiver`）45、`drawPolityLabels` 16、`clearRect` 11。
+- **下一步（真正的编辑流畅）**：静态层（省/界/河/路）离屏缓存 + 脏省重绘；河道曲线按 river 引用缓存
+  （现在每帧仍重跑 Catmull-Rom）；顶点拖动/省界笔刷期跳过 labels/burgs。
+
+
 
 
 

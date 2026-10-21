@@ -59,6 +59,21 @@ const py = (p) => (Array.isArray(p) ? Number(p[1]) : Number(p && p.y));
  * @returns {{area:number, cx:number, cy:number}}
  */
 export function ringAreaCentroid(points) {
+  // 🔴 2026-10-21：按**顶点数组引用**缓存。标签每帧对 415 个省重算面积+形心
+  //    （CPU 采样 22ms/帧），而几何只在改省界时换数组 —— 引用没变就不可能变。
+  //    ⚠️ 依赖「几何编辑换新数组」的纪律（store 的写口一直是换数组）。
+  if (Array.isArray(points)) {
+    const hit = ringAreaCache.get(points);
+    if (hit) return hit;
+  }
+  const res = computeRingAreaCentroid(points);
+  if (Array.isArray(points)) ringAreaCache.set(points, res);
+  return res;
+}
+
+const ringAreaCache = new WeakMap();
+
+function computeRingAreaCentroid(points) {
   const pts = Array.isArray(points) ? points.filter((p) => Number.isFinite(px(p)) && Number.isFinite(py(p))) : [];
   const n = pts.length;
   if (!n) return { area: 0, cx: 0, cy: 0 };
