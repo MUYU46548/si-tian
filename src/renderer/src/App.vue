@@ -6,6 +6,21 @@
         <search-bar ref="searchBar" />
       </div>
       <div class="toolbar-actions">
+        <!-- 模块切换（2026-10-21 模块壳第一刀）：
+             历史剧本此前只有「世界选择页里的一个按钮」这一个入口，进入后是一个布尔态
+             （scenarioMode），所以它天然读作"世界页上的一层遮罩"。现在把它做成
+             **App 级平级模块**：两个模块随时可切、当前模块高亮，剧本不再依附于世界页。
+             ⚠️ 切换只改模块，不销毁对方的视口位置（退出剧本仍保留 viewLevel，见 test_118 f0）。
+             卡片墙打开时整个 header 隐藏（它自己就是模块的入场页）。 -->
+        <nav class="module-switch" data-testid="module-switch" aria-label="模块切换">
+          <button :class="{ active: activeModule === 'world' }" data-testid="module-world"
+                  title="世界观模块：世界 → 星域 → 星系 → 行星 → 区域 → 室内"
+                  @click="switchModule('world')">世界观</button>
+          <button :class="{ active: activeModule === 'scenario' }" data-testid="module-scenario"
+                  title="历史剧本模块：剧本 / 势力 / 归属 / 时间轴"
+                  @click="switchModule('scenario')">历史剧本</button>
+        </nav>
+        <span class="toolbar-divider"></span>
         <nav class="level-indicator">
           <!-- 世界（下拉选择） -->
           <div class="breadcrumb-item">
@@ -464,12 +479,38 @@ const panelsStore = usePanelsStore();
 const { currentTheme, toggleTheme, initTheme } = useTheme();
 const { bookmarks, currentIndex, addBookmark, removeBookmark, clearAll } = useBookmarks();
 const dirty = ref(false);
-const scenarioMode = ref(false);
+/**
+ * **当前模块**（2026-10-21 模块壳第一刀）：`'world'` | `'scenario'`。
+ *
+ * 为什么要有它：历史剧本此前只是一个布尔 `scenarioMode` —— 没有"平级模块"的身份，
+ * 只能读作"世界页上盖了一层"。模块状态必须显式存在，才能：
+ *   ① 顶部模块切换按钮有唯一真源；
+ *   ② 以后再加第三个模块（星图 / 行星与细节）时不用再造一套布尔；
+ *   ③ 「在剧本里走到行星层」= 世界模块的视口，模块身份与层级身份不再混为一谈。
+ *
+ * ⚠️ `scenarioMode` 保留为**可写 computed**（= activeModule 的派生）：30+ 个用例与
+ *    既有函数都按 `scenarioMode.value` 读写，行为一行不改；但它不再有独立存储。
+ */
+const activeModule = ref('world');
+const scenarioMode = computed({
+  get: () => activeModule.value === 'scenario',
+  set: (v) => { activeModule.value = v ? 'scenario' : 'world'; },
+});
 // 剧本域内的两态（2026-10-17 P0 卡片墙）：卡片墙（选剧本）vs 编辑器。
-// scenarioMode 仍表示「在剧本域内」—— getActiveRenderer / 书签 / 世界选择页隐藏逻辑一行不改。
 const scenarioPickerVisible = ref(false);
 const scenarioInitialId = ref('');
 const scenarioOpenManager = ref(false);
+
+/**
+ * 顶部模块切换（唯一入口）。
+ * 进剧本 = 走既有 `enterScenarioMode()`（载入剧本 + 卡片墙/编辑器）；
+ * 回世界 = `exitScenarioMode()`（**只**关模块，不动 viewLevel —— test_118 f0 钉着这条）。
+ */
+async function switchModule(m) {
+  if (m === activeModule.value) return;
+  if (m === 'scenario') { await enterScenarioMode(); return; }
+  exitScenarioMode();
+}
 
 // ===== 剧本域与七层视图的**互斥**（2026-10-18 第十四修）=====
 //
@@ -1448,6 +1489,10 @@ function handleLoadSampleWorld() {
 // ===== 剧本地图模式 =====
 
 async function enterScenarioMode() {
+  // 模块入口 = 模块根（2026-10-21）：从行星/区域层点「历史剧本」时先把视口退回世界层。
+  // 否则卡片墙选完剧本 → pickerVisible=false、viewLevel 仍是 planet → ScenarioMap 因层级门
+  // 不挂载，用户看到的是"已离开历史剧本编辑器"的假态（模块进不去，只能靠浮标救）。
+  if (store.viewLevel !== 'world') store.backToWorld();
   // 从**知识库缓存**（<库>/.sitian/scenarios.json）载入剧本。
   // 🔴 必须走 `fillMissingOnly`（只补缺）：项目态下画布事实源是项目文件，
   //    库里同名的剧本 / 底图**不许**覆盖项目里已经编辑过的那一份 ——
@@ -2404,6 +2449,38 @@ async function clearCoordinateCache() {
   background: var(--toolbar-border);
   margin: 0 2px;
   flex-shrink: 0;
+}
+
+/* 模块切换（2026-10-21）：像一个分段控件，当前模块用实心强调色 —— 让"在哪个模块里"
+   一眼可见，而不是靠"世界选择页消失了吗"去猜。 */
+.module-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  flex: none;
+}
+
+.module-switch button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.module-switch button:hover { color: var(--accent); }
+
+.module-switch button.active {
+  color: #0f172a;
+  background: var(--accent);
+  font-weight: 600;
 }
 
 .level-indicator {

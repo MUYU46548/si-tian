@@ -186,12 +186,26 @@ def source_gates():
         fails.append('🔴 卡片墙没有 Teleport 到 body —— 左侧导航树又会在入场动画期间露出来（穿帮）')
     if 'position: fixed; inset: 0;' not in picker:
         fails.append('🔴 卡片墙不是 fixed 全屏（absolute 盖不住 .main-content 的兄弟节点）')
+
+    # a③ 模块壳（2026-10-21 第一刀）：模块状态必须显式存在，且顶部有平级切换入口。
+    #     旧形状是裸 `const scenarioMode = ref(false)` —— 世界页上的一个布尔，读作"遮罩"。
+    if 'const activeModule = ref(' not in app:
+        fails.append('🔴 App.vue 没有 activeModule（模块身份还是靠一个布尔在混）')
+    if 'const scenarioMode = computed(' not in app:
+        fails.append('🔴 scenarioMode 不是 activeModule 的派生（两套真源会漂移）')
+    if 'const scenarioMode = ref(' in app:
+        fails.append('🔴 scenarioMode 又变回独立 ref（模块状态必须单一真源）')
+    if 'data-testid="module-switch"' not in app or 'data-testid="module-scenario"' not in app:
+        fails.append('🔴 顶部没有模块切换入口（历史剧本只能是"世界页里的一个按钮"）')
+    seg_entry = app.split('async function enterScenarioMode', 1)
+    if len(seg_entry) < 2 or 'store.backToWorld()' not in seg_entry[1][:400]:
+        fails.append('🔴 enterScenarioMode 没有先退回 world 层 —— 从行星层进模块会落成"已离开编辑器"假态')
     return fails
 
 
 def run(cdp):
     fails = source_gates()
-    notes = ['源码闸门 5 条']
+    notes = ['源码闸门 13 条']
 
     ensure_case_state(cdp)
 
@@ -336,6 +350,33 @@ def run(cdp):
     if not again['scenarioBox']:
         fails.append('再次进入剧本域后编辑器没有挂载')
     notes.append('f2 世界选择页入口可重复进入剧本编辑器')
+
+    # ── g 模块切换（2026-10-21 第一刀）：顶部两个模块是平级的，切换不叠层 ──
+    #    判据不是"按钮存在"，而是**切过去之后谁在 DOM 里**：
+    #    世界观模块 = 只有 WorldSelector；剧本模块 = 只有 ScenarioMap。
+    _ev(cdp, "(() => { const b = document.querySelector('[data-testid=module-world]');"
+             " if (b) { b.click(); return 'ok'; } return 'no-btn'; })()", '切到世界观模块')
+    time.sleep(0.8)
+    g = _layout(cdp)
+    if g['scenarioMode']:
+        fails.append('切到世界观模块后 scenarioMode 仍为真（模块没切干净）')
+    if g['scenarioBox']:
+        fails.append('切到世界观模块后 ScenarioMap 还挂着（两个模块同屏）')
+    if not g['worldSelector']:
+        fails.append('切到世界观模块后没有回到世界选择页')
+    _ev(cdp, "(() => { const b = document.querySelector('[data-testid=module-scenario]');"
+             " if (b) { b.click(); return 'ok'; } return 'no-btn'; })()", '切回历史剧本模块')
+    try:
+        wait_for(cdp, "!!" + SMC, timeout=25, desc='切回剧本模块')
+    except Exception:
+        fails.append('点顶部「历史剧本」模块后编辑器没有挂载')
+    time.sleep(0.5)
+    h = _layout(cdp)
+    if not h['scenarioBox']:
+        fails.append('切回剧本模块后 ScenarioMap 不在（模块入口打不开）')
+    if h['viewLevel'] != 'world':
+        fails.append(f"切回剧本模块后 viewLevel={h['viewLevel']}（模块应落在世界层）")
+    notes.append(f"g 模块切换：世界观={g['worldSelector']} → 剧本={h['scenarioBox'] is not None}")
 
     if fails:
         return False, ' | '.join(notes) + ' ⇒ ' + ' ；'.join(fails)
