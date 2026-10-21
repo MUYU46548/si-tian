@@ -93,7 +93,9 @@ def source_gates():
                  'if (showRiverBase.value) drawRivers(ctx.value);\n  }\n'
                  '  if (!strokeBaseBuilding) drawRiverPaths',
                  'if (!blitted && showBorders.value) drawProvinceBorders',
-                 'if (!blitted && showBurgs.value) drawBurgs'):
+                 # 2026-10-21：相机移动期还会跳过聚落/标签/小地图（cameraMotion），
+                 # 门控条件因此变长；判据只要求"同一行里既有 !blitted 又有 drawBurgs"。
+                 'if (!blitted && showBurgs.value && !cameraMotion) drawBurgs'):
         if gate not in sm:
             fails.append(f'🔴 静态层没有受「贴图帧」门控：{gate!r}（贴图帧会把它们再画一遍）')
     for gate in ('if (!strokeBaseBuilding) drawRiverPaths', 'if (!strokeBaseBuilding) drawSelectedRiverHighlight',

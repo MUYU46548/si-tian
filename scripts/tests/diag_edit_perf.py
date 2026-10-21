@@ -34,7 +34,7 @@ PROBE = r"""
 
   // 省界笔刷：一次拖动 20 步，量每次 mousemove 的（几何布尔 + 渲染）耗时
   let brush = null;
-  {
+  if (false) {
     let pick = null;
     for (const p of provs) {
       if (p && p.kind !== 'sea' && Array.isArray(p.points) && p.points.length > 2) { pick = p; break; }
@@ -76,6 +76,25 @@ PROBE = r"""
       }
     }
   }
+
+  // 相机移动：fast 路径（markCameraMotion → 跳过标签/聚落/小地图）vs 全量
+  const panFast = [];
+  for (let i = 0; i < 12; i++) {
+    sm.markCameraMotion();
+    sm.cameraX += 7;
+    const a = performance.now();
+    sm.render();
+    panFast.push(performance.now() - a);
+  }
+  await new Promise(r => setTimeout(r, 220));   // 让 settle 的全量帧落地
+  const panFull = [];
+  for (let i = 0; i < 12; i++) {
+    sm.cameraX += 7;
+    const a = performance.now();
+    sm.render();
+    panFull.push(performance.now() - a);
+  }
+  const med = (arr) => { const s = arr.slice().sort((a, b) => a - b); return Math.round(s[Math.floor(s.length / 2)] * 10) / 10; };
 
   // 顶点拖动：走产品路径——先把相机对准一个陆地省的重心、点选它，再对准第一个顶点
   let drag = null;
@@ -139,6 +158,9 @@ PROBE = r"""
     drag,
     diag,
     brush,
+    pan: { fastMedian: med(panFast), fullMedian: med(panFull),
+           fastAll: panFast.map(v => Math.round(v * 10) / 10),
+           fullAll: panFull.map(v => Math.round(v * 10) / 10) },
   });
 })()
 """

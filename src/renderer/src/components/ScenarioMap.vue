@@ -3545,6 +3545,19 @@ function worldToScreen(wx, wy) {
 // Pan & Zoom
 // ═══════════════════════════════════════════
 let isPanning = false;
+// 相机移动期（平移 / 滚轮缩放）：标签、聚落、浮雕、小地图这些"读完就够"的层先跳过，
+// 停稳 140ms 再补一帧全量。415 省实测：带这些层的帧 ~23ms，去掉后接近静止帧（5~9ms）。
+let cameraMotion = false;
+let cameraSettleTimer = null;
+function markCameraMotion() {
+  cameraMotion = true;
+  if (cameraSettleTimer) clearTimeout(cameraSettleTimer);
+  cameraSettleTimer = setTimeout(() => {
+    cameraSettleTimer = null;
+    cameraMotion = false;
+    render();
+  }, 140);
+}
 let panStart = { x: 0, y: 0 };
 
 // ═══════════════════════════════════════════
@@ -4368,6 +4381,7 @@ function onMouseMove(event) {
   cameraX.value += dx;
   cameraY.value += dy;
   panStart = { x: event.clientX, y: event.clientY };
+  markCameraMotion();
   // 平移也是高频手势：一帧内多次移动只画一次（画布尺寸不变，不会出现"尺寸不一致"）
   renderCoalesced();
 }
@@ -4496,6 +4510,12 @@ function onMouseUp(event) {
     isPanning = false;
     updateCursor();
   }
+  // 相机停稳：补一帧全量（标签/聚落/小地图在移动期是跳过的）
+  if (cameraMotion || cameraSettleTimer) {
+    if (cameraSettleTimer) { clearTimeout(cameraSettleTimer); cameraSettleTimer = null; }
+    cameraMotion = false;
+    render();
+  }
   if (isBrushing) {
     isBrushing = false;
   }
@@ -4593,6 +4613,7 @@ function onWheel(event) {
   const worldAfter = screenToWorld(mx, my);
   cameraX.value += (worldAfter.x - worldBefore.x) * cameraScale.value;
   cameraY.value += (worldAfter.y - worldBefore.y) * cameraScale.value;
+  markCameraMotion();   // 缩放期跳过标签/聚落/小地图，停稳后补全量
   render();
 }
 
@@ -8765,15 +8786,15 @@ function renderFrame() {
   }
   if (!blitted && showBorders.value) drawProvinceBorders(ctx.value);
   if (!strokeBaseBuilding) drawVertexHandles(ctx.value);
-  if (!blitted && showBurgs.value) drawBurgs(ctx.value);
+  if (!blitted && showBurgs.value && !cameraMotion) drawBurgs(ctx.value);
   if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush')) drawProvinceBrushOverlay(ctx.value);
   if (!strokeBaseBuilding) drawPreviewOverlay(ctx.value);
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
   //    「基帧（草稿之下的静态层）→ 草稿 → 这四层 → 屏幕空间浮层」。
-  if (!strokeBaseBuilding && showLabels.value) drawLabels(ctx.value);
+  if (!strokeBaseBuilding && showLabels.value && !cameraMotion) drawLabels(ctx.value);
   // A8：势力标注画在用户浮动文本之后（势力名是底层读物，不该被浮字压住）
-  if (!strokeBaseBuilding) {
+  if (!strokeBaseBuilding && !cameraMotion) {
     drawPolityLabels(ctx.value);
     drawReliefIcons(ctx.value);
     drawScenarioMarkers(ctx.value);
@@ -8782,7 +8803,7 @@ function renderFrame() {
   ctx.value.restore();
 
   // 以下浮层画在屏幕坐标系：字号与命中不受缩放影响
-  if (!strokeBaseBuilding) {
+  if (!strokeBaseBuilding && !cameraMotion) {
     drawBurgTooltip(ctx.value);
     drawCultureLegend(ctx.value);
     drawMinimap(ctx.value);
