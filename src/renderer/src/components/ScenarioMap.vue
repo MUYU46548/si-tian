@@ -1528,6 +1528,7 @@ import {
   BASEMAP_RIVER_COLOR, RIVER_DRAW_COLOR, RIVER_BANK_COLOR, basemapRiverWidthPx, basemapRiverWidthWorld,
   flowToDischargeEquivalent,
   drawCurvedRiver, fillRiverRibbon, smoothRiverLine, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
+  planRiverCoveredRuns, collapseReversedRiverPoints,
   // 🔴 2026-10-18 第十六修：选中轮廓的**偏移几何**与空隙常量下沉到纯函数层 ——
   //    组件里"用加宽的中心线当轮廓"是"选中即盖住水面"的根源；下沉后单测能直接判偏移量。
   offsetPolyline, RIVER_SEL_GAP_PX as RIVER_SEL_GAP_PX_UTIL,
@@ -7628,6 +7629,8 @@ function polylineInView(pts, minX, minY, maxX, maxY) {
 //    改省份会换 terrain 数组引用、导入会换 rivers 数组引用 —— 引用没变就不可能变，
 //    所以这层缓存不会"陈旧"（比按 key 名缓存安全：同名换数据不会漏失效）。
 let displayRiverCache = { terrain: null, rivers: null, out: [] };
+/** 导入河的绘制计划（宽河优先 + 窄河去重）—— 按列表引用/缩放/最大宽度缓存 */
+let displayRiverPlanCache = { list: null, scale: 0, maxW: 0, smoothed: [], plans: [] };
 let landMaskCache = { terrain: null, mask: null };
 
 /** 取当前底图的陆地掩膜（按 terrain 引用缓存） */
@@ -7813,7 +7816,12 @@ function autoRiverPartsFor(net, terrain, segMax) {
 function getDisplayRivers() {
   const rivers = baseMap.value?.rivers || [];
   const terrain = baseMap.value?.terrain || null;
-  const imported = rivers.filter((r) => r && String(r.id || '').indexOf('river_') !== 0);
+  // 🔴 2026-10-21：`.map` 导入的河是「去 + 原路回」的闭合往返（160/160 实测），
+  //    不折成中心线就会画成两条平行线（用户截图里的"从某个节点开始分支"）。
+  //    在**显示列表**里折，不改用户数据；手画河（river_ 前缀）原样。
+  const imported = rivers
+    .filter((r) => r && String(r.id || '').indexOf('river_') !== 0)
+    .map((r) => ({ ...r, points: collapseReversedRiverPoints(r.points) }));
   if (displayRiverCache.rivers === rivers && displayRiverCache.terrain === terrain) return displayRiverCache.out;
   let out = imported;
   const mask = getLandMask();
@@ -7858,13 +7866,32 @@ function drawRivers(c) {
     const w = Number(r && r.width);
     if (Number.isFinite(w) && w > maxRiverWidth) maxRiverWidth = w;
   }
-  for (const r of list) {
+  // ── 同一段河道只画一遍（2026-10-21 第二十一修）────────────────────────────
+  // 真实 FMG 数据里支流的路径会沿干流再走一遍，两张 `rivers[]` 共享一段河身。
+  // 两条都画 = 粗河旁贴一条细线，放大后从某个节点分叉成双线（用户两张截图）。
+  // 这里按「宽的先画、窄的跳过被盖住的连续段」生成绘制计划；纯函数在 riverRender.js。
+  // 缓存键 = 裁剪后的列表引用 + 缩放（`dist` 按屏幕像素换算，缩放变了才需要重算）。
+  if (displayRiverPlanCache.list !== list || displayRiverPlanCache.scale !== cameraScale.value
+      || displayRiverPlanCache.maxW !== maxRiverWidth) {
+    const smoothed = list.map((r) => smoothRiverLine((r && r.points) || [], 4));
+    const plans = planRiverCoveredRuns(
+      list.map((r, i) => ({ points: smoothed[i], widthPx: basemapRiverWidthPx(r, maxRiverWidth) })),
+      // 去重距离 = **世界单位**（至少 4，1× 时 6）：同一段河道的两条路径在数据里相差
+      // 0.6~5.3 世界单位；这个量级不随缩放变，所以不能只用屏幕像素（放大后会漏掉）。
+      // 横穿的支流由方向判据（±45°）放过；真正分岔的两条河道一般隔 ≥1 格（14.4）。
+      { dist: Math.max(4, px(6)) },
+    );
+    displayRiverPlanCache = { list, scale: cameraScale.value, maxW: maxRiverWidth, smoothed, plans };
+  }
+  const { smoothed, plans } = displayRiverPlanCache;
+  for (let ri = 0; ri < list.length; ri++) {
+    const r = list[ri];
     const raw = r.points;
     if (!raw || raw.length < 2) continue;
     if (!polylineInView(raw, minX, minY, maxX, maxY)) continue;
     // 先圆角（中点二次曲线）再进样条：Catmull-Rom 是插值曲线，不圆角的话
     // 导入数据里的直角在放大后原样保留 = 用户说的"折线/铁轨"。
-    const pts = smoothRiverLine(raw, 4);
+    const pts = smoothed[ri];
     // 线宽：屏幕像素口径（`basemapRiverWidthPx` 按本幅图 width 分布归一化），
     // 画布已 `scale(cameraScale)` → 世界单位。
     const world = basemapRiverWidthWorld(r, cameraScale.value, maxRiverWidth);
@@ -7874,16 +7901,22 @@ function drawRivers(c) {
       const t = n > 1 ? i / (n - 1) : 1;
       widths.push(world * (0.78 + 0.22 * t));
     }
-    drawCurvedRiver(c, pts, widths[0], widths[n - 1], {
-      widths,
-      // 已经切过角 → 样条只需要轻度加密
-      subdiv: 2,
-      color: BASEMAP_RIVER_COLOR,
-      // 🔴 不画岸线：中心线加宽再压深色 = 「两条边夹一条缝」的观感来源。
-      //    真实地图上细河本来就没有可见堤岸；水色与地形已经能分开。
-      bankPx: 0,
-      alpha: 1,
-    });
+    // 只画"没有被更宽的河盖住"的连续段；被整段盖住的细河 = 一条都不画（这就是去重）
+    for (const [s, e] of (plans[ri] || [])) {
+      if (e - s < 2) continue;
+      const runPts = pts.slice(s, e);
+      const runW = widths.slice(s, e);
+      drawCurvedRiver(c, runPts, runW[0], runW[runW.length - 1], {
+        widths: runW,
+        // 已经切过角 → 样条只需要轻度加密
+        subdiv: 2,
+        color: BASEMAP_RIVER_COLOR,
+        // 🔴 不画岸线：中心线加宽再压深色 = 「两条边夹一条缝」的观感来源。
+        //    真实地图上细河本来就没有可见堤岸；水色与地形已经能分开。
+        bankPx: 0,
+        alpha: 1,
+      });
+    }
   }
   c.restore();
 }
@@ -7975,7 +8008,12 @@ function drawSelectedRiverHighlight(c) {
   for (const id of ids) {
     const r = all.find((x) => x && x.id === id);
     if (!r) continue;
-    const pts = riverNodesForRender(r);
+    const rawPts = riverNodesForRender(r);
+    // 导入河是「去 + 回」的闭合路径（见 getDisplayRivers）—— 选中轮廓也必须在折过的中心线上，
+    // 否则金色两条边线会跟着"双线"一起复制一份。
+    const pts = String(r.id || '').indexOf('river_') === 0
+      ? rawPts
+      : collapseReversedRiverPoints(rawPts);
     if (!pts || pts.length < 2) continue;
     if (!polylineInView(pts, tl.x - pad, tl.y - pad, br.x + pad, br.y + pad)) continue;
     const isPrimary = id === selectedRiverId.value;

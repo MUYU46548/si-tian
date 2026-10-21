@@ -565,6 +565,152 @@ export function drawCurvedRiver(ctx, controlPts, headWidth, mouthWidth, opts = {
 /** 自带河线宽的放缩（`ScenarioMap.drawRivers` 原式：`r.width * 6 * max(sqrt(discharge)/14, 0.6)`）。 */
 export const BASEMAP_RIVER_WIDTH_SCALE = 6;
 
+/**
+ * **把「往返路径」折成一条中心线**（2026-10-21 第二十二修，真数据取证）。
+ *
+ * 🔴 真实项目 160 条导入河**全部**是闭合往返：`p[i] ≈ p[n-1-i]`（实测 160/160，
+ *    首尾距离 0.4~1.4 世界单位）。也就是说 `.map` 里存的不是中心线，而是
+ *    「去 + 原路回」—— 渲染出来必然是从折返点开始的两条平行线，中间夹着原河宽。
+ *    这就是用户反复报的「从某个节点开始分支、变成双线」。
+ *
+ * 判据：后一半是前一半的**逆序重走**（80% 以上的对称点在 `tol` 内）。
+ * 命中 → 只保留 `[0..floor(n/2)]`（含折返点）；否则原样返回（手画河/正常数据不受影响）。
+ *
+ * @param {Array<{x:number,y:number}>} points
+ * @param {{tol?:number}} [opts]
+ * @returns {Array<{x:number,y:number}>} 新数组
+ */
+export function collapseReversedRiverPoints(points, opts = {}) {
+  const pts = Array.isArray(points) ? points.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)) : [];
+  const n = pts.length;
+  const tol = Number.isFinite(opts.tol) && opts.tol > 0 ? opts.tol : 3.5;
+  if (n < 6) return pts.map((p) => ({ x: p.x, y: p.y }));
+  const half = Math.floor(n / 2);
+  let same = 0;
+  for (let i = 0; i < half; i++) {
+    const a = pts[i], b = pts[n - 1 - i];
+    if (Math.hypot(a.x - b.x, a.y - b.y) <= tol) same++;
+  }
+  if (same < Math.ceil(half * 0.8)) return pts.map((p) => ({ x: p.x, y: p.y }));
+  const keep = Math.min(n, Math.floor(n / 2) + 1);
+  return pts.slice(0, keep).map((p) => ({ x: p.x, y: p.y }));
+}
+
+/**
+ * 把 `[0, count)` 按「该点是否已被更宽的河覆盖」切成若干**连续 run**（闭开区间）。
+ *
+ * 用途（2026-10-21 第二十一修）：真实 FMG 数据里，支流的路径会**沿着干流的河身再走一遍**
+ * （两条 `rivers[]` 共享同一段河道，只是控制点略有差异）。渲染时两条都画 → 屏幕上就是
+ * 「一条粗河旁边贴着一条细线」，放大后从某个节点开始分叉成双线（用户给的两张截图）。
+ * 这不是画法问题，是**同一段河道被画了两遍**。
+ *
+ * 口径：run 至少 2 个点（1 个点画不出线）；全被覆盖 → 空数组。
+ *
+ * @param {number} count
+ * @param {(i:number)=>boolean} isCovered
+ * @returns {Array<[number, number]>} `[start, end)` 列表
+ */
+export function uncoveredIndexRuns(count, isCovered) {
+  const n = Math.max(0, Math.floor(count) || 0);
+  const runs = [];
+  let start = -1;
+  for (let i = 0; i < n; i++) {
+    if (isCovered(i)) {
+      if (start >= 0 && i - start >= 2) runs.push([start, i]);
+      start = -1;
+    } else if (start < 0) {
+      start = i;
+    }
+  }
+  if (start >= 0 && n - start >= 2) runs.push([start, n]);
+  return runs;
+}
+
+/** 点到线段的距离（`planRiverCoveredRuns` 内部用） */
+function segPointDist(x, y, s) {
+  const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
+  const L2 = dx * dx + dy * dy;
+  const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - s.x0) * dx + (y - s.y0) * dy) / L2)) : 0;
+  return Math.hypot(x - (s.x0 + dx * t), y - (s.y0 + dy * t));
+}
+
+/**
+ * **绘制计划**：宽河先画；窄河只画「没有被更宽的河盖住」的连续段。
+ *
+ * 为什么不是改数据：同一段河道在数据里是两条独立 river（各有自己的源头与流量），
+ * 删掉谁都会丢地名/分级；而屏幕上的重复是**绘制期的**问题，所以在绘制期去重。
+ *
+ * 判据（两个条件同时满足才算"盖住"）：
+ *   ① 点到已画线段的距离 ≤ `dist`（世界单位，调用方按屏幕像素换算）；
+ *   ② 局部方向与线段方向夹角 ≤ ~45°（`dirDot` 0.7）—— **横穿的支流不许被吃掉**。
+ *
+ * @param {Array<{points:Array<{x:number,y:number}>, widthPx:number}>} rivers
+ * @param {{dist?:number, dirDot?:number}} [opts]
+ * @returns {Array<Array<[number,number]>>} 与入参等长的 run 列表
+ */
+export function planRiverCoveredRuns(rivers, opts = {}) {
+  const list = Array.isArray(rivers) ? rivers : [];
+  const dist = Number.isFinite(opts.dist) && opts.dist > 0 ? opts.dist : 6;
+  const minDot = Number.isFinite(opts.dirDot) ? opts.dirDot : 0.7;
+  const out = new Array(list.length);
+  const order = list.map((_, i) => i).sort((a, b) =>
+    (Number(list[b].widthPx) || 0) - (Number(list[a].widthPx) || 0) || a - b);
+  const cell = dist;
+  const buckets = new Map();
+  const addSeg = (a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const L = Math.hypot(dx, dy);
+    if (!(L > 1e-9)) return;
+    const seg = { x0: a.x, y0: a.y, x1: b.x, y1: b.y, dx: dx / L, dy: dy / L };
+    const i0 = Math.floor(Math.min(a.x, b.x) / cell), i1 = Math.floor(Math.max(a.x, b.x) / cell);
+    const j0 = Math.floor(Math.min(a.y, b.y) / cell), j1 = Math.floor(Math.max(a.y, b.y) / cell);
+    for (let i = i0; i <= i1; i++) {
+      for (let j = j0; j <= j1; j++) {
+        const k = `${i},${j}`;
+        let arr = buckets.get(k);
+        if (!arr) { arr = []; buckets.set(k, arr); }
+        arr.push(seg);
+      }
+    }
+  };
+  const coveredAt = (x, y, dx, dy) => {
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const arr = buckets.get(`${cx + i},${cy + j}`);
+        if (!arr) continue;
+        for (const s of arr) {
+          if (Math.abs(s.dx * dx + s.dy * dy) < minDot) continue;
+          if (segPointDist(x, y, s) <= dist) return true;
+        }
+      }
+    }
+    return false;
+  };
+  for (const idx of order) {
+    const pts = (list[idx] && list[idx].points) || [];
+    const n = pts.length;
+    if (n < 2) { out[idx] = []; continue; }
+    const dirAt = (i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const L = Math.hypot(dx, dy);
+      return L > 1e-9 ? { x: dx / L, y: dy / L } : { x: 1, y: 0 };
+    };
+    const flags = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const d = dirAt(i);
+      flags[i] = coveredAt(pts[i].x, pts[i].y, d.x, d.y);
+    }
+    const runs = uncoveredIndexRuns(n, (i) => flags[i]);
+    out[idx] = runs;
+    for (const [s, e] of runs) {
+      for (let i = s; i + 1 < e; i++) addSeg(pts[i], pts[i + 1]);
+    }
+  }
+  return out;
+}
+
 /** 实测的 discharge 区间（desite 底图 160 条河：min 36 / p50 96 / max 613）。 */
 export const BASEMAP_RIVER_DISCHARGE_RANGE = [36, 613];
 

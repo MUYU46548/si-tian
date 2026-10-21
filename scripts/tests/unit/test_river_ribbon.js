@@ -167,6 +167,44 @@ async function main() {
     return `默认 ${c.calls.alphas[0]} / 显式 ${c2.calls.alphas[0]}`;
   });
 
+  check('六：同一段河道不被两条河各画一遍（宽河先画、窄河去重；横穿不误伤）', () => {
+    const line = (x0, x1, y, n) => Array.from({ length: n }, (_, i) =>
+      ({ x: x0 + (x1 - x0) * i / (n - 1), y }));
+    const wide = { points: line(0, 100, 0, 101), widthPx: 4 };
+    const thin = { points: line(-30, 130, 2, 161), widthPx: 2 };
+    const plans = RR.planRiverCoveredRuns([thin, wide], { dist: 6 });
+    assert(plans[1].length === 1, `宽河应整条画：${JSON.stringify(plans[1])}`);
+    assert(plans[0].length === 2, `窄河应被切成两段（源头/河口各一段）：${JSON.stringify(plans[0])}`);
+    const kept = plans[0].reduce((a, [s, e]) => a + (e - s), 0);
+    assert(kept < 161 && kept > 40, `被盖住的中段必须跳过（剩 ${kept}/161）`);
+    // 横穿的支流：方向垂直 → 方向判据放过，不许被吃掉
+    const cross = { points: line(50, 50, -30, 40).map((p, i) => ({ x: 50, y: -30 + i * (60 / 39) })), widthPx: 1 };
+    const crossPlans = RR.planRiverCoveredRuns([cross, wide], { dist: 6 });
+    assert(crossPlans[0].length === 1 && crossPlans[0][0][1] === 40,
+      `横穿的河必须整条保留：${JSON.stringify(crossPlans[0])}`);
+    return `窄河剩 ${kept}/161 点；横穿整条保留`;
+  });
+
+  check('七：uncoveredIndexRuns 的边界（全空/夹花/全盖/单点段）', () => {
+    assert(JSON.stringify(RR.uncoveredIndexRuns(5, () => false)) === '[[0,5]]', '全空 → 一整段');
+    assert(JSON.stringify(RR.uncoveredIndexRuns(5, () => true)) === '[]', '全盖 → 空');
+    assert(JSON.stringify(RR.uncoveredIndexRuns(5, (i) => i === 2)) === '[[0,2],[3,5]]', '中间盖住 → 两段');
+    // 只留一个孤立点：画不出线 → 丢掉
+    assert(JSON.stringify(RR.uncoveredIndexRuns(3, (i) => i !== 1)) === '[]', '单点段必须丢掉');
+    return '四种边界都对';
+  });
+
+  check('八：导入河「去 + 原路回」的闭合路径折成一条中心线', () => {
+    const outbound = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 1 }, { x: 30, y: 2 }];
+    const roundTrip = outbound.concat(outbound.slice(0, -1).reverse().map((p) => ({ ...p })));
+    const got = RR.collapseReversedRiverPoints(roundTrip);
+    assert(got.length === outbound.length, `往返路径应折成 ${outbound.length} 点，实际 ${got.length}`);
+    assert(got[got.length - 1].x === 30, `折返点必须保留，实际 ${JSON.stringify(got[got.length - 1])}`);
+    const normal = Array.from({ length: 20 }, (_, i) => ({ x: i * 4, y: Math.sin(i) }));
+    assert(RR.collapseReversedRiverPoints(normal).length === 20, '正常单程路径不许被折');
+    return `往返 ${roundTrip.length} → ${got.length} 点；单程原样`;
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  — ' + r.detail : ''}`);
   console.log(`\n${results.length - failed.length}/${results.length} 通过`);
