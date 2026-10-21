@@ -321,7 +321,7 @@ export function buildTimeline(scenarios) {
   const maxYear = years.length ? years[years.length - 1].end : 0;
   const exEv = eraChg.reduce((a, e) => a + Object.keys(e.explicit || {}).length, 0);
   const evTotal = eraChg.reduce((a, e) => a + (e.events ? e.events.length : 0), 0);
-  return {
+  const tl = {
     scenarios: sorted,
     years,
     lineageOf,
@@ -342,7 +342,96 @@ export function buildTimeline(scenarios) {
       missingYears: years.filter((y) => y.missing).length,
     },
   };
+  // 统一账本（B 的第一块）：把「基线 + 事件」显式化，供日期回放/切片/迁移共用。
+  tl.ledger = buildLedger(tl);
+  return tl;
 }
+
+/**
+ * **统一账本**（2026-10-21，大修 B 第一块）——把时间轴里隐含的「时代边界易主」
+ * 与逐省事件整理成一份**可按日期回放**的数据。
+ *
+ * 为什么需要它：现有模型是「每代一份 ownership 快照 + 少量 changeEvents」，
+ * 回放要同时读两套结构（`currentOwnerRef` 里那一串 if）。账本把它们压成同一形状：
+ *
+ *   era = {
+ *     initial: { pid: owner|null },   // 本代**开始时**的归属
+ *     byPid:   { pid: [event...] },   // 本代内事件（显式 + 合成，按日期升序）
+ *     ownership: { ... }               // 本代终态快照（= initial + 事件的结果，迁移后可删）
+ *   }
+ *
+ * 口径与 `currentOwnerRef` **逐位一致**（单测钉住）：
+ *   · 本代没有该省事件 → owner = initial（= 本代快照）；
+ *   · 有事件且已落定   → 最后一条已落定事件的 owner；
+ *   · 有事件但都没到   → initial（= 上一代终态），era 归到 k-1。
+ *
+ * ⚠️ 这是**内存账本**，不改盘上数据。v2 迁移（把 initial + 合成事件写进文件）
+ *    单独一步做，迁移前先跑 `scripts/tests/unit/test_scenario_ledger.js` 的等价性。
+ *
+ * @param {object} tl `buildTimeline` 的产物（需 scenarios/years/eraChg）
+ * @returns {{eras: Array<{index:number,id:string,start:number,end:number,
+ *            initial:Record<string,string|null>, byPid:Record<string,Array>,
+ *            events:Array, ownership:Record<string,string|null>}>, byId: Map}}
+ */
+export function buildLedger(tl) {
+  const scenarios = tl?.scenarios || [];
+  const years = tl?.years || [];
+  const eraChg = tl?.eraChg || [];
+  const eras = [];
+  const byId = new Map();
+  let prevEnd = {};
+  for (let k = 0; k < scenarios.length; k++) {
+    const s = scenarios[k] || {};
+    const own = s.ownership || {};
+    const chg = eraChg[k] || {};
+    const byProv = chg.byProvince || {};
+    const initial = {};
+    for (const pid of Object.keys(own)) {
+      // 有本代事件的省：本代开始时还是上一代的主人；没有事件：本代快照从本代开始生效
+      initial[pid] = byProv[pid] ? (prevEnd[pid] ?? null) : (own[pid] ?? null);
+    }
+    const byPid = {};
+    const events = [];
+    for (const pid of Object.keys(byProv)) {
+      const list = (byProv[pid] || []).slice().sort(cmpDate);
+      byPid[pid] = list;
+      for (const ev of list) events.push(ev);
+    }
+    events.sort((a, b) => cmpDate(a, b) || String(a.provinceId).localeCompare(String(b.provinceId)));
+    const era = {
+      index: k,
+      id: s.id,
+      start: years[k] ? years[k].start : 0,
+      end: years[k] ? years[k].end : 0,
+      initial,
+      byPid,
+      events,
+      ownership: { ...own },
+    };
+    eras.push(era);
+    if (s.id) byId.set(s.id, era);
+    prevEnd = own;
+  }
+  return { eras, byId };
+}
+
+/**
+ * 账本里「某代、某省、某日期」的归属 —— `currentOwnerRef` 的等价实现（事件表走 byPid）。
+ * @returns {{owner:(string|null|undefined), era:number, settled:boolean}}
+ *   `settled` = 命中了本代事件（UI 的斜线占领/已易主计数可直接用）
+ */
+export function ledgerOwnerAt(ledger, k, pid, atDate) {
+  const era = ledger && ledger.eras ? ledger.eras[k] : null;
+  if (!era) return { owner: null, era: k, settled: false };
+  const list = era.byPid[pid];
+  if (!list || !list.length) return { owner: era.initial[pid] ?? null, era: k, settled: false };
+  const at = asDate(atDate);
+  const ev = lastEventAtOrBefore(list, at);
+  if (ev) return { owner: ev.owner, era: k, settled: true };
+  // 有事件但都还没到 → 仍是本代开始时的主人（= 上一代终态）
+  return { owner: era.initial[pid] ?? null, era: Math.max(0, k - 1), settled: false };
+}
+
 
 // ============================================================
 // 年份 ↔ 轨道位置（两种轴向）
