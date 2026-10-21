@@ -32,6 +32,51 @@ PROBE = r"""
   for (let i = 0; i < 12; i++) { const a = performance.now(); sm.render(); t.push(performance.now() - a); }
   const sorted = t.slice().sort((a, b) => a - b);
 
+  // 省界笔刷：一次拖动 20 步，量每次 mousemove 的（几何布尔 + 渲染）耗时
+  let brush = null;
+  {
+    let pick = null;
+    for (const p of provs) {
+      if (p && p.kind !== 'sea' && Array.isArray(p.points) && p.points.length > 2) { pick = p; break; }
+    }
+    if (pick) {
+      let cxs = 0, cys = 0;
+      for (const q of pick.points) { cxs += q.x; cys += q.y; }
+      const cx = cxs / pick.points.length, cy = cys / pick.points.length;
+      const sx0 = rect.left + rect.width / 2;
+      const sy0 = rect.top + rect.height / 2;
+      sm.cameraScale = 1;
+      sm.cameraX = rect.width / 2 - cx;
+      sm.cameraY = rect.height / 2 - cy;
+      const targets = sm.provinceTargets || [];
+      const targetId = targets.length ? (targets[0].id || targets[0]) : null;
+      if (targetId) {
+        sm.provBrushTarget = targetId;
+        sm.setTool('provinceBrush');
+        sm.render();
+        await new Promise(r => setTimeout(r, 120));
+        const mk = (type, x, y) => new MouseEvent(type, {
+          clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0,
+        });
+        const times = [];
+        const before = (sm.baseMap.terrain || []).length;
+        cvs.dispatchEvent(mk('mousedown', sx0, sy0));
+        for (let i = 1; i <= 20; i++) {
+          const a = performance.now();
+          cvs.dispatchEvent(mk('mousemove', sx0 + i * 3, sy0 + i * 2));
+          times.push(performance.now() - a);
+        }
+        cvs.dispatchEvent(mk('mouseup', sx0 + 60, sy0 + 40));
+        const sortedB = times.slice().sort((a, b) => a - b);
+        brush = { target: targetId, before, after: (sm.baseMap.terrain || []).length,
+                  median: Math.round(sortedB[10] * 10) / 10,
+                  max: Math.round(sortedB[19] * 10) / 10,
+                  all: times.map(v => Math.round(v * 10) / 10) };
+        sm.setTool('select');
+      }
+    }
+  }
+
   // 顶点拖动：走产品路径——先把相机对准一个陆地省的重心、点选它，再对准第一个顶点
   let drag = null;
   let diag = null;
@@ -93,6 +138,7 @@ PROBE = r"""
               max: Math.round(sorted[11] * 10) / 10, all: t.map(v => Math.round(v * 10) / 10) },
     drag,
     diag,
+    brush,
   });
 })()
 """
