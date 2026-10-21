@@ -18,6 +18,7 @@
  *    跨实例存活（详见下方 CACHE 段注释）。
  */
 import { buildHeightmapRaster } from './heightmapRaster.js';
+import { collapseReversedRiverPoints } from './riverRender.js';
 import { provinceRings } from './provinceShape.js';
 import { currentOwnerRef, polityOf } from './scenarioTimeline.js';
 import { openingSituation } from './scenarioCards.js';
@@ -194,7 +195,10 @@ export function createThumbBaker() {
     }
     const riverPaths = [];
     for (const rv of baseMap?.rivers || []) {
-      const pts = rv?.points;
+      // 导入河数据是「去 + 原路回」的闭合路径 → 缩略图也折成中心线（与画布/导出口径一致）
+      const pts = String(rv?.id || '').indexOf('river_') === 0
+        ? rv?.points
+        : collapseReversedRiverPoints(rv?.points);
       if (!pts || pts.length < 2) continue;
       const p = new Path2D();
       p.moveTo(X(pts[0].x ?? pts[0][0]), Y(pts[0].y ?? pts[0][1]));

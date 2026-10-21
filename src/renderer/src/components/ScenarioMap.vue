@@ -3682,6 +3682,10 @@ function onMouseDown(event) {
       selectPolity(first);
       statusMsg(`涂归属：没选势力，先用「${first.name}」—— 点地图上方的色块可以换`);
     }
+    // 手势期基帧（2026-10-21）：拖动期画布**只贴基帧 + 画笔刷圈/已碰省份的预览色**，
+    // 不再每帧重画 415 个省（用户反复报的「涂归属卡顿」）。落库仍在抬手（一笔一条撤销），
+    // 所以基帧与数据在整笔期间天然一致 —— 与河流拖笔/框选同一条纪律。
+    beginStrokeBase();
     ownerStrokeActive = true;
     ownerStrokeIds = new Set();
     ownerLastSample = { x: world.x, y: world.y };

@@ -2,6 +2,7 @@
 // 全图导出：PNG（离屏 canvas 重绘全部对象，2x 缩放）+ SVG（矢量，可进设计工具继续加工）
 
 import { ref } from 'vue';
+import { collapseReversedRiverPoints } from '../utils/riverRender';
 import { hasHeightmapContent } from '../utils/terrainRepresentation';
 import {
   serializeSvg, svgPathD, svgPath, svgRect, svgTextEl, svgCircleEl, svgImageEl,
@@ -406,7 +407,12 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
     // 河流
     if (vis('rivers')) {
       for (const river of md.rivers || []) {
-        const pts = river.points || river;
+        const raw = river.points || river;
+        // 导入河是「去 + 原路回」的闭合路径（2026-10-21，160/160 实测）→ 导出也要折成中心线，
+        // 否则画布单线、导出双线（同一份数据两个读口各画一套 = 本项目反复踩的"双源"）。
+        const pts = String(river.id || '').indexOf('river_') === 0
+          ? raw
+          : collapseReversedRiverPoints(raw);
         if (!Array.isArray(pts) || pts.length < 2) continue;
         const d = svgPathD(pts, { closed: false, straight: true });
         if (!d) continue;
