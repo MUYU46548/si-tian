@@ -32,45 +32,67 @@ PROBE = r"""
   for (let i = 0; i < 12; i++) { const a = performance.now(); sm.render(); t.push(performance.now() - a); }
   const sorted = t.slice().sort((a, b) => a - b);
 
-  // 顶点拖动：取第一个有 3+ 点的省，把相机对准它的第一个顶点
-  let pick = null;
-  for (const p of provs) {
-    if (!p || !Array.isArray(p.points) || p.points.length < 3) continue;
-    pick = p; break;
-  }
+  // 顶点拖动：走产品路径——先把相机对准一个陆地省的重心、点选它，再对准第一个顶点
   let drag = null;
-  if (pick) {
-    const v = pick.points[0];
-    sm.cameraScale = 2;
-    sm.cameraX = rect.width / 2 - v.x * 2;
-    sm.cameraY = rect.height / 2 - v.y * 2;
-    sm.setTool('vertex');
-    sm.selectedProvince = pick;
-    sm.render();
-    await new Promise(r => setTimeout(r, 80));
-    const sx = rect.left + rect.width / 2;
-    const sy = rect.top + rect.height / 2;
-    const mk = (type, x, y) => new MouseEvent(type, {
-      clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0,
-    });
-    const times = [];
-    cvs.dispatchEvent(mk('mousedown', sx, sy));
-    for (let i = 1; i <= 20; i++) {
-      const a = performance.now();
-      cvs.dispatchEvent(mk('mousemove', sx + i * 1.5, sy + i * 0.8));
-      times.push(performance.now() - a);
+  let diag = null;
+  {
+    let pick = null;
+    for (const p of provs) {
+      if (p && p.kind !== 'sea' && Array.isArray(p.points) && p.points.length > 2) { pick = p; break; }
     }
-    cvs.dispatchEvent(mk('mouseup', sx + 30, sy + 16));
-    const sortedD = times.slice().sort((a, b) => a - b);
-    drag = { province: pick.id, median: Math.round(sortedD[10] * 10) / 10,
-             max: Math.round(sortedD[19] * 10) / 10, all: times.map(v => Math.round(v * 10) / 10) };
-    sm.setTool('select');
+    if (pick) {
+      let cxs = 0, cys = 0;
+      for (const q of pick.points) { cxs += q.x; cys += q.y; }
+      const cx = cxs / pick.points.length, cy = cys / pick.points.length;
+      const sx0 = rect.left + rect.width / 2;
+      const sy0 = rect.top + rect.height / 2;
+      sm.cameraScale = 1;
+      sm.cameraX = rect.width / 2 - cx;
+      sm.cameraY = rect.height / 2 - cy;
+      const mk = (type, x, y) => new MouseEvent(type, {
+        clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0,
+      });
+      const click = (t2, x, y) => cvs.dispatchEvent(mk(t2, x, y));
+      sm.setTool('select');
+      sm.render();
+      await new Promise(r => setTimeout(r, 100));
+      click('mousedown', sx0, sy0); click('mouseup', sx0, sy0); click('click', sx0, sy0);
+      await new Promise(r => setTimeout(r, 150));
+      const prov = sm.selectedProvince;
+      diag = { tool: sm.tool, pick: pick.id, selected: prov && prov.id,
+               hit: sm.findProvinceAt ? (sm.findProvinceAt(cx, cy) || {}).id : 'n/a' };
+      if (prov && Array.isArray(prov.points) && prov.points.length > 1) {
+        const v = prov.points[0];
+        sm.cameraScale = 2;
+        sm.cameraX = rect.width / 2 - v.x * 2;
+        sm.cameraY = rect.height / 2 - v.y * 2;
+        sm.setTool('vertex');
+        sm.render();
+        await new Promise(r => setTimeout(r, 120));
+        const times = [];
+        click('mousedown', sx0, sy0);
+        const started = !!sm.draggingVertex;
+        for (let i = 1; i <= 20; i++) {
+          const a = performance.now();
+          click('mousemove', sx0 + i * 1.5, sy0 + i * 0.8);
+          times.push(performance.now() - a);
+        }
+        click('mouseup', sx0 + 30, sy0 + 16);
+        const sortedD = times.slice().sort((a, b) => a - b);
+        drag = { province: prov.id, started,
+                 median: Math.round(sortedD[10] * 10) / 10,
+                 max: Math.round(sortedD[19] * 10) / 10,
+                 all: times.map(v2 => Math.round(v2 * 10) / 10) };
+        sm.setTool('select');
+      }
+    }
   }
   return JSON.stringify({
     provinces: provs.length,
     render: { median: Math.round(sorted[6] * 10) / 10, min: Math.round(sorted[0] * 10) / 10,
               max: Math.round(sorted[11] * 10) / 10, all: t.map(v => Math.round(v * 10) / 10) },
     drag,
+    diag,
   });
 })()
 """
