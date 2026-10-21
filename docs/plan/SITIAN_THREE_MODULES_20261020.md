@@ -157,10 +157,26 @@ P0–P10 的 288 人日 WBS、新壳四工作区、星系 3D、切片动画、�
 
 | 切片 | 内容 | 验收（用户能亲手验） |
 |---|---|---|
-| **A 模块壳** | 历史剧本从遮罩改**平级入口**（App 级 `activeModule`；返回不叠层） | 世界页 →「历史剧本」进的是模块 → 返回回到世界；在剧本里点行星树，DOM 里**只有** PlanetMap；`elementFromPoint(画布中心)` 命中正确 |
+| **A 模块壳**（✅ 2026-10-21 已落地） | 历史剧本从遮罩改**平级入口**（App 级 `activeModule`；返回不叠层） | 世界页 →「历史剧本」进的是模块 → 返回回到世界；在剧本里点行星树，DOM 里**只有** PlanetMap；`elementFromPoint(画布中心)` 命中正确 |
 | B 统一账本 | `changeEvents` 为唯一事件源，`ownership` 降为派生快照；事件类型表；schema v2 迁移 | 415 省项目**副本** round-trip 无损；任意日期 replay 与快照一致 |
 | C 地图层 | 脏省重绘 + 全图层笔刷 | 415 省按住涂 2 秒不掉帧；单帧 < 16ms |
 | D 星图 3D / 资料层 | 后置 | — |
+
+**A 已落地（2026-10-21）**：
+
+- `App.vue` 新增 `activeModule: 'world' | 'scenario'` 作为模块身份的唯一真源；
+  `scenarioMode` 改成它的**可写 computed**（30+ 用例与既有函数的读写一行不改，但不再有第二份存储）。
+- 顶部常驻分段控件 `[世界观 | 历史剧本]`（`data-testid="module-switch"`），当前模块高亮；
+  切换走 `switchModule()` → `enterScenarioMode()` / `exitScenarioMode()`，两个模块**不同屏**。
+- `enterScenarioMode()` 先从任意层级退回 `world`：修掉"从行星层进剧本 → 选完卡落到
+  已离开编辑器假态"的真缺陷。
+- 回归：`test_118` 新增 8 条源码闸门 + g 段真机模块切换（世界观 ↔ 剧本）；
+  `scripts/tests/diag_module_shell.py` 读 DOM 证明四态：
+  世界（world tab 高亮）→ 卡片墙（activeModule=scenario）→ 编辑器（ScenarioMap 在场、
+  WorldSelector 不在、剧本 tab 高亮）→ 回世界（ScenarioMap 卸下、WorldSelector 回来）。
+  ⚠️ 本次会话 Electron 的 `Page.captureScreenshot` 连续 15s 超时（窗口被遮挡时合成器不出帧），
+  截图未取到；判据以 DOM 探针 + test_118 为准。
+
 
 **顺序**：A（结构是地基）→ B（数据契约）→ C（性能/图层）。
 **A 未收口之前不动 B/C 的代码** —— 上一轮的教训是"三个半截同时开"，最后只剩擦屁股。

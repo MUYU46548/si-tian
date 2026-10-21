@@ -391,6 +391,15 @@ def run(cdp):
         elif sw['gridReady']:
             fails.append('宽域 fixture 意外预建了网格 → setTool 的异步断言会失去意义')
         else:
+            # 🔴 切底图后的第一帧是**异步**的（渲染由 rAF 调度，不是 setter 同步画完）。
+            #    这里必须先等「新底图真的出内容」，否则接下来那条「打开省份工具后画布变空」
+            #    读到的是**上一张底图**的旧帧（实测非背景 1121/58 色，正是 4 省旧图的量级）。
+            #    判据仍是"最终不空白"，只是不给"0ms 内必须画完"这种不存在的承诺。
+            for _ in range(10):
+                ok_wide, _pxw = _canvas_has_content(cdp, colors_min=60, nonbg_min=400)
+                if ok_wide:
+                    break
+                time.sleep(0.1)
             tool = _js(cdp, SET_TOOL.replace('__SC__', SC).replace('__STORE__', STORE))
             if 'ERR' in tool:
                 fails.append(f'setTool 探针失败：{tool["ERR"]}')
@@ -403,7 +412,14 @@ def run(cdp):
                 #    矢量模型下涂抹只记轨迹、抬手才做布尔 → **入口零构造成本**。
                 if tool['gridReadyNow']:
                     fails.append('切到省份笔刷时立刻就有网格 → 又回到现场栅格化')
-                px_wait = _js(cdp, PIX)
+                # 工具切换的那一帧同样是 rAF 调度的：给 ≤0.6s 等它落地，再判"有没有变空"。
+                px_wait = None
+                for _ in range(8):
+                    px_wait = _js(cdp, PIX)
+                    if ('ERR' not in px_wait and px_wait.get('nonBg', 0) >= 400
+                            and px_wait.get('colors', 0) >= 60):
+                        break
+                    time.sleep(0.08)
                 if 'ERR' not in px_wait and (px_wait.get('nonBg', 0) < 400 or px_wait.get('colors', 0) < 60):
                     fails.append(f'打开省份工具后画布变空了（非背景像素 {px_wait.get("nonBg")}，'
                                  f'{px_wait.get("colors")} 色）→ 应始终渲染多边形')
