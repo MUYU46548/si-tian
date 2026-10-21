@@ -269,7 +269,11 @@ era = { start, end,
 
 真机（真实 415 省项目，`scripts/tests/diag_edit_perf.py` / `diag_edit_profile.py`）：
 
-- **单帧 render：中位 29.2ms → 18.6ms（-36%）**，最慢 34 → 27.5ms。
+- **单帧 render：中位 29.2ms → 18.6ms → 5.3ms（-82%）**，最慢 34 → 8.4ms。
+- 第二刀（河道分块 Path2D）：曲线 + 16 个分块 Path2D 按 smoothed 数组缓存；绘制期只剩
+  `stroke(path)`。此前每帧对 160 条河重跑 Catmull-Rom + 上万次 lineTo。修了一个换算错误
+  （块中点 `mid` 是曲线下标，须换算回整条河的点下标算 t），修后导入河像素计数与改前**逐值一致**
+  （test_103：2853）。
 - 改动：
   1. **省界 Path2D 缓存**（`provincePathFor`）：填充、省界、选中描边、EU4 裁剪共用一份路径；
      几何只在改省界时换数组 → 命中时不再逐帧重描 2.4 万顶点。快路径只比 `points/extraRings/rings` 引用，
@@ -277,10 +281,11 @@ era = { start, end,
   2. **`getDisplayRivers` 缓存检查提前**：原来看似有缓存，但 `collapseReversedRiverPoints`
      在命中判断**之前**对 160 条河全点跑了一遍（25ms/帧）。
   3. **标签形心按顶点数组缓存**（`ringAreaCentroid`）：415 省每帧重算面积+形心（22ms/20 帧→缓存命中）。
-- CPU 采样剩余热点（20 帧合计）：`(program)` 134ms、`lineTo` 46、GC 29、`drawBurgs` 27、
+- CPU 采样剩余热点（20 帧合计，第一刀后）：`(program)` 134ms、`lineTo` 46、GC 29、`drawBurgs` 27、
   河道（`strokeTaperedLine`+`drawCurvedRiver`）45、`drawPolityLabels` 16、`clearRect` 11。
-- **下一步（真正的编辑流畅）**：静态层（省/界/河/路）离屏缓存 + 脏省重绘；河道曲线按 river 引用缓存
-  （现在每帧仍重跑 Catmull-Rom）；顶点拖动/省界笔刷期跳过 labels/burgs。
+  第二刀把河道那一块清零后，单帧已到 5.3ms（约 190fps），600 省按比例仍有余量。
+- **下一步**：顶点拖动/省界笔刷的真机测帧（当前探针没点中顶点，读数 0，不可信）；
+  省界布尔笔刷每次 mousemove 的几何成本；`drawBurgs`/标签在手势期跳过。
 
 
 

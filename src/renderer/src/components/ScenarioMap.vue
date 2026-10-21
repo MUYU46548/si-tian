@@ -7690,6 +7690,30 @@ function polylineInView(pts, minX, minY, maxX, maxY) {
 let displayRiverCache = { terrain: null, rivers: null, out: [] };
 /** 导入河的绘制计划（宽河优先 + 窄河去重）—— 按列表引用/缩放/最大宽度缓存 */
 let displayRiverPlanCache = { list: null, scale: 0, maxW: 0, smoothed: [], plans: [] };
+/** 河道曲线 + 分块 Path2D 缓存：键 = 该河的 smoothed 数组（缩放变会换数组） */
+const riverRunCache = new WeakMap();
+function buildRiverRun(pts, s, e) {
+  const runPts = pts.slice(s, e);
+  const curve = catmullRomPoints(runPts, 2);
+  const n = curve.length;
+  const count = Math.max(1, Math.min(16, n - 1));
+  const out = [];
+  for (let c = 0; c < count; c++) {
+    const i0 = Math.floor((c * (n - 1)) / count);
+    const i1 = Math.floor(((c + 1) * (n - 1)) / count);
+    if (i1 <= i0) continue;
+    const mid = Math.min(n - 1, Math.round((i0 + i1) / 2));
+    // `mid` 是**本 run 的曲线**下标（subdiv=2，长度约 2 倍点数）—— 必须换算回整条河的
+    // 点下标再算 t，否则 s + mid 会越界、线宽被算粗（实测导入河像素 +12%）。
+    const frac = n > 1 ? mid / (n - 1) : 1;
+    const t = (s + frac * Math.max(0, e - s - 1)) / Math.max(1, pts.length - 1);
+    const path = new Path2D();
+    path.moveTo(curve[i0].x, curve[i0].y);
+    for (let i = i0 + 1; i <= i1; i++) path.lineTo(curve[i].x, curve[i].y);
+    out.push({ path, t });
+  }
+  return out;
+}
 let landMaskCache = { terrain: null, mask: null };
 
 /** 取当前底图的陆地掩膜（按 terrain 引用缓存） */
@@ -7956,27 +7980,26 @@ function drawRivers(c) {
     // 线宽：屏幕像素口径（`basemapRiverWidthPx` 按本幅图 width 分布归一化），
     // 画布已 `scale(cameraScale)` → 世界单位。
     const world = basemapRiverWidthWorld(r, cameraScale.value, maxRiverWidth);
-    const n = pts.length;
-    const widths = [];
-    for (let i = 0; i < n; i++) {
-      const t = n > 1 ? i / (n - 1) : 1;
-      widths.push(world * (0.78 + 0.22 * t));
+    // 🔴 2026-10-21：曲线 + 分块 Path2D 按 smoothed 数组缓存。此前每帧对每条河重跑
+    //    Catmull-Rom 并对 16 个块各做一遍 beginPath/lineTo（160 条 ≈ 每帧上万次 lineTo + 大量分配）。
+    //    现在绘制期只剩 `stroke(path)`；宽度按块中点比例算（world 随缩放变，几何不变）。
+    let runs = riverRunCache.get(pts);
+    if (!runs) {
+      runs = [];
+      for (const [s, e] of (plans[ri] || [])) {
+        if (e - s < 2) continue;
+        runs.push(...buildRiverRun(pts, s, e));
+      }
+      riverRunCache.set(pts, runs);
     }
-    // 只画"没有被更宽的河盖住"的连续段；被整段盖住的细河 = 一条都不画（这就是去重）
-    for (const [s, e] of (plans[ri] || [])) {
-      if (e - s < 2) continue;
-      const runPts = pts.slice(s, e);
-      const runW = widths.slice(s, e);
-      drawCurvedRiver(c, runPts, runW[0], runW[runW.length - 1], {
-        widths: runW,
-        // 已经切过角 → 样条只需要轻度加密
-        subdiv: 2,
-        color: BASEMAP_RIVER_COLOR,
-        // 🔴 不画岸线：中心线加宽再压深色 = 「两条边夹一条缝」的观感来源。
-        //    真实地图上细河本来就没有可见堤岸；水色与地形已经能分开。
-        bankPx: 0,
-        alpha: 1,
-      });
+    if (!runs.length) continue;
+    c.strokeStyle = BASEMAP_RIVER_COLOR;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.globalAlpha = 1;
+    for (const { path, t } of runs) {
+      c.lineWidth = Math.max(0.35, world * (0.78 + 0.22 * t));
+      c.stroke(path);
     }
   }
   c.restore();
