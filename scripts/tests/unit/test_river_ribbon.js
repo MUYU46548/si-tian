@@ -40,10 +40,13 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 /** 记录式 canvas stub（本仓不依赖原生 canvas） */
 function stubCtx() {
-  const calls = { fill: 0, stroke: 0, beginPath: 0, moveTo: 0, lineTo: 0, closePath: 0, lineWidth: [] };
+  const calls = { fill: 0, stroke: 0, beginPath: 0, moveTo: 0, lineTo: 0, closePath: 0, lineWidth: [], alphas: [] };
+  let alpha = 1;
   return {
     calls,
-    lineJoin: '', lineCap: '', globalAlpha: 1, fillStyle: '', strokeStyle: '',
+    lineJoin: '', lineCap: '', fillStyle: '', strokeStyle: '',
+    get globalAlpha() { return alpha; },
+    set globalAlpha(v) { calls.alphas.push(v); alpha = v; },
     set lineWidth(v) { calls.lineWidth.push(v); },
     get lineWidth() { return calls.lineWidth[calls.lineWidth.length - 1] || 0; },
     save() {}, restore() {}, beginPath() { calls.beginPath++; }, moveTo() { calls.moveTo++; },
@@ -147,6 +150,21 @@ async function main() {
     const after = maxTurn(smooth);
     assert(after < before - 10, `最大转角应明显下降：${before.toFixed(0)}° → ${after.toFixed(0)}°`);
     return `转角 ${before.toFixed(0)}° → ${after.toFixed(0)}° / ${raw.length} → ${smooth.length} 点`;
+  });
+
+  check('五：河身默认**不透明**（分块圆帽接缝叠自己不能把颜色压深）', () => {
+    const c = stubCtx();
+    const pts = Array.from({ length: 40 }, (_, i) => ({ x: i * 10, y: 0 }));
+    const widths = pts.map(() => 2);
+    RR.strokeTaperedLine(c, pts, widths, { chunks: 6 });
+    assert(c.calls.stroke === 6, `应有 6 次 stroke，实际 ${c.calls.stroke}`);
+    assert(c.calls.alphas.every((a) => a === 1),
+      `默认必须不透明（每块 globalAlpha=1），实际 ${c.calls.alphas.join(',')}`);
+    // 显式要半透明（预览/草稿）仍要生效 —— 默认值改了不等于把能力删了
+    const c2 = stubCtx();
+    RR.strokeTaperedLine(c2, pts, widths, { chunks: 2, alpha: 0.85 });
+    assert(c2.calls.alphas.every((a) => a === 0.85), `显式 alpha 应生效，实际 ${c2.calls.alphas.join(',')}`);
+    return `默认 ${c.calls.alphas[0]} / 显式 ${c2.calls.alphas[0]}`;
   });
 
   const failed = results.filter((r) => !r.ok);

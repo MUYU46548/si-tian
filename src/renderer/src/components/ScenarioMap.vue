@@ -1079,8 +1079,19 @@
       <div class="ctx-item" @click="ctxDuplicateProvince">⧉ 复制省份</div>
       <div class="ctx-item danger" @click="ctxDeleteProvince"><Icon name="trash" :size="13"/> 删除</div>
       <div class="ctx-divider"></div>
-      <div class="ctx-item disabled" v-if="selectedProvince">
-        {{ selectedProvince.name }} · {{ selectedProvince.biome || '未分类' }}
+      <div class="ctx-item" v-if="contextMenuProvince" @click="ctxOpenProvinceProps" data-testid="ctx-province-detail">
+        <Icon name="info" :size="13"/> 省份详情…
+      </div>
+      <div class="ctx-item disabled ctx-province" v-if="contextMenuProvince">
+        {{ contextMenuProvince.name }} · {{ contextMenuProvince.biome || '未分类' }}
+      </div>
+      <!-- 归属：2026-10-21 用户实测「右键和右上角都看不到归属」。这里必须给**当前日期**的
+           结论（与着色同一口径），无主就明说「无主」，不要留空让人猜。 -->
+      <div class="ctx-item disabled ctx-owner" v-if="contextMenuProvince" data-testid="ctx-province-owner">
+        归属：
+        <template v-if="contextMenuOwner"><span class="polity-dot" :style="{ background: contextMenuOwner.color }"></span>{{ contextMenuOwner.name }}</template>
+        <template v-else><span class="owner-none">无主</span></template>
+        <span class="ctx-sub">（{{ tlDateText }}）</span>
       </div>
     </div>
 
@@ -1097,6 +1108,26 @@
         <input ref="provNameInput" :value="selectedProvince.name || ''" @change="onProvinceNameChange" class="props-name" />
         <button @click="showProps = false" class="props-close"><Icon name="x" :size="13"/></button>
       </div>
+      <!-- 归属：2026-10-21 用户实测「看不到归属 / 看不到省份详情」。
+           归属按**时间轴当前日期**显示（与地图着色同一口径 `ownerPolityForProvince`），
+           无主就明说；两个按钮都走 store（一条 undo + 写闸门），不在模板里直改活对象。 -->
+      <div class="props-row props-owner" v-if="viewMode === 'scenario'" data-testid="province-owner-row">
+        <label>归属：</label>
+        <span class="owner-value" :class="{ none: !selectedProvincePolity }">
+          <template v-if="selectedProvincePolity">
+            <span class="polity-dot" :style="{ background: selectedProvincePolity.color }"></span>
+            {{ selectedProvincePolity.name }}
+          </template>
+          <template v-else>无主</template>
+        </span>
+        <button v-if="selectedProvincePolity" class="props-mini" :disabled="store.isReadOnly"
+                :title="`按当前日期 ${tlDateText} 清空归属（无主；时间轴记一条「该年变无主」，一笔撤销）`"
+                @click="clearSelectedProvinceOwner" data-testid="province-owner-clear">清成无主</button>
+        <button v-else class="props-mini" :disabled="store.isReadOnly || !selectedPolity"
+                :title="selectedPolity ? `按当前日期 ${tlDateText} 记为「${selectedPolity.name}」` : '先在色板选一个势力'"
+                @click="assignSelectedProvinceOwner" data-testid="province-owner-assign">设为当前势力</button>
+      </div>
+      <div class="props-sub" v-if="viewMode === 'scenario'">归属随「{{ tlDateText }}」变化（拖时间轴可看不同年份）</div>
       <div class="props-row">
         <label>生物群系：</label>
         <select :value="selectedProvince.biome || ''" @change="onProvinceBiomeChange">
@@ -2460,6 +2491,23 @@ const rasterCache = new Map();
 const contextMenu = ref({ show: false, x: 0, y: 0, provId: null });
 const showProps = ref(false);
 const selectedProvince = ref(null);
+
+/**
+ * 右键菜单指向的省份（按 id 反查活对象）与它在**时间轴当前日期**的归属势力。
+ *
+ * 为什么按 id 反查而不是存对象：`terrain[]` 在编辑后可能换新数组（撤销/导入/合并），
+ * 存对象会让菜单指向一个"已经不在列表里"的副本 —— 与 `selectedRiverId` 同一条纪律。
+ * 归属查询走 `ownerPolityForProvince`（与地图着色/势力标注同一口径），
+ * 所以「看到的颜色」和「菜单里写的名字」不可能不一致。
+ */
+const contextMenuProvince = computed(() => {
+  const id = contextMenu.value.provId;
+  if (!id) return null;
+  return (baseMap.value?.terrain || []).find((p) => p && p.id === id) || null;
+});
+const contextMenuOwner = computed(() => (contextMenu.value.show
+  ? ownerPolityForProvince(contextMenu.value.provId)
+  : null));
 
 // ── 省份多选（2026-10-02）────────────────────────────────────────────────────
 // 用途：一次把多个省指派给同一个势力（`store.batchSetOwnership` —— 此前是零调用的死入口）。
@@ -5883,7 +5931,8 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
       color: opts.color,
       // 岸线 = 0：见 drawCurvedRiver 的说明（两条边夹一条缝的成因）
       bankWidth: 0,
-      alpha: 0.92,
+      // 不透明：分块圆帽接缝会叠自己，半透明会在水里压出一条更深的细芯（2026-10-21）
+      alpha: 1,
     });
   }
 }
@@ -5983,7 +6032,8 @@ function drawOneHandRiver(c, nodes, river, opts = {}) {
     // 🔴 2026-10-20：默认**不画岸线**（用户反复报的「两条边夹一条缝 / 铁轨」）。
     //    需要堤岸的调用方显式传 bankPx。
     bankPx: opts.bankPx === undefined ? 0 : opts.bankPx,
-    alpha: opts.alpha === undefined ? 0.95 : opts.alpha,
+    // 不透明（同 `strokeTaperedLine`）：接缝叠自己不改颜色，半透明会压出深色细芯
+    alpha: opts.alpha === undefined ? 1 : opts.alpha,
   });
   return res.drawn;
 }
@@ -6710,6 +6760,48 @@ function ctxDeleteProvince() {
   showProps.value = false;
   render();
   contextMenu.value.show = false;
+}
+
+/** 右键菜单 → 打开省份详情（右上角属性面板），并选中它 */
+function ctxOpenProvinceProps() {
+  const prov = contextMenuProvince.value;
+  contextMenu.value.show = false;
+  if (!prov) return;
+  selectedProvince.value = prov;
+  showProps.value = true;
+  render();
+}
+
+/**
+ * 属性面板里「设为当前势力 / 清成无主」—— 与油漆桶同一套 store 写口（一条 undo）。
+ * 日期一律用 `tlDate`（时间轴游标 = 唯一真源），这样「看到哪年就改哪年」。
+ *
+ * ⚠️ 清空归属**不等于**抹掉历史：带日期的 `clearOwnership` 会在该日期写一条
+ *    `owner: null` 事件（时间轴上就是「这一年这块地变成无主」），只把 `ownership`
+ *    这个"终态快照键"删掉。所以文案不能说"连带删除易主事件"（2026-10-21 核对实现后改口）。
+ */
+function assignSelectedProvinceOwner() {
+  const prov = selectedProvince.value;
+  const sc = selectedScenario.value;
+  if (!prov || !sc) return;
+  if (prov.kind === 'sea') { statusMsg('这是海域（kind=sea）：海域不参与势力归属'); return; }
+  if (!selectedPolity.value) { statusMsg('先在色板选一个势力，再点「设为当前势力」'); return; }
+  if (store.isReadOnly) { statusMsg(`改归属已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+  const wr = store.setOwnership(sc.id, prov.id, selectedPolity.value.id, tlDate.value);
+  statusMsg(wr && wr.success === false
+    ? `「${prov.name}」归属已改，但易主日期没记：${wr.reason}`
+    : `「${prov.name}」→ ${selectedPolity.value.name}（${tlDateText.value}，可 Ctrl+Z 撤回）`);
+  render();
+}
+
+function clearSelectedProvinceOwner() {
+  const prov = selectedProvince.value;
+  const sc = selectedScenario.value;
+  if (!prov || !sc) return;
+  if (store.isReadOnly) { statusMsg(`改归属已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+  store.clearOwnership(sc.id, prov.id, tlDate.value);
+  statusMsg(`已清除「${prov.name}」的势力归属 → 无主（${tlDateText.value} 起；可 Ctrl+Z 撤回）`);
+  render();
 }
 
 // ── 省份属性面板的写入口（2026-10-01 重写）──────────────────────────────────
@@ -7783,7 +7875,7 @@ function drawRivers(c) {
       // 🔴 不画岸线：中心线加宽再压深色 = 「两条边夹一条缝」的观感来源。
       //    真实地图上细河本来就没有可见堤岸；水色与地形已经能分开。
       bankPx: 0,
-      alpha: 0.95,
+      alpha: 1,
     });
   }
   c.restore();
@@ -9377,18 +9469,29 @@ function mapVisibleRatio() {
 const polityLabelTierNow = computed(() => polityLabelTier(mapVisibleRatio()));
 
 /**
- * 当前选中省份所属势力 —— 「全名只在点开省份详情时给」那条诉求的落点
- * （地图上缩小时只画简称，全名要能查到）。
+ * 某省在**时间轴当前日期**的归属势力（唯一口径）。
+ *
+ * 与 `drawProvinces` / `drawPolityLabels` 共用 `polityLabelSources()`：
+ * 含「演变铺开」与 EU4 斜线占领的旧主口径，并在 **owner 所属的那个剧本**里查 polity。
+ * 返回 null = 该日期下无主（UI 必须明说「无主」，不能留空）。
+ *
+ * @param {string|null|undefined} provId
+ * @returns {object|null} polity
  */
-const selectedProvincePolity = computed(() => {
-  if (viewMode.value !== 'scenario') return null;
-  const prov = selectedProvince.value;
-  if (!prov) return null;
+function ownerPolityForProvince(provId) {
+  if (viewMode.value !== 'scenario' || !provId) return null;
   const { ownerRefOf, polityOfEra } = polityLabelSources();
-  const ref = ownerRefOf(prov.id);
+  const ref = ownerRefOf(provId);
   if (!ref || !ref.owner) return null;
   return polityOfEra(ref.era, ref.owner);
-});
+}
+
+/**
+ * 当前选中省份所属势力 —— 「全名只在点开省份详情时给」那条诉求的落点
+ * （地图上缩小时只画简称，全名要能查到）。
+ * 2026-10-21：抽到 `ownerPolityForProvince`，右键菜单与属性面板共用同一口径。
+ */
+const selectedProvincePolity = computed(() => ownerPolityForProvince(selectedProvince.value?.id));
 
 /**
  * 势力标注的**归属查询**：必须与 `getProvinceColor` 走同一口径
@@ -10829,6 +10932,14 @@ watch(baseMap, () => {
 .ctx-item:hover { background: #334155; }
 .ctx-item.danger { color: #f87171; }
 .ctx-item.disabled { color: #64748b; cursor: default; }
+.ctx-province { font-size: 12px; }
+/* 归属行：底色比其它禁用行亮一档 —— 它是用户右键时最想确认的一条信息 */
+.ctx-item.ctx-owner { color: #cbd5e1; padding-top: 2px; padding-bottom: 6px; }
+.ctx-item.ctx-owner .polity-dot {
+  width: 8px; height: 8px; margin: 0 4px 0 2px; vertical-align: -1px;
+}
+.ctx-owner .owner-none { color: #94a3b8; font-style: italic; margin-left: 2px; }
+.ctx-sub { color: #64748b; font-size: 11px; margin-left: 2px; }
 
 .ctx-divider {
   height: 1px;
@@ -10908,6 +11019,31 @@ watch(baseMap, () => {
   padding-top: 8px;
   border-top: 1px solid #334155;
 }
+
+/* 归属行（2026-10-21）：值占满剩余宽度，右侧一个「清成无主 / 设为当前势力」小按钮 */
+.props-row .owner-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #e2e8f0;
+  min-width: 0;
+}
+.props-row .owner-value.none { color: #94a3b8; font-style: italic; }
+.props-mini {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid #475569;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.props-mini:not(:disabled):hover { background: rgba(148, 163, 184, 0.24); }
+.props-mini:disabled { opacity: 0.45; cursor: not-allowed; }
+.props-sub { margin: -2px 0 8px 78px; font-size: 10px; color: #64748b; }
 
 /* 模态框 */
 .modal-overlay {

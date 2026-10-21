@@ -179,7 +179,13 @@ export function strokeTaperedLine(ctx, pts, widths, opts = {}) {
     const v = Array.isArray(widths) ? widths[Math.max(0, Math.min(widths.length - 1, i))] : widths;
     return Number.isFinite(v) && v > 0 ? v : 0.35;
   };
-  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 0.95;
+  // 🔴 2026-10-21 第二十修：默认**不透明**（原 0.95）。
+  //    分块描边在块与块的圆帽接缝处会**自己叠自己**：α=0.95 叠一次 ≈ 0.9975，
+  //    在两种蓝之间形成一条更深的细芯——放大后看起来就像"河里还有一条线"。
+  //    河本来就该是不透明的：不透明之后，接缝重叠在数学上不可能改变颜色
+  //    （同样的颜色画两遍还是同一个颜色），这一类"双线"从结构上消失。
+  //    ⚠️ 预览/草稿要半透明请显式传 `alpha`（如 0.85），不要改这里的默认值。
+  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
   const bankWidth = Number.isFinite(opts.bankWidth) ? opts.bankWidth : 0;
   let drawn = 0;
   ctx.save();
@@ -535,7 +541,8 @@ export function drawCurvedRiver(ctx, controlPts, headWidth, mouthWidth, opts = {
     widths = taperWidths(curve.length, headWidth, mouthWidth);
   }
   const bankWidth = Number.isFinite(opts.bankPx) ? opts.bankPx : 0.9;
-  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 0.92;
+  // 不透明（同 `strokeTaperedLine`：分块接缝叠自己不能改颜色）——见那条注释
+  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
   // 岸线宽：屏幕常量（调用方传的是 `px(1.1)` 世界值）与**水宽**取小 ——
   // 放大时水宽按世界单位涨，岸线若仍是常量就会变成粗边框（第十五修踩过的"铁轨"成因）。
   let maxW = 0;
