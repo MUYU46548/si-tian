@@ -206,12 +206,14 @@ export function computeEraChanges(scenarios, lineageOf, years) {
         for (const ev of raw) {
           const n = normalizeDate(ev);
           if (!n) continue;
+          // v2 的合成事件带 `synthesized: true`（重载后仍是合成，不计入"显式"统计）
+          const synth = ev.synthesized === true;
           list.push({
             provinceId: pid,
             y: n.y, m: n.m, d: n.d,
             owner: ev.owner !== undefined && ev.owner !== null ? ev.owner : (s.ownership?.[pid] ?? null),
-            explicit: true,
-            synthesized: false,
+            explicit: !synth,
+            synthesized: synth,
           });
         }
       }
@@ -225,7 +227,8 @@ export function computeEraChanges(scenarios, lineageOf, years) {
           owner: s.ownership?.[pid] ?? null, explicit: false, synthesized: true,
         });
       } else {
-        explicit[pid] = true;
+        // 只有**显式**事件才算"用户录过日期"；v2 落盘的合成事件不抬高这个计数
+        if (list.some((ev) => ev.explicit)) explicit[pid] = true;
       }
       list.sort(cmpDate);
       byProvince[pid] = list;
@@ -237,8 +240,10 @@ export function computeEraChanges(scenarios, lineageOf, years) {
     };
 
     if (k === 0) {
-      // era 0：能力所及只有显式事件；没有事件的省继续由 ownership 快照表达
-      for (const pid of explicitPids) if ((s.ownership || {})[pid] !== undefined) changed.push(pid);
+      // era 0：能力所及只有显式事件；没有事件的省继续由 ownership 快照表达。
+      // ⚠️ 事件省即使**不在 ownership 里**（被清成无主、ownership 键已删）也必须回放，
+      //    否则 clearOwnership 留下的 owner:null 历史会被整段丢掉。
+      for (const pid of explicitPids) changed.push(pid);
       changed.sort();
       changed.forEach((pid, i) => build(pid, i, changed.length));
     } else {
@@ -249,7 +254,7 @@ export function computeEraChanges(scenarios, lineageOf, years) {
       }
       const seen = new Set(changed);
       for (const pid of explicitPids) {
-        if (!seen.has(pid) && (s.ownership || {})[pid] !== undefined) { changed.push(pid); seen.add(pid); }
+        if (!seen.has(pid)) { changed.push(pid); seen.add(pid); }
       }
       changed.sort();
       changed.forEach((pid, i) => build(pid, i, changed.length));
@@ -405,6 +410,10 @@ export function buildLedger(tl) {
     for (const pid of Object.keys(own)) {
       // 有本代事件的省：本代开始时还是上一代的主人；没有事件：本代快照从本代开始生效
       initial[pid] = byProv[pid] ? (prevEnd[pid] ?? null) : (own[pid] ?? null);
+    }
+    // 事件省可能不在 ownership 里（被清成无主）—— 基线同样要补，否则回放起点是 undefined
+    for (const pid of Object.keys(byProv)) {
+      if (!(pid in initial)) initial[pid] = prevEnd[pid] ?? null;
     }
     const byPid = {};
     const events = [];

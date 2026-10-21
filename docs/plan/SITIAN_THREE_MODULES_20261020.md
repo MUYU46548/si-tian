@@ -241,6 +241,18 @@ era = { start, end,
 - `buildLedger` 的 `initial` 因此对 era 0 事件省 = null，`initial + 最后一条事件 = 快照`（真实数据 0 mismatch）。
 - ⚠️ 可见变化：era 0 里那 26 个省在各自第一条易主日之前会变白（无主），不再全程显示终态。
 
+**v2 迁移工具（2026-10-21）**：`scripts/migrate-ledger-v2.mjs --project <file> [--apply]`
+
+- 每代写入 `initialOwnership`（本代开始时的归属）+ **物化** `changeEvents`（显式 + 合成，
+  合成事件带 `synthesized: true`，重载后仍算合成）；`ownership` 保留为**双写缓存**，旧版本仍能读。
+- 真实 415 省项目 dry-run：12 代、**0 派生冲突**、体积 5.36 → 5.69 MB（+6.1%）；
+  era 0 的 initial=415 / events=26（含 4 个"不在 ownership 里、但事件仍在"的省 —— 以前会被丢掉）。
+- 在**副本**上 `--apply`：读回校验"全部一致"；再跑一次 +0.0%（幂等）。
+- ⚠️ 写盘前自动备份到 `backups/ledger-v2-<ts>/`；有冲突时**拒绝写盘**。
+- **尚未对真实项目 apply**：需先关闭司天（内存态会盖回去）。下一步：加载时改用
+  `deriveScenarioOwnership` 派生 `ownership`（现在仍读盘上缓存），确认无差异后再停写缓存。
+
+
 
 
 
