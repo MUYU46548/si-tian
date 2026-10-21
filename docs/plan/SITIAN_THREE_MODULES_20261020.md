@@ -252,6 +252,20 @@ era = { start, end,
 - **尚未对真实项目 apply**：需先关闭司天（内存态会盖回去）。下一步：加载时改用
   `deriveScenarioOwnership` 派生 `ownership`（现在仍读盘上缓存），确认无差异后再停写缓存。
 
+**2026-10-21 晚：已对真实项目 apply + 装载口接管**
+
+- 真实项目已迁移（备份：`backups/ledger-v2-2026-10-21T12-59-54-227Z/绒花计划-before.sitian`），
+  读回校验全部一致；体积 5.36 → 5.69 MB。
+- `scenarioEditing.normalizeScenarioDatesDict()`（**唯一装载口**）现在同时做
+  `normalizeLedgerDict()`：`initialOwnership + changeEvents` 派生 `ownership`；
+  缓存不一致时按账本覆盖并 `console.warn` 点名（不静默）。
+- 真机探针（真实 415 省 v2 项目，`scripts/tests/diag_ledger_v2.py`）：
+  **12/12 剧本带 initialOwnership、装载后 0 mismatch、12 代账本**；
+  era 0 事件省在第一条事件之前 = 无主、当天 = 新主（定案 A 在真数据上生效）。
+- 至此 `ownership` 在语义上是缓存；下一步可以停写它（减小文件、避免第二事实源），
+  或在编辑手感优先时先搁置（体感无差异，先不动更稳）。
+
+
 
 
 

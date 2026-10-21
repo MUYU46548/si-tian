@@ -113,6 +113,40 @@ export function verifyScenarioLedger(scenario) {
   return { ok: diffs.length === 0, reason: diffs.length ? 'mismatch' : 'ok', diffs };
 }
 
+/**
+ * 装载口的统一归一：把 v2 剧本的 `ownership` 换成**从账本派生**的值。
+ *
+ * 为什么是覆盖而不是"信任缓存"：`initialOwnership + changeEvents` 是事实源，
+ * `ownership` 只是缓存。缓存与账本不一致 = 账本被绕过（旧版本写盘、手改文件、迁移半途），
+ * 这时**按账本覆盖**并回报（不静默）。
+ *
+ * ⚠️ v1 剧本（没有 `initialOwnership`）原样返回，保持引用不变。
+ * @param {Object} dict `{ id: scenario }`
+ * @returns {{dict:Object, derived:number, mismatched:number, mismatchIds:string[]}}
+ */
+export function normalizeLedgerDict(dict) {
+  const out = {};
+  let derived = 0, mismatched = 0;
+  const mismatchIds = [];
+  for (const key of Object.keys(dict || {})) {
+    const sc = dict[key];
+    if (!sc || !sc.initialOwnership) { out[key] = sc; continue; }
+    const next = deriveScenarioOwnership(sc);
+    const cur = sc.ownership || {};
+    let diff = false;
+    const pids = new Set([...Object.keys(next), ...Object.keys(cur)]);
+    for (const pid of pids) {
+      const a = next[pid] === undefined ? null : next[pid];
+      const b = cur[pid] === undefined ? null : cur[pid];
+      if (a !== b) { diff = true; break; }
+    }
+    out[key] = diff ? { ...sc, ownership: next } : sc;
+    derived++;
+    if (diff) { mismatched++; mismatchIds.push(sc.id || key); }
+  }
+  return { dict: out, derived, mismatched, mismatchIds };
+}
+
 /** 事件日期是否会落在本剧本区间内（迁移/写口共用的边界提示，不参与判定） */
 export function eventDateInEra(scenario, ev) {
   const n = normalizeDate(ev);

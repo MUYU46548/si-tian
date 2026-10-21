@@ -107,6 +107,19 @@ async function main() {
     return `抓到 ${v.diffs.length} 条冲突（p2）`;
   });
 
+  check('五：装载口归一 —— 缓存被篡改时按账本覆盖；v1 剧本保持原引用', () => {
+    const dict = Object.fromEntries(plan.list.map((s) => [s.id, s]));
+    const bad = { ...dict, s2: { ...dict.s2, ownership: { ...dict.s2.ownership, p2: 'B2' } } };
+    const v1 = { id: 'old', ownership: { q: 'X' } };
+    bad.old = v1;
+    const r = V2.normalizeLedgerDict(bad);
+    assert(r.derived === 3, `应派生 3 个 v2 剧本，实际 ${r.derived}`);
+    assert(r.mismatched === 1 && r.mismatchIds[0] === 's2', `应点名 s2：${JSON.stringify(r.mismatchIds)}`);
+    assert(r.dict.s2.ownership.p2 === 'B1', '被篡改的缓存必须按账本覆盖回 B1');
+    assert(r.dict.old === v1, 'v1 剧本（无 initialOwnership）必须保持原引用');
+    return '派生 3 / 覆盖 1（s2）/ v1 原引用';
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  — ' + r.detail : ''}`);
   console.log(`\n${results.length - failed.length}/${results.length} 通过`);

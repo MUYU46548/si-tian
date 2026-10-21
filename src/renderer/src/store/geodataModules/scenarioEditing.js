@@ -34,6 +34,8 @@ import {
   normalizeScenarioDict, normalizeDate, cmpDate, dateKey,
 } from '../../utils/scenarioDates';
 import { validateChangeDateInRange } from '../../utils/scenarioSlices';
+// 账本 v2（2026-10-21）：装载口把 `ownership` 从 `initialOwnership + changeEvents` 派生。
+import { normalizeLedgerDict } from '../../utils/scenarioLedgerV2';
 // ── 自动河流（2026-10-14 重写）──────────────────────────────────────────────
 // 🔴 算法与口径的**单一实现**在 `utils/riverTrace.js`（纯函数 + Node 单测）。
 //    本模块只做「取哪份高度图 / 把不算数的情况变成可读回执」——
@@ -2291,7 +2293,15 @@ export function createScenarioEditingModule(ctx) {
 
   /** 剧本字典/数组 → 迁移后的同形结果（带迁移点名） */
   function normalizeScenarioDatesDict(list) {
-    return normalizeScenarioDict(list).scenarios;
+    // 2026-10-21（B v2）：装载口同时做**账本派生** —— `initialOwnership + changeEvents`
+    // 是事实源，`ownership` 只是缓存；缓存不一致时按账本覆盖并留一条 warn（不静默）。
+    const dated = normalizeScenarioDict(list).scenarios;
+    const led = normalizeLedgerDict(dated);
+    if (led.mismatched) {
+      console.warn(`[ledger] ${led.mismatched} 个剧本的 ownership 与账本派生不一致，已按账本覆盖：`,
+        led.mismatchIds.slice(0, 5));
+    }
+    return led.dict;
   }
 
   /**
