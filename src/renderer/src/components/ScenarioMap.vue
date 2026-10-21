@@ -2,7 +2,7 @@
   <div class="scenario-map-container" :class="{ immersive }">
     <!-- 沉浸模式细顶条（2026-10-17 P0）：默认态下不渲染；只留 返回 / 剧本名 / 年份 / 小地图 / 退出 -->
     <div v-if="immersive" class="immersive-bar" data-testid="immersive-bar">
-      <button class="imb-btn" @click="onBackClick">{{ basemapEditMode ? '← 返回日常' : '← 退出剧本' }}</button>
+      <button class="imb-btn" @click="onBackClick">{{ basemapEditMode ? '← 日常视图' : '← 退出剧本' }}</button>
       <!-- 换剧本（P0-1）：沉浸态左侧剧本列表是隐藏的，没有这个按钮就只能先退出沉浸再换 -->
       <button class="imb-btn" data-testid="imb-picker" title="回到剧本选择（卡片墙）"
               @click="$emit('picker')">换剧本</button>
@@ -68,7 +68,7 @@
              点左上角返回把整个剧本退了」——不能只靠顶栏那个按钮。 -->
         <button class="basemap-exit" data-testid="basemap-exit"
                 title="退出底图编辑，回到日常剧本编辑（省份 / 归属 / 剧本）—— 不会离开历史剧本"
-                @click="toggleBasemapEditMode()">← 返回日常</button>
+                @click="toggleBasemapEditMode()">← 日常视图</button>
       </div>
 
       <div class="toolbar-row primary-row">
@@ -79,9 +79,9 @@
              模块级退出还有顶部「世界观」页签，这里不再是唯一出口。 -->
         <button @click="onBackClick" class="back-btn" data-testid="scenario-back-btn"
                 :title="basemapEditMode
-                  ? '退出底图编辑，回到日常编辑（不会离开历史剧本）'
+                  ? '退出底图编辑，回到日常剧本编辑（不会离开历史剧本）'
                   : '退出历史剧本，回到世界页（顶部「世界观」页签同样可以离开）'">
-          {{ basemapEditMode ? '← 返回日常' : '← 退出剧本' }}
+          {{ basemapEditMode ? '← 日常视图' : '← 退出剧本' }}
         </button>
         <button
           :class="{ active: tool === 'select' }"

@@ -217,6 +217,38 @@ def run(cdp):
         fails.append('切回日常工具就把模式关了 —— 用户连着画几条河时会被踢出模式')
     notes.append(f"e 日常工具可用且不关模式：tool={s4['tool']} 模式={s4['mode']}")
 
+    # ── g 左上角「返回」的上下文语义（2026-10-21 用户误触）──────────────────
+    #    底图编辑中必须是「← 日常视图」（只退模式、不退出剧本）；
+    #    日常态才是「← 退出剧本」；底图行末尾也有「← 日常视图」出口。
+    back = _ev(cdp, "(() => { const b = document.querySelector('.scenario-toolbar .back-btn');"
+                    " return b ? b.textContent.trim() : 'none'; })()", '读返回按钮')
+    if '日常视图' not in back:
+        fails.append(f'底图编辑中返回按钮应是「← 日常视图」，实际「{back}」')
+    _ev(cdp, "(() => { const b = document.querySelector('.scenario-toolbar .back-btn');"
+             " if (b) b.click(); return 'ok'; })()", '点返回（应只退模式）')
+    time.sleep(0.4)
+    still = _ev(cdp, "!!document.querySelector('.scenario-map-container')", '编辑器仍在')
+    g1 = _state(cdp)
+    if not still:
+        fails.append('🔴 底图编辑中点「返回」直接退出了整个历史剧本（用户踩过的那个）')
+    if g1['mode']:
+        fails.append('点「返回」后底图编辑模式还开着')
+    back2 = _ev(cdp, "(() => { const b = document.querySelector('.scenario-toolbar .back-btn');"
+                     " return b ? b.textContent.trim() : 'none'; })()", '读日常态返回按钮')
+    if '退出剧本' not in back2:
+        fails.append(f'日常态返回按钮应是「← 退出剧本」，实际「{back2}」')
+    # 行内出口：开模式 → 点「← 日常视图」→ 仍在剧本、模式关
+    _ev(cdp, "(() => { %s.basemapEditMode = true; return 'ok'; })()" % SM, '再开底图编辑')
+    time.sleep(0.3)
+    _ev(cdp, "(() => { const b = document.querySelector('[data-testid=basemap-exit]');"
+             " if (b) b.click(); return b ? 'ok' : 'no-btn'; })()", '点底图行末尾出口')
+    time.sleep(0.4)
+    still2 = _ev(cdp, "!!document.querySelector('.scenario-map-container')", '编辑器仍在 2')
+    g2 = _state(cdp)
+    if not still2 or g2['mode']:
+        fails.append('底图行末尾「← 日常视图」没有把模式关掉（或退出了剧本）')
+    notes.append(f"g 返回语义：底图编辑「{back}」→ 仍挂载={still} / 模式={g1['mode']}；日常「{back2}」")
+
     # ── f 收尾：关模式回日常 + 退出剧本域 ──
     _ev(cdp, "(() => { const sm = %s; if (sm.basemapEditMode) sm.toggleBasemapEditMode();"
              " sm.setTool('select'); return 'ok'; })()" % SM, '收尾')
