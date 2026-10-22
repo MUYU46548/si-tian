@@ -85,7 +85,7 @@ def source_gates():
         # 所以判据跟着落到「落库时把 shiftKey 翻成 snap」+「freeTraceRing 里 snap=false 直接返回」——
         # 语义仍然是「Shift = 旁路骨架吸附」，只是实现位置变了。
         ('freeTraceRing(pts, { snap: !shiftKey })', 'Shift = 旁路骨架吸附'),
-        ('if (!snap) return { ring: pts, simplified: pts.length, snapped: pts.length };',
+        ('if (!snap) return {',
          'freeTraceRing 的不吸附分支'),
         ('function focusNewProvince(', '新建后选中 + 名字输入聚焦'),
         ('ref="provNameInput"', '属性面板名字框可聚焦（P1 名字输入）'),
