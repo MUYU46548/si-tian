@@ -975,8 +975,10 @@
       <!-- 有底图、但一个省都没有：把「第一笔怎么落」摆在画布中央（2026-10-22 用户实测）。
            他说"可以建空底图了，但是不知道怎么写，使用手册看不懂"——手册里写的「主行画省份」
            其实要先切「底图编辑」，日常模式里根本没有这个按钮。 -->
-      <div v-if="baseMap && provinceCount === 0 && !batchBusy && !renderPaused"
+      <div v-if="baseMap && provinceCount === 0 && tool === 'select' && !emptyHintDismissed && !batchBusy && !renderPaused"
            class="empty-province-hint" data-testid="empty-province-hint">
+        <button class="eph-close" data-testid="empty-province-dismiss" title="先不看这张提示（随时可用左上「底图编辑」回来）"
+                @click="emptyHintDismissed = true">×</button>
         <template v-if="store.isReadOnly">
           <p class="eph-title">只读：不能画省份</p>
           <p class="eph-note">{{ store.readOnlyReason }}（先到「项目」面板新建 / 打开一个项目）</p>
@@ -5308,6 +5310,8 @@ let freeTrace = null;
 let freeTraceActive = false;
 // 上一笔被净化层拒绝的原因（松手时 statusMsg 用它说人话，不再只报「轨迹太短」）
 let freeTraceRejectReason = '';
+/** 用户点了提示卡的 ×（本次进剧本内不再弹；换底图/新建省后自然也不需要） */
+const emptyHintDismissed = ref(false);
 let suppressDrawClick = false;      // 一笔成型后紧随的 click 不要再落顶点
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -5403,10 +5407,17 @@ let tracePreviewCache = { at: -1e9, ring: null };
 function previewTraceRing() {
   const n = freeTrace ? freeTrace.length : 0;
   if (n < 3) return null;
+  // 一大团自己绕自己的手迹（乱涂）不画"预测地块"：那种环本来就没意义，画出来是一团
+  // 交叉白线（用户实测："这玩意很卡…画出来一团"），还每 60ms 白算一次。
+  if (n > 400) return null;
   const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  if (now - tracePreviewCache.at < 60) return tracePreviewCache.ring;
+  if (now - tracePreviewCache.at < 90) return tracePreviewCache.ring;
   const shape = freeTraceRing(freeTrace, { snap: tool.value === 'draw', sanitize: false });
-  tracePreviewCache = { at: now, ring: shape ? shape.ring : null };
+  const ring = shape ? shape.ring : null;
+  tracePreviewCache = {
+    at: now,
+    ring: ring && selfIntersectionCount(ring) === 0 ? ring : null,
+  };
   return tracePreviewCache.ring;
 }
 
@@ -9414,9 +9425,9 @@ function drawPreviewOverlay() {
     c.save();
     c.lineJoin = 'round';
     c.lineCap = 'round';
-    // ① 手感线
-    c.strokeStyle = isOutline ? 'rgba(34, 211, 238, 0.45)' : 'rgba(196, 181, 253, 0.45)';
-    c.lineWidth = px(1.2);
+    // ① 手感线（像笔：粗一点、亮一点；地块预测见下，乱涂时不再画）
+    c.strokeStyle = isOutline ? 'rgba(34, 211, 238, 0.85)' : 'rgba(221, 214, 254, 0.9)';
+    c.lineWidth = px(2.2);
     c.beginPath();
     tracePath(c, freeTrace, false);
     c.stroke();
@@ -11056,6 +11067,12 @@ watch(baseMap, () => {
 }
 .empty-province-hint .eph-btn:hover { filter: brightness(1.12); }
 .empty-province-hint .eph-note { margin: 10px 0 0; font-size: 11.5px; line-height: 1.65; color: #94a3b8; }
+.empty-province-hint .eph-close {
+  position: absolute; top: 6px; right: 8px; width: 20px; height: 20px; padding: 0;
+  border: 0; border-radius: 4px; background: transparent; color: #94a3b8;
+  font-size: 16px; line-height: 18px; cursor: pointer; pointer-events: auto;
+}
+.empty-province-hint .eph-close:hover { background: #334155; color: #e2e8f0; }
 
 /* 渲染护栏提示（状态栏内，红黄警示 + 可点击恢复） */
 .render-guard { color: #fbbf24; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
