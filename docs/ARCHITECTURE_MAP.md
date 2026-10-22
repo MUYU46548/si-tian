@@ -42,14 +42,14 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 202 | `scripts/audit-project-size.js` | （待补） |
 | 324 | `scripts/clean-cache-junk.js` | .sitian 缓存历史垃圾清理（空名地形 / 空壳底图 / 测试残留节点）：dry-run 报告 + --apply 备份/存档/删除，删除前逐项自检（引用 / 包围盒 / 子节点） |
 | 103 | `scripts/emoji_audit.py` | emoji 审计（按文件聚合 + 行号上下文） |
-| 1213 | `scripts/extract-data.js` | Obsidian → geodata.json 提取（LAYER_ORDER/增量缓存/UUID/孤儿检测/mergeUserCreatedNodes） |
+| 1215 | `scripts/extract-data.js` | Obsidian → geodata.json 提取（LAYER_ORDER/增量缓存/UUID/孤儿检测/mergeUserCreatedNodes） |
 | 102 | `scripts/gen_architecture_map.py` | 再生成本清单（--check 自检模式） |
 | 100 | `scripts/generate-icons.py` | 图标生成 |
 | 237 | `scripts/generate_icon.py` | 图标生成 |
 | 60 | `scripts/icon_check.py` | 图标一致性校验（引用名是否都在 Icon.vue 中定义） |
 | 310 | `scripts/ledger-query.mjs` | 事件账本查询/录入（读 .sitian）：--list 清点、--at/--a/--b 一句话作答、--add [--apply] 先备份后落盘并读回校验 |
 | 57 | `scripts/lib/loadRendererUtils.mjs` | 在 Node 里加载渲染层 ESM utils 的 loader（抄到临时目录补 .js 扩展名，跑的仍是仓库源码）；迁移/查询工具共用这一份 |
-| 623 | `scripts/lib/vaultClassify.js` | 读料归类纯函数层（第二刀）：整份 frontmatter + 标签 + 结构目录 + 文件名后缀 → 12 类（含待人工），每条带 evidence；空间关系按「显式字段→双链→句式」推断并标 inferred；buildReport/reportToMarkdown 零静默丢失 |
+| 699 | `scripts/lib/vaultClassify.js` | 读料归类纯函数层（第二刀）：整份 frontmatter + 标签 + 结构目录 + 文件名后缀 → 12 类（含待人工），每条带 evidence；空间关系按「显式字段→双链→句式」推断并标 inferred；buildReport/reportToMarkdown 零静默丢失 |
 | 410 | `scripts/maint/repair_basemap_data.py` | （待补） |
 | 113 | `scripts/migrate-ledger-v2.mjs` | 账本 v2 迁移（默认 dry-run；--apply 先备份 + 写后读回校验）：每代写入 initialOwnership + 物化 changeEvents |
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
@@ -183,6 +183,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 226 | `scripts/tests/unit/test_disclaimer.js` | （待补） |
 | 278 | `scripts/tests/unit/test_entity_status.js` | （待补） |
 | 233 | `scripts/tests/unit/test_export_frames.js` | （待补） |
+| 184 | `scripts/tests/unit/test_freehand_ring.js` | 自由绘制几何单测：干净/手抖方框、圆、8 字、回勾、一条线、确定性、幂等 |
 | 220 | `scripts/tests/unit/test_galaxy_layout.js` | （待补） |
 | 186 | `scripts/tests/unit/test_git_credential_store.js` | （待补） |
 | 425 | `scripts/tests/unit/test_git_sync.js` | （待补） |
@@ -219,6 +220,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 369 | `scripts/tests/unit/test_undefined_identifiers.js` | （待补） |
 | 162 | `scripts/tests/unit/test_user_guide.js` | （待补） |
 | 191 | `scripts/tests/unit/test_vault_classify.js` | 读料归类单测：12 类信号、结构优先、零静默丢失守恒、三档空间推断、只读快照、通用提取、输出目录守卫 |
+| 160 | `scripts/tests/unit/test_vault_frontmatter_noise.js` | （待补） |
 | 188 | `scripts/tests/unit/test_vault_index.js` | 索引单测：walk/增量/候选/containment/搜索/阅读器/附件/接线 |
 | 107 | `scripts/tests/unit/test_vault_index_watcher.js` | （待补） |
 | 219 | `scripts/tests/unit/test_vault_relink.js` | Node 单元测试：笔记改名断线检测与候选打分（路径归一化 / 最长公共子串 / 推荐线 / 占用过滤 / 异常输入）—— 纯函数层，CDP 用例覆盖不到的判据粒度 |
@@ -237,7 +239,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 129 | `src/main/tray.js` | 托盘图标（多分辨率 ico）+ 菜单 |
 | 105 | `src/main/updater.js` | electron-updater 自动更新 |
 | 285 | `src/main/vault-watcher.js` | Obsidian vault 文件变更监听 |
-| 600 | `src/main/vaultIndex.js` | 全库只读索引（D1/D2 + 第二刀归类）：walkMarkdown/增量指纹、条目带 classification（整份 frontmatter 启发归类）、discoverCandidates/classifyReport、containment 读笔记/附件、搜索/解析链接 |
+| 601 | `src/main/vaultIndex.js` | 全库只读索引（D1/D2 + 第二刀归类）：walkMarkdown/增量指纹、条目带 classification（整份 frontmatter 启发归类）、discoverCandidates/classifyReport、containment 读笔记/附件、搜索/解析链接 |
 | 79 | `src/main/vaultIndexWatcher.js` | 知识库索引 watcher：文件变更 → 250ms 防抖 → 增量重建索引并通知渲染层 |
 | 234 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
 | 2685 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
@@ -274,7 +276,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 491 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 11700 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 11739 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 393 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 244 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
@@ -379,6 +381,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 112 | `src/renderer/src/utils/entityStatus.js` | （待补） |
 | 113 | `src/renderer/src/utils/errorReport.js` | 全局错误捕获 + 主进程落盘 |
 | 295 | `src/renderer/src/utils/floodfill.js` | 泛洪填充（地形快速绘制） |
+| 195 | `src/renderer/src/utils/freehandRing.js` | 自由绘制闭环净化（第三刀）：自交检测、在自交点切环只留最大一块、面积/填充比闸门；拒绝原因给人话（不造怪多边形、不引布尔库） |
 | 279 | `src/renderer/src/utils/galaxyLayout.js` | （待补） |
 | 162 | `src/renderer/src/utils/geojson.js` | GeoJSON 导入导出 |
 | 484 | `src/renderer/src/utils/geometry.js` | 凸包/多边形拆分合并/点包含判定 |
