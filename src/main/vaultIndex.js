@@ -12,15 +12,22 @@
 //   · 路径必须在库根内（readNote 做 containment），防止渲染层借 IPC 读任意文件；
 //   · 与提取器的关系：提取器继续决定“地图节点”；本索引决定“资料条目”。两者用 path 关联，
 //     谁都不覆盖谁。
+//
+// 🔴 2026-10-22（三刀序列·第二刀「读料桥」）：
+//   索引不再只记「有层级/在扫描目录」这类粗判，而是对**整份 frontmatter**做一次启发归类
+//   （`scripts/lib/vaultClassify.js`，纯函数 + Node 单测），并把「认不出来的」逐条落进
+//   `classifyReport().needsHuman`。上层缺失分三种：显式字段 / 正文双链 / 正文句式，
+//   后两者标 `inferred:true` 并带证据；都找不到 → `needsHuman: 'spatial'`，**不猜**。
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 
-const { SCAN_SCOPE, LAYER_KEYWORDS, LAYER_LABELS, normalizeRelPath } = require('../../scripts/extract-data');
+const { SCAN_SCOPE, LAYER_KEYWORDS, LAYER_LABELS, LAYER_SUFFIX_RULES, normalizeRelPath } = require('../../scripts/extract-data');
+const classify = require('../../scripts/lib/vaultClassify');
 
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2;   // v2：条目带 classification（升级会强制重建一次，缓存可丢）
 const INDEX_FILE = 'note-index.json';
 const MAX_NOTE_BYTES = 2 * 1024 * 1024;      // 单篇正文读取上限（防止把巨型附件当笔记读）
 const MAX_FILES = 50000;                      // 防御性上限（真实库 1.3k；不给出无穷 walk）
@@ -137,6 +144,22 @@ function isUnderScanDir(rel, scanDirs) {
   return (scanDirs || []).some((d) => p === d || p.startsWith(String(d).replace(/\\/g, '/') + '/'));
 }
 
+/** 只留「短小」的 frontmatter 值（索引文件别被长字段撑大；报告里够用） */
+function trimFm(fm) {
+  const out = {};
+  for (const [k, v] of Object.entries(fm || {})) {
+    if (v === null || v === undefined) continue;
+    if (Array.isArray(v)) {
+      out[k] = v.slice(0, 10).map((x) => String(x).slice(0, 200));
+    } else if (typeof v === 'object') {
+      out[k] = JSON.stringify(v).slice(0, 200);
+    } else {
+      out[k] = String(v).slice(0, 200);
+    }
+  }
+  return out;
+}
+
 /** 解析一篇笔记 → 索引条目；解析失败也返回条目（带 parseError），不让整库失败 */
 function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
   const abs = path.join(root, ...rel.split('/'));
@@ -148,7 +171,10 @@ function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
     mtimeMs: Math.round(st.mtimeMs || 0),
     size: st.size || 0,
     tags: [], aliases: [], headings: [], firstLine: '', wikilinks: [], fmKeys: [],
+    fm: {},
+    contentSample: '',
     layerHint: null,
+    classification: null,
     underscore: name.startsWith('_'),
   };
   let raw = '';
@@ -164,13 +190,35 @@ function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
     entry.firstLine = firstLineOf(content);
     entry.wikilinks = wikilinksOf(content);
     entry.fmKeys = Object.keys(fm);
-    entry.layerHint = layerFromFrontmatter(fm);
-    entry.parentTitle = stripBrackets(fm['上层区域'] != null ? fm['上层区域'] : fm.parent);
+    entry.fm = trimFm(fm);
+    // 只留开头一段正文：双链已在 wikilinks 里，这里给「位于…」这类句式推断用
+    entry.contentSample = content.slice(0, 500);
+    entry.classification = classify.classifyNote({
+      path: rel,
+      name,
+      title: entry.title,
+      tags: entry.tags,
+      aliases: entry.aliases,
+      fm,
+      content: entry.contentSample,
+    }, { layerKeywords: LAYER_KEYWORDS, suffixRules: LAYER_SUFFIX_RULES });
+    entry.layerHint = entry.classification.layer;
+    const parentField = classify.pickField(fm, classify.PARENT_FIELDS);
+    entry.parentTitle = parentField.key ? classify.stripBrackets(parentField.value) : '';
+    entry.parentField = parentField.key || '';
     entry.placeType = fm['地点类型'] != null ? String(fm['地点类型']) : '';
   } catch (e) {
     entry.parseError = String((e && e.message) || e).slice(0, 200);
+    entry.classification = {
+      category: 'unknown', categoryLabel: classify.CATEGORY_LABELS.unknown,
+      layer: null, confidence: 'low',
+      evidence: [{ signal: 'parse', detail: `解析失败：${entry.parseError}` }],
+      needsHuman: ['category'],
+    };
   }
-  entry.kind = (entry.layerHint || isUnderScanDir(rel, scanDirs)) ? 'map' : 'lore';
+  const cat = entry.classification ? entry.classification.category : 'unknown';
+  // 旧字段 `kind` 的含义保持「地图 / 资料」两档（UI 与搜索在用）；`unknown` 单列，便于报告
+  entry.kind = cat === 'geo' ? 'map' : (cat === 'unknown' ? 'unknown' : 'lore');
   return entry;
 }
 
@@ -197,7 +245,9 @@ function saveIndex(root, index) {
 /**
  * 建索引（增量：mtimeMs+size 指纹命中则复用条目）。
  * @param {string} root 库根
- * @param {{forceFull?:boolean, excludeDirs?:string[], scanDirs?:string[]}} [opts]
+ * @param {{forceFull?:boolean, excludeDirs?:string[], scanDirs?:string[], write?:boolean}} [opts]
+ *        `write:false` = **只读模式**（不落 `note-index.json`）—— 读料 CLI / 只读取证用，
+ *        对用户的库连 `.sitian` 都不碰。
  * @returns {{index:object, summary:object}}
  */
 function buildIndex(root, opts = {}) {
@@ -213,7 +263,8 @@ function buildIndex(root, opts = {}) {
     let st;
     try { st = fs.statSync(path.join(rootAbs, ...rel.split('/'))); } catch (e) { continue; }
     const old = prevFiles[rel];
-    if (old && old.mtimeMs === Math.round(st.mtimeMs || 0) && old.size === (st.size || 0)) {
+    if (old && old.mtimeMs === Math.round(st.mtimeMs || 0) && old.size === (st.size || 0)
+        && old.classification) {
       files[rel] = old;
       hits += 1;
       continue;
@@ -228,6 +279,11 @@ function buildIndex(root, opts = {}) {
     const top = rel.includes('/') ? rel.split('/')[0] : '(根目录)';
     byTop[top] = (byTop[top] || 0) + 1;
   }
+  const byCategory = {};
+  for (const e of Object.values(files)) {
+    const c = (e.classification && e.classification.category) || 'unknown';
+    byCategory[c] = (byCategory[c] || 0) + 1;
+  }
   const index = {
     version: INDEX_VERSION,
     root: rootAbs,
@@ -236,12 +292,13 @@ function buildIndex(root, opts = {}) {
     stats: {
       total: Object.keys(files).length,
       byTop,
+      byCategory,
       hits, misses, parseErrors,
       elapsedMs: Date.now() - t0,
       scanDirs,
     },
   };
-  saveIndex(rootAbs, index);
+  if (opts.write !== false) saveIndex(rootAbs, index);
   return { index, summary: index.stats };
 }
 
@@ -453,38 +510,50 @@ function defaultRules() {  return {
 }
 
 /**
+ * 全库归类报告（纯函数：不写盘、不改索引）。
+ *
+ * 这就是「识别不了的每条都有报告」的落点：`needsHuman` 里既有 `category`（完全认不出）
+ * 也有 `layer`（认得出是地点但认不出粒度）与 `spatial`/`parent-missing`（找不到上层）。
+ * 每条都带 `reasons` 与 `evidence`（信号 + 命中值），人可以逐条核对，不是黑箱。
+ *
+ * @returns {{total:number, byCategory:object, byLayer:object, geo:Array,
+ *            needsHuman:Array, inferred:Array, categories:object}}
+ */
+function classifyReport(index, opts = {}) {
+  const entries = Object.values((index && index.files) || {});
+  return classify.buildReport(entries, {
+    layerOrder: MAP_LAYER_ORDER,
+    ...opts,
+  });
+}
+
+/**
  * 从索引里挑“可能是地图实体”的候选（**只读，不导入**）。
- * 判定：在扫描目录内 / 有层级或上层区域或地点类型字段 / 路径里有层级关键词。
- * @returns {{count:number, candidates:Array, byLayer:object}}
+ *
+ * 判定 v2（2026-10-22）：以 `classification.category === 'geo'` 为准 —— 显式层级、类型值、
+ * 组织/物品/书名等非地理键、结构目录、标签、路径层级词、文件名后缀，都算「凭据」；
+ * 凭据写进 `reasons`。**认不出的笔记不会进候选**（进 `needsHuman`），避免 1,353 篇
+ * 全被算成实体。
+ *
+ * @returns {{count:number, candidates:Array, byLayer:object, needsHuman:Array, counts:object}}
  */
 function discoverCandidates(index, rules = defaultRules()) {
   const r = { ...defaultRules(), ...rules };
-  const scanDirs = r.scanDirs || DEFAULT_SCAN_DIRS;
+  const report = classifyReport(index);
   const cands = [];
-  for (const e of Object.values(index.files || {})) {
-    const reasons = [];
-    const underScan = isUnderScanDir(e.path, scanDirs);
-    if (underScan) reasons.push('在扫描目录内');
-    const fk = e.fmKeys || [];
-    if (fk.includes('层级')) reasons.push('有「层级」');
-    if (fk.includes('上层区域')) reasons.push('有「上层区域」');
-    if (fk.includes('地点类型')) reasons.push('有「地点类型」');
-    const pathLayer = layerFromPath(e.path);
-    if (pathLayer) reasons.push('目录含层级词');
-    if (!reasons.length) continue;
-    const layer = e.layerHint || pathLayer || null;
-    let confidence = 'low';
-    if (layer && (underScan || fk.includes('层级'))) confidence = 'high';
-    else if (layer || underScan) confidence = 'medium';
+  for (const g of report.geo) {
+    const entry = index.files[g.path] || {};
     cands.push({
-      path: e.path,
-      title: e.title,
-      layer,
-      layerLabel: layer ? (LAYER_LABELS[layer] || layer) : null,
-      parentTitle: e.parentTitle || '',
-      tags: e.tags || [],
-      confidence,
-      reasons,
+      path: g.path,
+      title: g.title,
+      layer: g.layer,
+      layerLabel: g.layer ? (LAYER_LABELS[g.layer] || g.layer) : null,
+      parentTitle: g.parentTitle || '',
+      parentPath: g.parentPath || '',
+      parentInferred: !!g.parentInferred,
+      tags: entry.tags || [],
+      confidence: g.confidence,
+      reasons: (g.evidence || []).map((x) => `${x.signal}：${x.detail}`),
     });
   }
   const rank = { high: 0, medium: 1, low: 2 };
@@ -492,7 +561,19 @@ function discoverCandidates(index, rules = defaultRules()) {
   const byLayer = {};
   for (const c of cands) { const k = c.layer || 'unknown'; byLayer[k] = (byLayer[k] || 0) + 1; }
   const limited = cands.slice(0, r.maxCandidates);
-  return { count: cands.length, candidates: limited, byLayer };
+  return {
+    count: cands.length,
+    candidates: limited,
+    byLayer,
+    // 报告随候选一起回传：面板能立刻说「还有 N 条待人工」，而不是只给一张优等生名单
+    needsHuman: report.needsHuman.slice(0, 200),
+    counts: {
+      total: report.total,
+      byCategory: report.byCategory,
+      inferred: report.inferred.length,
+      needsHuman: report.needsHuman.length,
+    },
+  };
 }
 
 module.exports = {
@@ -512,6 +593,7 @@ module.exports = {
   findAsset,
   defaultRules,
   discoverCandidates,
+  classifyReport,
   layerFromFrontmatter,
   layerFromPath,
   MAP_LAYER_ORDER,
