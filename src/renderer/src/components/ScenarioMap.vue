@@ -547,6 +547,17 @@
           </option>
         </select>
         <button @click="triggerMapImport" title="导入 .map 底图 —— 若同名底图已存在，只补数据、不动你已切好的省份"><Icon name="plus" :size="15"/></button>
+        <!-- 2026-10-22：**已有底图时也能新建空底图**。以前只有「空项目空态」能建，
+             已有底图的项目只能导 .map —— 用户想试笔刷却没有干净画布，只能对着真实底图下手
+             （「连新底图都建不了」/「怕改坏不敢测」的直接来源）。 -->
+        <button
+          data-testid="basemap-add-empty"
+          :disabled="store.isReadOnly"
+          :title="store.isReadOnly
+            ? `新建底图已停用：${store.readOnlyReason || '只读：未打开项目'}`
+            : '新建一张空白底图（已有底图时也能加）—— 之后画的省份 / 河流 / 道路都落在这张新图上，不动现有底图'"
+          @click="addEmptyBaseMap()"
+        ><Icon name="plus" :size="15"/>空底图</button>
         <!-- 0.2.9（2026-10-13）：**从留底恢复** —— 导入过的 .map 原文一直留在
              `<项目>.sitian.backups/basemap-sources/`（0.2.8 起），但此前只有"列清单"没有入口，
              用户在界面上够不着（只能自己去资源管理器翻目录）。备份读不回来就不算备份。 -->
@@ -1244,6 +1255,24 @@
         </div>
         <div class="new-scenario-form">
           <h4>{{ editingScenarioId ? '编辑剧本' : '新建剧本' }}</h4>
+          <!-- 2026-10-22：把「新剧本会绑哪张底图」摆在表单第一行。
+               以前不显示，用户以为"新建剧本 = 新地图"，结果还是一张旧底图（真实困惑）。 -->
+          <div class="form-row bound-row" data-testid="new-scenario-basemap">
+            <label>底图：</label>
+            <span class="bound-basemap" :title="baseMapKey ? `新剧本将绑定底图「${baseMapKey}」` : '还没有底图'">
+              {{ baseMapKey || '（还没有底图）' }}
+            </span>
+            <!-- 对话框里也给出口：不管有没有底图，都能"新建一张空底图再建剧本"——
+                 用户的困惑就发生在这张表单前（"新建剧本怎么还是旧底图"）。 -->
+            <button
+              type="button"
+              class="bound-add"
+              data-testid="new-scenario-basemap-add"
+              :disabled="store.isReadOnly"
+              :title="store.isReadOnly ? `新建底图已停用：${store.readOnlyReason || '只读：未打开项目'}` : '新建一张空白底图，并让本剧本绑定它'"
+              @click="addEmptyBaseMap()"
+            >＋ 新建空底图</button>
+          </div>
           <div class="form-row">
             <label>名称：</label>
             <input v-model="newScenario.name" placeholder="如：第一时代·黑暗时代" />
@@ -1279,7 +1308,9 @@
           <div class="form-actions">
             <button v-if="editingScenarioId" data-testid="scenario-save-edit"
                     @click="saveEditScenario" :disabled="store.isReadOnly || !newScenario.name">保存</button>
-            <button v-else data-testid="scenario-create" @click="createNewScenario" :disabled="!newScenario.name">创建</button>
+            <button v-else data-testid="scenario-create" @click="createNewScenario"
+                    :disabled="!newScenario.name || !baseMapKey || !store.baseMaps?.[baseMapKey] || store.isReadOnly"
+                    :title="(!baseMapKey || !store.baseMaps?.[baseMapKey]) ? '还没有底图：先在下面点「＋ 新建空底图」，或用「＋」导入 .map' : ''">创建</button>
             <button v-if="editingScenarioId" data-testid="scenario-cancel-edit" @click="cancelEditScenario">取消编辑</button>
             <button v-else @click="closeScenarioManager">关闭</button>
           </div>
@@ -3697,19 +3728,46 @@ function nextBaseMapName() {
  * - 项目里有底图但当前键失效：切到第一张
  * - 一张都没有：懒建空底图（只读态则拒绝并说明去处）
  */
+/**
+ * 建一张空白底图（**同步核心**：只建、不切换、不提示）—— ensureBaseMap / 工具栏按钮 / 空态按钮共用。
+ * @returns {{ok:boolean, name?:string, reason?:string}}
+ */
+function createEmptyBaseMap() {
+  if (store.isReadOnly) return { ok: false, reason: store.readOnlyReason || '只读：未打开项目' };
+  const name = nextBaseMapName();
+  store.addBaseMap(name, { name });
+  if (!store.baseMaps?.[name]) {
+    return { ok: false, reason: '底图没有建出来（保存状态可能异常，请看右上角保存提示）' };
+  }
+  return { ok: true, name };
+}
+
+/**
+ * 工具栏「空底图」与「新建剧本 → 新建空底图」的唯一动作：建好 → 切过去 → 回执。
+ *
+ * 为什么独立成函数：切换底图不只是改 `baseMapKey` —— 还要清选中、持久化当前键、按新底图重绘
+ * （`onBaseMapChange` 就是这条唯一收口）。三处入口各写一遍，迟早有一处忘了清选中/持久化。
+ */
+async function addEmptyBaseMap() {
+  const r = createEmptyBaseMap();
+  if (!r.ok) { statusMsg(`新建底图已停用：${r.reason}`); return null; }
+  baseMapKey.value = r.name;
+  await onBaseMapChange();
+  statusMsg(`已新建空底图「${r.name}」—— 之后画的省份 / 河流 / 道路都落在这张图上，不影响现有底图；要地形数据时用「＋」导入 .map 补`);
+  return r.name;
+}
+
 function ensureBaseMap() {
   if (baseMapKey.value && store.baseMaps?.[baseMapKey.value]) return true;
   const first = availableBaseMaps.value[0]?.id;
   if (first) { baseMapKey.value = first; return true; }
-  if (store.isReadOnly) {
-    statusMsg(`编辑已停用：${store.readOnlyReason}（在上面新建/打开项目后即可编辑）`);
+  const r = createEmptyBaseMap();
+  if (!r.ok) {
+    statusMsg(`编辑已停用：${r.reason}（在上面新建/打开项目后即可编辑）`);
     return false;
   }
-  const name = nextBaseMapName();
-  store.addBaseMap(name, { name });
-  if (!store.baseMaps?.[name]) { statusMsg('无法新建底图：请先用工具栏「+」导入 .map 底图'); return false; }
-  baseMapKey.value = name;
-  statusMsg(`项目里还没有底图：已新建空底图「${name}」（可用工具栏「+」导入 .map 覆盖）`);
+  baseMapKey.value = r.name;
+  statusMsg(`项目里还没有底图：已新建空底图「${r.name}」（可用工具栏「+」导入 .map 覆盖）`);
   return true;
 }
 
@@ -3718,12 +3776,12 @@ function ensureBaseMap() {
  * 与绘制工具触发的懒建是**同一条路**（`ensureBaseMap`）—— 这里只补一句针对按钮的回执：
  * 按钮点下去必须有回音（"没反应"是本项目反复出现的一类投诉）。
  */
-function createEmptyBaseMapFromHint() {
-  const ok = ensureBaseMap();
-  if (ok) {
-    statusMsg('已新建空底图 —— 用「画省份」或笔刷工具直接开始；之后随时可用「导入 .map 底图」补地形/河流数据');
+async function createEmptyBaseMapFromHint() {
+  const name = await addEmptyBaseMap();
+  if (name) {
+    statusMsg(`已新建空底图「${name}」—— 用「画省份」或笔刷工具直接开始；之后随时可用「导入 .map 底图」补地形/河流数据`);
   }
-  return ok;
+  return !!name;
 }
 
 function addEmptyProvince() {
@@ -7421,6 +7479,10 @@ function manualSave() {
 // 剧本管理
 // ═══════════════════════════════════════════
 function createNewScenario() {
+  if (!baseMapKey.value || !store.baseMaps?.[baseMapKey.value]) {
+    statusMsg('新建剧本失败：还没有选中底图（先在「底图」行点「空底图」，或「＋」导入 .map）');
+    return;
+  }
   const baseScenarioId = newScenario.value.inherit && sortedScenarios.value.length > 0
     ? sortedScenarios.value[sortedScenarios.value.length - 1].id
     : null;
@@ -11394,6 +11456,15 @@ watch(baseMap, () => {
 }
 
 .new-scenario-form h4 { margin: 0 0 12px; font-size: 14px; }
+.bound-row .bound-basemap {
+  flex: 1; font-size: 12px; color: var(--text-secondary, #9aa4b2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bound-row .bound-add {
+  font-size: 12px; padding: 2px 8px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border, #3a4350); border-radius: 4px;
+  color: var(--accent, #8ab4f8);
+}
 
 .form-row {
   display: flex;
