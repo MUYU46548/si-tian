@@ -36,6 +36,13 @@ import {
 import { validateChangeDateInRange } from '../../utils/scenarioSlices';
 // 账本 v2（2026-10-21）：装载口把 `ownership` 从 `initialOwnership + changeEvents` 派生。
 import { normalizeLedgerDict } from '../../utils/scenarioLedgerV2';
+// 事件账本（2026-10-22，三刀序列·第一刀）：`scenario.timelineEvents` 的纯函数层。
+// 🔴 校验 / 排序 / 关系查询 / 冲突检出**只有一份**（`utils/scenarioEventLedger.js`），
+//    本模块只做「走 undo 写进哪个剧本」—— 在这里再写一遍日期窗口比较，就是第二套真值。
+import {
+  appendEvent, replaceEvent, removeEvent, timelineEventsOf,
+  relationBetween, describeRelation, findConflicts,
+} from '../../utils/scenarioEventLedger';
 // ── 自动河流（2026-10-14 重写）──────────────────────────────────────────────
 // 🔴 算法与口径的**单一实现**在 `utils/riverTrace.js`（纯函数 + Node 单测）。
 //    本模块只做「取哪份高度图 / 把不算数的情况变成可读回执」——
@@ -1684,10 +1691,20 @@ export function createScenarioEditingModule(ctx) {
       delete nextChangeEvents[provId];
     }
 
-    const apply = (polities, ownership, changeEvents, touch) => {
+    // 事件账本级联（2026-10-22）：势力的战争/同盟事件里若出现被删势力，那条事件就**不成立**了
+    // （参与方缺一个，`EVENT_TYPES` 的 minActors 校验会红）。与 ownership/changeEvents 同一条纪律：
+    // 删势力 = 把它在剧本里的所有痕迹一起清掉，**一条 undo 全部还原**，并把条数回报给 UI。
+    const beforeTimelineEvents = timelineEventsOf(scenario).slice();
+    const nextTimelineEvents = beforeTimelineEvents.filter((ev) => {
+      const actors = ev && Array.isArray(ev.actors) ? ev.actors : [];
+      return !actors.some((a) => String(a) === String(polityId));
+    });
+    const affectedEvents = beforeTimelineEvents.length - nextTimelineEvents.length;
+
+    const apply = (polities, ownership, changeEvents, timelineEvents, touch) => {
       const cur = scenarios.value[scenarioId];
       if (!cur) return;
-      const nextSc = { ...cur, polities, ownership, changeEvents };
+      const nextSc = { ...cur, polities, ownership, changeEvents, timelineEvents };
       if (touch) nextSc.updatedAt = new Date().toISOString();
       scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
     };
@@ -1695,12 +1712,18 @@ export function createScenarioEditingModule(ctx) {
     execute({
       type: 'remove-polity',
       label: `删除势力：${target.name || polityId}`,
-      undo: () => apply(beforePolities, beforeOwnership, beforeChangeEvents, false),
-      redo: () => apply(nextPolities, nextOwnership, nextChangeEvents, true),
+      undo: () => apply(beforePolities, beforeOwnership, beforeChangeEvents, beforeTimelineEvents, false),
+      redo: () => apply(nextPolities, nextOwnership, nextChangeEvents, nextTimelineEvents, true),
     });
 
     saveScenarios();
-    return { success: true, affected: affected.length, affectedProvinceIds: affected, name: target.name || polityId };
+    return {
+      success: true,
+      affected: affected.length,
+      affectedProvinceIds: affected,
+      affectedEvents,
+      name: target.name || polityId,
+    };
   }
 
   /**
@@ -1827,6 +1850,190 @@ export function createScenarioEditingModule(ctx) {
 
     saveScenarios();
     return { success: true, changed, cleared, rejected };
+  }
+
+  // ============================================================
+  // 事件账本（timelineEvents）—— 谁和谁 / 什么事 / 起止（2026-10-22）
+  // ============================================================
+  //
+  // 为什么是**第二张表**而不是塞进 changeEvents：
+  //   `changeEvents[provinceId]` 是「这块地归谁」（每省一本小账）；外交/战争/同盟的主体是
+  //   **势力对**，语义与键都不同。混在一起，归属回放要把非归属事件全过滤一遍，
+  //   两边的校验也会互相误伤。两本账各管一件事，查询时按需合读，绝不双写。
+  //
+  // 纪律（与本文件其它写口一致）：
+  //   · 全部走 `execute()` —— 只读态拒绝、Ctrl+Z 可回滚、落盘由 `saveScenarios()` 调度；
+  //   · 因此**不需要** `guardWrite`，也**不登记** `MEMORY_WRITE_CALLSITES`（execute 是内存写总闸门）。
+  //   · 校验/排序/关系计算全在 `utils/scenarioEventLedger.js`（唯一实现），这里只搬数据。
+
+  /** 把一张新的事件表写回剧本（供 undo/redo 共用；`touch=false` 时不动 updatedAt） */
+  function applyTimelineEvents(scenarioId, events, touch = true) {
+    const cur = scenarios.value[scenarioId];
+    if (!cur) return;
+    const nextSc = { ...cur, timelineEvents: events };
+    if (touch) nextSc.updatedAt = new Date().toISOString();
+    scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
+  }
+
+  /** 本剧本的势力名解析（默认标题 / 查询文案用；找不到就原样显示 id，不编名字） */
+  function polityNameOf(scenario, id) {
+    const hit = (scenario.polities || []).find((p) => String(p.id) === String(id));
+    return (hit && hit.name) || String(id);
+  }
+
+  /**
+   * 录入一条历史事件（**一条 undo**）。
+   *
+   * @param {string} scenarioId
+   * @param {object} draft `{ type, actors, from, to, title, note, data }`
+   *        `from`/`to` 可以是 `{y,m,d}`、裸年份、或 `'1348-06-01'` 文本
+   * @returns {{ok:boolean, event?:object, events?:Array, errors?:string[], warnings?:string[]}}
+   *   校验不过 = `ok:false` + 逐条中文原因（**不静默丢弃**，也不写半条）
+   */
+  function addTimelineEvent(scenarioId, draft) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, errors: ['剧本不存在'], warnings: [] };
+    // `.slice()`：undo 存的是**当时那份快照**，不能存活数组的引用（以后谁改成就地 push 就回滚错）
+    const before = timelineEventsOf(scenario).slice();
+    const r = appendEvent(scenario, draft, {
+      polities: scenario.polities || [],
+      era: scenario.era || {},
+      nameOf: (id) => polityNameOf(scenario, id),
+    });
+    if (!r.ok) return { ok: false, errors: r.errors, warnings: r.warnings || [] };
+
+    execute({
+      type: 'add-timeline-event',
+      label: `录入事件：${r.event.title}`,
+      undo: () => applyTimelineEvents(scenarioId, before, false),
+      redo: () => applyTimelineEvents(scenarioId, r.events, true),
+    });
+
+    saveScenarios();
+    return { ok: true, event: r.event, events: r.events, warnings: r.warnings || [] };
+  }
+
+  /**
+   * 修改一条事件（按 id；返回新数组，**一条 undo**）。
+   * 找不到 id = `ok:false, reason:'missing'`（绝不静默新建一条）。
+   */
+  function updateTimelineEvent(scenarioId, eventId, patch = {}) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario', errors: ['剧本不存在'] };
+    // `.slice()`：undo 存的是**当时那份快照**，不能存活数组的引用（以后谁改成就地 push 就回滚错）
+    const before = timelineEventsOf(scenario).slice();
+    const r = replaceEvent(scenario, eventId, patch, {
+      polities: scenario.polities || [],
+      era: scenario.era || {},
+      nameOf: (id) => polityNameOf(scenario, id),
+    });
+    if (!r.ok) {
+      return { ok: false, reason: r.reason || 'invalid', errors: r.errors || [], warnings: r.warnings || [] };
+    }
+
+    execute({
+      type: 'update-timeline-event',
+      label: `修改事件：${r.event.title}`,
+      undo: () => applyTimelineEvents(scenarioId, before, false),
+      redo: () => applyTimelineEvents(scenarioId, r.events, true),
+    });
+
+    saveScenarios();
+    return { ok: true, event: r.event, events: r.events, warnings: r.warnings || [] };
+  }
+
+  /** 删除一条事件（按 id；**一条 undo**） */
+  function removeTimelineEvent(scenarioId, eventId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    // `.slice()`：undo 存的是**当时那份快照**，不能存活数组的引用（以后谁改成就地 push 就回滚错）
+    const before = timelineEventsOf(scenario).slice();
+    const r = removeEvent(scenario, eventId);
+    if (!r.ok) return { ok: false, reason: 'missing' };
+
+    execute({
+      type: 'remove-timeline-event',
+      label: '删除事件',
+      undo: () => applyTimelineEvents(scenarioId, before, false),
+      redo: () => applyTimelineEvents(scenarioId, r.events, true),
+    });
+
+    saveScenarios();
+    return { ok: true, events: r.events, removed: before.length - r.events.length };
+  }
+
+  /**
+   * 整表替换（导入剧本包 / 批量录入用）。**全有或全无**：
+   * 任何一条不合规就整体拒绝并逐条点名 —— 半批写进去比不写更难查。
+   * 传入的 id 保留（导入要能对齐外部引用）；没 id 的按现有表递增分配。
+   */
+  function setTimelineEvents(scenarioId, drafts) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    // `.slice()`：undo 存的是**当时那份快照**，不能存活数组的引用（以后谁改成就地 push 就回滚错）
+    const before = timelineEventsOf(scenario).slice();
+    const events = [];
+    const errors = [];
+    const warnings = [];
+    const usedIds = new Set(before.map((ev) => (ev && ev.id !== undefined ? String(ev.id) : '')));
+    for (let i = 0; i < (Array.isArray(drafts) ? drafts.length : 0); i++) {
+      const made = appendEvent({ timelineEvents: events }, drafts[i], {
+        polities: scenario.polities || [],
+        era: scenario.era || {},
+        nameOf: (id) => polityNameOf(scenario, id),
+      });
+      if (!made.ok) {
+        errors.push(`第 ${i + 1} 条：${(made.errors || []).join('；')}`);
+        continue;
+      }
+      const id = String(made.event.id);
+      if (usedIds.has(id)) {
+        errors.push(`第 ${i + 1} 条：事件 id「${id}」与已有事件重复`);
+        continue;
+      }
+      usedIds.add(id);
+      events.push(made.event);
+      for (const w of (made.warnings || [])) warnings.push(`第 ${i + 1} 条：${w}`);
+    }
+    if (errors.length) return { ok: false, errors, warnings };
+    execute({
+      type: 'set-timeline-events',
+      label: `设置事件表（${events.length} 条）`,
+      undo: () => applyTimelineEvents(scenarioId, before, false),
+      redo: () => applyTimelineEvents(scenarioId, events, true),
+    });
+    saveScenarios();
+    return { ok: true, events, warnings };
+  }
+
+  /**
+   * 只读查询：「`at` 这一刻，a 与 b 是什么关系」（命令行 / 面板共用同一实现）。
+   * @returns {{ok:boolean, relation?:string, label?:string, text?:string, since?:object,
+   *            until?:object, eventId?:string|null, title?:string, type?:string|null}}
+   */
+  function queryRelationAt(scenarioId, a, b, at) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    const events = timelineEventsOf(scenario);
+    const names = {};
+    for (const p of (scenario.polities || [])) names[p.id] = p.name || p.id;
+    const r = relationBetween(events, a, b, at);
+    return {
+      ok: true,
+      ...r,
+      text: describeRelation(events, a, b, at, { names }),
+    };
+  }
+
+  /** 只读体检：本剧本事件表的冲突/可疑清单（导入后、落盘前给人看） */
+  function auditTimelineEvents(scenarioId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    const r = findConflicts(timelineEventsOf(scenario), {
+      polities: scenario.polities || [],
+      era: scenario.era || {},
+    });
+    return { ok: true, errors: r.errors, warnings: r.warnings, total: timelineEventsOf(scenario).length };
   }
 
   // ============================================================
@@ -3484,6 +3691,10 @@ export function createScenarioEditingModule(ctx) {
     createScenario, updateScenario, removeScenario, inheritScenario,
     setOwnership, clearOwnership, batchSetOwnership,
     setPolityLineage, setChangeEvents, setChangeEventsBulk, updatePolity, addPolity, removePolity,
+    // 事件账本（2026-10-22，三刀序列·第一刀）：外交/战争/同盟的录入、修改、删除与只读查询
+    // （全部一条 undo；校验/排序/关系计算在 utils/scenarioEventLedger.js）
+    addTimelineEvent, updateTimelineEvent, removeTimelineEvent, setTimelineEvents,
+    queryRelationAt, auditTimelineEvents,
     // 切片书签（项目级时间点）：CRUD 各走一条 undo；区间归属运行时判定、不落盘
     slicePoints, sanitizeSlicePoints,
     addSlicePoint, renameSlicePoint, updateSlicePoint, removeSlicePoint,
