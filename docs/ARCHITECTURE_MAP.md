@@ -47,10 +47,21 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 100 | `scripts/generate-icons.py` | 图标生成 |
 | 237 | `scripts/generate_icon.py` | 图标生成 |
 | 60 | `scripts/icon_check.py` | 图标一致性校验（引用名是否都在 Icon.vue 中定义） |
+| 310 | `scripts/ledger-query.mjs` | 事件账本查询/录入（读 .sitian）：--list 清点、--at/--a/--b 一句话作答、--add [--apply] 先备份后落盘并读回校验 |
+| 57 | `scripts/lib/loadRendererUtils.mjs` | 在 Node 里加载渲染层 ESM utils 的 loader（抄到临时目录补 .js 扩展名，跑的仍是仓库源码）；迁移/查询工具共用这一份 |
 | 410 | `scripts/maint/repair_basemap_data.py` | （待补） |
+| 113 | `scripts/migrate-ledger-v2.mjs` | 账本 v2 迁移（默认 dry-run；--apply 先备份 + 写后读回校验）：每代写入 initialOwnership + 物化 changeEvents |
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
 | 341 | `scripts/migrate-vault-attrs.js` | **A-1 存量机器属性搬家**（默认 dry-run）：把笔记 frontmatter 的「层级 / 上层挂靠 / 地点类型」搬进 `.sitian`。只补空、不覆盖项目已有值（冲突只报告）、补 parentId 前校验父实体、写前备份 + 反向档；笔记只读。逻辑层 `parseArgs` / `runMigration` 可被用例直调（本仓 node 无法 spawn node） |
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
+| 274 | `scripts/tests/diag_edit_perf.py` | （待补） |
+| 158 | `scripts/tests/diag_edit_profile.py` | （待补） |
+| 189 | `scripts/tests/diag_ledger_v2.py` | （待补） |
+| 232 | `scripts/tests/diag_module_shell.py` | （待补） |
+| 361 | `scripts/tests/diag_owner_brush.py` | （待补） |
+| 391 | `scripts/tests/diag_province_detail.py` | （待补） |
+| 208 | `scripts/tests/diag_river_dup.py` | （待补） |
+| 277 | `scripts/tests/diag_river_scan.py` | （待补） |
 | 364 | `scripts/tests/diag_t2_save.py` | （待补） |
 | 877 | `scripts/tests/drill_p0_first_map.py` | （待补） |
 | 341 | `scripts/tests/drill_p1_vertex_marquee.py` | （待补） |
@@ -63,46 +74,83 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 526 | `scripts/tests/lib/helpers.py` | 测试公共 helper（世界/行星导航锚定） |
 | 159 | `scripts/tests/lib/pngcheck.py` | （待补） |
 | 811 | `scripts/tests/run_tests.py` | 测试主控（Edge CDP + mock 注入，用后还原） |
+| 99 | `scripts/tests/tools/_audit_unwired.mjs` | （待补） |
+| 37 | `scripts/tests/tools/_check_smooth_wired.mjs` | （待补） |
+| 8 | `scripts/tests/tools/_crop.py` | （待补） |
 | 269 | `scripts/tests/tools/_diag_hollow_river.py` | （待补） |
 | 64 | `scripts/tests/tools/_diff_shots.py` | （待补） |
+| 90 | `scripts/tests/tools/_fangcun_pipe.mjs` | （待补） |
+| 40 | `scripts/tests/tools/_inspect_scenarios.mjs` | （待补） |
 | 128 | `scripts/tests/tools/_lab.py` | （待补） |
 | 105 | `scripts/tests/tools/_make_brush_gallery.py` | （待补） |
+| 144 | `scripts/tests/tools/_probe_accumulation_compare.mjs` | （待补） |
+| 87 | `scripts/tests/tools/_probe_alt_surface.mjs` | （待补） |
 | 66 | `scripts/tests/tools/_probe_auto_river_visual.js` | （待补） |
 | 42 | `scripts/tests/tools/_probe_basemap_river_ui.js` | （待补） |
+| 27 | `scripts/tests/tools/_probe_basemap_source.mjs` | （待补） |
 | 63 | `scripts/tests/tools/_probe_bezier_overshoot.js` | （待补） |
 | 605 | `scripts/tests/tools/_probe_brush_matrix.py` | （待补） |
 | 54 | `scripts/tests/tools/_probe_case103_terrain.js` | （待补） |
 | 278 | `scripts/tests/tools/_probe_cpu_profile.py` | （待补） |
 | 30 | `scripts/tests/tools/_probe_data_sizes.js` | （待补） |
+| 39 | `scripts/tests/tools/_probe_endinsea.mjs` | （待补） |
+| 51 | `scripts/tests/tools/_probe_fangcun_pipe.mjs` | （待补） |
+| 93 | `scripts/tests/tools/_probe_fmg_river_tree.mjs` | （待补） |
+| 100 | `scripts/tests/tools/_probe_ideal_terrain.mjs` | （待补） |
+| 60 | `scripts/tests/tools/_probe_import_fidelity.mjs` | （待补） |
 | 141 | `scripts/tests/tools/_probe_jank_autoriver.js` | （待补） |
 | 228 | `scripts/tests/tools/_probe_jank_real.js` | （待补） |
 | 103 | `scripts/tests/tools/_probe_jank_real.py` | （待补） |
 | 40 | `scripts/tests/tools/_probe_jank_rescue.py` | （待补） |
+| 135 | `scripts/tests/tools/_probe_least_cost.mjs` | （待补） |
+| 75 | `scripts/tests/tools/_probe_map_provinces.mjs` | （待补） |
+| 40 | `scripts/tests/tools/_probe_map_segments.mjs` | （待补） |
 | 54 | `scripts/tests/tools/_probe_messy_vault.js` | （待补） |
 | 125 | `scripts/tests/tools/_probe_module_isolation.py` | （待补） |
 | 180 | `scripts/tests/tools/_probe_module_layout.py` | （待补） |
 | 94 | `scripts/tests/tools/_probe_one_tool.py` | （待补） |
 | 92 | `scripts/tests/tools/_probe_p0_first_map.js` | （待补） |
 | 65 | `scripts/tests/tools/_probe_perf.js` | （待补） |
+| 92 | `scripts/tests/tools/_probe_phantom.mjs` | （待补） |
 | 91 | `scripts/tests/tools/_probe_picker_bleed.py` | （待补） |
 | 129 | `scripts/tests/tools/_probe_picker_perf.js` | （待补） |
 | 119 | `scripts/tests/tools/_probe_preview_vs_landed.py` | （待补） |
 | 408 | `scripts/tests/tools/_probe_rail_widths.py` | （待补） |
+| 128 | `scripts/tests/tools/_probe_river_align.mjs` | （待补） |
 | 180 | `scripts/tests/tools/_probe_river_branch.py` | （待补） |
 | 86 | `scripts/tests/tools/_probe_river_classifier.js` | （待补） |
 | 155 | `scripts/tests/tools/_probe_river_edit_perf.py` | （待补） |
 | 35 | `scripts/tests/tools/_probe_river_flowdist.js` | （待补） |
 | 146 | `scripts/tests/tools/_probe_river_highlight.js` | （待补） |
+| 128 | `scripts/tests/tools/_probe_river_reachability.mjs` | （待补） |
 | 97 | `scripts/tests/tools/_probe_river_sea_pixels.js` | （待补） |
 | 236 | `scripts/tests/tools/_probe_river_selection_visibility.py` | （待补） |
+| 118 | `scripts/tests/tools/_probe_river_three_ways.mjs` | （待补） |
+| 97 | `scripts/tests/tools/_probe_river_valley.mjs` | （待补） |
 | 108 | `scripts/tests/tools/_probe_river_visual.js` | （待补） |
+| 40 | `scripts/tests/tools/_probe_river_width.mjs` | （待补） |
+| 490 | `scripts/tests/tools/_probe_routing_v2.mjs` | （待补） |
 | 99 | `scripts/tests/tools/_probe_save_block.js` | （待补） |
 | 60 | `scripts/tests/tools/_probe_save_breakdown_20261019.js` | （待补） |
 | 115 | `scripts/tests/tools/_probe_save_gate_20261019.js` | （待补） |
 | 90 | `scripts/tests/tools/_probe_selfbuilt_river.js` | （待补） |
 | 69 | `scripts/tests/tools/_probe_setup_keys.py` | （待补） |
+| 128 | `scripts/tests/tools/_probe_sink_neighborhood.mjs` | （待补） |
 | 154 | `scripts/tests/tools/_probe_stroke_spike.js` | （待补） |
+| 108 | `scripts/tests/tools/_probe_terrain_quality.mjs` | （待补） |
+| 274 | `scripts/tests/tools/_probe_terrain_structure.mjs` | （待补） |
+| 143 | `scripts/tests/tools/_probe_tiebreak.mjs` | （待补） |
 | 99 | `scripts/tests/tools/_probe_tree_nav.py` | （待补） |
+| 150 | `scripts/tests/tools/_proto_backbone_graft.mjs` | （待补） |
+| 254 | `scripts/tests/tools/_proto_downscale.mjs` | （待补） |
+| 236 | `scripts/tests/tools/_proto_downscale_threshold.mjs` | （待补） |
+| 198 | `scripts/tests/tools/_proto_fill_depressions.mjs` | （待补） |
+| 203 | `scripts/tests/tools/_proto_flow_accumulation.mjs` | （待补） |
+| 88 | `scripts/tests/tools/_proto_smooth_trace.mjs` | （待补） |
+| 86 | `scripts/tests/tools/_proto_upsample.mjs` | （待补） |
+| 106 | `scripts/tests/tools/_render_river_compare.mjs` | （待补） |
+| 111 | `scripts/tests/tools/_render_terrain_structure.mjs` | （待补） |
+| 45 | `scripts/tests/tools/_ribbon_check.js` | （待补） |
 | 308 | `scripts/tests/tools/_shot01_handriver_node_dots.js` | （待补） |
 | 170 | `scripts/tests/tools/_shot02_autoriver_unpruned.js` | （待补） |
 | 125 | `scripts/tests/tools/_shot02b_autoriver_unpruned_zoom.js` | （待补） |
@@ -113,6 +161,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 260 | `scripts/tests/tools/_shot06_handriver_preview_taper.js` | （待补） |
 | 225 | `scripts/tests/tools/_shot07_handriver_handles.js` | （待补） |
 | 70 | `scripts/tests/tools/_shot_basemap_mode.py` | （待补） |
+| 165 | `scripts/tests/tools/_shot_owner_and_river_20261020.py` | （待补） |
 | 521 | `scripts/tests/tools/_shot_planet_20261017.py` | （待补） |
 | 270 | `scripts/tests/tools/_shot_river_eraser_20261018.py` | （待补） |
 | 49 | `scripts/tests/tools/_shot_save.js` | （待补） |
@@ -122,6 +171,10 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 207 | `scripts/tests/tools/alias_fixture_names.py` | （待补） |
 | 65 | `scripts/tests/tools/compare_river_opts.py` | （待补） |
 | 281 | `scripts/tests/tools/diag_rivers.py` | （待补） |
+| 93 | `scripts/tests/tools/dump_river_clip.mjs` | （待补） |
+| 50 | `scripts/tests/tools/dump_river_flows.mjs` | （待补） |
+| 51 | `scripts/tests/tools/dump_river_network.mjs` | （待补） |
+| 122 | `scripts/tests/tools/extract_map_grid.mjs` | （待补） |
 | 102 | `scripts/tests/tools/fangcun_pipe.py` | （待补） |
 | 111 | `scripts/tests/tools/sweep_rivers.py` | （待补） |
 | 359 | `scripts/tests/unit/test_basemap_source_backup.js` | （待补） |
@@ -147,12 +200,16 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 285 | `scripts/tests/unit/test_project_size.js` | （待补） |
 | 231 | `scripts/tests/unit/test_province_overlap.js` | （待补） |
 | 490 | `scripts/tests/unit/test_province_shape.js` | （待补） |
-| 689 | `scripts/tests/unit/test_river_coastline.js` | （待补） |
+| 688 | `scripts/tests/unit/test_river_coastline.js` | （待补） |
 | 637 | `scripts/tests/unit/test_river_editor_nodes.js` | （待补） |
 | 179 | `scripts/tests/unit/test_river_erase.js` | （待补） |
+| 217 | `scripts/tests/unit/test_river_ribbon.js` | （待补） |
 | 195 | `scripts/tests/unit/test_save_status_text.js` | （待补） |
 | 232 | `scripts/tests/unit/test_scenario_cards.js` | （待补） |
 | 497 | `scripts/tests/unit/test_scenario_dates.js` | （待补） |
+| 293 | `scripts/tests/unit/test_scenario_event_ledger.js` | 事件账本纯函数单测（10 组）：录入校验、[from,to) 语义、同日多事件、跨年/跨代、非对称关系、冲突去重、纯函数不改入参、文本日期 |
+| 133 | `scripts/tests/unit/test_scenario_ledger.js` | （待补） |
+| 129 | `scripts/tests/unit/test_scenario_ledger_v2.js` | （待补） |
 | 402 | `scripts/tests/unit/test_scenario_slices.js` | （待补） |
 | 256 | `scripts/tests/unit/test_skeleton_index.js` | （待补） |
 | 93 | `scripts/tests/unit/test_stroke_math.js` | （待补） |
@@ -180,7 +237,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 518 | `src/main/vaultIndex.js` | （待补） |
 | 79 | `src/main/vaultIndexWatcher.js` | （待补） |
 | 233 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 2602 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
+| 2685 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到「只读 · 未打开项目」并可点达项目面板） |
 | 722 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
 | 2637 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 271 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
@@ -214,8 +271,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 491 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 11099 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
-| 391 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
+| 11700 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 393 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 244 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
 | 624 | `src/renderer/src/components/SearchBar.vue` | 全局搜索（store/geodataModules/search.js） |
@@ -260,7 +317,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 181 | `src/renderer/src/composables/useClusterEditor.js` | 地点簇编辑器 |
 | 61 | `src/renderer/src/composables/useContextMenu.js` | 右键菜单状态 |
 | 66 | `src/renderer/src/composables/useFocusHighlight.js` | 定位高亮（金色脉冲光圈 + 十字） |
-| 550 | `src/renderer/src/composables/useFullMapExport.js` | 全图 PNG 导出（离屏 canvas 重绘 + 比例尺） |
+| 556 | `src/renderer/src/composables/useFullMapExport.js` | 全图 PNG 导出（离屏 canvas 重绘 + 比例尺） |
 | 53 | `src/renderer/src/composables/useInlineEdit.js` | 双击画布文本原位编辑 |
 | 102 | `src/renderer/src/composables/useKeyboardShortcuts.js` | 键盘快捷键（方向键微调/Ctrl+CVD/Esc） |
 | 94 | `src/renderer/src/composables/useMarkerEditor.js` | 标记属性编辑器 |
@@ -296,7 +353,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 318 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 1080 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
 | 1956 | `src/renderer/src/store/geodataModules/provinceEditing.js` | 省份「归属标签网格」store 模块（Phase 3）：笔刷/套索一笔一条 undo、删除省份重编号安全（整表快照）、每个写操作先过 guardWrite（只读态零副作用） |
-| 3483 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
+| 3715 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 186 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 185 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
@@ -339,7 +396,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 79 | `src/renderer/src/utils/placeTypes.js` | （待补） |
 | 260 | `src/renderer/src/utils/placement.js` | 智能放置算法（聚落选址 + A* 道路）：必须走空间哈希桶 + 二叉堆，禁双重全表循环（27k 格 = 7 亿次 hypot） |
 | 252 | `src/renderer/src/utils/planetMapBundle.js` | （待补） |
-| 182 | `src/renderer/src/utils/polityLabels.js` | **历史剧本势力标注（A8）＝分级判定的唯一实现**（纯函数，Node 可测）：`polityLabelTier(视口可见宽度÷地图宽度)` 三档 province/polity/abbr、`ringAreaCentroid`（鞋带公式，退化环返回有限形心）、`aggregateTerritories`（面积加权质心）、`labelTextFor`（abbr 无则回落全名）、`labelFitsOnScreen` + 两个与用户预设解耦的本地样式；渲染（ScenarioMap）与导出两处共用 |
+| 197 | `src/renderer/src/utils/polityLabels.js` | **历史剧本势力标注（A8）＝分级判定的唯一实现**（纯函数，Node 可测）：`polityLabelTier(视口可见宽度÷地图宽度)` 三档 province/polity/abbr、`ringAreaCentroid`（鞋带公式，退化环返回有限形心）、`aggregateTerritories`（面积加权质心）、`labelTextFor`（abbr 无则回落全名）、`labelFitsOnScreen` + 两个与用户预设解耦的本地样式；渲染（ScenarioMap）与导出两处共用 |
 | 604 | `src/renderer/src/utils/polygonBool.js` | （待补） |
 | 197 | `src/renderer/src/utils/polylineSmooth.js` | （待补） |
 | 775 | `src/renderer/src/utils/projectSchema.js` | `.sitian` 结构定义 / 校验修复 / 版本迁移 / 就地 diff 快照环形缓冲（纯函数） |
@@ -350,19 +407,21 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 244 | `src/renderer/src/utils/reliefIcons.js` | 地貌图标**确定性**散布（整数哈希定抖动/旋转/尺寸，网格桶防重叠，单次笔刷有上限） |
 | 194 | `src/renderer/src/utils/riverChains.js` | （待补） |
 | 191 | `src/renderer/src/utils/riverErase.js` | （待补） |
-| 762 | `src/renderer/src/utils/riverRender.js` | （待补） |
+| 1053 | `src/renderer/src/utils/riverRender.js` | （待补） |
 | 858 | `src/renderer/src/utils/riverTrace.js` | （待补） |
 | 252 | `src/renderer/src/utils/rivers.js` | 河流编辑器核心算法：按高度自动排序成从高到低、拖拽禁止「逆流」、节点随存采样高度 |
 | 69 | `src/renderer/src/utils/roadStyles.js` | 道路样式预设（官道/道路/山路/小径）：style 优先于旧 route.color/dashed，老数据向后兼容 |
 | 44 | `src/renderer/src/utils/sampleData.js` | 示例数据 |
 | 122 | `src/renderer/src/utils/saveStatusText.js` | （待补） |
 | 130 | `src/renderer/src/utils/scenarioCards.js` | （待补） |
-| 359 | `src/renderer/src/utils/scenarioDates.js` | （待补） |
+| 397 | `src/renderer/src/utils/scenarioDates.js` | （待补） |
+| 662 | `src/renderer/src/utils/scenarioEventLedger.js` | 事件账本纯函数层：事件类型表/关系词表、makeEvent 录入校验、sortEvents、[from,to) 生效窗口、relationBetween/relationsAt/describeRelation、findConflicts（重叠相反关系按无序对去重） |
 | 79 | `src/renderer/src/utils/scenarioLabels.js` | （待补） |
+| 158 | `src/renderer/src/utils/scenarioLedgerV2.js` | （待补） |
 | 33 | `src/renderer/src/utils/scenarioPalette.js` | （待补） |
 | 306 | `src/renderer/src/utils/scenarioSlices.js` | （待补） |
-| 321 | `src/renderer/src/utils/scenarioThumb.js` | （待补） |
-| 522 | `src/renderer/src/utils/scenarioTimeline.js` | 剧本时间轴纯函数层（无 DOM/store 依赖）：势力谱系按省份重叠度贪心匹配、逐省易主年份、年份↔轨道轴向映射、EU4 斜线占领判定 |
+| 325 | `src/renderer/src/utils/scenarioThumb.js` | （待补） |
+| 644 | `src/renderer/src/utils/scenarioTimeline.js` | 剧本时间轴纯函数层（无 DOM/store 依赖）：势力谱系按省份重叠度贪心匹配、逐省易主年份、年份↔轨道轴向映射、EU4 斜线占领判定 |
 | 69 | `src/renderer/src/utils/selectionHandles.js` | 选择框手柄 |
 | 104 | `src/renderer/src/utils/settlement.js` | 聚落规模/人口/文化归属：人口对数滑块（100~1e6）+ 分级阈值 + 图标尺寸派生 |
 | 73 | `src/renderer/src/utils/smartGuides.js` | 智能参考线 |
@@ -385,4 +444,4 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 59 | `src/renderer/src/workers/deriveWorker.js` | 温度/降水/生物群系派生 Worker：复用 heightMath.deriveLayers 不复制公式（等价性由用例兜住） |
 <!-- GEN:END -->
 
-> 测试用例在 `scripts/tests/cases/`（75 个，以 `ls scripts/tests/cases/test_*.py | wc -l` 为准），职责见文件名；另有 `scripts/tests/unit/*.js` Node 单测（主进程 I/O 与模块接线 —— CDP 用例里 sitianAPI 是 mock，测不到）。
+> 测试用例在 `scripts/tests/cases/`（132 个，以 `ls scripts/tests/cases/test_*.py | wc -l` 为准），职责见文件名；另有 `scripts/tests/unit/*.js` Node 单测（主进程 I/O 与模块接线 —— CDP 用例里 sitianAPI 是 mock，测不到）。

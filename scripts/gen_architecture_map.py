@@ -17,7 +17,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOC = os.path.join(ROOT, "docs", "ARCHITECTURE_MAP.md")
 SCAN_DIRS = ["src/main", "src/preload", "src/renderer/src", "scripts"]
-EXTS = (".js", ".vue", ".py")
+EXTS = (".js", ".mjs", ".vue", ".py")   # .mjs = scripts/ 下的迁移/查询工具（Node ESM），以前漏扫
 SKIP_DIRS = {"node_modules", "__pycache__", "cases", "release"}
 
 
