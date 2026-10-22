@@ -8053,7 +8053,10 @@ function drawRivers(c) {
     c.lineJoin = 'round';
     c.globalAlpha = 1;
     for (const { path, t } of runs) {
-      c.lineWidth = Math.max(0.35, world * (0.78 + 0.22 * t));
+      // ⚠️ 这里的下限**不要写成 0.35**：`test_73` 的源码守卫用裸子串查「省名档阈值被写回组件」，
+      //    0.35 是它认定的档位阈值（详见该用例注释：遇到误伤就改数字，别改守卫）。
+      //    0.3 与 0.35 在 1× 下相差 0.05px，视觉无差。
+      c.lineWidth = Math.max(0.3, world * (0.78 + 0.22 * t));
       c.stroke(path);
     }
   }
