@@ -15,12 +15,11 @@
 //   node scripts/migrate-ledger-v2.mjs --project <file.sitian> --apply    # 写盘（先备份）
 //   ⚠️ 跑 --apply 前先在司天里关闭该项目（内存态会把改动盖回去）。
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import { pathToFileURL } from 'url';
+// loader 与 `scripts/ledger-query.mjs` 共用一份（以前每条命令各抄一份：扩展名规则一改就是两份漂移）
+import { loadRendererModule, repoRoot } from './lib/loadRendererUtils.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\//, '')), '..');
-const SRC = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
+const ROOT = repoRoot();
 
 function parseArgs(argv) {
   const out = { project: '', apply: false };
@@ -30,26 +29,6 @@ function parseArgs(argv) {
     else if (argv[i] === '--help' || argv[i] === '-h') out.help = true;
   }
   return out;
-}
-
-async function loadModule() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-ledger-v2-'));
-  const fix = (s) => s.replace(/from '\.\/([A-Za-z0-9_-]+)(\.js)?'/g, "from './$1.js'");
-  const seen = new Set();
-  const q = ['scenarioLedgerV2.js', 'scenarioTimeline.js', 'scenarioDates.js'];
-  while (q.length) {
-    const f = q.shift();
-    if (seen.has(f)) continue;
-    seen.add(f);
-    const full = path.join(SRC, f);
-    if (!fs.existsSync(full)) continue;
-    const code = fs.readFileSync(full, 'utf8');
-    fs.writeFileSync(path.join(tmp, f), fix(code));
-    for (const m of code.matchAll(/from '\.\/([A-Za-z0-9_-]+)(\.js)?'/g)) q.push(`${m[1]}.js`);
-  }
-  fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
-  const mod = await import(pathToFileURL(path.join(tmp, 'scenarioLedgerV2.js')).href);
-  return { mod, tmp };
 }
 
 function fmtBytes(n) {
@@ -75,7 +54,7 @@ async function main() {
     console.error('这个项目里没有 scenarios.scenarios');
     return 2;
   }
-  const { mod, tmp } = await loadModule();
+  const { mod, cleanup } = await loadRendererModule('scenarioLedgerV2.js');
   try {
     const plan = mod.planLedgerV2(dict);
     console.log('=== 账本 v2 迁移（' + (args.apply ? 'APPLY' : 'dry-run') + '）===');
@@ -127,7 +106,7 @@ async function main() {
     console.log('读回校验:', bad === 0 ? '全部一致' : `${bad} 个剧本不一致`);
     return bad === 0 ? 0 : 1;
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    cleanup();
   }
 }
 
