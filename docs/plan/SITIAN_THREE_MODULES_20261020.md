@@ -296,6 +296,31 @@ era = { start, end,
 
 
 
+### 7. 三刀序列·第一刀：事件账本（2026-10-22）
+
+施工单 `02-司天-三刀序列.md` 任务一。结论：**账本引擎不新建目录、不重写归属账本**，
+只补「事件 / 外交」这一本（第二本账），与既有的归属账本各管一件事、不双写。
+
+- 数据：`scenario.timelineEvents = [{ id, type, actors, from, to, title, note, data }]`；
+  语义 `[from, to)`（终止当日不再生效）、同日按录入顺序后录者生效。
+- 类型表：战争 / 同盟 / 友好 / 宿敌 / 臣属（有方向）/ 独立 / 和约 / 记事；关系词用 Azgaar 原语
+  （`Enemy/Ally/…/Suzerain/Vassal`），中文只在 `RELATION_LABELS` 出现一次。
+- 实现：`utils/scenarioEventLedger.js`（纯函数：录入校验 / 排序 / 时点关系查询 / 冲突检出 / 人话答案）；
+  store 只搬数据（`addTimelineEvent` / `updateTimelineEvent` / `removeTimelineEvent` / `setTimelineEvents`，
+  全走 `execute()`，一条 undo）；`removePolity` 级联删它参与的事件。
+- 入口：`scripts/ledger-query.mjs`（读 `.sitian`，`--at 1350 --a 瓯 --b 梁` 一句话作答；
+  `--add --apply` 录入，写前备份 + 写后读回校验）；Node 下加载渲染层 utils 的 loader 收敛到
+  `scripts/lib/loadRendererUtils.mjs`（`migrate-ledger-v2.mjs` 同步改用）。
+- 判据：`unit/test_scenario_event_ledger.js` 10 组（含反例：不重叠不误报 / 终止后不许谎称没记录 /
+  非对称方向不能同词）；`cases/test_132_event_ledger.py` 守接线与往返（录入→查询→冲突→undo→
+  项目载荷→重载→删势力级联）。
+- 真实数据取证（**副本**，`%TEMP%\sitian-ledger-proof\`）：12 代、0 事件 → 录 4 条演示事件后
+  问答正确（「333 年 玄方 与 澜方：敌对（战争「玄澜战争」，330-03-01 ~ 336-11-15）」），
+  备份额外落 `backups/ledger-events-<ts>/`。
+- 没做（施工单「悬置」）：外交表 / 事件面板 UI；事件→省份归属的联动（将来也只做单向派生）。
+
+---
+
 **顺序**：A（结构是地基）→ B（数据契约）→ C（性能/图层）。
 **A 未收口之前不动 B/C 的代码** —— 上一轮的教训是"三个半截同时开"，最后只剩擦屁股。
 
