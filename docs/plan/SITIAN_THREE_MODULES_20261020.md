@@ -319,6 +319,29 @@ era = { start, end,
   备份额外落 `backups/ledger-events-<ts>/`。
 - 没做（施工单「悬置」）：外交表 / 事件面板 UI；事件→省份归属的联动（将来也只做单向派生）。
 
+### 8. 三刀序列·第二刀：读料桥（2026-10-22）
+
+施工单 `02-司天-三刀序列.md` 任务二。旧提取器只认两个硬编码目录（1,353 篇里只扫 141 篇），
+字段识别是白名单（`层级`/`上层区域`/`地点类型`），认不出层级时默认 `location`。
+
+- **归类单源**：新增 `scripts/lib/vaultClassify.js`（纯函数）——整份 frontmatter + 标签 + 目录 + 文件名后缀
+  参与归类，分 12 类（地图实体 / 人物 / 组织 / 物品 / 种族生物 / 事件 / 概念 / 作品 / 资料收藏 / 维护模板 / 索引 / 待人工），
+  每条带 `evidence`（信号 + 命中值）。结构目录优先于 frontmatter（模板里的「层级: 世界」不是世界）。
+- **空间关系**：显式字段 → 正文双链 → 正文句式（只认「位于/隶属 + 已知实体名」），推断标
+  `parentInferred` + `signal`；找不到进待人工；`extract-data` 原有的「缺父级拿第一个 wikilink」也补了标记。
+- **零静默丢失**：`classifyReport()` 的 `byCategory` 对每条恰好落一类（Σ = total，单测守恒）；
+  `needsHuman` 分三种（无信号 / 认不出粒度 / 找不到上层·断链），
+  `extract-data` 的跳过、回退层级、重名冲突也进 `report`（以前只有 console.warn）。
+- **不挑目录结构**：标准目录存在 → 行为零变化；缺失或 `--generic` → 全库归类扫描（`buildGenericNodes`）。
+- **只读**：`buildIndex({write:false})` / `extractGeodata({writeCache:false})`；
+  `scripts/vault-scan.mjs` 输出目录在库内直接拒绝，跑完对比库指纹（md 的 size+mtime + `.sitian` 清单）。
+- 真实库取证（ROSA，**只读**）：1,353 篇 / 218 ms / 0 解析错误；地图实体 140、资料 1,188、待人工 25、
+  推断 4；试导节点 143；`只读校验：✅ 库内文件与 .sitian 均未改动`。
+  待人工 35 条里 4 条是「星域的上层 `粘土世界` 在库里没有词条」——**真实数据缺口，不是猜错**。
+- 判据：`unit/test_vault_classify.js`（9 组）、`unit/test_vault_index.js`（11 组）、
+  `cases/test_124_vault_index.py`（设置面板显示分布 + 待人工原因）。
+- 没做：自动导入（候选仍要人确认）、LLM 猜分类、全文语义检索。
+
 ---
 
 **顺序**：A（结构是地基）→ B（数据契约）→ C（性能/图层）。
