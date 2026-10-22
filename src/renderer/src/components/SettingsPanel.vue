@@ -266,7 +266,15 @@
           <div v-if="vaultIndexTotal" class="index-summary">
             <span>候选地图实体：<b>{{ vaultCandidates.length }}</b></span>
             <span v-if="vaultHighCount">高置信 {{ vaultHighCount }}</span>
+            <span v-if="vaultReportCounts" data-testid="vault-classify-counts">
+              地图 <b>{{ vaultReportCounts.geo }}</b> / 资料 <b>{{ vaultReportCounts.lore }}</b>
+              / 待人工 <b>{{ vaultReportCounts.needsHuman }}</b>
+              <template v-if="vaultReportCounts.inferred">（推断 {{ vaultReportCounts.inferred }}）</template>
+            </span>
             <button class="link-btn" @click="toggleVaultCandidates">{{ showVaultCandidates ? '收起' : '查看候选' }}</button>
+            <button class="link-btn" data-testid="toggle-vault-missing" @click="toggleVaultMissing">
+              {{ showVaultMissing ? '收起待人工' : '待人工' }}
+            </button>
             <button class="link-btn" data-testid="open-note-search" @click="openNoteSearchPanel">全库搜索</button>
           </div>
           <div v-if="showVaultCandidates" class="vault-candidate-list">
@@ -276,6 +284,18 @@
               <span class="vc-path">{{ c.path }}</span>
             </div>
             <p v-if="!vaultCandidates.length" class="setting-desc">没有候选；先重建索引。</p>
+          </div>
+          <!-- 待人工：认不出的**每一条**都在这里，附「为什么」（不静默吞） -->
+          <div v-if="showVaultMissing" class="vault-candidate-list" data-testid="vault-missing-list">
+            <div v-for="m in vaultNeedsHuman.slice(0, 30)" :key="m.path + '|' + (m.reasons || []).join('；')" class="vault-candidate">
+              <span class="vc-layer">待人工</span>
+              <span class="vc-title">{{ m.title || m.path }}</span>
+              <span class="vc-path">{{ (m.reasons || []).join('；') }}</span>
+            </div>
+            <p v-if="!vaultNeedsHuman.length" class="setting-desc">没有待人工条目。</p>
+            <p v-else-if="vaultNeedsHuman.length > 30" class="setting-desc">
+              其余 {{ vaultNeedsHuman.length - 30 }} 条见命令行 `scripts/vault-scan.mjs` 的「待人工.md」。
+            </p>
           </div>
           <p class="setting-desc">只读索引：不改笔记、不碰画布。阅读器 / 要素绑定在下一轮（D2）。</p>
         </section>
@@ -998,13 +1018,29 @@ const reextractBlockedHint = computed(() => (gateReadOnly.value
 // 只读索引：扫描全库 .md（1,353 篇量级），不改笔记、不碰画布；候选必须人确认后才谈导入。
 const vaultIndexStore = useVaultIndexStore();
 const {
-  status: vaultIndexStatus, candidates: vaultCandidates,
+  status: vaultIndexStatus, candidates: vaultCandidates, report: vaultReport,
   error: vaultIndexError, busy: vaultIndexBusy,
 } = storeToRefs(vaultIndexStore);
 const showVaultCandidates = ref(false);
+const showVaultMissing = ref(false);
 let offIndexUpdates = null;
 const vaultIndexTotal = computed(() => (vaultIndexStatus.value?.stats?.total) || 0);
 const vaultHighCount = computed(() => vaultCandidates.value.filter((c) => c.confidence === 'high').length);
+// 读料报告（第二刀）：地图实体 / 资料 / 待人工 的分布，以及待人工逐条原因
+const vaultReportCounts = computed(() => {
+  const r = vaultReport.value;
+  if (!r || !r.byCategory) return null;
+  const geo = (r.byCategory.geo || 0);
+  const unknown = (r.byCategory.unknown || 0);
+  const total = Object.values(r.byCategory).reduce((a, b) => a + b, 0);
+  return {
+    geo,
+    lore: Math.max(0, total - geo - unknown),
+    needsHuman: (r.needsHuman || []).length,
+    inferred: (r.inferred || []).length,
+  };
+});
+const vaultNeedsHuman = computed(() => (vaultReport.value && vaultReport.value.needsHuman) || []);
 const vaultIndexStatusText = computed(() => {
   const st = vaultIndexStatus.value;
   if (!st || !st.exists) return '尚未建立（只读扫描全库 .md，不改笔记）';
@@ -1023,6 +1059,17 @@ async function toggleVaultCandidates() {
   if (showVaultCandidates.value && !vaultCandidates.value.length) {
     await vaultIndexStore.loadCandidates();
   }
+}
+
+/** 看「待人工」时按需取一次读料报告（不在打开设置时白扫一遍） */
+async function ensureVaultReport() {
+  if (vaultReport.value) return;
+  await vaultIndexStore.loadReport();
+}
+
+async function toggleVaultMissing() {
+  showVaultMissing.value = !showVaultMissing.value;
+  if (showVaultMissing.value) await ensureVaultReport();
 }
 
 function openNoteSearchPanel() {

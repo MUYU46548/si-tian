@@ -140,6 +140,7 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   vaultIndexStatus: () => ipcRenderer.invoke('vault-index-status'),
   vaultIndexSearch: (query, limit) => ipcRenderer.invoke('vault-index-search', query, limit),
   vaultEntityCandidates: (rules) => ipcRenderer.invoke('vault-entity-candidates', rules || {}),
+  vaultClassifyReport: () => ipcRenderer.invoke('vault-classify-report'),
   vaultNoteRead: (relPath) => ipcRenderer.invoke('vault-note-read', relPath),
   vaultNoteResolve: (name) => ipcRenderer.invoke('vault-note-resolve', name),
   vaultNoteSearch: (query, limit) => ipcRenderer.invoke('vault-note-search', query, limit),

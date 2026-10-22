@@ -802,6 +802,20 @@ ipcMain.handle('vault-entity-candidates', async (event, rules) => {
   }
 });
 
+ipcMain.handle('vault-classify-report', async () => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径' };
+    const idx = vaultIndex.loadIndex(vault);
+    if (!idx) return { success: false, error: '资料索引尚未建立（设置 → 资料索引 → 重建索引）' };
+    // 纯计算：只读索引 + 启发归类（不改文档、不写库）
+    const report = vaultIndex.classifyReport(idx);
+    return { success: true, report };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // 阅读器：wikilink 目标 → 笔记路径（标题/别名/文件名/相对路径；重名给候选）
 ipcMain.handle('vault-note-resolve', async (event, name) => {
   try {

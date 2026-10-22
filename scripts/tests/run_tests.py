@@ -433,6 +433,21 @@ MOCK_SCRIPT = """<script>
             { path: '03 设定/11 地理系统/行星/曜川星/北境.md', title: '北境', layer: 'region', layerLabel: '区域', confidence: 'medium', reasons: ['目录含层级词'], tags: [] },
           ],
         }),
+        // 读料报告（第二刀）：mock 给一份固定分布，供设置面板展示「地图/资料/待人工」
+        vaultClassifyReport: async () => ({
+          success: true,
+          report: {
+            total: 120,
+            byCategory: { geo: 60, character: 20, organization: 10, item: 8, document: 14, meta: 4, index: 4 },
+            byLayer: { city: 20, region: 10, planet: 30 },
+            geo: [],
+            needsHuman: [
+              { path: '散装/人物/无名者.md', title: '无名者', category: 'unknown', reasons: ['没有任何可用的分类信号'] },
+              { path: '03 设定/11 地理系统/_说明.md', title: '说明', category: 'geo', reasons: ['认得出是地点，但认不出粒度（世界/星域/行星/城市…）'] },
+            ],
+            inferred: [{ path: '03 设定/02 场景地点/风岬港.md', title: '风岬港', parentTitle: '北境', signal: 'text' }],
+          },
+        }),
         vaultIndexSearch: async (q) => ({ success: true, results: [{ path: '03 设定/人物/艾琳.md', title: '艾琳', kind: 'lore', score: 80 }] }),
         vaultNoteRead: async (p) => ({ success: true, data: { path: p, content: '# mock\\n\\n测试正文，指向[[北境]]，图：![[图.png]]', frontmatter: {}, wikilinks: ['北境'] } }),
         vaultNoteResolve: async (name) => ({

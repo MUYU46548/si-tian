@@ -1,15 +1,18 @@
-"""用例 124：全库只读索引（D1）—— 设置面板入口 / 重建 / 候选列表接线。
+"""用例 124：全库只读索引（D1）+ 读料报告（第二刀）—— 设置面板入口 / 重建 / 候选 / 待人工。
 
 只测渲染层接线；主进程真实扫描与 containment 在 `scripts/tests/unit/test_vault_index.js`。
+读料归类/空间推断的判据在 `scripts/tests/unit/test_vault_classify.js`。
 网格数据来自 mock（run_tests.py 的 MOCK_SCRIPT），这里守：
   · 设置面板有「资料索引」段（不是只有主进程 API、用户看不见）；
   · 「重建索引」真的调用 `vaultIndexBuild`（不是按钮摆着）；
-  · 候选列表能读出来、显示层级/标题（不是空壳）。
+  · 候选列表能读出来、显示层级/标题（不是空壳）；
+  · 读料报告（第二刀）：显示「地图/资料/待人工」分布，待人工逐条带原因。
 """
 from lib.cdp import wait_for
 
 
 SECTION = "!!document.querySelector('[data-testid=\"vault-index-section\"]')"
+COUNTS = "!!document.querySelector('[data-testid=\"vault-classify-counts\"]')"
 
 
 def _click(cdp, text):
@@ -41,4 +44,23 @@ def run(cdp):
     row_text = cdp.eval("document.querySelector('.vault-candidate').innerText")
     if '霜寒城' not in str(row_text):
         return False, f'候选首行不含霜寒城：{str(row_text)[:120]}'
-    return True, f'索引段在位 / 重建被调用 / 候选 {rows} 行（首行 {str(row_text)[:40]}）'
+
+    # 读料报告（第二刀）：地图 60 / 资料 56 / 待人工 2（mock 固定值）
+    wait_for(cdp, COUNTS, timeout=10, desc='读料分布')
+    counts = cdp.eval("document.querySelector('[data-testid=\"vault-classify-counts\"]').innerText")
+    for token in ('地图', '资料', '待人工'):
+        if token not in str(counts):
+            return False, f'读料分布缺少「{token}」：{counts}'
+    if '60' not in str(counts):
+        return False, f'读料分布里的地理实体数不对：{counts}'
+
+    # 待人工：点开后每条都要有「为什么」
+    if _click(cdp, '待人工') != 'ok':
+        return False, '找不到「待人工」按钮'
+    wait_for(cdp, "!!document.querySelector('[data-testid=\"vault-missing-list\"]')", timeout=10, desc='待人工列表')
+    missing = cdp.eval("document.querySelector('[data-testid=\"vault-missing-list\"]').innerText")
+    if '没有任何可用的分类信号' not in str(missing):
+        return False, f'待人工列表没写原因：{str(missing)[:160]}'
+
+    return True, (f'索引段在位 / 重建被调用 / 候选 {rows} 行（首行 {str(row_text)[:40]}）'
+                  f' / 读料分布「{str(counts)[:60]}」/ 待人工带原因')

@@ -12,6 +12,8 @@ export const useVaultIndexStore = defineStore('vaultIndex', () => {
   const candidates = ref([]);        // [{ path, title, layer, layerLabel, confidence, reasons }]
   const byLayer = ref({});
   const searchResults = ref([]);
+  // 读料报告（2026-10-22，第二刀）：{ total, byCategory, byLayer, geo, needsHuman, inferred }
+  const report = ref(null);
   const error = ref('');
   const busy = ref(false);
 
@@ -53,6 +55,7 @@ export const useVaultIndexStore = defineStore('vaultIndex', () => {
       if (!res || res.success === false) return _fail(res);
       await refreshStatus();
       await loadCandidates();
+      await loadReport();
       return res;
     } catch (e) {
       error.value = `建立索引失败：${(e && e.message) || e}`;
@@ -75,6 +78,21 @@ export const useVaultIndexStore = defineStore('vaultIndex', () => {
     } catch (e) {
       error.value = `读取候选实体失败：${(e && e.message) || e}`;
       return [];
+    }
+  }
+
+  /** 读料报告（归类分布 + 待人工逐条原因 + 推断清单）；只读 */
+  async function loadReport() {
+    const fn = api().vaultClassifyReport;
+    if (!fn) return null;
+    try {
+      const res = await fn();
+      if (!res || res.success === false) { _fail(res); return null; }
+      report.value = res.report || null;
+      return report.value;
+    } catch (e) {
+      error.value = `读取读料报告失败：${(e && e.message) || e}`;
+      return null;
     }
   }
 
@@ -164,9 +182,9 @@ export const useVaultIndexStore = defineStore('vaultIndex', () => {
   function clearError() { error.value = ''; }
 
   return {
-    status, candidates, byLayer, searchResults, error, busy,
+    status, candidates, byLayer, searchResults, report, error, busy,
     exists, total, builtAt,
-    refreshStatus, build, loadCandidates, search, readNote,
+    refreshStatus, build, loadCandidates, loadReport, search, readNote,
     resolveNote, searchDeep, readAsset, bindIndexUpdates, clearError,
   };
 });
