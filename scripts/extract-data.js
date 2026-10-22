@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
+// 启发归类（三刀序列·第二刀，2026-10-22）：**纯函数层**，与主进程索引共用同一份判断。
+// 提取器只决定「哪些笔记能成为地图节点」，但「这条笔记到底是什么」必须只有一处口径。
+const classify = require('./lib/vaultClassify');
 
 // Vault 路径可配置化（2026-08-16）：模块级可变，extractGeodata(targetVault) 入口覆盖；
 // CLI 支持 --vault 参数；主进程通过 require 传入配置的路径
@@ -118,6 +121,93 @@ function parseMdFile(filePath) {
 
 // 扫描排除名单：这些文件名是"索引/说明"性质，历史上曾被误判为地理节点
 // （如 世界索引.md 的 H1 标题被 extractWorldsAndStars 当成世界，产生无子节点的幽灵世界）。
+
+// ============================================================
+// 读料（2026-10-22，三刀序列·第二刀）：字段别名 + 归类 + 报告
+// ============================================================
+//
+// 旧实现只认 `层级` / `上层区域` / `地点类型` 三个键，且「认不出层级就默认 location」——
+// 前者让换一种写法的库整批读不到，后者把人物/事件笔记静默变成地点。
+// 现在：字段别名全扫（`readLayerField` / `readParentLink`），归类交给纯函数层
+// （`scripts/lib/vaultClassify.js`），**认不出就跳过并记进报告**，绝不静默放进地图。
+const scanReport = {
+  skipped: [],          // 在扫描范围内、但归类不是地理 → 跳过（lore/unknown）
+  layerInferred: [],    // 认得出是地点、认不出粒度 → 用了回退层（location）
+  noParent: [],         // 没有上层线索（父节点留空，交人判断）
+  inferredParent: [],   // 从双链推出来的上级（导出/界面必须标注「推断」）
+  collisions: [],       // 跨目录重名 → 只留一个（以前只有 console.warn，用户看不见）
+  total: 0,             // 进过分类的笔记数
+};
+
+function resetScanReport() {
+  scanReport.skipped.length = 0;
+  scanReport.layerInferred.length = 0;
+  scanReport.noParent.length = 0;
+  scanReport.inferredParent.length = 0;
+  scanReport.collisions.length = 0;
+  scanReport.total = 0;
+  delete scanReport.generic;
+}
+
+/** frontmatter 的层级字段（别名全扫；值可能是中文标签或英文 id） */
+function readLayerField(fm) {
+  const hit = classify.pickField(fm, ['层级', '层次', 'layer', '层']);
+  if (!hit.key) return null;
+  const v = String(hit.value).trim();
+  return LAYER_KEYWORDS[v] || (LAYER_LABELS[v] ? v : null);
+}
+
+/** frontmatter 的上层字段（别名全扫）；返回去掉 [[ ]] 的标题 */
+function readParentLink(fm) {
+  const hit = classify.pickField(fm, classify.PARENT_FIELDS);
+  if (!hit.key) return { key: '', title: '' };
+  const title = classify.stripBrackets(hit.value);
+  return { key: hit.key, title: title === '无' ? '' : title };
+}
+
+/** frontmatter 的地点类型字段（别名全扫） */
+function readPlaceTypeField(fm) {
+  const hit = classify.pickField(fm, ['地点类型', '地点类别', 'placeType']);
+  return hit.key ? String(hit.value) : null;
+}
+
+/** 对一篇已解析的笔记做归类（与主进程索引同一份实现） */
+function classifyParsed(parsed, relPath) {
+  const fm = parsed.frontmatter || {};
+  return classify.classifyNote({
+    path: String(relPath || '').replace(/\\/g, '/'),
+    name: parsed.fileName,
+    title: fm['名称'] || fm.title || parsed.fileName,
+    tags: fm.tags,
+    aliases: fm['别名'] != null ? fm['别名'] : fm.aliases,
+    fm,
+    content: String(parsed.content || '').slice(0, 500),
+  }, { layerKeywords: LAYER_KEYWORDS, suffixRules: LAYER_SUFFIX_RULES });
+}
+
+/** 所有节点构造的唯一形状（扫描目录 / 全库通用扫描共用，字段不再各写一份） */
+function makeNode(input) {
+  const {
+    name, layer, parentId, tags, sourcePath, wikilinks,
+    placeType, coordinate, status, extra,
+  } = input;
+  return {
+    id: normalizeId(name),
+    name,
+    layer,
+    layerLabel: LAYER_LABELS[layer] || layer,
+    parentId: parentId || null,
+    tags: Array.isArray(tags) ? tags : [],
+    sourcePath,
+    wikilinks: wikilinks || [],
+    placeType: placeType || null,
+    coordinate: coordinate || { x: null, y: null },
+    uuid: generateUUID(),
+    status,
+    ...(extra || {}),
+  };
+}
+
 // 它们不是真实地理实体，提取时直接跳过。
 const SCAN_EXCLUDED_BASENAMES = new Set(SCAN_SCOPE.excludedBasenames);
 
@@ -136,21 +226,39 @@ function scanGeoSystem() {
         if (SCAN_EXCLUDED_BASENAMES.has(path.basename(entry.name, '.md'))) continue;
         const parsed = parseMdFile(fullPath);
         if (!parsed) continue;
-        const id = normalizeId(parsed.fileName);
-        let layer = parsed.frontmatter['层级'] || detectLayerFromPath(fullPath) || parentLayer || 'unknown';
+        const c = classifyParsed(parsed, parsed.relativePath);
+        scanReport.total += 1;
+        // 明确写了「层级」就信它；否则归类不是地理的（人物/事件/组织…）不进地图，落报告
+        const explicitLayer = readLayerField(parsed.frontmatter);
+        if (!explicitLayer && c.category !== 'geo') {
+          scanReport.skipped.push({
+            path: parsed.relativePath,
+            title: parsed.fileName,
+            category: c.category,
+            reason: (c.evidence || []).map((x) => `${x.signal}=${x.detail}`).join('，') || '没有任何地理信号',
+          });
+          continue;
+        }
+        let layer = explicitLayer || c.layer || detectLayerFromPath(fullPath) || parentLayer || 'unknown';
         layer = LAYER_KEYWORDS[layer] || layer;
-        const parentLink = parsed.frontmatter['上层区域'];
-        let parentId = null;
-        if (parentLink && parentLink !== '无') parentId = normalizeId(parentLink.replace(/\[\[|\]\]/g, '').trim());
-        const tags = Array.isArray(parsed.frontmatter['tags']) ? parsed.frontmatter['tags'] : [];
-        nodes.push({
-          id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer,
-          parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
-          placeType: parsed.frontmatter['地点类型'] || null,
+        if (!explicitLayer && layer !== 'unknown') {
+          scanReport.layerInferred.push({ path: parsed.relativePath, layer, reason: '层级由目录/文件名推断' });
+        }
+        const parentLink = readParentLink(parsed.frontmatter);
+        const parentId = parentLink.title ? normalizeId(parentLink.title) : null;
+        if (!parentId) scanReport.noParent.push({ path: parsed.relativePath, title: parsed.fileName });
+        nodes.push(makeNode({
+          name: parsed.fileName,
+          layer,
+          parentId,
+          tags: parsed.frontmatter.tags,
+          sourcePath: parsed.relativePath,
+          wikilinks: parsed.wikilinks,
+          placeType: readPlaceTypeField(parsed.frontmatter),
           coordinate: readFrontmatterCoordinate(parsed.frontmatter),
-          uuid: generateUUID(),
           status: readFrontmatterStatus(parsed.frontmatter),
-        });
+          extra: parentLink.title ? { parentSource: `frontmatter.${parentLink.key}` } : null,
+        }));
       }
     }
   }
@@ -170,22 +278,39 @@ function scanLocations() {
       if (!entry.name.endsWith('.md')) continue;
       const parsed = parseMdFile(fullPath);
       if (!parsed) continue;
-      const id = normalizeId(parsed.fileName);
-      const parentLink = parsed.frontmatter['上层区域'];
-      let parentId = null;
-      if (parentLink && parentLink !== '无') parentId = normalizeId(parentLink.replace(/\[\[|\]\]/g, '').trim());
-      const tags = Array.isArray(parsed.frontmatter['tags']) ? parsed.frontmatter['tags'] : [];
-      // frontmatter `层级` 字段为权威来源（中文，如 设施/地点/城市），缺失时回退启发式
-      const explicitLayer = parsed.frontmatter['层级'] ? LAYER_KEYWORDS[parsed.frontmatter['层级']] : null;
-      const layer = explicitLayer || detectLocationLayer(parsed.frontmatter, parsed.content, parsed.fileName);
-      nodes.push({
-        id, name: parsed.fileName, layer, layerLabel: LAYER_LABELS[layer] || layer,
-        parentId, tags, sourcePath: parsed.relativePath, wikilinks: parsed.wikilinks,
-        placeType: parsed.frontmatter['地点类型'] || null,
+      const c = classifyParsed(parsed, parsed.relativePath);
+      scanReport.total += 1;
+      // frontmatter `层级` 字段为权威来源（中文，如 设施/地点/城市）；没有它时**先看归类**：
+      // 归类不是地理的（事件/人物/组织…）跳过并记报告 —— 旧实现会默认 location（静默错节点）。
+      const explicitLayer = readLayerField(parsed.frontmatter);
+      if (!explicitLayer && c.category !== 'geo') {
+        scanReport.skipped.push({
+          path: parsed.relativePath,
+          title: parsed.fileName,
+          category: c.category,
+          reason: (c.evidence || []).map((x) => `${x.signal}=${x.detail}`).join('，') || '没有任何地理信号',
+        });
+        continue;
+      }
+      const layer = explicitLayer || c.layer || detectLocationLayer(parsed.frontmatter, parsed.content, parsed.fileName);
+      if (!explicitLayer) {
+        scanReport.layerInferred.push({ path: parsed.relativePath, layer, reason: '层级由 tags/后缀/正文推断' });
+      }
+      const parentLink = readParentLink(parsed.frontmatter);
+      const parentId = parentLink.title ? normalizeId(parentLink.title) : null;
+      if (!parentId) scanReport.noParent.push({ path: parsed.relativePath, title: parsed.fileName });
+      nodes.push(makeNode({
+        name: parsed.fileName,
+        layer,
+        parentId,
+        tags: parsed.frontmatter.tags,
+        sourcePath: parsed.relativePath,
+        wikilinks: parsed.wikilinks,
+        placeType: readPlaceTypeField(parsed.frontmatter),
         coordinate: readFrontmatterCoordinate(parsed.frontmatter),
-        uuid: generateUUID(),
         status: readFrontmatterStatus(parsed.frontmatter),
-      });
+        extra: parentLink.title ? { parentSource: `frontmatter.${parentLink.key}` } : null,
+      }));
     }
   }
   scanDir(locationsPath());
@@ -599,6 +724,8 @@ function mergeNodes(geo, loc, worlds, galaxies) {
   if (collisions.length > 0) {
     console.warn(`[提取] 发现 ${collisions.length} 个跨目录重名节点（后出现的被忽略，可能导致多世界数据丢失）:`);
     collisions.forEach(c => console.warn(`  - "${c.name}" (${c.existing} vs ${c.incoming})`));
+    // 报告里也要有：控制台 warn 用户看不到，重名丢节点属于「静默丢失」的一种
+    for (const c of collisions) scanReport.collisions.push(c);
   }
   
   // Resolve parent references
@@ -628,6 +755,11 @@ function resolveParents(nodes, worldStarMap) {
       const lid = normalizeId(link);
       if (map.has(lid) && isHigherLayer(map.get(lid).layer, n.layer)) {
         n.parentId = lid;
+        // 标注「这是从双链推出来的」——导出/界面不能把它当成用户写的上层
+        n.parentInferred = true;
+        n.parentSource = 'wikilink';
+        scanReport.inferredParent = scanReport.inferredParent || [];
+        scanReport.inferredParent.push({ name: n.name, parentId: lid, signal: 'wikilink', link });
         break;
       }
     }
@@ -817,13 +949,78 @@ function validateParentReferences(nodes) {
   return nodes;
 }
 
+/**
+ * 全库通用扫描（2026-10-22，第二刀）—— **不挑目录结构**：任意路径/文件名的库都能读。
+ *
+ * 与 `scanGeoSystem` / `scanLocations` 的分工：
+ *   · 有标准目录（`03 设定/11 地理系统` 等）时仍走那两条（行为零变化，既有用例不变）；
+ *   · 没有标准目录、或显式 `generic:true` 时走这里：全库归类 → 只把 `geo` 类目变成节点，
+ *     其余（人物/组织/物品/事件/…）留在报告里，**不当地图实体**。
+ *
+ * ⚠️ 延迟 require：`src/main/vaultIndex.js` 顶部依赖本文件（SCAN_SCOPE/LAYER_KEYWORDS），
+ *    顶层互相 require 会成环（先加载的那一方拿到空 exports）。函数内 require 让两个模块
+ *    都初始化完再取。
+ */
+function buildGenericNodes(targetVault) {
+  const vaultIndex = require('../src/main/vaultIndex');
+  const { index } = vaultIndex.buildIndex(targetVault, { forceFull: true, write: false });
+  const report = vaultIndex.classifyReport(index);
+  // 节点身份用「名称 || 文件名」，**不用 H1**：真实库里大量笔记的 H1 是「概述」「宏观特征」，
+  // 拿它当名字会让几十个节点撞成同一个 id（mergeNodes 只留一个 = 静默丢失）。
+  const displayName = (entry) => {
+    const fm = (entry && entry.fm) || {};
+    const named = fm['名称'] !== undefined && fm['名称'] !== null ? String(fm['名称']).trim() : '';
+    return named || (entry && entry.name) || '';
+  };
+  const nodes = [];
+  for (const g of report.geo) {
+    const e = index.files[g.path] || {};
+    const fm = e.fm || {};
+    const layer = g.layer || 'location';
+    if (!g.layer) {
+      scanReport.layerInferred.push({ path: e.path, layer, reason: '认得出是地点，认不出粒度（回退 location）' });
+    }
+    if (!g.parentPath) {
+      scanReport.noParent.push({ path: e.path, title: e.title });
+    }
+    nodes.push(makeNode({
+      name: displayName(e) || g.title,
+      layer,
+      parentId: g.parentPath && index.files[g.parentPath]
+        ? normalizeId(displayName(index.files[g.parentPath]) || index.files[g.parentPath].name)
+        : null,
+      tags: e.tags,
+      sourcePath: e.path,
+      wikilinks: e.wikilinks,
+      placeType: e.placeType || readPlaceTypeField(fm),
+      coordinate: readFrontmatterCoordinate(fm),
+      status: readFrontmatterStatus(fm),
+      extra: g.parentInferred
+        ? { parentSource: `inferred:${g.signal}`, parentInferred: true }
+        : (g.parentPath ? { parentSource: 'frontmatter' } : null),
+    }));
+  }
+  scanReport.generic = {
+    total: report.total,
+    byCategory: report.byCategory,
+    geo: report.geo.length,
+    inferred: report.inferred.length,
+    needsHuman: report.needsHuman.length,
+    needsHumanSample: report.needsHuman.slice(0, 50),
+  };
+  return nodes;
+}
+
 async function extractGeodata(targetVault, options = {}) {
   if (targetVault) vaultPath = targetVault;
   const forceFull = !!options.forceFull;
+  // 只读模式（读料 CLI / 证据跑）：不读也不写 `.sitian/extract-cache.json`，连缓存都不碰
+  const writeCache = options.writeCache !== false;
+  resetScanReport();
   console.log(`开始提取地理数据...${forceFull ? '（强制全量）' : ''}`);
 
   // 批次C3：增量提取——加载指纹缓存（--full / forceFull 跳过）
-  if (!forceFull) loadParseCache();
+  if (!forceFull && writeCache) loadParseCache();
   else parseCache.files = {};
   _indexLines = null; // vault 切换时重置索引行缓存
   
@@ -837,23 +1034,34 @@ async function extractGeodata(targetVault, options = {}) {
     }
   } catch (e) { /* 旧缓存不存在/损坏 → 全量初始化 */ }
 
-  const geoNodes = scanGeoSystem();
-  console.log(`地理系统节点: ${geoNodes.length}`);
-
-  const locationNodes = scanLocations();
-  console.log(`场景地点节点: ${locationNodes.length}`);
+  // 不挑目录结构（第二刀）：标准目录缺失、或显式 generic → 全库归类扫描
+  const hasStdDirs = fs.existsSync(geoSystemPath()) || fs.existsSync(locationsPath());
+  const generic = !!options.generic || !hasStdDirs;
+  let geoNodes = [];
+  let locationNodes = [];
+  if (generic) {
+    geoNodes = buildGenericNodes(vaultPath);
+    console.log(`全库通用扫描：${geoNodes.length} 个地理节点（${hasStdDirs ? '强制 generic' : '未找到标准目录，自动回退'}）`);
+  } else {
+    geoNodes = scanGeoSystem();
+    console.log(`地理系统节点: ${geoNodes.length}`);
+    locationNodes = scanLocations();
+    console.log(`场景地点节点: ${locationNodes.length}`);
+  }
 
   const { worlds, galaxies } = extractWorldsAndStars(getIndexLines());
   console.log(`世界节点: ${worlds.length}, 星系节点: ${galaxies.length}`);
 
   // 增量提取统计 + 清理已删除文件的缓存条目
-  if (parseCache.misses > 0 || parseCache.hits > 0) {
-    console.log(`解析缓存: 复用 ${parseCache.hits} 个未变更文件，重新解析 ${parseCache.misses} 个`);
+  if (writeCache) {
+    if (parseCache.misses > 0 || parseCache.hits > 0) {
+      console.log(`解析缓存: 复用 ${parseCache.hits} 个未变更文件，重新解析 ${parseCache.misses} 个`);
+    }
+    for (const rel of Object.keys(parseCache.files)) {
+      if (!parseCache.seen.has(rel)) delete parseCache.files[rel];
+    }
+    saveParseCache();
   }
-  for (const rel of Object.keys(parseCache.files)) {
-    if (!parseCache.seen.has(rel)) delete parseCache.files[rel];
-  }
-  saveParseCache();
 
   let allNodes = mergeNodes(geoNodes, locationNodes, worlds, galaxies);
   console.log(`合并后总数: ${allNodes.length}`);
@@ -904,6 +1112,8 @@ async function extractGeodata(targetVault, options = {}) {
     nodeCount: allNodes.length,
     nodes: allNodes,
     hyperlanes: autoHyperlanes,
+    // 报告只在显式要的时候带（主进程/画布不需要，避免给载荷增重）
+    ...(options.collectReport ? { report: scanReport } : {}),
   };
 }
 
@@ -977,7 +1187,7 @@ function listScannedNotes(targetVault) {
   return out;
 }
 
-module.exports = { extractGeodata, listScannedNotes, normalizeRelPath, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus, LAYER_KEYWORDS, LAYER_LABELS };
+module.exports = { extractGeodata, listScannedNotes, normalizeRelPath, SCAN_SCOPE, STATUS_ALIASES, readFrontmatterStatus, LAYER_KEYWORDS, LAYER_LABELS, LAYER_SUFFIX_RULES, LAYER_ORDER, TAG_LAYER_MAP, detectLayerFromPath, detectLocationLayer, normalizeId };
 
 if (require.main === module) {
   (async () => {
