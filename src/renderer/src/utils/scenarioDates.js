@@ -357,3 +357,41 @@ export function lastEventAtOrBefore(events, atDate) {
 export function hasSettledAt(events, atDate) {
   return !!lastEventAtOrBefore(events, atDate);
 }
+
+// ============================================================
+// 文本日期（命令行 / 导入 JSON 的入口）—— 唯一实现
+// ============================================================
+//
+// 为什么放在这个模块：本模块已经是「日期口径的唯一出处」（`m`/`d` 为 null = 1 月 1 日、
+// 负数年、比较、格式化）。文本解析若散落在命令行工具/导入器里，就会出现
+// 「工具认 `前1350`、界面不认」这类两套口径。
+//
+// 接受（**保守**，只认下面这几种；其余一律 null，由调用方报错，不猜）：
+//   `1350` / `-1350` / `前1350` / `1350-06` / `1350-06-01` / `1350/6/1` / `1350.6.1`
+//   `{y,m,d}`（交给 `normalizeDate`，与既有 API 同形）
+// 不接受：中文年月日、两个数字的年份区间、空串、非法月份/日（如 1350-13-01）。
+
+/** 文本日期 → `{y, m, d}`（缺省分量为 null）或 null */
+export function parseDateText(text) {
+  if (text === null || text === undefined) return null;
+  if (typeof text === 'object') return normalizeDate(text);
+  if (typeof text === 'number') return normalizeDate({ y: text });
+  const s = String(text).trim();
+  if (!s) return null;
+  // `前1350` = 公元前 1350 年（与 `formatDate` 的显示口径互逆）
+  const m = s.match(/^(前)?\s*(-?\d+)\s*(?:[-/.]\s*(\d{1,2}))?\s*(?:[-/.]\s*(\d{1,2}))?\s*$/);
+  if (!m) return null;
+  // 前导零的年份（`06-01` 想写 6 月 1 日却少了年）一律拒绝 —— 猜成「公元 6 年」比报错更坏
+  const yearText = m[2];
+  if (yearText.length > 1 && /^-?0/.test(yearText)) return null;
+  const hasBc = !!m[1];
+  let year = Number(yearText);
+  if (!Number.isFinite(year)) return null;
+  if (hasBc) year = -Math.abs(year);
+  const mm = m[3] === undefined ? null : Number(m[3]);
+  const dd = m[4] === undefined ? null : Number(m[4]);
+  if (mm !== null && (!(mm >= 1 && mm <= 12))) return null;
+  if (dd !== null && mm === null) return null;       // 「有日没月」是脏数据（同 normalizeDate）
+  if (dd !== null && (!(dd >= 1 && dd <= daysInMonth(year, mm)))) return null;
+  return { y: Math.trunc(year), m: mm, d: dd };
+}
