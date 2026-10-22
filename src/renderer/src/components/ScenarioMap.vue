@@ -120,6 +120,14 @@
            默认那 6 个可见控件里没有它（见 P3 / test_65）。 -->
       <div class="toolbar-row province-row" v-if="provinceRowVisible">
         <label class="row-label">省份：</label>
+        <!-- 日常模式里原本没有「画省份」（它只在底图编辑的主行出现）→ 空底图上无从下手。
+             这个入口点一下 = 自动进「底图编辑」+ 选好画省份（`setTool` 的门在 2681 行）。 -->
+        <button
+          v-if="!basemapEditMode"
+          data-testid="province-draw-entry"
+          title="画省份 · 自由绘制 (B) — 会先进入「底图编辑」；按住左键绕一圈，松手成省"
+          @click="startDrawingProvince()"
+        ><Icon name="pencil" :size="15"/>画省份</button>
         <!-- 2026-10-20：这里原先还有第二个「涂归属」，点了却是**改省界几何**（把地并进某个省）。
              两个同名按钮两种语义 = 用户实测「好像在生造省份」的直接来源。
              现在这个几何笔刷只出现在「底图编辑」行、并改名「改省界」。 -->
@@ -961,6 +969,27 @@
                     title="新建一张空白底图，直接用绘制/笔刷工具画（之后也能再导入 .map 补数据）"
                     @click="createEmptyBaseMapFromHint()">新建空底图，自己画</button>
           </div>
+        </template>
+      </div>
+
+      <!-- 有底图、但一个省都没有：把「第一笔怎么落」摆在画布中央（2026-10-22 用户实测）。
+           他说"可以建空底图了，但是不知道怎么写，使用手册看不懂"——手册里写的「主行画省份」
+           其实要先切「底图编辑」，日常模式里根本没有这个按钮。 -->
+      <div v-if="baseMap && provinceCount === 0 && !batchBusy && !renderPaused"
+           class="empty-province-hint" data-testid="empty-province-hint">
+        <template v-if="store.isReadOnly">
+          <p class="eph-title">只读：不能画省份</p>
+          <p class="eph-note">{{ store.readOnlyReason }}（先到「项目」面板新建 / 打开一个项目）</p>
+        </template>
+        <template v-else>
+          <p class="eph-title">这张底图还没有省份</p>
+          <ol class="eph-steps">
+            <li><b>点下面的「开始画省份」</b>（＝ 左上「底图编辑」+ 主行「画省份」）</li>
+            <li>在画布上<b>按住左键，绕一圈</b>画一个闭合形状</li>
+            <li><b>松手</b> → 这块就是一个省（右侧可改名）</li>
+          </ol>
+          <button class="eph-btn" data-testid="empty-province-start" @click="startDrawingProvince()">开始画省份</button>
+          <p class="eph-note">画歪了 Ctrl+Z；没围成圈的一笔会被拒绝（不会造怪形状）。第二个省贴着第一个的边走会自动吸住。</p>
         </template>
       </div>
 
@@ -3776,6 +3805,28 @@ function ensureBaseMap() {
  * 与绘制工具触发的懒建是**同一条路**（`ensureBaseMap`）—— 这里只补一句针对按钮的回执：
  * 按钮点下去必须有回音（"没反应"是本项目反复出现的一类投诉）。
  */
+/**
+ * 「第一笔」入口（2026-10-22）：确保有底图 → 进底图编辑 → 选「画省份」。
+ *
+ * 为什么需要它：空底图上日常模式的省份行只有 圈选/点填/折线/铺底/描轮廓，全都要"已有省份或陆地"；
+ * 真正能开第一笔的「画省份」只在「底图编辑」主行里（`v-if="basemapEditMode"`）——
+ * 用户卡在这里，无路可走（原话：「可以建空底图了，但是我不知道怎么画，于是又卡住了」）。
+ *
+ * ⚠️ 不能只靠 `setTool('draw')` 自动开模式：`BASEMAP_TOOL_IDS` 里**没有** draw/vertex
+ *    （它们是从主行去的），所以这里显式走 `toggleBasemapEditMode()`（它同时收起「更多」并给回执）。
+ */
+function startDrawingProvince() {
+  if (store.isReadOnly) {
+    statusMsg(`画省份已停用：${store.readOnlyReason || '只读：未打开项目'}`);
+    return false;
+  }
+  if (!ensureBaseMap()) return false;
+  if (!basemapEditMode.value) toggleBasemapEditMode();
+  setTool('draw');
+  statusMsg('画省份：在画布上按住左键绕一圈，松手成省（Shift = 不吸附已有省界；画歪了 Ctrl+Z）');
+  return true;
+}
+
 async function createEmptyBaseMapFromHint() {
   const name = await addEmptyBaseMap();
   if (name) {
@@ -10987,6 +11038,24 @@ watch(baseMap, () => {
 .scenario-empty-hint .eh-btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 .scenario-empty-hint .eh-btn.primary:hover:not(:disabled) { filter: brightness(1.12); }
 .scenario-empty-hint .eh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 空底图上的「第一笔」提示卡（2026-10-22） */
+.empty-province-hint {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 400px; max-width: calc(100% - 40px);
+  padding: 16px 18px; border-radius: 10px; text-align: left;
+  background: rgba(15, 23, 42, 0.94); border: 1px solid #334155;
+  color: #cbd5e1; pointer-events: none; z-index: 6;
+}
+.empty-province-hint .eph-title { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #e2e8f0; }
+.empty-province-hint .eph-steps { margin: 0 0 10px; padding-left: 18px; font-size: 12.5px; line-height: 1.9; }
+.empty-province-hint .eph-steps b { color: #e2e8f0; }
+.empty-province-hint .eph-btn {
+  pointer-events: auto; cursor: pointer; font-family: inherit;
+  background: #1f6feb; border: 1px solid #1f6feb; color: #fff;
+  border-radius: 6px; padding: 6px 14px; font-size: 12.5px;
+}
+.empty-province-hint .eph-btn:hover { filter: brightness(1.12); }
+.empty-province-hint .eph-note { margin: 10px 0 0; font-size: 11.5px; line-height: 1.65; color: #94a3b8; }
 
 /* 渲染护栏提示（状态栏内，红黄警示 + 可点击恢复） */
 .render-guard { color: #fbbf24; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
