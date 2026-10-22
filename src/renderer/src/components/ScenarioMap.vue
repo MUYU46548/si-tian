@@ -1460,6 +1460,8 @@ import { useScenarioExport } from '../composables/useScenarioExport';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import { useProvinceBrush } from '../composables/useProvinceBrush';
 import { simplifyClosedTrace } from '../utils/regionTrace';
+// 自由绘制闭环净化（2026-10-22，第三刀）：自交/碎屑/一条线 不再原样落库
+import { sanitizeFreehandRing, explainFreehandRejection, selfIntersectionCount } from '../utils/freehandRing';
 // T7（H1b）：perfect-freehand 的中心线稳定器 —— 自由绘制/描轮廓先平滑再简化，减少手抖折线
 import { smoothStrokePoints } from '../utils/strokeEngine';
 import { widthsBySpeed, resampleSeries } from '../utils/strokeMath';
@@ -3853,6 +3855,7 @@ function onMouseDown(event) {
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     freeTrace = [world];
     freeTraceActive = true;
+    freeTraceRejectReason = '';
     beginStrokeBase();                              // 拖笔期：底图进基帧，每帧只画笔迹
     tracePreviewCache = { at: -1e9, ring: null };   // 新一笔：扔掉上一笔的预览形状
     render();
@@ -5194,6 +5197,8 @@ function finishDraw() {
 const FREE_TRACE_MIN_POINTS = 10;   // 少于这个采样数 = 用户只是点了一下（交给描点分支）
 let freeTrace = null;
 let freeTraceActive = false;
+// 上一笔被净化层拒绝的原因（松手时 statusMsg 用它说人话，不再只报「轨迹太短」）
+let freeTraceRejectReason = '';
 let suppressDrawClick = false;      // 一笔成型后紧随的 click 不要再落顶点
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -5222,7 +5227,7 @@ function skeletonForTerrain(terrain) {
  * @param {object} opts `{ snap }` —— 画省份默认吸附到已有省界；Shift 旁路
  * @returns {{ring: Array, simplified: number, snapped: number}|null} null = 轨迹太短，不成形
  */
-function freeTraceRing(rawPts, { snap = false } = {}) {
+function freeTraceRing(rawPts, { snap = false, sanitize = true } = {}) {
   // T7：先过 perfect-freehand 的中心线稳定器（streamline），再 RDP 简化。
   // 预览与落库共用这一条链；稳定器对 100 点量级实测 p95 0.2ms（H1b spike）。
   //
@@ -5239,8 +5244,33 @@ function freeTraceRing(rawPts, { snap = false } = {}) {
   } catch (e) { /* 引擎异常 → 退回原始手迹，绝不吞掉这一笔 */ }
   const simplified = simplifyClosedTrace(src);
   if (!simplified || simplified.length < 3) return null;
-  const pts = simplified.map((q) => ({ x: q.x, y: q.y }));
-  if (!snap) return { ring: pts, simplified: pts.length, snapped: pts.length };
+  let pts = simplified.map((q) => ({ x: q.x, y: q.y }));
+
+  // 🔴 2026-10-22（第三刀）：落库前**净化闭环**。手画的圈经常自交（8 字 / 松手回勾），
+  //    以前原样落库 → 画布上是一个「几乎没面积、带洞的怪多边形」（实测 fill=0.002）。
+  //    这里用 polygon-clipping 归一：自交 → 拆成简单多边形 → 只留最大的一块；
+  //    面积过小 / 细成一条线的，直接拒绝并给出原因（不再造怪形状）。
+  // 预览**不跑净化**：polygon-clipping 在极端自交输入上可能长时间不返回（实测拖 8 字时
+  // 预览每 60ms 调一次 → 主线程卡死）。预览只画简化后的原环，松手落库时再净化一次；
+  // 打结时预览与成品的差别由状态栏「这一笔有交叉」说明。
+  if (!sanitize) {
+    return { ring: pts, simplified: pts.length, snapped: pts.length, cleaned: null, needsSanitize: true };
+  }
+  const sanitized = sanitizeFreehandRing(pts);
+  if (!sanitized.ok) {
+    freeTraceRejectReason = explainFreehandRejection(sanitized);
+    return null;
+  }
+  pts = sanitized.points;
+  freeTraceRejectReason = '';
+  const cleaned = {
+    dropped: sanitized.dropped,
+    droppedArea: sanitized.droppedArea,
+    holes: sanitized.holes,
+    selfInt: sanitized.selfInt,
+  };
+
+  if (!snap) return { ring: pts, simplified: pts.length, snapped: pts.length, cleaned };
   // 🔴 必须传 **toRaw 后的地形**（2026-10-18 第十八修）：`buildSkeleton` 会把每个环的
   //    **顶点数组本身**存进骨架，而 `conformToSkeleton` 随后要逐顶点读 `.x/.y`。
   //    传响应式数组 ⇒ 骨架里躺着的是 Vue 代理 ⇒ **每次读坐标都过响应式 get 陷阱**。
@@ -5248,10 +5278,15 @@ function freeTraceRing(rawPts, { snap = false } = {}) {
   //    `createReactiveObject` 127ms ≈ **15% 的拖笔时间**全花在这上面。
   //    地形写入一律换数组引用 ⇒ 引用缓存照样命中，渲染路径本来就该只读（同 `rawTerrain()`）。
   const skeleton = skeletonForTerrain(rawTerrain() || []);
-  if (!skeleton.length) return { ring: pts, simplified: pts.length, snapped: pts.length };
+  if (!skeleton.length) return { ring: pts, simplified: pts.length, snapped: pts.length, cleaned };
   const conformed = conformToSkeleton(pts, skeleton, SNAP_EDGE_THRESHOLD)
     .map((q) => ({ x: q.x, y: q.y }));
-  return { ring: conformed, simplified: pts.length, snapped: conformed.length };
+  // 贴骨架是插顶点，理论上不该自交；真出现了就**退回未吸附的形状**（宁可差一点缝隙，
+  // 也不要一个自己咬自己的多边形 —— 后者连填充/命中都会错乱）
+  if (selfIntersectionCount(conformed) > 0) {
+    return { ring: pts, simplified: pts.length, snapped: pts.length, cleaned, snapAborted: true };
+  }
+  return { ring: conformed, simplified: pts.length, snapped: conformed.length, cleaned };
 }
 
 /** 预览形状的节流缓存（手感线不用它；只有"地块形状"用） */
@@ -5261,7 +5296,7 @@ function previewTraceRing() {
   if (n < 3) return null;
   const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   if (now - tracePreviewCache.at < 60) return tracePreviewCache.ring;
-  const shape = freeTraceRing(freeTrace, { snap: tool.value === 'draw' });
+  const shape = freeTraceRing(freeTrace, { snap: tool.value === 'draw', sanitize: false });
   tracePreviewCache = { at: now, ring: shape ? shape.ring : null };
   return tracePreviewCache.ring;
 }
@@ -5348,7 +5383,7 @@ function commitFreeTrace(pts, shiftKey) {
   //    这里若另写一遍简化/吸附，就会出现"预览一个形、落库另一个形"（= 描点连线模拟器的观感）。
   const shape = freeTraceRing(pts, { snap: !shiftKey });
   if (!shape) {
-    statusMsg('自由绘制：轨迹太短，没有成型（按住沿轮廓拖一圈再松手）');
+    statusMsg(`自由绘制：${freeTraceRejectReason || '轨迹太短，没有成型（按住沿轮廓拖一圈再松手）'}`);
     return false;
   }
   const id = `prov_${Date.now()}`;
@@ -5366,8 +5401,12 @@ function commitFreeTrace(pts, shiftKey) {
   if (!addProvinceWithOverlapGate(prov)) return true;
   provinceBrush.invalidateBorders();
   focusNewProvince(id, prov);          // 建完即选中 + 名字框待改（P1）
+  const cleanedNote = shape.cleaned && (shape.cleaned.selfInt > 0 || shape.cleaned.dropped > 0 || shape.cleaned.holes > 0)
+    ? `；这一笔有交叉，已取较大的一圈（丢碎屑 ${shape.cleaned.dropped} 块 / 洞 ${shape.cleaned.holes} 个）`
+    : '';
   statusMsg(`已建「${name}」：轨迹 ${pts.length} 点 → 简化 ${shape.simplified} 点`
-    + (shiftKey ? '（Shift：未吸附骨架）' : `（贴骨架后 ${shape.snapped} 点）`)
+    + (shiftKey ? '（Shift：未吸附骨架）' : `（贴骨架后 ${shape.snapped} 点${shape.snapAborted ? '；吸附会自交，已放弃吸附' : ''}）`)
+    + cleanedNote
     + ' —— 右侧可改名，一次绘制 = 1 条撤销');
   return true;
 }
