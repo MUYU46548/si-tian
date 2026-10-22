@@ -52,7 +52,7 @@ const LAYER_ORDER = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon',
 // .sitian/extract-cache.json 按 mtimeMs+size 指纹缓存每个 Markdown 的解析产物
 // （frontmatter/wikilinks/正文），未变更的文件跳过读盘与 gray-matter 解析。
 // 该文件与 geodata.json 同级、同为编辑器元数据（可删可重建），绝不写回 Markdown。
-const PARSE_CACHE_VERSION = 1;
+const PARSE_CACHE_VERSION = 2;   // v2：frontmatter 做脏写法抢救（v1 缓存里的键可能是脏的）
 const parseCache = {
   files: {},        // { [relativePath]: { fp: 'mtimeMs:size', parsed } }
   seen: new Set(),  // 本次扫描遇到的文件（用于清理已删除文件的缓存条目）
@@ -107,8 +107,10 @@ function parseMdFile(filePath) {
     }
     parseCache.misses++;
 
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    const { data: frontmatter, content } = matter(raw);
+    const raw = fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '');
+    // 脏 frontmatter 抢救（全角冒号 / TOML 等号 / 键名带空格）—— 与索引/归类共用一份
+    const { data: rawFm, content } = matter(raw);
+    const frontmatter = classify.normalizeFrontmatter(rawFm);
     const wikilinks = [];
     const linkRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
     let match;
@@ -153,7 +155,7 @@ function resetScanReport() {
 function readLayerField(fm) {
   const hit = classify.pickField(fm, ['层级', '层次', 'layer', '层']);
   if (!hit.key) return null;
-  const v = String(hit.value).trim();
+  const v = classify.normValue(hit.value);
   return LAYER_KEYWORDS[v] || (LAYER_LABELS[v] ? v : null);
 }
 
@@ -251,7 +253,7 @@ function scanGeoSystem() {
           name: parsed.fileName,
           layer,
           parentId,
-          tags: parsed.frontmatter.tags,
+          tags: classify.asTagList(parsed.frontmatter.tags),
           sourcePath: parsed.relativePath,
           wikilinks: parsed.wikilinks,
           placeType: readPlaceTypeField(parsed.frontmatter),
@@ -303,7 +305,7 @@ function scanLocations() {
         name: parsed.fileName,
         layer,
         parentId,
-        tags: parsed.frontmatter.tags,
+        tags: classify.asTagList(parsed.frontmatter.tags),
         sourcePath: parsed.relativePath,
         wikilinks: parsed.wikilinks,
         placeType: readPlaceTypeField(parsed.frontmatter),

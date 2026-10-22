@@ -151,7 +151,57 @@ const TEXT_PARENT_PATTERNS = [
 function asArray(v) {
   if (v === null || v === undefined) return [];
   if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
-  return String(v).split(/[,，;；|、]/).map((x) => x.trim()).filter(Boolean);
+  if (typeof v === 'object') return [];   // 对象不是列表（插件产物/脏数据）→ 当成没有
+  return String(v).split(/[,，;；|、\n]+/).map((x) => x.trim()).filter(Boolean);
+}
+
+/**
+ * tags 专用：Obsidian 允许 `tags: a b`、`tags: "#a #b"`、`tags: [a, b]` 三种写法。
+ * 与 `asArray` 分开是因为别名**可以含空格**（"北 地" 是一个别名），标签不行。
+ */
+function asTagList(v) {
+  if (v === null || v === undefined) return [];
+  if (Array.isArray(v)) return v.flatMap((x) => asTagList(x));
+  if (typeof v === 'object') return [];
+  return String(v)
+    .split(/[\s,，;；|、]+/)
+    .map((t) => t.replace(/^#+/, '').trim())
+    .filter(Boolean);
+}
+
+/**
+ * frontmatter 的「脏写法」抢救（用户提醒：真实库什么都可能写）：
+ *   · `层级:　城市`（冒号后是全角空格）→ YAML 会把整行当**键名**、值为 null；
+ *   · `层级：城市`（全角冒号）、`层级 = 城市`（TOML 风）；
+ *   · 键名带前后空格。
+ * 只在「键里含分隔符且值为空」时抢救，正常键值一律不动（不猜内容）。
+ */
+function normalizeFrontmatter(fm) {
+  // YAML 坏到「整块被解析成一个字符串」时（例如 `层级:　城市` 用的是全角空格当分隔符），
+  // gray-matter 会把整行当键名、data 变成字符串 —— 这里按行长抢救，能救多少救多少
+  if (typeof fm === 'string') {
+    const out = {};
+    for (const line of fm.split(/\r?\n/)) {
+      const m = line.match(/^\s*([^:：=]{1,40})\s*[:：=]\s*(.+?)\s*$/);
+      if (m && m[1].trim() && m[2].trim()) out[m[1].trim()] = m[2].trim();
+    }
+    return out;
+  }
+  if (!fm || typeof fm !== 'object') return {};
+  const out = {};
+  for (const [rawKey, rawVal] of Object.entries(fm)) {
+    let key = String(rawKey).trim();
+    let val = rawVal;
+    if ((val === null || val === undefined) && /[:：=]/.test(key)) {
+      const at = key.search(/[:：=]/);
+      const k2 = key.slice(0, at).trim();
+      const v2 = key.slice(at + 1).trim();
+      if (k2 && v2) { key = k2; val = v2; }
+    }
+    if (!key) continue;
+    out[key] = val;
+  }
+  return out;
 }
 
 function stripBrackets(s) {
@@ -172,6 +222,14 @@ function normName(s) {
 function firstHeading(content) {
   const m = String(content || '').match(/^#\s+(.+)$/m);
   return m ? m[1].trim() : '';
+}
+
+/** 字段值规范化：去 [[ ]]、去首尾引号、去全角/半角空白（`层级: "[[城镇]]"` 也要认） */
+function normValue(v) {
+  return stripBrackets(
+    String(v === null || v === undefined ? '' : v)
+      .replace(/^["'“”]+|["'“”]+$/g, '')
+  ).replace(/[\s\u3000]+/g, ' ').trim();
 }
 
 /** 取 frontmatter 里第一个有值的别名键 */
@@ -196,10 +254,10 @@ function pickField(fm, keys) {
  */
 function classifyNote(entry, tables = {}) {
   const e = entry || {};
-  const fm = e.fm || {};
+  const fm = normalizeFrontmatter(e.fm);
   const path = String(e.path || '').replace(/\\/g, '/');
   const name = String(e.name || '');
-  const tags = asArray(e.tags);
+  const tags = asTagList(e.tags !== undefined ? e.tags : fm.tags);
   const layerKeywords = tables.layerKeywords || {};
   const suffixRules = tables.suffixRules || [];
   const evidence = [];
@@ -230,7 +288,7 @@ function classifyNote(entry, tables = {}) {
   const layerField = pickField(fm, ['层级', '层次', 'layer', '层']);
   let explicitLayer = null;
   if (layerField.key) {
-    const val = String(layerField.value).trim();
+    const val = normValue(layerField.value);
     if (layerKeywords[val]) {
       explicitLayer = layerKeywords[val];
       evidence.push({ signal: `frontmatter.${layerField.key}`, detail: `${val} → ${explicitLayer}` });
@@ -325,7 +383,8 @@ function classifyNote(entry, tables = {}) {
 
 /** 地理类目的收尾：确定 layer 粒度；确定不了就标 needsHuman.layer（仍然算 geo） */
 function finishGeo(evidence, explicitLayer, path, name, layerKeywords, suffixRules, tags, tables, confidence) {
-  let layer = explicitLayer || layerFromPath(path, layerKeywords) || layerFromName(name, suffixRules);
+  let layer = explicitLayer || layerFromPath(path, layerKeywords)
+    || layerFromTags(tags, layerKeywords) || layerFromName(name, suffixRules);
   const needsHuman = [];
   if (!layer) needsHuman.push('layer');
   if (layer && GEO_LAYERS.indexOf(layer) < 0) {
@@ -363,6 +422,14 @@ function layerFromName(name, suffixRules) {
   return null;
 }
 
+/** 标签本身就是层级词（`tags: [地点]` / `tags: [城市]`）→ 直接用那个层级 */
+function layerFromTags(tags, layerKeywords) {
+  for (const tag of (tags || [])) {
+    if (layerKeywords[tag]) return layerKeywords[tag];
+  }
+  return null;
+}
+
 // ============================================================
 // 空间关系推断（「缺上层」是读料桥最常缺的一块）
 // ============================================================
@@ -371,7 +438,7 @@ function layerFromName(name, suffixRules) {
 function buildNameIndex(entries) {
   const map = new Map();
   for (const e of entries) {
-    if (!e) continue;
+    if (!e) continue;   // 脏输入（null/非对象）不能把整份报告带崩
     const keys = new Set();
     for (const k of [e.title, e.name, ...(asArray(e.aliases))]) {
       const n = normName(k);
@@ -488,7 +555,7 @@ function inferParent(entry, ctx) {
  *            inferred:Array, categories:object}}
  */
 function buildReport(entries, opts = {}) {
-  const list = Array.isArray(entries) ? entries : [];
+  const list = (Array.isArray(entries) ? entries : []).filter((e) => e && typeof e === 'object');
   const nameIndex = buildNameIndex(list.filter((e) => e.classification && e.classification.category === 'geo'));
   const byCategory = {};
   const byLayer = {};
@@ -497,13 +564,19 @@ function buildReport(entries, opts = {}) {
   const inferred = [];
 
   for (const e of list) {
+    if (!e) continue;
     const c = e.classification || classifyNote(e);
     byCategory[c.category] = (byCategory[c.category] || 0) + 1;
     if (c.category !== 'geo') {
       if (c.category === 'unknown') {
+        // 解析失败的条目要让人看得出是「文件坏了」，不是「没写字段」——
+        // 两者的处理方式完全不同（后者补字段，前者修 YAML）
+        const parseEv = (c.evidence || []).find((x) => x.signal === 'parse');
         needsHuman.push({
           path: e.path, title: e.title, category: 'unknown',
-          reasons: (c.needsHuman || []).map((r) => (r === 'category' ? '没有任何可用的分类信号' : r)),
+          reasons: parseEv
+            ? [`frontmatter 解析失败：${parseEv.detail}`]
+            : (c.needsHuman || []).map((r) => (r === 'category' ? '没有任何可用的分类信号' : r)),
           evidence: c.evidence || [],
         });
       }
@@ -614,10 +687,13 @@ module.exports = {
   assertOutOutsideVault,
   // 供别的模块复用（避免各自再写一份规范化）
   asArray,
+  asTagList,
+  normalizeFrontmatter,
   stripBrackets,
   normName,
   firstHeading,
   layerFromPath,
   layerFromName,
   pickField,
+  normValue,
 };

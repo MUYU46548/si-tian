@@ -180,11 +180,12 @@ function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
   let raw = '';
   try {
     raw = fs.readFileSync(abs, 'utf-8');
-    const parsed = matter(raw);
-    const fm = parsed.data || {};
+    const parsed = matter(raw.replace(/^\uFEFF/, ''));
+    // 脏 frontmatter 抢救（全角冒号 / TOML 等号 / 键名带空格）—— 归类与字段读取共用这一份
+    const fm = classify.normalizeFrontmatter(parsed.data || {});
     const content = parsed.content || '';
     entry.title = String(fm['名称'] || fm.title || firstHeading(content) || name).trim() || name;
-    entry.tags = asArray(fm.tags);
+    entry.tags = classify.asTagList(fm.tags);
     entry.aliases = asArray(fm['别名'] != null ? fm['别名'] : fm.aliases);
     entry.headings = headingsOf(content);
     entry.firstLine = firstLineOf(content);
