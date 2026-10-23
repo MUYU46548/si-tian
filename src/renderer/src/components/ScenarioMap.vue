@@ -1581,6 +1581,10 @@ import {
   provinceRings, pointInProvince, provinceBBox, shapePatch,
   buildSkeleton, conformToSkeleton, ringPointsForRender,
 } from '../utils/provinceShape';
+// 省份命中的**空间索引**（2026-10-23，第 1 件 1-a）：把「全表线性扫描」换成「格子里那 1~3 个省」。
+// 实测：真实 200 省底图上 findProvinceAt 20.4ms/次 → 涂归属每 mousemove 要查 5 次 = 96.9ms。
+// 语义与旧实现**逐字节同义**（靠后的省盖在上面、洞点不中），索引按 terrain 引用缓存。
+import { createProvinceHitCache, hitProvince } from '../utils/provinceHitIndex';
 // 配色单一来源（2026-10-01）：省份色板 / 海域填充与海界 / 陆界 —— 画布与 SVG 导出共用一份
 import { PROVINCE_PALETTE, nextProvinceColor, SEA_FILL, SEA_EDGE, BORDER_COLOR } from '../utils/scenarioPalette';
 // B 方案（批量铺底）：画布里要**实时预览** Voronoi 边界，所以直接复用纯几何层（与 store 同一份实现）
@@ -7307,18 +7311,17 @@ function onProvinceCoastChange(e) {
  * （数组靠后的盖在上面）→ 两个省压叠时点中的是**视觉上被压在下面**的那个（越叠越明显）。
  * 两者口径必须相反才自洽：画 = 后面的在上，命中 = 从后面往前找。
  * 新省创建侧另有压叠闸门（`utils/provinceOverlap.js`），这条是「已经压叠了也要点得准」。
+ *
+ * 🔴 2026-10-23（第 1 件 1-a）：实现换成**空间索引**，语义逐字节不变（候选按原下标降序、
+ *    洞点不中、飞地点得中）。旧实现在真实 200 省底图上 20.4ms/次，涂归属每次 mousemove
+ *    要查 5 个偏移 = 96.9ms；换索引后是"格子里的 1~3 个省"。
+ *    索引按 `terrain` 引用缓存（本仓每次几何写入都换新数组 → 引用变即重建，零手工失效点）。
  */
+const provinceHitCache = createProvinceHitCache();
 function findProvinceAt(x, y) {
   const terrain = baseMap.value?.terrain;
   if (!terrain) return null;
-  for (let i = terrain.length - 1; i >= 0; i--) {
-    const prov = terrain[i];
-    if (!prov) continue;
-    if (!provinceRings(prov).length) continue;
-    // 多环 / 带洞口径统一走纯函数层（evenodd）：洞真的点不中、飞地真的点得中
-    if (pointInProvince(x, y, prov)) return prov;
-  }
-  return null;
+  return hitProvince(provinceHitCache.get(terrain), x, y);
 }
 
 

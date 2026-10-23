@@ -260,10 +260,15 @@ export function orientedRings(prov) {
 /**
  * nonzero 命中（绕数 ≠ 0）：与 canvas 的 `fill()`（默认 nonzero）完全一致 —— 所见即所点。
  * 飞地（同向双环）会命中，洞（反向环）不会。
+ *
+ * @param {{rings:Array, signs:Array<number>}} [cached] 预先算好的环与符号
+ *   （`utils/provinceHitIndex.js` 建索引时算一次，热循环里不再重复分配）——
+ *   形状与语义必须与 `provinceRings` / `ringSigns` 的输出一致；不传就照旧现算。
+ *   ⚠️ 这是**同一条判定**的缓存入口，不是第二套实现：绕数规则只有这一处。
  */
-export function pointInProvince(x, y, prov) {
-  const rings = provinceRings(prov);
-  const signs = ringSigns(prov);
+export function pointInProvince(x, y, prov, cached) {
+  const rings = (cached && cached.rings) || provinceRings(prov);
+  const signs = (cached && cached.signs) || ringSigns(prov);
   let w = 0;
   for (let i = 0; i < rings.length; i++) {
     if (pointInPolygon(x, y, rings[i].points)) w += signs[i];

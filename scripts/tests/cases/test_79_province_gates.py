@@ -104,8 +104,15 @@ def sub_source_guards(cdp):
                    '套索闸门分子早就是面积占比（area-gate）；死代码不许再被守卫背书')
 
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
-    if 'i >= 0; i--' not in sm:
-        bad.append('findProvinceAt 没有改成自顶向下（点中的仍可能是被压在下面的那个）')
+    # 2026-10-23（第 1 件 1-a）：命中从「全表线性扫描」换成**空间索引**（20.4ms → 0.18ms/次），
+    # "自顶向下"的保证也随之搬进 `utils/provinceHitIndex.js`：候选必须按**原下标降序**排、
+    # 第一个命中的赢。所以守卫改成查"两半"——组件走索引 + 索引里有降序；
+    # 行为断言（下面 f2 的「压叠处命中的是最后画上去的那个」）不变，仍然是最终判据。
+    hitidx = _code_only(_read('src/renderer/src/utils/provinceHitIndex.js'))
+    if 'hitProvince(' not in sm:
+        bad.append('findProvinceAt 没有走空间索引 hitProvince（第 1 件 1-a 的实现入口）')
+    if 'entries[b].index - entries[a].index' not in hitidx:
+        bad.append('省份命中索引没有按"原下标降序"取候选（点中的仍可能是被压在下面的那个）')
     if 'function addProvinceWithOverlapGate' not in sm:
         bad.append('ScenarioMap 缺少统一的建省落库口 addProvinceWithOverlapGate')
     if sm.count('addProvinceWithOverlapGate(') < 3:

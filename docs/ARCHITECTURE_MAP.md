@@ -87,6 +87,9 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 144 | `scripts/tests/tools/_probe_accumulation_compare.mjs` | （待补） |
 | 87 | `scripts/tests/tools/_probe_alt_surface.mjs` | （待补） |
 | 66 | `scripts/tests/tools/_probe_auto_river_visual.js` | （待补） |
+| 238 | `scripts/tests/tools/_probe_baseline_planet_brush.js` | （待补） |
+| 125 | `scripts/tests/tools/_probe_baseline_planet_brush.py` | （待补） |
+| 218 | `scripts/tests/tools/_probe_baseline_scenario_map.js` | （待补） |
 | 42 | `scripts/tests/tools/_probe_basemap_river_ui.js` | （待补） |
 | 27 | `scripts/tests/tools/_probe_basemap_source.mjs` | （待补） |
 | 63 | `scripts/tests/tools/_probe_bezier_overshoot.js` | （待补） |
@@ -97,12 +100,14 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 39 | `scripts/tests/tools/_probe_endinsea.mjs` | （待补） |
 | 51 | `scripts/tests/tools/_probe_fangcun_pipe.mjs` | （待补） |
 | 93 | `scripts/tests/tools/_probe_fmg_river_tree.mjs` | （待补） |
+| 169 | `scripts/tests/tools/_probe_hotspots_scenario_map.js` | （待补） |
 | 100 | `scripts/tests/tools/_probe_ideal_terrain.mjs` | （待补） |
 | 60 | `scripts/tests/tools/_probe_import_fidelity.mjs` | （待补） |
 | 141 | `scripts/tests/tools/_probe_jank_autoriver.js` | （待补） |
 | 228 | `scripts/tests/tools/_probe_jank_real.js` | （待补） |
 | 103 | `scripts/tests/tools/_probe_jank_real.py` | （待补） |
 | 40 | `scripts/tests/tools/_probe_jank_rescue.py` | （待补） |
+| 92 | `scripts/tests/tools/_probe_land_cost.js` | （待补） |
 | 135 | `scripts/tests/tools/_probe_least_cost.mjs` | （待补） |
 | 75 | `scripts/tests/tools/_probe_map_provinces.mjs` | （待补） |
 | 40 | `scripts/tests/tools/_probe_map_segments.mjs` | （待补） |
@@ -201,6 +206,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 265 | `scripts/tests/unit/test_polygon_bool.js` | （待补） |
 | 384 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
 | 285 | `scripts/tests/unit/test_project_size.js` | （待补） |
+| 279 | `scripts/tests/unit/test_province_hit_index.js` | 省份命中索引单测（8 条）：与朴素扫描 3000 点逐点对拍 0 处不一致、压叠取最上层、洞/飞地、空表与 NaN、巨型表路径、按 terrain 引用缓存、500 省性能底价、反向探针（正序必须被抓住） |
 | 231 | `scripts/tests/unit/test_province_overlap.js` | （待补） |
 | 490 | `scripts/tests/unit/test_province_shape.js` | （待补） |
 | 688 | `scripts/tests/unit/test_river_coastline.js` | （待补） |
@@ -277,7 +283,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 491 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 12064 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 12067 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 393 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 244 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
@@ -409,8 +415,9 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 197 | `src/renderer/src/utils/polylineSmooth.js` | （待补） |
 | 775 | `src/renderer/src/utils/projectSchema.js` | `.sitian` 结构定义 / 校验修复 / 版本迁移 / 就地 diff 快照环形缓冲（纯函数） |
 | 309 | `src/renderer/src/utils/provinceGrid.js` | 省份归属标签网格纯函数（Phase 3）：多边形→格归属（面积降序命中即停）、差异边→省界链→Chaikin、笔刷/套索差量、重编号与序列化自愈 |
+| 186 | `src/renderer/src/utils/provinceHitIndex.js` | 省份命中的**空间索引**（2026-10-23，第 1 件 1-a）：包围盒 + 均匀网格 + 每省「环/嵌套符号/包围盒」建一次；判定仍只走 pointInProvince（cached 参数），语义与旧 findProvinceAt 逐字节同义；按 terrain 引用缓存（零手工失效点）。实测 20.4ms → 0.18ms/次 |
 | 175 | `src/renderer/src/utils/provinceOverlap.js` | （待补） |
-| 1083 | `src/renderer/src/utils/provinceShape.js` | （待补） |
+| 1088 | `src/renderer/src/utils/provinceShape.js` | （待补） |
 | 258 | `src/renderer/src/utils/regionTrace.js` | 区域勾轮廓管线（Phase 2.6）：闭环 RDP 简化（容差随尺寸缩放）+ 离屏 canvas 光栅化校验「落地内 + 不重叠」，通过才落库 |
 | 244 | `src/renderer/src/utils/reliefIcons.js` | 地貌图标**确定性**散布（整数哈希定抖动/旋转/尺寸，网格桶防重叠，单次笔刷有上限） |
 | 194 | `src/renderer/src/utils/riverChains.js` | （待补） |
