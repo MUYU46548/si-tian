@@ -61,10 +61,13 @@
 
 - **交互模式全集**: pan / move / draw / region / marker / route（含自动寻路=道路编辑器，Shift+J）/ settle / text / cluster / height / terrain / political / **relief（R）** / **river（Shift+R）** / **culture（Shift+C）** / **religion（Shift+G）**
 
-- **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > HANDOFF.md / ROADMAP.md（严重滞后，仅作历史参考）
+- **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > `docs/guides/20261023/00-…`（指南包）> `docs/plan/SITIAN_GUIDE_DIGEST_20261023.md`（仓内对账）> 其余（历史，在 `docs/archive/`）
 
-- **现行规划（2026-10-20 取舍）**: [docs/plan/SITIAN_THREE_MODULES_20261020.md](docs/plan/SITIAN_THREE_MODULES_20261020.md) ——
-  三模块顶层（星图 / 行星与细节 / 历史剧本）+ 资料层横切；"已有账本不重写"的结论与下一步队列。
+- **现行规划（2026-10-23 指南包，取代三刀序列与所有旧施工单）**：
+  - 总入口 = [docs/guides/20261023/00-司天-开发指南-20261023.md](docs/guides/20261023/00-司天-开发指南-20261023.md)（路线/砍单/参照物/红线；包内 01–06 是参照件）；
+  - **开工先读** [docs/plan/SITIAN_GUIDE_DIGEST_20261023.md](docs/plan/SITIAN_GUIDE_DIGEST_20261023.md)：六件施工序的仓内拆解 + 与代码实况的对账 + 三个必须先定的口径（账本真源与 epoch 映射 / schema 类型放宽 / 保存挪线程分两步）；
+  - 施工序：0 对账留底 → 1 底盘三件 → 2 散布笔冒烟 → 3 账本引擎 `src/ledger/` → 4 四笔总装+时间轴+导出 → 5 读料桥 → 6 终验（用户出场一次）；
+  - 415 省孤本 `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份（2026-10-23 已留：`…_施工留底\绒花计划-20261023-203520.sitian`，SHA256 一致）。
 
 
 ### 当前红线（跨模块、动手之前必须知道）
