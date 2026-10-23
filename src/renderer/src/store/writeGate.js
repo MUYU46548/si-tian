@@ -206,6 +206,8 @@ export const MEMORY_WRITE_CALLSITES = [
           'splitProvince', 'splitProvinceAlong', 'splitProvincesAlong', 'mergeProvinces', 'batchSubdivide',
           'addBrushProvince', 'clearProvinceLabels', 'applyProvinceOutline', 'rebuildCoastline',
           'removeProvinceWithGrid', 'rebuildProvinceGrid',
+          // 2026-10-22：笔刷建省 —— 一笔涂抹长出一个**新省**（与改省界笔刷是两条路，都走 blocked()）
+          'createProvinceFromBrush',
           // P1（2026-10-13）：顶点拖动 = 目标省 + 共边邻省一起改（一次手势 = 一条 undo）
           'updateProvincesBatch'],
     what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；顶点拖动的批量形状写；统一经 blocked() 包装）' },

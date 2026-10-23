@@ -179,6 +179,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 102 | `scripts/tests/tools/fangcun_pipe.py` | （待补） |
 | 111 | `scripts/tests/tools/sweep_rivers.py` | （待补） |
 | 359 | `scripts/tests/unit/test_basemap_source_backup.js` | （待补） |
+| 283 | `scripts/tests/unit/test_brush_province.js` | 笔刷建省几何单测（11 条）：面积 = 2rL+πr²（±10%）、与已有省份交集为 0、环形笔迹保住洞、all-covered / too-thin 拒绝零副作用、确定性、反向探针（判据不空转） |
 | 134 | `scripts/tests/unit/test_color_util.js` | （待补） |
 | 226 | `scripts/tests/unit/test_disclaimer.js` | （待补） |
 | 278 | `scripts/tests/unit/test_entity_status.js` | （待补） |
@@ -276,7 +277,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 491 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 11879 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 12064 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 393 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 244 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
@@ -357,7 +358,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 289 | `src/renderer/src/store/geodataModules/channelBrush.js` | （待补） |
 | 318 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 1080 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
-| 1956 | `src/renderer/src/store/geodataModules/provinceEditing.js` | 省份「归属标签网格」store 模块（Phase 3）：笔刷/套索一笔一条 undo、删除省份重编号安全（整表快照）、每个写操作先过 guardWrite（只读态零副作用） |
+| 2039 | `src/renderer/src/store/geodataModules/provinceEditing.js` | 省份「归属标签网格」store 模块（Phase 3）：笔刷/套索一笔一条 undo、删除省份重编号安全（整表快照）、每个写操作先过 guardWrite（只读态零副作用） |
 | 3715 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 186 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
@@ -367,9 +368,10 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 43 | `src/renderer/src/store/quitFlush.js` | （待补） |
 | 155 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 190 | `src/renderer/src/store/vaultIndex.js` | 资料索引 store：状态/候选/读料报告/搜索/阅读/链解析；所有磁盘 I/O 走主进程 vault* IPC |
-| 241 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
+| 243 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
 | 63 | `src/renderer/src/utils/align.js` | 对齐/分布纯函数 |
 | 616 | `src/renderer/src/utils/azgaar-parser.js` | Azgaar FMG .map 解析器：按内容嗅探定位各数据段（不写死行号）、grid 级高度/温度/降水数组、provincesBody/河流/道路 SVG 几何、文化/宗教/势力/城镇定义与 province→burg→culture 映射 |
+| 166 | `src/renderer/src/utils/brushProvince.js` | 笔刷建省的纯几何层（2026-10-22）：笔迹 → 圆盘∪胶囊并集 → **减掉已有省份**（新省只长在空地上，不弹确认框）；拒绝分支零副作用（all-covered / too-thin）；引擎注入式，Node 单测用真 `polygon-clipping` |
 | 322 | `src/renderer/src/utils/canvasIcon.js` | Canvas 端矢量图标（Path2D 复刻 Icon.vue 几何 + 旧 emoji 数据回退） |
 | 44 | `src/renderer/src/utils/clipboard.js` | 复制/粘贴/克隆 |
 | 258 | `src/renderer/src/utils/coastline.js` | （待补） |
@@ -441,7 +443,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 579 | `src/renderer/src/utils/terrainSynthesis.js` | （待补） |
 | 39 | `src/renderer/src/utils/textMeasure.js` | 文本宽度测量 |
 | 245 | `src/renderer/src/utils/textures.js` | 程序化地形纹理 |
-| 414 | `src/renderer/src/utils/userGuide.js` | （待补） |
+| 418 | `src/renderer/src/utils/userGuide.js` | （待补） |
 | 137 | `src/renderer/src/utils/vault.js` | 库名解析：obsidian:// URI 的 vault 参数取自主进程配置（禁硬编码） |
 | 198 | `src/renderer/src/utils/vaultRelink.js` | 笔记改名「断线检测 + 重连候选打分」（纯函数，Node 可测）：路径归一化 / 最长公共子串 / 单候选打分 / detectBrokenLinks / 理由文案 —— **判定与打分的唯一实现**（只读、确定性、宁可少推不可乱推） |
 | 174 | `src/renderer/src/utils/vertexSharing.js` | （待补） |

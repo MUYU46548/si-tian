@@ -48,6 +48,8 @@ import {
   multiBBox as boolMultiBBox, multiNetArea, countMultiPoints, robustOp, splitProvinceByPolyline,
   pointInMulti,   // F：海岸线重建里判"这个省是否整块都在陆地内部"（可整省跳过）
 } from '../../utils/polygonBool';
+// 笔刷建省（2026-10-22）：一笔涂抹 → 一块新省的纯几何（Node 有单测，引擎注入）
+import { paintProvinceShape } from '../../utils/brushProvince';
 // B 方案（批量铺底）：Voronoi 播种 + 区域探针（纯几何，Node 有单测）
 import {
   voronoiCells, autoSeedsInRegion, makeRegionProbe, ringBBox,
@@ -1064,6 +1066,9 @@ export function createProvinceEditingModule(ctx) {
     if (isRO()) return blocked(label);
     if (!bm(key)) return null;
 
+    // 「笔刷建省」（2026-10-22）：这一笔**不是**改已有省份，而是长出一个新省 —— 走另一条落库路。
+    if (s.tool === 'provincePaint') return createProvinceFromBrush(key, s, label, opts);
+
     // 「平滑」在矢量语义下 = 对边界做 RDP 简化（格点时代那个"3×3 邻域众数"已无对象）
     if (s.tool === 'smooth') return smoothProvinceBoundary(key, s, label);
 
@@ -1110,6 +1115,80 @@ export function createProvinceEditingModule(ctx) {
       redo: () => setTerrain(key, after),
     });
     return { changed: 1, label, ops: [{ id: p.id, op: 'smooth' }], detail: `边界顶点 ${ptsBefore} → ${ptsAfter}` };
+  }
+
+  /**
+   * 笔刷建省（2026-10-22）：一笔涂抹 → **一个省**。
+   *
+   * 用户原话：「按住左键像涂色一样抹，松手自动把抹过的范围长成一个省（不用闭合、不会出现
+   * 一团自交线，涂抹过程就是最终形状）。」—— 这是"画图软件的手感"，和「画省份（描轮廓）」
+   * 是两件事：描轮廓要求"画一圈"，笔刷要求"抹一条"。
+   *
+   * 与既有四条路的分工（**别混**）：
+   *   · 画省份 / 描点   → 新建一个省，区域 = **画出来的轮廓**（要闭合、会贴骨架）
+   *   · **笔刷建省（本函数）** → 新建一个省，区域 = **笔迹扫过的范围**（不闭合、不贴骨架）
+   *   · 改省界（paint）  → **改已有省**的边界（目标省并集、相交省差集）
+   *   · 涂归属（ownerBrush）→ 只改势力归属，一根线都不动
+   *
+   * 🔴 为什么"新省只长在空地上"（减掉已有省份）而不像描点那样弹确认框问人：
+   *    笔刷是高频手势，每笔弹一次确认 = 完全没法用。所以改成**不覆盖**：
+   *    已有省份的地涂不上（用户看得见），要改那些地的形状就走「改省界」。
+   *    这样既没有压叠（点选/上色/标签三处口径一致），也不需要任何弹窗。
+   *
+   * @param {object} s 这一笔：`{ path:[{x,y}], radius, tool }`（来自 `applyProvinceStroke`）
+   * @returns {{changed:number, label:string, rejected?:string, message?:string, ...}}
+   *   拒绝分支**零副作用**（没建省、没进 undo 栈）。
+   */
+  function createProvinceFromBrush(key, s, label = '笔刷建省', opts = {}) {
+    if (isRO()) return blocked(label);
+    if (!bm(key)) return { changed: 0, label, rejected: 'no-basemap', message: '底图不存在' };
+    const path = (s && s.path) || [];
+    // 半径兜底与 `applyProvinceStroke` 一致（60 世界单位 = 旧默认）
+    const radius = (s && Number.isFinite(s.radius) && s.radius > 0) ? s.radius : 60;
+    const before = provincesOf(key);
+    // 几何兜底时的**人话回音**（不静默降级，也不炸整笔）—— 与 `applyRegionToTerrain` 同一条纪律
+    let geomWarn = '';
+    const res = paintProvinceShape(polygonClipping, path, radius, before, {
+      onWarn: (m) => { if (m) geomWarn = (geomWarn || '') + (geomWarn ? '；' : '') + m; },
+    });
+    if (res.rejected) {
+      return {
+        changed: 0, label, rejected: res.rejected, message: res.message,
+        paintedArea: res.paintedArea, cutRatio: res.cutRatio,
+      };
+    }
+    const patch = multiToShape(res.multi, 'land');
+    if (!patch.points || patch.points.length < 3) {
+      return { changed: 0, label, rejected: 'degenerate', message: '这一笔的形状退化（有效顶点不足 3 个），没有建省' };
+    }
+    const prov = normalizeProvince({
+      id: `prov_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      name: (opts && opts.name) || `新省份 ${before.length + 1}`,
+      kind: 'land',
+      color: (opts && opts.color) || nextProvinceColor(before.length),
+      coast: true,
+      ...patch,
+    });
+    const after = [...before, prov];
+    // 整表快照 undo（与描轮廓/合并同一条路）：一笔 = 一条撤销
+    execute({
+      type: 'province-brush-create',
+      label,
+      undo: () => setTerrain(key, before),
+      redo: () => setTerrain(key, after),
+    });
+    const pct = Math.round((res.cutRatio || 0) * 100);
+    return {
+      changed: 1, label,
+      provinceId: prov.id, name: prov.name,
+      area: Math.round(res.area || 0), paintedArea: Math.round(res.paintedArea || 0),
+      cutRatio: res.cutRatio || 0, cut: res.cut || 0,
+      points: patch.points.length, strokePoints: path.length,
+      ...(geomWarn ? { geomWarn } : {}),
+      detail: `「${prov.name}」${patch.points.length} 个顶点`
+        + (pct > 0 ? `；笔迹有 ${pct}% 压在已有省份上，那部分没算进来` : '')
+        + (geomWarn ? `；⚠️ ${geomWarn}` : ''),
+    };
   }
 
   /**
@@ -1938,6 +2017,10 @@ export function createProvinceEditingModule(ctx) {
   return {
     ensureProvinceGrid, getProvinceGrid, rebuildProvinceGrid, invalidateProvinceGrid,
     beginProvinceStroke, applyProvinceStroke, endProvinceStroke, applyProvinceLasso,
+    // 笔刷建省（2026-10-22）：一笔涂抹 → 一块新省（纯几何在 utils/brushProvince.js）
+    createProvinceFromBrush,
+    /** 供画布预览：当前这一笔已采到的**世界坐标**轨迹（未落库；没有笔迹时返回空数组） */
+    getProvinceStrokePath: () => (stroke && stroke.path ? stroke.path : []),
     // E（2026-10-11）：描轮廓 —— 笔迹围住的那块地并进目标省、从邻省挖掉（邻省自动重算）
     resolveOutlineRegion, applyProvinceOutline,
     // C（0.2.6）：折线切割「一次切多块」——按折线在各国内的局部段逐个切（每个省一条 undo）

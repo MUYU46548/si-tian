@@ -55,6 +55,16 @@
           :title="t.title"
           @click="setTool(t.id)"
         ><Icon :name="t.icon" :size="14"/>{{ t.label }}</button>
+        <!-- 「笔刷建省」= 像画图软件一样**涂出一块地**（2026-10-22）。
+             与「画省份」的分工：画省份 = 描一圈精确边界（要闭合、会贴骨架）；
+             笔刷建省 = 抹一条就成一块省（不闭合、涂抹过程就是最终形状）。
+             放在「改省界」旁边而不是主行：主行的可见控件数由 test_97 硬守（日常 4 / 底图编辑 6）。 -->
+        <button
+          :class="{ active: tool === 'provincePaint' }"
+          data-testid="basemap-tool-provincePaint"
+          title="笔刷建省 (Shift+B) — 按住左键像涂色一样抹，松手把抹过的范围长成**一个省**：不用闭合、不会画出自交怪形，涂抹过程就是最终形状。已有省份的地不会被抢（新省只长在空地上）；一笔 = 一条撤销"
+          @click="setTool('provincePaint')"
+        ><Icon name="brush" :size="14"/>笔刷建省</button>
         <!-- 「改省界」= 原先挂在日常行的那个几何笔刷（把笔迹并进所选省份）。
              2026-10-20：它与「涂归属」同名不同义，用户实测「好像在生造省份」。
              现在改名并收进底图编辑 —— 日常行只留**真的改归属**那一个。 -->
@@ -128,6 +138,14 @@
           title="画省份 · 自由绘制 (B) — 会先进入「底图编辑」；按住左键绕一圈，松手成省"
           @click="startDrawingProvince()"
         ><Icon name="pencil" :size="15"/>画省份</button>
+        <!-- 2026-10-22：空底图上"想随便涂一块地"的人不该被要求先画一个闭合圈 ——
+             笔刷建省 = 像画图一样抹（同一入口也会打开底图编辑）。 -->
+        <button
+          v-if="!basemapEditMode"
+          data-testid="province-paint-entry"
+          title="笔刷建省 (Shift+B) — 会先进入「底图编辑」；按住左键像涂色一样抹，松手就是一块省（不用闭合）"
+          @click="startPaintingProvince()"
+        ><Icon name="brush" :size="15"/>笔刷建省</button>
         <!-- 2026-10-20：这里原先还有第二个「涂归属」，点了却是**改省界几何**（把地并进某个省）。
              两个同名按钮两种语义 = 用户实测「好像在生造省份」的直接来源。
              现在这个几何笔刷只出现在「底图编辑」行、并改名「改省界」。 -->
@@ -189,6 +207,20 @@
           {{ provBrushRadius }}px
         </label>
         <span class="row-hint">按住涂 · 一笔一条撤销 · Alt 吸管</span>
+      </div>
+      <!-- ═══ 笔刷建省（2026-10-22）：像画图软件一样涂出一块地 ═══
+           它不选目标省 —— 每一笔都**新建**一个省（要改已有省就切「改省界」）。 -->
+      <div class="tool-group brush-settings" v-if="tool === 'provincePaint'" data-testid="province-paint-settings">
+        <span class="row-label">笔刷建省：</span>
+        <label class="check-label" title="笔刷半径（屏幕像素）—— 画布缩放时手感一致；世界半径 = 像素 / 当前缩放">
+          半径
+          <input type="range" v-model.number="provBrushRadius" min="1" max="200" step="1" class="brush-slider" />
+          {{ provBrushRadius }}px
+        </label>
+        <span class="row-hint ready"
+              title="新省只长在空地上：已有省份覆盖的地方涂不上（免得省份压叠）。要改已有省份的形状请用「改省界」。">
+          按住涂 → 松手成一个省 · 一笔一条撤销
+        </span>
       </div>
       <div class="tool-group brush-settings" v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)">
         <label>划归到：</label>
@@ -991,7 +1023,12 @@
             <li><b>松手</b> → 这块就是一个省（右侧可改名）</li>
           </ol>
           <button class="eph-btn" data-testid="empty-province-start" @click="startDrawingProvince()">开始画省份</button>
-          <p class="eph-note">画歪了 Ctrl+Z；没围成圈的一笔会被拒绝（不会造怪形状）。第二个省贴着第一个的边走会自动吸住。</p>
+          <!-- 2026-10-22：会画图的人不一定会"绕一圈"——给他一支笔。 -->
+          <button class="eph-btn" data-testid="empty-province-brush" @click="startPaintingProvince()">像画图一样涂一块（笔刷建省）</button>
+          <p class="eph-note">
+            画歪了 Ctrl+Z；没围成圈的一笔会被拒绝（不会造怪形状）。第二个省贴着第一个的边走会自动吸住。
+            <br />「笔刷建省」不用闭合：按住左键像涂色一样抹，松手抹过的范围就是一个省。
+          </p>
         </template>
       </div>
 
@@ -1097,6 +1134,9 @@
       </span>
       <span v-if="tool === 'provinceBrush' || tool === 'provinceLasso'" class="draw-hint">
         {{ tool === 'provinceBrush' ? '改省界：按住涂抹 → 整笔并进所选省份（改的是省界形状）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
+      </span>
+      <span v-if="tool === 'provincePaint'" class="draw-hint" data-testid="province-paint-hint">
+        笔刷建省：按住像涂色一样抹 → 松手抹过的范围就是一个省（不用闭合）· 已有省份的地不会被抢 · 一笔一条撤销
       </span>
       <span v-if="tool === 'outline'" class="draw-hint" data-testid="outline-hint">
         描轮廓：按住**贴着要改的那条边界**拖一圈再松手 —— 围住的那块地改判给它原本主要所属的省，邻省自动重算；松手前的虚线是收口边
@@ -1646,7 +1686,8 @@ const { radius: provBrushRadius, strength: provBrushStrength, tool: provBrushToo
 // 🔴 P2（2026-10-09）：**多边形是唯一的几何表示**。旧的「归属标签网格」不再参与渲染或编辑 ——
 //    它在抬手时把格点轮廓反向写成多边形，10525 点的海岸线一次涂抹就变 ~22 点（用户实测的「退化」）。
 //    现在涂完抬手即做**精确布尔**：目标省并集、相交省差集。详见 docs/SCENARIO_PROVINCE_FIX_PLAN.md。
-let provStrokeActive = false;             // 涂抹中
+let provStrokeActive = false;             // 涂抹中（改省界 / 抹除 / 平滑）
+let provPaintActive = false;              // 笔刷建省涂抹中（2026-10-22：抬手才建省）
 let provLassoActive = false;
 const provLassoPoints = ref([]);          // 套索轨迹（世界坐标）
 const provBrushPreview = ref(null);
@@ -1808,7 +1849,7 @@ const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'rive
   'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
 const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
 // 「变更归属」的省份选项：选到这类工具（或用户自己打开「更多」）就显示
-const PROVINCE_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex', 'polySplit', 'voronoi', 'outline', 'ownerBrush']);
+const PROVINCE_TOOLS = new Set(['provinceBrush', 'provincePaint', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex', 'polySplit', 'voronoi', 'outline', 'ownerBrush']);
 const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value));
 const viewMode = ref('base');
 /**
@@ -2714,6 +2755,7 @@ function setTool(t) {
   //     这里只保证有一个默认目标省，避免用户涂了半天才发现"没选省"。
   if (PROVINCE_GRID_TOOLS.has(t) && !provBrushTarget.value) provBrushTarget.value = 1;
   provStrokeActive = false;
+  provPaintActive = false;    // 笔刷建省：换工具 = 这一笔作废（不落库，与几何笔刷同一条纪律）
   // 涂归属：换工具 = 这一笔作废（不落库）—— 与几何笔刷同一条纪律
   ownerStrokeActive = false;
   ownerStrokeIds = new Set();
@@ -2778,6 +2820,7 @@ function updateCursor() {
   else if (tool.value === 'riverErase') canvas.value.style.cursor = 'crosshair';
   else if (tool.value === 'height' || tool.value === 'biome') canvas.value.style.cursor = 'none';
   else if (tool.value === 'ownerBrush') canvas.value.style.cursor = 'crosshair';
+  else if (tool.value === 'provincePaint') canvas.value.style.cursor = 'none';   // 笔刷：由画布上的圈指示笔头
   else if (PROVINCE_GRID_TOOLS.has(tool.value)) canvas.value.style.cursor = 'crosshair';
   else canvas.value.style.cursor = 'default';
 }
@@ -3709,6 +3752,41 @@ function drawProvinceBrushOverlay(c) {
     c.stroke();
     c.restore();
   }
+  // ── 笔刷建省（2026-10-22）：笔迹带**就是**最终形状（圆盘 ∪ 胶囊），不画任何"预测环" ──
+  //    为什么用「粗描边 + 圆头」而不是把 ring 算出来再填：算环要走布尔（每帧白算一次，
+  //    正是「画省份」那条路上一团交叉白线的来源）；粗描边在覆盖范围上与
+  //    `traceBrushRings`（每点一个圆盘 + 每段一个胶囊）一致，观感就是笔。
+  if (tool.value === 'provincePaint') {
+    const path = store.getProvinceStrokePath();
+    if (path && path.length) {
+      const rad = provBrushWorldRadius.value;
+      c.save();
+      c.strokeStyle = 'rgba(250, 204, 21, 0.34)';
+      c.fillStyle = 'rgba(250, 204, 21, 0.34)';
+      c.lineJoin = 'round';
+      c.lineCap = 'round';
+      c.lineWidth = rad * 2;
+      c.beginPath();
+      if (path.length === 1) {
+        c.arc(path[0].x, path[0].y, rad, 0, Math.PI * 2);
+        c.fill();
+      } else {
+        c.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) c.lineTo(path[i].x, path[i].y);
+        c.stroke();
+      }
+      c.restore();
+    }
+    if (p) {
+      c.save();
+      c.strokeStyle = 'rgba(255,255,255,0.8)';
+      c.lineWidth = px(1.2);
+      c.beginPath();
+      c.arc(p.x, p.y, provBrushWorldRadius.value, 0, Math.PI * 2);
+      c.stroke();
+      c.restore();
+    }
+  }
   const pts = provLassoPoints.value;
   if (pts && pts.length > 1) {
     c.save();
@@ -3739,7 +3817,7 @@ function statusMsg(text) {
 // ⚠️ 名字绝不借用任何真实剧本名（曾硬编码「德斯特星」= 拿暮雨自用剧本当示例，已移除）。
 const CREATES_CONTENT_TOOLS = new Set([
   'draw', 'height', 'biome', 'culture', 'religion', 'burg', 'river', 'relief',
-  'label', 'marker', 'road', 'provinceBrush', 'provinceLasso', 'provinceFill',
+  'label', 'marker', 'road', 'provinceBrush', 'provincePaint', 'provinceLasso', 'provinceFill',
 ]);
 
 /** 依赖「省份归属网格」的工具（落笔前要确保网格就位；也是 tools 图层/提示的判定依据） */
@@ -3829,6 +3907,27 @@ function startDrawingProvince() {
   return true;
 }
 
+/**
+ * 「笔刷建省」入口（2026-10-22）：确保有底图 → 进底图编辑 → 选笔刷建省。
+ *
+ * 与 `startDrawingProvince` 是**两条并列的第一笔路径**（不是同一个工具的两个名字）：
+ *   · 画省份 = 绕一圈描边界（精确、会贴骨架）
+ *   · 笔刷建省 = 抹一条（快、像画图；不闭合也能成省）
+ * 用户原话：「按住左键像涂色一样抹，松手自动把抹过的范围长成一个省」——
+ * 空底图上"不知道怎么落第一笔"的人，绝大多数想的是前者那种笔，不是套索。
+ */
+function startPaintingProvince() {
+  if (store.isReadOnly) {
+    statusMsg(`笔刷建省已停用：${store.readOnlyReason || '只读：未打开项目'}`);
+    return false;
+  }
+  if (!ensureBaseMap()) return false;
+  if (!basemapEditMode.value) toggleBasemapEditMode();
+  setTool('provincePaint');
+  statusMsg('笔刷建省：按住左键像涂色一样抹，松手抹过的范围就是一个省（不用闭合；一笔一条撤销）');
+  return true;
+}
+
 async function createEmptyBaseMapFromHint() {
   const name = await addEmptyBaseMap();
   if (name) {
@@ -3906,6 +4005,32 @@ function onMouseDown(event) {
     ownerLastSample = { x: world.x, y: world.y };
     ownerStrokeSample(world.x, world.y);
     provBrushPreview.value = { x: world.x, y: world.y };
+    render();
+    return;
+  }
+
+  // ── 笔刷建省（2026-10-22）：涂抹期只收轨迹（零落库），**抬手才建省** ──────────────
+  //    与「改省界」共用同一套采样（`applyProvinceStroke`，按 0.35×半径 抽稀），
+  //    但落库走另一条路（`endProvinceStroke` 里按 tool 分派到 createProvinceFromBrush）。
+  //    ⚠️ 这里**不要求已有省份**（空底图正是它最该能用的地方）——这是与上面那段的根本差别。
+  if (tool.value === 'provincePaint' && event.button === 0) {
+    if (store.isReadOnly) {
+      statusMsg(`笔刷建省已停用：${store.readOnlyReason}`);
+      return;
+    }
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    provPaintActive = true;
+    store.beginProvinceStroke();
+    store.applyProvinceStroke(baseMapKey.value, {
+      x: world.x, y: world.y,
+      radius: provBrushWorldRadius.value,
+      tool: 'provincePaint',
+      target: 0,
+    });
+    provBrushPreview.value = { x: world.x, y: world.y };
+    // 涂抹期数据一个字节都不变 → 底图可以整张贴成基帧，每帧只画笔迹带（见 beginStrokeBase）
+    beginStrokeBase();
     render();
     return;
   }
@@ -4301,6 +4426,23 @@ function onMouseMove(event) {
     return;
   }
 
+  // 笔刷建省：拖动期连续采点（与「改省界」同一套抽稀），落库仍在抬手
+  if (tool.value === 'provincePaint') {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    provBrushPreview.value = { x: world.x, y: world.y };
+    if (provPaintActive) {
+      store.applyProvinceStroke(baseMapKey.value, {
+        x: world.x, y: world.y,
+        radius: provBrushWorldRadius.value,
+        tool: 'provincePaint',
+        target: 0,
+      });
+    }
+    renderCoalesced();
+    return;
+  }
+
   // Phase 3：省份笔刷涂抹 / 套索描轨迹
   if (PROVINCE_GRID_TOOLS.has(tool.value)) {
     const rect = canvas.value.getBoundingClientRect();
@@ -4591,6 +4733,20 @@ function onMouseUp(event) {
     commitOwnerStroke();
     render();
   }
+  // 笔刷建省：抬手 → 整笔长成一个省（一笔 = 一条撤销；拒绝分支零副作用）
+  if (provPaintActive) {
+    provPaintActive = false;
+    const res = store.endProvinceStroke('笔刷建省', {});
+    provinceBrush.invalidateBorders();
+    if (res && res.blocked) statusMsg(res.message);
+    else if (res && res.rejected) statusMsg(`${res.label || '笔刷建省'}：${res.message}`);
+    else if (res && res.changed) {
+      statusMsg(`${res.label}：${res.detail} · 一笔 = 1 条撤销`);
+      const prov = (baseMap.value?.terrain || []).find((p) => p.id === res.provinceId);
+      if (prov) selectedProvince.value = prov;      // 建完即选中：接着用「改省界」精修
+    } else statusMsg((res && res.message) || '笔刷建省：这一笔没有建出省');
+    render();
+  }
   if (provStrokeActive) {
     provStrokeActive = false;
     const label = provBrushTool.value === 'erase' ? '省份笔刷抹除'
@@ -4818,6 +4974,8 @@ async function onCanvasClick(event) {  if (event.button === 2) {
 
   // 涂归属：写入已在 mouseup 完成 —— 紧随的 click 不再落到别的工具分支
   if (tool.value === 'ownerBrush') return;
+  // 笔刷建省（2026-10-22）：同上，建省已在 mouseup 完成（click 只可能是这一笔的尾巴）
+  if (tool.value === 'provincePaint') return;
 
   if (tool.value === 'erase') {
     const prov = findProvinceAt(world.x, world.y);
@@ -5240,6 +5398,9 @@ function onKeyDown(event) {
     return;
   }
   if (event.key === 'v' || event.key === 'V') setTool('select');
+  // Shift+B = 笔刷建省（B 的第二形态）。⚠️ 必须判在 `b` 之前：两个分支都会命中 `b`，
+  //    先写的那个赢 —— 不判 shiftKey 的话 Shift+B 会静默变成「画省份」（与 Shift+W 同一个坑）。
+  else if ((event.key === 'b' || event.key === 'B') && event.shiftKey) setTool('provincePaint');
   else if (event.key === 'b' || event.key === 'B') setTool('draw');
   else if (event.key === 'g' || event.key === 'G') setTool('vertex');
   else if (event.key === 'y' || event.key === 'Y') setTool('outline');   // E：描轮廓（Y 未被占用）
@@ -8953,7 +9114,7 @@ function renderFrame() {
   if (!blitted && showBorders.value) drawProvinceBorders(ctx.value);
   if (!strokeBaseBuilding) drawVertexHandles(ctx.value);
   if (!blitted && showBurgs.value && !cameraMotion) drawBurgs(ctx.value);
-  if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush')) drawProvinceBrushOverlay(ctx.value);
+  if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush' || tool.value === 'provincePaint')) drawProvinceBrushOverlay(ctx.value);
   if (!strokeBaseBuilding) drawPreviewOverlay(ctx.value);
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
@@ -10414,8 +10575,15 @@ watch(showBurgs, (visible) => {
 watch([baseMapKey, () => baseMap.value?.terrain?.length || 0], ([key, count]) => {
   if (!count) return;
   if (key === lastFitKey && count === lastFitCount) return;
+  const mapChanged = key !== lastFitKey;
   lastFitKey = key;
   lastFitCount = count;
+  // 🔴 2026-10-22（笔刷建省）：这一条是给"打开一张已有省份的图 / 导入之后 / 换底图"用的自动适屏。
+  //    但「笔刷建省」是**高频增量**手势（每涂一笔多一个省），适屏会把镜头一直拉到
+  //    "只看得见刚涂的那块" —— 想接着涂旁边就得先手动缩小一次，等于每一笔都被打断
+  //    （用户要的正是"像画图一样连着抹"）。所以**同一张图上**增减省份时不抢镜头，只重绘；
+  //    换底图（mapChanged）照旧适屏。计数照样记账：切走工具后不会"还欠一次适屏"而突然跳一下。
+  if (!mapChanged && tool.value === 'provincePaint') { render(); return; }
   setTimeout(fitToView, 50);
 });
 
