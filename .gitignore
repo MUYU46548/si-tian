@@ -87,3 +87,6 @@ build/p1-vertex-marquee/
 NUL
 # 根目录下的 index.html 是 src/renderer/index.html 的旧副本，不再使用
 /index.html
+
+# 探针用真实底图（4.5MB，本地证据，禁止提交；由 _lab 探针临时放这里）
+src/renderer/public/__real_desite.map
