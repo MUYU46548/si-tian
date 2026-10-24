@@ -183,7 +183,7 @@ git log --oneline -1; git status --short; git rev-list --left-right --count HEAD
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
 (Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 136
-(Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 50
+(Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 52
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime
 Get-ChildItem 'C:\Users\muyu\Documents\SiTianProjects\_施工留底' | Select-Object Name,Length

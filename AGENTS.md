@@ -1,4 +1,4 @@
-# SiTian (司天)
+﻿# SiTian (司天)
 
 为世界构建者设计的本地桌面应用（Electron 28），以 Obsidian 库（默认 `E:/图书馆/ROSA/`）为事实源之一，通过七层视图呈现世界观地理层级，为 Markdown 附加可编辑的坐标元数据，实现画布与笔记的双向同步。
 
@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**136 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**51 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**52 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -118,7 +118,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 136 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 51 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 52 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 45 | `grep -c "ipcMain.handle" src/main/index.js` |
