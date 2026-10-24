@@ -70,10 +70,13 @@ function pick(row) {
   close();
 }
 
-async function open() {
+async function open(initialQuery = '') {
   visible.value = true;
+  if (initialQuery) query.value = String(initialQuery);
   await nextTick();
   if (inputEl.value && inputEl.value.focus) inputEl.value.focus();
+  // 带词打开 = 直接把结果搜出来（读料桥：设定卡读不到笔记时"全库搜这个名字"一步到位）
+  if (initialQuery && query.value.trim()) await doSearch();
 }
 
 function close() {
@@ -84,7 +87,7 @@ function close() {
   error.value = '';
 }
 
-function onOpenEvent() { open(); }
+function onOpenEvent(e) { open((e && e.detail && e.detail.query) || ''); }
 
 onMounted(() => window.addEventListener(OPEN_NOTE_SEARCH_EVENT, onOpenEvent));
 onUnmounted(() => window.removeEventListener(OPEN_NOTE_SEARCH_EVENT, onOpenEvent));

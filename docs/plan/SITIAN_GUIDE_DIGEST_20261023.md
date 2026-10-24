@@ -222,6 +222,15 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 ### 第 5 件 · 读料桥（可提前到第 3 件后，用户点头即可）
 - 现成资产要复用：`utils/vaultIndex.js`（只读）、`scripts/vault-scan.mjs`（只读归类）、`scripts/lib/vaultClassify.js`（唯一归类实现）、`docs/VAULT_BRIDGE.md`。
 - 判据：拿一个"不听话"的库（乱目录+乱文件名+部分无 frontmatter）实测；点图出设定卡；换库不崩。
+- ✅ **第一刀：设定卡「读不到笔记」的可读回落（2026-10-24）**：库被切换 / 笔记被改名或删除时，
+  `sourcePath` 会指向不存在的文件 —— 此前只是 `note = null` → 正文区**静默消失**（用户以为内容没了）。
+  现在面板给出：来源路径 + 真实原因 + 两个出口（重试 / **全库搜这个名字**，搜索面板支持带词预填并直接搜）。
+  顺带补一处真隐患：`updateNode` 是**就地改对象** → `watch(node)` 看不到引用变化，同一节点换 sourcePath 后
+  正文会停在旧内容上；加了 `watch(() => node.sourcePath)` 之后才真正重读。
+  判据（新用例 test_141）：正常态有内容 → 模拟主进程读失败 → 回落点名路径 + 出口齐全、旧内容不再显示、
+  「全库搜索」带节点名预填 → 复原后内容回来；源码守卫：读取只走 `readObsidianNote`（读料层只读）。
+  ⏳ 还剩：真正的"不听话的库"整套实测（乱目录/乱文件名/缺 frontmatter）已由 test_124 +
+  `unit/test_vault_frontmatter_noise.js` 覆盖；UI 侧还缺"点**省份/标记**（非实体）也能出设定卡"。
 
 ### 第 6 件 · 终验（用户出场一次）
 - 三步齐 + 五件 + 415 省数据不丢 + 自测链证据（副本制 / 反向探针 / 读盘 / 三张无头截图）。
@@ -270,7 +279,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 git log --oneline -1; git status --short; git rev-list --left-right --count HEAD...origin/main
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
-(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 140
+(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 141
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime

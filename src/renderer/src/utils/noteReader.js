@@ -11,7 +11,11 @@ export function openNote(path) {
   return true;
 }
 
-export function openNoteSearch() {
-  window.dispatchEvent(new CustomEvent(OPEN_NOTE_SEARCH_EVENT));
+/**
+ * 打开「全库资料搜索」。
+ * @param {string} [query] 预填关键词（读料桥：设定卡读不到笔记时，带节点名直接搜）
+ */
+export function openNoteSearch(query = '') {
+  window.dispatchEvent(new CustomEvent(OPEN_NOTE_SEARCH_EVENT, { detail: { query: String(query || '') } }));
   return true;
 }

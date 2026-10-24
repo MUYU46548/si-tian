@@ -164,6 +164,22 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 | 归类 / 推断 / 只读 / 守恒 | `scripts/tests/unit/test_vault_classify.js`（9 组） |
 | 索引本体（walk/增量/containment/候选） | `scripts/tests/unit/test_vault_index.js`（11 组） |
 | 应用内展示 | `scripts/tests/cases/test_124_vault_index.py`（分布 + 待人工原因） |
+| 设定卡「读不到笔记」回落 | `scripts/tests/cases/test_141_lore_card_fallback.py`（正常态 / 读失败回落 / 搜索预填 / 复原） |
+
+## 七点五、设定卡读不到笔记时（2026-10-24）
+
+节点面板的设定卡（frontmatter + 正文 + 关联资料）吃的是 `sourcePath`。**换库 / 笔记改名 / 删除**之后
+这个路径会指向不存在的文件 —— 以前只是 `note = null`，正文区静默消失，用户以为"内容没了"。
+
+现在给**可读回落**（`[data-testid="lore-missing"]`）：
+
+- 点名来源路径 + 主进程返回的真实原因（如 `ENOENT: ...`）；
+- 两个出口：**重试**（重新读这篇）/ **全库搜「节点名」**（打开资料搜索并带上关键词、直接搜）；
+- 明确写着"归属与坐标仍以项目文件为准"（读料失败不影响项目数据，也不写任何东西）；
+- 读取只走 `readObsidianNote`（**只读**；回落块里没有任何写 IPC —— test_141 读源码守）。
+
+顺带修一处真隐患：`updateNode` 是**就地改对象**，`watch(node)` 看不到引用变化 ——
+同一节点换了 `sourcePath` 后正文会停在旧内容上。加了 `watch(() => node.sourcePath)` 之后才真正重读。
 
 ## 八、明确没做
 

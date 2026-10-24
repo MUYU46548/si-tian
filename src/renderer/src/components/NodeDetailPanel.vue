@@ -88,6 +88,23 @@
           </div>
         </section>
 
+        <!-- 设定卡读不到笔记时的**可读回落**（读料桥，2026-10-24）：
+             库被切换 / 笔记被改名或删除时，`sourcePath` 会指向一个不存在的文件。
+             以前这里只是 `note = null` → 正文区静默消失（用户以为"内容没了"）。
+             现在给出来源路径 + 原因 + 两个出口（重试 / 全库搜这个名字），并且**绝不写任何东西**。 -->
+        <section v-if="!isDraftNode && node.sourcePath && !loading && !note"
+                 class="lore-missing" data-testid="lore-missing">
+          <div class="section-header"><span class="section-title">设定卡</span></div>
+          <p class="lore-missing-line">这篇笔记现在读不到：<code>{{ node.sourcePath }}</code></p>
+          <p v-if="noteError" class="lore-missing-reason" data-testid="lore-missing-reason">{{ noteError }}</p>
+          <p class="lore-missing-hint">可能是库已切换、或笔记被改名/删除。归属与坐标仍以项目文件为准，这里只读展示。</p>
+          <div class="lore-missing-actions">
+            <button class="action-btn" data-testid="lore-retry" @click="loadNote">重试</button>
+            <button class="action-btn" data-testid="lore-search" @click="searchVaultByName"
+                    title="在全库资料里按这个名字找（只读检索，不改笔记）">全库搜索「{{ node.name }}」</button>
+          </div>
+        </section>
+
         <!-- 关联资料（D2）：主笔记 = sourcePath；附加笔记存项目文件，不写笔记 -->
         <section v-if="!isDraftNode" class="linked-notes-section" data-testid="linked-notes">
           <div class="section-header">
@@ -451,7 +468,7 @@
 import { iconSvg } from '../utils/iconSvg';
 import Icon from './Icon.vue';
 import NotePicker from './NotePicker.vue';
-import { openNote } from '../utils/noteReader';
+import { openNote, openNoteSearch } from '../utils/noteReader';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
@@ -472,6 +489,7 @@ marked.setOptions({ gfm: true, breaks: true });
 const store = useGeodataStore();
 const { askText } = usePromptDialog();
 const note = ref(null);
+const noteError = ref('');      // 读不到笔记时的原因（读料桥的可读回落用）
 const loading = ref(false);
 const isContentExpanded = ref(false);
 const isFmExpanded = ref(false); // frontmatter 默认折叠（批次A5）
@@ -897,13 +915,14 @@ function searchByTag(tag) {
   window.dispatchEvent(event);
 }
 
-// 加载 Obsidian 内容
+// 加载 Obsidian 内容（**只读**：只有 readObsidianNote，绝不写笔记）
 async function loadNote() {
+  noteError.value = '';
   if (!node.value?.sourcePath) {
     note.value = null;
     return;
   }
-  
+
   loading.value = true;
   try {
     const result = await window.sitianAPI.readObsidianNote(node.value.sourcePath);
@@ -911,13 +930,20 @@ async function loadNote() {
       note.value = result.data;
     } else {
       note.value = null;
+      noteError.value = (result && result.error) || '读取失败（原因未知）';
     }
   } catch (e) {
     console.error('Failed to load note:', e);
     note.value = null;
+    noteError.value = (e && e.message) || '读取时抛错';
   } finally {
     loading.value = false;
   }
+}
+
+/** 读不到笔记时的出口：拿节点名去全库搜（只读检索；搜索面板自己会打开阅读器） */
+function searchVaultByName() {
+  openNoteSearch(node.value && node.value.name ? node.value.name : '');
 }
 
 watch(node, () => {
@@ -926,6 +952,12 @@ watch(node, () => {
   activeTab.value = 'overview';
   loadNote();
 }, { immediate: true });
+
+// 同一节点**就地**改 sourcePath 时也要重读（读料桥：换库/重连会把路径换掉，
+// 而 `updateNode` 是就地改对象 → `watch(node)` 看不到引用变化，正文会停在旧内容上）。
+watch(() => (node.value && node.value.sourcePath) || '', (path, prev) => {
+  if (path !== prev) loadNote();
+});
 
 // 操作
 async function openSourceInObsidian() {
@@ -1508,6 +1540,40 @@ function updateCoordinate(axis, value) {
 /* ===== 正文区域 ===== */
 .content-section {
   margin-bottom: 16px;
+}
+
+/* 设定卡读不到笔记时的可读回落（读料桥）：只读、给出口，不写任何东西 */
+.lore-missing {
+  margin-bottom: 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle, #2a3442);
+  border-left: 3px solid #d08a3a;
+  border-radius: 6px;
+  background: rgba(208, 138, 58, 0.06);
+}
+.lore-missing-line {
+  margin: 4px 0 2px;
+  font-size: 12px;
+  color: var(--text-secondary, #9aa7b6);
+  word-break: break-all;
+}
+.lore-missing-line code {
+  font-size: 11px;
+  color: var(--text-primary, #e6edf5);
+}
+.lore-missing-reason {
+  margin: 2px 0;
+  font-size: 11px;
+  color: #e05252;
+}
+.lore-missing-hint {
+  margin: 4px 0 6px;
+  font-size: 11px;
+  color: var(--text-secondary, #9aa7b6);
+}
+.lore-missing-actions {
+  display: flex;
+  gap: 6px;
 }
 
 /* 关联资料（D2） */
