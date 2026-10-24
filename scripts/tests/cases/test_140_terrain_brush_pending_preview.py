@@ -114,17 +114,26 @@ DRAG = r"""(async () => {
   const origin = tb.pendingOriginRef();
   const brushing = !!tb.isTerrainBrushing.value;
   const midCount = countType();
-  // 等渲染器把这一帧画完再取像素（弹事件只是同步改数据，画是下一帧的事）
-  await frame();
-  await frame();
-  await sleep(60);
-  const pxDuring = px(probe[0], probe[1]);
+  // 等渲染器把这一帧画完再取像素（弹事件只是同步改数据，画是下一帧的事）。
+  // ⚠️ 全量跑时机器更忙：一次等待可能读到的还是上一帧（实测整轮跑偶发 delta=0，单跑必过）。
+  //    所以这里**主动 requestRender + 轮询**，最多 8 次 × ~90ms；仍为 0 才判失败。
+  const pxDeltaOf = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1])
+    + Math.abs(a[2] - b[2]) + Math.abs(a[3] - b[3]);
+  let pxDuring = px(probe[0], probe[1]);
+  let pxDelta = pxDeltaOf(pxDuring, pxBefore);
+  let pxTries = 0;
+  for (let i = 0; i < 8 && pxDelta <= 12; i += 1) {
+    pxTries = i + 1;
+    if (pm.renderer && typeof pm.renderer.requestRender === 'function') pm.renderer.requestRender();
+    await frame();
+    await sleep(90);
+    pxDuring = px(probe[0], probe[1]);
+    pxDelta = pxDeltaOf(pxDuring, pxBefore);
+  }
   const pxMid = probes.map(([x, y]) => px(x, y));
   const deltas = probes.map((_, i) => Math.abs(pxMid[i][0] - pxPre[i][0])
     + Math.abs(pxMid[i][1] - pxPre[i][1]) + Math.abs(pxMid[i][2] - pxPre[i][2])
     + Math.abs(pxMid[i][3] - pxPre[i][3]));
-  const pxDelta = Math.abs(pxDuring[0] - pxBefore[0]) + Math.abs(pxDuring[1] - pxBefore[1])
-    + Math.abs(pxDuring[2] - pxBefore[2]) + Math.abs(pxDuring[3] - pxBefore[3]);
 
   // ③ 抬手落库
   canvas.dispatchEvent(mk(path[path.length - 1][0], path[path.length - 1][1], 'mouseup'));
@@ -165,7 +174,7 @@ DRAG = r"""(async () => {
 
   return JSON.stringify({
     type: TYPE, pend0, pendingAt, preview: preview.length, brushing, midCount, afterCount, pendAfter,
-    pxDelta, pxBefore, pxDuring, deltas, pxPre, pxMid,
+    pxDelta, pxBefore, pxDuring, pxTries, deltas, pxPre, pxMid,
     checked, miss, outside, bytesChanged,
     undoExact, undoCount, redoCount, preCount,
     undoDelta: h1 - h0,

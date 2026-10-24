@@ -440,6 +440,8 @@ registerGitSyncHandlers({
 const SITIAN_CONFIG_FILES = {
   labelPresets: 'label-presets.json',
   markerTypes: 'marker-types.json',
+  // 新建笔记的落点（用户设置；留空 = 走自动规则：有 03 设定 用层级子目录，否则库根）
+  noteTarget: 'note-target.json',
 };
 
 function sitianConfigPath(name) {
@@ -558,11 +560,24 @@ ipcMain.handle('create-obsidian-note', async (event, payload) => {
   if (!vault) return { success: false, error: '未设置知识库路径' };
 
   try {
+    // 用户在设置里指定的「新笔记目录」优先于调用方传的（设置是长期意愿，payload 是一次性）
+    let configured = '';
+    try {
+      const p = sitianConfigPath('noteTarget');
+      if (p) {
+        const raw = await fs.readFile(p, 'utf-8');
+        const j = JSON.parse(raw);
+        if (j && typeof j.dir === 'string') configured = j.dir;
+      }
+    } catch (e) { configured = ''; }   // 没有配置 / 坏 JSON → 走自动规则（不阻断转正）
+
+    const wantDir = configured || targetDir || '';
     const target = resolveNoteTarget({
-      vault, layer, targetDir,
+      vault, layer, targetDir: wantDir,
       // 用同步版探目录（这里只探一次；`fs` 在上方是 promises 版，不能直接给它）
       pathExists: (p) => { try { return require('fs').existsSync(p); } catch (e) { return false; } },
     });
+    if (!target.dir) return { success: false, error: target.reason || '目标目录不合法' };
     await fs.mkdir(target.dir, { recursive: true });
 
     // 文件名

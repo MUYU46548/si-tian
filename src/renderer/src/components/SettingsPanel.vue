@@ -223,6 +223,22 @@
               <button class="vault-btn" @click="chooseVaultPath" title="选择知识库目录"><Icon name="folder" :size="14"/> 选择</button>
             </div>
           </div>
+          <!-- 新笔记目录（2026-10-24）：司天自己创建笔记时落在哪 -->
+          <div class="setting-item" data-testid="note-target-section">
+            <div class="setting-info">
+              <span class="setting-name">新笔记目录</span>
+              <span class="setting-desc">转正 / 批量导入新建的笔记落在库里哪个目录。留空 = 自动：有「03 设定」就用层级子目录，否则落库根；填了就必须在知识库内</span>
+            </div>
+            <div class="vault-path-row">
+              <input class="note-target-input" data-testid="note-target-dir" v-model="noteTargetDir"
+                     placeholder="留空 = 自动（例：99 我的沙盒）" />
+              <button class="vault-btn" data-testid="save-note-target" @click="saveNoteTarget"
+                      title="保存到 <库>/.sitian/config/note-target.json（只影响司天自己创建笔记）">
+                <Icon name="check" :size="14"/> 保存
+              </button>
+            </div>
+            <span v-if="noteTargetStatus" class="setting-desc" data-testid="note-target-status">{{ noteTargetStatus }}</span>
+          </div>
           <div class="data-actions">
             <button class="data-btn" @click="openVaultNow" title="在 Obsidian 里打开当前知识库（打不开时自动改为在文件管理器中打开库目录）">
               <Icon name="book" :size="14"/> 打开 Obsidian 知识库
@@ -1090,12 +1106,34 @@ async function openVaultFolder() {
 
 // ===== 知识库路径（2026-08-16 可配置化） =====
 const vaultPath = ref('');
-
 async function loadVaultPath() {
   try {
     const res = await window.sitianAPI.getVaultPath();
     if (typeof res === 'string') vaultPath.value = res;
   } catch (e) { /* 浏览器环境忽略 */ }
+}
+
+// ===== 新笔记目录（2026-10-24，用户拍板：能用约定目录才用、否则库根） =====
+// 落点规则的**唯一实现**在主进程 `src/main/noteTarget.js`；这里只存"用户意愿"这一条字符串。
+// 留空 = 自动（有 `03 设定` 就用层级子目录，否则库根）；填了就必须在知识库内（越界会被主进程拒绝）。
+const noteTargetDir = ref('');
+const noteTargetStatus = ref('');
+async function loadNoteTarget() {
+  try {
+    const res = await window.sitianAPI.getSitianConfig('noteTarget');
+    noteTargetDir.value = (res && res.success && res.data && typeof res.data.dir === 'string') ? res.data.dir : '';
+  } catch (e) { noteTargetDir.value = ''; }
+}
+async function saveNoteTarget() {
+  const dir = String(noteTargetDir.value || '').trim();
+  try {
+    const res = await window.sitianAPI.setSitianConfig('noteTarget', { dir });
+    noteTargetStatus.value = res && res.success
+      ? (dir ? `已保存：${dir}（须在知识库内）` : '已保存：留空 = 自动规则')
+      : `保存失败：${(res && res.error) || '未知错误'}`;
+  } catch (e) {
+    noteTargetStatus.value = '保存失败：' + ((e && e.message) || e);
+  }
 }
 
 async function chooseVaultPath() {
@@ -1208,6 +1246,7 @@ function resetSettings() {
 onMounted(() => {
   loadSettings();
   loadVaultPath();
+  loadNoteTarget();
   loadVersion();
   nextTick(renderPreview);
   // 资料索引状态（只读）：有索引就顺手把候选数读出来，没有就显示“尚未建立”
@@ -1633,6 +1672,22 @@ input:checked + .toggle-slider::before {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 新笔记目录（2026-10-24）：与知识库路径同一行布局，输入框占满剩余宽度 */
+.note-target-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--input-bg, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+}
+.note-target-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
 }
 
 /* 知识库路径（2026-08-16 可配置化） */

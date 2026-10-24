@@ -110,6 +110,20 @@ async function main() {
     return `层级=${fm['层级']} / 上层区域=${fm['上层区域']} / tags=${JSON.stringify(fm.tags)}；coordinate 与英文 layer 都不出现`;
   });
 
+  await check('g 显式目录越界 → 拒绝（绝不因填错把笔记写到库外）', () => {
+    const outside = path.join(path.dirname(vault), 'somewhere-else');
+    const r = T.resolveNoteTarget({ vault, layer: 'galaxy', targetDir: outside, pathExists: () => true });
+    eq(r.dir, null, '越界目录不该给出落点');
+    eq(r.source, 'rejected', '来源');
+    assert(/不在知识库内/.test(r.reason || ''), `原因读不懂：${r.reason}`);
+    // 反证：库内的绝对路径照用
+    const inside = path.join(vault, '99 沙盒');
+    const r2 = T.resolveNoteTarget({ vault, layer: 'galaxy', targetDir: inside, pathExists: () => true });
+    eq(r2.dir, inside, '库内绝对路径');
+    eq(r2.source, 'explicit', '来源');
+    return '库外绝对路径 → rejected + 可读原因；库内绝对路径 → 照用';
+  });
+
   await check('e 真实文件系统：临时库上真 mkdir + 写文件（含根目录兜底路径）', async () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-nt-'));
     const v1 = path.join(base, 'vault-with-convention');

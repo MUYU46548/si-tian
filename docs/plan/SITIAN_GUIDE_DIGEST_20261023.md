@@ -284,7 +284,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 git log --oneline -1; git status --short; git rev-list --left-right --count HEAD...origin/main
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
-(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 141
+(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 142
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime

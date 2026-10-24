@@ -54,7 +54,8 @@ function layerDirOf(layer) {
  * @param {string} [p.layer]   节点层级（决定约定子目录）
  * @param {string} [p.targetDir] 用户显式指定的目录（库内相对路径或绝对路径）
  * @param {(p:string)=>boolean} p.pathExists 目录存在性判定（注入以便单测，不在这里碰 fs）
- * @returns {{dir:string, source:'explicit'|'convention'|'root', usedRootFallback:boolean, layerDir:string[]}}
+ * @returns {{dir:string|null, source:'explicit'|'convention'|'root'|'rejected',
+ *            usedRootFallback:boolean, layerDir:string[], reason?:string}}
  */
 function resolveNoteTarget({ vault, layer, targetDir, pathExists } = {}) {
   if (!vault) throw new Error('未设置知识库路径');
@@ -62,12 +63,17 @@ function resolveNoteTarget({ vault, layer, targetDir, pathExists } = {}) {
   const segs = layerDirOf(layer);
 
   if (targetDir && String(targetDir).trim()) {
-    return {
-      dir: path.resolve(vault, String(targetDir).trim()),
-      source: 'explicit',
-      usedRootFallback: false,
-      layerDir: segs,
-    };
+    const abs = path.resolve(vault, String(targetDir).trim());
+    // 🔴 显式目录也必须**留在库内**：绝不因为用户填错/填了绝对路径就把笔记写到库外
+    const rel = path.relative(vault, abs);
+    const inside = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    if (!inside) {
+      return {
+        dir: null, source: 'rejected', usedRootFallback: false, layerDir: segs,
+        reason: `指定的新笔记目录不在知识库内：${abs}`,
+      };
+    }
+    return { dir: abs, source: 'explicit', usedRootFallback: false, layerDir: segs };
   }
 
   // ② 约定根目录存在才用（只探根，不探子目录）

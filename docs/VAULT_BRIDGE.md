@@ -189,12 +189,16 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 | 顺序 | 条件 | 落点 |
 |---|---|---|
-| ① | 调用方显式给了 `targetDir` | 用它（库内相对或绝对；将来加"新笔记目录"设置项就走这里） |
+| ① | **设置面板「新笔记目录」**（`<库>/.sitian/config/note-target.json` 的 `dir`）或调用方 `targetDir` | 用它（库内相对或绝对） |
 | ② | 库里**有** `03 设定` | `03 设定/11 地理系统/{星域,星系,行星}`；其它层级 → `03 设定/02 场景地点`（子目录自动建） |
 | ③ | 库里**没有** `03 设定` | **库根目录**，并回 `usedRootFallback: true` |
 
 ⚠️ 判据是"`03 设定` 存在"，不是"子目录存在"：以前无条件 `mkdir -p`，在一个没有这套目录的库里转正
 一个节点，会**替用户造一棵 `03 设定/11 地理系统/...`**（等于改人家的库结构）。批量导入同一口径。
+
+⚠️ **① 的目录也必须留在库内**：填了库外路径（填错 / 手写绝对路径）会被**拒绝并带原因**
+（`指定的新笔记目录不在知识库内：…`），不会静默落根、更不会写到库外。
+设置面板入口：设置 → 数据管理 → 「新笔记目录」（留空 = 自动规则），判据见 `test_142`。
 
 **frontmatter**（`buildNoteFrontmatter`，选项 B）：只写
 
@@ -204,9 +208,10 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 **绝不写 `coordinate`**（AGENTS 红线：坐标是编辑器元数据）；也不再写英文 `layer` 键。
 
-判据：`scripts/tests/unit/test_note_target.js`（6 组）—— 显式目录 / 约定目录（子目录不必先存在）/
+判据：`scripts/tests/unit/test_note_target.js`（7 组）—— 显式目录 / 越界拒绝 / 约定目录（子目录不必先存在）/
 根目录兜底（且裸库没被造出 `03 设定`）/ frontmatter 三键（英文 layer 与 coordinate 都不出现）/
-真实文件系统上真 mkdir+写文件 / 源码守卫（handler 用的是这两个函数，create 段零 coordinate）。
+真实文件系统上真 mkdir+写文件 / 源码守卫（handler 用的是这两个函数，create 段零 coordinate）；
+设置面板入口另有 `scripts/tests/cases/test_142_note_target_setting.py`（保存/回显/清空回自动 + 源码守卫）。
 
 ## 八、明确没做
 
