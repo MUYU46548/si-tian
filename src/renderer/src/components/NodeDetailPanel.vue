@@ -981,7 +981,10 @@ async function promoteDraft() {
   try {
     const result = await window.sitianAPI.createObsidianNote({
       name: n.name, layer: n.layer, parentId: n.parentId,
-      tags: n.tags || [], coordinate: n.coordinate,
+      // 上层区域要写成能解析的 wikilink → 优先给父节点**名字**（父 id 只是兜底）
+      parentName: parentNode.value ? parentNode.value.name : '',
+      tags: n.tags || [],
+      // 🔴 不传 coordinate：坐标是编辑器元数据，永不写入 frontmatter（AGENTS 红线）
       content: `# ${n.name}\n\n`,
     });
     if (!result?.success) {

@@ -231,6 +231,11 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   「全库搜索」带节点名预填 → 复原后内容回来；源码守卫：读取只走 `readObsidianNote`（读料层只读）。
   ⏳ 还剩：真正的"不听话的库"整套实测（乱目录/乱文件名/缺 frontmatter）已由 test_124 +
   `unit/test_vault_frontmatter_noise.js` 覆盖；UI 侧还缺"点**省份/标记**（非实体）也能出设定卡"。
+- ✅ **转正落点 + frontmatter 收口（2026-10-24 用户拍板选项 B）**：唯一实现 `src/main/noteTarget.js`。
+  落点 ① 显式 `targetDir` → ② 库里有 `03 设定` 才用层级子目录 → ③ 都没有就**落库根**
+  （此前无条件 `mkdir -p`，等于替用户造一棵 `03 设定/11 地理系统/…`）；批量导入同口径。
+  frontmatter 只写 `层级`（中文）/ `上层区域`（父**名**优先）/ `tags`，**不写 `coordinate`**、
+  不再写英文 `layer`。判据：`unit/test_note_target.js`（6 组，含真实 FS 与源码守卫）。
 
 ### 第 6 件 · 终验（用户出场一次）
 - 三步齐 + 五件 + 415 省数据不丢 + 自测链证据（副本制 / 反向探针 / 读盘 / 三张无头截图）。

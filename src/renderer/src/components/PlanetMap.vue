@@ -1838,7 +1838,7 @@ const renderer = useCanvasRenderer(canvas, {
         items.push({ key: 'ctx-place-create-note', label: store.isReadOnly ? '创建 Obsidian 笔记（只读：打开项目后可编辑）' : '创建 Obsidian 笔记', icon: 'file-text', disabled: store.isReadOnly, action: async () => {
           const gate = guardWrite('创建 Obsidian 笔记');
           if (!gate.ok) return;
-          const result = await window.sitianAPI.createObsidianNote({ name: place.name, layer: place.layer, parentId: place.parentId, tags: place.tags || [], coordinate: place.coordinate, content: `# ${place.name}\n\n` });
+          const result = await window.sitianAPI.createObsidianNote({ name: place.name, layer: place.layer, parentId: place.parentId, parentName: (store.nodes.find((x) => x && x.id === place.parentId) || {}).name || '', tags: place.tags || [], content: `# ${place.name}\n\n` });
           if (result?.success) { store.updateNode(place.id, { sourcePath: result.path }); emit('dirty', true); renderer.requestRender(); } else if (result?.error) { console.error('创建笔记失败:', result.error); }
         } });
         items.push({ separator: true });

@@ -19,6 +19,8 @@ const { writeFrames } = require('./handlers/exportFramesHandler');
 const { createCredentialStore } = require('./gitCredentialStore');
 // 全库只读索引（D1）：与提取器分工 —— 提取器决定“地图节点”，本模块回答“库里有什么”
 const vaultIndex = require('./vaultIndex');
+// 新建笔记的落点与 frontmatter（唯一实现；规则与理由见该文件头）
+const { resolveNoteTarget, buildNoteFrontmatter } = require('./noteTarget');
 const log = require('electron-log');
 
 let mainWindow;
@@ -547,55 +549,49 @@ async function validateVaultPath(dirPath) {
 }
 
 // IPC: 创建 Obsidian 笔记（从 draft 节点创建）
+// 🔴 落点与 frontmatter 的规则全在 `noteTarget.js`（唯一实现，可被 Node 单测直接跑）：
+//    ① 用户指定 `targetDir` → 用它；② 库里有 `03 设定` → 用层级子目录；③ 都没有 → 库根（usedRootFallback）。
+//    frontmatter 只写 `层级` / `上层区域` / `tags`，**绝不写 coordinate**（AGENTS 红线）。
 ipcMain.handle('create-obsidian-note', async (event, payload) => {
-  const { name, layer, parentId, tags = [], coordinate = null, content = '' } = payload || {};
+  const { name, layer, parentId, parentName, targetDir, tags = [], content = '' } = payload || {};
   const vault = getVaultPath();
   if (!vault) return { success: false, error: '未设置知识库路径' };
-  
+
   try {
-    // 确定目标目录
-    let targetDir;
-    if (layer === 'star_domain') {
-      targetDir = path.join(vault, '03 设定', '11 地理系统', '星域');
-    } else if (layer === 'galaxy') {
-      targetDir = path.join(vault, '03 设定', '11 地理系统', '星系');
-    } else if (layer === 'planet') {
-      targetDir = path.join(vault, '03 设定', '11 地理系统', '行星');
-    } else {
-      // 地点类 → 场景地点/<世界>
-      targetDir = path.join(vault, '03 设定', '02 场景地点');
-    }
-    await fs.mkdir(targetDir, { recursive: true });
-    
+    const target = resolveNoteTarget({
+      vault, layer, targetDir,
+      // 用同步版探目录（这里只探一次；`fs` 在上方是 promises 版，不能直接给它）
+      pathExists: (p) => { try { return require('fs').existsSync(p); } catch (e) { return false; } },
+    });
+    await fs.mkdir(target.dir, { recursive: true });
+
     // 文件名
     const safeName = String(name || '未命名').replace(/[\\/:*?"<>|]/g, '_');
-    const filePath = path.join(targetDir, safeName + '.md');
-    
+    const filePath = path.join(target.dir, safeName + '.md');
+
     // 检查文件是否已存在
     try {
       await fs.access(filePath);
       return { success: false, error: '文件已存在' };
     } catch (e) { /* 文件不存在，继续创建 */ }
-    
-    // 构建 frontmatter
-    const frontmatter = {
-      layer: { city: '城市', town: '城镇', village: '村庄', location: '地点', planet: '行星', galaxy: '星系', star_domain: '星域' }[layer] || layer,
-      tags: Array.isArray(tags) ? tags : [],
-    };
-    if (parentId) frontmatter['上层区域'] = `[[${parentId}]]`;
-    
-    // 坐标写入 frontmatter（供后续提取时保留）
-    if (coordinate && coordinate.x !== null && coordinate.y !== null) {
-      frontmatter['coordinate'] = { x: coordinate.x, y: coordinate.y };
-    }
-    
+
+    const frontmatter = buildNoteFrontmatter({ layer, tags, parentName, parentId });
+
     // 写入文件
     const fileContent = matter.stringify(content || `# ${name}\n\n`, frontmatter);
     await fs.writeFile(filePath, fileContent, 'utf-8');
-    
+
     // filename 一并返回：渲染端转正流程要用「文件名主干」推导节点 id（normalizeId(文件名)），
     // 与 extract-data 的 id 生成规则对齐；仅从 path 反推在语义上不够明确，故显式给出
-    return { success: true, path: path.relative(vault, filePath), filename: safeName };
+    return {
+      success: true,
+      path: path.relative(vault, filePath),
+      filename: safeName,
+      // 落点自查（渲染端/用例可据此说清"放在哪、为什么"）
+      dir: path.relative(vault, target.dir) || '.',
+      dirSource: target.source,
+      usedRootFallback: !!target.usedRootFallback,
+    };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -662,8 +658,15 @@ ipcMain.handle('batch-import-notes', async (event, payload) => {
   const errors = [];
   try {
     // 目标目录：地理类 → 11 地理系统/<层级>；地点类 → 02 场景地点/<世界>/<父节点?>
+    // 🔴 与转正同一条口径（2026-10-24）：库里**没有** `03 设定` 就别替他造这棵树 → 落到库根。
+    let usedRootFallback = false;
+    let hasConvention = false;
+    try { hasConvention = require('fs').existsSync(path.join(vault, '03 设定')); } catch (e) { hasConvention = false; }
     let targetDir;
-    if (LAYER_IMPORT_DIRS[layer]) {
+    if (!hasConvention) {
+      targetDir = vault;
+      usedRootFallback = true;
+    } else if (LAYER_IMPORT_DIRS[layer]) {
       targetDir = path.join(vault, ...LAYER_IMPORT_DIRS[layer]);
     } else {
       const worldDir = sanitizeFileName(worldName) || '未分类';
@@ -709,7 +712,7 @@ ipcMain.handle('batch-import-notes', async (event, payload) => {
         errors.push({ name, reason: e.message });
       }
     }
-    return { success: true, targetDir, created, skipped, errors };
+    return { success: true, targetDir, usedRootFallback, created, skipped, errors };
   } catch (err) {
     return { success: false, error: err.message, created, skipped, errors };
   }

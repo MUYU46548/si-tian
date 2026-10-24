@@ -181,6 +181,33 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 顺带修一处真隐患：`updateNode` 是**就地改对象**，`watch(node)` 看不到引用变化 ——
 同一节点换了 `sourcePath` 后正文会停在旧内容上。加了 `watch(() => node.sourcePath)` 之后才真正重读。
 
+## 七点六、新建笔记落在哪 + 写什么 frontmatter（2026-10-24 用户拍板：选项 B）
+
+唯一实现：`src/main/noteTarget.js`（纯 Node，可被单测直接跑）+ `create-obsidian-note` / 批量导入两个写口。
+
+**落点**（`resolveNoteTarget`）：
+
+| 顺序 | 条件 | 落点 |
+|---|---|---|
+| ① | 调用方显式给了 `targetDir` | 用它（库内相对或绝对；将来加"新笔记目录"设置项就走这里） |
+| ② | 库里**有** `03 设定` | `03 设定/11 地理系统/{星域,星系,行星}`；其它层级 → `03 设定/02 场景地点`（子目录自动建） |
+| ③ | 库里**没有** `03 设定` | **库根目录**，并回 `usedRootFallback: true` |
+
+⚠️ 判据是"`03 设定` 存在"，不是"子目录存在"：以前无条件 `mkdir -p`，在一个没有这套目录的库里转正
+一个节点，会**替用户造一棵 `03 设定/11 地理系统/...`**（等于改人家的库结构）。批量导入同一口径。
+
+**frontmatter**（`buildNoteFrontmatter`，选项 B）：只写
+
+- `层级`：中文标签（`galaxy → 星系`、`city → 城市`…；未知层级原样写，不编造）
+- `上层区域`：`[[父节点名字]]`（**名字优先**；只有 id 时用 id 兜底 —— wikilink 要能解析到真笔记）
+- `tags`：非空才写
+
+**绝不写 `coordinate`**（AGENTS 红线：坐标是编辑器元数据）；也不再写英文 `layer` 键。
+
+判据：`scripts/tests/unit/test_note_target.js`（6 组）—— 显式目录 / 约定目录（子目录不必先存在）/
+根目录兜底（且裸库没被造出 `03 设定`）/ frontmatter 三键（英文 layer 与 coordinate 都不出现）/
+真实文件系统上真 mkdir+写文件 / 源码守卫（handler 用的是这两个函数，create 段零 coordinate）。
+
 ## 八、明确没做
 
 - **不做自动导入**：候选仍需人确认（原来的 D2 边界不变）；本刀只把「读得到」做扎实。
