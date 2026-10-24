@@ -401,20 +401,26 @@ export function useScenarioExport({
    *
    * @returns {Promise<{files:Array, manifest:Object, stats:Object, warnings:string[]}>}
    */
-  async function buildSliceFrames({ png = false, scale = 2, onProgress, slicePoints } = {}) {
+  async function buildSliceFrames({ png = false, scale = 2, onProgress, slicePoints, era = null } = {}) {
     const tl = timeline.value;
+    // 范围（2026-10-24）：`era` = 只出这一段；`null` = 全部剧本。判定与过滤都在
+    // `utils/scenarioSlices.collectSliceFrames`（唯一实现），这里只透传 —— 否则对话框
+    // 显示的帧数会和真正导出的帧数对不上（本仓已经因"同屏两个数字"踩过一次）。
+    const scopeEra = (era === null || era === undefined) ? null : Number(era);
     let model;
     try {
       // 帧索引只算一次（与对话框共用同一份判定）；书签帧默认必出 → 必须把切片点传进去，
       // 否则「我在对话框里看到 8 帧、导出来 5 帧」（书签帧被吞）= 同屏两个数字对不上
-      model = collectSliceFrames(tl, slicePoints);
+      model = collectSliceFrames(tl, slicePoints, { era: scopeEra });
     } catch (e) {
       throw new Error(`切片索引失败：${e.message}`);
     }
     const frames = model.frames;
-    if (!frames.length) throw new Error('没有可导出的帧（还没有剧本，或剧本没有年代区间）');
+    const scopeName = scopeEra === null ? '全部剧本' : `「${tl.scenarios[scopeEra]?.name || ('第 ' + (scopeEra + 1) + ' 段')}」`;
+    if (!frames.length) throw new Error(`没有可导出的帧（${scopeName}没有剧本起点或易主日期）`);
     if (frames.length > MAX_SLICE_FRAMES) {
-      throw new Error(`需要 ${frames.length} 帧，超过上限 ${MAX_SLICE_FRAMES} —— 先合并/精简剧本，或分批导出`);
+      throw new Error(`需要 ${frames.length} 帧（${scopeName}），超过上限 ${MAX_SLICE_FRAMES} —— `
+        + '把范围切到「本剧本」、或先合并/精简剧本');
     }
 
     const warnings = [];
@@ -456,6 +462,13 @@ export function useScenarioExport({
       scale: png ? scale : 1,
       frameSize: size,
       frameCount: frames.length,
+      // 范围（2026-10-24）：`era` = 本剧本 / `all` = 全部剧本。交给外部工具的人要知道
+      // 这批帧覆盖的是"整部编年史"还是"其中一段"（否则字幕/时间轴会对错段）
+      scope: {
+        mode: scopeEra === null ? 'all' : 'era',
+        era: scopeEra,
+        eraName: scopeEra === null ? '' : (tl.scenarios[scopeEra]?.name || ''),
+      },
       dateStats: {
         total: dates.total, explicit: dates.explicit, synthesized: dates.synthesized,
         outOfRange: dates.outOfRange.length,
@@ -490,11 +503,11 @@ export function useScenarioExport({
    * 逐年切片导出（选一次目录 → 批量写 N 帧 + frames.json）。
    * 失败/取消都给可见回音；浏览器回退模式退化为逐个下载（并说明）。
    */
-  async function exportSliceFrames({ png = false, scale = 2, slicePoints } = {}) {
+  async function exportSliceFrames({ png = false, scale = 2, slicePoints, era = null } = {}) {
     try {
       setStatus('正在生成切片帧…', 0);
       const bundle = await buildSliceFrames({
-        png, scale, slicePoints,
+        png, scale, slicePoints, era,
         onProgress: (i, n, f) => setStatus(`正在生成第 ${i}/${n} 帧（${formatDate(f.date)}）…`, 0),
       });
       // 目录名用「首个剧本名 + 日期跨度」：一批切片本来就跨多个剧本，

@@ -92,6 +92,7 @@ async function main() {
   const {
     collectSliceFrames, changeDateStats, validateChangeDate, validateChangeDateInRange,
     sliceFrameName, normalizeSlicePoints, MAX_SLICE_FRAMES, FRAME_SOURCE,
+    pickSliceScope, SLICE_SCOPE,
   } = slices;
   const { buildTimeline, eraIndexOfYear } = timelineMod;
 
@@ -364,7 +365,66 @@ async function main() {
     return `空/缺字段安全；MAX_SLICE_FRAMES=${MAX_SLICE_FRAMES}`;
   });
 
-  // ---------- 4. 帧文件名（渲染层造载荷与主进程落盘的共同契约）----------
+  // ---------- 4. 范围（本剧本 / 全部）—— 真实数据可用性（2026-10-24）----------
+  check('t15 范围=本剧本：只出这一段的起点帧与该段易主（不动别的段），stats.scopeEra 记段号', () => {
+    const tl = buildTimeline(baseScenarios());
+    const all = collectSliceFrames(tl);
+    eq(all.stats.scopeEra, null, '默认（全部）时 scopeEra 为 null');
+    const era1 = collectSliceFrames(tl, [], { era: 1 });
+    // 乙时代：起点 2010 + 两条合成易主（2013 / 2017）
+    deepEq(era1.frames.map((f) => f.year), [2010, 2013, 2017], '只出乙时代的帧');
+    eq(era1.stats.scopeEra, 1, '记下段号');
+    eq(era1.stats.eraCount, 1, '起点帧数 = 1');
+    eq(era1.stats.changeCount, 2, '易主次数只算这一段');
+    assert(era1.frames.every((f) => f.era === 1), '所有帧都属乙时代');
+    const era0 = collectSliceFrames(tl, [], { era: 0 });
+    // 甲时代没有易主（第 0 段没有"上一段"可对比）→ 只有起点帧
+    deepEq(era0.frames.map((f) => f.year), [2000], '第 0 段只有起点帧');
+    eq(era0.stats.changeCount, 0, '第 0 段不计易主');
+    eq(all.frames.length, era0.frames.length + era1.frames.length, '两段之和 = 全部（不重不漏）');
+    return `全部 ${all.frames.length} 帧 = 甲 ${era0.frames.length} + 乙 ${era1.frames.length}`;
+  });
+
+  check('t16 范围=本剧本：别段的书签不混进来；本段书签照旧合并进帧', () => {
+    const tl = buildTimeline(baseScenarios());
+    const points = [
+      { id: 'a', label: '甲代中点', y: 2005 },
+      { id: 'b', label: '乙代中点', y: 2015 },
+    ];
+    const era1 = collectSliceFrames(tl, points, { era: 1 });
+    assert(!era1.frames.some((f) => f.year === 2005), '甲时代的书签不该出现在乙时代批次里');
+    const f = era1.frames.find((x) => x.year === 2015);
+    assert(!!f, '乙时代自己的书签仍在');
+    assert(f.sources.includes(FRAME_SOURCE.BOOKMARK), '书签来源标记保留');
+    eq(f.label, '乙代中点', '书签名保留');
+    const all = collectSliceFrames(tl, points);
+    eq(all.frames.filter((x) => x.year === 2005).length, 1, '全部范围下两段书签都在');
+    return '跨段书签被过滤、本段书签保留';
+  });
+
+  check('t17 非法段号 → 0 帧（绝不悄悄退化成"全部"）', () => {
+    const tl = buildTimeline(baseScenarios());
+    for (const bad of [99, -1, 1.5, 'x']) {
+      const r = collectSliceFrames(tl, [], { era: bad });
+      eq(r.frames.length, 0, `era=${JSON.stringify(bad)} 应 0 帧`);
+      eq(r.stats.frameCount, 0, `era=${JSON.stringify(bad)} 统计为 0`);
+    }
+    eq(collectSliceFrames(tl, [], { era: null }).frames.length, 4, 'null = 全部（兼容旧调用方）');
+    eq(collectSliceFrames(tl, []).frames.length, 4, '缺省 = 全部（旧行为零改动）');
+    return '非法段号 0 帧；null/缺省 = 全部';
+  });
+
+  check('t18 pickSliceScope：只在"全部超限、本段没超"时切本段，其余保持全部', () => {
+    eq(pickSliceScope(1088, 184, 400), SLICE_SCOPE.ERA, '全部超限 + 本段可导 → 本段');
+    eq(pickSliceScope(4, 3, 400), SLICE_SCOPE.ALL, '全部没超 → 全部（不打扰）');
+    eq(pickSliceScope(1088, 401, 400), SLICE_SCOPE.ALL, '两边都超 → 仍全部（让超限警示照旧出现）');
+    eq(pickSliceScope(0, 0, 400), SLICE_SCOPE.ALL, '没有帧 → 全部');
+    eq(pickSliceScope(401, 400, 400), SLICE_SCOPE.ERA, '边界：全部 401 / 本段 400 → 本段');
+    eq(pickSliceScope('x', 'y'), SLICE_SCOPE.ALL, '脏值不抛异常');
+    return '阈值两侧与边界都对';
+  });
+
+  // ---------- 5. 帧文件名（渲染层造载荷与主进程落盘的共同契约）----------
   check('t14 sliceFrameName：日期段补零、负数年用 n 前缀、月日缺省补 00（文件名不许出现 -）', () => {
     eq(sliceFrameName(0, { era: 0, year: 2000 }), 'frame_0001_era00_20000000.svg', '首帧（只到年 → 0000）');
     eq(sliceFrameName(11, { era: 2, date: D(2015, 5, 12) }, 'png'), 'frame_0012_era02_20150512.png', '第 12 帧 png');

@@ -1489,6 +1489,7 @@
       :province-names="provinceNameMap"
       :status="exportStatus"
       :busy="sliceExportBusy"
+      :current-era="tlEra"
       @close="showSliceExport = false"
       @run="onRunSliceExport"
     />
@@ -3163,11 +3164,12 @@ const {
 // ——— 逐年切片导出（EU4 式帧序列）———
 const showSliceExport = ref(false);
 const sliceExportBusy = ref(false);
-async function onRunSliceExport({ png = false, scale = 2 } = {}) {
+async function onRunSliceExport({ png = false, scale = 2, era = null } = {}) {
   if (sliceExportBusy.value) return;
   sliceExportBusy.value = true;
   try {
-    const r = await exportSliceFrames({ png, scale, slicePoints: slicePoints.value });
+    // `era` = 对话框选的范围（本剧本 / 全部）；过滤在 utils/scenarioSlices 的唯一实现里
+    const r = await exportSliceFrames({ png, scale, era, slicePoints: slicePoints.value });
     // 失败/取消的回音由 exportStatus 承担（对话框里也显示同一份），这里只补一条可点名的结论
     if (r && r.success === false && !r.canceled) statusMsg(`切片导出失败：${r.error || '未知错误'}`);
     else if (r && r.canceled) statusMsg('已取消切片导出');

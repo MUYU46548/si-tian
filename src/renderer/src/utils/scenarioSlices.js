@@ -28,6 +28,35 @@ import { cmpDate, normalizeDate, dateKey, dateToken, daysInMonth } from './scena
 /** 一帧一张图，帧数超过这个量级就不是「切片」而是「逐帧动画」了 —— 导不动也不该导 */
 export const MAX_SLICE_FRAMES = 400;
 
+/**
+ * 帧的**范围口径**（2026-10-24，终验前补）：
+ *   · `all` = 全部剧本（历史行为，也是纯函数默认值 —— 旧调用方/旧用例零改动）；
+ *   · `era` = 只出**当前这一段剧本**的帧。
+ *
+ * 为什么必须有它（真实数据实测）：415 省 / 13 段剧本的真实项目里有 **1642 个易主日期**
+ * （全部是自动铺开的合成值）→ 全部剧本 = **1088 帧** ≫ 上限 400 ⇒ 对话框按钮直接灰掉，
+ * 「导切片 PNG 拿去真用」在真实项目上一次都做不了。而按本剧本算，最大的那段是 184 帧
+ * （≤400），完全可导。所以范围不是"功能加法"，是**真实数据下的可用性**。
+ */
+export const SLICE_SCOPE = { ALL: 'all', ERA: 'era' };
+
+/**
+ * 默认该用哪个范围（唯一判定，UI 与用例共用）。
+ * 规则：全部帧超上限、而本剧本帧没超 → 默认切到本剧本；否则保持全部。
+ * （两边都超 → 仍是全部，让"帧数超过上限"的警示照旧出现，不许拿切范围掩盖数据问题。）
+ * @param {number} allCount 全部剧本的帧数
+ * @param {number} eraCount 当前剧本的帧数
+ * @param {number} [max]
+ * @returns {'all'|'era'}
+ */
+export function pickSliceScope(allCount, eraCount, max = MAX_SLICE_FRAMES) {
+  const a = Number(allCount) || 0;
+  const e = Number(eraCount) || 0;
+  const m = Number(max) || 0;
+  if (a > m && e <= m) return SLICE_SCOPE.ERA;
+  return SLICE_SCOPE.ALL;
+}
+
 /** 帧来源标记（frames.json 与对话框都用它说明「这一帧为什么存在」） */
 export const FRAME_SOURCE = { BOOKMARK: 'bookmark', ERA: 'era', CHANGE: 'change' };
 
@@ -188,18 +217,27 @@ export function normalizeSlicePoints(points) {
  *
  * @param {object} tl 时间轴模型
  * @param {Array} slicePoints 书签（`{id,label,y,m,d}` 或 `{id,label,date}`）
+ * @param {{era?: number|null}} [opts] `era` = 只出这一段的帧（缺省/`null` = 全部剧本）
  * @returns {{frames:Array, stats:Object}}
  */
-export function collectSliceFrames(tl, slicePoints) {
+export function collectSliceFrames(tl, slicePoints, opts = {}) {
   const years = (tl && tl.years) || [];
   const n = years.length;
   const frames = [];
   const stats = {
     frameCount: 0, eraCount: 0, changeCount: 0, bookmarkCount: 0,
     explicitChanges: 0, synthesizedChanges: 0, outOfRangeChanges: 0,
-    firstYear: 0, lastYear: 0, firstText: '', lastText: '',
+    firstYear: 0, lastYear: 0, firstText: '', lastText: '', scopeEra: null,
   };
   if (!n) return { frames, stats };
+
+  // 范围：给了 era 就**只出这一段**；给了非法值则出空（宁可"0 帧、按钮灰"，
+  // 也不能悄悄退化成"全部剧本"—— 那是替用户改了范围）
+  const wantEra = (opts && opts.era !== undefined && opts.era !== null) ? Number(opts.era) : null;
+  const eraOnly = (wantEra === null) ? null : (Number.isInteger(wantEra) && wantEra >= 0 && wantEra < n ? wantEra : -1);
+  stats.scopeEra = eraOnly >= 0 ? eraOnly : null;
+  if (eraOnly === -1) return { frames, stats };
+  const eraList = eraOnly === null ? years.map((_, i) => i) : [eraOnly];
 
   const byKey = new Map();
   const slot = (date) => {
@@ -218,6 +256,8 @@ export function collectSliceFrames(tl, slicePoints) {
 
   // ① 书签帧（默认必出）
   for (const p of normalizeSlicePoints(slicePoints)) {
+    // 按段过滤时，只收**落在那一段里**的书签（落别段的书签插进来会让这一批帧跨段、日期也错位）
+    if (eraOnly !== null && eraIndexOfYear(tl, p.date.y) !== eraOnly) continue;
     const f = slot(p.date);
     f.bookmarks.push({ id: p.id, label: p.label });
     if (p.id) f.bookmarkIds.push(p.id);
@@ -230,14 +270,16 @@ export function collectSliceFrames(tl, slicePoints) {
   // ⚠️ 起点帧的日期是「起点年 + 月日缺省」= 该年 1 月 1 日（`dateKey` 口径）→
   //    判「是不是起点帧」必须比**完整日期**而不是比年份：只比年份会让同一年里
   //    任何一次年中易主都被标成 `mixed`（纯函数用例 t5 抓到）。
-  const startKeys = new Set(years.map((y) => dateKey({ y: y.start, m: null, d: null })));
-  for (let k = 0; k < n; k++) {
+  const startKeys = new Set(eraList.map((k) => dateKey({ y: years[k].start, m: null, d: null })));
+  for (const k of eraList) {
     const f = slot({ y: years[k].start, m: null, d: null });
     if (!f.sources.includes(FRAME_SOURCE.ERA)) f.sources.push(FRAME_SOURCE.ERA);
   }
 
   // ③ 易主帧（同一天合并）
-  for (let k = 1; k < n; k++) {
+  // ⚠️ 从 k=1 起：第 0 段没有"上一段"可对比，它的基线在 `initialOwnership` 里（不是易主帧）
+  for (const k of eraList) {
+    if (k < 1) continue;
     const e = (tl.eraChg || [])[k];
     if (!e || !Array.isArray(e.changed)) continue;
     const r = years[k] || { start: 0, end: 0 };

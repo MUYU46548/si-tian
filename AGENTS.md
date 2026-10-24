@@ -22,7 +22,7 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**144 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**145 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
   - 该命令会先跑 `scripts/tests/unit/*.js`（**55 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
@@ -41,6 +41,14 @@
   ⚠️ 只在**没有真实任务在跑**时用：它会短暂开一个真实窗口）
   - **P4 = 剧本专用演练（2026-10-07 加）**：`--phase p4`（或 `all`）。空底图下第一次落笔懒建底图 → 建省 → 定位该省 → **拆分改边界** → Ctrl+Z 撤销 → 真右键菜单删省 → 剧本 增·改·删，**每一步都读项目文件核对落盘**（判据只有磁盘，因为剧本/地图各有 300ms + 800ms 两层防抖）。与 p1~p3 不同：**不要求空项目**（全程相对基线，可在有内容的项目上跑），跑完由 main() 还原项目文件。
     - ⚠️ **四个只在真机上才暴露的坑（改这段前必读）**：① **Vue 的 DOM 更新是异步的** —— 同一个 tick 里 `querySelector('.props-name')` 永远是空、`btn.disabled` 永远是旧值，读 DOM 前一律 `await new Promise(r => setTimeout(r, 0))`；② 对 **`:disabled` 按钮 `el.click()` 是静默 no-op**（既不执行也不报错）—— 填完表单必须等一拍再点，并回传 `disabled` 供诊断；③ 按 title 找工具按钮时 **片段必须唯一**：写 `'选择'` 会先命中 **「返回世界选择」**（排在最前）→ 一次点击直接退出剧本视图，必须写 `'选择 (V)'`；④ **CDP 客户端的读超时是 15s** —— 任何"扫描式"探测都要自带**墙钟上限**（本段取 8s）并在超限时**返回可读失败**，否则演练会崩在 `WebSocketTimeoutException` 上而不是给结论。另：底图是懒建的，**必须在落笔之后再读 `.basemap-select`**，用空键查盘会永远查不到（曾导致一条断言期望值也是 0 → **空转通过**）。
+- **终验自测链（第 6 件，2026-10-24）**: `python scripts/tests/drill_final_acceptance.py` —— **副本制**
+  （真实 415 省项目只读：跑前/跑后 sha256 一致；动作全在副本上）+ 三步齐（涂归属 / 拖时间轴 / 导切片 PNG）
+  + 手感五件（一笔多格 / 吸管 / 多选批量 / 撤销重做 / 标签联动）+ 415 省数据不丢（逐省
+  culture·coast·biome·kind·color + 顶点指纹 + **逐省**易主条数）+ 3 枚反向探针 + 读盘判据
+  （落盘载荷原样写盘再从磁盘读回）+ 三张互不相同的无头截图；产物在 `build/final-acceptance/`
+  （`report.md` + 三张截图 + 切片 PNG + `roundtrip.sitian`）。
+  ⚠️ 它自己要 Vite(5180)+Edge(9222)，**不要与 `run_tests.py` 同时跑**。真实 Electron 的磁盘链路
+  （退出落盘 / 强杀）仍由 `drill_quit_flush.py` 守，两者不重复。
 - 保存链真机诊断: `python scripts/tests/diag_t2_save.py`（dev 模式起真实 Electron，可读 `projectStore` 的
   `dirty/saveStatus/lastError`；用**工作副本**打开项目 → 真实项目只读、跑前备份跑后还原配置）
 - 图标一致性校验: `python scripts/icon_check.py`（校验所有被引用的图标名在 `Icon.vue` 中有定义）
@@ -118,7 +126,7 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 144 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| 测试用例数 | 145 | `ls scripts/tests/cases/test_*.py \| wc -l` |
 | Node 单测文件数 | 55 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |

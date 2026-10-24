@@ -83,6 +83,10 @@ build/p0-first-map/
 # P1 顶点编辑演练产物（报告里带真实省份 id/名字，含用户数据，禁止提交）
 build/p1-vertex-marquee/
 
+# 第 6 件终验自测链产物（三张截图 / 切片 PNG / 落盘载荷副本都含真实地图数据，禁止提交；
+# 复现：python scripts/tests/drill_final_acceptance.py）
+build/final-acceptance/
+
 # 遗留临时文件（MSYS / Electron 生成）
 NUL
 # 根目录下的 index.html 是 src/renderer/index.html 的旧副本，不再使用

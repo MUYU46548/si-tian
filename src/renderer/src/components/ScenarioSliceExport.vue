@@ -42,15 +42,31 @@
         </div>
 
         <div class="sse-row">
+          <span class="sse-kv">范围</span>
+          <select v-model="scope" data-testid="slice-scope" class="sse-scope"
+                  title="本剧本 = 只出当前时间轴所在这一段的帧；全部剧本 = 整部编年史">
+            <option value="era">本剧本（{{ eraName }}）</option>
+            <option value="all">全部剧本（{{ timeline.scenarios.length }} 段）</option>
+          </select>
+          <span v-if="autoSwitched" class="sse-dim" data-testid="slice-scope-auto">
+            全部剧本共 {{ allFrameCount }} 帧，超过上限 {{ MAX_SLICE_FRAMES }} →
+            已默认切到「本剧本」（{{ eraFrameCount }} 帧）
+          </span>
           <span class="sse-kv">帧数 <b data-testid="slice-frame-count">{{ frames.length }}</b></span>
           <span class="sse-kv">切片点 <b data-testid="slice-point-count">{{ slicePoints.length }}</b></span>
-          <span class="sse-kv">剧本 <b>{{ timeline.scenarios.length }}</b></span>
           <span class="sse-kv">年代跨度 <b>{{ stats.firstText }} ~ {{ stats.lastText }}</b></span>
           <span class="sse-kv">易主 <b>{{ stats.changeCount }}</b> 次</span>
         </div>
 
-        <div v-if="frames.length > MAX_SLICE_FRAMES" class="sse-warn">
-          帧数超过上限 {{ MAX_SLICE_FRAMES }} —— 请先合并剧本（当前是一天一帧就会变成逐帧动画）。
+        <div v-if="frames.length > MAX_SLICE_FRAMES" class="sse-warn" data-testid="slice-over-limit">
+          帧数超过上限 {{ MAX_SLICE_FRAMES }} —— 把范围切到「本剧本」，或先合并/精简剧本
+          （当前是一天一帧就会变成逐帧动画）。
+        </div>
+        <!-- 体量提示（2026-10-24）：真实项目一段剧本就有 184 帧，PNG 2× 每帧数 MB。
+             不编造精确总量，只说量级与减负办法 —— 用户按「导出」之前该知道这一下会写多少。 -->
+        <div v-if="frames.length >= 60" class="sse-warn" data-testid="slice-size-hint">
+          {{ frames.length }} 帧：PNG 每帧通常数 MB（整张 415 省地图），一段剧本就可能占数百 MB 磁盘；
+          只要矢量图请保持 SVG（每帧几十 KB），或在下面把倍率降到 1×。
         </div>
 
         <div class="sse-list" data-testid="slice-frame-list">
@@ -100,7 +116,7 @@
         <span class="sse-spacer"></span>
         <button class="sse-run" data-testid="slice-export-run"
                 :disabled="busy || !frames.length || frames.length > MAX_SLICE_FRAMES"
-                @click="emit('run', { png, scale })">
+                @click="emit('run', { png, scale, era: runEra })">
           {{ busy ? '导出中…' : `导出 ${frames.length} 帧…` }}
         </button>
       </div>
@@ -114,7 +130,10 @@
 // 这里不重算「哪些日期要出帧」——重算就是第二个事实源。
 import { computed, ref } from 'vue';
 import Icon from './Icon.vue';
-import { collectSliceFrames, changeDateStats, MAX_SLICE_FRAMES, FRAME_SOURCE } from '../utils/scenarioSlices';
+import {
+  collectSliceFrames, changeDateStats, MAX_SLICE_FRAMES, FRAME_SOURCE,
+  pickSliceScope, SLICE_SCOPE,
+} from '../utils/scenarioSlices';
 import { formatDate } from '../utils/scenarioDates';
 
 const props = defineProps({
@@ -125,6 +144,8 @@ const props = defineProps({
   provinceNames: { type: Object, default: () => ({}) },
   status: { type: String, default: '' },
   busy: { type: Boolean, default: false },
+  /** 当前时间轴所在的那一段（「本剧本」范围用它；导出请求也带回去） */
+  currentEra: { type: Number, default: 0 },
 });
 
 const emit = defineEmits(['close', 'run']);
@@ -137,9 +158,23 @@ const bookmarkSrc = FRAME_SOURCE.BOOKMARK;
 const eraSrc = FRAME_SOURCE.ERA;
 const changeSrc = FRAME_SOURCE.CHANGE;
 
+// 范围（2026-10-24）：默认值由**纯函数**判定（超上限才切本剧本），用户点了就以用户为准。
+const scopeOverride = ref('');
+const allModel = computed(() => collectSliceFrames(props.timeline, props.slicePoints, {}));
+const eraModel = computed(() => collectSliceFrames(props.timeline, props.slicePoints, { era: props.currentEra }));
+const allFrameCount = computed(() => allModel.value.frames.length);
+const eraFrameCount = computed(() => eraModel.value.frames.length);
+const autoScope = computed(() => pickSliceScope(allFrameCount.value, eraFrameCount.value, MAX_SLICE_FRAMES));
+const autoSwitched = computed(() => !scopeOverride.value && autoScope.value === SLICE_SCOPE.ERA);
+const scope = computed({
+  get: () => scopeOverride.value || autoScope.value,
+  set: (v) => { scopeOverride.value = v; },
+});
+const eraName = computed(() => props.timeline?.scenarios?.[props.currentEra]?.name || `第 ${props.currentEra + 1} 段`);
+
 const model = computed(() => {
   try {
-    return collectSliceFrames(props.timeline, props.slicePoints);
+    return scope.value === SLICE_SCOPE.ERA ? eraModel.value : allModel.value;
   } catch (_) {
     return {
       frames: [],
@@ -153,6 +188,8 @@ const model = computed(() => {
 const frames = computed(() => model.value.frames);
 const stats = computed(() => model.value.stats);
 const dates = computed(() => changeDateStats(props.timeline));
+/** 导出请求带回去的范围：本剧本 → 段号；全部 → null（与 store/纯函数同一口径） */
+const runEra = computed(() => (scope.value === SLICE_SCOPE.ERA ? props.currentEra : null));
 
 const outOfRangeText = computed(() => dates.value.outOfRange
   .slice(0, 6)
@@ -214,6 +251,10 @@ function explicitCount(f) {
 .sse-table tr.is-bookmark td { background: rgba(251, 191, 36, 0.10); }
 .sse-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; color: #94a3b8; }
 .sse-kv b { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.sse-scope {
+  background: #16233a; color: #cbd5e1; border: 1px solid #334155;
+  border-radius: 4px; padding: 2px 6px; font-size: 11px;
+}
 .sse-list { max-height: 320px; overflow-y: auto; border: 1px solid #1e293b; border-radius: 6px; }
 .sse-table { width: 100%; border-collapse: collapse; }
 .sse-table th {
