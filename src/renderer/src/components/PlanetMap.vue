@@ -1514,12 +1514,28 @@ function onRender(ctx, w, h) {
   drawing.drawSelectedHighlight(ctx);
   drawing.drawSelectionHandles(ctx);
   // 笔刷预览（最上层）
-  if (editMode.value && interactionMode.value === 'height') drawing.drawHeightBrushPreview(ctx);
+  // L2 笔迹层（第 2 件）：两支笔都在拖动中画**真笔迹**（淡色轨迹），松手由各自 end* 清掉。
+  // 线宽压在脏矩形半径内（各笔的 markDirtyRect 用 brushSegmentRect(prev,cur,半径)），否则局部重绘会裁边。
+  if (editMode.value && interactionMode.value === 'height') {
+    if (planetHeightBrush.strokePath.value.length > 1) {
+      drawing.drawBrushTrail(ctx, planetHeightBrush.strokePath.value, {
+        color: '#FFD700', width: Math.max(6, planetHeightBrush.brushRadius.value * 1.4),
+      });
+    }
+    drawing.drawHeightBrushPreview(ctx);
+  }
   // A3：文化 / 宗教笔刷也画预览圈（复用同一渲染通道，见 usePlanetChannelBrush 的 previewSink）
   if (editMode.value && (interactionMode.value === 'culture' || interactionMode.value === 'religion')) {
     drawing.drawHeightBrushPreview(ctx);
   }
-  if (editMode.value && interactionMode.value === 'terrain') drawing.drawTerrainBrushPreview(ctx);
+  if (editMode.value && interactionMode.value === 'terrain') {
+    if (terrainCanvasBrush.strokePath.value.length > 1) {
+      drawing.drawBrushTrail(ctx, terrainCanvasBrush.strokePath.value, {
+        color: '#E8C66A', width: Math.max(6, terrainCanvasBrush.brushWorldRadius() * 1.2),
+      });
+    }
+    drawing.drawTerrainBrushPreview(ctx);
+  }
   if (focusHighlightNode.value) focusHighlight.drawFocusHighlight(ctx, focusHighlightNode.value);
 }
 

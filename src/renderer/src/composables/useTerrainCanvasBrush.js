@@ -48,6 +48,9 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   const lastBrushY = ref(0);
   const terrainGridEnabled = ref(false);
   const terrainBrushPreview = ref(null); // { x, y, radius }
+  /** L2 笔迹层：这一笔已走过的世界坐标（**只画，不落库**）；松手即清空 */
+  const strokePath = ref([]);
+  const STROKE_PATH_MAX = 320;
 
   let gridOriginX = 0;
   let gridOriginY = 0;
@@ -254,6 +257,22 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
 
   function clearBrushPreview() { terrainBrushPreview.value = null; }
 
+  /**
+   * 记一个笔迹点（L2 笔迹层用；**不参与任何写入**）。
+   * 抽稀口径：与上一点距离 < 半个格宽就不记（一笔下来点数是"路径长度/间距"，不是采样帧数）。
+   */
+  function pushStrokePoint(wx, wy) {
+    const p = strokePath.value;
+    const last = p[p.length - 1];
+    const minStep = Math.max(1.5, cellWorldSize.value * 0.5);
+    if (last && Math.hypot(wx - last.x, wy - last.y) < minStep) return;
+    if (p.length >= STROKE_PATH_MAX) {
+      strokePath.value = p.filter((_, i) => i % 2 === 0 || i === p.length - 1).concat([{ x: wx, y: wy }]);
+      return;
+    }
+    strokePath.value = p.concat([{ x: wx, y: wy }]);
+  }
+
   // P2-3 脏矩形：网格笔刷的实际影响半径（含预览圈，预览半径 ≤ 涂抹半径）
   function brushWorldRadius() {
     return Math.max(1, (terrainBrushSize.value * cellWorldSize.value) / 2);
@@ -334,12 +353,14 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     };
     ensureCoverage(wx, wy);
     isTerrainBrushing.value = true;
+    strokePath.value = [];
     lastBrushX.value = wx;
     lastBrushY.value = wy;
     syncBrush();
     paintAt(wx, wy);
     markOutlineDirty(true); // 起笔立即重建一次：否则第一笔要等节流窗口才出现在画布上
     updateBrushPreview(wx, wy);
+    pushStrokePoint(wx, wy);
     markBrushDirty(null, { x: wx, y: wy });
     renderer.requestRender();
   }
@@ -357,6 +378,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     lastBrushY.value = wy;
     markOutlineDirty();
     updateBrushPreview(wx, wy);
+    pushStrokePoint(wx, wy);
     markBrushDirty(prev, { x: wx, y: wy });
     renderer.requestRender();
   }
@@ -364,7 +386,10 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   function endTerrainBrush() {
     if (!isTerrainBrushing.value) return;
     isTerrainBrushing.value = false;
+    strokePath.value = [];   // L2 笔迹层：先清数据，再整帧重画把它擦掉
     markOutlineDirty(true); // 抬手落定：轮廓必须与最终格数据完全一致
+    // 轨迹是瞬态层，只 requestRender 擦不掉（脏矩形只覆盖落点周围）
+    if (typeof renderer.markFullRedraw === 'function') renderer.markFullRedraw();
     const before = strokeSnapshot;
     strokeSnapshot = null;
     if (!before) return;
@@ -501,7 +526,9 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     isTerrainBrushing.value = false;
     lastBrushX.value = 0;
     lastBrushY.value = 0;
+    strokePath.value = [];
     clearBrushPreview();
+    if (typeof renderer.markFullRedraw === 'function') renderer.markFullRedraw();
   }
 
   watch([terrainBrushSize, terrainBrushHardness, terrainBrushType], syncBrush);
@@ -522,7 +549,8 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     cellWorldSize,
     terrainGridEnabled,
     terrainBrushPreview,
-
+    strokePath,
+    brushWorldRadius,
     initTerrainGrid,
     startTerrainBrush,
     moveTerrainBrush,

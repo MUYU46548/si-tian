@@ -373,3 +373,41 @@ python scripts/tests/tools/_lab.py down          # 收工：杀进程 + 还原 i
 
 > 拖动的**落库边界**：拖动中只动预览（只读态零半截写入）；`moveReliefIcons` 还顺手挡掉"没有一项真动过"的空命令。
 > 新用例同时把「点空白仍是散布、不会误挪」一起钉住；`test_31`（散布/擦除/undo/落盘载荷）照旧全绿。
+
+---
+
+## 十三、第 2 件续：高度笔 / 地形笔接 L2 笔迹层（2026-10-24 11:3x）
+
+笔迹层从散布笔**抽成一份实现**（`planetDrawing.drawBrushTrail`），散布笔退成它的一个参数预设；
+再把高度笔、地形笔各接一条。两支笔原本只有"格子/色带在变 + 一个预览圈"，看不到"这一笔扫过哪里"。
+
+| 改哪 | 改成什么 |
+|---|---|
+| `composables/planetDrawing.js` | `drawBrushTrail(ctx, path, {color,width,outerAlpha,innerAlpha,coreRatio})` —— **四支笔共用**；`drawReliefTrail` 变成它的预设（白/暖、宽 = size×0.95）。点数 >320 抽稀、尾点必画、线宽必须落在各笔脏矩形半径内 |
+| `composables/usePlanetHeightBrush.js` | `strokePath`（拖动中攒点，按"半径 8%"抽稀、320 封顶）；`endHeightStroke` / `strokeAborted` 清路径 + `markFullRedraw()` 收口 |
+| `composables/useTerrainCanvasBrush.js` | 同上（抽稀按"半个格宽"）；`endTerrainBrush` / `clearTerrainBrush` 清路径 + `markFullRedraw()` |
+| `components/PlanetMap.vue` | 高度笔/地形笔绘制：先画笔迹、再画预览圈（线宽压在脏矩形半径内，否则局部重绘会裁边） |
+
+**判据（探针 `_probe_brush_trails.py`，判据是像素 + 截图 + 帧统计）**：
+
+| 判据 | 高度笔 | 地形笔 |
+|---|---|---|
+| 拖动中攒出笔迹路径 | 25 点 | 25 点 |
+| 数据真的变了 | 高度和 153434 → 153771.9 | 已涂格 1778 → 1811 / gridSum 变 |
+| 松手后路径清空 | 0 | 0 |
+| **不留鬼影**（松手取校验和 → 强制全量重绘 → 必须相同） | ✅ 3295945593 = 3295945593 | ✅ 650658983 = 650658983 |
+| 10s 连拖帧数 / p95 / >50ms | 592 / **20.7** / 1 | 597 / **23.2** / 1 |
+| handler/事件 | 0.19ms | 0.11ms |
+
+> 基线（§二A 高度笔）是 30s：1801 帧 / p95 19.2 / 1 帧 >50ms —— 加了笔迹后 p95 +1.5ms，帧数持平；
+> 地形笔此前没量过，这次顺手留了基线（597 帧 / 23.2）。
+> 截图 `.lab-height-trail.png` / `.lab-terrain-trail.png`（人眼确认：一条半透明色带跟着手走，松手消失）。
+
+**两个"读数陷阱"（探针里已写注释）**：
+1. 地形笔拖动中必须读**组件本地网格**（`terrainCanvasBrush.terrainGrid`）—— store 里那份要等松手
+   `saveTerrainGrid()` 才回写，读 store 会得到"涂了但没变"的假读数（第一版当场假红）。
+2. 笔迹是**瞬态层**，只 `requestRender()` 擦不掉：两支笔的 end/abort 都补了 `markFullRedraw()`，
+   并用"松手校验和 == 强制重绘校验和"做反证（鬼影会立刻被抓出来）。
+
+⏳ **四笔还剩一支**：归属笔（`useProvinceBrush`，剧本侧）—— 指南 04 §二把它评为"最重一刀"，
+且它长在账本上（松手产出事件组），按施工序**并到第 4 件**做，不在这里顺手改。

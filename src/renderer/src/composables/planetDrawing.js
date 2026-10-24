@@ -1341,50 +1341,72 @@ function drawReliefIcons(ctx, overrideList = null) {
   }
 }
 
-// ===== L2 笔迹层（散布笔首落，2026-10-24 第 2 件）=====
+// ===== L2 笔迹层（第 2 件：四支笔共用一套，2026-10-24）=====
 /**
- * 拖动中的**淡色轨迹线**（L2 笔迹层）。松手就消失，绝不入库。
+ * 拖动中的**淡色轨迹线**（L2 笔迹层）—— 四支笔共用这一份实现，别再各写一条。
  *
- * 为什么画「线」不是画「更多图标」：散布笔现在的拖动反馈只有"图标一颗颗蹦出来"，
- * 用户看不出自己这一笔实际扫过哪里（手感像在撒豆子，不像在画）。轨迹线给的是**路径本身**，
- * 图标仍然沿它散布 —— 落到数据里的还是一个图标列表 + 一条 undo，本函数**零写口**。
+ * 为什么画「线」而不是"更多反馈点"：拖动反馈只有"格子/图标一颗颗变"时，用户看不出自己这一笔
+ * 实际扫过哪里（手感像在撒豆子，不像在画）。轨迹线给的是**路径本身**；数据仍由各笔自己的写口落库。
  *
  * 渲染纪律（与 dirtyRect 基帧共存）：
- *   · 每帧重画**整条**路径（老的点也要重画）—— 脏矩形只覆盖"这一段的矩形"，
- *     老轨迹所以会**攒在画面上**（正是"墨迹越画越长"的观感），不会闪；
+ *   · 每帧重画**整条**路径（老的点也重画）—— 脏矩形只覆盖"这一段的矩形"，老轨迹所以会**攒在画面上**
+ *     （正是"墨迹越画越长"的观感），不会闪；
  *   · 松手/取消由调用方 `renderer.markFullRedraw()` 全量重绘一次收口（否则那层会留在画面上 —— 这是
  *     "瞬态层忘了擦"的经典事故）；
- *   · 点数过多时按步长抽稀（≤`RELIEF_TRAIL_MAX_POINTS`），只在**画**的时候抽，路径数据不动。
+ *   · 点数过多时按步长抽稀（≤`BRUSH_TRAIL_MAX_POINTS`），只在**画**的时候抽，路径数据不动；
+ *   · **线宽必须落在脏矩形半径内**（各笔的 `markDirtyRect` 用 `brushSegmentRect(prev,cur,半径)`），
+ *     否则轨迹边缘会在局部重绘时被裁掉一截。
  */
-const RELIEF_TRAIL_MAX_POINTS = 320;
+const BRUSH_TRAIL_MAX_POINTS = 320;
 
-function drawReliefTrail(ctx, path, opts = {}) {
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Array<{x:number,y:number}>} path 世界坐标路径（这一笔已走过的点）
+ * @param {{color?:string, width?:number, outerAlpha?:number, innerAlpha?:number, coreRatio?:number}} [opts]
+ * @returns {number} 画了几层（0 = 没画；便于探针/用例判"笔迹层真的在")
+ */
+function drawBrushTrail(ctx, path, opts = {}) {
   if (!Array.isArray(path) || path.length < 2) return 0;
-  const erase = !!opts.erase;
-  const size = Math.max(8, Number(opts.size) || 24);
-  const step = Math.max(1, Math.ceil(path.length / RELIEF_TRAIL_MAX_POINTS));
+  const color = opts.color || 'rgba(255,255,255,1)';
+  const width = Math.max(2, Number(opts.width) || 24);
+  const outerAlpha = Number.isFinite(opts.outerAlpha) ? opts.outerAlpha : 0.16;
+  const innerAlpha = Number.isFinite(opts.innerAlpha) ? opts.innerAlpha : 0.40;
+  const coreRatio = Number.isFinite(opts.coreRatio) ? opts.coreRatio : 0.22;
+  const step = Math.max(1, Math.ceil(path.length / BRUSH_TRAIL_MAX_POINTS));
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  // 外圈（宽、很淡）+ 内芯（细、稍实）= 一笔"软笔迹"；两笔都比图标层更透明，不抢图标
+  // 外圈（宽、很淡）+ 内芯（细、稍实）= 一笔"软笔迹"；两笔都比主体内容更透明，不抢内容
   const layers = [
-    { color: erase ? 'rgba(255,138,101,0.16)' : 'rgba(255,255,255,0.16)', width: size * 0.95 },
-    { color: erase ? 'rgba(255,138,101,0.42)' : 'rgba(255,255,255,0.40)', width: Math.max(2, size * 0.22) },
+    { alpha: outerAlpha, width },
+    { alpha: innerAlpha, width: Math.max(2, width * coreRatio) },
   ];
-  let drawn = 0;
   for (const L of layers) {
-    ctx.beginPath();
-    ctx.strokeStyle = L.color;
+    ctx.globalAlpha = L.alpha;
+    ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(1, L.width);
+    ctx.beginPath();
     ctx.moveTo(path[0].x, path[0].y);
     for (let i = step; i < path.length; i += step) ctx.lineTo(path[i].x, path[i].y);
     const last = path[path.length - 1];
     ctx.lineTo(last.x, last.y);          // 尾点必须画到（抽稀容易把它漏掉 → 笔迹"跟不上手"）
     ctx.stroke();
-    drawn += 1;
   }
   ctx.restore();
-  return drawn;
+  return layers.length;
+}
+
+/** 散布笔的笔迹层（散布笔 = 深色地图上的白色轨迹 / 擦除时暖色）—— 参数固定，别在调用点另编一套 */
+function drawReliefTrail(ctx, path, opts = {}) {
+  const erase = !!opts.erase;
+  const size = Math.max(8, Number(opts.size) || 24);
+  return drawBrushTrail(ctx, path, {
+    color: erase ? '#FF8A65' : '#FFFFFF',
+    width: size * 0.95,
+    outerAlpha: erase ? 0.16 : 0.16,
+    innerAlpha: erase ? 0.42 : 0.40,
+    coreRatio: 0.22,
+  });
 }
 
 // ===== 实例选中环（第 2 件：可选中可移动，2026-10-24）=====
@@ -2068,6 +2090,7 @@ function getContrastColor(hex) {
     drawTerrainLabels,
     drawReliefIcons,
     drawReliefTrail,
+    drawBrushTrail,
     drawReliefSelection,
     drawRivers,
     drawRegions,

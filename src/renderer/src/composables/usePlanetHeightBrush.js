@@ -46,6 +46,9 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
   const brushBiome = ref('grassland');
   const isBrushing = ref(false);
   const brushPreview = ref(null); // { x, y, radius }
+  /** L2 笔迹层：这一笔已走过的世界坐标（**只画，不落库**）；松手/取消即清空 */
+  const strokePath = ref([]);
+  const STROKE_PATH_MAX = 320;
   const brushMode = ref('raise'); // 'raise' | 'lower' | 'smooth' | 'biome'
 
   const BIOME_KEY_INDEX = {};
@@ -305,6 +308,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
   // ===== stroke 生命周期（一次拖动 = 一条 undo 记录） =====
   function beginHeightStroke() {
     lastPaintPos = null; // 新 stroke 起点，避免跨 stroke 的伪脏区
+    strokePath.value = [];   // L2 笔迹层的路径（只用于画，不落库）
     const hm = ensureHeightmap();
     strokeBefore = null;
     strokeDirty = false;
@@ -331,6 +335,10 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     const dirty = strokeDirty;
     strokeBefore = null;
     strokeDirty = false;
+    strokePath.value = [];   // 轨迹是瞬态的：先清数据，再整帧重画一次把它擦掉
+    // 🔴 L2 收口：轨迹是画在主画布上的瞬态层，只 requestRender 擦不掉 —— 脏矩形只覆盖
+    //    这一笔的落点周围，轨迹别处的像素会留在画面上（"松手后挂一条黄线"）。
+    if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();
     const id = planetId();
     if (!before || !dirty || !id) return;
     const after = {
@@ -358,7 +366,31 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     store.scheduleAutoSaveMap(id);
   }
 
-  function strokeAborted() { strokeBefore = null; strokeDirty = false; lastPaintPos = null; }
+  function strokeAborted() {
+    strokeBefore = null;
+    strokeDirty = false;
+    lastPaintPos = null;
+    strokePath.value = [];
+    if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();
+  }
+
+  /**
+   * 记一个笔迹点（L2 笔迹层用；**不参与任何写入**）。
+   * 抽稀口径：与上一点距离 < 半径的 8% 就不记（一笔下来点数是"路径长度/间距"，不是采样帧数）。
+   */
+  function pushStrokePoint(wx, wy) {
+    const p = strokePath.value;
+    const last = p[p.length - 1];
+    const minStep = Math.max(1.5, brushRadius.value * 0.08);
+    if (last && Math.hypot(wx - last.x, wy - last.y) < minStep) return;
+    // 点数封顶：超了就把已有的隔点抽稀（**保留端点**），避免一条长笔迹把每帧画线拖成 O(上千)
+    if (p.length >= STROKE_PATH_MAX) {
+      const thinned = p.filter((_, i) => i % 2 === 0 || i === p.length - 1);
+      strokePath.value = thinned.concat([{ x: wx, y: wy }]);
+      return;
+    }
+    strokePath.value = p.concat([{ x: wx, y: wy }]);
+  }
 
   // ===== 高度笔刷 =====
   function paintHeight(hm, worldX, worldY) {
@@ -415,6 +447,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     const touched = paintHeight(hm, worldX, worldY);
     if (!touched) return false;
     strokeDirty = true;
+    pushStrokePoint(worldX, worldY);
     markPaintDirty(worldX, worldY);
     renderer?.requestRender();
     return true;
@@ -441,6 +474,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     }
     if (!touched) return false;
     strokeDirty = true;
+    pushStrokePoint(worldX, worldY);
     renderer?.requestRender();
     return true;
   }
@@ -464,6 +498,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     brushBiome,
     isBrushing,
     brushPreview,
+    strokePath,
     brushMode,
     BIOME_KEY_INDEX,
     ensureHeightmap,
