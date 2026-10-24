@@ -177,6 +177,8 @@ export const MEMORY_WRITE_CALLSITES = [
           'addMapSnapshot', 'removeMapSnapshot',
           'addCluster', 'removeCluster', 'updateCluster',
           'applyReliefStroke', 'ensureRivers', 'clearPlanetContent',
+          // 2026-10-24（第 2 件）：拖实例移动（先算 before/after 再 execute，函数首行必须守）
+          'moveReliefIcons',
           // 2026-10-17：行星视图的 `.map` 导入写口（整批写入 = 一条撤销；8 个键以外一律不动）
           'importPlanetMapBundle',
           'addChannelListItem', 'removeChannelListItem', 'updateChannelListItem'],

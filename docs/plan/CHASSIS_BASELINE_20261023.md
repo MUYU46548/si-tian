@@ -341,3 +341,35 @@ python scripts/tests/tools/_lab.py down          # 收工：杀进程 + 还原 i
 | 这一刀不碰数据 | ✅ 9 个最相关的场景用例（52/61/63/73/79/90/94/96/121）全过，无写口变化 |
 
 > 计数（`lastFitKey` / `lastFitCount`）仍然记账 —— 切走工具后不会"还欠一次适屏"而突然跳一下。
+
+---
+
+## 十二、第 2 件续：地貌图标「实例可选中可移动」（2026-10-24 11:0x）
+
+第 2 件判据里明写的一项（指南 04 §二：**拖动中 = 笔迹轨迹 + 图标；松手 = 图标入库**；实例可选中可移动）。
+
+| 改哪 | 改成什么 |
+|---|---|
+| `store/geodataModules/mapDataEditing.js` | 新增 `moveReliefIcons(planetId, [{id,x,y}])`：**快照式 undo**（与散布/擦除同一套），一次拖动 = 一条命令；`execute` 前先算 before/after → 函数首行 `guardWrite`（已登记 `MEMORY_WRITE_CALLSITES`） |
+| `composables/useReliefBrush.js` | 命中/选中/拖动预览：`hitReliefInstance`（后画的优先，半径 = 图标半边长×0.8）、`beginInstanceDrag` / `moveInstanceDrag`（**只改预览、不碰存储**）/ `endInstanceDrag`（真动过才落库）、`reliefInstanceIcons`（预览列表）、`selectedReliefIcon` |
+| `composables/planetInteractions.js` | 左键先问"点中图标了吗"：点中 → 拖它（抑制平移）；点空白 → 照旧开始散布。松手落库 + 只读态回音 |
+| `composables/planetDrawing.js` | `drawReliefSelection`：双同心圆 + 虚线外环（不用方框 —— 图标是圆的，方框会和邻居挤在一起） |
+
+**判据（新用例 `test_137`，每条都带反证）**：
+
+| 判据 | 读数 |
+|---|---|
+| 点中 = 选中，**零写入** | `selectedReliefId` 有值；undo label 与图标数一个没变 |
+| 拖动 = 位置变、条数不变、**一条 undo** | `(-216, -27)` → `(-126, 22)`；label「移动地貌图标」；10 颗还是 10 颗 |
+| 撤销 = 逐位回原位 | 撤销后 `(-216, -27.442469…)` **逐位相等**（不是"差不多"） |
+| 点空白收选中，且不误挪 | `selected` 变 null，图标数与位置都不动 |
+| 只读态诚实 | 拖得动预览，松手后**图标留在原位**、undo 栈没有"移动"命令、状态栏回音「地貌图标没移动：当前是只读态…」 |
+
+**踩到并修掉的两个坑（都写进注释了）**：
+1. **点击信用要"下次按下复位"，不能靠 click 消费** —— 程序化派发（用例/演练）常常只有 mousedown+mouseup，
+   click 永不到来；信用一直挂着 → 下一次点空白清不掉选中（探针当场抓到）。
+2. **状态回音不能传对象** —— `setStatus({toolLabel:…})` 会被渲染成 `[object Object]`；该通道只吃字符串
+   （`exportStatus` 直接进模板插值）。
+
+> 拖动的**落库边界**：拖动中只动预览（只读态零半截写入）；`moveReliefIcons` 还顺手挡掉"没有一项真动过"的空命令。
+> 新用例同时把「点空白仍是散布、不会误挪」一起钉住；`test_31`（散布/擦除/undo/落盘载荷）照旧全绿。

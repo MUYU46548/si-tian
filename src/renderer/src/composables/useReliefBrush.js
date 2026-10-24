@@ -37,6 +37,103 @@ export function useReliefBrush({ store, currentMapData, renderer = null }) {
   const reliefLiveIcons = ref(null);   // 拖动中的"实时列表"（绘制层优先用它）
   const reliefCursor = ref(null);      // 笔刷光标预览 {x, y}
 
+  // ===== 实例选中 / 拖动（第 2 件："实例可选中可移动"，2026-10-24）=====
+  // 与"散布一笔"是两条互斥的链：点中已有图标 = 选中它并**拖它**；点空白 = 开始散布新图标。
+  const selectedReliefId = ref(null);
+  const reliefDrag = ref(null);        // { id, origX, origY, x, y, moved }
+  /** 拖动中的**预览列表**：把被拖的那一颗换到手指位置（只读副本，不碰存储） */
+  const reliefInstanceIcons = computed(() => {
+    const d = reliefDrag.value;
+    if (!d) return null;
+    const list = currentMapData.value?.reliefIcons || [];
+    return list.map(it => (it.id === d.id ? { ...it, x: d.x, y: d.y } : it));
+  });
+  const selectedReliefIcon = computed(() => {
+    const id = selectedReliefId.value;
+    if (!id) return null;
+    const d = reliefDrag.value;
+    if (d && d.id === id) return { id, x: d.x, y: d.y, size: d.size };
+    const it = (currentMapData.value?.reliefIcons || []).find(x => x.id === id);
+    return it ? { id: it.id, x: it.x, y: it.y, size: it.size } : null;
+  });
+
+  /** 命中半径：图标半边长 × 0.8（比图标略小，免得挨着两颗时永远只选到大的那颗） */
+  function _hitRadius(it) { return Math.max(10, (it.size || 24) * 0.5 * 1.6); }
+
+  // 「这一次点击来自选中图标」→ 随后的 click 不要清选中（否则刚点中就立刻被清掉）
+  // 🔴 用**下一次 mousedown 复位**、而不是"靠 click 消费掉"：鼠标在画布外松开、或程序化派发
+  //    （用例/演练只发 mousedown+mouseup）时 click 可能永远不来 —— 那样这个信用会一直挂着，
+  //    下一次点空白就清不掉选中（实测就是这样：点空白后选中还在）。
+  let clickCameFromSelection = false;
+  function resetClickCredit() { clickCameFromSelection = false; }
+  /** click 时问一句：该不该清选中？返回 true = 清（点的是空白） */
+  function shouldClearSelectionOnClick() {
+    return !clickCameFromSelection;
+  }
+
+  /**
+   * 命中一颗图标的 id（后画的优先 —— 与绘制顺序一致，视觉在上面的先被选中）。
+   * @returns {string|null}
+   */
+  function hitReliefInstance(wx, wy) {
+    const list = currentMapData.value?.reliefIcons || [];
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const it = list[i];
+      if (!it || !Number.isFinite(it.x) || !Number.isFinite(it.y)) continue;
+      if (Math.hypot(wx - it.x, wy - it.y) <= _hitRadius(it)) return it.id;
+    }
+    return null;
+  }
+
+  /**
+   * 按下时先问"点中图标了吗"。
+   * @returns {boolean} true = 进入拖动实例（调用方**不要**再开始散布笔）
+   */
+  function beginInstanceDrag(wx, wy) {
+    const id = hitReliefInstance(wx, wy);
+    if (!id) return false;
+    const it = (currentMapData.value?.reliefIcons || []).find(x => x.id === id);
+    if (!it) return false;
+    selectedReliefId.value = id;
+    clickCameFromSelection = true;
+    reliefDrag.value = { id, origX: it.x, origY: it.y, x: it.x, y: it.y, size: it.size, moved: false };
+    return true;
+  }
+
+  /** 拖动中：只更新预览（**不碰存储** —— 只读态下也不会有任何半截写入） */
+  function moveInstanceDrag(wx, wy) {
+    const d = reliefDrag.value;
+    if (!d) return false;
+    d.x = wx;
+    d.y = wy;
+    if (!d.moved && Math.hypot(d.x - d.origX, d.y - d.origY) > 1) d.moved = true;
+    return true;
+  }
+
+  /**
+   * 松手：真的动过才落库（一次拖动 = 一条 undo）；没动过 = 只是"选中了一下"，零写入。
+   * @returns {{moved:boolean, committed:boolean}}
+   */
+  function endInstanceDrag() {
+    const d = reliefDrag.value;
+    reliefDrag.value = null;
+    if (!d) return { moved: false, committed: false };
+    if (!d.moved) return { moved: false, committed: false };
+    const planetId = currentMapData.value?.planetId;
+    if (!planetId) return { moved: true, committed: false };
+    const r = store.moveReliefIcons(planetId, [{ id: d.id, x: d.x, y: d.y }]);
+    // 挪过位置 → 旧位置必须整帧重画一次才不会留下"重影"（脏矩形只覆盖新位置）
+    if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();
+    return { moved: true, committed: !!(r && r.ok) };
+  }
+
+  function clearSelection() {
+    selectedReliefId.value = null;
+  }
+  function selectInstance(id) {
+    selectedReliefId.value = id || null;
+  }
+
   let lastDirtyPos = null;             // P2-3 脏矩形：上一个落点
   let strokeSeed = 1;
   let walkedLength = 0;                // 本次拖动已累积的弧长（用于间距相位连续）
@@ -232,6 +329,19 @@ export function useReliefBrush({ store, currentMapData, renderer = null }) {
     reliefLiveIcons,
     reliefCursor,
     reliefCount,
+    // 实例选中 / 拖动（第 2 件）
+    selectedReliefId,
+    selectedReliefIcon,
+    reliefDrag,
+    reliefInstanceIcons,
+    hitReliefInstance,
+    beginInstanceDrag,
+    moveInstanceDrag,
+    endInstanceDrag,
+    clearSelection,
+    selectInstance,
+    resetClickCredit,
+    shouldClearSelectionOnClick,
     // 动作
     startStroke,
     moveStroke,

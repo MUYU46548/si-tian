@@ -1387,6 +1387,30 @@ function drawReliefTrail(ctx, path, opts = {}) {
   return drawn;
 }
 
+// ===== 实例选中环（第 2 件：可选中可移动，2026-10-24）=====
+/**
+ * 选中一颗地貌图标时的**选中环**：两个同心圆（外实内虚）+ 中心十字。
+ * 为什么不用方框：图标是圆的（山/树/石），方框会和相邻图标叠在一起看不清"选中的是哪一个"。
+ */
+function drawReliefSelection(ctx, icon) {
+  if (!icon || !Number.isFinite(icon.x) || !Number.isFinite(icon.y)) return;
+  const r = Math.max(10, (icon.size || 24) * 0.72);
+  ctx.save();
+  ctx.translate(icon.x, icon.y);
+  ctx.strokeStyle = 'rgba(255,214,102,0.95)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(255,214,102,0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ===== P1-1 河流层（在路线之下、区域之上渲染，蓝线按宽度渐变） =====
 function drawRivers(ctx) {
   const s = getState();
@@ -2044,6 +2068,7 @@ function getContrastColor(hex) {
     drawTerrainLabels,
     drawReliefIcons,
     drawReliefTrail,
+    drawReliefSelection,
     drawRivers,
     drawRegions,
     drawPlaces,

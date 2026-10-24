@@ -59,7 +59,14 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 
   // P0-1 Relief 笔刷：左键散布 / 右键擦除。
   // 必须放在 button!==0 早退之前——右键拖拽是"擦除"的主要入口。
+  // 第 2 件（2026-10-24）：左键先问「点中已有图标了吗」——点中就是**选中并拖它**（实例可移动），
+  // 点空白才开始散布新图标。两条链互斥，且拖动期间只改预览（不碰存储）。
   if (s.interactionMode === 'relief' && s.editMode && s.reliefBrush) {
+    s.reliefBrush.resetClickCredit?.();          // 每次按下都复位（见 useReliefBrush 里的注释）
+    if (button === 0 && s.reliefBrush.beginInstanceDrag(wx, wy)) {
+      actions.requestRender();
+      return false; // 抑制平移
+    }
     s.reliefBrush.startStroke(wx, wy, { erase: button === 2 });
     actions.requestRender();
     return false; // 抑制平移
@@ -304,10 +311,18 @@ function onDragMove(wx, wy, dragInfo) {
   }
 
   // P0-1 Relief 笔刷拖动：沿路径散布 / 擦除
-  if (mode === 'relief' && s.editMode && s.reliefBrush && s.reliefBrush.isReliefBrushing.value) {
-    s.reliefBrush.moveStroke(wx, wy);
-    actions.requestRender();
-    return;
+  // 第 2 件：拖着某一颗实例时走另一条（只更新预览）
+  if (mode === 'relief' && s.editMode && s.reliefBrush) {
+    if (s.reliefBrush.reliefDrag.value) {
+      s.reliefBrush.moveInstanceDrag(wx, wy);
+      actions.requestRender();
+      return;
+    }
+    if (s.reliefBrush.isReliefBrushing.value) {
+      s.reliefBrush.moveStroke(wx, wy);
+      actions.requestRender();
+      return;
+    }
   }
 
   // 高度图笔刷拖动
@@ -489,7 +504,14 @@ function onDragEnd(wx, wy, dragInfo) {
   }
 
   // P0-1 Relief 笔刷松手：整次拖动 = 一条 undo
+  // 第 2 件：拖着实例松手 → 落库一条「移动地貌图标」（没动过 = 零写入，只是选中）
   if (mode === 'relief' && s.editMode && s.reliefBrush) {
+    if (s.reliefBrush.reliefDrag.value) {
+      const r = s.reliefBrush.endInstanceDrag();
+      if (r && r.moved && !r.committed) actions.setStatus?.('地貌图标没移动：当前是只读态（先打开项目，再回来拖）');
+      actions.requestRender();
+      return;
+    }
     s.reliefBrush.finishStroke();
     actions.requestRender();
     return;
@@ -604,8 +626,17 @@ function handleCanvasClick(hit, wx, wy) {
 
   const mode = s.isSpacebarDown ? 'pan' : s.interactionMode;
 
-  // P0-1 Relief 笔刷：落点已由拖动处理，点击不再命中对象
-  if (mode === 'relief' && s.editMode) return;
+  // P0-1 Relief 笔刷：落点已由拖动处理，点击不再命中对象。
+  // 第 2 件（2026-10-24）：点在空白处 → 收掉"实例选中"；点中图标的那一次点击不清（刚选中就被清掉是事故）
+  if (mode === 'relief' && s.editMode) {
+    if (s.reliefBrush && !s.reliefBrush.reliefDrag.value && !s.reliefBrush.isReliefBrushing.value) {
+      if (s.reliefBrush.shouldClearSelectionOnClick()) {
+        s.reliefBrush.clearSelection();
+        actions.requestRender();
+      }
+    }
+    return;
+  }
 
   // P1-1 河流：点击是描点/选中河流，不走通用对象选择
   if (mode === 'river' && s.editMode) return;

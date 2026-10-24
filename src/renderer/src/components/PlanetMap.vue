@@ -1461,7 +1461,11 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('planet', 'precipitation')) drawing.drawPrecipitation(ctx);
   if (layers.isVisible('planet', 'terrainLabels')) drawing.drawTerrainLabels(ctx);
   // P0-1 地貌图标层：地形之上、聚落/区域之下
-  if (editMode.value && reliefBrush.isReliefBrushing.value && reliefBrush.reliefLiveIcons.value) {
+  if (editMode.value && reliefBrush.reliefDrag.value && reliefBrush.reliefInstanceIcons.value) {
+    // 拖着某一颗实例：画**预览列表**（被拖的那颗在手指位置），再画选中环 —— 松手才落库
+    drawing.drawReliefIcons(ctx, reliefBrush.reliefInstanceIcons.value);
+    drawing.drawReliefSelection(ctx, reliefBrush.selectedReliefIcon.value);
+  } else if (editMode.value && reliefBrush.isReliefBrushing.value && reliefBrush.reliefLiveIcons.value) {
     // L2 笔迹层（第 2 件首落）：先画这一笔的淡色轨迹，再画图标（图标在上，不被轨迹糊住）。
     // 纯渲染：路径只来自 `reliefBrush.reliefPath`，落库仍只有"松手那一条 undo"。
     drawing.drawReliefTrail(ctx, reliefBrush.reliefPath.value, {
@@ -1471,6 +1475,10 @@ function onRender(ctx, w, h) {
     drawing.drawReliefIcons(ctx, reliefBrush.reliefLiveIcons.value);
   } else if (layers.isVisible('planet', 'reliefIcons')) {
     drawing.drawReliefIcons(ctx);
+    // 选中态（不拖也在）：画在地貌层之上、聚落/区域之下
+    if (editMode.value && reliefBrush.selectedReliefIcon.value) {
+      drawing.drawReliefSelection(ctx, reliefBrush.selectedReliefIcon.value);
+    }
   }
   if (layers.isVisible('planet', 'regions')) drawing.drawRegions(ctx);
   if (layers.isVisible('planet', 'rivers')) drawing.drawRivers(ctx);

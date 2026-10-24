@@ -131,6 +131,10 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   判据走**像素 + 拖动中截图**（`_probe_relief_trail.py`）：松手瞬间 8258 像素变暗（= 轨迹被擦掉）、图标 0→16、undo「散布地貌图标」；
   10s 连拖 597 帧 / p95 18.7 / 1 帧 >50ms（基线 596 / 18.2 / 1，持平），handler 0.27ms/事件。
   ⏳ 剩：「实例可选中可移动」+ 其余三支笔接线（指南 04 §二）。
+- ✅ **「实例可选中可移动」已落（2026-10-24）**：点中图标 = 选中（**零写入**）；拖动 = 位置变、条数不变、
+  **一条 undo「移动地貌图标」**；撤销逐位回原位；点空白收选中；只读态拖得动预览但落不了库（原位 + 「只读」回音）。
+  落库口 `store.moveReliefIcons`（快照式 undo，已登记 `MEMORY_WRITE_CALLSITES`）；新用例 **test_137**（含 5 条反证）。
+  ⏳ 剩：其余三支笔接线（指南 04 §二）。
 - ✅ **镜头语义一刀（2026-10-24）**：`watch([baseMapKey, terrain.length])` 只在**换底图**时适屏，
   同一张图上增减省份一律只重绘（原来只豁免笔刷建省）。判据：画一个省后镜头**一位不动**
   （`{67.6, -53.5, 0.3549}` → 同一组数，原先是 0.3549→0.4894 自己跳）；换底图/导入的适屏各有显式
@@ -203,7 +207,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 git log --oneline -1; git status --short; git rev-list --left-right --count HEAD...origin/main
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
-(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 136
+(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 137
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 52
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime

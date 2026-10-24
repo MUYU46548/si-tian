@@ -727,6 +727,36 @@ export function createMapDataEditingModule(ctx) {
   }
 
   /** 清空全部地貌图标（单条 undo） */
+  /**
+   * 移动一批地貌图标 —— 「实例可选中可移动」的落库口（第 2 件，2026-10-24）。
+   *
+   * 与散布/擦除**同一套快照式 undo**（只换数组内容，不记下标）：一次拖动 = 一条命令。
+   * ⚠️ 只接受 `{id, x, y}`：**不许**顺手改 size/type/rotation —— 那些是散布生成的属性，
+   *    让"移动"也能改它们，撤销的语义就不再是"把位置放回去"了。
+   */
+  function moveReliefIcons(planetId, moves = []) {
+    if (!guardWrite('移动地貌图标').ok) return { ok: false, reason: 'readonly' };
+    const list = mapData.value[planetId]?.reliefIcons;
+    if (!Array.isArray(list) || !list.length || !moves.length) return { ok: false, reason: 'empty' };
+    const byId = new Map(moves.filter(m => m && m.id).map(m => [m.id, m]));
+    const before = list.slice();
+    const after = list.map(it => (byId.has(it.id)
+      ? { ...it, x: byId.get(it.id).x, y: byId.get(it.id).y }
+      : it));
+    // 没有一项真的动过 → 不压栈（避免"点了一下没拖"也留一条空命令）
+    if (after.every((it, i) => it.x === before[i].x && it.y === before[i].y)) return { ok: false, reason: 'no-change' };
+    execute({
+      type: 'relief-move',
+      label: moves.length > 1 ? `移动 ${moves.length} 个地貌图标` : '移动地貌图标',
+      category: 'region',
+      undo: () => { mapData.value[planetId].reliefIcons = before.slice(); },
+      redo: () => { mapData.value[planetId].reliefIcons = after.slice(); },
+    });
+    mapData.value[planetId].updatedAt = new Date().toISOString();
+    scheduleAutoSaveMap(planetId);
+    return { ok: true, moved: moves.length };
+  }
+
   /** 「清空地图内容」会被重置的字段；**其余字段一律原样保留**（见下方说明） */
   const CLEARED_CONTENT_KEYS = ['terrain', 'regions', 'markers', 'routes', 'textLabels', 'clusters'];
 
@@ -1063,6 +1093,7 @@ export function createMapDataEditingModule(ctx) {
     updateCluster,
     moveClusterMembers,
     applyReliefStroke,
+    moveReliefIcons,
     clearReliefIcons,
     clearPlanetContent,
     importPlanetMapBundle,
