@@ -213,6 +213,22 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 真实文件系统上真 mkdir+写文件 / 源码守卫（handler 用的是这两个函数，create 段零 coordinate）；
 设置面板入口另有 `scripts/tests/cases/test_142_note_target_setting.py`（保存/回显/清空回自动 + 源码守卫）。
 
+## 七点七、点省份看资料（2026-10-24）
+
+剧本视图的省份属性区末尾有「资料」段（`data-testid="province-vault"`）：
+
+- 按**省名**查 `vaultIndexSearch`（主进程只读索引，**元数据命中**：标题/别名/标签/小标题/首行/路径，
+  不读正文）→ 最多 5 条候选（标题 + 路径）；
+- 点候选 → 阅读器（`openNote`）；「全库搜索」→ 资料搜索面板（带省名预填）；
+- **没命中就明说**「库里没有同名词条（只读检索；不会替你新建）」—— 不猜、不自动建；
+- 连点/改名有**序号防乱序**（先到的不许盖后到的），整段**没有任何写 IPC**。
+
+判据：`scripts/tests/cases/test_143_province_lore.py` —— 检索关键词=省名 / 候选可点开阅读器 /
+空态可读 / 创建笔记与改配置调用次数为 0 / 源码守卫（这一段只许 `vaultIndexSearch` + `openNote`）。
+
+⚠️ **"点标记"不在这一刀**：ScenarioMap 的标记目前**没有命中测试、也没有编辑面板**
+（放下时只 `askText` 问名字），所以"点标记出资料"要先做**标记命中 + 标记面板**，再挂同一段检索。
+
 ## 八、明确没做
 
 - **不做自动导入**：候选仍需人确认（原来的 D2 边界不变）；本刀只把「读得到」做扎实。

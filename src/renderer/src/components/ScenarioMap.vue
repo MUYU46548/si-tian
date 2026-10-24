@@ -1272,6 +1272,30 @@
         环数: {{ provinceRings(selectedProvince).length }} ·
         顶点数: {{ currentRingVertexCount }}（活动环）
       </div>
+      <!-- 资料（读料桥，2026-10-24）：按省名在全库资料里找**候选**。
+           只读：只有 `vaultIndexSearch`（元数据命中）+ 打开阅读器；不猜、不建、不写。
+           找不到就明说（与「读不到笔记」的可读回落同一口径：不能静默什么都不显示）。 -->
+      <div class="props-vault" data-testid="province-vault">
+        <div class="props-vault-head">
+          <span>资料</span>
+          <button class="props-mini" data-testid="province-vault-search"
+                  :title="`在全库资料里搜「${selectedProvince.name || ''}」（只读检索）`"
+                  @click="searchVaultForProvince(true)">全库搜索</button>
+        </div>
+        <div v-if="provinceVaultBusy" class="props-vault-dim">查找中…</div>
+        <template v-else>
+          <div v-if="provinceVaultHits.length" class="props-vault-list">
+            <a v-for="h in provinceVaultHits" :key="h.path" class="props-vault-row" :title="h.path"
+               :data-testid="'province-vault-hit'" @click="openVaultNote(h.path)">
+              <span class="pv-title">{{ h.title }}</span>
+              <span class="pv-path">{{ h.path }}</span>
+            </a>
+          </div>
+          <div v-else class="props-vault-dim" data-testid="province-vault-empty">
+            库里没有同名词条（只读检索；不会替你新建）
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- 剧本管理对话框 -->
@@ -1553,6 +1577,8 @@ import ScenarioSliceExport from './ScenarioSliceExport.vue';
 // 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报「区间外易主日期」，
 // 不另写一套口径（两套口径漂移 = 面板说没事、时间轴悄悄不显示）。
 import { changeDateStats } from '../utils/scenarioSlices';
+// 读料桥（2026-10-24）：省份 → 库内同名词条（**只读检索 + 打开阅读器**，不写笔记、不建笔记）
+import { openNote as openVaultNote, openNoteSearch } from '../utils/noteReader';
 import {
   buildTimeline, currentOwnerRef, isStriped, polityColor,
   settledCount, eraIndexOfYear, findGap,
@@ -10014,6 +10040,39 @@ function ownerPolityForProvince(provId) {
  */
 const selectedProvincePolity = computed(() => ownerPolityForProvince(selectedProvince.value?.id));
 
+// ===== 省份 → 库内资料（读料桥，2026-10-24；**只读**） =====
+//
+// 判据（第 5 件）：点图能看设定、换库不崩、一个字节都不写。
+// 这里只做两件事：`vaultIndexSearch`（主进程只读索引，元数据命中，不读正文）+ `openNote`（阅读器）。
+// 🔴 不猜、不自动建：没命中就明说「库里没有同名词条」——「认不出就进待人工」同一条纪律。
+const provinceVaultHits = ref([]);
+const provinceVaultBusy = ref(false);
+let provinceVaultSeq = 0;
+
+async function searchVaultForProvince(force = false) {
+  const prov = selectedProvince.value;
+  const name = prov && prov.name ? String(prov.name).trim() : '';
+  if (!name) { provinceVaultHits.value = []; return; }
+  const seq = ++provinceVaultSeq;
+  if (force) provinceVaultBusy.value = true;
+  else provinceVaultBusy.value = provinceVaultHits.value.length === 0;
+  try {
+    const res = await window.sitianAPI.vaultIndexSearch(name, 5);
+    if (seq !== provinceVaultSeq) return;          // 连点时最后一次赢（先到的不许盖后到的）
+    provinceVaultHits.value = (res && res.success && Array.isArray(res.results)) ? res.results : [];
+  } catch (e) {
+    if (seq === provinceVaultSeq) provinceVaultHits.value = [];
+  } finally {
+    if (seq === provinceVaultSeq) provinceVaultBusy.value = false;
+  }
+}
+
+// 选中的省换了 / 就地改名了 → 重新查（只读检索很轻，不必防抖）
+watch(() => (selectedProvince.value && selectedProvince.value.id) || '', () => { searchVaultForProvince(); });
+watch(() => (selectedProvince.value && selectedProvince.value.name) || '', (now, prev) => {
+  if (now !== prev) searchVaultForProvince();
+});
+
 /**
  * 势力标注的**归属查询**：必须与 `getProvinceColor` 走同一口径
  * （含「演变铺开」与 EU4 斜线占领的旧主底色），否则会出现「颜色是甲、名字写乙」。
@@ -11595,6 +11654,45 @@ watch(baseMap, () => {
   padding-top: 8px;
   border-top: 1px solid #334155;
 }
+
+/* 资料（读料桥）：省份名 → 库内候选（只读） */
+.props-vault {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #334155;
+}
+.props-vault-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+.props-vault-dim {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}
+.props-vault-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 132px;
+  overflow: auto;
+}
+.props-vault-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  background: rgba(148, 163, 184, 0.06);
+}
+.props-vault-row:hover { background: rgba(148, 163, 184, 0.16); }
+.props-vault-row .pv-title { font-size: 12px; color: #cbd5e1; }
+.props-vault-row .pv-path { font-size: 10px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 归属行（2026-10-21）：值占满剩余宽度，右侧一个「清成无主 / 设为当前势力」小按钮 */
 .props-row .owner-value {

@@ -230,7 +230,13 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   判据（新用例 test_141）：正常态有内容 → 模拟主进程读失败 → 回落点名路径 + 出口齐全、旧内容不再显示、
   「全库搜索」带节点名预填 → 复原后内容回来；源码守卫：读取只走 `readObsidianNote`（读料层只读）。
   ⏳ 还剩：真正的"不听话的库"整套实测（乱目录/乱文件名/缺 frontmatter）已由 test_124 +
-  `unit/test_vault_frontmatter_noise.js` 覆盖；UI 侧还缺"点**省份/标记**（非实体）也能出设定卡"。
+  `unit/test_vault_frontmatter_noise.js` 覆盖。
+- ✅ **点省份也能看设定（2026-10-24）**：剧本视图的省份属性区加「资料」段 —— 按**省名**走
+  `vaultIndexSearch`（只读索引、元数据命中）列候选，点候选进阅读器；**没命中就明说「库里没有同名词条」**
+  （不猜、不自动建）。判据 test_143：关键词=省名 / 候选可点开 / 空态可读 /
+  **创建笔记与改配置的调用次数 0** / 源码守卫（这一段只许 `vaultIndexSearch` + `openNote`）。
+  ⚠️ **"点标记"还差前置**：ScenarioMap 的标记目前没有命中测试、也没有编辑面板（放下时只问名字），
+  所以"点标记出设定卡"要先做**标记命中 + 标记面板**，再挂同一段资料检索 —— 单列一刀，不算进这个收口。
 - ✅ **转正落点 + frontmatter 收口（2026-10-24 用户拍板选项 B）**：唯一实现 `src/main/noteTarget.js`。
   落点 ① 显式 `targetDir` → ② 库里有 `03 设定` 才用层级子目录 → ③ 都没有就**落库根**
   （此前无条件 `mkdir -p`，等于替用户造一棵 `03 设定/11 地理系统/…`）；批量导入同口径。
@@ -284,7 +290,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 git log --oneline -1; git status --short; git rev-list --left-right --count HEAD...origin/main
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
-(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 142
+(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 143
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime
