@@ -28,6 +28,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
 SM = "document.querySelector('.scenario-map-container').__vueParentComponent.setupState"
 MAP = 'src/renderer/src/components/ScenarioMap.vue'
+LORE = 'src/renderer/src/components/VaultLoreSection.vue'
 KEY = '用例143底图'
 PROV_NAME = '雾隐城'
 
@@ -129,28 +130,33 @@ STATE = r"""(() => {
 
 
 def sub_source_guards():
+    """源码守卫：资料段**只有一份实现**（`VaultLoreSection.vue`），且全程只读。
+
+    2026-10-24（第 5 件补「点标记」）：省份资料与标记资料合并到同一个组件里，
+    原来"在 ScenarioMap 里找 `searchVaultForProvince`"的守卫随之改口径 ——
+    行为判据（关键词=名字 / 候选可点开 / 空态 / 只读计数）一条都没动，
+    改的只是"实现住在哪个文件"。顺带把"只许一份实现"也钉死：
+    ScenarioMap 里再出现 `vaultIndexSearch` 就是第二份实现，直接红。
+    """
     bad = []
     code = _code_only(_read(MAP))
-    seg_start = code.find('function searchVaultForProvince')
-    seg_end = code.find('function ', seg_start + 10)
-    seg = code[seg_start:seg_end] if seg_start >= 0 else ''
-    if not seg:
-        bad.append('ScenarioMap 里没有 searchVaultForProvince（省份资料入口）')
-    else:
-        if 'vaultIndexSearch' not in seg:
-            bad.append('省份资料没有走 vaultIndexSearch（只读索引）')
-        for banned in ('createObsidianNote', 'setSitianConfig', 'projectSave', 'updateBaseProvince', 'execute('):
-            if banned in seg:
-                bad.append(f'省份资料检索里出现写口 {banned}（必须只读）')
-    if 'data-testid="province-vault"' not in code:
-        bad.append('属性区没有「资料」段')
-    if 'province-vault-empty' not in code:
+    lore = _code_only(_read(LORE))
+    if 'vaultIndexSearch' not in lore:
+        bad.append(f'{LORE} 里没有 vaultIndexSearch（只读索引）')
+    for banned in ('createObsidianNote', 'setSitianConfig', 'projectSave', 'updateBaseProvince', 'execute('):
+        if banned in lore:
+            bad.append(f'资料段里出现写口 {banned}（必须只读）')
+    if 'vaultIndexSearch' in code:
+        bad.append('ScenarioMap 自己又调了 vaultIndexSearch（资料段必须只有一份实现）')
+    if 'testid="province-vault"' not in code:
+        bad.append('属性区没有把 province-vault 传给资料组件（「资料」段丢了）')
+    if 'testid + \'-empty\'' not in lore:
         bad.append('没有"库里没有同名词条"的空态')
-    if 'openNoteSearch' not in code:
+    if 'openNoteSearch' not in lore:
         bad.append('没有"全库搜索"出口')
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
-    return True, '省份资料只走 vaultIndexSearch + openNote；空态与全库搜索都在'
+    return True, '资料段只走 vaultIndexSearch + openNote；空态与全库搜索都在；实现只有一份'
 
 
 def run(cdp):

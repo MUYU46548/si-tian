@@ -1273,29 +1273,56 @@
         顶点数: {{ currentRingVertexCount }}（活动环）
       </div>
       <!-- 资料（读料桥，2026-10-24）：按省名在全库资料里找**候选**。
-           只读：只有 `vaultIndexSearch`（元数据命中）+ 打开阅读器；不猜、不建、不写。
+           实现只有一份：`VaultLoreSection.vue`（省份面板与标记面板共用）——
+           这一段只许 `vaultIndexSearch` + `openNote`，不猜、不建、不写；
            找不到就明说（与「读不到笔记」的可读回落同一口径：不能静默什么都不显示）。 -->
-      <div class="props-vault" data-testid="province-vault">
-        <div class="props-vault-head">
-          <span>资料</span>
-          <button class="props-mini" data-testid="province-vault-search"
-                  :title="`在全库资料里搜「${selectedProvince.name || ''}」（只读检索）`"
-                  @click="searchVaultForProvince(true)">全库搜索</button>
-        </div>
-        <div v-if="provinceVaultBusy" class="props-vault-dim">查找中…</div>
-        <template v-else>
-          <div v-if="provinceVaultHits.length" class="props-vault-list">
-            <a v-for="h in provinceVaultHits" :key="h.path" class="props-vault-row" :title="h.path"
-               :data-testid="'province-vault-hit'" @click="openVaultNote(h.path)">
-              <span class="pv-title">{{ h.title }}</span>
-              <span class="pv-path">{{ h.path }}</span>
-            </a>
-          </div>
-          <div v-else class="props-vault-dim" data-testid="province-vault-empty">
-            库里没有同名词条（只读检索；不会替你新建）
-          </div>
-        </template>
+      <VaultLoreSection testid="province-vault" :query="selectedProvince.name || ''" />
+    </div>
+
+    <!-- 标记属性面板（2026-10-24，第 5 件补「点标记」）
+         🔴 之前标记是"只画不收"的一层：放下时 `askText` 问个名字，之后**点不到它**
+         （没有命中测试、没有编辑面板）→ "点标记看资料"根本无从挂起。
+         现在：命中测试在 `utils/markerHitTest.js`（唯一实现，只读），本面板只走 store 写口
+         （`updateScenarioMarker` / `removeScenarioMarker`），模板里不直改 marker 对象
+         （与省份面板 2026-10-01 那次修复同一条纪律：v-model 直改活对象会绕开写闸门 + 弄坏 undo）。 -->
+    <div v-if="selectedMarker && showMarkerPanel && viewMode === 'scenario'"
+         class="province-props marker-props" data-testid="marker-props">
+      <div class="props-header">
+        <input :value="selectedMarker.name || ''" class="props-name" placeholder="标记名称"
+               data-testid="marker-name" @change="onMarkerNameChange" />
+        <button class="props-close" data-testid="marker-close" title="收起面板（标记本身不动）"
+                @click="showMarkerPanel = false"><Icon name="x" :size="13"/></button>
       </div>
+      <div class="props-row">
+        <label>类型：</label>
+        <select :value="selectedMarker.type || 'custom'" data-testid="marker-type" @change="onMarkerTypeChange">
+          <option v-for="t in MARKER_TYPES" :key="t.id" :value="t.id">{{ t.name }}</option>
+        </select>
+      </div>
+      <div class="props-row">
+        <label>坐标：</label>
+        <input class="coord-input" type="number" step="1" data-testid="marker-x"
+               :value="markerCoords.x" title="世界坐标（地图内部单位；改完立即落库，一条撤销）"
+               @change="onMarkerCoordChange('x', $event)" />
+        <input class="coord-input" type="number" step="1" data-testid="marker-y"
+               :value="markerCoords.y" title="世界坐标（地图内部单位；改完立即落库，一条撤销）"
+               @change="onMarkerCoordChange('y', $event)" />
+      </div>
+      <div class="props-row">
+        <label>剧本：</label>
+        <span class="marker-belong">{{ selectedScenario?.name || '（未选剧本）' }}</span>
+      </div>
+      <div class="props-stats">
+        标记 {{ markerOrdinal }} / {{ markerTotal }} · 点图标即选中，改动一次一条撤销
+      </div>
+      <div class="props-row">
+        <button class="props-mini danger" data-testid="marker-delete" :disabled="store.isReadOnly"
+                :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
+                  : '删除这个标记（可 Ctrl+Z 撤回；底图与省份不动）'"
+                @click="deleteSelectedMarker">删除标记</button>
+      </div>
+      <!-- 资料：**同一份实现**（与省份面板共用一个组件）—— 按标记名查只读索引 -->
+      <VaultLoreSection testid="marker-vault" :query="selectedMarker.name || ''" />
     </div>
 
     <!-- 剧本管理对话框 -->
@@ -1577,8 +1604,12 @@ import ScenarioSliceExport from './ScenarioSliceExport.vue';
 // 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报「区间外易主日期」，
 // 不另写一套口径（两套口径漂移 = 面板说没事、时间轴悄悄不显示）。
 import { changeDateStats } from '../utils/scenarioSlices';
-// 读料桥（2026-10-24）：省份 → 库内同名词条（**只读检索 + 打开阅读器**，不写笔记、不建笔记）
-import { openNote as openVaultNote, openNoteSearch } from '../utils/noteReader';
+// 读料桥（2026-10-24）：省份 / 标记 → 库内同名词条。
+// ⚠️ 实现只有一份：`VaultLoreSection.vue`（本文件只引用组件，不自己调 vaultIndexSearch）——
+//    两个使用点各写一份的话，"改一处另两处不变"迟早发生。
+import VaultLoreSection from './VaultLoreSection.vue';
+// 标记命中的**唯一实现**（2026-10-24，第 5 件补「点标记」）：纯函数、只读，Node 单测直接覆盖
+import { hitMarker, markerIdentity, markerIndexOf, MARKER_HIT_RADIUS_PX } from '../utils/markerHitTest';
 import {
   buildTimeline, currentOwnerRef, isStriped, polityColor,
   settledCount, eraIndexOfYear, findGap,
@@ -5087,7 +5118,7 @@ async function onCanvasClick(event) {  if (event.button === 2) {
     return;
   }
 
-  // 选择模式：城镇点击优先（标记支持选中，为后续编辑预留），否则选中省份
+  // 选择模式：标记 → 城镇 → 省份（标记画在最上层，所以先认它）
   if (tool.value === 'select') {
     // 🔴 2026-10-17 第八修·三修：这次 click 若是"mousedown 已经消费掉河命中"的那一次，
     //    直接跳过 —— 否则下面的"选省"逻辑会把刚选中的河当场取消（用户看到的是"点了没反应"）。
@@ -5111,6 +5142,7 @@ async function onCanvasClick(event) {  if (event.button === 2) {
       selectedRiverId.value = hitRiver.id;
       selectedProvince.value = null;
       showProps.value = false;
+      closeMarkerEditor();
       riverActiveNode.value = -1;
       const isImported = String(hitRiver.id || '').startsWith('imported_');
       statusMsg(isImported
@@ -5119,6 +5151,15 @@ async function onCanvasClick(event) {  if (event.button === 2) {
       render();
       return;
     }
+    // 标记命中（2026-10-24）：标记是叠在地形/城镇之上的图标 → 点它就该选中它。
+    // 此前这一段缺失 = 标记"放下就再也点不到"（没有面板，也没有任何回执）。
+    const markerHit = findMarkerAt(world);
+    if (markerHit) {
+      openMarkerEditor(markerHit.marker, markerHit.index);
+      render();
+      return;
+    }
+    if (selectedMarker.value) closeMarkerEditor();   // 点空地/别的对象 → 收起标记面板（重绘在末尾）
     const burg = showBurgs.value ? findBurgAt(sx, sy) : null;
     selectedBurg.value = burg;
     if (burg) {
@@ -5248,6 +5289,16 @@ async function onCanvasClick(event) {  if (event.button === 2) {
   } else if (tool.value === 'marker') {
     // 点击放置标记（P1-T5 标记类型系统）
     if (viewMode.value === 'scenario' && selectedScenario.value) {
+      // 2026-10-24：点在**已有标记**上 = 打开它的面板，而不是又叠一个（同一位置两个图标
+      // 谁也分不清，而且两个都点不开）。要用新标记请稍微挪开一点。
+      const exist = findMarkerAt(world);
+      if (exist) {
+        openMarkerEditor(exist.marker, exist.index);
+        statusMsg(`这里已有标记「${exist.marker.name || '（未命名标记）'}」—— 已打开它的面板；`
+          + '要新放一个请挪开一点（同一位置叠两个谁也点不准）');
+        render();
+        return;
+      }
       const name = await askText({ title: '标记名称' });
       if (name) {
         const typeDef = MARKER_TYPES.find(t => t.id === selectedMarkerType.value) || MARKER_TYPES[0];
@@ -10040,38 +10091,148 @@ function ownerPolityForProvince(provId) {
  */
 const selectedProvincePolity = computed(() => ownerPolityForProvince(selectedProvince.value?.id));
 
-// ===== 省份 → 库内资料（读料桥，2026-10-24；**只读**） =====
-//
-// 判据（第 5 件）：点图能看设定、换库不崩、一个字节都不写。
-// 这里只做两件事：`vaultIndexSearch`（主进程只读索引，元数据命中，不读正文）+ `openNote`（阅读器）。
-// 🔴 不猜、不自动建：没命中就明说「库里没有同名词条」——「认不出就进待人工」同一条纪律。
-const provinceVaultHits = ref([]);
-const provinceVaultBusy = ref(false);
-let provinceVaultSeq = 0;
+// ===== 库内资料检索 → 已抽成 `VaultLoreSection.vue`（2026-10-24，读料桥）=====
+// 唯一实现只在那一个组件里（省份面板 / 标记面板共用），本文件**不再自己调** `vaultIndexSearch`。
+// 纪律不变：只读检索 + 打开阅读器；没命中就明说「库里没有同名词条」；不猜、不自动建。
 
-async function searchVaultForProvince(force = false) {
-  const prov = selectedProvince.value;
-  const name = prov && prov.name ? String(prov.name).trim() : '';
-  if (!name) { provinceVaultHits.value = []; return; }
-  const seq = ++provinceVaultSeq;
-  if (force) provinceVaultBusy.value = true;
-  else provinceVaultBusy.value = provinceVaultHits.value.length === 0;
-  try {
-    const res = await window.sitianAPI.vaultIndexSearch(name, 5);
-    if (seq !== provinceVaultSeq) return;          // 连点时最后一次赢（先到的不许盖后到的）
-    provinceVaultHits.value = (res && res.success && Array.isArray(res.results)) ? res.results : [];
-  } catch (e) {
-    if (seq === provinceVaultSeq) provinceVaultHits.value = [];
-  } finally {
-    if (seq === provinceVaultSeq) provinceVaultBusy.value = false;
+// ===== 标记 → 命中 / 面板（2026-10-24，第 5 件补「点标记」）=====
+//
+// 为什么现在才有：标记此前是"只画不收"的一层 —— 放下时 `askText` 问个名字，
+// 之后**点不到它**（选择工具只认河流 / 城镇 / 省份）。所以"点标记看资料"的前置是
+// ① 命中测试（`utils/markerHitTest.js`，纯函数 + Node 单测）② 编辑面板（本段）。
+//
+// 选中的状态分两半：`selectedMarker`（对象，面板拿来显示）+ `selectedMarkerIndex`（下标）。
+// 为什么留下标：FMG `.map` 导入的标记**没有 id**（只有 `{x,y,name,type}`），
+// 只按 id 定位会落到"任意第一条无 id 的"（`removeScenarioMarker` 的注释记着这次事故）。
+const selectedMarker = ref(null);
+const selectedMarkerIndex = ref(-1);
+const showMarkerPanel = ref(false);
+
+/** 世界坐标 → 命中的标记（判定唯一实现见 utils/markerHitTest.js；容差按屏幕 px 换算） */
+function findMarkerAt(world) {
+  const list = selectedScenario.value?.markers || [];
+  if (!list.length) return null;
+  const tol = MARKER_HIT_RADIUS_PX / Math.max(1e-6, cameraScale.value || 1);
+  return hitMarker(list, world.x, world.y, tol);
+}
+
+function closeMarkerEditor() {
+  if (!selectedMarker.value && !showMarkerPanel.value) return;
+  selectedMarker.value = null;
+  selectedMarkerIndex.value = -1;
+  showMarkerPanel.value = false;
+}
+
+/** 打开标记面板：顺带收起省份面板（两块都在右侧，叠着谁也读不了） */
+function openMarkerEditor(marker, index) {
+  if (!marker) return;
+  selectedMarker.value = marker;
+  selectedMarkerIndex.value = Number.isInteger(index) ? index : -1;
+  showMarkerPanel.value = true;
+  selectedProvince.value = null;
+  showProps.value = false;
+  contextMenu.value.show = false;
+  statusMsg(`已选中标记「${marker.name || '（未命名标记）'}」—— 面板里可改名 / 改类型 / 改坐标 / 删除，`
+    + '下面「资料」按名字只读检索库内词条');
+}
+
+/** 对齐面板指向的标记对象（store 每次写都换对象；撤销/重做也走这里） */
+function refreshSelectedMarker() {
+  const cur = selectedMarker.value;
+  if (!cur) return;
+  const list = selectedScenario.value?.markers || [];
+  const idx = markerIndexOf(list, markerIdentity(cur, selectedMarkerIndex.value));
+  if (idx < 0) { closeMarkerEditor(); return; }
+  selectedMarkerIndex.value = idx;
+  if (list[idx] !== cur) selectedMarker.value = list[idx];
+}
+
+function markerRefOf() {
+  const cur = selectedMarker.value;
+  if (!cur) return null;
+  return markerIdentity(cur, selectedMarkerIndex.value);
+}
+
+const markerCoords = computed(() => {
+  const m = selectedMarker.value || {};
+  const round = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 10) / 10 : 0);
+  return { x: round(m.x), y: round(m.y) };
+});
+const markerTotal = computed(() => (selectedScenario.value?.markers || []).length);
+const markerOrdinal = computed(() => (selectedMarkerIndex.value >= 0 ? selectedMarkerIndex.value + 1 : '?'));
+
+/**
+ * 改标记的一个写口（名字 / 类型 / 坐标都走这里 → store 一条 undo + 写闸门）。
+ * @returns {boolean} 是否真的改了（只读 / 非法值 / 找不到目标时为 false，**且什么都不写**）
+ */
+function applyMarkerPatch(patch) {
+  const sc = selectedScenario.value;
+  if (!sc || !selectedMarker.value) return false;
+  if (store.isReadOnly) {
+    statusMsg(`改标记已停用：${store.readOnlyReason || '只读：未打开项目'}`);
+    return false;
+  }
+  const res = store.updateScenarioMarker(sc.id, markerRefOf(), patch);
+  if (!res || res.ok === false) {
+    statusMsg(`改标记失败（${(res && res.reason) || '未知原因'}）—— 数据没有变`);
+    return false;
+  }
+  selectedMarker.value = res.marker;
+  render();
+  return true;
+}
+
+function onMarkerNameChange(e) {
+  const name = String(e.target.value || '').trim();
+  if (!name) {
+    e.target.value = selectedMarker.value?.name || '';
+    statusMsg('标记名不能留空 —— 已恢复原值（没写任何东西）');
+    return;
+  }
+  if (applyMarkerPatch({ name })) statusMsg(`标记已改名「${name}」（可 Ctrl+Z 撤回）`);
+}
+
+function onMarkerTypeChange(e) {
+  const def = MARKER_TYPES.find(t => t.id === String(e.target.value || '')) || MARKER_TYPES[0];
+  // 图标/颜色跟着类型走：画布按 m.icon / m.color 渲染，只改 type 会"类型变了、图标没变"
+  if (applyMarkerPatch({ type: def.id, icon: def.icon, color: def.color })) {
+    statusMsg(`标记类型已改为「${def.name}」（可 Ctrl+Z 撤回）`);
   }
 }
 
-// 选中的省换了 / 就地改名了 → 重新查（只读检索很轻，不必防抖）
-watch(() => (selectedProvince.value && selectedProvince.value.id) || '', () => { searchVaultForProvince(); });
-watch(() => (selectedProvince.value && selectedProvince.value.name) || '', (now, prev) => {
-  if (now !== prev) searchVaultForProvince();
-});
+function onMarkerCoordChange(axis, e) {
+  // ⚠️ `Number('') === 0` —— 输入框被清空时必须判为非法，不能"顺手把坐标写成 0"
+  //    （那会是一个用户没打算执行的静默移动）
+  const raw = String(e.target.value == null ? '' : e.target.value).trim();
+  const v = raw === '' ? NaN : Number(raw);
+  if (!Number.isFinite(v)) {
+    e.target.value = markerCoords.value[axis];
+    statusMsg('坐标必须是有限数字 —— 已恢复原值（没写任何东西）');
+    return;
+  }
+  if (applyMarkerPatch({ [axis]: v })) statusMsg(`标记坐标 ${axis.toUpperCase()} → ${v}（可 Ctrl+Z 撤回）`);
+}
+
+function deleteSelectedMarker() {
+  const sc = selectedScenario.value;
+  const cur = selectedMarker.value;
+  if (!sc || !cur) return;
+  if (store.isReadOnly) { statusMsg(`删除标记已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
+  const name = cur.name || '（未命名标记）';
+  const res = store.removeScenarioMarker(sc.id, markerRefOf());
+  if (!res || res.ok === false) { statusMsg(`删除标记失败（${(res && res.reason) || '未知原因'}）`); return; }
+  closeMarkerEditor();
+  statusMsg(`已删除标记「${name}」（可 Ctrl+Z 撤回；底图与省份一个都没动）`);
+  render();
+}
+
+// 选中省份 / 换剧本 → 收起标记面板（面板占用同一块右侧位置）
+watch(selectedProvince, (p) => { if (p) closeMarkerEditor(); });
+watch(() => selectedScenario.value?.id, () => { closeMarkerEditor(); });
+// store 每次写都会把 `scenarios` 换成新对象 → `selectedScenario` 被重新指向（见 onMounted 里的
+// `watch(sortedScenarios…)`）→ 这里把面板指向**新的**标记对象；标记被撤销删掉时收起面板。
+watch(selectedScenario, () => { refreshSelectedMarker(); });
+
 
 /**
  * 势力标注的**归属查询**：必须与 `getProvinceColor` 走同一口径
@@ -10189,6 +10350,17 @@ function drawScenarioMarkers(c) {
   c.textBaseline = 'middle';
   for (const m of selectedScenario.value.markers) {
     if (m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
+    // 选中态（2026-10-24）：金色虚线圈 —— 面板在右侧，圈在图上，用户能确认"改的就是这一个"
+    if (selectedMarker.value && m === selectedMarker.value) {
+      const r = Math.max(12, px(16)) * 0.95;
+      c.beginPath();
+      c.arc(m.x, m.y, r, 0, Math.PI * 2);
+      c.strokeStyle = '#fbbf24';
+      c.lineWidth = px(1.6);
+      if (c.setLineDash) c.setLineDash([px(3), px(3)]);
+      c.stroke();
+      if (c.setLineDash) c.setLineDash([]);
+    }
     // 图标（矢量；历史数据里的 emoji 由内部 fillText 兜住）
     // 图标/颜色缺省时按「标记类型」补 —— 导入的数据往往只带 type，不补会全变成同一个兜底图标
     const typeDef = MARKER_TYPES.find(t => t.id === m.type);
@@ -11655,44 +11827,32 @@ watch(baseMap, () => {
   border-top: 1px solid #334155;
 }
 
-/* 资料（读料桥）：省份名 → 库内候选（只读） */
-.props-vault {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #334155;
+/* 资料（读料桥）段的样式**搬进了 `VaultLoreSection.vue`**（2026-10-24）：
+   父组件的 scoped 样式只能命中子组件根节点，内部节点拿不到 —— 与其在这里用 :deep 穿透
+   （子组件就被钉死在父组件身上），不如让组件自带样式。本文件不再保留那份规则。 */
+
+/* 标记面板（2026-10-24）：复用省份面板的定位/行样式，补坐标输入与删除按钮 */
+.marker-props { top: 100px; }
+.marker-props .coord-input {
+  width: 74px;
+  background: #334155;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: #e2e8f0;
+  font-size: 12px;
 }
-.props-vault-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  color: #94a3b8;
-  margin-bottom: 4px;
+.marker-props .marker-belong {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.props-vault-dim {
-  font-size: 11px;
-  color: #64748b;
-  line-height: 1.5;
-}
-.props-vault-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 132px;
-  overflow: auto;
-}
-.props-vault-row {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 3px 5px;
-  border-radius: 3px;
-  cursor: pointer;
-  background: rgba(148, 163, 184, 0.06);
-}
-.props-vault-row:hover { background: rgba(148, 163, 184, 0.16); }
-.props-vault-row .pv-title { font-size: 12px; color: #cbd5e1; }
-.props-vault-row .pv-path { font-size: 10px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.props-mini.danger { color: #f87171; border-color: #7f1d1d; }
+.props-mini.danger:not(:disabled):hover { background: rgba(248, 113, 113, 0.16); }
 
 /* 归属行（2026-10-21）：值占满剩余宽度，右侧一个「清成无主 / 设为当前势力」小按钮 */
 .props-row .owner-value {

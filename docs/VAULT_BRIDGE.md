@@ -213,9 +213,11 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 真实文件系统上真 mkdir+写文件 / 源码守卫（handler 用的是这两个函数，create 段零 coordinate）；
 设置面板入口另有 `scripts/tests/cases/test_142_note_target_setting.py`（保存/回显/清空回自动 + 源码守卫）。
 
-## 七点七、点省份看资料（2026-10-24）
+## 七点七、点省份 / 点标记看资料（2026-10-24）
 
-剧本视图的省份属性区末尾有「资料」段（`data-testid="province-vault"`）：
+剧本视图的省份属性区末尾有「资料」段（`data-testid="province-vault"`）—— 实现是共用组件
+`src/renderer/src/components/VaultLoreSection.vue`（标记面板用的是**同一个组件**，只是换了 `testid`；
+`vaultIndexSearch` 全仓只出现在这里，`test_143`/`test_144` 的源码守卫会查"第二份实现"）：
 
 - 按**省名**查 `vaultIndexSearch`（主进程只读索引，**元数据命中**：标题/别名/标签/小标题/首行/路径，
   不读正文）→ 最多 5 条候选（标题 + 路径）；
@@ -224,10 +226,29 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 - 连点/改名有**序号防乱序**（先到的不许盖后到的），整段**没有任何写 IPC**。
 
 判据：`scripts/tests/cases/test_143_province_lore.py` —— 检索关键词=省名 / 候选可点开阅读器 /
-空态可读 / 创建笔记与改配置调用次数为 0 / 源码守卫（这一段只许 `vaultIndexSearch` + `openNote`）。
+空态可读 / 创建笔记与改配置调用次数为 0 / 源码守卫（资料段只许 `vaultIndexSearch` + `openNote`，
+且 ScenarioMap 里**不许**再出现 `vaultIndexSearch`）。
 
-⚠️ **"点标记"不在这一刀**：ScenarioMap 的标记目前**没有命中测试、也没有编辑面板**
-（放下时只 `askText` 问名字），所以"点标记出资料"要先做**标记命中 + 标记面板**，再挂同一段检索。
+### 点标记（2026-10-24，同一刀的后半）
+
+标记此前是"只画不收"的一层：放下时 `askText` 问个名字，之后**点不到它**（选择工具只认河流 / 城镇 / 省份）。
+补了三件，缺一不可：
+
+1. **命中测试** `src/renderer/src/utils/markerHitTest.js` —— 纯函数、只读。
+   口径与省份/河流同一套：**从后往前**找（`drawScenarioMarkers` 后画的在上），容差由调用方按
+   「屏幕 px ÷ 缩放」换算；`null` / `''` / 非数字坐标一律跳过
+   （`Number(null) === 0` 会把坏标记变成"世界原点上的可点标记"——这条踩过，已钉在单测里）。
+   判据：`scripts/tests/unit/test_marker_hit.js`（7 组）。
+2. **标记面板** `ScenarioMap` 右侧：名字 / 类型 / 坐标 / 删除。写口只有一个
+   `store.updateScenarioMarker`（白名单字段、一条 undo、`saveScenarios()`；值没变**不落空 undo**）。
+   类型改名时**图标与颜色跟着类型走**（画布按 `m.icon/m.color` 渲染，只改 `type` 会"类型变了图标没变"）。
+3. **资料段** —— 与省份面板**同一个组件** `VaultLoreSection.vue`（不是复制）：
+   按标记名走 `vaultIndexSearch` → 候选 → 阅读器；没命中就明说「库里没有同名词条」；
+   「全库搜索」把名字带进搜索面板（可搜正文）。
+
+判据：`scripts/tests/cases/test_144_marker_lore.py` —— 真点图标开面板（**点偏 40px 不命中**）/
+改名·类型·坐标都落库且撤销栈标签是「编辑标记」/ 资料关键词=标记名 / 空态可读 /
+「全库搜索」预填 / 创建笔记与改配置调用 0 / 源码守卫（命中与资料各只有一份实现，面板不直改标记对象）。
 
 ## 八、明确没做
 

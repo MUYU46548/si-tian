@@ -2649,6 +2649,69 @@ export function createScenarioEditingModule(ctx) {
     saveScenarios();
   }
 
+  /**
+   * 更新剧本标记（名字 / 类型 / 图标 / 颜色 / 坐标）—— **一条 undo**，不碰别的字段。
+   *
+   * 2026-10-24（第 5 件补「点标记」）：标记面板之前不存在，于是"改标记"也没有写口 ——
+   * 组件里直改 `m.name = …` 会绕开 `execute()`（只读态照改内存、撤销把新值当旧值还原），
+   * 与省份面板 2026-10-01 那次修复是同一类缺陷。这里就是把那条路堵上：
+   *   · 只认白名单字段（`name/type/icon/color/x/y`），别的键一律不写；
+   *   · 值没变就返回 `unchanged`，**不落一条空 undo**（否则 100 条上限会被空操作挤掉）；
+   *   · 坐标必须是有限数（历史数据里有 `null` / 字符串坐标，写进去会变成"看不见的标记"）。
+   *
+   * @param {string} scenarioId
+   * @param {string|number} markerRef id 或下标（FMG 导入的标记没有 id）
+   * @param {object} patch
+   * @returns {{ok:true, marker:object, unchanged?:true}|{ok:false, reason:string}}
+   */
+  function updateScenarioMarker(scenarioId, markerRef, patch) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    const list = scenario.markers || [];
+    const idx = typeof markerRef === 'number' ? markerRef : list.findIndex(m => m.id === markerRef);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) return { ok: false, reason: 'no-target' };
+    const oldMarker = list[idx];
+    if (!oldMarker || typeof oldMarker !== 'object') return { ok: false, reason: 'no-target' };
+
+    const next = { ...oldMarker };
+    for (const k of ['name', 'type', 'icon', 'color']) {
+      if (patch && patch[k] !== undefined) next[k] = patch[k];
+    }
+    for (const k of ['x', 'y']) {
+      if (patch && patch[k] !== undefined) {
+        const n = Number(patch[k]);
+        if (!Number.isFinite(n)) return { ok: false, reason: 'bad-coord' };
+        next[k] = n;
+      }
+    }
+    const KEYS = ['name', 'type', 'icon', 'color', 'x', 'y'];
+    if (KEYS.every(k => next[k] === oldMarker[k])) return { ok: true, marker: oldMarker, unchanged: true };
+
+    // 按下标替换：撤销/重做都放回**原位**（标记顺序 = 绘制层叠顺序，追加到末尾会改变压叠）
+    const put = (val) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const arr = [...(cur.markers || [])];
+      const at = arr.indexOf(oldMarker);
+      const pos = at >= 0 ? at : idx;
+      if (pos < 0 || pos >= arr.length) return;
+      arr[pos] = val;
+      scenarios.value = {
+        ...scenarios.value,
+        [scenarioId]: { ...cur, markers: arr, updatedAt: new Date().toISOString() },
+      };
+    };
+    execute({
+      type: 'update-marker',
+      label: '编辑标记',
+      undo: () => { put(oldMarker); },
+      redo: () => { put(next); },
+    });
+
+    saveScenarios();
+    return { ok: true, marker: next };
+  }
+
   function removeScenarioMarker(scenarioId, markerRef) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return { ok: false, reason: 'no-scenario' };
@@ -3961,6 +4024,8 @@ export function createScenarioEditingModule(ctx) {
     applyScenarioState,
     exportScenariosPayload, auditScenariosPayload, importScenariosPayload, removeAllScenarios,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
+    // 2026-10-24（第 5 件补「点标记」）：标记面板的唯一写口（一条 undo；只认白名单字段）
+    updateScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
     // 2026-10-17 第八修·改向：自建底图的**本地地形起点**（按陆地轮廓生成，落库进 undo）
