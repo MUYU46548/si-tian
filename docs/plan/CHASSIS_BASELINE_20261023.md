@@ -411,3 +411,49 @@ python scripts/tests/tools/_lab.py down          # 收工：杀进程 + 还原 i
 
 ⏳ **四笔还剩一支**：归属笔（`useProvinceBrush`，剧本侧）—— 指南 04 §二把它评为"最重一刀"，
 且它长在账本上（松手产出事件组），按施工序**并到第 4 件**做，不在这里顺手改。
+
+---
+
+## 十四、第 3 件：账本引擎 `src/ledger/`（纯数据层，2026-10-24 12:0x）
+
+**形状**（digest §三-① 已定的口径）：一条事件流
+`{ id, worldId, epochId, day, type, groupId, provenance, payload }`；`day` = **该剧本内的绝对日**（可负，
+由 `CalendarConfig` 换算）；`groupId` = 「一笔/一次操作」的身份；`provenance` = brush / ui / import / ai / migrate。
+`initialOwnership` / `changeEvents` / `ownership` 降级为**投影缓存**（由引擎重算）。
+
+| 文件 | 职责 |
+|---|---|
+| `src/ledger/schema.js` | 事件形状 + `dayOfDate/dateOfDay`（360 天/年、30 天/月，可负年份）+ `validateEvent` |
+| `src/ledger/replay.js` | `projectOwnership(ledger, {atDay})` —— **全仓"某省某天归谁"的唯一实现**；`eventsFromV2` 是 v2 形状适配器；`diffOwnership` |
+| `src/ledger/groups.js` | 整笔撤销：`groupIds/groupInfo/removeGroup/insertGroup`（**基线没有 groupId，结构上撤不掉**） |
+| `src/ledger/migrate.js` | v2 剧本 → 账本（基线 + 事件；合成事件标 `migrate`）+ `verifyMigration`（逐省对拍）+ `toV2Projection`（缓存重算） |
+| `src/ledger/index.js` | 公开面 + `assertLedgerShape` + `makeEmptyLedger` |
+
+**"只有一份回放"不是口号**：`utils/scenarioLedgerV2.deriveFrom` 现在**改为**把 v2 形状喂给
+`ledger/replay.js`（原来那份 cmpDate 排序实现删掉了）。等价性由 `a5` 段拿两份实现**逐省对拍**守着。
+
+**判据（新单测 `unit/test_ledger_core.js`，6/6）**：
+
+| 段 | 判据 | 读数 |
+|---|---|---|
+| a1 | 日换算（负年份 / 缺省月日 / 越界夹紧）+ 事件校验 | 8 条换算 + 1 合法 + **4 条坏事件全被拒** |
+| a2 | 回放：基线 / 切片 / 最后赢 / `null` 删键 / 同日按流内先后 | 5 条口径全对 |
+| a3 | **400 省 × 2000 事件回放 < 50ms** | **0.6ms** |
+| a4 | 组撤销：整笔摘下再放回**逐省还原**；基线永远摘不掉 | 6 组、事件顺序也一致 |
+| a5 | 与 v2 `deriveFrom` **逐省对拍** | 4 份样本（负年份 / 无月日 / null 无主 / 同日两条）0 处不一致 |
+| a6 | 纯数据层守卫（`src/ledger/*` 不 import vue/store/组件、不碰 DOM）+ **反向探针** | 5 个文件零外部依赖；把 null 删键改成挂 null → 结论立刻不同 |
+
+**415 省孤本试算（只读）**：`node scripts/ledger-dryrun.mjs --project <绒花计划.sitian>`
+——13 段、**冲突 0**、11ms、跑完文件大小/mtime 未变（只读自证在脚本里）；
+事件量与日区间见表格（例：玦王朝 158 事件 / -148680..-51840）。
+
+**踩到的坑（都写进注释）**：
+1. `EVENT_TYPES['epoch.baseline']` 取到的是**中文标签**不是键 → 基线一条都不认、整段归属为空。
+   现在类型键是常量 `EVENT_BASELINE` / `EVENT_OWNER_CHANGED`。
+2. `Number(null) === 0` 且 `isInteger` 为真 → "没给月份"被当成 1 月、`d` 还生效（`{y:5,m:null,d:9}` 算成 5 年 9 日）。
+   先判"有没有值"再归一。
+3. 单元测试的 ESM 复制加载器原来只处理**同目录** `./x`；`scenarioLedgerV2` 现在跨目录 import `../../../ledger/replay`
+   → 改成**按仓库相对结构**复制（否则用例整片红，而产品是好的）。
+
+⏳ **第 3 件还没完**：笔画对象模型（`{strokeId, generator, params, rawPoints, geometry}`）与四笔总装
+（第 4 件）尚未落地；归属笔的写口要等这一步把 groupId 接上。

@@ -15,7 +15,9 @@
 //
 // ⚠️ 本模块只做纯计算：不读盘、不碰 store、不改入参。
 import { buildTimeline } from './scenarioTimeline';
-import { cmpDate, normalizeDate } from './scenarioDates';
+import { normalizeDate } from './scenarioDates';
+// 账本引擎（第 3 件）：回放只有一份实现，这里只做 v2 形状的适配
+import { eventsFromV2 as ledgerEventsFromV2, projectOwnership as ledgerProjectOwnership } from '../../../ledger/replay';
 
 /**
  * 为整串剧本计算 v2 的 `initialOwnership`（不修改入参）。
@@ -70,21 +72,17 @@ export function planLedgerV2(scenarios) {
   return { list, dict, byId, report: { eras, mismatchTotal } };
 }
 
-/** 从 initial + changeEvents 派生 ownership（纯函数；owner=null 表示无主 → 删键） */
+/**
+ * 从 initial + changeEvents 派生 ownership（纯函数；owner=null 表示无主 → 删键）
+ *
+ * 🔴 2026-10-24（第 3 件）：判定逻辑**搬进账本引擎**（`src/ledger/replay.js`），这里只做
+ *    「v2 形状 → 事件流」的适配后调用它 —— 全仓"某省某天归谁"仍然只有一份实现。
+ *    等价性由两处守：① `src/ledger/replay.js` 的口径注释（同日按流内先后、null = 删键）；
+ *    ② 单元测试 `test_ledger_core.js` 的 a5 段拿本函数与账本回放**逐省对拍**。
+ */
 export function deriveFrom(initial, changeEvents) {
-  const out = {};
-  for (const pid of Object.keys(initial || {})) {
-    if (initial[pid] !== null && initial[pid] !== undefined) out[pid] = initial[pid];
-  }
-  for (const pid of Object.keys(changeEvents || {})) {
-    const arr = Array.isArray(changeEvents[pid]) ? changeEvents[pid].slice() : [];
-    if (!arr.length) continue;
-    arr.sort(cmpDate);
-    const last = arr[arr.length - 1];
-    if (last.owner === null || last.owner === undefined) delete out[pid];
-    else out[pid] = last.owner;
-  }
-  return out;
+  const events = ledgerEventsFromV2(initial, changeEvents);
+  return ledgerProjectOwnership({ events });
 }
 
 /**

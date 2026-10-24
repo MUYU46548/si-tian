@@ -27,17 +27,31 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 async function main() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-ledger-v2-'));
-  const fix = (s) => s.replace(/from '\.\/([A-Za-z0-9_-]+)(\.js)?'/g, "from './$1.js'");
-  const seen = new Set(); const q = ['scenarioLedgerV2.js', 'scenarioTimeline.js', 'scenarioDates.js'];
-  while (q.length) {
-    const f = q.shift(); if (seen.has(f)) continue; seen.add(f);
-    const full = path.join(SRC, f); if (!fs.existsSync(full)) continue;
-    const code = fs.readFileSync(full, 'utf8');
-    fs.writeFileSync(path.join(tmp, f), fix(code));
-    for (const m of code.matchAll(/from '\.\/([A-Za-z0-9_-]+)(\.js)?'/g)) q.push(`${m[1]}.js`);
+  // 按**仓库内相对结构**把 ESM 依赖复制到临时目录，再 import。
+  // ⚠️ 2026-10-24（第 3 件）：`scenarioLedgerV2.js` 现在会把 v2 形状喂给账本引擎
+  //    （`src/ledger/replay.js`，跨目录的相对 import）。所以这里不能只按"同目录文件名"复制，
+  //    必须让**相对路径原样成立** —— 否则用例会因为"模块找不到"整片红，而产品代码是好的。
+  const srcRoot = path.join(ROOT, 'src');
+  const seen = new Set();
+  const queue = [path.join(SRC, 'scenarioLedgerV2.js')];
+  while (queue.length) {
+    const full = queue.shift();
+    const key = path.relative(srcRoot, full);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!fs.existsSync(full)) continue;
+    let code = fs.readFileSync(full, 'utf8');
+    code = code.replace(/from '(\.\.?\/[^']+?)(\.js)?'/g, "from '$1.js'");
+    const outFull = path.join(tmp, key);
+    fs.mkdirSync(path.dirname(outFull), { recursive: true });
+    fs.writeFileSync(outFull, code);
+    // 递归收集相对依赖（含 ../.. 跨目录）
+    for (const m of code.matchAll(/from '(\.\.?\/[^']+?)(\.js)?'/g)) {
+      queue.push(path.resolve(path.dirname(full), m[1] + '.js'));
+    }
   }
   fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
-  const V2 = await import(pathToFileURL(path.join(tmp, 'scenarioLedgerV2.js')).href);
+  const V2 = await import(pathToFileURL(path.join(tmp, 'renderer', 'src', 'utils', 'scenarioLedgerV2.js')).href);
 
   const scenarios = [
     {

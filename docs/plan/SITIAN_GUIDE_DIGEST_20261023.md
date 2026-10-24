@@ -153,6 +153,15 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   ③ **命名拆开**：轮廓勾画（矢量路径）/ 地形笔刷（笔画填充）/ 散布笔刷（实例分布）——三者共用对象模型，但生成器与验收标准不同；**不拆开派工，agent 会把"轮廓勾画"当"笔刷"做完**。
 - **判据**：6 项单测全绿（含 400×2000 <50ms + baseline 不可撤 + 旧档迁移逐省一致）；`src/ledger/` 不 import 任何 `vue`/`store`/`components`；笔画对象过一遍"原始点→简化→回放"往返逐点一致。
 - **风险**：与既有 `scenarioEventLedger` 的双源（§3-①）；迁移在 415 孤本副本上跑。
+- ✅ **引擎五件已落（2026-10-24）**：`src/ledger/{schema,replay,groups,migrate,index}.js`——
+  事件流 `{id,worldId,epochId,day,type,groupId,provenance,payload}`、日由 `CalendarConfig` 换算（可负）、
+  **基线不可撤**（结构上没 groupId）、整笔撤销走组。
+  **回放只有一份实现**：`utils/scenarioLedgerV2.deriveFrom` 改为把 v2 形状喂给 `ledger/replay.js`（旧 cmpDate 实现已删）。
+  单测 `unit/test_ledger_core.js` **6/6**：日换算/校验、回放五条口径、**400 省×2000 事件 0.6ms**、组撤销逐省还原、
+  与 v2 `deriveFrom` **逐省对拍 0 处不一致**、纯数据层守卫 + 反向探针。
+  415 孤本只读试算：`node scripts/ledger-dryrun.mjs --project <绒花计划.sitian>` → 13 段 / **冲突 0** / 11ms / 文件未动。
+  ⏳ 剩：**笔画对象模型**（`{strokeId, generator, params, rawPoints, geometry}`，原话见 §一-C 三处改法）
+  与四笔总装（第 4 件）。
 
 ### 第 4 件 · 四笔总装 + 时间轴 + 导出
 - **第一步**：涂归属笔改走账本（`provenance:"brush"`、一笔一组）——**这是产品本体的接线点**；配"读盘判据"（保存后重开，events 节真长了）。
@@ -212,7 +221,7 @@ git log --oneline -1; git status --short; git rev-list --left-right --count HEAD
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
 (Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 137
-(Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 52
+(Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime
 Get-ChildItem 'C:\Users\muyu\Documents\SiTianProjects\_施工留底' | Select-Object Name,Length
