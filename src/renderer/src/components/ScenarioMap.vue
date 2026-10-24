@@ -4724,6 +4724,7 @@ function onMouseUp(event) {
     const pts = freeTrace || [];
     freeTrace = null;
     // 够长才算「一笔成型」；否则让随后的 click 走描点分支（落一个顶点）
+    const beforeTrace = baseMap.value;
     if (pts.length >= FREE_TRACE_MIN_POINTS) {
       suppressDrawClick = true;
       const okTrace = tool.value === 'outline'
@@ -4731,7 +4732,13 @@ function onMouseUp(event) {
         : commitFreeTrace(pts, !!(event && event.shiftKey));
       if (!okTrace) suppressDrawClick = false;
     }
-    render();
+    // 🔴 2026-10-24（1-b 收口）：**数据真变了就不再在这里同步重绘**。
+    //    几何一变，`baseMap` 计算属性就换了对象引用 → 下面那个 `watch(baseMap)` 会在**同一帧**
+    //    （pre flush，绘制之前）重画一遍；这里再画一次等于同一份内容画两遍
+    //    —— 实测一次松手 3~4 遍全量重绘、冷帧 35ms（暖帧 8ms），其中一遍纯属重复。
+    //    只在「没换引用 = 数据没变」时才必须补这一帧：笔迹预览层画在主画布上，
+    //    没有一次全量重绘就擦不掉（拒绝分支 / 太短 / 用户取消压叠确认都走这里）。
+    if (!pts.length || baseMap.value === beforeTrace) render();
   }
   if (ownerStrokeActive) {
     commitOwnerStroke();
@@ -10590,6 +10597,15 @@ watch([baseMapKey, () => baseMap.value?.terrain?.length || 0], ([key, count]) =>
   setTimeout(fitToView, 50);
 });
 
+// 🔴 2026-10-24（1-b 收口）：**去掉 deep** —— 这里要的只是「这张底图换对象了」。
+//    原来 `{ deep: true }` 让 Vue 每次变化都 `traverse` **整份底图**（200 省 + 160 河 + 9975 格高度图）：
+//    CPU 采样里 **77ms/次**，比它触发的那次重绘（冷帧 35ms）还贵，且每次都发生在松手后的同一帧里。
+//    为什么可以只认引用：本仓所有底图写入都是**整体替换**（`baseMaps.value = {...baseMaps.value, [key]: {...bm, …}}`，
+//    见 scenarioEditing / provinceEditing 的 60+ 处写入；高度图走 `commitHeightmap` 同样是换对象）。
+//    `baseMap` 是 `store.baseMaps[key]` 的计算属性 → 写入换对象 = 引用变 = 这里必触发；
+//    而"写了别的底图"不会换这张的对象 → 也不会误触发（deep 反而会）。
+//    ⚠️ 若将来出现**就地改**底图几何（`prov.points[i].x = …` 这种），这里会漏一次重绘 ——
+//       那种写法本身就是本仓的禁区（改几何一律走 store 写口换数组），必须改写法而不是把 deep 加回来。
 watch(baseMap, () => {
   // updateBaseProvince 会生成新对象，重新对齐选中引用，避免读到旧数据
   const sp = selectedProvince.value;
@@ -10599,7 +10615,7 @@ watch(baseMap, () => {
   }
   invalidateMinimap();          // 几何变了 → 小地图缩略图与包围盒作废（否则省界改了缩略图不动）
   render();
-}, { deep: true });
+});
 </script>
 
 <style scoped>
