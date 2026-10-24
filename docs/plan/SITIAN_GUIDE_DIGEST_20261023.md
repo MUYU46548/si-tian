@@ -162,6 +162,12 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   415 孤本只读试算：`node scripts/ledger-dryrun.mjs --project <绒花计划.sitian>` → 13 段 / **冲突 0** / 11ms / 文件未动。
   ⏳ 剩：**笔画对象模型**（`{strokeId, generator, params, rawPoints, geometry}`，原话见 §一-C 三处改法）
   与四笔总装（第 4 件）。
+- ✅ **笔画对象模型已落（2026-10-24）**：`src/ledger/stroke.js` —— 三支笔共用一套 `{strokeId, kind, generator,
+  params, rawPoints, geometry, geometryDigest}`；**rawPoints 原样保留**，生成器由调用方传入（不复制几何算法）；
+  散布**没 seed 直接拒**（不可复现是静默故障）；落 `stroke.committed` 事件（groupId 默认 = strokeId，一笔一组）。
+  判据 a7/a8：轮廓 400→26 点、散布 16 实例、地形 27 格**三份回放指纹全一致**；改 tolerance/原始点/seed 指纹必变；
+  散布实例的 `id` 是运行时标识，**不进指纹**（否则同一笔回放两次永远假红）。
+  ⏳ 剩：接线（归属笔写口按 groupId 落事件、装载口把 changeEvents 变投影）= 第 4 件。
 
 ### 第 4 件 · 四笔总装 + 时间轴 + 导出
 - **第一步**：涂归属笔改走账本（`provenance:"brush"`、一笔一组）——**这是产品本体的接线点**；配"读盘判据"（保存后重开，events 节真长了）。

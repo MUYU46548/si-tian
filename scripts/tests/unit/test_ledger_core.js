@@ -111,9 +111,14 @@ async function main() {
   await load([
     'ledger/index.js',
     'renderer/src/utils/scenarioLedgerV2.js',
+    // 笔画对象模型的回放要**用渲染层那几份真实生成器**（不在这里另写 RDP/散布）
+    'renderer/src/utils/geometry.js',
+    'renderer/src/utils/reliefIcons.js',
   ]);
   const L = await import(pathToFileURL(path.join(tmp, 'ledger', 'index.js')).href);
   const V2 = await import(pathToFileURL(path.join(tmp, 'renderer', 'src', 'utils', 'scenarioLedgerV2.js')).href);
+  const GEO = await import(pathToFileURL(path.join(tmp, 'renderer', 'src', 'utils', 'geometry.js')).href);
+  const RELIEF = await import(pathToFileURL(path.join(tmp, 'renderer', 'src', 'utils', 'reliefIcons.js')).href);
 
   console.log('=== 账本引擎（src/ledger）单元测试 ===');
 
@@ -261,6 +266,99 @@ async function main() {
     assert(brokenOut.p1 === null, '反向探针失效：改成 null 赋值后 p1 仍不是 null');
     assert(L.projectOwnership(ledger).p1 === undefined, '正确实现应当是"删键"（p1 不存在）');
     return `${files.length} 个文件零外部依赖；反向探针把 null 改赋值 → 结论立刻不同（删键 vs 挂 null）`;
+  });
+
+  // ── a7 笔画对象模型：三种 kind 的"原始点 → 生成 → 回放"逐点一致 ──────────
+  await check('a7 笔画模型：三种 kind 用**真实生成器**回放逐点一致，且 rawPoints 原样保留', () => {
+    // ① 轮廓勾画：RDP 简化（渲染层 geometry.simplifyPath）
+    const raw = [];
+    for (let i = 0; i < 400; i += 1) {
+      const a = (i / 400) * Math.PI * 2;
+      raw.push({ x: 1000 + Math.cos(a) * 300 + (i % 3) * 0.7, y: 500 + Math.sin(a) * 200 });
+    }
+    const outlineGen = (pts, params) => GEO.simplifyPath(pts, params.tolerance);
+    const outline = L.makeStroke({
+      strokeId: 'st-outline', kind: 'outline', generator: 'rdp', params: { tolerance: 4 },
+      rawPoints: raw, geometry: outlineGen(raw, { tolerance: 4 }), epochId: 'e', day: 12,
+    });
+    const oReplay = L.replayStroke(outline, outlineGen);
+    assert(oReplay.ok && oReplay.matches, `轮廓回放不一致（${oReplay.error || '指纹不同'}）`);
+    assert(outline.rawPoints.length === raw.length, `rawPoints 被生成物覆盖了（${outline.rawPoints.length} ≠ ${raw.length}）`);
+    assert(JSON.stringify(outline.geometry).length < JSON.stringify(raw).length, '简化结果居然不比原始点短（读数无效）');
+
+    // ② 散布笔刷：沿路径按 seed 散布（渲染层 reliefIcons.scatterAlongPath）
+    const path = [{ x: 0, y: 0 }, { x: 300, y: 60 }, { x: 600, y: -40 }];
+    const scatterGen = (pts, params, st) => RELIEF.scatterAlongPath(pts, { ...params }, st.existing || []);
+    const scatter = L.makeStroke({
+      strokeId: 'st-scatter', kind: 'scatter', generator: 'scatter-along-path',
+      params: { spacing: 40, size: 26, density: 'medium', seed: 7 }, rawPoints: path,
+      geometry: scatterGen(path, { spacing: 40, size: 26, density: 'medium', seed: 7 }, { existing: [] }),
+      epochId: 'e', day: 13,
+    });
+    const sReplay = L.replayStroke(scatter, scatterGen);
+    assert(sReplay.ok && sReplay.matches, `散布回放不一致（${sReplay.error || '指纹不同'}）`);
+    assert(Array.isArray(scatter.geometry) && scatter.geometry.length > 2, `散布结果太少（${scatter.geometry.length}）`);
+
+    // ③ 地形笔刷：**填充**型生成器（这里用"沿路径落格"的确定性版本代表；本层不关心生成器内部）
+    const fillGen = (pts, params) => {
+      const cells = new Map();
+      for (const p of pts) {
+        const cx = Math.floor(p.x / params.cell);
+        const cy = Math.floor(p.y / params.cell);
+        for (let dx = -1; dx <= 1; dx += 1) for (let dy = -1; dy <= 1; dy += 1) cells.set(`${cx + dx},${cy + dy}`, params.type);
+      }
+      return [...cells.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    };
+    const terrainParams = { cell: 14.4, type: 2 };
+    const terrain = L.makeStroke({
+      strokeId: 'st-terrain', kind: 'terrain', generator: 'grid-fill', params: terrainParams,
+      rawPoints: path, geometry: fillGen(path, terrainParams), epochId: 'e', day: 14,
+    });
+    const tReplay = L.replayStroke(terrain, fillGen);
+    assert(tReplay.ok && tReplay.matches, `地形回放不一致（${tReplay.error || '指纹不同'}）`);
+
+    // ④ 落事件：payload 只带这笔本身，且能 JSON 往返（不带运行时对象）
+    const ev = L.strokeEvent(scatter, { epochId: 'e', day: 13, worldId: 'default' });
+    const back = JSON.parse(JSON.stringify(ev));
+    assert(back.type === 'stroke.committed', `事件类型不对：${back.type}`);
+    assert(back.groupId === 'st-scatter', `groupId 应等于 strokeId（一笔一组），实际 ${back.groupId}`);
+    assert(L.validateEvent(back).ok, '笔画事件未通过校验：' + L.validateEvent(back).errors.join('；'));
+    assert(L.digestStroke(back.payload.stroke) === scatter.geometryDigest, 'JSON 往返后指纹变了（不可复现）');
+    return `轮廓 ${raw.length}→${outline.geometry.length} 点 / 散布 ${scatter.geometry.length} 个 / 地形 ${terrain.geometry.length} 格；三份回放指纹全一致`;
+  });
+
+  // ── a8 笔画模型的反向探针：改参数/改原始点/换 seed 必须让指纹变 ────────────
+  await check('a8 笔画模型反向探针：改 params / rawPoints / seed 指纹必变；缺 seed 的散布被拒', () => {
+    const raw = [{ x: 0, y: 0 }, { x: 100, y: 10 }, { x: 200, y: 0 }, { x: 300, y: 20 }];
+    const gen = (pts, params) => GEO.simplifyPath(pts, params.tolerance);
+    const base = L.makeStroke({
+      strokeId: 'st-a', kind: 'outline', generator: 'rdp', params: { tolerance: 2 },
+      rawPoints: raw, geometry: gen(raw, { tolerance: 2 }), epochId: 'e',
+    });
+    const baseDigest = base.geometryDigest;
+
+    const looseTol = JSON.parse(JSON.stringify(base));
+    looseTol.params.tolerance = 50;
+    const r1 = L.replayStroke(looseTol, gen);
+    assert(r1.digest !== baseDigest, '改了 tolerance 指纹却没变（说明 geometry 不是生成物）');
+
+    const moved = JSON.parse(JSON.stringify(base));
+    moved.rawPoints[1] = { x: 100, y: 90 };
+    const r2 = L.replayStroke(moved, gen);
+    assert(r2.digest !== baseDigest, '改了一个原始点指纹却没变');
+
+    // 散布：换 seed 必变；缺 seed 必须被拒（不可复现是静默故障）
+    const spath = [{ x: 0, y: 0 }, { x: 400, y: 0 }];
+    const sgen = (pts, params, st) => RELIEF.scatterAlongPath(pts, { ...params }, (st && st.existing) || []);
+    const s1 = L.makeStroke({ strokeId: 's1', kind: 'scatter', generator: 'g', params: { spacing: 30, seed: 1 }, rawPoints: spath, geometry: sgen(spath, { spacing: 30, seed: 1 }) });
+    const s2 = JSON.parse(JSON.stringify(s1));
+    s2.params.seed = 2;
+    assert(L.replayStroke(s2, sgen).digest !== s1.geometryDigest, '换了 seed 散布结果却没变（seed 没真用上）');
+    const noSeed = JSON.parse(JSON.stringify(s1));
+    delete noSeed.params.seed;
+    const v = L.validateStroke(noSeed);
+    assert(!v.ok && v.errors.some((e) => e.includes('seed')), '缺 seed 的散布居然通过校验');
+    return 'tolerance / 原始点 / seed 三项反向探针全命中；缺 seed 被拒';
   });
 
   const failed = results.filter((r) => !r.ok);

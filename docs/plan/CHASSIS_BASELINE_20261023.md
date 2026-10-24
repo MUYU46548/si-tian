@@ -457,3 +457,35 @@ python scripts/tests/tools/_lab.py down          # 收工：杀进程 + 还原 i
 
 ⏳ **第 3 件还没完**：笔画对象模型（`{strokeId, generator, params, rawPoints, geometry}`）与四笔总装
 （第 4 件）尚未落地；归属笔的写口要等这一步把 groupId 接上。
+
+---
+
+## 十五、第 3 件续：笔画对象模型（`src/ledger/stroke.js`，2026-10-24 12:3x）
+
+按 digest §一-C 的三处改法落码：**落事件不落状态**、**原始点与简化参数都存**、**命名拆开三支笔**。
+
+| 形状 | 说明 |
+|---|---|
+| `{strokeId, kind, generator, params, rawPoints, geometry, geometryDigest, epochId, day, provenance, createdAt}` | `kind` = `outline`（轮廓勾画）/ `terrain`（地形笔刷填充）/ `scatter`（散布笔刷实例分布）；`generator` 是**名字**，真正的生成器由调用方在回放时传进来（渲染层那几份 `simplifyPath` / `scatterAlongPath` / 网格填充）——本层不复制几何算法 |
+
+四个入口：
+- `makeStroke`：唯一构造口（rawPoints **原样保留**，不去重不抽稀）
+- `validateStroke`：kind 登记过 / 有 generator / rawPoints ≥2 且逐点合法 / **散布必须带 seed**（没 seed 不可复现，静默故障）
+- `replayStroke(stroke, generate)`：用调用方生成器重算 geometry，与 `geometryDigest` 比对
+- `strokeEvent`：落一条 `stroke.committed`（payload 只带这笔本身；`groupId` 默认 = `strokeId` → 一笔一组便于撤销）
+
+**判据（单测 a7 / a8，真实生成器）**：
+
+| 段 | 读数 |
+|---|---|
+| a7 轮廓（RDP，`geometry.simplifyPath`） | 400 点 → **26 点**，回放指纹一致；rawPoints 仍是 400 点（没被生成物覆盖） |
+| a7 散布（`reliefIcons.scatterAlongPath`，seed=7） | 16 个实例，回放指纹一致；JSON 往返后指纹不变 |
+| a7 地形（填充型生成器，27 格） | 回放指纹一致 —— 本层不关心生成器内部是路径还是填充 |
+| a8 反向探针 | 改 `tolerance` / 改一个原始点 / 换 `seed` → 指纹**必变**；缺 seed 的散布**被拒** |
+
+**一个必须剔除的假红**：散布实例带 `id`（`nextReliefId()` 每次不同）——那是运行时标识、不是几何，
+进指纹会让"同一笔回放两次"永远判失败。所以指纹按 kind 投影：`scatter` 只取 `{type,x,y,size,rotation}`；
+轮廓/地形原样（`strokeGeometryView`）。
+
+> 至此第 3 件的两半（引擎五件 + 笔画模型）都齐了。**剩的是接线**：归属笔写口按 `groupId` 落事件、
+> 装载口把 `changeEvents` 变成投影 —— 那是第 4 件（四笔总装）的活。

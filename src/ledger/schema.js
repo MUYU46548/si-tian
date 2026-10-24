@@ -31,12 +31,15 @@ export const EVENT_TYPES = {
   'province.owner.changed': '省份易主',
   /** 该代开始时的归属（不可撤；每个 epoch 恰好一条，day 恒 0） */
   'epoch.baseline': '本代基线',
+  /** 一笔落库：payload = { stroke }（形状见 `stroke.js`；rawPoints 是真源，geometry 是生成物） */
+  'stroke.committed': '笔画落库',
 };
 
 // ⚠️ 类型键要当**常量**用，别写 `EVENT_TYPES['epoch.baseline']` —— 那是中文标签，不是键。
 //    2026-10-24 踩过：事件被判成 type="本代基线"，回放里基线一条都不认，整段归属全空。
 export const EVENT_BASELINE = 'epoch.baseline';
 export const EVENT_OWNER_CHANGED = 'province.owner.changed';
+export const EVENT_STROKE_COMMITTED = 'stroke.committed';
 
 export const EVENT_TYPE_LIST = Object.keys(EVENT_TYPES);
 
@@ -158,6 +161,16 @@ export function validateEvent(ev) {
     if (p.toPolityId !== null && typeof p.toPolityId !== 'string') errors.push('toPolityId 必须是字符串或 null');
   }
   if (ev.type === 'epoch.baseline' && ev.day !== 0) errors.push('epoch.baseline 的 day 必须是 0（基线不可撤、不可挪）');
+  if (ev.type === 'stroke.committed') {
+    const st = ev.payload && ev.payload.stroke;
+    if (!st || typeof st !== 'object') errors.push('stroke.committed 缺 payload.stroke');
+    else {
+      if (!st.strokeId) errors.push('stroke.committed 的笔画缺 strokeId');
+      if (!st.kind) errors.push('stroke.committed 的笔画缺 kind');
+      if (!Array.isArray(st.rawPoints) || st.rawPoints.length < 2) errors.push('stroke.committed 的 rawPoints 不足 2 点（原始点必须留）');
+      if (st.geometry === undefined) errors.push('stroke.committed 的笔画缺 geometry');
+    }
+  }
   return { ok: errors.length === 0, errors };
 }
 

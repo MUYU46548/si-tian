@@ -17,6 +17,7 @@ export {
   EVENT_TYPE_LIST,
   EVENT_BASELINE,
   EVENT_OWNER_CHANGED,
+  EVENT_STROKE_COMMITTED,
   PROVENANCE,
   normalizeCalendar,
   dayOfDate,
@@ -51,6 +52,20 @@ export {
   planMigration,
   makeOwnerChanged,
 } from './migrate';
+
+export {
+  STROKE_KINDS,
+  STROKE_KIND_LIST,
+  digestGeometry,
+  strokeGeometryView,
+  digestStroke,
+  isValidPoint,
+  makeStroke,
+  validateStroke,
+  replayStroke,
+  strokePayload,
+  strokeEvent,
+} from './stroke';
 
 import { createLedger, validateEvent } from './schema';
 
