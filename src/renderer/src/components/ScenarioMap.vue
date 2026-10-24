@@ -10581,19 +10581,24 @@ watch(showBurgs, (visible) => {
   render();
 });
 
-// 换图或省份增删时自动适应视图；编辑顶点/改名不打断当前镜头
+// 换图时自动适应视图；**同一张图上增减省份一律不动镜头**（只重绘）
 watch([baseMapKey, () => baseMap.value?.terrain?.length || 0], ([key, count]) => {
   if (!count) return;
   if (key === lastFitKey && count === lastFitCount) return;
   const mapChanged = key !== lastFitKey;
   lastFitKey = key;
   lastFitCount = count;
-  // 🔴 2026-10-22（笔刷建省）：这一条是给"打开一张已有省份的图 / 导入之后 / 换底图"用的自动适屏。
-  //    但「笔刷建省」是**高频增量**手势（每涂一笔多一个省），适屏会把镜头一直拉到
-  //    "只看得见刚涂的那块" —— 想接着涂旁边就得先手动缩小一次，等于每一笔都被打断
-  //    （用户要的正是"像画图一样连着抹"）。所以**同一张图上**增减省份时不抢镜头，只重绘；
-  //    换底图（mapChanged）照旧适屏。计数照样记账：切走工具后不会"还欠一次适屏"而突然跳一下。
-  if (!mapChanged && tool.value === 'provincePaint') { render(); return; }
+  // 🔴 2026-10-24（镜头语义一刀）：「省数变了」**不再**是适屏的理由。
+  //    原来只豁免 `provincePaint`（笔刷建省），自由绘制没豁免 —— 实测（`_probe_land_camera.js`）：
+  //    先把镜头挪到 {x:67.6,y:-53.5,scale:0.3549}，画一个省，松手后 800ms 内镜头变成
+  //    {x:45.3,y:-50.3,scale:0.4894} —— **每画一个省，镜头自己重新适屏**，既是第三遍全量重绘，
+  //    也是用户说的"手一松镜头就跳"。
+  //    为什么可以干脆不认它：真正需要适屏的入口**都已经自己调了 fitToView()** ——
+  //    · 打开/切换底图：`onMounted` 首帧 + `watch(immersive)` + 本 watch 的 mapChanged 分支；
+  //    · 导入 .map（含"刷新底图数据"）：导入流程末尾的 `setTimeout(fitToView, 50)`；
+  //    · 项目/底图装载：组件重挂 → onMounted。
+  //    计数照样记账（lastFitKey/lastFitCount）：切走工具后不会"还欠一次适屏"而突然跳一下。
+  if (!mapChanged) { render(); return; }
   setTimeout(fitToView, 50);
 });
 
