@@ -16,7 +16,7 @@
 //
 // 🔴 纯数据层：不 import vue / store / 组件。
 
-import { createLedger, dayOfDate, EVENT_BASELINE, EVENT_OWNER_CHANGED, makeEvent, normalizeCalendar, PROVENANCE } from './schema';
+import { createLedger, dayOfDate, dateOfDay, EVENT_BASELINE, EVENT_OWNER_CHANGED, makeEvent, normalizeCalendar, PROVENANCE } from './schema';
 import { eventsFromV2, projectOwnership, diffOwnership, baselineOwnership } from './replay';
 
 /** 剧本键 → epochId（既有的剧本键就是 `底图名/剧本名`；没有键时退回 id/名字） */
@@ -69,25 +69,53 @@ export function verifyMigration(scenario, ledger) {
   return { ok: d.same, diffs: d.changed.slice(0, 20), diffCount: d.changed.length, checked: Object.keys(cached).length };
 }
 
+/** 两条 v2 事件是否"同一天"（月/日缺省按 1 —— 与 `scenarioDates.dateKey` 同口径） */
+function sameV2Day(a, b) {
+  const m = (e) => (e.m === null || e.m === undefined ? 1 : Number(e.m));
+  const d = (e) => (e.d === null || e.d === undefined ? 1 : Number(e.d));
+  return Number(a.y) === Number(b.y) && m(a) === m(b) && d(a) === d(b);
+}
+
 /**
  * 反向投影：账本 → v2 形状（`{initialOwnership, changeEvents, ownership}`）。
  *
  * 为什么需要：M1 阶段 UI 仍读 v2 缓存（`initialOwnership`/`changeEvents`/`ownership`），
- * 账本落盘后要用这个函数把缓存**重算**一遍 —— 保证"缓存是投影，不是第二本账"。
- * `changeEvents` 只重建**显式**事件（合成事件回放得出同样的终态，但 UI 不展示合成项）。
+ * 归属写口落完账本要用这个函数把缓存**重算**一遍 —— 保证"缓存是投影，不是第二本账"。
+ *
+ * 三条口径（2026-10-24 第 4 件第二刀补齐）：
+ *   ① **月日不能丢**：事件里优先用 `payload.at`（写口当时给的 `{y,m,d}`；
+ *      账本自己的 `day` 只到"年内第几天"，`m/d` 缺省与否要还原成 v2 的原形）；
+ *      没有 `at` 的（迁移出来的）按账本的历法用 `dateOfDay` 换算 —— **不再写死 360**。
+ *   ② **合成事件照旧保留**（`synthesized: true`）：v2 的事实源是"基线 + 事件"，
+ *      把合成事件丢掉会让重载后的时间轴少掉"这一代这个省变过"（终态碰巧一样，切片不一样）。
+ *   ③ **同一天只留最后一条**：v2 的 `findEventIndex` 认"同日即同一条"，
+ *      而账本允许同日多条（一条流里都诚实保留）—— 投影到 v2 时按 v2 的口径收成一条。
  */
 export function toV2Projection(ledger) {
   const events = (ledger && Array.isArray(ledger.events)) ? ledger.events : [];
+  const cal = normalizeCalendar(ledger && ledger.calendar);
   const initialOwnership = baselineOwnership(ledger);
   const changeEvents = {};
   for (const ev of events) {
     if (!ev || ev.type !== EVENT_OWNER_CHANGED) continue;
     const p = ev.payload || {};
     if (!p.provinceId) continue;
-    if (p.synthesized) continue;              // 合成事件不进 UI 的事件表（回放仍生效）
-    const d = { y: Math.floor(ev.day / 360), m: null, d: null };
-    if (!changeEvents[p.provinceId]) changeEvents[p.provinceId] = [];
-    changeEvents[p.provinceId].push({ ...d, ...(ev.date ? { y: ev.date.y, m: ev.date.m, d: ev.date.d } : {}), owner: p.toPolityId });
+    const at = p.at && Number.isFinite(Number(p.at.y)) ? p.at : (dateOfDay(ev.day, cal) || { y: 0, m: null, d: null });
+    const rec = {
+      y: Number(at.y),
+      m: at.m === undefined ? null : at.m,
+      d: at.d === undefined ? null : at.d,
+      owner: p.toPolityId === undefined ? null : p.toPolityId,
+    };
+    if (p.synthesized) rec.synthesized = true;   // 显式事件**不加**标志（与新旧写口的历史形状一致）
+    const list = changeEvents[p.provinceId] || (changeEvents[p.provinceId] = []);
+    const at2 = list.findIndex((e) => sameV2Day(e, rec));
+    if (at2 >= 0) list[at2] = rec; else list.push(rec);
+  }
+  for (const pid of Object.keys(changeEvents)) {
+    const m = (e) => (e.m === null || e.m === undefined ? 1 : Number(e.m));
+    const d = (e) => (e.d === null || e.d === undefined ? 1 : Number(e.d));
+    changeEvents[pid].sort((a, b) => (Number(a.y) - Number(b.y)) || (m(a) - m(b)) || (d(a) - d(b)));
   }
   return { initialOwnership, changeEvents, ownership: projectOwnership(ledger) };
 }
@@ -115,6 +143,12 @@ export function planMigration(dict, opts = {}) {
 /** 生成"某省某天归谁"的一条事件（写口用；groupId 由调用方给 = 这一笔的身份） */
 export function makeOwnerChanged({ worldId = 'default', epochId = '', date = null, day = null, provinceId, fromPolityId = null, toPolityId = null, groupId = '', provenance = PROVENANCE.UI, calendar = null, existingIds = null, id = '' } = {}) {
   const d = Number.isFinite(day) ? Math.trunc(day) : dayOfDate(date, calendar);
+  // `payload.at` = 写口当时给的**月日原形**（`m/d` 缺省就留 null）。为什么要留：
+  // `day` 只到"年内第几天"，反投影回 v2 时把 `{y:1050,m:null,d:null}` 还原成
+  // "1050 年 1 月 1 日"会让事件表显示成用户没录过的月日（口径没变、观感变脏）。
+  const at = (date && typeof date === 'object' && Number.isFinite(Number(date.y)))
+    ? { y: Number(date.y), m: date.m === undefined ? null : date.m, d: date.d === undefined ? null : date.d }
+    : null;
   return makeEvent({
     id,
     worldId,
@@ -123,6 +157,6 @@ export function makeOwnerChanged({ worldId = 'default', epochId = '', date = nul
     type: EVENT_OWNER_CHANGED,
     groupId,
     provenance,
-    payload: { provinceId, fromPolityId, toPolityId },
+    payload: { provinceId, fromPolityId, toPolityId, ...(at ? { at } : {}) },
   }, { calendar, existingIds: existingIds || [] });
 }

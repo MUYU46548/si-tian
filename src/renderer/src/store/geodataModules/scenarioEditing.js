@@ -40,6 +40,7 @@ import { normalizeLedgerDict } from '../../utils/scenarioLedgerV2';
 // 🔴 纯数据层、不反向依赖 store —— 桥的方向与 canvasBridge 同一条纪律。
 import {
   fromV2Scenario, projectOwnership, diffOwnership, makeOwnerChanged, dayOfDate,
+  toV2Projection, removeGroup, insertGroup,
 } from '../../../../ledger/index';
 // 事件账本（2026-10-22，三刀序列·第一刀）：`scenario.timelineEvents` 的纯函数层。
 // 🔴 校验 / 排序 / 关系查询 / 冲突检出**只有一份**（`utils/scenarioEventLedger.js`），
@@ -1265,6 +1266,200 @@ export function createScenarioEditingModule(ctx) {
     return validateChangeDateInRange(date, r.start, r.end);
   }
 
+  // ============================================================
+  // 归属写口（第 4 件第二刀，2026-10-24）—— **唯一落库口** + 渐进反转
+  // ============================================================
+  //
+  // 口径（digest §3-①）：`scenario.ledger` 的事件流是**真源**，
+  // `ownership` / `changeEvents` / `initialOwnership` 是**投影缓存**（`toV2Projection` 现算）。
+  // 三个写口（油漆桶 / 属性面板 `setOwnership`、清归属 `clearOwnership`、笔刷与批量条
+  // `batchSetOwnership`）全部走 `ownershipCommand()` —— 归属写入只有这一份实现。
+  //
+  // ⚠️ **反转是渐进的**（本刀的实现取舍，不是半途而废）：
+  //   · 账本能解释缓存（`project(base) === 缓存`）→ 编辑后缓存**全部由投影重算**（真源反转）；
+  //   · 解释不了 → 退回"手算缓存 + 投影对拍上了才带账本"（与第一刀逐字段一致）。
+  //     为什么解释不了：① 改省界 / 合并 / 批量铺底会把归属**迁移到新省 id** 却不写账本
+  //     （`provinceEditing.buildOwnershipAfter`，本刀不接线）；② 无日期的编辑只写缓存。
+  //     这时若硬拿投影覆盖缓存，就会**悄悄丢掉**那些写口的编辑 —— 宁可这一笔不入账。
+  //
+  // 撤销（第 4 件第二刀）：一条归属编辑 = 一条 undo，但**数据栈是账本** ——
+  //   undo = `removeGroup(groupId)`（整笔摘下）→ 缓存按投影重算；redo = `insertGroup` 插回原位。
+  //   几何 / 河流 / 道路仍走 `store/undo.js` 的快照栈。两种条目共用**一条操作时序**
+  //   （digest 的"按最后一次操作属于哪个栈分派"，落码时是"每条历史条目自带所属栈"——
+  //   两个独立栈指针无法还原交织顺序，见 CHASSIS_BASELINE §十八）。
+
+  let _ownershipSeq = 0;
+  /** 一次归属编辑的 groupId（调用方没给 strokeId 时；只求同会话内唯一，不用随机数） */
+  function nextOwnershipGroupId() {
+    _ownershipSeq += 1;
+    return `own-${Date.now().toString(36)}-${_ownershipSeq}`;
+  }
+
+  /** 账本基线：已有账本用现成的；没有就从 v2 缓存迁一份（同一剧本只做一次，之后账本常驻） */
+  function ownershipLedgerBase(scenario, scenarioId) {
+    const cur = scenario.ledger;
+    if (cur && Array.isArray(cur.events) && cur.events.length) return cur;
+    return fromV2Scenario(scenario, { epochId: scenario.id || scenarioId }).ledger;
+  }
+
+  /**
+   * 归属编辑 → 一条 undo 命令（**唯一写口**）。
+   *
+   * @param {object} p
+   * @param {string} p.scenarioId
+   * @param {Array<{provinceId:string, toPolityId:string|null}>} p.changes 已确认"真有变动"的省
+   * @param {object|number|null} [p.date] `{y,m,d}` / 裸年份；假值 = 无日期（只写缓存，不入账）
+   * @param {string} [p.groupId] 这一笔的身份（笔刷传 strokeId）；缺省自动生成
+   * @param {string} [p.provenance] 'brush' | 'ui'（缺省 ui）
+   * @param {string} [p.label] 历史面板的文案
+   * @returns {object|null} 交给 `execute()` 的命令；`null` = 剧本不在 / 没有真变动
+   */
+  function ownershipCommand({ scenarioId, changes, date: rawDate, groupId, provenance = 'ui', label }) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario || !Array.isArray(changes) || !changes.length) return null;
+
+    const base = ownershipLedgerBase(scenario, scenarioId);
+    const explained = diffOwnership(projectOwnership(base), scenario.ownership || {}).same;
+    const date = normalizeDate(rawDate);
+    const gid = String(groupId || nextOwnershipGroupId());
+    const epochId = String(scenario.id || scenarioId);
+
+    const beforeOwnership = { ...(scenario.ownership || {}) };
+    const beforeChangeEvents = { ...(scenario.changeEvents || {}) };
+    const beforeLedger = scenario.ledger || null;
+    const hadInitial = !!scenario.initialOwnership;
+    const beforeInitial = hadInitial ? { ...scenario.initialOwnership } : null;
+
+    // ── 账本候选（**有日期才写**：账本是"按日回放"的事实源，编不出日期就不写）──
+    let ledgerNext = null;
+    if (date) {
+      const day = dayOfDate({ y: date.y, m: date.m, d: date.d }, base.calendar);
+      const ids = new Set(base.events.map((e) => e && e.id).filter(Boolean));
+      const events = [];
+      for (const c of changes) {
+        // ⚠️ 必须逐条把新 id 记进 `ids`：`makeEventId` 是按"已用集合大小"递增的，
+        //    一次性 map 会让这一笔的每个省拿到**同一个 id**（形状不报错、审计时才露馅）。
+        const ev = makeOwnerChanged({
+          worldId: base.worldId,
+          epochId,
+          day,
+          date: { y: date.y, m: date.m, d: date.d },
+          provinceId: c.provinceId,
+          fromPolityId: beforeOwnership[c.provinceId] === undefined ? null : beforeOwnership[c.provinceId],
+          toPolityId: c.toPolityId === undefined ? null : c.toPolityId,
+          groupId: gid,
+          provenance,
+          calendar: base.calendar,
+          existingIds: ids,
+        });
+        ids.add(ev.id);
+        events.push(ev);
+      }
+      ledgerNext = { ...base, events: base.events.concat(events) };
+    }
+
+    // ── 缓存：降级模式手算；账本模式由投影重算（下面 writeLedger）──
+    const nextOwnership = { ...beforeOwnership };
+    const nextChangeEvents = { ...beforeChangeEvents };
+    for (const c of changes) {
+      const pid = c.provinceId;
+      const cleared = (c.toPolityId === null || c.toPolityId === undefined);
+      if (cleared) delete nextOwnership[pid];
+      else nextOwnership[pid] = c.toPolityId;
+      if (date) {
+        const list = Array.isArray(nextChangeEvents[pid]) ? nextChangeEvents[pid].map((e) => ({ ...e })) : [];
+        const at = findEventIndex(list, date);
+        const rec = { y: date.y, m: date.m, d: date.d, owner: cleared ? null : c.toPolityId };
+        if (at >= 0) list[at] = rec; else list.push(rec);
+        list.sort(cmpDate);
+        putEvents(nextChangeEvents, pid, list);
+      } else if (cleared) {
+        delete nextChangeEvents[pid];
+      }
+    }
+
+    const ledgerMode = !!(explained && ledgerNext);
+    // 降级模式：投影与手算缓存一致才把账本带上（一致 = 账本没有少算这一笔）
+    let ledgerForCache = beforeLedger;
+    if (!ledgerMode) {
+      ledgerForCache = (ledgerNext && diffOwnership(projectOwnership(ledgerNext), nextOwnership).same)
+        ? ledgerNext : beforeLedger;
+      if (ledgerNext && ledgerForCache === beforeLedger) {
+        console.warn('[scenario] 账本投影与缓存不一致 —— 这一笔只写缓存、不入账');
+      }
+    }
+
+    /** 账本模式：账本换新 + 缓存按投影重算（**写入的唯一点**，undo/redo 都走它） */
+    const writeLedger = (ledger, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const cache = toV2Projection(ledger);
+      const next = { ...cur, ledger, ownership: cache.ownership, changeEvents: cache.changeEvents };
+      // 撤销回到"当时还没有账本"的状态：只剩基线时**把账本键也摘掉**，
+      // 否则撤销后内存里多出一本空账（语义一样，但"撤销 = 逐字段回到原样"这条纪律要守住）。
+      if (beforeLedger === null && !ledger.events.some((e) => e && e.type !== 'epoch.baseline')) {
+        delete next.ledger;
+      }
+      // 🔴 新剧本（v1 形状）**不主动长出** `initialOwnership`：装载口的账本派生规则
+      //    （`normalizeLedgerDict`）一见到它就会用"基线 + 事件"覆盖 ownership，
+      //    那会把无日期的缓存编辑当成漂移悄悄盖掉。已有 v2 的剧本照旧维护它。
+      if (hadInitial) next.initialOwnership = cache.initialOwnership;
+      if (touch) next.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: next };
+      scheduleAutoSaveScenarios();   // 撤销/重做也要落盘（`execute` 的 undo 本身不落盘）
+    };
+    /** 降级模式：缓存快照（与第一刀前逐字段一致；`null` = 删掉该键） */
+    const writeCache = (ownership, changeEvents, ledger, initial, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const next = { ...cur, ownership, changeEvents };
+      if (ledger === null) delete next.ledger;
+      else if (ledger !== undefined) next.ledger = ledger;
+      if (initial === null) delete next.initialOwnership;
+      else if (initial !== undefined) next.initialOwnership = initial;
+      if (touch) next.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: next };
+      scheduleAutoSaveScenarios();
+    };
+
+    let removed = null;        // 账本模式：摘下来的整组（redo 用它的位置）
+    if (ledgerMode) {
+      return {
+        type: 'ownership',
+        stack: 'ledger',
+        label: label || '指派势力',
+        undo: () => {
+          const cur = scenarios.value[scenarioId];
+          const r = removeGroup(cur && cur.ledger, gid);
+          removed = r.removed;
+          if (r.removed) {
+            writeLedger(r.ledger, false);
+          } else {
+            // 账本已被外部重建（重载/迁移）—— 组身份不在了，退回缓存快照（不静默）
+            console.warn('[scenario] 撤销时找不到账本组，退回缓存快照：', gid);
+            writeCache(beforeOwnership, beforeChangeEvents, beforeLedger, beforeInitial, false);
+          }
+        },
+        redo: () => {
+          if (!removed) { writeLedger(ledgerNext, true); return; }
+          const cur = scenarios.value[scenarioId];
+          const curLedger = (cur && cur.ledger && Array.isArray(cur.ledger.events)) ? cur.ledger : null;
+          // 撤销时把整本账摘掉了（"当时还没有账本"）→ 重做直接用准备好的那一份，
+          // 不能拿空账再插一遍（那会把这一组事件复制成两份）。
+          if (!curLedger) { writeLedger(ledgerNext, true); return; }
+          writeLedger(insertGroup(curLedger, removed), true);
+        },
+      };
+    }
+    return {
+      type: 'ownership',
+      stack: 'snapshot',       // 没入账（无日期 / 账本解释不了）→ 仍走缓存快照
+      label: label || '指派势力',
+      undo: () => writeCache(beforeOwnership, beforeChangeEvents, beforeLedger, beforeInitial, false),
+      redo: () => writeCache(nextOwnership, nextChangeEvents, ledgerForCache, beforeInitial, true),
+    };
+  }
+
   /**
    * 指派势力。可选 `changeDate`（`{y,m,d}` 或裸年份）：把「易主日期」一并记为显式值 ——
    * 这是日期最自然的录入路径：把游标拖到某日再上色 = 该日易主。
@@ -1290,51 +1485,29 @@ export function createScenarioEditingModule(ctx) {
     }
 
     const oldOwner = scenario.ownership?.[provinceId] || null;
-    const oldEvents = eventsOf(scenario, provinceId);
+    const sameOwner = oldOwner === (polityId ?? null);
+    // 真没变就不压栈（与 batchSetOwnership 的 alreadySame 同口径）—— 原来这里照样压一条空 undo
+    if (sameOwner) {
+      if (!date) return { success: true, noop: true, reason: 'no-change' };
+      const at = findEventIndex(eventsOf(scenario, provinceId), date);
+      if (at >= 0 && eventsOf(scenario, provinceId)[at].owner === (polityId ?? null)) {
+        return { success: true, noop: true, reason: 'no-change' };
+      }
+    }
 
-    execute({
-      type: 'set-ownership',
+    const cmd = ownershipCommand({
+      scenarioId,
+      changes: [{ provinceId, toPolityId: polityId ?? null }],
+      date,
       label: date ? '指派势力（含易主日期）' : '指派势力',
-      undo: () => {
-        const sc = scenarios.value[scenarioId];
-        const changeEvents = { ...(sc.changeEvents || {}) };
-        if (oldEvents.length) changeEvents[provinceId] = oldEvents;
-        else delete changeEvents[provinceId];
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: {
-            ...sc,
-            ownership: { ...sc.ownership, [provinceId]: oldOwner },
-            changeEvents,
-          },
-        };
-      },
-      redo: () => {
-        const sc = scenarios.value[scenarioId];
-        const changeEvents = { ...(sc.changeEvents || {}) };
-        if (date) {
-          const list = eventsOf(sc, provinceId);
-          const at = findEventIndex(list, date);
-          const rec = { y: date.y, m: date.m, d: date.d, owner: polityId ?? null };
-          if (at >= 0) list[at] = rec; else list.push(rec);
-          list.sort(cmpDate);
-          putEvents(changeEvents, provinceId, list);
-        }
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: {
-            ...sc,
-            ownership: { ...sc.ownership, [provinceId]: polityId },
-            changeEvents,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      },
+      provenance: 'ui',
     });
+    if (!cmd) return { success: false, reason: 'no-change' };
+    execute(cmd);
 
     // 2026-10-20：与 batchSetOwnership 同口径 —— 油漆桶单击不再同步导出整份画布载荷
     scheduleAutoSaveScenarios();
-    return { success: true };
+    return { success: true, ledger: cmd.stack === 'ledger' };
   }
 
   function clearOwnership(scenarioId, provinceId, changeDate) {
@@ -1344,51 +1517,16 @@ export function createScenarioEditingModule(ctx) {
     const oldOwner = scenario.ownership?.[provinceId];
     if (!oldOwner) return;
 
-    const oldEvents = eventsOf(scenario, provinceId);
     const date = normalizeDate(changeDate);
-    const writeDate = !!date;
-
-    execute({
-      type: 'clear-ownership',
-      label: '清除归属',
-      undo: () => {
-        const sc = scenarios.value[scenarioId];
-        const changeEvents = { ...(sc.changeEvents || {}) };
-        if (oldEvents.length) changeEvents[provinceId] = oldEvents;
-        else delete changeEvents[provinceId];
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: {
-            ...sc,
-            ownership: { ...sc.ownership, [provinceId]: oldOwner },
-            changeEvents,
-          },
-        };
-      },
-      redo: () => {
-        const sc = scenarios.value[scenarioId];
-        const { [provinceId]: _, ...rest } = sc.ownership;
-        const changeEvents = { ...(sc.changeEvents || {}) };
-        if (writeDate) {
-          // 清归属仍要记「何时易主（到无主）」—— 时间轴上「这一年这块地没人了」是真事件
-          const list = eventsOf(sc, provinceId);
-          const at = findEventIndex(list, date);
-          const rec = { y: date.y, m: date.m, d: date.d, owner: null };
-          if (at >= 0) list[at] = rec; else list.push(rec);
-          list.sort(cmpDate);
-          changeEvents[provinceId] = list;
-        }
-        scenarios.value = {
-          ...scenarios.value,
-          [scenarioId]: {
-            ...sc,
-            ownership: rest,
-            changeEvents,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      },
+    const cmd = ownershipCommand({
+      scenarioId,
+      changes: [{ provinceId, toPolityId: null }],
+      date,
+      label: date ? '清除归属（含易主日期）' : '清除归属',
+      provenance: 'ui',
     });
+    if (!cmd) return;
+    execute(cmd);
 
     // 2026-10-20：同 batchSetOwnership —— 清归属也不再同步导出整份画布载荷
     scheduleAutoSaveScenarios();
@@ -1426,11 +1564,8 @@ export function createScenarioEditingModule(ctx) {
     // 🔴 2026-10-20：**不再整表深拷 `changeEvents`**。真实 415 省项目里这个对象
     //    序列化后是 MB 级，JSON.parse(JSON.stringify(...)) 一次要 100ms+ ——
     //    用户按一下油漆桶/涂一笔就卡一下，卡的就是这一行。
-    //    只做浅拷贝 + 对**被碰到的省**单独克隆事件数组（下面 list.map 已经是新对象），
-    //    未碰到的省在 undo/redo 之间共享同一份引用是安全的（谁都不会原地改它）。
+    //    这里只读（判 alreadySame），真正的写入在 `ownershipCommand` 里按需克隆被碰到的省。
     const beforeChangeEvents = { ...(scenario.changeEvents || {}) };
-    const nextOwnership = { ...beforeOwnership };
-    const nextChangeEvents = { ...beforeChangeEvents };
 
     const clearing = !polityId;
     const date = normalizeDate(changeDate);
@@ -1451,25 +1586,14 @@ export function createScenarioEditingModule(ctx) {
       const had = Object.prototype.hasOwnProperty.call(beforeOwnership, rawId);
       if (clearing) {
         if (!had) continue;                       // 本来就没归属 → 不算改动
-        delete nextOwnership[rawId];
-        delete nextChangeEvents[rawId];
         changedIds.push(rawId);
         cleared++;
       } else {
-        const list = Array.isArray(nextChangeEvents[rawId])
-          ? nextChangeEvents[rawId].map(e => ({ ...e })) : [];
+        const list = Array.isArray(beforeChangeEvents[rawId]) ? beforeChangeEvents[rawId] : [];
         const at = writeDate ? findEventIndex(list, date) : -1;
         const alreadySame = beforeOwnership[rawId] === polityId
           && (!writeDate || (at >= 0 && list[at].owner === polityId));
         if (alreadySame) continue;                // 值没变 → 不算改动
-        nextOwnership[rawId] = polityId;
-        if (writeDate) {
-          // 同日在 → 改 owner；不在 → 追加（同省同年多次易主）
-          const rec = { y: date.y, m: date.m, d: date.d, owner: polityId ?? null };
-          if (at >= 0) list[at] = rec; else list.push(rec);
-          list.sort(cmpDate);
-          putEvents(nextChangeEvents, rawId, list);
-        }
         changedIds.push(rawId);
         changed++;
       }
@@ -1482,59 +1606,20 @@ export function createScenarioEditingModule(ctx) {
       };
     }
 
-    // ── 账本接线（第 4 件第一刀，2026-10-24）：有日期的归属编辑同时落**事件流** ──────────
-    // 口径（digest §3-①）：归属类编辑走账本组（groupId = 这一笔），v2 的
-    // `ownership`/`changeEvents` 仍是缓存。本刀**只加账本、不改 v2 的写法** ——
-    // 算完账本投影后与手工算出的 ownership 逐省对拍，**一致才带上账本**；
-    // 不一致就退回"只写缓存"（宁可暂时不入账，也不写一份自相矛盾的账）。
-    // 为什么要先对拍：v2 这边还有别的写口（props 面板的 setOwnership 等）没接线，
-    // 账本可能落后于缓存；这时若直接拿账本投影覆盖，会**悄悄丢掉**那些编辑。
-    // `ledgerNext` 用三态：**对象** = 换成这一份；**undefined** = 这一笔不碰账本（保持原样）；
-    // **null** = 账本不该存在（撤销回"当时没有账本"的状态）。
-    let ledgerNext;
-    const ledgerBefore = scenario.ledger || null;
-    if (writeDate && changedIds.length) {
-      try {
-        const base = (scenario.ledger && Array.isArray(scenario.ledger.events))
-          ? scenario.ledger
-          : fromV2Scenario(scenario, { epochId: scenario.id || scenarioId }).ledger;
-        const day = dayOfDate({ y: date.y, m: date.m, d: date.d });
-        const groupId = String(opts.strokeId || `own-${Date.now().toString(36)}`);
-        const events = changedIds.map((pid) => makeOwnerChanged({
-          epochId: String(scenario.id || scenarioId),
-          day,
-          provinceId: pid,
-          fromPolityId: beforeOwnership[pid] === undefined ? null : beforeOwnership[pid],
-          toPolityId: clearing ? null : polityId,
-          groupId,
-          provenance: 'brush',       // 这一刀只接笔刷；批量条将来同样走这里、换 provenance='ui'
-        }));
-        const candidate = { ...base, events: base.events.concat(events) };
-        const proj = projectOwnership(candidate);
-        if (diffOwnership(proj, nextOwnership).same) ledgerNext = candidate;
-        else console.warn('[scenario] 账本投影与缓存不一致 —— 这一笔只写缓存、不入账');
-      } catch (e) {
-        console.warn('[scenario] 账本接线失败（这一笔只写缓存）：', e);
-      }
-    }
-
-    const apply = (ownership, changeEvents, touch, ledger) => {
-      const cur = scenarios.value[scenarioId];
-      if (!cur) return;
-      const next = { ...cur, ownership, changeEvents };
-      // 账本跟着一起回滚/重做；三态见上面 `ledgerNext` 的注释。
-      if (ledger === null) delete next.ledger;
-      else if (ledger !== undefined) next.ledger = ledger;
-      if (touch) next.updatedAt = new Date().toISOString();
-      scenarios.value = { ...scenarios.value, [scenarioId]: next };
-    };
-
-    execute({
-      type: 'batch-ownership',
+    // ── 落库（第 4 件第二刀）：三个归属写口共用 `ownershipCommand` ──────────────
+    // 它负责：账本事件（一笔一组 / provenance）、缓存（账本解释得了就按投影重算，
+    // 否则退回手算 + 对拍）、以及"一条 undo"的两种数据栈（账本组撤 / 缓存快照）。
+    // 笔刷传 `strokeId`（= 这一笔的 groupId）；批量条不传 → 自动生成一组的 id。
+    const cmd = ownershipCommand({
+      scenarioId,
+      changes: changedIds.map((pid) => ({ provinceId: pid, toPolityId: clearing ? null : polityId })),
+      date,
+      groupId: opts.strokeId,
+      provenance: opts.provenance || (opts.strokeId ? 'brush' : 'ui'),
       label: clearing ? `批量清除归属（${cleared} 省）` : `批量指派（${changed} 省）`,
-      undo: () => apply(beforeOwnership, beforeChangeEvents, false, ledgerBefore),
-      redo: () => apply(nextOwnership, nextChangeEvents, true, ledgerNext),
     });
+    if (!cmd) return { success: false, reason: 'no-change' };
+    execute(cmd);
 
     // 2026-10-20：走 300ms 合并的自动保存（与其它写口同一条路），而不是同步 saveScenarios()。
     // 项目态下 saveScenarios → syncCanvasToProject 要导出并合并整份画布载荷，

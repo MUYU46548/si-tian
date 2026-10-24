@@ -108,6 +108,10 @@ export function eventsFromV2(initialOwnership, changeEvents, opts = {}) {
     const list = Array.isArray(changeEvents[pid]) ? changeEvents[pid] : [];
     list.forEach((ev, idx) => {
       const day = dayOfDate(ev, calendar);
+      // `payload.at` 保留月日原形（v2 的 m/d 可缺省；只靠 day 反推会变成"1 月 1 日"）
+      const at = (ev && Number.isFinite(Number(ev.y)))
+        ? { y: Number(ev.y), m: ev.m === undefined ? null : ev.m, d: ev.d === undefined ? null : ev.d }
+        : null;
       events.push(mk({
         worldId,
         epochId,
@@ -121,6 +125,7 @@ export function eventsFromV2(initialOwnership, changeEvents, opts = {}) {
           fromPolityId: null,
           toPolityId: (ev && ev.owner !== undefined) ? ev.owner : null,
           synthesized: !!(ev && ev.synthesized),
+          ...(at ? { at } : {}),
         },
       }));
     });

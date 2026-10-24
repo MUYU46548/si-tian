@@ -33,6 +33,7 @@ export function getLastCommandLabel() {
 }
 
 // 获取历史记录（用于变更日志/历史面板），保持原有字段形状
+// `stack` = 这条操作退的是哪个数据栈（'snapshot' | 'ledger'），面板可据此标注
 export function getHistory() {
   return history.value.map((cmd, index) => ({
     index,
@@ -40,7 +41,18 @@ export function getHistory() {
     label: cmd.label,
     timestamp: cmd.timestamp,
     category: cmd.category,
+    stack: cmd.stack || 'snapshot',
   }));
+}
+
+// 调试/测试用：当前栈指针与两条栈各有多少条（供"两栈不互相回滚"的用例判据）
+export function getStackCounts() {
+  let snapshot = 0;
+  let ledger = 0;
+  for (let i = 0; i <= pointer.value && i < history.value.length; i += 1) {
+    if (history.value[i].stack === 'ledger') ledger += 1; else snapshot += 1;
+  }
+  return { snapshot, ledger, total: history.value.length, pointer: pointer.value };
 }
 
 // 按类型筛选历史
@@ -59,6 +71,11 @@ export function execute(command) {
   const gate = guardWrite(label);
   if (!gate.ok) return gate;
   command.timestamp = Date.now();
+  // 所属**数据栈**（2026-10-24 第 4 件第二刀）：'snapshot' = 本文件的历史闭包里存快照
+  //   （几何 / 河流 / 道路 / 剧本元信息）；'ledger' = 归属类编辑，undo 走 `removeGroup(groupId)`
+  //   （账本组撤，缓存按投影重算）。两种条目共用**这一条操作时序** —— 只有一条时序才能
+  //   还原交织顺序（两个独立栈指针做不到"该退哪个栈"，见 CHASSIS_BASELINE §十八）。
+  if (!command.stack) command.stack = 'snapshot';
   // 合并连续相同类型操作（如笔刷拖拽）：保留最旧的 undo，用新的 redo 覆盖，避免堆栈爆炸
   if (command.merge && pointer.value >= 0) {
     const prev = history.value[pointer.value];

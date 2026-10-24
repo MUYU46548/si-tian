@@ -71,10 +71,17 @@ def sub_source_guards(cdp):
                      ('skippedSea', '海域必须跳过并回报'),
                      ('skippedMissing', '不存在的省份要回报'),
                      ('noop', '空/无改动不能压栈'),
-                     ('delete nextOwnership[', '清空必须真删键（不能留 null 孤儿键）')):
+                     # 2026-10-24（第 4 件第二刀）：真正写归属的算法搬进唯一落库口
+                     # `ownershipCommand`（笔刷/油漆桶/属性面板/批量条共用），
+                     # 批量口只负责"挑出真变动的省"。清空语义仍在同一处判。
+                     ('ownershipCommand(', '批量写必须走唯一落库口 ownershipCommand'),
+                     ('toPolityId: clearing ? null : polityId', '清空没走 toPolityId=null 的同一口径')):
         if sym not in seg:
             bad.append(f'batchSetOwnership 缺 {sym}（{why}）')
-    if 'null' in seg and 'delete nextOwnership[' not in seg:
+    # 清空必须真删键（不能留 null 孤儿键）：判定在唯一落库口里 → 按**文件级**查
+    if 'delete nextOwnership[' not in se:
+        bad.append('清空没真删归属键（不能留 null 孤儿键）')
+    if re.search(r'nextOwnership\[[^\]]+\]\s*=\s*null', se):
         bad.append('清空路径疑似仍写 null')
     # 🔴 月日精度（2026-10-05）：第 4 参由裸年份改成日期对象 `{y,m,d}`；
     #    回执里的 `changeYear` 已改名 `date`（UI 要用它点名这次易主的**哪一天**）

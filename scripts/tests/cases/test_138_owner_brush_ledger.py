@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 138：归属笔 → 账本（第 4 件第一接线点，2026-10-24）
+"""用例 138：归属笔 → 账本（第 4 件接线点，2026-10-24；第二刀扩到全部归属写口 + 双栈撤销）
 
 验收点（每条带反证/边界）：
 1. 一笔带日期的涂归属 → `scenario.ledger` 长出**同一 groupId** 的事件（provenance=brush、day=那天）
 2. 账本投影 == 缓存 `ownership`（**逐省 0 处不同**）—— 这是"账本可以当真源"的前提
-3. 撤销/重做：账本跟着整笔回滚/回来（不是只回滚缓存）
+3. 撤销/重做：账本跟着整笔回滚/回来（不是只回滚缓存）；撤销回到"当时还没有账本"
 4. **无日期编辑不入账**（只写缓存）—— 与尚未接线的写口共存，不制造假账
 5. 落盘 + 重开：`scenario.ledger` 跟项目文件走（条数与 groupId 都不变）
-6. 源码守卫：接线点在 `batchSetOwnership` 里（fromV2Scenario/projectOwnership/diffOwnership），
-   且组件把 groupId（strokeId）传下去
+6. 第二刀：属性面板 `setOwnership` 同走账本（provenance=ui、自动 groupId），缓存由投影重算
+7. 第二刀：**双栈交织撤销** —— 归属（账本栈）与剧本元信息（快照栈）交替撤销，
+   按操作时序各退各的栈，**互不回滚**（getStackCounts 佐证）
+8. 源码守卫：唯一落库口 `ownershipCommand`（投影重算 / removeGroup / insertGroup），
+   组件把 groupId（strokeId）传下去
 """
 import json
 import os
@@ -104,6 +107,7 @@ BATCH = r"""(() => {
     before, after: events.length,
     groups: [...new Set(events.filter(e => e.groupId).map(e => e.groupId))],
     days: [...new Set(events.filter(e => e.type === 'province.owner.changed').map(e => e.day))],
+    idsUnique: new Set(events.map(e => e.id)).size === events.length,
     ownership: cur.ownership || {},
     changeEventKeys: Object.keys(cur.changeEvents || {}),
   });
@@ -125,8 +129,66 @@ VERIFY = r"""(() => {
 
 LOAD_L = r"""(async () => {
   window.__L138 = await import('/@fs/E:/CODE/CangKu/SiTian/src/ledger/index.js');
-  return JSON.stringify({ ok: typeof window.__L138.projectOwnership === 'function' });
+  window.__U138 = await import('/src/store/undo.js');
+  return JSON.stringify({ ok: typeof window.__L138.projectOwnership === 'function',
+                          stack: typeof window.__U138.getStackCounts === 'function' });
 })()"""
+
+# 第二刀：属性面板 / 油漆桶的写口（与笔刷共用 ownershipCommand）
+PANEL = r"""(() => {
+  const s = STORE_X;
+  const key = '用例138底图/账本';
+  const scn = s.scenarios[key];
+  const pol = (scn.polities || [])[0];
+  const before = ((scn.ledger || {}).events || []).length;
+  const r = s.setOwnership(scn.id, 'p138a', pol.id, { y: 1060 });
+  const cur = s.scenarios[key];
+  const evs = ((cur.ledger || {}).events || []);
+  const added = evs.slice(before);
+  return JSON.stringify({
+    ok: !!(r && r.success), viaLedger: !!(r && r.ledger),
+    before, after: evs.length,
+    provenance: [...new Set(added.map(e => e.provenance))],
+    groups: [...new Set(added.map(e => e.groupId).filter(Boolean))],
+    days: [...new Set(added.map(e => e.day))],
+    strip: added.map(e => e.payload && e.payload.provinceId),
+    ownership: (cur.ownership || {}).p138a || null,
+    undoLabel: s.undoLabel || '',
+  });
+})()""".replace('STORE_X', STORE)
+
+# 快照栈的一条操作（剧本元信息：势力谱系），用来验"两栈交织撤销"
+LINEAGE = r"""(() => {
+  const s = STORE_X;
+  const key = '用例138底图/账本';
+  const scn = s.scenarios[key];
+  const pol = (scn.polities || [])[0];
+  s.setPolityLineage(scn.id, pol.id, { lineage: '用例138谱系' });
+  const cur = s.scenarios[key];
+  const u = window.__U138;
+  return JSON.stringify({
+    lineage: ((cur.polities || [])[0] || {}).lineage || '',
+    events: ((cur.ledger || {}).events || []).length,
+    ownershipA: (cur.ownership || {}).p138a || null,
+    stacks: u ? u.getStackCounts() : null,
+  });
+})()""".replace('STORE_X', STORE)
+
+AFTER = r"""(() => {
+  const s = STORE_X;
+  const key = '用例138底图/账本';
+  const scn = s.scenarios[key] || {};
+  const evs = ((scn.ledger || {}).events || []);
+  const u = window.__U138;
+  return JSON.stringify({
+    hasLedger: !!scn.ledger,
+    events: evs.length,
+    lineage: ((scn.polities || [])[0] || {}).lineage || '',
+    ownership: scn.ownership || {},
+    changeEvents: Object.keys(scn.changeEvents || {}),
+    stacks: u ? u.getStackCounts() : null,
+  });
+})()""".replace('STORE_X', STORE)
 
 UNDO = "(() => { STORE_X.undo(); return 'ok'; })()".replace('STORE_X', STORE)
 REDO = "(() => { STORE_X.redo(); return 'ok'; })()".replace('STORE_X', STORE)
@@ -172,10 +234,14 @@ def sub_source_guards():
     bad = []
     code = _code_only(_read(PROJ))
     for needle, why in [
-        ('fromV2Scenario(', 'batchSetOwnership 没接账本（旧档迁移入口缺失）'),
-        ('projectOwnership(', 'batchSetOwnership 没算账本投影'),
-        ('diffOwnership(', 'batchSetOwnership 没做"投影 vs 缓存"对拍（可能写自相矛盾的账）'),
-        ('provenance: \'brush\'', '事件没记 provenance=brush'),
+        ('function ownershipCommand(', '归属写入没有唯一落库口 ownershipCommand'),
+        ('fromV2Scenario(', '账本接线没接旧档迁移入口（fromV2Scenario）'),
+        ('projectOwnership(', '归属写入没算账本投影'),
+        ('diffOwnership(', '归属写入没做"投影 vs 缓存"对拍（可能写自相矛盾的账）'),
+        ('toV2Projection(', '账本模式没按投影重算缓存（真源反转缺失）'),
+        ('removeGroup(', '归属撤销没走账本组撤（removeGroup）'),
+        ('insertGroup(', '归属重做没把账本组插回（insertGroup）'),
+        ("opts.strokeId ? 'brush' : 'ui'", '笔刷/批量条没按来源分派 provenance'),
     ]:
         if needle not in code:
             bad.append(why)
@@ -184,7 +250,7 @@ def sub_source_guards():
         bad.append('ScenarioMap 没把 strokeId（这一笔的 groupId）传给 batchSetOwnership')
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
-    return True, '接线点在 batchSetOwnership（迁移/投影/对拍）+ 组件传 strokeId'
+    return True, '唯一落库口 ownershipCommand（迁移/投影/对拍/组撤）+ 组件传 strokeId'
 
 
 def run(cdp):
@@ -207,7 +273,7 @@ def run(cdp):
     s1 = _j(cdp, STATE)
     v1 = _j(cdp, VERIFY)
 
-    # ③ 撤销/重做
+    # ③ 撤销/重做（账本组撤；撤销后账本键也要回到"当时没有"）
     _j(cdp, UNDO)
     time.sleep(0.3)
     s2 = _j(cdp, STATE)
@@ -215,9 +281,31 @@ def run(cdp):
     time.sleep(0.3)
     s3 = _j(cdp, STATE)
 
+    # ⑥ 第二刀：属性面板写口（同一落库口，provenance=ui + 自动 groupId）
+    panel = _j(cdp, PANEL)
+    time.sleep(0.25)
+    s4 = _j(cdp, STATE)
+
+    # ⑦ 双栈交织：归属（账本栈）→ 剧本元信息（快照栈）→ 依次撤/重做
+    lin = _j(cdp, LINEAGE)
+    time.sleep(0.25)
+    _j(cdp, UNDO)                      # 撤快照栈那一条
+    time.sleep(0.25)
+    a1 = _j(cdp, AFTER)
+    _j(cdp, UNDO)                      # 再撤账本栈那一条
+    time.sleep(0.25)
+    a2 = _j(cdp, AFTER)
+    _j(cdp, REDO)                      # 重做账本那一条
+    time.sleep(0.25)
+    a3 = _j(cdp, AFTER)
+    _j(cdp, REDO)                      # 重做快照那一条
+    time.sleep(0.25)
+    a4 = _j(cdp, AFTER)
+
     # ④ 无日期编辑不入账
     nod = _j(cdp, NO_DATE)
     time.sleep(0.2)
+    pre_save = _j(cdp, AFTER)
 
     # ⑤ 落盘 + 重开
     sr = _j(cdp, SAVE_REOPEN)
@@ -232,26 +320,64 @@ def run(cdp):
         fails.append(f'groupId 不对：{b1.get("groups")}')
     if b1.get('days') != [1050 * 360]:
         fails.append(f'day 换算不对：{b1.get("days")}（期望 [{1050 * 360}]）')
+    if not b1.get('idsUnique'):
+        fails.append('同一笔里的事件 id 重复（makeEventId 没把新 id 记进已用集合）')
+    if s1.get('brush') != 2:
+        fails.append(f'事件来源不对（brush {s1.get("brush")} ≠ 2）')
     if not v1.get('same'):
         fails.append(f'账本投影与缓存不一致（{v1.get("diffCount")} 处）')
     if b1.get('ownership', {}).get('p138a') != r['polity']:
         fails.append('缓存 ownership 没更新到新势力')
     if sorted(b1.get('changeEventKeys') or []) != ['p138a', 'p138b']:
         fails.append(f'changeEvents 键不对：{b1.get("changeEventKeys")}')
-    if s2.get('events') != s0.get('events'):
-        fails.append(f'撤销后账本没回原状（{s2.get("events")} ≠ {s0.get("events")}）')
+    if s2.get('events') != s0.get('events') or s2.get('events') != 0:
+        fails.append(f'撤销后账本没回原状（{s2.get("events")} ≠ {s0.get("events")}；期望回到"没有账本"）')
     if s3.get('events') != s1.get('events'):
         fails.append(f'重做后账本没回来（{s3.get("events")} ≠ {s1.get("events")}）')
+    # 第二刀②：属性面板同走账本
+    if not panel.get('ok') or not panel.get('viaLedger'):
+        fails.append(f'属性面板写口没走账本：{panel}')
+    if panel.get('after') != 4 or panel.get('before') != 3:
+        fails.append(f'属性面板没长出一条事件（{panel.get("before")} → {panel.get("after")}，期望 3 → 4）')
+    if panel.get('provenance') != ['ui']:
+        fails.append(f'属性面板事件的 provenance 不对：{panel.get("provenance")}（期望 ["ui"]）')
+    if panel.get('days') != [1060 * 360]:
+        fails.append(f'属性面板事件的 day 不对：{panel.get("days")}')
+    if len(panel.get('groups') or []) != 1 or not (panel.get('groups') or [''])[0]:
+        fails.append(f'属性面板没自动生成这一笔的 groupId：{panel.get("groups")}')
+    if panel.get('groups') == ['case138-stroke-1']:
+        fails.append('属性面板复用了笔刷的 groupId（两笔会被一起撤掉）')
+    if s4.get('pdf') == 0:
+        fails.append('属性面板写入后 changeEvents 变空')
+    # 第二刀③：双栈交织
+    if lin.get('lineage') != '用例138谱系':
+        fails.append(f'快照栈那一条没写进去：{lin}')
+    if (lin.get('stacks') or {}).get('ledger') != 2 or (lin.get('stacks') or {}).get('snapshot') < 1:
+        fails.append(f'历史条目没带所属栈：{lin.get("stacks")}')
+    if a1.get('lineage') != '':
+        fails.append(f'第一次撤销没退回快照栈那一条（谱系还在：{a1.get("lineage")}）')
+    if a1.get('events') != 4:
+        fails.append(f'撤快照栈时账本被误回滚（{a1.get("events")} ≠ 4）')
+    if a2.get('lineage') != '' or a2.get('events') != 3:
+        fails.append(f'再撤账本栈没退回 3 条（events={a2.get("events")}）')
+    if a3.get('events') != 4:
+        fails.append(f'重做账本栈没回来（{a3.get("events")} ≠ 4）')
+    if a3.get('lineage') != '':
+        fails.append('重做账本栈时把快照栈的谱系一起带回来了（两栈串了）')
+    if a4.get('lineage') != '用例138谱系' or a4.get('events') != 4:
+        fails.append(f'重做快照栈没回来（{a4}）')
+    # ④ 无日期编辑
     if nod.get('after') != nod.get('before'):
         fails.append(f'无日期编辑居然入了账（{nod.get("before")} → {nod.get("after")}）')
     if nod.get('ownership', {}).get('p138c') != r['polity']:
         fails.append('无日期编辑连缓存都没写（那才是真丢数据）')
+    # ⑤ 落盘 + 重开
     if not sr.get('ok'):
         fails.append(f'落盘失败：{sr.get("error")}')
-    if sr.get('savedEvents') != b1.get('after'):
-        fails.append(f'落盘载荷里的账本条数不对（{sr.get("savedEvents")} ≠ {b1.get("after")}）')
-    if sr.get('savedGroups') != ['case138-stroke-1']:
-        fails.append(f'落盘载荷里的 groupId 不对：{sr.get("savedGroups")}')
+    if sr.get('savedEvents') != pre_save.get('events'):
+        fails.append(f'落盘载荷里的账本条数不对（{sr.get("savedEvents")} ≠ {pre_save.get("events")}）')
+    if 'case138-stroke-1' not in (sr.get('savedGroups') or []):
+        fails.append(f'落盘载荷里丢了笔刷的 groupId：{sr.get("savedGroups")}')
     if not sr.get('reopened'):
         fails.append('重开项目失败')
     if sr.get('reopenEvents') != sr.get('savedEvents'):
@@ -261,11 +387,13 @@ def run(cdp):
     if not sg_ok:
         fails.append(sg_detail)
 
-    detail = (f'归属笔→账本：一笔 2 省 → {b1.get("after")} 条事件（1 基线 + 2 变更）/ groupId='
+    detail = (f'归属写口→账本：一笔 2 省 → {b1.get("after")} 条事件（1 基线 + 2 变更）/ groupId='
               f'{b1.get("groups")} / day={b1.get("days")}；投影与缓存 **0 处不同**；'
-              f'撤销 {s2.get("events")} → 重做 {s3.get("events")}；无日期编辑不入账（{nod.get("before")}→'
-              f'{nod.get("after")}）但缓存照写；落盘 {sr.get("savedEvents")} 条 + 重开 {sr.get("reopenEvents")} 条；'
-              f'源码守卫：{sg_detail}')
+              f'撤销 {s2.get("events")} → 重做 {s3.get("events")}；属性面板 +1 条（ui / '
+              f'{panel.get("groups")}，3→{panel.get("after")}）；双栈交织 4 撤 4 复'
+              f'（{a1.get("events")}/{a2.get("events")}/{a3.get("events")}/{a4.get("events")}，谱系各退各栈）；'
+              f'无日期编辑不入账（{nod.get("before")}→{nod.get("after")}）但缓存照写；'
+              f'落盘 {sr.get("savedEvents")} 条 + 重开 {sr.get("reopenEvents")} 条；源码守卫：{sg_detail}')
     if fails:
         return False, '；'.join(fails)[:900]
     return True, detail
