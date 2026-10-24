@@ -1529,6 +1529,9 @@ function onRender(ctx, w, h) {
     drawing.drawHeightBrushPreview(ctx);
   }
   if (editMode.value && interactionMode.value === 'terrain') {
+    // L3「将涂格」高亮（第 4 件）：拖动中先把"这笔会填哪些格"以半透明叠出来，
+    // **松手才落库** —— 数据判据是"预览格集 == 落库格集"（test_140）。
+    terrainCanvasBrush.drawTerrainPendingToCtx(ctx);
     if (terrainCanvasBrush.strokePath.value.length > 1) {
       drawing.drawBrushTrail(ctx, terrainCanvasBrush.strokePath.value, {
         color: '#E8C66A', width: Math.max(6, terrainCanvasBrush.brushWorldRadius() * 1.2),

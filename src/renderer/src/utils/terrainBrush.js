@@ -42,6 +42,53 @@ export class TerrainBrush {
   }
 
   /**
+   * 枚举一个笔刷落点**会碰到**的格子（**不写数据**）。
+   *
+   * 🔴 这是"将涂格高亮"与"落笔写格"的**同一份枚举**（2026-10-24 第 4 件）：
+   *    预览自己再写一遍扫描逻辑，迟早出现"高亮的格子和真正涂上的格子不一样"——
+   *    那种偏差只在边角（半径边缘 / 插值步数）露一点，肉眼很难抓，但用户会觉得"笔不听话"。
+   *
+   * @param {number} gridWidth  -1 = 不裁列（预览用无界格点）
+   * @param {number} gridHeight
+   * @param {number} centerX 笔刷中心（与 `cellSize` 同一坐标系）
+   * @param {number} centerY
+   * @param {number} cellSize
+   * @param {(row:number, col:number, weight:number)=>void} cb
+   * @returns {{x:number,y:number,width:number,height:number}|null} 覆盖矩形（像素坐标）
+   */
+  forEachCell(gridWidth, gridHeight, centerX, centerY, cellSize, cb) {
+    const radius = this.size / 2;
+    const unbounded = gridWidth < 0 || gridHeight < 0;
+    const startCol = unbounded ? Math.floor((centerX - radius) / cellSize)
+      : Math.max(0, Math.floor((centerX - radius) / cellSize));
+    const endCol = unbounded ? Math.ceil((centerX + radius) / cellSize)
+      : Math.min(gridWidth - 1, Math.ceil((centerX + radius) / cellSize));
+    const startRow = unbounded ? Math.floor((centerY - radius) / cellSize)
+      : Math.max(0, Math.floor((centerY - radius) / cellSize));
+    const endRow = unbounded ? Math.ceil((centerY + radius) / cellSize)
+      : Math.min(gridHeight - 1, Math.ceil((centerY + radius) / cellSize));
+    if (startCol > endCol || startRow > endRow) return null;
+
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        const cellCenterX = col * cellSize + cellSize / 2;
+        const cellCenterY = row * cellSize + cellSize / 2;
+        const dx = cellCenterX - centerX;
+        const dy = cellCenterY - centerY;
+        const weight = this.getWeight(dx, dy);
+        if (weight > 0.15) cb(row, col, weight);
+      }
+    }
+
+    return {
+      x: startCol * cellSize,
+      y: startRow * cellSize,
+      width: (endCol - startCol + 1) * cellSize,
+      height: (endRow - startRow + 1) * cellSize,
+    };
+  }
+
+  /**
    * 笔刷涂抹到网格
    * @param {Uint8Array} grid - 地形网格数据
    * @param {number} gridWidth - 网格宽度
@@ -52,53 +99,42 @@ export class TerrainBrush {
    * @returns {Object} 受影响的区域边界 { x, y, width, height }
    */
   paint(grid, gridWidth, gridHeight, centerX, centerY, cellSize) {
-    const radius = this.size / 2;
-    const startCol = Math.max(0, Math.floor((centerX - radius) / cellSize));
-    const endCol = Math.min(gridWidth - 1, Math.ceil((centerX + radius) / cellSize));
-    const startRow = Math.max(0, Math.floor((centerY - radius) / cellSize));
-    const endRow = Math.min(gridHeight - 1, Math.ceil((centerY + radius) / cellSize));
-    
-    for (let row = startRow; row <= endRow; row++) {
-      for (let col = startCol; col <= endCol; col++) {
-        const cellCenterX = col * cellSize + cellSize / 2;
-        const cellCenterY = row * cellSize + cellSize / 2;
-        const dx = cellCenterX - centerX;
-        const dy = cellCenterY - centerY;
-        const weight = this.getWeight(dx, dy);
-        if (weight > 0.15) {
-          grid[row * gridWidth + col] = this.terrainType;
-        }
-      }
+    const type = this.terrainType;
+    return this.forEachCell(gridWidth, gridHeight, centerX, centerY, cellSize, (row, col) => {
+      grid[row * gridWidth + col] = type;
+    });
+  }
+
+  /**
+   * 枚举两点之间插值落点会碰到的格子（**不写数据**；与 `paintInterpolated` 同一份采样）。
+   */
+  forEachInterpolatedCell(x1, y1, x2, y2, cellSize, cb) {
+    const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    const steps = Math.max(1, Math.floor(dist / (this.size / 4)));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      cb(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
     }
-    
-    return {
-      x: startCol * cellSize,
-      y: startRow * cellSize,
-      width: (endCol - startCol + 1) * cellSize,
-      height: (endRow - startRow + 1) * cellSize
-    };
   }
 
   /**
    * 在两个点之间插值涂抹（用于快速移动时填补空隙）
    */
   paintInterpolated(grid, gridWidth, gridHeight, x1, y1, x2, y2, cellSize) {
-    const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-    const steps = Math.max(1, Math.floor(dist / (this.size / 4)));
     let bounds = null;
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const x = x1 + (x2 - x1) * t;
-      const y = y1 + (y2 - y1) * t;
+    this.forEachInterpolatedCell(x1, y1, x2, y2, cellSize, (x, y) => {
       const b = this.paint(grid, gridWidth, gridHeight, x, y, cellSize);
+      if (!b) return;
       if (!bounds) bounds = b;
       else {
+        const maxX = Math.max(bounds.x + bounds.width, b.x + b.width);
+        const maxY = Math.max(bounds.y + bounds.height, b.y + b.height);
         bounds.x = Math.min(bounds.x, b.x);
         bounds.y = Math.min(bounds.y, b.y);
-        bounds.width = Math.max(bounds.x + bounds.width, b.x + b.width) - bounds.x;
-        bounds.height = Math.max(bounds.y + bounds.height, b.y + b.height) - bounds.y;
+        bounds.width = maxX - bounds.x;
+        bounds.height = maxY - bounds.y;
       }
-    }
+    });
     return bounds;
   }
 }

@@ -51,10 +51,22 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   /** L2 笔迹层：这一笔已走过的世界坐标（**只画，不落库**）；松手即清空 */
   const strokePath = ref([]);
   const STROKE_PATH_MAX = 320;
+  /**
+   * L3「将涂格」高亮（第 4 件，2026-10-24）：拖动中**只算不写**，把这些格以半透明色叠在画面上；
+   * 松手时沿同一条笔迹一次性落库。`{col,row}` 是**这一笔起笔时的格点**（世界格，无界）。
+   * 松手前数据一格都不动 —— 这就是"所见即所得"的判据基础（预览格集 == 落库格集）。
+   */
+  const terrainPendingCells = ref([]);   // Array<{col,row}>（去重；只增不改，供渲染/用例读）
+  let pendingMap = null;                  // Map<'col,row', 1>（比数组快；渲染前才摊平）
+  let pendingOrigin = null;               // {x, y, cell}：这一笔的格点原点（扩网格不改对齐）
+  let pendingRev = 0;
+  let pendingRuns = null;                 // [{type,row,c0,c1}]：按行合并的连续段（渲染缓存）
+  let pendingRunsRev = -1;
 
   let gridOriginX = 0;
   let gridOriginY = 0;
   let strokeSnapshot = null; // 本笔的 {grid, geom, label}：几何也可能被扩，撤销要能一起还原
+  let rawPath = [];          // 这一笔的**原始落点**（落库回放用；L2 显示另走抽稀的 strokePath）
 
   // 轮廓渲染缓存状态（声明放在最前，避免 setup 期 TDZ：几何函数会调用 markOutlineDirty）
   let outlineRevision = 0;     // 每次涂抹/重采样/换行星自增
@@ -284,6 +296,118 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     renderer.markDirtyRect(brushSegmentRect(prev, cur, brushWorldRadius()));
   }
 
+  /**
+   * L3「将涂格」高亮：拖动中**只算不写**，把这些格以半透明色叠在画面上；松手时一次性落库。
+   * 判据（"所见即所得"）：预览的格集 == 松手后真正被写的格集 —— 靠**同一份枚举**保证
+   * （`terrainBrush.forEachCell/forEachInterpolatedCell` 被预览与落库共用）。
+   *
+   * ⚠️ 落库回放走的是 `rawPath`（**原始落点**），不是 L2 显示用的 `strokePath`（抽稀过的）——
+   *    抽稀会丢掉中间点，回放走的折线就与预览扫过的折线不同，边角上必然对不上。
+   */
+  function beginPending() {
+    // ⚠️ 类型也要**固定在起笔时**：拖动中改笔刷类型（工具栏可点）会让"预览混两种色、
+    //    落库全按最后一种"—— 那是肉眼能看出来的不一致。
+    pendingOrigin = { x: gridOriginX, y: gridOriginY, cell: cellWorldSize.value, type: terrainBrushType.value };
+    pendingMap = new Map();
+    pendingRev += 1;
+    pendingRuns = null;
+    terrainPendingCells.value = [];
+  }
+
+  function clearPending() {
+    pendingMap = null;
+    pendingOrigin = null;
+    pendingRev += 1;
+    pendingRuns = null;
+    rawPath = [];
+    terrainPendingCells.value = [];
+  }
+
+  /** 把一个落点会碰到的格记进 pending（**不写网格**；格点与类型都用这一笔起笔时定下的） */
+  function accumulateAt(wx, wy) {
+    if (!pendingMap || !pendingOrigin) return;
+    const { x: ox, y: oy, cell, type } = pendingOrigin;
+    terrainBrush.forEachCell(-1, -1, wx - ox, wy - oy, cell, (row, col) => {
+      const key = `${col},${row}`;
+      if (!pendingMap.has(key)) pendingMap.set(key, type);
+    });
+  }
+
+  /** 一段落点（原始点之间的直线）会碰到的格 —— 与 `paintInterpolated` 同一份插值采样 */
+  function accumulateSegment(x1, y1, x2, y2) {
+    if (!pendingMap || !pendingOrigin) return;
+    const { x: ox, y: oy, cell, type } = pendingOrigin;
+    terrainBrush.forEachInterpolatedCell(x1 - ox, y1 - oy, x2 - ox, y2 - oy, cell, (x, y) => {
+      terrainBrush.forEachCell(-1, -1, x, y, cell, (row, col) => {
+        const key = `${col},${row}`;
+        if (!pendingMap.has(key)) pendingMap.set(key, type);
+      });
+    });
+  }
+
+  /** pending 的格（供用例/诊断读；无界格点，坐标相对这一笔的原点） */
+  function pendingCells() {
+    if (!pendingMap) return [];
+    const out = [];
+    for (const key of pendingMap.keys()) {
+      const i = key.indexOf(',');
+      out.push({ col: Number(key.slice(0, i)), row: Number(key.slice(i + 1)) });
+    }
+    return out;
+  }
+
+  /** 按行合并成连续段（渲染缓存：几千格也只画几十~几百个矩形） */
+  function pendingRunsOf() {
+    if (!pendingMap || !pendingMap.size) return [];
+    if (pendingRuns && pendingRunsRev === pendingRev) return pendingRuns;
+    const byRow = new Map();
+    for (const [key, type] of pendingMap) {
+      const i = key.indexOf(',');
+      const col = Number(key.slice(0, i));
+      const row = Number(key.slice(i + 1));
+      let e = byRow.get(row);
+      if (!e) { e = { type, cols: [] }; byRow.set(row, e); }
+      e.cols.push(col);
+    }
+    const runs = [];
+    for (const [row, e] of byRow) {
+      e.cols.sort((a, b) => a - b);
+      let c0 = e.cols[0];
+      let prev = c0;
+      for (let i = 1; i < e.cols.length; i += 1) {
+        const c = e.cols[i];
+        if (c === prev + 1) { prev = c; continue; }
+        runs.push({ type: e.type, row, c0, c1: prev });
+        c0 = c; prev = c;
+      }
+      runs.push({ type: e.type, row, c0, c1: prev });
+    }
+    runs.sort((a, b) => (a.type - b.type) || (a.row - b.row) || (a.c0 - b.c0));
+    pendingRuns = runs;
+    pendingRunsRev = pendingRev;
+    return runs;
+  }
+
+  /** 把「将涂格」叠到画布上（世界坐标；PlanetMap 在地形网格之后调用） */
+  function drawTerrainPendingToCtx(ctx) {
+    if (!isTerrainBrushing.value || !pendingMap || !pendingMap.size || !pendingOrigin) return;
+    const { x: ox, y: oy, cell } = pendingOrigin;
+    const runs = pendingRunsOf();
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    let lastType = -1;
+    for (const r of runs) {
+      if (r.type !== lastType) {
+        const t = TERRAIN_TYPES[r.type] || TERRAIN_TYPES[0];
+        ctx.fillStyle = `rgb(${t.base[0]},${t.base[1]},${t.base[2]})`;
+        lastType = r.type;
+      }
+      ctx.fillRect(ox + r.c0 * cell, oy + r.row * cell, (r.c1 - r.c0 + 1) * cell, cell);
+    }
+    ctx.restore();
+    ctx.beginPath();
+  }
+
   function paintAt(wx, wy) {
     terrainBrush.paint(
       terrainGrid.value, gridWidth.value, gridHeight.value,
@@ -351,14 +475,20 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
       geom: snapshotGeometry(),
       label: `涂色地形（${TERRAIN_TYPES[terrainBrushType.value]?.name || '橡皮擦'}）`,
     };
-    ensureCoverage(wx, wy);
+    const expanded = ensureCoverage(wx, wy);   // 起笔仍扩一次：让预览的原点落在网格内（落笔本身在松手时才写）
     isTerrainBrushing.value = true;
     strokePath.value = [];
+    rawPath = [{ x: wx, y: wy }];
     lastBrushX.value = wx;
     lastBrushY.value = wy;
     syncBrush();
-    paintAt(wx, wy);
-    markOutlineDirty(true); // 起笔立即重建一次：否则第一笔要等节流窗口才出现在画布上
+    // 🔴 第 4 件（2026-10-24）：拖动中**不写格**，只累积「将涂格」高亮；松手才落库。
+    //    顺序很讲究：`beginPending` 要在起笔的 `ensureCoverage` **之后** —— 原点必须与
+    //    本笔最终用的格点对齐（扩网格只会整体平移整数格，对齐关系不变）。
+    beginPending();
+    accumulateAt(wx, wy);
+    // 起笔**不写格** → 只有"网格被扩了"才需要重建轮廓（几何变了）
+    if (expanded) markOutlineDirty(true);
     updateBrushPreview(wx, wy);
     pushStrokePoint(wx, wy);
     markBrushDirty(null, { x: wx, y: wy });
@@ -368,30 +498,52 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   function moveTerrainBrush(wx, wy) {
     if (!isTerrainBrushing.value || !terrainGrid.value) return;
     const prev = { x: lastBrushX.value, y: lastBrushY.value };
-    ensureCoverage(wx, wy);
-    terrainBrush.paintInterpolated(
-      terrainGrid.value, gridWidth.value, gridHeight.value,
-      lastBrushX.value - gridOriginX, lastBrushY.value - gridOriginY,
-      wx - gridOriginX, wy - gridOriginY, cellWorldSize.value,
-    );
+    // ① 原始落点：落库回放用它（不是 L2 显示用的抽稀路径 —— 那条会丢中间点，边角必然对不上）
+    const lastRaw = rawPath[rawPath.length - 1];
+    if (!lastRaw || Math.hypot(wx - lastRaw.x, wy - lastRaw.y) > 1e-3) rawPath.push({ x: wx, y: wy });
+    // ② 把这一段会碰到的格记进「将涂格」（不写网格）
+    accumulateSegment(prev.x, prev.y, wx, wy);
+    // ③ 覆盖范围拖到**松手**再统一扩（拖动中不写数据 → 没有"涂不上的真空区"）
     lastBrushX.value = wx;
     lastBrushY.value = wy;
-    markOutlineDirty();
     updateBrushPreview(wx, wy);
     pushStrokePoint(wx, wy);
     markBrushDirty(prev, { x: wx, y: wy });
     renderer.requestRender();
   }
 
+  /** 沿这一笔的**原始落点**重放写格（与预览同一份枚举：逐段插值 + 逐点扫格） */
+  function commitPendingStroke() {
+    if (!terrainGrid.value || !rawPath.length) return;
+    // ① 先把网格扩到覆盖整条笔迹（世界格对齐不变）
+    for (const p of rawPath) ensureCoverage(p.x, p.y);
+    // ② 回放（起点一次 paint，其余逐段 paintInterpolated —— 与 accumulate* 用的是同一对枚举）
+    const type = (pendingOrigin && pendingOrigin.type !== undefined) ? pendingOrigin.type : terrainBrushType.value;
+    terrainBrush.terrainType = type;
+    paintAt(rawPath[0].x, rawPath[0].y);
+    for (let i = 1; i < rawPath.length; i += 1) {
+      terrainBrush.paintInterpolated(
+        terrainGrid.value, gridWidth.value, gridHeight.value,
+        rawPath[i - 1].x - gridOriginX, rawPath[i - 1].y - gridOriginY,
+        rawPath[i].x - gridOriginX, rawPath[i].y - gridOriginY, cellWorldSize.value,
+      );
+    }
+    markOutlineDirty(true);
+  }
+
   function endTerrainBrush() {
     if (!isTerrainBrushing.value) return;
     isTerrainBrushing.value = false;
     strokePath.value = [];   // L2 笔迹层：先清数据，再整帧重画把它擦掉
-    markOutlineDirty(true); // 抬手落定：轮廓必须与最终格数据完全一致
-    // 轨迹是瞬态层，只 requestRender 擦不掉（脏矩形只覆盖落点周围）
-    if (typeof renderer.markFullRedraw === 'function') renderer.markFullRedraw();
     const before = strokeSnapshot;
     strokeSnapshot = null;
+    // ③ 落笔：把预览过的那些格一次性写进网格（此前一格都没动）
+    commitPendingStroke();
+    clearPending();
+    // 抬手落定：轮廓必须与最终格数据完全一致
+    markOutlineDirty(true);
+    // 高亮 / 轨迹都是瞬态层，只 requestRender 擦不掉（脏矩形只覆盖落点周围）
+    if (typeof renderer.markFullRedraw === 'function') renderer.markFullRedraw();
     if (!before) return;
     const after = { grid: Uint8Array.from(terrainGrid.value), geom: snapshotGeometry() };
     const label = before.label;
@@ -527,6 +679,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     lastBrushX.value = 0;
     lastBrushY.value = 0;
     strokePath.value = [];
+    clearPending();
     clearBrushPreview();
     if (typeof renderer.markFullRedraw === 'function') renderer.markFullRedraw();
   }
@@ -535,6 +688,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   watch(() => props.planet?.id, () => {
     terrainGridEnabled.value = false;
     terrainGrid.value = null;
+    clearPending();
     markOutlineDirty(true);
   });
 
@@ -562,6 +716,15 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
       cols: gridWidth.value, rows: gridHeight.value,
     }),
     drawTerrainGridToCtx,
+    /** L3「将涂格」高亮：拖动中叠在画布上的半透明格（第 4 件） */
+    drawTerrainPendingToCtx,
+    /** 诊断/用例：这一笔当前"将涂"的格（无界格点，相对这一笔的格点原点） */
+    pendingCells,
+    terrainPendingCells,
+    /** 这一笔的原始落点（用例做"预览格集 == 落库格集"的等价性判定用） */
+    rawStrokePath: () => rawPath.slice(),
+    /** 预览的格点原点（`{x,y,cell}`；与落库用的世界格对齐） */
+    pendingOriginRef: () => (pendingOrigin ? { ...pendingOrigin } : null),
     outlineStats,
     invalidateTerrainOutline: markOutlineDirty,
     clearTerrainBrush,

@@ -204,6 +204,13 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   不再只是"写的时候成立"（手改文件 / 旧版本写盘造出的陈旧缓存会在重开时被纠正）。
   判据：Node 单测 a10（含"构造一个会投影出不同结果的坏账本"的反向探针）+
   test_139 ⑦（内存清空缓存 → 装载口按账本恢复、账本一条未动）。
+- ✅ **第 4 件四笔总装 · 地形笔 L3「将涂格」（2026-10-24）**：拖动中**只算不写**，把"这笔会填哪些格"
+  以半透明叠出来，**松手才落库**（04 号指南对地形笔的原话）。预览与落库共用同一份格枚举
+  （`terrainBrush.forEachCell/forEachInterpolatedCell`）；落库回放走**原始落点**（不是 L2 抽稀路径，
+  否则边角对不上）；笔刷类型固定在起笔、扩网格挪到抬手。
+  判据（新用例 test_140）：拖动中网格**逐字节未变**（0 步变化）而「将涂格」32→356 单调增长；
+  抬手上 356 个预览格**全部**命中（漏 0）；一条 undo、撤销**逐字节**复原；
+  像素证据（笔迹中点亮 >12，远处对照点差 0）。顺带：中途取消不再"先写后丢"。
   ⏳ 下一步：时间轴按 `day` 切片 + 导出（第 4 件第三步）。
 
 ### 第 4 件 · 四笔总装 + 时间轴 + 导出
@@ -263,7 +270,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 git log --oneline -1; git status --short; git rev-list --left-right --count HEAD...origin/main
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
-(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 139
+(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 140
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime
