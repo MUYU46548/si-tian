@@ -10,7 +10,7 @@
 //   · 结构解释只走 `utils/projectSchema.js`（本文件不重复实现校验/快照算法）
 //   · 磁盘 I/O 只走 `window.sitianAPI.project*`（主进程 projectHandler）
 
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, toRaw } from 'vue';
 import { defineStore } from 'pinia';
 import { execute, clearHistory } from './undo';
 // 单一写闸门（Phase 2）：打开项目 = 切到 'project' 写模式；关闭 = 回到无项目默认模式
@@ -440,13 +440,21 @@ export const useProjectStore = defineStore('project', () => {
   /** 把画布载荷并进项目对象（纯函数式合并：返回新对象，保持响应式替换语义） */
   function mergeCanvasPayload(project, payload = {}) {
     if (!payload || (!payload.entities && !payload.hyperlanes && !payload.maps && !payload.scenarios)) return project;
-    const next = { ...project };
+    // 🔴 2026-10-24（1-b）：**先 toRaw 再展开**。
+    //    `{ ...project.value }` 走的是 Vue 代理的 get 陷阱 → 取回来的每个值又是**代理**，
+    //    于是这份合并结果里种满了代理：落盘时 `toIpcPlain` 逐属性读一遍 3.6MB = 237ms，
+    //    `pushSnapshot` 的 `deepClone` 又因为代理让 `structuredClone` 抛错、退化成 JSON 往返 = 129ms。
+    //    改成先取原始对象：合并结果里全是原始值，落盘/快照重新量到 60ms / 29ms（同机同数据）。
+    //    ⚠️ 这不改变语义：`project.value` 仍是**新对象**（响应式替换照旧触发），
+    //       只是它的内部值不再是"代理套代理"。
+    const raw = toRaw(project) || project;
+    const next = { ...raw };
     // 🔴 实体表**不能直接替换**（2026-10-11）：画布导出的实体带的是"导出时刻"的时间戳，
     //    整体替换 = 每次保存把 120 个实体的 createdAt/updatedAt 全改一遍（实测每次 240 条 diff）。
     //    `preserveEntityTimestamps` 只在内容真的变了时才接受新时间戳。
-    if (payload.entities) next.entities = preserveEntityTimestamps(project.entities, payload.entities);
+    if (payload.entities) next.entities = preserveEntityTimestamps(raw.entities, payload.entities);
     if (payload.hyperlanes) next.hyperlanes = payload.hyperlanes;
-    if (payload.maps) next.maps = { ...(project.maps || {}), ...payload.maps };   // mapData + editor 逐键合并
+    if (payload.maps) next.maps = { ...(toRaw(raw.maps) || {}), ...payload.maps };   // mapData + editor 逐键合并
     if (payload.scenarios) next.scenarios = payload.scenarios;
     return next;
   }
@@ -456,7 +464,12 @@ export const useProjectStore = defineStore('project', () => {
     const a = api();
     if (!a || !a.projectCreate) return { success: false, error: API_MISSING };
     const draft = createEmptyProject({ name });
-    const res = await a.projectCreate({ name, dir, project: draft });
+    // 🔴 2026-10-24（1-b）：过**唯一的下真源口**再进 IPC。
+    //    画布载荷自 1-b 起是"原始对象直传"（不再在 `buildProjectPayload` 里 JSON 往返），
+    //    所以这一步既要保证没有 Vue 代理跨进程（V8 遇到代理必抛 "An object could not be cloned."，
+    //    2026-10-06 T2 那次的根因），也要让 TypedArray 按 `jsonSafeReplacer` 变成普通数组
+    //    —— 主进程写盘是 `JSON.stringify(project)`，TypedArray 会变成 `{"0":..}`（丢 length）。
+    const res = await a.projectCreate({ name, dir, project: toIpcPlain(draft) });
     if (!res || !res.success) return { success: false, error: (res && res.error) || '创建项目失败' };
     // 主进程会回显项目正文；旧版/第三方主进程不回显时用本地 draft 兜底（否则新建必然失败）
     return adopt(res.project ? res : { ...res, project: draft });

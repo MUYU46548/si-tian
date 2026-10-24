@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, toRaw } from 'vue';
 import { execute, undo as undoCmd, redo as redoCmd, canUndo as undoCanUndo, canRedo as undoCanRedo, getLastCommandLabel } from './undo';
 // 单一写闸门（Phase 2）：本文件是「世界观数据落盘」的主要入口，所有 save*/re-extract 必须先过 guardWrite。
 // 无项目只读态下这些调用会被拒绝（不写散文件、不写回 Obsidian）。见 store/writeGate.js 的入口清单。
@@ -1735,6 +1735,43 @@ export const useGeodataStore = defineStore('geodata', () => {
     });
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 载荷构造：**只换壳，不深拷**（1-b，2026-10-24）
+  //
+  // 为什么（实测，不是推测；同机 / 真实 200 省底图 / 同一个 mouseup）：
+  //   旧实现给 6 个容器各做一次 `JSON.parse(JSON.stringify(x, jsonSafeReplacer))`。
+  //   而画布上的容器全是 Vue 的**响应式代理** —— 逐属性读一遍 2.07MB 的代价是 **160ms**
+  //   （同一份数据 `toRaw` 之后只要 3.3ms；差别全在代理的 get 陷阱上）。松手那一下
+  //   有 106ms 就记在这一笔上（消融实验：把深拷贝架空 → 松手 308ms → 202ms）。
+  //
+  // 为什么可以不要那份深拷贝（四处去向，没有一处需要"独立副本"）：
+  //   · `syncFromCanvas` → 并进 `project.value`：同一份内存里的两份引用，画布本来就是真相；
+  //   · 落盘 → `projectStore.saveProject` 里的 `toIpcPlain()` 是**唯一的下真源口**，
+  //     `jsonSafeReplacer`（TypedArray → 数组、保留 3 位小数）在那里照旧走一遍 ⇒ 文件内容不变；
+  //   · 快照 → `snapshotState` 自己深拷贝，不依赖载荷是不是副本；
+  //   · 新建项目 → `createProject` 也过 `toIpcPlain()`（见 projectStore 的注释）。
+  //
+  // 保留的隔离（**有意为之**）：字典/数组换新壳（`{...}` / `slice()`），所以画布"换容器"式写入
+  // （`mapData.value = {...}`、`baseMaps.value = {...}`）不会影响已经并进项目的那一份；
+  // 只有**就地改**（`province.points.push(...)`、`ownership[id]=x`）会共享 —— 那正是画布的事实，
+  // 下一次保存会照它重写一遍，不会产生"项目里是旧值、磁盘上是新值"的分裂。
+  // ══════════════════════════════════════════════════════════════════════════
+  /** 取原始值（去 Vue 代理，不深拷）——`toRaw` 对普通对象是恒等 */
+  function rawOf(value) {
+    return toRaw(value);
+  }
+  /** 字典换壳：新对象、值直传（隔离"换容器"式写入） */
+  function rawShallowDict(value) {
+    const raw = rawOf(value);
+    return (raw && typeof raw === 'object' && !Array.isArray(raw)) ? { ...raw } : {};
+  }
+  /** 小对象数组换壳：每个元素也换成原始对象的一份浅拷贝（航道 / 切片书签只有几十条） */
+  function rawShallowRows(value) {
+    const raw = rawOf(value);
+    if (!Array.isArray(raw)) return [];
+    return raw.map((row) => (row && typeof row === 'object' ? { ...rawOf(row) } : row));
+  }
+
   /**
    * 由「一组画布状态」构建项目载荷（实体形状与 exportCanvasToProject 完全一致）。
    * 抽成纯函数是为了让**知识库快照**能走同一条构造路径 —— 项目态下画布已被项目内容替换，
@@ -1746,19 +1783,19 @@ export const useGeodataStore = defineStore('geodata', () => {
     for (const n of (state.nodes || [])) entities[n.id] = nodeToProjectEntity(n, now);
     return {
       entities,
-      hyperlanes: JSON.parse(JSON.stringify(state.hyperlanes || [])),
+      hyperlanes: rawShallowRows(state.hyperlanes),
       // maps 不进快照（体积），另有整文件备份兜底；editor 放这里也一样（快照回滚不覆盖编辑器容器，
       // 这条限制写在 projectSchema 的头部注释里）
       maps: {
-        mapData: JSON.parse(JSON.stringify(state.mapData || {}, jsonSafeReplacer)),
-        editor: JSON.parse(JSON.stringify(state.editor || {}, jsonSafeReplacer)),
+        mapData: rawShallowDict(state.mapData),
+        editor: rawShallowDict(state.editor),
       },
       scenarios: state.scenarios ? {
         version: 2,
-        baseMaps: JSON.parse(JSON.stringify(state.scenarios.baseMaps || {}, jsonSafeReplacer)),
-        scenarios: JSON.parse(JSON.stringify(state.scenarios.scenarios || {}, jsonSafeReplacer)),
+        baseMaps: rawShallowDict(state.scenarios.baseMaps),
+        scenarios: rawShallowDict(state.scenarios.scenarios),
         // 切片书签是**项目级**（与剧本容器平行）—— 不带上它 = 保存一次就把用户建的书签丢了
-        slicePoints: JSON.parse(JSON.stringify(state.scenarios.slicePoints || [])),
+        slicePoints: rawShallowRows(state.scenarios.slicePoints),
       } : undefined,
     };
   }

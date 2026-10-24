@@ -115,6 +115,27 @@ const MIGRATIONS = {};
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
+ * 取 Vue 响应式代理底下的**原始对象**（2026-10-24，1-b）。
+ *
+ * 为什么不 import `vue`：本模块的契约是「纯函数、无 DOM / 无 IPC / Node 侧可读」，
+ * 而 Vue 的 `reactive()` 代理自带 `__v_raw`（`ReactiveFlags.RAW`）—— 读一个可选属性就够了。
+ * 对普通对象是恒等（读到 `undefined` 立即停），所以可以无脑先过一遍。
+ *
+ * 🔴 为什么非要去代理：`JSON.stringify` / `structuredClone` 走代理时，每个属性都要过 get 陷阱，
+ *    3.6MB 的项目正文实测 **237ms**（原始对象只要 60ms）；`structuredClone` 遇到代理还会直接抛错
+ *    （于是 `deepClone` 每次都落到 JSON 往返，129ms vs 29ms）。差别全在这里，不在数据量上。
+ */
+function unwrapRaw(value) {
+  let cur = value;
+  for (let i = 0; i < 16 && cur && typeof cur === 'object'; i += 1) {
+    const raw = cur.__v_raw;
+    if (raw === undefined || raw === cur) break;
+    cur = raw;
+  }
+  return cur;
+}
+
+/**
  * JSON.stringify 的 TypedArray 兜底（**单一事实源**）。
  *
  * 🔴 为什么必须（两条独立的坑，都在真机上吃过）：
@@ -152,19 +173,23 @@ export function jsonSafeReplacer(key, value) {
  */
 export function toIpcPlain(value) {
   if (value === undefined || value === null) return {};
-  return JSON.parse(JSON.stringify(value, jsonSafeReplacer));
+  // 先去代理再序列化（见 unwrapRaw 的注释：3.6MB 正文 237ms → 60ms）
+  return JSON.parse(JSON.stringify(unwrapRaw(value), jsonSafeReplacer));
 }
 
 // 深拷贝（项目数据只含 JSON-safe 值；structuredClone 优先，退化 JSON 往返）
 // ⚠️ 注意：`project.value` 里全是 Vue 代理 → `structuredClone` 分支**必然抛错**再退 JSON
 //    （见 deepClone 的 catch）。这里保留 structuredClone 是为了保住 TypedArray 的原生类型
 //    （JSON 往返会把 Float32Array 变成普通对象），所以**不要**图省事改成纯 JSON。
+// 2026-10-24（1-b）：先 `unwrapRaw` —— 原始对象进 structuredClone 就不会抛错，
+//    快照那 129ms 的"抛错 + JSON 降级"变成 29ms 的正常路径。
 export function deepClone(value) {
   if (value === undefined) return undefined;
+  const plain = unwrapRaw(value);
   try {
-    if (typeof structuredClone === 'function') return structuredClone(value);
+    if (typeof structuredClone === 'function') return structuredClone(plain);
   } catch (e) { /* 含不可克隆值 → 退 JSON */ }
-  return JSON.parse(JSON.stringify(value));
+  return JSON.parse(JSON.stringify(plain));
 }
 
 // 随机 id（不用 crypto.randomUUID：file:// 非安全上下文下可能缺失）
@@ -676,7 +701,11 @@ export function countChanges(patch) {
  * UI / 审计脚本 / 用例共用这一处口径，别各自 `JSON.stringify` 一遍。
  */
 export function snapshotBytes(snapshots) {
-  return JSON.stringify(Array.isArray(snapshots) ? snapshots : []).length;
+  // 2026-10-24（1-b）：与落盘**同一口径**（`jsonSafeReplacer`）。
+  //   `deepClone` 现在能走 structuredClone，快照里可能保留 TypedArray（旧路径总是退化成 JSON 对象，
+  //   反而"看起来小"）。不带 replacer 数出来的字节会虚高（`{"0":..}` 逐元素展开），
+  //   会让体积上限提前触发、把还能留的快照丢掉。
+  return JSON.stringify(Array.isArray(snapshots) ? snapshots : [], jsonSafeReplacer).length;
 }
 
 /**

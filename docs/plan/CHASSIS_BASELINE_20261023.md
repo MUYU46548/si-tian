@@ -134,3 +134,85 @@ python scripts/tests/tools/_lab.py down          # 收工：杀进程 + 还原 i
 
 **下一步（1-b）**：松手仍要 370ms（`exportCanvasToProject` 172ms + IPC）。按 §三 的 1-b 做：
 单次序列化 + 松手不同步落盘；判据 = 松手 ≤50ms 且读盘判据（保存后重开数据真变）不掉。
+
+---
+
+## 七、1-b 已落地并复测（2026-10-24 09:0x）
+
+### 7.1 先纠正上一轮那句「剩下 188ms 未归因」
+
+上一轮猜的是「IPC 结构化克隆 / 主进程写盘 / 快照 diff」。**量完发现这三样都不在松手那一下**：
+‑ 松手只走 `saveScenarios → syncCanvasToProject`（暂存 + 置 dirty + 排 800ms 防抖），**不碰 IPC、不写盘**；
+‑ 快照 diff 与 `toIpcPlain` 都发生在**800ms 之后**那次 `saveProject` 里（所以它们要单独量，见 7.4）；
+‑ 真正的钱花在**读 Vue 代理**上：同一份 2.07MB 载荷，逐属性读一遍 **160ms**，`toRaw` 之后 **3.3ms**。
+
+消融实验（只测量：把 `JSON.stringify` 打桩成返回空壳，让 6 次深拷贝空转，其余照旧）：
+**松手 308ms → 202ms**，即深拷贝在松手里占 **≈106ms**；剩下 202ms 由 trace + 压叠闸门 + 冷重绘 + 暂存构成。
+
+### 7.2 做了什么（四处，全在「序列化边界」上）
+
+| 改哪 | 改成什么 | 为什么 |
+|---|---|---|
+| `geodata.buildProjectPayload` | 6 次 `JSON.parse(JSON.stringify(容器, replacer))` → **只换壳不深拷**（字典 `{...}` / 数组 `slice()`，值直传；容器先 `toRaw`） | 深拷贝在**落盘唯一出口** `toIpcPlain` 里本来就要做一遍，载荷这份是重复的 |
+| `projectStore.mergeCanvasPayload` | `{...toRaw(project)}`（原来是 `{...project}`） | 不先 toRaw，取回来的每个值又是代理 → 合并结果里全是代理，落盘/快照都要重读 |
+| `projectSchema.toIpcPlain` / `deepClone` | 先 `unwrapRaw()`（读 `__v_raw`，**不 import vue**，保持模块纯） | 3.6MB 正文：237ms → 60ms；`structuredClone` 不再因代理抛错 → 129ms 的 JSON 降级变 29ms 正常路径 |
+| `projectStore.createProject` | 新建前过 `toIpcPlain(draft)` | 载荷不再自带 JSON 往返后，这条 IPC 边界必须自己保证「无代理 + TypedArray 转数组」 |
+
+连带的诚实调整：`snapshotBytes()` 也带上 `jsonSafeReplacer`（`deepClone` 现在能保住 TypedArray，
+不带 replacer 数出来的字节会虚高 → 体积上限提前触发、白丢快照）。
+
+**语义没变**：载荷仍是"能过 IPC 的纯值"，文件内容与旧实现同形（`jsonSafeReplacer` 照旧在落盘口走一遍）；
+隔离保留在"换容器"这一级（画布 `mapData.value = {...}` 这类写入不会改到已并进项目的那份）；
+**就地改**（`province.points.push`、`ownership[id]=x`）会共享 —— 那本来就是画布的事实，下一次保存照它重写。
+
+### 7.3 复测（同机 / 同真实 200 省底图 / 同一份探针 `_probe_land_breakdown.js`）
+
+| 读数 | 改前 | 改后 | 倍数 |
+|---|---:|---:|---|
+| `exportCanvasToProject`（载荷构造） | 164.8ms | **1.3ms** | 127× |
+| `syncCanvasToProject`（+ 合并进项目） | 172.3ms | **5.3ms** | 33× |
+| `saveScenarios`（项目态整条） | 173ms | **5.3ms** | 33× |
+| `addBaseProvince`（不带压叠闸门） | 180ms | **6.0ms** | 30× |
+| **建省松手（mouseup 同步段）p50** | **257ms**（max 368） | **99ms**（max 169） | 2.6× |
+| 落盘一次 `saveProject` | 584.6ms | **372.9ms** | 1.6× |
+| ↳ `toIpcPlain(project)`（3.6MB） | 236.6ms | **56.8ms** | 4.2× |
+| ↳ `pushSnapshot`（快照 diff） | 129.4ms | **32.3ms** | 4× |
+
+机制读数（`_probe_land_variants.js`，同一份数据同一台机器）：同一份底图 `JSON.stringify`
+**代理 65.8ms / `toRaw` 3.3ms**；`JSON.parse(JSON.stringify(...))` **代理 68.4 / 原始 6.5**；
+载荷两种造法 **现写法 160.2ms / 单次往返 44.5ms / 零拷贝 0.1ms**（选了零拷贝，理由见 7.2）。
+
+### 7.4 判据对账
+
+| 判据 | 结果 |
+|---|---|
+| 松手 ≤50ms | ❌ **未达**：99ms（干净堆时 70ms）。余量 = 描轮廓 10 + 压叠闸门 16 + **冷重绘 35 + 暂存 5**（见 7.5） |
+| 读盘判据（保存后重开数据真变） | ✅ **通过**（`_probe_land_readback.js`）：建省 → 改名 → 等 800ms 防抖 → 载荷里 201 省 + 新名字，且 `JSON.stringify` 往返逐字节一致（纯值）→ **关闭项目 → 重开**：省还在、名字还是新的、16 个顶点一位不差 |
+| 不谎报「已保存」 | ✅ `saveStatus` 仍是 staged → saved 两段（test_91 / test_115 全绿） |
+| 136 项回归 | ✅ **136/136**（含 51 个 Node 单测） |
+
+### 7.5 松手剩下的 99ms 在哪（下一刀的依据，别猜）
+
+| 段 | 值 | 能不能省 |
+|---|---:|---|
+| `freeTraceRing`（贴骨架成环） | ~10ms | 收笔与预览走同一函数（**故意**的：预览=落库）。可试"复用最后一帧预览环" |
+| 压叠闸门 `measureProvinceOverlap` | ~16ms | 已带包围盒预筛；1600 格心 × 点在内判定是算法固有成本 |
+| **冷重绘 `render()`** | **~35ms**（暖帧只要 8ms） | 省不掉（新省要上屏），但**一次松手会重绘 3~4 遍**：同步 render + `watch(baseMap,{deep:true})` + 相机停稳 |
+| 暂存（`syncCanvasToProject`） | 5ms | 已从 172 降到 5 |
+
+> 🔴 **下一刀应该切的是重绘与 deep watch，不是保存**：`watch(baseMap, { deep: true })` 一次变化要
+> `traverse` 整份底图，CPU 采样里 **77ms/次**（比渲染还贵）；`watch([baseMapKey, terrain.length])`
+> 还会在"省数变了"时 `setTimeout(fitToView, 50)`。**已实测确认（`_probe_land_camera.js`）**：
+> 先把镜头挪到 `{x:67.6, y:-53.5, scale:0.3549}` 再自由绘制一个省，松手后 800ms 内镜头变成
+> `{x:45.3, y:-50.3, scale:0.4894}` —— **每画一个省，镜头会自己重新适屏**（免责只在 `provincePaint` 工具上，
+> 自由绘制没豁免）。这既是第三遍重绘，也是"手一松镜头就跳"的来源；修法只需把这条例外扩到"同一张图上
+> 增减省份一律只重绘"，但那是**镜头语义**，要单独一刀 + 单独判据，不在 1-b 里顺手改。
+
+### 7.6 探针（全部只测量，不进用例集）
+
+`scripts/tests/tools/`：`_probe_land_breakdown.js`（主读数表）、`_probe_land_breakdown3.js`（消融）、
+`_probe_land_variants.js`（三种载荷写法对拍）、`_probe_land_clean.js`（数一次松手重绘几遍）、
+`_probe_land_sinkoff.js`（把"画布→项目"入水口架空 —— **负结果**：松手没变快，证明暂存不是那 188ms）、
+`_probe_land_readback.js`（读盘判据）、`_probe_land_camera.js`（镜头会不会自己适屏）、
+`_probe_land_profile.py`（CPU 自耗时，采样窗口要紧）。
+驱动照旧：`python scripts/tests/tools/_lab.py up` → `python scripts/tests/tools/_probe_jank_real.py <js> <GLOBAL>`。

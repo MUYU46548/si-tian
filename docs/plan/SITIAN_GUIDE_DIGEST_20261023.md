@@ -101,6 +101,13 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 - **真痛点在另外两处**（同机实测）：
   ① **涂归属**每事件 34ms / p95 117ms（`findProvinceAt` 全表扫 200 省 = 20ms/次，`ownerHitProvinceIds` 5 偏移 = 97ms/次）→ **省份命中加空间索引**，判据：30s 零帧 >50ms、命中 ≤2ms/次；
   ② **松手落库 299~421ms**（其中 `exportCanvasToProject` 168ms = 指南说的"四次深拷贝"同一条，本仓是 6 个容器）→ **单次序列化 + 松手不同步落盘**，判据：松手 ≤50ms 且读盘判据不掉。
+- ✅ **1-a 已落地**（2026-10-23）：省份命中改空间索引（`utils/provinceHitIndex.js`）—— 涂归属 34ms/事件 → 0.23ms，10s 零帧 >50ms。
+- ✅ **1-b 已落地**（2026-10-24）：**"深拷贝太慢"的真因是 Vue 代理的 get 陷阱**（`toRaw` 后同一份数据 3.3ms vs 65.8ms），
+  载荷改为"只换壳不深拷"，深拷贝只留在落盘唯一出口 `toIpcPlain`；`mergeCanvasPayload`/`toIpcPlain`/`deepClone` 一律先去代理。
+  读数：`exportCanvasToProject` **164.8 → 1.3ms**、`saveScenarios` 173 → 5.3ms、松手 p50 **257 → 99ms**、
+  落盘一次 `saveProject` 585 → 373ms（其中 toIpcPlain 237→57、pushSnapshot 129→32）；读盘判据（保存→关闭→重开）通过。
+  ⏳ **松手仍未到 50ms**：余量 = trace 10 + 压叠闸门 16 + **冷重绘 35** + 暂存 5（且一次松手会重绘 3~4 遍，见 baseline §七）。
+
 - **AreaMap / InteriorView 先量再定**（探针模板已就绪），没量出 >50ms 帧就不动 —— 防"没病吃药"。
 - 复现命令与读数表在 baseline 文件里（含一个假基线教训：不开编辑模式时 30s 拖拽一个格都不涂）。
 
