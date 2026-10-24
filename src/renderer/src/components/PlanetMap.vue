@@ -1462,6 +1462,12 @@ function onRender(ctx, w, h) {
   if (layers.isVisible('planet', 'terrainLabels')) drawing.drawTerrainLabels(ctx);
   // P0-1 地貌图标层：地形之上、聚落/区域之下
   if (editMode.value && reliefBrush.isReliefBrushing.value && reliefBrush.reliefLiveIcons.value) {
+    // L2 笔迹层（第 2 件首落）：先画这一笔的淡色轨迹，再画图标（图标在上，不被轨迹糊住）。
+    // 纯渲染：路径只来自 `reliefBrush.reliefPath`，落库仍只有"松手那一条 undo"。
+    drawing.drawReliefTrail(ctx, reliefBrush.reliefPath.value, {
+      erase: reliefBrush.reliefEraseMode.value,
+      size: reliefBrush.reliefSize.value,
+    });
     drawing.drawReliefIcons(ctx, reliefBrush.reliefLiveIcons.value);
   } else if (layers.isVisible('planet', 'reliefIcons')) {
     drawing.drawReliefIcons(ctx);

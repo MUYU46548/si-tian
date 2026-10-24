@@ -142,6 +142,10 @@ export function useReliefBrush({ store, currentMapData, renderer = null }) {
     if (planetId && (added.length || removedIds.length)) {
       store.applyReliefStroke(planetId, added, removedIds);
     }
+    // 🔴 L2 笔迹层收口（第 2 件首落）：轨迹是**瞬态**的，必须整帧重画一次才能擦掉。
+    //    只 requestRender() 不够 —— 渲染器的脏矩形只覆盖"这一笔碰过的图标矩形"，
+    //    轨迹在别处的像素会留在画面上（典型事故：松手后画布上挂着一条白线，直到下次全量重绘）。
+    if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();
     return added.length + removedIds.length;
   }
 
@@ -157,6 +161,8 @@ export function useReliefBrush({ store, currentMapData, renderer = null }) {
     reliefCursor.value = null;
     lastPoint = null;
     walkedLength = 0;
+    // 同上：取消也得把轨迹擦掉（这条路径没有 store 写入，光 requestRender 不会重画轨迹以外的地方）
+    if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();
   }
 
   function _scatterSegment(seg) {

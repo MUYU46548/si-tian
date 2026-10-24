@@ -1341,6 +1341,52 @@ function drawReliefIcons(ctx, overrideList = null) {
   }
 }
 
+// ===== L2 笔迹层（散布笔首落，2026-10-24 第 2 件）=====
+/**
+ * 拖动中的**淡色轨迹线**（L2 笔迹层）。松手就消失，绝不入库。
+ *
+ * 为什么画「线」不是画「更多图标」：散布笔现在的拖动反馈只有"图标一颗颗蹦出来"，
+ * 用户看不出自己这一笔实际扫过哪里（手感像在撒豆子，不像在画）。轨迹线给的是**路径本身**，
+ * 图标仍然沿它散布 —— 落到数据里的还是一个图标列表 + 一条 undo，本函数**零写口**。
+ *
+ * 渲染纪律（与 dirtyRect 基帧共存）：
+ *   · 每帧重画**整条**路径（老的点也要重画）—— 脏矩形只覆盖"这一段的矩形"，
+ *     老轨迹所以会**攒在画面上**（正是"墨迹越画越长"的观感），不会闪；
+ *   · 松手/取消由调用方 `renderer.markFullRedraw()` 全量重绘一次收口（否则那层会留在画面上 —— 这是
+ *     "瞬态层忘了擦"的经典事故）；
+ *   · 点数过多时按步长抽稀（≤`RELIEF_TRAIL_MAX_POINTS`），只在**画**的时候抽，路径数据不动。
+ */
+const RELIEF_TRAIL_MAX_POINTS = 320;
+
+function drawReliefTrail(ctx, path, opts = {}) {
+  if (!Array.isArray(path) || path.length < 2) return 0;
+  const erase = !!opts.erase;
+  const size = Math.max(8, Number(opts.size) || 24);
+  const step = Math.max(1, Math.ceil(path.length / RELIEF_TRAIL_MAX_POINTS));
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // 外圈（宽、很淡）+ 内芯（细、稍实）= 一笔"软笔迹"；两笔都比图标层更透明，不抢图标
+  const layers = [
+    { color: erase ? 'rgba(255,138,101,0.16)' : 'rgba(255,255,255,0.16)', width: size * 0.95 },
+    { color: erase ? 'rgba(255,138,101,0.42)' : 'rgba(255,255,255,0.40)', width: Math.max(2, size * 0.22) },
+  ];
+  let drawn = 0;
+  for (const L of layers) {
+    ctx.beginPath();
+    ctx.strokeStyle = L.color;
+    ctx.lineWidth = Math.max(1, L.width);
+    ctx.moveTo(path[0].x, path[0].y);
+    for (let i = step; i < path.length; i += step) ctx.lineTo(path[i].x, path[i].y);
+    const last = path[path.length - 1];
+    ctx.lineTo(last.x, last.y);          // 尾点必须画到（抽稀容易把它漏掉 → 笔迹"跟不上手"）
+    ctx.stroke();
+    drawn += 1;
+  }
+  ctx.restore();
+  return drawn;
+}
+
 // ===== P1-1 河流层（在路线之下、区域之上渲染，蓝线按宽度渐变） =====
 function drawRivers(ctx) {
   const s = getState();
@@ -1997,6 +2043,7 @@ function getContrastColor(hex) {
     drawPrecipitation,
     drawTerrainLabels,
     drawReliefIcons,
+    drawReliefTrail,
     drawRivers,
     drawRegions,
     drawPlaces,
