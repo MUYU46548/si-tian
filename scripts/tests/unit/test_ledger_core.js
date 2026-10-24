@@ -361,6 +361,88 @@ async function main() {
     return 'tolerance / 原始点 / seed 三项反向探针全命中；缺 seed 被拒';
   });
 
+  // ── a9 归属键迁移：改省 id / 删省 / 一省拆多省 / 整列表替换 ─────────────────
+  // 为什么这条必须在纯函数层钉住：改省界 / 合并 / 铺底 / 删省 / 删势力都会动归属的**键**，
+  // 只改 v2 缓存不改账本 → "账本投影 == 缓存"断掉 → 之后归属编辑永远掉进降级分支。
+  await check('a9 归属键迁移：改名/删省/拆省/替换事件后"投影 == 缓存"，且不动入参', () => {
+    const sc = {
+      id: 'e9',
+      initialOwnership: { prov_0: 'p_a', prov_1: 'p_b' },
+      changeEvents: { prov_0: [{ y: 1000, m: 6, d: 1, owner: 'p_b' }] },
+      ownership: { prov_0: 'p_b', prov_1: 'p_b' },
+    };
+    const { ledger } = L.fromV2Scenario(sc, { epochId: 'e9' });
+    const S = { ...sc, ledger };   // 账本挂在剧本上才是真形状（remapScenarioOwnership 一次改四件事）
+    const baselineOf = (Lg) => (Lg.events.find((e) => e.type === L.EVENT_BASELINE).payload.ownership || {});
+
+    // ① 改名 prov_0 → n0：四处都要跟着改
+    const renamed = L.remapScenarioOwnership(S, { provinceRename: { prov_0: 'n0' } });
+    assert(renamed !== S, '改名后应返回新剧本对象');
+    assert(renamed.ownership.n0 === 'p_b' && !('prov_0' in renamed.ownership), 'ownership 键没改名');
+    assert(renamed.initialOwnership.n0 === 'p_a' && !('prov_0' in renamed.initialOwnership), 'initialOwnership 键没改名');
+    assert(renamed.changeEvents.n0 && renamed.changeEvents.n0[0].m === 6, 'changeEvents 键没改名 / 月日丢了');
+    assert(renamed.ledger.events.some((e) => e.type === L.EVENT_OWNER_CHANGED && e.payload.provinceId === 'n0')
+      && !renamed.ledger.events.some((e) => e.payload && e.payload.provinceId === 'prov_0'),
+      '账本事件 payload 没跟着改名');
+    assert(renamed.ledger.events.find((e) => e.type === L.EVENT_BASELINE).payload.ownership.n0 === 'p_a',
+      '账本基线没跟着改名');
+    // 入参一份都没动（反向探针：原剧本/原账本仍是旧 id）
+    assert(S.ownership.prov_0 === 'p_b' && baselineOf(ledger).prov_0 === 'p_a', '迁移居然原地改了入参');
+    // 投影 == 缓存（迁移的唯一判据）
+    const d1 = L.diffOwnership(L.projectOwnership(renamed.ledger), renamed.ownership);
+    assert(d1.same, `改名后投影与缓存不一致（${d1.changed.length} 处）`);
+
+    // ② 删省 prov_1：缓存、基线、事件三处都不该再出现它
+    const dropped = L.remapScenarioOwnership(renamed, { provinceRemove: ['prov_1'] });
+    const d2 = L.diffOwnership(L.projectOwnership(dropped.ledger), dropped.ownership);
+    assert(d2.same, `删省后投影与缓存不一致（${d2.changed.length} 处）`);
+    assert(!('prov_1' in dropped.initialOwnership) && !('prov_1' in baselineOf(dropped.ledger)),
+      '删省后基线里还留着它（重开就会"复活"）');
+
+    // ③ 无参数 = 原引用（调用方据此跳过写盘）
+    assert(L.remapScenarioOwnership(S, {}) === S, '没有迁移参数却换了对象（会白排一次写盘）');
+
+    // ④ 一省拆多省：新省继承源省的归属 + 历史，源省随后摘掉
+    const forked = L.forkScenarioProvince(S, 'n0', 'prov_0');
+    assert(forked.ownership.n0 === 'p_b' && forked.initialOwnership.n0 === 'p_a', '拆省没复制归属/初始归属');
+    assert(forked.changeEvents.n0 && forked.changeEvents.n0.length === 1, '拆省没复制 v2 事件');
+    assert(forked.ledger.events.filter((e) => e.payload && e.payload.provinceId === 'n0').length === 1,
+      '拆省没复制账本历史');
+    const split = L.remapScenarioOwnership(forked, { provinceRemove: ['prov_0'] });
+    const d3 = L.diffOwnership(L.projectOwnership(split.ledger), split.ownership);
+    assert(d3.same, `拆省后投影与缓存不一致（${d3.changed.length} 处）`);
+    assert(split.ownership.n0 === 'p_b' && !('prov_0' in split.ownership), '拆省后归属不对');
+
+    // ④-b 一省拆**多**省（1:N）：每个新省都要拿到历史；事件 id 必须唯一
+    //     （踩过：第一版 fork 是把源事件**改名**，第一次 fork 就把它吃掉了，
+    //      后几个新省于是"没有历史"——投影里少一条，缓存里却有一份拷贝）
+    let multi = L.forkScenarioProvince(S, 'n1', 'prov_0');
+    multi = L.forkScenarioProvince(multi, 'n2', 'prov_0');
+    const multiSplit = L.remapScenarioOwnership(multi, { provinceRemove: ['prov_0'] });
+    const pids = multiSplit.ledger.events
+      .filter((e) => e.type === L.EVENT_OWNER_CHANGED).map((e) => e.payload.provinceId);
+    assert(pids.includes('n1') && pids.includes('n2'), `1:N 拆省时后一个新省没拿到账本历史：${pids}`);
+    const evIds = multiSplit.ledger.events.map((e) => e.id);
+    assert(new Set(evIds).size === evIds.length, `fork 出来的事件 id 重复：${evIds}`);
+    const dMulti = L.diffOwnership(L.projectOwnership(multiSplit.ledger), multiSplit.ownership);
+    assert(dMulti.same, `1:N 拆省后投影与缓存不一致（${dMulti.changed.length} 处）`);
+
+    // ⑤ 整列表替换（易主日期面板）：替换后投影跟着新事件走；空表 = 回到基线
+    const r1 = L.replaceProvinceEvents(ledger, 'prov_0', [{ y: 1020, m: 3, d: 4, owner: 'p_c' }], { groupId: 'g9' });
+    assert(r1.added === 1, `追加条数不对（${r1.added}）`);
+    assert(L.projectOwnership(r1.ledger).prov_0 === 'p_c', '替换事件后投影没跟着走');
+    assert(L.toV2Projection(r1.ledger).changeEvents.prov_0.length === 1, '替换后 v2 事件表不是一条');
+    const r2 = L.replaceProvinceEvents(r1.ledger, 'prov_0', [], {});
+    assert(L.projectOwnership(r2.ledger).prov_0 === 'p_a', '清空事件后没回到基线的归属');
+    assert(!L.toV2Projection(r2.ledger).changeEvents.prov_0, '清空事件后 v2 事件表还留着键');
+
+    // ⑥ 反向探针：只改缓存不改账本 → 投影 ≠ 缓存（这正是本函数要防的那种断链）
+    const half = { ...S, ownership: { n0: 'p_b', prov_1: 'p_b' }, initialOwnership: { n0: 'p_a', prov_1: 'p_b' } };
+    const dHalf = L.diffOwnership(L.projectOwnership(half.ledger), half.ownership);
+    assert(!dHalf.same, '反向探针失效：只改缓存时投影居然仍等于缓存');
+    return '改名/删省/拆省/替换事件四态投影均与缓存一致；入参零改动；只改缓存的断链被反向探针抓到';
+  });
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\n=== ${results.length - failed.length}/${results.length} 通过 ===`);
   fs.rmSync(tmp, { recursive: true, force: true });

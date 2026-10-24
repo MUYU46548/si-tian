@@ -49,8 +49,17 @@ ledger = { ledgerVersion, worldId: 'default', epochId: <剧本 id>, calendar: {y
   415 孤本实测 13 段 / 冲突 0 / 11ms。
 - `toV2Projection(ledger)`：账本 → v2 缓存（月日取 `payload.at`、合成事件保留、同日收成一条）。
 
-## 已知缺口
+## 键迁移与事件表（2026-10-24 收口）
 
-改省界 / 合并 / 批量铺底会把归属**迁移到新省 id**（`provinceEditing.buildOwnershipAfter`），
-这条路径不写账本 → 之后该剧本的归属编辑会一直落在上面的降级分支（不写假账，但也不入账）。
-要收它得让账本事件跟着 id 迁移改写 payload（含 v2 的 `initialOwnership`，那里现在也没迁移）。
+改省界 / 合并 / 批量铺底 / 删省 / 删势力动的是归属的**键**（省份 id），易主日期面板动的是**事件表**。
+两者都必须同时改四处（`ownership` / `initialOwnership` / `changeEvents` / `ledger`），否则
+「账本投影 == 缓存」会断，之后这个剧本**再也不进账**（不报错，只是账本停止增长）。唯一实现：
+
+- `remapScenarioOwnership(scenario, {provinceRename, provinceRemove})` —— 改名/删省（无改动返回原引用）
+- `forkScenarioProvince(scenario, newId, srcId)` —— 一省拆多省：新省继承归属 + v2 事件 + 账本历史
+  （**保留源事件 + 追加副本**，副本换 id —— 第一版写成"改名"，第一次 fork 就把源事件吃了）
+- `replaceProvinceEvents(ledger, pid, list)` —— 面板整列表替换该省的显式事件
+- `setLedgerBaselineOwner(ledger, pid, owner)` —— 清空显式日期时把基线记成本代当前归属
+
+`ownershipLedgerBase` 另有**自愈**：发现手里账本解释不了缓存时按 v2 事实重建（warn，旧 groupId 失效），
+剩余任何没接线的写口最多让账本落后一次，不会永久退化。

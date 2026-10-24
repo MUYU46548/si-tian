@@ -51,6 +51,13 @@ export {
   toV2Projection,
   planMigration,
   makeOwnerChanged,
+  remapOwnershipDict,
+  remapChangeEventsDict,
+  remapLedgerIds,
+  remapScenarioOwnership,
+  forkScenarioProvince,
+  replaceProvinceEvents,
+  setLedgerBaselineOwner,
 } from './migrate';
 
 export {

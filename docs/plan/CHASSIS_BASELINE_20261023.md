@@ -603,3 +603,51 @@ digest 原话是"按最后一次操作属于哪个栈分派"，落码时改成"�
 这条路径不写账本 → 之后该剧本的归属编辑会一直落在"账本解释不了"的降级分支（**不写假账，但也不入账**）。
 要收它得让账本事件跟着 id 迁移改写 payload（含 v2 的 `initialOwnership`，那里现在也没迁移 —— 是个更早的隐患）。
 
+---
+
+## 十九、第 4 件第二刀续：把"账本会停在降级分支"这条隐患收掉（2026-10-24 15:0x）
+
+§十八 留的缺口不是"少个功能"，是**会静默退化**：改一次省界，这个剧本从此再也不进账。
+这一刀把它连同"其它写口绕过账本"一起收掉 —— 现在归属的**键**和**事件表**都有唯一落点。
+
+**① 纯函数层（`src/ledger/migrate.js`，Node 单测 a9 守）**
+
+| 函数 | 干什么 | 关键口径 |
+|---|---|---|
+| `remapOwnershipDict` / `remapChangeEventsDict` | 归属字典/事件表的键改名、删省 | 无改动**返回原引用**（调用方可跳过写盘） |
+| `remapLedgerIds` | 账本：基线 payload 的键、事件 payload 的 `provinceId` | 省没了 → **整条事件摘掉**（留着会让那个省在投影里永不消失） |
+| `remapScenarioOwnership` | 上面四件事一次做完（ownership / initialOwnership / changeEvents / ledger） | 只改缓存不改账本 = 断链，反向探针钉住 |
+| `forkScenarioProvince` | 一省拆多省：新省继承源省的归属 + v2 事件 + 账本历史 | **保留源事件 + 追加副本**（第一版写成"改名"，第一次 fork 就把源事件吃了 → 后几个新省没历史）；副本 id 必须唯一 |
+| `replaceProvinceEvents` | 易主日期面板：整列表替换某省的显式事件 | 先摘该省全部 `province.owner.changed` 再按新表追加 |
+| `setLedgerBaselineOwner` | 清空显式日期时把基线改成本代当前归属 | v2 语义本来就是"没有事件的省，本代开始时就是这个主人" |
+
+**② 接线（四个曾绕过账本的写口）**
+
+- `provinceEditing.buildOwnershipAfter` / `collectOwnershipBefore` / `applyOwnership`：快照里**连 initialOwnership 与 ledger 一起抓**，
+  铺底时走 `forkScenarioProvince` + `remapScenarioOwnership(remove)`；undo 直接放回引用（O(1)）。
+- `removeBaseProvince` 级联：删省时账本/基线一起摘；undo 用捕获的四个引用还原（`changeEvents` 的旧值也补回来了 —— 这条曾被 test_77 抓红）。
+- `removePolity` 级联：同一条路（`provinceRemove = affected`）。
+- **易主日期面板**（`setChangeEvents` / `setChangeEventsBulk`）：新增唯一落库口 `changeEventsCommand()` ——
+  账本解释得了缓存就替换该省的账本段（undo = 整本账的引用快照），否则退回只写缓存。
+  不接的话，面板刚录的日期会被**下一次归属编辑按投影重算时抹掉**（这是反转带来的新风险，`test_139` 直接钉住）。
+
+**③ 自愈**：`ownershipLedgerBase` 发现手里的账本解释不了缓存时，**按 v2 事实重建**一本并 warn（旧 groupId 失效、
+历史条目撤销会退回缓存快照），而不是继续拿落后的账往下走。剩下任何没接线的写口最多让账本"落后一次"。
+
+**④ 顺带修的真缺陷**：批量条「统一设为该日 / 固化推算值」只传 `{y,m,d}` 不传 owner → 事件变成"那天起无主"。
+平时看不出来（v2 缓存 ownership 没跟着改），但账本按事件回放时那一片**直接变无主**（test_78 的 f3 因此崩在找不到按钮）。
+单省输入框一直是对的，批量条漏了；现在 `yearRows` 带 `owner`，两个批量动作都写回。
+
+| 判据（新用例 **test_139**，端到端） | 读数 |
+|---|---|
+| v2 剧本涂一笔 | 账本 0 → 3 条（基线 + 继承事件 + 这一笔），投影 0 处不同 |
+| **批量铺底** 1 省 → 2 块 | 基线 / 事件 / initialOwnership 三处旧 id 清零、新省全继承、投影一致 |
+| 铺底后**再涂一笔** | 4 → 5 条、groupId 是新的 → **账本没退化**（这是本刀的核心判据） |
+| 删省 | 账本 5 → 4 条、p139b 在 ownership/基线/事件三处清零 |
+| 面板改日期后再涂一笔 | 面板那条**还在**（没被投影抹掉）；撤销面板能回上一层（1050） |
+| 落盘 + 重开 | 5 条 + 归属键不变 + 投影一致 |
+
+另：`test_77`（删省级联 undo 要还原易主日期）、`test_78`（批量日期 + 固化）这两条**是这一刀修完才绿的**
+（它们本来就在守真缺陷，只是以前走的是另一条不会暴露问题的路径）。全量 **139/139** + 53 个 Node 单测 + `npm run build` 全绿。
+
+

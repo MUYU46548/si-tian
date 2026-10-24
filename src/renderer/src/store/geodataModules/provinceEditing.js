@@ -59,6 +59,10 @@ import { nextProvinceColor } from '../../utils/scenarioPalette';
 // → 长按拖一大圈会有上千点。矢量布尔虽是 O(n log n)，但上千点仍不值得 → 复用同一条简化管线。
 import { simplifyClosedTrace } from '../../utils/regionTrace';
 import { toRaw } from 'vue';
+// 归属键迁移（2026-10-24 第 4 件第二刀续）：一省拆多省 / 删省时，**账本与基线**也必须跟着改
+// （只迁 `ownership`/`changeEvents` 会让"账本投影 == 缓存"断掉，之后归属编辑永远进不了账）。
+// 纯数据层实现只有一份，在 `src/ledger/migrate.js`。
+import { forkScenarioProvince, remapScenarioOwnership } from '../../../../ledger/index';
 
 /**
  * 套索的**面积闸门**：轮廓包围盒占「全部省份包围盒」的比例上限。
@@ -1564,14 +1568,9 @@ export function createProvinceEditingModule(ctx) {
   //      海岸那一段就是**原多边形的原顶点**（布尔交集不是重采样）→ 海岸线逐点保留。
   //   ② **不丢归属**：旧省要被删掉，如果只是删，12 个剧本里 20 条归属键就成了孤儿
   //      （画布上看不见、却仍参与 groupMap / 谱系重叠度计算）。所以每个新省**承接**
-  //      它落点所在旧省的 `ownership` / `changeEvents`，且这一切**同属一条 undo**。
+  //      它落点所在旧省的 `ownership` / `changeEvents` / `initialOwnership` / 账本事件，
+  //      且这一切**同属一条 undo**（2026-10-24：账本与基线也一起迁，否则账本会永久落后）。
   //   ③ **不静默失败**：进度、跳过的块数、引擎兜底吸附次数、覆盖率都要如实回报。
-
-  /** 深拷贝一份「易主记录」（可能是数组/对象；结构化克隆在 Electron 与 Node 都在） */
-  function cloneEvents(ev) {
-    if (ev === undefined || ev === null) return ev;
-    try { return JSON.parse(JSON.stringify(ev)); } catch (e) { return ev; }
-  }
 
   /**
    * 解析批量铺底的**目标省**（只读，不写任何东西）。
@@ -1653,41 +1652,63 @@ export function createProvinceEditingModule(ctx) {
     };
   }
 
-  /** 采集要改的剧本（只认 `ownerKey === 底图 key`，与 `removeBaseProvince` 同口径） */
+  /**
+   * 采集要改的剧本（只认 `ownerKey === 底图 key`，与 `removeBaseProvince` 同口径）。
+   * ⚠️ 2026-10-24（第 4 件第二刀续）：快照必须**连同** `initialOwnership` 与 `ledger` 一起抓 ——
+   * 只抓 ownership/changeEvents 就等于"改了缓存、账本留在旧 id 上"，之后账本再也解释不了缓存。
+   * 这里存的是**引用**（不改入参；撤销直接放回这几个引用，成本 O(1)）。
+   */
   function collectOwnershipBefore(key) {
     const before = {};
     for (const [scId, sc] of Object.entries(scenarios.value || {})) {
       if (!sc || sc.ownerKey !== key) continue;
       const own = sc.ownership || {};
       const ev = sc.changeEvents || {};
-      const touchedIds = Object.keys(own).length + Object.keys(ev).length;
-      if (!touchedIds) continue;
-      before[scId] = { ownership: { ...own }, changeEvents: { ...ev } };
+      const init = sc.initialOwnership || {};
+      const touchedIds = Object.keys(own).length + Object.keys(ev).length + Object.keys(init).length;
+      if (!touchedIds && !sc.ledger) continue;
+      before[scId] = {
+        ownership: { ...own },
+        changeEvents: { ...ev },
+        initialOwnership: sc.initialOwnership ? { ...init } : undefined,
+        ledger: sc.ledger || undefined,
+      };
     }
     return before;
   }
 
   /**
    * 归属迁移：新省承接「它的落点所在旧省」的归属与易主记录；旧省的键**删掉**。
+   * 四处一起迁（ownership / initialOwnership / changeEvents / 账本）——纯函数在 `src/ledger`。
    * @param before `collectOwnershipBefore` 的结果
    * @param link   `[{ newId, srcId }]`
    */
   function buildOwnershipAfter(before, targetIds, link) {
     const after = {};
     for (const [scId, rec] of Object.entries(before)) {
-      const own = { ...rec.ownership };
-      const ev = { ...rec.changeEvents };
+      // 用快照拼一个"剧本形状"的临时对象喂给纯函数（不需要 polities/era 等其它字段）
+      let sc = {
+        ownership: rec.ownership,
+        changeEvents: rec.changeEvents,
+        initialOwnership: rec.initialOwnership,
+        ledger: rec.ledger,
+      };
       let touched = false;
       for (const { newId, srcId } of link) {
         if (!srcId) continue;
-        if (Object.prototype.hasOwnProperty.call(own, srcId)) { own[newId] = own[srcId]; touched = true; }
-        if (Object.prototype.hasOwnProperty.call(ev, srcId)) { ev[newId] = cloneEvents(ev[srcId]); touched = true; }
+        const forked = forkScenarioProvince(sc, newId, srcId);
+        if (forked !== sc) { sc = forked; touched = true; }
       }
-      for (const id of targetIds) {
-        if (Object.prototype.hasOwnProperty.call(own, id)) { delete own[id]; touched = true; }
-        if (Object.prototype.hasOwnProperty.call(ev, id)) { delete ev[id]; touched = true; }
+      const remapped = remapScenarioOwnership(sc, { provinceRemove: targetIds });
+      if (remapped !== sc) { sc = remapped; touched = true; }
+      if (touched) {
+        after[scId] = {
+          ownership: sc.ownership,
+          changeEvents: sc.changeEvents,
+          initialOwnership: sc.initialOwnership,
+          ledger: sc.ledger,
+        };
       }
-      if (touched) after[scId] = { ownership: own, changeEvents: ev };
     }
     return after;
   }
@@ -1701,7 +1722,13 @@ export function createProvinceEditingModule(ctx) {
     for (const scId of ids) {
       const sc = next[scId];
       if (!sc) continue;
-      next[scId] = { ...sc, ownership: snapshot[scId].ownership, changeEvents: snapshot[scId].changeEvents };
+      const rec = snapshot[scId];
+      const nextSc = { ...sc, ownership: rec.ownership, changeEvents: rec.changeEvents };
+      if (rec.initialOwnership === undefined) delete nextSc.initialOwnership;
+      else nextSc.initialOwnership = rec.initialOwnership;
+      if (rec.ledger === undefined) delete nextSc.ledger;
+      else nextSc.ledger = rec.ledger;
+      next[scId] = nextSc;
     }
     scenarios.value = next;
   }

@@ -41,6 +41,7 @@ import { normalizeLedgerDict } from '../../utils/scenarioLedgerV2';
 import {
   fromV2Scenario, projectOwnership, diffOwnership, makeOwnerChanged, dayOfDate,
   toV2Projection, removeGroup, insertGroup,
+  remapScenarioOwnership, replaceProvinceEvents, setLedgerBaselineOwner,
 } from '../../../../ledger/index';
 // 事件账本（2026-10-22，三刀序列·第一刀）：`scenario.timelineEvents` 的纯函数层。
 // 🔴 校验 / 排序 / 关系查询 / 冲突检出**只有一份**（`utils/scenarioEventLedger.js`），
@@ -798,10 +799,14 @@ export function createScenarioEditingModule(ctx) {
       const ev = sc.changeEvents || {};
       const hasOwner = Object.prototype.hasOwnProperty.call(own, provinceId);
       const hasEV = Object.prototype.hasOwnProperty.call(ev, provinceId);
-      if (hasOwner || hasEV) {
+      const hasInitial = !!(sc.initialOwnership && Object.prototype.hasOwnProperty.call(sc.initialOwnership, provinceId));
+      if (hasOwner || hasEV || hasInitial) {
         cascadeBefore[scId] = {
           hasOwner, owner: own[provinceId],
-          hasEV, events: ev[provinceId] ? JSON.parse(JSON.stringify(ev[provinceId])) : undefined,
+          hasEV,
+          events: hasEV ? JSON.parse(JSON.stringify(ev[provinceId])) : undefined,
+          hasInitial, initialOwner: hasInitial ? sc.initialOwnership[provinceId] : undefined,
+          ledger: sc.ledger || null,
         };
       }
     }
@@ -812,17 +817,27 @@ export function createScenarioEditingModule(ctx) {
       for (const scId of ids) {
         const sc = next[scId];
         if (!sc) continue;
-        const ownership = { ...(sc.ownership || {}) };
-        const changeEvents = { ...(sc.changeEvents || {}) };
         const rec = cascadeBefore[scId];
         if (mode === 'remove') {
-          delete ownership[provinceId];
-          delete changeEvents[provinceId];
-        } else {
-          if (rec.hasOwner) ownership[provinceId] = rec.owner;
-          if (rec.hasEV) changeEvents[provinceId] = rec.events;
+          // 账本/基线也跟着摘（只删 ownership/changeEvents 会让投影里这个省永不消失）
+          const remapped = remapScenarioOwnership(sc, { provinceRemove: [provinceId] });
+          const nextSc = { ...sc, ownership: remapped.ownership || {}, changeEvents: remapped.changeEvents || {} };
+          if (remapped.initialOwnership === undefined) delete nextSc.initialOwnership;
+          else nextSc.initialOwnership = remapped.initialOwnership;
+          if (remapped.ledger === undefined) delete nextSc.ledger;
+          else nextSc.ledger = remapped.ledger;
+          next[scId] = nextSc;
+          continue;
         }
-        next[scId] = { ...sc, ownership, changeEvents };
+        const ownership = { ...(sc.ownership || {}) };
+        const changeEvents = { ...(sc.changeEvents || {}) };
+        if (rec.hasOwner) ownership[provinceId] = rec.owner;
+        if (rec.hasEV) changeEvents[provinceId] = rec.events;
+        const nextSc = { ...sc, ownership, changeEvents };
+        if (rec.hasInitial) nextSc.initialOwnership = { ...(sc.initialOwnership || {}), [provinceId]: rec.initialOwner };
+        if (rec.ledger === null) delete nextSc.ledger;
+        else if (rec.ledger !== undefined) nextSc.ledger = rec.ledger;
+        next[scId] = nextSc;
       }
       scenarios.value = next;
     };
@@ -1295,10 +1310,21 @@ export function createScenarioEditingModule(ctx) {
     return `own-${Date.now().toString(36)}-${_ownershipSeq}`;
   }
 
-  /** 账本基线：已有账本用现成的；没有就从 v2 缓存迁一份（同一剧本只做一次，之后账本常驻） */
+  /**
+   * 账本基线：已有账本用现成的；没有就从 v2 缓存迁一份（同一剧本只做一次，之后账本常驻）。
+   *
+   * 🔴 **自愈**（第 4 件第二刀续，2026-10-24）：如果手里的账本**解释不了**当前缓存
+   * （改省界/合并/铺底迁移了省 id、删势力/删省、易主日期面板、`.map` 导入……都可能），
+   * 就按 v2 事实**重建**一本，而不是继续拿一份落后的账往下走 ——
+   * 否则这个剧本会永远停在降级分支：不写假账，但**也再进不了账**。
+   * 重建的代价是旧的 groupId 失效（历史里那些条目撤销时会退回缓存快照并 warn），换来的是"账继续长"。
+   */
   function ownershipLedgerBase(scenario, scenarioId) {
     const cur = scenario.ledger;
-    if (cur && Array.isArray(cur.events) && cur.events.length) return cur;
+    if (cur && Array.isArray(cur.events) && cur.events.length) {
+      if (diffOwnership(projectOwnership(cur), scenario.ownership || {}).same) return cur;
+      console.warn('[scenario] 账本解释不了缓存 —— 按 v2 事实重建账本（旧分组身份会失效）');
+    }
     return fromV2Scenario(scenario, { epochId: scenario.id || scenarioId }).ledger;
   }
 
@@ -1468,6 +1494,106 @@ export function createScenarioEditingModule(ctx) {
    *   · 该日**已有**事件 → 只更新它的 owner（同一时刻不会有两个主人）；
    *   · 没有 → 追加一条（同省同年多次易主因此天然成立）。
    */
+  /**
+   * 易主日期（v2 事件表）的**唯一落库口**：把「某省的显式事件整列表替换」落成账本事件。
+   *
+   * 为什么它也必须走账本（第 4 件第二刀续）：`changeEvents` 是**投影缓存**，
+   * 面板只改缓存不改账本 → 下一次归属编辑按投影重算缓存时，**用户刚录的日期会被抹掉**。
+   *
+   * 口径：
+   *   · 账本解释得了缓存 → 账本真源：先摘掉该省全部 `province.owner.changed`，再按新表追加；
+   *     空列表 = 回到"只有基线"——同时把基线里这一省改成**当前归属**（v2 的语义正是
+   *     "没有显式事件的省，本代开始时就是这个主人"，时间轴回落到按谱系推算）；
+   *   · 解释不了 → 只写 v2 缓存（与以前逐字段一致），不写假账。
+   * 撤销：整本账的**引用快照**（不是组撤 —— 这一刀改的是"这一省的历史整段"，不是追加一笔）。
+   *
+   * @param {object} p
+   * @param {string} p.scenarioId
+   * @param {Record<string, Array>} p.lists 省 id → 新事件列表（`[]` = 清掉显式事件）
+   * @param {string} [p.label]
+   * @returns {object|null} execute 的命令
+   */
+  function changeEventsCommand({ scenarioId, lists, label }) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario || !lists || !Object.keys(lists).length) return null;
+    const base = ownershipLedgerBase(scenario, scenarioId);
+    const explained = diffOwnership(projectOwnership(base), scenario.ownership || {}).same;
+    const hadInitial = !!scenario.initialOwnership;
+    const before = {
+      changeEvents: { ...(scenario.changeEvents || {}) },
+      ownership: { ...(scenario.ownership || {}) },
+      initialOwnership: hadInitial ? { ...scenario.initialOwnership } : null,
+      ledger: scenario.ledger || null,
+    };
+    const gid = nextOwnershipGroupId();
+
+    // v2 缓存（降级模式 / 账本模式都由它兜底成回执里的"改了几条"）
+    const nextChangeEvents = { ...before.changeEvents };
+    for (const [pid, list] of Object.entries(lists)) {
+      const cleaned = Array.isArray(list) ? list.map((e) => ({ ...e })) : [];
+      if (cleaned.length) nextChangeEvents[pid] = cleaned;
+      else delete nextChangeEvents[pid];
+    }
+
+    let ledgerNext = null;
+    if (explained) {
+      let L = base;
+      for (const [pid, list] of Object.entries(lists)) {
+        const cleaned = Array.isArray(list) ? list : [];
+        L = replaceProvinceEvents(L, pid, cleaned, {
+          groupId: gid, provenance: 'ui', calendar: base.calendar,
+        }).ledger;
+        if (!cleaned.length) {
+          // 空表 = 这个省本代"没有显式易主"：基线记成当前归属（否则投影会掉回上一代的主人）
+          L = setLedgerBaselineOwner(L, pid, before.ownership[pid] === undefined ? null : before.ownership[pid]);
+        }
+      }
+      ledgerNext = L;
+    }
+
+    const write = (state, touch) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const next = { ...cur, changeEvents: state.changeEvents, ownership: state.ownership };
+      if (state.initialOwnership === null) delete next.initialOwnership;
+      else if (state.initialOwnership !== undefined) next.initialOwnership = state.initialOwnership;
+      if (state.ledger === null) delete next.ledger;
+      else if (state.ledger !== undefined) next.ledger = state.ledger;
+      if (touch) next.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: next };
+      scheduleAutoSaveScenarios();
+    };
+
+    if (ledgerNext) {
+      const cache = toV2Projection(ledgerNext);
+      const next = {
+        changeEvents: cache.changeEvents,
+        ownership: cache.ownership,
+        initialOwnership: hadInitial ? cache.initialOwnership : null,
+        ledger: ledgerNext,
+      };
+      return {
+        type: 'set-change-events',
+        stack: 'ledger',
+        label: label || '设置易主日期',
+        undo: () => write(before, false),
+        redo: () => write(next, true),
+      };
+    }
+    return {
+      type: 'set-change-events',
+      stack: 'snapshot',
+      label: label || '设置易主日期',
+      undo: () => write(before, false),
+      redo: () => write({
+        changeEvents: nextChangeEvents,
+        ownership: before.ownership,
+        initialOwnership: hadInitial ? before.initialOwnership : null,
+        ledger: before.ledger,
+      }, true),
+    };
+  }
+
   function setOwnership(scenarioId, provinceId, polityId, changeDate) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return { success: false, reason: 'no-scenario' };
@@ -1811,17 +1937,18 @@ export function createScenarioEditingModule(ctx) {
     const beforePolities = JSON.parse(JSON.stringify(list));
     const beforeOwnership = JSON.parse(JSON.stringify(scenario.ownership || {}));
     const beforeChangeEvents = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
+    const beforeInitial = scenario.initialOwnership || null;
+    const beforeLedger = scenario.ledger || null;
     const nextPolities = list.filter(p => p.id !== polityId);
 
     const affected = Object.entries(beforeOwnership)
       .filter(([, pid]) => pid === polityId)
       .map(([provId]) => provId);
-    const nextOwnership = { ...beforeOwnership };
-    const nextChangeEvents = JSON.parse(JSON.stringify(beforeChangeEvents));
-    for (const provId of affected) {
-      delete nextOwnership[provId];
-      delete nextChangeEvents[provId];
-    }
+    // 🔴 键迁移必须**同时**改四处（ownership / initialOwnership / changeEvents / 账本）：
+    //    只删前两个，基线里还留着这些省 → 重开项目它们会"复活"，且账本投影再也对不上缓存。
+    const remapped = remapScenarioOwnership(scenario, { provinceRemove: affected });
+    const nextOwnership = remapped.ownership || {};
+    const nextChangeEvents = remapped.changeEvents || {};
 
     // 事件账本级联（2026-10-22）：势力的战争/同盟事件里若出现被删势力，那条事件就**不成立**了
     // （参与方缺一个，`EVENT_TYPES` 的 minActors 校验会红）。与 ownership/changeEvents 同一条纪律：
@@ -1833,10 +1960,14 @@ export function createScenarioEditingModule(ctx) {
     });
     const affectedEvents = beforeTimelineEvents.length - nextTimelineEvents.length;
 
-    const apply = (polities, ownership, changeEvents, timelineEvents, touch) => {
+    const apply = (polities, ownership, changeEvents, timelineEvents, touch, initial, ledger) => {
       const cur = scenarios.value[scenarioId];
       if (!cur) return;
       const nextSc = { ...cur, polities, ownership, changeEvents, timelineEvents };
+      if (initial === null) delete nextSc.initialOwnership;
+      else if (initial !== undefined) nextSc.initialOwnership = initial;
+      if (ledger === null) delete nextSc.ledger;
+      else if (ledger !== undefined) nextSc.ledger = ledger;
       if (touch) nextSc.updatedAt = new Date().toISOString();
       scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
     };
@@ -1844,8 +1975,10 @@ export function createScenarioEditingModule(ctx) {
     execute({
       type: 'remove-polity',
       label: `删除势力：${target.name || polityId}`,
-      undo: () => apply(beforePolities, beforeOwnership, beforeChangeEvents, beforeTimelineEvents, false),
-      redo: () => apply(nextPolities, nextOwnership, nextChangeEvents, nextTimelineEvents, true),
+      undo: () => apply(beforePolities, beforeOwnership, beforeChangeEvents, beforeTimelineEvents,
+        false, beforeInitial, beforeLedger),
+      redo: () => apply(nextPolities, nextOwnership, nextChangeEvents, nextTimelineEvents,
+        true, remapped.initialOwnership, remapped.ledger),
     });
 
     saveScenarios();
@@ -1870,8 +2003,6 @@ export function createScenarioEditingModule(ctx) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return { success: false, reason: 'no-scenario' };
 
-    const before = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
-    const next = JSON.parse(JSON.stringify(before));
     const old = eventsOf(scenario, provinceId);
 
     const cleaned = [];
@@ -1887,25 +2018,19 @@ export function createScenarioEditingModule(ctx) {
       if (at >= 0) cleaned[at] = rec; else cleaned.push(rec);
     }
     cleaned.sort(cmpDate);
-    putEvents(next, provinceId, cleaned);
 
     const same = JSON.stringify(old) === JSON.stringify(cleaned);
     if (same) return { success: true, changed: 0, removed: 0, noop: true };
 
-    const apply = (changeEvents, touch) => {
-      const cur = scenarios.value[scenarioId];
-      if (!cur) return;
-      const nextSc = { ...cur, changeEvents };
-      if (touch) nextSc.updatedAt = new Date().toISOString();
-      scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
-    };
-
-    execute({
-      type: 'set-change-events',
+    // 🔴 落库口在 `changeEventsCommand`（第 4 件第二刀续）：账本解释得了缓存就走账本真源，
+    //    否则退回只写 v2 缓存 —— 绝不能让面板改过的事件在下一次归属编辑时被投影抹掉。
+    const cmd = changeEventsCommand({
+      scenarioId,
+      lists: { [provinceId]: cleaned },
       label: cleaned.length ? `设置易主日期（${cleaned.length} 条）` : '清除易主日期（回到自动推算）',
-      undo: () => apply(before, false),
-      redo: () => apply(next, true),
     });
+    if (!cmd) return { success: false, reason: 'no-change' };
+    execute(cmd);
 
     saveScenarios();
     return { success: true, changed: cleaned.length, removed: old.length };
@@ -1929,6 +2054,7 @@ export function createScenarioEditingModule(ctx) {
 
     const before = JSON.parse(JSON.stringify(scenario.changeEvents || {}));
     const next = JSON.parse(JSON.stringify(before));
+    const lists = {};              // 省 id → 新事件列表（[] = 清掉显式事件）—— 交给账本落库口
     let changed = 0;
     let cleared = 0;
     const rejected = [];
@@ -1937,6 +2063,7 @@ export function createScenarioEditingModule(ctx) {
       if (raw === null || raw === undefined) {
         if (!had) continue;                   // 本来就没有显式值 → 没什么可清
         delete next[pid];
+        lists[pid] = [];
         cleared++;
         continue;
       }
@@ -1958,27 +2085,21 @@ export function createScenarioEditingModule(ctx) {
       cleaned.sort(cmpDate);
       if (JSON.stringify(before[pid] || null) === JSON.stringify(cleaned.length ? cleaned : null)) continue;
       putEvents(next, pid, cleaned);
+      lists[pid] = cleaned;
       changed++;
     }
     if (!changed && !cleared) {
       return { success: true, changed: 0, cleared: 0, noop: true, rejected };
     }
 
-    // 整表快照式 undo（与 removePolity 同形）：改的是「别的键」，差量还原不了
-    const apply = (changeEvents, touch) => {
-      const cur = scenarios.value[scenarioId];
-      if (!cur) return;
-      const nextSc = { ...cur, changeEvents };
-      if (touch) nextSc.updatedAt = new Date().toISOString();
-      scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
-    };
-
-    execute({
-      type: 'set-change-events-bulk',
+    // 落库口：与单省面板同一个 `changeEventsCommand`（账本解释得了就走账本，否则只写缓存）
+    const cmd = changeEventsCommand({
+      scenarioId,
+      lists,
       label: `批量设置易主日期（改 ${changed} / 清 ${cleared} 省）`,
-      undo: () => apply(before, false),
-      redo: () => apply(next, true),
     });
+    if (!cmd) return { success: false, reason: 'no-change' };
+    execute(cmd);
 
     saveScenarios();
     return { success: true, changed, cleared, rejected };

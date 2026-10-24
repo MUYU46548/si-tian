@@ -187,7 +187,17 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   test_138 扩到 8 组（属性面板 ui 事件 / 反转 0 处不同 / 撤销回"没有账本" / 双栈交织 4 撤 4 复谱系各退各栈 /
   无日期编辑重开后仍在 / 落盘 + 重开）。顺带修：撤销归属原来不触发自动保存（不落盘）。
   细节与读数在 [CHASSIS_BASELINE §十八](CHASSIS_BASELINE_20261023.md#L555)。
-  ⏳ 已知缺口：改省界/合并/铺底的**归属 id 迁移不写账本** → 之后该剧本落在降级分支（下刀收）。
+- ✅ **第 4 件第二刀续：把"账本会停在降级分支"的隐患收掉（2026-10-24）**：
+  ① 纯函数层 `remapScenarioOwnership` / `forkScenarioProvince` / `replaceProvinceEvents` / `setLedgerBaselineOwner`
+  —— 归属的**键**（改省界/合并/铺底/删省/删势力）与**事件表**（易主日期面板）从此都有唯一落点，
+  连 v2 的 `initialOwnership` 一起迁（它以前根本没被迁移过，是个更早的隐患）；
+  ② 铺底/删省/删势力/日期面板四个写口全部接上账本；面板另有唯一落库口 `changeEventsCommand()`
+  （不接的话，面板刚录的日期会被下一次归属编辑按投影抹掉）；
+  ③ `ownershipLedgerBase` 自愈：账本解释不了缓存就**按 v2 事实重建**并 warn，剩余任何没接线的写口最多让账本落后一次。
+  ④ 顺带修真缺陷：批量条「统一设为该日 / 固化推算值」只传日期不传 owner → 事件变成"那天起无主"
+  （v2 缓存看不出来，账本回放时那一片直接变无主）。
+  **判据（新用例 test_139）**：v2 剧本涂一笔 → 铺底 → **再涂一笔仍入账**（"没退化"是本刀核心）/ 删省三处清零 /
+  面板日期不被抹且可撤 / 落盘重开投影一致；`test_77`、`test_78` 的旧断言由这一刀修绿。
   ⏳ 下一步：时间轴按 `day` 切片 + 导出（第 4 件第三步）。
 
 ### 第 4 件 · 四笔总装 + 时间轴 + 导出
@@ -247,7 +257,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 git log --oneline -1; git status --short; git rev-list --left-right --count HEAD...origin/main
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
-(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 138
+(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 139
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime

@@ -261,6 +261,10 @@ const yearRows = computed(() => {
       oldColor: ctx.old?.color || '#4a5468',
       newName: ctx.new?.name || newPol || '（无主）',
       newColor: ctx.new?.color || '#4a5468',
+      // 这一行对应的**新主 id**：批量设日期/固化推算值时必须一起写回，
+      // 否则事件会变成「那天起无主」（见 applyBulkSet 的注释）
+      owner: newPol || null,
+      oldOwner: oldPol || null,
       // 生效日期（合成时就是那条合成日期）；月日为 null 表示只到年
       y: display.y, m: display.m ?? null, d: display.d ?? null,
       eventCount: events.length,
@@ -338,7 +342,11 @@ function applyBulkSet() {
   if (!bulkDateValid.value || !yearRows.value.length) return;
   const d = bulkDate.value;
   const patch = {};
-  for (const r of yearRows.value) patch[r.pid] = { y: d.y, m: d.m, d: d.d };
+  // 🔴 必须**带上新主**（2026-10-24）：v2 的 `changeEvents` 是「某天归谁」，只写日期不写 owner
+  //    等于在写「那天起变成无主」。旧实现只传 `{y,m,d}` → `owner` 落到 null，
+  //    平时看不出来（缓存 ownership 没跟着改），但账本按事件回放时那一片会**直接变无主**。
+  //    单省输入框一直是对的（带 `sc.ownership[pid]`），批量条漏了 —— 这里补上。
+  for (const r of yearRows.value) patch[r.pid] = { y: d.y, m: d.m, d: d.d, owner: r.owner };
   emit('set-change-dates-bulk', { scenarioId: yearRows.value[0].scenarioId, patch, what: '统一设为该日' });
 }
 
@@ -346,7 +354,7 @@ function applyBulkSet() {
 function applyBulkSnap() {
   if (!yearRows.value.length) return;
   const patch = {};
-  for (const r of yearRows.value) patch[r.pid] = { y: r.y, m: r.m, d: r.d };
+  for (const r of yearRows.value) patch[r.pid] = { y: r.y, m: r.m, d: r.d, owner: r.owner };
   emit('set-change-dates-bulk', { scenarioId: yearRows.value[0].scenarioId, patch, what: '固化推算值' });
 }
 
