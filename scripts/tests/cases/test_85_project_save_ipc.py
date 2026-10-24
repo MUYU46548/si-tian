@@ -67,11 +67,17 @@ def sub_source_guards(cdp):
     mock = _code_only(_read(MOCK))
 
     # ① 跨 IPC 的载荷必须过统一下载口
-    if not re.search(r'project:\s*toIpcPlain\(', proj):
-        bad.append('saveProject 的 IPC 实参没有过 toIpcPlain（Vue 代理会被 IPC 拒掉 → 保存必失败）')
-    # ② 反证：不许再回到「直接传项目对象」的旧写法
+    #    2026-10-24 起正式路径传**字符串**（`projectJson`）：主进程直接写盘，不做第二次 stringify、
+    #    也不克隆 3.6MB 对象图。对象版 `toIpcPlain` 仍是别的 IPC 载荷（如新建项目）的下载口。
+    if not re.search(r'projectJson:\s*toIpcJson\(', proj):
+        bad.append('saveProject 的 IPC 实参没有过 toIpcJson（落盘文本必须走统一下载口）')
+    if not re.search(r'export function toIpcJson\(', schema):
+        bad.append('projectSchema 没有导出 toIpcJson（落盘文本的下载口）')
+    # ② 反证：不许再回到「直接传项目对象」的旧写法（代理不可克隆 / 二次 stringify）
     if re.search(r'project:\s*withSnapshot\b', proj):
         bad.append('saveProject 又直接把 withSnapshot 交给 IPC 了（代理不可克隆）')
+    if re.search(r'project:\s*toIpcPlain\(withSnapshot\)', proj):
+        bad.append('saveProject 又传回对象了（会触发 3.6MB 结构化克隆 + 主进程二次 stringify）')
 
     # ③ 单一事实源：toIpcPlain / jsonSafeReplacer 只在 projectSchema 里实现一份
     if not re.search(r'export function toIpcPlain\(', schema):
@@ -84,12 +90,15 @@ def sub_source_guards(cdp):
         bad.append('geodata 没有从 projectSchema 再导出 jsonSafeReplacer（App.vue / test_21 会取不到）')
 
     # ④ mock 必须模拟真实 IPC 边界 —— 这是本用例能发现该缺陷的唯一原因
+    #    字符串分支（正式路径）解析后即用；**对象分支仍必须 structuredClone**（代理要能被拒）。
     if 'structuredClone(p.project || {})' not in mock:
         bad.append('测试 mock 的 projectSave 没有做 structuredClone（JSON 往返能读穿代理 → 缺陷会再次隐形）')
+    if 'typeof p.projectJson' not in mock:
+        bad.append('测试 mock 的 projectSave 没有处理字符串载荷（正式路径会静默不落库）')
 
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
-    return True, ('saveProject 走 toIpcPlain + 单一事实源齐备 + mock 真做 structuredClone')
+    return True, ('saveProject 走 toIpcJson（文本）+ 单一事实源齐备 + mock 两种形态都照真边界检查')
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -49,7 +49,9 @@ import {
   LAYER_ORDER,
   SNAPSHOT_DIFF_KEYS,
   // 跨 IPC 载荷的统一下载口（去 Vue 代理 / TypedArray 兜底）—— 见下方 saveProject 注释
+  // 跨 IPC / 落盘载荷的统一下载口（`toIpcPlain` = 对象版，`toIpcJson` = 文本版，同一口径）
   toIpcPlain,
+  toIpcJson,
 } from '../utils/projectSchema';
 
 const AUTO_SAVE_DELAY = 800;
@@ -615,10 +617,13 @@ export const useProjectStore = defineStore('project', () => {
       //    `project.value` 是 Vue 的深响应式代理，`ipcRenderer.invoke` 用 V8 ValueSerializer，
       //    **遇 Proxy 一律抛 "An object could not be cloned."** → 每一次保存都失败（连空项目也存不下），
       //    于是 `.sitian` 文件永远停在新建时的空壳，用户重开当然是空的。
-      //    项目文件本来就是 JSON（主进程就是 `JSON.stringify(project)` 写盘），所以这里先把载荷
-      //    降级成"将要写进文件的那一份值"：既越过克隆边界，也保证内存与磁盘同形。
       //    同一坑在 `saveGeodata`/`saveMapData`/`saveScenarios` 早已处理，**只有这条路漏了**。
-      const res = await a.projectSave({ filePath: filePath.value, project: toIpcPlain(withSnapshot) });
+      // 🔴 2026-10-24（收落盘 380ms）：**传字符串**而不是对象。
+      //    旧写法 `project: toIpcPlain(withSnapshot)` = 渲染侧 stringify+parse 一次、V8 把 3.6MB 对象图
+      //    克隆一遍、主进程再 stringify 一遍写盘 —— 三份开销。现在只 old 一份序列化：
+      //    `toIpcJson` 出文本 → 主进程直接写（见 projectHandler 的 atomicWriteText）。
+      //    ⚠️ 两种形态必须**逐字节同形**：都过 `unwrapRaw` + `jsonSafeReplacer`（同一份实现）。
+      const res = await a.projectSave({ filePath: filePath.value, projectJson: toIpcJson(withSnapshot) });
       if (!res || !res.success) throw new Error((res && res.error) || '写入失败');
       lastSavedAt.value = new Date().toISOString();
       if (project.value !== snapshotOf) {

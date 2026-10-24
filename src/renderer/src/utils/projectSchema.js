@@ -170,11 +170,28 @@ export function jsonSafeReplacer(key, value) {
  * 见 `jsonSafeReplacer` 的长注释 —— 这是所有跨进程载荷的统一下载口。
  * 注意 `undefined`/`null` 会归一成 `{}`（`JSON.stringify(undefined)` 返回 undefined，
  * 直接 `JSON.parse` 会抛）。
+ *
+ * 2026-10-24（收落盘 380ms）：实现改成 `JSON.parse(toIpcJson(value))` —— **序列化口径只有一份**。
+ * 落盘那条路（`saveProject`）现在直接要字符串（见 `toIpcJson`），这里只是它的对象版。
  */
 export function toIpcPlain(value) {
-  if (value === undefined || value === null) return {};
+  return JSON.parse(toIpcJson(value));
+}
+
+/**
+ * 跨 IPC 的**字符串**出口（2026-10-24，收落盘 380ms 的第一刀）。
+ *
+ * 为什么落盘要传字符串而不是对象：`ipcRenderer.invoke` 用 V8 ValueSerializer 把 3.6MB 项目正文
+ * 完整克隆一遍（几十毫秒 + 一次大分配），到主进程再 `JSON.stringify` 一遍（又一次几十毫秒）；
+ * 而主进程写盘只需要**文本**。于是渲染侧序列化一次、把字符串递过去、主进程直接写
+ * —— 克隆变成一次字符串拷贝（便宜且不产生对象图）。
+ *
+ * 与 `toIpcPlain` **同一口径**（去代理 + `jsonSafeReplacer`），所以两种形态落到磁盘上逐字节同形。
+ */
+export function toIpcJson(value) {
+  if (value === undefined || value === null) return '{}';
   // 先去代理再序列化（见 unwrapRaw 的注释：3.6MB 正文 237ms → 60ms）
-  return JSON.parse(JSON.stringify(unwrapRaw(value), jsonSafeReplacer));
+  return JSON.stringify(unwrapRaw(value), jsonSafeReplacer);
 }
 
 // 深拷贝（项目数据只含 JSON-safe 值；structuredClone 优先，退化 JSON 往返）

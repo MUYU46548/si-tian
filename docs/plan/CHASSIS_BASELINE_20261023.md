@@ -489,3 +489,65 @@ python scripts/tests/tools/_lab.py down          # 收工：杀进程 + 还原 i
 
 > 至此第 3 件的两半（引擎五件 + 笔画模型）都齐了。**剩的是接线**：归属笔写口按 `groupId` 落事件、
 > 装载口把 `changeEvents` 变成投影 —— 那是第 4 件（四笔总装）的活。
+
+---
+
+## 十六、收落盘 380ms：IPC 传字符串（2026-10-24 13:0x）
+
+digest §三③ 的第二刀。落盘那条路原来是**三份开销**：
+渲染侧 `JSON.stringify`+`JSON.parse`（造对象）→ `ipcRenderer.invoke` 用 V8 把 3.6MB **对象图**克隆一遍
+→ 主进程再 `JSON.stringify` 一遍写盘。
+
+| 改哪 | 改成什么 |
+|---|---|
+| `utils/projectSchema.js` | 新增 `toIpcJson(value)`（**文本版**下载口，与 `toIpcPlain` 同一 `unwrapRaw`+`jsonSafeReplacer`）；`toIpcPlain` 改为 `JSON.parse(toIpcJson(value))` —— 序列化口径**只有一份** |
+| `store/projectStore.js` | `projectSave({ filePath, projectJson: toIpcJson(withSnapshot) })` —— 只序列化一次，递字符串 |
+| `main/handlers/projectHandler.js` | 拆出 `atomicWriteText`；`atomicWriteJson` 变薄壳；`writeProjectFile` 接受**文本或对象**；`project-save` 认 `projectJson`（字符串）优先、`project`（对象）兼容 |
+| 测试侧 | mock 两种形态都照真边界检查（字符串 → `JSON.parse` 存 mock 库；对象 → 仍 `structuredClone`，代理照旧被拒）；harness 的记录口先把 `projectJson` 解析回 `p.project`，**29 处读 `.project` 的用例一个字不改** |
+
+**复测（同机 / 同 200 省底图 / `_probe_save_tick.js`）**：
+
+| 读数 | 改前 | 改后 |
+|---|---:|---:|
+| `saveProject` 整条（p50） | 372.9ms | **≈ 63ms**（两次独立采样 63.9 / 62.7） |
+| 落盘那一下**长任务** | — | **61 / 76ms**（一次） |
+| 其中 `pushSnapshot` | 32.3 | ~18 |
+| 其中 mock 的 `projectSave`（生产里换成"主进程直接写盘"） | — | ~12 |
+| 其中 `toIpcJson`（3.6MB 原始树） | — | ~15-25 |
+
+> **读数陷阱（探针里已写注释）**：`toIpcJson` 在探针里对 `{...ps.project}`（代理树）量出来是 **117ms**，
+> 但真实落盘路径喂给它的是 `mergeCanvasPayload` 产出的**原始树**（1-b 的 toRaw 修复），所以真实成本 ~20ms。
+> 拿错对象量，会把"代理读"的账算到序列化头上 —— 与 1-b 同一个坑。
+
+**生产与模拟的差别（如实记）**：mock 收到字符串后仍要 `JSON.parse` 一次（`__projects` 要按对象回给
+`projectOpen`），生产里主进程**只写文本**、没有这一下。所以真机应比 63ms 再少 ~12ms，约 **50ms 上下**；
+本机模拟环境不再多测（要真机读数得等 `diag_t2_save.py` 那一档）。
+
+**判据对账**：`test_85`（IPC 边界）改为守"走 `toIpcJson` 文本 + 反证不许回到对象/代理"，
+g1 探针仍证明**代理会被拒**；`test_55` / `test_115` / `test_91` / `test_46` 全绿。
+
+---
+
+## 十七、第 4 件第一刀：归属笔 → 账本（2026-10-24 13:2x）
+
+接线点选在 `batchSetOwnership`（笔刷与批量条共用）——**一笔一组**（`groupId` = 这一笔的 `strokeId`），
+事件落 `scenario.ledger`；v2 的 `ownership` / `changeEvents` **照旧写**（缓存），
+并且**每次把账本投影与缓存逐省对拍**，一致才带上账本（不一致就退回"只写缓存"）。
+
+为什么先对拍而不是直接让账本当真源：v2 这边还有别的写口（props 面板的 `setOwnership` 等）没接线，
+账本可能落后于缓存；此时若拿投影覆盖，会**悄悄丢掉**那些编辑。等第 4 件把写口收齐，才把顺序反过来。
+
+| 判据（新用例 **test_138**） | 读数 |
+|---|---|
+| 一笔 2 省 → 账本 | 3 条事件（1 基线 + 2 变更）、**同一 groupId**、`provenance=brush`、`day=378000`（1050 年） |
+| 投影 vs 缓存 | **逐省 0 处不同**（探针侧另用 `src/ledger` 独立再算一遍） |
+| 撤销 / 重做 | 3 → **0** → 3（账本整笔回滚，不是只回缓存） |
+| **无日期编辑** | 不入账（3 → 3），但缓存照写 —— 与未接线写口共存，不造假账 |
+| 落盘 + 重开 | 载荷里 3 条 + groupId 不变；**重开后仍是 3 条** |
+| 源码守卫 | 接线点含迁移/投影/对拍三件；组件把 `strokeId` 传下去 |
+
+**踩到的坑**：`ledgerNext` 必须是**三态**（对象 = 换 / `undefined` = 这刀不碰账本 / `null` = 撤销回"当时没有账本"）。
+第一版只写了"null = 删"，于是**无日期编辑把整本账删了**（3 → 0）——用例当场抓住。
+
+⏳ 下一步（第 4 件续）：把其余归属写口（props 面板 / 油桶 / 批量条）也接上，然后**把顺序反过来**
+（账本当真源、缓存由投影重算），再给 Ctrl+Z 做"两栈分派"（成分账本组撤销 / 几何走既有栈）。

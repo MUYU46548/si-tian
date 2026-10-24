@@ -108,6 +108,11 @@ OPEN_HARNESS_JS = r"""(async () => {
   if (!window.sitianAPI.__projectSaveHooked) {
     const orig = window.sitianAPI.projectSave;
     window.sitianAPI.projectSave = async (p) => {
+      // 2026-10-24：正式路径传 `projectJson`（字符串）→ 这里**先解析回对象再记**，
+      // 让所有读 `__savedProject[i].project` / `__probe.lastProject()` 的用例一个字都不用改。
+      if (p && typeof p.projectJson === 'string' && !p.project) {
+        try { p.project = JSON.parse(p.projectJson); } catch (e) { /* 交给原实现报错 */ }
+      }
       window.__savedProject.push(p);
       return orig ? orig(p) : { success: true, filePath: p && p.filePath };
     };

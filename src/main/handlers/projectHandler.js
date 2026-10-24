@@ -139,18 +139,16 @@ async function makeSessionBaseline(filePath) {
   return { backedUp: true, baselinePath: dest, backupDir: path.dirname(dest) };
 }
 
-/** 原子写：先写 .tmp-<ts> 再 rename（rename 在同一卷上是原子的） */
-async function atomicWriteJson(filePath, project) {
+/**
+ * 原子写**文本**：先写 .tmp-<ts> 再 rename（rename 在同一卷上是原子的）。
+ *
+ * 2026-10-24（收落盘 380ms）：渲染侧现在**直接递序列化好的 JSON 文本**（`projectJson`），
+ * 主进程只负责落盘 —— 不再对 3.6MB 对象图第二次 `JSON.stringify`。`atomicWriteJson` 保留给
+ * 内部仍拿对象的调用方（新建项目 / 测试），它只是本函数的薄壳。
+ */
+async function atomicWriteText(filePath, text) {
   await ensureDir(path.dirname(filePath));
   const tmp = `${filePath}.tmp-${Date.now()}`;
-  // 🔴 **紧凑 JSON（2026-10-11 体积裁剪）**：此前是 `JSON.stringify(project, null, 2)`。
-  //    实测暮雨的真实项目：正文 39853484 字节 → 紧凑后 10302398 字节 = **缩进占 74%**。
-  //    原因很具体：`scenarios.baseMaps[*].terrain[].points` 是 `[{x,y},…]` 的**上万点数组**，
-  //    每点两行缩进 → 一个省的海岸线就是几十万行。项目文件是机器管理的产物，
-  //    「人能读」换不来 4 倍体积，而体积直接决定**每次自动保存要写多少字节**（低配机的瓶颈）。
-  //    代价（如实记录）：git 侧的一行 = 整个文件，`.sitian` 的 diff 不再逐行可读。
-  //    若要恢复可读缩进，只改这一行；不要再在别处另写一份序列化（`serializeProject` 是给测试用的）。
-  const text = JSON.stringify(project);
   await fs.writeFile(tmp, text, 'utf-8');
   try {
     await fs.rename(tmp, filePath);
@@ -161,15 +159,30 @@ async function atomicWriteJson(filePath, project) {
   return { bytes: Buffer.byteLength(text, 'utf8') };
 }
 
+/** 原子写 JSON 对象（内部仍拿对象的调用方用；紧凑 JSON，口径见下） */
+async function atomicWriteJson(filePath, project) {
+  // 🔴 **紧凑 JSON（2026-10-11 体积裁剪）**：此前是 `JSON.stringify(project, null, 2)`。
+  //    实测暮雨的真实项目：正文 39853484 字节 → 紧凑后 10302398 字节 = **缩进占 74%**。
+  //    原因很具体：`scenarios.baseMaps[*].terrain[].points` 是 `[{x,y},…]` 的**上万点数组**，
+  //    每点两行缩进 → 一个省的海岸线就是几十万行。项目文件是机器管理的产物，
+  //    「人能读」换不来 4 倍体积，而体积直接决定**每次自动保存要写多少字节**（低配机的瓶颈）。
+  //    代价（如实记录）：git 侧的一行 = 整个文件，`.sitian` 的 diff 不再逐行可读。
+  //    若要恢复可读缩进，只改这一行；不要再在别处另写一份序列化（`serializeProject` 是给测试用的）。
+  return atomicWriteText(filePath, JSON.stringify(project));
+}
+
 /**
  * 写出项目文件（含旧文件备份）。
+ * @param {string|object} projectOrText 已序列化的 JSON 文本（首选），或待序列化的项目对象
  * @returns {{ success: true, filePath: string, bytes: number, backupPath: string|null }}
  */
-async function writeProjectFile(filePath, project, { backup = true, keep = BACKUP_KEEP } = {}) {
+async function writeProjectFile(filePath, projectOrText, { backup = true, keep = BACKUP_KEEP } = {}) {
   assertProjectPath(filePath);
   let backupInfo = { backedUp: false, backupPath: null };
   if (backup) backupInfo = await makeBackup(filePath, keep);
-  const { bytes } = await atomicWriteJson(filePath, project);
+  const { bytes } = typeof projectOrText === 'string'
+    ? await atomicWriteText(filePath, projectOrText)
+    : await atomicWriteJson(filePath, projectOrText);
   return { success: true, filePath, bytes, backupPath: backupInfo.backupPath || null };
 }
 
@@ -475,10 +488,17 @@ function registerProjectHandlers(deps) {
   });
 
   // 保存项目（备份旧文件 → 原子覆盖；不解释内容）
+  // 载荷两种形态：`projectJson`（渲染侧已序列化好的文本，**首选**，省掉这里第二次 stringify）
+  // 与 `project`（对象，给旧调用方/测试留的兼容口）。
   ipcMain.handle('project-save', async (event, payload = {}) => {
     try {
       const target = payload.filePath || getLastProjectPath();
       if (!target) return { success: false, error: '项目尚未落盘（没有 filePath）' };
+      if (typeof payload.projectJson === 'string') {
+        const res = await writeProjectFile(target, payload.projectJson);
+        await setLastProjectPath(target);
+        return ok(res);
+      }
       const res = await writeProjectFile(target, payload.project || {});
       await setLastProjectPath(target);
       return ok(res);

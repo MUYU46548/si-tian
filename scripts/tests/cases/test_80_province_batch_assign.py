@@ -60,7 +60,11 @@ def sub_source_guards(cdp):
     bad = []
 
     se = _code_only(_read('src/renderer/src/store/geodataModules/scenarioEditing.js'))
-    seg = se[se.find('function batchSetOwnership'):se.find('function batchSetOwnership') + 4200]
+    # ⚠️ 2026-10-24：原来按固定 4200 字符切片。函数加了账本接线（第 4 件第一刀）后变长，
+    #    切片把回执部分切掉了 → **假红**（"回执没给 date"）。改成**按结构切**：到下一个同级函数为止。
+    _start = se.find('function batchSetOwnership')
+    _next = se.find('\n  function ', _start + 10)
+    seg = se[_start:_next if _next > 0 else len(se)]
     if not seg:
         bad.append('scenarioEditing 缺少 batchSetOwnership')
     for sym, why in (('execute(', '批量写必须一条 undo'),

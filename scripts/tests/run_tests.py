@@ -310,17 +310,30 @@ MOCK_SCRIPT = """<script>
           //    mock 若只做 JSON 往返（它恰好能读穿代理），就永远测不到“载荷不可序列化”——
           //    这正是当年 84 用例全绿、而真机上项目保存**一次都没成功**的原因。
           //    ⚠️ 别把这一步删成 JSON.parse(JSON.stringify(...))。
+          // 🔴 2026-10-24：正式路径改成**字符串**（`projectJson`）—— 主进程直接写盘，不做第二次
+          //    stringify、也不克隆 3.6MB 对象图。字符串天然没有代理问题，这里只需解析回对象存进 mock 库
+          //    （projectOpen 要按对象返回）。对象形态仍接受（旧调用方/用例直连探针），照样过 structuredClone。
           let cloned;
-          try {
-            cloned = structuredClone(p.project || {});
-          } catch (e) {
-            return { success: false, error: String((e && e.message) || e) };
+          if (typeof p.projectJson === 'string') {
+            try {
+              cloned = JSON.parse(p.projectJson);
+            } catch (e) {
+              return { success: false, error: '载荷不是合法 JSON：' + String((e && e.message) || e) };
+            }
+            // 让 __savedProject 的读取方（helpers 的 lastProject / 各用例）继续拿到对象
+            p.project = cloned;
+          } else {
+            try {
+              cloned = structuredClone(p.project || {});
+            } catch (e) {
+              return { success: false, error: String((e && e.message) || e) };
+            }
           }
-          window.__projects[p.filePath] = JSON.parse(JSON.stringify(cloned));
+          window.__projects[p.filePath] = cloned;
           window.__projectCalls.push({ op: 'save', filePath: p.filePath });
           return {
             success: true, filePath: p.filePath,
-            bytes: JSON.stringify(cloned).length,
+            bytes: typeof p.projectJson === 'string' ? p.projectJson.length : JSON.stringify(cloned).length,
             backupPath: p.filePath + '.backups/mock.sitian',
           };
         },

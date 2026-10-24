@@ -2879,6 +2879,12 @@ const OWNER_BRUSH_SAMPLE_PX = 3;
 let ownerStrokeActive = false;
 let ownerStrokeIds = new Set();
 let ownerLastSample = null;
+// 这一笔的账本身份（groupId）：按下时生成，抬手落库时带给 store → 一笔一组（第 4 件接线点）
+let ownerStrokeId = '';
+function nextOwnerStrokeId() {
+  ownerStrokeId = `own-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
+  return ownerStrokeId;
+}
 
 /** 笔刷半径（世界单位）—— 与几何笔刷同一口径：屏幕像素 / 缩放 */
 function ownerBrushWorldRadius() {
@@ -2941,7 +2947,10 @@ function commitOwnerStroke() {
   if (!sc) { statusMsg('涂归属：还没有选中剧本'); return null; }
   const clearing = clearOwnerMode.value || !pol;
   if (!clearing && !pol) { statusMsg('涂归属：没有选中的势力（点地图上方「势力：」里的色块）'); return null; }
-  const res = store.batchSetOwnership(sc.id, ids, clearing ? null : pol.id, tlDate.value);
+  const res = store.batchSetOwnership(sc.id, ids, clearing ? null : pol.id, tlDate.value, {
+    // 第 4 件接线点：带上这一笔的 groupId → store 会把它落成账本事件组（一笔一组）
+    strokeId: ownerStrokeId || undefined,
+  });
   if (!res || res.success === false) {
     statusMsg(`涂归属失败：${(res && res.reason) || '未知原因'}`);
     return res;
@@ -4006,6 +4015,7 @@ function onMouseDown(event) {
     beginStrokeBase();
     ownerStrokeActive = true;
     ownerStrokeIds = new Set();
+    nextOwnerStrokeId();          // 第 4 件：这一笔的账本组身份（一笔一组）
     ownerLastSample = { x: world.x, y: world.y };
     ownerStrokeSample(world.x, world.y);
     provBrushPreview.value = { x: world.x, y: world.y };

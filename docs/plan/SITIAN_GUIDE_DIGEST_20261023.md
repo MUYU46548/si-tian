@@ -168,6 +168,14 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   判据 a7/a8：轮廓 400→26 点、散布 16 实例、地形 27 格**三份回放指纹全一致**；改 tolerance/原始点/seed 指纹必变；
   散布实例的 `id` 是运行时标识，**不进指纹**（否则同一笔回放两次永远假红）。
   ⏳ 剩：接线（归属笔写口按 groupId 落事件、装载口把 changeEvents 变投影）= 第 4 件。
+- ✅ **落盘 380ms 收掉（2026-10-24）**：IPC 传**字符串**（`toIpcJson` 出文本 → 主进程 `atomicWriteText` 直接写）。
+  三份开销变一份：渲染侧不再 parse、V8 不再克隆 3.6MB 对象图、主进程不再二次 stringify。
+  读数：`saveProject` 372.9 → **≈63ms**（两次采样 63.9/62.7），落盘长任务 61/76ms；生产还省掉 mock 的 parse，
+  约 50ms 上下。`toIpcPlain` 改成 `JSON.parse(toIpcJson(...))` —— 序列化口径仍只有一份；test_85 守新契约。
+- ✅ **第 4 件第一刀：归属笔 → 账本（2026-10-24）**：接线点在 `batchSetOwnership`，一笔一组（`groupId`=strokeId）、
+  `provenance=brush`、`day` 由时间轴那年换算；v2 字段照旧写缓存，且**每次把账本投影与缓存逐省对拍**，
+  一致才入账。新用例 **test_138**：3 条事件 / 投影 0 处不同 / 撤销 3→0→3 / **无日期编辑不入账**（但缓存照写）/
+  落盘 3 条 + 重开 3 条。⏳ 下一步：其余归属写口接线 → 把顺序反过来（账本真源）+ Ctrl+Z 两栈分派。
 
 ### 第 4 件 · 四笔总装 + 时间轴 + 导出
 - **第一步**：涂归属笔改走账本（`provenance:"brush"`、一笔一组）——**这是产品本体的接线点**；配"读盘判据"（保存后重开，events 节真长了）。
@@ -226,7 +234,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 git log --oneline -1; git status --short; git rev-list --left-right --count HEAD...origin/main
 # 2. 版本与规模（锚点）
 (Get-Content package.json -Raw | ConvertFrom-Json).version
-(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 137
+(Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 138
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
 Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime
