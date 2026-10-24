@@ -63,3 +63,16 @@ ledger = { ledgerVersion, worldId: 'default', epochId: <剧本 id>, calendar: {y
 
 `ownershipLedgerBase` 另有**自愈**：发现手里账本解释不了缓存时按 v2 事实重建（warn，旧 groupId 失效），
 剩余任何没接线的写口最多让账本落后一次，不会永久退化。
+
+## 装载口：账本优先于缓存（2026-10-24）
+
+`utils/scenarioLedgerV2.normalizeLedgerDict` 是**装载口的唯一归一**（所有入口都走它）：
+
+1. `scenario.ledger` 存在且 `assertLedgerShape` 通过 → `ownership` / `changeEvents`
+   （以及已有 v2 的 `initialOwnership`）**按 `toV2Projection` 重算**，不一致就覆盖并 warn；账本本身不动。
+2. 没有账本、或账本形状坏了 → 回落 `initialOwnership + changeEvents` 派生；
+   **坏账本绝不用来覆盖缓存**（用坏数据盖好数据比不盖更糟），只 warn。
+3. 一致时**不换对象引用**（避免打开项目就白换引用）。
+
+没有这一层，"账本是真源"只在写口成立：手改文件 / 半途迁移 / 旧版本写盘造出的陈旧缓存，
+会在重开项目时把账本盖回去。

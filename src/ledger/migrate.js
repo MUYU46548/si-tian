@@ -107,7 +107,12 @@ export function toV2Projection(ledger) {
       d: at.d === undefined ? null : at.d,
       owner: p.toPolityId === undefined ? null : p.toPolityId,
     };
-    if (p.synthesized) rec.synthesized = true;   // 显式事件**不加**标志（与新旧写口的历史形状一致）
+    // `explicit` / `synthesized` 的标记形状必须与迁移写盘时**完全一致**：
+    //   · 装载口按 `JSON.stringify` 比对缓存与投影（见 `normalizeLedgerDict`）——
+    //     少一个 `explicit: true` 就会被判成"缓存不一致"，每次打开项目都白重写一遍；
+    //   · `scenarioSlices.changeDateStats` 也靠这个标记区分"显式 / 合成"，
+    //     缺标记会把用户录的日期统计成"自动推算"（导出对话框的体检会误报）。
+    if (p.synthesized) rec.synthesized = true; else rec.explicit = true;
     const list = changeEvents[p.provinceId] || (changeEvents[p.provinceId] = []);
     const at2 = list.findIndex((e) => sameV2Day(e, rec));
     if (at2 >= 0) list[at2] = rec; else list.push(rec);

@@ -2755,11 +2755,17 @@ export function createScenarioEditingModule(ctx) {
   function normalizeScenarioDatesDict(list) {
     // 2026-10-21（B v2）：装载口同时做**账本派生** —— `initialOwnership + changeEvents`
     // 是事实源，`ownership` 只是缓存；缓存不一致时按账本覆盖并留一条 warn（不静默）。
+    // 2026-10-24（第 4 件第二刀续）：**`scenario.ledger` 优先** —— 否则"真源"只在写口成立，
+    // 重开一次就会被一份陈旧缓存盖回去（手改文件 / 半途迁移 / 旧版本写盘都能造出这种文件）。
     const dated = normalizeScenarioDict(list).scenarios;
     const led = normalizeLedgerDict(dated);
     if (led.mismatched) {
       console.warn(`[ledger] ${led.mismatched} 个剧本的 ownership 与账本派生不一致，已按账本覆盖：`,
         led.mismatchIds.slice(0, 5));
+    }
+    if (led.ledgerMismatched) {
+      console.warn(`[ledger] ${led.ledgerMismatched} 个剧本的缓存与**账本事件流**不一致，已按账本重算：`,
+        led.ledgerMismatchIds.slice(0, 5));
     }
     return led.dict;
   }

@@ -209,6 +209,29 @@ SAVE_REOPEN = r"""(async () => {
   });
 })()""".replace('STORE_X', STORE).replace('SC_X', "'" + SC + "'")
 
+# 装载口反向探针：把缓存故意改坏（模拟"手改文件 / 旧版本写盘 / 半途迁移"），
+# 再走**产品自己的装载口** —— 账本是真源，坏缓存必须被纠正，且报点。
+LOAD_TAMPERED = r"""(() => {
+  const s = STORE_X;
+  const key = SC_X;
+  const cur = (s.scenarios || {})[key];
+  if (!cur) return JSON.stringify({ __err__: '剧本不在' });
+  const wantKeys = Object.keys(cur.ownership || {}).sort();
+  const wantEvents = (((cur.ledger || {}).events) || []).length;
+  // 把缓存清空（账本不动）→ 模拟陈旧/被手改的文件
+  const tampered = { ...cur, ownership: {}, changeEvents: {} };
+  s.applyScenarioState({ scenarios: { [key]: tampered } }, { fresh: true });
+  const after = (s.scenarios || {})[key] || {};
+  const L = window.__L139;
+  const d = (L && after.ledger) ? L.diffOwnership(L.projectOwnership(after.ledger), after.ownership || {}) : { same: false };
+  return JSON.stringify({
+    wantKeys, gotKeys: Object.keys(after.ownership || {}).sort(),
+    wantEvents, events: (((after.ledger || {}).events) || []).length,
+    ce: Object.keys(after.changeEvents || {}),
+    same: !!d.same,
+  });
+})()""".replace('STORE_X', STORE).replace('SC_X', "'" + SC + "'")
+
 
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
@@ -354,12 +377,25 @@ def run(cdp):
     if not sr.get('reopenSame'):
         fails.append('重开后账本投影 != 缓存')
 
+    # ⑦ 装载口反向探针：手动把缓存改坏 → 装载口必须按账本纠正（真源不能只在写口成立）
+    lt = _j(cdp, LOAD_TAMPERED)
+    time.sleep(0.3)
+    if lt.get('gotKeys') != lt.get('wantKeys'):
+        fails.append(f'装载口没按账本恢复归属键（{lt.get("gotKeys")} ≠ {lt.get("wantKeys")}）')
+    if not lt.get('same'):
+        fails.append(f'装载口纠正后投影仍 != 缓存（{lt}）')
+    if lt.get('events') != lt.get('wantEvents'):
+        fails.append(f'装载口不该动账本（{lt.get("events")} ≠ {lt.get("wantEvents")}）')
+    if not (lt.get('ce') or []):
+        fails.append(f'装载口没按账本重建 changeEvents（{lt.get("ce")}）')
+
     detail = (f'v2 剧本涂一笔 → {p1.get("before")}→{p1.get("after")} 条（投影 0 处不同）；'
               f'批量铺底 1→{sub.get("created")} 块：基线/事件/initial 三处旧 id 清零、新省全继承、投影一致；'
               f'铺底后再涂 → {s2.get("events")}→{p2.get("after")} 条（**没退化**，groupId=s139-2）；'
               f'删省 → 账本 {rm.get("before")}→{rm.get("after")} 条、p139b 三处清零；'
               f'面板改日期 → 账本 day={D1080}、再涂一笔后仍在、撤销回 1050；'
-              f'落盘 {sr.get("savedEvents")} 条 + 重开 {sr.get("reopenEvents")} 条（投影一致）')
+              f'落盘 {sr.get("savedEvents")} 条 + 重开 {sr.get("reopenEvents")} 条（投影一致）；'
+              f'装载口反向探针：缓存清空后按账本恢复 {len(lt.get("gotKeys") or [])} 个归属键、账本 {lt.get("events")} 条未动')
     if fails:
         return False, '；'.join(fails)[:900]
     return True, detail

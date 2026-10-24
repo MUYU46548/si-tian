@@ -17,7 +17,12 @@
 import { buildTimeline } from './scenarioTimeline';
 import { normalizeDate } from './scenarioDates';
 // 账本引擎（第 3 件）：回放只有一份实现，这里只做 v2 形状的适配
-import { eventsFromV2 as ledgerEventsFromV2, projectOwnership as ledgerProjectOwnership } from '../../../ledger/replay';
+import {
+  eventsFromV2 as ledgerEventsFromV2,
+  projectOwnership as ledgerProjectOwnership,
+  toV2Projection as ledgerToV2Projection,
+  assertLedgerShape as ledgerAssertShape,
+} from '../../../ledger/index';
 
 /**
  * 为整串剧本计算 v2 的 `initialOwnership`（不修改入参）。
@@ -112,23 +117,71 @@ export function verifyScenarioLedger(scenario) {
 }
 
 /**
- * 装载口的统一归一：把 v2 剧本的 `ownership` 换成**从账本派生**的值。
+ * 装载口的统一归一：把剧本的缓存换成**从事实源派生**的值（缓存只有一个写者 = 装载口）。
  *
- * 为什么是覆盖而不是"信任缓存"：`initialOwnership + changeEvents` 是事实源，
- * `ownership` 只是缓存。缓存与账本不一致 = 账本被绕过（旧版本写盘、手改文件、迁移半途），
- * 这时**按账本覆盖**并回报（不静默）。
+ * 两级事实源（2026-10-24 第 4 件第二刀续补第二级）：
+ *   ① `scenario.ledger`（账本事件流）**优先**：它存在且形状合法时，`ownership` / `changeEvents`
+ *      （以及已有 v2 的 `initialOwnership`）一律按 `toV2Projection` 重算 —— 否则"真源"只在写口成立，
+ *      重开一次就会被一份陈旧缓存盖回去（手改文件、半途迁移、旧版本写盘都能造出这种文件）。
+ *   ② 没有账本（或账本形状坏了）→ 回落到 v2 的 `initialOwnership + changeEvents`（零迁移兼容）。
  *
- * ⚠️ v1 剧本（没有 `initialOwnership`）原样返回，保持引用不变。
+ * ⚠️ **形状坏就退回、不覆盖**：账本坏掉时用投影去覆盖缓存 = 用坏数据盖好数据；宁可保留缓存并 warn。
+ * ⚠️ v1 剧本（既没有账本也没有 `initialOwnership`）原样返回，保持引用不变。
  * @param {Object} dict `{ id: scenario }`
- * @returns {{dict:Object, derived:number, mismatched:number, mismatchIds:string[]}}
+ * @returns {{dict:Object, derived:number, mismatched:number, mismatchIds:string[],
+ *            ledgerDerived:number, ledgerMismatched:number, ledgerMismatchIds:string[]}}
  */
 export function normalizeLedgerDict(dict) {
   const out = {};
   let derived = 0, mismatched = 0;
   const mismatchIds = [];
+  let ledgerDerived = 0, ledgerMismatched = 0;
+  const ledgerBad = [];
+  const ledgerMismatchIds = [];
+  const sameOwnership = (a, b) => {
+    const A = a || {};
+    const B = b || {};
+    const pids = new Set([...Object.keys(A), ...Object.keys(B)]);
+    for (const pid of pids) {
+      const x = A[pid] === undefined ? null : A[pid];
+      const y = B[pid] === undefined ? null : B[pid];
+      if (x !== y) return false;
+    }
+    return true;
+  };
+  const sameJson = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
+
   for (const key of Object.keys(dict || {})) {
     const sc = dict[key];
-    if (!sc || !sc.initialOwnership) { out[key] = sc; continue; }
+    if (!sc || typeof sc !== 'object') { out[key] = sc; continue; }
+
+    // ① 账本优先
+    if (sc.ledger && Array.isArray(sc.ledger.events) && sc.ledger.events.length) {
+      const shape = ledgerAssertShape(sc.ledger);
+      if (!shape.ok) {
+        ledgerBad.push(sc.id || key);
+        console.warn(`[ledger] 剧本「${sc.id || key}」的账本形状不合法（${shape.problems.slice(0, 3).join('；')}）—— 本次只按 v2 缓存归一，不动账本`);
+      } else {
+        const proj = ledgerToV2Projection(sc.ledger);
+        const ownDiff = !sameOwnership(proj.ownership, sc.ownership);
+        const evDiff = !sameJson(proj.changeEvents, sc.changeEvents);
+        const initDiff = sc.initialOwnership ? !sameOwnership(proj.initialOwnership, sc.initialOwnership) : false;
+        if (ownDiff || evDiff || initDiff) {
+          const next = { ...sc, ownership: proj.ownership, changeEvents: proj.changeEvents };
+          if (sc.initialOwnership) next.initialOwnership = proj.initialOwnership;
+          out[key] = next;
+          ledgerMismatched++;
+          ledgerMismatchIds.push(sc.id || key);
+        } else {
+          out[key] = sc;
+        }
+        ledgerDerived++;
+        continue;
+      }
+    }
+
+    // ② v2 回落（没有账本 / 账本坏了）
+    if (!sc.initialOwnership) { out[key] = sc; continue; }
     const next = deriveScenarioOwnership(sc);
     const cur = sc.ownership || {};
     let diff = false;
@@ -142,7 +195,10 @@ export function normalizeLedgerDict(dict) {
     derived++;
     if (diff) { mismatched++; mismatchIds.push(sc.id || key); }
   }
-  return { dict: out, derived, mismatched, mismatchIds };
+  return {
+    dict: out, derived, mismatched, mismatchIds,
+    ledgerDerived, ledgerMismatched, ledgerMismatchIds, ledgerBad,
+  };
 }
 
 /** 事件日期是否会落在本剧本区间内（迁移/写口共用的边界提示，不参与判定） */

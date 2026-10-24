@@ -443,6 +443,57 @@ async function main() {
     return '改名/删省/拆省/替换事件四态投影均与缓存一致；入参零改动；只改缓存的断链被反向探针抓到';
   });
 
+  // ── a10 装载口：`scenario.ledger` 优先于 v2 缓存（缓存只有一个写者）────────────
+  // 为什么必须有这条：写口反转只在"写的时候"成立；**重开/导入**若还认 v2 缓存，
+  // 手改文件 / 半途迁移 / 旧版本写盘造出的陈旧缓存就会把账本盖回去（真源当场破功）。
+  await check('a10 装载口：账本优先于 v2 缓存；形状坏了退回不覆盖；一致时不换引用', () => {
+    const sc0 = {
+      id: 'e10',
+      initialOwnership: { pa: 'A', pb: 'B' },
+      changeEvents: { pa: [{ y: 1000, m: 6, d: 1, owner: 'A' }] },
+      ownership: { pa: 'A', pb: 'B' },
+    };
+    const { ledger } = L.fromV2Scenario(sc0, { epochId: 'e10' });
+    const proj = L.toV2Projection(ledger);
+    const good = { ...sc0, ledger, ownership: proj.ownership, changeEvents: proj.changeEvents, initialOwnership: proj.initialOwnership };
+
+    // ① 缓存与账本一致 → **同一个对象**（不白换引用、不触发无谓重渲染）
+    const r1 = V2.normalizeLedgerDict({ e10: good });
+    assert(r1.dict.e10 === good, '缓存与账本一致却换了对象引用');
+    assert(r1.ledgerMismatched === 0 && r1.ledgerDerived === 1, `统计不对：${JSON.stringify({ d: r1.ledgerDerived, m: r1.ledgerMismatched })}`);
+
+    // ② 缓存被改坏（手改文件/旧版本写盘）→ 按账本重算，并点名
+    const tampered = { ...good, ownership: {}, changeEvents: {} };
+    const r2 = V2.normalizeLedgerDict({ e10: tampered });
+    const fixed = r2.dict.e10;
+    assert(r2.ledgerMismatched === 1 && r2.ledgerMismatchIds[0] === 'e10', '没发现/没点名缓存与账本不一致');
+    assert(fixed.ownership.pa === 'A' && fixed.ownership.pb === 'B', `ownership 没按账本恢复：${JSON.stringify(fixed.ownership)}`);
+    assert((fixed.changeEvents.pa || []).length === 1, 'changeEvents 没按账本恢复');
+    assert(L.diffOwnership(L.projectOwnership(fixed.ledger), fixed.ownership).same, '恢复后投影仍对不上');
+
+    // ③ 账本形状坏了（缺基线）→ **不按坏账本投影覆盖**，退回 v2 事实（宁可用 v2 也不用坏账本盖数据）
+    //    构造：坏账本自己会投影出 pb=X（与 v2 的 {pa:A,pb:B} 不同），据此能分辨到底听了谁
+    const brokenLedger = {
+      ...ledger,
+      events: [
+        ...ledger.events.filter((e) => e.type !== L.EVENT_BASELINE),
+        L.makeEvent({ worldId: 'default', epochId: 'e10', day: 1, type: L.EVENT_OWNER_CHANGED,
+          provenance: 'ui', payload: { provinceId: 'pb', fromPolityId: 'B', toPolityId: 'X' } }),
+      ],
+    };
+    const r3 = V2.normalizeLedgerDict({ e10: { ...tampered, ledger: brokenLedger } });
+    assert(r3.ledgerBad[0] === 'e10', '账本坏了没点名');
+    assert(r3.dict.e10.ownership.pb === 'B' && r3.dict.e10.ownership.pa === 'A',
+      '坏账本覆盖了缓存（应当退回 v2 事实 {pa:A, pb:B}）');
+
+    // ④ 没有账本的 v2 剧本：旧行为一行不变（派生 + 点名）
+    const v2Only = { ...sc0, ownership: { pa: 'B', pb: 'B' } };
+    const r4 = V2.normalizeLedgerDict({ e10: v2Only });
+    assert(r4.derived === 1 && r4.mismatched === 1, `v2 回落统计不对：${JSON.stringify({ d: r4.derived, m: r4.mismatched })}`);
+    assert(r4.dict.e10.ownership.pa === 'A', 'v2 回落没按 initial+events 派生');
+    return '账本优先（坏缓存被纠正并点名）/ 形状坏了不覆盖 / 一致时不换引用 / v2 回落原样';
+  });
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\n=== ${results.length - failed.length}/${results.length} 通过 ===`);
   fs.rmSync(tmp, { recursive: true, force: true });
