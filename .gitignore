@@ -86,6 +86,8 @@ build/p1-vertex-marquee/
 # 第 6 件终验自测链产物（三张截图 / 切片 PNG / 落盘载荷副本都含真实地图数据，禁止提交；
 # 复现：python scripts/tests/drill_final_acceptance.py）
 build/final-acceptance/
+# 019 重导真实数据审计产物（复现：node scripts/audit-reimport-019.mjs）
+build/reimport-019/
 
 # 第 6 件收尾对照图（导出图改动前/后，含真实 415 省地图数据，禁止提交；
 # 说明见 build/acceptance-followup/README.md）

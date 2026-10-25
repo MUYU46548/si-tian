@@ -745,12 +745,16 @@ export function createScenarioEditingModule(ctx) {
     const gate = execute({
       type: 'reimport-basemap-as-new',
       label: `重导底图：${old.name || oldKey} → ${newName}`,
-      undo: () => { baseMaps.value = prevMaps; scenarios.value = prevScen; },
-      redo: () => { baseMaps.value = nextMaps; scenarios.value = remap.scenarios; },
+      // 🔴 2026-10-25 真机演练抓到：**撤销 / 重做必须自己安排落盘**。
+      //    命令的 undo/redo 只替换 baseMaps / scenarios 两个 ref，不像 `commitHeightmap`
+      //    那样内部会 scheduleAutoSave —— 而 App 的全局 Ctrl+Z 只调 `store.undo()`，
+      //    不补保存。结果是「内存里撤了、磁盘还是重导后的样子」，强杀/断电就会带着迁移后的街。
+      //    真机判据：`scripts/tests/drill_reimport_019.py`（Ctrl+Z 后读盘回基线）。
+      undo: () => { baseMaps.value = prevMaps; scenarios.value = prevScen; saveScenarios(); },
+      redo: () => { baseMaps.value = nextMaps; scenarios.value = remap.scenarios; saveScenarios(); },
     });
     if (gate && gate.ok === false) return { ok: false, rejected: 'blocked', message: gate.error };
 
-    saveScenarios();
     return {
       ok: true,
       changed: true,
