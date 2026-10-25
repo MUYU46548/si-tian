@@ -11,30 +11,55 @@
 4. **P2 小件清欠**（019 真机验证、H3、术语、外交表、斑块）
 5. **P3 星系历史剧本**（历史剧本达标后，抄 GalaxyMap）
 
+## 进度（2026-10-25 第一轮，已合入工作区）
+
+- ✅ **P0-1 参数模型 + 面板**（本轮完成）
+  - 新增 `src/renderer/src/utils/terrainParams.js`：参数表（种子/起伏/山脉/高原/裂谷/精度/走向/纬度跨度）
+    的**唯一事实源**（字段、范围、默认值、夹取、warning、预设、候选种子、映射口）；
+  - 新增 `src/renderer/src/components/TerrainGenPanel.vue`：滑杆 + 预设 + **3 张候选缩略图** +
+    「应用所选（一条 undo）」；入口 = 底板工具栏「生成参数」（带文字）；
+  - `terrainSynthesis.js` 新增 `structureOverrides` / `cellsAcross` 注入点；**默认参数与 0.4.0 逐字节一致**
+    （sha256 黄金值守在 `scripts/tests/unit/test_terrain_params.js`）；
+  - store 新增只读 `previewTerrainSynthesis()`；`synthesizeBaseMapTerrain()` 接受 `params` 并把气候一起落库。
+- ✅ **P0-3 气候补全**（本轮完成）
+  - `heightMath.js` 新增 `buildClimateInputs()`：纬度按行号（北为上，跨度可设）、离岸距离 = 8 邻域 BFS 格数；
+  - `deriveAllLayers()` 不再传 `null, null`；`synthesizeBaseMapTerrain()` 生成地形时**同一笔**写入 temp/prec/biome，
+    并把 `climateSpec.latitudeSpanDeg` 存进高度图（重算时用同一个跨度）。
+- ⏳ **P0-2 造陆**（下一轮）：`landRatio / continentCount` 属于「生成陆地轮廓」，尚未实现。
+  现有入口仍是「按**已画好的**轮廓推演地形」；P0-2 要补的是"从参数生成大陆形状 + 切省"。
+- ⏳ **P0-4 文化/宗教/势力派生**（未开始）。
+- 验收：`test_151`（面板端到端 + 可复现 + undo 粒度 + 气候）、`unit/test_terrain_params.js`（13 项）。
+
 ---
 
 ## P0 程序化生成收口（下一轮主战场）
 
-### P0-1 参数模型 + 面板
+### P0-1 参数模型 + 面板 ✅（2026-10-25 已落地）
 
-- 一份纯函数参数模型（`utils/terrainParams.js` 或现有模块扩展）：
-  `seed`、`landRatio`、`continentCount`、`plateCount`、`mountainStrength`、`erosion`、
-  `latitudeTilt`、`oceanDistance`、`cultureCount`、`religionCount`、`polityCount`。
-- 面板：滑块/数字/骰子（换种子）；**预览 → 应用**两段式；应用 = 一条 undo。
-- 默认参数与“可复现”规则：同 seed + 同参数 = 同结果（Node 单测）。
+- 一份纯函数参数模型（`utils/terrainParams.js`）——**已落地字段**：
+  `seed`、`relief`、`mountainStrength`、`plateauStrength`、`riftDepth`、`rangeAxisDeg`、
+  `cellsAcross`（精度）、`latitudeSpanDeg`（气候）。
+  （原计划里的 `landRatio / continentCount / plateCount` 属于 P0-2 造陆参数，另立一组，见下。）
+- 面板：滑块/数字/换种子；**候选缩略图 → 应用**两段式；应用 = 一条 undo。
+  已实现：`components/TerrainGenPanel.vue` + 工具栏「生成参数」入口 + store 只读 `previewTerrainSynthesis`。
+- 默认参数与“可复现”规则：同 seed + 同参数 = 同结果（Node 单测 + **改版前 sha256 黄金值**）。
 
-### P0-2 造陆（landmass）
+### P0-2 造陆（landmass）⏳（下一轮主战场）
 
 - 基于现有 `terrainSynthesis.js` v2（离岸距离场 + priority-flood + 山脉/高原/裂谷）。
+- ⚠️ 边界：现有入口只做「按**已画好的**轮廓推演地形」；本节要补的是从参数**生成陆地轮廓本身**
+  （陆块数量/大小/长条/群岛），再交给 `batchSubdivide` 切省。参数要单独一组
+  （`LAND_PARAM_FIELDS`），不要混进 `terrainParams.js` 现有的推演字段。
 - 补“大陆形状”控制：陆块数量/大小/长条/群岛；避免每次都是同一块中央大陆。
 - 海岸线：生成后仍走现有“重建海岸线段”，不整省重画。
 - 候选：生成 1~3 个候选缩略图，用户选一个再应用；候选有稳定 id，不污染当前底图。
 - 验收：同 seed 可复现；应用/撤销逐字节；415 省规模下不冻结（进度 + 可取消）。
 
-### P0-3 气候补全
+### P0-3 气候补全 ✅（2026-10-25 已落地）
 
-- 现在 `deriveLayers(heightmap, gridPoints, latitudeFn, oceanDistFn)` 支持纬度/海距，
-  但历史剧本调用传的是 `null, null`；补上真实纬度与离岸距离。
+- `deriveLayers(heightmap, gridPoints, latitudeFn, oceanDistFn)` 本来支持纬度/海距，
+  但历史剧本调用传的是 `null, null`；**现在补上真实纬度与离岸距离**
+  （`heightMath.buildClimateInputs()`：纬度按行号、海距 = 8 邻域 BFS 格数）。
 - 输出：温度 / 降水 / 群系；画布三档可看；应用一条 undo。
 - 验收：同一高度图重复派生结果一致；手动改过的格在“只补空”模式下不被覆盖（策略见 P0-4）。
 
@@ -97,6 +122,33 @@
 - 只做“克隆历史剧本模块到星系地图”的适配：
   剧本集/时间轴/归属/切片/导出复用；不重写一套。
 - 进入条件：P0/P1 收口 + 历史剧本真实 415 省项目连续使用无 P0/P1。
+
+### P3 前置资产：隔壁已做好的「星系地图编辑器」（2026-10-25）
+
+暮雨用另一套（免费额度）在**空白沙箱**里做了司天星系地图模块的组件；对方被告知的是"匿名项目"，
+**没有接触库、没有接触司天的真实数据**。对接前必须按下面这份索引读，不要凭印象猜它的接口：
+
+- 源码与文档位置：`E:\CODE\CangKu\SP-1025\`
+  - `README.md` —— 功能面、三组参数回验表、决策点清单（代码里 `// 决策点：` 的索引）、已知限制；
+  - `docs/拆件索引.md` —— **对接主文档**：core/render/app 每个文件的位置、接口、测试覆盖、拆件依赖、
+    15 个跨文件流程模式，以及**第七节「大项目接入最短路径」六步**；
+  - `PROGRESS.md` —— 每轮改了什么/为什么（历史）；
+  - `screenshots/` —— 成品图（远景 22% / 中景 105%）；
+  - `tests/` —— 117 例 Vitest（`npx vitest run`；拆任何件之前先跑对应测试）。
+- 技术栈：Electron + Vue 3 + **TypeScript** + Canvas 2D + Vite + Vitest；**零网络、纯本地 JSON**。
+  ⚠️ 与司天现状的差异要在对接时显式处理：司天是 **JS**（非 TS）、无 Pinia（用 store 模块装配）、
+  `.sitian` 单文件项目格式。**不要**把 TS 构建链一并搬进来；按"能直接跑的 JS 件"拆。
+- 对接顺序（建议，别一上来就搬 UI）：
+  1. 先读 `拆件索引.md` 第二~五节，确认要哪些件（候选：`core/topology.ts` 航道稀疏化、
+     `core/territory.ts` 势力归属 φ 场、`core/geometry.ts` 等值线、`render/regions.ts` 势力边界绘制）；
+  2. 按第七节"六步"：拷 `core/` → 只拷需要的 render 件 → 数据契约接缝（它吃 `GalaxyDoc` JSON）→
+     替换 host（司天的项目存储）→ 加字段照 `shape` 先例（可选 + 缺省不写出 + parse 校验）；
+  3. **先做只读演示**：用司天现有 `galaxy`/`star_domain` 节点造一份 `GalaxyDoc`，渲一张图出来对拍；
+     再谈写回 `.sitian`（星系侧的历史剧本 = P3，不在本轮）。
+- 红线（对方在空白沙箱里，不代表可以直接进主仓）：
+  - 不许新增 npm 依赖（它自己也没加 electron-builder 之外的包；three.js 若要用需单独评审）；
+  - 不许把它的 `Math.random` / 时间戳带进生成路径（它的 `prng.ts` 是确定性种子的正确做法，照抄）；
+  - 拆进来的件必须补 Node 单测（司天口径：纯函数层 Node 可测，UI 层 CDP 用例）。
 
 ---
 

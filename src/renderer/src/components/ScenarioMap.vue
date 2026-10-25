@@ -656,6 +656,19 @@
           title="按已画好的陆地轮廓推演一份地形高度图（内陆高、海岸低 + 分形起伏）—— 这是自建地图长出河流的起点，之后可用地形笔刷继续手改"
           @click="synthesizeBaseMapTerrainFromShape"
         ><Icon name="mountain" :size="15"/>按轮廓生成地形</button>
+        <!-- P0-1（2026-10-25）：**参数够不着 = 生成只能撞运气**。
+             旧入口一点就按写死的常量推演（种子 7 / 山脉权重 0.26 / 裂谷 0.26），
+             用户既不知道"这次是什么种子"，也无法换一种地形 —— 不满意只能反复点，
+             而每次点出来的都是同一张。这个入口带**文字**（本项目实测：只有图标的按钮
+             用户找不到），点开是面板：种子/起伏/山脉/高原/裂谷/精度 + 3 张候选缩略图，
+             选一张再应用（一条 undo）。 -->
+        <button
+          v-if="baseMapCanSynthesizeTerrain"
+          data-testid="basemap-terrain-params"
+          :class="{ active: terrainGenOpen }"
+          title="地形生成参数 —— 种子 / 起伏 / 山脉 / 高原 / 裂谷 / 精度 + 3 张候选预览，选一张再应用（一条撤销）"
+          @click="toggleTerrainGenPanel"
+        ><Icon name="settings" :size="15"/>生成参数</button>
         <!-- P5（2026-10-14）：高度图**分辨率**。
              真实来由：用户实测「地形模模糊糊」「高度图分辨率帮我调整。注意性能」。
              量出来的事实是源网格 133×75 / spacing 14.4，在 1900×1080 上每格约 3.6 屏幕像素
@@ -716,6 +729,16 @@
           1→2→4 倍时河条数 57→287→1089，而最长河的世界长度几乎不变（111→120→110）。
           想要更长的大河只能换更高分辨率的**源数据**。
         </div>
+      </div>
+
+      <!-- P0-1：地形生成参数面板（按需展开，与「分辨率」面板同一套 rp-* 外观） -->
+      <div v-if="terrainGenOpen" class="resample-panel" data-testid="terrain-gen-wrap">
+        <TerrainGenPanel
+          :base-map-key="baseMapKey"
+          :has-heightmap="baseMapHasHeightmap"
+          @apply="applyGeneratedTerrain"
+          @close="terrainGenOpen = false"
+        />
       </div>
 
       <!-- 地形来源（M1c，2026-09-25）—— 底图的地形有两种来源，取舍完全不同，必须显式选：
@@ -1719,6 +1742,9 @@ import { hasHeightmapContent } from '../utils/terrainRepresentation';
 import HistoryPanel from './HistoryPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
+// 地形生成参数面板（P0-1，2026-10-25）：种子/起伏/山脉/高原/裂谷 + 3 张候选缩略图 → 应用（一条 undo）。
+// 参数模型唯一实现在 utils/terrainParams.js（本组件只做展示与触发）。
+import TerrainGenPanel from './TerrainGenPanel.vue';
 // 逐年切片导出对话框（2026-10-02）：帧索引/日期体检走 utils/scenarioSlices.js，落盘走主进程一次选目录
 import ScenarioSliceExport from './ScenarioSliceExport.vue';
 // 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报「区间外易主日期」，
@@ -2105,6 +2131,26 @@ function synthesizeBaseMapTerrainFromShape() {
   rasterCache.clear();          // 地形换了 → 栅格缓存必须失效（否则画布还是旧图）
   rasterLayer.value = 'height'; // 生成完直接切到"地形高度"，让用户看见结果
   statusMsg(r.message);
+  render();
+}
+
+// ── P0-1（2026-10-25）：地形生成参数面板 ─────────────────────────────────────
+// 「按轮廓生成地形」保留为**一键最快路径**（默认参数）；想调/想挑形状走这个面板。
+// 两条路都走同一个 store 入口（`synthesizeBaseMapTerrain`），所以 undo/落盘/绑定行星
+// 的行为天然一致 —— 不许给面板再写一条"直接改 baseMaps"的捷径。
+const terrainGenOpen = ref(false);
+
+function toggleTerrainGenPanel() {
+  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
+  terrainGenOpen.value = !terrainGenOpen.value;
+}
+
+/** 面板应用回执：与一键入口做同样的画布侧收尾（缓存失效 + 切到地形高度 + 重绘） */
+function applyGeneratedTerrain(r) {
+  rasterCache.clear();
+  rasterLayer.value = 'height';
+  terrainGenOpen.value = false;
+  statusMsg((r && r.message) || '已生成地形');
   render();
 }
 

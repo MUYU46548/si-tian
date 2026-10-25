@@ -287,8 +287,12 @@ export function rangeAxisFromSeed(seed) {
  *          seaLevel?:number, relief?:number, seed?:number, structure?:boolean}} [opts]
  *   `isLand`   —— 陆地判定（**强烈建议传产品自己的 `buildLandMask`**：与渲染/裁剪同一口径）；
  *                 不传时会在采样点里"只要落进任何一个环就算陆"（慢，仅兜底）。
- *   `cellSize` —— 目标格距（世界单位）。不传则按包围盒长边 / 96 自动定，夹在 [2, 40]。
+ *   `cellSize` —— 目标格距（世界单位）。不传则按包围盒长边 / `cellsAcross` 自动定，夹在 [2, 40]。
+ *   `cellsAcross` —— 不传 `cellSize` 时的"长边格数"（默认 96 = 0.4.0 的旧口径）。
  *   `maxCells` —— 格数上限（默认 60000，防止把一张巨大的地图算成几百万格卡死）。
+ *   `structureOverrides` —— P0-1 参数面板的**唯一注入点**：在 `TERRAIN_STRUCTURE` 上做覆盖
+ *                 （`rangeWeight / crossRangeWeight / plateauWeight / riftDepth` …）。
+ *                 默认不传 → 与 0.4.0 逐字节一致（`test_terrain_params.js` 用黄金值守）。
  *   `structure` —— **默认 true**：叠山脉走向 / 高原面 / 裂谷（v2）。
  *                 传 `false` 得到 v1 的"坡面 + 噪声"（**只给对照组用**：用例靠它证明
  *                 "结构真的改变了地形"，产品路径不许用它）。
@@ -306,7 +310,12 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
   const seed = Number.isFinite(opts.seed) ? Math.floor(opts.seed) : 7;
   // 结构开关：默认开。`false` 只用于对照组（见 opts 注释）
   const useStructure = opts.structure !== false;
-  const st = TERRAIN_STRUCTURE;
+  // 参数覆盖（P0-1，2026-10-25）：面板滑杆只改这里，**不碰** TERRAIN_STRUCTURE 本体 ——
+  // 它是用例与实现的共同口径（`test_terrain_structure.js` 按它取阈值），改了常量会连带改测试语义。
+  // 不传 overrides 时 `st === TERRAIN_STRUCTURE`（引用相同 → 数值逐字节不变）。
+  const st = opts.structureOverrides && typeof opts.structureOverrides === 'object'
+    ? { ...TERRAIN_STRUCTURE, ...opts.structureOverrides }
+    : TERRAIN_STRUCTURE;
   const rangeAxisDeg = Number.isFinite(opts.rangeAxisDeg) ? opts.rangeAxisDeg
     : (st.rangeAxisDeg != null ? st.rangeAxisDeg : rangeAxisFromSeed(seed));
 
@@ -337,10 +346,13 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
   const longSide = Math.max(spanX, spanY);
   // 裂谷位置要用"高/长"比（见 `makeRiftSegments` 的 aspect 注释）
   const rifts = useStructure ? makeRiftSegments(seed, rangeAxisDeg, spanY / longSide) : [];
-  // 格距：默认让长边约 96 格（比外部最小档 133 略粗但**可控**；可用 cellSize 调细）
+  // 格距：默认让长边约 96 格（比外部最小档 133 略粗但**可控**；可用 cellSize / cellsAcross 调细）
+  const cellsAcross = Number.isFinite(opts.cellsAcross) && opts.cellsAcross >= 8
+    ? Math.floor(opts.cellsAcross)
+    : 96;
   let cellSize = Number.isFinite(opts.cellSize) && opts.cellSize > 0
     ? opts.cellSize
-    : Math.max(2, Math.min(40, longSide / 96));
+    : Math.max(2, Math.min(40, longSide / cellsAcross));
   const maxCells = Number.isFinite(opts.maxCells) && opts.maxCells > 0 ? opts.maxCells : 60000;
   // 格数超限时自动放粗格距（宁可粗，也不要卡死）
   let cols = Math.max(3, Math.ceil(spanX / cellSize) + 1);

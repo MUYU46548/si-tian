@@ -26,6 +26,90 @@ export function precipitationAtIndex(temperature, oceanDistance) {
   return Math.min(100, basePrecip + oceanBonus);
 }
 
+// ── 气候输入（P0-3，2026-10-25）─────────────────────────
+// 🔴 为什么必须有它：`deriveLayers(h, pts, null, null)` 把纬度与离岸距离都当成 0/100 ——
+//    温度只剩"赤道 30°C − 海拔惩罚"、降水只剩底噪，**群系于是只由高度决定**
+//    （热带雨林与寒带针叶林会出现在同一个纬度上）。这不是参数不全，是气候层没有地理意义。
+//    这里把两样补齐：纬度按网格行号线性给（北为上），离岸距离用**格数**的 BFS 距离。
+//    两者都是网格的确定性函数 → 同高度图重复派生结果一致（P0-3 验收项）。
+export const DEFAULT_LATITUDE_SPAN_DEG = 120;
+
+/**
+ * 网格 → 气候输入。
+ * @param {number[]|Float32Array} heightmap
+ * @param {{points:Array<[number,number]>, cellsX:number, cellsY:number}} grid
+ * @param {{latitudeSpanDeg?:number}} [opts] 上下两端跨越的纬度（默认 120°，即 ±60°）
+ * @returns {{lat:Float32Array|null, ocean:Float32Array|null, latitudeSpanDeg:number,
+ *            maxOceanCells:number, reason?:string}}
+ */
+export function buildClimateInputs(heightmap, grid, opts = {}) {
+  const n = heightmap ? heightmap.length : 0;
+  const span = Number.isFinite(opts.latitudeSpanDeg) && opts.latitudeSpanDeg > 0
+    ? Number(opts.latitudeSpanDeg)
+    : DEFAULT_LATITUDE_SPAN_DEG;
+  if (!n || !grid || !Array.isArray(grid.points) || grid.points.length !== n) {
+    return { lat: null, ocean: null, latitudeSpanDeg: span, maxOceanCells: 0, reason: 'no-grid' };
+  }
+  const cols = grid.cellsX | 0;
+  const rows = grid.cellsY | 0;
+  if (!cols || !rows || cols * rows !== n) {
+    return { lat: null, ocean: null, latitudeSpanDeg: span, maxOceanCells: 0, reason: 'grid-mismatch' };
+  }
+  // 纬度：第 0 行 = 北端（+span/2），最后一行 = 南端（−span/2）。与画布 y 向下一致。
+  const lat = new Float32Array(n);
+  for (let j = 0; j < rows; j++) {
+    const t = rows === 1 ? 0.5 : j / (rows - 1);
+    const v = (0.5 - t) * span;
+    for (let i = 0; i < cols; i++) lat[j * cols + i] = v;
+  }
+  const oceanInfo = buildOceanDistanceCells(heightmap, cols, rows);
+  return {
+    lat,
+    ocean: oceanInfo.dist,
+    latitudeSpanDeg: span,
+    maxOceanCells: oceanInfo.max,
+    ...(oceanInfo.noOcean ? { reason: 'no-ocean' } : {}),
+  };
+}
+
+/** 离岸距离（格数）：海格 = 0，陆格 = 到最近海格的 8 邻域 BFS 步数；全陆图给"很远" */
+function buildOceanDistanceCells(heightmap, cols, rows) {
+  const n = cols * rows;
+  // ⚠️ 用 -1 当"未访问"：Float32/Int32 的默认 0 会和"海格距离 0"混为一谈 ——
+  //    第一版就是因此把所有陆格当成海格跳过（距离全 0 → 降水处处吃满海洋奖励）。
+  const dist = new Int32Array(n).fill(-1);
+  const q = new Int32Array(n);
+  let head = 0, tail = 0;
+  for (let i = 0; i < n; i++) {
+    if (heightmap[i] < SEA_LEVEL) { dist[i] = 0; q[tail++] = i; }
+  }
+  if (!tail) {
+    // 整张图都是陆地（没有海岸）：降水不该被"海边"奖励 —— 统一按很远处理
+    const out = new Float32Array(n).fill(999);
+    return { dist: out, max: 999, noOcean: true };
+  }
+  while (head < tail) {
+    const cur = q[head++];
+    const cj = Math.floor(cur / cols);
+    const ci = cur - cj * cols;
+    const nd = dist[cur] + 1;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if (di === 0 && dj === 0) continue;
+        const ni = ci + di, nj = cj + dj;
+        if (ni < 0 || nj < 0 || ni >= cols || nj >= rows) continue;
+        const idx = nj * cols + ni;
+        if (dist[idx] >= 0) continue;
+        dist[idx] = nd;
+        q[tail++] = idx;
+      }
+    }
+  }
+  let max = 0;
+  for (let i = 0; i < n; i++) if (dist[i] > max) max = dist[i];
+  return { dist: Float32Array.from(dist), max, noOcean: false };
+}
+
 // ── 生物群系分类 ───────────────────────────────────────
 // 基于高度 + 温度 + 降水 → 13 种生物群系 key
 export function classifyBiome(height, temperature, precipitation) {

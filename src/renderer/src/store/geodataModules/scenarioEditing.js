@@ -16,7 +16,7 @@ import {
   planBindBaseMapToPlanet, planUnbindBaseMap, buildGridFromTerrain,
 } from '../../utils/heightmapAccess';
 import {
-  brushFalloff, deriveLayers, SEA_LEVEL,
+  brushFalloff, deriveLayers, SEA_LEVEL, buildClimateInputs,
 } from '../../utils/heightMath';
 import {
   scheduleDerive, isWorkerAvailable, getAsyncThreshold, getDeriveStats,
@@ -73,6 +73,14 @@ import { buildLandMask } from '../../utils/coastline';
 //    高度数据地图来救河流生成」）：**按陆地轮廓推演地形** —— 自建底图没有高度图时，
 //    自动河流不再直接拒绝，而是用这条推演结果当输入（只读、不写数据）。
 import { synthesizeHeightmapFromTerrain } from '../../utils/terrainSynthesis';
+// ── 地形生成参数（P0-1，2026-10-25）──────────────────────────────────────────
+// 🔴 参数的字段/范围/默认值/夹取/中文摘要**只有 `utils/terrainParams.js` 一份**。
+//    本模块只做「归一化 → 映射成推演 opts → 走 undo 落库」，绝不在这里另抄一组数字
+//    （否则面板拖到 1.4、算法读到的还是 1.0，而且两边都不报错）。
+import {
+  normalizeTerrainParams, toSynthesisOptions, toClimateOptions,
+  describeTerrainParams, candidateSeed,
+} from '../../utils/terrainParams';
 // ── 高度图分辨率（2026-10-14）───────────────────────────────────────────────
 // 🔴 「地形模模糊糊」的**唯一**解药是把格子变密（每格有自己的高度），而这件事的算法、
 //    性能护栏、内存估算全在 `utils/heightmapResample.js`（纯函数 + Node 单测）。
@@ -4103,7 +4111,7 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * **按陆地轮廓生成并落库一份地形高度图**（2026-10-17 第八修·改向）。
+   * **按陆地轮廓生成并落库一份地形高度图**（2026-10-17 第八修·改向；2026-10-25 P0-1 参数化）。
    *
    * 与 `generateRivers` 里那次"临时推演"的区别：这是**显式动作**，结果写进底图
    * （走 `commitHeightmap` = 一条 undo），此后：
@@ -4113,6 +4121,14 @@ export function createScenarioEditingModule(ctx) {
    *
    * 为什么需要它（暮雨 2026-10-17）：「不要指望靠用户导出高度数据地图来救河流生成」——
    * 自建底图必须有本地起点：画完大陆 → 一键有地形 → 有河 → 再手调。
+   *
+   * P0-1（2026-10-25）三处变化，都是把"只能撞运气"变成"能调、能复现"：
+   *   ① `opts.params` 从参数面板进来（种子/起伏/山脉/高原/裂谷/精度），**唯一映射口**
+   *      是 `toSynthesisOptions()`。**不传 = 0.4.0 的硬编码行为逐字节不变**
+   *      （`test_terrain_params.js` 用改版前抓的 sha256 黄金值守）。
+   *   ② **气候同一笔落库**（P0-3）：推演完立刻用真实纬度 + 离岸距离派生 temp/prec/biome，
+   *      不再是"生成完还要另点一次重算，而那次传的是 null, null"（群系只由高度决定）。
+   *   ③ 回执带参数摘要：用户看不到"这次是什么种子"，就无法复现，也无法判断该不该留。
    *
    * @returns {{ok:boolean, reason?:string, message:string, cellCount?:number, spacing?:number}}
    */
@@ -4129,16 +4145,36 @@ export function createScenarioEditingModule(ctx) {
     }
     const terrain = bm.terrain;
     const mask = Array.isArray(terrain) && terrain.length ? landMaskFor(terrain) : null;
-    const syn = synthesizeHeightmapFromTerrain(terrain, {
+    const norm = normalizeTerrainParams(opts.params || {});
+    const syn = synthesizeHeightmapFromTerrain(terrain, toSynthesisOptions(norm.params, {
       isLand: mask ? mask.lookup : undefined,
       cellSize: opts.cellSize,
-    });
+    }));
     if (!syn) {
       return {
         ok: false, reason: 'no-terrain',
         message: '还没有画好的陆地 —— 先用「自由绘制 / 套索」画出一块大陆，再生成地形。',
       };
     }
+    // ── P0-3：气候与高度**同一笔**写进 undo ──────────────────────────────────
+    // 只改高度、把气候留给"重算派生图层"是旧链路的坑：那一步传的是 null,null，
+    // 于是同一份地形上"寒带针叶林"和"热带雨林"可以出现在同一纬度（群系只由高度决定）。
+    const climate = buildClimateInputs(syn.h, syn.grid, toClimateOptions(norm.params));
+    const derivedLayers = deriveLayers(
+      syn.h,
+      syn.grid.points,
+      climate.lat ? (_pt, i) => climate.lat[i] : null,
+      climate.ocean ? (_pt, i) => climate.ocean[i] : null,
+    );
+    const payload = {
+      ...syn,
+      temp: derivedLayers.temperature,
+      prec: derivedLayers.precipitation,
+      biome: derivedLayers.biome,
+      // 纬度跨度随这份高度图落盘：之后「重算派生图层」按同一个跨度算，
+      // 否则"生成时 ±60°、重算时 ±90°"会让用户以为地形自己变了（静默不一致）。
+      climateSpec: { latitudeSpanDeg: climate.latitudeSpanDeg },
+    };
     const prev = getHeightmapFor(baseMapKey);
     const had = hasGrid(prev);
     // 🔴 2026-10-17 第八修·再修（用户实测：「现在地图上的改动全都无法撤销，撤销是灰色的」）：
@@ -4154,7 +4190,7 @@ export function createScenarioEditingModule(ctx) {
       type: 'synthesize-terrain',
       label: '按轮廓生成地形',
       undo: () => { commitHeightmap(baseMapKey, had ? prev : null, { touch: false }); },
-      redo: () => { commitHeightmap(baseMapKey, syn); },
+      redo: () => { commitHeightmap(baseMapKey, payload); },
     });
     saveScenarios();
     // 回执要把**结构**也说清：v2 起推演地形不再是"坡面 + 噪声"，而是带山脉走向 / 高原面 / 裂谷。
@@ -4168,8 +4204,80 @@ export function createScenarioEditingModule(ctx) {
       spacing: syn.effectiveCellSize,
       had,
       structure: syn.structure || null,
+      params: norm.params,
+      paramWarnings: norm.warnings,
+      climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },
       message: `已按陆地轮廓生成地形：${syn.cellCount} 格 / 格距 ${syn.effectiveCellSize}`
-        + `（最内陆 ${syn.maxInlandCells} 格）${st} —— 可用 Ctrl+Z 撤回，也可以拿地形笔刷继续改。`,
+        + `（最内陆 ${syn.maxInlandCells} 格）${st} —— ${describeTerrainParams(norm.params)}；`
+        + `气候已按纬度 ±${Math.round(climate.latitudeSpanDeg / 2)}° 与离岸距离派生`
+        + `（可用 Ctrl+Z 撤回，也可以拿地形笔刷继续改）。`,
+    };
+  }
+
+  /**
+   * **地形候选预览（只读，P0-1）**：同一组参数生成 1~3 张不同种子的候选，给面板画缩略图。
+   *
+   * 三条纪律：
+   *   ① **绝不写数据**（不碰 baseMaps / undo 栈 / 磁盘）—— 预览只是"看一眼"；
+   *   ② **候选 id 稳定**（`tgen-<基准种子>-<序号>`）：同参数永远同三张，
+   *      否则"选中的那张"在应用时就算不出来了（预览→应用对不上）；
+   *   ③ **预览用粗网格**（默认 56 格）：应用才按用户选的精度重算 —— 否则拖一次滑杆
+   *      就要在主线程上跑三遍 7000 格推演（卡顿的直接来源）。
+   *
+   * @param {string} baseMapKey
+   * @param {object} paramsIn 参数（见 utils/terrainParams.js；缺省 = 默认参数）
+   * @param {{count?:number, previewCells?:number}} [opts]
+   */
+  function previewTerrainSynthesis(baseMapKey, paramsIn = {}, opts = {}) {
+    const bm = baseMaps.value[baseMapKey];
+    if (!bm) return { ok: false, reason: 'no-basemap', message: '先选一张底图', candidates: [] };
+    const terrain = bm.terrain;
+    if (!Array.isArray(terrain) || !terrain.length) {
+      return {
+        ok: false, reason: 'no-terrain',
+        message: '还没有画好的陆地 —— 先用「自由绘制 / 套索」画出一块大陆，再预览地形。',
+        candidates: [],
+      };
+    }
+    const count = Math.max(1, Math.min(4, Math.floor(Number(opts.count) || 3)));
+    const previewCells = Math.max(24, Math.min(96, Math.floor(Number(opts.previewCells) || 56)));
+    const norm = normalizeTerrainParams(paramsIn);
+    const mask = landMaskFor(terrain);
+    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const candidates = [];
+    for (let i = 0; i < count; i++) {
+      // 候选参数 = 用户参数 + 换种子；**精度保留用户选择**（缩略图另用 previewCells）
+      const params = { ...norm.params, seed: candidateSeed(norm.params.seed, i) };
+      const syn = synthesizeHeightmapFromTerrain(terrain, toSynthesisOptions(params, {
+        isLand: mask.lookup,
+        cellsAcross: previewCells,
+      }));
+      if (!syn) continue;
+      candidates.push({
+        id: `tgen-${norm.params.seed}-${i}`,
+        index: i,
+        seed: params.seed,
+        params,
+        cols: syn.grid.cellsX,
+        rows: syn.grid.cellsY,
+        cells: syn.cellCount,
+        axis: syn.structure ? syn.structure.rangeAxisDeg : null,
+        rifts: syn.structure ? syn.structure.rifts : 0,
+        h: Float32Array.from(syn.h),
+      });
+    }
+    const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (!candidates.length) {
+      return { ok: false, reason: 'synthesize-failed', message: '候选生成失败（陆地掩膜为空？）', candidates: [] };
+    }
+    return {
+      ok: true,
+      previewCells,
+      params: norm.params,
+      paramWarnings: norm.warnings,
+      candidates,
+      elapsedMs: Math.round(t1 - t0),
+      message: `已出 ${candidates.length} 张候选（粗网格 ${previewCells} 格预览，${Math.round(t1 - t0)} ms）—— 选一张再应用`,
     };
   }
 
@@ -4273,16 +4381,31 @@ export function createScenarioEditingModule(ctx) {
     const oldTemp = hm.temp ? new Float32Array(hm.temp) : null;
     const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
     const oldBiome = hm.biome ? new Uint8Array(hm.biome) : null;
-    const derived = deriveLayers(hm.h, pts, null, null);
+    // ── P0-3（2026-10-25）：这里以前是 `deriveLayers(hm.h, pts, null, null)` ─────────
+    // 后果：这次「重算派生图层」把纬度当 0、离岸距离当 100 → 温度只剩赤道基准 + 海拔惩罚，
+    // 群系几乎只由高度决定（同一纬度上寒带针叶林与热带雨林并存）。现在补真实输入：
+    //   纬度 = 行号线性（北为上，跨度取 `hm.climateSpec.latitudeSpanDeg`，缺省 ±60°）；
+    //   离岸距离 = 海格到陆格的 8 邻域 BFS 格数（降水按它吃海洋奖励）。
+    // 两者都是网格的确定性函数 → 同一高度图重复重算结果一致（P0-3 验收项）。
+    const spanDeg = hm.climateSpec && Number.isFinite(hm.climateSpec.latitudeSpanDeg)
+      ? hm.climateSpec.latitudeSpanDeg
+      : undefined;
+    const climate = buildClimateInputs(hm.h, hm.grid, { latitudeSpanDeg: spanDeg });
+    const derived = deriveLayers(
+      hm.h,
+      pts,
+      climate.lat ? (_pt, i) => climate.lat[i] : null,
+      climate.ocean ? (_pt, i) => climate.ocean[i] : null,
+    );
 
     execute({
       type: 'derive-layers',
       label: '重算派生图层',
       undo: () => { commitHeightmap(baseMapKey, { ...hm, temp: oldTemp, prec: oldPrec, biome: oldBiome }, { touch: false }); },
-      redo: () => { commitHeightmap(baseMapKey, { ...hm, temp: derived.temperature, prec: derived.precipitation, biome: derived.biome }); },
+      redo: () => { commitHeightmap(baseMapKey, { ...hm, temp: derived.temperature, prec: derived.precipitation, biome: derived.biome, climateSpec: { ...(hm.climateSpec || {}), latitudeSpanDeg: climate.latitudeSpanDeg } }); },
     });
     saveScenarios();
-    return derived;
+    return { ...derived, climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells }, reason: climate.reason };
   }
 
   return {
@@ -4333,6 +4456,8 @@ export function createScenarioEditingModule(ctx) {
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
     // 2026-10-17 第八修·改向：自建底图的**本地地形起点**（按陆地轮廓生成，落库进 undo）
     synthesizeBaseMapTerrain,
+    // 2026-10-25（P0-1）：参数化预览（**只读**，返回 1~4 张候选给面板画缩略图；不写任何数据）
+    previewTerrainSynthesis,
     // P5（2026-10-14）：高度图分辨率与平滑 —— 「地形模模糊糊」的入口
     resampleBaseMapHeightmap, smoothBaseMapHeightmap, estimateResampleCost,
     getDeriveStats,
