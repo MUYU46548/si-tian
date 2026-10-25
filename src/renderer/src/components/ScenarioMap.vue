@@ -586,7 +586,7 @@
             {{ bm.name }} ({{ bm.count }}省)
           </option>
         </select>
-        <button @click="triggerMapImport" title="导入 .map 底图 —— 若同名底图已存在，只补数据、不动你已切好的省份"><Icon name="plus" :size="15"/></button>
+        <button @click="triggerMapImport" title="导入 .map 底图 —— 同名且一笔未改：只补缺；同名且改过：重导为新底图并迁移旧归属"><Icon name="plus" :size="15"/></button>
         <!-- 2026-10-22：**已有底图时也能新建空底图**。以前只有「空项目空态」能建，
              已有底图的项目只能导 .map —— 用户想试笔刷却没有干净画布，只能对着真实底图下手
              （「连新底图都建不了」/「怕改坏不敢测」的直接来源）。 -->
@@ -7833,6 +7833,12 @@ async function triggerMapImport(opts = {}) {
         //   · 改过一笔（或旧数据没有指纹）→ **不能再只补数据**：新底图 + 旧归属迁移。
         // 旧行为会把"改过的底图"当成同一张图补数据；用户明确说过：动过一笔就不是一个东西了。
         if (!isBasemapPristine(existing)) {
+          // 「刷新底图数据」入口只给未改过的底图补缺；改过的底图必须走「+ 导入」重导，
+          // 否则用户点刷新却被弹重导对话框，按钮语义就错了。
+          if (refreshOnly) {
+            statusMsg(`「${name}」这张底图改过，不能只补数据；要换新 .map 请用「+ 导入 .map 底图」重导（会迁移旧归属）。刷新入口只给一笔未改的底图补缺。`);
+            return;
+          }
           // 不直接写：先开重导对话框，把映射统计/冲突摆出来（019）
           openReimportDialog(name, bundle, file.name);
           return;
