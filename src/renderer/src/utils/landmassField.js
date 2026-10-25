@@ -342,21 +342,63 @@ export function modifyField(ctx, { range = 'all', add = 0, mult = 1 } = {}) {
 /**
  * 粗糙度：把 fBm 细节叠到高度上（陆地全幅、海里只留 35%，避免海面起伏又造出岛）。
  * @param {number} roughness 0..1
+ * @param {{freqMul?:number, octaves?:number, ampMul?:number, landFactor?:number}} [opts]
+ *   `freqMul` = 频率倍数（v4 加密后要在**同一张图**上叠更细的一层：2 倍频 ≈ 世界波长减半）
+ *   `octaves` = 层数（默认 6；细层别超过 4，否则超过格网 Nyquist → 采样成棋盘格）
+ *   `ampMul` / `landFactor` = 幅度倍数、陆地权重
  */
-export function applyRoughness(ctx, roughness, seed) {
+export function applyRoughness(ctx, roughness, seed, opts = {}) {
   const r = Math.max(0, Math.min(1, Number(roughness) || 0));
   if (r <= 0) return;
   const { heights, cols, rows } = ctx;
-  const amplitude = 2.5 + 13 * r;                   // 峰值高度差（高度点）
-  const baseFreq = (3.0 + 4.0 * r) / Math.max(cols, rows); // 整幅 3~7 个大波
+  const freqMul = Math.max(0.2, Math.min(64, Number(opts.freqMul) || 1));
+  const octaves = Math.max(1, Math.min(8, Math.round(Number(opts.octaves) || 6)));
+  const ampMul = Number.isFinite(opts.ampMul) ? opts.ampMul : 1;
+  const landFactor = Number.isFinite(opts.landFactor) ? opts.landFactor : 1;
+  const amplitude = (2.5 + 13 * r) * ampMul;        // 峰值高度差（高度点）
+  const baseFreq = ((3.0 + 4.0 * r) / Math.max(cols, rows)) * freqMul; // 整幅 3~7 个大波 × 倍数
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
-      const n = fbm(i * baseFreq, j * baseFreq, seed, 6);
+      const n = fbm(i * baseFreq, j * baseFreq, seed, octaves);
       const idx = j * cols + i;
       const land = heights[idx] >= SEA_LEVEL;
-      heights[idx] = lim(heights[idx] + n * amplitude * (land ? 1 : 0.35));
+      heights[idx] = lim(heights[idx] + n * amplitude * (land ? landFactor : 0.35));
     }
   }
+}
+
+/**
+ * **加密网格**（v4，2026-10-25）：双线性插值到 `factor` 倍密的格网。
+ *
+ * 为什么分开做（而不是一开始就用 480 格建场）：体元模型里所有半径都是**格数**，
+ * 分辨率一改，`baseR = √(cols·rows/count/π)`、山脊宽、海湾宽、抖动波长（`WOBBLE_FREQ`
+ * 是 1/25 格）会同时改 —— 地貌本身跟着变，就不是"同一块大陆画得更细"了。
+ * 所以：**宏观形状在 240 格上定死**，再加密成 480 格，只多出细节、不换地貌。
+ *
+ * ⚠️ 半格偏移：本文件的 `heights` 语义是**格点值**（索引 i 对应世界坐标 i·spacing），
+ *    加密后的格点落在原格点之间，等于把整幅场平移了半个旧格（7.5 世界单位的一小半）。
+ *    这只影响绝对位置，不影响形状/占比，用例里也没有任何"绝对坐标"判据。
+ */
+export function refineField(ctx, factor = 2) {
+  const f = Math.max(1, Math.min(4, Math.round(Number(factor) || 1)));
+  if (f === 1) return ctx;
+  const cols = (ctx.cols - 1) * f + 1;
+  const rows = (ctx.rows - 1) * f + 1;
+  const heights = new Float32Array(cols * rows);
+  const src = ctx.heights;
+  const sc = ctx.cols;
+  for (let j = 0; j < rows; j++) {
+    const fy = j / f, j0 = Math.floor(fy), ty = fy - j0;
+    const j1 = Math.min(ctx.rows - 1, j0 + 1);
+    for (let i = 0; i < cols; i++) {
+      const fx = i / f, i0 = Math.floor(fx), tx = fx - i0;
+      const i1 = Math.min(ctx.cols - 1, i0 + 1);
+      const h00 = src[j0 * sc + i0], h10 = src[j0 * sc + i1];
+      const h01 = src[j1 * sc + i0], h11 = src[j1 * sc + i1];
+      heights[j * cols + i] = (h00 * (1 - tx) + h10 * tx) * (1 - ty) + (h01 * (1 - tx) + h11 * tx) * ty;
+    }
+  }
+  return { ...ctx, cols, rows, heights };
 }
 
 /**
@@ -383,13 +425,20 @@ export function flattenCoast(ctx, level, factor = 0.45, softness = 22) {
  * 内陆与深海不动 —— 否则全图会变成噪声地毯。
  * @param {number} strength 峰值高度差（高度点，建议 5~12）
  * @param {number} level 当前海平面（**动态分位数**；不传就退回 20）
+ * @param {{freqCells?:number, octaves?:number}} [opts]
+ *   `freqCells` = 基波长的**格数**（默认 14）。⚠️ v4 把场加密到 2 倍之后必须把它也放大，
+ *   否则同一段岸线上叠的是**两倍频**的噪声：岸线会碎成"盐和胡椒"（实测：480 格场用
+ *   14 格波长 → 最细一层只有 0.9 格，分位数一切就是满屏 1 格宽的碎岛）。
+ *   判据是"**世界**波长"：岸带细节的基波长应在 60~120 世界单位、最细一层不小于 10 单位。
  */
-export function addCoastDetail(ctx, strength, seed, level = SEA_LEVEL) {
+export function addCoastDetail(ctx, strength, seed, level = SEA_LEVEL, opts = {}) {
   const s = Math.max(0, Number(strength) || 0);
   if (s <= 0) return;
   const { heights, cols, rows } = ctx;
   const band = Math.max(3, s * 1.4);
-  const freq = 1 / 14;   // 基波长 ~14 格（50px 量级）；5 个八度 → 细到 ~1 格
+  const freqCells = Math.max(6, Number(opts.freqCells) || 14);
+  const octaves = Math.max(1, Math.min(6, Math.round(Number(opts.octaves) || 5)));
+  const freq = 1 / freqCells;
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
       const idx = j * cols + i;
@@ -397,7 +446,7 @@ export function addCoastDetail(ctx, strength, seed, level = SEA_LEVEL) {
       if (d < -band * 2 || d > band * 2) continue;
       const w = Math.exp(-(d * d) / (2 * band * band));
       if (w < 0.02) continue;
-      const n = fbm(i * freq, j * freq, seed, 5);
+      const n = fbm(i * freq, j * freq, seed, octaves);
       heights[idx] = lim(heights[idx] + n * s * w);
     }
   }

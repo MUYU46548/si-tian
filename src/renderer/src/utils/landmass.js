@@ -19,15 +19,26 @@
 //   判据（`test_landmass.js`）：同参数可复现、占比命中（格 ≤0.5pp / 多边形 ≤2pp）、
 //   不重叠、不出界、湖泊存在、长条/群岛形状口径、roughness↑ → 海岸复杂度与顶点密度上升。
 //
+// ── v4 增量（2026-10-25 用户判词：「放大到很近时仍能看出多边形感」）──────────────
+//   v3 的拓扑（抖动网格逐格判海陆）是对的，但**几何也来自网格顶点**：18 单位一格的方形网格
+//   让 45° 海岸必然是等长台阶（实测中位边长 17.6 单位）。v4 只动尺度，不动拓扑：
+//     ① 网格加密到 24k~40k 格（6~8 单位/格）+ 抖动拉满 ±0.45 格（格边方向被随机化）；
+//     ② 顶点**吸附到等值线**（`snapLoopToLevel`）：几何由高度场决定，不再由格距决定；
+//     ③ 地形换成"轮廓定形状、`terrainSynthesis` 定山"的分工（体元场没有排水结构，
+//        合成地形才有山脉/高原/裂谷）——预览缩略图因此能画成地形图，而不是一块平涂土黄。
+//   ⚠️ 河流这一轮**没有出货**（理由与证据见 `⑤b` 上方注释与 archive 记录）。
+//
 //   ⚠️ 随机只来自 `makeRng(seed)` 与整数哈希噪声 —— 本文件与 `landmassField.js` 都没有
 //      `Math.random`（用例扫描源码守这条）。
 
 import {
   createField, addBlob, addRidge, addStrait, maskField,
   modifyField, applyRoughness, addCoastDetail, flattenCoast, bandField,
+  refineField, fbm,
 } from './landmassField';
+import { synthesizeHeightmapFromTerrain } from './terrainSynthesis';
 
-export const LANDMASS_VERSION = 3;
+export const LANDMASS_VERSION = 4;
 
 export const LAND_SHAPES = Object.freeze([
   { id: 'continent', name: '圆润大陆', aspect: 0.85, arms: 3, lobes: 4 },
@@ -455,12 +466,124 @@ function quantileLevel(heights, landRatio) {
 }
 
 /**
+ * **把环上的顶点贴到真正的等值线上**（v4 的海岸几何收口）。
+ *
+ * 拓扑来自抖动网格（逐格判海陆，天然不会自交/不会丢湖），但**几何**来自高度场：
+ * 网格顶点只是"格子角上离海最近的采样点"，所以岸线会带着格网的步进。
+ * 这里让每个顶点沿高度梯度走到 `h = seaLevel` 的那条等值线上（牛顿一步 + 位移上限），
+ * 于是岸线的形状由地形决定，而不是由格距决定 —— 放大看不再是一段段等长的台阶。
+ *
+ * ⚠️ 位移上限 = 1.2 个采样步长（≈ 半个场格）：岸线最窄处（一格宽的地峡）不会被拽到对面，
+ *    也不会因为平坦区梯度趋近 0 而飞出老远（`g2 < eps` 时原地不动）。
+ */
+function snapLoopToLevel(pts, sample, level, step, bbox) {
+  const out = new Array(pts.length);
+  const cap = step * 1.2;
+  const minX = bbox ? bbox.minX : -Infinity, maxX = bbox ? bbox.maxX : Infinity;
+  const minY = bbox ? bbox.minY : -Infinity, maxY = bbox ? bbox.maxY : Infinity;
+  for (let k = 0; k < pts.length; k++) {
+    const p = pts[k];
+    const h = sample(p.x, p.y);
+    const gx = sample(p.x + step, p.y) - sample(p.x - step, p.y);
+    const gy = sample(p.x, p.y + step) - sample(p.x, p.y - step);
+    const g2 = gx * gx + gy * gy;
+    if (!(g2 > 1e-12)) { out[k] = p; continue; }
+    const t = (level - h) / g2;
+    let dx = gx * t, dy = gy * t;
+    const dl = Math.hypot(dx, dy);
+    if (dl > cap) { dx *= cap / dl; dy *= cap / dl; }
+    // 贴到等值线之后仍须落在图幅内（a2 判据：**所有**顶点不许出界）
+    out[k] = {
+      x: clamp(p.x + dx, minX, maxX),
+      y: clamp(p.y + dy, minY, maxY),
+    };
+  }
+  return out;
+}
+
+/** 整数哈希 → [0,1)（确定性微起伏用；本文件不许出现 `Math.random`） */
+function hash01(x, seed) {
+  let h = (Math.imul(Math.round(x * 1000) | 0, 374761393) + Math.imul(seed | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+/**
+ * **把陆地环光栅化成掩膜**（even-odd：外环与洞一起扫，洞自然变成水）。
+ *
+ * 为什么不用"逐格点在多边形里"：12 个环 × 2000 顶点 × 3 万格 = 7 亿次边测试。
+ * 扫描线是 O(行数 × 边数)，同一份环在 250 行上只有 60 万次。
+ *
+ * 掩膜是**下游三件事的同一份陆地定义**：合成地形（`synthesizeHeightmapFromTerrain`）、
+ * 河源/河口（`traceRivers` 的 `isLand`）、以及"把河裁到海岸"。三者若各判一次，
+ * 就会出现"河从海里起步"或"河口悬在岸外"这类**看着只是别扭、查起来极难**的问题。
+ */
+function rasterizeLandMask(rings, bbox, cols, rows) {
+  const sx = (bbox.maxX - bbox.minX) / Math.max(1, cols - 1);
+  const sy = (bbox.maxY - bbox.minY) / Math.max(1, rows - 1);
+  const mask = new Uint8Array(cols * rows);
+  // 边表（世界坐标）
+  const edges = [];
+  for (const r of rings) {
+    for (const ring of [r.points, ...(r.holes || [])]) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[j], b = ring[i];
+        if (a.y === b.y) continue;
+        edges.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y });
+      }
+    }
+  }
+  const xs = [];
+  for (let j = 0; j < rows; j++) {
+    const wy = bbox.minY + j * sy;
+    xs.length = 0;
+    for (const e of edges) {
+      if ((e.y0 > wy) === (e.y1 > wy)) continue;
+      xs.push(e.x0 + ((wy - e.y0) * (e.x1 - e.x0)) / (e.y1 - e.y0));
+    }
+    if (xs.length < 2) continue;
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const i0 = Math.max(0, Math.ceil((xs[k] - bbox.minX) / sx));
+      const i1 = Math.min(cols - 1, Math.floor((xs[k + 1] - bbox.minX) / sx));
+      for (let i = i0; i <= i1; i++) mask[j * cols + i] = 1;
+    }
+  }
+  const isLand = (x, y) => {
+    const i = clamp(Math.round((x - bbox.minX) / sx), 0, cols - 1);
+    const j = clamp(Math.round((y - bbox.minY) / sy), 0, rows - 1);
+    return mask[j * cols + i] === 1;
+  };
+  let land = 0;
+  for (let i = 0; i < mask.length; i++) land += mask[i];
+  return { mask, cols, rows, spacing: sx, isLand, landCells: land };
+}
+
+/** 高度图（`synthesizeHeightmapFromTerrain` 的产物）→ 预览栅格 */
+function reliefFromHeightmap(hm, seaLevel) {
+  const { cellsX: w, cellsY: h, points } = hm.grid;
+  const data = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const v = Math.max(0, Math.min(100, Number(hm.h[i]) || 0));
+    data[i] = Math.round((v / 100) * 255);
+  }
+  return {
+    w, h, data,
+    origin: { x: points[0][0], y: points[0][1] },
+    spacing: hm.grid.spacing,
+    seaLevel,
+  };
+}
+
+/**
  * 生成一组大陆环。
  * @param {object} params 见 `terrainParams.normalizeLandParams`
  * @param {{minX:number,minY:number,maxX:number,maxY:number}} bbox
  * @returns {{version:number, seed:number, bbox:object, shape:string,
  *            rings:Array<{id:string, points:Array, holes:Array<Array>, area:number, center:object}>,
- *            stats:object}}
+ *            rivers:Array<{id:string, name:string, points:Array, width:number, discharge:number}>,
+ *            relief:object|null, stats:object}}
  */
 export function generateLandmass(params, bbox) {
   const p = params || {};
@@ -472,55 +595,66 @@ export function generateLandmass(params, bbox) {
   const W = Math.max(1, bbox.maxX - bbox.minX);
   const H = Math.max(1, bbox.maxY - bbox.minY);
   const longSide = Math.max(W, H);
-  // 场分辨率：长边 ~240 格。体元模型对分辨率不敏感（半径是格数），240 格够画出
-  // 5~10 格宽的海湾与 2~3 格宽的岛链，同时保证三张候选的生成时间在百毫秒级。
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const t0 = now();
+
+  // ── ⓪ 宏观场（长边 240 格）：**所有体元半径都是格数**，必须在这个分辨率上铺，
+  //    否则 480 格上 `baseR` 翻倍、山脊/海湾宽度跟着翻倍 —— 等于换了一块大陆。
   const target = 240;
-  const spacing = longSide / target;
-  const cols = Math.max(24, Math.ceil(W / spacing) + 1);
-  const rows = Math.max(24, Math.ceil(H / spacing) + 1);
+  const macroSpacing = longSide / target;
+  const cols0 = Math.max(24, Math.ceil(W / macroSpacing) + 1);
+  const rows0 = Math.max(24, Math.ceil(H / macroSpacing) + 1);
+  const ctx0 = createField({ cols: cols0, rows: rows0, seed });
+  for (const step of buildLandSteps(ctx0, { ...p, shape: shape.id, landRatio, roughness })) step(ctx0);
+  applyRoughness(ctx0, roughness, seed + 7001);
+  const tSteps = now() - t0;
 
-  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const ctx = createField({ cols, rows, seed });
-  const steps = buildLandSteps(ctx, { ...p, shape: shape.id, landRatio, roughness });
-  for (const step of steps) step(ctx);
-  const tSteps = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
-  applyRoughness(ctx, roughness, seed + 7001);
-  // 海平面 = 目标占比对应的**分位数**。
+  // ── ① 加密（×2）+ 细尺度岩性噪声：宏观形状不变，只多出细节。
+  //    没有这一步，等值线只能落在 7.5 世界单位一根的格点上，"放大看是面片"就是这么来的。
+  const ctx = refineField(ctx0, 2);
+  const sx = W / Math.max(1, ctx.cols - 1);
+  const sy = H / Math.max(1, ctx.rows - 1);
+  // 中尺度起伏（世界波长 100~240 → 25~60 单位）：让坡面不是双线性插值出来的斜面，
+  // ⚠️ 但不能更细 —— 480 格场上再叠 2~3 格波长的噪声，分位数一切就是满屏碎岛。
+  applyRoughness(ctx, roughness, seed + 3301, { freqMul: 2.5, octaves: 3, ampMul: 0.5 });
+  const tField = now() - t0;
+  // ── ③ 海平面 = 目标占比对应的**格高分位数**（不是整体平移）。
   let seaLevel = quantileLevel(ctx.heights, landRatio);
-  // 海岸带细节：**只叠在“当前海平面”那一圈**（±band）。分位数海平面是动态的，
-  // 这里必须把 level 传进去 —— 早先写死 20，细节全叠错了地方，海岸因此依旧光滑。
-  // 先做近岸压平：坡度不压缓，同样的噪声只能推动 1~2 格，海岸还是"整块"。
-  flattenCoast(ctx, seaLevel, 0.45, 22);
+  // 近岸压平（坡度不压缓，同样的噪声只能推动 1~2 格，海岸还是"整块"）→ 再加海岸带细节
+  flattenCoast(ctx, seaLevel, 0.55, 24);
   seaLevel = quantileLevel(ctx.heights, landRatio);
-  addCoastDetail(ctx, 9 + roughness * 7, seed + 991, seaLevel);
-  // 细节会把一部分格推过/推回海平面，重算一次分位数，保证占比仍然命中
+  addCoastDetail(ctx, 5 + roughness * 5, seed + 991, seaLevel, { freqCells: 26, octaves: 3 });
   seaLevel = quantileLevel(ctx.heights, landRatio);
-  const tField = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
 
-  // 海岸：抖动网格逐格判海陆 → 沿格边描环（见文件上半部分说明）
   const sampleField = (x, y) => {
-    const fx = (x - bbox.minX) / spacing;
-    const fy = (y - bbox.minY) / spacing;
-    const i0 = clamp(Math.floor(fx), 0, cols - 1), j0 = clamp(Math.floor(fy), 0, rows - 1);
-    const i1 = Math.min(cols - 1, i0 + 1), j1 = Math.min(rows - 1, j0 + 1);
+    const fx = (x - bbox.minX) / sx;
+    const fy = (y - bbox.minY) / sy;
+    const i0 = clamp(Math.floor(fx), 0, ctx.cols - 1), j0 = clamp(Math.floor(fy), 0, ctx.rows - 1);
+    const i1 = Math.min(ctx.cols - 1, i0 + 1), j1 = Math.min(ctx.rows - 1, j0 + 1);
     const tx = clamp(fx - i0, 0, 1), ty = clamp(fy - j0, 0, 1);
-    const h00 = ctx.heights[j0 * cols + i0], h10 = ctx.heights[j0 * cols + i1];
-    const h01 = ctx.heights[j1 * cols + i0], h11 = ctx.heights[j1 * cols + i1];
+    const h00 = ctx.heights[j0 * ctx.cols + i0], h10 = ctx.heights[j0 * ctx.cols + i1];
+    const h01 = ctx.heights[j1 * ctx.cols + i0], h11 = ctx.heights[j1 * ctx.cols + i1];
     return (h00 * (1 - tx) + h10 * tx) * (1 - ty) + (h01 * (1 - tx) + h11 * tx) * ty;
   };
-  // 6000 格：1800×1000 的图上约 18 世界单位/格（760px 预览里 ~7.5px），
-  // 正好是"看得出锯齿但不碎成沙"的尺度（对照 Azgaar 的 ~12px）。
-  // 格数也跟"海岸崎岖度"走：格子越细，岸线能表达的锯齿尺度越小（6k → 14k 格）
-  const meshCells = Math.round(6000 + roughness * 8000);
-  const mesh = coastRingsFromMesh(sampleField, bbox, meshCells, landRatio, ctx.rng, 0.28 + roughness * 0.5);
-  const tContour = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+  // ── ④ 海岸：抖动网格逐格判海陆 → 沿格边描环（拓扑）→ 顶点贴到等值线（几何）。
+  //
+  // 加密网格（24k~40k 格 = 6~8 世界单位/格）在这里是**必要**的：v3 的 6000 格（18 单位/格）
+  // 在 760px 预览里就是 7px 的台阶，放大后是"像素画"。网格再细一档之后，
+  // 一条 45° 的海岸不再由等长的直角台阶组成。
+  //
+  // 抖动幅度也拉满了（±0.45 格）：顶点只在**自己的格子里**移动，所以拓扑不变，
+  // 但格边的方向被随机化 —— 这正是"看不到格网"的关键（等距台阶的观感来自轴对齐的边）。
+  const meshCells = Math.round(24000 + roughness * 16000);
+  const mesh = coastRingsFromMesh(sampleField, bbox, meshCells, landRatio, ctx.rng, 0.62 + roughness * 0.28);
+  const tContour = now() - t0;
 
   const minArea = W * H * 0.00012;
-  const simpleEps = Math.min(W, H) / 420;
+  const simpleEps = Math.min(W, H) / 900;
   const outers = [];
   const holes = [];
   for (const loop of mesh.loops) {
-    const simplified = rdp(cornerCut(loop, 2), simpleEps);
+    const snapped = snapLoopToLevel(loop, sampleField, mesh.level, sx * 0.5, bbox);
+    const simplified = rdp(cornerCut(snapped, 1), simpleEps);
     if (simplified.length < 3) continue;
     const sa = signedArea(simplified);
     if (Math.abs(sa) < minArea) continue;
@@ -558,12 +692,83 @@ export function generateLandmass(params, bbox) {
   const perimeter = rings.reduce((a, r) => a + perimeterOf(r.points)
     + (r.holes || []).reduce((b, h) => b + perimeterOf(h), 0), 0);
 
+  // ── ⑤ 地形（**复用 `terrainSynthesis`**，不是第二套地形生成）→ 河流 → 预览栅格。
+  //
+  // 为什么地形要**重新在轮廓里合成**、而不继续用上面那张体元场：
+  //   · 体元场的作用是"造形状"（陆核/叶/山脊/海槽 → 半岛与海湾），它的高度分布是几个丘叠出来的，
+  //     **没有排水结构**（实测：整幅只有一个流域，450 条河全挤在一个 100 单位的洼地里）；
+  //   · `terrainSynthesis` 是司天自己的"轮廓 → 地形"实现（距离场 + 山脉走向 + 高原 + 裂谷 +
+  //     洼地填平），它的高度场**天生朝海岸排水**，`traceRivers` 在它上面能长出水系。
+  //   两者分工：**轮廓定"海在哪"，地形定"山在哪，水往哪走"**。
+  const maskCells = 448;
+  const maskRows = Math.max(24, Math.round((maskCells - 1) * (H / Math.max(1, W))) + 1);
+  const landMask = rasterizeLandMask(rings, bbox, maskCells, maskRows);
+  const terrainCells = Math.round(200 + roughness * 40);
+  const hm = synthesizeHeightmapFromTerrain(
+    rings.map((r) => ({ rings: [r.points, ...(r.holes || [])] })),
+    {
+      isLand: landMask.isLand,
+      cellsAcross: terrainCells,
+      seed,
+      // 参数面板的"崎岖度"直接喂给山脉/裂谷权重：同一个滑杆既改岸线也改山势。
+      // 🔴 高原面权重必须**压低**（默认 0.92 → 这里 0.3）：高原是"大面积同一高度"，
+      //    水在它上面只能按格序走 → 画面上是**一片 45° 平行直线**（实测截图）。
+      //    陆地世界要的是水系，不是台地；山脉走向 + 裂谷已经足够给出高差。
+      structureOverrides: {
+        rangeWeight: 0.34 + roughness * 0.2,
+        crossRangeWeight: 0.12 + roughness * 0.08,
+        riftDepth: 0.18 + roughness * 0.16,
+        plateauWeight: 0.2 + roughness * 0.1,
+      },
+    },
+  );
+  const tTerrain = now() - t0;
+
+  // ── ⑤b 地形微起伏：洼地填平会在陆地上留下大片**同一高度**的格子（高原面最明显），
+  //    平地上没有坡向，地形着色看上去像一块塑料板。这里给陆地格加一层中尺度微起伏
+  //    （±0.55 高度点、波长 ~27 世界单位），只为了"看起来有质感"。
+  //    ⚠️ 别指望它救河流：试过 ±1.1 的版本，水只是**变弯**，并不产生汇流（根因是均匀坡面）。
+  //    ⚠️ 只加在陆地上（海床加噪声 = 满屏"碎石"，实测）。
+  if (hm) {
+    const cellW = hm.grid.spacing || 8;
+    for (let k = 0; k < hm.h.length; k++) {
+      if (hm.h[k] < 20.5) continue;                  // 只动陆地
+      const i = k % hm.grid.cellsX;
+      const j = (k / hm.grid.cellsX) | 0;
+      const micro = fbm(i * 0.34, j * 0.34, seed + 6067, 3) * 0.55;
+      const jitter = (hash01(i * 12.9898 + j * 78.233, seed + 6067) - 0.5) * 0.25 * (cellW / 8);
+      hm.h[k] = Math.round((hm.h[k] + micro + jitter) * 100) / 100;
+    }
+  }
+  // 地形高差读数（回执/用例看"山地确实起来了"）
+  let terrainMin = 0, terrainMax = 0;
+  if (hm) {
+    terrainMin = Infinity;
+    for (const v of hm.h) {
+      if (v < 20) continue;
+      if (v < terrainMin) terrainMin = v;
+      if (v > terrainMax) terrainMax = v;
+    }
+    if (!Number.isFinite(terrainMin)) terrainMin = 0;
+  }
+
+  // 🔴 河流：**这一轮没有出货**。上一版把 `traceRivers` 接在合成地形上，实测是
+  //    "整片 45° 平行直线 + 半山腰断头"（证据图 docs/assets/landmass-v4-20261025/
+  //    rivers-rejected.png）。根因是合成地形是**均匀坡面**：水只能平行下流，而
+  //    `traceRivers` 在等高格上的兜底是"按格号走"（+x/+y = 对角线）。
+  //    要出货必须先有**汇流的谷** —— 那是下一件（水力侵蚀 + 洼地溢流），不是调参。
+  const relief = hm ? reliefFromHeightmap(hm, 20) : null;
+  const tEnd = now() - t0;
+
   return {
     version: LANDMASS_VERSION,
     seed,
     bbox: { ...bbox },
     shape: shape.id,
     rings,
+    // 地形高度图（`terrainSynthesis` 同构）：面板画山体阴影，也是下一步"落高度图/长河"的入口
+    terrain: hm || null,
+    relief,
     stats: {
       continentCount: clamp(Math.round(p.continentCount || 3), 1, 8),
       ringCount: rings.length,
@@ -576,14 +781,28 @@ export function generateLandmass(params, bbox) {
       coastComplexity: landArea > 0 ? perimeter / Math.sqrt(landArea) : 0,
       aspect: shape.aspect,
       roughness,
-      fieldCells: cols * rows,
-      spacing,
+      fieldCells: ctx.cols * ctx.rows,
+      spacing: sx,
+      meshPitch: Math.sqrt((W * H) / Math.max(1, mesh.cells)),
       // 海平面是**格高分位数**（目标占比决定），不是固定 20 —— 面板/用例别拿 20 当判据
       seaLevel: Math.round(mesh.level * 100) / 100,
       cellLandRatio: mesh.cellRatio,
       cells: mesh.cells,
+      // 地形（合成）与掩膜：预览/用例读它，别自己再算
+      terrainCells: hm ? hm.grid.cellsX * hm.grid.cellsY : 0,
+      terrainCellSize: hm ? hm.effectiveCellSize : 0,
+      terrainRifts: hm && hm.structure ? hm.structure.rifts : 0,
+      terrainMin: Math.round(terrainMin * 10) / 10,
+      terrainMax: Math.round(terrainMax * 10) / 10,
+      maskLandRatio: landMask.landCells / Math.max(1, landMask.cols * landMask.rows),
       // 分段时间（ms）：生成器是同步跑的，面板卡不卡全看这几个数
-      timings: { steps: Math.round(tSteps), field: Math.round(tField), contour: Math.round(tContour) },
+      timings: {
+        steps: Math.round(tSteps),
+        field: Math.round(tField),
+        terrain: Math.round(tTerrain),
+        coast: Math.round(tContour),
+        total: Math.round(tEnd),
+      },
     },
   };
 }

@@ -2026,6 +2026,10 @@ export function createProvinceEditingModule(ctx) {
         // ⚠️ 洞（湖泊）必须一起回传：面板缩略图要把它挖成水面，否则预览里湖会显示成陆地
         //    （v2 就漏了这条，缩略图与实际铺底不一致）
         rings: gen.rings.map((r) => ({ id: r.id, points: r.points, holes: r.holes || [], area: r.area })),
+        // v4：地形底图（高度栅格）——面板据此画山体阴影，而不是一块平涂的土黄。
+        // 只回传栅格（`w×h` 的 Uint8Array，约 20KB），**不回传整份高度图**
+        // （`gen.terrain` 有 2 万多个点对象，塞进候选会把三张缩略图变成几百 KB）。
+        relief: gen.relief || null,
         stats: gen.stats,
       });
     }

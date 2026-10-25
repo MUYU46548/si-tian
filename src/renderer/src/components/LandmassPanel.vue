@@ -81,7 +81,9 @@
     </div>
     <div class="lgen-note">
       ⚠️ 造陆会**替换**这张底图现有陆地与省份（一次性 Ctrl+Z 可整体退回）。
-      已有归属键会随旧省份一起退回 —— 不会只退一半。缩略图只画轮廓；铺底在点「造陆」后才算。
+      已有归属键会随旧省份一起退回 —— 不会只退一半。
+      缩略图里**海岸线来自轮廓、山地河湖来自同一份地形高度图**（绿=低地、褐=山地、灰=高山），
+      所以预览里看到的地形就是铺底后地形层的那份；铺底本身在点「造陆」后才算。
     </div>
   </div>
 </template>
@@ -94,6 +96,7 @@ import {
   DEFAULT_LAND_PARAMS, LAND_PARAM_FIELDS, LAND_PRESETS,
   normalizeLandParams, describeLandParams, rollSeed,
 } from '../utils/terrainParams';
+import { reliefRgb } from '../utils/landmassRelief';
 
 const props = defineProps({
   baseMapKey: { type: String, default: '' },
@@ -178,13 +181,67 @@ function runPreview() {
   });
 }
 
-// ── 缩略图：大陆环填色（海=深色底，陆=土黄；只画轮廓，不画省界）────────────────
+// ── 缩略图：地形底图（高度栅格 + 山体阴影）+ 海岸线；没有地形数据时退回平涂 ────────
+//
+// v4（2026-10-25）：v3 的缩略图是一块**平涂的土黄**，只能看轮廓、看不出山与水。
+// 现在造陆会顺带合成一份地形高度图（`terrainSynthesis`），这里把它染成地形图：
+//   · 色带走 `utils/landmassRelief.js`（与出图工具**同一份**，否则预览与出图不同色）；
+//   · 叠一层山体阴影（左上光源），山脊/谷地才看得出来；
+//   · 湖泊（洞）与海岸线仍按矢量描，保证与真正铺底的轮廓一致。
+function drawRelief(ctx, c, X, Y, s) {
+  const r = c.relief;
+  if (!r || !r.data || !r.w || !r.h) return false;
+  const sea = Number.isFinite(c.stats && c.stats.seaLevel) ? c.stats.seaLevel : 20;
+  const off = document.createElement('canvas');
+  off.width = r.w;
+  off.height = r.h;
+  const octx = off.getContext('2d');
+  if (!octx) return false;
+  const img = octx.createImageData(r.w, r.h);
+  const px = img.data;
+  const at = (i, j) => r.data[Math.min(r.h - 1, j) * r.w + Math.min(r.w - 1, i)] * (100 / 255);
+  for (let j = 0; j < r.h; j++) {
+    for (let i = 0; i < r.w; i++) {
+      const hv = at(i, j);
+      const [cr, cg, cb] = reliefRgb(hv, sea);
+      // 山体阴影只打在**陆地**上：海面是平的，给它叠阴影只会在栅格边缘露出
+      // 一圈"比海更深/更浅"的带子（实测：看上去像一张贴图方框）。
+      let shade = 1;
+      if (hv >= sea) {
+        const dx = (at(i + 1, j) - at(Math.max(0, i - 1), j)) * 0.5;
+        const dy = (at(i, j + 1) - at(i, Math.max(0, j - 1))) * 0.5;
+        shade = 1 + Math.max(-0.3, Math.min(0.3, (dx + dy) * 0.3));
+      }
+      const o = (j * r.w + i) * 4;
+      px[o] = Math.max(0, Math.min(255, cr * shade));
+      px[o + 1] = Math.max(0, Math.min(255, cg * shade));
+      px[o + 2] = Math.max(0, Math.min(255, cb * shade));
+      px[o + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  // 栅格的世界坐标 → 画布：`origin`/`spacing` 是它自己的口径（比 bbox 多一圈 pad），
+  // 直接铺满画布会与矢量海岸线错开 3%（0.94 的留白），所以按同一套 X/Y 换算贴图。
+  const ox0 = (r.origin && Number.isFinite(r.origin.x)) ? r.origin.x : (c.bbox ? c.bbox.minX : 0);
+  const oy0 = (r.origin && Number.isFinite(r.origin.y)) ? r.origin.y : (c.bbox ? c.bbox.minY : 0);
+  const sp = Number.isFinite(r.spacing) && r.spacing > 0 ? r.spacing : 1;
+  const x0 = X(ox0), y0 = Y(oy0);
+  const wpx = (r.w - 1) * sp * s, hpx = (r.h - 1) * sp * s;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, x0, y0, wpx, hpx);
+  return true;
+}
+
 function drawOne(c) {
   const el = canvases.get(c.index);
   if (!el || !c) return;
   const ctx = el.getContext('2d');
   const w = el.width, h = el.height;
-  ctx.fillStyle = '#16233b';
+  const seaLevel = Number.isFinite(c.stats && c.stats.seaLevel) ? c.stats.seaLevel : 20;
+  // 底色必须与地形栅格的**深海色**一致：地形图是矩形贴上去的，
+  // 底色差一点就会在画面上露出一个"比海更深"的方框（实测：一眼就看得出是贴图边界）。
+  const [sr, sg, sb] = reliefRgb(0, seaLevel);
+  ctx.fillStyle = `rgb(${sr}, ${sg}, ${sb})`;
   ctx.fillRect(0, 0, w, h);
   const b = c.bbox || { minX: -900, minY: -500, maxX: 900, maxY: 500 };
   const bw = Math.max(1e-6, b.maxX - b.minX), bh = Math.max(1e-6, b.maxY - b.minY);
@@ -203,13 +260,22 @@ function drawOne(c) {
     ctx.closePath();
     return true;
   };
-  for (const ring of c.rings || []) {
-    if (!trace(ring.points)) continue;
-    ctx.fill();
-    ctx.stroke();
+  if (!drawRelief(ctx, c, X, Y, s)) {
+    for (const ring of c.rings || []) {
+      if (!trace(ring.points)) continue;
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else {
+    // 海岸线：只描不填（地形底图已经铺过陆地色）
+    ctx.strokeStyle = 'rgba(24, 33, 48, 0.85)';
+    for (const ring of c.rings || []) {
+      if (!trace(ring.points)) continue;
+      ctx.stroke();
+    }
   }
   // 湖泊：用海色挖回去（视觉上才能看出"里面有水"，而不是一整块面团）
-  ctx.fillStyle = '#16233b';
+  ctx.fillStyle = `rgb(${sr}, ${sg}, ${sb})`;
   for (const ring of c.rings || []) {
     for (const hole of ring.holes || []) {
       if (!trace(hole)) continue;

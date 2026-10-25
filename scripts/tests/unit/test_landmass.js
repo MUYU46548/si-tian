@@ -227,6 +227,53 @@ async function main() {
     return 'ok';
   });
 
+  check('a10 地形：合成高度图存在、有落差、且与海岸线对得上', () => {
+    const g = gen({ landRatio: 0.32 });
+    assert(g.terrain && g.terrain.grid && Array.isArray(g.terrain.grid.points), '没有回传地形高度图');
+    assert(g.terrain.grid.cellsX * g.terrain.grid.cellsY > 8000, `地形格数太少：${g.terrain.grid.cellsX}×${g.terrain.grid.cellsY}`);
+    assert(g.stats.terrainMax - g.stats.terrainMin > 20,
+      `地形没有落差：${g.stats.terrainMin} ~ ${g.stats.terrainMax}（山地没起来）`);
+    // 高差要有"分层"：不能全挤在海岸那一段
+    const hs = Array.from(g.terrain.h).filter((v) => v >= 20).sort((a, b) => a - b);
+    const q = (p) => hs[Math.min(hs.length - 1, Math.round(p * (hs.length - 1)))];
+    assert(q(0.95) - q(0.5) > 12, `高地不够高：p50=${q(0.5).toFixed(1)} p95=${q(0.95).toFixed(1)}`);
+    // 回传的预览栅格：与水陆判定同口径（差 ≤ 5 个百分点）
+    assert(g.relief && g.relief.data && g.relief.w > 0, '没有回传预览栅格');
+    let below = 0;
+    for (const v of g.relief.data) if ((v * 100) / 255 < g.stats.seaLevel) below++;
+    const rasterLand = 1 - below / g.relief.data.length;
+    assert(Math.abs(rasterLand - g.stats.landRatio) < 0.05,
+      `预览栅格的陆地占比 ${(rasterLand * 100).toFixed(1)}% 与多边形 ${(g.stats.landRatio * 100).toFixed(1)}% 差太多`);
+    return `${g.terrain.grid.cellsX}×${g.terrain.grid.cellsY} 格 · 高差 ${g.stats.terrainMin}~${g.stats.terrainMax} · 栅格陆 ${(rasterLand * 100).toFixed(1)}%`;
+  });
+
+  check('a11 海岸细节尺度：中位边长 ≤ 12 世界单位（v3 是 17.6 —— 放大就是台阶）', () => {
+    const edgeLens = (g) => {
+      const out = [];
+      for (const r of g.rings) {
+        for (const ring of [r.points, ...(r.holes || [])]) {
+          for (let i = 0; i < ring.length; i++) {
+            const a = ring[i], b = ring[(i + 1) % ring.length];
+            out.push(Math.hypot(b.x - a.x, b.y - a.y));
+          }
+        }
+      }
+      out.sort((a, b) => a - b);
+      return out;
+    };
+    const g = gen({ roughness: 0.45, continentCount: 3 });
+    const lens = edgeLens(g);
+    const median = lens[Math.floor(lens.length / 2)];
+    assert(lens.length > 800, `顶点太少（${lens.length}），海岸没细节可言`);
+    assert(median <= 12, `中位边长 ${median.toFixed(1)} 世界单位 —— 台阶太粗（v3 实测 17.6）`);
+    // 台阶的观感来自"边长都差不多"：抖过之后分散度必须上来
+    const mean = lens.reduce((a, b) => a + b, 0) / lens.length;
+    const sd = Math.sqrt(lens.reduce((a, b) => a + (b - mean) ** 2, 0) / lens.length);
+    const cv = sd / mean;
+    assert(cv > 0.35, `边长过于整齐（CV=${cv.toFixed(2)}）：那是格网台阶的特征`);
+    return `中位 ${median.toFixed(1)} 单位 · CV ${cv.toFixed(2)} · ${lens.length} 条边`;
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
   console.log(`\n${results.length - failed.length}/${results.length} 通过`);
