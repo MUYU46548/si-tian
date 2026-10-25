@@ -105,6 +105,16 @@ def run(cdp):
     notes = out.get('notes') or {}
     if fails:
         return False, '；'.join(fails)[:1000] + ' | 实测：' + json.dumps(notes, ensure_ascii=False)[:600]
+
+    # 源码守卫：UI 必须真的接上「非 pristine → reimport」这条路
+    sm = open(os.path.join(os.path.dirname(__file__), '..', '..', '..',
+                           'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'),
+              encoding='utf-8').read()
+    if 'isBasemapPristine' not in sm:
+        return False, 'ScenarioMap 没有引用 isBasemapPristine（无法判断同图补数据/重导）'
+    if 'reimportBasemapAsNew(' not in sm:
+        return False, 'ScenarioMap 没有调用 reimportBasemapAsNew（用户点不到重导）'
+
     return True, (
         f'并省冲突阻止（{notes.get("conflict")}）；正常重导 newKey={notes.get("result", {}).get("newKey")}'
         f' 迁 {notes.get("result", {}).get("moved")} 条 / id 直配 {notes.get("result", {}).get("exact")} 省；'

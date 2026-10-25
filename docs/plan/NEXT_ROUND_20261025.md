@@ -29,8 +29,8 @@
 
 - 语义：换新 `.map` = 新底图 + 旧归属迁移；同图只补数据仅限一笔未改。
 - 已实现：`utils/basemapIdentity.js`（指纹 / pristine / 省映射 / 剧本重映射）、
-  store `reimportBasemapAsNew()`、`test_150`（冲突阻止/迁移/undo）。
-- 待做：UI 入口 + 冲突/未映射清单 + 参考图随迁勾选 + 真实 415 省副本跑一次。
+  store `reimportBasemapAsNew()`、导入同名 `.map` 时的 UI 分流、`test_150`（冲突阻止/迁移/undo/UI 守卫）。
+- 待做：专用重导对话框（映射统计/未映射清单/参考图勾选）+ 真实 415 省副本跑一次。
 - 详见 [REIMPORT_019_20261025.md](REIMPORT_019_20261025.md)。
 
 ### 第 0 轮（开工前）：底图编辑地基 + 不变量（约 2 天）

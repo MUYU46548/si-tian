@@ -1658,6 +1658,8 @@ const emit = defineEmits(['exit', 'picker']);
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
+// 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
+import { isBasemapPristine } from '../utils/basemapIdentity';
 // `.map` 的「文件名 → 底图名」与「原文留底」= 与行星视图共用的一份（见 utils/mapImportSource.js）
 import { mapNameFromFileName, backupMapSourceFile } from '../utils/mapImportSource';
 import { generateRoadPath } from '../utils/placement';
@@ -7725,6 +7727,48 @@ async function triggerMapImport(opts = {}) {
       //     真实场景：`desite` 底图现在有 415 块省份，而它建图时（2026-09-10）解析器
       //     还读不出高度图/河流/道路 → 用户需要的是"给这张图补上"，不是"重画一张"。
       if (bundle && store.baseMaps?.[name]) {
+        const existing = store.baseMaps[name];
+        // 019（2026-10-25）：同名底图分两条路 ——
+        //   · 一笔未改（指纹 == 导入时指纹）→ 只补缺（旧行为，安全）；
+        //   · 改过一笔（或旧数据没有指纹）→ **不能再只补数据**：新底图 + 旧归属迁移。
+        // 旧行为会把"改过的底图"当成同一张图补数据；用户明确说过：动过一笔就不是一个东西了。
+        if (!isBasemapPristine(existing)) {
+          const okGo = confirm(`「${name}」这张底图已经改过（或来源未知），不能再当"同一张图只补数据"。\n\n`
+            + '按 019 语义：重导为**新底图**，并把旧剧本的归属 / 易主迁过去。\n'
+            + `· 现有 ${(existing.terrain || []).length} 块省份、`
+            + `${Object.keys(store.scenarios || {}).length} 条剧本（归属/易主）会被重映射\n`
+            + '· 新底图 key 加 __reimport_ 后缀；旧底图保留归档\n'
+            + '· 并省（多个旧省并成一个新省）会阻止并列出冲突；参考图不随迁\n'
+            + '· 整次迁移 = 一条 Ctrl+Z\n\n'
+            + '（只想补高度图/河流/道路 → 取消，改用工具栏「刷新底图数据」）\n\n继续重导？');
+          if (!okGo) {
+            statusMsg('重导底图：已取消（底图与剧本均未改动）');
+            return;
+          }
+          const r = store.reimportBasemapAsNew(name, bundle, { copyReferenceImages: false });
+          if (!r || !r.ok) {
+            const conflictText = (r && r.conflicts || []).slice(0, 3)
+              .map((c) => `新省「${c.newId}」← 旧省 ${c.oldIds.join(' / ')}`).join('；');
+            statusMsg(r && r.rejected === 'merge-conflicts'
+              ? `重导被阻止：${r.message}${conflictText ? `（${conflictText}）` : ''}`
+              : `重导失败：${(r && r.message) || '未知原因'}`);
+            return;
+          }
+          baseMapKey.value = r.newKey;
+          if (window.sitianAPI?.setCurrentBaseMapKey) {
+            window.sitianAPI.setCurrentBaseMapKey(r.newKey);
+          }
+          if (store.baseMaps?.[r.newKey]?.heightmap) rasterLayer.value = 'height';
+          if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
+          setTimeout(fitToView, 50);
+          statusMsg(`${r.message}`
+            + (r.unmappedOld?.length ? `；⚠️ ${r.unmappedOld.length} 个旧省没映射上（归属会丢）` : '')
+            + (r.droppedOldProvinces?.length ? `；丢弃归属 ${r.droppedOldProvinces.length} 条` : '')
+            + srcNote
+            + '（Ctrl+Z 可整次撤回）');
+          return;
+        }
+
         const srcStats = parsed.stats || {};
         const missing = describeBaseMapMissing(store.baseMaps[name], bundle);
         if (!missing.length) {
