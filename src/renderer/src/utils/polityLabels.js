@@ -156,6 +156,22 @@ export function labelTextFor(polity, tier) {
 }
 
 /**
+ * 占位省名判据（2026-10-25）：程序自动起的名字，没有信息量。
+ *
+ * 用法分工（同一份判据，不是两套实现）：
+ *   · **导出成品图** → 跳过（真实 415 省项目 415 个名字全是「新省份 35」，
+ *     旧导出链只过滤 `Province N` / `feature_`，于是成品图上糊了 415 条灰字）；
+ *   · **画布** → 保留（编辑时它是"这块还没起名"的线索，改名时也好定位）。
+ */
+const PLACEHOLDER_NAME_RE = /^(?:新省份\s*\d*|Province\s*\d*|未命名(?:省份)?|\(未命名\))$/i;
+
+export function isPlaceholderProvinceName(name) {
+  const s = String(name == null ? '' : name).trim();
+  if (!s) return true;
+  return PLACEHOLDER_NAME_RE.test(s) || /^feature_/i.test(s);
+}
+
+/**
  * 世界面积 × 缩放 → 屏幕面积是否够大，值得挂标签。
  * @param {number} areaWorld 世界单位²
  * @param {number} scale 画布缩放

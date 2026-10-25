@@ -274,6 +274,11 @@ JS = r""" (async () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', bubbles: true }));
     await new Promise((r) => setTimeout(r, 60));
     ok('e1 快捷键 Y 切到描轮廓', sc.tool === 'outline', String(sc.tool));
+    // 🔴 2026-10-25：Ctrl/⌘+字母是系统组合键（复制/粘贴），不能当工具快捷键。
+    //    用户实测事故：选中状态栏文字按 Ctrl+C 复制 → 工具被静默切成「文化笔刷」。
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true }));
+    await new Promise((r) => setTimeout(r, 60));
+    ok('e1b Ctrl+C 不切工具（复制文字不该召唤笔刷）', sc.tool === 'outline', String(sc.tool));
     // 主行可见控件数（P3 纪律，test_65 同口径）
     // 🔴 2026-10-20：底图编辑模式落地后，日常行 = 4（返回/选择/涂归属/更多），
     //    开模式 = 6（+画省份 +改形状）。旧断言写死 6 是模式化之前的数字（自 10-18 起已红）。

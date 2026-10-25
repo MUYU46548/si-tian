@@ -435,6 +435,8 @@ SVGHEAD_JS = r"""(() => {
     texts: (svg.match(/<text /g) || []).length,
     patterns: (svg.match(/<pattern /g) || []).length,
     hasTitle: svg.indexOf('诸侯割据') >= 0,
+    // 2026-10-25：占位省名（「新省份 N」）不进成品图 —— 415 条灰字曾是「文本显示效果很差」的主因
+    hasPlaceholder: svg.indexOf('新省份') >= 0,
   });
 })()"""
 
@@ -797,19 +799,24 @@ def main():
                 img2 = png.open_png(png.decode_data_url(du2))
                 text_exact, _ = png.diff_pixels(img, img2)
                 label_stroke = png.label_text_pixels(img, img2, png.LABEL_COLOR, png.LABEL_ALPHA, 8)
-                ck('精确标注层像素（有/无标注两导之差，同一尺寸）',
-                   img2.size == img.size and text_exact > 0,
-                   '标注层 %s px、其中 LABEL_COLOR 实心笔画 %s px；关标注图 %d×%d'
-                   % (text_exact, label_stroke, img2.size[0], img2.size[1]))
-                print('  · 精确标注层像素 %s（其中 LABEL_COLOR 实心笔画 %s）' % (text_exact, label_stroke), flush=True)
+                # 2026-10-25：占位省名（「新省份 N」）已不进导出图 → 这份全占位名项目的
+                # 「开/关标注」两导之差应为 0。这里只核对尺寸一致并打印数字；
+                # "占位名有没有被过滤"由下面的 SVG 内容判据负责（更直接、不依赖像素）。
+                ck('关标注导出与开标注同尺寸（像素对照前提）', img2.size == img.size,
+                   '开 %d×%d / 关 %d×%d' % (img.size[0], img.size[1], img2.size[0], img2.size[1]))
+                print('  · 精确标注层像素 %s（其中白字实心笔画 %s；全占位名项目应为 0）'
+                      % (text_exact, label_stroke), flush=True)
             else:
                 ck('关标注的第二次导出（用于精确文字像素）', False,
                    json.dumps((e2res or {}).get('notes'), ensure_ascii=False)[:300])
         except Exception as e:
             ck('关标注的第二次导出（用于精确文字像素）', False, '异常：%s' % e)
-        ck('含文字像素（省名标注层，415 个「新省份 N」都不过 FMG 过滤器）', text_px > 1000,
-           '实测 %d px（判据 = LABEL_COLOR@0.85 叠在已知底子上的合成色，容差 ±8；**有假阳性地板**，'
-           '精确值见上一条）；同判据假色对照 #00ff00 = %d px' % (text_px, ctrl))
+        ck('导出图不含占位省名（「新省份 N」是成品图噪音，2026-10-25 起过滤）',
+           bool(head.get('hasPlaceholder')) is False, 'hasPlaceholder=%s' % head.get('hasPlaceholder'))
+        if text_px > 1000:
+            # 用户改过真名时白字省名会有像素；全占位名的项目应当是 0 —— 这里不设通过条件，
+            # 只把数字报出来（判据改为上面的 SVG 内容检查，像素数不再承担"标注存在"的判定）。
+            print('  · 省名像素 %d（有真名省时 >0；全占位名时应为 0）' % text_px, flush=True)
         ck('SVG 头里带剧本名标题', bool(head.get('hasTitle')), 'hasTitle=%s' % head.get('hasTitle'))
         print('  · 导出 SVG：%s B，%s path / %s text / %s pattern'
               % (head.get('bytes'), head.get('paths'), head.get('texts'), head.get('patterns')), flush=True)

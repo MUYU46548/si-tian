@@ -148,6 +148,10 @@
             <div class="pp-item-sub">
               {{ it.entityCount || 0 }} 实体<span v-if="it.mtime"> · {{ fmtTime(it.mtime) }}</span>
             </div>
+            <!-- 🔴 2026-10-25：同名副本只显示 meta.name 时无法分辨（用户实测：
+                 「两个同名同时的项目中随便选了一个」，以为副本不存在）。
+                 文件名才是目录里唯一的标识 —— meta.name 与文件名不一致时才多给这一行。 -->
+            <div v-if="fileHint(it)" class="pp-item-file" :title="it.filePath">{{ fileHint(it) }}</div>
           </div>
           <span v-if="it.error" class="pp-warn" title="文件读取失败（可能是损坏的 JSON）">!</span>
         </div>
@@ -547,6 +551,17 @@ function fmtTime(iso) {
   if (isNaN(d.getTime())) return String(iso);
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * 列表里第二个身份标识：**文件名**（只有当它和显示名不一致时才给）。
+ * 复制出来的副本 meta.name 仍叫「绒花计划」，但文件名是「绒花计划-终验.sitian」——
+ * 只显示 meta.name 时两条目一模一样，用户没法选。
+ */
+function fileHint(it) {
+  const base = String(it.name || '').replace(/\.sitian$/i, '');
+  const shown = String((it.meta && it.meta.name) || it.name || '');
+  return base && base !== shown ? String(it.name) : '';
 }
 
 function coordText(e) {
@@ -1141,6 +1156,14 @@ refresh();
   text-overflow: ellipsis;
 }
 .pp-item-sub { color: var(--planet-text-secondary); font-size: 10.5px; }
+/* 文件名（只在显示名与文件名不一致时出现，用来分辨同名副本）；等宽 + 可换行，路径尾巴不能看丢 */
+.pp-item-file {
+  color: var(--planet-text-secondary);
+  font-size: 10.5px;
+  font-family: ui-monospace, Consolas, monospace;
+  word-break: break-all;
+  opacity: 0.85;
+}
 /* 快照列表：全量时可滚动 —— 面板高度有限，但**不许再靠截断**来解决（见 allSnapshots 注释） */
 .pp-snapshot-list { max-height: 300px; overflow-y: auto; overscroll-behavior: contain; }
 .pp-warn { color: #a06b00; font-weight: 700; }

@@ -15,7 +15,7 @@
     导出按钮在 `.toolbar-more`（模板里是 `v-if="moreOpen"`）里 → **不展开就查不到该元素**。
   · **分块取回** dataUrl（`lib/cdp.fetch_string`）：CDP 读超时 15s，一次取几 MB 必炸。
   · 判据是**像素级**的（Pillow）：合法 PNG / 尺寸 == SVG 头解析出的 `W*2 × H*2` /
-    非空白 / 三个已知势力色确有像素 / 确有 LABEL_COLOR 的省名文字像素。
+    非空白 / 三个已知势力色确有像素 / 确有白字省名笔画（与画布 PROVINCE_LABEL_STYLE 同源）。
     "调用了 IPC" 不算判据。
 
 覆盖：
@@ -49,12 +49,12 @@ C1, C2, C3 = '#c23b3b', '#4a90d9', '#e6a23c'
 TOL = 8                     # 逐通道容差（任务要求 ≤8；实测原色/合成色的偏差为 0）
 MIN_UNIQUE_COLORS = 4       # 实测 840×440 的图上 2524 色
 MIN_COLOR_PIXELS = 1000     # 实测「原色 + 0.72 合成色」合计：C1=27208 C2=43261 C3=18848
-MIN_TEXT_PIXELS = 1500      # 实测「标注层贡献的像素」（有/无标注两导之差）= 3182
-MIN_LABEL_PIXELS = 400      # 实测其中**实心笔画**（= LABEL_COLOR@0.85 的精确合成色）= 904
+MIN_TEXT_PIXELS = 1500      # 实测「标注层贡献的像素」（有/无标注两导之差，2026-10-25 白字档 = 9256）
+MIN_LABEL_PIXELS = 250      # 白字实心笔画（2026-10-25 实测 977；旧深灰字档曾为 904）
 # ⚠️ 诚实交代：上面两条**文字**阈值是按按钮的默认档 `exportScenarioPNG()`（= `scale=2`）标定的。
-#    反向探针实测把默认档改成 `scale=1` 后，笔画像素从 904 掉到 244、标注层像素从 3182 掉到 956
-#    → 这两条也会跟着红（同时尺寸判据先红）。这是**正确**的红（PNG 确实不再是 2 倍图），
-#    但要知道它们是**尺度相关**的：日后真要支持"用户自选倍率"，这两条得改成按 `scale` 缩放。
+#    反向探针把默认档改成 `scale=1` 后，这两条会跟着红（同时尺寸判据先红）。这是**正确**的红
+#    （PNG 确实不再是 2 倍图），但要知道它们是**尺度相关**的：
+#    日后真要支持"用户自选倍率"，这两条得改成按 `scale` 缩放。
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -221,7 +221,7 @@ EXPORT_JS = r"""(async () => {
   notes.svgHasTitle = svgText.indexOf('乙时代') >= 0;
   // P0 制图要素：比例尺（世界单位）。没有它，“第一张图”只能自用、不能交人。
   notes.svgHasScaleBar = svgText.indexOf('比例尺') >= 0 && svgText.indexOf('单位') >= 0;
-  notes.svgHasLabelColor = svgText.toUpperCase().indexOf('#3C4150') >= 0;
+  notes.svgHasLabelColor = svgText.toUpperCase().indexOf('FILL="#FFFFFF"') >= 0;
   return JSON.stringify({ fails, notes });
 })()"""
 
@@ -335,9 +335,9 @@ def run(cdp):
 
     # ── 标注（省名）的判据：**两套互补口径**，都出自「有标注 / 无标注」两张独立导出 ──
     #   ① `text_px` = 两份导出逐像素差 = **标注这一层贡献的全部像素**（含抗锯齿边缘）
-    #   ② `label_px` = 其中**实心笔画**：`b` 就是文字底下真实的背景，所以期望色
-    #      `0.85*LABEL + 0.15*b` 是逐像素精确的 → 落在 ±TOL 内的即是 LABEL_COLOR 的笔画
-    #   ③ 反向 = 两次**独立**的「关掉 labels」导出之差：同一算子在"开"时给 578，在"关"时必须给 0
+    #   ② `label_px` = 其中**实心笔画**：`b` 就是文字底下真实的背景，白字 alpha=1 →
+    #      期望色就是纯白，落在 ±TOL 内的即是省名笔画（2026-10-25 起与画布同一份样式）
+    #   ③ 反向 = 两次**独立**的「关掉 labels」导出之差：同一算子在"开"时给正数，在"关"时必须给 0
     # 为什么不用"数某个候选色"当独立判据（实测过，已弃用）：省界 / 网格 与省份填充的过渡色
     # 会落进候选集合，产生 **~4.8k 的假阳性地板**（实测 4843 vs 真实 39），比值判据因此失效。
     text_px, _ = png.diff_pixels(img_a, img_b)
@@ -349,7 +349,7 @@ def run(cdp):
     if text_px < MIN_TEXT_PIXELS:
         fails.append(f'标注层贡献的像素 {text_px} < {MIN_TEXT_PIXELS} —— 省名标注没进 PNG（或几乎没画出来）')
     if label_px < MIN_LABEL_PIXELS:
-        fails.append(f'LABEL_COLOR 实心笔画像素 {label_px} < {MIN_LABEL_PIXELS}（标注不是 LABEL_COLOR 画的？）')
+        fails.append(f'白字实心笔画像素 {label_px} < {MIN_LABEL_PIXELS}（省名不是白字画的？）')
     # 🔴 反向判据：关掉 labels 后，同一算子测得的标注层像素必须归零（实测 578 → 0）
     if text_px_off != 0:
         fails.append(f'关掉 labels 后标注层仍有 {text_px_off} 像素（应归零；开标注时是 {text_px}）')
@@ -378,7 +378,7 @@ def run(cdp):
     if notes1['svgTextCount'] <= 0:
         fails.append('SVG 里一个 <text> 都没有')
     if not notes1['svgHasLabelColor']:
-        fails.append('SVG 里没有 LABEL_COLOR(#3c4150) 的省名文字')
+        fails.append('SVG 里没有白字省名（fill="#FFFFFF"，与画布 PROVINCE_LABEL_STYLE 同源）')
 
     if fails:
         return False, ('PNG 导出判据失败 ' + str(len(fails)) + ' 项：' + '；'.join(fails[:8])
@@ -401,7 +401,7 @@ def run(cdp):
         f'(exact {color_stats["#c23b3b"]["exact"]}) C2={color_stats["#4a90d9"]["total"]}'
         f'(exact {color_stats["#4a90d9"]["exact"]}) C3={color_stats["#e6a23c"]["total"]}'
         f'(exact {color_stats["#e6a23c"]["exact"]})'
-        f' / 标注层像素 {text_px}（其中 LABEL_COLOR 实心笔画 {label_px}）'
+        f' / 标注层像素 {text_px}（其中白字实心笔画 {label_px}）'
         f' → 关掉 labels 后 {text_px_off}（同一算子，归零）'
         f' / 连导两次差异 {noise_px}px'
         f' / 非真空对照 #00ff00={ctrl_stats["#00ff00"]} #ff00ff={ctrl_stats["#ff00ff"]}'

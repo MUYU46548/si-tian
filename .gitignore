@@ -87,6 +87,10 @@ build/p1-vertex-marquee/
 # 复现：python scripts/tests/drill_final_acceptance.py）
 build/final-acceptance/
 
+# 第 6 件收尾对照图（导出图改动前/后，含真实 415 省地图数据，禁止提交；
+# 说明见 build/acceptance-followup/README.md）
+build/acceptance-followup/
+
 # 遗留临时文件（MSYS / Electron 生成）
 NUL
 # 根目录下的 index.html 是 src/renderer/index.html 的旧副本，不再使用

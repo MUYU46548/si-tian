@@ -23,14 +23,16 @@ import io
 
 from PIL import Image, ImageChops
 
-#: 导出 SVG 的背景色（`serializeSvg({ background: '#1a2a3a' })`，唯一事实源在 svgExport.js）
-SVG_BG = (0x1a, 0x2a, 0x3a)
+#: 导出 SVG 的背景色（`scenarioPalette.EXPORT_OCEAN`，唯一事实源在 utils/scenarioPalette.js）
+#: 2026-10-25 起比画布底色亮一档：近黑海面在成品图里像一块洞（用户实测反馈）。
+SVG_BG = (0x24, 0x45, 0x5f)
 #: 省份填充不透明度（`svgPath(d, { 'fill-opacity': 0.72 })`，唯一事实源在 useScenarioExport.js）
 PROVINCE_FILL_ALPHA = 0.72
-#: 省名文字颜色（`LABEL_COLOR`，唯一事实源在 useScenarioExport.js）
-LABEL_COLOR = (0x3c, 0x41, 0x50)
-#: 省名文字不透明度（`svgTextEl(..., { opacity: 0.85 })`）
-LABEL_ALPHA = 0.85
+#: 省名文字颜色（`PROVINCE_LABEL_STYLE.color`，唯一事实源在 utils/polityLabels.js）
+#: 2026-10-25 起与画布同款：白字 + 深色描边，不再是 `#3c4150` 深灰。
+LABEL_COLOR = (0xFF, 0xFF, 0xFF)
+#: 省名文字不透明度（白字实心填，无 opacity）
+LABEL_ALPHA = 1.0
 
 
 def decode_data_url(data_url):
@@ -109,6 +111,8 @@ def name_text_candidates(label=LABEL_COLOR, alpha=LABEL_ALPHA, polity_colors=(),
                         fill_alpha=PROVINCE_FILL_ALPHA, bg=SVG_BG):
     """省名文字**可能**落成的合成色集合（不依赖"关掉标注再导一次"那张对照图）。
 
+    2026-10-25 起省名是**不透明白字 + 深色描边**（与画布同一份 `PROVINCE_LABEL_STYLE`），
+    所以 `alpha=1` 时候选集合退化为纯白 —— 本函数仍保留参数，供历史口径/未来改色复用。
     省名画在省份的面积加权形心处（`ringAreaCentroid`），所以它的底子只可能是两种：
       · SVG 背景色本身（40px 外边距 / 无省份覆盖处）；
       · 某个势力的省份填充色 = `fill_alpha * polity_color + (1-fill_alpha) * bg`。

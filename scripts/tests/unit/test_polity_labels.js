@@ -59,6 +59,7 @@ async function main() {
   const mod = await load(SRC);
   const {
     polityLabelTier, ringAreaCentroid, aggregateTerritories, labelTextFor, labelFitsOnScreen,
+    isPlaceholderProvinceName,
     POLITY_LABEL_THRESHOLDS, LABEL_MIN_AREA_PX, LABEL_TIERS,
   } = mod;
 
@@ -200,6 +201,19 @@ async function main() {
     assert(LABEL_MIN_AREA_PX.province < LABEL_MIN_AREA_PX.polity,
       '势力门槛应高于省门槛：势力名要占更大地盘才值当画');
     return `省门槛 ${LABEL_MIN_AREA_PX.province}px² < 势力门槛 ${LABEL_MIN_AREA_PX.polity}px²`;
+  });
+
+  // ---------- 6. 占位省名（导出过滤器） ----------
+  check('t10 占位省名：只认"程序起的名字"，真人起的名字一个都不许吞', () => {
+    for (const s of ['新省份 1', '新省份1', '新省份', 'Province 12', 'province', 'feature_12',
+      '未命名', '未命名省份', '(未命名)', '  ', '', null, undefined]) {
+      eq(isPlaceholderProvinceName(s), true, `应判占位：${JSON.stringify(s)}`);
+    }
+    // 🔴 反向：这些是真名，过滤掉就是"用户的省名凭空消失"
+    for (const s of ['新省份城', '长安', 'Province Road', '未命名之地', '新 省份', '阳台']) {
+      eq(isPlaceholderProvinceName(s), false, `不该判占位：${JSON.stringify(s)}`);
+    }
+    return '12 个占位/空值 + 6 个真名反向';
   });
 
   // ---------- 汇总 ----------

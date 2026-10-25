@@ -1146,9 +1146,10 @@
       </span>
       <span v-if="selectedBurg" class="selected-burg">城镇：{{ selectedBurg.name }}（人口 {{ formatPopulation(selectedBurg.population) }}）</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
-      <span v-if="timeline.years.length" class="tl-status" data-testid="tl-status">
+      <span v-if="timeline.years.length" class="tl-status" data-testid="tl-status"
+            title="「本剧本 N 省易主」= 这一段剧本里会易主的省总数；「已落定 M」= 游标日期之前已经发生过的条数（同省多次易主分别计数）">
         日期 <b data-testid="tl-date">{{ tlDateText }}</b>
-        <template v-if="tlEra > 0"> · 本剧本 <b>{{ tlSettled.settled }}</b>/{{ tlSettled.total }} 省已易主</template>
+        <template v-if="tlEra > 0"> · 本剧本 <b>{{ tlSettled.total }}</b> 省易主 · 截至本日已落定 <b data-testid="tl-settled">{{ tlSettled.settled }}</b></template>
         <template v-if="tlAxisMode === 'year' && tlInGap"> · <span class="tl-warn">空位（沿用 {{ timeline.scenarios[tlEra].name }}）</span></template>
       </span>
       <span v-if="exportStatus" class="export-msg" data-testid="export-msg"><Icon name="info" :size="13"/> {{ exportStatus }}</span>
@@ -5417,6 +5418,13 @@ function onCanvasDblClick(event) {
   }
 }
 
+/** 输入类元素 / 可编辑区里，画布快捷键一律让路（打字、退格、复制粘贴都不劫持） */
+function isEditableTarget(t) {
+  if (!t) return false;
+  const tag = String(t.tagName || '').toUpperCase();
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!t.isContentEditable;
+}
+
 function onKeyDown(event) {
   if (event.key === 'Escape' || event.key === 'Esc') {
     riverDraft.value = [];
@@ -5485,9 +5493,10 @@ function onKeyDown(event) {
   if (event.key === 'Enter' && tool.value === 'draw' && drawPoints.value.length >= 3) {
     finishDraw();
   }
-  if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+  if (isEditableTarget(event.target)) return;
   // 沉浸看图模式（2026-10-17 P0，暮雨拍板）：Ctrl+I 收起顶栏/侧栏/时间轴，地图占满。
   // 🔴 用 Ctrl+I 不用裸 I —— 裸 I 已被 Relief 图标占用（下面的 else-if 链）。
+  // ⚠️ 这是**唯一**允许的组合键；它必须判在下面的「组合键一律让路」之前。
   if ((event.ctrlKey || event.metaKey) && (event.key === 'i' || event.key === 'I')) {
     event.preventDefault();
     immersive.value = !immersive.value;
@@ -5497,6 +5506,16 @@ function onKeyDown(event) {
       : '已退出沉浸模式');
     return;
   }
+  // 🔴 2026-10-25：**Ctrl/⌘/Alt 组合键不是工具快捷键**。
+  //    用户实测事故：选中状态栏文字按 Ctrl+C 复制，旧代码命中 `event.key === 'c'`
+  //    → 工具被切成「文化笔刷」（"复制文字时突然召唤出某种笔刷"）。
+  //    同理 Ctrl+V 会切成「选择」、Ctrl+X 会切成「拆分」—— 全是静默改工具。
+  //    Alt 单独按的"临时直线段"已在上面处理，这里只拦组合键。
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  // 页面上有一段文字被选中时，裸字母也不切工具：用户多半是在读/准备复制，
+  // 不是在按快捷键。点一下画布（选区清空）后快捷键立即恢复。
+  const selection = window.getSelection?.();
+  if (selection && !selection.isCollapsed && String(selection).trim()) return;
   if (event.key === 'v' || event.key === 'V') setTool('select');
   // Shift+B = 笔刷建省（B 的第二形态）。⚠️ 必须判在 `b` 之前：两个分支都会命中 `b`，
   //    先写的那个赢 —— 不判 shiftKey 的话 Shift+B 会静默变成「画省份」（与 Shift+W 同一个坑）。

@@ -18,10 +18,13 @@ import {
   provinceRings, ringPointsForRender,
 } from '../utils/provinceShape';
 import {
-  // 配色单一来源（省份色板 / 海域填充与海界 / 陆界）—— 与画布共用一份
-  SEA_FILL, SEA_EDGE, BORDER_COLOR,
+  // 配色单一来源（省份色板 / 海域填充与海界 / 陆界 / 导出纸面）—— 与画布共用一份
+  SEA_FILL, SEA_EDGE, BORDER_COLOR, EXPORT_OCEAN,
 } from '../utils/scenarioPalette';
-import { polityLabelTier, ringAreaCentroid } from '../utils/polityLabels';
+import {
+  polityLabelTier, ringAreaCentroid, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
+  isPlaceholderProvinceName,
+} from '../utils/polityLabels';
 // 剧本标签「该写哪些字、写在哪」的唯一判定 —— 画布与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
 // 逐年切片的帧索引 / 日期体检 / 帧命名（纯函数，画布与导出共用一份判定）
@@ -31,6 +34,37 @@ import {
 import { formatDate, dateToken } from '../utils/scenarioDates';
 
 const LABEL_COLOR = '#3c4150';
+
+/**
+ * 画布标签样式（`utils/polityLabels.js` 的 `*_LABEL_STYLE`）→ SVG `<text>` 属性。
+ *
+ * 🔴 导出与画布必须同源：旧实现给省名写 `#3c4150`、`opacity 0.85`、无描边，
+ *    而画布是**白字 + 3px 深色描边** —— 用户实测「导出的图里文本显示效果很差」。
+ *    字号 / 颜色 / 描边 / 字重全部取同一份常量，两处不会再各说各话。
+ */
+function svgLabelTextStyle(style, extra = {}) {
+  const stroke = style.stroke || {};
+  return {
+    fill: style.color,
+    'font-size': style.fontSize,
+    'font-family': style.fontFamily === 'serif'
+      ? 'Georgia, "Songti SC", "SimSun", serif'
+      : '"Microsoft YaHei", "PingFang SC", sans-serif',
+    'font-weight': style.weight || 'normal',
+    'text-anchor': 'middle',
+    'dominant-baseline': 'middle',
+    ...(stroke.enabled
+      ? {
+        stroke: stroke.color,
+        'stroke-width': stroke.width,
+        'stroke-linejoin': 'round',
+        // 先描边后填字：与画布 `drawStyledLabel` 的顺序一致（否则字被描边吃掉一半）
+        'paint-order': 'stroke',
+      }
+      : {}),
+    ...extra,
+  };
+}
 
 export function useScenarioExport({
   store, baseMap, timeline, currentEra, currentYear, diffMode, provinceNames, layerFlags,
@@ -189,21 +223,22 @@ export function useScenarioExport({
       }
     }
 
-    // 省名（跳过无名 / FMG 自动名，避免「(未命名)」「Province 12」刷屏）
-    // 落点改用**面积加权形心**（与画布 `ringAreaCentroid` 同口径；算术平均会把长条省的名字拽偏）
+    // 省名（跳过无名 / 自动占位名）
+    // 🔴 2026-10-25：占位名判据补上**司天自己的默认名**（`新省份 35`）——
+    //    真实 415 省项目里 415 条全是它，旧过滤只认 `Province N` / `feature_`，
+    //    于是导出图上糊满 "新省份 35"（这正是「文本显示效果很差」的主因）。
+    //    落点用**面积加权形心**（与画布 `ringAreaCentroid` 同口径）。
     if (flags.labels !== false) {
       for (let i = 0; i < terrain.length; i++) {
         const prov = terrain[i];
         const nm = prov.name || provinceNames.value?.[prov.id];
-        if (!nm || /^Province\s*\d*$/i.test(nm) || /^feature_/i.test(nm)) continue;
+        if (!nm || isPlaceholderProvinceName(nm)) continue;
         const r0 = ringCache[i][0];
         if (!r0 || r0.kind === 'sea') continue;
         const { cx, cy } = ringAreaCentroid(r0.points);
         if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
-        body.push(svgTextEl(cx, cy, nm, {
-          fill: LABEL_COLOR, 'font-size': 11, 'font-family': 'Microsoft YaHei, sans-serif',
-          'text-anchor': 'middle', 'dominant-baseline': 'middle', opacity: 0.85,
-        }));
+        // 字号 / 颜色 / 描边与画布同一份样式常量（白字 + 深色描边，任何势力色上都读得出）
+        body.push(svgTextEl(cx, cy, nm, svgLabelTextStyle(PROVINCE_LABEL_STYLE)));
       }
     }
 
@@ -224,12 +259,8 @@ export function useScenarioExport({
       polityOfEra: (era, owner) => tl.scenarios[era]?.polities?.find((p) => p.id === owner) || null,
     });
     for (const lb of labels) {
-      if (lb.kind !== 'polity') continue;        // 省名那一层上面单独画（带 FMG 自动名过滤）
-      body.push(svgTextEl(lb.x, lb.y, lb.text, {
-        fill: '#F7F3E8', 'font-size': 15, 'font-family': 'serif', 'font-weight': 'bold',
-        stroke: '#1B2130', 'stroke-width': 3, 'paint-order': 'stroke',
-        'text-anchor': 'middle', 'dominant-baseline': 'middle',
-      }));
+      if (lb.kind !== 'polity') continue;        // 省名那一层上面单独画（带占位名过滤）
+      body.push(svgTextEl(lb.x, lb.y, lb.text, svgLabelTextStyle(POLITY_LABEL_STYLE)));
     }
 
     // 剧本标签 / 标记
@@ -259,7 +290,7 @@ export function useScenarioExport({
         `${tl.years[k].start} ~ ${tl.years[k].end} · 当前 ${formatDate(at)}`,
         `${baseMap.value?.name || baseMap.value?.id || ''} · ${terrain.length} 省`,
       ];
-      if (k > 0) lines.push(`易主 ${settled}/${total} 省已落定`);
+      if (k > 0) lines.push(`易主 ${total} 省 · 已落定 ${settled}`);
       body.push(svgRect(12, 12, 236, 20 + lines.length * 16, {
         fill: 'rgba(15,23,42,0.86)', stroke: '#334155', 'stroke-width': 1, rx: 6,
       }));
@@ -326,7 +357,7 @@ export function useScenarioExport({
       }));
     }
 
-    const svg = serializeSvg({ width: W, height: H, background: '#1a2a3a', defs, body });
+    const svg = serializeSvg({ width: W, height: H, background: EXPORT_OCEAN, defs, body });
     return { svg, width: W, height: H };
   }
 
