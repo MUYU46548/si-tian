@@ -292,7 +292,8 @@ export function useScenarioExport({
     // 导出是"出版档"：只标首都 + 流量前 12 的河 —— 617 个城镇名会把成品图糊满。
     // ⚠️ 默认关闭（`placeNames` 为 false）：FMG 导入的自动地名多为英文，中文地图上会突然冒出
     //    "Scorcreden / Navarak" 这类标注。用户要时在「图层 → 自动地名」打开。
-    if (flags.labels !== false && flags.placeNames !== false) {
+    //    默认关闭 → 只认显式 true（其它调用方不传 flags 时也不会偷偷带上）。
+    if (flags.labels !== false && flags.placeNames === true) {
       const bm = baseMap.value || {};
       for (const lb of collectBurgLabels(bm.burgs || [], { tier: EXPORT_BURG_TIER })) {
         body.push(svgTextEl(lb.x, lb.y + 10, lb.name, svgTextAttrsFromStyle(
