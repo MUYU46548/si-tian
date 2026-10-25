@@ -2023,7 +2023,9 @@ export function createProvinceEditingModule(ctx) {
         seed: params.seed,
         params,
         bbox,
-        rings: gen.rings.map((r) => ({ id: r.id, points: r.points, area: r.area })),
+        // ⚠️ 洞（湖泊）必须一起回传：面板缩略图要把它挖成水面，否则预览里湖会显示成陆地
+        //    （v2 就漏了这条，缩略图与实际铺底不一致）
+        rings: gen.rings.map((r) => ({ id: r.id, points: r.points, holes: r.holes || [], area: r.area })),
         stats: gen.stats,
       });
     }

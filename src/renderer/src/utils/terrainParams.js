@@ -225,7 +225,7 @@ export const LAND_PARAM_FIELDS = Object.freeze([
   },
   {
     key: 'landRatio', label: '陆地占比', kind: 'float', min: 0.05, max: 0.55, step: 0.01, def: 0.32,
-    hint: '目标陆地面积 / 区域面积。⚠️ 不重叠的多块大陆上限约 35%（再多就装不下，实际值会如实回低）',
+    hint: '目标陆地面积 / 区域面积（按高度分位数精确命中，不再"大概"）',
   },
   {
     key: 'shape', label: '形状', kind: 'enum', options: ['continent', 'elongated', 'archipelago'], def: 'continent',
@@ -233,7 +233,7 @@ export const LAND_PARAM_FIELDS = Object.freeze([
   },
   {
     key: 'roughness', label: '海岸崎岖度', kind: 'float', min: 0, max: 1, step: 0.05, def: 0.45,
-    hint: '0 = 光滑椭圆；越大海岸线越碎（环采样点也更多）',
+    hint: '越大海岸越碎：地形噪声更强、岸线格更细（0 = 平缓海岸，1 = 峡湾/碎岛密布）',
   },
   {
     key: 'sizeVariance', label: '大小差异', kind: 'float', min: 0, max: 1, step: 0.05, def: 0.4,

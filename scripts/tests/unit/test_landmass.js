@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：**造陆 v2**（src/renderer/src/utils/landmass.js）+ 造陆参数（terrainParams.js 的 LAND_* 组）
+ * Node 单元测试：**造陆 v3**（src/renderer/src/utils/landmass.js + landmassField.js）+ 造陆参数
  *
- * v2（2026-10-25 用户判词「像几坨面团」之后重写）：标量场 + marching squares，不再是
- * "一个圆心 + 径向噪声"。判据随之改成**场/轮廓层**能证明的东西：
+ * v3（2026-10-25 用户判词「从几坨面团变成了几坨花生酱」之后重写）：先铺**地形**
+ * （陆核 / 叶 / 山脊=半岛 / 海槽=海湾 / 海峡），再在**抖动网格**上逐格判海陆、沿格边描海岸。
+ * 判据随之改成"用户能看见的东西"：
  *   ① 确定性：同 seed + 同参数 → 逐点相同；
  *   ② 不出界 + 不重叠（外环互不包含、互不相交）；
- *   ③ **占比命中**：按分位数定阈值，实测陆地占比与目标差 ≤ 5 个百分点（这是用户能看见的旋钮）；
- *   ④ 形状口径：长条的整体 y/x 更小；群岛的环数更多；
- *   ⑤ 海岸复杂度：roughness↑ → 周长/√面积 上升（"面团"就是这条低的形态）；
- *   ⑥ 参数归一化留 warning；无 Math.random。
+ *   ③ **占比命中**：格口径（海平面分位数）≤0.5 个点、多边形口径 ≤2 个点；
+ *   ④ 形状口径：长条整体更扁长；群岛的环数更多；
+ *   ⑤ 海岸不是面团：roughness↑ → 周长/√面积 与 顶点密度都上升；光滑档也必须 10+；
+ *   ⑥ 湖泊（洞）存在且方向相反；参数归一化留 warning；无 Math.random。
  *
  * 用法：node scripts/tests/unit/test_landmass.js
  */
@@ -135,51 +136,68 @@ async function main() {
     return '0 处重叠';
   });
 
-  check('a4 形状口径：长条最大陆块更"细长"（PCA 主轴比）；群岛的环数更多', () => {
+  check('a4 形状口径：长条的整体更"扁长"（面积加权陆地主轴比）；群岛的环数更多', () => {
     const c = gen({ shape: 'continent', continentCount: 3, landRatio: 0.3 });
     const e = gen({ shape: 'elongated', continentCount: 3, landRatio: 0.3 });
     const a = gen({ shape: 'archipelago', continentCount: 3, landRatio: 0.28 });
-    // 旋转不变的主轴细长比（bbox 会被旋转/簇状布局骗到）
-    const elongOfBiggest = (g) => {
-      const biggest = g.rings.slice().sort((x, y) => y.area - x.area)[0];
-      if (!biggest) return 1;
-      const pts = biggest.points;
-      const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-      const my = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+    // 为什么是"面积加权主轴"而不是"最大环 PCA"或"包围盒"：
+    //   · 最大环 PCA —— 单个大环可能只是一块近圆的半岛/岛，会被单块形状骗到；
+    //   · 包围盒 —— 几座散岛就能把 bbox 撑满整张画布（实测三种形状全都 ≈1.0，判不出差别）。
+    //   面积加权后大块陆地主导方向，散岛权重趋近于零。
+    const landPCA = (g) => {
+      let A = 0, mx = 0, my = 0;
+      const means = g.rings.map((r) => {
+        const m = r.points.reduce((acc, p) => ({ x: acc.x + p.x / r.points.length, y: acc.y + p.y / r.points.length }), { x: 0, y: 0 });
+        return m;
+      });
+      g.rings.forEach((r, i) => { A += r.area; mx += means[i].x * r.area; my += means[i].y * r.area; });
+      if (A <= 0) return 1;
+      mx /= A; my /= A;
       let sxx = 0, syy = 0, sxy = 0;
-      for (const p of pts) { const dx = p.x - mx, dy = p.y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+      g.rings.forEach((r, i) => {
+        const w = r.area / r.points.length;
+        for (const p of r.points) {
+          const dx = p.x - mx, dy = p.y - my;
+          sxx += w * dx * dx; syy += w * dy * dy; sxy += w * dx * dy;
+        }
+      });
       const tr = sxx + syy, det = sxx * syy - sxy * sxy;
       const disc = Math.max(0, (tr * tr) / 4 - det);
       const l1 = tr / 2 + Math.sqrt(disc), l2 = Math.max(1e-9, tr / 2 - Math.sqrt(disc));
       return Math.sqrt(l1 / l2);
     };
-    const ec = elongOfBiggest(c), ee = elongOfBiggest(e);
-    assert(ee > ec * 1.15, `长条最大陆块主轴比 ${ee.toFixed(2)} 未明显高于圆润 ${ec.toFixed(2)}`);
+    const ec = landPCA(c), ee = landPCA(e);
+    assert(ee > ec * 1.15, `长条陆地主轴比 ${ee.toFixed(2)} 未明显高于圆润 ${ec.toFixed(2)}`);
     assert(a.rings.length > c.rings.length, `群岛环数 ${a.rings.length} 未多于圆润 ${c.rings.length}`);
-    return `主轴比 圆润 ${ec.toFixed(2)} / 长条 ${ee.toFixed(2)} / 环数 ${c.rings.length}→${a.rings.length}`;
+    return `陆地主轴比 圆润 ${ec.toFixed(2)} / 长条 ${ee.toFixed(2)} / 环数 ${c.rings.length}→${a.rings.length}`;
   });
 
-  check('a5 海岸不是面团：roughness↑ → 周长/√面积 明显上升', () => {
+  check('a5 海岸不是面团：roughness↑ → 周长/√面积 与 顶点密度 都明显上升', () => {
     const metric = (g) => {
-      let P2 = 0, A = 0;
-      for (const r of g.rings) { P2 += perimeter(r.points); A += area(r.points); }
-      return P2 / Math.sqrt(Math.max(1e-9, A));
+      let P2 = 0, A = 0, pts = 0;
+      for (const r of g.rings) { P2 += perimeter(r.points); A += area(r.points); pts += r.points.length; }
+      return { c: P2 / Math.sqrt(Math.max(1e-9, A)), pts };
     };
-    const smooth = gen({ shape: 'continent', continentCount: 2, roughness: 0.05 });
-    const rough = gen({ shape: 'continent', continentCount: 2, roughness: 0.95 });
-    const ms = metric(smooth), mr = metric(rough);
-    assert(mr > ms * 1.15, `粗糙度没有拉开复杂度：${ms.toFixed(2)} → ${mr.toFixed(2)}`);
-    assert(ms > 3.2, `光滑档也太碎（${ms.toFixed(2)}）—— 检查噪声幅度`);
-    return `复杂度 ${ms.toFixed(2)} → ${mr.toFixed(2)}`;
+    const smooth = metric(gen({ shape: 'continent', continentCount: 2, roughness: 0.05 }));
+    const rough = metric(gen({ shape: 'continent', continentCount: 2, roughness: 0.95 }));
+    assert(rough.c > smooth.c * 1.15, `粗糙度没有拉开复杂度：${smooth.c.toFixed(2)} → ${rough.c.toFixed(2)}`);
+    assert(rough.pts > smooth.pts * 1.2, `粗糙度没有拉开顶点密度：${smooth.pts} → ${rough.pts}`);
+    // 光滑档也不能是"面团"：v3 用格边描岸，复杂度天生在 12+（v2 面团约 6~8）
+    assert(smooth.c > 10, `光滑档太"面团"（${smooth.c.toFixed(2)} < 10）`);
+    return `复杂度 ${smooth.c.toFixed(2)} → ${rough.c.toFixed(2)}；顶点 ${smooth.pts} → ${rough.pts}`;
   });
 
-  check('a6 占比命中：目标 15%/32%/45% 实测差 ≤ 5 个百分点', () => {
+  check('a6 占比命中：目标 15%/32%/45% 的多边形与格口径都差 ≤ 2 个百分点', () => {
     for (const target of [0.15, 0.32, 0.45]) {
       const g = gen({ landRatio: target, continentCount: 3 });
       const got = g.stats.landRatio;
-      assert(Math.abs(got - target) <= 0.05, `目标 ${target} 实测 ${got.toFixed(3)}（差 ${(Math.abs(got - target) * 100).toFixed(1)} 个点）`);
+      assert(Math.abs(got - target) <= 0.02, `目标 ${target} 多边形实测 ${got.toFixed(3)}（差 ${(Math.abs(got - target) * 100).toFixed(1)} 个点）`);
+      // 格口径是海平面分位数的直接结果，必须更准（≤ 0.5 个点）——它证明"占比滑杆"真的在生效
+      const cell = g.stats.cellLandRatio;
+      assert(Math.abs(cell - target) <= 0.005, `目标 ${target} 格口径 ${cell.toFixed(3)} 偏差过大`);
+      assert(g.stats.holeCount >= 0 && g.stats.cells > 1000, `格数异常：${g.stats.cells}`);
     }
-    return '三档命中';
+    return '三档命中（多边形 ≤2pp / 格 ≤0.5pp）';
   });
 
   check('a7 湖泊：带洞的环 holes 是反向闭合环，且洞面积计入扣减', () => {

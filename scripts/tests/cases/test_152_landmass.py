@@ -15,7 +15,8 @@
     真的落出省份、面板关闭、状态栏有回执、渲染没崩。
   c 一条 undo：撤销后陆地回到 0（不是"退回一半"）。
   d 可复现：同参数两次预览环点逐点相同；换 seed 必不同。
-  e 形状口径：长条大陆的包围盒 y/x 明显小于圆润；群岛环数 > 陆块数。
+  e 形状口径：长条大陆**整片陆地**的归一化包围盒比明显大于圆润（不用单块 PCA：会被近圆的
+    半岛骗到）；群岛环数 > 陆块数。
   f 规模：400 省量级一次造陆 + 铺底 < 30s（会分批让帧），且撤销仍是**一条**。
 """
 import json
@@ -235,7 +236,29 @@ JS_DETERMINISM = r""" (async () => {
       const l1 = tr / 2 + Math.sqrt(disc), l2 = Math.max(1e-9, tr / 2 - Math.sqrt(disc));
       pca = Math.sqrt(l1 / l2);
     }
-    shapes[shape] = { rings: rings.length, ratio: (maxY - minY) / Math.max(1e-6, maxX - minX), pca, land: cand.stats.landRatio };
+    // v3 起用"面积加权陆地主轴比"（与 unit/test_landmass.js 同口径）：
+    // 单块 PCA 会被近圆的半岛骗到；包围盒会被散岛撑满（三种形状都 ≈1.0）；面积加权后
+    // 大块陆地主导向，散岛权重趋近于零。
+    const meanOf = (pts) => pts.reduce((a, p) => ({ x: a.x + p.x / pts.length, y: a.y + p.y / pts.length }), { x: 0, y: 0 });
+    let A = 0, mx = 0, my = 0;
+    for (const r of rings) { const m = meanOf(r.points); A += r.area; mx += m.x * r.area; my += m.y * r.area; }
+    let landPCA = 1;
+    if (A > 0) {
+      mx /= A; my /= A;
+      let sxx = 0, syy = 0, sxy = 0;
+      for (const r of rings) {
+        const w = r.area / r.points.length;
+        for (const p of r.points) {
+          const dx = p.x - mx, dy = p.y - my;
+          sxx += w * dx * dx; syy += w * dy * dy; sxy += w * dx * dy;
+        }
+      }
+      const tr = sxx + syy, det = sxx * syy - sxy * sxy;
+      const disc = Math.max(0, (tr * tr) / 4 - det);
+      const l1 = tr / 2 + Math.sqrt(disc), l2 = Math.max(1e-9, tr / 2 - Math.sqrt(disc));
+      landPCA = Math.sqrt(l1 / l2);
+    }
+    shapes[shape] = { rings: rings.length, pca, landPCA, land: cand.stats.landRatio };
   }
   return JSON.stringify({ okA: !!a.ok, same: hash(a) === hash(b), differs: hash(a) !== hash(c), shapes });
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
@@ -353,11 +376,11 @@ def run(cdp):
         if not (c and e and a):
             fails.append(f'🔴 形状口径探针不完整：{shapes}')
         else:
-            if not (e.get('pca', 1) > c.get('pca', 0) * 1.12):
-                fails.append(f"🔴 长条大陆不够细长：主轴比 {e.get('pca')} vs 圆润 {c.get('pca')}")
+            if not (e.get('landPCA', 1) > c.get('landPCA', 0) * 1.15):
+                fails.append(f"🔴 长条大陆整体不够扁长：面积加权主轴比 {e.get('landPCA')} vs 圆润 {c.get('landPCA')}")
             if not (a.get('rings', 0) > c.get('rings', 0)):
                 fails.append(f"🔴 群岛环数 {a.get('rings')} 未多于圆润 {c.get('rings')}")
-            notes.append(f"形状：圆润 {c.get('pca', 0):.2f} / 长条 {e.get('pca', 0):.2f} / 群岛 {a.get('rings')} 环")
+            notes.append(f"形状：圆润 {c.get('landPCA', 0):.2f} / 长条 {e.get('landPCA', 0):.2f} / 群岛 {a.get('rings')} 环")
 
     scale = _ev(cdp, JS_SCALE, '400 省规模 + 撤销')
     if scale.get('__err__'):
