@@ -692,7 +692,8 @@ export function createScenarioEditingModule(ctx) {
    * @param {{name?:string, copyReferenceImages?:boolean}} opts
    */
   function reimportBasemapAsNew(oldKey, bundle, opts = {}) {
-    if (!guardWrite('重导底图').ok) return { ok: false, rejected: 'readonly', message: '只读态不允许重导底图' };
+    // 只读态由 `execute` 的总闸门拒绝（本函数在 execute 之前只读/算映射，不改内存）；
+    // 因此不登记进 MEMORY_WRITE_CALLSITES（那里只收"直接改内存/先改后 execute"的函数）。
     const old = baseMaps.value[oldKey];
     if (!old) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${oldKey}` };
     if (!bundle || !Array.isArray(bundle.terrain) || !bundle.terrain.length) {
