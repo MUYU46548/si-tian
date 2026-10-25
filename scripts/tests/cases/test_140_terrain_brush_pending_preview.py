@@ -113,6 +113,9 @@ DRAG = r"""(async () => {
   const preview = tb.pendingCells();
   const origin = tb.pendingOriginRef();
   const brushing = !!tb.isTerrainBrushing.value;
+  const runs = (typeof tb.pendingRunsOf === 'function') ? tb.pendingRunsOf().length : -1;
+  const mode = pm.interactionMode;
+  const edit = !!pm.editMode;
   const midCount = countType();
   // 等渲染器把这一帧画完再取像素（弹事件只是同步改数据，画是下一帧的事）。
   // ⚠️ 全量跑时机器更忙：一次等待可能读到的还是上一帧（实测整轮跑偶发 delta=0，单跑必过）。
@@ -122,9 +125,13 @@ DRAG = r"""(async () => {
   let pxDuring = px(probe[0], probe[1]);
   let pxDelta = pxDeltaOf(pxDuring, pxBefore);
   let pxTries = 0;
+  if (pm.renderer && typeof pm.renderer.renderNow === 'function') pm.renderer.renderNow();
+  pxDuring = px(probe[0], probe[1]);
+  pxDelta = pxDeltaOf(pxDuring, pxBefore);
   for (let i = 0; i < 8 && pxDelta <= 12; i += 1) {
     pxTries = i + 1;
-    if (pm.renderer && typeof pm.renderer.requestRender === 'function') pm.renderer.requestRender();
+    if (pm.renderer && typeof pm.renderer.renderNow === 'function') pm.renderer.renderNow();
+    else if (pm.renderer && typeof pm.renderer.requestRender === 'function') pm.renderer.requestRender();
     await frame();
     await sleep(90);
     pxDuring = px(probe[0], probe[1]);
@@ -174,6 +181,7 @@ DRAG = r"""(async () => {
 
   return JSON.stringify({
     type: TYPE, pend0, pendingAt, preview: preview.length, brushing, midCount, afterCount, pendAfter,
+    runs, mode, edit,
     pxDelta, pxBefore, pxDuring, pxTries, deltas, pxPre, pxMid,
     checked, miss, outside, bytesChanged,
     undoExact, undoCount, redoCount, preCount,
@@ -236,7 +244,9 @@ def run(cdp):
         fails.append('拖动中 isTerrainBrushing 不是 true（预览态没建立）')
     if not (data.get('pxDelta', 0) > 12):
         fails.append(f'拖动中画布没变色 —— 「将涂格」没被画出来（像素差 {data.get("pxDelta")}: '
-                     f'{data.get("pxBefore")} → {data.get("pxDuring")}）')
+                     f'{data.get("pxBefore")} → {data.get("pxDuring")}；'
+                     f'runs={data.get("runs")} mode={data.get("mode")} edit={data.get("edit")} '
+                     f'brushing={data.get("brushing")}）')
     # 对照：远离笔迹的那个点必须**没变** —— 否则"变色"可能只是整帧重绘的巧合
     if (data.get('deltas') or [0, 0, 0, 0])[3] != 0:
         fails.append(f'远离笔迹的对照点也变色了（{data.get("deltas")}）—— 像素判据不成立')
