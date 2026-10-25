@@ -74,6 +74,8 @@ def run(cdp):
         ownership: { prov_a: 'P1' },
       });
       SM.baseMapKey = KEY;
+      // 自动地名默认关闭（FMG 英文名）；本用例专测分级/导出，显式打开
+      SM.showPlaceNames = true;
       await tick(40);
       SM.tlEra = 0;
       SM.tlDate = { y: 2000, m: null, d: null };
@@ -90,6 +92,9 @@ def run(cdp):
       const fn = SM.buildScenarioSVG || (SM.scenarioExport && SM.scenarioExport.buildScenarioSVG);
       if (!fn) return JSON.stringify({ __err__: '没有 buildScenarioSVG' });
       const svg = String(fn({ era: 0, date: { y: 2000, m: null, d: null } }).svg || '');
+      // 关掉「自动地名」后再导一次：默认关闭时不应出现 FMG 英文名
+      SM.showPlaceNames = false;
+      const svgOff = String(fn({ era: 0, date: { y: 2000, m: null, d: null } }).svg || '');
       const pick = (text) => {
         const re = new RegExp('<text\\b([^>]*)>' + text + '</text>');
         const m = svg.match(re); return m ? m[1] : null;
@@ -103,6 +108,8 @@ def run(cdp):
         smallRiver: pick('小河'),
         hasNonCapital: svg.indexOf('>非首都乙<') >= 0,
         hasSmallRiver: svg.indexOf('>小河<') >= 0,
+        offHasCapital: svgOff.indexOf('>首都甲<') >= 0,
+        offHasRiver: svgOff.indexOf('>大河<') >= 0,
       });
     })()"""
     ok, out = eval_json(cdp, build.replace('__SM__', SM), required=('svgLen',), desc='f1 构建导出 SVG')
@@ -118,6 +125,8 @@ def run(cdp):
         fails.append('导出 SVG 缺流量最大的河名')
     if out.get('hasSmallRiver'):
         fails.append('导出 SVG 混进非前 12 的河名')
+    if out.get('offHasCapital') or out.get('offHasRiver'):
+        fails.append('关掉「自动地名」后导出仍有城镇/河流名（默认关闭没生效）')
     # 位置：城镇 y+10、河流 y-4
     if out.get('capital1') and 'y="230"' not in out['capital1']:
         fails.append(f'城镇名应在点下方 y+10：{out.get("capital1")}')

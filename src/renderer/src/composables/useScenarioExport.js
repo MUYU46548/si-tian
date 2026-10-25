@@ -290,7 +290,9 @@ export function useScenarioExport({
 
     // 城镇名 / 河流名（2026-10-25）：与画布共用分级与样式。
     // 导出是"出版档"：只标首都 + 流量前 12 的河 —— 617 个城镇名会把成品图糊满。
-    if (flags.labels !== false) {
+    // ⚠️ 默认关闭（`placeNames` 为 false）：FMG 导入的自动地名多为英文，中文地图上会突然冒出
+    //    "Scorcreden / Navarak" 这类标注。用户要时在「图层 → 自动地名」打开。
+    if (flags.labels !== false && flags.placeNames !== false) {
       const bm = baseMap.value || {};
       for (const lb of collectBurgLabels(bm.burgs || [], { tier: EXPORT_BURG_TIER })) {
         body.push(svgTextEl(lb.x, lb.y + 10, lb.name, svgTextAttrsFromStyle(

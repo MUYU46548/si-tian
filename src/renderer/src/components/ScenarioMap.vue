@@ -800,6 +800,7 @@
         <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
+        <label class="check-label" title="显示导入的城镇名 / 河流名（FMG 数据多为英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
         <label class="check-label" title="EU4 式分级标注：放大看省名，缩小看势力名（可简称）"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
         <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
@@ -2421,6 +2422,9 @@ function isLayerEditable(layerId) {
 const showBiomes = ref(true);
 const showBorders = ref(true);
 const showLabels = ref(true);
+// 城镇名/河流名（导入的 FMG 自动地名；多为英文）—— 默认关闭，避免中文地图上突然出现一串英文。
+// 与 `showLabels`（用户手放的地名/标记）分开：那一层是用户自己写的，这层是底图自带的。
+const showPlaceNames = ref(false);
 const showBurgs = ref(true);
 // A8：势力名/省名的分级标注（默认开 —— 势力名是历史剧本的主要读物）。
 // 与 showLabels 分开：showLabels 管的是用户**手放**的浮动文本，两者是不同性质的东西。
@@ -3335,7 +3339,7 @@ const scenarioExport = useScenarioExport({  store,
   currentYear: tlYear,
   diffMode: tlDiffMode,
   provinceNames: provinceNameMap,
-  layerFlags: () => ({ labels: showLabels.value, borders: showBorders.value }),
+  layerFlags: () => ({ labels: showLabels.value, borders: showBorders.value, placeNames: showPlaceNames.value }),
 });
 const {
   exportStatus, exportScenarioPNG, exportScenarioSVG, exportScenariosJson, pickScenariosJson,
@@ -8848,15 +8852,17 @@ function drawRivers(c) {
     }
   }
   // 河流名（2026-10-25）：只标有名字的河；低缩放不标，放大后按流量取前 N 条。
-  // 617 城镇 / 160 河全标就是糊图 —— 分级规则与导出共用 `scenarioTextPlacement`。
-  const riverLabels = collectRiverLabels(list, {
-    tier: riverLabelTier(cameraScale.value),
-    rect: { minX, minY, maxX, maxY },
-  });
-  for (const lb of riverLabels) {
-    drawStyledLabel(c, lb.name, lb.x, lb.y - px(4), riverLabelTextStyle(), {
-      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+  // 默认关闭（自动地名多为 FMG 英文名），由「图层 → 自动地名」控制。
+  if (showPlaceNames.value) {
+    const riverLabels = collectRiverLabels(list, {
+      tier: riverLabelTier(cameraScale.value),
+      rect: { minX, minY, maxX, maxY },
     });
+    for (const lb of riverLabels) {
+      drawStyledLabel(c, lb.name, lb.x, lb.y - px(4), riverLabelTextStyle(), {
+        align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+      });
+    }
   }
   c.restore();
 }
@@ -10358,14 +10364,17 @@ function drawBurgs(c) {
   }
   // 城镇名（2026-10-25）：按缩放分级，避免 617 个名字糊满画布。
   // 低缩放只标首都；放大后逐步放出人口靠前的城镇。样式与 SVG 导出同一份。
-  const burgLabels = collectBurgLabels(burgs.value, {
-    tier: burgLabelTier(cameraScale.value),
-    rect: { minX, minY, maxX, maxY },
-  });
-  for (const lb of burgLabels) {
-    drawStyledLabel(c, lb.name, lb.x, lb.y + px(10), burgLabelTextStyle({ capital: lb.capital }), {
-      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+  // 默认关闭（自动地名多为 FMG 英文名），用户需要时在「图层 → 自动地名」打开。
+  if (showPlaceNames.value) {
+    const burgLabels = collectBurgLabels(burgs.value, {
+      tier: burgLabelTier(cameraScale.value),
+      rect: { minX, minY, maxX, maxY },
     });
+    for (const lb of burgLabels) {
+      drawStyledLabel(c, lb.name, lb.x, lb.y + px(10), burgLabelTextStyle({ capital: lb.capital }), {
+        align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+      });
+    }
   }
 }
 function formatPopulation(pop) {
@@ -11165,7 +11174,7 @@ function onHistoryJump() {
 //    （本项目在高度图着色档位上踩过同一条：test_69 抓到过 `diffPixels: 0`）。
 // ⚠️ `riverSource`（河流来源）必须在这里 —— 漏了就是"下拉改了画布没反应"
 // ⚠️ `terrainShade` / `terrainShadeStrength` 同理（2026-10-17 第七修）：漏了就是"勾了立体没反应"
-watch([rasterLayer, showRivers, riverSource, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPolityLabels, terrainShade, terrainShadeStrength], () => render());
+watch([rasterLayer, showRivers, riverSource, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPlaceNames, showPolityLabels, terrainShade, terrainShadeStrength], () => render());
 // 🔴 手势期基帧的**安全阀**（2026-10-18 第十八修·二）：只要底图几何/河网换了引用
 //    （撤销、别的入口写入、导入…），立刻解甲 —— 底图变了还贴旧图就是"改了数据画面不动"。
 //    启用基帧的前提本来就是"这一笔不改数据"，这条 watch 是**把前提落实成机制**，
