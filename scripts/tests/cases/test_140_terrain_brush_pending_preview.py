@@ -89,6 +89,10 @@ DRAG = r"""(async () => {
   // ⚠️ 对照点必须在**画布内**：负坐标取样恒为透明黑，那种"没变"是空转（本项目踩过"空转通过"）。
   const pxPre = probes.map(([x, y]) => px(x, y));
   const pxBefore = pxPre[0];
+  // 整张画布的"拖动前"快照：最终判据用它，而不是赌某一个探针点。
+  // ⚠️ 拖动中还有 L2 笔迹层与笔刷预告圈；测像素前会先清掉它们，只留下「将涂格」。
+  const c2d = canvas.getContext('2d');
+  const allPre = new Uint8ClampedArray(c2d.getImageData(0, 0, canvas.width, canvas.height).data);
   // ① 按下（只此一次可能扩网格）；快照取在按下之后 = "拖动中不改"的对照
   canvas.dispatchEvent(mk(path[0][0], path[0][1], 'mousedown'));
   await frame();
@@ -117,6 +121,18 @@ DRAG = r"""(async () => {
   const mode = pm.interactionMode;
   const edit = !!pm.editMode;
   const midCount = countType();
+  // 清掉 L2 笔迹与笔刷预告圈，只留「将涂格」再取整图差 ——
+  // 这样"像素变了"只能来自 pending 高亮，不会被轨迹/预告圈冒充。
+  if (tb.strokePath && tb.strokePath.value) tb.strokePath.value = [];
+  if (typeof tb.clearBrushPreview === 'function') tb.clearBrushPreview();
+  if (pm.renderer && typeof pm.renderer.renderNow === 'function') pm.renderer.renderNow();
+  const allMid = c2d.getImageData(0, 0, canvas.width, canvas.height).data;
+  let pixelDiff = 0;
+  for (let i = 0; i < allPre.length; i += 4) {
+    if (Math.abs(allPre[i] - allMid[i]) > 12
+      || Math.abs(allPre[i + 1] - allMid[i + 1]) > 12
+      || Math.abs(allPre[i + 2] - allMid[i + 2]) > 12) pixelDiff += 1;
+  }
   // 等渲染器把这一帧画完再取像素（弹事件只是同步改数据，画是下一帧的事）。
   // ⚠️ 全量跑时机器更忙：一次等待可能读到的还是上一帧（实测整轮跑偶发 delta=0，单跑必过）。
   //    所以这里**主动 requestRender + 轮询**，最多 8 次 × ~90ms；仍为 0 才判失败。
@@ -181,7 +197,7 @@ DRAG = r"""(async () => {
 
   return JSON.stringify({
     type: TYPE, pend0, pendingAt, preview: preview.length, brushing, midCount, afterCount, pendAfter,
-    runs, mode, edit,
+    runs, mode, edit, pixelDiff,
     pxDelta, pxBefore, pxDuring, pxTries, deltas, pxPre, pxMid,
     checked, miss, outside, bytesChanged,
     undoExact, undoCount, redoCount, preCount,
@@ -242,11 +258,10 @@ def run(cdp):
     fails = []
     if not data.get('brushing'):
         fails.append('拖动中 isTerrainBrushing 不是 true（预览态没建立）')
-    if not (data.get('pxDelta', 0) > 12):
-        fails.append(f'拖动中画布没变色 —— 「将涂格」没被画出来（像素差 {data.get("pxDelta")}: '
-                     f'{data.get("pxBefore")} → {data.get("pxDuring")}；'
+    if not (data.get('pixelDiff', 0) > 200):
+        fails.append(f'清掉轨迹/预告圈后整图仍没变化 —— 「将涂格」没被画出来（变化像素 {data.get("pixelDiff")}；'
                      f'runs={data.get("runs")} mode={data.get("mode")} edit={data.get("edit")} '
-                     f'brushing={data.get("brushing")}）')
+                     f'brushing={data.get("brushing")}；单点探针差 {data.get("pxDelta")}）')
     # 对照：远离笔迹的那个点必须**没变** —— 否则"变色"可能只是整帧重绘的巧合
     if (data.get('deltas') or [0, 0, 0, 0])[3] != 0:
         fails.append(f'远离笔迹的对照点也变色了（{data.get("deltas")}）—— 像素判据不成立')
