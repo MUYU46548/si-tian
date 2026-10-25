@@ -1703,6 +1703,8 @@ import {
   polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
 } from '../utils/polityLabels';
 import { drawStyledLabel } from '../utils/labelStyles';
+// 文字层样式单源（用户地名 / 标记名）—— 画布与 SVG 导出共用同一份
+import { scenarioLabelTextStyle, markerLabelTextStyle } from '../utils/mapTextStyles';
 // 剧本标签的**唯一判定**（省名 / 势力名 / 简称三档该写什么字、写在哪）—— 与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
 // 剧本集（2026-10-25）：组判定 / 选项 / 计数 / 初始组**只有一份实现**（utils/scenarioGroups.js）
@@ -10545,16 +10547,12 @@ function drawPolityLabels(c) {
 function drawLabels(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.labels) return;
   selectedScenario.value.labels.forEach(label => {
-    c.font = label.font || `${label.size || 12}px "PingFang SC", sans-serif`;
-    c.fillStyle = label.color || '#e2e8f0';
-    // 描边（提升可读性，Wonderdraft 风格）
-    if (label.stroke && label.strokeWidth > 0) {
-      c.strokeStyle = label.stroke;
-      c.lineWidth = label.strokeWidth;
-      c.lineJoin = 'round';
-      c.strokeText(label.text, label.x, label.y);
-    }
-    c.fillText(label.text, label.x, label.y);
+    // 2026-10-25：地名与导出共用一份样式（浅色字 + 默认深色描边）。
+    // 旧实现是裸 fillText：画布默认浅色、导出默认深灰，同一个地名两幅图两种颜色。
+    // `align/baseline` 保持旧画布的「左上角锚点」，避免地名整体位移。
+    drawStyledLabel(c, label.text || '', label.x, label.y, scenarioLabelTextStyle(label), {
+      align: 'left', baseline: 'alphabetic',
+    });
   });
 }
 
@@ -10605,10 +10603,11 @@ function drawScenarioMarkers(c) {
     const typeDef = MARKER_TYPES.find(t => t.id === m.type);
     drawIconOrEmoji(c, m.icon || (typeDef && typeDef.icon) || 'map-pin', m.x, m.y,
       Math.max(12, px(16)), m.color || (typeDef && typeDef.color) || '#FFFFFF');
-    // 名称标签
-    c.font = `${Math.max(10, px(11))}px "PingFang SC", sans-serif`;
-    c.fillStyle = m.color || '#e2e8f0';
-    c.fillText(m.name, m.x, m.y + fontSize * 0.8);
+    // 名称标签（2026-10-25：与导出共用一份样式 + 默认深色描边，任何底色上都读得出）
+    const nameStyle = markerLabelTextStyle(m);
+    drawStyledLabel(c, m.name || '', m.x, m.y + fontSize * 0.8, nameStyle, {
+      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+    });
   }
   c.textAlign = 'start';
   c.textBaseline = 'alphabetic';
