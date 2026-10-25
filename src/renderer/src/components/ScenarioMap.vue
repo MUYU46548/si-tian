@@ -1703,8 +1703,14 @@ import {
   polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
 } from '../utils/polityLabels';
 import { drawStyledLabel } from '../utils/labelStyles';
-// 文字层样式单源（用户地名 / 标记名）—— 画布与 SVG 导出共用同一份
-import { scenarioLabelTextStyle, markerLabelTextStyle } from '../utils/mapTextStyles';
+// 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
+import {
+  scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
+} from '../utils/mapTextStyles';
+// 城镇名 / 河流名的分级与取数（纯函数，画布与导出共用；617 个城镇全标就是糊图）
+import {
+  collectBurgLabels, collectRiverLabels, burgLabelTier, riverLabelTier,
+} from '../utils/scenarioTextPlacement';
 // 剧本标签的**唯一判定**（省名 / 势力名 / 简称三档该写什么字、写在哪）—— 与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
 // 剧本集（2026-10-25）：组判定 / 选项 / 计数 / 初始组**只有一份实现**（utils/scenarioGroups.js）
@@ -8722,6 +8728,17 @@ function drawRivers(c) {
       c.stroke(path);
     }
   }
+  // 河流名（2026-10-25）：只标有名字的河；低缩放不标，放大后按流量取前 N 条。
+  // 617 城镇 / 160 河全标就是糊图 —— 分级规则与导出共用 `scenarioTextPlacement`。
+  const riverLabels = collectRiverLabels(list, {
+    tier: riverLabelTier(cameraScale.value),
+    rect: { minX, minY, maxX, maxY },
+  });
+  for (const lb of riverLabels) {
+    drawStyledLabel(c, lb.name, lb.x, lb.y - px(4), riverLabelTextStyle(), {
+      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+    });
+  }
   c.restore();
 }
 
@@ -10220,9 +10237,18 @@ function drawBurgs(c) {
       }
     }
   }
+  // 城镇名（2026-10-25）：按缩放分级，避免 617 个名字糊满画布。
+  // 低缩放只标首都；放大后逐步放出人口靠前的城镇。样式与 SVG 导出同一份。
+  const burgLabels = collectBurgLabels(burgs.value, {
+    tier: burgLabelTier(cameraScale.value),
+    rect: { minX, minY, maxX, maxY },
+  });
+  for (const lb of burgLabels) {
+    drawStyledLabel(c, lb.name, lb.x, lb.y + px(10), burgLabelTextStyle({ capital: lb.capital }), {
+      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+    });
+  }
 }
-
-/** FMG 的 population 为原始数值（不做单位换算，避免臆造量纲） */
 function formatPopulation(pop) {
   if (!pop) return '—';
   return pop >= 100 ? String(Math.round(pop)) : pop.toFixed(1);

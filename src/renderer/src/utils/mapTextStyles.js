@@ -30,6 +30,24 @@ export const MARKER_LABEL_DEFAULTS = Object.freeze({
   fontFamily: 'sans-serif',
 });
 
+/** 城镇名（baseMap.burgs）：比地名小，首都要更醒目 */
+export const BURG_LABEL_DEFAULTS = Object.freeze({
+  color: '#f8fafc',
+  size: 10,
+  haloColor: '#0b1220',
+  haloWidth: 2.5,
+  fontFamily: 'sans-serif',
+});
+
+/** 河流名（baseMap.rivers）：淡蓝字，避免和城镇名抢 */
+export const RIVER_LABEL_DEFAULTS = Object.freeze({
+  color: '#dbeafe',
+  size: 10,
+  haloColor: '#0b1220',
+  haloWidth: 2.5,
+  fontFamily: 'sans-serif',
+});
+
 function haloOf(kind, style) {
   if (style && style.stroke) {
     return { enabled: true, color: style.stroke, width: Number(style.strokeWidth) || 2 };
@@ -70,6 +88,40 @@ export function markerLabelTextStyle(marker = {}) {
     shadow: { enabled: false },
     background: { enabled: false },
     // 标记名在旧画布里是**屏幕像素**（缩放时不变）—— 保持不变，避免缩小时名字消失
+    lockScreenSize: true,
+  };
+}
+
+/** `baseMap.burgs[]` → 城镇名样式（首都加粗、字大一号） */
+export function burgLabelTextStyle(burg = {}) {
+  const d = BURG_LABEL_DEFAULTS;
+  const capital = !!(burg.capital || burg.group === 'capital');
+  return {
+    key: 'burg-label',
+    fontFamily: d.fontFamily,
+    fontSize: capital ? d.size + 1 : d.size,
+    weight: capital ? 'bold' : 'normal',
+    color: d.color,
+    stroke: { enabled: true, color: d.haloColor, width: d.haloWidth },
+    shadow: { enabled: false },
+    background: { enabled: false },
+    lockScreenSize: true,
+  };
+}
+
+/** `baseMap.rivers[]` → 河流名样式 */
+export function riverLabelTextStyle() {
+  const d = RIVER_LABEL_DEFAULTS;
+  return {
+    key: 'river-label',
+    fontFamily: d.fontFamily,
+    fontSize: d.size,
+    weight: 'normal',
+    color: d.color,
+    stroke: { enabled: true, color: d.haloColor, width: d.haloWidth },
+    shadow: { enabled: false },
+    background: { enabled: false },
+    // 河流名跟着河道走，缩放时保持屏幕字号（与城镇名一致）
     lockScreenSize: true,
   };
 }

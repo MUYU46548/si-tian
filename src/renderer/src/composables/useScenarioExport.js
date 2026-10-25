@@ -34,8 +34,13 @@ import {
 import { formatDate, dateToken } from '../utils/scenarioDates';
 // 文字层样式单源（用户地名 / 标记名）—— 画布与导出共用同一份
 import {
-  scenarioLabelTextStyle, markerLabelTextStyle, svgTextAttrsFromStyle,
+  scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
+  svgTextAttrsFromStyle,
 } from '../utils/mapTextStyles';
+// 城镇名/河流名分级（画布与导出共用；导出用"出版档"：首都 + 流量前 12 的河）
+import {
+  collectBurgLabels, collectRiverLabels, EXPORT_BURG_TIER, EXPORT_RIVER_TIER,
+} from '../utils/scenarioTextPlacement';
 
 /**
  * 画布标签样式（`utils/polityLabels.js` 的 `*_LABEL_STYLE`）→ SVG `<text>` 属性。
@@ -280,6 +285,24 @@ export function useScenarioExport({
           'text-anchor': 'middle',
           'dominant-baseline': 'middle',
         })));
+      }
+    }
+
+    // 城镇名 / 河流名（2026-10-25）：与画布共用分级与样式。
+    // 导出是"出版档"：只标首都 + 流量前 12 的河 —— 617 个城镇名会把成品图糊满。
+    if (flags.labels !== false) {
+      const bm = baseMap.value || {};
+      for (const lb of collectBurgLabels(bm.burgs || [], { tier: EXPORT_BURG_TIER })) {
+        body.push(svgTextEl(lb.x, lb.y + 10, lb.name, svgTextAttrsFromStyle(
+          burgLabelTextStyle({ capital: lb.capital }),
+          { 'text-anchor': 'middle', 'dominant-baseline': 'middle' },
+        )));
+      }
+      for (const lb of collectRiverLabels(bm.rivers || [], { tier: EXPORT_RIVER_TIER })) {
+        body.push(svgTextEl(lb.x, lb.y - 4, lb.name, svgTextAttrsFromStyle(
+          riverLabelTextStyle(),
+          { 'text-anchor': 'middle', 'dominant-baseline': 'middle' },
+        )));
       }
     }
 
