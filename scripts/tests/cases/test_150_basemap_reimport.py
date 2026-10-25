@@ -114,6 +114,8 @@ def run(cdp):
         return False, 'ScenarioMap 没有引用 isBasemapPristine（无法判断同图补数据/重导）'
     if 'reimportBasemapAsNew(' not in sm:
         return False, 'ScenarioMap 没有调用 reimportBasemapAsNew（用户点不到重导）'
+    if 'previewReimportBasemap' not in sm or 'data-testid="reimport-dialog"' not in sm:
+        return False, 'ScenarioMap 没有重导对话框（previewReimportBasemap / reimport-dialog）'
 
     return True, (
         f'并省冲突阻止（{notes.get("conflict")}）；正常重导 newKey={notes.get("result", {}).get("newKey")}'

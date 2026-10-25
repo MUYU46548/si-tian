@@ -654,6 +654,31 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
+   * 019 预检（只读）：不写任何数据，只算「旧省→新省」统计与冲突，供重导对话框展示。
+   * 判据与 `reimportBasemapAsNew` 共用 `mapProvinces`，不会出现"对话框说能导、实际冲突"。
+   */
+  function previewReimportBasemap(oldKey, bundle) {
+    const old = baseMaps.value[oldKey];
+    if (!old) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${oldKey}` };
+    if (!bundle || !Array.isArray(bundle.terrain) || !bundle.terrain.length) {
+      return { ok: false, rejected: 'no-terrain', message: '新 .map 里没有省份多边形' };
+    }
+    const mapping = mapProvinces(old.terrain || [], bundle.terrain || []);
+    return {
+      ok: true,
+      oldKey,
+      oldName: old.name || oldKey,
+      totalOld: (old.terrain || []).length,
+      totalNew: (bundle.terrain || []).length,
+      exact: mapping.exact.length,
+      conflicts: mapping.conflicts,
+      unmappedOld: mapping.unmappedOld,
+      unmappedNew: mapping.unmappedNew,
+      canApply: mapping.conflicts.length === 0,
+    };
+  }
+
+  /**
    * 019：把一份新 `.map` 作为**新底图**导入，并把旧底图的剧本/归属迁过去。
    *
    * 语义（暮雨 2026-10-25）：换新 .map = 新底图 + 旧归属迁过去；同一底图只补数据仅限一笔未改
@@ -4274,7 +4299,7 @@ export function createScenarioEditingModule(ctx) {
     // 底图级数据（高度图 / 河流 / 道路 / 城镇）的装载与**只补缺刷新**（B2，2026-10-11）
     buildBaseMapFromBundle, updateBaseMapData,
     // 019 重导：新底图 + 旧归属迁移（同图只补数据仍走 updateBaseMapData）
-    reimportBasemapAsNew,
+    previewReimportBasemap, reimportBasemapAsNew,
     // 底图侧河流 / 道路 CRUD（D，2026-10-11）：此前手画的河从不落盘、手画的路绕过 undo
     addBaseMapRiver, removeBaseMapRiver, updateBaseMapRiver,
     removeBaseMapRivers, applyBaseMapRiverPatches, applyBaseMapRiverEdit,
