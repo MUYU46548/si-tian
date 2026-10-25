@@ -2065,7 +2065,8 @@ export function createProvinceEditingModule(ctx) {
       id: `land_outline_${norm.params.seed}_${r.id}`,
       name: '陆块',
       points: r.points,
-      rings: [r.points],
+      // v2：环可能带洞（湖泊）—— 一起交给铺底，否则湖会被当成陆地切进省份
+      rings: [r.points, ...((r.holes || []))],
     }));
     // 只算不写：铺底的 Voronoi/裁剪走同一条实现，结果交回这里拼命令
     const plan = await batchSubdivide(key, {

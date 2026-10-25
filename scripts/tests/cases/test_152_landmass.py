@@ -144,6 +144,21 @@ JS_OPEN = r""" (async () => {
   out.hasPreview = !!document.querySelector('[data-testid="lgen-preview"]');
   out.hasApply = !!document.querySelector('[data-testid="lgen-apply"]');
   out.applyText = (() => { const b = document.querySelector('[data-testid="lgen-apply"]'); return b ? (b.textContent || '').trim() : null; })();
+  // 🔴 命中检查（2026-10-25 用户实测「按钮根本点不了」）：
+  //    `el.click()` 会绕过命中测试 —— 只有 elementFromPoint 才能发现"被别的元素盖住"。
+  const hitBtn = document.querySelector('[data-testid="lgen-apply"]');
+  if (hitBtn) {
+    const r = hitBtn.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const top = document.elementFromPoint(x, y);
+    out.hit = {
+      rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+      top: top ? (top.tagName + '.' + String(top.className || '').split(' ').slice(0, 3).join('.')) : null,
+      topTestId: top && top.getAttribute ? top.getAttribute('data-testid') : null,
+      covered: !(top === hitBtn || (top && hitBtn.contains(top))),
+      disabled: !!hitBtn.disabled,
+    };
+  }
   return JSON.stringify(out);
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
 
@@ -195,15 +210,32 @@ JS_DETERMINISM = r""" (async () => {
   const c = s.previewLandmass(K, { ...params, seed: 4321 });
   const shapes = {};
   for (const shape of ['continent', 'elongated', 'archipelago']) {
-    const r = s.previewLandmass(K, { ...params, shape, continentCount: 2 });
+    const r = s.previewLandmass(K, { ...params, shape, continentCount: 3, landRatio: 0.3 });
     const cand = (r.candidates || [])[0] || { rings: [], stats: {} };
+    const rings = cand.rings || [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const ring of cand.rings) for (const p of ring.points) {
+    for (const ring of rings) for (const p of ring.points) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
-    shapes[shape] = { rings: cand.rings.length, ratio: (maxY - minY) / Math.max(1e-6, maxX - minX),
-      land: cand.stats.landRatio };
+    // 最大陆块的主轴细长比（旋转不变；bbox 会被簇状布局骗到）
+    const biggest = rings.slice().sort((a, b) => {
+      const area = (pts) => { let q = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) q += pts[j].x * pts[i].y - pts[i].x * pts[j].y; return Math.abs(q) / 2; };
+      return area(b.points) - area(a.points);
+    })[0];
+    let pca = 1;
+    if (biggest) {
+      const pts = biggest.points;
+      const mx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+      const my = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+      let sxx = 0, syy = 0, sxy = 0;
+      for (const p of pts) { const dx = p.x - mx, dy = p.y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+      const tr = sxx + syy, det = sxx * syy - sxy * sxy;
+      const disc = Math.max(0, (tr * tr) / 4 - det);
+      const l1 = tr / 2 + Math.sqrt(disc), l2 = Math.max(1e-9, tr / 2 - Math.sqrt(disc));
+      pca = Math.sqrt(l1 / l2);
+    }
+    shapes[shape] = { rings: rings.length, ratio: (maxY - minY) / Math.max(1e-6, maxX - minX), pca, land: cand.stats.landRatio };
   }
   return JSON.stringify({ okA: !!a.ok, same: hash(a) === hash(b), differs: hash(a) !== hash(c), shapes });
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
@@ -274,6 +306,11 @@ def run(cdp):
         fails.append('🔴 有候选缩略图是空白的（canvas 没画出来）')
     if not opened.get('hasApply'):
         fails.append('🔴 面板没有应用按钮')
+    hit = opened.get('hit') or {}
+    if hit.get('covered'):
+        fails.append(f"🔴 「造陆」按钮被别的元素盖住，真人点不到：{hit.get('top')} (testid={hit.get('topTestId')}) rect={hit.get('rect')}")
+    elif hit:
+        notes.append(f"按钮命中正常（{hit.get('rect', {}).get('w')}×{hit.get('rect', {}).get('h')}，disabled={hit.get('disabled')}）")
 
     applied = _ev(cdp, JS_APPLY, '设 60 省并应用')
     if applied.get('__err__'):
@@ -316,11 +353,11 @@ def run(cdp):
         if not (c and e and a):
             fails.append(f'🔴 形状口径探针不完整：{shapes}')
         else:
-            if not (e.get('ratio', 1) < c.get('ratio', 0) * 0.8):
-                fails.append(f"🔴 长条大陆不够长：{e.get('ratio')} vs 圆润 {c.get('ratio')}")
-            if not (a.get('rings', 0) > 2):
-                fails.append(f"🔴 群岛只有 {a.get('rings')} 个环（应 > 陆块数 2）")
-            notes.append(f"形状：圆润 {c.get('ratio', 0):.2f} / 长条 {e.get('ratio', 0):.2f} / 群岛 {a.get('rings')} 环")
+            if not (e.get('pca', 1) > c.get('pca', 0) * 1.12):
+                fails.append(f"🔴 长条大陆不够细长：主轴比 {e.get('pca')} vs 圆润 {c.get('pca')}")
+            if not (a.get('rings', 0) > c.get('rings', 0)):
+                fails.append(f"🔴 群岛环数 {a.get('rings')} 未多于圆润 {c.get('rings')}")
+            notes.append(f"形状：圆润 {c.get('pca', 0):.2f} / 长条 {e.get('pca', 0):.2f} / 群岛 {a.get('rings')} 环")
 
     scale = _ev(cdp, JS_SCALE, '400 省规模 + 撤销')
     if scale.get('__err__'):

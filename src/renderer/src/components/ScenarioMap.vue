@@ -750,35 +750,49 @@
         </div>
       </div>
 
-      <!-- P0-1：地形生成参数面板（按需展开，与「分辨率」面板同一套 rp-* 外观） -->
-      <div v-if="terrainGenOpen" class="resample-panel" data-testid="terrain-gen-wrap">
-        <TerrainGenPanel
-          :base-map-key="baseMapKey"
-          :has-heightmap="baseMapHasHeightmap"
-          @apply="applyGeneratedTerrain"
-          @close="terrainGenOpen = false"
-        />
-      </div>
+      <!-- P0-1：地形生成参数面板（**浮层**：2026-10-25 实测被左侧剧本列表的 `slp-empty` 盖住，
+           真人点不到「应用」——`el.click()` 绕过命中测试所以用例一直绿）。
+           三个生成面板统一 Teleport 到 body + 固定定位 + 高层级，不再受工具栏布局/滚动裁剪影响。 -->
+      <Teleport to="body">
+        <div v-if="terrainGenOpen" class="gen-float" data-testid="terrain-gen-wrap">
+          <div class="resample-panel">
+            <TerrainGenPanel
+              :base-map-key="baseMapKey"
+              :has-heightmap="baseMapHasHeightmap"
+              @apply="applyGeneratedTerrain"
+              @close="terrainGenOpen = false"
+            />
+          </div>
+        </div>
+      </Teleport>
 
       <!-- P0-2：造陆面板（轮廓候选 → 铺底切省；一条撤销） -->
-      <div v-if="landmassOpen" class="resample-panel" data-testid="landmass-wrap">
-        <LandmassPanel
-          :base-map-key="baseMapKey"
-          :has-terrain="provinceCount > 0"
-          @apply="applyLandmassResult"
-          @close="landmassOpen = false"
-        />
-      </div>
+      <Teleport to="body">
+        <div v-if="landmassOpen" class="gen-float" data-testid="landmass-wrap">
+          <div class="resample-panel">
+            <LandmassPanel
+              :base-map-key="baseMapKey"
+              :has-terrain="provinceCount > 0"
+              @apply="applyLandmassResult"
+              @close="landmassOpen = false"
+            />
+          </div>
+        </div>
+      </Teleport>
 
       <!-- P0-4：文化/宗教/势力派生面板 -->
-      <div v-if="deriveOpen" class="resample-panel" data-testid="derive-wrap">
-        <DerivePanel
-          :base-map-key="baseMapKey"
-          :scenario-key="selectedScenario?.id || ''"
-          @applied="onDerived"
-          @close="deriveOpen = false"
-        />
-      </div>
+      <Teleport to="body">
+        <div v-if="deriveOpen" class="gen-float" data-testid="derive-wrap">
+          <div class="resample-panel">
+            <DerivePanel
+              :base-map-key="baseMapKey"
+              :scenario-key="selectedScenario?.id || ''"
+              @applied="onDerived"
+              @close="deriveOpen = false"
+            />
+          </div>
+        </div>
+      </Teleport>
 
       <!-- 地形来源（M1c，2026-09-25）—— 底图的地形有两种来源，取舍完全不同，必须显式选：
              冻结导入 = 复制一份独立副本 → 历史存档剧本（行星后来怎么改都不影响它）
@@ -12163,6 +12177,27 @@ watch(baseMap, () => {
 /* ── P5：高度图分辨率面板（2026-10-14）───────────────────────────────────────
    为什么按需展开而不是常驻：这组操作**不常做**（一次调整管很久），常驻会在工具栏上
    再加一排控件，把"每屏能看几个工具"进一步挤没。 */
+/* 生成类面板的浮层容器（P0-1/P0-2/P0-4 共用）：固定定位 + 高层级。
+   🔴 2026-10-25 用户实测「按钮根本点不了」：内联在工具栏里时，左栏剧本列表的
+   `.slp-empty` 正好压在「造陆并铺 N 省」上方 —— 真人点击命中的是它，而 `el.click()`
+   绕过命中测试，所以用例一直绿。浮层化后既不被遮挡，也不受工具栏高度裁剪。 */
+.gen-float {
+  position: fixed;
+  left: 50%;
+  top: 64px;
+  transform: translateX(-50%);
+  z-index: 80;
+  width: min(780px, calc(100vw - 96px));
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  padding: 8px 10px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+.gen-float .resample-panel { margin: 0; border: none; background: transparent; padding: 0; }
+
 .resample-panel {
   display: flex;
   flex-direction: column;

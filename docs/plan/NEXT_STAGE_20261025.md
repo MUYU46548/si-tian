@@ -1,4 +1,4 @@
-# 司天 v0.4.0 之后：后续开发计划（2026-10-25）
+﻿# 司天 v0.4.0 之后：后续开发计划（2026-10-25）
 
 > 基线：`main` = `v0.4.0`（c1e5e77）；全量 150/150 通过（`build/_release_0.4.0_full.log`）。
 > 当前阶段门：**历史剧本可用**已过；下一阶段按“先补底图生成，再接渲染层，最后扩模块”推进。
@@ -25,16 +25,25 @@
   - `heightMath.js` 新增 `buildClimateInputs()`：纬度按行号（北为上，跨度可设）、离岸距离 = 8 邻域 BFS 格数；
   - `deriveAllLayers()` 不再传 `null, null`；`synthesizeBaseMapTerrain()` 生成地形时**同一笔**写入 temp/prec/biome，
     并把 `climateSpec.latitudeSpanDeg` 存进高度图（重算时用同一个跨度）。
-- ✅ **P0-2 造陆**（2026-10-25 第二轮完成）
-  - `utils/landmass.js`：确定性大陆/群岛轮廓（网格槽位放置 → 不重叠、不出界；
-    粗糙度只改形状不改大小；实际占比如实回报，40 块以上不重叠时上限约 35%）。
+- ✅ **P0-2 造陆**（2026-10-25 第二轮完成；第三轮按用户判词重写海岸）
+  - **v2 重写**（用户："像几坨面团，怎么摇种子都很丑"）：不再"每块大陆一个径向噪声圆"，
+    改成 **标量场 + marching squares 等值线**：平顶缓坡的大陆掩膜 + **域扭曲的分形噪声**
+    （扭曲作用在掩膜取样坐标上），按目标占比取分位数定阈值（误差 ≤ 5 个点），
+    轮廓 Chaikin 平滑 + RDP 简化；**湖泊**（洞）挂到包含它的陆块环上一起交给铺底。
+  - `utils/landmass.js`：确定性大陆/群岛轮廓（网格槽位放置、不重叠、不出界、边缘衰减防"直边"）。
   - `terrainParams.js` 新增 `LAND_PARAM_FIELDS` / `LAND_PRESETS` / `normalizeLandParams`
     （种子 / 陆块数 / 陆地占比 / 形状 / 崎岖度 / 大小差异 / 铺底块数）。
   - 切省**复用批量铺底**：`batchSubdivide` 新增 `targetShapes` + `planOnly`（只算不写），
     `generateLandmass` 把「造陆 + 铺底」拼成**一条命令**（一次 Ctrl+Z 全退）。
-  - `components/LandmassPanel.vue` + 工具栏「造陆」入口：3 张轮廓候选缩略图 → 设铺底块数 → 应用；
+  - `components/LandmassPanel.vue` + 工具栏「造陆」入口：3 张轮廓候选 → 设铺底块数 → 应用；
     已有陆地时先问（覆盖 = 整张替换）。
-  - 实测：60 省 ~0.4s / 400 省 ~1.8s（一条 undo 归零）；`test_152` + `unit/test_landmass.js` 守。
+  - 🔴 **用户实测"按钮根本点不了"**：面板内联在工具栏里时被左栏剧本列表的 `.slp-empty` 压住，
+    真人点击命中的是它；`el.click()` 绕过命中测试，所以用例一直绿。三个生成面板已改为
+    **Teleport 到 body 的浮层**（固定定位 + z-index 80），并给 test_152 加了
+    `document.elementFromPoint` 命中判据（这是唯一能抓"被盖住"的判据）。
+  - 实测：60 省 ~0.6s / 400 省 ~1.9s（一条 undo 归零）；`test_152` + `unit/test_landmass.js`（9 项）守。
+  - ⚠️ 仍未到参考图（EU4 / Azgaar）水准：海岸是"场上阈值 + 平滑"的形态，
+    缺**侵蚀/板块**这类成因结构。若要继续提升，方向是液压侵蚀 + 河网回灌，而不是继续调噪声。
 - ✅ **P0-4 文化/宗教/势力派生**（2026-10-25 第三轮完成）
   - `utils/cultureDerive.js`：最远点采样选文化中心（确定性）→ 逐格归最近中心（连续文化区）；
     宗教中心优先落在文化中心（沿文化扩散）；省份形心 → 最近陆格得到省摘要（形心落海会退到最近陆格）；
@@ -66,7 +75,7 @@
   已实现：`components/TerrainGenPanel.vue` + 工具栏「生成参数」入口 + store 只读 `previewTerrainSynthesis`。
 - 默认参数与“可复现”规则：同 seed + 同参数 = 同结果（Node 单测 + **改版前 sha256 黄金值**）。
 
-### P0-2 造陆（landmass）⏳（下一轮主战场）
+### P0-2 造陆（landmass）✅（2026-10-25 已落地，海岸 v2）
 
 - 基于现有 `terrainSynthesis.js` v2（离岸距离场 + priority-flood + 山脉/高原/裂谷）。
 - ⚠️ 边界：现有入口只做「按**已画好的**轮廓推演地形」；本节要补的是从参数**生成陆地轮廓本身**

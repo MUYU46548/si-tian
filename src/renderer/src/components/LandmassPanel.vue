@@ -63,7 +63,7 @@
         :title="`种子 ${c.seed} · ${c.stats.ringCount} 个环 · 陆地 ${(c.stats.landRatio * 100).toFixed(1)}%`"
         @click="selected = i"
       >
-        <canvas :ref="(el) => setCanvas(i, el)" width="150" height="88" />
+        <canvas :ref="(el) => setCanvas(i, el)" width="184" height="108" />
         <span class="lgen-cand-name">候选 {{ ['一', '二', '三', '四'][i] || i + 1 }}</span>
         <span class="lgen-cand-meta">种子 {{ c.seed }} · {{ (c.stats.landRatio * 100).toFixed(0) }}% 陆地</span>
       </button>
@@ -195,15 +195,26 @@ function drawOne(c) {
   ctx.fillStyle = '#c9b48a';
   ctx.strokeStyle = '#8a7850';
   ctx.lineWidth = 1;
-  for (const ring of c.rings || []) {
-    const pts = ring.points || [];
-    if (pts.length < 3) continue;
+  const trace = (pts) => {
+    if (!pts || pts.length < 3) return false;
     ctx.beginPath();
     ctx.moveTo(X(pts[0].x), Y(pts[0].y));
     for (let i = 1; i < pts.length; i++) ctx.lineTo(X(pts[i].x), Y(pts[i].y));
     ctx.closePath();
+    return true;
+  };
+  for (const ring of c.rings || []) {
+    if (!trace(ring.points)) continue;
     ctx.fill();
     ctx.stroke();
+  }
+  // 湖泊：用海色挖回去（视觉上才能看出"里面有水"，而不是一整块面团）
+  ctx.fillStyle = '#16233b';
+  for (const ring of c.rings || []) {
+    for (const hole of ring.holes || []) {
+      if (!trace(hole)) continue;
+      ctx.fill();
+    }
   }
 }
 function drawAll() {
@@ -274,7 +285,7 @@ defineExpose({ summary: () => describeLandParams(snapshot()) });
 .lgen-cands { display: flex; gap: 8px; flex-wrap: wrap; }
 .lgen-cand { display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid #475569; background: transparent; border-radius: 6px; cursor: pointer; }
 .lgen-cand.on { border-color: #34d399; box-shadow: 0 0 0 1px #34d399 inset; }
-.lgen-cand canvas { display: block; border-radius: 4px; width: 150px; height: 88px; }
+.lgen-cand canvas { display: block; border-radius: 4px; width: 184px; height: 108px; }
 .lgen-cand-name { font-size: 11px; }
 .lgen-cand-meta { font-size: 10px; color: #94a3b8; }
 .lgen-empty { color: #94a3b8; font-size: 11px; padding: 10px 0; }
