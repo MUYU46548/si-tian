@@ -25,9 +25,17 @@
   - `heightMath.js` 新增 `buildClimateInputs()`：纬度按行号（北为上，跨度可设）、离岸距离 = 8 邻域 BFS 格数；
   - `deriveAllLayers()` 不再传 `null, null`；`synthesizeBaseMapTerrain()` 生成地形时**同一笔**写入 temp/prec/biome，
     并把 `climateSpec.latitudeSpanDeg` 存进高度图（重算时用同一个跨度）。
-- ⏳ **P0-2 造陆**（下一轮）：`landRatio / continentCount` 属于「生成陆地轮廓」，尚未实现。
-  现有入口仍是「按**已画好的**轮廓推演地形」；P0-2 要补的是"从参数生成大陆形状 + 切省"。
-- ⏳ **P0-4 文化/宗教/势力派生**（未开始）。
+- ✅ **P0-2 造陆**（2026-10-25 第二轮完成）
+  - `utils/landmass.js`：确定性大陆/群岛轮廓（网格槽位放置 → 不重叠、不出界；
+    粗糙度只改形状不改大小；实际占比如实回报，40 块以上不重叠时上限约 35%）。
+  - `terrainParams.js` 新增 `LAND_PARAM_FIELDS` / `LAND_PRESETS` / `normalizeLandParams`
+    （种子 / 陆块数 / 陆地占比 / 形状 / 崎岖度 / 大小差异 / 铺底块数）。
+  - 切省**复用批量铺底**：`batchSubdivide` 新增 `targetShapes` + `planOnly`（只算不写），
+    `generateLandmass` 把「造陆 + 铺底」拼成**一条命令**（一次 Ctrl+Z 全退）。
+  - `components/LandmassPanel.vue` + 工具栏「造陆」入口：3 张轮廓候选缩略图 → 设铺底块数 → 应用；
+    已有陆地时先问（覆盖 = 整张替换）。
+  - 实测：60 省 ~0.4s / 400 省 ~1.8s（一条 undo 归零）；`test_152` + `unit/test_landmass.js` 守。
+- ⏳ **P0-4 文化/宗教/势力派生**（未开始；下一轮主战场）。
 - 验收：`test_151`（面板端到端 + 可复现 + undo 粒度 + 气候）、`unit/test_terrain_params.js`（13 项）。
 
 - ✅ **P2 · 019 真机验证**（2026-10-25 第二轮完成，见下面 P2 段）

@@ -669,6 +669,16 @@
           title="地形生成参数 —— 种子 / 起伏 / 山脉 / 高原 / 裂谷 / 精度 + 3 张候选预览，选一张再应用（一条撤销）"
           @click="toggleTerrainGenPanel"
         ><Icon name="settings" :size="15"/>生成参数</button>
+        <!-- P0-2（2026-10-25）：**造陆**。此前"从零开始"的第一步是让用户自己画大陆 ——
+             手画出来多是圆饼，而且只会画一块中央大陆。这里按参数生成大陆/群岛轮廓，
+             再用现有铺底管线切成省（一条 undo）。 -->
+        <button
+          v-if="baseMapKey"
+          data-testid="basemap-generate-landmass"
+          :class="{ active: landmassOpen }"
+          title="造陆 —— 按参数生成大陆/群岛轮廓，再用铺底切成省；一次 Ctrl+Z 可整体退回"
+          @click="toggleLandmassPanel"
+        ><Icon name="globe" :size="15"/>造陆</button>
         <!-- P5（2026-10-14）：高度图**分辨率**。
              真实来由：用户实测「地形模模糊糊」「高度图分辨率帮我调整。注意性能」。
              量出来的事实是源网格 133×75 / spacing 14.4，在 1900×1080 上每格约 3.6 屏幕像素
@@ -738,6 +748,16 @@
           :has-heightmap="baseMapHasHeightmap"
           @apply="applyGeneratedTerrain"
           @close="terrainGenOpen = false"
+        />
+      </div>
+
+      <!-- P0-2：造陆面板（轮廓候选 → 铺底切省；一条撤销） -->
+      <div v-if="landmassOpen" class="resample-panel" data-testid="landmass-wrap">
+        <LandmassPanel
+          :base-map-key="baseMapKey"
+          :has-terrain="provinceCount > 0"
+          @apply="applyLandmassResult"
+          @close="landmassOpen = false"
         />
       </div>
 
@@ -1745,6 +1765,9 @@ import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // 地形生成参数面板（P0-1，2026-10-25）：种子/起伏/山脉/高原/裂谷 + 3 张候选缩略图 → 应用（一条 undo）。
 // 参数模型唯一实现在 utils/terrainParams.js（本组件只做展示与触发）。
 import TerrainGenPanel from './TerrainGenPanel.vue';
+// 造陆面板（P0-2，2026-10-25）：大陆轮廓候选 → 铺底切省。轮廓纯几何在 utils/landmass.js，
+// 切分复用 utils/voronoiBatch.js + store 的 batchSubdivide（不是第二套切分器）。
+import LandmassPanel from './LandmassPanel.vue';
 // 逐年切片导出对话框（2026-10-02）：帧索引/日期体检走 utils/scenarioSlices.js，落盘走主进程一次选目录
 import ScenarioSliceExport from './ScenarioSliceExport.vue';
 // 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报「区间外易主日期」，
@@ -2151,6 +2174,24 @@ function applyGeneratedTerrain(r) {
   rasterLayer.value = 'height';
   terrainGenOpen.value = false;
   statusMsg((r && r.message) || '已生成地形');
+  render();
+}
+
+// ── P0-2（2026-10-25）：造陆面板 ─────────────────────────────────────────────
+// 「造陆」= 生成轮廓 + 现有铺底切省（store 里合成**一条 undo**）。
+// 只读态/绑定行星都不影响省份创建；已有陆地时面板里会先问一次（覆盖 = 整张替换）。
+const landmassOpen = ref(false);
+
+function toggleLandmassPanel() {
+  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
+  landmassOpen.value = !landmassOpen.value;
+}
+
+function applyLandmassResult(r) {
+  rasterCache.clear();
+  rasterLayer.value = 'landsea';     // 造陆不产生高度图 —— 先看陆海底色，省界本来就会画
+  landmassOpen.value = false;
+  statusMsg((r && r.message) || '已造陆');
   render();
 }
 

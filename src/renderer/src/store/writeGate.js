@@ -211,8 +211,10 @@ export const MEMORY_WRITE_CALLSITES = [
           // 2026-10-22：笔刷建省 —— 一笔涂抹长出一个**新省**（与改省界笔刷是两条路，都走 blocked()）
           'createProvinceFromBrush',
           // P1（2026-10-13）：顶点拖动 = 目标省 + 共边邻省一起改（一次手势 = 一条 undo）
-          'updateProvincesBatch'],
-    what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；顶点拖动的批量形状写；统一经 blocked() 包装）' },
+          'updateProvincesBatch',
+          // P0-2（2026-10-25）：造陆 = 生成轮廓 + 复用铺底切省，一条命令落库（首行 blocked() 守卫）
+          'generateLandmass'],
+    what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；顶点拖动的批量形状写；造陆并铺底；统一经 blocked() 包装）' },
   { id: 9, file: 'src/renderer/src/store/geodataModules/channelBrush.js',
     fns: ['beginChannelStroke', 'endChannelStroke'],
     what: '高度图逐格通道笔刷（文化/宗教）：落笔（涂抹期就改内存数组）与抬手提交各一个守卫' },

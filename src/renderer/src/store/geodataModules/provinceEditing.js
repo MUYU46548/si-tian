@@ -54,6 +54,11 @@ import { paintProvinceShape } from '../../utils/brushProvince';
 import {
   voronoiCells, autoSeedsInRegion, makeRegionProbe, ringBBox,
 } from '../../utils/voronoiBatch';
+// P0-2（2026-10-25）：造陆 —— 大陆/群岛轮廓的纯几何层 + 参数模型（两份都在 utils，Node 可测）
+import { generateLandmass as buildLandmass } from '../../utils/landmass';
+import {
+  normalizeLandParams, toLandmassOptions, describeLandParams, candidateSeed,
+} from '../../utils/terrainParams';
 import { nextProvinceColor } from '../../utils/scenarioPalette';
 // 套索采样点简化：鼠标 mousemove 每动一次落一点（去重阈值 1e-6 世界单位 ≈ 必落）
 // → 长按拖一大圈会有上千点。矢量布尔虽是 O(n log n)，但上千点仍不值得 → 复用同一条简化管线。
@@ -1576,7 +1581,26 @@ export function createProvinceEditingModule(ctx) {
    * 解析批量铺底的**目标省**（只读，不写任何东西）。
    * 默认 = 全部有几何的陆地省；`provinceIds` 给定时只认这几个。
    */
-  function resolveBatchTargets(key, provinceIds) {
+  function resolveBatchTargets(key, provinceIds, targetShapes = null) {
+    // P0-2（2026-10-25）：造陆时**轮廓还不存在** —— 先生成环、直接作为"目标省"喂给同一条铺底管线。
+    // 这样切省仍然只有 VoronoiShop 一份实现，不需要"造陆专用切分器"。
+    if (Array.isArray(targetShapes) && targetShapes.length) {
+      const targets = targetShapes
+        .filter((s) => s && Array.isArray(s.points) && s.points.length >= 3)
+        .map((s, i) => normalizeProvince({
+          id: s.id || `batch_shape_${i}`,
+          name: s.name || `陆块 ${i + 1}`,
+          kind: 'land',
+          color: s.color || '',
+          biome: '', culture: '', coast: true,
+          rings: s.rings || [s.points],
+          points: s.points,
+        }));
+      if (!targets.length) {
+        return { error: { ok: false, rejected: 'no-geometry', message: '没有可用的陆块轮廓（环点数不足）' } };
+      }
+      return { targets, targetIds: targets.map((p) => p.id), synthetic: true };
+    }
     const all = provincesOf(key);
     if (!all.length) {
       return { error: { ok: false, rejected: 'no-province', message: '这张底图还没有省份 —— 先用「自由绘制 (B)」画一块大陆，再铺底' } };
@@ -1588,7 +1612,7 @@ export function createProvinceEditingModule(ctx) {
     if (!targets.length) {
       return { error: { ok: false, rejected: 'no-geometry', message: '目标省份还没有边界 —— 先画/涂出轮廓再铺底' } };
     }
-    return { targets, targetIds: targets.map((p) => p.id) };
+    return { targets, targetIds: targets.map((p) => p.id), synthetic: false };
   }
 
   /**
@@ -1596,8 +1620,11 @@ export function createProvinceEditingModule(ctx) {
    * 只有一个目标省时**不做并集**（真实底图上「整块大陆就是一个省」是最常见的情形，
    * 而 10525 点自并要 1 秒多 —— 没必要白花）。
    */
-  function buildBatchRegion(key, targets) {
-    const raw = rawProvinces(key).filter((p) => targets.some((t) => t.id === p.id));
+  function buildBatchRegion(key, targets, synthetic = false) {
+    // synthetic（造陆）：目标不是底图里已有的省，直接用传进来的形状
+    const raw = synthetic
+      ? targets
+      : rawProvinces(key).filter((p) => targets.some((t) => t.id === p.id));
     let region = null;
     if (raw.length === 1) {
       region = provinceToMulti(raw[0]);
@@ -1776,16 +1803,17 @@ export function createProvinceEditingModule(ctx) {
     });
     const m = bm(key);
     if (!m) return { ok: false, rejected: 'no-basemap', message: '底图不存在' };
-    const t = resolveBatchTargets(key, provinceIds);
+    const t = resolveBatchTargets(key, provinceIds, opts.targetShapes);
     if (t.error) return t.error;
     const targets = t.targets;
     const targetIds = t.targetIds;
+    const synthetic = !!t.synthetic;
 
     const t0 = Date.now();
 
     // ① 区域 = 目标省的并集（只有一个省时不必并，省掉一次大扫描）
     report('region', 0, 1, targetIds.length === 1 ? '准备范围…' : `合并 ${targetIds.length} 个省份的范围…`);
-    const r0 = buildBatchRegion(key, targets);
+    const r0 = buildBatchRegion(key, targets, synthetic);
     if (r0.error) return r0.error;
     const region = r0.region, probe = r0.probe;
     const regionArea = r0.regionArea, regionBox = r0.regionBox;
@@ -1860,11 +1888,12 @@ export function createProvinceEditingModule(ctx) {
     await yieldToPaint();                       // 让"正在写入"先画出去（落库这一下也是同步的）
     if (cancelled()) return abort();
     const terrainNow = provincesOf(key);
-    if (!terrainNow.some((p) => p.id === targetIds[0])) {
+    // synthetic（造陆）：目标形状本来就不在 terrain 里，跳过"目标是否还在"的自检
+    if (!synthetic && !terrainNow.some((p) => p.id === targetIds[0])) {
       return { ok: false, rejected: 'changed', message: '底图在切分过程中变化了，已放弃（数据未改动）' };
     }
     const stamp = Date.now().toString(36);
-    const remaining = terrainNow.length - targets.length;
+    const remaining = synthetic ? terrainNow.length : terrainNow.length - targets.length;
     const link = [];
     const newProvs = cells.map((c, i) => {
       const id = `prov_batch_${stamp}_${i}`;
@@ -1887,6 +1916,27 @@ export function createProvinceEditingModule(ctx) {
     const terrainAfter = terrainNow.filter((p) => !idset.has(p.id)).concat(newProvs);
     const ownBefore = collectOwnershipBefore(key);
     const ownAfter = buildOwnershipAfter(ownBefore, targetIds, link);
+
+    // P0-2：造陆要「造陆 + 切省」**一条 undo** —— 所以铺底只算不写，把结果交回调用方，
+    // 由它拼一条命令同时恢复/写入。真实行政区也要这条：先看方案再落库。
+    if (opts.planOnly) {
+      return {
+        ok: true,
+        planOnly: true,
+        created: newProvs.length,
+        newProvs,
+        terrainBefore: terrainNow,
+        terrainAfter,
+        ownBefore,
+        ownAfter,
+        targetIds,
+        skipped, outside, failed, snapped, inner, clipped,
+        coverage: regionArea > 0 ? cellArea / regionArea : 0,
+        regionArea, cellArea, cellPoints,
+        seeds: seedPts.length,
+        elapsedMs: Date.now() - t0,
+      };
+    }
 
     const applyTerrain = (terrain) => { invalidateProvinceGrid(key); setTerrain(key, terrain, { save: false }); };
     execute({
@@ -1913,6 +1963,150 @@ export function createProvinceEditingModule(ctx) {
     };
   }
 
+
+  // ============================================================
+  // 造陆（P0-2，2026-10-25）：轮廓生成 + 铺底切省（**一条 undo**）
+  // ============================================================
+
+  /** 没有陆地时用的默认区域（世界坐标；与剧本画布的常用范围同量级） */
+  const LANDMASS_BBOX_DEFAULT = Object.freeze({ minX: -900, minY: -500, maxX: 900, maxY: 500 });
+
+  /** 造陆区域：已有陆地就用它的包围盒外扩 4%（在原来的地方造），否则用默认区域 */
+  function landmassBBox(key) {
+    let box = null;
+    for (const p of rawProvinces(key)) {
+      const bb = provinceBBox(p);
+      if (!bb) continue;
+      if (!box) box = { ...bb };
+      else {
+        box.minX = Math.min(box.minX, bb.minX);
+        box.minY = Math.min(box.minY, bb.minY);
+        box.maxX = Math.max(box.maxX, bb.maxX);
+        box.maxY = Math.max(box.maxY, bb.maxY);
+      }
+    }
+    if (box && (box.maxX - box.minX) > 10 && (box.maxY - box.minY) > 10) {
+      const w = box.maxX - box.minX, h = box.maxY - box.minY;
+      return {
+        minX: box.minX - w * 0.02, minY: box.minY - h * 0.02,
+        maxX: box.maxX + w * 0.02, maxY: box.maxY + h * 0.02,
+      };
+    }
+    return { ...LANDMASS_BBOX_DEFAULT };
+  }
+
+  /**
+   * **只读**：出 1~4 张大陆轮廓候选（给面板画缩略图）。
+   * 候选 id 稳定（`land-<基准种子>-<序号>`）—— 同参数永远同三张，选中哪张应用的就是哪张。
+   * ⚠️ 只生成**轮廓**，不铺底、不写任何数据（铺底很贵，应该在用户点了应用之后才算）。
+   */
+  function previewLandmass(key, paramsIn = {}, opts = {}) {
+    const m = bm(key);
+    if (!m) return { ok: false, rejected: 'no-basemap', message: '先选一张底图', candidates: [] };
+    const norm = normalizeLandParams(paramsIn);
+    const count = Math.max(1, Math.min(4, Math.floor(Number(opts.count) || 3)));
+    const bbox = landmassBBox(key);
+    const candidates = [];
+    for (let i = 0; i < count; i++) {
+      const params = { ...norm.params, seed: candidateSeed(norm.params.seed, i) };
+      const gen = buildLandmass(toLandmassOptions(params), bbox);
+      candidates.push({
+        id: `land-${norm.params.seed}-${i}`,
+        index: i,
+        seed: params.seed,
+        params,
+        bbox,
+        rings: gen.rings.map((r) => ({ id: r.id, points: r.points, area: r.area })),
+        stats: gen.stats,
+      });
+    }
+    return {
+      ok: true,
+      params: norm.params,
+      warnings: norm.warnings,
+      bbox,
+      candidates,
+      hasTerrain: provincesOf(key).length,
+      message: `已出 ${candidates.length} 张大陆候选（${describeLandParams(norm.params)}）`,
+    };
+  }
+
+  /**
+   * **造陆 + 铺底切省**（P0-2）：轮廓由 `utils/landmass.js` 生成，切分复用 `batchSubdivide`
+   * 的 `planOnly` 计划（**不是第二套切分器**），最后拼成**一条命令**落库 —— 一次 Ctrl+Z 全退回。
+   *
+   * 🔴 已有陆地时默认**拒绝**（`rejected:'has-terrain'`）：造陆会覆盖整张底图的省份，
+   *    必须由 UI 明确问过用户再带 `force:true` 进来（与 P0-1 的覆盖语义一致）。
+   */
+  async function generateLandmass(key, paramsIn = {}, opts = {}) {
+    if (isRO()) return blocked('造陆');
+    const m = bm(key);
+    if (!m) return { ok: false, rejected: 'no-basemap', message: '先选一张底图' };
+    const existing = provincesOf(key);
+    if (existing.length && !opts.force) {
+      return {
+        ok: false, rejected: 'has-terrain',
+        message: `这张底图已经有 ${existing.length} 块陆地/省份 —— 造陆会整张替换（连同归属键），`
+          + '确认后才能继续（旧数据可由一次 Ctrl+Z 退回）。',
+      };
+    }
+    const norm = normalizeLandParams(paramsIn);
+    const bbox = landmassBBox(key);
+    const gen = buildLandmass(toLandmassOptions(norm.params), bbox);
+    if (!gen.rings.length) return { ok: false, rejected: 'no-rings', message: '没生成出任何陆地轮廓' };
+    const shapes = gen.rings.map((r) => ({
+      id: `land_outline_${norm.params.seed}_${r.id}`,
+      name: '陆块',
+      points: r.points,
+      rings: [r.points],
+    }));
+    // 只算不写：铺底的 Voronoi/裁剪走同一条实现，结果交回这里拼命令
+    const plan = await batchSubdivide(key, {
+      targetShapes: shapes,
+      count: norm.params.provinceCount,
+      seed: norm.params.seed,
+      planOnly: true,
+      yieldEvery: 4,
+      onProgress: opts.onProgress,
+      token: opts.token,
+    });
+    if (!plan || plan.ok === false) return plan || { ok: false, rejected: 'subdivide-failed', message: '铺底计划失败' };
+
+    const terrainBefore = plan.terrainBefore;
+    const terrainAfter = plan.terrainAfter;
+    execute({
+      type: 'generate-landmass',
+      label: `造陆：${gen.rings.length} 块陆地 / ${plan.created} 省`,
+      undo: () => {
+        invalidateProvinceGrid(key);
+        setTerrain(key, terrainBefore, { save: false });
+        applyOwnership(plan.ownBefore);
+        scheduleAutoSaveScenarios();
+      },
+      redo: () => {
+        invalidateProvinceGrid(key);
+        setTerrain(key, terrainAfter, { save: false });
+        applyOwnership(plan.ownAfter);
+        scheduleAutoSaveScenarios();
+      },
+    });
+
+    return {
+      ok: true,
+      changed: true,
+      created: plan.created,
+      removed: existing.length,
+      rings: gen.rings.length,
+      landRatio: gen.stats.landRatio,
+      targetRatio: gen.stats.targetRatio,
+      bbox,
+      params: norm.params,
+      elapsedMs: plan.elapsedMs,
+      message: `已造陆：${gen.rings.length} 块陆地 → 铺成 ${plan.created} 省`
+        + `（实际陆地占比 ${(gen.stats.landRatio * 100).toFixed(1)}% / 目标 ${(gen.stats.targetRatio * 100).toFixed(0)}%；`
+        + `${describeLandParams(norm.params)}）—— 一次 Ctrl+Z 可整体退回`,
+    };
+  }
 
   // ============================================================
   // 省份定义表（新增 / 删除 / 清空）—— 与 terrain[] 同步
@@ -2055,6 +2249,8 @@ export function createProvinceEditingModule(ctx) {
     // F（2026-10-11）：用新 .map 的海岸线重建现有省份的外环（只裁不加，一条 undo）
     rebuildCoastline, rebuildCoastlineFromBaseMap, buildLandMulti,
     fillProvinceRegion, splitProvince, splitProvinceAlong, mergeProvinces, batchSubdivide,
+    // P0-2（2026-10-25）：造陆 —— 轮廓候选（只读）+ 造陆并铺底（一条 undo）
+    previewLandmass, generateLandmass,
     // P1（2026-10-13）：顶点编辑 —— 目标省 + 跟随的邻省形状一起改（一次拖动 = 一条 undo）
     updateProvincesBatch,
     previewSplitAlong, planBatchSeeds,

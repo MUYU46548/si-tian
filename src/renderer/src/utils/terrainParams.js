@@ -207,3 +207,107 @@ export function rollSeed(seed) {
 export function terrainParamField(key) {
   return FIELD_BY_KEY.get(key) || null;
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// 造陆参数（P0-2，2026-10-25）—— **另一组**，不要与上面混
+//   上面那组喂 `synthesizeHeightmapFromTerrain()`（按已有轮廓推地形）；
+//   这一组喂 `generateLandmass()`（生成轮廓本身）。消费者不同，字段也不重叠。
+// ══════════════════════════════════════════════════════════════════════════
+
+export const LAND_PARAM_FIELDS = Object.freeze([
+  {
+    key: 'seed', label: '随机种子', kind: 'int', min: 0, max: 999999, step: 1, def: 7,
+    hint: '同种子 + 同参数 = 同一组大陆；换种子只改位置/形状落点',
+  },
+  {
+    key: 'continentCount', label: '陆块数', kind: 'int', min: 1, max: 8, step: 1, def: 3,
+    hint: '生成几块大陆（群岛模式下每块再拆成 2~4 个岛）',
+  },
+  {
+    key: 'landRatio', label: '陆地占比', kind: 'float', min: 0.05, max: 0.55, step: 0.01, def: 0.32,
+    hint: '目标陆地面积 / 区域面积。⚠️ 不重叠的多块大陆上限约 35%（再多就装不下，实际值会如实回低）',
+  },
+  {
+    key: 'shape', label: '形状', kind: 'enum', options: ['continent', 'elongated', 'archipelago'], def: 'continent',
+    hint: '圆润大陆 / 长条大陆 / 群岛',
+  },
+  {
+    key: 'roughness', label: '海岸崎岖度', kind: 'float', min: 0, max: 1, step: 0.05, def: 0.45,
+    hint: '0 = 光滑椭圆；越大海岸线越碎（环采样点也更多）',
+  },
+  {
+    key: 'sizeVariance', label: '大小差异', kind: 'float', min: 0, max: 1, step: 0.05, def: 0.4,
+    hint: '0 = 各陆块一样大；1 = 最大块约是最小块的 4 倍',
+  },
+  {
+    key: 'provinceCount', label: '铺底块数', kind: 'int', min: 20, max: 600, step: 10, def: 180,
+    hint: '造陆后用现有 Voronoi 铺底切成多少省（415 省量级请填 400+，会走分批让帧）',
+  },
+]);
+
+export const DEFAULT_LAND_PARAMS = Object.freeze(
+  LAND_PARAM_FIELDS.reduce((acc, f) => { acc[f.key] = f.def; return acc; }, {}),
+);
+
+export const LAND_PRESETS = Object.freeze([
+  { id: 'continent', name: '大陆世界', params: { ...DEFAULT_LAND_PARAMS } },
+  {
+    id: 'archipelago', name: '群岛世界',
+    params: { ...DEFAULT_LAND_PARAMS, continentCount: 2, shape: 'archipelago', landRatio: 0.24, roughness: 0.6 },
+  },
+  {
+    id: 'coast', name: '狭长海岸',
+    params: { ...DEFAULT_LAND_PARAMS, continentCount: 2, shape: 'elongated', landRatio: 0.28 },
+  },
+]);
+
+const LAND_FIELD_BY_KEY = new Map(LAND_PARAM_FIELDS.map((f) => [f.key, f]));
+
+/** 归一化造陆参数（夹取留 warning；enum 只认白名单） */
+export function normalizeLandParams(raw = {}) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const params = {};
+  const warnings = [];
+  for (const f of LAND_PARAM_FIELDS) {
+    const v = src[f.key];
+    if (f.kind === 'enum') {
+      params[f.key] = f.options.includes(v) ? v : f.def;
+      if (v !== undefined && v !== params[f.key]) warnings.push({ key: f.key, reason: 'invalid', to: params[f.key] });
+      continue;
+    }
+    const n = Number(v);
+    if (v === undefined || v === null || v === '' || !Number.isFinite(n)) {
+      params[f.key] = f.def;
+      if (v !== undefined && v !== null && v !== '') warnings.push({ key: f.key, reason: 'invalid', to: f.def });
+      continue;
+    }
+    let c = f.kind === 'int' ? Math.round(n) : tidy(n, f.step);
+    c = Math.min(f.max, Math.max(f.min, c));
+    if (c !== n) warnings.push({ key: f.key, reason: 'clamped', from: n, to: c });
+    params[f.key] = c;
+  }
+  return { params, warnings };
+}
+
+/** 造陆参数 → `generateLandmass(params, bbox)` 的入参（唯一映射口） */
+export function toLandmassOptions(params) {
+  return normalizeLandParams(params).params;
+}
+
+/** 中文摘要（回执 / 面板一行） */
+export function describeLandParams(params) {
+  const p = normalizeLandParams(params).params;
+  const label = { continent: '圆润大陆', elongated: '长条大陆', archipelago: '群岛' }[p.shape] || p.shape;
+  return `种子 ${p.seed} · ${p.continentCount} 陆块 · ${label} · 占比 ${(p.landRatio * 100).toFixed(0)}%`
+    + ` · 崎岖 ${p.roughness.toFixed(2)} · 大小差 ${p.sizeVariance.toFixed(2)} · 铺 ${p.provinceCount} 省`;
+}
+
+/** 稳定 key（候选缓存 / 用例断言） */
+export function landParamsKey(params) {
+  const p = normalizeLandParams(params).params;
+  return LAND_PARAM_FIELDS.map((f) => `${f.key}=${p[f.key]}`).join('|');
+}
+
+export function landParamField(key) {
+  return LAND_FIELD_BY_KEY.get(key) || null;
+}
