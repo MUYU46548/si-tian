@@ -58,7 +58,11 @@ import {
 import { generateLandmass as buildLandmass } from '../../utils/landmass';
 import {
   normalizeLandParams, toLandmassOptions, describeLandParams, candidateSeed,
+  normalizeCultureParams, describeCultureParams,
 } from '../../utils/terrainParams';
+// P0-4（2026-10-25）：文化/宗教/势力派生的纯函数层（最远点采样 + 省份摘要 + 势力方案）
+import { deriveCultureLayers, planPolities } from '../../utils/cultureDerive';
+import { SEA_LEVEL } from '../../utils/heightMath';
 import { nextProvinceColor } from '../../utils/scenarioPalette';
 // 套索采样点简化：鼠标 mousemove 每动一次落一点（去重阈值 1e-6 世界单位 ≈ 必落）
 // → 长按拖一大圈会有上千点。矢量布尔虽是 O(n log n)，但上千点仍不值得 → 复用同一条简化管线。
@@ -96,6 +100,9 @@ export function createProvinceEditingModule(ctx) {
   const guardWrite = ctx.guardWrite || (() => ({ ok: true }));
   const isReadOnly = ctx.isReadOnly || { value: false };
   const isRO = () => !!(isReadOnly && isReadOnly.value);
+  // P0-4：文化/宗教派生要写逐格网格 —— 只经 scenarioEditing 的这两个唯一入口
+  const getHeightmapFor = ctx.getHeightmapFor || (() => null);
+  const commitHeightmap = ctx.commitHeightmap || (() => {});
   /**
    * 剧本容器（**批量铺底要迁移归属/易主**，见 `batchSubdivide`）。
    * ⚠️ 只在「批量切分」这一条链上读它 —— 省份几何本身仍然只住 `baseMaps[key].terrain`。
@@ -2109,6 +2116,168 @@ export function createProvinceEditingModule(ctx) {
   }
 
   // ============================================================
+  // 文化 / 宗教派生（P0-4，2026-10-25）
+  // ============================================================
+  //
+  // 数据形状（沿用导入与笔刷的同一份）：`heightmap.culture/religion` = Uint8Array（0 = 无主），
+  // 列表在 `heightmap.cultures/religions`（`{i,name,color}`），省份摘要写 `terrain[].cultureId/culture/...`。
+  // 两处都要改 → 一条命令里同时 `commitHeightmap` 与 `setTerrain`，一次 Ctrl+Z 全退回。
+
+  function channelFilled(arr) {
+    if (!arr || !arr.length) return 0;
+    let n = 0;
+    for (let i = 0; i < arr.length; i++) if (arr[i]) n++;
+    return n;
+  }
+
+  /** 只读预览：派生会得到什么、现有数据有多少（UI 据此推荐"只补空/覆盖"） */
+  function previewCultureDerive(key, paramsIn = {}) {
+    const m = bm(key);
+    if (!m) return { ok: false, rejected: 'no-basemap', message: '先选一张底图' };
+    const hm = getHeightmapFor(key);
+    if (!hm || !hm.grid || !Array.isArray(hm.grid.points) || !hm.grid.points.length) {
+      return {
+        ok: false, rejected: 'no-heightmap',
+        message: '文化/宗教是**逐格**数据：这张底图还没有高度图网格 —— 先「按轮廓生成地形」或导入 .map，再派生',
+      };
+    }
+    const norm = normalizeCultureParams(paramsIn);
+    const terrain = provincesOf(key);
+    const derived = deriveCultureLayers({
+      grid: hm.grid, h: hm.h, seaLevel: SEA_LEVEL, terrain, params: norm.params,
+    });
+    const polityPlan = planPolities(terrain, derived.provinceCulture, norm.params);
+    const existing = {
+      cultureCells: channelFilled(hm.culture),
+      religionCells: channelFilled(hm.religion),
+      cultures: Array.isArray(hm.cultures) ? hm.cultures.length : 0,
+      religions: Array.isArray(hm.religions) ? hm.religions.length : 0,
+      provinceCultured: terrain.filter((p) => p && p.cultureId).length,
+      provinceTotal: terrain.length,
+    };
+    return {
+      ok: true,
+      params: norm.params,
+      derived,
+      polityPlan,
+      existing,
+      message: `预览：${derived.stats.cultureCount} 文化 / ${derived.stats.religionCount} 宗教（${derived.stats.landCells} 个陆格）`
+        + ` · ${polityPlan.stats.polities} 势力 / ${polityPlan.stats.assigned} 省`,
+    };
+  }
+
+  /**
+   * 落库文化/宗教派生。
+   * `strategy`：`fill-empty`（默认，只补空格/空省 —— 手改与已有数据一律不动）| `overwrite`（整层替换）。
+   * ⚠️ 覆盖模式会**替换**已有文化/宗教（不只是补空）；UI 必须先问。
+   */
+  function applyCultureDerive(key, paramsIn = {}, opts = {}) {
+    if (isRO()) return blocked('文化/宗教派生');
+    const pv = previewCultureDerive(key, paramsIn);
+    if (!pv.ok) return pv;
+    const strategy = opts.strategy === 'overwrite' ? 'overwrite' : 'fill-empty';
+    const hm = getHeightmapFor(key);
+    const terrain = provincesOf(key);
+    const derived = pv.derived;
+    const n = hm.grid.points.length;
+    const oldCulture = hm.culture && hm.culture.length === n ? new Uint8Array(hm.culture) : null;
+    const oldReligion = hm.religion && hm.religion.length === n ? new Uint8Array(hm.religion) : null;
+    const nextCulture = oldCulture ? new Uint8Array(oldCulture) : new Uint8Array(n);
+    const nextReligion = oldReligion ? new Uint8Array(oldReligion) : new Uint8Array(n);
+    let cultureCells = 0, religionCells = 0, keptCells = 0;
+    for (let i = 0; i < n; i++) {
+      const c = derived.cultureGrid[i] || 0;
+      if (c) {
+        if (strategy === 'overwrite' || !nextCulture[i]) {
+          if (nextCulture[i] !== c) cultureCells++;
+          nextCulture[i] = c;
+        } else keptCells++;
+      }
+      const r = derived.religionGrid[i] || 0;
+      if (r && (strategy === 'overwrite' || !nextReligion[i])) {
+        if (nextReligion[i] !== r) religionCells++;
+        nextReligion[i] = r;
+      }
+    }
+    const mergeList = (oldList, gen) => {
+      if (strategy === 'overwrite') return gen.map((x) => ({ ...x }));
+      const out = Array.isArray(oldList) ? oldList.map((x) => ({ ...x })) : [];
+      const ids = new Set(out.map((x) => x.i));
+      for (const g of gen) if (!ids.has(g.i)) out.push({ ...g });
+      return out;
+    };
+    const nextCultures = mergeList(hm.cultures, derived.cultures);
+    const nextReligions = mergeList(hm.religions, derived.religions);
+
+    let provinceChanged = 0;
+    const nextTerrain = terrain.map((p) => {
+      if (!p || p.kind === 'sea') return p;
+      const rec = derived.provinceCulture[p.id];
+      if (!rec) return p;
+      if (strategy === 'fill-empty' && p.cultureId && p.religionId) return p;
+      const next = {
+        ...p,
+        cultureId: rec.cultureId || p.cultureId || 0,
+        culture: rec.culture || p.culture || '',
+        cultureColor: rec.cultureColor || p.cultureColor || '',
+        religionId: rec.religionId || p.religionId || 0,
+        religion: rec.religion || p.religion || '',
+      };
+      if (next.cultureId !== p.cultureId || next.religionId !== p.religionId || next.culture !== p.culture) provinceChanged++;
+      return next;
+    });
+    const listsChanged = nextCultures.length !== (hm.cultures || []).length
+      || nextReligions.length !== (hm.religions || []).length;
+
+    if (!cultureCells && !religionCells && !provinceChanged && !listsChanged) {
+      return { ok: true, changed: false, noop: true, message: '派生结果与现有数据一致（只补空模式下没有可补的）' };
+    }
+
+    const buildHm = (culture, religion, cultures, religions) => {
+      const next = { ...hm };
+      if (culture) next.culture = culture; else delete next.culture;
+      if (religion) next.religion = religion; else delete next.religion;
+      if (cultures && cultures.length) next.cultures = cultures; else delete next.cultures;
+      if (religions && religions.length) next.religions = religions; else delete next.religions;
+      return next;
+    };
+    execute({
+      type: 'derive-culture',
+      label: strategy === 'overwrite'
+        ? `覆盖派生文化/宗教（${derived.stats.cultureCount}/${derived.stats.religionCount}）`
+        : `补空派生文化/宗教（${derived.stats.cultureCount}/${derived.stats.religionCount}）`,
+      undo: () => {
+        commitHeightmap(key, buildHm(oldCulture, oldReligion, hm.cultures, hm.religions));
+        setTerrain(key, terrain, { save: false });
+        scheduleAutoSaveScenarios();
+      },
+      redo: () => {
+        commitHeightmap(key, buildHm(nextCulture, nextReligion, nextCultures, nextReligions));
+        setTerrain(key, nextTerrain, { save: false });
+        scheduleAutoSaveScenarios();
+      },
+    });
+    return {
+      ok: true,
+      changed: true,
+      strategy,
+      cultureCells,
+      religionCells,
+      keptCells,
+      provinces: provinceChanged,
+      cultures: nextCultures.length,
+      religions: nextReligions.length,
+      params: pv.params,
+      message: strategy === 'overwrite'
+        ? `已覆盖派生：文化 ${derived.stats.cultureCount} 个 / 宗教 ${derived.stats.religionCount} 个`
+          + `（改 ${cultureCells} 格文化、${religionCells} 格宗教、${provinceChanged} 省摘要）—— 一次 Ctrl+Z 可整体退回`
+        : `已补空派生：文化 ${derived.stats.cultureCount} 个 / 宗教 ${derived.stats.religionCount} 个`
+          + `（补 ${cultureCells} 格文化、${religionCells} 格宗教、${provinceChanged} 省摘要；`
+          + `保留已有 ${keptCells} 格）—— 一次 Ctrl+Z 可整体退回`,
+    };
+  }
+
+  // ============================================================
   // 省份定义表（新增 / 删除 / 清空）—— 与 terrain[] 同步
   // ============================================================
 
@@ -2251,6 +2420,8 @@ export function createProvinceEditingModule(ctx) {
     fillProvinceRegion, splitProvince, splitProvinceAlong, mergeProvinces, batchSubdivide,
     // P0-2（2026-10-25）：造陆 —— 轮廓候选（只读）+ 造陆并铺底（一条 undo）
     previewLandmass, generateLandmass,
+    // P0-4（2026-10-25）：文化/宗教派生（预览只读；落库一条 undo，逐格 + 省摘要一起写）
+    previewCultureDerive, applyCultureDerive,
     // P1（2026-10-13）：顶点编辑 —— 目标省 + 跟随的邻省形状一起改（一次拖动 = 一条 undo）
     updateProvincesBatch,
     previewSplitAlong, planBatchSeeds,

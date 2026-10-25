@@ -186,6 +186,8 @@ export const MEMORY_WRITE_CALLSITES = [
   { id: 7, file: 'src/renderer/src/store/geodataModules/scenarioEditing.js',
     fns: ['importFromScenariosJson', 'importPlanetLayerData', 'applyHeightBrush', 'applyBiomeBrush',
           'applyCultureBrush', 'applyReligionBrush', 'deriveAllLayers',
+          // P0-4（2026-10-25）：势力派生（只给无主省铺初始归属；首行 guardWrite）
+          'applyPolityDerive',
           'createBaseMapHeightmap', 'bindBaseMapToPlanet', 'unbindBaseMap', 'importHeightmapFromPlanet',
           // 2026-10-17 第八修·改向：按陆地轮廓推演地形并落库（走 `commitHeightmap` = 换高度图本体）
           // ⚠️ 它是**新写口**，必须登记 —— 第一次跑全量时 `test_54` 把这条漏登记当场抓出来了
@@ -213,8 +215,10 @@ export const MEMORY_WRITE_CALLSITES = [
           // P1（2026-10-13）：顶点拖动 = 目标省 + 共边邻省一起改（一次手势 = 一条 undo）
           'updateProvincesBatch',
           // P0-2（2026-10-25）：造陆 = 生成轮廓 + 复用铺底切省，一条命令落库（首行 blocked() 守卫）
-          'generateLandmass'],
-    what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；顶点拖动的批量形状写；造陆并铺底；统一经 blocked() 包装）' },
+          'generateLandmass',
+          // P0-4（2026-10-25）：文化/宗教派生（逐格 + 省摘要一条命令；首行 blocked() 守卫）
+          'applyCultureDerive'],
+    what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；顶点拖动的批量形状写；造陆并铺底；文化/宗教派生；统一经 blocked() 包装）' },
   { id: 9, file: 'src/renderer/src/store/geodataModules/channelBrush.js',
     fns: ['beginChannelStroke', 'endChannelStroke'],
     what: '高度图逐格通道笔刷（文化/宗教）：落笔（涂抹期就改内存数组）与抬手提交各一个守卫' },

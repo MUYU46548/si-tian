@@ -679,6 +679,15 @@
           title="造陆 —— 按参数生成大陆/群岛轮廓，再用铺底切成省；一次 Ctrl+Z 可整体退回"
           @click="toggleLandmassPanel"
         ><Icon name="globe" :size="15"/>造陆</button>
+        <!-- P0-4（2026-10-25）：文化/宗教/势力派生 —— 空省从"没有文化、没有归属"变成
+             有连续文化区、有按文化分组的势力；只补空/覆盖两档显式选，笔刷仍可覆盖。 -->
+        <button
+          v-if="baseMapKey"
+          data-testid="basemap-derive-culture"
+          :class="{ active: deriveOpen }"
+          title="派生文化/宗教/势力 —— 逐格文化区 + 省份摘要 + 按文化分组建势力；只补空或覆盖（会先问）"
+          @click="toggleDerivePanel"
+        ><Icon name="users" :size="15"/>派生</button>
         <!-- P5（2026-10-14）：高度图**分辨率**。
              真实来由：用户实测「地形模模糊糊」「高度图分辨率帮我调整。注意性能」。
              量出来的事实是源网格 133×75 / spacing 14.4，在 1900×1080 上每格约 3.6 屏幕像素
@@ -758,6 +767,16 @@
           :has-terrain="provinceCount > 0"
           @apply="applyLandmassResult"
           @close="landmassOpen = false"
+        />
+      </div>
+
+      <!-- P0-4：文化/宗教/势力派生面板 -->
+      <div v-if="deriveOpen" class="resample-panel" data-testid="derive-wrap">
+        <DerivePanel
+          :base-map-key="baseMapKey"
+          :scenario-key="selectedScenario?.id || ''"
+          @applied="onDerived"
+          @close="deriveOpen = false"
         />
       </div>
 
@@ -1768,6 +1787,8 @@ import TerrainGenPanel from './TerrainGenPanel.vue';
 // 造陆面板（P0-2，2026-10-25）：大陆轮廓候选 → 铺底切省。轮廓纯几何在 utils/landmass.js，
 // 切分复用 utils/voronoiBatch.js + store 的 batchSubdivide（不是第二套切分器）。
 import LandmassPanel from './LandmassPanel.vue';
+// 文化/宗教/势力派生面板（P0-4，2026-10-25）：只补空 / 覆盖两档；层数据写口全在 store。
+import DerivePanel from './DerivePanel.vue';
 // 逐年切片导出对话框（2026-10-02）：帧索引/日期体检走 utils/scenarioSlices.js，落盘走主进程一次选目录
 import ScenarioSliceExport from './ScenarioSliceExport.vue';
 // 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报「区间外易主日期」，
@@ -2192,6 +2213,21 @@ function applyLandmassResult(r) {
   rasterLayer.value = 'landsea';     // 造陆不产生高度图 —— 先看陆海底色，省界本来就会画
   landmassOpen.value = false;
   statusMsg((r && r.message) || '已造陆');
+  render();
+}
+
+// ── P0-4（2026-10-25）：文化/宗教/势力派生 ───────────────────────────────────
+const deriveOpen = ref(false);
+
+function toggleDerivePanel() {
+  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
+  deriveOpen.value = !deriveOpen.value;
+}
+
+/** 派生回执：文化层变了要清栅格缓存；势力归属变了会走既有渲染路径 */
+function onDerived(r, kind) {
+  if (kind === 'culture') rasterCache.clear();
+  statusMsg((r && r.message) || '已派生');
   render();
 }
 

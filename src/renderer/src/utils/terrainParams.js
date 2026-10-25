@@ -311,3 +311,61 @@ export function landParamsKey(params) {
 export function landParamField(key) {
   return LAND_FIELD_BY_KEY.get(key) || null;
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// 文化 / 宗教 / 势力派生参数（P0-4，2026-10-25）
+// ══════════════════════════════════════════════════════════════════════════
+
+export const CULTURE_PARAM_FIELDS = Object.freeze([
+  {
+    key: 'seed', label: '随机种子', kind: 'int', min: 0, max: 999999, step: 1, def: 7,
+    hint: '同种子 + 同参数 = 同一套文化/宗教/势力落点',
+  },
+  {
+    key: 'cultureCount', label: '文化数', kind: 'int', min: 1, max: 12, step: 1, def: 5,
+    hint: '逐格文化用最远点采样选中心，每格归最近中心 → 连续文化区',
+  },
+  {
+    key: 'religionCount', label: '宗教数', kind: 'int', min: 1, max: 12, step: 1, def: 4,
+    hint: '每个文化中心优先配一个宗教中心（宗教沿文化扩散），不足再补',
+  },
+  {
+    key: 'polityCount', label: '势力数', kind: 'int', min: 1, max: 12, step: 1, def: 4,
+    hint: '按文化区分组，一组一个势力；势力多于文化时同一文化按形心再切',
+  },
+]);
+
+export const DEFAULT_CULTURE_PARAMS = Object.freeze(
+  CULTURE_PARAM_FIELDS.reduce((acc, f) => { acc[f.key] = f.def; return acc; }, {}),
+);
+
+const CULTURE_FIELD_BY_KEY = new Map(CULTURE_PARAM_FIELDS.map((f) => [f.key, f]));
+
+export function normalizeCultureParams(raw = {}) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const params = {};
+  const warnings = [];
+  for (const f of CULTURE_PARAM_FIELDS) {
+    const n = Number(src[f.key]);
+    if (!Number.isFinite(n)) {
+      params[f.key] = f.def;
+      if (src[f.key] !== undefined && src[f.key] !== null && src[f.key] !== '') {
+        warnings.push({ key: f.key, reason: 'invalid', to: f.def });
+      }
+      continue;
+    }
+    const c = Math.min(f.max, Math.max(f.min, Math.round(n)));
+    if (c !== n) warnings.push({ key: f.key, reason: 'clamped', from: n, to: c });
+    params[f.key] = c;
+  }
+  return { params, warnings };
+}
+
+export function describeCultureParams(params) {
+  const p = normalizeCultureParams(params).params;
+  return `种子 ${p.seed} · ${p.cultureCount} 文化 · ${p.religionCount} 宗教 · ${p.polityCount} 势力`;
+}
+
+export function cultureParamField(key) {
+  return CULTURE_FIELD_BY_KEY.get(key) || null;
+}

@@ -106,6 +106,10 @@ export const useGeodataStore = defineStore('geodata', () => {
     // 批量铺底（B）要把旧省的**归属 / 易主记录**迁给新省 —— 键就是省份 id，
     // 不迁移就会在 12 个剧本里留下指向不存在省份的孤儿键（画布上看不见却仍参与分组与谱系计算）。
     scenarios: scenarioEditingModule.scenarios,
+    // P0-4（2026-10-25）：文化/宗教派生要**同时**写逐格网格（高度图）与省份摘要（terrain），
+    // 一条命令里两处都改 —— 高度图读写仍然只经 scenarioEditing 的这两个唯一入口。
+    getHeightmapFor: scenarioEditingModule.getHeightmapFor,
+    commitHeightmap: scenarioEditingModule.commitHeightmap,
   });
   provinceGridOps.shiftForDelete = provinceEditingModule.shiftProvinceGridForDelete;
   provinceGridOps.restore = provinceEditingModule.restoreProvinceGrid;

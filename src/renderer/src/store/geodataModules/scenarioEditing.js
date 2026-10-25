@@ -80,7 +80,10 @@ import { synthesizeHeightmapFromTerrain } from '../../utils/terrainSynthesis';
 import {
   normalizeTerrainParams, toSynthesisOptions, toClimateOptions,
   describeTerrainParams, candidateSeed,
+  normalizeCultureParams,
 } from '../../utils/terrainParams';
+// P0-4（2026-10-25）：势力方案（按文化区分组）—— 纯函数层
+import { planPolities } from '../../utils/cultureDerive';
 // ── 高度图分辨率（2026-10-14）───────────────────────────────────────────────
 // 🔴 「地形模模糊糊」的**唯一**解药是把格子变密（每格有自己的高度），而这件事的算法、
 //    性能护栏、内存估算全在 `utils/heightmapResample.js`（纯函数 + Node 单测）。
@@ -4377,6 +4380,89 @@ export function createScenarioEditingModule(ctx) {
     };
   }
 
+  /**
+   * **势力派生（只补空）**（P0-4，2026-10-25）。
+   *
+   * 语义边界（重要）：这里只给**还没有任何归属/易主记录**的省铺初始归属
+   * （写 `initialOwnership` + `ownership`，**不写 `changeEvents`**）。
+   * 为什么不覆盖已有归属：归属是两本账里"按日回放"的那本 —— 用一个**没有日期**的铺底
+   * 去改已有历史，要么得编一个日期（等于伪造历史），要么清空事件（等于删历史）。
+   * 想改朝换代请用「涂归属」笔刷/批量指派（它们会按选定日期记事件）。
+   *
+   * 势力按文化区分组（省上的 `cultureId` 来自文化派生）：一组一个势力；势力多于文化时
+   * 同一文化按形心 x 再切。所有新省的归属与势力**同一条命令**，一次 Ctrl+Z 全退回。
+   */
+  function applyPolityDerive(scenarioId, paramsIn = {}) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario', message: '先选一个剧本' };
+    if (!guardWrite('派生势力').ok) return { ok: false, reason: 'readonly', message: '只读：未打开项目' };
+    const terrain = (baseMaps.value[scenario.ownerKey] || {}).terrain || [];
+    if (!terrain.length) {
+      return { ok: false, reason: 'no-province', message: '这张底图还没有省份 —— 先用「造陆」或画省' };
+    }
+    const norm = normalizeCultureParams(paramsIn);
+    // 省上的文化摘要（没有文化派生时全部落进 cultureId=0 一组，仍能生成一个势力）
+    const provinceCulture = {};
+    for (const p of terrain) provinceCulture[p.id] = { cultureId: p.cultureId || 0 };
+    const plan = planPolities(terrain, provinceCulture, norm.params);
+    if (!plan.polities.length) {
+      return { ok: false, reason: 'no-plan', message: '没有生成出任何势力方案（省份几何为空？）' };
+    }
+    const own = scenario.ownership || {};
+    const ev = scenario.changeEvents || {};
+    const eligible = Object.keys(plan.ownerByProvince)
+      .filter((pid) => !own[pid] && !(ev[pid] && ev[pid].length));
+    const existingIds = new Set((scenario.polities || []).map((p) => p && p.id));
+    const addPolities = plan.polities.filter((p) => p && !existingIds.has(p.id));
+    if (!eligible.length) {
+      return {
+        ok: true, changed: false, noop: true,
+        message: `所有可分配的省都已经有归属了（只补空；想改朝换代请用「涂归属」）—— 候选势力 ${plan.polities.length} 个`,
+      };
+    }
+    const nextPolities = [...(scenario.polities || []), ...addPolities];
+    const nextOwn = { ...own };
+    const nextInit = { ...(scenario.initialOwnership || {}) };
+    for (const pid of eligible) {
+      const owner = plan.ownerByProvince[pid];
+      nextOwn[pid] = owner;
+      nextInit[pid] = owner;
+    }
+    const beforePolities = scenario.polities || [];
+    const beforeOwn = scenario.ownership || {};
+    const beforeInit = scenario.initialOwnership || null;
+
+    const apply = (polities, ownership, initialOwnership) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const next = { ...cur, polities };
+      if (ownership) next.ownership = ownership; else delete next.ownership;
+      if (initialOwnership) next.initialOwnership = initialOwnership; else delete next.initialOwnership;
+      next.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: next };
+    };
+
+    execute({
+      type: 'derive-polity',
+      label: `补空派生势力：${addPolities.length} 个 / ${eligible.length} 省`,
+      undo: () => { apply(beforePolities, beforeOwn, beforeInit); scheduleAutoSaveScenarios(); },
+      redo: () => { apply(nextPolities, nextOwn, nextInit); scheduleAutoSaveScenarios(); },
+    });
+    saveScenarios();
+    return {
+      ok: true,
+      changed: true,
+      polities: addPolities.length,
+      assigned: eligible.length,
+      skipped: Object.keys(plan.ownerByProvince).length - eligible.length,
+      params: norm.params,
+      message: `已补空派生势力：新建 ${addPolities.length} 个势力，给 ${eligible.length} 个无主省铺了初始归属`
+        + (Object.keys(plan.ownerByProvince).length - eligible.length > 0
+          ? `（${Object.keys(plan.ownerByProvince).length - eligible.length} 个省已有历史，未动）` : '')
+        + ' —— 一次 Ctrl+Z 可整体退回',
+    };
+  }
+
   function deriveAllLayers(baseMapKey) {
     if (!guardWrite('重算派生图层').ok) return null;   // 2026-10-08（B0）：补首行守卫 + 登记契约
     if (!hasGrid(getHeightmapFor(baseMapKey))) return null;
@@ -4442,6 +4528,8 @@ export function createScenarioEditingModule(ctx) {
     scenarioGroups, addScenarioGroup, renameScenarioGroup, removeScenarioGroup,
     setScenarioGroup, setScenariosGroup, getScenariosForGroup,
     setOwnership, clearOwnership, batchSetOwnership,
+    // P0-4（2026-10-25）：势力派生（只给无主省铺初始归属；不写 changeEvents，见函数注释）
+    applyPolityDerive,
     setPolityLineage, setChangeEvents, setChangeEventsBulk, updatePolity, addPolity, removePolity,
     // 事件账本（2026-10-22，三刀序列·第一刀）：外交/战争/同盟的录入、修改、删除与只读查询
     // （全部一条 undo；校验/排序/关系计算在 utils/scenarioEventLedger.js）
