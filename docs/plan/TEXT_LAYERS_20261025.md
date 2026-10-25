@@ -40,7 +40,9 @@
   - 河流名落点 = 折线**按长度**的中点，不是顶点数组的中点。
 - 画布：`drawBurgs` 加城镇名（首都加粗），`drawRivers` 加河流名；都走 `drawStyledLabel`。
 - 导出：同一份分级 + 同一份样式；修掉「617 个城镇名糊满图」。
-- 用例：`test_149_scenario_text_tiers`（首都/非首都、前 12 河/无名河、位置、源码守卫）；
+- **默认关闭**：FMG 导入的城镇/河流名多为英文（Scorcreden/Navarak 等），中文地图上会突然出现；
+  画布与导出都受「图层 → 自动地名」开关控制（默认 false），需要时再开。
+- 用例：`test_149_scenario_text_tiers`（首都/非首都、前 12 河/无名河、位置、关闭后不出现、源码守卫）；
   `unit/test_scenario_text_placement` 7/7。
 
 ## 3. 下一刀（第一轮剩余）
