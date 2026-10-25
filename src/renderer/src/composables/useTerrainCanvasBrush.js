@@ -297,6 +297,38 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   }
 
   /**
+   * 「将涂格」的脏矩形：**覆盖整批 pending 格**，而不是只覆盖笔刷圆心轨迹。
+   *
+   * 为什么需要（2026-10-25，test_140 偶发红）：局部重绘只画脏矩形内的内容；
+   * 笔刷轨迹矩形与 pending 格的外接框并不总是重合（格点对齐、扩网格平移、沿笔迹外侧的格），
+   * 于是 pending 数据在、`drawTerrainPendingToCtx` 也调了，但落在裁剪区外 → 像素差 0。
+   * 这里按 pending 格的真实外接框补一个脏矩形，保证"预览画得出来"。
+   */
+  function markPendingDirty() {
+    if (!renderer.markDirtyRect || !pendingOrigin || !pendingMap || !pendingMap.size) return;
+    const { x: ox, y: oy, cell } = pendingOrigin;
+    let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+    for (const key of pendingMap.keys()) {
+      const i = key.indexOf(',');
+      const c = Number(key.slice(0, i));
+      const r = Number(key.slice(i + 1));
+      if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+    }
+    if (!Number.isFinite(minC) || !Number.isFinite(minR)) return;
+    const pad = cell;
+    renderer.markDirtyRect({
+      x: ox + minC * cell - pad,
+      y: oy + minR * cell - pad,
+      w: (maxC - minC + 1) * cell + pad * 2,
+      h: (maxR - minR + 1) * cell + pad * 2,
+    });
+  }
+
+  /**
    * L3「将涂格」高亮：拖动中**只算不写**，把这些格以半透明色叠在画面上；松手时一次性落库。
    * 判据（"所见即所得"）：预览的格集 == 松手后真正被写的格集 —— 靠**同一份枚举**保证
    * （`terrainBrush.forEachCell/forEachInterpolatedCell` 被预览与落库共用）。
@@ -492,6 +524,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     updateBrushPreview(wx, wy);
     pushStrokePoint(wx, wy);
     markBrushDirty(null, { x: wx, y: wy });
+    markPendingDirty();
     renderer.requestRender();
   }
 
@@ -509,6 +542,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     updateBrushPreview(wx, wy);
     pushStrokePoint(wx, wy);
     markBrushDirty(prev, { x: wx, y: wy });
+    markPendingDirty();
     renderer.requestRender();
   }
 
@@ -720,6 +754,8 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     drawTerrainPendingToCtx,
     /** 诊断/用例：这一笔当前"将涂"的格（无界格点，相对这一笔的格点原点） */
     pendingCells,
+    /** 诊断/用例：按行合并后的矩形段（渲染真正画的东西） */
+    pendingRunsOf,
     terrainPendingCells,
     /** 这一笔的原始落点（用例做"预览格集 == 落库格集"的等价性判定用） */
     rawStrokePath: () => rawPath.slice(),

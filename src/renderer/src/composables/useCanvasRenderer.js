@@ -771,6 +771,15 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     getDirtyTracker: () => tracker,
     markDirtyRect: (rect) => { if (tracker) tracker.add(rect); },
     markFullRedraw: () => { forceFullNextRender = true; if (tracker) tracker.markFull(); requestRender(); },
+    /**
+     * 同步画一帧（测试/诊断用）。正常交互仍走 rAF；这里只给「需要确定性地读像素」的用例，
+     * 避免 headless 下 rAF 被节流导致「数据已变、像素还是上一帧」的偶发假红（test_140 踩过）。
+     */
+    renderNow: () => {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      needsRender = false;
+      render();
+    },
     getRenderInfo: () => ({ ...renderInfo }),
     startAnimation,
     stopAnimation,

@@ -1566,6 +1566,50 @@
       @run="onRunSliceExport"
     />
 
+    <!-- 019 重导对话框：先摆映射统计/冲突，再让用户点「重导并迁移」 -->
+    <div v-if="reimportDialog" class="modal-overlay" @click.self="closeReimportDialog">
+      <div class="modal-dialog reimport-dialog" data-testid="reimport-dialog">
+        <h3>重导底图为新底图</h3>
+        <p class="rd-intro">
+          这张底图已经改过（或来源未知），不能当「同一张图只补数据」。
+          重导会新建一张底图，并把旧剧本的归属 / 易主迁过去；旧底图保留归档。
+        </p>
+        <div class="rd-grid">
+          <span>旧底图</span><b>{{ reimportDialog.preview.oldName }}</b>
+          <span>新文件</span><b>{{ reimportDialog.fileName || '（未命名）' }}</b>
+          <span>省份</span><b>{{ reimportDialog.preview.totalOld }} → {{ reimportDialog.preview.totalNew }}</b>
+          <span>按 id 直配</span><b>{{ reimportDialog.preview.exact }} 省</b>
+          <span>未映射</span>
+          <b>旧 {{ reimportDialog.preview.unmappedOld.length }} / 新 {{ reimportDialog.preview.unmappedNew.length }}</b>
+        </div>
+        <div v-if="reimportDialog.preview.conflicts.length" class="rd-warn" data-testid="reimport-conflicts">
+          <strong>{{ reimportDialog.preview.conflicts.length }} 处并省冲突</strong>（多个旧省 → 同一新省），
+          默认阻止，不替用户选：
+          <ul>
+            <li v-for="c in reimportDialog.preview.conflicts.slice(0, 6)" :key="c.newId">
+              新省「{{ c.newId }}」← 旧省 {{ c.oldIds.join(' / ') }}
+            </li>
+          </ul>
+          <span v-if="reimportDialog.preview.conflicts.length > 6">…共 {{ reimportDialog.preview.conflicts.length }} 条</span>
+        </div>
+        <div v-if="reimportDialog.preview.unmappedOld.length" class="rd-warn" data-testid="reimport-unmapped">
+          有 {{ reimportDialog.preview.unmappedOld.length }} 个旧省没映射到新省；继续的话这些省的归属会丢：
+          <code>{{ reimportDialog.preview.unmappedOld.slice(0, 8).join(' / ') }}</code>
+          <span v-if="reimportDialog.preview.unmappedOld.length > 8"> …</span>
+        </div>
+        <label class="rd-check">
+          <input type="checkbox" v-model="reimportDialog.copyReferenceImages" />
+          带上旧底图的参考图（默认不带；新 .map 通常有自己的地理）
+        </label>
+        <div class="rd-actions">
+          <button @click="closeReimportDialog">取消</button>
+          <button class="primary" :disabled="!reimportDialog.preview.canApply" @click="applyReimportDialog">
+            {{ reimportDialog.preview.canApply ? '重导并迁移' : '有冲突，不能重导' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 聚落编辑器面板 -->
     <div v-if="burgEditorOpen && editingBurg" class="burg-editor-panel">
       <div class="burg-editor-header">
@@ -1658,6 +1702,8 @@ const emit = defineEmits(['exit', 'picker']);
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
+// 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
+import { isBasemapPristine } from '../utils/basemapIdentity';
 // `.map` 的「文件名 → 底图名」与「原文留底」= 与行星视图共用的一份（见 utils/mapImportSource.js）
 import { mapNameFromFileName, backupMapSourceFile } from '../utils/mapImportSource';
 import { generateRoadPath } from '../utils/placement';
@@ -1703,6 +1749,14 @@ import {
   polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
 } from '../utils/polityLabels';
 import { drawStyledLabel } from '../utils/labelStyles';
+// 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
+import {
+  scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
+} from '../utils/mapTextStyles';
+// 城镇名 / 河流名的分级与取数（纯函数，画布与导出共用；617 个城镇全标就是糊图）
+import {
+  collectBurgLabels, collectRiverLabels, burgLabelTier, riverLabelTier,
+} from '../utils/scenarioTextPlacement';
 // 剧本标签的**唯一判定**（省名 / 势力名 / 简称三档该写什么字、写在哪）—— 与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
 // 剧本集（2026-10-25）：组判定 / 选项 / 计数 / 初始组**只有一份实现**（utils/scenarioGroups.js）
@@ -3290,6 +3344,9 @@ const {
 
 // ——— 逐年切片导出（EU4 式帧序列）———
 const showSliceExport = ref(false);
+// 019：重导对话框（预览统计 + 冲突；真正写盘在 applyReimportDialog）
+const reimportDialog = ref(null);
+let pendingReimportBundle = null;
 const sliceExportBusy = ref(false);
 async function onRunSliceExport({ png = false, scale = 2, era = null } = {}) {
   if (sliceExportBusy.value) return;
@@ -7690,6 +7747,59 @@ async function restoreFromSource(f) {
   }
 }
 
+/**
+ * 019 重导对话框（2026-10-25）：先把映射统计/冲突摆出来，再让用户点「重导并迁移」。
+ * 预览走 `store.previewReimportBasemap`（只读），真正写盘在 `applyReimportDialog`。
+ */
+function openReimportDialog(oldKey, bundle, fileName = '') {
+  const preview = store.previewReimportBasemap(oldKey, bundle);
+  if (!preview || !preview.ok) {
+    statusMsg(`重导预检失败：${(preview && preview.message) || '未知原因'}`);
+    return;
+  }
+  pendingReimportBundle = bundle;
+  reimportDialog.value = {
+    oldKey,
+    fileName,
+    preview,
+    copyReferenceImages: false,
+  };
+}
+
+function closeReimportDialog() {
+  reimportDialog.value = null;
+  pendingReimportBundle = null;
+}
+
+function applyReimportDialog() {
+  const d = reimportDialog.value;
+  const bundle = pendingReimportBundle;
+  if (!d || !bundle) return;
+  if (!d.preview.canApply) {
+    statusMsg('重导被阻止：存在并省冲突，先处理冲突再导');
+    return;
+  }
+  const r = store.reimportBasemapAsNew(d.oldKey, bundle, {
+    copyReferenceImages: !!d.copyReferenceImages,
+  });
+  if (!r || !r.ok) {
+    statusMsg(`重导失败：${(r && r.message) || '未知原因'}`);
+    return;
+  }
+  closeReimportDialog();
+  baseMapKey.value = r.newKey;
+  if (window.sitianAPI?.setCurrentBaseMapKey) {
+    window.sitianAPI.setCurrentBaseMapKey(r.newKey);
+  }
+  if (store.baseMaps?.[r.newKey]?.heightmap) rasterLayer.value = 'height';
+  if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
+  setTimeout(fitToView, 50);
+  statusMsg(`${r.message}`
+    + (r.unmappedOld?.length ? `；⚠️ ${r.unmappedOld.length} 个旧省没映射上（归属会丢）` : '')
+    + (r.droppedOldProvinces?.length ? `；丢弃归属 ${r.droppedOldProvinces.length} 条` : '')
+    + '（Ctrl+Z 可整次撤回）');
+}
+
 async function triggerMapImport(opts = {}) {
   const refreshOnly = !!(opts && opts.refreshOnly);
   // 🔴 2026-10-13：「拿到一份 .map 之后」的处理体 = **唯一实现**，两条入口共用 ——
@@ -7717,6 +7827,17 @@ async function triggerMapImport(opts = {}) {
       //     真实场景：`desite` 底图现在有 415 块省份，而它建图时（2026-09-10）解析器
       //     还读不出高度图/河流/道路 → 用户需要的是"给这张图补上"，不是"重画一张"。
       if (bundle && store.baseMaps?.[name]) {
+        const existing = store.baseMaps[name];
+        // 019（2026-10-25）：同名底图分两条路 ——
+        //   · 一笔未改（指纹 == 导入时指纹）→ 只补缺（旧行为，安全）；
+        //   · 改过一笔（或旧数据没有指纹）→ **不能再只补数据**：新底图 + 旧归属迁移。
+        // 旧行为会把"改过的底图"当成同一张图补数据；用户明确说过：动过一笔就不是一个东西了。
+        if (!isBasemapPristine(existing)) {
+          // 不直接写：先开重导对话框，把映射统计/冲突摆出来（019）
+          openReimportDialog(name, bundle, file.name);
+          return;
+        }
+
         const srcStats = parsed.stats || {};
         const missing = describeBaseMapMissing(store.baseMaps[name], bundle);
         if (!missing.length) {
@@ -8719,6 +8840,17 @@ function drawRivers(c) {
       c.lineWidth = Math.max(0.3, world * (0.78 + 0.22 * t));
       c.stroke(path);
     }
+  }
+  // 河流名（2026-10-25）：只标有名字的河；低缩放不标，放大后按流量取前 N 条。
+  // 617 城镇 / 160 河全标就是糊图 —— 分级规则与导出共用 `scenarioTextPlacement`。
+  const riverLabels = collectRiverLabels(list, {
+    tier: riverLabelTier(cameraScale.value),
+    rect: { minX, minY, maxX, maxY },
+  });
+  for (const lb of riverLabels) {
+    drawStyledLabel(c, lb.name, lb.x, lb.y - px(4), riverLabelTextStyle(), {
+      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+    });
   }
   c.restore();
 }
@@ -10218,9 +10350,18 @@ function drawBurgs(c) {
       }
     }
   }
+  // 城镇名（2026-10-25）：按缩放分级，避免 617 个名字糊满画布。
+  // 低缩放只标首都；放大后逐步放出人口靠前的城镇。样式与 SVG 导出同一份。
+  const burgLabels = collectBurgLabels(burgs.value, {
+    tier: burgLabelTier(cameraScale.value),
+    rect: { minX, minY, maxX, maxY },
+  });
+  for (const lb of burgLabels) {
+    drawStyledLabel(c, lb.name, lb.x, lb.y + px(10), burgLabelTextStyle({ capital: lb.capital }), {
+      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+    });
+  }
 }
-
-/** FMG 的 population 为原始数值（不做单位换算，避免臆造量纲） */
 function formatPopulation(pop) {
   if (!pop) return '—';
   return pop >= 100 ? String(Math.round(pop)) : pop.toFixed(1);
@@ -10545,16 +10686,12 @@ function drawPolityLabels(c) {
 function drawLabels(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.labels) return;
   selectedScenario.value.labels.forEach(label => {
-    c.font = label.font || `${label.size || 12}px "PingFang SC", sans-serif`;
-    c.fillStyle = label.color || '#e2e8f0';
-    // 描边（提升可读性，Wonderdraft 风格）
-    if (label.stroke && label.strokeWidth > 0) {
-      c.strokeStyle = label.stroke;
-      c.lineWidth = label.strokeWidth;
-      c.lineJoin = 'round';
-      c.strokeText(label.text, label.x, label.y);
-    }
-    c.fillText(label.text, label.x, label.y);
+    // 2026-10-25：地名与导出共用一份样式（浅色字 + 默认深色描边）。
+    // 旧实现是裸 fillText：画布默认浅色、导出默认深灰，同一个地名两幅图两种颜色。
+    // `align/baseline` 保持旧画布的「左上角锚点」，避免地名整体位移。
+    drawStyledLabel(c, label.text || '', label.x, label.y, scenarioLabelTextStyle(label), {
+      align: 'left', baseline: 'alphabetic',
+    });
   });
 }
 
@@ -10605,10 +10742,11 @@ function drawScenarioMarkers(c) {
     const typeDef = MARKER_TYPES.find(t => t.id === m.type);
     drawIconOrEmoji(c, m.icon || (typeDef && typeDef.icon) || 'map-pin', m.x, m.y,
       Math.max(12, px(16)), m.color || (typeDef && typeDef.color) || '#FFFFFF');
-    // 名称标签
-    c.font = `${Math.max(10, px(11))}px "PingFang SC", sans-serif`;
-    c.fillStyle = m.color || '#e2e8f0';
-    c.fillText(m.name, m.x, m.y + fontSize * 0.8);
+    // 名称标签（2026-10-25：与导出共用一份样式 + 默认深色描边，任何底色上都读得出）
+    const nameStyle = markerLabelTextStyle(m);
+    drawStyledLabel(c, m.name || '', m.x, m.y + fontSize * 0.8, nameStyle, {
+      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
+    });
   }
   c.textAlign = 'start';
   c.textBaseline = 'alphabetic';
@@ -12157,6 +12295,33 @@ watch(baseMap, () => {
 }
 
 .modal-dialog h3 { margin: 0 0 16px; font-size: 16px; }
+
+/* 019 重导对话框 */
+.reimport-dialog { max-width: 560px; }
+.rd-intro { margin: 0 0 12px; font-size: 12px; line-height: 1.65; color: #94a3b8; }
+.rd-grid {
+  display: grid; grid-template-columns: 88px 1fr; gap: 6px 10px;
+  padding: 10px 12px; margin-bottom: 12px;
+  background: rgba(15, 23, 42, 0.55); border: 1px solid #334155; border-radius: 8px;
+  font-size: 12px; color: #cbd5e1;
+}
+.rd-grid span { color: #64748b; }
+.rd-grid b { color: #e2e8f0; font-weight: 600; word-break: break-all; }
+.rd-warn {
+  margin: 0 0 10px; padding: 8px 10px; font-size: 11.5px; line-height: 1.6;
+  color: #fde68a; background: rgba(120, 53, 15, 0.28);
+  border: 1px solid #92400e; border-radius: 6px;
+}
+.rd-warn ul { margin: 4px 0 0; padding-left: 18px; }
+.rd-warn code { color: #fef3c7; }
+.rd-check { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #94a3b8; }
+.rd-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.rd-actions button {
+  background: #1e293b; border: 1px solid #475569; color: #cbd5e1;
+  border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.rd-actions button.primary { background: rgba(124, 58, 237, 0.9); border-color: #7c3aed; color: #fff; }
+.rd-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .scenario-list { margin-bottom: 20px; }
 

@@ -32,8 +32,15 @@ import {
   collectSliceFrames, changeDateStats, sliceFrameName, MAX_SLICE_FRAMES,
 } from '../utils/scenarioSlices';
 import { formatDate, dateToken } from '../utils/scenarioDates';
-
-const LABEL_COLOR = '#3c4150';
+// 文字层样式单源（用户地名 / 标记名）—— 画布与导出共用同一份
+import {
+  scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
+  svgTextAttrsFromStyle,
+} from '../utils/mapTextStyles';
+// 城镇名/河流名分级（画布与导出共用；导出用"出版档"：首都 + 流量前 12 的河）
+import {
+  collectBurgLabels, collectRiverLabels, EXPORT_BURG_TIER, EXPORT_RIVER_TIER,
+} from '../utils/scenarioTextPlacement';
 
 /**
  * 画布标签样式（`utils/polityLabels.js` 的 `*_LABEL_STYLE`）→ SVG `<text>` 属性。
@@ -263,20 +270,39 @@ export function useScenarioExport({
       body.push(svgTextEl(lb.x, lb.y, lb.text, svgLabelTextStyle(POLITY_LABEL_STYLE)));
     }
 
-    // 剧本标签 / 标记
+    // 剧本标签 / 标记（2026-10-25：与画布共用 `mapTextStyles`，不再各写一套颜色/字号/描边）
     for (const lb of (s.labels || [])) {
-      body.push(svgTextEl(lb.x, lb.y, lb.text || '', {
-        fill: lb.color || LABEL_COLOR, 'font-size': lb.size || 12,
-        'font-family': 'Microsoft YaHei, sans-serif', 'text-anchor': 'middle',
-      }));
+      body.push(svgTextEl(lb.x, lb.y, lb.text || '', svgTextAttrsFromStyle(scenarioLabelTextStyle(lb), {
+        // 画布地名是「左上角锚点」；导出必须同锚点，否则整体偏半个字宽
+        'text-anchor': 'start',
+        'dominant-baseline': 'alphabetic',
+      })));
     }
     for (const mk of (s.markers || [])) {
       body.push(svgCircleEl(mk.x, mk.y, 4, { fill: mk.color || '#f6ad55', stroke: '#1a2a3a', 'stroke-width': 1 }));
       if (mk.name) {
-        body.push(svgTextEl(mk.x, mk.y - 8, mk.name, {
-          fill: '#e2e8f0', 'font-size': 10, 'font-family': 'Microsoft YaHei, sans-serif',
+        body.push(svgTextEl(mk.x, mk.y + 9, mk.name, svgTextAttrsFromStyle(markerLabelTextStyle(mk), {
           'text-anchor': 'middle',
-        }));
+          'dominant-baseline': 'middle',
+        })));
+      }
+    }
+
+    // 城镇名 / 河流名（2026-10-25）：与画布共用分级与样式。
+    // 导出是"出版档"：只标首都 + 流量前 12 的河 —— 617 个城镇名会把成品图糊满。
+    if (flags.labels !== false) {
+      const bm = baseMap.value || {};
+      for (const lb of collectBurgLabels(bm.burgs || [], { tier: EXPORT_BURG_TIER })) {
+        body.push(svgTextEl(lb.x, lb.y + 10, lb.name, svgTextAttrsFromStyle(
+          burgLabelTextStyle({ capital: lb.capital }),
+          { 'text-anchor': 'middle', 'dominant-baseline': 'middle' },
+        )));
+      }
+      for (const lb of collectRiverLabels(bm.rivers || [], { tier: EXPORT_RIVER_TIER })) {
+        body.push(svgTextEl(lb.x, lb.y - 4, lb.name, svgTextAttrsFromStyle(
+          riverLabelTextStyle(),
+          { 'text-anchor': 'middle', 'dominant-baseline': 'middle' },
+        )));
       }
     }
 

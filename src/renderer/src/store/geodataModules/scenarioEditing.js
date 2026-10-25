@@ -26,6 +26,10 @@ import {
 import { buildAzgaarReferenceLayers } from '../../utils/planetMapBundle';
 // 新建省份的压叠度量（纯函数，Node 有单测）—— 判定单源，store 只做策略
 import { measureProvinceOverlap, describeOverlap } from '../../utils/provinceOverlap';
+// ── 019 底图重导（2026-10-25）：指纹 / 旧省→新省映射 / 剧本归属重映射（纯函数，Node 有单测）──
+import {
+  stampBasemapSource, mapProvinces, remapScenariosForReimport,
+} from '../../utils/basemapIdentity';
 // ── 剧本集（2026-10-25）：组判定/规整/计数**只有一份实现**（utils/scenarioGroups.js）──
 // 左栏、时间轴、切片、管理对话框、导入导出都从这里取；store 只做 CRUD 与落盘。
 import {
@@ -646,6 +650,116 @@ export function createScenarioEditingModule(ctx) {
           added.burgs ? `${added.burgs} 个城镇` : '',
         ].filter(Boolean).join(' / ')
         + `（省份边界 ${(target.terrain || []).length} 块一字未动）`,
+    };
+  }
+
+  /**
+   * 019 预检（只读）：不写任何数据，只算「旧省→新省」统计与冲突，供重导对话框展示。
+   * 判据与 `reimportBasemapAsNew` 共用 `mapProvinces`，不会出现"对话框说能导、实际冲突"。
+   */
+  function previewReimportBasemap(oldKey, bundle) {
+    const old = baseMaps.value[oldKey];
+    if (!old) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${oldKey}` };
+    if (!bundle || !Array.isArray(bundle.terrain) || !bundle.terrain.length) {
+      return { ok: false, rejected: 'no-terrain', message: '新 .map 里没有省份多边形' };
+    }
+    const mapping = mapProvinces(old.terrain || [], bundle.terrain || []);
+    return {
+      ok: true,
+      oldKey,
+      oldName: old.name || oldKey,
+      totalOld: (old.terrain || []).length,
+      totalNew: (bundle.terrain || []).length,
+      exact: mapping.exact.length,
+      conflicts: mapping.conflicts,
+      unmappedOld: mapping.unmappedOld,
+      unmappedNew: mapping.unmappedNew,
+      canApply: mapping.conflicts.length === 0,
+    };
+  }
+
+  /**
+   * 019：把一份新 `.map` 作为**新底图**导入，并把旧底图的剧本/归属迁过去。
+   *
+   * 语义（暮雨 2026-10-25）：换新 .map = 新底图 + 旧归属迁过去；同一底图只补数据仅限一笔未改
+   * （那条路仍走 `updateBaseMapData`，本函数不碰）。旧底图**保留归档**，新 key 绝不覆盖。
+   *
+   * 并省冲突（多个旧省 → 同一新省）默认**阻止**：不替用户选，返回冲突清单。
+   * 拆省（一个旧省 → 多个新省）允许：归属/事件复制到每个新省。
+   *
+   * @param {string} oldKey 旧底图 key
+   * @param {object} bundle 新 .map 解析结果（terrain/heightmap/rivers/routes/burgs/source…）
+   * @param {{name?:string, copyReferenceImages?:boolean}} opts
+   */
+  function reimportBasemapAsNew(oldKey, bundle, opts = {}) {
+    // 只读态由 `execute` 的总闸门拒绝（本函数在 execute 之前只读/算映射，不改内存）；
+    // 因此不登记进 MEMORY_WRITE_CALLSITES（那里只收"直接改内存/先改后 execute"的函数）。
+    const old = baseMaps.value[oldKey];
+    if (!old) return { ok: false, rejected: 'no-basemap', message: `底图不存在：${oldKey}` };
+    if (!bundle || !Array.isArray(bundle.terrain) || !bundle.terrain.length) {
+      return { ok: false, rejected: 'no-terrain', message: '新 .map 里没有省份多边形' };
+    }
+
+    const mapping = mapProvinces(old.terrain || [], bundle.terrain || []);
+    if (mapping.conflicts.length) {
+      return {
+        ok: false,
+        rejected: 'merge-conflicts',
+        conflicts: mapping.conflicts,
+        message: `有 ${mapping.conflicts.length} 处「多个旧省并成一个新省」的冲突，未写入任何数据`,
+      };
+    }
+
+    const now = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const stampText = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-`
+      + `${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+    let newKey = `${oldKey}__reimport_${stampText}`;
+    let n = 2;
+    while (baseMaps.value[newKey]) { newKey = `${oldKey}__reimport_${stampText}_${n++}`; }
+    const newName = opts.name || `${old.name || oldKey}（重导 ${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}）`;
+
+    let nextBm = buildBaseMapFromBundle(newKey, bundle, newName);
+    if (opts.copyReferenceImages && (old.referenceImages || []).length) {
+      nextBm.referenceImages = JSON.parse(JSON.stringify(old.referenceImages));
+    }
+    nextBm = stampBasemapSource(nextBm, {
+      file: (bundle.source && (bundle.source.file || bundle.source.name)) || '',
+      at: now.toISOString(),
+    });
+    const oldNext = { ...old, archived: true, updatedAt: now.toISOString() };
+
+    const remap = remapScenariosForReimport(scenarios.value, oldKey, newKey, mapping);
+    const prevMaps = baseMaps.value;
+    const prevScen = scenarios.value;
+    const nextMaps = { ...prevMaps, [oldKey]: oldNext, [newKey]: nextBm };
+
+    const gate = execute({
+      type: 'reimport-basemap-as-new',
+      label: `重导底图：${old.name || oldKey} → ${newName}`,
+      undo: () => { baseMaps.value = prevMaps; scenarios.value = prevScen; },
+      redo: () => { baseMaps.value = nextMaps; scenarios.value = remap.scenarios; },
+    });
+    if (gate && gate.ok === false) return { ok: false, rejected: 'blocked', message: gate.error };
+
+    saveScenarios();
+    return {
+      ok: true,
+      changed: true,
+      oldKey,
+      newKey,
+      newName,
+      movedScenarios: remap.moved.length,
+      movedScenarioIds: remap.moved,
+      totalOld: (old.terrain || []).length,
+      totalNew: (bundle.terrain || []).length,
+      exact: mapping.exact.length,
+      conflicts: [],
+      unmappedOld: mapping.unmappedOld,
+      unmappedNew: mapping.unmappedNew,
+      droppedOldProvinces: remap.droppedOldProvinces,
+      message: `已重导为新底图「${newName}」：迁 ${remap.moved.length} 条剧本 / `
+        + `${mapping.exact.length} 个省按 id 直配；未映射旧省 ${mapping.unmappedOld.length} 个、新省 ${mapping.unmappedNew.length} 个`,
     };
   }
 
@@ -4185,6 +4299,8 @@ export function createScenarioEditingModule(ctx) {
     addBaseMap, removeBaseMap, addBaseProvince, updateBaseProvince, removeBaseProvince,
     // 底图级数据（高度图 / 河流 / 道路 / 城镇）的装载与**只补缺刷新**（B2，2026-10-11）
     buildBaseMapFromBundle, updateBaseMapData,
+    // 019 重导：新底图 + 旧归属迁移（同图只补数据仍走 updateBaseMapData）
+    previewReimportBasemap, reimportBasemapAsNew,
     // 底图侧河流 / 道路 CRUD（D，2026-10-11）：此前手画的河从不落盘、手画的路绕过 undo
     addBaseMapRiver, removeBaseMapRiver, updateBaseMapRiver,
     removeBaseMapRivers, applyBaseMapRiverPatches, applyBaseMapRiverEdit,
