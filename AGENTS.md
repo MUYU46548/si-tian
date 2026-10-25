@@ -1,4 +1,4 @@
-# SiTian (司天)
+﻿# SiTian (司天)
 
 为世界构建者设计的本地桌面应用（Electron 28），以 Obsidian 库（默认 `E:/图书馆/ROSA/`）为事实源之一，通过七层视图呈现世界观地理层级，为 Markdown 附加可编辑的坐标元数据，实现画布与笔记的双向同步。
 
@@ -22,9 +22,9 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**145 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**146 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**55 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**56 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -62,6 +62,7 @@
 
 - **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 8 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / provinceEditing（省份归属标签网格）/ interior / search / spaceEditing / channelBrush（文化·宗教逐格通道笔刷）
 
+- **剧本集（2026-10-25）**: `scenario.group` + 项目级 `scenarios.groups`；一组 = 一条独立时间线，左栏/时间轴/播放/切片「全部剧本」都只取当前组；组判定/选项/计数单源 = `utils/scenarioGroups.js`（`test_146` / `unit/test_scenario_groups.js` 守）。删除组不删剧本，组内剧本退回默认组。
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
 
 - **图标系统**: `src/renderer/src/components/Icon.vue`（152 个内联 SVG 图标）+ `src/renderer/src/utils/canvasIcon.js`（Canvas 矢量绘制适配），已替换全部 emoji（含 ScenarioMap 的 15 个地貌/标记预设：**预设里存图标名，不存 emoji 字面量**，双端各自渲染；旧数据里的 emoji 仍由 `drawIconOrEmoji` 的 fillText 兜底）；`python scripts/icon_check.py` 校验引用名均有定义
@@ -126,8 +127,8 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 145 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 55 | `ls scripts/tests/unit/*.js \| wc -l` |
+| 测试用例数 | 146 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| Node 单测文件数 | 56 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 45 | `grep -c "ipcMain.handle" src/main/index.js` |

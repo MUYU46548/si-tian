@@ -13,7 +13,7 @@
 //     meta:      { id, name, created, updated },          // 项目元信息
 //     entities:  { [entityId]: Entity },                  // 实体树（与 GeoNode 同形，见下）
 //     hyperlanes:[ { id, fromId, toId, type } ],          // 星系间航道
-//     scenarios: { version: 2, baseMaps, scenarios },     // 历史剧本（复用既有结构，勿改）
+//     scenarios: { version: 2, baseMaps, scenarios, groups?, slicePoints? },  // 历史剧本（groups = 剧本集，2026-10-25）
 //     maps:      { [planetId]: { …mapData } },            // 每行星地图数据（Phase 2 从 .sitian/mapdata.json 迁入）
 //     snapshots: [ { at, label, base?, patch, changes } ] // 自动备份环形缓冲（最近 50 份）
 //   }
@@ -241,7 +241,7 @@ export function createEmptyProject({ name = '未命名项目', id = '', now = ''
     meta: { id: id || randomId(), name: String(name || '未命名项目'), created: ts, updated: ts },
     entities: {},
     hyperlanes: [],
-    scenarios: { version: 2, baseMaps: {}, scenarios: {} },
+    scenarios: { version: 2, baseMaps: {}, scenarios: {}, groups: [] },
     maps: {},
     snapshots: [],
   };
@@ -454,10 +454,15 @@ export function validateProject(raw) {
   // ---- scenarios（沿用既有 version 2 结构；这里只保证容器形状，内容由 scenarioEditing 负责）----
   let scenarios;
   if (isPlainObject(raw.scenarios) && isPlainObject(raw.scenarios.baseMaps) && isPlainObject(raw.scenarios.scenarios)) {
-    scenarios = { version: raw.scenarios.version || 2, ...raw.scenarios };
+    // `groups` 是 2026-10-25 新增的剧本集表；旧项目没有该字段 → 给空表（剧本全落默认组）
+    scenarios = {
+      version: raw.scenarios.version || 2,
+      ...raw.scenarios,
+      groups: Array.isArray(raw.scenarios.groups) ? raw.scenarios.groups : [],
+    };
   } else {
     if (raw.scenarios !== undefined) problems.push('scenarios 结构不完整，已重置为空白剧本容器');
-    scenarios = { version: 2, baseMaps: {}, scenarios: {} };
+    scenarios = { version: 2, baseMaps: {}, scenarios: {}, groups: [] };
   }
 
   // ---- maps ----

@@ -26,6 +26,12 @@ import {
 import { buildAzgaarReferenceLayers } from '../../utils/planetMapBundle';
 // 新建省份的压叠度量（纯函数，Node 有单测）—— 判定单源，store 只做策略
 import { measureProvinceOverlap, describeOverlap } from '../../utils/provinceOverlap';
+// ── 剧本集（2026-10-25）：组判定/规整/计数**只有一份实现**（utils/scenarioGroups.js）──
+// 左栏、时间轴、切片、管理对话框、导入导出都从这里取；store 只做 CRUD 与落盘。
+import {
+  DEFAULT_SCENARIO_GROUP, scenarioGroupIdOf, sanitizeScenarioGroups,
+  nextScenarioGroupId, filterScenariosByGroup, adoptOrphanGroups,
+} from '../../utils/scenarioGroups';
 // ── 月日精度（2026-10-05）：易主日期的规整 / 比较 / 校验 ──────────────────────
 // 🔴 `changeYears[pid] = 1993` → `changeEvents[pid] = [{y,m,d,owner}, …]` 的迁移**唯一实现**
 //    在 `utils/scenarioDates.js`。本模块只做「何时搬」与「搬到哪」，绝不自己写第二套日期逻辑：
@@ -81,6 +87,12 @@ export function createScenarioEditingModule(ctx) {
 
   const baseMaps = ref({});
   const scenarios = ref({});
+  /**
+   * 剧本集表（2026-10-25）：`[{ id, name, order }]`，**只存自定义组**。
+   * 「默认」是虚拟组（`DEFAULT_SCENARIO_GROUP`），不在表里 —— 旧项目零迁移。
+   * 归属写在 `scenario.group`（空/缺省 = 默认组）。
+   */
+  const scenarioGroups = ref([]);
 
   // P2-4：派生计算世代号。异步派生回来时必须确认「这仍是当前这条命令的结果」，
   // 否则会把旧 h 的派生值写到新 h 上（脏写）。
@@ -1126,6 +1138,8 @@ export function createScenarioEditingModule(ctx) {
       name: scenario.name || 'New Scenario',
       era: scenario.era || { roman: '', label: '', startYear: '', endYear: '' },
       order: scenario.order || Object.keys(scenarios.value).length + 1,
+      // 剧本集（2026-10-25）：缺省 = 默认组（旧调用点一行不改）
+      group: scenarioGroupIdOf(scenario),
       description: scenario.description || '',
       // hook = 卡片墙的钩子文案（1-2 句，ScenarioPicker 卡片上两行截断显示）。
       // 与 description 分工：description 是长注记（编辑器属性区），hook 是给"选剧本"那一屏看的。
@@ -1159,7 +1173,7 @@ export function createScenarioEditingModule(ctx) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return;
     
-    execute({
+    const gate = execute({
       type: 'update-scenario',
       label: '编辑剧本',
       undo: () => {
@@ -1174,6 +1188,7 @@ export function createScenarioEditingModule(ctx) {
     });
     
     saveScenarios();
+    return gate;
   }
 
   function removeScenario(scenarioId) {
@@ -1219,6 +1234,9 @@ export function createScenarioEditingModule(ctx) {
       createdAt: now,
       updatedAt: now,
       ...overrides,
+      // 放**最后**：overrides.group 显式给了就用它，否则继承 base 的组
+      // （放在 spread 之前会被 `group: undefined` 顶掉，于是继承出来的剧本全落默认组）
+      group: scenarioGroupIdOf({ group: overrides.group || base?.group }),
     };
     
     execute({
@@ -1237,8 +1255,121 @@ export function createScenarioEditingModule(ctx) {
   }
 
   // ============================================================
-  // Ownership（EU4 省份染色）—— 月日精度（2026-10-05）
+  // 剧本集（2026-10-25）—— 一组 = 一条独立时间线
   // ============================================================
+  //
+  // 语义：`scenario.group` 决定它属于哪一条时间线；左栏 / 时间轴 / 播放 /
+  // 切片导出的「全部剧本」都只取**当前组**。组本身只存 名字 + 顺序，不承载剧本内容。
+  // 「默认」是虚拟组（不在 `scenarioGroups` 里）—— 旧项目打开即默认组，零迁移。
+
+  /** 新建剧本集（返回新组；调用方据此切过去） */
+  function addScenarioGroup({ name, id } = {}) {
+    const gid = id || nextScenarioGroupId(scenarioGroups.value);
+    const row = {
+      id: gid,
+      name: String(name || '').trim() || `剧本集 ${scenarioGroups.value.length + 1}`,
+      order: scenarioGroups.value.length + 1,
+    };
+    const prev = scenarioGroups.value;
+    const next = sanitizeScenarioGroups([...prev, row]);
+    // 只读态由 execute 的写闸门统一拒绝；这里把拒绝原样回报（调用方据此不切换当前组）
+    const gate = execute({
+      type: 'add-scenario-group',
+      label: '新建剧本集',
+      undo: () => { scenarioGroups.value = prev; },
+      redo: () => { scenarioGroups.value = next; },
+    });
+    if (gate && gate.ok === false) return { success: false, error: gate.error };
+    saveScenarios();
+    return { success: true, group: row };
+  }
+
+  function renameScenarioGroup(groupId, name) {
+    const id = String(groupId || '');
+    if (!id || id === DEFAULT_SCENARIO_GROUP) return { success: false, error: '默认剧本集不能改名' };
+    const prev = scenarioGroups.value;
+    const hit = (prev || []).find(g => g.id === id);
+    if (!hit) return { success: false, error: '剧本集不存在' };
+    const nextName = String(name || '').trim();
+    if (!nextName) return { success: false, error: '名称不能为空' };
+    const next = prev.map(g => (g.id === id ? { ...g, name: nextName } : g));
+    const gate = execute({
+      type: 'rename-scenario-group',
+      label: '重命名剧本集',
+      undo: () => { scenarioGroups.value = prev; },
+      redo: () => { scenarioGroups.value = next; },
+    });
+    if (gate && gate.ok === false) return { success: false, error: gate.error };
+    saveScenarios();
+    return { success: true };
+  }
+
+  /**
+   * 删除剧本集：**不删剧本**，组内剧本全部退回默认组（一条 undo）。
+   * 这是「删文件夹」而不是「删内容」—— 剧本是真数据，删组只是取消分类。
+   */
+  function removeScenarioGroup(groupId) {
+    const id = String(groupId || '');
+    if (!id || id === DEFAULT_SCENARIO_GROUP) return { success: false, error: '默认剧本集不能删除' };
+    const hit = (scenarioGroups.value || []).find(g => g.id === id);
+    if (!hit) return { success: false, error: '剧本集不存在' };
+    const prevGroups = scenarioGroups.value;
+    const prevScenarios = scenarios.value;
+    const affected = Object.keys(prevScenarios || {}).filter((k) => scenarioGroupIdOf(prevScenarios[k]) === id);
+    const nextGroups = prevGroups.filter(g => g.id !== id);
+    const nextScenarios = { ...prevScenarios };
+    for (const k of affected) nextScenarios[k] = { ...nextScenarios[k], group: DEFAULT_SCENARIO_GROUP };
+    const gate = execute({
+      type: 'remove-scenario-group',
+      label: '删除剧本集',
+      undo: () => { scenarioGroups.value = prevGroups; scenarios.value = prevScenarios; },
+      redo: () => { scenarioGroups.value = nextGroups; scenarios.value = nextScenarios; },
+    });
+    if (gate && gate.ok === false) return { success: false, error: gate.error };
+    saveScenarios();
+    return { success: true, moved: affected.length };
+  }
+
+  /** 把一条剧本移进某组（组不存在 / 与当前相同 → 不动） */
+  function setScenarioGroup(scenarioId, groupId) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { success: false, error: '剧本不存在' };
+    const gid = scenarioGroupIdOf({ group: groupId });
+    if (gid !== DEFAULT_SCENARIO_GROUP && !(scenarioGroups.value || []).some(g => g.id === gid)) {
+      return { success: false, error: '剧本集不存在' };
+    }
+    if (scenarioGroupIdOf(scenario) === gid) return { success: true, unchanged: true };
+    const gate = updateScenario(scenarioId, { group: gid });
+    if (gate && gate.ok === false) return { success: false, error: gate.error };
+    return { success: true };
+  }
+
+  /** 把一批剧本移进某组（一条 undo；批量整理用） */
+  function setScenariosGroup(scenarioIds, groupId) {
+    const ids = Array.isArray(scenarioIds) ? scenarioIds.filter(id => scenarios.value[id]) : [];
+    if (!ids.length) return { success: false, error: '没有要移动的剧本' };
+    const gid = scenarioGroupIdOf({ group: groupId });
+    if (gid !== DEFAULT_SCENARIO_GROUP && !(scenarioGroups.value || []).some(g => g.id === gid)) {
+      return { success: false, error: '剧本集不存在' };
+    }
+    const prev = scenarios.value;
+    const next = { ...prev };
+    for (const id of ids) next[id] = { ...next[id], group: gid, updatedAt: new Date().toISOString() };
+    const gate = execute({
+      type: 'set-scenarios-group',
+      label: '移动剧本集',
+      undo: () => { scenarios.value = prev; },
+      redo: () => { scenarios.value = next; },
+    });
+    if (gate && gate.ok === false) return { success: false, error: gate.error };
+    saveScenarios();
+    return { success: true, moved: ids.length };
+  }
+
+  /** 当前底图下、某组里的剧本（UI 唯一取数口；过滤实现仍在纯函数层） */
+  function getScenariosForGroup(ownerKey, groupId) {
+    return filterScenariosByGroup(getScenariosByOwner(ownerKey), groupId);
+  }
   //
   // 数据形状（现行）：
   //   `scenario.ownership[pid]`   = 该省在本剧本快照里的归属（= 本剧本**结束**时的状态）
@@ -2411,6 +2542,8 @@ export function createScenarioEditingModule(ctx) {
         version: 1,
         baseMaps: JSON.parse(JSON.stringify(baseMaps.value || {})),
         scenarios: JSON.parse(JSON.stringify(scenarios.value || {})),
+        // 剧本集随包走（否则「导到另一个项目」会全部落回默认组，多时间线语义丢失）
+        groups: JSON.parse(JSON.stringify(adoptOrphanGroups(scenarioGroups.value, scenarios.value))),
         updatedAt: new Date().toISOString(),
       };
     }
@@ -2422,7 +2555,11 @@ export function createScenarioEditingModule(ctx) {
         sc[k] = JSON.parse(JSON.stringify(v));
       }
     }
-    return { version: 1, baseMaps: bm, scenarios: sc, updatedAt: new Date().toISOString() };
+    // 只带**这批判剧本实际用到**的组（不把别的底图的时间线一起塞进单底图导出包）
+    const used = new Set(Object.values(sc).map(s => scenarioGroupIdOf(s)));
+    const groups = adoptOrphanGroups(scenarioGroups.value, sc)
+      .filter(g => used.has(g.id)).map(g => ({ ...g }));
+    return { version: 1, baseMaps: bm, scenarios: sc, groups, updatedAt: new Date().toISOString() };
   }
 
   /** 导出前体检：返回给人看的警告清单 */
@@ -2430,6 +2567,7 @@ export function createScenarioEditingModule(ctx) {
     const warns = [];
     const scen = payload?.scenarios || {};
     const maps = payload?.baseMaps || {};
+    const groupIds = new Set((payload?.groups || []).map(g => g.id));
     const keys = Object.keys(scen);
     if (!keys.length) warns.push('没有任何剧本');
     if (!Object.keys(maps).length) warns.push('没有任何底图（剧本将没有省份可渲染）');
@@ -2441,6 +2579,10 @@ export function createScenarioEditingModule(ctx) {
       const own = Object.keys(s?.ownership || {}).length;
       if (!own) warns.push(`剧本「${s?.name || k}」没有省份归属`);
       if (s?.era?.startYear === undefined || s?.era?.startYear === '') warns.push(`剧本「${s?.name || k}」缺起始年份`);
+      // 组引用悬空 = 导入后它会静默落回默认组（分组语义丢失，且不报错）
+      if (s?.group && s.group !== DEFAULT_SCENARIO_GROUP && !groupIds.has(s.group)) {
+        warns.push(`剧本「${s?.name || k}」指向的剧本集「${s.group}」不在导出范围内`);
+      }
     }
     return warns;
   }
@@ -2459,6 +2601,7 @@ export function createScenarioEditingModule(ctx) {
     const snapMaps = JSON.parse(JSON.stringify(baseMaps.value || {}));
     const snapScen = JSON.parse(JSON.stringify(scenarios.value || {}));
     const snapPts = JSON.parse(JSON.stringify(slicePoints.value || []));
+    const snapGroups = JSON.parse(JSON.stringify(scenarioGroups.value || []));
     // 🔴 导入的剧本可能是**旧格式**（外部包/老备份）→ 必须过迁移，否则这份数据一进来
     //    就被当成「没有显式日期」，全部退回合成值。
     const inScenMigrated = inScen ? normalizeScenarioDatesDict(JSON.parse(JSON.stringify(inScen))) : null;
@@ -2468,6 +2611,18 @@ export function createScenarioEditingModule(ctx) {
     const nextScen = mode === 'replace'
       ? JSON.parse(JSON.stringify(inScenMigrated || {}))
       : { ...snapScen, ...JSON.parse(JSON.stringify(inScenMigrated || {})) };
+    // 剧本集随包往返：替换 = 用包里的（没有就清空，剧本全落默认组）；
+    // 合并 = 按 id 合并，同 id 以**包里**的名字/顺序为准（「同 key 覆盖」与底图/剧本同一口径）
+    const inGroups = data.groups !== undefined ? sanitizeScenarioGroups(data.groups) : null;
+    const nextGroups = mode === 'replace'
+      ? (inGroups || [])
+      : (() => {
+        const byId = new Map(snapGroups.map(g => [g.id, g]));
+        for (const g of (inGroups || [])) byId.set(g.id, g);
+        return sanitizeScenarioGroups([...byId.values()]);
+      })();
+    // 导入包可能只带 `scenario.group`、没带组表 → 收编成同名组，避免剧本"无处可见"
+    const nextGroupsAdopted = adoptOrphanGroups(nextGroups, nextScen);
     // 书签随包往返：替换 = 用包里的（没有就清空）；合并 = 追加去重
     const inPts = Array.isArray(data.slicePoints) ? data.slicePoints : null;
     const nextPts = mode === 'replace'
@@ -2484,11 +2639,13 @@ export function createScenarioEditingModule(ctx) {
         baseMaps.value = snapMaps;
         scenarios.value = snapScen;
         slicePoints.value = snapPts;
+        scenarioGroups.value = snapGroups;
       },
       redo: () => {
         baseMaps.value = nextMaps;
         scenarios.value = nextScen;
         slicePoints.value = nextPts;
+        scenarioGroups.value = nextGroupsAdopted;
       },
     });
     // 只读态：execute 被闸门拒绝 → 绝不回报「导入成功」（否则用户看到「导入完成」却什么都没进来）
@@ -2501,6 +2658,7 @@ export function createScenarioEditingModule(ctx) {
       baseMaps: Object.keys(nextMaps).length,
       scenarios: Object.keys(nextScen).length,
       slicePoints: nextPts.length,
+      groups: nextGroupsAdopted.length,
       addedMaps,
       addedScenarios: addedScen,
     };
@@ -2794,8 +2952,11 @@ export function createScenarioEditingModule(ctx) {
   }
 
   function loadScenarioState(data) {
+    if (!data || typeof data !== 'object') return;
     if (data.baseMaps) baseMaps.value = data.baseMaps;
     if (data.scenarios) scenarios.value = normalizeScenarioDatesDict(data.scenarios);
+    // 剧本集随容器一起装载；没有该字段 = 旧数据 → 清空（全部落默认组）
+    if (data.groups !== undefined) scenarioGroups.value = sanitizeScenarioGroups(data.groups);
   }
 
   // ============================================================
@@ -2859,6 +3020,27 @@ export function createScenarioEditingModule(ctx) {
     const prevBaseMaps = baseMaps.value;
     const prevScenarios = scenarios.value;
     const prevSlicePoints = slicePoints.value;
+    const prevGroups = scenarioGroups.value;
+    // 剧本集（2026-10-25）：
+    //  · fresh（打开项目 / 快照回滚）= 整体替换；没有该字段的旧项目 → 清空（= 全部落默认组）
+    //  · merge（显式导入外部包）= 按 id 合并，同 id 以包里的名字为准
+    //  · fillMissingOnly（知识库隐式载入）**一律不碰** —— 组是项目侧语义，知识库缓存里没有
+    if (!fillMissingOnly) {
+      if (data.groups !== undefined) {
+        const incoming = sanitizeScenarioGroups(data.groups);
+        if (fresh) {
+          scenarioGroups.value = incoming;
+        } else {
+          const byId = new Map((scenarioGroups.value || []).map(g => [g.id, g]));
+          for (const g of incoming) byId.set(g.id, g);
+          scenarioGroups.value = sanitizeScenarioGroups([...byId.values()]);
+        }
+      } else if (fresh) {
+        scenarioGroups.value = [];
+      }
+      // 孤儿组收编：剧本引用了组表里没有的 id → 补一个同名组（否则这条剧本在**所有组**里都不可见）
+      scenarioGroups.value = adoptOrphanGroups(scenarioGroups.value, scenarios.value);
+    }
 
     if (data.baseMaps) {
       if (fresh) {
@@ -2902,10 +3084,12 @@ export function createScenarioEditingModule(ctx) {
       // 调用方用它决定「要不要排一次保存」：只有引用变了才算真的改了内存
       changed: baseMaps.value !== prevBaseMaps
         || scenarios.value !== prevScenarios
-        || slicePoints.value !== prevSlicePoints,
+        || slicePoints.value !== prevSlicePoints
+        || scenarioGroups.value !== prevGroups,
       baseMaps: Object.keys(baseMaps.value || {}).length,
       scenarios: Object.keys(scenarios.value || {}).length,
       slicePoints: (slicePoints.value || []).length,
+      groups: (scenarioGroups.value || []).length,
     };
   }
 
@@ -4011,6 +4195,9 @@ export function createScenarioEditingModule(ctx) {
     splitBaseProvince, mergeBaseProvinces,
     addBaseReferenceImage, updateBaseReferenceImage, removeBaseReferenceImage,
     createScenario, updateScenario, removeScenario, inheritScenario,
+    // 剧本集（2026-10-25）：组表 + CRUD；组内剧本取数走 getScenariosForGroup（过滤单源）
+    scenarioGroups, addScenarioGroup, renameScenarioGroup, removeScenarioGroup,
+    setScenarioGroup, setScenariosGroup, getScenariosForGroup,
     setOwnership, clearOwnership, batchSetOwnership,
     setPolityLineage, setChangeEvents, setChangeEventsBulk, updatePolity, addPolity, removePolity,
     // 事件账本（2026-10-22，三刀序列·第一刀）：外交/战争/同盟的录入、修改、删除与只读查询

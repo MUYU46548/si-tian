@@ -1077,6 +1077,25 @@
             <Icon :name="showScenarioList ? 'chevron-left' : 'chevron-right'" :size="13"/>
           </button>
         </div>
+        <!-- 剧本集切换（2026-10-25）：一组 = 一条独立时间线（同一张底图 + 连续年代）。
+             不切换 = 不同底图/不同时间线的剧本混在一条年份轴上，断层与"上一剧本"语义都会乱。 -->
+        <div v-if="showScenarioList" class="slp-groupbar" data-testid="scenario-group-bar">
+          <span class="slp-group-label">剧本集</span>
+          <select
+            class="slp-group-select"
+            :value="activeGroupId"
+            data-testid="scenario-group-switch"
+            title="一组 = 一条独立时间线。切换后左栏、时间轴、播放与切片导出的「全部剧本」都只取这一组。"
+            @change="switchGroup($event.target.value)"
+          >
+            <option v-for="g in groupOptions" :key="g.id" :value="g.id">
+              {{ g.name }}（{{ groupCount(g.id) }}）
+            </option>
+          </select>
+          <button class="slp-group-manage" data-testid="scenario-group-manage"
+                  title="新建 / 改名 / 删除剧本集，或把某条剧本移到别的组（不删任何剧本）"
+                  @click="showScenarioManager = true">管理</button>
+        </div>
         <template v-if="showScenarioList">
           <div v-if="!sortedScenarios.length" class="slp-empty" data-testid="slp-empty">
             还没有剧本 —— 打开下方「新建 / 管理剧本…」创建第一个时期。<br />
@@ -1330,11 +1349,55 @@
     <div v-if="showScenarioManager" class="modal-overlay" @click.self="closeScenarioManager">
       <div class="modal-dialog scenario-manager">
         <h3>剧本管理</h3>
+
+        <!-- 剧本集管理（2026-10-25）：一组 = 一条独立时间线。删除组**不删剧本**，只退回默认组。 -->
+        <div class="scenario-groups" data-testid="scenario-groups">
+          <div class="sg-head">
+            <span class="sg-title">剧本集</span>
+            <span class="sg-hint">切换后左栏、时间轴、播放与切片导出只显示这一组</span>
+          </div>
+          <div v-for="g in groupOptions" :key="g.id" class="sg-row" :data-testid="'scenario-group-row-' + g.id">
+            <template v-if="editingGroupId === g.id">
+              <input v-model="editGroupName" class="sg-name-input" data-testid="scenario-group-rename-input"
+                     @keydown.enter="commitRenameGroup" @keydown.esc="cancelRenameGroup" />
+              <button class="sg-btn primary" data-testid="scenario-group-rename-save"
+                      :disabled="!editGroupName.trim()" @click="commitRenameGroup">保存</button>
+              <button class="sg-btn" @click="cancelRenameGroup">取消</button>
+            </template>
+            <template v-else>
+              <span class="sg-name" :class="{ current: g.id === activeGroupId }">{{ g.name }}</span>
+              <span class="sg-count">{{ groupCount(g.id) }} 条</span>
+              <button v-if="g.id !== DEFAULT_SCENARIO_GROUP" class="sg-btn" data-testid="scenario-group-rename"
+                      :disabled="store.isReadOnly" title="重命名这个剧本集"
+                      @click="startRenameGroup(g)">改名</button>
+              <button v-if="g.id !== DEFAULT_SCENARIO_GROUP" class="sg-btn danger" data-testid="scenario-group-delete"
+                      :disabled="store.isReadOnly"
+                      :title="`删除剧本集「${g.name}」—— 组内 ${groupCount(g.id)} 条剧本会退回「默认」，一条剧本都不会删`"
+                      @click="deleteGroup(g)">删除</button>
+            </template>
+          </div>
+          <div class="sg-new">
+            <input v-model="newGroupName" class="sg-name-input" placeholder="新剧本集名称（如：第二时间线 / 另一张底图）"
+                   data-testid="scenario-group-name" @keydown.enter="createGroup" />
+            <button class="sg-btn primary" data-testid="scenario-group-create"
+                    :disabled="store.isReadOnly || !newGroupName.trim()" @click="createGroup">新建剧本集</button>
+          </div>
+          <p class="sg-note">
+            剧本集只决定「哪些剧本一起出现在左栏和时间轴上」；删除组只是取消分类，剧本、省份、归属一条都不动。
+          </p>
+        </div>
+
         <div class="scenario-list">
-          <div v-for="s in sortedScenarios" :key="s.id" class="scenario-item">
+          <div v-for="s in allSortedScenarios" :key="s.id" class="scenario-item" :data-testid="'scenario-item-' + s.id">
             <span class="item-era">{{ s.era?.roman || '·' }}</span>
             <span class="item-name">{{ s.name }}</span>
             <span class="item-years">{{ s.era?.startYear || '?' }} – {{ s.era?.endYear || '?' }}</span>
+            <select class="item-group" :value="scenarioGroupIdOf(s)" :disabled="store.isReadOnly"
+                    :title="`把「${s.name}」移到别的剧本集（不删任何数据）`"
+                    data-testid="scenario-item-group"
+                    @change="moveScenarioToGroup(s, $event.target.value)">
+              <option v-for="g in groupOptions" :key="g.id" :value="g.id">{{ g.name }}</option>
+            </select>
             <button class="item-edit" data-testid="scenario-edit" :disabled="store.isReadOnly"
                     :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
                       : '编辑剧本信息（名称 / 罗马数字 / 时代标签 / 起止年 / 描述）—— 不改动已录的省份归属与易主日期'"
@@ -1352,14 +1415,14 @@
           <button
             class="btn-clear-all"
             data-testid="scenario-clear-all"
-            :disabled="store.isReadOnly || !sortedScenarios.length"
+            :disabled="store.isReadOnly || !allSortedScenarios.length"
             :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
-              : ('删除全部 ' + sortedScenarios.length + ' 条剧本。只删剧本本身（名称/年份/势力归属/易主记录/标注标记），'
+              : ('删除全部 ' + allSortedScenarios.length + ' 条剧本（所有剧本集）。只删剧本本身（名称/年份/势力归属/易主记录/标注标记），'
                 + '底图与省份边界一个都不动；一条撤销即可回退')"
             @click="clearAllScenarios"
           >清空全部剧本（保留底图与省份）</button>
           <span class="bulk-hint">
-            共 {{ sortedScenarios.length }} 条 · 底图与省份不受影响 · Ctrl+Z 可撤销
+            共 {{ allSortedScenarios.length }} 条（所有剧本集）· 底图与省份不受影响 · Ctrl+Z 可撤销
           </span>
         </div>
         <div class="scenario-annos" data-testid="scenario-annotations">
@@ -1395,6 +1458,13 @@
               :title="store.isReadOnly ? `新建底图已停用：${store.readOnlyReason || '只读：未打开项目'}` : '新建一张空白底图，并让本剧本绑定它'"
               @click="addEmptyBaseMap()"
             >＋ 新建空底图</button>
+          </div>
+          <div class="form-row">
+            <label>剧本集：</label>
+            <select v-model="newScenario.group" data-testid="new-scenario-group" class="short-input"
+                    title="新剧本落在哪条时间线；切到该组后才出现在左栏与时间轴">
+              <option v-for="g in groupOptions" :key="g.id" :value="g.id">{{ g.name }}</option>
+            </select>
           </div>
           <div class="form-row">
             <label>名称：</label>
@@ -1491,6 +1561,7 @@
       :status="exportStatus"
       :busy="sliceExportBusy"
       :current-era="tlEra"
+      :group-name="groupNameNow"
       @close="showSliceExport = false"
       @run="onRunSliceExport"
     />
@@ -1634,6 +1705,11 @@ import {
 import { drawStyledLabel } from '../utils/labelStyles';
 // 剧本标签的**唯一判定**（省名 / 势力名 / 简称三档该写什么字、写在哪）—— 与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
+// 剧本集（2026-10-25）：组判定 / 选项 / 计数 / 初始组**只有一份实现**（utils/scenarioGroups.js）
+import {
+  DEFAULT_SCENARIO_GROUP, scenarioGroupIdOf, scenarioGroupOptions,
+  scenarioGroupNameOf, scenarioGroupCounts, firstNonEmptyGroupId,
+} from '../utils/scenarioGroups';
 // P0 第二块：省份几何的**唯一表示**（多环实体）与其配套纯函数 —— 渲染/命中/分割/合并/骨架吸附
 // 全部走这一层，画布里不再自己实现多边形算法（旧实现里那份凸包合并就是「吃掉邻居省份」的根因）。
 import {
@@ -2769,6 +2845,7 @@ const newScenario = ref({
   endYear: '',
   description: '',
   inherit: true,
+  group: DEFAULT_SCENARIO_GROUP,
 });
 
 const baseMap = computed(() => store.baseMaps?.[baseMapKey.value]);
@@ -2791,9 +2868,58 @@ const scenarios = computed(() => {
   return store.getScenariosByOwner?.(baseMapKey.value) || [];
 });
 
-const sortedScenarios = computed(() => {
+// ── 剧本集（2026-10-25）────────────────────────────────────────────────────
+// 一组 = 一条独立时间线（通常一张底图 + 一段连续年代）。
+// 左栏 / 时间轴 / 播放 / 切片导出的「全部剧本」都只取**当前组**；
+// 组表在 project 文件里（`scenarios.groups`），默认组是虚拟的（旧项目零迁移）。
+const activeGroupId = ref(DEFAULT_SCENARIO_GROUP);
+const groupOptions = computed(() => scenarioGroupOptions(store.scenarioGroups || []));
+const groupNameNow = computed(() => scenarioGroupNameOf(store.scenarioGroups || [], activeGroupId.value));
+const groupCounts = computed(() => scenarioGroupCounts(scenarios.value));
+function groupCount(id) { return groupCounts.value.get(String(id || DEFAULT_SCENARIO_GROUP)) || 0; }
+function groupNameOf(id) { return scenarioGroupNameOf(store.scenarioGroups || [], id); }
+
+/** 当前底图的全部剧本（跨所有剧本集），按 order 排；仅管理对话框 / 初始组判定用 */
+const allSortedScenarios = computed(() => {
   return [...scenarios.value].sort((a, b) => (a.order || 0) - (b.order || 0));
 });
+
+/** 当前剧本集里的剧本 —— 时间轴 / 左栏 / 播放 / 切片导出的唯一取数口 */
+const sortedScenarios = computed(() => {
+  return allSortedScenarios.value.filter((s) => scenarioGroupIdOf(s) === activeGroupId.value);
+});
+
+/**
+ * 切剧本集：选择第一段并同步游标；空组则清空选中（时间轴无帧）。
+ * 不走 `selectScenarioAt` 的「找不到就 return」—— 空组是合法状态。
+ */
+function switchGroup(gid) {
+  const id = String(gid || DEFAULT_SCENARIO_GROUP);
+  if (id === activeGroupId.value) return;
+  activeGroupId.value = id;
+  const list = sortedScenarios.value;
+  if (list.length) {
+    selectScenarioAt(list[0]);
+  } else {
+    selectedScenario.value = null;
+    selectedPolity.value = null;
+    tlEra.value = 0;
+    tlPlaying.value = false;
+    tlDate.value = { y: 0, m: null, d: null };
+    render();
+  }
+  statusMsg(`已切到剧本集「${groupNameOf(id)}」${list.length ? `（${list.length} 条剧本）` : '（空）'}`);
+}
+
+/**
+ * 换底图 / 首次装载 → 落到**第一条剧本所在的组**（而不是永远默认组）。
+ * 只在底图切换时调用；用户手动切到空组不在这里被弹回去。
+ */
+function resetGroupForBaseMap() {
+  const list = allSortedScenarios.value;
+  if (!list.length) { activeGroupId.value = DEFAULT_SCENARIO_GROUP; return; }
+  activeGroupId.value = firstNonEmptyGroupId(list);
+}
 
 const statusText = computed(() => {
   if (!baseMap.value) return '未加载底图';
@@ -3169,8 +3295,8 @@ async function onRunSliceExport({ png = false, scale = 2, era = null } = {}) {
   if (sliceExportBusy.value) return;
   sliceExportBusy.value = true;
   try {
-    // `era` = 对话框选的范围（本剧本 / 全部）；过滤在 utils/scenarioSlices 的唯一实现里
-    const r = await exportSliceFrames({ png, scale, era, slicePoints: slicePoints.value });
+    // `era` = 对话框选的范围（本剧本 / 本剧本集全部）；过滤在 utils/scenarioSlices 的唯一实现里
+    const r = await exportSliceFrames({ png, scale, era, slicePoints: slicePoints.value, groupName: groupNameNow.value });
     // 失败/取消的回音由 exportStatus 承担（对话框里也显示同一份），这里只补一条可点名的结论
     if (r && r.success === false && !r.canceled) statusMsg(`切片导出失败：${r.error || '未知错误'}`);
     else if (r && r.canceled) statusMsg('已取消切片导出');
@@ -7817,15 +7943,82 @@ function manualSave() {
 }
 
 // ═══════════════════════════════════════════
-// 剧本管理
+// 剧本集（2026-10-25）
 // ═══════════════════════════════════════════
+const newGroupName = ref('');
+const editingGroupId = ref('');
+const editGroupName = ref('');
+
+function createGroup() {
+  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
+  const name = newGroupName.value.trim();
+  if (!name) return;
+  const r = store.addScenarioGroup({ name });
+  if (!r || !r.success) { statusMsg(`新建剧本集失败：${(r && r.error) || '未知原因'}`); return; }
+  newGroupName.value = '';
+  activeGroupId.value = r.group.id;
+  statusMsg(`已新建剧本集「${r.group.name}」—— 新建剧本会默认落在这一组；也可在列表里把已有剧本移进来`);
+  render();
+}
+
+function startRenameGroup(g) {
+  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
+  editingGroupId.value = g.id;
+  editGroupName.value = g.name;
+}
+
+function cancelRenameGroup() {
+  editingGroupId.value = '';
+  editGroupName.value = '';
+}
+
+function commitRenameGroup() {
+  const id = editingGroupId.value;
+  if (!id) return;
+  const name = editGroupName.value.trim();
+  if (!name) return;
+  const r = store.renameScenarioGroup(id, name);
+  if (!r || !r.success) { statusMsg(`改名失败：${(r && r.error) || '未知原因'}`); return; }
+  cancelRenameGroup();
+  statusMsg(`剧本集已改名为「${name}」`);
+}
+
+function deleteGroup(g) {
+  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
+  const n = groupCount(g.id);
+  const r = store.removeScenarioGroup(g.id);
+  if (!r || !r.success) { statusMsg(`删除失败：${(r && r.error) || '未知原因'}`); return; }
+  if (activeGroupId.value === g.id) activeGroupId.value = DEFAULT_SCENARIO_GROUP;
+  statusMsg(n
+    ? `已删除剧本集「${g.name}」—— ${n} 条剧本退回「默认」组（一条都没删，Ctrl+Z 可撤销）`
+    : `已删除空剧本集「${g.name}」（Ctrl+Z 可撤销）`);
+  render();
+}
+
+function moveScenarioToGroup(s, groupId) {
+  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
+  const target = String(groupId || DEFAULT_SCENARIO_GROUP);
+  const r = store.setScenarioGroup(s.id, target);
+  if (!r || !r.success) { statusMsg(`移动失败：${(r && r.error) || '未知原因'}`); return; }
+  // 移的正好是当前在看的那条 → 跟着它切组（否则地图上还是它、左栏却没它了）
+  if (selectedScenario.value?.id === s.id) {
+    activeGroupId.value = target;
+    selectScenarioAt(store.getScenario(s.id));
+  }
+  statusMsg(`「${s.name}」已移到剧本集「${groupNameOf(target)}」${r.unchanged ? '（本来就在这一组）' : ''}`);
+  render();
+}
+
 function createNewScenario() {
   if (!baseMapKey.value || !store.baseMaps?.[baseMapKey.value]) {
     statusMsg('新建剧本失败：还没有选中底图（先在「底图」行点「空底图」，或「＋」导入 .map）');
     return;
   }
-  const baseScenarioId = newScenario.value.inherit && sortedScenarios.value.length > 0
-    ? sortedScenarios.value[sortedScenarios.value.length - 1].id
+  const targetGroup = newScenario.value.group || activeGroupId.value || DEFAULT_SCENARIO_GROUP;
+  // 继承的基准必须是**目标组**里的最后一条（不是当前左栏里的最后一条 —— 表单允许落到别的组）
+  const groupList = allSortedScenarios.value.filter((x) => scenarioGroupIdOf(x) === targetGroup);
+  const baseScenarioId = newScenario.value.inherit && groupList.length > 0
+    ? groupList[groupList.length - 1].id
     : null;
   const scenarioId = `${baseMapKey.value}/${newScenario.value.name}`;
   if (baseScenarioId) {
@@ -7834,6 +8027,7 @@ function createNewScenario() {
       era: { roman: newScenario.value.roman, label: newScenario.value.label, startYear: newScenario.value.startYear, endYear: newScenario.value.endYear },
       description: newScenario.value.description,
       hook: newScenario.value.hook,
+      group: targetGroup,
     });
   } else {
     store.createScenario(scenarioId, {
@@ -7842,12 +8036,16 @@ function createNewScenario() {
       era: { roman: newScenario.value.roman, label: newScenario.value.label, startYear: newScenario.value.startYear, endYear: newScenario.value.endYear },
       description: newScenario.value.description,
       hook: newScenario.value.hook,
+      group: targetGroup,
     });
   }
+  // 新剧本可能落在**另一个组**：先切过去（`scenarioFormBlank` 也读 activeGroupId，必须排在它前面）
+  activeGroupId.value = targetGroup;
   newScenario.value = scenarioFormBlank();
   showScenarioManager.value = false;
   const newS = store.getScenario(scenarioId);
   if (newS) selectScenario(newS);
+  else render();
 }
 
 function deleteScenario(s) {
@@ -7873,12 +8071,13 @@ function clearAllScenarios() {
     statusMsg(`清空剧本已停用：${store.readOnlyReason || '只读：未打开项目'}`);
     return;
   }
-  const n = sortedScenarios.value.length;
+  const n = allSortedScenarios.value.length;
   if (!n) return;
   const okGo = window.confirm(
-    `清空全部 ${n} 条剧本？\n\n`
+    `清空全部 ${n} 条剧本（所有剧本集）？\n\n`
     + '只删剧本本身（名称 / 年份 / 势力归属 / 易主记录 / 标注与标记）。\n'
-    + '**底图与省份边界一个都不动** —— 省份还在，可以直接用「批量铺底 (A)」重切。\n\n'
+    + '**底图与省份边界一个都不动** —— 省份还在，可以直接用「批量铺底 (A)」重切。\n'
+    + '剧本集本身保留（只是会变成空组）。\n\n'
     + '这一步可以用 Ctrl+Z 撤销。'
   );
   if (!okGo) { statusMsg(`已取消清空（仍有 ${n} 条剧本）`); return; }
@@ -7886,7 +8085,7 @@ function clearAllScenarios() {
   // 选中引用必须重指向：清空后所有剧本都没了，留着旧对象会让属性区读一个已不存在的剧本
   selectedScenario.value = sortedScenarios.value[0] || null;
   render();
-  statusMsg(`已清空 ${n} 条剧本（底图与省份保留）—— Ctrl+Z 可撤销`);
+  statusMsg(`已清空 ${n} 条剧本（底图、省份与剧本集保留）—— Ctrl+Z 可撤销`);
 }
 
 // ═══════════════════════════════════════════
@@ -7898,7 +8097,11 @@ function clearAllScenarios() {
 const editingScenarioId = ref(null);
 
 function scenarioFormBlank() {
-  return { name: '', roman: '', label: '', startYear: '', endYear: '', description: '', hook: '', inherit: true };
+  return {
+    name: '', roman: '', label: '', startYear: '', endYear: '',
+    description: '', hook: '', inherit: true,
+    group: activeGroupId.value || DEFAULT_SCENARIO_GROUP,
+  };
 }
 
 function scenarioToForm(s) {
@@ -7911,6 +8114,7 @@ function scenarioToForm(s) {
     description: s.description || '',
     hook: s.hook || '',
     inherit: false,   // 编辑既有剧本时没有「继承上一时代」的语义
+    group: scenarioGroupIdOf(s),
   };
 }
 
@@ -7930,6 +8134,12 @@ function closeScenarioManager() {
   showScenarioManager.value = false;
 }
 
+// 每次打开管理对话框：新建表单落到**当前剧本集**（否则在自定义组里打开，默认会建到「默认」组）
+watch(showScenarioManager, (open) => {
+  if (!open || editingScenarioId.value) return;
+  newScenario.value = scenarioFormBlank();
+});
+
 function saveEditScenario() {
   const id = editingScenarioId.value;
   if (!id) return;
@@ -7945,7 +8155,15 @@ function saveEditScenario() {
     era: { roman: f.roman || '', label: f.label || '', startYear: f.startYear || '', endYear: f.endYear || '' },
     description: f.description || '',
     hook: f.hook || '',
+    group: f.group || DEFAULT_SCENARIO_GROUP,
   });
+  // 编辑时改了组 → 跟着它切过去（否则保存后它从左栏消失，看着像被删了）
+  const targetGroup = f.group || DEFAULT_SCENARIO_GROUP;
+  if (targetGroup !== activeGroupId.value) {
+    activeGroupId.value = targetGroup;
+    const moved = store.getScenario(id);
+    if (moved) selectScenarioAt(moved);
+  }
   cancelEditScenario();
   // 🔴 收窄区间可能让**已录的易主日期落到区间外**（时间轴与切片都不再显示它们）——
   //    "改坏了自己却看不出来"是最坏的一类。这里复用切片对话框同一份体检函数，不另写口径。
@@ -10715,6 +10933,17 @@ onMounted(async () => {
     if (initialFitPending) fitToView();
   }, 250);
 
+  // 剧本集：数据到了才定"当前是哪一组"（落到第一条剧本所在的组；全空则默认组）
+  resetGroupForBaseMap();
+  // 数据**晚于挂载**到达（scenarios.json / 导入项目）时兜底：当前组一条都没有、别的组有 → 跟过去。
+  // 只在这条「当前组为空」的窄条件下切，用户手动切到空组不会被弹走（空组是合法状态）。
+  watch(allSortedScenarios, (list) => {
+    if (!list.length) return;
+    if (!list.some((x) => scenarioGroupIdOf(x) === activeGroupId.value)) {
+      activeGroupId.value = scenarioGroupIdOf(list[0]);
+    }
+  }, { deep: false });
+
   // 时间轴游标落到第一个剧本（数据可能刚由 scenarios.json 异步载入）
   resetTimelineToStart();
   setTimeout(resetTimelineToStart, 300);
@@ -10727,6 +10956,8 @@ onMounted(async () => {
     if (s?.ownerKey && store.baseMaps?.[s.ownerKey] && s.ownerKey !== baseMapKey.value) {
       baseMapKey.value = s.ownerKey;
     }
+    // 卡片可能来自**别的剧本集**：先切到它那一组，否则 320ms 后按当前组找不到它
+    if (s) activeGroupId.value = scenarioGroupIdOf(s);
     setTimeout(() => {
       const target = sortedScenarios.value.find((x) => x && x.id === props.initialScenarioId);
       if (target) selectScenarioAt(target);
@@ -10804,6 +11035,8 @@ watch(
 watch(baseMapKey, () => {
   rasterCache.clear();
   invalidateMinimap();               // 换图 → 小地图缩略图与包围盒都要重算
+  // 剧本集按底图重选：落到这张底图第一条剧本所在的组（不同底图通常就是不同时间线）
+  resetGroupForBaseMap();
   // Phase 3：省份网格随底图切换（目标省份、省界缓存、套索态都要重置）
   provBrushTarget.value = 1;
   provStrokeActive = false;
@@ -11938,6 +12171,99 @@ watch(baseMap, () => {
 .item-era { font-weight: 600; color: #7c3aed; min-width: 20px; }
 .item-name { flex: 1; font-size: 13px; }
 .item-years { font-size: 11px; color: #64748b; }
+.item-group {
+  max-width: 92px;
+  background: #16233a;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  border-radius: 4px;
+  font-size: 10.5px;
+  padding: 1px 3px;
+  font-family: inherit;
+}
+
+/* 剧本集（2026-10-25）：左栏切换条 + 管理对话框里的组表 */
+.slp-groupbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid #263449;
+}
+.slp-group-label { font-size: 10px; color: #94a3b8; flex: none; }
+.slp-group-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  border-radius: 5px;
+  font-size: 11px;
+  padding: 2px 4px;
+  font-family: inherit;
+}
+.slp-group-manage {
+  flex: none;
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.slp-group-manage:hover { background: #334155; color: #e2e8f0; }
+
+.scenario-groups {
+  margin: 0 0 16px;
+  padding: 8px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+}
+.sg-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.sg-title { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+.sg-hint { font-size: 10.5px; color: #64748b; }
+.sg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-bottom: 1px solid #263449;
+}
+.sg-row:last-of-type { border-bottom: 0; }
+.sg-name { flex: 1; font-size: 12px; color: #cbd5e1; }
+.sg-name.current { color: #fff; font-weight: 600; }
+.sg-count { font-size: 10.5px; color: #64748b; font-variant-numeric: tabular-nums; }
+.sg-name-input {
+  flex: 1;
+  min-width: 0;
+  background: #16233a;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 5px;
+  font-family: inherit;
+}
+.sg-btn {
+  flex: none;
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.sg-btn:hover:not(:disabled) { background: #334155; color: #e2e8f0; }
+.sg-btn.primary { background: rgba(124, 58, 237, 0.85); border-color: #7c3aed; color: #fff; }
+.sg-btn.danger:hover:not(:disabled) { background: rgba(180, 40, 50, 0.35); border-color: #a3474f; color: #fecaca; }
+.sg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.sg-new { display: flex; gap: 6px; margin-top: 6px; }
+.sg-note { margin: 6px 0 0; font-size: 10.5px; line-height: 1.55; color: #64748b; }
 
 .item-delete {
   background: none;

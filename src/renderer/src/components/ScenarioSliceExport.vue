@@ -3,7 +3,9 @@
     <div class="sse-dialog" data-testid="slice-export-panel">
       <div class="sse-head">
         <span class="sse-title"><Icon name="layers" :size="15"/> 逐年切片导出</span>
-        <span class="sse-sub">按「状态真的变了」出帧 · 一次选目录写一批</span>
+        <span class="sse-sub">
+          按「状态真的变了」出帧 · 一次选目录写一批<span v-if="groupName"> · 剧本集「{{ groupName }}」</span>
+        </span>
         <span class="sse-spacer"></span>
         <button class="sse-x" data-testid="slice-export-close" @click="emit('close')" title="关闭">
           <Icon name="x" :size="14"/>
@@ -44,12 +46,12 @@
         <div class="sse-row">
           <span class="sse-kv">范围</span>
           <select v-model="scope" data-testid="slice-scope" class="sse-scope"
-                  title="本剧本 = 只出当前时间轴所在这一段的帧；全部剧本 = 整部编年史">
+                  title="本剧本 = 只出当前时间轴所在这一段的帧；全部剧本 = 当前剧本集里的全部剧本（不是整个项目）">
             <option value="era">本剧本（{{ eraName }}）</option>
-            <option value="all">全部剧本（{{ timeline.scenarios.length }} 段）</option>
+            <option value="all">全部剧本（本组 {{ timeline.scenarios.length }} 段）</option>
           </select>
           <span v-if="autoSwitched" class="sse-dim" data-testid="slice-scope-auto">
-            全部剧本共 {{ allFrameCount }} 帧，超过上限 {{ MAX_SLICE_FRAMES }} →
+            本组全部剧本共 {{ allFrameCount }} 帧，超过上限 {{ MAX_SLICE_FRAMES }} →
             已默认切到「本剧本」（{{ eraFrameCount }} 帧）
           </span>
           <span class="sse-kv">帧数 <b data-testid="slice-frame-count">{{ frames.length }}</b></span>
@@ -146,6 +148,8 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
   /** 当前时间轴所在的那一段（「本剧本」范围用它；导出请求也带回去） */
   currentEra: { type: Number, default: 0 },
+  /** 当前剧本集名（只用于标题/清单说明；范围过滤已在父级 timeline 里做过） */
+  groupName: { type: String, default: '' },
 });
 
 const emit = defineEmits(['close', 'run']);

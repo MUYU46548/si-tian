@@ -82,6 +82,7 @@
           </div>
           <div class="sp-body">
             <div class="sp-name">{{ c.name }}</div>
+            <div v-if="c.groupName && c.groupName !== '默认'" class="sp-group" :title="`剧本集：${c.groupName}`">剧本集 · {{ c.groupName }}</div>
             <div class="sp-hook">{{ c.hook }}</div>
             <div class="sp-situation">
               <div v-for="row in c.rows" :key="row.owner" class="sp-row">
@@ -133,25 +134,30 @@ import Icon from './Icon.vue';
 import { useGeodataStore } from '../store/geodata.js';
 import { buildTimeline } from '../utils/scenarioTimeline.js';
 import { openingSituation, cardYearsText, cardHookText, provinceAreaIndex } from '../utils/scenarioCards.js';
+import { scenarioGroupNameOf, scenarioGroupIdOf } from '../utils/scenarioGroups.js';
 import { createThumbBaker } from '../utils/scenarioThumb.js';
 
 const emit = defineEmits(['edit', 'exit']);
 const store = useGeodataStore();
 const baker = createThumbBaker();
 
-/** 卡片数据 = 全部剧本（跨底图），按起始年升序；每张卡记自己的底图 key 与组内剧本下标 */
+/** 卡片数据 = 全部剧本（跨底图/跨剧本集），按起始年升序；每张卡记自己的底图 key、剧本集与组内下标 */
 const cards = computed(() => {
   const all = store.scenarios || {};
-  // 按底图分组 buildTimeline：谱系/易主是**同底图内**的语义（跨底图省份 id 不同源）
-  const byOwner = new Map();
+  // 按「底图 + 剧本集」分组 buildTimeline：谱系/易主是**同一条时间线内**的语义。
+  // 2026-10-25 起只按底图分组已经不够 —— 同一张底图上可以有多条互不相干的时间线，
+  // 混在一起 buildTimeline 会让岁序、谱系继承、开局态势全部错位（且不报错）。
+  const byGroup = new Map();
   for (const [id, s] of Object.entries(all)) {
     if (!s) continue;
-    const key = s.ownerKey || '';
-    if (!byOwner.has(key)) byOwner.set(key, []);
-    byOwner.get(key).push({ id, ...s });
+    const ownerKey = s.ownerKey || '';
+    const groupId = scenarioGroupIdOf(s);
+    const key = ownerKey + '\u0000' + groupId;
+    if (!byGroup.has(key)) byGroup.set(key, { ownerKey, groupId, list: [] });
+    byGroup.get(key).list.push({ id, ...s });
   }
   const out = [];
-  for (const [ownerKey, list] of byOwner) {
+  for (const { ownerKey, groupId, list } of byGroup.values()) {
     list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     // 🔴 传给 buildTimeline 的对象必须**带 id**，且下标对齐只能靠 id ——
     //    buildTimeline 内部还会 sortScenarios 再排一次（order 优先），与这里的排序
@@ -171,10 +177,11 @@ const cards = computed(() => {
       const sit = baseMap?.terrain?.length
         ? openingSituation(tl, k, baseMap.terrain, { areaOf }) : null;
       out.push({
-        id, ownerKey, k, tl,
+        id, ownerKey, k, tl, groupId,
         testId: id.replace(/[^\w一-龥-]/g, '_').slice(-40),
         roman: sc.era?.roman || '',
         name: sc.name || id,
+        groupName: scenarioGroupNameOf(store.scenarioGroups || [], sc.group),
         years: cardYearsText(sc),
         hook: cardHookText(sc) || (sc.description ? String(sc.description).slice(0, 60) : '（未写钩子文案）'),
         rows: (sit?.byPolity || []).slice(0, 4),
@@ -211,7 +218,7 @@ const filteredCards = computed(() => {
     if (ownerFilter.value && c.ownerKey !== ownerFilter.value) return false;
     if (onlyOwned.value && c.sitEmpty) return false;
     if (!q) return true;
-    return `${c.name} ${c.hook} ${c.roman} ${c.years}`.toLowerCase().includes(q);
+    return `${c.name} ${c.hook} ${c.roman} ${c.years} ${c.groupName}`.toLowerCase().includes(q);
   });
   const out = list.slice();
   if (sortBy.value === 'name') out.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'));
@@ -368,6 +375,11 @@ onUnmounted(() => { dead = true; cancelAnimationFrame(rafId); });
 }
 .sp-body { padding: 14px 18px 16px; }
 .sp-name { color: #f0f3f6; font-size: 16px; font-weight: 600; letter-spacing: 1px; margin-bottom: 6px; }
+.sp-group {
+  display: inline-block; margin: 0 0 6px; padding: 1px 7px; border-radius: 999px;
+  font-size: 10.5px; color: #c4b5fd; background: rgba(124, 58, 237, 0.18);
+  border: 1px solid rgba(124, 58, 237, 0.55);
+}
 .sp-hook {
   color: #9aa4b1; font-size: 12.5px; line-height: 1.75; height: 44px; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-bottom: 12px;

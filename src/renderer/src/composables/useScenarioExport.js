@@ -432,11 +432,13 @@ export function useScenarioExport({
    *
    * @returns {Promise<{files:Array, manifest:Object, stats:Object, warnings:string[]}>}
    */
-  async function buildSliceFrames({ png = false, scale = 2, onProgress, slicePoints, era = null } = {}) {
+  async function buildSliceFrames({ png = false, scale = 2, onProgress, slicePoints, era = null, groupName = '' } = {}) {
     const tl = timeline.value;
-    // 范围（2026-10-24）：`era` = 只出这一段；`null` = 全部剧本。判定与过滤都在
-    // `utils/scenarioSlices.collectSliceFrames`（唯一实现），这里只透传 —— 否则对话框
-    // 显示的帧数会和真正导出的帧数对不上（本仓已经因"同屏两个数字"踩过一次）。
+    // 范围（2026-10-24）：`era` = 只出这一段；`null` = 当前剧本集的全部剧本。
+    // 判定与过滤都在 `utils/scenarioSlices.collectSliceFrames`（唯一实现），这里只透传 ——
+    // 否则对话框显示的帧数会和真正导出的帧数对不上（本仓已经因"同屏两个数字"踩过一次）。
+    // 2026-10-25：`timeline` 本身已经是**当前剧本集**的范围（父级按组过滤），所以这里的
+    // "all" = 本组全部，不是整个项目 —— manifest 里带上 groupName，外部工具才不会误读。
     const scopeEra = (era === null || era === undefined) ? null : Number(era);
     let model;
     try {
@@ -499,6 +501,9 @@ export function useScenarioExport({
         mode: scopeEra === null ? 'all' : 'era',
         era: scopeEra,
         eraName: scopeEra === null ? '' : (tl.scenarios[scopeEra]?.name || ''),
+        // 2026-10-25：scope=all 的含义已收窄为「**当前剧本集**的全部剧本」；
+        // 清单里写明是哪一组，外部工具/字幕才不会把它当成整个项目的时间线。
+        groupName: String(groupName || ''),
       },
       dateStats: {
         total: dates.total, explicit: dates.explicit, synthesized: dates.synthesized,
@@ -534,11 +539,11 @@ export function useScenarioExport({
    * 逐年切片导出（选一次目录 → 批量写 N 帧 + frames.json）。
    * 失败/取消都给可见回音；浏览器回退模式退化为逐个下载（并说明）。
    */
-  async function exportSliceFrames({ png = false, scale = 2, slicePoints, era = null } = {}) {
+  async function exportSliceFrames({ png = false, scale = 2, slicePoints, era = null, groupName = '' } = {}) {
     try {
       setStatus('正在生成切片帧…', 0);
       const bundle = await buildSliceFrames({
-        png, scale, slicePoints, era,
+        png, scale, slicePoints, era, groupName,
         onProgress: (i, n, f) => setStatus(`正在生成第 ${i}/${n} 帧（${formatDate(f.date)}）…`, 0),
       });
       // 目录名用「首个剧本名 + 日期跨度」：一批切片本来就跨多个剧本，

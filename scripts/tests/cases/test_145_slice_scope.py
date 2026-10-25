@@ -187,8 +187,11 @@ def sub_source_guards():
         bad.append('useScenarioExport 没有把 era 透传给 collectSliceFrames')
     if 'scope: {' not in exp or 'eraName' not in exp:
         bad.append('manifest 没写 scope（外部工具不知道这批覆盖哪一段）')
-    if 'exportSliceFrames({ png = false, scale = 2, slicePoints, era = null }' not in exp:
+    if 'exportSliceFrames({ png = false, scale = 2, slicePoints, era = null' not in exp:
         bad.append('exportSliceFrames 没有 era 参数')
+    # 2026-10-25：scope=all 已收窄为「当前剧本集」→ 清单必须写明是哪一组
+    if "groupName: String(groupName || '')" not in exp:
+        bad.append('manifest.scope 没写 groupName（外部工具会把"本组全部"误读成整个项目）')
 
     # ④ 外层接线：ScenarioMap 传 current-era 并把 era 交回去
     if ':current-era="tlEra"' not in mp:
@@ -197,6 +200,8 @@ def sub_source_guards():
         bad.append('onRunSliceExport 没接 era')
     if 'exportSliceFrames({ png, scale, era,' not in mp:
         bad.append('onRunSliceExport 没把 era 传给 exportSliceFrames')
+    if 'groupName: groupNameNow.value' not in mp:
+        bad.append('onRunSliceExport 没把当前剧本集名传给导出链')
 
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)

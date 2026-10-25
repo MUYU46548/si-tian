@@ -22,6 +22,8 @@ import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge
 import { registerFlush } from './quitFlush';
 // 纯函数：实体的规范化构造（保证写进项目文件的实体形状统一；不引入任何 IO）
 import { createEntity as createProjectEntity } from '../utils/projectSchema';
+// 剧本集：落盘前收养「剧本引用了、组表里却没有」的组 id —— 否则这条剧本在所有组里都不可见
+import { adoptOrphanGroups } from '../utils/scenarioGroups';
 // 地点类型枚举单源（A-3）：搜索筛选 / 详情面板 / 项目面板共用一份，组件里不许再抄 `['自然', …]`
 import { PLACE_TYPES } from '../utils/placeTypes';
 // 手势闸门（第十九修·一）：人在拖的时候自动保存顺延 —— 那一下 519ms 的主线程占住
@@ -550,6 +552,8 @@ export const useGeodataStore = defineStore('geodata', () => {
         scenarios: scenarioEditingModule.scenarios.value,
         // 切片书签（项目级）：与剧本容器平行，不带上它 = 保存一次就丢书签
         slicePoints: scenarioEditingModule.slicePoints.value,
+        // 剧本集（项目级）：不带上它 = 保存一次就把多时间线分组合并回默认组
+        groups: adoptOrphanGroups(scenarioEditingModule.scenarioGroups.value, Object.values(scenarioEditingModule.scenarios.value || {})),
         updatedAt: new Date().toISOString()
       }));
       await window.sitianAPI.saveScenarios(data);
@@ -1639,6 +1643,10 @@ export const useGeodataStore = defineStore('geodata', () => {
         baseMaps: JSON.parse(JSON.stringify(scenarioEditingModule.baseMaps.value, jsonSafeReplacer)),
         scenarios: JSON.parse(JSON.stringify(scenarioEditingModule.scenarios.value, jsonSafeReplacer)),
         slicePoints: JSON.parse(JSON.stringify(scenarioEditingModule.slicePoints.value)),
+        groups: JSON.parse(JSON.stringify(adoptOrphanGroups(
+          scenarioEditingModule.scenarioGroups.value,
+          Object.values(scenarioEditingModule.scenarios.value || {}),
+        ))),
       } : null,
     };
   }
@@ -1731,6 +1739,7 @@ export const useGeodataStore = defineStore('geodata', () => {
         baseMaps: scenarioEditingModule.baseMaps.value,
         scenarios: scenarioEditingModule.scenarios.value,
         slicePoints: scenarioEditingModule.slicePoints.value,
+        groups: scenarioEditingModule.scenarioGroups.value,
       } : null,
     });
   }
@@ -1796,6 +1805,11 @@ export const useGeodataStore = defineStore('geodata', () => {
         scenarios: rawShallowDict(state.scenarios.scenarios),
         // 切片书签是**项目级**（与剧本容器平行）—— 不带上它 = 保存一次就把用户建的书签丢了
         slicePoints: rawShallowRows(state.scenarios.slicePoints),
+        // 剧本集同理（多时间线分组）—— 不带上它 = 保存一次就全并回默认组
+        groups: rawShallowRows(adoptOrphanGroups(
+          state.scenarios.groups,
+          Object.values(state.scenarios.scenarios || {}),
+        )),
       } : undefined,
     };
   }
@@ -1834,6 +1848,7 @@ export const useGeodataStore = defineStore('geodata', () => {
         baseMaps: scenarioEditingModule.baseMaps.value,
         scenarios: scenarioEditingModule.scenarios.value,
         slicePoints: scenarioEditingModule.slicePoints.value,
+        groups: scenarioEditingModule.scenarioGroups.value,
       } : null,
     } : vaultSnapshot;
     if (!state || !(state.nodes || []).length) return null;
@@ -1908,7 +1923,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       //    在这里自己写 `scenarios.value = sc.scenarios` 就是漏掉迁移的经典写法 ——
       //    症状是「载入旧项目后易主日期全成了推算值」，不报错（纯函数与用例都守不住这条）。
       scenarioEditingModule.applyScenarioState(
-        { baseMaps: sc.baseMaps, scenarios: sc.scenarios, slicePoints: sc.slicePoints },
+        { baseMaps: sc.baseMaps, scenarios: sc.scenarios, slicePoints: sc.slicePoints, groups: sc.groups },
         { fresh: true },
       );
     }
@@ -1981,7 +1996,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (scenarioEditingModule && snap.scenarios) {
       // 同样走统一装载口：知识库快照里的剧本也可能是**迁移前**的形状
       scenarioEditingModule.applyScenarioState(
-        { baseMaps: snap.scenarios.baseMaps, scenarios: snap.scenarios.scenarios, slicePoints: snap.scenarios.slicePoints },
+        { baseMaps: snap.scenarios.baseMaps, scenarios: snap.scenarios.scenarios, slicePoints: snap.scenarios.slicePoints, groups: snap.scenarios.groups },
         { fresh: true },
       );
     }
