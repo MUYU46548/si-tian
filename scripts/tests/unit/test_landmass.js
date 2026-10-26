@@ -278,6 +278,51 @@ async function main() {
     return `中位 ${median.toFixed(1)} 单位 · CV ${cv.toFixed(2)} · ${lens.length} 条边`;
   });
 
+  check('a12 河流：出了水系、全在陆地上、不是"一排直线"', () => {
+    const g = gen({ roughness: 0.45, continentCount: 3, landRatio: 0.32 });
+    const rv = g.rivers || [];
+    assert(rv.length >= 6, `只出了 ${rv.length} 条河（太少：地形没长出谷？）`);
+    const holes = [];
+    for (const r of g.rings) for (const h of r.holes || []) holes.push(h);
+    // 河是用**陆地掩膜**（每格 4 世界单位）裁的，所以末端可能比精确多边形多出不到一格。
+    // 判据允许 5 个单位（≈1 格）的容差 —— 这不是放水：超过一格就是"河跑进海里"。
+    const TOL = 5;
+    const distToRing = (pt, pts) => {
+      let best = Infinity;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const a = pts[j], b = pts[i];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const L2 = dx * dx + dy * dy;
+        let t = L2 > 0 ? ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / L2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        best = Math.min(best, Math.hypot(pt.x - (a.x + t * dx), pt.y - (a.y + t * dy)));
+      }
+      return best;
+    };
+    let pts = 0, straightSum = 0, outside = 0, inHole = 0;
+    for (const r of rv) {
+      const p = r.points || [];
+      assert(p.length >= 6, `河太短（${p.length} 点）：那是沟不是河`);
+      let len = 0;
+      for (let i = 0; i + 1 < p.length; i++) len += Math.hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y);
+      straightSum += Math.hypot(p[p.length - 1].x - p[0].x, p[p.length - 1].y - p[0].y) / Math.max(1e-6, len);
+      for (const q of p) {
+        pts++;
+        const insideAny = g.rings.some((rg) => insidePolygon(q, rg.points));
+        if (!insideAny) {
+          const near = g.rings.some((rg) => distToRing(q, rg.points) <= TOL);
+          if (!near) outside++;
+        }
+        if (holes.some((h) => insidePolygon(q, h) && distToRing(q, h) > TOL)) inHole++;
+      }
+    }
+    const meanStraight = straightSum / rv.length;
+    assert(outside === 0, `${outside} 个河点跑到海里（离岸超过 ${TOL} 单位）`);
+    assert(inHole === 0, `${inHole} 个河点落在湖里（应该在岸上就停）`);
+    assert(meanStraight < 0.86, `河太直（平均直度 ${meanStraight.toFixed(2)}）—— 那是并行坡面水流，不是水系`);
+    return `${rv.length} 条 / ${pts} 点 · 平均直度 ${meanStraight.toFixed(2)}`;
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
   console.log(`\n${results.length - failed.length}/${results.length} 通过`);

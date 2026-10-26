@@ -281,6 +281,27 @@ function drawOne(c) {
       ctx.stroke();
     }
   }
+  // 河流：只画**最长的 18 条**、0.8px —— 184px 的缩略图上 50 多条会把画面糊成一片蓝。
+  // 线宽按"本图最大 discharge"归一（与画布 `basemapRiverWidthPx` 同一条纪律：比的是分布）。
+  const rv = Array.isArray(c.rivers) ? c.rivers : [];
+  if (rv.length) {
+    const shown = rv.slice()
+      .sort((a, b) => (Number(b.discharge) || 0) - (Number(a.discharge) || 0))
+      .slice(0, 18);
+    const maxD = shown.reduce((a, r) => Math.max(a, Number(r.discharge) || 0), 0) || 1;
+    ctx.strokeStyle = 'rgba(58, 126, 214, 0.92)';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const r of shown) {
+      const pts = r.points || [];
+      if (pts.length < 2) continue;
+      ctx.lineWidth = 0.55 + 0.75 * Math.sqrt((Number(r.discharge) || 1) / maxD);
+      ctx.beginPath();
+      ctx.moveTo(X(pts[0].x), Y(pts[0].y));
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(X(pts[i].x), Y(pts[i].y));
+      ctx.stroke();
+    }
+  }
   // 湖泊：用海色挖回去（视觉上才能看出"里面有水"，而不是一整块面团）
   ctx.fillStyle = `rgb(${sr}, ${sg}, ${sb})`;
   for (const ring of c.rings || []) {

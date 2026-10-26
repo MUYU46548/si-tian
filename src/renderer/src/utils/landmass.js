@@ -37,6 +37,10 @@ import {
   refineField, fbm,
 } from './landmassField';
 import { synthesizeHeightmapFromTerrain } from './terrainSynthesis';
+import { inciseByFlow } from './terrainErosion';
+import { traceRivers, clipPolylineToLand } from './riverTrace';
+import { flowToDischargeEquivalent } from './riverRender';
+import { buildRiverPaths } from './riverChains';
 
 export const LANDMASS_VERSION = 4;
 
@@ -626,8 +630,64 @@ function rasterizeLandMask(rings, bbox, cols, rows) {
   return { mask, cols, rows, spacing: sx, isLand, landCells: land };
 }
 
-/** 高度图（`synthesizeHeightmapFromTerrain` 的产物）→ 预览栅格 */
-function reliefFromHeightmap(hm, seaLevel) {
+/**
+ * **多尺度丘陵**：在地形里撒一批半径/高度各异的丘与盆（Azgaar 的 `addHill` / `addBlob` 同款思路）。
+ *
+ * 🔴 为什么必须有（第四轮实测结论，写下来免得再试）：
+ *   `terrainSynthesis` 的地形 = **一个离岸距离穹顶** + 一层**各向异性**脊线。
+ *   穹顶上每一格的"最陡方向"都指向海岸 → D8 流线天然是**放射状 / 平行**的；
+ *   各向异性脊线又让水在平行的谷里平行下流。两者叠加，画出来就是"一片 45° 直线"
+ *   （顺手做过的三件事都没救回来：加大脊线权重、局部起伏放大 1.8×、按流向场下切 3 轮 ——
+ *    它们都只是把同一批直线切深/弄弯，没有改变"水往哪走"）。
+ *
+ *   真实地形的坡是被**一堆大小不一的丘**弄乱的：水先流进小洼、翻过鞍部、再汇进大河。
+ *   所以这里按 `1/r` 的幂律撒丘（小丘多、大丘少），并让 30% 是**负丘（盆）** ——
+ *   盆地正是"水留一会儿再走"的地方，也是树枝状水系的分叉点。
+ *
+ * @param {{h:number[], grid:{cellsX:number,cellsY:number,spacing:number}}} hm 就地修改
+ * @param {{count:number, rMin:number, rMax:number, ampMin:number, ampMax:number,
+ *          seaLevel?:number, rng:()=>number}} opts `rMin/rMax` 是**格**；`amp` 是高度点
+ * @returns {{placed:number, skipped:number}}
+ */
+function scatterHills(hm, opts) {
+  const { cellsX: cols, cellsY: rows } = hm.grid;
+  const sea = Number.isFinite(opts.seaLevel) ? opts.seaLevel : 20;
+  const rng = opts.rng;
+  const count = Math.max(0, Math.round(opts.count));
+  let placed = 0, skipped = 0, guard = 0;
+  while (placed < count && guard++ < count * 30) {
+    const ci = 2 + Math.floor(rng() * Math.max(1, cols - 4));
+    const cj = 2 + Math.floor(rng() * Math.max(1, rows - 4));
+    const ck = cj * cols + ci;
+    if (hm.h[ck] < sea + 0.6) { skipped++; continue; }        // 只落在陆地上
+    // 半径按 1/r 幂律：小丘多、大丘少（真实地形的"丘陵谱"就长这样）
+    const r = opts.rMin + (opts.rMax - opts.rMin) * Math.pow(rng(), 1.7);
+    const amp = (opts.ampMin + (opts.ampMax - opts.ampMin) * Math.pow(rng(), 1.4))
+      * (rng() < (opts.basinRate == null ? 0.3 : opts.basinRate) ? -1 : 1);
+    const i0 = Math.max(1, Math.floor(ci - r)), i1 = Math.min(cols - 2, Math.ceil(ci + r));
+    const j0 = Math.max(1, Math.floor(cj - r)), j1 = Math.min(rows - 2, Math.ceil(cj + r));
+    for (let jj = j0; jj <= j1; jj++) {
+      for (let ii = i0; ii <= i1; ii++) {
+        const d = Math.hypot(ii - ci, jj - cj) / r;
+        if (d >= 1) continue;
+        const f = (1 - d * d) ** 2;
+        const k = jj * cols + ii;
+        // 🔴 **只动陆地格**：丘的圆盘会越过海岸线。若把海格也抬过 20，栅格里的陆地就比
+        //    海岸环多出一圈（实测面积 +21%，a10 当场抓住），而省份是按环切的 ——
+        //    画面上就是"水里明明该有省，却没有"。
+        if (hm.h[k] < sea + 0.6) continue;
+        // 负丘（盆）不许把陆地压到海平面以下：那会在轮廓里凭空多出一个"湖"，
+        // 而海岸环并不知道它（预览里是蓝斑、省份却盖在上面）。压到 sea+0.4 就够成洼了。
+        hm.h[k] = Math.max(sea + 0.4, hm.h[k] + amp * f);
+      }
+    }
+    placed++;
+  }
+  for (let k = 0; k < hm.h.length; k++) hm.h[k] = Math.round(hm.h[k] * 100) / 100;
+  return { placed, skipped };
+}
+
+/** 高度图（`synthesizeHeightmapFromTerrain` 的产物）→ 预览栅格 */function reliefFromHeightmap(hm, seaLevel) {
   const { cellsX: w, cellsY: h, points } = hm.grid;
   const data = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) {
@@ -769,7 +829,7 @@ export function generateLandmass(params, bbox) {
   const maskCells = 448;
   const maskRows = Math.max(24, Math.round((maskCells - 1) * (H / Math.max(1, W))) + 1);
   const landMask = rasterizeLandMask(rings, bbox, maskCells, maskRows);
-  const terrainCells = Math.round(200 + roughness * 40);
+  const terrainCells = Math.round(170 + roughness * 30);
   const hm = synthesizeHeightmapFromTerrain(
     rings.map((r) => ({ rings: [r.points, ...(r.holes || [])] })),
     {
@@ -790,11 +850,24 @@ export function generateLandmass(params, bbox) {
   );
   const tTerrain = now() - t0;
 
-  // ── ⑤b 地形微起伏：洼地填平会在陆地上留下大片**同一高度**的格子（高原面最明显），
-  //    平地上没有坡向，地形着色看上去像一块塑料板。这里给陆地格加一层中尺度微起伏
+  // ── ⑤b **多尺度丘陵**（第四轮的核心改动）：把"穹顶 + 平行脊线"的坡面打散成
+  //    "一堆大小不一的丘与盆"。这一步是**河流能不能长成树枝状**的前提（理由见 `scatterHills`）。
+  const hills = hm
+    ? scatterHills(hm, {
+      count: Math.round(90 + roughness * 110),
+      rMin: 2.2,
+      rMax: 8.5,
+      ampMin: 1.2,
+      ampMax: 6.5,
+      basinRate: 0.16,
+      seaLevel: 20,
+      rng: ctx.rng,
+    })
+    : null;
+
+  // ── ⑤b2 地形微起伏：洼地填平会在陆地上留下大片**同一高度**的格子（高原面最明显），
+  //    平地上没有坡向，地形着色看上去像一块塑料板。这里给陆地格加一层细尺度微起伏
   //    （±0.55 高度点、波长 ~27 世界单位），只为了"看起来有质感"。
-  //    ⚠️ 别指望它救河流：试过 ±1.1 的版本，水只是**变弯**，并不产生汇流（根因是均匀坡面）。
-  //    ⚠️ 只加在陆地上（海床加噪声 = 满屏"碎石"，实测）。
   if (hm) {
     const cellW = hm.grid.spacing || 8;
     for (let k = 0; k < hm.h.length; k++) {
@@ -806,6 +879,16 @@ export function generateLandmass(params, bbox) {
       hm.h[k] = Math.round((hm.h[k] + micro + jitter) * 100) / 100;
     }
   }
+
+  // ── ⑤c **河成侵蚀**：让水把丘与丘之间的谷切深（正反馈：切得深 → 汇流更多 → 切得更深）。
+  const erosion = hm
+    ? inciseByFlow(hm, {
+      seaLevel: 20,
+      isLand: landMask.isLand,
+      iterations: 3,
+      strength: 2.2,
+    })
+    : null;
   // 地形高差读数（回执/用例看"山地确实起来了"）
   let terrainMin = 0, terrainMax = 0;
   if (hm) {
@@ -818,11 +901,58 @@ export function generateLandmass(params, bbox) {
     if (!Number.isFinite(terrainMin)) terrainMin = 0;
   }
 
-  // 🔴 河流：**这一轮没有出货**。上一版把 `traceRivers` 接在合成地形上，实测是
-  //    "整片 45° 平行直线 + 半山腰断头"（证据图 docs/assets/landmass-v4-20261025/
-  //    rivers-rejected.png）。根因是合成地形是**均匀坡面**：水只能平行下流，而
-  //    `traceRivers` 在等高格上的兜底是"按格号走"（+x/+y = 对角线）。
-  //    要出货必须先有**汇流的谷** —— 那是下一件（水力侵蚀 + 洼地溢流），不是调参。
+  // ── ⑤d 河流：多尺度丘陵 + 侵蚀之后，地形才有"丘间谷"，这时才谈得上画河。
+  //    仍然**复用**画布「自动河流」的整条链（`traceRivers` → `buildRiverPaths`），
+  //    不写第二套追踪器；这里只负责挑哪些链、以及线宽口径。
+  let traced = { rivers: [], segments: [], elapsedMs: 0 };
+  const rivers = [];
+  if (hm) {
+    traced = traceRivers(hm, {
+      seaLevel: 20,
+      sourceHeight: 24 + roughness * 10,
+      sourceInlandCells: 2,
+      minPoints: 4,
+      coalesce: true,
+      isLand: landMask.isLand,
+    });
+    // ⚠️ **不剪枝**：`pruneRiverNetwork` 会砍掉细段，而 `buildRiverPaths` 是"沿上游串链"——
+    //    中间少一段，链就在那里断掉（实测：剪完再串，每条河只剩 4~5 个点 = 一堆短棍）。
+    const chains = buildRiverPaths(traced.segments, { minFlow: 2, minLen: 8, maxPaths: 260 });
+    const maxRivers = 56;
+    const pick = [];
+    for (const ch of chains) {
+      if (!ch || !ch.points || ch.points.length < 6) continue;
+      // 只收**能流到海**的链：支流链在汇流点就断了，单画它是"悬在半山腰的半截河"
+      if (!ch.endInSea) continue;
+      const pts = clipPolylineToLand(ch.points.map((q) => ({ x: q.x, y: q.y })), landMask.isLand);
+      if (pts.length < 4) continue;
+      let len = 0;
+      for (let i = 0; i + 1 < pts.length; i++) len += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      // 太短的只算沟（不到 10 格），不像河
+      if (len < hm.grid.spacing * 10) continue;
+      // 🔴 **直度闸门**：真实河几乎不会笔直。实测在这份地形上，"河口→源头直线距离 / 路径长"
+      //    接近 1 的那批，正是画面上最扎眼的"45° 平行线"（均匀坡面上的并行水流）。
+      //    留弯曲的、丢掉直的 —— 宁可稀疏，也不要一排排假河。
+      const chord = Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].y - pts[0].y);
+      const straightness = chord / Math.max(1e-6, len);
+      if (straightness > 0.82) continue;
+      pick.push({ points: pts, flow: Math.max(2, ch.flow || 2), len, straightness });
+    }
+    pick.sort((a, b) => (b.len - a.len) || (b.flow - a.flow));
+    const rawRivers = pick.slice(0, maxRivers);
+    const maxFlow = rawRivers.reduce((a, r) => Math.max(a, r.flow), 0) || 2;
+    rawRivers.forEach((r, i) => {
+      rivers.push({
+        id: `land_river_${seed}_${i}`,
+        name: '',
+        points: r.points,
+        // 线宽口径：与导入河同一条公式（`basemapRiverWidthPx` 按本图最大 width 归一化）
+        width: Math.round((0.03 + 0.23 * Math.sqrt(Math.max(0, r.flow - 1) / Math.max(1, maxFlow - 1))) * 1000) / 1000,
+        discharge: Math.round(flowToDischargeEquivalent(r.flow, maxFlow)),
+      });
+    });
+  }
+  const tRivers = now() - t0;
   const relief = hm ? reliefFromHeightmap(hm, 20) : null;
   const tEnd = now() - t0;
 
@@ -832,7 +962,8 @@ export function generateLandmass(params, bbox) {
     bbox: { ...bbox },
     shape: shape.id,
     rings,
-    // 地形高度图（`terrainSynthesis` 同构）：面板画山体阴影，也是下一步"落高度图/长河"的入口
+    rivers,
+    // 地形高度图（`terrainSynthesis` 同构）：面板画山体阴影，也是下一步"落高度图"的入口
     terrain: hm || null,
     relief,
     stats: {
@@ -860,12 +991,20 @@ export function generateLandmass(params, bbox) {
       terrainRifts: hm && hm.structure ? hm.structure.rifts : 0,
       terrainMin: Math.round(terrainMin * 10) / 10,
       terrainMax: Math.round(terrainMax * 10) / 10,
+      // 丘陵/侵蚀/河流（诊断与回执）
+      hillCount: hills ? hills.placed : 0,
+      erodedRounds: erosion ? erosion.iterations : 0,
+      erodedDepth: erosion ? erosion.carved : 0,
+      rivers: rivers.length,
+      riverPoints: rivers.reduce((a, r) => a + r.points.length, 0),
+      tracedRivers: traced.rivers.length,
       maskLandRatio: landMask.landCells / Math.max(1, landMask.cols * landMask.rows),
       // 分段时间（ms）：生成器是同步跑的，面板卡不卡全看这几个数
       timings: {
         steps: Math.round(tSteps),
         field: Math.round(tField),
         terrain: Math.round(tTerrain),
+        rivers: Math.round(tRivers - tTerrain),
         coast: Math.round(tContour),
         total: Math.round(tEnd),
       },

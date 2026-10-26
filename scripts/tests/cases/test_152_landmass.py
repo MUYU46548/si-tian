@@ -189,6 +189,8 @@ JS_APPLY = r""" (async () => {
   out.status = String(sm.provinceHint || '');
   out.renderError = String(sm.renderError || '');
   out.undoLabel = (() => { try { return String(sm.undoLabel || ''); } catch (e) { return ''; } })();
+  // v4.2：造陆同时写河网（同一批命令）—— 这里看它有没有真的落库
+  out.rivers = ((s.baseMaps[K] || {}).rivers || []).length;
   return JSON.stringify(out);
 })() """.replace('__STORE__', STORE).replace('__SC__', SC).replace('__KEY__', repr(KEY))
 
@@ -198,7 +200,8 @@ JS_UNDO = r""" (async () => {
   s.undo();
   await new Promise(r => setTimeout(r, 400));
   const after = ((s.baseMaps[K] || {}).terrain || []).length;
-  return JSON.stringify({ before, after });
+  const riversAfter = ((s.baseMaps[K] || {}).rivers || []).length;
+  return JSON.stringify({ before, after, riversAfter });
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
 
 JS_DETERMINISM = r""" (async () => {
@@ -344,6 +347,10 @@ def run(cdp):
     notes.append(f"铺出 {applied['count']} 省 / {applied.get('ms')} ms")
     if applied.get('count', 0) > 70:
         fails.append(f"🔴 铺底块数滑块没生效：设了 60 却铺出 {applied.get('count')} 省（用了候选里的旧参数）")
+    if not (applied.get('rivers') or 0) >= 1:
+        fails.append(f"造陆没有写河网（rivers={applied.get('rivers')}）—— 地形长不出谷还是河道没落库？")
+    else:
+        notes.append(f"河网 {applied['rivers']} 条")
     if not applied.get('allHavePoints'):
         fails.append('🔴 有省份没有顶点（几何没落库）')
     if not applied.get('panelClosed'):
@@ -356,6 +363,8 @@ def run(cdp):
     undo = _ev(cdp, JS_UNDO, '一次撤销')
     if undo.get('__err__'):
         fails.append(f'撤销探针失败：{undo}')
+    elif (undo.get('riversAfter') or 0) != 0:
+        fails.append(f"一次撤销没把河网退回（还剩 {undo.get('riversAfter')} 条）—— 造陆应是同一条命令")
     elif undo.get('after') != 0:
         fails.append(f"🔴 一次撤销没退回：{undo.get('before')} → {undo.get('after')} 省（造陆+铺底应是同一条命令）")
     else:

@@ -760,6 +760,24 @@ export function createProvinceEditingModule(ctx) {
     return { terrain: next, ops, transferArea, transferMulti: transfer };
   }
 
+  /**
+   * **整批替换底图的河流**（造陆专用；2026-10-26）。
+   *
+   * ⚠️ 与 `scenarioEditing` 的 `addBaseMapRiver / updateBaseMapRiver / removeBaseMapRivers` 分工：
+   *    那几个是"用户手改某条河"（一次一条、带 id 校验）；这里是造陆时**整张换掉**（和
+   *    `setTerrain` 换省份同一性质），所以不按 id 合并 —— 造陆的语义就是"这张底图重来"。
+   *    两者都只碰 `baseMaps[key].rivers` 这一个字段，形状必须与 `normalizeBaseMapRivers` 一致：
+   *    `{ id, name, points:[{x,y}], width?, discharge? }`。
+   */
+  function setBaseMapRivers(key, rivers) {
+    const m = bm(key);
+    if (!m) return;
+    baseMaps.value = {
+      ...baseMaps.value,
+      [key]: { ...m, rivers: Array.isArray(rivers) ? rivers : [], updatedAt: new Date().toISOString() },
+    };
+  }
+
   /** 写 terrain（新数组 → 响应式）+ 同步签名 */
   function setTerrain(key, terrain, { save = true } = {}) {
     const m = bm(key);
@@ -2026,6 +2044,8 @@ export function createProvinceEditingModule(ctx) {
         // ⚠️ 洞（湖泊）必须一起回传：面板缩略图要把它挖成水面，否则预览里湖会显示成陆地
         //    （v2 就漏了这条，缩略图与实际铺底不一致）
         rings: gen.rings.map((r) => ({ id: r.id, points: r.points, holes: r.holes || [], area: r.area })),
+        // 河网：缩略图要画（否则"预览没河、应用后有河"）；每条 10~40 个点，56 条约 1500 点
+        rivers: gen.rivers || [],
         // v4：地形底图（高度栅格）——面板据此画山体阴影，而不是一块平涂的土黄。
         // 只回传栅格（`w×h` 的 Uint8Array，约 20KB），**不回传整份高度图**
         // （`gen.terrain` 有 2 万多个点对象，塞进候选会把三张缩略图变成几百 KB）。
@@ -2088,18 +2108,24 @@ export function createProvinceEditingModule(ctx) {
 
     const terrainBefore = plan.terrainBefore;
     const terrainAfter = plan.terrainAfter;
+    // 河流：造陆是"这张底图重来"，所以整批换（与省份同一语义），并在同一条 undo 里还回去。
+    // ⚠️ 只换 rivers，不动用户手画的其它图层（标记/道路/参考图）。
+    const riversBefore = Array.isArray(m.rivers) ? m.rivers : [];
+    const riversAfter = Array.isArray(gen.rivers) ? gen.rivers : [];
     execute({
       type: 'generate-landmass',
       label: `造陆：${gen.rings.length} 块陆地 / ${plan.created} 省`,
       undo: () => {
         invalidateProvinceGrid(key);
         setTerrain(key, terrainBefore, { save: false });
+        setBaseMapRivers(key, riversBefore);
         applyOwnership(plan.ownBefore);
         scheduleAutoSaveScenarios();
       },
       redo: () => {
         invalidateProvinceGrid(key);
         setTerrain(key, terrainAfter, { save: false });
+        setBaseMapRivers(key, riversAfter);
         applyOwnership(plan.ownAfter);
         scheduleAutoSaveScenarios();
       },
@@ -2111,12 +2137,14 @@ export function createProvinceEditingModule(ctx) {
       created: plan.created,
       removed: existing.length,
       rings: gen.rings.length,
+      rivers: riversAfter.length,
       landRatio: gen.stats.landRatio,
       targetRatio: gen.stats.targetRatio,
       bbox,
       params: norm.params,
       elapsedMs: plan.elapsedMs,
       message: `已造陆：${gen.rings.length} 块陆地 → 铺成 ${plan.created} 省`
+        + (riversAfter.length ? ` / ${riversAfter.length} 条河` : '')
         + `（实际陆地占比 ${(gen.stats.landRatio * 100).toFixed(1)}% / 目标 ${(gen.stats.targetRatio * 100).toFixed(0)}%；`
         + `${describeLandParams(norm.params)}）—— 一次 Ctrl+Z 可整体退回`,
     };
