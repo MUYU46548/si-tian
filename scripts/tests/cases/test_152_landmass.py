@@ -19,8 +19,10 @@
     半岛骗到）；群岛环数 > 陆块数。
   f 规模：400 省量级一次造陆 + 铺底 < 30s（会分批让帧），且撤销仍是**一条**。
 """
+import base64
 import json
 import os
+import pathlib
 import re
 import sys
 import time
@@ -204,6 +206,11 @@ JS_APPLY = r""" (async () => {
     for (let i = 0; i < d.length; i += 4 * 97) set.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
     return set.size;
   })();
+  // 可选：把画面本身带回去（只在 SITIAN_SHOT_DIR 设了的时候），用于人眼看"实际长什么样"
+  if (__SHOT__) {
+    const cv2 = document.querySelector('.scenario-map-container canvas');
+    out.shot = cv2 ? cv2.toDataURL('image/png') : '';
+  }
   return JSON.stringify(out);
 })() """.replace('__STORE__', STORE).replace('__SC__', SC).replace('__KEY__', repr(KEY))
 
@@ -353,12 +360,22 @@ def run(cdp):
     elif hit:
         notes.append(f"按钮命中正常（{hit.get('rect', {}).get('w')}×{hit.get('rect', {}).get('h')}，disabled={hit.get('disabled')}）")
 
-    applied = _ev(cdp, JS_APPLY, '设 60 省并应用')
+    applied = _ev(cdp, JS_APPLY.replace('__SHOT__', 'true' if os.environ.get('SITIAN_SHOT_DIR') else 'false'), '设 60 省并应用')
     if applied.get('__err__'):
         return False, f'应用探针失败：{applied}'
     if not applied.get('count'):
         fails.append(f"🔴 造陆后没有省份（回执={applied.get('status')!r}）")
         return False, ' | '.join(fails)
+    shot_dir = os.environ.get('SITIAN_SHOT_DIR')
+    if shot_dir and applied.get('shot'):
+        try:
+            out_dir = pathlib.Path(shot_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            b64 = str(applied['shot']).split(',', 1)[-1]
+            (out_dir / 'landmass-after.png').write_bytes(base64.b64decode(b64))
+            notes.append(f"截图 {shot_dir}/landmass-after.png")
+        except Exception as e:                       # 截图失败不许影响判据
+            notes.append(f"截图失败：{e}")
     notes.append(f"铺出 {applied['count']} 省 / {applied.get('ms')} ms")
     if applied.get('count', 0) > 70:
         fails.append(f"🔴 铺底块数滑块没生效：设了 60 却铺出 {applied.get('count')} 省（用了候选里的旧参数）")
