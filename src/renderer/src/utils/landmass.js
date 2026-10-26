@@ -39,7 +39,7 @@ import {
 import { synthesizeHeightmapFromTerrain } from './terrainSynthesis';
 import { inciseByFlow } from './terrainErosion';
 import { traceRivers, clipPolylineToLand } from './riverTrace';
-import { flowToDischargeEquivalent } from './riverRender';
+import { flowToDischargeEquivalent, smoothRiverLine } from './riverRender';
 import { buildRiverPaths } from './riverChains';
 
 export const LANDMASS_VERSION = 4;
@@ -664,11 +664,25 @@ function scatterHills(hm, opts) {
     const r = opts.rMin + (opts.rMax - opts.rMin) * Math.pow(rng(), 1.7);
     const amp = (opts.ampMin + (opts.ampMax - opts.ampMin) * Math.pow(rng(), 1.4))
       * (rng() < (opts.basinRate == null ? 0.3 : opts.basinRate) ? -1 : 1);
-    const i0 = Math.max(1, Math.floor(ci - r)), i1 = Math.min(cols - 2, Math.ceil(ci + r));
-    const j0 = Math.max(1, Math.floor(cj - r)), j1 = Math.min(rows - 2, Math.ceil(cj + r));
+    // 18% 是**脊**（拉长的丘）：真实大陆上"圆圆的小丘"只占一半，另一半是成串的山脊。
+    // 脊还有个副作用是我们要的：山脊两侧的坡会把水**逼到同一条谷**里。
+    const isRidge = rng() < 0.18;
+    const elong = isRidge ? 1.8 + rng() * 1.8 : 1;
+    const ang = isRidge ? rng() * Math.PI : 0;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const reach = r * elong;
+    const i0 = Math.max(1, Math.floor(ci - reach)), i1 = Math.min(cols - 2, Math.ceil(ci + reach));
+    const j0 = Math.max(1, Math.floor(cj - reach)), j1 = Math.min(rows - 2, Math.ceil(cj + reach));
     for (let jj = j0; jj <= j1; jj++) {
       for (let ii = i0; ii <= i1; ii++) {
-        const d = Math.hypot(ii - ci, jj - cj) / r;
+        let dx = ii - ci, dy = jj - cj;
+        if (isRidge) {                                    // 转到脊的坐标系里量距离
+          const rx = dx * ca + dy * sa;
+          const ry = -dx * sa + dy * ca;
+          dx = rx / elong;
+          dy = ry;
+        }
+        const d = Math.hypot(dx, dy) / r;
         if (d >= 1) continue;
         const f = (1 - d * d) ** 2;
         const k = jj * cols + ii;
@@ -964,10 +978,15 @@ export function generateLandmass(params, bbox) {
     const rawRivers = pick.slice(0, maxRivers);
     const maxFlow = rawRivers.reduce((a, r) => Math.max(a, r.flow), 0) || 2;
     rawRivers.forEach((r, i) => {
+      // 🔴 **落库前先圆角**：D8 的路径是"逐格走 8 个方向"，直接存下来就是一条**直角折线**
+      //    （放大看像水管）。画布侧对导入河本来就会 `smoothRiverLine`，但我们的河还要被
+      //    出图工具、缩略图、切片导出各自画一遍 —— 在这一层把角切掉，一处改、处处顺。
+      //    用同一份实现（`riverRender.smoothRiverLine`），不另写平滑。
+      const points = smoothRiverLine(r.points, 4);
       rivers.push({
         id: `land_river_${seed}_${i}`,
         name: '',
-        points: r.points,
+        points,
         // 线宽口径：与导入河同一条公式（`basemapRiverWidthPx` 按本图最大 width 归一化）
         width: Math.round((0.03 + 0.23 * Math.sqrt(Math.max(0, r.flow - 1) / Math.max(1, maxFlow - 1))) * 1000) / 1000,
         discharge: Math.round(flowToDischargeEquivalent(r.flow, maxFlow)),
