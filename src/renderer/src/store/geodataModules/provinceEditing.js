@@ -2112,6 +2112,11 @@ export function createProvinceEditingModule(ctx) {
     // ⚠️ 只换 rivers，不动用户手画的其它图层（标记/道路/参考图）。
     const riversBefore = Array.isArray(m.rivers) ? m.rivers : [];
     const riversAfter = Array.isArray(gen.rivers) ? gen.rivers : [];
+    // 地形高度图：造陆顺手把合成地形落库（否则地图上是"纯色扁平图"，高度笔刷/群系/自动河流
+    // 全都因为没有高度图而空转）。**读**必须走 `getHeightmapFor`（绑定行星时真值在行星侧），
+    // **写**必须走 `commitHeightmap`（它会自动写到真值那一侧）。
+    const heightmapBefore = getHeightmapFor(key) || null;
+    const heightmapAfter = gen.terrain || null;
     execute({
       type: 'generate-landmass',
       label: `造陆：${gen.rings.length} 块陆地 / ${plan.created} 省`,
@@ -2119,6 +2124,7 @@ export function createProvinceEditingModule(ctx) {
         invalidateProvinceGrid(key);
         setTerrain(key, terrainBefore, { save: false });
         setBaseMapRivers(key, riversBefore);
+        if (heightmapAfter || heightmapBefore) commitHeightmap(key, heightmapBefore, { touch: false });
         applyOwnership(plan.ownBefore);
         scheduleAutoSaveScenarios();
       },
@@ -2126,6 +2132,7 @@ export function createProvinceEditingModule(ctx) {
         invalidateProvinceGrid(key);
         setTerrain(key, terrainAfter, { save: false });
         setBaseMapRivers(key, riversAfter);
+        if (heightmapAfter) commitHeightmap(key, heightmapAfter);
         applyOwnership(plan.ownAfter);
         scheduleAutoSaveScenarios();
       },

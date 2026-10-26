@@ -191,6 +191,19 @@ JS_APPLY = r""" (async () => {
   out.undoLabel = (() => { try { return String(sm.undoLabel || ''); } catch (e) { return ''; } })();
   // v4.2：造陆同时写河网（同一批命令）—— 这里看它有没有真的落库
   out.rivers = ((s.baseMaps[K] || {}).rivers || []).length;
+  // 地形高度图：造陆顺手落库（地图上才有山；高度笔刷/群系/自动河流也才不空转）
+  const hmA = s.getHeightmapFor(K);
+  out.hmCells = hmA && hmA.grid && hmA.grid.points ? hmA.grid.points.length : 0;
+  // 画布是否真的画出了地形：着色档 + 画面上的不同颜色数（纯色扁平图只有几种）
+  out.rasterLayer = String(sm.rasterLayer || '');
+  out.canvasColors = (() => {
+    const cv = document.querySelector('.scenario-map-container canvas');
+    if (!cv) return 0;
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    const set = new Set();
+    for (let i = 0; i < d.length; i += 4 * 97) set.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    return set.size;
+  })();
   return JSON.stringify(out);
 })() """.replace('__STORE__', STORE).replace('__SC__', SC).replace('__KEY__', repr(KEY))
 
@@ -201,7 +214,9 @@ JS_UNDO = r""" (async () => {
   await new Promise(r => setTimeout(r, 400));
   const after = ((s.baseMaps[K] || {}).terrain || []).length;
   const riversAfter = ((s.baseMaps[K] || {}).rivers || []).length;
-  return JSON.stringify({ before, after, riversAfter });
+  const hmB = s.getHeightmapFor(K);
+  const hmCellsAfter = hmB && hmB.grid && hmB.grid.points ? hmB.grid.points.length : 0;
+  return JSON.stringify({ before, after, riversAfter, hmCellsAfter });
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
 
 JS_DETERMINISM = r""" (async () => {
@@ -351,6 +366,14 @@ def run(cdp):
         fails.append(f"造陆没有写河网（rivers={applied.get('rivers')}）—— 地形长不出谷还是河道没落库？")
     else:
         notes.append(f"河网 {applied['rivers']} 条")
+    if str(applied.get('rasterLayer') or '') != 'height':
+        fails.append(f"造陆后着色档不是 height（是 {applied.get('rasterLayer')!r}）—— 用户看不到地形")
+    if (applied.get('canvasColors') or 0) < 12:
+        fails.append(f"画布只有 {applied.get('canvasColors')} 种颜色 —— 地形没画出来（纯色扁平图）")
+    if not (applied.get('hmCells') or 0) >= 5000:
+        fails.append(f"造陆没有落地形高度图（hmCells={applied.get('hmCells')}）—— 地图上只会是纯色扁平图")
+    else:
+        notes.append(f"地形高度图 {applied['hmCells']} 格 / 着色 {applied.get('rasterLayer')} / 画面 {applied.get('canvasColors')} 色")
     if not applied.get('allHavePoints'):
         fails.append('🔴 有省份没有顶点（几何没落库）')
     if not applied.get('panelClosed'):
@@ -363,6 +386,8 @@ def run(cdp):
     undo = _ev(cdp, JS_UNDO, '一次撤销')
     if undo.get('__err__'):
         fails.append(f'撤销探针失败：{undo}')
+    elif (undo.get('hmCellsAfter') or 0) != 0:
+        fails.append(f"一次撤销没把高度图退回（还剩 {undo.get('hmCellsAfter')} 格）")
     elif (undo.get('riversAfter') or 0) != 0:
         fails.append(f"一次撤销没把河网退回（还剩 {undo.get('riversAfter')} 条）—— 造陆应是同一条命令")
     elif undo.get('after') != 0:

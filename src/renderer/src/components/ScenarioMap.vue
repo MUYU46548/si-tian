@@ -2224,9 +2224,16 @@ function toggleLandmassPanel() {
 
 function applyLandmassResult(r) {
   rasterCache.clear();
-  rasterLayer.value = 'landsea';     // 造陆不产生高度图 —— 先看陆海底色，省界本来就会画
+  // v4.3（2026-10-26）：造陆现在会顺手落一张**地形高度图**（合成地形），所以画布可以直接
+  // 切到"高度"着色 —— 用户点完就能看见山，而不是一张纯色扁平图。
+  // 高度图不在（旧数据 / 被拒写）时退回"陆海"底色，行为与以前一致。
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  const hasHm = !!(hm && hm.grid && (hm.grid.points || []).length);
+  rasterLayer.value = hasHm ? 'height' : 'landsea';
   landmassOpen.value = false;
-  statusMsg((r && r.message) || '已造陆');
+  statusMsg(hasHm
+    ? `${(r && r.message) || '已造陆'}（已切到「高度」着色，可直接看地形）`
+    : ((r && r.message) || '已造陆'));
   render();
 }
 
