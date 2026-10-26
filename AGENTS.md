@@ -22,9 +22,9 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**153 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**154 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**65 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**67 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -116,7 +116,7 @@
 | 主题 | 什么时候读它 | 文件 |
 |---|---|---|
 | 卡顿与性能 | 帧间隔 / 基帧缓存 / 空间索引 / 自动保存占住主线程 / 测量方法 | [perf-jank](docs/agents-archive/perf-jank.md)（3 条） |
-| 河流与地形 | 河流画法与橡皮 / 河网路由 / 地形推演 / 高度图与笔刷 / 海岸线 | [map-river-terrain](docs/agents-archive/map-river-terrain.md)（26 条） |
+| 河流与地形 | 河流画法与橡皮 / 河网路由 / 地形推演 / 高度图与笔刷 / 海岸线 | [map-river-terrain](docs/agents-archive/map-river-terrain.md)（27 条） |
 | 省份与顶点 | 省份绘制与布尔 / 顶点与共边 / 骨架吸附 / 框选与分割 | [map-province](docs/agents-archive/map-province.md)（10 条） |
 | 底图与导入导出 | .map 导入 / 参考图 / 标记与聚落 / 道路 / 导出 / 底图编辑模式 | [map-basemap](docs/agents-archive/map-basemap.md)（7 条） |
 | 项目文件与保存链 | 写闸门 / 快照 / 落盘与恢复 / 只读 / 备份 / 退出落盘 / git 同步 | [project-save](docs/agents-archive/project-save.md)（12 条） |
@@ -133,8 +133,8 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 153 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 65 | `ls scripts/tests/unit/*.js \| wc -l` |
+| 测试用例数 | 154 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| Node 单测文件数 | 67 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 45 | `grep -c "ipcMain.handle" src/main/index.js` |

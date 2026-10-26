@@ -14,6 +14,22 @@
       <button class="imb-btn" data-testid="imb-exit" title="退出沉浸模式（Ctrl+I）"
               @click="immersive = false">退出沉浸 (Ctrl+I)</button>
     </div>
+    <!-- D3：地形注记面板 —— **必须放在顶栏之外**。
+         面板曾跟着「造陆」放在 `toolbar-more`（v-if=moreOpen）里：底图编辑模式下「更多」是收起的，
+         于是"按钮点了、面板不出现"（test_154 实测）。Teleport 的目标在 body，但 **Teleport 自身
+         仍在 v-if 的子树里** —— 父节点不渲染，它就不存在。 -->
+    <Teleport to="body">
+      <div v-if="terrainLabelsOpen" class="gen-float" data-testid="terrain-labels-wrap">
+        <div class="resample-panel">
+          <TerrainLabelsPanel
+            :base-map-key="baseMapKey"
+            :has-heightmap="baseMapHasHeightmap"
+            @applied="applyTerrainLabelsResult"
+            @close="terrainLabelsOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
     <!-- 顶栏：工具 + 模式切换 -->
     <div class="scenario-toolbar" :class="{ dim: capsuleDim }" @mousemove="pokeCapsule">
       <!-- 第 1 行：**按任务分层的 4 个主工具** + 「更多」（P3）
@@ -74,6 +90,15 @@
           title="改省界 (Shift+Q) — 按住涂抹，把笔迹并进下面「划归到」所选的那个省（**改的是省界形状，不是势力归属**）；相交的邻省会相应让出这块地。一笔 = 一条撤销。想改「这块地归哪个势力」请回日常行点「涂归属」"
           @click="setTool('provinceBrush')"
         ><Icon name="pencil" :size="14"/>改省界</button>
+        <!-- D3（2026-10-26）：**地形注记** —— 山系名沿脊线排。它是**地理数据**（不是历史归属），
+             所以住在底图编辑行；更多菜单里不再重复一份（同一个 testid 两处 = 用例命中哪个看顺序）。 -->
+        <button
+          v-if="baseMapKey"
+          data-testid="basemap-terrain-labels"
+          :class="{ active: terrainLabelsOpen }"
+          title="地形注记 —— 从高度图抽山脊候选，逐条命名；名字沿脊线排（一条 Ctrl+Z 可退回）"
+          @click="toggleTerrainLabelsPanel"
+        ><Icon name="type" :size="14"/>地形注记</button>
         <!-- 2026-10-21：出口就在工作行末尾。用户「误进入底图编辑、又找不到退出口，
              点左上角返回把整个剧本退了」——不能只靠顶栏那个按钮。 -->
         <button class="basemap-exit" data-testid="basemap-exit"
@@ -780,6 +805,19 @@
         </div>
       </Teleport>
 
+      <!-- D3：地形注记面板（山脊候选 → 命名 → 应用；一条撤销） -->
+      <Teleport to="body">
+        <div v-if="terrainLabelsOpen" class="gen-float" data-testid="terrain-labels-wrap">
+          <div class="resample-panel">
+            <TerrainLabelsPanel
+              :base-map-key="baseMapKey"
+              :has-heightmap="baseMapHasHeightmap"
+              @applied="applyTerrainLabelsResult"
+              @close="terrainLabelsOpen = false"
+            />
+          </div>
+        </div>
+      </Teleport>
       <!-- P0-4：文化/宗教/势力派生面板 -->
       <Teleport to="body">
         <div v-if="deriveOpen" class="gen-float" data-testid="derive-wrap">
@@ -877,6 +915,7 @@
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
         <label class="check-label" title="显示导入的城镇名 / 河流名（FMG 数据多为英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
+        <label class="check-label" title="显示「地形注记」里的山系/海域名（沿走向排字；自己命名的数据，默认开）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" /> 地形名</label>
         <label class="check-label" title="EU4 式分级标注：放大看省名，缩小看势力名（可简称）"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
         <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
@@ -1805,6 +1844,8 @@ import TerrainGenPanel from './TerrainGenPanel.vue';
 // 造陆面板（P0-2，2026-10-25）：大陆轮廓候选 → 铺底切省。轮廓纯几何在 utils/landmass.js，
 // 切分复用 utils/voronoiBatch.js + store 的 batchSubdivide（不是第二套切分器）。
 import LandmassPanel from './LandmassPanel.vue';
+// D3（2026-10-26）：地形注记面板（山脊候选 → 命名 → 应用）
+import TerrainLabelsPanel from './TerrainLabelsPanel.vue';
 // 文化/宗教/势力派生面板（P0-4，2026-10-25）：只补空 / 覆盖两档；层数据写口全在 store。
 import DerivePanel from './DerivePanel.vue';
 // 逐年切片导出对话框（2026-10-02）：帧索引/日期体检走 utils/scenarioSlices.js，落盘走主进程一次选目录
@@ -1837,7 +1878,9 @@ import { widthsBySpeed, resampleSeries } from '../utils/strokeMath';
 import {
   polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE, isPlaceholderProvinceName,
 } from '../utils/polityLabels';
-import { drawStyledLabel, fontString } from '../utils/labelStyles';
+import { drawStyledLabel, fontString, drawTextAlongPath } from '../utils/labelStyles';
+// 沿路径排字（D3，2026-10-26）：山系名沿脊线、河名沿河 —— 纯几何在 utils/textOnPath.js
+import { layoutTextAlongPath } from '../utils/textOnPath';
 // 文字避让（2026-10-26）：四档标签（势力/省/城镇/河）共用一次排布 —— 纯函数，画布与导出同源
 import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
 // 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
@@ -2211,6 +2254,23 @@ function toggleTerrainGenPanel() {
   terrainGenOpen.value = !terrainGenOpen.value;
 }
 
+// ── D3（2026-10-26）：地形注记 —— 山系名沿脊线排 ──────────────────────────────
+// 名字由用户给（面板里逐条命名），几何来自 `ridges.detectRidges` 的候选；
+// 落库走 store 的 `applyTerrainLabels`（整表一条 undo）。
+const terrainLabelsOpen = ref(false);
+/** 与「自动地名」分开：FMG 的英文城镇名可以关，山系名是自己的数据、默认开 */
+const showTerrainNames = ref(true);
+
+function toggleTerrainLabelsPanel() {
+  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
+  terrainLabelsOpen.value = !terrainLabelsOpen.value;
+}
+
+function applyTerrainLabelsResult(msg) {
+  statusMsg(msg || '地形注记已保存');
+  render();
+}
+
 /** 面板应用回执：与一键入口做同样的画布侧收尾（缓存失效 + 切到地形高度 + 重绘） */
 function applyGeneratedTerrain(r) {
   rasterCache.clear();
@@ -2231,8 +2291,7 @@ function toggleLandmassPanel() {
 }
 
 function applyLandmassResult(r) {
-  rasterCache.clear();
-  // v4.3（2026-10-26）：造陆现在会顺手落一张**地形高度图**（合成地形），所以画布可以直接
+  rasterCache.clear();  // v4.3（2026-10-26）：造陆现在会顺手落一张**地形高度图**（合成地形），所以画布可以直接
   // 切到"高度"着色 —— 用户点完就能看见山，而不是一张纯色扁平图。
   // 高度图不在（旧数据 / 被拒写）时退回"陆海"底色，行为与以前一致。
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
@@ -9930,6 +9989,8 @@ function renderFrame() {
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
   //    「基帧（草稿之下的静态层）→ 草稿 → 这四层 → 屏幕空间浮层」。
+  // 地形注记（山系名沿脊线）：画在用户地名之下、河流/城镇名之上
+  if (!strokeBaseBuilding && !cameraMotion) drawTerrainLabels(ctx.value);
   if (!strokeBaseBuilding && showLabels.value && !cameraMotion) drawLabels(ctx.value);
   // A8：势力标注画在用户浮动文本之后（势力名是底层读物，不该被浮字压住）
   if (!strokeBaseBuilding && !cameraMotion) {
@@ -11153,6 +11214,76 @@ function drawPlannedLabels(c, kinds) {
   }
 }
 
+const TERRAIN_RANGE_STYLE = Object.freeze({
+  key: 'terrain-range',
+  fontFamily: 'serif',
+  fontSize: 14,
+  weight: 'normal',
+  color: '#3f3222',
+  stroke: { enabled: true, color: 'rgba(248, 244, 232, 0.92)', width: 2.0 },
+  shadow: { enabled: false },
+  background: { enabled: false },
+  lockScreenSize: true,
+});
+
+/**
+ * 地形注记（D3，2026-10-26）：山系名**沿脊线**排。
+ *
+ * 为什么不能像普通标签那样居中写一个横排字：参考图里"亚平宁山脉"是顺着山脊弯的 ——
+ * 横着写会横跨山谷，读者反而看不出它指哪条山。路径不够长/太陡时**退化为水平字**
+ * （宁可横着，也别让名字凭空消失）。
+ */
+function drawTerrainLabels(c) {
+  if (!showTerrainNames.value) return;
+  const labels = baseMap.value?.terrainLabels || [];
+  if (!labels.length) return;
+  const scale = cameraScale.value;
+  if (!(scale > 0)) return;
+  const W = cw();
+  const H = ch();
+  const style = TERRAIN_RANGE_STYLE;
+  const toScreen = (p) => ({ x: cameraX.value + p.x * scale, y: cameraY.value + p.y * scale });
+
+  for (const lb of labels) {
+    const name = String((lb && lb.name) || '').trim();
+    const pts = (lb && lb.points) || [];
+    if (!name || pts.length < 2) continue;
+    // 视口裁剪（整条线都在屏外就跳过；山脊几十个点，比逐点判定便宜）
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      const sp = toScreen(p);
+      if (sp.x < minX) minX = sp.x;
+      if (sp.x > maxX) maxX = sp.x;
+      if (sp.y < minY) minY = sp.y;
+      if (sp.y > maxY) maxY = sp.y;
+    }
+    if (maxX < -40 || minX > W + 40 || maxY < -40 || minY > H + 40) continue;
+
+    const scr = pts.map(toScreen);
+    const layout = layoutTextAlongPath(name, scr, {
+      fontSize: style.fontSize,
+      letterSpacing: 2,
+      maxTiltDeg: 70,
+      // 每个字的宽度直接量（与 drawStyledLabel 同一条 fontString 口径）
+      measure: (ch) => Math.max(2, measureTextWithStyle(ch, style).w - 6),
+    });
+    if (layout.ok) {
+      const placedWorld = layout.placed.map((p) => ({
+        ch: p.ch,
+        x: (p.x - cameraX.value) / scale,
+        y: (p.y - cameraY.value) / scale,
+        angle: p.angle,
+      }));
+      drawTextAlongPath(c, placedWorld, style, { screenScale: scale });
+    } else {
+      const mid = pts[Math.floor(pts.length / 2)] || pts[0];
+      drawStyledLabel(c, name, mid.x, mid.y, style, {
+        align: 'center', baseline: 'middle', screenScale: scale,
+      });
+    }
+  }
+}
+
 function drawLabels(c) {
   if (viewMode.value !== 'scenario' || !selectedScenario.value?.labels) return;
   selectedScenario.value.labels.forEach(label => {
@@ -11629,7 +11760,7 @@ function onHistoryJump() {
 //    （本项目在高度图着色档位上踩过同一条：test_69 抓到过 `diffPixels: 0`）。
 // ⚠️ `riverSource`（河流来源）必须在这里 —— 漏了就是"下拉改了画布没反应"
 // ⚠️ `terrainShade` / `terrainShadeStrength` 同理（2026-10-17 第七修）：漏了就是"勾了立体没反应"
-watch([rasterLayer, showRivers, riverSource, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPlaceNames, showPolityLabels, terrainShade, terrainShadeStrength], () => render());
+watch([rasterLayer, showRivers, riverSource, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPlaceNames, showPolityLabels, showTerrainNames, terrainShade, terrainShadeStrength], () => render());
 // 🔴 手势期基帧的**安全阀**（2026-10-18 第十八修·二）：只要底图几何/河网换了引用
 //    （撤销、别的入口写入、导入…），立刻解甲 —— 底图变了还贴旧图就是"改了数据画面不动"。
 //    启用基帧的前提本来就是"这一笔不改数据"，这条 watch 是**把前提落实成机制**，

@@ -217,7 +217,9 @@ export const MEMORY_WRITE_CALLSITES = [
           // P0-2（2026-10-25）：造陆 = 生成轮廓 + 复用铺底切省，一条命令落库（首行 blocked() 守卫）
           'generateLandmass',
           // P0-4（2026-10-25）：文化/宗教派生（逐格 + 省摘要一条命令；首行 blocked() 守卫）
-          'applyCultureDerive'],
+          'applyCultureDerive',
+          // D3（2026-10-26）：地形注记（山系/海域/平原；整表替换一条 undo；首行 blocked()）
+          'applyTerrainLabels'],
     what: '省份矢量编辑写操作（涂抹/套索/点填 = 多边形布尔；直线分割/折线切割/合并/批量铺底/重置省界；顶点拖动的批量形状写；造陆并铺底；文化/宗教派生；统一经 blocked() 包装）' },
   { id: 9, file: 'src/renderer/src/store/geodataModules/channelBrush.js',
     fns: ['beginChannelStroke', 'endChannelStroke'],

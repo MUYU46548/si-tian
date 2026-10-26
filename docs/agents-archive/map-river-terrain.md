@@ -356,3 +356,28 @@
     `test_152` 754 色；全量 **153/153**（`build/_widths_full.log`）。截图 `docs/assets/river-width-20261026/`。
   - 仍差：干流与支流的**汇合处**没有"越汇越宽"的突变（现在只是沿程平滑增宽）——
     要做需要让同一河网的多条链共享一条按 flow 的宽度曲线（会动 `widths` 的语义，留到下一批）。
+
+- **造陆 v5.3：地形注记（山系名沿脊线排；2026-10-26）**：
+  参考图的信息密度有一半来自「亚平宁山脉」这类**沿走向**的标注；我们此前既没有数据、也没有入口。
+  - **数据**：`baseMaps[key].terrainLabels = [{ id, kind, name, points, origin }]`。
+    `origin:'auto'` = 脊线检测出来的候选（名字仍由人给），`'user'` = 手绘；
+    重新检测**只替换"没命名的自动项"**，绝不覆盖手绘或已命名的条目。
+  - **检测**：新增 `utils/ridges.js`：3×3 平滑 → 脊得分（自身 − 4 邻域均值）→ 分位阈值 →
+    **Zhang-Suen 细化** → 8 连通成组 → 组内两次 BFS 求最长路径 → 平滑/抽稀。纯函数、确定性。
+  - **排字**：新增 `utils/textOnPath.js`（弧长参数化、整段居中、朝左先反序、单字切线 >70° 跳过、
+    路径不够长就 `ok:false` 而不是压字距）+ `labelStyles.drawTextAlongPath`（逐字 translate/rotate，先描后填）。
+  - **入口**：底图编辑行的「地形注记」→ 面板（检测山脊 → 逐条命名 → 应用）；
+    落库 `applyTerrainLabels`（整表一条 undo，已登记 `writeGate` id 8）。
+  - 🔴 四个坑：① 脊得分把**海格**算进 4 邻域平均 → 贴岸那一行凭空多 3~4 的高度差，
+    整条海岸线成了"山脊"（候选变成沿图框一圈）→ 只平均陆格；② 非极大抑制在**宽脊**上削不干净，
+    浮点并列还会把整条杀光（实测只剩 7 格）→ 换细化算法；③ 面板 Teleport 放在
+    `toolbar-more`（`v-if=moreOpen`）里：**Teleport 自身也在 v-if 子树里**，底图编辑模式下
+    "按钮点了、面板不出现"→ 挪到根节点下；④ 重构时弄丢了 `drawLabels` 的
+    `!selectedScenario.value?.labels` 守卫 → 无剧本时渲染抛错、**渲染护栏暂停（画布整片空白）**，
+    是 test_154 里"应用后画布必须有像素"这条断言抓出来的。
+  - 判据：新增 3 个 Node 单测（`test_ridges` / `test_text_on_path`，共 **67**）；
+    新增 `test_154_terrain_labels`（面板 → 检测 → 命名 → `origin:'auto'` 落库 →
+    画布有像素且未暂停 → 一次 undo 归零）；全量 **154/154**（`build/_labels3_full.log`）。
+    截图 `docs/assets/terrain-labels-20261026/`。
+  - 仍差：海域 / 平原注记（数据形状已支持，面板还没有"手动建/在地图上画"）；沿河排字；
+    导出（SVG 是政治图，不带地形注记）。

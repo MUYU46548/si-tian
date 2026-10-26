@@ -443,6 +443,55 @@ export function drawStyledLabel(ctx, text, x, y, style, opts = {}) {
   return width;
 }
 
+/**
+ * **沿路径画字**（2026-10-26）：把 `textOnPath.layoutTextAlongPath` 的结论逐字画出来。
+ *
+ * 为什么逐字而不是 `fillText` 一次：Canvas 2D 没有"沿路径文字"，只能每个字
+ * `translate + rotate + fillText`。描边/填色的顺序与 `drawStyledLabel` 一致
+ * （先描后填），否则字会被描边吃掉一半 —— 那是本项目反复出现过的观感缺陷。
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Array<{ch:string,x:number,y:number,angle:number}>} placed 布局结论（与 ctx 同一坐标系）
+ * @param {object} style `drawStyledLabel` 同款样式
+ * @param {{screenScale?:number, alpha?:number}} [opts]
+ * @returns {number} 实际画出的字数
+ */
+export function drawTextAlongPath(ctx, placed, style, opts = {}) {
+  const list = Array.isArray(placed) ? placed : [];
+  if (!ctx || !style || !list.length) return 0;
+  const screenScale = Number(opts.screenScale) || 1;
+  const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
+  const size = effectiveFontSize(style, screenScale);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = fontString(style, screenScale);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (style.stroke?.enabled) {
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = (style.stroke.width || 2) / Math.max(screenScale, 1e-6);
+    ctx.strokeStyle = style.stroke.color || '#101820';
+  }
+  let drawn = 0;
+  for (const p of list) {
+    if (!p || !p.ch) continue;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    // 旋转角在**屏幕**坐标系里算的；画布已按 cameraScale 缩放，但缩放不改变角度
+    ctx.rotate(Number(p.angle) || 0);
+    if (style.stroke?.enabled) ctx.strokeText(p.ch, 0, 0);
+    ctx.fillStyle = style.color || '#E6EDF3';
+    ctx.fillText(p.ch, 0, 0);
+    ctx.restore();
+    drawn++;
+  }
+  ctx.restore();
+  void size;
+  return drawn;
+}
+
 /** 生成一行「预览用」的样式摘要（设置面板展示） */
 export function describePreset(style) {
   if (!style) return '';

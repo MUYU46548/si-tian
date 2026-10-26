@@ -2446,6 +2446,94 @@ export function createProvinceEditingModule(ctx) {
     return { rings: provinceRings(p).length, kind: p.kind || 'land' };
   }
 
+  // ============================================================
+  // 地形注记（D3，2026-10-26）：山系 / 海域 / 平原的名字与走向
+  // ============================================================
+  //
+  // 形状：`baseMaps[key].terrainLabels = [{ id, kind, name, points:[{x,y}], origin }]`
+  //   · kind: 'range'（沿山脊的线）| 'sea'（海域，沿湾/洋的线）| 'plain'（平原，位置点）
+  //   · origin: 'auto'（脊线检测来的候选，用户命名）+ 'user'（手绘）
+  //     —— 存这个字段只为了**筛选/重检测**时能只覆盖自动项，绝不碰用户手绘的。
+  //
+  // 为什么整表替换（而不是逐条 CRUD）：一张图上的注记是**十几条**量级，逐条 undo 会让
+  // 「检测出 7 条 → 命名 → 应用」变成按 7 次 Ctrl+Z 才退得回去。整表 = 一条命令，
+  // 与 `setTerrain` / `setBaseMapRivers` 同一口径。
+  function normalizeTerrainLabels(labels) {
+    const list = Array.isArray(labels) ? labels : [];
+    const KINDS = ['range', 'sea', 'plain'];
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      if (!it || typeof it !== 'object') continue;
+      const name = String(it.name || '').trim();
+      if (!name) continue;                       // 没名字 = 半成品，不落库
+      const kind = KINDS.indexOf(it.kind) >= 0 ? it.kind : 'range';
+      const src = Array.isArray(it.points) ? it.points : [];
+      const points = [];
+      for (const p of src) {
+        const x = Array.isArray(p) ? Number(p[0]) : Number(p && p.x);
+        const y = Array.isArray(p) ? Number(p[1]) : Number(p && p.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
+      }
+      if (points.length < (kind === 'plain' ? 1 : 2)) continue;
+      out.push({
+        id: String(it.id || `tl_${Date.now().toString(36)}_${i}`),
+        kind,
+        name,
+        points,
+        origin: it.origin === 'auto' ? 'auto' : 'user',
+      });
+    }
+    return out;
+  }
+
+  /** 内部：只改 `baseMaps[key].terrainLabels`（不加 undo；undo/redo 各调一次） */
+  function setTerrainLabels(key, labels) {
+    const m = bm(key);
+    if (!m) return;
+    baseMaps.value = {
+      ...baseMaps.value,
+      [key]: {
+        ...m,
+        terrainLabels: Array.isArray(labels) ? labels : [],
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  /**
+   * 应用一份地形注记（整表替换；一条 undo）。
+   * @param {string} key 底图键
+   * @param {Array} labels 见上方形状
+   * @param {{label?:string}} [opts]
+   * @returns {{ok:boolean, changed:boolean, count:number, message?:string}}
+   */
+  function applyTerrainLabels(key, labels, opts = {}) {
+    if (isRO()) return blocked('地形注记');
+    const m = bm(key);
+    if (!m) return { ok: false, changed: false, count: 0, rejected: 'no-basemap', message: '先选一张底图' };
+    const before = Array.isArray(m.terrainLabels) ? m.terrainLabels : [];
+    const after = normalizeTerrainLabels(labels);
+    if (JSON.stringify(before) === JSON.stringify(after)) {
+      return { ok: true, changed: false, count: after.length, message: '地形注记没有变化' };
+    }
+    const name = String(opts.label || '地形注记');
+    execute({
+      type: 'terrain-labels',
+      label: `${name}：${after.length} 条`,
+      undo: () => setTerrainLabels(key, before),
+      redo: () => setTerrainLabels(key, after),
+    });
+    scheduleAutoSaveScenarios();
+    const added = after.length - before.length;
+    return {
+      ok: true,
+      changed: true,
+      count: after.length,
+      message: `${name}已保存：${after.length} 条${added ? `（${added > 0 ? '+' : ''}${added}）` : ''} —— 一次 Ctrl+Z 可退回`,
+    };
+  }
+
   return {
     ensureProvinceGrid, getProvinceGrid, rebuildProvinceGrid, invalidateProvinceGrid,
     beginProvinceStroke, applyProvinceStroke, endProvinceStroke, applyProvinceLasso,
@@ -2464,6 +2552,8 @@ export function createProvinceEditingModule(ctx) {
     previewLandmass, generateLandmass,
     // P0-4（2026-10-25）：文化/宗教派生（预览只读；落库一条 undo，逐格 + 省摘要一起写）
     previewCultureDerive, applyCultureDerive,
+    // D3（2026-10-26）：地形注记（山系/海域/平原）—— 整表替换一条 undo
+    applyTerrainLabels,
     // P1（2026-10-13）：顶点编辑 —— 目标省 + 跟随的邻省形状一起改（一次拖动 = 一条 undo）
     updateProvincesBatch,
     previewSplitAlong, planBatchSeeds,
