@@ -9628,18 +9628,19 @@ function renderFrame() {
   if (!blitted) {
     drawBackground(ctx.value);
 
-    // 底图数据图层：陆海底色铺底（补足省份多边形之外的海岸缝隙）
+    // 栅格图层：只有"陆海底色"是给省份兜底的；height/temp/prec 是**地形底图**，
+    // 必须画在省份之前、且不透明（2026-10-26：旧做法是"省份不透明填色 + 45% 栅格盖上去"，
+    // 两层半透明互相洗成一张粉彩画，用户原话「看不出地形」）。
+    const rasterBase = rasterLayer.value === 'height'
+      || rasterLayer.value === 'temp' || rasterLayer.value === 'prec';
     if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
+    else if (rasterBase) drawRasterLayer(ctx.value, rasterLayer.value, 1);
 
     if (showBiomes.value) drawBiomeBackground(ctx.value);
     // 🔴 渲染单一路径：**永远画省份多边形**（存下来 / 导出的就是它）。
     //    P2 起涂抹期间不再叠「格点反馈」—— 格子已退役；边界在抬手时被精确布尔替换。
-    drawProvinces(ctx.value);
-
-    // 地形/温度/降水：半透明叠加在省份之上（验收：alpha ≈ 0.4，不影响点击选中）
-    if (rasterLayer.value === 'height') drawRasterLayer(ctx.value, 'height', 0.45);
-    else if (rasterLayer.value === 'temp') drawRasterLayer(ctx.value, 'temp', 0.5);
-    else if (rasterLayer.value === 'prec') drawRasterLayer(ctx.value, 'prec', 0.5);
+    //    地形底图模式下只描边不填色（`fills:false`），否则地形又被色块盖住。
+    drawProvinces(ctx.value, { fills: !rasterBase });
 
     if (showRoutes.value) drawRoutes(ctx.value);
     if (showRiverBase.value) drawRivers(ctx.value);
@@ -9823,8 +9824,14 @@ function isOpaqueColor(col) {
   return parts.length < 4 || Number(parts[3]) >= 1;
 }
 
-function drawProvinces(c) {
+function drawProvinces(c, opts = {}) {
   if (!baseMap.value?.terrain) return;
+  // 🔴 2026-10-26（用户原话「偏粉彩的问题很严重，看不出地形」）：地形/温度/降水这类
+  // **栅格图层**打开时，省份**只描边不填色**（fills:false）。
+  // 旧行为是"省份不透明填色 + 栅格 45% 叠在上面" —— 两层半透明互相洗，
+  // 结果是一张粉彩画：既看不出地形，也看不出归属。栅格作底、省界作线，才两者都清楚
+  // （对照用户给的意大利地形图：地形色 + 细省界，没有一块块色块）。
+  const fills = opts.fills !== false;
   const tl = timeline.value;
   const k = tlEra.value;
   // 🔴 归属查询必须吃**日期**（月日精度）：同一年内 6 月前后归主不同，
@@ -9838,9 +9845,11 @@ function drawProvinces(c) {
     const path = provincePathFor(rp, altStraight);
     if (!path) return;
     const fillCol = getProvinceColor(rp);
-    c.fillStyle = fillCol;
-    // 多环实体：一条路径覆盖所有环；evenodd 与命中口径（pointInProvince）一致 → 洞真空、飞地真画
-    c.fill(path, 'evenodd');
+    if (fills) {
+      c.fillStyle = fillCol;
+      // 多环实体：一条路径覆盖所有环；evenodd 与命中口径（pointInProvince）一致 → 洞真空、飞地真画
+      c.fill(path, 'evenodd');
+    }
     // 同色描边（~1px）：抹掉相邻省份之间的**亚像素缝**。
     // 网格派生的边界由相邻两省各自平滑（Chaikin 在共享弧的两端邻域不同），交界处最多差
     // 零点几像素 —— 同色 1px 描边是最省事的收敛办法（恰好覆盖在边界上，观感不变）。
@@ -9852,9 +9861,14 @@ function drawProvinces(c) {
       c.lineWidth = px(1.2);
       c.stroke(path);
       c.setLineDash([]);
-    } else if (isOpaqueColor(fillCol)) {
+    } else if (fills && isOpaqueColor(fillCol)) {
       c.strokeStyle = fillCol;
       c.lineWidth = px(1);
+      c.stroke(path);
+    } else if (!fills) {
+      // 不填色时，省界**必须**自己画出来（否则"没有省份"和"有省份"看起来一样）
+      c.strokeStyle = BORDER_COLOR;
+      c.lineWidth = px(0.9);
       c.stroke(path);
     }
 

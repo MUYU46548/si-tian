@@ -752,7 +752,15 @@ export function basemapRiverWidthPx(river, maxWidth) {
   const width = Number.isFinite(w) && w > 0 ? w : 0;   // 缺数据 = 最细
   const ref = Number.isFinite(maxWidth) && maxWidth > 0 ? maxWidth : 0.26;  // 实测 p100
   const t = Math.max(0, Math.min(1, width / ref));
-  return Math.max(1.2, Math.min(4.6, 1.2 + 3.4 * Math.pow(t, 0.55)));
+  // 🔴 2026-10-26（用户原话「河流太粗太丑，像虫子在爬」+ 意大利地形图对照）：
+  //    我一度把区间压到 [1.2, 2.6]，结果 **test_112/119 的"选中后水面保留率"从 0.83 掉到 0.42**
+  //    （< 0.6 的判据）—— 细河撑不住那圈选中高亮，整条会被描边吃掉。
+  //    所以**区间维持 1.2~4.6 不动**（导入河也吃这条公式，改它会动用户已有底图）；
+  //    "支流也和干流一样粗"的真正来源在数据侧：生成器给每条河的 width 都挤在 0.1~0.26，
+  //    归一化后几乎每条都顶到 4.6px → 改 `landmass.js` 的流量→宽度曲线（指数 ^1.6）。
+  //    取到 0.01px：浮点尾差（1.2+3.4=4.6000000000000005）会让用例的 `=== 4.6` 假红。
+  const v = Math.max(1.2, Math.min(4.6, 1.2 + 3.4 * Math.pow(t, 0.55)));
+  return Math.round(v * 100) / 100;
 }
 
 /** 自带河线宽（世界单位）—— 给 `strokeRiverNetwork` 的 `widthPx` 用（它按世界单位收宽度）。 */

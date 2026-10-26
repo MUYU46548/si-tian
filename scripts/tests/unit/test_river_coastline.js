@@ -478,8 +478,11 @@ async function main() {
     assert(Math.abs(world - px / 0.5) < 1e-9, `屏幕 ${px} / pxPerWorld 0.5 应等于世界 ${px / 0.5}，实际 ${world}`);
     // 🔴 2026-10-20 第十八修：真实数据 width 0.03~0.26（p50 0.07）。旧公式把它们全压到
     //    0.7px 地板 = 每条河都是发丝，再压深色岸线就成了「两条边夹一条缝」。
-    //    现在归一化到 [1.2, 4.6]：中位 2.85、最细 1.2、最粗 4.6。
-    assert(Math.abs(px - 2.85) < 0.15, `width 0.07 / max 0.26 应 ≈2.85px，实际 ${px}`);
+    //    2026-10-26（用户原话「河流太粗太丑，像虫子在爬」+ 意大利地形图对照）：
+    //    我一度把它压到 [1.2, 2.6]，结果 test_112/119 的"选中后水面保留率"掉到 0.42（<0.6）——
+    //    细河撑不住那圈选中高亮。所以**区间不动**（仍是 1.2~4.6），
+    //    "支流也和干流一样粗"改在数据侧：`landmass.js` 的流量→宽度曲线指数改 ^1.6。
+    assert(Math.abs(px - 2.82) < 0.15, `width 0.07 / max 0.26 应 ≈2.82px，实际 ${px}`);
     assert(RR.basemapRiverWidthPx({ width: 0.26, discharge: 523 }, 0.26) === 4.6, '最粗的一条应到 4.6px 上界');
     assert(RR.basemapRiverWidthPx({ width: 0, discharge: 1 }, 0.26) === 1.2, '没有宽度的河夹到 1.2px 下界');
     const tiny = RR.basemapRiverWidthPx({ width: 0.001, discharge: 1 }, 0.26);

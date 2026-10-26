@@ -987,8 +987,13 @@ export function generateLandmass(params, bbox) {
         id: `land_river_${seed}_${i}`,
         name: '',
         points,
-        // 线宽口径：与导入河同一条公式（`basemapRiverWidthPx` 按本图最大 width 归一化）
-        width: Math.round((0.03 + 0.23 * Math.sqrt(Math.max(0, r.flow - 1) / Math.max(1, maxFlow - 1))) * 1000) / 1000,
+        // 线宽口径：与导入河同一条公式（`basemapRiverWidthPx` 按本图最大 width 归一化）。
+        // 🔴 指数从 `sqrt` 改成 **^1.6**（2026-10-26，用户原话「河流太粗太丑，像虫子在爬」）：
+        //    旧曲线下 element 流量 0.1 的支流也能拿到 ~0.15 的 width，归一化后 ≈3.7px，
+        //    于是**每条河都像干流一样粗**（画面上一堆蓝虫子）。^1.6 让"细"真的细：
+        //    支流落在 0.02~0.05（→1.2~1.9px），只有真正的干流才吃到 0.26（→4.6px）。
+        //    改的是**数据**，不是那条共享公式 —— 公式区间被 test_112/119 的选中高亮判据钉着。
+        width: Math.round((0.02 + 0.24 * Math.pow(Math.max(0, r.flow - 1) / Math.max(1, maxFlow - 1), 1.6)) * 1000) / 1000,
         discharge: Math.round(flowToDischargeEquivalent(r.flow, maxFlow)),
       });
     });

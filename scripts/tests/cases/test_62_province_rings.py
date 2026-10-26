@@ -95,7 +95,9 @@ def _source_gate():
         fails.append('「网格视图」开关又回来了 → 又会变成两条渲染路径（看到的 ≠ 存下来的）')
     if 'if (provinceMeshOn.value) drawProvinces' in sc:
         fails.append('渲染仍在「网格 / 多边形」之间二选一 → 必须永远画多边形')
-    for tok in ('drawProvinces(ctx.value);', 'traceProvincePath', 'provinceRings('):
+    # 2026-10-26：`drawProvinces` 多了第二个参数（地形底图模式下只描边不填色），
+    # 所以按"调用点"判，而不是按带分号的字面量。
+    for tok in ('drawProvinces(ctx.value', 'traceProvincePath', 'provinceRings('):
         if tok not in sc:
             fails.append(f'渲染单一路径缺件：{tok}')
 
