@@ -927,18 +927,20 @@ export function generateLandmass(params, bbox) {
     // ⚠️ **不剪枝**：`pruneRiverNetwork` 会砍掉细段，而 `buildRiverPaths` 是"沿上游串链"——
     //    中间少一段，链就在那里断掉（实测：剪完再串，每条河只剩 4~5 个点 = 一堆短棍）。
     const chains = buildRiverPaths(traced.segments, { minFlow: 2, minLen: 8, maxPaths: 260 });
-    const maxRivers = 56;
+    const maxRivers = 90;
     const pick = [];
     for (const ch of chains) {
       if (!ch || !ch.points || ch.points.length < 6) continue;
-      // 只收**能流到海**的链：支流链在汇流点就断了，单画它是"悬在半山腰的半截河"
-      if (!ch.endInSea) continue;
+      // 🔴 **支流也要**：`buildRiverPaths` 给出的链分两种 —— 干流（能流到海）与支流
+      //    （在上一个汇流点就断了）。只收干流的话，画面上是几根互不相连的长线；
+      //    把支流也画上，才会出现"多条汇进一条"的层次（这正是"像不像真地图"的地方）。
+      //    支流的断头处一定是另一个河道的汇流点，所以不会出现"悬在半山腰"的假河。
       const pts = clipPolylineToLand(ch.points.map((q) => ({ x: q.x, y: q.y })), landMask.isLand);
       if (pts.length < 4) continue;
       let len = 0;
       for (let i = 0; i + 1 < pts.length; i++) len += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
-      // 太短的只算沟（不到 10 格），不像河
-      if (len < hm.grid.spacing * 10) continue;
+      // 太短的只算沟（干流不到 10 格、支流不到 6 格），不像河
+      if (len < hm.grid.spacing * (ch.endInSea ? 10 : 6)) continue;
       // 🔴 **直度闸门**：真实河几乎不会笔直。实测在这份地形上，"河口→源头直线距离 / 路径长"
       //    接近 1 的那批，正是画面上最扎眼的"45° 平行线"（均匀坡面上的并行水流）。
       //    留弯曲的、丢掉直的 —— 宁可稀疏，也不要一排排假河。
