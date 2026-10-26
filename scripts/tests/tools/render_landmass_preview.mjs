@@ -165,6 +165,13 @@ function hyps(h, seaLevel) {
 }
 
 let RELIEF_SEA = 20;
+// 地形栅格自己的海平面（**不是** stats.seaLevel —— 那是体元场的分位数，
+// 与合成地形的高度口径不是一回事；混用会让海面在栅格里显示成浅水色/一块方框）
+function reliefSeaOf(gen) {
+  const r = gen && gen.relief;
+  return r && Number.isFinite(r.seaLevel) ? r.seaLevel
+    : (gen && gen.stats && Number.isFinite(gen.stats.seaLevel) ? gen.stats.seaLevel : 20);
+}
 
 /** 地形底图：高度场光栅 + 山体阴影（只有生成器回传 relief 时才有） */
 function paintRelief(ras, relief, view) {
@@ -244,7 +251,7 @@ function renderOne(gen, file, view) {
   const BW = W * SS, BH = H * SS;
   const ras = makeRaster(BW, BH);
   // 底色 = 地形栅格的深海色（否则矩形贴图会在画面上露出一个方框边）
-  const seaRgb = gen.relief && gen.relief.data && LR ? LR.reliefRgb(0, gen.stats.seaLevel) : SEA;
+  const seaRgb = gen.relief && gen.relief.data && LR ? LR.reliefRgb(0, reliefSeaOf(gen)) : SEA;
   ras.clear(seaRgb[0], seaRgb[1], seaRgb[2]);
   const bw = view.maxX - view.minX, bh = view.maxY - view.minY;
   const s = Math.min(BW / bw, BH / bh);
@@ -254,7 +261,7 @@ function renderOne(gen, file, view) {
   const mapRing = (pts) => pts.map((p) => ({ x: X(p.x), y: Y(p.y) }));
 
   if (!FLAT && gen.relief && gen.relief.data && gen.relief.w) {
-    RELIEF_SEA = gen.stats.seaLevel;
+    RELIEF_SEA = reliefSeaOf(gen);
     paintRelief(ras, gen.relief, view);
   } else {
     fillRings(ras, gen.rings.map((r) => mapRing(r.points)), LAND_LO);

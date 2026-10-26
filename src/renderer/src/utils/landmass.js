@@ -139,6 +139,66 @@ export function buildLandSteps(ctx, params) {
       pctRange(cyPct + toPctY(dy), cyPct + toPctY(dy)),
     ];
 
+    // ── 长条大陆：**一条脊柱上的若干核**（不是"把整张图压成一条带"）─────────────
+    // 🔴 用户原话：「长条模式也只是'窄带'而不是天然的地峡/半岛链」。v3 的做法是
+    //    "一个压扁的椭圆 + 纵向带窗"，所以出来是一条等宽的香肠。这里改成：
+    //    · 脊柱上 4~6 个**半径不等**的核（中段最宽，偶发窄颈 → 地峡）；
+    //    · 脊柱本身**弯曲**（bow），不是直尺；
+    //    · 1~2 条**横向半岛**从脊柱垂直射进海里（长条也有岬角）；
+    //    · 两端各一枚小岛（尾巴 = 岛链，把"长条"延伸到海上）。
+    if (shape.id === 'elongated') {
+      const spineLen = R * (3.0 + 0.8 * rng());
+      const segs = 5 + Math.floor(rng() * 3);
+      const bow = (rng() - 0.5) * R * 0.7;
+      const fat = 0.3 + rng() * 0.24;
+      const nodes = [];
+      for (let n = 0; n < segs; n++) {
+        const t = segs > 1 ? n / (segs - 1) - 0.5 : 0;
+        const neck = n > 0 && n < segs - 1 && rng() < 0.34 ? 0.45 : 1;   // 窄颈 = 地峡
+        const rr = R * (0.3 + fat * Math.cos(t * Math.PI) ** 2) * neck;
+        nodes.push({
+          dx: t * spineLen,
+          dy: bow * Math.sin(t * Math.PI * 1.2) + (rng() - 0.5) * R * 0.14,
+          rr,
+          h: Math.round(66 + 22 * (1 - Math.abs(t) * 1.5) + rng() * 8),
+        });
+      }
+      for (const nd of nodes) {
+        const [xr, yr] = at(nd.dx, nd.dy);
+        push((c) => addBlob(c, {
+          count: [1, 1], height: [26, 33], xr, yr,
+          radius: nd.rr * 1.5, squash: 0.62, wobble: 0.34,
+        }));
+      }
+      for (const nd of nodes) {
+        const [xr, yr] = at(nd.dx, nd.dy);
+        push((c) => addBlob(c, {
+          count: [1, 1], height: [nd.h, nd.h + 12], xr, yr,
+          radius: nd.rr, squash: 0.62, wobble: 0.3,
+        }));
+      }
+      // 横向半岛：从脊柱中段垂直射出去（脊线尾巴 = 岬角）
+      const arms = 1 + (rng() < 0.5 ? 1 : 0);
+      for (let a = 0; a < arms; a++) {
+        const nd = nodes[1 + Math.floor(rng() * Math.max(1, nodes.length - 2))];
+        const side = a === 0 ? 1 : -1;
+        const [xr, yr] = at(nd.dx, nd.dy + side * R * 0.45);
+        push((c) => addRidge(c, {
+          count: [1, 1], height: [46 + rng() * 8, 58 + rng() * 8],
+          xr, yr, radius: Math.max(1.5, R * 0.1), taper: 0.62,
+        }));
+      }
+      // 两端尾巴：脊柱延长线上的小岛（岛链感）
+      for (const side of [-1, 1]) {
+        const [xr, yr] = at(side * (spineLen / 2 + R * 0.55), (rng() - 0.5) * R * 0.3);
+        push((c) => addBlob(c, {
+          count: [1, 1], height: [26 + rng() * 6, 36 + rng() * 6], xr, yr,
+          radius: R * (0.16 + rng() * 0.12), squash: 0.7, wobble: 0.36,
+        }));
+      }
+      return;
+    }
+
     // ① 陆架：一圈低矮的宽阔基座（高度刚过海平面）。它的作用是让模板在**定海平面之前**就
     //    覆盖足够大的面积 —— 分位数海平面只有落在"陆地高度分布"里面才切得出海岸；若大部分格
     //    是 0，分位数会落在 1~2 高度点，海平面就成了"陆块脚印的边缘"。定完海平面之后，
@@ -303,8 +363,9 @@ export function buildLandSteps(ctx, params) {
     wobble: 0.3,
   }));
 
-  // ⑬ 长条大陆：纵向带状窗（不压横向）—— 否则全球散点岛与山脊会把陆地摊成"方饼"
-  if (shape.id === 'elongated') push((c) => bandField(c, 0.5, 0.36));
+  // ⑬ 长条大陆：纵向带状窗（不压横向）—— 否则全球散点岛与山脊会把陆地摊成"方饼"。
+  //    半高 0.36 → 0.44：v4 的长条是"脊柱 + 窄颈 + 横向半岛"，太窄的带窗会把半岛切掉。
+  if (shape.id === 'elongated') push((c) => bandField(c, 0.5, 0.44));
   // ⑭ 边缘淡出（图幅四周必须是海；海岸带细节在 `generateLandmass` 里按**动态海平面**叠，
   //    因为这里的海平面要到分位数算完才知道）
   push((c) => maskField(c, rough > 0.65 ? 1.4 : 1.8));
@@ -551,8 +612,13 @@ function rasterizeLandMask(rings, bbox, cols, rows) {
     }
   }
   const isLand = (x, y) => {
-    const i = clamp(Math.round((x - bbox.minX) / sx), 0, cols - 1);
-    const j = clamp(Math.round((y - bbox.minY) / sy), 0, rows - 1);
+    // 🔴 **掩膜范围之外一律是海**。这里曾经用 clamp 把界外坐标夹到边上，
+    //    而掩膜的 bbox 恰好是"陆地自己的包围盒"→ 边缘那一圈是陆地 → 夹完以后
+    //    合成地形四周的 pad 也变成陆地，栅格陆地占比从 32% 涨到 41%（a10 当场抓住）。
+    if (x < bbox.minX || x > bbox.maxX || y < bbox.minY || y > bbox.maxY) return false;
+    const i = Math.round((x - bbox.minX) / sx);
+    const j = Math.round((y - bbox.minY) / sy);
+    if (i < 0 || j < 0 || i >= cols || j >= rows) return false;
     return mask[j * cols + i] === 1;
   };
   let land = 0;

@@ -191,7 +191,11 @@ function runPreview() {
 function drawRelief(ctx, c, X, Y, s) {
   const r = c.relief;
   if (!r || !r.data || !r.w || !r.h) return false;
-  const sea = Number.isFinite(c.stats && c.stats.seaLevel) ? c.stats.seaLevel : 20;
+  // ⚠️ 必须用**地形栅格自己的**海平面：`stats.seaLevel` 是体元场的分位数
+  //    （长条 / 低占比时能低到 12），而合成地形的高度口径是 20 —— 混用会让整片海
+  //    显示成"浅水色"，画面上就是一块比外面更亮的方框（实测踩到）。
+  const sea = Number.isFinite(r.seaLevel) ? r.seaLevel
+    : (Number.isFinite(c.stats && c.stats.seaLevel) ? c.stats.seaLevel : 20);
   const off = document.createElement('canvas');
   off.width = r.w;
   off.height = r.h;
@@ -237,7 +241,8 @@ function drawOne(c) {
   if (!el || !c) return;
   const ctx = el.getContext('2d');
   const w = el.width, h = el.height;
-  const seaLevel = Number.isFinite(c.stats && c.stats.seaLevel) ? c.stats.seaLevel : 20;
+  const seaLevel = (c.relief && Number.isFinite(c.relief.seaLevel)) ? c.relief.seaLevel
+    : (Number.isFinite(c.stats && c.stats.seaLevel) ? c.stats.seaLevel : 20);
   // 底色必须与地形栅格的**深海色**一致：地形图是矩形贴上去的，
   // 底色差一点就会在画面上露出一个"比海更深"的方框（实测：一眼就看得出是贴图边界）。
   const [sr, sg, sb] = reliefRgb(0, seaLevel);

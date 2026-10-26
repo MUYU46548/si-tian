@@ -239,12 +239,16 @@ async function main() {
     assert(q(0.95) - q(0.5) > 12, `高地不够高：p50=${q(0.5).toFixed(1)} p95=${q(0.95).toFixed(1)}`);
     // 回传的预览栅格：与水陆判定同口径（差 ≤ 5 个百分点）
     assert(g.relief && g.relief.data && g.relief.w > 0, '没有回传预览栅格');
-    let below = 0;
-    for (const v of g.relief.data) if ((v * 100) / 255 < g.stats.seaLevel) below++;
-    const rasterLand = 1 - below / g.relief.data.length;
-    assert(Math.abs(rasterLand - g.stats.landRatio) < 0.05,
-      `预览栅格的陆地占比 ${(rasterLand * 100).toFixed(1)}% 与多边形 ${(g.stats.landRatio * 100).toFixed(1)}% 差太多`);
-    return `${g.terrain.grid.cellsX}×${g.terrain.grid.cellsY} 格 · 高差 ${g.stats.terrainMin}~${g.stats.terrainMax} · 栅格陆 ${(rasterLand * 100).toFixed(1)}%`;
+    // ⚠️ 栅格只覆盖**地形网格**（= 陆地包围盒 + 一圈 pad），不是整幅 bbox ——
+    //    所以只能比**面积**，不能比"占比"（占比的分母不一样，实测 40% vs 32% 是正常的）。
+    const reliefSea = Number.isFinite(g.relief.seaLevel) ? g.relief.seaLevel : 20;
+    let landCells = 0;
+    for (const v of g.relief.data) if ((v * 100) / 255 >= reliefSea) landCells++;
+    const rasterArea = landCells * g.relief.spacing * g.relief.spacing;
+    const relErr = Math.abs(rasterArea - g.stats.landArea) / Math.max(1, g.stats.landArea);
+    assert(relErr < 0.15,
+      `预览栅格的陆地面积 ${Math.round(rasterArea)} 与多边形 ${Math.round(g.stats.landArea)} 差 ${(relErr * 100).toFixed(0)}%`);
+    return `${g.terrain.grid.cellsX}×${g.terrain.grid.cellsY} 格 · 高差 ${g.stats.terrainMin}~${g.stats.terrainMax} · 栅格陆地 ${(rasterArea / 1e3).toFixed(0)}k 单位²`;
   });
 
   check('a11 海岸细节尺度：中位边长 ≤ 12 世界单位（v3 是 17.6 —— 放大就是台阶）', () => {
