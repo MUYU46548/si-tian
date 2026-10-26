@@ -377,7 +377,9 @@
     是 test_154 里"应用后画布必须有像素"这条断言抓出来的。
   - 判据：新增 3 个 Node 单测（`test_ridges` / `test_text_on_path`，共 **67**）；
     新增 `test_154_terrain_labels`（面板 → 检测 → 命名 → `origin:'auto'` 落库 →
-    画布有像素且未暂停 → 一次 undo 归零）；全量 **154/154**（`build/_labels3_full.log`）。
+    画布有像素且未暂停 → 一次 undo 归零）；**全量 154 用例未跑完**（时间到，用户叫停；
+    已单跑 67 个 Node 单测 + `test_154`，`build/_labels3_full.log` 无输出）。
+    ⚠️ 下次开工**第一件事是补全量回归**，再谈新功能。
     截图 `docs/assets/terrain-labels-20261026/`。
   - 仍差：海域 / 平原注记（数据形状已支持，面板还没有"手动建/在地图上画"）；沿河排字；
     导出（SVG 是政治图，不带地形注记）。
