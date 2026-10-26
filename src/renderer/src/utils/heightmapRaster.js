@@ -21,14 +21,25 @@
 //    颜色定义与「无主」底色的口径在 `utils/heightmapChannels.js`（单一实现）。
 
 import { CHANNEL_KEYS, CHANNEL_UNASSIGNED_HEX } from './heightmapChannels';
+import { buildSeaDepth } from './seaDepth';
 
 // ── 陆海底色（无主省份本色 / 海洋底）───────────────────────────────────────
 export const LAND_BASE_COLOR = [220, 216, 207];   // #dcd8cf
 export const SEA_BASE_COLOR = [201, 214, 228];    // #c9d6e4
 
 // ── 色带（hex）──────────────────────────────────────────────────────────────
-export const HYPSO_WATER = ['#12314f', '#1d4a70', '#2b6b93', '#3f8fb0', '#63b0c9'];
-export const HYPSO_LAND = ['#6f9f5a', '#8fb063', '#c3c46c', '#d8bf7a', '#b59468', '#8f7a5c', '#d9d2c6'];
+export const HYPSO_WATER = ['#e4f1f9', '#d2e9f6', '#bcdff0', '#a4d2e9', '#8cc4df'];
+export const HYPSO_LAND = ['#b0d07e', '#cfe09a', '#e9e6b4', '#eed68c', '#dfae5f', '#c3853d', '#a9742f'];
+
+/**
+ * 陆地分带的**高度分割线**（t 的升序下界，7 档 6 条线）—— 与 `HYPSO_LAND` 逐项对应。
+ *
+ * 为什么不是等分：等分时"中位高度"正好落在第 4 档（沙色），整幅地图像被烤过一遍
+ * （实测截图：陆地大面积橙黄、只有海岸是绿的）。参考图的绿占绝大多数面积，
+ * 橙/棕只属于真正的高山 —— 所以低档要宽、高档要窄。
+ * 这套比例是**对着意大利地形图量的**（平原绿 ≈ 一半陆地，高山 ≈ 顶 10%）。
+ */
+export const HYPSO_LAND_BANDS = Object.freeze([0, 0.45, 0.63, 0.76, 0.86, 0.93, 0.975]);
 export const TEMP_RAMP = ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#fee090', '#fdae61', '#f46d43', '#d73027'];
 export const PREC_RAMP = ['#fff7bc', '#fee391', '#fec44f', '#c7e9b4', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8'];
 
@@ -103,8 +114,14 @@ export function sampleRamp(rgbList, t) {
   return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
 }
 
-/** 网格单元 → 颜色（kind: landsea | height | temp | prec | culture | religion） */
-export function cellColor(kind, i, hm, palette) {
+/** 网格单元 → 颜色（kind: landsea | height | temp | prec | culture | religion）
+ *
+ * `ctx`（可选，2026-10-26）：
+ *   · `span: {lo,hi}` —— 陆地高度的**本幅图**分位区间（p2~p98）。不给则按旧的 `(h-20)/80`。
+ *   · `sea: {t}`      —— 海深场（`seaDepth.buildSeaDepth` 的产物）。不给则按旧口径用 h 采样。
+ * 两处都必须**由 `buildHeightmapRaster` 一次算好**再传进来：逐格去算分位数/距岸就是每帧 O(n log n)。
+ */
+export function cellColor(kind, i, hm, palette, ctx) {
   if (kind === 'landsea') {
     return hm.h[i] >= RASTER_SEA_LEVEL ? LAND_BASE_COLOR : SEA_BASE_COLOR;
   }
@@ -121,9 +138,62 @@ export function cellColor(kind, i, hm, palette) {
     return (palette && palette[v]) || CHANNEL_UNASSIGNED_RGB;
   }
   const h = hm.h[i];
-  return h < RASTER_SEA_LEVEL
-    ? sampleRamp(HYPSO_WATER_RGB, h / (RASTER_SEA_LEVEL - 1))
-    : sampleRamp(HYPSO_LAND_RGB, (h - RASTER_SEA_LEVEL) / 80);
+  // ── 海：有海深场就按"离岸多远"**连续**采样（5 色渐变）──
+  // ⚠️ 海面**不分带**：分带后每条带边都锁在格边界上，1× 下是一圈圈方块梯田
+  //    （实测截图）；层次交给等深线去表达，色带只负责"越远越深"。
+  if (h < RASTER_SEA_LEVEL) {
+    const sea = ctx && ctx.sea;
+    if (sea && sea.t) return sampleRamp(HYPSO_WATER_RGB, sea.t[i] || 0);
+    return sampleRamp(HYPSO_WATER_RGB, h / (RASTER_SEA_LEVEL - 1));
+  }
+  // ── 陆：按**本幅图自己的陆地高度分位**归一化，再按非等宽分带取色 ──────────
+  // 🔴 2026-10-26（用户附意大利地形图）：旧口径 `(h-20)/80` 在这份真实数据上
+  //    只用到色带的 0.02~0.63（陆地 p98 = 63.5）—— 棕/灰/雪永远不出现，整幅偏黄绿。
+  //    现在换成 p2~p98 映射到 0..1（"按本分布归一化"，与河宽/流量同一条纪律），
+  //    并按 `HYPSO_LAND_BANDS` 取档（参考图是分层设色，不是连续渐变）。
+  const span = ctx && ctx.span;
+  const lo = span ? span.lo : RASTER_SEA_LEVEL;
+  const hi = span ? span.hi : RASTER_SEA_LEVEL + 80;
+  const t = clamp01((h - lo) / (hi - lo > 1e-6 ? hi - lo : 1));
+  return HYPSO_LAND_RGB[landBandIndex(t)];
+}
+
+/** t（0..1 的相对高度）→ 陆地色带下标（按 `HYPSO_LAND_BANDS` 的非等宽分档） */
+export function landBandIndex(t) {
+  const v = clamp01(Number.isFinite(t) ? t : 0);
+  let idx = 0;
+  for (let i = 0; i < HYPSO_LAND_BANDS.length; i++) {
+    if (v >= HYPSO_LAND_BANDS[i]) idx = i;
+  }
+  return Math.min(HYPSO_LAND_RGB.length - 1, idx);
+}
+
+/**
+ * 陆地高度的**本幅图分位区间**（p2 / p98）—— 分带配色的归一化基准。
+ *
+ * 为什么不用绝对量程：高度点没有物理单位（导入图 20~70、造陆图 20~100 都合法），
+ * 写死除 80 的表现是"这份数据只用得到半条色带"，而且不报错。
+ *
+ * @param {ArrayLike<number>} h
+ * @param {number} [seaLevel]
+ * @returns {{lo:number, hi:number, count:number, fallback:boolean}}
+ */
+export function landHeightSpan(h, seaLevel = RASTER_SEA_LEVEL) {
+  const vals = [];
+  if (h) {
+    for (let i = 0; i < h.length; i++) {
+      const v = h[i];
+      if (Number.isFinite(v) && v >= seaLevel) vals.push(v);
+    }
+  }
+  if (vals.length < 8) return { lo: seaLevel, hi: seaLevel + 80, count: vals.length, fallback: true };
+  vals.sort((a, b) => a - b);
+  const q = (p) => vals[Math.min(vals.length - 1, Math.max(0, Math.floor(p * (vals.length - 1))))];
+  const lo = q(0.02);
+  const hi = q(0.98);
+  // 几乎全平的地形：分位区间会退化成 0 → 回落到旧量程，避免整幅一个颜色
+  if (!(hi - lo > 2)) return { lo: seaLevel, hi: seaLevel + 80, count: vals.length, fallback: true };
+  return { lo, hi, count: vals.length, fallback: false };
 }
 
 /**
@@ -176,7 +246,10 @@ export function buildShadeMap(h, cols, rows, opts) {
       const dzdy = (hv(yd) - hv(yu)) / (2 * NORM * std);
       // 与 NW 光向点乘：坡朝向光 → 更亮
       const shade = 1 + (dzdx * 0.7 + dzdy * 0.7) * strength;
-      out[i] = Math.max(0.55, Math.min(1.45, shade));
+      // 🔴 2026-10-26：上限从 1.45 压到 **1.08**。浅色分层设色（奶油 #e9e6b4 = 233）乘 1.45
+      //    会直接顶到 255 —— 迎光坡变成一片死白，"地形"反而糊掉（用户给的参考图里
+      //    阴影**只压暗**，亮面几乎不动）。下限仍留 0.62：明暗差靠暗面表达，这才是制图惯例。
+      out[i] = Math.max(0.62, Math.min(1.08, shade));
     }
   }
   return out;
@@ -248,28 +321,37 @@ export function buildHeightmapRaster(hm, kind, opts) {
   const w = Math.max(1, Math.ceil(maxX - minX));
   const h = Math.max(1, Math.ceil(maxY - minY));
 
+  // 只对"读地形的档"（高度）做分带归一化与海深；别的档是专题图，换量纲会把数值读成地形。
+  // ⚠️ 两样都是**一次性**算好再逐格用：逐格算分位数 = 每帧 O(n log n)，逐格 BFS = 每帧几十毫秒。
+  const ctx = {
+    span: kind === 'height' ? landHeightSpan(hm.h, RASTER_SEA_LEVEL) : null,
+    sea: kind === 'height' && !(opts && opts.sea === false)
+      ? buildSeaDepth(hm, { seaLevel: RASTER_SEA_LEVEL })
+      : null,
+  };
+
   // 平滑档只在「网格维度与数据长度严格自洽」时启用；不自洽（历史数据）自动退回方块档，
   // 宁可方块也不要画错（下标一旦错位，颜色会整体偏移且不报错）。
   const cols = hm.grid.cellsX | 0, rows = hm.grid.cellsY | 0;
   if (smooth && cols > 0 && rows > 0 && cols * rows === values.length && pts.length === values.length) {
     const shade = shadeOn ? buildShadeMap(hm.h, cols, rows, { shade: opts.shade }) : null;
-    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade);
+    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade, ctx);
   }
-  return buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h);
+  return buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h, ctx);
 }
 
 /**
  * 平滑档：格分辨率 RGB → 子格双线性上采样。
  * 输出画布边长 ≈ `w·SS/spacing`（不是 1 世界单位 1 像素），由绘制端插值放大。
  */
-function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h, shade) {
+function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h, shade, ctx) {
   const ox = p0[0] - spacing / 2, oy = p0[1] - spacing / 2;   // 格 (0,0) 的左上角
   const n = cols * rows;
 
   // ① 格分辨率 RGB（每个格子一次 cellColor）
   const cellRgb = new Uint8Array(n * 3);
   for (let i = 0; i < n; i++) {
-    const c = cellColor(kind, i, hm, palette);
+    const c = cellColor(kind, i, hm, palette, ctx);
     cellRgb[i * 3] = c[0] | 0;
     cellRgb[i * 3 + 1] = c[1] | 0;
     cellRgb[i * 3 + 2] = c[2] | 0;
@@ -330,7 +412,7 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
 }
 
 /** 方块档（旧观感）：每格画一个实心 spacing×spacing 方块，1 世界单位 = 1 像素 */
-function buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h) {
+function buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h, ctx) {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -340,7 +422,7 @@ function buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w
   const half = spacing / 2;
 
   for (let i = 0; i < pts.length && i < values.length; i++) {
-    const rgb = cellColor(kind, i, hm, palette);
+    const rgb = cellColor(kind, i, hm, palette, ctx);
     const cx = pts[i][0] - minX;
     const cy = pts[i][1] - minY;
     fillPixelBlock(data, w, h, cx - half, cy - half, cx + half, cy + half, rgb);

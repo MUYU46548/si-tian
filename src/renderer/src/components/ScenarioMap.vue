@@ -1785,7 +1785,11 @@ import { isBasemapPristine } from '../utils/basemapIdentity';
 import { mapNameFromFileName, backupMapSourceFile } from '../utils/mapImportSource';
 import { generateRoadPath } from '../utils/placement';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
-import { buildHeightmapRaster, RASTER_SMOOTH } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
+import { buildHeightmapRaster, RASTER_SMOOTH, RASTER_SEA_LEVEL } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
+// 海面细节（2026-10-26）：海深是从高度图**推导**出来的（数据里海格高度是常数，见 utils/seaDepth.js），
+// 等深线由 marching squares 抽取（utils/contour.js）。两者都按高度图引用缓存，不落盘。
+import { buildSeaDepth, SEA_DEPTH_LEVELS } from '../utils/seaDepth';
+import { extractIsoLines } from '../utils/contour';
 // 两个**不同**判据，别再混（2026-10-11 踩过）：
 //   · `hasGrid`（heightmapAccess）= "能否开始用笔刷编辑"（有点即可；历史数据里存在只有点没有 h 的高度图）
 //   · `hasHeightmapContent`（terrainRepresentation）= "有没有**地形内容**"（点与 h 都要有）
@@ -8664,6 +8668,106 @@ function drawRasterLayer(c, kind, alpha) {
 }
 
 // ══════════════════════════════════════
+// 海面细节：等深线 + 海岸线（2026-10-26）
+// ══════════════════════════════════════
+//
+// 用户给的意大利地形图里，海面不是一块纯色：浅海 → 深海有分带，带上还有等深线，
+// 陆地与海之间有一条明确的海岸线。这三样在我们数据里**都不存在**：
+//   · 海格高度恒 = 12（导入图 2539/2539 个海格、造陆图 `seaLevel-8`）→ 分带无从下手；
+//   · 海岸线只有导入的 `.map` 带 `landFeatures`，造陆出来的底图没有。
+// 所以海深**推导**（utils/seaDepth.js），海岸线"有轮廓用轮廓、没有就在高度场上取海平面等值线"。
+// 两者都是纯几何，按高度图/轮廓的**引用**缓存 —— 引用没变就不可能变，与既有缓存纪律一致。
+let seaDetailCache = { hm: null, land: null, isobaths: [], coasts: [] };
+
+function getSeaDetail() {
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  if (!hm || !hm.grid || !hm.h || !hm.h.length) return null;
+  const land = baseMap.value?.landFeatures || null;
+  if (seaDetailCache.hm === hm && seaDetailCache.land === land) return seaDetailCache;
+
+  const cols = hm.grid.cellsX | 0;
+  const rows = hm.grid.cellsY | 0;
+  const pts = hm.grid.points;
+  const gridOk = cols > 1 && rows > 1 && pts && pts.length >= cols * rows;
+  const isobaths = [];
+  // 等深线的可读性下限：1 格 = 18 世界单位的老导入图（真实 415 省底图就是 97×45 / 18.3 格距），
+  // 抽出来的等深线是一圈圈十来个像素一段的多边形；这种图只给**海深渐变**，不画线。
+  // 阈值 14 覆盖造陆图（约 8~10 单位/格），也与"细网格才谈得上等深线"这个事实一致。
+  const spacing = Number(hm.grid.spacing) || 0;
+  const isobathOk = spacing > 0 && spacing <= 14;
+  if (gridOk && isobathOk) {
+    const depth = buildSeaDepth(hm, { seaLevel: RASTER_SEA_LEVEL });
+    if (depth) {
+      for (const level of SEA_DEPTH_LEVELS) {
+        for (const ln of extractIsoLines(depth.t, cols, rows, pts, level)) {
+          // 等值线的折角来自格距（marching squares 每格一段）→ 先 Chaikin 再画，
+          // 否则 1× 下是一圈"锯齿轮廓"（实测截图）。平滑只切角、不改变档位。
+          const smooth = smoothPolyline(ln.points, 2);
+          if (smooth.length >= 2) isobaths.push(smooth);
+        }
+      }
+    }
+  }
+  // 海岸线：① 存着的陆地轮廓（导入 .map 的高精度环，与省份几何同源）；② 没有 → 高度场等值线
+  const coasts = [];
+  const feats = Array.isArray(land) ? land : [];
+  if (feats.length) {
+    for (const f of feats) {
+      const ring = f && f.points;
+      if (ring && ring.length >= 3) coasts.push(ring);
+    }
+  } else if (gridOk) {
+    for (const ln of extractIsoLines(hm.h, cols, rows, pts, RASTER_SEA_LEVEL)) {
+      const smooth = smoothPolyline(ln.points, 2);
+      if (smooth.length >= 2) coasts.push(smooth);
+    }
+  }
+  seaDetailCache = { hm, land, isobaths, coasts };
+  return seaDetailCache;
+}
+
+/** 世界坐标折线描边（画布已按相机做过 translate/scale，这里直接用世界坐标） */
+function strokeWorldPolyline(c, pts, close = false) {
+  if (!pts || pts.length < 2) return;
+  c.beginPath();
+  c.moveTo(vx(pts[0]), vy(pts[0]));
+  for (let i = 1; i < pts.length; i++) c.lineTo(vx(pts[i]), vy(pts[i]));
+  if (close) c.closePath();
+  c.stroke();
+}
+
+function drawSeaDetail(c) {
+  // 只在「高度」档画：温度/降水/文化是专题图，给它们加海深与等深线会被读成地形（口径错误）。
+  if (rasterLayer.value !== 'height') return;
+  const d = getSeaDetail();
+  if (!d || (!d.isobaths.length && !d.coasts.length)) return;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(cw(), ch());
+  const pad = px(24);
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+
+  c.save();
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  // 等深线：细、淡 —— 参考图里它是"看得出但不抢戏"的那一层
+  c.lineWidth = px(0.6);
+  c.strokeStyle = 'rgba(48, 96, 128, 0.20)';
+  for (const ln of d.isobaths) {
+    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
+    strokeWorldPolyline(c, ln);
+  }
+  // 海岸线：压在省界**下面**，只露出一圈蓝边（省界会盖住它的中心 0.9px）——
+  // 参考图的"蓝海岸 + 灰省界"就是这个层叠关系，不用去改省界的描边逻辑。
+  c.lineWidth = px(1.7);
+  c.strokeStyle = 'rgba(44, 92, 122, 0.45)';
+  for (const ln of d.coasts) {
+    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
+    strokeWorldPolyline(c, ln, true);
+  }
+  c.restore();
+}
+
+// ══════════════════════════════════════
 // 河流 / 道路图层（P1-T3）
 // ══════════════════════════════════════
 /** 折线是否与当前视口相交（含 pad） */
@@ -9638,7 +9742,11 @@ function renderFrame() {
     const rasterBase = rasterLayer.value === 'height'
       || rasterLayer.value === 'temp' || rasterLayer.value === 'prec';
     if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
-    else if (rasterBase) drawRasterLayer(ctx.value, rasterLayer.value, 1);
+    else if (rasterBase) {
+      drawRasterLayer(ctx.value, rasterLayer.value, 1);
+      // 等深线 + 海岸线（2026-10-26）：画在栅格之上、省界之下 —— 海岸属地形，压在行政边界以下
+      drawSeaDetail(ctx.value);
+    }
 
     if (showBiomes.value) drawBiomeBackground(ctx.value);
     // 🔴 渲染单一路径：**永远画省份多边形**（存下来 / 导出的就是它）。
