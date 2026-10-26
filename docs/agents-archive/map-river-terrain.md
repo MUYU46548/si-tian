@@ -276,3 +276,14 @@
   - 判据：`test_62` 的源码闸门从字面量 `drawProvinces(ctx.value);` 改成按调用点
     `drawProvinces(ctx.value` 判（API 多了 options 参数）；全量 **153/153**（`build/_landmass_v48b_full.log`）。
   - 截图：`docs/assets/landmass-v43-20261026/app-terrain-view.png`（地形作底 + 省界 + 细河）。
+
+- **造陆 v4.9：造完陆顺手打开「立体」（山体阴影）2026-10-26**：
+  v4.8 把粉彩解决了（地形作底 + 省界只描边），但高度图只有**分层设色** ——
+  山地与平地都是"一片色"，用户原话「看不出地形」的另一半就是这个。
+  仓库里早就有 `buildShadeMap`（2026-10-17 第七修），只是 `terrainShade` **默认关**
+  且注释写明"开了会改变所有既有底图的观感，必须由用户自己选"。
+  - ✅ 因此**不动全局默认**，只在 `applyLandmassResult` 里：造完陆切到「高度」时**同时打开「立体」**，
+    并在回执里说明（`已切到「高度」着色 + 开启「立体」`）。既有底图不受影响。
+  - 观感：山地有阴阳面、河谷变暗、海岸线亮起来（画面颜色数 397 → **546**，说明层次确实出来了）。
+  - 判据：`test_152` 仍读 `rasterLayer === 'height'` / `canvasColors ≥ 12`；全量回归见
+    `build/_landmass_v49_full.log`。

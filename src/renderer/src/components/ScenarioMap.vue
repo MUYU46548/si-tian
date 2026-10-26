@@ -2230,9 +2230,13 @@ function applyLandmassResult(r) {
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
   const hasHm = !!(hm && hm.grid && (hm.grid.points || []).length);
   rasterLayer.value = hasHm ? 'height' : 'landsea';
+  // 同时打开「立体」（山体阴影）：高度图只有分层设色时，山地与平地同样是"一片色"，
+  // 用户原话「看不出地形」。⚠️ 全局默认仍是**关**（既有底图不擅自改观感，
+  // 见 `terrainShade` 的注释）；这里只是在"刚造完陆、正在看地形"的这一刻替用户打开。
+  if (hasHm) terrainShade.value = true;
   landmassOpen.value = false;
   statusMsg(hasHm
-    ? `${(r && r.message) || '已造陆'}（已切到「高度」着色，可直接看地形）`
+    ? `${(r && r.message) || '已造陆'}（已切到「高度」着色 + 开启「立体」）`
     : ((r && r.message) || '已造陆'));
   render();
 }
