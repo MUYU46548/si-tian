@@ -40,12 +40,15 @@ export const INCISE_SLOPE_EXP = 0.9;
  *   高度图（就地修改 `h`；`grid` 只读）
  * @param {{seaLevel?:number, isLand?:(x:number,y:number)=>boolean, iterations?:number,
  *          strength?:number, maxDropFrac?:number, onIteration?:(i:number, stats:object)=>void}} [opts]
- * @returns {{iterations:number, carved:number, cells:number, ms:number, perIteration:number[]}}
- *   `carved` = 累计下切的高度点总量（诊断/回执用）
+ * @returns {{iterations:number, carved:number, cells:number, ms:number, perIteration:number[],
+ *            segments:Array}}
+ *   `carved` = 累计下切的高度点总量（诊断/回执用）；
+ *   `segments` = **最后一轮**的流向场（每格一条 + `flow`）。它已经是"每格流向哪"的完整答案，
+ *   调用方要串河链时直接用它就行 —— 再跑一次 `traceRivers` 只是把同样的事重算一遍（实测 ~80ms/次）。
  */
 export function inciseByFlow(hm, opts = {}) {
   const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  const out = { iterations: 0, carved: 0, cells: 0, ms: 0, perIteration: [] };
+  const out = { iterations: 0, carved: 0, cells: 0, ms: 0, perIteration: [], segments: [] };
   if (!hm || !Array.isArray(hm.h) || !hm.grid || !Array.isArray(hm.grid.points)) return out;
   const n = hm.h.length;
   if (!n || hm.grid.points.length !== n) return out;
@@ -82,6 +85,8 @@ export function inciseByFlow(hm, opts = {}) {
     });
     const segments = traced.segments || [];
     if (!segments.length) break;
+    // 最后一轮的流向场留给调用方（串河链时直接复用，省一次 traceRivers —— 实测 ~80ms）
+    out.segments = segments;
 
     // ② 流量上界（归一化用本轮的分布，不用绝对公式 —— 同一份地形换个分辨率量纲就变）
     let maxFlow = 1;

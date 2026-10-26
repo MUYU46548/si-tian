@@ -889,13 +889,17 @@ export function generateLandmass(params, bbox) {
     }
   }
 
+  const tHills = now() - t0;
   // ── ⑤c **河成侵蚀**：让水把丘与丘之间的谷切深（正反馈：切得深 → 汇流更多 → 切得更深）。
   const erosion = hm
     ? inciseByFlow(hm, {
       seaLevel: 20,
-      isLand: landMask.isLand,
-      iterations: 3,
-      strength: 2.2,
+      // ⚠️ **不给 `isLand`**：侵蚀只要"每格流向哪"，而 `isLand` 会让 `traceRivers` 多跑一遍
+      //    全图海距 BFS（那套是给"河源不许贴海"用的，侵蚀里没人读）—— 实测省 ~20ms/轮。
+      // 2 轮：每轮一次流向场（18k 格 ≈ 85ms）。3 轮实测只多切深 1~2 个高度点，
+      // 观感差别看不出来，但三张候选要多等 85ms —— 不值。
+      iterations: 2,
+      strength: 2.8,
     })
     : null;
   // 地形高差读数（回执/用例看"山地确实起来了"）
@@ -910,23 +914,30 @@ export function generateLandmass(params, bbox) {
     if (!Number.isFinite(terrainMin)) terrainMin = 0;
   }
 
+  const tErosion = now() - t0;
   // ── ⑤d 河流：多尺度丘陵 + 侵蚀之后，地形才有"丘间谷"，这时才谈得上画河。
   //    仍然**复用**画布「自动河流」的整条链（`traceRivers` → `buildRiverPaths`），
   //    不写第二套追踪器；这里只负责挑哪些链、以及线宽口径。
   let traced = { rivers: [], segments: [], elapsedMs: 0 };
   const rivers = [];
   if (hm) {
-    traced = traceRivers(hm, {
-      seaLevel: 20,
-      sourceHeight: 24 + roughness * 10,
-      sourceInlandCells: 2,
-      minPoints: 4,
-      coalesce: true,
-      isLand: landMask.isLand,
-    });
+    // 🔴 **复用侵蚀最后一轮的流向场**（`inciseByFlow` 已经算过一遍"每格流向哪"），
+    //    不再调一次 `traceRivers` —— 那是把同一件事重算（实测 18k 格 ~80ms/次）。
+    //    侵蚀只把河道往下切，不改流向拓扑，所以这份场拿来串链是自洽的。
+    const flowSegments = (erosion && erosion.segments && erosion.segments.length)
+      ? erosion.segments
+      : (traceRivers(hm, {
+        seaLevel: 20,
+        sourceHeight: 24 + roughness * 10,
+        sourceInlandCells: 2,
+        minPoints: 4,
+        coalesce: true,
+        isLand: landMask.isLand,
+      }).segments || []);
+    traced.segments = flowSegments;
     // ⚠️ **不剪枝**：`pruneRiverNetwork` 会砍掉细段，而 `buildRiverPaths` 是"沿上游串链"——
     //    中间少一段，链就在那里断掉（实测：剪完再串，每条河只剩 4~5 个点 = 一堆短棍）。
-    const chains = buildRiverPaths(traced.segments, { minFlow: 2, minLen: 8, maxPaths: 260 });
+    const chains = buildRiverPaths(flowSegments, { minFlow: 2, minLen: 8, maxPaths: 260 });
     const maxRivers = 90;
     const pick = [];
     for (const ch of chains) {
@@ -1015,6 +1026,8 @@ export function generateLandmass(params, bbox) {
         steps: Math.round(tSteps),
         field: Math.round(tField),
         terrain: Math.round(tTerrain),
+        hills: Math.round(tHills - tTerrain),
+        erosion: Math.round(tErosion - tHills),
         rivers: Math.round(tRivers - tTerrain),
         coast: Math.round(tContour),
         total: Math.round(tEnd),
