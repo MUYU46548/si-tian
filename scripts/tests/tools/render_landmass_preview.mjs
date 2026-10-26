@@ -199,7 +199,7 @@ function paintRelief(ras, relief, view) {
       const dhx = ((at(x1, y0) - at(x0, y0)) * (1 - ty)) + ((at(x1, y1) - at(x0, y1)) * ty);
       const dhy = ((at(x0, y1) - at(x0, y0)) * (1 - tx)) + ((at(x1, y1) - at(x1, y0)) * tx);
       const shade = hv >= RELIEF_SEA
-        ? 1 + Math.max(-0.32, Math.min(0.32, (dhx + dhy) * 0.30))
+        ? 1 + Math.max(-0.32, Math.min(0.32, (dhx + dhy) * 0.18))
         : 1;
       ras.set(x, y, col[0] * shade, col[1] * shade, col[2] * shade);
     }

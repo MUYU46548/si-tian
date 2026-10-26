@@ -214,7 +214,9 @@ function drawRelief(ctx, c, X, Y, s) {
       if (hv >= sea) {
         const dx = (at(i + 1, j) - at(Math.max(0, i - 1), j)) * 0.5;
         const dy = (at(i, j + 1) - at(i, Math.max(0, j - 1))) * 0.5;
-        shade = 1 + Math.max(-0.3, Math.min(0.3, (dx + dy) * 0.3));
+        // 0.18（不是 0.3）：合成地形里有一层 13 波长的走向噪声，阴影太强会把它放大成
+        // 一片"斜向笔触"（缩略图里看着像刷痕）。轻一点才像山体阴影。
+        shade = 1 + Math.max(-0.3, Math.min(0.3, (dx + dy) * 0.18));
       }
       const o = (j * r.w + i) * 4;
       px[o] = Math.max(0, Math.min(255, cr * shade));
