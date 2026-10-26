@@ -1788,7 +1788,7 @@ import { drawIconOrEmoji } from '../utils/canvasIcon';
 import { buildHeightmapRaster, RASTER_SMOOTH, RASTER_SEA_LEVEL } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
 // 海面细节（2026-10-26）：海深是从高度图**推导**出来的（数据里海格高度是常数，见 utils/seaDepth.js），
 // 等深线由 marching squares 抽取（utils/contour.js）。两者都按高度图引用缓存，不落盘。
-import { buildSeaDepth, SEA_DEPTH_LEVELS } from '../utils/seaDepth';
+import { buildSeaDepth, SEA_DEPTH_LEVELS, buildDistanceToSea, sampleGridAt } from '../utils/seaDepth';
 import { extractIsoLines } from '../utils/contour';
 // 两个**不同**判据，别再混（2026-10-11 踩过）：
 //   · `hasGrid`（heightmapAccess）= "能否开始用笔刷编辑"（有点即可；历史数据里存在只有点没有 h 的高度图）
@@ -1933,6 +1933,8 @@ import {
   flowToDischargeEquivalent,
   drawCurvedRiver, fillRiverRibbon, smoothRiverLine, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
   planRiverCoveredRuns, collapseReversedRiverPoints,
+  // 逐点河宽（2026-10-26）：宽度因子 / 河口判定 / 变距偏移（宽段高亮不许压进水面）
+  riverWidthFactors, pickRiverMouthEnd, offsetPolylineVariable,
   // 🔴 2026-10-18 第十六修：选中轮廓的**偏移几何**与空隙常量下沉到纯函数层 ——
   //    组件里"用加宽的中心线当轮廓"是"选中即盖住水面"的根源；下沉后单测能直接判偏移量。
   offsetPolyline, RIVER_SEL_GAP_PX as RIVER_SEL_GAP_PX_UTIL,
@@ -8792,7 +8794,14 @@ let displayRiverCache = { terrain: null, rivers: null, out: [] };
 let displayRiverPlanCache = { list: null, scale: 0, maxW: 0, smoothed: [], plans: [] };
 /** 河道曲线 + 分块 Path2D 缓存：键 = 该河的 smoothed 数组（缩放变会换数组） */
 const riverRunCache = new WeakMap();
-function buildRiverRun(pts, s, e) {
+/**
+ * 一条河的可视段 → 若干块 Path2D（每块一个**宽度值**，2026-10-26 起逐点）。
+ *
+ * @param {Array} pts 已平滑的中心线
+ * @param {number} s @param {number} e 可见段端点（`planRiverCoveredRuns` 给的连续段）
+ * @param {number[]|null} widths 逐点宽度（与 `river.width` 同量纲）；缺省回落到"越往下游越宽"的旧口径
+ */
+function buildRiverRun(pts, s, e, widths) {
   const runPts = pts.slice(s, e);
   const curve = catmullRomPoints(runPts, 2);
   const n = curve.length;
@@ -8804,13 +8813,13 @@ function buildRiverRun(pts, s, e) {
     if (i1 <= i0) continue;
     const mid = Math.min(n - 1, Math.round((i0 + i1) / 2));
     // `mid` 是**本 run 的曲线**下标（subdiv=2，长度约 2 倍点数）—— 必须换算回整条河的
-    // 点下标再算 t，否则 s + mid 会越界、线宽被算粗（实测导入河像素 +12%）。
+    // 点下标再取宽度，否则 s + mid 会越界、线宽被算粗（实测导入河像素 +12%）。
     const frac = n > 1 ? mid / (n - 1) : 1;
-    const t = (s + frac * Math.max(0, e - s - 1)) / Math.max(1, pts.length - 1);
+    const idx = s + frac * Math.max(0, e - s - 1);
     const path = new Path2D();
     path.moveTo(curve[i0].x, curve[i0].y);
     for (let i = i0 + 1; i <= i1; i++) path.lineTo(curve[i].x, curve[i].y);
-    out.push({ path, t });
+    out.push({ path, idx });
   }
   return out;
 }
@@ -9018,6 +9027,65 @@ function getDisplayRivers() {
   return out;
 }
 
+// ── 逐点河宽（2026-10-26）──────────────────────────────────────────────────
+// 数据里 `width` 是**每河一个标量**；要"源头细 → 河口粗"就得逐点宽度。
+// 两种来源：
+//   · 造陆河：生成时已经把逐点流量写进 `r.widths`（同一份 `widthAt` 曲线）；
+//   · 导入河：没有逐点数据 → 按**弧长**推 0.35~1 的因子。方向（哪端是河口）用
+//     `buildDistanceToSea` 的距海距离判断 —— 用两端地形高度判不出来（159 条里 156 条两端同格）。
+// 结果按 points 数组引用缓存（`WeakMap`）：同一段几何不可能变。
+let seaDistanceCache = { hm: null, field: null };
+function getSeaDistanceField() {
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  if (!hm || !hm.grid) return null;
+  if (seaDistanceCache.hm === hm) return seaDistanceCache.field;
+  seaDistanceCache = { hm, field: buildDistanceToSea(hm, { seaLevel: RASTER_SEA_LEVEL }) };
+  return seaDistanceCache.field;
+}
+
+const riverWidthSeriesCache = new WeakMap();
+
+/** 逐点宽度（与 `river.width` 同量纲：0.02~0.26） */
+function riverWidthSeries(river, pts) {
+  const base = Number(river && river.width) > 0 ? Number(river.width) : 0.02;
+  if (!pts || pts.length < 2) return [base];
+  const hit = riverWidthSeriesCache.get(pts);
+  if (hit) return hit;
+  let series;
+  if (Array.isArray(river.widths) && river.widths.length >= 2) {
+    const n = river.widths.length;
+    series = pts.map((_, k) => {
+      const t = pts.length > 1 ? k / (pts.length - 1) : 1;
+      return Number(river.widths[Math.min(n - 1, Math.max(0, Math.round(t * (n - 1))))]) || base;
+    });
+  } else {
+    const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+    const field = getSeaDistanceField();
+    let reversed = false;
+    if (hm && field) {
+      const end = pickRiverMouthEnd(pts, (x, y) => sampleGridAt(hm, field.dist, x, y), { fallback: 'last' });
+      reversed = end === 'first';
+    }
+    series = riverWidthFactors(pts, { reversed }).map((f) => base * f);
+  }
+  riverWidthSeriesCache.set(pts, series);
+  return series;
+}
+
+/** 本幅图最宽的河（`basemapRiverWidthPx` 的归一化参照）—— 按 rivers 数组引用缓存 */
+let maxRiverWidthCache = { list: null, max: 0 };
+function getMaxRiverWidth() {
+  const list = baseMap.value?.rivers || [];
+  if (maxRiverWidthCache.list === list) return maxRiverWidthCache.max;
+  let max = 0;
+  for (const r of list) {
+    const w = Number(r && r.width);
+    if (Number.isFinite(w) && w > max) max = w;
+  }
+  maxRiverWidthCache = { list, max };
+  return max;
+}
+
 function drawRivers(c) {
   // D（2026-10-11）：**只画导入的**（FMG 参考图层）。手画的（id 前缀 `river_`）由
   // `drawRiverPaths` 负责 —— 两边都画就会把同一份数据画两遍（线宽叠加、观感更粗），
@@ -9045,12 +9113,8 @@ function drawRivers(c) {
   //      · 曲线：Catmull-Rom（subdiv=2，导入点本来就密，只削折角）；
   //      · 宽度：源头 0.62× → 河口 1×（`discharge` 定绝对值，与自动河同一条公式）；
   //      · 岸线：多边形的描边（不是两条平行线）。
-  // 本幅图最宽的河（宽度归一化的参照）—— 一次扫描，160 条量级可忽略
-  let maxRiverWidth = 0;
-  for (const r of list) {
-    const w = Number(r && r.width);
-    if (Number.isFinite(w) && w > maxRiverWidth) maxRiverWidth = w;
-  }
+  // 本幅图最宽的河（宽度归一化的参照）—— 按 rivers 引用缓存，160 条量级可忽略
+  const maxRiverWidth = getMaxRiverWidth();
   // ── 同一段河道只画一遍（2026-10-21 第二十一修）────────────────────────────
   // 真实 FMG 数据里支流的路径会沿干流再走一遍，两张 `rivers[]` 共享一段河身。
   // 两条都画 = 粗河旁贴一条细线，放大后从某个节点分叉成双线（用户两张截图）。
@@ -9077,18 +9141,18 @@ function drawRivers(c) {
     // 先圆角（中点二次曲线）再进样条：Catmull-Rom 是插值曲线，不圆角的话
     // 导入数据里的直角在放大后原样保留 = 用户说的"折线/铁轨"。
     const pts = smoothed[ri];
-    // 线宽：屏幕像素口径（`basemapRiverWidthPx` 按本幅图 width 分布归一化），
-    // 画布已 `scale(cameraScale)` → 世界单位。
-    const world = basemapRiverWidthWorld(r, cameraScale.value, maxRiverWidth);
+    // 逐点宽度（2026-10-26）：造陆河用落库的 `widths`；导入河按弧长 + 距海方向推。
+    // 缓存挂在 `pts`（平滑后的数组）上 —— 同一段几何不可能变。
+    const widths = riverWidthSeries(r, pts);
     // 🔴 2026-10-21：曲线 + 分块 Path2D 按 smoothed 数组缓存。此前每帧对每条河重跑
     //    Catmull-Rom 并对 16 个块各做一遍 beginPath/lineTo（160 条 ≈ 每帧上万次 lineTo + 大量分配）。
-    //    现在绘制期只剩 `stroke(path)`；宽度按块中点比例算（world 随缩放变，几何不变）。
+    //    现在绘制期只剩 `stroke(path)`；宽度按块**取该块中点处的逐点宽度**。
     let runs = riverRunCache.get(pts);
     if (!runs) {
       runs = [];
       for (const [s, e] of (plans[ri] || [])) {
         if (e - s < 2) continue;
-        runs.push(...buildRiverRun(pts, s, e));
+        runs.push(...buildRiverRun(pts, s, e, widths));
       }
       riverRunCache.set(pts, runs);
     }
@@ -9097,11 +9161,13 @@ function drawRivers(c) {
     c.lineCap = 'round';
     c.lineJoin = 'round';
     c.globalAlpha = 1;
-    for (const { path, t } of runs) {
+    for (const { path, idx } of runs) {
+      const wi = Math.min(widths.length - 1, Math.max(0, Math.round(idx)));
+      const w = Number(widths[wi]) || Number(r.width) || 0.02;
       // ⚠️ 这里的下限**不要写成 0.35**：`test_73` 的源码守卫用裸子串查「省名档阈值被写回组件」，
       //    0.35 是它认定的档位阈值（详见该用例注释：遇到误伤就改数字，别改守卫）。
       //    0.3 与 0.35 在 1× 下相差 0.05px，视觉无差。
-      c.lineWidth = Math.max(0.3, world * (0.78 + 0.22 * t));
+      c.lineWidth = Math.max(0.3, basemapRiverWidthWorld({ width: w }, cameraScale.value, maxRiverWidth));
       c.stroke(path);
     }
   }
@@ -9231,14 +9297,30 @@ function drawSelectedRiverHighlight(c) {
     //    （`test_112` 的源码闸门要求"选中高亮里不许出现裸数值线宽" —— 见下方注释）。
     //    🔴 空隙必须**跟着河宽收窄**：细河（`width=1` → 3.6 屏幕像素）用满 3.5px 空地会把
     //       水面吃掉一半（test_112 实测保留率 0.47）；`riverSelGapForWidth` 是那条口径的单源。
-    const basePx = basemapRiverWidthPx(r);
-    const gap = px(riverSelGapForWidth(basePx) * (isPrimary ? 1 : 0.7));
     const weightWorld = px(RIVER_SEL_WEIGHT_PX);
     const edgeWorld = px(1);
     const barWorld = px(2);
     const barHalfWorld = px(6);
-    const sides = [offsetPolyline(pts, baseW / 2 + gap),
-                   offsetPolyline(pts, -(baseW / 2 + gap))];
+    // 🔴 2026-10-26：逐点宽度之后，轮廓的偏移量也必须**逐点**（常量偏移会在宽段压进水面、
+    //    窄段飘出老远）。手画河没有逐点宽度，沿用旧常量路径。
+    const selSeries = String(r.id || '').indexOf('river_') === 0 ? null : riverWidthSeries(r, pts);
+    let sides;
+    if (selSeries) {
+      const maxW = getMaxRiverWidth();
+      const dists = selSeries.map((w) => {
+        const pxw = basemapRiverWidthPx({ width: w }, maxW);
+        const gapPx = riverSelGapForWidth(pxw) * (isPrimary ? 1 : 0.7);
+        return basemapRiverWidthWorld({ width: w }, cameraScale.value, maxW) / 2 + px(gapPx);
+      });
+      sides = [offsetPolylineVariable(pts, dists),
+        offsetPolylineVariable(pts, dists.map((d) => -d))];
+    } else {
+      const baseW = basemapRiverWidthWorld(r, cameraScale.value);
+      const basePx = basemapRiverWidthPx(r);
+      const gap = px(riverSelGapForWidth(basePx) * (isPrimary ? 1 : 0.7));
+      sides = [offsetPolyline(pts, baseW / 2 + gap),
+        offsetPolyline(pts, -(baseW / 2 + gap))];
+    }
     c.strokeStyle = isPrimary ? 'rgba(255, 214, 102, 0.95)' : 'rgba(34, 211, 238, 0.7)';
     c.lineWidth = weightWorld;
     for (const side of sides) {

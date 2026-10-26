@@ -45,6 +45,92 @@ function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/**
+ * 8 邻域 Chamfer 距离场（纯几何，两个调用方共用：海深 / 距海）。
+ *
+ * @param {number} n @param {number} cols @param {number} rows
+ * @param {(i:number)=>boolean} isSource 源格 → 距离 0
+ * @returns {Float32Array} 每格到最近源的距离（格为单位，≈欧氏）
+ */
+export function chamferDistance(n, cols, rows, isSource) {
+  const dist = new Float32Array(n);
+  const FAR = 1e9;
+  for (let i = 0; i < n; i++) dist[i] = isSource(i) ? 0 : FAR;
+  const D1 = 1;
+  const D2 = Math.SQRT2;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      let v = dist[i];
+      if (v === 0) continue;
+      if (x > 0) v = Math.min(v, dist[i - 1] + D1);
+      if (y > 0) v = Math.min(v, dist[i - cols] + D1);
+      if (x > 0 && y > 0) v = Math.min(v, dist[i - cols - 1] + D2);
+      if (x < cols - 1 && y > 0) v = Math.min(v, dist[i - cols + 1] + D2);
+      dist[i] = v;
+    }
+  }
+  for (let y = rows - 1; y >= 0; y--) {
+    for (let x = cols - 1; x >= 0; x--) {
+      const i = y * cols + x;
+      let v = dist[i];
+      if (v === 0) continue;
+      if (x < cols - 1) v = Math.min(v, dist[i + 1] + D1);
+      if (y < rows - 1) v = Math.min(v, dist[i + cols] + D1);
+      if (x < cols - 1 && y < rows - 1) v = Math.min(v, dist[i + cols + 1] + D2);
+      if (x > 0 && y < rows - 1) v = Math.min(v, dist[i + cols - 1] + D2);
+      dist[i] = v;
+    }
+  }
+  return dist;
+}
+
+/**
+ * 陆格到海的**距离场**（2026-10-26，逐点河宽配套）。
+ *
+ * 用途：判断一条河的**哪一端是河口**（离海更近的那端）。
+ * 🔴 为什么不用"两端地形高度"：实测 159 条导入河里 **156 条两端落在同一格高度**
+ *    （97×45 的格距 18 世界单位，河端差不到一格）—— 高度差判不出方向，必须用距离。
+ *
+ * @param {object} hm
+ * @param {{seaLevel?:number}} [opts]
+ * @returns {{dist:Float32Array, cols:number, rows:number}|null} 海格 = 0
+ */
+export function buildDistanceToSea(hm, opts = {}) {
+  const grid = hm && hm.grid;
+  const h = hm && hm.h;
+  if (!grid || !h || !h.length) return null;
+  const cols = grid.cellsX | 0;
+  const rows = grid.cellsY | 0;
+  if (!(cols > 1) || !(rows > 1) || cols * rows > h.length) return null;
+  const seaLevel = Number.isFinite(opts.seaLevel) ? opts.seaLevel : 20;
+  let sea = 0;
+  for (let i = 0; i < cols * rows; i++) if ((h[i] || 0) < seaLevel) sea++;
+  if (!sea) return null;
+  const dist = chamferDistance(cols * rows, cols, rows, (i) => (h[i] || 0) < seaLevel);
+  return { dist, cols, rows };
+}
+
+/**
+ * 在格心网格上**最近格**采样（不插值）—— 只用于"哪端离海更近"这类定性判断。
+ * 出界 / 无数据 → NaN（调用方必须判，别把 NaN 当 0）。
+ */
+export function sampleGridAt(hm, field, x, y) {
+  const g = hm && hm.grid;
+  if (!g || !field || !Array.isArray(g.points) && !(g.points && g.points.length)) return NaN;
+  const cols = g.cellsX | 0;
+  const rows = g.cellsY | 0;
+  const spacing = Number(g.spacing) || 0;
+  const p0 = g.points && g.points[0];
+  if (!(cols > 0) || !(rows > 0) || !(spacing > 0) || !p0) return NaN;
+  const ox = Array.isArray(p0) ? p0[0] : p0.x;
+  const oy = Array.isArray(p0) ? p0[1] : p0.y;
+  const c = Math.round((x - ox) / spacing);
+  const r = Math.round((y - oy) / spacing);
+  if (c < 0 || c >= cols || r < 0 || r >= rows) return NaN;
+  return field[r * cols + c];
+}
+
 /** 升序数组的分位数（q ∈ 0..1）。空数组 → NaN（调用方必须判） */
 function quantileSorted(sorted, q) {
   const n = sorted.length;
@@ -100,40 +186,12 @@ export function buildSeaDepth(hm, opts = {}) {
     return { t, ref: SEA_HEIGHT_DEPTH_UNITS, mode: 'height', seaCells, maxDepthCells: 0, cols, rows };
   }
 
-  // ── ② 距岸距离（多源：所有陆格；**8 邻域 Chamfer 3-4**，不是 BFS 数格）────────
+  // ── ② 距岸距离（多源：所有陆格）──────────────────────────────────────────
   // 🔴 为什么不用 4 邻域 BFS：它算的是"走几步"，等距线是**方角**的（切比雪夫方框），
   //    等深线会画成一圈圈圆角矩形（实测截图）。8 邻域带 √2 权重 ≈ 欧氏距离，等距线才是圆的。
-  const dist = new Float32Array(n);
+  // 实现与"距海距离"共用 `chamferDistance`（两个方向、一份几何）。
+  const dist = chamferDistance(n, cols, rows, (i) => (h[i] || 0) >= seaLevel);
   const FAR = 1e9;
-  for (let i = 0; i < n; i++) dist[i] = (h[i] || 0) >= seaLevel ? 0 : FAR;
-  const D1 = 1;
-  const D2 = Math.SQRT2;
-  // 前向：左 / 上 / 左上 / 右上
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const i = y * cols + x;
-      let v = dist[i];
-      if (v === 0) continue;                     // 陆格是源，不再被邻格拉高
-      if (x > 0) v = Math.min(v, dist[i - 1] + D1);
-      if (y > 0) v = Math.min(v, dist[i - cols] + D1);
-      if (x > 0 && y > 0) v = Math.min(v, dist[i - cols - 1] + D2);
-      if (x < cols - 1 && y > 0) v = Math.min(v, dist[i - cols + 1] + D2);
-      dist[i] = v;
-    }
-  }
-  // 后向：右 / 下 / 右下 / 左下
-  for (let y = rows - 1; y >= 0; y--) {
-    for (let x = cols - 1; x >= 0; x--) {
-      const i = y * cols + x;
-      let v = dist[i];
-      if (v === 0) continue;
-      if (x < cols - 1) v = Math.min(v, dist[i + 1] + D1);
-      if (y < rows - 1) v = Math.min(v, dist[i + cols] + D1);
-      if (x < cols - 1 && y < rows - 1) v = Math.min(v, dist[i + cols + 1] + D2);
-      if (x > 0 && y < rows - 1) v = Math.min(v, dist[i + cols - 1] + D2);
-      dist[i] = v;
-    }
-  }
 
   // 平滑**距离场**（不是 t）：陆格是 0，参与平均 → 贴岸仍然浅（0.7 左右），
   // 而等距线从"八角形"被磨成圆角 —— 等深线的锯齿主要来自这里。

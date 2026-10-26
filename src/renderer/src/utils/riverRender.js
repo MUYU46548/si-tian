@@ -150,8 +150,122 @@ export function offsetPolyline(pts, dist) {
 }
 
 /**
- * **变宽中心线**（分块描边）—— 河流唯一的画法（2026-10-20 第十九修）。
+ * 折线的**逐点变距平行偏移**（纯几何；2026-10-26，逐点河宽配套）。
  *
+ * 与 `offsetPolyline` 的差别只有一处：偏移量**逐点不同**。
+ * 为什么必须有它：逐点变宽之后，选中轮廓若还用**常量**偏移，宽段的轮廓会压进水面
+ * （水面保留率掉回第十六修之前的形态）、窄段又会飘出老远 —— 而 `test_112/119`
+ * 量的正是"选中后水面还看得见多少"。
+ *
+ * ⚠️ 退化处理与 `offsetPolyline` 完全一致（单点 / 重合点 / 全零偏移都原样返回，不抛）。
+ *
+ * @param {Array<{x:number,y:number}>} pts
+ * @param {number[]|number} dists 逐点偏移（世界单位，正负决定两侧）；长度不足时沿用最后一个
+ * @returns {Array<{x:number,y:number}>} 新数组
+ */
+export function offsetPolylineVariable(pts, dists) {
+  const src = Array.isArray(pts) ? pts : [];
+  if (src.length < 2) return src.map((p) => ({ x: p.x, y: p.y }));
+  const at = (i) => {
+    if (Array.isArray(dists)) {
+      const v = dists[Math.max(0, Math.min(dists.length - 1, i))];
+      return Number.isFinite(v) ? v : 0;
+    }
+    return Number.isFinite(dists) ? dists : 0;
+  };
+  const segNormal = (a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 1e-9)) return null;
+    return { x: -dy / len, y: dx / len };
+  };
+  const out = [];
+  for (let i = 0; i < src.length; i++) {
+    const prev = i > 0 ? segNormal(src[i - 1], src[i]) : null;
+    const next = i + 1 < src.length ? segNormal(src[i], src[i + 1]) : null;
+    let n = null;
+    if (prev && next) {
+      const mx = prev.x + next.x, my = prev.y + next.y;
+      const mlen = Math.hypot(mx, my);
+      n = mlen > 1e-9 ? { x: mx / mlen, y: my / mlen } : next;
+    } else {
+      n = next || prev;
+    }
+    if (!n) return src.map((p) => ({ x: p.x, y: p.y }));
+    const d = at(i);
+    out.push({ x: src[i].x + n.x * d, y: src[i].y + n.y * d });
+  }
+  return out;
+}
+
+/**
+ * 河流的**逐点宽度因子**（纯函数；2026-10-26）。
+ *
+ * 目标形状：源头细 → 河口粗（参考图的河是"越往下游越宽"的）。这里只产出 **0.35~1 的因子**，
+ * 绝对值仍由 `basemapRiverWidthPx`（按本图 width 分布归一化）决定 —— 两条口径分开，
+ * 免得再出现"改这里、那里变了"。
+ *
+ * ⚠️ 方向由调用方给（`reversed`）：导入河是"去+原路回"折过的闭合路，哪端是河口必须由
+ *    `pickRiverMouthEnd` 用**距海距离**判断 —— 用两端地形高度判断在这份数据上无效
+ *    （实测 159 条河里 156 条两端落在同一格高度：97×45 的格距 18 单位，端点差不到一格）。
+ *
+ * @param {Array<{x:number,y:number}>} points 中心线（弧长参数化）
+ * @param {{reversed?:boolean,min?:number,max?:number,gamma?:number}} [opts]
+ * @returns {number[]} 与 points 等长
+ */
+export function riverWidthFactors(points, opts = {}) {
+  const src = Array.isArray(points) ? points : [];
+  const n = src.length;
+  const out = new Array(n).fill(1);
+  if (!n) return out;
+  const min = Number.isFinite(opts.min) ? opts.min : 0.35;
+  const max = Number.isFinite(opts.max) ? opts.max : 1;
+  const gamma = Number.isFinite(opts.gamma) ? opts.gamma : 0.8;
+  if (n === 1) { out[0] = max; return out; }
+  let total = 0;
+  const cum = new Array(n);
+  cum[0] = 0;
+  for (let i = 1; i < n; i++) {
+    total += Math.hypot(src[i].x - src[i - 1].x, src[i].y - src[i - 1].y);
+    cum[i] = total;
+  }
+  // 全重合（长度 0）：没有"上下游"可言 → 均匀给满，绝不产出 NaN（NaN 线宽 = 整条不画）
+  if (!(total > 1e-9)) { out.fill(max); return out; }
+  const rev = !!opts.reversed;
+  for (let i = 0; i < n; i++) {
+    let t = cum[i] / total;
+    if (rev) t = 1 - t;
+    const tt = t < 0 ? 0 : t > 1 ? 1 : t;
+    out[i] = min + (max - min) * Math.pow(tt, gamma);
+  }
+  return out;
+}
+
+/**
+ * 判断**哪一端是河口**（纯函数）：离海更近的那端。
+ *
+ * @param {Array<{x:number,y:number}>} points
+ * @param {(x:number,y:number)=>number} distanceAt 该点"距海多远"（越小越靠海；无数据给 NaN）
+ * @param {{fallback?:'first'|'last'}} [opts] 判不出来时用哪端（默认 last = 数据原本的方向）
+ * @returns {'first'|'last'}
+ */
+export function pickRiverMouthEnd(points, distanceAt, opts = {}) {
+  const src = Array.isArray(points) ? points : [];
+  const fallback = opts.fallback === 'first' ? 'first' : 'last';
+  if (src.length < 2 || typeof distanceAt !== 'function') return fallback;
+  const d0 = distanceAt(src[0].x, src[0].y);
+  const d1 = distanceAt(src[src.length - 1].x, src[src.length - 1].y);
+  const f0 = Number.isFinite(d0);
+  const f1 = Number.isFinite(d1);
+  if (!f0 && !f1) return fallback;
+  if (!f0) return 'last';
+  if (!f1) return 'first';
+  if (Math.abs(d0 - d1) < 1e-6) return fallback;
+  return d0 < d1 ? 'first' : 'last';
+}
+
+/**
+ * **变宽中心线**（分块描边）—— 河流唯一的画法（2026-10-20 第十九修）。 *
  * 为什么不是"左岸+右岸合成一个多边形再 fill"（十八修的做法，已废弃）：
  *   实测真实项目 30 条河 × 3 档宽度 = **90/90 都自交**（弯急处左右偏移互相穿过）。
  *   自交多边形用 nonzero 填充会在交叠处**抵消成洞** —— 屏幕上就是"两条边夹一条缝"，

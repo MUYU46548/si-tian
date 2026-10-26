@@ -972,28 +972,46 @@ export function generateLandmass(params, bbox) {
       const chord = Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].y - pts[0].y);
       const straightness = chord / Math.max(1e-6, len);
       if (straightness > 0.82) continue;
-      pick.push({ points: pts, flow: Math.max(2, ch.flow || 2), len, straightness });
+      // 逐点汇流量（`buildRiverPaths` 的链点自带 `flow`）—— 落库时转成逐点宽度，
+      // 否则整条河只有一个 `width`，源头和河口一样粗（用户参照的意大利图是"越往下游越宽"）。
+      const flows = ch.points.map((q) => Number(q.flow) || ch.flow || 2);
+      pick.push({ points: pts, flow: Math.max(2, ch.flow || 2), flows, len, straightness });
     }
     pick.sort((a, b) => (b.len - a.len) || (b.flow - a.flow));
     const rawRivers = pick.slice(0, maxRivers);
     const maxFlow = rawRivers.reduce((a, r) => Math.max(a, r.flow), 0) || 2;
+    const widthAt = (flow) => 0.02 + 0.24 * Math.pow(Math.max(0, flow - 1) / Math.max(1, maxFlow - 1), 1.6);
     rawRivers.forEach((r, i) => {
       // 🔴 **落库前先圆角**：D8 的路径是"逐格走 8 个方向"，直接存下来就是一条**直角折线**
       //    （放大看像水管）。画布侧对导入河本来就会 `smoothRiverLine`，但我们的河还要被
       //    出图工具、缩略图、切片导出各自画一遍 —— 在这一层把角切掉，一处改、处处顺。
       //    用同一份实现（`riverRender.smoothRiverLine`），不另写平滑。
       const points = smoothRiverLine(r.points, 4);
+      // 逐点宽度：把链上逐点汇流量**按归一化位置**重采样到平滑后的点列上
+      // （平滑会改变点数；裁岸线只动两端一两个点，按比例重采样不会错位）。
+      // 再**单调化**：下游不许比上游窄（汇流只会让流量变大，出现回缩就是重采样抖动）。
+      const nf = r.flows.length;
+      const widths = points.map((_, k) => {
+        const t = points.length > 1 ? k / (points.length - 1) : 1;
+        const fi = nf > 0 ? Math.min(nf - 1, Math.max(0, Math.round(t * (nf - 1)))) : 0;
+        return widthAt(nf > 0 ? r.flows[fi] : r.flow);
+      });
+      for (let k = 1; k < widths.length; k++) {
+        if (widths[k] < widths[k - 1]) widths[k] = widths[k - 1];
+      }
+      const roundedWidths = widths.map((w) => Math.round(w * 1000) / 1000);
       rivers.push({
         id: `land_river_${seed}_${i}`,
         name: '',
         points,
+        widths: roundedWidths,
         // 线宽口径：与导入河同一条公式（`basemapRiverWidthPx` 按本图最大 width 归一化）。
         // 🔴 指数从 `sqrt` 改成 **^1.6**（2026-10-26，用户原话「河流太粗太丑，像虫子在爬」）：
         //    旧曲线下 element 流量 0.1 的支流也能拿到 ~0.15 的 width，归一化后 ≈3.7px，
         //    于是**每条河都像干流一样粗**（画面上一堆蓝虫子）。^1.6 让"细"真的细：
         //    支流落在 0.02~0.05（→1.2~1.9px），只有真正的干流才吃到 0.26（→4.6px）。
         //    改的是**数据**，不是那条共享公式 —— 公式区间被 test_112/119 的选中高亮判据钉着。
-        width: Math.round((0.02 + 0.24 * Math.pow(Math.max(0, r.flow - 1) / Math.max(1, maxFlow - 1), 1.6)) * 1000) / 1000,
+        width: Math.round(widthAt(r.flow) * 1000) / 1000,
         discharge: Math.round(flowToDischargeEquivalent(r.flow, maxFlow)),
       });
     });
