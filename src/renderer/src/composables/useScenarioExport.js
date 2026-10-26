@@ -41,6 +41,25 @@ import {
 import {
   collectBurgLabels, collectRiverLabels, EXPORT_BURG_TIER, EXPORT_RIVER_TIER,
 } from '../utils/scenarioTextPlacement';
+// 文字避让排布（2026-10-26）：画布与导出**同一份**「放不放得下」的判定
+import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
+
+/**
+ * 导出侧量字（SVG 用户空间 = 世界单位，所以字号直接用 style.fontSize）。
+ * ⚠️ 与画布的 `measureTextWithStyle` 必须同口径（同 font-family / 同 "字宽 + 余量"）——
+ *    否则"画布放得下、导出放不下"，两张图又对不上。
+ */
+let exportLabelMeasureCtx = null;
+function exportLabelMeasure(text, cand) {
+  if (!exportLabelMeasureCtx) exportLabelMeasureCtx = document.createElement('canvas').getContext('2d');
+  const style = cand.style || {};
+  const size = Number(style.fontSize) || 12;
+  const family = style.fontFamily === 'serif'
+    ? 'Georgia, "Songti SC", "SimSun", serif'
+    : '"Microsoft YaHei", "PingFang SC", sans-serif';
+  exportLabelMeasureCtx.font = `${style.weight || 'normal'} ${size}px ${family}`;
+  return { w: exportLabelMeasureCtx.measureText(String(text)).width + 6, h: size * 1.3 + 2 };
+}
 
 /**
  * 画布标签样式（`utils/polityLabels.js` 的 `*_LABEL_STYLE`）→ SVG `<text>` 属性。
@@ -230,6 +249,12 @@ export function useScenarioExport({
       }
     }
 
+    // ── 文字层：省名 / 势力名 /（可选）城镇名 / 河流名 ──────────────────────
+    // 🔴 2026-10-26：四档标签改成**与画布同一份避让排布**（`utils/labelLayout.js`）。
+    //    旧实现是四个独立循环各画各的 —— 真实 415 省项目整图导出时省名互相压成一团。
+    //    现在先收集候选（屏幕/世界坐标同一量纲：SVG 用户空间 = 世界单位），
+    //    由 `layoutLabels` 统一决定放不放得下，再统一出 `<text>`。
+    const labelCands = [];
     // 省名（跳过无名 / 自动占位名）
     // 🔴 2026-10-25：占位名判据补上**司天自己的默认名**（`新省份 35`）——
     //    真实 415 省项目里 415 条全是它，旧过滤只认 `Province N` / `feature_`，
@@ -244,8 +269,10 @@ export function useScenarioExport({
         if (!r0 || r0.kind === 'sea') continue;
         const { cx, cy } = ringAreaCentroid(r0.points);
         if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
-        // 字号 / 颜色 / 描边与画布同一份样式常量（白字 + 深色描边，任何势力色上都读得出）
-        body.push(svgTextEl(cx, cy, nm, svgLabelTextStyle(PROVINCE_LABEL_STYLE)));
+        labelCands.push({
+          kind: 'province', text: nm, x: cx, y: cy, style: PROVINCE_LABEL_STYLE,
+          placements: AREA_LABEL_PLACEMENTS,
+        });
       }
     }
 
@@ -266,8 +293,10 @@ export function useScenarioExport({
       polityOfEra: (era, owner) => tl.scenarios[era]?.polities?.find((p) => p.id === owner) || null,
     });
     for (const lb of labels) {
-      if (lb.kind !== 'polity') continue;        // 省名那一层上面单独画（带占位名过滤）
-      body.push(svgTextEl(lb.x, lb.y, lb.text, svgLabelTextStyle(POLITY_LABEL_STYLE)));
+      if (lb.kind !== 'polity') continue;        // 省名上面已收进候选（带占位名过滤）
+      labelCands.push({
+        kind: 'polity', text: lb.text, x: lb.x, y: lb.y, style: POLITY_LABEL_STYLE,
+      });
     }
 
     // 剧本标签 / 标记（2026-10-25：与画布共用 `mapTextStyles`，不再各写一套颜色/字号/描边）
@@ -296,17 +325,37 @@ export function useScenarioExport({
     if (flags.labels !== false && flags.placeNames === true) {
       const bm = baseMap.value || {};
       for (const lb of collectBurgLabels(bm.burgs || [], { tier: EXPORT_BURG_TIER })) {
-        body.push(svgTextEl(lb.x, lb.y + 10, lb.name, svgTextAttrsFromStyle(
-          burgLabelTextStyle({ capital: lb.capital }),
-          { 'text-anchor': 'middle', 'dominant-baseline': 'middle' },
-        )));
+        labelCands.push({
+          kind: lb.capital ? 'capital' : 'town',
+          text: lb.name,
+          x: lb.x, y: lb.y,
+          style: burgLabelTextStyle({ capital: lb.capital }),
+          placements: [
+            { mode: 'right', gap: 7 }, { mode: 'left', gap: 7 },
+            { mode: 'above', gap: 7 }, { mode: 'below', gap: 9 },
+          ],
+          obstacles: [{ x0: lb.x - 6, y0: lb.y - 6, x1: lb.x + 6, y1: lb.y + 6 }],
+        });
       }
       for (const lb of collectRiverLabels(bm.rivers || [], { tier: EXPORT_RIVER_TIER })) {
-        body.push(svgTextEl(lb.x, lb.y - 4, lb.name, svgTextAttrsFromStyle(
-          riverLabelTextStyle(),
-          { 'text-anchor': 'middle', 'dominant-baseline': 'middle' },
-        )));
+        labelCands.push({
+          kind: 'river',
+          text: lb.name,
+          x: lb.x, y: lb.y,
+          style: riverLabelTextStyle(),
+          placements: [{ mode: 'above', gap: 5 }, { mode: 'below', gap: 5 }],
+        });
       }
+    }
+
+    // 统一排布 + 出字：放不下的**不画**（参考图的制图惯例；与画布同一份规则与优先级）
+    const placedLabels = layoutLabels(labelCands, {
+      measure: exportLabelMeasure,
+      bounds: { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY },
+      pad: 2,
+    });
+    for (const p of placedLabels) {
+      body.push(svgTextEl(p.cx, p.cy, p.text, svgLabelTextStyle(p.style)));
     }
 
     body.push('</g>');

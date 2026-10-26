@@ -1835,9 +1835,11 @@ import { widthsBySpeed, resampleSeries } from '../utils/strokeMath';
 // A8（2026-09-26）：历史剧本「势力标注」—— 分级判定 / 领土聚合 / 标签文本全是纯函数，
 // 放在 utils 里以便 Node 侧直接测（渲染里只剩「取数据 + 调 drawStyledLabel」）。
 import {
-  polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
+  polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE, isPlaceholderProvinceName,
 } from '../utils/polityLabels';
-import { drawStyledLabel } from '../utils/labelStyles';
+import { drawStyledLabel, fontString } from '../utils/labelStyles';
+// 文字避让（2026-10-26）：四档标签（势力/省/城镇/河）共用一次排布 —— 纯函数，画布与导出同源
+import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
 // 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
 import {
   scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
@@ -9103,19 +9105,9 @@ function drawRivers(c) {
       c.stroke(path);
     }
   }
-  // 河流名（2026-10-25）：只标有名字的河；低缩放不标，放大后按流量取前 N 条。
+  // 河流名（2026-10-25 分级；2026-10-26 起并入统一避让排布 `getLabelPlan`）
   // 默认关闭（自动地名多为 FMG 英文名），由「图层 → 自动地名」控制。
-  if (showPlaceNames.value) {
-    const riverLabels = collectRiverLabels(list, {
-      tier: riverLabelTier(cameraScale.value),
-      rect: { minX, minY, maxX, maxY },
-    });
-    for (const lb of riverLabels) {
-      drawStyledLabel(c, lb.name, lb.x, lb.y - px(4), riverLabelTextStyle(), {
-        align: 'center', baseline: 'middle', screenScale: cameraScale.value,
-      });
-    }
-  }
+  if (showPlaceNames.value) drawPlannedLabels(c, ['river']);
   c.restore();
 }
 
@@ -10632,20 +10624,9 @@ function drawBurgs(c) {
       }
     }
   }
-  // 城镇名（2026-10-25）：按缩放分级，避免 617 个名字糊满画布。
-  // 低缩放只标首都；放大后逐步放出人口靠前的城镇。样式与 SVG 导出同一份。
-  // 默认关闭（自动地名多为 FMG 英文名），用户需要时在「图层 → 自动地名」打开。
-  if (showPlaceNames.value) {
-    const burgLabels = collectBurgLabels(burgs.value, {
-      tier: burgLabelTier(cameraScale.value),
-      rect: { minX, minY, maxX, maxY },
-    });
-    for (const lb of burgLabels) {
-      drawStyledLabel(c, lb.name, lb.x, lb.y + px(10), burgLabelTextStyle({ capital: lb.capital }), {
-        align: 'center', baseline: 'middle', screenScale: cameraScale.value,
-      });
-    }
-  }
+  // 城镇名（2026-10-25 分级；2026-10-26 起并入统一避让排布 `getLabelPlan`）：
+  // 与河名/省名/势力名**互不重叠**，放不下的直接不标（参考图的制图惯例）。
+  if (showPlaceNames.value) drawPlannedLabels(c, ['capital', 'town']);
 }
 function formatPopulation(pop) {
   if (!pop) return '—';
@@ -10928,43 +10909,165 @@ function polityLabelSources() {
 function drawPolityLabels(c) {
   if (!showPolityLabels.value) return;
   if (viewMode.value !== 'scenario') return;
-  const terrain = rawTerrain();
-  if (!terrain || !terrain.length) return;
+  // 「该写哪些字、写在哪、放不放得下」全部由 `getLabelPlan()` 统一判定（与城镇/河名同一份排布）
+  drawPlannedLabels(c, ['province', 'polity']);
+}
+
+// ══════════════════════════════════════
+// 文字层：统一避让排布（2026-10-26）
+// ══════════════════════════════════════
+//
+// 参考图的高信息密度靠的是「放不下就不标」，而我们是四档标签各画各的：
+// 势力名、省名、617 个城镇名、160 个河名分属四个绘制段，全都能画在同一处。
+// 这里把四档**合成一次排布**（`utils/labelLayout.js` 纯函数），结论按「相机 + 数据引用」缓存：
+// 相机没动、数据没换 → 每帧只是把结论画出来，不重新 measureText。
+let labelPlanCanvas = null;
+let labelPlanCache = { refs: null, nums: null, plan: [] };
+
+function measureTextWithStyle(text, style) {
+  if (!labelPlanCanvas) labelPlanCanvas = document.createElement('canvas');
+  const mc = labelPlanCanvas.getContext('2d');
+  mc.font = fontString(style, 1);          // 所有地图标签都是 lockScreenSize:true → 屏幕字号
+  const size = Number(style && style.fontSize) || 12;
+  // +6 / +2 是**留缝**：纯字宽会把两个标签贴成一行，看起来像一个词
+  return { w: mc.measureText(String(text)).width + 6, h: size * 1.3 + 2 };
+}
+
+/** 四档标签的候选与排布结论（世界坐标）。缓存键 = 相机数值 + 数据引用 */
+function getLabelPlan() {
+  if (viewMode.value !== 'scenario') return [];
+  const baseMapRef = baseMap.value;
+  const terrainRef = rawTerrain();
+  const burgsRef = baseMapRef?.burgs || null;
+  const riversRef = baseMapRef?.rivers || null;
+  const ownRef = selectedScenario.value?.ownership || null;
+  // ⚠️ `timeline.value` 必须进缓存键：势力**改名**不改 ownership/terrain 的引用，
+  //    漏了它就会出现「撤销后画布上还是旧名字」（test_73 f3 实测）。
+  const refs = [terrainRef, burgsRef, riversRef, ownRef, selectedPolity.value,
+    timeline.value, selectedScenario.value];
+  const nums = [
+    cameraX.value, cameraY.value, cameraScale.value, cw(), ch(),
+    showLabels.value ? 1 : 0, showPlaceNames.value ? 1 : 0,
+    showPolityLabels.value ? 1 : 0, showBurgs.value ? 1 : 0,
+    tlEra.value, tlDate.value, tlDiffMode.value,
+  ];
+  const sameRefs = labelPlanCache.refs && labelPlanCache.refs.length === refs.length
+    && refs.every((r, i) => r === labelPlanCache.refs[i]);
+  const sameNums = labelPlanCache.nums && labelPlanCache.nums.length === nums.length
+    && nums.every((n, i) => n === labelPlanCache.nums[i]);
+  if (sameRefs && sameNums) return labelPlanCache.plan;
 
   const scale = cameraScale.value;
-  const tier = polityLabelTierNow.value;
-  const { ownerRefOf, polityOfEra } = polityLabelSources();
-
-  // 视口裁剪（标签是屏幕空间的，画在屏幕外纯属浪费 measureText）
+  const W = cw();
+  const H = ch();
+  const toScreen = (x, y) => ({ x: cameraX.value + x * scale, y: cameraY.value + y * scale });
   const tl0 = screenToWorld(0, 0);
-  const br0 = screenToWorld(cw(), ch());
-  const pad = px(40);
-  const inView = (x, y) => x >= tl0.x - pad && x <= br0.x + pad && y >= tl0.y - pad && y <= br0.y + pad;
+  const br0 = screenToWorld(W, H);
+  const worldRect = { minX: tl0.x - px(24), minY: tl0.y - px(24), maxX: br0.x + px(24), maxY: br0.y + px(24) };
+  const cands = [];
 
-  // 「该写哪些字、写在哪」由 `utils/scenarioLabels.js` 统一判定（**SVG 导出共用同一份**）——
-  // 这里只负责：把省份准备成环顶点（含渲染口径的平滑）、把结论画出来。
-  // ⚠️ 只取主环（rings[0]）平滑：标签只需要一个落点，全环平滑在大省份上是白付 Chaikin 成本。
-  const provinces = [];
-  for (const prov of terrain) {
-    if (!prov) continue;
-    const r0 = provinceRings(prov)[0];
-    provinces.push({
-      id: prov.id,
-      name: prov.name,
-      rings: r0 ? [{ kind: r0.kind, points: ringPointsForRender(r0) }] : [],
+  // ① 省名 / 势力名（占位名不上图：真实项目 415 个全叫「新省份 N」）
+  if (showPolityLabels.value && terrainRef && terrainRef.length) {
+    const provinces = [];
+    for (const prov of terrainRef) {
+      if (!prov) continue;
+      const r0 = provinceRings(prov)[0];
+      provinces.push({
+        id: prov.id,
+        name: prov.name,
+        rings: r0 ? [{ kind: r0.kind, points: ringPointsForRender(r0) }] : [],
+      });
+    }
+    const { ownerRefOf, polityOfEra } = polityLabelSources();
+    const labels = collectScenarioLabels({
+      provinces,
+      tier: polityLabelTierNow.value,
+      scale,
+      ownerRefOf,
+      polityOfEra,
+      highlightOwnerId: selectedPolity.value?.id || null,
     });
+    for (const lb of labels) {
+      if (lb.kind === 'province' && isPlaceholderProvinceName(lb.text)) continue;
+      const sp = toScreen(lb.x, lb.y);
+      cands.push({
+        id: lb.kind + ':' + lb.text,
+        kind: lb.kind,          // 'province' | 'polity'
+        text: lb.text,
+        x: sp.x, y: sp.y,
+        style: lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE,
+        highlight: lb.highlight,
+        // 省名放不下时在面内挪一点（势力名优先级更高，会先占住形心）
+        placements: lb.kind === 'province' ? AREA_LABEL_PLACEMENTS : undefined,
+      });
+    }
   }
 
-  const labels = collectScenarioLabels({
-    provinces, tier, scale, ownerRefOf, polityOfEra,
-    highlightOwnerId: selectedPolity.value?.id || null,
-  });
+  // ② 城镇名（圆点右侧优先，放不下换左/上/下；圆点本身是障碍物）
+  if (showPlaceNames.value && showBurgs.value && burgsRef && burgsRef.length) {
+    for (const lb of collectBurgLabels(burgsRef, { tier: burgLabelTier(scale), rect: worldRect })) {
+      const sp = toScreen(lb.x, lb.y);
+      const r = (lb.capital ? 5.5 : 2.5) * 1.4;   // 屏幕像素：圆点/星标半径 + 余量
+      cands.push({
+        id: 'burg:' + lb.id,
+        kind: lb.capital ? 'capital' : 'town',
+        text: lb.name,
+        x: sp.x, y: sp.y,
+        style: burgLabelTextStyle({ capital: lb.capital }),
+        placements: [
+          { mode: 'right', gap: r }, { mode: 'left', gap: r },
+          { mode: 'above', gap: r }, { mode: 'below', gap: r + 2 },
+          { mode: 'right', gap: r, dy: -11 }, { mode: 'left', gap: r, dy: 11 },
+        ],
+        obstacles: [{ x0: sp.x - r, y0: sp.y - r, x1: sp.x + r, y1: sp.y + r }],
+      });
+    }
+  }
 
-  for (const lb of labels) {
-    if (!inView(lb.x, lb.y)) continue;
-    const style = lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE;
-    // 选中势力高亮：与色板/状态栏的「已选势力」呼应，方便确认自己正在改谁
-    drawStyledLabel(c, lb.text, lb.x, lb.y, style, { screenScale: scale, highlight: lb.highlight });
+  // ③ 河名（贴河上方，其次下方 —— 河名压河是最难读的一种）
+  if (showPlaceNames.value && showRiverBase.value && riversRef && riversRef.length) {
+    for (const lb of collectRiverLabels(riversRef, { tier: riverLabelTier(scale), rect: worldRect })) {
+      const sp = toScreen(lb.x, lb.y);
+      cands.push({
+        id: 'river:' + lb.id,
+        kind: 'river',
+        text: lb.name,
+        x: sp.x, y: sp.y,
+        style: riverLabelTextStyle(),
+        placements: [{ mode: 'above', gap: 5 }, { mode: 'below', gap: 5 }, { mode: 'right', gap: 7 }],
+      });
+    }
+  }
+
+  const placed = layoutLabels(cands, {
+    measure: (text, cand) => measureTextWithStyle(text, cand.style),
+    bounds: { minX: 6, minY: 6, maxX: W - 6, maxY: H - 6 },
+    pad: 3,
+  });
+  const plan = placed.map((p) => ({
+    kind: p.kind,
+    text: p.text,
+    style: p.style,
+    highlight: !!p.highlight,
+    wx: (p.cx - cameraX.value) / scale,
+    wy: (p.cy - cameraY.value) / scale,
+  }));
+  labelPlanCache = { refs, nums, plan };
+  return plan;
+}
+
+/** 画出排布结论里的指定档位（世界坐标 → drawStyledLabel） */
+function drawPlannedLabels(c, kinds) {
+  const plan = getLabelPlan();
+  if (!plan.length) return;
+  for (const lb of plan) {
+    if (kinds.indexOf(lb.kind) < 0) continue;
+    drawStyledLabel(c, lb.text, lb.wx, lb.wy, lb.style, {
+      align: 'center',
+      baseline: 'middle',
+      screenScale: cameraScale.value,
+      highlight: lb.highlight,
+    });
   }
 }
 

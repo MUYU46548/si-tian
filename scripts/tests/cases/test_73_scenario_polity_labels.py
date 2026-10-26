@@ -141,10 +141,12 @@ def sub_source_guards(cdp):
     if _re.search(r'visibleRatio\s*[<>]=?\s*[0-9]', sm):
         bad.append('ScenarioMap 里出现了对 visibleRatio 的裸阈值比较（应调用 polityLabelTier）')
 
-    # ② 渲染入口**两处**都要接（主渲染 + 导出）—— 少一处导出图就与画布不一致
+    # ② 渲染入口**必须接上单一排布链路**（2026-10-26 重构：四档标签共用一次避让排布）：
+    #    drawPolityLabels → drawPlannedLabels → getLabelPlan（内部 collectScenarioLabels）
+    #    → drawStyledLabel。判据仍落在**函数体**上，不退化成"文件里出现过某符号"。
     calls = len(_re.findall(r'drawPolityLabels\(', sm))
-    if calls < 3:      # 1 处定义 + 2 处调用
-        bad.append(f'drawPolityLabels 只有 {calls} 处出现（应为 1 定义 + 主渲染 + 导出 ≥3）')
+    if calls < 2:      # 1 处定义 + 1 处主渲染调用
+        bad.append(f'drawPolityLabels 只有 {calls} 处出现（应为 1 定义 + 主渲染 ≥2）')
 
     # ③ 组件里不许自己实现「档位 → 文本」（必须在纯函数里）
     if _re.search(r"(?:tier|polityLabelTierNow)\s*===\s*'abbr'", sm):
@@ -152,6 +154,8 @@ def sub_source_guards(cdp):
     # 🔴 2026-10-01：标签判定抽到 `utils/scenarioLabels.js`（画布 + PNG + **SVG 导出**三处共用）。
     #   判据随之升级 —— 不再是「组件函数体里出现了这两个调用」，而是
     #   ① 单源模块里真有 文本选择 / 领土聚合；② 画布与**导出链**都调 collectScenarioLabels。
+    #   ⚠️ 2026-10-26：画布侧多了"避让排布"这一层（`utils/labelLayout.js`），
+    #      collectScenarioLabels 从 drawPolityLabels 挪进了 getLabelPlan —— 守卫跟着挪，意图不变。
     labels_mod = _code_only(_read('src/renderer/src/utils/scenarioLabels.js'))
     export_mod = _code_only(_read('src/renderer/src/composables/useScenarioExport.js'))
     for sym in ['labelTextFor(', 'aggregateTerritories(', 'ringAreaCentroid(']:
@@ -160,11 +164,14 @@ def sub_source_guards(cdp):
     body = _function_body(sm, 'drawPolityLabels')
     if body is None:
         bad.append('ScenarioMap 找不到 drawPolityLabels()（渲染函数改名后守卫要同步）')
-    else:
-        if 'collectScenarioLabels(' not in body:
-            bad.append('drawPolityLabels 没走 collectScenarioLabels（画布又自己算了一套标签）')
-        if 'drawStyledLabel(' not in body:
-            bad.append('drawPolityLabels 没有走统一文本渲染入口 drawStyledLabel')
+    elif 'drawPlannedLabels(' not in body:
+        bad.append('drawPolityLabels 没走统一排布 drawPlannedLabels（画布又各画各的）')
+    plan_body = _function_body(sm, 'getLabelPlan')
+    if plan_body is None or 'collectScenarioLabels(' not in plan_body:
+        bad.append('getLabelPlan 没走 collectScenarioLabels（画布又自己算了一套标签）')
+    draw_body = _function_body(sm, 'drawPlannedLabels')
+    if draw_body is None or 'drawStyledLabel(' not in draw_body:
+        bad.append('drawPlannedLabels 没有走统一文本渲染入口 drawStyledLabel')
     if 'collectScenarioLabels(' not in export_mod:
         bad.append('导出链没接 collectScenarioLabels（导出的图会没有势力名 —— A8 的主要读物）')
     if "from '../utils/scenarioLabels'" not in sm:

@@ -317,3 +317,22 @@
     全量 **153/153**（`build/_sea_full.log`）。截图 `docs/assets/terrain-sea-20261026/`。
   - 与参考图仍差：省界偏粗偏灰（参考图是细棕线）、地名/注记（下一批）、
     老导入图的海深只有渐变没有等深线（若要，得用 `landFeatures` 的高精度环另建一张深场）。
+
+- **造陆 v5.1：文字避让排布（2026-10-26）**：
+  参考图的信息密度不是"多画字"，而是**放不下就不标**。我们有分级（`polityLabels` /
+  `scenarioTextPlacement`），却没有避让：2× 下 150 个城镇名、415 个省名、160 条河名各画各的，必然互相压。
+  - 新增 `utils/labelLayout.js`（纯函数）：优先级 polity > capital > province > town > river；
+    落点支持 `center / right / left / above / below`（贴圆点右侧不用预先知道字宽）；
+    障碍物（城镇圆点）与已放标签共用屏幕空间网格哈希，但**障碍物不加缝**；全撞就丢。
+  - 画布：`getLabelPlan()` 把四档合成**一次**排布（世界→屏幕→世界），按「相机数值 + 数据引用」缓存；
+    `drawPolityLabels` / `drawBurgs` / `drawRivers` 各取自己那一档画。占位省名（`新省份 N`）在这一层过滤。
+  - 导出：同一引擎、同一候选集，`exportLabelMeasure` 与画布同口径（同字族、同"字宽 + 余量"），
+    放不下同样不画 —— 否则就是"画布放得下、导出放不下"的两套结论。
+  - 🔴 三个坑：① **障碍物也加了 pad** → 城镇名被自己的圆点挡掉（模拟里 3 个一个都放不下）——
+    障碍物是精确几何，pad 必须为 0；② 缓存键漏了 `timeline` → 势力**改名**撤销后画布仍是旧名
+    （`test_73` f3 红；`refs` 里补 timeline / selectedScenario）；③ 省名只试形心 → 势力名先占了同一形心，
+    整片省名被丢（`test_100` 的 PNG 一个省名都没有）→ 补 `AREA_LABEL_PLACEMENTS`（形心 + 上下左右挪 30~44）。
+  - 判据：新增 `test_label_layout` 9 条（Node 共 **64** 个）；`test_73` / `test_100` / `test_149` 绿
+    （`test_149` 增"画布排布确实含 capital/polity"探针 + `SITIAN_SHOT_DIR` 画布截图，实测 4 个标签零重叠）；
+    全量 **153/153**（`build/_labels_full.log`）。
+  - 仍差：文字还没有"沿路径排"（山脊/河流名仍是水平字），地形注记（山系/海域名）还没有数据模型 —— 下一批。

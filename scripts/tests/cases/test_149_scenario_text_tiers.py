@@ -11,7 +11,7 @@
 判据：
   1. 导出 SVG 含首都名、不含非首都城镇名（出版档 = capitalOnly）；
   2. 含流量最大的河名；无名河不出现；
-  3. 城镇名在点下方（y+10）、河流名在河中点上方（y-4）；
+  3. 城镇名贴着点、河流名贴着河道中点（**方位**由避让排布决定：右侧优先，放不下换左/上/下）；
   4. 源码守卫：ScenarioMap 与 useScenarioExport 都引用 `scenarioTextPlacement`。
 """
 import json
@@ -93,6 +93,10 @@ def run(cdp):
       if (!fn) return JSON.stringify({ __err__: '没有 buildScenarioSVG' });
       const svg = String(fn({ era: 0, date: { y: 2000, m: null, d: null } }).svg || '');
       // 关掉「自动地名」后再导一次：默认关闭时不应出现 FMG 英文名
+      // 画布侧：同一套候选（避让排布）里必须真的有城镇/河/势力三类 —— 只测导出会漏掉画布接线。
+      // ⚠️ 必须在**关掉自动地名之前**取：排布缓存按开关值失效，关掉之后自然只剩势力名。
+      const plan = (typeof SM.getLabelPlan === 'function') ? SM.getLabelPlan() : [];
+      const planKinds = plan.map((p) => p.kind);
       SM.showPlaceNames = false;
       const svgOff = String(fn({ era: 0, date: { y: 2000, m: null, d: null } }).svg || '');
       const pick = (text) => {
@@ -110,6 +114,13 @@ def run(cdp):
         hasSmallRiver: svg.indexOf('>小河<') >= 0,
         offHasCapital: svgOff.indexOf('>首都甲<') >= 0,
         offHasRiver: svgOff.indexOf('>大河<') >= 0,
+        planKinds,
+        diag: {
+          place: !!SM.showPlaceNames, burgs: !!SM.showBurgs,
+          nBurgs: ((SM.baseMap && SM.baseMap.burgs) || []).length,
+          nRivers: ((SM.baseMap && SM.baseMap.rivers) || []).length,
+          scale: SM.cameraScale,
+        },
       });
     })()"""
     ok, out = eval_json(cdp, build.replace('__SM__', SM), required=('svgLen',), desc='f1 构建导出 SVG')
@@ -127,14 +138,27 @@ def run(cdp):
         fails.append('导出 SVG 混进非前 12 的河名')
     if out.get('offHasCapital') or out.get('offHasRiver'):
         fails.append('关掉「自动地名」后导出仍有城镇/河流名（默认关闭没生效）')
-    # 位置：城镇 y+10、河流 y-4
-    if out.get('capital1') and 'y="230"' not in out['capital1']:
-        fails.append(f'城镇名应在点下方 y+10：{out.get("capital1")}')
-    if out.get('bigRiver') and 'y="346"' not in out['bigRiver']:
-        # 大河中点按长度：折线 (150,350)-(400,360)-(650,350)，长度中点约 y=360? 实际取 360/2 -> 355
-        # 这里只断言有 y 属性且不是 0，避免写死错误中点；精确中点由单测覆盖
-        if 'y="' not in out['bigRiver']:
-            fails.append('河流名缺 y 坐标')
+    # 画布侧：避让排布的结论里要真的有城镇与势力名。
+    # ⚠️ 不含 river：该缩放下 `riverLabelTier` 刻意返回 -1（低缩放不标河名），导出档才标。
+    kinds = out.get('planKinds') or []
+    for k in ('capital', 'polity'):
+        if k not in kinds:
+            fails.append(f'画布标签排布里没有 {k}（kinds={kinds}, diag={out.get("diag")}）')
+    # 位置：城镇名贴着自己的点、河名贴着河道中点。
+    # ⚠️ 2026-10-26 起落点由**避让排布**决定（右侧优先，放不下换左/上/下），
+    #    不再是固定的 y+10 —— 所以判据从"精确坐标"改成"离锚点足够近"；
+    #    精确落点/换位规则由 `scripts/tests/unit/test_label_layout.js` 覆盖。
+    def _attrs(blob):
+        import re as _re2
+        return {k: float(v) for k, v in _re2.findall(r'([a-z-]+)="(-?[0-9.]+)"', blob or '')}
+    if out.get('capital1'):
+        a = _attrs(out['capital1'])
+        if not (240 <= a.get('x', -1) <= 340) or abs(a.get('y', 0) - 220) > 24:
+            fails.append(f'城镇名应贴在点附近（锚点 260,220）：{out.get("capital1")}')
+    if out.get('bigRiver'):
+        a = _attrs(out['bigRiver'])
+        if abs(a.get('y', 0) - 355) > 24:
+            fails.append(f'河流名应在河道中点附近（≈355）：{out.get("bigRiver")}')
 
     sm_src = _read('src/renderer/src/components/ScenarioMap.vue')
     ex_src = _read('src/renderer/src/composables/useScenarioExport.js')
@@ -145,7 +169,36 @@ def run(cdp):
 
     if fails:
         return False, '；'.join(fails)[:900] + ' | 实测：' + json.dumps(out, ensure_ascii=False)[:600]
+
+    # 可选：把画布存一张（SITIAN_SHOT_DIR），人眼看"避让后到底什么样"
+    shot_dir = os.environ.get('SITIAN_SHOT_DIR')
+    if shot_dir:
+        import base64
+        import pathlib
+        from lib.cdp import fetch_string
+        try:
+            # 截图前把「自动地名」打开并重绘（上面为了测导出翻转，已经把它关掉了）
+            cdp.eval("(() => { const SM = %s; SM.showPlaceNames = true;"
+                     " if (SM.render) SM.render(); return 'ok'; })()" % SM)
+            import time as _t
+            _t.sleep(0.4)
+            cdp.eval("(() => { const cv = document.querySelector('.scenario-map-container canvas');"
+                     " window.__SHOT__ = cv ? cv.toDataURL('image/png') : ''; return 'ok'; })()")
+            data_url = fetch_string(
+                cdp,
+                "window.__SHOT__ ? window.__SHOT__.length : -1",
+                lambda i, j: "window.__SHOT__.slice(%d,%d)" % (i, j),
+                chunk=262144, desc='标签画布截图')
+            if isinstance(data_url, str) and data_url.startswith('data:image'):
+                out_dir = pathlib.Path(shot_dir)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / 'labels-canvas.png').write_bytes(
+                    base64.b64decode(data_url.split(',', 1)[-1]))
+        except Exception:
+            pass
+
     return True, (
         f'SVG {out.get("svgLen")}B：首都甲/首都丙在、非首都乙不在；大河在、小河不在；'
-        f'城镇名 y+10、河流名 y-4；画布/导出共用 scenarioTextPlacement'
+        f'城镇名贴点旁、河名贴河道（方位由避让排布决定）；'
+        f'画布排布含 {out.get("planKinds")}；画布/导出共用 scenarioTextPlacement'
     )
