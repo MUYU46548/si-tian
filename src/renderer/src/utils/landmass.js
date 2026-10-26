@@ -848,6 +848,15 @@ export function generateLandmass(params, bbox) {
       },
     },
   );
+  // 网格坐标**取到两位小数**：合成出来的点是 (-755.6471868676042, …) 这种全精度浮点，
+  // 序列化进项目文件时一个点要 30+ 个字符（实测 19.8k 点 = 847KB）。两位小数足够表达
+  // 7~9 单位的格距，体积直接砍掉一半以上。
+  if (hm) {
+    for (const pt of hm.grid.points) {
+      pt[0] = Math.round(pt[0] * 100) / 100;
+      pt[1] = Math.round(pt[1] * 100) / 100;
+    }
+  }
   const tTerrain = now() - t0;
 
   // ── ⑤b **多尺度丘陵**（第四轮的核心改动）：把"穹顶 + 平行脊线"的坡面打散成
