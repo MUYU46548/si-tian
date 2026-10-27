@@ -111,12 +111,13 @@ export function detailCaps(detail) {
 /**
  * 字号系数：放大时**小幅**变大（不是按比例放大 —— 那会把画布撑爆）。
  *
- * `ratio=0.6`（near 上沿）→ 1.00；`ratio=0.1`（放大 6 倍）→ ≈1.37；`ratio=0.02` → 封顶 1.55。
- * 缩小到整图以外时略收（下限 0.95）：远看时字略小一点，给地图让位。
- * 指数 0.2 是从观感调的：0.1 太肉（放大几乎不变），0.5 太冲（放大 3 倍字翻倍，压满地图）。
+ * 基准 ratio=0.6（near 上沿）→ 1.00；ratio=0.1（放大 6 倍）→ ≈1.38；ratio=0.02 → 上限 1.75。
+ * **下限 1.00**（2026-10-27）：旧值 0.95 会让"缩小后只剩势力名"的那一档再缩 5% ——
+ * 而势力名正是缩小时唯一的读物（用户实测「缩小后几乎看不清字」）。
+ * 缩小时**绝不缩小字号**，只减少层数。
  */
 export function labelFontScale(ratio) {
   const r = cleanRatio(ratio);
   const k = Math.pow(ZOOM_DETAIL_THRESHOLDS.near / r, 0.2);
-  return Math.min(1.55, Math.max(0.95, k));
+  return Math.min(1.75, Math.max(1, k));
 }

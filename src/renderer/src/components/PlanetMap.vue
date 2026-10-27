@@ -273,7 +273,7 @@
         <div class="toolbar-group" title="图层可见性">
           <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="地形总开关：有高度图时以高度图为主表示，没有高度图时显示地形多边形">▣ 地形</button>
           <button :class="{ active: layers.isVisible('planet', 'terrainPolygons') }" @click="layers.toggleLayer('planet', 'terrainPolygons')" title="地形多边形（覆盖物）：有高度图时默认隐藏，打开后**半透明**叠在高度图上，便于对照两者" data-testid="layer-terrain-polygons">▦ 多边形</button>
-          <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="layers.toggleLayer('planet', 'terrainLabels')" title="切换地形名称显示"><Icon name="mountain" :size="13"/> 地名</button>
+          <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="toggleTerrainNameLayer" title="切换地形名称显示（名字来自「地形多边形」的 name；用笔刷涂出来的地形格没有名字）"><Icon name="mountain" :size="13"/> 地名</button>
           <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
           <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）"><Icon name="more-horizontal" :size="13"/> 更多</button>
         </div>
@@ -3256,6 +3256,22 @@ function zoomFit() {
   if (worldBounds.value) {
     const s = renderer.fitView(worldBounds.value);
     zoomPercent.value = Math.round(s * 100);
+  }
+}
+
+/**
+ * 「地名」图层开关（2026-10-27，用户 B2「勾了地形名完全看不见」）。
+ * 地名读的是 `terrain[].name`（地形**多边形**的名字）——笔刷涂的是 `terrainGrid` 色格，
+ * 压根没有名字。没有名字时勾上只会"什么都没发生"，所以这里把原因说出来。
+ */
+function toggleTerrainNameLayer() {
+  layers.toggleLayer('planet', 'terrainLabels');
+  renderer.requestRender();
+  if (!layers.isVisible('planet', 'terrainLabels')) return;
+  const named = (currentMapData.value?.terrain || [])
+    .filter((t) => t && String(t.name || '').trim()).length;
+  if (!named) {
+    setStatus({ toolLabel: '地名层已开，但这张行星图还没有命名地形 —— 地名来自「多边形」的名字，笔刷涂的地形格不带名字' });
   }
 }
 

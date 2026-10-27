@@ -230,10 +230,12 @@ def run(cdp):
             if abs(sp_near - want) > 0.06:
                 fails.append(f'排布字号没跟上系数：near 实测 {sp_near}，应为 {want:.2f}（基准 {base:.2f}）')
 
-    # ⑥ 滞回：near 档内走到 0.62 不掉河名；0.68 才换 mid；再从 mid 0.58 保持、0.5 才回 near
-    if out['nearKeep'].get('detail') != 'near' or int(out['nearKeep'].get('nRiver') or 0) < 1:
-        fails.append(f"滞回失效：near 档内 ratio 0.62 就掉档了（应保持 near，河名不消失）："
-                     f"detail={out['nearKeep'].get('detail')} kinds={out['nearKeep'].get('kinds')}")
+    # ⑥ 滞回：near 档内走到 0.62 不换档；0.68 才换 mid；再从 mid 0.58 保持、0.5 才回 near
+    #    ⚠️ 判据看**档位 + 该档的容量**，不拿"某条河名还在不在"当滞回代理：
+    #    河名是最低优先级，字号变大后它会被避让排布挤掉（那是排布正确行为，不是掉档）。
+    if out['nearKeep'].get('detail') != 'near' or int((out['nearKeep'].get('caps') or {}).get('rivers', -1)) < 0:
+        fails.append(f"滞回失效：near 档内 ratio 0.62 就掉档了（应保持 near，河名档仍开放）："
+                     f"detail={out['nearKeep'].get('detail')} caps={out['nearKeep'].get('caps')} kinds={out['nearKeep'].get('kinds')}")
     if out['toMid'].get('detail') != 'mid':
         fails.append(f"ratio 0.68 应换 mid：{out['toMid'].get('detail')}")
     if out['midKeep'].get('detail') != 'mid':

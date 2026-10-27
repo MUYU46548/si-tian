@@ -1754,6 +1754,15 @@ onMounted(async () => {
     } else if (r && r.reason === 'missing') {
       statusText.value = '上次打开的项目文件已不存在（可能被移动或删除）—— 已回到只读浏览';
       statusKind.value = 'warn';
+    } else if (r && r.reason && r.reason !== 'none' && r.reason !== 'no-api') {
+      // 2026-10-27（用户 F1「重开项目直接没」）：恢复失败此前**完全静默**（except 里吞掉），
+      // 用户看到的就是"项目没了、也没人告诉我为什么"。现在把原因说出来并指路。
+      const msg = `上次的项目没能自动打开（${r.reason}）—— 请到「项目」面板手动打开；这不是数据被删了`;
+      try {
+        window.dispatchEvent(new CustomEvent('sitian:project-warning', { detail: { message: msg } }));
+      } catch (e) { /* 非浏览器环境忽略 */ }
+      statusText.value = msg;
+      statusKind.value = 'warn';
     }
   } catch (e) { /* 静默：恢复失败不能影响启动 */ }
 

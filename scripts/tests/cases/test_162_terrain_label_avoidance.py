@@ -51,7 +51,10 @@ def run(cdp):
         ownerKey: KEY, name: '甲', order: 1, group: 'default',
         era: { roman: 'Ⅰ', label: '甲', startYear: '2000', endYear: '2010' },
         polities: [{ id: 'P1', name: '甲国', color: '#c23b3b' }],
-        ownership: { p162: 'P1' },
+        // ⚠️ 2026-10-27：势力名现在**每一档都画**且优先级高于省名。这里刻意**不给归属**，
+        //    让形心只可能落省名 —— 本用例测的是「地形注记保留区把省名挤开」这一条，
+        //    势力名在场会把形心占走，判据就测不准了。
+        ownership: {},
       });
       // 山系名横穿省形心 (300,300)：这条走廊正是省名想落的地方
       const res = s.applyTerrainLabels(KEY, [{
@@ -62,8 +65,8 @@ def run(cdp):
       if (typeof SM.onBaseMapChange === 'function') await SM.onBaseMapChange();
       SM.tlEra = 0; SM.tlDate = { y: 2000, m: null, d: null };
       SM.showTerrainNames = true;
-      SM.showPolityLabels = true;
-      SM.showPlaceNames = false;      // 只留省名/势力名 + 地形注记，判据干净
+      SM.showPolityLabels = true;     // 图层开着；但本用例没有归属 → 只会出省名
+      SM.showPlaceNames = false;      // 只留省名 + 地形注记，判据干净
       await tick(500);
       // 近景（ratio≈0.25）才会出省名（polityLabelTier 的 close 档）
       const cvs = document.querySelector('.scenario-map-container canvas');

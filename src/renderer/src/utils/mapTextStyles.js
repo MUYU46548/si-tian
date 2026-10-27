@@ -15,7 +15,7 @@
 /** 用户地名（scenario.labels）：浅色字 + 深色描边，落在任何势力色上都读得出 */
 export const SCENARIO_LABEL_DEFAULTS = Object.freeze({
   color: '#e2e8f0',
-  size: 12,
+  size: 14,
   haloColor: '#1B2130',
   haloWidth: 2.5,
   fontFamily: 'sans-serif',
@@ -24,7 +24,7 @@ export const SCENARIO_LABEL_DEFAULTS = Object.freeze({
 /** 标记名（scenario.markers）：比地名小一号，优先用标记自身颜色 */
 export const MARKER_LABEL_DEFAULTS = Object.freeze({
   color: '#e2e8f0',
-  size: 11,
+  size: 12,
   haloColor: '#1B2130',
   haloWidth: 2.5,
   fontFamily: 'sans-serif',
@@ -33,7 +33,7 @@ export const MARKER_LABEL_DEFAULTS = Object.freeze({
 /** 城镇名（baseMap.burgs）：比地名小，首都要更醒目 */
 export const BURG_LABEL_DEFAULTS = Object.freeze({
   color: '#f8fafc',
-  size: 10,
+  size: 12,
   haloColor: '#0b1220',
   haloWidth: 2.5,
   fontFamily: 'sans-serif',
@@ -42,7 +42,7 @@ export const BURG_LABEL_DEFAULTS = Object.freeze({
 /** 河流名（baseMap.rivers）：淡蓝字，避免和城镇名抢 */
 export const RIVER_LABEL_DEFAULTS = Object.freeze({
   color: '#dbeafe',
-  size: 10,
+  size: 12,
   haloColor: '#0b1220',
   haloWidth: 2.5,
   fontFamily: 'sans-serif',
@@ -58,9 +58,9 @@ export const RIVER_LABEL_DEFAULTS = Object.freeze({
  */
 export const TERRAIN_LABEL_DEFAULTS = Object.freeze({
   color: '#3f3222',
-  size: 14,
+  size: 16,
   haloColor: 'rgba(248, 244, 232, 0.92)',
-  haloWidth: 2.0,
+  haloWidth: 2.2,
   fontFamily: 'serif',
 });
 

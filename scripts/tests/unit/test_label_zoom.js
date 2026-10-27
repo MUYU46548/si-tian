@@ -102,17 +102,18 @@ async function main() {
     return seen.join('>') + ' / ' + back.join('>');
   });
 
-  check('z5 字号系数：放大变大、缩小略小、单调且有上下限', () => {
+  check('z5 字号系数：放大变大、缩小时保持 1.0、单调且有上下限', () => {
     const near = labelFontScale(ZOOM_DETAIL_THRESHOLDS.near);   // 0.6
     eq(Number(near.toFixed(2)), 1.0, 'near 上沿 = 1.0');
     const zoomedIn = labelFontScale(0.1);
     const moreIn = labelFontScale(0.02);
     assert(zoomedIn > near, `放大应变大：${zoomedIn}`);
     assert(moreIn >= zoomedIn, '更大不低于前一档（可封顶）');
-    assert(moreIn <= 1.55 + 1e-9, `封顶 1.55：${moreIn}`);
+    assert(moreIn <= 1.75 + 1e-9, `封顶 1.75：${moreIn}`);
+    // 2026-10-27（用户「缩小后几乎看不清字」）：缩小时字号**不缩小**（下限 1.0）——
+    // 这一档只剩势力名，再缩 5% 就是雪上加霜。
     const zoomedOut = labelFontScale(5);
-    assert(zoomedOut < 1, '缩小时略小');
-    assert(zoomedOut >= 0.95 - 1e-9, `下限 0.95：${zoomedOut}`);
+    assert(Math.abs(zoomedOut - 1) < 1e-9, `缩小时保持 1.0：${zoomedOut}`);
     // 单调：ratio 越小（放得越大）字号系数不减
     let prev = 0;
     for (const r of [10, 3, 1.6, 1, 0.6, 0.35, 0.1, 0.02]) {

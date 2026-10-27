@@ -691,8 +691,12 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
       const color = `rgb(${type.base[0]},${type.base[1]},${type.base[2]})`;
       ctx.fillStyle = color;
       ctx.strokeStyle = color;
-      // 同色描边 ≈ 外扩半线宽：既柔化轮廓，也堵住相邻区域圆角内收留下的细缝
-      ctx.lineWidth = cell * 0.9;
+      // 同色描边 ≈ 外扩半线宽：既柔化轮廓，也堵住相邻区域圆角内收留下的细缝。
+      // 🔴 2026-10-27（用户 B1「莫名其妙的阴影」）：旧值是 `cell*0.9`（真实图 = 13 世界单位），
+      //    在 1× 下就是一圈 13px 的彩色光晕 —— 相邻色块互相叠成一团，看起来像阴影。
+      //    缝只有亚像素级，所以取「≈1.2 屏幕像素」并把上限压到 0.9 格。
+      const viewScale = (renderer.getViewTransform && renderer.getViewTransform().scale) || 1;
+      ctx.lineWidth = Math.min(cell * 0.9, Math.max(0.4, 1.2 / Math.max(viewScale, 1e-6)));
       ctx.stroke();
       ctx.fill('evenodd');
     }

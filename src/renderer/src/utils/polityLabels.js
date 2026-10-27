@@ -190,10 +190,13 @@ export const POLITY_LABEL_STYLE = Object.freeze({
   key: 'polity-name',
   name: '势力名',
   fontFamily: 'serif',
-  fontSize: 15,
+  // 🔴 2026-10-27（用户实测「缩小后几乎看不清字」，并贴了 Paradox 参考图）：
+  //    15px 在 1280 宽画布、51% 缩放下只有两个字那么点大 —— 势力名是缩小时**唯一**的读物，
+  //    必须比城镇/河名大一个量级。22px 配 1.0 的下限字号系数（见 `labelZoom.labelFontScale`）。
+  fontSize: 22,
   weight: 'bold',
   color: '#F7F3E8',
-  stroke: { enabled: true, color: '#1B2130', width: 3 },
+  stroke: { enabled: true, color: '#1B2130', width: 3.5 },
   shadow: { enabled: true, color: 'rgba(0,0,0,0.55)', blur: 6 },
   background: { enabled: true, color: '#000000', opacity: 0.32, padding: 4 },
   lockScreenSize: true,
@@ -203,7 +206,8 @@ export const PROVINCE_LABEL_STYLE = Object.freeze({
   key: 'province-name',
   name: '省名',
   fontFamily: 'sans-serif',
-  fontSize: 12,
+  // 12 → 15：与势力名拉开层次，但放大后仍要读得出（旧值在同屏 22px 势力名旁边像脚注）
+  fontSize: 15,
   weight: 'normal',
   color: '#FFFFFF',
   stroke: { enabled: true, color: '#1F2933', width: 3 },

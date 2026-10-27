@@ -37,7 +37,38 @@ export function collectScenarioLabels({
   const out = [];
   if (!Array.isArray(provinces) || !provinces.length) return out;
 
-  // ── 放大档：省名（海域不挂名字，与 `drawProvinces` 的 `rp.kind === 'sea'` 同口径）──
+  // ── 势力名 / 简称：**每一档都画** ──────────────────────────────────────────
+  // 🔴 2026-10-27（用户实测「放大后看不到省名、也看不到势力名」）：
+  //    旧实现在最详档**只**返回省名（势力名被 `labelTextFor(..., 'province')` 返回 ''）
+  //    → 放大到能看省名的那一刻，整张图的国家名集体消失。
+  //    Paradox/EU4 的读法是「国家名永远在，省名放大才加」——所以这里不再互斥。
+  const polityTier = tier === 'province' ? 'polity' : tier;
+  if (polityTier !== 'province') {
+    const items = [];
+    for (const prov of provinces) {
+      if (!prov) continue;
+      const ref = ownerRefOf ? ownerRefOf(prov.id) : null;
+      if (!ref || !ref.owner) continue;
+      const ring = mainRing(prov);
+      if (!ring || ring.kind === 'sea') continue;   // 海不是谁的领土
+      items.push({ key: `${ref.era}|${ref.owner}`, points: ring.points });
+    }
+    const agg = aggregateTerritories(items, (it) => it.key);
+    for (const [key, st] of agg) {
+      if (!labelFitsOnScreen(st.area, scale, minAreaPx.polity)) continue;
+      const sep = key.indexOf('|');
+      const era = Number(key.slice(0, sep));
+      const owner = key.slice(sep + 1);
+      const text = labelTextFor(polityOfEra ? polityOfEra(era, owner) : null, polityTier);
+      if (!text) continue;                          // 查不到势力 → 静默跳过（绝不画 id 上去）
+      out.push({
+        kind: 'polity', text, x: st.cx, y: st.cy, owner, era,
+        highlight: !!highlightOwnerId && highlightOwnerId === owner,
+      });
+    }
+  }
+
+  // ── 最详档：再叠一层省名（海域不挂名字，与 `drawProvinces` 的 `rp.kind === 'sea'` 同口径）──
   if (tier === 'province') {
     for (const prov of provinces) {
       if (!prov) continue;
@@ -49,31 +80,6 @@ export function collectScenarioLabels({
       if (!labelFitsOnScreen(area, scale, minAreaPx.province)) continue;
       out.push({ kind: 'province', text: name, x: cx, y: cy, owner: null, era: -1, highlight: false });
     }
-    return out;
-  }
-
-  // ── 中/小档：势力名 / 简称（领土聚合 → **面积加权**质心）──
-  const items = [];
-  for (const prov of provinces) {
-    if (!prov) continue;
-    const ref = ownerRefOf ? ownerRefOf(prov.id) : null;
-    if (!ref || !ref.owner) continue;
-    const ring = mainRing(prov);
-    if (!ring || ring.kind === 'sea') continue;   // 海不是谁的领土
-    items.push({ key: `${ref.era}|${ref.owner}`, points: ring.points });
-  }
-  const agg = aggregateTerritories(items, (it) => it.key);
-  for (const [key, st] of agg) {
-    if (!labelFitsOnScreen(st.area, scale, minAreaPx.polity)) continue;
-    const sep = key.indexOf('|');
-    const era = Number(key.slice(0, sep));
-    const owner = key.slice(sep + 1);
-    const text = labelTextFor(polityOfEra ? polityOfEra(era, owner) : null, tier);
-    if (!text) continue;                          // 查不到势力 → 静默跳过（绝不画 id 上去）
-    out.push({
-      kind: 'polity', text, x: st.cx, y: st.cy, owner, era,
-      highlight: !!highlightOwnerId && highlightOwnerId === owner,
-    });
   }
   return out;
 }

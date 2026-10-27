@@ -923,8 +923,8 @@
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
         <label class="check-label" title="显示导入的城镇名 / 河流名（FMG 数据多为英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
-        <label class="check-label" title="显示「地形注记」里的山系/海域名（沿走向排字；自己命名的数据，默认开）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" /> 地形名</label>
-        <label class="check-label" title="EU4 式分级标注：放大看省名，缩小看势力名（可简称）"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
+        <label class="check-label" title="显示「地形注记」里的山系/海域名（沿走向排字；名字要自己给：检测山脊或手动画一条，见「地形注记」面板）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
+        <label class="check-label" title="EU4 式分级标注：放大看省名，缩小看势力名（可简称）—— 这一开关同时管两层，关掉则两者都不画"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力/省名</label>
         <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
       <div class="tool-group">
@@ -1886,11 +1886,11 @@ import { widthsBySpeed, resampleSeries } from '../utils/strokeMath';
 // A8（2026-09-26）：历史剧本「势力标注」—— 分级判定 / 领土聚合 / 标签文本全是纯函数，
 // 放在 utils 里以便 Node 侧直接测（渲染里只剩「取数据 + 调 drawStyledLabel」）。
 import {
-  polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE, isPlaceholderProvinceName,
+  polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
 } from '../utils/polityLabels';
 import { drawStyledLabel, fontString, drawTextAlongPath } from '../utils/labelStyles';
 // 沿路径排字（D3，2026-10-26）：山系名沿脊线、河名沿河 —— 纯几何在 utils/textOnPath.js
-import { layoutTextAlongPath, slicePathAroundPoint } from '../utils/textOnPath';
+import { layoutTextAlongPath, slicePathAroundPoint, pathLength } from '../utils/textOnPath';
 // 文字避让（2026-10-26）：四档标签（势力/省/城镇/河）共用一次排布 —— 纯函数，画布与导出同源
 import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
 // 缩放 → 详略档位 / 字号（2026-10-27）：Paradox 式「缩小只看势力名、放大出省名」的唯一判定
@@ -2282,6 +2282,24 @@ function toggleTerrainLabelsPanel() {
 
 function applyTerrainLabelsResult(msg) {
   statusMsg(msg || '地形注记已保存');
+  render();
+}
+
+/**
+ * 「地形名」勾选（2026-10-27 用户 A2/B2：「勾了地形名完全看不见」）。
+ *
+ * 真相：这张底图 `terrainLabels = 0` —— 地形注记是**用户命名**的数据（检测山脊候选或手绘），
+ * 没有名字就没有东西可画。旧界面勾上后**一声不响**，看起来像渲染坏了。
+ * 现在：勾上且一条都没有 → 直接把「地形注记」面板打开并说清下一步。
+ */
+function onTerrainNamesToggle(e) {
+  const on = !!(e && e.target && e.target.checked);
+  if (!on) { render(); return; }
+  const n = (baseMap.value?.terrainLabels || []).length;
+  if (n === 0) {
+    if (baseMapKey.value) terrainLabelsOpen.value = true;
+    statusMsg('这张底图还没有地形注记（0 条）—— 已打开「地形注记」面板：点「检测山脊」或用「画山系 / 画海域 / 点平原」自己画一条，命名后「应用」');
+  }
   render();
 }
 
@@ -2922,6 +2940,32 @@ function toggleRiverSelection(id) {
   const next = has ? cur.filter((x) => x !== id) : [...cur, id];
   setRiverSelection(next, has ? (next[next.length - 1] || null) : id);
   return !has;
+}
+
+/**
+ * 「点选一条河」的唯一落点（2026-10-27 抽出来：mousedown 记账、mouseup 结算、click 兜底
+ * 三条路都走它，避免"点了没反应/选不中"那类三套实现）。
+ */
+function applyRiverPick(id, shift = false) {
+  const r = ((baseMap.value?.rivers) || []).find((x) => x && x.id === id);
+  if (!r) return false;
+  if (shift) {
+    const added = toggleRiverSelection(id);
+    statusMsg(`已${added ? '加选' : '移出'}河流「${r.name || '未命名'}」`
+      + `（当前选中 ${riverSelIds().length} 条）—— Delete 批量删 / 或点「裁到海岸线」`);
+  } else {
+    setRiverSelection([id], id);
+    const imported = String(r.id || '').indexOf('river_') !== 0;
+    statusMsg(`已选中${imported ? '导入' : ''}河流「${r.name || '未命名'}」（${(r.points || []).length} 个点）`
+      + (imported
+        ? ' —— 上面有一条操作栏：删除 / 裁海岸线 / 取消选中（Esc 同效）；导入河不支持拖节点'
+        : ' —— 上面有一条操作栏：删除 / 编辑节点 / 裁海岸线 / 取消选中（Esc 同效）'));
+  }
+  selectedProvince.value = null;
+  showProps.value = false;
+  closeMarkerEditor();
+  render();
+  return true;
 }
 /** 框选状态（Shift+拖动）：`{ x0, y0, x1, y1 }` 世界坐标；null = 没在框 */
 const riverMarquee = ref(null);
@@ -4182,6 +4226,12 @@ function worldToScreen(wx, wy) {
 // Pan & Zoom
 // ═══════════════════════════════════════════
 let isPanning = false;
+/**
+ * 「按下时命中了河、但还没决定要选中」—— 2026-10-27 用户实测「随便一拖就选中河流」。
+ * 旧实现 mousedown 命中就立刻选中并吃掉按下，于是想拖地图查看时只要起点靠近河（10px）就变成选河。
+ * 现在：按下只记候选，**照常进平移**；松手时位移 ≤4px 才算"点选"。
+ */
+let pendingRiverPick = null;
 // 相机移动期（平移 / 滚轮缩放）：标签、聚落、浮雕、小地图这些"读完就够"的层先跳过，
 // 停稳 140ms 再补一帧全量。415 省实测：带这些层的帧 ~23ms，去掉后接近静止帧（5~9ms）。
 let cameraMotion = false;
@@ -4729,6 +4779,12 @@ function onMouseDown(event) {
 
   // 笔刷工具：左键抬高 / 右键降低
   if (tool.value === 'height' && (event.button === 0 || event.button === 2)) {
+    // 2026-10-27（B3「三个都画了，地形仿佛根本没变」）：高度笔刷只改高度图，而画布默认
+    // 「陆海底色」档根本不吃高度 → 涂了完全看不出来。第一次落笔自动切到「地形高度」。
+    if (rasterLayer.value !== 'height') {
+      rasterLayer.value = 'height';
+      statusMsg('已切到「地形高度」图层 —— 高度笔刷的改动只在这档看得见（涂完可用右上「底图图层」换回）');
+    }
     isBrushing = true;
     brushMode = event.button === 0 ? 'raise' : 'lower';
     const rect = canvas.value.getBoundingClientRect();
@@ -4737,6 +4793,12 @@ function onMouseDown(event) {
     return;
   }
   if (tool.value === 'biome' && event.button === 0) {
+    // 群系色只在**底图编辑**视图里露出来（剧本模式被势力归属色整片盖住）—— 涂了没反应
+    // 不是笔刷坏了，是当前视图把它盖住了。落笔时自动切到看得见的那一档。
+    if (viewMode.value !== 'base') {
+      viewMode.value = 'base';
+      statusMsg('已切到「底图编辑」视图 —— 群系色在剧本模式会被势力色盖住（涂完可切回剧本）');
+    }
     isBrushing = true;
     brushMode = 'biome';
     const rect = canvas.value.getBoundingClientRect();
@@ -4745,6 +4807,11 @@ function onMouseDown(event) {
     return;
   }
   if (tool.value === 'culture' && event.button === 0) {
+    // 文化/宗教色由「着色」下拉决定；不切这一档，笔画再对也看不出来
+    if (colorMode.value !== 'culture') {
+      colorMode.value = 'culture';
+      statusMsg('已切到「着色：文化」—— 文化笔刷只在这档看得见');
+    }
     isBrushing = true;
     brushMode = 'culture';
     const rect = canvas.value.getBoundingClientRect();
@@ -4753,6 +4820,10 @@ function onMouseDown(event) {
     return;
   }
   if (tool.value === 'religion' && event.button === 0) {
+    if (colorMode.value !== 'religion') {
+      colorMode.value = 'religion';
+      statusMsg('已切到「着色：宗教」—— 宗教笔刷只在这档看得见');
+    }
     isBrushing = true;
     brushMode = 'religion';
     const rect = canvas.value.getBoundingClientRect();
@@ -4778,47 +4849,21 @@ function onMouseDown(event) {
       const radiusWorld = RIVER_SELECT_HIT_PX / Math.max(1e-6, cameraScale.value);
       const hit = hitTestRiver(list, world0.x, world0.y, radiusWorld, (r) => riverNodesForRender(r));
       if (hit) {
-        // Shift+点 = 加选/移出（多选）；普通点 = 单选（并把多选清掉）
-        if (event.shiftKey) {
-          const added = toggleRiverSelection(hit.id);
-          statusMsg(`已${added ? '加选' : '移出'}河流「${hit.name || '未命名'}」`
-            + `（当前选中 ${riverSelIds().length} 条）—— Delete 批量删 / 或点「裁到海岸线」`);
-        } else {
-          setRiverSelection([hit.id], hit.id);
-          statusMsg(`已选中河流（${(hit.points || []).length} 个点）—— 上面有一条操作栏：`
-            + '删除 / 编辑节点 / 裁海岸线 / 取消（Shift+点可多选，Shift+拖动可框选）');
-        }
-        selectedProvince.value = null;
-        showProps.value = false;
-        riverPressHandled = true;     // 吃掉这次按下：不再进平移，也不要再触发 click 逻辑
-        render();
-        return;
+        // 不在这里选中（2026-10-27）：只记候选，**照常进平移** —— 松手位移 ≤4px 才算点选。
+        // 这样「在河附近按住拖动看地图」不会变成选河，而点一下照旧能选中。
+        pendingRiverPick = { id: hit.id, shift: !!event.shiftKey, x: event.clientX, y: event.clientY };
+      } else {
+        pendingRiverPick = null;
       }
       // 🔴 第五轮（2026-10-17）：Shift + 拖动 = **框选一批河**（用户点名「框选批量删河」）。
       //    只在不命中任何河时生效 —— 命中时 Shift 是"加选这一条"（上面那段）。
-      if (event.shiftKey) {
+      if (!hit && event.shiftKey) {
         riverMarquee.value = { x0: world0.x, y0: world0.y, x1: world0.x, y1: world0.y };
         canvas.value.style.cursor = 'crosshair';
         beginStrokeBase();            // 框选期：底图进基帧，每帧只画框
         statusMsg('框选河流：拖出矩形，松手选中框内的河（Shift+点单条可加选）');
         render();
         return;
-      }
-      // 没点中：给可观测反馈（只在"附近确实有河"时才说，避免每次点空地都刷屏）
-      if (list.length) {
-        let nearest = Infinity;
-        for (const r of list) {
-          const nodes = riverNodesForRender(r);
-          if (!nodes || nodes.length < 2) continue;
-          const d = distanceToPolyline(world0.x, world0.y, nodes);
-          if (d < nearest) nearest = d;
-        }
-        if (Number.isFinite(nearest) && nearest < radiusWorld * 6) {
-          const need = Math.round((radiusWorld - nearest) * cameraScale.value);
-          statusMsg(need > 0
-            ? `没点中河：离最近那条还差 ${Math.max(1, need)} 屏幕像素（再靠近一点，或放大后点）`
-            : '没点中河');
-        }
       }
     }
     // 顶点编辑模式：先判切线手柄，再判顶点
@@ -5246,6 +5291,16 @@ function onMouseUp(event) {
   // ── 河流（2026-10-17）：先收拖动，再落笔迹 ────────────────────────────────────
   // 顺序不能反：拖节点时 `riverDraft` 是空的（mousedown 里已清），
   // 反过来先跑 finishRiverDraft 会白白清一遍状态并打一条误导的回执。
+  // 「按下记候选、松手结算」（2026-10-27）：位移 ≤4px 才算点选；拖动 = 平移，不选中
+  if (pendingRiverPick) {
+    const pick = pendingRiverPick;
+    pendingRiverPick = null;
+    const moved = Math.hypot(event.clientX - pick.x, event.clientY - pick.y);
+    if (moved <= 4) {
+      riverPressHandled = true;   // 随后的 click 不要再当成"点空白/选省"
+      applyRiverPick(pick.id, pick.shift);
+    }
+  }
   if (tool.value === 'river') {
     if (riverDrag.value) {
       commitRiverDrag();
@@ -5644,17 +5699,14 @@ async function onCanvasClick(event) {  if (event.button === 2) {
       (r) => riverNodesForRender(r),
     );
     if (hitRiver) {
-      selectedRiverId.value = hitRiver.id;
-      selectedProvince.value = null;
-      showProps.value = false;
-      closeMarkerEditor();
-      riverActiveNode.value = -1;
-      const isImported = String(hitRiver.id || '').startsWith('imported_');
-      statusMsg(isImported
-        ? `已选中导入河（地图自带，共 ${(hitRiver.points || []).length} 个点）—— 按 Delete 删除这条；导入河不支持拖节点`
-        : `已选中河流（${(hitRiver.points || []).length} 个点）—— 按 Delete 删除 · 拖动可微调 · 双击进河流工具拖节点`);
-      render();
+      applyRiverPick(hitRiver.id, event.shiftKey);
       return;
+    }
+    // 点空白 / 城镇 / 省份 = 取消河流选中（2026-10-27 用户 C3：「特别难取消选中」）。
+    // 旧实现只换 selectedProvince，selectedRiverId 留着 → 河一直高亮、手柄一直在。
+    if (riverSelIds().length) {
+      setRiverSelection([]);
+      statusMsg('已取消河流选中（数据未改；Esc 同效）');
     }
     // 标记命中（2026-10-24）：标记是叠在地形/城镇之上的图标 → 点它就该选中它。
     // 此前这一段缺失 = 标记"放下就再也点不到"（没有面板，也没有任何回执）。
@@ -5970,6 +6022,12 @@ function onKeyDown(event) {
     polySplitPreview.value = null;
     clearSnapMarker();
     clearProvinceSelection();      // Esc 也取消多选（批量条的「取消选择」同效）
+    // Esc 取消河流选中（2026-10-27）：用户实测「选中河流后特别难取消」——
+    // 旧实现只有工具栏行里一个小按钮，按 Esc 什么都不会发生。
+    if (selectedRiver.value || riverSelIds().length) {
+      setRiverSelection([]);
+      statusMsg('已取消河流选中（数据未改）');
+    }
     // 地形注记手绘：Esc 取消采集（几何只在内存草稿里，数据一个字节都没写）
     if (terrainLabelPick.value) {
       terrainLabelPick.value = null;
@@ -9272,7 +9330,10 @@ function riverWidthSeries(river, pts) {
       const end = pickRiverMouthEnd(pts, (x, y) => sampleGridAt(hm, field.dist, x, y), { fallback: 'last' });
       reversed = end === 'first';
     }
-    series = riverWidthFactors(pts, { reversed }).map((f) => base * f);
+    // 🔴 2026-10-27（C2「粗细几乎完全平均」）：线性因子 0.35→1 落到像素口径只差 ~1.5 倍
+    //    （被 1.2~4.6 的区间和归一化一起压平了）。平方后源头只剩 12%，河口仍是满宽 ——
+    //    这样一条河自己能看出"越往下游越宽"，而不只是河与河之间不同。
+    series = riverWidthFactors(pts, { reversed }).map((f) => base * f * f);
   }
   riverWidthSeriesCache.set(pts, series);
   return series;
@@ -9536,8 +9597,11 @@ function drawSelectedRiverHighlight(c) {
       for (let i = 1; i < side.length; i++) c.lineTo(vx(side[i]), vy(side[i]));
       c.stroke();
     }
-    // 节点手柄：主选中才画（"这条河能编辑"的信号由手柄承担，多选的"批"只给两条边线）
-    if (isPrimary) {
+    // 节点手柄：**只在河流工具里、且只对手画的河**画（2026-10-27 用户实测 C3）：
+    //   旧实现只要选中就画几十个方块 —— 而导入河（FMG，85~129 点）**根本不支持拖节点**，
+    //    于是点一下河就满屏"一堆点点"，把河本身盖死。导入河只留两条轮廓线（表示选中）。
+    const handDrawn = String(r.id || '').indexOf('river_') === 0;
+    if (isPrimary && handDrawn && tool.value === 'river') {
       const hs = px(3.2);
       c.strokeStyle = 'rgba(15, 23, 42, 0.9)';
       c.lineWidth = edgeWorld;
@@ -11363,7 +11427,11 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
   const worldRect = { minX: tl0.x - px(24), minY: tl0.y - px(24), maxX: br0.x + px(24), maxY: br0.y + px(24) };
   const cands = [];
 
-  // ① 省名 / 势力名（占位名不上图：真实项目 415 个全叫「新省份 N」）
+  // ① 省名 / 势力名
+  //    🔴 2026-10-27（用户实测 A4「看不到省名，城镇名却可见」）：旧代码在这里**跳过占位名**
+  //    （真实 415 省项目 415 个全叫「新省份 N」）→ 放大到省名档时一个省名都画不出来，
+  //    而 `polityLabels.isPlaceholderProvinceName` 的注释明确写着「画布 → 保留（改名时好定位）」——
+  //    代码与约定相反。现在**画布照约定保留**（导出仍过滤，见 `useScenarioExport`）。
   if (showPolityLabels.value && terrainRef && terrainRef.length) {
     const provinces = [];
     for (const prov of terrainRef) {
@@ -11385,7 +11453,6 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
       highlightOwnerId: selectedPolity.value?.id || null,
     });
     for (const lb of labels) {
-      if (lb.kind === 'province' && isPlaceholderProvinceName(lb.text)) continue;
       const sp = toScreen(lb.x, lb.y);
       cands.push({
         id: lb.kind + ':' + lb.text,
@@ -11486,6 +11553,24 @@ function drawPlannedLabels(c, kinds) {
 const RIVER_NAME_NORMAL_OFFSET = 7;
 
 /**
+ * 沿路径排出来的字在**屏幕上**是否互相压住（2026-10-27）。
+ *
+ * 沿路径推进不重叠 ≠ 屏幕上不重叠：急弯/回环处两个不同弧长的字会落到同一块像素上，
+ * 这正是「河名/山名诡异折叠」的形态。判据只看**非相邻**字对（相邻字本来就该挨着）。
+ */
+function placedCharsOverlap(placed, fontSize) {
+  const list = Array.isArray(placed) ? placed : [];
+  const minGap = Math.max(4, Number(fontSize || 12) * 0.5);
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 2; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      if (Math.hypot(a.x - b.x, a.y - b.y) < minGap) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 河名沿河排字。
  *
  * 为什么不是「把整条河喂给 layoutTextAlongPath」：避让排布已经判定「这个名字放在此处放得下」，
@@ -11505,7 +11590,7 @@ function drawRiverNameAlongPath(c, lb, scale) {
   if (!chars.length) return false;
   // 与排布/绘制同一条字体口径量字（drawStyledLabel 走 fontString；这里只量宽）
   const measure = (ch) => Math.max(2, measureTextWithStyle(ch, style).w - 6);
-  const letterSpacing = 2;
+  const letterSpacing = 2.5;
   const textWidth = chars.reduce((sum, ch) => sum + measure(ch), 0)
     + letterSpacing * Math.max(0, chars.length - 1);
 
@@ -11513,13 +11598,40 @@ function drawRiverNameAlongPath(c, lb, scale) {
   const anchor = { x: cameraX.value + lb.wx * scale, y: cameraY.value + lb.wy * scale };
   const window = slicePathAroundPoint(scr, anchor, textWidth * 1.6);
   if (!Array.isArray(window) || window.length < 2) return false;
+  // 🔴 2026-10-27（用户 A3/C1：「河名有时候会诡异折叠，放大非常多倍才正常」）：
+  //    旧实现只把一小段折线喂给沿路径排字，**不判这段有多弯**。河道在低缩放下被压成
+  //    几十像素，一个 S 弯会让同一串字先右后左地折回来（字叠字）；窗口又随缩放变化，
+  //    所以只在某些倍率下"看起来重叠扭曲"。这里先量**这段的平直度**（净位移/弧长）
+  //    与**最大转角**：不够直就退回水平字 —— 宁可横着，也不要折成一团。
+  const winLen = pathLength(window);
+  if (!(winLen > 1)) return false;
+  const net = Math.hypot(window[window.length - 1].x - window[0].x,
+    window[window.length - 1].y - window[0].y);
+  const straightness = net / winLen;
+  let maxTurn = 0;
+  let prevAngle = null;
+  for (let i = 1; i < window.length; i++) {
+    const a = Math.atan2(window[i].y - window[i - 1].y, window[i].x - window[i - 1].x);
+    if (prevAngle != null) {
+      let d = Math.abs(a - prevAngle);
+      if (d > Math.PI) d = Math.PI * 2 - d;
+      if (d > maxTurn) maxTurn = d;
+    }
+    prevAngle = a;
+  }
+  if (straightness < 0.72 || maxTurn > 1.05) return false;   // 1.05rad ≈ 60°
   const layout = layoutTextAlongPath(lb.text, window, {
     fontSize: style.fontSize,
     letterSpacing,
-    maxTiltDeg: 65,
+    // 50°：45° 的斜河必须还能沿河排（test_156 的判据就是这个角度）；
+    // 再陡的字看起来就像"竖起来"了，交给 `placedCharsOverlap` 兜底。
+    maxTiltDeg: 50,
     measure,
   });
   if (!layout.ok || layout.placed.length < chars.length) return false;
+  // 字与字之间的空间重叠检查：沿路径推进不重叠不代表**屏幕上**不重叠
+  // （急弯处两个不同弧长的字会落到同一块像素上）→ 退回水平字。
+  if (placedCharsOverlap(layout.placed, style.fontSize)) return false;
   const placedWorld = layout.placed.map((p) => ({
     ch: p.ch,
     x: (p.x + Math.sin(p.angle) * RIVER_NAME_NORMAL_OFFSET - cameraX.value) / scale,
@@ -11589,11 +11701,12 @@ function drawTerrainLabels(c) {
     const layout = layoutTextAlongPath(name, scr, {
       fontSize: style.fontSize,
       letterSpacing: kind === 'sea' ? 6 : 2,
-      maxTiltDeg: 70,
+      maxTiltDeg: 55,
       // 每个字的宽度直接量（与 drawStyledLabel 同一条 fontString 口径）
       measure: (ch) => Math.max(2, measureTextWithStyle(ch, style).w - 6),
     });
-    if (layout.ok) {
+    // 折叠退让（2026-10-27，用户「山脉名字问题同河名」）：急弯处字叠字 → 退回水平字
+    if (layout.ok && !placedCharsOverlap(layout.placed, style.fontSize)) {
       const placedWorld = layout.placed.map((p) => ({
         ch: p.ch,
         x: (p.x - cameraX.value) / scale,
