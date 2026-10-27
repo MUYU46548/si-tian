@@ -12,7 +12,8 @@
 | `3eb208e` | **地形注记手动入口**（画山系/画海域/点平原）+ 平原终于会画 | `test_157`：无高度图也能手动；平原画布差 685 像素；3 条 `origin:'user'`；一次 undo 退 1 条；取消/Esc 零落库 |
 | `28173e5` | **SVG 导出带上地形注记** | `test_158`：开=7 处逐字 `rotate` + 平原整名；关=逐字计数 0 / rotate 0 |
 
-当前全量：**158 用例 + 67 个 Node 单测**（`python scripts/tests/run_tests.py`，约 25 分钟）。
+当前全量：**158 用例 + 67 个 Node 单测**（`python scripts/tests/run_tests.py`，约 25 分钟；
+最后一次全绿日志 `build/_final_158b.log`）。
 
 ## 二、现在的地形注记长什么样（改之前必读）
 
