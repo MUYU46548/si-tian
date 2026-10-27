@@ -107,6 +107,46 @@ function svgLabelTextStyle(style, extra = {}) {
   };
 }
 
+/**
+ * 地形注记的**保留走廊**（世界坐标；与画布 `terrainReserveBoxes` 同一口径）。
+ *
+ * 导出里地形注记在排布**之后**才出字，所以必须先把它的位置占住 ——
+ * 否则省名/城镇名会压在山系名上（画布侧 2026-10-27 已按同一条口径排布）。
+ * 沿路径只占中点附近一段（≈ 字宽），不是整条脊线。
+ */
+function terrainReserveWorldBoxes(labels, style) {
+  const out = [];
+  const fs = Number(style && style.fontSize) || 14;
+  const pad = fs * 0.7;
+  for (const lb of (Array.isArray(labels) ? labels : [])) {
+    const name = String((lb && lb.name) || '').trim();
+    const pts = (Array.isArray(lb && lb.points) ? lb.points : [])
+      .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (!name || !pts.length) continue;
+    if (lb.kind === 'plain' || pts.length < 2) {
+      const m = exportLabelMeasure(name, { style });
+      out.push({
+        x0: pts[0].x - m.w / 2 - pad, y0: pts[0].y - m.h / 2 - pad,
+        x1: pts[0].x + m.w / 2 + pad, y1: pts[0].y + m.h / 2 + pad,
+      });
+      continue;
+    }
+    const mid = pts[Math.floor(pts.length / 2)];
+    const textW = Math.max(24, exportLabelMeasure(name, { style }).w - 6);
+    const win = slicePathAroundPoint(pts, mid, textW * 1.4);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of win) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (!Number.isFinite(minX)) continue;
+    out.push({ x0: minX - pad, y0: minY - pad, x1: maxX + pad, y1: maxY + pad });
+  }
+  return out;
+}
+
 export function useScenarioExport({
   store, baseMap, timeline, currentEra, currentYear, diffMode, provinceNames, layerFlags,
   // 地形底图快照（2026-10-27）：ScenarioMap 提供，返回 `{kind, raster, isobaths, coasts}` 或 null。
@@ -292,7 +332,7 @@ export function useScenarioExport({
           //    不透明 `BORDER_COLOR`）。以前这里是 0.6px + opacity 0.6，而画布同一轮
           //    也改成了"不透明 1.1px"—— 不同步就是"导出图比画布淡一半"那种
           //    "两处各写一份"的老毛病（本项目在这上面栽过多次）。
-          fill: 'none', stroke: BORDER_COLOR, 'stroke-width': 1.1, opacity: 1,
+          fill: 'none', stroke: BORDER_COLOR, 'stroke-width': 0.9, opacity: 1,
         }));
       }
       if (seaDs.length) {
@@ -408,6 +448,10 @@ export function useScenarioExport({
       measure: exportLabelMeasure,
       bounds: { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY },
       pad: 2,
+      // 地形注记的走廊先占位（世界坐标）—— 它们在下面才出字，但位置已经定了
+      reserve: flags.terrainNames !== false
+        ? terrainReserveWorldBoxes(baseMap.value?.terrainLabels, terrainLabelTextStyle())
+        : [],
     });
     for (const p of placedLabels) {
       const attrs = svgLabelTextStyle(p.style);

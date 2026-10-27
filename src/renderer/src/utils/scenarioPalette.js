@@ -29,8 +29,14 @@ export function nextProvinceColor(count) {
 export const SEA_FILL = 'rgba(74, 118, 158, 0.42)';
 export const SEA_EDGE = 'rgba(206, 228, 244, 0.75)';
 
-/** 陆地省界色（画布与 SVG 导出共用；海界用 SEA_EDGE + 虚线区分） */
-export const BORDER_COLOR = '#8d8a82';
+/**
+ * 陆地省界色（画布与 SVG 导出共用；海界用 SEA_EDGE + 虚线区分）。
+ *
+ * 2026-10-27：中性灰 `#8d8a82` → **细棕** `#7b5b3f`（用户参照的意大利地形图里省界是
+ * 细棕线，不是灰线；灰线压在地形分带与势力色上发脏，棕线读起来像墨线）。
+ * 必须**不透明**：共边会被相邻两省各描一次，半透明叠加后共边比独边深（旧坑，见 ScenarioMap）。
+ */
+export const BORDER_COLOR = '#7b5b3f';
 
 /**
  * 导出图（SVG / PNG）的「纸面」底色（2026-10-25）。

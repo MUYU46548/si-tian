@@ -116,6 +116,16 @@ export function layoutLabels(candidates, opts = {}) {
     for (const o of c.obstacles) if (o) addBox(o, true);
   }
 
+  // 外部保留区（2026-10-27）：**不是候选标签、但也不许被压住**的东西 ——
+  // 典型是地形注记（山系名沿脊线排的那一条走廊）。它们由调用方按自己的坐标系给框
+  // （画布 = 屏幕像素，导出 = 世界单位），本函数只把它当障碍物。
+  for (const o of (Array.isArray(opts.reserve) ? opts.reserve : [])) {
+    if (!o) continue;
+    const x0 = Number(o.x0), y0 = Number(o.y0), x1 = Number(o.x1), y1 = Number(o.y1);
+    if (![x0, y0, x1, y1].every(Number.isFinite)) continue;
+    addBox({ x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) }, true);
+  }
+
   const order = src.map((c, i) => ({ c, i }))
     .sort((a, b) => (priorityOf(b.c) - priorityOf(a.c)) || (a.i - b.i));
 

@@ -42,7 +42,8 @@ function makeHm(cols, rows, hOf) {
 async function main() {
   const mod = await import('data:text/javascript;base64,'
     + Buffer.from(fs.readFileSync(SRC, 'utf8'), 'utf8').toString('base64'));
-  const { buildSeaDepth, seaBandIndex, smoothSeaField, SEA_DEPTH_LEVELS, SEA_HEIGHT_MIN_SPAN } = mod;
+  const { buildSeaDepth, seaBandIndex, smoothSeaField, SEA_DEPTH_LEVELS, SEA_HEIGHT_MIN_SPAN,
+  buildSeaDepthFromRings } = mod;
 
   check('t1 距岸模式：陆格 t=0，离岸越远 t 越大，ref 来自本图分布', () => {
     // 7×5，左边 2 列是陆（h=30），右边 5 列是海（h=12）
@@ -126,6 +127,56 @@ async function main() {
     eq(t[0], 0, '陆格不变');
     assert(t[1] <= 1 && t[2] <= 1, '海格不越界');
     return `t=${Array.from(t).join(',')}`;
+  });
+
+  // ── 粗格导入图：由高精度陆地环重建海深场（2026-10-27）────────────────────────
+  check('t9 环栅格化：岛内是陆（t=0）、离岸越远 t 越大、场在 (0,1]', () => {
+    // 400×400 的方岛，环 = 四个角（顺时针）
+    const ring = [{ x: 100, y: 100 }, { x: 300, y: 100 }, { x: 300, y: 300 }, { x: 100, y: 300 }];
+    const f = buildSeaDepthFromRings([ring], { step: 4 });
+    assert(f, '应能建出场');
+    eq(f.mode, 'rings', '来源标记');
+    const at = (x, y) => {
+      const c = Math.round((x - f.points[0][0]) / f.step);
+      const r = Math.round((y - f.points[0][1]) / f.step);
+      return f.t[r * f.cols + c];
+    };
+    eq(at(200, 200), 0, '岛心必须是陆（t=0，否则等深线会画到陆地上）');
+    // ⚠️ 取点在**栅格范围内**：环外只扩了 3 格（step×3），380 已经在网格外（会读到 undefined）
+    const near = at(304, 200);
+    const far = at(310, 200);
+    assert(near > 0, `贴岸海格应有深度：${near}`);
+    assert(far > near, `离岸更远应更深：${near} vs ${far}`);
+    let max = 0;
+    for (const v of f.t) if (v > max) max = v;
+    assert(max <= 1 + 1e-9 && max > 0.5, `t 应在 (0,1]：max=${max}`);
+    return `ref=${f.ref.toFixed(2)} step=${f.step} 近=${near.toFixed(2)} 远=${far.toFixed(2)}`;
+  });
+
+  check('t10 环带洞：洞里的水不被填成陆地（偶数奇偶）', () => {
+    const outer = [{ x: 100, y: 100 }, { x: 300, y: 100 }, { x: 300, y: 300 }, { x: 100, y: 300 }];
+    const hole = [{ x: 180, y: 180 }, { x: 220, y: 180 }, { x: 220, y: 220 }, { x: 180, y: 220 }];
+    const f = buildSeaDepthFromRings([outer, hole], { step: 4 });
+    assert(f, '应能建出场');
+    const at = (x, y) => {
+      const c = Math.round((x - f.points[0][0]) / f.step);
+      const r = Math.round((y - f.points[0][1]) / f.step);
+      return f.t[r * f.cols + c];
+    };
+    assert(at(200, 200) > 0, `洞心应是水（t>0），实际 ${at(200, 200)}`);
+    eq(at(140, 200), 0, '环壁上仍是陆');
+    return `洞心=${at(200, 200).toFixed(2)}`;
+  });
+
+  check('t11 退化输入：空环 / 全同点 / 单环两点 / 格数上限 → null 或可读结果', () => {
+    eq(buildSeaDepthFromRings([], {}), null, '空环');
+    eq(buildSeaDepthFromRings([[{ x: 0, y: 0 }]], {}), null, '单点环');
+    eq(buildSeaDepthFromRings([[{ x: 0, y: 0 }, { x: 1, y: 1 }]], {}), null, '两点环');
+    // 极小 maxCells 时放大格距；放不下则老实返回 null（不硬扛成几百万格）
+    const ring = [{ x: 0, y: 0 }, { x: 2000, y: 0 }, { x: 2000, y: 2000 }, { x: 0, y: 2000 }];
+    const tiny = buildSeaDepthFromRings([ring], { step: 1, maxCells: 500 });
+    assert(tiny === null || tiny.cols * tiny.rows <= 500, '不能超格数上限');
+    return `tiny=${tiny ? tiny.cols + 'x' + tiny.rows : 'null'}`;
   });
 
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);

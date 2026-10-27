@@ -44,7 +44,7 @@ function assertNoOverlap(placed, pad = 0) {
 async function main() {
   const mod = await import('data:text/javascript;base64,'
     + Buffer.from(fs.readFileSync(SRC, 'utf8'), 'utf8').toString('base64'));
-  const { layoutLabels, LABEL_PRIORITY } = mod;
+  const { layoutLabels, LABEL_PRIORITY, AREA_LABEL_PLACEMENTS } = mod;
 
   check('t1 同一坐标三个标签：高优先级占位，其余换位或丢弃，任意两个不相交', () => {
     const placed = layoutLabels([
@@ -144,6 +144,33 @@ async function main() {
     eq(placed.length, 1, '同点只放一个');
     eq(placed[0].text, 'AAAA', '先到先得');
     return 'AAAA';
+  });
+
+  check('t10 保留区（reserve）：地形注记走廊里的标签必须让开或丢掉', () => {
+    const cand = { text: '省名', x: 100, y: 100 };
+    const free = layoutLabels([cand], { measure });
+    eq(free.length, 1, '无保留区时应放下');
+    assert(Math.abs(free[0].cx - 100) < 1e-6 && Math.abs(free[0].cy - 100) < 1e-6, '无保留区时应落在原位');
+    // 走廊正好盖住候选落点 → 不许压上去
+    const blocked = layoutLabels([{ ...cand, placements: [{ dx: 0, dy: 0 }] }], {
+      measure,
+      reserve: [{ x0: 60, y0: 90, x1: 140, y1: 110 }],
+    });
+    for (const p of blocked) {
+      const overlaps = !(p.box.x1 <= 60 || p.box.x0 >= 140 || p.box.y1 <= 90 || p.box.y0 >= 110);
+      assert(!overlaps, `压到保留区了：${JSON.stringify(p.box)}`);
+    }
+    // 有备选落点的（省名）应被挪出去而不是丢掉
+    const nudged = layoutLabels([{ ...cand, placements: AREA_LABEL_PLACEMENTS }], {
+      measure,
+      reserve: [{ x0: 60, y0: 90, x1: 140, y1: 110 }],
+    });
+    eq(nudged.length, 1, '有备选落点时应挪开而不是丢');
+    assert(Math.abs(nudged[0].cy - 100) > 1e-6 || Math.abs(nudged[0].cx - 100) > 1e-6, '位置应真的变了');
+    // 脏保留区不抛
+    const dirty = layoutLabels([cand], { measure, reserve: [null, { x0: NaN }, { x0: 1, y0: 1, x1: 2, y1: 2 }] });
+    eq(dirty.length, 1, '脏框只跳过、不影响正常排布（这个候选被小框挡住就该丢）');
+    return `free=1 blocked=${blocked.length} nudged=${nudged.length}`;
   });
 
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);

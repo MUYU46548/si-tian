@@ -300,3 +300,111 @@ export function seaBandIndex(tValue, bands = SEA_DEPTH_BANDS) {
   const v = clamp01(Number.isFinite(tValue) ? tValue : 0);
   return Math.min(b - 1, Math.floor(v * b));
 }
+
+/**
+ * 由**高精度陆地环**推导海深场（2026-10-27；粗格导入图专用）。
+ *
+ * ── 为什么需要它 ────────────────────────────────────────────────────────────
+ * 老 97×45 的 `.map` 导入图格距 **18.3 世界单位**：`extractIsoLines` 在这种格上
+ * 一圈只出十来个像素一段的多边形，等于画不出等深线（`getSeaDetail` 的 spacing 闸门
+ * 因此只给它渐变）。但这类图恰恰**带着高精度海岸线环**（`landFeatures`，实测 20 环 /
+ * 1747 点）—— 有精度的海岸线，就能重建出一张足够细的"离岸距离"场。
+ *
+ * ── 做法（与 `buildSeaDepth` 同一套口径，只是数据源换成环）────────────────────
+ *   ① 把环按**偶数奇偶**扫描线栅格化成细掩膜（`step` 世界单位一格，默认 4）；
+ *   ② 对海格算 8 邻域 Chamfer 距岸距离（源 = 陆格），两遍平滑；
+ *   ③ 按**本场自己的**距岸分布 p70 归一化，`t = 1 - exp(-d/ref)`（与高度图口径逐字一致）。
+ *
+ * @param {Array<Array<{x:number,y:number}|[number,number]>>} rings 陆地环（可多环、可带洞）
+ * @param {{step?:number, maxCells?:number, refQuantile?:number}} [opts]
+ * @returns {{t:Float32Array, cols:number, rows:number, points:Array<[number,number]>,
+ *            step:number, ref:number, seaCells:number, mode:'rings'}|null}
+ *   没有环 / 全陆 / 全海 → null（调用方退回"不画等深线"）。
+ */
+export function buildSeaDepthFromRings(rings, opts = {}) {
+  const src = Array.isArray(rings) ? rings.filter((r) => Array.isArray(r) && r.length >= 3) : [];
+  if (!src.length) return null;
+  const xy = (p) => (Array.isArray(p) ? { x: Number(p[0]), y: Number(p[1]) } : { x: Number(p && p.x), y: Number(p && p.y) });
+  const clean = [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of src) {
+    const ring = [];
+    for (const p of r) {
+      const q = xy(p);
+      if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
+      ring.push(q);
+      if (q.x < minX) minX = q.x;
+      if (q.x > maxX) maxX = q.x;
+      if (q.y < minY) minY = q.y;
+      if (q.y > maxY) maxY = q.y;
+    }
+    if (ring.length >= 3) clean.push(ring);
+  }
+  if (!clean.length || !Number.isFinite(minX)) return null;
+
+  let step = Number(opts.step) > 0 ? Number(opts.step) : 4;
+  const maxCells = Number(opts.maxCells) > 0 ? Number(opts.maxCells) : 250000;
+  // 扩一圈边（海要延伸到环外，否则最外一排格没有"向外"的深度）
+  const pad = step * 3;
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  let cols = 0, rows = 0;
+  // 格数超上限 → 加大格距（最多放 4 次；仍超就老实返回 null，不硬扛）
+  for (let i = 0; i < 4; i++) {
+    cols = Math.max(2, Math.ceil((maxX - minX) / step) + 1);
+    rows = Math.max(2, Math.ceil((maxY - minY) / step) + 1);
+    if (cols * rows <= maxCells) break;
+    step *= 1.5;
+  }
+  if (cols * rows > maxCells) return null;
+
+  const n = cols * rows;
+  const land = new Uint8Array(n);
+  for (let r = 0; r < rows; r++) {
+    const y = minY + r * step;
+    const xs = [];
+    for (const ring of clean) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const yi = ring[i].y, yj = ring[j].y;
+        if ((yi > y) !== (yj > y)) {
+          const t = (y - yj) / (yi - yj);
+          xs.push(ring[j].x + (ring[i].x - ring[j].x) * t);
+        }
+      }
+    }
+    if (xs.length < 2) continue;
+    xs.sort((a, b) => a - b);
+    // 偶数奇偶填：第 1-2 个交点之间是陆地，第 3-4 个之间是陆地……（洞会被自然挖掉）
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const c0 = Math.max(0, Math.ceil((xs[k] - minX) / step - 0.5));
+      const c1 = Math.min(cols - 1, Math.floor((xs[k + 1] - minX) / step - 0.5));
+      for (let c = c0; c <= c1; c++) land[r * cols + c] = 1;
+    }
+  }
+  let landCells = 0;
+  for (let i = 0; i < n; i++) if (land[i]) landCells++;
+  if (!landCells || landCells === n) return null;
+
+  const dist = chamferDistance(n, cols, rows, (i) => land[i] === 1);
+  smoothDistanceField(dist, cols, rows, 2);
+  const FAR = 1e9;
+  const dists = [];
+  let seaCells = 0;
+  for (let i = 0; i < n; i++) {
+    if (land[i]) continue;
+    if (dist[i] > 0 && dist[i] < FAR) { dists.push(dist[i]); seaCells++; }
+  }
+  if (!seaCells) return null;
+  dists.sort((a, b) => a - b);
+  const q = Number.isFinite(opts.refQuantile) ? opts.refQuantile : 0.7;
+  const ref = Math.max(2, quantileSorted(dists, q) || 2);
+  const t = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (land[i]) continue;
+    if (dist[i] > 0 && dist[i] < FAR) t[i] = 1 - Math.exp(-dist[i] / ref);
+  }
+  const points = new Array(n);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) points[r * cols + c] = [minX + c * step, minY + r * step];
+  }
+  return { t, cols, rows, points, step, ref, seaCells, mode: 'rings' };
+}

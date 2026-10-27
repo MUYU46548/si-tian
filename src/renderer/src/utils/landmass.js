@@ -41,6 +41,8 @@ import { inciseByFlow } from './terrainErosion';
 import { traceRivers, clipPolylineToLand } from './riverTrace';
 import { flowToDischargeEquivalent, smoothRiverLine } from './riverRender';
 import { buildRiverPaths } from './riverChains';
+// 逐点宽度：流量按弧长投到平滑点列 + 汇流台阶（纯函数，2026-10-27）
+import { flowAlongSmoothedPath, applyConfluenceSteps } from './riverWidths';
 
 export const LANDMASS_VERSION = 4;
 
@@ -974,7 +976,13 @@ export function generateLandmass(params, bbox) {
       if (straightness > 0.82) continue;
       // 逐点汇流量（`buildRiverPaths` 的链点自带 `flow`）—— 落库时转成逐点宽度，
       // 否则整条河只有一个 `width`，源头和河口一样粗（用户参照的意大利图是"越往下游越宽"）。
-      const flows = ch.points.map((q) => Number(q.flow) || ch.flow || 2);
+      //
+      // 🔴 2026-10-27：流量必须**与裁剪后的点列对齐**。旧实现直接 `ch.points.map(...)`，
+      //    而 `pts` 已被 `clipPolylineToLand` 裁掉两端 —— 两数组不同长，后面按比例采样时
+      //    整条河的流量错位（河口取到 ~90% 处的流量），汇流台阶也跟着挪位。
+      const flowByKey = new Map();
+      for (const q of ch.points) flowByKey.set(`${q.x},${q.y}`, Number(q.flow) || ch.flow || 2);
+      const flows = pts.map((q) => flowByKey.get(`${q.x},${q.y}`) || ch.flow || 2);
       pick.push({ points: pts, flow: Math.max(2, ch.flow || 2), flows, len, straightness });
     }
     pick.sort((a, b) => (b.len - a.len) || (b.flow - a.flow));
@@ -987,18 +995,18 @@ export function generateLandmass(params, bbox) {
       //    出图工具、缩略图、切片导出各自画一遍 —— 在这一层把角切掉，一处改、处处顺。
       //    用同一份实现（`riverRender.smoothRiverLine`），不另写平滑。
       const points = smoothRiverLine(r.points, 4);
-      // 逐点宽度：把链上逐点汇流量**按归一化位置**重采样到平滑后的点列上
-      // （平滑会改变点数；裁岸线只动两端一两个点，按比例重采样不会错位）。
-      // 再**单调化**：下游不许比上游窄（汇流只会让流量变大，出现回缩就是重采样抖动）。
-      const nf = r.flows.length;
-      const widths = points.map((_, k) => {
-        const t = points.length > 1 ? k / (points.length - 1) : 1;
-        const fi = nf > 0 ? Math.min(nf - 1, Math.max(0, Math.round(t * (nf - 1)))) : 0;
-        return widthAt(nf > 0 ? r.flows[fi] : r.flow);
+      // ── 逐点宽度（2026-10-27 重做）───────────────────────────────────────────
+      // ① 流量按**最近段**投到平滑后的点列上（旧实现按归一化下标，台阶被抹成缓坡）；
+      // ② `widthAt(flow)` 仍是主口径（细支流保持细）；
+      // ③ 在汇流点补**台阶**：下游 ≥ 上游 ×1.35（封顶 = 最大流量对应的宽度）。
+      //    没有 ③ 时，全局归一化把 40→80 的流量差压成 0.006 世界单位（屏幕上 ~0.1px），
+      //    用户看到的就还是"越汇不宽"。
+      const flowsSmooth = flowAlongSmoothedPath(points, r.points, r.flows, r.flow);
+      const baseWidths = flowsSmooth.map((fl) => widthAt(fl));
+      const widths = applyConfluenceSteps(baseWidths, flowsSmooth, {
+        factor: 1.35,
+        cap: widthAt(maxFlow),
       });
-      for (let k = 1; k < widths.length; k++) {
-        if (widths[k] < widths[k - 1]) widths[k] = widths[k - 1];
-      }
       const roundedWidths = widths.map((w) => Math.round(w * 1000) / 1000);
       rivers.push({
         id: `land_river_${seed}_${i}`,

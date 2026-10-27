@@ -1835,7 +1835,9 @@ import { drawIconOrEmoji } from '../utils/canvasIcon';
 import { buildHeightmapRaster, RASTER_SMOOTH, RASTER_SEA_LEVEL } from '../utils/heightmapRaster';   // M2/A2：与 PlanetMap 共用同一套栅格配色
 // 海面细节（2026-10-26）：海深是从高度图**推导**出来的（数据里海格高度是常数，见 utils/seaDepth.js），
 // 等深线由 marching squares 抽取（utils/contour.js）。两者都按高度图引用缓存，不落盘。
-import { buildSeaDepth, SEA_DEPTH_LEVELS, buildDistanceToSea, sampleGridAt } from '../utils/seaDepth';
+import {
+  buildSeaDepth, SEA_DEPTH_LEVELS, buildDistanceToSea, sampleGridAt, buildSeaDepthFromRings,
+} from '../utils/seaDepth';
 import { extractIsoLines } from '../utils/contour';
 // 两个**不同**判据，别再混（2026-10-11 踩过）：
 //   · `hasGrid`（heightmapAccess）= "能否开始用笔刷编辑"（有点即可；历史数据里存在只有点没有 h 的高度图）
@@ -8881,6 +8883,10 @@ function getSeaDetail() {
   const pts = hm.grid.points;
   const gridOk = cols > 1 && rows > 1 && pts && pts.length >= cols * rows;
   const isobaths = [];
+  // 高精度陆地环（导入 .map 的 `landFeatures`）：海岸线用它，粗格图上还用它重建海深场。
+  const ringRings = (Array.isArray(land) ? land : [])
+    .map((f) => (f && Array.isArray(f.points) ? f.points : null))
+    .filter((r) => r && r.length >= 3);
   // 等深线的可读性下限：1 格 = 18 世界单位的老导入图（真实 415 省底图就是 97×45 / 18.3 格距），
   // 抽出来的等深线是一圈圈十来个像素一段的多边形；这种图只给**海深渐变**，不画线。
   // 阈值 14 覆盖造陆图（约 8~10 单位/格），也与"细网格才谈得上等深线"这个事实一致。
@@ -8898,15 +8904,28 @@ function getSeaDetail() {
         }
       }
     }
+  } else if (ringRings.length) {
+    // ── 粗格导入图的等深线（2026-10-27）────────────────────────────────────────
+    // 97×45 / 格距 18.3 的高度场画不出可读的等深线，但这类图带着**高精度海岸线环**：
+    // 把环栅格化成细掩膜 → 同一套 Chamfer + p70 + 指数映射 → 同一组档位抽线。
+    // 数据源换成环，口径与 `buildSeaDepth` 逐字一致（不是第二套海深模型）。
+    const fine = buildSeaDepthFromRings(ringRings, {
+      step: Math.max(2, Math.min(5, (spacing || 18) / 4)),
+    });
+    if (fine) {
+      for (const level of SEA_DEPTH_LEVELS) {
+        for (const ln of extractIsoLines(fine.t, fine.cols, fine.rows, fine.points, level)) {
+          const smooth = smoothPolyline(ln.points, 1);
+          if (smooth.length >= 2) isobaths.push(smooth);
+        }
+      }
+    }
   }
   // 海岸线：① 存着的陆地轮廓（导入 .map 的高精度环，与省份几何同源）；② 没有 → 高度场等值线
   const coasts = [];
   const feats = Array.isArray(land) ? land : [];
-  if (feats.length) {
-    for (const f of feats) {
-      const ring = f && f.points;
-      if (ring && ring.length >= 3) coasts.push(ring);
-    }
+  if (ringRings.length) {
+    for (const ring of ringRings) coasts.push(ring);
   } else if (gridOk) {
     for (const ln of extractIsoLines(hm.h, cols, rows, pts, RASTER_SEA_LEVEL)) {
       const smooth = smoothPolyline(ln.points, 2);
@@ -10290,7 +10309,7 @@ function drawProvinces(c, opts = {}) {
  *      ① **半透明 + 逐省重描**：两个省的**共边会被描两次** → 共边比独边颜色更深，
  *         于是"同一张图上边界深浅不一"（观感发灰、发虚，越看越像没画完）；
  *      ② 0.6px 在 1080 宽的画布上几乎看不见 —— 真实地图上省界是**看得见的深色线**。
- *    现在：普通省界的**唯一一遍**用不透明深色（`PROVINCE_BORDER_COLOR` @1.1px），
+ *    现在：普通省界的**唯一一遍**用不透明细棕（`PROVINCE_BORDER_COLOR` @0.9px），
  *    选中 / 多选 / 合并目标**在第二遍**叠上去（它们必须比底色醒目，不能混在一起画）。
  */
 function drawProvinceBorders(c) {
@@ -10332,8 +10351,8 @@ function drawProvinceBorders(c) {
  *    同一张图导出与画布**边界颜色不一致** —— 正是"看起来做了但两处不一样"那一类）。
  */
 const PROVINCE_BORDER_COLOR = BORDER_COLOR;
-/** 普通省界的线宽（屏幕像素）—— 0.6 在 1080 宽的画布上几乎看不见（用户：边界要看得见） */
-const PROVINCE_BORDER_PX = 1.1;
+/** 普通省界的线宽（屏幕像素）—— 参考图是**细线**：1.1 → 0.9（2026-10-27 细棕线口径） */
+const PROVINCE_BORDER_PX = 0.9;
 
 function drawVertexHandles(c) {
   // P1：跟随移动的邻省环要在**任何情况下**都画出来（它是"边界整体移动"的唯一视觉证据），
@@ -11257,9 +11276,51 @@ function measureTextWithStyle(text, style) {
   return { w: mc.measureText(String(text)).width + 6, h: size * 1.3 + 2 };
 }
 
+/**
+ * 地形注记的**保留走廊**（2026-10-27，用户 gap #6）：山系/海域名沿脊线排，占的是一条线；
+ * 别的标签压上去就白排了。这里把「名字实际会占的那一段」算成框交给 `layoutLabels`
+ * 当障碍物（沿路径只占中点附近一段，不是整条脊线 —— 否则半张图都被禁掉）。
+ *
+ * 坐标系与调用方一致（画布 = 屏幕像素；导出 = 世界单位），`toScreen` 由调用方给。
+ */
+function terrainReserveBoxes(style, toScreen) {
+  const out = [];
+  const labels = baseMap.value?.terrainLabels || [];
+  if (!labels.length) return out;
+  const fs = Number(style && style.fontSize) || 14;
+  const pad = fs * 0.7;
+  for (const lb of labels) {
+    const name = String((lb && lb.name) || '').trim();
+    const pts = (lb && lb.points) || [];
+    if (!name || !pts.length) continue;
+    const scr = pts.map((p) => toScreen(p.x, p.y));
+    if (lb.kind === 'plain' || scr.length < 2) {
+      const sp = scr[0];
+      const m = measureTextWithStyle(name, style);
+      out.push({
+        x0: sp.x - m.w / 2 - pad, y0: sp.y - m.h / 2 - pad,
+        x1: sp.x + m.w / 2 + pad, y1: sp.y + m.h / 2 + pad,
+      });
+      continue;
+    }
+    const mid = scr[Math.floor(scr.length / 2)];
+    const textW = Math.max(24, measureTextWithStyle(name, style).w - 6);
+    const win = slicePathAroundPoint(scr, mid, textW * 1.4);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of win) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (!Number.isFinite(minX)) continue;
+    out.push({ x0: minX - pad, y0: minY - pad, x1: maxX + pad, y1: maxY + pad });
+  }
+  return out;
+}
+
 /** 四档标签的候选与排布结论（世界坐标）。缓存键 = 相机数值 + 数据引用 */
-function getLabelPlan() {
-  if (viewMode.value !== 'scenario') return [];
+function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
   const baseMapRef = baseMap.value;
   const terrainRef = rawTerrain();
   const burgsRef = baseMapRef?.burgs || null;
@@ -11267,7 +11328,10 @@ function getLabelPlan() {
   const ownRef = selectedScenario.value?.ownership || null;
   // ⚠️ `timeline.value` 必须进缓存键：势力**改名**不改 ownership/terrain 的引用，
   //    漏了它就会出现「撤销后画布上还是旧名字」（test_73 f3 实测）。
-  const refs = [terrainRef, burgsRef, riversRef, ownRef, selectedPolity.value,
+  // ⚠️ `terrainLabels` 同理（2026-10-27）：它们现在是**排布的保留区**（会挪动别的字），
+  //    改了注记却不重排 = 画面不动。
+  const terrainLabelsRef = baseMapRef?.terrainLabels || null;
+  const refs = [terrainRef, burgsRef, riversRef, terrainLabelsRef, ownRef, selectedPolity.value,
     timeline.value, selectedScenario.value];
   const nums = [
     cameraX.value, cameraY.value, cameraScale.value, cw(), ch(),
@@ -11276,6 +11340,8 @@ function getLabelPlan() {
     tlEra.value, tlDate.value, tlDiffMode.value,
     // 档位与字号必须进缓存键：滚轮跨档时「候选集/字号」都变，漏了就会画面不动（假"没反应"）
     labelDetailNow(), labelScaleNow().toFixed(3),
+    // 地形注记的保留区（显示开关 + 档位）也改变排布结论
+    showTerrainNames.value ? 1 : 0,
   ];
   const sameRefs = labelPlanCache.refs && labelPlanCache.refs.length === refs.length
     && refs.every((r, i) => r === labelPlanCache.refs[i]);
@@ -11379,6 +11445,10 @@ function getLabelPlan() {
     measure: (text, cand) => measureTextWithStyle(text, cand.style),
     bounds: { minX: 6, minY: 6, maxX: W - 6, maxY: H - 6 },
     pad: 3,
+    // 地形注记走廊先占位（与画布上真实画出的位置同坐标系：屏幕像素）
+    reserve: (showTerrainNames.value && caps.terrainNames)
+      ? terrainReserveBoxes(scaleLabelStyle(terrainLabelTextStyle(), fontScale), toScreen)
+      : [],
   });
   const plan = placed.map((p) => ({
     kind: p.kind,

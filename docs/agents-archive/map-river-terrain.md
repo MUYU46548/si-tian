@@ -445,3 +445,29 @@
     截图 `docs/assets/label-zoom-20261027/zoom-{far,mid,near,close}.png`。
   - 仍差：导出是固定分辨率图，**不分档**（按 `EXPORT_*` 出版档），缩放分层只作用于画布；
     行星 / 区域 / 建筑三处文字层仍按各自阶段门后延。
+
+- **越汇越宽 + 粗格图等深线 + 地形注记避让（2026-10-27，用户一次点三条）**：
+  - **汇流台阶**：宽度本来按 `widthAt(flow)` 算，但两件事把它抹平了 —— ① `smoothRiverLine`
+    之后按**归一化下标**把流量重采样到平滑点列（Chaikin 角点更密 → 台阶变缓坡）；
+    ② 流量与裁剪后的点列**不同长**（`clipPolylineToLand` 裁了两端，flows 还是全长）→
+    河口取到 ~90% 处的流量。新增 `utils/riverWidths.js`：
+    `flowAlongSmoothedPath`（按最近段投影，位置对齐）+ `applyConfluenceSteps`
+    （流量跳 ≥1.6× 处下游宽 ≥ 上游 ×1.35，封顶 = 最大流量对应宽度、非递减，防回缩）。
+    `landmass.js` 三条一起改：flows 按坐标对齐裁剪点列 → 最近段投影到平滑点列 → 台阶。
+    ⚠️ 台阶是"至少"，绝对曲线仍是主口径（细支流保持细；否则又回到"一堆蓝虫子"）。
+    判据：`unit/test_river_widths.js` 5 条（投影/拐角/台阶/平缓不算汇流/封顶与退化）。
+  - **粗格导入图的等深线**：97×45 / 格距 18.3 的高度场抽出来的等值线是十来像素一段的多边形，
+    旧实现按 spacing ≤14 的闸门只给渐变。但这类图带着**高精度海岸线环**（实测 20 环/1747 点）。
+    新增 `seaDepth.buildSeaDepthFromRings`：环 → 偶数奇偶扫描线栅格化（step≈格距/4，格数上限
+    25 万，超了自动放大格距）→ 8 邻域 Chamfer + 两遍平滑 → p70 归一化 → `t=1-exp(-d/ref)`，
+    与 `buildSeaDepth` 逐字同一套口径（只换数据源）。`getSeaDetail` 在 spacing>14 且有环时走它；
+    导出沿用同一份（矢量等深线）。判据：`unit/test_sea_depth.js` t9~t11（岛/洞/退化）、
+    `test_161`（有环 4 条、去环 0 条、导出也带上、耗时 0ms）。
+  - **地形注记参与避让**：`utils/labelLayout.layoutLabels` 新增 `opts.reserve`（外部保留区，
+    不参与输出、只挡字）。画布 `terrainReserveBoxes` / 导出 `terrainReserveWorldBoxes` 各按自己的
+    坐标系算「注记实际会占的那一段」——**沿路径只取中点附近 ≈ 字宽**（整条脊线当障碍会把半张图禁掉）。
+    缓存键补 `terrainLabels` 引用 + `showTerrainNames`（否则"改了注记画面不动"）。
+    判据：`unit/test_label_layout.js` t10（保留区里必须让开或丢/有备选落点要挪/脏框不抛）、
+    `test_162`（有注记时走廊上 0 条；删注记后省名回形心；导出省名让开）。
+  - 全量 **162/162**（69 个 Node 单测）。
+  - 仍差：汇流台阶只作用于**造陆生成的河**（导入河没有 flow 数据，宽度按弧长 + 距海推）。
