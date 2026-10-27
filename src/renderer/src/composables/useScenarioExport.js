@@ -32,10 +32,10 @@ import {
   collectSliceFrames, changeDateStats, sliceFrameName, MAX_SLICE_FRAMES,
 } from '../utils/scenarioSlices';
 import { formatDate, dateToken } from '../utils/scenarioDates';
-// 文字层样式单源（用户地名 / 标记名）—— 画布与导出共用同一份
+// 文字层样式单源（用户地名 / 标记名 / 地形注记）—— 画布与导出共用同一份
 import {
   scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
-  svgTextAttrsFromStyle,
+  terrainLabelTextStyle, svgTextAttrsFromStyle,
 } from '../utils/mapTextStyles';
 // 城镇名/河流名分级（画布与导出共用；导出用"出版档"：首都 + 流量前 12 的河）
 import {
@@ -43,6 +43,8 @@ import {
 } from '../utils/scenarioTextPlacement';
 // 文字避让排布（2026-10-26）：画布与导出**同一份**「放不放得下」的判定
 import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
+// 沿路径排字（2026-10-27）：山系/海域名沿走向排 —— 与画布同一份几何（`textOnPath`）
+import { layoutTextAlongPath, slicePathAroundPoint } from '../utils/textOnPath';
 
 /**
  * 导出侧量字（SVG 用户空间 = 世界单位，所以字号直接用 style.fontSize）。
@@ -356,6 +358,50 @@ export function useScenarioExport({
     });
     for (const p of placedLabels) {
       body.push(svgTextEl(p.cx, p.cy, p.text, svgLabelTextStyle(p.style)));
+    }
+
+    // ── 地形注记（2026-10-27）：山系/海域沿走向、平原落点横排 ──────────────────
+    // 数据与画布同一份（`baseMap.terrainLabels`）、样式同一份（`terrainLabelTextStyle`）、
+    // 几何同一份（`layoutTextAlongPath`）—— 不接这一步就是「画布上有山名、导出图上没有」，
+    // 用户导出的成品地形图会白导一次。沿路径的字在 SVG 里是**逐字 `<text>` + rotate**
+    // （SVG 1.1 没有"沿路径文字"，与画布逐字 rotate 同一口径）。
+    if (flags.terrainNames !== false) {
+      const tStyle = terrainLabelTextStyle();
+      const tAttrs = svgLabelTextStyle(tStyle);
+      const measureCh = (ch) => Math.max(1, exportLabelMeasure(ch, { style: tStyle }).w - 6);
+      for (const lb of (baseMap.value?.terrainLabels || [])) {
+        const nm = String((lb && lb.name) || '').trim();
+        if (!nm) continue;
+        const kind = lb.kind === 'sea' ? 'sea' : (lb.kind === 'plain' ? 'plain' : 'range');
+        const pts = (lb.points || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+        if (pts.length < (kind === 'plain' ? 1 : 2)) continue;
+        // 平原：点注记，横排落在那个点上
+        if (kind === 'plain') {
+          body.push(svgTextEl(pts[0].x, pts[0].y, nm, tAttrs));
+          continue;
+        }
+        const letterSpacing = kind === 'sea' ? 6 : 2;
+        const layout = layoutTextAlongPath(nm, pts, {
+          fontSize: tStyle.fontSize,
+          letterSpacing,
+          maxTiltDeg: 70,
+          measure: measureCh,
+        });
+        if (layout.ok && layout.placed.length === Array.from(nm).length) {
+          for (const pc of layout.placed) {
+            body.push(svgTextEl(pc.x, pc.y, pc.ch, {
+              ...tAttrs,
+              // 绕自身中心转（SVG 的 rotate(a cx cy)）→ 与画布 translate+rotate 等价
+              transform: `rotate(${(pc.angle * 180 / Math.PI).toFixed(2)} `
+                + `${pc.x.toFixed(2)} ${pc.y.toFixed(2)})`,
+            }));
+          }
+        } else {
+          // 路径太短/太陡 → 退化为水平字（与画布同一条兜底：宁可横着，也别丢名字）
+          const mid = pts[Math.floor(pts.length / 2)];
+          body.push(svgTextEl(mid.x, mid.y, nm, tAttrs));
+        }
+      }
     }
 
     body.push('</g>');

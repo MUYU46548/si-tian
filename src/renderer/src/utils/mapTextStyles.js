@@ -48,6 +48,23 @@ export const RIVER_LABEL_DEFAULTS = Object.freeze({
   fontFamily: 'sans-serif',
 });
 
+/**
+ * 地形注记（`baseMap.terrainLabels` 的 range/sea/plain）：serif 深棕字 + 浅色描边。
+ *
+ * 为什么单独一档而不是复用城镇/河名样式：地形注记是**底图层**的名字（山系/海域/平原），
+ * 要印在红/绿/蓝的省份底色与深色海面上都读得出，所以用「深字 + 浅描边」
+ * （与省名的「浅字 + 深描边」相反）；衬线体也更像地图册。
+ * 画布（`ScenarioMap.drawTerrainLabels`）与导出（`useScenarioExport`）**共用这一份**常量。
+ */
+export const TERRAIN_LABEL_DEFAULTS = Object.freeze({
+  color: '#3f3222',
+  size: 14,
+  haloColor: 'rgba(248, 244, 232, 0.92)',
+  haloWidth: 2.0,
+  fontFamily: 'serif',
+});
+
+
 function haloOf(kind, style) {
   if (style && style.stroke) {
     return { enabled: true, color: style.stroke, width: Number(style.strokeWidth) || 2 };
@@ -122,6 +139,26 @@ export function riverLabelTextStyle() {
     shadow: { enabled: false },
     background: { enabled: false },
     // 河流名跟着河道走，缩放时保持屏幕字号（与城镇名一致）
+    lockScreenSize: true,
+  };
+}
+
+/**
+ * `baseMap.terrainLabels[]` → 地形注记样式（kind 只影响画布上的字距/排法，样式同一份）。
+ * `lockScreenSize: true`：画布上字不随缩放变大变小（与城镇/河名一致）；
+ * 导出是固定分辨率图，`svgTextAttrsFromStyle` 直接用 `fontSize` 当世界单位。
+ */
+export function terrainLabelTextStyle() {
+  const d = TERRAIN_LABEL_DEFAULTS;
+  return {
+    key: 'terrain-label',
+    fontFamily: d.fontFamily,
+    fontSize: d.size,
+    weight: 'normal',
+    color: d.color,
+    stroke: { enabled: true, color: d.haloColor, width: d.haloWidth },
+    shadow: { enabled: false },
+    background: { enabled: false },
     lockScreenSize: true,
   };
 }

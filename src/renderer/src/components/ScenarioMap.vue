@@ -1894,6 +1894,7 @@ import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
 // 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
 import {
   scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
+  terrainLabelTextStyle,
 } from '../utils/mapTextStyles';
 // 城镇名 / 河流名的分级与取数（纯函数，画布与导出共用；617 个城镇全标就是糊图）
 import {
@@ -3595,7 +3596,11 @@ const scenarioExport = useScenarioExport({  store,
   currentYear: tlYear,
   diffMode: tlDiffMode,
   provinceNames: provinceNameMap,
-  layerFlags: () => ({ labels: showLabels.value, borders: showBorders.value, placeNames: showPlaceNames.value }),
+  // `terrainNames`：地形注记（山系/海域/平原）跟着画布的那个开关走 —— 导出与画布一致
+  layerFlags: () => ({
+    labels: showLabels.value, borders: showBorders.value,
+    placeNames: showPlaceNames.value, terrainNames: showTerrainNames.value,
+  }),
 });
 const {
   exportStatus, exportScenarioPNG, exportScenarioSVG, exportScenariosJson, pickScenariosJson,
@@ -11386,18 +11391,6 @@ function drawRiverNameAlongPath(c, lb, scale) {
   return true;
 }
 
-const TERRAIN_RANGE_STYLE = Object.freeze({
-  key: 'terrain-range',
-  fontFamily: 'serif',
-  fontSize: 14,
-  weight: 'normal',
-  color: '#3f3222',
-  stroke: { enabled: true, color: 'rgba(248, 244, 232, 0.92)', width: 2.0 },
-  shadow: { enabled: false },
-  background: { enabled: false },
-  lockScreenSize: true,
-});
-
 /**
  * 地形注记（D3，2026-10-26；2026-10-27 补海域/平原）：山系/海域名**沿走向**排，平原名落点横排。
  *
@@ -11410,6 +11403,7 @@ const TERRAIN_RANGE_STYLE = Object.freeze({
  *   · `sea`   —— 沿海湾/洋流走向，字距放大（制图惯例：海名疏排，别让字挤在岸线上）；
  *   · `plain` —— 平原是**面/点**语义，沿路径排没有意义 → 直接落在那个点（此前被 ≥2 点门槛
  *                整类跳过：数据支持 kind:'plain'，画布却永远不画）。
+ * 样式单源在 `utils/mapTextStyles.terrainLabelTextStyle()`（导出一份同样的常量）。
  */
 function drawTerrainLabels(c) {
   if (!showTerrainNames.value) return;
@@ -11419,7 +11413,7 @@ function drawTerrainLabels(c) {
   if (!(scale > 0)) return;
   const W = cw();
   const H = ch();
-  const style = TERRAIN_RANGE_STYLE;
+  const style = terrainLabelTextStyle();
   const toScreen = (p) => ({ x: cameraX.value + p.x * scale, y: cameraY.value + p.y * scale });
 
   for (const lb of labels) {
