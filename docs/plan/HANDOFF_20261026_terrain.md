@@ -2,30 +2,28 @@
 
 > 用户叫停原因：时间不够。要求"保存进度、总结未完成内容"。
 
-## 现在的状态
+## 现在的状态（2026-10-27 09:5x 更新）
 
 | 项 | 状态 |
 |---|---|
 | 代码 | 已提交并推送：`c0a8240`（地形注记）、`bcb953d`（逐点河宽）、`3fa8630`（标签避让）、`02e54d1`（海深/配色） |
-| Node 单测 | **67/67 绿**（含新增 `test_ridges` / `test_text_on_path` / `test_river_width_factors` / `test_sea_depth` / `test_iso_contours` / `test_label_layout`） |
+| Node 单测 | **67/67 绿**（含 `test_ridges` / `test_text_on_path` / `test_river_width_factors` / `test_sea_depth` / `test_iso_contours` / `test_label_layout`） |
 | `test_154_terrain_labels` | **绿**（面板 → 检测山脊 → 命名 → `origin:'auto'` 落库 → 画布有像素且渲染未暂停 → 一次 undo 归零） |
-| **全量 154 用例** | 🔴 **未跑完**（被叫停；`build/_labels3_full.log` 无输出）。这是下次开工第一件事 |
+| **全量用例** | ✅ **155/155 绿**（2026-10-27 09:53 全量跑完，日志 `build/_labels3_full.log`）。此前悬着的 `test_73/100/149/112/119/152/54/47` 全部通过 |
+| **`test_155_terrain_labels_persist`** | ✅ **新增并绿**：经 `applyTerrainLabels` 落 4 条（含脏数据被归一化丢弃）→ 保存 → 落盘载荷 `scenarios.baseMaps[key].terrainLabels` **逐字段一致** → 关项目 / 重开 → 内存态原样带回（`origin` 也保住）→ 重开画布有像素、护栏未暂停。**持久化链路不再是缺口** |
 | 工作区 | 干净（只有 `build/` 下的历史临时文件未跟踪；`src/renderer/index.html` 已还原、无 harness 注入） |
 
 ## 下次开工第一件事
+
+先跑全量（约 15 分钟，务必用系统 Python）：
 
 ```powershell
 python scripts/tests/run_tests.py
 ```
 
-重点盯：
-
-- `test_73` / `test_100` / `test_149`：标签层（本赛季重构过 `drawLabels` / `drawPolityLabels` / 导出排布）；
-- `test_112` / `test_119`：河宽与选中高亮（`buildRiverRun` 改逐点宽度、选中轮廓改 `offsetPolylineVariable`）；
-- `test_152`：造陆（生成器多写 `widths` 字段）；
-- `test_54` / `test_47`：`applyTerrainLabels` 已登记 `writeGate` id 8，跑一遍确认契约没漏。
-
-若全量绿：补一条"地形注记会随项目落盘/打开还原"的读盘用例（现在只验证到内存态 + undo）。
+> ⚠️ 若报「检测到上一次 mock 未收尾 …index.html.bak 还存在」：先确认没有别的回归/诊断在跑
+> （`Get-CimInstance Win32_Process` 里查 `run_tests` / `vite` / `test-edge-profile`），
+> 再 `git checkout -- src/renderer/index.html` 并删掉 `.bak` 与 `mock-data/`。
 
 ## 本轮交付（按提交）
 
@@ -41,8 +39,8 @@ python scripts/tests/run_tests.py
 
 ## 未完成 / 已知缺口（按优先级）
 
-1. 🔴 **全量回归**（见上）。
-2. **地形注记的持久化链路验证**：`.sitian` 保存/重开是否原样带回 `terrainLabels`（字段在 `baseMaps[key]` 下，预计随底图整体落盘，但没跑读盘用例）。
+1. ✅ ~~全量回归~~（2026-10-27：155/155 绿）。
+2. ✅ ~~地形注记的持久化链路验证~~（`test_155_terrain_labels_persist` 守：落盘载荷逐字段 → 关/开项目原样带回）。
 3. **海域 / 平原注记**：数据形状已支持 `kind:'sea'|'plain'`，面板只能从山脊候选生成 `range`；缺"手动新建 + 在地图上画一条线/点"的入口。
 4. **河名沿路径**：`textOnPath` 已就绪，但河名仍走水平标签（`drawPlannedLabels(['river'])`）。接上后"河名沿河"才与参考图一致。
 5. **导出**：SVG/PNG 是政治图，**不带**地形注记与海深；若用户要"成品地形图"，需要把 `terrainLabels` + 栅格底图接进导出链。
