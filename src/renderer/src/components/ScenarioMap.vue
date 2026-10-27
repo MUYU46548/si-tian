@@ -1891,14 +1891,17 @@ import { drawStyledLabel, fontString, drawTextAlongPath } from '../utils/labelSt
 import { layoutTextAlongPath, slicePathAroundPoint } from '../utils/textOnPath';
 // 文字避让（2026-10-26）：四档标签（势力/省/城镇/河）共用一次排布 —— 纯函数，画布与导出同源
 import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
+// 缩放 → 详略档位 / 字号（2026-10-27）：Paradox 式「缩小只看势力名、放大出省名」的唯一判定
+import { zoomDetail, detailCaps, labelFontScale } from '../utils/labelZoom';
 // 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
 import {
   scenarioLabelTextStyle, markerLabelTextStyle, burgLabelTextStyle, riverLabelTextStyle,
   terrainLabelTextStyle,
 } from '../utils/mapTextStyles';
-// 城镇名 / 河流名的分级与取数（纯函数，画布与导出共用；617 个城镇全标就是糊图）
+// 城镇名 / 河流名的取数上限（纯函数，画布与导出共用；617 个城镇全标就是糊图）
+// ⚠️ 档位（标不标、标哪一档）不在这里 —— 见 `utils/labelZoom.js`（按可见比例，带滞回）
 import {
-  collectBurgLabels, collectRiverLabels, burgLabelTier, riverLabelTier,
+  collectBurgLabels, collectRiverLabels,
 } from '../utils/scenarioTextPlacement';
 // 剧本标签的**唯一判定**（省名 / 势力名 / 简称三档该写什么字、写在哪）—— 与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
@@ -10976,6 +10979,34 @@ function mapVisibleRatio() {
 /** 当前档位（暴露给模板/用例；判定本体在 utils/polityLabels.js） */
 const polityLabelTierNow = computed(() => polityLabelTier(mapVisibleRatio()));
 
+// ── 缩放 → 详略档位 / 字号（2026-10-27）──────────────────────────────────────
+// 用户口径（Paradox）：缩小只看见势力名；放大才出省名；再大出城镇/河名；字号随缩放略变。
+// 判定本体在 `utils/labelZoom.js`（纯函数：档位表 + 12% 滞回 + 字号系数）。
+// 滞回状态放**模块级**（不是 ref）：它只影响「这一帧算多细」，不进响应式、不该触发渲染。
+let labelDetailState = { key: '', detail: null };
+
+/** 当前详略档位（close / near / mid / far；带滞回，抗滚轮边界抖动） */
+function labelDetailNow() {
+  const key = baseMapKey.value || '';
+  // 换底图 → 重新起算（否则新图会沿用上一张图的档位滞回状态）
+  if (labelDetailState.key !== key) labelDetailState = { key, detail: null };
+  const detail = zoomDetail(mapVisibleRatio(), labelDetailState.detail);
+  labelDetailState = { key, detail };
+  return detail;
+}
+
+/** 字号系数（放大略大 / 缩小略小；见 `labelZoom.labelFontScale`） */
+function labelScaleNow() {
+  return labelFontScale(mapVisibleRatio());
+}
+
+/** 给标签样式套字号系数（样式常量是 freeze 的，只能返回新对象） */
+function scaleLabelStyle(style, k) {
+  if (!style || !(k > 0) || Math.abs(k - 1) < 1e-6) return style;
+  return { ...style, fontSize: (Number(style.fontSize) || 12) * k };
+}
+
+
 /**
  * 某省在**时间轴当前日期**的归属势力（唯一口径）。
  *
@@ -11214,6 +11245,8 @@ function getLabelPlan() {
     showLabels.value ? 1 : 0, showPlaceNames.value ? 1 : 0,
     showPolityLabels.value ? 1 : 0, showBurgs.value ? 1 : 0,
     tlEra.value, tlDate.value, tlDiffMode.value,
+    // 档位与字号必须进缓存键：滚轮跨档时「候选集/字号」都变，漏了就会画面不动（假"没反应"）
+    labelDetailNow(), labelScaleNow().toFixed(3),
   ];
   const sameRefs = labelPlanCache.refs && labelPlanCache.refs.length === refs.length
     && refs.every((r, i) => r === labelPlanCache.refs[i]);
@@ -11224,6 +11257,11 @@ function getLabelPlan() {
   const scale = cameraScale.value;
   const W = cw();
   const H = ch();
+  // 详略档位 + 字号系数（2026-10-27）：与 `polityLabelTier` 同一份「可见比例」，
+  // 档位表/滞回在 utils/labelZoom.js；字号系数让放大时字略大、缩小时略小。
+  const detail = labelDetailNow();
+  const caps = detailCaps(detail);
+  const fontScale = labelScaleNow();
   const toScreen = (x, y) => ({ x: cameraX.value + x * scale, y: cameraY.value + y * scale });
   const tl0 = screenToWorld(0, 0);
   const br0 = screenToWorld(W, H);
@@ -11259,7 +11297,7 @@ function getLabelPlan() {
         kind: lb.kind,          // 'province' | 'polity'
         text: lb.text,
         x: sp.x, y: sp.y,
-        style: lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE,
+        style: scaleLabelStyle(lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE, fontScale),
         highlight: lb.highlight,
         // 省名放不下时在面内挪一点（势力名优先级更高，会先占住形心）
         placements: lb.kind === 'province' ? AREA_LABEL_PLACEMENTS : undefined,
@@ -11268,8 +11306,9 @@ function getLabelPlan() {
   }
 
   // ② 城镇名（圆点右侧优先，放不下换左/上/下；圆点本身是障碍物）
-  if (showPlaceNames.value && showBurgs.value && burgsRef && burgsRef.length) {
-    for (const lb of collectBurgLabels(burgsRef, { tier: burgLabelTier(scale), rect: worldRect })) {
+  //    档位来自 `labelZoom.DETAIL_CAPS`：far 档 `burgs = -1` = 一个城镇名都不标（只剩势力名）。
+  if (caps.burgs >= 0 && showPlaceNames.value && showBurgs.value && burgsRef && burgsRef.length) {
+    for (const lb of collectBurgLabels(burgsRef, { tier: caps.burgs, rect: worldRect })) {
       const sp = toScreen(lb.x, lb.y);
       const r = (lb.capital ? 5.5 : 2.5) * 1.4;   // 屏幕像素：圆点/星标半径 + 余量
       cands.push({
@@ -11277,7 +11316,7 @@ function getLabelPlan() {
         kind: lb.capital ? 'capital' : 'town',
         text: lb.name,
         x: sp.x, y: sp.y,
-        style: burgLabelTextStyle({ capital: lb.capital }),
+        style: scaleLabelStyle(burgLabelTextStyle({ capital: lb.capital }), fontScale),
         placements: [
           { mode: 'right', gap: r }, { mode: 'left', gap: r },
           { mode: 'above', gap: r }, { mode: 'below', gap: r + 2 },
@@ -11289,15 +11328,16 @@ function getLabelPlan() {
   }
 
   // ③ 河名（贴河上方，其次下方 —— 河名压河是最难读的一种）
-  if (showPlaceNames.value && showRiverBase.value && riversRef && riversRef.length) {
-    for (const lb of collectRiverLabels(riversRef, { tier: riverLabelTier(scale), rect: worldRect })) {
+  //    档位同样来自 `DETAIL_CAPS`：mid/far 档 `rivers = -1` = 不标河名（整图看不见河名）。
+  if (caps.rivers >= 0 && showPlaceNames.value && showRiverBase.value && riversRef && riversRef.length) {
+    for (const lb of collectRiverLabels(riversRef, { tier: caps.rivers, rect: worldRect })) {
       const sp = toScreen(lb.x, lb.y);
       cands.push({
         id: 'river:' + lb.id,
         kind: 'river',
         text: lb.name,
         x: sp.x, y: sp.y,
-        style: riverLabelTextStyle(),
+        style: scaleLabelStyle(riverLabelTextStyle(), fontScale),
         placements: [{ mode: 'above', gap: 5 }, { mode: 'below', gap: 5 }, { mode: 'right', gap: 7 }],
         // 河名沿河（2026-10-27）：排布只决定「放在哪一段河道附近」，实际落字沿折线排。
         // 世界坐标；绘制时换算成屏幕（见 drawRiverNameAlongPath）。
@@ -11407,13 +11447,16 @@ function drawRiverNameAlongPath(c, lb, scale) {
  */
 function drawTerrainLabels(c) {
   if (!showTerrainNames.value) return;
+  // 档位闸门（2026-10-27）：最粗的 far 档（地图只占视口一小块）不画地形注记 ——
+  // 与城镇/河名同一条「缩小只剩势力名」的纪律（`utils/labelZoom.DETAIL_CAPS`）。
+  if (!detailCaps(labelDetailNow()).terrainNames) return;
   const labels = baseMap.value?.terrainLabels || [];
   if (!labels.length) return;
   const scale = cameraScale.value;
   if (!(scale > 0)) return;
   const W = cw();
   const H = ch();
-  const style = terrainLabelTextStyle();
+  const style = scaleLabelStyle(terrainLabelTextStyle(), labelScaleNow());
   const toScreen = (p) => ({ x: cameraX.value + p.x * scale, y: cameraY.value + p.y * scale });
 
   for (const lb of labels) {

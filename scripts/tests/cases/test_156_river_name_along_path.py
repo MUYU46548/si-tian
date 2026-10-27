@@ -49,9 +49,16 @@ def _read(rel):
 MEASURE_JS = r"""(async () => {
   const SM = __SM__;
   const tick = (ms) => new Promise(r => setTimeout(r, ms || 0));
-  // 相机必须在这里设：造数那一步设的会被「进入剧本 → 适屏」覆盖（实测被改成 0.697，
-  // 而 riverLabelTier 在 <1.2 时刻意不标河名 → 排布为空，整条用例空转）。
-  const setCam = () => { SM.cameraScale = 1.4; SM.cameraX = 0; SM.cameraY = 0; };
+  // 相机：让「可见比例」落在 near 档（ratio≈0.5）—— 河名在 mid/far 档刻意不标
+  // （2026-10-27 起档位按可见比例判定，不是绝对 scale；见 utils/labelZoom.js）。
+  // 同时把河道中点放到视口中心，否则字排在屏外、差集里一个像素都没有。
+  const MAP_W = 580;
+  const setCam = () => {
+    const W = SM.cw(), H = SM.ch();
+    SM.cameraScale = W / (0.5 * MAP_W);
+    SM.cameraX = W / 2 - 240 * SM.cameraScale;
+    SM.cameraY = H / 2 - 190 * SM.cameraScale;
+  };
   const cv = () => document.querySelector('.scenario-map-container canvas');
   const grab = async () => {
     setCam();
@@ -99,11 +106,12 @@ MEASURE_JS = r"""(async () => {
   const riverPlans = plan.filter((p) => p.kind === 'river');
   let cand = null;
   try {
-    const mod = await import('/src/utils/scenarioTextPlacement.js');
+    const lm = await import('/src/utils/labelZoom.js');
+    const sp = await import('/src/utils/scenarioTextPlacement.js');
     const rivers = (SM.baseMap && SM.baseMap.rivers) || [];
-    const got = mod.collectRiverLabels(rivers, { tier: mod.riverLabelTier(SM.cameraScale) });
-    cand = { tier: mod.riverLabelTier(SM.cameraScale), n: got.length,
-             pathLen: got[0] && got[0].path ? got[0].path.length : 0 };
+    const caps = lm.detailCaps(lm.zoomDetail(SM.mapVisibleRatio ? SM.mapVisibleRatio() : 0.5));
+    const got = caps.rivers >= 0 ? sp.collectRiverLabels(rivers, { tier: caps.rivers }) : [];
+    cand = { caps, n: got.length, pathLen: got[0] && got[0].path ? got[0].path.length : 0 };
   } catch (e) { cand = { err: String((e && e.message) || e) }; }
   return JSON.stringify({
     n: m.n, slope: m.slope, w: m.w, h: m.h, cx: m.cx, cy: m.cy,
@@ -163,11 +171,8 @@ def run(cdp):
       SM.showPlaceNames = true;
       SM.showBurgs = false;
       SM.showRiverBase = true;
-      // 1.4×：riverLabelTier 才 >0（<1.2 画布刻意不标河名），而且斜河整条在视口内
-      SM.cameraScale = 1.4;
-      SM.cameraX = 0; SM.cameraY = 0;
-      // 等待「剧本载入 → 适屏 / 时间轴归零」这些异步链路全部落地：
-      // 早返回的话，测第一帧时它们会把相机改回适屏比例（0.697）→ 河名分级掉到 -1 → 空转
+      // 相机在测量那一刻才设（`MEASURE_JS` 的 setCam）：进入剧本会异步适屏覆盖这里设的值。
+      // 这里只等异步链路落地。
       await tick(700);
       return JSON.stringify({ ok: true, tier: SM.cameraScale });
     })()"""
@@ -243,7 +248,11 @@ def run(cdp):
               const s = %s, SM = %s, KEY = %s;
               s.baseMaps = { ...s.baseMaps, [KEY]: { ...s.baseMaps[KEY],
                 rivers: [{ id: 'r156', name: '测试长河', points: %s, discharge: 900, width: 2 }] } };
-              SM.cameraScale = 1.4; SM.cameraX = 0; SM.cameraY = 0;
+              // 与测量同一取景（near 档 + 河道居中），否则截图里没有河名
+              const W = SM.cw(), H = SM.ch();
+              SM.cameraScale = W / (0.5 * 580);
+              SM.cameraX = W / 2 - 240 * SM.cameraScale;
+              SM.cameraY = H / 2 - 190 * SM.cameraScale;
               SM.render();
               return 'ok';
             })()""" % (STORE, SM, json.dumps(KEY), json.dumps(DIAG)))

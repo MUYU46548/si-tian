@@ -32,7 +32,7 @@ function deepEq(a, b, label) {
 async function main() {
   const mod = await import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(SRC, 'utf8')).toString('base64'));
   const {
-    BURG_TIERS, burgLabelTier, riverLabelTier,
+    BURG_TIERS,
     collectBurgLabels, collectRiverLabels, polylineMidpoint,
     EXPORT_BURG_TIER, EXPORT_RIVER_TIER,
   } = mod;
@@ -46,15 +46,16 @@ async function main() {
     { id: 'no-name', x: 60, y: 60, population: 100 },
   ];
 
-  check('t1 分级阈值：城镇 <1 首都 / 1~2 主要 / ≥2 全部；河流 <1.2 不标', () => {
-    eq(burgLabelTier(0.5), BURG_TIERS.capitalOnly, '0.5');
-    eq(burgLabelTier(1), BURG_TIERS.major, '1');
-    eq(burgLabelTier(1.9), BURG_TIERS.major, '1.9');
-    eq(burgLabelTier(2), BURG_TIERS.all, '2');
-    eq(riverLabelTier(0.5), -1, '河 0.5 不标');
-    eq(riverLabelTier(1.2), 1, '河 1.2');
-    eq(riverLabelTier(2), 2, '河 2');
-    return '城 0/1/2，河 -1/1/2';
+  // ⚠️ 2026-10-27：画布的档位判定已迁到 `utils/labelZoom.js`（按可见比例 + 滞回），
+  //    这里不再有 `burgLabelTier/riverLabelTier`（按绝对 scale 分档，换数据量纲就失准）。
+  //    本文件只守「取数/上限/版面过滤」。
+  check('t1 取数上限：首都/主要/全部三档各自只取该取的', () => {
+    const cap = collectBurgLabels(burgs, { tier: BURG_TIERS.capitalOnly });
+    eq(cap.length, 2, '只首都');
+    assert(cap.every((b) => b.capital), '首都档不该混进非首都');
+    const major = collectBurgLabels(burgs, { tier: BURG_TIERS.major });
+    assert(major.length > cap.length, '主要档应比首都档多');
+    return `首都 ${cap.length} / 主要 ${major.length}`;
   });
 
   check('t2 首都档：只回首都（capital 与 group=capital 都认），忽略无名', () => {

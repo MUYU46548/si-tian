@@ -137,6 +137,15 @@ def run(cdp):
         }));
       };
       const grab = async () => {
+        // 取景：把已落库的第一条注记点放到视口中心，并让「可见比例」落在 mid 档
+        // （2026-10-27 起 far 档刻意不画地形注记；不设相机 = 适屏比例 ≈2.7，会落进 far → 差 0 像素）
+        const pt = ((((s.baseMaps[__KEY__] || {}).terrainLabels) || [])[0] || {}).points?.[0];
+        const el0 = cv();
+        const W = SM.cw(), H = SM.ch();
+        SM.cameraScale = 1.6;
+        SM.cameraX = W / 2 - (pt ? pt.x : 0) * 1.6;
+        SM.cameraY = H / 2 - (pt ? pt.y : 0) * 1.6;
+        void el0;
         if (SM.render) SM.render();
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         await tick(80);

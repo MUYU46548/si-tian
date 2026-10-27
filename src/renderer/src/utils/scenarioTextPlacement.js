@@ -4,35 +4,24 @@
 // 画布与导出**共用**，否则「画布上只标首都、导出图里标了 617 个」这种不一致不会报错，
 // 只会让成品图没法用。
 //
-// 分级（按缩放，刻度是「屏幕像素/世界单位」）：
-//   · 城镇：<1 只标首都；1~2 首都 + 人口前 40；≥2 全部（上限 150）
-//   · 河流：<1.2 不标；1.2~2 流量前 30；≥2 全部（上限 80）
+// ⚠️ 2026-10-27：**画布的档位不再由这里决定**。原先 `burgLabelTier(scale)` /
+//    `riverLabelTier(scale)` 按**绝对 cameraScale** 分级，而绝对 scale 依赖数据量纲
+//    （FMG 导入 ≈1.0、合成图 ≈0.2）→ 换一份数据阈值整体失准。现在画布统一按
+//    「可见比例」在 `utils/labelZoom.js` 里分档（close/near/mid/far），与势力名/省名同一口径；
+//    本模块只保留「各档最多标几条」的取数能力（`collectBurgLabels` / `collectRiverLabels`）。
+//
 // 导出是固定分辨率图，用**出版档**：首都 + 流量前 12 的河（`EXPORT_*`）。
 //
 // 纯函数：不碰 DOM / store；Node 可直接测。
 
 export const BURG_TIERS = Object.freeze({
-  /** 缩放 <1：只标首都 */
+  /** 只标首都 */
   capitalOnly: 0,
-  /** 1~2：首都 + 人口前 40 */
+  /** 首都 + 人口前 40 */
   major: 1,
-  /** ≥2：全部（可见范围内，上限 150） */
+  /** 全部（可见范围内，上限 150） */
   all: 2,
 });
-
-export function burgLabelTier(scale) {
-  const s = Number(scale) || 0;
-  if (s >= 2) return BURG_TIERS.all;
-  if (s >= 1) return BURG_TIERS.major;
-  return BURG_TIERS.capitalOnly;
-}
-
-export function riverLabelTier(scale) {
-  const s = Number(scale) || 0;
-  if (s >= 2) return 2;
-  if (s >= 1.2) return 1;
-  return -1;   // 画布：低缩放不标河名（导出用 0 档）
-}
 
 const MAX_BURG_LABELS = Object.freeze({ 0: 30, 1: 80, 2: 150 });
 const MAX_RIVER_LABELS = Object.freeze({ 0: 0, 1: 30, 2: 80 });
