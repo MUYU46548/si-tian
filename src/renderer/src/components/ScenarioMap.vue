@@ -24,7 +24,11 @@
           <TerrainLabelsPanel
             :base-map-key="baseMapKey"
             :has-heightmap="baseMapHasHeightmap"
+            :pick="terrainLabelPick"
             @applied="applyTerrainLabelsResult"
+            @pick="startTerrainLabelPick"
+            @pick-done="onTerrainLabelPickDone"
+            @pick-cancel="cancelTerrainLabelPick"
             @close="terrainLabelsOpen = false"
           />
         </div>
@@ -812,7 +816,11 @@
             <TerrainLabelsPanel
               :base-map-key="baseMapKey"
               :has-heightmap="baseMapHasHeightmap"
+              :pick="terrainLabelPick"
               @applied="applyTerrainLabelsResult"
+              @pick="startTerrainLabelPick"
+              @pick-done="onTerrainLabelPickDone"
+              @pick-cancel="cancelTerrainLabelPick"
               @close="terrainLabelsOpen = false"
             />
           </div>
@@ -2271,6 +2279,37 @@ function applyTerrainLabelsResult(msg) {
   render();
 }
 
+// ── D3 手绘（2026-10-27）：山系/海域拖一条线、平原点一个点 ──────────────────
+// 为什么几何采集放这里而不是面板里：只有画布知道相机与屏幕→世界的换算，
+// 也只有它能画「拖到一半」的预览。面板负责命名与整表落库（`applyTerrainLabels`），
+// 两边合成的仍是**同一条数据形状**与**同一个写口**。
+const terrainLabelPick = ref(null);
+const TERRAIN_PICK_MIN_STEP = 3;     // 屏幕像素：采样抽稀，别让一条线攒出上千点
+
+function startTerrainLabelPick(kind) {
+  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
+  if (store.isReadOnly) { statusMsg(`地形注记已停用：${store.readOnlyReason}`); return; }
+  const k = ['range', 'sea', 'plain'].includes(kind) ? kind : 'range';
+  terrainLabelPick.value = { kind: k, points: [], dragging: false, finished: false };
+  statusMsg(k === 'plain' ? '平原注记：在地图上点一下落个点' : '在地图上拖一条线（松开鼠标完成）');
+  render();
+}
+
+function clearTerrainLabelPick(msg) {
+  terrainLabelPick.value = null;
+  if (msg) statusMsg(msg);
+  render();
+}
+
+/** 面板「完成」→ 采到的点已经变成一行（面板负责），这里只收尾 */
+function onTerrainLabelPickDone() {
+  clearTerrainLabelPick('');
+}
+
+function cancelTerrainLabelPick() {
+  clearTerrainLabelPick('已取消手绘注记（数据未改）');
+}
+
 /** 面板应用回执：与一键入口做同样的画布侧收尾（缓存失效 + 切到地形高度 + 重绘） */
 function applyGeneratedTerrain(r) {
   rasterCache.clear();
@@ -2940,6 +2979,8 @@ const riverDrag = ref(null);
 const riverActiveNode = ref(-1);
 /** 河流工具下"这一笔已经处理过了"的标记：吃掉紧随其后的 click（见 finishRiverDraft） */
 let suppressRiverClick = false;
+/** 地形注记手绘（2026-10-27）：这一笔已由 mousedown/mouseup 收口，紧随的 click 不要再落到别的工具 */
+let suppressTerrainPickClick = false;
 /** 这一笔是否已经顶到 `RIVER_MAX_DRAFT_POINTS`（顶到只说一次，不要每帧刷屏） */
 let riverDraftCapped = false;
 /**
@@ -4442,6 +4483,23 @@ function onMouseDown(event) {
   }
   initialFitPending = false;      // 用户开始操作 → 不再自动抢镜头（见 onMounted 的适屏收尾）
 
+  // 地形注记手绘（2026-10-27）：面板点「画山系/画海域/点平原」后画布进入取点态。
+  // 必须排在所有工具分支之前：这一刻用户就是在给这条注记取几何，不许被别的工具抢走这一击。
+  if (terrainLabelPick.value && event.button === 0) {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    const p = terrainLabelPick.value;
+    terrainLabelPick.value = {
+      ...p,
+      points: [{ x: world.x, y: world.y }],
+      dragging: p.kind !== 'plain',
+      finished: p.kind === 'plain',
+    };
+    if (p.kind === 'plain') statusMsg('已落点：点面板「完成」再命名');
+    render();
+    return;
+  }
+
   // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会「点了没反应」）
   if (CREATES_CONTENT_TOOLS.has(tool.value) && !ensureBaseMap()) return;
 
@@ -4846,6 +4904,18 @@ function onMouseDown(event) {
 function onMouseMove(event) {
   // 沉浸模式：画布上任何移动都唤醒底部胶囊（pokeCapsule 自带非沉浸态早退，代价 = 一次布尔判断）
   pokeCapsule();
+  // 地形注记手绘（2026-10-27）：拖动中按**屏幕像素**抽稀（世界阈值会随缩放差几十倍）
+  if (terrainLabelPick.value && terrainLabelPick.value.dragging) {
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    const p = terrainLabelPick.value;
+    const last = p.points[p.points.length - 1];
+    if (!last || Math.hypot(world.x - last.x, world.y - last.y) * cameraScale.value >= TERRAIN_PICK_MIN_STEP) {
+      terrainLabelPick.value = { ...p, points: [...p.points, { x: world.x, y: world.y }] };
+      renderCoalesced();
+    }
+    return;
+  }
   // 🔴 第五轮：河流**框选**（Shift+拖动）—— 与顶点框选同款，只画框不碰数据，抬手才结算
   if (riverMarquee.value) {
     const rect = canvas.value.getBoundingClientRect();
@@ -5127,6 +5197,20 @@ function onMouseUp(event) {
   // 手势结束 → 手势期基帧作废（**必须无条件写在最前面**：任何一条 return 路径漏掉它，
   // 都会让"贴图帧"泄漏到手势之外，那正是"改了数据画面不动"这类事故的配方）
   endStrokeBase();
+  // ── 地形注记手绘（2026-10-27）：抬手 = 这一条线画完（平原在 mousedown 就已成点） ──
+  if (terrainLabelPick.value) {
+    const p = terrainLabelPick.value;
+    if (p.dragging) {
+      const n = p.points.length;
+      terrainLabelPick.value = { ...p, dragging: false, finished: n >= 1 };
+      statusMsg(p.kind === 'plain'
+        ? '已落点：点面板「完成」再命名'
+        : (n >= 2 ? `已取 ${n} 点：点面板「完成」再命名` : '线太短 —— 重拖一条（至少要起点和终点）'));
+      render();
+    }
+    suppressTerrainPickClick = true;   // 紧随的 click 不要落到别的工具上
+    return;
+  }
   // ── 河流**框选**（第五轮）：先结算框，再谈其它手势 ────────────────────────────
   if (riverMarquee.value) {
     const box = normalizeBox(riverMarquee.value);
@@ -5449,6 +5533,8 @@ async function onCanvasClick(event) {  if (event.button === 2) {
     openProvinceContextMenu(event);
     return;
   }
+  // 地形注记手绘：这一击已经在 mousedown/mouseup 收口，别再落到选省/选河等分支上
+  if (suppressTerrainPickClick || terrainLabelPick.value) { suppressTerrainPickClick = false; return; }
   
   const rect = canvas.value.getBoundingClientRect();
   const sx = event.clientX - rect.left;
@@ -5870,6 +5956,11 @@ function onKeyDown(event) {
     polySplitPreview.value = null;
     clearSnapMarker();
     clearProvinceSelection();      // Esc 也取消多选（批量条的「取消选择」同效）
+    // 地形注记手绘：Esc 取消采集（几何只在内存草稿里，数据一个字节都没写）
+    if (terrainLabelPick.value) {
+      terrainLabelPick.value = null;
+      statusMsg('已取消手绘注记（数据未改）');
+    }
     render();
   }
   // A：折线切割 —— Enter 收口、Backspace 退一个点
@@ -10636,6 +10727,31 @@ function drawPreviewOverlay() {
     }
   }
 
+  // 地形注记手绘预览（2026-10-27）：拖到一半也要看得见线 —— 否则用户不知道自己在画什么。
+  // 颜色按类别区分（山系橙 / 海域蓝 / 平原黄），与面板按钮一一对应。
+  if (terrainLabelPick.value && terrainLabelPick.value.points.length) {
+    const p = terrainLabelPick.value;
+    const pts = p.points;
+    const color = p.kind === 'sea' ? '#38bdf8' : (p.kind === 'plain' ? '#fbbf24' : '#f97316');
+    c.save();
+    c.strokeStyle = color;
+    c.fillStyle = color;
+    c.lineWidth = px(1.6);
+    c.setLineDash(p.kind === 'plain' ? [] : [px(6), px(4)]);
+    c.beginPath();
+    c.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+    c.stroke();
+    c.setLineDash([]);
+    const marks = p.kind === 'plain' ? [pts[0]] : [pts[0], pts[pts.length - 1]];
+    for (const q of marks) {
+      c.beginPath();
+      c.arc(q.x, q.y, px(p.kind === 'plain' ? 5 : 3), 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+  }
+
   // ── 河流节点编辑的**可见性**（2026-10-17）────────────────────────────────
   // 🔴 为什么必须画出来：没有节点标记时，"拖节点=微调 / Delete=删节点"这两个能力
   //    **完全没有入口感**（用户根本看不到节点在哪，也就不会去拖它）。
@@ -11283,11 +11399,17 @@ const TERRAIN_RANGE_STYLE = Object.freeze({
 });
 
 /**
- * 地形注记（D3，2026-10-26）：山系名**沿脊线**排。
+ * 地形注记（D3，2026-10-26；2026-10-27 补海域/平原）：山系/海域名**沿走向**排，平原名落点横排。
  *
  * 为什么不能像普通标签那样居中写一个横排字：参考图里"亚平宁山脉"是顺着山脊弯的 ——
  * 横着写会横跨山谷，读者反而看不出它指哪条山。路径不够长/太陡时**退化为水平字**
  * （宁可横着，也别让名字凭空消失）。
+ *
+ * 三类各有读法（`terrainLabels[].kind`）：
+ *   · `range` —— 沿脊线（字距 2）；
+ *   · `sea`   —— 沿海湾/洋流走向，字距放大（制图惯例：海名疏排，别让字挤在岸线上）；
+ *   · `plain` —— 平原是**面/点**语义，沿路径排没有意义 → 直接落在那个点（此前被 ≥2 点门槛
+ *                整类跳过：数据支持 kind:'plain'，画布却永远不画）。
  */
 function drawTerrainLabels(c) {
   if (!showTerrainNames.value) return;
@@ -11302,8 +11424,20 @@ function drawTerrainLabels(c) {
 
   for (const lb of labels) {
     const name = String((lb && lb.name) || '').trim();
+    const kind = lb && lb.kind === 'sea' ? 'sea' : (lb && lb.kind === 'plain' ? 'plain' : 'range');
     const pts = (lb && lb.points) || [];
-    if (!name || pts.length < 2) continue;
+    if (!name || pts.length < (kind === 'plain' ? 1 : 2)) continue;
+
+    // 平原：点注记 —— 不参与沿路径排字，落在取的点上（视口外跳过）
+    if (kind === 'plain') {
+      const sp = toScreen(pts[0]);
+      if (sp.x < -60 || sp.x > W + 60 || sp.y < -30 || sp.y > H + 30) continue;
+      drawStyledLabel(c, name, pts[0].x, pts[0].y, style, {
+        align: 'center', baseline: 'middle', screenScale: scale,
+      });
+      continue;
+    }
+
     // 视口裁剪（整条线都在屏外就跳过；山脊几十个点，比逐点判定便宜）
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of pts) {
@@ -11318,7 +11452,7 @@ function drawTerrainLabels(c) {
     const scr = pts.map(toScreen);
     const layout = layoutTextAlongPath(name, scr, {
       fontSize: style.fontSize,
-      letterSpacing: 2,
+      letterSpacing: kind === 'sea' ? 6 : 2,
       maxTiltDeg: 70,
       // 每个字的宽度直接量（与 drawStyledLabel 同一条 fontString 口径）
       measure: (ch) => Math.max(2, measureTextWithStyle(ch, style).w - 6),

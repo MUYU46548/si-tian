@@ -24,9 +24,24 @@
       <span class="tlab-status" data-testid="terrain-labels-status">{{ status }}</span>
     </div>
 
+    <!-- 手动新建（2026-10-27）：山系/海域 = 在地图上拖一条线；平原 = 点一下落个点。
+         几何由 ScenarioMap 采集（`terrainLabelPick`），本面板只负责「命名 + 应用」——
+         与山脊候选同一条落库路径（整表一条 undo）。 -->
+    <div class="tlab-manual">
+      <span class="tlab-manual-label">手动新建：</span>
+      <button class="tlab-btn sm" data-testid="terrain-labels-pick-range" :disabled="!!pick" @click="$emit('pick', 'range')">画山系</button>
+      <button class="tlab-btn sm" data-testid="terrain-labels-pick-sea" :disabled="!!pick" @click="$emit('pick', 'sea')">画海域</button>
+      <button class="tlab-btn sm" data-testid="terrain-labels-pick-plain" :disabled="!!pick" @click="$emit('pick', 'plain')">点平原</button>
+      <template v-if="pick">
+        <span class="tlab-status" data-testid="terrain-labels-pick-status">{{ pickStatus }}</span>
+        <button class="tlab-btn sm" data-testid="terrain-labels-pick-done" :disabled="!pickReady" @click="finishPick">完成</button>
+        <button class="tlab-btn sm" data-testid="terrain-labels-pick-cancel" @click="$emit('pick-cancel')">取消</button>
+      </template>
+    </div>
+
     <div v-if="!rows.length" class="tlab-empty">
-      还没有注记。点「检测山脊」抽候选，填名字后再「应用」——
-      没名字的候选不会落库（不自动编专名）。
+      还没有注记。点「检测山脊」抽候选，或手动「画/点」一条；填名字后再「应用」——
+      没名字的不会落库（不自动编专名）。
     </div>
 
     <div v-else class="tlab-rows">
@@ -46,13 +61,13 @@
 
     <div class="tlab-note">
       自动项只来自高度图抽出的脊线（候选可筛、可删）；用户手绘的注记永远不会被“重新检测”覆盖。
-      海域 / 平原注记与沿河排字在下一批。
+      手绘的走同一条落库路径：填名字 →「应用」= 一条 Ctrl+Z。
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import { useGeodataStore } from '../store/geodata';
 import { detectRidges } from '../utils/ridges';
@@ -60,11 +75,15 @@ import { smoothPolyline } from '../utils/polylineSmooth';
 import { simplifyContour } from '../utils/contour';
 import { SEA_LEVEL } from '../utils/heightMath';
 
+const KIND_LABEL = { range: '山系', sea: '海域', plain: '平原' };
+
 const props = defineProps({
   baseMapKey: { type: String, default: '' },
   hasHeightmap: { type: Boolean, default: false },
+  // 手绘采集中的状态（由 ScenarioMap 采集）：{ kind, points:[{x,y}], finished }
+  pick: { type: Object, default: null },
 });
-const emit = defineEmits(['applied', 'close']);
+const emit = defineEmits(['applied', 'close', 'pick', 'pick-done', 'pick-cancel']);
 
 const store = useGeodataStore();
 const rows = ref([]);
@@ -84,7 +103,7 @@ function loadSaved() {
     name: t.name || '',
     points: Array.isArray(t.points) ? t.points : [],
     origin: t.origin === 'auto' ? 'auto' : 'user',
-    meta: `${(t.points || []).length} 点`,
+    meta: `${KIND_LABEL[t.kind || 'range'] || ''} · ${(t.points || []).length} 点`,
   }));
   status.value = '';
 }
@@ -138,6 +157,41 @@ function removeRow(i) {
   rows.value.splice(i, 1);
 }
 
+// ── 手动新建（2026-10-27）───────────────────────────────────────────────────
+// 几何采集在 ScenarioMap（它才知道相机/屏幕坐标）；本面板只把采到的点做成一行，
+// 跟着「应用」一起整表落库 —— 与山脊候选同一条路（一条 undo）。
+const pickReady = computed(() => {
+  const p = props.pick;
+  if (!p) return false;
+  const n = (p.points || []).length;
+  return p.kind === 'plain' ? n >= 1 : n >= 2;
+});
+const pickStatus = computed(() => {
+  const p = props.pick;
+  if (!p) return '';
+  const n = (p.points || []).length;
+  const name = KIND_LABEL[p.kind] || '注记';
+  if (p.kind === 'plain') {
+    return n >= 1 ? `${name}：已取点，点「完成」再命名` : `${name}：在地图上点一下`;
+  }
+  return `${name}：已取 ${n} 点${n >= 2 ? '，点「完成」再命名' : ' —— 在地图上拖一条线'}`;
+});
+
+function finishPick() {
+  const p = props.pick;
+  if (!pickReady.value || !p) return;
+  rows.value = [...rows.value, {
+    id: `user_${Date.now().toString(36)}_${rows.value.length}`,
+    kind: p.kind,
+    name: '',
+    points: (p.points || []).map((q) => ({ x: q.x, y: q.y })),
+    origin: 'user',
+    meta: `${KIND_LABEL[p.kind] || ''} · ${(p.points || []).length} 点 · 手绘`,
+  }];
+  emit('pick-done');
+  status.value = `已加入一条手绘${KIND_LABEL[p.kind] || '注记'} —— 填名字后「应用」才会落库`;
+}
+
 function apply() {
   const labels = rows.value
     .filter((r) => String(r.name || '').trim())
@@ -178,7 +232,10 @@ function apply() {
   border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer;
 }
 .tlab-btn.primary { color: #0f172a; background: #38bdf8; border-color: #38bdf8; font-weight: 600; }
+.tlab-btn.sm { padding: 2px 8px; font-size: 11px; }
 .tlab-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.tlab-manual { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tlab-manual-label { color: #94a3b8; font-size: 11px; }
 .tlab-status { color: #94a3b8; font-size: 11px; line-height: 1.5; }
 .tlab-empty { color: #94a3b8; font-size: 11px; line-height: 1.7; padding: 6px 0; }
 .tlab-rows { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow: auto; }
