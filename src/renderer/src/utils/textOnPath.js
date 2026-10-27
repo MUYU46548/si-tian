@@ -35,6 +35,92 @@ export function estimateCharWidth(ch, fontSize) {
   return wide ? size : size * 0.55;
 }
 
+function cleanPoints(points) {
+  return Array.isArray(points)
+    ? points.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+    : [];
+}
+
+/**
+ * 折线上离目标点最近的投影（河名沿河时用来把「避让排布给的落点」投到河道上）。
+ * @returns {{x:number,y:number,s:number,dist:number}|null} `s` = 从起点算的弧长；无有效折线 → null
+ */
+export function nearestPointOnPath(points, target) {
+  const src = cleanPoints(points);
+  if (!src.length) return null;
+  const tx = target && Number.isFinite(target.x) ? target.x : src[0].x;
+  const ty = target && Number.isFinite(target.y) ? target.y : src[0].y;
+  let best = { x: src[0].x, y: src[0].y, s: 0, dist: Math.hypot(tx - src[0].x, ty - src[0].y) };
+  let acc = 0;
+  for (let i = 1; i < src.length; i++) {
+    const ax = src[i - 1].x, ay = src[i - 1].y;
+    const dx = src[i].x - ax, dy = src[i].y - ay;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 1e-9)) continue;
+    let t = ((tx - ax) * dx + (ty - ay) * dy) / (len * len);
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    const px = ax + dx * t, py = ay + dy * t;
+    const dist = Math.hypot(tx - px, ty - py);
+    if (dist < best.dist) best = { x: px, y: py, s: acc + len * t, dist };
+    acc += len;
+  }
+  return best;
+}
+
+/**
+ * 取折线上「以某点为中心、总长不超过 span」的一段。
+ *
+ * 为什么需要它：河名沿河排字时若把**整条河**喂给 `layoutTextAlongPath`，字会跑到河的中点，
+ * 而避让排布刚刚判定「这个名字放在这里放得下」——两处位置不一致，避让就白做了。
+ * 这里先把排布给的落点投到河道上（最近投影），再取它两侧的一段，字数才落在判定过的位置。
+ *
+ * 边界：span 超过整条河 → 整条返回（由调用方判断字是否放得下，**不压缩字距**）；
+ *       窗口贴到端点时向另一端平移（保持 span 长度，别让字挤在端点）。
+ */
+export function slicePathAroundPoint(points, target, span) {
+  const src = cleanPoints(points);
+  if (src.length < 2) return src.slice();
+  const total = pathLength(src);
+  if (!(total > 0)) return src.slice();
+  const want = Number(span) > 0 ? Number(span) : total;
+
+  const np = nearestPointOnPath(src, target);
+  const s0 = np ? np.s : total / 2;
+  let lo = s0 - want / 2;
+  let hi = s0 + want / 2;
+  if (lo < 0) { lo = 0; hi = Math.min(total, want); }
+  if (hi > total) { hi = total; lo = Math.max(0, total - want); }
+
+  // 累计弧长（cum[i] = 起点到第 i 个顶点的长度）
+  const cum = [0];
+  for (let i = 1; i < src.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(src[i].x - src[i - 1].x, src[i].y - src[i - 1].y));
+  }
+  const pointAt = (s) => {
+    const v = Math.max(0, Math.min(total, s));
+    for (let i = 1; i < src.length; i++) {
+      if (v <= cum[i] || i === src.length - 1) {
+        const segLen = cum[i] - cum[i - 1];
+        const t = segLen > 1e-9 ? (v - cum[i - 1]) / segLen : 0;
+        return {
+          x: src[i - 1].x + (src[i].x - src[i - 1].x) * t,
+          y: src[i - 1].y + (src[i].y - src[i - 1].y) * t,
+        };
+      }
+    }
+    return { x: src[src.length - 1].x, y: src[src.length - 1].y };
+  };
+
+  const out = [pointAt(lo)];
+  for (let i = 1; i < src.length - 1; i++) {
+    if (cum[i] > lo && cum[i] < hi) out.push({ x: src[i].x, y: src[i].y });
+  }
+  const end = pointAt(hi);
+  const last = out[out.length - 1];
+  if (!last || Math.hypot(end.x - last.x, end.y - last.y) > 1e-9) out.push(end);
+  return out;
+}
+
 /**
  * 沿折线排字。
  *

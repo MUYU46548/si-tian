@@ -1880,7 +1880,7 @@ import {
 } from '../utils/polityLabels';
 import { drawStyledLabel, fontString, drawTextAlongPath } from '../utils/labelStyles';
 // 沿路径排字（D3，2026-10-26）：山系名沿脊线、河名沿河 —— 纯几何在 utils/textOnPath.js
-import { layoutTextAlongPath } from '../utils/textOnPath';
+import { layoutTextAlongPath, slicePathAroundPoint } from '../utils/textOnPath';
 // 文字避让（2026-10-26）：四档标签（势力/省/城镇/河）共用一次排布 —— 纯函数，画布与导出同源
 import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
 // 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
@@ -11178,6 +11178,9 @@ function getLabelPlan() {
         x: sp.x, y: sp.y,
         style: riverLabelTextStyle(),
         placements: [{ mode: 'above', gap: 5 }, { mode: 'below', gap: 5 }, { mode: 'right', gap: 7 }],
+        // 河名沿河（2026-10-27）：排布只决定「放在哪一段河道附近」，实际落字沿折线排。
+        // 世界坐标；绘制时换算成屏幕（见 drawRiverNameAlongPath）。
+        path: lb.path || null,
       });
     }
   }
@@ -11194,6 +11197,8 @@ function getLabelPlan() {
     highlight: !!p.highlight,
     wx: (p.cx - cameraX.value) / scale,
     wy: (p.cy - cameraY.value) / scale,
+    // 河名沿河：排布结论只给落点，走向要带回去才能沿折线排字（世界坐标）
+    path: p.kind === 'river' ? (p.path || null) : null,
   }));
   labelPlanCache = { refs, nums, plan };
   return plan;
@@ -11203,8 +11208,11 @@ function getLabelPlan() {
 function drawPlannedLabels(c, kinds) {
   const plan = getLabelPlan();
   if (!plan.length) return;
+  const scale = cameraScale.value;
   for (const lb of plan) {
     if (kinds.indexOf(lb.kind) < 0) continue;
+    // 河名沿河（2026-10-27）：能沿折线排就沿，排不下才退回水平字（宁可横着，也别丢名字）
+    if (lb.kind === 'river' && drawRiverNameAlongPath(c, lb, scale)) continue;
     drawStyledLabel(c, lb.text, lb.wx, lb.wy, lb.style, {
       align: 'center',
       baseline: 'middle',
@@ -11212,6 +11220,54 @@ function drawPlannedLabels(c, kinds) {
       highlight: lb.highlight,
     });
   }
+}
+
+// 河名抬离河道中线的屏幕像素数：字压在水线上，河本身就看不清了
+const RIVER_NAME_NORMAL_OFFSET = 7;
+
+/**
+ * 河名沿河排字。
+ *
+ * 为什么不是「把整条河喂给 layoutTextAlongPath」：避让排布已经判定「这个名字放在此处放得下」，
+ * 若按整条河的中点排字，字会跑离判定过的位置（那个位置可能正压着省名）。
+ * 所以先把排布给的落点**投到河道上**，只取它两侧一段（`slicePathAroundPoint`），
+ * 再把这一小段喂给沿路径排字 —— 判定与落字看的是同一处。
+ *
+ * 只在**每个字都放得下**时采用（弯太急时字会被跳掉 → 缺字的名字比横排更难读）；
+ * 否则返回 false，由调用方退回水平标签。
+ */
+function drawRiverNameAlongPath(c, lb, scale) {
+  const pts = lb && lb.path;
+  if (!Array.isArray(pts) || pts.length < 2) return false;
+  if (!(scale > 0)) return false;
+  const style = lb.style || riverLabelTextStyle();
+  const chars = Array.from(String(lb.text || ''));
+  if (!chars.length) return false;
+  // 与排布/绘制同一条字体口径量字（drawStyledLabel 走 fontString；这里只量宽）
+  const measure = (ch) => Math.max(2, measureTextWithStyle(ch, style).w - 6);
+  const letterSpacing = 2;
+  const textWidth = chars.reduce((sum, ch) => sum + measure(ch), 0)
+    + letterSpacing * Math.max(0, chars.length - 1);
+
+  const scr = pts.map((p) => ({ x: cameraX.value + p.x * scale, y: cameraY.value + p.y * scale }));
+  const anchor = { x: cameraX.value + lb.wx * scale, y: cameraY.value + lb.wy * scale };
+  const window = slicePathAroundPoint(scr, anchor, textWidth * 1.6);
+  if (!Array.isArray(window) || window.length < 2) return false;
+  const layout = layoutTextAlongPath(lb.text, window, {
+    fontSize: style.fontSize,
+    letterSpacing,
+    maxTiltDeg: 65,
+    measure,
+  });
+  if (!layout.ok || layout.placed.length < chars.length) return false;
+  const placedWorld = layout.placed.map((p) => ({
+    ch: p.ch,
+    x: (p.x + Math.sin(p.angle) * RIVER_NAME_NORMAL_OFFSET - cameraX.value) / scale,
+    y: (p.y - Math.cos(p.angle) * RIVER_NAME_NORMAL_OFFSET - cameraY.value) / scale,
+    angle: p.angle,
+  }));
+  drawTextAlongPath(c, placedWorld, style, { screenScale: scale });
+  return true;
 }
 
 const TERRAIN_RANGE_STYLE = Object.freeze({

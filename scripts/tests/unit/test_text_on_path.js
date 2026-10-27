@@ -38,7 +38,7 @@ const line = (x0, y0, x1, y1, n = 2) => {
 async function main() {
   const mod = await import('data:text/javascript;base64,'
     + Buffer.from(fs.readFileSync(SRC, 'utf8'), 'utf8').toString('base64'));
-  const { layoutTextAlongPath, pathLength, estimateCharWidth } = mod;
+  const { layoutTextAlongPath, pathLength, estimateCharWidth, slicePathAroundPoint } = mod;
 
   check('t1 水平直线：4 个字居中、角度 0、字距均匀', () => {
     const pts = line(0, 100, 200, 100);
@@ -97,6 +97,35 @@ async function main() {
     eq(estimateCharWidth('山', 10), 10, 'CJK');
     assert(Math.abs(estimateCharWidth('A', 10) - 5.5) < 1e-9, '拉丁');
     return '10 / 5.5';
+  });
+
+  // ── 河名沿河（2026-10-27）：先取「落点附近的一段河道」，再沿它排字 ──
+  check('t8 窗口以落点的**最近投影**为中心（不是整条河的中点）', () => {
+    // 一条 1000 长的水平河；落点在 x=800 附近 → 窗口应落在 [750,850] 一带，而不是 [450,550]
+    const river = line(0, 0, 1000, 0, 2);
+    const win = slicePathAroundPoint(river, { x: 800, y: 40 }, 100);
+    assert(win.length >= 2, '应返回 >=2 点');
+    const x0 = win[0].x, x1 = win[win.length - 1].x;
+    assert(Math.abs((x0 + x1) / 2 - 800) < 1e-6, `窗口中心应≈800（实际 ${(x0 + x1) / 2}）`);
+    assert(Math.abs((x1 - x0) - 100) < 1e-6, `窗口长度应=100（实际 ${x1 - x0}）`);
+    return `[${x0.toFixed(0)}, ${x1.toFixed(0)}]`;
+  });
+
+  check('t9 端点/短河边界：窗口不越界、span 超长时整条返回', () => {
+    const river = line(0, 0, 200, 0, 2);
+    const head = slicePathAroundPoint(river, { x: 0, y: 10 }, 100);
+    eq(head[0].x, 0, '窗口贴左端不越界');
+    assert(Math.abs(head[head.length - 1].x - 100) < 1e-6, `贴端时整段平移（实际到 ${head[head.length - 1].x}）`);
+    const whole = slicePathAroundPoint(river, { x: 100, y: 0 }, 10000);
+    assert(Math.abs(whole[whole.length - 1].x - 200) < 1e-6, 'span 超长 → 整条');
+    // 折线中段的顶点要被保留（窗口不是只有两个端点，拐弯才排得出字）
+    const bent = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+    const w2 = slicePathAroundPoint(bent, { x: 100, y: 0 }, 300);
+    assert(w2.length === 3, `应保留拐点（实际 ${w2.length} 点）`);
+    // 退化输入不抛
+    eq(slicePathAroundPoint([], { x: 0, y: 0 }, 10).length, 0, '空折线');
+    eq(slicePathAroundPoint([{ x: 1, y: 1 }], { x: 0, y: 0 }, 10).length, 1, '单点');
+    return `head=[${head[0].x},${head[1].x}] whole=${whole.length}pt bent=${w2.length}pt`;
   });
 
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);

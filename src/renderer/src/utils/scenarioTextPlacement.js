@@ -131,6 +131,13 @@ function riverWeight(r) {
  */
 export function collectRiverLabels(rivers, { tier = 0, rect = null, max = null } = {}) {
   if (tier < 0) return [];
+  // 河名沿河（2026-10-27）：把折线一并带出来 —— 画布/导出要按走向排字，
+  // 只给一个中点锚点就只能写水平字（"名字横跨河湾"）。points 是**原数组引用**，
+  // 不做拷贝：160 条河 × 上百点，每帧复制一遍不值得（读侧只读不改）。
+  const withPath = (r, mid) => ({
+    id: r.id, name: r.name, x: mid.x, y: mid.y, weight: riverWeight(r),
+    path: Array.isArray(r.points) && r.points.length >= 2 ? r.points : null,
+  });
   if (tier === 0) {
     // 出图档：全图只标流量前 12 的河
     const list = (Array.isArray(rivers) ? rivers : [])
@@ -138,7 +145,7 @@ export function collectRiverLabels(rivers, { tier = 0, rect = null, max = null }
       .sort((a, b) => riverWeight(b) - riverWeight(a));
     return list.slice(0, Number(max) > 0 ? Number(max) : 12).map((r) => {
       const mid = polylineMidpoint(r.points);
-      return mid ? { id: r.id, name: r.name, x: mid.x, y: mid.y, weight: riverWeight(r) } : null;
+      return mid ? withPath(r, mid) : null;
     }).filter(Boolean);
   }
   const list = (Array.isArray(rivers) ? rivers : [])
@@ -146,7 +153,7 @@ export function collectRiverLabels(rivers, { tier = 0, rect = null, max = null }
     .map((r) => {
       const mid = polylineMidpoint(r.points);
       if (!mid || !inRect(mid.x, mid.y, rect)) return null;
-      return { id: r.id, name: r.name, x: mid.x, y: mid.y, weight: riverWeight(r) };
+      return withPath(r, mid);
     })
     .filter(Boolean)
     .sort((a, b) => b.weight - a.weight);
