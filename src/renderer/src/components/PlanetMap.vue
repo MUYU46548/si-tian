@@ -123,6 +123,7 @@
             <button :class="{ active: heightTool === 'lower' }" @click="heightTool = 'lower'" title="左键降低地形"><Icon name="trending-down" :size="13"/> 降低</button>
             <button :class="{ active: heightTool === 'smooth' }" @click="heightTool = 'smooth'" title="平滑地形"><Icon name="activity" :size="13"/> 平滑</button>
             <button :class="{ active: heightTool === 'biome' }" @click="heightTool = 'biome'" title="涂抹生物群系"><Icon name="palette" :size="13"/> 群系</button>
+            <button :class="{ active: heightTool === 'lake' }" @click="heightTool = 'lake'" title="湖泊工具：按住挖湖盆（平底 18/19，松手后海陆重标；临海会灌穿成海湾）" data-testid="height-tool-lake"><Icon name="droplet" :size="13"/> 湖泊</button>
             <template v-if="heightTool === 'biome'">
               <span class="toolbar-label">群系</span>
               <select v-model="planetHeightBrush.brushBiome.value" class="brush-biome-select">
@@ -1256,10 +1257,16 @@ const interactionMode = ref('pan');
 //     **与 ScenarioMap 底图图层同一套配色与实现**（M2 的目标：同一份高度图，两个视图一个观感）
 // 为什么默认不改：矢量那套是为解决「逐格绘制 + 画布滤镜卡死」重写的（见 planetDrawing 352 行），
 // 群系着色信息量也更大；栅格是**补上**「与剧本视图对齐」的那一档选择，不是替代。
-const heightmapRasterKind = ref('biome');
+// 2026-10-27（SP-1025 集成 · 阶段 0）：新增「卫星影像 / 地形色」两个栅格档，
+// 默认切到 `satellite` —— 海面是近岸青绿→深海的连续色带 + 卫星陆色/阴影，
+// 这是用户参照的独立模块（SP-1025 planet-map）里那张海陆图的观感。
+// `biome` 仍保留（矢量群系轮廓，海岸更锐利）。
+const heightmapRasterKind = ref('satellite');
 // 着色方案的**唯一选项表**（高度面板与文化/宗教面板共用；写两处必然漂移：
 // 加一档只改一处 → 另一个面板里那档就是"看不见的"）
 const RASTER_KIND_OPTIONS = [
+  { value: 'satellite', label: '卫星影像' },
+  { value: 'terrain', label: '地形色' },
   { value: 'biome', label: '群系' },
   { value: 'landsea', label: '陆海底色' },
   { value: 'height', label: '海拔' },
@@ -1401,6 +1408,28 @@ const undoLabel = computed(() => getLastCommandLabel());
 const isDrawing = computed(() => currentPath.value.length > 0);
 
 // ===== 鹰眼导航数据 =====
+/** 高度图网格的世界包围盒（按 points 引用缓存）—— `worldBounds` 必须带上它，
+ *  否则 `zoomFit` 只按地形/标记算，真实行星图会被缩成屏幕角落的一小块（2026-10-27）。 */
+let _hmBoundsCache = { pts: null, b: null };
+function heightmapBounds(md) {
+  const pts = md?.heightmap?.grid?.points;
+  if (!Array.isArray(pts) || !pts.length) return null;
+  if (_hmBoundsCache.pts === pts) return _hmBoundsCache.b;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    const x = Array.isArray(p) ? p[0] : p?.x;
+    const y = Array.isArray(p) ? p[1] : p?.y;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  const b = Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+  _hmBoundsCache = { pts, b };
+  return b;
+}
+
 const worldBounds = computed(() => {
   const preset = Number(canvasSizePreset.value);
   const elements = [];
@@ -1410,6 +1439,8 @@ const worldBounds = computed(() => {
   for (const marker of currentMapData.value?.markers || []) { elements.push({ x: marker.x, y: marker.y }); }
   for (const label of currentMapData.value?.textLabels || []) { elements.push({ x: label.x, y: label.y }); }
   for (const place of places.value) { if (place.coordinate?.x !== null && place.coordinate?.x !== undefined) elements.push({ x: place.coordinate.x, y: place.coordinate.y }); }
+  const hb = heightmapBounds(currentMapData.value);
+  if (hb) elements.push({ x: hb.minX, y: hb.minY }, { x: hb.maxX, y: hb.maxY });
   if (elements.length === 0) { if (preset > 0) return { minX: -preset, maxX: preset, minY: -preset, maxY: preset }; return { minX: -300, maxX: 300, minY: -300, maxY: 300 }; }
   let minX = preset > 0 ? -preset : Infinity, maxX = preset > 0 ? preset : -Infinity, minY = preset > 0 ? -preset : Infinity, maxY = preset > 0 ? preset : -Infinity;
   for (const p of elements) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }

@@ -445,10 +445,12 @@ function drawHeightmapRaster(ctx, kind, alpha) {
   // ⚠️ 不画而不是画成一片"无主底色"：后者会用一个假色块盖住地形，用户以为数据丢了。
   if (isChannel && (!hm[kind] || !hm[kind].length)) return;
   const palette = channelPaletteOf(md, kind);
+  // 卫星/地形色默认带山体阴影（阶段 0：SP-1025 的 NW 光照观感）；其它档不加
+  const shade = (kind === 'satellite' || kind === 'terrain') ? 1 : 0;
   // 缓存失效用内容指纹：h 变了（涂高度）或通道变了（涂文化）或调色板变了（改颜色）都要重建
-  const key = kind + '|' + hashLabels(hm.h)
+  const key = kind + '|sh' + shade + '|' + hashLabels(hm.h)
     + (isChannel ? '|' + hashLabels(hm[kind]) + '|' + paletteFingerprint(palette) : '');
-  const r = hmRasterCache.get(key, hm, kind, palette ? { palette } : undefined);
+  const r = hmRasterCache.get(key, hm, kind, { palette, shade });
   if (!r) return;
   ctx.save();
   // 平滑档输出的是**格级分辨率**画布，靠这里的插值放大成渐变（反「拼豆」，2026-10-09）；

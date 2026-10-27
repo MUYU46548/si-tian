@@ -177,7 +177,9 @@ export function buildSeaDepth(hm, opts = {}) {
   if (!seaCells || !landCells) return null;   // 全陆或全海：没有"岸"可量
 
   // ── ① 真海深优先 ──────────────────────────────────────────────────────────
-  if (Number.isFinite(hMin) && hMax - hMin > SEA_HEIGHT_MIN_SPAN) {
+  // `opts.forceDistance`（2026-10-27）：老导入图的**海格 h 恒定 12**，按 h 算深度会整片
+  // 一个色（没有浅滩带）；政治底图要的是"近岸青绿 → 远海深蓝"，所以强制走距离场。
+  if (!opts.forceDistance && Number.isFinite(hMin) && hMax - hMin > SEA_HEIGHT_MIN_SPAN) {
     for (let i = 0; i < n; i++) {
       if ((h[i] || 0) >= seaLevel) continue;
       t[i] = clamp01((seaLevel - h[i]) / SEA_HEIGHT_DEPTH_UNITS);

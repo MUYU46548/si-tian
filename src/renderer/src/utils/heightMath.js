@@ -157,6 +157,16 @@ export function brushFalloff(radius, dist) {
   return Math.exp(-(t * t) / (2 * 0.5 * 0.5));
 }
 
+/**
+ * 湖泊工具的**平底高度**（2026-10-27，SP-1025 语义）：真实湖面是平的。
+ * 权重 1（盆心）→ 18（水下 2 档），权重 0（边缘）→ 19（浅缘）；统一低于海平面 20。
+ * 单一实现：行星笔刷与剧本底图笔刷都调它（`unit/test_lake_height.js`）。
+ */
+export function lakeHeightForWeight(weight) {
+  const w = Number.isFinite(weight) ? Math.max(0, Math.min(1, weight)) : 0;
+  return 18 + Math.round(1 - w);
+}
+
 // ── 高度图重算 ─────────────────────────────────────────
 // 给定全量高度图 + 纬度/海洋距离，返回派生图层
 export function deriveLayers(heightmap, gridPoints, latitudeFn, oceanDistFn) {

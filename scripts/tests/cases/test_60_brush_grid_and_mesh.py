@@ -397,6 +397,10 @@ def run(cdp):
     # 高度图（生物群系层）：源码之外再看真实渲染成本
     _js(cdp, SET_MODE.replace('__PM__', PM).replace('__MODE__', "'height'"))
     time.sleep(0.8)
+    # 2026-10-27：PlanetMap 默认档改为 `satellite`（SP-1025 阶段 0），矢量群系层不再默认绘制；
+    # 本段测的是 `drawHeightmap` 的轮廓统计，必须显式切回 `biome` 再量。
+    _js(cdp, "(() => { const pm = %s; pm.heightmapRasterKind = 'biome'; pm.renderer.requestRender(); return 'ok'; })()" % PM)
+    time.sleep(0.8)
     f_on = _js(cdp, FRAMES.replace('__PM__', PM).replace('__N__', '6'))
     hm = _js(cdp, HM_STATS.replace('__PM__', PM))
     if 'ERR' in hm or not hm.get('stats'):

@@ -29,6 +29,34 @@ export const SEA_BASE_COLOR = [201, 214, 228];    // #c9d6e4
 
 // ── 色带（hex）──────────────────────────────────────────────────────────────
 export const HYPSO_WATER = ['#e4f1f9', '#d2e9f6', '#bcdff0', '#a4d2e9', '#8cc4df'];
+// 🔴 2026-10-27（SP-1025 集成 · 阶段 0）：新增两套「卫星影像 / 地形色」色带。
+//    数据来源：SP-1025 `planet-map/src/render/palettes.ts`（抄码主源 FMG，MIT；
+//    只取色带数值，不引入其 Voronoi 数据模型）。海面从「近岸青绿 → 海蓝 → 深海」，
+//    陆地按海拔从草绿到岩灰/雪线 —— 这是用户说的「独立模块的海陆图」的关键。
+export const OCEAN_DEPTH_STOPS = Object.freeze([
+  [0, 168, 214, 218],
+  [0.15, 122, 190, 200],
+  [0.35, 70, 130, 168],
+  [0.62, 30, 76, 128],
+  [1, 14, 38, 80],
+]);
+export const TERRAIN_LAND_STOPS = Object.freeze([
+  [20, 96, 128, 84],
+  [32, 130, 152, 92],
+  [46, 172, 168, 106],
+  [60, 172, 148, 104],
+  [74, 156, 128, 106],
+  [86, 148, 132, 126],
+  [94, 214, 214, 214],
+  [100, 244, 246, 248],
+]);
+/** FMG 13 群系色（顺序 = `heightMath.BIOME_KEYS`，与 SP-1025 `BIOME_COLORS` 同表） */
+export const BIOME_RGB = Object.freeze([
+  [70, 110, 171], [251, 231, 159], [181, 184, 135], [210, 208, 130],
+  [200, 214, 143], [182, 217, 93], [41, 188, 86], [125, 203, 53],
+  [64, 156, 67], [75, 107, 50], [150, 120, 75], [213, 231, 235], [11, 145, 49],
+]);
+
 // 🔴 2026-10-27（用户附 EU4 截图 + B1「黑一块白一块」）：旧陆地色带的高端是
 //    `#c3853d`/`#a9742f`（橙/深棕），在粗格高度图上会糊成一块块"锈斑"；
 //    低端 `#e9e6b4` 乘 1.08 又顶到近白。改成**低饱和的绿→麦→灰褐**，且不再有近白/深黑，
@@ -118,6 +146,42 @@ export function sampleRamp(rgbList, t) {
   return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
 }
 
+/** 分段色带（stops = `[t, r, g, b]`）—— SP-1025 palettes 的等价实现 */
+export function sampleStops(stops, t) {
+  const list = Array.isArray(stops) && stops.length ? stops : [[0, 0, 0, 0]];
+  const v = Math.max(list[0][0], Math.min(list[list.length - 1][0], Number(t) || 0));
+  for (let i = 0; i < list.length - 1; i++) {
+    const [t0, r0, g0, b0] = list[i];
+    const [t1, r1, g1, b1] = list[i + 1];
+    if (v <= t1) {
+      const k = t1 === t0 ? 0 : (v - t0) / (t1 - t0);
+      return [r0 + (r1 - r0) * k, g0 + (g1 - g0) * k, b0 + (b1 - b0) * k];
+    }
+  }
+  const last = list[list.length - 1];
+  return [last[1], last[2], last[3]];
+}
+
+/** 海色：`t` 0（近岸）→ 1（深海）；SP-1025 的五档青绿→深蓝 */
+export function oceanDepthColor(t) {
+  return sampleStops(OCEAN_DEPTH_STOPS, clamp01(t));
+}
+
+/** 卫星陆色：群系色 × 海拔（高山岩灰、雪线偏白） */
+export function satelliteLandColor(h, biome) {
+  const base = BIOME_RGB[biome | 0] || BIOME_RGB[4];
+  const altitude = clamp01((Number(h) - 20) / 70);
+  const rock = [148, 138, 126];
+  const snow = [235, 237, 240];
+  const target = altitude > 0.75 ? snow : rock;
+  const k = altitude > 0.75 ? (altitude - 0.75) * 4 : altitude / 0.75;
+  return [
+    base[0] + (target[0] - base[0]) * k * 0.8,
+    base[1] + (target[1] - base[1]) * k * 0.8,
+    base[2] + (target[2] - base[2]) * k * 0.8,
+  ];
+}
+
 /** 网格单元 → 颜色（kind: landsea | height | temp | prec | culture | religion）
  *
  * `ctx`（可选，2026-10-26）：
@@ -130,7 +194,15 @@ export function cellColor(kind, i, hm, palette, ctx) {
     // 2026-10-27：剧本画布把「陆海底色」当**海面纸**用（陆地由省份多边形负责）。
     // 旧实现把陆地也刷成浅米色 → 省界平滑后海岸会漏出一圈块状"白斑"
     // （用户 B1「黑一块白一块」）。`landAsSea` 时整张底图统一海色，漏出的部分看起来就是海。
-    if (ctx && ctx.landAsSea) return SEA_BASE_COLOR;
+    if (ctx && ctx.landAsSea) {
+      // 阶段 0：海面也吃 SP-1025 的深度色带（近岸青绿→深蓝），陆地交给省份盖住。
+      if (hm.h[i] < RASTER_SEA_LEVEL) {
+        const sea = ctx.sea;
+        const tt = sea && sea.t ? (sea.t[i] || 0) : (RASTER_SEA_LEVEL - hm.h[i]) / RASTER_SEA_LEVEL;
+        return oceanDepthColor(0.06 + 0.64 * clamp01(tt));
+      }
+      return SEA_BASE_COLOR;
+    }
     return hm.h[i] >= RASTER_SEA_LEVEL ? LAND_BASE_COLOR : SEA_BASE_COLOR;
   }
   if (kind === 'temp') {
@@ -144,6 +216,20 @@ export function cellColor(kind, i, hm, palette, ctx) {
     const arr = hm[kind];
     const v = arr ? (arr[i] | 0) : 0;
     return (palette && palette[v]) || CHANNEL_UNASSIGNED_RGB;
+  }
+  // ── 卫星影像 / 地形色（阶段 0，来自 SP-1025 的 palettes）──────────────
+  // 海：近岸两圈用距离场（turquoise 浅滩），远海用 h 的坡面渐变；不再是一块淡蓝。
+  if (kind === 'satellite' || kind === 'terrain') {
+    const hs = hm.h[i];
+    if (hs < RASTER_SEA_LEVEL) {
+      const sea = ctx && ctx.sea;
+      const tt = sea && sea.t ? (sea.t[i] || 0) : (RASTER_SEA_LEVEL - hs) / RASTER_SEA_LEVEL;
+      // 0.06 起步（最靠岸也保留青绿）；上限压到 0.70 —— 司天的海格 h 几乎恒定 12，
+      // 若按 t=1 取到色带末端就是近黑（用户截图里的"黑海"）。0.7 落在海蓝/深蓝之间。
+      return oceanDepthColor(0.06 + 0.64 * clamp01(tt));
+    }
+    if (kind === 'terrain') return sampleStops(TERRAIN_LAND_STOPS, hs);
+    return satelliteLandColor(hs, hm.biome ? hm.biome[i] : 4);
   }
   const h = hm.h[i];
   // ── 海：有海深场就按"离岸多远"**连续**采样（5 色渐变）──
@@ -228,6 +314,11 @@ export function buildShadeMap(h, cols, rows, opts) {
   const strength = opts && Number.isFinite(opts.shade) ? opts.shade : 1;
   if (!h || !(cols > 1) || !(rows > 1) || h.length < cols * rows) return null;
   if (!(strength > 0)) return null;
+  // 2026-10-27：卫星/地形色的阴影要更柔（0.90~1.02），否则整片陆地被压暗 20%，
+  // 看起来像"脏"而不是"立体"。高度/陆海底色保持原来的 0.80~1.03。
+  const shadeMin = opts && Number.isFinite(opts.min) ? opts.min : 0.8;
+  const shadeMax = opts && Number.isFinite(opts.max) ? opts.max : 1.03;
+  const norm = opts && Number.isFinite(opts.norm) ? opts.norm : 1.15;
 
   // 高度标准差：把"陡峭度"归一化到本幅图自己的量纲上
   let sum = 0, sum2 = 0, n = 0;
@@ -241,9 +332,8 @@ export function buildShadeMap(h, cols, rows, opts) {
   if (!(std > 1e-6)) return null;
 
   const out = new Float32Array(cols * rows);
-  // 2026-10-27：NORM 0.9 → 1.15（同样高差算"更缓"），并把手影区间从 0.62~1.08
-  // 收到 **0.80~1.03** —— 旧值在 97×45 粗格上是一块块死黑/死白（用户截图）。
-  const NORM = 1.15;
+  // 2026-10-27：默认 NORM 1.15（同样高差算"更缓"），区间由 opts 控制。
+  const NORM = norm;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -257,7 +347,7 @@ export function buildShadeMap(h, cols, rows, opts) {
       // 与 NW 光向点乘：坡朝向光 → 更亮
       const shade = 1 + (dzdx * 0.7 + dzdy * 0.7) * strength;
       // 只保留柔和的明暗（阴影是辅助，不该把地形涂成黑白）
-      out[i] = Math.max(0.8, Math.min(1.03, shade));
+      out[i] = Math.max(shadeMin, Math.min(shadeMax, shade));
     }
   }
   return out;
@@ -306,7 +396,8 @@ export function buildHeightmapRaster(hm, kind, opts) {
   // 🔴 山体阴影（2026-10-17 第七修）：`{shade:1}` 打开，默认**关**（零行为变更）。
   //    只对"读地形的档"（高度 / 陆海底色）有意义 —— 温度/降水/文化那些是**专题图**，
   //    给它们加阴影会把数值读成地形（那是错的口径）。
-  const shadeOn = !!(opts && opts.shade > 0) && (kind === 'height' || kind === 'landsea');
+  const shadeOn = !!(opts && opts.shade > 0)
+    && (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain');
   const pts = hm?.grid?.points;
   if (!hm || !pts || !pts.length) return null;
   const values = kind === 'temp' ? hm.temp
@@ -333,8 +424,11 @@ export function buildHeightmapRaster(hm, kind, opts) {
   // ⚠️ 两样都是**一次性**算好再逐格用：逐格算分位数 = 每帧 O(n log n)，逐格 BFS = 每帧几十毫秒。
   const ctx = {
     span: kind === 'height' ? landHeightSpan(hm.h, RASTER_SEA_LEVEL) : null,
-    sea: kind === 'height' && !(opts && opts.sea === false)
-      ? buildSeaDepth(hm, { seaLevel: RASTER_SEA_LEVEL })
+    // 海深场：height / satellite / terrain / 剧本政治底图（landAsSea）都要
+    sea: (kind === 'height' || kind === 'satellite' || kind === 'terrain'
+      || (kind === 'landsea' && opts && opts.landAsSea))
+      && !(opts && opts.sea === false)
+      ? buildSeaDepth(hm, { seaLevel: RASTER_SEA_LEVEL, forceDistance: kind === 'landsea' })
       : null,
     // 剧本画布专用：landsea 只当海面纸（陆地由省份画）
     landAsSea: !!(opts && opts.landAsSea),
@@ -344,7 +438,15 @@ export function buildHeightmapRaster(hm, kind, opts) {
   // 宁可方块也不要画错（下标一旦错位，颜色会整体偏移且不报错）。
   const cols = hm.grid.cellsX | 0, rows = hm.grid.cellsY | 0;
   if (smooth && cols > 0 && rows > 0 && cols * rows === values.length && pts.length === values.length) {
-    const shade = shadeOn ? buildShadeMap(hm.h, cols, rows, { shade: opts.shade }) : null;
+    const soft = kind === 'satellite' || kind === 'terrain';
+    const shade = shadeOn
+      ? buildShadeMap(hm.h, cols, rows, {
+        shade: opts.shade,
+        min: soft ? 0.9 : undefined,
+        max: soft ? 1.02 : undefined,
+        norm: soft ? 1.35 : undefined,
+      })
+      : null;
     return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade, ctx);
   }
   return buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h, ctx);

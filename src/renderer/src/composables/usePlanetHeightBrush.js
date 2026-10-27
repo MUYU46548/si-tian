@@ -24,7 +24,7 @@ import { brushSegmentRect } from '../utils/dirtyRect';
 import { setSaveState } from './useStatusBar';
 import {
   SEA_LEVEL, BIOME_KEYS,
-  temperatureAtIndex, precipitationAtIndex, biomeIndex, brushFalloff,
+  temperatureAtIndex, precipitationAtIndex, biomeIndex, brushFalloff, lakeHeightForWeight,
 } from '../utils/heightMath';
 // A3（2026-10-08）：文化/宗教是**可选通道层**（首次涂抹才建），落盘读回是普通数组 →
 // 统一成 Uint8Array 的口径在 `utils/heightmapChannels.js`（单一实现，勿在这里再写一份）
@@ -314,7 +314,8 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     strokeDirty = false;
     strokeLabel = brushMode.value === 'biome' ? '涂抹生物群系'
       : brushMode.value === 'lower' ? '降低地形'
-        : brushMode.value === 'smooth' ? '平滑地形' : '抬高地形';
+        : brushMode.value === 'lake' ? '挖湖泊'
+          : brushMode.value === 'smooth' ? '平滑地形' : '抬高地形';
     if (!hm) return false;
     strokeBefore = {
       h: new Float32Array(hm.h),
@@ -415,6 +416,10 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
         const delta = strength * falloff;
         const v = round3(mode === 'raise' ? Math.min(100, cur + delta) : Math.max(0, cur - delta));
         if (v !== cur) pending.push([i, v]);
+      } else if (mode === 'lake') {
+        // 湖泊（SP-1025 语义）：平底 18/19 两档，中心 18（盆底）、边缘 19（浅缘）
+        const v = lakeHeightForWeight(falloff);
+        if (v !== hm.h[i]) pending.push([i, v]);
       } else if (mode === 'smooth') {
         // 邻域均值（读本帧稳定快照，避免"边算边改"产生方向性拖影）
         let sum = 0, count = 0;

@@ -933,6 +933,8 @@
         <select v-model="rasterLayer" title="网格数据图层（一次只渲染一层，避免叠加失真）">
           <option value="none">无</option>
           <option value="landsea">陆海底色</option>
+          <option value="satellite">卫星影像</option>
+          <option value="terrain">地形色</option>
           <option value="height">地形高度</option>
           <option value="temp">温度</option>
           <option value="prec">降水</option>
@@ -2145,6 +2147,7 @@ const basemapEditMode = ref(false);
 /** 底图编辑模式里的工具清单（唯一来源；行内按钮由它渲染） */
 const BASEMAP_TOOLS = [
   { id: 'height', icon: 'mountain', label: '高度', title: '高度笔刷 (H) — 按住抬高 / 右键降低（滚轮调半径、Shift+滚轮调强度）' },
+  { id: 'lake', icon: 'droplet', label: '湖泊', title: '湖泊工具 (Shift+L) — 按住挖湖盆；松手后海陆重标，不触边的洼地成湖（临海会灌穿成海湾）' },
   { id: 'biome', icon: 'palette', label: '群系', title: '生物群系笔刷 (N) — 涂抹生物群系' },
   { id: 'relief', icon: 'mountain', label: '地貌', title: 'Relief 图标 (I) — 放置山脉/树木/沙漠等自然特征' },
   { id: 'river', icon: 'droplets', label: '河流', title: '河流编辑器 (W) — 按住拖出笔迹画河；**Shift + 按在已有河的河身上拖出去 = 画支流**；点河身加拐点；拖节点微调' },
@@ -3375,7 +3378,7 @@ function updateCursor() {
   // 河流（2026-10-17）：十字准星＝可以画；指到节点上时换成 grab（见 onMouseMove）
   else if (tool.value === 'river') canvas.value.style.cursor = 'crosshair';
   else if (tool.value === 'riverErase') canvas.value.style.cursor = 'crosshair';
-  else if (tool.value === 'height' || tool.value === 'biome') canvas.value.style.cursor = 'none';
+  else if (tool.value === 'height' || tool.value === 'biome' || tool.value === 'lake') canvas.value.style.cursor = 'none';
   else if (tool.value === 'ownerBrush') canvas.value.style.cursor = 'crosshair';
   else if (tool.value === 'provincePaint') canvas.value.style.cursor = 'none';   // 笔刷：由画布上的圈指示笔头
   else if (PROVINCE_GRID_TOOLS.has(tool.value)) canvas.value.style.cursor = 'crosshair';
@@ -4796,6 +4799,19 @@ function onMouseDown(event) {
     store.applyHeightBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushStrength.value, brushMode);
     return;
   }
+  if (tool.value === 'lake' && event.button === 0) {
+    // 湖泊（2026-10-27，SP-1025 语义）：平底 18/19；松手后按 h 重标海陆。
+    if (rasterLayer.value !== 'height') {
+      rasterLayer.value = 'height';
+      statusMsg('已切到「地形高度」图层 —— 湖泊的改动只在这档看得见');
+    }
+    isBrushing = true;
+    brushMode = 'lake';
+    const rect = canvas.value.getBoundingClientRect();
+    const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    store.applyHeightBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushStrength.value, 'lake');
+    return;
+  }
   if (tool.value === 'biome' && event.button === 0) {
     // 群系色只在**底图编辑**视图里露出来（剧本模式被势力归属色整片盖住）—— 涂了没反应
     // 不是笔刷坏了，是当前视图把它盖住了。落笔时自动切到看得见的那一档。
@@ -5070,14 +5086,14 @@ function onMouseMove(event) {
   }
 
   // 笔刷预览更新
-  if (['height', 'biome', 'culture', 'religion'].includes(tool.value)) {
+  if (['height', 'lake', 'biome', 'culture', 'religion'].includes(tool.value)) {
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     brushPreview.value = { x: world.x, y: world.y, radius: brushRadius.value };
 
     // 拖动中应用笔刷
     if (isBrushing) {
-      if (tool.value === 'height') {
+      if (tool.value === 'height' || tool.value === 'lake') {
         store.applyHeightBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushStrength.value, brushMode);
       } else if (tool.value === 'biome') {
         store.applyBiomeBrush(baseMapKey.value, world.x, world.y, brushRadius.value, brushBiome.value);
@@ -5503,7 +5519,7 @@ function onWheel(event) {
   initialFitPending = false;         // 用户开始操作 → 不再自动抢镜头
   endStrokeBase();                   // 滚轮会动相机 → 手势期基帧必须作废（相机动了贴图就是错的）
   // 笔刷工具下：滚轮调半径，Shift+滚轮调强度
-  if (tool.value === 'height' || tool.value === 'biome') {
+  if (tool.value === 'height' || tool.value === 'biome' || tool.value === 'lake') {
     event.preventDefault();
     const delta = event.deltaY < 0 ? 1 : -1;
     if (event.shiftKey && tool.value === 'height') {
@@ -6096,6 +6112,7 @@ function onKeyDown(event) {
   else if (event.key === 'm' || event.key === 'M') setTool('merge');
   else if (event.key === 'p' || event.key === 'P') setTool('paint');
   else if (event.key === 'q' || event.key === 'Q') setTool(event.shiftKey ? 'provinceBrush' : 'ownerBrush');
+  else if ((event.key === 'l' || event.key === 'L') && event.shiftKey) setTool('lake');
   else if (event.key === 'l' || event.key === 'L') setTool('provinceLasso');
   else if (event.key === 'o' || event.key === 'O') setTool('provinceFill');
   else if (event.key === 'd' || event.key === 'D') setTool('polySplit');
@@ -8869,7 +8886,8 @@ function buildCellRaster(kind) {
   // `landAsSea`（2026-10-27）：剧本画布的「陆海底色」只当海面纸 —— 陆地由省份多边形负责，
   // 否则省份平滑后的海岸会漏出一圈块状浅米色（B1「白一块」）。
   return buildHeightmapRaster(hm, kind, {
-    shade: terrainShade.value ? terrainShadeStrength.value : 0,
+    shade: terrainShade.value ? terrainShadeStrength.value
+      : ((kind === 'satellite' || kind === 'terrain') ? 1 : 0),
     landAsSea: kind === 'landsea',
   });
 }
@@ -9065,8 +9083,8 @@ function drawPoliticalCoast(c) {
   c.save();
   c.lineCap = 'round';
   c.lineJoin = 'round';
-  c.lineWidth = px(3.2);
-  c.strokeStyle = 'rgba(238, 247, 253, 0.55)';
+  c.lineWidth = px(5);
+  c.strokeStyle = 'rgba(150, 210, 215, 0.55)';
   for (const ln of d.coasts) {
     if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
     strokeWorldPolyline(c, ln, true);
@@ -10181,7 +10199,8 @@ function renderFrame() {
     // 必须画在省份之前、且不透明（2026-10-26：旧做法是"省份不透明填色 + 45% 栅格盖上去"，
     // 两层半透明互相洗成一张粉彩画，用户原话「看不出地形」）。
     const rasterBase = rasterLayer.value === 'height'
-      || rasterLayer.value === 'temp' || rasterLayer.value === 'prec';
+      || rasterLayer.value === 'temp' || rasterLayer.value === 'prec'
+      || rasterLayer.value === 'satellite' || rasterLayer.value === 'terrain';
     if (rasterLayer.value === 'landsea') {
       drawRasterLayer(ctx.value, 'landsea', 1);
       // 浅海带 + 海岸线（政治档也要，否则海陆边界是一刀切的硬边 —— 2026-10-27）
@@ -10403,7 +10422,11 @@ function drawProvinces(c, opts = {}) {
     const path = provincePathFor(rp, altStraight);
     if (!path) return;
     const fillCol = getProvinceColor(rp);
-    if (fills) {
+    // 2026-10-27（阶段 0）：政治档的海面由 `landsea` 栅格画**深度色带**；
+    // 海域省再盖一层 SEA_FILL 会把青绿浅滩压成一块深蓝（用户参照的 SP-1025 海陆图没有这层）。
+    // 只留虚线海界，不填海。
+    const seaFromRaster = rp.kind === 'sea' && rasterLayer.value === 'landsea';
+    if (fills && !seaFromRaster) {
       c.fillStyle = fillCol;
       // 多环实体：一条路径覆盖所有环；evenodd 与命中口径（pointInProvince）一致 → 洞真空、飞地真画
       c.fill(path, 'evenodd');
@@ -10882,7 +10905,7 @@ function drawPreviewOverlay() {
   }
 
   // 笔刷预览（hover 时显示）
-  if (brushPreview.value && ['height', 'biome', 'culture', 'religion'].includes(tool.value)) {
+  if (brushPreview.value && ['height', 'lake', 'biome', 'culture', 'religion'].includes(tool.value)) {
     const bp = brushPreview.value;
     c.beginPath();
     c.arc(bp.x, bp.y, bp.radius, 0, Math.PI * 2);

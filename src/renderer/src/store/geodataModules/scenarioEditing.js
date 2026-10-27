@@ -16,8 +16,10 @@ import {
   planBindBaseMapToPlanet, planUnbindBaseMap, buildGridFromTerrain,
 } from '../../utils/heightmapAccess';
 import {
-  brushFalloff, deriveLayers, SEA_LEVEL, buildClimateInputs,
+  brushFalloff, deriveLayers, SEA_LEVEL, buildClimateInputs, lakeHeightForWeight,
 } from '../../utils/heightMath';
+// 地形特征级锁定（2026-10-27）：纯函数在 utils/handEdits.js（Node 可测）
+import { mergeHandEdits, activeHandEdits, reapplyHandEdits } from '../../utils/handEdits';
 import {
   scheduleDerive, isWorkerAvailable, getAsyncThreshold, getDeriveStats,
 } from '../../utils/deriveClient';
@@ -3226,6 +3228,10 @@ export function createScenarioEditingModule(ctx) {
   // Height Map Brush (v2 data-driven editing)
   // ============================================================
 
+  // 手绘地形登记 / 重生成写回的纯函数在 `utils/handEdits.js`
+  // （`handEditKey` / `mergeHandEdits` / `activeHandEdits` / `reapplyHandEdits`）——
+  // 按世界坐标记，不按 grid 下标；Node 单测在 `unit/test_hand_edits.js`。
+
   function applyHeightBrush(baseMapKey, cx, cy, radius, strength, mode) {
     // ⚠️ 本函数**先改内存、后 execute**（涂抹期直接写 baseMaps）→ 只读态必须守函数首行，
     //    否则「拒绝」发生在数据已经改完之后（改了不落盘 = 静默丢数据）
@@ -3240,6 +3246,7 @@ export function createScenarioEditingModule(ctx) {
     const pts = toRaw(grid.points);
     const spacing = grid.spacing || 14.4;
     const newH = new Float32Array(hm.h);
+    const touched = [];
 
     // 性能优化：空间索引（构建一次，复用多次）
     if (!hm._spatialIndex) {
@@ -3301,7 +3308,12 @@ export function createScenarioEditingModule(ctx) {
               }
             }
             newH[i] = count > 0 ? sum / count : newH[i];
+          } else if (mode === 'lake') {
+            // 湖泊（2026-10-27，SP-1025 语义）：真实湖面是平的 —— 触及格统一压到 18/19
+            // 两档（权重只定盆底/浅缘），松手后按 h 重标海陆；不触边的洼地自然成湖。
+            newH[i] = lakeHeightForWeight(falloff);
           }
+          if (newH[i] !== hm.h[i]) touched.push({ x: px, y: py, h: newH[i] });
         }
       }
     }
@@ -3323,17 +3335,21 @@ export function createScenarioEditingModule(ctx) {
     const oldTemp = hm.temp ? new Float32Array(hm.temp) : null;
     const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
     const oldBiome = hm.biome ? new Uint8Array(hm.biome) : null;
+    // 手绘登记随笔画一起进 undo：撤销后 `handEdits` 也回到上一代
+    const oldHand = Array.isArray(hm.handEdits) ? hm.handEdits : [];
+    const newHand = mergeHandEdits(oldHand, touched);
 
     const cmd = {
       type: 'height-brush',
       baseMapKey,
       mode,
-      label: mode === 'raise' ? '抬高地形' : mode === 'lower' ? '降低地形' : '平滑地形',
+      label: mode === 'raise' ? '抬高地形' : mode === 'lower' ? '降低地形'
+        : mode === 'lake' ? '挖湖泊' : '平滑地形',
       merge: (prev) => prev.type === 'height-brush' && prev.mode === mode && prev.baseMapKey === baseMapKey,
       undo: () => {
         // A1/M1b：改走 commitHeightmap —— 绑定行星时写行星那份，未绑定时写底图自己那份（与原表达式等价）。
         // touch:false 与改动前一致（原 undo 不打 updatedAt）
-        commitHeightmap(baseMapKey, { ...hm, h: oldH, temp: oldTemp, prec: oldPrec, biome: oldBiome }, { touch: false });
+        commitHeightmap(baseMapKey, { ...hm, h: oldH, temp: oldTemp, prec: oldPrec, biome: oldBiome, handEdits: oldHand }, { touch: false });
       },
       redo: () => {
         commitHeightmap(baseMapKey, {
@@ -3342,6 +3358,7 @@ export function createScenarioEditingModule(ctx) {
           temp: derived.temperature,
           prec: derived.precipitation,
           biome: derived.biome,
+          handEdits: newHand,
         });
         // P2-4：异步派生挂在 redo 内 —— execute() 首帧与后续 redo 都会走到，
         // 所以「撤销后再重做」同样能拿回正确派生值（否则重做会留下陈旧图层）。
@@ -4163,6 +4180,15 @@ export function createScenarioEditingModule(ctx) {
         message: '还没有画好的陆地 —— 先用「自由绘制 / 套索」画出一块大陆，再生成地形。',
       };
     }
+    // ── 地形特征级锁定（2026-10-27，SP-1025 语义）────────────────────────────
+    // 同 seed 重生成 → 把手绘格按坐标写回新底稿；换 seed = 全新世界，手绘如实丢弃。
+    const prev = getHeightmapFor(baseMapKey);
+    const prevHand = activeHandEdits(prev);
+    const sameSeed = !prev || !Number.isFinite(prev.genSeed) || prev.genSeed === norm.params.seed;
+    let handKept = [];
+    if (prevHand.length && sameSeed) handKept = reapplyHandEdits(syn, prevHand).kept;
+    syn.handEdits = handKept;
+    syn.genSeed = norm.params.seed;
     // ── P0-3：气候与高度**同一笔**写进 undo ──────────────────────────────────
     // 只改高度、把气候留给"重算派生图层"是旧链路的坑：那一步传的是 null,null，
     // 于是同一份地形上"寒带针叶林"和"热带雨林"可以出现在同一纬度（群系只由高度决定）。
@@ -4182,7 +4208,6 @@ export function createScenarioEditingModule(ctx) {
       // 否则"生成时 ±60°、重算时 ±90°"会让用户以为地形自己变了（静默不一致）。
       climateSpec: { latitudeSpanDeg: climate.latitudeSpanDeg },
     };
-    const prev = getHeightmapFor(baseMapKey);
     const had = hasGrid(prev);
     // 🔴 2026-10-17 第八修·再修（用户实测：「现在地图上的改动全都无法撤销，撤销是灰色的」）：
     //    第一版我在这里**直接调 `commitHeightmap`**，没有套 `execute()` ——
@@ -4216,6 +4241,9 @@ export function createScenarioEditingModule(ctx) {
       climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },
       message: `已按陆地轮廓生成地形：${syn.cellCount} 格 / 格距 ${syn.effectiveCellSize}`
         + `（最内陆 ${syn.maxInlandCells} 格）${st} —— ${describeTerrainParams(norm.params)}；`
+        + (handKept.length
+          ? `已保留 ${handKept.length} 格手绘地形；`
+          : (prevHand.length && !sameSeed ? '换 seed = 全新世界，手绘地形未保留；' : ''))
         + `气候已按纬度 ±${Math.round(climate.latitudeSpanDeg / 2)}° 与离岸距离派生`
         + `（可用 Ctrl+Z 撤回，也可以拿地形笔刷继续改）。`,
     };
