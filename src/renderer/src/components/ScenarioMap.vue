@@ -9044,6 +9044,42 @@ function drawSeaDetail(c) {
   c.restore();
 }
 
+/**
+ * 政治档的**海岸带**（2026-10-27，用户「海路图/海陆图还不如之前那个独立模块」）。
+ *
+ * 此前政治档的海陆边界只有"省份填色突然结束"：没有浅海带、没有海岸线，
+ * 远看就是一块色块贴在一块平色海面上（用户截图 #142923 正是这种硬边）。
+ * 这里复用 `getSeaDetail().coasts`（高精度 `landFeatures` 环）画两层：
+ *   ① 外侧 3px 的浅海光带 → 让陆地"浮"在水上；
+ *   ② 1px 的深青海岸线 → 给边界一个明确的边。
+ * 画在省份填色**之前**：陆地一侧会被省份盖住，只留下海侧的带和线。
+ */
+function drawPoliticalCoast(c) {
+  if (rasterLayer.value !== 'landsea') return;
+  const d = getSeaDetail();
+  if (!d || !d.coasts || !d.coasts.length) return;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(cw(), ch());
+  const pad = px(24);
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  c.save();
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  c.lineWidth = px(3.2);
+  c.strokeStyle = 'rgba(238, 247, 253, 0.55)';
+  for (const ln of d.coasts) {
+    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
+    strokeWorldPolyline(c, ln, true);
+  }
+  c.lineWidth = px(1.1);
+  c.strokeStyle = 'rgba(44, 92, 122, 0.55)';
+  for (const ln of d.coasts) {
+    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
+    strokeWorldPolyline(c, ln, true);
+  }
+  c.restore();
+}
+
 // ══════════════════════════════════════
 // 河流 / 道路图层（P1-T3）
 // ══════════════════════════════════════
@@ -9457,7 +9493,10 @@ function drawRivers(c) {
 const ROUTE_STYLES = {
   roads: { color: '#d06324', width: 0.9, dash: null, alpha: 0.95 },
   trails: { color: '#d06324', width: 0.5, dash: [2, 3], alpha: 0.85 },
-  searoutes: { color: '#ffffff', width: 0.5, dash: [1.5, 3], alpha: 0.5 },
+  // 2026-10-27（用户「海路图还不如之前那个独立模块」）：0.5px + 1.5/3 的短虚线在浅色海面上
+  // 几乎看不见，压在陆地上又像划痕。加宽到 0.9、虚线拉到 5/4，并在 drawRoutes 里加一层深色
+  // 底衬（只在海路），让他无论在深海/浅海/陆边都读得出是一条航线。
+  searoutes: { color: '#eaf4fb', width: 0.9, dash: [5, 4], alpha: 0.8 },
 };
 
 function drawRoutes(c) {
@@ -9467,6 +9506,10 @@ function drawRoutes(c) {
   const br = screenToWorld(cw(), ch());
   const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  // 档位节流（2026-10-27）：整图可见时 496 条路/航路会糊成一张网 —— 只留主干道；
+  // 放大到 near/close 才出小径与海路。
+  const detail = labelDetailNow();
+  const sparse = detail === 'far' || detail === 'mid';
 
   c.save();
   c.lineCap = 'round';
@@ -9474,17 +9517,57 @@ function drawRoutes(c) {
   for (const r of list) {
     const pts = r.points;
     if (!pts || pts.length < 2) continue;
+    if (sparse && (r.group === 'searoutes' || r.group === 'trails')) continue;
     if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
     // 优先使用道路自带样式（P1-T3），回退到 group 默认
     const st = r.color ? { color: r.color, width: r.width || 1, dash: r.dash || null, alpha: 0.95 } : ROUTE_STYLES[r.group] || ROUTE_STYLES.roads;
-    c.globalAlpha = st.alpha;
-    c.strokeStyle = st.color;
-    c.lineWidth = st.width;
-    c.setLineDash(st.dash || []);
-    c.beginPath();
-    c.moveTo(vx(pts[0]), vy(pts[0]));
-    for (let i = 1; i < pts.length; i++) c.lineTo(vx(pts[i]), vy(pts[i]));
-    c.stroke();
+    const isSea = r.group === 'searoutes';
+    // 海路**只画在海面**（2026-10-27）：FMG 的 sea route 会横穿陆地（用户截图里那几条
+    // 白色虚线切过省界），按陆地掩膜把穿陆段切掉，只留水上那几段。
+    let runs = [pts];
+    if (isSea) {
+      const mask = getLandMask();
+      if (mask) {
+        runs = [];
+        let cur = [pts[0]];
+        for (let i = 1; i < pts.length; i++) {
+          const mx = (pts[i - 1].x + pts[i].x) / 2;
+          const my = (pts[i - 1].y + pts[i].y) / 2;
+          if (mask.lookup(mx, my)) {
+            if (cur.length >= 2) runs.push(cur);
+            cur = [pts[i]];
+          } else {
+            cur.push(pts[i]);
+          }
+        }
+        if (cur.length >= 2) runs.push(cur);
+      }
+    }
+    for (const run of runs) {
+      c.globalAlpha = st.alpha;
+      c.strokeStyle = st.color;
+      c.lineWidth = st.width;
+      c.setLineDash(st.dash || []);
+      c.beginPath();
+      c.moveTo(vx(run[0]), vy(run[0]));
+      for (let i = 1; i < run.length; i++) c.lineTo(vx(run[i]), vy(run[i]));
+      // 海路：先画一层深色底衬，再画浅色虚线（否则浅海面上等于没画）
+      if (isSea) {
+        c.save();
+        c.globalAlpha = 0.38;
+        c.setLineDash([]);
+        c.strokeStyle = 'rgba(16, 44, 64, 1)';
+        c.lineWidth = st.width + 1.7;
+        c.stroke();
+        c.restore();
+        // 路径还在，恢复浅色虚线再描一遍
+        c.globalAlpha = st.alpha;
+        c.strokeStyle = st.color;
+        c.lineWidth = st.width;
+        c.setLineDash(st.dash || []);
+      }
+      c.stroke();
+    }
   }
   c.setLineDash([]);
   c.restore();
@@ -10099,8 +10182,11 @@ function renderFrame() {
     // 两层半透明互相洗成一张粉彩画，用户原话「看不出地形」）。
     const rasterBase = rasterLayer.value === 'height'
       || rasterLayer.value === 'temp' || rasterLayer.value === 'prec';
-    if (rasterLayer.value === 'landsea') drawRasterLayer(ctx.value, 'landsea', 1);
-    else if (rasterBase) {
+    if (rasterLayer.value === 'landsea') {
+      drawRasterLayer(ctx.value, 'landsea', 1);
+      // 浅海带 + 海岸线（政治档也要，否则海陆边界是一刀切的硬边 —— 2026-10-27）
+      drawPoliticalCoast(ctx.value);
+    } else if (rasterBase) {
       drawRasterLayer(ctx.value, rasterLayer.value, 1);
       // 等深线 + 海岸线（2026-10-26）：画在栅格之上、省界之下 —— 海岸属地形，压在行政边界以下
       drawSeaDetail(ctx.value);
