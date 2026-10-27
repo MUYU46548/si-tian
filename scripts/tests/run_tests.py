@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -530,20 +531,41 @@ class ProcessHandle:
             pass
 
 
+# 🔴 2026-10-27：**代理环境把「等端口」等死的坑**
+# 本机装了 HTTP 代理（`HTTP_PROXY=http://127.0.0.1:7897`，NO_PROXY 里只有 localhost/127.0.0.1）。
+# `urllib.request.urlopen()` 默认读环境代理：`http://localhost:5180/` 能不能通，
+# 取决于 NO_PROXY 里有没有它 —— 换个终端（NO_PROXY 不同/没设）就变成
+# 「Vite 明明 400ms 就起来了，脚本等 40 秒然后报『Vite dev server 启动超时』」。
+# 所以：**Vite 用 socket 级探测（直连、不过代理、IPv6 ::1 也认）**；
+# CDP 仍要 HTTP（要确认 `/json` 真能回），但走一个显式空代理的 opener。
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _tcp_open(port, host, timeout=0.4):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 def wait_port(port, timeout=40):
-    """等待端口就绪（Vite 可能只监听 IPv6 ::1，CDP 监听 IPv4 → 双栈尝试）"""
-    candidates = [f'http://localhost:{port}/', f'http://127.0.0.1:{port}/']
-    if port == CDP_PORT:
-        candidates = [f'http://127.0.0.1:{port}/json', f'http://localhost:{port}/json']
+    """等待端口就绪（Vite 只监听 IPv6 ::1 → 双栈；**不走 HTTP 代理**）"""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        for url in candidates:
-            try:
-                with urllib.request.urlopen(url, timeout=1):
+        if port == CDP_PORT:
+            for url in (f'http://127.0.0.1:{port}/json', f'http://localhost:{port}/json'):
+                try:
+                    with _OPENER.open(url, timeout=1):
+                        return True
+                except Exception:
+                    pass
+        else:
+            # Vite：socket 能连上就算就绪（HTTP 层由后面的 Edge 真去加载验证）
+            for host in ('::1', '127.0.0.1'):
+                if _tcp_open(port, host):
                     return True
-            except Exception:
-                pass
-        time.sleep(0.5)
+        time.sleep(0.25)
     return False
 
 
@@ -734,7 +756,13 @@ def main():
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         handles.append(ProcessHandle(dev, 'dev'))
         if not wait_port(DEV_PORT):
-            raise RuntimeError('Vite dev server 启动超时')
+            raise RuntimeError(
+                'Vite dev server 启动超时（%ds）。\n'
+                '  → 先看端口：`netstat -ano | findstr :5180`（有没有别的东西占着）\n'
+                '  → ⚠️ 若 Vite 自己起在了 5181（端口被占时它会自动 +1），脚本永远等不到 5180：\n'
+                '     先关掉 `npm run dev:watch` / Electron 窗口再重跑\n'
+                '  → 上次异常退出的残留：`git checkout -- src/renderer/index.html`，'
+                '再删 `.bak` 与 `src/renderer/mock-data/`' % 40)
 
         print('3/5 启动 Edge headless...')
         free_port(CDP_PORT)
