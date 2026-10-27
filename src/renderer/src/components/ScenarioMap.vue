@@ -924,7 +924,8 @@
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
         <label class="check-label" title="显示导入的城镇名 / 河流名（FMG 数据多为英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
         <label class="check-label" title="显示「地形注记」里的山系/海域名（沿走向排字；名字要自己给：检测山脊或手动画一条，见「地形注记」面板）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
-        <label class="check-label" title="EU4 式分级标注：放大看省名，缩小看势力名（可简称）—— 这一开关同时管两层，关掉则两者都不画"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力/省名</label>
+        <label class="check-label" title="EU4 式分级标注：缩小看势力名（可简称），放大再加上省名"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
+        <label class="check-label" title="放大到最详档时显示省名（未命名的省显示「新省份 N」，是改名的线索）"><input type="checkbox" v-model="showProvinceNames" data-testid="toggle-province-names" /> 省名</label>
         <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
       <div class="tool-group">
@@ -2707,6 +2708,9 @@ const showBurgs = ref(true);
 // A8：势力名/省名的分级标注（默认开 —— 势力名是历史剧本的主要读物）。
 // 与 showLabels 分开：showLabels 管的是用户**手放**的浮动文本，两者是不同性质的东西。
 const showPolityLabels = ref(true);
+/** 省名单独一层（2026-10-27）：旧实现与「势力名」共用一个开关，关掉势力名会连省名一起消失 ——
+ *  用户排查 A4 时就被这一点误导过。现在两个开关各管一层，默认都开。 */
+const showProvinceNames = ref(true);
 
 // 摄像机（pan/zoom）
 const cameraX = ref(0);
@@ -8862,7 +8866,12 @@ function buildCellRaster(kind) {
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
   // 山体阴影（2026-10-17 第七修，用户：「地形怎么3D表现」）：默认关 = 零行为变更。
   // 只对"读地形的档"生效（`buildHeightmapRaster` 内部自己判，专题图档不会加阴影）。
-  return buildHeightmapRaster(hm, kind, { shade: terrainShade.value ? terrainShadeStrength.value : 0 });
+  // `landAsSea`（2026-10-27）：剧本画布的「陆海底色」只当海面纸 —— 陆地由省份多边形负责，
+  // 否则省份平滑后的海岸会漏出一圈块状浅米色（B1「白一块」）。
+  return buildHeightmapRaster(hm, kind, {
+    shade: terrainShade.value ? terrainShadeStrength.value : 0,
+    landAsSea: kind === 'landsea',
+  });
 }
 
 function getRaster(kind) {  // 🔴 键里必须含**高度图对象引用**（2026-10-14）：只按 `底图键|档位` 存的话，
@@ -9602,15 +9611,20 @@ function drawSelectedRiverHighlight(c) {
     //    于是点一下河就满屏"一堆点点"，把河本身盖死。导入河只留两条轮廓线（表示选中）。
     const handDrawn = String(r.id || '').indexOf('river_') === 0;
     if (isPrimary && handDrawn && tool.value === 'river') {
-      const hs = px(3.2);
+      // 节点太多时**抽稀**画（2026-10-27 C3）：72 个方块沿河排 = 一条白链子，把河本身盖死。
+      // 端点、当前节点必画，其余按 stride 取；手柄也缩小。
+      const hs = px(2.6);
+      const stride = pts.length > 20 ? Math.ceil(pts.length / 20) : 1;
       c.strokeStyle = 'rgba(15, 23, 42, 0.9)';
       c.lineWidth = edgeWorld;
       for (let i = 0; i < pts.length; i++) {
+        const keep = i === 0 || i === pts.length - 1 || i === riverActiveNode.value || (i % stride === 0);
+        if (!keep) continue;
         const sx = vx(pts[i]);
         const sy = vy(pts[i]);
         const isHead = i === 0;
         const isMouth = i === pts.length - 1;
-        c.fillStyle = isHead ? '#fbbf24' : (isMouth ? '#22d3ee' : '#f8fafc');
+        c.fillStyle = isHead ? '#fbbf24' : (isMouth ? '#22d3ee' : 'rgba(248,250,252,0.92)');
         c.beginPath();
         c.rect(sx - hs, sy - hs, hs * 2, hs * 2);
         c.fill();
@@ -10321,7 +10335,10 @@ function drawProvinces(c, opts = {}) {
       c.setLineDash([]);
     } else if (fills && isOpaqueColor(fillCol)) {
       c.strokeStyle = fillCol;
-      c.lineWidth = px(1);
+      // 2026-10-27：1px → 1.6px。相邻两省各自平滑共享边，交界处会留下 1~3px 的
+      // 「白点/针孔」（用户截图里省界接头处的一串浅色小点）；同色描边外扩半线宽，
+      // 两边各 0.8px 正好把缝盖住。
+      c.lineWidth = px(1.6);
       c.stroke(path);
     } else if (!fills) {
       // 不填色时，省界**必须**自己画出来（否则"没有省份"和"有省份"看起来一样）
@@ -10526,6 +10543,35 @@ function drawVertexHandles(c) {
   }
 }
 
+/** 十六进制色混合：`t=0` 全 a、`t=1` 全 b（非 6 位色退回 a） */
+function mixHexColor(a, b, t) {
+  const pa = String(a || '').match(/^#([0-9a-f]{6})$/i);
+  const pb = String(b || '').match(/^#([0-9a-f]{6})$/i);
+  if (!pa) return a;
+  if (!pb) return a;
+  const k = Math.max(0, Math.min(1, Number(t) || 0));
+  const av = parseInt(pa[1], 16), bv = parseInt(pb[1], 16);
+  const ch = (sh) => {
+    const x = (av >> sh) & 255, y = (bv >> sh) & 255;
+    return Math.round(x + (y - x) * k);
+  };
+  return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0')}`;
+}
+
+/**
+ * 无主省份的底色（2026-10-27，用户 B1「黑一块白一块」）。
+ *
+ * 旧实现：剧本模式里**没有势力归属**的省一律刷 `#4a5568`（深灰蓝）—— 真实 415 省项目
+ * 大部分省在早期年份是无主的，于是整块大陆变成一块灰蓝，中间夹几个有主色/湖泊色，
+ * 就是"黑一块白一块"。EU4 的读法是：**无主 = 露出地形本色**，只有有主的地方才上势力色。
+ * 这里同理：纸面底色 + 群系淡淡一调（有群系时），有主省仍由势力色覆盖。
+ */
+const UNOWNED_LAND_HEX = '#d8d2c2';
+function unownedProvinceColor(prov) {
+  const b = showBiomes.value && prov && prov.biome ? BIOME_COLORS[prov.biome] : '';
+  return b ? mixHexColor(UNOWNED_LAND_HEX, b, 0.28) : UNOWNED_LAND_HEX;
+}
+
 function getProvinceColor(prov) {
   // P4：海域**不参与归属着色**（海不是谁的领土）→ 永远用水面色，与剧本/时间轴无关
   if (prov && prov.kind === 'sea') return SEA_FILL;
@@ -10552,13 +10598,16 @@ function getProvinceColor(prov) {
       const ref = (tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, at))
         ? { owner: tl.scenarios[k - 1].ownership?.[prov.id], era: k - 1 }
         : currentOwnerRef(tl, k, prov.id, at);
+      // 无主 → 地形本色（不再刷一块深灰蓝；见 `unownedProvinceColor`）
+      if (!ref || !ref.owner) return unownedProvinceColor(prov);
       return polityColor(tl.scenarios[ref.era], ref.owner);
     }
     // 时间轴不可用（剧本缺年份等）时退回选中剧本的静态归属
     if (selectedScenario.value) {
       const owner = selectedScenario.value.ownership?.[prov.id];
       const polity = selectedScenario.value.polities?.find(p => p.id === owner);
-      return polity?.color || '#4a5568';
+      if (!polity) return unownedProvinceColor(prov);
+      return polity.color || unownedProvinceColor(prov);
     }
   }
 
@@ -10568,7 +10617,7 @@ function getProvinceColor(prov) {
   // 生物群系图层开启时按群系染色
   if (showBiomes.value && prov.biome && BIOME_COLORS[prov.biome]) return BIOME_COLORS[prov.biome];
 
-  if (viewMode.value === 'scenario' && selectedScenario.value) return '#4a5568';
+  if (viewMode.value === 'scenario' && selectedScenario.value) return unownedProvinceColor(prov);
   return prov.biomeColor || '#bccda0';
 }
 
@@ -10971,8 +11020,13 @@ function drawBurgs(c) {
   const br = screenToWorld(cw(), ch());
   const pad = px(24);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  const dotR = px(2.5);
-  const starR = px(5.5);
+  // 🔴 2026-10-27（用户附 EU4 截图 + B1「白点糊满/黑一块白一块」）：
+  //    真实底图 617 个城镇，旧实现**每个都画白点** —— 整图缩小后就是一层白芝麻，
+  //    把地形、省界、河名全盖住。EU4 在国家尺度只留首都，放大才逐步出城镇。
+  //    这里按 `labelZoom` 同一套档位节流，并把点缩小/压淡。
+  const detail = labelDetailNow();
+  const dotR = px(1.9);
+  const starR = px(4.6);
   const hoverId = hoveredBurg.value ? hoveredBurg.value.id : null;
   const selectedId = selectedBurg.value ? selectedBurg.value.id : null;
 
@@ -10984,11 +11038,14 @@ function drawBurgs(c) {
       if (pass === 1) {
         drawCapitalStar(c, b.x, b.y, starR);
       } else {
+        // 档位节流：far/mid 只留首都；near 只留人口 ≥20 的；close 全出
+        if (detail === 'far' || detail === 'mid') continue;
+        if (detail === 'near' && Number(b.population || 0) < 20) continue;
         // 根据聚落规模调整大小（P1-T4）
         const sizeDef = BURG_SIZES.find(s => s.id === b.size) || BURG_SIZES[1];
         const r = dotR * (sizeDef.radius / 3.5);
         c.fillStyle = sizeDef.color;
-        c.globalAlpha = 0.85;
+        c.globalAlpha = 0.62;
         c.beginPath();
         c.arc(b.x, b.y, r, 0, Math.PI * 2);
         c.fill();
@@ -11336,6 +11393,11 @@ function measureTextWithStyle(text, style) {
   const mc = labelPlanCanvas.getContext('2d');
   mc.font = fontString(style, 1);          // 所有地图标签都是 lockScreenSize:true → 屏幕字号
   const size = Number(style && style.fontSize) || 12;
+  // 与 `drawStyledLabel` 同一口径：有字距就把字距算进宽度（否则排布会少留位置、字压字）
+  const em = Number(style && style.letterSpacingEm);
+  if ('letterSpacing' in mc) {
+    try { mc.letterSpacing = em > 0 ? `${Math.round(size * em * 100) / 100}px` : '0px'; } catch (e) { /* 忽略 */ }
+  }
   // +6 / +2 是**留缝**：纯字宽会把两个标签贴成一行，看起来像一个词
   return { w: mc.measureText(String(text)).width + 6, h: size * 1.3 + 2 };
 }
@@ -11400,7 +11462,7 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
   const nums = [
     cameraX.value, cameraY.value, cameraScale.value, cw(), ch(),
     showLabels.value ? 1 : 0, showPlaceNames.value ? 1 : 0,
-    showPolityLabels.value ? 1 : 0, showBurgs.value ? 1 : 0,
+    showPolityLabels.value ? 1 : 0, showProvinceNames.value ? 1 : 0, showBurgs.value ? 1 : 0,
     tlEra.value, tlDate.value, tlDiffMode.value,
     // 档位与字号必须进缓存键：滚轮跨档时「候选集/字号」都变，漏了就会画面不动（假"没反应"）
     labelDetailNow(), labelScaleNow().toFixed(3),
@@ -11432,7 +11494,7 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
   //    （真实 415 省项目 415 个全叫「新省份 N」）→ 放大到省名档时一个省名都画不出来，
   //    而 `polityLabels.isPlaceholderProvinceName` 的注释明确写着「画布 → 保留（改名时好定位）」——
   //    代码与约定相反。现在**画布照约定保留**（导出仍过滤，见 `useScenarioExport`）。
-  if (showPolityLabels.value && terrainRef && terrainRef.length) {
+  if ((showPolityLabels.value || showProvinceNames.value) && terrainRef && terrainRef.length) {
     const provinces = [];
     for (const prov of terrainRef) {
       if (!prov) continue;
@@ -11453,14 +11515,32 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
       highlightOwnerId: selectedPolity.value?.id || null,
     });
     for (const lb of labels) {
+      // 两层各归各的开关（2026-10-27）
+      if (lb.kind === 'polity' && !showPolityLabels.value) continue;
+      if (lb.kind === 'province' && !showProvinceNames.value) continue;
       const sp = toScreen(lb.x, lb.y);
+      const baseStyle = lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE;
+      let style = scaleLabelStyle(baseStyle, fontScale);
+      // 势力名字号按**领土屏幕面积**给（2026-10-27 EU4 参考图）：大国名压得住地图、
+      // 小国名不喧宾夺主。`sqrt` 让面积翻 4 倍字号才翻倍，避免碎国名糊成一片。
+      if (lb.kind === 'polity' && Number.isFinite(lb.area) && lb.area > 0) {
+        const areaPx = lb.area * scale * scale;
+        // 上限 = 地图在屏幕上的宽度的 6%（EU4 实测：马穆鲁克约占图宽 6%，不是 20%），
+        // 再加 96px 绝对上限 —— 否则单省小国放大到整屏时会得到一个盖住一切的巨字。
+        const mapWpx = mapWorldSize().w * scale;
+        const cap = Math.max(24, Math.min(96, mapWpx * 0.06));
+        const byArea = Math.max(20, Math.min(cap, Math.sqrt(Math.max(1, areaPx)) * 0.32));
+        style = { ...style, fontSize: Math.min(110, byArea * fontScale) };
+      }
       cands.push({
         id: lb.kind + ':' + lb.text,
         kind: lb.kind,          // 'province' | 'polity'
         text: lb.text,
         x: sp.x, y: sp.y,
-        style: scaleLabelStyle(lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE, fontScale),
+        style,
         highlight: lb.highlight,
+        // 势力名/省名是**面状大字**：城市圆点不该把它挡掉（EU4 里国名直接压在城市上）
+        ignoreSoftObstacles: true,
         // 省名放不下时在面内挪一点（势力名优先级更高，会先占住形心）
         placements: lb.kind === 'province' ? AREA_LABEL_PLACEMENTS : undefined,
       });
@@ -12199,7 +12279,7 @@ function onHistoryJump() {
 //    （本项目在高度图着色档位上踩过同一条：test_69 抓到过 `diffPixels: 0`）。
 // ⚠️ `riverSource`（河流来源）必须在这里 —— 漏了就是"下拉改了画布没反应"
 // ⚠️ `terrainShade` / `terrainShadeStrength` 同理（2026-10-17 第七修）：漏了就是"勾了立体没反应"
-watch([rasterLayer, showRivers, riverSource, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPlaceNames, showPolityLabels, showTerrainNames, terrainShade, terrainShadeStrength], () => render());
+watch([rasterLayer, showRivers, riverSource, showRoutes, colorMode, showBiomes, showBorders, showLabels, showPlaceNames, showPolityLabels, showProvinceNames, showTerrainNames, terrainShade, terrainShadeStrength], () => render());
 // 🔴 手势期基帧的**安全阀**（2026-10-18 第十八修·二）：只要底图几何/河网换了引用
 //    （撤销、别的入口写入、导入…），立刻解甲 —— 底图变了还贴旧图就是"改了数据画面不动"。
 //    启用基帧的前提本来就是"这一笔不改数据"，这条 watch 是**把前提落实成机制**，

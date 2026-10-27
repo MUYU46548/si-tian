@@ -190,15 +190,17 @@ export const POLITY_LABEL_STYLE = Object.freeze({
   key: 'polity-name',
   name: '势力名',
   fontFamily: 'serif',
-  // 🔴 2026-10-27（用户实测「缩小后几乎看不清字」，并贴了 Paradox 参考图）：
-  //    15px 在 1280 宽画布、51% 缩放下只有两个字那么点大 —— 势力名是缩小时**唯一**的读物，
-  //    必须比城镇/河名大一个量级。22px 配 1.0 的下限字号系数（见 `labelZoom.labelFontScale`）。
+  // 🔴 2026-10-27 第三轮（用户附 EU4 截图：「直接抄别人的美术」）：
+  //    EU4 的国家名是**大号墨字**、无底框、字距疏、随领土面积变大。
+  //    旧样式（15px 白字 + 深色圆角底框）看起来像 tooltip，不像地图注记。
+  //    字号不再写死：`getLabelPlan` 按领土屏幕面积给 22~64px（见 `collectScenarioLabels.area`）。
   fontSize: 22,
   weight: 'bold',
-  color: '#F7F3E8',
-  stroke: { enabled: true, color: '#1B2130', width: 3.5 },
-  shadow: { enabled: true, color: 'rgba(0,0,0,0.55)', blur: 6 },
-  background: { enabled: true, color: '#000000', opacity: 0.32, padding: 4 },
+  color: 'rgba(28, 22, 15, 0.88)',
+  stroke: { enabled: true, color: 'rgba(250, 246, 235, 0.75)', width: 2 },
+  shadow: { enabled: false, color: 'rgba(0,0,0,0.55)', blur: 6 },
+  background: { enabled: false, color: '#000000', opacity: 0.32, padding: 4 },
+  letterSpacingEm: 0.16,
   lockScreenSize: true,
 });
 
@@ -206,11 +208,13 @@ export const PROVINCE_LABEL_STYLE = Object.freeze({
   key: 'province-name',
   name: '省名',
   fontFamily: 'sans-serif',
-  // 12 → 15：与势力名拉开层次，但放大后仍要读得出（旧值在同屏 22px 势力名旁边像脚注）
-  fontSize: 15,
+  // 省名保持**白字 + 深描边**（与导出链 `fill="#FFFFFF"` 的既有判据同源）：
+  // 它要同时压在有主省的饱和色与无主省的纸面色上，白字深边是两边都读得出的那一档。
+  // 字号收到 12（EU4 的省名比国家名小一号，不抢主次）。
+  fontSize: 12,
   weight: 'normal',
   color: '#FFFFFF',
-  stroke: { enabled: true, color: '#1F2933', width: 3 },
+  stroke: { enabled: true, color: '#1F2933', width: 2.6 },
   shadow: { enabled: false, color: 'rgba(0,0,0,0.6)', blur: 6 },
   background: { enabled: false, color: '#000000', opacity: 0.4, padding: 3 },
   lockScreenSize: true,

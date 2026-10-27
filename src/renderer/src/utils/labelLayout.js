@@ -38,12 +38,16 @@ export const LABEL_PRIORITY = Object.freeze({
  */
 export const AREA_LABEL_PLACEMENTS = Object.freeze([
   { dx: 0, dy: 0 },
-  { dx: 0, dy: -22 },
-  { dx: 0, dy: 22 },
-  { dx: -30, dy: 0 },
-  { dx: 30, dy: 0 },
-  { dx: 0, dy: -44 },
-  { dx: 0, dy: 44 },
+  { dx: 0, dy: -34 },
+  { dx: 0, dy: 34 },
+  { dx: -42, dy: 0 },
+  { dx: 42, dy: 0 },
+  { dx: 0, dy: -68 },
+  { dx: 0, dy: 68 },
+  { dx: -76, dy: 0 },
+  { dx: 76, dy: 0 },
+  { dx: 0, dy: -110 },
+  { dx: 0, dy: 110 },
 ]);
 
 function priorityOf(c) {
@@ -90,20 +94,23 @@ export function layoutLabels(candidates, opts = {}) {
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) out.push(i + ',' + j);
     return out;
   };
-  const addBox = (b, isObstacle) => {
+  const addBox = (b, isObstacle, softObstacle) => {
     for (const k of cellsOf(b)) {
       let arr = grid.get(k);
       if (!arr) { arr = []; grid.set(k, arr); }
-      arr.push({ b, obs: !!isObstacle });
+      arr.push({ b, obs: !!isObstacle, soft: !!softObstacle });
     }
   };
-  const blocked = (b) => {
+  const blocked = (b, ignoreSoft) => {
     for (const k of cellsOf(b)) {
       const arr = grid.get(k);
       if (!arr) continue;
       // 障碍物（圆点/星标）是**精确几何**，不加留缝 —— 加了缝连"贴着圆点右侧"都算撞上，
       // 于是所有城镇名都会被自己的圆点挡掉（实测：3 个城镇一个都放不下）。
       for (const e of arr) {
+        // 2026-10-27：城镇圆点是"软障碍"——势力名/省名这种面状大字本来就该盖住城市点；
+        // 地形注记走廊是"硬保留区"，任何标签都得让开。
+        if (e.obs && e.soft && ignoreSoft) continue;
         if (rectsOverlap(b, e.b, e.obs ? 0 : pad)) return true;
       }
     }
@@ -113,7 +120,7 @@ export function layoutLabels(candidates, opts = {}) {
   // 障碍物先占位（它们不参与输出，但会挡标签）
   for (const c of src) {
     if (!Array.isArray(c.obstacles)) continue;
-    for (const o of c.obstacles) if (o) addBox(o, true);
+    for (const o of c.obstacles) if (o) addBox(o, true, true);
   }
 
   // 外部保留区（2026-10-27）：**不是候选标签、但也不许被压住**的东西 ——
@@ -162,10 +169,14 @@ export function layoutLabels(candidates, opts = {}) {
       }
       const cx = (box.x0 + box.x1) / 2;
       const cy = (box.y0 + box.y1) / 2;
-      if (bounds && (cx < bounds.minX || cx > bounds.maxX || cy < bounds.minY || cy > bounds.maxY)) {
+      // 可见范围判定用**框与视口是否相交**，不是"中心点在视口内"：
+      // 大国名/边缘城镇名本来就常常一半在屏外，按中心判会把它们整条丢掉
+      // （2026-10-27 实测：真实项目右下角的势力名因为形心差 26px 出界而整条消失）。
+      if (bounds && (box.x1 < bounds.minX || box.x0 > bounds.maxX
+        || box.y1 < bounds.minY || box.y0 > bounds.maxY)) {
         continue;
       }
-      if (blocked(box)) continue;
+      if (blocked(box, c.ignoreSoftObstacles)) continue;
       addBox(box, false);
       out.push({ ...c, cx, cy, w, h, box, place: p });
       break;

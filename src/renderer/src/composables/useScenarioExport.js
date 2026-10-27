@@ -387,8 +387,16 @@ export function useScenarioExport({
     });
     for (const lb of labels) {
       if (lb.kind !== 'polity') continue;        // 省名上面已收进候选（带占位名过滤）
+      // 2026-10-27：与画布同一条「领土面积 → 字号」口径（EU4 参考图），
+      // 上限 = 地图宽度的 10%，所以同一张大图在画布和导出里的相对大小一致。
+      let style = POLITY_LABEL_STYLE;
+      if (Number.isFinite(lb.area) && lb.area > 0) {
+        const cap = Math.max(24, Math.min(120, W * 0.06));
+        const fs = Math.max(20, Math.min(cap, Math.sqrt(lb.area) * 0.32));
+        style = { ...POLITY_LABEL_STYLE, fontSize: fs };
+      }
       labelCands.push({
-        kind: 'polity', text: lb.text, x: lb.x, y: lb.y, style: POLITY_LABEL_STYLE,
+        kind: 'polity', text: lb.text, x: lb.x, y: lb.y, style,
       });
     }
 

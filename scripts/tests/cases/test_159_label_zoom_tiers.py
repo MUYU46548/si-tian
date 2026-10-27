@@ -152,6 +152,11 @@ def run(cdp):
 
       const far = await snapshot(3.0);
       const mid = await snapshot(1.0);
+      // 2026-10-27：势力名改成 EU4 式大字后，会盖住同一形心附近的河名/省名（产品上是对的：
+      // 国家名优先级最高）。本用例测的是「档位 → 该出哪几层」，所以从 near 档起**关掉
+      // 势力名图层**，让低优先级的河名/省名有位置可放 —— 不是在测避让。
+      SM.showPolityLabels = false;
+      await tick(80);
       const near = await snapshot(0.5);
       // ── 滞回（12% 死区）：必须从 near 档**内部**往边界走，才测得到"不换档" ──
       // 0.62 已越过 0.6 的裸阈值，但没到 0.6×1.12=0.672 → 应保持 near（河名不消失）
@@ -220,15 +225,17 @@ def run(cdp):
     else:
         if not (k_close > k_far + 1e-6):
             fails.append(f'放大后字号系数应变大：far={k_far} close={k_close}')
-        if k_far < 0.95 - 1e-6:
-            fails.append(f'缩小档系数不该低于 0.95：{k_far}')
-        # 排布里的字号 = 常量 × 系数：用 far 档的势力名反推基准，再看 near 档是否同比例
-        sp_far, sp_near = far.get('sizePolity') or 0, near.get('sizePolity') or 0
+        if k_far < 1.0 - 1e-6:
+            fails.append(f'缩小档系数不该小于 1.0（缩小时不缩字）：{k_far}')
+        # 排布字号：2026-10-27 起势力名**按领土屏幕面积**给大小（EU4 参考图），
+        # 所以不再与字号系数成固定比例；判据改为「放大后只增不减 + 落在 20~110px」。
+        # 用 far / mid 两档取字号（near 起势力名图层已关，见上）。
+        sp_far, sp_near = far.get('sizePolity') or 0, mid.get('sizePolity') or 0
         if sp_far and sp_near:
-            base = sp_far / k_far
-            want = base * float(near.get('fontScale') or 0)
-            if abs(sp_near - want) > 0.06:
-                fails.append(f'排布字号没跟上系数：near 实测 {sp_near}，应为 {want:.2f}（基准 {base:.2f}）')
+            if not (sp_near >= sp_far - 0.01):
+                fails.append(f'放大后势力名字号不应变小：far 实测 {sp_far}，mid {sp_near}')
+            if not (20 - 0.01 <= sp_far <= 110.01):
+                fails.append(f'势力名字号越界（应 20~110px）：far 实测 {sp_far}')
 
     # ⑥ 滞回：near 档内走到 0.62 不换档；0.68 才换 mid；再从 mid 0.58 保持、0.5 才回 near
     #    ⚠️ 判据看**档位 + 该档的容量**，不拿"某条河名还在不在"当滞回代理：

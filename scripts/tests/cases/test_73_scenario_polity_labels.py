@@ -294,12 +294,15 @@ JS = r"""(async () => {
      !hasExact(texts, '甲午王朝') && !hasExact(texts, '乙卯王朝'), null);
 
   // 关掉图层 → 一条势力标注都不该出现（接线真的通到开关上）
+  // 2026-10-27：省名已拆成独立开关（`showProvinceNames`），两个都关才是一条都不画
   pm.showPolityLabels = false;
+  pm.showProvinceNames = false;
   await tick(80);
   const off = record(() => pm.render());
-  ck('f2 关掉「势力名」图层 → 不再画任何势力/省名',
+  ck('f2 关掉「势力名 + 省名」图层 → 不再画任何势力/省名',
      !has(off, '甲午') && !has(off, '乙卯') && !has(off, '青原省'), off.slice(0, 12));
   pm.showPolityLabels = true;
+  pm.showProvinceNames = true;
   await tick(80);
 
   // ── f3 改名落库（走 undo / redo / 空改动 / 空名）──────────────────────

@@ -29,7 +29,11 @@ export const SEA_BASE_COLOR = [201, 214, 228];    // #c9d6e4
 
 // ── 色带（hex）──────────────────────────────────────────────────────────────
 export const HYPSO_WATER = ['#e4f1f9', '#d2e9f6', '#bcdff0', '#a4d2e9', '#8cc4df'];
-export const HYPSO_LAND = ['#b0d07e', '#cfe09a', '#e9e6b4', '#eed68c', '#dfae5f', '#c3853d', '#a9742f'];
+// 🔴 2026-10-27（用户附 EU4 截图 + B1「黑一块白一块」）：旧陆地色带的高端是
+//    `#c3853d`/`#a9742f`（橙/深棕），在粗格高度图上会糊成一块块"锈斑"；
+//    低端 `#e9e6b4` 乘 1.08 又顶到近白。改成**低饱和的绿→麦→灰褐**，且不再有近白/深黑，
+//    山体只靠阴影表达（EU4 的地形色几乎是同一族色，明暗才是立体感来源）。
+export const HYPSO_LAND = ['#a9c489', '#bfd09a', '#d5d9aa', '#ddd2a3', '#d0bd92', '#c0a780', '#b09478'];
 
 /**
  * 陆地分带的**高度分割线**（t 的升序下界，7 档 6 条线）—— 与 `HYPSO_LAND` 逐项对应。
@@ -123,6 +127,10 @@ export function sampleRamp(rgbList, t) {
  */
 export function cellColor(kind, i, hm, palette, ctx) {
   if (kind === 'landsea') {
+    // 2026-10-27：剧本画布把「陆海底色」当**海面纸**用（陆地由省份多边形负责）。
+    // 旧实现把陆地也刷成浅米色 → 省界平滑后海岸会漏出一圈块状"白斑"
+    // （用户 B1「黑一块白一块」）。`landAsSea` 时整张底图统一海色，漏出的部分看起来就是海。
+    if (ctx && ctx.landAsSea) return SEA_BASE_COLOR;
     return hm.h[i] >= RASTER_SEA_LEVEL ? LAND_BASE_COLOR : SEA_BASE_COLOR;
   }
   if (kind === 'temp') {
@@ -233,7 +241,9 @@ export function buildShadeMap(h, cols, rows, opts) {
   if (!(std > 1e-6)) return null;
 
   const out = new Float32Array(cols * rows);
-  const NORM = 0.9;        // 每多少"个标准差"的高差算满坡（0.9 实测能出结构又不爆）
+  // 2026-10-27：NORM 0.9 → 1.15（同样高差算"更缓"），并把手影区间从 0.62~1.08
+  // 收到 **0.80~1.03** —— 旧值在 97×45 粗格上是一块块死黑/死白（用户截图）。
+  const NORM = 1.15;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -246,10 +256,8 @@ export function buildShadeMap(h, cols, rows, opts) {
       const dzdy = (hv(yd) - hv(yu)) / (2 * NORM * std);
       // 与 NW 光向点乘：坡朝向光 → 更亮
       const shade = 1 + (dzdx * 0.7 + dzdy * 0.7) * strength;
-      // 🔴 2026-10-26：上限从 1.45 压到 **1.08**。浅色分层设色（奶油 #e9e6b4 = 233）乘 1.45
-      //    会直接顶到 255 —— 迎光坡变成一片死白，"地形"反而糊掉（用户给的参考图里
-      //    阴影**只压暗**，亮面几乎不动）。下限仍留 0.62：明暗差靠暗面表达，这才是制图惯例。
-      out[i] = Math.max(0.62, Math.min(1.08, shade));
+      // 只保留柔和的明暗（阴影是辅助，不该把地形涂成黑白）
+      out[i] = Math.max(0.8, Math.min(1.03, shade));
     }
   }
   return out;
@@ -328,6 +336,8 @@ export function buildHeightmapRaster(hm, kind, opts) {
     sea: kind === 'height' && !(opts && opts.sea === false)
       ? buildSeaDepth(hm, { seaLevel: RASTER_SEA_LEVEL })
       : null,
+    // 剧本画布专用：landsea 只当海面纸（陆地由省份画）
+    landAsSea: !!(opts && opts.landAsSea),
   };
 
   // 平滑档只在「网格维度与数据长度严格自洽」时启用；不自洽（历史数据）自动退回方块档，

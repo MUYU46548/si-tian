@@ -176,11 +176,13 @@ export function fontFamilyCss(style) {
  */
 export function svgTextAttrsFromStyle(style, extra = {}) {
   const stroke = style.stroke || {};
+  const em = Number(style.letterSpacingEm);
   return {
     fill: style.color,
     'font-size': style.fontSize,
     'font-family': fontFamilyCss(style),
     'font-weight': style.weight || 'normal',
+    ...(em > 0 ? { 'letter-spacing': Math.round(Number(style.fontSize) * em * 100) / 100 } : {}),
     ...(stroke.enabled
       ? {
         stroke: stroke.color,

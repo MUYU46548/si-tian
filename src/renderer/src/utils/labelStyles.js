@@ -387,6 +387,12 @@ export function drawStyledLabel(ctx, text, x, y, style, opts = {}) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.font = fontString(style, screenScale);
+  // 字距（2026-10-27 EU4 参考图）：国家名是疏排的墨字。Canvas 的 letterSpacing
+  // 只有 Chromium 支持；不支持就当没设（不报错、只是紧排）。
+  const em = Number(style.letterSpacingEm);
+  if ('letterSpacing' in ctx) {
+    try { ctx.letterSpacing = em > 0 ? `${Math.round(fontSize * em * 100) / 100}px` : '0px'; } catch (e) { /* 忽略 */ }
+  }
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
   const width = ctx.measureText(String(text)).width;

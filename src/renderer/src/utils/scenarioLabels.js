@@ -63,6 +63,8 @@ export function collectScenarioLabels({
       if (!text) continue;                          // 查不到势力 → 静默跳过（绝不画 id 上去）
       out.push({
         kind: 'polity', text, x: st.cx, y: st.cy, owner, era,
+        // 领土**世界面积**（2026-10-27）：画布按它给字号（EU4 的大国名/小国名层次）
+        area: st.area,
         highlight: !!highlightOwnerId && highlightOwnerId === owner,
       });
     }
