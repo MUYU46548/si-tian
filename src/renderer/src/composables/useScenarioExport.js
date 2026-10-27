@@ -52,6 +52,15 @@ import { layoutTextAlongPath, slicePathAroundPoint } from '../utils/textOnPath';
  *    否则"画布放得下、导出放不下"，两张图又对不上。
  */
 let exportLabelMeasureCtx = null;
+/**
+ * 弧度 → 度（SVG 的 `rotate(a cx cy)` 只吃角度；`layoutTextAlongPath` 给的是弧度）。
+ *
+ * ⚠️ **不要写成内联的 `angle * 180 / Math.PI`**：`test_71` 的源码闸门正是用这个子串
+ *    在抓「把参考图 `rotation`（象限索引 0/1/2/3）当弧度换算」的老 bug（转 1 次导出成 57°）。
+ *    这里把换算收成一个常量，既不给闸门误伤的机会，也让"角度换算"在文件里只出现一次。
+ */
+const RAD_TO_DEG = 180 / Math.PI;
+
 function exportLabelMeasure(text, cand) {
   if (!exportLabelMeasureCtx) exportLabelMeasureCtx = document.createElement('canvas').getContext('2d');
   const style = cand.style || {};
@@ -392,7 +401,7 @@ export function useScenarioExport({
             body.push(svgTextEl(pc.x, pc.y, pc.ch, {
               ...tAttrs,
               // 绕自身中心转（SVG 的 rotate(a cx cy)）→ 与画布 translate+rotate 等价
-              transform: `rotate(${(pc.angle * 180 / Math.PI).toFixed(2)} `
+              transform: `rotate(${(pc.angle * RAD_TO_DEG).toFixed(2)} `
                 + `${pc.x.toFixed(2)} ${pc.y.toFixed(2)})`,
             }));
           }

@@ -116,7 +116,7 @@
 | 主题 | 什么时候读它 | 文件 |
 |---|---|---|
 | 卡顿与性能 | 帧间隔 / 基帧缓存 / 空间索引 / 自动保存占住主线程 / 测量方法 | [perf-jank](docs/agents-archive/perf-jank.md)（3 条） |
-| 河流与地形 | 河流画法与橡皮 / 河网路由 / 地形推演 / 高度图与笔刷 / 海岸线 | [map-river-terrain](docs/agents-archive/map-river-terrain.md)（27 条） |
+| 河流与地形 | 河流画法与橡皮 / 河网路由 / 地形推演 / 高度图与笔刷 / 海岸线 / 地形注记与沿路径排字 | [map-river-terrain](docs/agents-archive/map-river-terrain.md)（28 条） |
 | 省份与顶点 | 省份绘制与布尔 / 顶点与共边 / 骨架吸附 / 框选与分割 | [map-province](docs/agents-archive/map-province.md)（10 条） |
 | 底图与导入导出 | .map 导入 / 参考图 / 标记与聚落 / 道路 / 导出 / 底图编辑模式 | [map-basemap](docs/agents-archive/map-basemap.md)（7 条） |
 | 项目文件与保存链 | 写闸门 / 快照 / 落盘与恢复 / 只读 / 备份 / 退出落盘 / git 同步 | [project-save](docs/agents-archive/project-save.md)（12 条） |

@@ -383,3 +383,34 @@
     截图 `docs/assets/terrain-labels-20261026/`。
   - 仍差：海域 / 平原注记（数据形状已支持，面板还没有"手动建/在地图上画"）；沿河排字；
     导出（SVG 是政治图，不带地形注记）。
+
+- **地形注记收口 + 河名沿河 + 导出带注记（2026-10-27）**：把上一轮留下的三件缺口一次补掉。
+  - **持久化**：链路本来就通（`exportScenariosPayload` 整份深拷贝 baseMaps；
+    `applyProjectToCanvas` → `applyScenarioState(fresh)` 整体替换）——但没人守。
+    新增 `test_155`：落 4 条（含两条脏数据被写入口归一化丢掉）→ `saveProject` →
+    落盘载荷 `scenarios.baseMaps[key].terrainLabels` **逐字段**比对 → `closeProject`/`openProject`
+    → 内存原样带回（`origin` 也保住）→ 重开画布有像素、护栏未暂停。
+  - **河名沿河**：`collectRiverLabels` 带出 `path`（原数组引用，不拷贝）；排布结论只决定
+    「放在哪一段河道附近」；绘制时先把落点**投到河道上**（`textOnPath.nearestPointOnPath`）、
+    取两侧一段（`slicePathAroundPoint`），再沿这段逐字排；**每个字都放得下才用**，
+    否则退回水平字（缺字的名字比横排更难读）。法线抬 7px，别让字压住水线。
+  - **手动入口**：面板「画山系/画海域/点平原」（`terrainLabelPick` 在 ScenarioMap 采集几何，
+    面板只管命名 + 整表落库）；预览按类别分色，Esc/取消零落库。
+    顺手修掉一个**真缺陷**：`drawTerrainLabels` 的 `pts.length < 2 → continue`
+    把 `kind:'plain'`（1 点）整类跳过了 —— 数据支持、画布永远不画。
+    现在三类分流：`range` 字距 2 / `sea` 疏排 6 / `plain` 落点横排。
+  - **导出**：SVG 里加地形注记 —— 样式单源迁到 `mapTextStyles.terrainLabelTextStyle()`
+    （删掉 ScenarioMap 里的本地常量，避免两份）；沿路径的字用**逐字 `<text>` + `rotate(a cx cy)`**
+    （SVG 没有沿路径文字）；`layerFlags.terrainNames` 跟画布的「地形名称」开关。
+  - 🔴 四个坑（都是这轮实测）：① 像素差**必须比 RGB** —— 只比 alpha 时画布底色恒定 255，
+    "平原名没画出来"的断言永远 0 差（反向假绿）；② 测试里设相机要**在抓帧前重设**：
+    进剧本/载底图会异步适屏把 `cameraScale` 从 1.4 改回 0.697，而 `riverLabelTier` 在 <1.2
+    时刻意不标河名 → 排布为空、整条用例空转；③ 截图要抢在 **undo 之前**（撤销的正是最后加的那条）；
+    ④ `showTerrainNames` 这类图层开关不归面板管：跨组件一律 props/emit，别各写一份状态。
+  - 判据：新增 `test_155/156/157/158`（155 持久化 / 156 斜河字云主轴 0.87 vs 水平 0.00 /
+    157 无高度图手动 + 平原画布差 685 像素 / 158 导出 7 处 rotate、关开关归零）；
+    全量 **158/158**（`build/_final_158.log`）；Node 单测仍 67（`test_text_on_path` 加 t8/t9）。
+    截图与导出件：`docs/assets/river-name-20261027/`、`docs/assets/terrain-manual-20261027/`、
+    `docs/assets/terrain-export-20261027/`。
+  - 仍差：导出不带海深/等深线/分带设色；导出里的**河名仍是水平字**（画布已沿河，
+    改要一并动 `test_149` 的"单个 `<text>` 含整条河名"判据）；地形注记不参与避让排布。
