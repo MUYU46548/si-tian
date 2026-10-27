@@ -103,6 +103,15 @@ def run(cdp):
         const re = new RegExp('<text\\b([^>]*)>' + text + '</text>');
         const m = svg.match(re); return m ? m[1] : null;
       };
+      // 河名沿河（2026-10-27）：河名现在是**逐字** `<text>` + rotate（与画布同一套几何），
+      // 不能再按"一个 text 含整条河名"去 pick —— 逐字取出属性，再用坐标/角度判"有没有真的排在河道上"。
+      const charNodes = (ch) => {
+        const re = new RegExp('<text\\b([^>]*)>' + ch + '</text>', 'g');
+        const out = [];
+        let m;
+        while ((m = re.exec(svg))) out.push(m[1]);
+        return out;
+      };
       return JSON.stringify({
         svgLen: svg.length,
         capital1: pick('首都甲'),
@@ -110,10 +119,12 @@ def run(cdp):
         nonCapital: pick('非首都乙'),
         bigRiver: pick('大河'),
         smallRiver: pick('小河'),
+        riverChars: [...charNodes('大').map((a) => ({ ch: '大', attrs: a })),
+          ...charNodes('河').map((a) => ({ ch: '河', attrs: a }))],
         hasNonCapital: svg.indexOf('>非首都乙<') >= 0,
         hasSmallRiver: svg.indexOf('>小河<') >= 0,
         offHasCapital: svgOff.indexOf('>首都甲<') >= 0,
-        offHasRiver: svgOff.indexOf('>大河<') >= 0,
+        offHasRiver: svgOff.indexOf('>大河<') >= 0 || svgOff.indexOf('>大<') >= 0,
         planKinds,
         diag: {
           place: !!SM.showPlaceNames, burgs: !!SM.showBurgs,
@@ -132,8 +143,25 @@ def run(cdp):
         fails.append('导出 SVG 缺首都名（出版档应含全部首都）')
     if out.get('hasNonCapital'):
         fails.append('导出 SVG 混进非首都城镇名（出版档应只标首都）')
-    if not out.get('bigRiver'):
-        fails.append('导出 SVG 缺流量最大的河名')
+    # 河名：逐字节点（沿河排字）——两个字都在、都在河道附近、从左到右、且带 rotate
+    chars = out.get('riverChars') or []
+    da = next((c for c in chars if c.get('ch') == '大'), None)
+    he = next((c for c in chars if c.get('ch') == '河'), None)
+    if not da or not he:
+        fails.append(f'导出缺流量最大的河名（逐字：大={bool(da)} 河={bool(he)}）')
+    else:
+        def _attrs(blob):
+            import re as _re2
+            return {k: float(v) for k, v in _re2.findall(r'([a-z-]+)="(-?[0-9.]+)"', blob or '')}
+        a1, a2 = _attrs(da['attrs']), _attrs(he['attrs'])
+        if not (330 <= a1.get('y', -1) <= 380):
+            fails.append(f'河名首字不在河道附近（y={a1.get("y")}，河道 ≈355）')
+        if a2.get('x', 0) <= a1.get('x', 0):
+            fails.append(f'河名字序反了（大 x={a1.get("x")} 河 x={a2.get("x")}）')
+        if abs(a2.get('y', 0) - a1.get('y', 0)) > 24:
+            fails.append(f'两个字离得太远（y {a1.get("y")} vs {a2.get("y")}）')
+        if 'rotate(' not in (da['attrs'] or '') or 'rotate(' not in (he['attrs'] or ''):
+            fails.append('河名没有逐字 rotate（没走沿河排字）')
     if out.get('hasSmallRiver'):
         fails.append('导出 SVG 混进非前 12 的河名')
     if out.get('offHasCapital') or out.get('offHasRiver'):
@@ -144,7 +172,7 @@ def run(cdp):
     for k in ('capital', 'polity'):
         if k not in kinds:
             fails.append(f'画布标签排布里没有 {k}（kinds={kinds}, diag={out.get("diag")}）')
-    # 位置：城镇名贴着自己的点、河名贴着河道中点。
+    # 位置：城镇名贴着自己的点（河名的位置校验在上面的逐字断言里）。
     # ⚠️ 2026-10-26 起落点由**避让排布**决定（右侧优先，放不下换左/上/下），
     #    不再是固定的 y+10 —— 所以判据从"精确坐标"改成"离锚点足够近"；
     #    精确落点/换位规则由 `scripts/tests/unit/test_label_layout.js` 覆盖。
@@ -155,10 +183,6 @@ def run(cdp):
         a = _attrs(out['capital1'])
         if not (240 <= a.get('x', -1) <= 340) or abs(a.get('y', 0) - 220) > 24:
             fails.append(f'城镇名应贴在点附近（锚点 260,220）：{out.get("capital1")}')
-    if out.get('bigRiver'):
-        a = _attrs(out['bigRiver'])
-        if abs(a.get('y', 0) - 355) > 24:
-            fails.append(f'河流名应在河道中点附近（≈355）：{out.get("bigRiver")}')
 
     sm_src = _read('src/renderer/src/components/ScenarioMap.vue')
     ex_src = _read('src/renderer/src/composables/useScenarioExport.js')

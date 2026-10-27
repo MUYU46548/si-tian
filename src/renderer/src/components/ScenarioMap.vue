@@ -3600,10 +3600,14 @@ const scenarioExport = useScenarioExport({  store,
   diffMode: tlDiffMode,
   provinceNames: provinceNameMap,
   // `terrainNames`：地形注记（山系/海域/平原）跟着画布的那个开关走 —— 导出与画布一致
+  // `terrainBg`：地形/专题底图档（height/temp/prec）时导出**带上地形底图**（与画布一致：
+  //   省份只描边不填色）。见 `exportTerrainSnapshot`。
   layerFlags: () => ({
     labels: showLabels.value, borders: showBorders.value,
     placeNames: showPlaceNames.value, terrainNames: showTerrainNames.value,
+    terrainBg: rasterLayer.value === 'height' || rasterLayer.value === 'temp' || rasterLayer.value === 'prec',
   }),
+  exportTerrain: exportTerrainSnapshot,
 });
 const {
   exportStatus, exportScenarioPNG, exportScenarioSVG, exportScenariosJson, pickScenariosJson,
@@ -8801,8 +8805,7 @@ function buildCellRaster(kind) {
   return buildHeightmapRaster(hm, kind, { shade: terrainShade.value ? terrainShadeStrength.value : 0 });
 }
 
-function getRaster(kind) {
-  // 🔴 键里必须含**高度图对象引用**（2026-10-14）：只按 `底图键|档位` 存的话，
+function getRaster(kind) {  // 🔴 键里必须含**高度图对象引用**（2026-10-14）：只按 `底图键|档位` 存的话，
   //    「调整分辨率 / 平滑 / 涂抹 / 撤销」之后画布还是旧图 —— 缓存命中，什么都不重画，
   //    而且没有任何提示。`commitHeightmap` 每次都换对象 → 引用变 = 内容变。
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
@@ -8829,10 +8832,36 @@ function drawRasterLayer(c, kind, alpha) {
   c.restore();
 }
 
+/**
+ * 导出的地形底图快照（2026-10-27）：「导出 = 你看到的那张图」。
+ *
+ * 触发条件：用户的「地形表示」选的是 height / temp / prec（这三档是**地形/专题底图**，
+ * 画布上省份只描边不填色，政治色块不参与）。这时导出若仍是纯政治色块，成品图与屏幕上是两张图。
+ *
+ * 返回 `{ kind, raster, isobaths, coasts }`：
+ *   · `raster`：与画布**同一份** `getRaster()`（分带设色 + 海深渐变 + 山体阴影）的 PNG dataURL；
+ *   · `isobaths` / `coasts`：等深线与海岸线（同 `getSeaDetail()` 的那份几何，导出侧画成矢量
+ *     `<path>` —— 比位图清晰，也不随导出分辨率糊掉）。
+ * 拿不到任何底图数据 → 返回 null（调用方退回原来的政治图）。
+ */
+function exportTerrainSnapshot() {
+  const kind = rasterLayer.value;
+  if (kind !== 'height' && kind !== 'temp' && kind !== 'prec') return null;
+  const r = getRaster(kind);
+  const raster = r
+    ? { dataUrl: r.canvas.toDataURL('image/png'), minX: r.minX, minY: r.minY, w: r.w, h: r.h }
+    : null;
+  // 只有「高度」档有海深/等深线（温度/降水是专题图，加海深会被读成地形 —— 与画布同一条口径）
+  const sea = kind === 'height' ? getSeaDetail() : null;
+  const isobaths = sea && Array.isArray(sea.isobaths) ? sea.isobaths : [];
+  const coasts = sea && Array.isArray(sea.coasts) ? sea.coasts : [];
+  if (!raster && !isobaths.length && !coasts.length) return null;
+  return { kind, raster, isobaths, coasts };
+}
+
 // ══════════════════════════════════════
 // 海面细节：等深线 + 海岸线（2026-10-26）
-// ══════════════════════════════════════
-//
+// ══════════════════════════════════════//
 // 用户给的意大利地形图里，海面不是一块纯色：浅海 → 深海有分带，带上还有等深线，
 // 陆地与海之间有一条明确的海岸线。这三样在我们数据里**都不存在**：
 //   · 海格高度恒 = 12（导入图 2539/2539 个海格、造陆图 `seaLevel-8`）→ 分带无从下手；

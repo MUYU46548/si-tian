@@ -110,3 +110,31 @@
   - ⚠️ **已知未做（如实登记）**：`desite` 的旧边界只有 21 个点（`features` 退化轮廓），补齐高度图后**海岸线与地形不会自动对齐** —— 现在有第三条路了：用「重建省份外环」把新 .map 的海岸线换上去（**不必**重导为新底图、不作废省份），见下面「折线切割一次切多块 + 海岸线重建」条。「描轮廓 + 相邻省自动重算」**已做**（`Y` 键，回归 `test_97`）。
 
 - **P0/P1 编辑器模块**（2026-09-15 落地，全部有回归用例 test_28~test_35）: `utils/labelStyles.js`（标签样式预设 + `drawStyledLabel` 统一文本渲染）、`utils/reliefIcons.js`（地貌图标确定性散布 + 网格桶）、`utils/markerTypes.js`（标记类型注册表）、`utils/settlement.js`（人口对数滑块/分级/半径）、`utils/roadStyles.js`（道路样式）、`utils/rivers.js`（河流流向排序/拖拽 clamp）、`utils/viewport.js`（视口世界矩形，小地图遮罩用）；`composables/useReliefBrush.js`
+
+- **🔴 导出地形底图 + 河名沿河（2026-10-27；回归 `test_160` / `test_149`）**：
+  「画布上是什么，导出的成品图就该是什么」这条纪律一直有两个缺口，这轮补掉。
+  - **地形底图**：用户把「地形表示」切到 `height / temp / prec` 时，画布上画的是**地形/专题底图**
+    （`drawProvinces({fills:false})` —— 省份只描边，否则地形被色块盖住），而导出一直是纯政治色块。
+    现在：`layerFlags().terrainBg` 为真时，`buildScenarioSVG` 先内联一张 **与画布同一份**
+    `getRaster()` 的 PNG 位图（分带设色 + 海深渐变 + 山体阴影），再叠**矢量**的等深线
+    （`rgba(48,96,128,0.20)`，0.6 宽）与海岸线（`rgba(44,92,122,0.45)`，1.7 宽），
+    最后只画省界与文字、**不填省色**。
+    - 为什么底图用位图、线用矢量：高度图本质是栅格（矢量格式里只能内联位图，与行星侧导出、
+      参考底图同一手法）；而等值线是几何 —— 画成 `<path>` 换分辨率不糊。
+    - 快照由 ScenarioMap 以 `exportTerrain` 注入 `useScenarioExport`（`{raster, isobaths, coasts}`）——
+      栅格与海面细节的生成函数都在组件里，复制一份就是"改一处另两处不变"。
+    - 政治档（`none/landsea`）导出**一字未变**（现有 5 条导出用例 0 改动通过）。
+  - **河名沿河（导出侧）**：画布 2026-10-27 已沿河排字，导出仍是水平字。现在导出复用同一套几何
+    （`slicePathAroundPoint` + `layoutTextAlongPath`），SVG 里是**逐字 `<text>` + `rotate(a cx cy)`**
+    （SVG 没有沿路径文字），字排不全（河太短/弯太急）退回水平字 —— 与画布同一条兜底。
+    `test_149` 的判据随之从「一个 `<text>` 含整条河名」改成「逐字节点：两个字都在河道 y≈355 ±24、
+    从左到右、且带 rotate」——**判据没有变弱**（反而更贴近"是否真的沿河排"）。
+  - 🔴 踩到的坑：① `undefined identifier` 守卫（`unit/test_undefined_identifiers.js`）当场抓到
+    `svgImageEl` 忘了 import —— Vite 不查未声明标识符，这类错在真机上就是"导出直接抛"；
+    ② `getRaster` 的缓存键必须含阴影开关（已有注释），导出复用同一函数才能保证与画布同色。
+  - 判据：`test_160`（内联 PNG 12KB，**水域 9 种蓝 / 陆地 34 种色** —— 用 PIL 解码后数颜色，
+    不是"看有没有字符串"；海岸线 1 处；地形档 `fill-opacity="0.72"` 出现 **0** 次、省界仍在；
+    政治档反向对照：无内联图、省色回来了）+ 全量 **160/160**。
+    导出件：`docs/assets/terrain-export-map-20261027/terrain-map-export.svg`。
+  - 仍差：等深线只对 `height` 档、且格距 ≤14 才画（97×45 老导入图只给渐变，与画布同一条闸门）；
+    温度/降水档只内联位图、不带海面细节（专题图口径，与画布一致）。

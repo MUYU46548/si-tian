@@ -6,6 +6,8 @@
 import { ref } from 'vue';
 import {
   serializeSvg, svgPathD, svgPath, svgRect, svgTextEl, svgCircleEl,
+  // 地形底图内联位图（2026-10-27）：与行星侧导出同一手法（`<image>` + data URL）
+  svgImageEl,
   hatchPatternDef, boundsOf, rasterizeSvg, escXml, stamp,
   // A7：参考底图几何的唯一实现（象限索引 → 90° 步进 / flipH / 宽高互换）
   refImageSvgGroup,
@@ -60,6 +62,8 @@ let exportLabelMeasureCtx = null;
  *    这里把换算收成一个常量，既不给闸门误伤的机会，也让"角度换算"在文件里只出现一次。
  */
 const RAD_TO_DEG = 180 / Math.PI;
+/** 河名抬离河道中线的世界单位数（导出 1 单位 ≈ 1px，与画布 7px@zoom1.4 同量级） */
+const RIVER_NAME_OFFSET = 3;
 
 function exportLabelMeasure(text, cand) {
   if (!exportLabelMeasureCtx) exportLabelMeasureCtx = document.createElement('canvas').getContext('2d');
@@ -105,6 +109,10 @@ function svgLabelTextStyle(style, extra = {}) {
 
 export function useScenarioExport({
   store, baseMap, timeline, currentEra, currentYear, diffMode, provinceNames, layerFlags,
+  // 地形底图快照（2026-10-27）：ScenarioMap 提供，返回 `{kind, raster, isobaths, coasts}` 或 null。
+  // 为什么要注入而不是在这里重建：栅格/等深线的生成函数（`getRaster` / `getSeaDetail`）都在组件里，
+  // 复制一份就是"改一处另两处不变"。导出只消费它给出的**同一份**结果。
+  exportTerrain,
 }) {
   const exportStatus = ref('');
 
@@ -161,6 +169,37 @@ export function useScenarioExport({
     // 外层平移（世界坐标 → SVG 用户坐标）
     body.push(`<g transform="translate(${Math.round(tx)},${Math.round(ty)})">`);
 
+    // ── 地形底图（2026-10-27）：「导出 = 你看到的那张图」───────────────────────
+    // `rasterLayer` 是 height/temp/prec 时，画布画的是**地形/专题底图**（省份只描边不填色）。
+    // 底图本身是栅格（高度图逐格分带设色 + 海深渐变 + 山体阴影），矢量格式里只能内联位图
+    // （与行星侧导出、参考底图同一手法）；等深线/海岸线是**几何**，就画成矢量 `<path>`
+    // —— 比位图清晰，也不会因为导出分辨率不同而糊成一片。
+    const terrainSnap = (flags.terrainBg && typeof exportTerrain === 'function') ? exportTerrain() : null;
+    if (terrainSnap) {
+      const img = terrainSnap.raster;
+      if (img && img.dataUrl) {
+        body.push(svgImageEl(img.minX, img.minY, img.w, img.h, img.dataUrl, {
+          preserveAspectRatio: 'none',
+        }));
+      }
+      const isoD = (terrainSnap.isobaths || [])
+        .map((ln) => svgPathD(ln, { closed: false })).filter(Boolean).join(' ');
+      if (isoD) {
+        body.push(svgPath(isoD, {
+          fill: 'none', stroke: 'rgba(48, 96, 128, 0.20)', 'stroke-width': 0.6,
+          'stroke-linejoin': 'round',
+        }));
+      }
+      const coastD = (terrainSnap.coasts || [])
+        .map((ln) => svgPathD(ln, { closed: false })).filter(Boolean).join(' ');
+      if (coastD) {
+        body.push(svgPath(coastD, {
+          fill: 'none', stroke: 'rgba(44, 92, 122, 0.45)', 'stroke-width': 1.7,
+          'stroke-linejoin': 'round',
+        }));
+      }
+    }
+
     // 参考底图（数据 URL 直接内联，SVG 光栅化时无需外部资源）
     // A7：几何统一走 `refImageSvgGroup`（象限索引 → 90° 步进 / flipH / 宽高互换），
     // 与行星侧导出、与画布绘制**同一份实现**；此前这里把 rotation 当弧度换算
@@ -196,7 +235,10 @@ export function useScenarioExport({
     //   ② 海域（`kind === 'sea'`）用 `SEA_FILL` —— 旧实现照样按归属上色/回落灰，
     //      导出图里水陆分不开（画布在 `getProvinceColor` 里**最先**判海域）。
     //   ③ 网格派生的环走 `ringPointsForRender`（与画布同一条 Chaikin 规则）。
-    for (let i = 0; i < terrain.length; i++) {
+    //   ④ 地形底图模式下**不填省色**（`!terrainSnap`）：画布在 rasterLayer=height/temp/prec 时
+    //      也是 `drawProvinces({ fills:false })` —— 否则地形被色块盖住（用户原话「看不出地形」）。
+    //      省界仍在后面的 `flags.borders` 段里画 → 这张图是「地形 + 省界 + 文字」。
+    for (let i = 0; i < terrain.length && !terrainSnap; i++) {
       const prov = terrain[i];
       const rings = ringCache[i];
       if (!rings.length) continue;
@@ -355,6 +397,8 @@ export function useScenarioExport({
           x: lb.x, y: lb.y,
           style: riverLabelTextStyle(),
           placements: [{ mode: 'above', gap: 5 }, { mode: 'below', gap: 5 }],
+          // 河名沿河（2026-10-27）：排布只决定"放在哪一段河道附近"，落字沿折线排
+          path: lb.path || null,
         });
       }
     }
@@ -366,7 +410,37 @@ export function useScenarioExport({
       pad: 2,
     });
     for (const p of placedLabels) {
-      body.push(svgTextEl(p.cx, p.cy, p.text, svgLabelTextStyle(p.style)));
+      const attrs = svgLabelTextStyle(p.style);
+      // 河名沿河（2026-10-27）：与画布**同一套几何** —— 把排布给的落点投到河道上、只取两侧一段、
+      // 再逐字 rotate（SVG 没有沿路径文字）。字排不全（河太短/弯太急）就退回水平字：
+      // 缺字的名字比横排更难读（与画布同一条兜底）。
+      if (p.kind === 'river' && Array.isArray(p.path) && p.path.length >= 2) {
+        const chars = Array.from(String(p.text || ''));
+        const letterSpacing = 2;
+        const measureCh = (ch) => Math.max(1, exportLabelMeasure(ch, { style: p.style }).w - 6);
+        const textWidth = chars.reduce((acc, ch) => acc + measureCh(ch), 0)
+          + letterSpacing * Math.max(0, chars.length - 1);
+        const win = slicePathAroundPoint(p.path, { x: p.cx, y: p.cy }, textWidth * 1.6);
+        const riverLayout = layoutTextAlongPath(p.text, win, {
+          fontSize: Number(p.style && p.style.fontSize) || 10,
+          letterSpacing,
+          maxTiltDeg: 65,
+          measure: measureCh,
+        });
+        if (riverLayout.ok && riverLayout.placed.length === chars.length) {
+          for (const pc of riverLayout.placed) {
+            // 抬离河道中线（导出 1 世界单位 ≈ 1px，3 单位与画布 7px@zoom1.4 同量级）
+            const ox = pc.x + Math.sin(pc.angle) * RIVER_NAME_OFFSET;
+            const oy = pc.y - Math.cos(pc.angle) * RIVER_NAME_OFFSET;
+            body.push(svgTextEl(ox, oy, pc.ch, {
+              ...attrs,
+              transform: `rotate(${(pc.angle * RAD_TO_DEG).toFixed(2)} ${ox.toFixed(2)} ${oy.toFixed(2)})`,
+            }));
+          }
+          continue;
+        }
+      }
+      body.push(svgTextEl(p.cx, p.cy, p.text, attrs));
     }
 
     // ── 地形注记（2026-10-27）：山系/海域沿走向、平原落点横排 ──────────────────
