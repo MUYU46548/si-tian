@@ -15,7 +15,7 @@
 | 海陆图为什么不如 SP-1025？ | 司天的海是**平涂**：`HYPSO_WATER` 是 5 档淡蓝、政治档是单色海面；SP-1025 有**近岸浅滩带 + 远海按 h 的深度渐变 + 卫星陆色（群系×海拔）+ 山体阴影**。差距在 `palettes.ts` + `renderer.ts` 的约 200 行，不在整条管线。 |
 | 能不能把 SP-1025 的行星模块整个搬进来？ | **不能**。它是「Voronoi 格 → 位图」的独立生成器；司天的底图是**415 个省矢量多边形 + 剧本归属**。整包替换会丢掉省界/归属/时间轴/导出链。 |
 | 最值得搬的三件 | ① 海陆调色与浅滩/阴影；② 湖泊工具（平底 18-19）+ 地形特征级锁定（坐标重放）；③ FMG 模板 + 生成管线（仅用于**新建底图**）。 |
-| 明确不搬 | 星系编辑器整包、两套 vanilla UI/Electron/启动脚本、3D 观景（three.js）、`serialize` 外壳、全局 `Math.random` 改写。 |
+| 明确不搬 | 星系编辑器整包、两套 vanilla UI/Electron/启动脚本、`serialize` 外壳、全局 `Math.random` 改写。**3D 观景例外：它必做（用户 2026-10-27 明确「一直在计划里」），只是未排期**，参考 `System3D.vue`。 |
 | 司天现状更强的部分 | 项目文件/快照/写闸门/撤销栈/162 用例、415 省矢量与剧本账本、七层视图、导出链（PNG/SVG/切片）、读料桥。**这些不要回退**。 |
 
 ---
@@ -126,12 +126,13 @@
 | `core/model.ts` `generator.ts` `topology.ts` `territory.ts` `geometry.ts` `metrics.ts` `commands.ts` `serializer.ts` `view.ts` `prng.ts` `ids.ts` | 🔵 参考 | 与司天 `GalaxyMap/SystemView` 的数据模型不同（节点/边/区域 vs 实体树/航道/势力）。可借鉴：**所有权场 φ**（零重叠边界）、**metaball 并集轮廓**、**生成即量化回验**、**LOD 规则表** |
 | `render/background.ts` `planetArt.ts` `regions.ts` `lanes.ts` `nodes.ts` `labels.ts` `lod.ts` | 🔵 参考 | 司天已有 `galaxyDrawing.js`/`spaceBackground.js`；可借 `planetArt`（18 类行星 sprite）与背景分层，但不要整包替换 |
 | `app/*` | ⚫ 废件 | vanilla/Vue demo UI，与司天壳/面板体系不兼容 |
-| `System3D.vue` + three@0.128 | ⛔ 不搬 | 司天刻意不引 three.js；3D 观景是 demo 级需求，优先级低 |
+| `System3D.vue` + three@0.128 | 🟡 必做（参考实现） | 用户 2026-10-27 明确「星系 3D 必做，一直在计划里」；接 `SystemDetailView`，three 动态加载、关闭即 dispose |
 | `tests/*` 121 例 | 🔵 参考 | 只作为「生成器该有的判据」清单，不搬运行链 |
 | `README` 决策点清单 | ✅ 参考 | 15 条跨文件决策（命令模式/所有权场/批量原位插回/资产缓存）值得抄进司天文档 |
 
-**星系模块结论**：**不建议集成**。司天的星系层在数据/视图完整性上更强；只借 `territory.ts` 的零重叠边界与
-`planetArt.ts` 的行星美术（如果司天要做行星图标）。3D 观景不立项。
+**星系模块结论**：**不建议整包集成**。司天的星系层在数据/视图完整性上更强；只借 `territory.ts` 的零重叠边界与
+`planetArt.ts` 的行星美术。**3D 观景是例外：用户明确必做**，按 `System3D.vue` 的参考实现接到
+`SystemDetailView`（three 动态加载、关闭即 dispose）。
 
 ---
 
@@ -142,7 +143,7 @@
   搬进司天后要在文件头保留，并在 `About` / `README` / `THIRD_PARTY_NOTICES.md` 写第三方声明。
 - 运行时依赖（行星）：`alea`、`delaunator`、`simplex-noise`。司天当前没有这三个。
   两条路：① 正常加为 dependency（3 个小包）；② 把源码 vendor 到 `src/renderer/src/third_party/`，保持「零新增依赖」。
-- 星系根仓库的 `three@0.128` **不进司天**。
+- 星系根仓库的 `three@0.128` **只在 3D 观景视图里动态加载**（不进首屏）；版本钉 0.128.0（0.16x 灯光模型会漂观感）。
 - `planet-map` 的 `README` 已写明「抄码主源 FMG @ 67d555b8（MIT）」，照抄其声明即可。
 
 ---
@@ -184,7 +185,7 @@
 
 - `territory.ts` 的零重叠所有权场 → 如果司天势力边界要更平滑；
 - `planetArt.ts` 的 18 类行星 sprite → 行星列表/详情图标；
-- `System3D` 不立项。
+- `System3D` **必做**（用户 2026-10-27 明确）：参考 `System3D.vue` + `planetArt.ts`，独立一轮排期。
 
 ---
 
@@ -213,7 +214,7 @@
 | P2 | Vitest 运行链 | 核心断言 Node 化；不为主仓加测试框架 |
 | P2 | 坐标/分辨率错位 | 显式 `width/height/spacing` 适配层 + 单测锁边界 |
 | P2 | 固定 1920×1080 | 生成时映射到司天 worldBounds；存 `width/height` |
-| P3 | 3D/three.js | 不立项 |
+| P2 | 3D/three.js：体积 / Electron WebGL 兼容 / 资源泄漏 | 动态 import、按 SP-1025 低配口径、关闭即 dispose + 连续开关 20 次内存判据 |
 
 ---
 
@@ -222,7 +223,7 @@
 1. **阶段 0（海陆渲染）**：先让司天的海图达到 `style-standard.jpg` 的观感；这是用户当前最直接的抱怨，且零数据风险。
 2. **阶段 1（湖泊 + 锁定）**：两个可见功能，不动 415 省项目。
 3. **阶段 2（生成管线）**：先 3 个模板 + heightmap 输出；验证后再谈河网/群系/省份分组。
-4. 星系模块只做「参考」；3D 不做。
+4. 星系模块只做「参考」；**3D 观景必做**（用户点名，独立一轮）。
 
 ---
 

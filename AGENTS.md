@@ -84,6 +84,7 @@
   - **开工先读** [docs/plan/SITIAN_GUIDE_DIGEST_20261023.md](docs/plan/SITIAN_GUIDE_DIGEST_20261023.md)：六件施工序的仓内拆解 + 与代码实况的对账 + 三个必须先定的口径（账本真源与 epoch 映射 / schema 类型放宽 / 保存挪线程分两步）；
   - 施工序：0 对账留底 → 1 底盘三件 → 2 散布笔冒烟 → 3 账本引擎 `src/ledger/` → 4 四笔总装+时间轴+导出 → 5 读料桥 → 6 终验（用户出场一次）；
   - 415 省孤本 `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份（2026-10-23 已留：`…_施工留底\绒花计划-20261023-203520.sitian`，SHA256 一致）。
+  - **2026-10-27 之后的剩余**（时间不足暂停点）：[docs/plan/REMAINING_BACKLOG_20261027.md](docs/plan/REMAINING_BACKLOG_20261027.md) —— **星系 3D 必做（用户点名，未排期）**、阶段 2 FMG 生成管线、阶段 0/1 欠账、文字/观感旧账。
 
 
 ### 当前红线（跨模块、动手之前必须知道）
