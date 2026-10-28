@@ -504,3 +504,19 @@
   - 仍未定：**B1 的"黑一块白一块"** 需要用户那张参考图（本轮未收到图，只修了可定位的光晕）；
     **F1 若是"重启应用后不恢复"**，需按新告警里的原因再查一次。
 
+- **地形特征锁定收尾 + 湖泊 UI（2026-10-28，`REMAINING_BACKLOG_20261027.md` §3 的 A2/A3/A4）**:
+  - **「重生成保留手绘」不再恒开**（A2）：`TerrainGenPanel` 加 checkbox（默认开，`tgen-keep-hand`），
+    关掉时传 `keepHandEdits:false` → store **不写回**且 `syn.handEdits = []`，回执写明
+    「按你的选择未保留 N 格手绘地形」。`synthesizeBaseMapTerrain` 的返回也多了 `handKept / handDropped`
+    供 UI 与用例读。判据在 `test_151` 的 g 段：开 → 手绘值 77 写回新地形；关 → `handEdits` 长度 0、
+    该格不是 77、回执正确。
+  - **`handEdits` 软上限 2 万 + 保形抽稀**（A3）：超限时按 0.5 → 1 → 2 … 逐级网格抽稀，直到 ≤ 上限；
+    **同格留最新**（`mergeHandEdits` 覆盖时先 `delete` 再 `set`，否则 Map 保留旧插入位置，
+    "刚画的那格"会被当成最旧的丢掉 —— 单测第一版就红在这里）。抽稀是确定性的（同输入同输出）。
+    `unit/test_hand_edits.js` h6：40000 → 7744、四角都还有条目、刚画的格不丢。
+  - **湖泊工具强度滑杆移除**（A4）：湖泊是平底（18/19 两档），强度对它没有任何作用；行星图在
+    `heightTool === 'lake'` 时只留半径，强度位置改显示「平底」并带 title 说明。
+    （剧本底图侧的湖泊工具本来就没有强度滑杆，无需改。）
+  - 同轮还给**政治档 SVG 导出**补了海面浅滩带（见 [map-basemap](map-basemap.md)）。
+
+

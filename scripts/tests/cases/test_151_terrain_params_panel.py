@@ -16,6 +16,8 @@
   d 一条 undo：撤销回到应用前（原来是"没有高度图"就回到没有）
   e 气候：temp/prec/biome 都在、北冷南暖、群系不是单一值；重算派生图层结果一致
   f 预览只读：出候选不写任何数据（高度图仍为空）
+  g 「重生成保留手绘」开关（2026-10-28，补 §3.2）：默认开 → 手绘按坐标写回；
+    关掉 → handEdits 清空、该格回到新地形值（不是只改回执）。
 """
 import os
 import sys
@@ -110,6 +112,15 @@ def source_gates():
     for tid in ('tgen-preview', 'tgen-apply', 'tgen-seed', 'tgen-cand-'):
         if tid not in panel:
             fails.append(f'🔴 面板缺少 `{tid}` 锚点（用户/用例都够不着）')
+
+    # ⑦ 「重生成保留手绘」开关（2026-10-28，补 §3.2 欠账）：
+    #    之前恒开 —— 用户想彻底重来只能手动把地形涂回去。现在面板有 checkbox，且**传给 store**。
+    if 'data-testid="tgen-keep-hand"' not in panel:
+        fails.append('🔴 面板缺少「重生成保留手绘」checkbox（`tgen-keep-hand`）')
+    if 'keepHandEdits: keepHandEdits.value' not in panel:
+        fails.append('🔴 面板没有把 keepHandEdits 传给 store（勾了也不生效）')
+    if 'opts.keepHandEdits !== false' not in se:
+        fails.append('🔴 store 的 synthesizeBaseMapTerrain 不认 keepHandEdits（开关是摆设）')
     return fails
 
 
@@ -265,6 +276,55 @@ JS_DETERMINISM = r""" (async () => {
   });
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
 
+JS_KEEPHAND = r""" (async () => {
+  const s = __STORE__;
+  const K = __KEY__;
+  const params = { seed: 777, relief: 1.2, mountainStrength: 1.1, cellsAcross: 64 };
+  const idxOf = (hm, x, y) => {
+    const pts = hm.grid.points;
+    for (let i = 0; i < pts.length; i++) {
+      const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
+      const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
+      if (Math.abs(px - x) < 0.51 && Math.abs(py - y) < 0.51) return i;
+    }
+    return -1;
+  };
+  const hm = s.getHeightmapFor(K);
+  const i = Math.floor(hm.h.length / 2);
+  const pt = hm.grid.points[i];
+  const x = Array.isArray(pt) ? pt[0] : pt.x;
+  const y = Array.isArray(pt) ? pt[1] : pt.y;
+  // 模拟"手绘过一格"：登记 + 当前 h 一致（activeHandEdits 的判据）
+  hm.h[i] = 77;
+  hm.handEdits = [{ x, y, h: 77 }];
+
+  const keep = s.synthesizeBaseMapTerrain(K, { params, force: true, keepHandEdits: true });
+  const hmKeep = s.getHeightmapFor(K);
+  const i2 = idxOf(hmKeep, x, y);
+  const keptValue = i2 >= 0 ? hmKeep.h[i2] : null;
+
+  // 重新登记（上一次重生成会重建 grid）
+  const hm3 = s.getHeightmapFor(K);
+  const j = idxOf(hm3, x, y);
+  if (j >= 0) hm3.h[j] = 77;
+  hm3.handEdits = [{ x, y, h: 77 }];
+  const drop = s.synthesizeBaseMapTerrain(K, { params, force: true, keepHandEdits: false });
+  const hmDrop = s.getHeightmapFor(K);
+  const j2 = idxOf(hmDrop, x, y);
+
+  return JSON.stringify({
+    okKeep: !!(keep && keep.ok), okDrop: !!(drop && drop.ok),
+    keepKept: keep ? keep.handKept : null,
+    keptValue,
+    dropKept: drop ? drop.handKept : null,
+    dropDropped: drop ? drop.handDropped : null,
+    dropEditsLen: Array.isArray(hmDrop.handEdits) ? hmDrop.handEdits.length : -1,
+    dropValue: j2 >= 0 ? hmDrop.h[j2] : null,
+    keepMsg: keep ? String(keep.message || '').slice(0, 160) : '',
+    dropMsg: drop ? String(drop.message || '').slice(0, 160) : '',
+  });
+})() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
+
 JS_UNDO = r""" (async () => {
   const s = __STORE__;
   const K = __KEY__;
@@ -398,6 +458,31 @@ def run(cdp):
         fails.append('🔴 撤销后高度图整个丢了（撤销粒度错了：应只回滚派生数组）')
     else:
         notes.append('撤销粒度 ✓（h 不动）')
+
+    # ── g 重生成保留手绘开关（2026-10-28，§3.2）────────────────────────────
+    # 放在 undo 之后：这段会连续两次重生成，会把 undo 栈顶改写掉（顺序错了会让上面那条误红）。
+    kh = _ev(cdp, JS_KEEPHAND, '保留手绘开/关各重生成一次')
+    if kh.get('__err__'):
+        fails.append(f'保留手绘探针求值失败：{kh}')
+    elif not (kh.get('okKeep') and kh.get('okDrop')):
+        fails.append(f"重生成失败：{kh}")
+    else:
+        if not (kh.get('keepKept') or 0) >= 1:
+            fails.append(f"开关开（默认）时手绘没保留：handKept={kh.get('keepKept')}")
+        elif kh.get('keptValue') != 77:
+            fails.append(f"手绘值没写回新地形：{kh.get('keptValue')}（应为 77）")
+        else:
+            notes.append(f"保留手绘 {kh.get('keepKept')} 格 ✓")
+        if (kh.get('dropKept') or 0) != 0:
+            fails.append(f"关掉开关后仍保留了手绘：handKept={kh.get('dropKept')}")
+        if (kh.get('dropEditsLen') or 0) != 0:
+            fails.append(f"关掉开关后 handEdits 没清空：{kh.get('dropEditsLen')} 条")
+        if kh.get('dropValue') == 77:
+            fails.append('关掉开关后该格仍是手绘值 77（开关只写了回执没生效）')
+        if not str(kh.get('dropMsg') or '').startswith('已按陆地轮廓生成地形'):
+            fails.append(f"回执异常：{kh.get('dropMsg')}")
+        else:
+            notes.append('关掉开关 = 手绘清空 ✓')
 
     summary = ' | '.join(notes)
     return (not fails), (summary if not fails else ' | '.join(fails) + ' ## ' + summary)

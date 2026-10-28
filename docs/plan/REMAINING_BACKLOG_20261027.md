@@ -5,9 +5,10 @@
 > 本表只列**没做的**，按优先级/依赖排序；下次开工照这张表挑，不用重新翻聊天记录。
 >
 > **2026-10-28 更新**：§1 **星系 3D 观景已交付**（`System3DView.vue` + `utils/system3dScene.js` +
-> `utils/planetArt.js`，回归 `test_163` + `unit/test_system3d_scene.js`，全量 **163/163 + 71 Node** 绿）。
-> 交接见 [`HANDOFF_20261028_system3d.md`](HANDOFF_20261028_system3d.md)。下面 §1 的内容**保留为历史设计记录**，
-> 与实现不完全一致的以代码与交接文档为准。
+> `utils/planetArt.js`，回归 `test_163` + `unit/test_system3d_scene.js`）；§3 阶段 0/1 欠账已完成
+> **A1 导出浅滩 / A2 保留手绘开关 / A3 handEdits 抽稀 / A4 湖泊 UI** 四项。
+> **剩余全部条目已收敛到 [`TODO_REMAINING_20261028.md`](TODO_REMAINING_20261028.md)**（唯一待办清单，
+> 含 A5/A6、阶段 2 拆解、文字观感、B1/F1 复核、3D 二期）。本文件保留为 10-27 的设计口径与分析证据。
 
 ---
 

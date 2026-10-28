@@ -153,6 +153,9 @@ export function useScenarioExport({
   // 为什么要注入而不是在这里重建：栅格/等深线的生成函数（`getRaster` / `getSeaDetail`）都在组件里，
   // 复制一份就是"改一处另两处不变"。导出只消费它给出的**同一份**结果。
   exportTerrain,
+  // 徒海岸/浅滩几何（2026-10-28）：与 `exportTerrain` 分开 —— 政治模式下也要浅滩带，
+  // 但那时**不该**为了导出而生成栅格（`getRaster` 是有成本的）。这里只取几何。
+  exportSea,
 }) {
   const exportStatus = ref('');
 
@@ -268,6 +271,24 @@ export function useScenarioExport({
       }));
     }
 
+    // ── 海面浅滩带（2026-10-28，补 §3.1 欠账）───────────────────────────────
+    // 画布的海面不是一块死蓝：近岸有一圈青绿浅滩（SP-1025 阶段 0）。导出此前只有
+    // `SEA_FILL` 平涂 —— 同一张图屏幕上有层次、导出成平片。
+    // 做法：沿**海岸线几何**画一条宽描边（靠陆那一半随后被省填充盖住，露出来的就是浅滩），
+    // 填充之后再补一条细海岸线。几何与画布同一份（`getSeaDetail`），不另算距离场。
+    const seaSnap = (!terrainSnap && typeof exportSea === 'function') ? exportSea() : null;
+    const coastD = ((seaSnap && Array.isArray(seaSnap.coasts)) ? seaSnap.coasts : [])
+      .map((ln) => svgPathD(ln, { closed: false })).filter(Boolean).join(' ');
+    if (coastD) {
+      body.push(svgPath(coastD, {
+        fill: 'none',
+        stroke: 'rgba(150, 205, 214, 0.55)',
+        'stroke-width': 9,
+        'stroke-linejoin': 'round',
+        'stroke-linecap': 'round',
+      }));
+    }
+
     // 省份填充 + EU4 斜线占领
     // 🔴 2026-10-01「导出与画布同源」三件事：
     //   ① 多环省份要把**所有环**拼进一条 path + `fill-rule="evenodd"` —— 旧实现只画
@@ -314,6 +335,13 @@ export function useScenarioExport({
           fill: 'none', stroke: '#ffffff', 'stroke-width': 2, 'stroke-linejoin': 'round',
         }));
       }
+    }
+
+    // 海岸线：浅滩带之上补一条细线（与画布 1.1px 海岸线同口径；地形底图模式已在上面画过）
+    if (coastD && !terrainSnap) {
+      body.push(svgPath(coastD, {
+        fill: 'none', stroke: 'rgba(44, 92, 122, 0.5)', 'stroke-width': 1.1, 'stroke-linejoin': 'round',
+      }));
     }
 
     // 边界：陆地省界（实线）+ 海域海界（淡虚线 —— 与画布 `SEA_EDGE` 同一约定，水陆一眼可分）

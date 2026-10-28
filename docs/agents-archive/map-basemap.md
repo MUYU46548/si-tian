@@ -138,3 +138,16 @@
     导出件：`docs/assets/terrain-export-map-20261027/terrain-map-export.svg`。
   - 仍差：等深线只对 `height` 档、且格距 ≤14 才画（97×45 老导入图只给渐变，与画布同一条闸门）；
     温度/降水档只内联位图、不带海面细节（专题图口径，与画布一致）。
+
+- **政治档导出也有海面浅滩了（2026-10-28，`REMAINING_BACKLOG_20261027.md` §3.1 / A1）**:
+  之前只有"地形档"（rasterLayer = height/temp/prec）会把栅格（含海深渐变）内联进 SVG；
+  **政治档的海是纯 `SEA_FILL` 平涂** —— 屏幕上有层次、导出成平片。
+  - 做法：`ScenarioMap` 新增 `exportSeaSnapshot()`（只取 `getSeaDetail()` 的 `coasts` / `isobaths`
+    几何，**不生成栅格**），经 `useScenarioExport({ exportSea })` 注入；导出时在省份填充**之前**
+    沿海岸线画一条 9px 半透明浅滩带（靠陆的一半随后被省填充盖住，露出来的就是浅滩），
+    填充之后再补 1.1px 细海岸线（与画布同口径）。
+  - 两条纪律：① **地形档不重复叠**（栅格已有海深，再叠会压两道）—— `test_160` 反向断言
+    `terrainBand == 0`、`plainBand >= 1`、`plainCoastThin >= 1`；② 几何只有一份（`getSeaDetail`），
+    不另算距离场、不复制海岸线算法。
+  - 仍差：远海仍是 `EXPORT_OCEAN` 单色（没有按离岸距离做多段渐变）—— 要做得把海深场栅格化，
+    与"政治档不生成栅格"的成本口径冲突，留作待办（`TODO_REMAINING_20261028.md` C6）。

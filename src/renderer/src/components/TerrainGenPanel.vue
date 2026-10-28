@@ -82,6 +82,16 @@
       </div>
     </div>
 
+    <!-- 重生成保留手绘（2026-10-28，补 §3.2 欠账）：默认开；关掉 = 用户明确要"彻底重来" -->
+    <label
+      class="tgen-check"
+      title="重生成时把这张底图上已手绘/笔刷改过的高度按坐标写回新地形（只对同种子有效）；关掉 = 手绘全部丢弃，彻底重来"
+    >
+      <input type="checkbox" v-model="keepHandEdits" data-testid="tgen-keep-hand" />
+      重生成保留手绘地形
+      <span class="tgen-sub">（同种子才有效；关掉等于彻底重来）</span>
+    </label>
+
     <div class="tgen-cands-head">
       <span>候选（同参数、不同种子）</span>
       <button class="tgen-mini" :disabled="busy" data-testid="tgen-preview" @click="runPreview">
@@ -153,6 +163,7 @@ const busy = ref(false);
 const elapsedMs = ref(null);
 const warn = ref('');
 const paramWarn = ref('');
+const keepHandEdits = ref(true);
 const canvases = new Map();
 
 function setCanvas(i, el) {
@@ -271,7 +282,11 @@ function apply() {
   if (!c) return;
   busy.value = true;
   nextTick(() => {
-    const r = store.synthesizeBaseMapTerrain(props.baseMapKey, { params: c.params, force: true });
+    const r = store.synthesizeBaseMapTerrain(props.baseMapKey, {
+      params: c.params,
+      force: true,
+      keepHandEdits: keepHandEdits.value,
+    });
     busy.value = false;
     if (!r || r.ok === false) {
       warn.value = (r && r.message) || '应用失败';
@@ -294,7 +309,7 @@ const summary = computed(() => describeTerrainParams(paramSnapshot()));
 
 // 打开面板即出一组候选（用户不用先猜"先在哪儿点"）
 if (props.baseMapKey) runPreview();
-defineExpose({ summary });
+defineExpose({ summary, keepHandEdits });
 </script>
 
 <style scoped>
@@ -324,6 +339,11 @@ defineExpose({ summary });
 }
 .tgen-chip.on { border-color: #38bdf8; color: #e2e8f0; background: rgba(56, 189, 248, 0.14); }
 .tgen-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 4px 16px; }
+.tgen-check {
+  display: flex; align-items: center; gap: 6px;
+  color: #cbd5e1; font-size: 12px; cursor: pointer;
+}
+.tgen-check input[type='checkbox'] { accent-color: #38bdf8; }
 .tgen-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 6px; }
 .tgen-row label { color: #94a3b8; white-space: nowrap; }
 .tgen-row input[type='range'] { width: 100%; accent-color: #38bdf8; }

@@ -3661,6 +3661,8 @@ const scenarioExport = useScenarioExport({  store,
     terrainBg: rasterLayer.value === 'height' || rasterLayer.value === 'temp' || rasterLayer.value === 'prec',
   }),
   exportTerrain: exportTerrainSnapshot,
+  // 政治模式导出也要浅滩带（§3.1 欠账）：只给海岸线几何，**不生成栅格**
+  exportSea: exportSeaSnapshot,
 });
 const {
   exportStatus, exportScenarioPNG, exportScenarioSVG, exportScenariosJson, pickScenariosJson,
@@ -8933,8 +8935,7 @@ function drawRasterLayer(c, kind, alpha) {
  */
 function exportTerrainSnapshot() {
   const kind = rasterLayer.value;
-  if (kind !== 'height' && kind !== 'temp' && kind !== 'prec') return null;
-  const r = getRaster(kind);
+  if (kind !== 'height' && kind !== 'temp' && kind !== 'prec') return null;  const r = getRaster(kind);
   const raster = r
     ? { dataUrl: r.canvas.toDataURL('image/png'), minX: r.minX, minY: r.minY, w: r.w, h: r.h }
     : null;
@@ -8944,6 +8945,20 @@ function exportTerrainSnapshot() {
   const coasts = sea && Array.isArray(sea.coasts) ? sea.coasts : [];
   if (!raster && !isobaths.length && !coasts.length) return null;
   return { kind, raster, isobaths, coasts };
+}
+
+/**
+ * 只取海岸线 / 等深线几何（2026-10-28，补 §3.1 欠账）：政治模式导出要在海面上画浅滩带，
+ * 但那时**不该**为了导出而生成栅格（`getRaster` 有成本）。与 `exportTerrainSnapshot`
+ * 共用 `getSeaDetail()`（同一份缓存），不另算距离场。
+ */
+function exportSeaSnapshot() {
+  const sea = getSeaDetail();
+  if (!sea) return null;
+  return {
+    isobaths: Array.isArray(sea.isobaths) ? sea.isobaths : [],
+    coasts: Array.isArray(sea.coasts) ? sea.coasts : [],
+  };
 }
 
 // ══════════════════════════════════════

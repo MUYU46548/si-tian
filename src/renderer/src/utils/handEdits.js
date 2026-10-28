@@ -15,18 +15,65 @@ export function handEditKey(x, y) {
   return `${Math.round(Number(x) * 100) / 100},${Math.round(Number(y) * 100) / 100}`;
 }
 
-/** 合并旧登记 + 本笔触及格（同坐标后者覆盖）；脏条目丢弃 */
+/**
+ * 手绘登记的软上限。超过就**按网格抽稀**（不是丢最新的）：
+ * 真到几万条时（大图长时间编辑），文件体积与每次重生成的对齐开销都开始拖人；
+ * 抽稀保留"每一片区域至少还有一格手绘"，形状轮廓不会整块消失。
+ *
+ * 为什么不是简单 slice：slice 会把用户最后画的那片（通常是正在改的地方）整块丢掉。
+ */
+export const HAND_EDITS_SOFT_MAX = 20000;
+
+/**
+ * 超上限时按逐渐变粗的网格抽稀（确定性：同一输入 → 同一输出；同格后者覆盖前者）。
+ * @param {Array<{x:number,y:number,h:number}>} edits
+ * @param {number} [max]
+ * @returns {Array<{x:number,y:number,h:number}>}
+ */
+export function thinHandEdits(edits, max = HAND_EDITS_SOFT_MAX) {
+  const list = (Array.isArray(edits) ? edits : []).filter(
+    (e) => e && Number.isFinite(e.x) && Number.isFinite(e.y) && Number.isFinite(e.h),
+  );
+  if (list.length <= max) return list;
+  let step = 0.5;
+  let out = list;
+  for (let round = 0; round < 10; round++) {
+    const map = new Map();
+    // 从**最新**往里填（倒序 + 先到先得）：抽稀时同格保留最后画的那一条，
+    // 而不是被更早的条目覆盖 —— 用户正在改的地方不该因为抽稀变成旧值。
+    for (let i = list.length - 1; i >= 0; i--) {
+      const e = list[i];
+      const key = `${Math.round(e.x / step)},${Math.round(e.y / step)}`;
+      if (!map.has(key)) map.set(key, e);
+    }
+    out = [...map.values()];
+    if (out.length <= max) return out;
+    step *= 2;
+  }
+  // 极端情况（所有点落在同一格附近）：保留前 max 条，保证不返回超大数组
+  return out.slice(0, max);
+}
+
+/** 合并旧登记 + 本笔触及格（同坐标后者覆盖）；脏条目丢弃；超上限自动抽稀 */
 export function mergeHandEdits(oldEdits, touched) {
   const map = new Map();
+  // 🔴 覆盖时先 delete 再 set：Map 的 set 对已存在键**保留原插入位置**，而抽稀按
+  //    "从最新往里填"决定同格留哪条 —— 不 delete 的话"刚画的那格"会被当成最旧的丢掉
+  //    （2026-10-28 实测：h6 抽稀用例第一版就红在这里）。
+  const put = (e) => {
+    const k = handEditKey(e.x, e.y);
+    if (map.has(k)) map.delete(k);
+    map.set(k, { x: e.x, y: e.y, h: e.h });
+  };
   for (const e of (Array.isArray(oldEdits) ? oldEdits : [])) {
     if (!e || !Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.h)) continue;
-    map.set(handEditKey(e.x, e.y), { x: e.x, y: e.y, h: e.h });
+    put(e);
   }
   for (const e of (Array.isArray(touched) ? touched : [])) {
     if (!e || !Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.h)) continue;
-    map.set(handEditKey(e.x, e.y), { x: e.x, y: e.y, h: e.h });
+    put(e);
   }
-  return [...map.values()];
+  return thinHandEdits([...map.values()]);
 }
 
 function pointXY(p) {

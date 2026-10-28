@@ -141,8 +141,13 @@
             </select>
             <span class="toolbar-label">半径</span>
             <input type="range" v-model.number="planetHeightBrush.brushRadius.value" min="20" max="300" step="10" class="brush-slider" />
-            <span class="toolbar-label">强度</span>
-            <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
+            <!-- 湖泊是平底（18/19 两档）→ 强度对它没有任何作用；旧版照样显示滑杆，
+                 用户拖了没反应（§3.6 欠账）。只在非湖泊时给强度。 -->
+            <template v-if="heightTool !== 'lake'">
+              <span class="toolbar-label">强度</span>
+              <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
+            </template>
+            <span v-else class="toolbar-label" title="湖泊是平底（盆底 18 / 浅缘 19），没有强度可调">平底</span>
             <!-- 补高度图的入口（2026-10-17）：自动寻路 / 智能聚落会说「无高度图数据」，
                  而这句话曾经指向一个**行星视图里不存在**的入口。现在入口就在这个面板里。 -->
             <button

@@ -145,6 +145,11 @@ def run(cdp):
         plainCoast: count(plain, 'rgba(44, 92, 122, 0.45)'),
         terrainMountain: terrain.indexOf('>测试山脉<') >= 0 || count(terrain, '>山<') > 0,
         terrainBorder: count(terrain, 'stroke="#') > 0,
+        // 海面浅滩带（2026-10-28，§3.1）：政治档要有一条宽描边浅滩 + 一条细海岸线；
+        // 地形档已经有海深栅格，**不许**再叠（否则同一片海被压两道）。
+        terrainBand: count(terrain, 'rgba(150, 205, 214, 0.55)'),
+        plainBand: count(plain, 'rgba(150, 205, 214, 0.55)'),
+        plainCoastThin: count(plain, 'rgba(44, 92, 122, 0.5)'),
         svg: terrain,
       });
     })()"""
@@ -193,7 +198,15 @@ def run(cdp):
     if int(out.get('plainFills') or 0) < 1:
         fails.append('政治档导出应恢复省份填色（fill-opacity 0.72 没出现）')
     if int(out.get('plainCoast') or 0) != 0:
-        fails.append('政治档导出不该有海岸线 path')
+        fails.append('政治档导出不该有地形档的海岸线 path')
+
+    # ⑥ 海面浅滩（2026-10-28，§3.1）：政治档也有浅滩带 + 细海岸线；地形档不重复叠
+    if int(out.get('plainBand') or 0) < 1:
+        fails.append('政治档导出没有海面浅滩带（画布有、导出还是平涂 SEA_FILL）')
+    if int(out.get('plainCoastThin') or 0) < 1:
+        fails.append('政治档导出没有细海岸线（浅滩带边上缺收边）')
+    if int(out.get('terrainBand') or 0) != 0:
+        fails.append('地形档重复叠了浅滩带（栅格已有海深渐变）')
 
     if fails:
         return False, '；'.join(fails)[:900] + ' | 实测：' + json.dumps(

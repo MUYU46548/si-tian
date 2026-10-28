@@ -4185,8 +4185,11 @@ export function createScenarioEditingModule(ctx) {
     const prev = getHeightmapFor(baseMapKey);
     const prevHand = activeHandEdits(prev);
     const sameSeed = !prev || !Number.isFinite(prev.genSeed) || prev.genSeed === norm.params.seed;
+    // 「重生成保留手绘」开关（2026-10-28，补 §3.2 欠账）：默认开；关掉 = 按用户明确选择丢弃手绘。
+    // 之前这里恒开 —— 用户想"彻底重来"时只能先把地形笔刷涂回去，等于没有出口。
+    const keepHand = opts.keepHandEdits !== false;
     let handKept = [];
-    if (prevHand.length && sameSeed) handKept = reapplyHandEdits(syn, prevHand).kept;
+    if (keepHand && prevHand.length && sameSeed) handKept = reapplyHandEdits(syn, prevHand).kept;
     syn.handEdits = handKept;
     syn.genSeed = norm.params.seed;
     // ── P0-3：气候与高度**同一笔**写进 undo ──────────────────────────────────
@@ -4238,12 +4241,16 @@ export function createScenarioEditingModule(ctx) {
       structure: syn.structure || null,
       params: norm.params,
       paramWarnings: norm.warnings,
+      handKept: handKept.length,
+      handDropped: keepHand ? 0 : prevHand.length,
       climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },
       message: `已按陆地轮廓生成地形：${syn.cellCount} 格 / 格距 ${syn.effectiveCellSize}`
         + `（最内陆 ${syn.maxInlandCells} 格）${st} —— ${describeTerrainParams(norm.params)}；`
         + (handKept.length
           ? `已保留 ${handKept.length} 格手绘地形；`
-          : (prevHand.length && !sameSeed ? '换 seed = 全新世界，手绘地形未保留；' : ''))
+          : (!keepHand && prevHand.length
+            ? `按你的选择未保留 ${prevHand.length} 格手绘地形；`
+            : (prevHand.length && !sameSeed ? '换 seed = 全新世界，手绘地形未保留；' : '')))
         + `气候已按纬度 ±${Math.round(climate.latitudeSpanDeg / 2)}° 与离岸距离派生`
         + `（可用 Ctrl+Z 撤回，也可以拿地形笔刷继续改）。`,
     };

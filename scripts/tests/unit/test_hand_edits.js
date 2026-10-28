@@ -45,7 +45,7 @@ function makeHm(offsetX = 0) {
 }
 
 async function main() {
-  const { handEditKey, mergeHandEdits, activeHandEdits, reapplyHandEdits } = await load(HAND);
+  const { handEditKey, mergeHandEdits, activeHandEdits, reapplyHandEdits, thinHandEdits, HAND_EDITS_SOFT_MAX } = await load(HAND);
   const { lakeHeightForWeight } = await load(MATH);
 
   check('h1 坐标量化：1e-2 精度，同格不同浮点尾差得到同一个键', () => {
@@ -106,6 +106,28 @@ async function main() {
     assert(vals.every(v => v === 18 || v === 19), `只允许 18/19：${vals}`);
     assert(Math.max(...vals) < 20, '必须低于海平面');
     return vals.join(',');
+  });
+
+  check('h6 上限抽稀：超上限按网格保形抽稀，结果确定、不整块丢最新', () => {
+    // 200×200 密集网格 = 40000 条（模拟大图长时间编辑）
+    const many = [];
+    for (let i = 0; i < 200; i++) {
+      for (let j = 0; j < 200; j++) many.push({ x: i * 7, y: j * 7, h: 30 + ((i + j) % 5) });
+    }
+    assert(many.length > HAND_EDITS_SOFT_MAX, '前提：输入应超上限');
+    const a = thinHandEdits(many);
+    const b = thinHandEdits(many);
+    assert(a.length <= HAND_EDITS_SOFT_MAX, `抽稀后仍超上限：${a.length}`);
+    assert(JSON.stringify(a) === JSON.stringify(b), '抽稀结果不确定（同输入应同输出）');
+    // 保形：四个角附近都应还有条目（不是把后半段整块砍掉）
+    const near = (px, py) => a.some((e) => Math.abs(e.x - px) < 60 && Math.abs(e.y - py) < 60);
+    assert(near(0, 0) && near(1386, 0) && near(0, 1386) && near(1386, 1386),
+      '抽稀把某个角整块丢了（保形失败）');
+    // merge 走同一条路：超上限时合并结果也必须被抽稀
+    const merged = mergeHandEdits(many, [{ x: 0, y: 0, h: 99 }]);
+    assert(merged.length <= HAND_EDITS_SOFT_MAX, `merge 未抽稀：${merged.length}`);
+    assert(merged.some((e) => e.x === 0 && e.y === 0), '抽稀把刚画的格丢了');
+    return `${many.length} → ${a.length} 条`;
   });
 
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
