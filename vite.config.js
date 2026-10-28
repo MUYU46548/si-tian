@@ -27,6 +27,12 @@ export default defineConfig({
       },
     },
   },
+  // 3D 观景（2026-10-27）：three 只在 System3DView 挂载后 `await import('three')`。
+  // dev 模式下**必须**预打包 —— 否则首次点开 3D 时 Vite 才发现新依赖 → 触发整页 reload，
+  // 3D 视图刚挂上就被刷掉（真机上表现为"点一下闪回 2D"）。构建产物不受此项影响。
+  optimizeDeps: {
+    include: ['three', 'three/examples/jsm/controls/OrbitControls.js'],
+  },
   // P2-4：派生 worker（workers/deriveWorker.js，经 `?worker` 引入）。
   // 显式用 iife 而不是 'es' —— 打包后的应用是以 file:// 加载 dist/index.html 的，
   // file:// 页面构造「模块 worker」受 CORS 限制；经典 worker 无此问题。

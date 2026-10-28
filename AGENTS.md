@@ -11,7 +11,7 @@
 - UI 框架: Vue 3 + Pinia
 - 构建工具: Vite 5
 - 数据格式: Markdown + YAML frontmatter + JSON 缓存层（`E:/图书馆/ROSA/.sitian/`）+ `.sitian` 项目文件
-- 前端画布: 原生 Canvas 2D（无外部渲染库）
+- 前端画布: 原生 Canvas 2D（无外部渲染库）；**星系 3D 观景**按需加载 `three@0.128.0`（动态 import，不进首屏，见 views 归档）
 - UI 基座（2026-10-06 试点）: Tailwind CSS 3（**只出 utilities 层**）+ shadcn-vue 源码组件（`components/ui/`，基于 reka-ui）
 
 ## 常用命令 (Common Commands)
@@ -22,9 +22,9 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**162 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**70 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**71 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -84,7 +84,7 @@
   - **开工先读** [docs/plan/SITIAN_GUIDE_DIGEST_20261023.md](docs/plan/SITIAN_GUIDE_DIGEST_20261023.md)：六件施工序的仓内拆解 + 与代码实况的对账 + 三个必须先定的口径（账本真源与 epoch 映射 / schema 类型放宽 / 保存挪线程分两步）；
   - 施工序：0 对账留底 → 1 底盘三件 → 2 散布笔冒烟 → 3 账本引擎 `src/ledger/` → 4 四笔总装+时间轴+导出 → 5 读料桥 → 6 终验（用户出场一次）；
   - 415 省孤本 `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份（2026-10-23 已留：`…_施工留底\绒花计划-20261023-203520.sitian`，SHA256 一致）。
-  - **2026-10-27 之后的剩余**（时间不足暂停点）：[docs/plan/REMAINING_BACKLOG_20261027.md](docs/plan/REMAINING_BACKLOG_20261027.md) —— **星系 3D 必做（用户点名，未排期）**、阶段 2 FMG 生成管线、阶段 0/1 欠账、文字/观感旧账。
+  - **2026-10-27 之后的剩余**（时间不足暂停点）：[docs/plan/REMAINING_BACKLOG_20261027.md](docs/plan/REMAINING_BACKLOG_20261027.md) —— **星系 3D 已于 2026-10-28 交付**（`System3DView.vue` + `utils/system3dScene.js` + `utils/planetArt.js`，见 views 归档），其余：阶段 2 FMG 生成管线、阶段 0/1 欠账、文字/观感旧账。
 
 
 ### 当前红线（跨模块、动手之前必须知道）
@@ -122,7 +122,7 @@
 | 底图与导入导出 | .map 导入 / 参考图 / 标记与聚落 / 道路 / 导出 / 底图编辑模式 / 导出地形底图 | [map-basemap](docs/agents-archive/map-basemap.md)（8 条） |
 | 项目文件与保存链 | 写闸门 / 快照 / 落盘与恢复 / 只读 / 备份 / 退出落盘 / git 同步 | [project-save](docs/agents-archive/project-save.md)（12 条） |
 | 剧本与时间轴 | 剧本装载语义 / 时间切片 / 态势 / 卡片墙 / 标注与事件 | [scenario](docs/agents-archive/scenario.md)（12 条） |
-| 视图层 | 星系·星域·行星·区域·室内 / 图层开关 / 拖拽与命中 / 画布单位与淡出 | [views](docs/agents-archive/views.md)（7 条） |
+| 视图层 | 星系·星域·行星·区域·室内 / 图层开关 / 拖拽与命中 / 画布单位与淡出 / **星系 3D 观景（three 动态加载）** | [views](docs/agents-archive/views.md)（8 条） |
 | 知识库与数据 | 提取 / 迁移 / 坐标 / fixture 专名 / 笔记重连 / 实体 id | [vault-data](docs/agents-archive/vault-data.md)（10 条） |
 | UI 与测试工具 | UI 基座 / 免责声明 / 图标与配色 / 测试纪律 / 演练 / 方寸联动 | [ui-tooling](docs/agents-archive/ui-tooling.md)（11 条） |
 | 规划与决策 | 排期定案 / 批次收口 / 阶段性取舍（当时的判断，不是现状） | [misc](docs/agents-archive/misc.md)（2 条） |
@@ -134,8 +134,8 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 162 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 70 | `ls scripts/tests/unit/*.js \| wc -l` |
+| 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| Node 单测文件数 | 71 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 45 | `grep -c "ipcMain.handle" src/main/index.js` |

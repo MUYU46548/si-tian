@@ -93,6 +93,10 @@ build/reimport-019/
 # 说明见 build/acceptance-followup/README.md）
 build/acceptance-followup/
 
+# 观感存档图（SP-1025 阶段 0/1 与星系 3D 的截图；本地证据，禁止提交 ——
+# 与 build/p0-first-map 同口径。复现见 docs/plan/HANDOFF_20261028_system3d.md）
+build/visual-audit/
+
 # 遗留临时文件（MSYS / Electron 生成）
 NUL
 # 根目录下的 index.html 是 src/renderer/index.html 的旧副本，不再使用

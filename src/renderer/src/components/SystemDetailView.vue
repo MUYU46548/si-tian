@@ -12,6 +12,15 @@
         </p>
       </div>
       <div class="header-actions">
+        <button
+          :class="{ active: show3d }"
+          :disabled="!hasPlanets3d"
+          :title="hasPlanets3d ? '进入 3D 观景（可旋转/缩放，Esc 返回）' : '3D 观景需要至少 1 颗行星'"
+          data-testid="system-3d-open"
+          @click="openSystem3d"
+        >
+          <Icon name="orbit" :size="14"/> 3D 观景
+        </button>
         <button :class="{ active: neighborPanelOpen }" @click="neighborPanelOpen = !neighborPanelOpen" title="邻近恒星系列表（含未显示航道）">
           <Icon name="compass" :size="14"/> 邻系 ({{ allNeighbors.length }})
         </button>
@@ -49,12 +58,19 @@
         </div>
       </PanelShell>
     </div>
+
+    <!-- 3D 观景（2026-10-27）：异步组件 + 组件内 `await import('three')`，
+         首屏与 2D 路径都不背 3D 引擎；关闭 = v-if 卸载 → 组件内全量 dispose。
+         🔴 必须用 PascalCase 标签：`<system-3d-view>` 会被 camelize 成 `System3dView`
+         （小写 d），与 `System3DView` 对不上 → 编译器 resolveComponent 找不到组件、
+         动态 import 被摇掉，构建里连 three chunk 都不会出现（本轮真实踩过）。 -->
+    <System3DView v-if="show3d" :spec="spec3d" @close="show3d = false" />
   </div>
 </template>
 
 <script setup>
 import Icon from './Icon.vue';
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 // 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
@@ -68,6 +84,10 @@ import { SPACE_MARKER_TYPES, FLEET_KINDS } from '../store/geodataModules/spaceEd
 import { usePromptDialog } from '../composables/usePromptDialog';
 import PanelShell from './PanelShell.vue';
 import ContextMenu from './ContextMenu.vue';
+import { buildSystem3dScene } from '../utils/system3dScene.js';
+
+// 3D 观景：异步组件（本文件静态 import 只拿到一个壳，three 在子组件挂载后才动态加载）
+const System3DView = defineAsyncComponent(() => import('./System3DView.vue'));
 
 /**
  * 单恒星系详情视图（批次 B4 + B5 + B3 编辑 + B6/B7 太空实体）
@@ -92,6 +112,8 @@ const canvas = ref(null);
 const neighborPanelOpen = ref(false);
 // ===== 编辑模式状态（B3） =====
 const editMode = ref(false);
+// ===== 3D 观景（2026-10-27）=====
+const show3d = ref(false);
 // 拖拽中的行星显示位置（系内相对坐标）：非 userMoved 行星改 store 坐标不会立刻反映到
 // 公式位布局，需此覆盖层提供拖拽跟手反馈；mouseup 落盘 userMoved 后由 saved 路径接管
 const dragPlanet = ref(null); // { nodeId, x, y } | null
@@ -224,6 +246,21 @@ const pickHostCandidates = computed(() =>
 const maxOrbitRadius = computed(() =>
   planetLayouts.value.reduce((max, p) => Math.max(max, p.orbitRadius || ORBIT_RING_START), ORBIT_RING_START)
 );
+
+// ===== 3D 观景数据（2026-10-27）=====
+// 只传行星：`planetLayouts` 里的卫星是 `isMoon: true` 的展开副本（自带 x/y，没有轨道半径），
+// 传进去会被当成额外行星；卫星走 `systemBodies.moons` 由适配层按 parentId 挂到母行星上。
+const spec3d = computed(() => buildSystem3dScene({
+  starName: starName.value || props.system?.displayName || props.system?.name || '恒星',
+  starTint: getStarColor(systemBodies.value.primaryStar?.starType).mid,
+  planets: planetLayouts.value.filter((p) => !p.isMoon),
+  moons: systemBodies.value.moons,
+}));
+const hasPlanets3d = computed(() => (spec3d.value?.counts?.planets || 0) > 0);
+function openSystem3d() {
+  if (!hasPlanets3d.value) return;
+  show3d.value = true;
+}
 
 // ===== 太空实体数据（B6 标记 / B7 部队卡片）：只取当前恒星系的（只渲染当前层级） =====
 // null 坐标（缓存缺字段）落回恒星原点，避免 NaN 破坏绘制/命中
@@ -1184,6 +1221,9 @@ onUnmounted(() => {
   renderer.cleanupCanvas();
 });
 
+// 切换恒星系时关掉 3D（3D 场景只在打开那一刻按 spec 构建一次；换系必须重建，不能沿用旧系行星）
+watch(() => props.system?.id, () => { show3d.value = false; });
+
 // 切换恒星系（箭头跳转/面包屑切换）或数据变化时重绘；换系后重新自适应视野
 // `props.system` 整个对象（而不是只 `.id`）：叙事状态淡化（2026-09-24）需要覆盖**恒星自身**的 status ——
 // 只监听 id 的话，恒星状态改了画布不会重绘。
@@ -1197,6 +1237,8 @@ watch(() => [props.system, store.currentSystemPlanets, store.hyperlanes, store.s
 
 defineExpose({
   canvas, renderer, neighborArrows, planetLayouts, allNeighbors, omittedCount, jumpTo,
+  // 3D 观景（2026-10-27，供测试/父组件访问）
+  show3d, spec3d, hasPlanets3d, openSystem3d,
   // 编辑模式（B3，供测试/父组件访问）
   editMode, toggleEditMode, createBody, createBodyAt, deleteBodyById, contextMenu, dragPlanet,
   // 卫星轨道（批次D5，供测试访问）
@@ -1208,7 +1250,7 @@ defineExpose({
 </script>
 
 <style scoped>
-.system-detail-container { display: flex; flex-direction: column; height: 100%; }
+.system-detail-container { display: flex; flex-direction: column; height: 100%; position: relative; }
 .map-header {
   padding: 12px 16px;
   border-bottom: 1px solid var(--map-header-border);
@@ -1246,6 +1288,12 @@ defineExpose({
   transition: all 0.2s;
 }
 .header-actions button:hover { background: var(--map-btn-hover); }
+/* 3D 观景：无行星时灰禁（司天「无项目 = 只读」同款灰禁语言：点不动 + title 说明原因） */
+.header-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.header-actions button:disabled:hover { background: var(--map-btn-bg); }
 .header-actions button.active {
   background: var(--map-accent-green-bg);
   border-color: var(--map-accent-green-border);

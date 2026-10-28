@@ -38,6 +38,7 @@
     "perfect-freehand": "^1.2.3",
     "pinia": "^2.1.7",
     "polygon-clipping": "^0.15.7",
+    "three": "^0.128.0",
     "vue": "^3.4.0"
   },
   "devDependencies": {
