@@ -71,11 +71,13 @@ export function isStationNode(node) {
 
 /**
  * 节点 → 行星类别 id。
- * 司天没有群星那套 `class` 字段，只能按 layer / tags / 名称关键字映射；认不出就按 id 散列取一款默认。
+ * **优先级**（E2，2026-10-29）：`node.planetClass`（用户显式设的，落项目文件）> tags/名称关键字
+ * > 空间站 > 卫星散列 > 行星散列。以前只有推断，用户选了"气态巨行星"下次打开又变回去。
  * @param {object} node
  * @param {{ fallbackLayer?: 'planet'|'moon' }} [opts]
  */
 export function planetClassForNode(node, opts = {}) {
+  if (isPlanetClassId(node?.planetClass)) return node.planetClass;
   const text = nodeText(node);
   for (const [words, classId] of CLASS_KEYWORDS) {
     if (words.some((w) => text.includes(w))) return classId;

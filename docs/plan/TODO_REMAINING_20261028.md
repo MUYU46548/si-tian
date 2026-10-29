@@ -60,8 +60,8 @@
 
 ## E. 星系 3D 二期（10-28 交付时刻意留的）
 
-1. **3D 里点行星下钻**（现在纯观景，不导航、不改数据）。
-2. **行星类别落数据**：现在是 tags/名称推断；建议加 `node.planetClass`（与 `sizeOverride` 同级，走 `updateNode`）。
+1. ~~**3D 里点行星下钻**（现在纯观景，不导航、不改数据）。~~ ✅ 2026-10-29：射线点选（区分点选/拖拽旋转）→ 左下角卡片（类型下拉 + 「进入行星地图」）；下钻经 `emit('select-node', {id})` → `SystemDetailView.on3dSelectNode` 按 id 找回真节点 → 上层 `selectPlanetOrNode`。判据 `test_163` F 段。
+2. ~~**行星类别落数据**：现在是 tags/名称推断；建议加 `node.planetClass`（与 `sizeOverride` 同级，走 `updateNode`）。~~ ✅ 2026-10-29：`planetClassForNode` 优先读 `node.planetClass`（非法值/老数据回落推断，绝不把脏 classId 送进渲染）；3D 卡片里改类型 → `updateNode`（一条 undo）+ **当场换贴图**。判据 `unit/test_system3d_scene.js` a4b。
 3. **双星互绕可视化**：现在只按主恒星取色，双星不参与光照/轨道。
 4. **多恒星系同屏**（域内 3D 总览）—— 会显著放大性能与交互复杂度，先不做。
 5. **低配降级**：现在只有"WebGL 不可用 → 报错面板"，没有自动降帧/减段数。

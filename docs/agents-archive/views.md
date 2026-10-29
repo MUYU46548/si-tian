@@ -115,3 +115,10 @@
   - **构建产物（2026-10-28 实测）**：`three.module-*.js` 601.28 kB（gzip 153.61 kB）+ `OrbitControls-*.js` 11.2 kB + `System3DView-*.js` 10.2 kB，三者**都不在首屏**（`index-*.js` 里搜不到 `WebGLRenderer`）。
   - **判据**：`test_163_system_3d.py`（进单系 → 点开 → canvas/frames/labels 出现 → Esc 与按钮各关 3 次，共 6 轮，每轮 `memoryAtDispose` 的 geometries/textures 都是 0、页面 canvas 数回到 1）+ `unit/test_system3d_scene.js` 12 条（确定性/轨道单调/卫星挂靠/类别映射/空系/上限/源码闸门）。2D 恢复用截图逐像素比对：除工具栏一处按钮态外**完全一致**（`build/visual-audit/system3d/`）。
   - **没做**：行星点击下钻（3D 只读观景）、多恒星系同屏、纹理分辨率提升；`planetArt.js` 的纹理缓存常驻内存（跨开关复用，不在 dispose 里清 —— 清了下次要重画）。
+
+- **3D 点选下钻 + 行星类别落数据（2026-10-29，`TODO_REMAINING_20261028.md` 的 E1/E2）**: 3D 观景此前只能看不能点，用户看完还得回 2D 找那颗星。
+  - **点选**：`System3DView` 里维护 `pickables[{mesh,mat,body}]`，`pointerdown/up` 记录位移与时长 —— **位移 >6px（旋转视角）或按住 >700ms 不算点选**（否则每次转视角都弹卡片）。命中用 `Raycaster.setFromCamera`（NDC 由 `host.getBoundingClientRect()` 算），只测行星/空间站那批 mesh（恒星不参与）。
+  - **下钻**：3D 只 `emit('select-node', { id })`（spec 里没有整份节点对象）；`SystemDetailView.on3dSelectNode` 按 id 从 `store.nodes` 找回**真节点**再交给上层 `selectPlanetOrNode` —— 上层要的是节点本体（坐标/tags/displayName），传壳对象会在 `selectPlanet` 里炸。
+  - **类型落数据**：`planetClassForNode` 的优先级改成 `node.planetClass` > tags/名称关键字 > 空间站 > 卫星散列 > 行星散列；非法值（拼错/老数据）回落推断，**绝不让脏 classId 进渲染**（`unit/test_system3d_scene.js` a4b）。卡片里改类型 → `SystemDetailView.on3dSetClass` → `store.updateNode(id, { planetClass })`（一条 undo + 自动保存），同时**当场换贴图**（`mat.map = new CanvasTexture(getPlanetTexture(classId))`）—— 不换就得重开 3D，用户会以为没生效。
+  - 判据：`test_163` F 段（喂选中态 → 卡片出现 → 改类型后 `node.planetClass === 'arctic'` → 点下钻后 `viewLevel === 'planet'` 且 `currentPlanet` 就是那颗、3D 根节点消失）。
+

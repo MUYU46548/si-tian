@@ -64,7 +64,13 @@
          🔴 必须用 PascalCase 标签：`<system-3d-view>` 会被 camelize 成 `System3dView`
          （小写 d），与 `System3DView` 对不上 → 编译器 resolveComponent 找不到组件、
          动态 import 被摇掉，构建里连 three chunk 都不会出现（本轮真实踩过）。 -->
-    <System3DView v-if="show3d" :spec="spec3d" @close="show3d = false" />
+    <System3DView
+      v-if="show3d"
+      :spec="spec3d"
+      @close="show3d = false"
+      @select-node="on3dSelectNode"
+      @set-class="on3dSetClass"
+    />
   </div>
 </template>
 
@@ -260,6 +266,34 @@ const hasPlanets3d = computed(() => (spec3d.value?.counts?.planets || 0) > 0);
 function openSystem3d() {
   if (!hasPlanets3d.value) return;
   show3d.value = true;
+}
+
+/**
+ * E1（2026-10-29）：3D 里点行星 → 下钻。
+ * 3D 只报 `{id}`（spec 里没有整份节点对象），这里按 id 找回**真节点**再交给上层
+ * （上层 `store.selectPlanetOrNode` 要用节点本体：坐标、tags、displayName 都在上面）。
+ */
+function on3dSelectNode(payload) {
+  const id = payload && payload.id;
+  if (!id) return;
+  const node = store.nodes.find((n) => n.id === id);
+  if (!node) return;
+  show3d.value = false;
+  emit('select-node', node);
+}
+
+/**
+ * E2（2026-10-29）：行星类型落数据。
+ * 之前类型是 tags/名称**推断**出来的（改不了、也不进项目文件）；现在写 `node.planetClass`
+ * （与 `sizeOverride` 同级），`planetClassForNode` 优先读它 —— 3D/2D 图标按同一份值。
+ * 走 `updateNode` = 一条 undo + 自动保存。
+ */
+function on3dSetClass(payload) {
+  const id = payload && payload.id;
+  const classId = payload && payload.classId;
+  if (!id || !classId) return;
+  store.updateNode(id, { planetClass: classId });
+  emit('dirty', true);
 }
 
 // ===== 太空实体数据（B6 标记 / B7 部队卡片）：只取当前恒星系的（只渲染当前层级） =====

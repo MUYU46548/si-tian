@@ -13,6 +13,11 @@
   D. **资源归零**：每次关闭后 `renderer.info.memory` 的 geometries / textures 都是 0
      —— 这是"遍历 dispose + forceContextLoss"的直接证据。
   E. **反复开关不涨**：连开连关 6 轮，每轮资源都归零、页面 canvas 数不增长。
+  F. **E1/E2（2026-10-29）**：点中一颗行星 → 出现操作卡片（类型下拉 + 下钻）；
+     改类型 → `node.planetClass` 落库（推断被显式值压过，单测 a4b 守优先级）；
+     点「进入行星地图」→ 3D 关闭且 `viewLevel === 'planet'` 且 `currentPlanet` 就是那颗。
+     （射线点选本身用真实鼠标坐标不好稳定复现：相机在动、行星在公转 —— 这里只喂"选中态"，
+      验证点中之后那两条链。）
 
 为什么用 store 直接进 system_detail：背包路径（点恒星亮点）已由 test_10 守；
 本用例只关心 3D，少一次画布命中就少一处会误红的依赖。
@@ -239,4 +244,60 @@ def run(cdp):
             return False, f'第 {i + 1} 轮资源没归零：{m}'
 
     detail = json.dumps({'first': first, 'cycles': cycles}, ensure_ascii=False)
+
+    # ---------- F. E1/E2（2026-10-29）：点中行星 → 改类型落数据 / 下钻到行星地图 ----------
+    # 射线点选用真实鼠标坐标不好稳定复现（相机在动、行星在公转），所以这里直接给组件喂
+    # 一个"选中态"，只验证**点中之后那两条链**：改类型 → store.planetClass；下钻 → 进行星视图。
+    ok, why = open_3d(cdp, timeout=25)
+    if not ok:
+        return False, f'F 段打开 3D 失败：{why}'
+    time.sleep(0.4)
+    ok, pick = eval_json(cdp, r""" (async () => {
+      const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+      const planet = s.currentSystemPlanets.find((p) => p.layer === 'planet');
+      const root = document.querySelector('[data-testid="system-3d"]');
+      const pm = root && root.__vueParentComponent && root.__vueParentComponent.setupState;
+      if (!planet || !pm) return JSON.stringify({ stage: 'setup', planet: !!planet, pm: !!pm });
+      const before = (s.nodes.find((n) => n.id === planet.id) || {}).planetClass || null;
+      pm.picked = { id: planet.id, name: planet.displayName || planet.name, classId: 'ocean', kind: 'planet' };
+      await new Promise(r => setTimeout(r, 350));
+      const out = {
+        card: !!document.querySelector('[data-testid="sys3d-card"]'),
+        select: !!document.querySelector('[data-testid="sys3d-class"]'),
+        drill: !!document.querySelector('[data-testid="sys3d-drill"]'),
+        before,
+      };
+      const sel = document.querySelector('[data-testid="sys3d-class"]');
+      if (sel) {
+        sel.value = 'arctic';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 450));
+      }
+      out.saved = (s.nodes.find((n) => n.id === planet.id) || {}).planetClass || null;
+      out.label = (document.querySelector('[data-testid="sys3d-card"] .sys3d-card-sub') || {}).textContent || '';
+      const drill = document.querySelector('[data-testid="sys3d-drill"]');
+      if (drill) drill.click();
+      await new Promise(r => setTimeout(r, 700));
+      out.level = s.viewLevel;
+      out.currentPlanet = s.currentPlanet ? s.currentPlanet.id : null;
+      out.rootGone = !document.querySelector('[data-testid="system-3d"]');
+      out.want = planet.id;
+      return JSON.stringify(out);
+    })() """, required=None, desc='3D 选中 → 改类型 / 下钻')
+    if not ok or not isinstance(pick, dict):
+        return False, f'F 段探针失败：{pick}'
+    if pick.get('stage') == 'setup':
+        return False, f'F 段装置不齐：{pick}'
+    if not (pick.get('card') and pick.get('select') and pick.get('drill')):
+        return False, f"F 段点中行星后没有操作卡片：{pick}"
+    if pick.get('saved') != 'arctic':
+        return False, f"F 段类型没落数据（before={pick.get('before')} saved={pick.get('saved')}）"
+    if not pick.get('label'):
+        return False, f"F 段卡片没显示类型名：{pick}"
+    if pick.get('level') != 'planet' or pick.get('currentPlanet') != pick.get('want'):
+        return False, f"F 段下钻没进行星地图：{pick}"
+    if not pick.get('rootGone'):
+        return False, f"F 段下钻后 3D 没关：{pick}"
+    detail += ' | F: 改类型落数据 + 下钻进行星地图'
+
     return True, f'3D 观景：开→渲染→关 6 轮，资源每次归零，2D 未重建 | {detail}'

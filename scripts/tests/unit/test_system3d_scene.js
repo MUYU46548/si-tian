@@ -155,6 +155,30 @@ async function main() {
     return 'ok';
   });
 
+  check('a4b E2 显式类型优先：node.planetClass 压过 tags/名称推断；非法值不被采信', () => {
+    // 名称明明像气态巨行星，但用户显式选了"海洋" → 以显式为准
+    const explicit = S.planetClassForNode({
+      id: 'p-a', layer: 'planet', name: '某气态巨行星', tags: ['气态'], planetClass: 'ocean',
+    });
+    assert(explicit === 'ocean', `显式 planetClass 应优先，实得 ${explicit}`);
+    // 显式值与推断一致时结果不变（不引入新的非法分支）
+    const same = S.planetClassForNode({ id: 'p-b', layer: 'planet', name: '海洋星', planetClass: 'ocean' });
+    assert(same === 'ocean', '显式/推断一致时应同为 ocean');
+    // 脏值（拼错/老数据）→ 回落推断，绝不让非法 classId 进渲染
+    for (const bad of ['NotAClass', '', null, 42, undefined]) {
+      const got = S.planetClassForNode({ id: 'p-c', layer: 'planet', name: '海洋星', planetClass: bad });
+      assert(got === 'ocean', `脏值 ${JSON.stringify(bad)} 应回落推断，实得 ${got}`);
+    }
+    // 进构景后 classId 也跟着变（贴图/环按它走）
+    const spec = S.buildSystem3dScene({
+      starName: '衡佑',
+      planets: [planet('p-d', '某气态巨行星', 75, { planetClass: 'arctic' })],
+      moons: [],
+    });
+    assert(spec.bodies[0].classId === 'arctic', `构景 classId 应为 arctic，实得 ${spec.bodies[0].classId}`);
+    return 'ok';
+  });
+
   check('a5 空间站：tags 记「空间站」→ kind=station 且尺寸固定', () => {
     const s = S.buildSystem3dScene({
       starName: '衡佑',

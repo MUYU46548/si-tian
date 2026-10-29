@@ -1,6 +1,32 @@
 <template>
   <div class="sys3d" data-testid="system-3d">
-    <div ref="host" class="sys3d-host"></div>
+    <div
+      ref="host"
+      class="sys3d-host"
+      @pointerdown="onPointerDown"
+      @pointerup="onPointerUp"
+    ></div>
+
+    <!-- E1/E2（2026-10-29）：点中一颗行星 → 小卡片（改类型 / 下钻到行星地图）。
+         以前 3D 是纯观景：能看不能点，用户看完还得回 2D 找那颗星。 -->
+    <div v-if="picked" class="sys3d-card" data-testid="sys3d-card">
+      <div class="sys3d-card-head">
+        <strong>{{ picked.name }}</strong>
+        <span class="sys3d-card-sub">{{ classLabel(picked.classId) }}</span>
+        <button class="sys3d-card-x" title="取消选择（Esc 仍是返回 2D）" @click="picked = null">
+          <Icon name="x" :size="12" />
+        </button>
+      </div>
+      <label class="sys3d-card-row" title="行星类型：落数据（node.planetClass），下次打开 3D / 2D 图标都按它">
+        <span>类型</span>
+        <select data-testid="sys3d-class" :value="picked.classId" @change="onClassChange">
+          <option v-for="c in planetClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
+        </select>
+      </label>
+      <button class="sys3d-card-go" data-testid="sys3d-drill" @click="onDrill">
+        进入行星地图 <Icon name="chevron-right" :size="12" />
+      </button>
+    </div>
 
     <div class="sys3d-hud">
       <div class="sys3d-title">{{ spec.star.name }} 恒星系 · 3D 观景</div>
@@ -42,13 +68,15 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Icon from './Icon.vue';
-import { SeededRng, getPlanetTexture, hashString, hexAlpha, planetClassLabel } from '../utils/planetArt.js';
+import {
+  PLANET_CLASSES, SeededRng, getPlanetTexture, hashString, hexAlpha, planetClassLabel,
+} from '../utils/planetArt.js';
 
 const props = defineProps({
   // buildSystem3dScene() 的产物；父组件每次打开时现算
   spec: { type: Object, required: true },
 });
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'select-node', 'set-class']);
 
 const host = ref(null);
 const fpsEl = ref(null);
@@ -60,6 +88,64 @@ const countsText = computed(() => {
   const c = props.spec?.counts || {};
   return `${c.planets ?? 0} 行星 · ${c.moons ?? 0} 卫星${c.stations ? ` · ${c.stations} 空间站` : ''}`;
 });
+
+// ===== E1/E2（2026-10-29）：3D 里点中行星 → 改类型 / 下钻 =====
+const planetClasses = PLANET_CLASSES;
+const picked = ref(null);       // { id, name, classId, kind }（选中那颗）
+/** 可点对象：mesh 用于射线检测，mat 用于换贴图（改类型当场生效，不必重开 3D） */
+const pickables = [];
+let raycaster = null;
+let downAt = null;              // pointerdown 位置：用来区分「点选」与「拖拽旋转」
+
+const classLabel = (id) => planetClassLabel(id);
+
+function onPointerDown(e) {
+  downAt = { x: e.clientX, y: e.clientY, t: Date.now() };
+}
+
+function onPointerUp(e) {
+  if (!downAt || !raycaster || !camera || !host.value) return;
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  const held = Date.now() - downAt.t;
+  downAt = null;
+  // 拖拽（旋转视角）与长按都不算点选 —— 否则每次转视角都会弹出卡片
+  if (moved > 6 || held > 700) return;
+  const rect = host.value.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  raycaster.setFromCamera({
+    x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    y: -((e.clientY - rect.top) / rect.height) * 2 + 1,
+  }, camera);
+  const hits = raycaster.intersectObjects(pickables.map((p) => p.mesh), false);
+  if (!hits.length) { picked.value = null; return; }
+  const hit = pickables.find((p) => p.mesh === hits[0].object);
+  picked.value = hit ? { ...hit.body } : null;
+}
+
+/** 改类型：**当场换贴图** + 落数据（`node.planetClass`，走父组件的 store 写口） */
+function onClassChange(e) {
+  const id = picked.value && picked.value.id;
+  const classId = String(e.target.value || '');
+  if (!id || !classId) return;
+  const hit = pickables.find((p) => p.body.id === id);
+  if (hit && THREE) {
+    const tex = new THREE.CanvasTexture(getPlanetTexture(classId));
+    tex.encoding = THREE.sRGBEncoding;
+    track(tex);
+    hit.mat.map = tex;
+    hit.mat.needsUpdate = true;
+    picked.value = { ...picked.value, classId };
+  }
+  emit('set-class', { id, classId });
+}
+
+/** 下钻：只报 id，父组件自己按 id 找到**真节点**（3D spec 里没有整份节点对象） */
+function onDrill() {
+  const p = picked.value;
+  if (!p) return;
+  picked.value = null;
+  emit('select-node', { id: p.id });
+}
 
 // ===== three 运行期状态（刻意不进响应式：每帧改它会触发 Vue 重渲染） =====
 let THREE = null;
@@ -284,6 +370,8 @@ function buildScene() {
       : new THREE.SphereGeometry(body.size, 24, 16);
     const mesh = new THREE.Mesh(track(geo), track(mat));
     mesh.rotation.z = body.tilt;
+    // E1：这颗球可被点中（射线检测只认这一份清单）
+    pickables.push({ mesh, mat, body });
     // holder = 行星在轨道上的位置（pivot 只负责公转角度）。卫星/环挂 holder 而不是 mesh：
     // mesh 每帧自转，挂上去卫星轨道会跟着行星一起转（第一版真实踩过）。
     const holder = new THREE.Object3D();
@@ -457,6 +545,10 @@ function disposeAll() {
   for (const l of labels) l.el.remove();
   labels.length = 0;
   orbits.length = 0;
+  // E1：点选清单与选中态一起清（否则重开 3D 会拿到已 dispose 的 mesh）
+  pickables.length = 0;
+  picked.value = null;
+  raycaster = null;
 
   try { controls?.dispose(); } catch { /* 上下文已丢失时可能抛 */ }
 
@@ -498,6 +590,8 @@ async function init() {
     const mod = await import('three/examples/jsm/controls/OrbitControls.js');
     if (destroyed) return;
     OrbitControlsCtor = mod.OrbitControls;
+    // E1：点选用的射线检测器（只建一个，每帧不重建）
+    raycaster = new THREE.Raycaster();
 
     const canvas = document.createElement('canvas');
     canvas.className = 'sys3d-canvas';
@@ -625,4 +719,46 @@ defineExpose({ getStats, paused });
   pointer-events: none;
   will-change: transform;
 }
+
+/* E1/E2（2026-10-29）：点中行星后的卡片（改类型 / 下钻） */
+.sys3d-card {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  min-width: 240px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(12, 18, 30, 0.88);
+  backdrop-filter: blur(6px);
+  color: #dbe4f3;
+  font-size: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.sys3d-card-head { display: flex; align-items: baseline; gap: 8px; }
+.sys3d-card-head strong { font-size: 14px; color: #f1f5fb; }
+.sys3d-card-sub { color: #8b98b3; font-size: 11px; }
+.sys3d-card-x {
+  margin-left: auto;
+  border: none; background: transparent; color: #8b98b3;
+  cursor: pointer; display: inline-flex; padding: 0 2px;
+}
+.sys3d-card-row { display: flex; align-items: center; gap: 8px; color: #9fb0c8; }
+.sys3d-card-row select {
+  flex: 1;
+  background: #0f172a; color: #dbe4f3;
+  border: 1px solid rgba(148, 163, 184, 0.4); border-radius: 4px;
+  padding: 2px 6px; font-size: 12px;
+}
+.sys3d-card-go {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.16);
+  color: #e2f3ff; border-radius: 4px;
+  padding: 5px 10px; font-size: 12px; cursor: pointer;
+}
+.sys3d-card-go:hover { background: rgba(56, 189, 248, 0.26); }
 </style>
