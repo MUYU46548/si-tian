@@ -92,7 +92,8 @@
     **C2 国名沿主轴转/折行 + C3 仅已命名省 + C5 道路四档渐显**（`720a6e4`）、
     **C4 放大改双三次 / C6 等深线收口 / F 体积实测**（`b7c8a94`）、
     **B 阶段 2 ①②：FMG 高度图管线 + 面板接线**（`7e7faab` + `9e1d211`；14 套 Azgaar 模板、显式 rng、8k 格 11ms）、
-    **B ④⑤：FMG 地形能长出河（填洼 + 覆盖率拉伸）+ Voronoi 邻接（delaunator）**（`3a7de13` + 本轮）。
+    **B ④⑤：FMG 地形能长出河（填洼 + 覆盖率拉伸）+ Voronoi 邻接（delaunator）**（`3a7de13` + `97fa858`）、
+    **B⑥ 决定不做 Worker（实测 60k 格 118ms）+ F 保存热点修复（快照重放 422→66ms）**（`5afa706`）。
     历史快照与设计口径见 [REMAINING_BACKLOG_20261027.md](docs/plan/REMAINING_BACKLOG_20261027.md)。
 
 
