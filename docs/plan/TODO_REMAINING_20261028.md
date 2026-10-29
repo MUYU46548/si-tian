@@ -49,8 +49,12 @@
 > - 判据：`test_151` h 段（入口 / 3 张候选非空 / 预览只读 + 可复现 / 应用后 `fmg.template` 落库 + `genBBox` 记录 +
 >   气候数组齐全 / **一条 undo 回到应用前**）。
 >
-> **下一步（按顺序）**：⑤ Voronoi 化 —— ✅ 已完成（见下）；⑥ worker 化 + 进度条。
->
+> **下一步**：⑥ worker 化 + 进度条 —— 🔶 **实测后决定不做 Worker**（2026-10-29）：
+> 单次生成 8k 格 **41ms** / 16k **64ms** / 32k **61ms** / 60k **118ms**（Node 实测，含 Delaunay + 填洼）。
+> 最慢档也没到"可感知卡顿"（≈150ms 阈值），而 Worker 会把 `applyFmgTerrain` 变成异步
+> （store → 面板 → 用例全要改），拿 100ms 换一条跨线程协议，不划算。面板已有忙碌态（「生成中…」+ 耗时回显）。
+> 触发重估的条件：**当候选数 × 格数让单次预览 > 300ms** 时再上 Worker。
+
 > ⑤ **Voronoi 邻接已换**（2026-10-29）：`utils/fmg/lattice.js#buildVoronoiAdjacency` 用 **`delaunator`**
 > （ISC，已进 `THIRD_PARTY_NOTICES.md`）对抖动点阵做 Delaunay 三角化，**边集就是 Voronoi 邻接**。
 > 生成入口默认走它，`adjacency: 'grid'` 保留为退路/对照。实测：平均邻居 **5.99**、范围 3–14
@@ -141,8 +145,22 @@
   - 底图级 `updatedAt` 也进了 patch（× 8）—— 噪音 diff 的又一处（与实体时间戳同源）。
   结论：压体积的杠杆顺序 = ① 数组级 diff（省表按 id 局部化）/ ② base 快照里 `terrain` 的去重（口径要动）/
   ③ `grid.points` 去冗余（≈4.5%，可与 origin+spacing 推出，但加载侧要同步改）。**`changeEvents` 只有 18 KB —— 不是大头**。
-- **保存挪线程**：指南包里的"分两步"口径仍未做（大项目落盘会占主线程）。**本轮没动** ——
-  它要在"数据安全优先"下改序列化/写盘路径，仓促改等于拿落盘安全换手感；下一步先做「序列化耗时实测」再决定第 1 步切在哪。
+- **保存挪线程** —— ✅ 2026-10-29 **已实测 + 先修掉两个热点**（真实 415 省孤本 7.34 MB，Node 实测）：
+  | 环节 | 修前 | 修后 | 说明 |
+  |---|---|---|---|
+  | `JSON.stringify` 整份 | 53ms | 53ms | 7.34MB；不是瓶颈 |
+  | `snapshotState` | 28ms | 28ms | 深拷 + 剔重字段 |
+  | **`pushSnapshot`（无改动 → 早退）** | **422ms** | **66ms** | 主因：`replayTo` 每应用一份补丁就把 **整份状态深拷一遍**（13 份 = 十几次 4MB 拷贝） |
+  | **`pushSnapshot`（改一个省）** | **1610ms** | **772ms** | 主因之一同上；另一个是"体积上限"循环里**每丢一份就把整串重新 serialize**（O(n²)） |
+
+  修法（都在 `utils/projectSchema.js`，语义不变）：
+  ① 拆出 `applyPatchInPlace`，`replayTo` 只深拷 **1 次** base，之后逐份就地合并（被 set 的值仍 `deepClone`）；
+  ② `dropOldestSnapshot` 不再重复深拷（旧写法 `applyPatch(deepClone(...))` 拷了两遍）；
+  ③ 体积上限改成**增量记账**（先各份量一次，之后每丢一份只重算新的第 0 份）。
+  判据：`unit/test_project_size.js` **F1（新）**「改恢复结果/改 applyPatch 结果，不许污染快照缓冲」+ B1/B2 照旧。
+  **下一步（真·挪线程）**：剩下的 772ms 里大头是 **12 次折叠（每次深拷 base）+ 12 次 base 重序列化**，
+  触发条件是"补丁里带整张省表"——真正的解法是**数组级 diff（省表按 id 局部化）**，
+  那一步做完之后补丁会小两个数量级，届时再决定要不要 Worker（搬 `snapshotState + diff + stringify` 进线程）。
 - **`docs/ARCHITECTURE_MAP.md`** 是脚本生成的，每轮收尾跑一次 `python scripts/gen_architecture_map.py`（本轮已更新）。
 - **方寸（fangcun）执行日志**：每轮只落仓内文档，没有回写方寸看板（工具侧没有 create-log 能力；任务卡倒是能更新，已同步进度）。
 

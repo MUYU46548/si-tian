@@ -45,3 +45,22 @@
     `extraRings` 里既有裸点数组、也有 `{points, kind}` 环描述对象，直接 `.length` 会得 undefined。修后 desite = **415 省 / 27067 顶点**。
   - 下一步（按性价比）：**数组级 diff（省表按 id 局部化）** > base 快照的 terrain 去重（口径要动）> `grid.points` 去冗余（≈4.5%，加载侧要同步）。
 
+- **保存链路热点实测（2026-10-29，F"保存挪线程"的第一步：先量再切）**: 真实 415 省孤本 7.34 MB（Node 实测）：
+  `JSON.stringify` 整份 **53ms**（不是瓶颈）、`snapshotState` 28ms、
+  **`pushSnapshot` 无改动 422ms → 66ms**、**改一个省 1610ms → 772ms**（本轮修完）。
+  - 🔴 **第一热点：`replayTo` 每应用一份补丁就整份深拷一遍**。旧写法 `state = applyPatch(state, patch)`，
+    而 `applyPatch` 内部 `deepClone(base)` —— 13 份快照 = 十几次 4MB 深拷。
+    修法：拆出 `applyPatchInPlace`（就地合并，被 set 的值仍 `deepClone`），`replayTo` 只深拷 **1 次** base。
+    ⚠️ **引用纪律不能破**：就地合并的前提是"这份 base 已经属于调用方"。所以
+    `applyPatch`（公开 API）仍返回**新对象**、`restoreSnapshot` 拿到的状态与快照缓冲**不共享引用** ——
+    这条由 `unit/test_project_size.js` F1 守着（改恢复结果 / 改 applyPatch 结果，缓冲逐字节不变）。
+  - 🔴 **第二热点：体积上限循环 O(n²)**。旧写法每丢一份就 `snapshotBytes(整串)` 重算一遍；
+    一次大补丁（带整张 839KB 省表）会让它连续丢 12 份 → 光数体积就 1.2s。
+    修法：先各份量一次、之后每丢一份只重算新的第 0 份（`dropOldestSnapshot` 也顺手去掉一次重复深拷）。
+  - **剩下的 772ms 从哪来**：12 次折叠（每次深拷 base）+ 12 次 base 重序列化，触发条件是"补丁里带整张省表"。
+    真正的解法是**数组级 diff（省表按 id 局部化）**；那一步做完补丁会小两个数量级，再谈 Worker
+    （搬 `snapshotState + diff + stringify` 进线程）。
+  - 反向验收：`B1`（超上限从最旧丢、永不丢最新）+ `B2`（裁剪后旧快照**仍能精确恢复**、抽查 4 个下标逐字节一致）
+    在重构后照旧全绿 —— 这两条就是"折叠语义没被优化改坏"的证据。
+
+

@@ -272,6 +272,37 @@ async function main() {
     return `maxBytes=${(S.SNAPSHOT_MAX_BYTES / 1024 / 1024).toFixed(1)} MB / keep=${S.SNAPSHOT_KEEP}`;
   });
 
+  // ══════════════════════════════════════════════════════════════
+  // F. 快照重放的引用纪律（2026-10-29：`applyPatchInPlace` 之后必须守）
+  // ══════════════════════════════════════════════════════════════
+  await check('F1 就地重放不共享引用：改恢复出来的状态，不许污染快照缓冲', () => {
+    let p = bigProject(S, 'replay', 4, 120);
+    p = S.pushSnapshot(p, { at: '2026-01-01T00:00:00.000Z', label: 'a' });
+    // 第二份：改一个省的 color（数组整体替换 → 补丁里带整张省表）
+    const mutated = { ...p, scenarios: { ...p.scenarios, baseMaps: { ...p.scenarios.baseMaps } } };
+    const bm = { ...mutated.scenarios.baseMaps.base };
+    bm.terrain = bm.terrain.map((t, i) => (i === 0 ? { ...t, color: '#ffffff' } : t));
+    mutated.scenarios.baseMaps.base = bm;
+    p = S.pushSnapshot(mutated, { at: '2026-01-02T00:00:00.000Z', label: 'b' });
+    eq(p.snapshots.length, 2, '应当有两份快照');
+
+    const before = JSON.stringify(p.snapshots);
+    const restored = S.restoreSnapshot(p, 1);
+    assert(restored.ok, `恢复失败：${restored.error}`);
+    // 深度改写恢复结果：省表、省名、颜色全改一遍
+    restored.state.scenarios.baseMaps.base.terrain[0].color = '#000000';
+    restored.state.scenarios.baseMaps.base.terrain.push({ id: 'injected', name: '脏数据', points: [] });
+    eq(JSON.stringify(p.snapshots), before, '改恢复结果污染了快照缓冲（applyPatchInPlace 的深拷漏了）');
+
+    // 再看"应用补丁"这条公开路径：同样不许共享引用
+    const patch = p.snapshots[1].patch;
+    const applied = S.applyPatch(S.snapshotState(p), patch);
+    const appliedBefore = JSON.stringify(applied);
+    applied.scenarios.baseMaps.base.terrain[0].color = '#111111';
+    eq(JSON.stringify(S.applyPatch(S.snapshotState(p), patch)), appliedBefore, 'applyPatch 的结果与源数据共享了引用');
+    return `快照 ${p.snapshots.length} 份 / 深改恢复结果后缓冲逐字节不变`;
+  });
+
   // 输出
   const failed = results.filter(r => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);

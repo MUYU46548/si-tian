@@ -677,6 +677,23 @@ export function diffStates(prev, next, keys = SNAPSHOT_DIFF_KEYS) {
 /** 把补丁应用到状态上（返回新对象，不改入参） */
 export function applyPatch(base, patch) {
   const out = deepClone(base || {});
+  applyPatchInPlace(out, patch);
+  return out;
+}
+
+/**
+ * 把补丁**就地**应用到一份"已经属于调用方的"状态上（F 工程债，2026-10-29）。
+ *
+ * 为什么要拆出这一层：`applyPatch` 每次都会 `deepClone(base)`，而 `replayTo` 要按快照链
+ * 逐份应用补丁 —— 真实 415 省项目（7.3MB / 13 份快照）实测 `pushSnapshot` **422ms（无改动）/
+ * 1610ms（改一个省）**，绝大部分花在"每应用一份补丁就把整份状态深拷一遍"上。
+ * 拆开后：`replayTo` 只深拷 **1 次** base，之后逐份就地合并（被 set 的值仍然 `deepClone`，
+ * 所以补丁里的数据不会与外面共享引用）。
+ *
+ * ⚠️ 只给内部/已明确拥有该对象所有权的调用方用；对外仍用 `applyPatch`（它返回新对象）。
+ */
+function applyPatchInPlace(target, patch) {
+  const out = target || {};
   const { set = [], del = [] } = patch || {};
   for (const { path } of del) {
     if (!Array.isArray(path) || !path.length) continue;
@@ -697,16 +714,20 @@ export function applyPatch(base, patch) {
 }
 
 // 快照缓冲：重放第 i 份快照对应的状态
+// ⚠️ 只深拷 **1 次** base，之后逐份就地合并（旧实现每份都 `applyPatch` → 整份深拷一遍，
+//    真实项目上 13 份 = 十几次 4MB 的深拷，`pushSnapshot` 因此 400ms~1.6s）。
 function replayTo(snapshots, index) {
   let state = deepClone(snapshots[0].base || {});
-  for (let i = 1; i <= index; i++) state = applyPatch(state, snapshots[i].patch);
+  for (let i = 1; i <= index; i++) applyPatchInPlace(state, snapshots[i].patch);
   return state;
 }
 
 // 缓冲溢出：丢弃最旧的 1 份，把它的状态折进新的第 0 份（保持「1 base + N diff」不变式）
 function dropOldestSnapshot(snapshots) {
   if (snapshots.length < 2) { snapshots.shift(); return; }
-  const base = applyPatch(deepClone(snapshots[0].base || {}), snapshots[1].patch);
+  // ⚠️ 这里只深拷一次（旧写法 `applyPatch(deepClone(...))` 会在 applyPatch 里**再拷一遍**）
+  const base = deepClone(snapshots[0].base || {});
+  applyPatchInPlace(base, snapshots[1].patch);
   snapshots.shift();
   snapshots[0] = { ...snapshots[0], base, patch: { set: [], del: [] } };
 }
@@ -763,7 +784,19 @@ export function pushSnapshot(project, opts = {}) {
   while (snapshots.length > Math.max(1, keep)) dropOldestSnapshot(snapshots);
   // ② 体积上限（`> 1` 保证最新那份不会被丢）
   if (maxBytes > 0) {
-    while (snapshots.length > 1 && snapshotBytes(snapshots) > maxBytes) dropOldestSnapshot(snapshots);
+    // 🔴 2026-10-29（F 实测）：旧写法是「每丢一份就 `snapshotBytes(整串)` 重算一遍」= O(n²)。
+    //   真实 415 省项目上一次"改一个省"（补丁里带整张 839KB 的省表）会连续丢 12 份 →
+    //   光是数体积就 1.2s。改成**增量记账**：先各份量一次，之后每丢一份只重算新的第 0 份。
+    const sizeOf = (s) => JSON.stringify(s, jsonSafeReplacer).length;
+    const sizes = snapshots.map(sizeOf);
+    let total = sizes.reduce((a, b) => a + b, 0);
+    while (snapshots.length > 1 && total > maxBytes) {
+      const dropped = sizes.shift();
+      const folded = sizes[0];
+      dropOldestSnapshot(snapshots);
+      sizes[0] = sizeOf(snapshots[0]);
+      total = total - dropped - folded + sizes[0];
+    }
   }
   return { ...project, snapshots };
 }
