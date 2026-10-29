@@ -69,6 +69,9 @@ export function collectScenarioLabels({
         kind: 'polity', text, x: st.cx, y: st.cy, owner, era,
         // 领土**世界面积**（2026-10-27）：画布按它给字号（EU4 的大国名/小国名层次）
         area: st.area,
+        // C2（2026-10-29）：领土主轴与细长比 —— 超大国名要沿走向排 / 超宽要折行
+        axis: st.axis,
+        elongation: st.elongation,
         highlight: !!highlightOwnerId && highlightOwnerId === owner,
       });
     }

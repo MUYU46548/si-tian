@@ -33,6 +33,10 @@ async function main() {
     ZOOM_DETAILS, ZOOM_DETAIL_THRESHOLDS, DETAIL_CAPS,
     rawZoomDetail, zoomDetail, detailCaps, labelFontScale,
   } = mod;
+  // C5（2026-10-29）：道路分级渐显与标签**同一套档位**（routeDensity 无 import → data: URL 可直接载）
+  const rd = await import('data:text/javascript;base64,'
+    + Buffer.from(fs.readFileSync(path.join(path.dirname(SRC), 'routeDensity.js'), 'utf8'), 'utf8').toString('base64'));
+  const { shouldDrawRoute, arterialLengthThreshold, polylineLength, ROUTE_TIER_GROUPS } = rd;
 
   check('z1 裸档位：阈值两侧各自落档（0.35 / 0.6 / 2.2）', () => {
     eq(rawZoomDetail(0.1), 'close', '0.1');
@@ -122,6 +126,35 @@ async function main() {
       prev = k;
     }
     return `0.6→${near.toFixed(2)} / 0.1→${zoomedIn.toFixed(2)} / 0.02→${moreIn.toFixed(2)} / 5→${zoomedOut.toFixed(2)}`;
+  });
+
+  check('z6 C5 道路分级渐显：档位逐级放开 + far 只留主干（长度分位）', () => {
+    const road = (len, group = 'roads') => ({
+      group,
+      points: [{ x: 0, y: 0 }, { x: len, y: 0 }],
+    });
+    // 分组：far/mid 只有 roads；near 加 trails；close 再加 searoutes（单调放开）
+    eq(ROUTE_TIER_GROUPS.far.join(','), 'roads', 'far');
+    eq(ROUTE_TIER_GROUPS.mid.join(','), 'roads', 'mid');
+    eq(ROUTE_TIER_GROUPS.near.join(','), 'roads,trails', 'near');
+    eq(ROUTE_TIER_GROUPS.close.join(','), 'roads,trails,searoutes', 'close');
+    for (const [g, want] of [['trails', 'near'], ['searoutes', 'close']]) {
+      assert(!shouldDrawRoute(road(100, g), 'mid'), `${g} 不该在 mid 画`);
+      assert(shouldDrawRoute(road(100, g), want), `${g} 应在 ${want} 画`);
+    }
+    // far 档：只留长度进前 50% 的干道（真实数据里线宽分不出主次，长度是唯一信号）
+    const list = [road(1000), road(800), road(120), road(60)];
+    const th = arterialLengthThreshold(list, 'far', 0.5);
+    assert(th === 800, `前 50% 门槛应为 800，实得 ${th}`);
+    eq(list.filter((r) => shouldDrawRoute(r, 'far', th)).length, 2, 'far 只剩 2 条干道');
+    eq(list.filter((r) => shouldDrawRoute(r, 'mid', 0)).length, 4, 'mid 全部 roads');
+    // 非 far 档不算门槛（0 = 不过滤），脏输入不崩
+    eq(arterialLengthThreshold(list, 'mid'), 0, 'mid 不需要门槛');
+    eq(polylineLength([{ x: 0, y: 0 }, { x: 3, y: 4 }]), 5, '折线长度');
+    eq(polylineLength([{ x: 0, y: 0 }]), 0, '单点 = 0');
+    assert(!shouldDrawRoute(null, 'close'), '空路线不画');
+    assert(!shouldDrawRoute({ points: [{ x: 0, y: 0 }] }, 'close'), '单点路线不画');
+    return `far ${th} / 分档 ${Object.keys(ROUTE_TIER_GROUPS).length} 档`;
   });
 
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);

@@ -1911,6 +1911,10 @@ import {
 } from '../utils/scenarioTextPlacement';
 // 剧本标签的**唯一判定**（省名 / 势力名 / 简称三档该写什么字、写在哪）—— 与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
+// C5（2026-10-29）：道路分级渐显的判据（纯函数；与标签/城镇同一套 far→close 档位）
+import { arterialLengthThreshold, shouldDrawRoute } from '../utils/routeDensity';
+// C2（2026-10-29）：超大国名的走向与折行（纯函数；画布与导出共用同一份决策）
+import { planPolityShape } from '../utils/labelOrient';
 // 剧本集（2026-10-25）：组判定 / 选项 / 计数 / 初始组**只有一份实现**（utils/scenarioGroups.js）
 import {
   DEFAULT_SCENARIO_GROUP, scenarioGroupIdOf, scenarioGroupOptions,
@@ -9544,10 +9548,11 @@ function drawRoutes(c) {
   const br = screenToWorld(cw(), ch());
   const pad = px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  // 档位节流（2026-10-27）：整图可见时 496 条路/航路会糊成一张网 —— 只留主干道；
-  // 放大到 near/close 才出小径与海路。
+  // 档位节流（2026-10-27 粗版；C5 2026-10-29 升级为分级渐显）：
+  // 496 条路/航路整图可见时会糊成一张网 —— 判据收在 `utils/routeDensity.js`（纯函数、可测）：
+  // far 只留主干 → mid 全部 roads → near 加 trails → close 再加 searoutes（与标签/城镇同一套档位）。
   const detail = labelDetailNow();
-  const sparse = detail === 'far' || detail === 'mid';
+  const arterialLen = arterialLengthThreshold(list, detail);
 
   c.save();
   c.lineCap = 'round';
@@ -9555,7 +9560,7 @@ function drawRoutes(c) {
   for (const r of list) {
     const pts = r.points;
     if (!pts || pts.length < 2) continue;
-    if (sparse && (r.group === 'searoutes' || r.group === 'trails')) continue;
+    if (!shouldDrawRoute(r, detail, arterialLen)) continue;
     if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
     // 优先使用道路自带样式（P1-T3），回退到 group 默认
     const st = r.color ? { color: r.color, width: r.width || 1, dash: r.dash || null, alpha: 0.95 } : ROUTE_STYLES[r.group] || ROUTE_STYLES.roads;
@@ -11531,6 +11536,15 @@ function measureTextWithStyle(text, style) {
   return { w: mc.measureText(String(text)).width + 6, h: size * 1.3 + 2 };
 }
 
+/** C2：多行标签的排布盒子（最宽一行 × 行数；行高与 `drawStyledLabel` 同一系数 1.12） */
+function measureTextBlockWithStyle(lines, style) {
+  const list = Array.isArray(lines) && lines.length ? lines : [''];
+  const size = Number(style && style.fontSize) || 12;
+  let w = 0;
+  for (const l of list) w = Math.max(w, measureTextWithStyle(l, style).w);
+  return { w, h: size * 1.3 + 2 + (list.length - 1) * size * 1.12 };
+}
+
 /**
  * 地形注记的**保留走廊**（2026-10-27，用户 gap #6）：山系/海域名沿脊线排，占的是一条线；
  * 别的标签压上去就白排了。这里把「名字实际会占的那一段」算成框交给 `layoutLabels`
@@ -11665,6 +11679,19 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
         const byArea = Math.max(20, Math.min(cap, Math.sqrt(Math.max(1, areaPx)) * 0.32));
         style = { ...style, fontSize: Math.min(110, byArea * fontScale) };
       }
+      // C2（2026-10-29）：超大国名**沿领土主轴排**、超宽**折两行**。
+      // 领土近似宽度 = sqrt(面积) × 缩放（正方形近似），留 8% 余量 —— 只要"放得下"
+      // 这一条判据，不追求像素级排版（真排版在 `layoutLabels` 里）。
+      let shape = null;
+      if (lb.kind === 'polity' && Number.isFinite(lb.area) && lb.area > 0) {
+        shape = planPolityShape({
+          text: lb.text,
+          fontSize: style.fontSize,
+          maxWidthPx: Math.sqrt(lb.area) * scale * 0.92,
+          axis: lb.axis,
+          elongation: lb.elongation,
+        });
+      }
       cands.push({
         id: lb.kind + ':' + lb.text,
         kind: lb.kind,          // 'province' | 'polity'
@@ -11672,6 +11699,9 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
         x: sp.x, y: sp.y,
         style,
         highlight: lb.highlight,
+        // C2（2026-10-29）：超大国名沿领土主轴转 + 超宽折两行（判据在 utils/labelOrient.js）
+        lines: shape ? shape.lines : null,
+        rotate: shape ? shape.rotate : 0,
         // 势力名/省名是**面状大字**：城市圆点不该把它挡掉（EU4 里国名直接压在城市上）
         ignoreSoftObstacles: true,
         // 省名放不下时在面内挪一点（势力名优先级更高，会先占住形心）
@@ -11722,7 +11752,10 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
   }
 
   const placed = layoutLabels(cands, {
-    measure: (text, cand) => measureTextWithStyle(text, cand.style),
+    // C2：多行标签按**块**量（最宽一行 × 行数），否则排布会少留一行的高度、两行字互相压
+    measure: (text, cand) => (cand && Array.isArray(cand.lines) && cand.lines.length > 1
+      ? measureTextBlockWithStyle(cand.lines, cand.style)
+      : measureTextWithStyle(text, cand.style)),
     bounds: { minX: 6, minY: 6, maxX: W - 6, maxY: H - 6 },
     pad: 3,
     // 地形注记走廊先占位（与画布上真实画出的位置同坐标系：屏幕像素）
@@ -11737,6 +11770,9 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
     highlight: !!p.highlight,
     wx: (p.cx - cameraX.value) / scale,
     wy: (p.cy - cameraY.value) / scale,
+    // C2：折行与旋转随排布结论一起带出去（绘制端只照做，不再自己判断）
+    lines: p.lines || null,
+    rotate: p.rotate || 0,
     // 河名沿河：排布结论只给落点，走向要带回去才能沿折线排字（世界坐标）
     path: p.kind === 'river' ? (p.path || null) : null,
   }));
@@ -11758,6 +11794,8 @@ function drawPlannedLabels(c, kinds) {
       baseline: 'middle',
       screenScale: cameraScale.value,
       highlight: lb.highlight,
+      lines: lb.lines || undefined,
+      rotate: lb.rotate || 0,
     });
   }
 }

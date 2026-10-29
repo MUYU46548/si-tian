@@ -64,3 +64,22 @@
 - **历史剧本时间轴**（2026-09-17 落地，回归用例 test_41~test_45）: `utils/scenarioTimeline.js`（**纯函数**：势力谱系按省份重叠度贪心匹配 + 逐省易主年份 + 年份/轨道轴向映射；无 DOM 依赖，可单独在 Node 里跑）、`components/ScenarioTimeline.vue`（按年比例/等宽双轴向轨道 + 游标拖动 + 键盘 + 播放）、`components/ScenarioLineagePanel.vue`（P2 谱系纠正面板）、`composables/useScenarioExport.js`（SVG/PNG/scenarios.json 导出导入）。**出口**：`utils/svgExport.js`（SVG 序列化，曲线约定同 `traceShapePath`；PNG 由 SVG 光栅化而来，两者永远一致）+ `save-text-file` IPC
 
 - **剧本时间轴的两条硬约束**：① `era.startYear/endYear` 是**字符串且可为负**（`'-1350'`→`'2138'`），任何算术先 `Number()`；② **每个剧本的 polity id 都是全新的**（`pol_ou`→`pol_li`），直接比 id 会得出「每代 100% 省份全变」→ 必须先做谱系匹配。详见 skill `obsidian/sitian-development`
+
+- **国名沿主轴转 + 超宽折行 · 道路分级渐显（2026-10-29，`TODO_REMAINING_20261028.md` 的 C2/C5）**:
+  - **C2 为什么必须有一层纯函数**：国名的走向/折行是"看形状说话"，画布与 SVG 导出**都要**同一份结论 ——
+    两处各写一套的下场是「导出图里国名横着、画布上斜着」。所以判据全在 `utils/labelOrient.js`：
+    `principalAxisAngle`（领土二阶矩；用「每省形心 + 面积权」做点集 —— 单省势力自然退化、不转）、
+    `planPolityShape`（**细长比 ≥1.6 才转、夹 ±30°**：转太多就"倒着读"；超宽折两行，CJK 按字、西文按词）。
+  - ⚠️ **字宽是估算不是 measureText**：这一层必须能在 Node 里跑（也有 SVG 导出用），所以字宽按
+    "CJK 1em / 其它 0.55em" 估 —— 只用来决定**折不折/转不转**，真正的排版盒子仍在 `layoutLabels` 里量。
+    两处 `measure` 都要认 `cand.lines`（按块量：最宽一行 × 行数），否则排布少留一行高度、两行字互压。
+  - **渲染端**：`drawStyledLabel` 新增 `opts.lines` / `opts.rotate`（绕锚点旋转；描边/填色逐行重复，
+    顺序仍是先描后填）；SVG 导出逐行 `<text>` + `transform="rotate(deg cx cy)"`（与河名沿路径的写法同源）。
+  - **C5**：道路从"一次粗节流"改成**四档渐显**（`utils/routeDensity.js`）：far 只留长度前 50% 的干道 →
+    mid 全部 roads → near 加 trails → close 再加 searoutes。**不许按线宽判主干** —— FMG 导入的路几乎同宽（0.9），
+    按线宽过滤等于全留；长度是真实数据里唯一能分出主次的信号。
+  - 判据：`unit/test_polity_labels.js` t12/t13（主轴/不倒写/折行不丢字/旋转夹持）、
+    `unit/test_label_zoom.js` z6（分档放开 + far 长度分位 + 脏输入）；`test_73` / `test_77` / `test_100` 全过。
+  - ⚠️ 踩坑：给 `polityLabels.js` 加 import 之后，**所有把它拷到临时目录的单测**都要把新依赖加进 DEPS
+    （`test_basemap_identity.js` 当场 `ERR_MODULE_NOT_FOUND`，表现为"无输出"）。
+

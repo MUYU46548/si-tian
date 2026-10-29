@@ -42,7 +42,7 @@ function loadUtilsModule(names, entry) {
     fs.writeFileSync(path.join(dir, f), src);
   }
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }));
-  return import(pathToFileURL(path.join(dir, entry)).href);
+  return { dir, url: (f) => pathToFileURL(path.join(dir, f)).href };
 }
 
 const results = [];
@@ -75,8 +75,10 @@ const TIER_ORDER = { province: 0, polity: 1, abbr: 2 };
 
 async function main() {
   const load = async (p) => import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(p, 'utf8'), 'utf8').toString('base64'));
-  const mod = await load(SRC);
-  const SL = await loadUtilsModule(['polityLabels.js', 'scenarioLabels.js'], 'scenarioLabels.js');
+  const { url } = loadUtilsModule(['labelOrient.js', 'polityLabels.js', 'scenarioLabels.js']);
+  const mod = await import(url('polityLabels.js'));
+  const SL = await import(url('scenarioLabels.js'));
+  const LO = await import(url('labelOrient.js'));
   const {
     polityLabelTier, ringAreaCentroid, aggregateTerritories, labelTextFor, labelFitsOnScreen,
     isPlaceholderProvinceName,
@@ -258,6 +260,50 @@ async function main() {
       collectScenarioLabels({ ...owned, provinces, skipPlaceholderProvinces: true }).length,
       '势力名层不该被省名开关影响');
     return `全量 ${all.length} → 已命名 ${named.length}`;
+  });
+
+  // ---------- 8. C2：国名沿主轴转 + 超宽折行（labelOrient 纯函数） ----------
+  check('t12 C2 主轴：细长环有走向、圆环不转、角度不倒写（|angle| ≤ 90°）', () => {
+    // 1:10 的细长矩形（横着）→ 主轴贴 x 轴
+    const wide = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 10 }, { x: 0, y: 10 }];
+    const a1 = LO.principalAxisAngle(wide);
+    assert(Math.abs(a1.angle) < 0.05, `横向细长条主轴应贴 0°：${a1.angle}`);
+    assert(a1.elongation > 3, `细长比应 >3：${a1.elongation}`);
+    // 竖着的细长条 → 主轴 ≈ ±90°
+    const tall = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 100 }, { x: 0, y: 100 }];
+    const a2 = LO.principalAxisAngle(tall);
+    assert(Math.abs(Math.abs(a2.angle) - Math.PI / 2) < 0.05, `竖向主轴应贴 ±90°：${a2.angle}`);
+    // 正方形 → 细长比 ≈ 1（不转）
+    const sq = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }, { x: 0, y: 50 }];
+    const a3 = LO.principalAxisAngle(sq);
+    assert(a3.elongation < 1.2, `正方形不该判为细长：${a3.elongation}`);
+    // 脏输入不崩、不返回 NaN
+    for (const bad of [null, [], [{ x: 1, y: 1 }], [{ x: NaN, y: 0 }, { x: 1, y: 1 }]]) {
+      const r = LO.principalAxisAngle(bad);
+      assert(Number.isFinite(r.angle) && Number.isFinite(r.elongation), `脏输入返回 NaN：${JSON.stringify(bad)}`);
+    }
+    return `${a1.elongation.toFixed(1)}× / ${a2.elongation.toFixed(1)}×`;
+  });
+
+  check('t13 C2 折行与旋转：放得下不折、超宽折两行、细长才转且夹在 ±30°', () => {
+    // 放得下 → 一行、不转（圆形国）
+    const short = LO.planPolityShape({ text: '甲午王朝', fontSize: 30, maxWidthPx: 500, axis: 0, elongation: 1 });
+    eq(short.lines.length, 1, '放得下不该折行');
+    eq(short.rotate, 0, '圆形国不该转');
+    // 超宽 → 折两行（CJK 按字断）；每行都不超过限宽
+    const long = LO.planPolityShape({ text: '西境联合总督区', fontSize: 40, maxWidthPx: 160, axis: 0, elongation: 1 });
+    eq(long.lines.length, 2, '超宽应折成两行');
+    assert(long.lines.join('') === '西境联合总督区', '折行不许丢字/改字');
+    for (const l of long.lines) assert(LO.estimateTextWidth(l, 40) <= 160, `折完仍超宽：${l}`);
+    // 词间空格优先断（英文名不被切在词中间）
+    const en = LO.planPolityShape({ text: 'Grand Duchy of the North', fontSize: 20, maxWidthPx: 150, axis: 0, elongation: 1 });
+    assert(en.lines.every((l) => !l.startsWith(' ')), '英文折行不该留前导空格');
+    // 细长 → 转，且夹在 ±30°（转太多就倒着读）
+    const rot = LO.planPolityShape({ text: '长条国', fontSize: 20, maxWidthPx: 500, axis: 1.2, elongation: 3 });
+    assert(Math.abs(rot.rotate - Math.PI / 6) < 1e-9, `旋转应夹在 30°：${rot.rotate}`);
+    const noRot = LO.planPolityShape({ text: '长条国', fontSize: 20, maxWidthPx: 500, axis: 0.5, elongation: 1.2 });
+    eq(noRot.rotate, 0, '不够细长就不转');
+    return `折 ${long.lines.length} 行 / 旋转 ${(rot.rotate * 180 / Math.PI).toFixed(0)}°`;
   });
 
   // ---------- 汇总 ----------

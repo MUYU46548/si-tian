@@ -18,7 +18,9 @@ const { pathToFileURL } = require('url');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const SRC_DIR = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
-const DEPS = ['basemapIdentity.js', 'provinceShape.js', 'geometry.js', 'gridOutline.js', 'polylineSmooth.js', 'polityLabels.js'];
+// C2（2026-10-29）：polityLabels 现在 import './labelOrient' —— 依赖表要跟着加，
+// 否则临时目录里少一个文件，整条用例直接 ERR_MODULE_NOT_FOUND（表现为"无输出"）。
+const DEPS = ['basemapIdentity.js', 'provinceShape.js', 'geometry.js', 'gridOutline.js', 'polylineSmooth.js', 'labelOrient.js', 'polityLabels.js'];
 
 const results = [];
 function check(name, fn) {

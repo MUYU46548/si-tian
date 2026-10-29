@@ -29,6 +29,8 @@ import {
 } from '../utils/polityLabels';
 // 剧本标签「该写哪些字、写在哪」的唯一判定 —— 画布与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
+// C2（2026-10-29）：国名的走向/折行决策（与画布同一份纯函数，导出不许自己另算）
+import { planPolityShape } from '../utils/labelOrient';
 // 逐年切片的帧索引 / 日期体检 / 帧命名（纯函数，画布与导出共用一份判定）
 import {
   collectSliceFrames, changeDateStats, sliceFrameName, MAX_SLICE_FRAMES,
@@ -73,7 +75,11 @@ function exportLabelMeasure(text, cand) {
     ? 'Georgia, "Songti SC", "SimSun", serif'
     : '"Microsoft YaHei", "PingFang SC", sans-serif';
   exportLabelMeasureCtx.font = `${style.weight || 'normal'} ${size}px ${family}`;
-  return { w: exportLabelMeasureCtx.measureText(String(text)).width + 6, h: size * 1.3 + 2 };
+  // C2（2026-10-29）：多行标签按**块**量（最宽一行 × 行数），与画布 `measureTextBlockWithStyle` 同口径
+  const lines = Array.isArray(cand.lines) && cand.lines.length ? cand.lines : [String(text)];
+  let w = 0;
+  for (const l of lines) w = Math.max(w, exportLabelMeasureCtx.measureText(String(l)).width + 6);
+  return { w, h: size * 1.3 + 2 + (lines.length - 1) * size * 1.12 };
 }
 
 /**
@@ -423,8 +429,19 @@ export function useScenarioExport({
         const fs = Math.max(20, Math.min(cap, Math.sqrt(lb.area) * 0.32));
         style = { ...POLITY_LABEL_STYLE, fontSize: fs };
       }
+      // C2（2026-10-29）：与画布**同一份决策**（`planPolityShape`）—— 沿领土主轴转 + 超宽折两行。
+      // SVG 用户空间 = 世界单位（scale 1），所以领土近似宽度直接 sqrt(面积) × 0.92。
+      const shape = planPolityShape({
+        text: lb.text,
+        fontSize: style.fontSize,
+        maxWidthPx: Math.sqrt(Math.max(1, lb.area || 0)) * 0.92,
+        axis: lb.axis,
+        elongation: lb.elongation,
+      });
       labelCands.push({
         kind: 'polity', text: lb.text, x: lb.x, y: lb.y, style,
+        lines: shape.lines,
+        rotate: shape.rotate,
       });
     }
 
@@ -520,7 +537,20 @@ export function useScenarioExport({
           continue;
         }
       }
-      body.push(svgTextEl(p.cx, p.cy, p.text, attrs));
+      // C2（2026-10-29）：多行 / 沿主轴旋转 —— 与画布同一份决策（`planPolityShape` 给的 lines/rotate）。
+      // 逐行出 `<text>`（比 tspan 简单，且排版盒子与画布一致：行高 1.12em）。
+      const lines = Array.isArray(p.lines) && p.lines.length ? p.lines : null;
+      const rot = Number(p.rotate) || 0;
+      const lineH = (Number(p.style && p.style.fontSize) || 20) * 1.12;
+      const rotAttr = rot ? `rotate(${(rot * RAD_TO_DEG).toFixed(2)} ${p.cx.toFixed(2)} ${p.cy.toFixed(2)})` : null;
+      if (lines && lines.length > 1) {
+        lines.forEach((ln, li) => {
+          const yy = p.cy + (li - (lines.length - 1) / 2) * lineH;
+          body.push(svgTextEl(p.cx, yy, ln, rotAttr ? { ...attrs, transform: rotAttr } : attrs));
+        });
+      } else {
+        body.push(svgTextEl(p.cx, p.cy, p.text, rotAttr ? { ...attrs, transform: rotAttr } : attrs));
+      }
     }
 
     // ── 地形注记（2026-10-27）：山系/海域沿走向、平原落点横排 ──────────────────

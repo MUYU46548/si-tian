@@ -12,6 +12,9 @@
 //
 // 本模块是纯函数（不碰 store / DOM / 响应式），Node 侧可直接测。
 
+// C2（2026-10-29）：领土主轴的数学与"折行/旋转"判据在 `labelOrient.js`（画布与导出共用）
+import { axisFromMoments } from './labelOrient';
+
 /**
  * 档位阈值。`visibleRatio = 视口可见世界宽度 / 地图世界宽度`。
  * ≤0.35 → 放大（只看得到三分之一以内的地图）→ 省名
@@ -111,13 +114,18 @@ function computeRingAreaCentroid(points) {
  * @returns {Map<string, {count:number, area:number, cx:number, cy:number}>}
  */
 export function aggregateTerritories(items, keyOf = (it) => it && it.owner) {
+  // C2（2026-10-29）：同时累计二阶矩 —— 国名要沿**领土主轴**排（`labelOrient.axisFromMoments`）。
+  // 用"每省形心 + 面积权"做点集：省数量级几十~几百，足够看出国土走向；
+  // 单省势力自然退化成 elongation=1（不转），不会因为形状未知就乱转。
   const acc = new Map();
   for (const it of items || []) {
     if (!it) continue;
     const key = keyOf(it);
     if (!key) continue;
     const { area, cx, cy } = ringAreaCentroid(it.points);
-    const cur = acc.get(key) || { count: 0, area: 0, sx: 0, sy: 0, wsum: 0 };
+    const cur = acc.get(key) || {
+      count: 0, area: 0, sx: 0, sy: 0, wsum: 0, mxx: 0, myy: 0, mxy: 0,
+    };
     cur.count += 1;
     cur.area += area;
     // 面积为 0（退化环）时用权 1，保证它至少能贡献一个位置，而不是把质心拉向 (0,0)
@@ -125,15 +133,27 @@ export function aggregateTerritories(items, keyOf = (it) => it && it.owner) {
     cur.sx += cx * w;
     cur.sy += cy * w;
     cur.wsum += w;
+    cur.mxx += w * cx * cx;
+    cur.myy += w * cy * cy;
+    cur.mxy += w * cx * cy;
     acc.set(key, cur);
   }
   const out = new Map();
   for (const [k, a] of acc) {
+    const mx = a.wsum ? a.sx / a.wsum : 0;
+    const my = a.wsum ? a.sy / a.wsum : 0;
+    // 方差 = E[x²] − (E[x])²（面积加权），再交给共享的主轴数学
+    const vxx = a.wsum ? a.mxx / a.wsum - mx * mx : 0;
+    const vyy = a.wsum ? a.myy / a.wsum - my * my : 0;
+    const vxy = a.wsum ? a.mxy / a.wsum - mx * my : 0;
+    const { angle, elongation } = axisFromMoments(vxx, vyy, vxy);
     out.set(k, {
       count: a.count,
       area: a.area,
-      cx: a.wsum ? a.sx / a.wsum : 0,
-      cy: a.wsum ? a.sy / a.wsum : 0,
+      cx: mx,
+      cy: my,
+      axis: angle,
+      elongation,
     });
   }
   return out;

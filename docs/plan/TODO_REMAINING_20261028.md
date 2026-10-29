@@ -40,13 +40,13 @@
 
 ## C. 文字 / 观感旧账（原 §4）
 
-| # | 事项 | 备注 / 下一步 |
-|---|---|---|
-| C1 | 内嵌字体（宋体/文楷） | 现在 fallback 系统字体；需选字重、算体积（**不许**为了字形把首屏撑大 —— 走 `@font-face` + 按需子集） |
-| C2 | 国名多行 / 沿主轴旋转 | 超大国名单行会横穿省界；`utils/labelLayout.js` 已有避让，需加"按多边形主轴决定旋转 + 超长折行" |
+| # | 事项 | 状态 | 备注 / 下一步 |
+|---|---|---|---|
+| C1 | 内嵌字体（宋体/文楷） | ⬜ 待做 | 现在 fallback 系统字体；需选字重、算体积（**不许**为了字形把首屏撑大 —— 走 `@font-face` + 按需子集） |
+| C2 | 国名多行 / 沿主轴旋转 | ✅ 2026-10-29 | 新增 `utils/labelOrient.js`（画布与导出**共用一份决策**）：`principalAxisAngle`（领土主轴：每省形心 + 面积权的二阶矩；单省退化=不转）+ `planPolityShape`（细长比 ≥1.6 才转、夹 ±30°；超宽折两行，CJK 按字/西文按词）。`drawStyledLabel` 支持 `lines/rotate`，SVG 导出逐行 `<text>` + `transform=rotate`。判据 `unit/test_polity_labels.js` t12/t13 |
 | C3 | 省名占位（415 个「新省份 N」） | ✅ 2026-10-29（便宜那条路） | 画布加「仅已命名省」开关（`toggle-named-provinces`，默认关）：打开后占位名整层不画。判据复用 `polityLabels.isPlaceholderProvinceName`（与导出链同一份），过滤落在 `collectScenarioLabels({skipPlaceholderProvinces})`，组件只传开关。`unit/test_polity_labels.js` t11 + `test_73` f0 源码闸门守。数据侧「从 Obsidian 批量导入真名」仍未做（要用户定映射规则） |
-| C4 | 地形分辨率 97×45 太粗 | 与 B 的 8k/16k 一起解决；或先做 bicubic 上采样（治标） |
-| C5 | 道路分级显隐 | 496 条在 near 档偏密；按 highway/road/trail 分档渐显（与城镇节流同口径） |
+| C4 | 地形分辨率 97×45 太粗 | ⬜ 待做 | 与 B 的 8k/16k 一起解决；或先做 bicubic 上采样（治标） |
+| C5 | 道路分级显隐 | ✅ 2026-10-29 | 新增 `utils/routeDensity.js`（纯函数）：far 只留长度前 50% 的干道 → mid 全部 roads → near 加 trails → close 再加 searoutes —— **与标签/城镇同一套 far→close 档位**；`drawRoutes` 不再自带 `sparse` 分支。判据 `unit/test_label_zoom.js` z6（含"不许按线宽判主干"的理由：FMG 导入的路几乎同宽） |
 | C6 | 海岸带导出一致性 | 已在 A1 覆盖政治档浅滩；地形档海岸线早就有。**遗留**：等深线在粗格图（spacing > 14）不画（有意），若要导出更密的等深线需先在数据侧提分辨率 |
 
 ## D. 之前验收的复核项（原 §5）

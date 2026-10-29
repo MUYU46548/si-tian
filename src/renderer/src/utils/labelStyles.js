@@ -383,9 +383,22 @@ export function drawStyledLabel(ctx, text, x, y, style, opts = {}) {
 
   const fontSize = effectiveFontSize(style, screenScale);
   const pad = (style.background?.padding ?? 3);
+  // C2（2026-10-29）：多行 + 旋转。判据（折不折/转不转）在 `utils/labelOrient.js`，
+  // 这里只负责"把结论画出来" —— 画布与 SVG 导出各自渲染同一份结论。
+  const lines = (Array.isArray(opts.lines) && opts.lines.length)
+    ? opts.lines.map((l) => String(l))
+    : [String(text)];
+  const lineH = fontSize * 1.12;
+  const rotate = Number.isFinite(opts.rotate) ? Number(opts.rotate) : 0;
 
   ctx.save();
   ctx.globalAlpha = alpha;
+  // 绕锚点旋转（锚点在屏幕/世界坐标里都等价：缩放不改变角度）
+  if (rotate) {
+    ctx.translate(x, y);
+    ctx.rotate(rotate);
+    ctx.translate(-x, -y);
+  }
   ctx.font = fontString(style, screenScale);
   // 字距（2026-10-27 EU4 参考图）：国家名是疏排的墨字。Canvas 的 letterSpacing
   // 只有 Chromium 支持；不支持就当没设（不报错、只是紧排）。
@@ -395,26 +408,28 @@ export function drawStyledLabel(ctx, text, x, y, style, opts = {}) {
   }
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
-  const width = ctx.measureText(String(text)).width;
+  let width = 0;
+  for (const l of lines) width = Math.max(width, ctx.measureText(l).width);
 
   // 背景条（半透明底衬）
   if (style.background?.enabled) {
     const padY = pad;
     const padX = pad * 1.4;
+    const blockH = fontSize + (lines.length - 1) * lineH;
     let bx = x - width / 2 - padX;
     if (align === 'left') bx = x - padX;
     else if (align === 'right') bx = x - width - padX;
-    let by = y - fontSize / 2 - padY / 2;
+    let by = y - blockH / 2 - padY / 2;
     if (baseline === 'top') by = y - padY / 2;
-    else if (baseline === 'bottom') by = y - fontSize - padY / 2;
+    else if (baseline === 'bottom') by = y - blockH - padY / 2;
     ctx.save();
     ctx.globalAlpha = alpha * (style.background.opacity ?? 0.35);
     ctx.fillStyle = style.background.color || '#000000';
     ctx.beginPath();
     if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(bx, by, width + padX * 2, fontSize + padY, Math.max(2, fontSize * 0.3));
+      ctx.roundRect(bx, by, width + padX * 2, blockH + padY, Math.max(2, fontSize * 0.3));
     } else {
-      ctx.rect(bx, by, width + padX * 2, fontSize + padY);
+      ctx.rect(bx, by, width + padX * 2, blockH + padY);
     }
     ctx.fill();
     ctx.restore();
@@ -426,24 +441,26 @@ export function drawStyledLabel(ctx, text, x, y, style, opts = {}) {
     ctx.shadowBlur = style.shadow.blur ?? 6;
   }
 
-  const txt = String(text);
-  // 描边（先描后填，保证文字轮廓清晰）
-  if (style.stroke?.enabled) {
-    ctx.lineJoin = 'round';
-    ctx.miterLimit = 2;
-    ctx.lineWidth = style.stroke.width || 2;
-    ctx.strokeStyle = style.stroke.color || '#101820';
-    ctx.strokeText(txt, x, y);
+  for (let li = 0; li < lines.length; li++) {
+    const ly = y + (li - (lines.length - 1) / 2) * lineH;
+    // 描边（先描后填，保证文字轮廓清晰）
+    if (style.stroke?.enabled) {
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+      ctx.lineWidth = style.stroke.width || 2;
+      ctx.strokeStyle = style.stroke.color || '#101820';
+      ctx.strokeText(lines[li], x, ly);
+    }
+    if (highlight) {
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = (style.stroke?.width || 2) + 1.5;
+      ctx.strokeStyle = '#FFD700';
+      ctx.strokeText(lines[li], x, ly);
+    }
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = style.color || '#E6EDF3';
+    ctx.fillText(lines[li], x, ly);
   }
-  if (highlight) {
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = (style.stroke?.width || 2) + 1.5;
-    ctx.strokeStyle = '#FFD700';
-    ctx.strokeText(txt, x, y);
-  }
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = style.color || '#E6EDF3';
-  ctx.fillText(txt, x, y);
   ctx.restore();
 
   return width;
