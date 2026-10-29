@@ -49,9 +49,14 @@
 > - 判据：`test_151` h 段（入口 / 3 张候选非空 / 预览只读 + 可复现 / 应用后 `fmg.template` 落库 + `genBBox` 记录 +
 >   气候数组齐全 / **一条 undo 回到应用前**）。
 >
-> **下一步（按顺序）**：③ 气候/群系（`climate/*` + `biomes`，替换现在的 `buildClimateInputs` 近似）；
-> ④ 河网 + 湖泊（`river` / `lakes`，接司天 `rivers[]` 与河宽换算）；⑤ Voronoi 化（`delaunator`）替换 8 邻居；
-> ⑥ worker 化 + 进度条。
+> **下一步（按顺序）**：③ 气候/群系 —— 🔶 **决定不搬**（见下）；④ 河网 + 湖泊（`river` / `lakes`，接司天 `rivers[]` 与河宽换算）；
+> ⑤ Voronoi 化（`delaunator`）替换 8 邻居；⑥ worker 化 + 进度条。
+>
+> ③ **决定：不搬 FMG 的 `climate/*` 与 `biomes`**（2026-10-29）。理由：
+> 司天已有**唯一一份**气候派生（`heightMath.buildClimateInputs` 纬度 + 离岸距离 → `deriveLayers` 出 temp/prec/biome），
+> 而且 A6 的落库链路里气候是**和高度同一笔**写进 undo 的。再搬 FMG 的温带/风带/湿度模型 = 两套气候真值，
+> 迟早出现"同一份高度图两种群系"。若将来确实要 FMG 的风带/湿度（观感更真实），正确的做法是
+> **替换那份唯一实现**，不是并列新增。
 
 **前置已核实（2026-10-29）**：参考实现就在本机 `E:\CODE\CangKu\SP-1025\planet-map\src\core`（约 3000 行 TS）：
 `graph/{lattice,voronoi,grid,pack}` + `heightmap/{generator,templates}`（**templates 是 Azgaar MIT 的模板脚本，文件头带
