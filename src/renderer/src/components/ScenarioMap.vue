@@ -926,6 +926,7 @@
         <label class="check-label" title="显示「地形注记」里的山系/海域名（沿走向排字；名字要自己给：检测山脊或手动画一条，见「地形注记」面板）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
         <label class="check-label" title="EU4 式分级标注：缩小看势力名（可简称），放大再加上省名"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
         <label class="check-label" title="放大到最详档时显示省名（未命名的省显示「新省份 N」，是改名的线索）"><input type="checkbox" v-model="showProvinceNames" data-testid="toggle-province-names" /> 省名</label>
+        <label class="check-label" title="只显示你自己起过名的省 —— 程序生成的「新省份 N」整层不画（415 省项目里通常只有几十个有真名，其余会把画面糊满）"><input type="checkbox" v-model="showNamedProvincesOnly" data-testid="toggle-named-provinces" /> 仅已命名省</label>
         <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
       <div class="tool-group">
@@ -2714,6 +2715,10 @@ const showPolityLabels = ref(true);
 /** 省名单独一层（2026-10-27）：旧实现与「势力名」共用一个开关，关掉势力名会连省名一起消失 ——
  *  用户排查 A4 时就被这一点误导过。现在两个开关各管一层，默认都开。 */
 const showProvinceNames = ref(true);
+/** C3（2026-10-29）：「只显示已命名的省」。415 省项目里绝大多数名字是程序起的「新省份 N」，
+ *  它们盖住真正起了名的几十个 —— 开关默认关（保持现有观感），打开后占位名整层不画。
+ *  判据复用 `polityLabels.isPlaceholderProvinceName`（与导出链同一份，不另写正则）。 */
+const showNamedProvincesOnly = ref(false);
 
 // 摄像机（pan/zoom）
 const cameraX = ref(0);
@@ -11587,6 +11592,8 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
     cameraX.value, cameraY.value, cameraScale.value, cw(), ch(),
     showLabels.value ? 1 : 0, showPlaceNames.value ? 1 : 0,
     showPolityLabels.value ? 1 : 0, showProvinceNames.value ? 1 : 0, showBurgs.value ? 1 : 0,
+    // C3（2026-10-29）：只显示已命名省 —— 换个开关就换了一批候选，必须进缓存键
+    showNamedProvincesOnly.value ? 1 : 0,
     tlEra.value, tlDate.value, tlDiffMode.value,
     // 档位与字号必须进缓存键：滚轮跨档时「候选集/字号」都变，漏了就会画面不动（假"没反应"）
     labelDetailNow(), labelScaleNow().toFixed(3),
@@ -11637,6 +11644,8 @@ function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
       ownerRefOf,
       polityOfEra,
       highlightOwnerId: selectedPolity.value?.id || null,
+      // C3：只显示已命名省（占位名整层不画；判据与导出链同一份）
+      skipPlaceholderProvinces: showNamedProvincesOnly.value,
     });
     for (const lb of labels) {
       // 两层各归各的开关（2026-10-27）

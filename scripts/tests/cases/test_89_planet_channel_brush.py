@@ -101,6 +101,30 @@ def _static_guard():
     for bad in ("from '../store/undo'", "store/writeGate", "'../store/undo'"):
         if bad in comp:
             problems.append(f'交互层不应直接依赖 {bad}（数据层与交互层要分离）')
+
+    # ── A6（2026-10-29）：行星侧「生成地形」必须**共用**剧本侧那份实现 ──────────────
+    # 判据只有两条：① 推演/写口只有一份（`synthesizeTerrainInto` 是唯一实现，两个薄入口）；
+    # ② 面板与工具栏都只是"换 target"，没有第二份推演/第二份参数面板。
+    sce = _read('src/renderer/src/store/geodataModules/scenarioEditing.js')
+    for anchor in ('function resolveTerrainTarget', 'function synthesizeTerrainInto',
+                   'function synthesizePlanetTerrain', 'function previewPlanetTerrainSynthesis'):
+        if anchor not in sce:
+            problems.append(f'scenarioEditing 缺少 `{anchor}`（行星侧推演应复用同一份实现）')
+    if sce.count('function synthesizeTerrainInto') != 1:
+        problems.append('synthesizeTerrainInto 定义不唯一（出现了第二份推演实现）')
+    panel = _read('src/renderer/src/components/TerrainGenPanel.vue')
+    if 'planetId' not in panel or 'store.synthesizePlanetTerrain' not in panel \
+            or 'store.previewPlanetTerrainSynthesis' not in panel:
+        problems.append('TerrainGenPanel 没接行星目标（应传 planetId → 同一个 store 入口）')
+    if 'data-testid="planet-gen-terrain"' not in pm or ':planet-id=' not in pm:
+        problems.append('PlanetMap 缺少「生成地形」入口（planet-gen-terrain → TerrainGenPanel :planet-id）')
+    # 行星笔刷必须登记手绘格，否则「重生成保留手绘」在行星侧永远保留 0 格
+    brush = _read('src/renderer/src/composables/usePlanetHeightBrush.js')
+    if 'mergeHandEdits' not in brush:
+        problems.append('usePlanetHeightBrush 没登记 handEdits（行星侧手绘锁定是空开关）')
+    gate = _read('src/renderer/src/store/writeGate.js')
+    if 'synthesizeTerrainInto' not in gate:
+        problems.append('writeGate 没登记 synthesizeTerrainInto（生成地形的唯一写口）')
     return problems
 
 
@@ -308,6 +332,122 @@ JS = r"""(async () => {
     ck('f5 切到宗教模式后着色跟着切', kindNow() === 'religion', kindNow());
     ck('f5 宗教模式下通道下拉仍在（同一份面板）', !!document.querySelector('[data-testid="channel-value"]'), null);
     notes.push('f5 UI：工具栏 2 枚按钮 + 面板 + 吸管 + 着色自动切档均已接线');
+  }
+
+  // ══════════════════════════════════════════════════════
+  // f6 A6（2026-10-29）：行星侧「生成地形」—— 同一份推演 + 手绘锁定 + 一条 undo
+  // ══════════════════════════════════════════════════════
+  {
+    const md = store.mapData[pid];
+    // 生成地形要先有轮廓可推：行星本来没有地貌多边形就先画一块（走 store 唯一写口 = 一条 undo）
+    if (!Array.isArray(md.terrain) || !md.terrain.length) {
+      const p0 = md.heightmap.grid.points[0];
+      const bx = Array.isArray(p0) ? p0[0] : p0.x;
+      const by = Array.isArray(p0) ? p0[1] : p0.y;
+      store.addTerrainPolygon(pid, {
+        id: 'a6-contour', name: '用例轮廓',
+        points: [{ x: bx, y: by }, { x: bx + 700, y: by },
+                 { x: bx + 700, y: by + 460 }, { x: bx, y: by + 460 }],
+      });
+      notes.push('f6 装置：行星原本没有轮廓，已补一块');
+    }
+    ck('f6 装置：行星有轮廓可推', (store.mapData[pid].terrain || []).length > 0,
+       (store.mapData[pid].terrain || []).length);
+
+    const pv = store.previewPlanetTerrainSynthesis(pid, { seed: 7 }, { count: 3 });
+    ck('f6 ★ 行星候选预览走同一份推演（3 张、有格子）',
+       !!(pv && pv.ok) && (pv.candidates || []).length === 3
+       && pv.candidates.every(c => c.cols > 0 && c.h && c.h.length > 0),
+       pv && (pv.reason || pv.message));
+
+    const hm0 = store.mapData[pid].heightmap;
+    const cells0 = hm0 && hm0.grid ? hm0.grid.points.length : 0;
+    const r1 = store.synthesizePlanetTerrain(pid, { force: true, params: { seed: 7 } });
+    ck('f6 ★ 行星生成地形成功', !!(r1 && r1.ok), r1 && r1.message);
+    const hm1 = store.mapData[pid].heightmap;
+    const cells1 = hm1 && hm1.grid ? hm1.grid.points.length : 0;
+    ck('f6 ★ 高度图落在行星自己那份上（换了对象、格数够）',
+       hm1 !== hm0 && cells1 > 300 && hm1.h.length === cells1, { cells0, cells1 });
+    ck('f6 回执是「按陆地轮廓生成地形」那一条',
+       String((r1 && r1.message) || '').includes('已按陆地轮廓生成地形'),
+       r1 && String(r1.message).slice(0, 40));
+    ck('f6 genSeed 落库（下次重生成靠它判断同种子）',
+       Number.isFinite(hm1.genSeed) && hm1.genSeed === 7, hm1.genSeed);
+
+    // 手绘锁定：扫出 6 个陆格抬高到 77 并登记 → 同种子重生成 → 逐格写回
+    const pts1 = hm1.grid.points;
+    const picked = [];
+    const step = Math.max(1, Math.floor(pts1.length / 600));
+    for (let i = 0; i < pts1.length && picked.length < 6; i += step) {
+      if (!(hm1.h[i] >= 20)) continue;
+      const p = pts1[i];
+      const x = Array.isArray(p) ? p[0] : p.x;
+      const y = Array.isArray(p) ? p[1] : p.y;
+      hm1.h[i] = 77;
+      picked.push({ x, y, h: 77 });
+    }
+    ck('f6 装置：找到 ≥3 个陆格可手绘（否则下面两条是空转）', picked.length >= 3, { picked: picked.length });
+    hm1.handEdits = picked;
+    const r2 = store.synthesizePlanetTerrain(pid, { force: true, params: { seed: 7 }, keepHandEdits: true });
+    const hm2 = store.mapData[pid].heightmap;
+    ck('f6 ★ 同种子重生成保留手绘（逐格全中）',
+       !!(r2 && r2.ok) && r2.handKept === picked.length && (hm2.handEdits || []).length === picked.length,
+       { painted: picked.length, kept: r2 && r2.handKept, stored: (hm2.handEdits || []).length });
+    const byKey = new Map();
+    for (let i = 0; i < hm2.grid.points.length; i++) {
+      const p = hm2.grid.points[i];
+      byKey.set(`${Array.isArray(p) ? p[0] : p.x},${Array.isArray(p) ? p[1] : p.y}`, i);
+    }
+    ck('f6 保留的手绘真的写回了新高度图',
+       (hm2.handEdits || []).every(e => {
+         const i = byKey.get(`${e.x},${e.y}`);
+         return i !== undefined && Math.abs(Number(hm2.h[i]) - 77) < 1e-3;
+       }), (hm2.handEdits || []).length);
+
+    const r3 = store.synthesizePlanetTerrain(pid, { force: true, params: { seed: 7 }, keepHandEdits: false });
+    const hm3 = store.mapData[pid].heightmap;
+    ck('f6 ★ 关掉「保留手绘」→ 一条不留（回执写明）',
+       !!(r3 && r3.ok) && r3.handKept === 0 && (hm3.handEdits || []).length === 0
+       && String(r3.message || '').includes('未保留'),
+       { kept: r3 && r3.handKept, msg: r3 && String(r3.message).slice(-40) });
+
+    // 三次生成 = 三条命令：全撤回去，高度图应回到最初那份
+    for (let k = 0; k < 3; k++) { store.undo(); await tick(120); }
+    const hmBack = store.mapData[pid].heightmap;
+    ck('f6 ★ 生成 = 一条 undo（撤 3 次回到生成前那份）',
+       hmBack === hm0 || (hmBack && hm0 && hmBack.grid && hm0.grid
+         && hmBack.grid.points.length === cells0),
+       { back: hmBack && hmBack.grid && hmBack.grid.points.length, want: cells0 });
+
+    // UI：工具栏入口 + 浮面板真的能开（3 张候选画出来）
+    // ⚠️ 「生成地形」在**高度**工具坞里（f5 结尾切到了宗教）—— 先切回来，否则按钮不在 DOM
+    const pmEl = document.querySelector('.planet-map-container');
+    const pmSetup = pmEl && pmEl.__vueParentComponent && pmEl.__vueParentComponent.setupState;
+    if (pmSetup && typeof pmSetup.setInteractionMode === 'function') pmSetup.setInteractionMode('height');
+    await tick(400);
+    const genBtn = document.querySelector('[data-testid="planet-gen-terrain"]');
+    ck('f6 ★ 行星工具栏有「生成地形」入口', !!genBtn, null);
+    if (genBtn) {
+      genBtn.click();
+      await tick(800);
+      const wrap = document.querySelector('[data-testid="planet-gen-terrain-wrap"]');
+      ck('f6 点入口后浮面板打开', !!wrap, null);
+      const cands = document.querySelectorAll('[data-testid^="tgen-cand-"]');
+      ck('f6 面板里真的有 3 张候选（同一份 TerrainGenPanel）', cands.length === 3, { n: cands.length });
+      const painted = Array.from(cands).map((el) => {
+        const c = el.querySelector('canvas');
+        if (!c) return false;
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true;
+        return false;
+      });
+      ck('f6 候选缩略图不是空白', painted.length === 3 && painted.every(Boolean), painted);
+      const closeBtn = wrap && wrap.querySelector('[data-testid="tgen-cancel"]');
+      if (closeBtn) closeBtn.click();
+      await tick(200);
+      ck('f6 点取消后浮面板收起', !document.querySelector('[data-testid="planet-gen-terrain-wrap"]'), null);
+    }
+    notes.push('f6 行星生成地形：预览 3 张 / 落库 + 手绘保留 / 关掉即丢 / 3 条 undo 归位 / UI 入口可开');
   }
 
   return JSON.stringify({ fails, notes });

@@ -85,7 +85,7 @@
     <!-- 重生成保留手绘（2026-10-28，补 §3.2 欠账）：默认开；关掉 = 用户明确要"彻底重来" -->
     <label
       class="tgen-check"
-      title="重生成时把这张底图上已手绘/笔刷改过的高度按坐标写回新地形（只对同种子有效）；关掉 = 手绘全部丢弃，彻底重来"
+      title="重生成时把这张地图上已手绘/笔刷改过的高度按坐标写回新地形（只对同种子有效）；关掉 = 手绘全部丢弃，彻底重来"
     >
       <input type="checkbox" v-model="keepHandEdits" data-testid="tgen-keep-hand" />
       重生成保留手绘地形
@@ -147,9 +147,15 @@ import { SEA_LEVEL } from '../utils/heightMath';
 
 const props = defineProps({
   baseMapKey: { type: String, default: '' },
+  // A6（2026-10-29）：面板也能用在**行星**上 —— 传 planetId 就写 `mapData[planetId].heightmap`，
+  // 推演 / 手绘搬移 / 气候派生仍是同一份实现（store 侧 `synthesizeTerrainInto`）。
+  planetId: { type: String, default: '' },
   hasHeightmap: { type: Boolean, default: false },
 });
 const emit = defineEmits(['apply', 'close']);
+
+const isPlanet = computed(() => !!props.planetId);
+const targetName = computed(() => (isPlanet.value ? '这颗行星' : '这张底图'));
 
 const store = useGeodataStore();
 const fields = TERRAIN_PARAM_FIELDS;
@@ -217,7 +223,7 @@ function paramSnapshot() {
 }
 
 function runPreview() {
-  if (!props.baseMapKey) { warn.value = '先选一张底图'; return; }
+  if (!props.baseMapKey && !props.planetId) { warn.value = `先打开${isPlanet.value ? '一颗行星' : '一张底图'}`; return; }
   busy.value = true;
   warn.value = '';
   // 逐帧让 UI 先画出"生成中"再同步算（推演是同步纯函数；预览用粗网格，单张几十毫秒）
@@ -225,7 +231,9 @@ function runPreview() {
     const t0 = performance.now();
     let r = null;
     try {
-      r = store.previewTerrainSynthesis(props.baseMapKey, paramSnapshot(), { count: 3 });
+      r = isPlanet.value
+        ? store.previewPlanetTerrainSynthesis(props.planetId, paramSnapshot(), { count: 3 })
+        : store.previewTerrainSynthesis(props.baseMapKey, paramSnapshot(), { count: 3 });
     } catch (err) {
       warn.value = `候选生成失败：${(err && err.message) || err}`;
     }
@@ -282,11 +290,17 @@ function apply() {
   if (!c) return;
   busy.value = true;
   nextTick(() => {
-    const r = store.synthesizeBaseMapTerrain(props.baseMapKey, {
-      params: c.params,
-      force: true,
-      keepHandEdits: keepHandEdits.value,
-    });
+    const r = isPlanet.value
+      ? store.synthesizePlanetTerrain(props.planetId, {
+        params: c.params,
+        force: true,
+        keepHandEdits: keepHandEdits.value,
+      })
+      : store.synthesizeBaseMapTerrain(props.baseMapKey, {
+        params: c.params,
+        force: true,
+        keepHandEdits: keepHandEdits.value,
+      });
     busy.value = false;
     if (!r || r.ok === false) {
       warn.value = (r && r.message) || '应用失败';
@@ -296,8 +310,8 @@ function apply() {
   });
 }
 
-// 换底图 → 旧候选作废（否则会把上一张底图的缩略图当成这一张的）
-watch(() => props.baseMapKey, () => {
+// 换底图 / 换行星 → 旧候选作废（否则会把上一张地图的缩略图当成这一张的）
+watch(() => [props.baseMapKey, props.planetId], () => {
   candidates.value = [];
   selected.value = 0;
   elapsedMs.value = null;
@@ -308,7 +322,7 @@ watch(candidates, () => nextTick(() => drawAll()));
 const summary = computed(() => describeTerrainParams(paramSnapshot()));
 
 // 打开面板即出一组候选（用户不用先猜"先在哪儿点"）
-if (props.baseMapKey) runPreview();
+if (props.baseMapKey || props.planetId) runPreview();
 defineExpose({ summary, keepHandEdits });
 </script>
 

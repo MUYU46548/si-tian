@@ -542,4 +542,30 @@
   - ⚠️ 存量项目（生成于本修之前）没记 `genBBox`，**下一次造陆仍会按老口径缩一次**（≈9.5%），
     之后稳定；这是"只修未来"的取舍，没有回溯改数据的路（改了等于凭空放大所有绝对坐标）。
 
+- **行星侧「生成地形」+ 只显示已命名省（2026-10-29，A6 / C3）**:
+  - **A6 的形态**：行星侧一直**有** `mapData[planetId].heightmap`（高度/群系笔刷、通道笔刷都在用），
+    但没有"按轮廓推演一份"的入口 —— 只有 `usePlanetHeightBrush.ensureHeightmap` 在损坏/首次时按
+    多边形 elevation 估个底稿。于是「地形生成参数面板」（种子/山脉/高原/裂谷 + 候选缩略图）
+    只有剧本底图够得着。
+  - **做法（不复制第二份）**：新增 `resolveTerrainTarget(target)`，把两种容器的差别收成三处
+    （轮廓多边形从哪读、高度图从哪读写、保存排给谁）；推演 → 陆地掩膜 → 手绘搬移 → 气候派生 →
+    **一条 undo** 全部在 `synthesizeTerrainInto()` 里，对外只留 `synthesizeBaseMapTerrain` /
+    `synthesizePlanetTerrain` 两个薄入口（预览同理：`previewTerrainFrom` + 两个入口）。
+    `TerrainGenPanel` 加 `planetId` prop（不传 planetId 时行为逐字不变）；行星高度工具栏加
+    「生成地形」按钮 + 浮面板（`planet-gen-terrain` / `planet-gen-terrain-wrap`）。
+  - **行星笔刷补 `handEdits`**（`usePlanetHeightBrush.endHeightStroke`）：抬手按 `h` 前后差集登记，
+    与底图侧同一条纯函数 `mergeHandEdits`（顺带进 undo 快照）。不补的话「重生成保留手绘」
+    在行星侧只能保留 0 格 —— 开关是摆设，而且**不会报错**。
+  - ⚠️ **writeGate 的两个坑**（第一次跑全量就红）：① 反向扫描的函数体里**不能出现**
+    `commitHeightmap(` 这个字面量（连注释里写 `commitHeightmap(` 也算），否则那个"只做解析"的
+    函数会被当成写口；② 对外薄入口**不要**登记 —— 登记了就要过"必须有 guardWrite"那条，
+    而守卫在唯一实现里。正确姿势：只登记 `synthesizeTerrainInto`。
+  - **C3**：画布加「仅已命名省」开关（`toggle-named-provinces`，默认关）。过滤落在
+    `collectScenarioLabels({ skipPlaceholderProvinces })`，判据复用 `polityLabels.isPlaceholderProvinceName`
+    （导出链本来就在用），组件只传开关；开关必须进 `getLabelPlan` 的缓存键，否则"勾了不动"。
+  - 判据：`test_89` f6（行星生成：预览 3 张 / 落库 / 同种子手绘逐格全中 / 关掉即丢 /
+    3 条 undo 归位 / 入口可开）+ `unit/test_polity_labels.js` t11 + `test_73` f0 源码闸门。
+  - ⚠️ 跑全量时**别改源码**：Vite dev server 是活的，中途改文件会触发 HMR，后面的用例会读到
+    半新半旧的页面（本轮实测：`test_08` / `test_100` 就是这么红的，重跑即绿）。
+
 

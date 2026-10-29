@@ -20,7 +20,7 @@
 | A3 | `handEdits` 无上限/无压缩 | ✅ 2026-10-28 | 软上限 2 万，超出按网格逐级抽稀（保形、同格留最新）；`unit/test_hand_edits.js` h6 守 |
 | A4 | 湖泊工具强度滑块无意义 | ✅ 2026-10-28 | 行星图湖泊档隐藏强度滑杆，改显示「平底」说明（18/19 固定） |
 | A5 | **造陆路径不锁手绘** | ✅ 2026-10-29 | 口径按代码实况定死：新图与旧图共享**世界坐标系**、但**不是同一张网格**（包围盒按省份外扩重推、格距随崎岖度变）→ 按**图幅相对位置**搬（`transferHandEdits`：包围盒归一化 + 吸附到最近格；抬高型落到新图海里丢弃、手挖湖保留；换 seed 不搬）。面板只在真有手绘时露 `lgen-keep-hand`，确认框与回执都点名格数。**顺带修掉一个真缺陷**：旧口径每次重跑都按省份包围盒重推图幅 → 实测**每次缩 ≈9.5%**（1800→1628→1473）；现在把图幅记进 `heightmap.genBBox`，重跑逐格同网格（手绘逐点命中）。判据：`unit/test_hand_edits.js` h7–h10、`test_152` g 段 |
-| A6 | 行星图没有「重生成」 | ⬜ 待做 | **前提已核实**：行星侧**有** `mapData[planetId].heightmap`（高度/群刷、通道刷都在用），但**没有"按轮廓推演地形"的入口** —— 现在只有 `usePlanetHeightBrush.ensureHeightmap`（按多边形 elevation 估一个底稿）。所以 A6 = 把「地形目标」抽成一份（`{kind:'basemap',key}` / `{kind:'planet',planetId}`）→ `TerrainGenPanel` 传 target 而不是 baseMapKey + 行星侧一个入口按钮；**不要**复制第二份推演/面板 |
+| A6 | 行星图没有「重生成」 | ✅ 2026-10-29 | 把「地形目标」抽成一份（`resolveTerrainTarget`：`{kind:'basemap',key}` / `{kind:'planet',planetId}`），推演/手绘搬移/气候/一条 undo 收进唯一实现 `synthesizeTerrainInto`；对外两个薄入口 `synthesizeBaseMapTerrain` / `synthesizePlanetTerrain`。`TerrainGenPanel` 加 `planetId` 直传目标（**没有第二份面板**），行星高度工具栏加「生成地形」入口（`planet-gen-terrain` → 浮面板）。行星高度笔刷补 `handEdits` 登记（抬手 diff），否则「重生成保留手绘」在行星侧永远是空开关。判据：`test_89` f6（预览 3 张 / 落库 / 同种子手绘逐格全中 / 关掉即丢 / 3 条 undo 归位 / UI 可开）+ `test_54` 反向扫描（写口 `synthesizeTerrainInto` 已登记） |
 
 ## B. 阶段 2：FMG 生成管线（最大一块，1–2 周）
 
@@ -44,7 +44,7 @@
 |---|---|---|
 | C1 | 内嵌字体（宋体/文楷） | 现在 fallback 系统字体；需选字重、算体积（**不许**为了字形把首屏撑大 —— 走 `@font-face` + 按需子集） |
 | C2 | 国名多行 / 沿主轴旋转 | 超大国名单行会横穿省界；`utils/labelLayout.js` 已有避让，需加"按多边形主轴决定旋转 + 超长折行" |
-| C3 | 省名占位（415 个「新省份 N」） | 现在画布会显示占位名。两条路：加「只显示已命名省」开关（便宜）/ 从 Obsidian 批量导入真名（数据侧） |
+| C3 | 省名占位（415 个「新省份 N」） | ✅ 2026-10-29（便宜那条路） | 画布加「仅已命名省」开关（`toggle-named-provinces`，默认关）：打开后占位名整层不画。判据复用 `polityLabels.isPlaceholderProvinceName`（与导出链同一份），过滤落在 `collectScenarioLabels({skipPlaceholderProvinces})`，组件只传开关。`unit/test_polity_labels.js` t11 + `test_73` f0 源码闸门守。数据侧「从 Obsidian 批量导入真名」仍未做（要用户定映射规则） |
 | C4 | 地形分辨率 97×45 太粗 | 与 B 的 8k/16k 一起解决；或先做 bicubic 上采样（治标） |
 | C5 | 道路分级显隐 | 496 条在 near 档偏密；按 highway/road/trail 分档渐显（与城镇节流同口径） |
 | C6 | 海岸带导出一致性 | 已在 A1 覆盖政治档浅滩；地形档海岸线早就有。**遗留**：等深线在粗格图（spacing > 14）不画（有意），若要导出更密的等深线需先在数据侧提分辨率 |

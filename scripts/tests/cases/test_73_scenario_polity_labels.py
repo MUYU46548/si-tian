@@ -177,7 +177,15 @@ def sub_source_guards(cdp):
     if "from '../utils/scenarioLabels'" not in sm:
         bad.append('ScenarioMap 没有引用 utils/scenarioLabels（判定被写回了组件？）')
 
-    return (False, '；'.join(bad)) if bad else (True, '分级判定单源（含导出链共 3 处接线）/ 无阈值回流组件')
+    # ④ C3（2026-10-29）「只显示已命名省」：开关在 UI 上、过滤在纯函数里（组件不许自己写正则）
+    if 'toggle-named-provinces' not in sm:
+        bad.append('ScenarioMap 缺少「仅已命名省」开关（data-testid="toggle-named-provinces"）')
+    if plan_body is None or 'skipPlaceholderProvinces' not in plan_body:
+        bad.append('getLabelPlan 没把「仅已命名省」传进 collectScenarioLabels')
+    if 'skipPlaceholderProvinces' not in labels_mod:
+        bad.append('utils/scenarioLabels.js 没有 skipPlaceholderProvinces 选项（判据应只有一份）')
+
+    return (False, '；'.join(bad)) if bad else (True, '分级判定单源（含导出链共 3 处接线）/ 无阈值回流组件 / 已命名省开关接线')
 
 
 # ══════════════════════════════════════════════════════════════════

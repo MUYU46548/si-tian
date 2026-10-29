@@ -158,6 +158,16 @@
                 ? store.readOnlyReason
                 : '选一份 Azgaar（FMG）导出的 .map：把高度图（连同省份 / 河流 / 道路）装进这张行星地图'"
             ><Icon name="upload" :size="13"/> 导入 .map</button>
+            <!-- A6（2026-10-29）：行星侧自己的「地形起点」——以前只有导入 .map 才有地形，
+                 「地形生成参数」那套（种子/山脉/高原/裂谷 + 候选缩略图）只有剧本底图能用。 -->
+            <button
+              data-testid="planet-gen-terrain"
+              :disabled="store.isReadOnly"
+              :title="store.isReadOnly
+                ? store.readOnlyReason
+                : '按这颗行星的地貌轮廓推演一份地形高度图：种子/起伏/山脉/高原/裂谷可调，3 张候选，一条 Ctrl+Z 可撤回'"
+              @click="terrainGenOpen = true"
+            ><Icon name="sparkles" :size="13"/> 生成地形</button>
           </div>
           <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调强度 · Ctrl+滚轮缩放 · 空格+拖动平移</div>
         </template>
@@ -1027,6 +1037,17 @@
       </div>
     </div>
   </div>
+  <!-- A6（2026-10-29）：行星侧「生成地形」浮面板 —— 与剧本视图**共用** TerrainGenPanel，
+       只把目标从 baseMapKey 换成 planetId（store 侧同一份推演实现）。 -->
+  <Teleport to="body">
+    <div v-if="terrainGenOpen" class="planet-gen-float" data-testid="planet-gen-terrain-wrap">
+      <TerrainGenPanel
+        :planet-id="terrainGenTargetId"
+        @apply="onTerrainGenerated"
+        @close="terrainGenOpen = false"
+      />
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -1104,6 +1125,8 @@ import {
 // 保存回执的**唯一判定**：staged（只交给了项目）≠ persisted（真进磁盘）—— 见 utils/saveStatusText.js
 import { describeSaveAction } from '../utils/saveStatusText';
 import CanvasSkeleton from './CanvasSkeleton.vue';
+// A6（2026-10-29）：地形生成参数面板（与剧本视图共用；只换 target = planetId）
+import TerrainGenPanel from './TerrainGenPanel.vue';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
@@ -1127,6 +1150,8 @@ const canvas = ref(null);
 const skeletonReady = ref(false);
 const drawMode = ref(true);
 const heightTool = ref('raise');
+// A6（2026-10-29）：行星侧「生成地形」浮面板开关（候选 → 应用 = 一条 undo，走 store 唯一实现）
+const terrainGenOpen = ref(false);
 const BIOME_COLORS = {
   ocean: '#2E86AB', hot_desert: '#E9C46A', cold_desert: '#B5B887',
   savanna: '#D2D082', grassland: '#C8D68F', tropical_seasonal: '#B6D95D',
@@ -1320,6 +1345,14 @@ watch(canvasSizePreset, (v) => {
 const currentMapData = computed(() => {
   if (!props.planet) return null;
   return store.mapData[props.planet.id] || { planetId: props.planet.id, version: 1, terrain: [], regions: [], markers: [], routes: [], textLabels: [] };
+});
+
+/** A6（2026-10-29）：「生成地形」的写入目标 —— 与 `currentMapData` 同一套解析口径
+ *  （有真实条目就用行星 id 这个键；旧数据缺 `planetId` 也不回空串） */
+const terrainGenTargetId = computed(() => {
+  if (!props.planet) return '';
+  if (store.mapData[props.planet.id]) return props.planet.id;
+  return (currentMapData.value && currentMapData.value.planetId) || props.planet.id;
 });
 
 // ===== 地形表示（M2/A2 第二步）=====
@@ -1921,6 +1954,22 @@ const renderer = useCanvasRenderer(canvas, {
   onWheel: (e, newScale) => { zoomOnWheel(newScale); },
   drawMode, currentPath, interactionMode, isSpacebarDown,
 });
+
+/**
+ * A6（2026-10-29）：行星「生成地形」应用后的收口。
+ * 三件事，缺一件用户都会以为"没生效"：
+ *   ① 着色档切到**海拔**（不切就还是群系矢量图，看不出地形来了）；
+ *   ② 把回执原样打到状态行（保留了几格手绘、含多少山脉/裂谷 —— store 已经写好了）；
+ *   ③ 强制整帧重画（高度图换了引用，脏矩形猜不到）。
+ */
+function onTerrainGenerated(r) {
+  terrainGenOpen.value = false;
+  exportStatus.value = (r && r.message) ? String(r.message) : '地形已生成';
+  heightmapRasterKind.value = 'height';
+  if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();
+  renderer?.requestRender();
+  emit('dirty', true);
+}
 
 // ===== 其他 composables（需要 renderer）=====
 const routeEditor = useRouteEditor({ store, props, emit, selectedRoute, renderer });
@@ -4463,5 +4512,23 @@ canvas {
   color: #f0883e;
   margin: 8px 0 0 0;
   line-height: 1.4;
+}
+
+/* A6（2026-10-29）：行星侧「生成地形」浮面板 —— 与剧本视图的 .gen-float 同口径（深色、不跟主题），
+   因为它装的是深色参数面板（TerrainGenPanel），浅色主题下浅底会压成"读不出来的深字"。 */
+.planet-gen-float {
+  position: fixed;
+  top: 72px;
+  right: 18px;
+  z-index: 60;
+  width: 720px;
+  max-width: 92vw;
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  background: #0f172a;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
 }
 </style>

@@ -29,6 +29,9 @@ import {
 // A3（2026-10-08）：文化/宗教是**可选通道层**（首次涂抹才建），落盘读回是普通数组 →
 // 统一成 Uint8Array 的口径在 `utils/heightmapChannels.js`（单一实现，勿在这里再写一份）
 import { CHANNEL_KEYS, normalizeChannel } from '../utils/heightmapChannels';
+// A6（2026-10-29）：行星侧也要登记**手绘地形**（特征级锁定）。不登记的话
+// 「重生成保留手绘」在行星侧永远是空开关 —— 手绘一个都没记，重生成自然"保留 0 格"。
+import { mergeHandEdits } from '../utils/handEdits';
 
 const DEFAULT_SPACING = 14.4;
 const ELEV_MAP = { '深海': 5, '浅海': 15, '平原': 30, '丘陵': 50, '高原': 70, '山地': 85, '高山': 95 };
@@ -322,6 +325,8 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
       temp: new Float32Array(hm.temp),
       prec: new Float32Array(hm.prec),
       biome: new Uint8Array(hm.biome),
+      // 手绘登记也进快照：撤销要把"这一笔登记过哪些格"一起退回去
+      handEdits: Array.isArray(hm.handEdits) ? hm.handEdits.slice() : [],
     };
     // 换新数组：本 stroke 就地改的都是新数组，历史栈里的引用不会被后续涂抹篡改
     hm.h = new Float32Array(hm.h);
@@ -342,12 +347,26 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();
     const id = planetId();
     if (!before || !dirty || !id) return;
+    const live = liveHeightmap();
     const after = {
-      h: new Float32Array(liveHeightmap()?.h || before.h),
-      temp: new Float32Array(liveHeightmap()?.temp || before.temp),
-      prec: new Float32Array(liveHeightmap()?.prec || before.prec),
-      biome: new Uint8Array(liveHeightmap()?.biome || before.biome),
+      h: new Float32Array(live?.h || before.h),
+      temp: new Float32Array(live?.temp || before.temp),
+      prec: new Float32Array(live?.prec || before.prec),
+      biome: new Uint8Array(live?.biome || before.biome),
     };
+    // 手绘登记：**抬手 diff**（这一笔真改了高度的格）。只记 h 变了的格 ——
+    // 群系笔刷不碰高度，不该往"手绘地形"里塞条目（否则重生成会把它当成地形锁定）。
+    const pts = live?.grid?.points || [];
+    const touched = [];
+    for (let i = 0; i < after.h.length; i++) {
+      if (after.h[i] === before.h[i]) continue;
+      const p = pts[i];
+      if (!p) continue;
+      const x = Array.isArray(p) ? p[0] : p.x;
+      const y = Array.isArray(p) ? p[1] : p.y;
+      if (Number.isFinite(x) && Number.isFinite(y)) touched.push({ x, y, h: after.h[i] });
+    }
+    after.handEdits = mergeHandEdits(before.handEdits || [], touched);
     const label = strokeLabel;
     const apply = (snap) => {
       const hm = liveHeightmap();
@@ -357,6 +376,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
       hm.temp = snap.temp;
       hm.prec = snap.prec;
       hm.biome = snap.biome;
+      hm.handEdits = snap.handEdits || [];
     };
     execute({
       type: 'height-brush',

@@ -21,10 +21,29 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const SRC = path.join(ROOT, 'src', 'renderer', 'src', 'utils', 'polityLabels.js');
+
+/**
+ * 多文件模块加载器（C3，2026-10-29）：`scenarioLabels.js` 里有 `from './polityLabels'`，
+ * data: URL 解析不了相对导入 → 拷到临时目录、补 `.js` 后缀、写 `package.json{type:module}` 再 import。
+ * （与 `test_landmass.js` 的 loadModules 同一套做法。）
+ */
+function loadUtilsModule(names, entry) {
+  const utils = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-labels-'));
+  for (const f of names) {
+    const src = fs.readFileSync(path.join(utils, f), 'utf8')
+      .replace(/from '\.\/([A-Za-z0-9_.-]+)'/g, (m, p) => (p.endsWith('.js') ? m : `from './${p}.js'`));
+    fs.writeFileSync(path.join(dir, f), src);
+  }
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }));
+  return import(pathToFileURL(path.join(dir, entry)).href);
+}
 
 const results = [];
 function check(name, fn) {
@@ -57,6 +76,7 @@ const TIER_ORDER = { province: 0, polity: 1, abbr: 2 };
 async function main() {
   const load = async (p) => import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(p, 'utf8'), 'utf8').toString('base64'));
   const mod = await load(SRC);
+  const SL = await loadUtilsModule(['polityLabels.js', 'scenarioLabels.js'], 'scenarioLabels.js');
   const {
     polityLabelTier, ringAreaCentroid, aggregateTerritories, labelTextFor, labelFitsOnScreen,
     isPlaceholderProvinceName,
@@ -214,6 +234,30 @@ async function main() {
       eq(isPlaceholderProvinceName(s), false, `不该判占位：${JSON.stringify(s)}`);
     }
     return '12 个占位/空值 + 6 个真名反向';
+  });
+
+  // ---------- 7. C3：只显示已命名省（画布开关的纯函数落点） ----------
+  check('t11 只看已命名省：占位名整层不画、真名一个不丢（画布与导出同一份判据）', () => {
+    const { collectScenarioLabels } = SL;
+    const prov = (id, name, x) => ({ id, name, rings: [{ kind: 'land', points: rect(x, 0, 1000, 1000) }] });
+    const provinces = [
+      prov('p1', '长安', 0), prov('p2', '新省份 12', 2000),
+      prov('p3', 'feature_3', 4000), prov('p4', '', 6000),
+    ];
+    const base = { tier: 'province', scale: 1, ownerRefOf: () => null, polityOfEra: () => null };
+    const all = collectScenarioLabels({ ...base, provinces });
+    const named = collectScenarioLabels({ ...base, provinces, skipPlaceholderProvinces: true });
+    eq(all.map((l) => l.text).join('|'), '长安|新省份 12|feature_3', '不过滤时三条都在（空名本来就不挂）');
+    eq(named.map((l) => l.text).join('|'), '长安', '过滤后只剩真名');
+    // 反向：这个开关说的是**省名**，势力名层一条都不该少
+    const owned = {
+      ...base, tier: 'polity',
+      ownerRefOf: () => ({ owner: 'A', era: 0 }), polityOfEra: () => ({ id: 'A', name: '甲午王朝' }),
+    };
+    eq(collectScenarioLabels({ ...owned, provinces }).length,
+      collectScenarioLabels({ ...owned, provinces, skipPlaceholderProvinces: true }).length,
+      '势力名层不该被省名开关影响');
+    return `全量 ${all.length} → 已命名 ${named.length}`;
   });
 
   // ---------- 汇总 ----------

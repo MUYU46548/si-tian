@@ -192,7 +192,10 @@ export const MEMORY_WRITE_CALLSITES = [
           // 2026-10-17 第八修·改向：按陆地轮廓推演地形并落库（走 `commitHeightmap` = 换高度图本体）
           // ⚠️ 它是**新写口**，必须登记 —— 第一次跑全量时 `test_54` 把这条漏登记当场抓出来了
           //    （判据是"文件里有 guardWrite 却没进契约"的反向扫描，正是为这种情况设的）。
-          'synthesizeBaseMapTerrain',
+          // A6（2026-10-29）：把「底图 / 行星」两种目标的推演收进**唯一实现** `synthesizeTerrainInto`
+          //   （守卫在里面）。对外是 `synthesizeBaseMapTerrain(key)` 与 `synthesizePlanetTerrain(planetId)`
+          //   两个薄入口 —— 它们自己不碰写口，所以不单独登记（登记了反而过不了"必须有守卫"那条）。
+          'synthesizeTerrainInto',
           // P5（2026-10-14）：高度图分辨率 / 地形平滑 —— 两个都直接改高度图本体，必须守首行
           'resampleBaseMapHeightmap', 'smoothBaseMapHeightmap',
           'addSlicePoint', 'renameSlicePoint', 'updateSlicePoint', 'removeSlicePoint',

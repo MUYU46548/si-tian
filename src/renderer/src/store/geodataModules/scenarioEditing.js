@@ -4156,18 +4156,112 @@ export function createScenarioEditingModule(ctx) {
    *
    * @returns {{ok:boolean, reason?:string, message:string, cellCount?:number, spacing?:number}}
    */
-  function synthesizeBaseMapTerrain(baseMapKey, opts = {}) {
-    if (!guardWrite('按轮廓生成地形').ok) return { ok: false, reason: 'readonly', message: '只读：未打开项目' };
-    const bm = baseMaps.value[baseMapKey];
-    if (!bm) return { ok: false, reason: 'no-basemap', message: '先选一张底图' };
-    if (hasGrid(getHeightmapFor(baseMapKey)) && !opts.force) {
+  /**
+   * **地形目标**（A6，2026-10-29）：同一套「按轮廓推演地形」要能用在**两种容器**上 ——
+   * 剧本底图（`baseMaps[key]`）与行星（`mapData[planetId]`）。
+   *
+   * 两者的差别只有三处：轮廓多边形从哪读、高度图从哪读/写、保存排给谁。
+   * 把这三处收进本函数，其余（陆地掩膜 / 推演 / 手绘搬移 / 气候派生 / 一条 undo / 回执文案）
+   * **只有一份实现**（`synthesizeTerrainInto`）—— 复制第二份的下场是"改一处另一处不变"。
+   *
+   * @param {{kind:'basemap',key:string}|{kind:'planet',planetId:string}} target
+   * @returns {{ok:true, kind, id, subject, writeLabel, commandType, commandLabel,
+   *            terrain, heightmap, save()}|{ok:false, reason, message}}
+   *          ⚠️ 写入不在这里（`commitHeightmap` 这个写口只能出现在**有守卫**的函数体内，
+   *          否则 writeGate 的反向扫描会把"只做解析"的函数当成写口）。
+   */
+  function resolveTerrainTarget(target) {
+    const t = typeof target === 'string' ? { kind: 'basemap', key: target } : (target || {});
+    if (t.kind === 'planet') {
+      const pid = String(t.planetId || '');
+      const md = pid ? mapData.value[pid] : null;
+      if (!md) {
+        return { ok: false, reason: 'no-planet', message: '先打开一颗有地图数据的行星（没有可写的目标）' };
+      }
       return {
-        ok: false, reason: 'has-terrain',
-        message: '这张底图已经有地形高度图了 —— 再生成会覆盖它（想覆盖请显式确认）。'
-          + ' 想从零重来，先「底图图层」里检查现有地形，或新建一张底图。',
+        ok: true,
+        kind: 'planet',
+        id: pid,
+        subject: '这颗行星',
+        writeLabel: '按轮廓生成行星地形',
+        commandType: 'synthesize-planet-terrain',
+        commandLabel: '按轮廓生成地形（行星）',
+        terrain: md.terrain,
+        heightmap: md.heightmap || null,
+        // 行星侧不走"底图 → 绑定行星"的代理写口；写到行星自己那份上（写入实现在
+        // `synthesizeTerrainInto` 里统一分派 —— 这样写口的字面量只出现在有守卫的函数体内，
+        // 不会让 writeGate 的反向扫描把一个"只做解析"的函数当成写口）。
+        save: () => scheduleAutoSaveMap(pid),
       };
     }
-    const terrain = bm.terrain;
+    const key = String(t.key || '');
+    const bm = baseMaps.value[key];
+    if (!bm) return { ok: false, reason: 'no-basemap', message: '先选一张底图' };
+    return {
+      ok: true,
+      kind: 'basemap',
+      id: key,
+      subject: '这张底图',
+      writeLabel: '按轮廓生成地形',
+      commandType: 'synthesize-terrain',
+      commandLabel: '按轮廓生成地形',
+      terrain: bm.terrain,
+      // 绑定行星时读的是行星那份；写也经 `commitHeightmap` 写回真值那一侧（A1 的唯一写口）
+      heightmap: getHeightmapFor(key),
+      save: () => saveScenarios(),
+    };
+  }
+
+  function synthesizeBaseMapTerrain(baseMapKey, opts = {}) {
+    const t = resolveTerrainTarget({ kind: 'basemap', key: baseMapKey });
+    if (t.ok === false) return { ok: false, reason: t.reason, message: t.message };
+    return synthesizeTerrainInto(t, opts);
+  }
+
+  /**
+   * **行星侧「按轮廓生成地形」**（A6，2026-10-29）：与底图侧**同一个**推演/手绘/气候实现。
+   *
+   * 为什么需要它：行星侧一直**有** `mapData[planetId].heightmap`（高度笔刷 / 群系 / 通道笔刷都在用），
+   * 但**没有"从轮廓推演一份"的入口** —— 只有 `usePlanetHeightBrush.ensureHeightmap`（按多边形
+   * elevation 估个底稿，只在损坏/首次时跑）。于是行星地图永远只能靠导入 `.map` 才有地形，
+   * 「地形生成参数面板」那套（种子/山脉/高原/裂谷 + 候选缩略图）在行星侧完全够不着。
+   */
+  function synthesizePlanetTerrain(planetId, opts = {}) {
+    const t = resolveTerrainTarget({ kind: 'planet', planetId });
+    if (t.ok === false) return { ok: false, reason: t.reason, message: t.message };
+    return synthesizeTerrainInto(t, opts);
+  }
+
+  /**
+   * 推演 + 落库（**唯一实现**，写口在这里，`guardWrite` 守首行）。
+   * @param {object} t `resolveTerrainTarget` 的产物（`ok:true` 那份）
+   */
+  function synthesizeTerrainInto(t, opts = {}) {
+    if (!guardWrite(t.writeLabel).ok) return { ok: false, reason: 'readonly', message: '只读：未打开项目' };
+    // 写入分派：底图走 `commitHeightmap`（绑定行星时自动写行星那份）；行星直接写自己那份。
+    // 两种目标**同样进 undo**（`execute` 的 undo/redo 只调这一个函数）。
+    const writeHeightmap = (hm, meta = {}) => {
+      if (t.kind === 'planet') {
+        const cur = mapData.value[t.id];
+        if (!cur) return;
+        mapData.value[t.id] = {
+          ...cur,
+          heightmap: hm,
+          ...(meta.touch === false ? {} : { updatedAt: new Date().toISOString() }),
+        };
+        scheduleAutoSaveMap(t.id);
+        return;
+      }
+      commitHeightmap(t.id, hm, meta);
+    };
+    if (hasGrid(t.heightmap) && !opts.force) {
+      return {
+        ok: false, reason: 'has-terrain',
+        message: `${t.subject}已经有地形高度图了 —— 再生成会覆盖它（想覆盖请显式确认）。`
+          + ' 想从零重来，先检查现有地形，或新建一张地图。',
+      };
+    }
+    const terrain = t.terrain;
     const mask = Array.isArray(terrain) && terrain.length ? landMaskFor(terrain) : null;
     const norm = normalizeTerrainParams(opts.params || {});
     const syn = synthesizeHeightmapFromTerrain(terrain, toSynthesisOptions(norm.params, {
@@ -4177,12 +4271,12 @@ export function createScenarioEditingModule(ctx) {
     if (!syn) {
       return {
         ok: false, reason: 'no-terrain',
-        message: '还没有画好的陆地 —— 先用「自由绘制 / 套索」画出一块大陆，再生成地形。',
+        message: `${t.subject}还没有画好的陆地 —— 先画出轮廓再生成地形。`,
       };
     }
     // ── 地形特征级锁定（2026-10-27，SP-1025 语义）────────────────────────────
     // 同 seed 重生成 → 把手绘格按坐标写回新底稿；换 seed = 全新世界，手绘如实丢弃。
-    const prev = getHeightmapFor(baseMapKey);
+    const prev = t.heightmap;
     const prevHand = activeHandEdits(prev);
     const sameSeed = !prev || !Number.isFinite(prev.genSeed) || prev.genSeed === norm.params.seed;
     // 「重生成保留手绘」开关（2026-10-28，补 §3.2 欠账）：默认开；关掉 = 按用户明确选择丢弃手绘。
@@ -4222,12 +4316,12 @@ export function createScenarioEditingModule(ctx) {
     //      · `redo` 写入推演结果；
     //      · 之后 `saveScenarios()`。
     execute({
-      type: 'synthesize-terrain',
-      label: '按轮廓生成地形',
-      undo: () => { commitHeightmap(baseMapKey, had ? prev : null, { touch: false }); },
-      redo: () => { commitHeightmap(baseMapKey, payload); },
+      type: t.commandType,
+      label: t.commandLabel,
+      undo: () => { writeHeightmap(had ? prev : null, { touch: false }); },
+      redo: () => { writeHeightmap(payload); },
     });
-    saveScenarios();
+    t.save();
     // 回执要把**结构**也说清：v2 起推演地形不再是"坡面 + 噪声"，而是带山脉走向 / 高原面 / 裂谷。
     // 用户看不到这句就会以为"还是老样子"（而这三样正是他点名要的）。
     const st = syn.structure
@@ -4235,6 +4329,8 @@ export function createScenarioEditingModule(ctx) {
       : '';
     return {
       ok: true,
+      owner: t.kind,
+      ownerId: t.id,
       cellCount: syn.cellCount,
       spacing: syn.effectiveCellSize,
       had,
@@ -4271,13 +4367,24 @@ export function createScenarioEditingModule(ctx) {
    * @param {{count?:number, previewCells?:number}} [opts]
    */
   function previewTerrainSynthesis(baseMapKey, paramsIn = {}, opts = {}) {
-    const bm = baseMaps.value[baseMapKey];
-    if (!bm) return { ok: false, reason: 'no-basemap', message: '先选一张底图', candidates: [] };
-    const terrain = bm.terrain;
+    const t = resolveTerrainTarget({ kind: 'basemap', key: baseMapKey });
+    if (t.ok === false) return { ok: false, reason: t.reason, message: t.message, candidates: [] };
+    return previewTerrainFrom(t, paramsIn, opts);
+  }
+
+  /** 行星侧候选预览（A6）：与底图侧**同一个** `previewTerrainFrom`，只是目标不同 */
+  function previewPlanetTerrainSynthesis(planetId, paramsIn = {}, opts = {}) {
+    const t = resolveTerrainTarget({ kind: 'planet', planetId });
+    if (t.ok === false) return { ok: false, reason: t.reason, message: t.message, candidates: [] };
+    return previewTerrainFrom(t, paramsIn, opts);
+  }
+
+  function previewTerrainFrom(t, paramsIn, opts) {
+    const terrain = t.terrain;
     if (!Array.isArray(terrain) || !terrain.length) {
       return {
         ok: false, reason: 'no-terrain',
-        message: '还没有画好的陆地 —— 先用「自由绘制 / 套索」画出一块大陆，再预览地形。',
+        message: `${t.subject}还没有画好的陆地 —— 先画出轮廓再预览地形。`,
         candidates: [],
       };
     }
@@ -4583,8 +4690,11 @@ export function createScenarioEditingModule(ctx) {
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
     // 2026-10-17 第八修·改向：自建底图的**本地地形起点**（按陆地轮廓生成，落库进 undo）
     synthesizeBaseMapTerrain,
+    // A6（2026-10-29）：行星侧同一个实现（目标只是"容器不同"，推演/手绘/气候不复制）
+    synthesizePlanetTerrain,
     // 2026-10-25（P0-1）：参数化预览（**只读**，返回 1~4 张候选给面板画缩略图；不写任何数据）
     previewTerrainSynthesis,
+    previewPlanetTerrainSynthesis,
     // P5（2026-10-14）：高度图分辨率与平滑 —— 「地形模模糊糊」的入口
     resampleBaseMapHeightmap, smoothBaseMapHeightmap, estimateResampleCost,
     getDeriveStats,

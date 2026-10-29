@@ -200,6 +200,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 51 | `scripts/tests/tools/dump_river_network.mjs` | （待补） |
 | 122 | `scripts/tests/tools/extract_map_grid.mjs` | （待补） |
 | 102 | `scripts/tests/tools/fangcun_pipe.py` | （待补） |
+| 92 | `scripts/tests/tools/probe_landmass_frames.mjs` | （待补） |
 | 367 | `scripts/tests/tools/render_landmass_preview.mjs` | （待补） |
 | 111 | `scripts/tests/tools/sweep_rivers.py` | （待补） |
 | 171 | `scripts/tests/unit/test_basemap_identity.js` | （待补） |
@@ -231,7 +232,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 174 | `scripts/tests/unit/test_note_target.js` | （待补） |
 | 197 | `scripts/tests/unit/test_place_types.js` | （待补） |
 | 263 | `scripts/tests/unit/test_planet_map_bundle.js` | （待补） |
-| 232 | `scripts/tests/unit/test_polity_labels.js` | Node 单元测试：历史剧本势力标注的分级判定 / 面积形心（含退化环不许出 NaN）/ 面积加权聚合 / 文本选择（abbr 无则回落全名、绝不截断）/ 屏上面积门槛，9 条 |
+| 276 | `scripts/tests/unit/test_polity_labels.js` | Node 单元测试：历史剧本势力标注的分级判定 / 面积形心（含退化环不许出 NaN）/ 面积加权聚合 / 文本选择（abbr 无则回落全名、绝不截断）/ 屏上面积门槛，9 条 |
 | 265 | `scripts/tests/unit/test_polygon_bool.js` | （待补） |
 | 384 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
 | 184 | `scripts/tests/unit/test_project_plain.js` | （待补） |
@@ -319,13 +320,13 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 391 | `src/renderer/src/components/ObjectListPanel.vue` | 对象列表面板 |
 | 307 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
-| 4467 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
+| 4534 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 1350 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 499 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 14133 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 14142 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 405 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 289 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
@@ -336,7 +337,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 628 | `src/renderer/src/components/System3DView.vue` | （待补） |
 | 1343 | `src/renderer/src/components/SystemDetailView.vue` | 单恒星系地图：恒星居中 + 轨道 + 邻系箭头 + 太空标记/部队卡片 |
 | 917 | `src/renderer/src/components/SystemView.vue` | 域内恒星系总览（真 hyperlanes） |
-| 388 | `src/renderer/src/components/TerrainGenPanel.vue` | （待补） |
+| 402 | `src/renderer/src/components/TerrainGenPanel.vue` | （待补） |
 | 263 | `src/renderer/src/components/TerrainLabelsPanel.vue` | （待补） |
 | 128 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
 | 130 | `src/renderer/src/components/TreeNavigation.vue` | 树形导航面板 |
@@ -383,7 +384,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 78 | `src/renderer/src/composables/useObjectPanel.js` | 对象面板（聚焦/重命名/删除） |
 | 34 | `src/renderer/src/composables/usePanelManager.js` | 本地面板单开互斥 + 与 App 层浮层互斥 |
 | 186 | `src/renderer/src/composables/usePlanetChannelBrush.js` | （待补） |
-| 518 | `src/renderer/src/composables/usePlanetHeightBrush.js` | PlanetMap 高度图笔刷（抬高/降低/平滑 + 生物群系涂抹）：stroke 快照式「一次拖动 = 一条 undo」 |
+| 538 | `src/renderer/src/composables/usePlanetHeightBrush.js` | PlanetMap 高度图笔刷（抬高/降低/平滑 + 生物群系涂抹）：stroke 快照式「一次拖动 = 一条 undo」 |
 | 73 | `src/renderer/src/composables/usePromptDialog.js` | 对话框状态（替代 prompt()） |
 | 175 | `src/renderer/src/composables/useProvinceBrush.js` | 省份笔刷状态 + 画布渲染（Phase 3）：格用 roundRect+blur 消体素感、省界走缓存（提取+Chaikin 后按版本号复用）；只渲染不改数据 |
 | 71 | `src/renderer/src/composables/useProvinceEditor.js` | 省份(地形块)属性编辑器 |
@@ -411,7 +412,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 318 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 1111 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
 | 2648 | `src/renderer/src/store/geodataModules/provinceEditing.js` | 省份「归属标签网格」store 模块（Phase 3）：笔刷/套索一笔一条 undo、删除省份重编号安全（整表快照）、每个写操作先过 guardWrite（只读态零副作用） |
-| 4594 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
+| 4704 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 186 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 185 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
@@ -420,7 +421,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 43 | `src/renderer/src/store/quitFlush.js` | （待补） |
 | 172 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 190 | `src/renderer/src/store/vaultIndex.js` | 资料索引 store：状态/候选/读料报告/搜索/阅读/链解析；所有磁盘 I/O 走主进程 vault* IPC |
-| 253 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
+| 256 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
 | 63 | `src/renderer/src/utils/align.js` | 对齐/分布纯函数 |
 | 616 | `src/renderer/src/utils/azgaar-parser.js` | Azgaar FMG .map 解析器：按内容嗅探定位各数据段（不写死行号）、grid 级高度/温度/降水数组、provincesBody/河流/道路 SVG 几何、文化/宗教/势力/城镇定义与 province→burg→culture 映射 |
 | 277 | `src/renderer/src/utils/basemapIdentity.js` | （待补） |
@@ -491,7 +492,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 397 | `src/renderer/src/utils/scenarioDates.js` | （待补） |
 | 662 | `src/renderer/src/utils/scenarioEventLedger.js` | 事件账本纯函数层：事件类型表/关系词表、makeEvent 录入校验、sortEvents、[from,to) 生效窗口、relationBetween/relationsAt/describeRelation、findConflicts（重叠相反关系按无序对去重） |
 | 123 | `src/renderer/src/utils/scenarioGroups.js` | （待补） |
-| 87 | `src/renderer/src/utils/scenarioLabels.js` | （待补） |
+| 92 | `src/renderer/src/utils/scenarioLabels.js` | （待补） |
 | 212 | `src/renderer/src/utils/scenarioLedgerV2.js` | （待补） |
 | 48 | `src/renderer/src/utils/scenarioPalette.js` | （待补） |
 | 348 | `src/renderer/src/utils/scenarioSlices.js` | （待补） |

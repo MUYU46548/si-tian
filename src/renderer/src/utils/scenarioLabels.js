@@ -1,5 +1,6 @@
 import {
   aggregateTerritories, ringAreaCentroid, labelTextFor, labelFitsOnScreen, LABEL_MIN_AREA_PX,
+  isPlaceholderProvinceName,
 } from './polityLabels';
 
 /**
@@ -33,6 +34,9 @@ function mainRing(prov) {
 export function collectScenarioLabels({
   provinces, tier, scale, ownerRefOf, polityOfEra, highlightOwnerId = null,
   minAreaPx = LABEL_MIN_AREA_PX,
+  // C3（2026-10-29）：只显示**已命名**的省。判据（`isPlaceholderProvinceName`）本来就只有一份，
+  // 之前只有导出链在用；画布这边加个开关，用户才能在 415 个「新省份 N」里看清自己起过名的那些。
+  skipPlaceholderProvinces = false,
 }) {
   const out = [];
   if (!Array.isArray(provinces) || !provinces.length) return out;
@@ -76,6 +80,7 @@ export function collectScenarioLabels({
       if (!prov) continue;
       const name = String(prov.name || '').trim();
       if (!name) continue;
+      if (skipPlaceholderProvinces && isPlaceholderProvinceName(name)) continue;
       const ring = mainRing(prov);
       if (!ring || ring.kind === 'sea') continue;
       const { area, cx, cy } = ringAreaCentroid(ring.points);
