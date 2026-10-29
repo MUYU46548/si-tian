@@ -636,9 +636,54 @@ export function deepEqual(a, b) {
   return true;
 }
 
-// 递归 diff：对象递归到键级；数组/原始值整体替换（路径式 diff 不索引数组，
-// 否则「省份数组插入一项」会产出几十条索引位移改动，diff 比整份拷贝还大）
+/**
+ * **id 数组**（F 工程债，2026-10-29）：数组里全是带唯一 `id` 的对象 → 可以按 id 局部化 diff。
+ * 判据刻意严格：非空、每个元素是普通对象、`id` 是**非空字符串**、且**不重复**
+ * （重复 id 就没法当键，宁可整表替换也不能错位）。
+ */
+function isIdArray(arr) {
+  if (!Array.isArray(arr) || !arr.length) return false;
+  const seen = new Set();
+  for (const it of arr) {
+    if (!isPlainObject(it)) return false;
+    const id = it.id;
+    if (typeof id !== 'string' || !id || seen.has(id)) return false;
+    seen.add(id);
+  }
+  return true;
+}
+
+/**
+ * id 数组的局部化 diff：`#<id>` 定位元素、`@order` 记顺序。
+ *
+ * 为什么值得为它破"数组整体替换"的规矩：真实 415 省项目里 `baseMaps[*].terrain` 是 839 KB 的
+ * 省数组，改**一个省的颜色**会让整表进 patch —— 快照体积（占项目 41.8%）与保存耗时（一次改一个省
+ * 1.6s）两个问题都由它喂大。按 id 局部化之后，同一改动是"一条 path + 一个颜色值"，
+ * 再加一份 id 顺序表（415 个 id ≈ 4KB）。
+ *
+ * 兼容性：**只新增路径段形态**（`#id` / `@order`），老的补丁（数字下标 / 整表替换）在
+ * `applyPatchInPlace` 里照旧能应用 —— 旧 `.sitian` 不需要迁移。
+ */
+function diffIdArray(prev, next, path, set, del) {
+  const prevMap = new Map(prev.map((x) => [x.id, x]));
+  const nextMap = new Map(next.map((x) => [x.id, x]));
+  const before = set.length + del.length;
+  for (const id of prevMap.keys()) {
+    if (!nextMap.has(id)) del.push({ path: [...path, `#${id}`] });
+  }
+  for (const [id, item] of nextMap) {
+    const old = prevMap.get(id);
+    if (!old) { set.push({ path: [...path, `#${id}`], value: deepClone(item) }); continue; }
+    diffWalk(old, item, [...path, `#${id}`], set, del);
+  }
+  // 顺序变了（插入到中间 / 重排）才记一次 id 表；纯 append 也能被 push 复现，但记上更稳
+  if (set.length + del.length > before) set.push({ path: [...path, '@order'], value: next.map((x) => x.id) });
+}
+
+// 递归 diff：对象递归到键级；**带 id 的对象数组**按 id 局部化（见 `diffIdArray`）；
+// 其它数组/原始值整体替换（路径式 diff 不索引普通数组，否则「数组插入一项」会产出几十条索引位移改动）
 function diffWalk(prev, next, path, set, del) {
+  if (deepEqual(prev, next)) return;
   if (isPlainObject(prev) && isPlainObject(next)) {
     const pk = Object.keys(prev);
     const nk = new Set(Object.keys(next));
@@ -650,7 +695,10 @@ function diffWalk(prev, next, path, set, del) {
     }
     return;
   }
-  if (deepEqual(prev, next)) return;
+  if (isIdArray(prev) && isIdArray(next)) {
+    diffIdArray(prev, next, path, set, del);
+    return;
+  }
   set.push({ path, value: deepClone(next) });
 }
 
@@ -695,20 +743,102 @@ export function applyPatch(base, patch) {
 function applyPatchInPlace(target, patch) {
   const out = target || {};
   const { set = [], del = [] } = patch || {};
+
+  /** 取一个路径段指向的子节点（`#id` = 数组里按 id 找；数字 = 数组下标；其它 = 对象键） */
+  const childOf = (container, seg) => {
+    if (container == null) return null;
+    if (typeof seg === 'string' && seg.charAt(0) === '#') {
+      if (!Array.isArray(container)) return null;
+      const id = seg.slice(1);
+      const idx = container.findIndex((x) => isPlainObject(x) && x.id === id);
+      return idx < 0 ? null : { node: container, child: container[idx], idx };
+    }
+    if (Array.isArray(container)) {
+      const idx = Number(seg);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= container.length) return null;
+      return { node: container, child: container[idx], idx };
+    }
+    if (isPlainObject(container)) {
+      if (!Object.prototype.hasOwnProperty.call(container, seg)) return { node: container, child: undefined };
+      return { node: container, child: container[seg] };
+    }
+    return null;
+  };
+
+  /** 走到 path 的父节点（沿途缺普通对象就补一个；缺数组元素 / 找不到 id → 放弃这一条） */
+  const parentOf = (root, path) => {
+    let node = root;
+    for (let i = 0; i < path.length - 1; i++) {
+      const seg = path[i];
+      const hit = childOf(node, seg);
+      if (!hit) return null;
+      if (hit.child === undefined && isPlainObject(hit.node)) {
+        hit.node[seg] = {};
+        node = hit.node[seg];
+      } else {
+        node = hit.child;
+      }
+      if (node == null || (!isPlainObject(node) && !Array.isArray(node))) return null;
+    }
+    return node;
+  };
+
   for (const { path } of del) {
     if (!Array.isArray(path) || !path.length) continue;
-    const parent = path.slice(0, -1).reduce((acc, k) => (isPlainObject(acc) || Array.isArray(acc)) ? acc[k] : undefined, out);
-    if (isPlainObject(parent)) delete parent[path[path.length - 1]];
+    const parent = parentOf(out, path);
+    if (!parent) continue;
+    const last = path[path.length - 1];
+    if (typeof last === 'string' && last.charAt(0) === '#') {
+      if (!Array.isArray(parent)) continue;
+      const id = last.slice(1);
+      const idx = parent.findIndex((x) => isPlainObject(x) && x.id === id);
+      if (idx >= 0) parent.splice(idx, 1);
+      continue;
+    }
+    if (Array.isArray(parent)) {
+      const idx = Number(last);
+      if (Number.isInteger(idx) && idx >= 0 && idx < parent.length) parent.splice(idx, 1);
+      continue;
+    }
+    if (isPlainObject(parent)) delete parent[last];
   }
+
   for (const { path, value } of set) {
     if (!Array.isArray(path) || !path.length) continue;
-    let node = out;
-    for (let i = 0; i < path.length - 1; i++) {
-      const k = path[i];
-      if (!isPlainObject(node[k]) && !Array.isArray(node[k])) node[k] = {};
-      node = node[k];
+    const parent = parentOf(out, path);
+    if (!parent) continue;
+    const last = path[path.length - 1];
+    // ① 顺序表（`@order`）：按 id 重排，未列出的保序接在后面
+    if (last === '@order') {
+      if (!Array.isArray(parent) || !Array.isArray(value)) continue;
+      const byId = new Map();
+      for (const item of parent) if (isPlainObject(item) && item.id) byId.set(item.id, item);
+      const ordered = [];
+      for (const id of value) {
+        const item = byId.get(id);
+        if (item) { ordered.push(item); byId.delete(id); }
+      }
+      for (const item of byId.values()) ordered.push(item);
+      parent.length = 0;
+      parent.push(...ordered);
+      continue;
     }
-    node[path[path.length - 1]] = deepClone(value);
+    // ② 按 id 定位的元素：找到就替换，找不到就**追加**（新增项走这条）
+    if (typeof last === 'string' && last.charAt(0) === '#') {
+      if (!Array.isArray(parent)) continue;
+      const id = last.slice(1);
+      const idx = parent.findIndex((x) => isPlainObject(x) && x.id === id);
+      if (idx >= 0) parent[idx] = deepClone(value);
+      else parent.push(deepClone(value));
+      continue;
+    }
+    // ③ 老格式：数字下标 / 普通键
+    if (Array.isArray(parent)) {
+      const idx = Number(last);
+      if (Number.isInteger(idx) && idx >= 0) parent[idx] = deepClone(value);
+      continue;
+    }
+    if (isPlainObject(parent)) parent[last] = deepClone(value);
   }
   return out;
 }

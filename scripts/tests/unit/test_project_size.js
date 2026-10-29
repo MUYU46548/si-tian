@@ -171,13 +171,16 @@ async function main() {
   });
 
   await check('B2 裁剪后**旧快照仍能精确恢复**（丢最旧 = 折进 base，不能丢内容）', () => {
-    const maxBytes = 150 * 1024;
+    // 2026-10-29（数组级 diff 之后）：补丁不再含整张省表 → 靠"字节上限"很难触发裁剪。
+    // 这里改成用**份数上限**触发（同样走 `dropOldestSnapshot` 的折叠路径），判据不变：
+    // 裁剪之后，留下的每一份仍要能逐字节恢复到当时的 terrain。
+    const keep = 4;
     let p = bigProject(S, 'ring-exact');
     const states = [];
     for (let i = 0; i < 10; i++) {
       const terrain = p.scenarios.baseMaps.base.terrain.map((t, k) => (k === i % 6 ? { ...t, points: ring(300, i + 1) } : t));
       p = { ...p, scenarios: { ...p.scenarios, baseMaps: { base: { ...p.scenarios.baseMaps.base, terrain } } } };
-      p = S.pushSnapshot(p, { label: 'r' + i, maxBytes });
+      p = S.pushSnapshot(p, { label: 'r' + i, keep });
       states.push(p.scenarios.baseMaps.base.terrain);
     }
     const dropped = states.length - p.snapshots.length;
@@ -190,7 +193,7 @@ async function main() {
       if (JSON.stringify(r.state.scenarios.baseMaps.base.terrain) !== JSON.stringify(want)) bad.push(`restore ${idx} 不一致`);
     }
     assert(bad.length === 0, bad.join('；'));
-    return `丢了 ${dropped} 份，抽查 4 个下标全部逐字节一致`;
+    return `丢了 ${dropped} 份（keep=${keep}），抽查 4 个下标全部逐字节一致`;
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -301,6 +304,62 @@ async function main() {
     applied.scenarios.baseMaps.base.terrain[0].color = '#111111';
     eq(JSON.stringify(S.applyPatch(S.snapshotState(p), patch)), appliedBefore, 'applyPatch 的结果与源数据共享了引用');
     return `快照 ${p.snapshots.length} 份 / 深改恢复结果后缓冲逐字节不变`;
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  // G. 数组级 diff（2026-10-29：id 数组按 id 局部化）
+  // ══════════════════════════════════════════════════════════════
+  await check('G1 改一个省的颜色：补丁不含整张省表，且应用后与目标逐字节一致', () => {
+    const prev = { scenarios: { baseMaps: { base: { terrain: [
+      { id: 'p1', name: '甲', color: '#111111', points: ring(200, 1) },
+      { id: 'p2', name: '乙', color: '#222222', points: ring(200, 2) },
+      { id: 'p3', name: '丙', color: '#333333', points: ring(200, 3) },
+    ] } } } };
+    const next = S.deepClone(prev);
+    next.scenarios.baseMaps.base.terrain[1].color = '#abcdef';
+    const patch = S.diffStates(prev, next);
+    const bytes = JSON.stringify(patch).length;
+    const whole = JSON.stringify(prev.scenarios.baseMaps.base.terrain).length;
+    assert(bytes < whole / 10, `补丁应远小于整表（补丁 ${bytes}B / 整表 ${whole}B）`);
+    const paths = patch.set.map((x) => x.path.join('/'));
+    assert(paths.some((p) => p.endsWith('#p2/color')), `补丁路径应按 id 定位：${paths.join(' , ')}`);
+    assert(!patch.set.some((x) => x.path[x.path.length - 1] === 'terrain'), '不该出现"整表替换"的路径');
+    const applied = S.applyPatch(prev, patch);
+    assert(S.deepEqual(applied, next), '应用补丁后应与目标逐字节一致');
+    eq(applied.scenarios.baseMaps.base.terrain.length, 3, '省数应不变');
+    // 引用纪律：应用结果不与补丁共享引用
+    applied.scenarios.baseMaps.base.terrain[1].color = '#000000';
+    eq(S.applyPatch(prev, patch).scenarios.baseMaps.base.terrain[1].color, '#abcdef', 'applyPatch 与补丁共享了引用');
+    return `补丁 ${bytes}B vs 整表 ${whole}B（省表 ${prev.scenarios.baseMaps.base.terrain.length} 个省）`;
+  });
+
+  await check('G2 增 / 删 / 重排：按 id 局部化后 roundtrip 仍精确（含顺序）', () => {
+    const prev = { terrain: [{ id: 'a', v: 1 }, { id: 'b', v: 2 }, { id: 'c', v: 3 }] };
+    // 删 b、给 a 改值、在中间插入 d、并把 c 挪到最前
+    const next = { terrain: [{ id: 'c', v: 3 }, { id: 'd', v: 4 }, { id: 'a', v: 9 }] };
+    const patch = S.diffStates(prev, next, ['terrain']);
+    const applied = S.applyPatch(prev, patch);
+    assert(S.deepEqual(applied, next), `roundtrip 不等于目标：${JSON.stringify(applied)}`);
+    eq(applied.terrain.map((x) => x.id).join(','), 'c,d,a', '顺序也必须精确');
+    return `set ${patch.set.length} / del ${patch.del.length} / 顺序 ${applied.terrain.map((x) => x.id).join(',')}`;
+  });
+
+  await check('G3 兼容老格式：数字下标 / 整表替换的补丁照旧能应用', () => {
+    const base = { terrain: [{ id: 'a', v: 1 }, { id: 'b', v: 2 }] };
+    const legacyIndex = { set: [{ path: ['terrain', '1', 'v'], value: 20 }], del: [] };
+    const r1 = S.applyPatch(base, legacyIndex);
+    eq(r1.terrain[1].v, 20, '老格式数字下标应仍然生效');
+    const legacyWhole = { set: [{ path: ['terrain'], value: [{ id: 'z', v: 9 }] }], del: [] };
+    const r2 = S.applyPatch(base, legacyWhole);
+    eq(r2.terrain.length, 1, '老格式整表替换应仍然生效');
+    eq(r2.terrain[0].id, 'z', '老格式整表替换内容');
+    // 反向：普通数组（无 id）仍整体替换，不引入索引级 diff
+    const prevPts = { points: [[0, 0], [1, 1], [2, 2]] };
+    const nextPts = { points: [[0, 0], [9, 9], [2, 2]] };
+    const patchPts = S.diffStates(prevPts, nextPts, ['points']);
+    assert(patchPts.set.length === 1 && patchPts.set[0].path.join('/') === 'points',
+      `无 id 数组应整体替换，实际 ${JSON.stringify(patchPts.set.map((x) => x.path))}`);
+    return '数字下标 / 整表替换都兼容；无 id 数组仍整体替换';
   });
 
   // 输出
