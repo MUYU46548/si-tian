@@ -190,6 +190,16 @@ export function satelliteLandColor(h, biome) {
  * 两处都必须**由 `buildHeightmapRaster` 一次算好**再传进来：逐格去算分位数/距岸就是每帧 O(n log n)。
  */
 export function cellColor(kind, i, hm, palette, ctx) {
+  // ── 湖面（B④，2026-10-29）：`hm.lakes` 是**渲染层水面标记**，不是高度场里的洞 ──────────
+  // 为什么不在高度里挖：挖成 18/19 会造出**没有出水口**的盆地 → 河流在湖边断头（本项目明令禁止）。
+  // 只有"读地形的档"才带 ctx.lakes（见 `buildHeightmapRaster`），所以这里不用再判 kind。
+  if (ctx && ctx.lakes && ctx.lakes.size) {
+    const lakeLevel = ctx.lakes.get(i);
+    if (lakeLevel !== undefined) {
+      // 湖不深：取海深色带的浅端（比海面略深一点，仍与海区分得开）
+      return oceanDepthColor(0.10);
+    }
+  }
   if (kind === 'landsea') {
     // 2026-10-27：剧本画布把「陆海底色」当**海面纸**用（陆地由省份多边形负责）。
     // 旧实现把陆地也刷成浅米色 → 省界平滑后海岸会漏出一圈块状"白斑"
@@ -372,6 +382,28 @@ export function fillPixelBlock(data, w, h, x0, y0, x1, y1, rgb) {
 }
 
 /**
+ * 湖格索引（B④，2026-10-29）：`hm.lakes = [{ level, cells }]` → `Map<格下标, 水位>`。
+ *
+ * 上限保护：湖是"每格都记"的元数据，极端图上会很大；绘制只查表，
+ * 超过 `limit` 的格直接不画（宁可少画，也不让一帧多几万次 Map 查找）。
+ * @param {object} hm @param {number} [limit]
+ * @returns {Map<number, number>}
+ */
+export function buildLakeCellMap(hm, limit = 20000) {
+  const map = new Map();
+  const lakes = hm && Array.isArray(hm.lakes) ? hm.lakes : null;
+  if (!lakes || !lakes.length) return map;
+  for (const lake of lakes) {
+    if (!lake || !Array.isArray(lake.cells)) continue;
+    for (const i of lake.cells) {
+      if (map.size >= limit) return map;
+      if (Number.isInteger(i)) map.set(i, Number(lake.level) || 0);
+    }
+  }
+  return map;
+}
+
+/**
  * 把高度图预渲染成一张离屏图层。
  *
  * 红线：大数据量必须预渲染，不逐帧重绘（几万格逐格画 = 每帧几十毫秒）。
@@ -432,6 +464,10 @@ export function buildHeightmapRaster(hm, kind, opts) {
       : null,
     // 剧本画布专用：landsea 只当海面纸（陆地由省份画）
     landAsSea: !!(opts && opts.landAsSea),
+    // 湖（B④）：只在"读地形的档"上叠；专题图（温度/降水/文化/宗教）不叠 —— 那会把湖读成气候
+    lakes: (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain')
+      ? buildLakeCellMap(hm)
+      : null,
   };
 
   // 平滑档只在「网格维度与数据长度严格自洽」时启用；不自洽（历史数据）自动退回方块档，

@@ -211,7 +211,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 226 | `scripts/tests/unit/test_disclaimer.js` | （待补） |
 | 278 | `scripts/tests/unit/test_entity_status.js` | （待补） |
 | 233 | `scripts/tests/unit/test_export_frames.js` | （待补） |
-| 236 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
+| 260 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
 | 184 | `scripts/tests/unit/test_freehand_ring.js` | 自由绘制几何单测：干净/手抖方框、圆、8 字、回勾、一条线、确定性、幂等 |
 | 220 | `scripts/tests/unit/test_galaxy_layout.js` | （待补） |
 | 186 | `scripts/tests/unit/test_git_credential_store.js` | （待补） |
@@ -441,7 +441,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 113 | `src/renderer/src/utils/errorReport.js` | 全局错误捕获 + 主进程落盘 |
 | 295 | `src/renderer/src/utils/floodfill.js` | 泛洪填充（地形快速绘制） |
 | 418 | `src/renderer/src/utils/fmg/generator.js` | （待补） |
-| 264 | `src/renderer/src/utils/fmg/index.js` | （待补） |
+| 356 | `src/renderer/src/utils/fmg/index.js` | （待补） |
 | 156 | `src/renderer/src/utils/fmg/lattice.js` | （待补） |
 | 71 | `src/renderer/src/utils/fmg/rng.js` | （待补） |
 | 258 | `src/renderer/src/utils/fmg/templates.js` | （待补） |
@@ -456,7 +456,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 44 | `src/renderer/src/utils/heightThumb.js` | （待补） |
 | 229 | `src/renderer/src/utils/heightmapAccess.js` | （待补） |
 | 105 | `src/renderer/src/utils/heightmapChannels.js` | （待补） |
-| 567 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap「着色」档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |
+| 603 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap「着色」档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |
 | 387 | `src/renderer/src/utils/heightmapResample.js` | （待补） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
 | 141 | `src/renderer/src/utils/interactionGate.js` | （待补） |

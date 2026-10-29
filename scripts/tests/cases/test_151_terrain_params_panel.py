@@ -144,6 +144,15 @@ def source_gates():
     for name, src in (('TerrainGenPanel', panel), ('FmgPanel', fmg_panel)):
         if 'drawHeightThumb' not in src:
             fails.append(f'🔴 {name} 没走共享的高度图缩略图（同高度会两块面板不同色）')
+    # ⑨ B④ 湖：生成侧标 `lakes`（fmg），渲染侧**只有一份**读法（heightmapRaster）
+    raster = _code_only(_read('src/renderer/src/utils/heightmapRaster.js'))
+    if 'buildLakeCellMap' not in raster or 'ctx.lakes' not in raster:
+        fails.append('🔴 heightmapRaster 没读 `hm.lakes`（湖标了也没人画）')
+    fmg_mod = _code_only(_read('src/renderer/src/utils/fmg/index.js'))
+    if 'detectBasinLakes' not in fmg_mod:
+        fails.append('🔴 fmg/index.js 缺 `detectBasinLakes`（湖标不出来）')
+    if 'lakes' not in fmg_mod or 'toSitianHeightmap' not in fmg_mod:
+        fails.append('🔴 fmg/index.js 的适配层没把 `lakes` 带到高度图上')
     return fails
 
 
@@ -185,13 +194,17 @@ JS_FMG = r""" (async () => {
   out.pvReadOnly = (hmBefore && hmBefore.h ? digest(s.getHeightmapFor(K).h) : null) === h0;
 
   // ③ 应用（同一条 undo）：换模板 + 换 seed → 高度图真的变了，且记了 FMG 元数据
-  const r = s.applyFmgTerrain(target, { ...params, cells: 4000 }, { force: true, keepHandEdits: false });
+  //    ⚠️ 用 `continents`（岛上/群岛模板盆地少，湖可能为 0 —— 那不是 bug，是地貌）
+  const r = s.applyFmgTerrain(target, { template: 'continents', seed: 42, coverage: 0.4, cells: 6000 },
+    { force: true, keepHandEdits: false });
   const after = s.getHeightmapFor(K);
   out.applyOk = !!(r && r.ok);
   out.msg = String((r && r.message) || '');
   out.changed = !!(after && after.h && digest(after.h) !== h0);
   out.fmgMeta = after && after.fmg ? String(after.fmg.template) : '';
   out.genBBox = !!(after && after.genBBox);
+  out.lakes = (after && Array.isArray(after.lakes)) ? after.lakes.length : 0;
+  out.lakeCells = (after && Array.isArray(after.lakes)) ? after.lakes.reduce((a, l) => a + ((l.cells || []).length), 0) : 0;
   out.landRatio = after && after.fmg ? Number(after.fmg.landRatio) : null;
   out.hasClimate = !!(after && after.temp && after.prec && after.biome);
 
@@ -593,7 +606,7 @@ def run(cdp):
             fails.append(f"🔴 applyFmgTerrain 失败：{fmg.get('msg')}")
         elif not fmg.get('changed'):
             fails.append('🔴 FMG 应用后高度图没变')
-        elif fmg.get('fmgMeta') != 'archipelago':
+        elif fmg.get('fmgMeta') != 'continents':
             fails.append(f"🔴 应用后没记住 FMG 模板（fmg.template={fmg.get('fmgMeta')!r}）")
         else:
             notes.append(f"FMG 应用：{fmg.get('msg', '')[:60]}")
@@ -601,6 +614,12 @@ def run(cdp):
             fails.append('🔴 FMG 应用后没记图幅（genBBox）—— 重跑会换框，手绘会漂')
         if not fmg.get('hasClimate'):
             fails.append('🔴 FMG 应用后没有气候数组（应随地形同一笔落库）')
+        if not fmg.get('lakes'):
+            fails.append('🔴 FMG 应用后高度图上没有 `lakes`（湖是渲染层水面标记，应随高度图落库）')
+        elif not (fmg.get('lakeCells') or 0) >= 8:
+            fails.append(f"🔴 湖的格数异常：{fmg.get('lakeCells')}")
+        else:
+            notes.append(f"湖 {fmg.get('lakes')} 个 / {fmg.get('lakeCells')} 格")
         if not fmg.get('undoOk'):
             fails.append('🔴 FMG 应用不是一条 undo（撤销没回到应用前）')
         else:

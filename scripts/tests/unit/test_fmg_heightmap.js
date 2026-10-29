@@ -224,6 +224,30 @@ async function main() {
     return `均值 ${mean.toFixed(2)} / 范围 ${min}–${max} / 河 ${(rivers.rivers || []).length} 条`;
   });
 
+  check('f9 B④ 湖：盆地被标成水面元数据，但**高度场保持可排水**（不挖洞）', () => {
+    const opts = { ...base, cellsDesired: 6000, templateId: 'continents', coverage: 0.35 };
+    const r = generateHeightmap(opts);
+    assert(Array.isArray(r.lakes) && r.lakes.length >= 1, `应至少标出一个湖，实际 ${(r.lakes || []).length}`);
+    const lake = r.lakes[0];
+    assert(lake.cells.length >= 8, `最小的湖也应有 8 格，实际 ${lake.cells.length}`);
+    assert(Number.isFinite(lake.level), `水位必须是有限数：${lake.level}`);
+    // 🔴 核心判据：湖格的高度**没有**被挖到海平面以下（挖了就是死湖 → 河在湖边断头）
+    for (const i of lake.cells) {
+      assert(r.h[i] >= 20, `湖格 ${i} 的高度被挖成 ${r.h[i]}（应保持 ≥20 的可排水高度）`);
+    }
+    // 下标合法 + 去重
+    const set = new Set(lake.cells);
+    assert(set.size === lake.cells.length, '湖格里应无重复');
+    for (const i of lake.cells) assert(Number.isInteger(i) && i >= 0 && i < r.h.length, `湖格下标越界：${i}`);
+    // 确定性：同 seed 两次的湖完全一致
+    const r2 = generateHeightmap(opts);
+    eq(JSON.stringify(r2.lakes), JSON.stringify(r.lakes), '同 seed 的湖应逐字节一致');
+    // 适配层要把湖带到高度图上（落库后渲染层才看得见）
+    const hm = toSitianHeightmap(r);
+    assert(Array.isArray(hm.lakes) && hm.lakes.length === r.lakes.length, 'toSitianHeightmap 丢了 lakes');
+    return `${r.lakes.length} 个湖 / 最大 ${lake.cells.length} 格 / 水位 ${lake.level}`;
+  });
+
   let failed = 0;
   for (const r of results) {
     if (!r.ok) failed += 1;

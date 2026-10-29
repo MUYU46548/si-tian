@@ -58,15 +58,94 @@ export function applyRoughness(heights, lattice, roughness, seed) {
 }
 
 /**
+ * **盆地 → 湖**（B④ 的"湖"这一步，2026-10-29）。
+ *
+ * 🔴 关键口径：**不动高度场**。这里只产出 `{level, cells}` 这份**渲染层水面标记**，
+ * 高度仍然是"填平之后、处处可排水"的那份。理由写在计划表里（也踩过）：
+ * 把湖格挖成 18/19 会在高度场上造出**没有出水口**的盆地 → 河流在湖边断头（本项目明令禁止的形态）。
+ * 保留可排水高度 + 单独标记水面，等于"湖是水面，不是地形洞"—— 河照样从湖里穿过去。
+ *
+ * 判定：被 `fillBasins` 抬起来、且**抬升量 ≥ minDepth**（默认 0.5）的陆格按 8 邻居聚成连通块，
+ * 面积 ≥ `minArea` 的才算湖；水位取块内**最高的填充高度**（≈ 溢出口高度）。
+ *
+ * 🔴 为什么要 `minDepth`：priority-flood 会沿"排水通道"把整条平坦路径一格一档地抬（ε≈0.04），
+ * 实测 974 个抬高格里 **p50 = 0.00 / p90 = 0.04** —— 绝大多数是通道噪声，不是盆地。
+ * 不设深度门槛会把整条流路当成一个"488 格的湖"（实测），水位还被算到 97（接近峰顶）。
+ *
+ * @param {Float32Array} filled 填洼后的高度
+ * @param {Array<{i:number,before:number,after:number}>} basins `fillBasins` 的 basins
+ * @param {number} cellsX @param {number} cellsY
+ * @param {{minArea?:number, minDepth?:number, maxLakes?:number, maxCells?:number}} [opts]
+ * @returns {Array<{level:number, cells:number[]}>} 按面积从大到小
+ */
+export function detectBasinLakes(filled, basins, cellsX, cellsY, opts = {}) {
+  const n = filled ? filled.length : 0;
+  if (!n || cellsX < 2 || cellsY < 2) return [];
+  const minArea = Math.max(4, Math.floor(Number(opts.minArea) || 8));
+  const minDepth = Number.isFinite(opts.minDepth) ? Math.max(0, Number(opts.minDepth)) : 0.5;
+  const maxLakes = Math.max(1, Math.floor(Number(opts.maxLakes) || 40));
+  const maxCells = Math.max(100, Math.floor(Number(opts.maxCells) || 6000));
+
+  const raised = new Uint8Array(n);
+  for (const b of (basins || [])) {
+    if (!b || !Number.isInteger(b.i) || b.i < 0 || b.i >= n) continue;
+    if (Number(b.after) - Number(b.before) >= minDepth) raised[b.i] = 1;
+  }
+  const seen = new Uint8Array(n);
+  const out = [];
+  for (let start = 0; start < n; start++) {
+    if (!raised[start] || seen[start]) continue;
+    const comp = [];
+    const queue = [start];
+    seen[start] = 1;
+    let level = -Infinity;
+    while (queue.length) {
+      const cur = queue.pop();
+      comp.push(cur);
+      if (filled[cur] > level) level = filled[cur];
+      const ci = cur % cellsX;
+      const cj = (cur - ci) / cellsX;
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          if (!di && !dj) continue;
+          const ni = ci + di;
+          const nj = cj + dj;
+          if (ni < 0 || nj < 0 || ni >= cellsX || nj >= cellsY) continue;
+          const idx = nj * cellsX + ni;
+          if (!raised[idx] || seen[idx]) continue;
+          seen[idx] = 1;
+          queue.push(idx);
+        }
+      }
+    }
+    if (comp.length >= minArea) {
+      comp.sort((a, b) => a - b);
+      out.push({ level: Math.round(level * 100) / 100, cells: comp });
+    }
+  }
+  out.sort((a, b) => (b.cells.length - a.cells.length) || (a.cells[0] - b.cells[0]));
+  // 体积上限：湖是**元数据**，最大的一条也可能是几百格；只留最大的若干条 + 总格数封顶
+  const kept = [];
+  let budget = maxCells;
+  for (const lake of out) {
+    if (kept.length >= maxLakes || lake.cells.length > budget) continue;
+    budget -= lake.cells.length;
+    kept.push(lake);
+  }
+  return kept;
+}
+/**
  * **洼地填平**（B④，2026-10-29）：FMG 模板地形有大量封闭盆地 → 司天的自动河流在它上面
  * **一条都长不出来**（实测 8k 格：continents / archipelago / oldWorld 全部 0 条）。
  * 用 `terrainSynthesis.fillDepressions`（priority-flood，仓库里唯一实现）抬平盆地，
  * 并把结果保留到 **2 位小数** —— ε 必须能在量化后活下来，否则又变成平层。
  *
- * @param {Uint8Array} heights
+ * 顺带产出 `basins`（抬高格的原值/新值），给 `detectBasinLakes` 判"哪些盆地该画成湖"。
+ *
+ * @param {Uint8Array|Float32Array} heights
  * @param {number} cellsX
  * @param {number} cellsY
- * @returns {{heights:Float32Array, raisedCells:number}}
+ * @returns {{heights:Float32Array, raisedCells:number, basins:Array<{i:number, before:number, after:number}>}}
  */
 export function fillBasins(heights, cellsX, cellsY) {
   const n = heights.length;
@@ -79,13 +158,17 @@ export function fillBasins(heights, cellsX, cellsY) {
   const eps = Math.max(0.01, (Math.max(1, maxH - FMG_SEA_LEVEL)) / 2000);
   const filled = fillDepressions(Float64Array.from(heights), land, cellsX, cellsY, FMG_SEA_LEVEL, eps);
   const out = new Float32Array(n);
+  const basins = [];
   let raised = 0;
   for (let i = 0; i < n; i++) {
     const v = Math.round(filled[i] * 100) / 100;
     out[i] = v;
-    if (land[i] && v > heights[i]) raised++;
+    if (land[i] && v > heights[i]) {
+      raised++;
+      basins.push({ i, before: heights[i], after: v });
+    }
   }
-  return { heights: out, raisedCells: raised };
+  return { heights: out, raisedCells: raised, basins };
 }
 
 /**
@@ -140,10 +223,13 @@ export function generateHeightmap(o = {}) {
   h = cal.heights;
   // 填平洼地（B④）：不填的话自动河流一条都长不出来（实测）；填完 h 变成 2 位小数的 Float32Array
   let raisedCells = 0;
+  let lakes = [];
   if (o.fillBasins !== false) {
     const fb = fillBasins(h, lattice.cellsX, lattice.cellsY);
     h = fb.heights;
     raisedCells = fb.raisedCells;
+    // 湖 = **渲染层水面标记**（不动高度场，见 `detectBasinLakes` 的说明）
+    lakes = detectBasinLakes(h, fb.basins, lattice.cellsX, lattice.cellsY, o.lakeOpts);
   }
 
   const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -159,6 +245,7 @@ export function generateHeightmap(o = {}) {
     shoreline: cal.shoreline,
     landScale: cal.scale,
     raisedCells,
+    lakes,
     elapsedMs: Math.round(t1 - t0),
   };
 }
@@ -187,6 +274,11 @@ export function toSitianHeightmap(result, opts = {}) {
       cellsY: result.cellsY,
       count: result.h.length,
     },
+    // B④ 的湖：**元数据**（`{level, cells}`），只给渲染层用；高度场保持可排水。
+    // 落到 `.sitian` 里就是高度图对象上的一个可选字段，旧代码读不到也不会受影响。
+    ...(Array.isArray(result.lakes) && result.lakes.length
+      ? { lakes: result.lakes.map((l) => ({ level: l.level, cells: l.cells.slice() })) }
+      : {}),
   };
 }
 
