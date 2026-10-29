@@ -211,7 +211,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 226 | `scripts/tests/unit/test_disclaimer.js` | （待补） |
 | 278 | `scripts/tests/unit/test_entity_status.js` | （待补） |
 | 233 | `scripts/tests/unit/test_export_frames.js` | （待补） |
-| 168 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
+| 190 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
 | 184 | `scripts/tests/unit/test_freehand_ring.js` | 自由绘制几何单测：干净/手抖方框、圆、8 字、回勾、一条线、确定性、幂等 |
 | 220 | `scripts/tests/unit/test_galaxy_layout.js` | （待补） |
 | 186 | `scripts/tests/unit/test_git_credential_store.js` | （待补） |
@@ -305,7 +305,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 244 | `src/renderer/src/components/DisclaimerDialog.vue` | （待补） |
 | 417 | `src/renderer/src/components/EagleEye.vue` | 鹰眼小地图 |
 | 516 | `src/renderer/src/components/EntityCreator.vue` | 实体创建向导（C 方案分派式）：表单「名称/层级/父级」+ 层级按父级过滤（CHILD_LAYERS）+ 创建后结果卡片（分派步骤 + 「前往编辑」） |
-| 238 | `src/renderer/src/components/FmgPanel.vue` | （待补） |
+| 239 | `src/renderer/src/components/FmgPanel.vue` | （待补） |
 | 2093 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
 | 552 | `src/renderer/src/components/GitSyncPanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/GuidePanel.vue` | （待补） |
@@ -441,7 +441,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 113 | `src/renderer/src/utils/errorReport.js` | 全局错误捕获 + 主进程落盘 |
 | 295 | `src/renderer/src/utils/floodfill.js` | 泛洪填充（地形快速绘制） |
 | 418 | `src/renderer/src/utils/fmg/generator.js` | （待补） |
-| 187 | `src/renderer/src/utils/fmg/index.js` | （待补） |
+| 234 | `src/renderer/src/utils/fmg/index.js` | （待补） |
 | 89 | `src/renderer/src/utils/fmg/lattice.js` | （待补） |
 | 71 | `src/renderer/src/utils/fmg/rng.js` | （待补） |
 | 258 | `src/renderer/src/utils/fmg/templates.js` | （待补） |
@@ -523,7 +523,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 132 | `src/renderer/src/utils/terrainErosion.js` | （待补） |
 | 371 | `src/renderer/src/utils/terrainParams.js` | （待补） |
 | 100 | `src/renderer/src/utils/terrainRepresentation.js` | 地形表示判定（**M2/A2 第二步**：`terrain[]` 降为可选覆盖物）—— 纯函数 `hasHeightmapContent` / `resolveTerrainRepresentation`：有高度图 → 高度图是主表示、多边形退为半透明覆盖物；**没有**高度图 → 多边形照旧主表示且不透明（旧地图兼容底线）。**渲染 / 命中 / 导出三处共用同一份**（各写一套 `if` = 又一个双源） |
-| 591 | `src/renderer/src/utils/terrainSynthesis.js` | （待补） |
+| 594 | `src/renderer/src/utils/terrainSynthesis.js` | （待补） |
 | 39 | `src/renderer/src/utils/textMeasure.js` | 文本宽度测量 |
 | 209 | `src/renderer/src/utils/textOnPath.js` | （待补） |
 | 245 | `src/renderer/src/utils/textures.js` | 程序化地形纹理 |

@@ -141,9 +141,12 @@ function makeHeap() {
  *   priority-flood（Barnes 2014）：从海格起，由低到高"漫灌"，每个陆格的高度被抬到
  *   `max(自身高度, 已访问邻格 + ε)`。结果是：没有洼地、没有平层，处处可排水。
  *   代价是低洼盆地会被抬平 —— 那正是真实湖泊/沼泽的成因，视觉上是合理的。
+ *
+ * B④（2026-10-29）：**导出**给 `utils/fmg/index.js` 复用 —— FMG 模板地形本身带大量封闭洼地，
+ * 不填平的话司天的自动河流在 8k 格上一**条**都长不出来（实测：水只能停在盆里）。填平是纯函数、
+ * 与地形从哪来无关，所以只留这一份实现（不要再抄一份到 fmg/）。
  */
-function fillDepressions(h, land, cols, rows, seaLevel, epsilon) {
-  const n = cols * rows;
+export function fillDepressions(h, land, cols, rows, seaLevel, epsilon) {  const n = cols * rows;
   const visited = new Uint8Array(n);
   const out = Float64Array.from(h);
   const heap = makeHeap();

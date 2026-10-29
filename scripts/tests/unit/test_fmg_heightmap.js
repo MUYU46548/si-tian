@@ -52,7 +52,7 @@ function copyUtils() {
 function hashBytes(arr) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < arr.length; i++) {
-    h ^= arr[i];
+    h ^= Math.round(Number(arr[i]) * 100) | 0;
     h = Math.imul(h, 16777619) >>> 0;
   }
   return h >>> 0;
@@ -63,6 +63,7 @@ async function main() {
   const url = (rel) => pathToFileURL(path.join(dir, rel)).href;
   const F = await import(url('utils/fmg/index.js'));
   const T = await import(url('utils/fmg/templates.js'));
+  const TR = await import(url('utils/riverTrace.js'));
   const { generateHeightmap, toSitianHeightmap, landRatioOf, spacingForCells, HEIGHT_TEMPLATES, TEMPLATE_IDS } = F;
 
   const base = { seed: 12345, width: 1600, height: 1000, cellsDesired: 2000, templateId: 'continents' };
@@ -154,6 +155,27 @@ async function main() {
     walk(path.join(UTILS, 'fmg'));
     assert(bad.length === 0, `fmg/ 里出现 Math.random：${bad.join(', ')}`);
     return 'fmg/ 下 0 处 Math.random';
+  });
+
+  check('f7 B④ 河道能长出来：填洼抬平了盆地，司天自动河流在 FMG 地形上有河', () => {
+    const { traceRivers } = TR;
+    const opts = { ...base, cellsDesired: 6000, templateId: 'continents', coverage: 0.35 };
+    const withFill = generateHeightmap(opts);
+    assert(withFill.raisedCells > 0, `应当抬平了洼地（raisedCells=${withFill.raisedCells}）`);
+    // 源头闸门是**绝对高度 60**：覆盖率校准必须把峰值留在 100 附近（第一版"整体平移"只剩 ~50 → 0 条河）
+    let maxH = 0;
+    for (const v of withFill.h) if (v > maxH) maxH = v;
+    assert(maxH >= 60, `峰值应 ≥ 60（否则自动河流的源头闸门过不去），实际 ${maxH}`);
+    const rivers = traceRivers({
+      h: withFill.h,
+      grid: { points: withFill.points, spacing: withFill.spacing, cellsX: withFill.cellsX, cellsY: withFill.cellsY },
+    }, {});
+    assert((rivers.rivers || []).length >= 3, `至少应长出 3 条河，实际 ${(rivers.rivers || []).length} 条`);
+    // 填洼不许改变陆地占比（只抬高地、不造陆）
+    const noFill = generateHeightmap({ ...opts, fillBasins: false });
+    assert(Math.abs(landRatioOf(withFill.h) - landRatioOf(noFill.h)) < 0.005,
+      `填洼不该改变陆地占比：${landRatioOf(withFill.h).toFixed(3)} vs ${landRatioOf(noFill.h).toFixed(3)}`);
+    return `填洼 ${withFill.raisedCells} 格 / 峰值 ${maxH} / 河 ${(rivers.rivers || []).length} 条`;
   });
 
   let failed = 0;

@@ -17,8 +17,12 @@ import { placePoints, buildAdjacency } from './lattice';
 import { buildContinentsTemplate, getTemplateScript, HEIGHT_TEMPLATES, TEMPLATE_IDS } from './templates';
 import { HeightmapGenerator } from './generator';
 import { fbm } from '../landmassField';
+// B④（2026-10-29）：洼地填平复用 `terrainSynthesis.fillDepressions`（priority-flood，唯一实现）
+import { fillDepressions } from '../terrainSynthesis';
 
 export { HEIGHT_TEMPLATES, TEMPLATE_IDS };
+
+export const FMG_SEA_LEVEL = 20;
 
 /** 目标格数 → 格距（图幅面积 / 格数 开方；与上游同一思路） */
 export function spacingForCells(width, height, cellsDesired) {
@@ -54,6 +58,37 @@ export function applyRoughness(heights, lattice, roughness, seed) {
 }
 
 /**
+ * **洼地填平**（B④，2026-10-29）：FMG 模板地形有大量封闭盆地 → 司天的自动河流在它上面
+ * **一条都长不出来**（实测 8k 格：continents / archipelago / oldWorld 全部 0 条）。
+ * 用 `terrainSynthesis.fillDepressions`（priority-flood，仓库里唯一实现）抬平盆地，
+ * 并把结果保留到 **2 位小数** —— ε 必须能在量化后活下来，否则又变成平层。
+ *
+ * @param {Uint8Array} heights
+ * @param {number} cellsX
+ * @param {number} cellsY
+ * @returns {{heights:Float32Array, raisedCells:number}}
+ */
+export function fillBasins(heights, cellsX, cellsY) {
+  const n = heights.length;
+  const land = new Uint8Array(n);
+  let maxH = 0;
+  for (let i = 0; i < n; i++) {
+    land[i] = heights[i] >= FMG_SEA_LEVEL ? 1 : 0;
+    if (heights[i] > maxH) maxH = heights[i];
+  }
+  const eps = Math.max(0.01, (Math.max(1, maxH - FMG_SEA_LEVEL)) / 2000);
+  const filled = fillDepressions(Float64Array.from(heights), land, cellsX, cellsY, FMG_SEA_LEVEL, eps);
+  const out = new Float32Array(n);
+  let raised = 0;
+  for (let i = 0; i < n; i++) {
+    const v = Math.round(filled[i] * 100) / 100;
+    out[i] = v;
+    if (land[i] && v > heights[i]) raised++;
+  }
+  return { heights: out, raisedCells: raised };
+}
+
+/**
  * 生成一张高度图。
  *
  * @param {object} o
@@ -66,7 +101,10 @@ export function applyRoughness(heights, lattice, roughness, seed) {
  * @param {{count:number,sizeVariance:number}} [o.continents] 给了就用 `buildContinentsTemplate` 展开
  * @param {number} [o.roughness] 0..100
  * @param {number} [o.jitter] 点抖动 0..0.9（默认 0.9，与上游同一档）
- * @returns {{h:Uint8Array, cellsX:number, cellsY:number, spacing:number, points:Array, template:string, seed:number|string, elapsedMs:number}}
+ * @param {number} [o.coverage] 陆地覆盖率目标（默认 0.35；0 = 不校准）
+ * @param {boolean} [o.fillBasins] 是否填平洼地（默认 **true**；关掉 = 自动河流长不出来，仅用于对照实验）
+ * @returns {{h:Float32Array, cellsX:number, cellsY:number, spacing:number, points:Array, template:string,
+ *            seed:number|string, landRatio:number, seaShift:number, raisedCells:number, elapsedMs:number}}
  */
 export function generateHeightmap(o = {}) {
   const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -93,8 +131,17 @@ export function generateHeightmap(o = {}) {
   h = applyRoughness(h, lattice, o.roughness || 0, typeof seed === 'number' ? seed : 1);
   // 覆盖率校准（默认 35% 陆地；`coverage: 0` 可关掉，保留模板原样）
   const coverage = o.coverage == null ? 0.35 : Number(o.coverage);
-  const cal = coverage > 0 ? calibrateCoverage(h, coverage) : { heights: h, shift: 0, ratio: landRatioOf(h) };
+  const cal = coverage > 0
+    ? calibrateCoverage(h, coverage)
+    : { heights: h, shoreline: FMG_SEA_LEVEL, scale: 1, ratio: landRatioOf(h) };
   h = cal.heights;
+  // 填平洼地（B④）：不填的话自动河流一条都长不出来（实测）；填完 h 变成 2 位小数的 Float32Array
+  let raisedCells = 0;
+  if (o.fillBasins !== false) {
+    const fb = fillBasins(h, lattice.cellsX, lattice.cellsY);
+    h = fb.heights;
+    raisedCells = fb.raisedCells;
+  }
 
   const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   return {
@@ -105,8 +152,10 @@ export function generateHeightmap(o = {}) {
     points: lattice.points,
     template: script,
     seed,
-    landRatio: cal.ratio,
-    seaShift: cal.shift,
+    landRatio: landRatioOf(h),
+    shoreline: cal.shoreline,
+    landScale: cal.scale,
+    raisedCells,
     elapsedMs: Math.round(t1 - t0),
   };
 }
@@ -150,38 +199,36 @@ export function landRatioOf(heights) {
  * **陆地覆盖率校准**（本层的补充，不是上游代码）。
  *
  * 为什么必须有：模板只保证"地貌像"，不管陆地占比 —— 实测 `continents` 模板在 4000 格上是
- * **87% 陆地**（几乎没有海）。而司天这边"陆地占比"是用户能感知的产品参数（造陆面板里就有滑杆），
- * 也是本步判据的一部分（覆盖率 ±1%）。
+ * **87% 陆地**（几乎没有海）。而"陆地占比"是用户能感知的产品参数，也是本步判据（覆盖率 ±1%）。
  *
- * 做法：整体平移高度（**不改相对高差**），二分找到命中目标的平移量。平移而不是按比例缩放，
- * 因为缩放会把海岸线附近的坡度改掉（观感直接变），平移只是"海平面相对陆地动了一点"。
+ * 做法（2026-10-29 第二版）：**找分位值当海岸线，再把陆上落差拉伸到 0..100**。
+ *   · 取 `q` = 原高度图的 `(1-coverage)` 分位 → 令 `h' = 20 + (h - q)·k`，使 `q → 20`、`max → 100`。
+ *   · 为什么不是第一版那种"整体平移"：平移会把**山峰一起压下去**（覆盖率高时实测峰值只剩 ~50），
+ *     而自动河流的源头闸门是绝对高度 `> 60` → 河一条都长不出来。拉伸保留相对落差、峰值仍到 100。
+ *   · 只用一个 `k`（全域同一个缩放）—— 不做非线性，免得把海岸坡度改得不像地形。
  *
- * @param {Uint8Array} heights
+ * @param {Uint8Array|Float32Array} heights
  * @param {number} target 0..1
- * @returns {{heights:Uint8Array, shift:number, ratio:number}}
+ * @returns {{heights:Float32Array, shoreline:number, scale:number, ratio:number}}
  */
 export function calibrateCoverage(heights, target) {
   const goal = Math.max(0, Math.min(1, Number(target)));
-  if (!(goal > 0) || !heights || !heights.length) {
-    return { heights, shift: 0, ratio: landRatioOf(heights) };
+  const n = heights ? heights.length : 0;
+  if (!(goal > 0) || !n) {
+    return { heights, shoreline: FMG_SEA_LEVEL, scale: 1, ratio: landRatioOf(heights) };
   }
-  const ratioAt = (shift) => {
-    let land = 0;
-    for (let i = 0; i < heights.length; i++) if (heights[i] + shift >= 20) land++;
-    return land / heights.length;
-  };
-  let lo = -120;
-  let hi = 120;
-  for (let i = 0; i < 40; i++) {
-    const mid = (lo + hi) / 2;
-    if (ratioAt(mid) > goal) hi = mid;
-    else lo = mid;
+  const sorted = Array.from(heights).sort((a, b) => a - b);
+  const idx = Math.min(n - 1, Math.max(0, Math.round((1 - goal) * n)));
+  const shoreline = sorted[idx];
+  const maxH = sorted[n - 1];
+  // 拉伸系数：海岸线 → 20、峰值 → 100；夹在 [1, 6]（只拉伸不压缩：压缩会把峰压到 60 以下）
+  const scale = Math.max(1, Math.min(6, (100 - FMG_SEA_LEVEL) / Math.max(1e-6, maxH - shoreline)));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let v = FMG_SEA_LEVEL + (heights[i] - shoreline) * scale;
+    if (v < 0) v = 0;
+    else if (v > 100) v = 100;
+    out[i] = Math.round(v * 100) / 100;
   }
-  const shift = Math.round(((lo + hi) / 2) * 10) / 10;
-  const out = new Uint8Array(heights.length);
-  for (let i = 0; i < heights.length; i++) {
-    const v = Math.round(heights[i] + shift);
-    out[i] = v < 0 ? 0 : v > 100 ? 100 : v;
-  }
-  return { heights: out, shift, ratio: landRatioOf(out) };
+  return { heights: out, shoreline, scale: Math.round(scale * 1000) / 1000, ratio: landRatioOf(out) };
 }
