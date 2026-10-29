@@ -30,12 +30,22 @@
 
 ## B. 阶段 2：FMG 生成管线（最大一块，1–2 周）
 
+> **第 ① 步已交付（2026-10-29）**：`src/renderer/src/utils/fmg/`（`rng.js` / `lattice.js` / `templates.js` /
+> `generator.js` / `index.js`）+ `THIRD_PARTY_NOTICES.md` + `unit/test_fmg_heightmap.js`（6 条）。
+> 判据实测：**同 seed 逐字节一致**（换 seed 必变）、**8k 格 11ms**（目标 < 1s）、陆地覆盖率命中 40%±1pp、
+> 14 个模板齐全且 MIT 头在、`fmg/` 下 **0 处 `Math.random`**。
+> 与上游的差异（已写进代码头）：邻居表是规则方阵 **8 邻居**（上游 Voronoi）→ 长得像但不逐字节同构；
+> 粗糙度用仓内值噪声 fBm（没引 simplex-noise）；覆盖率校准是本层补充（模板本身不管占比，实测 continents 87% 陆地）。
+>
+> **下一步（按顺序）**：② 接进 UI/store（候选 → 应用，复用 A6 的 `synthesizeTerrainInto`）；
+> ③ 气候/群系（`climate/*` + `biomes`）；④ 河网 + 湖泊（`river` / `lakes`，接司天 `rivers[]`）；
+> ⑤ Voronoi 化（`delaunator`）替换 8 邻居；⑥ worker 化 + 进度条。
+
 **前置已核实（2026-10-29）**：参考实现就在本机 `E:\CODE\CangKu\SP-1025\planet-map\src\core`（约 3000 行 TS）：
 `graph/{lattice,voronoi,grid,pack}` + `heightmap/{generator,templates}`（**templates 是 Azgaar MIT 的模板脚本，文件头带
 `Copyright 2017-2024 Max Haniyeu (Azgaar)` + `SPDX-License-Identifier: MIT`，移植必须原样保留并补 `THIRD_PARTY_NOTICES.md`）
-+ `noise/climate/river/lakes/biomes/pipeline`。依赖 `alea` / `delaunator` / `simplex-noise`。
-第一步（下轮开工）只搬 `heightmap/templates` + `generator` + `noise` + `hash` + `utils/{number,probability}` ——
-接成 sitian 的 `heightmap{h,grid}`，先把「同 seed 两次逐字节一致 / 8k 格 <1s」两条判据立起来；RNG 显式传入，**不许** `Math.random`。
++ `noise/climate/river/lakes/biomes/pipeline`。依赖 `alea` / `delaunator` / `simplex-noise`（**这三个司天一个都没引**，
+理由见 `THIRD_PARTY_NOTICES.md` 末节）。
 
 - **搬 `SP-1025/planet-map/src/core/`**：`graph/*`（lattice/voronoi/grid/pack）、`heightmap/*`（14 模板 + DSL 执行器）、
   `pipeline`、`climate/*`、`river`、`lakes`、`biomes`、`noise`、`utils/*`、`worker/generate.worker.ts`。

@@ -583,5 +583,26 @@
     阶跃 17 格**不过冲且单调**、统计串是 `h:bicubic`；原来的"线性场手算对照"仍然精确（双三次对线性场与双线性等价）。
   - 真解仍是源数据分辨率（B 阶段的 8k/16k）；这一步只是让"×2 提分辨率"不再产生台阶。
 
+- **B 阶段 2 第 ① 步：FMG 高度图管线（2026-10-29）**: 新目录 `src/renderer/src/utils/fmg/`
+  （`rng` / `lattice` / `templates` / `generator` / `index`），从 `E:\CODE\CangKu\SP-1025\planet-map\src\core`
+  移植 Azgaar MIT 的模板脚本与解释器。**只出 heightmap，不接 UI**（落库仍走 A6 的 `synthesizeTerrainInto`）。
+  - 🔴 **P0：随机必须是显式参数**。上游靠 `Math.random = alea(seed)` 换全局流 —— 在司天里这是毒药：
+    同一页还有造陆/Voronoi 铺底在用 `Math.random`，全局替换会互相污染（结果取决于谁先跑），
+    worker 化后更是不可复现。现在 `createFmgRandom(seed)`（复用仓内 `voronoiBatch.makeRng`，**不引 alea**）
+    逐层传参；判据是 `unit/test_fmg_heightmap.js` f6：`fmg/` 下 **0 处 `Math.random`**（注释先剥掉再扫）。
+  - 🔴 **抖动点阵必须"每点固定掷两次"**：`jitter=0` 时也不能省（上游注释写了原因）——
+    否则改一个参数会让随机流相位漂移，同 seed 下整张图全变。
+  - **邻居表是规则方阵 8 邻居**（第一步）：长得像 Voronoi 但不是同构 → 两边高度图**不会逐字节相同**，
+    我们只保证**自己**同 seed 逐字节一致。接 Voronoi（delaunator）时只换 `lattice.buildAdjacency`。
+  - **模板是数据**：14 个模板逐字节保留（含 `Hill 1 90-100 44-56 40-60` 这类脚本行），
+    未知模板 id **抛错**而不是回落（回落会让"选了 A 出来 B"无法排查）。MIT 头留在文件里 +
+    仓根 `THIRD_PARTY_NOTICES.md`（同时写明 alea/delaunator/simplex-noise **一个都没引**）。
+  - **`heights` 保持 Uint8Array**（与上游一致）：中间值截断是上游真实行为，别"顺手修成浮点"。
+  - **覆盖率校准是本层补充**（不是上游）：模板只保证地貌像，不管占比 —— 实测 `continents` 在 4000 格上
+    **87% 陆地**。校准做法是**整体平移高度**（不改相对高差）二分命中目标；判据 40%±1pp。
+  - 判据实测（`unit/test_fmg_heightmap.js`）：同 seed 逐字节一致 / 换 seed 必变；**8k 格 10–15ms**（目标 <1s）；
+    陆地 40.4%（目标 40）；14 模板齐全 + MIT 头在；`fmg/` 0 处 `Math.random`。
+
+
 
 
