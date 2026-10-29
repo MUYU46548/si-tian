@@ -144,6 +144,7 @@ import {
   normalizeTerrainParams, describeTerrainParams, rollSeed,
 } from '../utils/terrainParams';
 import { SEA_LEVEL } from '../utils/heightMath';
+import { drawHeightThumb } from '../utils/heightThumb';
 
 const props = defineProps({
   baseMapKey: { type: String, default: '' },
@@ -253,33 +254,13 @@ function runPreview() {
   });
 }
 
-// ── 缩略图：把 h 画成"海/低地/高地"三段色（不引入第二套配色表：三档就是画布已有的地形三档语义）──
+// ── 缩略图：三段色（海/低地/高地）—— 与 FMG 面板**共用** `utils/heightThumb.js`（同一高度同一种颜色）──
 function drawOne(c) {
   const el = canvases.get(c.index);
   if (!el || !c) return;
   const ctx = el.getContext('2d');
-  const { cols, rows } = c;
-  const w = el.width, h = el.height;
-  ctx.clearRect(0, 0, w, h);
-  const cellW = w / cols, cellH = h / rows;
-  for (let j = 0; j < rows; j++) {
-    for (let i = 0; i < cols; i++) {
-      const v = c.h[j * cols + i];
-      let color;
-      if (v < SEA_LEVEL) {
-        const t = Math.max(0, Math.min(1, (SEA_LEVEL - v) / 8));
-        color = `rgb(${30 + 20 * (1 - t)},${70 + 40 * (1 - t)},${110 + 40 * (1 - t)})`;
-      } else {
-        const t = Math.max(0, Math.min(1, (v - SEA_LEVEL) / 60));
-        const r = Math.round(120 + 110 * t);
-        const g = Math.round(150 + 40 * t);
-        const b = Math.round(90 - 40 * t);
-        color = `rgb(${r},${g},${b})`;
-      }
-      ctx.fillStyle = color;
-      ctx.fillRect(i * cellW, j * cellH, Math.ceil(cellW) + 1, Math.ceil(cellH) + 1);
-    }
-  }
+  ctx.clearRect(0, 0, el.width, el.height);
+  drawHeightThumb(ctx, { h: c.h, cols: c.cols, rows: c.rows }, { seaLevel: SEA_LEVEL });
 }
 function drawAll() {
   for (const c of candidates.value) drawOne(c);

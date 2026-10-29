@@ -121,8 +121,88 @@ def source_gates():
         fails.append('🔴 面板没有把 keepHandEdits 传给 store（勾了也不生效）')
     if 'opts.keepHandEdits !== false' not in se:
         fails.append('🔴 store 的 synthesizeBaseMapTerrain 不认 keepHandEdits（开关是摆设）')
+
+    # ⑧ B 阶段 2（2026-10-29）：FMG 模板地形 —— 引擎在 utils/fmg，落库复用同一条写口
+    fmg_panel = _code_only(_read('src/renderer/src/components/FmgPanel.vue'))
+    pmv = _code_only(_read('src/renderer/src/components/PlanetMap.vue'))
+    for tid in ('fmg-template', 'fmg-coverage', 'fmg-apply', 'fmg-cand-', 'fmg-keep-hand'):
+        if tid not in fmg_panel:
+            fails.append(f'🔴 FMG 面板缺少 `{tid}` 锚点')
+    if 'store.previewFmgTerrain' not in fmg_panel or 'store.applyFmgTerrain' not in fmg_panel:
+        fails.append('🔴 FMG 面板没走 store 的预览/应用入口')
+    if 'commitHeightmap' in fmg_panel or 'execute(' in fmg_panel:
+        fails.append('🔴 FMG 面板自己写了落库（必须复用 store 的唯一写口）')
+    if 'data-testid="basemap-fmg-terrain"' not in smv or 'data-testid="planet-fmg-terrain"' not in pmv:
+        fails.append('🔴 缺「FMG 地形」入口（剧本侧 / 行星侧各一个）')
+    for anchor in ('function previewFmgTerrain', 'function applyFmgTerrain', 'generateHeightmap('):
+        if anchor not in se:
+            fails.append(f'🔴 store 缺 `{anchor}`（FMG 接线不完整）')
+    # 高度图缩略图必须只有一份实现（两个面板同色）
+    thumb = _code_only(_read('src/renderer/src/utils/heightThumb.js'))
+    if 'export function drawHeightThumb' not in thumb:
+        fails.append('🔴 utils/heightThumb.js 缺 drawHeightThumb（缩略图实现被复制了）')
+    for name, src in (('TerrainGenPanel', panel), ('FmgPanel', fmg_panel)):
+        if 'drawHeightThumb' not in src:
+            fails.append(f'🔴 {name} 没走共享的高度图缩略图（同高度会两块面板不同色）')
     return fails
 
+
+JS_FMG = r""" (async () => {
+  const s = __STORE__, K = __KEY__;
+  const tick = (ms) => new Promise(r => setTimeout(r, ms || 150));
+  const digest = (arr) => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < arr.length; i++) { h ^= Math.round(Number(arr[i]) * 100) | 0; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16) + ':' + arr.length;
+  };
+  const out = {};
+  // ① UI 入口 + 候选
+  const btn = document.querySelector('[data-testid="basemap-fmg-terrain"]');
+  out.hasBtn = !!btn;
+  if (btn) { btn.click(); await tick(700); }
+  out.panelOpen = !!document.querySelector('[data-testid="fmg-panel"]');
+  out.cands = document.querySelectorAll('[data-testid^="fmg-cand-"]').length;
+  out.blank = Array.from(document.querySelectorAll('[data-testid^="fmg-cand-"] canvas')).map((c) => {
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return false;
+    return true;
+  });
+  const cancel = document.querySelector('[data-testid="fmg-cancel"]');
+  if (cancel) cancel.click();
+  await tick(200);
+
+  // ② store：预览只读 + 同参数可复现
+  const hmBefore = s.getHeightmapFor(K);
+  const h0 = hmBefore && hmBefore.h ? digest(hmBefore.h) : null;
+  const params = { template: 'archipelago', seed: 42, coverage: 0.4, cells: 2500 };
+  const target = { kind: 'basemap', key: K };
+  const pv1 = s.previewFmgTerrain(target, params, { count: 3 });
+  const pv2 = s.previewFmgTerrain(target, params, { count: 3 });
+  out.pvOk = !!(pv1 && pv1.ok);
+  out.pvCands = (pv1 && pv1.candidates ? pv1.candidates.length : 0);
+  out.pvSame = !!(pv1 && pv2 && pv1.candidates.length === pv2.candidates.length
+    && digest(pv1.candidates[0].h) === digest(pv2.candidates[0].h));
+  out.pvReadOnly = (hmBefore && hmBefore.h ? digest(s.getHeightmapFor(K).h) : null) === h0;
+
+  // ③ 应用（同一条 undo）：换模板 + 换 seed → 高度图真的变了，且记了 FMG 元数据
+  const r = s.applyFmgTerrain(target, { ...params, cells: 4000 }, { force: true, keepHandEdits: false });
+  const after = s.getHeightmapFor(K);
+  out.applyOk = !!(r && r.ok);
+  out.msg = String((r && r.message) || '');
+  out.changed = !!(after && after.h && digest(after.h) !== h0);
+  out.fmgMeta = after && after.fmg ? String(after.fmg.template) : '';
+  out.genBBox = !!(after && after.genBBox);
+  out.landRatio = after && after.fmg ? Number(after.fmg.landRatio) : null;
+  out.hasClimate = !!(after && after.temp && after.prec && after.biome);
+
+  // ④ 一条 undo 回到应用前
+  s.undo();
+  await tick(220);
+  const back = s.getHeightmapFor(K);
+  out.undoOk = !!(back && back.h && digest(back.h) === h0);
+  out.panelClosed = !document.querySelector('[data-testid="fmg-panel"]');
+  return JSON.stringify(out);
+})() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
 
 JS_SETUP = r""" (async () => {
   const s = __STORE__, sm = __SC__, K = __KEY__;
@@ -483,6 +563,48 @@ def run(cdp):
             fails.append(f"回执异常：{kh.get('dropMsg')}")
         else:
             notes.append('关掉开关 = 手绘清空 ✓')
+
+    # ── h B 阶段 2（2026-10-29）：FMG 模板地形 ─────────────────────────────
+    fmg = _ev(cdp, JS_FMG, 'FMG 模板地形（入口 / 预览只读 / 应用 / 一条 undo）')
+    if fmg.get('__err__'):
+        fails.append(f'FMG 探针求值失败：{fmg}')
+    else:
+        if not fmg.get('hasBtn'):
+            fails.append('🔴 工具栏没有「FMG 地形」入口（basemap-fmg-terrain）')
+        if not fmg.get('panelOpen'):
+            fails.append('🔴 点了「FMG 地形」面板没打开')
+        if (fmg.get('cands') or 0) < 3:
+            fails.append(f"🔴 FMG 候选只有 {fmg.get('cands')} 张（要求 3 张）")
+        elif any(b is True for b in (fmg.get('blank') or [])):
+            fails.append('🔴 FMG 候选缩略图有空白（canvas 没画出来）')
+        else:
+            notes.append(f"FMG 候选 {fmg.get('cands')} 张（缩略图非空）")
+        if not fmg.get('pvOk'):
+            fails.append(f"🔴 previewFmgTerrain 失败：{fmg}")
+        if not fmg.get('pvCands'):
+            fails.append('🔴 FMG 预览没有候选')
+        if not fmg.get('pvSame'):
+            fails.append('🔴 FMG 同参数两次预览不一致（不可复现）')
+        else:
+            notes.append('FMG 预览可复现 ✓')
+        if not fmg.get('pvReadOnly'):
+            fails.append('🔴 FMG 预览写了数据（预览必须只读）')
+        if not fmg.get('applyOk'):
+            fails.append(f"🔴 applyFmgTerrain 失败：{fmg.get('msg')}")
+        elif not fmg.get('changed'):
+            fails.append('🔴 FMG 应用后高度图没变')
+        elif fmg.get('fmgMeta') != 'archipelago':
+            fails.append(f"🔴 应用后没记住 FMG 模板（fmg.template={fmg.get('fmgMeta')!r}）")
+        else:
+            notes.append(f"FMG 应用：{fmg.get('msg', '')[:60]}")
+        if not fmg.get('genBBox'):
+            fails.append('🔴 FMG 应用后没记图幅（genBBox）—— 重跑会换框，手绘会漂')
+        if not fmg.get('hasClimate'):
+            fails.append('🔴 FMG 应用后没有气候数组（应随地形同一笔落库）')
+        if not fmg.get('undoOk'):
+            fails.append('🔴 FMG 应用不是一条 undo（撤销没回到应用前）')
+        else:
+            notes.append('FMG 一条 undo ✓')
 
     summary = ' | '.join(notes)
     return (not fails), (summary if not fails else ' | '.join(fails) + ' ## ' + summary)

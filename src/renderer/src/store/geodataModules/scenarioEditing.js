@@ -19,7 +19,9 @@ import {
   brushFalloff, deriveLayers, SEA_LEVEL, buildClimateInputs, lakeHeightForWeight,
 } from '../../utils/heightMath';
 // 地形特征级锁定（2026-10-27）：纯函数在 utils/handEdits.js（Node 可测）
-import { mergeHandEdits, activeHandEdits, reapplyHandEdits } from '../../utils/handEdits';
+import { mergeHandEdits, activeHandEdits, reapplyHandEdits, transferHandEdits } from '../../utils/handEdits';
+// B 阶段 2（2026-10-29）：FMG 模板高度图（纯函数层，Node 有单测 `test_fmg_heightmap.js`）
+import { generateHeightmap, toSitianHeightmap, TEMPLATE_IDS, HEIGHT_TEMPLATES } from '../../utils/fmg/index';
 import {
   scheduleDerive, isWorkerAvailable, getAsyncThreshold, getDeriveStats,
 } from '../../utils/deriveClient';
@@ -4264,7 +4266,11 @@ export function createScenarioEditingModule(ctx) {
     const terrain = t.terrain;
     const mask = Array.isArray(terrain) && terrain.length ? landMaskFor(terrain) : null;
     const norm = normalizeTerrainParams(opts.params || {});
-    const syn = synthesizeHeightmapFromTerrain(terrain, toSynthesisOptions(norm.params, {
+    // B 阶段 2（2026-10-29）：`opts.heightmap` = **已经生成好的**高度图（FMG 模板管线）。
+    // 给了它就不再"按轮廓推演"，但**后面整条链路完全一样**（手绘搬移 / 气候同一笔 / 一条 undo）——
+    // 这样 FMG 只是"另一个源头"，不是一个新写口。
+    const provided = (opts.heightmap && hasGrid(opts.heightmap)) ? opts.heightmap : null;
+    const syn = provided || synthesizeHeightmapFromTerrain(terrain, toSynthesisOptions(norm.params, {
       isLand: mask ? mask.lookup : undefined,
       cellSize: opts.cellSize,
     }));
@@ -4278,14 +4284,26 @@ export function createScenarioEditingModule(ctx) {
     // 同 seed 重生成 → 把手绘格按坐标写回新底稿；换 seed = 全新世界，手绘如实丢弃。
     const prev = t.heightmap;
     const prevHand = activeHandEdits(prev);
-    const sameSeed = !prev || !Number.isFinite(prev.genSeed) || prev.genSeed === norm.params.seed;
+    const genSeed = opts.genSeed == null ? norm.params.seed : opts.genSeed;
+    const sameSeed = !prev || !Number.isFinite(prev.genSeed) || prev.genSeed === genSeed;
     // 「重生成保留手绘」开关（2026-10-28，补 §3.2 欠账）：默认开；关掉 = 按用户明确选择丢弃手绘。
     // 之前这里恒开 —— 用户想"彻底重来"时只能先把地形笔刷涂回去，等于没有出口。
     const keepHand = opts.keepHandEdits !== false;
     let handKept = [];
-    if (keepHand && prevHand.length && sameSeed) handKept = reapplyHandEdits(syn, prevHand).kept;
+    if (keepHand && prevHand.length && sameSeed) {
+      // 网格是否同一张：按轮廓推演是"同一张网格"（逐点同坐标）；FMG 是**整张换掉**（图幅/格距都变）
+      // → 走图幅相对位置搬（与造陆同一条 `transferHandEdits`）。
+      handKept = provided
+        ? transferHandEdits(syn, prev, prevHand, { seaLevel: SEA_LEVEL }).kept
+        : reapplyHandEdits(syn, prevHand).kept;
+    }
     syn.handEdits = handKept;
-    syn.genSeed = norm.params.seed;
+    syn.genSeed = genSeed;
+    // 记图幅（FMG 分支）：下次重生成沿用同一框，手绘的相对位置才稳定
+    if (opts.genBBox && ['minX', 'minY', 'maxX', 'maxY'].every((k) => Number.isFinite(opts.genBBox[k]))) {
+      syn.genBBox = { ...opts.genBBox };
+    }
+    if (opts.selection) syn.fmg = { ...opts.selection };
     // ── P0-3：气候与高度**同一笔**写进 undo ──────────────────────────────────
     // 只改高度、把气候留给"重算派生图层"是旧链路的坑：那一步传的是 null,null，
     // 于是同一份地形上"寒带针叶林"和"热带雨林"可以出现在同一纬度（群系只由高度决定）。
@@ -4327,12 +4345,22 @@ export function createScenarioEditingModule(ctx) {
     const st = syn.structure
       ? `，含山脉走向 ${syn.structure.rangeAxisDeg}° / 裂谷 ${syn.structure.rifts} 条 / 高原面 ${syn.structure.plateauCells} 格`
       : '';
+    // FMG 分支的高度图没有 `cellCount/effectiveCellSize/maxInlandCells`（那是 `terrainSynthesis` 的字段）
+    // → 从 grid 现算，回执口径对用户来说一致（格数 / 格距）。
+    const cellCount = Number.isFinite(syn.cellCount) ? syn.cellCount : (syn.h ? syn.h.length : 0);
+    const spacing = Number.isFinite(syn.effectiveCellSize)
+      ? syn.effectiveCellSize
+      : Math.round((Number(syn.grid && syn.grid.spacing) || 0) * 1000) / 1000;
+    const inlandText = Number.isFinite(syn.maxInlandCells) ? `（最内陆 ${syn.maxInlandCells} 格）` : '';
+    const fmgNote = provided && syn.fmg
+      ? `FMG 模板 ${syn.fmg.template} / 种子 ${syn.fmg.seed} / 陆地 ${(Number(syn.fmg.landRatio) * 100).toFixed(1)}%；`
+      : '';
     return {
       ok: true,
       owner: t.kind,
       ownerId: t.id,
-      cellCount: syn.cellCount,
-      spacing: syn.effectiveCellSize,
+      cellCount,
+      spacing,
       had,
       structure: syn.structure || null,
       params: norm.params,
@@ -4340,8 +4368,9 @@ export function createScenarioEditingModule(ctx) {
       handKept: handKept.length,
       handDropped: keepHand ? 0 : prevHand.length,
       climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },
-      message: `已按陆地轮廓生成地形：${syn.cellCount} 格 / 格距 ${syn.effectiveCellSize}`
-        + `（最内陆 ${syn.maxInlandCells} 格）${st} —— ${describeTerrainParams(norm.params)}；`
+      message: `${provided ? '已按 FMG 模板生成地形' : '已按陆地轮廓生成地形'}：${cellCount} 格 / 格距 ${spacing}`
+        + `${inlandText}${st} —— ${describeTerrainParams(norm.params)}；`
+        + (fmgNote ? `${fmgNote}` : '')
         + (handKept.length
           ? `已保留 ${handKept.length} 格手绘地形；`
           : (!keepHand && prevHand.length
@@ -4379,8 +4408,153 @@ export function createScenarioEditingModule(ctx) {
     return previewTerrainFrom(t, paramsIn, opts);
   }
 
-  function previewTerrainFrom(t, paramsIn, opts) {
-    const terrain = t.terrain;
+  // ══════════════════════════════════════════════════════════════════════════
+  // B 阶段 2（2026-10-29）：**FMG 模板高度图**
+  // 生成本体在 `utils/fmg/`（纯函数、Node 测）；这里只做三件事：
+  //   ① 定图幅（已有高度图就沿用它的框，否则用轮廓包围盒，再否则 1600×1000）；
+  //   ② 调 `generateHeightmap`；
+  //   ③ 落库 —— **走 `synthesizeTerrainInto` 的 `opts.heightmap` 分支**（同一条写口、同一条 undo、
+  //      同一份气候派生），**不新开写口**（所以这两个入口不需要进 writeGate 契约：
+  //      守卫在 `synthesizeTerrainInto` 里）。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 点集包围盒（认 `[x,y]` 与 `{x,y}` 两种形态） */
+  function fmPointsBBox(points) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of (points || [])) {
+      const x = Array.isArray(p) ? Number(p[0]) : Number(p && p.x);
+      const y = Array.isArray(p) ? Number(p[1]) : Number(p && p.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    if (!Number.isFinite(minX) || maxX - minX <= 10 || maxY - minY <= 10) return null;
+    return { minX, minY, maxX, maxY };
+  }
+
+  /**
+   * FMG 的**图幅**：优先沿用已有高度图的框（记在 `genBBox` 上）→ 高度图点集 → 轮廓点集 → 默认 1600×1000。
+   * 沿用同一框是"重跑同 seed 逐格同网格"的前提（与造陆的 `recordedLandBBox` 同一口径）。
+   */
+  function fmgFrameFor(t) {
+    const hm = t.heightmap;
+    const rec = hm && hm.genBBox;
+    if (rec && ['minX', 'minY', 'maxX', 'maxY'].every((k) => Number.isFinite(rec[k]))
+      && rec.maxX - rec.minX > 10 && rec.maxY - rec.minY > 10) {
+      return { minX: rec.minX, minY: rec.minY, maxX: rec.maxX, maxY: rec.maxY };
+    }
+    const fromHm = hm && hm.grid && Array.isArray(hm.grid.points) ? fmPointsBBox(hm.grid.points) : null;
+    if (fromHm) return fromHm;
+    const pts = [];
+    for (const poly of (Array.isArray(t.terrain) ? t.terrain : [])) {
+      const ring = poly && (poly.points || (Array.isArray(poly.rings) ? poly.rings[0] : null));
+      if (Array.isArray(ring)) pts.push(...ring);
+    }
+    return fmPointsBBox(pts) || { minX: -800, minY: -500, maxX: 800, maxY: 500 };
+  }
+
+  /** FMG 参数归一（模板 id / 种子 / 覆盖率 / 崎岖度 / 格数） */
+  function normalizeFmgParams(raw = {}) {
+    const template = TEMPLATE_IDS.indexOf(raw.template) >= 0 ? raw.template : 'continents';
+    const seedNum = Number(raw.seed);
+    return {
+      template,
+      seed: Number.isFinite(seedNum) ? Math.abs(Math.floor(seedNum)) : 7,
+      coverage: Math.max(0.05, Math.min(0.9, Number.isFinite(Number(raw.coverage)) ? Number(raw.coverage) : 0.35)),
+      roughness: Math.max(0, Math.min(100, Number.isFinite(Number(raw.roughness)) ? Number(raw.roughness) : 0)),
+      cells: Math.max(500, Math.min(40000, Number.isFinite(Number(raw.cells)) ? Math.floor(Number(raw.cells)) : 8000)),
+    };
+  }
+
+  /**
+   * **只读**：出 1~4 张 FMG 候选（粗网格给面板画缩略图）。
+   * 候选 id 稳定（`fmg-<种子>-<序号>`）—— 同参数永远同一批，选中哪张应用的就是哪张。
+   */
+  function previewFmgTerrain(target, paramsIn = {}, opts = {}) {
+    const t = resolveTerrainTarget(target);
+    if (t.ok === false) return { ok: false, reason: t.reason, message: t.message, candidates: [] };
+    const p = normalizeFmgParams(paramsIn);
+    const frame = fmgFrameFor(t);
+    const width = frame.maxX - frame.minX;
+    const height = frame.maxY - frame.minY;
+    const count = Math.max(1, Math.min(4, Math.floor(Number(opts.count) || 3)));
+    const previewCells = Math.max(800, Math.min(6000, Math.floor(Number(opts.cells) || 2500)));
+    const candidates = [];
+    for (let i = 0; i < count; i++) {
+      const seed = p.seed + i;
+      const r = generateHeightmap({
+        seed, width, height, cellsDesired: previewCells,
+        templateId: p.template, coverage: p.coverage, roughness: p.roughness,
+      });
+      candidates.push({
+        id: `fmg-${p.seed}-${i}`,
+        index: i,
+        seed,
+        template: p.template,
+        cols: r.cellsX,
+        rows: r.cellsY,
+        cells: r.h.length,
+        landRatio: r.landRatio,
+        elapsedMs: r.elapsedMs,
+        h: Float32Array.from(r.h),
+      });
+    }
+    return {
+      ok: true,
+      params: p,
+      frame,
+      previewCells,
+      candidates,
+      message: `已出 ${candidates.length} 张 FMG 候选（${p.template}，粗网格 ${previewCells} 格）—— 选一张再应用`,
+    };
+  }
+
+  /**
+   * **应用 FMG 模板高度图**：生成 → 走 `synthesizeTerrainInto`（同一条 undo + 气候 + 手绘搬移）。
+   * @param {{kind:'basemap',key:string}|{kind:'planet',planetId:string}} target
+   * @param {object} paramsIn 见 `normalizeFmgParams`
+   * @param {{force?:boolean, keepHandEdits?:boolean}} [opts]
+   */
+  function applyFmgTerrain(target, paramsIn = {}, opts = {}) {
+    const t = resolveTerrainTarget(target);
+    if (t.ok === false) return { ok: false, reason: t.reason, message: t.message };
+    const p = normalizeFmgParams(paramsIn);
+    const frame = fmgFrameFor(t);
+    const width = frame.maxX - frame.minX;
+    const height = frame.maxY - frame.minY;
+    const gen = generateHeightmap({
+      seed: p.seed, width, height, cellsDesired: p.cells,
+      templateId: p.template, coverage: p.coverage, roughness: p.roughness,
+    });
+    const hm = toSitianHeightmap(gen, { originX: frame.minX, originY: frame.minY });
+    const r = synthesizeTerrainInto(t, {
+      ...opts,
+      heightmap: hm,
+      force: true,                  // 面板已经问过"要覆盖吗"
+      genSeed: p.seed,
+      genBBox: { ...frame },
+      selection: p,
+    });
+    if (!r || r.ok === false) return r || { ok: false, reason: 'fmg-failed', message: 'FMG 生成失败' };
+    return {
+      ...r,
+      fmg: {
+        template: p.template,
+        templateName: (HEIGHT_TEMPLATES[p.template] || {}).name || p.template,
+        seed: p.seed,
+        coverage: p.coverage,
+        roughness: p.roughness,
+        cells: gen.h.length,
+        landRatio: gen.landRatio,
+        genMs: gen.elapsedMs,
+        frame,
+      },
+    };
+  }
+
+  function previewTerrainFrom(t, paramsIn, opts) {    const terrain = t.terrain;
     if (!Array.isArray(terrain) || !terrain.length) {
       return {
         ok: false, reason: 'no-terrain',
@@ -4695,6 +4869,8 @@ export function createScenarioEditingModule(ctx) {
     // 2026-10-25（P0-1）：参数化预览（**只读**，返回 1~4 张候选给面板画缩略图；不写任何数据）
     previewTerrainSynthesis,
     previewPlanetTerrainSynthesis,
+    // B 阶段 2（2026-10-29）：FMG 模板高度图（生成在 utils/fmg，落库复用 `synthesizeTerrainInto`）
+    previewFmgTerrain, applyFmgTerrain, normalizeFmgParams,
     // P5（2026-10-14）：高度图分辨率与平滑 —— 「地形模模糊糊」的入口
     resampleBaseMapHeightmap, smoothBaseMapHeightmap, estimateResampleCost,
     getDeriveStats,

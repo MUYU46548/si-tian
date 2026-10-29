@@ -37,9 +37,21 @@
 > 与上游的差异（已写进代码头）：邻居表是规则方阵 **8 邻居**（上游 Voronoi）→ 长得像但不逐字节同构；
 > 粗糙度用仓内值噪声 fBm（没引 simplex-noise）；覆盖率校准是本层补充（模板本身不管占比，实测 continents 87% 陆地）。
 >
-> **下一步（按顺序）**：② 接进 UI/store（候选 → 应用，复用 A6 的 `synthesizeTerrainInto`）；
-> ③ 气候/群系（`climate/*` + `biomes`）；④ 河网 + 湖泊（`river` / `lakes`，接司天 `rivers[]`）；
-> ⑤ Voronoi 化（`delaunator`）替换 8 邻居；⑥ worker 化 + 进度条。
+> **第 ② 步已交付（2026-10-29）**：面板 + store 接线。
+> - `components/FmgPanel.vue`（**两个视图共用一份**：模板 / 种子 / 陆地占比 / 崎岖度 / 精度 + 3 张候选 + 保留手绘开关），
+>   剧本侧入口 `basemap-fmg-terrain`、行星侧 `planet-fmg-terrain`。
+> - store：`previewFmgTerrain(target, params, opts)`（**只读**，粗网格 2500 格出 3 张）/
+>   `applyFmgTerrain(target, params, opts)` —— 生成后走 `synthesizeTerrainInto` 的 **`opts.heightmap` 分支**：
+>   同一条 undo、同一份气候派生、同一套手绘搬移（FMG 换的是整张网格 → 用 `transferHandEdits` 按图幅相对位置搬）。
+>   **没有新开写口**，所以这两个入口不进 writeGate 契约（守卫仍在 `synthesizeTerrainInto` 里）。
+> - 顺手把两处高度图缩略图收成一份 `utils/heightThumb.js`（`drawHeightThumb`），
+>   否则"同一个高度在两块面板里是两种颜色"。
+> - 判据：`test_151` h 段（入口 / 3 张候选非空 / 预览只读 + 可复现 / 应用后 `fmg.template` 落库 + `genBBox` 记录 +
+>   气候数组齐全 / **一条 undo 回到应用前**）。
+>
+> **下一步（按顺序）**：③ 气候/群系（`climate/*` + `biomes`，替换现在的 `buildClimateInputs` 近似）；
+> ④ 河网 + 湖泊（`river` / `lakes`，接司天 `rivers[]` 与河宽换算）；⑤ Voronoi 化（`delaunator`）替换 8 邻居；
+> ⑥ worker 化 + 进度条。
 
 **前置已核实（2026-10-29）**：参考实现就在本机 `E:\CODE\CangKu\SP-1025\planet-map\src\core`（约 3000 行 TS）：
 `graph/{lattice,voronoi,grid,pack}` + `heightmap/{generator,templates}`（**templates 是 Azgaar MIT 的模板脚本，文件头带

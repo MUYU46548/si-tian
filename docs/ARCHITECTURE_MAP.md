@@ -305,6 +305,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 244 | `src/renderer/src/components/DisclaimerDialog.vue` | （待补） |
 | 417 | `src/renderer/src/components/EagleEye.vue` | 鹰眼小地图 |
 | 516 | `src/renderer/src/components/EntityCreator.vue` | 实体创建向导（C 方案分派式）：表单「名称/层级/父级」+ 层级按父级过滤（CHILD_LAYERS）+ 创建后结果卡片（分派步骤 + 「前往编辑」） |
+| 238 | `src/renderer/src/components/FmgPanel.vue` | （待补） |
 | 2093 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
 | 552 | `src/renderer/src/components/GitSyncPanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/GuidePanel.vue` | （待补） |
@@ -321,13 +322,13 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 391 | `src/renderer/src/components/ObjectListPanel.vue` | 对象列表面板 |
 | 307 | `src/renderer/src/components/OnboardingGuide.vue` | 首启引导（含选 Obsidian 库入口） |
 | 162 | `src/renderer/src/components/PanelShell.vue` | 面板通用外壳（标题/关闭/拖拽） |
-| 4534 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
+| 4558 | `src/renderer/src/components/PlanetMap.vue` | 行星地图（最大组件）：地形/聚落/批量操作，装配 22 个 composables；**读片段勿整读** |
 | 1350 | `src/renderer/src/components/ProjectPanel.vue` | 项目面板：新建（空项目 / **以知识库为基底新建并导入**）/打开/保存/备份/关闭 + 实体树（改名/两段式删除/拖动改父级/父级下拉，全走 undo）+ 快照回滚；只依赖 projectStore + canvasBridge |
 | 159 | `src/renderer/src/components/PromptDialog.vue` | 自定义对话框（替代被禁的 prompt()） |
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 499 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 14180 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 14206 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 405 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 289 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
@@ -338,7 +339,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 859 | `src/renderer/src/components/System3DView.vue` | （待补） |
 | 1383 | `src/renderer/src/components/SystemDetailView.vue` | 单恒星系地图：恒星居中 + 轨道 + 邻系箭头 + 太空标记/部队卡片 |
 | 917 | `src/renderer/src/components/SystemView.vue` | 域内恒星系总览（真 hyperlanes） |
-| 402 | `src/renderer/src/components/TerrainGenPanel.vue` | （待补） |
+| 383 | `src/renderer/src/components/TerrainGenPanel.vue` | （待补） |
 | 263 | `src/renderer/src/components/TerrainLabelsPanel.vue` | （待补） |
 | 128 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
 | 130 | `src/renderer/src/components/TreeNavigation.vue` | 树形导航面板 |
@@ -413,7 +414,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 318 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 1111 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
 | 2648 | `src/renderer/src/store/geodataModules/provinceEditing.js` | 省份「归属标签网格」store 模块（Phase 3）：笔刷/套索一笔一条 undo、删除省份重编号安全（整表快照）、每个写操作先过 guardWrite（只读态零副作用） |
-| 4704 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
+| 4880 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 186 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 185 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
@@ -452,6 +453,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 104 | `src/renderer/src/utils/gridSpatialIndex.js` | （待补） |
 | 252 | `src/renderer/src/utils/handEdits.js` | （待补） |
 | 282 | `src/renderer/src/utils/heightMath.js` | 高度/温度/降水/生物群系派生**纯函数**（唯一事实源：主线程与 deriveWorker 共用，禁止在别处复制公式） |
+| 44 | `src/renderer/src/utils/heightThumb.js` | （待补） |
 | 229 | `src/renderer/src/utils/heightmapAccess.js` | （待补） |
 | 105 | `src/renderer/src/utils/heightmapChannels.js` | （待补） |
 | 567 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap「着色」档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |

@@ -603,6 +603,22 @@
   - 判据实测（`unit/test_fmg_heightmap.js`）：同 seed 逐字节一致 / 换 seed 必变；**8k 格 10–15ms**（目标 <1s）；
     陆地 40.4%（目标 40）；14 模板齐全 + MIT 头在；`fmg/` 0 处 `Math.random`。
 
+- **B 阶段 2 第 ② 步：FMG 接进面板（2026-10-29）**: `components/FmgPanel.vue` 一份面板两处挂
+  （剧本侧 `basemap-fmg-terrain`、行星侧 `planet-fmg-terrain`），store 两个入口
+  `previewFmgTerrain`（**只读**，2500 格粗网格 3 张候选）/ `applyFmgTerrain`。
+  - 🔴 **不新开写口**：`applyFmgTerrain` 生成完直接喂给 `synthesizeTerrainInto` 的 **`opts.heightmap` 分支** ——
+    同一条 undo、同一份气候派生、同一套手绘搬移。因此这两个入口**不要**登记进 writeGate
+    （登记了过不了"必须有 guardWrite"那条；守卫在唯一实现里）。
+  - 🔴 **FMG 换的是整张网格**（图幅/格距都变）→ 手绘搬移走 `transferHandEdits`（图幅相对位置 + 吸附），
+    **不能**用 `reapplyHandEdits`（那是"同一张网格逐点同坐标"，在 FMG 分支上等于把所有手绘丢掉）。
+  - **图幅接力**：生成时把用的框写进 `heightmap.genBBox`，下次重生成沿用它 —— 否则每跑一次都换框，
+    手绘与"同 seed 逐格同网格"都保不住（与造陆 `recordedLandBBox` 同一口径）。
+  - **缩略图只有一份实现**：`utils/heightThumb.js` 的 `drawHeightThumb`（两个面板共用）——
+    各写一套的下场是"同一个高度在两块面板里显示成两种颜色"。
+  - 判据：`test_151` h 段（入口 / 3 张候选非空 / 预览只读且可复现 / 应用后 `fmg.template` 落库 + `genBBox` 记录 +
+    气候数组齐全 / **一条 undo 回到应用前**）；源码闸门同时守"面板里不许出现 `commitHeightmap`/`execute(`"。
+
+
 
 
 

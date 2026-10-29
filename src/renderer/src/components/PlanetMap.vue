@@ -168,6 +168,15 @@
                 : '按这颗行星的地貌轮廓推演一份地形高度图：种子/起伏/山脉/高原/裂谷可调，3 张候选，一条 Ctrl+Z 可撤回'"
               @click="terrainGenOpen = true"
             ><Icon name="sparkles" :size="13"/> 生成地形</button>
+            <!-- B 阶段 2（2026-10-29）：FMG 模板地形（14 套 Azgaar 模板；与「生成地形」共用落库写口） -->
+            <button
+              data-testid="planet-fmg-terrain"
+              :disabled="store.isReadOnly"
+              :title="store.isReadOnly
+                ? store.readOnlyReason
+                : 'FMG 模板地形：14 套 Azgaar 模板（大陆 / 群岛 / 环礁 / 地中海…）直接出高度图，3 张候选，一条 Ctrl+Z 可撤回'"
+              @click="fmgOpen = true"
+            ><Icon name="globe" :size="13"/> FMG 地形</button>
           </div>
           <div class="brush-wheel-hint">滚轮调半径 · Shift+滚轮调强度 · Ctrl+滚轮缩放 · 空格+拖动平移</div>
         </template>
@@ -1048,6 +1057,16 @@
       />
     </div>
   </Teleport>
+  <!-- B 阶段 2（2026-10-29）：行星侧 FMG 模板地形浮面板（与剧本侧同一个 FmgPanel，只换 target） -->
+  <Teleport to="body">
+    <div v-if="fmgOpen" class="planet-gen-float" data-testid="planet-fmg-wrap">
+      <FmgPanel
+        :planet-id="terrainGenTargetId"
+        @apply="onTerrainGenerated"
+        @close="fmgOpen = false"
+      />
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -1127,6 +1146,8 @@ import { describeSaveAction } from '../utils/saveStatusText';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 // A6（2026-10-29）：地形生成参数面板（与剧本视图共用；只换 target = planetId）
 import TerrainGenPanel from './TerrainGenPanel.vue';
+// B 阶段 2（2026-10-29）：FMG 模板地形面板（与剧本视图同一个组件）
+import FmgPanel from './FmgPanel.vue';
 import EagleEye from './EagleEye.vue';
 import ClusterPanel from './ClusterPanel.vue';
 import ObjectListPanel from './ObjectListPanel.vue';
@@ -1152,6 +1173,8 @@ const drawMode = ref(true);
 const heightTool = ref('raise');
 // A6（2026-10-29）：行星侧「生成地形」浮面板开关（候选 → 应用 = 一条 undo，走 store 唯一实现）
 const terrainGenOpen = ref(false);
+/** B 阶段 2（2026-10-29）：FMG 模板地形面板开关 */
+const fmgOpen = ref(false);
 const BIOME_COLORS = {
   ocean: '#2E86AB', hot_desert: '#E9C46A', cold_desert: '#B5B887',
   savanna: '#D2D082', grassland: '#C8D68F', tropical_seasonal: '#B6D95D',
@@ -1964,6 +1987,7 @@ const renderer = useCanvasRenderer(canvas, {
  */
 function onTerrainGenerated(r) {
   terrainGenOpen.value = false;
+  fmgOpen.value = false;
   exportStatus.value = (r && r.message) ? String(r.message) : '地形已生成';
   heightmapRasterKind.value = 'height';
   if (typeof renderer?.markFullRedraw === 'function') renderer.markFullRedraw();

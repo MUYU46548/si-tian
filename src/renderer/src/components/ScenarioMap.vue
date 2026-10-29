@@ -698,6 +698,13 @@
           title="地形生成参数 —— 种子 / 起伏 / 山脉 / 高原 / 裂谷 / 精度 + 3 张候选预览，选一张再应用（一条撤销）"
           @click="toggleTerrainGenPanel"
         ><Icon name="settings" :size="15"/>生成参数</button>
+        <button
+          v-if="baseMapKey"
+          data-testid="basemap-fmg-terrain"
+          :class="{ active: fmgOpen }"
+          title="FMG 模板地形 —— 14 套 Azgaar 模板（大陆 / 群岛 / 环礁 / 地中海…）直接出高度图，同一条撤销"
+          @click="fmgOpen = !fmgOpen"
+        ><Icon name="sparkles" :size="15"/>FMG 地形</button>
         <!-- P0-2（2026-10-25）：**造陆**。此前"从零开始"的第一步是让用户自己画大陆 ——
              手画出来多是圆饼，而且只会画一块中央大陆。这里按参数生成大陆/群岛轮廓，
              再用现有铺底管线切成省（一条 undo）。 -->
@@ -790,6 +797,19 @@
               :has-heightmap="baseMapHasHeightmap"
               @apply="applyGeneratedTerrain"
               @close="terrainGenOpen = false"
+            />
+          </div>
+        </div>
+      </Teleport>
+
+      <!-- B 阶段 2（2026-10-29）：FMG 模板地形（14 套 Azgaar 模板 → 直接出高度图；同一条 undo） -->
+      <Teleport to="body">
+        <div v-if="fmgOpen" class="gen-float" data-testid="fmg-wrap">
+          <div class="resample-panel">
+            <FmgPanel
+              :base-map-key="baseMapKey"
+              @apply="applyGeneratedTerrain"
+              @close="fmgOpen = false"
             />
           </div>
         </div>
@@ -1855,6 +1875,8 @@ import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // 地形生成参数面板（P0-1，2026-10-25）：种子/起伏/山脉/高原/裂谷 + 3 张候选缩略图 → 应用（一条 undo）。
 // 参数模型唯一实现在 utils/terrainParams.js（本组件只做展示与触发）。
 import TerrainGenPanel from './TerrainGenPanel.vue';
+// B 阶段 2（2026-10-29）：FMG 模板地形面板（14 套 Azgaar 模板；生成在 utils/fmg，落库复用同一条写口）
+import FmgPanel from './FmgPanel.vue';
 // 造陆面板（P0-2，2026-10-25）：大陆轮廓候选 → 铺底切省。轮廓纯几何在 utils/landmass.js，
 // 切分复用 utils/voronoiBatch.js + store 的 batchSubdivide（不是第二套切分器）。
 import LandmassPanel from './LandmassPanel.vue';
@@ -2271,6 +2293,8 @@ function synthesizeBaseMapTerrainFromShape() {
 // 两条路都走同一个 store 入口（`synthesizeBaseMapTerrain`），所以 undo/落盘/绑定行星
 // 的行为天然一致 —— 不许给面板再写一条"直接改 baseMaps"的捷径。
 const terrainGenOpen = ref(false);
+/** B 阶段 2（2026-10-29）：FMG 模板地形面板开关（与「生成参数」是两个引擎，各自一个入口） */
+const fmgOpen = ref(false);
 
 function toggleTerrainGenPanel() {
   if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
@@ -2347,7 +2371,9 @@ function cancelTerrainLabelPick() {
 function applyGeneratedTerrain(r) {
   rasterCache.clear();
   rasterLayer.value = 'height';
+  // 两个引擎（按轮廓推演 / FMG 模板）共用一个收口：谁应用完都关面板、切高度档、递回执
   terrainGenOpen.value = false;
+  fmgOpen.value = false;
   statusMsg((r && r.message) || '已生成地形');
   render();
 }
