@@ -211,7 +211,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 226 | `scripts/tests/unit/test_disclaimer.js` | （待补） |
 | 278 | `scripts/tests/unit/test_entity_status.js` | （待补） |
 | 233 | `scripts/tests/unit/test_export_frames.js` | （待补） |
-| 190 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
+| 236 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
 | 184 | `scripts/tests/unit/test_freehand_ring.js` | 自由绘制几何单测：干净/手抖方框、圆、8 字、回勾、一条线、确定性、幂等 |
 | 220 | `scripts/tests/unit/test_galaxy_layout.js` | （待补） |
 | 186 | `scripts/tests/unit/test_git_credential_store.js` | （待补） |
@@ -441,8 +441,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 113 | `src/renderer/src/utils/errorReport.js` | 全局错误捕获 + 主进程落盘 |
 | 295 | `src/renderer/src/utils/floodfill.js` | 泛洪填充（地形快速绘制） |
 | 418 | `src/renderer/src/utils/fmg/generator.js` | （待补） |
-| 234 | `src/renderer/src/utils/fmg/index.js` | （待补） |
-| 89 | `src/renderer/src/utils/fmg/lattice.js` | （待补） |
+| 264 | `src/renderer/src/utils/fmg/index.js` | （待补） |
+| 156 | `src/renderer/src/utils/fmg/lattice.js` | （待补） |
 | 71 | `src/renderer/src/utils/fmg/rng.js` | （待补） |
 | 258 | `src/renderer/src/utils/fmg/templates.js` | （待补） |
 | 195 | `src/renderer/src/utils/freehandRing.js` | 自由绘制闭环净化（第三刀）：自交检测、在自交点切环只留最大一块、面积/填充比闸门；拒绝原因给人话（不造怪多边形、不引布尔库） |

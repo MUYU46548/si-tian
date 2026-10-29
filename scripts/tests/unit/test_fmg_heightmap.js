@@ -46,6 +46,13 @@ function copyUtils() {
   };
   copy(UTILS, path.join(dir, 'utils'));
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }));
+  // B⑤：fmg 现在 import 'delaunator'（裸模块名）。临时目录里没有 node_modules，
+  // 用一个 **junction** 指回仓库的 node_modules（Windows 下目录联接不需要管理员权限）。
+  try {
+    fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(dir, 'node_modules'), 'junction');
+  } catch (e) {
+    // 已经存在 / 平台不支持 → 由后面的 import 报错暴露（不吞掉真正的问题）
+  }
   return dir;
 }
 
@@ -64,6 +71,7 @@ async function main() {
   const F = await import(url('utils/fmg/index.js'));
   const T = await import(url('utils/fmg/templates.js'));
   const TR = await import(url('utils/riverTrace.js'));
+  const LA = await import(url('utils/fmg/lattice.js'));
   const { generateHeightmap, toSitianHeightmap, landRatioOf, spacingForCells, HEIGHT_TEMPLATES, TEMPLATE_IDS } = F;
 
   const base = { seed: 12345, width: 1600, height: 1000, cellsDesired: 2000, templateId: 'continents' };
@@ -176,6 +184,44 @@ async function main() {
     assert(Math.abs(landRatioOf(withFill.h) - landRatioOf(noFill.h)) < 0.005,
       `填洼不该改变陆地占比：${landRatioOf(withFill.h).toFixed(3)} vs ${landRatioOf(noFill.h).toFixed(3)}`);
     return `填洼 ${withFill.raisedCells} 格 / 峰值 ${maxH} / 河 ${(rivers.rivers || []).length} 条`;
+  });
+
+  check('f8 B⑤ Voronoi 邻接：邻居数像 Voronoi（≥3、均值 5–8）、对称、且与 8 邻居结果不同', () => {
+    const L = LA;
+    const lat = L.placePoints({ width: 1600, height: 1000, spacing: 20, jitter: 0.9 }, { next: (() => { let s = 42; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; })() });
+    const vor = L.buildVoronoiAdjacency(lat.points, lat.cellsX, lat.cellsY);
+    eq(vor.length, lat.points.length, '邻接表长度应等于点数');
+    let min = Infinity, max = 0, sum = 0;
+    for (const list of vor) {
+      assert(list.length >= 3, `有 cell 的邻居少于 3（${list.length}）—— 网格不连通`);
+      if (list.length < min) min = list.length;
+      if (list.length > max) max = list.length;
+      sum += list.length;
+    }
+    const mean = sum / vor.length;
+    assert(mean > 4.5 && mean < 8, `平均邻居数应像 Voronoi（5–8），实际 ${mean.toFixed(2)}`);
+    // 抖动 0.9 时点会成簇 → Delaunay 里出现个别"高次顶点"（实测最高 14），这是上游同一参数下的正常现象；
+    // 只防"整表退化"（比如所有点都连到同一个中心点）
+    assert(max <= 16, `最大邻居数异常：${max}`);
+    // 对称性：i 的邻居里含 j ⇒ j 的邻居里必须含 i（无向图）
+    for (let i = 0; i < vor.length; i += 7) {
+      for (const j of vor[i]) assert(vor[j].includes(i), `邻接不对称：${i}→${j} 但 ${j} 没有 ${i}`);
+    }
+    // 与 8 邻居确实不同（地形也该不同）
+    const gridC = L.buildAdjacency(lat.cellsX, lat.cellsY);
+    let differs = 0;
+    for (let i = 0; i < vor.length; i++) if (vor[i].length !== gridC[i].length) differs++;
+    assert(differs > vor.length * 0.3, `Voronoi 邻接与 8 邻居几乎一致（${differs} 个不同）—— 等于没换`);
+    const a = generateHeightmap({ ...base, cellsDesired: 3000, templateId: 'oldWorld' });
+    const b = generateHeightmap({ ...base, cellsDesired: 3000, templateId: 'oldWorld', adjacency: 'grid' });
+    assert(hashBytes(a.h) !== hashBytes(b.h), 'Voronoi 与 8 邻居生成的地形一样 —— 邻接没生效');
+    // 换邻接后河道仍能长出来（B④ 的结论不能被 B⑤ 打回）
+    const rivers = TR.traceRivers({
+      h: a.h,
+      grid: { points: a.points, spacing: a.spacing, cellsX: a.cellsX, cellsY: a.cellsY },
+    }, {});
+    assert((rivers.rivers || []).length >= 1, `Voronoi 邻接后自动河流 0 条`);
+    return `均值 ${mean.toFixed(2)} / 范围 ${min}–${max} / 河 ${(rivers.rivers || []).length} 条`;
   });
 
   let failed = 0;

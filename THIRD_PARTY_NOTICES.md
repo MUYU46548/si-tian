@@ -49,14 +49,36 @@ SOFTWARE.
 
 同 §1 的来源与许可（移植自 `src/model/graph/lattice.ts` 的 square 采样分支）。
 
+## 4. `delaunator`（B⑤，2026-10-29 引入，运行时依赖）
+
+```
+ISC License
+
+Copyright (c) 2016, Mapbox
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
+
+用途：抖动点阵的 **Delaunay 三角化**（边集 = Voronoi 邻接），替换第一步的 8 邻居
+（`utils/fmg/lattice.js#buildVoronoiAdjacency`）。版本见 `package.json`。
+
 ---
 
 ## 本项目**没有**引入的依赖（写在这里防重复评估）
 
-`alea` / `delaunator` / `simplex-noise` 都是 SP-1025 那边的依赖。司天这边：
+`alea` / `simplex-noise` 是 SP-1025 那边的依赖，司天这边**没有**引入：
 
 - 随机数复用仓内既有的 `utils/voronoiBatch.makeRng`（mulberry32），**不再引 alea**；
-- 第一步的点阵用规则方阵 + 8 邻居，**没有引 delaunator**（接 Voronoi 时再评估）；
 - 粗糙度用仓内既有的值噪声 `landmassField.fbm`，**没有引 simplex-noise**。
 
-如果将来真引了其中任何一个，必须回到本文件补上对应许可与版本。
+（`delaunator` 已在 §4 正式引入。如果将来真引了其它任何一个，必须回到本文件补对应许可与版本。）

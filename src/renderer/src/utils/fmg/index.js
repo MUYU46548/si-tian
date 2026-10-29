@@ -13,7 +13,7 @@
 //       **不再引 `simplex-noise`**：这一步只需要"有细节"，不是要跟 FMG 逐字节同构。
 
 import { createFmgRandom } from './rng';
-import { placePoints, buildAdjacency } from './lattice';
+import { placePoints, buildAdjacency, buildVoronoiAdjacency } from './lattice';
 import { buildContinentsTemplate, getTemplateScript, HEIGHT_TEMPLATES, TEMPLATE_IDS } from './templates';
 import { HeightmapGenerator } from './generator';
 import { fbm } from '../landmassField';
@@ -115,7 +115,10 @@ export function generateHeightmap(o = {}) {
   const rng = createFmgRandom(seed);
 
   const lattice = placePoints({ width, height, spacing, jitter: o.jitter }, rng);
-  lattice.c = buildAdjacency(lattice.cellsX, lattice.cellsY);
+  // B⑤（2026-10-29）：邻接默认走 **Voronoi**（Delaunay 边集）。`adjacency: 'grid'` 是退路/对照。
+  lattice.c = o.adjacency === 'grid'
+    ? buildAdjacency(lattice.cellsX, lattice.cellsY)
+    : buildVoronoiAdjacency(lattice.points, lattice.cellsX, lattice.cellsY);
 
   let script;
   if (typeof o.template === 'string' && o.template.trim()) script = o.template;
@@ -230,5 +233,32 @@ export function calibrateCoverage(heights, target) {
     else if (v > 100) v = 100;
     out[i] = Math.round(v * 100) / 100;
   }
-  return { heights: out, shoreline, scale: Math.round(scale * 1000) / 1000, ratio: landRatioOf(out) };
+  // 细调（2026-10-29，B⑤ 实测）：模板高度是**整数**，同一高度成片 → 分位法会整块跳过边界，
+  // 实测能偏 1.3pp。这里按 0.1 为单位整体平移再二分，把占比拉到目标 ±0.1pp
+  // （平移 0.1 只挪"贴着海平面的那一档"，对地貌观感无影响）。
+  let best = null;
+  for (let step = -40; step <= 40; step++) {
+    const shift = step * 0.1;
+    let land = 0;
+    for (let i = 0; i < n; i++) if (out[i] + shift >= FMG_SEA_LEVEL) land++;
+    const ratio = land / n;
+    const err = Math.abs(ratio - goal);
+    if (!best || err < best.err) best = { shift, ratio, err };
+    if (err === 0) break;
+  }
+  if (best && best.err > 2e-6) {
+    for (let i = 0; i < n; i++) {
+      let v = out[i] + best.shift;
+      if (v < 0) v = 0;
+      else if (v > 100) v = 100;
+      out[i] = Math.round(v * 100) / 100;
+    }
+  }
+  return {
+    heights: out,
+    shoreline,
+    scale: Math.round(scale * 1000) / 1000,
+    shift: best ? Math.round(best.shift * 10) / 10 : 0,
+    ratio: best ? best.ratio : landRatioOf(out),
+  };
 }

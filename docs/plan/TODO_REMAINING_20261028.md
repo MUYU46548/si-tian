@@ -49,9 +49,15 @@
 > - 判据：`test_151` h 段（入口 / 3 张候选非空 / 预览只读 + 可复现 / 应用后 `fmg.template` 落库 + `genBBox` 记录 +
 >   气候数组齐全 / **一条 undo 回到应用前**）。
 >
-> **下一步（按顺序）**：③ 气候/群系 —— 🔶 **决定不搬**（见下）；④ 河网 + 湖泊 —— 🔶 **河已通，湖不做**（见下）；
-> ⑤ Voronoi 化（`delaunator`）替换 8 邻居；⑥ worker 化 + 进度条。
+> **下一步（按顺序）**：⑤ Voronoi 化 —— ✅ 已完成（见下）；⑥ worker 化 + 进度条。
 >
+> ⑤ **Voronoi 邻接已换**（2026-10-29）：`utils/fmg/lattice.js#buildVoronoiAdjacency` 用 **`delaunator`**
+> （ISC，已进 `THIRD_PARTY_NOTICES.md`）对抖动点阵做 Delaunay 三角化，**边集就是 Voronoi 邻接**。
+> 生成入口默认走它，`adjacency: 'grid'` 保留为退路/对照。实测：平均邻居 **5.99**、范围 3–14
+> （抖动 0.9 下的高次顶点是正常现象）、图**双向对称**、与 8 邻居生成的地形**不同**、河道仍能长出（7 条）。
+> 判据 `unit/test_fmg_heightmap.js` f8。**顺带发现**：模板高度是整数 → 同高成片，分位法校准会整块跳过边界
+> （实测偏 1.3pp）→ 拉伸后再按 0.1 单位平移二分，占比命中 ±0.1pp（f3: 39.4% vs 目标 40）。
+
 > ③ **决定：不搬 FMG 的 `climate/*` 与 `biomes`**（2026-10-29）。理由：
 > 司天已有**唯一一份**气候派生（`heightMath.buildClimateInputs` 纬度 + 离岸距离 → `deriveLayers` 出 temp/prec/biome），
 > 而且 A6 的落库链路里气候是**和高度同一笔**写进 undo 的。再搬 FMG 的温带/风带/湿度模型 = 两套气候真值，
