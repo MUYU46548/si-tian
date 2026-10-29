@@ -30,6 +30,13 @@
 
 ## B. 阶段 2：FMG 生成管线（最大一块，1–2 周）
 
+**前置已核实（2026-10-29）**：参考实现就在本机 `E:\CODE\CangKu\SP-1025\planet-map\src\core`（约 3000 行 TS）：
+`graph/{lattice,voronoi,grid,pack}` + `heightmap/{generator,templates}`（**templates 是 Azgaar MIT 的模板脚本，文件头带
+`Copyright 2017-2024 Max Haniyeu (Azgaar)` + `SPDX-License-Identifier: MIT`，移植必须原样保留并补 `THIRD_PARTY_NOTICES.md`）
++ `noise/climate/river/lakes/biomes/pipeline`。依赖 `alea` / `delaunator` / `simplex-noise`。
+第一步（下轮开工）只搬 `heightmap/templates` + `generator` + `noise` + `hash` + `utils/{number,probability}` ——
+接成 sitian 的 `heightmap{h,grid}`，先把「同 seed 两次逐字节一致 / 8k 格 <1s」两条判据立起来；RNG 显式传入，**不许** `Math.random`。
+
 - **搬 `SP-1025/planet-map/src/core/`**：`graph/*`（lattice/voronoi/grid/pack）、`heightmap/*`（14 模板 + DSL 执行器）、
   `pipeline`、`climate/*`、`river`、`lakes`、`biomes`、`noise`、`utils/*`、`worker/generate.worker.ts`。
 - **P0 改造**：去掉全局 `Math.random = Alea`，改显式 `rng` 参数（判据：同 seed 全层 hash 一致）。
@@ -48,7 +55,7 @@
 
 | # | 事项 | 状态 | 备注 / 下一步 |
 |---|---|---|---|
-| C1 | 内嵌字体（宋体/文楷） | ⬜ 待做 | 现在 fallback 系统字体；需选字重、算体积（**不许**为了字形把首屏撑大 —— 走 `@font-face` + 按需子集） |
+| C1 | 内嵌字体（宋体/文楷） | ⛔ 需用户定（字体与许可） | **不能自主定**：司天要发布安装包，字体许可是硬约束 —— 系统里的 SimSun/宋体是微软授权，**不许随包分发**；能分发的只有 OFL 字体（如 LXGW 文楷 / Noto Serif SC），但 ① 选哪款、② 可接受的体积预算（整字库 10–20 MB，子集要 fonttools，本机未装）、③ 是否允许走网络取字体文件 —— 三条都得暮雨拍板。定了之后落地动作很明确：`@font-face` + **按需子集**（只收 GB2312 常用字 + 地图用字），`display: swap`，且**不许进首屏关键路径** |
 | C2 | 国名多行 / 沿主轴旋转 | ✅ 2026-10-29 | 新增 `utils/labelOrient.js`（画布与导出**共用一份决策**）：`principalAxisAngle`（领土主轴：每省形心 + 面积权的二阶矩；单省退化=不转）+ `planPolityShape`（细长比 ≥1.6 才转、夹 ±30°；超宽折两行，CJK 按字/西文按词）。`drawStyledLabel` 支持 `lines/rotate`，SVG 导出逐行 `<text>` + `transform=rotate`。判据 `unit/test_polity_labels.js` t12/t13 |
 | C3 | 省名占位（415 个「新省份 N」） | ✅ 2026-10-29（便宜那条路） | 画布加「仅已命名省」开关（`toggle-named-provinces`，默认关）：打开后占位名整层不画。判据复用 `polityLabels.isPlaceholderProvinceName`（与导出链同一份），过滤落在 `collectScenarioLabels({skipPlaceholderProvinces})`，组件只传开关。`unit/test_polity_labels.js` t11 + `test_73` f0 源码闸门守。数据侧「从 Obsidian 批量导入真名」仍未做（要用户定映射规则） |
 | C4 | 地形分辨率 97×45 太粗 | ✅ 2026-10-29（治标） | 放大插值从**双线性换成双三次**（Catmull-Rom）：双线性只有 C0、等值线会拐在格心上，双三次是 C1；四周补一圈用**二阶外插**（`v(-1)=3v(0)-3v(1)+v(2)`，一阶外插在二次面上边缘仍差 1.03 实测），并对**真实格点邻域**做 min/max 夹持砍过冲。判据 `unit/test_heightmap_resample.js`（二次面误差 0 / 阶跃不过冲且单调）。真解（8k/16k 源数据）随 B |
