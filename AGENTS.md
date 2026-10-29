@@ -86,7 +86,10 @@
   - 415 省孤本 `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份（2026-10-23 已留：`…_施工留底\绒花计划-20261023-203520.sitian`，SHA256 一致）。
   - **2026-10-27 之后的剩余**：**当前唯一待办清单 = [`docs/plan/TODO_REMAINING_20261028.md`](docs/plan/TODO_REMAINING_20261028.md)**（A 阶段 0/1 欠账 / B 阶段 2 FMG / C 文字观感 / D B1·F1 复核 / E 3D 二期 / F 工程债）。
     已完成：星系 3D 观景（2026-10-28，`bd80cbc`）、阶段 0/1 欠账 A1–A4（导出浅滩 / 保留手绘开关 / handEdits 抽稀 / 湖泊 UI）、
-    **造陆接手绘地形 + 图幅不再缩**（2026-10-29，A5：`transferHandEdits` 按图幅相对位置搬；`heightmap.genBBox` 让重跑逐格同网格 —— 此前每重跑一次图幅缩 ≈9.5%）。
+    **造陆接手绘地形 + 图幅不再缩**（2026-10-29，A5，`8425a2c`）、
+    **A6 行星侧「生成地形」入口**（`0010380`）、**E1/E2 3D 点选下钻 + `node.planetClass` 落数据**（`f9d7366`）、
+    **E3/E5/E6 3D 双星 + 自动降档 + 项目关闭释放纹理**（`844d4bf`）、
+    **C2 国名沿主轴转/折行 + C3 仅已命名省 + C5 道路四档渐显**（`720a6e4`）。
     历史快照与设计口径见 [REMAINING_BACKLOG_20261027.md](docs/plan/REMAINING_BACKLOG_20261027.md)。
 
 
