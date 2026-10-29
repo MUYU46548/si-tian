@@ -259,7 +259,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 188 | `scripts/tests/unit/test_sea_depth.js` | （待补） |
 | 256 | `scripts/tests/unit/test_skeleton_index.js` | （待补） |
 | 93 | `scripts/tests/unit/test_stroke_math.js` | （待补） |
-| 291 | `scripts/tests/unit/test_system3d_scene.js` | （待补） |
+| 333 | `scripts/tests/unit/test_system3d_scene.js` | （待补） |
 | 356 | `scripts/tests/unit/test_terrain_params.js` | （待补） |
 | 200 | `scripts/tests/unit/test_terrain_representation.js` | Node 单测：地形表示判定 13 条（空/损坏高度图、覆盖物开合、编辑与笔刷强制显示、**无高度图 → 多边形照旧不透明**＝兼容底线、与 `heightmapAccess.hasGrid` 的口径蕴含关系） |
 | 464 | `scripts/tests/unit/test_terrain_structure.js` | （待补） |
@@ -334,8 +334,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 1850 | `src/renderer/src/components/SettingsPanel.vue` | 设置面板（选库/关闭行为/窗口模式） |
 | 147 | `src/renderer/src/components/SnapshotPanel.vue` | 版本快照面板 |
 | 106 | `src/renderer/src/components/StatusBar.vue` | 状态栏 |
-| 764 | `src/renderer/src/components/System3DView.vue` | （待补） |
-| 1377 | `src/renderer/src/components/SystemDetailView.vue` | 单恒星系地图：恒星居中 + 轨道 + 邻系箭头 + 太空标记/部队卡片 |
+| 859 | `src/renderer/src/components/System3DView.vue` | （待补） |
+| 1383 | `src/renderer/src/components/SystemDetailView.vue` | 单恒星系地图：恒星居中 + 轨道 + 邻系箭头 + 太空标记/部队卡片 |
 | 917 | `src/renderer/src/components/SystemView.vue` | 域内恒星系总览（真 hyperlanes） |
 | 402 | `src/renderer/src/components/TerrainGenPanel.vue` | （待补） |
 | 263 | `src/renderer/src/components/TerrainLabelsPanel.vue` | （待补） |
@@ -417,7 +417,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 185 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
 | 39 | `src/renderer/src/store/panels.js` | App 层浮层互斥 |
-| 1117 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
+| 1123 | `src/renderer/src/store/projectStore.js` | `.sitian` 项目 store：项目 CRUD + 实体 CRUD（走 undo）+ 快照回滚 + **从知识库导入**（createProjectFromVault：先 prepareExport 补齐行星图，再创建项目并播种） |
 | 43 | `src/renderer/src/store/quitFlush.js` | （待补） |
 | 172 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 190 | `src/renderer/src/store/vaultIndex.js` | 资料索引 store：状态/候选/读料报告/搜索/阅读/链解析；所有磁盘 I/O 走主进程 vault* IPC |
@@ -508,7 +508,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 51 | `src/renderer/src/utils/strokeEngine.js` | （待补） |
 | 97 | `src/renderer/src/utils/strokeMath.js` | （待补） |
 | 213 | `src/renderer/src/utils/svgExport.js` | 地图 → SVG 矢量序列化：path 曲线约定同 ScenarioMap 的 `traceShapePath`、斜线 pattern、文档组装与 SVG→PNG 光栅化；**`refImageSvgGroup` / `refImageWorldBounds`（M3/A7）＝参考底图几何的唯一实现**（`rotation` 是象限索引 0..3 → ×90°、90/270 交换宽高、`flipH` 在 rotate 之后；算边界用旋转后包围盒），`useFullMapExport` 与 `useScenarioExport` 两处共用 |
-| 186 | `src/renderer/src/utils/system3dScene.js` | （待补） |
+| 228 | `src/renderer/src/utils/system3dScene.js` | （待补） |
 | 154 | `src/renderer/src/utils/terrainBrush.js` | 地形笔刷引擎（8 种地形类型）：硬度幂函数衰减 + 快速移动时的速度插值补点 |
 | 132 | `src/renderer/src/utils/terrainErosion.js` | （待补） |
 | 371 | `src/renderer/src/utils/terrainParams.js` | （待补） |

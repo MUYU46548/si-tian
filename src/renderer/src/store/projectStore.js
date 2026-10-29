@@ -709,6 +709,12 @@ export const useProjectStore = defineStore('project', () => {
     resetWriteMode('项目已关闭');
     // P3（2026-09-25）：关闭项目后「撤销」不该回退到项目内的编辑 —— 那些闭包指向已下线的数据对象
     clearHistory();
+    // E6（2026-10-29）：3D 行星纹理缓存（18 张 canvas）**跨开关常驻**是收益（二次打开瞬时），
+    // 但项目都关了还留着就是纯占内存 —— 在"项目生命周期"这一层释放，而不是每次关 3D 就清。
+    try {
+      const mod = await import('../utils/planetArt.js');
+      if (mod && typeof mod.__clearTextureCache === 'function') mod.__clearTextureCache();
+    } catch (err) { /* 纹理库加载失败不该影响关项目 */ }
     return { success: true, saved };
   }
 

@@ -62,10 +62,10 @@
 
 1. ~~**3D 里点行星下钻**（现在纯观景，不导航、不改数据）。~~ ✅ 2026-10-29：射线点选（区分点选/拖拽旋转）→ 左下角卡片（类型下拉 + 「进入行星地图」）；下钻经 `emit('select-node', {id})` → `SystemDetailView.on3dSelectNode` 按 id 找回真节点 → 上层 `selectPlanetOrNode`。判据 `test_163` F 段。
 2. ~~**行星类别落数据**：现在是 tags/名称推断；建议加 `node.planetClass`（与 `sizeOverride` 同级，走 `updateNode`）。~~ ✅ 2026-10-29：`planetClassForNode` 优先读 `node.planetClass`（非法值/老数据回落推断，绝不把脏 classId 送进渲染）；3D 卡片里改类型 → `updateNode`（一条 undo）+ **当场换贴图**。判据 `unit/test_system3d_scene.js` a4b。
-3. **双星互绕可视化**：现在只按主恒星取色，双星不参与光照/轨道。
-4. **多恒星系同屏**（域内 3D 总览）—— 会显著放大性能与交互复杂度，先不做。
-5. **低配降级**：现在只有"WebGL 不可用 → 报错面板"，没有自动降帧/减段数。
-6. **纹理常驻缓存**：18 张 canvas 跨开关复用（换来二次打开瞬时）；若最后要抠内存，项目关闭时调 `__clearTextureCache()`。
+3. ~~**双星互绕可视化**：现在只按主恒星取色，双星不参与光照/轨道。~~ ✅ 2026-10-29：`buildSystem3dScene({companions})` 出伴星（色/轨道/相位/自转，最多 2 颗、脏色回落）；3D 里各带一盏点光 + 光晕绕主星转。判据 `unit/test_system3d_scene.js` a11。
+4. **多恒星系同屏**（域内 3D 总览）—— 会显著放大性能与交互复杂度，先不做（维持原判断）。
+5. ~~**低配降级**：现在只有"WebGL 不可用 → 报错面板"，没有自动降帧/减段数。~~ ✅ 2026-10-29：按实测帧耗自动降档（high→mid→low，**只降不升**避免抖动）：像素比 1.5→1.0→0.75、最低档关小行星带；HUD 出「已自动降档」提示。判据 `nextQualityLevel` 单测 a10 + 源码闸门 b3。
+6. ~~**纹理常驻缓存**：18 张 canvas 跨开关复用（换来二次打开瞬时）；若最后要抠内存，项目关闭时调 `__clearTextureCache()`。~~ ✅ 2026-10-29：`projectStore.closeProject` 里动态 import 后调 `__clearTextureCache()`（跨开关仍复用，只在**项目生命周期**结束时释放）。判据 b3 源码闸门。
 
 ## F. 工程债 / 口径待定（跨轮遗留）
 

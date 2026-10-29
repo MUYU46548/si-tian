@@ -122,3 +122,16 @@
   - **类型落数据**：`planetClassForNode` 的优先级改成 `node.planetClass` > tags/名称关键字 > 空间站 > 卫星散列 > 行星散列；非法值（拼错/老数据）回落推断，**绝不让脏 classId 进渲染**（`unit/test_system3d_scene.js` a4b）。卡片里改类型 → `SystemDetailView.on3dSetClass` → `store.updateNode(id, { planetClass })`（一条 undo + 自动保存），同时**当场换贴图**（`mat.map = new CanvasTexture(getPlanetTexture(classId))`）—— 不换就得重开 3D，用户会以为没生效。
   - 判据：`test_163` F 段（喂选中态 → 卡片出现 → 改类型后 `node.planetClass === 'arctic'` → 点下钻后 `viewLevel === 'planet'` 且 `currentPlanet` 就是那颗、3D 根节点消失）。
 
+- **3D 二期三件：双星 / 自动降档 / 纹理释放（2026-10-29，E3/E5/E6）**:
+  - **双星（E3）**：数据里本来就有（`star.parentStar` 指向主星），3D 只按主恒星取色 → 双星系和单星系长得一样。
+    现在 `buildSystem3dScene({ companions })` 出 `{tint, radius, orbit, speed, phase}`（最多 2 颗；脏色回落 `#cfd8e3`），
+    组件里每颗伴星 = 小球 + 加色光晕 + 一盏 **0.8 强度**的点光（主星 2.1 —— 强度相同会让行星两面都亮，看不出昼夜）。
+  - **自动降档（E5）**：判据是纯函数 `nextQualityLevel(level, avgFrameMs, 30)` —— `>30ms` 降一档、最低档停、
+    **只降不升**（升档会在临界点来回抖 = 用户看到"分辨率自己跳"）。接线在渲染循环里每 45 帧评一次
+    （窗口太短会被一次 GC 误伤），落到 `setPixelRatio(1.5→1.0→0.75)` + 最低档关小行星带；HUD 出
+    「已自动降档（低）：帧耗 42ms」—— 降档必须让用户看得见，否则会以为"3D 怎么糊了"。
+  - **纹理释放（E6）**：`planetArt` 的 18 张 canvas 跨开关复用是收益（二次打开瞬时），但项目都关了还留着是纯占内存。
+    在 `projectStore.closeProject` 里动态 import 后调 `__clearTextureCache()` —— **不要**放进 3D 的
+    dispose（那样每次关 3D 都要重画，等于把收益扔掉）。
+
+

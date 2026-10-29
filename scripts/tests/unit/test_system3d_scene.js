@@ -179,6 +179,42 @@ async function main() {
     return 'ok';
   });
 
+  check('a10 E5 自动降档：>30ms 降一档、最低档就停、只降不升', () => {
+    const q = (lv, ms) => S.nextQualityLevel(lv, ms);
+    assert(q('high', 12) === 'high', '流畅时不降');
+    assert(q('high', 41) === 'mid', '掉帧降一档');
+    assert(q('mid', 41) === 'low', '再掉降到底');
+    assert(q('low', 90) === 'low', '最低档不再降');
+    assert(q('mid', 20) === 'mid', '只降不升（临界点来回抖会看到分辨率自己跳）');
+    assert(q('high', NaN) === 'high', '脏帧耗不降档');
+    assert(S.SYS3D_QUALITY.low.pixelRatioCap < S.SYS3D_QUALITY.high.pixelRatioCap, '低档像素比必须更小');
+    assert(S.SYS3D_QUALITY.low.belt === false, '最低档应关掉小行星带');
+    return 'ok';
+  });
+
+  check('a11 E3 双星：伴星进 spec（有色/轨道/相位/自转），最多 2 颗，缺色回落', () => {
+    const one = S.buildSystem3dScene({
+      starName: 'A', planets: [planet('p1', '一', 75)], moons: [],
+      companions: [{ id: 'b1', name: '伴星甲', tint: '#88aaff' }],
+    });
+    assert(Array.isArray(one.companions) && one.companions.length === 1, `伴星数不对：${JSON.stringify(one.companions)}`);
+    const c = one.companions[0];
+    assert(c.tint === '#88aaff', `伴星色应透传，实得 ${c.tint}`);
+    assert(c.orbit > one.star.radius, '伴星轨道必须在主星外面（否则被吞进恒星里）');
+    assert(c.radius < one.star.radius, '伴星必须比主星小（大小关系反了会看成"两颗主星"）');
+    assert(Number.isFinite(c.phase) && c.speed > 0, '伴星相位/角速度必须是有限数');
+    // 缺色 / 非法色 → 回落（绝不把 undefined 塞进 Color()）
+    const dirty = S.buildSystem3dScene({
+      starName: 'A', planets: [], moons: [],
+      companions: [{ id: 'b2', name: '伴星乙' }, { id: 'b3', tint: 'red' }, { id: 'b4' }],
+    });
+    assert(dirty.companions.every((x) => typeof x.tint === 'string' && x.tint[0] === '#'), '脏色没回落');
+    assert(dirty.companions.length === 2, `伴星上限应为 2，实得 ${dirty.companions.length}`);
+    // 单星系（无 companions）→ 空数组，不抛错
+    assert(S.buildSystem3dScene({ starName: 'A', planets: [] }).companions.length === 0, '无伴星时应为空数组');
+    return 'ok';
+  });
+
   check('a5 空间站：tags 记「空间站」→ kind=station 且尺寸固定', () => {
     const s = S.buildSystem3dScene({
       starName: '衡佑',
@@ -273,6 +309,12 @@ async function main() {
       assert(three.includes(needle), `System3DView 缺资源纪律：${needle}`);
     }
     assert(three.includes("e.code === 'Escape'") && three.includes("e.code === 'KeyP'"), '缺 Esc/P 键位');
+    // E5（2026-10-29）：自动降档必须接在渲染循环里（判据在 nextQualityLevel，接线在这里）
+    assert(three.includes('nextQualityLevel(') && three.includes('applyQuality('), '缺自动降档接线');
+    assert(three.includes('setPixelRatio('), '降档必须真的改像素比（否则只是改了个变量）');
+    // E6：项目关闭时释放 3D 纹理缓存（常驻是收益，但要有个释放点）
+    const ps = read('src/renderer/src/store/projectStore.js');
+    assert(ps.includes('__clearTextureCache'), 'projectStore.closeProject 没释放 3D 纹理缓存');
     return 'ok';
   });
 

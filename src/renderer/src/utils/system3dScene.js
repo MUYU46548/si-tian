@@ -91,6 +91,35 @@ export function planetClassForNode(node, opts = {}) {
   return pool[hashString(node?.id || node?.name || '') % pool.length];
 }
 
+/**
+ * 低配降级档位（E5，2026-10-29）。
+ * 旧口径只有"WebGL 不可用 → 报错面板"：显卡能跑但跑不动时只能看着它卡。
+ * 现在按**实测帧耗**降档（只降不升 —— 升档会在临界点来回抖，用户看到"分辨率自己跳"）。
+ *   像素比 / 小行星带：这两项一降就是实打实的帧率，且不改变观感结构。
+ */
+export const SYS3D_QUALITY = Object.freeze({
+  high: { pixelRatioCap: 1.5, belt: true, label: '高' },
+  mid: { pixelRatioCap: 1.0, belt: true, label: '中' },
+  low: { pixelRatioCap: 0.75, belt: false, label: '低' },
+});
+export const SYS3D_QUALITY_ORDER = Object.freeze(['high', 'mid', 'low']);
+
+/**
+ * 帧耗 → 下一档。>30ms（≈33fps 以下）降一档，已到最低档就停在那里。
+ * @param {'high'|'mid'|'low'} level
+ * @param {number} avgFrameMs 最近若干帧的平均帧耗
+ * @param {number} [thresholdMs]
+ * @returns {'high'|'mid'|'low'}
+ */
+export function nextQualityLevel(level, avgFrameMs, thresholdMs = 30) {
+  const i = Math.max(0, SYS3D_QUALITY_ORDER.indexOf(level));
+  const cur = SYS3D_QUALITY_ORDER[i];
+  if (Number.isFinite(avgFrameMs) && avgFrameMs > thresholdMs && i < SYS3D_QUALITY_ORDER.length - 1) {
+    return SYS3D_QUALITY_ORDER[i + 1];
+  }
+  return cur;
+}
+
 /** 0~1 的确定性伪随机（同一 key 恒定） */
 function unit(key) {
   return (hashString(key) % 10000) / 10000;
@@ -168,12 +197,25 @@ export function buildSystem3dScene(input = {}) {
   });
 
   const maxOrbit = bodies.reduce((m, b) => Math.max(m, b.orbit), SYS3D_GEOM.orbitBase);
+  // 双星（E3，2026-10-29）：子恒星（`parentStar` 指向主星）绕主恒星转。
+  // 3D 里此前只按主恒星取色 —— 双星系看起来和单星一模一样（数据在，但画不出来）。
+  const companionInput = Array.isArray(input.companions) ? input.companions : [];
+  const companions = companionInput.slice(0, 2).map((c, i) => ({
+    id: c?.id || `companion-${i}`,
+    name: c?.displayName || c?.name || `伴星${i + 1}`,
+    tint: (typeof c?.tint === 'string' && c.tint[0] === '#') ? c.tint : '#cfd8e3',
+    radius: SYS3D_GEOM.starRadius * (0.46 - i * 0.1),
+    orbit: SYS3D_GEOM.starRadius * (2.1 + i * 1.0),
+    speed: 0.34 / (1 + i * 0.45),
+    phase: unit(`companion:${c?.id || i}`) * Math.PI * 2,
+  }));
   return {
     star: {
       name: input.starName || '恒星',
       tint: starTint,
       radius: SYS3D_GEOM.starRadius,
     },
+    companions,
     bodies,
     hasPlanets: bodies.some((b) => b.kind === 'planet'),
     maxOrbit,

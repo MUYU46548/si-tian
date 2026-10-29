@@ -43,6 +43,7 @@
     </button>
 
     <div v-if="status" class="sys3d-status" data-testid="system-3d-status">{{ status }}</div>
+    <div v-if="qualityBadge" class="sys3d-quality" data-testid="system-3d-quality">{{ qualityBadge }}</div>
     <div v-if="error" class="sys3d-error" data-testid="system-3d-error">
       <div class="sys3d-error-title">3D 观景不可用</div>
       <div class="sys3d-error-body">{{ error }}</div>
@@ -71,6 +72,7 @@ import Icon from './Icon.vue';
 import {
   PLANET_CLASSES, SeededRng, getPlanetTexture, hashString, hexAlpha, planetClassLabel,
 } from '../utils/planetArt.js';
+import { SYS3D_QUALITY, nextQualityLevel } from '../utils/system3dScene.js';
 
 const props = defineProps({
   // buildSystem3dScene() 的产物；父组件每次打开时现算
@@ -160,9 +162,36 @@ let clockLast = 0;
 const disposable = [];
 const labels = [];
 const orbits = [];
+/** E3：伴星 pivot（公转角度每帧推进） */
+const starPivots = [];
 const projectVec = { v: null };
 let lastFpsStamp = 0;
 let framesSinceStamp = 0;
+
+// ===== E5（2026-10-29）：按实测帧耗自动降档（只降不升，判据是纯函数） =====
+let qualityLevel = 'high';
+let qualityAvgMs = 0;
+let qualityAccumMs = 0;
+let qualityAccumN = 0;
+let beltMesh = null;
+const qualityBadge = ref('');
+
+function applyQuality() {
+  const q = SYS3D_QUALITY[qualityLevel] || SYS3D_QUALITY.high;
+  try {
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatioCap));
+  } catch (e) { /* 上下文丢失时忽略 */ }
+  resize();
+  if (beltMesh) beltMesh.visible = q.belt;
+  stats.quality = {
+    level: qualityLevel,
+    pixelRatio: (() => { try { return renderer.getPixelRatio(); } catch (e) { return null; } })(),
+    avgFrameMs: Math.round(qualityAvgMs * 10) / 10,
+  };
+  qualityBadge.value = qualityLevel === 'high'
+    ? ''
+    : `已自动降档（${q.label}）：帧耗 ${Math.round(qualityAvgMs)}ms，像素比 ${stats.quality.pixelRatio}`;
+}
 
 /** 关闭后的验收数据（也用于排查 WebGL 泄漏） */
 const stats = {
@@ -346,6 +375,32 @@ function buildScene() {
   limb.renderOrder = 3;
   scene.add(limb);
 
+  // ── 双星（E3，2026-10-29）：子恒星绕主恒星转，自带点光与光晕 ──────────────────
+  // 以前 3D 只按主恒星取色 → 双星系和单星系长得一模一样（数据在 `parentStar` 上，画不出来）。
+  for (const c of (spec.companions || [])) {
+    const pivot = new THREE.Object3D();
+    pivot.rotation.y = c.phase;
+    scene.add(pivot);
+    const holder = new THREE.Object3D();
+    holder.position.set(c.orbit, 0, 0);
+    pivot.add(holder);
+    const cGeo = new THREE.SphereGeometry(c.radius, 20, 14);
+    const cMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(c.tint) });
+    holder.add(new THREE.Mesh(track(cGeo), track(cMat)));
+    const cGlow = new THREE.Sprite(track(new THREE.SpriteMaterial({
+      map: track(makeGlowTexture(c.tint)),
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.9,
+    })));
+    cGlow.scale.setScalar(c.radius * 5.2);
+    holder.add(cGlow);
+    // 伴星也参与照明（强度低一档：主星仍是主光源，否则行星暗面会"两面都亮"）
+    holder.add(new THREE.PointLight(new THREE.Color(c.tint), 0.8, 0, 1.4));
+    starPivots.push({ pivot, speed: c.speed });
+  }
+
   for (const body of spec.bodies) {
     // 轨道环（128 段折线，比圆环更省）
     const pts = [];
@@ -450,6 +505,7 @@ function buildScene() {
       const belt = new THREE.Points(track(beltGeo), track(beltMat));
       belt.name = 'belt';
       scene.add(belt);
+      beltMesh = belt;    // E5：降到最低档时整条带子关掉（它是纯装饰、点最多）
     }
   }
 
@@ -474,6 +530,8 @@ function buildScene() {
   stats.geometries = renderer.info.memory.geometries;
   stats.textures = renderer.info.memory.textures;
   stats.labels = labels.length;
+  // E5：初始就在最高档（不预设降档 —— 用户机器够快就不该看到任何变化）
+  stats.quality = { level: qualityLevel, pixelRatio: renderer ? renderer.getPixelRatio() : null, avgFrameMs: 0 };
 }
 
 function animate() {
@@ -492,6 +550,7 @@ function animate() {
       o.mesh.rotation.y += 0.25 * dt;
       for (const mp of o.moonPivots) mp.pivot.rotation.y += mp.speed * dt;
     }
+    for (const s of starPivots) s.pivot.rotation.y += s.speed * dt;
   }
   controls.update();
   renderer.render(scene, camera);
@@ -521,6 +580,20 @@ function animate() {
     lastFpsStamp = now;
     framesSinceStamp = 0;
   }
+
+  // E5：每 45 帧评一次档（窗口太短会被一次 GC 误伤，太长则用户已经卡了半天）
+  qualityAccumMs += dt * 1000;
+  qualityAccumN += 1;
+  if (qualityAccumN >= 45) {
+    qualityAvgMs = qualityAccumMs / qualityAccumN;
+    qualityAccumMs = 0;
+    qualityAccumN = 0;
+    const next = nextQualityLevel(qualityLevel, qualityAvgMs);
+    if (next !== qualityLevel) {
+      qualityLevel = next;
+      applyQuality();
+    }
+  }
 }
 
 function startLoop() {
@@ -549,6 +622,14 @@ function disposeAll() {
   pickables.length = 0;
   picked.value = null;
   raycaster = null;
+  // E3/E5：伴星 pivot 与降档状态也归零（重开 3D 从最高档开始）
+  starPivots.length = 0;
+  beltMesh = null;
+  qualityLevel = 'high';
+  qualityAvgMs = 0;
+  qualityAccumMs = 0;
+  qualityAccumN = 0;
+  qualityBadge.value = '';
 
   try { controls?.dispose(); } catch { /* 上下文已丢失时可能抛 */ }
 
@@ -761,4 +842,18 @@ defineExpose({ getStats, paused });
   padding: 5px 10px; font-size: 12px; cursor: pointer;
 }
 .sys3d-card-go:hover { background: rgba(56, 189, 248, 0.26); }
+
+/* E5（2026-10-29）：自动降档提示（只在真的降了才出现） */
+.sys3d-quality {
+  position: absolute;
+  left: 18px;
+  top: 78px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  background: rgba(120, 53, 15, 0.55);
+  color: #fde68a;
+  font-size: 11px;
+  pointer-events: none;
+}
 </style>

@@ -261,6 +261,12 @@ const spec3d = computed(() => buildSystem3dScene({
   starTint: getStarColor(systemBodies.value.primaryStar?.starType).mid,
   planets: planetLayouts.value.filter((p) => !p.isMoon),
   moons: systemBodies.value.moons,
+  // E3（2026-10-29）：双星/伴星一起进 3D（`parentStar` 指向主星的那些），各按自己的 starType 取色
+  companions: systemBodies.value.binaryStars.map((s) => ({
+    id: s.id,
+    name: s.displayName || s.name,
+    tint: getStarColor(s.starType).mid,
+  })),
 }));
 const hasPlanets3d = computed(() => (spec3d.value?.counts?.planets || 0) > 0);
 function openSystem3d() {
