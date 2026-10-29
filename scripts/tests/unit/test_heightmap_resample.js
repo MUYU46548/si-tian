@@ -109,7 +109,7 @@ async function main() {
     return `左上 (${first}) / 右下 (${last})`;
   });
 
-  check('🔴 双线性：新格心的值等于四邻线性插值（手算对照）', () => {
+  check('🔴 线性场：新格心的值等于四邻插值（手算对照；双三次对线性场与双线性等价）', () => {
     const r = RS.resampleHeightmap(src, 2);
     const g = r.heightmap.grid, H = r.heightmap.h;
     // 原格 (0,0)=0 与 (1,0)=10 之间的中点 → 5；(0,0)/ (0,1)=1 之间的中点 → 0.5
@@ -123,6 +123,35 @@ async function main() {
     assert(close(at(0, 0), src.h[0], 1e-6), '原格 (0,0) 应原样保留');
     assert(close(at(6, 4), src.h[src.h.length - 1], 1e-6), '原格 (3,2) 应原样保留');
     return `中点 ${at(1, 0)} / ${at(0, 1)}，原格 ${at(2, 2)}`;
+  });
+
+  check('C4 双三次：二次面上的中点误差 ≈0（双线性在这里差 0.25），阶跃处不过冲且单调', () => {
+    // 5×3：h = c²（只看列）—— 双线性在中点给 0.5，而真值是 0.25；Catmull-Rom 对三次以下精确
+    const quad = makeGrid(5, 3, 14.4, (c) => c * c);
+    const r = RS.resampleHeightmap(quad, 4);
+    assert(r.ok, `应当成功：${r.message || ''}`);
+    const g = r.heightmap.grid, H = r.heightmap.h;
+    const row = 2;   // 内部行
+    let maxErr = 0;
+    for (let ci = 0; ci < g.cellsX; ci++) {
+      const x = ci / 4;                  // 源列坐标
+      maxErr = Math.max(maxErr, Math.abs(H[row * g.cellsX + ci] - x * x));
+    }
+    assert(maxErr < 1e-3, `二次面上的最大误差应 ≈0（双线性会到 0.25），实际 ${maxErr}`);
+    // 阶跃 0,0,100,100,100：过渡带单调 + 不冲出 [0,100]（Catmull-Rom 会过冲，靠邻域夹持砍掉）
+    const step = makeGrid(5, 3, 14.4, (c) => (c >= 2 ? 100 : 0));
+    const rs = RS.resampleHeightmap(step, 4);
+    assert(rs.ok, `阶跃重采样应当成功：${rs.message || ''}`);
+    const gs = rs.heightmap.grid, Hs = rs.heightmap.h;
+    const line = [];
+    for (let ci = 0; ci < gs.cellsX; ci++) line.push(Hs[2 * gs.cellsX + ci]);
+    assert(line.every((v) => v >= -1e-6 && v <= 100 + 1e-6),
+      `过冲了：${line.map((v) => v.toFixed(2)).join(',')}`);
+    for (let i = 1; i < line.length; i++) {
+      assert(line[i] >= line[i - 1] - 1e-6, `过渡带回摆：${line.map((v) => v.toFixed(2)).join(',')}`);
+    }
+    assert(rs.stats.channels.some((ch) => ch.includes(':bicubic')), `统计应标 bicubic：${rs.stats.channels}`);
+    return `二次面误差 ${maxErr.toExponential(1)} / 阶跃 ${line.length} 格不过冲`;
   });
 
   check('🔴 分类量（biome）走最近邻：不许插出"不存在的群系编号"', () => {

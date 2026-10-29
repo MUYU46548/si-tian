@@ -149,13 +149,21 @@ function auditOne(file) {
   }
 
   // 省份多边形规模（用户真正关心的量级）
+  // ⚠️ 2026-10-29 修：`extraRings` 里既有**裸点数组**，也有 `{points, kind}` 环描述对象
+  //    （多环省/带洞省），旧实现直接 `.length` → 那些省算出 undefined，整行变成 "NaN 个顶点"。
+  //    这里两种形态都认：环描述取 `.points`，裸数组取自身。
+  const ringPoints = (ring) => {
+    if (Array.isArray(ring)) return ring.length;
+    if (ring && Array.isArray(ring.points)) return ring.points.length;
+    return 0;
+  };
   const baseMaps = (project.scenarios && project.scenarios.baseMaps) || {};
   for (const [k, bm] of Object.entries(baseMaps)) {
     const terrain = (bm && bm.terrain) || [];
     let points = 0;
     for (const p of terrain) {
-      for (const ring of [p.points, ...((p.extraRings) || [])]) points += (ring || []).length;
-      if (Array.isArray(p.holes)) for (const h of p.holes) points += (h || []).length;
+      for (const ring of [p.points, ...((p.extraRings) || [])]) points += ringPoints(ring);
+      if (Array.isArray(p.holes)) for (const h of p.holes) points += ringPoints(h);
     }
     console.log(`  底图「${k}」：${terrain.length} 块省份 / ${points} 个顶点`);
   }

@@ -39,7 +39,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 219 | `scripts/add-layer-frontmatter.js` | 给 vault 笔记补 layer frontmatter |
 | 234 | `scripts/add-place-type-frontmatter.js` | 给 vault 笔记补 placeType frontmatter |
 | 210 | `scripts/audit-coverage.js` | 提取覆盖率审计（只读）：范围内成节点率 + 缺口清单 + 范围外分布，--write-report 落 96 事务管理/ |
-| 202 | `scripts/audit-project-size.js` | （待补） |
+| 210 | `scripts/audit-project-size.js` | （待补） |
 | 268 | `scripts/audit-reimport-019.mjs` | （待补） |
 | 324 | `scripts/clean-cache-junk.js` | .sitian 缓存历史垃圾清理（空名地形 / 空壳底图 / 测试残留节点）：dry-run 报告 + --apply 备份/存档/删除，删除前逐项自检（引用 / 包围盒 / 子节点） |
 | 103 | `scripts/emoji_audit.py` | emoji 审计（按文件聚合 + 行号上下文） |
@@ -219,7 +219,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 214 | `scripts/tests/unit/test_hand_edits.js` | （待补） |
 | 225 | `scripts/tests/unit/test_heightmap_access.js` | （待补） |
 | 206 | `scripts/tests/unit/test_heightmap_channels.js` | （待补） |
-| 404 | `scripts/tests/unit/test_heightmap_resample.js` | （待补） |
+| 433 | `scripts/tests/unit/test_heightmap_resample.js` | （待补） |
 | 180 | `scripts/tests/unit/test_interaction_gate.js` | （待补） |
 | 121 | `scripts/tests/unit/test_iso_contours.js` | （待补） |
 | 182 | `scripts/tests/unit/test_label_layout.js` | （待补） |
@@ -449,7 +449,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 229 | `src/renderer/src/utils/heightmapAccess.js` | （待补） |
 | 105 | `src/renderer/src/utils/heightmapChannels.js` | （待补） |
 | 567 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap「着色」档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |
-| 312 | `src/renderer/src/utils/heightmapResample.js` | （待补） |
+| 387 | `src/renderer/src/utils/heightmapResample.js` | （待补） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
 | 141 | `src/renderer/src/utils/interactionGate.js` | （待补） |
 | 186 | `src/renderer/src/utils/labelLayout.js` | （待补） |

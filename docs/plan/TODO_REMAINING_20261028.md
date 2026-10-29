@@ -51,9 +51,9 @@
 | C1 | 内嵌字体（宋体/文楷） | ⬜ 待做 | 现在 fallback 系统字体；需选字重、算体积（**不许**为了字形把首屏撑大 —— 走 `@font-face` + 按需子集） |
 | C2 | 国名多行 / 沿主轴旋转 | ✅ 2026-10-29 | 新增 `utils/labelOrient.js`（画布与导出**共用一份决策**）：`principalAxisAngle`（领土主轴：每省形心 + 面积权的二阶矩；单省退化=不转）+ `planPolityShape`（细长比 ≥1.6 才转、夹 ±30°；超宽折两行，CJK 按字/西文按词）。`drawStyledLabel` 支持 `lines/rotate`，SVG 导出逐行 `<text>` + `transform=rotate`。判据 `unit/test_polity_labels.js` t12/t13 |
 | C3 | 省名占位（415 个「新省份 N」） | ✅ 2026-10-29（便宜那条路） | 画布加「仅已命名省」开关（`toggle-named-provinces`，默认关）：打开后占位名整层不画。判据复用 `polityLabels.isPlaceholderProvinceName`（与导出链同一份），过滤落在 `collectScenarioLabels({skipPlaceholderProvinces})`，组件只传开关。`unit/test_polity_labels.js` t11 + `test_73` f0 源码闸门守。数据侧「从 Obsidian 批量导入真名」仍未做（要用户定映射规则） |
-| C4 | 地形分辨率 97×45 太粗 | ⬜ 待做 | 与 B 的 8k/16k 一起解决；或先做 bicubic 上采样（治标） |
+| C4 | 地形分辨率 97×45 太粗 | ✅ 2026-10-29（治标） | 放大插值从**双线性换成双三次**（Catmull-Rom）：双线性只有 C0、等值线会拐在格心上，双三次是 C1；四周补一圈用**二阶外插**（`v(-1)=3v(0)-3v(1)+v(2)`，一阶外插在二次面上边缘仍差 1.03 实测），并对**真实格点邻域**做 min/max 夹持砍过冲。判据 `unit/test_heightmap_resample.js`（二次面误差 0 / 阶跃不过冲且单调）。真解（8k/16k 源数据）随 B |
 | C5 | 道路分级显隐 | ✅ 2026-10-29 | 新增 `utils/routeDensity.js`（纯函数）：far 只留长度前 50% 的干道 → mid 全部 roads → near 加 trails → close 再加 searoutes —— **与标签/城镇同一套 far→close 档位**；`drawRoutes` 不再自带 `sparse` 分支。判据 `unit/test_label_zoom.js` z6（含"不许按线宽判主干"的理由：FMG 导入的路几乎同宽） |
-| C6 | 海岸带导出一致性 | 已在 A1 覆盖政治档浅滩；地形档海岸线早就有。**遗留**：等深线在粗格图（spacing > 14）不画（有意），若要导出更密的等深线需先在数据侧提分辨率 |
+| C6 | 海岸带导出一致性 | ✅ 2026-10-29（已覆盖，非欠账） | 两条路都在：细网格（spacing ≤14）直接抽等深线；粗格导入图用**高精度 `landFeatures` 环**栅格化重建海深场再抽线（`getSeaDetail` 的 `buildSeaDepthFromRings` 分支，`unit/test_sea_depth.js` t9–t11 守）。只有"粗格且没有高精度环"这一类才需要先 ×2 提分辨率（现在是 bicubic，坡面连续） |
 
 ## D. 之前验收的复核项（原 §5）
 
@@ -75,18 +75,35 @@
 
 ## F. 工程债 / 口径待定（跨轮遗留）
 
-- **`.sitian` 体积**：`handEdits` 已加软上限（A3），但 `changeEvents` / 地形数组仍是大头；
-  要动就按 `docs/agents-archive/project-save.md` 的"三个来源"逐项测，不要凭感觉压。
-- **保存挪线程**：指南包里的"分两步"口径仍未做（大项目落盘会占主线程）。
-- **`docs/ARCHITECTURE_MAP.md`** 是脚本生成的，每轮收尾跑一次 `python scripts/gen_architecture_map.py`；
-  本轮已更新（含 3D 三件与 163/71 数字）。
-- **方寸（fangcun）执行日志**：本轮只落了仓内文档，没有回写方寸看板（工具侧没有 create-log 能力）。
+- **`.sitian` 体积** —— ✅ 2026-10-29 **已实测**（`npm run audit-project-size -- --project <file>`，只读；顺带修了它把多环省的顶点数算成 `NaN` 的 bug —— `extraRings` 里有 `{points,kind}` 环描述对象，不能直接 `.length`）。
+  真实 415 省孤本（`绒花计划.sitian` 7.06 MB / desite 底图 27067 个顶点）的钱花在哪：
+
+  | 占比 | 字节 | 是什么 |
+  |---|---|---|
+  | 41.8% | 2.95 MB | `snapshots`（13 份；`SNAPSHOT_MAX_BYTES=3MB` 已生效，不是失控）—— 其中**第 0 份 base 就占 2.33 MB**（含全量 `terrain`），其余是 diff |
+  | 37.1% | 2.62 MB | `scenarios` 主体 |
+  | 19.5% | 1.37 MB | `maps`（行星地图） |
+  | ≤1% | 45 KB | `entities` / `hyperlanes` / `meta` |
+
+  更细的两个真问题（工具直接点名）：
+  - **同一份 `terrain` 进了 8 份 patch**（`scenarios/baseMaps/底图 2/terrain` × 8 = 0.57 MB）——
+    `diffWalk` 对数组是整体替换，动一个省 = 整表重存；
+  - 底图级 `updatedAt` 也进了 patch（× 8）—— 噪音 diff 的又一处（与实体时间戳同源）。
+  结论：压体积的杠杆顺序 = ① 数组级 diff（省表按 id 局部化）/ ② base 快照里 `terrain` 的去重（口径要动）/
+  ③ `grid.points` 去冗余（≈4.5%，可与 origin+spacing 推出，但加载侧要同步改）。**`changeEvents` 只有 18 KB —— 不是大头**。
+- **保存挪线程**：指南包里的"分两步"口径仍未做（大项目落盘会占主线程）。**本轮没动** ——
+  它要在"数据安全优先"下改序列化/写盘路径，仓促改等于拿落盘安全换手感；下一步先做「序列化耗时实测」再决定第 1 步切在哪。
+- **`docs/ARCHITECTURE_MAP.md`** 是脚本生成的，每轮收尾跑一次 `python scripts/gen_architecture_map.py`（本轮已更新）。
+- **方寸（fangcun）执行日志**：每轮只落仓内文档，没有回写方寸看板（工具侧没有 create-log 能力；任务卡倒是能更新，已同步进度）。
 
 ---
 
 ## 下次开工建议
 
-1. **A5 / A6**（阶段 0/1 收尾）：A5 先定坐标口径再动代码；A6 优先"共用 TerrainGenPanel"。
-2. **B 阶段 2 第一步**：只搬网格 + 高度模板，出 heightmap，先把"同 seed hash 一致 / 8k <1s"两条判据立起来。
-3. **C1 + C2**（字体 + 国名排布）：观感收益最大，且与数据无关，可独立一轮。
-4. D 的三条等用户回话（截图/原因/工具视图），不猜。
+1. **B 阶段 2 第一步**（最大一块）：只搬网格 + 高度模板，出 heightmap，先把"同 seed hash 一致 / 8k <1s"两条判据立起来。
+2. **C1 字体**：先定字体与体积预算（要真字体文件；`@font-face` + 子集，不许撑大首屏）。
+3. **C4 真解 / C6**：C4 的治标（bicubic 上采样）已做；真解随 B 的 8k/16k 一起。
+   C6 已由两条路覆盖（细网格直接抽等深线；粗格导入图用高精度 `landFeatures` 环重算海深场）——
+   只有"粗格且没有高精度环"这一类才需要先 ×2 提分辨率。
+4. **F 下一步**：快照策略（上限/频次）与 `grid.points` 去冗余（≈4.5%，要同时改加载侧）；保存挪线程先测序列化耗时。
+5. D 的三条等用户回话（截图/原因/工具视图），不猜。

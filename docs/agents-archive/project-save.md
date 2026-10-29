@@ -34,3 +34,14 @@
 - **写口契约的反向校验（2026-10-08，test_54 a2）**: 原校验只回答「登记了 ⇒ 必须有守卫」→ **「新增写口忘了登记」永不上报**（结构性漏网）。实测一次性揪出 18 个未登记写口（文化/宗教笔刷、底图绑定/迁移、切片点 4 个、省份笔刷族 5 个、清空行星内容、重算派生…），其中 `applyCultureBrush` / `applyReligionBrush` / `deriveAllLayers` / `addBaseMapBurg` 连首行守卫都没有 —— 已全部补守卫 + 登记（契约 9 条 / 76 个函数）。规则：**函数体出现 `guardWrite(`/`blocked(`/`commitHeightmap(` ⇒ 它就算写口 ⇒ 必须登记**（白名单只放守卫包装原语 `blocked`）。⚠️ 校验范围只含 `MEMORY_WRITE_CALLSITES`（函数级）里列出的文件；`WRITE_CALLSITES`（文件级）里的组件入口（`enterEditMode`/`persist`…）登记粒度是整文件，按函数名要求它们登记是不成立的。
 
 - 🔴 **项目文件的体积有三个来源，改任何一个都要重新量（2026-10-11）**：① **缩进**——`JSON.stringify(project, null, 2)` 在真实项目上占 **74%**（38.09 MiB → 紧凑 9.91 MiB），落盘已改紧凑，代价是 git 侧 diff 不再逐行可读；② **快照**——`diffWalk` 对数组是**整体替换**，动一个省 = 2.6 万点多边形 ≈ 700 KB 进 patch，实测 25 份快照里 6.41 MB 是同一份 `terrain` 存了 11 遍，现由 `SNAPSHOT_MAX_BYTES = 3 MB`（与 50 份双上限，**最新那份永不丢**）兜住；③ **噪音 diff**——`createdAt`/`updatedAt` 曾被每次保存改写（120 实体 × 2 = 每次 240 条 diff，且实体的"创建时间"被刷成保存那一刻 = 真数据被改），现由 `preserveEntityTimestamps` + `createEntity` 接受显式时间戳守住。诊断工具：`npm run audit-project-size`（只读）。**在真实项目副本上实测：38.09 MiB → 5.06 MiB（快照 25 份 → 6 份），且最新一份仍精确可恢复。**
+
+- **体积实测（2026-10-29，F 欠账的"先量再改"）**: 真实 415 省孤本 `绒花计划.sitian` **7.06 MB（已紧凑）**：
+  `snapshots 2.95 MB（41.8%）` / `scenarios 2.62 MB（37.1%）` / `maps 1.37 MB（19.5%）` / 其余 <1%。
+  - **快照里最大的不是份数而是 base**：第 0 份 **2.33 MB**（含全量 `terrain`），其余 12 份是 diff；3 MB 上限**已生效**（13 份就顶住了）。
+  - **两个真问题被工具点名**：① 同一份 `scenarios/baseMaps/底图 2/terrain` 进了 **8 份 patch（0.57 MB）** ——
+    `diffWalk` 对数组整体替换，动一个省 = 整表重存；② 底图级 `updatedAt` 也进 patch（噪音 diff 的又一处）。
+  - **被实测推翻的旧判断**：「`changeEvents` 是大头」——其实只有 **18 KB**；账本那条线不值得为体积动。
+  - **工具 bug（同轮修）**：`audit-project-size.js` 把多环省的顶点数算成 `NaN` ——
+    `extraRings` 里既有裸点数组、也有 `{points, kind}` 环描述对象，直接 `.length` 会得 undefined。修后 desite = **415 省 / 27067 顶点**。
+  - 下一步（按性价比）：**数组级 diff（省表按 id 局部化）** > base 快照的 terrain 去重（口径要动）> `grid.points` 去冗余（≈4.5%，加载侧要同步）。
+

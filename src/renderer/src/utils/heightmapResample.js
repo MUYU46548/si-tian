@@ -119,7 +119,30 @@ export function fmtBytes(n) {
 }
 
 /**
- * 把高度图放大 `factor` 倍（**双线性**，格心对齐、外沿保持不动）。
+ * Catmull-Rom 一维权重（4 点，t∈[0,1]）。和恒为 1，线性函数被**精确复现**
+ * （所以 `h = 10c + r` 这种平面地形放大后值与双线性一模一样）。
+ */
+function cubicWeights(t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return [
+    -0.5 * t3 + t2 - 0.5 * t,
+    1.5 * t3 - 2.5 * t2 + 1,
+    -1.5 * t3 + 2 * t2 + 0.5 * t,
+    0.5 * t3 - 0.5 * t2,
+  ];
+}
+
+/**
+ * 把高度图放大 `factor` 倍（连续量 **bicubic / Catmull-Rom**，格心对齐、外沿保持不动）。
+ *
+ * ── 为什么从双线性换成双三次（C4，2026-10-29）─────────────────────────────────
+ * 双线性在放大处**只有 C0 连续**：每一格的边界上斜率突变，等值线因此呈"折线台阶"，
+ * 光照/山体阴影会把台阶放大成一条条直线棱（用户原话「地形模模糊糊 / 一格一格的」）。
+ * 双三次是 C1：同样的格数下坡面连续，等值线不再拐在格心上。
+ * ⚠️ 双三次的代价是**过冲**（Catmull-Rom 在阶跃处会冲出 [a,b]）—— 地形高度冲出邻域会造出
+ * 不存在的山尖/负高度，所以这里对 16 点邻域做 **min/max 夹持**：只在过冲时生效，
+ * 线性/平滑坡面完全不受影响（判据在 `unit/test_heightmap_resample.js`）。
  *
  * 为什么格心对齐很重要：重采样后 `spacing` 变成 `spacing / factor`，而**最外圈的格心
  * 与世界坐标不变**。于是"省份多边形 / 参考底图 / 相机视口"全都不需要任何补偿 ——
@@ -185,28 +208,80 @@ export function resampleHeightmap(hm, factor, opts = {}) {
   const out = { grid: { points, spacing: nspacing, cellsX: nc, cellsY: nr, count: n } };
   const stats = { factor: f, srcCells: cols * rows, dstCells: n, channels: [] };
 
-  // ── 连续量：双线性 ────────────────────────────────────────────────────────
+  // ── 连续量：双三次（Catmull-Rom + 邻域夹持）──────────────────────────────────
   for (const key of CONTINUOUS_CHANNELS) {
     const src = hm[key];
     if (!src || src.length !== cols * rows) continue;
+    // 四周各补一圈：**二阶外插**（不是夹持/镜像）。
+    // 🔴 实测：夹持会让边缘中点偏 12%（h=10c+r 的 (0.5,0) 中点会算成 4.375 而不是 5）——
+    //    因为 Catmull-Rom 需要第 4 个点，用 p0 顶替 p(-1) 等于把直线掰弯了。
+    //    一阶（线性）外插能救回直线，但二次面在边缘仍差 1.03（实测）→ 这里用二阶：
+    //    `v(-1) = 3·v(0) − 3·v(1) + v(2)`（对二次以下精确，线性/常数是其特例）。
+    const padW = cols + 2;
+    const padH = rows + 2;
+    const pad = new Float32Array(padW * padH);
+    const at = (r, c) => pad[(r + 1) * padW + (c + 1)];
+    const put = (r, c, v) => { pad[(r + 1) * padW + (c + 1)] = v; };
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) put(r, c, src[r * cols + c]);
+    }
+    // 行方向上下两圈（列 0..cols-1 已填好）
+    for (let c = 0; c < cols; c++) {
+      if (rows >= 3) {
+        put(-1, c, 3 * at(0, c) - 3 * at(1, c) + at(2, c));
+        put(rows, c, 3 * at(rows - 1, c) - 3 * at(rows - 2, c) + at(rows - 3, c));
+      } else {
+        put(-1, c, at(0, c));
+        put(rows, c, at(rows - 1, c));
+      }
+    }
+    // 列方向左右两圈（此时每一行（含上下两圈）都已齐全）
+    for (let r = -1; r <= rows; r++) {
+      if (cols >= 3) {
+        put(r, -1, 3 * at(r, 0) - 3 * at(r, 1) + at(r, 2));
+        put(r, cols, 3 * at(r, cols - 1) - 3 * at(r, cols - 2) + at(r, cols - 3));
+      } else {
+        put(r, -1, at(r, 0));
+        put(r, cols, at(r, cols - 1));
+      }
+    }
     const dst = new Float32Array(n);
     for (let r = 0; r < nr; r++) {
       const fy = r / f;
       const j = Math.min(rows - 2, Math.floor(fy));
       const ty = fy - j;
-      const rowA = j * cols, rowB = (j + 1) * cols;
+      const wy = cubicWeights(ty);
       const base = r * nc;
       for (let c = 0; c < nc; c++) {
         const fx = c / f;
         const i = Math.min(cols - 2, Math.floor(fx));
         const tx = fx - i;
-        const a = src[rowA + i], b = src[rowA + i + 1];
-        const cc = src[rowB + i], d = src[rowB + i + 1];
-        dst[base + c] = (a + (b - a) * tx) * (1 - ty) + (cc + (d - cc) * tx) * ty;
+        const wx = cubicWeights(tx);
+        let sum = 0;
+        let mn = Infinity;
+        let mx = -Infinity;
+        for (let b = 0; b < 4; b++) {
+          const rr = j - 1 + b;
+          const rowIn = rr >= 0 && rr < rows;
+          const wb = wy[b];
+          for (let a = 0; a < 4; a++) {
+            const cc = i - 1 + a;
+            const v = at(rr, cc);
+            // 夹持只看**真实格点**：外插的鬼点可能远离数据（阶跃处会到 300），
+            // 把它算进 min/max 等于给过冲开后门 —— 那正是要防的东西。
+            if (rowIn && cc >= 0 && cc < cols) {
+              if (v < mn) mn = v;
+              if (v > mx) mx = v;
+            }
+            sum += v * wb * wx[a];
+          }
+        }
+        // 邻域 min/max 夹持：只砍过冲（否则阶跃处会造出"不存在的山尖"与负高度）
+        dst[base + c] = sum < mn ? mn : (sum > mx ? mx : sum);
       }
     }
     out[key] = dst;
-    stats.channels.push(key + ':bilinear');
+    stats.channels.push(key + ':bicubic');
   }
 
   // ── 分类量：最近邻（插值会造出不存在的编码）────────────────────────────────
