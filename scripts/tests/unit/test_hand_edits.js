@@ -44,8 +44,21 @@ function makeHm(offsetX = 0) {
   return { h: Float32Array.from(h), grid: { points, spacing: 10 } };
 }
 
+/** 通用网格：cols×rows，原点 (ox, oy)，格距 spacing，高度统一 h0 */
+function makeGrid(cols, rows, ox, oy, spacing, h0 = 30) {
+  const points = [];
+  const h = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      points.push([ox + c * spacing, oy + r * spacing]);
+      h.push(h0);
+    }
+  }
+  return { h: Float32Array.from(h), grid: { points, spacing, cellsX: cols, cellsY: rows } };
+}
+
 async function main() {
-  const { handEditKey, mergeHandEdits, activeHandEdits, reapplyHandEdits, thinHandEdits, HAND_EDITS_SOFT_MAX } = await load(HAND);
+  const { handEditKey, mergeHandEdits, activeHandEdits, reapplyHandEdits, thinHandEdits, HAND_EDITS_SOFT_MAX, transferHandEdits } = await load(HAND);
   const { lakeHeightForWeight } = await load(MATH);
 
   check('h1 坐标量化：1e-2 精度，同格不同浮点尾差得到同一个键', () => {
@@ -128,6 +141,68 @@ async function main() {
     assert(merged.length <= HAND_EDITS_SOFT_MAX, `merge 未抽稀：${merged.length}`);
     assert(merged.some((e) => e.x === 0 && e.y === 0), '抽稀把刚画的格丢了');
     return `${many.length} → ${a.length} 条`;
+  });
+
+  check('h7 造陆搬手绘（同包围盒）：逐点命中，写回用**新格坐标**，之后仍能被 activeHandEdits 认出', () => {
+    const prev = makeHm();
+    prev.h[0] = 70; prev.h[4] = 65;
+    prev.handEdits = [{ x: 0, y: 0, h: 70 }, { x: 10, y: 10, h: 65 }];
+    const next = makeHm();
+    const r = transferHandEdits(next, prev, activeHandEdits(prev));
+    eq(r.applied, 2, '同包围盒 2 格搬过去');
+    eq([next.h[0], next.h[4]], [70, 65], '写回值');
+    eq(r.dropped, 0, '没有丢弃');
+    // 🔴 kept 必须用新格坐标：写回旧坐标 = 下一次重生成 activeHandEdits 认不出来（静默丢）
+    eq(r.kept.map((e) => [e.x, e.y]).sort(), [[0, 0], [10, 10]], 'kept 坐标');
+    next.handEdits = r.kept;
+    eq(activeHandEdits(next).length, 2, '搬完 handEdits 仍有效');
+    return `${r.applied} 格`;
+  });
+
+  check('h8 造陆搬手绘（包围盒挪位/变密）：按**图幅相对位置**吸附，格距不同也能落', () => {
+    // 旧图 0..20（格距 10），新图 -10..30（格距 10）：统一块地在图幅里的相对位置没变
+    const prev = makeHm();
+    prev.h[8] = 88;                                   // 旧图右下角 (20,20)
+    prev.handEdits = [{ x: 20, y: 20, h: 88 }];
+    const next = makeGrid(5, 5, -10, -10, 10);        // 新图包围盒 -10..30
+    const r = transferHandEdits(next, prev, activeHandEdits(prev));
+    eq(r.applied, 1, '相对位置应命中');
+    eq(r.kept[0], { x: 30, y: 30, h: 88 }, '落在新图右下角');
+    eq(r.snapped, 0, '恰好落格：不需要吸附');
+    // 新图更密（格距 5）：映射点落在格点上仍然是命中，值为手绘值
+    const dense = makeGrid(9, 9, -10, -10, 5);
+    const r2 = transferHandEdits(dense, prev, activeHandEdits(prev));
+    eq(r2.applied, 1, '变密也命中');
+    eq(r2.kept[0].h, 88, '写回值');
+    return `${r.kept[0].x},${r.kept[0].y} / 密图 ${r2.applied}`;
+  });
+
+  check('h9 造陆搬手绘：抬高型落到新图的海里 → 丢弃；手挖湖（压低型）→ 保留', () => {
+    const prev = makeHm();
+    prev.h[0] = 75; prev.h[1] = 18;
+    prev.handEdits = [{ x: 0, y: 0, h: 75 }, { x: 10, y: 0, h: 18 }];
+    const next = makeHm();
+    next.h[0] = 12; next.h[1] = 30;                   // 新图上 (0,0) 已是海
+    const r = transferHandEdits(next, prev, activeHandEdits(prev), { seaLevel: 20 });
+    eq(r.applied, 1, '只保留手挖湖那条');
+    eq(r.kept[0].x, 10, '留下的是压低型');
+    eq(r.dropped, 1, '抬高型进海 = 孤岛，丢弃');
+    eq(next.h[0], 12, '海格不被抬起来');
+    eq(next.h[1], 18, '湖写回');
+    return `保留 ${r.applied} / 丢 ${r.dropped}`;
+  });
+
+  check('h10 造陆搬手绘：超出吸附半径如实丢弃 + 结果确定', () => {
+    const prev = makeGrid(5, 5, 0, 0, 10);
+    prev.handEdits = [{ x: 10, y: 10, h: 77 }, { x: 20, y: 20, h: 66 }];
+    prev.h[6] = 77; prev.h[12] = 66;
+    const next = makeGrid(2, 2, 0, 0, 40);            // 网格很粗：格心离最近点 28.3
+    const a = transferHandEdits(next, prev, activeHandEdits(prev), { maxSnap: 10 });
+    eq(a.applied, 0, `超出半径应全丢（实际 ${a.applied}）`);
+    eq(a.dropped, 2, '丢弃计数');
+    const b = transferHandEdits(makeGrid(2, 2, 0, 0, 40), prev, activeHandEdits(prev), { maxSnap: 10 });
+    eq(JSON.stringify(a.kept), JSON.stringify(b.kept), '同输入同输出');
+    return `丢 ${a.dropped}`;
   });
 
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);

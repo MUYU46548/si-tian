@@ -18,6 +18,8 @@
   e 形状口径：长条大陆**整片陆地**的归一化包围盒比明显大于圆润（不用单块 PCA：会被近圆的
     半岛骗到）；群岛环数 > 陆块数。
   f 规模：400 省量级一次造陆 + 铺底 < 30s（会分批让帧），且撤销仍是**一条**。
+  g 手绘地形（A5，2026-10-29）：图上已有手绘高度 → 同种子重生成**按图幅相对位置搬过去**
+    （回执照写保留格数、逐格核对写回值）；关掉「保留手绘地形」→ 一条不留且回执写明。
 """
 import base64
 import json
@@ -105,6 +107,14 @@ def source_gates():
     for tid in ('lgen-preview', 'lgen-apply', 'lgen-seed', 'lgen-cand-', 'lgen-provinceCount'):
         if tid not in panel:
             fails.append(f'🔴 面板缺少 `{tid}` 锚点')
+    # A5（2026-10-29）：造陆 = 整张换掉高度图，但手绘地形必须能搬过去（同种子）或**显式丢弃**
+    if 'transferHandEdits' not in pe or 'keepHandEdits !== false' not in pe:
+        fails.append('🔴 造陆没有接手绘地形（A5）：store 应走 transferHandEdits + opts.keepHandEdits')
+    if 'lgen-keep-hand' not in panel or 'keepHandEdits: keepHandEdits.value' not in panel:
+        fails.append('🔴 造陆面板缺少「保留手绘地形」开关（A5）：lgen-keep-hand → store.keepHandEdits')
+    # 图幅必须记在高度图上：不记 → 每次重跑按省份包围盒重推，大陆每次缩 ≈9.5%
+    if 'genBBox' not in pe or 'recordedLandBBox' not in pe:
+        fails.append('🔴 造陆没把图幅（genBBox）记到高度图 —— 重跑会越造越小')
     return fails
 
 
@@ -304,6 +314,66 @@ JS_SCALE = r""" (async () => {
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
 
 
+JS_KEEP_HAND = r""" (async () => {
+  const s = __STORE__, K = __KEY__;
+  const out = {};
+  const hmA = s.getHeightmapFor(K);
+  const ptsA = hmA && hmA.grid && hmA.grid.points;
+  if (!ptsA || !ptsA.length) return JSON.stringify({ stage: 'no-heightmap' });
+  const xy = (p) => (Array.isArray(p) ? [p[0], p[1]] : [p.x, p.y]);
+  const span = (b) => (b && Number.isFinite(b.maxX)
+    ? `${Math.round((b.maxX - b.minX) * 100) / 100}x${Math.round((b.maxY - b.minY) * 100) / 100}` : null);
+  out.frame0 = span(hmA.genBBox);
+  // 在陆格上手绘 12 格（抬高到 77），并登记 handEdits —— 与高度笔刷落库后的形状一致
+  const picked = [];
+  for (let k = 1; k <= 12; k++) {
+    const i = Math.floor(ptsA.length * k / 14);
+    if (!(hmA.h[i] >= 20)) continue;
+    const [x, y] = xy(ptsA[i]);
+    hmA.h[i] = 77;
+    picked.push({ x, y, h: 77 });
+  }
+  hmA.handEdits = picked;
+  out.painted = picked.length;
+  const seed = Number.isFinite(hmA.genSeed) ? hmA.genSeed : null;
+  out.seed = seed;
+  if (!picked.length) return JSON.stringify(out);
+
+  // ① 同种子重生成 + 保留手绘
+  const r = await s.generateLandmass(K, { seed, provinceCount: 60 }, { force: true, keepHandEdits: true });
+  out.okKeep = !!(r && r.ok);
+  out.handKeep = r ? r.handKept : null;
+  out.handBefore = r ? r.handBefore : null;
+  out.msgKeep = r ? String(r.message || '').slice(-160) : '';
+  const hmB = s.getHeightmapFor(K);
+  out.frame1 = span(hmB && hmB.genBBox);
+  const kept = (hmB && hmB.handEdits) || [];
+  out.storedKeep = kept.length;
+  const byKey = new Map();
+  for (let i = 0; i < hmB.grid.points.length; i++) { const [x, y] = xy(hmB.grid.points[i]); byKey.set(`${x},${y}`, i); }
+  out.valuesOk = kept.every((e) => {
+    const i = byKey.get(`${e.x},${e.y}`);
+    return i !== undefined && Math.abs(Number(hmB.h[i]) - 77) < 1e-3;
+  });
+
+  // ② 关掉开关 + 同种子 → 一条都不留（且回执写明）
+  const r2 = await s.generateLandmass(K, { seed, provinceCount: 60 }, { force: true, keepHandEdits: false });
+  out.okDrop = !!(r2 && r2.ok);
+  out.handDrop = r2 ? r2.handKept : null;
+  out.dropBefore = r2 ? r2.handBefore : null;
+  out.msgDrop = r2 ? String(r2.message || '').slice(-160) : '';
+  const hmC = s.getHeightmapFor(K);
+  out.storedDrop = ((hmC && hmC.handEdits) || []).length;
+
+  // 探针自己把这两条命令撤回去（否则后面「一次 undo 归零」的判据会被探针污染）
+  s.undo();
+  s.undo();
+  await new Promise(r => setTimeout(r, 420));
+  out.backTerrain = ((s.baseMaps[K] || {}).terrain || []).length;
+  return JSON.stringify(out);
+})() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
+
+
 def _ev(cdp, js, desc):
     r = eval_json(cdp, js, required=None, desc=desc)
     if isinstance(r, tuple) and r[0]:
@@ -399,6 +469,42 @@ def run(cdp):
         fails.append(f"🔴 状态栏没有造陆回执：{applied.get('status')!r}")
     if applied.get('renderError'):
         fails.append(f"🔴 渲染报错：{applied['renderError']}")
+
+    keep = _ev(cdp, JS_KEEP_HAND, '本图手绘 → 重生成保留 / 关掉丢弃（A5）')
+    if keep.get('__err__'):
+        fails.append(f'手绘保留探针失败：{keep}')
+    elif keep.get('stage'):
+        fails.append(f"手绘保留探针前置失败：{keep.get('stage')}（造陆后应先有高度图）")
+    elif not keep.get('painted'):
+        fails.append('手绘保留探针没有可挑的陆格（造陆后的高度图里没有陆地？）')
+    else:
+        if not keep.get('okKeep'):
+            fails.append(f"🔴 同种子重生成失败：{keep.get('msgKeep')}")
+        elif keep.get('handKeep') != keep.get('painted'):
+            fails.append(
+                f"🔴 同种子 + 同图幅应当逐格全中：画了 {keep.get('painted')} 格，只搬过去 {keep.get('handKeep')} 格"
+            )
+        elif not keep.get('valuesOk'):
+            fails.append('🔴 保留的手绘没写回新高度图（按 handEdits 逐格核对 h != 手绘值）')
+        else:
+            notes.append(f"手绘保留 {keep.get('handKeep')}/{keep.get('painted')} 格（逐格核对写回值）")
+        if '手绘' not in (keep.get('msgKeep') or ''):
+            fails.append(f"🔴 造陆回执没提手绘：{keep.get('msgKeep')!r}")
+        if not keep.get('okDrop'):
+            fails.append(f"🔴 关掉开关那次造陆失败：{keep.get('msgDrop')}")
+        elif (keep.get('storedDrop') or 0) != 0 or (keep.get('handDrop') or 0) != 0:
+            fails.append(f"🔴 关掉「保留手绘」后仍留了手绘：stored={keep.get('storedDrop')} handKept={keep.get('handDrop')}")
+        elif '未保留' not in (keep.get('msgDrop') or ''):
+            fails.append(f"🔴 关掉开关后回执没写明未保留：{keep.get('msgDrop')!r}")
+        else:
+            notes.append(f"关掉开关：{keep.get('dropBefore')} 格手绘如实丢弃（回执写明）")
+        if (keep.get('backTerrain') or 0) == 0:
+            fails.append('🔴 手绘保留探针没有把状态还回去（它自己那两条 undo 丢失了本图）')
+        frames = [keep.get('frame0'), keep.get('frame1')]
+        if all(frames) and frames[0] != frames[1]:
+            fails.append(f"🔴 重跑造陆把图幅改了（{frames[0]} → {frames[1]}）—— 会越造越小 / 手绘逐格漂移")
+        elif frames[0]:
+            notes.append(f"图幅稳定 {frames[0]}")
 
     undo = _ev(cdp, JS_UNDO, '一次撤销')
     if undo.get('__err__'):

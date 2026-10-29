@@ -8,6 +8,10 @@
 // ── 条目形状 ────────────────────────────────────────────────────────────────
 // `{ x, y, h }`：世界坐标 + 手绘高度。数组可直接进 `.sitian`（JSON），不需要 TypedArray。
 //
+// ── 两条写回路径（别混用）────────────────────────────────────────────────────
+//   · `reapplyHandEdits`：**同一张网格**重推（地形面板「重新生成」）→ 逐点同坐标。
+//   · `transferHandEdits`：**整张图换掉**（造陆）→ 网格/包围盒都变，按图幅相对位置搬 + 吸附。
+//
 // 纯函数：不碰 Vue / DOM / store；Node 侧直接测（`unit/test_hand_edits.js`）。
 
 /** 坐标量化键：1e-2 精度（FMG 网格 spacing 通常 ≥7，远大于此） */
@@ -100,6 +104,124 @@ export function activeHandEdits(hm) {
     out.push({ x: e.x, y: e.y, h: Number(hm.h[i]) });
   }
   return out;
+}
+
+/** 一份高度图 `grid.points` 的包围盒（世界坐标）；没有点就返回 null */
+export function gridBBox(hm) {
+  const pts = hm && hm.grid && Array.isArray(hm.grid.points) ? hm.grid.points : null;
+  if (!pts || !pts.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y] = pointXY(pts[i]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * **整张高度图换掉**（造陆 `generateLandmass` 这类路径）时，把旧手绘搬到新网格。
+ *
+ * ── 为什么不直接用 `reapplyHandEdits` ────────────────────────────────────────
+ * 那条路要求**逐点同坐标**（同 seed + 同布局）。造陆重建的不是"同一张网格"：
+ *   · 包围盒由「现有省份包围盒外扩 4%」推出来（`landmassBBox`），重跑一次就会挪几格；
+ *   · 格距来自 `170 + 崎岖度×30` 格，改一个滑杆就变。
+ * 于是绝对坐标几乎一定对不上（实测：同种子重跑一次，逐点命中率接近 0），
+ * 但**同一块地在图幅里的相对位置没变** —— 所以按包围盒归一化搬：
+ *   `x' = newMinX + (x - oldMinX) / oldSpanX * newSpanX`，再吸附到最近的格。
+ *
+ * ── 什么时候不搬 ────────────────────────────────────────────────────────────
+ * ① 换 seed = 全新世界（调用方按 `genSeed` 判断后不调用本函数）；
+ * ② 搬过去落在**新图的海里**、而这条手绘又是"抬高"（把山搬进大洋 = 凭空冒出一座孤岛）→ 丢；
+ *    反过来"压低"的手绘（手挖湖）落在海里无害，保留（它本来就该是水）。
+ *
+ * @param {object} nextHm 新高度图（会被改写 `h`）
+ * @param {object} prevHm 旧高度图（只用它的 `h` / `grid.points` 定图幅）
+ * @param {Array<{x:number,y:number,h:number}>} edits 旧手绘（建议先过 `activeHandEdits`）
+ * @param {{maxSnap?:number, seaLevel?:number, dropSeaOrphans?:boolean}} [opts]
+ *        `maxSnap` 吸附半径（世界单位，默认 0.75 格）；超出的如实丢弃。
+ * @returns {{applied:number, kept:Array, dropped:number, maxSnap:number, snapped:number}}
+ *          返回的 `kept` 用的是**新格坐标**（之后 `activeHandEdits` 才能再认出它们）
+ */
+export function transferHandEdits(nextHm, prevHm, edits, opts = {}) {
+  const list = (Array.isArray(edits) ? edits : []).filter(
+    (e) => e && Number.isFinite(e.x) && Number.isFinite(e.y) && Number.isFinite(e.h),
+  );
+  const pts = nextHm && nextHm.grid && Array.isArray(nextHm.grid.points) ? nextHm.grid.points : null;
+  const fail = { applied: 0, kept: [], dropped: list.length, maxSnap: 0, snapped: 0 };
+  if (!list.length || !pts || !pts.length || !nextHm.h || nextHm.h.length !== pts.length) return fail;
+
+  const nb = gridBBox(nextHm);
+  const pb = gridBBox(prevHm) || nb;
+  if (!nb || !pb) return fail;
+  const rawSpacing = Number(nextHm.grid && nextHm.grid.spacing);
+  const spacing = Number.isFinite(rawSpacing) && rawSpacing > 0
+    ? rawSpacing
+    : (Number.isFinite(nextHm.effectiveCellSize) && nextHm.effectiveCellSize > 0
+      ? nextHm.effectiveCellSize
+      : Math.max(1, (nb.maxX - nb.minX) / Math.max(1, (nextHm.grid.cellsX || 1) - 1)));
+  const maxSnap = Number.isFinite(opts.maxSnap) && opts.maxSnap > 0 ? opts.maxSnap : Math.max(0.5, spacing * 0.75);
+  const seaLevel = Number.isFinite(opts.seaLevel) ? opts.seaLevel : 20;
+  const dropSeaOrphans = opts.dropSeaOrphans !== false;
+
+  const pSpanX = pb.maxX - pb.minX, pSpanY = pb.maxY - pb.minY;
+  const nSpanX = nb.maxX - nb.minX, nSpanY = nb.maxY - nb.minY;
+  const mapX = (x) => (pSpanX > 1e-9 && nSpanX > 1e-9 ? nb.minX + ((x - pb.minX) / pSpanX) * nSpanX : x);
+  const mapY = (y) => (pSpanY > 1e-9 && nSpanY > 1e-9 ? nb.minY + ((y - pb.minY) / pSpanY) * nSpanY : y);
+
+  // 桶索引（格 = 吸附半径）：命中一定落在同格或相邻 8 格 → 只需看 3×3
+  const cell = Math.max(maxSnap, 1e-6);
+  const buckets = new Map();
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y] = pointXY(pts[i]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const k = `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+    let arr = buckets.get(k);
+    if (!arr) buckets.set(k, arr = []);
+    arr.push(i);
+  }
+
+  const hit = new Map();   // 新格下标 → 手绘值（多点吸到同一格时后者覆盖）
+  let dropped = 0, snapped = 0, worst = 0;
+  for (const e of list) {
+    const tx = mapX(e.x), ty = mapY(e.y);
+    const bx = Math.floor(tx / cell), by = Math.floor(ty / cell);
+    let best = -1, bestD2 = Infinity;
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const arr = buckets.get(`${bx + ox},${by + oy}`);
+        if (!arr) continue;
+        for (const i of arr) {
+          const [x, y] = pointXY(pts[i]);
+          const dx = x - tx, dy = y - ty;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) { bestD2 = d2; best = i; }
+        }
+      }
+    }
+    if (best < 0) { dropped++; continue; }
+    const dist = Math.sqrt(bestD2);
+    if (dist > maxSnap) { dropped++; continue; }
+    if (dropSeaOrphans && e.h >= seaLevel && !(Number(nextHm.h[best]) >= seaLevel)) {
+      dropped++;   // 抬高型手绘落到新图的海里 = 凭空孤岛 → 丢
+      continue;
+    }
+    if (dist > worst) worst = dist;
+    if (dist > 1e-6) snapped++;
+    hit.set(best, e.h);
+  }
+
+  const kept = [];
+  for (const [i, h] of hit) {
+    const [x, y] = pointXY(pts[i]);
+    nextHm.h[i] = h;
+    kept.push({ x, y, h });
+  }
+  return { applied: kept.length, kept, dropped, maxSnap, snapped, worst };
 }
 
 /**

@@ -56,6 +56,9 @@ import {
 } from '../../utils/voronoiBatch';
 // P0-2（2026-10-25）：造陆 —— 大陆/群岛轮廓的纯几何层 + 参数模型（两份都在 utils，Node 可测）
 import { generateLandmass as buildLandmass } from '../../utils/landmass';
+// A5（2026-10-29）：造陆会整张换掉高度图 —— 手绘地形按**图幅相对位置**搬到新网格
+// （`transferHandEdits` 与地形面板用的 `reapplyHandEdits` 是两条路径，理由见 utils/handEdits.js）
+import { activeHandEdits, transferHandEdits } from '../../utils/handEdits';
 import {
   normalizeLandParams, toLandmassOptions, describeLandParams, candidateSeed,
   normalizeCultureParams, describeCultureParams,
@@ -1996,7 +1999,38 @@ export function createProvinceEditingModule(ctx) {
   /** 没有陆地时用的默认区域（世界坐标；与剧本画布的常用范围同量级） */
   const LANDMASS_BBOX_DEFAULT = Object.freeze({ minX: -900, minY: -500, maxX: 900, maxY: 500 });
 
-  /** 造陆区域：已有陆地就用它的包围盒外扩 4%（在原来的地方造），否则用默认区域 */
+  /** 两个图幅的并集（任一侧为空就取另一侧） */
+  function unionLandBBox(a, b) {
+    if (!a) return b || null;
+    if (!b) return a;
+    return {
+      minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY),
+      maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY),
+    };
+  }
+
+  /**
+   * **上次造陆用的图幅**（记在高度图上，A5 修 2026-10-29）。
+   *
+   * 🔴 为什么必须记：旧实现每次都从「现有省份包围盒外扩 4%」重推图幅，而省份只占环的
+   *    一小部分（实测 ≈0.87）→ **每重跑一次造陆，整块大陆缩 ≈9.5%**（实测图幅
+   *    1800 → 1628 → 1473 世界单位，连跑三次缩 18%）。缩的不只是画面：所有按绝对坐标
+   *    摆的标记/道路/手绘地形都会相对陆地漂移；手绘也因此只能"图幅相对位置"搬。
+   *    记上图幅后：同种子同参数重跑 = **逐格同网格**（手绘逐点命中，不再需要吸附）。
+   */
+  function recordedLandBBox(key) {
+    const hm = getHeightmapFor(key);
+    const b = hm && hm.genBBox;
+    if (!b || ![b.minX, b.minY, b.maxX, b.maxY].every((v) => Number.isFinite(v))) return null;
+    return (b.maxX - b.minX > 10 && b.maxY - b.minY > 10)
+      ? { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY }
+      : null;
+  }
+
+  /**
+   * 造陆区域：① 优先沿用上次的图幅（见 `recordedLandBBox`，不缩）；② 与「现有省份包围盒
+   * 外扩 4%」取并集（用户手涂到框外时跟着长，不会被裁掉）；③ 都没有 → 默认区域。
+   */
   function landmassBBox(key) {
     let box = null;
     for (const p of rawProvinces(key)) {
@@ -2010,14 +2044,15 @@ export function createProvinceEditingModule(ctx) {
         box.maxY = Math.max(box.maxY, bb.maxY);
       }
     }
-    if (box && (box.maxX - box.minX) > 10 && (box.maxY - box.minY) > 10) {
-      const w = box.maxX - box.minX, h = box.maxY - box.minY;
-      return {
-        minX: box.minX - w * 0.02, minY: box.minY - h * 0.02,
-        maxX: box.maxX + w * 0.02, maxY: box.maxY + h * 0.02,
-      };
-    }
-    return { ...LANDMASS_BBOX_DEFAULT };
+    const fromProvinces = (box && (box.maxX - box.minX) > 10 && (box.maxY - box.minY) > 10)
+      ? {
+        minX: box.minX - (box.maxX - box.minX) * 0.02,
+        minY: box.minY - (box.maxY - box.minY) * 0.02,
+        maxX: box.maxX + (box.maxX - box.minX) * 0.02,
+        maxY: box.maxY + (box.maxY - box.minY) * 0.02,
+      }
+      : null;
+    return unionLandBBox(recordedLandBBox(key), fromProvinces) || { ...LANDMASS_BBOX_DEFAULT };
   }
 
   /**
@@ -2077,9 +2112,13 @@ export function createProvinceEditingModule(ctx) {
     if (!m) return { ok: false, rejected: 'no-basemap', message: '先选一张底图' };
     const existing = provincesOf(key);
     if (existing.length && !opts.force) {
+      // A5：把「手绘地形也会被整张换掉」写进拒绝理由 —— 不写清，用户以为只有省被替换
+      const pendingHand = activeHandEdits(getHeightmapFor(key)).length;
       return {
         ok: false, rejected: 'has-terrain',
-        message: `这张底图已经有 ${existing.length} 块陆地/省份 —— 造陆会整张替换（连同归属键），`
+        message: `这张底图已经有 ${existing.length} 块陆地/省份`
+          + (pendingHand ? `、${pendingHand} 格手绘地形` : '')
+          + ' —— 造陆会整张替换（连同归属键），'
           + '确认后才能继续（旧数据可由一次 Ctrl+Z 退回）。',
       };
     }
@@ -2117,6 +2156,46 @@ export function createProvinceEditingModule(ctx) {
     // **写**必须走 `commitHeightmap`（它会自动写到真值那一侧）。
     const heightmapBefore = getHeightmapFor(key) || null;
     const heightmapAfter = gen.terrain || null;
+    // ── 地形特征级锁定（A5，2026-10-29）：造陆 = 整张底图重来，手绘地形默认**搬过去** ─────
+    // 口径（改之前先想清楚，别写成"看起来能保留"）：
+    //   ① 新图与旧图共享**世界坐标系**，但**不是同一张网格**：包围盒由「现有省份包围盒外扩 4%」
+    //      推出来、格距随崎岖度变 → 逐点同坐标几乎一定落空（实测：同种子重跑一次命中率≈0）。
+    //      所以按「图幅相对位置」搬（`transferHandEdits`），落在新图海里的"抬高型"手绘如实丢弃。
+    //   ② **换 seed = 全新世界**：不搬（与地形面板「同种子才有效」同一条口径）。
+    //   ③ 用户显式关掉开关 → 不搬，并在回执里写明丢了多少格（不做静默保留）。
+    const prevHand = activeHandEdits(heightmapBefore);
+    const keepHand = opts.keepHandEdits !== false;
+    const sameSeed = !heightmapBefore || !Number.isFinite(heightmapBefore.genSeed)
+      || heightmapBefore.genSeed === norm.params.seed;
+    let handKept = [];
+    let handDropped = 0;
+    let handSnapped = 0;
+    if (heightmapAfter) {
+      if (keepHand && sameSeed && prevHand.length) {
+        const tr = transferHandEdits(heightmapAfter, heightmapBefore, prevHand, { seaLevel: SEA_LEVEL });
+        handKept = tr.kept;
+        handDropped = tr.dropped;
+        handSnapped = tr.snapped;
+      } else if (prevHand.length) {
+        handDropped = prevHand.length;
+      }
+      // `genSeed` 必须落库：下一次重生成靠它判断"是不是同一个世界"（没有它就只能一律保留）
+      heightmapAfter.handEdits = handKept;
+      heightmapAfter.genSeed = norm.params.seed;
+      // 图幅也落库：下一次重跑沿用同一框（否则按省份包围盒重推 → 每次缩 9.5%，见 `recordedLandBBox`）
+      heightmapAfter.genBBox = { minX: bbox.minX, minY: bbox.minY, maxX: bbox.maxX, maxY: bbox.maxY };
+    }
+    const handNote = handKept.length
+      ? `已保留 ${handKept.length} 格手绘地形`
+        + (handSnapped ? `（其中 ${handSnapped} 格按新网格吸附）` : '')
+        + (handDropped ? `，${handDropped} 格对新地形对不上已丢弃` : '') + '；'
+      : (prevHand.length
+        ? (!keepHand
+          ? `按你的选择未保留 ${prevHand.length} 格手绘地形；`
+          : (!sameSeed
+            ? `换 seed = 全新世界，${prevHand.length} 格手绘地形未保留；`
+            : `${prevHand.length} 格手绘地形对新地形对不上，已丢弃；`))
+        : '');
     execute({
       type: 'generate-landmass',
       label: `造陆：${gen.rings.length} 块陆地 / ${plan.created} 省`,
@@ -2150,10 +2229,14 @@ export function createProvinceEditingModule(ctx) {
       bbox,
       params: norm.params,
       elapsedMs: plan.elapsedMs,
+      handBefore: prevHand.length,
+      handKept: handKept.length,
+      handDropped,
+      keepHandEdits: keepHand,
       message: `已造陆：${gen.rings.length} 块陆地 → 铺成 ${plan.created} 省`
         + (riversAfter.length ? ` / ${riversAfter.length} 条河` : '')
         + `（实际陆地占比 ${(gen.stats.landRatio * 100).toFixed(1)}% / 目标 ${(gen.stats.targetRatio * 100).toFixed(0)}%；`
-        + `${describeLandParams(norm.params)}）—— 一次 Ctrl+Z 可整体退回`,
+        + `${describeLandParams(norm.params)}${handNote ? `；${handNote.replace(/；$/, '')}` : ''}）—— 一次 Ctrl+Z 可整体退回`,
     };
   }
 

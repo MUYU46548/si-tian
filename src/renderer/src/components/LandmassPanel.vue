@@ -48,6 +48,18 @@
       </div>
     </div>
 
+    <!-- A5（2026-10-29）：造陆 = 整张底图重来，但手绘地形不该顺手丢掉。
+         只在**确实有手绘**时露出来 —— 没有手绘时不放一个永远勾着的空开关。 -->
+    <label
+      v-if="handCount > 0"
+      class="lgen-check"
+      title="造陆会整张换掉高度图；勾上 = 把这张图上已手绘/笔刷改过的高度按图幅相对位置搬到新地形（只对同种子有效）。关掉 = 手绘全部丢弃。"
+    >
+      <input type="checkbox" v-model="keepHandEdits" data-testid="lgen-keep-hand" />
+      保留手绘地形
+      <span class="lgen-sub">（{{ handCount }} 格；同种子才有效；对新地形对不上的会如实丢弃）</span>
+    </label>
+
     <div class="lgen-cands-head">
       <span>候选（同参数、不同种子）</span>
       <button class="lgen-mini" :disabled="busy" data-testid="lgen-preview" @click="runPreview">重新出候选</button>
@@ -82,6 +94,7 @@
     <div class="lgen-note">
       ⚠️ 造陆会**替换**这张底图现有陆地与省份（一次性 Ctrl+Z 可整体退回）。
       已有归属键会随旧省份一起退回 —— 不会只退一半。
+      手绘地形（笔刷刷过的高度）**默认按图幅相对位置搬到新地形**，可在上方关掉；换种子 = 全新世界，不保留。
       缩略图里**海岸线来自轮廓、山地河湖来自同一份地形高度图**（绿=低地、褐=山地、灰=高山），
       所以预览里看到的地形就是铺底后地形层的那份；铺底本身在点「造陆」后才算。
     </div>
@@ -89,7 +102,7 @@
 </template>
 
 <script setup>
-import { nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import { useGeodataStore } from '../store/geodata';
 import {
@@ -97,6 +110,8 @@ import {
   normalizeLandParams, describeLandParams, rollSeed,
 } from '../utils/terrainParams';
 import { reliefRgb } from '../utils/landmassRelief';
+// A5（2026-10-29）：面板要知道"这张图上有没有手绘"，只需要**读**（写回的唯一实现在 store）
+import { activeHandEdits } from '../utils/handEdits';
 
 const props = defineProps({
   baseMapKey: { type: String, default: '' },
@@ -116,7 +131,16 @@ const busy = ref(false);
 const previewMs = ref(null);
 const warn = ref('');
 const progress = ref('');
+// A5：默认保留（与「地形生成参数」面板的 tgen-keep-hand 同一默认值）
+const keepHandEdits = ref(true);
 const canvases = new Map();
+
+/** 这张底图（绑定行星时 = 行星那份）上**当前有效**的手绘格数 */
+const handCount = computed(() => {
+  if (!props.baseMapKey) return 0;
+  const hm = store.getHeightmapFor ? store.getHeightmapFor(props.baseMapKey) : null;
+  return activeHandEdits(hm).length;
+});
 
 function shapeName(id) {
   return { continent: '圆润大陆', elongated: '长条大陆', archipelago: '群岛' }[id] || id;
@@ -319,7 +343,11 @@ async function apply() {
   const c = candidates.value[selected.value];
   if (!c) return;
   if (props.hasTerrain && !confirm(
-    '这张底图已经有陆地/省份。\n\n造陆会整张替换它们（连同归属键），一次 Ctrl+Z 可整体退回。\n\n继续吗？',
+    '这张底图已经有陆地/省份。\n\n造陆会整张替换它们（连同归属键），一次 Ctrl+Z 可整体退回。\n\n'
+    + (handCount.value
+      ? `另有 ${handCount.value} 格手绘地形 —— 本次${keepHandEdits.value ? '会按图幅相对位置尽量保留（换种子则不保留）' : '会全部丢弃'}。\n\n`
+      : '')
+    + '继续吗？',
   )) return;
   busy.value = true;
   warn.value = '';
@@ -330,6 +358,7 @@ async function apply() {
     const applyParams = { ...c.params, provinceCount: Number(params.provinceCount) };
     const r = await store.generateLandmass(props.baseMapKey, applyParams, {
       force: props.hasTerrain,
+      keepHandEdits: keepHandEdits.value,
       onProgress: (p) => { progress.value = p && p.message ? p.message : '正在铺底…'; },
     });
     if (!r || r.ok === false) {
@@ -391,4 +420,6 @@ defineExpose({ summary: () => describeLandParams(snapshot()) });
 .lgen-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .lgen-btn:not(:disabled):hover { filter: brightness(1.1); }
 .lgen-note { color: #94a3b8; font-size: 11px; line-height: 1.6; }
+.lgen-check { display: flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: 12px; cursor: pointer; }
+.lgen-check input[type='checkbox'] { accent-color: #34d399; }
 </style>
