@@ -104,3 +104,15 @@ NUL
 
 # 探针用真实底图（4.5MB，本地证据，禁止提交；由 _lab 探针临时放这里）
 src/renderer/public/__real_desite.map
+
+# build/ 下的施工临时件（2026-10-30 审计 A6：**不删文件**，只是不让它们进版本视野）
+# 形态：`_xxx.mjs` 一次性脚本 / `_commit_*.txt` 提交信息草稿 / `lm-*/ shots*/` 试渲染对比目录
+build/_*
+build/lm-*/
+build/v4old*/
+build/shots*/
+build/v3all/
+build/flowdiag/
+build/ref/
+build/landmass_head.txt
+build/*.zip
