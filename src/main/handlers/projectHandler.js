@@ -20,10 +20,13 @@ const fs = require('fs').promises;
 const { execFile } = require('child_process');
 
 const PROJECT_EXT = '.sitian';
-const BACKUP_KEEP = 10;
+// 滚动备份份数。2026-10-30 用户拍板：**保留最近 3 份**（原 10 份）。
+// 依据：真实 415 省项目 7.4MB/份 → 10 份 = 76MB，而绝大多数"翻回去"只需要最近两三次；
+// 更早的历史由**会话基线**（下面那条，不参与轮转）和 git 同步兜底。
+const BACKUP_KEEP = 3;
 
 // 会话基线：每次「打开项目」时把文件原样复制一份，固定文件名、覆盖式（永远只有 1 份）。
-// 为什么必须要它：快照轮转（BACKUP_KEEP=10）会被高频自动保存迅速刷光 —— 打开项目大改一场后，
+// 为什么必须要它：滚轮转（BACKUP_KEEP=3）会被高频自动保存迅速刷光 —— 打开项目大改一场后，
 // 备份目录里剩的全是最近几分钟的状态，「打开时的样子」永久丢失。基线不参与轮转，专门兜这一层。
 // （用户原话：没有数据安全承诺的系统，投进去的手绘时间是无担保贷款。）
 const BASELINE_TAG = '.session-baseline' + PROJECT_EXT;

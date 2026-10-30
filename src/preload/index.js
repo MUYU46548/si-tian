@@ -108,7 +108,8 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   projectBackupNow: (filePath) => ipcRenderer.invoke('project-backup-now', filePath),
   projectGitSnapshot: (payload) => ipcRenderer.invoke('project-git-snapshot', payload),
   // 🔴 原始底图来源备份（2026-10-11）：导入 `.map` 时把**原文**留一份到
-  //    `<项目>.sitian.backups/basemap-sources/`（原子写 + 轮转 10 份）。
+  //    `<项目>.sitian.backups/basemap-sources/`（原子写 + 轮转 10 份；项目文件本身按
+  //    `projectHandler.js#BACKUP_KEEP` 轮转，2026-10-30 起 = 3 份，两者不是同一个常量）。
   //    为什么需要：司天此前只备份自己的项目文件，**从不留用户导入的 `.map`** ——
   //    而那份文件是"地形/河流/道路能否重新导入"的唯一凭据（真实丢过一轮，见 handler 头注）。
   saveBaseMapSource: (payload) => ipcRenderer.invoke('basemap-source-save', payload),

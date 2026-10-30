@@ -14,6 +14,7 @@
     "clean-cache-junk": "node scripts/clean-cache-junk.js",
     "audit-coverage": "node scripts/audit-coverage.js",
     "audit-project-size": "node scripts/audit-project-size.js",
+    "prune-backups": "node scripts/prune-backups.mjs",
     "test": "python scripts/tests/run_tests.py",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",

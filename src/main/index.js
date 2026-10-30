@@ -355,8 +355,10 @@ ipcMain.handle('load-scenarios', async () => {
   }
 });
 
-// ===== 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳，保留最近 10 批 =====
-const BACKUP_KEEP = 10;
+// ===== 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳，保留最近 3 批 =====
+// 2026-10-30 用户拍板：备份目录统一**保留最近 3 份**（原 10 批 = 21MB，其中一大半是同一份
+// scenarios.json 的重复快照）。缓存本身可由「重新提取」重建，3 批足够回溯最近几次误操作。
+const BACKUP_KEEP = 3;
 
 async function backupSitianCache() {
   try {

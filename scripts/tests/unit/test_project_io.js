@@ -190,15 +190,16 @@ async function main() {
     return `backup=${path.basename(res.backupPath)}`;
   });
 
-  await check('备份轮转：写 12 次只留 10 份', async () => {
+  await check('备份轮转：写 12 次只留 BACKUP_KEEP 份', async () => {
     for (let i = 0; i < 12; i++) {
       await H.writeProjectFile(createdPath, sampleProject(`第${i}次`));
     }
     const dir = H.backupDirFor(createdPath);
     const files = (await fsp.readdir(dir)).filter(f => f.endsWith('.sitian'));
-    assert(files.length <= 10, `备份未轮转：${files.length} 份`);
-    assert(files.length >= 9, `备份被过度清理：${files.length} 份`);
-    return `备份 ${files.length} 份（上限 10）`;
+    // ⚠️ 份数从常量读（2026-10-30 用户拍板 10 → 3），别再写死数字
+    assert(files.length <= H.BACKUP_KEEP, `备份未轮转：${files.length} 份（上限 ${H.BACKUP_KEEP}）`);
+    assert(files.length >= H.BACKUP_KEEP - 1, `备份被过度清理：${files.length} 份`);
+    return `备份 ${files.length} 份（上限 ${H.BACKUP_KEEP}）`;
   });
 
   // ── 6. 列表 ─────────────────────────────────────────────────────────────
@@ -329,8 +330,8 @@ async function main() {
   });
 
   // ── 9. 数据安全：会话基线（打开时留底，且不被备份轮转删掉）─────────────────
-  //    为什么单列一条：rolling 备份上限 10 份，被高频自动保存刷光后，
-  //    「打开项目时的样子」就再也取不回来了 —— 基线是这一层的唯一兜底。
+  //    为什么单列一条：rolling 备份上限很小（BACKUP_KEEP，2026-10-30 起 = 3），
+  //    被高频自动保存刷光后，「打开项目时的样子」就再也取不回来了 —— 基线是这一层的唯一兜底。
   await check('会话基线：留底不受轮转影响、内容恒为打开时的状态', async () => {
     const base = await H.createProjectFile(DIR, '基线测试', sampleProject('基线·原始'));
     const p = base.filePath;
@@ -341,14 +342,14 @@ async function main() {
     eq(r1.backedUp, true, '基线未建立');
     eq(JSON.parse(await fsp.readFile(bl, 'utf-8')).meta.name, '基线·原始', '基线内容不对');
 
-    // 大改一场 + 高频保存（14 次 > 10 份上限）→ 滚动备份被轮转
+    // 大改一场 + 高频保存（14 次 > BACKUP_KEEP 份上限）→ 滚动备份被轮转
     for (let i = 0; i < 14; i++) await H.writeProjectFile(p, sampleProject(`基线·第${i}次`));
     assert(await exists(bl), '会话基线被轮转删除了（打开时的状态永久丢失）');
     eq(JSON.parse(await fsp.readFile(bl, 'utf-8')).meta.name, '基线·原始', '基线内容被后来的保存覆盖了');
 
     const rolling = (await fsp.readdir(H.backupDirFor(p)))
       .filter(f => f.endsWith('.sitian') && !f.endsWith(H.BASELINE_TAG));
-    assert(rolling.length <= 10, `滚动备份未轮转：${rolling.length} 份`);
+    assert(rolling.length <= H.BACKUP_KEEP, `滚动备份未轮转：${rolling.length} 份（上限 ${H.BACKUP_KEEP}）`);
 
     // 再打开一次 → 基线刷新成「这一次打开时的状态」（覆盖，仍只有 1 份）
     const r2 = await H.makeSessionBaseline(p);
