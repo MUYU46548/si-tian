@@ -272,11 +272,16 @@ def run(cdp):
         for tok in ('rawTerrain', 'rawPointsOf', 'toRaw'):
             if tok not in code:
                 fails.append(f'绘制路径未去响应式（缺 {tok}）→ 单帧又会回到 ~94ms')
-        for tok in ('invalidateMinimap', 'buildMinimapThumb', 'getMinimapEntry'):
-            if tok not in code:
-                fails.append(f'小地图缓存缺失（{tok}）→ 每帧两次全量遍历 25930 点')
-        if 'getMinimapWorldBounds' in code:
-            fails.append('旧的小地图包围盒函数还在（每帧全量遍历）→ 应已由 getMinimapEntry 的缓存取代')
+        # ⚠️ 2026-10-30（N1 刀 2）：小地图整块搬进 `scenario/layers/overlays.js` —— 判据跟着搬家。
+        #    原意不变：「缩略图缓存 + 入口」必须存在，「每帧全量遍历的旧包围盒」必须不存在。
+        overlay_code = _code_only(_read('src/renderer/src/scenario/layers/overlays.js'))
+        for tok in ('invalidateMinimap', 'buildThumb', 'getEntry'):
+            if tok not in overlay_code:
+                fails.append(f'小地图缓存缺失（overlays.js 缺 {tok}）→ 每帧两次全量遍历 25930 点')
+        if 'overlayLayers.invalidateMinimap(' not in code:
+            fails.append('ScenarioMap 没有在换图/改几何时作废小地图缓存（overlayLayers.invalidateMinimap）')
+        if 'getMinimapWorldBounds' in code or 'getMinimapWorldBounds' in overlay_code:
+            fails.append('旧的小地图包围盒函数还在（每帧全量遍历）→ 应已由 getEntry 的缓存取代')
         # 🔴 P2（2026-10-09）反转：`scheduleProvinceGrid` 必须**不存在** ——
         #    "异步补建网格"这一步随网格退役整体消失；打开省份工具现在是**零构造成本**。
         if 'scheduleProvinceGrid' in code:

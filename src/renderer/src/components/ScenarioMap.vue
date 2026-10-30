@@ -1857,6 +1857,8 @@ import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/
 import { drawProvincesLayer, drawProvinceBordersLayer } from '../scenario/layers/provinces';
 // N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
 import { createLabelLayers } from '../scenario/layers/labels';
+// N1 刀 2：屏幕空间浮层（小地图 / 文化图例 / 数据分布图 / 城镇悬浮卡）
+import { createOverlayLayers } from '../scenario/layers/overlays';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -9742,45 +9744,6 @@ function drawSelectedRiverHighlight(c) {
 const RIVER_SEL_GAP_PX = RIVER_SEL_GAP_PX_UTIL;
 const RIVER_SEL_WEIGHT_PX = RIVER_SEL_WEIGHT_PX_UTIL;
 
-// ══════════════════════════════════════
-// 文化/宗教图例（P1-T5，屏幕坐标系右下角）
-// ══════════════════════════════════════
-function drawCultureLegend(c) {
-  const hm = baseMap.value?.heightmap;
-  const src = colorMode.value === 'culture' ? hm?.cultures : hm?.religions;
-  if (!src || !src.length) return;
-  const rows = src.filter(x => x && x.i > 0 && x.color);
-  if (!rows.length) return;
-
-  const rowH = 15;
-  const shown = rows.slice(0, 22);
-  c.font = '11px "PingFang SC", sans-serif';
-  let maxW = 40;
-  for (const r of shown) maxW = Math.max(maxW, c.measureText(r.name || '').width);
-  const boxW = Math.min(250, maxW + 34);
-  const boxH = shown.length * rowH + 12;
-  const bx = cw() - boxW - 12;
-  const by = ch() - boxH - 12;
-
-  c.save();
-  c.fillStyle = 'rgba(15,26,46,0.86)';
-  c.strokeStyle = 'rgba(148,163,184,0.5)';
-  c.lineWidth = 1;
-  c.beginPath();
-  if (typeof c.roundRect === 'function') c.roundRect(bx, by, boxW, boxH, 6);
-  else c.rect(bx, by, boxW, boxH);
-  c.fill();
-  c.stroke();
-  for (let i = 0; i < shown.length; i++) {
-    const y = by + 6 + i * rowH;
-    c.fillStyle = shown[i].color;
-    c.fillRect(bx + 8, y + 3, 10, 10);
-    c.fillStyle = '#cbd5e1';
-    c.fillText(shown[i].name || '', bx + 24, y + 12);
-  }
-  c.restore();
-}
-
 /** 当前底图可用的数据图层清单（状态栏显示） */
 const layerAvailability = computed(() => {
   const hm = baseMap.value?.heightmap;
@@ -9798,125 +9761,9 @@ const layerAvailability = computed(() => {
 });
 
 // 小地图（P11）
+// N1 刀 2：缩略图缓存 / 包围盒 / 缩略图烘焙全搬进 `scenario/layers/overlays.js`（按实例），
+// 这里只留开关；缓存失效由 `overlayLayers.invalidateMinimap()` 触发。
 const showMinimap = ref(true);
-const MINIMAP_SIZE = 150;
-const minimapViewportDragging = false;
-
-// 🔴 小地图缓存（P-0 实测：`drawMinimap` + `getMinimapWorldBounds` 每帧两次全量遍历
-//    25930 个顶点，占单帧 CPU 的 16%）。现在几何只在「换图 / 数据变更」时重算一次，
-//    缩略图烘到离屏 canvas，每帧只 drawImage + 画视口框。
-let minimapRev = 0;
-let minimapCache = { key: '', entry: null };
-
-/** 省份几何/底图变化时作废小地图缓存（由 watch 调用） */
-function invalidateMinimap() {
-  minimapRev++;
-}
-
-/** 缩略图局部坐标系（0,0 起算，与屏幕上的摆放位置无关） */
-function minimapGeo(bounds) {
-  const mw = MINIMAP_SIZE;
-  const mh = MINIMAP_SIZE;
-  const spanX = bounds.maxX - bounds.minX || 1;
-  const spanY = bounds.maxY - bounds.minY || 1;
-  const scale = Math.min((mw - 4) / spanX, (mh - 4) / spanY);
-  return {
-    scale,
-    offX: 2 + ((mw - 4) - spanX * scale) / 2,
-    offY: 2 + ((mh - 4) - spanY * scale) / 2,
-  };
-}
-
-function computeMinimapBounds() {
-  const terrain = rawTerrain();
-  if (!terrain?.length) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const prov of terrain) {
-    for (const pts of rawRingPointsList(prov)) {      // 多环：飞地 / 洞都要进包围盒
-      for (const p of pts) {
-        const px = vx(p);
-        const py = vy(p);
-        if (px < minX) minX = px;
-        if (py < minY) minY = py;
-        if (px > maxX) maxX = px;
-        if (py > maxY) maxY = py;
-      }
-    }
-  }
-  if (!isFinite(minX)) return null;
-  return { minX, minY, maxX, maxY };
-}
-
-function buildMinimapThumb(bounds, geo) {
-  const cv = document.createElement('canvas');
-  cv.width = MINIMAP_SIZE;
-  cv.height = MINIMAP_SIZE;
-  const g = cv.getContext('2d');
-  g.fillStyle = 'rgba(15,26,46,0.85)';
-  g.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
-  const terrain = rawTerrain();
-  if (terrain) {
-    g.fillStyle = 'rgba(148,163,184,0.4)';
-    for (const prov of terrain) {
-      for (const pts of rawRingPointsList(prov)) {
-        if (!pts || pts.length < 3) continue;
-        g.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-          const sx = geo.offX + (vx(pts[i]) - bounds.minX) * geo.scale;
-          const sy = geo.offY + (vy(pts[i]) - bounds.minY) * geo.scale;
-          if (i === 0) g.moveTo(sx, sy);
-          else g.lineTo(sx, sy);
-        }
-        g.closePath();
-        g.fill();
-      }
-    }
-  }
-  return cv;
-}
-
-function getMinimapEntry() {
-  const key = `${baseMapKey.value}|${minimapRev}|${MINIMAP_SIZE}`;
-  if (minimapCache.key === key) return minimapCache.entry;
-  const bounds = computeMinimapBounds();
-  let entry = null;
-  if (bounds) {
-    const geo = minimapGeo(bounds);
-    entry = { bounds, geo, thumb: buildMinimapThumb(bounds, geo) };
-  }
-  minimapCache = { key, entry };
-  return entry;
-}
-
-function drawMinimap(c) {
-  if (!showMinimap.value) return;
-  const entry = getMinimapEntry();
-  if (!entry) return;
-  const { bounds, geo, thumb } = entry;
-  const mw = MINIMAP_SIZE;
-  const mh = MINIMAP_SIZE;
-  const pad = 12;
-  const mx = cw() - mw - pad;
-  const my = ch() - mh - pad;
-
-  c.save();
-  c.drawImage(thumb, mx, my);
-  c.strokeStyle = 'rgba(148,163,184,0.5)';
-  c.lineWidth = 1;
-  c.strokeRect(mx, my, mw, mh);
-
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const vx1 = mx + geo.offX + (tl.x - bounds.minX) * geo.scale;
-  const vy1 = my + geo.offY + (tl.y - bounds.minY) * geo.scale;
-  const vx2 = mx + geo.offX + (br.x - bounds.minX) * geo.scale;
-  const vy2 = my + geo.offY + (br.y - bounds.minY) * geo.scale;
-  c.strokeStyle = '#ffd700';
-  c.lineWidth = 1.5;
-  c.strokeRect(vx1, vy1, vx2 - vx1, vy2 - vy1);
-
-  c.restore();
-}
 
 // 数据图表（P2-T3 文化/宗教/势力分布）
 const showDataChart = ref(false);
@@ -9924,63 +9771,6 @@ const dataChartType = ref('culture'); // culture | religion | polity
 
 function toggleDataChart() {
   showDataChart.value = !showDataChart.value;
-}
-
-function drawDataChart(c) {
-  if (!showDataChart.value) return;
-  const hm = baseMap.value?.heightmap;
-  const rows = dataChartType.value === 'culture' ? hm?.cultures : dataChartType.value === 'religion' ? hm?.religions : null;
-  if (!rows || !rows.length) return;
-  const data = rows.filter(x => x && x.i > 0 && x.color);
-  if (!data.length) return;
-
-  // 统计各文化/宗教的网格点数
-  const counts = {};
-  const arr = dataChartType.value === 'culture' ? hm.culture : hm.religion;
-  if (!arr) return;
-  for (let i = 0; i < arr.length; i++) {
-    const id = arr[i];
-    counts[id] = (counts[id] || 0) + 1;
-  }
-
-  const labels = data.map(r => ({ name: r.name, color: r.color, count: counts[r.i] || 0 }));
-  const total = labels.reduce((s, l) => s + l.count, 0);
-  if (!total) return;
-
-  const boxW = 220;
-  const boxH = labels.length * 22 + 50;
-  const bx = 12;
-  const by = ch() - boxH - 12;
-
-  c.save();
-  c.fillStyle = 'rgba(15,26,46,0.9)';
-  c.strokeStyle = 'rgba(148,163,184,0.5)';
-  c.lineWidth = 1;
-  c.fillRect(bx, by, boxW, boxH);
-  c.strokeRect(bx, by, boxW, boxH);
-
-  c.font = 'bold 12px "PingFang SC", sans-serif';
-  c.fillStyle = '#e2e8f0';
-  c.fillText(`${dataChartType.value === 'culture' ? '文化' : '宗教'}分布`, bx + 10, by + 18);
-
-  const maxCount = Math.max(...labels.map(l => l.count));
-  for (let i = 0; i < labels.length; i++) {
-    const y = by + 35 + i * 22;
-    const pct = (labels[i].count / total * 100).toFixed(1);
-    // 色块
-    c.fillStyle = labels[i].color;
-    c.fillRect(bx + 10, y, 12, 12);
-    // 名称 + 百分比
-    c.fillStyle = '#cbd5e1';
-    c.font = '11px "PingFang SC", sans-serif';
-    c.fillText(`${labels[i].name} ${pct}%`, bx + 28, y + 11);
-    // 条形图
-    const barW = 80;
-    const barX = bx + 120;
-    c.fillStyle = labels[i].color;
-    c.fillRect(barX, y, (labels[i].count / maxCount) * barW, 12);
-  }
-  c.restore();
 }
 
 /**
@@ -10236,10 +10026,23 @@ function makeLayerView() {
     mapWorldSize,
     labelDetail: labelDetailNow,
     labelScale: labelScaleNow,
+    // 屏幕空间浮层（小地图 / 图例 / 分布图 / 悬浮卡）
+    baseMapKey: baseMapKey.value,
+    colorMode: colorMode.value,
+    dataChartType: dataChartType.value,
+    showDataChart: showDataChart.value,
+    showMinimap: showMinimap.value,
+    hoveredBurg: hoveredBurg.value,
+    selectedBurg: selectedBurg.value,
+    ringPointsList: rawRingPointsList,
+    vx,
+    vy,
+    formatPopulation,
   };
 }
 
 const labelLayers = createLabelLayers();
+const overlayLayers = createOverlayLayers();
 
 const scenarioRenderLayers = createLayerRegistry();
 scenarioRenderLayers.register({
@@ -10413,10 +10216,11 @@ function renderFrame() {
 
   // 以下浮层画在屏幕坐标系：字号与命中不受缩放影响
   if (!strokeBaseBuilding && !cameraMotion) {
-    drawBurgTooltip(ctx.value);
-    drawCultureLegend(ctx.value);
-    drawMinimap(ctx.value);
-    drawDataChart(ctx.value);
+    const overlayView = makeLayerView();
+    overlayLayers.drawBurgTooltip(ctx.value, overlayView);
+    overlayLayers.drawCultureLegend(ctx.value, overlayView);
+    overlayLayers.drawMinimap(ctx.value, overlayView);
+    overlayLayers.drawDataChart(ctx.value, overlayView);
   }
 }
 
@@ -11064,38 +10868,6 @@ function drawBurgs(c) {
 function formatPopulation(pop) {
   if (!pop) return '—';
   return pop >= 100 ? String(Math.round(pop)) : pop.toFixed(1);
-}
-
-/** 悬停/选中的城镇信息浮层（屏幕坐标系，字号不随缩放变化） */
-function drawBurgTooltip(c) {
-  if (!showBurgs.value) return;
-  const b = hoveredBurg.value || selectedBurg.value;
-  if (!b) return;
-  const sx = cameraX.value + b.x * cameraScale.value;
-  const sy = cameraY.value + b.y * cameraScale.value;
-  const title = b.name || '未命名城镇';
-  const sub = `${b.capital ? '首都 · ' : ''}人口 ${formatPopulation(b.population)}`;
-  c.font = '12px "PingFang SC", sans-serif';
-  const w = Math.max(c.measureText(title).width, c.measureText(sub).width) + 18;
-  const h = 36;
-  let tx = sx + 12;
-  let ty = sy - h - 6;
-  if (tx + w > cw()) tx = sx - w - 12;
-  if (ty < 0) ty = sy + 12;
-  c.fillStyle = 'rgba(15,26,46,0.94)';
-  c.strokeStyle = b.capital ? '#ffd700' : '#475569';
-  c.lineWidth = 1;
-  c.beginPath();
-  if (typeof c.roundRect === 'function') c.roundRect(tx, ty, w, h, 6);
-  else c.rect(tx, ty, w, h);
-  c.fill();
-  c.stroke();
-  c.fillStyle = '#e2e8f0';
-  c.font = '12px "PingFang SC", sans-serif';
-  c.fillText(title, tx + 9, ty + 15);
-  c.fillStyle = '#94a3b8';
-  c.font = '11px "PingFang SC", sans-serif';
-  c.fillText(sub, tx + 9, ty + 28);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -11857,7 +11629,7 @@ watch(
 // 切换底图 → 作废离屏栅格缓存（不同地图的网格数据不同）
 watch(baseMapKey, () => {
   rasterCache.clear();
-  invalidateMinimap();               // 换图 → 小地图缩略图与包围盒都要重算
+  overlayLayers.invalidateMinimap();               // 换图 → 小地图缩略图与包围盒都要重算
   // 剧本集按底图重选：落到这张底图第一条剧本所在的组（不同底图通常就是不同时间线）
   resetGroupForBaseMap();
   // Phase 3：省份网格随底图切换（目标省份、省界缓存、套索态都要重置）
@@ -11936,7 +11708,7 @@ watch(baseMap, () => {
     const fresh = baseMap.value?.terrain?.find(p => p.id === sp.id);
     if (fresh && fresh !== sp) selectedProvince.value = fresh;
   }
-  invalidateMinimap();          // 几何变了 → 小地图缩略图与包围盒作废（否则省界改了缩略图不动）
+  overlayLayers.invalidateMinimap();          // 几何变了 → 小地图缩略图与包围盒作废（否则省界改了缩略图不动）
   render();
 });
 </script>
