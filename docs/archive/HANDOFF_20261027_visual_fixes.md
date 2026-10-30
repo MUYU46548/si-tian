@@ -1,6 +1,6 @@
 # 交接：真机验收后的六条修补（2026-10-27 第二轮）
 
-> 上一份：`docs/plan/HANDOFF_20261027_text_layers.md`（文字分层 / 河名沿河 / 导出注记）。
+> 上一份：`docs/archive/HANDOFF_20261027_text_layers.md`（文字分层 / 河名沿河 / 导出注记）。
 > 本份只记**用户在真实 415 省项目上逐条验收后**修的那批；两份冲突时以本份 + 代码为准。
 
 ## 一、真机证据（都在本机 `build/visual-audit/`，被 .gitignore 忽略）

@@ -7,7 +7,7 @@
 > **2026-10-28 更新**：§1 **星系 3D 观景已交付**（`System3DView.vue` + `utils/system3dScene.js` +
 > `utils/planetArt.js`，回归 `test_163` + `unit/test_system3d_scene.js`）；§3 阶段 0/1 欠账已完成
 > **A1 导出浅滩 / A2 保留手绘开关 / A3 handEdits 抽稀 / A4 湖泊 UI** 四项。
-> **剩余全部条目已收敛到 [`TODO_REMAINING_20261028.md`](TODO_REMAINING_20261028.md)**（唯一待办清单，
+> **剩余全部条目已收敛到 [`TODO_REMAINING_20261028.md`](../archive/TODO_REMAINING_20261028.md)**（唯一待办清单，
 > 含 A5/A6、阶段 2 拆解、文字观感、B1/F1 复核、3D 二期）。本文件保留为 10-27 的设计口径与分析证据。
 
 ---
@@ -26,7 +26,7 @@
 
 > 实况：three@0.128.0 已装、`SystemDetailView` 头部按钮、`System3DView.vue` 异步组件、
 > 18 类程序化纹理、6 轮开关资源归零判据、首屏不含 three。细节见
-> [`HANDOFF_20261028_system3d.md`](HANDOFF_20261028_system3d.md) 与 `docs/agents-archive/views.md`。
+> [`HANDOFF_20261028_system3d.md`](../archive/HANDOFF_20261028_system3d.md) 与 `docs/agents-archive/views.md`。
 > 下面这段是最初的设计口径，留作对照（**未做项**已在交接文档末尾单列）。
 
 **目标**：在 `SystemDetailView`（单恒星系）里点「3D 观景」，进入可旋转/缩放的真实 3D 星系；
@@ -146,8 +146,8 @@ Esc/关闭回 2D，且不泄漏 WebGL 资源。
 
 ## 7. 证据与文档
 
-- 分析：[`SP1025_INTEGRATION_ANALYSIS.md`](SP1025_INTEGRATION_ANALYSIS.md)
-- 阶段 0+1 交接：[`HANDOFF_20261027_sp1025_stage01.md`](HANDOFF_20261027_sp1025_stage01.md)
+- 分析：[`SP1025_INTEGRATION_ANALYSIS.md`](../archive/SP1025_INTEGRATION_ANALYSIS.md)
+- 阶段 0+1 交接：[`HANDOFF_20261027_sp1025_stage01.md`](../archive/HANDOFF_20261027_sp1025_stage01.md)
 - 视觉：`build/visual-audit/`（scenario-fit / planet-satellite / scenario-height-shade）
 - SP-1025 参考图：`docs/assets/sp1025-20261027/`
 - 本轮提交：`f9f2d3a`

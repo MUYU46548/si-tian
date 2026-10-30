@@ -84,24 +84,17 @@
 
 - **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > `docs/guides/20261023/00-…`（指南包）> `docs/plan/SITIAN_GUIDE_DIGEST_20261023.md`（仓内对账）> 其余（历史，在 `docs/archive/`）
 
-- **现行规划（2026-10-23 指南包，取代三刀序列与所有旧施工单）**：
-  - 总入口 = [docs/guides/20261023/00-司天-开发指南-20261023.md](docs/guides/20261023/00-司天-开发指南-20261023.md)（路线/砍单/参照物/红线；包内 01–06 是参照件）；
-  - **开工先读** [docs/plan/SITIAN_GUIDE_DIGEST_20261023.md](docs/plan/SITIAN_GUIDE_DIGEST_20261023.md)：六件施工序的仓内拆解 + 与代码实况的对账 + 三个必须先定的口径（账本真源与 epoch 映射 / schema 类型放宽 / 保存挪线程分两步）；
-  - 施工序：0 对账留底 → 1 底盘三件 → 2 散布笔冒烟 → 3 账本引擎 `src/ledger/` → 4 四笔总装+时间轴+导出 → 5 读料桥 → 6 终验（用户出场一次）；
-  - 415 省孤本 `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份（2026-10-23 已留：`…_施工留底\绒花计划-20261023-203520.sitian`，SHA256 一致）。
-  - **2026-10-27 之后的剩余**：**当前唯一待办清单 = [`docs/plan/TODO_REMAINING_20261028.md`](docs/plan/TODO_REMAINING_20261028.md)**（A 阶段 0/1 欠账 / B 阶段 2 FMG / C 文字观感 / D B1·F1 复核 / E 3D 二期 / F 工程债）。
-    已完成：星系 3D 观景（2026-10-28，`bd80cbc`）、阶段 0/1 欠账 A1–A4（导出浅滩 / 保留手绘开关 / handEdits 抽稀 / 湖泊 UI）、
-    **造陆接手绘地形 + 图幅不再缩**（2026-10-29，A5，`8425a2c`）、
-    **A6 行星侧「生成地形」入口**（`0010380`）、**E1/E2 3D 点选下钻 + `node.planetClass` 落数据**（`f9d7366`）、
-    **E3/E5/E6 3D 双星 + 自动降档 + 项目关闭释放纹理**（`844d4bf`）、
-    **C2 国名沿主轴转/折行 + C3 仅已命名省 + C5 道路四档渐显**（`720a6e4`）、
-    **C4 放大改双三次 / C6 等深线收口 / F 体积实测**（`b7c8a94`）、
-    **B 阶段 2 ①②：FMG 高度图管线 + 面板接线**（`7e7faab` + `9e1d211`；14 套 Azgaar 模板、显式 rng、8k 格 11ms）、
-    **B ④⑤：FMG 地形能长出河（填洼 + 覆盖率拉伸）+ Voronoi 邻接（delaunator）**（`3a7de13` + `97fa858`）、
-    **B⑥ 决定不做 Worker（实测 60k 格 118ms）+ F 保存热点修复（快照重放 422→66ms）**（`5afa706`）、
-    **F 数组级 diff（省表按 id 局部化：改一个省 1610→100ms、补丁 839KB→10.9KB）**（`cf3020b`）、
-    **B④ 收尾：FMG 地形的湖 = 渲染层水面标记（高度场保持可排水）**（`7e7b6e9`）。
-    历史快照与设计口径见 [REMAINING_BACKLOG_20261027.md](docs/plan/REMAINING_BACKLOG_20261027.md)。
+- **现行规划（2026-10-30 起：`docs/plan/PLAN_AUDIT_20261030.md` 是唯一施工依据）**：
+  - **总入口** = [docs/plan/PLAN_AUDIT_20261030.md](docs/plan/PLAN_AUDIT_20261030.md)（阶段门 N0/N1/N2/N3/N4 + 判据 + 已拍板事项）；
+    **接手先读** [docs/plan/BREAKPOINT_20261030_n1.md](docs/plan/BREAKPOINT_20261030_n1.md)（当前断点：做到哪、还差什么、怎么继续、踩过的坑）。
+  - 参照件（不是施工令）：`docs/guides/20261023/00-…`（路线/红线）、`docs/plan/SITIAN_GUIDE_DIGEST_20261023.md`（仓内对账）、
+    `docs/plan/CHASSIS_BASELINE_20261023.md`（性能基线）、`docs/plan/INTEGRATION_AUDIT_20261030.md`（模块集成审计）。
+  - **已被取代的规划/交接件已全部移入 [`docs/archive/`](docs/archive/)**（TODO_REMAINING_20261028 / REMAINING_BACKLOG_20261027 /
+    NEXT_STAGE_20261025 / 各 HANDOFF 等 14 份；只作证据，不再具备施工效力）。
+  - 415 省孤本 `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份
+    （2026-10-23 已留：`…_施工留底\绒花计划-20261023-203520.sitian`，SHA256 一致）。
+  - 已完成的历史条目（3D 观景 / 阶段 0-1 欠账 / FMG 管线 / 保存链提速…）见 `docs/archive/TODO_REMAINING_20261028.md` 与
+    本文件「文档权威顺序」以下各节。
 
 
 ### 当前红线（跨模块、动手之前必须知道）

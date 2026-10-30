@@ -474,7 +474,7 @@
 
 - **实测验收后的六条修补：字号 / 省名 / 折名 / 河宽 / 手柄 / 涂了看不见（2026-10-27 第二轮；全量 162/162）**：
   用户在真机 415 省项目上逐条验收，这一轮只修**能复现的**（每条的现场证据都留在
-  `build/visual-audit/` 与 `docs/plan/HANDOFF_20261027_visual_fixes.md`）：
+  `build/visual-audit/` 与 `docs/archive/HANDOFF_20261027_visual_fixes.md`）：
   - **字号太小（A1）**：`POLITY_LABEL_STYLE 15→22`、`PROVINCE 12→15`、城镇/河名 `10→12`、
     地形注记 `14→16`；`labelZoom.labelFontScale` 下限 `0.95→1.0`（缩小时**不再缩字**）、
     上限 `1.55→1.75`。判据：`test_159` 字号系数段 + 四张缩放截图。
