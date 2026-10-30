@@ -824,16 +824,19 @@ async function handleExportPNG() {
   ctx.drawImage(canvas, 0, 0, tmpCanvas.width, tmpCanvas.height);
 
   await new Promise(resolve => {
-    tmpCanvas.toBlob(blob => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sitian-${store.viewLevel}-${Date.now()}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
+    tmpCanvas.toBlob(async (blob) => {
+      const saved = await savePngBlob(blob, `sitian-${store.viewLevel}-${new Date().toISOString().slice(0, 10)}.png`);
       hideExportProgress();
-      statusText.value = '导出完成';
-      statusKind.value = 'ok';
+      if (saved.canceled) {
+        statusText.value = '已取消导出';
+        statusKind.value = 'warn';
+      } else if (saved.success) {
+        statusText.value = saved.path ? `已导出：${saved.path}` : '已下载（浏览器回退模式）';
+        statusKind.value = 'ok';
+      } else {
+        statusText.value = `导出失败：${saved.error || '未知错误'}`;
+        statusKind.value = 'err';
+      }
       resolve();
     });
   });
@@ -868,16 +871,31 @@ async function handleExportSVG() {
 </svg>`;
 
   const blob = new Blob([svg], { type: 'image/svg+xml' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `sitian-${store.viewLevel}-${Date.now()}.svg`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const svgName = `sitian-${store.viewLevel}-${new Date().toISOString().slice(0, 10)}.svg`;
+  let saved;
+  if (window.sitianAPI?.saveTextFile) {
+    saved = await window.sitianAPI.saveTextFile({ text: svg, defaultName: svgName, kind: 'svg' });
+  } else {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = svgName;
+    a.click();
+    URL.revokeObjectURL(url);
+    saved = { success: true, path: null, fallback: true };
+  }
 
   hideExportProgress();
-  statusText.value = '导出完成';
-  statusKind.value = 'ok';
+  if (saved?.canceled) {
+    statusText.value = '已取消导出';
+    statusKind.value = 'warn';
+  } else if (saved?.success) {
+    statusText.value = saved.path ? `已导出：${saved.path}` : '已下载（浏览器回退模式）';
+    statusKind.value = 'ok';
+  } else {
+    statusText.value = `导出失败：${saved?.error || '未知错误'}`;
+    statusKind.value = 'err';
+  }
   panelsStore.close('export');
 }
 
@@ -919,14 +937,16 @@ async function handleExportFullPNG() {
   const galaxyById = new Map(galaxyNodes.map(g => [g.id, g]));
   const domainById = new Map(domainNodes.map(d => [d.id, d]));
 
-  // 图幅：**必须把布局算出来的位置一起纳入**（否则环形上的星域会跑到画布外被裁掉）
-  const placed = [
-    ...nodes.filter(n => n.layer !== 'galaxy' && n.layer !== 'star_domain'),
-    ...domainNodes,
-    ...galaxyNodes,
-  ];
-  const xs = placed.map(n => n.coordinate?.x ?? n.x).filter(x => Number.isFinite(x));
-  const ys = placed.map(n => n.coordinate?.y ?? n.y).filter(y => Number.isFinite(y));
+  // 图幅：只按**画布真正画的东西**算（星域 + 星系，布局坐标）。
+  // 🔴 2026-10-30 修：旧口径把 `nodes` 里**所有世界**的 planet / city / facility 也算进图幅 ——
+  //    它们的位置是提取器的同心圆布局（真实项目实测 ±1300 世界单位），而星域环形半径只有 630。
+  //    后果（用真实 415 省项目复算得出，`build/_probe_export_bounds.mjs`）：
+  //    图幅 2734×2759，星系全挤在一角，其余是**大片空白**，10px 标签在 5468px 的位图上小到看不清 ——
+  //    用户 2026-10-30 原话「全是画得一坨狗屎的星系地图」，指的就是这张图。
+  //    画布（GalaxyMap）只画星域 + 星系，导出当然也不该画别的。
+  const placed = [...domainNodes, ...galaxyNodes];
+  const xs = placed.map(n => (Number.isFinite(n.x) ? n.x : n.coordinate?.x)).filter(x => Number.isFinite(x));
+  const ys = placed.map(n => (Number.isFinite(n.y) ? n.y : n.coordinate?.y)).filter(y => Number.isFinite(y));
   if (xs.length === 0 || ys.length === 0) return;
   
   const minX = Math.min(...xs) - 150;
@@ -937,9 +957,15 @@ async function handleExportFullPNG() {
   const height = maxY - minY;
   
   const tmpCanvas = document.createElement('canvas');
-  const dpr = 2; // 2x for high quality
-  tmpCanvas.width = width * dpr;
-  tmpCanvas.height = height * dpr;
+  // 尺寸闸门：位图上限 ≈ 36MP（再大就是白烧内存/磁盘：旧口径实测一张 5468×5518 = 30MP、
+  // 17.9MB PNG）。图幅真的超大时先降 dpr，而不是直接产出一个几十 MB 的文件。
+  const MAX_EXPORT_PX = 36e6;
+  let dpr = 2; // 2x for high quality
+  while (dpr > 1 && (width * dpr) * (height * dpr) > MAX_EXPORT_PX) dpr -= 0.5;
+  // 字号 / 半径随图幅缩放：固定 10px 在 2000px 与 5000px 的图上观感完全不同（旧图就是这么糊的）
+  const uiScale = Math.max(1, Math.min(2.5, width / 1400));
+  tmpCanvas.width = Math.round(width * dpr);
+  tmpCanvas.height = Math.round(height * dpr);
   const ctx = tmpCanvas.getContext('2d');
   ctx.scale(dpr, dpr);
   ctx.translate(-minX, -minY);
@@ -1003,13 +1029,15 @@ async function handleExportFullPNG() {
     ctx.stroke();
     // 星域名标签（带衬底，保证可读）
     const label = border.name;
-    ctx.font = 'bold 13px sans-serif';
+    const labelPx = Math.round(13 * uiScale);
+    ctx.font = `bold ${labelPx}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const m = ctx.measureText(label);
+    const padY = Math.round(12 * uiScale);
     ctx.fillStyle = isDark ? 'rgba(10, 14, 26, 0.72)' : 'rgba(255, 255, 255, 0.8)';
     ctx.beginPath();
-    ctx.roundRect(cx - m.width / 2 - 8, cy - 12, m.width + 16, 24, 5);
+    ctx.roundRect(cx - m.width / 2 - padY * 0.7, cy - padY, m.width + padY * 1.4, padY * 2, Math.round(5 * uiScale));
     ctx.fill();
     ctx.fillStyle = color;
     ctx.fillText(label, cx, cy + 1);
@@ -1039,20 +1067,19 @@ async function handleExportFullPNG() {
   });
   
   // 5. 节点 + 光晕 + 亮核 + 带衬底名称标签（导出可读性核心）
-  //    ⚠️ 星系用**布局位置 + 势力色**（与画布一致）；更深的层按自己的 coordinate。
-  const drawList = [
-    ...nodes.filter(n => n.layer !== 'galaxy' && n.layer !== 'star_domain'),
-    ...domainNodes,
-    ...galaxyNodes,
-  ];
+  //    ⚠️ 星系用**布局位置 + 势力色**（与画布一致）。
+  //    🔴 2026-10-30：这里原先把 `nodes` 里所有更深层的节点（planet/city/facility…）也画上来，
+  //       位置取它们自己的 `coordinate` —— 那是提取器的同心圆布局，与星域视图毫无关系。
+  //       画布（GalaxyMap）根本不画它们，导出却画，于是"导出的图和屏幕上的不是一回事"。
+  const drawList = [...domainNodes, ...galaxyNodes];
   drawList.forEach(n => {
     const p = posOf(n);
     if (!p) return;
     const color = nodeColor(n, { isDark });
-    const r = nodeRadius(n.layer);
+    const r = nodeRadius(n.layer) * uiScale;
     ctx.fillStyle = color;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 10 * uiScale;
     ctx.beginPath();
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -1063,32 +1090,43 @@ async function handleExportFullPNG() {
     ctx.arc(p.x - 1, p.y - 1, r * 0.35, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    
+
     const label = n.displayName || n.name;
-    ctx.font = (n.layer === 'world' || n.layer === 'star_domain' ? 'bold ' : '') + '10px sans-serif';
+    const labelPx = Math.round(10 * uiScale);
+    ctx.font = (n.layer === 'world' || n.layer === 'star_domain' ? 'bold ' : '') + `${labelPx}px sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     const m = ctx.measureText(label);
-    const pad = 4;
+    const pad = Math.round(4 * uiScale);
+    const plateH = labelPx + pad * 2;
     ctx.fillStyle = isDark ? 'rgba(8, 12, 22, 0.65)' : 'rgba(255, 255, 255, 0.75)';
     ctx.beginPath();
-    ctx.roundRect(p.x + r + 4, p.y - 7, m.width + pad * 2, 14, 3);
+    ctx.roundRect(p.x + r + pad, p.y - plateH / 2, m.width + pad * 2, plateH, Math.round(3 * uiScale));
     ctx.fill();
     ctx.fillStyle = textColor;
-    ctx.fillText(label, p.x + r + 4 + pad, p.y + 1);
+    ctx.fillText(label, p.x + r + pad * 2, p.y + 1);
   });
-  
-  tmpCanvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sitian-full-${Date.now()}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
-    statusText.value = '导出完成';
+
+  tmpCanvas.toBlob(async (blob) => {
+    if (!blob) {
+      statusText.value = '导出失败：位图为空';
+      statusKind.value = 'err';
+      panelsStore.close('export');
+      return;
+    }
+    const saved = await savePngBlob(blob, `sitian-full-${new Date().toISOString().slice(0, 10)}.png`);
+    if (saved.canceled) {
+      statusText.value = '已取消导出';
+      statusKind.value = 'warn';
+    } else if (saved.success) {
+      statusText.value = saved.path ? `已导出：${saved.path}` : '已下载（浏览器回退模式）';
+      statusKind.value = 'ok';
+    } else {
+      statusText.value = `导出失败：${saved.error || '未知错误'}`;
+      statusKind.value = 'err';
+    }
+    panelsStore.close('export');
   });
-  
-  panelsStore.close('export');
 }
 
 /** 取一个绘制对象的坐标：优先布局坐标（`x`/`y`），否则回落节点自己的 `coordinate` */
@@ -1102,6 +1140,41 @@ function posOf(n) {
 }
 
 // ===== 导入/导出地图配置 =====
+
+/**
+ * 导出位图落盘 —— **唯一实现**（2026-10-30）。
+ *
+ * 修前：`App.vue` 里三条导出（当前视图 / 全图 / SVG）各写一遍 `a.download`，
+ * 那是**浏览器的默认下载目录**（Chromium 下即用户「下载」文件夹）：不问路径、不记上次目录、
+ * 文件名带毫秒时间戳 → 每次点一次就多一份，**永远不覆盖**。
+ * 用户实测（2026-10-30）：三天攒了 21 份**字节完全相同**的 `sitian-full-*.png`，
+ * 每份 17.9 MB、共 359 MB —— 全是同一张图，因为布局是确定性的。
+ *
+ * 行星侧（`composables/useFullMapExport.js`）早就走主进程保存对话框
+ * （`window.sitianAPI.saveExportFile` → `ipcMain.handle('save-export-file')`）。
+ * 两条链路各写一套正是本项目反复踩的"改一处另两处不变"，现在收成这一份。
+ */
+async function savePngBlob(blob, defaultName) {
+  if (!blob) return { success: false, error: '位图为空' };
+  const api = window.sitianAPI;
+  if (api?.saveExportFile) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => reject(new Error('读取导出位图失败'));
+      fr.readAsDataURL(blob);
+    });
+    return api.saveExportFile({ dataUrl, defaultName });
+  }
+  // 纯浏览器（`npm run dev`，无 Electron API）回退：只能进下载目录
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = defaultName;
+  a.click();
+  URL.revokeObjectURL(url);
+  return { success: true, path: null, fallback: true };
+}
 
 // E10: GeoJSON 导出（当前行星地图 → FeatureCollection，局部米制坐标系）
 function handleExportGeoJSON() {

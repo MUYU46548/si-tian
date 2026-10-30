@@ -16,6 +16,15 @@
 判据手法：**在导出期间插桩 `CanvasRenderingContext2D.prototype.arc`**（记录每个节点圆的圆心与半径），
 再把记录到的位置和"用同一份共享函数算出来的期望位置"逐点比对 —— 这是"同源"的直接证据；
 另外把导出的 PNG 抓下来做像素检查（证明它真的被画进了图里）。
+
+⚠️ **2026-10-30 口径修正（用户报障驱动）**：修前这条用例的 `expected` 里还包含
+`store.nodes` 中**所有世界**的更深层节点（planet / city / facility…），等于把「导出画了它们」写成了判据。
+实测后果：它们的 `coordinate` 来自提取器的同心圆布局（真实 415 省项目 ±1300 世界单位），
+把图幅撑到 2734×2759，星系挤在一角、大片空白、10px 标签在 5468px 位图上几乎不可读 ——
+用户原话「全是画得一坨狗屎的星系地图」。画布（GalaxyMap）**从不画**这些节点，所以：
+- `expected` 现在只有 **星域 + 星系**；
+- 新增反向判据：更深层节点的坐标上**不许再出现节点圆**；
+- 新增落盘判据：导出走**主进程保存对话框**（`saveExportFile`），不再 `a.download` 往下载目录里堆。
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -148,15 +157,31 @@ def run(cdp):
   const G = await import('/src/utils/galaxyLayout.js');
 
   // 先按"共享布局"算期望（与导出内部同一份函数、同一份输入）
+  // ⚠️ 2026-10-30：只算**画布真的画的东西** —— 星域 + 星系。更深层节点不再进导出（见文件头）。
   const domainNodes = G.layoutDomains(store.currentWorldDomains, {});
   const galaxyNodes = G.layoutGalaxies(store.galaxies, domainNodes, {});
-  const deepNodes = store.nodes.filter(n => n.layer !== 'galaxy' && n.layer !== 'star_domain'
-    && n.coordinate && Number.isFinite(n.coordinate.x) && Number.isFinite(n.coordinate.y));
   const expected = [
-    ...deepNodes.map(n => ({ id: n.id, x: n.coordinate.x, y: n.coordinate.y, layer: n.layer })),
     ...domainNodes.map(d => ({ id: d.id, x: d.x, y: d.y, layer: 'star_domain' })),
     ...galaxyNodes.map(g => ({ id: g.id, x: g.x, y: g.y, layer: 'galaxy' })),
   ];
+  // 反向判据用：更深层节点（画布不画）的旧坐标
+  const deepPts = store.nodes
+    .filter(n => n.layer !== 'galaxy' && n.layer !== 'star_domain'
+      && n.coordinate && Number.isFinite(n.coordinate.x) && Number.isFinite(n.coordinate.y))
+    .map(n => ({ id: n.id, x: n.coordinate.x, y: n.coordinate.y }));
+
+  // 落盘通道：导出必须走主进程保存对话框（stub 掉，否则真弹窗会把用例卡死）
+  // ⚠️ 这个 stub **不在 f1 里恢复**：`toBlob` 的回调是异步的（还要走 FileReader → saveExportFile），
+  //    轮询一拿到入口就把 stub 撤掉的话，我们的导出代码会调**真**的 IPC → 弹原生保存框 → 用例挂死。
+  //    恢复放在整个用例跑完之后（见 run() 末尾的 cleanup）。
+  const api = window.sitianAPI || (window.sitianAPI = {});
+  window.__origSaveExportFile = api.saveExportFile;
+  const savedCalls = [];
+  window.__savedCalls = savedCalls;
+  api.saveExportFile = async (payload) => {
+    savedCalls.push(payload);
+    return { success: true, path: 'C:/tmp/test_117-export.png' };
+  };
 
   // 插桩：记录所有"节点圆"（半径 >= 5 的 arc）；星尘的半径 <= 1.2，天然被排除
   const proto = CanvasRenderingContext2D.prototype;
@@ -186,10 +211,14 @@ def run(cdp):
     // 导出是"同步绘制 + 异步 toBlob"：图很大（世界包围盒 × dpr2 ≈ 千万像素），
     // PNG 编码可能要好几百毫秒 —— 轮询等它落地（上限 8s），否则下一段拿不到产物
     for (let i = 0; i < 80 && !window.__exportBlob; i++) await new Promise(r => setTimeout(r, 100));
+    // 落盘是异步的（toBlob 回调 → FileReader → saveExportFile），再等它一拍
+    for (let i = 0; i < 40 && savedCalls.length === 0; i++) await new Promise(r => setTimeout(r, 100));
     out.blobMs = null;
   } finally {
     proto.arc = origArc;
     HTMLCanvasElement.prototype.toBlob = origToBlob;
+    // ⚠️ 这里**不**恢复 saveExportFile（见上面 stub 处的注释：toBlob 回调是异步的，
+    //    提前恢复会让我们自己的导出代码调到真 IPC、弹原生保存框把用例挂死）
   }
   out.clicked = clicked;
   out.arcCount = arcs.length;
@@ -210,13 +239,47 @@ def run(cdp):
   out.matched = matched;
   out.missing = missing.slice(0, 4);
 
-  // 反向对照：**至少一个**节点的位置必须不等于它自己的 coordinate（否则这条判据分开不出两套实现）
-  const differs = expected.filter(e => deepNodes.every(n => n.id !== e.id));
-  out.expectNotCoordinate = differs.length;
+  // 反向对照：**至少一个**星系的位置必须不等于它自己的遗留 coordinate
+  // （否则这条判据分不出两套实现：数据全是手动摆过的就看不出来）
+  const gDiffer = galaxyNodes.filter(g => {
+    const raw = (store.galaxies || []).find(x => x.id === g.id);
+    return raw && raw.coordinate && !raw.userMoved
+      && (Math.abs(raw.coordinate.x - g.x) > 0.75 || Math.abs(raw.coordinate.y - g.y) > 0.75);
+  });
+  out.expectNotCoordinate = gDiffer.length;
+  if (gDiffer.length === 0) {
+    out.fails.push('没有"布局位置 ≠ 旧 coordinate"的星系 —— 本判据分不出两套实现（fixture 可能全是手动摆过的）');
+  }
+
+  // 反向判据（2026-10-30）：更深层节点的旧坐标上**不许**出现节点圆（画布不画，导出也不许画）
+  const nearExpected = (x, y) => expected.some(e => Math.hypot(e.x - x, e.y - y) < 2);
+  let deepHits = 0;
+  for (const a of arcs) {
+    if (deepPts.some(d => !nearExpected(d.x, d.y) && Math.abs(a.x - d.x) <= 0.75 && Math.abs(a.y - d.y) <= 0.75)) deepHits++;
+  }
+  out.deepDrawn = deepHits;
+  out.deepCount = deepPts.length;
+  if (deepHits > 0) {
+    out.fails.push(`导出仍画了 ${deepHits} 个更深层节点（planet/city/facility…，画布不画它们）`
+      + ' —— 图幅会被它们的旧坐标撑开、星系挤在一角');
+  }
+
+  // 落盘通道（2026-10-30）：导出必须走主进程保存对话框，不再 `a.download` 往下载目录里堆
+  out.savedCalls = savedCalls.length;
+  out.savedName = savedCalls[0] ? String(savedCalls[0].defaultName || '') : null;
+  if (savedCalls.length !== 1) {
+    out.fails.push(`导出没有走保存对话框（saveExportFile 调用 ${savedCalls.length} 次）—— 又会静默堆进下载目录`);
+  } else if (!/\\.png$/.test(out.savedName || '')) {
+    out.fails.push(`导出默认文件名不是 .png（${out.savedName}）`);
+  } else if (/\\d{13}/.test(out.savedName)) {
+    out.fails.push(`导出默认文件名仍带毫秒时间戳（${out.savedName}）—— 每次都生成新文件而不是可覆盖`);
+  }
+
   if (matched !== expected.length) {
     out.fails.push(`导出画了 ${arcs.length} 个节点圆，与共享布局的 ${expected.length} 个对不上（缺 ${missing.length} 个，`
       + `例：${JSON.stringify(missing.slice(0, 3))}）—— 导出没走同一份布局`);
   }
+
   // 明确点：某个星域的位置必须等于布局位置、且不等于它的遗留 coordinate
   const d0 = domainNodes[0];
   const raw0 = (store.currentWorldDomains || []).find(d => d.id === d0.id);
@@ -242,6 +305,8 @@ def run(cdp):
     if r1.get('fails'):
         fails += [f'[f1 同源] {x}' for x in r1['fails']]
     notes.append(f"f1 同源：节点圆 {r1.get('arcCount')} 个 vs 期望 {r1.get('expectedCount')} 个（对上 {r1.get('matched')}）"
+                 f" · 深层节点误画 {r1.get('deepDrawn')}/{r1.get('deepCount')}"
+                 f" · 落盘 saveExportFile {r1.get('savedCalls')} 次（{r1.get('savedName')}）"
                  f" · 星域布局 {r1.get('domainLayout')} · 星系布局 {r1.get('galaxyLayout')}")
 
     # ══════════════════════════════════════════════════════════════════════
@@ -293,6 +358,16 @@ def run(cdp):
     if r2.get('fails'):
         fails += [f'[f2 像素] {x}' for x in r2['fails']]
     notes.append(f"f2 像素：{r2.get('size')} · 金色像素 {r2.get('gold')} · 星系色像素 {r2.get('galaxyColorPixels')} {r2.get('galaxyColors')}")
+
+    # 收尾：撤掉 f1 里的 saveExportFile stub（页面随后可能被别的用例复用）
+    try:
+        eval_json(cdp, """(() => {
+          if (window.__origSaveExportFile) window.sitianAPI.saveExportFile = window.__origSaveExportFile;
+          delete window.__origSaveExportFile; delete window.__savedCalls; delete window.__exportBlob;
+          return JSON.stringify({ ok: true });
+        })()""", desc='撤导出 stub')
+    except Exception:
+        pass
 
     if fails:
         return False, ' | '.join(notes) + ' ⇒ ' + ' ；'.join(fails)
