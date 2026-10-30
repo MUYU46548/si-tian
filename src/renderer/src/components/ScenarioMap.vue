@@ -1859,6 +1859,8 @@ import { drawProvincesLayer, drawProvinceBordersLayer } from '../scenario/layers
 import { createLabelLayers } from '../scenario/layers/labels';
 // N1 刀 2：屏幕空间浮层（小地图 / 文化图例 / 数据分布图 / 城镇悬浮卡）
 import { createOverlayLayers } from '../scenario/layers/overlays';
+// N1 刀 2：编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
+import { drawVertexHandlesLayer, drawProvinceBrushOverlayLayer } from '../scenario/layers/editing';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -4337,106 +4339,6 @@ function provinceBrushOpts() {
     tool: provBrushTool.value,
     target: provBrushTarget.value,
   };
-}
-
-/** 笔刷预览圈（**世界半径** —— 不再乘格宽）+ 套索轨迹（世界坐标，ctx 已带相机变换） */
-function drawProvinceBrushOverlay(c) {
-  const p = provBrushPreview.value;
-  if (p && tool.value === 'ownerBrush') {
-    // 涂归属：笔刷圈 + **这笔已经碰到的省**（半透明势力色）—— 抬手前就能看出会改哪些
-    const polColor = clearOwnerMode.value
-      ? '#94a3b8'
-      : ((selectedPolity.value && selectedPolity.value.color) || '#fbbf24');
-    if (ownerStrokeIds.size) {
-      const terr = baseMap.value?.terrain || [];
-      c.save();
-      c.globalAlpha = 0.45;
-      c.fillStyle = polColor;
-      for (const prov of terr) {
-        if (!prov || !ownerStrokeIds.has(prov.id)) continue;
-        const rings = provinceRings(prov);
-        if (!rings.length) continue;
-        c.beginPath();
-        for (const ring of rings) {
-          const pts = ring && ring.points;
-          if (!pts || pts.length < 2) continue;
-          c.moveTo(pts[0].x, pts[0].y);
-          for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
-          c.closePath();
-        }
-        c.fill('evenodd');
-      }
-      c.restore();
-    }
-    c.save();
-    c.strokeStyle = polColor;
-    c.lineWidth = px(1.4);
-    c.setLineDash([px(3), px(3)]);
-    c.beginPath();
-    c.arc(p.x, p.y, ownerBrushWorldRadius(), 0, Math.PI * 2);
-    c.stroke();
-    c.restore();
-  }
-  if (p && tool.value === 'provinceBrush' && provBrushRadius.value > 0) {
-    c.save();
-    c.strokeStyle = 'rgba(255,255,255,0.7)';
-    c.lineWidth = px(1.2);
-    c.beginPath();
-    c.arc(p.x, p.y, provBrushWorldRadius.value, 0, Math.PI * 2);
-    c.stroke();
-    c.restore();
-  }
-  // ── 笔刷建省（2026-10-22）：笔迹带**就是**最终形状（圆盘 ∪ 胶囊），不画任何"预测环" ──
-  //    为什么用「粗描边 + 圆头」而不是把 ring 算出来再填：算环要走布尔（每帧白算一次，
-  //    正是「画省份」那条路上一团交叉白线的来源）；粗描边在覆盖范围上与
-  //    `traceBrushRings`（每点一个圆盘 + 每段一个胶囊）一致，观感就是笔。
-  if (tool.value === 'provincePaint') {
-    const path = store.getProvinceStrokePath();
-    if (path && path.length) {
-      const rad = provBrushWorldRadius.value;
-      c.save();
-      c.strokeStyle = 'rgba(250, 204, 21, 0.34)';
-      c.fillStyle = 'rgba(250, 204, 21, 0.34)';
-      c.lineJoin = 'round';
-      c.lineCap = 'round';
-      c.lineWidth = rad * 2;
-      c.beginPath();
-      if (path.length === 1) {
-        c.arc(path[0].x, path[0].y, rad, 0, Math.PI * 2);
-        c.fill();
-      } else {
-        c.moveTo(path[0].x, path[0].y);
-        for (let i = 1; i < path.length; i++) c.lineTo(path[i].x, path[i].y);
-        c.stroke();
-      }
-      c.restore();
-    }
-    if (p) {
-      c.save();
-      c.strokeStyle = 'rgba(255,255,255,0.8)';
-      c.lineWidth = px(1.2);
-      c.beginPath();
-      c.arc(p.x, p.y, provBrushWorldRadius.value, 0, Math.PI * 2);
-      c.stroke();
-      c.restore();
-    }
-  }
-  const pts = provLassoPoints.value;
-  if (pts && pts.length > 1) {
-    c.save();
-    c.setLineDash([px(5), px(4)]);
-    c.strokeStyle = '#c4b5fd';
-    c.lineWidth = px(1.6);
-    c.lineJoin = 'round';
-    c.lineCap = 'round';
-    c.beginPath();
-    // 平滑轨迹（中点二次曲线）：手绘一圈就应该是曲线，逐点 lineTo 会读成「描点连线」
-    tracePath(c, pts, !provLassoActive);
-    c.stroke();
-    if (!provLassoActive) { c.fillStyle = 'rgba(196,181,253,.18)'; c.fill(); }
-    c.setLineDash([]);
-    c.restore();
-  }
 }
 
 /** 最近一次操作回执的时间（毫秒）—— 布局类提示不许覆盖它（见 handleResize） */
@@ -10035,6 +9937,29 @@ function makeLayerView() {
     hoveredBurg: hoveredBurg.value,
     selectedBurg: selectedBurg.value,
     ringPointsList: rawRingPointsList,
+    // 编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
+    dragPreview: dragPreview.value,
+    vertexEditMode: vertexEditMode.value,
+    currentProvince,
+    resolvePoints,
+    activeVertexIdx: activeVertexIdx.value,
+    vertexSelection: vertexSelection.value,
+    draggingVertex: draggingVertex.value,
+    vertexMarquee: vertexMarquee.value,
+    riverMarquee: riverMarquee.value,
+    normalizeBox,
+    provBrushPreview: provBrushPreview.value,
+    tool: tool.value,
+    clearOwnerMode: clearOwnerMode.value,
+    ownerStrokeIds,
+    provinceRings,
+    ownerBrushWorldRadius,
+    provBrushRadius: provBrushRadius.value,
+    provBrushWorldRadius: provBrushWorldRadius.value,
+    store,
+    provLassoPoints: provLassoPoints.value,
+    provLassoActive: provLassoActive.value,
+    tracePath,
     vx,
     vy,
     formatPopulation,
@@ -10195,9 +10120,9 @@ function renderFrame() {
   // 省界（N1 刀 1）：仍直接调用 —— 它的门控是 `showBorders`，且必须画在河流/草稿之上，
   // 塞进注册表会改变层叠顺序（那是刀 2 的事）。实现已搬到 `scenario/layers/provinces.js`。
   if (!blitted && showBorders.value) drawProvinceBordersLayer(ctx.value, makeLayerView());
-  if (!strokeBaseBuilding) drawVertexHandles(ctx.value);
+  if (!strokeBaseBuilding) drawVertexHandlesLayer(ctx.value, makeLayerView());
   if (!blitted && showBurgs.value && !cameraMotion) drawBurgs(ctx.value);
-  if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush' || tool.value === 'provincePaint')) drawProvinceBrushOverlay(ctx.value);
+  if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush' || tool.value === 'provincePaint')) drawProvinceBrushOverlayLayer(ctx.value, makeLayerView());
   if (!strokeBaseBuilding) drawPreviewOverlay(ctx.value);
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
@@ -10235,114 +10160,6 @@ function renderFrame() {
 const PROVINCE_BORDER_COLOR = BORDER_COLOR;
 /** 普通省界的线宽（屏幕像素）—— 参考图是**细线**：1.1 → 0.9（2026-10-27 细棕线口径） */
 const PROVINCE_BORDER_PX = 0.9;
-
-function drawVertexHandles(c) {
-  // P1：跟随移动的邻省环要在**任何情况下**都画出来（它是"边界整体移动"的唯一视觉证据），
-  // 所以放在最前面、且不依赖"当前选中省"是否还存在。
-  const linked = (dragPreview.value && dragPreview.value.linked) || [];
-  if (linked.length) {
-    c.save();
-    c.setLineDash([px(5), px(4)]);
-    c.lineWidth = px(2);
-    c.strokeStyle = '#f59e0b';
-    for (const g of linked) {
-      for (const r of g.rings) {
-        if (!r.points || r.points.length < 3) continue;
-        c.beginPath();
-        r.points.forEach((p, i) => {
-          const x = vx(p), y = vy(p);
-          if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
-        });
-        c.closePath();
-        c.stroke();
-      }
-    }
-    c.restore();
-  }
-
-  if (vertexEditMode.value && selectedProvince.value) {
-    const prov = currentProvince();
-    const points = prov ? resolvePoints(prov) : null;
-    if (points) {
-      const r = px(4);
-      const hR = px(3.5);
-      const active = activeVertexIdx.value;
-      const selected = vertexSelection.value || [];
-
-      // P0-T1：仅对当前选中顶点画切线手柄（大省份全画会遮满屏幕）
-      if (active >= 0 && active < points.length && !altStraight) {
-        const p = points[active];
-        const cx = vx(p), cy = vy(p);
-        const out = p.controlOut;
-        const inn = p.controlIn;
-        if (out || inn) {
-          c.save();
-          c.setLineDash([px(3), px(3)]);
-          c.strokeStyle = 'rgba(167,139,250,0.8)';
-          c.lineWidth = px(1);
-          if (out) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + out.x, cy + out.y); c.stroke(); }
-          if (inn) { c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + inn.x, cy + inn.y); c.stroke(); }
-          c.setLineDash([]);
-          c.fillStyle = '#38bdf8';
-          c.strokeStyle = '#ffffff';
-          if (out) { c.beginPath(); c.arc(cx + out.x, cy + out.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
-          if (inn) { c.beginPath(); c.arc(cx + inn.x, cy + inn.y, hR, 0, Math.PI * 2); c.fill(); c.stroke(); }
-          c.restore();
-        }
-      }
-
-      points.forEach((p, i) => {
-        const sx = vx(p);
-        const sy = vy(p);
-        // P1：框选中的顶点用青色（与省份多选的描边同色系），正在拖的是金色，当前激活的是粉色
-        const isSel = selected.indexOf(i) >= 0;
-        c.fillStyle = draggingVertex.value?.vertexIdx === i
-          ? '#ffd700'
-          : (i === active ? '#f472b6' : (isSel ? '#22d3ee' : '#a78bfa'));
-        c.strokeStyle = '#fff';
-        c.lineWidth = px(1);
-        c.beginPath();
-        c.arc(sx, sy, isSel ? r * 1.25 : r, 0, Math.PI * 2);
-        c.fill();
-        c.stroke();
-      });
-    }
-  }
-
-  // P1：框选矩形（世界坐标 → 屏幕；虚线，不参与任何导出与命中）
-  const box = vertexMarquee.value;
-  if (box) {
-    const x0 = vx({ x: Math.min(box.x0, box.x1), y: 0 });
-    const y0 = vy({ x: 0, y: Math.min(box.y0, box.y1) });
-    const x1 = vx({ x: Math.max(box.x0, box.x1), y: 0 });
-    const y1 = vy({ x: 0, y: Math.max(box.y0, box.y1) });
-    c.save();
-    c.fillStyle = 'rgba(34,211,238,0.12)';
-    c.strokeStyle = '#22d3ee';
-    c.lineWidth = px(1.5);
-    c.setLineDash([px(4), px(3)]);
-    c.fillRect(x0, y0, x1 - x0, y1 - y0);
-    c.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    c.restore();
-  }
-  // 第五轮：河流框选（同款虚线框，颜色用河高亮的青白，与顶点框选区分开）
-  const rbox = riverMarquee.value;
-  if (rbox) {
-    const nb = normalizeBox(rbox);
-    const x0 = vx({ x: nb.minX, y: 0 });
-    const y0 = vy({ x: 0, y: nb.minY });
-    const x1 = vx({ x: nb.maxX, y: 0 });
-    const y1 = vy({ x: 0, y: nb.maxY });
-    c.save();
-    c.fillStyle = 'rgba(223,243,255,0.10)';
-    c.strokeStyle = 'rgba(223,243,255,0.9)';
-    c.lineWidth = px(1.5);
-    c.setLineDash([px(6), px(4)]);
-    c.fillRect(x0, y0, x1 - x0, y1 - y0);
-    c.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    c.restore();
-  }
-}
 
 /** 十六进制色混合：`t=0` 全 a、`t=1` 全 b（非 6 位色退回 a） */
 function mixHexColor(a, b, t) {

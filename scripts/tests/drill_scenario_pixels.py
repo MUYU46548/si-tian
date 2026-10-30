@@ -86,6 +86,9 @@ def ck(name, ok, detail=''):
 def main():
     args = sys.argv[1:]
     tag = 'before'
+    scene_name = 'base'          # base = 静态场景；edit = 再叠一层编辑态（顶点手柄/框选/笔刷圈）
+    if '--scene' in args:
+        scene_name = args[args.index('--scene') + 1]
     if '--tag' in args:
         tag = args[args.index('--tag') + 1]
     if '--compare' in args:
@@ -197,6 +200,29 @@ def main():
         })()""", required=('ok',), desc='铺设像素基线场景')
         ck('场景已铺设', bool(scene[0]) and scene[1].get('ok'), scene[1])
         time.sleep(0.5)
+
+        # 可选：把画布切到「编辑态」再拍（顶点手柄 / 框选 / 笔刷圈那几层只在这时候出现，
+        # 默认场景里它们整体不触发 —— 只拍静态场景等于没给那几刀留判据）
+        if scene_name == 'edit':
+            edit = eval_json(cdp, """(() => {
+              const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+              const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+              const KEY = '像素基线底图';
+              const prov = (s.baseMaps[KEY].terrain || [])[0];
+              SM.selectedProvince = prov;
+              SM.vertexEditMode = true;
+              SM.activeVertexIdx = 2;
+              SM.vertexSelection = [1, 3];
+              SM.tool = 'provinceBrush';
+              SM.provBrushRadius = 24;
+              SM.provBrushPreview = { x: 180, y: 150 };
+              SM.vertexMarquee = { x0: 60, y0: 60, x1: 300, y1: 240 };
+              SM.riverMarquee = { x0: 120, y0: 200, x1: 380, y1: 300 };
+              if (typeof SM.render === 'function') SM.render();
+              return JSON.stringify({ ok: true, tool: SM.tool, radius: SM.provBrushRadius });
+            })()""", required=('ok',), desc='切编辑态')
+            ck('编辑态已就位', bool(edit[0]) and edit[1].get('ok'), edit[1])
+            time.sleep(0.5)
         fit = eval_json(cdp, """(() => {
           const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
           if (typeof SM.fitToView !== 'function') return JSON.stringify({ ok: false, why: 'no-fitToView' });

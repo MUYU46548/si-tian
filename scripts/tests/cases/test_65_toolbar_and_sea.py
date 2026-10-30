@@ -60,7 +60,8 @@ def source_gates():
         # 组件这边只守「引了单源 + 用法没变」，常量本体在下面单独查单源文件。
         ("from '../utils/scenarioPalette'", '组件引用配色单源'),
         ("if (prov && prov.kind === 'sea') return SEA_FILL;", '海域不吃归属色（最先判）'),
-        ('c.setLineDash([px(6), px(4)])', '海界 = 淡虚线'),
+        # 2026-10-30（N1 刀 1）：省界的绘制体搬进 `scenario/layers/provinces.js` ——
+        # 「海界 = 淡虚线」这条判据跟着搬到模块里查（下面单独一项）。
         ("if (prov && prov.kind === 'sea') {", '势力油漆桶跳过海域'),
         ('海域不参与势力归属', '海域被拒时有明确交代（不是静默无效）'),
         ('onProvinceKindChange', '属性面板可切「陆地/海域」'),
@@ -74,6 +75,10 @@ def source_gates():
                           ("export const SEA_EDGE = 'rgba(", '海界色常量（单源）')):
         if needle not in pal:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
+    # 「海界 = 淡虚线」：2026-10-30 起绘制体在 `scenario/layers/provinces.js`，判据跟着搬家
+    prov_layer = _code_only(_read('src/renderer/src/scenario/layers/provinces.js'))
+    if 'setLineDash([view.px(6), view.px(4)])' not in prov_layer:
+        fails.append('源码闸门缺失：海界 = 淡虚线（scenario/layers/provinces.js 里找不到 6/4 虚线）')
     for needle in ("const SEA_FILL = 'rgba(", "const SEA_EDGE = 'rgba("):
         if needle in sc:
             fails.append(f'ScenarioMap 又抄了一份 {needle.strip()}（配色单源被破坏）')
