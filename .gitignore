@@ -40,6 +40,8 @@ __pycache__/
 # 常驻实验室（scripts/tests/tools/_lab.py up）残留：Edge 用户目录 + 进程号
 .lab-edge-profile/
 .lab-pids.json
+# 常驻实验室跑探针的临时结果（_probe_jank_real.py → .lab-jank.json）
+.lab-jank.json
 # 测试运行残留（中断时可能滞留；mock-data 含真实库数据副本，禁止提交）
 src/renderer/mock-data/
 # 纯浏览器开发（npm run dev）用的真实数据只读副本，含真实库数据，禁止提交
