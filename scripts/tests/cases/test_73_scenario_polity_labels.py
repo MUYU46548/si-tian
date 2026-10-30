@@ -142,11 +142,14 @@ def sub_source_guards(cdp):
         bad.append('ScenarioMap 里出现了对 visibleRatio 的裸阈值比较（应调用 polityLabelTier）')
 
     # ② 渲染入口**必须接上单一排布链路**（2026-10-26 重构：四档标签共用一次避让排布）：
-    #    drawPolityLabels → drawPlannedLabels → getLabelPlan（内部 collectScenarioLabels）
-    #    → drawStyledLabel。判据仍落在**函数体**上，不退化成"文件里出现过某符号"。
-    calls = len(_re.findall(r'drawPolityLabels\(', sm))
-    if calls < 2:      # 1 处定义 + 1 处主渲染调用
-        bad.append(f'drawPolityLabels 只有 {calls} 处出现（应为 1 定义 + 主渲染 ≥2）')
+    #    labelLayers.drawPolity → drawPlanned → getPlan（内部 collectScenarioLabels）→ drawStyledLabel。
+    #    ⚠️ 2026-10-30（N1 刀 1）：实现搬进 `scenario/layers/labels.js`，判据跟着搬家 ——
+    #       仍然落在**函数体**上（不退化成"文件里出现过某符号"），只是去模块里看。
+    labels_layer = _code_only(_read('src/renderer/src/scenario/layers/labels.js'))
+    if 'labelLayers.drawPolity(' not in sm:
+        bad.append('ScenarioMap 的主渲染没接 labelLayers.drawPolity（文字层没接线）')
+    if 'drawPlanned(' not in labels_layer:
+        bad.append('文字层模块里找不到 drawPlanned（四档标签没走统一排布）')
 
     # ③ 组件里不许自己实现「档位 → 文本」（必须在纯函数里）
     if _re.search(r"(?:tier|polityLabelTierNow)\s*===\s*'abbr'", sm):
@@ -161,21 +164,21 @@ def sub_source_guards(cdp):
     for sym in ['labelTextFor(', 'aggregateTerritories(', 'ringAreaCentroid(']:
         if sym not in labels_mod:
             bad.append(f'utils/scenarioLabels.js 缺少 {sym}（标签判定单源不完整）')
-    body = _function_body(sm, 'drawPolityLabels')
+    body = _function_body(labels_layer, 'drawPolity')
     if body is None:
-        bad.append('ScenarioMap 找不到 drawPolityLabels()（渲染函数改名后守卫要同步）')
-    elif 'drawPlannedLabels(' not in body:
-        bad.append('drawPolityLabels 没走统一排布 drawPlannedLabels（画布又各画各的）')
-    plan_body = _function_body(sm, 'getLabelPlan')
+        bad.append('scenario/layers/labels.js 找不到 drawPolity()（渲染函数改名后守卫要同步）')
+    elif 'drawPlanned(' not in body:
+        bad.append('drawPolity 没走统一排布 drawPlanned（画布又各画各的）')
+    plan_body = _function_body(labels_layer, 'getPlan')
     if plan_body is None or 'collectScenarioLabels(' not in plan_body:
-        bad.append('getLabelPlan 没走 collectScenarioLabels（画布又自己算了一套标签）')
-    draw_body = _function_body(sm, 'drawPlannedLabels')
+        bad.append('getPlan 没走 collectScenarioLabels（画布又自己算了一套标签）')
+    draw_body = _function_body(labels_layer, 'drawPlanned')
     if draw_body is None or 'drawStyledLabel(' not in draw_body:
-        bad.append('drawPlannedLabels 没有走统一文本渲染入口 drawStyledLabel')
+        bad.append('drawPlanned 没有走统一文本渲染入口 drawStyledLabel')
     if 'collectScenarioLabels(' not in export_mod:
         bad.append('导出链没接 collectScenarioLabels（导出的图会没有势力名 —— A8 的主要读物）')
-    if "from '../utils/scenarioLabels'" not in sm:
-        bad.append('ScenarioMap 没有引用 utils/scenarioLabels（判定被写回了组件？）')
+    if "from '../../utils/scenarioLabels'" not in labels_layer:
+        bad.append('文字层模块没有引用 utils/scenarioLabels（判定被写回了组件？）')
 
     # ④ C3（2026-10-29）「只显示已命名省」：开关在 UI 上、过滤在纯函数里（组件不许自己写正则）
     if 'toggle-named-provinces' not in sm:

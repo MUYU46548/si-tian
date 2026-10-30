@@ -1855,6 +1855,8 @@ import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
 import { drawProvincesLayer, drawProvinceBordersLayer } from '../scenario/layers/provinces';
+// N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
+import { createLabelLayers } from '../scenario/layers/labels';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -9492,7 +9494,7 @@ function drawRivers(c) {
   }
   // 河流名（2026-10-25 分级；2026-10-26 起并入统一避让排布 `getLabelPlan`）
   // 默认关闭（自动地名多为 FMG 英文名），由「图层 → 自动地名」控制。
-  if (showPlaceNames.value) drawPlannedLabels(c, ['river']);
+  if (showPlaceNames.value) labelLayers.drawPlanned(c, makeLayerView(), ['river']);
   c.restore();
 }
 
@@ -10186,7 +10188,11 @@ function makeLayerView() {
     h: ch(),
     px,
     screenToWorld,
+    cameraX: cameraX.value,
+    cameraY: cameraY.value,
+    cameraScale: cameraScale.value,
     baseMap: baseMap.value,
+    terrain: rawTerrain(),
     rasterLayer: rasterLayer.value,
     showBiomes: showBiomes.value,
     timeline: timeline.value,
@@ -10196,8 +10202,19 @@ function makeLayerView() {
     mode: viewMode.value,
     altStraight,
     selectedProvince: selectedProvince.value,
+    selectedScenario: selectedScenario.value,
+    selectedPolity: selectedPolity.value,
     multiSelect: multiSelectSet.value,
     mergeProvId: mergeProvId.value,
+    // 文字层的五个开关 + 河名开关（都是「这一帧画不画」的判据，不是选项面板状态）
+    showLabels: showLabels.value,
+    showPlaceNames: showPlaceNames.value,
+    showPolityLabels: showPolityLabels.value,
+    showProvinceNames: showProvinceNames.value,
+    showBurgs: showBurgs.value,
+    showNamedProvincesOnly: showNamedProvincesOnly.value,
+    showTerrainNames: showTerrainNames.value,
+    showRiverBase: showRiverBase.value,
     GRID_STEP,
     SEA_EDGE,
     BORDER_COLOR,
@@ -10213,8 +10230,16 @@ function makeLayerView() {
     polityColor,
     polylineInView,
     strokeWorldPolyline,
+    // 文字层要的几个组件内判据（档位/字号/领土来源/地图尺寸）
+    polityLabelSources,
+    polityLabelTier: polityLabelTierNow.value,
+    mapWorldSize,
+    labelDetail: labelDetailNow,
+    labelScale: labelScaleNow,
   };
 }
+
+const labelLayers = createLabelLayers();
 
 const scenarioRenderLayers = createLayerRegistry();
 scenarioRenderLayers.register({
@@ -10375,11 +10400,11 @@ function renderFrame() {
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
   //    「基帧（草稿之下的静态层）→ 草稿 → 这四层 → 屏幕空间浮层」。
   // 地形注记（山系名沿脊线）：画在用户地名之下、河流/城镇名之上
-  if (!strokeBaseBuilding && !cameraMotion) drawTerrainLabels(ctx.value);
-  if (!strokeBaseBuilding && showLabels.value && !cameraMotion) drawLabels(ctx.value);
+  if (!strokeBaseBuilding && !cameraMotion) labelLayers.drawTerrain(ctx.value, makeLayerView());
+  if (!strokeBaseBuilding && showLabels.value && !cameraMotion) labelLayers.drawScenarioLabels(ctx.value, makeLayerView());
   // A8：势力标注画在用户浮动文本之后（势力名是底层读物，不该被浮字压住）
   if (!strokeBaseBuilding && !cameraMotion) {
-    drawPolityLabels(ctx.value);
+    labelLayers.drawPolity(ctx.value, makeLayerView());
     drawReliefIcons(ctx.value);
     drawScenarioMarkers(ctx.value);
   }
@@ -11034,7 +11059,7 @@ function drawBurgs(c) {
   }
   // 城镇名（2026-10-25 分级；2026-10-26 起并入统一避让排布 `getLabelPlan`）：
   // 与河名/省名/势力名**互不重叠**，放不下的直接不标（参考图的制图惯例）。
-  if (showPlaceNames.value) drawPlannedLabels(c, ['capital', 'town']);
+  if (showPlaceNames.value) labelLayers.drawPlanned(c, makeLayerView(), ['capital', 'town']);
 }
 function formatPopulation(pop) {
   if (!pop) return '—';
@@ -11342,486 +11367,14 @@ function polityLabelSources() {
   };
 }
 
-function drawPolityLabels(c) {
-  if (!showPolityLabels.value) return;
-  if (viewMode.value !== 'scenario') return;
-  // 「该写哪些字、写在哪、放不放得下」全部由 `getLabelPlan()` 统一判定（与城镇/河名同一份排布）
-  drawPlannedLabels(c, ['province', 'polity']);
-}
-
 // ══════════════════════════════════════
-// 文字层：统一避让排布（2026-10-26）
+// 文字层（N1 刀 1：实现已搬到 `scenario/layers/labels.js`）
 // ══════════════════════════════════════
 //
-// 参考图的高信息密度靠的是「放不下就不标」，而我们是四档标签各画各的：
-// 势力名、省名、617 个城镇名、160 个河名分属四个绘制段，全都能画在同一处。
-// 这里把四档**合成一次排布**（`utils/labelLayout.js` 纯函数），结论按「相机 + 数据引用」缓存：
-// 相机没动、数据没换 → 每帧只是把结论画出来，不重新 measureText。
-let labelPlanCanvas = null;
-let labelPlanCache = { refs: null, nums: null, plan: [] };
-
-function measureTextWithStyle(text, style) {
-  if (!labelPlanCanvas) labelPlanCanvas = document.createElement('canvas');
-  const mc = labelPlanCanvas.getContext('2d');
-  mc.font = fontString(style, 1);          // 所有地图标签都是 lockScreenSize:true → 屏幕字号
-  const size = Number(style && style.fontSize) || 12;
-  // 与 `drawStyledLabel` 同一口径：有字距就把字距算进宽度（否则排布会少留位置、字压字）
-  const em = Number(style && style.letterSpacingEm);
-  if ('letterSpacing' in mc) {
-    try { mc.letterSpacing = em > 0 ? `${Math.round(size * em * 100) / 100}px` : '0px'; } catch (e) { /* 忽略 */ }
-  }
-  // +6 / +2 是**留缝**：纯字宽会把两个标签贴成一行，看起来像一个词
-  return { w: mc.measureText(String(text)).width + 6, h: size * 1.3 + 2 };
-}
-
-/** C2：多行标签的排布盒子（最宽一行 × 行数；行高与 `drawStyledLabel` 同一系数 1.12） */
-function measureTextBlockWithStyle(lines, style) {
-  const list = Array.isArray(lines) && lines.length ? lines : [''];
-  const size = Number(style && style.fontSize) || 12;
-  let w = 0;
-  for (const l of list) w = Math.max(w, measureTextWithStyle(l, style).w);
-  return { w, h: size * 1.3 + 2 + (list.length - 1) * size * 1.12 };
-}
-
-/**
- * 地形注记的**保留走廊**（2026-10-27，用户 gap #6）：山系/海域名沿脊线排，占的是一条线；
- * 别的标签压上去就白排了。这里把「名字实际会占的那一段」算成框交给 `layoutLabels`
- * 当障碍物（沿路径只占中点附近一段，不是整条脊线 —— 否则半张图都被禁掉）。
- *
- * 坐标系与调用方一致（画布 = 屏幕像素；导出 = 世界单位），`toScreen` 由调用方给。
- */
-function terrainReserveBoxes(style, toScreen) {
-  const out = [];
-  const labels = baseMap.value?.terrainLabels || [];
-  if (!labels.length) return out;
-  const fs = Number(style && style.fontSize) || 14;
-  const pad = fs * 0.7;
-  for (const lb of labels) {
-    const name = String((lb && lb.name) || '').trim();
-    const pts = (lb && lb.points) || [];
-    if (!name || !pts.length) continue;
-    const scr = pts.map((p) => toScreen(p.x, p.y));
-    if (lb.kind === 'plain' || scr.length < 2) {
-      const sp = scr[0];
-      const m = measureTextWithStyle(name, style);
-      out.push({
-        x0: sp.x - m.w / 2 - pad, y0: sp.y - m.h / 2 - pad,
-        x1: sp.x + m.w / 2 + pad, y1: sp.y + m.h / 2 + pad,
-      });
-      continue;
-    }
-    const mid = scr[Math.floor(scr.length / 2)];
-    const textW = Math.max(24, measureTextWithStyle(name, style).w - 6);
-    const win = slicePathAroundPoint(scr, mid, textW * 1.4);
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of win) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    }
-    if (!Number.isFinite(minX)) continue;
-    out.push({ x0: minX - pad, y0: minY - pad, x1: maxX + pad, y1: maxY + pad });
-  }
-  return out;
-}
-
-/** 四档标签的候选与排布结论（世界坐标）。缓存键 = 相机数值 + 数据引用 */
-function getLabelPlan() {  if (viewMode.value !== 'scenario') return [];
-  const baseMapRef = baseMap.value;
-  const terrainRef = rawTerrain();
-  const burgsRef = baseMapRef?.burgs || null;
-  const riversRef = baseMapRef?.rivers || null;
-  const ownRef = selectedScenario.value?.ownership || null;
-  // ⚠️ `timeline.value` 必须进缓存键：势力**改名**不改 ownership/terrain 的引用，
-  //    漏了它就会出现「撤销后画布上还是旧名字」（test_73 f3 实测）。
-  // ⚠️ `terrainLabels` 同理（2026-10-27）：它们现在是**排布的保留区**（会挪动别的字），
-  //    改了注记却不重排 = 画面不动。
-  const terrainLabelsRef = baseMapRef?.terrainLabels || null;
-  const refs = [terrainRef, burgsRef, riversRef, terrainLabelsRef, ownRef, selectedPolity.value,
-    timeline.value, selectedScenario.value];
-  const nums = [
-    cameraX.value, cameraY.value, cameraScale.value, cw(), ch(),
-    showLabels.value ? 1 : 0, showPlaceNames.value ? 1 : 0,
-    showPolityLabels.value ? 1 : 0, showProvinceNames.value ? 1 : 0, showBurgs.value ? 1 : 0,
-    // C3（2026-10-29）：只显示已命名省 —— 换个开关就换了一批候选，必须进缓存键
-    showNamedProvincesOnly.value ? 1 : 0,
-    tlEra.value, tlDate.value, tlDiffMode.value,
-    // 档位与字号必须进缓存键：滚轮跨档时「候选集/字号」都变，漏了就会画面不动（假"没反应"）
-    labelDetailNow(), labelScaleNow().toFixed(3),
-    // 地形注记的保留区（显示开关 + 档位）也改变排布结论
-    showTerrainNames.value ? 1 : 0,
-  ];
-  const sameRefs = labelPlanCache.refs && labelPlanCache.refs.length === refs.length
-    && refs.every((r, i) => r === labelPlanCache.refs[i]);
-  const sameNums = labelPlanCache.nums && labelPlanCache.nums.length === nums.length
-    && nums.every((n, i) => n === labelPlanCache.nums[i]);
-  if (sameRefs && sameNums) return labelPlanCache.plan;
-
-  const scale = cameraScale.value;
-  const W = cw();
-  const H = ch();
-  // 详略档位 + 字号系数（2026-10-27）：与 `polityLabelTier` 同一份「可见比例」，
-  // 档位表/滞回在 utils/labelZoom.js；字号系数让放大时字略大、缩小时略小。
-  const detail = labelDetailNow();
-  const caps = detailCaps(detail);
-  const fontScale = labelScaleNow();
-  const toScreen = (x, y) => ({ x: cameraX.value + x * scale, y: cameraY.value + y * scale });
-  const tl0 = screenToWorld(0, 0);
-  const br0 = screenToWorld(W, H);
-  const worldRect = { minX: tl0.x - px(24), minY: tl0.y - px(24), maxX: br0.x + px(24), maxY: br0.y + px(24) };
-  const cands = [];
-
-  // ① 省名 / 势力名
-  //    🔴 2026-10-27（用户实测 A4「看不到省名，城镇名却可见」）：旧代码在这里**跳过占位名**
-  //    （真实 415 省项目 415 个全叫「新省份 N」）→ 放大到省名档时一个省名都画不出来，
-  //    而 `polityLabels.isPlaceholderProvinceName` 的注释明确写着「画布 → 保留（改名时好定位）」——
-  //    代码与约定相反。现在**画布照约定保留**（导出仍过滤，见 `useScenarioExport`）。
-  if ((showPolityLabels.value || showProvinceNames.value) && terrainRef && terrainRef.length) {
-    const provinces = [];
-    for (const prov of terrainRef) {
-      if (!prov) continue;
-      const r0 = provinceRings(prov)[0];
-      provinces.push({
-        id: prov.id,
-        name: prov.name,
-        rings: r0 ? [{ kind: r0.kind, points: ringPointsForRender(r0) }] : [],
-      });
-    }
-    const { ownerRefOf, polityOfEra } = polityLabelSources();
-    const labels = collectScenarioLabels({
-      provinces,
-      tier: polityLabelTierNow.value,
-      scale,
-      ownerRefOf,
-      polityOfEra,
-      highlightOwnerId: selectedPolity.value?.id || null,
-      // C3：只显示已命名省（占位名整层不画；判据与导出链同一份）
-      skipPlaceholderProvinces: showNamedProvincesOnly.value,
-    });
-    for (const lb of labels) {
-      // 两层各归各的开关（2026-10-27）
-      if (lb.kind === 'polity' && !showPolityLabels.value) continue;
-      if (lb.kind === 'province' && !showProvinceNames.value) continue;
-      const sp = toScreen(lb.x, lb.y);
-      const baseStyle = lb.kind === 'province' ? PROVINCE_LABEL_STYLE : POLITY_LABEL_STYLE;
-      let style = scaleLabelStyle(baseStyle, fontScale);
-      // 势力名字号按**领土屏幕面积**给（2026-10-27 EU4 参考图）：大国名压得住地图、
-      // 小国名不喧宾夺主。`sqrt` 让面积翻 4 倍字号才翻倍，避免碎国名糊成一片。
-      if (lb.kind === 'polity' && Number.isFinite(lb.area) && lb.area > 0) {
-        const areaPx = lb.area * scale * scale;
-        // 上限 = 地图在屏幕上的宽度的 6%（EU4 实测：马穆鲁克约占图宽 6%，不是 20%），
-        // 再加 96px 绝对上限 —— 否则单省小国放大到整屏时会得到一个盖住一切的巨字。
-        const mapWpx = mapWorldSize().w * scale;
-        const cap = Math.max(24, Math.min(96, mapWpx * 0.06));
-        const byArea = Math.max(20, Math.min(cap, Math.sqrt(Math.max(1, areaPx)) * 0.32));
-        style = { ...style, fontSize: Math.min(110, byArea * fontScale) };
-      }
-      // C2（2026-10-29）：超大国名**沿领土主轴排**、超宽**折两行**。
-      // 领土近似宽度 = sqrt(面积) × 缩放（正方形近似），留 8% 余量 —— 只要"放得下"
-      // 这一条判据，不追求像素级排版（真排版在 `layoutLabels` 里）。
-      let shape = null;
-      if (lb.kind === 'polity' && Number.isFinite(lb.area) && lb.area > 0) {
-        shape = planPolityShape({
-          text: lb.text,
-          fontSize: style.fontSize,
-          maxWidthPx: Math.sqrt(lb.area) * scale * 0.92,
-          axis: lb.axis,
-          elongation: lb.elongation,
-        });
-      }
-      cands.push({
-        id: lb.kind + ':' + lb.text,
-        kind: lb.kind,          // 'province' | 'polity'
-        text: lb.text,
-        x: sp.x, y: sp.y,
-        style,
-        highlight: lb.highlight,
-        // C2（2026-10-29）：超大国名沿领土主轴转 + 超宽折两行（判据在 utils/labelOrient.js）
-        lines: shape ? shape.lines : null,
-        rotate: shape ? shape.rotate : 0,
-        // 势力名/省名是**面状大字**：城市圆点不该把它挡掉（EU4 里国名直接压在城市上）
-        ignoreSoftObstacles: true,
-        // 省名放不下时在面内挪一点（势力名优先级更高，会先占住形心）
-        placements: lb.kind === 'province' ? AREA_LABEL_PLACEMENTS : undefined,
-      });
-    }
-  }
-
-  // ② 城镇名（圆点右侧优先，放不下换左/上/下；圆点本身是障碍物）
-  //    档位来自 `labelZoom.DETAIL_CAPS`：far 档 `burgs = -1` = 一个城镇名都不标（只剩势力名）。
-  if (caps.burgs >= 0 && showPlaceNames.value && showBurgs.value && burgsRef && burgsRef.length) {
-    for (const lb of collectBurgLabels(burgsRef, { tier: caps.burgs, rect: worldRect })) {
-      const sp = toScreen(lb.x, lb.y);
-      const r = (lb.capital ? 5.5 : 2.5) * 1.4;   // 屏幕像素：圆点/星标半径 + 余量
-      cands.push({
-        id: 'burg:' + lb.id,
-        kind: lb.capital ? 'capital' : 'town',
-        text: lb.name,
-        x: sp.x, y: sp.y,
-        style: scaleLabelStyle(burgLabelTextStyle({ capital: lb.capital }), fontScale),
-        placements: [
-          { mode: 'right', gap: r }, { mode: 'left', gap: r },
-          { mode: 'above', gap: r }, { mode: 'below', gap: r + 2 },
-          { mode: 'right', gap: r, dy: -11 }, { mode: 'left', gap: r, dy: 11 },
-        ],
-        obstacles: [{ x0: sp.x - r, y0: sp.y - r, x1: sp.x + r, y1: sp.y + r }],
-      });
-    }
-  }
-
-  // ③ 河名（贴河上方，其次下方 —— 河名压河是最难读的一种）
-  //    档位同样来自 `DETAIL_CAPS`：mid/far 档 `rivers = -1` = 不标河名（整图看不见河名）。
-  if (caps.rivers >= 0 && showPlaceNames.value && showRiverBase.value && riversRef && riversRef.length) {
-    for (const lb of collectRiverLabels(riversRef, { tier: caps.rivers, rect: worldRect })) {
-      const sp = toScreen(lb.x, lb.y);
-      cands.push({
-        id: 'river:' + lb.id,
-        kind: 'river',
-        text: lb.name,
-        x: sp.x, y: sp.y,
-        style: scaleLabelStyle(riverLabelTextStyle(), fontScale),
-        placements: [{ mode: 'above', gap: 5 }, { mode: 'below', gap: 5 }, { mode: 'right', gap: 7 }],
-        // 河名沿河（2026-10-27）：排布只决定「放在哪一段河道附近」，实际落字沿折线排。
-        // 世界坐标；绘制时换算成屏幕（见 drawRiverNameAlongPath）。
-        path: lb.path || null,
-      });
-    }
-  }
-
-  const placed = layoutLabels(cands, {
-    // C2：多行标签按**块**量（最宽一行 × 行数），否则排布会少留一行的高度、两行字互相压
-    measure: (text, cand) => (cand && Array.isArray(cand.lines) && cand.lines.length > 1
-      ? measureTextBlockWithStyle(cand.lines, cand.style)
-      : measureTextWithStyle(text, cand.style)),
-    bounds: { minX: 6, minY: 6, maxX: W - 6, maxY: H - 6 },
-    pad: 3,
-    // 地形注记走廊先占位（与画布上真实画出的位置同坐标系：屏幕像素）
-    reserve: (showTerrainNames.value && caps.terrainNames)
-      ? terrainReserveBoxes(scaleLabelStyle(terrainLabelTextStyle(), fontScale), toScreen)
-      : [],
-  });
-  const plan = placed.map((p) => ({
-    kind: p.kind,
-    text: p.text,
-    style: p.style,
-    highlight: !!p.highlight,
-    wx: (p.cx - cameraX.value) / scale,
-    wy: (p.cy - cameraY.value) / scale,
-    // C2：折行与旋转随排布结论一起带出去（绘制端只照做，不再自己判断）
-    lines: p.lines || null,
-    rotate: p.rotate || 0,
-    // 河名沿河：排布结论只给落点，走向要带回去才能沿折线排字（世界坐标）
-    path: p.kind === 'river' ? (p.path || null) : null,
-  }));
-  labelPlanCache = { refs, nums, plan };
-  return plan;
-}
-
-/** 画出排布结论里的指定档位（世界坐标 → drawStyledLabel） */
-function drawPlannedLabels(c, kinds) {
-  const plan = getLabelPlan();
-  if (!plan.length) return;
-  const scale = cameraScale.value;
-  for (const lb of plan) {
-    if (kinds.indexOf(lb.kind) < 0) continue;
-    // 河名沿河（2026-10-27）：能沿折线排就沿，排不下才退回水平字（宁可横着，也别丢名字）
-    if (lb.kind === 'river' && drawRiverNameAlongPath(c, lb, scale)) continue;
-    drawStyledLabel(c, lb.text, lb.wx, lb.wy, lb.style, {
-      align: 'center',
-      baseline: 'middle',
-      screenScale: cameraScale.value,
-      highlight: lb.highlight,
-      lines: lb.lines || undefined,
-      rotate: lb.rotate || 0,
-    });
-  }
-}
-
-// 河名抬离河道中线的屏幕像素数：字压在水线上，河本身就看不清了
-const RIVER_NAME_NORMAL_OFFSET = 7;
-
-/**
- * 沿路径排出来的字在**屏幕上**是否互相压住（2026-10-27）。
- *
- * 沿路径推进不重叠 ≠ 屏幕上不重叠：急弯/回环处两个不同弧长的字会落到同一块像素上，
- * 这正是「河名/山名诡异折叠」的形态。判据只看**非相邻**字对（相邻字本来就该挨着）。
- */
-function placedCharsOverlap(placed, fontSize) {
-  const list = Array.isArray(placed) ? placed : [];
-  const minGap = Math.max(4, Number(fontSize || 12) * 0.5);
-  for (let i = 0; i < list.length; i++) {
-    for (let j = i + 2; j < list.length; j++) {
-      const a = list[i], b = list[j];
-      if (Math.hypot(a.x - b.x, a.y - b.y) < minGap) return true;
-    }
-  }
-  return false;
-}
-
-/**
- * 河名沿河排字。
- *
- * 为什么不是「把整条河喂给 layoutTextAlongPath」：避让排布已经判定「这个名字放在此处放得下」，
- * 若按整条河的中点排字，字会跑离判定过的位置（那个位置可能正压着省名）。
- * 所以先把排布给的落点**投到河道上**，只取它两侧一段（`slicePathAroundPoint`），
- * 再把这一小段喂给沿路径排字 —— 判定与落字看的是同一处。
- *
- * 只在**每个字都放得下**时采用（弯太急时字会被跳掉 → 缺字的名字比横排更难读）；
- * 否则返回 false，由调用方退回水平标签。
- */
-function drawRiverNameAlongPath(c, lb, scale) {
-  const pts = lb && lb.path;
-  if (!Array.isArray(pts) || pts.length < 2) return false;
-  if (!(scale > 0)) return false;
-  const style = lb.style || riverLabelTextStyle();
-  const chars = Array.from(String(lb.text || ''));
-  if (!chars.length) return false;
-  // 与排布/绘制同一条字体口径量字（drawStyledLabel 走 fontString；这里只量宽）
-  const measure = (ch) => Math.max(2, measureTextWithStyle(ch, style).w - 6);
-  const letterSpacing = 2.5;
-  const textWidth = chars.reduce((sum, ch) => sum + measure(ch), 0)
-    + letterSpacing * Math.max(0, chars.length - 1);
-
-  const scr = pts.map((p) => ({ x: cameraX.value + p.x * scale, y: cameraY.value + p.y * scale }));
-  const anchor = { x: cameraX.value + lb.wx * scale, y: cameraY.value + lb.wy * scale };
-  const window = slicePathAroundPoint(scr, anchor, textWidth * 1.6);
-  if (!Array.isArray(window) || window.length < 2) return false;
-  // 🔴 2026-10-27（用户 A3/C1：「河名有时候会诡异折叠，放大非常多倍才正常」）：
-  //    旧实现只把一小段折线喂给沿路径排字，**不判这段有多弯**。河道在低缩放下被压成
-  //    几十像素，一个 S 弯会让同一串字先右后左地折回来（字叠字）；窗口又随缩放变化，
-  //    所以只在某些倍率下"看起来重叠扭曲"。这里先量**这段的平直度**（净位移/弧长）
-  //    与**最大转角**：不够直就退回水平字 —— 宁可横着，也不要折成一团。
-  const winLen = pathLength(window);
-  if (!(winLen > 1)) return false;
-  const net = Math.hypot(window[window.length - 1].x - window[0].x,
-    window[window.length - 1].y - window[0].y);
-  const straightness = net / winLen;
-  let maxTurn = 0;
-  let prevAngle = null;
-  for (let i = 1; i < window.length; i++) {
-    const a = Math.atan2(window[i].y - window[i - 1].y, window[i].x - window[i - 1].x);
-    if (prevAngle != null) {
-      let d = Math.abs(a - prevAngle);
-      if (d > Math.PI) d = Math.PI * 2 - d;
-      if (d > maxTurn) maxTurn = d;
-    }
-    prevAngle = a;
-  }
-  if (straightness < 0.72 || maxTurn > 1.05) return false;   // 1.05rad ≈ 60°
-  const layout = layoutTextAlongPath(lb.text, window, {
-    fontSize: style.fontSize,
-    letterSpacing,
-    // 50°：45° 的斜河必须还能沿河排（test_156 的判据就是这个角度）；
-    // 再陡的字看起来就像"竖起来"了，交给 `placedCharsOverlap` 兜底。
-    maxTiltDeg: 50,
-    measure,
-  });
-  if (!layout.ok || layout.placed.length < chars.length) return false;
-  // 字与字之间的空间重叠检查：沿路径推进不重叠不代表**屏幕上**不重叠
-  // （急弯处两个不同弧长的字会落到同一块像素上）→ 退回水平字。
-  if (placedCharsOverlap(layout.placed, style.fontSize)) return false;
-  const placedWorld = layout.placed.map((p) => ({
-    ch: p.ch,
-    x: (p.x + Math.sin(p.angle) * RIVER_NAME_NORMAL_OFFSET - cameraX.value) / scale,
-    y: (p.y - Math.cos(p.angle) * RIVER_NAME_NORMAL_OFFSET - cameraY.value) / scale,
-    angle: p.angle,
-  }));
-  drawTextAlongPath(c, placedWorld, style, { screenScale: scale });
-  return true;
-}
-
-/**
- * 地形注记（D3，2026-10-26；2026-10-27 补海域/平原）：山系/海域名**沿走向**排，平原名落点横排。
- *
- * 为什么不能像普通标签那样居中写一个横排字：参考图里"亚平宁山脉"是顺着山脊弯的 ——
- * 横着写会横跨山谷，读者反而看不出它指哪条山。路径不够长/太陡时**退化为水平字**
- * （宁可横着，也别让名字凭空消失）。
- *
- * 三类各有读法（`terrainLabels[].kind`）：
- *   · `range` —— 沿脊线（字距 2）；
- *   · `sea`   —— 沿海湾/洋流走向，字距放大（制图惯例：海名疏排，别让字挤在岸线上）；
- *   · `plain` —— 平原是**面/点**语义，沿路径排没有意义 → 直接落在那个点（此前被 ≥2 点门槛
- *                整类跳过：数据支持 kind:'plain'，画布却永远不画）。
- * 样式单源在 `utils/mapTextStyles.terrainLabelTextStyle()`（导出一份同样的常量）。
- */
-function drawTerrainLabels(c) {
-  if (!showTerrainNames.value) return;
-  // 档位闸门（2026-10-27）：最粗的 far 档（地图只占视口一小块）不画地形注记 ——
-  // 与城镇/河名同一条「缩小只剩势力名」的纪律（`utils/labelZoom.DETAIL_CAPS`）。
-  if (!detailCaps(labelDetailNow()).terrainNames) return;
-  const labels = baseMap.value?.terrainLabels || [];
-  if (!labels.length) return;
-  const scale = cameraScale.value;
-  if (!(scale > 0)) return;
-  const W = cw();
-  const H = ch();
-  const style = scaleLabelStyle(terrainLabelTextStyle(), labelScaleNow());
-  const toScreen = (p) => ({ x: cameraX.value + p.x * scale, y: cameraY.value + p.y * scale });
-
-  for (const lb of labels) {
-    const name = String((lb && lb.name) || '').trim();
-    const kind = lb && lb.kind === 'sea' ? 'sea' : (lb && lb.kind === 'plain' ? 'plain' : 'range');
-    const pts = (lb && lb.points) || [];
-    if (!name || pts.length < (kind === 'plain' ? 1 : 2)) continue;
-
-    // 平原：点注记 —— 不参与沿路径排字，落在取的点上（视口外跳过）
-    if (kind === 'plain') {
-      const sp = toScreen(pts[0]);
-      if (sp.x < -60 || sp.x > W + 60 || sp.y < -30 || sp.y > H + 30) continue;
-      drawStyledLabel(c, name, pts[0].x, pts[0].y, style, {
-        align: 'center', baseline: 'middle', screenScale: scale,
-      });
-      continue;
-    }
-
-    // 视口裁剪（整条线都在屏外就跳过；山脊几十个点，比逐点判定便宜）
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of pts) {
-      const sp = toScreen(p);
-      if (sp.x < minX) minX = sp.x;
-      if (sp.x > maxX) maxX = sp.x;
-      if (sp.y < minY) minY = sp.y;
-      if (sp.y > maxY) maxY = sp.y;
-    }
-    if (maxX < -40 || minX > W + 40 || maxY < -40 || minY > H + 40) continue;
-
-    const scr = pts.map(toScreen);
-    const layout = layoutTextAlongPath(name, scr, {
-      fontSize: style.fontSize,
-      letterSpacing: kind === 'sea' ? 6 : 2,
-      maxTiltDeg: 55,
-      // 每个字的宽度直接量（与 drawStyledLabel 同一条 fontString 口径）
-      measure: (ch) => Math.max(2, measureTextWithStyle(ch, style).w - 6),
-    });
-    // 折叠退让（2026-10-27，用户「山脉名字问题同河名」）：急弯处字叠字 → 退回水平字
-    if (layout.ok && !placedCharsOverlap(layout.placed, style.fontSize)) {
-      const placedWorld = layout.placed.map((p) => ({
-        ch: p.ch,
-        x: (p.x - cameraX.value) / scale,
-        y: (p.y - cameraY.value) / scale,
-        angle: p.angle,
-      }));
-      drawTextAlongPath(c, placedWorld, style, { screenScale: scale });
-    } else {
-      const mid = pts[Math.floor(pts.length / 2)] || pts[0];
-      drawStyledLabel(c, name, mid.x, mid.y, style, {
-        align: 'center', baseline: 'middle', screenScale: scale,
-      });
-    }
-  }
-}
-
-function drawLabels(c) {
-  if (viewMode.value !== 'scenario' || !selectedScenario.value?.labels) return;
-  selectedScenario.value.labels.forEach(label => {
-    // 2026-10-25：地名与导出共用一份样式（浅色字 + 默认深色描边）。
-    // 旧实现是裸 fillText：画布默认浅色、导出默认深灰，同一个地名两幅图两种颜色。
-    // `align/baseline` 保持旧画布的「左上角锚点」，避免地名整体位移。
-    drawStyledLabel(c, label.text || '', label.x, label.y, scenarioLabelTextStyle(label), {
-      align: 'left', baseline: 'alphabetic',
-    });
-  });
+// 排布结论（四档合一 + 避让 + 档位滞回）全在层模块里；本文件只留**一个兼容出口**：
+// 用例按 `SM.getLabelPlan()` 读结论（test_149/156/159/162 都在用），别让探针跟着搬家。
+function getLabelPlan() {
+  return labelLayers.getPlan(makeLayerView());
 }
 
 function drawReliefIcons(c) {
@@ -12110,9 +11663,9 @@ async function exportPNG() {
   drawBackgroundLayer(ctx, exportView);
   drawProvincesLayer(ctx, exportView);
   if (showBurgs.value) drawBurgs(ctx);
-  drawLabels(ctx);
+  labelLayers.drawScenarioLabels(ctx, makeLayerView());
   // A8：导出必须与画布一致（M2/A2 的教训：导出各写一套 → 导出的东西画布上看不见，且不报错）
-  drawPolityLabels(ctx);
+  labelLayers.drawPolity(ctx, makeLayerView());
   ctx.font = '14px "PingFang SC", sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   const scenarioName = selectedScenario?.value?.name || '未命名剧本';

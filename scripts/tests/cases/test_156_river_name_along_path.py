@@ -223,12 +223,17 @@ def run(cdp):
     if int(flat.get('h') or 0) > 26:
         fails.append(f"对照：水平河的字云纵向跨度 {flat.get('h')}px 过大")
 
+    # ⚠️ 2026-10-30（N1 刀 1）：沿河排字的实现搬进 `scenario/layers/labels.js` —— 判据跟着搬家，
+    #    原意不变（入口存在 / 按落点取河道段 / 字没排全就退回水平字）。
     sm_src = _read('src/renderer/src/components/ScenarioMap.vue')
-    if 'slicePathAroundPoint' not in sm_src:
-        fails.append('ScenarioMap 没有用 slicePathAroundPoint（河名没按落点取河道段）')
-    if 'drawRiverNameAlongPath' not in sm_src:
-        fails.append('ScenarioMap 缺 drawRiverNameAlongPath（沿河排字入口）')
-    if 'layout.placed.length < chars.length' not in sm_src:
+    labels_src = _read('src/renderer/src/scenario/layers/labels.js')
+    if 'labelLayers.drawPlanned(' not in sm_src:
+        fails.append('ScenarioMap 主渲染没接 labelLayers.drawPlanned（河名走不到文字层）')
+    if 'slicePathAroundPoint' not in labels_src:
+        fails.append('文字层没有用 slicePathAroundPoint（河名没按落点取河道段）')
+    if 'drawRiverNameAlongPath' not in labels_src:
+        fails.append('文字层缺 drawRiverNameAlongPath（沿河排字入口）')
+    if 'layout.placed.length < chars.length' not in labels_src:
         fails.append('缺少「字没排全就退回水平字」的保护（缺字的名字比横排更难读）')
 
     if fails:

@@ -67,9 +67,14 @@ FP_JS = """(() => {
 
 TOGGLE_LABELS_JS = """((on) => {
   const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
-  if (!('showLabels' in SM)) return JSON.stringify({ error: 'no-showLabels' });
-  SM.showLabels = !!on;
-  return JSON.stringify({ ok: true, showLabels: SM.showLabels });
+  // 文字层有**五个**开关（标志/省名/地名/地形注记/城镇），只关 `showLabels` 画不出"无文字的几何图"
+  // ——2026-10-30 实测：第一版只关它，`hashNoLabels` 与整图完全相同（势力名照旧画）。
+  const keys = ['showLabels', 'showPolityLabels', 'showProvinceNames', 'showPlaceNames', 'showTerrainNames'];
+  const missing = keys.filter(k => !(k in SM));
+  if (missing.length) return JSON.stringify({ error: 'missing switches: ' + missing.join(',') });
+  for (const k of keys) SM[k] = !!on;
+  if (typeof SM.render === 'function') SM.render();
+  return JSON.stringify({ ok: true, off: !on, keys });
 })"""
 
 
@@ -162,7 +167,33 @@ def main():
               points: pts, biome: 'temperate', coast: coasts[injected] }, { checkOverlap: false });
             injected++;
           }
-          return JSON.stringify({ ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, injected });
+          // ② 一层剧本：**文字层必须有东西可画**（此前基线里省名一个都没出 → `hashNoLabels`
+          //    与整图相同，文字那一刀等于没有判据）。这里造一个势力 + 三个省归属 + 一条浮动地名：
+          //      · 省名/势力名 → `drawPolityLabels`（走统一避让排布 getLabelPlan）
+          //      · 浮动地名   → `drawLabels`（走 scenarioLabelTextStyle）
+          if (s.scenarios && typeof s.removeScenario === 'function') {
+            for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
+          }
+          s.createScenario(KEY + '/像素基线时代', {
+            ownerKey: KEY, name: '像素基线时代', order: 1,
+            era: { roman: 'I', label: '基', startYear: '2000', endYear: '2010' },
+            polities: [{ id: 'PIX_A', name: '像素甲国', color: '#c23b3b' }],
+            ownership: { pix_prov_0: 'PIX_A', pix_prov_1: 'PIX_A', pix_prov_2: 'PIX_A' },
+            labels: [{ text: '像素基线地名', x: 300, y: 420 }],
+          });
+          sm.baseMapKey = KEY;
+          if (typeof sm.onBaseMapChange === 'function') sm.onBaseMapChange();
+          sm.tlDate = { y: 2005, m: null, d: null };
+          const ids = sm.timeline.scenarios.map(x => x.id);
+          sm.tlEra = Math.max(0, ids.indexOf(KEY + '/像素基线时代'));
+          sm.selectedPolity = null;
+          sm.selectedProvinceIds = [];
+          if (typeof sm.render === 'function') sm.render();
+          return JSON.stringify({
+            ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, injected,
+            scenarios: ids.length, era: sm.tlEra,
+            hasLabels: !!(sm.timeline.scenarios[sm.tlEra] || {}).labels,
+          });
         })()""", required=('ok',), desc='铺设像素基线场景')
         ck('场景已铺设', bool(scene[0]) and scene[1].get('ok'), scene[1])
         time.sleep(0.5)
