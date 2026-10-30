@@ -1849,6 +1849,8 @@ const props = defineProps({
 const emit = defineEmits(['exit', 'picker']);
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
+// N1 刀 1（2026-10-30）：渲染层注册表 —— 把 renderFrame 里的手写 if 链变成"层 + order"
+import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -10221,6 +10223,41 @@ function blitStrokeBase() {
   return true;
 }
 
+// ── N1 刀 1：渲染层注册表（2026-10-30）─────────────────────────────────────────
+// 这一步只把「谁先谁后」变成数据（绘制实现仍在本文件），所以判据是**逐像素一致**
+// （`python scripts/tests/drill_scenario_pixels.py --compare before after`）。
+// 顺序口径（照抄原来的 if 链，一个字都没改）：
+//   · 栅格图层只有"陆海底色"是给省份兜底的；height/temp/prec/satellite/terrain 是**地形底图**，
+//     必须画在省份之前、且不透明（2026-10-26 用户原话「看不出地形」就是两层半透明互相洗成的）；
+//   · 海岸（浅海带 `landsea` / 等深线 `rasterBase`）画在栅格之上、省界之下 —— 海岸属地形，压在行政边界以下；
+//   · 省份**永远画**（存下来/导出的就是它）；地形底图模式下只描边不填色（`fills:false`），否则地形被色块盖住。
+const RASTER_BASE_KINDS = new Set(['height', 'temp', 'prec', 'satellite', 'terrain']);
+const isRasterBase = () => RASTER_BASE_KINDS.has(rasterLayer.value);
+const isAnyRaster = () => rasterLayer.value === 'landsea' || isRasterBase();
+
+const scenarioRenderLayers = createLayerRegistry();
+scenarioRenderLayers.register({ id: 'basemap.background', order: 10, draw: (c) => drawBackground(c), cacheable: true });
+scenarioRenderLayers.register({
+  id: 'basemap.raster', order: 20, when: isAnyRaster, cacheable: true,
+  draw: (c) => drawRasterLayer(c, rasterLayer.value, 1),
+});
+scenarioRenderLayers.register({
+  id: 'basemap.coastShallow', order: 30, when: () => rasterLayer.value === 'landsea',
+  draw: (c) => drawPoliticalCoast(c),
+});
+scenarioRenderLayers.register({
+  id: 'basemap.seaDetail', order: 30, when: isRasterBase, cacheable: true,
+  draw: (c) => drawSeaDetail(c),
+});
+scenarioRenderLayers.register({
+  id: 'basemap.biomes', order: 40, when: () => showBiomes.value, cacheable: true,
+  draw: (c) => drawBiomeBackground(c),
+});
+scenarioRenderLayers.register({
+  id: 'provinces.fill', order: 50, cacheable: true,
+  draw: (c) => drawProvinces(c, { fills: !isRasterBase() }),
+});
+
 function renderFrame() {
   if (!ctx.value) return;
   const cvs = canvas.value;
@@ -10244,29 +10281,9 @@ function renderFrame() {
   ctx.value.scale(cameraScale.value, cameraScale.value);
 
   if (!blitted) {
-    drawBackground(ctx.value);
-
-    // 栅格图层：只有"陆海底色"是给省份兜底的；height/temp/prec 是**地形底图**，
-    // 必须画在省份之前、且不透明（2026-10-26：旧做法是"省份不透明填色 + 45% 栅格盖上去"，
-    // 两层半透明互相洗成一张粉彩画，用户原话「看不出地形」）。
-    const rasterBase = rasterLayer.value === 'height'
-      || rasterLayer.value === 'temp' || rasterLayer.value === 'prec'
-      || rasterLayer.value === 'satellite' || rasterLayer.value === 'terrain';
-    if (rasterLayer.value === 'landsea') {
-      drawRasterLayer(ctx.value, 'landsea', 1);
-      // 浅海带 + 海岸线（政治档也要，否则海陆边界是一刀切的硬边 —— 2026-10-27）
-      drawPoliticalCoast(ctx.value);
-    } else if (rasterBase) {
-      drawRasterLayer(ctx.value, rasterLayer.value, 1);
-      // 等深线 + 海岸线（2026-10-26）：画在栅格之上、省界之下 —— 海岸属地形，压在行政边界以下
-      drawSeaDetail(ctx.value);
-    }
-
-    if (showBiomes.value) drawBiomeBackground(ctx.value);
-    // 🔴 渲染单一路径：**永远画省份多边形**（存下来 / 导出的就是它）。
-    //    P2 起涂抹期间不再叠「格点反馈」—— 格子已退役；边界在抬手时被精确布尔替换。
-    //    地形底图模式下只描边不填色（`fills:false`），否则地形又被色块盖住。
-    drawProvinces(ctx.value, { fills: !rasterBase });
+    // ── N1 刀 1（2026-10-30）：底图 / 栅格 / 海岸浅滩 / 等深线 / 群系 / 省界 六层走注册表 ──
+    //    顺序不再是"读代码才知道"，而是每层自己声明的 `order`；迁移口径见 `scenarioRenderLayers` 定义处。
+    scenarioRenderLayers.run(ctx.value, { w, h }, {});
 
     if (showRoutes.value) drawRoutes(ctx.value);
     if (showRiverBase.value) drawRivers(ctx.value);

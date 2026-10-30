@@ -89,8 +89,14 @@ def source_gates():
         if sym not in sm:
             fails.append(f'🔴 手势期基帧缓存的接线缺失：{sym}')
     # 静态层必须受 blitted 管、动态层必须受 strokeBaseBuilding 管（两边漏一个都会画错）
-    for gate in ('if (!blitted) {\n    drawBackground',
-                 'if (showRiverBase.value) drawRivers(ctx.value);\n  }\n'
+    # 2026-10-30（N1 刀 1）：静态六层改走 `scenarioLayers` 注册表，所以判据从"字面量"改成
+    #   "注册表的 run 就在 `if (!blitted) {` 打开后 200 字符内" —— 门控仍然只包住静态层。
+    _i_gate = sm.find('if (!blitted) {')
+    _i_run = sm.find('scenarioRenderLayers.run(ctx.value')
+    if _i_gate < 0 or _i_run < 0 or (_i_run - _i_gate) > 200:
+        fails.append('🔴 静态层没有受「贴图帧」门控：`scenarioLayers.run(...)` 不在 `if (!blitted) {` 里'
+                     '（贴图帧会把它们再画一遍）')
+    for gate in ('if (showRiverBase.value) drawRivers(ctx.value);\n  }\n'
                  '  if (!strokeBaseBuilding) drawRiverPaths',
                  'if (!blitted && showBorders.value) drawProvinceBorders',
                  # 2026-10-21：相机移动期还会跳过聚落/标签/小地图（cameraMotion），

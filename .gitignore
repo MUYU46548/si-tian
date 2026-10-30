@@ -116,3 +116,6 @@ build/flowdiag/
 build/ref/
 build/landmass_head.txt
 build/*.zip
+
+# N1 像素基线（drill_scenario_pixels.py 的产物：同机位截图 + 指纹，本地证据）
+build/pixel-baseline/

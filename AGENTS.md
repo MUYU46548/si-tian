@@ -58,6 +58,10 @@
   （退出落盘 / 强杀）仍由 `drill_quit_flush.py` 守，两者不重复。
 - 保存链真机诊断: `python scripts/tests/diag_t2_save.py`（dev 模式起真实 Electron，可读 `projectStore` 的
   `dirty/saveStatus/lastError`；用**工作副本**打开项目 → 真实项目只读、跑前备份跑后还原配置）
+- **N1 像素基线（渲染层接口化的判据）**: `python scripts/tests/drill_scenario_pixels.py --tag before` 留底、
+  `--tag after` 再拍一次、`--compare before after` 比 —— 起 Vite(5180)+Edge(9222)，用**自带底图（3 省）**固定取景，
+  落 `build/pixel-baseline/<tag>.json`（整图 FNV-1a + **关标注**后的几何层指纹 + camera）与同名 PNG。
+  非 0 退出 = 逐像素判据没过。⚠️ 不要与 `run_tests.py` / 其它要 5180/9222 的演练同时跑
 - 图标一致性校验: `python scripts/icon_check.py`（校验所有被引用的图标名在 `Icon.vue` 中有定义）
 - 结构清单再生成: `python scripts/gen_architecture_map.py`（详见下节）
 
