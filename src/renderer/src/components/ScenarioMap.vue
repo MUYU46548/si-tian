@@ -1851,6 +1851,10 @@ import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
 // N1 刀 1（2026-10-30）：渲染层注册表 —— 把 renderFrame 里的手写 if 链变成"层 + order"
 import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
+// N1 刀 1：四层里已搬出本文件的三组（底图 / 海岸浅滩 / 省界）；文字标注层下一波
+import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
+import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
+import { drawProvincesLayer, drawProvinceBordersLayer } from '../scenario/layers/provinces';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -9083,73 +9087,6 @@ function strokeWorldPolyline(c, pts, close = false) {
   c.stroke();
 }
 
-function drawSeaDetail(c) {
-  // 只在「高度」档画：温度/降水/文化是专题图，给它们加海深与等深线会被读成地形（口径错误）。
-  if (rasterLayer.value !== 'height') return;
-  const d = getSeaDetail();
-  if (!d || (!d.isobaths.length && !d.coasts.length)) return;
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(24);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-
-  c.save();
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  // 等深线：细、淡 —— 参考图里它是"看得出但不抢戏"的那一层
-  c.lineWidth = px(0.6);
-  c.strokeStyle = 'rgba(48, 96, 128, 0.20)';
-  for (const ln of d.isobaths) {
-    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
-    strokeWorldPolyline(c, ln);
-  }
-  // 海岸线：压在省界**下面**，只露出一圈蓝边（省界会盖住它的中心 0.9px）——
-  // 参考图的"蓝海岸 + 灰省界"就是这个层叠关系，不用去改省界的描边逻辑。
-  c.lineWidth = px(1.7);
-  c.strokeStyle = 'rgba(44, 92, 122, 0.45)';
-  for (const ln of d.coasts) {
-    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
-    strokeWorldPolyline(c, ln, true);
-  }
-  c.restore();
-}
-
-/**
- * 政治档的**海岸带**（2026-10-27，用户「海路图/海陆图还不如之前那个独立模块」）。
- *
- * 此前政治档的海陆边界只有"省份填色突然结束"：没有浅海带、没有海岸线，
- * 远看就是一块色块贴在一块平色海面上（用户截图 #142923 正是这种硬边）。
- * 这里复用 `getSeaDetail().coasts`（高精度 `landFeatures` 环）画两层：
- *   ① 外侧 3px 的浅海光带 → 让陆地"浮"在水上；
- *   ② 1px 的深青海岸线 → 给边界一个明确的边。
- * 画在省份填色**之前**：陆地一侧会被省份盖住，只留下海侧的带和线。
- */
-function drawPoliticalCoast(c) {
-  if (rasterLayer.value !== 'landsea') return;
-  const d = getSeaDetail();
-  if (!d || !d.coasts || !d.coasts.length) return;
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(24);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  c.save();
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  c.lineWidth = px(5);
-  c.strokeStyle = 'rgba(150, 210, 215, 0.55)';
-  for (const ln of d.coasts) {
-    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
-    strokeWorldPolyline(c, ln, true);
-  }
-  c.lineWidth = px(1.1);
-  c.strokeStyle = 'rgba(44, 92, 122, 0.55)';
-  for (const ln of d.coasts) {
-    if (!polylineInView(ln, minX, minY, maxX, maxY)) continue;
-    strokeWorldPolyline(c, ln, true);
-  }
-  c.restore();
-}
-
 // ══════════════════════════════════════
 // 河流 / 道路图层（P1-T3）
 // ══════════════════════════════════════
@@ -10235,27 +10172,74 @@ const RASTER_BASE_KINDS = new Set(['height', 'temp', 'prec', 'satellite', 'terra
 const isRasterBase = () => RASTER_BASE_KINDS.has(rasterLayer.value);
 const isAnyRaster = () => rasterLayer.value === 'landsea' || isRasterBase();
 
+/**
+ * 一帧的「层可见世界」——**渲染层唯一的数据入口**（N1 接口化的核心）。
+ *
+ * 为什么是一个显式的 view 而不是让层直接摸组件状态：
+ *   ① 每层读什么写在它自己的文件头里，改一层不用通读 14k 行；
+ *   ② 将来"在整张图之上套质感"时，质感层拿到的是同一份 view，而不是 28 个各画各的闭包；
+ *   ③ 导出（`exportPNG`）与画布用同一份 view，天然同源（此前导出各写一套 → 导出与画布不一致且不报错）。
+ */
+function makeLayerView() {
+  return {
+    w: cw(),
+    h: ch(),
+    px,
+    screenToWorld,
+    baseMap: baseMap.value,
+    rasterLayer: rasterLayer.value,
+    showBiomes: showBiomes.value,
+    timeline: timeline.value,
+    eraIndex: tlEra.value,
+    date: tlDate.value,
+    diffMode: tlDiffMode.value,
+    mode: viewMode.value,
+    altStraight,
+    selectedProvince: selectedProvince.value,
+    multiSelect: multiSelectSet.value,
+    mergeProvId: mergeProvId.value,
+    GRID_STEP,
+    SEA_EDGE,
+    BORDER_COLOR,
+    PROVINCE_BORDER_COLOR,
+    PROVINCE_BORDER_PX,
+    getSeaDetail,
+    rawTerrain,
+    rawProvOf,
+    provincePathFor,
+    getProvinceColor,
+    provinceBBox,
+    isStriped,
+    polityColor,
+    polylineInView,
+    strokeWorldPolyline,
+  };
+}
+
 const scenarioRenderLayers = createLayerRegistry();
-scenarioRenderLayers.register({ id: 'basemap.background', order: 10, draw: (c) => drawBackground(c), cacheable: true });
+scenarioRenderLayers.register({
+  id: 'basemap.background', order: 10, cacheable: true,
+  draw: (c, view) => drawBackgroundLayer(c, view),
+});
 scenarioRenderLayers.register({
   id: 'basemap.raster', order: 20, when: isAnyRaster, cacheable: true,
   draw: (c) => drawRasterLayer(c, rasterLayer.value, 1),
 });
 scenarioRenderLayers.register({
   id: 'basemap.coastShallow', order: 30, when: () => rasterLayer.value === 'landsea',
-  draw: (c) => drawPoliticalCoast(c),
+  draw: (c, view) => drawPoliticalCoastLayer(c, view),
 });
 scenarioRenderLayers.register({
   id: 'basemap.seaDetail', order: 30, when: isRasterBase, cacheable: true,
-  draw: (c) => drawSeaDetail(c),
+  draw: (c, view) => drawSeaDetailLayer(c, view),
 });
 scenarioRenderLayers.register({
   id: 'basemap.biomes', order: 40, when: () => showBiomes.value, cacheable: true,
-  draw: (c) => drawBiomeBackground(c),
+  draw: (c, view) => drawBiomeLegendLayer(c, view),
 });
 scenarioRenderLayers.register({
   id: 'provinces.fill', order: 50, cacheable: true,
-  draw: (c) => drawProvinces(c, { fills: !isRasterBase() }),
+  draw: (c, view) => drawProvincesLayer(c, view, { fills: !isRasterBase() }),
 });
 
 function renderFrame() {
@@ -10282,8 +10266,9 @@ function renderFrame() {
 
   if (!blitted) {
     // ── N1 刀 1（2026-10-30）：底图 / 栅格 / 海岸浅滩 / 等深线 / 群系 / 省界 六层走注册表 ──
-    //    顺序不再是"读代码才知道"，而是每层自己声明的 `order`；迁移口径见 `scenarioRenderLayers` 定义处。
-    scenarioRenderLayers.run(ctx.value, { w, h }, {});
+    //    顺序不再是"读代码才知道"，而是每层自己声明的 `order`；每层读什么见 `makeLayerView()`。
+    const layerView = makeLayerView();
+    scenarioRenderLayers.run(ctx.value, layerView, {});
 
     if (showRoutes.value) drawRoutes(ctx.value);
     if (showRiverBase.value) drawRivers(ctx.value);
@@ -10379,7 +10364,9 @@ function renderFrame() {
     }
     ctx.value.restore();
   }
-  if (!blitted && showBorders.value) drawProvinceBorders(ctx.value);
+  // 省界（N1 刀 1）：仍直接调用 —— 它的门控是 `showBorders`，且必须画在河流/草稿之上，
+  // 塞进注册表会改变层叠顺序（那是刀 2 的事）。实现已搬到 `scenario/layers/provinces.js`。
+  if (!blitted && showBorders.value) drawProvinceBordersLayer(ctx.value, makeLayerView());
   if (!strokeBaseBuilding) drawVertexHandles(ctx.value);
   if (!blitted && showBurgs.value && !cameraMotion) drawBurgs(ctx.value);
   if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush' || tool.value === 'provincePaint')) drawProvinceBrushOverlay(ctx.value);
@@ -10408,199 +10395,7 @@ function renderFrame() {
   }
 }
 
-function drawBackground(ctx) {
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  ctx.fillStyle = '#1a2a3a';
-  ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
 
-  // Grid
-  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-  ctx.lineWidth = px(1);
-  const step = GRID_STEP;
-  const startX = Math.floor(tl.x / step) * step;
-  const startY = Math.floor(tl.y / step) * step;
-  const endX = br.x + step;
-  const endY = br.y + step;
-  for (let x = startX; x <= endX; x += step) {
-    ctx.beginPath();
-    ctx.moveTo(x, startY);
-    ctx.lineTo(x, endY);
-    ctx.stroke();
-  }
-  for (let y = startY; y <= endY; y += step) {
-    ctx.beginPath();
-    ctx.moveTo(startX, y);
-    ctx.lineTo(endX, y);
-    ctx.stroke();
-  }
-}
-
-function drawBiomeBackground(ctx) {
-  // 如果有生物群系数据，用半透明色块显示
-  const biomes = baseMap.value?.heightmap?.biomes;
-  if (!biomes || !biomes.length) return;
-  
-  // 绘制生物群系图例（右下角）
-  const legendX = screenToWorld(cw() - 150, ch() - 300).x;
-  const legendY = screenToWorld(cw() - 150, ch() - 300).y;
-  ctx.font = `${11}px "PingFang SC", sans-serif`;
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillRect(legendX - 5, legendY - 15, 140, biomes.length * 18 + 20);
-  ctx.fillStyle = '#fff';
-  ctx.fillText('生物群系', legendX, legendY);
-  biomes.forEach((b, i) => {
-    if (i < 10) {
-      ctx.fillStyle = b.color || '#888';
-      ctx.fillRect(legendX, legendY + 5 + i * 18, 12, 12);
-      ctx.fillStyle = '#ccc';
-      ctx.fillText(b.name || `Biome ${i}`, legendX + 16, legendY + 15 + i * 18);
-    }
-  });
-}
-
-
-/** 颜色是否不透明（同色描边前的判据：半透明色描边会变成可见的深色轮廓线） */
-function isOpaqueColor(col) {
-  if (typeof col !== 'string') return false;
-  const m = col.match(/^rgba?\(([^)]+)\)$/i);
-  if (!m) return true;                       // #rrggbb / 命名色 / hsl() → 当作不透明
-  const parts = m[1].split(',').map((s) => s.trim());
-  return parts.length < 4 || Number(parts[3]) >= 1;
-}
-
-function drawProvinces(c, opts = {}) {
-  if (!baseMap.value?.terrain) return;
-  // 🔴 2026-10-26（用户原话「偏粉彩的问题很严重，看不出地形」）：地形/温度/降水这类
-  // **栅格图层**打开时，省份**只描边不填色**（fills:false）。
-  // 旧行为是"省份不透明填色 + 栅格 45% 叠在上面" —— 两层半透明互相洗，
-  // 结果是一张粉彩画：既看不出地形，也看不出归属。栅格作底、省界作线，才两者都清楚
-  // （对照用户给的意大利地形图：地形色 + 细省界，没有一块块色块）。
-  const fills = opts.fills !== false;
-  const tl = timeline.value;
-  const k = tlEra.value;
-  // 🔴 归属查询必须吃**日期**（月日精度）：同一年内 6 月前后归主不同，
-  //    传年份只能整年切 → 外观与「已易主」计数都会与真实状态差半年。
-  const at = tlDate.value;
-  const scenarioMode = viewMode.value === 'scenario' && tl.scenarios.length > 0;
-
-  rawTerrain().forEach(prov => {
-    const rp = rawProvOf(prov);
-    // 路径按省缓存（Path2D）：几何不变时每帧只做 fill/stroke，不再重描 2.4 万个顶点
-    const path = provincePathFor(rp, altStraight);
-    if (!path) return;
-    const fillCol = getProvinceColor(rp);
-    // 2026-10-27（阶段 0）：政治档的海面由 `landsea` 栅格画**深度色带**；
-    // 海域省再盖一层 SEA_FILL 会把青绿浅滩压成一块深蓝（用户参照的 SP-1025 海陆图没有这层）。
-    // 只留虚线海界，不填海。
-    const seaFromRaster = rp.kind === 'sea' && rasterLayer.value === 'landsea';
-    if (fills && !seaFromRaster) {
-      c.fillStyle = fillCol;
-      // 多环实体：一条路径覆盖所有环；evenodd 与命中口径（pointInProvince）一致 → 洞真空、飞地真画
-      c.fill(path, 'evenodd');
-    }
-    // 同色描边（~1px）：抹掉相邻省份之间的**亚像素缝**。
-    // 网格派生的边界由相邻两省各自平滑（Chaikin 在共享弧的两端邻域不同），交界处最多差
-    // 零点几像素 —— 同色 1px 描边是最省事的收敛办法（恰好覆盖在边界上，观感不变）。
-    // 仅对不透明色描边：半透明色描上去会变成一条可见的深色轮廓线（不是我们要的）。
-    if (rp.kind === 'sea') {
-      // P4：海界 = **淡虚线**（实线是陆地省界，虚线一眼区分水陆；海陆交界处两者贴合 = 严丝合缝）
-      c.setLineDash([px(6), px(4)]);
-      c.strokeStyle = SEA_EDGE;
-      c.lineWidth = px(1.2);
-      c.stroke(path);
-      c.setLineDash([]);
-    } else if (fills && isOpaqueColor(fillCol)) {
-      c.strokeStyle = fillCol;
-      // 2026-10-27：1px → 1.6px。相邻两省各自平滑共享边，交界处会留下 1~3px 的
-      // 「白点/针孔」（用户截图里省界接头处的一串浅色小点）；同色描边外扩半线宽，
-      // 两边各 0.8px 正好把缝盖住。
-      c.lineWidth = px(1.6);
-      c.stroke(path);
-    } else if (!fills) {
-      // 不填色时，省界**必须**自己画出来（否则"没有省份"和"有省份"看起来一样）
-      c.strokeStyle = BORDER_COLOR;
-      c.lineWidth = px(0.9);
-      c.stroke(path);
-    }
-
-    // EU4 式斜线占领：底色刻意是**旧主**色（上面刚填的），斜线用**新主**色。
-    // 两方本色即可表达「谁占了谁的」，不需要引入任何新色相。
-    if (scenarioMode && tlDiffMode.value === 'eu4' && isStriped(tl, k, rp.id, at)) {
-      const newCol = polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[rp.id]);
-      const b = provinceBBox(rp);
-      const dy = b.maxY - b.minY;
-      const step = px(8.5);
-      c.save();
-      c.clip(path);                   // 复用缓存路径做裁剪
-      c.globalAlpha = 0.92;
-      c.strokeStyle = newCol;
-      c.lineWidth = px(3.2);
-      for (let t = b.minX - dy - 20; t < b.maxX + 20; t += step) {
-        c.beginPath();
-        c.moveTo(t, b.minY - 20);
-        c.lineTo(t + dy + 40, b.maxY + 20);
-        c.stroke();
-      }
-      c.restore();
-      c.save();
-      c.lineWidth = px(1.4);
-      c.strokeStyle = newCol;
-      c.stroke(path);
-      c.restore();
-    } else if (scenarioMode && tlDiffMode.value === 'outline'
-               && k > 0 && (tl.eraChg[k]?.changed || []).includes(rp.id)) {
-      c.save();
-      c.lineWidth = px(2);
-      c.strokeStyle = '#ffffff';
-      c.stroke(path);
-      c.restore();
-    }
-  });
-}
-
-/**
- * 省份边界（**两遍**：先全部、再高亮）。
- *
- * 🔴 2026-10-17 第七修（用户：「你看看人家的省份边界怎么画」——附了张真实世界地图）：
- *    旧实现是**逐省一遍**、普通省用 `rgba(141,138,130,0.6)` @0.6px。两个毛病：
- *      ① **半透明 + 逐省重描**：两个省的**共边会被描两次** → 共边比独边颜色更深，
- *         于是"同一张图上边界深浅不一"（观感发灰、发虚，越看越像没画完）；
- *      ② 0.6px 在 1080 宽的画布上几乎看不见 —— 真实地图上省界是**看得见的深色线**。
- *    现在：普通省界的**唯一一遍**用不透明细棕（`PROVINCE_BORDER_COLOR` @0.9px），
- *    选中 / 多选 / 合并目标**在第二遍**叠上去（它们必须比底色醒目，不能混在一起画）。
- */
-function drawProvinceBorders(c) {
-  if (!baseMap.value?.terrain) return;
-  const multi = multiSelectSet.value;
-  const terrain = rawTerrain();
-  // ── 第一遍：所有省的普通边界（不透明、统一线宽 —— 共边叠加也还是同一个色）────────
-  c.save();
-  c.strokeStyle = PROVINCE_BORDER_COLOR;
-  c.lineWidth = px(PROVINCE_BORDER_PX);
-  for (const prov of terrain) {
-    const rp = rawProvOf(prov);
-    // 边界与填充共用同一份 Path2D 缓存：每帧不再重描 2.4 万顶点（2026-10-21）
-    const path = provincePathFor(rp, altStraight);
-    if (!path) continue;
-    c.stroke(path);
-  }
-  c.restore();
-  // ── 第二遍：选中 / 多选 / 合并目标（只画这几个，顺序=层叠顺序）──────────────────
-  for (const prov of terrain) {
-    const isSelected = selectedProvince.value?.id === prov.id;
-    const isMulti = multi.has(prov.id);
-    const isMergeTarget = mergeProvId.value === prov.id;
-    if (!isSelected && !isMulti && !isMergeTarget) continue;
-    const rp = rawProvOf(prov);
-    const path = provincePathFor(rp, altStraight);
-    if (!path) continue;
-    // 多选描边用**青色 + 更粗**：单选是白色 1.5px，两者叠在一起时也得看得出"这几个是批量对象"
-    c.strokeStyle = isMergeTarget ? '#ffd700' : (isMulti ? '#22d3ee' : '#ffffff');
-    c.lineWidth = isMulti ? px(2.5) : px(1.5);
-    c.stroke(path);
-  }
-}
 /**
  * 普通省界的颜色 / 线宽口径（单一来源）。
  * 为什么不半透明：**共边会被相邻两个省各描一次**，半透明叠加后共边比独边深 ——
@@ -12309,8 +12104,11 @@ async function exportPNG() {
   ctx.scale(scale, scale);
   ctx.translate(cameraX.value, cameraY.value);
   ctx.scale(cameraScale.value, cameraScale.value);
-  drawBackground(ctx);
-  drawProvinces(ctx);
+  // 导出与画布**同一份 view / 同一批层函数**（N1 刀 1）——
+  // 此前导出各写一套，"导出的东西画布上看不见"且不报错（M2/A2 的教训）
+  const exportView = makeLayerView();
+  drawBackgroundLayer(ctx, exportView);
+  drawProvincesLayer(ctx, exportView);
   if (showBurgs.value) drawBurgs(ctx);
   drawLabels(ctx);
   // A8：导出必须与画布一致（M2/A2 的教训：导出各写一套 → 导出的东西画布上看不见，且不报错）

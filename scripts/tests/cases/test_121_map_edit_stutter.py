@@ -98,7 +98,7 @@ def source_gates():
                      '（贴图帧会把它们再画一遍）')
     for gate in ('if (showRiverBase.value) drawRivers(ctx.value);\n  }\n'
                  '  if (!strokeBaseBuilding) drawRiverPaths',
-                 'if (!blitted && showBorders.value) drawProvinceBorders',
+                 'if (!blitted && showBorders.value) drawProvinceBordersLayer',
                  # 2026-10-21：相机移动期还会跳过聚落/标签/小地图（cameraMotion），
                  # 门控条件因此变长；判据只要求"同一行里既有 !blitted 又有 drawBurgs"。
                  'if (!blitted && showBurgs.value && !cameraMotion) drawBurgs'):

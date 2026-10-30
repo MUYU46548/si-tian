@@ -97,9 +97,9 @@ def _source_gate():
         fails.append('渲染仍在「网格 / 多边形」之间二选一 → 必须永远画多边形')
     # 2026-10-26：`drawProvinces` 多了第二个参数（地形底图模式下只描边不填色），
     # 所以按"调用点"判，而不是按带分号的字面量。
-    # 2026-10-30（N1 刀 1）：调用搬进 `scenarioLayers` 的 `provinces.fill` 层，形参变成 `(c, {...})`
-    # → 判据只认"函数名 + 参数个数口径"，不再绑死 `ctx.value` 这个字面量。
-    for tok in ('drawProvinces(c,', 'traceProvincePath', 'provinceRings('):
+    # 2026-10-30（N1 刀 1）：绘制体搬进 `scenario/layers/provinces.js`，SFC 里只剩接线
+    #   `drawProvincesLayer(c, view, ...)` —— 判据跟着认这个调用点（"永远画多边形"这条原意不变）。
+    for tok in ('drawProvincesLayer(c,', 'traceProvincePath', 'provinceRings('):
         if tok not in sc:
             fails.append(f'渲染单一路径缺件：{tok}')
 
