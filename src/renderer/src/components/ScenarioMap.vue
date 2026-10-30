@@ -1862,7 +1862,7 @@ import { createOverlayLayers } from '../scenario/layers/overlays';
 // N1 刀 2：编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
 import { drawVertexHandlesLayer, drawProvinceBrushOverlayLayer } from '../scenario/layers/editing';
 // N1 刀 2：地图要素层（道路/航路 / 手画河 / 城镇）
-import { drawRoutesLayer, drawRiverPathsLayer, drawBurgsLayer } from '../scenario/layers/features';
+import { drawRoutesLayer, drawRiverPathsLayer, drawBurgsLayer, drawReliefIconsLayer, drawScenarioMarkersLayer } from '../scenario/layers/features';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -9846,6 +9846,12 @@ function makeLayerView() {
     riverNodesForRender,
     drawOneHandRiver,
     BURG_SIZES,
+    reliefIcons: reliefIcons.value,
+    selectedMarker: selectedMarker.value,
+    MARKER_TYPES,
+    markerLabelTextStyle,
+    drawStyledLabel,
+    drawIconOrEmoji,
     // 编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
     dragPreview: dragPreview.value,
     vertexEditMode: vertexEditMode.value,
@@ -10046,8 +10052,8 @@ function renderFrame() {
   // A8：势力标注画在用户浮动文本之后（势力名是底层读物，不该被浮字压住）
   if (!strokeBaseBuilding && !cameraMotion) {
     labelLayers.drawPolity(ctx.value, makeLayerView());
-    drawReliefIcons(ctx.value);
-    drawScenarioMarkers(ctx.value);
+    drawReliefIconsLayer(ctx.value, makeLayerView());
+    drawScenarioMarkersLayer(ctx.value, makeLayerView());
   }
 
   ctx.value.restore();
@@ -10806,63 +10812,6 @@ function polityLabelSources() {
 // 用例按 `SM.getLabelPlan()` 读结论（test_149/156/159/162 都在用），别让探针跟着搬家。
 function getLabelPlan() {
   return labelLayers.getPlan(makeLayerView());
-}
-
-function drawReliefIcons(c) {
-  if (!reliefIcons.value.length) return;
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(30);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  const fontSize = Math.max(12, px(16));
-  c.font = `${fontSize}px "PingFang SC", sans-serif`;
-  c.textAlign = 'center';
-  c.textBaseline = 'middle';
-  for (const r of reliefIcons.value) {
-    if (r.x < minX || r.x > maxX || r.y < minY || r.y > maxY) continue;
-    // 矢量图标名走 Path2D；用户历史数据里的 emoji 由 drawIconOrEmoji 内部 fillText 兜住
-    drawIconOrEmoji(c, r.icon, r.x, r.y, Math.max(14, px(18)), r.color || '#FFFFFF');
-  }
-  c.textAlign = 'start';
-  c.textBaseline = 'alphabetic';
-}
-
-function drawScenarioMarkers(c) {
-  if (viewMode.value !== 'scenario' || !selectedScenario.value?.markers?.length) return;
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(30);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  const fontSize = Math.max(12, px(14));
-  c.font = `${fontSize}px "PingFang SC", sans-serif`;
-  c.textAlign = 'center';
-  c.textBaseline = 'middle';
-  for (const m of selectedScenario.value.markers) {
-    if (m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
-    // 选中态（2026-10-24）：金色虚线圈 —— 面板在右侧，圈在图上，用户能确认"改的就是这一个"
-    if (selectedMarker.value && m === selectedMarker.value) {
-      const r = Math.max(12, px(16)) * 0.95;
-      c.beginPath();
-      c.arc(m.x, m.y, r, 0, Math.PI * 2);
-      c.strokeStyle = '#fbbf24';
-      c.lineWidth = px(1.6);
-      if (c.setLineDash) c.setLineDash([px(3), px(3)]);
-      c.stroke();
-      if (c.setLineDash) c.setLineDash([]);
-    }
-    // 图标（矢量；历史数据里的 emoji 由内部 fillText 兜住）
-    // 图标/颜色缺省时按「标记类型」补 —— 导入的数据往往只带 type，不补会全变成同一个兜底图标
-    const typeDef = MARKER_TYPES.find(t => t.id === m.type);
-    drawIconOrEmoji(c, m.icon || (typeDef && typeDef.icon) || 'map-pin', m.x, m.y,
-      Math.max(12, px(16)), m.color || (typeDef && typeDef.color) || '#FFFFFF');
-    // 名称标签（2026-10-25：与导出共用一份样式 + 默认深色描边，任何底色上都读得出）
-    const nameStyle = markerLabelTextStyle(m);
-    drawStyledLabel(c, m.name || '', m.x, m.y + fontSize * 0.8, nameStyle, {
-      align: 'center', baseline: 'middle', screenScale: cameraScale.value,
-    });
-  }
-  c.textAlign = 'start';
-  c.textBaseline = 'alphabetic';
 }
 
 let smallCanvasWarned = false;

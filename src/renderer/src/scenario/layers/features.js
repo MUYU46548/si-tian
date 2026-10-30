@@ -118,6 +118,64 @@ export function drawRiverPathsLayer(c, view) {
   c.restore();
 }
 
+/** 浮雕图标（山/火山等；矢量名走 Path2D，历史 emoji 由 drawIconOrEmoji 内部 fillText 兜住） */
+export function drawReliefIconsLayer(c, view) {
+  const icons = view.reliefIcons;
+  if (!icons || !icons.length) return;
+  const tl = view.screenToWorld(0, 0);
+  const br = view.screenToWorld(view.w, view.h);
+  const pad = view.px(30);
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  const fontSize = Math.max(12, view.px(16));
+  c.font = `${fontSize}px "PingFang SC", sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (const r of icons) {
+    if (r.x < minX || r.x > maxX || r.y < minY || r.y > maxY) continue;
+    view.drawIconOrEmoji(c, r.icon, r.x, r.y, Math.max(14, view.px(18)), r.color || '#FFFFFF');
+  }
+  c.textAlign = 'start';
+  c.textBaseline = 'alphabetic';
+}
+
+/** 剧本标记（图标 + 名称；选中时金色虚线圈 —— 面板在右侧、圈在图上，用户能确认"改的就是这一个"） */
+export function drawScenarioMarkersLayer(c, view) {
+  const markers = view.selectedScenario && view.selectedScenario.markers;
+  if (view.mode !== 'scenario' || !markers || !markers.length) return;
+  const tl = view.screenToWorld(0, 0);
+  const br = view.screenToWorld(view.w, view.h);
+  const pad = view.px(30);
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  const fontSize = Math.max(12, view.px(14));
+  c.font = `${fontSize}px "PingFang SC", sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (const m of markers) {
+    if (m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
+    if (view.selectedMarker && m === view.selectedMarker) {
+      const r = Math.max(12, view.px(16)) * 0.95;
+      c.beginPath();
+      c.arc(m.x, m.y, r, 0, Math.PI * 2);
+      c.strokeStyle = '#fbbf24';
+      c.lineWidth = view.px(1.6);
+      if (c.setLineDash) c.setLineDash([view.px(3), view.px(3)]);
+      c.stroke();
+      if (c.setLineDash) c.setLineDash([]);
+    }
+    // 图标/颜色缺省时按「标记类型」补 —— 导入的数据往往只带 type
+    const typeDef = view.MARKER_TYPES.find(t => t.id === m.type);
+    view.drawIconOrEmoji(c, m.icon || (typeDef && typeDef.icon) || 'map-pin', m.x, m.y,
+      Math.max(12, view.px(16)), m.color || (typeDef && typeDef.color) || '#FFFFFF');
+    // 名称标签：与导出共用一份样式 + 默认深色描边
+    const nameStyle = view.markerLabelTextStyle(m);
+    view.drawStyledLabel(c, m.name || '', m.x, m.y + fontSize * 0.8, nameStyle, {
+      align: 'center', baseline: 'middle', screenScale: view.cameraScale,
+    });
+  }
+  c.textAlign = 'start';
+  c.textBaseline = 'alphabetic';
+}
+
 /** 首都星标（十角星；城镇层内部用） */
 function drawCapitalStar(c, view, x, y, r) {
   c.beginPath();
