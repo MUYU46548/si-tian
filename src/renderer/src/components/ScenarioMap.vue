@@ -1861,6 +1861,8 @@ import { createLabelLayers } from '../scenario/layers/labels';
 import { createOverlayLayers } from '../scenario/layers/overlays';
 // N1 刀 2：编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
 import { drawVertexHandlesLayer, drawProvinceBrushOverlayLayer } from '../scenario/layers/editing';
+// N1 刀 2：地图要素层（道路/航路 / 手画河 / 城镇）
+import { drawRoutesLayer, drawRiverPathsLayer, drawBurgsLayer } from '../scenario/layers/features';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -9412,109 +9414,6 @@ const ROUTE_STYLES = {
   searoutes: { color: '#eaf4fb', width: 0.9, dash: [5, 4], alpha: 0.8 },
 };
 
-function drawRoutes(c) {
-  const list = baseMap.value?.routes;
-  if (!list || !list.length) return;
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(40);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  // 档位节流（2026-10-27 粗版；C5 2026-10-29 升级为分级渐显）：
-  // 496 条路/航路整图可见时会糊成一张网 —— 判据收在 `utils/routeDensity.js`（纯函数、可测）：
-  // far 只留主干 → mid 全部 roads → near 加 trails → close 再加 searoutes（与标签/城镇同一套档位）。
-  const detail = labelDetailNow();
-  const arterialLen = arterialLengthThreshold(list, detail);
-
-  c.save();
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  for (const r of list) {
-    const pts = r.points;
-    if (!pts || pts.length < 2) continue;
-    if (!shouldDrawRoute(r, detail, arterialLen)) continue;
-    if (!polylineInView(pts, minX, minY, maxX, maxY)) continue;
-    // 优先使用道路自带样式（P1-T3），回退到 group 默认
-    const st = r.color ? { color: r.color, width: r.width || 1, dash: r.dash || null, alpha: 0.95 } : ROUTE_STYLES[r.group] || ROUTE_STYLES.roads;
-    const isSea = r.group === 'searoutes';
-    // 海路**只画在海面**（2026-10-27）：FMG 的 sea route 会横穿陆地（用户截图里那几条
-    // 白色虚线切过省界），按陆地掩膜把穿陆段切掉，只留水上那几段。
-    let runs = [pts];
-    if (isSea) {
-      const mask = getLandMask();
-      if (mask) {
-        runs = [];
-        let cur = [pts[0]];
-        for (let i = 1; i < pts.length; i++) {
-          const mx = (pts[i - 1].x + pts[i].x) / 2;
-          const my = (pts[i - 1].y + pts[i].y) / 2;
-          if (mask.lookup(mx, my)) {
-            if (cur.length >= 2) runs.push(cur);
-            cur = [pts[i]];
-          } else {
-            cur.push(pts[i]);
-          }
-        }
-        if (cur.length >= 2) runs.push(cur);
-      }
-    }
-    for (const run of runs) {
-      c.globalAlpha = st.alpha;
-      c.strokeStyle = st.color;
-      c.lineWidth = st.width;
-      c.setLineDash(st.dash || []);
-      c.beginPath();
-      c.moveTo(vx(run[0]), vy(run[0]));
-      for (let i = 1; i < run.length; i++) c.lineTo(vx(run[i]), vy(run[i]));
-      // 海路：先画一层深色底衬，再画浅色虚线（否则浅海面上等于没画）
-      if (isSea) {
-        c.save();
-        c.globalAlpha = 0.38;
-        c.setLineDash([]);
-        c.strokeStyle = 'rgba(16, 44, 64, 1)';
-        c.lineWidth = st.width + 1.7;
-        c.stroke();
-        c.restore();
-        // 路径还在，恢复浅色虚线再描一遍
-        c.globalAlpha = st.alpha;
-        c.strokeStyle = st.color;
-        c.lineWidth = st.width;
-        c.setLineDash(st.dash || []);
-      }
-      c.stroke();
-    }
-  }
-  c.setLineDash([]);
-  c.restore();
-}
-
-function drawRiverPaths(c) {
-  // D（2026-10-11）：手画的河现在住在 store（`baseMap.rivers`，id 前缀 `river_`），
-  // 不再有"组件本地数组"这条平行事实源 —— 那正是"画完重开就没"的根因。
-  const list = (baseMap.value?.rivers || []).filter((r) => r && String(r.id || '').indexOf('river_') === 0);
-  if (!list.length) return;
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(40);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  c.save();
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  // 🔴 2026-10-17 第六修（色差第四处，用户第 N 次报）：这一段原来用 `RIVER_COLOR = '#3B82F6'`
-  //    —— 而自带河 / 自动河在第五修里已经统一到 `#5d97bb`。于是**手画河成了唯一那个异类**：
-  //    同一条河一半 `#5d97bb` 一半 `#3B82F6`（用户截图实证）。
-  //    现在全部走 `RIVER_DRAW_COLOR`（= `#5d97bb`，唯一河色）。
-  // ⚠️ 而且这里**不再自己 beginPath/lineTo/stroke**：改成 `drawOneHandRiver`
-  //    （曲线 + 源头细→河口粗 + 岸线）。用户原话「不会弯吗？不会有粗细变化吗？」——
-  //    折线 + 单一线宽正是那两条抱怨的技术成因。
-  for (const r of list) {
-    const path = riverNodesForRender(r);
-    if (path.length < 2) continue;
-    if (!polylineInView(path, minX, minY, maxX, maxY)) continue;
-    drawOneHandRiver(c, path, r);
-  }
-  c.restore();
-}
-
 /**
  * 选中河流的高亮（2026-10-17 暮雨实测）。
  *
@@ -9937,6 +9836,16 @@ function makeLayerView() {
     hoveredBurg: hoveredBurg.value,
     selectedBurg: selectedBurg.value,
     ringPointsList: rawRingPointsList,
+    // 地图要素层（道路 / 手画河 / 城镇）
+    routes: baseMap.value?.routes || null,
+    rivers: baseMap.value?.rivers || null,
+    burgs: burgs.value,
+    arterialLengthThreshold,
+    shouldDrawRoute,
+    getLandMask,
+    riverNodesForRender,
+    drawOneHandRiver,
+    BURG_SIZES,
     // 编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
     dragPreview: dragPreview.value,
     vertexEditMode: vertexEditMode.value,
@@ -10023,10 +9932,10 @@ function renderFrame() {
     const layerView = makeLayerView();
     scenarioRenderLayers.run(ctx.value, layerView, {});
 
-    if (showRoutes.value) drawRoutes(ctx.value);
+    if (showRoutes.value) drawRoutesLayer(ctx.value, makeLayerView());
     if (showRiverBase.value) drawRivers(ctx.value);
   }
-  if (!strokeBaseBuilding) drawRiverPaths(ctx.value);
+  if (!strokeBaseBuilding) drawRiverPathsLayer(ctx.value, makeLayerView());
   // 选中河流的高亮（2026-10-17 暮雨实测「缺乏视觉提示……只能通过工具栏突然往下挤」）：
   // 选中的河画两遍 —— 外层宽半透明光晕 + 内层亮芯，任何底色上都一眼可辨（EU4 选中单位的光圈语义）。
   if (!strokeBaseBuilding) drawSelectedRiverHighlight(ctx.value);
@@ -10121,7 +10030,11 @@ function renderFrame() {
   // 塞进注册表会改变层叠顺序（那是刀 2 的事）。实现已搬到 `scenario/layers/provinces.js`。
   if (!blitted && showBorders.value) drawProvinceBordersLayer(ctx.value, makeLayerView());
   if (!strokeBaseBuilding) drawVertexHandlesLayer(ctx.value, makeLayerView());
-  if (!blitted && showBurgs.value && !cameraMotion) drawBurgs(ctx.value);
+  if (!blitted && showBurgs.value && !cameraMotion) {
+    drawBurgsLayer(ctx.value, makeLayerView());
+    // 城镇名与河名/省名/势力名同一份排布（放不下的直接不标）
+    if (showPlaceNames.value) labelLayers.drawPlanned(ctx.value, makeLayerView(), ['capital', 'town']);
+  }
   if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush' || tool.value === 'provincePaint')) drawProvinceBrushOverlayLayer(ctx.value, makeLayerView());
   if (!strokeBaseBuilding) drawPreviewOverlay(ctx.value);
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
@@ -10611,77 +10524,6 @@ function updateBurgHover(event) {
   render();
 }
 
-/** 首都：金色星形 */
-function drawCapitalStar(c, x, y, r) {
-  c.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const rad = i % 2 === 0 ? r : r * 0.42;
-    const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    const px = x + Math.cos(a) * rad;
-    const py = y + Math.sin(a) * rad;
-    if (i === 0) c.moveTo(px, py);
-    else c.lineTo(px, py);
-  }
-  c.closePath();
-  c.fillStyle = '#ffd700';
-  c.fill();
-  c.strokeStyle = 'rgba(20,24,34,0.65)';
-  c.lineWidth = px(1);
-  c.stroke();
-}
-
-function drawBurgs(c) {
-  const list = burgs.value;
-  if (!list.length) return;
-  // 视口裁剪：只画可见范围（含边距）
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(24);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-  // 🔴 2026-10-27（用户附 EU4 截图 + B1「白点糊满/黑一块白一块」）：
-  //    真实底图 617 个城镇，旧实现**每个都画白点** —— 整图缩小后就是一层白芝麻，
-  //    把地形、省界、河名全盖住。EU4 在国家尺度只留首都，放大才逐步出城镇。
-  //    这里按 `labelZoom` 同一套档位节流，并把点缩小/压淡。
-  const detail = labelDetailNow();
-  const dotR = px(1.9);
-  const starR = px(4.6);
-  const hoverId = hoveredBurg.value ? hoveredBurg.value.id : null;
-  const selectedId = selectedBurg.value ? selectedBurg.value.id : null;
-
-  // 两趟绘制（普通城镇在下、首都在上）；不新建数组，避免渲染循环内分配
-  for (let pass = 0; pass <= 1; pass++) {
-    for (const b of list) {
-      if ((b.capital ? 1 : 0) !== pass) continue;
-      if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
-      if (pass === 1) {
-        drawCapitalStar(c, b.x, b.y, starR);
-      } else {
-        // 档位节流：far/mid 只留首都；near 只留人口 ≥20 的；close 全出
-        if (detail === 'far' || detail === 'mid') continue;
-        if (detail === 'near' && Number(b.population || 0) < 20) continue;
-        // 根据聚落规模调整大小（P1-T4）
-        const sizeDef = BURG_SIZES.find(s => s.id === b.size) || BURG_SIZES[1];
-        const r = dotR * (sizeDef.radius / 3.5);
-        c.fillStyle = sizeDef.color;
-        c.globalAlpha = 0.62;
-        c.beginPath();
-        c.arc(b.x, b.y, r, 0, Math.PI * 2);
-        c.fill();
-        c.globalAlpha = 1;
-      }
-      if (b.id === selectedId || b.id === hoverId) {
-        c.strokeStyle = b.id === selectedId ? '#34d399' : '#ffffff';
-        c.lineWidth = px(1.5);
-        c.beginPath();
-        c.arc(b.x, b.y, starR * 1.8, 0, Math.PI * 2);
-        c.stroke();
-      }
-    }
-  }
-  // 城镇名（2026-10-25 分级；2026-10-26 起并入统一避让排布 `getLabelPlan`）：
-  // 与河名/省名/势力名**互不重叠**，放不下的直接不标（参考图的制图惯例）。
-  if (showPlaceNames.value) labelLayers.drawPlanned(c, makeLayerView(), ['capital', 'town']);
-}
 function formatPopulation(pop) {
   if (!pop) return '—';
   return pop >= 100 ? String(Math.round(pop)) : pop.toFixed(1);
@@ -11251,7 +11093,10 @@ async function exportPNG() {
   const exportView = makeLayerView();
   drawBackgroundLayer(ctx, exportView);
   drawProvincesLayer(ctx, exportView);
-  if (showBurgs.value) drawBurgs(ctx);
+  if (showBurgs.value) {
+    drawBurgsLayer(ctx, makeLayerView());
+    if (showPlaceNames.value) labelLayers.drawPlanned(ctx, makeLayerView(), ['capital', 'town']);
+  }
   labelLayers.drawScenarioLabels(ctx, makeLayerView());
   // A8：导出必须与画布一致（M2/A2 的教训：导出各写一套 → 导出的东西画布上看不见，且不报错）
   labelLayers.drawPolity(ctx, makeLayerView());

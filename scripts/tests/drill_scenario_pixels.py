@@ -191,6 +191,19 @@ def main():
           sm.tlEra = Math.max(0, ids.indexOf(KEY + '/像素基线时代'));
           sm.selectedPolity = null;
           sm.selectedProvinceIds = [];
+          // ③ 地图要素（城镇 / 道路 / 手画河）：没有它们，`drawBurgs` / `drawRoutes` /
+          //    `drawRiverPaths` 这几层在基线里整体不触发 —— 那几刀就等于没有判据。
+          s.baseMaps[KEY].burgs = [
+            { id: 'pix_burg_cap', name: '像素都城', x: 210, y: 160, capital: true, population: 120, size: 'capital' },
+            { id: 'pix_burg_town', name: '像素镇', x: 330, y: 260, capital: false, population: 60, size: 'town' },
+          ];
+          s.baseMaps[KEY].routes = [
+            { id: 'pix_road_1', group: 'roads', points: [{ x: 210, y: 160 }, { x: 270, y: 210 }, { x: 330, y: 260 }] },
+            { id: 'pix_trail_1', group: 'trails', points: [{ x: 120, y: 80 }, { x: 200, y: 110 }, { x: 300, y: 120 }] },
+          ];
+          s.baseMaps[KEY].rivers = [
+            { id: 'river_pix', name: '基线河', points: [{ x: 80, y: 260 }, { x: 160, y: 230 }, { x: 240, y: 210 }, { x: 320, y: 190 }], width: 1.2 },
+          ];
           if (typeof sm.render === 'function') sm.render();
           return JSON.stringify({
             ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, injected,
