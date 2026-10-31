@@ -76,7 +76,9 @@ def source_gates():
         fails.append('🔴 预览没走 previewTraceRing（仍是手迹折线 = 描点连线模拟器的观感）')
     if 'withBezierControls(previewRing)' in sm:
         fails.append('🔴 T8：预览又套了贝塞尔控制点（看到的曲线 ≠ 数据多边形；布尔/命中按顶点算）')
-    if 'traceShapePath(c, ring, true)' not in sm:
+    # 2026-10-31：预览绘制体搬进 `scenario/layers/preview.js` —— 判据跟着搬家
+    pv = _read('src/renderer/src/scenario/layers/preview.js')
+    if 'traceShapePath(c, previewRing, true)' not in pv:
         fails.append('🔴 预览不是闭合路径（用户看不到"围出了哪块地"）')
     # 骨架缓存（415 省底图每帧 buildSkeleton 会拖死拖笔）
     if 'function skeletonForTerrain(' not in sm or 'skeletonCache' not in sm:

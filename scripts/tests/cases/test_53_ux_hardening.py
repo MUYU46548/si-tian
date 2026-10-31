@@ -141,7 +141,9 @@ JS_SRC = r"""(() => {
   const txt = window.__SCENARIO_SRC__ || '';
   if (!txt) return JSON.stringify({ fails: ['未取到 ScenarioMap 源码'] });
   const pxUses = (txt.match(/px\(/g) || []).length;
-  ok('px() 助手覆盖绘制路径', pxUses >= 40, pxUses);
+  // 2026-10-31：绘制体已分批搬进 scenario/layers/*（那边用同一份 px，形参化成 view.px），
+  // 组件里剩的是交互/预览接线 —— 门槛随之下调（实质判据仍是下面的「裸除法 = 0」）。
+  ok('px() 助手覆盖绘制路径', pxUses >= 30, pxUses);
   const raw = (txt.match(/[^\w.]\d+(?:\.\d+)?\s*\/\s*cameraScale\.value/g) || []).length;
   ok('裸「数字 / cameraScale」已清零', raw === 0, raw);
   ok('坐标变换仍用真实 scale', /\(sx - cameraX\.value\) \/ cameraScale\.value/.test(txt));

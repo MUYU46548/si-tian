@@ -1861,6 +1861,8 @@ import { createLabelLayers } from '../scenario/layers/labels';
 import { createOverlayLayers } from '../scenario/layers/overlays';
 // N1 第三阶段：交互逻辑搬出组件（先搬键盘；鼠标/滚轮随后）
 import { createKeyboardHandlers } from '../scenario/interaction/keyboard';
+// N1 刀 2 收尾：交互预览层（原来 317 行的 drawPreviewOverlay）
+import { drawPreviewOverlayLayer } from '../scenario/layers/preview';
 // N1 刀 2：编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
 import { drawVertexHandlesLayer, drawProvinceBrushOverlayLayer } from '../scenario/layers/editing';
 // N1 刀 2：地图要素层（道路/航路 / 手画河 / 城镇）
@@ -9617,6 +9619,46 @@ function blitStrokeBase() {
 // 键盘先搬（纯"读状态→调动作"），鼠标/滚轮随后用同一个 ctx 搬。
 // `let` 变量（altStraight / suppressRiverClick / vertexMarqueeStart / vertexLinkCtx）用 get/set 传 ——
 // 直接传值只会拷一份，组件这边永远不更新。
+// 预览层的 view（比 makeLayerView 多几项只在交互期才有的状态）
+function makePreviewView() {
+  return {
+    ...makeLayerView(),
+    px,
+    tool: tool.value,
+    freeTraceActive,
+    freeTrace,
+    drawPoints: drawPoints.value,
+    polySplitPoints: polySplitPoints.value,
+    polySplitPreview: polySplitPreview.value,
+    polySplitKeepStart: polySplitKeepStart.value,
+    polySplitHover: polySplitHover.value,
+    batchSeeds: batchSeeds.value,
+    batchPreviewCells: batchPreviewCells.value,
+    batchPreviewInside: batchPreviewInside.value,
+    snapMarker: snapMarker.value,
+    brushPreview: brushPreview.value,
+    roadPath: roadPath.value,
+    splitStep: splitStep.value,
+    splitPoints: splitPoints.value,
+    riverEraseStroke: riverEraseStroke.value,
+    riverDraft: riverDraft.value,
+    terrainLabelPick: terrainLabelPick.value,
+    selectedRiver: selectedRiver.value,
+    riverActiveNode: riverActiveNode.value,
+    cameraScale: cameraScale.value,
+    tracePath,
+    traceShapePath,
+    previewTraceRing,
+    riverPreviewNodes,
+    drawOneHandRiver,
+    riverNodesForRender,
+    RIVER_ERASE_RADIUS_PX,
+    RIVER_WIDTH_DEFAULT,
+    RIVER_HANDLE_MAX,
+    RIVER_HANDLE_MIN_ZOOM,
+  };
+}
+
 const { onKeyDown, onKeyUp } = createKeyboardHandlers({
   tool, selectedRiver, riverSelIds, setRiverSelection, statusMsg, render,
   setTool, fitToView, isEditableTarget, nextTick,
@@ -9923,7 +9965,7 @@ function renderFrame() {
     if (showPlaceNames.value) labelLayers.drawPlanned(ctx.value, makeLayerView(), ['capital', 'town']);
   }
   if (!strokeBaseBuilding && (PROVINCE_GRID_TOOLS.has(tool.value) || tool.value === 'ownerBrush' || tool.value === 'provincePaint')) drawProvinceBrushOverlayLayer(ctx.value, makeLayerView());
-  if (!strokeBaseBuilding) drawPreviewOverlay(ctx.value);
+  if (!strokeBaseBuilding) drawPreviewOverlayLayer(ctx.value, makePreviewView());
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
   //    「基帧（草稿之下的静态层）→ 草稿 → 这四层 → 屏幕空间浮层」。
@@ -10052,324 +10094,6 @@ function tracePath(c, pts, close) {
   c.lineTo(last.x, last.y);
   if (close) c.closePath();
   return true;
-}
-
-function drawPreviewOverlay() {
-  const c = ctx.value;
-  // ── A 折线切割：已点的折线 + 橡皮筋 + 两块几何预览 ────────────────────────
-  if (tool.value === 'polySplit') {
-    const pts = polySplitPoints.value;
-    const pv = polySplitPreview.value;
-    if (pv) {
-      // 「绿 = 保留原省份身份，橙 = 新生块」—— 不需要用户理解 a/b 或左右，看颜色即可
-      const halves = [
-        { mp: polySplitKeepStart.value ? pv.a : pv.b, fill: 'rgba(34, 197, 94, 0.26)', line: '#22c55e', dash: [] },
-        { mp: polySplitKeepStart.value ? pv.b : pv.a, fill: 'rgba(249, 115, 22, 0.22)', line: '#f97316', dash: [px(5), px(4)] },
-      ];
-      for (const h of halves) {
-        c.save();
-        c.beginPath();
-        for (const poly of h.mp || []) {
-          for (const ring of poly || []) {
-            if (!ring || ring.length < 3) continue;
-            c.moveTo(ring[0][0], ring[0][1]);
-            for (let i = 1; i < ring.length; i++) c.lineTo(ring[i][0], ring[i][1]);
-            c.closePath();
-          }
-        }
-        c.fillStyle = h.fill;
-        c.fill('evenodd');
-        c.strokeStyle = h.line;
-        c.lineWidth = px(1.6);
-        c.setLineDash(h.dash);
-        c.stroke();
-        c.restore();
-      }
-    }
-    if (pts.length) {
-      c.save();
-      c.strokeStyle = '#f8fafc';
-      c.lineWidth = px(2);
-      c.lineJoin = 'round';
-      c.beginPath();
-      c.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
-      c.stroke();
-      // 橡皮筋：从最后一点到鼠标
-      if (polySplitHover.value) {
-        c.setLineDash([px(6), px(5)]);
-        c.strokeStyle = 'rgba(248, 250, 252, 0.7)';
-        c.beginPath();
-        c.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        c.lineTo(polySplitHover.value.x, polySplitHover.value.y);
-        c.stroke();
-        c.setLineDash([]);
-      }
-      for (let i = 0; i < pts.length; i++) {
-        c.fillStyle = i === 0 ? '#22c55e' : '#f8fafc';
-        c.beginPath();
-        c.arc(pts[i].x, pts[i].y, px(3.5), 0, Math.PI * 2);
-        c.fill();
-      }
-      c.restore();
-    }
-  }
-
-  // ── B 批量铺底：种子点 + Voronoi 预览（只画不裁，真切分会与陆地求交）──────
-  if (tool.value === 'voronoi' && batchSeeds.value.length) {
-    c.save();
-    c.strokeStyle = 'rgba(34, 211, 238, 0.45)';
-    c.lineWidth = px(1);
-    for (const ring of batchPreviewCells.value) {
-      if (!ring || ring.length < 3) continue;
-      c.beginPath();
-      c.moveTo(ring[0][0], ring[0][1]);
-      for (let i = 1; i < ring.length; i++) c.lineTo(ring[i][0], ring[i][1]);
-      c.stroke();
-    }
-    for (let i = 0; i < batchSeeds.value.length; i++) {
-      const p = batchSeeds.value[i];
-      const inside = batchPreviewInside.value[i] !== false;
-      c.fillStyle = inside ? '#22d3ee' : 'rgba(148, 163, 184, 0.75)';
-      c.beginPath();
-      c.arc(p.x, p.y, px(inside ? 2.6 : 2), 0, Math.PI * 2);
-      c.fill();
-    }
-    c.restore();
-  }
-
-  // 「绘制」工具的自由绘制实时轨迹（一笔跟着走，松手才简化成型）
-  // 🔴 2026-10-17 第四轮：这里画**两样东西** ——
-  //    ① **手感线**（细、淡）：笔尖跟手，逐帧更新；
-  //    ② **将要落库的地块**（闭合 + 与落库同一套贝塞尔）：这就是 `freeTraceRing` 的产物，
-  //       它和松手后真正写进 `terrain[]` 的环**逐点相同**（`test_113` 守）。
-  //    旧实现只有 ①，松手后形状会"跳"成另一个 —— 那就是"描点连线模拟器"的观感来源。
-  if (freeTraceActive && freeTrace && freeTrace.length > 1) {
-    const isOutline = tool.value === 'outline';
-    c.save();
-    c.lineJoin = 'round';
-    c.lineCap = 'round';
-    // ① 手感线（像笔：粗一点、亮一点；地块预测见下，乱涂时不再画）
-    c.strokeStyle = isOutline ? 'rgba(34, 211, 238, 0.85)' : 'rgba(221, 214, 254, 0.9)';
-    c.lineWidth = px(2.2);
-    c.beginPath();
-    tracePath(c, freeTrace, false);
-    c.stroke();
-    // ② 将得到的地块（T8：预览与落库同一几何，不再套贝塞尔控制点）
-    const previewRing = previewTraceRing();
-    if (previewRing && previewRing.length >= 3) {
-      const ring = previewRing;
-      c.beginPath();
-      traceShapePath(c, ring, true);
-      c.fillStyle = isOutline ? 'rgba(34, 211, 238, 0.10)' : 'rgba(196, 181, 253, 0.14)';
-      c.fill();
-      c.strokeStyle = isOutline ? '#22d3ee' : '#c4b5fd';
-      c.lineWidth = px(1.8);
-      c.stroke();
-    }
-    c.restore();
-  }
-  if (tool.value === 'draw' && drawPoints.value.length > 0) {
-    c.strokeStyle = '#7c3aed';
-    c.fillStyle = 'rgba(124, 58, 237, 0.15)';
-    c.lineWidth = px(2);
-    c.beginPath();
-    c.moveTo(drawPoints.value[0].x, drawPoints.value[0].y);
-    for (let i = 1; i < drawPoints.value.length; i++) {
-      c.lineTo(drawPoints.value[i].x, drawPoints.value[i].y);
-    }
-    if (drawPoints.value.length >= 3) c.closePath();
-    c.fill();
-    c.stroke();
-    for (const p of drawPoints.value) {
-      c.fillStyle = '#a78bfa';
-      c.beginPath();
-      c.arc(p.x, p.y, px(3), 0, Math.PI * 2);
-      c.fill();
-    }
-  }
-
-  // 吸附标记（P0-T3 网格绿十字 / P0-T2 边界青环）
-  if (snapMarker.value) {
-    const mx = snapMarker.value.x;
-    const my = snapMarker.value.y;
-    const isEdge = snapMarker.value.kind === 'edge';
-    const arm = px(7);
-    c.strokeStyle = isEdge ? '#22d3ee' : '#34d399';
-    c.lineWidth = px(1.5);
-    c.beginPath();
-    c.moveTo(mx - arm, my);
-    c.lineTo(mx + arm, my);
-    c.moveTo(mx, my - arm);
-    c.lineTo(mx, my + arm);
-    c.stroke();
-    c.beginPath();
-    c.arc(mx, my, px(2.5), 0, Math.PI * 2);
-    c.stroke();
-    if (isEdge) {
-      c.beginPath();
-      c.arc(mx, my, px(6), 0, Math.PI * 2);
-      c.stroke();
-    }
-  }
-
-  // 笔刷预览（hover 时显示）
-  if (brushPreview.value && ['height', 'lake', 'biome', 'culture', 'religion'].includes(tool.value)) {
-    const bp = brushPreview.value;
-    c.beginPath();
-    c.arc(bp.x, bp.y, bp.radius, 0, Math.PI * 2);
-    let color = 'rgba(74, 158, 255, 0.8)';
-    if (tool.value === 'biome') color = 'rgba(255, 107, 107, 0.8)';
-    else if (tool.value === 'culture') color = 'rgba(255, 215, 0, 0.8)';
-    else if (tool.value === 'religion') color = 'rgba(167, 139, 250, 0.8)';
-    c.strokeStyle = color;
-    c.lineWidth = px(2);
-    c.setLineDash([px(5), px(5)]);
-    c.stroke();
-    c.setLineDash([]);
-    c.fillStyle = color.replace('0.8', '0.1');
-    c.fill();
-  }
-
-  // 道路预览
-  if (tool.value === 'road' && roadPath.value.length >= 2) {
-    c.strokeStyle = '#ffd700';
-    c.lineWidth = px(2);
-    c.setLineDash([px(4), px(4)]);
-    c.beginPath();
-    c.moveTo(roadPath.value[0].x, roadPath.value[0].y);
-    for (let i = 1; i < roadPath.value.length; i++) {
-      c.lineTo(roadPath.value[i].x, roadPath.value[i].y);
-    }
-    c.stroke();
-    c.setLineDash([]);
-    // 起终点标记
-    c.fillStyle = '#ffd700';
-    c.beginPath();
-    c.arc(roadPath.value[0].x, roadPath.value[0].y, px(4), 0, Math.PI * 2);
-    c.fill();
-    c.beginPath();
-    c.arc(roadPath.value[roadPath.value.length - 1].x, roadPath.value[roadPath.value.length - 1].y, px(4), 0, Math.PI * 2);
-    c.fill();
-  }
-
-  if (tool.value === 'split' && splitStep.value === 1 && splitPoints.value.length === 1) {
-    c.fillStyle = '#fbbf24';
-    c.beginPath();
-    c.arc(splitPoints.value[0].x, splitPoints.value[0].y, px(5), 0, Math.PI * 2);
-    c.fill();
-  }
-
-  // ── 河流橡皮的擦除轨迹（2026-10-18 第十八修·三）────────────────────────────
-  // 🔴 为什么必须画出来：橡皮是"抹过去就没了"的手势，如果只画一个光标圈，用户
-  //    **看不到自己已经抹过哪里**（尤其拖歪了要重来的时候）。这里画的是**将擦掉的范围**：
-  //    半径 = 橡皮半径的半透明粗轨迹 + 当前笔尖的圈 —— 正是 `planRiverErase` 的判据形状。
-  //    ⚠️ 轨迹与圈的半径取自**同一个常量**（`RIVER_ERASE_RADIUS_PX`）：画小一点会让
-  //    "看起来没碰到"的河被擦掉（判据与视觉不一致，最难查的一类）。
-  if (tool.value === 'riverErase') {
-    const rW = px(RIVER_ERASE_RADIUS_PX);
-    const trail = riverEraseStroke.value || [];
-    c.save();
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    if (trail.length > 1) {
-      c.strokeStyle = 'rgba(248, 113, 113, 0.28)';
-      c.lineWidth = rW * 2;
-      c.beginPath();
-      c.moveTo(trail[0].x, trail[0].y);
-      for (let i = 1; i < trail.length; i++) c.lineTo(trail[i].x, trail[i].y);
-      c.stroke();
-    }
-    if (trail.length) {
-      const head = trail[trail.length - 1];
-      c.strokeStyle = '#f87171';
-      c.lineWidth = px(1.5);
-      c.beginPath();
-      c.arc(head.x, head.y, rW, 0, Math.PI * 2);
-      c.stroke();
-      c.fillStyle = 'rgba(248, 113, 113, 0.12)';
-      c.fill();
-    }
-    c.restore();
-  }
-
-  // 河流编辑器预览（P1-T2）
-  // 🔴 2026-10-17 第六修：预览**不再是一条虚线 + 一串圆点**（那正是用户截图里
-  //    "画出来一堆点，而不是线"的观感来源之一）——
-  //    现在预览走**与落库完全同一条画法**（`drawOneHandRiver`：曲线 + 变宽 + 岸线），
-  //    因为"我按看到的形状判断好不好看"要求**预览就长成最终的样子**。
-  //    只在源头画一个方向标记：它是"高处/起点"的读数，不是装饰。
-  if (tool.value === 'river' && riverDraft.value.length > 1) {
-    // 🔴 第十八修·四：预览走**与落库同一条链**（`riverPreviewNodes`），并且用**落库那个宽度**
-    //    （`RIVER_WIDTH_DEFAULT`）—— 以前预览写死 `width: 0.7`，画出来是一条细发丝、
-    //    松手变成 8.4 屏幕像素的宽河：用户抱怨的"画的和想的不一样"有一半是这里。
-    const previewPts = riverPreviewNodes();
-    if (previewPts.length >= 2) {
-      drawOneHandRiver(c, previewPts, { width: RIVER_WIDTH_DEFAULT }, { alpha: 0.85 });
-      const head = previewPts[0];
-      c.fillStyle = '#f59e0b';
-      c.beginPath();
-      c.arc(head.x, head.y, px(3.2), 0, Math.PI * 2);
-      c.fill();
-    }
-  }
-
-  // 地形注记手绘预览（2026-10-27）：拖到一半也要看得见线 —— 否则用户不知道自己在画什么。
-  // 颜色按类别区分（山系橙 / 海域蓝 / 平原黄），与面板按钮一一对应。
-  if (terrainLabelPick.value && terrainLabelPick.value.points.length) {
-    const p = terrainLabelPick.value;
-    const pts = p.points;
-    const color = p.kind === 'sea' ? '#38bdf8' : (p.kind === 'plain' ? '#fbbf24' : '#f97316');
-    c.save();
-    c.strokeStyle = color;
-    c.fillStyle = color;
-    c.lineWidth = px(1.6);
-    c.setLineDash(p.kind === 'plain' ? [] : [px(6), px(4)]);
-    c.beginPath();
-    c.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
-    c.stroke();
-    c.setLineDash([]);
-    const marks = p.kind === 'plain' ? [pts[0]] : [pts[0], pts[pts.length - 1]];
-    for (const q of marks) {
-      c.beginPath();
-      c.arc(q.x, q.y, px(p.kind === 'plain' ? 5 : 3), 0, Math.PI * 2);
-      c.fill();
-    }
-    c.restore();
-  }
-
-  // ── 河流节点编辑的**可见性**（2026-10-17）────────────────────────────────
-  // 🔴 为什么必须画出来：没有节点标记时，"拖节点=微调 / Delete=删节点"这两个能力
-  //    **完全没有入口感**（用户根本看不到节点在哪，也就不会去拖它）。
-  //    可发现性纪律：能力要有一条看得见的路 —— 这里就是那条路。
-  // 🔴 2026-10-17 第六修（**这条是"一堆点"的直接成因**）：手柄只有在
-  //    **点数不多、且放大到看得清**时才画。
-  //    原来无条件给每个节点画一对实心圆（半径 px(4) 世界单位）——
-  //    一条 480 点的河在 zoom 0.5 下节点间距不到 1 屏幕像素 →
-  //    **几百个圆点糊成一条虚线**，用户看到的就是"不是线，是一堆点"。
-  //    现在：点数 > `RIVER_HANDLE_MAX` 或缩放 < `RIVER_HANDLE_MIN_ZOOM` 时**只画活动节点**。
-  if (tool.value === 'river' && selectedRiver.value) {
-    const r = selectedRiver.value;
-    // 拖动期间画**草稿**（含正在拖的那个点）——见 `riverNodesForRender`
-    const nodes = riverNodesForRender(r);
-    // 手柄的**可见性闸门**（见上面那段注释）：宁可只画活动节点，也不要把河糊成虚线
-    const showAll = nodes.length <= RIVER_HANDLE_MAX && cameraScale.value >= RIVER_HANDLE_MIN_ZOOM;
-    c.save();
-    for (let i = 0; i < nodes.length; i++) {
-      const active = i === riverActiveNode.value;
-      if (!showAll && !active) continue;
-      const p = nodes[i];
-      c.beginPath();
-      c.arc(p.x, p.y, px(active ? 6 : 3.2), 0, Math.PI * 2);
-      c.fillStyle = active ? '#fbbf24' : '#0b1220';
-      c.fill();
-      c.lineWidth = px(active ? 2 : 1.2);
-      c.strokeStyle = active ? '#fde68a' : '#e2e8f0';
-      c.stroke();
-    }
-    c.restore();
-  }
 }
 
 // ═══════════════════════════════════════════

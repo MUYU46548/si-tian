@@ -107,7 +107,8 @@ def source_gates():
     #    只搜 "width: 0.7" 会假红（本轮实测）。
     if '{ width: 0.7 }, { alpha' in sm:
         fails.append('🔴 预览里还写死着 `width: 0.7`（画出来比落库细一大截 = 预览不是最终样子）')
-    if 'drawOneHandRiver(c, previewPts, { width: RIVER_WIDTH_DEFAULT }' not in sm:
+    # 2026-10-31：预览绘制体搬进 `scenario/layers/preview.js`（形参改成 view）
+    if 'drawOneHandRiver(c, previewPts, { width: view.RIVER_WIDTH_DEFAULT }' not in sm and 'drawOneHandRiver(c, previewPts, { width: view.RIVER_WIDTH_DEFAULT }' not in _read('src/renderer/src/scenario/layers/preview.js'):
         fails.append('🔴 预览没有用落库那个宽度（RIVER_WIDTH_DEFAULT）')
     # ③ 支流 = 一条撤销（同一批：加河 + 改母河 走同一个原子口）
     if 'store.updateBaseMapRiver(baseMapKey.value, parentId' in sm:
