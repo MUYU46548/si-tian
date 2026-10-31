@@ -104,6 +104,9 @@ def sub_source_guards(cdp):
                    '套索闸门分子早就是面积占比（area-gate）；死代码不许再被守卫背书')
 
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集，不再绑文件位置
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     # 2026-10-23（第 1 件 1-a）：命中从「全表线性扫描」换成**空间索引**（20.4ms → 0.18ms/次），
     # "自顶向下"的保证也随之搬进 `utils/provinceHitIndex.js`：候选必须按**原下标降序**排、
     # 第一个命中的赢。所以守卫改成查"两半"——组件走索引 + 索引里有降序；

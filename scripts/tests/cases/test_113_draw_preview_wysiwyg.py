@@ -60,6 +60,9 @@ def _read(path):
 def source_gates():
     fails = []
     sm = _read(SMV)
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集
+    from lib.rsrc import render_src as _rsrc_all
+    sm = _rsrc_all()
     if 'function freeTraceRing(' not in sm:
         fails.append('🔴 没有 freeTraceRing —— 预览与落库各写一份几何链（形状会对不上）')
     # 落库两条路都必须走同一条链

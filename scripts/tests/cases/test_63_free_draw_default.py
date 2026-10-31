@@ -75,6 +75,9 @@ def _code_only(src):
 def source_gates():
     fails, notes = [], []
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
     checks = [
         ("const tool = ref('select')", '默认工具 = 选择（2026-10-09 反转：拖拽=平移，不误触建省）'),
         # 色板常量已移入 utils/scenarioPalette.js（单源）；组件这边只守「引了它、没抄一份」

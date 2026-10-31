@@ -84,6 +84,9 @@ def source_gates():
     fails = []
     with open(SMV, encoding='utf-8') as f:
         sm = _code_only(f.read())
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     for sym in ('function beginStrokeBase(', 'function endStrokeBase(', 'function buildStrokeBase(',
                 'function blitStrokeBase(', 'strokeBaseStats'):
         if sym not in sm:

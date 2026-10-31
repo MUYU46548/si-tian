@@ -69,6 +69,9 @@ def source_gates():
     fails, notes = [], []
     pe = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集，不再绑文件位置
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
     wg = _code_only(_read('src/renderer/src/store/writeGate.js'))
 
     for src, needle, label in [

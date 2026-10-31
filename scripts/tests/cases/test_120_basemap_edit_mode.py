@@ -74,6 +74,9 @@ def _code_only(src):
 def source_gates():
     fails = []
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     for sym in ('basemapEditMode', 'basemap-edit-toggle', 'basemap-row', 'BASEMAP_TOOLS', 'BASEMAP_TOOL_IDS'):
         if sym not in sm:
             fails.append(f'🔴 ScenarioMap 缺少底图编辑模式的接线：{sym}')

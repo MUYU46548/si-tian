@@ -106,6 +106,9 @@ def sub_source_guards(cdp):
     if 'maxWork' in pei or "'raster'" in pei:
         bad.append('provinceEditing 仍有「超阈降级到栅格」的残留（P2 后应完全消失）')
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集，不再绑文件位置
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     if '布尔精确并集' not in sm:
         bad.append('合并文案没说明走的是布尔精确并集（用户看不出会不会降精度）')
     if '精度降级' in sm:

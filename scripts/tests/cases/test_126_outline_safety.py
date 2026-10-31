@@ -20,6 +20,9 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')
 def source_gates():
     fails = []
     sm = open(os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), encoding='utf-8').read()
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集
+    from lib.rsrc import render_src as _rsrc_all
+    sm = _rsrc_all()
     pe = open(os.path.join(ROOT, 'src', 'renderer', 'src', 'store', 'geodataModules', 'provinceEditing.js'), encoding='utf-8').read()
     if 'outlineToNeighbor = ref(false)' not in sm:
         fails.append('D10：描轮廓默认应“不换主”（outlineToNeighbor = ref(false)）')

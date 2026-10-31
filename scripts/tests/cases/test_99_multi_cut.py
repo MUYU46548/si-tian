@@ -75,6 +75,9 @@ def source_gates():
         fails.append('写口契约缺失：splitProvincesAlong 未登记（只读态必须被拦）')
     # 🔴 组件的折线收口必须真的走多块入口（否则界面说"切开 N 块"、实际只切一块 = 假绿）
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集，不再绑文件位置
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
     if 'store.splitProvincesAlong(' not in sc:
         fails.append('🔴 折线收口没有调用 store.splitProvincesAlong（界面切一块、回执说多块 = 假绿）')
     # 🔴 红线：不许把"整条折线"直接喂给每个省（那正是原先"一次只切一个"要防的事）
