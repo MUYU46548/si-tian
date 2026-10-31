@@ -60,6 +60,9 @@ def source_gates():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
     with open(os.path.join(root, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), encoding='utf-8') as f:
         sc = _code_only(f.read())
+    # 2026-10-31：顶点/联动逻辑搬进 scenario/interaction/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
     # 2026-10-31：抬手收口搬进 scenario/interaction/pointer.js —— 判据把那份源码一起读
     with open(os.path.join(root, 'src', 'renderer', 'src', 'scenario', 'interaction', 'pointer.js'), encoding='utf-8') as f:
         sc += '\n' + _code_only(f.read())

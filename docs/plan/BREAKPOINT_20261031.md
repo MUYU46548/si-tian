@@ -72,6 +72,15 @@ rivers → provinceOps → province → actions → pointer → move → down �
    代码仍停在 `596bff4`。下次重试时先查：`beginStrokeBase()` 的调用链是否被 `ctx` 转手打断
    （它在 `down.js` 里被调用，而 `strokeBaseArmed` 仍在组件里）。
 8. **PowerShell 处理这个 10k 行 SFC 会毁编码/吃引号** —— 一律用 `node` 脚本（utf8 读写）+ 先判 CRLF。
+9. 🔴 **绝不要 `Stop-Process -Name msedge`**（2026-10-31 真实事故：跑回归前为清残留 Edge，
+   我按进程名杀了全部 msedge —— **连带把用户正在看视频的浏览器一起杀了**）。
+   测试用的 Edge 有明确标识，只杀它自己：
+   ```powershell
+   Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
+     Where-Object { $_.CommandLine -match 'test-edge-profile|remote-debugging-port=9222' } |
+     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+   ```
+   或直接用 `scripts/tests/tools/_lab.py down`（它按 PID 文件关自己的浏览器）。
 
 ## 六、给用户的现状一句话
 

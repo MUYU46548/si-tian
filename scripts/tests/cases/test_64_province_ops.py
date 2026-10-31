@@ -45,7 +45,9 @@ def _js(cdp, src):
 
 def source_gates():
     fails, notes = [], []
-    sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：拆分/合并逻辑搬进 scenario/interaction/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
     se = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     checks = [
         (se, 'function splitProvince(key, provinceId, p1, p2, { side = 1 } = {})', 'store：拆分带侧符号'),
