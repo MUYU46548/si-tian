@@ -133,6 +133,9 @@ def source_gates():
                 fails.append('geodata.flushSave 没有真的 saveGeodata（只清定时器 = 丢改动）')
 
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：mousedown/mouseup 搬进 scenario/interaction/{down,pointer}.js —— 判据把两份源码一起读
+    sm += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/down.js'))
+    sm += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/pointer.js'))
     for needle, label in [
         ("import { beginInteraction, endInteraction } from '../utils/interactionGate'",
          '组件真的接线（不是只有模块躺着）'),

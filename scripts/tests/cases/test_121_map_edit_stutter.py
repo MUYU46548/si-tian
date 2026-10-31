@@ -109,6 +109,9 @@ def source_gates():
         if gate not in sm:
             fails.append(f'🔴 动态层没有从基帧里排除：{gate!r}（基帧会把草稿烙进去 → 拖笔留鬼影）')
     # 缓存只在明确的高频手势里启用（不许全局挂上）
+    # 2026-10-31：mousedown 搬进 scenario/interaction/down.js —— 判据把那份源码一起读
+    with open(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'down.js'), encoding='utf-8') as f:
+        sm = sm + '\n' + _code_only(f.read())
     if sm.count('beginStrokeBase()') < 6:
         fails.append('🔴 `beginStrokeBase()` 的启用点太少 —— 缓存没接在高频手势上（接了也没收益）')
     wheel = sm.split('function onWheel(', 1)
