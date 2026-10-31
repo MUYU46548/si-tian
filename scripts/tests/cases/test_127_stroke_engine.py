@@ -17,6 +17,9 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')
 def source_gates():
     fails = []
     sm = open(os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), encoding='utf-8').read()
+    # 2026-10-31：河网动作搬进 scenario/interaction/rivers.js —— 判据把那份源码一起读
+    with open(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'rivers.js'), encoding='utf-8') as _f:
+        sm += '\n' + _f.read()
     if 'river.widthFactors' not in sm or 'widthFactors' not in sm:
         fails.append('T7 收尾：手画河没接 widthFactors（速度→宽度）')
     if 'provBrushWorldRadius' not in sm:

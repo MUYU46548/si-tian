@@ -66,6 +66,8 @@ def source_gates():
     fails = []
     # 2026-10-31：河流绘制体搬进 scenario/layers/features.js —— 判据把那份源码一起读
     sm = _read(SMV) + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
+    # 2026-10-31：河网动作搬进 scenario/interaction/rivers.js —— 判据把那份源码一起读
+    sm += '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'rivers.js'))
     rr = _read(RRJ)
     # a① 自带河：宽度必须过世界单位换算（不许再直接塞屏幕像素数）
     # 🔴 2026-10-20 第十七修：自带河也改走 `drawCurvedRiver` 丝带，不再自己写字面

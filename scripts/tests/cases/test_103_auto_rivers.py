@@ -114,7 +114,9 @@ def _probe_err(obj):
 
 def source_gates():
     fails, notes = [], []
+    # 2026-10-31：河网生成/落库搬进 scenario/interaction/rivers.js —— 判据把那份源码一起读
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    sc += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/rivers.js'))
     se = _code_only(_read('src/renderer/src/store/geodataModules/scenarioEditing.js'))
     rt = _code_only(_read('src/renderer/src/utils/riverTrace.js'))
     cl = _code_only(_read('src/renderer/src/utils/coastline.js'))

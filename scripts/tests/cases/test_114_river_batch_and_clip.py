@@ -65,6 +65,8 @@ def source_gates():
     fails = []
     # 2026-10-31：河流绘制体搬进 scenario/layers/features.js —— 判据把那份源码一起读
     sm = _read(SMV) + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
+    # 2026-10-31：河网动作搬进 scenario/interaction/rivers.js —— 判据把那份源码一起读
+    sm += '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'rivers.js'))
     se = _read(SE)
     wg = _read(WG)
     # a① 批量写口：存在 + 组件真的用了 + 一条 undo（这两个函数体内必须只有一处 execute）

@@ -75,6 +75,7 @@ def _read(rel):
 def source_gates():
     fails = []
     sm = _read('src/renderer/src/components/ScenarioMap.vue')
+    sm += '\n' + _read('src/renderer/src/scenario/interaction/rivers.js')
     # 2026-10-31：抬手收口搬进 scenario/interaction/pointer.js —— 判据把那份源码一起读
     sm += '\n' + _read('src/renderer/src/scenario/interaction/pointer.js')
     se = _read('src/renderer/src/store/geodataModules/scenarioEditing.js')
