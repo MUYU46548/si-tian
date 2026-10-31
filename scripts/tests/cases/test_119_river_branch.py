@@ -80,7 +80,9 @@ def _code_only(src):
 
 def source_gates():
     fails = []
-    sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：河相关动作搬进 scenario/interaction/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     rr = _code_only(_read('src/renderer/src/utils/riverRender.js'))
 
     # a① 起点吸附（支流）三件：入口 / 吸附函数 / 母河 ref

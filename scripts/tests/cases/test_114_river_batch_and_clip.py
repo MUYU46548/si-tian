@@ -64,7 +64,9 @@ def _read(path):
 def source_gates():
     fails = []
     # 2026-10-31：河流绘制体搬进 scenario/layers/features.js —— 判据把那份源码一起读
-    sm = _read(SMV) + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
+    # 2026-10-31：动作体搬进 scenario/interaction/* —— 判据读合集
+    from lib.rsrc import render_src as _rsrc_all
+    sm = _rsrc_all()
     # 2026-10-31：河网动作搬进 scenario/interaction/rivers.js —— 判据把那份源码一起读
     sm += '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'rivers.js'))
     se = _read(SE)
