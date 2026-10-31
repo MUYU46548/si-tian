@@ -67,7 +67,9 @@ def _code_only(src):
 
 def source_gates():
     fails, notes = [], []
+    # 2026-10-31：抬手收口搬进 scenario/interaction/pointer.js —— 判据把那份源码一起读
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    sc += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/pointer.js'))
     pm = _code_only(_read('src/renderer/src/components/PlanetMap.vue'))
     pd = _code_only(_read('src/renderer/src/composables/planetDrawing.js'))
     se = _code_only(_read('src/renderer/src/store/geodataModules/scenarioEditing.js'))

@@ -90,7 +90,11 @@ def source_gates():
 
     # g2 判据位置：`writeRingPoints` 出来的 patch **必须先过闸门**才交给 updateBaseProvince
     #    （写成"先写库再问要不要撤销"也能跑，但那会给一次拖拽留下两条历史）
-    if 'confirmVertexMoveOverlap(prov, { ...prov, ...patch })' not in sc:
+    # 2026-10-31：抬手收口搬进 scenario/interaction/pointer.js —— 判据把那份源码一起读
+    _ptr = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src', 'renderer', 'src', 'scenario', 'interaction', 'pointer.js')
+    with open(_ptr, encoding='utf-8') as f:
+        _ptr_src = _code_only(f.read()) if '_code_only' in globals() else f.read()
+    if 'confirmVertexMoveOverlap(prov, { ...prov, ...patch })' not in (sc + '\n' + _ptr_src):
         fails.append('源码闸门缺失：顶点拖拽的写库必须被 confirmVertexMoveOverlap 守卫（先量后写）')
 
     # g3 「只对恶化发问」这条语义必须在场（否则既存压叠会天天弹窗）

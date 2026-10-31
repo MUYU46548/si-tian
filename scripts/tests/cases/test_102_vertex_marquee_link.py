@@ -60,6 +60,9 @@ def source_gates():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
     with open(os.path.join(root, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), encoding='utf-8') as f:
         sc = _code_only(f.read())
+    # 2026-10-31：抬手收口搬进 scenario/interaction/pointer.js —— 判据把那份源码一起读
+    with open(os.path.join(root, 'src', 'renderer', 'src', 'scenario', 'interaction', 'pointer.js'), encoding='utf-8') as f:
+        sc += '\n' + _code_only(f.read())
     with open(os.path.join(root, 'src', 'renderer', 'src', 'utils', 'vertexSharing.js'), encoding='utf-8') as f:
         vs = f.read()
     with open(os.path.join(root, 'src', 'renderer', 'src', 'store', 'geodataModules', 'provinceEditing.js'), encoding='utf-8') as f:
