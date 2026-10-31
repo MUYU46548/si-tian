@@ -90,7 +90,9 @@ def source_gates():
         fails.append('🔴 橡皮没有走**原子**写口 applyBaseMapRiverEdit（改/加/删会各压一条 undo）')
     if 'commitRiverErase' not in sm or 'if (riverEraseStroke.value.length)' not in sm:
         fails.append('🔴 抬手没有收口橡皮（`commitRiverErase` 没接在 mouseup 上）')
-    if "(event.key === 'w' || event.key === 'W') && event.shiftKey" not in sm:
+    # 2026-10-31：快捷键搬进 `scenario/interaction/keyboard.js` —— 判据跟着搬家
+    kbd = _read('src/renderer/src/scenario/interaction/keyboard.js')
+    if "(event.key === 'w' || event.key === 'W') && event.shiftKey" not in kbd:
         fails.append('🔴 没有 Shift+W 的入口（且必须判在普通 w 之前）')
     # ② 预览＝落库：唯一几何链
     if 'function riverNodesFromDraft(' not in sm:

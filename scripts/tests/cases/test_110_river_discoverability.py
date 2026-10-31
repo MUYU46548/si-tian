@@ -81,7 +81,11 @@ def source_gates():
     if j < 0 and 'hitTestRiver(' not in smv:
         fails.append('🔴 「选择」工具里没有河流命中判定（`hitTestRiver`）—— 点不中河')
     # a③ Delete 必须覆盖非河流工具
-    if 'tool.value !== \'river\' && selectedRiver.value' not in smv:
+    # 2026-10-31：键盘处理搬进 `scenario/interaction/keyboard.js` —— 判据跟着搬家
+    _kbd_path = os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'keyboard.js')
+    with open(_kbd_path, encoding='utf-8') as f:
+        kbd = _code_only(f.read())
+    if 'tool.value !== \'river\' && selectedRiver.value' not in kbd:
         fails.append('🔴 `Delete` 只在河流工具里生效 —— 在「选择」里选中河也删不掉')
     return fails
 

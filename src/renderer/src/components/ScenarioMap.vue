@@ -1859,6 +1859,8 @@ import { drawProvincesLayer, drawProvinceBordersLayer } from '../scenario/layers
 import { createLabelLayers } from '../scenario/layers/labels';
 // N1 刀 2：屏幕空间浮层（小地图 / 文化图例 / 数据分布图 / 城镇悬浮卡）
 import { createOverlayLayers } from '../scenario/layers/overlays';
+// N1 第三阶段：交互逻辑搬出组件（先搬键盘；鼠标/滚轮随后）
+import { createKeyboardHandlers } from '../scenario/interaction/keyboard';
 // N1 刀 2：编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
 import { drawVertexHandlesLayer, drawProvinceBrushOverlayLayer } from '../scenario/layers/editing';
 // N1 刀 2：地图要素层（道路/航路 / 手画河 / 城镇）
@@ -5950,148 +5952,6 @@ function isEditableTarget(t) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!t.isContentEditable;
 }
 
-function onKeyDown(event) {
-  if (event.key === 'Escape' || event.key === 'Esc') {
-    riverDraft.value = [];
-    riverDrag.value = null;
-    riverActiveNode.value = -1;
-    suppressRiverClick = false;
-  }
-  // Delete / Backspace：河流工具下 —— 有活动节点先删那个节点；空手再按一次删整条
-  if ((event.key === 'Delete' || event.key === 'Backspace') && tool.value === 'river' && selectedRiver.value) {
-    event.preventDefault();
-    if (!removeSelectedRiverNode()) deleteSelectedRiver();
-    return;
-  }
-  // 🔴 2026-10-17 第八修·补：**选择工具**里选中河之后，Delete 也必须能删它。
-  //    此前这条只认河流工具 → 用户在「选择」里点了河、按 Delete 毫无反应
-  //    （他报的正是"之前画的测试河流无法删除"）。
-  if ((event.key === 'Delete' || event.key === 'Backspace')
-      && tool.value !== 'river' && selectedRiver.value) {
-    event.preventDefault();
-    deleteSelectedRiver();
-    return;
-  }
-  if (event.key === 'Escape') {
-    drawPoints.value = [];
-    splitStep.value = 0;
-    splitPoints.value = [];
-    mergeStep.value = 0;
-    mergeProvId.value = null;
-    contextMenu.value.show = false;
-    selectedBurg.value = null;
-    dragPreview.value = null;
-    draggingHandle.value = null;
-    activeVertexIdx.value = -1;
-    // P1：Esc 同时退出顶点框选（否则框选的顶点会一直跟着下一次拖动）
-    vertexSelection.value = [];
-    vertexMarquee.value = null;
-    vertexMarqueeStart = null;
-    vertexLinkCtx = null;
-    polySplitPoints.value = [];
-    polySplitHover.value = null;
-    polySplitPreview.value = null;
-    clearSnapMarker();
-    clearProvinceSelection();      // Esc 也取消多选（批量条的「取消选择」同效）
-    // Esc 取消河流选中（2026-10-27）：用户实测「选中河流后特别难取消」——
-    // 旧实现只有工具栏行里一个小按钮，按 Esc 什么都不会发生。
-    if (selectedRiver.value || riverSelIds().length) {
-      setRiverSelection([]);
-      statusMsg('已取消河流选中（数据未改）');
-    }
-    // 地形注记手绘：Esc 取消采集（几何只在内存草稿里，数据一个字节都没写）
-    if (terrainLabelPick.value) {
-      terrainLabelPick.value = null;
-      statusMsg('已取消手绘注记（数据未改）');
-    }
-    render();
-  }
-  // A：折线切割 —— Enter 收口、Backspace 退一个点
-  if (tool.value === 'polySplit') {
-    if (event.key === 'Enter') { event.preventDefault(); finishPolySplit(); return; }
-    if (event.key === 'Backspace') {
-      event.preventDefault();
-      if (polySplitPoints.value.length) {
-        polySplitPoints.value = polySplitPoints.value.slice(0, -1);
-        statusMsg(`折线切割：退回一个点（还剩 ${polySplitPoints.value.length} 个）`);
-        schedulePolySplitPreview();
-        render();
-      }
-      return;
-    }
-  }
-  // P0-T1：Alt 临时直线段（按下即重绘，松开恢复曲线）
-  if (event.key === 'Alt' && !altStraight) {
-    altStraight = true;
-    event.preventDefault();
-    render();
-  }
-  if (event.key === 'Enter' && tool.value === 'draw' && drawPoints.value.length >= 3) {
-    finishDraw();
-  }
-  if (isEditableTarget(event.target)) return;
-  // 沉浸看图模式（2026-10-17 P0，暮雨拍板）：Ctrl+I 收起顶栏/侧栏/时间轴，地图占满。
-  // 🔴 用 Ctrl+I 不用裸 I —— 裸 I 已被 Relief 图标占用（下面的 else-if 链）。
-  // ⚠️ 这是**唯一**允许的组合键；它必须判在下面的「组合键一律让路」之前。
-  if ((event.ctrlKey || event.metaKey) && (event.key === 'i' || event.key === 'I')) {
-    event.preventDefault();
-    immersive.value = !immersive.value;
-    nextTick(() => { if (baseMap.value?.terrain?.length) fitToView(); });
-    statusMsg(immersive.value
-      ? '已进入沉浸模式 —— Ctrl+I 退出；底部胶囊 8 秒无操作自动淡出'
-      : '已退出沉浸模式');
-    return;
-  }
-  // 🔴 2026-10-25：**Ctrl/⌘/Alt 组合键不是工具快捷键**。
-  //    用户实测事故：选中状态栏文字按 Ctrl+C 复制，旧代码命中 `event.key === 'c'`
-  //    → 工具被切成「文化笔刷」（"复制文字时突然召唤出某种笔刷"）。
-  //    同理 Ctrl+V 会切成「选择」、Ctrl+X 会切成「拆分」—— 全是静默改工具。
-  //    Alt 单独按的"临时直线段"已在上面处理，这里只拦组合键。
-  if (event.ctrlKey || event.metaKey || event.altKey) return;
-  // 页面上有一段文字被选中时，裸字母也不切工具：用户多半是在读/准备复制，
-  // 不是在按快捷键。点一下画布（选区清空）后快捷键立即恢复。
-  const selection = window.getSelection?.();
-  if (selection && !selection.isCollapsed && String(selection).trim()) return;
-  if (event.key === 'v' || event.key === 'V') setTool('select');
-  // Shift+B = 笔刷建省（B 的第二形态）。⚠️ 必须判在 `b` 之前：两个分支都会命中 `b`，
-  //    先写的那个赢 —— 不判 shiftKey 的话 Shift+B 会静默变成「画省份」（与 Shift+W 同一个坑）。
-  else if ((event.key === 'b' || event.key === 'B') && event.shiftKey) setTool('provincePaint');
-  else if (event.key === 'b' || event.key === 'B') setTool('draw');
-  else if (event.key === 'g' || event.key === 'G') setTool('vertex');
-  else if (event.key === 'y' || event.key === 'Y') setTool('outline');   // E：描轮廓（Y 未被占用）
-  else if (event.key === 'x' || event.key === 'X') setTool('split');
-  else if (event.key === 'm' || event.key === 'M') setTool('merge');
-  else if (event.key === 'p' || event.key === 'P') setTool('paint');
-  else if (event.key === 'q' || event.key === 'Q') setTool(event.shiftKey ? 'provinceBrush' : 'ownerBrush');
-  else if ((event.key === 'l' || event.key === 'L') && event.shiftKey) setTool('lake');
-  else if (event.key === 'l' || event.key === 'L') setTool('provinceLasso');
-  else if (event.key === 'o' || event.key === 'O') setTool('provinceFill');
-  else if (event.key === 'd' || event.key === 'D') setTool('polySplit');
-  else if (event.key === 'a' || event.key === 'A') setTool('voronoi');
-  else if (event.key === 't' || event.key === 'T') setTool('label');
-  else if (event.key === 'e' || event.key === 'E') setTool('erase');
-  else if (event.key === 'h' || event.key === 'H') setTool('height');
-  else if (event.key === 'n' || event.key === 'N') setTool('biome');
-  else if (event.key === 'u' || event.key === 'U') setTool('burg');
-  else if (event.key === 'c' || event.key === 'C') setTool('culture');
-  else if (event.key === 'r' || event.key === 'R') setTool('religion');
-  else if (event.key === 'k' || event.key === 'K') setTool('marker');
-  else if (event.key === 'j' || event.key === 'J') setTool('road');
-  // Shift+W = 河流橡皮（W 的第二形态）。⚠️ 必须判在 `w` 之前：不判 shiftKey 的话
-  // 两个分支都会命中 `w`，而先写的那个赢 —— 于是"Shift+W 打开了画河"这种静默错位。
-  else if ((event.key === 'w' || event.key === 'W') && event.shiftKey) setTool('riverErase');
-  else if (event.key === 'w' || event.key === 'W') setTool('river');
-  else if (event.key === 'i' || event.key === 'I') setTool('relief');
-  else if (event.key === 'f' || event.key === 'F') fitToView();
-}
-
-function onKeyUp(event) {
-  if (event.key === 'Alt' && altStraight) {
-    altStraight = false;
-    render();
-  }
-}
-
 function finishDraw() {
   const id = `prov_${Date.now()}`;
   // ① 先贴**共享边界骨架**（P0 第二块）：相邻省份的轮廓走同一条线 → 零缝。
@@ -9752,6 +9612,27 @@ function blitStrokeBase() {
   strokeBaseStats.blits += 1;
   return true;
 }
+
+// ── N1 第三阶段：交互处理（2026-10-31）────────────────────────────────────
+// 键盘先搬（纯"读状态→调动作"），鼠标/滚轮随后用同一个 ctx 搬。
+// `let` 变量（altStraight / suppressRiverClick / vertexMarqueeStart / vertexLinkCtx）用 get/set 传 ——
+// 直接传值只会拷一份，组件这边永远不更新。
+const { onKeyDown, onKeyUp } = createKeyboardHandlers({
+  tool, selectedRiver, riverSelIds, setRiverSelection, statusMsg, render,
+  setTool, fitToView, isEditableTarget, nextTick,
+  deleteSelectedRiver, removeSelectedRiverNode, clearSnapMarker, clearProvinceSelection,
+  finishPolySplit, schedulePolySplitPreview, finishDraw,
+  riverDraft, riverDrag, riverActiveNode,
+  drawPoints, splitStep, splitPoints, mergeStep, mergeProvId,
+  contextMenu, selectedBurg, dragPreview, draggingHandle, activeVertexIdx,
+  vertexSelection, vertexMarquee, polySplitPoints, polySplitHover, polySplitPreview,
+  terrainLabelPick, immersive, baseMap,
+  getAltStraight: () => altStraight,
+  setAltStraight: (v) => { altStraight = v; },
+  setSuppressRiverClick: (v) => { suppressRiverClick = v; },
+  setVertexMarqueeStart: (v) => { vertexMarqueeStart = v; },
+  setVertexLinkCtx: (v) => { vertexLinkCtx = v; },
+});
 
 // ── N1 刀 1：渲染层注册表（2026-10-30）─────────────────────────────────────────
 // 这一步只把「谁先谁后」变成数据（绘制实现仍在本文件），所以判据是**逐像素一致**

@@ -108,7 +108,9 @@ def source_gates():
         fails.append('🔴 ScenarioMap 没有 initialScenarioId/openManager props')
     if 'immersive' not in sm or 'immersive-bar' not in sm:
         fails.append('🔴 ScenarioMap 没有沉浸模式实现（immersive 状态 / 顶条）')
-    if "event.key === 'i'" not in sm or 'ctrlKey' not in sm:
+    # 2026-10-31：快捷键搬进 `scenario/interaction/keyboard.js` —— 判据跟着搬家
+    kbd = _read('src/renderer/src/scenario/interaction/keyboard.js')
+    if "event.key === 'i'" not in kbd or 'ctrlKey' not in kbd:
         fails.append('🔴 沉浸模式没有 Ctrl+I 快捷键')
 
     # a④ 卡片墙组件本体
