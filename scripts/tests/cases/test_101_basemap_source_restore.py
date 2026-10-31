@@ -63,8 +63,9 @@ def _code_only(src):
 def source_gates():
     fails, notes = [], []
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-    with open(os.path.join(root, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), encoding='utf-8') as f:
-        sc = _code_only(f.read())
+    # 2026-10-31：留底/恢复逻辑搬进 scenario/interaction/canvasClick.js —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
     with open(os.path.join(root, 'src', 'preload', 'index.js'), encoding='utf-8') as f:
         pl = _code_only(f.read())
     with open(os.path.join(root, 'src', 'main', 'handlers', 'projectHandler.js'), encoding='utf-8') as f:

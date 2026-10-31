@@ -68,7 +68,9 @@ def source_gates():
     fails, notes = [], []
     pe = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     wg = _code_only(_read('src/renderer/src/store/writeGate.js'))
-    sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：导入/重建逻辑搬进 scenario/interaction/canvasClick.js —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
 
     for needle, label in [
         ('function buildLandMulti(', 'store：陆地轮廓 → MultiPolygon（单源）'),

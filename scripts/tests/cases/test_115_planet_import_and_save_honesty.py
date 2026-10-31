@@ -112,7 +112,9 @@ def source_gates():
     fails, notes = [], []
     pm = _code_only(_read('src/renderer/src/components/PlanetMap.vue'))
     mis = _code_only(_read('src/renderer/src/utils/mapImportSource.js'))
-    sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：导入/重建逻辑搬进 scenario/interaction/canvasClick.js —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     md = _code_only(_read('src/renderer/src/store/geodataModules/mapDataEditing.js'))
     pmb = _code_only(_read('src/renderer/src/utils/planetMapBundle.js'))
     wg = _code_only(_read('src/renderer/src/store/writeGate.js'))

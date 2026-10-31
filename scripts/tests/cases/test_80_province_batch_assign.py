@@ -92,7 +92,9 @@ def sub_source_guards(cdp):
     if 'normalizeDate(changeDate)' not in seg:
         bad.append('batchSetOwnership 没把第 4 参规整成日期（月日精度下裸值会静默丢掉月日）')
 
-    sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：点击/选择逻辑搬进 scenario/interaction/canvasClick.js —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     for sym, why in (('selectedProvinceIds', '缺少多选状态'),
                      ('event.ctrlKey || event.metaKey', '缺少 Ctrl/⌘ 加选'),
                      ('toggleProvinceSelection', '缺少加选/减选切换'),
