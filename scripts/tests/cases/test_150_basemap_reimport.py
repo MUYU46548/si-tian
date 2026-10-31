@@ -107,9 +107,9 @@ def run(cdp):
         return False, '；'.join(fails)[:1000] + ' | 实测：' + json.dumps(notes, ensure_ascii=False)[:600]
 
     # 源码守卫：UI 必须真的接上「非 pristine → reimport」这条路
-    sm = open(os.path.join(os.path.dirname(__file__), '..', '..', '..',
-                           'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'),
-              encoding='utf-8').read()
+    # 2026-10-31：重导对话框逻辑搬进 scenario/interaction/helpers.js —— 判据读合集
+    from lib.rsrc import render_src as _rsrc_all
+    sm = _rsrc_all()
     if 'isBasemapPristine' not in sm:
         return False, 'ScenarioMap 没有引用 isBasemapPristine（无法判断同图补数据/重导）'
     if 'reimportBasemapAsNew(' not in sm:
