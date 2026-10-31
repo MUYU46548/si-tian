@@ -22,11 +22,17 @@ SFC = os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vu
 
 
 def render_files():
-    """组件 + layers/*.js + interaction/*.js（按路径排序，保证结果稳定）"""
+    """组件 + layers/*.js + interaction/*.js + styles/*.css（按路径排序，保证结果稳定）
+
+    ⚠️ 样式也算：`ScenarioMap.vue` 的 `<style scoped>` 已搬进 `styles/scenario-map.css`，
+    而不少用例的源码闸门会在组件源码里找 CSS 选择器（`.toolbar-more {` 之类）。
+    """
     files = [SFC]
     for sub in ('layers', 'interaction'):
         files += sorted(glob.glob(os.path.join(
             ROOT, 'src', 'renderer', 'src', 'scenario', sub, '*.js')))
+    files += sorted(glob.glob(os.path.join(
+        ROOT, 'src', 'renderer', 'src', 'styles', '*.css')))
     return files
 
 
