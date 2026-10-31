@@ -86,7 +86,7 @@
 
 - **现行规划（2026-10-30 起：`docs/plan/PLAN_AUDIT_20261030.md` 是唯一施工依据）**：
   - **总入口** = [docs/plan/PLAN_AUDIT_20261030.md](docs/plan/PLAN_AUDIT_20261030.md)（阶段门 N0/N1/N2/N3/N4 + 判据 + 已拍板事项）；
-    **接手先读** [docs/plan/BREAKPOINT_20261030_n1.md](docs/plan/BREAKPOINT_20261030_n1.md)（当前断点：做到哪、还差什么、怎么继续、踩过的坑）。
+    **接手先读** [docs/plan/BREAKPOINT_20261031.md](docs/plan/BREAKPOINT_20261031.md)（当前断点：做到哪、还差什么、怎么继续、踩过的坑）。
   - 参照件（不是施工令）：`docs/guides/20261023/00-…`（路线/红线）、`docs/plan/SITIAN_GUIDE_DIGEST_20261023.md`（仓内对账）、
     `docs/plan/CHASSIS_BASELINE_20261023.md`（性能基线）、`docs/plan/INTEGRATION_AUDIT_20261030.md`（模块集成审计）。
   - **已被取代的规划/交接件已全部移入 [`docs/archive/`](docs/archive/)**（TODO_REMAINING_20261028 / REMAINING_BACKLOG_20261027 /

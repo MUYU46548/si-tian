@@ -90,6 +90,374 @@
   </script>
 
 
+  <script>
+    window.__SITIAN_MOCK__ = true;
+    // ===== 剧本卡片墙跳过开关（2026-10-17 P0）=====
+    // 产品默认：点「历史剧本」先见卡片墙（ScenarioPicker），点卡片才进编辑器。
+    // 30+ 个既有用例的路径是「点历史剧本 → ScenarioMap 直接挂载」——
+    // 注入本开关让 enterScenarioMode 跳过卡片墙（同免责声明种子的手法）。
+    // test_111（卡片墙自身）用 sessionStorage 开关关掉它并重载（跨导航存活，用例收尾必须清）。
+    (function () {
+      try { if (sessionStorage.getItem('__sitian_skip_picker_seed') === '1') return; } catch (e) {}
+      window.__SKIP_SCENARIO_PICKER = true;
+    })();
+    // ===== fixture 专名 → 当前数据源名 的别名（2026-10-06）=====
+    // 用例里写的是合成 fixture 的名字（曜川星…）。--real-data 下数据源是真实库，那些名字不存在
+    // → 集体假红（19 个失败里 17 个是它）。用例改用 __alias('曜川星') 取名字：
+    //   合成 fixture 模式 → 表为空，恒等（行为零变化）；--real-data → 解析成真实名。
+    // 表本体在 scripts/tests/fixtures/make_vault_fixture.py（唯一实现），由 harness 注入。
+    window.__ALIAS__ = {};
+    window.__alias = function (n) { return (window.__ALIAS__ && window.__ALIAS__[n]) || n; };
+    // ===== 免责声明（UI 基座试点，test_83 守）=====
+    // 回归基线默认视为「已确认当前版本条款」—— 否则首启阻断层（模态 + 拦截点击）
+    // 会盖住整个界面，所有点击类用例一起变红（"一起红"的假失败最难定位）。
+    // 🔴 键名与版本号由 harness 从 src/renderer/src/utils/disclaimer.js 解析后注入（见上），
+    //    不在这里写死。test_83 用 sessionStorage 的跳过开关清掉该键并重载，专门验证阻断行为。
+    (function () {
+      try { if (sessionStorage.getItem('__sitian_skip_disclaimer_seed') === '1') return; } catch (e) {}
+      try { localStorage.setItem('sitian_disclaimer_ack_v' + '1.0.0', '2026-01-01T00:00:00.000Z'); } catch (e) {}
+    })();
+    // ⚠️ 必须**同步**安装 sitianAPI（同步 XHR 阻塞解析）：
+    // 本 <script> 之后的 <script type="module"> 是 defer 执行，只要这里的安装是同步的，
+    // 应用 mount 时 sitianAPI 必然已存在。历史 bug：原来用 async fetch → 若 fetch 解析
+    // 慢于应用 mount，`await store.loadGeodata()` 抛 TypeError → store.nodes 恒为 0 →
+    // 用例报「no-world / 树节点未渲染 / 地理数据加载超时」这类**假失败**（跨多个会话反复出现）。
+    (function () {
+      const loadJson = (url) => {
+        const x = new XMLHttpRequest();
+        x.open('GET', url, false); // false = 同步，锁死安装顺序
+        x.send(null);
+        return JSON.parse(x.responseText);
+      };
+      let geodata = null, mapdata = {};
+      try {
+        geodata = loadJson('/mock-data/geodata.json');
+        mapdata = loadJson('/mock-data/mapdata.json');
+      } catch (e) {
+        console.error('[mock] 数据加载失败', e);
+      }
+      const noop = () => () => {};
+      window.sitianAPI = {
+        // Ctrl+Q 退出确认（2026-10-09 新增能力）：mock 不真退，只记调用次数。
+        // 真实的两段式退出链（before-input-event → 'app-request-quit' → 渲染层确认 →
+        // 'app-confirm-quit'）在真机演练 drill_quit_flush.py 里验，这里只保证 App.vue 挂载不炸。
+        onRequestQuit: noop,
+        confirmQuit: () => { window.__confirmQuitCalls = (window.__confirmQuitCalls || 0) + 1; },
+        getGeodata: async () => ({ success: true, data: geodata }),
+        reextractGeodata: async () => ({ success: true }),
+        saveGeodata: async () => ({ success: true }),
+        getVaultPath: async () => 'E:/合成测试库',
+        selectVaultPath: async () => ({ success: false, canceled: true }),
+        setVaultPath: async () => ({ success: false, canceled: true }),
+        getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
+        saveMapData: async () => ({ success: true }),
+        saveScenarios: async () => ({ success: true }),
+        // 「当前底图键」持久化（产品在导入 .map / 切换底图后调它）。mock 里必须存在：
+        // ScenarioMap 用的是 `window.sitianAPI?.setCurrentBaseMapKey` 可选调用，缺了不会报错，
+        // 但**导入路径的后半段会被静默截断**（`?.` 不炸，只是什么都不发生）——
+        // 用例若想断言「导入后确实把当前底图记下来了」，就得先有这个口子。
+        setCurrentBaseMapKey: async () => ({ success: true }),
+        getCurrentBaseMapKey: async () => ({ success: true, key: '' }),
+        // 默认空 → 保持既有用例行为不变；并记调用次数供 test_84 断言「确实读了库」。
+        // test_84 会在点击「历史剧本」之前塞 window.__scenarioVaultStub，用来验证
+        // 「知识库 → 画布的隐式载入必须只补缺、不许覆盖项目里已有的剧本与底图」。
+        loadScenarios: async () => {
+          window.__scenarioLoadCalls = (window.__scenarioLoadCalls || 0) + 1;
+          return { success: true, data: window.__scenarioVaultStub || { version: 2, baseMaps: {}, scenarios: {} } };
+        },
+        // ===== 一键同步（git）：内存态 mock，不调用真实 git（真实验证在 unit/test_git_sync.js）=====
+        gitSyncStatus: async (dir) => {
+          const st = (window.__gitState || {})[dir] || {};
+          return { success: true, isRepo: !!st.isRepo, remote: st.remote || '', branch: 'main',
+                   dirty: st.dirty || 0, lastCommit: st.lastCommit || '', lastCommitAt: '',
+                   hasToken: !!st.hasToken, tokenUsername: st.hasToken ? 'mockuser' : '' };
+        },
+        gitSyncConfigure: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'configure', dir: p && p.dir, remoteUrl: p && p.remoteUrl });
+          window.__gitState = window.__gitState || {};
+          window.__gitState[p.dir] = { ...(window.__gitState[p.dir] || {}), isRepo: true, remote: p.remoteUrl };
+          return { success: true, dir: p.dir, remoteUrl: p.remoteUrl, created: true };
+        },
+        gitSyncCredential: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          // 只记录「被调过 + 是否带了令牌」，**不记录令牌内容**（mock 也不碰明文）
+          window.__gitCalls.push({ op: 'credential', hasToken: !!(p && p.token) });
+          window.__gitState = window.__gitState || {};
+          const st = window.__gitState[p && p.dir] || {};
+          window.__gitState[p && p.dir] = { ...st, hasToken: !!(p && p.token) };
+          return { success: true, host: 'mock', username: 'git', persistent: true,
+                   note: '令牌已加密保存在本机（推送时直接使用，不再依赖系统凭据管理器）' };
+        },
+        gitSyncForget: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'forget', hasToken: false });
+          window.__gitState = window.__gitState || {};
+          const st = window.__gitState[p && p.dir] || {};
+          window.__gitState[p && p.dir] = { ...st, hasToken: false };
+          return { success: true, host: 'mock' };
+        },
+        gitSyncTest: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'test', dir: p && p.dir, remoteUrl: p && p.remoteUrl });
+          // 内存态 mock：真实验证在 unit/test_git_sync.js（本地 bare 仓库当远程）
+          const st = (window.__gitState || {})[p && p.dir] || {};
+          if (!st.remote) return { success: false, error: '还没有填远程仓库地址' };
+          return { success: true, host: 'example.com', heads: 0, note: '连接成功（远端仓库目前是空的，正好用来首次推送）' };
+        },
+        gitSyncPull: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'pull', dir: p && p.dir, confirm: !!(p && p.confirm) });
+          const st = (window.__gitState || {})[p && p.dir] || {};
+          if (!p || !p.confirm) {
+            if (st.pullBehind === 0) return { success: true, pulled: false, behind: 0, message: '远程没有新内容，本地不必恢复' };
+            return { success: false, needsConfirm: true, behind: st.pullBehind === undefined ? 2 : st.pullBehind,
+                     ahead: 0, dirty: st.dirty || 0, error: '远程有新内容：恢复会把本地改成与远端一致' };
+          }
+          return { success: true, pulled: true, behind: 2, ahead: 0, changedFiles: ['绒花计划.sitian'],
+                   branch: 'main', localSnapshot: true, rescueBranch: 'sitian-rescue-mock' };
+        },
+        gitSyncNow: async (p) => {
+          window.__gitCalls = window.__gitCalls || [];
+          window.__gitCalls.push({ op: 'sync', dir: p && p.dir });
+          return { success: true, changed: 0, branch: 'main' };
+        },
+        // ===== .sitian 项目文件（Phase 1）：内存态，不落盘 → 对真实数据零污染 =====
+        projectCreate: async (payload) => {
+          const p = payload || {};
+          const name = String(p.name || '未命名项目');
+          const dir = p.dir || 'mock/projects';
+          const filePath = dir + '/' + name + '.sitian';
+          window.__projects = window.__projects || {};
+          window.__projectCalls = window.__projectCalls || [];
+          window.__projects[filePath] = JSON.parse(JSON.stringify(p.project || {}));
+          window.__projectCalls.push({ op: 'create', filePath: filePath });
+          // 与真实主进程一致：必须回显项目正文（否则渲染层 adopt() 拿到 undefined）
+          return { success: true, filePath: filePath, dir: dir, name: name + '.sitian', bytes: 0, project: JSON.parse(JSON.stringify(p.project || {})) };
+        },
+        projectOpen: async (filePath) => {
+          window.__projects = window.__projects || {};
+          window.__projectCalls = window.__projectCalls || [];
+          const target = filePath || Object.keys(window.__projects)[0] || '';
+          if (!target || !window.__projects[target]) return { success: false, error: '项目不存在: ' + target };
+          window.__projectCalls.push({ op: 'open', filePath: target });
+          const cut = target.lastIndexOf('/');
+          return {
+            success: true, filePath: target, dir: cut > 0 ? target.substring(0, cut) : '',
+            project: JSON.parse(JSON.stringify(window.__projects[target])),
+          };
+        },
+        projectSave: async (payload) => {
+          const p = payload || {};
+          window.__projects = window.__projects || {};
+          window.__projectCalls = window.__projectCalls || [];
+          if (!p.filePath) return { success: false, error: 'no-path' };
+          // 🔴 必须模拟真实 IPC 边界（2026-10-06）：renderer→main 的载荷要过 V8 ValueSerializer，
+          //    遇到 Vue 的 reactive 代理会抛 "An object could not be cloned."。
+          //    mock 若只做 JSON 往返（它恰好能读穿代理），就永远测不到“载荷不可序列化”——
+          //    这正是当年 84 用例全绿、而真机上项目保存**一次都没成功**的原因。
+          //    ⚠️ 别把这一步删成 JSON.parse(JSON.stringify(...))。
+          // 🔴 2026-10-24：正式路径改成**字符串**（`projectJson`）—— 主进程直接写盘，不做第二次
+          //    stringify、也不克隆 3.6MB 对象图。字符串天然没有代理问题，这里只需解析回对象存进 mock 库
+          //    （projectOpen 要按对象返回）。对象形态仍接受（旧调用方/用例直连探针），照样过 structuredClone。
+          let cloned;
+          if (typeof p.projectJson === 'string') {
+            try {
+              cloned = JSON.parse(p.projectJson);
+            } catch (e) {
+              return { success: false, error: '载荷不是合法 JSON：' + String((e && e.message) || e) };
+            }
+            // 让 __savedProject 的读取方（helpers 的 lastProject / 各用例）继续拿到对象
+            p.project = cloned;
+          } else {
+            try {
+              cloned = structuredClone(p.project || {});
+            } catch (e) {
+              return { success: false, error: String((e && e.message) || e) };
+            }
+          }
+          window.__projects[p.filePath] = cloned;
+          window.__projectCalls.push({ op: 'save', filePath: p.filePath });
+          return {
+            success: true, filePath: p.filePath,
+            bytes: typeof p.projectJson === 'string' ? p.projectJson.length : JSON.stringify(cloned).length,
+            backupPath: p.filePath + '.backups/mock.sitian',
+          };
+        },
+        projectList: async (dir) => {
+          window.__projects = window.__projects || {};
+          const d = dir || 'mock/projects';
+          const items = Object.keys(window.__projects).map((fp) => ({
+            name: fp.split('/').pop(), filePath: fp,
+            meta: window.__projects[fp].meta || null,
+            version: window.__projects[fp].version || '',
+            entityCount: Object.keys(window.__projects[fp].entities || {}).length,
+            bytes: 0, mtime: '',
+          }));
+          return { success: true, dir: d, items: items };
+        },
+        projectPickDir: async () => ({ success: true, dir: 'mock/picked' }),
+        projectReveal: async (filePath) => ({ success: true, filePath: filePath }),
+        projectBackupNow: async () => ({ success: true, backedUp: true, backupPath: 'mock/x.sitian' }),
+        projectGitSnapshot: async () => ({ success: false, skipped: true, reason: 'mock 环境非 git 仓库' }),
+        // 🔴 原始底图来源备份（2026-10-11）：mock 里要**如实回报成功**，
+        //    否则「导入后状态栏有没有说"已留底"」这类断言会在 mock 层被静默跳过。
+        //    真实落盘在 scripts/tests/unit/test_basemap_source_backup.js 里测（那里有真文件系统）。
+        // 2026-10-13：save/list/read 三者改成**有状态**（`window.__MOCK_BMSRC`）——
+        //    「留底 → 列清单 → 读回 → 当底图导入」整条恢复链才能在 mock 层真跑（test_101）。
+        projectCurrentPath: async () => ({ success: true, filePath: 'mock/项目.sitian', exists: true }),
+        saveBaseMapSource: async (payload) => {
+          window.__MOCK_BMSRC = window.__MOCK_BMSRC || {};
+          const nm = String((payload && payload.name) || 'basemap.map');
+          const text = String((payload && payload.text) || '');
+          window.__MOCK_BMSRC[nm] = { text, at: Date.now() };
+          return {
+            success: true,
+            path: 'mock/项目.sitian.backups/basemap-sources/' + nm,
+            bytes: text.length,
+            dir: 'mock/项目.sitian.backups/basemap-sources',
+            pruned: 0,
+          };
+        },
+        listBaseMapSources: async () => {
+          const m = window.__MOCK_BMSRC || {};
+          const files = Object.keys(m).map((n) => ({
+            name: n,
+            path: 'mock/项目.sitian.backups/basemap-sources/' + n,
+            bytes: m[n].text.length,
+            mtime: new Date(m[n].at).toISOString(),
+          })).sort((a, b) => String(b.mtime).localeCompare(String(a.mtime)));
+          return { success: true, dir: 'mock/项目.sitian.backups/basemap-sources', files };
+        },
+        // 只读：读回一份留底原文（找不到 → **明确失败**，不回空串让上层以为读到一份空底图）
+        readBaseMapSource: async (payload) => {
+          const nm = String((payload && payload.name) || '');
+          const rec = (window.__MOCK_BMSRC || {})[nm];
+          if (!rec) return { success: false, error: '留底文件不存在：' + nm };
+          return {
+            success: true, name: nm,
+            path: 'mock/项目.sitian.backups/basemap-sources/' + nm,
+            bytes: rec.text.length, mtime: new Date(rec.at).toISOString(), text: rec.text,
+          };
+        },
+        backupSitianCache: async () => ({ success: true, backupDir: 'mock/backups', count: 0, files: [] }),
+        batchImportNotes: async (payload) => ({ success: true, targetDir: 'mock', created: (payload?.names || []).map(n => ({ name: n, path: `mock/${n}.md` })), skipped: [], errors: [] }),
+        createObsidianNote: async (payload) => {
+          const nm = String(payload?.name || '未命名').replace(/[\/:*?"<>|]/g, '_');
+          return { success: true, path: `mock/${nm}.md`, filename: nm };
+        },
+        selectReferenceImage: async () => ({ success: false, canceled: true }),
+        saveExportFile: async () => ({ success: false, canceled: true }),
+        saveTextFile: async (opts) => {
+          // 记录最近一次导出内容供断言（不写盘 → 零污染）
+          window.__LAST_TEXT_EXPORT__ = opts || null;
+          return { success: true, path: '/mock/' + ((opts && opts.defaultName) || 'export.txt') };
+        },
+        exportScenarioFrames: async (payload) => {
+          // 逐年切片批量导出：**累积**记录（与 saveTextFile 的「只记最后一次」不同 ——
+          // 批量是一次调用带 N 个文件，用例要断言的是整批内容与清单）
+          window.__FRAMES_EXPORTS__ = window.__FRAMES_EXPORTS__ || [];
+          window.__FRAMES_EXPORTS__.push(payload || null);
+          window.__LAST_FRAMES_EXPORT__ = payload || null;
+          const files = (payload && payload.files) || [];
+          return {
+            success: true, dir: 'mock/slices/' + ((payload && payload.dirName) || 'sitian-slices'),
+            count: files.length, bytes: files.reduce((a, f) => a + String((f && f.text) || '').length, 0),
+            files: files.map((f) => f && f.name),
+            manifestPath: 'mock/slices/frames.json',
+          };
+        },
+        readObsidianNote: async () => ({ success: true, data: { frontmatter: { publish: true, tags: ['测试'], 层级: '星系' }, content: '测试笔记正文。', wikilinks: [] } }),
+        // 断线检测（R15/A-0）：库里的笔记清单。**用例通过 window.__vaultNotes 注入**，
+        // 默认空数组（真实主进程会扫库；mock 不碰文件系统）。
+        listVaultNotes: async () => {
+          const notes = Array.isArray(window.__vaultNotes) ? window.__vaultNotes : [];
+          return { success: true, vault: 'E:/合成测试库', notes: notes.map(n => ({ ...n })), count: notes.length };
+        },
+        // ===== 全库只读索引（D1）=====
+        // 主进程的真实扫描/解析在 unit/test_vault_index.js 里验（临时目录 + 真文件）；
+        // 这里只给 UI 一个稳定的内存态，用来守「设置面板的入口/按钮/候选列表」接线。
+        vaultIndexStatus: async () => ({
+          success: true, exists: true, root: 'E:/合成测试库',
+          builtAt: '2026-10-19T00:00:00.000Z', sizeBytes: 2048,
+          stats: { total: 120, byTop: { '03 设定': 80, '07 资料收藏': 40 }, hits: 0, misses: 120, parseErrors: 0 },
+        }),
+        vaultIndexBuild: async () => {
+          window.__viBuildCalls = (window.__viBuildCalls || 0) + 1;
+          return { success: true, total: 120, byTop: { '03 设定': 80 }, hits: 0, misses: 120, parseErrors: 0, elapsedMs: 3 };
+        },
+        vaultEntityCandidates: async () => ({
+          success: true, count: 2, byLayer: { city: 1, region: 1 },
+          candidates: [
+            { path: '03 设定/11 地理系统/行星/曜川星/霜寒城.md', title: '霜寒城', layer: 'city', layerLabel: '城市', confidence: 'high', reasons: ['有「层级」'], tags: [] },
+            { path: '03 设定/11 地理系统/行星/曜川星/北境.md', title: '北境', layer: 'region', layerLabel: '区域', confidence: 'medium', reasons: ['目录含层级词'], tags: [] },
+          ],
+        }),
+        // 读料报告（第二刀）：mock 给一份固定分布，供设置面板展示「地图/资料/待人工」
+        vaultClassifyReport: async () => ({
+          success: true,
+          report: {
+            total: 120,
+            byCategory: { geo: 60, character: 20, organization: 10, item: 8, document: 14, meta: 4, index: 4 },
+            byLayer: { city: 20, region: 10, planet: 30 },
+            geo: [],
+            needsHuman: [
+              { path: '散装/人物/无名者.md', title: '无名者', category: 'unknown', reasons: ['没有任何可用的分类信号'] },
+              { path: '03 设定/11 地理系统/_说明.md', title: '说明', category: 'geo', reasons: ['认得出是地点，但认不出粒度（世界/星域/行星/城市…）'] },
+            ],
+            inferred: [{ path: '03 设定/02 场景地点/风岬港.md', title: '风岬港', parentTitle: '北境', signal: 'text' }],
+          },
+        }),
+        vaultIndexSearch: async (q) => ({ success: true, results: [{ path: '03 设定/人物/艾琳.md', title: '艾琳', kind: 'lore', score: 80 }] }),
+        vaultNoteRead: async (p) => ({ success: true, data: { path: p, content: '# mock\n\n测试正文，指向[[北境]]，图：![[图.png]]', frontmatter: {}, wikilinks: ['北境'] } }),
+        vaultNoteResolve: async (name) => ({
+          success: true,
+          path: name === '北境' ? '03 设定/11 地理系统/行星/曜川星/北境.md' : '03 设定/11 地理系统/行星/曜川星/霜寒城.md',
+          candidates: [{ path: name === '北境' ? '03 设定/11 地理系统/行星/曜川星/北境.md' : '03 设定/11 地理系统/行星/曜川星/霜寒城.md', title: name }],
+        }),
+        vaultNoteSearch: async (q) => ({
+          success: true,
+          results: [{ path: '03 设定/01 人物/艾琳.md', title: '艾琳', kind: 'lore', score: 15, matchedIn: 'content', snippet: '风岬港的灯塔守。' }],
+        }),
+        vaultAssetRead: async (p) => ({
+          success: true,
+          data: { path: p, mime: 'image/png', size: 68, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' },
+        }),
+        revealInExplorer: async () => ({ success: true }),
+        openExternal: async () => ({ success: true }),
+        onNodeUpdated: () => () => {},
+        onNodeRemoved: () => () => {},
+        clearCoordinateCache: async () => ({ success: true }),
+        // 以下 API 应用侧**无 ?. 守卫**，缺失会让 onMounted 抛错（进而中断挂载链路）→ 必须提供
+        onOpenSettings: noop,
+        onOpenAbout: noop,
+        reportError: async () => ({ success: true }),
+        getCurrentBaseMapKey: async () => '',
+        setCurrentBaseMapKey: async () => ({ success: true }),
+        // .sitian/config/*.json（P0-2 标签预设 / P1-4 标记类型）：内存态，不落盘
+        getSitianConfig: async (name) => ({ success: true, data: (window.__uiConfig || {})[name] ?? null }),
+        setSitianConfig: async (name, data) => {
+          window.__uiConfig = window.__uiConfig || {};
+          window.__uiConfig[name] = data;
+          return { success: true };
+        },
+        getWindowMode: async () => 'default',
+        setWindowMode: async () => ({ success: true }),
+        getCloseQuitsApp: async () => false,
+        setCloseQuitsApp: async () => ({ success: true }),
+        uninstallApp: async () => ({ success: false, dev: true }),
+        version: '0.0.0-mock',
+        // 自动更新通道（UpdateNotification 用 ?. 调用，这里给全以免测试环境报错）
+        onUpdateAvailable: noop, onUpdateCheckManual: noop, onUpdateNotAvailable: noop,
+        onUpdateProgress: noop, onUpdateDownloaded: noop, onUpdateError: noop,
+        checkForUpdates: async () => ({ success: false, error: 'mock' }),
+        downloadUpdate: async () => ({ success: false, error: 'mock' }),
+        installUpdate: async () => ({ success: false, error: 'mock' }),
+        platform: 'browser',
+      };
+      window.dispatchEvent(new CustomEvent('sitian-mock-ready'));
+    })();
+  </script>
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

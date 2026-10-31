@@ -1,89 +1,88 @@
-# 断点（2026-10-31 18:0x，N1 刀 1/刀 2 进行中 · 第 15 轮）
+# 断点（2026-10-31 22:0x，N1 刀 1/刀 2 · 第 21 轮收尾）
 
-> 接手先读这一页：现在在哪、还差什么、怎么继续、哪些坑别重踩。
-> 上一版（10-30 22:4x）已过时，被本文件取代。
+> 接手先读这一页。上一版（10-31 18:0x，10,749 行）已过时，被本文件取代。
 
 ---
 
-## 一、此刻的仓库状态
+## 一、仓库状态
 
-- 分支 `main`，与 `origin/main` 同步到 **`596bff4`**，**工作树干净**。
-- `ScenarioMap.vue`：**10,749 行**（起点 14,277，已减 **3,528**）。目标 **8,500**，还差 **2,249**。
-- 已迁出的模块（都在 `src/renderer/src/`）：
+- 分支 `main`，与 `origin/main` 同步到 **`cc47b9a`**，**工作树干净**。
+- `ScenarioMap.vue`：**9,356 行**（起点 14,277，已减 **4,921**）。目标 **≤8,500**，**还差 856 行**。
+- 已迁出（`src/renderer/src/`）：
   - `scenario/layers/`：background / coast / provinces / labels / overlays / editing / features / preview
-  - `scenario/interaction/`：keyboard / pointer / move / down / rivers / province / actions
-  - `utils/scenarioLayerRegistry.js`（层注册表引擎 + Node 单测）
-- 测试工具：`scripts/tests/lib/rsrc.py`（`render_src()` = 组件 + 所有 layers + 所有 interaction 的合集，
-  **源码闸门一律读它**，搬家不会再误伤用例）；`scripts/tests/drill_scenario_pixels.py`（同机位像素指纹）。
+  - `scenario/interaction/`：keyboard / pointer / move / down / rivers / province / actions /
+    helpers / riverOps / provinceOps / misc / canvasClick
+  - `utils/scenarioLayerRegistry.js`（层注册表 + Node 单测）
+- 测试工具：`scripts/tests/lib/rsrc.py`（「组件 + 所有 layers + 所有 interaction」源码合集，
+  **源码闸门一律读它**）；`scripts/tests/drill_scenario_pixels.py`（同机位像素指纹）。
 
 ## 二、判据状态
 
 | # | 判据 | 状态 |
 |---|---|---|
-| 1 | 同机位逐像素一致 | ✅ 三组 A/B（静态 `6993c0bc` / 编辑态 `df13eec4` / 含要素 `c65ed170`） |
-| 2 | p95 帧时不退化 | ✅ 三档 25.0→25.3 / 18.0→18.0 / 18.0→18.0（`_probe_jank_real.py`） |
-| 3 | 163 CDP + 72 单测全绿 | ✅ 最后一次全量 163/163（`596bff4`） |
-| 4 | `ScenarioMap.vue` ≤8,500 | ❌ 现 **10,749**（还差 2,249） |
-| 5 | 刀 1 完出内测包 | ⚠️ 21:19 那版内测包是 11 万行时期的老包，**行数达标后要重打** |
+| 1 | 同机位逐像素一致 | ✅ 三组 A/B（静态 / 编辑态 / 含要素） |
+| 2 | p95 帧时不退化 | ✅ 三档 25.0→25.3 / 18.0→18.0 / 18.0→18.0 |
+| 3 | 163 CDP + 72 单测全绿 | ✅ 最近一次全量 163/163（`1a2d939`；`cc47b9a` 正在复核） |
+| 4 | `ScenarioMap.vue` ≤8,500 | ❌ 现 **9,356**（还差 856） |
+| 5 | 刀 1 完出内测包 | ⏳ 达标后重打 |
 
-## 三、继续搬的顺序（下一轮从这里接）
+## 三、下一轮从这里接（还剩约 214 个函数 / 1,931 行）
 
-1. **先搬"叶子"函数**（不依赖其它待搬函数的）：`getSeaDetail` / `riverWidthSeries` / `mapWorldSize` /
-   `applyReimportDialog` / `autoSeedBatch` / `onWheel` / `handleResize` …
-2. 再搬"中间层"：`fitToView` / `confirmVertexBatchOverlap` / `beginVertexLinkContext` /
-   `buildLinkedPreview` / `buildProvincePath` / `handleSplitClick` / `ctxDuplicateProvince` /
-   `addProvinceWithOverlapGate` / `confirmVertexMoveOverlap`。
-3. **必须留在组件里的**：`renderFrame`(157) / `makeLayerView`(114) / `makePreviewView`(38) / `render`(30)
-   —— 它们就是"接线"，是这次重构的成品形态。
-4. 全部搬完预计落在 **≈8,2xx**，达标后：像素 A/B → 帧时 A/B → 重打内测包 → 交给用户过眼。
+**必须留在组件里的接线**（约占 340 行，搬了反而更绕）：
+`renderFrame`(157) / `makeLayerView`(114) / `makePreviewView`(38) / `render`(30)。
 
-### 工厂调用顺序（硬约束，错了就是 TDZ / 白屏）
+**可以继续搬的**（按大小排序，前 20）：
+`buildStrokeBase`21 / `countCrossingsWithExisting`20 / `selectScenarioAt`16 / `previewTraceRing`16 /
+`snapToPolyline`16 / `snapToEdge`16 / `applyMarkerPatch`16 / `bindTerrainToPlanet`15 /
+`segmentHitsBox`15 / `onAddPolity`15 / `onPolySplitClick`15 / `deleteAnnotation`15 /
+`buildCellRaster`15 / `ownerHitProvinceIds`14 / `onSaveSlicePoint`14 / `provincePathFor`14 /
+`openProvinceContextMenu`14 / `onCanvasDblClick`14 / `openReimportDialog`14 / `describeBaseMapMissing`14。
+
+**先查「谁已被别处的 ctx 消费」再决定顺序**（`build/_ctx_used.mjs` 会列出 225 个这样的名字）：
+被消费的名字不能在更晚的位置搬走，否则 TDZ（白屏）。
+
+### 工厂调用顺序（硬约束）
 
 ```
-rivers → provinceOps → province → actions → pointer → move → down → keyboard
+helpers → rivers → riverOps → provinceOps → misc → province → actions
+        → pointer → move → down → keyboard → canvasClick（最后，ctx 引用前面全部）
 ```
 
-理由：后面的工厂在 ctx 里**直接引用**前面工厂返回的 const（例如 `pointer` 的 ctx 里有
-`finishRiverDraft`）。顺序反了会 `Cannot access 'xxx' before initialization`，表现是
-**整个剧本视图挂不起来**（用例只报"剧本模式未挂载超时"，看不出根因）。
+### 达线后的收尾清单
+
+1. `python scripts/tests/drill_scenario_pixels.py --tag cut1_before` / `--tag cut1_after` / `--compare`
+2. `python scripts/tests/tools/_probe_jank_real.py …`（p95 三档）
+3. `npx electron-builder --dir --config.directories.output=release-internal` → `release-internal/win-unpacked/司天.exe`
+4. 交给用户过眼（三件事见下）
 
 ## 四、搬家工具（别再手写依赖清单）
 
-- `build/_extract_batch.mjs <fn1,fn2,…> <outFile> <factoryName>`：一组函数 → 一个工厂。
-  依赖规则：组件顶层 `let` → `st`（带 get/set）；import 绑定 → 模块直接 import；
-  其余 ref/const/函数 → `ctx`。
-- `build/_wire_module.mjs <moduleRel> <factory> <fn1,fn2>`：把工厂接进组件（**会校验 ctx 名字
-  是否都在组件里声明过**，不通过就拒绝写盘）。
-- `build/_measure_draw_lines.mjs` / `_measure_sfc_blocks.mjs`：行数与函数清单。
-- `build/_diag_scenario.py`：**白屏诊断**（起 lab、开项目、点历史剧本、读应用自己的错误面板）。
+| 工具 | 用途 |
+|---|---|
+| `build/_extract_batch.mjs <fn1,fn2> <out> <factory>` | 一组函数 → 一个工厂（顶层 `let`→`st`；import→直接 import；其余→`ctx`） |
+| `build/_wire_at.mjs <rel> <factory> <fns> [锚点]` | 插到某个工厂之前（会校验 ctx 名字都已声明） |
+| `build/_wire_last.mjs <rel> <factory> <fns>` | 插到 `<script setup>` 末尾（ctx 可引用前面全部） |
+| `build/_ensure_st.mjs <rel>` | 补 `pointerState` 的 get/set（模块里用到但组件没暴露的 `st.xxx`） |
+| `build/_ctx_used.mjs` | 列出已被各模块 ctx 消费的名字（判断能不能搬晚一点） |
+| `build/_diag_scenario.py` | **白屏诊断**：读应用自己的错误面板（TDZ/未声明都在这里看得见） |
+| `build/_list_fns.mjs` / `_measure_draw_lines.mjs` | 剩余函数清单与行数 |
 
-## 五、踩过的坑（每条都真的炸过）
+## 五、踩过的坑（都真的炸过）
 
-1. **依赖扫描把注释里的名字当依赖** → 同名 const 与 function 冲突（`onMouseDown`）。
-2. **把函数自己的声明行算进依赖** → `return { onMouseMove }` 返回解构出来的 undefined。
-3. **import 路径照抄** → 组件在 `components/`，模块在 `scenario/interaction/`，`../utils/x` 要变 `../../utils/x`。
-4. **`async function` 只搬走 `function`** → 组件里留一个孤零零 `async`，解析失败。
-5. **`ctx` 撞名**（组件里有 ref 就叫 `ctx`）→ 工具现在自动改参数名为 `api` + 别名 `ctxRef`。
-6. **全局非贪婪 `const {…} =` 扫解构**会横跨大段代码，把函数内局部变量（`w` / `minX` / `minY`）
-   当成顶层绑定 → `w` 未声明 → 白屏。现在只在**行首**匹配并配平花括号。
-7. **造基帧（stroke base）在搬完之后失效过一次**（2026-10-31 第 15 轮）：把
-   `addProvinceWithOverlapGate` 等 8 个函数搬进 `provinceOps.js` 后，用例 `test_121` 报
-   「一次拖动建了 0 次基帧 / 拖动期间贴图 0 次 / 相机变了基帧没作废」——**已回滚该次搬动**，
-   代码仍停在 `596bff4`。下次重试时先查：`beginStrokeBase()` 的调用链是否被 `ctx` 转手打断
-   （它在 `down.js` 里被调用，而 `strokeBaseArmed` 仍在组件里）。
-8. **PowerShell 处理这个 10k 行 SFC 会毁编码/吃引号** —— 一律用 `node` 脚本（utf8 读写）+ 先判 CRLF。
-9. 🔴 **绝不要 `Stop-Process -Name msedge`**（2026-10-31 真实事故：跑回归前为清残留 Edge，
-   我按进程名杀了全部 msedge —— **连带把用户正在看视频的浏览器一起杀了**）。
-   测试用的 Edge 有明确标识，只杀它自己：
+1. 依赖扫描把**注释里**的名字当依赖 → 同名 const 与 function 冲突。
+2. 把**函数自己的声明行**算进依赖 → `return { fn }` 返回 undefined。
+3. **import 路径照抄**（组件在 `components/`，模块在 `scenario/interaction/`）。
+4. **`async function` 只搬走 `function`** → 组件里留个孤零零 `async`。
+5. **`ctx` 撞名**（组件里有 ref 就叫 `ctx`）→ 工具改成参数 `api` + 别名 `ctxRef`。
+6. 全局非贪婪 `const {…} =` 扫解构会横跨大段代码 → 把 `w/minX/minY` 当顶层绑定 → 白屏。
+7. **生成器双逗号**（每项加 `,` 又 join `,`）→ `vy,,` → 接线时该名字被过滤 → `vy is not a function`。
+8. **工厂顺序 = TDZ**：`rivers` 与 `misc` 互相引用 → 把 `countCrossingsWithExisting` 留在组件里断开环路。
+9. 🔴 **绝不 `Stop-Process -Name msedge`**（2026-10-31 真实事故：把用户正在看视频的浏览器一起杀了）。
+   只杀测试自己的：
    ```powershell
    Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
      Where-Object { $_.CommandLine -match 'test-edge-profile|remote-debugging-port=9222' } |
      ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
    ```
-   或直接用 `scripts/tests/tools/_lab.py down`（它按 PID 文件关自己的浏览器）。
-
-## 六、给用户的现状一句话
-
-刀 1 四层迁完、判据 1/2/3 全绿；从 14,277 减到 **10,749 行**（−3,528）。
-行数判据（≤8,500）还差 2,249，按每轮 200–400 行算还要 **6–8 轮**；
-达线后我会重打内测包、再跑一次像素与帧时 A/B，然后交给你过眼。
+   或 `python scripts/tests/tools/_lab.py down`。
+10. 跑全量前先确认**没有别的 lab / 演练占着 5180/9222**；残留 Edge 会让一批用例报 `WinError 10054`。
