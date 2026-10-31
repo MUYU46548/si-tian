@@ -303,7 +303,7 @@ def source_gates():
         fails.append('🔴 缺 `showRiverBase`（自带河的门控）')
     if 'const showRiverAuto = computed(' not in sc:
         fails.append('🔴 缺 `showRiverAuto`（自动河的门控）')
-    if 'if (showRiverBase.value) drawRivers(ctx.value);' not in sc:
+    if 'if (showRiverBase.value) drawRiversLayer(ctx.value' not in sc:
         fails.append('🔴 `drawRivers`（自带河）没有走 `showRiverBase` —— 选「只画自动生成」时自带河藏不掉')
     if 'autoRivers.value.length > 0 && showRiverAuto.value' not in sc:
         fails.append('🔴 自动河没有走 `showRiverAuto` —— 选「只画底图自带」时自动河藏不掉')

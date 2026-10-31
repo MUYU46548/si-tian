@@ -508,8 +508,9 @@ async function main() {
   });
 
   check('source：选中高亮**不许**再用"加宽的中心线"（那会把水面盖住）', () => {
-    const vm = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), 'utf8');
-    const seg = vm.split('function drawSelectedRiverHighlight', 2)[1] || '';
+    // 2026-10-31：选中高亮搬进 scenario/layers/features.js —— 判据跟着搬家（原意不变）
+    const vm = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'), 'utf8');
+    const seg = vm.split('function drawSelectedRiverHighlightLayer', 2)[1] || '';
     const body = seg.split('\nfunction ', 1)[0];
     assert(body.indexOf('offsetPolyline(') >= 0, '选中高亮必须调用 offsetPolyline 画**两侧**边线');
     // 反向探针：老形态是 "两遍加宽描边"（lineWidth = baseW + …）

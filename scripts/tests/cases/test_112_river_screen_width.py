@@ -64,19 +64,20 @@ def _read(path):
 
 def source_gates():
     fails = []
-    sm = _read(SMV)
+    # 2026-10-31：河流绘制体搬进 scenario/layers/features.js —— 判据把那份源码一起读
+    sm = _read(SMV) + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
     rr = _read(RRJ)
     # a① 自带河：宽度必须过世界单位换算（不许再直接塞屏幕像素数）
     # 🔴 2026-10-20 第十七修：自带河也改走 `drawCurvedRiver` 丝带，不再自己写字面
     #    `c.lineWidth = ...` —— 判据改成"真的调用了那个换算函数"（换算口径单源）。
-    if 'basemapRiverWidthWorld(r, cameraScale.value)' not in sm:
+    if 'basemapRiverWidthWorld(r, cameraScale.value)' not in sm and 'basemapRiverWidthWorld(r, view.cameraScale)' not in sm:
         fails.append('🔴 drawRivers 没把自带河线宽换算成世界单位 —— 放大后自带河会跟着变粗'
                      '（实测 1× 8px → 4× 19px）')
     # 反证：旧的错写法不许回来
     if 'c.lineWidth = basemapRiverWidthPx(r);' in sm:
         fails.append('🔴 又出现 `c.lineWidth = basemapRiverWidthPx(r)` —— 屏幕像素数当世界单位用')
     # a② 高亮：baseW 也必须是世界单位，且增量仍是 px() 屏幕像素口径
-    i = sm.find('function drawSelectedRiverHighlight')
+    i = sm.find('function drawSelectedRiverHighlightLayer')
     seg = sm[i:] if i >= 0 else ''
     end = seg.find('\n}\n')          # 只取**本函数**的函数体（否则会连上下一个函数里的 lineWidth）
     if end > 0:
@@ -87,12 +88,13 @@ def source_gates():
     #       —— 判据不能在字面上找 `px(3.5)`、也不能要求 `px(` 出现在**赋值那一行**，
     #       否则合法写法一改就假红。口径是"**有没有裸数值线宽**"：RHS 既不是字面数字，
     #       又能在本函数里查到它是 `px(...)` 的结果，就算合规）。
-    if 'basemapRiverWidthWorld(r, cameraScale.value)' not in seg:
+    if 'basemapRiverWidthWorld(r, cameraScale.value)' not in seg and 'basemapRiverWidthWorld(r, view.cameraScale)' not in seg:
         fails.append('🔴 选中高亮的 baseW 不是世界单位（高亮会随缩放变粗 —— 暮雨二测的"太粗"）')
     widths = [ln.strip() for ln in seg.split('\n') if 'lineWidth =' in ln]
     pxVars = set()
     for ln in seg.split('\n'):
-        m = re.match(r'\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*px\(', ln)
+        # 2026-10-31：绘制体搬进 layers 后形参化成 `view.px(...)` —— 同一条口径，两种写法都认
+        m = re.match(r'\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:view\.)?px\(', ln)
         if m:
             pxVars.add(m.group(1))
     def _is_bare(ln):

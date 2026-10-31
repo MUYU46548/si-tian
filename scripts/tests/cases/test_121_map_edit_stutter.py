@@ -96,16 +96,16 @@ def source_gates():
     if _i_gate < 0 or _i_run < 0 or (_i_run - _i_gate) > 200:
         fails.append('🔴 静态层没有受「贴图帧」门控：`scenarioLayers.run(...)` 不在 `if (!blitted) {` 里'
                      '（贴图帧会把它们再画一遍）')
-    for gate in ('if (showRiverBase.value) drawRivers(ctx.value);\n  }\n'
-                 '  if (!strokeBaseBuilding) drawRiverPaths',
+    for gate in ('if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());\n  }\n'
+                 '  if (!strokeBaseBuilding) drawRiverPathsLayer',
                  'if (!blitted && showBorders.value) drawProvinceBordersLayer',
                  # 2026-10-21：相机移动期还会跳过聚落/标签/小地图（cameraMotion），
                  # 门控条件因此变长；判据只要求"同一行里既有 !blitted 又有 drawBurgs"。
                  'if (!blitted && showBurgs.value && !cameraMotion) {\n    drawBurgsLayer'):
         if gate not in sm:
             fails.append(f'🔴 静态层没有受「贴图帧」门控：{gate!r}（贴图帧会把它们再画一遍）')
-    for gate in ('if (!strokeBaseBuilding) drawRiverPaths', 'if (!strokeBaseBuilding) drawSelectedRiverHighlight',
-                 'if (!strokeBaseBuilding) drawVertexHandles', 'if (!strokeBaseBuilding) drawPreviewOverlay'):
+    for gate in ('if (!strokeBaseBuilding) drawRiverPathsLayer', 'if (!strokeBaseBuilding) drawSelectedRiverHighlightLayer',
+                 'if (!strokeBaseBuilding) drawVertexHandlesLayer', 'if (!strokeBaseBuilding) drawPreviewOverlayLayer'):
         if gate not in sm:
             fails.append(f'🔴 动态层没有从基帧里排除：{gate!r}（基帧会把草稿烙进去 → 拖笔留鬼影）')
     # 缓存只在明确的高频手势里启用（不许全局挂上）

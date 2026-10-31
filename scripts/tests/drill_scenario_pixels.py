@@ -203,7 +203,11 @@ def main():
           ];
           s.baseMaps[KEY].rivers = [
             { id: 'river_pix', name: '基线河', points: [{ x: 80, y: 260 }, { x: 160, y: 230 }, { x: 240, y: 210 }, { x: 320, y: 190 }], width: 1.2 },
+            // 导入河（id 不以 river_ 开头）：走 drawRivers 那条路；选中它才能覆盖「选中高亮」那层
+            { id: 'imp_pix', name: '导入河', discharge: 300, width: 2,
+              points: [{ x: 40, y: 120 }, { x: 140, y: 140 }, { x: 240, y: 120 }, { x: 340, y: 100 }, { x: 440, y: 130 }] },
           ];
+          sm.selectedRiverId = 'imp_pix';
           if (typeof sm.render === 'function') sm.render();
           return JSON.stringify({
             ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, injected,

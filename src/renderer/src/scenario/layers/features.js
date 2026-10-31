@@ -13,6 +13,49 @@
 // `view` 字段：w,h,px,vx,vy,screenToWorld,baseMap,burgs,hoveredBurg,selectedBurg,BURG_SIZES,
 //   polylineInView,labelDetail(),arterialLengthThreshold,shouldDrawRoute,getLandMask,
 //   riverNodesForRender,drawOneHandRiver
+//
+// 河流两块（2026-10-31 加）：导入河 + 选中高亮。它们依赖 `utils/riverRender` 的纯函数
+// （已在此直接 import），**只**把组件内的取数/缓存助手经 view 传入（getDisplayRivers /
+// getMaxRiverWidth / riverWidthSeries / riverNodesForRender / riverSelIds），
+// 计划缓存与 Path2D 缓存是**渲染独占**，随函数一起搬进本模块。
+
+import {
+  BASEMAP_RIVER_COLOR, basemapRiverWidthPx, basemapRiverWidthWorld,
+  smoothRiverLine, planRiverCoveredRuns, catmullRomPoints,
+  collapseReversedRiverPoints, offsetPolyline, offsetPolylineVariable, riverSelGapForWidth,
+} from '../../utils/riverRender';
+
+/** 导入河的绘制计划缓存（键 = 裁剪后列表引用 + 缩放 + 最宽河） */
+let displayRiverPlanCache = { list: null, scale: 0, maxW: 0, smoothed: [], plans: [] };
+/** 河道曲线 + 分块 Path2D 缓存：键 = 该河的 smoothed 数组（缩放变会换数组） */
+const riverRunCache = new WeakMap();
+
+/**
+ * 一条河的可视段 → 若干块 Path2D（每块一个**宽度值**，2026-10-26 起逐点）。
+ * `mid` 是**本 run 曲线**下标（subdiv=2，长度约 2 倍点数）—— 必须换算回整条河的点下标再取宽度，
+ * 否则线宽被算粗（实测导入河像素 +12%）。
+ */
+function buildRiverRun(pts, s, e, widths) {
+  const runPts = pts.slice(s, e);
+  const curve = catmullRomPoints(runPts, 2);
+  const n = curve.length;
+  const count = Math.max(1, Math.min(16, n - 1));
+  const out = [];
+  for (let c = 0; c < count; c++) {
+    const i0 = Math.floor((c * (n - 1)) / count);
+    const i1 = Math.floor(((c + 1) * (n - 1)) / count);
+    if (i1 <= i0) continue;
+    const mid = Math.min(n - 1, Math.round((i0 + i1) / 2));
+    const frac = n > 1 ? mid / (n - 1) : 1;
+    const idx = s + frac * Math.max(0, e - s - 1);
+    const path = new Path2D();
+    path.moveTo(curve[i0].x, curve[i0].y);
+    for (let i = i0 + 1; i <= i1; i++) path.lineTo(curve[i].x, curve[i].y);
+    out.push({ path, idx });
+  }
+  return out;
+}
+
 
 /** 配色/样式对齐 Azgaar FMG 默认：道路棕色实线、小径棕色虚线、海路白色虚线 */
 export const ROUTE_STYLES = {
@@ -174,6 +217,177 @@ export function drawScenarioMarkersLayer(c, view) {
   }
   c.textAlign = 'start';
   c.textBaseline = 'alphabetic';
+}
+
+/** 河流（导入河）：先裁到海岸线，再按覆盖段去重、逐块 Path2D 描边；末尾画河名 */
+export function drawRiversLayer(c, view) {
+  // D（2026-10-11）：**只画导入的**（FMG 参考图层）。手画的（id 前缀 `river_`）由
+  // `drawRiverPathsLayer` 负责 —— 两边都画会把同一份数据画两遍（线宽叠加、观感更粗）。
+  //
+  // 🔴 2026-10-14：导入的河要**先裁到海岸线**（`view.getDisplayRivers()`，按引用缓存）。
+  //    省份轮廓是按**后来的**新海岸线重建的，而这些河还是那次导入留下的 →
+  //    真实底图实测 142/160 条河的末端落在省份多边形之外。
+  const list = view.getDisplayRivers();
+  if (!list.length) return;
+  const tl = view.screenToWorld(0, 0);
+  const br = view.screenToWorld(view.w, view.h);
+  const pad = view.px(40);
+  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+
+  c.save();
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  // 本幅图最宽的河（宽度归一化的参照）—— 按 rivers 引用缓存
+  const maxRiverWidth = view.getMaxRiverWidth();
+  // ── 同一段河道只画一遍（2026-10-21 第二十一修）────────────────────────────
+  // 真实 FMG 数据里支流的路径会沿干流再走一遍，两张 `rivers[]` 共享一段河身；
+  // 两条都画 = 粗河旁贴一条细线，放大后从某个节点分叉成双线。
+  // 这里按「宽的先画、窄的跳过被盖住的连续段」生成绘制计划；纯函数在 riverRender.js。
+  // 缓存键 = 裁剪后的列表引用 + 缩放（`dist` 按屏幕像素换算，缩放变了才需要重算）。
+  if (displayRiverPlanCache.list !== list || displayRiverPlanCache.scale !== view.cameraScale
+      || displayRiverPlanCache.maxW !== maxRiverWidth) {
+    const smoothed = list.map((r) => smoothRiverLine((r && r.points) || [], 4));
+    const plans = planRiverCoveredRuns(
+      list.map((r, i) => ({ points: smoothed[i], widthPx: basemapRiverWidthPx(r, maxRiverWidth) })),
+      // 去重距离 = **世界单位**（至少 4，1× 时 6）：同一段河道的两条路径在数据里相差
+      // 0.6~5.3 世界单位；这个量级不随缩放变，所以不能只用屏幕像素（放大后会漏掉）。
+      { dist: Math.max(4, view.px(6)) },
+    );
+    displayRiverPlanCache = { list, scale: view.cameraScale, maxW: maxRiverWidth, smoothed, plans };
+  }
+  const { smoothed, plans } = displayRiverPlanCache;
+  for (let ri = 0; ri < list.length; ri++) {
+    const r = list[ri];
+    const raw = r.points;
+    if (!raw || raw.length < 2) continue;
+    if (!view.polylineInView(raw, minX, minY, maxX, maxY)) continue;
+    // 先圆角（中点二次曲线）再进样条：Catmull-Rom 是插值曲线，不圆角的话
+    // 导入数据里的直角在放大后原样保留 = 用户说的"折线/铁轨"。
+    const pts = smoothed[ri];
+    // 逐点宽度（2026-10-26）：造陆河用落库的 `widths`；导入河按弧长 + 距海方向推。
+    const widths = view.riverWidthSeries(r, pts);
+    // 🔴 曲线 + 分块 Path2D 按 smoothed 数组缓存（此前每帧对 16 个块各做一遍 beginPath/lineTo）
+    let runs = riverRunCache.get(pts);
+    if (!runs) {
+      runs = [];
+      for (const [s, e] of (plans[ri] || [])) {
+        if (e - s < 2) continue;
+        runs.push(...buildRiverRun(pts, s, e, widths));
+      }
+      riverRunCache.set(pts, runs);
+    }
+    if (!runs.length) continue;
+    c.strokeStyle = BASEMAP_RIVER_COLOR;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.globalAlpha = 1;
+    for (const { path, idx } of runs) {
+      const wi = Math.min(widths.length - 1, Math.max(0, Math.round(idx)));
+      const w = Number(widths[wi]) || Number(r.width) || 0.02;
+      // ⚠️ 下限**不要写成 0.35**：`test_73` 的源码守卫用裸子串查「省名档阈值被写回组件」，
+      //    0.35 是它认定的档位阈值（详见该用例注释：遇到误伤就改数字，别改守卫）。
+      c.lineWidth = Math.max(0.3, basemapRiverWidthWorld({ width: w }, view.cameraScale, maxRiverWidth));
+      c.stroke(path);
+    }
+  }
+  // 河流名：默认关闭（自动地名多为 FMG 英文名），由「图层 → 自动地名」控制
+  if (view.showPlaceNames) view.drawRiverNames(c);
+  c.restore();
+}
+
+/** 选中河流的高亮：沿河两侧各退开一段画**两条平行偏移线**，中间完全留空（水面像素一个不碰） */
+export function drawSelectedRiverHighlightLayer(c, view) {
+  const ids = view.riverSelIds();
+  if (!ids.length) return;
+  const all = (view.baseMap && view.baseMap.rivers) || [];
+  const tl = view.screenToWorld(0, 0);
+  const br = view.screenToWorld(view.w, view.h);
+  const pad = view.px(40);
+  for (const id of ids) {
+    const r = all.find((x) => x && x.id === id);
+    if (!r) continue;
+    const rawPts = view.riverNodesForRender(r);
+    // 导入河是「去 + 回」的闭合路径 —— 选中轮廓也必须在折过的中心线上，
+    // 否则金色两条边线会跟着"双线"一起复制一份。
+    const pts = String(r.id || '').indexOf('river_') === 0
+      ? rawPts
+      : collapseReversedRiverPoints(rawPts);
+    if (!pts || pts.length < 2) continue;
+    if (!view.polylineInView(pts, tl.x - pad, tl.y - pad, br.x + pad, br.y + pad)) continue;
+    const isPrimary = id === view.selectedRiverId;
+    c.save();
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    // 🔴 2026-10-18 第十六修：**选中反馈不许盖住被选中的东西**。
+    //   旧实现是两遍加宽描边（外层暖白 +3.5px、内层亮芯 +1.2px）⇒ 整条河被奶白光带盖住；
+    //   第二版"虚线轮廓"照样盖住（线宽 baseW+1.6px、中心就在河道中心线上）。
+    //   现在：沿河两侧各退开 `RIVER_SEL_GAP_PX` 画两条平行偏移线，中间完全留空。
+    const weightWorld = view.px(view.RIVER_SEL_WEIGHT_PX);
+    const edgeWorld = view.px(1);
+    const barWorld = view.px(2);
+    const barHalfWorld = view.px(6);
+    // 逐点宽度之后，轮廓的偏移量也必须**逐点**（常量偏移会在宽段压进水面、窄段飘出老远）
+    const selSeries = String(r.id || '').indexOf('river_') === 0 ? null : view.riverWidthSeries(r, pts);
+    let sides;
+    if (selSeries) {
+      const maxW = view.getMaxRiverWidth();
+      const dists = selSeries.map((w) => {
+        const pxw = basemapRiverWidthPx({ width: w }, maxW);
+        const gapPx = riverSelGapForWidth(pxw) * (isPrimary ? 1 : 0.7);
+        return basemapRiverWidthWorld({ width: w }, view.cameraScale, maxW) / 2 + view.px(gapPx);
+      });
+      sides = [offsetPolylineVariable(pts, dists),
+        offsetPolylineVariable(pts, dists.map((d) => -d))];
+    } else {
+      const baseW = basemapRiverWidthWorld(r, view.cameraScale);
+      const basePx = basemapRiverWidthPx(r);
+      const gap = view.px(riverSelGapForWidth(basePx) * (isPrimary ? 1 : 0.7));
+      sides = [offsetPolyline(pts, baseW / 2 + gap),
+        offsetPolyline(pts, -(baseW / 2 + gap))];
+    }
+    c.strokeStyle = isPrimary ? 'rgba(255, 214, 102, 0.95)' : 'rgba(34, 211, 238, 0.7)';
+    c.lineWidth = weightWorld;
+    for (const side of sides) {
+      if (!side || side.length < 2) continue;
+      c.beginPath();
+      c.moveTo(view.vx(side[0]), view.vy(side[0]));
+      for (let i = 1; i < side.length; i++) c.lineTo(view.vx(side[i]), view.vy(side[i]));
+      c.stroke();
+    }
+    // 节点手柄：**只在河流工具里、且只对手画的河**画（导入河不支持拖节点，
+    // 旧实现只要选中就画几十个方块 → 点一下就满屏"一堆点点"把河盖死）
+    const handDrawn = String(r.id || '').indexOf('river_') === 0;
+    if (isPrimary && handDrawn && view.tool === 'river') {
+      // 节点太多时**抽稀**画：端点、当前节点必画，其余按 stride 取；手柄也缩小
+      const hs = view.px(2.6);
+      const stride = pts.length > 20 ? Math.ceil(pts.length / 20) : 1;
+      c.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+      c.lineWidth = edgeWorld;
+      for (let i = 0; i < pts.length; i++) {
+        const keep = i === 0 || i === pts.length - 1 || i === view.riverActiveNode || (i % stride === 0);
+        if (!keep) continue;
+        const sx = view.vx(pts[i]);
+        const sy = view.vy(pts[i]);
+        const isHead = i === 0;
+        const isMouth = i === pts.length - 1;
+        c.fillStyle = isHead ? '#fbbf24' : (isMouth ? '#22d3ee' : 'rgba(248,250,252,0.92)');
+        c.beginPath();
+        c.rect(sx - hs, sy - hs, hs * 2, hs * 2);
+        c.fill();
+        c.stroke();
+      }
+      // 两端再加一枚"短横杠"：手柄会被水面附近的地形吃掉对比度，端点是用户最常确认的东西
+      for (const i of [0, pts.length - 1]) {
+        if (i < 0 || i >= pts.length) continue;
+        c.strokeStyle = i === 0 ? '#fbbf24' : '#22d3ee';
+        c.lineWidth = barWorld;
+        c.beginPath();
+        c.moveTo(view.vx(pts[i]) - barHalfWorld, view.vy(pts[i]));
+        c.lineTo(view.vx(pts[i]) + barHalfWorld, view.vy(pts[i]));
+        c.stroke();
+      }
+    }
+    c.restore();
+  }
 }
 
 /** 首都星标（十角星；城镇层内部用） */

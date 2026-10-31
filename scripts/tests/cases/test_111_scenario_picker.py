@@ -75,7 +75,8 @@ def _read(path):
 def source_gates():
     fails = []
     app = _read(APPVUE)
-    sm = _read(SMV)
+    # 2026-10-31：河流绘制体搬进 scenario/layers/features.js —— 判据把那份源码一起读
+    sm = _read(SMV) + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
     sp = _read(SPV)
     cards = _read(SCARDS)
     sed = _read(SEDIT)
@@ -150,7 +151,7 @@ def source_gates():
     if 'drawSelectedRiverHighlight' not in sm:
         fails.append('🔴 没有选中河流的画布高亮（选中状态只活在工具栏文字里）')
     else:
-        i = sm.find('function drawSelectedRiverHighlight')
+        i = sm.find('function drawSelectedRiverHighlightLayer')
         seg = sm[i:i + 1600] if i >= 0 else ''
         if 'px(' not in seg:
             fails.append('🔴 选中高亮的线宽没走 px() 屏幕像素换算 —— 放大后会粗成大白虫（暮雨二测）')

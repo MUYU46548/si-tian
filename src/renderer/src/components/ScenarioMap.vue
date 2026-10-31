@@ -1866,7 +1866,10 @@ import { drawPreviewOverlayLayer } from '../scenario/layers/preview';
 // N1 刀 2：编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
 import { drawVertexHandlesLayer, drawProvinceBrushOverlayLayer } from '../scenario/layers/editing';
 // N1 刀 2：地图要素层（道路/航路 / 手画河 / 城镇）
-import { drawRoutesLayer, drawRiverPathsLayer, drawBurgsLayer, drawReliefIconsLayer, drawScenarioMarkersLayer } from '../scenario/layers/features';
+import {
+  drawRoutesLayer, drawRiverPathsLayer, drawBurgsLayer, drawReliefIconsLayer, drawScenarioMarkersLayer,
+  drawRiversLayer, drawSelectedRiverHighlightLayer,
+} from '../scenario/layers/features';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
 // 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
@@ -8876,39 +8879,8 @@ function polylineInView(pts, minX, minY, maxX, maxY) {
 //    改省份会换 terrain 数组引用、导入会换 rivers 数组引用 —— 引用没变就不可能变，
 //    所以这层缓存不会"陈旧"（比按 key 名缓存安全：同名换数据不会漏失效）。
 let displayRiverCache = { terrain: null, rivers: null, out: [] };
-/** 导入河的绘制计划（宽河优先 + 窄河去重）—— 按列表引用/缩放/最大宽度缓存 */
-let displayRiverPlanCache = { list: null, scale: 0, maxW: 0, smoothed: [], plans: [] };
-/** 河道曲线 + 分块 Path2D 缓存：键 = 该河的 smoothed 数组（缩放变会换数组） */
-const riverRunCache = new WeakMap();
-/**
- * 一条河的可视段 → 若干块 Path2D（每块一个**宽度值**，2026-10-26 起逐点）。
- *
- * @param {Array} pts 已平滑的中心线
- * @param {number} s @param {number} e 可见段端点（`planRiverCoveredRuns` 给的连续段）
- * @param {number[]|null} widths 逐点宽度（与 `river.width` 同量纲）；缺省回落到"越往下游越宽"的旧口径
- */
-function buildRiverRun(pts, s, e, widths) {
-  const runPts = pts.slice(s, e);
-  const curve = catmullRomPoints(runPts, 2);
-  const n = curve.length;
-  const count = Math.max(1, Math.min(16, n - 1));
-  const out = [];
-  for (let c = 0; c < count; c++) {
-    const i0 = Math.floor((c * (n - 1)) / count);
-    const i1 = Math.floor(((c + 1) * (n - 1)) / count);
-    if (i1 <= i0) continue;
-    const mid = Math.min(n - 1, Math.round((i0 + i1) / 2));
-    // `mid` 是**本 run 的曲线**下标（subdiv=2，长度约 2 倍点数）—— 必须换算回整条河的
-    // 点下标再取宽度，否则 s + mid 会越界、线宽被算粗（实测导入河像素 +12%）。
-    const frac = n > 1 ? mid / (n - 1) : 1;
-    const idx = s + frac * Math.max(0, e - s - 1);
-    const path = new Path2D();
-    path.moveTo(curve[i0].x, curve[i0].y);
-    for (let i = i0 + 1; i <= i1; i++) path.lineTo(curve[i].x, curve[i].y);
-    out.push({ path, idx });
-  }
-  return out;
-}
+// 导入河的「绘制计划」与「分块 Path2D」两套缓存已随 `drawRivers` 搬进
+// `scenario/layers/features.js`（它们是渲染独占，组件这边不再需要）。
 let landMaskCache = { terrain: null, mask: null };
 
 /** 取当前底图的陆地掩膜（按 terrain 引用缓存） */
@@ -9175,97 +9147,6 @@ function getMaxRiverWidth() {
   return max;
 }
 
-function drawRivers(c) {
-  // D（2026-10-11）：**只画导入的**（FMG 参考图层）。手画的（id 前缀 `river_`）由
-  // `drawRiverPaths` 负责 —— 两边都画就会把同一份数据画两遍（线宽叠加、观感更粗），
-  // 这是拆分"导入/手画"两条渲染路时最容易漏的一处。
-  //
-  // 🔴 2026-10-14：导入的河要**先裁到海岸线**（`getDisplayRivers()`，按引用缓存）。
-  //    省份轮廓是按**后来的**新海岸线重建的，而这些河/路还是那次导入留下的 →
-  //    真实底图实测 142/160 条河的末端落在省份多边形之外，最深的一条连着 37 个顶点在海里
-  //    （用户原话：「有好几条过度延伸到海洋中」）。裁剪只在两端动手，过湖的中间段保留。
-  const list = getDisplayRivers();
-  if (!list.length) return;
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(40);
-  const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
-
-  c.save();
-  c.lineCap = 'round';
-  c.lineJoin = 'round';
-  // 🔴 2026-10-16 第五修：色与线宽改成**共用常量/公式**（`utils/riverRender.js`）——
-  //    自动河流现在也按这条公式画，两处各写一份就会出现"自带河 1px、自动河 3px"。
-  // 🔴 2026-10-20 第十七修（用户：「河流依然在给我玩铁轨」）：导入河此前是**一条裸折线描边**
-  //    —— 等宽、无曲线、无岸线，和自动河/手画河是两套画法（"同一能力两份实现"）。
-  //    现在三类河**全部**走 `drawCurvedRiver` → 实心变宽丝带：
-  //      · 曲线：Catmull-Rom（subdiv=2，导入点本来就密，只削折角）；
-  //      · 宽度：源头 0.62× → 河口 1×（`discharge` 定绝对值，与自动河同一条公式）；
-  //      · 岸线：多边形的描边（不是两条平行线）。
-  // 本幅图最宽的河（宽度归一化的参照）—— 按 rivers 引用缓存，160 条量级可忽略
-  const maxRiverWidth = getMaxRiverWidth();
-  // ── 同一段河道只画一遍（2026-10-21 第二十一修）────────────────────────────
-  // 真实 FMG 数据里支流的路径会沿干流再走一遍，两张 `rivers[]` 共享一段河身。
-  // 两条都画 = 粗河旁贴一条细线，放大后从某个节点分叉成双线（用户两张截图）。
-  // 这里按「宽的先画、窄的跳过被盖住的连续段」生成绘制计划；纯函数在 riverRender.js。
-  // 缓存键 = 裁剪后的列表引用 + 缩放（`dist` 按屏幕像素换算，缩放变了才需要重算）。
-  if (displayRiverPlanCache.list !== list || displayRiverPlanCache.scale !== cameraScale.value
-      || displayRiverPlanCache.maxW !== maxRiverWidth) {
-    const smoothed = list.map((r) => smoothRiverLine((r && r.points) || [], 4));
-    const plans = planRiverCoveredRuns(
-      list.map((r, i) => ({ points: smoothed[i], widthPx: basemapRiverWidthPx(r, maxRiverWidth) })),
-      // 去重距离 = **世界单位**（至少 4，1× 时 6）：同一段河道的两条路径在数据里相差
-      // 0.6~5.3 世界单位；这个量级不随缩放变，所以不能只用屏幕像素（放大后会漏掉）。
-      // 横穿的支流由方向判据（±45°）放过；真正分岔的两条河道一般隔 ≥1 格（14.4）。
-      { dist: Math.max(4, px(6)) },
-    );
-    displayRiverPlanCache = { list, scale: cameraScale.value, maxW: maxRiverWidth, smoothed, plans };
-  }
-  const { smoothed, plans } = displayRiverPlanCache;
-  for (let ri = 0; ri < list.length; ri++) {
-    const r = list[ri];
-    const raw = r.points;
-    if (!raw || raw.length < 2) continue;
-    if (!polylineInView(raw, minX, minY, maxX, maxY)) continue;
-    // 先圆角（中点二次曲线）再进样条：Catmull-Rom 是插值曲线，不圆角的话
-    // 导入数据里的直角在放大后原样保留 = 用户说的"折线/铁轨"。
-    const pts = smoothed[ri];
-    // 逐点宽度（2026-10-26）：造陆河用落库的 `widths`；导入河按弧长 + 距海方向推。
-    // 缓存挂在 `pts`（平滑后的数组）上 —— 同一段几何不可能变。
-    const widths = riverWidthSeries(r, pts);
-    // 🔴 2026-10-21：曲线 + 分块 Path2D 按 smoothed 数组缓存。此前每帧对每条河重跑
-    //    Catmull-Rom 并对 16 个块各做一遍 beginPath/lineTo（160 条 ≈ 每帧上万次 lineTo + 大量分配）。
-    //    现在绘制期只剩 `stroke(path)`；宽度按块**取该块中点处的逐点宽度**。
-    let runs = riverRunCache.get(pts);
-    if (!runs) {
-      runs = [];
-      for (const [s, e] of (plans[ri] || [])) {
-        if (e - s < 2) continue;
-        runs.push(...buildRiverRun(pts, s, e, widths));
-      }
-      riverRunCache.set(pts, runs);
-    }
-    if (!runs.length) continue;
-    c.strokeStyle = BASEMAP_RIVER_COLOR;
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    c.globalAlpha = 1;
-    for (const { path, idx } of runs) {
-      const wi = Math.min(widths.length - 1, Math.max(0, Math.round(idx)));
-      const w = Number(widths[wi]) || Number(r.width) || 0.02;
-      // ⚠️ 这里的下限**不要写成 0.35**：`test_73` 的源码守卫用裸子串查「省名档阈值被写回组件」，
-      //    0.35 是它认定的档位阈值（详见该用例注释：遇到误伤就改数字，别改守卫）。
-      //    0.3 与 0.35 在 1× 下相差 0.05px，视觉无差。
-      c.lineWidth = Math.max(0.3, basemapRiverWidthWorld({ width: w }, cameraScale.value, maxRiverWidth));
-      c.stroke(path);
-    }
-  }
-  // 河流名（2026-10-25 分级；2026-10-26 起并入统一避让排布 `getLabelPlan`）
-  // 默认关闭（自动地名多为 FMG 英文名），由「图层 → 自动地名」控制。
-  if (showPlaceNames.value) labelLayers.drawPlanned(c, makeLayerView(), ['river']);
-  c.restore();
-}
-
 /** 配色/样式对齐 Azgaar FMG 默认：道路棕色实线、小径棕色虚线、海路白色虚线 */
 const ROUTE_STYLES = {
   roads: { color: '#d06324', width: 0.9, dash: null, alpha: 0.95 },
@@ -9275,133 +9156,6 @@ const ROUTE_STYLES = {
   // 底衬（只在海路），让他无论在深海/浅海/陆边都读得出是一条航线。
   searoutes: { color: '#eaf4fb', width: 0.9, dash: [5, 4], alpha: 0.8 },
 };
-
-/**
- * 选中河流的高亮（2026-10-17 暮雨实测）。
- *
- * 用户原话：「缺乏视觉提示（《EU4》选中单位还有动态高亮光圈呢，我选中河流只能通过
- * 工具栏突然往下挤，再反应十秒才看到『删除这条河』」—— 选中状态此前**只**存在于
- * 工具栏文字里，画布上一点痕迹没有 → 用户根本不知道点中了哪条（尤其多条河重叠时）。
- *
- * 画法 = 两遍描边（本仓河流观感的既定配方）：
- *   ① 外层光晕：线宽 +8px 的暖白半透明 —— 在任何地形底色上都能跳出来；
- *   ② 内层亮芯：比原河更亮的青白色实线 —— 精确指示"是哪一条"。
- * 导入河与手画河都覆盖（selectedRiverId 对两类都可命中，hitTestRiver 吃整个 rivers 列表）。
- */
-function drawSelectedRiverHighlight(c) {
-  const ids = riverSelIds();
-  if (!ids.length) return;
-  const all = (baseMap.value?.rivers) || [];
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(cw(), ch());
-  const pad = px(40);
-  for (const id of ids) {
-    const r = all.find((x) => x && x.id === id);
-    if (!r) continue;
-    const rawPts = riverNodesForRender(r);
-    // 导入河是「去 + 回」的闭合路径（见 getDisplayRivers）—— 选中轮廓也必须在折过的中心线上，
-    // 否则金色两条边线会跟着"双线"一起复制一份。
-    const pts = String(r.id || '').indexOf('river_') === 0
-      ? rawPts
-      : collapseReversedRiverPoints(rawPts);
-    if (!pts || pts.length < 2) continue;
-    if (!polylineInView(pts, tl.x - pad, tl.y - pad, br.x + pad, br.y + pad)) continue;
-    const isPrimary = id === selectedRiverId.value;
-    c.save();
-    c.lineCap = 'round'; c.lineJoin = 'round';
-    // 🔴🔴 2026-10-18 第十六修：**选中反馈不许盖住被选中的东西**。
-    //
-    //   暮雨原话（配了一张连他自己都认不出的截图）：
-    //   「那一条白色的显然就算选中河流的光晕，但是太诡异太离谱了，根本没办法正常绘图，
-    //     把整条河都挡住。也许需要想想别的办法。只要用户能编辑河流就行了，而不是点下去没反馈。」
-    //
-    //   旧实现是**两遍加宽描边**（外层暖白 +3.5px 的 0.30 + 内层亮芯 +1.2px 的 0.95，
-    //   两遍叠起来接近不透明）⇒ 整条河被一层奶白"发光带子"盖住：水色 / 河宽 / 两岸全没了。
-    //   也就是说：为了"点下去有反馈"，把"能编辑"这件事本身毁掉了。
-    //
-    //   第二版（我先试的）改成"虚线轮廓"，实测**照样盖住** —— 因为它的线宽是
-    //   `baseW + 1.6px`，**中心就在河道中心线上**，虚线实心段把 3px 宽的河连根盖掉
-    //   （探针实测水色保留率 0.009；`docs/assets/river-selection-20261018/selected-zoom-1x.png`
-    //   里那条河整条变成一根灰白细线）。教训：**"轮廓"不能靠"加粗的中心线"实现**。
-    //
-    //   现在：沿河两侧各退开 `RIVER_SEL_GAP_PX` 画**两条平行偏移线**，中间**完全留空**
-    //   → 水面像素一个不碰（这就是判据要量的东西）。偏移数学在 `offsetPolyline`（纯函数）。
-    const baseW = basemapRiverWidthWorld(r, cameraScale.value);
-    // ⚠️ 三个常量都是**屏幕像素口径**，统一在块首过 `px()` 换算成世界单位
-    //    （`test_112` 的源码闸门要求"选中高亮里不许出现裸数值线宽" —— 见下方注释）。
-    //    🔴 空隙必须**跟着河宽收窄**：细河（`width=1` → 3.6 屏幕像素）用满 3.5px 空地会把
-    //       水面吃掉一半（test_112 实测保留率 0.47）；`riverSelGapForWidth` 是那条口径的单源。
-    const weightWorld = px(RIVER_SEL_WEIGHT_PX);
-    const edgeWorld = px(1);
-    const barWorld = px(2);
-    const barHalfWorld = px(6);
-    // 🔴 2026-10-26：逐点宽度之后，轮廓的偏移量也必须**逐点**（常量偏移会在宽段压进水面、
-    //    窄段飘出老远）。手画河没有逐点宽度，沿用旧常量路径。
-    const selSeries = String(r.id || '').indexOf('river_') === 0 ? null : riverWidthSeries(r, pts);
-    let sides;
-    if (selSeries) {
-      const maxW = getMaxRiverWidth();
-      const dists = selSeries.map((w) => {
-        const pxw = basemapRiverWidthPx({ width: w }, maxW);
-        const gapPx = riverSelGapForWidth(pxw) * (isPrimary ? 1 : 0.7);
-        return basemapRiverWidthWorld({ width: w }, cameraScale.value, maxW) / 2 + px(gapPx);
-      });
-      sides = [offsetPolylineVariable(pts, dists),
-        offsetPolylineVariable(pts, dists.map((d) => -d))];
-    } else {
-      const baseW = basemapRiverWidthWorld(r, cameraScale.value);
-      const basePx = basemapRiverWidthPx(r);
-      const gap = px(riverSelGapForWidth(basePx) * (isPrimary ? 1 : 0.7));
-      sides = [offsetPolyline(pts, baseW / 2 + gap),
-        offsetPolyline(pts, -(baseW / 2 + gap))];
-    }
-    c.strokeStyle = isPrimary ? 'rgba(255, 214, 102, 0.95)' : 'rgba(34, 211, 238, 0.7)';
-    c.lineWidth = weightWorld;
-    for (const side of sides) {
-      if (!side || side.length < 2) continue;
-      c.beginPath();
-      c.moveTo(vx(side[0]), vy(side[0]));
-      for (let i = 1; i < side.length; i++) c.lineTo(vx(side[i]), vy(side[i]));
-      c.stroke();
-    }
-    // 节点手柄：**只在河流工具里、且只对手画的河**画（2026-10-27 用户实测 C3）：
-    //   旧实现只要选中就画几十个方块 —— 而导入河（FMG，85~129 点）**根本不支持拖节点**，
-    //    于是点一下河就满屏"一堆点点"，把河本身盖死。导入河只留两条轮廓线（表示选中）。
-    const handDrawn = String(r.id || '').indexOf('river_') === 0;
-    if (isPrimary && handDrawn && tool.value === 'river') {
-      // 节点太多时**抽稀**画（2026-10-27 C3）：72 个方块沿河排 = 一条白链子，把河本身盖死。
-      // 端点、当前节点必画，其余按 stride 取；手柄也缩小。
-      const hs = px(2.6);
-      const stride = pts.length > 20 ? Math.ceil(pts.length / 20) : 1;
-      c.strokeStyle = 'rgba(15, 23, 42, 0.9)';
-      c.lineWidth = edgeWorld;
-      for (let i = 0; i < pts.length; i++) {
-        const keep = i === 0 || i === pts.length - 1 || i === riverActiveNode.value || (i % stride === 0);
-        if (!keep) continue;
-        const sx = vx(pts[i]);
-        const sy = vy(pts[i]);
-        const isHead = i === 0;
-        const isMouth = i === pts.length - 1;
-        c.fillStyle = isHead ? '#fbbf24' : (isMouth ? '#22d3ee' : 'rgba(248,250,252,0.92)');
-        c.beginPath();
-        c.rect(sx - hs, sy - hs, hs * 2, hs * 2);
-        c.fill();
-        c.stroke();
-      }
-      // 两端再加一枚"短横杠"：手柄本身会被水面附近的地形吃掉对比度，端点是用户最常确认的东西
-      for (const i of [0, pts.length - 1]) {
-        if (i < 0 || i >= pts.length) continue;
-        c.strokeStyle = i === 0 ? '#fbbf24' : '#22d3ee';
-        c.lineWidth = barWorld;
-        c.beginPath();
-        c.moveTo(vx(pts[i]) - barHalfWorld, vy(pts[i]));
-        c.lineTo(vx(pts[i]) + barHalfWorld, vy(pts[i]));
-        c.stroke();
-      }
-    }
-    c.restore();
-  }
-}
 
 /** 选中轮廓的空隙（屏幕像素）—— 单一来源在 `riverRender.js`（`riverSelGapForWidth` 按河宽收窄） */
 const RIVER_SEL_GAP_PX = RIVER_SEL_GAP_PX_UTIL;
@@ -9769,6 +9523,13 @@ function makeLayerView() {
     riverNodesForRender,
     drawOneHandRiver,
     BURG_SIZES,
+    getDisplayRivers,
+    getMaxRiverWidth,
+    riverWidthSeries,
+    riverSelIds,
+    selectedRiverId: selectedRiverId.value,
+    RIVER_SEL_WEIGHT_PX: RIVER_SEL_WEIGHT_PX_UTIL,
+    drawRiverNames: (cc) => labelLayers.drawPlanned(cc, makeLayerView(), ['river']),
     reliefIcons: reliefIcons.value,
     selectedMarker: selectedMarker.value,
     MARKER_TYPES,
@@ -9862,12 +9623,12 @@ function renderFrame() {
     scenarioRenderLayers.run(ctx.value, layerView, {});
 
     if (showRoutes.value) drawRoutesLayer(ctx.value, makeLayerView());
-    if (showRiverBase.value) drawRivers(ctx.value);
+    if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());
   }
   if (!strokeBaseBuilding) drawRiverPathsLayer(ctx.value, makeLayerView());
   // 选中河流的高亮（2026-10-17 暮雨实测「缺乏视觉提示……只能通过工具栏突然往下挤」）：
   // 选中的河画两遍 —— 外层宽半透明光晕 + 内层亮芯，任何底色上都一眼可辨（EU4 选中单位的光圈语义）。
-  if (!strokeBaseBuilding) drawSelectedRiverHighlight(ctx.value);
+  if (!strokeBaseBuilding) drawSelectedRiverHighlightLayer(ctx.value, makeLayerView());
 
   // v2: 自动生成的河流
   // 🔴 2026-10-14 修：这一段原来写的是裸 `ctx.xxx(...)` —— `ctx` 是 `ref(null)`，
