@@ -2741,21 +2741,11 @@ const scenarioLayers = ref({
   raster: { visible: true, label: '底图数据', locked: false, order: 7 },
 });
 
-function isLayerLocked(layerId) {
-  return scenarioLayers.value[layerId]?.locked ?? false;
-}
-
 function toggleLayerLock(layerId) {
   const layer = scenarioLayers.value[layerId];
   if (layer) {
     layer.locked = !layer.locked;
   }
-}
-
-function isLayerEditable(layerId) {
-  const layer = scenarioLayers.value[layerId];
-  if (!layer) return false;
-  return layer.visible && !layer.locked;
 }
 
 // 图层可见性（保留旧 ref 兼容模板）
@@ -2807,7 +2797,6 @@ const mergeProvId = ref(null);
 const vertexEditMode = ref(false);
 const draggingVertex = ref(null); // { provId, vertexIdx }
 const draggingHandle = ref(null); // { provId, vertexIdx, which: 'in'|'out' }（P0-T1 切线手柄）
-const hoveredVertex = ref(null);
 // 拖拽中的临时顶点（仅做渲染预览，不写 store → undo 快照保持正确）
 // `linked` = 跟随一起移动的邻省环（P1）：`[{ provId, ringIdx, points }]`，同样只做预览
 const dragPreview = ref(null); // { provId, points, linked?: Array<{provId, ringIdx, points}> }
@@ -2845,51 +2834,8 @@ let brushMode = 'raise';             // 'raise' | 'lower' | 'smooth'
 const brushPreview = ref(null);      // { x, y, radius } 笔刷预览（hover 显示）
 
 // 笔刷性能优化：空间索引（网格快速定位，避免全量遍历）
-let gridSpatialIndex = null;
-
-function buildSpatialIndex(pts, spacing) {
-  if (!pts || !pts.length) return null;
-  const cellSize = spacing * 2;
-  const cellMap = new Map();
-  let minX = Infinity, minY = Infinity;
-  for (let i = 0; i < pts.length; i++) {
-    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
-    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
-    if (px < minX) minX = px;
-    if (py < minY) minY = py;
-  }
-  for (let i = 0; i < pts.length; i++) {
-    const px = Array.isArray(pts[i]) ? pts[i][0] : pts[i].x;
-    const py = Array.isArray(pts[i]) ? pts[i][1] : pts[i].y;
-    const cx = Math.floor((px - minX) / cellSize);
-    const cy = Math.floor((py - minY) / cellSize);
-    const key = `${cx},${cy}`;
-    if (!cellMap.has(key)) cellMap.set(key, []);
-    cellMap.get(key).push(i);
-  }
-  return { cellSize, minX, minY, cellMap };
-}
-
-function getNearbyIndices(worldX, worldY, radius, spatialIndex) {
-  if (!spatialIndex) return null;
-  const { cellSize, minX, minY, cellMap } = spatialIndex;
-  const minCx = Math.floor((worldX - radius - minX) / cellSize);
-  const maxCx = Math.floor((worldX + radius - minX) / cellSize);
-  const minCy = Math.floor((worldY - radius - minY) / cellSize);
-  const maxCy = Math.floor((worldY + radius - minY) / cellSize);
-  const result = [];
-  for (let cx = minCx; cx <= maxCx; cx++) {
-    for (let cy = minCy; cy <= maxCy; cy++) {
-      const cell = cellMap.get(`${cx},${cy}`);
-      if (cell) result.push(...cell);
-    }
-  }
-  return result;
-}
 
 // 笔刷性能优化：派生节流（拖拽中每 3 帧派生一次）
-let brushFrameCount = 0;
-let pendingDerive = false;
 // 文化/宗教选项
 const availableCultures = computed(() => {
   const hm = baseMap.value?.heightmap;
@@ -3594,7 +3540,6 @@ const tlPlaying = ref(false);
 /** 游标年份（只读派生）—— 轨道位置 / 播放 / 旧调用点用 */
 const tlYear = computed(() => dateToYearValue(tlDate.value));
 /** 游标年份（整数）—— 状态栏显示与「上色即易主」的显式日期用 */
-const tlYearInt = computed(() => (Number.isFinite(tlDate.value?.y) ? tlDate.value.y : 0));
 /** 状态栏日期文本（只到年时只显示年，不谎报 1 月 1 日） */
 const tlDateText = computed(() => formatDate(tlDate.value));
 
@@ -4170,15 +4115,6 @@ const provinceTargets = computed(() => baseMap.value?.terrain || []);
 const provinceTargetOptions = computed(() => provinceTargets.value
   .map((p, i) => ({ p, idx: i + 1 }))
   .filter((o) => !o.p.empty));
-
-/** 当前视口的世界矩形（用于网格裁剪；屏幕坐标 = 相机变换，见 screenToWorld） */
-function viewWorldRect() {
-  const cvs = canvas.value;
-  if (!cvs) return null;
-  const a = screenToWorld(0, 0);
-  const b = screenToWorld(cvs.clientWidth, cvs.clientHeight);
-  return { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
-}
 
 // 🔴 P2（2026-10-09）：原先这一整段「省份网格即时反馈」已删除 ——
 //    `provinceMeshColorOf` / `scheduleProvinceGrid` / `provinceMeshOn` / `drawProvinceMesh`
@@ -5370,42 +5306,6 @@ const RIVER_MIN_SCREEN_PX = 1.8;
 const RIVER_MIN_SCREEN_CAP_PX = 12;
 /** 世界单位硬下限（防病态数据画出 0 宽；数值刻意避开 test_73 守卫的那个字面量） */
 const RIVER_WORLD_FLOOR = 0.4;
-
-/**
- * 自动河网**每一段的弯曲控制点**（2026-10-17 第六修；用户：「不会弯吗？」）。
- *
- * 做法：取段的中点，沿**垂直于该段**的方向偏移一点点 —— 于是每段从直线变成一条小弧。
- * 为什么不做"整条干流一条样条"：段本来就是"每格一小截"（`traceRivers` 的段 = 流向场本身），
- * 单段只有一两格长；把它们串成整条路径需要重建拓扑（那会把"树枝状汇聚"搞丢）。
- * 逐段微弯之后，**整条河在观感上就是弯的**，而拓扑一字不动。
- *
- * 🔴 幅度必须**同时**满足两个约束（缺一个就会坏）：
- *   ① 与段长成比例（`RIVER_MEANDER_RATIO`）——短段小弯、长段大弯，否则短段会被弯成钩子；
- *   ② 有**屏幕像素上限**（`RIVER_MEANDER_MAX_PX`）——否则放大之后弯幅跟着世界单位一起放大，
- *      河会开始自我缠绕（"像意大利面"）。
- *
- * @param {{x0:number,y0:number,x1:number,y1:number,flow:number}} seg
- * @returns {{x:number,y:number}|null} 控制点；段退化时返回 null（调用方退回直线）
- */
-function riverMeanderControl(seg) {
-  const dx = seg.x1 - seg.x0;
-  const dy = seg.y1 - seg.y0;
-  const len = Math.hypot(dx, dy);
-  if (!(len > 1e-6)) return null;
-  // 垂直于段方向的单位向量
-  const nx = -dy / len;
-  const ny = dx / len;
-  // 幅度：段长的 12%，再夹到"屏幕上不超过 N px"
-  const scale = cameraScale.value || 1;
-  const amp = Math.min(len * RIVER_MEANDER_RATIO, RIVER_MEANDER_MAX_PX / scale);
-  // ⚠️ 每段的**弯曲方向必须稳定**（同一段每次重绘要朝同一边），否则平移画布时河会"抖"。
-  //    用一个只依赖段坐标的确定性符号（不是随机数、也不是时间）。
-  const sign = Math.sin((seg.x0 * 12.9898 + seg.y0 * 78.233)) >= 0 ? 1 : -1;
-  return {
-    x: (seg.x0 + seg.x1) / 2 + nx * amp * sign,
-    y: (seg.y0 + seg.y1) / 2 + ny * amp * sign,
-  };
-}
 
 /** 段长的多少比例用作弯曲偏移（12% ≈ 轻微蜿蜒，像真河而不是像折线） */
 const RIVER_MEANDER_RATIO = 0.12;
@@ -7397,14 +7297,6 @@ function getMaxRiverWidth() {
 }
 
 /** 配色/样式对齐 Azgaar FMG 默认：道路棕色实线、小径棕色虚线、海路白色虚线 */
-const ROUTE_STYLES = {
-  roads: { color: '#d06324', width: 0.9, dash: null, alpha: 0.95 },
-  trails: { color: '#d06324', width: 0.5, dash: [2, 3], alpha: 0.85 },
-  // 2026-10-27（用户「海路图还不如之前那个独立模块」）：0.5px + 1.5/3 的短虚线在浅色海面上
-  // 几乎看不见，压在陆地上又像划痕。加宽到 0.9、虚线拉到 5/4，并在 drawRoutes 里加一层深色
-  // 底衬（只在海路），让他无论在深海/浅海/陆边都读得出是一条航线。
-  searoutes: { color: '#eaf4fb', width: 0.9, dash: [5, 4], alpha: 0.8 },
-};
 
 /** 选中轮廓的空隙（屏幕像素）—— 单一来源在 `riverRender.js`（`riverSelGapForWidth` 按河宽收窄） */
 const RIVER_SEL_GAP_PX = RIVER_SEL_GAP_PX_UTIL;
@@ -7434,10 +7326,6 @@ const showMinimap = ref(true);
 // 数据图表（P2-T3 文化/宗教/势力分布）
 const showDataChart = ref(false);
 const dataChartType = ref('culture'); // culture | religion | polity
-
-function toggleDataChart() {
-  showDataChart.value = !showDataChart.value;
-}
 
 /**
  * 🔴 **帧合并的正确位置**（2026-10-17 第七修补正）：只在**高频连续手势**里用，
@@ -8153,12 +8041,6 @@ function labelDetailNow() {
 /** 字号系数（放大略大 / 缩小略小；见 `labelZoom.labelFontScale`） */
 function labelScaleNow() {
   return labelFontScale(mapVisibleRatio());
-}
-
-/** 给标签样式套字号系数（样式常量是 freeze 的，只能返回新对象） */
-function scaleLabelStyle(style, k) {
-  if (!style || !(k > 0) || Math.abs(k - 1) < 1e-6) return style;
-  return { ...style, fontSize: (Number(style.fontSize) || 12) * k };
 }
 
 
