@@ -65,7 +65,9 @@ def _code_only(src):
 def source_gates():
     fails, notes = [], []
     se = _code_only(_read('src/renderer/src/store/geodataModules/scenarioEditing.js'))
-    sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-10-31：动作体搬进 scenario/interaction/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sc = _rsrc_all()
     wg = _code_only(_read('src/renderer/src/store/writeGate.js'))
 
     for src, needle, label in [

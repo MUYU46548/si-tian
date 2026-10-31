@@ -245,7 +245,9 @@ def sub_source_guards():
     ]:
         if needle not in code:
             bad.append(why)
-    map_code = _code_only(_read(MAP))
+    # 2026-10-31：涂归属等动作搬进 scenario/interaction/* —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    map_code = _rsrc_all()
     if 'strokeId:' not in map_code:
         bad.append('ScenarioMap 没把 strokeId（这一笔的 groupId）传给 batchSetOwnership')
     if bad:

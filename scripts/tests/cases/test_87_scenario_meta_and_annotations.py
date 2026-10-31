@@ -61,7 +61,9 @@ def _code_only(src):
 # ══════════════════════════════════════════════════════════════════
 def sub_source_guards(cdp):
     bad = []
-    sm = _code_only(_read(SM))
+    # 2026-10-31：剧本编辑动作搬进 scenario/interaction/actions.js —— 判据读合集
+    from lib.rsrc import render_src_code_only as _rsrc_all
+    sm = _rsrc_all()
     se = _code_only(_read(SE))
     wg = _code_only(_read(WG))
 

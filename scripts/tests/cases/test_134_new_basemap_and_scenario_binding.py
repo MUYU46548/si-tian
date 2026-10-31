@@ -29,6 +29,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 def _source_gates():
     fails = []
     src = open(os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), encoding='utf-8').read()
+    # 2026-10-31：动作体搬进 scenario/interaction/* —— 判据读合集
+    from lib.rsrc import render_src as _rsrc_all
+    src = _rsrc_all()
     checks = [
         ('data-testid="basemap-add-empty"', '工具栏「空底图」按钮'),
         ('function createEmptyBaseMap(', '建空底图的唯一核心'),
