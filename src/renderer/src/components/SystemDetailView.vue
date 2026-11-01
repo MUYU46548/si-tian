@@ -14,8 +14,9 @@
       <div class="header-actions">
         <button
           :class="{ active: show3d }"
-          :disabled="!hasPlanets3d"
-          :title="hasPlanets3d ? '进入 3D 观景（可旋转/缩放，Esc 返回）' : '3D 观景需要至少 1 颗行星'"
+          :title="hasPlanets3d
+            ? '进入 3D 观景（可旋转/缩放，Esc 返回）'
+            : '进入 3D 观景（本系暂无行星，只显示恒星；可旋转/缩放，Esc 返回）'"
           data-testid="system-3d-open"
           @click="openSystem3d"
         >
@@ -90,7 +91,8 @@ import { SPACE_MARKER_TYPES, FLEET_KINDS } from '../store/geodataModules/spaceEd
 import { usePromptDialog } from '../composables/usePromptDialog';
 import PanelShell from './PanelShell.vue';
 import ContextMenu from './ContextMenu.vue';
-import { buildSystem3dScene } from '../utils/system3dScene.js';
+import { buildSystem3dScene, planetClassForNode } from '../utils/system3dScene.js';
+import { getPlanetDisc } from '../utils/planetArt.js';
 
 // 3D 观景：异步组件（本文件静态 import 只拿到一个壳，three 在子组件挂载后才动态加载）
 const System3DView = defineAsyncComponent(() => import('./System3DView.vue'));
@@ -270,7 +272,9 @@ const spec3d = computed(() => buildSystem3dScene({
 }));
 const hasPlanets3d = computed(() => (spec3d.value?.counts?.planets || 0) > 0);
 function openSystem3d() {
-  if (!hasPlanets3d.value) return;
+  // 2026-11-01：**不再要求"至少 1 颗行星"**。
+  // 原来 0 行星时按钮是灰的 —— 用户点了没反应，就直接判成「3D 观景没做」。
+  // 0 行星也该能进（至少能看恒星、能确认观景可用），所以只留一句说明，不再拦。
   show3d.value = true;
 }
 
@@ -945,36 +949,44 @@ function drawPlanets(ctx) {
       ctx.setLineDash([]);
     }
 
-    if (matched) {
-      ctx.fillStyle = isCurrent ? '#ffd700' : '#ffaa00';
-      ctx.shadowColor = isCurrent ? 'rgba(255, 200, 50, 0.8)' : 'rgba(255, 170, 0, 0.6)';
-      ctx.shadowBlur = isCurrent ? 15 : 8;
-    } else if (isHovered) {
-      ctx.fillStyle = '#7affb4';
-      ctx.shadowColor = 'rgba(100, 255, 180, 0.6)';
-      ctx.shadowBlur = 10;
-    } else {
-      ctx.fillStyle = planet.isMoon ? '#c9d1d9' : getPlanetColor(planet.layer);
-    }
     const r = (planet.isMoon ? 3 : getPlanetRadius(planet.layer, planet) + (matched ? 2 : 0) + 1);
-    // C1: 图标优化 — 空间站绘制为方块（区别于行星圆点），标签在 tags 第二项
+    // C1: 图标优化 — 空间站绘制为方块（区别于行星），标签在 tags 第二项
     const isStation = planet.tags && planet.tags.includes('空间站');
+
     if (isStation) {
+      ctx.fillStyle = matched ? (isCurrent ? '#ffd700' : '#ffaa00') : isHovered ? '#7affb4' : getPlanetColor(planet.layer);
       ctx.beginPath();
       ctx.rect(planet.x - r, planet.y - r, r * 2, r * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 1;
       ctx.stroke();
     } else {
-      ctx.beginPath();
-      ctx.arc(planet.x, planet.y, r, 0, Math.PI * 2);
-      ctx.fill();
+      // 2D 行星圆盘（2026-11-01）：与 3D 观景共用 `planetArt` 的类别纹理与光照口径，
+      // 不再是"一堆一模一样的纯色圆点"。类别由 `planetClassForNode` 决定（用户显式设的优先）。
+      const classId = planetClassForNode(planet, { fallbackLayer: planet.isMoon ? 'moon' : 'planet' });
+      // 视觉放大 1.45×（**命中半径不变**）：7px 的球看不清纹理，而放大命中区会改变点选手感。
+      const vis = planet.isMoon ? r : r * 1.45;
+      const pxSize = Math.max(24, Math.round(vis * 2 * scale));
+      const disc = getPlanetDisc(classId, pxSize);
+      const d = (vis * 2) / 0.94;   // 圆盘可见直径 = 画布 0.94 → 反算绘制边长
+      if (matched || isHovered) {
+        ctx.shadowColor = matched
+          ? (isCurrent ? 'rgba(255, 200, 50, 0.85)' : 'rgba(255, 170, 0, 0.6)')
+          : 'rgba(100, 255, 180, 0.6)';
+        ctx.shadowBlur = matched ? (isCurrent ? 15 : 8) : 10;
+      }
+      ctx.drawImage(disc, planet.x - d / 2, planet.y - d / 2, d, d);
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+
+      // 匹配 / 悬停的颜色语义保留（颜色只出现在外圈，不再糊住球体本身）
+      if (matched || isHovered) {
+        ctx.beginPath();
+        ctx.arc(planet.x, planet.y, r + 2.5, 0, Math.PI * 2);
+        ctx.strokeStyle = matched ? (isCurrent ? '#ffd700' : '#ffaa00') : '#7affb4';
+        ctx.lineWidth = Math.max(0.8, 1.6 / scale);
+        ctx.stroke();
+      }
     }
 
     if (!renderer.isFastMode()) {

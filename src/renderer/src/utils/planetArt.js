@@ -238,4 +238,78 @@ export function getPlanetTexture(classId) {
 /** 仅测试/诊断用：清空纹理缓存（正常流程不清，纹理常驻对 3D 观景是收益）。 */
 export function __clearTextureCache() {
   textureCache.clear();
+  discCache.clear();
+}
+
+// ===== 2D 行星圆盘（恒星系 2D 观景用；2026-11-01）=====
+// 复用同一份 `getPlanetTexture`（3D 球面贴图）——**不新造一套配色**，只是把它按球面明暗压成圆盘。
+// 为什么要它：`SystemDetailView` 原先每颗行星是一个纯色圆点（7px），一堆行星长得一模一样，
+// 与原型「下钻恒星系视图」差着一整个美术层（`refs/src/sp1025-system-drilldown.png`）。
+const discCache = new Map();
+
+/** 贴图取样高度（等距圆柱的赤道带；取太高会把极区压扁） */
+const DISC_TEX_BAND = 64;
+
+/**
+ * 行星圆盘 sprite（带光照/边缘大气），**按 (类别, 像素档) 缓存**。
+ * @param {string} classId
+ * @param {number} px 目标像素直径（内部取 48/96/128 档，避免每帧重画）
+ * @returns {HTMLCanvasElement}
+ */
+export function getPlanetDisc(classId, px = 48) {
+  const cid = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
+  const bucket = px <= 48 ? 48 : px <= 96 ? 96 : 128;
+  const key = `${cid}:${bucket}`;
+  const hitP = discCache.get(key);
+  if (hitP) return hitP;
+
+  const def = planetClassDef(cid);
+  const S = bucket;
+  const R = S / 2;
+  const c = document.createElement('canvas');
+  c.width = S;
+  c.height = S;
+  const g = c.getContext('2d');
+
+  g.save();
+  g.beginPath();
+  g.arc(R, R, R * 0.94, 0, Math.PI * 2);
+  g.clip();
+
+  // 底：类别主色（贴图覆盖不到的地方不露白）
+  g.fillStyle = def.base;
+  g.fillRect(0, 0, S, S);
+
+  // 贴图：取赤道带一块铺满圆盘（等价于"正面"）
+  const tex = getPlanetTexture(cid);
+  g.drawImage(tex, 0, (tex.height - DISC_TEX_BAND) / 2, tex.width, DISC_TEX_BAND, 0, 0, S, S);
+
+  // 球面光照：左上受光、右下入影（与 3D 观景同侧，切视图不"翻灯"）
+  const shade = g.createRadialGradient(R * 0.62, R * 0.58, R * 0.08, R, R, R * 1.02);
+  shade.addColorStop(0, 'rgba(255,255,255,0.20)');
+  shade.addColorStop(0.42, 'rgba(0,0,0,0)');
+  shade.addColorStop(1, 'rgba(0,0,0,0.74)');
+  g.fillStyle = shade;
+  g.fillRect(0, 0, S, S);
+
+  // 极冠（有 cap 的类别：顶部一条冷色带，别让"极地星球"看起来像普通球）
+  if (def.cap) {
+    g.globalAlpha = 0.5;
+    g.fillStyle = def.cap;
+    g.beginPath();
+    g.ellipse(R, R * 0.12, R * 0.92, R * 0.3, 0, 0, Math.PI * 2);
+    g.fill();
+    g.globalAlpha = 1;
+  }
+  g.restore();
+
+  // 边缘：大气辉光 + 一圈细轮廓（远景也看得出是个球，而不是色块）
+  g.beginPath();
+  g.arc(R, R, R * 0.94, 0, Math.PI * 2);
+  g.strokeStyle = hexAlpha(def.atmosphere || def.base, 0.55);
+  g.lineWidth = Math.max(1, S * 0.035);
+  g.stroke();
+
+  discCache.set(key, c);
+  return c;
 }
