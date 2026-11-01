@@ -1036,13 +1036,16 @@ async function handleExportFullPNG() {
     ctx.shadowColor = color;
     ctx.shadowBlur = 8;
     ctx.strokeStyle = color;
-    ctx.lineWidth = h.type === 'cross_domain' ? 2.5 : 2;
-    if (h.type === 'cross_domain') ctx.setLineDash([8, 5]);
+    // 线宽与画布同口径收细（2026-11-01）：旧值 2.5 在 3617px 的图上仍把整幅铺成紫色虚线网。
+    ctx.lineWidth = (h.type === 'cross_domain' ? 1.2 : 1.6) * uiScale;
+    ctx.globalAlpha = 0.75;
+    if (h.type === 'cross_domain') ctx.setLineDash([6 * uiScale, 5 * uiScale]);
     ctx.beginPath();
     ctx.moveTo(fp.x, fp.y);
     ctx.lineTo(tp.x, tp.y);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
     ctx.restore();
   });
   
