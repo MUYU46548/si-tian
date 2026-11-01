@@ -22,8 +22,8 @@
 | 主题 | 参照物（已拷进 `src/`，原名见括注） | 现状 | 目标 |
 |---|---|---|---|
 | **星系/星域总览** | `src/sp1025-galaxy-mid.png`（成品图5-最终-中景105）、`src/sp1025-galaxy-far.png`（成品图6-最终-远景22）、`src/sp1025-galaxy-final.png`（成品图13-收尾版）、`src/sp1025-galaxy-ownership.png`（成品图7-所有权场） | 🟡 **2026-11-01 已内化第一层**：背景资产（星云/尘埃带/三层星场/暗角）、恒星色温分级 + 归属环 + 光晕、LOD 标签（无底框 + 贪心避让）已进 `src/renderer/src/galaxy/`，画布与「导出 PNG(全图)」共用（`test_117` 守）。**未内化**：所有权场 φ 的软融合轮廓（司天仍用凸包/覆盖点边界）、星云按图幅自适应 | 继续：边界改软融合、按视口裁星云 |
-| **恒星系 2D 观景（伪 3D）** | `src/sp1025-system-drilldown.png`（成品图11-下钻恒星系视图）、`src/sp1025-system-2d-pseudo3d.png`（小样-方案A-伪3D） | ⏳ 未吸收：`SystemView` 是聚合视图，`SystemDetailView` 是线框轨道 + `utils/planetArt.js` 已有 18 类行星纹理但未用于构图 | 下钻后：恒星辉光 + 行星贴 sprite（按 `planetClass`）+ 轨道分级 |
-| **3D 观览** | `src/sp1025-system-3d.png`（成品图12-3D观景模式） | 🟡 代码存在且已接线（`SystemDetailView` 内 `System3DView`），但入口不显眼 → 用户没找到 | 入口提到 2D 视图工具条/面包屑，可发现性先修 |
+| **恒星系 2D 观景（伪 3D）** | `src/sp1025-system-drilldown.png`（成品图11-下钻恒星系视图）、`src/sp1025-system-2d-pseudo3d.png`（小样-方案A-伪3D） | 🟡 **2026-11-01 已内化第一层**：行星改贴 `getPlanetDisc()`（复用 3D 同一份纹理：球面光照/极冠/大气边缘），类别走 `planetClassForNode` | 继续：轨道分级（远景细线/近景带刻度）、恒星日冕、行星名沿轨道排字 |
+| **3D 观览** | `src/sp1025-system-3d.png`（成品图12-3D观景模式） | ✅ **可发现性已修（2026-11-01）**：去掉「0 行星就灰禁」，任何恒星系都能进 3D；`test_163` 6 轮开关全过 | — |
 
 > ⚠️ 原型目录 `E:\CODE\CangKu\SP-1025` 是临时产物，随时可能被清理 ——
 > **图和要用的美术/算法都已拷进本仓**（图在 `refs/src/`，代码在 `src/renderer/src/galaxy/`），
