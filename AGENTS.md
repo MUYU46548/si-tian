@@ -86,7 +86,11 @@
 
 - **现行规划（2026-10-30 起：`docs/plan/PLAN_AUDIT_20261030.md` 是唯一施工依据）**：
   - **总入口** = [docs/plan/PLAN_AUDIT_20261030.md](docs/plan/PLAN_AUDIT_20261030.md)（阶段门 N0/N1/N2/N3/N4 + 判据 + 已拍板事项）；
-    **接手先读** [docs/plan/BREAKPOINT_20261031.md](docs/plan/BREAKPOINT_20261031.md)（当前断点：做到哪、还差什么、怎么继续、踩过的坑）。
+    **接手先读** [docs/plan/BREAKPOINT_20261101.md](docs/plan/BREAKPOINT_20261101.md)（当前断点：**临时产物内化第一刀** ——
+    星域总览美术 / 本地参照图库 `refs/` / 行星「空地图」判定；行数拆分进度见上一版 `BREAKPOINT_20261031.md`）。
+  - **本地参照图库 `refs/`（2026-11-01）**：动任何视觉之前先读 `refs/MANIFEST.md`。
+    目录只有 `README.md` + `MANIFEST.md` 入库，**图片一律 gitignore**（用户截图/第三方画面，不入库）；
+    新增参看图必须同时在清单里写「要抄的事实 + 吸收状态」，否则下一轮等于没喂过。
   - 参照件（不是施工令）：`docs/guides/20261023/00-…`（路线/红线）、`docs/plan/SITIAN_GUIDE_DIGEST_20261023.md`（仓内对账）、
     `docs/plan/CHASSIS_BASELINE_20261023.md`（性能基线）、`docs/plan/INTEGRATION_AUDIT_20261030.md`（模块集成审计）。
   - **已被取代的规划/交接件已全部移入 [`docs/archive/`](docs/archive/)**（TODO_REMAINING_20261028 / REMAINING_BACKLOG_20261027 /
@@ -172,7 +176,7 @@
 | area | AreaMap | 区域地图：区域多边形、道路、标记、文本、建筑入口 |
 | interior | InteriorView | 建筑内部：楼层切换 + 家具放置 |
 
-> 两套绘制风格独立维护：GalaxyMap 用 `utils/galaxyDrawing.js` + `composables/spaceBackground.js`；PlanetMap 用 `composables/planetDrawing.js`。禁止互相套用。
+> 两套绘制风格独立维护：GalaxyMap 用 `galaxy/{sky,starArt,labels}.js`（2026-11-01 内化自 SP-1025 原型，**画布与「导出 PNG(全图)」共用同一份**，`test_117` 守）+ `utils/galaxyLayout.js`（布局/配色/航道的唯一实现）；SystemView / SystemDetailView 用 `composables/spaceBackground.js`；PlanetMap 用 `composables/planetDrawing.js`。禁止互相套用。
 
 ## 数据模型
 

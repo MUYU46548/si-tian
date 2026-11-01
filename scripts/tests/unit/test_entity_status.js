@@ -133,7 +133,9 @@ async function main() {
     const SITES = [
       { file: 'src/renderer/src/composables/planetDrawing.js', fns: ['drawPlaces'], save: 1, restore: 1 },
       // GalaxyMap 多一个 restore：lod 分支有一个**中途 return**，save 后必须先收尾
-      { file: 'src/renderer/src/components/GalaxyMap.vue', fns: ['drawGalaxyNodes'], save: 1, restore: 2 },
+      // GalaxyMap 的淡化值仍在组件里算（fadedAlpha），但**真正落 alpha 的绘制入口**已在
+      // 2026-11-01 搬进 `galaxy/starArt.js#paintStar`（吸收 SP-1025 美术）。这条改守"接得上"：
+      //   ① 组件确实算了 fade 并交给 paintStar；② starArt 的 save/restore 必须成对、alpha 来自 fade。
       { file: 'src/renderer/src/components/SystemView.vue', fns: ['drawSystemStar', 'drawSystemPlanets'], save: 2, restore: 2 },
       { file: 'src/renderer/src/components/SystemDetailView.vue', fns: ['drawStar', 'drawPlanets'], save: 2, restore: 2 },
       { file: 'src/renderer/src/components/AreaMap.vue', fns: ['drawNodes'], save: 1, restore: 1 },
@@ -149,6 +151,18 @@ async function main() {
       eq(count(src, SAVE), site.save, `${site.file} 的淡化 save 数`);
       eq(count(src, RESTORE), site.restore, `${site.file} 的淡化 restore 数（必须与 save 配对，否则 alpha 会泄漏）`);
     }
+
+    // ① 组件侧：算 fade → 交给唯一绘制入口
+    const gm = fs.readFileSync(path.join(ROOT, 'src/renderer/src/components/GalaxyMap.vue'), 'utf8');
+    assert(gm.includes('fadedAlpha'), 'GalaxyMap 未引入 fadedAlpha');
+    assert(/fade[^\n]*\n?/.test(gm) && /paintStar\(/.test(gm), 'GalaxyMap 没有把 fade 交给 paintStar —— 淡化会静默失效');
+    // ② 绘制侧：alpha 来自 fade，且 save/restore 成对
+    const sa = fs.readFileSync(path.join(ROOT, 'src/renderer/src/galaxy/starArt.js'), 'utf8');
+    assert(sa.includes('globalAlpha = fade'), 'starArt.paintStar 没有按 fade 设 globalAlpha');
+    const saSave = count(sa, 'ctx.save()');
+    const saRestore = count(sa, 'ctx.restore()');
+    assert(saSave >= 1, 'starArt 一处 save 都没有');
+    eq(saRestore, saSave, 'starArt 的 restore 数（必须与 save 配对数，否则 alpha 会泄漏）');
     return `${SITES.length} 个视图 / ${SITES.reduce((a, s) => a + s.fns.length, 0)} 个绘制入口`;
   });
 

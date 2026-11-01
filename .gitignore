@@ -121,3 +121,12 @@ build/*.zip
 
 # N1 像素基线（drill_scenario_pixels.py 的产物：同机位截图 + 指纹，本地证据）
 build/pixel-baseline/
+
+# 本地参看图库（2026-11-01 用户要求）：只留清单与说明，图/截图/对照产物一律不入库
+# 为什么：参看图多是用户截图或第三方软件画面（含用户数据 / 版权风险）
+refs/*
+!refs/README.md
+!refs/MANIFEST.md
+
+# 星域总览美术 A/B 截图（2026-11-01，本地证据，禁止提交）
+build/galaxy-art/

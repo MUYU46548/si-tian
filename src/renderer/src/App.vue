@@ -410,6 +410,12 @@ import { iconSvg } from './utils/iconSvg';
 import {
   layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, nodeColor, nodeRadius, STARFIELD,
 } from './utils/galaxyLayout';
+// 星系美术（2026-11-01 吸收 SP-1025 原型）：背景资产 / 恒星色温与归属环 / LOD 标签。
+// 🔴 画布（GalaxyMap.vue）与本导出**调同一份** —— 任何一边自己再画一套，就又回到
+//    「导出的图和屏幕上的不是一回事」（§bug 导出与画布不同源）那条老病。
+import { paintGalaxySky } from './galaxy/sky';
+import { paintStar, paintDomainMarker } from './galaxy/starArt';
+import { collectStarLabels, cullStarLabels, paintStarLabels } from './galaxy/labels';
 import { withAlpha } from './utils/colorUtil';
 // 打开知识库本体（用户需求：一键可达的「打开 Obsidian 知识库」入口）
 import { openVault } from './utils/vault';
@@ -974,42 +980,18 @@ async function handleExportFullPNG() {
   const isDark = currentTheme.value !== 'light';
   const textColor = isDark ? '#e8edf6' : '#1f2328';
   
-  // 1. 背景渐变（暗色：深蓝灰径向；亮色：浅灰线性）
+  // 1. 背景：**与画布同一份资产**（星云 / 尘埃带 / 三层星场 / 暗角，`galaxy/sky.js`）
+  //    🔴 2026-11-01：旧实现是「径向渐变 + 6 团固定星云 + 300 个取模点」——
+  //       与画布那片天不是一回事（§bug 导出与画布不同源）。现在两边都调 `paintGalaxySky`。
   if (isDark) {
-    const bg = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(width, height) * 0.72);
-    bg.addColorStop(0, '#151b2e');
-    bg.addColorStop(0.5, '#0f1424');
-    bg.addColorStop(1, '#0a0e1a');
-    ctx.fillStyle = bg;
+    paintGalaxySky(ctx, { x: minX, y: minY, w: width, h: height });
   } else {
     const bg = ctx.createLinearGradient(0, minY, 0, maxY);
     bg.addColorStop(0, '#f8fafc');
     bg.addColorStop(1, '#eef2f7');
     ctx.fillStyle = bg;
+    ctx.fillRect(minX, minY, width, height);
   }
-  ctx.fillRect(minX, minY, width, height);
-  
-  // 2. 星云 + 星尘（仅暗色主题）：**取共享星云谱**（世界坐标固定，与画布同一条谱）
-  if (isDark) {
-    for (const neb of STARFIELD.nebulae) {
-      if (neb.x + neb.r < minX || neb.x - neb.r > maxX || neb.y + neb.r < minY || neb.y - neb.r > maxY) continue;
-      const g = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
-      g.addColorStop(0, neb.color);
-      g.addColorStop(0.6, neb.color.replace(/[\d.]+\)$/, '0.0)'));
-      g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g;
-      ctx.fillRect(neb.x - neb.r, neb.y - neb.r, neb.r * 2, neb.r * 2);
-    }
-    ctx.fillStyle = 'rgba(220, 230, 245, 0.12)';
-    for (let i = 0; i < 300; i++) {
-      const x = minX + ((i * 97 + 23) % Math.floor(width));
-      const y = minY + ((i * 61 + 41) % Math.floor(height));
-      ctx.beginPath();
-      ctx.arc(x, y, (i % 3) * 0.4 + 0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  
   // 3. 势力边界：**共享 `factionBorders`**（覆盖点 / 星系数<3 的正多边形 / 凸包外扩 50 —— 与画布同值）
   for (const border of factionBorders({
     domainNodes, galaxyNodes, overrides: store.domainBorderOverrides,
@@ -1027,20 +1009,18 @@ async function handleExportFullPNG() {
     ctx.lineWidth = 2.5;
     ctx.lineJoin = 'round';
     ctx.stroke();
-    // 星域名标签（带衬底，保证可读）
+    // 星域名：**无底框墨字**（与画布同口径；EU4 参考图 `refs/src/20261027-08-eu4-1518.jpg`）
     const label = border.name;
-    const labelPx = Math.round(13 * uiScale);
-    ctx.font = `bold ${labelPx}px sans-serif`;
+    const labelPx = Math.round(17 * uiScale);
+    ctx.font = `600 ${labelPx}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const m = ctx.measureText(label);
-    const padY = Math.round(12 * uiScale);
-    ctx.fillStyle = isDark ? 'rgba(10, 14, 26, 0.72)' : 'rgba(255, 255, 255, 0.8)';
-    ctx.beginPath();
-    ctx.roundRect(cx - m.width / 2 - padY * 0.7, cy - padY, m.width + padY * 1.4, padY * 2, Math.round(5 * uiScale));
-    ctx.fill();
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = isDark ? 'rgba(4, 7, 14, 0.78)' : 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 3.2 * uiScale;
+    ctx.strokeText(label, cx, cy);
     ctx.fillStyle = color;
-    ctx.fillText(label, cx, cy + 1);
+    ctx.fillText(label, cx, cy);
   }
   
   // 4. 航道（分类型颜色 + 辉光，跨域虚线）：颜色走共享 `hyperlaneColor`（**4 类**，含用户建的）
@@ -1066,47 +1046,46 @@ async function handleExportFullPNG() {
     ctx.restore();
   });
   
-  // 5. 节点 + 光晕 + 亮核 + 带衬底名称标签（导出可读性核心）
-  //    ⚠️ 星系用**布局位置 + 势力色**（与画布一致）。
-  //    🔴 2026-10-30：这里原先把 `nodes` 里所有更深层的节点（planet/city/facility…）也画上来，
-  //       位置取它们自己的 `coordinate` —— 那是提取器的同心圆布局，与星域视图毫无关系。
-  //       画布（GalaxyMap）根本不画它们，导出却画，于是"导出的图和屏幕上的不是一回事"。
-  const drawList = [...domainNodes, ...galaxyNodes];
-  drawList.forEach(n => {
-    const p = posOf(n);
-    if (!p) return;
-    const color = nodeColor(n, { isDark });
-    const r = nodeRadius(n.layer) * uiScale;
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 10 * uiScale;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    ctx.arc(p.x - 1, p.y - 1, r * 0.35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
-    const label = n.displayName || n.name;
-    const labelPx = Math.round(10 * uiScale);
-    ctx.font = (n.layer === 'world' || n.layer === 'star_domain' ? 'bold ' : '') + `${labelPx}px sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    const m = ctx.measureText(label);
-    const pad = Math.round(4 * uiScale);
-    const plateH = labelPx + pad * 2;
-    ctx.fillStyle = isDark ? 'rgba(8, 12, 22, 0.65)' : 'rgba(255, 255, 255, 0.75)';
-    ctx.beginPath();
-    ctx.roundRect(p.x + r + pad, p.y - plateH / 2, m.width + pad * 2, plateH, Math.round(3 * uiScale));
-    ctx.fill();
-    ctx.fillStyle = textColor;
-    ctx.fillText(label, p.x + r + pad * 2, p.y + 1);
-  });
-
+  // 5. 节点：**与画布同一份美术**（`galaxy/starArt.js` + `galaxy/labels.js`）
+  //    · 星系 = 色温主星体 + 归属色细环 + 光晕（导出态不闪、不画悬停）
+  //    · 星域 = 中心标记（回归契约：每个节点必须有一个半径 ≥ 5 的 arc 落在布局位置上）
+  //    · 名字走 LOD 收集 + 贪心避让，**无底框**（旧实现在 5468px 位图上糊成一排黑砖）
+  //    🔴 2026-10-30 口径不变：只画星域 + 星系，更深层节点的旧坐标不进图（否则图幅被撑开）。
+  const degreeOf = new Map();
+  for (const h of hyperlanes) {
+    degreeOf.set(h.fromId, (degreeOf.get(h.fromId) || 0) + 1);
+    degreeOf.set(h.toId, (degreeOf.get(h.toId) || 0) + 1);
+  }
+  const starEntries = [];
+  for (const g of galaxyNodes) {
+    const p = posOf(g);
+    if (!p) continue;
+    const star = {
+      id: g.id,
+      x: p.x,
+      y: p.y,
+      name: g.displayName || g.name,
+      factionColor: g.factionColor,
+      degree: degreeOf.get(g.id) || 0,
+      matched: false,
+      current: false,
+      fade: 1,
+    };
+    paintStar(ctx, star, { scale: 1, lod: 1, exportMode: true, uiScale });
+    starEntries.push(star);
+  }
+  for (const d of domainNodes) {
+    const p = posOf(d);
+    if (!p) continue;
+    paintDomainMarker(ctx, { ...d, x: p.x, y: p.y }, { exportMode: true, uiScale });
+  }
+  // 星系名（星域名已在边界那段画过；这里只画星系的，避免同名两套口径）
+  const exportLabels = cullStarLabels(
+    collectStarLabels(starEntries, { scale: 1 }),
+    ctx,
+    { fontPx: Math.round(11 * uiScale) },
+  );
+  paintStarLabels(ctx, exportLabels, { scale: 1, fontPx: Math.round(11 * uiScale), isDark });
   tmpCanvas.toBlob(async (blob) => {
     if (!blob) {
       statusText.value = '导出失败：位图为空';

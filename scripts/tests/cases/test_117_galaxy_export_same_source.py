@@ -82,17 +82,25 @@ def source_gates():
         src = app if 'App.vue' in why else gm
         if bad in src:
             fails.append(f'🔴 {why}（`{bad}`）')
+    # 2026-11-01：节点美术已搬进 `galaxy/*`（吸收 SP-1025 原型），导出与画布都调这一份。
+    # 原来这里的 `nodeColor(` / `nodeRadius(` 是"导出侧不许自带第二套配色"的守卫；
+    # 现在同一描述改由 `paintStar(` / `paintDomainMarker(` / `paintGalaxySky(` 承担 ——
+    # 三件都在 `src/renderer/src/galaxy/`，GalaxyMap 与 App.vue 各 import 同一份。
     for needle, why in (
         ('layoutDomains(', '星域布局'),
         ('layoutGalaxies(', '星系布局'),
         ('factionBorders(', '势力边界（覆盖点/正多边形/凸包外扩）'),
         ('hyperlaneColor(', '航道配色（4 类）'),
-        ('nodeColor(', '节点配色（星系用势力色）'),
-        ('nodeRadius(', '节点半径'),
+        ('paintGalaxySky(', '背景资产（星云/尘埃带/星场/暗角）'),
+        ('paintStar(', '恒星美术（色温 + 归属环 + 光晕）'),
+        ('paintDomainMarker(', '星域中心标记'),
         ('STARFIELD', '星云谱（世界坐标固定，两边同一条）'),
     ):
         if needle not in app:
             fails.append(f'🔴 导出没有走共享 {why}（找不到 `{needle}`）')
+    for needle, why in (('paintGalaxySky(', '背景资产'), ('paintStar(', '恒星美术'), ('paintStarLabels(', '标签层')):
+        if needle not in gm:
+            fails.append(f'🔴 画布没有走共享 {why}（找不到 `{needle}`）—— 画布会退回自己那套')
     if gm.count('hyperlaneColor(h,') < 1:
         fails.append('🔴 画布的航道配色没有走共享 hyperlaneColor（4 类会退化成画布自己一套）')
     for bad in ("color + '", 'const nebulae = ['):

@@ -142,8 +142,13 @@ import { withAlpha, toHex6 } from '../utils/colorUtil';
 // （§bug 导出与画布不同源：这些原先在 App.vue 里各有一份，两边结果不一致且不报错）
 import {
   getFactionColor, resolveDomainColor as resolveDomainColorShared,
-  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, STARFIELD,
+  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor,
 } from '../utils/galaxyLayout';
+// 星系绘制美术（**吸收自 SP-1025 原型**，2026-11-01）：背景资产 / 恒星色温与归属环 / LOD 标签。
+// 🔴 这三件同时被「导出 PNG(全图)」（App.vue）调用 —— 同一份实现，不许各画一套。
+import { paintGalaxySky, GALAXY_SKY_RECT } from '../galaxy/sky';
+import { paintStar } from '../galaxy/starArt';
+import { collectStarLabels, cullStarLabels, paintStarLabels, labelLodFor } from '../galaxy/labels';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -605,89 +610,12 @@ function onRender(ctx, w, h) {
 }
 
 // ===== 背景 =====
-function drawStarfield(ctx, w, h) {
-  // 1. 基础深空渐变 — 从中心微亮到边缘暗角
-  const bgGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 3500);
-  bgGradient.addColorStop(0, '#1a2035');
-  bgGradient.addColorStop(0.4, '#141828');
-  bgGradient.addColorStop(0.7, '#0e1220');
-  bgGradient.addColorStop(1, '#0a0e18');
-  ctx.fillStyle = bgGradient;
-  ctx.fillRect(-5000, -5000, 10000, 10000);
-  
-  // 2. 星云层 — 更多层、更低 opacity、有机分布
-  // ⚠️ 星云谱取自 `utils/galaxyLayout.js` 的 `STARFIELD`（**世界坐标固定**）：导出 PNG(全图) 也取它，
-  //    原先导出按图幅重掷星云 → "导出的背景和屏幕上的背景是两片不同的星云"（§bug 导出与画布不同源）。
-  const nebulae = STARFIELD.nebulae;
-  
-  for (const neb of nebulae) {
-    const nebGradient = ctx.createRadialGradient(neb.x, neb.y, 0, neb.x, neb.y, neb.r);
-    nebGradient.addColorStop(0, neb.color);
-    nebGradient.addColorStop(0.4, neb.color.replace(/[\d.]+\)$/, (parseFloat(neb.color.match(/[\d.]+\)$/)[0]) * 0.5) + ')'));
-    nebGradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = nebGradient;
-    ctx.fillRect(neb.x - neb.r, neb.y - neb.r, neb.r * 2, neb.r * 2);
-  }
-  
-  // 3. 网格线 — 更暗、更细腻
-  ctx.strokeStyle = 'rgba(60, 80, 120, 0.12)';
-  ctx.lineWidth = 0.5;
-  const gridSize = 200;
-  for (let gx = -2500; gx <= 2500; gx += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(gx, -2500);
-    ctx.lineTo(gx, 2500);
-    ctx.stroke();
-  }
-  for (let gy = -2500; gy <= 2500; gy += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(-2500, gy);
-    ctx.lineTo(2500, gy);
-    ctx.stroke();
-  }
-  
-  // 4. 星空粒子 — 多层、不同大小和亮度
-  for (let layer = 0; layer < 5; layer++) {
-    const alpha = 0.08 + layer * 0.04;
-    const count = 150 + layer * 60;
-    const sizeBase = 0.3 + layer * 0.3;
-    const seedOffset = layer * 234;
-    ctx.fillStyle = `rgba(220, 230, 245, ${alpha})`;
-    for (let i = seedOffset; i < count + seedOffset; i++) {
-      const x = ((i * 97 + 23 + layer * 137) % 3500) - 1750;
-      const y = ((i * 61 + 41 + layer * 89) % 3500) - 1750;
-      const size = sizeBase + (i % 5) * 0.2;
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  
-  // 5. 亮星 — 带光晕
-  for (let i = 0; i < 20; i++) {
-    const x = ((i * 137 + 53) % 3000) - 1500;
-    const y = ((i * 89 + 67) % 3000) - 1500;
-    const starGlow = ctx.createRadialGradient(x, y, 0, x, y, 4);
-    starGlow.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-    starGlow.addColorStop(1, 'transparent');
-    ctx.fillStyle = starGlow;
-    ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.beginPath();
-    ctx.arc(x, y, 1.2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  
-  // 6. 暗角 — 增加深度感
-  const vignette = ctx.createRadialGradient(0, 0, 1000, 0, 0, 4000);
-  vignette.addColorStop(0, 'transparent');
-  vignette.addColorStop(1, 'rgba(5, 8, 16, 0.4)');
-  ctx.fillStyle = vignette;
-  ctx.fillRect(-5000, -5000, 10000, 10000);
+// ===== 背景（吸收自 SP-1025 原型：星云 / 尘埃带 / 三层星场 / 暗角，一次生成存资产）=====
+// 原先这里是「径向渐变 + 200 世界单位的坐标网格 + 谐波点子」——网格像坐标纸、点子成斜纹。
+// 现在整片天由 `galaxy/sky.js` 生成（同 seed 恒同），画布与「导出 PNG(全图)」共用这份。
+function drawStarfield(ctx) {
+  paintGalaxySky(ctx, GALAXY_SKY_RECT);
 }
-
 // ===== 势力边界 =====
 function drawFactionBorders(ctx, lod) {
   const borders = computeFactionBorders();
@@ -710,7 +638,7 @@ function drawFactionBorders(ctx, lod) {
     //    只对 6 位 hex 成立；而 `getFactionColor()` 对**不在硬编码表里的势力名**返回 `hsl(...)`
     //    → 拼出 `hsl(210, 70%, 60%)12` = **非法 CSS**，赋给 fillStyle/addColorStop 会被**静默忽略**
     //    （沿用上一个颜色 = 星域颜色串了，且不报错）。真实库的势力名必然不在表里 → 必然走到。
-    ctx.fillStyle = withAlpha(border.color, '12');
+    ctx.fillStyle = withAlpha(border.color, '1E');
     ctx.fill();
     ctx.restore();
     
@@ -718,9 +646,10 @@ function drawFactionBorders(ctx, lod) {
       border.center.x, border.center.y, 0,
       border.center.x, border.center.y, 400
     );
-    gradient.addColorStop(0, withAlpha(border.color, '35'));
-    gradient.addColorStop(0.5, withAlpha(border.color, '22'));
-    gradient.addColorStop(1, withAlpha(border.color, '10'));
+    // 领土要有"体积"：中心亮一点、边缘收淡（原先 35/22/10 在远景几乎看不出是领土）
+    gradient.addColorStop(0, withAlpha(border.color, '48'));
+    gradient.addColorStop(0.5, withAlpha(border.color, '2C'));
+    gradient.addColorStop(1, withAlpha(border.color, '14'));
     
     ctx.beginPath();
     ctx.moveTo(border.points[0].x, border.points[0].y);
@@ -757,35 +686,21 @@ function drawFactionBorders(ctx, lod) {
       const cx = border.center.x;
       const cy = border.center.y;
       const scale = renderer.getViewTransform().scale;
-      // 字号按"目标屏幕字号 / scale"稳定（屏幕始终 ~15px）
-      const fontSize = Math.min(70, Math.max(7, Math.round(15 / scale)));
-
-      ctx.font = `bold ${fontSize}px sans-serif`;
+      // 星域名：**无底框墨字**（EU4 参考图口径，见 `refs/src/20261027-08-eu4-1518.jpg`）。
+      // 旧实现是「势力色圆角底框 + 白字」——远景几十个方块糊成一片、近景把星点盖住。
+      // 字号：远景小、近景大（屏幕恒定：世界字号 = 屏幕字号 / scale）。
+      const fontPx = lod > 0.85 ? 19 : 16;
+      const fontSize = Math.min(64, Math.max(10, Math.round(fontPx / scale)));
+      ctx.font = `600 ${fontSize}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-
+      ctx.lineJoin = 'round';
       const text = border.name;
-      const metrics = ctx.measureText(text);
-      const padding = 10;
-
-      ctx.fillStyle = withAlpha(border.color, 'EE');
-      ctx.beginPath();
-      ctx.roundRect(
-        cx - metrics.width / 2 - padding,
-        cy - fontSize / 2 - 4,
-        metrics.width + padding * 2,
-        fontSize + 8,
-        8
-      );
-      ctx.fill();
-
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.6;
-      ctx.stroke();
-      ctx.globalAlpha = 1.0;
-
-      ctx.fillStyle = '#FFFFFF';
+      // 暗底深描边 → 亮字；字色取势力色（归属靠颜色读，不靠底框）
+      ctx.strokeStyle = 'rgba(4, 7, 14, 0.78)';
+      ctx.lineWidth = 3.4 / scale;
+      ctx.strokeText(text, cx, cy);
+      ctx.fillStyle = withAlpha(border.color, 'E8');
       ctx.fillText(text, cx, cy);
     }
   }
@@ -836,26 +751,54 @@ function drawHyperlanes(ctx) {
     // ⚠️ 颜色取自 `utils/galaxyLayout.js` 的 `hyperlaneColor`（**唯一实现**）——
     //    导出 PNG(全图) 也调它，否则"画布 4 类 / 导出 3 类"（§bug 导出与画布不同源）
     const color = hyperlaneColor(h, { isDark: true, hovered: isHovered });
+    // 线宽收细（2026-11-01）：原先跨域线 2px 紫虚线在远景把整幅图铺成"紫色乱麻"（原型 README 点名过的病）。
+    // 现在：跨域 1.2px、跳跃 1.3px、用户建 1.6px、自动 1.0px —— 细线 + 暗色，星与领土才是主角。
     let lineWidth, dash = null;
     if (h.type === 'cross_domain') {
-      lineWidth = isHovered ? 3 : 2;
-      dash = [6, 6];
+      lineWidth = isHovered ? 2.4 : 1.2;
+      dash = [5, 6];
     } else if (h.type === 'hyperjump') {
-      lineWidth = isHovered ? 3 : 2;
-      dash = [10, 6];
+      lineWidth = isHovered ? 2.4 : 1.3;
+      dash = [9, 5];
     } else if (isUserCreated) {
-      lineWidth = isHovered ? 2.5 : 2;
+      lineWidth = isHovered ? 2.2 : 1.6;
     } else {
-      lineWidth = isHovered ? 2 : 1.8;
-      dash = [5, 7];
+      lineWidth = isHovered ? 1.8 : 1.0;
+      dash = [4, 6];
     }
+    // 远景再压一档透明度：`scale < 0.5` 时线是背景，不该比星还抢眼
+    const laneAlpha = vt.scale < 0.5 ? 0.62 : 1;
     
+    // 🔴 线宽/虚线一律**屏幕像素 ÷ scale**（原型口径「缩放不变粗」）：
+    //    旧实现写死世界单位 → 放大后航道变成粗管子、缩小后细到看不见。
+    const px = 1 / (vt.scale || 1);
     ctx.save();
+    // 光晕底衬（原型做法：单独一条更宽的半透明线，比 shadowBlur 便宜得多）
     ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.16;
+    ctx.lineWidth = Math.max(1.5 * px, lineWidth * px + 3 * px);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    if (h.controlPoints && h.controlPoints.length === 1) {
+      ctx.quadraticCurveTo(h.controlPoints[0].x, h.controlPoints[0].y, to.x, to.y);
+    } else if (h.controlPoints && h.controlPoints.length >= 2) {
+      ctx.bezierCurveTo(
+        h.controlPoints[0].x, h.controlPoints[0].y,
+        h.controlPoints[1].x, h.controlPoints[1].y,
+        to.x, to.y
+      );
+    } else {
+      ctx.lineTo(to.x, to.y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = laneAlpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth * px;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (dash) ctx.setLineDash(dash.map(d => d * px));
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     if (h.controlPoints && h.controlPoints.length === 1) {
@@ -871,6 +814,7 @@ function drawHyperlanes(ctx) {
     }
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
     ctx.restore();
     
     if (editMode.value && isHovered) {
@@ -921,129 +865,60 @@ function drawHyperlanes(ctx) {
 }
 
 // ===== 恒星节点 =====
+// 每个节点连了几条航道（枢纽判据：度数 ≥ 4 在近景出四向短芒 / 中景也留名字）
+function hyperlaneDegreeMap() {
+  const m = new Map();
+  for (const h of store.hyperlanes || []) {
+    m.set(h.fromId, (m.get(h.fromId) || 0) + 1);
+    m.set(h.toId, (m.get(h.toId) || 0) + 1);
+  }
+  return m;
+}
+
+// ===== 恒星节点（吸收自 SP-1025 `nodes.ts`：色温分级 + 光晕 + 归属环 + LOD 图元）=====
+// 与旧实现的差别（用户 2026-11-01 报障「星域总览还是一坨」）：
+//   · 旧：统一白色=势力色圆点 + 白核，远景与近景一样糊；名字一律挂深色底框。
+//   · 新：色温按 id 哈希分五档（同一颗星恒定）、归属色退成细环 + 低透明光晕底衬、
+//        远景只留点、枢纽才出短芒、名字走 LOD + 贪心避让（无底框）。
 function drawGalaxyNodes(ctx, lod) {
   const nodes = filteredGalaxyNodes.value;
+  const scale = renderer.getViewTransform().scale;
+  const degreeOf = hyperlaneDegreeMap();
+  const hit = renderer.getCurrentHit();
+  const hoveredId = hit && hit.node ? hit.node.id : null;
+  const stars = [];
+
   nodes.forEach(galaxy => {
     const isSource = editMode.value && dragSourceNode && dragSourceNode.id === galaxy.id;
     const isTarget = editMode.value && targetNode && targetNode.id === galaxy.id;
     const matched = store.isNodeMatched(galaxy.id);
     const isCurrent = store.isCurrentMatch(galaxy.id);
-    
-    const baseColor = galaxy.factionColor || '#4a90d9';
-    const isHighlighted = isSource || isTarget || matched;
-    
-    let starColor = baseColor;
-    if (isSource || isTarget) starColor = '#7affb4';
-    if (matched) starColor = isCurrent ? '#ffd700' : '#ffaa00';
-    
-    const baseRadius = matched ? 11 : 9;
-
-    // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
-    // 匹配命中 / 拖拽高亮时不淡化（你正在操作它）。
-    // ⚠️ 下方 lod 分支有一个**中途 return** —— save 之后必须在那里先 restore，否则 alpha 会泄漏。
-    const fade = fadedAlpha(galaxy.status, { focused: isHighlighted || matched });
-    if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
-
-    if (lod < 0.35) {
-      ctx.fillStyle = starColor;
-      ctx.shadowColor = starColor;
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.arc(galaxy.x, galaxy.y, baseRadius + 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      if (fade < 1) ctx.restore();   // ← 中途 return 前必须收尾
-      return;
-    }
-    
-    const flicker = 0.88 + Math.sin(animationTime * 4 + galaxy.x * 0.05) * 0.12;
-    
-    const glowRadius = baseRadius * (matched ? 12 : 8) * flicker;
-    const glowGradient = ctx.createRadialGradient(
-      galaxy.x, galaxy.y, 0,
-      galaxy.x, galaxy.y, glowRadius
-    );
-    glowGradient.addColorStop(0, starColor + 'CC');
-    glowGradient.addColorStop(0.25, starColor + '66');
-    glowGradient.addColorStop(0.5, starColor + '22');
-    glowGradient.addColorStop(0.75, starColor + '08');
-    glowGradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = glowGradient;
-    ctx.beginPath();
-    ctx.arc(galaxy.x, galaxy.y, glowRadius, 0, Math.PI * 2);
-    ctx.fill();
-    
-    if (lod > 0.45 && isHighlighted) {
-      const spikeLength = glowRadius * 1.8 * flicker;
-      const spikeWidth = 1.5;
-      ctx.strokeStyle = starColor + '50';
-      ctx.lineWidth = spikeWidth;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(galaxy.x - spikeLength, galaxy.y);
-      ctx.lineTo(galaxy.x + spikeLength, galaxy.y);
-      ctx.moveTo(galaxy.x, galaxy.y - spikeLength);
-      ctx.lineTo(galaxy.x, galaxy.y + spikeLength);
-      ctx.stroke();
-      
-      const diagLength = spikeLength * 0.5;
-      ctx.strokeStyle = starColor + '30';
-      ctx.lineWidth = spikeWidth * 0.7;
-      ctx.beginPath();
-      ctx.moveTo(galaxy.x - diagLength, galaxy.y - diagLength);
-      ctx.lineTo(galaxy.x + diagLength, galaxy.y + diagLength);
-      ctx.moveTo(galaxy.x + diagLength, galaxy.y - diagLength);
-      ctx.lineTo(galaxy.x - diagLength, galaxy.y + diagLength);
-      ctx.stroke();
-    }
-    
-    ctx.fillStyle = starColor;
-    ctx.beginPath();
-    ctx.arc(galaxy.x, galaxy.y, baseRadius, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.globalAlpha = 0.95;
-    ctx.beginPath();
-    ctx.arc(galaxy.x, galaxy.y, baseRadius * 0.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(galaxy.x - 1.5, galaxy.y - 1.5, baseRadius * 0.3, 0, Math.PI * 2);
-    ctx.fill();
-    
-    const scale = renderer.getViewTransform().scale;
-    if (scale >= 0.35 && galaxy.name) {
-      const labelY = galaxy.y + baseRadius + 8;
-      // 字号按"目标屏幕字号 / scale"稳定（世界坐标被 scale 放大，字号反比抵消 → 屏幕始终 ~13px）
-      const fontSize = Math.min(60, Math.max(6, Math.round(13 / scale)));
-
-      ctx.font = `${matched ? 'bold ' : ''}${fontSize}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-
-      const text = galaxy.displayName || galaxy.name;
-      const metrics = ctx.measureText(text);
-      const padding = 5;
-
-      ctx.fillStyle = 'rgba(15, 22, 35, 0.85)';
-      ctx.fillRect(
-        galaxy.x - metrics.width / 2 - padding,
-        labelY - 2,
-        metrics.width + padding * 2,
-        fontSize + 4
-      );
-
-      ctx.fillStyle = isHighlighted ? starColor : 'rgba(230, 240, 255, 0.95)';
-      ctx.fillText(text, galaxy.x, labelY);
-    }
-
-    if (fade < 1) ctx.restore();   // 与上面的 save 配对（叙事状态淡化）
+    // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**
+    const fade = fadedAlpha(galaxy.status, { focused: isSource || isTarget || matched });
+    const star = {
+      id: galaxy.id,
+      x: galaxy.x,
+      y: galaxy.y,
+      name: galaxy.displayName || galaxy.name,
+      factionColor: galaxy.factionColor || getFactionColor(galaxy.faction),
+      degree: degreeOf.get(galaxy.id) || 0,
+      matched,
+      current: isCurrent,
+      hovered: hoveredId === galaxy.id,
+      selected: selectedNodeIds.value.has(galaxy.id),
+      fade,
+    };
+    paintStar(ctx, star, { scale, lod, time: animationTime, exportMode: false });
+    stars.push(star);
   });
-}
 
+  // 标签最后画（压在所有星点之上）：远景不出名字，中景只留枢纽/匹配项，近景全量 + 避让
+  const { band, fontPx } = labelLodFor(scale);
+  if (band !== 'none') {
+    const kept = cullStarLabels(collectStarLabels(stars, { scale }), ctx, { fontPx });
+    paintStarLabels(ctx, kept, { scale, fontPx, isDark: true });
+  }
+}
 function drawDragPreview(ctx) {
   if (!editMode.value || !dragSourceNode) return;
   
