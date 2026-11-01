@@ -22,7 +22,7 @@
 | 1 | **参照图库 `refs/`**（本地、gitignore；`README.md` + `MANIFEST.md` 入库） | 图片全在 `refs/src/`、`refs/shots/`、`refs/out/` 且被 ignore；清单逐张写「要抄的事实 + 吸收状态」。原型截图（SP-1025 的 7 张）已拷进 `refs/src/`，临时目录被删也不丢参照 |
 | 2 | **星域总览美术内化**（`src/renderer/src/galaxy/`：`sky.js` / `starArt.js` / `labels.js`） | 画布与「导出 PNG(全图)」**调同一份**（`test_117` 源码闸门 + 像素判据全过） |
 | 3 | 行星地图「空却不空」缺陷 | `utils/mapContent.js` 唯一判定 + `useAutoRegions#fogMode` 改用它；`unit/test_map_content.js` 8/8 |
-| 4 | **生产包里的测试 mock**（a17d511 把 `index.html` 的 mock 块一起提交了） | 已从 `index.html` 摘掉（368 行）→ 打包不再带 `window.__SITIAN_MOCK__`、不再自动跳过免责声明 |
+| 4 | **生产包里的测试 mock**（a17d511 把 `index.html` 的 mock 块一起提交了）——380 行测试脚手架与免责声明 ack 预置一直被打进 dist/内测包 | 已从 `index.html` 摘掉（368 行，回到 93 行）→ `dist/index.html` 复验 0 处 `__SITIAN_MOCK__`；`vite build` 通过 |
 
 ### 星域总览具体改了什么（对得上原型的哪几条）
 
@@ -46,7 +46,7 @@
 | `test_02`（导航链） | ✅ |
 | `unit/test_map_content.js` | ✅ 8/8 |
 | `unit/test_entity_status.js` | ✅ 13/13（接线守卫改守「fade 传到 `paintStar`」，原来守的是组件内的 save/restore） |
-| 全量 163 | ⏳ 本轮最后一次全量在跑（结果写进提交信息） |
+| 全量 163 | ✅ **163/163**（`build/_regress_galaxyart2.log`，2026-11-01 21:3x；含 72 个 Node 单测） |
 
 ## 四、没做的（别装作做了）
 
