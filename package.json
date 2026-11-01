@@ -69,9 +69,13 @@
       "build/*.icns",
       "build/*.png",
       "build/icon-manifest.json",
+      "!build/_*.png",
       "src/main/**/*",
       "src/preload/**/*",
-      "scripts/**/*",
+      "scripts/extract-data.js",
+      "scripts/lib/**/*",
+      "!scripts/tests/**/*",
+      "!dist/__real_desite.map",
       "node_modules/**/*"
     ],
     "win": {
