@@ -83,6 +83,33 @@ export function createProvinceActions(ctx) {
     viewMode,
   } = rest;
 
+// ── N2 手感判据（2026-11-02）────────────────────────────────────────────────
+// 为什么要有它：`land_ms` 那种「包住 `dispatchEvent` 量墙钟」的读数里混着浏览器事件派发、
+// 样式/布局刷新和 GC —— 实测**一次什么都没发生的 mouseup 也有 51ms**，拿它当 ≤50ms 的判据，
+// 改代码也不会有可解释的变化。所以这里把真正属于我们的三段分开记：
+//   ① 手迹管线（smooth/simplify/净化/骨架吸附）  ② store 落库  ③ 边界失效与收尾
+// **默认零成本**：`window.__SITIAN_PERF__` 没打开时只多做一次布尔判断。
+// 读数落在 `window.__LAND_PERF__`（数组，最近的在前），探针/人工都能直接看。
+function perfMark(name) {
+  if (typeof window === 'undefined' || !window.__SITIAN_PERF__) return;
+  try { performance.mark(name); } catch (e) { /* ignore */ }
+}
+function perfMeasure(label, a, b) {
+  if (typeof window === 'undefined' || !window.__SITIAN_PERF__) return 0;
+  try {
+    performance.measure(label, a, b);
+    const list = performance.getEntriesByName(label);
+    const ms = list.length ? list[list.length - 1].duration : 0;
+    const box = window.__LAND_PERF__ || (window.__LAND_PERF__ = []);
+    box.unshift({ label, ms: +ms.toFixed(1) });
+    if (box.length > 40) box.length = 40;
+    performance.clearMarks(a);
+    performance.clearMarks(b);
+    performance.clearMeasures(label);
+    return ms;
+  } catch (e) { return 0; }
+}
+
 function freeTraceRing(rawPts, { snap = false, sanitize = true } = {}) {
   // T7：先过 perfect-freehand 的中心线稳定器（streamline），再 RDP 简化。
   // 预览与落库共用这一条链；稳定器对 100 点量级实测 p95 0.2ms（H1b spike）。
@@ -203,7 +230,10 @@ function commitFreeTrace(pts, shiftKey) {
   if (!ensureBaseMap()) return false;
   // 🔴 与预览**同一条链**（`freeTraceRing`）：用户松手前看到的那块地就是落库的那块地。
   //    这里若另写一遍简化/吸附，就会出现"预览一个形、落库另一个形"（= 描点连线模拟器的观感）。
+  perfMark('land:trace:0');
   const shape = freeTraceRing(pts, { snap: !shiftKey });
+  perfMark('land:trace:1');
+  perfMeasure('手迹管线', 'land:trace:0', 'land:trace:1');
   if (!shape) {
     statusMsg(`自由绘制：${st.freeTraceRejectReason || '轨迹太短，没有成型（按住沿轮廓拖一圈再松手）'}`);
     return false;
@@ -220,7 +250,12 @@ function commitFreeTrace(pts, shiftKey) {
     // 想要平滑轮廓时，用户点顶点（withBezierControls，/6 夹紧）显式加手柄。
     points: shape.ring,
   };
-  if (!addProvinceWithOverlapGate(prov)) return true;
+  perfMark('land:store:0');
+  const stored = addProvinceWithOverlapGate(prov);
+  perfMark('land:store:1');
+  perfMeasure('store 落库', 'land:store:0', 'land:store:1');
+  if (!stored) return true;
+  perfMark('land:tail:0');
   provinceBrush.invalidateBorders();
   focusNewProvince(id, prov);          // 建完即选中 + 名字框待改（P1）
   const cleanedNote = shape.cleaned && (shape.cleaned.selfInt > 0 || shape.cleaned.dropped > 0 || shape.cleaned.holes > 0)
@@ -230,6 +265,8 @@ function commitFreeTrace(pts, shiftKey) {
     + (shiftKey ? '（Shift：未吸附骨架）' : `（贴骨架后 ${shape.snapped} 点${shape.snapAborted ? '；吸附会自交，已放弃吸附' : ''}）`)
     + cleanedNote
     + ' —— 右侧可改名，一次绘制 = 1 条撤销');
+  perfMark('land:tail:1');
+  perfMeasure('失效与收尾', 'land:tail:0', 'land:tail:1');
   return true;
 }
 

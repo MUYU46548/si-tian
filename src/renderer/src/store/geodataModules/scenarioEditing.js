@@ -846,6 +846,7 @@ export function createScenarioEditingModule(ctx) {
 
     let overlap = null;
     if (opts.checkOverlap !== false && !opts.allowOverlap) {
+      if (typeof window !== 'undefined' && window.__SITIAN_PERF__) { try { performance.mark('land:ov:0'); } catch (e) {} }
       try {
         overlap = measureProvinceOverlap(newProv, baseMap.terrain || [], {
           ratio: opts.overlapShare,
@@ -853,6 +854,14 @@ export function createScenarioEditingModule(ctx) {
         });
       } catch (e) {
         overlap = null;              // 度量失败绝不能挡住建省（宁可不判也不误拒）
+      }
+      if (typeof window !== 'undefined' && window.__SITIAN_PERF__) {
+        try {
+          performance.mark('land:ov:1');
+          performance.measure('重叠度量', 'land:ov:0', 'land:ov:1');
+          const list = performance.getEntriesByName('重叠度量');
+          (window.__LAND_PERF__ || (window.__LAND_PERF__ = [])).unshift({ label: '重叠度量', ms: +(list[list.length - 1].duration).toFixed(1) });
+        } catch (e) {}
       }
       if (overlap && overlap.blocked) {
         return {
@@ -863,6 +872,8 @@ export function createScenarioEditingModule(ctx) {
       }
     }
 
+    const _perf = typeof window !== 'undefined' && window.__SITIAN_PERF__;
+    if (_perf) { try { performance.mark('land:exec:0'); } catch (e) {} }
     execute({
       type: 'add-province',
       label: '绘制省份',
@@ -886,8 +897,25 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
+    if (_perf) {
+      try {
+        performance.mark('land:exec:1');
+        performance.measure('execute', 'land:exec:0', 'land:exec:1');
+        const l = performance.getEntriesByName('execute');
+        (window.__LAND_PERF__ || (window.__LAND_PERF__ = [])).unshift({ label: 'execute', ms: +(l[l.length - 1].duration).toFixed(1) });
+        performance.mark('land:save:0');
+      } catch (e) {}
+    }
 
     saveScenarios();
+    if (_perf) {
+      try {
+        performance.mark('land:save:1');
+        performance.measure('saveScenarios(同步段)', 'land:save:0', 'land:save:1');
+        const l = performance.getEntriesByName('saveScenarios(同步段)');
+        (window.__LAND_PERF__ || (window.__LAND_PERF__ = [])).unshift({ label: 'saveScenarios(同步段)', ms: +(l[l.length - 1].duration).toFixed(1) });
+      } catch (e) {}
+    }
     return { success: true, id: newProv.id, overlap: overlap && overlap.total ? overlap : null };
   }
 

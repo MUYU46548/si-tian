@@ -17,7 +17,22 @@
 //   · 大省（顶点数 > `MAX_POINTS_PER_PROVINCE`）按步长抽稀后再判，结果带 `approx: true`
 //     ——**不抽稀的话**：真实库有两个 1 万点的省，格心数 × 顶点数会到千万级，卡在抬手那一帧。
 //     抽稀只用于**度量**，绝不写回任何几何。
-import { pointInProvince, provinceBBox } from './provinceShape';
+import { pointInProvince, provinceBBox, provinceRings, ringSigns } from './provinceShape';
+
+/**
+ * 环 + 环向预计算（2026-11-02，N2 手感）：
+ *   `pointInProvince(x, y, prov)` 在不传 `cached` 时会**每次重算** `provinceRings` / `ringSigns` ——
+ *   而压叠度量要对 40×40=1600 个格心各调一次、且每个格心还要对若干个邻省调一次。
+ *   实测（真实 200 省底图、新省一圈地形）这一段 **80.5ms**，占了「松手」的 88%。
+ *   环与环向只跟形状有关，预计算一次即可 —— **结果逐字节不变**（同一份几何、同一套判定）。
+ */
+function ringCacheOf(shape) {
+  try {
+    return { rings: provinceRings(shape), signs: ringSigns(shape) };
+  } catch (e) {
+    return null;
+  }
+}
 
 /** 新省与已有省的重叠比例超过这个值 → 判为「压叠」（调用方通常据此二次确认） */
 export const OVERLAP_REJECT_RATIO = 0.25;
@@ -117,6 +132,7 @@ export function measureProvinceOverlap(candidate, existing, opts = {}) {
       kind: p.kind === 'sea' ? 'sea' : 'land',
       box: b,
       shape,
+      cache: ringCacheOf(shape),
       sampled: isSampled(p),
     });
   }
@@ -127,6 +143,7 @@ export function measureProvinceOverlap(candidate, existing, opts = {}) {
   const dim = maxDim;
   const cell = span / dim;
   const candShape = approxShape(cand);
+  const candCache = ringCacheOf(candShape);
   const approx = list.some((p) => p.sampled) || isSampled(cand);
 
   let total = 0;
@@ -138,11 +155,11 @@ export function measureProvinceOverlap(candidate, existing, opts = {}) {
     for (let c = 0; c < dim; c++) {
       const x = candBox.minX + (c + 0.5) * cell;
       if (x > candBox.maxX) break;
-      if (!pointInProvince(x, y, candShape)) continue;
+      if (!pointInProvince(x, y, candShape, candCache)) continue;
       total++;
       for (const p of list) {
         if (x < p.box.minX || x > p.box.maxX || y < p.box.minY || y > p.box.maxY) continue;
-        if (!pointInProvince(x, y, p.shape)) continue;
+        if (!pointInProvince(x, y, p.shape, p.cache)) continue;
         occupied++;
         hits.set(p.id, (hits.get(p.id) || 0) + 1);
         break;                                  // 一格只记一次（谁先命中不影响比例）

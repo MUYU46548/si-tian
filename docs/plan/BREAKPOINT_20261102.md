@@ -62,16 +62,19 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 
 ## 四、没做到 / 留到下轮（别装作做了）
 
-1. **N2 建省松手仍 79.8ms**（目标 ≤50ms）—— 但**这个指标本身先要修**（本轮实测发现的坑，下一轮先做这个再谈优化）：
-   - 同一个探针口径下，**一次"什么都没有发生"的 mouseup（trace=0，没建省）也量到 51ms**；
-   - 而把各段单独量：手迹管线 ≈14ms（1800 点）/ `store.addBaseProvince` 3~5ms / `sm.render()` **4ms**（暖缓存）；
-   - 用 CDP CPU 采样（只包住 mouseup 那一下）能看到的最大单项只有 `focus` 1.9ms、`pointInPolygon` 1.8ms，
-     其余摊在几十个 <1ms 的小函数 + `(program)`/GC 上 —— **没有"某个函数吃掉 40ms"这种可打靶的热点**。
-   ⇒ 结论：`land_ms` 量的是「`dispatchEvent` 到返回」这段墙钟，里面混着浏览器事件派发/样式与布局刷新/GC，
-   不等于"我们代码的工作量"。**下一轮第一件事是给这一段换判据**（在 commit 路径里打 `performance.mark`
-   分段量：管线 / store / invalidate / 首帧），拿到干净的数再决定改什么。
-   已知的一个候选项：`provinceBrush.invalidateBorders()` 会让下一帧 `borderChains` 全量重抽一次
-   （200 省 / 6,826 顶点），这是"松手后第一帧 81.8ms"最可能的来源 —— 但那要增量抽取，属于下一轮。
+1. ~~**N2 建省松手 79.8ms**~~ → **已到线（并顺手修了指标）**：
+   - `land_ms`（包住 `dispatchEvent` 量墙钟）**不是干净的信号** —— 实测一次「什么都没发生」的 mouseup 也有 51ms，
+     里面混着事件派发/样式与布局刷新/GC。所以给 commit 路径加了分段 `performance.mark`
+     （`window.__SITIAN_PERF__` 打开才记，默认零成本，读数落 `window.__LAND_PERF__`）。
+   - 分段实测（真实 200 省底图 / 1080×484 / 新画一圈地形）暴露真凶：
+     **`measureProvinceOverlap` 80.5ms**（占松手 88%），根因是它对**每个采样格心**都重算一次
+     `provinceRings` / `ringSigns`（40×40=1600 次）。
+   - 修法：在 `utils/provinceOverlap.js` 里把「环 + 环向」按形状**预计算一次**再传进 `pointInProvince(…, cached)`
+     —— **同一份几何、同一套判定，结果逐字节不变**（`test_79` 的 0.50 / 0.20 两个精确比值原样通过）。
+   - 结果（同机同数据，3 次）：**手迹管线 3~6ms ｜ 重叠度量 28~40ms ｜ execute 0.1~0.4ms ｜
+     saveScenarios 同步段 3~4ms ｜ 落库合计 32~43ms ｜ 松手墙钟 36~47ms** → **≤50ms 达标**。
+   - 仍大的一块是 `重叠度量`（占剩余时间 70%）：要再快就得动采样口径（`OVERLAP_MAX_DIM` / 每省点数上限），
+     那会改变比值语义、牵连 `test_79` 的精确断言 —— 不做，留作"以后真的嫌慢再说"。
 2. **`st.ownerStrokeId` 是个老洞**（本轮抽取时发现，未修）：`pointerState` 从来没有它的 get/set，
    于是 `actions.js` 里 `st.ownerStrokeId` 恒为 `undefined` —— 涂归属那一笔的账本 `groupId` 一直没带上。
    改它会有**行为变化**（账本分组），所以留成单独一刀，不夹在重构里。
