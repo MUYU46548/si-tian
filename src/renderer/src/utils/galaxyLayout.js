@@ -76,6 +76,8 @@ export const GALAXY_LAYOUT = {
   circleSegments: 12,       // 星系数 < 3 时的多边形边数
   minHullPoints: 3,
   fieldSalt: 20261102,      // 所有权场波浪的固定盐（同项目同项目、换项目换形状，且可复现）
+  domainShape: 'ring',      // 星域排布形态：ring（旧）/ disc / spiral（抄群星，见 layoutDomains 注释）
+  domainSeed: 20261102,     // 形态采样种子（同项目恒定）
 };
 
 /** 凸包（Graham Scan，**唯一实现**：`App.vue` 的 `convexHullForExport` 已删） */
@@ -121,25 +123,106 @@ export function expandHull(hull, pad = GALAXY_LAYOUT.hullPad) {
 /**
  * 星域布局。**只有 `userMoved`（或正在拖动）才采信 `coordinate`** ——
  * 提取器给每个星域都写了遗留 coordinate，无条件采信会让老项目一次性全部错位（见 test_116 f5）。
+ *
+ * 2026-11-02（抄群星）：新增 `shape` —— 群星的银河是**盘/螺旋臂/环带**，我们一直是"环"。
+ * 形态采样直接移植原型 `core/generator.ts#sampleShape`（同一套公式：disc 用 u^1.4 的核密度梯度、
+ * spiral 用对数螺线 + 高斯抖动、ring 用 0.52~1 的环带）。默认仍是 `ring`（等价于旧布局，
+ * 不动既有项目与用例）；要看效果用 `window.__SITIAN_DOMAIN_SHAPE__` 或传 `shape`。
  * @param {Array} domains
- * @param {{draggingId?:string, overrides?:object}} [opts]
+ * @param {{draggingId?:string, overrides?:object, shape?:'ring'|'disc'|'spiral', seed?:number}} [opts]
  */
 export function layoutDomains(domains, opts = {}) {
   const list = Array.isArray(domains) ? domains : [];
   const count = list.length;
   const radius = count > 1 ? GALAXY_LAYOUT.domainSpacing * GALAXY_LAYOUT.ringFactor : 0;
+  const shape = opts.shape
+    || (typeof window !== 'undefined' && window.__SITIAN_DOMAIN_SHAPE__)
+    || GALAXY_LAYOUT.domainShape
+    || 'ring';
+  // 盘/螺旋：先按形态采样出一组**互不重叠**的中心点（确定性），再按 id 顺序分配
+  let placed = null;
+  if (shape !== 'ring' && count > 1) {
+    placed = sampleDomainCenters(count, shape, opts.seed || GALAXY_LAYOUT.domainSeed, radius);
+  }
   return list.map((domain, idx) => {
     const angle = (idx / Math.max(count, 1)) * Math.PI * 2 - Math.PI / 2;
     const saved = (domain.userMoved || domain.id === opts.draggingId)
       && domain.coordinate && Number.isFinite(domain.coordinate.x) && Number.isFinite(domain.coordinate.y);
+    const fallback = placed ? placed[idx] : {
+      x: count > 1 ? Math.cos(angle) * radius : 0,
+      y: count > 1 ? Math.sin(angle) * radius : 0,
+    };
     return {
       ...domain,
-      x: saved ? domain.coordinate.x : (count > 1 ? Math.cos(angle) * radius : 0),
-      y: saved ? domain.coordinate.y : (count > 1 ? Math.sin(angle) * radius : 0),
+      x: saved ? domain.coordinate.x : fallback.x,
+      y: saved ? domain.coordinate.y : fallback.y,
       factionColor: resolveDomainColor(domain, opts.overrides),
       radius: GALAXY_LAYOUT.domainRadius,
     };
   });
+}
+
+/** mulberry32（与 sky.js / FMG 同族；布局里不许碰 Math.random） */
+function _rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * 形态采样（移植自原型 `core/generator.ts#sampleShape`）：
+ *   disc  = 核密椭圆盘（u^1.4，中心密、边缘疏）
+ *   spiral= 对数螺线旋臂（3.1·ln(1+5.2r) 的臂偏角 + 高斯抖动）
+ *   ring  = 环带（0.52~1.0）
+ */
+export function sampleDomainShape(shape, rx, ry, rnd, arms = 3) {
+  const u = rnd();
+  const ang0 = rnd() * Math.PI * 2;
+  if (shape === 'spiral') {
+    const arm = Math.floor(rnd() * arms);
+    const rr = 0.16 + 0.84 * Math.pow(u, 0.85);
+    const ang = (arm * Math.PI * 2) / arms + 3.1 * Math.log(1 + 5.2 * rr) + (rnd() - 0.5) * 0.26;
+    return { x: Math.cos(ang) * rr * rx, y: Math.sin(ang) * rr * ry };
+  }
+  if (shape === 'ring') {
+    const rr = 0.52 + 0.48 * Math.pow(u, 0.9);
+    return { x: Math.cos(ang0) * rr * rx, y: Math.sin(ang0) * rr * ry };
+  }
+  const rr = Math.pow(u, 1.4);
+  return { x: Math.cos(ang0) * rr * rx, y: Math.sin(ang0) * rr * ry };
+}
+
+/** 在形态上撒 count 个互不重叠的星域中心（最小间距 = 星域半径 × 1.5，留出航道空间） */
+export function sampleDomainCenters(count, shape, seed, radius) {
+  const rnd = _rng(seed >>> 0);
+  const rx = radius;
+  const ry = radius * 0.74;          // 椭圆盘：群星的银河是扁的
+  const minGap = GALAXY_LAYOUT.domainRadius * 1.5;
+  const arms = 3;
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    let best = null;
+    for (let attempt = 0; attempt < 400; attempt++) {
+      const p = sampleDomainShape(shape, rx, ry, rnd, arms);
+      let ok = true;
+      for (const q of out) {
+        if (Math.hypot(q.x - p.x, q.y - p.y) < minGap) { ok = false; break; }
+      }
+      if (ok) { best = p; break; }
+    }
+    // 兜底：按环摆（保证一定放得下，不产生 NaN / 重叠堆在一起）
+    if (!best) {
+      const a = (i / Math.max(count, 1)) * Math.PI * 2 - Math.PI / 2;
+      best = { x: Math.cos(a) * radius, y: Math.sin(a) * radius * 0.74 };
+    }
+    out.push(best);
+  }
+  return out;
 }
 
 /**

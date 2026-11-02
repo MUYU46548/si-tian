@@ -140,9 +140,43 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 3. 判据：`quote-audit` 的「界面 + 代码」两个计数降到 0（docs 可分批）；全量 163 全绿；像素基线不变；
 4. 顺手把这条写进 `AGENTS.md` 红线（新代码不许再出现）。
 
-## 八、下一轮从这里接
+## 八、原型（SP-1025）集成清点（2026-11-02，用户追问"都利用完了吗"）
 
-1. **星域领土改成“暗底 + 亮边”**（按新增群星图的事实，见 `refs/MANIFEST.md` 第〇节）：
+原型 `E:\CODE\CangKu\SP-1025\src` 共 **4,004 行 / 24 个 .ts**。逐个对账后的事实是：**只进了"美术层"，没进"生成器/拓扑/自验"**。
+
+| 原型文件 | 行 | 进了没有 | 在哪 / 差什么 |
+|---|---|---|---|
+| `render/background.ts` | 227 | ✅ 已内化 | `galaxy/sky.js`（同 spec 重写：星云/尘埃带/三层星场/暗角） |
+| `render/nodes.ts` | 183 | ✅ 已内化 | `galaxy/starArt.js`（色温五档 + 归属环 + 光晕 + LOD） |
+| `render/labels.ts` | 64 | ✅ 已内化 | `galaxy/labels.js`（LOD + 贪心避让 + 无底框） |
+| `core/territory.ts` | 201 | 🟡 部分 | `galaxy/territory.js`（φ 场 + claim），**`growRegions`/`factionWeights` 没搬**（那是"从零生成归属"用的，我们现在靠用户数据） |
+| `render/regions.ts` | 215 | 🟡 部分 | `galaxy/domainPaint.js`（轮廓 + 三层边；渐隐参数按群星图重定） |
+| `render/lanes.ts` | 92 | 🟡 部分 | 线宽/光晕已抄；**按类型配色改成单色青是今天才按群星图做的** |
+| `render/planetArt.ts` | 232 | 🟡 部分 | `utils/planetArt.js#getPlanetDisc`（只搬了 2D 圆盘那条） |
+| **`core/generator.ts`** | **350** | ❌ **没进** | 盘/螺旋/环带的**形态采样 + 参数自验 + 首府/要冲/资源带**。**这是"和原型差那么多"的头号原因** |
+| **`core/topology.ts`** | **270** | ❌ **没进** | kNN/度数建航道 + 桥接 + 割点（我们的航道来自数据/自动生成，不是这一套） |
+| **`core/metrics.ts`** | **166** | ❌ **没进** | 量化自验（重叠对/最大度/连通分量）——原型"生成不合格就换种子重试"靠它 |
+| `render/lod.ts` | 62 | ❌ 没进 | 我们用的是 `lod = clamp((scale-0.3)/0.7)` 的临时口径，不是原型的分档带 |
+| `render/renderer.ts` | 451 | ❌ 没进 | 原型自己的渲染编排（绘制顺序/剔除/LOD 套用）；我们有自己的一套 |
+| `core/geometry.ts` | 249 | 🟡 自研替代 | 等值线/Chaikin 是自己重写的（`galaxy/territory.js`），没逐行对照过 |
+| `core/commands.ts` / `model.ts` / `serializer.ts` | 900 | ➖ 不适用 | 撤销栈/文档模型跟着司天自己的 store 走 |
+| `app/*` / `core/{ids,prng,view}.ts` / `render/camera.ts` | 400 | ➖ 不适用 | 原型壳 |
+
+**一句话**：进了约 **40%**（美术层），没进的是**生成器 + 拓扑 + 量化自验 + LOD 分档**。
+原型的"银河感"主要来自 `generator.ts` 在 120 个节点 / 4 个势力上跑盘/螺旋采样 + kNN 航道；
+我们是在"4 个星域 + 10 颗星"的用户数据上套美术 —— 数据密度差一个数量级，所以怎么调都不像。
+
+**2026-11-02 已补的第一步**：`layoutDomains` 加了 `shape: 'ring' | 'disc' | 'spiral'`
+（`sampleDomainShape`/`sampleDomainCenters` 直接移植原型公式；默认仍是 ring，可用
+`window.__SITIAN_DOMAIN_SHAPE__` 或传参切换）。出图 `build/galaxy-shape/{ring,disc,spiral}.png`。
+⚠️ 实测：**只有 4 个星域时，螺旋读不出来**（采样点太少，退化成一横排）——形态要成立，需要 8+ 星域。
+
+**下一步（二选一，建议 B）**：
+- A. 把 `generator.ts + topology.ts + metrics.ts` 整包移植成"**生成示例星系**"命令（一条 undo 造出
+  120 节点 / 4 势力 / kNN 航道的星域），这样司天能一键得到群星那种密度；
+- B. 先把布局默认切到 `disc`，并在星域数 ≥8 时自动用 `spiral`；等用户数据变多自然就对了。
+
+## 九、下一轮从这里接1. **星域领土改成“暗底 + 亮边”**（按新增群星图的事实，见 `refs/MANIFEST.md` 第〇节）：
    现在 `domainPaint` 是亮色径向水洗（越往中心越亮）—— 方向反了。群里图上是**近黑半透明底 + 1px 亮线 + 外柔光**。
    判据：同机位出图与 `refs/src/星域视图2.jpg` / `星域视图4.png` 并排；`test_116`（改色/命中/拖拽）全绿。
 2. **航道改单色**（群星只有一种青色，靠明暗分主次）：`hyperlaneColor` 的 4 类色要收成 1 类 + 两档明暗；
