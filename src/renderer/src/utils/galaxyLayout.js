@@ -244,27 +244,34 @@ export function factionBorders({ domainNodes, galaxyNodes, overrides } = {}) {
 }
 
 /**
- * 航道配色（**4 类**：跨域紫 / 跳跃红 / 用户建的绿 / 自动的蓝）。
- * `isUserCreated` 的口径 = id 不以 `auto_` 开头（与画布一致）。
+ * 航道配色（**2026-11-02 按群星参考图改口径**）：群星里普通航道只有**一种青色**，
+ * 靠明暗分主次，不按类型换色（`refs/src/星链接线1.jpg` / `星域视图2.jpg`）；紫色只留给虫洞。
+ * 所以现在是「同族青 + 两种明暗 + 虚线表示非直连」，而不是以前的紫/红/绿/蓝四色：
+ *   · 自动航道（auto_*）：青、实线、偏暗（它是背景网，不该抢星）；
+ *   · 跨域航道：同族青、虚线、更暗（远看只是"这边和那边连着"）；
+ *   · 跳跃航道：紫、虚线（= 虫洞语义，唯一保留的第二种颜色）；
+ *   · 用户亲手建的：绿、最亮（**我们自己的语义**：他画的那条要看得到）。
+ * ⚠️ 判据（`unit/test_galaxy_layout.js` e1）跟着改：不再要求"四色互不相同"，
+ *    改守"自动与跨域同族青、跳跃紫、用户绿，且四者两两可区分（同族靠明暗+虚线区分）"。
  */
 export function hyperlaneColor(h, opts = {}) {
   const isDark = opts.isDark !== false;
   const hovered = !!opts.hovered;
   const isUserCreated = !String(h && h.id || '').startsWith('auto_');
   if (h && h.type === 'cross_domain') {
-    return hovered ? 'rgba(220, 170, 255, 1.0)'
-      : (isDark ? 'rgba(190, 130, 255, 0.85)' : 'rgba(110, 70, 200, 0.55)');
+    return hovered ? 'rgba(160, 235, 245, 0.95)'
+      : (isDark ? 'rgba(96, 190, 205, 0.42)' : 'rgba(40, 110, 125, 0.45)');
   }
   if (h && h.type === 'hyperjump') {
-    return hovered ? 'rgba(255, 150, 150, 1.0)'
-      : (isDark ? 'rgba(255, 120, 120, 0.85)' : 'rgba(200, 70, 70, 0.5)');
+    return hovered ? 'rgba(214, 175, 255, 1.0)'
+      : (isDark ? 'rgba(178, 136, 235, 0.8)' : 'rgba(110, 70, 190, 0.5)');
   }
   if (isUserCreated) {
     return hovered ? 'rgba(120, 255, 210, 1.0)'
       : (isDark ? 'rgba(100, 240, 180, 0.85)' : 'rgba(40, 170, 130, 0.55)');
   }
-  return hovered ? 'rgba(150, 220, 255, 1.0)'
-    : (isDark ? 'rgba(120, 200, 255, 0.75)' : 'rgba(60, 140, 200, 0.5)');
+  return hovered ? 'rgba(190, 250, 255, 1.0)'
+    : (isDark ? 'rgba(120, 214, 232, 0.62)' : 'rgba(50, 130, 150, 0.5)');
 }
 
 /**

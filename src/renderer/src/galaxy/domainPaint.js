@@ -117,40 +117,42 @@ export function paintDomainBorders(ctx, borders, opts = {}) {
     const isHovered = hoveredId != null && border.domainId === hoveredId;
     const boost = isEditing ? 0.1 : isHovered ? 0.05 : 0;
 
-    // ── 填充：径向渐隐（中心浓、边淡）──
+    // ── 填充：**近黑的半透明底**（2026-11-02 按群星参考图改口径）──
+    // 旧做法是「径向渐隐、中心最亮」——那是把领土画成一片发光的雾；
+    // 群星（`refs/src/星域视图2.jpg` / `星域视图4.png`）恰恰相反：**底色比星空更暗、几乎不加色**，
+    // 颜色只留给边缘那一道亮线。方向反了，所以怎么调透明度都不像。
     ctx.save();
     traceLoops(ctx, loops);
     const cx = border.center ? border.center.x : loops[0][0].x;
     const cy = border.center ? border.center.y : loops[0][0].y;
     const rOuter = border.fadeRadius || 360;
+    const tint = mixToward(border.color, [10, 14, 24], 0.66);   // 向深空色去饱和，只留一点点归属色
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rOuter);
-    const base = isDark ? 1 : 0.62;
-    // 色块是**一层淡淡的归属水洗**，不是实心领土：0.34 在近景会把整屏糊成一片紫雾（实测踩过）。
-    // 同时向蓝灰去饱和 16%（原型 `regions.ts` 的 NEUTRAL 混色），免得三个势力色互相打架。
-    const fillColor = mixToward(border.color, [168, 182, 210], 0.16);
-    g.addColorStop(0, toRgba(fillColor, Math.min(1, (0.21 + boost) * base)));
-    g.addColorStop(0.7, toRgba(fillColor, Math.min(1, (0.15 + boost) * base)));
-    g.addColorStop(1, toRgba(fillColor, Math.min(1, 0.075 * base)));
+    const base = isDark ? 1 : 0.5;
+    g.addColorStop(0, toRgba(tint, Math.min(1, (0.36 + boost) * base)));
+    g.addColorStop(0.85, toRgba(tint, Math.min(1, (0.40 + boost) * base)));
+    g.addColorStop(1, toRgba(tint, Math.min(1, (0.24 + boost) * base)));
     ctx.fillStyle = g;
-    // 远景色块不该发光抢星点（原型：远景区块只是"一片淡淡的地")
-    if (!exportMode && isDark && lod > 0.45) {
-      ctx.shadowColor = toRgba(border.color, 0.5);
-      ctx.shadowBlur = (isEditing ? 34 : 20) * unit * (exportMode ? 1 : 0.6);
-    }
     ctx.fill();
     ctx.restore();
 
-    // ── 边界：柔光底衬 + 细线（粗白边会把相邻星域割成两块贴纸）──
-    const lineAlpha = (isEditing ? 0.85 : isHovered ? 0.7 : 0.5) + (lod < 0.4 ? -0.1 : 0);
+    // ── 边界：**内亮线 + 中软带 + 外柔光**（群星是"厚软带"而不是一条细线）──
+    const lineAlpha = (isEditing ? 0.95 : isHovered ? 0.9 : 0.78) + (lod < 0.4 ? -0.22 : 0);
     ctx.save();
     traceLoops(ctx, loops);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.strokeStyle = toRgba(border.color, Math.max(0.05, lineAlpha * 0.36));
-    ctx.lineWidth = (isEditing ? 10 : 7) * unit;
+    // 外柔光：宽、低透明
+    ctx.strokeStyle = toRgba(border.color, Math.max(0.04, lineAlpha * 0.16));
+    ctx.lineWidth = (isEditing ? 16 : 11) * unit;
     ctx.stroke();
-    ctx.strokeStyle = toRgba(border.color, Math.max(0.08, lineAlpha));
-    ctx.lineWidth = (isEditing ? 2.4 : 1.6) * unit;
+    // 中软带：半宽
+    ctx.strokeStyle = toRgba(border.color, Math.max(0.08, lineAlpha * 0.42));
+    ctx.lineWidth = (isEditing ? 6 : 4.2) * unit;
+    ctx.stroke();
+    // 内亮线：屏幕恒定细线
+    ctx.strokeStyle = toRgba(mixToward(border.color, [255, 255, 255], 0.25), Math.max(0.15, lineAlpha));
+    ctx.lineWidth = (isEditing ? 1.8 : 1.2) * unit;
     ctx.stroke();
     ctx.restore();
 
@@ -160,7 +162,9 @@ export function paintDomainBorders(ctx, borders, opts = {}) {
     // 缩到全图时 scale≈0.36，旧口径 `lod>0.4` 会让整幅图一个星域名都没有（用户看到的是「四个无名色块」）。
     const pxRadius = (border.fadeRadius || 360) * (exportMode ? 1 : scale);
     if (exportMode ? false : pxRadius < 26) continue;
-    const fontPx = exportMode ? 17 * uiScale : Math.max(10, Math.min(19, pxRadius / 5.2));
+    // 字号：群星里帝国名是**小字、字距宽**（`refs/src/星域视图1.jpg` 里比星名还小）；
+    // 旧口径 16~19px 在那个尺度上属于"海报大字"。中文没有大小写，靠字距 + 半透明压层级。
+    const fontPx = exportMode ? 15 * uiScale : Math.max(9, Math.min(15, pxRadius / 6.4));
     const fontSize = exportMode ? fontPx : fontPx * unit;
     ctx.save();
     ctx.font = `600 ${fontSize}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;

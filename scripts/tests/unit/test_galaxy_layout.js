@@ -210,18 +210,25 @@ async function main() {
     return 'ok';
   });
 
-  check('e1 航道配色：**4 类**互不相同；用户建的（非 auto_）与自动的必须不同', () => {
-    const cs = [
-      G.hyperlaneColor({ id: 'auto_1', type: 'local' }, {}),
-      G.hyperlaneColor({ id: 'h1', type: 'local' }, {}),                 // 用户建的
-      G.hyperlaneColor({ id: 'h2', type: 'cross_domain' }, {}),
-      G.hyperlaneColor({ id: 'h3', type: 'hyperjump' }, {}),
-    ];
-    assert(new Set(cs).size === 4, `4 类应互不相同：${JSON.stringify(cs)}`);
-    assert(G.hyperlaneColor({ id: 'auto_9', type: 'local' }, {}) === cs[0], '自动航道的色应稳定');
-    assert(G.hyperlaneColor({ id: 'h1', type: 'local' }, { hovered: true }) !== cs[1], '悬停态应不同');
-    assert(G.hyperlaneColor({ id: 'auto_1', type: 'local' }, { isDark: false }) !== cs[0], '亮色主题应不同');
-    return cs.join(' / ');
+  check('e1 航道配色：自动/跨域**同族青**、跳跃紫、用户绿（2026-11-02 按群星参考图改口径）', () => {
+    const auto = G.hyperlaneColor({ id: 'auto_1', type: 'local' }, {});
+    const user = G.hyperlaneColor({ id: 'h1', type: 'local' }, {});
+    const cross = G.hyperlaneColor({ id: 'h2', type: 'cross_domain' }, {});
+    const jump = G.hyperlaneColor({ id: 'h3', type: 'hyperjump' }, {});
+    assert(new Set([auto, user, cross, jump]).size === 4, `四类应两两可区分：${JSON.stringify([auto, user, cross, jump])}`);
+    // 同族青：自动与跨域的**色相相同**，只靠明暗/虚线区分（群星就是这么干的）
+    const hueOf = (s) => { const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(s); return m ? [m[1], m[2], m[3]].map(Number) : null; };
+    const a = hueOf(auto), c = hueOf(cross);
+    assert(a && c, '颜色应是 rgba 形式');
+    // 青色的判据：G 与 B 明显高于 R
+    assert(a[1] > a[0] + 40 && a[2] > a[0] + 40, `自动航道应是青色系，实测 ${auto}`);
+    assert(c[1] > c[0] + 30 && c[2] > c[0] + 30, `跨域航道应与自动同族（青），实测 ${cross}`);
+    assert(jump !== auto && jump !== cross, '跳跃（虫洞语义）必须与航道不同色');
+    assert(user !== auto && user !== cross && user !== jump, '用户手建的必须能被单独认出来');
+    assert(G.hyperlaneColor({ id: 'auto_9', type: 'local' }, {}) === auto, '自动航道的色应稳定');
+    assert(G.hyperlaneColor({ id: 'h1', type: 'local' }, { hovered: true }) !== user, '悬停态应不同');
+    assert(G.hyperlaneColor({ id: 'auto_1', type: 'local' }, { isDark: false }) !== auto, '亮色主题应不同');
+    return [auto, user, cross, jump].join(' / ');
   });
 
   check('e2 节点观感：星系用势力色（导出原先固定 #ffd700）；半径按层', () => {
