@@ -45,14 +45,15 @@ export function starTintOf(id) {
   return STAR_CLASSES[0].tint;
 }
 
-/** 屏幕半径（px）：远景 3.4，中近景 4.6~9.5；枢纽 ×1.3
+/** 屏幕半径（px）：2026-11-02 整体收小一档（用户：示例图里"恒星太亮太大"）。
+ *  远景 2.7~3.4，中近景 4.2~8.0；枢纽 ×1.25。
  *  ⚠️ 远景别做太小：司天的星系数远少于原型（415 省项目里一个星域也就几颗），
  *     2.2px 的点在整幅图里会"看不见星"、只剩标签飘在空中（2026-11-01 首版就是这个问题）。 */
 export function starScreenRadius(lod, { major = false, exportMode = false, uiScale = 1 } = {}) {
-  if (exportMode) return (major ? 10 : 8) * uiScale;
-  if (lod < 0.28) return major ? 4.4 : 3.4;
-  const base = Math.min(9.5, Math.max(5.2, 4.0 + lod * 4.4));
-  return major ? base * 1.3 : base;
+  if (exportMode) return (major ? 8 : 6.5) * uiScale;
+  if (lod < 0.28) return major ? 3.4 : 2.7;
+  const base = Math.min(8.0, Math.max(4.2, 3.2 + lod * 3.4));
+  return major ? base * 1.25 : base;
 }
 
 function rgba(hex, a) {
@@ -90,10 +91,10 @@ export function paintStar(ctx, star, o) {
 
   // ① 归属光晕底衬（低透明）：远处也能看出"这一片是谁的"
   if (owner && (exportMode || lod >= 0.2)) {
-    const hr = r * (exportMode ? 4.2 : 3.6);
+    const hr = r * (exportMode ? 3.6 : 3.2);
     const g = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, hr);
-    g.addColorStop(0, rgba(owner, 0.34));
-    g.addColorStop(0.55, rgba(owner, 0.12));
+    g.addColorStop(0, rgba(owner, 0.22));
+    g.addColorStop(0.55, rgba(owner, 0.08));
     g.addColorStop(1, rgba(owner, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -103,11 +104,11 @@ export function paintStar(ctx, star, o) {
 
   // ② 色温光晕（所有档位都画：远景没有光晕就只剩几个看不出是星的像素点）
   {
-    const flicker = exportMode ? 1 : 0.92 + Math.sin(time * 1.6 + (hash01(String(star.id), 3) * 6.28)) * 0.08;
-    const gr = r * (major ? 4.0 : 3.4) * flicker;
+    const flicker = exportMode ? 1 : 0.94 + Math.sin(time * 1.6 + (hash01(String(star.id), 3) * 6.28)) * 0.06;
+    const gr = r * (major ? 3.2 : 2.8) * flicker;
     const g = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, gr);
-    g.addColorStop(0, rgba(tint, major ? 0.62 : 0.5));
-    g.addColorStop(0.45, rgba(tint, 0.18));
+    g.addColorStop(0, rgba(tint, major ? 0.44 : 0.34));
+    g.addColorStop(0.45, rgba(tint, 0.12));
     g.addColorStop(1, rgba(tint, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -121,10 +122,10 @@ export function paintStar(ctx, star, o) {
   ctx.fillStyle = tint;
   ctx.fill();
 
-  // ④ 白热星心
+  // ④ 白热星心（收小收淡：原来 0.42r / 0.95 在深底上是一团白斑）
   ctx.beginPath();
-  ctx.arc(star.x, star.y, r * 0.42, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.arc(star.x, star.y, r * 0.34, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
   ctx.fill();
 
   // ⑤ 归属细环（读归属靠它；远景不画，免得糊成一圈）

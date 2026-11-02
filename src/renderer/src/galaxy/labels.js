@@ -9,10 +9,12 @@
 //
 // 画布与导出共用本模块（导出传 `exportMode` + `uiScale`）。
 
-/** 缩放 → 标签档位 */
+/** 缩放 → 标签档位（2026-11-02 上调：远景只留星点，中景只有枢纽，近景才全量）
+ *  ⚠️ 上一版的门槛（0.35 / 0.7）在"星多"的数据上完全不够：120 颗星的图在 0.5 缩放就已经糊成一片。
+ *     现在 0.6 以下一个名字都不画；0.6~1.1 只画枢纽（度数 ≥4 / 命中）；1.1 以上才全量。 */
 export function labelLodFor(scale) {
-  if (scale < 0.35) return { band: 'none', fontPx: 12 };
-  if (scale < 0.7) return { band: 'major', fontPx: 12 };
+  if (scale < 0.6) return { band: 'none', fontPx: 12 };
+  if (scale < 1.1) return { band: 'major', fontPx: 12 };
   return { band: 'all', fontPx: 13 };
 }
 
@@ -49,17 +51,22 @@ export function collectStarLabels(stars, opts = {}) {
  */
 export function cullStarLabels(labels, ctx, opts = {}) {
   const fontPx = opts.fontPx || 12;
+  // 🔴 2026-11-02：避让必须在**世界坐标**里做 —— 标签的 x/y 是世界坐标，而 measureText 给的是屏幕像素。
+  //    上一版直接拿像素宽当世界宽比（scale<1 时框比实际小一半以上）→ 明明会撞的字也留下，
+  //    于是"星多 + 缩小"时名字糊成一片（用户报的就是这个）。
+  const scale = opts.scale || 1;
+  const unit = 1 / Math.max(0.0001, scale);
   ctx.save();
   ctx.font = `${fontPx}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
   const rects = [];
   const kept = [];
   for (const l of labels) {
-    const w = ctx.measureText(l.text).width;
-    const h = fontPx + 2;
-    // 名字放星点右侧（原型同款），留 6px 间距
-    const x1 = l.x + 6;
+    const w = ctx.measureText(l.text).width * unit;
+    const h = (fontPx + 2) * unit;
+    // 名字放星点右侧（原型同款），留 6px 间距（同样换算成世界单位）
+    const x1 = l.x + 6 * unit;
     const y1 = l.y - h / 2;
-    const box = { x1, y1, x2: x1 + w + 2, y2: y1 + h };
+    const box = { x1, y1, x2: x1 + w + 2 * unit, y2: y1 + h };
     const clash = rects.some(r => box.x1 < r.x2 && box.x2 > r.x1 && box.y1 < r.y2 && box.y2 > r.y1);
     if (clash) continue;
     rects.push(box);

@@ -162,9 +162,9 @@ export function paintDomainBorders(ctx, borders, opts = {}) {
     // 缩到全图时 scale≈0.36，旧口径 `lod>0.4` 会让整幅图一个星域名都没有（用户看到的是「四个无名色块」）。
     const pxRadius = (border.fadeRadius || 360) * (exportMode ? 1 : scale);
     if (exportMode ? false : pxRadius < 26) continue;
-    // 字号：群星里帝国名是**小字、字距宽**（`refs/src/星域视图1.jpg` 里比星名还小）；
-    // 旧口径 16~19px 在那个尺度上属于"海报大字"。中文没有大小写，靠字距 + 半透明压层级。
-    const fontPx = exportMode ? 15 * uiScale : Math.max(9, Math.min(15, pxRadius / 6.4));
+    // 字号：2026-11-02 先按群星调成 9~15，实测**太小**（用户："星域名号太小"）——
+    // 群星是小字，但它的地图密度是我们的十几倍，字小也读得出；我们星域少，放大到 12~22 才立得住。
+    const fontPx = exportMode ? 17 * uiScale : Math.max(12, Math.min(22, pxRadius / 4.6));
     const fontSize = exportMode ? fontPx : fontPx * unit;
     ctx.save();
     ctx.font = `600 ${fontSize}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
