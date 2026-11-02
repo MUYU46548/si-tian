@@ -138,3 +138,6 @@ build/system-2d/
 build/diplomacy/
 build/simple-mode/
 build/diplomacy-preview/
+
+# EU4/群星 对照出图（2026-11-02，本地证据，禁止提交）
+build/eu4-compare/
