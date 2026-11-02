@@ -50,6 +50,8 @@ export function createActionHandlers(api) {
     selectedBurgSize,
     selectedPolity,
     selectedScenario,
+    // 2026-11-02：这一笔涂归属的 groupId（`pointerState` 没有它的 get/set，改由 polityPalette 交付）
+    ownerStrokeIdNow,
     showBurgs,
     showPlaceNames,
     showScenarioManager,
@@ -364,7 +366,9 @@ function commitOwnerStroke() {
   if (!clearing && !pol) { statusMsg('涂归属：没有选中的势力（点地图上方「势力：」里的色块）'); return null; }
   const res = store.batchSetOwnership(sc.id, ids, clearing ? null : pol.id, tlDate.value, {
     // 第 4 件接线点：带上这一笔的 groupId → store 会把它落成账本事件组（一笔一组）
-    strokeId: st.ownerStrokeId || undefined,
+    // 2026-11-02 修：原来读的是 `st.ownerStrokeId`，而 `pointerState` 没有它的 get/set →
+    //   恒为 undefined（账本记了，但记不成"一组"）。现在由 `polityPalette` 把值交出来。
+    strokeId: (typeof ownerStrokeIdNow === 'function' ? ownerStrokeIdNow() : '') || undefined,
   });
   if (!res || res.success === false) {
     statusMsg(`涂归属失败：${(res && res.reason) || '未知原因'}`);

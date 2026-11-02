@@ -75,9 +75,11 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
      saveScenarios 同步段 3~4ms ｜ 落库合计 32~43ms ｜ 松手墙钟 36~47ms** → **≤50ms 达标**。
    - 仍大的一块是 `重叠度量`（占剩余时间 70%）：要再快就得动采样口径（`OVERLAP_MAX_DIM` / 每省点数上限），
      那会改变比值语义、牵连 `test_79` 的精确断言 —— 不做，留作"以后真的嫌慢再说"。
-2. **`st.ownerStrokeId` 是个老洞**（本轮抽取时发现，未修）：`pointerState` 从来没有它的 get/set，
-   于是 `actions.js` 里 `st.ownerStrokeId` 恒为 `undefined` —— 涂归属那一笔的账本 `groupId` 一直没带上。
-   改它会有**行为变化**（账本分组），所以留成单独一刀，不夹在重构里。
+2. ~~**`st.ownerStrokeId` 是个老洞**~~ → **已修（2026-11-02 第四轮）**：`pointerState` 从来没有它的 get/set，
+   于是 `actions.js` 里 `st.ownerStrokeId` 恒为 `undefined` —— 涂归属那一笔的账本 `groupId` 一直没带上
+   （账本照记，但记不成"一组"）。现在由 `polityPalette.js` 交出 `ownerStrokeIdNow()`（唯一实现），
+   `commitOwnerStroke` 改调它。判据：真实拖一笔 → 账本长出同一 `groupId`
+   （实测 `own-mvyux7hb-6ow`，2 条事件）；`test_138` 的「属性面板自动 groupId 不复用笔刷的 groupId」仍绿。
 3. 星云按视口裁（MANIFEST 星域行最后一条）：背景资产仍按固定 3200×3200 世界矩形铺。视觉上无问题，
    只是超大图幅导出时多画了一部分 —— 没做，不算吸收完。
 4. **「部分地形沉入海底」**：用户 2026-11-01 已说明 415 省项目从不承载真实数据 → 本轮按"不复现不修"处理，

@@ -50,6 +50,13 @@ function nextOwnerStrokeId() {
   ownerStrokeId = `own-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
   return ownerStrokeId;
 }
+/**
+ * 读回当前这一笔的 groupId（2026-11-02 补的洞）。
+ * 之前 `actions.js` 写的是 `st.ownerStrokeId`，而 `pointerState` 从来没有给它 get/set ——
+ * 于是**这一笔的 groupId 恒为 undefined**：账本照记，但记不成"一组"，两笔连涂会被当成两堆散事件。
+ * 现在由这里把值交出去，`commitOwnerStroke` 走同一个函数（唯一实现，别再各写一份）。
+ */
+function ownerStrokeIdNow() { return ownerStrokeId || ''; }
 
 /** 笔刷半径（世界单位）—— 与几何笔刷同一口径：屏幕像素 / 缩放 */
 function ownerBrushWorldRadius() {
@@ -212,6 +219,7 @@ function clearSelectedProvinceOwner() {
     selectPolity,
     selectClearOwnership,
     nextOwnerStrokeId,
+    ownerStrokeIdNow,
     ownerBrushWorldRadius,
     ownerHitProvinceIds,
     updateSelectedPolity,

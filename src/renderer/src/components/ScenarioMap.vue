@@ -6101,7 +6101,7 @@ const pointerState = {
 };
 
 // ── N1.5：势力色板（改色/改简称/新建/删除/选中 + 批量归属 + 单省指派）──
-const { selectPolity, selectClearOwnership, nextOwnerStrokeId, ownerBrushWorldRadius, ownerHitProvinceIds, updateSelectedPolity, onPolityNameChange, onAddPolity, onPolityColorChange, onPolityAbbrChange, onSetPolityLineage, batchEcho, onBatchAssign, onBatchClear, onSelectAllLand, assignSelectedProvinceOwner, clearSelectedProvinceOwner } = createPolityActions({
+const { selectPolity, selectClearOwnership, nextOwnerStrokeId, ownerStrokeIdNow, ownerBrushWorldRadius, ownerHitProvinceIds, updateSelectedPolity, onPolityNameChange, onAddPolity, onPolityColorChange, onPolityAbbrChange, onSetPolityLineage, batchEcho, onBatchAssign, onBatchClear, onSelectAllLand, assignSelectedProvinceOwner, clearSelectedProvinceOwner } = createPolityActions({
   askText,
   cameraScale,
   clearOwnerMode,
@@ -6494,6 +6494,8 @@ const { exportPNG, createNewScenario, saveEditScenario, onSetChangeDate, tlFrame
   labelLayers,
   makeLayerView,
   newScenario,
+  // 2026-11-02：涂归属这一笔的 groupId（pointerState 没这个 get/set，改由 polityPalette 交付）
+  ownerStrokeIdNow,
   px,
   render,
   riverEraseStroke,
