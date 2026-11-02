@@ -29,11 +29,27 @@ function check(name, fn) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
+/** 射线法：点是否在闭合环内（边界按内处理）—— 判「色块包住自己的中心 / 两家不重叠」用 */
+function pointInLoop(loop, x, y) {
+  let inside = false;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+    const xi = loop[i].x, yi = loop[i].y;
+    const xj = loop[j].x, yj = loop[j].y;
+    if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
 async function main() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-glayout-'));
-  fs.copyFileSync(path.join(SRC_DIR, 'galaxyLayout.js'), path.join(tmp, 'galaxyLayout.js'));
+  // ⚠️ 2026-11-02：`galaxyLayout.js` 现在 import `../galaxy/territory`（所有权场 φ）。
+  // 临时目录必须保住这个相对路径，否则 import 直接失败（而这是**用例自己的**失败，不是产品的）。
+  fs.mkdirSync(path.join(tmp, 'utils'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'galaxy'), { recursive: true });
+  fs.copyFileSync(path.join(SRC_DIR, 'galaxyLayout.js'), path.join(tmp, 'utils', 'galaxyLayout.js'));
+  fs.copyFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'galaxy', 'territory.js'), path.join(tmp, 'galaxy', 'territory.js'));
   fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
-  const G = await import(pathToFileURL(path.join(tmp, 'galaxyLayout.js')).href);
+  const G = await import(pathToFileURL(path.join(tmp, 'utils', 'galaxyLayout.js')).href);
 
   const dom = (id, extra) => Object.assign({ id, name: id, layer: 'star_domain', faction: undefined }, extra || {});
   const gal = (id, parentId, extra) => Object.assign({ id, name: id, layer: 'galaxy', parentId }, extra || {});
@@ -121,12 +137,54 @@ async function main() {
     const domains = G.layoutDomains([dom('a'), dom('b')], {});
     const galaxies = G.layoutGalaxies([gal('g1', 'a'), gal('g2', 'a'), gal('g3', 'b')], domains, {});
     const borders = G.factionBorders({ domainNodes: domains, galaxyNodes: galaxies, overrides: {} });
-    assert(borders.length === 2, `应有 2 条边界（a 走凸包 / b 走多边形），实测 ${borders.length}`);
-    const b = borders.find(x => x.domainId === 'b');
-    assert(b && b.points.length === G.GALAXY_LAYOUT.circleSegments, '星系数不足时应画正多边形');
+    // 2026-11-02 改口径：边界不再是「凸包 / 12 边形」，而是**所有权场 φ 派生的软轮廓**。
+    // 守的东西不变：**每个星域都必须有边界**（导出原先在这里直接 continue），且轮廓是闭合环。
+    assert(borders.length === 2, `应有 2 条边界（软轮廓），实测 ${borders.length}`);
+    for (const b of borders) {
+      assert(b.points.length >= 8, `${b.domainId} 的手柄点太少（${b.points.length}），没法拖`);
+      assert(Array.isArray(b.loops) && b.loops.length >= 1, `${b.domainId} 缺 loops（画布按 loops 填充）`);
+      assert(b.loops[0].length >= 24, `${b.domainId} 的软轮廓应有 >= 24 个点，实测 ${b.loops[0].length}`);
+      assert(b.soft === true, `${b.domainId} 应标记 soft（= 场派生、尚未被用户接管）`);
+      assert(Number.isFinite(b.fadeRadius) && b.fadeRadius > 0, `${b.domainId} 缺 fadeRadius`);
+      // 形状必须**包住自己的中心**（φ 的代数性质：成员位置 φ>0）
+      const c = b.center;
+      const inside = pointInLoop(b.loops[0], c.x, c.y);
+      assert(inside, `${b.domainId} 的软轮廓没包住自己的中心 —— 场算错了`);
+      // 中心恒为星域坐标（标签 / 命中 / 拖拽手柄都靠它）
+      const d = domains.find(x => x.id === b.domainId);
+      assert(Math.abs(c.x - d.x) < 1e-6 && Math.abs(c.y - d.y) < 1e-6, `${b.domainId} 的 center 不是星域坐标`);
+    }
     const a = borders.find(x => x.domainId === 'a');
-    assert(a && a.points.length >= 3, 'a 应有凸包');
-    return `a=${a.points.length} 点 / b=${b.points.length} 点`;
+    return `a=${a.points.length} 手柄 / ${a.loops[0].length} 轮廓点`;
+  });
+
+  check('d1b 两个星域的软轮廓**互不重叠**（argmin 互斥：色块零重叠的代数性质）', () => {
+    const domains = G.layoutDomains([dom('a'), dom('b')], {});
+    const galaxies = G.layoutGalaxies([gal('g1', 'a'), gal('g2', 'a'), gal('g3', 'b'), gal('g4', 'b')], domains, {});
+    const borders = G.factionBorders({ domainNodes: domains, galaxyNodes: galaxies, overrides: {} });
+    // 在两家连线的中点附近采样：任一点不应同时落在两条轮廓内
+    const A = domains.find(d => d.id === 'a'), B = domains.find(d => d.id === 'b');
+    let overlap = 0, sampled = 0;
+    for (let t = 0.3; t <= 0.7; t += 0.05) {
+      const p = { x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t };
+      const inA = pointInLoop(borders.find(b => b.domainId === 'a').loops[0], p.x, p.y);
+      const inB = pointInLoop(borders.find(b => b.domainId === 'b').loops[0], p.x, p.y);
+      sampled++;
+      if (inA && inB) overlap++;
+    }
+    assert(sampled > 0, '采样点为空');
+    assert(overlap === 0, `${overlap}/${sampled} 个采样点同时落在两个星域里 —— 场不互斥`);
+    return `采样 ${sampled} 点，重叠 0`;
+  });
+
+  check('d1c 同输入两次 → 边界逐点一致（确定性；画布与导出不会各画一套）', () => {
+    const domains = G.layoutDomains([dom('a'), dom('b')], {});
+    const galaxies = G.layoutGalaxies([gal('g1', 'a'), gal('g2', 'a'), gal('g3', 'b')], domains, {});
+    const one = G.factionBorders({ domainNodes: domains, galaxyNodes: galaxies, overrides: {} });
+    const two = G.factionBorders({ domainNodes: domains, galaxyNodes: galaxies.map(g => ({ ...g })), overrides: {} });
+    const sig = (bs) => JSON.stringify(bs.map(b => b.loops.map(l => l.map(p => [Math.round(p.x * 1000), Math.round(p.y * 1000)]))));
+    assert(sig(one) === sig(two), '同一布局两次算出的边界不一致');
+    return 'ok';
   });
 
   check('d2 凸包外扩是**同一个 pad**（原先画布 50 / 导出 25）', () => {
@@ -209,7 +267,8 @@ async function main() {
 
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
-  console.log(`\n${results.length - failed.length}/${results.length} 通过`);
+  // `run_tests.py` 的摘要按 `===` 开头的行取（没有这行时它只能记「无输出」，即使全绿也难看懂）
+  console.log(`\n=== 星系布局 ${results.length - failed.length}/${results.length} 通过 ===`);
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* ignore */ }
   process.exit(failed.length ? 1 : 0);
 }

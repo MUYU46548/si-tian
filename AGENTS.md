@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**72 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**79 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -71,7 +71,7 @@
 
 - **七层视图链**（全部已实现）: world → domain → system → system_detail → planet → area → interior，对应组件 WorldSelector → GalaxyMap → SystemView → SystemDetailView → PlanetMap → AreaMap → InteriorView
 
-- **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 8 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / provinceEditing（省份归属标签网格）/ interior / search / spaceEditing / channelBrush（文化·宗教逐格通道笔刷）
+- **store 结构**: `store/geodata.js` 是壳（defineStore + 装配），真实逻辑在 `store/geodataModules/` 9 个模块：mapDataEditing（最大）/ areaEditing / scenarioEditing / provinceEditing（省份归属标签网格）/ interior / search / spaceEditing / channelBrush（文化·宗教逐格通道笔刷）/ loreBinding（笔记↔节点稳定绑定，2026-11-02）
 
 - **剧本集（2026-10-25）**: `scenario.group` + 项目级 `scenarios.groups`；一组 = 一条独立时间线，左栏/时间轴/播放/切片「全部剧本」都只取当前组；组判定/选项/计数单源 = `utils/scenarioGroups.js`（`test_146` / `unit/test_scenario_groups.js` 守）。删除组不删剧本，组内剧本退回默认组。
 - **undo 纪律**: `store/undo.js` 的 `execute()` 内部立即调用 `command.redo()` 完成首次写入——数据修改必须放在 redo 回调内，禁止在 execute 之前手动改数据（会造成双写）
@@ -86,8 +86,9 @@
 
 - **现行规划（2026-10-30 起：`docs/plan/PLAN_AUDIT_20261030.md` 是唯一施工依据）**：
   - **总入口** = [docs/plan/PLAN_AUDIT_20261030.md](docs/plan/PLAN_AUDIT_20261030.md)（阶段门 N0/N1/N2/N3/N4 + 判据 + 已拍板事项）；
-    **接手先读** [docs/plan/BREAKPOINT_20261101.md](docs/plan/BREAKPOINT_20261101.md)（当前断点：**临时产物内化第一刀** ——
-    星域总览美术 / 本地参照图库 `refs/` / 行星「空地图」判定；行数拆分进度见上一版 `BREAKPOINT_20261031.md`）。
+    **接手先读** [docs/plan/BREAKPOINT_20261102.md](docs/plan/BREAKPOINT_20261102.md)（当前断点：**把在列的活全部做掉** ——
+    星域边界所有权场 φ 软融合 / 航道稀疏化 / 恒星系轨道分级 + 日冕 / N3a-1 provenance / N3a-2 外交表 /
+    N3a-3 读料桥稳定 ID / N3b-1 侵蚀层 / N3b-2 简易模式；没做到的也逐条写在那一页第三节）。
   - **本地参照图库 `refs/`（2026-11-01）**：动任何视觉之前先读 `refs/MANIFEST.md`。
     目录只有 `README.md` + `MANIFEST.md` 入库，**图片一律 gitignore**（用户截图/第三方画面，不入库）；
     新增参看图必须同时在清单里写「要抄的事实 + 吸收状态」，否则下一轮等于没喂过。
@@ -149,10 +150,10 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 72 | `ls scripts/tests/unit/*.js \| wc -l` |
-| store 模块数 | 8 | `ls src/renderer/src/store/geodataModules/` |
-| App.vue 异步面板 | 24 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
-| IPC handle 数 | 45 | `grep -c "ipcMain.handle" src/main/index.js` |
+| Node 单测文件数 | 79 | `ls scripts/tests/unit/*.js \| wc -l` |
+| store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
+| App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
+| IPC handle 数 | 46 | `grep -c "ipcMain.handle" src/main/index.js` |
 | 项目文件 IPC 通道数 | 10 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
 | 同步 IPC 通道数 | 7 | `grep -c "ipcMain.handle('git-sync-" src/main/handlers/gitSyncHandler.js` |
 | 七层视图组件 | 7 个齐全 | `ls src/renderer/src/components/` |

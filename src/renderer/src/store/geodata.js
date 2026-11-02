@@ -15,6 +15,8 @@ import { createSpaceEditingModule, normalizeSpaceMarkers, normalizeFleetCards } 
 import { createScenarioEditingModule } from './geodataModules/scenarioEditing';
 import { createProvinceEditingModule } from './geodataModules/provinceEditing';
 import { createChannelBrushModule } from './geodataModules/channelBrush';
+// 读料桥写口（N3a-3）：节点 ↔ 笔记的稳定绑定 / 解绑 / 候选导入（一条 undo；首行 guardWrite）
+import { createLoreBindingModule } from './geodataModules/loreBinding';
 // 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
 // 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
 import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge';
@@ -255,6 +257,14 @@ export const useGeodataStore = defineStore('geodata', () => {
     planet: '行星', moon: '卫星', region: '区域', city: '城市',
     town: '城镇', village: '村庄', building: '建筑', facility: '设施', location: '地点', unknown: '未知'
   };
+
+  // 读料桥写口（N3a-3）：绑定 / 解绑 / 候选导入。
+  // 位置说明：它要 `layerLabels`（层级中文标签的**唯一**来源）来把候选的层级别名归一到 id，
+  // 所以必须在 layerLabels 之后创建（前面的模块块里放会撞上 const 的 TDZ）。
+  // 写入一律走既有的 `addNode` / `execute`，本模块不碰磁盘、不写笔记。
+  const loreBindingModule = createLoreBindingModule({
+    nodes, execute, scheduleAutoSave, addNode, layerLabels,
+  });
 
   const tree = computed(() => {
     const map = new Map();
@@ -2186,5 +2196,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     ...spaceEditingModule,
     ...scenarioEditingModule,
     ...provinceEditingModule,
+    // 读料桥（N3a-3）：bindNodeToNote / unbindNodeNote / importVaultCandidate
+    // —— 三个都是写口，已登记在 store/writeGate.js#MEMORY_WRITE_CALLSITES（id 12）
+    ...loreBindingModule,
   };
 });

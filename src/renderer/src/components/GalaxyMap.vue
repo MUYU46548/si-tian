@@ -142,16 +142,19 @@ import { withAlpha, toHex6 } from '../utils/colorUtil';
 // （§bug 导出与画布不同源：这些原先在 App.vue 里各有一份，两边结果不一致且不报错）
 import {
   getFactionColor, resolveDomainColor as resolveDomainColorShared,
-  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor,
+  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, sparsifyHyperlanes,
 } from '../utils/galaxyLayout';
 // 星系绘制美术（**吸收自 SP-1025 原型**，2026-11-01）：背景资产 / 恒星色温与归属环 / LOD 标签。
 // 🔴 这三件同时被「导出 PNG(全图)」（App.vue）调用 —— 同一份实现，不许各画一套。
 import { paintGalaxySky, GALAXY_SKY_RECT } from '../galaxy/sky';
+import { paintDomainBorders } from '../galaxy/domainPaint';
+import { distanceToLoop } from '../galaxy/territory';
 import { paintStar } from '../galaxy/starArt';
 import { collectStarLabels, cullStarLabels, paintStarLabels, labelLodFor } from '../galaxy/labels';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { useContextMenu } from '../composables/useContextMenu';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
+import { useTheme } from '../composables/useTheme';
 import CanvasSkeleton from './CanvasSkeleton.vue';
 import EagleEye from './EagleEye.vue';
 import ZoomControls from './ZoomControls.vue';
@@ -167,6 +170,8 @@ const emit = defineEmits(['select', 'enter-system', 'back', 'dirty', 'select-nod
 
 const store = useGeodataStore();
 const layers = useLayersStore();
+// 星域色块的浓度按主题分档（深底要更亮才看得出领土，浅底要更淡才不糊）
+const { currentTheme } = useTheme();
 
 const canvas = ref(null);
 // U4: 骨架屏显隐——首帧渲染后淡出
@@ -473,15 +478,34 @@ function hitTest(wx, wy) {
 
   if (editMode.value) {
     const borders = computeFactionBorders();
+    // 命中半径一律**屏幕恒定**（÷scale）：软轮廓的手柄在远景只有几个像素，
+    // 用固定的 12 世界单位会出现「看得见的点拖不动、看不见的地方反而拖得动」。
+    const scale = renderer.getViewTransform().scale || 1;
+    const hitR = 12 / Math.max(0.2, scale);
     for (const border of borders) {
       for (let i = 0; i < border.points.length; i++) {
         const p = border.points[i];
         const dx = wx - p.x;
         const dy = wy - p.y;
-        if (dx * dx + dy * dy < 12 * 12) {
+        if (dx * dx + dy * dy < hitR * hitR) {
           return { type: 'boundary-vertex', border, vertexIndex: i };
         }
       }
+    }
+    // 软轮廓（场派生、用户还没接管）：**点在边界线上**也算命中 —— 以最近的手柄接管。
+    // 没有这条，14 个稀疏手柄里必须先精确点中一个才能开始改边界（旧凸包 5~10 点时代的老问题）。
+    const lineR = 8 / Math.max(0.2, scale);
+    for (const border of borders) {
+      if (!border.soft) continue;
+      const loop = border.loops && border.loops.length ? border.loops[0] : border.points;
+      if (distanceToLoop(loop, wx, wy) > lineR) continue;
+      let bi = 0;
+      let bd = Infinity;
+      border.points.forEach((p, i) => {
+        const d = Math.hypot(p.x - wx, p.y - wy);
+        if (d < bd) { bd = d; bi = i; }
+      });
+      return { type: 'boundary-vertex', border, vertexIndex: bi, soft: true };
     }
     // 🔴 星域本身必须**可命中**（§bug5）：`domain-label` 那条分支被 `!editMode` 门控，
     //    而编辑模式下又只判边界顶点 → 星域在编辑模式里"看得见、点不到"，
@@ -522,8 +546,32 @@ const visibleHyperlanes = computed(() => {
   return store.hyperlanes.filter(h => ids.has(h.fromId) && ids.has(h.toId));
 });
 
+/**
+ * **真正画出来的**航道（2026-11-02 稀疏化）。
+ * 画与命中必须用同一份 —— 否则「看得见的点不到 / 看不见的反而点得到」。
+ * 稀疏化只改渲染，不改 `store.hyperlanes`（数据一条不删）。
+ */
+const _laneCache = { key: '', list: [] };
+function hyperlanesToDraw() {
+  const vt = renderer.getViewTransform();
+  const scale = vt.scale || 1;
+  const lod = Math.min(1, Math.max(0, (scale - 0.3) / 0.7));
+  const key = `${Math.round(scale * 100)}:${editMode.value}:${store.hyperlanes.length}:${hoveredHyperlane}:${visibleHyperlanes.value.length}`;
+  if (_laneCache.key === key) return _laneCache.list;
+  const list = sparsifyHyperlanes(visibleHyperlanes.value, {
+    nodeById: new Map(galaxyNodes.value.map(g => [g.id, g])),
+    domainOf: new Map(galaxyNodes.value.map(g => [g.id, g.domainId])),
+    lod,
+    editMode: editMode.value,
+    pinned: new Set(hoveredHyperlane ? [hoveredHyperlane] : []),
+  });
+  _laneCache.key = key;
+  _laneCache.list = list;
+  return list;
+}
+
 function hitTestHyperlane(wx, wy) {
-  const hyperlanes = visibleHyperlanes.value;
+  const hyperlanes = hyperlanesToDraw();
   const nodeMap = new Map(galaxyNodes.value.map(g => [g.id, g]));
   
   let closest = null;
@@ -616,99 +664,21 @@ function onRender(ctx, w, h) {
 function drawStarfield(ctx) {
   paintGalaxySky(ctx, GALAXY_SKY_RECT);
 }
-// ===== 势力边界 =====
+// ===== 势力边界（2026-11-02：所有权场 φ 软融合；画法在 `galaxy/domainPaint.js`，导出共用）=====
 function drawFactionBorders(ctx, lod) {
-  const borders = computeFactionBorders();
-  
-  for (const border of borders) {
-    if (border.points.length < 3) continue;
-    
-    const isEditing = editingBoundary.value?.domainId === border.domainId;
-    
-    ctx.save();
-    ctx.shadowColor = border.color;
-    ctx.shadowBlur = isEditing ? 50 : 35;
-    ctx.beginPath();
-    ctx.moveTo(border.points[0].x, border.points[0].y);
-    for (let i = 1; i < border.points.length; i++) {
-      ctx.lineTo(border.points[i].x, border.points[i].y);
-    }
-    ctx.closePath();
-    // 🔴 透明度一律走 `withAlpha`（**唯一实现**）：以前这里写的是 `border.color + '12'`，
-    //    只对 6 位 hex 成立；而 `getFactionColor()` 对**不在硬编码表里的势力名**返回 `hsl(...)`
-    //    → 拼出 `hsl(210, 70%, 60%)12` = **非法 CSS**，赋给 fillStyle/addColorStop 会被**静默忽略**
-    //    （沿用上一个颜色 = 星域颜色串了，且不报错）。真实库的势力名必然不在表里 → 必然走到。
-    ctx.fillStyle = withAlpha(border.color, '1E');
-    ctx.fill();
-    ctx.restore();
-    
-    const gradient = ctx.createRadialGradient(
-      border.center.x, border.center.y, 0,
-      border.center.x, border.center.y, 400
-    );
-    // 领土要有"体积"：中心亮一点、边缘收淡（原先 35/22/10 在远景几乎看不出是领土）
-    gradient.addColorStop(0, withAlpha(border.color, '48'));
-    gradient.addColorStop(0.5, withAlpha(border.color, '2C'));
-    gradient.addColorStop(1, withAlpha(border.color, '14'));
-    
-    ctx.beginPath();
-    ctx.moveTo(border.points[0].x, border.points[0].y);
-    for (let i = 1; i < border.points.length; i++) {
-      ctx.lineTo(border.points[i].x, border.points[i].y);
-    }
-    ctx.closePath();
-    ctx.fillStyle = gradient;
-    ctx.fill();
-    
-    ctx.strokeStyle = withAlpha(border.color, '60');
-    ctx.lineWidth = isEditing ? 8 : 5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(border.points[0].x, border.points[0].y);
-    for (let i = 1; i < border.points.length; i++) {
-      ctx.lineTo(border.points[i].x, border.points[i].y);
-    }
-    ctx.closePath();
-    ctx.stroke();
-    
-    ctx.strokeStyle = withAlpha(border.color, isEditing ? 'FF' : 'CC');
-    ctx.lineWidth = isEditing ? 3.5 : 2.5;
-    ctx.beginPath();
-    ctx.moveTo(border.points[0].x, border.points[0].y);
-    for (let i = 1; i < border.points.length; i++) {
-      ctx.lineTo(border.points[i].x, border.points[i].y);
-    }
-    ctx.closePath();
-    ctx.stroke();
-    
-    if (lod > 0.4) {
-      const cx = border.center.x;
-      const cy = border.center.y;
-      const scale = renderer.getViewTransform().scale;
-      // 星域名：**无底框墨字**（EU4 参考图口径，见 `refs/src/20261027-08-eu4-1518.jpg`）。
-      // 旧实现是「势力色圆角底框 + 白字」——远景几十个方块糊成一片、近景把星点盖住。
-      // 字号：远景小、近景大（屏幕恒定：世界字号 = 屏幕字号 / scale）。
-      const fontPx = lod > 0.85 ? 19 : 16;
-      const fontSize = Math.min(64, Math.max(10, Math.round(fontPx / scale)));
-      ctx.font = `600 ${fontSize}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineJoin = 'round';
-      const text = border.name;
-      // 暗底深描边 → 亮字；字色取势力色（归属靠颜色读，不靠底框）
-      ctx.strokeStyle = 'rgba(4, 7, 14, 0.78)';
-      ctx.lineWidth = 3.4 / scale;
-      ctx.strokeText(text, cx, cy);
-      ctx.fillStyle = withAlpha(border.color, 'E8');
-      ctx.fillText(text, cx, cy);
-    }
-  }
+  paintDomainBorders(ctx, computeFactionBorders(), {
+    scale: renderer.getViewTransform().scale,
+    isDark: currentTheme.value !== 'light',
+    lod,
+    editingId: editingBoundary.value?.domainId || null,
+    hoveredId: hoveredBoundaryVertex.value?.domainId || null,
+    labelAlpha: 1,
+  });
 }
 
 // ===== 航道（静态线段：无阴影、无动画，保证性能与对比度） =====
 function drawHyperlanes(ctx) {
-  const hyperlanes = visibleHyperlanes.value;
+  const hyperlanes = hyperlanesToDraw();
   const nodeMap = new Map(galaxyNodes.value.map(g => [g.id, g]));
 
   // 批次C2：视口裁剪——端点+控制点的包围盒与视口不相交的航道整条跳过
@@ -962,26 +932,37 @@ function drawBoundaryEditHelpers(ctx) {
   // 编辑辅助（锚点/手柄）仅编辑模式绘制，避免"看得到却拖不动"的困惑
   if (!editMode.value) return;
   const borders = computeFactionBorders();
-  
+  const editingId = editingBoundary.value?.domainId || null;
+  const hoveredId = hoveredBoundaryVertex.value?.domainId || null;
+  const scale = renderer.getViewTransform().scale;
+
   for (const border of borders) {
+    // 软轮廓（场派生）有 14 个手柄，但它**还没被用户接管** —— 只在鼠标靠近这条边界
+    // 或正在编辑它时才亮手柄，否则编辑态满屏都是圆点（14 × 星域数）。
+    const active = editingId === border.domainId || hoveredId === border.domainId;
+    if (border.soft && !active) continue;
+    // 手柄一律屏幕恒定（÷scale），缩放时不变胖
+    const r = 6.5 / Math.max(0.2, scale);
+    const rHover = 9 / Math.max(0.2, scale);
     for (let i = 0; i < border.points.length; i++) {
       const p = border.points[i];
-      const isHovered = hoveredBoundaryVertex.value?.domainId === border.domainId && 
-                        hoveredBoundaryVertex.value?.vertexIndex === i;
-      
+      const isHovered = hoveredBoundaryVertex.value?.domainId === border.domainId
+        && hoveredBoundaryVertex.value?.vertexIndex === i;
+      const rr = isHovered ? rHover : r;
+
       ctx.save();
       ctx.shadowColor = isHovered ? '#FF6B6B' : border.color;
       ctx.shadowBlur = isHovered ? 15 : 8;
       ctx.fillStyle = isHovered ? '#FF6B6B' : border.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, isHovered ? 10 : 7, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, rr, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      
+
       ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.6 / Math.max(0.2, scale);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, isHovered ? 10 : 7, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, rr, 0, Math.PI * 2);
       ctx.stroke();
     }
   }

@@ -839,16 +839,53 @@ function drawOrbitDragPreview(ctx) {
   ctx.fillText(`r=${snapped}`, px, py - 8);
 }
 
+// 轨道分级（2026-11-02，吸收 `refs/MANIFEST.md` 里「恒星系 2D」那条待吸收项：远景细线 / 近景带刻度）：
+//   远景（scale<0.55）：只留极淡的实线细环 —— 十条虚线在远景会糊成一圈"参考线"；
+//   中景：虚线，且**有行星的轨道**比空槽亮一档（用户关心的是"我摆了几条轨道"，不是网格）；
+//   近景（scale>1.1）：实线细环 + 沿环的短刻度（12 格），像仪表盘而不是网格纸。
 function drawOrbitRings(ctx) {
-  ctx.strokeStyle = 'rgba(110, 170, 230, 0.22)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 4]);
+  const scale = renderer.getViewTransform().scale;
+  const unit = 1 / Math.max(0.05, scale);
+  const occupied = new Set();
+  for (const p of planetLayouts.value) {
+    if (!p.isMoon && p.orbitRadius) occupied.add(Math.round(p.orbitRadius));
+  }
   for (let r = ORBIT_RING_START; r <= maxOrbitRadius.value + 30; r += ORBIT_RING_STEP) {
+    const has = occupied.has(Math.round(r));
+    const far = scale < 0.55;
+    const near = scale > 1.1;
+    ctx.save();
+    ctx.lineWidth = (has ? 1.1 : 0.8) * unit;
+    if (far) {
+      ctx.strokeStyle = has ? 'rgba(120, 176, 232, 0.26)' : 'rgba(110, 150, 200, 0.10)';
+      ctx.setLineDash([]);
+    } else if (near) {
+      ctx.strokeStyle = has ? 'rgba(132, 186, 240, 0.30)' : 'rgba(110, 150, 200, 0.14)';
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = has ? 'rgba(120, 176, 232, 0.30)' : 'rgba(110, 150, 200, 0.13)';
+      ctx.setLineDash([3 * unit, 4 * unit]);
+    }
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (near && has) {
+      // 刻度：沿环 12 格，长短交替 —— 让"这条轨道是摆过行星的"一眼可辨
+      ctx.strokeStyle = 'rgba(150, 200, 245, 0.34)';
+      ctx.lineWidth = 1 * unit;
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const len = (k % 3 === 0 ? 5 : 2.6) * unit;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.lineTo(Math.cos(a) * (r - len), Math.sin(a) * (r - len));
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
-  ctx.setLineDash([]);
 }
 
 function drawStar(ctx) {
@@ -908,6 +945,37 @@ function drawStar(ctx) {
   ctx.beginPath();
   ctx.arc(0, 0, 60, 0, Math.PI * 2);
   ctx.fill();
+
+  // 恒星日冕（2026-11-02）：14 道长短不一的柔光冠。
+  // 旧实现只有一圈 `shadowBlur` 光晕 —— 在星系总览缩到 40% 时就是"一个圆点"，
+  // 参照图的恒星是有"放射状冠"的（`refs/MANIFEST.md` 恒星系 2D 待吸收项第二条）。
+  // 全是确定性三角函数，无随机；`lighter` 混合让冠叠加处更亮。
+  {
+    const r0 = getStarRadius(primary || props.system);
+    const scaleNow = renderer.getViewTransform().scale || 1;
+    const rays = 14;
+    const baseLen = r0 * 2.4;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (let i = 0; i < rays; i++) {
+      const a = (i / rays) * Math.PI * 2 + 0.21;
+      const len = baseLen * (0.5 + 0.5 * Math.abs(Math.sin(i * 2.399 + 1.1)));
+      const g2 = ctx.createLinearGradient(
+        Math.cos(a) * r0, Math.sin(a) * r0,
+        Math.cos(a) * (r0 + len), Math.sin(a) * (r0 + len),
+      );
+      g2.addColorStop(0, starColor.mid + '9E');
+      g2.addColorStop(1, starColor.outer + '00');
+      ctx.strokeStyle = g2;
+      ctx.lineWidth = (0.9 + (i % 3) * 0.4) / Math.max(0.2, scaleNow);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r0 * 0.85, Math.sin(a) * r0 * 0.85);
+      ctx.lineTo(Math.cos(a) * (r0 + len), Math.sin(a) * (r0 + len));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   ctx.fillStyle = matched ? (isCurrent ? '#fff' : starColor.glow) : starColor.center;
   const starR = getStarRadius(primary || props.system);
@@ -996,7 +1064,36 @@ function drawPlanets(ctx) {
         : Math.min(55, Math.max(5, Math.round(11 / scale)));
       ctx.font = `${pFont}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(planet.displayName || planet.name, planet.x, planet.y + r + pFont * 1.2);
+      const planetLabel = planet.displayName || planet.name;
+      if (planet.isMoon) {
+        // 卫星：小字仍横排（贴在卫星下方）—— 绕月轨道很短，切向排字会压住母行星
+        ctx.fillText(planetLabel, planet.x, planet.y + r + pFont * 1.2);
+      } else if (planetCount < 3) {
+        // 1~2 颗行星时**切向排字反而更差**（实测截图 s1：字被压在球面上、旋转后像乱码）——
+        // 切向排字是为「一圈行星各占一个角」服务的；行星少时横排在下方最好读。
+        ctx.fillText(planetLabel, planet.x, planet.y + r + pFont * 1.35);
+      } else {
+        // 行星名**沿轨道切向排字**（2026-11-02，吸收参照图「行星名沿轨道」那条）：
+        // 旧写法是往行星正下方横着糊一行字，行星一多就互相压；切向排字天然沿环散开。
+        // 角度翻转过 0/π 时把文字翻正，否则左半边行星的名字会倒着显示。
+        const ang = Math.atan2(planet.y, planet.x);
+        const tangent = ang + Math.PI / 2;
+        const flip = Math.cos(tangent) < 0;
+        // 往外推够远（球面视觉半径 1.45×r，再加一个字高），否则字压在球上读不出来
+        const out = r * 1.45 + pFont * 1.05;
+        ctx.save();
+        ctx.translate(planet.x + Math.cos(ang) * out, planet.y + Math.sin(ang) * out);
+        ctx.rotate(flip ? tangent + Math.PI : tangent);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // 暗底描边：切向字会压在轨道环上，没有描边会读不清
+        ctx.strokeStyle = 'rgba(6, 10, 18, 0.62)';
+        ctx.lineWidth = 2.6 / Math.max(0.05, scale);
+        ctx.lineJoin = 'round';
+        ctx.strokeText(planetLabel, 0, 0);
+        ctx.fillText(planetLabel, 0, 0);
+        ctx.restore();
+      }
     }
 
     if (fade < 1) ctx.restore();   // 与上面的 save 配对（叙事状态淡化）

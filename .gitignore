@@ -133,3 +133,8 @@ build/galaxy-art/
 
 # 恒星系 2D/3D 观感截图（2026-11-01，本地证据，禁止提交）
 build/system-2d/
+
+# 外交表 / 简易模式 观感截图（2026-11-02，本地证据，禁止提交）
+build/diplomacy/
+build/simple-mode/
+build/diplomacy-preview/

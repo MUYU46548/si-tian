@@ -23,6 +23,13 @@
                   title="历史剧本模块：剧本 / 势力 / 归属 / 时间轴"
                   @click="switchModule('scenario')">历史剧本</button>
         </nav>
+        <!-- ⚠️ 只在**世界观模块**出现：简易模式是"从零画第一张图"的入口，
+             在剧本模块里它既用不上、又要把顶部栏挤爆（实测 test_129：多这 70px 之后
+             搜索框与模块页签在 1280px 下重叠，卡片墙打开时「历史剧本」页签点不到）。
+             title 里也**不许**出现 `.sitian`（test_48/49/58/75/76 靠它找项目面板入口）。 -->
+        <button v-if="activeModule === 'world'" class="simple-mode-open" data-testid="simple-mode-open"
+                title="简易模式：四步画出第一张图（随时可切回完整模式）"
+                @click="openSimpleMode">简易模式</button>
         <span class="toolbar-divider"></span>
         <nav class="level-indicator">
           <!-- 世界（下拉选择） -->
@@ -347,6 +354,18 @@
 
     <status-bar />
 
+    <!-- 简易模式（M3 / N3b-2）：新手四步外壳。
+         ⚠️ **不用 Teleport** —— 两个理由：① 本仓无头回归环境里 Teleport 的子节点到不了 DOM
+            （2026-11-02 实测），面板必须留在 App 自己的模板里才验得到（`data-testid="simple-mode"`）；
+            ② `.theme-*` 的 CSS 变量挂在 .app-layout 上（见 assets/tailwind.css 的 R7），
+            一出这层容器颜色就断了。
+         组件自己读 store 的真实状态，`close` 只表示"关掉这层壳"，由这里决定。 -->
+    <simple-mode
+      v-if="simpleOpen"
+      @close="closeSimpleMode"
+      @enter-scenario="handleSimpleEnterScenario"
+    />
+
     <node-detail-panel />
     <!-- 资料阅读器 / 全库搜索（D2）：自管理显隐，靠 CustomEvent 唤起，不占 App 状态 -->
     <note-reader />
@@ -408,12 +427,13 @@ import { iconSvg } from './utils/iconSvg';
 // 星系/星域视图的布局 + 凸包 + 配色 + 航道色：**与画布共用唯一实现**
 // （§bug 导出与画布不同源，2026-10-18 第十二修：原先 App.vue 自带第二套 convexHull / 配色 / 星云）
 import {
-  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, nodeColor, nodeRadius, STARFIELD,
+  layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, nodeColor, nodeRadius, STARFIELD, sparsifyHyperlanes,
 } from './utils/galaxyLayout';
 // 星系美术（2026-11-01 吸收 SP-1025 原型）：背景资产 / 恒星色温与归属环 / LOD 标签。
 // 🔴 画布（GalaxyMap.vue）与本导出**调同一份** —— 任何一边自己再画一套，就又回到
 //    「导出的图和屏幕上的不是一回事」（§bug 导出与画布不同源）那条老病。
 import { paintGalaxySky } from './galaxy/sky';
+import { paintDomainBorders } from './galaxy/domainPaint';
 import { paintStar, paintDomainMarker } from './galaxy/starArt';
 import { collectStarLabels, cullStarLabels, paintStarLabels } from './galaxy/labels';
 import { withAlpha } from './utils/colorUtil';
@@ -465,6 +485,9 @@ const BookmarkPanel = defineAsyncComponent(() => import('./components/BookmarkPa
 const HistoryPanel = defineAsyncComponent(() => import('./components/HistoryPanel.vue'));
 // Phase 2.1：项目面板（项目文件操作 + 实体浏览器 + 快照回滚）。EntityCreator 随该 chunk 一起加载。
 const ProjectPanel = defineAsyncComponent(() => import('./components/ProjectPanel.vue'));
+// 简易模式（M3 / N3b-2）：新手四步外壳。与面板同一条「低频、按需加载」的路子（首屏不背它）。
+// ⚠️ 它自己连 store（含 projectStore）—— App 仍然不 import projectStore（test_46/test_55 守）。
+const SimpleMode = defineAsyncComponent(() => import('./components/SimpleMode.vue'));
 // 一键同步到远程仓库（git）：傻瓜式推送（填一次地址 → 点「立即同步」）
 const GitSyncPanel = defineAsyncComponent(() => import('./components/GitSyncPanel.vue'));
 // 免责声明（UI 基座试点）：首启强制确认 + 关于/设置面板随时可查
@@ -519,6 +542,48 @@ async function switchModule(m) {
   if (m === activeModule.value) return;
   if (m === 'scenario') { await enterScenarioMode(); return; }
   exitScenarioMode();
+}
+
+// ===== 简易模式（M3 / N3b-2，2026-11-02）=====
+/**
+ * 新手四步外壳的开 / 关。
+ *
+ * 它**不是模块**：不占 activeModule 的值，也不改视图层级 —— 关掉就回到原来那一屏。
+ * 面板自己从 store 读真实状态、调既有动作；App 这里只负责"壳"与「进剧本编辑器」这一步。
+ */
+const simpleOpen = ref(false);
+/**
+ * 打开简易模式。
+ * ⚠️ 免责声明阻断态先挡住：面板的 z 高于 .toolbar（6000），而免责声明是 1200 ——
+ *    不挡就等于给了新手一条"绕过免责声明继续干活"的路（免责声明的语义是首启确认）。
+ */
+function openSimpleMode() {
+  if (isDisclaimerGateOpen.value) {
+    statusText.value = '先读完并确认免责声明，再进简易模式';
+    statusKind.value = 'warn';
+    return;
+  }
+  simpleOpen.value = true;
+}
+function closeSimpleMode() { simpleOpen.value = false; }
+
+/**
+ * 简易模式第③/④步：进历史剧本编辑器（画省份 / 导出 PNG 的入口只在那儿）。
+ *
+ * 走的就是顶部「历史剧本」页签那条 `switchModule('scenario')` → `enterScenarioMode()`，
+ * 不另开第二条进入链 —— 否则「只补缺载入」「卡片墙」这些口径迟早分叉（本项目踩过）。
+ * 进去之后由状态栏指路（简易模式不重复实现画布工具，也不重复实现导出）。
+ */
+async function handleSimpleEnterScenario(payload = {}) {
+  closeSimpleMode();
+  await switchModule('scenario');
+  statusText.value = payload.intent === 'export'
+    ? '导出在剧本编辑器顶部工具栏：图片按钮 = 导出当前剧本 / 年份为 PNG'
+    : '在剧本编辑器左侧工具栏用「画省份 / 批量铺底」画 —— 画完等自动保存（或 Ctrl+S）';
+  statusKind.value = 'ok';
+  setTimeout(() => {
+    if (statusKind.value === 'ok') { statusText.value = ''; statusKind.value = ''; }
+  }, 6000);
 }
 
 // ===== 剧本域与七层视图的**互斥**（2026-10-18 第十四修）=====
@@ -992,39 +1057,29 @@ async function handleExportFullPNG() {
     ctx.fillStyle = bg;
     ctx.fillRect(minX, minY, width, height);
   }
-  // 3. 势力边界：**共享 `factionBorders`**（覆盖点 / 星系数<3 的正多边形 / 凸包外扩 50 —— 与画布同值）
-  for (const border of factionBorders({
+  // 3. 势力边界：**与画布同一份**（`galaxy/domainPaint.js#paintDomainBorders`，2026-11-02 起）
+  //    旧实现是导出这边自己写一段「填充 + 单描边 + 名字」，与画布的三段描边**从来就不一致**
+  //    （`test_117` 守的就是这件事）。现在形状来自同一个所有权场，画法也同一份。
+  paintDomainBorders(ctx, factionBorders({
     domainNodes, galaxyNodes, overrides: store.domainBorderOverrides,
-  })) {
-    if (!border.points || border.points.length < 3) continue;
-    const color = border.color;
-    const cx = border.center.x, cy = border.center.y;
-    ctx.beginPath();
-    ctx.moveTo(border.points[0].x, border.points[0].y);
-    for (let i = 1; i < border.points.length; i++) ctx.lineTo(border.points[i].x, border.points[i].y);
-    ctx.closePath();
-    ctx.fillStyle = withAlpha(color, isDark ? 0.15 : 0.10);
-    ctx.fill();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-    // 星域名：**无底框墨字**（与画布同口径；EU4 参考图 `refs/src/20261027-08-eu4-1518.jpg`）
-    const label = border.name;
-    const labelPx = Math.round(17 * uiScale);
-    ctx.font = `600 ${labelPx}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = isDark ? 'rgba(4, 7, 14, 0.78)' : 'rgba(255, 255, 255, 0.9)';
-    ctx.lineWidth = 3.2 * uiScale;
-    ctx.strokeText(label, cx, cy);
-    ctx.fillStyle = color;
-    ctx.fillText(label, cx, cy);
-  }
+  }), {
+    exportMode: true,
+    uiScale,
+    isDark,
+    lod: 1,
+    labelAlpha: 1,
+  });
   
   // 4. 航道（分类型颜色 + 辉光，跨域虚线）：颜色走共享 `hyperlaneColor`（**4 类**，含用户建的）
-  hyperlanes.forEach(h => {
+  //    2026-11-02：全图导出等效于「中景」，与画布共用同一份稀疏化（`sparsifyHyperlanes`）——
+  //    否则导出把每一对恒星都连一条，3617px 的大图上就是一张紫色乱麻网。
+  const exportLanes = sparsifyHyperlanes(hyperlanes, {
+    nodeById: galaxyById,
+    domainOf: new Map(galaxyNodes.map(g => [g.id, g.domainId])),
+    lod: 0.45,
+    editMode: false,
+  });
+  exportLanes.forEach(h => {
     // 两端**优先取布局位置**（星系在画布上画的就是它），没有才回落自己的 coordinate
     const from = galaxyById.get(h.fromId) || domainById.get(h.fromId) || nodes.find(n => n.id === h.fromId);
     const to = galaxyById.get(h.toId) || domainById.get(h.toId) || nodes.find(n => n.id === h.toId);
@@ -2419,6 +2474,9 @@ async function clearCoordinateCache() {
 
 .toolbar-center {
   flex: 1;
+  /* 允许被压缩：不加这条时 flex 项的 min-width:auto 会让搜索框拒绝收缩，
+     顶部栏一挤就直接**盖住**右侧模块页签（2026-11-02 实测：test_129 命中 search-input-wrapper）。 */
+  min-width: 0;
   display: flex;
   justify-content: center;
 }
@@ -2551,6 +2609,25 @@ async function clearCoordinateCache() {
   color: #0f172a;
   background: var(--accent);
   font-weight: 600;
+}
+
+/* 简易模式入口（M3 / N3b-2）：与模块页签并排，但**朴素**（描边、不抢强调色）——
+   它是给新手的门，不是第三个模块。文字必须看得见（不只靠图标）。
+   ⚠️ 选择器必须比 `.toolbar-actions button`（0,1,1）更具体，否则下面这些取值会被它盖掉
+      （同类名数相同、但它多一个 type 选择器 → 赢）。 */
+.toolbar-actions .simple-mode-open {
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toolbar-actions .simple-mode-open:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .level-indicator {

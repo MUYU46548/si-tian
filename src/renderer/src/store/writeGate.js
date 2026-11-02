@@ -234,6 +234,14 @@ export const MEMORY_WRITE_CALLSITES = [
   { id: 11, file: 'src/renderer/src/store/geodata.js',
     fns: ['setDomainBorderPoints'],
     what: '星域势力边界覆盖点的唯一写口（组件原先直写 store ref：无闸门、无 undo）' },
+  // ── 读料桥（N3a-3，2026-11-02）：节点 ↔ 笔记的稳定绑定 ─────────────────────
+  // 为什么算"内存写"：`node.lore` 是节点字段（随项目文件往返），只读态改了它 = 永远不会落盘，
+  // 用户却看到「已绑定」——正是本清单要防的那种静默丢数据。
+  // `importVaultCandidate` 的写入点是既有的 `addNode`（它内部才 `execute()`）；如果不在这里先过闸门，
+  // 就会出现"节点已 push 进 nodes、但这次操作永远不会落盘"的中间态，所以三个函数体首行都有 guardWrite。
+  { id: 12, file: 'src/renderer/src/store/geodataModules/loreBinding.js',
+    fns: ['bindNodeToNote', 'unbindNodeNote', 'importVaultCandidate'],
+    what: '读料桥写口：节点 ↔ 笔记稳定绑定 / 解绑 / 候选导入草稿节点（一条 undo；导入复用 addNode）' },
 ];
 
 // ── 拒绝回音（供 App.vue 提示用户「为什么点了没反应 / 改哪儿去了」）─────────

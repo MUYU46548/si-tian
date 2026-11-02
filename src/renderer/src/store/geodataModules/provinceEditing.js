@@ -65,6 +65,10 @@ import {
 } from '../../utils/terrainParams';
 // P0-4（2026-10-25）：文化/宗教/势力派生的纯函数层（最远点采样 + 省份摘要 + 势力方案）
 import { deriveCultureLayers, planPolities } from '../../utils/cultureDerive';
+// N3a-1（2026-11-02）**生成即录账本**：记录与数据写在**同一条 undo** 里（见 generateLandmass /
+// applyCultureDerive 的 undo/redo）—— 一次 Ctrl+Z 数据与账一起退回，不会留半截状态。
+// ⚠️ 账本只记标量摘要（计数/占比），绝不把 heightmap / terrain 塞进去（`summaryOf` 会当场抛）。
+import { makeGenRecord, appendGenRecord, landmassSummary } from '../../utils/genProvenance';
 import { SEA_LEVEL } from '../../utils/heightMath';
 import { nextProvinceColor } from '../../utils/scenarioPalette';
 // 套索采样点简化：鼠标 mousemove 每动一次落一点（去重阈值 1e-6 世界单位 ≈ 必落）
@@ -778,6 +782,31 @@ export function createProvinceEditingModule(ctx) {
     baseMaps.value = {
       ...baseMaps.value,
       [key]: { ...m, rivers: Array.isArray(rivers) ? rivers : [], updatedAt: new Date().toISOString() },
+    };
+  }
+
+  /**
+   * **生成账本**列表的写入（N3a-1，2026-11-02）—— 唯一写口；不加 undo，undo/redo 各调一次。
+   *
+   * 住在 `baseMaps[key].provenance`：与 `terrain` / `rivers` / `heightmap` 同一个容器，
+   * 项目文件一存就带上（`utils/projectSchema` 不做字段白名单，见 `stripHeavyFromValue`），
+   * 快照/备份也一起走 —— 账本**跟着数据走**，不另建第二处真值。
+   *
+   * ⚠️ 别与 `scenario.changeEvents[].provenance`（`'brush'|'ui'`，归属事件的来源标记）
+   *    搞混：那个是"这一笔是谁写的"，这里是"这张图是怎么生成的"。
+   * ⚠️ 只在这里拼 basemap 对象：散落的 `{...m, provenance}` 写两处，改一处另一处就不变了
+   *    （红线：同一能力只许一份实现）。
+   */
+  function setProvenance(key, list) {
+    const m = bm(key);
+    if (!m) return;
+    baseMaps.value = {
+      ...baseMaps.value,
+      [key]: {
+        ...m,
+        provenance: Array.isArray(list) ? list : [],
+        updatedAt: new Date().toISOString(),
+      },
     };
   }
 
@@ -2145,6 +2174,10 @@ export function createProvinceEditingModule(ctx) {
     });
     if (!plan || plan.ok === false) return plan || { ok: false, rejected: 'subdivide-failed', message: '铺底计划失败' };
 
+    // ── N3a-1（2026-11-02）：生成账本的「旧值」必须在**任何写入之前**抓住 ──────────
+    // 写进 undo 的必须是"命令执行前那一份"，否则撤销会把这次的新账当成旧账填回去
+    // （= 撤了数据、账还在，正是这条红线要防的半截状态）。
+    const provenanceBefore = Array.isArray(m.provenance) ? m.provenance : [];
     const terrainBefore = plan.terrainBefore;
     const terrainAfter = plan.terrainAfter;
     // 河流：造陆是"这张底图重来"，所以整批换（与省份同一语义），并在同一条 undo 里还回去。
@@ -2196,6 +2229,20 @@ export function createProvinceEditingModule(ctx) {
             ? `换 seed = 全新世界，${prevHand.length} 格手绘地形未保留；`
             : `${prevHand.length} 格手绘地形对新地形对不上，已丢弃；`))
         : '');
+    // ── N3a-1：**生成即录账本**（与数据同一条命令）──────────────────────────────
+    // ① `bbox` 必须进 params：造陆是"按图幅出图"的，不记图幅，重放只能按默认框再画一块
+    //    （见 utils/genProvenanceReplay.js 头注）；
+    // ② 摘要只收计数/占比（`landmassSummary`），高度图与省份数组**绝不**入账；
+    // ③ 记录 id 是**确定性**的（kind + 参数 + seed + 摘要）：同参数再生成一次是同一个 id，
+    //    `appendGenRecord` 原位替换而不是叠一条重复账。
+    const genRecord = makeGenRecord({
+      kind: 'landmass',
+      key,
+      params: { ...norm.params, bbox },
+      seed: norm.params.seed,
+      result: landmassSummary(gen),
+    });
+    const provenanceAfter = appendGenRecord(provenanceBefore, genRecord);
     execute({
       type: 'generate-landmass',
       label: `造陆：${gen.rings.length} 块陆地 / ${plan.created} 省`,
@@ -2205,6 +2252,8 @@ export function createProvinceEditingModule(ctx) {
         setBaseMapRivers(key, riversBefore);
         if (heightmapAfter || heightmapBefore) commitHeightmap(key, heightmapBefore, { touch: false });
         applyOwnership(plan.ownBefore);
+        // 账本与数据同进同退：一次 Ctrl+Z 把这次生成的记录也摘掉
+        setProvenance(key, provenanceBefore);
         scheduleAutoSaveScenarios();
       },
       redo: () => {
@@ -2213,6 +2262,7 @@ export function createProvinceEditingModule(ctx) {
         setBaseMapRivers(key, riversAfter);
         if (heightmapAfter) commitHeightmap(key, heightmapAfter);
         applyOwnership(plan.ownAfter);
+        setProvenance(key, provenanceAfter);
         scheduleAutoSaveScenarios();
       },
     });
@@ -2228,6 +2278,8 @@ export function createProvinceEditingModule(ctx) {
       targetRatio: gen.stats.targetRatio,
       bbox,
       params: norm.params,
+      // 账本记录 id（确定性）：同参数再生成一次是同一个 id，可用来对拍"是不是同一张图"
+      recordId: genRecord.id,
       elapsedMs: plan.elapsedMs,
       handBefore: prevHand.length,
       handKept: handKept.length,
@@ -2303,6 +2355,9 @@ export function createProvinceEditingModule(ctx) {
     const strategy = opts.strategy === 'overwrite' ? 'overwrite' : 'fill-empty';
     const hm = getHeightmapFor(key);
     const terrain = provincesOf(key);
+    // N3a-1：账本旧值必须在写入之前抓（见 generateLandmass 里的同一条注释）
+    const bmNow = bm(key);
+    const provenanceBefore = (bmNow && Array.isArray(bmNow.provenance)) ? bmNow.provenance : [];
     const derived = pv.derived;
     const n = hm.grid.points.length;
     const oldCulture = hm.culture && hm.culture.length === n ? new Uint8Array(hm.culture) : null;
@@ -2366,6 +2421,38 @@ export function createProvinceEditingModule(ctx) {
       if (religions && religions.length) next.religions = religions; else delete next.religions;
       return next;
     };
+    // ── N3a-1（2026-11-02）：文化/宗教**同一次派生**录两条账 ──────────────────────
+    // 为什么两条：它们是两层不同的逐格数据（`culture` / `religion`），各自有"生成了多少个"
+    //   与"落了多少格"；合成一条会让"这次到底派生了多少宗教"要靠翻参数猜。
+    // 为什么同一条 undo：两层数据本来就是**同一条命令**写的（见下面 undo/redo），
+    //   一条账拆成两处写就会出现"撤了文化、宗教的账还在"。
+    // `strategy` 必须进参数：`fill-empty` 与 `overwrite` 落库的格子完全不同（不是同一份结果）。
+    const genParams = { ...pv.params, strategy };
+    const genRecords = [
+      makeGenRecord({
+        kind: 'culture',
+        key,
+        params: genParams,
+        seed: pv.params.seed,
+        result: {
+          cultures: derived.stats.cultureCount,
+          cells: cultureCells,
+          provinces: provinceChanged,
+          keptCells,
+        },
+      }),
+      makeGenRecord({
+        kind: 'religion',
+        key,
+        params: genParams,
+        seed: pv.params.seed,
+        result: {
+          religions: derived.stats.religionCount,
+          cells: religionCells,
+        },
+      }),
+    ];
+    const provenanceAfter = genRecords.reduce((acc, rec) => appendGenRecord(acc, rec), provenanceBefore);
     execute({
       type: 'derive-culture',
       label: strategy === 'overwrite'
@@ -2374,11 +2461,13 @@ export function createProvinceEditingModule(ctx) {
       undo: () => {
         commitHeightmap(key, buildHm(oldCulture, oldReligion, hm.cultures, hm.religions));
         setTerrain(key, terrain, { save: false });
+        setProvenance(key, provenanceBefore);
         scheduleAutoSaveScenarios();
       },
       redo: () => {
         commitHeightmap(key, buildHm(nextCulture, nextReligion, nextCultures, nextReligions));
         setTerrain(key, nextTerrain, { save: false });
+        setProvenance(key, provenanceAfter);
         scheduleAutoSaveScenarios();
       },
     });
@@ -2393,6 +2482,7 @@ export function createProvinceEditingModule(ctx) {
       cultures: nextCultures.length,
       religions: nextReligions.length,
       params: pv.params,
+      recordIds: genRecords.map((r) => r.id),
       message: strategy === 'overwrite'
         ? `已覆盖派生：文化 ${derived.stats.cultureCount} 个 / 宗教 ${derived.stats.religionCount} 个`
           + `（改 ${cultureCells} 格文化、${religionCells} 格宗教、${provinceChanged} 省摘要）—— 一次 Ctrl+Z 可整体退回`

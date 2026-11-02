@@ -27,7 +27,11 @@ const matter = require('gray-matter');
 const { SCAN_SCOPE, LAYER_KEYWORDS, LAYER_LABELS, LAYER_SUFFIX_RULES, normalizeRelPath } = require('../../scripts/extract-data');
 const classify = require('../../scripts/lib/vaultClassify');
 
-const INDEX_VERSION = 2;   // v2：条目带 classification（升级会强制重建一次，缓存可丢）
+// v2：条目带 classification（升级会强制重建一次，缓存可丢）
+// v3（N3a-3，2026-11-02）：条目带 `sitianId`（frontmatter 里的显式稳定 id），且搜索结果带
+//    `aliases` / `sitianId` —— 渲染层的稳定绑定（`utils/loreBinding.js`）直接用这两个字段算身份，
+//    索引侧只负责**提供事实**、不自己实现一套键（同一能力只许一份实现）。
+const INDEX_VERSION = 3;
 const INDEX_FILE = 'note-index.json';
 const MAX_NOTE_BYTES = 2 * 1024 * 1024;      // 单篇正文读取上限（防止把巨型附件当笔记读）
 const MAX_FILES = 50000;                      // 防御性上限（真实库 1.3k；不给出无穷 walk）
@@ -139,6 +143,40 @@ function wikilinksOf(content) {
   return [...new Set(out)];
 }
 
+// ── 显式稳定 id（N3a-3）────────────────────────────────────────────────────
+// 为什么加：本仓的实体 id 是 `normalizeId(文件名)`，**改文件名就换 id** → 绑定必断。
+// 唯一真正抗改名的身份是 frontmatter 里人写的稳定 id（`sitian-id` / `uid`）。
+// 真实库目前几乎没人写它 —— 所以这里只"留着位置并如实回传空串"，不伪造、不自动生成
+// （自动生成会写出笔记 = 违反"读料必须只读"；而且生成的东西改了名照样对不上）。
+const EXPLICIT_ID_KEYS = ['sitian-id', 'sitian_id', 'sitianId', 'uid', 'UID'];
+
+function explicitNoteId(fm) {
+  for (const k of EXPLICIT_ID_KEYS) {
+    const v = fm && fm[k];
+    if (v == null) continue;
+    const first = Array.isArray(v) ? v[0] : v;
+    const s = String(first == null ? '' : first).replace(/\[\[|\]\]/g, '').trim();
+    if (s) return s.slice(0, 200);
+  }
+  return '';
+}
+
+/** 一条索引条目 → 搜索结果行（`searchIndex` / `searchIndexDeep` 共用，字段不许各写一套） */
+function toHit(e, score, extra = {}) {
+  return {
+    path: e.path,
+    title: e.title,
+    layerHint: e.layerHint,
+    kind: e.kind,
+    score,
+    // 稳定绑定要用的两个事实（N3a-3）：别名参与指纹、显式 id 参与身份键。
+    // 不在这里预计算 key/fingerprint —— 那份实现只有 `utils/loreBinding.js` 一份。
+    aliases: Array.isArray(e.aliases) ? [...e.aliases] : [],
+    sitianId: e.sitianId || '',
+    ...extra,
+  };
+}
+
 function isUnderScanDir(rel, scanDirs) {
   const p = posix(rel);
   return (scanDirs || []).some((d) => p === d || p.startsWith(String(d).replace(/\\/g, '/') + '/'));
@@ -172,6 +210,7 @@ function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
     size: st.size || 0,
     tags: [], aliases: [], headings: [], firstLine: '', wikilinks: [], fmKeys: [],
     fm: {},
+    sitianId: '',
     contentSample: '',
     layerHint: null,
     classification: null,
@@ -187,6 +226,8 @@ function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
     entry.title = String(fm['名称'] || fm.title || firstHeading(content) || name).trim() || name;
     entry.tags = classify.asTagList(fm.tags);
     entry.aliases = asArray(fm['别名'] != null ? fm['别名'] : fm.aliases);
+    // 显式稳定 id（可选）：改名/移动都不变的唯一身份；没有就是空串（不生成、不写笔记）
+    entry.sitianId = explicitNoteId(fm);
     entry.headings = headingsOf(content);
     entry.firstLine = firstLineOf(content);
     entry.wikilinks = wikilinksOf(content);
@@ -389,7 +430,7 @@ function searchIndex(index, query, limit = 50) {
     if (!score && (e.headings || []).some((h) => String(h).toLowerCase().includes(q))) score = 30;
     if (!score && String(e.firstLine || '').toLowerCase().includes(q)) score = 20;
     if (!score && String(e.path || '').toLowerCase().includes(q)) score = 10;
-    if (score) out.push({ path: e.path, title: e.title, layerHint: e.layerHint, kind: e.kind, score });
+    if (score) out.push(toHit(e, score));
   }
   out.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title, 'zh'));
   return out.slice(0, limit);
@@ -423,10 +464,7 @@ function searchIndexDeep(root, index, query, limit = 50) {
     if (at < 0) continue;
     const from = Math.max(0, at - 50);
     const snippet = body.slice(from, Math.min(body.length, at + q.length + 70)).replace(/\s+/g, ' ').trim();
-    out.push({
-      path: e.path, title: e.title, layerHint: e.layerHint, kind: e.kind,
-      score: 15, matchedIn: 'content', snippet,
-    });
+    out.push(toHit(e, 15, { matchedIn: 'content', snippet }));
   }
   out.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title, 'zh'));
   return out.slice(0, limit);

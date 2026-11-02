@@ -37,7 +37,7 @@ import {
   refineField, fbm,
 } from './landmassField';
 import { synthesizeHeightmapFromTerrain } from './terrainSynthesis';
-import { inciseByFlow } from './terrainErosion';
+import { erodeTerrain } from './terrainErosion';
 import { traceRivers, clipPolylineToLand } from './riverTrace';
 import { flowToDischargeEquivalent, smoothRiverLine } from './riverRender';
 import { buildRiverPaths } from './riverChains';
@@ -906,9 +906,15 @@ export function generateLandmass(params, bbox) {
   }
 
   const tHills = now() - t0;
-  // ── ⑤c **河成侵蚀**：让水把丘与丘之间的谷切深（正反馈：切得深 → 汇流更多 → 切得更深）。
+  // ── ⑤c **河成侵蚀层（N3b-1）**：下切 → 谷壁拓宽 → 削峰 → 断头河守卫。
+  //
+  // 旧实现只调 `inciseByFlow`（只切床、不动两侧）→ 放大看是"一条 1 格宽的缝"，
+  // 坡面上没有侵蚀细节。`erodeTerrain` 在同一个入口里补齐三件事（理由见 `terrainErosion.js` 文件头）：
+  //   ① 谷壁按 V 字剖面下带（河床仍是最低点，水往床里流的方向不变）；
+  //   ② 只削峰的坡度阈值松弛（平地不动、山脊磨圆，河床有"不低于下游"的下限）；
+  //   ③ 断头河后置断言（河格不得低于下游）→ `stats.brokenRivers` 必须为 0。
   const erosion = hm
-    ? inciseByFlow(hm, {
+    ? erodeTerrain(hm, {
       seaLevel: 20,
       // ⚠️ **不给 `isLand`**：侵蚀只要"每格流向哪"，而 `isLand` 会让 `traceRivers` 多跑一遍
       //    全图海距 BFS（那套是给"河源不许贴海"用的，侵蚀里没人读）—— 实测省 ~20ms/轮。
@@ -1065,8 +1071,16 @@ export function generateLandmass(params, bbox) {
       terrainMax: Math.round(terrainMax * 10) / 10,
       // 丘陵/侵蚀/河流（诊断与回执）
       hillCount: hills ? hills.placed : 0,
+      // ⚠️ 这两个字段的含义**不许改**（面板回执与历史用例读它）：
+      //    erodedRounds = 下切轮数，erodedDepth = 累计下切高度点总量
       erodedRounds: erosion ? erosion.iterations : 0,
       erodedDepth: erosion ? erosion.carved : 0,
+      // N3b-1 新增诊断：谷壁拓宽格数 / 谷壁削去的总高度 / 坡面松弛改过的格数 /
+      // 断头河计数（判据：必须为 0；非 0 = 断头河守卫漏了，用例会红）
+      valleyCells: erosion ? erosion.widenCells : 0,
+      valleyDepth: erosion ? erosion.widenCarved : 0,
+      relaxedCells: erosion ? erosion.relaxCells : 0,
+      brokenRivers: erosion ? erosion.brokenRivers : 0,
       rivers: rivers.length,
       riverPoints: rivers.reduce((a, r) => a + r.points.length, 0),
       tracedRivers: traced.rivers.length,

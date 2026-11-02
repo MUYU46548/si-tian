@@ -122,6 +122,15 @@
           </div>
           <p v-else class="linked-note-empty">还没有附加笔记；主笔记就是该节点的词条。</p>
         </section>
+
+        <!-- 库内资料（读料桥，N3a-3）：按节点名做**只读**检索（主进程索引，不读正文）。
+             传了 node-id 才出现「绑定 / 导入为节点」两个写口 —— 两者各一条撤销、只读态灰禁；
+             不传就与省份/标记面板完全同形（纯只读）。实现只有 VaultLoreSection 一份。 -->
+        <vault-lore-section
+          :query="node.name"
+          testid="node-vault"
+          :node-id="node.id"
+        />
       </template>
 
       <!-- ===== Tab 关系：节点间跳转 + 层级迁移 ===== -->
@@ -468,6 +477,8 @@
 import { iconSvg } from '../utils/iconSvg';
 import Icon from './Icon.vue';
 import NotePicker from './NotePicker.vue';
+// 读料桥（N3a-3）：库内资料段的**唯一实现**（省份 / 标记 / 节点三处共用；这里传 node-id 才有写口）
+import VaultLoreSection from './VaultLoreSection.vue';
 import { openNote, openNoteSearch } from '../utils/noteReader';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import { ref, computed, watch } from 'vue';

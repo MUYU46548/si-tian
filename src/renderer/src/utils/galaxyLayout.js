@@ -16,6 +16,14 @@
 //
 // ⚠️ **背景星云/星尘不在共享范围**（`STARFIELD` 只导出常量供两边取用同一条谱）：它是装饰、无信息量，
 //    画布按世界坐标铺、导出按图幅裁；这条取舍写进交接文档，不装作"全都同源了"。
+//
+// 2026-11-02：**边界从凸包改成所有权场 φ 软融合**（吸收 SP-1025 `core/territory.ts`）。
+//    场的数学在 `galaxy/territory.js`（纯函数），这里是唯一消费口 —— 画布、导出、命中测试都走它。
+//    `convexHull` / `expandHull` 仍导出（历史调用与单测还在用），但**不再参与边界绘制**。
+
+// ⚠️ 显式写 `.js`：这份模块被 Node 单测**复制到临时目录当 ESM 跑**（`test_galaxy_layout.js`），
+//    无扩展名的相对 import 在 Node ESM 下解析不了（Vite 能解析，Node 不能）。
+import { buildFieldInputs, computeDomainShapes, resampleLoop, TERRITORY } from '../galaxy/territory.js';
 
 /** 势力 → 固定色板（**唯一实现**：原先 store 与 GalaxyMap 各有一份同形表） */
 export const FACTION_COLORS = {
@@ -67,6 +75,7 @@ export const GALAXY_LAYOUT = {
   hullPad: 50,              // 凸包外扩（原先画布 50 / 导出 25 —— 统一取画布值）
   circleSegments: 12,       // 星系数 < 3 时的多边形边数
   minHullPoints: 3,
+  fieldSalt: 20261102,      // 所有权场波浪的固定盐（同项目同项目、换项目换形状，且可复现）
 };
 
 /** 凸包（Graham Scan，**唯一实现**：`App.vue` 的 `convexHullForExport` 已删） */
@@ -174,41 +183,61 @@ export function layoutGalaxies(galaxies, domainNodes, opts = {}) {
 }
 
 /**
- * 势力边界：① 用户覆盖点优先 ② 星系数 < 3 → 正多边形（半径 = 星域半径）③ 否则凸包外扩。
- * ⚠️ 三个分支缺一不可：导出原先在 ② 处直接 `continue`（星域凭空消失）。
+ * 势力边界（2026-11-02 换口径：**所有权场 φ 软融合**，不再是凸包）：
+ *   ① 用户覆盖点优先（逐点可拖，原样返回 —— `test_116` f5 / 单测守这条身份）
+ *   ② 其余星域由 `galaxy/territory.js` 的场派生出**闭合软轮廓**（`loops`，多环）
+ *   ③ `points` 是对最大环**等距重采样**后的 14 个手柄点（软形状点一下才转成覆盖点，
+ *      不给用户 200 个拖不动的点），`center` 恒为星域中心（标签 / 命中 / 拖拽手柄都靠它）
+ *
+ * ⚠️ 三个分支缺一不可的历史原因仍在：导出原先在「星系数不足」处直接 `continue`（星域凭空消失）。
+ * ⚠️ 形状只跟**布局**有关（星域坐标 + 星系坐标），与颜色无关 —— 所以形状走缓存、颜色每次现取。
  */
+const _shapeCache = new Map();
+const _SHAPE_CACHE_MAX = 6;
+
+/** 形状缓存键：布局一变就换（颜色 / 覆盖点不进键，见上） */
+function shapeKey(domainNodes, galaxyNodes) {
+  const d = (domainNodes || []).map(n => `${n.id}@${Math.round(n.x)},${Math.round(n.y)}`).join('|');
+  const g = (galaxyNodes || []).map(n => `${n.id}>${n.domainId}@${Math.round(n.x)},${Math.round(n.y)}`).join('|');
+  return `${d}##${g}`;
+}
+
+/** 场派生的星域轮廓（带缓存；画布每帧、命中测试每次都调它） */
+export function domainShapes(domainNodes, galaxyNodes) {
+  const key = shapeKey(domainNodes, galaxyNodes);
+  const hit = _shapeCache.get(key);
+  if (hit) return hit;
+  const inputs = buildFieldInputs(domainNodes, galaxyNodes, { salt: GALAXY_LAYOUT.fieldSalt });
+  const shapes = computeDomainShapes(inputs);
+  if (_shapeCache.size >= _SHAPE_CACHE_MAX) {
+    _shapeCache.delete(_shapeCache.keys().next().value);
+  }
+  _shapeCache.set(key, shapes);
+  return shapes;
+}
+
 export function factionBorders({ domainNodes, galaxyNodes, overrides } = {}) {
   const borders = [];
-  const byDomain = new Map();
-  for (const g of galaxyNodes || []) {
-    if (!byDomain.has(g.domainId)) byDomain.set(g.domainId, []);
-    byDomain.get(g.domainId).push(g);
-  }
+  const shapes = new Map(domainShapes(domainNodes, galaxyNodes).map(s => [s.domainId, s]));
   for (const domain of domainNodes || []) {
     const override = overrides && overrides[domain.id];
-    if (override) {
+    if (Array.isArray(override) && override.length >= 3) {
       borders.push({
         domainId: domain.id, name: domain.name, color: domain.factionColor,
-        points: override, center: { x: domain.x, y: domain.y },
+        points: override, loops: [override], center: { x: domain.x, y: domain.y },
+        soft: false, editable: true,
       });
       continue;
     }
-    const galaxies = byDomain.get(domain.id);
-    if (!galaxies || galaxies.length < GALAXY_LAYOUT.minHullPoints) {
-      const r = domain.radius || GALAXY_LAYOUT.domainRadius;
-      const points = [];
-      for (let i = 0; i < GALAXY_LAYOUT.circleSegments; i++) {
-        const a = (i / GALAXY_LAYOUT.circleSegments) * Math.PI * 2;
-        points.push({ x: domain.x + Math.cos(a) * r, y: domain.y + Math.sin(a) * r });
-      }
-      borders.push({ domainId: domain.id, name: domain.name, color: domain.factionColor, points, center: { x: domain.x, y: domain.y } });
-      continue;
-    }
-    const hull = convexHull(galaxies.map(g => ({ x: g.x, y: g.y })));
-    if (hull.length < GALAXY_LAYOUT.minHullPoints) continue;
+    const shape = shapes.get(domain.id);
+    if (!shape) continue;
     borders.push({
       domainId: domain.id, name: domain.name, color: domain.factionColor,
-      points: expandHull(hull), center: hullCenter(hull),
+      points: resampleLoop(shape.loops[0], TERRITORY.resampleN),
+      loops: shape.loops,
+      center: shape.center,
+      fadeRadius: shape.fadeRadius,
+      soft: true, editable: false,
     });
   }
   return borders;
@@ -236,6 +265,96 @@ export function hyperlaneColor(h, opts = {}) {
   }
   return hovered ? 'rgba(150, 220, 255, 1.0)'
     : (isDark ? 'rgba(120, 200, 255, 0.75)' : 'rgba(60, 140, 200, 0.5)');
+}
+
+/**
+ * 航道稀疏化（2026-11-02，对应用户第 2 条「跨域航道数量本身没做稀疏化，数据多时仍偏吵」）。
+ *
+ * 只改**画什么**，不改数据（`hyperlanes` 一条都不删 —— 删一条就是改世界观）。
+ * 口径：
+ *   · 编辑态 / 近景（lod ≥ 0.85）→ 全画（要能点、要能改，别在编辑时藏东西）；
+ *   · 用户亲手建的航道（id 不以 `auto_` 开头）→ 永远画；
+ *   · 悬停 / 选中的 → 永远画（不能"看不见却点得到"，反过来也不行）；
+ *   · 其余自动航道：**先保骨架**（Kruskal 最小生成树，把所有恒星连成一片，不产生孤岛），
+ *     再按「每个星域对最多 1 条（远景）/ 2 条（中景）」补跨域，最后按每个恒星最多 2 条短边补局部。
+ * 全程按 (长度, id) 排序 → 同一份数据每次都画出同一批线（不会闪来闪去）。
+ *
+ * @param {Array} lanes 航道
+ * @param {{nodeById?:Map, domainOf?:Map, lod?:number, editMode?:boolean, pinned?:Set}} opts
+ * @returns {Array} 该画的航道（顺序即输入顺序）
+ */
+export function sparsifyHyperlanes(lanes, opts = {}) {
+  const list = Array.isArray(lanes) ? lanes : [];
+  const { nodeById, domainOf, lod = 1, editMode = false, pinned } = opts;
+  if (!nodeById || list.length < 4) return list;
+  if (editMode || lod >= 0.85) return list;
+
+  const keep = new Set();
+  const measured = [];
+  for (const h of list) {
+    const isUser = !String(h.id || '').startsWith('auto_');
+    if (isUser || (pinned && pinned.has(h.id))) { keep.add(h.id); continue; }
+    const a = nodeById.get(h.fromId);
+    const b = nodeById.get(h.toId);
+    if (!a || !b) continue;
+    measured.push({
+      h,
+      len: Math.hypot(b.x - a.x, b.y - a.y),
+      a: a.id,
+      b: b.id,
+      pair: [domainOf ? domainOf.get(a.id) : null, domainOf ? domainOf.get(b.id) : null].sort().join('>'),
+      cross: h.type === 'cross_domain'
+        || (domainOf && domainOf.get(a.id) !== domainOf.get(b.id)),
+    });
+  }
+  measured.sort((p, q) => (p.len - q.len) || String(p.h.id).localeCompare(String(q.h.id)));
+
+  // ① 骨架：Kruskal 最小生成树（保证没有任何一颗星因为稀疏化变成孤岛）
+  const parent = new Map();
+  const find = (x) => {
+    let r = x;
+    while (parent.get(r) !== undefined && parent.get(r) !== r) r = parent.get(r);
+    return r;
+  };
+  const union = (x, y) => {
+    const rx = find(x), ry = find(y);
+    if (rx === ry) return false;
+    parent.set(rx, ry);
+    return true;
+  };
+  for (const e of measured) {
+    if (find(e.a) === undefined) parent.set(e.a, e.a);
+    if (find(e.b) === undefined) parent.set(e.b, e.b);
+    if (union(e.a, e.b)) keep.add(e.h.id);
+  }
+
+  // ② 跨域：同一对星域最多留 1 条（远景）/ 2 条（中景）
+  const perPair = lod < 0.5 ? 1 : 2;
+  const pairCount = new Map();
+  for (const e of measured) {
+    if (!e.cross || keep.has(e.h.id)) continue;
+    const n = pairCount.get(e.pair) || 0;
+    if (n >= perPair) continue;
+    pairCount.set(e.pair, n + 1);
+    keep.add(e.h.id);
+  }
+
+  // ③ 局部：每颗星最多再补 2 条最短的（跨域已经算过的也计入度）
+  const degree = new Map();
+  for (const e of measured) {
+    if (!keep.has(e.h.id)) continue;
+    degree.set(e.a, (degree.get(e.a) || 0) + 1);
+    degree.set(e.b, (degree.get(e.b) || 0) + 1);
+  }
+  const ADD_CAP = 2;
+  for (const e of measured) {
+    if (keep.has(e.h.id)) continue;
+    if ((degree.get(e.a) || 0) >= ADD_CAP || (degree.get(e.b) || 0) >= ADD_CAP) continue;
+    keep.add(e.h.id);
+    degree.set(e.a, (degree.get(e.a) || 0) + 1);
+    degree.set(e.b, (degree.get(e.b) || 0) + 1);
+  }
+  return list.filter(h => keep.has(h.id));
 }
 
 /** 节点半径（层 → 半径；画布与导出同值） */

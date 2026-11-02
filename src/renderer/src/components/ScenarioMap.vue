@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="scenario-map-container" :class="{ immersive }">
     <!-- 沉浸模式细顶条（2026-10-17 P0）：默认态下不渲染；只留 返回 / 剧本名 / 年份 / 小地图 / 退出 -->
     <div v-if="immersive" class="immersive-bar" data-testid="immersive-bar">
@@ -860,6 +860,23 @@
         </div>
       </Teleport>
 
+      <!-- 外交表（N3a-2，2026-11-02）：浮层，点「外交」开/关。
+           ⚠️ 这里**不用 `<Teleport to="body">`**（同目录其它浮层是那个写法）：2026-11-02 实测，
+              在本仓的无头 Edge 回归环境里 Teleport 的子节点一个都进不了 body（连早就交付的
+              派生/FMG 浮层也一起不出现），于是「外交」点了没反应、也没法截图验收。
+              改用 `fixed` + `z-[80]` 直接挂在组件树里：位置一样，且 **DOM 里能查到**。
+              关闭时 v-if 移除，DOM 里零节点，不会抢画布指针事件（开着时只有卡片本身可点）。 -->
+      <div v-if="diplomacyOpen" class="fixed inset-0 z-[80] pointer-events-none" data-testid="diplomacy-wrap">
+        <div class="pointer-events-auto absolute left-1/2 top-16 -translate-x-1/2">
+          <diplomacy-panel
+            :scenario-id="selectedScenario?.id || ''"
+            :date="tlDate"
+            @update:date="onDiplomacySetDate"
+            @close="diplomacyOpen = false"
+          />
+        </div>
+      </div>
+
       <!-- 地形来源（M1c，2026-09-25）—— 底图的地形有两种来源，取舍完全不同，必须显式选：
              冻结导入 = 复制一份独立副本 → 历史存档剧本（行星后来怎么改都不影响它）
              跟随行星 = 共用同一份数据   → 当代地图（两边互相影响）
@@ -986,6 +1003,15 @@
       <div class="tool-group">
         <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/></button>
         <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/></button>
+        <!-- 外交表（N3a-2，2026-11-02）：回答「某年 A 与 B 什么关系」——
+             关系标签 / 该年生效事件 / 「为什么」+ 势力关系矩阵。**只读**（不走 undo、不写盘）。
+             与「势力谱系」分工：谱系管继承与易主年份，这里管两两关系（战争/同盟/臣属…）。 -->
+        <button
+          data-testid="diplomacy-open"
+          :class="{ active: diplomacyOpen }"
+          title="外交 —— 查「某年 A 与 B 什么关系」：关系 / 该年生效事件 / 为什么，附势力关系矩阵（只读，不改任何数据）"
+          @click="diplomacyOpen = !diplomacyOpen"
+        ><Icon name="flag" :size="15"/>外交</button>
         <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/></button>
       </div>
       <div class="tool-group" title="导出">
@@ -1064,6 +1090,16 @@
         @click="selectClearOwnership()"
         title="清除归属：选中它之后，用「涂归属」涂过 / 用油漆桶点过的省份会变成**无主**（可 Ctrl+Z 撤回）"
       ><Icon name="x" :size="14"/></div>
+      <!-- 外交表快速入口（N3a-2）：剧本模式 + 已选剧本时常驻在势力色板这一行。
+           与「更多 → 外交」是同一个面板的两条路（能力一份实现、入口可以有两个 —— 与「剧本管理」同款）；
+           这里点开就是"选甲 / 选乙"两步，不用先展开「更多」。 -->
+      <button
+        class="polity-add diplomacy-quick"
+        data-testid="diplomacy-open-palette"
+        :class="{ active: diplomacyOpen }"
+        title="外交 —— 查「某年 A 与 B 什么关系」：关系 / 该年生效事件 / 为什么 + 势力关系矩阵（只读）"
+        @click="diplomacyOpen = !diplomacyOpen"
+      ><Icon name="flag" :size="13"/> 外交</button>
       <!-- 新建势力（2026-10-01）：此前 polities **只能由 Azgaar .map 导入带进来** ——
            自建底图 + 自建剧本 = 势力功能整块不可用（色板空、油漆桶点了没反应）。
            现在＋按钮新建（走 store.addPolity = 一条 undo），选中后可改名/简称/配色/删除。 -->
@@ -1833,7 +1869,7 @@
 
 <script setup>
 import Icon from './Icon.vue';
-import { ref, onMounted, onUnmounted, watch, computed, toRaw, nextTick, unref } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed, toRaw, nextTick, unref, defineAsyncComponent } from 'vue';
 
 /**
  * 卡片墙进入（2026-10-17 P0）：App 从 ScenarioPicker 带来的初始剧本。
@@ -2065,6 +2101,10 @@ import { useSaveDisplay } from '../composables/useSaveDisplay';
 // ⚠️ `useStatusBarState()` 在本组件只作**诊断注入口**保留（`test_91` 在真机上用 `sc.sbState`
 //    注入落盘失败态）。显示合成一律走 `useSaveDisplay()`，**不要**在这里再写第二份 computed。
 import { useStatusBarState } from '../composables/useStatusBar';
+
+// 外交表（N3a-2，2026-11-02）：按需异步加载 —— 只在用户点「外交」时才拉这份面板，
+// 不进首屏（与 App.vue 的面板同一条纪律）。面板本身只读，数据全部来自 store 与事件账本。
+const DiplomacyPanel = defineAsyncComponent(() => import('./DiplomacyPanel.vue'));
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -3409,6 +3449,8 @@ function onPolityAbbrChange(e) {
 }
 
 const showLineagePanel = ref(false);
+// 外交表（N3a-2，2026-11-02）：按需打开的浮层；**只读**，不写任何数据、不产生 undo。
+const diplomacyOpen = ref(false);
 
 // ═══════════════════════════════════════════
 // 时间轴（P1）：月日精度游标 + EU4 斜线占领
@@ -3646,6 +3688,23 @@ function onTimelineSetYear(y) {
   const yy = Math.round(n);
   if (tlDate.value.y === yy && tlDate.value.m === null && tlDate.value.d === null) return;
   tlDate.value = { y: yy, m: null, d: null };
+  render();
+}
+
+/**
+ * 外交面板步进/输入年份 → 移动**同一个**时间轴游标（tlDate 仍是唯一真源）。
+ * 与 `onTimelineSetYear` 的差别：面板会带回月日（它只改年时保留用户拖到的月日），
+ * 所以这里不把 m/d 归 null —— 归 null 会让「面板里点一下年份」把精确到日的游标悄悄抹掉。
+ */
+function onDiplomacySetDate(next) {
+  if (!next) return;
+  const n = Number(next.y);
+  if (!Number.isFinite(n)) return;
+  const yy = Math.trunc(n);
+  const m = next.m === undefined ? null : next.m;
+  const d = next.d === undefined ? null : next.d;
+  if (tlDate.value.y === yy && tlDate.value.m === m && tlDate.value.d === d) return;
+  tlDate.value = { y: yy, m, d };
   render();
 }
 
@@ -8121,6 +8180,16 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .polity-del:hover:not(:disabled) { border-color: #f85149; color: #f85149; }
 .polity-add:disabled,
 .polity-del:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 外交表快速入口（N3a-2）：与「新建势力」同款尺寸，但用实线 + 蓝调区分「查询」与「建势力」 */
+.diplomacy-quick {
+  margin-left: 6px;
+  border-style: solid;
+  border-color: #3b6b8f;
+  color: #93c5fd;
+}
+.diplomacy-quick:hover:not(:disabled) { border-color: #38bdf8; color: #7dd3fc; }
+.diplomacy-quick.active { border-color: #38bdf8; color: #e0f2fe; background: #0c4a6e; }
 
 .polity-editor-hint { color: #64748b; font-size: 11px; }
 

@@ -250,8 +250,70 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 改名·类型·坐标都落库且撤销栈标签是「编辑标记」/ 资料关键词=标记名 / 空态可读 /
 「全库搜索」预填 / 创建笔记与改配置调用 0 / 源码守卫（命中与资料各只有一份实现，面板不直改标记对象）。
 
+## 七点八、稳定身份绑定 + 候选导入（N3a-3，2026-11-02）
+
+节点与笔记此前的唯一关联是 `sourcePath`；笔记一改名 / 挪目录，`sourcePath` 就失效，
+而节点 id 是 `normalizeId(文件名)` → **同一篇笔记变成另一个实体**（坐标、地图、剧本归属留在旧 id 上）。
+
+纯函数层：`src/renderer/src/utils/loreBinding.js`（无 DOM / 无 IPC / 不读时钟，Node 可测）。
+
+### 绑定键的优先级（**就是**这份清单）
+
+| 顺序 | 来源 | 键 | 抗改名？ |
+|---|---|---|---|
+| 1 | frontmatter 的 `sitian-id` / `sitian_id` / `uid`（索引条目上是 `sitianId`） | `id:<值>` | ✅ 改名 + 移动都不变 |
+| 2 | 库内相对路径（统一 `/`、去 `./`） | `path:<路径>` | ❌ 改名即换键（靠指纹兜底认亲） |
+| 3 | 标题（只有"没有路径的合成条目"才落到这档） | `title:<标题>` | ❌ |
+| — | 都没有 | `''` = **不可识别**（不许绑、不许按名字猜） | — |
+
+⚠️ **别名不进键**：别名是用户随时可改的显示名，把可变值当键 = "加个别名链接就断"；
+别名只参与指纹。真实库目前几乎没人写 `sitian-id`（索引如实回传空串，不生成、不写笔记）。
+
+### 改名怎么认出来（以及**诚实的天花板**）
+
+`fingerprintOf(entry)` = 与位置无关的身份：有显式 id 就用它，否则 `标题 + 排序后的别名`。
+**刻意不含 size / mtime** —— mtime 每次保存/同步都变、size 改一个标点就变，拿它们做身份会把
+"编辑过"误判成"另一篇笔记"。
+
+`reconcileBindings(prevBindings, nextIndexEntries)` 的裁决顺序（**不做模糊匹配**）：
+
+1. 绑定键精确命中且唯一 → 保留；路径变了就是改名（`renamed: [{entityId, from, to, via}]`）；
+2. 键命中但不唯一（两篇笔记共用同一身份）→ `lost`；
+3. 键没命中 → 指纹命中且**两侧都唯一** → 重绑 + 报改名；
+4. 其余 → `lost: [{entityId, noteId, why}]`（带可读原因），**绝不**按名字相似度兜底。
+
+天花板（写在代码注释里，也写在这儿）：**标题和别名都改了**的笔记指纹对不上 → 进 `lost`，
+**需人工重绑**。两篇同名笔记 → 指纹不唯一 → 同样 `lost`（乱认一条比不认更坏）。
+
+### 写口（各一条 undo，登记在 `writeGate.js#MEMORY_WRITE_CALLSITES` id 12）
+
+| API | 落点 | 说明 |
+|---|---|---|
+| `bindNodeToNote(nodeId, noteRef)` | `node.lore = {noteId,path,title,at,key,fingerprint}` | 重复绑同一篇不进撤销栈（`unchanged: true`） |
+| `unbindNodeNote(nodeId)` | 删 `node.lore` | 没绑定时给可读原因、不建空 undo |
+| `importVaultCandidate(candidate, {layer, parentId})` | 复用既有 `addNode`（**不写第二个建节点函数**） | id = `vault_<规范化标题>_<身份键 hash8>` → 导两次**同 id**，第二次被拒并指回原节点 |
+
+`node.lore` 与 `node.notePaths`（关联资料，可挂多篇、只存路径）是两种能力，不是两套实现。
+候选导入只在**主进程归类结论**是地图实体（`kind === 'map'`）时出现 —— 组件里不重新判一次。
+
+### UI
+
+`VaultLoreSection.vue` 传 `nodeId` 时：候选行多一个「绑定」（`<testid>-bind`）、地图实体多一个
+「导入为节点」（`<testid>-import`），列表上方显示「已绑定 … / 解绑」（`<testid>-bound`）。
+不传 `nodeId`（省份 / 标记面板）时按钮根本不渲染 = 仍是纯只读段。
+入口在节点详情面板「概览」页（`testid="node-vault"`）。
+
+判据：`scripts/tests/unit/test_lore_binding.js`（12 组）—— 键优先级 / 指纹不含 size·mtime /
+改名检测 / 显式 id 认亲 / 歧义不猜（两侧各一次）/ 草稿 id 确定性 / 不可变 / 索引侧 `sitianId`+`aliases`
+（少了 aliases，UI 建的绑定第一次改名就会被误判失联）/ 读料只读 / 写口登记与装配 / `noteId ≠ bindingKey`。
+
 ## 八、明确没做
 
 - **不做自动导入**：候选仍需人确认（原来的 D2 边界不变）；本刀只把「读得到」做扎实。
 - **不用 LLM 猜**：归类是规则 + 证据，宁可 `unknown`。
 - 全文语义检索 / 向量化：不在本刀。
+- **改名对账还没接进界面**（N3a-3 的边界）：`reconcileBindings` 是纯函数、判据齐全，但还没有
+  「扫描全库 → 列出改名/失联 → 一键重绑」的面板；也没有为此新增 IPC（`note-index` 的全量条目
+  目前没有对外通道）。绑定 / 解绑 / 候选导入这三个**已落地**的写口不依赖它。
+- **`sitian-id` 不自动生成**：生成它必须写进笔记 frontmatter，而「读料必须只读」是红线 ——
+  要的话只能由用户在自己的模板里写。

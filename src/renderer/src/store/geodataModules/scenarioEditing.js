@@ -95,6 +95,10 @@ import { planPolities } from '../../utils/cultureDerive';
 import {
   resampleHeightmap, smoothHeightmapGrid, estimateResampleCost, fmtBytes,
 } from '../../utils/heightmapResample';
+// N3a-1（2026-11-02）**生成即录账本**：地形推演也要留下"用什么参数生成的"。
+// 记录与高度图写在**同一条 undo**（见 `synthesizeTerrainInto` 的 undo/redo）——
+// 一次 Ctrl+Z 数据与账一起退回。摘要只收格数/格距，绝不把高度图塞进账（`summaryOf` 会抛）。
+import { makeGenRecord, appendGenRecord, terrainSummary, isValidBBox } from '../../utils/genProvenance';
 
 export function createScenarioEditingModule(ctx) {
   const {
@@ -4234,6 +4238,38 @@ export function createScenarioEditingModule(ctx) {
     return synthesizeTerrainInto(t, opts);
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // N3a-1（2026-11-02）：生成账本 —— 容器「取 / 写」各一份实现
+  //   底图 → `baseMaps[key].provenance`；行星 → `mapData[pid].provenance`
+  //   （两种容器都必须能存：A6 之后同一条推演链服务两个目标，账本不能只记一半）。
+  //   ⚠️ 只在这里拼容器对象：散落的 `{...bm, provenance}` 写两处，改一处另一处就不变。
+  //   ⚠️ 记录本身仍是**标量**（见 utils/genProvenance.js），不存高度图/省份数组。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 读该目标的账本数组（**只读**；没有就返回空数组，不写任何东西） */
+  function genProvenanceOf(t) {
+    const bag = t.kind === 'planet' ? mapData.value[t.id] : baseMaps.value[t.id];
+    return (bag && Array.isArray(bag.provenance)) ? bag.provenance : [];
+  }
+
+  /** 写该目标的账本数组（不加 undo；undo/redo 各调一次） */
+  function writeGenProvenance(t, list) {
+    const next = Array.isArray(list) ? list : [];
+    if (t.kind === 'planet') {
+      const cur = mapData.value[t.id];
+      if (!cur) return;
+      mapData.value[t.id] = { ...cur, provenance: next };
+      scheduleAutoSaveMap(t.id);
+      return;
+    }
+    const cur = baseMaps.value[t.id];
+    if (!cur) return;
+    baseMaps.value = { ...baseMaps.value, [t.id]: { ...cur, provenance: next } };
+  }
+
+  /** 账本记录里的 `key`：底图用底图键，行星加前缀（`planet:<id>`）——同一份账里看得清容器 */
+  const provenanceKeyOf = (t) => (t.kind === 'planet' ? `planet:${t.id}` : String(t.id));
+
   /**
    * 推演 + 落库（**唯一实现**，写口在这里，`guardWrite` 守首行）。
    * @param {object} t `resolveTerrainTarget` 的产物（`ok:true` 那份）
@@ -4333,11 +4369,35 @@ export function createScenarioEditingModule(ctx) {
     //      · `undo` 把**原来那份**（可能是 null）填回去，`touch:false` 不打时间戳；
     //      · `redo` 写入推演结果；
     //      · 之后 `saveScenarios()`。
+    // ── N3a-1（2026-11-02）：**生成即录账本**（与高度图同一条命令）─────────────────
+    // 旧值必须在 `execute` 之前抓（execute 内部立刻调 redo → 一切写入都发生在之后）。
+    const provenanceBefore = genProvenanceOf(t);
+    const genRecord = makeGenRecord({
+      kind: 'terrain',
+      key: provenanceKeyOf(t),
+      params: {
+        ...norm.params,
+        // 图幅是推演的独立入参（FMG 分支整张换网格）→ 不记就重放不出同一张地形
+        ...(opts.genBBox && isValidBBox(opts.genBBox) ? { bbox: { ...opts.genBBox } } : {}),
+        // 源头也要记：`contour` = 按轮廓推演，`fmg` = 模板高度图（同一条落库链，两种来源）
+        source: provided ? 'fmg' : 'contour',
+        ...(provided && opts.selection ? { fmg: { ...opts.selection } } : {}),
+      },
+      seed: genSeed,
+      result: terrainSummary(syn),
+    });
+    const provenanceAfter = appendGenRecord(provenanceBefore, genRecord);
     execute({
       type: t.commandType,
       label: t.commandLabel,
-      undo: () => { writeHeightmap(had ? prev : null, { touch: false }); },
-      redo: () => { writeHeightmap(payload); },
+      undo: () => {
+        writeHeightmap(had ? prev : null, { touch: false });
+        writeGenProvenance(t, provenanceBefore);
+      },
+      redo: () => {
+        writeHeightmap(payload);
+        writeGenProvenance(t, provenanceAfter);
+      },
     });
     t.save();
     // 回执要把**结构**也说清：v2 起推演地形不再是"坡面 + 噪声"，而是带山脉走向 / 高原面 / 裂谷。
@@ -4365,6 +4425,8 @@ export function createScenarioEditingModule(ctx) {
       structure: syn.structure || null,
       params: norm.params,
       paramWarnings: norm.warnings,
+      // 账本记录 id（确定性）：同参数同图幅再生成一次是同一个 id，可用来对拍
+      recordId: genRecord.id,
       handKept: handKept.length,
       handDropped: keepHand ? 0 : prevHand.length,
       climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },

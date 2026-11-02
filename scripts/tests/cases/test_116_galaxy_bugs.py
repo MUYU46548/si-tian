@@ -140,10 +140,25 @@ def source_gates():
         fails.append('🔴 旧的无条件"拖拽恒星编辑坐标"文案还在（那句话骗人）')
 
     # ⑤ 颜色拼 alpha 的旧写法必须绝迹（对 hsl 是非法 CSS，会被静默忽略）
-    for name, src in (('GalaxyMap', gm), ('InteriorView', iv)):
+    #   ⚠️ 2026-11-02 口径搬家：星域色块的画法从 GalaxyMap 搬进 `galaxy/domainPaint.js`
+    #      （画布与「导出 PNG(全图)」共用同一份 —— 这才是"唯一实现"该在的位置）。
+    #      所以这里守的是**接口**：GalaxyMap 必须调到那份共享实现，且真正拼 alpha 的地方
+    #      走 `toRgba()` 而不是字符串拼接。`InteriorView` 照旧直接用它自己的 withAlpha。
+    dp = _code_only(_read('src/renderer/src/galaxy/domainPaint.js'))
+    if 'paintDomainBorders(' not in gm:
+        fails.append('🔴 GalaxyMap 没有接 `paintDomainBorders`（星域画法的唯一实现，画布与导出共用）')
+    if 'export function toRgba(' not in dp:
+        fails.append('🔴 galaxy/domainPaint.js 缺 toRgba 实现（hsl 颜色也要能取 alpha）')
+    for name, src in (('GalaxyMap', gm), ('InteriorView', iv), ('domainPaint', dp)):
         if "color + '" in src:
             fails.append(f'🔴 {name} 仍在用字符串拼 alpha（对 hsl 颜色是非法 CSS，会静默沿用上一个颜色）')
-        if 'withAlpha(' not in src:
+        if name == 'domainPaint':
+            if 'toRgba(' not in src:
+                fails.append('🔴 domainPaint 没有接 toRgba（唯一实现）')
+        elif name == 'GalaxyMap':
+            if 'paintDomainBorders(' not in src and 'withAlpha(' not in src:
+                fails.append('🔴 GalaxyMap 既没调共享画法也没接 withAlpha（唯一实现）')
+        elif 'withAlpha(' not in src:
             fails.append(f'🔴 {name} 没有接 withAlpha（唯一实现）')
     if 'export function withAlpha(' not in cu:
         fails.append('🔴 utils/colorUtil.js 缺 withAlpha 实现')
