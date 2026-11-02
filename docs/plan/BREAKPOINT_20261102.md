@@ -62,8 +62,16 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 
 ## 四、没做到 / 留到下轮（别装作做了）
 
-1. **N2 建省松手仍 79.8ms**（目标 ≤50ms）—— 拆解见下一节第 2 条：不是 store 的锅，是松手后的整屏重绘，
-   下一轮做**脏矩形局部重绘**（只重画新省包围盒），别整屏重来。
+1. **N2 建省松手仍 79.8ms**（目标 ≤50ms）—— 但**这个指标本身先要修**（本轮实测发现的坑，下一轮先做这个再谈优化）：
+   - 同一个探针口径下，**一次"什么都没有发生"的 mouseup（trace=0，没建省）也量到 51ms**；
+   - 而把各段单独量：手迹管线 ≈14ms（1800 点）/ `store.addBaseProvince` 3~5ms / `sm.render()` **4ms**（暖缓存）；
+   - 用 CDP CPU 采样（只包住 mouseup 那一下）能看到的最大单项只有 `focus` 1.9ms、`pointInPolygon` 1.8ms，
+     其余摊在几十个 <1ms 的小函数 + `(program)`/GC 上 —— **没有"某个函数吃掉 40ms"这种可打靶的热点**。
+   ⇒ 结论：`land_ms` 量的是「`dispatchEvent` 到返回」这段墙钟，里面混着浏览器事件派发/样式与布局刷新/GC，
+   不等于"我们代码的工作量"。**下一轮第一件事是给这一段换判据**（在 commit 路径里打 `performance.mark`
+   分段量：管线 / store / invalidate / 首帧），拿到干净的数再决定改什么。
+   已知的一个候选项：`provinceBrush.invalidateBorders()` 会让下一帧 `borderChains` 全量重抽一次
+   （200 省 / 6,826 顶点），这是"松手后第一帧 81.8ms"最可能的来源 —— 但那要增量抽取，属于下一轮。
 2. **`st.ownerStrokeId` 是个老洞**（本轮抽取时发现，未修）：`pointerState` 从来没有它的 get/set，
    于是 `actions.js` 里 `st.ownerStrokeId` 恒为 `undefined` —— 涂归属那一笔的账本 `groupId` 一直没带上。
    改它会有**行为变化**（账本分组），所以留成单独一刀，不夹在重构里。
