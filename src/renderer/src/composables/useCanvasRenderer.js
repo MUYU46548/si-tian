@@ -286,6 +286,13 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     perfStats.lastFrameTime = frameTime;
     perfStats.frameCount++;
     perfStats.peakFrameTime = Math.max(perfStats.peakFrameTime, frameTime);
+    // N2 判据（2026-11-02）：帧时间单独记一条 —— 否则只能看到 `dispatchEvent` 的墙钟，
+    // 分不清"我们的绘制"和"等垂直同步"。只在 `window.__SITIAN_PERF__` 打开时记（默认零成本）。
+    if (typeof window !== 'undefined' && window.__SITIAN_PERF__) {
+      const box = window.__LAND_PERF__ || (window.__LAND_PERF__ = []);
+      box.unshift({ label: partial ? '帧渲染(局部)' : '帧渲染(全量)', ms: +frameTime.toFixed(1) });
+      if (box.length > 60) box.length = 60;
+    }
 
     // ---- 脏矩形状态收尾：本帧已消费，清空等待下次 add ----
     if (tracker) {

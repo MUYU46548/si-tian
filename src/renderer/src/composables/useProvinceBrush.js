@@ -53,7 +53,16 @@ export function useProvinceBrush() {
 
   function borderChains(key, labels, grid) {
     if (cache.key === key && cache.token === borderToken) return cache.chains;
+    // N2 分段计时（同 `province.js` 的约定：`window.__SITIAN_PERF__` 打开才记，默认零成本）
+    const perf = typeof window !== 'undefined' && window.__SITIAN_PERF__;
+    if (perf) { try { performance.mark('border:0'); } catch (e) {} }
     const raw = extractBorders(labels, grid);
+    if (perf) { try {
+      performance.mark('border:1');
+      performance.measure('省界抽取', 'border:0', 'border:1');
+      const l = performance.getEntriesByName('省界抽取');
+      (window.__LAND_PERF__ || (window.__LAND_PERF__ = [])).unshift({ label: '省界抽取', ms: +(l[l.length - 1].duration).toFixed(1) });
+    } catch (e) {} }
     cache.key = key;
     cache.token = borderToken;
     cache.chains = raw.map(ch => chaikin(ch, 2));

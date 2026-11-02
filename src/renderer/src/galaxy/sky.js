@@ -218,12 +218,26 @@ export function paintSkyAsset(px = 1024, seed = 20261031) {
 
 /**
  * 把背景铺进世界矩形。画布与导出**都调它**（同源）。
- * @param {CanvasRenderingContext2D} ctx 已带世界变换的上下文
- * @param {{x:number,y:number,w:number,h:number}} rect
- * @param {{seed?:number, px?:number}} [opts]
+ *
+ * 2026-11-02（②「星云按视口裁」）：资产分辨率不再固定 1024，而是**按当前变换算出来的屏幕尺寸**选档。
+ * 旧口径是「一张 1024² 资产拉满 3200×3200 世界矩形」—— 远景（scale≈0.36）刚好够用，
+ * 但一放大到 1.2 就是 3.75 倍上采样，星点糊成团、星云没有层次（用户说的"抄不清楚"里有一条就是它）。
+ * 现在按 `rect.w × scale` 选 1024 / 1536 / 2048 三档（只在跨档时才重新生成，资产本身有缓存）。
+ * 上限 2048 是有意的：4096² 要 64MB 且生成一次就掉一帧，收益却只有边缘那一点锐度。
  */
 export function paintGalaxySky(ctx, rect, opts = {}) {
-  const px = opts.px || 1024;
+  let px = opts.px || 0;
+  if (!px) {
+    // 世界→屏幕的缩放（含 DPR 之外的画布变换）；导出态是 1（外层已按 dpr 铺好）
+    let scale = 1;
+    try {
+      const m = ctx.getTransform ? ctx.getTransform() : null;
+      if (m && Number.isFinite(m.a)) scale = Math.hypot(m.a, m.b) || 1;
+    } catch (e) { scale = 1; }
+    const need = Math.abs(rect.w) * scale;
+    px = need > 1500 ? 2048 : need > 900 ? 1536 : 1024;
+    if (opts.maxPx) px = Math.min(px, opts.maxPx);
+  }
   const asset = paintSkyAsset(px, opts.seed || 20261031);
   ctx.save();
   ctx.imageSmoothingEnabled = true;
