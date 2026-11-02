@@ -66,6 +66,11 @@ def source_gates():
     fails = []
     with open(SMV, encoding='utf-8') as f:
         smv = _code_only(f.read())
+    # 2026-11-02 N1.5：河流几何/命中搬进 `scenario/interaction/riverGeometry.js` ——
+    # 判据跟着搬（实质不变：`hitTestRiver` 仍只许有一处实现，且选择工具里必须调它）。
+    with open(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'riverGeometry.js'),
+              encoding='utf-8') as f:
+        rivergeo = _code_only(f.read())
 
     # a① 按钮条件不许再"因为已有高度图而隐藏"
     i = smv.find('const baseMapCanSynthesizeTerrain = computed(')
@@ -76,9 +81,9 @@ def source_gates():
         if 'baseMapHasHeightmap' in seg and '!' not in seg.split('baseMapHasHeightmap')[0][-3:]:
             fails.append('🔴 按钮条件里仍用「没有高度图」来隐藏 —— 正好在用户找它时藏掉')
 
-    # a② 选择工具分支里必须有河流命中
+    # a② 选择工具分支里必须有河流命中（命中函数可能在 SFC，也可能在同目录 riverGeometry.js）
     j = smv.find("if (tool.value === 'select') {\n    // 🔴 2026-10-17")
-    if j < 0 and 'hitTestRiver(' not in smv:
+    if j < 0 and 'hitTestRiver(' not in smv and 'hitTestRiver(' not in rivergeo:
         fails.append('🔴 「选择」工具里没有河流命中判定（`hitTestRiver`）—— 点不中河')
     # a③ Delete 必须覆盖非河流工具
     # 2026-10-31：键盘处理搬进 `scenario/interaction/keyboard.js` —— 判据跟着搬家

@@ -162,6 +162,9 @@ def sub_source_guards():
     dlg = _code_only(_read(DIALOG))
     exp = _code_only(_read(EXPORT))
     mp = _code_only(_read(MAP))
+    # 2026-11-02 N1.5：切片导出的**编排**搬进 scenario/interaction/transfer.js ——
+    # 判据把那份源码一起读；实质不变（era 与当前剧本集名必须一路传到 exportSliceFrames）。
+    mp += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/transfer.js'))
 
     # ① 过滤只在一处：collectSliceFrames 里按 eraList 迭代
     if 'const eraList' not in sl:

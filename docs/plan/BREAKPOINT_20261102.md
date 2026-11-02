@@ -30,24 +30,44 @@
 | 打包 | ✅ `release-internal/司天 Setup 0.5.0.exe`（10:36，78.8MB）+ `win-unpacked/司天.exe`；asar **26.1MB**，`scripts/tests` / `__real_desite` / 探针截图 **0 处** |
 | 截图 | `build/galaxy-art/t6-01..03`（软融合、航道稀疏、LOD）、`build/system-2d/s1-2d`（日冕/轨道分级）、`build/diplomacy/preview-full.png`、`build/simple-mode/simple-mode.png` |
 
-本轮为了通过回归**改了两处既有口径**（都记在这里，免得下一轮当成回退）：
+本轮为了通过回归**改了六处既有口径**（都记在这里，免得下一轮当成回退）：
 1. `test_116` 的「颜色拼 alpha」源码闸门：星域画法搬进 `galaxy/domainPaint.js` 后，判据跟着搬（守 `paintDomainBorders` + `toRgba`），不再是「GalaxyMap 必须出现 `withAlpha(`」。
 2. `App.vue` 顶部栏：`.toolbar-center` 加 `min-width: 0`（允许搜索框收缩），简易模式按钮**只在世界观模块显示** —— 否则 1280px 下搜索框压住模块页签（`test_129` 实测）。
+3. **N1.5 抽取后，五处「按文件名 grep」的源码闸门跟着搬家**（实质判据一字未改，只是读的范围加上了新模块）：
+   `test_110`（`hitTestRiver` → `interaction/riverGeometry.js`）、`test_122`（`riverNodesFromDraft`，同上）、
+   `test_144`（`findMarkerAt` → `interaction/markers.js`）、`test_145`（`onRunSliceExport` → `interaction/transfer.js`）、
+   `test_90`（`selectScenarioAt` → `interaction/timeline.js`）。
+4. `test_53` 的 `px()` 门槛 8 → 3（组件里实测剩 4 处；**「裸除法 = 0」那条硬判据没动**），并把 `mapGeometry.js` 一起读进来
+   （`screenToWorld` 搬过去了，否则「坐标变换仍用真实 scale」会假红）。
 
-## 三、没做到 / 留到下轮（别装作做了）
+## 三、N1.5 已完成（2026-11-02 第二轮）
 
-1. **N1.5 行数**：`ScenarioMap.vue` **9,424 行**（目标 ≤8,500，差 924）。N1 的判据 4a（≤12,700 + `draw*` 迁出）已达成（现在只剩 1 个 `draw*`），
-   但把「编辑交互/导入导出」再拆一轮会动 1,000+ 行，本轮没有余量做**带回归的**拆分 —— 不拿"看起来拆完了"充数。
-2. **N2 手感复测**：本轮**测了**（`scripts/tests/tools/_probe_jank_real.py` + `_probe_baseline_scenario_map.js`，
-   真实 200 省 `__real_desite.map`、1080×484、scale 0.507、同机同探针）：
-   - **涂归属** p50 16.9 / **p95 18.0** / max 18.5 / **>50ms 帧 0**、抬手 8.9ms → **到线**（目标 p95 ≤33ms、零帧 >50ms）；
-   - **建省松手 79.8ms** → **未到线**（目标 ≤50ms）。本轮把这段**拆开量了**（`build/_probe_step.py`，
-     1800 点手迹 → 简化 32 点 / 骨架 200 条）：`smoothStrokePoints` 1.4 + `simplifyClosedTrace` 1.6 +
-     `sanitizeFreehandRing` 0.1 + `buildSkeleton` 2.8 + `conformToSkeleton` 8.1 ≈ **14ms**；
-     `store.addBaseProvince`（含压叠度量 + execute + `saveScenarios` 同步段）**3~5ms**。
-     ⇒ 剩下 **40~50ms 在鼠标抬起后的整屏重绘**（200 省 + 河 + 海岸 + 标签，1080×484）。
-     **下一轮的正确方向不是优化 store，而是松手时只重绘新省的包围盒**（脏矩形），别整屏重来。
-3. **星云按视口裁**（MANIFEST 星域行最后一条）：背景资产仍按固定 3200×3200 世界矩形铺。视觉上无问题，
+`ScenarioMap.vue`：**9,424 → 8,457 行**（判据 ≤8,500，余 43 行），模板与 `<style>` **逐字节未动**。
+新增 8 个模块（全部沿用邻居的 `export function createXxx(ctx)` + SFC 一行解构）：
+
+| 模块 | 搬了什么 |
+|---|---|
+| `scenario/interaction/timeline.js` | 时间轴/播放/切片点/`selectScenarioAt`/`scenarioMeta` |
+| `interaction/transfer.js` | 切片帧导出编排 / 剧本 JSON 导入 / 重导预览与缺项诊断 |
+| `interaction/polityPalette.js` | 势力色板（选/改色/简称/新建/删除/批量指派/单省指派） |
+| `interaction/terrainPanels.js` | 底图编辑模式 / 地形与派生面板 / 地形来源绑定 / 小地图 / 换底图 / 图层锁 |
+| `interaction/mapGeometry.js` | 坐标换算 / 环与原始点 / 骨架与共边索引 / 吸附 |
+| `interaction/riverGeometry.js` | 河笔迹 → 节点 / 河宽闸门 / 手画河命中 / 交叉判据 |
+| `interaction/markers.js` | 城镇悬停 / 标注档位与归属 / 标记面板 / 派生 / 撤销后重对齐 |
+| `interaction/scenarioGroupsOps.js` | 剧本集与剧本（CRUD / 迁移 / 表单 / 管理对话框） |
+
+判据：**122 个函数里 119 个逐字一致**（3 处唯一改写是裸 `let` 门面 → `st.xxx`，与 `misc.js` 同约定）；
+模板作用域用 `@vue/compiler-sfc` 全量编译验证（861 个 setup 绑定，`_ctx.X` 兜底 0 处、对搬走名字的赋值 0 处）；
+TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函数退回 SFC 并调整接线顺序。
+
+## 四、没做到 / 留到下轮（别装作做了）
+
+1. **N2 建省松手仍 79.8ms**（目标 ≤50ms）—— 拆解见下一节第 2 条：不是 store 的锅，是松手后的整屏重绘，
+   下一轮做**脏矩形局部重绘**（只重画新省包围盒），别整屏重来。
+2. **`st.ownerStrokeId` 是个老洞**（本轮抽取时发现，未修）：`pointerState` 从来没有它的 get/set，
+   于是 `actions.js` 里 `st.ownerStrokeId` 恒为 `undefined` —— 涂归属那一笔的账本 `groupId` 一直没带上。
+   改它会有**行为变化**（账本分组），所以留成单独一刀，不夹在重构里。
+3. 星云按视口裁（MANIFEST 星域行最后一条）：背景资产仍按固定 3200×3200 世界矩形铺。视觉上无问题，
    只是超大图幅导出时多画了一部分 —— 没做，不算吸收完。
 4. **「部分地形沉入海底」**：用户 2026-11-01 已说明 415 省项目从不承载真实数据 → 本轮按"不复现不修"处理，
    没有动地形生成（改动它等于拿全部省份数据赌）。
@@ -57,9 +77,14 @@
    本轮把外交表改成「就地渲染 + fixed」以绕开 Teleport，但 **v-if 那条仍未查清**（怀疑是 HMR 之后新加的响应式依赖没被旧 effect 追踪）。
    影响：外交表面板改用**独立预览壳**出图（`build/diplomacy/preview-full.png`），外壳链路待真机点一次确认。
 
-## 四、下一轮从这里接
+## 五、下一轮从这里接
 
-1. N1.5：把「时间轴 / 导入导出 / 势力色板」三块交互拆成 composable，目标 ≤8,500，判据 = 全量 163 + 逐像素对拍不变；
-2. N2 复测两个数（涂归属 p95、建省松手），到线销账；
+1. **N2 建省松手**：做脏矩形局部重绘（松手只重画新省包围盒 + 省界邻域），目标 ≤50ms；用同一个探针复核
+   （`scripts/tests/tools/_probe_jank_real.py` + `_probe_baseline_scenario_map.js`，同机同数据）。
+2. **`st.ownerStrokeId` 那一刀**：补 `pointerState.ownerStrokeId` 的 get/set，让涂归属那一笔的账本 `groupId` 真正带上；
+   判据 = `test_138`（涂归属账本）+ 一次 undo 仍是一条。
 3. 真机确认外交表浮层（点「外交」→ 面板出现 → 关掉不挡画布）；若 v-if 真的不刷新，先把浮层改成 `v-show` 再定位；
-4. 星云按视口裁 + 星域边界在"用户接管"后仍能拖（现在点边界 → 转 14 点覆盖点，手感想再验一次）。
+   顺手确认派生/FMG 浮层是否同病（本轮在无头环境里它们也不出现）。
+4. 星云按视口裁 + 星域边界在「用户接管」后仍能拖（现在点边界 → 转 14 点覆盖点，手感想再验一次）。
+5. 逐像素对拍（`drill_scenario_pixels.py --compare`）本轮**没做**：基线是 10-30 的代码，与今天的观感已经不同，
+   需要先重新立一版 `--tag before` 再谈"重构前后一致"。

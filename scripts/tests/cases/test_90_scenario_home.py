@@ -53,6 +53,9 @@ def source_gates():
     fails, notes = [], []
 
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-11-02 N1.5：剧本站首的「点条目 = 选时期」受理函数搬进 scenario/interaction/timeline.js ——
+    # 判据把那份源码一起读；实质不变（`selectScenarioAt` 仍只许有一处实现）。
+    sc += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/timeline.js'))
 
     # ① 默认工具
     if "const tool = ref('select')" not in sc:

@@ -149,7 +149,9 @@ JS_SRC = r"""(() => {
   // 实质判据仍是下面的「裸除法 = 0」（那一条不会因为搬家而放松）。
   // 2026-10-31：绘制/交互体已陆续搬出组件（那边统一用 view.px，同一份换算），
   // 这条只剩“组件里还有没有用 px”的意义 —— 实质判据是下面的裸除法 = 0。
-  ok('px() 助手覆盖绘制路径', pxUses >= 8, pxUses);
+  // 2026-11-02 N1.5：几何/绘制体又搬走 8 个模块（那边同样用 px；`裸除法 = 0` 那条更硬的判据在下面）。
+  // 组件里实测剩 4 处（坐标换算/命中接线），门槛随之降到 3；实质判据仍是「裸除法 = 0」。
+  ok('px() 助手覆盖绘制路径', pxUses >= 3, pxUses);
   const raw = (txt.match(/[^\w.]\d+(?:\.\d+)?\s*\/\s*cameraScale\.value/g) || []).length;
   ok('裸「数字 / cameraScale」已清零', raw === 0, raw);
   ok('坐标变换仍用真实 scale', /\(sx - cameraX\.value\) \/ cameraScale\.value/.test(txt));
@@ -319,9 +321,12 @@ def run(cdp):
     base_note = f"空项目无底图、落笔懒建 {obj['keys'][0]}（不借用真实剧本名）"
 
     # ── f) 渲染护栏（静态 + 行为）────────────────────────────────────────
+    # 2026-11-02 N1.5：坐标换算（`screenToWorld`）搬进 scenario/interaction/mapGeometry.js ——
+    # 静态检查读**组件 + 那份模块**（否则「坐标变换仍用真实 scale」会因为搬家而假红）。
     cdp.eval("""(async () => {
       const r = await fetch('/src/components/ScenarioMap.vue?raw');
-      window.__SCENARIO_SRC__ = await r.text();
+      const g = await fetch('/src/scenario/interaction/mapGeometry.js?raw');
+      window.__SCENARIO_SRC__ = (await r.text()) + '\\n' + (await g.text());
       return true;
     })()""")
     obj, err = _j(cdp, JS_SRC, desc='px/护栏静态检查')

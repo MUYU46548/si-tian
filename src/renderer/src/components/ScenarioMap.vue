@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="scenario-map-container" :class="{ immersive }">
     <!-- 沉浸模式细顶条（2026-10-17 P0）：默认态下不渲染；只留 返回 / 剧本名 / 年份 / 小地图 / 退出 -->
     <div v-if="immersive" class="immersive-bar" data-testid="immersive-bar">
@@ -1908,6 +1908,22 @@ import { createRiverOps } from '../scenario/interaction/riverOps';
 import { createHelperActions } from '../scenario/interaction/helpers';
 import { createProvinceActions } from '../scenario/interaction/province';
 import { createActionHandlers } from '../scenario/interaction/actions';
+// N1.5（2026-11-02）：时间轴 / 播放 / 切片点（`tlDate` 仍是唯一真源；watch 留在本文件）
+import { createTimelineActions } from '../scenario/interaction/timeline';
+// N1.5（2026-11-02）：导入导出（切片帧导出 / 重导预览 / 底图缺项诊断）
+import { createTransferActions } from '../scenario/interaction/transfer';
+// N1.5（2026-11-02）：势力色板（改色/简称/新建/选中 + 批量归属 + 单省指派）
+import { createPolityActions } from '../scenario/interaction/polityPalette';
+// N1.5（2026-11-02）：底图编辑模式 / 地形与派生面板 / 地形来源绑定 / 小地图 / 换底图
+import { createTerrainPanelActions } from '../scenario/interaction/terrainPanels';
+// N1.5（2026-11-02）：画布几何（坐标换算 / 环与原始点 / 骨架与共边索引 / 网格吸附）
+import { createMapGeometry } from '../scenario/interaction/mapGeometry';
+// N1.5（2026-11-02）：河流几何（笔迹→节点 / 河宽闸门 / 手画河命中 / 交叉判据 / 节点草稿）
+import { createRiverGeometry } from '../scenario/interaction/riverGeometry';
+// N1.5（2026-11-02）：城镇悬停 / 标注档位与归属 / 标记面板 / 派生与聚落编辑 / 撤销后重对齐
+import { createMarkerActions } from '../scenario/interaction/markers';
+// N1.5（2026-11-02）：剧本集与剧本（CRUD / 迁移 / 表单 / 管理对话框收口）
+import { createGroupActions } from '../scenario/interaction/scenarioGroupsOps';
 // N1 刀 2 收尾：交互预览层（原来 317 行的 drawPreviewOverlay）
 import { drawPreviewOverlayLayer } from '../scenario/layers/preview';
 // N1 刀 2：编辑期覆盖层（顶点手柄 / 框选 / 笔刷圈 / 套索）
@@ -2259,38 +2275,7 @@ const BASEMAP_TOOLS = [
   { id: 'burg', icon: 'home', label: '聚落', title: '聚落 (U) — 放一个城镇/村庄' },
 ];
 const BASEMAP_TOOL_IDS = new Set(BASEMAP_TOOLS.map((t) => t.id));
-function toggleBasemapEditMode() {
-  basemapEditMode.value = !basemapEditMode.value;  // 🔴 开模式**顺手收起「更多」**（2026-10-18 第十七修·出图实测）：
-  //    第一版是"开模式就展开「更多」"，结果工具栏从 ~120px 撑到 **~470px**（出图
-  //    `docs/assets/basemap-mode-20261018/02-basemap-edit-mode.png` 一眼可见）——
-  //    画布被压掉一半，而"模式分区"的收益全被这个面板吃掉了。
-  //    地理类工具**已经在模式行里**；「更多」里的那几件（参考图 / 自带-自动河源 / 着色档 / 吸附）
-  //    是**进阶开关**，想用再点开。同理：`setTool` 的自动开模式更不该碰 `moreOpen`
-  //    （那会让"切一下工具"就展开 42vh 面板，实测把 `test_61` 的画布内容判空判红）。
-  if (basemapEditMode.value) moreOpen.value = false;
-  statusMsg(basemapEditMode.value
-    ? '已进入底图编辑模式 —— 这一行是画地理；关掉它回到日常剧本编辑'
-    : '已退出底图编辑模式 —— 回到日常剧本编辑（省份 / 归属 / 剧本）');
-}
 
-/**
- * 左上角「返回」：**先退子模式，再退模块**（2026-10-21，暮雨实测误触）。
- *
- * 旧行为：底图编辑里点「← 返回」→ 直接 `exit`，整个历史剧本被退掉。
- * 新行为：
- *   · 底图编辑中 → 只关底图编辑，留在历史剧本（按钮显示「← 返回日常」）；
- *   · 日常态   → 才退出历史剧本（按钮显示「← 退出剧本」）。
- * 模块级退出另有顶部「世界观」页签，这里不再是唯一出口。
- */
-function onBackClick() {
-  if (basemapEditMode.value) {
-    basemapEditMode.value = false;
-    statusMsg('已退出底图编辑 —— 回到日常剧本编辑（历史剧本还在；要离开请点「← 退出剧本」或顶部「世界观」）');
-    render();
-    return;
-  }
-  emit('exit');
-}
 const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'river', 'relief', 'label',
   'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
 const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
@@ -2352,10 +2337,6 @@ const terrainGenOpen = ref(false);
 /** B 阶段 2（2026-10-29）：FMG 模板地形面板开关（与「生成参数」是两个引擎，各自一个入口） */
 const fmgOpen = ref(false);
 
-function toggleTerrainGenPanel() {
-  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
-  terrainGenOpen.value = !terrainGenOpen.value;
-}
 
 // ── D3（2026-10-26）：地形注记 —— 山系名沿脊线排 ──────────────────────────────
 // 名字由用户给（面板里逐条命名），几何来自 `ridges.detectRidges` 的候选；
@@ -2364,33 +2345,8 @@ const terrainLabelsOpen = ref(false);
 /** 与「自动地名」分开：FMG 的英文城镇名可以关，山系名是自己的数据、默认开 */
 const showTerrainNames = ref(true);
 
-function toggleTerrainLabelsPanel() {
-  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
-  terrainLabelsOpen.value = !terrainLabelsOpen.value;
-}
 
-function applyTerrainLabelsResult(msg) {
-  statusMsg(msg || '地形注记已保存');
-  render();
-}
 
-/**
- * 「地形名」勾选（2026-10-27 用户 A2/B2：「勾了地形名完全看不见」）。
- *
- * 真相：这张底图 `terrainLabels = 0` —— 地形注记是**用户命名**的数据（检测山脊候选或手绘），
- * 没有名字就没有东西可画。旧界面勾上后**一声不响**，看起来像渲染坏了。
- * 现在：勾上且一条都没有 → 直接把「地形注记」面板打开并说清下一步。
- */
-function onTerrainNamesToggle(e) {
-  const on = !!(e && e.target && e.target.checked);
-  if (!on) { render(); return; }
-  const n = (baseMap.value?.terrainLabels || []).length;
-  if (n === 0) {
-    if (baseMapKey.value) terrainLabelsOpen.value = true;
-    statusMsg('这张底图还没有地形注记（0 条）—— 已打开「地形注记」面板：点「检测山脊」或用「画山系 / 画海域 / 点平原」自己画一条，命名后「应用」');
-  }
-  render();
-}
 
 // ── D3 手绘（2026-10-27）：山系/海域拖一条线、平原点一个点 ──────────────────
 // 为什么几何采集放这里而不是面板里：只有画布知道相机与屏幕→世界的换算，
@@ -2399,50 +2355,18 @@ function onTerrainNamesToggle(e) {
 const terrainLabelPick = ref(null);
 const TERRAIN_PICK_MIN_STEP = 3;     // 屏幕像素：采样抽稀，别让一条线攒出上千点
 
-function startTerrainLabelPick(kind) {
-  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
-  if (store.isReadOnly) { statusMsg(`地形注记已停用：${store.readOnlyReason}`); return; }
-  const k = ['range', 'sea', 'plain'].includes(kind) ? kind : 'range';
-  terrainLabelPick.value = { kind: k, points: [], dragging: false, finished: false };
-  statusMsg(k === 'plain' ? '平原注记：在地图上点一下落个点' : '在地图上拖一条线（松开鼠标完成）');
-  render();
-}
 
-function clearTerrainLabelPick(msg) {
-  terrainLabelPick.value = null;
-  if (msg) statusMsg(msg);
-  render();
-}
 
 /** 面板「完成」→ 采到的点已经变成一行（面板负责），这里只收尾 */
-function onTerrainLabelPickDone() {
-  clearTerrainLabelPick('');
-}
 
-function cancelTerrainLabelPick() {
-  clearTerrainLabelPick('已取消手绘注记（数据未改）');
-}
 
 /** 面板应用回执：与一键入口做同样的画布侧收尾（缓存失效 + 切到地形高度 + 重绘） */
-function applyGeneratedTerrain(r) {
-  rasterCache.clear();
-  rasterLayer.value = 'height';
-  // 两个引擎（按轮廓推演 / FMG 模板）共用一个收口：谁应用完都关面板、切高度档、递回执
-  terrainGenOpen.value = false;
-  fmgOpen.value = false;
-  statusMsg((r && r.message) || '已生成地形');
-  render();
-}
 
 // ── P0-2（2026-10-25）：造陆面板 ─────────────────────────────────────────────
 // 「造陆」= 生成轮廓 + 现有铺底切省（store 里合成**一条 undo**）。
 // 只读态/绑定行星都不影响省份创建；已有陆地时面板里会先问一次（覆盖 = 整张替换）。
 const landmassOpen = ref(false);
 
-function toggleLandmassPanel() {
-  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
-  landmassOpen.value = !landmassOpen.value;
-}
 
 // applyLandmassResult 已搬到 misc.js（2026-10-31）
 
@@ -2450,17 +2374,8 @@ function toggleLandmassPanel() {
 // ── P0-4（2026-10-25）：文化/宗教/势力派生 ───────────────────────────────────
 const deriveOpen = ref(false);
 
-function toggleDerivePanel() {
-  if (!baseMapKey.value) { statusMsg('先选一张底图'); return; }
-  deriveOpen.value = !deriveOpen.value;
-}
 
 /** 派生回执：文化层变了要清栅格缓存；势力归属变了会走既有渲染路径 */
-function onDerived(r, kind) {
-  if (kind === 'culture') rasterCache.clear();
-  statusMsg((r && r.message) || '已派生');
-  render();
-}
 
 // ── P5：高度图分辨率（2026-10-14）────────────────────────────────────────────
 // 「地形模模糊糊」的量出来的事实：源网格 133×75 / spacing 14.4，在 1900×1080 的画布上
@@ -2549,25 +2464,6 @@ const riverTerrainAdvice = computed(() => {
     + `或直接用「河流来源 → 只画底图自带」（那 160 条自带河好看得多）。`;
 });
 
-function openResamplePanel() {
-  resampleOpen.value = !resampleOpen.value;
-}
-function applyResample() {
-  const r = store.resampleBaseMapHeightmap(baseMapKey.value, resampleFactor.value);
-  if (!r || r.ok === false) { statusMsg((r && r.message) || '调整分辨率失败'); return; }
-  resampleOpen.value = false;
-  // ⚠️ 这里**刻意不手写 `rasterCache.clear()`**：格数/内容变了，高度图对象引用就变了，
-  //    而栅格缓存的键里含这个引用（见 `getRaster`）→ 自己就失效了。
-  //    手写 clear 是"两处都要记得改"的双源（本项目反复踩的那类）。
-  statusMsg(r.message + ' —— 已重建，可用 Ctrl+Z 撤销');
-  render();
-}
-function applySmooth() {
-  const r = store.smoothBaseMapHeightmap(baseMapKey.value, { radius: smoothRadius.value, passes: 1 });
-  if (!r || r.ok === false) { statusMsg((r && r.message) || '平滑失败'); return; }
-  statusMsg(r.message);
-  render();
-}
 
 // ── 地形来源（M1c，2026-09-25）────────────────────────────────────────────────
 // 用户决策：「历史剧本 = 一次施工永久存档」，强行绑到行星上会有风险（改行星会连带改剧本）。
@@ -2584,9 +2480,6 @@ const availablePlanets = computed(() =>
 const terrainInfo = computed(() =>
   (baseMapKey.value ? store.describeBaseMapTerrain(baseMapKey.value) : { mode: 'none' }));
 
-function planetNameById(id) {
-  return availablePlanets.value.find(p => p.id === id)?.name || id;
-}
 
 const terrainModeLabel = computed(() => {
   const t = terrainInfo.value;
@@ -2617,48 +2510,10 @@ const terrainModeTitle = computed(() => {
 });
 
 /** 冻结导入：把行星当前地形**复制**一份（副本独立） */
-function freezeTerrainFromPlanet() {
-  const pid = pickPlanetId.value;
-  if (!pid) return;
-  const name = planetNameById(pid);
-  let r = store.importHeightmapFromPlanet(baseMapKey.value, pid, { planetName: name });
-  if (r && r.conflict) {
-    if (!window.confirm(r.error)) { statusMsg('已取消导入（保留了原地形）'); return; }
-    r = store.importHeightmapFromPlanet(baseMapKey.value, pid, { force: true, planetName: name });
-  }
-  if (!r || r.ok === false) { statusMsg((r && r.error) || '导入地形失败'); return; }
-  statusMsg(`已冻结导入「${name}」的地形（${r.cellsX}×${r.cellsY}，${r.cells} 格）—— 这是独立副本，之后行星改地形不会影响它`);
-  render();
-}
 
 /** 跟随行星：共用同一份（会二次确认，并提示存档场景应改用冻结导入） */
-function bindTerrainToPlanet() {
-  const pid = pickPlanetId.value;
-  if (!pid) return;
-  const name = planetNameById(pid);
-  const okGo = window.confirm(
-    `让「${baseMapKey.value}」跟随「${name}」的地形？\n\n`
-    + '跟随 = 两边共用同一份：在剧本里涂山会改到行星，行星改地形也会改到这张剧本。\n\n'
-    + '如果这是要长期存档的历史剧本，请改用「冻结导入」（复制一份、互不影响）。'
-  );
-  if (!okGo) return;
-  const r = store.bindBaseMapToPlanet(baseMapKey.value, pid);
-  if (!r || r.ok === false) { statusMsg((r && r.error) || '跟随失败'); return; }
-  statusMsg(`已跟随「${name}」的地形 —— 现在两边是同一份：在剧本里编辑会改到那颗行星`);
-  render();
-}
 
 /** 解绑：行星那份不动，本底图回到「没有地形」 */
-function unbindTerrainFromPlanet() {
-  const okGo = window.confirm(
-    '解除跟随？\n\n行星那份地形不受影响；这张底图会回到「没有地形」（可再用「冻结导入」拿一份独立副本）。'
-  );
-  if (!okGo) return;
-  const r = store.unbindBaseMap(baseMapKey.value);
-  if (!r || r.ok === false) { statusMsg((r && r.error) || '解绑失败'); return; }
-  statusMsg('已解除跟随 —— 行星那份没动；可用「冻结导入」从行星拿一份独立副本');
-  render();
-}
 const baseMapKey = ref('');   // 空 = 当前项目还没有底图（onMounted 里解析：上次的 → 项目里第一张 → 空）
 const selectedScenario = ref(null);
 // ⚠️ 势力对象必须随数据**自愈重指向**：`updatePolity`（改名/简称）、撤销、导入都会整体替换
@@ -2691,18 +2546,6 @@ const showScenarioManager = ref(false);
 // 小地图显隐：**复用既有 `showMinimap`**（6683，此前无 UI 开关）——本轮给它补按钮与偏好持久化。
 const immersive = ref(false);
 const capsuleDim = ref(false);
-let capsuleTimer = 0;
-function pokeCapsule() {
-  if (!immersive.value) return;
-  capsuleDim.value = false;
-  clearTimeout(capsuleTimer);
-  capsuleTimer = setTimeout(() => { capsuleDim.value = true; }, 8000);
-}
-function toggleMinimap() {
-  showMinimap.value = !showMinimap.value;
-  try { localStorage.setItem('sitian-scenario-minimap', showMinimap.value ? '1' : '0'); } catch { /* 隐私模式 */ }
-  render();
-}
 watch(immersive, () => { pokeCapsule(); nextTick(() => { if (baseMap.value?.terrain?.length) fitToView(); }); });
 /** 「历史剧本」常驻左栏是否展开（收起后只留一条标题栏，腾出画布空间） */
 const showScenarioList = ref(true);
@@ -2718,30 +2561,6 @@ const availableBaseMaps = computed(() => {
   }));
 });
 
-// 底图切换（P2 方案A：切换底图 = 切换剧本集）
-async function onBaseMapChange() {
-  // 清空当前选中态（避免引用旧底图数据）
-  selectedProvince.value = null;
-  selectedScenario.value = null;
-  selectedPolity.value = null;
-  showProps.value = false;
-  contextMenu.value.show = false;
-  rasterCache.clear();
-
-  // 持久化当前底图键
-  if (window.sitianAPI?.setCurrentBaseMapKey) {
-    await window.sitianAPI.setCurrentBaseMapKey(baseMapKey.value);
-  }
-
-  // 自动选中该底图下的第一个剧本
-  const first = sortedScenarios.value[0];
-  resetTimelineToStart();
-  if (first) {
-    selectScenario(first);
-  } else {
-    render();
-  }
-}
 
 // 图层锁定（P0 图层锁定迁移）
 const scenarioLayers = ref({
@@ -2755,12 +2574,6 @@ const scenarioLayers = ref({
   raster: { visible: true, label: '底图数据', locked: false, order: 7 },
 });
 
-function toggleLayerLock(layerId) {
-  const layer = scenarioLayers.value[layerId];
-  if (layer) {
-    layer.locked = !layer.locked;
-  }
-}
 
 // 图层可见性（保留旧 ref 兼容模板）
 const showBiomes = ref(true);
@@ -3300,16 +3113,6 @@ function selectScenario(s) {
   render();
 }
 
-function selectPolity(p) {
-  selectedPolity.value = p || null;
-  if (p) clearOwnerMode.value = false;
-}
-
-/** 色板 ✕：进入「清除归属」模式（把涂到的省改成无主，而不是涂错颜色） */
-function selectClearOwnership() {
-  selectedPolity.value = null;
-  clearOwnerMode.value = true;
-}
 
 // ══════════════════════════════════════════════════════════════════════════
 // 涂归属（2026-10-20 重做）—— **只改势力归属，不动省界几何**
@@ -3331,33 +3134,7 @@ const OWNER_BRUSH_SAMPLE_PX = 3;
 let ownerStrokeActive = false;
 let ownerStrokeIds = new Set();
 let ownerLastSample = null;
-// 这一笔的账本身份（groupId）：按下时生成，抬手落库时带给 store → 一笔一组（第 4 件接线点）
-let ownerStrokeId = '';
-function nextOwnerStrokeId() {
-  ownerStrokeId = `own-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
-  return ownerStrokeId;
-}
 
-/** 笔刷半径（世界单位）—— 与几何笔刷同一口径：屏幕像素 / 缩放 */
-function ownerBrushWorldRadius() {
-  return provBrushRadius.value / Math.max(1e-6, cameraScale.value || 1);
-}
-
-/** 世界点 → 命中的陆地省 id 列表（海域不算：海不参与势力归属） */
-function ownerHitProvinceIds(wx, wy) {
-  const r = ownerBrushWorldRadius();
-  const offsets = [[0, 0], [0.65, 0], [-0.65, 0], [0, 0.65], [0, -0.65]];
-  const out = [];
-  const seen = new Set();
-  for (const [dx, dy] of offsets) {
-    const p = findProvinceAt(wx + dx * r, wy + dy * r);
-    if (!p || p.kind === 'sea') continue;
-    if (seen.has(p.id)) continue;
-    seen.add(p.id);
-    out.push(p.id);
-  }
-  return out;
-}
 
 /** 一次采样：把这笔新碰到的省并进 `ownerStrokeIds`（返回新增个数） */
 function ownerStrokeSample(wx, wy) {
@@ -3388,65 +3165,10 @@ function pickPolityAt(wx, wy) {
 // commitOwnerStroke 已搬到 actions.js（2026-10-31）
 
 
-// ── A8：势力显示信息（名称 / 简称）的编辑入口 ──────────────────────────────
-// 「自定义显示的势力名称」是暮雨的原话诉求：.map 导入带来的是 FMG 的国家名，
-// 用户要把它改成自己世界观里的叫法（并可另给一个缩小档用的简称）。
-function updateSelectedPolity(patch, okText) {
-  const polity = selectedPolity.value;
-  const sc = selectedScenario.value;
-  if (!polity || !sc) return;
-  const r = store.updatePolity(sc.id, polity.id, patch);
-  if (!r || !r.success) {
-    statusMsg(r && r.reason === 'no-polity' ? '势力已不存在（可能被删除）' : '修改势力失败');
-    return;
-  }
-  if (!r.changed) return;    // 没实质改动 → 不入 undo 栈、不提示
-  statusMsg(okText);
-  render();
-}
-
-function onPolityNameChange(e) {
-  const polity = selectedPolity.value;
-  if (!polity) return;
-  const v = String(e.target.value || '').trim();
-  if (!v) { e.target.value = polity.name || ''; statusMsg('势力名不能为空'); return; }
-  updateSelectedPolity({ name: v }, `势力已改名：${v}`);
-}
-
-/**
- * 新建势力（2026-10-01）：补上「势力只能靠 .map 导入带进来」这个缺口 ——
- * 自建底图 + 自建剧本时 polities 为空，色板空空、油漆桶点了静默无反应。
- * 名称用 prompt（与 label/marker 的录入方式一致，不新造一套内联编辑）。
- */
-async function onAddPolity() {
-  const sc = selectedScenario.value;
-  if (!sc) { statusMsg('先选一个剧本，再新建势力'); return; }
-  if (store.isReadOnly) { statusMsg(`新建势力已停用：${store.readOnlyReason || '只读'}`); return; }
-  const name = await askText({ title: '新势力名称', defaultValue: `势力 ${(sc.polities || []).length + 1}` });
-  if (name === null) return;                     // 取消
-  if (!String(name).trim()) { statusMsg('势力名不能为空'); return; }
-  const r = store.addPolity(sc.id, { name });
-  if (!r || !r.success) { statusMsg('新建势力失败'); return; }
-  // 选中新势力：接着就能直接油漆桶上色（不是"建完了还得自己找"）
-  const created = (store.scenarios?.[sc.id]?.polities || []).find(p => p.id === r.id) || null;
-  selectedPolity.value = created;
-  statusMsg(`已新建势力：${r.name}（选中它，用油漆桶 P 点省份即可指派）`);
-  render();
-}
-
-function onPolityColorChange(e) {
-  const v = String(e.target.value || '').trim();
-  if (!v) return;
-  updateSelectedPolity({ color: v }, `势力配色已改为 ${v}`);
-}
 
 // onDeletePolity 已搬到 misc.js（2026-10-31）
 
 
-function onPolityAbbrChange(e) {
-  const v = String(e.target.value || '').trim();
-  updateSelectedPolity({ abbr: v || null }, v ? `势力简称：${v}` : '已清除简称（缩小档回落全名）');
-}
 
 const showLineagePanel = ref(false);
 // 外交表（N3a-2，2026-11-02）：按需打开的浮层；**只读**，不写任何数据、不产生 undo。
@@ -3526,75 +3248,9 @@ const showSliceExport = ref(false);
 const reimportDialog = ref(null);
 let pendingReimportBundle = null;
 const sliceExportBusy = ref(false);
-async function onRunSliceExport({ png = false, scale = 2, era = null } = {}) {
-  if (sliceExportBusy.value) return;
-  sliceExportBusy.value = true;
-  try {
-    // `era` = 对话框选的范围（本剧本 / 本剧本集全部）；过滤在 utils/scenarioSlices 的唯一实现里
-    const r = await exportSliceFrames({ png, scale, era, slicePoints: slicePoints.value, groupName: groupNameNow.value });
-    // 失败/取消的回音由 exportStatus 承担（对话框里也显示同一份），这里只补一条可点名的结论
-    if (r && r.success === false && !r.canceled) statusMsg(`切片导出失败：${r.error || '未知错误'}`);
-    else if (r && r.canceled) statusMsg('已取消切片导出');
-  } finally {
-    sliceExportBusy.value = false;
-  }
-}
 
-function importScenariosJson(mode) {
-  return pickScenariosJson({ mode });
-}
 
-function onSetPolityLineage({ scenarioId, polityId, successorOf }) {
-  store.setPolityLineage(scenarioId, polityId, { successorOf });
-  render();
-}
 
-/** 面板里的输入被拒（越界年份等）：拒绝必须有回音 —— 静默吞掉等于用户以为改成功了 */
-function onPanelReject({ what = '输入', reason = '' } = {}) {
-  statusMsg(`${what}未写入：${reason || '不合法'}`);
-}
-
-// ── 省份多选 → 批量归属（2026-10-02 接活 batchSetOwnership）─────────────────
-// 回执必须点名「改了几省 / 跳过了什么」：批量操作最怕"点了没反应"或"悄悄漏掉几个"。
-function batchEcho(r, verb) {
-  if (!r || r.success === false) { statusMsg(`${verb}失败：${r?.reason || '未知原因'}`); return; }
-  if (r.noop) { statusMsg(`${verb}：没有需要改动的省份${r.skippedSea ? `（跳过 ${r.skippedSea} 个海域省）` : ''}`); return; }
-  const parts = [`${verb}：${r.changed || r.cleared} 省`];
-  if (r.skippedSea) parts.push(`跳过 ${r.skippedSea} 个海域省`);
-  if (r.skippedMissing) parts.push(`跳过 ${r.skippedMissing} 个不存在的省`);
-  parts.push('可 Ctrl+Z 撤回');
-  statusMsg(parts.join(' · '));
-}
-
-function onBatchAssign() {
-  if (store.isReadOnly) { statusMsg(`批量指派已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
-  if (!selectedPolity.value) { statusMsg('批量指派：先在上面的色板里选一个势力'); return; }
-  if (!selectedScenario.value) { statusMsg('批量指派：先在时间轴上选一个剧本'); return; }
-  const r = store.batchSetOwnership(
-    selectedScenario.value.id,
-    selectedProvinceIds.value.slice(),
-    selectedPolity.value.id,
-    tlDate.value,
-  );
-  batchEcho(r, `已指派给「${selectedPolity.value.name}」`);
-  render();
-}
-
-function onBatchClear() {
-  if (store.isReadOnly) { statusMsg(`批量清除归属已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
-  if (!selectedScenario.value) { statusMsg('批量清除归属：先在时间轴上选一个剧本'); return; }
-  const r = store.batchSetOwnership(
-    selectedScenario.value.id, selectedProvinceIds.value.slice(), null,
-  );
-  batchEcho(r, '已清除归属');
-  render();
-}
-
-function onSelectAllLand() {
-  selectedProvinceIds.value = selectedLandProvinces.value.slice();
-  statusMsg(`已选中当前底图的 ${selectedProvinceIds.value.length} 个陆地省（海域不参与归属，未入选）`);
-  render();
-}
 
 /**
  * 单省易主日期（面板的「年-月-日」三格或「自动」按钮）—— 月日精度后是**整列表替换**。
@@ -3612,113 +3268,17 @@ function onSelectAllLand() {
 // onSetChangeDatesBulk 已搬到 riverOps.js（2026-10-31）
 
 
-/** 把当前游标存为切片点（带默认名 = 日期文本），走 store 的一条 undo */
-async function onSaveSlicePoint() {
-  if (store.isReadOnly) {
-    statusMsg(`只读：${store.readOnlyReason || '未打开项目'} —— 切片点未保存`);
-    return;
-  }
-  if (!timeline.value.years.length) { statusMsg('还没有剧本，无法存切片点'); return; }
-  const d = tlDate.value;
-  const label = await askText({ title: '切片点名称（留空则显示日期）', defaultValue: formatDate(d) });
-  if (label === null) return;                       // 取消
-  const r = store.addSlicePoint({ y: d.y, m: d.m, d: d.d }, label || '');
-  if (!r || r.success === false) { statusMsg(`切片点未保存：${r?.reason || '未知原因'}`); return; }
-  statusMsg(`已存切片点「${label || formatDate(d)}」（${formatDate(d)}）—— 切片导出会默认带上它（可 Ctrl+Z 撤回）`);
-  render();
-}
 
-/** 时间轴切剧本时同步选中态（编辑目标跟着走） */
-function onTimelineSelectScenario(s) {
-  if (s && selectedScenario.value?.id !== s.id) {
-    selectedScenario.value = s;
-    selectedPolity.value = null;   // 跨剧本 polity id 全新，留着必然落空
-  }
-  render();
-}
 
-/**
- * 剧本列表条目的一句话摘要（EU4 那张「选择历史时期」列表里的第二行）。
- * 势力数 = 本剧本定义的势力数；省数 = 本剧本 ownership 里**真有归属**的省份数
- * （值为空/缺失 = 无主，不计入 —— 地图上显示灰，不该被算成"这个势力的地盘"）。
- */
-function scenarioMeta(s) {
-  const polities = (s?.polities || []).length;
-  const own = s?.ownership || {};
-  const owned = Object.keys(own).filter((pid) => own[pid]).length;
-  return `${polities} 势力 · ${owned} 省`;
-}
 
-/**
- * 「选择历史时期」：点列表一条 = **切剧本 + 地图跳到该时期起始年 + 时间轴游标同步**。
- *
- * 🔴 为什么必须三件事一起做（而不是只改 selectedScenario）：
- *    ① 只改 selectedScenario → 地图着色不动（游标还在旧年份）→ 看着像"设置项"不是"时期选择器"；
- *    ② 只改游标 → 编辑目标（势力色板 / 归属写入落到哪个剧本）还停在旧剧本 → **写错地方**。
- *    三件一起才是 EU4 里「点一条，地图变成那一年的世界」这个动作的完整语义。
- * 年份取 `timeline.years[idx].start`（而非 `s.era.startYear`）：与轨道、播放同一口径，
- * 避免"列表说 2044、游标落到 2043"这种只有对齐时才发现的不一致。
- */
-function selectScenarioAt(s) {
-  const idx = sortedScenarios.value.findIndex((x) => x && s && x.id === s.id);
-  if (idx < 0) return false;
-  tlPlaying.value = false;
-  tlEra.value = idx;
-  const start = timeline.value?.years?.[idx]?.start;
-  if (Number.isFinite(start)) tlDate.value = { y: start, m: null, d: null };
-  if (selectedScenario.value?.id !== s.id) {
-    selectedScenario.value = s;
-    selectedPolity.value = null;
-  }
-  // 从底图编辑里点列表 = 想去看/改政治版图 → 顺带切到剧本模式（否则改了看不见）
-  if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
-  render();
-  return true;
-}
 
-/**
- * 轨道拖拽/点击/键盘给了「年」→ 写回 tlDate。
- * 🔴 月日**归 null**（= 该年 1 月 1 日）而不是保留旧月日：轨道表达的是「到某一年」，
- *    保留 6 月 1 日会让「拖到 1045 年」实际停在 1045-06-01 —— 用户看不见、却影响归属判定。
- *    要精确到日请走「存为切片点」或谱系面板的日期录入。
- */
-function onTimelineSetYear(y) {
-  const n = Number(y);
-  if (!Number.isFinite(n)) return;
-  const yy = Math.round(n);
-  if (tlDate.value.y === yy && tlDate.value.m === null && tlDate.value.d === null) return;
-  tlDate.value = { y: yy, m: null, d: null };
-  render();
-}
 
-/**
- * 外交面板步进/输入年份 → 移动**同一个**时间轴游标（tlDate 仍是唯一真源）。
- * 与 `onTimelineSetYear` 的差别：面板会带回月日（它只改年时保留用户拖到的月日），
- * 所以这里不把 m/d 归 null —— 归 null 会让「面板里点一下年份」把精确到日的游标悄悄抹掉。
- */
-function onDiplomacySetDate(next) {
-  if (!next) return;
-  const n = Number(next.y);
-  if (!Number.isFinite(n)) return;
-  const yy = Math.trunc(n);
-  const m = next.m === undefined ? null : next.m;
-  const d = next.d === undefined ? null : next.d;
-  if (tlDate.value.y === yy && tlDate.value.m === m && tlDate.value.d === d) return;
-  tlDate.value = { y: yy, m, d };
-  render();
-}
 
 // ——— 播放：一帧一剧本，剧本内年份线性扫过，跨剧本自动跳过年份断层 ———
 const TL_ERA_MS = 1300;
 let tlRafId = null;
 let tlLastT = 0;
 
-/** 该年在该月的天数（播放插值用；与 scenarioDates 同口径，闰年照算） */
-function daysInMonthOf(y, m) {
-  const v = Math.abs(y);
-  const feb = (v % 4 === 0 && v % 100 !== 0) || v % 400 === 0 ? 29 : 28;
-  return [31, feb, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
-}
 
 // ⚠️ `tlPlayT` 在模块顶部声明（时间轴区域）—— 播放环与 watch 都要用，别在这里再 let 一次（重复声明会静默遮蔽）
 // tlFrame 已搬到 actions.js（2026-10-31）
@@ -3789,28 +3349,11 @@ onMounted(() => {
   resetTimelineToStart();
 });
 
-/** 初始化/切换底图后把游标落到第一个剧本 */
-function resetTimelineToStart() {
-  const tl = timeline.value;
-  if (!tl.years.length) { tlEra.value = 0; tlDate.value = { y: 0, m: null, d: null }; return; }
-  tlEra.value = 0;
-  tlDate.value = { y: tl.years[0].start, m: null, d: null };
-  // 进入剧本模块时默认就是「政治视图」——否则省份按生物群系着色，时间轴等于白拖
-  if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
-}
 
 // ═══════════════════════════════════════════
 // 网格吸附（P0-T3）
 // ═══════════════════════════════════════════
 /** 对齐到最近网格点；bypass（按住 Shift）或关闭开关时原样返回 */
-function snapToGrid(world, bypass = false) {
-  if (!snapToGridEnabled.value || bypass) return { x: world.x, y: world.y, snapped: false };
-  return {
-    x: Math.round(world.x / GRID_STEP) * GRID_STEP,
-    y: Math.round(world.y / GRID_STEP) * GRID_STEP,
-    snapped: true,
-  };
-}
 
 function setSnapMarker(x, y, kind = 'grid') {
   snapMarker.value = { x, y, kind };
@@ -3829,35 +3372,11 @@ function clearSnapMarker(delay = 0) {
 }
 
 /** 拖拽中返回临时预览点集，避免渲染读到未提交的修改 */
-function resolvePoints(prov) {
-  if (dragPreview.value && dragPreview.value.provId === prov.id) return dragPreview.value.points;
-  return ringPointsOf(prov);        // 顶点编辑作用于**活动环**（多环省份可在属性面板切换）
-}
 
-// ─────────────────────────────────────────────────────────────
-// 绘制用的「去响应式」几何（P-0 实测：单帧 94ms 的主因）
-//   `baseMap.value.terrain` 是 Pinia ref 里的对象 → 走 `.value` 读到的每个省份/顶点都是
-//   Vue 响应式代理；drawProvinces / traceShapePath / 小地图每帧对 25930 个顶点做属性读取，
-//   CPU profiler 里「Vue 响应式 get 陷阱」占 27%、`reactive()` 占 6%，`vx/vy` 占 9%。
-//   渲染是纯读场景，取 toRaw 后的原始数组即可（toRaw 是 WeakMap 查表，可忽略成本）。
-//   ⚠️ 只在**绘制**路径用；命中检测、编辑、store 写入仍走原来的响应式引用（避免脱钩）。
-// ─────────────────────────────────────────────────────────────
-function rawTerrain() {
-  const t = baseMap.value?.terrain;
-  return t ? toRaw(t) : null;
-}
 
 /** 原始（无代理）顶点数组；拖拽预览用的是普通对象，直接返回 */
-function rawPointsOf(prov) {
-  if (dragPreview.value && dragPreview.value.provId === prov.id) return dragPreview.value.points;
-  const pts = toRaw(prov).points;          // raw 对象上取到的是原始数组，不再创建代理
-  return Array.isArray(pts) ? pts : (pts || []);
-}
 
 /** 原始省份对象（供绘制期读取 id/颜色等标量字段，同样避免代理陷阱） */
-function rawProvOf(prov) {
-  return toRaw(prov);
-}
 
 /**
  * 环的渲染顶点 —— 实现已移到 `utils/provinceShape.js#ringPointsForRender`
@@ -3916,74 +3435,15 @@ function provincePathFor(prov, straight = false) {
 
 /** 活动环的顶点（顶点编辑作用于「活动环」；多环省份可在属性面板切换环） */
 const activeRingIdx = ref(0);
-function ringPointsOf(prov, idx = activeRingIdx.value) {
-  const rings = provinceRings(prov);
-  const r = rings[idx] || rings[0];
-  return r ? r.points : null;
-}
 
-/**
- * 把**多个环**的新顶点一次性写回省份（P1：顶点拖动可能同时牵涉一个省的另一个环 ——
- * 例如洞环与外环共用一个顶点）。
- * @param {Map<number, Array>} ringChanges ringIdx → 新顶点数组
- */
-function writeRingsPatch(prov, ringChanges) {
-  const rings = provinceRings(prov).map((r) => ({ points: r.points, kind: r.kind, fromGrid: r.fromGrid }));
-  if (!rings.length) return null;
-  for (const [idx, points] of ringChanges) {
-    // 与 ringPointsOf 同口径：越界一律落到主环（否则手柄画在环 0、写回却被丢弃 = 静默 no-op）
-    const i = idx >= 0 && idx < rings.length ? idx : 0;
-    rings[i] = { ...rings[i], points };   // 形状被手工改过 → 不再是网格派生的，去掉 fromGrid
-  }
-  const patch = shapePatch(rings);
-  // fromGrid 显式给出：手工改过的环不再算「网格派生」→ 渲染端不再对它做平滑
-  return { kind: patch.kind || 'land', points: patch.points, extraRings: patch.extraRings, fromGrid: !!patch.fromGrid };
-}
 
 /** 把「活动环」的新顶点写回省份（主环 → points；额外环 → extraRings[i-1]），返回可 merge 的补丁 */
-function writeRingPoints(prov, idx, points) {
-  return writeRingsPatch(prov, new Map([[idx, points]]));
-}
 
 /** 省份的全部环的顶点数组（去响应式）——多环感知的度量 / 小地图 都走它 */
-function rawRingPointsList(prov) {
-  const rp = toRaw(prov);
-  return provinceRings(rp).map((r) => toRaw(r.points)).filter((pts) => Array.isArray(pts) && pts.length);
-}
 
 /** 选中省份始终指向 store 中的最新对象（updateBaseProvince 会生成新对象） */
-function currentProvince() {
-  const sp = selectedProvince.value;
-  if (!sp) return null;
-  return baseMap.value?.terrain?.find(p => p.id === sp.id) || sp;
-}
 
-// ═══════════════════════════════════════════
-// 坐标转换
-// ═══════════════════════════════════════════
-function screenToWorld(sx, sy) {
-  return {
-    x: (sx - cameraX.value) / cameraScale.value,
-    y: (sy - cameraY.value) / cameraScale.value,
-  };
-}
 
-/**
- * 世界坐标 → **画布内**屏幕坐标（`screenToWorld` 的逆）。
- *
- * 🔴 为什么要有这个函数（2026-10-17，我自己踩的坑）：真机探针里我手写
- *    `sc.cameraX + wx * sc.cameraScale` 来算点击位置 —— 而 `sc` 是组件实例代理，
- *    **ref 不会在那里解包**，于是 `sc.cameraX` 拿到的是 ref 对象，
- *    整个表达式变成 `[object] + wx * [object]` → 点在了别处，
- *    我还以为"节点拖不动"。有了这枚函数，探针与产品走**同一个换算**，
- *    这类"测试自己算错"就不会再伪装成产品缺陷。
- */
-function worldToScreen(wx, wy) {
-  return {
-    x: cameraX.value + wx * cameraScale.value,
-    y: cameraY.value + wy * cameraScale.value,
-  };
-}
 
 // ═══════════════════════════════════════════
 // Pan & Zoom
@@ -4309,13 +3769,6 @@ let suppressDrawClick = false;      // 一笔成型后紧随的 click 不要再�
  *    ① 骨架按 `terrain` 引用缓存（`skeletonCache`，同 `coincidentIndexFor` 的口径）；
  *    ② 预览形状按 **60ms** 节流（手感线仍逐帧跟手，只有"地块形状"是 ~16fps）。
  * ══════════════════════════════════════════════════════════════════════════ */
-let skeletonCache = null;           // { terrain, skeleton }
-function skeletonForTerrain(terrain) {
-  if (skeletonCache && skeletonCache.terrain === terrain) return skeletonCache.skeleton;
-  const built = buildSkeleton(terrain);
-  skeletonCache = { terrain, skeleton: built };
-  return built;
-}
 
 /**
  * 轨迹 → 省份环（预览与落库共用）。
@@ -4396,28 +3849,13 @@ const VERTEX_OVERLAP_WORSEN_MARGIN = 0.05;
 // ══════════════════════════════════════════════════════════════════════════════
 
 /** 这次拖动实际搬哪些顶点：拖动的那一个若在选中集里 → 整组；否则只有它自己 */
-function effectiveVertexSelection(vertexIdx) {
-  const sel = vertexSelection.value || [];
-  return sel.indexOf(vertexIdx) >= 0 ? sel.slice() : [vertexIdx];
-}
 
 /**
  * 共边索引的**按需缓存**：键是 `terrain` 数组本身。
  * 每次 store 写入都会换数组引用（`setTerrain` / `updateProvincesBatch` 都是新数组），
  * 所以引用相等 = 几何没变 → 复用；引用变了自然失效，不需要额外的手工失效点。
  */
-let vertexIndexCache = null;   // { terrain, built }
-function coincidentIndexFor(terrain) {
-  if (vertexIndexCache && vertexIndexCache.terrain === terrain) return vertexIndexCache.built;
-  const built = buildCoincidentIndex(terrain);
-  vertexIndexCache = { terrain, built };
-  return built;
-}
 
-function provIdxOf(prov) {
-  const terrain = baseMap.value?.terrain || [];
-  return terrain.findIndex((p) => p.id === prov.id);
-}
 
 /** mousedown 时算一次共边索引与联动表（mousemove 里复用 —— 每帧重算索引会拖垮帧预算） */
 // beginVertexLinkContext 已搬到 provinceOps.js（2026-10-31）
@@ -4553,47 +3991,11 @@ const riverEraseStroke = ref([]);
 // commitRiverErase 已搬到 actions.js（2026-10-31）
 
 
-/**
- * 笔迹 → **落库节点**（预览与落库的**唯一**几何链；2026-10-18 第十八修·四）。
- *
- * 🔴 暮雨原话：「河流要不要尝试其他画法？应该更偏向手绘吗（甚至有橡皮擦来擦除）……
- *    不要搞成描点连线模拟器」。其中"模拟器"的观感有一半来自**画的和落库的不是一条**：
- *    拖动时预览走 `smoothWhileDrawing`，抬手落库走「抽稀 → 压点数 → Chaikin」——
- *    两条链的手感与形状都不同，用户看到的是"松手之后形状跳了一下"。
- *    现在两条路**逐点相同**（回归 `test_122` 按点比对）。
- *
- * **三步走，顺序不能换**（2026-10-17 第六修，用户截图"画出来一堆点而不是线"）：
- *    ① 抽稀：丢掉过密的采样点（按屏幕 px 口径）；
- *    ② **压到目标点数**：按弧长均匀取样 —— 这一步决定"节点间距不会小于约 18 屏幕像素"；
- *    ③ 平滑：Chaikin **只跑 1 轮**（点已经不多，1 轮足够切角；2 轮会把点数再乘 2）。
- *    旧实现缺 ②、且 ③ 跑 2 轮 → 点数 ×4 → 节点手柄糊成一条虚线。
- *
- * @returns {{raw:Array, wantNodes:number, fitted:Array, pts:Array}}
- */
-function riverNodesFromDraft(draft) {
-  const raw = decimatePolyline((draft || []).map((p) => ({ x: p.x, y: p.y })), px(RIVER_TRACE_MIN_STEP_PX));
-  if (raw.length < 2) return { raw, wantNodes: 0, fitted: raw, pts: raw };
-  const wantNodes = Math.max(RIVER_MIN_NODES, Math.min(RIVER_MAX_NODES,
-    Math.round(draftWorldLength(raw) / px(RIVER_NODE_SPACING_PX))));
-  const fitted = fitPolylineToCount(raw, wantNodes, { minCount: RIVER_MIN_NODES, maxCount: RIVER_MAX_NODES });
-  const pts = fitted.length >= 3 ? smoothRiverNodes(fitted, 1) : fitted;
-  return { raw, wantNodes, fitted, pts };
-}
 
 /**
  * 拖动期间的预览节点（= 抬手会落库的那一条）。按 **60ms 节流** —— 几何链里有抽稀与按弧长
  * 重采样，逐帧算没必要（河笔迹最多 `RIVER_MAX_DRAFT_POINTS` 个采样点，但预览只要跟上手感）。
  */
-let riverPreviewCache = { at: -1e9, pts: [] };
-function riverPreviewNodes() {
-  const draft = riverDraft.value || [];
-  if (draft.length < 2) return [];
-  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  if (now - riverPreviewCache.at < 60) return riverPreviewCache.pts;
-  const pts = riverNodesFromDraft(draft).pts;
-  riverPreviewCache = { at: now, pts };
-  return pts;
-}
 
 /**
  * 落库一条手画河（抬笔收口；一条河 = 一条 undo）。
@@ -4604,13 +4006,6 @@ function riverPreviewNodes() {
 
 
 /** 折线总长（世界单位）—— 用来算"该给多少个控制点" */
-function draftWorldLength(pts) {
-  let sum = 0;
-  for (let i = 0; i + 1 < (pts || []).length; i++) {
-    sum += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
-  }
-  return sum;
-}
 
 /**
  * 一条手画河的**逐点宽度序列**（源头细 → 河口粗）—— 见 `drawCurvedRiver`/`taperWidths`。
@@ -4698,48 +4093,9 @@ const RIVER_PATH_CONTROL_POINTS = 12;
 /** 河链曲线的每段细分（8 → 一条 12 控制点的链约 90 个曲线点） */
 const RIVER_NET_CURVE_SUBDIV = 8;
 
-/**
- * 自动河网的**流量闸门**（绝对流量值）—— 走**分位口径**。
- *
- * 🔴 判据来源（两次实测，第一次的结论是错的，都在这里留档）：
- *   · 第一版用 `segMaxFlow × 0.25`（按上界取比例）。圆丘数据上还行（留 1/8），
- *     但在**真实分布**上直接崩：那份数据段汇流 `p50 = 2`、`max = 1275`（极端长尾），
- *     0.25×1275 = 319 → 3750 段只留 **26 段**（0.7%）→ 画布上几乎什么都没有
- *     （回归 `test_103` 当场抓住："画布上找不到自带河色的像素"）。
- *   · 现在按**分位**（留流量最高的 `RIVER_FLOW_KEEP_RATIO`）—— 与分布形状无关。
- * 🔴 教训的完整版：**归一化的对象是分布，不是最大值**。
- */
-function riverFlowGate(segMax, segments) {
-  const list = Array.isArray(segments) ? segments : autoRiverSegments.value;
-  const gate = riverFlowGateByQuantile(list, RIVER_FLOW_KEEP_RATIO);
-  if (gate > 0) return gate;
-  // 兜底（没有段数据时按上界比例）
-  const m = Number.isFinite(segMax) && segMax > 1 ? segMax : 0;
-  return m > 0 ? Math.max(2, m * RIVER_FLOW_KEEP_RATIO) : 0;
-}
 /** 河网只画流量最高的这一比例（实测 12% 在两种分布上都留住了成百上千段主干） */
 const RIVER_FLOW_KEEP_RATIO = 0.12;
 
-/**
- * 河网的**屏幕像素线宽下限** —— 让"这份数据在当前缩放下还有没有意义"决定画多粗。
- *
- * 🔴 为什么需要（用户：「恐怖谷」的几何成因，本轮实测）：
- *    段是"格→格"，**一格的屏幕尺寸 = 格距 × 缩放**。缩到 10% 时一格只有 1.4 屏幕像素 →
- *    一万根 1~2 像素的短线并排 = 一片**平行斜线网格**（不是河，是布纹）。
- *    真实地图在这种比例尺下**根本不画细支流**。
- *    所以：一格 ≥ 6px 时按自带河口径（0.7px 起）；一格只有 1.4px 时抬到 2.2px ——
- *    细到"看不见"的段自然被更粗的主干盖过，网络才不会变成布纹。
- */
-function riverMinWidthForNet() {
-  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
-  const spacing = Number(hm && hm.grid && hm.grid.spacing) || 0;
-  const scale = cameraScale.value || 0;
-  if (!(spacing > 0) || !(scale > 0)) return RIVER_NET_MIN_PX_BASE;
-  const cellPx = spacing * scale;
-  if (cellPx >= RIVER_NET_CELL_PX_OK) return RIVER_NET_MIN_PX_BASE;
-  const t = Math.max(0, Math.min(1, cellPx / RIVER_NET_CELL_PX_OK));
-  return RIVER_NET_MIN_PX_BASE + (RIVER_NET_MIN_PX_MAX - RIVER_NET_MIN_PX_BASE) * (1 - t);
-}
 /** 一格 ≥ 这个屏幕像素数 ⇒ 网络还"看得清"，按自带河口径画 */
 const RIVER_NET_CELL_PX_OK = 6;
 /**
@@ -4778,15 +4134,8 @@ const RIVER_CURVE_SUBDIV = 7;
 // ══════════════════════════════════════════════════════════════════════════
 
 /** 手画的河（id 前缀 `river_`）—— 与 `drawRiverPaths` 同一口径，导入河不参与节点编辑 */
-function handDrawnRivers() {
-  return (baseMap.value?.rivers || []).filter((r) => r && String(r.id || '').indexOf('river_') === 0);
-}
 
 /** 命中哪一条手画河（河身容差随相机缩放换算） */
-function hitBaseMapRiver(wx, wy) {
-  const tol = px(RIVER_HIT_PX);
-  return hitTestRiver(handDrawnRivers(), wx, wy, tol);
-}
 
 // ── 支流（2026-10-18 第十五修）──────────────────────────────────────────────
 //
@@ -4803,180 +4152,24 @@ function hitBaseMapRiver(wx, wy) {
 const RIVER_BRANCH_SNAP_PX = 22;
 
 /** 河身上离给定世界点最近的那一点（返回 dist 供调用方判闸门） */
-function snapToPolyline(w, points) {
-  const pts = Array.isArray(points) ? points : [];
-  if (!w || pts.length === 0) return null;
-  if (pts.length === 1) return { point: { x: pts[0].x, y: pts[0].y }, dist: Math.hypot(w.x - pts[0].x, w.y - pts[0].y), segIndex: 0 };
-  let best = null;
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const a = pts[i], b = pts[i + 1];
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len2 = dx * dx + dy * dy;
-    const t = len2 > 0 ? Math.max(0, Math.min(1, ((w.x - a.x) * dx + (w.y - a.y) * dy) / len2)) : 0;
-    const px2 = a.x + dx * t, py2 = a.y + dy * t;
-    const dist = Math.hypot(w.x - px2, w.y - py2);
-    if (!best || dist < best.dist) best = { point: { x: px2, y: py2 }, dist, segIndex: i };
-  }
-  return best;
-}
 
 /** 起笔是否有"母河"可接（返回 { river, point, dist } 或 null）—— 只看手画河（导入河不参与编辑） */
-function hitHandRiverBranchAnchor(wx, wy) {
-  const tol = px(RIVER_BRANCH_SNAP_PX);
-  let best = null;
-  for (const r of handDrawnRivers()) {
-    const s = snapToPolyline({ x: wx, y: wy }, r && r.points);
-    if (s && s.dist <= tol && (!best || s.dist < best.dist)) best = { river: r, point: s.point, dist: s.dist };
-  }
-  return best;
-}
 
-/**
- * 两条线段是否相交（**含端点接触与共线重叠**）。
- *
- * 🔴 2026-10-18 第十五修·补：第一版只判"严格跨立"（四个叉积异号）—— 用户手画的河
- *    常常是**轴对齐的**（一笔拉直、或横平竖直），于是"穿过去"恰好落在母河的**顶点**上：
- *    四个叉积里有一个是 0，严格判据返回 false ⇒ **交叉怪物照样落库**
- *    （探针实测：一条水平笔画过一条竖线的中点，`worst=0`）。
- *    端点接触必须算相交：拓扑上它就是"穿过"。
- */
-function segmentsProperlyIntersect(p1, p2, p3, p4) {
-  const EPS = 1e-9;
-  const o = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-  const onSeg = (a, b, c) => Math.abs(o(a, b, c)) <= EPS
-    && Math.min(a.x, b.x) - EPS <= c.x && c.x <= Math.max(a.x, b.x) + EPS
-    && Math.min(a.y, b.y) - EPS <= c.y && c.y <= Math.max(a.y, b.y) + EPS;
-  const o1 = o(p3, p4, p1), o2 = o(p3, p4, p2), o3 = o(p1, p2, p3), o4 = o(p1, p2, p4);
-  if (((o1 > EPS && o2 < -EPS) || (o1 < -EPS && o2 > EPS))
-      && ((o3 > EPS && o4 < -EPS) || (o3 < -EPS && o4 > EPS))) return true;
-  // 退化情形：端点落在另一条线段上 / 共线重叠
-  if (onSeg(p3, p4, p1) || onSeg(p3, p4, p2) || onSeg(p1, p2, p3) || onSeg(p1, p2, p4)) return true;
-  return false;
-}
 
 /** 两条线段是否相交（**含端点接触与共线重叠**）。见下方同名实现的注释。 */
-function segmentHits(p1, p2, p3, p4) {
-  return segmentsProperlyIntersect(p1, p2, p3, p4);
-}
 
 /** 折线与折线的交点数（用于"穿回母河"与"自交"两条判定） */
-function countPolylineCrossings(a, b) {
-  const A = Array.isArray(a) ? a : [];
-  const B = Array.isArray(b) ? b : [];
-  let n = 0;
-  for (let i = 0; i + 1 < A.length; i++) {
-    for (let j = 0; j + 1 < B.length; j++) {
-      if (segmentHits(A[i], A[i + 1], B[j], B[j + 1])) n++;
-    }
-  }
-  return n;
-}
 
 /** 自交段数（相邻段共享端点，天然不算相交） */
-function countSelfCrossings(pts) {
-  const P = Array.isArray(pts) ? pts : [];
-  let n = 0;
-  for (let i = 0; i + 1 < P.length; i++) {
-    for (let j = i + 2; j + 1 < P.length; j++) {
-      if (segmentsProperlyIntersect(P[i], P[i + 1], P[j], P[j + 1])) n++;
-    }
-  }
-  return n;
-}
 
-/**
- * 给一条折线当"侧向测试基准"的一段（取**最长**的那一段，最能代表这条河的走向）。
- * @returns {{a:{x:number,y:number}, b:{x:number,y:number}}|null}
- */
-function riverSideRef(points) {
-  const pts = Array.isArray(points) ? points : [];
-  let best = null;
-  let bestLen = -1;
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const len = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
-    if (len > bestLen) { bestLen = len; best = { a: pts[i], b: pts[i + 1] }; }
-  }
-  return best;
-}
 
 /** 点在直线 a→b 的哪一侧（>0 左 | <0 右 | 0 线上；只看符号，不看距离） */
-function sideOfLine(a, b, p) {
-  const v = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
-  return v > 1e-9 ? 1 : (v < -1e-9 ? -1 : 0);
-}
 
-/**
- * 这一笔**横切了哪几条河** —— 「交叉怪物」的结构性判据。
- *
- * 🔴 口径迭代了三次，每一次都是被判据教出来的（据实记下来，免得下一个人走回头路）：
- *    ① **只统计"与任何已有河有 ≥2 交点"** → 把**搭桥、正当交汇**也拒了
- *       （test_95 立刻红：一笔普通的新河恰好斜穿两条已有河）。
- *    ② 收紧成"**同一条河**上 ≥2 交点" → 还是把"穿过两条河各一次"误当成怪物
- *       （test_95 依然红：draft 的两段各穿第一条河一次 = 同一条河 2 个交点）。
- *    ③ 现在按**形状**判（这才是用户说的"交叉怪物"）：一笔从河的一侧出去、**又绕回同一侧**，
- *       于是同一条河被穿过 ≥2 次。判据 = 交点 ≥2 **且** 笔迹首尾在该河同侧
- *       （真的"穿过去"首尾必然异侧）。
- *    ⚠️ 代价（据实说）：首尾同侧的"来回穿两次"才拦；一笔横穿好几条不同的河不拦
- *       （那是正当交汇，用户可用 Ctrl+Z）。
- */
-function countCrossingsWithExisting(draft, minPerRiver = 2) {
-  const P = Array.isArray(draft) ? draft : [];
-  let total = 0;
-  let worst = 0;
-  if (P.length < 2) return { total, worst };
-  const head = P[0], tail = P[P.length - 1];
-  for (const r of handDrawnRivers()) {
-    const n = countPolylineCrossings(P, r && r.points);
-    if (n < minPerRiver) continue;
-    const ref = riverSideRef(r && r.points);
-    if (!ref) continue;
-    const s0 = sideOfLine(ref.a, ref.b, head);
-    const s1 = sideOfLine(ref.a, ref.b, tail);
-    if (s0 === 0 || s1 === 0) continue;      // 有一端就落在河上 → 那是"接在上面"，不是横切
-    if (s0 !== s1) continue;                  // 首尾异侧 = 真的穿过去了（回去查是桥/交汇）
-    total += n;
-    if (n > worst) worst = n;
-  }
-  return { total, worst };
-}
 
 /** 命中**选中那条河**的第几个节点（-1 = 没中） */
-function hitRiverNodeIndex(wx, wy) {
-  const r = selectedRiver.value;
-  if (!r) return -1;
-  // ⚠️ 底图河的节点数组字段是 **`points`**（`addBaseMapRiver` / `normalizeBaseMapRivers`
-  //    与 `drawRiverPaths` 全都读它）。行星图那边叫 `nodes` —— 别顺手写错，
-  //    写错的后果是"能选中但拖不动"（`r.nodes` 恒 undefined）。
-  const nodes = r.points || [];
-  if (nodes.length < 2) return -1;
-  return findRiverPointIndex(nodes, wx, wy, px(RIVER_HIT_PX));
-}
 
-/** 拖动中：**只动拖动草稿**（`riverDrag.points`），松手才一条提交。
- *
- * 🔴 为什么不用"就地改 `selectedRiver.points[i]`"（2026-10-17，实测踩到）：
- *    看着更省，但拖动期间读到的那条河**不保证是 store 里那条对象** ——
- *    本仓在项目↔画布接线上踩过同款（按引用持有的当前节点会脱钩）。
- *    症状是"按住节点拖，松手后坐标没变"（日志里 `commit changed=true`，
- *    而 store 里的点纹丝不动）。改成**显式草稿**之后，"画什么"与"存什么"
- *    各有唯一来源，也不再依赖对象身份。与同文件顶点拖动的 `dragPreview` 同款。
- */
-function moveRiverNodeTo(world) {
-  const drag = riverDrag.value;
-  const r = selectedRiver.value;
-  if (!drag || !r || drag.riverId !== r.id) return;
-  if (!drag.points || !drag.points[drag.index]) return;
-  drag.points[drag.index] = { x: world.x, y: world.y };
-  // 拖节点是高频手势 → 帧合并；松手时 `commitRiverDrag` 会用同步 `render()` 收口
-  renderCoalesced();
-}
 
 /** 拖动期间**画的是草稿**（含正在拖的那个点）；没在拖就画 store 里的真值 */
-function riverNodesForRender(r) {
-  const drag = riverDrag.value;
-  if (drag && r && drag.riverId === r.id && drag.points) return drag.points;
-  return (r && r.points) || [];
-}
 
 /** 松手：一条 undo 提交（草稿 != 按下那一刻的快照才写） */
 // commitRiverDrag 已搬到 riverOps.js（2026-10-31）
@@ -5160,37 +4353,6 @@ function ctxOpenProvinceProps() {
   render();
 }
 
-/**
- * 属性面板里「设为当前势力 / 清成无主」—— 与油漆桶同一套 store 写口（一条 undo）。
- * 日期一律用 `tlDate`（时间轴游标 = 唯一真源），这样「看到哪年就改哪年」。
- *
- * ⚠️ 清空归属**不等于**抹掉历史：带日期的 `clearOwnership` 会在该日期写一条
- *    `owner: null` 事件（时间轴上就是「这一年这块地变成无主」），只把 `ownership`
- *    这个"终态快照键"删掉。所以文案不能说"连带删除易主事件"（2026-10-21 核对实现后改口）。
- */
-function assignSelectedProvinceOwner() {
-  const prov = selectedProvince.value;
-  const sc = selectedScenario.value;
-  if (!prov || !sc) return;
-  if (prov.kind === 'sea') { statusMsg('这是海域（kind=sea）：海域不参与势力归属'); return; }
-  if (!selectedPolity.value) { statusMsg('先在色板选一个势力，再点「设为当前势力」'); return; }
-  if (store.isReadOnly) { statusMsg(`改归属已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
-  const wr = store.setOwnership(sc.id, prov.id, selectedPolity.value.id, tlDate.value);
-  statusMsg(wr && wr.success === false
-    ? `「${prov.name}」归属已改，但易主日期没记：${wr.reason}`
-    : `「${prov.name}」→ ${selectedPolity.value.name}（${tlDateText.value}，可 Ctrl+Z 撤回）`);
-  render();
-}
-
-function clearSelectedProvinceOwner() {
-  const prov = selectedProvince.value;
-  const sc = selectedScenario.value;
-  if (!prov || !sc) return;
-  if (store.isReadOnly) { statusMsg(`改归属已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
-  store.clearOwnership(sc.id, prov.id, tlDate.value);
-  statusMsg(`已清除「${prov.name}」的势力归属 → 无主（${tlDateText.value} 起；可 Ctrl+Z 撤回）`);
-  render();
-}
 
 // ── 省份属性面板的写入口（2026-10-01 重写）──────────────────────────────────
 // 旧实现在模板上用 `v-model` 直改 store 里的活对象，再调 `updateBaseProvince`：
@@ -5306,20 +4468,6 @@ const sourceRestoreLoading = ref(false);
 const sourceRestoreBusy = ref(false);
 const sourceRestoreMsg = ref('');
 
-function fmtSrcBytes(n) {
-  const b = Number(n) || 0;
-  if (b >= 1048576) return `${(b / 1048576).toFixed(1)}MB`;
-  if (b >= 1024) return `${(b / 1024).toFixed(0)}KB`;
-  return `${b}B`;
-}
-
-function fmtSrcTime(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
 /** 打开留底清单（**只读**：只问项目路径与文件名清单，不动任何世界观数据） */
 // openSourceRestore 已搬到 canvasClick.js（2026-10-31）
@@ -5333,29 +4481,6 @@ function fmtSrcTime(iso) {
 // restoreFromSource 已搬到 canvasClick.js（2026-10-31）
 
 
-/**
- * 019 重导对话框（2026-10-25）：先把映射统计/冲突摆出来，再让用户点「重导并迁移」。
- * 预览走 `store.previewReimportBasemap`（只读），真正写盘在 `applyReimportDialog`。
- */
-function openReimportDialog(oldKey, bundle, fileName = '') {
-  const preview = store.previewReimportBasemap(oldKey, bundle);
-  if (!preview || !preview.ok) {
-    statusMsg(`重导预检失败：${(preview && preview.message) || '未知原因'}`);
-    return;
-  }
-  pendingReimportBundle = bundle;
-  reimportDialog.value = {
-    oldKey,
-    fileName,
-    preview,
-    copyReferenceImages: false,
-  };
-}
-
-function closeReimportDialog() {
-  reimportDialog.value = null;
-  pendingReimportBundle = null;
-}
 
 // applyReimportDialog 已搬到 helpers.js（2026-10-31）
 
@@ -5363,24 +4488,6 @@ function closeReimportDialog() {
 // triggerMapImport 已搬到 canvasClick.js（2026-10-31）
 
 
-/**
- * 底图级"缺什么"清单（渲染/提示共用；判定口径与 store 的 `updateBaseMapData` 一致）。
- * ⚠️ 绑定了行星的底图**不算缺高度图** —— 那时高度图的家在行星侧，底图侧本来就不该有。
- */
-function describeBaseMapMissing(bm, bundle) {
-  if (!bm) return [];
-  const missing = [];
-  const bound = store.getBoundPlanetId ? store.getBoundPlanetId(bm.id) : (bm.planetId || null);
-  // ⚠️ 判"这张底图有没有地形"必须用**地形内容**口径（`hasHeightmapContent`），不能只看
-  //    `heightmap` 这个键在不在、也不能用 `hasGrid`（后者是"能否开始用笔刷编辑"，
-  //    会放过"有点、无 h"的空壳 —— 那正是把纯色图报成"有地形"的原因；test_96 守）。
-  const bundleHasTerrain = hasHeightmapContent(bundle?.heightmap);
-  if (bundleHasTerrain && !hasHeightmapContent(bm.heightmap) && !bound) missing.push('地形高度图');
-  if ((bundle?.rivers || []).length && !(bm.rivers || []).length) missing.push('河流');
-  if ((bundle?.routes || []).length && !(bm.routes || []).length) missing.push('道路');
-  if ((bundle?.burgs || []).length && !(bm.burgs || []).length) missing.push('城镇');
-  return missing;
-}
 
 /**
  * F（0.2.6）：用新 .map 的海岸线重建省份外环。
@@ -5420,77 +4527,12 @@ const newGroupName = ref('');
 const editingGroupId = ref('');
 const editGroupName = ref('');
 
-function createGroup() {
-  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
-  const name = newGroupName.value.trim();
-  if (!name) return;
-  const r = store.addScenarioGroup({ name });
-  if (!r || !r.success) { statusMsg(`新建剧本集失败：${(r && r.error) || '未知原因'}`); return; }
-  newGroupName.value = '';
-  activeGroupId.value = r.group.id;
-  statusMsg(`已新建剧本集「${r.group.name}」—— 新建剧本会默认落在这一组；也可在列表里把已有剧本移进来`);
-  render();
-}
-
-function startRenameGroup(g) {
-  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
-  editingGroupId.value = g.id;
-  editGroupName.value = g.name;
-}
-
-function cancelRenameGroup() {
-  editingGroupId.value = '';
-  editGroupName.value = '';
-}
-
-function commitRenameGroup() {
-  const id = editingGroupId.value;
-  if (!id) return;
-  const name = editGroupName.value.trim();
-  if (!name) return;
-  const r = store.renameScenarioGroup(id, name);
-  if (!r || !r.success) { statusMsg(`改名失败：${(r && r.error) || '未知原因'}`); return; }
-  cancelRenameGroup();
-  statusMsg(`剧本集已改名为「${name}」`);
-}
-
-function deleteGroup(g) {
-  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
-  const n = groupCount(g.id);
-  const r = store.removeScenarioGroup(g.id);
-  if (!r || !r.success) { statusMsg(`删除失败：${(r && r.error) || '未知原因'}`); return; }
-  if (activeGroupId.value === g.id) activeGroupId.value = DEFAULT_SCENARIO_GROUP;
-  statusMsg(n
-    ? `已删除剧本集「${g.name}」—— ${n} 条剧本退回「默认」组（一条都没删，Ctrl+Z 可撤销）`
-    : `已删除空剧本集「${g.name}」（Ctrl+Z 可撤销）`);
-  render();
-}
-
-function moveScenarioToGroup(s, groupId) {
-  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
-  const target = String(groupId || DEFAULT_SCENARIO_GROUP);
-  const r = store.setScenarioGroup(s.id, target);
-  if (!r || !r.success) { statusMsg(`移动失败：${(r && r.error) || '未知原因'}`); return; }
-  // 移的正好是当前在看的那条 → 跟着它切组（否则地图上还是它、左栏却没它了）
-  if (selectedScenario.value?.id === s.id) {
-    activeGroupId.value = target;
-    selectScenarioAt(store.getScenario(s.id));
-  }
-  statusMsg(`「${s.name}」已移到剧本集「${groupNameOf(target)}」${r.unchanged ? '（本来就在这一组）' : ''}`);
-  render();
-}
-
-// createNewScenario 已搬到 actions.js（2026-10-31）
 
 
-function deleteScenario(s) {
-  if (!confirm(`确定删除剧本「${s.name}」？`)) return;
-  store.removeScenario(s.id);
-  if (selectedScenario.value?.id === s.id) {
-    selectedScenario.value = sortedScenarios.value[0] || null;
-  }
-  render();
-}
+
+
+
+
 
 /**
  * 清空全部剧本（2026-10-11 接活 `removeAllScenarios` 这个零调用死入口）。
@@ -5512,43 +4554,10 @@ function deleteScenario(s) {
 //    ownership / changeEvents / 标注 / 标记（那是真丢数据）。这里复用新建表单做编辑。
 const editingScenarioId = ref(null);
 
-function scenarioFormBlank() {
-  return {
-    name: '', roman: '', label: '', startYear: '', endYear: '',
-    description: '', hook: '', inherit: true,
-    group: activeGroupId.value || DEFAULT_SCENARIO_GROUP,
-  };
-}
 
-function scenarioToForm(s) {
-  return {
-    name: s.name || '',
-    roman: s.era?.roman || '',
-    label: s.era?.label || '',
-    startYear: s.era?.startYear != null ? String(s.era.startYear) : '',
-    endYear: s.era?.endYear != null ? String(s.era.endYear) : '',
-    description: s.description || '',
-    hook: s.hook || '',
-    inherit: false,   // 编辑既有剧本时没有「继承上一时代」的语义
-    group: scenarioGroupIdOf(s),
-  };
-}
 
-function startEditScenario(s) {
-  if (store.isReadOnly) { statusMsg(store.readOnlyReason || '只读：未打开项目'); return; }
-  editingScenarioId.value = s.id;
-  newScenario.value = scenarioToForm(s);
-}
 
-function cancelEditScenario() {
-  editingScenarioId.value = null;
-  newScenario.value = scenarioFormBlank();
-}
 
-function closeScenarioManager() {
-  cancelEditScenario();
-  showScenarioManager.value = false;
-}
 
 // 每次打开管理对话框：新建表单落到**当前剧本集**（否则在自定义组里打开，默认会建到「默认」组）
 watch(showScenarioManager, (open) => {
@@ -6567,25 +5576,7 @@ function tracePath(c, pts, close) {
 
 
 /** 选择工具下 hover 命中城镇；仅状态变化时重绘，避免 mousemove 刷屏 */
-function updateBurgHover(event) {
-  if (tool.value !== 'select' || !showBurgs.value) {
-    if (hoveredBurg.value) { hoveredBurg.value = null; render(); }
-    return;
-  }
-  const rect = canvas.value.getBoundingClientRect();
-  const hit = findBurgAt(event.clientX - rect.left, event.clientY - rect.top);
-  const prevId = hoveredBurg.value ? hoveredBurg.value.id : null;
-  const nextId = hit ? hit.id : null;
-  if (prevId === nextId) return;
-  hoveredBurg.value = hit;
-  canvas.value.style.cursor = hit ? 'pointer' : 'grab';
-  render();
-}
 
-function formatPopulation(pop) {
-  if (!pop) return '—';
-  return pop >= 100 ? String(Math.round(pop)) : pop.toFixed(1);
-}
 
 // ─────────────────────────────────────────────────────────────
 // A8：势力标注（EU4 式分级）—— 放大看省名，缩小只留势力名（可简称），全名点开省份详情才给
@@ -6600,13 +5591,6 @@ let _mapSizeCache = { src: null, w: 0, h: 0 };
 
 
 /** 视口可见世界宽度 ÷ 地图世界宽度（无数据时回落 1 = 中档，绝不返回 NaN） */
-function mapVisibleRatio() {
-  const { w } = mapWorldSize();
-  const cvsW = cw() || canvas.value?.clientWidth || 0;
-  const scale = Math.max(cameraScale.value, MIN_CAMERA_SCALE);
-  if (!w || !cvsW) return 1;
-  return (cvsW / scale) / w;
-}
 
 /** 当前档位（暴露给模板/用例；判定本体在 utils/polityLabels.js） */
 const polityLabelTierNow = computed(() => polityLabelTier(mapVisibleRatio()));
@@ -6615,41 +5599,10 @@ const polityLabelTierNow = computed(() => polityLabelTier(mapVisibleRatio()));
 // 用户口径（Paradox）：缩小只看见势力名；放大才出省名；再大出城镇/河名；字号随缩放略变。
 // 判定本体在 `utils/labelZoom.js`（纯函数：档位表 + 12% 滞回 + 字号系数）。
 // 滞回状态放**模块级**（不是 ref）：它只影响「这一帧算多细」，不进响应式、不该触发渲染。
-let labelDetailState = { key: '', detail: null };
-
-/** 当前详略档位（close / near / mid / far；带滞回，抗滚轮边界抖动） */
-function labelDetailNow() {
-  const key = baseMapKey.value || '';
-  // 换底图 → 重新起算（否则新图会沿用上一张图的档位滞回状态）
-  if (labelDetailState.key !== key) labelDetailState = { key, detail: null };
-  const detail = zoomDetail(mapVisibleRatio(), labelDetailState.detail);
-  labelDetailState = { key, detail };
-  return detail;
-}
 
 /** 字号系数（放大略大 / 缩小略小；见 `labelZoom.labelFontScale`） */
-function labelScaleNow() {
-  return labelFontScale(mapVisibleRatio());
-}
 
 
-/**
- * 某省在**时间轴当前日期**的归属势力（唯一口径）。
- *
- * 与 `drawProvinces` / `drawPolityLabels` 共用 `polityLabelSources()`：
- * 含「演变铺开」与 EU4 斜线占领的旧主口径，并在 **owner 所属的那个剧本**里查 polity。
- * 返回 null = 该日期下无主（UI 必须明说「无主」，不能留空）。
- *
- * @param {string|null|undefined} provId
- * @returns {object|null} polity
- */
-function ownerPolityForProvince(provId) {
-  if (viewMode.value !== 'scenario' || !provId) return null;
-  const { ownerRefOf, polityOfEra } = polityLabelSources();
-  const ref = ownerRefOf(provId);
-  if (!ref || !ref.owner) return null;
-  return polityOfEra(ref.era, ref.owner);
-}
 
 /**
  * 当前选中省份所属势力 —— 「全名只在点开省份详情时给」那条诉求的落点
@@ -6675,50 +5628,53 @@ const selectedMarker = ref(null);
 const selectedMarkerIndex = ref(-1);
 const showMarkerPanel = ref(false);
 
-/** 世界坐标 → 命中的标记（判定唯一实现见 utils/markerHitTest.js；容差按屏幕 px 换算） */
-function findMarkerAt(world) {
-  const list = selectedScenario.value?.markers || [];
-  if (!list.length) return null;
-  const tol = MARKER_HIT_RADIUS_PX / Math.max(1e-6, cameraScale.value || 1);
-  return hitMarker(list, world.x, world.y, tol);
+// ── N1.5：这三个仍留在 SFC —— 它们的依赖（`findBurgAt` / `polityLabelSources`）与
+//    `formatPopulation` 的使用点（文字层工厂）在**本文件里更晚/更早**，搬进模块会造成 TDZ。
+function formatPopulation(pop) {
+  if (!pop) return '—';
+  return pop >= 100 ? String(Math.round(pop)) : pop.toFixed(1);
 }
 
-function closeMarkerEditor() {
-  if (!selectedMarker.value && !showMarkerPanel.value) return;
-  selectedMarker.value = null;
-  selectedMarkerIndex.value = -1;
-  showMarkerPanel.value = false;
+function updateBurgHover(event) {
+  if (tool.value !== 'select' || !showBurgs.value) {
+    if (hoveredBurg.value) { hoveredBurg.value = null; render(); }
+    return;
+  }
+  const rect = canvas.value.getBoundingClientRect();
+  const hit = findBurgAt(event.clientX - rect.left, event.clientY - rect.top);
+  const prevId = hoveredBurg.value ? hoveredBurg.value.id : null;
+  const nextId = hit ? hit.id : null;
+  if (prevId === nextId) return;
+  hoveredBurg.value = hit;
+  canvas.value.style.cursor = hit ? 'pointer' : 'grab';
+  render();
 }
+
+/**
+ * 某省在**时间轴当前日期**的归属势力（唯一口径）。
+ *
+ * 与 `drawProvinces` / `drawPolityLabels` 共用 `polityLabelSources()`：
+ * 含「演变铺开」与 EU4 斜线占领的旧主口径，并在 **owner 所属的那个剧本**里查 polity。
+ * 返回 null = 该日期下无主（UI 必须明说「无主」，不能留空）。
+ *
+ * @param {string|null|undefined} provId
+ * @returns {object|null} polity
+ */
+function ownerPolityForProvince(provId) {
+  if (viewMode.value !== 'scenario' || !provId) return null;
+  const { ownerRefOf, polityOfEra } = polityLabelSources();
+  const ref = ownerRefOf(provId);
+  if (!ref || !ref.owner) return null;
+  return polityOfEra(ref.era, ref.owner);
+}
+
+/** 世界坐标 → 命中的标记（判定唯一实现见 utils/markerHitTest.js；容差按屏幕 px 换算） */
+
 
 /** 打开标记面板：顺带收起省份面板（两块都在右侧，叠着谁也读不了） */
-function openMarkerEditor(marker, index) {
-  if (!marker) return;
-  selectedMarker.value = marker;
-  selectedMarkerIndex.value = Number.isInteger(index) ? index : -1;
-  showMarkerPanel.value = true;
-  selectedProvince.value = null;
-  showProps.value = false;
-  contextMenu.value.show = false;
-  statusMsg(`已选中标记「${marker.name || '（未命名标记）'}」—— 面板里可改名 / 改类型 / 改坐标 / 删除，`
-    + '下面「资料」按名字只读检索库内词条');
-}
 
 /** 对齐面板指向的标记对象（store 每次写都换对象；撤销/重做也走这里） */
-function refreshSelectedMarker() {
-  const cur = selectedMarker.value;
-  if (!cur) return;
-  const list = selectedScenario.value?.markers || [];
-  const idx = markerIndexOf(list, markerIdentity(cur, selectedMarkerIndex.value));
-  if (idx < 0) { closeMarkerEditor(); return; }
-  selectedMarkerIndex.value = idx;
-  if (list[idx] !== cur) selectedMarker.value = list[idx];
-}
 
-function markerRefOf() {
-  const cur = selectedMarker.value;
-  if (!cur) return null;
-  return markerIdentity(cur, selectedMarkerIndex.value);
-}
 
 const markerCoords = computed(() => {
   const m = selectedMarker.value || {};
@@ -6728,70 +5684,10 @@ const markerCoords = computed(() => {
 const markerTotal = computed(() => (selectedScenario.value?.markers || []).length);
 const markerOrdinal = computed(() => (selectedMarkerIndex.value >= 0 ? selectedMarkerIndex.value + 1 : '?'));
 
-/**
- * 改标记的一个写口（名字 / 类型 / 坐标都走这里 → store 一条 undo + 写闸门）。
- * @returns {boolean} 是否真的改了（只读 / 非法值 / 找不到目标时为 false，**且什么都不写**）
- */
-function applyMarkerPatch(patch) {
-  const sc = selectedScenario.value;
-  if (!sc || !selectedMarker.value) return false;
-  if (store.isReadOnly) {
-    statusMsg(`改标记已停用：${store.readOnlyReason || '只读：未打开项目'}`);
-    return false;
-  }
-  const res = store.updateScenarioMarker(sc.id, markerRefOf(), patch);
-  if (!res || res.ok === false) {
-    statusMsg(`改标记失败（${(res && res.reason) || '未知原因'}）—— 数据没有变`);
-    return false;
-  }
-  selectedMarker.value = res.marker;
-  render();
-  return true;
-}
 
-function onMarkerNameChange(e) {
-  const name = String(e.target.value || '').trim();
-  if (!name) {
-    e.target.value = selectedMarker.value?.name || '';
-    statusMsg('标记名不能留空 —— 已恢复原值（没写任何东西）');
-    return;
-  }
-  if (applyMarkerPatch({ name })) statusMsg(`标记已改名「${name}」（可 Ctrl+Z 撤回）`);
-}
 
-function onMarkerTypeChange(e) {
-  const def = MARKER_TYPES.find(t => t.id === String(e.target.value || '')) || MARKER_TYPES[0];
-  // 图标/颜色跟着类型走：画布按 m.icon / m.color 渲染，只改 type 会"类型变了、图标没变"
-  if (applyMarkerPatch({ type: def.id, icon: def.icon, color: def.color })) {
-    statusMsg(`标记类型已改为「${def.name}」（可 Ctrl+Z 撤回）`);
-  }
-}
 
-function onMarkerCoordChange(axis, e) {
-  // ⚠️ `Number('') === 0` —— 输入框被清空时必须判为非法，不能"顺手把坐标写成 0"
-  //    （那会是一个用户没打算执行的静默移动）
-  const raw = String(e.target.value == null ? '' : e.target.value).trim();
-  const v = raw === '' ? NaN : Number(raw);
-  if (!Number.isFinite(v)) {
-    e.target.value = markerCoords.value[axis];
-    statusMsg('坐标必须是有限数字 —— 已恢复原值（没写任何东西）');
-    return;
-  }
-  if (applyMarkerPatch({ [axis]: v })) statusMsg(`标记坐标 ${axis.toUpperCase()} → ${v}（可 Ctrl+Z 撤回）`);
-}
 
-function deleteSelectedMarker() {
-  const sc = selectedScenario.value;
-  const cur = selectedMarker.value;
-  if (!sc || !cur) return;
-  if (store.isReadOnly) { statusMsg(`删除标记已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
-  const name = cur.name || '（未命名标记）';
-  const res = store.removeScenarioMarker(sc.id, markerRefOf());
-  if (!res || res.ok === false) { statusMsg(`删除标记失败（${(res && res.reason) || '未知原因'}）`); return; }
-  closeMarkerEditor();
-  statusMsg(`已删除标记「${name}」（可 Ctrl+Z 撤回；底图与省份一个都没动）`);
-  render();
-}
 
 // 选中省份 / 换剧本 → 收起标记面板（面板占用同一块右侧位置）
 watch(selectedProvince, (p) => { if (p) closeMarkerEditor(); });
@@ -6828,29 +5724,8 @@ let smallCanvasWarned = false;
 // v2 智能放置与派生
 // ═══════════════════════════════════════════
 
-// placeSmartBurg 已搬到 actions.js（2026-10-31）
 
 
-function openBurgEditor(burg) {
-  editingBurg.value = { ...burg };
-  burgEditorOpen.value = true;
-}
-
-// saveBurgEditor 已搬到 actions.js（2026-10-31）
-
-
-function closeBurgEditor() {
-  burgEditorOpen.value = false;
-  editingBurg.value = null;
-}
-
-// generateAndShowRivers 已搬到 rivers.js（2026-10-31）
-
-
-function deriveLayers() {
-  store.deriveAllLayers(baseMapKey.value);
-  render();
-}
 
 // exportPNG 已搬到 actions.js（2026-10-31）
 
@@ -6995,16 +5870,6 @@ onUnmounted(() => {
   rasterCache.clear();
 });
 
-function onHistoryJump() {
-  // 撤销/重做后重新对齐选中引用（updateBaseProvince 会生成新对象）
-  const sp = selectedProvince.value;
-  if (sp) {
-    const fresh = baseMap.value?.terrain?.find(p => p.id === sp.id);
-    if (fresh && fresh !== sp) selectedProvince.value = fresh;
-  }
-  pruneProvinceSelection();     // 省份表变了 → 多选集合里已不存在的 id 必须剔除
-  render();
-}
 // ⚠️ `riverSource`（河流来源）必须在这里 —— 漏了就是"下拉改了画布没反应"
 //    （本项目在高度图着色档位上踩过同一条：test_69 抓到过 `diffPixels: 0`）。
 // ⚠️ `riverSource`（河流来源）必须在这里 —— 漏了就是"下拉改了画布没反应"
@@ -7104,6 +5969,54 @@ watch(baseMap, () => {
   overlayLayers.invalidateMinimap();          // 几何变了 → 小地图缩略图与包围盒作废（否则省界改了缩略图不动）
   render();
 });
+// ── N1.5：时间轴 / 播放 / 切片点（函数体逐字搬出，ref 与 watch 仍在上面）──
+const { onPanelReject, onSaveSlicePoint, onTimelineSelectScenario, scenarioMeta, selectScenarioAt, onTimelineSetYear, onDiplomacySetDate, daysInMonthOf, resetTimelineToStart } = createTimelineActions({
+  askText,
+  render,
+  selectedPolity,
+  selectedScenario,
+  sortedScenarios,
+  statusMsg,
+  store,
+  timeline,
+  tlDate,
+  tlEra,
+  tlPlaying,
+  viewMode,
+});
+// ── N1.5：剧本集与剧本（CRUD / 迁移 / 表单 / 管理对话框收口）──
+const { createGroup, startRenameGroup, cancelRenameGroup, commitRenameGroup, deleteGroup, moveScenarioToGroup, deleteScenario, scenarioFormBlank, scenarioToForm, startEditScenario, cancelEditScenario, closeScenarioManager } = createGroupActions({
+  activeGroupId,
+  editGroupName,
+  editingGroupId,
+  editingScenarioId,
+  groupCount,
+  groupNameOf,
+  newGroupName,
+  newScenario,
+  render,
+  selectScenarioAt,
+  selectedScenario,
+  showScenarioManager,
+  sortedScenarios,
+  statusMsg,
+  store,
+});
+// ── N1.5：导入导出（切片帧导出 / 重导预览 / 底图缺项诊断）──
+const { onRunSliceExport, importScenariosJson, fmtSrcBytes, fmtSrcTime, openReimportDialog, closeReimportDialog, describeBaseMapMissing } = createTransferActions({
+  st: {
+    get pendingReimportBundle() { return pendingReimportBundle; },
+    set pendingReimportBundle(v) { pendingReimportBundle = v; },
+  },
+  exportSliceFrames,
+  groupNameNow,
+  pickScenariosJson,
+  reimportDialog,
+  sliceExportBusy,
+  slicePoints,
+  statusMsg,
+  store,
+});
 // ── 交互工厂（放在最后：ctx 会立即读取各绑定，必须等它们全部初始化）──
 // ── N1 第三阶段：指针手势（2026-10-31）───────────────────────────────────────
 // 手势期的普通 `let` 状态放在一个**带 get/set 的对象**里：搬出组件后仍然读写同一份变量
@@ -7187,6 +6100,99 @@ const pointerState = {
   set lastStatusAt(v) { lastStatusAt = v; },
 };
 
+// ── N1.5：势力色板（改色/改简称/新建/删除/选中 + 批量归属 + 单省指派）──
+const { selectPolity, selectClearOwnership, nextOwnerStrokeId, ownerBrushWorldRadius, ownerHitProvinceIds, updateSelectedPolity, onPolityNameChange, onAddPolity, onPolityColorChange, onPolityAbbrChange, onSetPolityLineage, batchEcho, onBatchAssign, onBatchClear, onSelectAllLand, assignSelectedProvinceOwner, clearSelectedProvinceOwner } = createPolityActions({
+  askText,
+  cameraScale,
+  clearOwnerMode,
+  findProvinceAt,
+  provBrushRadius,
+  render,
+  selectedLandProvinces,
+  selectedPolity,
+  selectedProvince,
+  selectedProvinceIds,
+  selectedScenario,
+  statusMsg,
+  store,
+  tlDate,
+  tlDateText,
+});
+// ── N1.5：底图编辑模式 / 地形与派生面板 / 地形来源绑定 / 小地图 / 换底图 ──
+const { toggleBasemapEditMode, onBackClick, toggleTerrainGenPanel, toggleTerrainLabelsPanel, applyTerrainLabelsResult, onTerrainNamesToggle, startTerrainLabelPick, clearTerrainLabelPick, onTerrainLabelPickDone, cancelTerrainLabelPick, applyGeneratedTerrain, toggleLandmassPanel, toggleDerivePanel, onDerived, openResamplePanel, applyResample, applySmooth, planetNameById, freezeTerrainFromPlanet, bindTerrainToPlanet, unbindTerrainFromPlanet, pokeCapsule, toggleMinimap, onBaseMapChange, toggleLayerLock } = createTerrainPanelActions({
+  availablePlanets,
+  baseMap,
+  baseMapKey,
+  basemapEditMode,
+  capsuleDim,
+  contextMenu,
+  deriveOpen,
+  emit,
+  fmgOpen,
+  immersive,
+  landmassOpen,
+  moreOpen,
+  pickPlanetId,
+  rasterCache,
+  rasterLayer,
+  render,
+  resampleFactor,
+  resampleOpen,
+  resetTimelineToStart,
+  scenarioLayers,
+  selectScenario,
+  selectedPolity,
+  selectedProvince,
+  selectedScenario,
+  showMinimap,
+  showProps,
+  smoothRadius,
+  sortedScenarios,
+  statusMsg,
+  store,
+  terrainGenOpen,
+  terrainLabelPick,
+  terrainLabelsOpen,
+});
+// ── N1.5：画布几何（坐标换算 / 环与原始点 / 骨架与共边索引 / 网格吸附）──
+const { snapToGrid, rawPointsOf, rawTerrain, rawProvOf, resolvePoints, ringPointsOf, writeRingsPatch, writeRingPoints, rawRingPointsList, currentProvince, screenToWorld, worldToScreen, skeletonForTerrain, effectiveVertexSelection, coincidentIndexFor, provIdxOf } = createMapGeometry({
+  GRID_STEP,
+  activeRingIdx,
+  baseMap,
+  cameraScale,
+  cameraX,
+  cameraY,
+  dragPreview,
+  selectedProvince,
+  snapToGridEnabled,
+  vertexSelection,
+});
+// ── N1.5：河流几何（笔迹→节点 / 河宽闸门 / 手画河命中 / 交叉判据 / 节点草稿）──
+// 拖动期预览的 60ms 节流缓存：pointerState 的 get/set 指着它（模块侧走 st 读写同一份）
+let riverPreviewCache = { at: -1e9, pts: [] };
+const { riverNodesFromDraft, riverPreviewNodes, draftWorldLength, riverFlowGate, riverMinWidthForNet, handDrawnRivers, hitBaseMapRiver, snapToPolyline, hitHandRiverBranchAnchor, segmentsProperlyIntersect, segmentHits, countPolylineCrossings, countSelfCrossings, riverSideRef, sideOfLine, countCrossingsWithExisting, hitRiverNodeIndex, moveRiverNodeTo, riverNodesForRender } = createRiverGeometry({
+  st: pointerState,
+  RIVER_BRANCH_SNAP_PX,
+  RIVER_FLOW_KEEP_RATIO,
+  RIVER_HIT_PX,
+  RIVER_MAX_NODES,
+  RIVER_MIN_NODES,
+  RIVER_NET_CELL_PX_OK,
+  RIVER_NET_MIN_PX_BASE,
+  RIVER_NET_MIN_PX_MAX,
+  RIVER_NODE_SPACING_PX,
+  RIVER_TRACE_MIN_STEP_PX,
+  autoRiverSegments,
+  baseMap,
+  baseMapKey,
+  cameraScale,
+  px,
+  renderCoalesced,
+  riverDrag,
+  riverDraft,
+  selectedRiver,
+  store,
+});
 // 河流动作工厂要在指针三件**之前**：它们的 ctx 直接引用 finishRiverDraft 等 const
 const { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, autoSeedBatch, onWheel, fitToView, handleResize } = createHelperActions({
   st: pointerState,
@@ -7218,6 +6224,33 @@ const { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, autoS
   tool,
 });
 
+// ── N1.5：城镇悬停 / 标注档位与归属 / 标记面板 / 派生与聚落编辑 / 撤销后重对齐 ──
+// 档位滞回状态（`labelDetailState`）随函数搬进模块 —— 它只影响「这一帧算多细」，不进响应式
+const { mapVisibleRatio, labelDetailNow, labelScaleNow, findMarkerAt, closeMarkerEditor, openMarkerEditor, refreshSelectedMarker, markerRefOf, applyMarkerPatch, onMarkerNameChange, onMarkerTypeChange, onMarkerCoordChange, deleteSelectedMarker, deriveLayers, openBurgEditor, closeBurgEditor, onHistoryJump } = createMarkerActions({
+  MARKER_TYPES,
+  MIN_CAMERA_SCALE,
+  baseMap,
+  baseMapKey,
+  burgEditorOpen,
+  cameraScale,
+  canvas,
+  contextMenu,
+  cw,
+  editingBurg,
+  mapWorldSize,
+  markerCoords,
+  pruneProvinceSelection,
+  render,
+  selectedMarker,
+  selectedMarkerIndex,
+  selectedProvince,
+  selectedScenario,
+  showMarkerPanel,
+  showProps,
+  statusMsg,
+  store,
+  viewMode,
+});
 const { finishRiverDraft, riverWidthsFor, makeRiverLandCheck, strokeRiverNetworkAsPaths, autoRiverPartsFor, clipSelectedRiversToCoast, generateAndShowRivers } = createRiverActions({
   st: pointerState,
   RIVER_BRUSH_MIN_POINTS,

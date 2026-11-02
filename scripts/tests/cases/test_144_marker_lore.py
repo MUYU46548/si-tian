@@ -236,6 +236,10 @@ def sub_source_guards():
     lore = _code_only(_read(LORE))
     store = _code_only(_read(STORE_FILE))
     hit = _code_only(_read(HIT))
+    # 2026-11-02 N1.5：标记命中/编辑这套搬进 scenario/interaction/markers.js ——
+    # 判据把那份源码一起读（实质不变：命中仍只许经 markerHitTest.hitMarker 一份实现）。
+    markers = _code_only(_read('src/renderer/src/scenario/interaction/markers.js'))
+    code = code + '\n' + markers
 
     # ① 命中测试只有一份实现，且面板确实用它
     if 'function hitMarker' not in hit:

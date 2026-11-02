@@ -78,6 +78,8 @@ def source_gates():
     sm += '\n' + _read('src/renderer/src/scenario/interaction/rivers.js')
     # 2026-10-31：抬手收口搬进 scenario/interaction/pointer.js —— 判据把那份源码一起读
     sm += '\n' + _read('src/renderer/src/scenario/interaction/pointer.js')
+    # 2026-11-02 N1.5：河笔迹 → 节点的几何搬进 riverGeometry.js（预览与落库仍共用同一条链）
+    sm += '\n' + _read('src/renderer/src/scenario/interaction/riverGeometry.js')
     se = _read('src/renderer/src/store/geodataModules/scenarioEditing.js')
     wg = _read('src/renderer/src/store/writeGate.js')
     icon = _read('src/renderer/src/components/Icon.vue')
