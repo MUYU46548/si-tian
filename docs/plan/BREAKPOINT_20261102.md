@@ -171,10 +171,25 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 `window.__SITIAN_DOMAIN_SHAPE__` 或传参切换）。出图 `build/galaxy-shape/{ring,disc,spiral}.png`。
 ⚠️ 实测：**只有 4 个星域时，螺旋读不出来**（采样点太少，退化成一横排）——形态要成立，需要 8+ 星域。
 
-**下一步（二选一，建议 B）**：
-- A. 把 `generator.ts + topology.ts + metrics.ts` 整包移植成"**生成示例星系**"命令（一条 undo 造出
-  120 节点 / 4 势力 / kNN 航道的星域），这样司天能一键得到群星那种密度；
-- B. 先把布局默认切到 `disc`，并在星域数 ≥8 时自动用 `spiral`；等用户数据变多自然就对了。
+**方案 A 已实现（2026-11-02，用户拍板）**：
+- 新增 `src/renderer/src/galaxy/generator.js`（纯函数，**逐条移植**原型 `core/generator.ts` + `topology.ts` +
+  `metrics.ts`：mulberry32/Rng、sampleShape 三形态、加权 Prim 区域生长、kNN/Gabriel 候选 + 2 跳补环（禁交叉）
+  + 分量桥接、Tarjan 割点、computeMetrics、三次换种子自验）；
+- 新增 store 写口 `generateSampleGalaxy`（`geodata.js`，**首行 guardWrite、一条 execute**，登记 `writeGate` id 13）；
+- `toSiTianEntities()` 把生成物转成司天实体（star_domain / galaxy / hyperlane）：
+  **边域（ρ>0.7）的星没有势力归属**，原型里它们不属于任何区 —— 司天按 parentId 聚簇，挂世界上就画不出来，
+  所以兜底归到**最近星域**；
+- GalaxyMap 工具栏新增「示例星系」按钮（`data-testid="gen-sample-galaxy"`，只读态禁用带原因）。
+
+判据（实测）：
+- `unit/test_galaxy_generator.js` **10/10**：同 seed 逐项一致 / overlap 0 / maxDeg 5 ≤ cap / 分量 1 /
+  三形态分布不同 / 名字不重（原型只补一次序数，实测 120 节点重名 9 个 —— 已改成补到不重）/
+  实体形状合法 / 写口过闸门；
+- 真机点按钮：节点 120 → 244（+4 星域 +120 恒星）、航道 72 → 247（+175），**一次 undo 精确回到 120/72**；
+- 出图 `build/galaxy-shape/generated.png`；全量回归 **163/163**（`build/_regress_round9.log`）。
+
+**下一步**：
+- B. 布局默认切 `disc`，星域数 ≥8 时自动 `spiral`；等用户数据变多自然就对了。
 
 ## 九、下一轮从这里接1. **星域领土改成“暗底 + 亮边”**（按新增群星图的事实，见 `refs/MANIFEST.md` 第〇节）：
    现在 `domainPaint` 是亮色径向水洗（越往中心越亮）—— 方向反了。群里图上是**近黑半透明底 + 1px 亮线 + 外柔光**。

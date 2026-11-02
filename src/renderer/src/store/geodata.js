@@ -17,6 +17,8 @@ import { createProvinceEditingModule } from './geodataModules/provinceEditing';
 import { createChannelBrushModule } from './geodataModules/channelBrush';
 // 读料桥写口（N3a-3）：节点 ↔ 笔记的稳定绑定 / 解绑 / 候选导入（一条 undo；首行 guardWrite）
 import { createLoreBindingModule } from './geodataModules/loreBinding';
+// 示例星系生成器（原型 SP-1025 的 generator/topology/metrics 整包移植，2026-11-02）
+import { generateGalaxy, presetParams as genPresetParams, toSiTianEntities } from '../galaxy/generator';
 // 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
 // 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
 import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge';
@@ -1308,6 +1310,53 @@ export const useGeodataStore = defineStore('geodata', () => {
     redoCmd();
   }
 
+  /**
+   * 生成示例星系（2026-11-02）：把原型 SP-1025 的 generator/topology/metrics 整包用起来 ——
+   * 一次 undo 造出 N 个星域 + M 颗恒星 + kNN 航道（120/4/175 是 A 档默认）。
+   *
+   * 为什么要有：司天原先只能在用户已有数据上套美术，密度差一个数量级，观感与原型/群星差得远。
+   * 这里只**产出实体**（节点的父级、坐标、航道类型都是普通字段），不引入第二套数据模型；
+   * 生成物带 `tags: ['sample']` 且 id 前缀固定，用户要撤/要删都能认出来。
+   */
+  function generateSampleGalaxy(opts = {}) {
+    if (!guardWrite('生成示例星系').ok) {
+      return { ok: false, rejected: 'readonly', message: '只读态不能生成（先打开或新建一个项目）' };
+    }
+    const worldId = opts.worldId || (worlds.value[0] && worlds.value[0].id) || null;
+    if (!worldId) {
+      return { ok: false, rejected: 'no-world', message: '还没有世界：先在「世界选择」里建一个世界' };
+    }
+    const params = { ...genPresetParams(opts.preset || 'A'), ...(opts.params || {}) };
+    let gen;
+    try {
+      gen = generateGalaxy(params);
+    } catch (e) {
+      // “参数无解”是原型就有的合法结局（三次换种子都不达标），如实回给 UI，不吞
+      return { ok: false, rejected: 'no-solution', message: (e && e.message) || String(e) };
+    }
+    const ent = toSiTianEntities(gen, {
+      worldId,
+      idPrefix: opts.idPrefix || `sample_${params.seed}_${Date.now().toString(36)}`,
+    });
+    const nodeIds = new Set([...ent.domains, ...ent.galaxies].map(n => n.id));
+    const laneIds = new Set(ent.lanes.map(l => l.id));
+    execute({
+      type: 'generate-sample-galaxy',
+      label: `生成示例星系：${ent.domains.length} 星域 / ${ent.galaxies.length} 恒星`,
+      category: 'property',
+      undo: () => {
+        nodes.value = nodes.value.filter(n => !nodeIds.has(n.id));
+        hyperlanes.value = hyperlanes.value.filter(h => !laneIds.has(h.id));
+      },
+      redo: () => {
+        nodes.value.push(...ent.domains, ...ent.galaxies);
+        hyperlanes.value.push(...ent.lanes);
+      },
+    });
+    scheduleAutoSave();
+    return { ok: true, worldId, ...ent.summary };
+  }
+
   function addHyperlane(fromId, toId, type = 'local') {
     const exists = hyperlanes.value.some(h =>
       (h.fromId === fromId && h.toId === toId) ||
@@ -2173,6 +2222,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     FACTION_COLORS, getFactionColor,
       updateNodePosition, updateAllCoordinates,
       addNode, removeNode, updateNode, changeNodeId, reparentNode, reparentNodes,
+  generateSampleGalaxy,
       addHyperlane, removeHyperlane, updateHyperlane, getHyperlaneById,
       setDomainBorderPoints,
       selectNode, clearSelection, selectPlanetOrNode,

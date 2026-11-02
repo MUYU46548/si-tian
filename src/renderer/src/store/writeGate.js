@@ -242,6 +242,11 @@ export const MEMORY_WRITE_CALLSITES = [
   { id: 12, file: 'src/renderer/src/store/geodataModules/loreBinding.js',
     fns: ['bindNodeToNote', 'unbindNodeNote', 'importVaultCandidate'],
     what: '读料桥写口：节点 ↔ 笔记稳定绑定 / 解绑 / 候选导入草稿节点（一条 undo；导入复用 addNode）' },
+  // ── 示例星系生成（N3b-3，2026-11-02）：原型 generator/topology/metrics 整包用起来 ──────
+  // 一次生成 = N 个星域 + M 颗恒星 + kNN 航道，**一条 undo 收掉**；首行 guardWrite。
+  { id: 13, file: 'src/renderer/src/store/geodata.js',
+    fns: ['generateSampleGalaxy'],
+    what: '示例星系生成（星域/恒星/航道批量入库，一条 undo；只读态拒绝并给可读回执）' },
 ];
 
 // ── 拒绝回音（供 App.vue 提示用户「为什么点了没反应 / 改哪儿去了」）─────────

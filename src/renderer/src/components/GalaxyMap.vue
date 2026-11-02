@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="galaxy-map-container">
     <div class="map-header">
       <div class="header-left">
@@ -53,6 +53,14 @@
           @click="createGalaxy"
           title="在当前视图中心创建恒星"
         >＋ 恒星</button>
+        <!-- 生成示例星系（2026-11-02）：原型 SP-1025 的 generator/topology/metrics 整包用起来 ——
+             一次 undo 造出 N 星域 / M 恒星 / kNN 航道。给"想看银河该长什么样"和"要一份能改的样例"用。 -->
+        <button
+          data-testid="gen-sample-galaxy"
+          :disabled="store.isReadOnly"
+          :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '按原型生成器造一份示例星系（4 星域 / 120 恒星 / 航道网；一次 Ctrl+Z 可整体撤回）'"
+          @click="generateSample"
+        ><Icon name="sparkles" :size="14"/> 示例星系</button>
       </div>
     </div>
 
@@ -1578,6 +1586,28 @@ function createGalaxyAt(wx, wy) {
 function createGalaxy() {
   const vt = renderer.getViewTransform();
   createGalaxyAt(-vt.x / vt.scale, -vt.y / vt.scale);
+}
+
+/**
+ * 生成示例星系（2026-11-02）：调 store 的唯一写口 `generateSampleGalaxy`（一条 undo），
+ * 成功后重算布局 + 适应全图 + 重绘，并把回执写进状态栏（星域/恒星/航道/指标）。
+ */
+function generateSample() {
+  const r = store.generateSampleGalaxy({ worldId: props.world?.id });
+  if (!r || r.ok === false) {
+    setStatus((r && r.message) || '生成失败：未知原因', 'warn');
+    return;
+  }
+  applyStableLayout();
+  setTimeout(() => { try { fitAllGalaxy(); } catch (e) { /* 视图还没挂上就只重绘 */ } }, 0);
+  const m = r.metrics || {};
+  setStatus(
+    `已生成示例星系：${r.domains} 星域 / ${r.stars} 恒星 / ${r.lanes} 条航道`
+    + `（跨域 ${r.crossDomainLanes}；重叠对 ${m.overlapPairs ?? '?'} · 最大度 ${m.maxDegree ?? '?'} · 分量 ${m.components ?? '?'}）`
+    + ` —— 一次 Ctrl+Z 可整体撤回`,
+    'info',
+  );
+  renderer.requestRender();
 }
 
 // ===== 鹰眼导航 =====
