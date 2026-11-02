@@ -130,7 +130,17 @@ async function main() {
       assert(l.type === 'local' || l.type === 'cross_domain', '航道类型非法：' + l.type);
       assert(l.id.startsWith('auto_'), '自动航道 id 必须以 auto_ 开头');
     }
-    return ent.domains.length + '/' + ent.galaxies.length + '/' + ent.lanes.length + ' · 跨域 ' + ent.summary.crossDomainLanes;
+    // 星域中心必须**摊开**（2026-11-02 修复"示例星域互相压叠"）：四个簇心实测只隔 300~460，
+    // 而 claim 至少 210 —— 不摊开的话领土必然叠在一起。判据：任意两个星域中心 ≥ 700。
+    const cs = ent.domains.map((d) => d.coordinate);
+    let minPair = Infinity;
+    for (let i = 0; i < cs.length; i++) {
+      for (let j = i + 1; j < cs.length; j++) {
+        minPair = Math.min(minPair, Math.hypot(cs[i].x - cs[j].x, cs[i].y - cs[j].y));
+      }
+    }
+    assert(minPair >= 700, '星域中心最小间距应为 ≥700（实测 ' + Math.round(minPair) + '）—— 会互相压叠');
+    return ent.domains.length + '/' + ent.galaxies.length + '/' + ent.lanes.length + ' · 跨域 ' + ent.summary.crossDomainLanes + ' · 星域最小间距 ' + Math.round(minPair);
   });
 
   check('e1 指标函数口径：空输入不炸、重叠对能数出来', () => {

@@ -658,17 +658,41 @@ export function generateGalaxy(pIn) {
 
 /**
  * @param {object} gen `generateGalaxy()` 的返回
- * @param {{worldId?:string, idPrefix?:string}} [opts]
+ * @param {{worldId?:string, idPrefix?:string, minDomainGap?:number}} [opts]
  * @returns {{domains:Array, galaxies:Array, lanes:Array, summary:object}}
  */
 export function toSiTianEntities(gen, opts = {}) {
   const prefix = opts.idPrefix || `sample_${gen.params.seed}`;
   const worldId = opts.worldId || null;
   const domainIdOf = new Map();
+
+  // ── 先把 4 个星域的中心摊开（2026-11-02 修「示例星域互相压叠」）────────────────
+  // 生成器把 120 颗星撒在一个 1800×1400 的椭圆盘里，但**成员是聚簇的**：四个簇心实测只隔 300~460，
+  // 而司天的星域半径是 350、claim 至少 210 —— 四个中心挤在一起，领土必然叠在一起（用户实测截图）。
+  // 这里按「簇心最小间距」整体等比放大坐标（星星之间的相对形状不变，只把整团拉开），
+  // 让四个星域至少隔 GAP 远，和既有星环（间距 ~890）处在同一个量级。
+  const GAP = opts.minDomainGap || 760;
+  const centroids = gen.regions.map((r) => {
+    const members = gen.nodes.filter((n) => r.nodeIds.includes(n.id));
+    return {
+      x: members.reduce((a, n) => a + n.x, 0) / Math.max(1, members.length),
+      y: members.reduce((a, n) => a + n.y, 0) / Math.max(1, members.length),
+    };
+  });
+  let minPair = Infinity;
+  for (let i = 0; i < centroids.length; i++) {
+    for (let j = i + 1; j < centroids.length; j++) {
+      const d = Math.hypot(centroids[i].x - centroids[j].x, centroids[i].y - centroids[j].y);
+      if (d > 0 && d < minPair) minPair = d;
+    }
+  }
+  const scaleK = Number.isFinite(minPair) && minPair > 0 ? Math.max(1, GAP / minPair) : 1;
+  const posOf = (n) => ({ x: n.x * scaleK, y: n.y * scaleK });
+
   const domains = gen.regions.map((r, i) => {
     const members = gen.nodes.filter((n) => r.nodeIds.includes(n.id));
-    const cx = members.reduce((a, n) => a + n.x, 0) / Math.max(1, members.length);
-    const cy = members.reduce((a, n) => a + n.y, 0) / Math.max(1, members.length);
+    const cx = members.reduce((a, n) => a + posOf(n).x, 0) / Math.max(1, members.length);
+    const cy = members.reduce((a, n) => a + posOf(n).y, 0) / Math.max(1, members.length);
     const id = `${prefix}_d${i + 1}`;
     domainIdOf.set(r.id, id);
     return {
@@ -691,8 +715,8 @@ export function toSiTianEntities(gen, opts = {}) {
   const centroidOf = new Map();
   gen.regions.forEach((r, i) => {
     const members = gen.nodes.filter((n) => r.nodeIds.includes(n.id));
-    const cx = members.reduce((a, n) => a + n.x, 0) / Math.max(1, members.length);
-    const cy = members.reduce((a, n) => a + n.y, 0) / Math.max(1, members.length);
+    const cx = members.reduce((a, n) => a + posOf(n).x, 0) / Math.max(1, members.length);
+    const cy = members.reduce((a, n) => a + posOf(n).y, 0) / Math.max(1, members.length);
     centroidOf.set(i, { x: cx, y: cy });
   });
   const nearestRegion = (x, y) => {
@@ -705,13 +729,14 @@ export function toSiTianEntities(gen, opts = {}) {
     return best;
   };
   const galaxies = gen.nodes.map((n, i) => {
-    const cluster = n.cluster === null ? nearestRegion(n.x, n.y) : n.cluster;
+    const p = posOf(n);
+    const cluster = n.cluster === null ? nearestRegion(p.x, p.y) : n.cluster;
     return {
       id: `${prefix}_g${i + 1}`,
       name: n.name,
       layer: 'galaxy',
       parentId: clusterToDomain.get(cluster) ?? worldId,
-      coordinate: { x: n.x, y: n.y },
+      coordinate: { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100 },
       userMoved: true,
       tags: ['sample', n.type],
       sourcePath: '',
