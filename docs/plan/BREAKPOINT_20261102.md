@@ -17,7 +17,7 @@
 | 5 | PLAN N3a-2 | **外交表 UI** `DiplomacyPanel.vue`（只读：甲/乙 + 年份 + 关系 chip + 「为什么」+ 当年生效事件 + ≤12 势力关系矩阵），入口两条（「更多 → 外交」与势力色板行的可见按钮） | `unit/test_diplomacy_relation.js` **6/6**；面板独立出图 `build/diplomacy/preview-full.png`（1351 年：同盟、由「甲乙同盟」确立、矩阵 4×4 带关系色） |
 | 6 | PLAN N3a-3 | **读料桥稳定 ID 绑定 + 候选导入**：`utils/loreBinding.js`（bindingKey 三级优先：显式 `sitian-id` > 相对路径 > 标题；`reconcileBindings` 认改名）+ 两个 store 写口 `bindNodeToNote` / `importVaultCandidate`（各一条 undo、都过 `guardWrite`、登记进 `writeGate` id 12）+ 索引 v3 带 `sitianId`/`aliases` + 节点详情里的「资料」段可绑定 | `unit/test_lore_binding.js` **12/12**；`docs/VAULT_BRIDGE.md` §7.8 |
 | 7 | PLAN N3b-1 | **FMG 侵蚀层补全**：在 `inciseByFlow` 之上加「V 形谷壁拓宽 + 只削峰的坡度松弛 + 断头河后置断言」；同 seed 逐字节一致 | `unit/test_terrain_erosion.js` **8/8**：8k 格 **85ms**（<1s）、`brokenRivers = 0`、同 seed hash 一致；造陆实跑 erosion 188ms、河 46 条不变 |
-| 8 | PLAN N3b-2 | **简易模式（M3）**：`SimpleMode.vue` 四步导轨（项目 → 底图 → 画省 → 导出），每步只调**既有** store/UI 入口，零新数据模型、零新持久化；只读态给出原因并禁用 | `unit/test_simple_mode_contract.js` **13/13**（逐个 `store.xxx` 解析出处 + 无 `window.sitianAPI`/`ipcRenderer`/`localStorage`）；出图见下节 |
+| 8 | PLAN N3b-2 | **简易模式（M3）**：`SimpleMode.vue` 四步导轨（项目 → 底图 → 画省 → 导出），每步只调**既有** store/UI 入口，零新数据模型、零新持久化；只读态给出原因并禁用 | `unit/test_simple_mode_contract.js` **13/13**（逐个 `store.xxx` 解析出处 + 无 `window.sitianAPI`/`ipcRenderer`/`localStorage`）；**端到端真跑过一遍**（2026-11-02 第五轮）：① 新建项目 → 真落 `.sitian`；② 一键生成 → 9 块陆地 / **180 省 / 46 河**（回执齐全）；③ 进编辑器 → 画布上就是那 180 省、46 条河、小地图正常（`build/simple-mode/flow-01..04.png`） |
 | 9 | 上一轮遗留 | `refs/MANIFEST.md` 收口：星域 / 恒星系 2D 两条从「待吸收」改成「已吸收」，并注明 **sp1025 的图已被用户删除**（只保留事实与判据，不再依赖外部目录） | 本文件 + MANIFEST |
 
 ## 二、判据状态
@@ -30,8 +30,7 @@
 | 打包 | ✅ `release-internal/司天 Setup 0.5.0.exe`（10:36，78.8MB）+ `win-unpacked/司天.exe`；asar **26.1MB**，`scripts/tests` / `__real_desite` / 探针截图 **0 处** |
 | 截图 | `build/galaxy-art/t6-01..03`（软融合、航道稀疏、LOD）、`build/system-2d/s1-2d`（日冕/轨道分级）、`build/diplomacy/preview-full.png`、`build/simple-mode/simple-mode.png` |
 
-本轮为了通过回归**改了六处既有口径**（都记在这里，免得下一轮当成回退）：
-1. `test_116` 的「颜色拼 alpha」源码闸门：星域画法搬进 `galaxy/domainPaint.js` 后，判据跟着搬（守 `paintDomainBorders` + `toRgba`），不再是「GalaxyMap 必须出现 `withAlpha(`」。
+本轮为了通过回归**改了六处既有口径**（都记在这里，免得下一轮当成回退）：1. `test_116` 的「颜色拼 alpha」源码闸门：星域画法搬进 `galaxy/domainPaint.js` 后，判据跟着搬（守 `paintDomainBorders` + `toRgba`），不再是「GalaxyMap 必须出现 `withAlpha(`」。
 2. `App.vue` 顶部栏：`.toolbar-center` 加 `min-width: 0`（允许搜索框收缩），简易模式按钮**只在世界观模块显示** —— 否则 1280px 下搜索框压住模块页签（`test_129` 实测）。
 3. **N1.5 抽取后，五处「按文件名 grep」的源码闸门跟着搬家**（实质判据一字未改，只是读的范围加上了新模块）：
    `test_110`（`hitTestRiver` → `interaction/riverGeometry.js`）、`test_122`（`riverNodesFromDraft`，同上）、
