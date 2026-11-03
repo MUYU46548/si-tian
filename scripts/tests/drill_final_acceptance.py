@@ -56,6 +56,30 @@ KEY = 'desite'
 SC_PAINT = 'desite/诸侯割据'      # 7 个势力 / 183 条易主 —— 三步用的主场景
 SC_SLICE = 'desite/炎太帝国'      # 只有 1 条易主 → 本剧本范围 2 帧（切片 PNG 的落盘判据用它，体量可控）
 SM = "document.querySelector('.scenario-map-container').__vueParentComponent.setupState"
+
+
+def _real_counts():
+    """从真实项目文件里读出"应有"的剧本数 / desite 省份数。
+
+    2026-11-03：原来这两个数字是写死的（13 / 415）。用户在自己的孤本里加了两段剧本（"测试"/"测试专用"），
+    演练就会红 3 条 —— **那是数据变了，不是回归**。演练的判据应该是"打开后与文件里一致"，
+    不是"与我上次看到的数字一致"。读不到就回落到旧值，保证演练在没有文件时也能给出可读结论。
+    """
+    try:
+        with open(REAL_PROJECT, encoding='utf-8') as f:
+            d = json.load(f)
+        sc = (d.get('scenarios') or {})
+        n_sc = len(sc.get('scenarios') or {})
+        bm = (sc.get('baseMaps') or {}).get(KEY) or {}
+        n_prov = len(bm.get('terrain') or [])
+        if n_sc and n_prov:
+            return n_sc, n_prov
+    except Exception:
+        pass
+    return 13, 415
+
+
+EXPECT_SCENARIOS, EXPECT_PROVINCES = _real_counts()
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
 
 R = []
@@ -941,9 +965,11 @@ def main():
         print('  · 基线快照：省份 %d / 剧本 %d / 底图 %s / 河 %d / 镇 %d'
               % (snap_before['provinceCount'], len(snap_before['scenarios']),
                  snap_before['baseMapKeys'], snap_before['rivers'], snap_before['burgs']), flush=True)
-        ck('基线：desite 省份数 == 415', snap_before['provinceCount'] == 415, snap_before['provinceCount'])
-        ck('基线：剧本数 == 13（12 段 desite + 1 段“底图 1/测试”）',
-           len(snap_before['scenarios']) == 13, len(snap_before['scenarios']))
+        ck('基线：desite 省份数与文件一致', snap_before['provinceCount'] == EXPECT_PROVINCES,
+           '%s（文件里 %d）' % (snap_before['provinceCount'], EXPECT_PROVINCES))
+        ck('基线：剧本数与文件一致（用户会往孤本里加剧本，别写死）',
+           len(snap_before['scenarios']) == EXPECT_SCENARIOS,
+           '%s（文件里 %d）' % (len(snap_before['scenarios']), EXPECT_SCENARIOS))
 
         # ── 2. 起服务 ────────────────────────────────────────────────────
         print('2/9 启动 Vite dev + Edge headless…', flush=True)
@@ -992,7 +1018,8 @@ def main():
            '耗时 %sms / 事实源 %s / 底图 %s / 节点 %s'
            % (inj.get('ms'), inj.get('source'), inj.get('baseMapKeys'), inj.get('nodes')))
         ck('打开后 terrain == 415 省', inj.get('terrain') == 415, inj.get('terrain'))
-        ck('打开后剧本数 == 13', inj.get('scenarioCount') == 13, inj.get('scenarioCount'))
+        ck('打开后剧本数与文件一致', inj.get('scenarioCount') == EXPECT_SCENARIOS,
+           '%s（文件里 %d）' % (inj.get('scenarioCount'), EXPECT_SCENARIOS))
         ck('打开的是真实项目（meta.name=绒花计划）', inj.get('metaName') == '绒花计划', inj.get('metaName'))
         ck('打开/保存路径都在副本上（真实项目没被打开）',
            inj.get('filePath') == MOCK_PROJECT_PATH, inj.get('filePath'))
@@ -1305,9 +1332,9 @@ def main():
                               .replace('__P1__', p1['id']), required=('has', 'saves'), desc='落盘载荷')
         ck('读盘载荷存在（应用确实把项目交给了保存 IPC）', dok and disk.get('has'),
            '保存次数=%s 路径=%s' % (disk.get('saves'), json.dumps(disk.get('savePaths'), ensure_ascii=False)))
-        ck('落盘载荷：meta=绒花计划 / 415 省 / 13 剧本 / 保存路径只在副本',
-           disk.get('metaName') == '绒花计划' and disk.get('terrain') == 415
-           and disk.get('scenarioCount') == 13
+        ck('落盘载荷：meta=绒花计划 / 省份与剧本数与文件一致 / 保存路径只在副本',
+           disk.get('metaName') == '绒花计划' and disk.get('terrain') == EXPECT_PROVINCES
+           and disk.get('scenarioCount') == EXPECT_SCENARIOS
            and all(p == MOCK_PROJECT_PATH for p in (disk.get('savePaths') or [])),
            'meta=%s terrain=%s scenarios=%s paths=%s'
            % (disk.get('metaName'), disk.get('terrain'), disk.get('scenarioCount'),
