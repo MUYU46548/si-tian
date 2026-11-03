@@ -140,6 +140,21 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 3. 判据：`quote-audit` 的「界面 + 代码」两个计数降到 0（docs 可分批）；全量 163 全绿；像素基线不变；
 4. 顺手把这条写进 `AGENTS.md` 红线（新代码不许再出现）。
 
+**2026-11-03 已执行（提交 `8ffe330`）**：
+- 新增 `scripts/fix-quote-marks.mjs`：默认 dry-run；`--apply` 才写；`--scope src|tests|docs`；
+  `--files a,b` 定向；**正则字面量行自动跳过**并进"需人工"清单（本仓实测只命中一处）。
+- 实际落盘：`src/` + `scripts/` **10,269 处 / 498 文件**（界面 5,724 + 用例/脚本 4,493 + mockup 52）。
+  实现与用例**同一套替换**，所以断言跟着一起变，一次全绿。
+- 两处手工（脚本跳过的）：
+  ① `scripts/lib/vaultClassify.js` 的剥离字符类改用 `\u300c\u300d` 转义 —— 语义不变（老资料里的角括号
+     照样被剥），但源码里不再有字面量；
+  ② `scripts/quote-audit.mjs` 的输出改成用 `OPEN`/`CLOSE` 常量拼，注释不再写字面量。
+- 判据：`node scripts/quote-audit.mjs` → **界面 0 / 代码 0**；全量回归 **163/163**
+  （`build/_regress_round14.log`）；`npx vite build` 通过。
+- **没做**：**docs 归档 1,978 处**原样保留 —— `docs/agents-archive/*` 页头写着"原文一字未改"，
+  改了就等于改历史证据。要清只需 `node scripts/fix-quote-marks.mjs --scope docs --apply`，
+  但得先接受那句承诺作废（建议：只清 `docs/plan/` 与 `docs/guides/`，归档不动）。
+
 ## 八、原型（SP-1025）集成清点（2026-11-02，用户追问"都利用完了吗"）
 
 原型 `E:\CODE\CangKu\SP-1025\src` 共 **4,004 行 / 24 个 .ts**。逐个对账后的事实是：**只进了"美术层"，没进"生成器/拓扑/自验"**。
