@@ -4772,10 +4772,11 @@ function getReliefRaster() {
   const key = baseMapKey.value + '|relief';
   const hit = rasterCache.get(key);
   if (hit && hit.hm === hm) return hit.raster;
-  // kind 取 'terrain'（SP-1025 的地形色带）+ 强制山体阴影：`height` 档默认不加阴影，
-  // 不加阴影就是"彩色等高线"，立不起来。shade 1.25 = 比行星侧的默认(1)再重一点 ——
-  // 政治水洗会把地形压掉约一半对比度，1.0 时出图上几乎看不出起伏（实测 build/scenario-relief/）。
-  const built = buildHeightmapRaster(hm, 'terrain', { shade: 1.25 });
+  // kind 取 'relief'（2026-11-03 专用色带：低饱和灰绿→灰褐）+ 强制山体阴影：
+  // `height` 档默认不加阴影，不加阴影就是"彩色等高线"，立不起来。
+  // 为什么不再用 'terrain'：那条绿得足，铺在政治色下面会把红省带成橄榄色（§十一 留的欠账）。
+  // shade 1.25 = 比行星侧默认(1)再重一点 —— 政治水洗会把地形压掉约一半对比度。
+  const built = buildHeightmapRaster(hm, 'relief', { shade: 1.25 });
   if (built) rasterCache.set(key, { hm, raster: built });
   return built;
 }

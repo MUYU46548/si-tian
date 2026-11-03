@@ -62,10 +62,10 @@
   `--tag after` 再拍一次、`--compare before after` 比 —— 起 Vite(5180)+Edge(9222)，用**自带底图（3 省）**固定取景，
   落 `build/pixel-baseline/<tag>.json`（整图 FNV-1a + **关标注**后的几何层指纹 + camera）与同名 PNG。
   非 0 退出 = 逐像素判据没过。⚠️ 不要与 `run_tests.py` / 其它要 5180/9222 的演练同时跑
-  - **当前基线 = `v20261103c`**（2026-11-03 重立，且**含合成高度图**；同代码再拍 `v20261103d` 与它逐像素一致，
-    `hash 4ba506d8` / `hashNoLabels 19b877d7` / `camera scale 1.1375`）。改动观感后**必须重立**，
-    并在这里写新 tag —— 旧基线一比就是"到处都变了"。`v20261103a|b` 已作废。
-  - 基线覆盖：地形浮雕底 / 政治水洗 / 海岸带 / 国界 / 航道 / 文字层（fixture 在铺完省之后调
+  - **当前基线 = `v20261103e`**（2026-11-03 重立：含合成高度图 + 浮雕专用色带；同代码再拍 `v20261103f` 与它逐像素一致，
+    `hash 903c5dc` / `hashNoLabels 80ce735c` / `camera scale 1.1375` / 颜色数 4,096）。改动观感后**必须重立**，
+    并在这里写新 tag —— 旧基线一比就是"到处都变了"。`v20261103a|b|c|d` 已作废。
+  - 基线覆盖：地形浮雕底（`relief` 专用色带）/ 政治水洗 / 海岸带 / 国界 / 航道 / 文字层（fixture 在铺完省之后调
     `synthesizeBaseMapTerrain(KEY,{seed:7})` 生成高度图，并有判据守着"确实有高度图"）。
     浮雕的开/关两帧另有 `scripts/tests/drill_scenario_relief.py` 单独守。
 - 图标一致性校验: `python scripts/icon_check.py`（校验所有被引用的图标名在 `Icon.vue` 中有定义）
@@ -225,6 +225,9 @@ interface GeoNode {
 
 - Vue 3 ref 嵌套属性直接赋值（`obj[key]=value`）会丢失响应式，必须创建新对象（`{...obj, [key]: value}`）
 - Canvas 绘制函数拆分时，辅助函数和样式常量必须随函数一起迁移，否则运行时 ReferenceError 导致渲染管线断裂
+- **读源码的用例必须先归一化换行**：本仓 index 是 LF、工作树是 CRLF（git autocrlf），用 `'\n}\n'` 之类
+  切片会**匹配不到 → 切片为空 → 判据假红**（2026-11-03 `test_simple_mode_contract` d3 真踩：一次 `git checkout`
+  把文件还原成 CRLF 就红了，代码其实没改坏）。读文件后一律 `.replace(/\r\n/g, '\n')` 再做字符串判据。
 
 > 具体的坑（每条都带"当时怎么被发现的 + 判据"）按主题归档在 `docs/agents-archive/`：
 > 例："引用未声明标识符"整类缺陷 → [ui-tooling](docs/agents-archive/ui-tooling.md)；

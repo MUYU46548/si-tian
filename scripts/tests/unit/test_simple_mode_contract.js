@@ -44,7 +44,10 @@ function check(name, fn) {
   }
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
-function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
+// ⚠️ 读源码一律**归一化换行**（2026-11-03 实测踩到）：本仓 index 是 LF、工作树是 CRLF（git autocrlf），
+//    下面的 d3 用 `'\n}\n'` 找函数结尾 —— 工作树变回 CRLF 时那个模式永远匹配不到，切片直接变成空，
+//    判据就会**假红**（这次是 `git checkout` 把 App.vue 还原成 CRLF 才暴露）。
+function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n'); }
 function exists(rel) { return fs.existsSync(path.join(ROOT, rel)); }
 
 /** 剥注释：判据不许被注释里的示例骗过（模板里的 HTML 注释也要剥 —— 里面写了解释 Teleport 的话） */

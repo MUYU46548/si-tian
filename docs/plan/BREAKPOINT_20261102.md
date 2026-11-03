@@ -376,13 +376,13 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 
 **② 红线装上了守门**（此前只写在 `AGENTS.md` 里，下一轮就会破）：
 新增 `unit/test_quote_marks.js`：spawn `scripts/quote-audit.mjs --json`，断言
-「界面 0 / 代码 0 / docs 非归档区 0」。**为什么 spawn 而不抄一份分类逻辑**：审计脚本是唯一实现，
+“界面 0 / 代码 0 / docs 非归档区 0”。**为什么 spawn 而不抄一份分类逻辑**：审计脚本是唯一实现，
 抄一份就会出现"用例说绿、审计说红"。
 **负向探针验过**：临时塞一个 `export const probe = '\u300c探测';` → q3 当场红并点名文件行，
 删掉后恢复 4/4 —— 这条守门不是空转的。
 
 判据：`node scripts/tests/unit/test_quote_marks.js` **4/4**；全量回归 **163/163**（`build/_regress_round18.log`）；
-`node scripts/quote-audit.mjs` 的「界面 0 / 代码 0」保持不变（总命中从 1,988 降到 1,559，全是归档）。
+`node scripts/quote-audit.mjs` 的“界面 0 / 代码 0”保持不变（总命中从 1,988 降到 1,559，全是归档）。
 
 ## 十七、2026-11-03：拿真实 415 省项目验收（不是合成夹具）
 
@@ -393,7 +393,7 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 动作全在副本上，三步齐（涂归属 / 拖时间轴 / 导切片 PNG）+ 手感五件 + 415 省逐省语义与顶点指纹对拍。
 
 **首跑 59/62**，三条红全是同一件事：`剧本数 13 → 14`。查真实文件（只读）：
-`绒花计划.sitian` 现在有 **14** 段剧本 —— 多了「测试」「测试专用」两段，是**用户往孤本里加的**，
+`绒花计划.sitian` 现在有 **14** 段剧本 —— 多了“测试”“测试专用”两段，是**用户往孤本里加的**，
 不是回归。演练当时把 415 / 13 写死在断言里，所以"数据一变就红"。
 
 **修法**（提交 `a8a41b6`）：演练的基线改为**从项目文件推导**
@@ -431,3 +431,23 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 平移动画反而略快（噪声量级）。原因是四层都不是逐格重绘：浮雕是**一张预渲染栅格 drawImage**、
 国界是**一次 beginPath 收全体**、水洗/海岸只是改了既有 stroke/fill 的 alpha 与线宽。
 样本量 12 偏小、这台机器上进程间也有噪声 —— 结论只到"**没有可见的帧耗时代价**"，不到"更快"。
+
+## 十九、2026-11-03：浮雕专用色带（灰褐）+ 抓到一个 CRLF 假红
+
+**① 浮雕不再借 `terrain` 色带**（§十一 留的欠账："偏绿，EU4 更偏灰褐"）。
+新增 `RELIEF_LAND_STOPS`（低饱和灰绿→灰褐，luminance 跨度拉大）与 `kind: 'relief'`，
+`ScenarioMap#getReliefRaster` 改用它。**为什么不用 `terrain`**：那条绿得足，铺在政治色下面会把红省带成橄榄色；
+两轮出图对比（`build/relief-before-palette.png` vs `build/scenario-relief/on.png`）之后定的当前这版：
+**政治色读得清、地形起伏仍在**。
+
+**② 顺手抓到一个假红（值得记下来）**：`test_simple_mode_contract` 的 d3 用 `'\n}\n'` 切函数体，
+而本仓 **index 是 LF、工作树是 CRLF**（git autocrlf）——工作树一旦是 CRLF，这个模式永远匹配不到，切片变成空串，
+判据就**假红**成"没有走 switchModule"。这次是 perf A/B 的 `git checkout` 把 `App.vue` 还原成 CRLF 才暴露的。
+修法：该用例的 `read()` 归一化 CRLF → LF。同类写法全仓只剩这一处 + `test_migrate_attrs`（后者用 `'\n}'`，CRLF 下仍成立）。
+
+**判据**：
+| 项 | 结果 |
+|---|---|
+| `drill_scenario_relief.py` | **通过**；全图颜色数 2,365 → **6,256**（浮雕仍在） |
+| 像素基线重立 | **`v20261103e`**（`hash 903c5dc` / `noLabels 80ce735c` / colors 4,096）；同代码再拍 `v20261103f` **逐像素一致**。`a|b|c|d` 作废 |
+| 全量回归 | **163/163**，前置 83 个 Node 单测**全通过**（`build/_regress_round20.log`） |

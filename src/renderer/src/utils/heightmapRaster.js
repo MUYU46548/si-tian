@@ -50,6 +50,22 @@ export const TERRAIN_LAND_STOPS = Object.freeze([
   [94, 214, 214, 214],
   [100, 244, 246, 248],
 ]);
+/**
+ * 剧本视图「浮雕底」专用色带（2026-11-03）。
+ *
+ * 为什么不直接用 `TERRAIN_LAND_STOPS`：那条是给**地形图**自己看的（绿得比较足），
+ * 铺在政治色下面当"纸"时会把省份颜色带偏（一片红省看起来发橄榄）。EU4 的地形底是
+ * **低饱和的灰绿→灰褐**，饱和度全留给政治色 —— 所以这条色带的绿/棕都往灰里压了一档。
+ */
+export const RELIEF_LAND_STOPS = Object.freeze([
+  [0, 92, 98, 82],
+  [25, 120, 122, 99],
+  [50, 151, 147, 117],
+  [70, 173, 166, 135],
+  [84, 180, 170, 149],
+  [93, 199, 193, 183],
+  [100, 238, 239, 240],
+]);
 /** FMG 13 群系色（顺序 = `heightMath.BIOME_KEYS`，与 SP-1025 `BIOME_COLORS` 同表） */
 export const BIOME_RGB = Object.freeze([
   [70, 110, 171], [251, 231, 159], [181, 184, 135], [210, 208, 130],
@@ -229,7 +245,7 @@ export function cellColor(kind, i, hm, palette, ctx) {
   }
   // ── 卫星影像 / 地形色（阶段 0，来自 SP-1025 的 palettes）──────────────
   // 海：近岸两圈用距离场（turquoise 浅滩），远海用 h 的坡面渐变；不再是一块淡蓝。
-  if (kind === 'satellite' || kind === 'terrain') {
+  if (kind === 'satellite' || kind === 'terrain' || kind === 'relief') {
     const hs = hm.h[i];
     if (hs < RASTER_SEA_LEVEL) {
       const sea = ctx && ctx.sea;
@@ -238,6 +254,7 @@ export function cellColor(kind, i, hm, palette, ctx) {
       // 若按 t=1 取到色带末端就是近黑（用户截图里的"黑海"）。0.7 落在海蓝/深蓝之间。
       return oceanDepthColor(0.06 + 0.64 * clamp01(tt));
     }
+    if (kind === 'relief') return sampleStops(RELIEF_LAND_STOPS, hs);
     if (kind === 'terrain') return sampleStops(TERRAIN_LAND_STOPS, hs);
     return satelliteLandColor(hs, hm.biome ? hm.biome[i] : 4);
   }
@@ -429,7 +446,7 @@ export function buildHeightmapRaster(hm, kind, opts) {
   //    只对"读地形的档"（高度 / 陆海底色）有意义 —— 温度/降水/文化那些是**专题图**，
   //    给它们加阴影会把数值读成地形（那是错的口径）。
   const shadeOn = !!(opts && opts.shade > 0)
-    && (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain');
+    && (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain' || kind === 'relief');
   const pts = hm?.grid?.points;
   if (!hm || !pts || !pts.length) return null;
   const values = kind === 'temp' ? hm.temp
@@ -457,7 +474,7 @@ export function buildHeightmapRaster(hm, kind, opts) {
   const ctx = {
     span: kind === 'height' ? landHeightSpan(hm.h, RASTER_SEA_LEVEL) : null,
     // 海深场：height / satellite / terrain / 剧本政治底图（landAsSea）都要
-    sea: (kind === 'height' || kind === 'satellite' || kind === 'terrain'
+    sea: (kind === 'height' || kind === 'satellite' || kind === 'terrain' || kind === 'relief'
       || (kind === 'landsea' && opts && opts.landAsSea))
       && !(opts && opts.sea === false)
       ? buildSeaDepth(hm, { seaLevel: RASTER_SEA_LEVEL, forceDistance: kind === 'landsea' })
@@ -465,7 +482,7 @@ export function buildHeightmapRaster(hm, kind, opts) {
     // 剧本画布专用：landsea 只当海面纸（陆地由省份画）
     landAsSea: !!(opts && opts.landAsSea),
     // 湖（B④）：只在"读地形的档"上叠；专题图（温度/降水/文化/宗教）不叠 —— 那会把湖读成气候
-    lakes: (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain')
+    lakes: (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain' || kind === 'relief')
       ? buildLakeCellMap(hm)
       : null,
   };
@@ -474,7 +491,7 @@ export function buildHeightmapRaster(hm, kind, opts) {
   // 宁可方块也不要画错（下标一旦错位，颜色会整体偏移且不报错）。
   const cols = hm.grid.cellsX | 0, rows = hm.grid.cellsY | 0;
   if (smooth && cols > 0 && rows > 0 && cols * rows === values.length && pts.length === values.length) {
-    const soft = kind === 'satellite' || kind === 'terrain';
+    const soft = kind === 'satellite' || kind === 'terrain' || kind === 'relief';
     const shade = shadeOn
       ? buildShadeMap(hm.h, cols, rows, {
         shade: opts.shade,
