@@ -68,6 +68,12 @@
   - 基线覆盖：地形浮雕底（`relief` 专用色带）/ 政治水洗 / 海岸带 / 国界 / 航道 / 文字层（fixture 在铺完省之后调
     `synthesizeBaseMapTerrain(KEY,{seed:7})` 生成高度图，并有判据守着"确实有高度图"）。
     浮雕的开/关两帧另有 `scripts/tests/drill_scenario_relief.py` 单独守。
+- **浮层直判（外交表等）**: `python scripts/tests/drill_diplomacy_overlay.py` —— 整页加载（不是 HMR）后
+  点「更多 → 外交」与势力色板那条捷径，断言 `[data-testid=diplomacy-panel]` **真的在 DOM 里**、
+  **收起「更多」后仍在**、关掉后零节点；顺带复测 `Teleport` 落点（`body > [data-testid=fmg-wrap]`）。
+  截图走 `Page.captureScreenshot`（DOM 浮层只有它能拍），落 `build/diplomacy-overlay/open.png`。
+  ⚠️ 这类断言必须查 **DOM**，不能查状态：2026-11-03 的 bug 正是 `open:true / panel:false`
+  （浮层被写在 `.toolbar-more`（`v-if=moreOpen`）里，下拉一关整个子树就不存在）。
 - 图标一致性校验: `python scripts/icon_check.py`（校验所有被引用的图标名在 `Icon.vue` 中有定义）
 - 结构清单再生成: `python scripts/gen_architecture_map.py`（详见下节）
 

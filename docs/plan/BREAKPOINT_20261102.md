@@ -451,3 +451,42 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 | `drill_scenario_relief.py` | **通过**；全图颜色数 2,365 → **6,256**（浮雕仍在） |
 | 像素基线重立 | **`v20261103e`**（`hash 903c5dc` / `noLabels 80ce735c` / colors 4,096）；同代码再拍 `v20261103f` **逐像素一致**。`a|b|c|d` 作废 |
 | 全量回归 | **163/163**，前置 83 个 Node 单测**全通过**（`build/_regress_round20.log`） |
+
+## 二十、2026-11-03：六个浮层被嵌套在“更多”下拉里（外交表“点了没反应”的真根因）
+
+**现象**：点“更多 → 外交”时灵时不灵；点势力色板那行的“外交”**完全没反应**。
+查 DOM：`diplomacyOpen = true`、`[data-testid=diplomacy-wrap]` **不存在**（`open:true / panel:false`）。
+
+**根因**（用 `@vue/compiler-sfc` 打模板 AST 得到的祖先链，不是猜的）：
+```
+div.scenario-map-container
+  div.scenario-toolbar
+    div.toolbar-more      v-if="moreOpen"     ← 关键
+      div.toolbar-row
+        div[data-testid=diplomacy-wrap]  v-if="diplomacyOpen"
+```
+整块浮层写在**“更多”下拉的 `v-if` 子树**里：下拉一关，连 `v-if="diplomacyOpen"` 那个节点都不存在。
+所以“更多 → 外交”只能在下拉还开着时看到；而色板那条捷径只置 `diplomacyOpen`、不开下拉 → 面板永远不会渲染。
+
+**同一位置还有五个**（同样被 AST 祖先链证实）：地形生成参数 / FMG 模板 / 造陆 / 地形注记 / 派生。
+即这批“生成类浮层”全都只有在下拉开着时才有可能被点开。
+
+**修法**（提交 `fc26064`）：六个浮层全部搬到 `.scenario-map-container` 的直接子节点下
+（Teleport 依旧把它们送到 body；`fixed` 定位，DOM 位置不影响布局）。
+
+**顺带纠正一条旧笔记**：2026-11-02 记的“无头 Edge 里 Teleport 子节点进不了 body”是**误判**。
+搬到容器下后复测：`fmgOpen=true` → `body > [data-testid=fmg-wrap]` **存在**（`underBody: true`）。
+真因就是那层 `v-if` 嵌套 —— 连 `<Teleport>` 一起被卸了，自然“body 里查不到”。
+
+**判据**（新增 `scripts/tests/drill_diplomacy_overlay.py`，全 DOM 断言）：
+- “更多 → 外交”开 → 面板在 DOM、只有一份；
+- **收起“更多”后面板仍在**（这条就是本次 bug 的回归探针）；
+- 关掉 → 零节点；色板捷径也能开、也能关；
+- Teleport 落点复测 `body > ...` 为真；
+- 截图 `build/diplomacy-overlay/open.png`（`Page.captureScreenshot` —— canvas dataURL 里没有 HTML）。
+
+全量 **163/163**（`build/_regress_round23.log`）；像素基线 `v20261103e` 与搬完后的 `v20261103h`
+**逐像素一致**（浮层默认关闭，DOM 位置不动画面）。
+
+**没做到**：这六个浮层的**视觉层级/遮挡**没有逐一真机看过（只验了外交表与 FMG 的 DOM 落点）；
+五个生成面板的入口按钮仍在“更多”里，这是产品取舍，不是 bug。
