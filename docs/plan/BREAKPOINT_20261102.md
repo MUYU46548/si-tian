@@ -220,9 +220,39 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 |---|---|
 | `unit/test_galaxy_layout.js` | **19/19**（新增 b3 形态门槛 / b4 n=7 盘：最近 760.3 / b5 n=12：最近 761.0、半径 706~2870） |
 | `test_116`（拖拽/边界/命中/持久化） | **通过**；f5 口径改成「任意两中心 ≥ 760」+「撤销回到拖动前的布局位置」（实测最近 891.0） |
-| 出图目检 | `build/domain-layout-preview.png`（n=3/6/7/8/12/16，每格自动缩放、圆圈 = 350 半径领土） |
-| 全量回归 163 | 见 `build/_regress_round12.log` |
+| 出图目检 | `build/domain-layout/preview.png`（n=3/6/7/8/12/16，每格自动缩放、圆圈 = 350 半径领土） |
+| 全量回归 163 | **163/163**（`build/_regress_round12b.log`） |
 
 **诚实结论（没做到的，别当已吸收）**：n≥8 的螺旋臂**还是读不出来**——8~16 个星域时看上去是"摊开的场"，
 不是三条旋臂。原因不是采样公式，是"领土半径 350 + 中心间距 760"把臂挤平了；要真像群星，
 需要 ①星域数量再上一个量级，或 ②整幅美术（星云/星链/尘埃）托底。本轮只解决了**"环会互相压"**这个真问题。
+
+## 十一、2026-11-03：剧本视图地形浮雕底（§六「下一轮就该做这一件」第 1 条）
+
+**问题**（用户原话的量化版）：EU4 一屏约 65% 地形纹理 + 25% 政治水洗；我们 90% 是平涂色块，
+只剩 10% 线字。所以怎么调字体/线宽都不像 —— 缺的是那 65%。
+
+**改了什么**：
+| 文件 | 改动 |
+|---|---|
+| `scenario/layers/background.js` | 新增 `drawRelief`：底色之后、网格之前 `drawImage` 一张**浮雕栅格**（地形色 + 山体阴影） |
+| `components/ScenarioMap.vue` | 新增 `reliefOn()`（只在政治档 landsea/none + 底图**真有高度图**时开，可 `window.__SITIAN_SCENARIO_RELIEF__ = false` 关）与 `getReliefRaster()`（`buildHeightmapRaster(hm,'terrain',{shade:1.25})`，按高度图引用缓存）；`basemap.raster` 在浮雕开时**让位**（否则 landsea 栅格会把浮雕盖住） |
+| `scenario/layers/provinces.js` | 填色与同色缝描边都吃 `view.politicalWash`（浮雕开 = **0.42**，关 = 1 旧口径） |
+| `scenario/layers/coast.js` | 政治档海岸线 1.1 → **1.6px**；浅海光带 0.55 → 0.38（原先在浮雕上像一圈发光塑料） |
+| `ScenarioMap.vue` | 省界 `PROVINCE_BORDER_PX` 0.9 → **0.7**（三级线宽：海岸 1.6 > 国界 1.2 > 省界 0.7） |
+
+**判据（都实测过）**：
+| 判据 | 结果 |
+|---|---|
+| `unit/test_scenario_relief.js`（新增，假 ctx 记账） | **7/7**：浮雕按序 drawImage / 关掉时一次不画 / 拿不到栅格不崩；填色与缝描边**都**吃 0.42；无浮雕时回到 1；海岸 5px 带 + 1.6px 线；省界常量 0.7 |
+| `scripts/tests/drill_scenario_relief.py`（新增，真机开/关各拍一张） | **通过**：同机位开/关两帧不同；全图颜色数 **4,006 → 8,192**（地形色+阴影真的进来了） |
+| 出图目检 | `build/scenario-relief/on.png` / `off.png`（off 是纯平涂色块，on 能看出山脊与阴影，政治色明显被水洗） |
+| 全量回归 163 | 见 `build/_regress_round13.log` |
+
+**没做到（诚实）**：
+1. **国界 1.2px 没实现**：要在共边索引上比对两侧归属（同一对顶点两侧 `ownership` 不同才画），
+   本轮只落了省界 0.7 与海岸 1.6 两级；「国界」现在是**缺的一级**。
+2. **像素基线没重立**：`build/pixel-baseline/before` 是旧观感下的，浮雕一开就作废；
+   重立要在新观感上重拍 before/after（任务卡 `像素基线重立…3213daba`）。
+3. 浮雕色带直接用 SP-1025 的 `terrain` 档（偏绿）；EU4 的地形色更偏**灰褐**。要不要另调一条
+   「浮雕专用色带」得先有并排对照图，本轮没做。

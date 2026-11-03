@@ -42,9 +42,16 @@ export function drawProvincesLayer(c, view, opts = {}) {
     // 政治档的海面由 `landsea` 栅格画**深度色带**；海域省再盖 SEA_FILL 会把青绿浅滩压成深蓝
     const seaFromRaster = rp.kind === 'sea' && view.rasterLayer === 'landsea';
     if (fills && !seaFromRaster) {
+      // 政治水洗（2026-11-03）：`view.politicalWash` 默认 1（= 旧口径，不透明）。
+      // 地形浮雕底打开时降到 ~0.42 —— 让山体阴影/地形色从政治色下面透出来，
+      // 这是"像 EU4"的构图比例（一屏 65% 地形 + 25% 政治 + 10% 线字）里最关键的一层。
+      const wash = view.politicalWash == null ? 1 : view.politicalWash;
+      c.save();
+      c.globalAlpha = wash;
       c.fillStyle = fillCol;
       // 多环实体：一条路径覆盖所有环；evenodd 与命中口径一致 → 洞真空、飞地真画
       c.fill(path, 'evenodd');
+      c.restore();
     }
     // 同色描边（~1px）：抹掉相邻省份之间的**亚像素缝**（共享弧两端 Chaikin 邻域不同）
     if (rp.kind === 'sea') {
@@ -55,10 +62,15 @@ export function drawProvincesLayer(c, view, opts = {}) {
       c.stroke(path);
       c.setLineDash([]);
     } else if (fills && isOpaqueColor(fillCol)) {
+      // 同色描边也走同一个水洗值：否则浮雕底上会浮出一圈"实色描边"（比省身还重）
+      const wash = view.politicalWash == null ? 1 : view.politicalWash;
+      c.save();
+      c.globalAlpha = wash;
       c.strokeStyle = fillCol;
       // 1.6px：相邻两省各 0.8px 正好把 1~3px 的白点/针孔盖住
       c.lineWidth = view.px(1.6);
       c.stroke(path);
+      c.restore();
     } else if (!fills) {
       // 不填色时，省界**必须**自己画出来（否则"没有省份"和"有省份"看起来一样）
       c.strokeStyle = view.BORDER_COLOR;

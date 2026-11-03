@@ -4743,6 +4743,42 @@ function drawRasterLayer(c, kind, alpha) {
   c.restore();
 }
 
+// ══════════════════════════════════════════════════════════════════
+// 地形浮雕底（2026-11-03，EU4 构图比例）
+//
+// 用户对照《欧陆风云4》的原话：EU4 一屏约 65% 地形纹理 + 25% 政治水洗 + 10% 线字；
+// 我们 90% 是平涂色块 —— 参数怎么调都不像，因为缺的是那 65% 的「地形」。
+// 做法：底图本来就有高度图 → 复用 `heightmapRaster` 的「地形色 + 山体阴影」档，
+// 铺在政治色**下面**；省份填色按 `view.politicalWash`（0.42）水洗上去。
+//
+// 只跑政治档（landsea / none）：height/temp/prec 这些栅格档自己就是地形图，再叠一层会糊。
+// 关掉的开关：`window.__SITIAN_SCENARIO_RELIEF__ = false`（排障/对比用，默认 undefined = 开）。
+// ══════════════════════════════════════════════════════════════════
+const POLITICAL_WASH = 0.42;
+
+function reliefOn() {
+  if (typeof window !== 'undefined' && window.__SITIAN_SCENARIO_RELIEF__ === false) return false;
+  const kind = rasterLayer.value;
+  if (kind !== 'landsea' && kind !== 'none') return false;
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  return !!(hm && hm.grid && Array.isArray(hm.grid.points) && hm.grid.points.length);
+}
+
+/** 浮雕栅格（与导出共用同一份缓存；key 里带高度图引用，涂抹/撤销后自动失效） */
+function getReliefRaster() {
+  const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+  if (!hm) return null;
+  const key = baseMapKey.value + '|relief';
+  const hit = rasterCache.get(key);
+  if (hit && hit.hm === hm) return hit.raster;
+  // kind 取 'terrain'（SP-1025 的地形色带）+ 强制山体阴影：`height` 档默认不加阴影，
+  // 不加阴影就是"彩色等高线"，立不起来。shade 1.25 = 比行星侧的默认(1)再重一点 ——
+  // 政治水洗会把地形压掉约一半对比度，1.0 时出图上几乎看不出起伏（实测 build/scenario-relief/）。
+  const built = buildHeightmapRaster(hm, 'terrain', { shade: 1.25 });
+  if (built) rasterCache.set(key, { hm, raster: built });
+  return built;
+}
+
 /**
  * 导出的地形底图快照（2026-10-27）：「导出 = 你看到的那张图」。
  *
@@ -5208,6 +5244,8 @@ const isAnyRaster = () => rasterLayer.value === 'landsea' || isRasterBase();
  *   ③ 导出（`exportPNG`）与画布用同一份 view，天然同源（此前导出各写一套 → 导出与画布不一致且不报错）。
  */
 function makeLayerView() {
+  // 浮雕底只在政治档开（见 reliefOn 上方注释）；每帧算一次，别让每个层各算一遍
+  const relief = reliefOn();
   return {
     w: cw(),
     h: ch(),
@@ -5219,6 +5257,10 @@ function makeLayerView() {
     baseMap: baseMap.value,
     terrain: rawTerrain(),
     rasterLayer: rasterLayer.value,
+    // 地形浮雕底 + 政治水洗（2026-11-03）：有高度图才开，没有就退回旧口径（不透明填色）
+    showRelief: relief,
+    reliefRaster: getReliefRaster,
+    politicalWash: relief ? POLITICAL_WASH : 1,
     showBiomes: showBiomes.value,
     timeline: timeline.value,
     eraIndex: tlEra.value,
@@ -5331,7 +5373,7 @@ scenarioRenderLayers.register({
   draw: (c, view) => drawBackgroundLayer(c, view),
 });
 scenarioRenderLayers.register({
-  id: 'basemap.raster', order: 20, when: isAnyRaster, cacheable: true,
+  id: 'basemap.raster', order: 20, when: () => isAnyRaster() && !reliefOn(), cacheable: true,
   draw: (c) => drawRasterLayer(c, rasterLayer.value, 1),
 });
 scenarioRenderLayers.register({
@@ -5518,8 +5560,10 @@ function renderFrame() {
  *    同一张图导出与画布**边界颜色不一致** —— 正是"看起来做了但两处不一样"那一类）。
  */
 const PROVINCE_BORDER_COLOR = BORDER_COLOR;
-/** 普通省界的线宽（屏幕像素）—— 参考图是**细线**：1.1 → 0.9（2026-10-27 细棕线口径） */
-const PROVINCE_BORDER_PX = 0.9;
+/** 普通省界的线宽（屏幕像素）—— 参考图是**细线**：1.1 → 0.9 → 0.7（2026-11-03 三级线宽口径）
+ *  三级：海岸 1.6（coast.js 政治档）/ 国界 1.2（**未实现**：要在共边索引上比对两侧归属，
+ *  见 BREAKPOINT 第十一节）/ 省界 0.7（本值）。 */
+const PROVINCE_BORDER_PX = 0.7;
 
 /** 十六进制色混合：`t=0` 全 a、`t=1` 全 b（非 6 位色退回 a） */
 function mixHexColor(a, b, t) {

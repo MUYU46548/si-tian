@@ -51,13 +51,17 @@ export function drawPoliticalCoastLayer(c, view) {
   c.save();
   c.lineCap = 'round';
   c.lineJoin = 'round';
+  // 浅海光带（2026-11-03：0.55 → 0.38）—— 原先在浮雕底上像一圈发光的青色塑料；
+  // 参考图的海岸是"深色岸线 + 一点点亮"，不是霓虹。
   c.lineWidth = view.px(5);
-  c.strokeStyle = 'rgba(150, 210, 215, 0.55)';
+  c.strokeStyle = 'rgba(150, 210, 215, 0.38)';
   for (const ln of d.coasts) {
     if (!view.polylineInView(ln, minX, minY, maxX, maxY)) continue;
     view.strokeWorldPolyline(c, ln, true);
   }
-  c.lineWidth = view.px(1.1);
+  // 2026-11-03 三级线宽：海岸 1.6 > 国界 1.2 > 省界 0.7 —— 海岸最重，因为它是"地形/海"的界，
+  // 也是 EU4 里最粗的一级（原先 1.1 与省界 0.9 几乎一样粗，读不出层级）。
+  c.lineWidth = view.px(1.6);
   c.strokeStyle = 'rgba(44, 92, 122, 0.55)';
   for (const ln of d.coasts) {
     if (!view.polylineInView(ln, minX, minY, maxX, maxY)) continue;
