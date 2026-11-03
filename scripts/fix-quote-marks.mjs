@@ -44,6 +44,9 @@ const SCOPES = {
   src: ['src'],
   tests: ['scripts'],
   docs: ['docs'],
+  // `docs-live`：docs 里**除归档以外**的部分（plan / guides / 顶层说明）。
+  // 归档（`docs/archive`、`docs/agents-archive`）页头写着"原文一字未改"，是历史证据，不动。
+  'docs-live': ['docs'],
   all: ['src', 'scripts', 'docs'],
 };
 if (!SCOPES[SCOPE]) {
@@ -82,7 +85,12 @@ const files = (ONLY
   ? ONLY.map((rel) => path.join(ROOT, rel))
   : SCOPES[SCOPE].flatMap((d) => walk(path.join(ROOT, d))))
   .filter((p) => EXTS.has(path.extname(p).toLowerCase()))
-  .filter((p) => !SKIP_FILES.has(path.relative(ROOT, p).replace(/\\/g, '/')));
+  .filter((p) => !SKIP_FILES.has(path.relative(ROOT, p).replace(/\\/g, '/')))
+  .filter((p) => {
+    if (SCOPE !== 'docs-live') return true;
+    const rel = path.relative(ROOT, p).replace(/\\/g, '/');
+    return !/^docs\/(archive|agents-archive)\//.test(rel);
+  });
 
 const rows = [];
 const manual = [];

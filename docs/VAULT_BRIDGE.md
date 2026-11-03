@@ -1,4 +1,4 @@
-# 读料桥（三刀序列·第二刀）—— 从「只认两个目录」到「整库可读」
+# 读料桥（三刀序列·第二刀）—— 从“只认两个目录”到“整库可读”
 
 > 2026-10-22。对应施工单 `02-司天-三刀序列.md` 任务二。
 > 本文回答：读什么、怎么判、缺空间关系怎么办、报告长什么样、**只读**怎么保证。
@@ -15,16 +15,16 @@
 
 后果（真实库 1,353 篇实测）：
 
-- 只有 ~141 篇被读过；人物 / 组织 / 事件 / 物品这些「资料」在司天里没有入口；
+- 只有 ~141 篇被读过；人物 / 组织 / 事件 / 物品这些“资料”在司天里没有入口；
 - 字段识别是白名单：只认 `层级` / `上层区域` / `地点类型`，换一种写法（`类型`、`类别`、`组织类型`、`书名`…）就读不到；
 - 认不出层级时**默认 `location`** —— 事件/人物笔记会被静默变成地点；
-- 没有空间关系的笔记不会被报告，用户不知道「哪些没读进去」。
+- 没有空间关系的笔记不会被报告，用户不知道“哪些没读进去”。
 
 第二刀把这三件事一起改掉：
 
 1. **不挑目录结构**：标准目录存在 → 行为不变；不存在（或显式 `generic`）→ 全库归类扫描；
 2. **整份 frontmatter 参与归类**（`scripts/lib/vaultClassify.js`，纯函数）；
-3. **识别不了的每条都进报告**（路径 + 为什么 + 凭据），并落到设置面板「待人工」；
+3. **识别不了的每条都进报告**（路径 + 为什么 + 凭据），并落到设置面板“待人工”；
 4. **空间关系逐级推断**（显式字段 → 正文双链 → 正文句式），推断的标 `inferred`，
    找不到的进待人工，**不造名字、不硬塞父级**。
 
@@ -60,14 +60,14 @@
 给每个 `geo` 条目找上层：
 
 1. **显式字段**（`上层区域` / `上级页面` / `上级` / `parent` / `属于` / `位于`…）→ `inferred: false`；
-   - 值是 `无` / `-` → 当作「明确没有」，继续往下试；
+   - 值是 `无` / `-` → 当作“明确没有”，继续往下试；
    - 指向一个**库里不存在**的词条 → 进待人工并点名（`parent-missing`），不静默丢。
 2. **正文双链**：第一个能解析到 geo 条目的 `[[…]]` → `inferred: true, signal: wikilink`；
 3. **正文句式**：`位于/坐落于/地处/处于/属于/隶属` + **已知实体名**（后面必须跟
    `的/境内/附近/一带/标点` 等边界词）→ `inferred: true, signal: text`；
-4. 都没有 → `needsHuman: 'spatial'`（列表里写「没有任何上层线索」）。
+4. 都没有 → `needsHuman: 'spatial'`（列表里写“没有任何上层线索”）。
 
-另外，`extract-data.js` 里原有的「缺父级时拿第一个 wikilink 当父级」也补上了标记：
+另外，`extract-data.js` 里原有的“缺父级时拿第一个 wikilink 当父级”也补上了标记：
 节点上写 `parentInferred: true` + `parentSource: 'wikilink'`，导出/界面不得当成用户写的上层。
 
 ## 四、报告（零静默丢失）
@@ -117,7 +117,7 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 候选地图实体：N   高置信 M   地图 140 / 资料 1188 / 待人工 35（推断 4）   [查看候选] [待人工]
 ```
 
-点「待人工」逐条看原因。归类与推断在**主进程**完成（`vault-classify-report` IPC），
+点“待人工”逐条看原因。归类与推断在**主进程**完成（`vault-classify-report` IPC），
 渲染层只展示，不读盘。
 
 ## 六、真实库取证（2026-10-22，ROSA，只读）
@@ -135,12 +135,12 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 6 条地点没有任何上层线索、4 条星域的 `上层区域: 粘土世界` 在库里**没有对应词条**。
 
 > 最后这 4 条是真实的数据缺口（`粘土世界` 只有目录、没有词条），不是程序猜错 ——
-> 报告把它们点名，正是「不猜」的价值。
+> 报告把它们点名，正是“不猜”的价值。
 
 ## 六点五、用户乱写怎么办（2026-10-22 补强）
 
-用户提醒原话：「真实场景中用户的 frontmatter 可能随便乱写……甚至可能不按标准格式来，或者混了一堆插件产物。」
-所以读料层不做「规范假设」，只做「不崩、不丢、能救就救」：
+用户提醒原话：“真实场景中用户的 frontmatter 可能随便乱写……甚至可能不按标准格式来，或者混了一堆插件产物。”
+所以读料层不做“规范假设”，只做“不崩、不丢、能救就救”：
 
 | 脏写法 | 处理 |
 |---|---|
@@ -150,13 +150,13 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 | `tags: "#地点 #港口"` / `tags: a b` | `asTagList` 按空白/逗号/# 拆开（别名不拆 —— 别名可以含空格） |
 | `tags: {primary: 地点}` / `tags: 114514` | 不崩；拿不到就靠其它信号，最后进待人工 |
 | 缺少闭合 `---` | 当作没有 frontmatter → 按目录/文件名归类，仍进报告 |
-| YAML 语法错（`层级: [城市`） | 条目保留、`parseError` 记录下来，待人工原因写「frontmatter 解析失败」 |
+| YAML 语法错（`层级: [城市`） | 条目保留、`parseError` 记录下来，待人工原因写“frontmatter 解析失败” |
 | BOM / 正文 dataview `key:: value` | BOM 剥掉；dataview 不是 frontmatter，不参与归类 |
 | 插件键（`cssclasses` / `banner` / `dg-publish` / `dataview`） | 一律忽略，不影响归类 |
-| 上层的三种写法 `[[北境|北]]` / `北境` / `无` | 前两种解析到目标；「无」= 明确没有上层（不误报断链） |
+| 上层的三种写法 `[[北境|北]]` / `北境` / `无` | 前两种解析到目标；“无”= 明确没有上层（不误报断链） |
 
 判据：`scripts/tests/unit/test_vault_frontmatter_noise.js`（7 组，16 篇全是脏数据；
-包括「总数守恒：报告条目 = 笔记数，一个都不吞」）。
+包括“总数守恒：报告条目 = 笔记数，一个都不吞”）。
 ## 七、判据
 
 | 层 | 位置 |
@@ -164,7 +164,7 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 | 归类 / 推断 / 只读 / 守恒 | `scripts/tests/unit/test_vault_classify.js`（9 组） |
 | 索引本体（walk/增量/containment/候选） | `scripts/tests/unit/test_vault_index.js`（11 组） |
 | 应用内展示 | `scripts/tests/cases/test_124_vault_index.py`（分布 + 待人工原因） |
-| 设定卡「读不到笔记」回落 | `scripts/tests/cases/test_141_lore_card_fallback.py`（正常态 / 读失败回落 / 搜索预填 / 复原） |
+| 设定卡“读不到笔记”回落 | `scripts/tests/cases/test_141_lore_card_fallback.py`（正常态 / 读失败回落 / 搜索预填 / 复原） |
 
 ## 七点五、设定卡读不到笔记时（2026-10-24）
 
@@ -174,7 +174,7 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 现在给**可读回落**（`[data-testid="lore-missing"]`）：
 
 - 点名来源路径 + 主进程返回的真实原因（如 `ENOENT: ...`）；
-- 两个出口：**重试**（重新读这篇）/ **全库搜「节点名」**（打开资料搜索并带上关键词、直接搜）；
+- 两个出口：**重试**（重新读这篇）/ **全库搜“节点名”**（打开资料搜索并带上关键词、直接搜）；
 - 明确写着"归属与坐标仍以项目文件为准"（读料失败不影响项目数据，也不写任何东西）；
 - 读取只走 `readObsidianNote`（**只读**；回落块里没有任何写 IPC —— test_141 读源码守）。
 
@@ -189,7 +189,7 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 | 顺序 | 条件 | 落点 |
 |---|---|---|
-| ① | **设置面板「新笔记目录」**（`<库>/.sitian/config/note-target.json` 的 `dir`）或调用方 `targetDir` | 用它（库内相对或绝对） |
+| ① | **设置面板“新笔记目录”**（`<库>/.sitian/config/note-target.json` 的 `dir`）或调用方 `targetDir` | 用它（库内相对或绝对） |
 | ② | 库里**有** `03 设定` | `03 设定/11 地理系统/{星域,星系,行星}`；其它层级 → `03 设定/02 场景地点`（子目录自动建） |
 | ③ | 库里**没有** `03 设定` | **库根目录**，并回 `usedRootFallback: true` |
 
@@ -198,7 +198,7 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 ⚠️ **① 的目录也必须留在库内**：填了库外路径（填错 / 手写绝对路径）会被**拒绝并带原因**
 （`指定的新笔记目录不在知识库内：…`），不会静默落根、更不会写到库外。
-设置面板入口：设置 → 数据管理 → 「新笔记目录」（留空 = 自动规则），判据见 `test_142`。
+设置面板入口：设置 → 数据管理 → “新笔记目录”（留空 = 自动规则），判据见 `test_142`。
 
 **frontmatter**（`buildNoteFrontmatter`，选项 B）：只写
 
@@ -215,14 +215,14 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 ## 七点七、点省份 / 点标记看资料（2026-10-24）
 
-剧本视图的省份属性区末尾有「资料」段（`data-testid="province-vault"`）—— 实现是共用组件
+剧本视图的省份属性区末尾有“资料”段（`data-testid="province-vault"`）—— 实现是共用组件
 `src/renderer/src/components/VaultLoreSection.vue`（标记面板用的是**同一个组件**，只是换了 `testid`；
 `vaultIndexSearch` 全仓只出现在这里，`test_143`/`test_144` 的源码守卫会查"第二份实现"）：
 
 - 按**省名**查 `vaultIndexSearch`（主进程只读索引，**元数据命中**：标题/别名/标签/小标题/首行/路径，
   不读正文）→ 最多 5 条候选（标题 + 路径）；
-- 点候选 → 阅读器（`openNote`）；「全库搜索」→ 资料搜索面板（带省名预填）；
-- **没命中就明说**「库里没有同名词条（只读检索；不会替你新建）」—— 不猜、不自动建；
+- 点候选 → 阅读器（`openNote`）；“全库搜索”→ 资料搜索面板（带省名预填）；
+- **没命中就明说**“库里没有同名词条（只读检索；不会替你新建）”—— 不猜、不自动建；
 - 连点/改名有**序号防乱序**（先到的不许盖后到的），整段**没有任何写 IPC**。
 
 判据：`scripts/tests/cases/test_143_province_lore.py` —— 检索关键词=省名 / 候选可点开阅读器 /
@@ -236,19 +236,19 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 1. **命中测试** `src/renderer/src/utils/markerHitTest.js` —— 纯函数、只读。
    口径与省份/河流同一套：**从后往前**找（`drawScenarioMarkers` 后画的在上），容差由调用方按
-   「屏幕 px ÷ 缩放」换算；`null` / `''` / 非数字坐标一律跳过
+   “屏幕 px ÷ 缩放”换算；`null` / `''` / 非数字坐标一律跳过
    （`Number(null) === 0` 会把坏标记变成"世界原点上的可点标记"——这条踩过，已钉在单测里）。
    判据：`scripts/tests/unit/test_marker_hit.js`（7 组）。
 2. **标记面板** `ScenarioMap` 右侧：名字 / 类型 / 坐标 / 删除。写口只有一个
    `store.updateScenarioMarker`（白名单字段、一条 undo、`saveScenarios()`；值没变**不落空 undo**）。
    类型改名时**图标与颜色跟着类型走**（画布按 `m.icon/m.color` 渲染，只改 `type` 会"类型变了图标没变"）。
 3. **资料段** —— 与省份面板**同一个组件** `VaultLoreSection.vue`（不是复制）：
-   按标记名走 `vaultIndexSearch` → 候选 → 阅读器；没命中就明说「库里没有同名词条」；
-   「全库搜索」把名字带进搜索面板（可搜正文）。
+   按标记名走 `vaultIndexSearch` → 候选 → 阅读器；没命中就明说“库里没有同名词条”；
+   “全库搜索”把名字带进搜索面板（可搜正文）。
 
 判据：`scripts/tests/cases/test_144_marker_lore.py` —— 真点图标开面板（**点偏 40px 不命中**）/
-改名·类型·坐标都落库且撤销栈标签是「编辑标记」/ 资料关键词=标记名 / 空态可读 /
-「全库搜索」预填 / 创建笔记与改配置调用 0 / 源码守卫（命中与资料各只有一份实现，面板不直改标记对象）。
+改名·类型·坐标都落库且撤销栈标签是“编辑标记”/ 资料关键词=标记名 / 空态可读 /
+“全库搜索”预填 / 创建笔记与改配置调用 0 / 源码守卫（命中与资料各只有一份实现，面板不直改标记对象）。
 
 ## 七点八、稳定身份绑定 + 候选导入（N3a-3，2026-11-02）
 
@@ -298,10 +298,10 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 ### UI
 
-`VaultLoreSection.vue` 传 `nodeId` 时：候选行多一个「绑定」（`<testid>-bind`）、地图实体多一个
-「导入为节点」（`<testid>-import`），列表上方显示「已绑定 … / 解绑」（`<testid>-bound`）。
+`VaultLoreSection.vue` 传 `nodeId` 时：候选行多一个“绑定”（`<testid>-bind`）、地图实体多一个
+“导入为节点”（`<testid>-import`），列表上方显示“已绑定 … / 解绑”（`<testid>-bound`）。
 不传 `nodeId`（省份 / 标记面板）时按钮根本不渲染 = 仍是纯只读段。
-入口在节点详情面板「概览」页（`testid="node-vault"`）。
+入口在节点详情面板“概览”页（`testid="node-vault"`）。
 
 判据：`scripts/tests/unit/test_lore_binding.js`（12 组）—— 键优先级 / 指纹不含 size·mtime /
 改名检测 / 显式 id 认亲 / 歧义不猜（两侧各一次）/ 草稿 id 确定性 / 不可变 / 索引侧 `sitianId`+`aliases`
@@ -309,11 +309,11 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 
 ## 八、明确没做
 
-- **不做自动导入**：候选仍需人确认（原来的 D2 边界不变）；本刀只把「读得到」做扎实。
+- **不做自动导入**：候选仍需人确认（原来的 D2 边界不变）；本刀只把“读得到”做扎实。
 - **不用 LLM 猜**：归类是规则 + 证据，宁可 `unknown`。
 - 全文语义检索 / 向量化：不在本刀。
 - **改名对账还没接进界面**（N3a-3 的边界）：`reconcileBindings` 是纯函数、判据齐全，但还没有
-  「扫描全库 → 列出改名/失联 → 一键重绑」的面板；也没有为此新增 IPC（`note-index` 的全量条目
+  “扫描全库 → 列出改名/失联 → 一键重绑”的面板；也没有为此新增 IPC（`note-index` 的全量条目
   目前没有对外通道）。绑定 / 解绑 / 候选导入这三个**已落地**的写口不依赖它。
-- **`sitian-id` 不自动生成**：生成它必须写进笔记 frontmatter，而「读料必须只读」是红线 ——
+- **`sitian-id` 不自动生成**：生成它必须写进笔记 frontmatter，而“读料必须只读”是红线 ——
   要的话只能由用户在自己的模板里写。

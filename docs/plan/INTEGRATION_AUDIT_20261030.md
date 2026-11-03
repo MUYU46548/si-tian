@@ -1,7 +1,7 @@
 # 司天 · 模块集成审计（2026-10-30）
 
-> **触发**：用户 2026-10-30 报障 ——「下载文件夹里堆了一堆司天 PNG，全是画得很难看的星系地图；
-> 哪怕抄之前那个模块都比这个生成效果好，说明根本没集成」+ 要求「检查之前那些司天相关模块是否都完成集成」。
+> **触发**：用户 2026-10-30 报障 ——“下载文件夹里堆了一堆司天 PNG，全是画得很难看的星系地图；
+> 哪怕抄之前那个模块都比这个生成效果好，说明根本没集成”+ 要求“检查之前那些司天相关模块是否都完成集成”。
 > **口径**：与 `PLAN_AUDIT_20261030.md` 一致 —— **代码 + 用例 + 实测为准**，文档只作线索。
 > **审计时点**：`1d2e349`（2026-10-30 19:0x，`main` 已与 `origin/main` 同步）。
 > **一句话结论**：**功能模块没有孤儿**（全部接上了线），但**渲染层确实存在"第二套实现"，用户看到的就是它**；
@@ -15,7 +15,7 @@
 |---|---|---|
 | `build/_probe_dead_modules.mjs` | 扫 `src/` 全部 262 个 `.js/.vue/.mjs` 的 import / `export … from` / `import()`，找"没有任何消费方"的文件 | `node build/_probe_dead_modules.mjs` |
 | `build/_probe_component_usage.mjs` | 比对 `App.vue` 里 import 的组件与模板里真正出现的标签（PascalCase + kebab-case 都认） | `node build/_probe_component_usage.mjs` |
-| `build/_probe_export_bounds.mjs` | 用**真实 415 省项目**复算「导出 PNG(全图)」的图幅，对比"按 coordinate"与"按布局"两种口径 | `node build/_probe_export_bounds.mjs` |
+| `build/_probe_export_bounds.mjs` | 用**真实 415 省项目**复算“导出 PNG(全图)”的图幅，对比"按 coordinate"与"按布局"两种口径 | `node build/_probe_export_bounds.mjs` |
 
 > 三个脚本都在 `build/_*`（已进 `.gitignore`）：它们是**证据**，不是产品代码。
 
@@ -48,7 +48,7 @@
 
 21 份 `sitian-full-*.png` **SHA256 完全相同**（布局是确定性的，同一份数据每次导出必然一样），
 每份 17.9 MB / 5468×5518，共 359 MB —— 也就是说用户点了 21 次，每次都**没被问过存哪**，
-也没覆盖，只是往「下载」文件夹里又堆一份。
+也没覆盖，只是往“下载”文件夹里又堆一份。
 
 ### 3.2 根因（两处，都在 `App.vue#handleExportFullPNG`）
 
@@ -88,7 +88,7 @@
 `App.vue` 里**三条**导出（当前视图 PNG / 全图 PNG / 当前视图 SVG）原先都各自写一遍
 `a.download` —— 那是浏览器默认下载目录：**不问路径、不记上次目录、文件名带毫秒时间戳、永不覆盖**。
 行星侧（`composables/useFullMapExport.js`）早就走 `saveExportFile` 保存对话框，**两条链路各写一套**，
-正是本项目「同一能力只许一份实现」红线反复踩的形态。
+正是本项目“同一能力只许一份实现”红线反复踩的形态。
 
 现在三条统一走一份 `savePngBlob()`（`App.vue`，全仓唯一实现），SVG 走 `saveTextFile(kind:'svg')`；
 纯浏览器（`npm run dev` 无 Electron API）才回退 `a.download`。

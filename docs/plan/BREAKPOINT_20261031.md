@@ -13,7 +13,7 @@
   - `scenario/interaction/`：keyboard / pointer / move / down / rivers / province / actions /
     helpers / riverOps / provinceOps / misc / canvasClick
   - `utils/scenarioLayerRegistry.js`（层注册表 + Node 单测）
-- 测试工具：`scripts/tests/lib/rsrc.py`（「组件 + 所有 layers + 所有 interaction」源码合集，
+- 测试工具：`scripts/tests/lib/rsrc.py`（“组件 + 所有 layers + 所有 interaction”源码合集，
   **源码闸门一律读它**）；`scripts/tests/drill_scenario_pixels.py`（同机位像素指纹）。
 
 ## 二、判据状态
@@ -38,7 +38,7 @@
 `buildCellRaster`15 / `ownerHitProvinceIds`14 / `onSaveSlicePoint`14 / `provincePathFor`14 /
 `openProvinceContextMenu`14 / `onCanvasDblClick`14 / `openReimportDialog`14 / `describeBaseMapMissing`14。
 
-**先查「谁已被别处的 ctx 消费」再决定顺序**（`build/_ctx_used.mjs` 会列出 225 个这样的名字）：
+**先查“谁已被别处的 ctx 消费”再决定顺序**（`build/_ctx_used.mjs` 会列出 225 个这样的名字）：
 被消费的名字不能在更晚的位置搬走，否则 TDZ（白屏）。
 
 ### 工厂调用顺序（硬约束）

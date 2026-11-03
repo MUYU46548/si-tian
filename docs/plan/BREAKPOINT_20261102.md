@@ -1,8 +1,8 @@
 # 断点（2026-11-02 · 第三轮：把在列的活全部做完）
 
 > 接 `BREAKPOINT_20261101.md`。用户本轮原话两条：
-> ①「由于没空测试，其他计划中所有在列的东西全部都做，后续一起验收」；
-> ②「现成可抄的东西一大堆……注意截图验证，不要只看代码」。
+> ①“由于没空测试，其他计划中所有在列的东西全部都做，后续一起验收”；
+> ②“现成可抄的东西一大堆……注意截图验证，不要只看代码”。
 > 所以本轮**不新增规划**，只把 `PLAN_AUDIT_20261030.md` 与 `refs/MANIFEST.md` 里还在列的项逐条做掉，
 > 每条都留判据（用例 / 读盘 / 截图），并在下面写清**没做到的**。
 
@@ -10,15 +10,15 @@
 
 | # | 来源 | 做了什么 | 判据 / 证据 |
 |---|---|---|---|
-| 1 | MANIFEST「星域边界」+ 用户第 2 条 | **星域边界改所有权场 φ 软融合**（不再是凸包）：`galaxy/territory.js`（φ + marching squares + Chaikin）→ `utils/galaxyLayout.js#factionBorders`（唯一消费口）→ `galaxy/domainPaint.js#paintDomainBorders`（画布与导出**同一份**） | `unit/test_galaxy_layout.js` d1/d1b/d1c（每个星域都有边界 / 两家轮廓互不重叠 / 轮廓包住自己的中心 / 同输入两次逐点一致）；画面 `build/galaxy-art/t6-*.png` |
-| 2 | 同上「航道数量本身没做稀疏化」 | **跨域航道稀疏化**：`galaxyLayout.js#sparsifyHyperlanes`（Kruskal 最小生成树保骨架 + 每对星域 1 条（远景）/2 条（中景）+ 每颗星最多补 2 条；编辑态与近景全画；用户手建的线永远保留）。**只改画什么，不删数据** | 同一份函数被画布（`hyperlanesToDraw`）与导出（`exportLanes`）调用；出图 t3（20 条 → 8 条） |
-| 3 | MANIFEST「恒星系 2D」三条 | **轨道分级**（远景 1px 细环 / 中景虚线 / 近景实线 + 12 格刻度，且**有行星的轨道更亮**）+ **恒星日冕**（14 道确定性柔光冠）+ **行星名沿轨道切向**（<3 颗行星时回落横排 —— 实测切向在少行星时更难读） | `build/system-2d/s1-2d.png`；`test_10` / `test_13` |
+| 1 | MANIFEST“星域边界”+ 用户第 2 条 | **星域边界改所有权场 φ 软融合**（不再是凸包）：`galaxy/territory.js`（φ + marching squares + Chaikin）→ `utils/galaxyLayout.js#factionBorders`（唯一消费口）→ `galaxy/domainPaint.js#paintDomainBorders`（画布与导出**同一份**） | `unit/test_galaxy_layout.js` d1/d1b/d1c（每个星域都有边界 / 两家轮廓互不重叠 / 轮廓包住自己的中心 / 同输入两次逐点一致）；画面 `build/galaxy-art/t6-*.png` |
+| 2 | 同上“航道数量本身没做稀疏化” | **跨域航道稀疏化**：`galaxyLayout.js#sparsifyHyperlanes`（Kruskal 最小生成树保骨架 + 每对星域 1 条（远景）/2 条（中景）+ 每颗星最多补 2 条；编辑态与近景全画；用户手建的线永远保留）。**只改画什么，不删数据** | 同一份函数被画布（`hyperlanesToDraw`）与导出（`exportLanes`）调用；出图 t3（20 条 → 8 条） |
+| 3 | MANIFEST“恒星系 2D”三条 | **轨道分级**（远景 1px 细环 / 中景虚线 / 近景实线 + 12 格刻度，且**有行星的轨道更亮**）+ **恒星日冕**（14 道确定性柔光冠）+ **行星名沿轨道切向**（<3 颗行星时回落横排 —— 实测切向在少行星时更难读） | `build/system-2d/s1-2d.png`；`test_10` / `test_13` |
 | 4 | PLAN N3a-1 | **生成即录账本（provenance）**：`utils/genProvenance.js`（记录 `{id,kind,key,at,seed,params,digest,summary}`，id = `gen_<kind>_<digest8>` 确定性）+ `genProvenanceReplay.js`（真重放对拍）；写入点 = 造陆 / 文化宗教派生 / 地形合成（底图与行星两侧），**全部写在同一条 `execute()` 的 undo+redo 里** | `unit/test_gen_provenance.js` **20/20**（含 f1~f4 源码闸门：账本必须在 execute 块内，且字符串/注释里的 `execute({` 骗不过扫描） |
-| 5 | PLAN N3a-2 | **外交表 UI** `DiplomacyPanel.vue`（只读：甲/乙 + 年份 + 关系 chip + 「为什么」+ 当年生效事件 + ≤12 势力关系矩阵），入口两条（「更多 → 外交」与势力色板行的可见按钮） | `unit/test_diplomacy_relation.js` **6/6**；面板独立出图 `build/diplomacy/preview-full.png`（1351 年：同盟、由「甲乙同盟」确立、矩阵 4×4 带关系色） |
-| 6 | PLAN N3a-3 | **读料桥稳定 ID 绑定 + 候选导入**：`utils/loreBinding.js`（bindingKey 三级优先：显式 `sitian-id` > 相对路径 > 标题；`reconcileBindings` 认改名）+ 两个 store 写口 `bindNodeToNote` / `importVaultCandidate`（各一条 undo、都过 `guardWrite`、登记进 `writeGate` id 12）+ 索引 v3 带 `sitianId`/`aliases` + 节点详情里的「资料」段可绑定 | `unit/test_lore_binding.js` **12/12**；`docs/VAULT_BRIDGE.md` §7.8 |
-| 7 | PLAN N3b-1 | **FMG 侵蚀层补全**：在 `inciseByFlow` 之上加「V 形谷壁拓宽 + 只削峰的坡度松弛 + 断头河后置断言」；同 seed 逐字节一致 | `unit/test_terrain_erosion.js` **8/8**：8k 格 **85ms**（<1s）、`brokenRivers = 0`、同 seed hash 一致；造陆实跑 erosion 188ms、河 46 条不变 |
+| 5 | PLAN N3a-2 | **外交表 UI** `DiplomacyPanel.vue`（只读：甲/乙 + 年份 + 关系 chip + “为什么”+ 当年生效事件 + ≤12 势力关系矩阵），入口两条（“更多 → 外交”与势力色板行的可见按钮） | `unit/test_diplomacy_relation.js` **6/6**；面板独立出图 `build/diplomacy/preview-full.png`（1351 年：同盟、由“甲乙同盟”确立、矩阵 4×4 带关系色） |
+| 6 | PLAN N3a-3 | **读料桥稳定 ID 绑定 + 候选导入**：`utils/loreBinding.js`（bindingKey 三级优先：显式 `sitian-id` > 相对路径 > 标题；`reconcileBindings` 认改名）+ 两个 store 写口 `bindNodeToNote` / `importVaultCandidate`（各一条 undo、都过 `guardWrite`、登记进 `writeGate` id 12）+ 索引 v3 带 `sitianId`/`aliases` + 节点详情里的“资料”段可绑定 | `unit/test_lore_binding.js` **12/12**；`docs/VAULT_BRIDGE.md` §7.8 |
+| 7 | PLAN N3b-1 | **FMG 侵蚀层补全**：在 `inciseByFlow` 之上加“V 形谷壁拓宽 + 只削峰的坡度松弛 + 断头河后置断言”；同 seed 逐字节一致 | `unit/test_terrain_erosion.js` **8/8**：8k 格 **85ms**（<1s）、`brokenRivers = 0`、同 seed hash 一致；造陆实跑 erosion 188ms、河 46 条不变 |
 | 8 | PLAN N3b-2 | **简易模式（M3）**：`SimpleMode.vue` 四步导轨（项目 → 底图 → 画省 → 导出），每步只调**既有** store/UI 入口，零新数据模型、零新持久化；只读态给出原因并禁用 | `unit/test_simple_mode_contract.js` **13/13**（逐个 `store.xxx` 解析出处 + 无 `window.sitianAPI`/`ipcRenderer`/`localStorage`）；**端到端真跑过一遍**（2026-11-02 第五轮）：① 新建项目 → 真落 `.sitian`；② 一键生成 → 9 块陆地 / **180 省 / 46 河**（回执齐全）；③ 进编辑器 → 画布上就是那 180 省、46 条河、小地图正常（`build/simple-mode/flow-01..04.png`） |
-| 9 | 上一轮遗留 | `refs/MANIFEST.md` 收口：星域 / 恒星系 2D 两条从「待吸收」改成「已吸收」，并注明 **sp1025 的图已被用户删除**（只保留事实与判据，不再依赖外部目录） | 本文件 + MANIFEST |
+| 9 | 上一轮遗留 | `refs/MANIFEST.md` 收口：星域 / 恒星系 2D 两条从“待吸收”改成“已吸收”，并注明 **sp1025 的图已被用户删除**（只保留事实与判据，不再依赖外部目录） | 本文件 + MANIFEST |
 
 ## 二、判据状态
 
@@ -30,14 +30,14 @@
 | 打包 | ✅ `release-internal/司天 Setup 0.5.0.exe`（10:36，78.8MB）+ `win-unpacked/司天.exe`；asar **26.1MB**，`scripts/tests` / `__real_desite` / 探针截图 **0 处** |
 | 截图 | `build/galaxy-art/t6-01..03`（软融合、航道稀疏、LOD）、`build/system-2d/s1-2d`（日冕/轨道分级）、`build/diplomacy/preview-full.png`、`build/simple-mode/simple-mode.png` |
 
-本轮为了通过回归**改了六处既有口径**（都记在这里，免得下一轮当成回退）：1. `test_116` 的「颜色拼 alpha」源码闸门：星域画法搬进 `galaxy/domainPaint.js` 后，判据跟着搬（守 `paintDomainBorders` + `toRgba`），不再是「GalaxyMap 必须出现 `withAlpha(`」。
+本轮为了通过回归**改了六处既有口径**（都记在这里，免得下一轮当成回退）：1. `test_116` 的“颜色拼 alpha”源码闸门：星域画法搬进 `galaxy/domainPaint.js` 后，判据跟着搬（守 `paintDomainBorders` + `toRgba`），不再是“GalaxyMap 必须出现 `withAlpha(`”。
 2. `App.vue` 顶部栏：`.toolbar-center` 加 `min-width: 0`（允许搜索框收缩），简易模式按钮**只在世界观模块显示** —— 否则 1280px 下搜索框压住模块页签（`test_129` 实测）。
-3. **N1.5 抽取后，五处「按文件名 grep」的源码闸门跟着搬家**（实质判据一字未改，只是读的范围加上了新模块）：
+3. **N1.5 抽取后，五处“按文件名 grep”的源码闸门跟着搬家**（实质判据一字未改，只是读的范围加上了新模块）：
    `test_110`（`hitTestRiver` → `interaction/riverGeometry.js`）、`test_122`（`riverNodesFromDraft`，同上）、
    `test_144`（`findMarkerAt` → `interaction/markers.js`）、`test_145`（`onRunSliceExport` → `interaction/transfer.js`）、
    `test_90`（`selectScenarioAt` → `interaction/timeline.js`）。
-4. `test_53` 的 `px()` 门槛 8 → 3（组件里实测剩 4 处；**「裸除法 = 0」那条硬判据没动**），并把 `mapGeometry.js` 一起读进来
-   （`screenToWorld` 搬过去了，否则「坐标变换仍用真实 scale」会假红）。
+4. `test_53` 的 `px()` 门槛 8 → 3（组件里实测剩 4 处；**“裸除法 = 0”那条硬判据没动**），并把 `mapGeometry.js` 一起读进来
+   （`screenToWorld` 搬过去了，否则“坐标变换仍用真实 scale”会假红）。
 
 ## 三、N1.5 已完成（2026-11-02 第二轮）
 
@@ -62,13 +62,13 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 ## 四、没做到 / 留到下轮（别装作做了）
 
 1. ~~**N2 建省松手 79.8ms**~~ → **已到线（并顺手修了指标）**：
-   - `land_ms`（包住 `dispatchEvent` 量墙钟）**不是干净的信号** —— 实测一次「什么都没发生」的 mouseup 也有 51ms，
+   - `land_ms`（包住 `dispatchEvent` 量墙钟）**不是干净的信号** —— 实测一次“什么都没发生”的 mouseup 也有 51ms，
      里面混着事件派发/样式与布局刷新/GC。所以给 commit 路径加了分段 `performance.mark`
      （`window.__SITIAN_PERF__` 打开才记，默认零成本，读数落 `window.__LAND_PERF__`）。
    - 分段实测（真实 200 省底图 / 1080×484 / 新画一圈地形）暴露真凶：
      **`measureProvinceOverlap` 80.5ms**（占松手 88%），根因是它对**每个采样格心**都重算一次
      `provinceRings` / `ringSigns`（40×40=1600 次）。
-   - 修法：在 `utils/provinceOverlap.js` 里把「环 + 环向」按形状**预计算一次**再传进 `pointInProvince(…, cached)`
+   - 修法：在 `utils/provinceOverlap.js` 里把“环 + 环向”按形状**预计算一次**再传进 `pointInProvince(…, cached)`
      —— **同一份几何、同一套判定，结果逐字节不变**（`test_79` 的 0.50 / 0.20 两个精确比值原样通过）。
    - 结果（同机同数据，3 次）：**手迹管线 3~6ms ｜ 重叠度量 28~40ms ｜ execute 0.1~0.4ms ｜
      saveScenarios 同步段 3~4ms ｜ 落库合计 32~43ms ｜ 松手墙钟 36~47ms** → **≤50ms 达标**。
@@ -78,20 +78,20 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
    于是 `actions.js` 里 `st.ownerStrokeId` 恒为 `undefined` —— 涂归属那一笔的账本 `groupId` 一直没带上
    （账本照记，但记不成"一组"）。现在由 `polityPalette.js` 交出 `ownerStrokeIdNow()`（唯一实现），
    `commitOwnerStroke` 改调它。判据：真实拖一笔 → 账本长出同一 `groupId`
-   （实测 `own-mvyux7hb-6ow`，2 条事件）；`test_138` 的「属性面板自动 groupId 不复用笔刷的 groupId」仍绿。
+   （实测 `own-mvyux7hb-6ow`，2 条事件）；`test_138` 的“属性面板自动 groupId 不复用笔刷的 groupId”仍绿。
 3. 星云按视口裁（MANIFEST 星域行最后一条）：背景资产仍按固定 3200×3200 世界矩形铺。视觉上无问题，
    只是超大图幅导出时多画了一部分 —— 没做，不算吸收完。
-4. **「部分地形沉入海底」**：用户 2026-11-01 已说明 415 省项目从不承载真实数据 → 本轮按"不复现不修"处理，
+4. **“部分地形沉入海底”**：用户 2026-11-01 已说明 415 省项目从不承载真实数据 → 本轮按"不复现不修"处理，
    没有动地形生成（改动它等于拿全部省份数据赌）。
 5. **浮层在无头回归环境里不重渲染**（本轮实测，影响验收方式）：
    `ScenarioMap` 里那些 `v-if` 浮层（含早就交付的派生/FMG 面板）在无头 Edge + HMR 过的页面上
    **状态为真、DOM 里却没有节点**（`$forceUpdate()` 后才出现）；`<Teleport to="body">` 的子节点在本环境**一个都进不了 body**。
-   本轮把外交表改成「就地渲染 + fixed」以绕开 Teleport，但 **v-if 那条仍未查清**（怀疑是 HMR 之后新加的响应式依赖没被旧 effect 追踪）。
+   本轮把外交表改成“就地渲染 + fixed”以绕开 Teleport，但 **v-if 那条仍未查清**（怀疑是 HMR 之后新加的响应式依赖没被旧 effect 追踪）。
    影响：外交表面板改用**独立预览壳**出图（`build/diplomacy/preview-full.png`），外壳链路待真机点一次确认。
 
 ## 六、对照《欧陆风云4》/《群星》的诚实清点（2026-11-02 第六轮）
 
-用户原话：「一堆东西放在那里抄了几十次……自己对比目标《欧陆风云4》和《群星》，抄没抄清楚心里要有数」。
+用户原话：“一堆东西放在那里抄了几十次……自己对比目标《欧陆风云4》和《群星》，抄没抄清楚心里要有数”。
 对着 `refs/src/20261027-08-eu4-1518.jpg`、我们自己的剧本视图出图（`build/eu4-compare/ours-political.png`，
 200 省 + 14 势力）、以及星域出图（`build/galaxy-art/sky1-*.png`）逐项比对：
 
@@ -109,24 +109,24 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 
 **为什么"抄了几十次"还是不像**（这条比任何单项都重要）：一直在抄**样式参数**（字号、颜色、透明度、线宽），
 没有抄**画面构成比例** —— EU4 一屏大约 65% 地形纹理 + 25% 政治水洗 + 10% 线/字；
-我们一屏 90% 平涂色块 + 10% 线/字。参数再调也不会像，因为缺的是那 65% 的「地形」。
+我们一屏 90% 平涂色块 + 10% 线/字。参数再调也不会像，因为缺的是那 65% 的“地形”。
 同理星域：群星是"盘 + 螺旋臂"，我们是"环"，形态这一层没跟上，材质做得再细也不像。
 
 **下一轮就该做这一件（不再零敲）**：
 1. 剧本视图：地形浮雕底（复用 `heightmapRaster`，底图本来就有高度图）→ 政治色降到 ~40% 水洗 →
    三级线宽（海岸 1.6 / 国界 1.2 / 省界 0.7）→ 海的深浅 + 岸线光晕；
    判据：与 EU4 截图同尺寸并排、像素基线**重立**（旧基线作废，先 `--tag before` 后 `--tag after` 对拍）。
-2. 星域：`layoutDomains` 从「环」改成「盘 + 螺旋臂」（数据层），这才是群星观感的根；
+2. 星域：`layoutDomains` 从“环”改成“盘 + 螺旋臂”（数据层），这才是群星观感的根；
    判据：同一份 120 节点 fixture 的布局出图 + `test_116`（拖拽/边界/命中）全绿。
 3. 参考图缺口（必须由用户补）：真实《群星》截图从没进过 `refs/`（此前抄的是自家原型，已被用户删除）；
    EU4 只有两张整幅图，缺局部放大（省界/海岸/字的细节尺寸）。**没有这些，"抄"就只能靠猜比例。**
 
-## 七、待办：直角引号「」清理（用户 2026-11-02 点名）
+## 七、待办：直角引号“”清理（用户 2026-11-02 点名）
 
-**规则**：`「」` 不是常规中文标点（日式角括号），界面文案与代码注释都不该拿它当"引用/强调"。
+**规则**：`“”` 不是常规中文标点（日式角括号），界面文案与代码注释都不该拿它当"引用/强调"。
 正确写法是中文双引号 “ ” 与单引号 ‘ ’（不是英文直引号 `"` `'`，代码里除外）。
 
-**现状（`node scripts/quote-audit.mjs` 实测，只读）**：`「` **7,066** 次 / `」` 7,067 次，命中 **584 个文件**；
+**现状（`node scripts/quote-audit.mjs` 实测，只读）**：`“` **7,066** 次 / `”` 7,067 次，命中 **584 个文件**；
 其中 **Vue 模板（直接显示给用户）329 处**、**JS 字符串/代码里 728 处**（状态栏回执、用户指南 `utils/userGuide.js` 149 处等），
 其余是注释与 docs（docs 侧 1,450 行提到）。
 
@@ -135,9 +135,9 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 
 **下一轮做法（建议单独一刀）**：
 1. 写 `scripts/fix-quote-marks.mjs`：默认 dry-run 出清单；`--apply` 才写盘，替换规则
-   `「 → “`、`」 → ”`（嵌套 `『』` 先处理成 ‘ ’）；**跳过** `.js` 字符串里的正则/JSON key，只改面向人的文案；
+   `\u300c → \u201c`、`\u300d → \u201d`（嵌套 `\u300e\u300f` 先处理成 ‘ ’）；**跳过** `.js` 字符串里的正则/JSON key，只改面向人的文案；
 2. 同步改用例里的期望字符串（成对替换，保证断言跟实现一起变）；
-3. 判据：`quote-audit` 的「界面 + 代码」两个计数降到 0（docs 可分批）；全量 163 全绿；像素基线不变；
+3. 判据：`quote-audit` 的“界面 + 代码”两个计数降到 0（docs 可分批）；全量 163 全绿；像素基线不变；
 4. 顺手把这条写进 `AGENTS.md` 红线（新代码不许再出现）。
 
 **2026-11-03 已执行（提交 `8ffe330`）**：
@@ -194,7 +194,7 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 - `toSiTianEntities()` 把生成物转成司天实体（star_domain / galaxy / hyperlane）：
   **边域（ρ>0.7）的星没有势力归属**，原型里它们不属于任何区 —— 司天按 parentId 聚簇，挂世界上就画不出来，
   所以兜底归到**最近星域**；
-- GalaxyMap 工具栏新增「示例星系」按钮（`data-testid="gen-sample-galaxy"`，只读态禁用带原因）。
+- GalaxyMap 工具栏新增“示例星系”按钮（`data-testid="gen-sample-galaxy"`，只读态禁用带原因）。
 
 判据（实测）：
 - `unit/test_galaxy_generator.js` **10/10**：同 seed 逐项一致 / overlap 0 / maxDeg 5 ≤ cap / 分量 1 /
@@ -211,12 +211,12 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
    现在 `domainPaint` 是亮色径向水洗（越往中心越亮）—— 方向反了。群里图上是**近黑半透明底 + 1px 亮线 + 外柔光**。
    判据：同机位出图与 `refs/src/星域视图2.jpg` / `星域视图4.png` 并排；`test_116`（改色/命中/拖拽）全绿。
 2. **航道改单色**（群星只有一种青色，靠明暗分主次）：`hyperlaneColor` 的 4 类色要收成 1 类 + 两档明暗；
-   跨域/跳跃只用「虚线 + 压暗」区分。判据：`test_116` / `test_117` 全绿 + 出图。
+   跨域/跳跃只用“虚线 + 压暗”区分。判据：`test_116` / `test_117` 全绿 + 出图。
 3. **星域名改小字**：现在 16~19px，群星是 ~12px、字距宽、白色；中文没有大小写，靠**字距 + 低饱和**做层级。
-4. **星域布局从「环」改「盘 + 螺旋臂」**（`layoutDomains`，数据层）—— 这是"像不像群星"的根，排在上面的观感调整之后做，
+4. **星域布局从“环”改“盘 + 螺旋臂”**（`layoutDomains`，数据层）—— 这是"像不像群星"的根，排在上面的观感调整之后做，
    因为它会动布局与坐标持久化，要单独一轮 + `test_116` 兜底。
 5. 直角引号清理（第七节，单独一刀）。
-6. 真机确认外交表浮层（点「外交」→ 面板出现 → 关掉不挡画布）；顺手确认派生/FMG 浮层是否同病。
+6. 真机确认外交表浮层（点“外交”→ 面板出现 → 关掉不挡画布）；顺手确认派生/FMG 浮层是否同病。
 
 ## 十、2026-11-03：星域布局按数量自动切形态（§八"下一步 B" / §九-4）
 
@@ -234,7 +234,7 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 | 判据 | 结果 |
 |---|---|
 | `unit/test_galaxy_layout.js` | **19/19**（新增 b3 形态门槛 / b4 n=7 盘：最近 760.3 / b5 n=12：最近 761.0、半径 706~2870） |
-| `test_116`（拖拽/边界/命中/持久化） | **通过**；f5 口径改成「任意两中心 ≥ 760」+「撤销回到拖动前的布局位置」（实测最近 891.0） |
+| `test_116`（拖拽/边界/命中/持久化） | **通过**；f5 口径改成“任意两中心 ≥ 760”+“撤销回到拖动前的布局位置”（实测最近 891.0） |
 | 出图目检 | `build/domain-layout/preview.png`（n=3/6/7/8/12/16，每格自动缩放、圆圈 = 350 半径领土） |
 | 全量回归 163 | **163/163**（`build/_regress_round12b.log`） |
 
@@ -242,7 +242,7 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 不是三条旋臂。原因不是采样公式，是"领土半径 350 + 中心间距 760"把臂挤平了；要真像群星，
 需要 ①星域数量再上一个量级，或 ②整幅美术（星云/星链/尘埃）托底。本轮只解决了**"环会互相压"**这个真问题。
 
-## 十一、2026-11-03：剧本视图地形浮雕底（§六「下一轮就该做这一件」第 1 条）
+## 十一、2026-11-03：剧本视图地形浮雕底（§六“下一轮就该做这一件”第 1 条）
 
 **问题**（用户原话的量化版）：EU4 一屏约 65% 地形纹理 + 25% 政治水洗；我们 90% 是平涂色块，
 只剩 10% 线字。所以怎么调字体/线宽都不像 —— 缺的是那 65%。
@@ -266,16 +266,16 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 
 **没做到（诚实）**：
 1. **国界 1.2px 没实现**：要在共边索引上比对两侧归属（同一对顶点两侧 `ownership` 不同才画），
-   本轮只落了省界 0.7 与海岸 1.6 两级；「国界」现在是**缺的一级**。
+   本轮只落了省界 0.7 与海岸 1.6 两级；“国界”现在是**缺的一级**。
 2. **像素基线没重立**：`build/pixel-baseline/before` 是旧观感下的，浮雕一开就作废；
    重立要在新观感上重拍 before/after（任务卡 `像素基线重立…3213daba`）。
 3. 浮雕色带直接用 SP-1025 的 `terrain` 档（偏绿）；EU4 的地形色更偏**灰褐**。要不要另调一条
-   「浮雕专用色带」得先有并排对照图，本轮没做。
+   “浮雕专用色带”得先有并排对照图，本轮没做。
 
 ## 十二、2026-11-03：星域图收尾（远景不画航道 + 端点圆点；帝国色环已有）
 
 **来源**：上一轮日志 A.3/A.4 —— 群星的全景**一条连接线都没有**，我们远景还留稀疏航道；航道两端有圆点，
-我们没有；「有主恒星外圈帝国色环」此前已做（`galaxy/starArt.js`：归属细环 lod≥0.45、光晕 lod≥0.2），本轮实测确认、未改。
+我们没有；“有主恒星外圈帝国色环”此前已做（`galaxy/starArt.js`：归属细环 lod≥0.45、光晕 lod≥0.2），本轮实测确认、未改。
 
 **改了什么**：
 | 位置 | 改动 |
@@ -315,7 +315,7 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 **诚实的边界**：
 - ~~这个 fixture 的底图**没有高度图**~~ → **2026-11-03 已补**：`drill_scenario_pixels.py` 在铺完 3 个省之后
   调 `synthesizeBaseMapTerrain(KEY, {seed: 7})` 生成一张**合成高度图**（4,947 格），并加了一条判据
-  「基线底图有合成高度图（浮雕层在判据里）」。新基线 = **`v20261103c`**（`hash 4ba506d8` /
+  “基线底图有合成高度图（浮雕层在判据里）”。新基线 = **`v20261103c`**（`hash 4ba506d8` /
   `hashNoLabels 19b877d7` / 颜色数 **1,885 → 4,096**），同代码再拍 `v20261103d` 与之逐像素一致。
   从这版起，浮雕底/政治水洗/海岸/国界**都**在像素基线里；`v20261103a|b` 作废。
 - `build/pixel-baseline/` 按惯例 gitignore（PNG 是本地证据）；json 里带 camera，跨机器不可比，
@@ -325,8 +325,8 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 
 ## 十四、2026-11-03：国界 1.2px（三级线宽补齐）
 
-**背景**：§十一 落了省界 0.7 与海岸 1.6，中间那级「国界」一直缺 —— EU4 的层级是 海岸 > 国界 > 省界。
-「国界」的定义不是"省的外框"，而是**同一条共边两侧归属不同**；这需要共边拓扑，不能靠画轮廓。
+**背景**：§十一 落了省界 0.7 与海岸 1.6，中间那级“国界”一直缺 —— EU4 的层级是 海岸 > 国界 > 省界。
+“国界”的定义不是"省的外框"，而是**同一条共边两侧归属不同**；这需要共边拓扑，不能靠画轮廓。
 
 **改了什么**：
 | 位置 | 改动 |
@@ -357,10 +357,29 @@ TDZ 检查抓到 `markers` 的接线顺序会让 setup 抛错，已把 3 个函�
 这正是"导出比画布少一层"那类缺陷的抓法。
 
 **② 像素基线覆盖浮雕**：`drill_scenario_pixels.py` 里给 fixture 底图补了合成高度图
-（`synthesizeBaseMapTerrain(KEY, {seed: 7})`，4,947 格），并加判据「基线底图有合成高度图」。
+（`synthesizeBaseMapTerrain(KEY, {seed: 7})`，4,947 格），并加判据“基线底图有合成高度图”。
 新基线 `v20261103c`（`hash 4ba506d8` / `noLabels 19b877d7` / camera scale 1.1375 / 颜色数 1,885 → 4,096），
 同代码再拍 `v20261103d` 与之**逐像素一致**。出图 `build/pixel-baseline/v20261103c.png`
 能直接看到地形阴影 + 政治水洗 + 海岸带 + 深海渐变。
 
 **这一轮的诚实边界**：基线口径变了（多了一张高度图），`v20261103a|b` 作废；
 以后改 `synthesizeBaseMapTerrain` 的默认参数，基线也会跟着变 —— 这是**特性**（那本来就是要测的东西）。
+
+## 十六、2026-11-03：docs 非归档区清引号 + 给红线装守门
+
+**① docs 非归档区也清了**（§七 留的"可分批"那半）：
+- `docs/` 里**除 `archive/` 与 `agents-archive/`** 的部分（plan / guides / 顶层说明）共 **864 处 / 21 文件**；
+  归档两处（1,559 处）**原样不动** —— 那两处页头写着"原文一字未改"，是历史证据。
+- 清理器加了 `--scope docs-live`（走 docs 但跳过两个归档目录）。
+- 一处手工：`BREAKPOINT` 里那行"替换规则 `\u300c → \u201c`…"被机械替换成了自己指自己，
+  已改写成转义写法（文档说明规则时不能用被说明的字面量）。
+
+**② 红线装上了守门**（此前只写在 `AGENTS.md` 里，下一轮就会破）：
+新增 `unit/test_quote_marks.js`：spawn `scripts/quote-audit.mjs --json`，断言
+「界面 0 / 代码 0 / docs 非归档区 0」。**为什么 spawn 而不抄一份分类逻辑**：审计脚本是唯一实现，
+抄一份就会出现"用例说绿、审计说红"。
+**负向探针验过**：临时塞一个 `export const probe = '\u300c探测';` → q3 当场红并点名文件行，
+删掉后恢复 4/4 —— 这条守门不是空转的。
+
+判据：`node scripts/tests/unit/test_quote_marks.js` **4/4**；全量回归 **163/163**（`build/_regress_round18.log`）；
+`node scripts/quote-audit.mjs` 的「界面 0 / 代码 0」保持不变（总命中从 1,988 降到 1,559，全是归档）。

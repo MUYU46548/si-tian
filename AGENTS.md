@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**82 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**83 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -121,10 +121,12 @@
   两份实现不会报错，只会"改一处另两处不变"。
 - **直角引号 `「」` 不是中文标点**（2026-11-02 用户拍板）：界面文案、回执、注释都不许拿它当引用/强调，
   该用中文双引号 `“ ”` 与单引号 `‘ ’`（代码里的英文引号除外）。**新写的代码/文案一律不许再用**。
-  **2026-11-03 已清完 product + 用例**：`src/` + `scripts/` 共 **10,269 处 / 498 文件**，
-  `node scripts/quote-audit.mjs` 的「界面 0 / 代码 0」；清理器 `node scripts/fix-quote-marks.mjs`
-  （默认 dry-run，`--apply` 才写，`--scope src|tests|docs`，正则字面量行自动跳过交人工）。
-  只剩 **docs/ 归档 1,978 处**（`agents-archive` 写着"原文一字未改"，按历史证据保留；要清用
+  **2026-11-03 已清完 product + 用例 + docs 非归档区**：`src/` + `scripts/` 共 **10,269 处 / 498 文件**、
+  `docs/`（除归档）**864 处 / 21 文件**；`node scripts/quote-audit.mjs` 的「界面 0 / 代码 0」。
+  清理器 `node scripts/fix-quote-marks.mjs`（默认 dry-run，`--apply` 才写，
+  `--scope src|tests|docs-live|docs`，正则字面量行自动跳过交人工）。
+  **红线有守门**：`unit/test_quote_marks.js` 直接跑 audit 并断言 0/0（负向探针验过：塞一个就红）。
+  只剩 **docs 归档 1,559 处**（`agents-archive` 写着"原文一字未改"，按历史证据保留；要清用
   `--scope docs`，会一起改掉"未改"的承诺，先想清楚）。
 - **「涂归属」只改势力归属**（2026-10-20）：日常行的 `ownerBrush` = 给碰到的省改 `ownership`
   （一笔一条 undo），**绝不碰省界多边形**；改省界形状是「底图编辑 → 改省界」（`provinceBrush`）。
@@ -163,7 +165,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 82 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 83 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 46 | `grep -c "ipcMain.handle" src/main/index.js` |
