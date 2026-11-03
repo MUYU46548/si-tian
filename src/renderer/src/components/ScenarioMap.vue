@@ -1,5 +1,103 @@
 <template>
   <div class="scenario-map-container" :class="{ immersive }">
+    <!-- 生成类浮层（2026-11-03 搬家）：地形参数 / FMG / 造陆 / 地形注记 / 派生 ——
+         它们**原先都写在 `.toolbar-more`（`v-if="moreOpen"`）里面**，于是只有下拉还开着时才存在：
+         一下拉关掉，整个 `<Teleport>` 连同子节点一起消失 —— 表现就是“点了没反应、body 里查不到”
+         （2026-11-02 记的“无头环境里 Teleport 进不了 body”是误判，真因是这个嵌套）。
+         现在挂到容器下：Teleport 仍然把面板送到 body，但挂载不再取决于下拉开没开。 -->
+    <!-- P0-1：地形生成参数面板（**浮层**：2026-10-25 实测被左侧剧本列表的 `slp-empty` 盖住，
+         真人点不到“应用”——`el.click()` 绕过命中测试所以用例一直绿）。
+         三个生成面板统一 Teleport 到 body + 固定定位 + 高层级，不再受工具栏布局/滚动裁剪影响。 -->
+    <Teleport to="body">
+      <div v-if="terrainGenOpen" class="gen-float" data-testid="terrain-gen-wrap">
+        <div class="resample-panel">
+          <TerrainGenPanel
+            :base-map-key="baseMapKey"
+            :has-heightmap="baseMapHasHeightmap"
+            @apply="applyGeneratedTerrain"
+            @close="terrainGenOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- B 阶段 2（2026-10-29）：FMG 模板地形（14 套 Azgaar 模板 → 直接出高度图；同一条 undo） -->
+    <Teleport to="body">
+      <div v-if="fmgOpen" class="gen-float" data-testid="fmg-wrap">
+        <div class="resample-panel">
+          <FmgPanel
+            :base-map-key="baseMapKey"
+            @apply="applyGeneratedTerrain"
+            @close="fmgOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- P0-2：造陆面板（轮廓候选 → 铺底切省；一条撤销） -->
+    <Teleport to="body">
+      <div v-if="landmassOpen" class="gen-float" data-testid="landmass-wrap">
+        <div class="resample-panel">
+          <LandmassPanel
+            :base-map-key="baseMapKey"
+            :has-terrain="provinceCount > 0"
+            @apply="applyLandmassResult"
+            @close="landmassOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- D3：地形注记面板（山脊候选 → 命名 → 应用；一条撤销） -->
+    <Teleport to="body">
+      <div v-if="terrainLabelsOpen" class="gen-float" data-testid="terrain-labels-wrap">
+        <div class="resample-panel">
+          <TerrainLabelsPanel
+            :base-map-key="baseMapKey"
+            :has-heightmap="baseMapHasHeightmap"
+            :pick="terrainLabelPick"
+            @applied="applyTerrainLabelsResult"
+            @pick="startTerrainLabelPick"
+            @pick-done="onTerrainLabelPickDone"
+            @pick-cancel="cancelTerrainLabelPick"
+            @close="terrainLabelsOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
+    <!-- P0-4：文化/宗教/势力派生面板 -->
+    <Teleport to="body">
+      <div v-if="deriveOpen" class="gen-float" data-testid="derive-wrap">
+        <div class="resample-panel">
+          <DerivePanel
+            :base-map-key="baseMapKey"
+            :scenario-key="selectedScenario?.id || ''"
+            @applied="onDerived"
+            @close="deriveOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
+    <!-- 外交表（N3a-2，2026-11-02；2026-11-03 修“点了没反应”）：
+         **必须挂在这里（容器的直接子节点）**。它原先写在 `.toolbar-more`（`v-if="moreOpen"`）里面 ——
+         于是“更多 → 外交”只能在下拉还开着时看到，一下拉关掉面板就跟着消失；
+         而势力色板行那个快捷入口把 `diplomacyOpen` 置真、却没有开下拉 → **面板从来不会渲染**
+         （真机/无头一致，不是环境问题：`open:true / panel:false` 实测）。
+         用 `fixed` + `z-[80]`：DOM 位置不影响布局；关闭时 v-if 移除，零节点、不抢画布指针。
+         ⚠️ 不用 `<Teleport to="body">`（同目录其它浮层那样写）：无头 Edge 里 Teleport 子节点进不了 body。 -->
+    <div v-if="diplomacyOpen" class="fixed inset-0 z-[80] pointer-events-none" data-testid="diplomacy-wrap">
+      <!-- 居中用 flex（不用 `left-1/2 + -translate-x-1/2`）：本仓 Tailwind 只出部分 utilities，
+           transform 那几件在真机上没生效 —— 实测面板正好从视口中线开始（左边缘 = 50%），
+           等于"右对齐"。flex 居中不依赖 transform，宽度多少都居中。 -->
+      <div class="pointer-events-auto absolute inset-x-0 top-16 flex justify-center">
+        <diplomacy-panel
+          :scenario-id="selectedScenario?.id || ''"
+          :date="tlDate"
+          @update:date="onDiplomacySetDate"
+          @close="diplomacyOpen = false"
+        />
+      </div>
+    </div>
     <!-- 沉浸模式细顶条（2026-10-17 P0）：默认态下不渲染；只留 返回 / 剧本名 / 年份 / 小地图 / 退出 -->
     <div v-if="immersive" class="immersive-bar" data-testid="immersive-bar">
       <button class="imb-btn" @click="onBackClick">{{ basemapEditMode ? '← 日常视图' : '← 退出剧本' }}</button>
@@ -783,97 +881,6 @@
           ⚠️ 实测口径：放大**不会**让河变长（同一片地形被更细地走一遍而已）。
           1→2→4 倍时河条数 57→287→1089，而最长河的世界长度几乎不变（111→120→110）。
           想要更长的大河只能换更高分辨率的**源数据**。
-        </div>
-      </div>
-
-      <!-- P0-1：地形生成参数面板（**浮层**：2026-10-25 实测被左侧剧本列表的 `slp-empty` 盖住，
-           真人点不到“应用”——`el.click()` 绕过命中测试所以用例一直绿）。
-           三个生成面板统一 Teleport 到 body + 固定定位 + 高层级，不再受工具栏布局/滚动裁剪影响。 -->
-      <Teleport to="body">
-        <div v-if="terrainGenOpen" class="gen-float" data-testid="terrain-gen-wrap">
-          <div class="resample-panel">
-            <TerrainGenPanel
-              :base-map-key="baseMapKey"
-              :has-heightmap="baseMapHasHeightmap"
-              @apply="applyGeneratedTerrain"
-              @close="terrainGenOpen = false"
-            />
-          </div>
-        </div>
-      </Teleport>
-
-      <!-- B 阶段 2（2026-10-29）：FMG 模板地形（14 套 Azgaar 模板 → 直接出高度图；同一条 undo） -->
-      <Teleport to="body">
-        <div v-if="fmgOpen" class="gen-float" data-testid="fmg-wrap">
-          <div class="resample-panel">
-            <FmgPanel
-              :base-map-key="baseMapKey"
-              @apply="applyGeneratedTerrain"
-              @close="fmgOpen = false"
-            />
-          </div>
-        </div>
-      </Teleport>
-
-      <!-- P0-2：造陆面板（轮廓候选 → 铺底切省；一条撤销） -->
-      <Teleport to="body">
-        <div v-if="landmassOpen" class="gen-float" data-testid="landmass-wrap">
-          <div class="resample-panel">
-            <LandmassPanel
-              :base-map-key="baseMapKey"
-              :has-terrain="provinceCount > 0"
-              @apply="applyLandmassResult"
-              @close="landmassOpen = false"
-            />
-          </div>
-        </div>
-      </Teleport>
-
-      <!-- D3：地形注记面板（山脊候选 → 命名 → 应用；一条撤销） -->
-      <Teleport to="body">
-        <div v-if="terrainLabelsOpen" class="gen-float" data-testid="terrain-labels-wrap">
-          <div class="resample-panel">
-            <TerrainLabelsPanel
-              :base-map-key="baseMapKey"
-              :has-heightmap="baseMapHasHeightmap"
-              :pick="terrainLabelPick"
-              @applied="applyTerrainLabelsResult"
-              @pick="startTerrainLabelPick"
-              @pick-done="onTerrainLabelPickDone"
-              @pick-cancel="cancelTerrainLabelPick"
-              @close="terrainLabelsOpen = false"
-            />
-          </div>
-        </div>
-      </Teleport>
-      <!-- P0-4：文化/宗教/势力派生面板 -->
-      <Teleport to="body">
-        <div v-if="deriveOpen" class="gen-float" data-testid="derive-wrap">
-          <div class="resample-panel">
-            <DerivePanel
-              :base-map-key="baseMapKey"
-              :scenario-key="selectedScenario?.id || ''"
-              @applied="onDerived"
-              @close="deriveOpen = false"
-            />
-          </div>
-        </div>
-      </Teleport>
-
-      <!-- 外交表（N3a-2，2026-11-02）：浮层，点“外交”开/关。
-           ⚠️ 这里**不用 `<Teleport to="body">`**（同目录其它浮层是那个写法）：2026-11-02 实测，
-              在本仓的无头 Edge 回归环境里 Teleport 的子节点一个都进不了 body（连早就交付的
-              派生/FMG 浮层也一起不出现），于是“外交”点了没反应、也没法截图验收。
-              改用 `fixed` + `z-[80]` 直接挂在组件树里：位置一样，且 **DOM 里能查到**。
-              关闭时 v-if 移除，DOM 里零节点，不会抢画布指针事件（开着时只有卡片本身可点）。 -->
-      <div v-if="diplomacyOpen" class="fixed inset-0 z-[80] pointer-events-none" data-testid="diplomacy-wrap">
-        <div class="pointer-events-auto absolute left-1/2 top-16 -translate-x-1/2">
-          <diplomacy-panel
-            :scenario-id="selectedScenario?.id || ''"
-            :date="tlDate"
-            @update:date="onDiplomacySetDate"
-            @close="diplomacyOpen = false"
-          />
         </div>
       </div>
 
@@ -5228,7 +5235,7 @@ function makePreviewView() {
 // ══════════════════════════════════════════════════════════════════
 // 国界（2026-11-03，三级线宽里缺的中间一级）
 //
-// EU4 的层级是：海岸 > 国界 > 省界。省界 0.7（发丝）、海岸 1.6 都有了；缺的是「国界」——
+// EU4 的层级是：海岸 > 国界 > 省界。省界 0.7（发丝）、海岸 1.6 都有了；缺的是“国界”——
 // 同一条共边两侧属于**不同势力**时才画的那条 1.2px 线。
 // 几何不另算：`buildPolityBorderEdges` 在共边索引（顶点严格重合）上按归属分拣，纯函数、不写数据。
 // 缓存键 = 地形 + 归属对象引用（涂归属会换对象）+ 世代/日期 —— 改一处不会"另一处不变"。
