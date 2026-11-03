@@ -70,6 +70,7 @@ function label(node) {
 function scanTemplate(ast) {
   const chains = new Map();
   const testids = new Set();
+  const counts = new Map();
   let hasMoreOpenGate = false;
   const walk = (node, chain) => {
     if (!node || typeof node !== 'object') return;
@@ -78,7 +79,11 @@ function scanTemplate(ast) {
       for (const p of node.props || []) {
         const n = attrName(p);
         if (n === 'v-if' && /moreOpen/.test(attrValue(p))) hasMoreOpenGate = true;
-        if (n === 'data-testid') testids.add(attrValue(p));
+        if (n === 'data-testid') {
+          const v = attrValue(p);
+          testids.add(v);
+          counts.set(v, (counts.get(v) || 0) + 1);
+        }
       }
       for (const p of node.props || []) {
         if (attrName(p) !== 'data-testid') continue;
@@ -95,7 +100,7 @@ function scanTemplate(ast) {
     for (const ch of (node.children || [])) walk(ch, chain);
   };
   walk(ast, []);
-  return { chains, hasMoreOpenGate, testids };
+  return { chains, hasMoreOpenGate, testids, counts };
 }
 
 function main() {
@@ -170,6 +175,18 @@ function main() {
     assert(ids.has('diplomacy-open'), '找不到“更多 → 外交”入口（data-testid="diplomacy-open"）');
     assert(ids.has('diplomacy-open-palette'), '找不到势力色板行的快捷入口（diplomacy-open-palette）');
     return '2 条入口';
+  });
+
+  // 2026-11-03 实地发现：修 ①② 时把「地形注记」的整块 Teleport **复制**了一份（两个都 v-if 同一状态）
+  //   → 面板一开就是两个一模一样的面板精确重叠；`querySelector` 只看得到第一个，所以旧的 DOM 用例全绿。
+  check('m6 六个浮层包装节点在模板里**恰好各一次**（重复 = 两块面板精确重叠）', () => {
+    const { counts } = scanTemplate(ast);
+    const bad = WRAPS
+      .map(([w, n]) => [w, n, counts.get(w) || 0])
+      .filter(([, , c]) => c !== 1)
+      .map(([w, n, c]) => `${w}(${n}) × ${c}`);
+    assert(!bad.length, `浮层包装节点重复或缺失：${bad.join('，')} —— 模板里同一块面板只许有一份`);
+    return `${WRAPS.length} 个各 1 份`;
   });
 
   const failed = results.filter((r) => !r.ok);

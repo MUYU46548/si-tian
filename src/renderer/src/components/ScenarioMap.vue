@@ -48,7 +48,15 @@
       </div>
     </Teleport>
 
-    <!-- D3：地形注记面板（山脊候选 → 命名 → 应用；一条撤销） -->
+    <!-- D3：地形注记面板（山脊候选 → 命名 → 应用；一条撤销）。
+         ⚠️ 两条历史教训都写在这里，因为这个位置很容易被“顺手挪回去”：
+           ① 面板曾跟着“造陆”放在 `toolbar-more`（v-if=moreOpen）里 —— 底图编辑模式下“更多”是收起的，
+              于是“按钮点了、面板不出现”（test_154 实测）。Teleport 的目标在 body，但 **Teleport 自身
+              仍在 v-if 的子树里** —— 父节点不渲染，它就不存在。
+           ② 2026-11-03 修上面那件事时，这里留下了**同一份面板的第二份拷贝**（两个 Teleport 都
+              `v-if="terrainLabelsOpen"`）—— 一开面板就是两个一模一样的面板叠在同一处，
+              `querySelector` 只看得到第一个，所以当时的 DOM 用例一直是绿的。
+              `unit/test_scenario_map_split.js` m6 现在守着“每个浮层包装节点恰好一次”。 -->
     <Teleport to="body">
       <div v-if="terrainLabelsOpen" class="gen-float" data-testid="terrain-labels-wrap">
         <div class="resample-panel">
@@ -112,26 +120,6 @@
       <button class="imb-btn" data-testid="imb-exit" title="退出沉浸模式（Ctrl+I）"
               @click="immersive = false">退出沉浸 (Ctrl+I)</button>
     </div>
-    <!-- D3：地形注记面板 —— **必须放在顶栏之外**。
-         面板曾跟着“造陆”放在 `toolbar-more`（v-if=moreOpen）里：底图编辑模式下“更多”是收起的，
-         于是"按钮点了、面板不出现"（test_154 实测）。Teleport 的目标在 body，但 **Teleport 自身
-         仍在 v-if 的子树里** —— 父节点不渲染，它就不存在。 -->
-    <Teleport to="body">
-      <div v-if="terrainLabelsOpen" class="gen-float" data-testid="terrain-labels-wrap">
-        <div class="resample-panel">
-          <TerrainLabelsPanel
-            :base-map-key="baseMapKey"
-            :has-heightmap="baseMapHasHeightmap"
-            :pick="terrainLabelPick"
-            @applied="applyTerrainLabelsResult"
-            @pick="startTerrainLabelPick"
-            @pick-done="onTerrainLabelPickDone"
-            @pick-cancel="cancelTerrainLabelPick"
-            @close="terrainLabelsOpen = false"
-          />
-        </div>
-      </div>
-    </Teleport>
     <!-- 顶栏：工具 + 模式切换 -->
     <div class="scenario-toolbar" :class="{ dim: capsuleDim }" @mousemove="pokeCapsule">
       <!-- 第 1 行：**按任务分层的 4 个主工具** + “更多”（P3）

@@ -149,3 +149,10 @@ build/scenario-relief/
 build/galaxy-lanes/
 build/perf-*.json
 build/diplomacy-overlay/
+
+# 2026-11-03 新增演练产物（截图 + 真实 415 省项目的工作副本，含用户数据，禁止提交；
+# 复现：npm run test:visual / test:overlays / test:owner-latency / test:sample-galaxy）
+build/overlays-visual/
+build/owner-latency/
+build/sample-galaxy/
+build/visual-suite/
