@@ -8,7 +8,7 @@ import { DEFAULT_SCENARIO_GROUP, scenarioGroupIdOf } from '../../utils/scenarioG
 import { changeDateStats } from '../../utils/scenarioSlices';
 import { drawBackgroundLayer } from '../../scenario/layers/background';
 import { drawBurgsLayer } from '../../scenario/layers/features';
-import { drawProvincesLayer } from '../../scenario/layers/provinces';
+import { drawProvincesLayer, drawPolityBordersLayer } from '../../scenario/layers/provinces';
 import { formatDate } from '../../utils/scenarioTimeline';
 import { planRiverErase } from '../../utils/riverErase';
 
@@ -80,6 +80,8 @@ function exportPNG() {
   const exportView = makeLayerView();
   drawBackgroundLayer(ctxRef, exportView);
   drawProvincesLayer(ctxRef, exportView);
+  // 国界（2026-11-03）：导出与画布同一份判定（`view.polityBorderEdges` 是同一份缓存）
+  drawPolityBordersLayer(ctxRef, exportView);
   if (showBurgs.value) {
     drawBurgsLayer(ctxRef, makeLayerView());
     if (showPlaceNames.value) labelLayers.drawPlanned(ctxRef, makeLayerView(), ['capital', 'town']);

@@ -113,6 +113,33 @@ export function drawProvincesLayer(c, view, opts = {}) {
 }
 
 /**
+ * 国界层（2026-11-03）：三级线宽里缺的中间一级。
+ *
+ * 只画**共边两侧归属不同**的那些边（`view.polityBorderEdges()` 在共边索引上分拣，纯函数、不写数据）。
+ * 一次 `beginPath` 收全体、只 `stroke` 一次 —— 415 省底图上国界边可能上千条，逐条 stroke 会掉帧。
+ * 画在省界**之前**（order 55 < 省界两遍法）：0.7px 的细省界盖住 1.2px 国界的中线，
+ * 读起来才是"国界线外面还有一圈省界"的 EU4 层级，而不是两条线抢同一条边。
+ */
+export function drawPolityBordersLayer(c, view) {
+  if (!view.baseMap || !view.baseMap.terrain) return;
+  if (typeof view.polityBorderEdges !== 'function') return;
+  const edges = view.polityBorderEdges();
+  if (!edges || !edges.length) return;
+  c.save();
+  c.strokeStyle = view.POLITY_BORDER_COLOR || 'rgba(46, 34, 26, 0.92)';
+  c.lineWidth = view.px(view.POLITY_BORDER_PX == null ? 1.2 : view.POLITY_BORDER_PX);
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  c.beginPath();
+  for (const e of edges) {
+    c.moveTo(e.a.x, e.a.y);
+    c.lineTo(e.b.x, e.b.y);
+  }
+  c.stroke();
+  c.restore();
+}
+
+/**
  * 省份边界（**两遍**：先全部、再高亮）。
  * 逐省一遍 + 半透明会让**共边被描两次**（颜色更深，观感发灰）；0.6px 在 1080 宽画布上几乎看不见。
  */

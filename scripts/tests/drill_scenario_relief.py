@@ -111,10 +111,12 @@ SCENE_JS = """(() => {
   if (typeof sm.onBaseMapChange === 'function') sm.onBaseMapChange();
 
   // ① 省份：地形推演需要“画好的陆地”当掩膜 —— **必须先有轮廓再生成**（顺序反了会拿不到高度图）
+  //    用**严丝合缝的拼块**（不是彼此留缝的岛）：相邻两块共用同两个顶点，
+  //    国界判据（共边两侧归属不同）才有东西可测；留缝的话永远测不出国界。
   const rects = [];
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 2; c++) {
-      const x0 = c * 260, y0 = r * 170;
+      const x0 = c * 240, y0 = r * 150;
       rects.push([[x0, y0], [x0 + 240, y0], [x0 + 240, y0 + 150], [x0, y0 + 150]]);
     }
   }
@@ -159,9 +161,11 @@ SCENE_JS = """(() => {
   sm.selectedProvinceIds = [];
   if (typeof sm.fitToView === 'function') sm.fitToView();
   if (typeof sm.render === 'function') sm.render();
+  // 国界（2026-11-03）：拼块相邻 + 三个势力轮转 → 共边两侧归属不同，必须真的有国界边
+  const borders = typeof sm.polityBorderEdges === 'function' ? sm.polityBorderEdges().length : -1;
   return JSON.stringify({
     ok: gen.ok !== false, genReason: gen.reason || '', hmPts, provinces: provIds.length,
-    scenarios: ids.length, era: sm.tlEra,
+    scenarios: ids.length, era: sm.tlEra, borders,
   });
 })()"""
 
@@ -247,7 +251,11 @@ def main():
 
         sc_ok, sc = eval_json(cdp, SCENE_JS, required=('ok',), desc='铺浮雕判据场景')
         bad += 0 if ck('场景已铺设', bool(sc_ok) and bool(sc.get('ok')),
-                       f"高度图格 {sc.get('hmPts')} / 省 {sc.get('provinces')} / 剧本 {sc.get('scenarios')}") else 1
+                       f"高度图格 {sc.get('hmPts')} / 省 {sc.get('provinces')} / 剧本 {sc.get('scenarios')}"
+                       f" / 国界边 {sc.get('borders')}") else 1
+        # 国界（2026-11-03）：拼块相邻 + 三势力轮转 → 必须真的判出共边
+        bad += 0 if ck('国界边判出 > 0（拼块相邻、三势力轮转）', (sc.get('borders') or 0) > 0,
+                       f"borders={sc.get('borders')}") else 1
         if not sc.get('hmPts'):
             print('  ❌ 底图没有高度图 —— 浮雕无从判断（地形生成失败？）', flush=True)
             return 1

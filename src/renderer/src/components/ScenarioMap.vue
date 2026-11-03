@@ -1890,7 +1890,7 @@ import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 // N1 刀 1：四层里已搬出本文件的三组（底图 / 海岸浅滩 / 省界）；文字标注层下一波
 import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
-import { drawProvincesLayer, drawProvinceBordersLayer } from '../scenario/layers/provinces';
+import { drawProvincesLayer, drawProvinceBordersLayer, drawPolityBordersLayer } from '../scenario/layers/provinces';
 // N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
 import { createLabelLayers } from '../scenario/layers/labels';
 // N1 刀 2：屏幕空间浮层（小地图 / 文化图例 / 数据分布图 / 城镇悬浮卡）
@@ -2044,6 +2044,7 @@ import { voronoiCells } from '../utils/voronoiBatch';
 // 一起走（方案甲：边界整体移动、无缝无压叠；只认坐标不认拓扑，不做布尔运算）。
 import {
   buildCoincidentIndex, findLinkedVertices, shiftPoints, verticesInBox,
+  buildPolityBorderEdges,
 } from '../utils/vertexSharing';
 // 2026-10-14：导入的河流要裁到**当前海岸线**上（省份轮廓是后重建的，旧几何的尾巴露在海面上）。
 // 掩膜与裁剪都是纯函数（Node 有单测），画布只做"按引用缓存 + 给判定注入一点容差"。
@@ -5223,6 +5224,37 @@ function makePreviewView() {
   };
 }
 
+// ══════════════════════════════════════════════════════════════════
+// 国界（2026-11-03，三级线宽里缺的中间一级）
+//
+// EU4 的层级是：海岸 > 国界 > 省界。省界 0.7（发丝）、海岸 1.6 都有了；缺的是「国界」——
+// 同一条共边两侧属于**不同势力**时才画的那条 1.2px 线。
+// 几何不另算：`buildPolityBorderEdges` 在共边索引（顶点严格重合）上按归属分拣，纯函数、不写数据。
+// 缓存键 = 地形 + 归属对象引用（涂归属会换对象）+ 世代/日期 —— 改一处不会"另一处不变"。
+// ══════════════════════════════════════════════════════════════════
+const POLITY_BORDER_COLOR = 'rgba(46, 34, 26, 0.92)';
+const POLITY_BORDER_PX = 1.2;
+let _polityEdgeCache = { key: '', ownership: null, edges: [] };
+
+function ownerKeyOf(prov) {
+  const sc = timeline.value.scenarios[tlEra.value];
+  if (!sc) return '';
+  const r = currentOwnerRef(timeline.value, tlEra.value, prov.id, tlDate.value);
+  return (r && r.owner) || '';
+}
+
+function polityBorderEdges() {
+  const terrain = rawTerrain();
+  if (!terrain || !terrain.length) return [];
+  const sc = timeline.value.scenarios[tlEra.value];
+  const key = `${baseMapKey.value}|${terrain.length}|${tlEra.value}|${JSON.stringify(tlDate.value)}`;
+  const own = (sc && sc.ownership) || null;
+  if (_polityEdgeCache.key === key && _polityEdgeCache.ownership === own) return _polityEdgeCache.edges;
+  const edges = buildPolityBorderEdges(terrain, (prov) => ownerKeyOf(prov));
+  _polityEdgeCache = { key, ownership: own, edges };
+  return edges;
+}
+
 // ── N1 刀 1：渲染层注册表（2026-10-30）─────────────────────────────────────────
 // 这一步只把“谁先谁后”变成数据（绘制实现仍在本文件），所以判据是**逐像素一致**
 // （`python scripts/tests/drill_scenario_pixels.py --compare before after`）。
@@ -5292,6 +5324,10 @@ function makeLayerView() {
     rawProvOf,
     provincePathFor,
     getProvinceColor,
+    // 国界（三级线宽中间一级）：共边两侧归属不同的那些边 + 画法常量
+    polityBorderEdges,
+    POLITY_BORDER_COLOR,
+    POLITY_BORDER_PX,
     provinceBBox,
     isStriped,
     polityColor,
@@ -5391,6 +5427,13 @@ scenarioRenderLayers.register({
 scenarioRenderLayers.register({
   id: 'provinces.fill', order: 50, cacheable: true,
   draw: (c, view) => drawProvincesLayer(c, view, { fills: !isRasterBase() }),
+});
+// 国界压在省界**下面**（先画粗的、后画细的）：省界 0.7 的细线会盖住 1.2 国界的中线，
+// 读起来才是"国界线外面还有一圈省界"的 EU4 层级，而不是两条线抢同一条边。
+scenarioRenderLayers.register({
+  id: 'provinces.polityBorders', order: 55,
+  when: () => !isRasterBase() && showBorders.value, cacheable: true,
+  draw: (c, view) => drawPolityBordersLayer(c, view),
 });
 
 function renderFrame() {

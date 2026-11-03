@@ -83,6 +83,65 @@ export function buildCoincidentIndex(provinces, { quantum = VERTEX_QUANTUM } = {
 }
 
 /**
+ * 共边索引（2026-11-03）：每条省边按"两端顶点量化键（排序后）"记一份，值 = 共享这条边的省下标。
+ *
+ * 用途只有一个：**画国界**（同一条边两侧归属不同 → 那条边是国界）。纯计算，不写数据。
+ * 为什么不用布尔运算：共边顶点是**严格重合**的（顶点吸附保证），量化键就能把两侧认成同一条边；
+ * 几十万点的底图上一次遍历就够，而且可以按"地形 + 归属对象引用"缓存（见 `ScenarioMap`）。
+ *
+ * @param {Array} provinces `baseMap.terrain`
+ * @returns {Map<string, {a:{x:number,y:number}, b:{x:number,y:number}, provs:number[]}>}
+ */
+export function buildEdgeIndex(provinces, { quantum = VERTEX_QUANTUM } = {}) {
+  const index = new Map();
+  (provinces || []).forEach((prov, provIdx) => {
+    for (const ring of provinceRings(prov)) {
+      const pts = (ring && ring.points) || [];
+      const n = pts.length;
+      if (n < 3) continue;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const ax = px(pts[i]), ay = py(pts[i]);
+        const bx = px(pts[j]), by = py(pts[j]);
+        const ka = vertexKey(ax, ay, quantum);
+        const kb = vertexKey(bx, by, quantum);
+        if (!ka || !kb || ka === kb) continue;
+        const key = ka < kb ? `${ka}~${kb}` : `${kb}~${ka}`;
+        let e = index.get(key);
+        if (!e) { e = { a: { x: ax, y: ay }, b: { x: bx, y: by }, provs: [] }; index.set(key, e); }
+        if (!e.provs.includes(provIdx)) e.provs.push(provIdx);
+      }
+    }
+  });
+  return index;
+}
+
+/**
+ * 国界边（2026-11-03）：共边索引里**两侧归属不同**的那些边。
+ * 口径：两侧都无主 → 不算国界（无主地之间没有国界；否则整张图会被画满）。
+ * @param {Array} provinces
+ * @param {(prov:object, idx:number)=>string} ownerOf 势力 id（空串 = 无主）
+ * @returns {Array<{a:{x:number,y:number}, b:{x:number,y:number}, provs:number[]}>}
+ */
+export function buildPolityBorderEdges(provinces, ownerOf, { quantum = VERTEX_QUANTUM } = {}) {
+  const index = buildEdgeIndex(provinces, { quantum });
+  const owners = (provinces || []).map((p, i) => String((ownerOf ? ownerOf(p, i) : '') || ''));
+  const out = [];
+  for (const e of index.values()) {
+    if (e.provs.length < 2) continue;
+    const first = owners[e.provs[0]] || '';
+    let differs = false;
+    for (let k = 1; k < e.provs.length; k++) {
+      if ((owners[e.provs[k]] || '') !== first) { differs = true; break; }
+    }
+    if (!differs) continue;
+    if (e.provs.every(i => !owners[i])) continue;   // 两侧都无主 → 不是国界
+    out.push(e);
+  }
+  return out;
+}
+
+/**
  * 找出“这些顶点在别的省份里的同位顶点”。
  *
  * @param {Array} provinces
