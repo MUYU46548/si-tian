@@ -87,6 +87,9 @@ def _js(cdp, expr):
 def _source_gate():
     fails = []
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-11-03：样式已原样搬到 `scenario-map.css`（`<style scoped src>`，N1.6）——
+    # 判据读“脚本 + 样式”两份；断言本身一字未改（`.toolbar-row` 仍然必须存在）。
+    sc += _read('src/renderer/src/components/scenario-map.css')
     pe = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     ps = _code_only(_read('src/renderer/src/utils/provinceShape.js'))
 

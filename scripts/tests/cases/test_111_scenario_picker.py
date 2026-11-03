@@ -76,7 +76,10 @@ def source_gates():
     fails = []
     app = _read(APPVUE)
     # 2026-10-31：河流绘制体搬进 scenario/layers/features.js —— 判据把那份源码一起读
-    sm = _read(SMV) + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
+    # 2026-11-03：样式搬进 `scenario-map.css`（`<style scoped src>`，N1.6）—— 一并读，断言不变
+    sm = (_read(SMV) + '\n'
+          + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
+          + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'scenario-map.css')))
     sp = _read(SPV)
     cards = _read(SCARDS)
     sed = _read(SEDIT)

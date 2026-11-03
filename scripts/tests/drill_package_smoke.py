@@ -204,10 +204,17 @@ def main():
         RESULT['notes']['canvas'] = bool(cdp.eval("!!document.querySelector('.scenario-map-container canvas')"))
 
         # 🔴 关键动作：离开剧本视图 → 触发 onUnmounted（0.2.3 的崩溃点）
-        back = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button'))"
+        # ⚠️ 2026-11-03 修：这条原本按 `title` 里含“返回世界选择”找按钮 —— 而 `dc9258e`（2026-10-21）
+        #    把 title 改成了动态文案（“退出历史剧本，回到世界页…”），于是从那天起这里一直返回
+        #    `noback`：**卸载钩子再也没被走到过**（判据看着是红的，但它连自己该测的东西都没测到）。
+        #    现在认稳定钩子 `data-testid="scenario-back-btn"`，title 兜底只为兼容更老的包。
+        back = cdp.eval("(() => {"
+                        " const byId = document.querySelector('[data-testid=\"scenario-back-btn\"]');"
+                        " if (byId) { byId.click(); return 'back:testid'; }"
+                        " const b = Array.from(document.querySelectorAll('button'))"
                         ".find(x => (x.title || '').includes('返回世界选择'));"
-                        " if (!b) return 'noback'; b.click(); return 'back'; })()")
-        ck('点得到“返回”（离开剧本视图）', back == 'back', back)
+                        " if (!b) return 'noback'; b.click(); return 'back:title'; })()")
+        ck('点得到“返回”（离开剧本视图）', isinstance(back, str) and back.startswith('back'), back)
         time.sleep(2.5)
         left = not cdp.eval("!!document.querySelector('.scenario-map-container')")
         ck('剧本视图真的卸载了（否则没走到卸载钩子）', left, '')

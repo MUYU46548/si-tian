@@ -49,6 +49,9 @@ def source_gates():
     # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集，不再绑文件位置
     from lib.rsrc import render_src_code_only as _rsrc_all
     sc = _rsrc_all()
+    # 2026-11-03：样式已原样搬到 `scenario-map.css`（`<style scoped src>`，N1.6）——
+    # 判据读“脚本合集 + 样式”两份；断言本身一字未改（`.toolbar-more {` 仍然必须存在）。
+    sc += _read('src/renderer/src/components/scenario-map.css')
     checks = [
         # ── P3 ──
         ('class="toolbar-row primary-row"', '主工具行存在（按任务分层）'),

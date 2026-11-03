@@ -72,13 +72,17 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 330 | `scripts/tests/drill_diplomacy_overlay.py` | （待补） |
 | 1447 | `scripts/tests/drill_final_acceptance.py` | （待补） |
 | 198 | `scripts/tests/drill_galaxy_lanes.py` | （待补） |
+| 537 | `scripts/tests/drill_owner_latency.py` | （待补） |
 | 884 | `scripts/tests/drill_p0_first_map.py` | （待补） |
 | 341 | `scripts/tests/drill_p1_vertex_marquee.py` | （待补） |
 | 295 | `scripts/tests/drill_package_smoke.py` | （待补） |
 | 870 | `scripts/tests/drill_quit_flush.py` | （待补） |
 | 444 | `scripts/tests/drill_reimport_019.py` | （待补） |
+| 285 | `scripts/tests/drill_sample_galaxy.py` | （待补） |
+| 457 | `scripts/tests/drill_scenario_overlays_visual.py` | （待补） |
 | 350 | `scripts/tests/drill_scenario_pixels.py` | （待补） |
 | 311 | `scripts/tests/drill_scenario_relief.py` | （待补） |
+| 202 | `scripts/tests/drill_visual_suite.py` | （待补） |
 | 427 | `scripts/tests/fixtures/make_vault_fixture.py` | （待补） |
 | 161 | `scripts/tests/fixtures/make_vault_fixture_messy.py` | （待补） |
 | 39 | `scripts/tests/fixtures/name_map.py` | （待补） |
@@ -271,6 +275,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 172 | `scripts/tests/unit/test_scenario_layer_registry.js` | （待补） |
 | 133 | `scripts/tests/unit/test_scenario_ledger.js` | （待补） |
 | 143 | `scripts/tests/unit/test_scenario_ledger_v2.js` | （待补） |
+| 198 | `scripts/tests/unit/test_scenario_map_split.js` | （待补） |
 | 177 | `scripts/tests/unit/test_scenario_relief.js` | （待补） |
 | 462 | `scripts/tests/unit/test_scenario_slices.js` | （待补） |
 | 124 | `scripts/tests/unit/test_scenario_text_placement.js` | （待补） |
@@ -348,7 +353,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 499 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 8554 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 6902 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 405 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 289 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |

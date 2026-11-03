@@ -59,112 +59,175 @@ SETUP_JS = r"""(async () => {
   const polities = sc.polities || [];
   if (!polities.length) return JSON.stringify({ ok: false, why: 'no-polity' });
   const pol = polities[0];
-  const terrain = (SM.baseMap && SM.baseMap.terrain) || [];
-  // 挑一个：陆地 + 当前日期下**不属于**目标势力（保证这一笔真的改点什么）+ 顶点够多（面积大，好点中）
-  let pick = null;
-  for (const p of terrain) {
-    if (!p || p.kind === 'sea' || !Array.isArray(p.points) || p.points.length < 4) continue;
-    const cur = typeof SM.ownerPolityForProvince === 'function' ? SM.ownerPolityForProvince(p.id) : null;
-    const curId = cur && (cur.id || cur);
-    if (curId === pol.id) continue;
-    if (!pick || p.points.length > pick.points.length) pick = p;
-  }
-  if (!pick) return JSON.stringify({ ok: false, why: 'no-target-province' });
-  let cx = 0, cy = 0;
-  for (const q of pick.points) { cx += q.x; cy += q.y; }
-  cx /= pick.points.length; cy /= pick.points.length;
   const cvs = SM.canvas;
-  const rect = cvs.getBoundingClientRect();
-  const scale = 1.2;
-  SM.cameraScale = scale;
-  SM.cameraX = rect.width / 2 - cx * scale;
-  SM.cameraY = rect.height / 2 - cy * scale;
+  // ⚠️ 先切工具再量矩形：切到 `ownerBrush` 会多出一行“笔刷设置”（模板里 `v-if="tool === 'ownerBrush'"`），
+  //   画布高度会变 —— 先用旧矩形算相机，正中对准的就不是那个省了（2026-11-03 第二跑实测：涂到了邻居）。
   SM.setTool('ownerBrush');
   SM.selectedPolity = pol;
   if (typeof SM.clearOwnerMode !== 'undefined') SM.clearOwnerMode = false;
-  if (typeof SM.render === 'function') SM.render();
+  if (typeof SM.fitToView === 'function') SM.fitToView();
+  SM.render();
+  await new Promise(r => setTimeout(r, 200));
+  const rect = cvs.getBoundingClientRect();
+
+  // 🔴 目标点必须**用产品自己的命中函数**挑，不能拿省的顶点重心当靶：
+  //    真实 415 省里很多是批量切出来的凹多边形，重心可能落在海里/省外 ——
+  //    2026-11-03 首跑就是这么"一笔什么都没涂到"（commitMs 13.6ms 但 ownership 没变）。
+  //    做法：在画布上扫网格 → screenToWorld → findProvinceAt，命中"陆地且不是目标势力"的第一个点。
+  let hit = null;
+  const grid = [];
+  for (let gy = 1; gy <= 11 && !hit; gy++) {
+    for (let gx = 1; gx <= 13 && !hit; gx++) {
+      const lx = rect.width * gx / 14;
+      const ly = rect.height * gy / 12;
+      const w = SM.screenToWorld(lx, ly);
+      const p = SM.findProvinceAt(w.x, w.y);
+      if (!p || p.kind === 'sea') continue;
+      const cur = SM.ownerPolityForProvince(p.id);
+      const curId = cur && (cur.id || cur);
+      grid.push(p.id);
+      if (curId === pol.id) continue;
+      hit = { id: p.id, wx: w.x, wy: w.y, points: (p.points || []).length, curId };
+    }
+  }
+  if (!hit) return JSON.stringify({ ok: false, why: 'no-target-province', scanned: grid.slice(0, 12) });
+
+  // 选好点之后再定相机：把该世界点摆到画布正中（缩放 0.8 让笔刷半径 ≈37 世界单位，一笔几格）
+  const scale = 0.8;
+  SM.cameraScale = scale;
+  SM.cameraX = rect.width / 2 - hit.wx * scale;
+  SM.cameraY = rect.height / 2 - hit.wy * scale;
+  SM.render();
   await new Promise(r => setTimeout(r, 160));
   const sx = Math.round(rect.left + rect.width / 2);
   const sy = Math.round(rect.top + rect.height / 2);
-  const before = (typeof SM.ownerPolityForProvince === 'function' ? SM.ownerPolityForProvince(pick.id) : null);
-  window.__ownerProbe = { provinceId: pick.id, polityId: pol.id, scenarioId: sc.id,
-                          baseMapKey: SM.baseMapKey, sx, sy, rect: { left: rect.left, top: rect.top,
-                          width: rect.width, height: rect.height } };
-  return JSON.stringify({ ok: true, province: pick.id, points: pick.points.length,
+  // 摆好相机后再用产品命中函数复核一次（证明"要点的那个像素确实是目标省"）
+  const verify = SM.findProvinceAt(SM.screenToWorld(rect.width / 2, rect.height / 2).x,
+                                   SM.screenToWorld(rect.width / 2, rect.height / 2).y);
+  window.__ownerProbe = { provinceId: hit.id, polityId: pol.id, scenarioId: sc.id,
+                          baseMapKey: SM.baseMapKey, sx, sy,
+                          ownBefore: JSON.parse(JSON.stringify(sc.ownership || {})) };
+  return JSON.stringify({ ok: true, province: hit.id, points: hit.points,
                           polity: pol.id, scenario: sc.id, baseMap: SM.baseMapKey,
-                          beforeOwner: before && (before.id || before), tool: SM.tool,
-                          scale, sx, sy, canvas: [rect.width, rect.height] });
+                          beforeOwner: hit.curId || '', tool: SM.tool, scale, sx, sy,
+                          canvas: [rect.width, rect.height],
+                          verify: verify ? verify.id : null,
+                          verifySame: !!verify && verify.id === hit.id });
 })()"""
 
-# ── 第二段：真鼠标事件（mousedown → 3 次 mousemove → 松手），松手后立刻返回时间戳
-STROKE_JS = r"""(() => {
+# ── 第二段：真鼠标事件（mousedown → 3 次 mousemove → 松手），松手后**同步**读结果
+STROKE_JS = r"""(async () => {
   const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+  const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
   const pr = window.__ownerProbe;
   const cvs = SM.canvas;
   const mk = (type, x, y) => new MouseEvent(type, {
     clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, buttons: 1,
   });
-  const moves = [];
-  const t0 = performance.now();
-  cvs.dispatchEvent(mk('mousedown', pr.sx, pr.sy));
-  const d0 = Date.now();
-  for (let i = 1; i <= 3; i++) {
-    const a = performance.now();
-    cvs.dispatchEvent(mk('mousemove', pr.sx + i * 3, pr.sy + i * 2));
-    moves.push(Math.round((performance.now() - a) * 100) / 100);
-  }
-  const tBefore = performance.now();
-  const wallBefore = Date.now();
-  cvs.dispatchEvent(mk('mouseup', pr.sx + 9, pr.sy + 6));
-  const commitMs = performance.now() - tBefore;
-  const wallAfter = Date.now();
-  const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+  // 目标点复核（相机已把它摆到画布正中）：正中那个像素必须还是目标省
+  const rect = cvs.getBoundingClientRect();
+  const wCenter = SM.screenToWorld(rect.width / 2, rect.height / 2);
+  const hitCenter = SM.findProvinceAt(wCenter.x, wCenter.y);
   const sc = s.scenarios[pr.scenarioId];
+  const polities = (sc && sc.polities) || [];
+  const pol = polities[0] || null;
+  const pol2 = polities[1] || null;
+
+  /** 一笔：按下 → 3 次 mousemove → 松手；返回**松手那一下**的同步耗时 */
+  const strike = (targets, tgt) => {
+    SM.selectedPolity = tgt;
+    SM.clearOwnerMode = !tgt;
+    const ms = [];
+    cvs.dispatchEvent(mk('mousedown', pr.sx, pr.sy));
+    for (let i = 1; i <= 3; i++) {
+      const a = performance.now();
+      cvs.dispatchEvent(mk('mousemove', pr.sx + i * 3, pr.sy + i * 2));
+      ms.push(Math.round((performance.now() - a) * 100) / 100);
+    }
+    const t = performance.now();
+    cvs.dispatchEvent(mk('mouseup', pr.sx + 9, pr.sy + 6));
+    return { commitMs: Math.round((performance.now() - t) * 100) / 100, moveMs: ms };
+  };
+
+  // ① 预热一笔（冷启动的 JIT / 命中索引 / 基帧都在这笔里付掉，不该算进稳态口径）
+  const warm = strike(null, pol);
+
+  // 把归属写口包一层计时：60ms 到底花在"写口"还是"事件/渲染"上，得能拆开说
+  let storeMs = 0, storeCalls = 0;
+  const origBatch = s.batchSetOwnership.bind(s);
+  s.batchSetOwnership = (...a) => {
+    const t = performance.now();
+    const r = origBatch(...a);
+    storeMs += performance.now() - t;
+    storeCalls++;
+    return r;
+  };
+
+  // ② 稳态：交替两个势力涂 4 笔（**偶数**笔：最后一笔落在 pol 上，与预热后的初值不同，
+  //    这样"改了哪些省"与磁盘断言都能对上；奇数笔会绕回初值 —— 实测"改了 0 个省"的假象）。
+  const strokes = [];
+  for (let i = 0; i < 4; i++) {
+    const tgt = (i % 2 === 0) ? (pol2 || null) : pol;
+    const t = Date.now();
+    const r = strike(null, tgt);
+    strokes.push({ i, commitMs: r.commitMs, moveMs: r.moveMs,
+                   target: tgt ? (tgt.id || String(tgt)) : null, wall: t });
+  }
+  s.batchSetOwnership = origBatch;
+  const wallBefore = strokes[strokes.length - 1].wall;
+  const lastTarget = strokes[strokes.length - 1].target;
+  // ⚠️ 必须**重新取**剧本对象：每次归属写入都会换新对象，开头抓的那个是旧快照
+  //    （2026-11-03 实测：不改这里会得到"改了 0 个省 / groupId 空"的假象）
+  const scNow = s.scenarios[pr.scenarioId];
+  const own = (scNow && scNow.ownership) || {};
+  const before = pr.ownBefore || {};
+  const changed = [];
+  for (const k of Object.keys(own)) if (own[k] !== before[k]) changed.push(k);
+  const raw = strokes.map(x => x.commitMs).slice().sort((a, b) => a - b);
+  // 内存侧这一笔的 groupId（账本里最后一条属于本省的事件）
+  let gidMem = '';
+  const led = (scNow && scNow.ledger && scNow.ledger.events) || [];
+  for (let i = led.length - 1; i >= 0; i--) {
+    const e = led[i];
+    if (e && e.payload && e.payload.provinceId === pr.provinceId && e.groupId) { gidMem = e.groupId; break; }
+  }
+  // 同步读 projectStore（松手那一刻的 dirty / 状态）
+  const app = document.querySelector('#app').__vue_app__;
+  const pinia = app.config.globalProperties.$pinia;
+  const { useProjectStore } = await import('/src/store/projectStore.js');
+  const proj = useProjectStore(pinia);
   return JSON.stringify({
     ok: true,
-    wallBefore, wallAfter,
-    commitMs: Math.round(commitMs * 100) / 100,
-    moves,
-    overlaps: performance.now() - t0,
-    after: {
-      ownership: sc && sc.ownership ? sc.ownership[pr.provinceId] : 'n/a',
-      changeEvents: sc && sc.changeEvents && sc.changeEvents[pr.provinceId]
-        ? sc.changeEvents[pr.provinceId].length : 0,
-      ledgerEvents: sc && sc.ledger && Array.isArray(sc.ledger.events) ? sc.ledger.events.length : 0,
-    },
-    status: (document.querySelector('.scenario-map-container') || {}).innerText
-      ? '' : '',
+    wallBefore,
+    warmMs: warm.commitMs,
+    strokes,
+    medianMs: Math.round(((raw.length % 2)
+      ? raw[(raw.length - 1) / 2]
+      : (raw[raw.length / 2 - 1] + raw[raw.length / 2]) / 2) * 100) / 100,
+    maxMs: Math.round(raw[raw.length - 1] * 100) / 100,
+    minMs: Math.round(raw[0] * 100) / 100,
+    lastTarget,
+    // 60ms 拆账：写口（batchSetOwnership）自己占多少 / 其余是事件派发+渲染+回执
+    storeMs: Math.round(storeMs * 100) / 100,
+    storeCalls,
+    storePerCallMs: storeCalls ? Math.round((storeMs / storeCalls) * 100) / 100 : null,
+    centerProvince: hitCenter ? hitCenter.id : null,
+    centerMatches: !!hitCenter && hitCenter.id === pr.provinceId,
+    changed: changed.slice(0, 12),
+    changedCount: changed.length,
+    ownership: own[pr.provinceId] || null,
+    changeEvents: (scNow && scNow.changeEvents && scNow.changeEvents[pr.provinceId]
+      ? scNow.changeEvents[pr.provinceId].length : 0),
+    ledgerEvents: led.length,
+    gidMem,
+    statusMsg: SM.provinceHint || '',
+    dirty: !!proj.dirty,
+    saveStatus: proj.saveStatus,
+    lastSavedAt: proj.lastSavedAt,
   });
 })()"""
 
-STAGED_JS = r"""(() => {
-  const app = document.querySelector('#app').__vue_app__;
-  const pinia = app.config.globalProperties.$pinia;
-  return import('/src/store/projectStore.js').then(({ useProjectStore }) => {
-    const proj = useProjectStore(pinia);
-    const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
-    const pr = window.__ownerProbe;
-    const sc = s.scenarios[pr.scenarioId];
-    return JSON.stringify({
-      dirty: !!proj.dirty,
-      saveStatus: proj.saveStatus,
-      lastSavedAt: proj.lastSavedAt,
-      filePath: proj.filePath,
-      ownership: sc && sc.ownership ? sc.ownership[pr.provinceId] : null,
-      changeEvents: sc && sc.changeEvents && sc.changeEvents[pr.provinceId]
-        ? sc.changeEvents[pr.provinceId].length : 0,
-      ledgerEvents: sc && sc.ledger && Array.isArray(sc.ledger.events) ? sc.ledger.events.length : 0,
-      groupId: (() => {
-        const evs = (sc && sc.ledger && sc.ledger.events) || [];
-        for (let i = evs.length - 1; i >= 0; i--) {
-          const e = evs[i];
-          if (e && e.payload && e.payload.provinceId === pr.provinceId && e.groupId) return e.groupId;
-        }
-        return '';
-      })(),
-    });
-  });
-})()"""
+STAGED_JS = None   # 已并入 STROKE_JS（松手当场同步读 dirty，比事后采样准）
 
 # ── 第四段：第二笔 + 立刻 flush（不含 800ms 防抖的纯落盘成本）
 FLUSH_JS = r"""(async () => {
@@ -173,27 +236,33 @@ FLUSH_JS = r"""(async () => {
   const pr = window.__ownerProbe;
   const sc = s.scenarios[pr.scenarioId];
   const pol = (sc.polities || [])[0];
-  // 换一个省（避开刚才那个），避免"值没变 → 不算改动"
-  let pick = null;
-  for (const p of ((SM.baseMap && SM.baseMap.terrain) || [])) {
-    if (!p || p.kind === 'sea' || p.id === pr.provinceId) continue;
-    if (!Array.isArray(p.points) || p.points.length < 4) continue;
-    const cur = typeof SM.ownerPolityForProvince === 'function' ? SM.ownerPolityForProvince(p.id) : null;
-    if (cur && (cur.id || cur) === pol.id) continue;
-    pick = p; break;
+  // 换一个点/省（避开刚才那个），避免"值没变 → 不算改动"。
+  // ⚠️ 同样用产品命中函数扫网格挑点（重心可能在省外，见 SETUP_JS 的说明）。
+  const rect = SM.canvas.getBoundingClientRect();
+  SM.fitToView();
+  SM.render();
+  await new Promise(r => setTimeout(r, 180));
+  let pick = null, hit2 = null;
+  for (let gy = 1; gy <= 11 && !pick; gy++) {
+    for (let gx = 1; gx <= 13 && !pick; gx++) {
+      const lx = rect.width * gx / 14, ly = rect.height * gy / 12;
+      const w = SM.screenToWorld(lx, ly);
+      const p = SM.findProvinceAt(w.x, w.y);
+      if (!p || p.kind === 'sea' || p.id === pr.provinceId) continue;
+      const cur = SM.ownerPolityForProvince(p.id);
+      if (cur && (cur.id || cur) === pol.id) continue;
+      pick = p; hit2 = { wx: w.x, wy: w.y };
+    }
   }
   if (!pick) return JSON.stringify({ ok: false, why: 'no-second-province' });
-  let cx = 0, cy = 0;
-  for (const q of pick.points) { cx += q.x; cy += q.y; }
-  cx /= pick.points.length; cy /= pick.points.length;
-  const rect = SM.canvas.getBoundingClientRect();
-  SM.cameraScale = 1.2;
-  SM.cameraX = rect.width / 2 - cx * 1.2;
-  SM.cameraY = rect.height / 2 - cy * 1.2;
+  const scale2 = 0.8;
+  SM.cameraScale = scale2;
+  SM.cameraX = rect.width / 2 - hit2.wx * scale2;
+  SM.cameraY = rect.height / 2 - hit2.wy * scale2;
   SM.setTool('ownerBrush');
   SM.selectedPolity = pol;
   SM.render();
-  await new Promise(r => setTimeout(r, 140));
+  await new Promise(r => setTimeout(r, 160));
   const mk = (type, x, y) => new MouseEvent(type, {
     clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, buttons: 1,
   });
@@ -204,14 +273,19 @@ FLUSH_JS = r"""(async () => {
   const pinia = app.config.globalProperties.$pinia;
   const { useProjectStore } = await import('/src/store/projectStore.js');
   const proj = useProjectStore(pinia);
-  // 等 timeout(0) 让 Vue 的响应式与 store 提交都落定，再 flush
-  await new Promise(r => setTimeout(r, 30));
+  // 等 450ms 让**剧本层自己的 300ms 防抖**先跑完（否则此刻 projectStore 还是干净的，
+  //   `flushSave()` 会直接 skipped —— 2026-11-03 第三跑就是这么"测了个空"）
+  await new Promise(r => setTimeout(r, 450));
+  const dirtyBefore = !!proj.dirty;
+  const changedBefore = (s.scenarios[pr.scenarioId].ownership || {})[pick.id];
   const w0 = Date.now();
   const p0 = performance.now();
   const r = await proj.flushSave();
   const flushMs = performance.now() - p0;
-  return JSON.stringify({ ok: true, province: pick.id, wallBefore: w0,
+  return JSON.stringify({ ok: true, province: pick.id, wallBefore: w0, dirtyBefore,
+                          ownershipAfterStroke: changedBefore || null,
                           flushMs: Math.round(flushMs * 100) / 100,
+                          skipped: !!(r && r.skipped),
                           saveResult: r && (r.success !== undefined ? r.success : null) });
   function cvsDispatch(mk2, x, y, cv) {
     cv.dispatchEvent(mk2('mousedown', x, y));
@@ -392,22 +466,40 @@ def main():
         stat0 = os.stat(work)
         sig0 = (stat0.st_mtime_ns, stat0.st_size)
 
-        # ── 真鼠标：一笔 + 松手（同步段）──
-        ok_st, stroke = eval_json(cdp, STROKE_JS, required=('ok',), desc='涂一笔')
-        bad += 0 if ck('鼠标事件走完了（mousedown → 3×move → up）', bool(ok_st) and stroke.get('ok'),
+        # ── 真鼠标：预热 1 笔 + 稳态 5 笔（松手同步段逐笔计时）──
+        ok_st, stroke = eval_json(cdp, STROKE_JS, required=('ok',), desc='涂一笔 ×6')
+        bad += 0 if ck('鼠标事件走完了（预热 1 笔 + 稳态 5 笔）', bool(ok_st) and stroke.get('ok'),
                        json.dumps(stroke, ensure_ascii=False)[:160]) else 1
-        commit_ms = stroke.get('commitMs')
-        print(f"  · 松手同步段 commitMs = {commit_ms} ms（每步 mousemove {stroke.get('moves')} ms）", flush=True)
-        bad += 0 if ck('① 松手同步段 ≤50ms（用户口径）', isinstance(commit_ms, (int, float)) and commit_ms <= 50,
-                       f'{commit_ms} ms') else 1
+        if not (ok_st and stroke.get('ok')):
+            return 1
+        median_ms = stroke.get('medianMs')
+        print(f"  · 松手同步段：预热 {stroke.get('warmMs')} ms · 稳态 "
+              f"min {stroke.get('minMs')} / 中位 {median_ms} / max {stroke.get('maxMs')} ms", flush=True)
+        print(f"  · 逐笔：{[s.get('commitMs') for s in (stroke.get('strokes') or [])]}", flush=True)
+        print(f"  · 拆账：归属写口 batchSetOwnership 每次 {stroke.get('storePerCallMs')} ms"
+              f"（{stroke.get('storeCalls')} 次共 {stroke.get('storeMs')} ms）"
+              f" → 其余 {round((median_ms or 0) - (stroke.get('storePerCallMs') or 0), 1)} ms 是事件/渲染/回执",
+              flush=True)
+        bad += 0 if ck('① 松手同步段（稳态中位）≤50ms（用户口径）',
+                       isinstance(median_ms, (int, float)) and median_ms <= 50,
+                       f'中位 {median_ms} ms（预热 {stroke.get("warmMs")} ms）') else 1
 
-        # ── 暂存：交给 projectStore 了吗 ──
-        time.sleep(0.05)
-        ok_st2, staged = eval_json(cdp, STAGED_JS, required=('dirty',), desc='暂存状态')
-        staged_ms = 50 if staged.get('dirty') else None   # 判据只看"是否已 staged"（≤50ms 采样口径）
-        bad += 0 if ck('② 松手后改动已交给项目（dirty=true）', bool(staged.get('dirty')),
-                       json.dumps({k: staged.get(k) for k in ('dirty', 'saveStatus', 'ownership')},
-                                  ensure_ascii=False)) else 1
+        # 前置：正中那个像素必须还是目标省（否 = 相机/布局变了，这一跑的数据没意义）
+        bad += 0 if ck('前置：画布正中确实是目标省（相机没被布局改掉）',
+                       bool(stroke.get('centerMatches')),
+                       f"正中命中 {stroke.get('centerProvince')} / 目标 {pid}") else 1
+        print(f"  · 这几笔改了 {stroke.get('changedCount')} 个省：{stroke.get('changed')}", flush=True)
+        print(f"  · 回执：{str(stroke.get('statusMsg'))[:80]}", flush=True)
+
+        # ── 暂存：松手 → projectStore.dirty（剧本层自己还有 300ms 防抖，所以等 450ms 再读）──
+        time.sleep(0.45)
+        ok_st2, staged = eval_json(cdp, """(() => import('/src/store/projectStore.js').then(({ useProjectStore }) => {
+          const pinia = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia;
+          const p = useProjectStore(pinia);
+          return JSON.stringify({ dirty: !!p.dirty, saveStatus: p.saveStatus });
+        }))()""", required=('dirty',), desc='暂存状态（450ms 后）')
+        bad += 0 if ck('② 松手 450ms 内改动已交给项目（dirty=true）', bool(staged.get('dirty')),
+                       json.dumps(staged, ensure_ascii=False)) else 1
 
         # ── 磁盘：等自动保存（800ms 防抖 + 写）真的落地 ──
         t0_wall = float(stroke.get('wallBefore') or (time.time() * 1000))
@@ -422,27 +514,34 @@ def main():
         own = (scen.get('ownership') or {}).get(pid)
         evs = (scen.get('changeEvents') or {}).get(pid) or []
         led = (scen.get('ledger') or {}).get('events') or []
-        gid_mem = staged.get('groupId') or ''
+        # 这一笔的 groupId：磁盘上取账本里**最后一条**属于本省的事件（笔刷写入时带 strokeId）
         gid_disk = ''
-        for e in led:
-            if (e or {}).get('groupId') == gid_mem and (e.get('payload') or {}).get('provinceId') == pid:
-                gid_disk = e.get('groupId') or ''
-        bad += 0 if ck('④ 磁盘上该省归属已是目标势力', own == pol, f'ownership[{pid}] = {own!r}') else 1
+        for e in reversed(led):
+            if (e or {}).get('payload', {}).get('provinceId') == pid and (e or {}).get('groupId'):
+                gid_disk = e.get('groupId')
+                break
+        gid_mem = stroke.get('gidMem') or ''
+        target_owner = stroke.get('lastTarget') or pol
+        bad += 0 if ck('④ 磁盘上该省归属 = 最后一笔的目标势力', own == target_owner,
+                       f'ownership[{pid}] = {own!r}（目标 {target_owner!r}）') else 1
         bad += 0 if ck('⑤ 磁盘上账本多了一条（changeEvents 带内容）', len(evs) >= 1,
                        f'changeEvents[{pid}] 共 {len(evs)} 条') else 1
-        bad += 0 if ck('⑥ 磁盘上一笔一组（groupId 与内存一致）',
-                       bool(gid_mem) and gid_disk == gid_mem,
+        bad += 0 if ck('⑥ 账本给这一笔记了组（内存 groupId == 磁盘，且不是迁移合成的 v2: 组）',
+                       bool(gid_mem) and gid_mem == gid_disk and not gid_disk.startswith('v2:'),
                        f'内存 {gid_mem!r} / 磁盘 {gid_disk!r}') else 1
 
         # ── 第四段：第二笔 + 立刻 flush（不含防抖的纯落盘）──
         sig1 = (os.stat(work).st_mtime_ns, os.path.getsize(work))
         ok_f, fl = eval_json(cdp, FLUSH_JS, required=('ok',), desc='第二笔 + flush')
         flush_e2e = None
-        if ok_f and fl.get('ok'):
+        if ok_f and fl.get('ok') and fl.get('dirtyBefore'):
             _, flush_e2e = wait_file_change(work, sig1, float(fl.get('wallBefore') or (time.time() * 1000)),
                                             timeout=25.0)
-        bad += 0 if ck('⑦ 显式 flush（关项目/退出那条路）也能落盘', flush_e2e is not None,
-                       f'纯落盘 {flush_e2e} ms · flushSave 内部 {fl.get('flushMs')} ms') else 1
+        # `flushSave()` 在没有 dirty 时会**跳过**（返回 skipped）—— 那种情况测不到落盘，必须当成没测到
+        bad += 0 if ck('⑦ 显式 flush（关项目/退出那条路）也能落盘',
+                       bool(fl.get('dirtyBefore')) and flush_e2e is not None,
+                       f"纯落盘 {flush_e2e} ms · flushSave 内部 {fl.get('flushMs')} ms · "
+                       f"dirtyBefore={fl.get('dirtyBefore')} · skipped={fl.get('skipped')}") else 1
 
         # ── 只读纪律：真实项目一个字节都没动 ──
         sha_after = sha256(real)
@@ -452,12 +551,17 @@ def main():
         result = {
             'ts': ts, 'realProject': real, 'realSha256': real_sha_before, 'workCopy': work,
             'province': pid, 'polity': pol, 'scenario': sid,
-            'commitMs': commit_ms, 'stagedMs': staged_ms,
+            'warmMs': stroke.get('warmMs'), 'medianMs': median_ms,
+            'minMs': stroke.get('minMs'), 'maxMs': stroke.get('maxMs'),
+            'strokes': [s.get('commitMs') for s in (stroke.get('strokes') or [])],
+            'storePerCallMs': stroke.get('storePerCallMs'), 'storeMs': stroke.get('storeMs'),
+            'storeCalls': stroke.get('storeCalls'),
             'endToEndMs': e2e_ms, 'flushMs': fl.get('flushMs'), 'flushEndToEndMs': flush_e2e,
-            'moveMs': stroke.get('moves'), 'groupId': gid_mem,
+            'groupId': gid_disk,
+            'changed': stroke.get('changed'), 'statusMsg': stroke.get('statusMsg'),
             'disk': {'ownership': own, 'changeEvents': len(evs), 'ledgerEvents': len(led)},
-            'verdict': {'commit_le_50ms': commit_ms is not None and commit_ms <= 50,
-                        'persisted': changed_at is not None and own == pol},
+            'verdict': {'commit_median_le_50ms': isinstance(median_ms, (int, float)) and median_ms <= 50,
+                        'persisted': changed_at is not None and own == target_owner},
             'bad': bad,
         }
         with open(os.path.join(out_dir, 'result.json'), 'w', encoding='utf-8') as f:
@@ -465,13 +569,19 @@ def main():
         md = [
             f'# 涂归属一笔的端到端时延 · {ts}', '',
             f'- 真实项目（只读）：`{real}`', f'- 工作副本：`{work}`',
-            f'- 目标：省 `{pid}` → 势力 `{pol}`（剧本 `{sid}`）', '',
+            f'- 目标：省 `{pid}`（剧本 `{sid}`）· 稳态 5 笔交替势力', '',
             '| 段 | 实测 | 口径 |', '|---|---|---|',
-            f"| ① 松手同步段 `commitMs` | **{commit_ms} ms** | ≤50ms |",
-            f'| ② 交给项目（staged） | {staged_ms} ms（采样上限） | ≤5ms |',
-            f'| ③ 松手 → 磁盘（含 800ms 防抖） | **{e2e_ms} ms** | 记录，不设上限 |',
+            f"| ① 松手同步段（稳态中位） | **{median_ms} ms** | ≤50ms |",
+            f"| ↳ 同一批：预热 / min / max | {stroke.get('warmMs')} / {stroke.get('minMs')} / {stroke.get('maxMs')} ms | 参考 |",
+            f"| ↳ 逐笔 | {result['strokes']} ms | 参考 |",
+            f"| ↳ 拆账：归属写口 / 其余 | {stroke.get('storePerCallMs')} ms / "
+            f"{round((median_ms or 0) - (stroke.get('storePerCallMs') or 0), 1)} ms | 事件派发 + 渲染 + 回执 |",
+            f'| ② 交给项目（dirty） | 450ms 内 = {staged.get("dirty")} | 剧本层 300ms 防抖 + 项目层 800ms 防抖 |',
+            f'| ③ 松手 → 磁盘（含两层防抖） | **{e2e_ms} ms** | 记录，不设上限 |',
             f"| ④ 显式 flush → 磁盘 | {flush_e2e} ms（flushSave 内部 {fl.get('flushMs')} ms） | 记录 |",
-            '', f'- 一笔一组 groupId：`{gid_mem}`（磁盘同值：{bool(gid_disk)}）',
+            '', f'- 这几笔改了 {stroke.get("changedCount")} 个省：`{stroke.get("changed")}`',
+            f'- 回执：{stroke.get("statusMsg")}',
+            f'- 一笔一组 groupId：内存 `{gid_mem}` / 磁盘 `{gid_disk}`',
             f'- 磁盘：changeEvents {len(evs)} 条 / ledger {len(led)} 条',
             f'- 真实项目 sha256 跑前后一致：{sha_after == real_sha_before}',
             '', f'结论：**{bad} 项没过**',

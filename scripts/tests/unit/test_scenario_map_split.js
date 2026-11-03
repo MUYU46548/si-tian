@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：ScenarioMap 的「体量 + 浮层落点」判据（2026-11-03，N1.6）
+ * Node 单元测试：ScenarioMap 的“体量 + 浮层落点”判据（2026-11-03，N1.6）
  *
  * 为什么要这个文件：
  *   ① ScenarioMap.vue 之前 8,554 行 —— 判据（PLAN_AUDIT 第 4 条）是 ≤8,500，只差 54 行，
@@ -8,7 +8,7 @@
  *      `scenario-map.css`（`<style scoped src>` 仍然加同一个 scope 属性，选择器语义不变），
  *      SFC 降到 6,914 行。这条用例把"不许再涨回去"钉住（阈值给到 7,000，留 86 行余量）。
  *   ② 2026-11-03 的真 bug：六个浮层（外交 / 地形参数 / FMG / 造陆 / 地形注记 / 派生）
- *      被写进「更多」下拉的 `v-if="moreOpen"` 子树 —— 下拉一关，`v-if="xxxOpen"` 那个节点
+ *      被写进“更多”下拉的 `v-if="moreOpen"` 子树 —— 下拉一关，`v-if="xxxOpen"` 那个节点
  *      连存在都不存在，表现是"点了没反应"。当时只靠 `drill_diplomacy_overlay.py` 在真机上抓。
  *      本用例用 `@vue/compiler-sfc` 打**模板 AST 的祖先链**，把这条做成秒级源码闸门。
  *
@@ -140,13 +140,13 @@ function main() {
 
     const missing = WRAPS.filter(([w]) => !chains.has(w)).map(([w, n]) => `${w}(${n})`);
     assert(!missing.length, `模板里找不到这些浮层包装节点：${missing.join(', ')}`);
-    assert(hasMoreOpenGate, '模板里找不到 v-if="moreOpen" 的「更多」下拉 —— 这条判据会永远通过（空转）');
+    assert(hasMoreOpenGate, '模板里找不到 v-if="moreOpen" 的“更多”下拉 —— 这条判据会永远通过（空转）');
 
     const bad = [];
     for (const [w, chain] of chains) {
       if (chain.length) bad.push(`${w} 仍嵌在 ${chain.join(' > ')} 里`);
     }
-    assert(!bad.length, `浮层又被塞回「更多」下拉（下拉一关它就整个消失 = 点了没反应）：${bad.join('；')}`);
+    assert(!bad.length, `浮层又被塞回“更多”下拉（下拉一关它就整个消失 = 点了没反应）：${bad.join('；')}`);
     return `6 个浮层都在容器直接子节点下`;
   });
 
@@ -177,7 +177,7 @@ function main() {
     return '2 条入口';
   });
 
-  // 2026-11-03 实地发现：修 ①② 时把「地形注记」的整块 Teleport **复制**了一份（两个都 v-if 同一状态）
+  // 2026-11-03 实地发现：修 ①② 时把“地形注记”的整块 Teleport **复制**了一份（两个都 v-if 同一状态）
   //   → 面板一开就是两个一模一样的面板精确重叠；`querySelector` 只看得到第一个，所以旧的 DOM 用例全绿。
   check('m6 六个浮层包装节点在模板里**恰好各一次**（重复 = 两块面板精确重叠）', () => {
     const { counts } = scanTemplate(ast);
