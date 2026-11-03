@@ -133,6 +133,71 @@ async function main() {
     return 'ok';
   });
 
+  check('b3 形态自动切换：≤6 仍是环 / 7 盘 / ≥8 螺旋；传 shape 可强制覆盖', () => {
+    const want = { 1: 'ring', 2: 'ring', 3: 'ring', 4: 'ring', 6: 'ring', 7: 'disc', 8: 'spiral', 12: 'spiral', 40: 'spiral' };
+    for (const [n, shape] of Object.entries(want)) {
+      const got = G.autoDomainShape(Number(n));
+      assert(got === shape, `n=${n} 应为 ${shape}，实测 ${got}`);
+    }
+    const three = (opts) => G.layoutDomains([dom('a'), dom('b'), dom('c')], opts).map(p => [Math.round(p.x), Math.round(p.y)]);
+    const ring = JSON.stringify(three({ shape: 'ring' }));
+    const spiral = JSON.stringify(three({ shape: 'spiral' }));
+    assert(ring !== spiral, 'shape 参数没生效（强制 spiral 与 ring 结果一样）');
+    // 缺省：≤6 个星域仍走环（半径 630）—— 小数量时"盘"会退化成一条线（实测出图）
+    const d3 = G.layoutDomains([dom('a'), dom('b'), dom('c')], {});
+    for (const p of d3) {
+      const r = Math.hypot(p.x, p.y);
+      assert(Math.abs(r - 630) < 1e-6, `3 个星域应落在半径 630 的环上，实测 ${r}`);
+    }
+    // 环在 n=7 时会挤（相邻中心只剩 546 < 700）→ 必须切走
+    const ring7 = G.layoutDomains(Array.from({ length: 7 }, (_, i) => dom('r' + i)), { shape: 'ring' });
+    const adj7 = 2 * 630 * Math.sin(Math.PI / 7);
+    assert(adj7 < 700, `n=7 环上相邻间距 ${adj7.toFixed(0)} 应小于 700（这是"必须切盘"的理由）`);
+    assert(ring7.length === 7, 'ring 强制应仍可用');
+    return 'ok';
+  });
+
+  check('b4 盘布局（n=7）：任意两星域中心 ≥ minDomainGap（领土不互相压）+ 同 seed 确定性', () => {
+    const ds = Array.from({ length: 7 }, (_, i) => dom('d' + i));
+    const out = G.layoutDomains(ds, {});
+    const gap = G.GALAXY_LAYOUT.minDomainGap;
+    assert(gap >= 700, `minDomainGap 应 >= 700（星域半径 350 的两倍），实测 ${gap}`);
+    let min = Infinity;
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        min = Math.min(min, Math.hypot(out[i].x - out[j].x, out[i].y - out[j].y));
+      }
+    }
+    assert(min >= gap - 1, `两星域中心最近 ${min.toFixed(1)}，小于 ${gap}（领土会压在一起）`);
+    // 再跑一次必须逐点一致（布局不许抖）
+    const again = G.layoutDomains(ds.map(d => ({ ...d })), {});
+    assert(JSON.stringify(again.map(p => [p.x, p.y])) === JSON.stringify(out.map(p => [p.x, p.y])), '布局不确定');
+    // 7 个星域不再是一条等半径环（半径全等 = 环）
+    const radii = out.map(p => Math.hypot(p.x, p.y));
+    assert(new Set(radii.map(r => Math.round(r))).size > 1, '7 个星域仍是等半径环 —— 形态没切');
+    return `n=7 最近 ${min.toFixed(1)}（阈值 ${gap}）`;
+  });
+
+  check('b5 螺旋布局：≥8 个星域时径向铺开（不是挤成一圈）+ 中心间距仍达标', () => {
+    const n = 12;
+    const ds = Array.from({ length: n }, (_, i) => dom('d' + i));
+    const out = G.layoutDomains(ds, {});
+    const gap = G.GALAXY_LAYOUT.minDomainGap;
+    let min = Infinity;
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        min = Math.min(min, Math.hypot(out[i].x - out[j].x, out[i].y - out[j].y));
+      }
+    }
+    assert(min >= gap - 1, `n=12 两中心最近 ${min.toFixed(1)}，小于 ${gap}`);
+    const radii = out.map(p => Math.hypot(p.x, p.y));
+    const rMin = Math.min(...radii), rMax = Math.max(...radii);
+    // 环的判据是"半径全等"；螺旋必须内外都有（实测 12 个星域 rMax/rMin ≈ 5）
+    assert(rMax / Math.max(rMin, 1) >= 2, `n=12 半径比只有 ${(rMax / Math.max(rMin, 1)).toFixed(2)} —— 还是挤成一圈`);
+    for (const p of out) assert(Number.isFinite(p.x) && Number.isFinite(p.y), '坐标出现非有限数');
+    return `n=12 最近 ${min.toFixed(1)} / 半径 ${rMin.toFixed(0)}~${rMax.toFixed(0)}`;
+  });
+
   check('d1 边界：星系数 < 3 也必须有边界（导出原先直接 continue → 星域凭空消失）', () => {
     const domains = G.layoutDomains([dom('a'), dom('b')], {});
     const galaxies = G.layoutGalaxies([gal('g1', 'a'), gal('g2', 'a'), gal('g3', 'b')], domains, {});

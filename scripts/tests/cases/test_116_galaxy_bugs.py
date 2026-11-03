@@ -523,7 +523,20 @@ def run(cdp):
   if (coord && dn.x === coord.x && dn.y === coord.y) {
     fails.push(`初始布局用了遗留 coordinate (${coord.x},${coord.y}) —— 老项目会一次性全部错位`);
   }
-  if (Math.abs(ringR - 630) > 60) fails.push(`星域没落在环形布局上（到原点 ${ringR.toFixed(0)}，期望 ≈630）`);
+  // ⚠️ 2026-11-03 改口径：默认形态按星域数自动切（本 fixture 8 个星域 → spiral），不再"恒定为半径 630 的环"。
+  //    守的东西不变、而且更强：布局必须真的把星域排开 —— 任意两中心 >= 760（星域半径 350 的两倍多），
+  //    否则领土会互相压（旧环形在 n=8 时相邻只剩 482，本来就在压）。
+  const minGap = 760;
+  let closest = Infinity;
+  for (let i = 0; i < st.domainNodes.length; i++) {
+    for (let j = i + 1; j < st.domainNodes.length; j++) {
+      const p = st.domainNodes[i], q = st.domainNodes[j];
+      closest = Math.min(closest, Math.hypot(p.x - q.x, p.y - q.y));
+    }
+  }
+  if (st.domainNodes.length > 1 && closest < minGap - 1) {
+    fails.push(`星域中心最近 ${closest.toFixed(1)} < ${minGap} —— 领土会互相压（布局没排开）`);
+  }
 
   // ② 移动工具拖星域 → 写 coordinate + userMoved
   const btn = document.querySelector('[data-testid="galaxy-move-tool"]');
@@ -601,19 +614,20 @@ def run(cdp):
   st.applyStableLayout();
   await tick();
   const dnUndo = st.domainNodes.find(d => d.id === dn.id);
-  const ringBack = Math.hypot(dnUndo.x, dnUndo.y);
-  if (Math.abs(ringBack - 630) > 60) {
-    fails.push(`撤销后重排没回到环形布局（到原点 ${ringBack.toFixed(0)}，期望 ≈630）`);
+  // 撤销后必须回到**拖动前的那次布局位置**（userMoved 还原为假 → 按星域数重算）。
+  // 原先这里断言"回到半径 630 的环"；2026-11-03 布局改为按星域数自动选形态后，环不再是唯一答案。
+  if (Math.hypot(dnUndo.x - x0, dnUndo.y - y0) > 1) {
+    fails.push(`撤销后重排没回到拖动前的布局位置（${dnUndo.x.toFixed(1)},${dnUndo.y.toFixed(1)} vs ${x0.toFixed(1)},${y0.toFixed(1)}）`);
   }
   // 收尾：工具切回拖手（后续段假定默认）
   const panBtn = Array.from(el.querySelectorAll('button')).find(b => (b.textContent || '').trim() === '拖手');
   if (panBtn) panBtn.click();
   await tick();
-  return { fails, ringR, dx, dy, wantX, wantY, galDx, galDiag, ringBack, userMoved: !!nodeAfter.userMoved, coordBefore: coord };
+  return { fails, ringR, closest, dx, dy, wantX, wantY, galDx, galDiag, userMoved: !!nodeAfter.userMoved, coordBefore: coord };
 """, 'f5 星域')
     if r5.get('fails'):
         fails += [f'[f5 星域持久化] {x}' for x in r5['fails']]
-    notes.append(f"f5 星域：环形 |pos|={r5.get('ringR') and round(r5['ringR'])} / 拖动 Δ=({r5.get('dx') and round(r5['dx'],1)},{r5.get('dy') and round(r5['dy'],1)}) 期望 ({round(r5.get('wantX') or 0,1)},{round(r5.get('wantY') or 0,1)}) / 恒星 Δx={r5.get('galDx') and round(r5['galDx'],1)} / userMoved={r5.get('userMoved')} / 撤销后 |pos|={r5.get('ringBack') and round(r5['ringBack'])}")
+    notes.append(f"f5 星域：初始 |pos|={r5.get('ringR') and round(r5['ringR'])} / 中心最近={r5.get('closest') and round(r5['closest'],1)}（阈值 760） / 拖动 Δ=({r5.get('dx') and round(r5['dx'],1)},{r5.get('dy') and round(r5['dy'],1)}) 期望 ({round(r5.get('wantX') or 0,1)},{round(r5.get('wantY') or 0,1)}) / 恒星 Δx={r5.get('galDx') and round(r5['galDx'],1)} / userMoved={r5.get('userMoved')}")
 
     # ══════════════════════════════════════════════════════════════════════
     # f6 faction 写入路径：图例填势力名 → 落库 + 配色真的变了 + 一次 undo 复原

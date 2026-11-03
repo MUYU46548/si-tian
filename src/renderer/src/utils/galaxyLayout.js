@@ -76,8 +76,13 @@ export const GALAXY_LAYOUT = {
   circleSegments: 12,       // 星系数 < 3 时的多边形边数
   minHullPoints: 3,
   fieldSalt: 20261102,      // 所有权场波浪的固定盐（同项目同项目、换项目换形状，且可复现）
-  domainShape: 'ring',      // 星域排布形态：ring（旧）/ disc / spiral（抄群星，见 layoutDomains 注释）
+  domainShape: '',          // 星域排布形态：'' = 按星域数自动切（见 autoDomainShape）；ring / disc / spiral 可强制
   domainSeed: 20261102,     // 形态采样种子（同项目恒定）
+  minDomainGap: 760,        // 任意两个星域中心的**最小间距**（与生成器 toSiTianEntities 同量级：
+                            //   星域半径 350 + claim 余量，低于这个数领土就会出现"一块压着另一块"）
+  discMinCount: 7,          // ≥7 个星域才摆"盘"：环上相邻间距 = 2·630·sin(π/n)，n=7 时只剩 546，
+                            //   小于两倍星域半径（700）→ 圆已经开始压；小数量时环反而更舒展（实测出图）
+  spiralMinCount: 8,        // ≥8 个星域才读得出螺旋臂（4 个时螺旋退化成一横排）
 };
 
 /** 凸包（Graham Scan，**唯一实现**：`App.vue` 的 `convexHullForExport` 已删） */
@@ -126,19 +131,34 @@ export function expandHull(hull, pad = GALAXY_LAYOUT.hullPad) {
  *
  * 2026-11-02（抄群星）：新增 `shape` —— 群星的银河是**盘/螺旋臂/环带**，我们一直是"环"。
  * 形态采样直接移植原型 `core/generator.ts#sampleShape`（同一套公式：disc 用 u^1.4 的核密度梯度、
- * spiral 用对数螺线 + 高斯抖动、ring 用 0.52~1 的环带）。默认仍是 `ring`（等价于旧布局，
- * 不动既有项目与用例）；要看效果用 `window.__SITIAN_DOMAIN_SHAPE__` 或传 `shape`。
+ * spiral 用对数螺线 + 高斯抖动、ring 用 0.52~1 的环带）。
+ *
+ * 2026-11-03（用户"其他继续做"）：**默认不再恒定是环**，按星域数自动切（`autoDomainShape`）：
+ *   · ≤6 → ring（小数量时环最舒展；3 个点摆盘会退化成一条线，实测出图见 build/domain-layout/preview.png）；
+ *   · 7 → disc —— 环在 n=7 时相邻中心只剩 546 < 700（两倍星域半径），圆开始互相压，必须换布局；
+ *   · ≥8 → spiral（3 条对数螺线臂）—— 实测 4 个星域时螺旋退化成一横排，所以门槛是 8。
+ * 采样完再按 `minDomainGap`（760）把整组中心拉开：星与星的相对形状基本不变，只把整团撑开，
+ * 保证领土不互相压（与生成器 `toSiTianEntities` 同一条判据）。
+ * `window.__SITIAN_DOMAIN_SHAPE__` 与 `opts.shape` 仍可强制覆盖（调形态用）。
  * @param {Array} domains
  * @param {{draggingId?:string, overrides?:object, shape?:'ring'|'disc'|'spiral', seed?:number}} [opts]
  */
 export function layoutDomains(domains, opts = {}) {
   const list = Array.isArray(domains) ? domains : [];
   const count = list.length;
-  const radius = count > 1 ? GALAXY_LAYOUT.domainSpacing * GALAXY_LAYOUT.ringFactor : 0;
+  // 环半径：默认 630；但 n≥5 时 630 上的相邻间距已经不够（n=6 只剩 630 < 700），
+  // 按"相邻中心 ≥ minDomainGap"反解半径，保证环上也不压（n≤4 反解值 < 630，仍取 630）。
+  const ringRadius = count > 1
+    ? Math.max(
+      GALAXY_LAYOUT.domainSpacing * GALAXY_LAYOUT.ringFactor,
+      GALAXY_LAYOUT.minDomainGap / (2 * Math.sin(Math.PI / count)),
+    )
+    : 0;
+  const radius = ringRadius;
   const shape = opts.shape
     || (typeof window !== 'undefined' && window.__SITIAN_DOMAIN_SHAPE__)
     || GALAXY_LAYOUT.domainShape
-    || 'ring';
+    || autoDomainShape(count);
   // 盘/螺旋：先按形态采样出一组**互不重叠**的中心点（确定性），再按 id 顺序分配
   let placed = null;
   if (shape !== 'ring' && count > 1) {
@@ -197,32 +217,115 @@ export function sampleDomainShape(shape, rx, ry, rnd, arms = 3) {
   return { x: Math.cos(ang0) * rr * rx, y: Math.sin(ang0) * rr * ry };
 }
 
-/** 在形态上撒 count 个互不重叠的星域中心（最小间距 = 星域半径 × 1.5，留出航道空间） */
+/**
+ * 按星域数自动选形态（**唯一实现**：`layoutDomains` 与用例都走这里，别各写一套门槛）。
+ * ≤6 → ring（小数量时环最舒展）｜7 → disc｜≥8 → spiral（4 个星域时螺旋退化成一横排，实测）。
+ */
+export function autoDomainShape(count) {
+  const n = Math.max(0, Number(count) || 0);
+  if (n >= GALAXY_LAYOUT.spiralMinCount) return 'spiral';
+  if (n >= GALAXY_LAYOUT.discMinCount) return 'disc';
+  return 'ring';
+}
+
+/** 一组点的最小两两距离（判定"领土会不会互相压"用） */
+function minPairDistance(points) {
+  let min = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const d = Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y);
+      if (d < min) min = d;
+    }
+  }
+  return min;
+}
+
+/**
+ * 把一组中心点彼此推开，直到任意两点 ≥ `minGap`。
+ * 为什么不能只靠"等比放大"：采样兜底点可能与已有点几乎重合，等比放大会把整团吹到天边（实测 n=10 时
+ * 半径从 ~1,200 炸到 ~34,000）。所以先用确定性的**两两松弛**把压在一起的点推开，形状只微调。
+ */
+function relaxCenters(points, minGap, iters = 80) {
+  const pts = (points || []).map(p => ({ x: p.x, y: p.y }));
+  for (let it = 0; it < iters; it++) {
+    let moved = false;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        let dx = pts[j].x - pts[i].x;
+        let dy = pts[j].y - pts[i].y;
+        let d = Math.hypot(dx, dy);
+        if (d >= minGap) continue;
+        if (d < 1e-6) {
+          // 完全重合：按 (i,j) 给一个确定方向推开（不许用 Math.random，布局必须可复现）
+          const a = i * 2.399963 + j * 1.618034;
+          dx = Math.cos(a); dy = Math.sin(a);
+        } else {
+          dx /= d; dy /= d;
+        }
+        const push = (minGap - d) / 2 + 0.5;
+        pts[i].x -= dx * push; pts[i].y -= dy * push;
+        pts[j].x += dx * push; pts[j].y += dy * push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return pts;
+}
+
+/**
+ * 把一组中心点拉开到任意两点 ≥ `minGap`：**先两两松弛，再以质心等比放大补足**。
+ * 星与星之间的相对形状基本不变（盘的"近核密、边缘疏"不会被破坏）。
+ * 布局坐标不落盘（只有 `userMoved` 才落），放大不会改用户数据。
+ */
+export function expandCentersToGap(points, minGap = GALAXY_LAYOUT.minDomainGap) {
+  const pts = relaxCenters(points, minGap);
+  if (pts.length < 2 || !(minGap > 0)) return pts;
+  let cx = 0, cy = 0;
+  for (const p of pts) { cx += p.x; cy += p.y; }
+  cx /= pts.length; cy /= pts.length;
+  // 残余压紧（松弛没到位）：放大倍率封顶 1.6，最多 4 轮 —— 宁可略近一点也不炸到天边
+  for (let iter = 0; iter < 4; iter++) {
+    const min = minPairDistance(pts);
+    if (min >= minGap) break;
+    const k = Math.min(1.6, (minGap / Math.max(min, 1e-6)) * 1.002);
+    for (const p of pts) {
+      p.x = cx + (p.x - cx) * k;
+      p.y = cy + (p.y - cy) * k;
+    }
+  }
+  return pts;
+}
+
+/** 在形态上撒 count 个互不重叠的星域中心（先按采样间距散开，再整体放大到 `minDomainGap`） */
 export function sampleDomainCenters(count, shape, seed, radius) {
   const rnd = _rng(seed >>> 0);
-  const rx = radius;
-  const ry = radius * 0.74;          // 椭圆盘：群星的银河是扁的
-  const minGap = GALAXY_LAYOUT.domainRadius * 1.5;
+  // 星域一多，630 的采样盘装不下（拒采 400 次也放不进 → 全掉进环形兜底，螺旋就白采了）。
+  // 采样盘按 √n 放大：形态不变、点够散，最后再统一放大到 minDomainGap。
+  const fieldScale = Math.max(1, Math.sqrt(Math.max(count, 1) / 3));
+  const rx = radius * fieldScale;
+  const ry = radius * 0.74 * fieldScale;    // 椭圆盘：群星的银河是扁的
+  const sampleGap = GALAXY_LAYOUT.minDomainGap * 0.65;
   const arms = 3;
   const out = [];
   for (let i = 0; i < count; i++) {
     let best = null;
-    for (let attempt = 0; attempt < 400; attempt++) {
+    for (let attempt = 0; attempt < 800; attempt++) {
       const p = sampleDomainShape(shape, rx, ry, rnd, arms);
       let ok = true;
       for (const q of out) {
-        if (Math.hypot(q.x - p.x, q.y - p.y) < minGap) { ok = false; break; }
+        if (Math.hypot(q.x - p.x, q.y - p.y) < sampleGap) { ok = false; break; }
       }
       if (ok) { best = p; break; }
     }
     // 兜底：按环摆（保证一定放得下，不产生 NaN / 重叠堆在一起）
     if (!best) {
       const a = (i / Math.max(count, 1)) * Math.PI * 2 - Math.PI / 2;
-      best = { x: Math.cos(a) * radius, y: Math.sin(a) * radius * 0.74 };
+      best = { x: Math.cos(a) * rx, y: Math.sin(a) * ry };
     }
     out.push(best);
   }
-  return out;
+  return expandCentersToGap(out, GALAXY_LAYOUT.minDomainGap);
 }
 
 /**
