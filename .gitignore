@@ -147,3 +147,4 @@ build/galaxy-shape/
 build/domain-layout/
 build/scenario-relief/
 build/galaxy-lanes/
+build/perf-*.json
