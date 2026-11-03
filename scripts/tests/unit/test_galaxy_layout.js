@@ -307,6 +307,9 @@ async function main() {
     const gm = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'components', 'GalaxyMap.vue'), 'utf8');
     assert(/if \(!lanesVisibleAt\(lod/.test(gm), 'GalaxyMap 没接 lanesVisibleAt（画与命中会分家）');
     assert(/2\.2 \* px/.test(gm), 'GalaxyMap 没有航道端点圆点（2.2px）');
+    // 导出侧（App.vue）必须也有同一笔 —— 否则"导出比画布少一层"
+    const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'App.vue'), 'utf8');
+    assert(/2\.2 \* uiScale/.test(app), 'App.vue 导出没有航道端点圆点（2.2 * uiScale）');
     return `门槛 lod=${G.LANE_FAR_LOD}`;
   });
 

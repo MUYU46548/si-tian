@@ -62,11 +62,12 @@
   `--tag after` 再拍一次、`--compare before after` 比 —— 起 Vite(5180)+Edge(9222)，用**自带底图（3 省）**固定取景，
   落 `build/pixel-baseline/<tag>.json`（整图 FNV-1a + **关标注**后的几何层指纹 + camera）与同名 PNG。
   非 0 退出 = 逐像素判据没过。⚠️ 不要与 `run_tests.py` / 其它要 5180/9222 的演练同时跑
-  - **当前基线 = `v20261103a`**（2026-11-03 重立；同一代码再拍 `v20261103b` 与它逐像素一致，
-    `hash 2f82e8e8` / `hashNoLabels 22332c34` / `camera scale 1.1375`）。改动观感后**必须重立**，
-    并在这里写新 tag —— 旧基线一比就是"到处都变了"。
-  - 注意：该 fixture 底图**没有高度图** → 基线只覆盖「无地形底的政治档」；浮雕那层由
-    `scripts/tests/drill_scenario_relief.py` 单独守。
+  - **当前基线 = `v20261103c`**（2026-11-03 重立，且**含合成高度图**；同代码再拍 `v20261103d` 与它逐像素一致，
+    `hash 4ba506d8` / `hashNoLabels 19b877d7` / `camera scale 1.1375`）。改动观感后**必须重立**，
+    并在这里写新 tag —— 旧基线一比就是"到处都变了"。`v20261103a|b` 已作废。
+  - 基线覆盖：地形浮雕底 / 政治水洗 / 海岸带 / 国界 / 航道 / 文字层（fixture 在铺完省之后调
+    `synthesizeBaseMapTerrain(KEY,{seed:7})` 生成高度图，并有判据守着"确实有高度图"）。
+    浮雕的开/关两帧另有 `scripts/tests/drill_scenario_relief.py` 单独守。
 - 图标一致性校验: `python scripts/icon_check.py`（校验所有被引用的图标名在 `Icon.vue` 中有定义）
 - 结构清单再生成: `python scripts/gen_architecture_map.py`（详见下节）
 

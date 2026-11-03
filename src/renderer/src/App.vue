@@ -1102,6 +1102,19 @@ async function handleExportFullPNG() {
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     ctx.restore();
+
+    // 端点小圆点（2026-11-03）：与画布同一语义 —— `GalaxyMap#drawHyperlanes` 画的也是 2.2px 同色点。
+    // 导出图幅大（3617px 起），点也按 `uiScale` 放大，否则整幅图上根本看不见。
+    const dotR = 2.2 * uiScale;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = color;
+    for (const p of [fp, tp]) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   });
   
   // 5. 节点：**与画布同一份美术**（`galaxy/starArt.js` + `galaxy/labels.js`）

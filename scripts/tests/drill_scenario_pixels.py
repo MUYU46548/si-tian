@@ -170,6 +170,16 @@ def main():
               points: pts, biome: 'temperate', coast: coasts[injected] }, { checkOverlap: false });
             injected++;
           }
+          // ①b 合成高度图（2026-11-03）：不补的话**地形浮雕底那一层永远不在像素基线里**
+          //     （旧基线只剩平涂色块，浮雕改坏了也拍不出来）。走产品自己的「按轮廓推演」：
+          //     必须先有省轮廓再生成，顺序反了会拿不到高度图。seed 固定 → 每次同一张地形。
+          let hmPts = 0;
+          if (typeof s.synthesizeBaseMapTerrain === 'function') {
+            const gen = s.synthesizeBaseMapTerrain(KEY, { seed: 7 });
+            const hm = typeof s.getHeightmapFor === 'function' ? s.getHeightmapFor(KEY) : null;
+            hmPts = hm && hm.grid && hm.grid.points ? hm.grid.points.length : 0;
+            if (!hmPts && gen && gen.reason) hmPts = -1;
+          }
           // ② 一层剧本：**文字层必须有东西可画**（此前基线里省名一个都没出 → `hashNoLabels`
           //    与整图相同，文字那一刀等于没有判据）。这里造一个势力 + 三个省归属 + 一条浮动地名：
           //      · 省名/势力名 → `drawPolityLabels`（走统一避让排布 getLabelPlan）
@@ -210,13 +220,16 @@ def main():
           sm.selectedRiverId = 'imp_pix';
           if (typeof sm.render === 'function') sm.render();
           return JSON.stringify({
-            ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, injected,
+            ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, injected, hmPts,
             scenarios: ids.length, era: sm.tlEra,
             hasLabels: !!(sm.timeline.scenarios[sm.tlEra] || {}).labels,
           });
         })()""", required=('ok',), desc='铺设像素基线场景')
         ck('场景已铺设', bool(scene[0]) and scene[1].get('ok'), scene[1])
         time.sleep(0.5)
+        # 基线必须带高度图：否则浮雕底这一层不在判据里（2026-11-03 补）
+        ck('基线底图有合成高度图（浮雕层在判据里）',
+           int((scene[1] or {}).get('hmPts') or 0) > 0, f"高度图格 {scene[1] and scene[1].get('hmPts')}")
 
         # 可选：把画布切到“编辑态”再拍（顶点手柄 / 框选 / 笔刷圈那几层只在这时候出现，
         # 默认场景里它们整体不触发 —— 只拍静态场景等于没给那几刀留判据）
