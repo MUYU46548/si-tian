@@ -48,6 +48,13 @@ SCENE_JS = """(() => {
       { checkOverlap: false });
     i++;
   }
+  // 合成高度图：地形注记那类入口是 `v-if="baseMapHasHeightmap"`，没有高度图按钮不渲染（那不是 bug）
+  let hmPts = 0;
+  if (typeof s.synthesizeBaseMapTerrain === 'function') {
+    s.synthesizeBaseMapTerrain(KEY, { seed: 11 });
+    const hm = typeof s.getHeightmapFor === 'function' ? s.getHeightmapFor(KEY) : null;
+    hmPts = hm && hm.grid && hm.grid.points ? hm.grid.points.length : 0;
+  }
   if (s.scenarios && typeof s.removeScenario === 'function') {
     for (const k of Object.keys(s.scenarios)) s.removeScenario(k);
   }
@@ -69,7 +76,7 @@ SCENE_JS = """(() => {
   sm.selectedProvinceIds = [];
   if (typeof sm.fitToView === 'function') sm.fitToView();
   if (typeof sm.render === 'function') sm.render();
-  return JSON.stringify({ ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, scenarios: ids.length });
+  return JSON.stringify({ ok: true, provinces: (s.baseMaps[KEY].terrain || []).length, scenarios: ids.length, hmPts });
 })()"""
 
 STATE_JS = """(() => {
@@ -233,9 +240,55 @@ def main():
         st6 = state(cdp)
         bad += 0 if ck('色板入口开的也能关掉', st6.get('panel') is False, json.dumps(st6, ensure_ascii=False)) else 1
 
-        # ④ 顺带复测旧笔记那条：“无头环境里 Teleport 子节点进不了 body”
-        #    拿 FMG 浮层（`Teleport to="body"`）直接验：置 fmgOpen → 看它在不在 DOM、在不在 body。
-        #    结论两种都要写回文档：进得去 → 旧口径作废；进不去 → 那批浮层要改成外交表这种就地渲染。
+        # ④ 五个"生成类浮层"逐个从**真实入口**点开：这也是 2026-11-03 那次 bug 的全覆盖
+        #    （它们原先和外交表一样被嵌在 .toolbar-more 里，只有下拉开着才存在）。
+        #    ⚠️ 入口分两处：四个在**日常行 / 更多**里，地形注记只在**底图编辑模式**的工具栏里
+        #    （ScenarioMap 注释：同 testid 不重复两处）—— 所以分两批，先日常后模式。
+        def probe_panel(btn, wrap, state_key, label):
+            nonlocal bad
+            ok_b, rb = click_sel(cdp, '[data-testid="%s"]' % btn, '点入口·' + label)
+            time.sleep(0.35)
+            ok_q, q = eval_json(cdp, """(() => JSON.stringify({
+              open: !!document.querySelector('.scenario-map-container').__vueParentComponent.setupState.%s,
+              inDom: !!document.querySelector('[data-testid="%s"]'),
+              underBody: !!document.querySelector('body > [data-testid="%s"]'),
+            }))()""" % (state_key, wrap, wrap), required=('inDom',), desc='查落点·' + label)
+            print(f"  · {label}：{json.dumps(q or {}, ensure_ascii=False)}", flush=True)
+            bad += 0 if ck('入口点得开·' + label, ok_b and bool((rb or {}).get('ok')),
+                           json.dumps(rb or {}, ensure_ascii=False)[:60]) else 1
+            bad += 0 if ck('面板在 DOM·' + label, bool((q or {}).get('inDom')),
+                           json.dumps(q or {}, ensure_ascii=False)) else 1
+            eval_json(cdp, """(() => {
+              const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+              SM.%s = false;
+              return JSON.stringify({ ok: true });
+            })()""" % state_key, required=('ok',), desc='关闭·' + label)
+            time.sleep(0.2)
+            ok_q2, q2 = eval_json(cdp, """(() => JSON.stringify({
+              inDom: !!document.querySelector('[data-testid="%s"]'),
+            }))()""" % wrap, required=('inDom',), desc='查关闭·' + label)
+            bad += 0 if ck('关掉后零节点·' + label, not (q2 or {}).get('inDom'),
+                           json.dumps(q2 or {}, ensure_ascii=False)) else 1
+
+        click_sel(cdp, 'button[title^="更多"]', '展开「更多」（生成类浮层入口都在里面）')
+        for btn, wrap, state_key, label in [
+            ('basemap-terrain-params', 'terrain-gen-wrap', 'terrainGenOpen', '地形生成参数'),
+            ('basemap-fmg-terrain', 'fmg-wrap', 'fmgOpen', 'FMG 模板地形'),
+            ('basemap-generate-landmass', 'landmass-wrap', 'landmassOpen', '造陆'),
+            ('basemap-derive-culture', 'derive-wrap', 'deriveOpen', '文化/宗教/势力派生'),
+        ]:
+            probe_panel(btn, wrap, state_key, label)
+
+        # 进底图编辑，验只在模式里出现的那个入口（地形注记）
+        ok_mode, rm2 = click_sel(cdp, '[data-testid="basemap-edit-toggle"]', '进入底图编辑')
+        time.sleep(0.5)
+        bad += 0 if ck('进入底图编辑模式', ok_mode, json.dumps(rm2 or {}, ensure_ascii=False)[:60]) else 1
+        probe_panel('basemap-terrain-labels', 'terrain-labels-wrap', 'terrainLabelsOpen', '地形注记（仅底图编辑）')
+        click_sel(cdp, '[data-testid="basemap-exit"]', '退出底图编辑')
+        time.sleep(0.3)
+
+        # ⑤ 顺带复测旧笔记那条：“无头环境里 Teleport 子节点进不了 body”
+        #    直接置状态（绕开按钮，单独看 Teleport 本身）→ 看它在不在 DOM、在不在 body。
         eval_json(cdp, """(() => {
           const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
           SM.fmgOpen = true;

@@ -53,14 +53,18 @@
           @click="createGalaxy"
           title="在当前视图中心创建恒星"
         >＋ 恒星</button>
-        <!-- 生成示例星系（2026-11-02）：原型 SP-1025 的 generator/topology/metrics 整包用起来 ——
-             一次 undo 造出 N 星域 / M 恒星 / kNN 航道。给"想看银河该长什么样"和"要一份能改的样例"用。 -->
+        <!-- 生成示例星系（2026-11-02；2026-11-03 用户定调）：**这是测试夹具，不是产品生成路径**。
+             用户原话：生成进当前世界；实在不行测试自己创一个世界（反正都是测试项目），
+             别固化成软件本身的生成逻辑，只用于临时测试。所以：
+               · 行为保持“追加进当前世界”（会和已造出的星域叠加 —— 已知、可接受）；
+               · 要干净样例就在测试里自建项目/世界，**不要把这一步写进世界的创建/生成流程**；
+               · 按钮名带“（测试）”，代码里一眼能看出它不该长在产品主线上。 -->
         <button
           data-testid="gen-sample-galaxy"
           :disabled="store.isReadOnly"
-          :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '按原型生成器造一份示例星系（4 星域 / 120 恒星 / 航道网；一次 Ctrl+Z 可整体撤回）'"
+          :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '测试用：按原型生成器造一份示例星系（4 星域 / 120 恒星 / 航道网；追加进当前世界，一次 Ctrl+Z 可整体撤回）'"
           @click="generateSample"
-        ><Icon name="sparkles" :size="14"/> 示例星系</button>
+        ><Icon name="sparkles" :size="14"/> 示例星系（测试）</button>
       </div>
     </div>
 

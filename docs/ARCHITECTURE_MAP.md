@@ -44,6 +44,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 324 | `scripts/clean-cache-junk.js` | .sitian 缓存历史垃圾清理（空名地形 / 空壳底图 / 测试残留节点）：dry-run 报告 + --apply 备份/存档/删除，删除前逐项自检（引用 / 包围盒 / 子节点） |
 | 103 | `scripts/emoji_audit.py` | emoji 审计（按文件聚合 + 行号上下文） |
 | 1215 | `scripts/extract-data.js` | Obsidian → geodata.json 提取（LAYER_ORDER/增量缓存/UUID/孤儿检测/mergeUserCreatedNodes） |
+| 151 | `scripts/fix-quote-marks.mjs` | （待补） |
 | 102 | `scripts/gen_architecture_map.py` | 再生成本清单（--check 自检模式） |
 | 100 | `scripts/generate-icons.py` | 图标生成 |
 | 237 | `scripts/generate_icon.py` | 图标生成 |
@@ -51,12 +52,13 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 84 | `scripts/ledger-dryrun.mjs` | （待补） |
 | 310 | `scripts/ledger-query.mjs` | 事件账本查询/录入（读 .sitian）：--list 清点、--at/--a/--b 一句话作答、--add [--apply] 先备份后落盘并读回校验 |
 | 57 | `scripts/lib/loadRendererUtils.mjs` | 在 Node 里加载渲染层 ESM utils 的 loader（抄到临时目录补 .js 扩展名，跑的仍是仓库源码）；迁移/查询工具共用这一份 |
-| 699 | `scripts/lib/vaultClassify.js` | 读料归类纯函数层（第二刀）：整份 frontmatter + 标签 + 结构目录 + 文件名后缀 → 12 类（含待人工），每条带 evidence；空间关系按“显式字段→双链→句式”推断并标 inferred；buildReport/reportToMarkdown 零静默丢失 |
+| 701 | `scripts/lib/vaultClassify.js` | 读料归类纯函数层（第二刀）：整份 frontmatter + 标签 + 结构目录 + 文件名后缀 → 12 类（含待人工），每条带 evidence；空间关系按“显式字段→双链→句式”推断并标 inferred；buildReport/reportToMarkdown 零静默丢失 |
 | 410 | `scripts/maint/repair_basemap_data.py` | （待补） |
 | 113 | `scripts/migrate-ledger-v2.mjs` | 账本 v2 迁移（默认 dry-run；--apply 先备份 + 写后读回校验）：每代写入 initialOwnership + 物化 changeEvents |
 | 180 | `scripts/migrate-mapdata-keys.js` | mapdata.json 旧（无世界前缀）key 清理：dry-run 报告 + --apply 备份/存档/删除 |
 | 341 | `scripts/migrate-vault-attrs.js` | **A-1 存量机器属性搬家**（默认 dry-run）：把笔记 frontmatter 的“层级 / 上层挂靠 / 地点类型”搬进 `.sitian`。只补空、不覆盖项目已有值（冲突只报告）、补 parentId 前校验父实体、写前备份 + 反向档；笔记只读。逻辑层 `parseArgs` / `runMigration` 可被用例直调（本仓 node 无法 spawn node） |
 | 144 | `scripts/prune-backups.mjs` | （待补） |
+| 139 | `scripts/quote-audit.mjs` | （待补） |
 | 77 | `scripts/tests/debug_planetmap.py` | PlanetMap 手动诊断脚本 |
 | 274 | `scripts/tests/diag_edit_perf.py` | （待补） |
 | 158 | `scripts/tests/diag_edit_profile.py` | （待补） |
@@ -67,13 +69,16 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 208 | `scripts/tests/diag_river_dup.py` | （待补） |
 | 277 | `scripts/tests/diag_river_scan.py` | （待补） |
 | 364 | `scripts/tests/diag_t2_save.py` | （待补） |
-| 1420 | `scripts/tests/drill_final_acceptance.py` | （待补） |
+| 330 | `scripts/tests/drill_diplomacy_overlay.py` | （待补） |
+| 1447 | `scripts/tests/drill_final_acceptance.py` | （待补） |
+| 198 | `scripts/tests/drill_galaxy_lanes.py` | （待补） |
 | 884 | `scripts/tests/drill_p0_first_map.py` | （待补） |
 | 341 | `scripts/tests/drill_p1_vertex_marquee.py` | （待补） |
 | 295 | `scripts/tests/drill_package_smoke.py` | （待补） |
 | 870 | `scripts/tests/drill_quit_flush.py` | （待补） |
 | 444 | `scripts/tests/drill_reimport_019.py` | （待补） |
-| 337 | `scripts/tests/drill_scenario_pixels.py` | （待补） |
+| 350 | `scripts/tests/drill_scenario_pixels.py` | （待补） |
+| 311 | `scripts/tests/drill_scenario_relief.py` | （待补） |
 | 427 | `scripts/tests/fixtures/make_vault_fixture.py` | （待补） |
 | 161 | `scripts/tests/fixtures/make_vault_fixture_messy.py` | （待补） |
 | 39 | `scripts/tests/fixtures/name_map.py` | （待补） |
@@ -217,7 +222,8 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 233 | `scripts/tests/unit/test_export_frames.js` | （待补） |
 | 260 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
 | 184 | `scripts/tests/unit/test_freehand_ring.js` | 自由绘制几何单测：干净/手抖方框、圆、8 字、回勾、一条线、确定性、幂等 |
-| 279 | `scripts/tests/unit/test_galaxy_layout.js` | （待补） |
+| 176 | `scripts/tests/unit/test_galaxy_generator.js` | （待补） |
+| 368 | `scripts/tests/unit/test_galaxy_layout.js` | （待补） |
 | 424 | `scripts/tests/unit/test_gen_provenance.js` | （待补） |
 | 186 | `scripts/tests/unit/test_git_credential_store.js` | （待补） |
 | 425 | `scripts/tests/unit/test_git_sync.js` | （待补） |
@@ -240,6 +246,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 174 | `scripts/tests/unit/test_note_target.js` | （待补） |
 | 197 | `scripts/tests/unit/test_place_types.js` | （待补） |
 | 263 | `scripts/tests/unit/test_planet_map_bundle.js` | （待补） |
+| 115 | `scripts/tests/unit/test_polity_borders.js` | （待补） |
 | 322 | `scripts/tests/unit/test_polity_labels.js` | Node 单元测试：历史剧本势力标注的分级判定 / 面积形心（含退化环不许出 NaN）/ 面积加权聚合 / 文本选择（abbr 无则回落全名、绝不截断）/ 屏上面积门槛，9 条 |
 | 265 | `scripts/tests/unit/test_polygon_bool.js` | （待补） |
 | 385 | `scripts/tests/unit/test_project_io.js` | Node 单元测试：`.sitian` 路径守卫 / 原子写 / 备份轮转 / 8 个 IPC 通道端到端（CDP 用例的 mock 测不到主进程 I/O） |
@@ -248,6 +255,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 279 | `scripts/tests/unit/test_province_hit_index.js` | 省份命中索引单测（8 条）：与朴素扫描 3000 点逐点对拍 0 处不一致、压叠取最上层、洞/飞地、空表与 NaN、巨型表路径、按 terrain 引用缓存、500 省性能底价、反向探针（正序必须被抓住） |
 | 231 | `scripts/tests/unit/test_province_overlap.js` | （待补） |
 | 490 | `scripts/tests/unit/test_province_shape.js` | （待补） |
+| 76 | `scripts/tests/unit/test_quote_marks.js` | （待补） |
 | 110 | `scripts/tests/unit/test_ridges.js` | （待补） |
 | 688 | `scripts/tests/unit/test_river_coastline.js` | （待补） |
 | 638 | `scripts/tests/unit/test_river_editor_nodes.js` | （待补） |
@@ -263,10 +271,11 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 172 | `scripts/tests/unit/test_scenario_layer_registry.js` | （待补） |
 | 133 | `scripts/tests/unit/test_scenario_ledger.js` | （待补） |
 | 143 | `scripts/tests/unit/test_scenario_ledger_v2.js` | （待补） |
+| 177 | `scripts/tests/unit/test_scenario_relief.js` | （待补） |
 | 462 | `scripts/tests/unit/test_scenario_slices.js` | （待补） |
 | 124 | `scripts/tests/unit/test_scenario_text_placement.js` | （待补） |
 | 188 | `scripts/tests/unit/test_sea_depth.js` | （待补） |
-| 284 | `scripts/tests/unit/test_simple_mode_contract.js` | （待补） |
+| 287 | `scripts/tests/unit/test_simple_mode_contract.js` | （待补） |
 | 256 | `scripts/tests/unit/test_skeleton_index.js` | （待补） |
 | 93 | `scripts/tests/unit/test_stroke_math.js` | （待补） |
 | 333 | `scripts/tests/unit/test_system3d_scene.js` | （待补） |
@@ -301,7 +310,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 639 | `src/main/vaultIndex.js` | 全库只读索引（D1/D2 + 第二刀归类）：walkMarkdown/增量指纹、条目带 classification（整份 frontmatter 启发归类）、discoverCandidates/classifyReport、containment 读笔记/附件、搜索/解析链接 |
 | 79 | `src/main/vaultIndexWatcher.js` | 知识库索引 watcher：文件变更 → 250ms 防抖 → 增量重建索引并通知渲染层 |
 | 235 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 2826 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到“只读 · 未打开项目”并可点达项目面板） |
+| 2839 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到“只读 · 未打开项目”并可点达项目面板） |
 | 722 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
 | 2640 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 271 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
@@ -317,7 +326,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 417 | `src/renderer/src/components/EagleEye.vue` | 鹰眼小地图 |
 | 516 | `src/renderer/src/components/EntityCreator.vue` | 实体创建向导（C 方案分派式）：表单“名称/层级/父级”+ 层级按父级过滤（CHILD_LAYERS）+ 创建后结果卡片（分派步骤 + “前往编辑”） |
 | 239 | `src/renderer/src/components/FmgPanel.vue` | （待补） |
-| 1949 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
+| 2008 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
 | 552 | `src/renderer/src/components/GitSyncPanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/GuidePanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/HistoryPanel.vue` | undo 历史面板 |
@@ -339,7 +348,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 499 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 9424 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 8554 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 405 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 289 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
@@ -386,7 +395,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 187 | `src/renderer/src/composables/useBatchArrange.js` | 批量排列（网格/圆形/对齐/分布/移入区域） |
 | 120 | `src/renderer/src/composables/useBatchSelection.js` | 多选/框选 + 批量属性应用 |
 | 78 | `src/renderer/src/composables/useBookmarks.js` | 书签逻辑 |
-| 787 | `src/renderer/src/composables/useCanvasRenderer.js` | 渲染引擎：viewTransform/rAF/拖拽平移模式切换 |
+| 794 | `src/renderer/src/composables/useCanvasRenderer.js` | 渲染引擎：viewTransform/rAF/拖拽平移模式切换 |
 | 181 | `src/renderer/src/composables/useClusterEditor.js` | 地点簇编辑器 |
 | 61 | `src/renderer/src/composables/useContextMenu.js` | 右键菜单状态 |
 | 66 | `src/renderer/src/composables/useFocusHighlight.js` | 定位高亮（金色脉冲光圈 + 十字） |
@@ -400,7 +409,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 186 | `src/renderer/src/composables/usePlanetChannelBrush.js` | （待补） |
 | 538 | `src/renderer/src/composables/usePlanetHeightBrush.js` | PlanetMap 高度图笔刷（抬高/降低/平滑 + 生物群系涂抹）：stroke 快照式“一次拖动 = 一条 undo” |
 | 73 | `src/renderer/src/composables/usePromptDialog.js` | 对话框状态（替代 prompt()） |
-| 175 | `src/renderer/src/composables/useProvinceBrush.js` | 省份笔刷状态 + 画布渲染（Phase 3）：格用 roundRect+blur 消体素感、省界走缓存（提取+Chaikin 后按版本号复用）；只渲染不改数据 |
+| 184 | `src/renderer/src/composables/useProvinceBrush.js` | 省份笔刷状态 + 画布渲染（Phase 3）：格用 roundRect+blur 消体素感、省界走缓存（提取+Chaikin 后按版本号复用）；只渲染不改数据 |
 | 71 | `src/renderer/src/composables/useProvinceEditor.js` | 省份(地形块)属性编辑器 |
 | 116 | `src/renderer/src/composables/useProvinceSplitMerge.js` | 省份拆分（切割线）/合并（凸包） |
 | 228 | `src/renderer/src/composables/useReferenceImage.js` | 区域参考图 + 比例尺校准 |
@@ -417,42 +426,51 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 35 | `src/renderer/src/composables/useTheme.js` | 主题切换 |
 | 38 | `src/renderer/src/composables/useZoomControls.js` | 缩放百分比联动 |
 | 118 | `src/renderer/src/dev-standalone.js` | DEV-only 浏览器兜底：无 Electron preload 时从 `/dev-data/*.json` 只读装载，写操作一律返回失败（绝不制造“已保存”假象）；生产构建被摇掉 |
-| 179 | `src/renderer/src/galaxy/domainPaint.js` | （待补） |
-| 105 | `src/renderer/src/galaxy/labels.js` | （待补） |
-| 237 | `src/renderer/src/galaxy/sky.js` | （待补） |
-| 205 | `src/renderer/src/galaxy/starArt.js` | （待补） |
+| 183 | `src/renderer/src/galaxy/domainPaint.js` | （待补） |
+| 772 | `src/renderer/src/galaxy/generator.js` | （待补） |
+| 112 | `src/renderer/src/galaxy/labels.js` | （待补） |
+| 251 | `src/renderer/src/galaxy/sky.js` | （待补） |
+| 206 | `src/renderer/src/galaxy/starArt.js` | （待补） |
 | 402 | `src/renderer/src/galaxy/territory.js` | （待补） |
 | 9 | `src/renderer/src/lib/utils.js` | （待补） |
 | 33 | `src/renderer/src/main.js` | renderer 入口 |
-| 424 | `src/renderer/src/scenario/interaction/actions.js` | （待补） |
+| 430 | `src/renderer/src/scenario/interaction/actions.js` | （待补） |
 | 810 | `src/renderer/src/scenario/interaction/canvasClick.js` | （待补） |
 | 521 | `src/renderer/src/scenario/interaction/down.js` | （待补） |
 | 313 | `src/renderer/src/scenario/interaction/helpers.js` | （待补） |
 | 166 | `src/renderer/src/scenario/interaction/keyboard.js` | （待补） |
+| 180 | `src/renderer/src/scenario/interaction/mapGeometry.js` | （待补） |
+| 231 | `src/renderer/src/scenario/interaction/markers.js` | （待补） |
 | 344 | `src/renderer/src/scenario/interaction/misc.js` | （待补） |
 | 367 | `src/renderer/src/scenario/interaction/move.js` | （待补） |
 | 302 | `src/renderer/src/scenario/interaction/pointer.js` | （待补） |
-| 429 | `src/renderer/src/scenario/interaction/province.js` | （待补） |
+| 238 | `src/renderer/src/scenario/interaction/polityPalette.js` | （待补） |
+| 466 | `src/renderer/src/scenario/interaction/province.js` | （待补） |
 | 254 | `src/renderer/src/scenario/interaction/provinceOps.js` | （待补） |
+| 330 | `src/renderer/src/scenario/interaction/riverGeometry.js` | （待补） |
 | 223 | `src/renderer/src/scenario/interaction/riverOps.js` | （待补） |
 | 477 | `src/renderer/src/scenario/interaction/rivers.js` | （待补） |
-| 62 | `src/renderer/src/scenario/layers/background.js` | （待补） |
-| 67 | `src/renderer/src/scenario/layers/coast.js` | （待补） |
+| 156 | `src/renderer/src/scenario/interaction/scenarioGroupsOps.js` | （待补） |
+| 304 | `src/renderer/src/scenario/interaction/terrainPanels.js` | （待补） |
+| 160 | `src/renderer/src/scenario/interaction/timeline.js` | （待补） |
+| 113 | `src/renderer/src/scenario/interaction/transfer.js` | （待补） |
+| 85 | `src/renderer/src/scenario/layers/background.js` | （待补） |
+| 71 | `src/renderer/src/scenario/layers/coast.js` | （待补） |
 | 226 | `src/renderer/src/scenario/layers/editing.js` | （待补） |
 | 457 | `src/renderer/src/scenario/layers/features.js` | （待补） |
 | 484 | `src/renderer/src/scenario/layers/labels.js` | （待补） |
 | 269 | `src/renderer/src/scenario/layers/overlays.js` | （待补） |
 | 309 | `src/renderer/src/scenario/layers/preview.js` | （待补） |
-| 137 | `src/renderer/src/scenario/layers/provinces.js` | （待补） |
+| 176 | `src/renderer/src/scenario/layers/provinces.js` | （待补） |
 | 127 | `src/renderer/src/store/canvasBridge.js` | 画布↔项目文件**唯一接线点**（Phase 2.4）：双向注册表 —— geodata 注册画布适配器（applyProject/releaseProject/refreshEntities/exportCanvas），projectStore 注册入水口（syncFromCanvas）。两个 store 不互相 import（防循环依赖与两套事实源） |
-| 2203 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 6 个 geodataModules + 视图导航 + 项目↔画布接线（画布适配器注册；项目模式下行星图不回退知识库缓存） |
+| 2253 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 6 个 geodataModules + 视图导航 + 项目↔画布接线（画布适配器注册；项目模式下行星图不回退知识库缓存） |
 | 241 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 289 | `src/renderer/src/store/geodataModules/channelBrush.js` | （待补） |
 | 318 | `src/renderer/src/store/geodataModules/interior.js` | interiorData 楼层/家具管理 |
 | 142 | `src/renderer/src/store/geodataModules/loreBinding.js` | （待补） |
 | 1111 | `src/renderer/src/store/geodataModules/mapDataEditing.js` | mapData：地形/标记/路线/文本/快照编辑（最大模块） |
 | 2738 | `src/renderer/src/store/geodataModules/provinceEditing.js` | 省份“归属标签网格”store 模块（Phase 3）：笔刷/套索一笔一条 undo、删除省份重编号安全（整表快照）、每个写操作先过 guardWrite（只读态零副作用） |
-| 4942 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
+| 4970 | `src/renderer/src/store/geodataModules/scenarioEditing.js` | 剧本数据模块：baseMaps（省份/参考图）与 scenarios（polities/ownership/labels/markers）CRUD + 继承拷贝，全部经 execute 走 undo |
 | 186 | `src/renderer/src/store/geodataModules/search.js` | matchNode 搜索匹配 |
 | 159 | `src/renderer/src/store/geodataModules/spaceEditing.js` | spaceMarkers/fleetCards/hyperlanes 编辑 |
 | 185 | `src/renderer/src/store/layers.js` | 图层可见性栈 |
@@ -461,7 +479,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 43 | `src/renderer/src/store/quitFlush.js` | （待补） |
 | 172 | `src/renderer/src/store/undo.js` | undo/redo 栈（execute 内即调 redo，防双写） |
 | 190 | `src/renderer/src/store/vaultIndex.js` | 资料索引 store：状态/候选/读料报告/搜索/阅读/链解析；所有磁盘 I/O 走主进程 vault* IPC |
-| 264 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
+| 269 | `src/renderer/src/store/writeGate.js` | 单一写闸门：世界观数据落盘写的唯一判定（guardWrite/isReadOnly，三模式 project|legacy|readonly）+ 11 条落盘入口清单 |
 | 63 | `src/renderer/src/utils/align.js` | 对齐/分布纯函数 |
 | 616 | `src/renderer/src/utils/azgaar-parser.js` | Azgaar FMG .map 解析器：按内容嗅探定位各数据段（不写死行号）、grid 级高度/温度/降水数组、provincesBody/河流/道路 SVG 几何、文化/宗教/势力/城镇定义与 province→burg→culture 映射 |
 | 277 | `src/renderer/src/utils/basemapIdentity.js` | （待补） |
@@ -484,7 +502,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 71 | `src/renderer/src/utils/fmg/rng.js` | （待补） |
 | 258 | `src/renderer/src/utils/fmg/templates.js` | （待补） |
 | 195 | `src/renderer/src/utils/freehandRing.js` | 自由绘制闭环净化（第三刀）：自交检测、在自交点切环只留最大一块、面积/填充比闸门；拒绝原因给人话（不造怪多边形、不引布尔库） |
-| 398 | `src/renderer/src/utils/galaxyLayout.js` | （待补） |
+| 607 | `src/renderer/src/utils/galaxyLayout.js` | （待补） |
 | 362 | `src/renderer/src/utils/genProvenance.js` | （待补） |
 | 56 | `src/renderer/src/utils/genProvenanceReplay.js` | （待补） |
 | 162 | `src/renderer/src/utils/geojson.js` | GeoJSON 导入导出 |
@@ -496,7 +514,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 44 | `src/renderer/src/utils/heightThumb.js` | （待补） |
 | 229 | `src/renderer/src/utils/heightmapAccess.js` | （待补） |
 | 105 | `src/renderer/src/utils/heightmapChannels.js` | （待补） |
-| 603 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap“着色”档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |
+| 620 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap“着色”档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |
 | 387 | `src/renderer/src/utils/heightmapResample.js` | （待补） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
 | 141 | `src/renderer/src/utils/interactionGate.js` | （待补） |
@@ -525,7 +543,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 989 | `src/renderer/src/utils/projectSchema.js` | `.sitian` 结构定义 / 校验修复 / 版本迁移 / 就地 diff 快照环形缓冲（纯函数） |
 | 309 | `src/renderer/src/utils/provinceGrid.js` | 省份归属标签网格纯函数（Phase 3）：多边形→格归属（面积降序命中即停）、差异边→省界链→Chaikin、笔刷/套索差量、重编号与序列化自愈 |
 | 186 | `src/renderer/src/utils/provinceHitIndex.js` | 省份命中的**空间索引**（2026-10-23，第 1 件 1-a）：包围盒 + 均匀网格 + 每省“环/嵌套符号/包围盒”建一次；判定仍只走 pointInProvince（cached 参数），语义与旧 findProvinceAt 逐字节同义；按 terrain 引用缓存（零手工失效点）。实测 20.4ms → 0.18ms/次 |
-| 175 | `src/renderer/src/utils/provinceOverlap.js` | （待补） |
+| 192 | `src/renderer/src/utils/provinceOverlap.js` | （待补） |
 | 1088 | `src/renderer/src/utils/provinceShape.js` | （待补） |
 | 258 | `src/renderer/src/utils/regionTrace.js` | 区域勾轮廓管线（Phase 2.6）：闭环 RDP 简化（容差随尺寸缩放）+ 离屏 canvas 光栅化校验“落地内 + 不重叠”，通过才落库 |
 | 244 | `src/renderer/src/utils/reliefIcons.js` | 地貌图标**确定性**散布（整数哈希定抖动/旋转/尺寸，网格桶防重叠，单次笔刷有上限） |
@@ -573,7 +591,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 420 | `src/renderer/src/utils/userGuide.js` | （待补） |
 | 137 | `src/renderer/src/utils/vault.js` | 库名解析：obsidian:// URI 的 vault 参数取自主进程配置（禁硬编码） |
 | 198 | `src/renderer/src/utils/vaultRelink.js` | 笔记改名“断线检测 + 重连候选打分”（纯函数，Node 可测）：路径归一化 / 最长公共子串 / 单候选打分 / detectBrokenLinks / 理由文案 —— **判定与打分的唯一实现**（只读、确定性、宁可少推不可乱推） |
-| 174 | `src/renderer/src/utils/vertexSharing.js` | （待补） |
+| 233 | `src/renderer/src/utils/vertexSharing.js` | （待补） |
 | 42 | `src/renderer/src/utils/viewport.js` | 由 renderer.viewTransform 反解**视口**世界矩形（小地图遮罩用，必须区别于内容边界） |
 | 307 | `src/renderer/src/utils/voronoiBatch.js` | （待补） |
 | 59 | `src/renderer/src/workers/deriveWorker.js` | 温度/降水/生物群系派生 Worker：复用 heightMath.deriveLayers 不复制公式（等价性由用例兜住） |
