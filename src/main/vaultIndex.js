@@ -13,9 +13,9 @@
 //   · 与提取器的关系：提取器继续决定“地图节点”；本索引决定“资料条目”。两者用 path 关联，
 //     谁都不覆盖谁。
 //
-// 🔴 2026-10-22（三刀序列·第二刀「读料桥」）：
-//   索引不再只记「有层级/在扫描目录」这类粗判，而是对**整份 frontmatter**做一次启发归类
-//   （`scripts/lib/vaultClassify.js`，纯函数 + Node 单测），并把「认不出来的」逐条落进
+// 🔴 2026-10-22（三刀序列·第二刀“读料桥”）：
+//   索引不再只记“有层级/在扫描目录”这类粗判，而是对**整份 frontmatter**做一次启发归类
+//   （`scripts/lib/vaultClassify.js`，纯函数 + Node 单测），并把“认不出来的”逐条落进
 //   `classifyReport().needsHuman`。上层缺失分三种：显式字段 / 正文双链 / 正文句式，
 //   后两者标 `inferred:true` 并带证据；都找不到 → `needsHuman: 'spatial'`，**不猜**。
 'use strict';
@@ -98,7 +98,7 @@ function layerFromFrontmatter(fm) {
   return null;
 }
 
-/** 路径里的层级关键词（目录名包含「星域/星系/行星/区域/城市…」） */
+/** 路径里的层级关键词（目录名包含“星域/星系/行星/区域/城市…”） */
 function layerFromPath(rel) {
   const segs = posix(rel).split('/');
   for (const seg of segs) {
@@ -182,7 +182,7 @@ function isUnderScanDir(rel, scanDirs) {
   return (scanDirs || []).some((d) => p === d || p.startsWith(String(d).replace(/\\/g, '/') + '/'));
 }
 
-/** 只留「短小」的 frontmatter 值（索引文件别被长字段撑大；报告里够用） */
+/** 只留“短小”的 frontmatter 值（索引文件别被长字段撑大；报告里够用） */
 function trimFm(fm) {
   const out = {};
   for (const [k, v] of Object.entries(fm || {})) {
@@ -233,7 +233,7 @@ function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
     entry.wikilinks = wikilinksOf(content);
     entry.fmKeys = Object.keys(fm);
     entry.fm = trimFm(fm);
-    // 只留开头一段正文：双链已在 wikilinks 里，这里给「位于…」这类句式推断用
+    // 只留开头一段正文：双链已在 wikilinks 里，这里给“位于…”这类句式推断用
     entry.contentSample = content.slice(0, 500);
     entry.classification = classify.classifyNote({
       path: rel,
@@ -259,7 +259,7 @@ function parseEntry(root, rel, st, scanDirs = DEFAULT_SCAN_DIRS) {
     };
   }
   const cat = entry.classification ? entry.classification.category : 'unknown';
-  // 旧字段 `kind` 的含义保持「地图 / 资料」两档（UI 与搜索在用）；`unknown` 单列，便于报告
+  // 旧字段 `kind` 的含义保持“地图 / 资料”两档（UI 与搜索在用）；`unknown` 单列，便于报告
   entry.kind = cat === 'geo' ? 'map' : (cat === 'unknown' ? 'unknown' : 'lore');
   return entry;
 }
@@ -551,7 +551,7 @@ function defaultRules() {  return {
 /**
  * 全库归类报告（纯函数：不写盘、不改索引）。
  *
- * 这就是「识别不了的每条都有报告」的落点：`needsHuman` 里既有 `category`（完全认不出）
+ * 这就是“识别不了的每条都有报告”的落点：`needsHuman` 里既有 `category`（完全认不出）
  * 也有 `layer`（认得出是地点但认不出粒度）与 `spatial`/`parent-missing`（找不到上层）。
  * 每条都带 `reasons` 与 `evidence`（信号 + 命中值），人可以逐条核对，不是黑箱。
  *
@@ -570,7 +570,7 @@ function classifyReport(index, opts = {}) {
  * 从索引里挑“可能是地图实体”的候选（**只读，不导入**）。
  *
  * 判定 v2（2026-10-22）：以 `classification.category === 'geo'` 为准 —— 显式层级、类型值、
- * 组织/物品/书名等非地理键、结构目录、标签、路径层级词、文件名后缀，都算「凭据」；
+ * 组织/物品/书名等非地理键、结构目录、标签、路径层级词、文件名后缀，都算“凭据”；
  * 凭据写进 `reasons`。**认不出的笔记不会进候选**（进 `needsHuman`），避免 1,353 篇
  * 全被算成实体。
  *
@@ -604,7 +604,7 @@ function discoverCandidates(index, rules = defaultRules()) {
     count: cands.length,
     candidates: limited,
     byLayer,
-    // 报告随候选一起回传：面板能立刻说「还有 N 条待人工」，而不是只给一张优等生名单
+    // 报告随候选一起回传：面板能立刻说“还有 N 条待人工”，而不是只给一张优等生名单
     needsHuman: report.needsHuman.slice(0, 200),
     counts: {
       total: report.total,

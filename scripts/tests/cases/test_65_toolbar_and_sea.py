@@ -3,13 +3,13 @@
 """用例 65：P3 工具栏按任务分层 + P4 海洋分区
 
 对应验收行：
-  P3  默认可见控件 ≤6；「更多」里每个原入口都可达（能力一个都不减）
+  P3  默认可见控件 ≤6；“更多”里每个原入口都可达（能力一个都不减）
   P4  海陆分界严丝合缝；海区不出现在 ownership / 时间轴
 
-P3 的判定手法：**真的去点**。逐个按 title 找到「更多」里的入口并 click，断言工具真的切过去了
+P3 的判定手法：**真的去点**。逐个按 title 找到“更多”里的入口并 click，断言工具真的切过去了
 （只数按钮个数是假绿：按钮在 DOM 里 ≠ 点得到、更 ≠ 真的接上了 handler）。
 P4 的判定手法：海色由 `getProvinceColor` 直接判定（函数在 setupState 里可调），归属则走
-「势力油漆桶点在海域上 → ownership 里不能出现它」的行为路径。
+“势力油漆桶点在海域上 → ownership 里不能出现它”的行为路径。
 """
 
 import json
@@ -52,33 +52,33 @@ def source_gates():
     checks = [
         # ── P3 ──
         ('class="toolbar-row primary-row"', '主工具行存在（按任务分层）'),
-        ('const moreOpen = ref(false)', '「更多」默认收起'),
-        ('const ADVANCED_TOOLS = new Set(', '高级工具清单（收进「更多」）'),
+        ('const moreOpen = ref(false)', '“更多”默认收起'),
+        ('const ADVANCED_TOOLS = new Set(', '高级工具清单（收进“更多”）'),
         ('const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value))',
-         '省份选项只在选到该类工具/打开「更多」时出现'),
-        ('.toolbar-more {', '「更多」面板样式'),
-        ('class="more-toggle"', '「更多」按钮'),
+         '省份选项只在选到该类工具/打开“更多”时出现'),
+        ('.toolbar-more {', '“更多”面板样式'),
+        ('class="more-toggle"', '“更多”按钮'),
         # ── P4 ──
         # 海色/海界常量 2026-10-01 移入 `utils/scenarioPalette.js`（画布与 SVG 导出共用一份）；
-        # 组件这边只守「引了单源 + 用法没变」，常量本体在下面单独查单源文件。
+        # 组件这边只守“引了单源 + 用法没变”，常量本体在下面单独查单源文件。
         ("from '../utils/scenarioPalette'", '组件引用配色单源'),
         ("if (prov && prov.kind === 'sea') return SEA_FILL;", '海域不吃归属色（最先判）'),
         # 2026-10-30（N1 刀 1）：省界的绘制体搬进 `scenario/layers/provinces.js` ——
-        # 「海界 = 淡虚线」这条判据跟着搬到模块里查（下面单独一项）。
+        # “海界 = 淡虚线”这条判据跟着搬到模块里查（下面单独一项）。
         ("if (prov && prov.kind === 'sea') {", '势力油漆桶跳过海域'),
         ('海域不参与势力归属', '海域被拒时有明确交代（不是静默无效）'),
-        ('onProvinceKindChange', '属性面板可切「陆地/海域」'),
+        ('onProvinceKindChange', '属性面板可切“陆地/海域”'),
     ]
     for needle, label in checks:
         if needle not in sc:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
-    # 单源里必须真有那两个常量（否则「引了单源」是假接线）
+    # 单源里必须真有那两个常量（否则“引了单源”是假接线）
     pal = _code_only(_read('src/renderer/src/utils/scenarioPalette.js'))
     for needle, label in (("export const SEA_FILL = 'rgba(", '海面色常量（单源）'),
                           ("export const SEA_EDGE = 'rgba(", '海界色常量（单源）')):
         if needle not in pal:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
-    # 「海界 = 淡虚线」：2026-10-30 起绘制体在 `scenario/layers/provinces.js`，判据跟着搬家
+    # “海界 = 淡虚线”：2026-10-30 起绘制体在 `scenario/layers/provinces.js`，判据跟着搬家
     prov_layer = _code_only(_read('src/renderer/src/scenario/layers/provinces.js'))
     if 'setLineDash([view.px(6), view.px(4)])' not in prov_layer:
         fails.append('源码闸门缺失：海界 = 淡虚线（scenario/layers/provinces.js 里找不到 6/4 虚线）')
@@ -118,7 +118,7 @@ JS_UI = r""" (async () => {
   sc.moreOpen = false;
   await tick();
   // 🔴 2026-10-18 第十七修：ScenarioMap 顶部多了一条**模式条**（`[data-testid=toolbar-modes]`：
-  //    「底图编辑」开关 + 一句当前模式文案）。它是**状态指示**，不是工具控件 ——
+  //    “底图编辑”开关 + 一句当前模式文案）。它是**状态指示**，不是工具控件 ——
   //    把它算进"默认可见控件"会让这条纪律从"工具栏别堆控件"变成"别告诉用户现在在哪个模式"。
   //    口径：**排除模式条**之后仍 ≤6（主行 `test_97` 仍逐个按钮数、等于 6，双保险）。
   const modes = bar.querySelector('[data-testid=toolbar-modes]');
@@ -128,16 +128,16 @@ JS_UI = r""" (async () => {
   ok('P3：默认可见控件 ≤ 6（不含模式条）', defControls.length <= 6,
      defControls.length + ' 个：' + notes.defaultControls.join(' / ')
      + '（另排除模式条 ' + notes.excludedModeStrip + ' 个）');
-  ok('P3：「更多」默认收起（面板不在 DOM 里）', !document.querySelector('.toolbar-more'));
+  ok('P3：“更多”默认收起（面板不在 DOM 里）', !document.querySelector('.toolbar-more'));
   ok('P3：moreOpen 初值为 false', sc.moreOpen === false);
 
-  // ── P3-② 「更多」里每个原入口都可达（真的点，断言工具切过去了）───────────
+  // ── P3-② “更多”里每个原入口都可达（真的点，断言工具切过去了）───────────
   const moreBtn = Array.from(bar.querySelectorAll('button')).find((b) => (b.title || '').includes('更多'));
-  ok('P3：找得到「更多」按钮', !!moreBtn);
+  ok('P3：找得到“更多”按钮', !!moreBtn);
   if (moreBtn) moreBtn.click();
   await tick();
   const panel = document.querySelector('.toolbar-more');
-  ok('P3：点开后出现「更多」面板', !!panel);
+  ok('P3：点开后出现“更多”面板', !!panel);
   notes.moreControls = controls(panel).length;
 
   const want = {
@@ -156,9 +156,9 @@ JS_UI = r""" (async () => {
   }
   notes.clicked = clicked;
   ok('P3：14 个高级工具入口全部可达且真的切换', unreachable.length === 0, unreachable.join('；'));
-  ok('P3：「更多」里控件数 > 6（工具是搬进去了，不是删了）', notes.moreControls > 6, notes.moreControls);
+  ok('P3：“更多”里控件数 > 6（工具是搬进去了，不是删了）', notes.moreControls > 6, notes.moreControls);
 
-  // ── P3-③ 省份选项随工具出现（不必打开「更多」）────────────────────────
+  // ── P3-③ 省份选项随工具出现（不必打开“更多”）────────────────────────
   sc.setTool('provinceBrush');
   sc.moreOpen = false;
   await tick();
@@ -201,7 +201,7 @@ JS_SEA = r""" (async () => {
 
   // ── P4-③ 海域不进归属（真的点一次势力油漆桶）─────────────────────────
   // 🔴 画布只画**当前底图**：不把 baseMapKey 切到合成底图，点击查的是 harness 那张图上的省份，
-  //    两次点击都会「什么都没点中」→ 断言变成假绿（海区那条会因为 prov=null 而"通过"）。
+  //    两次点击都会“什么都没点中”→ 断言变成假绿（海区那条会因为 prov=null 而"通过"）。
   const prevKey = sc.baseMapKey;
   sc.baseMapKey = KEY;
   await tick(150);
@@ -292,7 +292,7 @@ def run(cdp):
 
     notes.append(
         f'P3：默认可见控件 {len(un.get("defaultControls", []))} 个（'
-        + ' / '.join(un.get('defaultControls', [])[:8]) + f'…），「更多」里 {un.get("moreControls")} 个；'
+        + ' / '.join(un.get('defaultControls', [])[:8]) + f'…），“更多”里 {un.get("moreControls")} 个；'
         f'P4：归属 {sn.get("ownership")}'
     )
     if fails:

@@ -3,7 +3,7 @@
 覆盖三条用户可感链路：
   · 任意笔记在司天内可读（含 ![[图]]）、[[双链]] 应用内跳、返回栈；
   · 全库正文搜索 → 点结果进阅读器；
-  · 节点面板「关联资料」把另一篇笔记绑到节点上（notePaths，存项目字段）。
+  · 节点面板“关联资料”把另一篇笔记绑到节点上（notePaths，存项目字段）。
 主进程的索引/正文搜索/附件 containment 在 unit/test_vault_index.js 里验。
 """
 from lib.cdp import wait_for

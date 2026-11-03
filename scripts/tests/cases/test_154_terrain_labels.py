@@ -3,15 +3,15 @@
 """用例 153：地形注记（山脊候选 → 命名 → 落库 → 撤销）
 
 背景（D3，2026-10-26）：
-  参考图的信息密度有一半来自「亚平宁山脉」这类**沿走向排布的山系名**。
+  参考图的信息密度有一半来自“亚平宁山脉”这类**沿走向排布的山系名**。
   我们此前既没有这类数据、也没有入口。这一版：
     · `utils/ridges.detectRidges` 从高度图抽脊线候选（纯函数，单测覆盖）；
     · 面板里逐条命名（**没名字不落库**，不自动编专名）；
     · 落库 `baseMaps[key].terrainLabels`（整表一条 undo，`origin:'auto'` 标记来源）。
 
 判据（全部读真实状态，不看按钮文字）：
-  1. 点「地形注记」→ 面板出现；
-  2. 点「检测山脊」→ 候选 ≥1（人造对角山脊）；
+  1. 点“地形注记”→ 面板出现；
+  2. 点“检测山脊”→ 候选 ≥1（人造对角山脊）；
   3. 命名 + 应用 → store 里有 1 条，`origin='auto'`、点数 ≥2、名字正确；
   4. 一次 `undo()` → 注记退回 0 条；
   5. 重绘不抛（`SM.render()` 后的渲染错误为空）。
@@ -81,7 +81,7 @@ def run(cdp):
     if not ok or not seeded.get('ok'):
         return False, f'造数失败：{seeded}'
 
-    # ① 进「底图编辑」模式：地形注记是**地理数据**，住在底图编辑行（与「改省界」同一排）
+    # ① 进“底图编辑”模式：地形注记是**地理数据**，住在底图编辑行（与“改省界”同一排）
     mode_js = """(() => {
       const btn = Array.from(document.querySelectorAll('[data-testid="toolbar-modes"] button'))
         .find(b => (b.textContent || '').includes('底图编辑'));
@@ -90,7 +90,7 @@ def run(cdp):
       return 'ok';
     })()"""
     if cdp.eval(mode_js) != 'ok':
-        return False, '找不到「底图编辑」模式按钮'
+        return False, '找不到“底图编辑”模式按钮'
     try:
         wait_for(cdp, "!!document.querySelector('[data-testid=\"basemap-row\"]')",
                  desc='底图工具行', timeout=6)
@@ -110,7 +110,7 @@ def run(cdp):
     })()"""
     opened = cdp.eval(open_panel)
     if opened != 'ok':
-        return False, f'找不到「地形注记」按钮：{opened}'
+        return False, f'找不到“地形注记”按钮：{opened}'
     try:
         wait_for(cdp, "!!document.querySelector('[data-testid=\"terrain-labels-panel\"]')",
                  desc='地形注记面板', timeout=6)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 144：点标记 → 标记面板 → 库内资料（2026-10-24，第 5 件补「点标记」）
+"""用例 144：点标记 → 标记面板 → 库内资料（2026-10-24，第 5 件补“点标记”）
 
 背景：标记此前是"只画不收"的一层 —— 放下时 `askText` 问个名字，之后**点不到它**
 （选择工具只认河流 / 城镇 / 省份，没有命中测试也没有面板）。于是"点标记看资料"一直挂不上。
@@ -12,9 +12,9 @@
 1. 真点地图上的标记图标 → 打开标记面板（面板里名字 / 类型 / 坐标来自那条标记）；
    **点偏 40px 不算命中**（否则"哪都能点开"= 命中半径形同虚设）；
 2. 面板改三项都**走 store**：改名 / 改类型（图标·颜色跟着类型走）/ 改坐标，
-   且撤销栈里是「编辑标记」（证明不是直改内存）；
-3. 资料段：检索关键词**就是标记名**；候选可点开阅读器；空态明说「库里没有同名词条」；
-   「全库搜索」把标记名带进搜索面板；
+   且撤销栈里是“编辑标记”（证明不是直改内存）；
+3. 资料段：检索关键词**就是标记名**；候选可点开阅读器；空态明说“库里没有同名词条”；
+   “全库搜索”把标记名带进搜索面板；
 4. **只读**：`createObsidianNote` / `setSitianConfig` 调用次数 0（资料检索不写库）；
 5. 删除：标记真的从剧本里消失、面板收起；
 6. 源码守卫：命中只有一份实现；资料段只有一份实现（`vaultIndexSearch` 全仓一处）；
@@ -336,7 +336,7 @@ def run(cdp):
     if not st1.get('panel'):
         fails.append(f'点标记没打开面板（点在了 {click}）')
     if not st1.get('hasBox'):
-        fails.append('标记面板没有「资料」段')
+        fails.append('标记面板没有“资料”段')
     if st1.get('name') != MARKER_NAME:
         fails.append(f'面板名字不是那条标记：{st1.get("name")!r}')
     if st1.get('type') != 'city':
@@ -350,7 +350,7 @@ def run(cdp):
     else:
         titles = [r.get('title') for r in st1['rows']]
         if '雾隐驿' not in titles:
-            fails.append(f'候选里没有「雾隐驿」：{titles}')
+            fails.append(f'候选里没有“雾隐驿”：{titles}')
     if MARKER_NAME not in (st1.get('calls') or []):
         fails.append(f'检索关键词不是标记名（calls={st1.get("calls")}）')
 
@@ -365,7 +365,7 @@ def run(cdp):
     _j(cdp, CLICK.replace('DX', '0'))
     time.sleep(0.4)
 
-    # ③ 改名字 / 类型 / 坐标 —— 全部走 store，撤销栈标签是「编辑标记」
+    # ③ 改名字 / 类型 / 坐标 —— 全部走 store，撤销栈标签是“编辑标记”
     if _j(cdp, SET_NAME) != 'ok':
         fails.append('找不到标记名输入框')
     time.sleep(0.35)
@@ -424,7 +424,7 @@ def run(cdp):
 
     _j(cdp, RESTUB_NONE)
     if _j(cdp, CLICK_SEL % '[data-testid=\\"marker-vault-search\\"]') != 'ok':
-        fails.append('找不到资料段的「重查」按钮')
+        fails.append('找不到资料段的“重查”按钮')
     time.sleep(0.6)
     st6 = _j(cdp, STATE)
     if not st6.get('empty'):
@@ -432,14 +432,14 @@ def run(cdp):
     elif '没有同名词条' not in (st6.get('emptyText') or ''):
         fails.append(f'空态文案没说明原因：{st6.get("emptyText")!r}')
 
-    # ⑤ 「全库搜索」把标记名带进搜索面板
+    # ⑤ “全库搜索”把标记名带进搜索面板
     _j(cdp, RESTUB_HIT)
     if _j(cdp, CLICK_SEL % '[data-testid=\\"marker-vault-global\\"]') != 'ok':
-        fails.append('找不到资料段的「全库搜索」按钮')
+        fails.append('找不到资料段的“全库搜索”按钮')
     time.sleep(0.8)
     st7 = _j(cdp, STATE)
     if not st7.get('searchPanel'):
-        fails.append('「全库搜索」没打开资料搜索面板')
+        fails.append('“全库搜索”没打开资料搜索面板')
     elif (st7.get('searchInput') or '') != MARKER_NAME + '·西':
         fails.append(f'搜索面板没带标记名预填：{st7.get("searchInput")!r}')
     if MARKER_NAME + '·西' not in (st7.get('deepCalls') or []):
@@ -474,8 +474,8 @@ def run(cdp):
               f'点偏 40px 不命中={not st2.get("panel")}；'
               f'改名·类型·坐标都落库（{mk2.get("type")}/{mk2.get("icon")}，x={mk3.get("x")}），'
               f'undoLabel={st3.get("undoLabel")!r}；'
-              f'资料候选 {len(st1.get("rows") or [])} 条、空态「{st6.get("emptyText")}」、'
-              f'全库搜索预填「{st7.get("searchInput")}」；写调用 {writes}；源码守卫：{sg_detail}')
+              f'资料候选 {len(st1.get("rows") or [])} 条、空态“{st6.get("emptyText")}”、'
+              f'全库搜索预填“{st7.get("searchInput")}”；写调用 {writes}；源码守卫：{sg_detail}')
     if fails:
         return False, '；'.join(fails)[:900]
     return True, detail

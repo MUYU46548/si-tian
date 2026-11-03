@@ -26,7 +26,7 @@ import { CHANNEL_KEYS } from '../utils/heightmapChannels';
 const BIOME_BUCKETS = BIOME_KEYS.length; // 13 种生物群系（图例/着色按编码索引）
 
 // ===== 高度图（生物群系）轮廓参数 =====
-// 与地形涂色层（useTerrainCanvasBrush）同一套「栅格 → 矢量轮廓」做法，参数也取一致：
+// 与地形涂色层（useTerrainCanvasBrush）同一套“栅格 → 矢量轮廓”做法，参数也取一致：
 // eps / minAreaCells 以**格**为单位（格宽会变，固定世界单位阈值会失效）。
 const HM_OUTLINE_EPS_CELLS = 0.75;
 const HM_OUTLINE_CHAIKIN_ITERS = 2;
@@ -150,7 +150,7 @@ function drawFog(ctx, w, h) {
   ctx.font = '13px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(120, 140, 160, 0.5)';
-  ctx.fillText('这片区域尚未绘制 — 点击「编辑地图」开始探索', 0, 0);
+  ctx.fillText('这片区域尚未绘制 — 点击“编辑地图”开始探索', 0, 0);
   ctx.restore();
 }
 
@@ -346,12 +346,12 @@ function drawBackground(ctx, w, h) {
 
 // ===== 高度图渲染（P3 阶段 3） =====
 //
-// 🔴 曾经的实现是「逐格 roundRect + ctx.filter = blur(1.4/zoom) + 13 个分桶各 fill 一次」——
-//    这正是上一轮「行星地形反马赛克」只改了 terrainGrid、**漏掉的另一半**：
+// 🔴 曾经的实现是“逐格 roundRect + ctx.filter = blur(1.4/zoom) + 13 个分桶各 fill 一次”——
+//    这正是上一轮“行星地形反马赛克”只改了 terrainGrid、**漏掉的另一半**：
 //    · 可见区内每一格都要进一次 roundRect（真实库 207×130，缩放下每帧数千格）；
 //    · 13 个分桶各一次 fill，而画布滤镜（ctx.filter）会让每一次 fill 都重新做一遍整层模糊；
-//    用户实测原话：「群系（高度）笔刷一画就卡，是整个司天卡死的级别……约二十秒后地图上出现
-//    神秘草绿色方块」——草绿色方块就是这一堆圆角格（草地色）终于画完的样子。
+//    用户实测原话：“群系（高度）笔刷一画就卡，是整个司天卡死的级别……约二十秒后地图上出现
+//    神秘草绿色方块”——草绿色方块就是这一堆圆角格（草地色）终于画完的样子。
 //    现在与地形涂色层同一套做法：格边界抽平滑闭合环（utils/gridOutline）→ 缓存 → 一次 fill，
 //    彻底去掉逐格绘制与画布滤镜。
 let hmOutlineKey = '';
@@ -359,7 +359,7 @@ let hmOutlines = null;
 let hmOutlineCost = 0;
 let hmOutlineLoops = 0;
 
-/** 双 FNV-1a：27k 字节一遍约 0.05ms，比「每帧重建轮廓」便宜两个数量级 */
+/** 双 FNV-1a：27k 字节一遍约 0.05ms，比“每帧重建轮廓”便宜两个数量级 */
 function hashLabels(a) {
   let h1 = 2166136261, h2 = 2166136261 ^ 0x9e3779b9;
   for (let i = 0; i < a.length; i++) {
@@ -384,7 +384,7 @@ function heightmapOutlines(hm) {
     cell: spacing, ox, oy,
     eps: HM_OUTLINE_EPS_CELLS,
     chaikinIters: HM_OUTLINE_CHAIKIN_ITERS,
-    outside: -1,              // 网格外框 = 无标签（等价于「这里没有群系」）
+    outside: -1,              // 网格外框 = 无标签（等价于“这里没有群系”）
     ignore: [],
     minAreaCells: HM_OUTLINE_MIN_AREA_CELLS,
   });
@@ -404,7 +404,7 @@ function heightmapOutlineStats() {
 // ── 高度图**栅格**渲染（M2/A2，2026-09-25）────────────────────────────────────
 // 与 ScenarioMap 共用 `utils/heightmapRaster.js` 的构建逻辑与配色。
 //
-// 为什么**保留**下面那套矢量轮廓：它做的是「生物群系着色 + 反马赛克」（buildLabelOutlines
+// 为什么**保留**下面那套矢量轮廓：它做的是“生物群系着色 + 反马赛克”（buildLabelOutlines
 // 平滑闭合环，见 352 行那段踩坑记录），仍是 `biome` 方案的实现；栅格是**新增的另一档配色**
 // （陆海底色 / 海拔 / 温度 / 降水），让两个视图对同一份高度图给出同一套观感。默认仍走 biome
 // → 零行为变更（`heightmap` 图层本来就默认关闭，只有编辑高度时强制显示）。
@@ -453,11 +453,11 @@ function drawHeightmapRaster(ctx, kind, alpha) {
   const r = hmRasterCache.get(key, hm, kind, { palette, shade });
   if (!r) return;
   ctx.save();
-  // 平滑档输出的是**格级分辨率**画布，靠这里的插值放大成渐变（反「拼豆」，2026-10-09）；
+  // 平滑档输出的是**格级分辨率**画布，靠这里的插值放大成渐变（反“拼豆”，2026-10-09）；
   // 方块档是 1 世界单位 1 像素、1:1 贴回，插值与否无差别（关掉更省）。
   ctx.imageSmoothingEnabled = RASTER_SMOOTH;
   ctx.imageSmoothingQuality = 'high';
-  // alpha 由调用方按「主表示 or 叠加」决定（见 utils/terrainRepresentation.js）：
+  // alpha 由调用方按“主表示 or 叠加”决定（见 utils/terrainRepresentation.js）：
   // 主表示时不透明（否则透出画布背景），与多边形叠加时半透明（两者都要看得见）。
   ctx.globalAlpha = (typeof alpha === 'number') ? alpha : 0.85;
   ctx.drawImage(r.canvas, r.minX, r.minY, r.w, r.h);
@@ -590,7 +590,7 @@ function drawTerrain(ctx, opts) {
     // 程序化纹理（P2-4）：LOD 高时叠加细节增强 EU4 省份质感；低缩放纯色省性能
     // 拖拽（fastMode）不跳过纹理：pattern 是缓存的一次 fill，成本低（2026-08-16 用户反馈拖拽时纹理消失）
     // ⚠️ alpha 由 0.7 降到 0.45（2026-09-22）：textures.js 已改为大尺度柔和底纹，
-    //    再按旧强度叠会把「柔和」压成「脏」。调纹理观感时联动看 textures.js 的配方。
+    //    再按旧强度叠会把“柔和”压成“脏”。调纹理观感时联动看 textures.js 的配方。
     if (s.lodRef > 0.55) {
       const pattern = getTexturePattern(poly.type, terrainColor, ctx);
       if (pattern) {
@@ -920,7 +920,7 @@ function drawPlaces(ctx) {
     const y = place.coordinate?.y || 0;
     if (!pointInViewport(x, y, vp, 120)) return;
     // 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的聚落 —— **降视觉权重，不隐藏、不删数据**。
-    // 选中或悬停时不淡化：「编辑优先于装饰」，你正在看它就别弄模糊。
+    // 选中或悬停时不淡化：“编辑优先于装饰”，你正在看它就别弄模糊。
     // ⚠️ 本函数体内**没有** globalAlpha 硬编码，所以 save/restore 只需包住整个回调；
     //    若将来有人加了中途 `return`，必须在其之前 restore（否则 alpha 会泄漏到后续绘制）。
     const fade = fadedAlpha(place.status, {
@@ -1347,7 +1347,7 @@ function drawReliefIcons(ctx, overrideList = null) {
 /**
  * 拖动中的**淡色轨迹线**（L2 笔迹层）—— 四支笔共用这一份实现，别再各写一条。
  *
- * 为什么画「线」而不是"更多反馈点"：拖动反馈只有"格子/图标一颗颗变"时，用户看不出自己这一笔
+ * 为什么画“线”而不是"更多反馈点"：拖动反馈只有"格子/图标一颗颗变"时，用户看不出自己这一笔
  * 实际扫过哪里（手感像在撒豆子，不像在画）。轨迹线给的是**路径本身**；数据仍由各笔自己的写口落库。
  *
  * 渲染纪律（与 dirtyRect 基帧共存）：

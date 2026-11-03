@@ -1,4 +1,4 @@
-// scenario/layers/background.js — 剧本视图「底图」层（N1 刀 1，2026-10-30）
+// scenario/layers/background.js — 剧本视图“底图”层（N1 刀 1，2026-10-30）
 //
 // 从 `ScenarioMap.vue` 搬出来的第一批：**画布底色 + 网格** 与 **生物群系图例**。
 // 依赖一律从 `view` 取（不 import Vue、不碰组件状态）—— 这是 N1 的全部意义：

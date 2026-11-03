@@ -12,7 +12,7 @@ export function openNote(path) {
 }
 
 /**
- * 打开「全库资料搜索」。
+ * 打开“全库资料搜索”。
  * @param {string} [query] 预填关键词（读料桥：设定卡读不到笔记时，带节点名直接搜）
  */
 export function openNoteSearch(query = '') {

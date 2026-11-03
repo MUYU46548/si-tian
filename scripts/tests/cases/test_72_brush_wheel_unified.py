@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 72：A6 —— 笔刷工具的统一滚轮契约（滚轮=半径 / Shift+滚轮=强度）
 
-`ROADMAP_NEXT` 的 A6：同一个应用两套手感 —— 剧本视图支持「滚轮=半径、Shift+滚轮=强度」
+`ROADMAP_NEXT` 的 A6：同一个应用两套手感 —— 剧本视图支持“滚轮=半径、Shift+滚轮=强度”
 （`ScenarioMap.onWheel`），而行星图只有滑块，滚轮一律走画布缩放。
 
 本用例守两件事：
@@ -14,7 +14,7 @@
      到边界夹住、非笔刷模式**不拦截**（滚轮仍归画布缩放）
 
 ⚠️ 事件必须派发到 `.canvas-wrapper` 并走**捕获阶段**（模板用 `@wheel.capture`）——
-   直接改 ref 值会绕过「事件 → 处理器 → ref → 重绘」整条链，抓不到漏接线这类缺陷。
+   直接改 ref 值会绕过“事件 → 处理器 → ref → 重绘”整条链，抓不到漏接线这类缺陷。
 """
 import sys, os, io, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -59,7 +59,7 @@ def _static_guard():
     if 'brush-wheel-hint' not in src:
         problems.append('缺少滚轮手势提示（用户不知道有这组手势）')
 
-    # 🔴 Ctrl/⌘+滚轮必须**放行给画布缩放**（2026-10-09 暮雨实测：「鼠标滚轮锁死只能调画笔半径」）。
+    # 🔴 Ctrl/⌘+滚轮必须**放行给画布缩放**（2026-10-09 暮雨实测：“鼠标滚轮锁死只能调画笔半径”）。
     #    原来各笔刷分支无条件 preventDefault + stopPropagation，且没有修饰键分支 → 一进画笔就缩不了图。
     seg = src.split('function onWrapperWheel')[1][:500] if 'function onWrapperWheel' in src else ''
     if 'e.ctrlKey || e.metaKey' not in seg:
@@ -127,8 +127,8 @@ JS_MAIN = r"""(async () => {
   await tick(120);
 
   // ---------- f1 ★ Ctrl+滚轮 = 画布缩放（画笔模式的逃生口，2026-10-09）----------
-  // 判据是「半径**一个都不动**」：没有逃生口时 Ctrl+上滚会走普通分支把半径 +10，
-  // 所以这条断言能真正区分「放行了」和「被吃掉」。
+  // 判据是“半径**一个都不动**”：没有逃生口时 Ctrl+上滚会走普通分支把半径 +10，
+  // 所以这条断言能真正区分“放行了”和“被吃掉”。
   const cR = HB.brushRadius.value;
   await wheel(-100, false, true);
   ck('f1 ★ Ctrl+滚轮放出画笔（半径不动，滚轮交给画布缩放）',

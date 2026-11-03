@@ -84,7 +84,7 @@ def source_gates():
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
     if "'rebuildCoastline'" not in wg:
         fails.append('写口契约缺失：rebuildCoastline 未登记（只读态必须被拦）')
-    # 🔴 「没接 UI 的功能等于不存在」——本项目第一大类缺陷，所以入口也算判据
+    # 🔴 “没接 UI 的功能等于不存在”——本项目第一大类缺陷，所以入口也算判据
     for needle, label in [
         ('store.rebuildCoastline(', '组件：调用 store 的重建入口'),
         ('data-testid="basemap-rebuild-coastline"', '组件：海岸线重建按钮（有入口）'),

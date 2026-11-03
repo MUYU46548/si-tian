@@ -6,15 +6,15 @@
  *   0.2.3 用户实测崩溃 —— `ScenarioMap.vue` 的 `onUnmounted` 里留着一句从格点模型（P2 前）
  *   时代残留下来的 `if (provinceGridTimer) …`，而那个变量**全仓从未声明**。
  *   打包（vite + rollup + esbuild）**不会**因此报错：未声明标识符在 JS 里是合法的
- *   「运行时去全局找」，只有真跑到那一行才抛 `ReferenceError`。于是：
+ *   “运行时去全局找”，只有真跑到那一行才抛 `ReferenceError`。于是：
  *     · `npm run build` 成功；
  *     · 92 个 CDP 用例全绿（它们不进剧本视图、也不触发卸载）；
- *     · 用户一点「历史剧本」→ 退出/切换视图 → 卸载钩子抛错。
+ *     · 用户一点“历史剧本”→ 退出/切换视图 → 卸载钩子抛错。
  *   vs 本仓其它静态守卫（test_47/54/59/71…）都是"查某个字符串在不在"，**结构性地抓不到这类问题**。
  *
  * 判据：文件里出现的**引用位置**标识符，必须能被以下之一解释 ——
  *   ① 本文件里声明过（const/let/var/function/class/import/参数/catch/解构，**不区分作用域嵌套**，
- *      这是「宁可漏报不可误报」的刻意放宽：只要文件里任何地方声明过就不报）；
+ *      这是“宁可漏报不可误报”的刻意放宽：只要文件里任何地方声明过就不报）；
  *   ② 在全局白名单里（浏览器 / Node / Vue 编译器宏）。
  * 剩下的一律报错并给出 文件:行:列 + 名字（按名字聚合，一个名字一行）。
  *
@@ -104,7 +104,7 @@ function loadParser() {
   }
 }
 
-/** 递归遍历 AST（只看对象/数组，带 parent / grandparent，用于「父节点的父节点」判据） */
+/** 递归遍历 AST（只看对象/数组，带 parent / grandparent，用于“父节点的父节点”判据） */
 function walk(node, parent, cb, grand) {
   if (!node || typeof node !== 'object') return;
   if (Array.isArray(node)) {
@@ -126,7 +126,7 @@ function walk(node, parent, cb, grand) {
   }
 }
 
-/** 把「绑定形态」里的所有标识符塞进 out（解构 / 默认值 / rest 都覆盖） */
+/** 把“绑定形态”里的所有标识符塞进 out（解构 / 默认值 / rest 都覆盖） */
 function collectPattern(node, out) {
   if (!node || typeof node !== 'object') return;
   switch (node.type) {
@@ -339,7 +339,7 @@ function main() {
     scan = { findings: [{ file: '<扫描失败>', line: 0, col: 0, name: String((err && err.message) || err) }], scanned: 0 };
   }
 
-  check(`全仓扫描：${scan.scanned} 个文件里没有「引用未声明标识符」`, () => {
+  check(`全仓扫描：${scan.scanned} 个文件里没有“引用未声明标识符”`, () => {
     const f = scan.findings;
     if (!f.length) return `${scan.scanned} 个文件 / 0 条`;
     // 按名字聚合，一个名字一行（同名的多处引用只报第一处 + 计数）

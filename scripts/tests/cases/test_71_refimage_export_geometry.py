@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 71：A7 —— 参考底图的导出几何（旋转单位 / 翻转 / 宽高互换 / 多图）
 
-`ROADMAP_NEXT` 的 A7 原文只写了一条「导出按弧度换算」；实测把它拆开后是**四处**错，
+`ROADMAP_NEXT` 的 A7 原文只写了一条“导出按弧度换算”；实测把它拆开后是**四处**错，
 而且第一处会让整段导出成为**死代码**：
 
   ① `useFullMapExport` 读的是 `referenceImage.referenceImage` —— 那是 useReferenceImage 返回的
@@ -32,7 +32,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 def _code_only(src):
     """剥掉行注释/块注释，只留代码行。
 
-    🔴 必须剥：修完之后我在注释里写了「此前读 `referenceImage.referenceImage`」，子串判据立刻把它当违规（本用例第一版就是这么假红的）。
+    🔴 必须剥：修完之后我在注释里写了“此前读 `referenceImage.referenceImage`”，子串判据立刻把它当违规（本用例第一版就是这么假红的）。
     """
     out, in_block = [], False
     for line in src.splitlines():

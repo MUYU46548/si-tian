@@ -486,5 +486,5 @@ for (const factor of [3, 4, 6]) {
     metrics(G, f, recv, cost, `  ${factor}× 最小代价 w=${w}`, Date.now() - t);
   }
 }
-console.log('\n判读：看「最长河道(u)」与「梳齿% / 汇流率%」两列。');
+console.log('\n判读：看“最长河道(u)”与“梳齿% / 汇流率%”两列。');
 console.log('      若最小代价口径在细网格上把最长河道成倍拉长、且梳齿下降 → 就是本轮要接的东西。');

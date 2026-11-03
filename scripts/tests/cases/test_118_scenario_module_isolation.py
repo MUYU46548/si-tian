@@ -3,10 +3,10 @@
 """用例 118：历史剧本必须是一个**独立模块**，不是盖在其他模块上的大号图层（2026-10-18 第十四修）
 
 暮雨原话（第十四轮反馈第 1、4 条）：
-  ·「历史剧本选择界面（卡片墙），左下角依旧会露出导航栏，虽然不是很严重的 bug，算视觉上的穿帮。
-     此问题应该已经修过至少三次，没有一次修好。」
-  ·「历史剧本依旧整体是一个大号图层盖在顶上，想测行星地图点导航栏双击几遍都出不来，
-     点返回果然是被整个盖住了。历史剧本我说过是一个**独立的模块**，不是盖在其他模块上面的遮罩。」
+  ·“历史剧本选择界面（卡片墙），左下角依旧会露出导航栏，虽然不是很严重的 bug，算视觉上的穿帮。
+     此问题应该已经修过至少三次，没有一次修好。”
+  ·“历史剧本依旧整体是一个大号图层盖在顶上，想测行星地图点导航栏双击几遍都出不来，
+     点返回果然是被整个盖住了。历史剧本我说过是一个**独立的模块**，不是盖在其他模块上面的遮罩。”
 
 案情（DOM 实测，不是读码推测）：
   `App.vue` 旧模板条件只有 `scenarioMode && !scenarioPickerVisible` —— 只管"在不在剧本域"，
@@ -28,7 +28,7 @@
     回程浮标必须出现。
   d 点浮标 → 回剧本编辑器（ScenarioMap 回来、PlanetMap 消失、viewLevel 回 world）。
   e 反向：在行星地图里**点导航树双击又一遍**，ScenarioMap 不许复活（"盖住"的复发探针）；
-    点行星地图的「返回」→ 也不许复活。
+    点行星地图的“返回”→ 也不许复活。
 """
 import json
 import os
@@ -172,7 +172,7 @@ def source_gates():
         head = seg[1][:400]
         if "viewLevel === 'world'" not in head:
             fails.append("🔴 scenarioEditorVisible 里没有 `viewLevel === 'world'` —— "
-                         "门只判了「在不在剧本域」，没判「看的是哪一层」（这正是第十四修的病根）")
+                         "门只判了“在不在剧本域”，没判“看的是哪一层”（这正是第十四修的病根）")
     if 'const scenarioSteppedOut' not in app:
         fails.append('🔴 App.vue 没有 scenarioSteppedOut（走开了却没有回程 = 另一种"点了没反应"）')
     if 'data-testid="scenario-return-chip"' not in app or 'data-testid="scenario-return-btn"' not in app:
@@ -214,7 +214,7 @@ def run(cdp):
     try:
         wait_for(cdp, "!!" + SMC, timeout=25, desc='剧本编辑器挂载')
     except Exception:
-        return False, '点「历史剧本」没进编辑器（用例前提不成立）'
+        return False, '点“历史剧本”没进编辑器（用例前提不成立）'
     time.sleep(0.8)
 
     b = _layout(cdp)
@@ -271,7 +271,7 @@ def run(cdp):
         fails.append('回到编辑器后 steppedOut 仍为真（浮标该消失）')
     notes.append(f"d 回程：编辑器={e['scenarioBox'] is not None} / viewLevel={e['viewLevel']}")
 
-    # ── e 反向：在行星地图里再双击一遍树，以及点行星地图的「返回」──
+    # ── e 反向：在行星地图里再双击一遍树，以及点行星地图的“返回”──
     _ev(cdp, DBL_PLANET, '再双击行星')
     time.sleep(1.0)
     _ev(cdp, DBL_PLANET, '第三遍双击行星')
@@ -287,11 +287,11 @@ def run(cdp):
     time.sleep(1.0)
     g = _layout(cdp)
     if g['scenarioBox']:
-        fails.append('🔴 点行星地图的「返回」后剧本编辑器又盖上来（用户原话就是这条）')
+        fails.append('🔴 点行星地图的“返回”后剧本编辑器又盖上来（用户原话就是这条）')
     notes.append(f"e 反向：反复双击后 scenarioBox={f['scenarioBox']} / 返回后 scenarioBox={g['scenarioBox']}")
 
     # ── f 入口/回程在**每一层**都可走（目标 ②：含从行星视图等任意层级进入/返回）──
-    #    修前的形状：用户必须"回到世界选择页"才找得到「历史剧本」按钮，而一旦在剧本域里
+    #    修前的形状：用户必须"回到世界选择页"才找得到“历史剧本”按钮，而一旦在剧本域里
     #    走到行星层就被盖住（c/e 两段守的就是这个）。这一段补的是**反方向**：
     #    从更深的层能不能回到世界选择页、再进剧本，以及**退出剧本域后视口位置是否保留**。
     #
@@ -304,12 +304,12 @@ def run(cdp):
     time.sleep(0.6)
     left = _layout(cdp)
     if left['scenarioBox'] or left['scenarioMode']:
-        fails.append(f"点「退出剧本」后剧本域没有收干净（scenarioMode={left['scenarioMode']}）")
+        fails.append(f"点“退出剧本”后剧本域没有收干净（scenarioMode={left['scenarioMode']}）")
     if left['viewLevel'] != 'system':
         fails.append(f"退出剧本域后视口位置被改了（停在 {left['viewLevel']}，应保留在 system）"
                      f"—— 退出剧本不该顺带把视口复位")
     notes.append(f"f0 退出剧本域：scenarioMode=False / 视口保留在 {left['viewLevel']}")
-    # 逐层返回世界选择页（产品路径：每层工具栏的「← 返回」）
+    # 逐层返回世界选择页（产品路径：每层工具栏的“← 返回”）
     for _ in range(5):
         if _layout(cdp)['viewLevel'] == 'world':
             break
@@ -327,7 +327,7 @@ def run(cdp):
                        ".find(x => (x.textContent || '').includes('\u5386\u53f2\u5267\u672c'));"
                        " return b ? 'yes' : 'no'; })()", '找历史剧本按钮')
     if has_btn != 'yes':
-        fails.append('回到世界选择页后找不到「历史剧本」入口（进不去剧本域）')
+        fails.append('回到世界选择页后找不到“历史剧本”入口（进不去剧本域）')
     notes.append(f"f1 任意层级回程：{left['viewLevel']}→逐层→{back['viewLevel']}，入口={has_btn}")
 
     # f2 再进一次剧本域（产品入口），编辑器必须挂回来
@@ -369,7 +369,7 @@ def run(cdp):
     try:
         wait_for(cdp, "!!" + SMC, timeout=25, desc='切回剧本模块')
     except Exception:
-        fails.append('点顶部「历史剧本」模块后编辑器没有挂载')
+        fails.append('点顶部“历史剧本”模块后编辑器没有挂载')
     time.sleep(0.5)
     h = _layout(cdp)
     if not h['scenarioBox']:

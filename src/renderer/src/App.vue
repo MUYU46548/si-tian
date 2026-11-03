@@ -1,7 +1,7 @@
 <template>
   <div class="app-layout" :class="`theme-${currentTheme}`">
     <!-- 顶部栏常驻（2026-10-21 模块壳第二轮）：卡片墙打开时也保留 ——
-         用户实测「点历史剧本后再也没有地方点世界观，最接近的是返回世界」。
+         用户实测“点历史剧本后再也没有地方点世界观，最接近的是返回世界”。
          模块页签必须永远在手边，而不是藏在卡片墙的退出按钮里。 -->
     <header class="toolbar">
       <h1 class="app-brand-title">司天</h1>
@@ -10,7 +10,7 @@
       </div>
       <div class="toolbar-actions">
         <!-- 模块切换（2026-10-21 模块壳第一刀）：
-             历史剧本此前只有「世界选择页里的一个按钮」这一个入口，进入后是一个布尔态
+             历史剧本此前只有“世界选择页里的一个按钮”这一个入口，进入后是一个布尔态
              （scenarioMode），所以它天然读作"世界页上的一层遮罩"。现在把它做成
              **App 级平级模块**：两个模块随时可切、当前模块高亮，剧本不再依附于世界页。
              ⚠️ 切换只改模块，不销毁对方的视口位置（退出剧本仍保留 viewLevel，见 test_118 f0）。
@@ -25,7 +25,7 @@
         </nav>
         <!-- ⚠️ 只在**世界观模块**出现：简易模式是"从零画第一张图"的入口，
              在剧本模块里它既用不上、又要把顶部栏挤爆（实测 test_129：多这 70px 之后
-             搜索框与模块页签在 1280px 下重叠，卡片墙打开时「历史剧本」页签点不到）。
+             搜索框与模块页签在 1280px 下重叠，卡片墙打开时“历史剧本”页签点不到）。
              title 里也**不许**出现 `.sitian`（test_48/49/58/75/76 靠它找项目面板入口）。 -->
         <button v-if="activeModule === 'world'" class="simple-mode-open" data-testid="simple-mode-open"
                 title="简易模式：四步画出第一张图（随时可切回完整模式）"
@@ -161,16 +161,16 @@
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
         <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)"><Icon name="history" :size="15"/></button>
-        <!-- 「重新提取」：项目态**隐藏** —— 画布事实源=项目文件，重提取必被事实源冲突拒绝（点完才报错的坏交互）；
-             要把库内容带进项目请走项目面板「导入知识库内容」。只读态保留（灰禁 + title 说明去处）。
-             ⚠️ 只读态必须仍存在且 disabled（test_57 ⑤ 按 title 含「重新提取」找它），所以只加 v-if、不动 disabled。 -->
+        <!-- “重新提取”：项目态**隐藏** —— 画布事实源=项目文件，重提取必被事实源冲突拒绝（点完才报错的坏交互）；
+             要把库内容带进项目请走项目面板“导入知识库内容”。只读态保留（灰禁 + title 说明去处）。
+             ⚠️ 只读态必须仍存在且 disabled（test_57 ⑤ 按 title 含“重新提取”找它），所以只加 v-if、不动 disabled。 -->
         <button v-if="!canvasIsProject" @click="reextract" :disabled="!canReextract" :title="reextractTitle"><Icon name="refresh" :size="15"/></button>
         <button @click="saveData" :disabled="!dirty || isReadOnly" title="保存"><Icon name="save" :size="15"/></button>
         <button @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/></button>
         <button @click="panelsStore.toggle('git-sync')" :class="{ active: panelsStore.isOpen('git-sync') }" title="同步到远程仓库（一键推送到你自己的 git 仓库）"><Icon name="cloud" :size="15"/></button>
         <button @click="openVaultFromToolbar" :title="vaultButtonTitle"><Icon name="book" :size="15"/></button>
         <!-- 只读徽标（决策 1 终态）：状态栏只在画布视图出现，世界/选择视图必须靠这里常驻提示，
-             否则用户只会在「点了没反应」时才发现自己处于只读（点它直接去项目面板 = 给出去处）。 -->
+             否则用户只会在“点了没反应”时才发现自己处于只读（点它直接去项目面板 = 给出去处）。 -->
         <button
           v-if="isReadOnly"
           class="readonly-badge"
@@ -194,7 +194,7 @@
     </header>
 
     <!-- 只读态常驻提示条（用户实测反馈 2026-09-22）：
-         「进入只读后除顶部小字外无任何提示，按钮却像能点」→ 顶部小徽标不够，
+         “进入只读后除顶部小字外无任何提示，按钮却像能点”→ 顶部小徽标不够，
          这里给一条**全宽、大字、可点**的横幅（只在只读态渲染，是文档流内的元素，
          因此不会像绝对定位那样压住任何视图自己的按钮）。
          文案三段式：现状（只读·未打开项目）+ 影响（编辑与保存已停用）+ 去处（点它去项目面板）。 -->
@@ -214,9 +214,9 @@
 
     <!-- 导出菜单 -->
     <div v-if="panelsStore.isOpen('export')" class="export-menu" @click.self="panelsStore.close('export')">
-      <!-- ⚠️ 「当前视图」整图导出只在 galaxy / system / system_detail 三层可用（PlanetMap 与
+      <!-- ⚠️ “当前视图”整图导出只在 galaxy / system / system_detail 三层可用（PlanetMap 与
            ScenarioMap 各有自己的导出工具栏）。不可用时**置灰 + 说明去处**，而不是点了静默 return
-           —— 用户实测「点了没反应」（2026-09-24 修）。 -->
+           —— 用户实测“点了没反应”（2026-09-24 修）。 -->
       <button :disabled="!viewExportSupported" :title="viewExportSupported ? '' : VIEW_EXPORT_HINT"
               @click="handleExportPNG">导出 PNG (当前视图)</button>
       <button :disabled="!viewExportSupported"
@@ -272,9 +272,9 @@
              ScenarioMap 在模板里排在前面 → **行星地图整块被盖住、点不到**。
              DOM 实测：scenarioBox=(200,127,1080,647)、planetBox=(200,774…) 同尺寸，
              `elementFromPoint(画布中心)` 命中的是 ScenarioMap 的 canvas。
-             用户的原话就是「历史剧本整体是一个大号图层盖在顶上，想测行星地图点导航栏
-             双击几遍都出不来，点返回果然是被整个盖住了」。
-             ⚠️ 门必须挂在**剧本域第一层**（world）上，不能写成「scenarioMode 就显示」。 -->
+             用户的原话就是“历史剧本整体是一个大号图层盖在顶上，想测行星地图点导航栏
+             双击几遍都出不来，点返回果然是被整个盖住了”。
+             ⚠️ 门必须挂在**剧本域第一层**（world）上，不能写成“scenarioMode 就显示”。 -->
         <scenario-map
           v-if="scenarioEditorVisible"
           :initial-scenario-id="scenarioInitialId"
@@ -342,9 +342,9 @@
       </main>
     </div>
 
-    <!-- 剧本域「走开了」浮标（2026-10-18 第十四修）：用户在剧本编辑器里双击导航树去了
+    <!-- 剧本域“走开了”浮标（2026-10-18 第十四修）：用户在剧本编辑器里双击导航树去了
          行星/区域/内部层 → 编辑器按层级卸下（否则会盖住行星地图）。此时必须给一条**显眼的回程**，
-         否则「去了行星地图就回不到剧本」= 另一种形式的"点了没反应"。
+         否则“去了行星地图就回不到剧本”= 另一种形式的"点了没反应"。
          位置在状态栏正上方居中：不遮画布中心、不与左下工具条抢位。 -->
     <div v-if="scenarioSteppedOut" class="scenario-return-chip" data-testid="scenario-return-chip">
       <span class="src-text">已离开历史剧本编辑器（当前：{{ currentLevelLabel }}）</span>
@@ -379,8 +379,8 @@
       @open-project="openProjectFromSync"
     />
     <about-panel ref="aboutPanelRef" />
-    <!-- 使用手册（2026-10-11）：暮雨的原话是「司天内没有教程」——
-         文档一直在 docs/ 里，但他只有 exe，看不到仓库。入口挂在「关于」面板里（他唯一会点的地方）。 -->
+    <!-- 使用手册（2026-10-11）：暮雨的原话是“司天内没有教程”——
+         文档一直在 docs/ 里，但他只有 exe，看不到仓库。入口挂在“关于”面板里（他唯一会点的地方）。 -->
     <guide-panel ref="guidePanelRef" />
     <batch-import-panel ref="batchImportPanelRef" />
     <settings-panel ref="settingsPanelRef" />
@@ -431,13 +431,13 @@ import {
 } from './utils/galaxyLayout';
 // 星系美术（2026-11-01 吸收 SP-1025 原型）：背景资产 / 恒星色温与归属环 / LOD 标签。
 // 🔴 画布（GalaxyMap.vue）与本导出**调同一份** —— 任何一边自己再画一套，就又回到
-//    「导出的图和屏幕上的不是一回事」（§bug 导出与画布不同源）那条老病。
+//    “导出的图和屏幕上的不是一回事”（§bug 导出与画布不同源）那条老病。
 import { paintGalaxySky } from './galaxy/sky';
 import { paintDomainBorders } from './galaxy/domainPaint';
 import { paintStar, paintDomainMarker } from './galaxy/starArt';
 import { collectStarLabels, cullStarLabels, paintStarLabels } from './galaxy/labels';
 import { withAlpha } from './utils/colorUtil';
-// 打开知识库本体（用户需求：一键可达的「打开 Obsidian 知识库」入口）
+// 打开知识库本体（用户需求：一键可达的“打开 Obsidian 知识库”入口）
 import { openVault } from './utils/vault';
 // 导入知识库内容：App 只跟注册表打交道（不 import projectStore）
 import { importFromVault, restoreLastProject } from './store/canvasBridge';
@@ -485,15 +485,15 @@ const BookmarkPanel = defineAsyncComponent(() => import('./components/BookmarkPa
 const HistoryPanel = defineAsyncComponent(() => import('./components/HistoryPanel.vue'));
 // Phase 2.1：项目面板（项目文件操作 + 实体浏览器 + 快照回滚）。EntityCreator 随该 chunk 一起加载。
 const ProjectPanel = defineAsyncComponent(() => import('./components/ProjectPanel.vue'));
-// 简易模式（M3 / N3b-2）：新手四步外壳。与面板同一条「低频、按需加载」的路子（首屏不背它）。
+// 简易模式（M3 / N3b-2）：新手四步外壳。与面板同一条“低频、按需加载”的路子（首屏不背它）。
 // ⚠️ 它自己连 store（含 projectStore）—— App 仍然不 import projectStore（test_46/test_55 守）。
 const SimpleMode = defineAsyncComponent(() => import('./components/SimpleMode.vue'));
-// 一键同步到远程仓库（git）：傻瓜式推送（填一次地址 → 点「立即同步」）
+// 一键同步到远程仓库（git）：傻瓜式推送（填一次地址 → 点“立即同步”）
 const GitSyncPanel = defineAsyncComponent(() => import('./components/GitSyncPanel.vue'));
 // 免责声明（UI 基座试点）：首启强制确认 + 关于/设置面板随时可查
 const DisclaimerDialog = defineAsyncComponent(() => import('./components/DisclaimerDialog.vue'));
 import { planetToGeoJSON, geoJSONToPlanet } from './utils/geojson';
-// 退出确认（2026-10-09）：Ctrl+Q 的「要不要退」由渲染层用这个模态问用户
+// 退出确认（2026-10-09）：Ctrl+Q 的“要不要退”由渲染层用这个模态问用户
 import { usePromptDialog } from './composables/usePromptDialog';
 import { useLayersStore } from './store/layers';
 // 退出前落盘（数据安全）：中立注册表 —— App 不直接 import 任何 store 实现，只驱动 flushAll()
@@ -518,7 +518,7 @@ const dirty = ref(false);
  * 只能读作"世界页上盖了一层"。模块状态必须显式存在，才能：
  *   ① 顶部模块切换按钮有唯一真源；
  *   ② 以后再加第三个模块（星图 / 行星与细节）时不用再造一套布尔；
- *   ③ 「在剧本里走到行星层」= 世界模块的视口，模块身份与层级身份不再混为一谈。
+ *   ③ “在剧本里走到行星层”= 世界模块的视口，模块身份与层级身份不再混为一谈。
  *
  * ⚠️ `scenarioMode` 保留为**可写 computed**（= activeModule 的派生）：30+ 个用例与
  *    既有函数都按 `scenarioMode.value` 读写，行为一行不改；但它不再有独立存储。
@@ -549,7 +549,7 @@ async function switchModule(m) {
  * 新手四步外壳的开 / 关。
  *
  * 它**不是模块**：不占 activeModule 的值，也不改视图层级 —— 关掉就回到原来那一屏。
- * 面板自己从 store 读真实状态、调既有动作；App 这里只负责"壳"与「进剧本编辑器」这一步。
+ * 面板自己从 store 读真实状态、调既有动作；App 这里只负责"壳"与“进剧本编辑器”这一步。
  */
 const simpleOpen = ref(false);
 /**
@@ -570,8 +570,8 @@ function closeSimpleMode() { simpleOpen.value = false; }
 /**
  * 简易模式第③/④步：进历史剧本编辑器（画省份 / 导出 PNG 的入口只在那儿）。
  *
- * 走的就是顶部「历史剧本」页签那条 `switchModule('scenario')` → `enterScenarioMode()`，
- * 不另开第二条进入链 —— 否则「只补缺载入」「卡片墙」这些口径迟早分叉（本项目踩过）。
+ * 走的就是顶部“历史剧本”页签那条 `switchModule('scenario')` → `enterScenarioMode()`，
+ * 不另开第二条进入链 —— 否则“只补缺载入”“卡片墙”这些口径迟早分叉（本项目踩过）。
  * 进去之后由状态栏指路（简易模式不重复实现画布工具，也不重复实现导出）。
  */
 async function handleSimpleEnterScenario(payload = {}) {
@@ -579,7 +579,7 @@ async function handleSimpleEnterScenario(payload = {}) {
   await switchModule('scenario');
   statusText.value = payload.intent === 'export'
     ? '导出在剧本编辑器顶部工具栏：图片按钮 = 导出当前剧本 / 年份为 PNG'
-    : '在剧本编辑器左侧工具栏用「画省份 / 批量铺底」画 —— 画完等自动保存（或 Ctrl+S）';
+    : '在剧本编辑器左侧工具栏用“画省份 / 批量铺底”画 —— 画完等自动保存（或 Ctrl+S）';
   statusKind.value = 'ok';
   setTimeout(() => {
     if (statusKind.value === 'ok') { statusText.value = ''; statusKind.value = ''; }
@@ -588,8 +588,8 @@ async function handleSimpleEnterScenario(payload = {}) {
 
 // ===== 剧本域与七层视图的**互斥**（2026-10-18 第十四修）=====
 //
-// 反馈原话：「历史剧本依旧整体是一个大号图层盖在顶上，想测行星地图点导航栏双击几遍都出不来，
-// 点返回果然是被整个盖住了。历史剧本我说过是一个**独立的模块**，不是盖在其他模块上面的遮罩。」
+// 反馈原话：“历史剧本依旧整体是一个大号图层盖在顶上，想测行星地图点导航栏双击几遍都出不来，
+// 点返回果然是被整个盖住了。历史剧本我说过是一个**独立的模块**，不是盖在其他模块上面的遮罩。”
 //
 // 事实（DOM 实测，非读码推测）：旧条件 `scenarioMode && !scenarioPickerVisible` 只管
 // "在不在剧本域"，不管"当前看的是哪一层"。用户在剧本编辑器里双击导航树的行星 →
@@ -602,7 +602,7 @@ async function handleSimpleEnterScenario(payload = {}) {
 const scenarioEditorVisible = computed(
   () => scenarioMode.value && !scenarioPickerVisible.value && store.viewLevel === 'world'
 );
-// 「走开了」= 还在剧本域，但编辑器被上面这道门卸下了 → 必须给回程浮标（见模板）。
+// “走开了”= 还在剧本域，但编辑器被上面这道门卸下了 → 必须给回程浮标（见模板）。
 const scenarioSteppedOut = computed(
   () => scenarioMode.value && !scenarioPickerVisible.value && store.viewLevel !== 'world'
 );
@@ -611,7 +611,7 @@ const LEVEL_LABELS = {
   planet: '行星地图', area: '区域地图', interior: '建筑内部',
 };
 const currentLevelLabel = computed(() => LEVEL_LABELS[store.viewLevel] || store.viewLevel);
-/** 浮标「返回剧本编辑器」：回剧本域第一层（编辑器）。 */
+/** 浮标“返回剧本编辑器”：回剧本域第一层（编辑器）。 */
 function returnToScenarioEditor() {
   store.backToWorld();          // viewLevel='world' → scenarioEditorVisible 变真，编辑器挂回来
   scenarioInitialId.value = ''; // 一次性载荷清干净（与 backToScenarioPicker 同一口径）
@@ -621,7 +621,7 @@ const statusText = ref('');
 // 状态类型：ok | err —— 驱动状态栏图标（替代原先在文案里内嵌的对错符号）
 const statusKind = ref('');
 
-// 写闸门拒绝回音（2026-09-21）：只读态下任何被拦的写操作都要在状态栏说清「为什么没反应 + 去哪儿」
+// 写闸门拒绝回音（2026-09-21）：只读态下任何被拦的写操作都要在状态栏说清“为什么没反应 + 去哪儿”
 // ——覆盖落盘写（11 条入口）与内存编辑（execute / 参考图 / 剧本导入…），见 store/writeGate.js。
 // 绝不静默：只拦不提示 = 用户以为点了没反应（本项目踩过）。
 let rejectionTimer = null;
@@ -657,7 +657,7 @@ const onboardingGuideRef = ref(null);
 
 // ===== 免责声明（2026-10-06 UI 基座试点）=====
 // 首启阻断必须在 loadGeodata() **之前**决定（放在之后会出现
-// 「splash 淡出 → 闪一下主界面 → 才盖上来」，见 docs/PROPOSAL_DISCLAIMER_AND_UI.md §1.4）。
+// “splash 淡出 → 闪一下主界面 → 才盖上来”，见 docs/PROPOSAL_DISCLAIMER_AND_UI.md §1.4）。
 const disclaimerOpen = ref(false);
 const disclaimerMode = ref('gate'); // 'gate' 首启阻断 | 'view' 随时查看
 const isDisclaimerGateOpen = computed(() => disclaimerOpen.value && disclaimerMode.value === 'gate');
@@ -679,7 +679,7 @@ function handleDisclaimerAccept(payload) {
   disclaimerOpen.value = false;
   window.__sitianDisclaimerGate = false;
   if (!persisted) {
-    // 写不进 localStorage（隐私模式/配额满）也要说清：否则用户以为「下次不用再点了」
+    // 写不进 localStorage（隐私模式/配额满）也要说清：否则用户以为“下次不用再点了”
     statusText.value = '免责声明已确认（本次会话内有效：无法写入本地记录）';
     statusKind.value = 'warn';
   }
@@ -690,7 +690,7 @@ function handleDisclaimerAccept(payload) {
 }
 
 function handleDisclaimerDecline() {
-  // 「不同意并退出」：走窗口关闭路径（与点 × 一致；主进程 before-quit 仍会尝试落盘未保存改动）
+  // “不同意并退出”：走窗口关闭路径（与点 × 一致；主进程 before-quit 仍会尝试落盘未保存改动）
   window.close();
 }
 
@@ -738,31 +738,31 @@ const undoTooltip = computed(() => {
 });
 
 // 只读徽标 title（决策 1 终态）：状态原因 + **能力说明 + 去处**。
-// 能力不减纪律：任何「不可用」提示都必须说明去哪恢复，否则用户只看到一句「已停用」。
+// 能力不减纪律：任何“不可用”提示都必须说明去哪恢复，否则用户只看到一句“已停用”。
 const readonlyTitle = computed(() => {
   const base = String(readOnlyReason.value || '只读');
   const hint = base.indexOf('打开项目后即可继续编辑') >= 0 ? '' : '；新建或打开项目后即可继续编辑';
-  // 以「只读」开头：title 是「这个元素是什么」的说明，不该以状态原因开头（原因可能是「项目已关闭」）
+  // 以“只读”开头：title 是“这个元素是什么”的说明，不该以状态原因开头（原因可能是“项目已关闭”）
   return `只读：${base}${hint}（点击打开项目面板）`;
 });
 
-// 「重新提取」的可用性与说明（三段式：原因 + 影响 + 去处）
+// “重新提取”的可用性与说明（三段式：原因 + 影响 + 去处）
 //   ① 只读态（无项目）：重提取是"落盘写"，会被闸门拒绝
 //   ② 已打开项目：画布事实源是项目文件，重提取会把知识库数据倒进画布（两套事实源混流）
 // 两种情形都灰禁 + 在 title 里写清去哪儿恢复，避免"点了才发现被拒"。
 const canvasIsProject = computed(() => store.canvasSource === 'project');
 const canReextract = computed(() => !isReadOnly.value && !canvasIsProject.value);
-// ⚠️ 三段文案**都必须以「重新提取」开头**：状态原因是动态的（关闭项目后是「项目已关闭」），
-// 直接拿它开头会让 title 变成以「项目」开头的句子 —— 按 title 前缀找「项目面板」入口的调用方
-// （用例 / 未来的帮助检索）会挑中这个按钮，表现为「点了项目按钮面板不出现」（2026-09-22 实测踩到）。
+// ⚠️ 三段文案**都必须以“重新提取”开头**：状态原因是动态的（关闭项目后是“项目已关闭”），
+// 直接拿它开头会让 title 变成以“项目”开头的句子 —— 按 title 前缀找“项目面板”入口的调用方
+// （用例 / 未来的帮助检索）会挑中这个按钮，表现为“点了项目按钮面板不出现”（2026-09-22 实测踩到）。
 const reextractTitle = computed(() => {
   if (isReadOnly.value) {
     return `重新提取（已停用）：${readOnlyReason.value}；它要重写知识库坐标缓存，`
-      + '请先在项目面板「以知识库为基底新建项目」或打开已有项目，再用面板里的「导入知识库内容」把数据带进来';
+      + '请先在项目面板“以知识库为基底新建项目”或打开已有项目，再用面板里的“导入知识库内容”把数据带进来';
   }
   if (canvasIsProject.value) {
     return '重新提取（已停用）：当前画布数据来自项目文件，重提取会让知识库数据与项目数据混流。'
-      + '要把知识库内容带进项目，请用项目面板的「导入知识库内容」（只补缺、可撤销）；'
+      + '要把知识库内容带进项目，请用项目面板的“导入知识库内容”（只补缺、可撤销）；'
       + '若要从零重建，先在项目面板关闭当前项目';
   }
   return '重新提取（把知识库最新内容读进来）';
@@ -771,7 +771,7 @@ const reextractTitle = computed(() => {
 const vaultButtonTitle = computed(() => '打开 Obsidian 知识库（打不开时自动改为在文件管理器中打开库目录）');
 
 /**
- * 打开知识库本体（用户需求 2026-09-22：给一个「打开 Obsidian 知识库」的按钮，
+ * 打开知识库本体（用户需求 2026-09-22：给一个“打开 Obsidian 知识库”的按钮，
  * 不再让用户自己猜知识库在哪）。三级兜底见 utils/vault.js#openVault。
  */
 async function openVaultFromToolbar() {
@@ -786,7 +786,7 @@ async function openVaultFromToolbar() {
 }
 
 /**
- * 「导入知识库内容」（2026-09-22 用户实测）：把知识库既有内容合并进**当前项目**。
+ * “导入知识库内容”（2026-09-22 用户实测）：把知识库既有内容合并进**当前项目**。
  * App 不 import projectStore（静态闸门），所以走 canvasBridge 的注册口。
  */
 async function doImportFromVault() {
@@ -830,7 +830,7 @@ let perfUpdateTimer = null;
 // 获取当前活动的 renderer ref
 // 获取当前活动的 renderer（相机 / 聚焦 / 性能统计 + 视口书签）
 // ⚠️ R5（2026-09-26）：原来只认 domain / system / system_detail 三层，行星 / 区域 / 建筑内部
-// 一律返回 null → 调用方（书签）静默 `return`，用户表现为「点了没反应」。
+// 一律返回 null → 调用方（书签）静默 `return`，用户表现为“点了没反应”。
 // 现在覆盖**全部六层有画布的视图**（world 是选择页、无画布）。
 // 前置条件：PlanetMap / AreaMap / InteriorView 必须 `defineExpose({ canvas, renderer })`。
 function getActiveRenderer() {
@@ -849,7 +849,7 @@ function getActiveRenderer() {
 }
 
 // 获取当前活动的 canvas ref —— ⚠️ **刻意保持三层**（domain / system / system_detail）。
-// 它与 `getActiveRenderer()` 不是同一件事：这个只服务「当前视图整图导出」，而那条导出链
+// 它与 `getActiveRenderer()` 不是同一件事：这个只服务“当前视图整图导出”，而那条导出链
 // 只在三层实现过（见下方 `viewExportSupported` / VIEW_EXPORT_HINT）。
 // 行星 / 区域 / 建筑内部若在这里返回 canvas，会让导出函数拿到一张它处理不了的画布
 // —— 按钮虽然仍然置灰，但函数级守卫就失效了（双保险变单保险）。
@@ -866,9 +866,9 @@ function getActiveCanvas() {
 
 // 导出功能已内联实现，无需 useMapExport
 
-// 「当前视图」整图导出只覆盖 galaxy / system / system_detail 三层
+// “当前视图”整图导出只覆盖 galaxy / system / system_detail 三层
 // （PlanetMap 与 ScenarioMap 各有自己的导出工具栏）。不可用时按钮置灰 + 说明去处，
-// 而不是点了静默 return —— 用户实测「点了没反应」（2026-09-24 修）。
+// 而不是点了静默 return —— 用户实测“点了没反应”（2026-09-24 修）。
 const VIEW_EXPORT_HINT = '当前层级没有整图导出：行星地图与历史剧本请用各自工具栏的导出按钮';
 const viewExportSupported = computed(() => ['domain', 'system', 'system_detail'].includes(store.viewLevel));
 
@@ -1013,7 +1013,7 @@ async function handleExportFullPNG() {
   //    它们的位置是提取器的同心圆布局（真实项目实测 ±1300 世界单位），而星域环形半径只有 630。
   //    后果（用真实 415 省项目复算得出，`build/_probe_export_bounds.mjs`）：
   //    图幅 2734×2759，星系全挤在一角，其余是**大片空白**，10px 标签在 5468px 的位图上小到看不清 ——
-  //    用户 2026-10-30 原话「全是画得一坨狗屎的星系地图」，指的就是这张图。
+  //    用户 2026-10-30 原话“全是画得一坨狗屎的星系地图”，指的就是这张图。
   //    画布（GalaxyMap）只画星域 + 星系，导出当然也不该画别的。
   const placed = [...domainNodes, ...galaxyNodes];
   const xs = placed.map(n => (Number.isFinite(n.x) ? n.x : n.coordinate?.x)).filter(x => Number.isFinite(x));
@@ -1046,7 +1046,7 @@ async function handleExportFullPNG() {
   const textColor = isDark ? '#e8edf6' : '#1f2328';
   
   // 1. 背景：**与画布同一份资产**（星云 / 尘埃带 / 三层星场 / 暗角，`galaxy/sky.js`）
-  //    🔴 2026-11-01：旧实现是「径向渐变 + 6 团固定星云 + 300 个取模点」——
+  //    🔴 2026-11-01：旧实现是“径向渐变 + 6 团固定星云 + 300 个取模点”——
   //       与画布那片天不是一回事（§bug 导出与画布不同源）。现在两边都调 `paintGalaxySky`。
   if (isDark) {
     paintGalaxySky(ctx, { x: minX, y: minY, w: width, h: height });
@@ -1058,7 +1058,7 @@ async function handleExportFullPNG() {
     ctx.fillRect(minX, minY, width, height);
   }
   // 3. 势力边界：**与画布同一份**（`galaxy/domainPaint.js#paintDomainBorders`，2026-11-02 起）
-  //    旧实现是导出这边自己写一段「填充 + 单描边 + 名字」，与画布的三段描边**从来就不一致**
+  //    旧实现是导出这边自己写一段“填充 + 单描边 + 名字”，与画布的三段描边**从来就不一致**
   //    （`test_117` 守的就是这件事）。现在形状来自同一个所有权场，画法也同一份。
   paintDomainBorders(ctx, factionBorders({
     domainNodes, galaxyNodes, overrides: store.domainBorderOverrides,
@@ -1071,7 +1071,7 @@ async function handleExportFullPNG() {
   });
   
   // 4. 航道（分类型颜色 + 辉光，跨域虚线）：颜色走共享 `hyperlaneColor`（**4 类**，含用户建的）
-  //    2026-11-02：全图导出等效于「中景」，与画布共用同一份稀疏化（`sparsifyHyperlanes`）——
+  //    2026-11-02：全图导出等效于“中景”，与画布共用同一份稀疏化（`sparsifyHyperlanes`）——
   //    否则导出把每一对恒星都连一条，3617px 的大图上就是一张紫色乱麻网。
   const exportLanes = sparsifyHyperlanes(hyperlanes, {
     nodeById: galaxyById,
@@ -1182,7 +1182,7 @@ function posOf(n) {
  * 导出位图落盘 —— **唯一实现**（2026-10-30）。
  *
  * 修前：`App.vue` 里三条导出（当前视图 / 全图 / SVG）各写一遍 `a.download`，
- * 那是**浏览器的默认下载目录**（Chromium 下即用户「下载」文件夹）：不问路径、不记上次目录、
+ * 那是**浏览器的默认下载目录**（Chromium 下即用户“下载”文件夹）：不问路径、不记上次目录、
  * 文件名带毫秒时间戳 → 每次点一次就多一份，**永远不覆盖**。
  * 用户实测（2026-10-30）：三天攒了 21 份**字节完全相同**的 `sitian-full-*.png`，
  * 每份 17.9 MB、共 359 MB —— 全是同一张图，因为布局是确定性的。
@@ -1300,14 +1300,14 @@ function handleImportGeoJSON() {
 }
 
 /**
- * 构建「地图配置」载荷（**纯构造，不落盘/不下载**）。
+ * 构建“地图配置”载荷（**纯构造，不落盘/不下载**）。
  *
- * 抽成独立函数是为了让「导出 → 导入」能**真的走一个往返**（回归 test_74）：
+ * 抽成独立函数是为了让“导出 → 导入”能**真的走一个往返**（回归 test_74）：
  * 载荷构造留在 `handleExportMapConfig` 里面时，用例只能自己手写一份配置去喂导入端 ——
  * 那样**导出端漏字段永远测不出来**（实测：把 `parentId` 改成恒 null，手写配置的用例照样全绿）。
  *
  * ⚠️ 字段必须与 `handleImportMapConfig` 的读取**对齐**（2026-09-24 修）：导入端会读
- *    mapData / areaZones / interiorData，旧导出端只写 nodes + hyperlanes → 「导出后再导入」
+ *    mapData / areaZones / interiorData，旧导出端只写 nodes + hyperlanes → “导出后再导入”
  *    会**静默丢掉**行星地图、区域多边形/道路/标记/文本、建筑内部数据。
  * 深拷贝：去响应式代理（IPC/JSON 需要）+ TypedArray 兜底（见 jsonSafeReplacer）。
  */
@@ -1318,7 +1318,7 @@ function buildMapConfig() {
     viewLevel: store.viewLevel,
     currentWorld: store.currentWorld?.id || null,
     currentDomain: store.currentDomain?.id || null,
-    // R6（2026-09-26）：`parentId` 是**层级**，旧导出漏了它 → 「导出 → 在另一台机器导入」后
+    // R6（2026-09-26）：`parentId` 是**层级**，旧导出漏了它 → “导出 → 在另一台机器导入”后
     //    实体树会整片塌成 0 级（父子关系全丢），而且不报错。
     //    形状刻意与项目文件的实体形状对齐（`nodeToProjectEntity`）：编辑侧字段走 `entityExtras`
     //    一次性带走，`draft` 不入配置（它由 sourcePath 派生）—— 导入端用 `store.entityToNode()`
@@ -1378,7 +1378,7 @@ function handleImportMapConfig() {
     if (!file) return;
 
     // 🔴 导入会直接改写世界观数据 → 必须先过写闸门（2026-09-24 补，本函数原 89 行里 guardWrite 一次都没有）。
-    //    旧实现直接给 store 的各个容器赋值：只读态下「已导入 N 个节点」的提示照打，
+    //    旧实现直接给 store 的各个容器赋值：只读态下“已导入 N 个节点”的提示照打，
     //    但 scheduleAutoSave 在只读态直接返回 → **数据永不落盘**（静默假成功），且不进 undo 栈。
     const gate = guardWrite('导入地图配置');
     if (!gate.ok) {
@@ -1398,7 +1398,7 @@ function handleImportMapConfig() {
       
       // 🔴 整次导入 = **一条 undo**（B8，2026-09-24）。
       //    既有实现直接给 store 的各个容器赋值：既绕写闸门（只读态静默假成功）、也不进 undo 栈
-      //    （Ctrl+Z 撤不掉）。现在改成「先把导入后应该是什么样算好，再交给 execute 的 redo 落库」——
+      //    （Ctrl+Z 撤不掉）。现在改成“先把导入后应该是什么样算好，再交给 execute 的 redo 落库”——
       //    **绝不先手动改 store**（那是双写，撤销会错位）。
       const clone = (v) => JSON.parse(JSON.stringify(v || {}, jsonSafeReplacer));
       const before = {
@@ -1414,7 +1414,7 @@ function handleImportMapConfig() {
       };
 
       // ── R6：导入端**新建缺失实体**（旧实现只 `find` 更新已存在节点的坐标 → 换台机器导入后
-      //    实体根本没进来，提示却照打「已导入 N 个节点」= 假成功）。
+      //    实体根本没进来，提示却照打“已导入 N 个节点”= 假成功）。
       //    层级靠 `parentId` 复原；父级在**本次导入集合内**也算有效（两趟：先算 id 全集，再落库）。
       const seenCfgId = new Set();
       const importNodes = (config.nodes || []).filter(n => {
@@ -1424,7 +1424,7 @@ function handleImportMapConfig() {
       });
       const existingIds = new Set(store.nodes.map(n => n.id));
       const knownIds = new Set([...existingIds, ...importNodes.map(n => n.id)]);
-      /** 节点要落到画布上的样子 —— 与「项目 → 画布」共用同一份形状定义 */
+      /** 节点要落到画布上的样子 —— 与“项目 → 画布”共用同一份形状定义 */
       const toNode = (n) => {
         const node = store.entityToNode(n);
         node.parentId = (n.parentId && n.parentId !== n.id && knownIds.has(n.parentId)) ? n.parentId : null;
@@ -1554,7 +1554,7 @@ function cleanupStressTest() {
 // ===== 世界管理（WorldSelector） =====
 
 function handleCreateWorld() {
-  // ⚠️ 只读态（无项目）下 addNode 会被写闸门拒绝 —— 旧实现不看返回值、照样打印「已创建」= 谎报成功。
+  // ⚠️ 只读态（无项目）下 addNode 会被写闸门拒绝 —— 旧实现不看返回值、照样打印“已创建”= 谎报成功。
   //    2026-09-24 修：先判只读 → 给出去处（去项目面板建/开项目），而不是让用户对着"假成功"发呆。
   if (isReadOnly.value) {
     statusText.value = '新建世界被拒绝：还没有打开项目 —— 先新建或打开项目，再回来建世界';
@@ -1573,12 +1573,12 @@ function handleCreateWorld() {
     coordinate: { x: null, y: null },
   });
   dirty.value = true;
-  statusText.value = `已创建「新世界${Date.now() % 1000}」，可在左侧树中选中后重命名`;
+  statusText.value = `已创建“新世界${Date.now() % 1000}”，可在左侧树中选中后重命名`;
   setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 4000);
 }
 
 function handleLoadSampleWorld() {
-  // ⚠️ 同上：只读态下 20+ 个 addNode 全会被拒，旧实现仍打印「已加载示例世界观」= 谎报成功。
+  // ⚠️ 同上：只读态下 20+ 个 addNode 全会被拒，旧实现仍打印“已加载示例世界观”= 谎报成功。
   if (isReadOnly.value) {
     statusText.value = '加载示例被拒绝：还没有打开项目 —— 先新建或打开项目，再回来加载示例';
     statusKind.value = 'warn';
@@ -1595,37 +1595,37 @@ function handleLoadSampleWorld() {
     store.addHyperlane(lane.fromId, lane.toId, lane.type);
   }
   dirty.value = true;
-  statusText.value = '已加载示例世界观「幻境」，点击世界卡片开始探索';
+  statusText.value = '已加载示例世界观“幻境”，点击世界卡片开始探索';
   setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 5000);
 }
 
 // ===== 剧本地图模式 =====
 
 async function enterScenarioMode() {
-  // 模块入口 = 模块根（2026-10-21）：从行星/区域层点「历史剧本」时先把视口退回世界层。
+  // 模块入口 = 模块根（2026-10-21）：从行星/区域层点“历史剧本”时先把视口退回世界层。
   // 否则卡片墙选完剧本 → pickerVisible=false、viewLevel 仍是 planet → ScenarioMap 因层级门
   // 不挂载，用户看到的是"已离开历史剧本编辑器"的假态（模块进不去，只能靠浮标救）。
   if (store.viewLevel !== 'world') store.backToWorld();
   // 从**知识库缓存**（<库>/.sitian/scenarios.json）载入剧本。
   // 🔴 必须走 `fillMissingOnly`（只补缺）：项目态下画布事实源是项目文件，
   //    库里同名的剧本 / 底图**不许**覆盖项目里已经编辑过的那一份 ——
-  //    旧实现走默认的「新值赢」合并，紧接着 `saveScenarios()` 把覆盖结果推给项目并落盘，
-  //    于是「每次启动后第一次点『历史剧本』」都会把用户的剧本与底图编辑**静默回退**。
-  //    「同 key 覆盖」留给用户在剧本工具栏明确按下的「导入剧本数据（合并：同 key 覆盖）」。
+  //    旧实现走默认的“新值赢”合并，紧接着 `saveScenarios()` 把覆盖结果推给项目并落盘，
+  //    于是“每次启动后第一次点‘历史剧本’”都会把用户的剧本与底图编辑**静默回退**。
+  //    “同 key 覆盖”留给用户在剧本工具栏明确按下的“导入剧本数据（合并：同 key 覆盖）”。
   const result = await window.sitianAPI.loadScenarios();
   if (result?.success && result.data) {
     store.importFromScenariosJson(result.data, { fillMissingOnly: true });
   }
   // 卡片墙（2026-10-17 P0）：先选剧本再进编辑器。
   // harness 注入 `__SKIP_SCENARIO_PICKER` 时直达编辑器 —— 30+ 个既有用例的
-  // 「点历史剧本 → ScenarioMap 挂载」路径逐字不变（同免责声明种子的跳过开关手法）。
+  // “点历史剧本 → ScenarioMap 挂载”路径逐字不变（同免责声明种子的跳过开关手法）。
   scenarioInitialId.value = '';
   scenarioOpenManager.value = false;
   scenarioPickerVisible.value = !window.__SKIP_SCENARIO_PICKER;
   scenarioMode.value = true;
 }
 
-/** 卡片墙选中一张卡 / 点「进入编辑器」/ 空态「新建剧本」 */
+/** 卡片墙选中一张卡 / 点“进入编辑器”/ 空态“新建剧本” */
 function handlePickerEdit(payload) {
   scenarioInitialId.value = payload?.scenarioId || '';
   scenarioOpenManager.value = !!payload?.openManager;
@@ -1635,13 +1635,13 @@ function handlePickerEdit(payload) {
 /**
  * 编辑器 → 卡片墙（P0-1，2026-10-17 第三轮）。
  *
- * 为什么不是把「返回」改成回卡片墙：`← 返回` 的语义是**离开剧本域**（去世界选择页），
+ * 为什么不是把“返回”改成回卡片墙：`← 返回` 的语义是**离开剧本域**（去世界选择页），
  * 与"换一个剧本继续编辑"是两件事 —— 混成一个按钮会出现"想回世界却被留在剧本域"。
- * 所以由编辑器的「换剧本」按钮显式发 `picker` 事件，这里只切回卡片墙。
+ * 所以由编辑器的“换剧本”按钮显式发 `picker` 事件，这里只切回卡片墙。
  *
  * 🔴 必须把 initialScenarioId / openManager **清干净**：它们是"本次进入要落到的剧本"的
  *    一次性载荷。不清的话，用户从卡片墙回来、再点另一张卡时，ScenarioMap 可能读到上一轮
- *    的残留（例如上次是「打开管理对话框」→ 这次点卡片也会莫名弹出对话框）。
+ *    的残留（例如上次是“打开管理对话框”→ 这次点卡片也会莫名弹出对话框）。
  */
 function backToScenarioPicker() {
   scenarioInitialId.value = '';
@@ -1658,22 +1658,22 @@ function exitScenarioMode() {
 
 function handleDeleteWorld(world) {
   const childCount = store.starDomains.filter(d => d.parentId === world.id).length;
-  const msg = `确定删除世界「${world.name}」吗？\n\n` +
+  const msg = `确定删除世界“${world.name}”吗？\n\n` +
     (childCount > 0 ? `该世界下有 ${childCount} 个星域（及其星系/行星）将失去上级关联。\n` : '') +
     `仅从地图缓存移除，不删除 Obsidian 文件。可撤销。`;
   if (!confirm(msg)) return;
   store.removeNode(world.id);
   dirty.value = true;
-  statusText.value = `世界「${world.name}」已从地图移除`;
+  statusText.value = `世界“${world.name}”已从地图移除`;
   setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 4000);
 }
 
 // ===== 书签管理（R5，2026-09-26 修）=====
 //
-// 旧实现的三个问题，全在「点了没反应」这条线上：
+// 旧实现的三个问题，全在“点了没反应”这条线上：
 //   ① `getActiveRenderer()` 只认三层 → 行星 / 区域 / 建筑内部拿到 null 就 `return`
 //      （**静默**：不跳转、不提示、不报错）；那三层也没被组件暴露出来。
-//   ② 后面那段「切换视图级别」用 `backToXxx()` —— 那是**往回退一层**，与书签记录的层级不是同一件事
+//   ② 后面那段“切换视图级别”用 `backToXxx()` —— 那是**往回退一层**，与书签记录的层级不是同一件事
 //      （书签记 planet，`backToSystem()` 退到的是 system）。它排在 `if (!renderer) return` 之后，
 //      实际一次都没跑到过。
 //   ③ 图层状态被记下来了却**从没应用过**（`addBookmark` 存了 layerState，App 里没读）。
@@ -1727,7 +1727,7 @@ function handleAddBookmark() {
   if (!renderer) {
     bookmarkStatus(scenarioMode.value
       ? '历史剧本没有视口书签（书签服务的是六层地图视图）'
-      : `「${levelText(store.viewLevel)}」没有可记录的画布 —— 先进入星域总览或更下层`, 'err');
+      : `“${levelText(store.viewLevel)}”没有可记录的画布 —— 先进入星域总览或更下层`, 'err');
     return;
   }
 
@@ -1771,7 +1771,7 @@ function handleBookmarkNavigate(bm) {
   if (bm.viewLevel === store.viewLevel) {
     const renderer = getActiveRenderer();
     if (!renderer) {
-      bookmarkStatus(`书签属于「${levelText(bm.viewLevel)}」，但当前没有可用的画布`, 'err');
+      bookmarkStatus(`书签属于“${levelText(bm.viewLevel)}”，但当前没有可用的画布`, 'err');
       return;
     }
     applyBookmarkCamera(renderer, bm);
@@ -1784,7 +1784,7 @@ function handleBookmarkNavigate(bm) {
   // ── 跨层：先按锚点把视图切过去 ──
   if (!bm.anchorId) {
     bookmarkStatus(
-      `这条书签记于「${levelText(bm.viewLevel)}」，但没记录定位锚点（早期版本的书签）——`
+      `这条书签记于“${levelText(bm.viewLevel)}”，但没记录定位锚点（早期版本的书签）——`
       + '请切到那一层重新添加', 'err');
     return;
   }
@@ -1799,7 +1799,7 @@ function handleBookmarkNavigate(bm) {
   nextTick(() => {
     const renderer = getActiveRenderer();
     if (!renderer) {
-      bookmarkStatus(`已切到「${levelText(store.viewLevel)}」，但该视图的画布尚未就绪`, 'err');
+      bookmarkStatus(`已切到“${levelText(store.viewLevel)}”，但该视图的画布尚未就绪`, 'err');
       return;
     }
     applyBookmarkCamera(renderer, bm);
@@ -1807,7 +1807,7 @@ function handleBookmarkNavigate(bm) {
     if (bm.viewLevel !== store.viewLevel) {
       // 锚点只能定位到实体，落点层级与书签层级不一致时**如实说明**，不假装成功
       bookmarkStatus(
-        `书签记于「${levelText(bm.viewLevel)}」，已切到「${levelText(store.viewLevel)}」`
+        `书签记于“${levelText(bm.viewLevel)}”，已切到“${levelText(store.viewLevel)}”`
         + '（层级不同，相机按原比例套用）', 'warn');
     } else {
       bookmarkStatus(`已跳转到书签（${levelText(bm.viewLevel)}）`, 'ok');
@@ -1844,7 +1844,7 @@ onMounted(async () => {
     await store.loadGeodata();
     statusText.value = `已加载 ${store.nodes.length} 个节点`;
   } catch (e) {
-    // 加载失败必须显式暴露：否则界面只是「空地图」，用户与测试都看不出原因
+    // 加载失败必须显式暴露：否则界面只是“空地图”，用户与测试都看不出原因
     // （历史上 preload/ mock 未就绪时正是这样静默留在 0 节点）
     statusText.value = `数据加载失败：${e?.message || e}`;
     statusKind.value = 'err';   // 曾误写 'error'（模板只认 ok/err/warn）→ 该提示长期无图标
@@ -1865,9 +1865,9 @@ onMounted(async () => {
       statusText.value = '上次打开的项目文件已不存在（可能被移动或删除）—— 已回到只读浏览';
       statusKind.value = 'warn';
     } else if (r && r.reason && r.reason !== 'none' && r.reason !== 'no-api') {
-      // 2026-10-27（用户 F1「重开项目直接没」）：恢复失败此前**完全静默**（except 里吞掉），
+      // 2026-10-27（用户 F1“重开项目直接没”）：恢复失败此前**完全静默**（except 里吞掉），
       // 用户看到的就是"项目没了、也没人告诉我为什么"。现在把原因说出来并指路。
-      const msg = `上次的项目没能自动打开（${r.reason}）—— 请到「项目」面板手动打开；这不是数据被删了`;
+      const msg = `上次的项目没能自动打开（${r.reason}）—— 请到“项目”面板手动打开；这不是数据被删了`;
       try {
         window.dispatchEvent(new CustomEvent('sitian:project-warning', { detail: { message: msg } }));
       } catch (e) { /* 非浏览器环境忽略 */ }
@@ -1883,7 +1883,7 @@ onMounted(async () => {
   cleanupNodeUpdated = window.sitianAPI.onNodeUpdated((data) => {
     const applied = store.handleNodeUpdated(data.node);
     statusText.value = applied === false
-      ? '知识库已变更（当前打开的是项目，画布不受影响；如需带入请用「导入知识库内容」）'
+      ? '知识库已变更（当前打开的是项目，画布不受影响；如需带入请用“导入知识库内容”）'
       : `已更新: ${data.node.name}`;
     statusKind.value = applied === false ? 'warn' : 'ok';
   });
@@ -1896,13 +1896,13 @@ onMounted(async () => {
   });
 
   // Ctrl+Q 退出确认（2026-10-09）：主进程不再直接退，改为问渲染层（见 main/index.js 的
-  // before-input-event）。用户点「退出司天」才回执 confirmQuit；点「留在窗口」/ Esc /
+  // before-input-event）。用户点“退出司天”才回执 confirmQuit；点“留在窗口”/ Esc /
   // 点遮罩（PromptDialog 的 @click.self=cancel）= 什么都不做，留在窗口。
-  // ⚠️ 选项顺序刻意把「留在窗口」放第一：防误触 —— 回车或习惯性点第一个不该是破坏性动作。
+  // ⚠️ 选项顺序刻意把“留在窗口”放第一：防误触 —— 回车或习惯性点第一个不该是破坏性动作。
   cleanupRequestQuit = window.sitianAPI.onRequestQuit?.(async () => {
     const { askChoice } = usePromptDialog();
     const choice = await askChoice({
-      title: '退出「司天」',
+      title: '退出“司天”',
       label: dirty.value
         ? '还有未保存的改动。退出前会再尝试落盘一次；若落盘失败会另行提示。'
         : '当前没有未保存的改动。',
@@ -1956,13 +1956,13 @@ onMounted(async () => {
   window.addEventListener('sitian:open-project-panel', handleOpenProjectPanel);
   // 免责声明入口（关于面板 / 设置面板共用同一通道）
   window.addEventListener('sitian:open-disclaimer', openDisclaimerView);
-  // 使用手册入口（关于面板「使用手册」按钮 / 引导末步共用同一通道）
+  // 使用手册入口（关于面板“使用手册”按钮 / 引导末步共用同一通道）
   // 用事件而不是 ref 直连：关于面板是异步组件、与 App 之间没有 prop 通道，
   // 本仓同类入口（open-project-panel / open-disclaimer / focus-node）也都是这条约定。
   window.addEventListener('sitian:open-guide', (e) => {
     guidePanelRef.value?.open((e && e.detail && e.detail.section) || '');
   });
-  // 项目侧告警（如「会话基线未能创建」= 失去回滚点）→ 状态栏提醒，别让它静默
+  // 项目侧告警（如“会话基线未能创建”= 失去回滚点）→ 状态栏提醒，别让它静默
   window.addEventListener('sitian:project-warning', (e) => {
     const msg = e?.detail?.message;
     if (!msg) return;
@@ -1992,7 +1992,7 @@ onMounted(async () => {
       failed = [{ name: 'flushAll', error: (err && err.message) || String(err) }];
     }
     // 🔴 必须把失败一并回执给主进程（2026-09-24 修）：主进程据此弹**原生对话框**。
-    //    旧实现只 console.warn 就照常退出 —— 窗口随即关闭，用户以为「已正常退出、改动已保存」，
+    //    旧实现只 console.warn 就照常退出 —— 窗口随即关闭，用户以为“已正常退出、改动已保存”，
     //    实际未落盘；这是唯一能触达用户的时机（渲染层可能已经不可见了）。
     try { window.sitianAPI?.notifyFlushDone?.({ failed }); } catch (e) { /* noop */ }
   });
@@ -2003,7 +2003,7 @@ function closeAppPanels() {
 }
 
 /**
- * 把用户送到「项目」面板（B2/B3，2026-09-24）。
+ * 把用户送到“项目”面板（B2/B3，2026-09-24）。
  * 为什么不在这里直接新建/打开项目：App.vue 有一条静态闸门 —— **不得 import projectStore**
  * （只有面板/组件才连项目 store）。所以 App 只负责"送人过去"，执行者仍是面板。
  */
@@ -2011,21 +2011,21 @@ function handleOpenProjectPanel() {
   if (!panelsStore.isOpen('project')) panelsStore.toggle('project');
 }
 
-/** 只读态下的「新建项目」：面板才是执行者 */
+/** 只读态下的“新建项目”：面板才是执行者 */
 function handleCreateProject() {
   handleOpenProjectPanel();
-  statusText.value = '在项目面板填个名字点「新建」即可（或点「新建并导入知识库内容」把现有词条一并带进来）';
+  statusText.value = '在项目面板填个名字点“新建”即可（或点“新建并导入知识库内容”把现有词条一并带进来）';
   statusKind.value = 'warn';
 }
 
-/** 只读态下的「打开项目」 */
+/** 只读态下的“打开项目” */
 function handleOpenProject() {
   handleOpenProjectPanel();
-  statusText.value = '在项目面板点「打开项目…」选择 .sitian 文件';
+  statusText.value = '在项目面板点“打开项目…”选择 .sitian 文件';
   statusKind.value = 'warn';
 }
 
-/** 同步面板 → 项目面板（面板里「还没有可同步的目录」时的去处） */
+/** 同步面板 → 项目面板（面板里“还没有可同步的目录”时的去处） */
 function openProjectFromSync() {
   panelsStore.close('git-sync');
   panelsStore.toggle('project');
@@ -2047,14 +2047,14 @@ onUnmounted(() => {
 function handleBeforeUnload(e) {
   // ⚠️ 刻意**不**再 preventDefault：在 Electron 里阻止 beforeunload = 窗口静默关不掉
   //    （不会弹对话框，用户只能去任务管理器强杀）—— 那比丢数据更糟。
-  //    未落盘的改动改由「主进程 quit 前 flush」保障（main/index.js 的 before-quit → quitFlush）。
+  //    未落盘的改动改由“主进程 quit 前 flush”保障（main/index.js 的 before-quit → quitFlush）。
   if (dirty.value) {
     console.warn('[quit] 仍有未落盘的画布改动：已交给退出前 flush 处理');
   }
 }
 
 function handleGlobalKeydown(e) {
-  // 免责声明阻断态：Esc 与 F1 一律吞掉。弹窗自己已拦住「Esc 关闭」，
+  // 免责声明阻断态：Esc 与 F1 一律吞掉。弹窗自己已拦住“Esc 关闭”，
   // 这里再挡一次是为了不让全局 Escape 去 closeAll() 别的面板、
   // 也不让 F1 在模态后面把关于面板打开（两层浮层同屏）。
   if (isDisclaimerGateOpen.value) {
@@ -2113,7 +2113,7 @@ async function reextract() {
   statusText.value = '正在重新提取...';
   const res = await store.reextract();
   // ⚠️ 必须看返回值：只读态 / 已打开项目时 reextract 会**拒绝执行**（gate 或事实源冲突），
-  // 旧实现忽略返回值照样打印「已更新 N 个节点」= 谎报成功（用户实测「点了没有任何反应」的真因）。
+  // 旧实现忽略返回值照样打印“已更新 N 个节点”= 谎报成功（用户实测“点了没有任何反应”的真因）。
   if (res && res.ok === false) {
     statusText.value = res.error || '重新提取被拒绝';
     statusKind.value = 'err';
@@ -2127,7 +2127,7 @@ async function reextract() {
 async function saveData() {
   // ⚠️ 必须**按返回值**说话（2026-09-24 修，B6）：项目态下 `saveGeodata()` 只是把改动**推给 projectStore**，
   //    真正的落盘由它的 800ms 防抖自动保存完成（返回 `staged:true / persisted:false`）。
-  //    旧实现不看返回值、无条件打印「已保存」并把 dirty 清掉 = 谎报成功。
+  //    旧实现不看返回值、无条件打印“已保存”并把 dirty 清掉 = 谎报成功。
   const r = await store.saveGeodata();
   if (r && r.success === false) {
     statusText.value = `保存失败：${r.error || '未知原因'}`;
@@ -2250,7 +2250,7 @@ async function clearCoordinateCache() {
 .app-body.scenario-picker-open { background: #0a0d13; }
 .app-body.scenario-picker-open .main-content { background: #0a0d13; }
 
-/* 剧本域「走开了」浮标（2026-10-18 第十四修）：固定**左下角**（状态栏正上方）。
+/* 剧本域“走开了”浮标（2026-10-18 第十四修）：固定**左下角**（状态栏正上方）。
    ⚠️ 两条都是踩过的坑：
    ① 必须 fixed 而不是在流内 —— 它是"提醒 + 回程"，**不许**改变任何视图的高度
       （在流内会挤掉画布高度 → 相机 fit 白算、行星地图又被压一截）；
@@ -2490,7 +2490,7 @@ async function clearCoordinateCache() {
 }
 
 /* 只读徽标（决策 1 终态）：与状态栏 sb-readonly 同一套配色语义（--warning），
-   但必须常驻工具栏 —— 世界/选择视图没有状态栏，用户在那里最需要知道「现在只能读」。
+   但必须常驻工具栏 —— 世界/选择视图没有状态栏，用户在那里最需要知道“现在只能读”。
    点击可达去处（项目面板），不是死标。 */
 .toolbar-actions .readonly-badge {
   height: 24px;
@@ -2514,7 +2514,7 @@ async function clearCoordinateCache() {
 }
 
 /* 只读态常驻提示条：全宽、大字、可点（详见模板注释）
-   颜色语义与工具栏只读徽标一致（--warning），但字号明显更大 —— 「小字提示」已被用户明确否掉。 */
+   颜色语义与工具栏只读徽标一致（--warning），但字号明显更大 —— “小字提示”已被用户明确否掉。 */
 .readonly-notice {
   display: flex;
   align-items: center;

@@ -145,7 +145,7 @@ function main() {
     return `${need.length} 个`;
   });
 
-  check('a3 「切换到完整模式」= emit(close)，且写明同一个 .sitian', () => {
+  check('a3 “切换到完整模式”= emit(close)，且写明同一个 .sitian', () => {
     const src = read(SFC);
     assert(/defineEmits\(\s*\[[^\]]*'close'/.test(src), "defineEmits 里没有 'close'");
     assert(/emit\(\s*'close'\s*\)/.test(src), "没有 emit('close')（按钮会是死的）");
@@ -234,11 +234,11 @@ function main() {
   });
 
   // ── d) App.vue 的入口与会话接线 ───────────────────────────────────────
-  check('d1 App.vue 有「简易模式」按钮（可见文字）+ 面板挂在自身模板里', () => {
+  check('d1 App.vue 有“简易模式”按钮（可见文字）+ 面板挂在自身模板里', () => {
     const app = read(APP);
     assert(app.includes('data-testid="simple-mode-open"'), 'App.vue 缺 data-testid="simple-mode-open"');
     assert(/data-testid="simple-mode-open"[\s\S]{0,400}?>\s*简易模式\s*</.test(app),
-      '入口按钮的文字不是「简易模式」（必须看得见，不能只有一个图标）');
+      '入口按钮的文字不是“简易模式”（必须看得见，不能只有一个图标）');
     assert(/<simple-mode\b[\s\S]{0,200}?v-if="simpleOpen"/.test(app), '面板没有用 v-if="simpleOpen" 挂在 App 模板里');
     assert(/defineAsyncComponent\(\s*\(\)\s*=>\s*import\(\s*['"]\.\/components\/SimpleMode\.vue['"]\s*\)\s*\)/.test(app),
       'SimpleMode 不是 defineAsyncComponent（会拖首屏）');
@@ -253,13 +253,13 @@ function main() {
     return 'ok';
   });
 
-  check('d3 「画省份 / 导出」交回剧本编辑器：走 switchModule(scenario) 同一条入口', () => {
+  check('d3 “画省份 / 导出”交回剧本编辑器：走 switchModule(scenario) 同一条入口', () => {
     const app = codeOnly(read(APP));
     assert(/function\s+handleSimpleEnterScenario/.test(app), 'App.vue 没有接 enter-scenario');
     const fn = app.slice(app.indexOf('async function handleSimpleEnterScenario'));
     const body = fn.slice(0, fn.indexOf('\n}\n') + 3);
     assert(/switchModule\(\s*'scenario'\s*\)/.test(body),
-      "handleSimpleEnterScenario 没有走 switchModule('scenario')（那是顶部「历史剧本」的同一条调用）");
+      "handleSimpleEnterScenario 没有走 switchModule('scenario')（那是顶部“历史剧本”的同一条调用）");
     assert(!/window\.sitianAPI/.test(body), '这一跳里直接调了 sitianAPI（应只经既有入口）');
     return 'ok';
   });

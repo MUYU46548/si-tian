@@ -4,9 +4,9 @@
  *
  * 为什么必须有这一层（CDP 用例覆盖不到）：
  *   ① **版本化重确认**是这份声明的核心机制：`DISCLAIMER_ACK_KEY` 必须含 `DISCLAIMER_VERSION`。
- *      一旦有人把键写成不含版本的固定串，「升版本 → 全员重新确认」就**静默失效** ——
+ *      一旦有人把键写成不含版本的固定串，“升版本 → 全员重新确认”就**静默失效** ——
  *      用户永远不会再看到新条款，而界面与日志都没有任何异常。
- *   ② 文案侧要守「老实」：13 节骨架不许缺、**未成年人条款必须保留**（本次需求明确要求）、
+ *   ② 文案侧要守“老实”：13 节骨架不许缺、**未成年人条款必须保留**（本次需求明确要求）、
  *      第 12 节的司法辖区**必须是占位符**（绝不编造法院/辖区）、短版要点不许为空。
  *   ③ ack 读写必须能优雅降级：localStorage 在隐私模式/配额满时会**抛异常**，
  *      而这条路径在 CDP 用例里几乎跑不到（测试环境的 localStorage 一切正常）。
@@ -76,11 +76,11 @@ async function main() {
     return `键=${DISCLAIMER_ACK_KEY}，版本=${DISCLAIMER_VERSION}`;
   });
 
-  check('v1 换版本号 → 旧 ack 失效（用「键名不同 ⇒ 互不影响」实证）', () => {
+  check('v1 换版本号 → 旧 ack 失效（用“键名不同 ⇒ 互不影响”实证）', () => {
     const store = fakeStore();
     ackDisclaimer(store, new Date('2026-10-06T05:00:00.000Z'));
     assert(hasAckedDisclaimer(store) === true, '本版本应已确认');
-    // 模拟「产品升版本」：换一个含新版本号的键去查 —— 老记录不该被判为已确认
+    // 模拟“产品升版本”：换一个含新版本号的键去查 —— 老记录不该被判为已确认
     const otherKey = DISCLAIMER_ACK_KEY.replace(DISCLAIMER_VERSION, '99.0.0');
     assert(Object.keys(store._raw).length === 1, '应只有一条 ack 记录');
     assert(!Object.keys(store._raw).includes(otherKey), '不应存在别的版本的 ack 记录');
@@ -143,32 +143,32 @@ async function main() {
     const sec = DISCLAIMER_FULL.find((s) => s.n === 5);
     assert(sec, '缺少第 5 节');
     const all = sec.title + JSON.stringify(sec.blocks);
-    assert(all.includes('未成年人'), '第 5 节没有出现「未成年人」');
+    assert(all.includes('未成年人'), '第 5 节没有出现“未成年人”');
     assert(all.includes('监护人'), '第 5 节没有提到监护人');
     assert(/知情同意|同意/.test(all), '第 5 节没有提到知情同意');
     return `${sec.title}（含监护人知情同意 + 监护人担责）`;
   });
 
-  check('t2 第 2 节「软件性质」= 本地工具 / 无 LLM / 无账号 / 无遥测，且联网只两处', () => {
+  check('t2 第 2 节“软件性质”= 本地工具 / 无 LLM / 无账号 / 无遥测，且联网只两处', () => {
     const txt = JSON.stringify(DISCLAIMER_FULL.find((s) => s.n === 2));
     for (const kw of ['大语言模型', '本地桌面', '账号', '遥测']) {
-      assert(txt.includes(kw), `第 2 节缺少「${kw}」`);
+      assert(txt.includes(kw), `第 2 节缺少“${kw}”`);
     }
     // 两处联网必须点名，且必须说清"不做假承诺"的边界
     assert(txt.includes('electron-updater') && txt.includes('Git'), '第 2 节没有点明两处联网');
-    assert(txt.includes('两处'), '第 2 节没有明确「只有两处」联网');
+    assert(txt.includes('两处'), '第 2 节没有明确“只有两处”联网');
     return '本地 / 无 LLM / 无账号 / 无遥测 / 仅更新与 Git 两处联网';
   });
 
-  check('t3 第 6 节「数据安全」必须"先如实列机制、再明确不保证"（写虚了整份声明就白写）', () => {
+  check('t3 第 6 节“数据安全”必须"先如实列机制、再明确不保证"（写虚了整份声明就白写）', () => {
     const sec = DISCLAIMER_FULL.find((s) => s.n === 6);
     const txt = JSON.stringify(sec);
     // 7 条机制的关键词各至少出现一次
     const mech = ['自动保存', '轮转', '会话基线', '原子写盘', '快照', '退出前落盘', '加密'];
-    for (const m of mech) assert(txt.includes(m), `第 6 节缺少机制「${m}」`);
-    // 必须写明「都不构成保证」
+    for (const m of mech) assert(txt.includes(m), `第 6 节缺少机制“${m}”`);
+    // 必须写明“都不构成保证”
     assert(txt.includes('不构成') && txt.includes('保证'), '第 6 节没有写明"不构成保证"');
-    // 必须点出「备份与主文件同盘」这个真实的同损风险
+    // 必须点出“备份与主文件同盘”这个真实的同损风险
     assert(txt.includes('同一台电脑') || txt.includes('同一块磁盘'), '第 6 节没点出备份与主文件同盘的风险');
     // 必须给行动建议（自行另备并验证）
     assert(txt.includes('另行备份') && txt.includes('验证'), '第 6 节没有给"自行备份并验证"的建议');
@@ -182,7 +182,7 @@ async function main() {
     assert(txt.includes('待定'), '缺少"待定"字样');
     // 常见辖区名一旦出现就是编造
     for (const bad of ['中华人民共和国', '北京仲裁', '中国法院', '香港特别行政区']) {
-      assert(!txt.includes(bad), `第 12 节出现了具体辖区/机构「${bad}」（属编造，必须留占位符）`);
+      assert(!txt.includes(bad), `第 12 节出现了具体辖区/机构“${bad}”（属编造，必须留占位符）`);
     }
     return '保留【待定：司法辖区】占位符，无任何编造';
   });
@@ -205,7 +205,7 @@ async function main() {
     const txt = JSON.stringify(DISCLAIMER_FULL.find((s) => s.n === 9));
     assert(txt.includes('版权与许可证.md'), '第 9 节没有引用 版权与许可证.md');
     for (const dep of ['Electron', 'Vue', 'Vite', 'reka-ui', 'Tailwind', 'marked']) {
-      assert(txt.includes(dep), `第 9 节漏了依赖「${dep}」`);
+      assert(txt.includes(dep), `第 9 节漏了依赖“${dep}”`);
     }
     return '引用 版权与许可证.md 且点名主要依赖';
   });

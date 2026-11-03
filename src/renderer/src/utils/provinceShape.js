@@ -1,8 +1,8 @@
-// utils/provinceShape.js — 省份几何的「唯一表示」纯函数层（P0 第二块）
+// utils/provinceShape.js — 省份几何的“唯一表示”纯函数层（P0 第二块）
 //
-// 解决的问题（用户侧三条投诉「丑东西 / 圈不着 / 功能打架」的数据层根因）：
+// 解决的问题（用户侧三条投诉“丑东西 / 圈不着 / 功能打架”的数据层根因）：
 //   ① **单环模型**：省份只能有一个 `points` 环 → 飞地、多块领土、带洞的行政区表达不了，
-//      合并只能退化成「凸包」（实测吃掉邻居省份）；海域（sea）与陆地（land）也无处标注。
+//      合并只能退化成“凸包”（实测吃掉邻居省份）；海域（sea）与陆地（land）也无处标注。
 //   ② **无共享边界**：手绘描点的省份彼此不共享顶点 → 相邻省之间必然留缝。
 //   ③ **几何无单一来源**：网格（`provinceLabels`）与多边形（`terrain[].points`）两套各自演化。
 //
@@ -10,12 +10,12 @@
 // 存储形态**保持向后兼容**：主环仍是 `p.points`（既有 30+ 处消费者、既有用例、
 // FMG 导入、贝塞尔控制点全都读它），额外环放 `p.extraRings: [{points, kind}]`，
 // 省份级 `p.kind: 'land' | 'sea'`（**只有岛/海才需要写**，默认 land）。
-// 本模块的 `provinceRings(p)` 返回 `[{points, kind}, …]` 就是「多环实体」的规范视图，
+// 本模块的 `provinceRings(p)` 返回 `[{points, kind}, …]` 就是“多环实体”的规范视图，
 // 每个环在磁盘上只有一处描述 —— 两个字段之间没有任何冗余副本，因此不存在漂移。
 //
-// 为什么不把 `points` 改名成 `rings[0].points`：那会让「描边」与「笔刷」产出两份几何语义，
+// 为什么不把 `points` 改名成 `rings[0].points`：那会让“描边”与“笔刷”产出两份几何语义，
 // 且序列化时要么重复一份坐标、要么在序列化器里特例剥字段（隐式约定最易腐坏）。
-// skill §88/§112 的红线是「同一功能不要两套数据模型」——本模块遵守的是那条红线，
+// skill §88/§112 的红线是“同一功能不要两套数据模型”——本模块遵守的是那条红线，
 // 不是字段名。
 //
 // ── 纯函数 ────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ export function provinceRings(prov) {
   if (!prov || typeof prov !== 'object') return [];
   const baseKind = normKind(prov.kind);
   const out = [];
-  // `fromGrid`：该环是否由「归属格轮廓」派生 —— 渲染端只有它需要平滑（消格点台阶），
+  // `fromGrid`：该环是否由“归属格轮廓”派生 —— 渲染端只有它需要平滑（消格点台阶），
   // 手绘 / 描点 / 贝塞尔环一律原样（顶点是用户刻意摆的）。主环的标记落在**省份级**字段
   // （`points` 是裸数组，挂不上环级标记），额外环各带各的。
   if (isValidRing(prov.points)) out.push({ points: prov.points, kind: baseKind, fromGrid: !!prov.fromGrid });
@@ -104,7 +104,7 @@ export function normalizeProvince(prov) {
 
   if (out.kind === undefined) { out.kind = RING_KIND_LAND; changed = true; }
   else if (normKind(out.kind) !== out.kind) { out.kind = normKind(out.kind); changed = true; }
-  // fromGrid 只做「真值归一」（省得存 0/1/'true' 这类脏值）；不主动删除，它是渲染口径的一部分
+  // fromGrid 只做“真值归一”（省得存 0/1/'true' 这类脏值）；不主动删除，它是渲染口径的一部分
   if (out.fromGrid !== undefined && typeof out.fromGrid !== 'boolean') {
     out.fromGrid = !!out.fromGrid; changed = true;
   }
@@ -149,7 +149,7 @@ export function shapePatch(rings) {
   const kind = normKind(list[0].kind);
   const patch = { points: list[0].points };
   if (kind !== RING_KIND_LAND) patch.kind = kind; else delete patch.kind;
-  // 主环的「网格派生」标记必须落到**省份级**字段（points 是裸数组）；必须显式给值 ——
+  // 主环的“网格派生”标记必须落到**省份级**字段（points 是裸数组）；必须显式给值 ——
   // 调用方是 `{ ...prov, ...patch }` 合并语义：不给这个键就等于保留旧值（手工改过的环会被误平滑）
   patch.fromGrid = !!list[0].fromGrid;
   if (list.length > 1) {
@@ -182,7 +182,7 @@ export function provinceBBox(prov) {
 
 /**
  * 毛面积（各环面积绝对值之和，世界单位²）。
- * 用途是**面积闸门**（挡住「一点就把整片海填了」），不是精确的拓扑面积 ——
+ * 用途是**面积闸门**（挡住“一点就把整片海填了”），不是精确的拓扑面积 ——
  * 环是洞还是飞地在这里不区分，闸门只关心量级。
  */
 export function provinceArea(prov) {
@@ -192,10 +192,10 @@ export function provinceArea(prov) {
 }
 
 /**
- * 省份的**净面积**（洞减掉、飞地加上）= 用户眼里「这块地有多大」。
+ * 省份的**净面积**（洞减掉、飞地加上）= 用户眼里“这块地有多大”。
  *
  * 🔴 与 `provinceArea`（各环绝对值之和）的区别：带洞的省份 gross 会把洞的面积也算进去
- *    （100×100 外框 + 20×20 洞 → gross 10400、net 10000）。凡是「面积守恒 / 面积比较」的
+ *    （100×100 外框 + 20×20 洞 → gross 10400、net 10000）。凡是“面积守恒 / 面积比较”的
  *    断言与显示都必须用 net，否则一出现洞就把洞算成两份地。
  */
 export function provinceNetArea(prov) {
@@ -211,9 +211,9 @@ export function provinceNetArea(prov) {
  * 环的**嵌套符号**（+1 = 实心外环 / -1 = 洞）。
  *
  * 🔴 为什么必须有它：多环省份有两种完全不同的语义 ——
- *    · 「飞地 / 不连通的领土」= 两个互不嵌套的外环（都该填）
- *    · 「洞」= 落在另一个环内部的环（不该填）
- *    偶数嵌套深度 = 实心，奇数 = 洞。涂色产出的环（gridOutline 按「左手侧 = 本格」取向）
+ *    · “飞地 / 不连通的领土”= 两个互不嵌套的外环（都该填）
+ *    · “洞”= 落在另一个环内部的环（不该填）
+ *    偶数嵌套深度 = 实心，奇数 = 洞。涂色产出的环（gridOutline 按“左手侧 = 本格”取向）
  *    天然满足这条；合并/写回时也必须把绕向统一到这条不变式上，否则渲染（nonzero 填充）
  *    会把洞填掉、或把飞地挖空。
  */
@@ -331,7 +331,7 @@ export function chaikinRing(points, iters = 2) {
   return pts.map(([x, y]) => ({ x, y }));
 }
 
-// 🔴 平滑几何必须缓存：Chaikin 2 轮会把点数 ×4，21 省 × 数千点逐帧算就是「拖不动」。
+// 🔴 平滑几何必须缓存：Chaikin 2 轮会把点数 ×4，21 省 × 数千点逐帧算就是“拖不动”。
 //    缓存键用**顶点数组本身**（WeakMap）：编辑一律换新数组 → 自动失效、自动 GC。
 const smoothCache = new WeakMap();
 export function smoothRing(points, iters = 2) {
@@ -360,7 +360,7 @@ export { smoothPolyline, decimatePolyline, smoothRiverNodes } from './polylineSm
  * 环的**渲染顶点**：该环怎么画，全应用只有一个判定（画布、PNG 导出、SVG 导出、标签落点共用）。
  *
  * · **网格派生的环**（`fromGrid`，由归属格轮廓重算出来的）→ Chaikin 平滑，消掉格点台阶
- *   （这正是「马赛克 / 台阶边」的收敛点；网格只作为中间层，落库的是平滑后的折线）。
+ *   （这正是“马赛克 / 台阶边”的收敛点；网格只作为中间层，落库的是平滑后的折线）。
  * · **手绘 / 描点 / 带贝塞尔控制点的环** → 原样（顶点是用户刻意摆的，平滑会削掉有意的形状）。
  *
  * 2026-10-01 从 `ScenarioMap.vue` 移到这里：SVG 导出当时直接画 `prov.points`，
@@ -459,11 +459,11 @@ export function splitProvinceShape(prov, p1, p2, opts = {}) {
 const QKEY = (x, y, q) => `${Math.round(x / q)}:${Math.round(y / q)}`;
 
 /**
- * 把每条边在「落在它身上的其他顶点」处切开（T 形接点 / 共线部分重叠）。
+ * 把每条边在“落在它身上的其他顶点”处切开（T 形接点 / 共线部分重叠）。
  *
  * 🔴 为什么少不了这一步：两个省共边时，**边长往往不相等** —— 比如 A 的南边界是
  *    `(20,10)→(0,10)`（一条长边），B 的北边界是 `(0,10)→(10,10)`（半条）。
- *    单纯按「整边反向重合」抵消时它们谁也不匹配 → 并集退化成两个环（等于没合并）。
+ *    单纯按“整边反向重合”抵消时它们谁也不匹配 → 并集退化成两个环（等于没合并）。
  *    真实数据里这种情况**必然出现**：写回环时会做共线塌缩，长边会把中间的节点吃掉。
  *    切开之后两条边变成同样的两段，抵消才成立。
  * @returns {Array<{a,b,ka,kb,used}>}
@@ -512,7 +512,7 @@ function splitEdgesAtNodes(edges, quantum) {
  *   ① 各环统一绕向（signedArea ≥ 0）
  *   ② 每条边在落在其上的其他顶点处切开（T 接点 / 共线部分重叠，见 splitEdgesAtNodes）
  *   ③ 成对反向重合的边（共边）互相抵消
- *   ④ 剩下的边按「最右转」走链 → 闭合环（正确保留洞与飞地）
+ *   ④ 剩下的边按“最右转”走链 → 闭合环（正确保留洞与飞地）
  * 由网格派生的省份彼此共边**完全重合**（同一套格边），FMG 导入的相邻州也共用同一批
  * Voronoi 顶点 → 这条路径覆盖绝大多数真实数据。
  * @returns {Array<Array<{x:number,y:number}>>} 环列表（可能多个 = 多环/飞地，也可能为空）
@@ -523,7 +523,7 @@ export function unionRingsByCancellation(rings, { quantum = 1e-6, minArea = 1e-9
     const pts = dedupeRing((r && r.points) || r);
     if (pts.length < 3) continue;
     // 绕向**不再归一**：调用方必须传取向一致的环（`orientedRings` —— 外环正、洞负）。
-    // 归一化会把「洞」翻成「实心」并集，是静默的语义错误。相邻两省的共边本就是反向的，
+    // 归一化会把“洞”翻成“实心”并集，是静默的语义错误。相邻两省的共边本就是反向的，
     // 所以只要各方绕向自洽，抵消就成立。
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
@@ -535,7 +535,7 @@ export function unionRingsByCancellation(rings, { quantum = 1e-6, minArea = 1e-9
   const nodeCount = new Set();
   for (const e of edges) { nodeCount.add(e.ka); nodeCount.add(e.kb); }
   const work = edges.length * nodeCount.size;
-  // 把量纲交回调用方（`mergeProvinceShapes` 要把它写进返回值，UI 才能说「超阈 N 倍」而不是一句"降级"）
+  // 把量纲交回调用方（`mergeProvinceShapes` 要把它写进返回值，UI 才能说“超阈 N 倍”而不是一句"降级"）
   if (stats) Object.assign(stats, { edges: edges.length, nodes: nodeCount.size, work, maxWork, overflow: work > maxWork });
   if (work > maxWork) return [];                       // 规模过大 → 交给栅格兜底（调用方会看到空数组）
   const split = work > edges.length ? splitEdgesAtNodes(edges, quantum) : edges;
@@ -566,7 +566,7 @@ export function unionRingsByCancellation(rings, { quantum = 1e-6, minArea = 1e-9
     start.get(e.ka).push(i);
   });
   const ang = (fx, fy, tx, ty) => Math.atan2(ty - fy, tx - fx);
-  // 最右转：进来时朝向 back = 起点方向，选「顺时针转过的角最小」的出边 → 贴着边界走
+  // 最右转：进来时朝向 back = 起点方向，选“顺时针转过的角最小”的出边 → 贴着边界走
   const pickNext = (fromNodeKey, nodeKey, node) => {
     const list = start.get(nodeKey);
     if (!list) return -1;
@@ -612,9 +612,9 @@ export function unionRingsByCancellation(rings, { quantum = 1e-6, minArea = 1e-9
 }
 
 /**
- * 两个环是否「真正穿过」（严格相交：不含端点接触 / 共边 / 包含）。
+ * 两个环是否“真正穿过”（严格相交：不含端点接触 / 共边 / 包含）。
  * 🔴 不能用 `detectSelfIntersection(A.concat(B))`：把两个环接成一条折线本身就会造出
- *    两段「桥接边」，它们与自己的环相交 → 恒为真（实测：一个环 + 它内部的洞被判成「穿插」，
+ *    两段“桥接边”，它们与自己的环相交 → 恒为真（实测：一个环 + 它内部的洞被判成“穿插”，
  *    合并于是无谓地退回栅格，面积还量化错了）。必须逐边两两严格相交 + 包围盒预筛。
  */
 export function ringsProperlyCross(a, b) {
@@ -648,8 +648,8 @@ export function ringsProperlyCross(a, b) {
 
 /**
  * 栅格并集（退化兜底）：把环并集采样成掩膜 → 抽平滑轮廓。
- * 只在「环真的互相穿过」时使用（共边抵消对穿插无能为力）；分辨率按包围盒自适应。
- * 🔴 填掩膜走**扫描线**（每行求交点 → 填跨度），不是「逐格点对多边形求交」：
+ * 只在“环真的互相穿过”时使用（共边抵消对穿插无能为力）；分辨率按包围盒自适应。
+ * 🔴 填掩膜走**扫描线**（每行求交点 → 填跨度），不是“逐格点对多边形求交”：
  *    后者是 O(格数 × 点数)，单省上千顶点时是秒级；扫描线是 O(行数 × 点数)，毫秒级。
  * @returns {Array<Array<{x:number,y:number}>>}
  */
@@ -698,8 +698,8 @@ export function unionRingsByRaster(rings, { maxDim = 220 } = {}) {
 }
 
 /**
- * 合并多个省份为**多环实体**（取代旧的「凸包合并」——凸包会把邻省的凹口一起吞掉，
- * 用户实测原话「丑东西」）。
+ * 合并多个省份为**多环实体**（取代旧的“凸包合并”——凸包会把邻省的凹口一起吞掉，
+ * 用户实测原话“丑东西”）。
  * @returns {{ shape:object, method:'cancel'|'raster', loops:number, work:number, edges:number,
  *            nodes:number, maxWork:number, overflow:boolean, pairsTested:number, crossScanSkipped:boolean }}
  */
@@ -780,7 +780,7 @@ function boxesOverlapRaw(a, b) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// 六、共享边界骨架（吸附「整段插顶点」→ 相邻省零缝）
+// 六、共享边界骨架（吸附“整段插顶点”→ 相邻省零缝）
 // ══════════════════════════════════════════════════════════════════════════
 
 /**
@@ -829,7 +829,7 @@ function arcBetween(line, ka, kb) {
 
 // ── 骨架顶点的**空间索引**（2026-10-18 第十八修）──────────────────────────────
 // 🔴 为什么必须有（CPU 采样实测，不是猜的）：`conformToSkeleton` 的第一步是
-//    「笔迹上每个点找最近的骨架顶点」，朴素写法是 **O(笔迹点数 × 骨架顶点数)**。
+//    “笔迹上每个点找最近的骨架顶点”，朴素写法是 **O(笔迹点数 × 骨架顶点数)**。
 //    真实 desite 底图 = 200 省 / **24018 个骨架顶点**；一笔 46 点的预览
 //    = 46 × 24018 ≈ **110 万次 `Math.hypot`**，而预览每 60ms 就重算一次。
 //    4 秒拖笔的采样里：`conformToSkeleton` 的最近点扫描 **590ms**（10.6%）
@@ -838,9 +838,9 @@ function arcBetween(line, ka, kb) {
 //    同一份采样里 `get` 574ms + `isReadonly` 138ms = **12.8%**）就更贵了，
 //    所以调用方还必须传 `toRaw` 后的地形（见 `ScenarioMap.skeletonForTerrain` 的调用点）。
 //
-// 口径：格子边长 = threshold。半径 ≤ threshold 的圆盘最多与「中心格 ±1」的 3×3 格相交，
+// 口径：格子边长 = threshold。半径 ≤ threshold 的圆盘最多与“中心格 ±1”的 3×3 格相交，
 //       所以 3×3 邻域内必然含全部候选 —— 这是**完备性**，不是近似。
-// 并列（同距离）时的取舍必须与朴素实现**逐位一致**：朴素实现按「行序 → 顶点序」扫描、
+// 并列（同距离）时的取舍必须与朴素实现**逐位一致**：朴素实现按“行序 → 顶点序”扫描、
 //       只在 `d < bd` 时替换 ⇒ 同距离取**先出现**的那个。索引里记 `seq` 并按其排序后
 //       复用同一段比较逻辑。（位姿不同但距离相同的两个顶点，"取哪个"是会被用例看见的：
 //       它决定插哪段弧、决定是否 `hit`。）
@@ -871,7 +871,7 @@ function skeletonIndexFor(skeleton, threshold) {
 
 /**
  * 骨架顶点里离 `(x, y)` 最近的那一个（严格 `dist < threshold` 才算命中，否则返回 null）。
- * 语义与「双循环扫全部骨架顶点」完全一致（含并列取舍）—— 见上方索引注释。
+ * 语义与“双循环扫全部骨架顶点”完全一致（含并列取舍）—— 见上方索引注释。
  */
 export function nearestSkeletonVertex(x, y, skeleton, threshold) {
   if (!skeleton || !skeleton.length || !(threshold > 0)) return null;
@@ -895,9 +895,9 @@ export function nearestSkeletonVertex(x, y, skeleton, threshold) {
 }
 
 /**
- * 把手绘/描点的轮廓「贴」到既有边界骨架上：
+ * 把手绘/描点的轮廓“贴”到既有边界骨架上：
  *   ① 顶点落在骨架顶点 threshold 内 → 直接换成骨架顶点（坐标完全相同 → 零缝）
- *   ② 相邻两个「已吸附」顶点之间 → 沿骨架**整段插入**中间顶点（这是「圈不着」的正解：
+ *   ② 相邻两个“已吸附”顶点之间 → 沿骨架**整段插入**中间顶点（这是“圈不着”的正解：
  *      只吸端点会在两省之间斜切一条缝，整段插顶点才是沿同一条线走）
  * 插入前提：沿骨架那段弧长 ≤ 弦长 × maxDetour（默认 1.6）—— 否则说明用户在绕远路，
  * 不该被拉过去（避免把有意的形状吸成骨架弧）。
@@ -908,7 +908,7 @@ export function conformToSkeleton(points, skeleton, threshold = 10, { maxDetour 
   if (src.length < 3 || !skeleton || !skeleton.length) return src;
 
   const snapped = src.map((p) => {
-    // 走空间索引（O(1) 查询）—— 逐位等价于原来的「扫全部骨架顶点」，见索引注释
+    // 走空间索引（O(1) 查询）—— 逐位等价于原来的“扫全部骨架顶点”，见索引注释
     const best = nearestSkeletonVertex(p.x, p.y, skeleton, threshold);
     return best ? { x: best.x, y: best.y, hit: true } : { x: p.x, y: p.y, hit: false };
   });
@@ -1004,7 +1004,7 @@ export function ringsOfLabel(labels, grid, label, opts) {
  *
  * 用途：**判断存的归属网格是不是这套多边形派生的** —— `provinceLabels.shape` 存指纹，
  * 读取时比对，不符就按多边形重建。为什么需要它：改了多边形的调用点有十几处
- * （新增/删除/分割/合并/拖顶点/插入顶点/自由绘制/导入…），靠「每处都记得作废缓存」
+ * （新增/删除/分割/合并/拖顶点/插入顶点/自由绘制/导入…），靠“每处都记得作废缓存”
  * 必然漏一处，而漏掉的后果是**静默的错数据**（拿旧几何派生的归属格去渲染/涂抹）。
  * @returns {number} 32 位无符号整数
  */
@@ -1055,7 +1055,7 @@ export function gridFromProvinceShapes(provinces, makeGridFn) {
  * 省份表 → 归属序号网格（`0 = 无主`）。
  * **按面积降序、命中即停**：大省先落，小省不覆盖已有归属 —— 否则小多边形会在大多边形上
  * 啃出一个个洞（导入的 FMG 数据里小省多得多）。
- * 命中判据是**绕数 ≠ 0**（`orientedRings` 的符号），所以「洞」不会被填，「飞地」会被填。
+ * 命中判据是**绕数 ≠ 0**（`orientedRings` 的符号），所以“洞”不会被填，“飞地”会被填。
  * @returns {Uint8Array}
  */
 export function rasterizeProvinceShapes(provinces, grid) {

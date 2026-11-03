@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 55：数据安全 —— 退出前落盘 / 关闭项目先保存 / 保存失败拒绝关闭
 
-用户原话（2026-09-21）：「没有数据安全承诺的系统，投进去的手绘时间是无担保贷款。」
+用户原话（2026-09-21）：“没有数据安全承诺的系统，投进去的手绘时间是无担保贷款。”
 本用例把这句话对应的机制变成**可执行契约**，而不是口头承诺：
 
   a) 退出前落盘（quitFlush 注册表）：画布侧与项目侧都注册了 flush 回调，
@@ -13,7 +13,7 @@
      （原实现只 clearTimeout 不保存 = 静默丢改动）
   e) 静态：主进程在 before-quit 拦截并等渲染层回执（含超时兜底）+ preload 通道 + App 侧驱动
 
-判定一律走显式布尔，不用「没有报错就算过」（CDP 用例的假绿陷阱）。
+判定一律走显式布尔，不用“没有报错就算过”（CDP 用例的假绿陷阱）。
 """
 import os
 import re
@@ -72,7 +72,7 @@ MAIN_JS = """(async () => {
   ck('制造 dirty（保存失败场景）', ce2 && ce2.success === true, ce2);
   const r2 = await proj.closeProject();
   ck('保存失败时拒绝关闭（success=false）', r2 && r2.success === false, r2);
-  ck('拒绝原因写明「项目未关闭 / 数据仍在」',
+  ck('拒绝原因写明“项目未关闭 / 数据仍在”',
      r2 && String(r2.error || '').indexOf('未关闭') >= 0, r2 && r2.error);
   ck('项目仍打开（没被关掉）', proj.isOpen === true);
   ck('未保存改动仍在（dirty 保持）', proj.dirty === true, proj.dirty);
@@ -97,7 +97,7 @@ MAIN_JS = """(async () => {
       id: 'flush_probe_' + Date.now(), name: 'flush 探针地形',
       points: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }],
     });
-    store.scheduleAutoSaveMap(key);            // 只是「挂起 800ms」，此时还没落盘
+    store.scheduleAutoSaveMap(key);            // 只是“挂起 800ms”，此时还没落盘
     await store.flushSave();                   // flush 必须把它真的写掉
     await window.__probe.flushProject();
     const md = window.__probe.lastMapPayload(key);

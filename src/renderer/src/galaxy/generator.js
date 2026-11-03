@@ -120,7 +120,7 @@ function pickRoots(nodes, count, rng, rootRhoMax) {
   return roots;
 }
 
-/** 加权 Prim 式生长：每个腹地节点归给「离它最近的已归属节点」所属势力 */
+/** 加权 Prim 式生长：每个腹地节点归给“离它最近的已归属节点”所属势力 */
 export function growRegions(nodes, factionCount, weights, rng, interiorRho, rootRhoMax = ROOT_RHO_MAX) {
   const roots = pickRoots(nodes, factionCount, rng, rootRhoMax);
   const weightOrder = weights.map((w, i) => ({ w, i })).sort((a, b) => b.w - a.w);
@@ -666,10 +666,10 @@ export function toSiTianEntities(gen, opts = {}) {
   const worldId = opts.worldId || null;
   const domainIdOf = new Map();
 
-  // ── 先把 4 个星域的中心摊开（2026-11-02 修「示例星域互相压叠」）────────────────
+  // ── 先把 4 个星域的中心摊开（2026-11-02 修“示例星域互相压叠”）────────────────
   // 生成器把 120 颗星撒在一个 1800×1400 的椭圆盘里，但**成员是聚簇的**：四个簇心实测只隔 300~460，
   // 而司天的星域半径是 350、claim 至少 210 —— 四个中心挤在一起，领土必然叠在一起（用户实测截图）。
-  // 这里按「簇心最小间距」整体等比放大坐标（星星之间的相对形状不变，只把整团拉开），
+  // 这里按“簇心最小间距”整体等比放大坐标（星星之间的相对形状不变，只把整团拉开），
   // 让四个星域至少隔 GAP 远，和既有星环（间距 ~890）处在同一个量级。
   const GAP = opts.minDomainGap || 760;
   const centroids = gen.regions.map((r) => {

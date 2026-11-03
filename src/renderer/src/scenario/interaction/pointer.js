@@ -63,7 +63,7 @@ export function createPointerHandlers(ctx) {
   } = rest;
 
   function onMouseUp(event) {
-  // 手势闸门：抬手 = 「人离开画布了」→ 顺延中的保存会在静默窗口后立刻补上（见 interactionGate.js）
+  // 手势闸门：抬手 = “人离开画布了”→ 顺延中的保存会在静默窗口后立刻补上（见 interactionGate.js）
   if (st.canvasGateArmed) {
     endInteraction('scenario-canvas');
     st.canvasGateArmed = false;
@@ -78,8 +78,8 @@ export function createPointerHandlers(ctx) {
       const n = p.points.length;
       terrainLabelPick.value = { ...p, dragging: false, finished: n >= 1 };
       statusMsg(p.kind === 'plain'
-        ? '已落点：点面板「完成」再命名'
-        : (n >= 2 ? `已取 ${n} 点：点面板「完成」再命名` : '线太短 —— 重拖一条（至少要起点和终点）'));
+        ? '已落点：点面板“完成”再命名'
+        : (n >= 2 ? `已取 ${n} 点：点面板“完成”再命名` : '线太短 —— 重拖一条（至少要起点和终点）'));
       render();
     }
     st.suppressTerrainPickClick = true;   // 紧随的 click 不要落到别的工具上
@@ -98,7 +98,7 @@ export function createPointerHandlers(ctx) {
           + ' —— 河很细，框稍微画大一点，或直接点河身');
     } else {
       setRiverSelection(picked, picked[picked.length - 1]);
-      statusMsg(`已框选 ${picked.length} 条河流 —— Delete 一次删掉，或点「裁到海岸线」（都是一条撤销）`);
+      statusMsg(`已框选 ${picked.length} 条河流 —— Delete 一次删掉，或点“裁到海岸线”（都是一条撤销）`);
     }
     render();
     return;
@@ -106,7 +106,7 @@ export function createPointerHandlers(ctx) {
   // ── 河流（2026-10-17）：先收拖动，再落笔迹 ────────────────────────────────────
   // 顺序不能反：拖节点时 `riverDraft` 是空的（mousedown 里已清），
   // 反过来先跑 finishRiverDraft 会白白清一遍状态并打一条误导的回执。
-  // 「按下记候选、松手结算」（2026-10-27）：位移 ≤4px 才算点选；拖动 = 平移，不选中
+  // “按下记候选、松手结算”（2026-10-27）：位移 ≤4px 才算点选；拖动 = 平移，不选中
   if (st.pendingRiverPick) {
     const pick = st.pendingRiverPick;
     st.pendingRiverPick = null;
@@ -148,12 +148,12 @@ export function createPointerHandlers(ctx) {
           + (found.sharedCount ? `，其中 ${found.sharedCount} 个与邻省共边 —— 拖动它们时邻省的边界会跟着一起走` : '（都不与邻省共边，拖动只改这一个省）')
           + '；Esc 取消选择');
       } else {
-        // 🔴 框里没顶点时**必须说清为什么**（用户实测「Shift 没什么作用」很可能就是这一条）：
+        // 🔴 框里没顶点时**必须说清为什么**（用户实测“Shift 没什么作用”很可能就是这一条）：
         //    框选只作用于**当前选中的省份** —— 在别的省身上、或还没点过省份，框都是空的，
-        //    而旧文案「要框住紫色圆点」在"根本没画紫色圆点（没选省）"时等于没说。
+        //    而旧文案“要框住紫色圆点”在"根本没画紫色圆点（没选省）"时等于没说。
         statusMsg(prov
-          ? `框选：这一框里没有「${prov.name || '当前省'}」的顶点 —— 框选只作用于当前选中的省（紫色圆点）`
-          : '框选只作用于**当前选中的省份**：先用「选择 (V)」点一下要精修的省，再按 Shift 拖框');
+          ? `框选：这一框里没有“${prov.name || '当前省'}”的顶点 —— 框选只作用于当前选中的省（紫色圆点）`
+          : '框选只作用于**当前选中的省份**：先用“选择 (V)”点一下要精修的省，再按 Shift 拖框');
       }
     }
     render();
@@ -163,7 +163,7 @@ export function createPointerHandlers(ctx) {
     st.freeTraceActive = false;
     const pts = st.freeTrace || [];
     st.freeTrace = null;
-    // 够长才算「一笔成型」；否则让随后的 click 走描点分支（落一个顶点）
+    // 够长才算“一笔成型”；否则让随后的 click 走描点分支（落一个顶点）
     const beforeTrace = baseMap.value;
     if (pts.length >= FREE_TRACE_MIN_POINTS) {
       st.suppressDrawClick = true;
@@ -176,7 +176,7 @@ export function createPointerHandlers(ctx) {
     //    几何一变，`baseMap` 计算属性就换了对象引用 → 下面那个 `watch(baseMap)` 会在**同一帧**
     //    （pre flush，绘制之前）重画一遍；这里再画一次等于同一份内容画两遍
     //    —— 实测一次松手 3~4 遍全量重绘、冷帧 35ms（暖帧 8ms），其中一遍纯属重复。
-    //    只在「没换引用 = 数据没变」时才必须补这一帧：笔迹预览层画在主画布上，
+    //    只在“没换引用 = 数据没变”时才必须补这一帧：笔迹预览层画在主画布上，
     //    没有一次全量重绘就擦不掉（拒绝分支 / 太短 / 用户取消压叠确认都走这里）。
     if (!pts.length || baseMap.value === beforeTrace) render();
   }
@@ -194,7 +194,7 @@ export function createPointerHandlers(ctx) {
     else if (res && res.changed) {
       statusMsg(`${res.label}：${res.detail} · 一笔 = 1 条撤销`);
       const prov = (baseMap.value?.terrain || []).find((p) => p.id === res.provinceId);
-      if (prov) selectedProvince.value = prov;      // 建完即选中：接着用「改省界」精修
+      if (prov) selectedProvince.value = prov;      // 建完即选中：接着用“改省界”精修
     } else statusMsg((res && res.message) || '笔刷建省：这一笔没有建出省');
     render();
   }
@@ -214,7 +214,7 @@ export function createPointerHandlers(ctx) {
     provLassoPoints.value = [];
     const res = store.applyProvinceLasso(baseMapKey.value, poly, provBrushTarget.value, '自由轮廓划归', { lockCoast: lockCoast.value });
     provinceBrush.invalidateBorders();
-    // 拒绝分支必须排在「changed」之前 —— 与点击填充同一条协议（{rejected, message}）
+    // 拒绝分支必须排在“changed”之前 —— 与点击填充同一条协议（{rejected, message}）
     if (res && res.blocked) statusMsg(res.message);
     else if (res && res.rejected) statusMsg(res.message || '自由轮廓被拒绝');
     else if (res && res.changed) {
@@ -269,10 +269,10 @@ export function createPointerHandlers(ctx) {
       // P1（2026-10-13）：跟随移动的邻省补丁 —— 与目标省**同一条命令**（一次拖动 = 一条 undo）
       const linkedPatches = collectLinkedPatches(preview);
       // ① 邻省先过闸门：它们只会"涨"，但仍可能涨到**第三个**省身上（罕见）。
-      //    顺序不能反 —— 目标省那道闸门会当场回一句「已应用顶点移动」，
+      //    顺序不能反 —— 目标省那道闸门会当场回一句“已应用顶点移动”，
       //    先过后拒会留下自相矛盾的两句话。
       const linkedOk = !linkedPatches.length || confirmVertexBatchOverlap(linkedPatches);
-      // ② 目标省的压叠闸门（2026-10-11 收口「顶点编辑造成的压叠不在任何闸门范围内」）：
+      // ② 目标省的压叠闸门（2026-10-11 收口“顶点编辑造成的压叠不在任何闸门范围内”）：
       //    判据放在**写之前** —— 拖到一半弹窗更坏（手还在拖），但写完之后再问就得靠撤销兜底；
       //    在抬手这一帧先量、问过再写，用户说"不"就什么都不发生，形状原地保持拖动前。
       if (linkedOk && patch && confirmVertexMoveOverlap(prov, { ...prov, ...patch })) {

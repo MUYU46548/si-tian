@@ -74,7 +74,7 @@ def main():
     except Exception as e:
         print('shot failed:', e)
 
-    # 卡片墙「返回世界」是否真的回到世界选择页
+    # 卡片墙“返回世界”是否真的回到世界选择页
     cdp.eval("(() => { const b = document.querySelector('[data-testid=sp-back]'); if (b) b.click(); return 'ok'; })()")
     time.sleep(1.0)
     print('返回后:', cdp.eval("""JSON.stringify((() => {

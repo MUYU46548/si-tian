@@ -1,25 +1,25 @@
-// utils/genProvenance.js — **生成即录账本**（provenance）：把「这次生成了什么、用什么参数」
+// utils/genProvenance.js — **生成即录账本**（provenance）：把“这次生成了什么、用什么参数”
 // 记成一条可回放、可对拍的小记录（N3a-1 / A8，2026-11-02）
 //
 // ── 为什么需要它（问题本身）─────────────────────────────────────────────────
 //   造陆 / 地形推演 / 文化·宗教派生都已经进 undo 栈（一次 Ctrl+Z 退回），但撤销只回得去
-//   **状态**，回不去「这是怎么生成的」—— 种子、参数、口径一个都没留下。后果三条：
-//     ① **复现不了**：用户想「再出一张差不多的大陆」只能靠记忆；
+//   **状态**，回不去“这是怎么生成的”—— 种子、参数、口径一个都没留下。后果三条：
+//     ① **复现不了**：用户想“再出一张差不多的大陆”只能靠记忆；
 //     ② **对拍不了**：同一份地形到底是不是同一组参数生成的，只能靠眼睛看；
-//     ③ **缺口只会越来越大**：每加一个生成器（侵蚀 / 河流重排…）就多一处「没账」。
+//     ③ **缺口只会越来越大**：每加一个生成器（侵蚀 / 河流重排…）就多一处“没账”。
 //   所以账本必须跟数据**同一条命令**写（见 store 里 `generate-landmass` / `derive-culture` /
 //   `synthesize-terrain` 的 undo/redo）—— 一次 Ctrl+Z 数据与账一起退回，**不会**出现
-//   「数据没了账还在」或「账没了数据还在」这种半截状态。
+//   “数据没了账还在”或“账没了数据还在”这种半截状态。
 //
 // ── 纪律（改这个文件前先读）─────────────────────────────────────────────────
 //   · **纯函数**：零 DOM / 零 Vue / 零依赖 / 不用 crypto（Node 与浏览器同一份，用例直接 import）；
 //   · **只记标量**：`summary` 只收计数与占比，**绝不收 heightmap / terrain / 多边形数组**
 //     （账本是给人和回放读的，不是第二份数据 —— 几十 KB 的账会把每次保存都拖慢）；
 //   · **确定性 id**：`id = gen_<kind>_<digest>`，digest 只由 kind + 参数 + seed + summary 决定
-//     → **同一组参数生成两次，id 与 digest 完全相同**（这正是「可对拍」的前提：保存后重开
+//     → **同一组参数生成两次，id 与 digest 完全相同**（这正是“可对拍”的前提：保存后重开
 //     再生成一次，看 id 就知道是不是同一张图）。所以 id 里**绝不能**掺时间戳/随机数；
 //   · `at`（ISO 时间）只给人看与排序，**不进 digest**（否则同一参数两次生成就对不上了）；
-//   · 参数指纹只认「**影响生成结果**」的键（见 `GEN_PARAM_IGNORE`）——
+//   · 参数指纹只认“**影响生成结果**”的键（见 `GEN_PARAM_IGNORE`）——
 //     `force` / `keepHandEdits` / 整份高度图 这类执行期输入混进指纹会让"同参数"永远不同。
 
 /**
@@ -29,7 +29,7 @@
  *   · `landmass` —— 造陆（store/generateLandmass，**有重放**）
  *   · `terrain`  —— 地形推演（store/synthesizeTerrainInto：底图 + 行星两条容器都记）
  *   · `culture` / `religion` —— 文化·宗教派生（store/applyCultureDerive，一次派生两条账）
- *   · `rivers`   —— 目前**没有生产写口**：画布「自动河流」只算不写（结果留在
+ *   · `rivers`   —— 目前**没有生产写口**：画布“自动河流”只算不写（结果留在
  *     `ScenarioMap` 的 `autoRivers` 里，用户看得到但没落库），落库的河流只来自造陆
  *     （已并入 `landmass` 记录的 summary）。等河流生成有了自己的落库入口，再补 kind。
  */
@@ -49,7 +49,7 @@ export function genKindLabel(kind) {
 }
 
 /**
- * **执行期参数**：只影响「怎么写」、不影响「生成什么」→ 不进指纹。
+ * **执行期参数**：只影响“怎么写”、不影响“生成什么”→ 不进指纹。
  *   · `force` / `keepHandEdits`：覆盖确认与手绘保留开关（同一组参数、两种写法，结果数据相同）；
  *   · `onProgress` / `token`：UI 回调与取消令牌；
  *   · `heightmap`：FMG 分支会把**整份高度图**塞进 opts.params（2 万格数组，不是参数）。
@@ -124,7 +124,7 @@ export function digestOf(parts) {
 /**
  * 摘要归一：**只留标量**（计数 / 占比 / 枚举名）。
  *   · 非有限数丢弃（`landRatio` 之类偶尔是 NaN，不该让整条记录写不进去）；
- *   · 数组 / 对象 / 函数**直接抛** —— 这是「payload 要小」的硬闸门：
+ *   · 数组 / 对象 / 函数**直接抛** —— 这是“payload 要小”的硬闸门：
  *     有人把 heightmap 塞进 summary 的那一刻就应该炸，而不是悄悄生成一份几十 KB 的账。
  * 键排序 → 指纹与插入顺序无关。
  */
@@ -252,7 +252,7 @@ export function recordDigest({ kind, params, seed, summary } = {}) {
  *            params:object, digest:string, summary:object}}
  *
  * 🔴 `id` 是**确定性**的：同 kind + 同参数 + 同 seed + 同 summary → 同 id + 同 digest。
- *    所以「同一组参数生成两次」在账本里是同一条（`appendGenRecord` 会原位替换，不叠加）。
+ *    所以“同一组参数生成两次”在账本里是同一条（`appendGenRecord` 会原位替换，不叠加）。
  */
 export function makeGenRecord({ kind, key = '', params = {}, seed, at, result, summary } = {}) {
   const kindText = String(kind || '');
@@ -311,7 +311,7 @@ export function dropGenRecord(list, id) {
 }
 
 /**
- * 校验「记录 vs 重跑结果」：用**同一条** `recordDigest` 重算，与存下来的 digest 比。
+ * 校验“记录 vs 重跑结果”：用**同一条** `recordDigest` 重算，与存下来的 digest 比。
  *
  * @param {object} rec 账本里那条记录
  * @param {object} replayed `{ kind?, params?, seed?, summary? }` 或 `{ result? }`

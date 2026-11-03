@@ -1,6 +1,6 @@
 // probe_landmass_frames.mjs — **一次性探针**（2026-10-29，A5）：造陆连跑几次，量两件事
 //   ① 图幅会不会缩（修前：每次 ≈9.5%；修后：`heightmap.genBBox` 让重跑逐格同网格）；
-//   ② 手绘按「图幅相对位置」搬的命中率（`transferHandEdits`）。
+//   ② 手绘按“图幅相对位置”搬的命中率（`transferHandEdits`）。
 // 不进回归（跑几分钟，结论已固化成 unit/test_hand_edits h7–h10 与 test_152 g 段）。
 // 用法：node scripts/tests/tools/probe_landmass_frames.mjs
 import fs from 'fs';

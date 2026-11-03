@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// S0 资料线探针（不是回归用例）：把「不听话的库」喂给现有提取器，记录它到底看到几篇、会不会崩。
+// S0 资料线探针（不是回归用例）：把“不听话的库”喂给现有提取器，记录它到底看到几篇、会不会崩。
 //
 // 用法：
 //   node scripts/tests/tools/_probe_messy_vault.js
@@ -37,7 +37,7 @@ async function main() {
     result.scanned = scanned.map((n) => n.sourcePath);
     result.scannedCount = scanned.length;
     try {
-      // 🔴 extractGeodata 是 async：不 await 会把「拒绝」当成「返回了一个没有 nodes 的对象」，
+      // 🔴 extractGeodata 是 async：不 await 会把“拒绝”当成“返回了一个没有 nodes 的对象”，
       //    看起来像“提取成功但 0 节点”——这正是本项目最怕的假绿。
       const g = await extractGeodata(dst);
       result.extract = { ok: true, nodeCount: g.nodeCount, nodes: (g.nodes || []).map((n) => ({ name: n.name, layer: n.layer, sourcePath: n.sourcePath })) };

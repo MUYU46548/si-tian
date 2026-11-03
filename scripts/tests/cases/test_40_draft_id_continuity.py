@@ -8,7 +8,7 @@
 
 覆盖：
   a) normalizeId 三处实现（extract-data.js / vault-watcher.js / utils/normalizeId.js）逐字符一致
-     —— 「防漂移」是转正 id 推导的正确性前提（历史上 vault-watcher 就漂移过一次）
+     —— “防漂移”是转正 id 推导的正确性前提（历史上 vault-watcher 就漂移过一次）
   b) normalizeId / basenameNoExt / nodeIdFromNoteResult 语义（纯函数，页面内实测）
   c) store.changeNodeId 级联完整性：子节点 parentId、航道端点、太空标记 systemId、
      区域/建筑数据字典键、建筑内部自引用字段、剧本 ownership 键、星域边界覆盖键
@@ -396,7 +396,7 @@ def sub_promote_ui(cdp):
         bad.append(f'提示样式非 ok（{res.get("noticeKind")}）')
     if bad:
         return False, '转正 UI 链路异常：' + '；'.join(bad)
-    return True, f'转正后 id 同步为「{PROMOTE_EXPECT}」，子节点 parentId 跟随，面板提示 ok'
+    return True, f'转正后 id 同步为“{PROMOTE_EXPECT}”，子节点 parentId 跟随，面板提示 ok'
 
 
 # ─────────────────────────────────────────────────────────────
@@ -406,7 +406,7 @@ def sub_collision_fallback(cdp):
     made = _j(cdp, """(() => {
       const s = @STORE@;
       const planet = s.nodes.find(n => n.layer === 'planet');
-      // 占位节点：id 恰为「草稿名的 normalizeId」→ 转正时必然撞车
+      // 占位节点：id 恰为“草稿名的 normalizeId”→ 转正时必然撞车
       s.addNode({ id: @TARGET@, name: @TARGET@, layer: 'city',
         parentId: planet ? planet.id : null, tags: [], sourcePath: 'blocker.md',
         coordinate: { x: 9, y: 9 } });

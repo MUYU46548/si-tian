@@ -1,7 +1,7 @@
 // scenario/interaction/keyboard.js — 剧本视图键盘处理（N1 第三阶段：把交互逻辑搬出组件）
 //
 // 为什么单独一刀：`onKeyDown` / `onKeyUp` 是**纯"读状态 → 调动作"**，不碰画布绘制、
-// 也不持有只有组件才知道的临时对象 —— 最适合先搬，用来验证「交互搬出组件」这套搬法。
+// 也不持有只有组件才知道的临时对象 —— 最适合先搬，用来验证“交互搬出组件”这套搬法。
 //
 // 约定（与 `scenario/layers/*` 一致）：不 import Vue、不摸组件；所有状态与动作由 `ctx` 传入。
 // `ctx` 里 ref 传**对象本身**（读写 .value），普通 `let` 变量（altStraight / suppressRiverClick /
@@ -71,7 +71,7 @@ export function createKeyboardHandlers(ctx) {
       polySplitHover.value = null;
       polySplitPreview.value = null;
       clearSnapMarker();
-      clearProvinceSelection();      // Esc 也取消多选（批量条的「取消选择」同效）
+      clearProvinceSelection();      // Esc 也取消多选（批量条的“取消选择”同效）
       // Esc 取消河流选中（2026-10-27）：旧实现只有工具栏一个小按钮，按 Esc 什么都不发生
       if (selectedRiver.value || riverSelIds().length) {
         setRiverSelection([]);

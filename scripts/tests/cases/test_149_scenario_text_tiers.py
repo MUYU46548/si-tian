@@ -5,7 +5,7 @@
 背景（2026-10-25 文本标注第二刀）：
   真实底图 617 个城镇、160 条河，全标名字就是糊图。画布按缩放分级，
   导出是固定分辨率图，用**出版档**：只标首都 + 流量前 12 的河。
-  如果画布与导出各写一套分级，就会出现「画布只标首都、导出标 617 个」——
+  如果画布与导出各写一套分级，就会出现“画布只标首都、导出标 617 个”——
   不会报错，只会让成品图没法用。
 
 判据：
@@ -92,7 +92,7 @@ def run(cdp):
       const fn = SM.buildScenarioSVG || (SM.scenarioExport && SM.scenarioExport.buildScenarioSVG);
       if (!fn) return JSON.stringify({ __err__: '没有 buildScenarioSVG' });
       const svg = String(fn({ era: 0, date: { y: 2000, m: null, d: null } }).svg || '');
-      // 关掉「自动地名」后再导一次：默认关闭时不应出现 FMG 英文名
+      // 关掉“自动地名”后再导一次：默认关闭时不应出现 FMG 英文名
       // 画布侧：同一套候选（避让排布）里必须真的有城镇/河/势力三类 —— 只测导出会漏掉画布接线。
       // ⚠️ 必须在**关掉自动地名之前**取：排布缓存按开关值失效，关掉之后自然只剩势力名。
       const plan = (typeof SM.getLabelPlan === 'function') ? SM.getLabelPlan() : [];
@@ -165,7 +165,7 @@ def run(cdp):
     if out.get('hasSmallRiver'):
         fails.append('导出 SVG 混进非前 12 的河名')
     if out.get('offHasCapital') or out.get('offHasRiver'):
-        fails.append('关掉「自动地名」后导出仍有城镇/河流名（默认关闭没生效）')
+        fails.append('关掉“自动地名”后导出仍有城镇/河流名（默认关闭没生效）')
     # 画布侧：避让排布的结论里要真的有城镇与势力名。
     # ⚠️ 不含 river：该缩放下 `riverLabelTier` 刻意返回 -1（低缩放不标河名），导出档才标。
     kinds = out.get('planKinds') or []
@@ -201,7 +201,7 @@ def run(cdp):
         import pathlib
         from lib.cdp import fetch_string
         try:
-            # 截图前把「自动地名」打开并重绘（上面为了测导出翻转，已经把它关掉了）
+            # 截图前把“自动地名”打开并重绘（上面为了测导出翻转，已经把它关掉了）
             cdp.eval("(() => { const SM = %s; SM.showPlaceNames = true;"
                      " if (SM.render) SM.render(); return 'ok'; })()" % SM)
             import time as _t

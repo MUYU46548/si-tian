@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""真机验收：省份「归属」在右键菜单 + 右上角详情面板里必须看得见，且能改。
+"""真机验收：省份“归属”在右键菜单 + 右上角详情面板里必须看得见，且能改。
 
 判据（全部读真实 DOM / 真实 store，不读源码）：
-  f1 右键一个有主的省 → 菜单里出现「归属：<势力名>」；
-  f2 点「省份详情…」→ 右上角面板出现「归属」行且显示同一个名字；
-  f3 面板「清成无主」→ store 里 ownership 键消失、changeEvents 里落一条 owner=null；
-  f4 右键一个无主的省 → 菜单写「无主」；选一个势力色块后点「设为当前势力」→ ownership 写回。
+  f1 右键一个有主的省 → 菜单里出现“归属：<势力名>”；
+  f2 点“省份详情…”→ 右上角面板出现“归属”行且显示同一个名字；
+  f3 面板“清成无主”→ store 里 ownership 键消失、changeEvents 里落一条 owner=null；
+  f4 右键一个无主的省 → 菜单写“无主”；选一个势力色块后点“设为当前势力”→ ownership 写回。
 
 用法：python scripts/tests/diag_province_detail.py（只用工作副本，跑完还原配置）
 """
@@ -308,7 +308,7 @@ def main():
         menu = json.loads(cdp.eval(OPEN_MENU % (pos['at'][0], pos['at'][1])))
         print('\nf1 右键菜单:', menu['text'].replace('\n', ' | '))
         if '归属' not in menu['text']:
-            fails.append('f1 菜单里没有「归属」')
+            fails.append('f1 菜单里没有“归属”')
         if pick['owned']['ownerName'] and pick['owned']['ownerName'] not in menu['text']:
             fails.append('f1 菜单里的势力名与当前日期归属不一致（期望 %s）' % pick['owned']['ownerName'])
         detail = json.loads(cdp.eval(CLICK_DETAIL))
@@ -316,9 +316,9 @@ def main():
         panel = json.loads(cdp.eval(PANEL))
         print('f2 详情面板:', panel)
         if '归属' not in panel['text']:
-            fails.append('f2 面板里没有「归属」')
+            fails.append('f2 面板里没有“归属”')
         if panel.get('selectedId') != pick['owned']['id']:
-            fails.append('f2 点「省份详情…」后选中的不是菜单那个省：%s != %s'
+            fails.append('f2 点“省份详情…”后选中的不是菜单那个省：%s != %s'
                          % (panel.get('selectedId'), pick['owned']['id']))
         if not panel.get('name'):
             fails.append('f2 面板标题（省名）是空的')
@@ -332,7 +332,7 @@ def main():
         print('\nf3 清成无主:', res, 'owner', before['owner'], '->', after['owner'],
               'events尾:', after['events'][-1] if after['events'] else None)
         if res.get('disabled'):
-            fails.append('f3 「清成无主」按钮是 disabled')
+            fails.append('f3 “清成无主”按钮是 disabled')
         if after['owner'] is not None:
             fails.append('f3 点完之后 ownership 还在')
         if not after['events'] or after['events'][-1].get('owner') is not None:
@@ -347,13 +347,13 @@ def main():
         menu2 = json.loads(cdp.eval(OPEN_MENU % (pos2['at'][0], pos2['at'][1])))
         print('\nf4 无主省右键:', menu2['text'].replace('\n', ' | '))
         if '无主' not in menu2['text']:
-            fails.append('f4 无主省的菜单没有写「无主」')
+            fails.append('f4 无主省的菜单没有写“无主”')
         cdp.eval(CLICK_DETAIL)
         time.sleep(0.35)
         panel2 = json.loads(cdp.eval(PANEL))
         print('f4 无主省详情:', panel2)
         if '无主' not in panel2['text']:
-            fails.append('f4 无主省详情没有写「无主」')
+            fails.append('f4 无主省详情没有写“无主”')
         # 选第一个势力色块 → 设为当前势力
         cdp.eval("(() => { const b = document.querySelector('.polity-swatch:not(.clear)');"
                  " if (b) b.click(); return b ? 'ok' : 'none'; })()")
@@ -362,7 +362,7 @@ def main():
         after2 = json.loads(cdp.eval(STATE))
         print('f4 设为当前势力:', res2, '→ owner =', after2['owner'])
         if res2.get('disabled'):
-            fails.append('f4 「设为当前势力」按钮是 disabled（选了色块之后）')
+            fails.append('f4 “设为当前势力”按钮是 disabled（选了色块之后）')
         if not after2['owner']:
             fails.append('f4 点完之后 ownership 还是空')
 

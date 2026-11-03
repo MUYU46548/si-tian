@@ -60,7 +60,7 @@
 
     <!-- 无结果提示（P1-3）：有查询但无命中时给出建议 -->
     <div v-if="showResults && query && store.searchResults.length === 0" class="no-results-panel" @click.stop>
-      <div class="no-results-title">未找到「{{ query }}」</div>
+      <div class="no-results-title">未找到“{{ query }}”</div>
       <div class="no-results-hint">
         试试：
         <span v-if="filterCount > 0">清除类型过滤 · </span>
@@ -185,7 +185,7 @@ function selectResult(nodeId, index) {
     // 等 v-if 视图切换完成后再派发焦点事件，确保目标组件已挂载监听
     nextTick(() => window.dispatchEvent(new CustomEvent('sitian:focus-node', { detail: node })));
     // 导航成功后清空搜索状态：避免输入框残留 query + searchResults 已被 clearSearch 清空
-    // → 无结果面板误报「未找到 xx」（原 showResults = false 是对 const ref 非法赋值，运行时抛 TypeError 中断）
+    // → 无结果面板误报“未找到 xx”（原 showResults = false 是对 const ref 非法赋值，运行时抛 TypeError 中断）
     query.value = '';
     store.clearSearch();
   }
@@ -514,7 +514,7 @@ input::placeholder {
   font-weight: 500;
 }
 
-/* 「提及」徽标：该结果靠正文 wikilink 命中（反向链接），非名称直配 */
+/* “提及”徽标：该结果靠正文 wikilink 命中（反向链接），非名称直配 */
 .result-mention-badge {
   font-size: 10px;
   line-height: 1.4;

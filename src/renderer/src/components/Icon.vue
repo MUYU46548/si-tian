@@ -42,7 +42,7 @@
     <template v-else-if="name === 'upload'"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></template>
     <!-- 导出（把内容送出去：方框 + 指向右上方的箭头）——
          语义区别：download = 箭头向下落进托盘（拉取/下载，如导出菜单的历史用法），
-         export = 从方框里送出去。用户反馈「导出用下载图标语义有误」，导出类按钮一律用它。 -->
+         export = 从方框里送出去。用户反馈“导出用下载图标语义有误”，导出类按钮一律用它。 -->
     <template v-else-if="name === 'export'"><path d="M14 3h7v7"/><line x1="21" y1="3" x2="12" y2="12"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></template>
     <template v-else-if="name === 'eye'"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></template>
     <template v-else-if="name === 'zoom-in'"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></template>

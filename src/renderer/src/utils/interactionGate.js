@@ -101,7 +101,7 @@ export function describeInteractionGate(now = Date.now()) {
 }
 
 /**
- * 自动保存的「顺延判定器」。每个保存链一份（geodata / projectStore）。
+ * 自动保存的“顺延判定器”。每个保存链一份（geodata / projectStore）。
  *
  * 用法（定时器到点时调用一次）：
  * ```js

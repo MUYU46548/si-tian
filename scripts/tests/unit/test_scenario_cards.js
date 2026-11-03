@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：卡片墙「开局态势」的纯函数层（src/renderer/src/utils/scenarioCards.js）
+ * Node 单元测试：卡片墙“开局态势”的纯函数层（src/renderer/src/utils/scenarioCards.js）
  *
- * 来历（2026-10-17 第三轮）：缩略图成品缓存上线后，实测「第二次进卡片墙」仍要 **1020ms**
+ * 来历（2026-10-17 第三轮）：缩略图成品缓存上线后，实测“第二次进卡片墙”仍要 **1020ms**
  * （探针 `scripts/tests/tools/_probe_picker_perf.js`，缓存 hits=10 / misses=10 未变）。
  * 逐段计时找出真凶：400 省 × 10 剧本，`openingSituation` 合计 **597.7ms**，
  * 其中 `provinceNetArea` 全量 **60.6ms** —— 同一份面积被**算了 10 遍**（每条剧本一遍）。
@@ -11,7 +11,7 @@
  * 本文件守三件（都不靠计时，计时在 CI 上会抖）：
  *   ① 索引口径 = 逐省 `provinceNetArea`（含带洞省份的净面积）；
  *   ② 给了索引与不给索引**结果逐字段一致**（优化不许悄悄改语义）；
- *   ③ 「每省只读一次几何」的**计数判据**（用计数 getter 数 `points` 被读了几次）——
+ *   ③ “每省只读一次几何”的**计数判据**（用计数 getter 数 `points` 被读了几次）——
  *      这条是"真的省下了重复计算"的硬证据，光看耗时快了多少说明不了问题。
  *
  * 用法：node scripts/tests/unit/test_scenario_cards.js
@@ -134,7 +134,7 @@ async function main() {
     return `total=${a0.total}，top=${a0.top.name} ${Math.round(a0.top.pct * 100)}%`;
   });
 
-  // ---------- 3. 「不再读几何」的硬判据 ----------
+  // ---------- 3. “不再读几何”的硬判据 ----------
   check('t3 给了索引就**一次几何都不读**（计数 getter 数出来，不是"看着快"）', () => {
     // ⚠️ 不能用"getter 一读就抛"来判：`openingSituation` 的现算分支本就 `try/catch` 兜底
     //    （脏数据不许把卡片墙炸掉），异常会被吞掉 → 那种判据是**空转通过**。

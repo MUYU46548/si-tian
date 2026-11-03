@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 121：**地图编辑的卡顿** —— 手势期「底图基帧」缓存（2026-10-18 第十八修）
+"""用例 121：**地图编辑的卡顿** —— 手势期“底图基帧”缓存（2026-10-18 第十八修）
 
 暮雨原话：
-  「卡顿发生在方方面面，基本涉及地图编辑绘制的，画条线圈个地都要卡一卡。以画河流为例，
-    随便拖一条出来都要卡一阵，点节点又开始卡。」
+  “卡顿发生在方方面面，基本涉及地图编辑绘制的，画条线圈个地都要卡一卡。以画河流为例，
+    随便拖一条出来都要卡一阵，点节点又开始卡。”
 
 先量后修（真实 `docs/mockups/desite.map`：200 省 / 160 河 / 24018 个骨架顶点 / 9975 格高度图）：
 
@@ -23,8 +23,8 @@ CPU 采样（`_probe_cpu_profile.py`，拖一圈 4 秒）把 29ms 摊开：**(pr
      地形建（不然每个 `v.x` 都要过响应式 get 陷阱）；口径与朴素双循环**逐位一致**（含并列取舍）。
   ② 自动河那一段几何（闸门/剪枝/成链/抽稀/裁岸线 + 陆地掩膜）**按数据引用缓存** ——
      它原来每帧重算（实测 `render` 7.3ms → 14.3ms，`pruneRiverNetwork` 一项 4.2ms）。
-  ③ **手势期「底图基帧」缓存**（本条的主角）：按下时把「没有草稿的那一帧」渲染进离屏画布，
-     拖动期间每帧只「贴图 + 画笔迹」，抬手即作废。绘图软件的分层就是这个意思。
+  ③ **手势期“底图基帧”缓存**（本条的主角）：按下时把“没有草稿的那一帧”渲染进离屏画布，
+     拖动期间每帧只“贴图 + 画笔迹”，抬手即作废。绘图软件的分层就是这个意思。
 
 本用例判据（**不靠墙钟时间** —— 时间断言在慢机器上会假红）：
   a 源码闸门：三个函数在、`renderFrame` 的静态层受 `blitted` 管、动态层受 `strokeBaseBuilding` 管、
@@ -97,7 +97,7 @@ def source_gates():
     _i_gate = sm.find('if (!blitted) {')
     _i_run = sm.find('scenarioRenderLayers.run(ctx.value')
     if _i_gate < 0 or _i_run < 0 or (_i_run - _i_gate) > 200:
-        fails.append('🔴 静态层没有受「贴图帧」门控：`scenarioLayers.run(...)` 不在 `if (!blitted) {` 里'
+        fails.append('🔴 静态层没有受“贴图帧”门控：`scenarioLayers.run(...)` 不在 `if (!blitted) {` 里'
                      '（贴图帧会把它们再画一遍）')
     for gate in ('if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());\n  }\n'
                  '  if (!strokeBaseBuilding) drawRiverPathsLayer',
@@ -106,7 +106,7 @@ def source_gates():
                  # 门控条件因此变长；判据只要求"同一行里既有 !blitted 又有 drawBurgs"。
                  'if (!blitted && showBurgs.value && !cameraMotion) {\n    drawBurgsLayer'):
         if gate not in sm:
-            fails.append(f'🔴 静态层没有受「贴图帧」门控：{gate!r}（贴图帧会把它们再画一遍）')
+            fails.append(f'🔴 静态层没有受“贴图帧”门控：{gate!r}（贴图帧会把它们再画一遍）')
     for gate in ('if (!strokeBaseBuilding) drawRiverPathsLayer', 'if (!strokeBaseBuilding) drawSelectedRiverHighlightLayer',
                  'if (!strokeBaseBuilding) drawVertexHandlesLayer', 'if (!strokeBaseBuilding) drawPreviewOverlayLayer'):
         if gate not in sm:
@@ -121,7 +121,7 @@ def source_gates():
     if len(wheel) < 2 or 'endStrokeBase()' not in wheel[1][:400]:
         fails.append('🔴 滚轮动相机时没有作废基帧（会贴着旧图缩放）')
     if '() => baseMap.value?.terrain' not in sm or 'strokeBaseArmed) endStrokeBase()' not in sm:
-        fails.append('🔴 没有「底图几何换引用就解甲」的安全阀（撤销后还贴旧图）')
+        fails.append('🔴 没有“底图几何换引用就解甲”的安全阀（撤销后还贴旧图）')
     # 骨架索引 + toRaw（不然每帧 110 万次 Math.hypot / 每个坐标都过响应式 get）
     if 'skeletonForTerrain(rawTerrain()' not in sm:
         fails.append('🔴 骨架仍从**响应式**地形建（坐标读取每帧过 Vue get 陷阱）')

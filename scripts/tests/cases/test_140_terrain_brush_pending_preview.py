@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 140：地形笔的 L3「将涂格」高亮（第 4 件，2026-10-24）
+"""用例 140：地形笔的 L3“将涂格”高亮（第 4 件，2026-10-24）
 
 04 号指南对地形笔的要求：**拖动中 = 真笔迹 + "这笔下去会填哪些格"的高亮浮层；松手才批量写格**
 （"松手前你先看见这笔会填哪些格，再决定认不认"）。此前是边拖边写 —— 用户看到的永远是"已经涂上"，
@@ -8,7 +8,7 @@
 
 验收点（数据判据优先，全部走 product 自己的凸包/枚举）：
 1. **拖动中不写格**：按下后到抬手前，网格字节**逐字节不变**（对照快照）—— 这是"预览"与"已落库"的分界
-2. 拖动中确实积累了「将涂格」：`pendingCells().length > 0` 且随拖动增长
+2. 拖动中确实积累了“将涂格”：`pendingCells().length > 0` 且随拖动增长
 3. **所见即所得**：抬手后，每一个预览过的格都真的变成了这一笔的类型（越界格除外）
 4. 抬手：pending 清空、格子落库、**一笔一条 undo**；撤销**逐字节**回到按下前的网格与几何；重做再回来
 5. 源码守卫：预览与落库共用同一份格枚举（`forEachCell` / `forEachInterpolatedCell`），
@@ -90,7 +90,7 @@ DRAG = r"""(async () => {
   const pxPre = probes.map(([x, y]) => px(x, y));
   const pxBefore = pxPre[0];
   // 整张画布的"拖动前"快照：最终判据用它，而不是赌某一个探针点。
-  // ⚠️ 拖动中还有 L2 笔迹层与笔刷预告圈；测像素前会先清掉它们，只留下「将涂格」。
+  // ⚠️ 拖动中还有 L2 笔迹层与笔刷预告圈；测像素前会先清掉它们，只留下“将涂格”。
   const c2d = canvas.getContext('2d');
   const allPre = new Uint8ClampedArray(c2d.getImageData(0, 0, canvas.width, canvas.height).data);
   // ① 按下（只此一次可能扩网格）；快照取在按下之后 = "拖动中不改"的对照
@@ -121,7 +121,7 @@ DRAG = r"""(async () => {
   const mode = pm.interactionMode;
   const edit = !!pm.editMode;
   const midCount = countType();
-  // 清掉 L2 笔迹与笔刷预告圈，只留「将涂格」再取整图差 ——
+  // 清掉 L2 笔迹与笔刷预告圈，只留“将涂格”再取整图差 ——
   // 这样"像素变了"只能来自 pending 高亮，不会被轨迹/预告圈冒充。
   if (tb.strokePath && tb.strokePath.value) tb.strokePath.value = [];
   if (typeof tb.clearBrushPreview === 'function') tb.clearBrushPreview();
@@ -219,7 +219,7 @@ def sub_source_guards():
         bad.append('paint/paintInterpolated 没有复用统一枚举')
     comp = _code_only(_read('src/renderer/src/composables/useTerrainCanvasBrush.js'))
     if 'drawTerrainPendingToCtx' not in comp:
-        bad.append('没有把「将涂格」画出来的入口')
+        bad.append('没有把“将涂格”画出来的入口')
     if 'commitPendingStroke' not in comp:
         bad.append('没有"松手才落库"的提交口')
     # 拖动中不许再调 paintInterpolated（那是写口的活，归 commit）
@@ -230,7 +230,7 @@ def sub_source_guards():
         bad.append('moveTerrainBrush 没累积预览格')
     planet = _code_only(_read('src/renderer/src/components/PlanetMap.vue'))
     if 'drawTerrainPendingToCtx' not in planet:
-        bad.append('PlanetMap 没有调用「将涂格」渲染')
+        bad.append('PlanetMap 没有调用“将涂格”渲染')
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
     return True, '预览与落库共用 forEachCell/forEachInterpolatedCell；拖动中只累积、松手才提交'
@@ -259,7 +259,7 @@ def run(cdp):
     if not data.get('brushing'):
         fails.append('拖动中 isTerrainBrushing 不是 true（预览态没建立）')
     if not (data.get('pixelDiff', 0) > 200):
-        fails.append(f'清掉轨迹/预告圈后整图仍没变化 —— 「将涂格」没被画出来（变化像素 {data.get("pixelDiff")}；'
+        fails.append(f'清掉轨迹/预告圈后整图仍没变化 —— “将涂格”没被画出来（变化像素 {data.get("pixelDiff")}；'
                      f'runs={data.get("runs")} mode={data.get("mode")} edit={data.get("edit")} '
                      f'brushing={data.get("brushing")}；单点探针差 {data.get("pxDelta")}）')
     # 对照：远离笔迹的那个点必须**没变** —— 否则"变色"可能只是整帧重绘的巧合
@@ -297,7 +297,7 @@ def run(cdp):
         fails.append(sg_detail)
 
     detail = (f'拖动中：{data.get("pend0")}→{data.get("pendingAt")[-1] if data.get("pendingAt") else "?"} 个'
-              f'「将涂格」、网格**逐字节未变**（{data.get("bytesChanged")} 步变化）；'
+              f'“将涂格”、网格**逐字节未变**（{data.get("bytesChanged")} 步变化）；'
               f'抬手：落库 {data.get("preCount")}→{data.get("afterCount")} 格、预览清空、一条 undo；'
               f'所见即所得：{data.get("checked")} 个预览格全部命中（越界 {data.get("outside")}、漏 {data.get("miss")}）；'
               f'撤销逐字节复原（类型计数 {data.get("undoCount")}）、重做 {data.get("redoCount")}；源码守卫：{sg_detail}')

@@ -6,8 +6,8 @@
   行星主编辑器此前**没有**文化 / 宗教笔刷（`interactionMode` 只有 height/terrain/relief/river/political），
   渲染侧 `drawCultureReligionRegions` 画的还是 Azgaar 导入的参考数据 —— 用户自己的数据无处可画。
   本轮把剧本侧早就有的文化/宗教涂抹能力按**同一份数据模型**补到行星侧，但**不照抄**剧本侧那种
-  「每次 mousemove 都 execute + 靠 merge 合栈」的实现（每次移动全量拷贝通道数组 + 整体替换
-  heightmap 对象），改用本项目 `provinceEditing` 已验证的「抬手 diff」：
+  “每次 mousemove 都 execute + 靠 merge 合栈”的实现（每次移动全量拷贝通道数组 + 整体替换
+  heightmap 对象），改用本项目 `provinceEditing` 已验证的“抬手 diff”：
     涂抹期只改**内存里的通道数组** + 记差量账本 → 抬手把整笔压成**一条** undo 并落盘。
 
 覆盖：
@@ -102,7 +102,7 @@ def _static_guard():
         if bad in comp:
             problems.append(f'交互层不应直接依赖 {bad}（数据层与交互层要分离）')
 
-    # ── A6（2026-10-29）：行星侧「生成地形」必须**共用**剧本侧那份实现 ──────────────
+    # ── A6（2026-10-29）：行星侧“生成地形”必须**共用**剧本侧那份实现 ──────────────
     # 判据只有两条：① 推演/写口只有一份（`synthesizeTerrainInto` 是唯一实现，两个薄入口）；
     # ② 面板与工具栏都只是"换 target"，没有第二份推演/第二份参数面板。
     sce = _read('src/renderer/src/store/geodataModules/scenarioEditing.js')
@@ -117,8 +117,8 @@ def _static_guard():
             or 'store.previewPlanetTerrainSynthesis' not in panel:
         problems.append('TerrainGenPanel 没接行星目标（应传 planetId → 同一个 store 入口）')
     if 'data-testid="planet-gen-terrain"' not in pm or ':planet-id=' not in pm:
-        problems.append('PlanetMap 缺少「生成地形」入口（planet-gen-terrain → TerrainGenPanel :planet-id）')
-    # 行星笔刷必须登记手绘格，否则「重生成保留手绘」在行星侧永远保留 0 格
+        problems.append('PlanetMap 缺少“生成地形”入口（planet-gen-terrain → TerrainGenPanel :planet-id）')
+    # 行星笔刷必须登记手绘格，否则“重生成保留手绘”在行星侧永远保留 0 格
     brush = _read('src/renderer/src/composables/usePlanetHeightBrush.js')
     if 'mergeHandEdits' not in brush:
         problems.append('usePlanetHeightBrush 没登记 handEdits（行星侧手绘锁定是空开关）')
@@ -335,7 +335,7 @@ JS = r"""(async () => {
   }
 
   // ══════════════════════════════════════════════════════
-  // f6 A6（2026-10-29）：行星侧「生成地形」—— 同一份推演 + 手绘锁定 + 一条 undo
+  // f6 A6（2026-10-29）：行星侧“生成地形”—— 同一份推演 + 手绘锁定 + 一条 undo
   // ══════════════════════════════════════════════════════
   {
     const md = store.mapData[pid];
@@ -368,7 +368,7 @@ JS = r"""(async () => {
     const cells1 = hm1 && hm1.grid ? hm1.grid.points.length : 0;
     ck('f6 ★ 高度图落在行星自己那份上（换了对象、格数够）',
        hm1 !== hm0 && cells1 > 300 && hm1.h.length === cells1, { cells0, cells1 });
-    ck('f6 回执是「按陆地轮廓生成地形」那一条',
+    ck('f6 回执是“按陆地轮廓生成地形”那一条',
        String((r1 && r1.message) || '').includes('已按陆地轮廓生成地形'),
        r1 && String(r1.message).slice(0, 40));
     ck('f6 genSeed 落库（下次重生成靠它判断同种子）',
@@ -406,7 +406,7 @@ JS = r"""(async () => {
 
     const r3 = store.synthesizePlanetTerrain(pid, { force: true, params: { seed: 7 }, keepHandEdits: false });
     const hm3 = store.mapData[pid].heightmap;
-    ck('f6 ★ 关掉「保留手绘」→ 一条不留（回执写明）',
+    ck('f6 ★ 关掉“保留手绘”→ 一条不留（回执写明）',
        !!(r3 && r3.ok) && r3.handKept === 0 && (hm3.handEdits || []).length === 0
        && String(r3.message || '').includes('未保留'),
        { kept: r3 && r3.handKept, msg: r3 && String(r3.message).slice(-40) });
@@ -420,13 +420,13 @@ JS = r"""(async () => {
        { back: hmBack && hmBack.grid && hmBack.grid.points.length, want: cells0 });
 
     // UI：工具栏入口 + 浮面板真的能开（3 张候选画出来）
-    // ⚠️ 「生成地形」在**高度**工具坞里（f5 结尾切到了宗教）—— 先切回来，否则按钮不在 DOM
+    // ⚠️ “生成地形”在**高度**工具坞里（f5 结尾切到了宗教）—— 先切回来，否则按钮不在 DOM
     const pmEl = document.querySelector('.planet-map-container');
     const pmSetup = pmEl && pmEl.__vueParentComponent && pmEl.__vueParentComponent.setupState;
     if (pmSetup && typeof pmSetup.setInteractionMode === 'function') pmSetup.setInteractionMode('height');
     await tick(400);
     const genBtn = document.querySelector('[data-testid="planet-gen-terrain"]');
-    ck('f6 ★ 行星工具栏有「生成地形」入口', !!genBtn, null);
+    ck('f6 ★ 行星工具栏有“生成地形”入口', !!genBtn, null);
     if (genBtn) {
       genBtn.click();
       await tick(800);

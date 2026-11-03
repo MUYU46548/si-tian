@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 20：FMG .map 底图图层解析专项（P1-T1/T2/T3/T5 的数据地基）
 
-覆盖目标（回归「硬编码行号」这一类错误）：
+覆盖目标（回归“硬编码行号”这一类错误）：
   1. .map 段位移鲁棒性：SVG 段行数变化后，biomes/cultures/religions/provinces/burgs/rivers/routes
      仍要按内容结构被正确识别（旧实现写死 lines[160]/[165]，位移后取到 zones / cells.good）
   2. grid 级数组（h/temp/prec）按 grid 锚点 + 位置解析，长度与网格点数一致
@@ -300,7 +300,7 @@ def run(cdp):
         ('P0-T2 边界吸附 (15,4)→(15,0)',
          abs(ep.get('x', -1) - 15) < 0.5 and abs(ep.get('y', -1)) < 0.5, ep),
         # 注：浏览器会把 MouseEvent 的 clientX/clientY 截断为整数，而 canvas 的 rect.top
-        # 在部分布局下为小数（如 220.375），故「无吸附」断言须容忍亚像素偏差。
+        # 在部分布局下为小数（如 220.375），故“无吸附”断言须容忍亚像素偏差。
         # 容差 0.5 远小于吸附位移（4px），仍可证明 Shift 未触发边界吸附（吸附会落到 y=0）。
         ('P0-T2 Shift 禁用吸附（保持 (15,4)±亚像素）',
          abs(sp.get('x', 0) - 15) < 0.01 and abs(sp.get('y', 0) - 4) < 0.5, sp),

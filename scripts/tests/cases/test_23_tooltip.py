@@ -129,7 +129,7 @@ def run(cdp):
     if not isinstance(after, dict) or not after.get('visible'):
         return False, f'拖拽结束后提示框未恢复 {after}'
 
-    # c) 移到空白处 → 消失（在 JS 内扫描候选点，直接以「提示框消失」为判据：
+    # c) 移到空白处 → 消失（在 JS 内扫描候选点，直接以“提示框消失”为判据：
     #    纯按距离避让地点不够 —— 地形多边形/区域/标记同样会命中并弹出提示）
     blank = _j(cdp, f"""(async () => {{
       const c = {CANVAS};
@@ -154,5 +154,5 @@ def run(cdp):
     if isinstance(gone, dict) and gone.get('visible'):
         return False, f'移到空白处提示框未消失 {gone}'
 
-    return True, (f'悬停提示正常（地点「{target["name"]}」提示 {tip["name"]} / {tip["meta"]}，'
+    return True, (f'悬停提示正常（地点“{target["name"]}”提示 {tip["name"]} / {tip["meta"]}，'
                   f'pointer-events={tip["pointerEvents"]}，拖拽抑制 + 空白处消失均通过）')

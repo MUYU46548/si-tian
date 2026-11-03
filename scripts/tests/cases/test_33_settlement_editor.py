@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 33：聚落编辑器 —— 规模 / 人口 / 文化归属（P1-3）
 
-验收点（对应提示词 P1-3 的「验收标准」逐条）：
+验收点（对应提示词 P1-3 的“验收标准”逐条）：
 1. 人口可输入变更（对数滑块 + 数字输入），且写入节点（geodata.json 载荷可见）
 2. 聚落图标按人口变化大小（settlementRadius：分级系数 × 手动缩放）
 3. 文化下拉可选（planet 级 cultures 列表 + -1 无归属），新建文化后可选并落到 mapdata.json
@@ -77,7 +77,7 @@ def run(cdp):
     if not isinstance(town, dict) or 'id' not in town:
         return False, f'数据里找不到聚落节点 {town}'
     time.sleep(0.9)
-    # 人口/文化字段在详情面板的「编辑」分页下
+    # 人口/文化字段在详情面板的“编辑”分页下
     cdp.eval("""(() => {
       const b = Array.from(document.querySelectorAll('.detail-tab-btn')).find(x => x.textContent.trim() === '编辑');
       if (b) b.click();
@@ -170,10 +170,10 @@ def run(cdp):
 
     # 保存载荷来源：接线后 geodata/mapdata 落盘去向 = 项目文件（harness 已挂好 projectSave 记录 + __probe）
 
-    # 走 UI：点「＋ 新建文化」（真实入口，顺带验证 mapData 懒加载）
+    # 走 UI：点“＋ 新建文化”（真实入口，顺带验证 mapData 懒加载）
     cdp.eval("window.prompt = () => '测试文化';")
     if cdp.eval("(() => { const b = document.querySelector('[data-testid=\"settlement-add-culture\"]'); if (!b) return 'no-btn'; b.click(); return 'ok'; })()") != 'ok':
-        return False, '找不到「新建文化」按钮'
+        return False, '找不到“新建文化”按钮'
     time.sleep(1.0)
 
     created = _j(cdp, f"""(() => {{
@@ -200,9 +200,9 @@ def run(cdp):
     if not any(o['t'] == '测试文化' for o in options):
         return False, f'文化下拉未出现新建的文化：{options}'
     if not any(o['v'] == '-1' for o in options):
-        return False, f'文化下拉缺少「无归属」(-1) 选项：{options}'
+        return False, f'文化下拉缺少“无归属”(-1) 选项：{options}'
 
-    # 切到「无归属」再切回来（下拉真实可用）
+    # 切到“无归属”再切回来（下拉真实可用）
     def set_culture(value):
         return cdp.eval(f"""(() => {{
           const el = document.querySelector('[data-testid="settlement-culture"]');
@@ -222,7 +222,7 @@ def run(cdp):
       return JSON.stringify({{ cultureId: n.cultureId, swatch: !!document.querySelector('.culture-swatch') }});
     }})()""")
     if none_state.get('cultureId') != -1:
-        return False, f'选择「无归属」未写入节点：{none_state}'
+        return False, f'选择“无归属”未写入节点：{none_state}'
     if none_state.get('swatch'):
         return False, '无归属时不应显示文化色块'
 
@@ -307,6 +307,6 @@ def run(cdp):
         f'聚落编辑器通过：分级阈值正确（{tr["_999"]}/{tr["_5000"]}/{tr["_50000"]}/{tr["_500000"]}），'
         f'4 档视觉系数互不相同、半径 {calc["radii"]["hamlet"]}→{calc["radii"]["city"]}；'
         f'人口写入节点（500000）并随 geodata 载荷落盘，undo/redo 正常；'
-        f'文化下拉出现「测试文化」并可选中（节点 cultureId={culture_id}、色块显示、随 mapdata 落盘）；'
-        f'Burg Editor 三控件齐全、预估分级「城市」、缩放 1.5 写入节点'
+        f'文化下拉出现“测试文化”并可选中（节点 cultureId={culture_id}、色块显示、随 mapdata 落盘）；'
+        f'Burg Editor 三控件齐全、预估分级“城市”、缩放 1.5 写入节点'
     )

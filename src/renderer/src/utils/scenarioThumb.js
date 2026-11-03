@@ -14,7 +14,7 @@
  * ③ **本模块带 DOM 依赖**（document.createElement('canvas')）→ 走 CDP 用例，不进 Node 单测
  *    （同 regionTrace.js 的既有归类）。
  * ④ **成品位图按内容签名缓存**（P0-2）：`createThumbBaker()` 是**每个组件实例**一份，
- *    所以「进卡片墙 → 改剧本 → 回卡片墙」这条路上路径缓存必然重建 —— 位图缓存放在**模块级**，
+ *    所以“进卡片墙 → 改剧本 → 回卡片墙”这条路上路径缓存必然重建 —— 位图缓存放在**模块级**，
  *    跨实例存活（详见下方 CACHE 段注释）。
  */
 import { buildHeightmapRaster } from './heightmapRaster.js';
@@ -30,12 +30,12 @@ const RIVER_COLOR = '#5d97bb';               // 与画布自带河同色（BASEM
 const BORDER_STROKE = 'rgba(12,16,22,0.55)';
 
 /* ══════════ 烘成品位图缓存（P0-2，2026-10-17 第三轮）══════════
- * 上一轮只做了 **Path2D 按底图缓存**（同一次进入的 N 张卡共用路径），但「进卡片墙 → 进编辑器
- * → 再回卡片墙」时**整个 baker 实例重建**（`createThumbBaker()` 挂在组件 setup 上），
+ * 上一轮只做了 **Path2D 按底图缓存**（同一次进入的 N 张卡共用路径），但“进卡片墙 → 进编辑器
+ * → 再回卡片墙”时**整个 baker 实例重建**（`createThumbBaker()` 挂在组件 setup 上），
  * 于是每次回到卡片墙都要把 N 张卡重画一遍（415 省底图 = 每张付 fill/stroke 的原生开销）。
  * 现在把**烘好的位图**放进模块级缓存：第二次进卡片墙是纯 drawImage 拷位图（无路径/无栅格重建）。
  *
- * 🔴 失效口径 = **内容签名**，不是「底图 key」：签名是缩略图依赖的全部数据的**全量**哈希
+ * 🔴 失效口径 = **内容签名**，不是“底图 key”：签名是缩略图依赖的全部数据的**全量**哈希
  *    （省份点列 / 高度图 h / 河流点 / 剧本归属与势力色 / 起始年）。改一个顶点、涂一格高度、
  *    换一个势力颜色，签名就变 → 自动换新图。
  *    ⚠️ 不许改成"抽样哈希"或"只看长度"：那种失效的表现是**图看着对但其实是上一版**，
@@ -47,7 +47,7 @@ const CACHE_MAX = 24;                        // ≤24 张位图（680×400×4B �
 const bakedCache = new Map();                // `key#sig` -> HTMLCanvasElement
 const cacheStats = { hits: 0, misses: 0 };
 
-/** 供回归用例量「第二次进卡片墙到底有没有走缓存」（纯读数，不改行为） */
+/** 供回归用例量“第二次进卡片墙到底有没有走缓存”（纯读数，不改行为） */
 export function thumbCacheStats() {
   return { hits: cacheStats.hits, misses: cacheStats.misses, size: bakedCache.size };
 }
@@ -174,7 +174,7 @@ export function createThumbBaker() {
       raster = buildHeightmapRaster(hm, 'landsea', { shade: 1 });
     }
 
-    // 🔴 Path2D 只建一次（每张卡复用）——2026-10-17 暮雨实测「进入的时候有点卡」：
+    // 🔴 Path2D 只建一次（每张卡复用）——2026-10-17 暮雨实测“进入的时候有点卡”：
     //    真实底图 415 省 / 2.7 万点，旧实现**每张卡**从点列重建一遍路径（12 张卡 = 12 遍）。
     //    路径构建才是大头；Path2D 复用后第 2..N 张卡只付 fill/stroke 的原生开销。
     const provPaths = [];
@@ -195,7 +195,7 @@ export function createThumbBaker() {
     }
     const riverPaths = [];
     for (const rv of baseMap?.rivers || []) {
-      // 导入河数据是「去 + 原路回」的闭合路径 → 缩略图也折成中心线（与画布/导出口径一致）
+      // 导入河数据是“去 + 原路回”的闭合路径 → 缩略图也折成中心线（与画布/导出口径一致）
       const pts = String(rv?.id || '').indexOf('river_') === 0
         ? rv?.points
         : collapseReversedRiverPoints(rv?.points);

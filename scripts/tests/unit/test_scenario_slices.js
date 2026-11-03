@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：历史剧本「逐年切片」纯函数（src/renderer/src/utils/scenarioSlices.js）
+ * Node 单元测试：历史剧本“逐年切片”纯函数（src/renderer/src/utils/scenarioSlices.js）
  *
  * 为什么必须有这一层：
- *   ① 「哪些年份各出一帧」是**判定**，不是遍历结果 —— 真实数据 12 剧本 / 3488 年，
+ *   ① “哪些年份各出一帧”是**判定**，不是遍历结果 —— 真实数据 12 剧本 / 3488 年，
  *      按年出帧 = 3488 张。判定错了不会报错：只会导出一堆重复帧，或者**漏掉整代底图**
  *      （时代交界处没有易主但换名换色，漏了起点帧就少一代）。
  *   ② 切片可信度取决于日期真假：`computeEraChanges` 在缺显式值时会在区间内**均匀铺开**
- *      一个合成年份，看起来很像真的。把「显式 / 合成」分开计数是本功能的诚信底线。
+ *      一个合成年份，看起来很像真的。把“显式 / 合成”分开计数是本功能的诚信底线。
  *   ③ 帧文件名是渲染层造载荷与主进程落盘的**共同契约**，两份实现必然错位。
  *
  * 用法：node scripts/tests/unit/test_scenario_slices.js
@@ -97,8 +97,8 @@ async function main() {
   const { buildTimeline, eraIndexOfYear } = timelineMod;
 
   // ── 基础时间轴 ──
-  // ⚠️ 谱系是按「相邻剧本省份重叠度」贪心继承的（`computeLineage`），一个前代集团只能被一个后代继承。
-  //    所以「乙时代两个省都算变化」不能靠两个势力 —— 甲时代只占 prov_a，乙时代的 prov_b/prov_c
+  // ⚠️ 谱系是按“相邻剧本省份重叠度”贪心继承的（`computeLineage`），一个前代集团只能被一个后代继承。
+  //    所以“乙时代两个省都算变化”不能靠两个势力 —— 甲时代只占 prov_a，乙时代的 prov_b/prov_c
   //    在上一代**无人持有**（无重叠）→ 两个都拿新谱系 → eraChg[1].changed = ['prov_b','prov_c']。
   const baseScenarios = () => [
     scen('甲', '甲时代', 1, 2000, 2010, [{ id: 'A1', name: '甲国' }], { prov_a: 'A1' }),
@@ -165,7 +165,7 @@ async function main() {
   });
 
   check('t4 同日期的两条日期写法（同年 1-1 与只给年）→ 同一帧，不重复出图', () => {
-    // 「只给年」的语义就是该年 1 月 1 日（见 scenarioDates 的文件头），所以这两种写法必须同帧
+    // “只给年”的语义就是该年 1 月 1 日（见 scenarioDates 的文件头），所以这两种写法必须同帧
     const list = baseScenarios();
     list[1].changeEvents = { prov_b: [D(2012)], prov_c: [D(2012, 1, 1)] };
     const tl = buildTimeline(list);
@@ -178,7 +178,7 @@ async function main() {
   });
 
   check('t5 易主日期恰好落在剧本起点（同一日期）→ 合并成 mixed；年中易主则与起点帧分开', () => {
-    // 起点帧的日期是「剧本起点年 + 月日缺省」= 该年 1 月 1 日 → 只有同一天的易主才合并
+    // 起点帧的日期是“剧本起点年 + 月日缺省”= 该年 1 月 1 日 → 只有同一天的易主才合并
     const list = baseScenarios();
     list[1].changeEvents = { prov_b: [D(2010)] };   // 2010-01-01 = 乙时代起点
     const tl = buildTimeline(list);
@@ -205,8 +205,8 @@ async function main() {
   });
 
   check('t6 谱系全部人工纠正（无变化）→ 只剩起点帧（不是零帧）', () => {
-    // 「变化」= 谱系与前一代不同；**上一代没人持有也算变化**（无主 → 有主）。
-    // 所以要真的「无变化」，两代必须逐省对上，靠 successorOf 一个个指。
+    // “变化”= 谱系与前一代不同；**上一代没人持有也算变化**（无主 → 有主）。
+    // 所以要真的“无变化”，两代必须逐省对上，靠 successorOf 一个个指。
     const list = [
       scen('甲', '甲时代', 1, 2000, 2010,
         [{ id: 'A1', name: '甲国' }, { id: 'A2', name: '甲南' }, { id: 'A3', name: '甲东' }],
@@ -310,7 +310,7 @@ async function main() {
     return '区间外 1 条：prov_b 1999-06-01 ∉ [2010,2020]';
   });
 
-  check('t11 日期体检把「显式 / 合成」分开计数，并数出**同省多次易主**', () => {
+  check('t11 日期体检把“显式 / 合成”分开计数，并数出**同省多次易主**', () => {
     const list = baseScenarios();
     list[1].changeEvents = { prov_b: [D(2015, 3, 1), D(2015, 9, 1)] };   // 同省同年两次
     const tl = buildTimeline(list);
@@ -432,7 +432,7 @@ async function main() {
     eq(sliceFrameName(4, { era: 1, date: D(-350) }), 'frame_0005_era01_n3500000.svg', '公元前年份不带减号');
     eq(sliceFrameName(5, { era: 1, date: D(1993, 5) }), 'frame_0006_era01_19930500.svg', '只到月 → 日补 00');
     eq(sliceFrameName(0, null), 'frame_0001_era00_0.svg', '缺帧对象不抛异常');
-    // 关键：只到年补 00、真 1 月 1 日补 01 —— 两者文件名必须不同（否则「只到年」被谎报成精确日期）
+    // 关键：只到年补 00、真 1 月 1 日补 01 —— 两者文件名必须不同（否则“只到年”被谎报成精确日期）
     assert(sliceFrameName(0, { era: 0, date: D(2000) }) !== sliceFrameName(0, { era: 0, date: D(2000, 1, 1) }),
       '只到年与真 1-1 不得同名');
     // 确定性：同一帧两次调用必须一模一样（否则重复导出无法对账）

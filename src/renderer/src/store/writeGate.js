@@ -1,11 +1,11 @@
 // store/writeGate.js — 单一写闸门（Phase 2，用户决策 2026-09-18）
 //
-// 决策：默认事实源 = 「有项目文件用项目文件；无项目时回退 Obsidian」，
+// 决策：默认事实源 = “有项目文件用项目文件；无项目时回退 Obsidian”，
 //       但**无项目状态下必须只读** —— 禁止一切落盘写操作（不写散文件、不写回 Obsidian）。
 //
-// ── 为什么是「单一闸门」而不是各处判断 ──────────────────────────────────────
+// ── 为什么是“单一闸门”而不是各处判断 ──────────────────────────────────────
 // 世界观数据的落盘入口有 11 个（下表）。分散判断必漏，而且漏了**不会有任何报错**——
-// 正是「你以为在只读浏览，其实已经写回知识库」的静默破坏形态。
+// 正是“你以为在只读浏览，其实已经写回知识库”的静默破坏形态。
 // 所以：所有落盘路径统一过 `guardWrite()`，UI 侧统一读 `isReadOnly` 做灰禁。
 //
 // ── 落盘入口清单（新增任何落盘路径必须登记进本表 + 加 guard）──────────────
@@ -37,12 +37,12 @@
 //
 // ✅ 终态已落地：`READONLY_WITHOUT_PROJECT = true`（2026-09-20，决策 1 收尾）。
 //    无项目 = 只读：画布仍可浏览知识库数据（事实源 'vault'），但任何落盘写都被 `guardWrite()`
-//    拒绝，UI 入口同步灰禁 + 给出「新建或打开项目后即可继续编辑」的能力说明。
+//    拒绝，UI 入口同步灰禁 + 给出“新建或打开项目后即可继续编辑”的能力说明。
 //    随之而来的两条纪律（都踩过或差点踩到）：
 //      ① **项目文件的生命周期操作不受本闸门管辖** —— 新建 / 打开 / 保存 / 备份项目文件
-//         是「项目文件写」，不是「世界观数据落盘写」。若把 ProjectPanel 的「新建」也灰禁，
+//         是“项目文件写”，不是“世界观数据落盘写”。若把 ProjectPanel 的“新建”也灰禁，
 //         就会形成死锁：没有项目 → 只读 → 禁新建 → 永远没有项目（第一个项目打不开）。
-//      ② **回归基线必须跑在「已打开项目」状态** —— 45+ 个用例依赖落盘写。
+//      ② **回归基线必须跑在“已打开项目”状态** —— 45+ 个用例依赖落盘写。
 //         harness 在每个用例前用当前知识库内容播种一个 mock 项目并打开（不落盘、零污染），
 //         见 `scripts/tests/run_tests.py` 的 `open_harness_project()`。
 
@@ -106,7 +106,7 @@ export function setWriteMode(next, why = '') {
   return { ok: true, mode: next };
 }
 
-/** 回到「无项目」时的默认模式（项目关闭时调用） */
+/** 回到“无项目”时的默认模式（项目关闭时调用） */
 export function resetWriteMode(why = '') {
   return setWriteMode(defaultModeWithoutProject(), why);
 }
@@ -118,7 +118,7 @@ export function canWrite() {
 
 /**
  * 落盘写守卫 —— 所有世界观数据落盘路径的唯一入口。
- * @param {string} [action] 动作名（用于错误信息，如「保存地理数据」）
+ * @param {string} [action] 动作名（用于错误信息，如“保存地理数据”）
  * @returns {{ ok: true } | { ok: false, readOnly: true, error: string }}
  */
 export function guardWrite(action = '写操作') {
@@ -131,23 +131,23 @@ export function guardWrite(action = '写操作') {
 }
 
 // ── 内存编辑闸门（2026-09-21 补齐；2026-09-24 改为**函数级**契约）──────────────
-// 「落盘写」之外还有一类写：**内存编辑**（画布上的笔刷 / 多边形 / 家具 / 剧本染色…）。
+// “落盘写”之外还有一类写：**内存编辑**（画布上的笔刷 / 多边形 / 家具 / 剧本染色…）。
 // 它们在只读态下曾经可以照改内存 —— 改动看起来生效（画布变了、列表多了），
 // 但永远不会落盘 = 静默丢数据，比直接报错更坏。处置与落盘写一致：拒绝 + 提示去处。
 //
-// 🔴 **为什么必须按「函数」登记（2026-09-24 修，本文件最重要的变更）**：
+// 🔴 **为什么必须按“函数”登记（2026-09-24 修，本文件最重要的变更）**：
 //    旧清单是**文件级**的（条目里只写 `marker: 'guardWrite('`），测试只判
-//    「这个文件里出现过 guardWrite(」—— 于是**一个文件里只要有一个守卫，整行就算通过**，
+//    “这个文件里出现过 guardWrite(”—— 于是**一个文件里只要有一个守卫，整行就算通过**，
 //    同文件里其余裸奔的写函数**永远查不出来**（漏报型假绿，比误报隐蔽得多）。
 //    实测代价：`interior.js` 13 个函数只有 3 个有守卫、`mapDataEditing.js` 有 26 处
-//    「先改内存后 execute」，全部隐形；`test_47`/`test_54` 却双双全绿。
+//    “先改内存后 execute”，全部隐形；`test_47`/`test_54` 却双双全绿。
 //    现在条目登记到 `fns: [...]`，测试**截取每个函数体**后逐个断言。
 //
-// 清单只登记「**自己不守就会出事**」的两类函数：
+// 清单只登记“**自己不守就会出事**”的两类函数：
 //   ① 直接改世界观数据、不走 `execute()` 的裸写；
 //   ② **先改内存、后 `execute()`** 的函数 —— 只守 execute 时，拒绝发生在数据已经改完之后。
 // 靠 `execute()` 间接守卫的函数**不在此登记**（execute 本身是 id=1 条目）。
-// ⚠️ 新增任何「直接改世界观数据」的函数，必须补 `guardWrite` + 登记到本表。
+// ⚠️ 新增任何“直接改世界观数据”的函数，必须补 `guardWrite` + 登记到本表。
 // ⚠️ 校验口径：函数体内出现 `guardWrite(` **或** `blocked(`（省份模块用 blocked() 统一包装）。
 export const MEMORY_WRITE_CALLSITES = [
   { id: 1, file: 'src/renderer/src/store/undo.js',
@@ -192,7 +192,7 @@ export const MEMORY_WRITE_CALLSITES = [
           // 2026-10-17 第八修·改向：按陆地轮廓推演地形并落库（走 `commitHeightmap` = 换高度图本体）
           // ⚠️ 它是**新写口**，必须登记 —— 第一次跑全量时 `test_54` 把这条漏登记当场抓出来了
           //    （判据是"文件里有 guardWrite 却没进契约"的反向扫描，正是为这种情况设的）。
-          // A6（2026-10-29）：把「底图 / 行星」两种目标的推演收进**唯一实现** `synthesizeTerrainInto`
+          // A6（2026-10-29）：把“底图 / 行星”两种目标的推演收进**唯一实现** `synthesizeTerrainInto`
           //   （守卫在里面）。对外是 `synthesizeBaseMapTerrain(key)` 与 `synthesizePlanetTerrain(planetId)`
           //   两个薄入口 —— 它们自己不碰写口，所以不单独登记（登记了反而过不了"必须有守卫"那条）。
           'synthesizeTerrainInto',
@@ -203,7 +203,7 @@ export const MEMORY_WRITE_CALLSITES = [
           'addBaseMapRiver', 'removeBaseMapRiver', 'updateBaseMapRiver',
           'removeBaseMapRivers', 'applyBaseMapRiverPatches',
           // 2026-10-18 第十八修·三：改/加/删**原子**一条撤销（河流橡皮擦断一条河、画支流时
-          // 「加河 + 在母河插拐点」）。新写口一律登记 —— test_54 的反向扫描会查"有守卫没登记"。
+          // “加河 + 在母河插拐点”）。新写口一律登记 —— test_54 的反向扫描会查"有守卫没登记"。
           'applyBaseMapRiverEdit',
           'addBaseMapRoute', 'removeBaseMapRoute',
           'updateBaseMapBurg'],
@@ -236,7 +236,7 @@ export const MEMORY_WRITE_CALLSITES = [
     what: '星域势力边界覆盖点的唯一写口（组件原先直写 store ref：无闸门、无 undo）' },
   // ── 读料桥（N3a-3，2026-11-02）：节点 ↔ 笔记的稳定绑定 ─────────────────────
   // 为什么算"内存写"：`node.lore` 是节点字段（随项目文件往返），只读态改了它 = 永远不会落盘，
-  // 用户却看到「已绑定」——正是本清单要防的那种静默丢数据。
+  // 用户却看到“已绑定”——正是本清单要防的那种静默丢数据。
   // `importVaultCandidate` 的写入点是既有的 `addNode`（它内部才 `execute()`）；如果不在这里先过闸门，
   // 就会出现"节点已 push 进 nodes、但这次操作永远不会落盘"的中间态，所以三个函数体首行都有 guardWrite。
   { id: 12, file: 'src/renderer/src/store/geodataModules/loreBinding.js',
@@ -249,7 +249,7 @@ export const MEMORY_WRITE_CALLSITES = [
     what: '示例星系生成（星域/恒星/航道批量入库，一条 undo；只读态拒绝并给可读回执）' },
 ];
 
-// ── 拒绝回音（供 App.vue 提示用户「为什么点了没反应 / 改哪儿去了」）─────────
+// ── 拒绝回音（供 App.vue 提示用户“为什么点了没反应 / 改哪儿去了”）─────────
 export const rejectionCount = ref(0);
 export const lastRejection = ref(null); // { action, message, at }
 

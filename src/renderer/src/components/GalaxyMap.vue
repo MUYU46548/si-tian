@@ -7,12 +7,12 @@
           <h2>{{ world?.name }} — 星域总览</h2>
         </div>
         <p class="hint">
-          <span v-if="!editMode">点击恒星进入 · 滚动缩放 · 拖拽空白处平移 · <b>「移动」工具下拖拽恒星或星域编辑坐标</b>（默认拖手模式防误触）</span>
+          <span v-if="!editMode">点击恒星进入 · 滚动缩放 · 拖拽空白处平移 · <b>“移动”工具下拖拽恒星或星域编辑坐标</b>（默认拖手模式防误触）</span>
           <span v-else class="edit-hint">编辑模式：拖拽恒星间创建航道 · 右键航道删除 · 拖拽边界顶点编辑势力范围 · 点击空白取消</span>
         </p>
       </div>
       <div class="header-actions">
-        <!-- 浏览态的两种拖拽语义（与 SystemView 同一形态）：默认拖手防误触，「移动」才改坐标。
+        <!-- 浏览态的两种拖拽语义（与 SystemView 同一形态）：默认拖手防误触，“移动”才改坐标。
              这条 UI 以前根本不存在，而提示文案却写着"拖拽恒星编辑坐标"（骗人，见 §bug1）。 -->
         <template v-if="!editMode">
           <button
@@ -89,7 +89,7 @@
     
     <!-- 势力图例：色板改的是**星域自己的颜色**（落库到节点 factionColor），
          所以键必须是 domain.id —— 老实现用 `domain.faction` 当键，真实库该值是 undefined，
-         于是所有星域共用一个键「undefined」：改一个色 = 改全部（见 §bug2）。 -->
+         于是所有星域共用一个键“undefined”：改一个色 = 改全部（见 §bug2）。 -->
     <div class="faction-legend">
       <span 
         v-for="domain in domains" 
@@ -146,14 +146,14 @@ import { useLayersStore } from '../store/layers';
 // 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
 import { fadedAlpha } from '../utils/entityStatus';
 import { withAlpha, toHex6 } from '../utils/colorUtil';
-// 布局 / 凸包 / 配色 / 航道色：与「导出 PNG(全图)」**共用同一份实现**
+// 布局 / 凸包 / 配色 / 航道色：与“导出 PNG(全图)”**共用同一份实现**
 // （§bug 导出与画布不同源：这些原先在 App.vue 里各有一份，两边结果不一致且不报错）
 import {
   getFactionColor, resolveDomainColor as resolveDomainColorShared,
   layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, sparsifyHyperlanes,
 } from '../utils/galaxyLayout';
 // 星系绘制美术（**吸收自 SP-1025 原型**，2026-11-01）：背景资产 / 恒星色温与归属环 / LOD 标签。
-// 🔴 这三件同时被「导出 PNG(全图)」（App.vue）调用 —— 同一份实现，不许各画一套。
+// 🔴 这三件同时被“导出 PNG(全图)”（App.vue）调用 —— 同一份实现，不许各画一套。
 import { paintGalaxySky, GALAXY_SKY_RECT } from '../galaxy/sky';
 import { paintDomainBorders } from '../galaxy/domainPaint';
 import { distanceToLoop } from '../galaxy/territory';
@@ -362,11 +362,11 @@ let animationTime = 0;
 
 // ===== 势力颜色 =====
 // ⚠️ `FACTION_COLORS` / `getFactionColor` 现在只有一份实现（`utils/galaxyLayout.js`），
-//    import 在上面 —— 本组件与「导出 PNG(全图)」共用它（原先两处各有一份同形表）。
+//    import 在上面 —— 本组件与“导出 PNG(全图)”共用它（原先两处各有一份同形表）。
 
 /**
  * **星域当前颜色的唯一解析口**（图例 / 布局 / 边界 / 鹰眼 / 导出五处共用）。
- * 优先级：① 本组件内的即时预览覆盖（按 **domain.id** 存，见 §bug2 的「undefined 共用键」）
+ * 优先级：① 本组件内的即时预览覆盖（按 **domain.id** 存，见 §bug2 的“undefined 共用键”）
  *        ② 节点自己持久化的 `factionColor`（用户改过色 → 落库 → 重开还在）
  *        ③ 按势力名推的默认色（`FACTION_COLORS` 表 → 名字哈希 hsl）
  *
@@ -432,7 +432,7 @@ function commitFaction(domain, value) {
 }
 
 // ===== 布局计算 =====
-// 具体数学在 `utils/galaxyLayout.js`（与「导出 PNG(全图)」共用同一份 —— §bug 导出与画布不同源）。
+// 具体数学在 `utils/galaxyLayout.js`（与“导出 PNG(全图)”共用同一份 —— §bug 导出与画布不同源）。
 // 本函数只负责：把"当前组件的输入"喂进去 + 把结果存进组件的布局副本。
 function applyStableLayout() {
   // 星域：只有 `userMoved`（或正在拖动）才采信 `coordinate`——遗留 coordinate 会让老项目全部错位（§bug3）
@@ -487,7 +487,7 @@ function hitTest(wx, wy) {
   if (editMode.value) {
     const borders = computeFactionBorders();
     // 命中半径一律**屏幕恒定**（÷scale）：软轮廓的手柄在远景只有几个像素，
-    // 用固定的 12 世界单位会出现「看得见的点拖不动、看不见的地方反而拖得动」。
+    // 用固定的 12 世界单位会出现“看得见的点拖不动、看不见的地方反而拖得动”。
     const scale = renderer.getViewTransform().scale || 1;
     const hitR = 12 / Math.max(0.2, scale);
     for (const border of borders) {
@@ -556,7 +556,7 @@ const visibleHyperlanes = computed(() => {
 
 /**
  * **真正画出来的**航道（2026-11-02 稀疏化）。
- * 画与命中必须用同一份 —— 否则「看得见的点不到 / 看不见的反而点得到」。
+ * 画与命中必须用同一份 —— 否则“看得见的点不到 / 看不见的反而点得到”。
  * 稀疏化只改渲染，不改 `store.hyperlanes`（数据一条不删）。
  */
 const _laneCache = { key: '', list: [] };
@@ -667,8 +667,8 @@ function onRender(ctx, w, h) {
 
 // ===== 背景 =====
 // ===== 背景（吸收自 SP-1025 原型：星云 / 尘埃带 / 三层星场 / 暗角，一次生成存资产）=====
-// 原先这里是「径向渐变 + 200 世界单位的坐标网格 + 谐波点子」——网格像坐标纸、点子成斜纹。
-// 现在整片天由 `galaxy/sky.js` 生成（同 seed 恒同），画布与「导出 PNG(全图)」共用这份。
+// 原先这里是“径向渐变 + 200 世界单位的坐标网格 + 谐波点子”——网格像坐标纸、点子成斜纹。
+// 现在整片天由 `galaxy/sky.js` 生成（同 seed 恒同），画布与“导出 PNG(全图)”共用这份。
 function drawStarfield(ctx) {
   paintGalaxySky(ctx, GALAXY_SKY_RECT);
 }
@@ -747,7 +747,7 @@ function drawHyperlanes(ctx) {
     // 远景再压一档透明度：`scale < 0.5` 时线是背景，不该比星还抢眼
     const laneAlpha = vt.scale < 0.5 ? 0.62 : 1;
     
-    // 🔴 线宽/虚线一律**屏幕像素 ÷ scale**（原型口径「缩放不变粗」）：
+    // 🔴 线宽/虚线一律**屏幕像素 ÷ scale**（原型口径“缩放不变粗”）：
     //    旧实现写死世界单位 → 放大后航道变成粗管子、缩小后细到看不见。
     const px = 1 / (vt.scale || 1);
     ctx.save();
@@ -854,7 +854,7 @@ function hyperlaneDegreeMap() {
 }
 
 // ===== 恒星节点（吸收自 SP-1025 `nodes.ts`：色温分级 + 光晕 + 归属环 + LOD 图元）=====
-// 与旧实现的差别（用户 2026-11-01 报障「星域总览还是一坨」）：
+// 与旧实现的差别（用户 2026-11-01 报障“星域总览还是一坨”）：
 //   · 旧：统一白色=势力色圆点 + 白核，远景与近景一样糊；名字一律挂深色底框。
 //   · 新：色温按 id 哈希分五档（同一颗星恒定）、归属色退成细环 + 低透明光晕底衬、
 //        远景只留点、枢纽才出短芒、名字走 LOD + 贪心避让（无底框）。
@@ -1103,7 +1103,7 @@ const renderer = useCanvasRenderer(canvas, {
         draggedControlPoint = { hyperlaneId: hit.hyperlane.id, cpIndex: hit.controlPointIndex, startX: wx, startY: wy };
         // 🔴 这里原有一句 `panSuppressed = true;` —— 该变量**全文件只有这两处赋值、没有任何读取**
         //    （由 test_93 的静态守卫抓出）。模块作用域是严格模式，赋值一个未声明标识符会当场
-        //    `ReferenceError`，即「一拖航道控制点就报错」。抑制平移的语义已经由紧邻的
+        //    `ReferenceError`，即“一拖航道控制点就报错”。抑制平移的语义已经由紧邻的
         //    `return false`（= 本组件接管这次拖动）完整表达，所以删除死赋值而不是补声明。
         return false;
       }
@@ -1166,7 +1166,7 @@ const renderer = useCanvasRenderer(canvas, {
         emit('select-node', hit.node);
       }
       if (interactionMode.value === 'pan') return true;   // 拖手模式：本次拖动仍归画布平移
-      // 「移动」工具（§bug1 的接通）：拖恒星 / 星域 = 改坐标。
+      // “移动”工具（§bug1 的接通）：拖恒星 / 星域 = 改坐标。
       // ✅ 星域**现在也能拖**了（§bug3 落地）：拖动写 `coordinate` 并在松手时置 `userMoved`，
       //    布局从此认它；星域的**恒星**由 `applyStableLayout` 按父星域位置重算（未手动摆过的会跟着走）。
       // ⚠️ 浏览态下"星域的手柄"是它中心的**名称标签**（`domain-label`），编辑态才是 `domain`（多边形命中）——
@@ -1174,7 +1174,7 @@ const renderer = useCanvasRenderer(canvas, {
       const isDomainHandle = hit.type === 'domain' || hit.type === 'domain-label';
       if (hit.type !== 'galaxy' && !isDomainHandle) return true;
       if (!hit.node.coordinate || !Number.isFinite(hit.node.coordinate.x)) {
-        setStatus('这个节点还没有坐标，先「编辑地图」里点一次「完成编辑」让它落到布局上', 'info');
+        setStatus('这个节点还没有坐标，先“编辑地图”里点一次“完成编辑”让它落到布局上', 'info');
         return true;
       }
       // 多选状态下的拖动 = 整批移动（一次 undo）—— 这也是 `isDraggingMultiple` 这条死分支的接活点
@@ -1391,8 +1391,8 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onContextMenu: (wx, wy) => {
-    // 🔴 浏览态不许弹菜单（§bug6）：菜单里的「在此创建恒星 / 删除该节点 / 删除航道 / 删除控制点」
-    //    全是**写操作**。此前没有这道门 → 浏览态右键就能改数据（与「编辑地图」这个显式入口自相矛盾）。
+    // 🔴 浏览态不许弹菜单（§bug6）：菜单里的“在此创建恒星 / 删除该节点 / 删除航道 / 删除控制点”
+    //    全是**写操作**。此前没有这道门 → 浏览态右键就能改数据（与“编辑地图”这个显式入口自相矛盾）。
     //    写法照抄 `SystemDetailView.vue` 的既有闸门（那一层早就修好了，这里是漏网的之一）。
     if (!editMode.value) return;
     const hit = hitTest(wx, wy);
@@ -1527,7 +1527,7 @@ watch(visibleHyperlanes, () => {
 
 // 叙事状态变更 → 重绘（2026-09-24）。
 // ⚠️ 必须走这个指纹：`updateNode` 是 `Object.assign(node, …)` **就地改字段** —— 既不换数组引用、
-//    也不换节点对象，所以基于「数组/对象引用」的浅 watch 全都捕捉不到 status 变化。
+//    也不换节点对象，所以基于“数组/对象引用”的浅 watch 全都捕捉不到 status 变化。
 // 这里 extra 要重建布局：`galaxyNodes` 是**本地副本**（`{...galaxy, x, y}` 展开而来），
 // 副本里的 status 是拷贝时的旧值 —— 只 requestRender 会一直画旧状态。
 watch(() => store.statusRevision, () => {

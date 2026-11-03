@@ -2,12 +2,12 @@
 /**
  * Node 单元测试：应用侧令牌保管（src/main/gitCredentialStore.js）
  *
- * 为什么单独守这一层：2026-09-22 的真实事故是「用户填了令牌，点同步仍报需要登录」——
+ * 为什么单独守这一层：2026-09-22 的真实事故是“用户填了令牌，点同步仍报需要登录”——
  * 旧实现只把令牌交给系统凭据管理器，推送时取不回来。现在令牌由本应用加密保管并直接喂给 git，
- * 所以「存进去能不能取回来」「会不会落明文」必须有用例守着。
+ * 所以“存进去能不能取回来”“会不会落明文”必须有用例守着。
  *
- * 手法：注入「假加密」（base64 + 前缀）当成 safeStorage —— 不依赖 Electron，也能验证
- * 「磁盘上不含明文」「跨实例（≈重启）能解密取回」「解密失败按没有处理」。
+ * 手法：注入“假加密”（base64 + 前缀）当成 safeStorage —— 不依赖 Electron，也能验证
+ * “磁盘上不含明文”“跨实例（≈重启）能解密取回”“解密失败按没有处理”。
  *
  * 用法：node scripts/tests/unit/test_git_credential_store.js
  */
@@ -56,7 +56,7 @@ async function resolveTmpRoot() {
   throw new Error('找不到可写的临时目录。候选：' + tried.join(' | '));
 }
 
-/** 假加密：base64 + 前缀（只用于证明「磁盘上不是明文」「跨实例可取回」） */
+/** 假加密：base64 + 前缀（只用于证明“磁盘上不是明文”“跨实例可取回”） */
 const fakeEncrypt = (s) => 'enc:' + Buffer.from(String(s), 'utf-8').toString('base64');
 const fakeDecrypt = (s) => {
   const t = String(s || '');

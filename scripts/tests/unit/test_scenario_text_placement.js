@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：剧本侧「城镇名/河流名」分级与取数（src/renderer/src/utils/scenarioTextPlacement.js）
+ * Node 单元测试：剧本侧“城镇名/河流名”分级与取数（src/renderer/src/utils/scenarioTextPlacement.js）
  *
  * 为什么值得测：617 个城镇、160 条河，全标名字就是糊图。分级规则必须**画布与导出共用**，
- * 否则「画布只标首都、导出标 617 个」不会报错，只会让成品图没法用。
+ * 否则“画布只标首都、导出标 617 个”不会报错，只会让成品图没法用。
  *
  * 用法：node scripts/tests/unit/test_scenario_text_placement.js
  */
@@ -48,7 +48,7 @@ async function main() {
 
   // ⚠️ 2026-10-27：画布的档位判定已迁到 `utils/labelZoom.js`（按可见比例 + 滞回），
   //    这里不再有 `burgLabelTier/riverLabelTier`（按绝对 scale 分档，换数据量纲就失准）。
-  //    本文件只守「取数/上限/版面过滤」。
+  //    本文件只守“取数/上限/版面过滤”。
   check('t1 取数上限：首都/主要/全部三档各自只取该取的', () => {
     const cap = collectBurgLabels(burgs, { tier: BURG_TIERS.capitalOnly });
     eq(cap.length, 2, '只首都');

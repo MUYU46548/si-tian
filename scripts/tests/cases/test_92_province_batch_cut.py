@@ -3,12 +3,12 @@
 """用例 92：切四五百块省份的两条路 —— A 折线切割 + B Voronoi 批量铺底
 
 背景（暮雨 2026-10-09 明确的目标）：
-  「以当前德斯特星底图为例，我少说也要切四五百块省份出来。」
-  旧实现只有「拆分 (X)」= 两点**直线**切一刀 —— 切 400 块 = 400 次精确点击，不可行；
+  “以当前德斯特星底图为例，我少说也要切四五百块省份出来。”
+  旧实现只有“拆分 (X)”= 两点**直线**切一刀 —— 切 400 块 = 400 次精确点击，不可行；
   而且直线切不出沿山脊/海岸走的历史边界。于是本轮补两条路：
   · **A 折线切割**：画任意折线切开一个省（`splitProvinceByPolyline`）
   · **B 批量铺底**：播 N 个点 → Voronoi → 与陆地求交 → 一次切出 N 块（`batchSubdivide`）
-  推荐组合正是「B 铺底 + A 精修」。
+  推荐组合正是“B 铺底 + A 精修”。
 
 本用例守五类判据：
   a 源码闸门（剥注释）：两条路的关键件在位；**不许**出现凸包/格点重投影这类退化路径
@@ -41,7 +41,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉行注释与块注释（本项目已三次踩到「注释里的旧名字把自己的判据判红」）。"""
+    """剥掉行注释与块注释（本项目已三次踩到“注释里的旧名字把自己的判据判红”）。"""
     out, in_block = [], False
     for line in src.split('\n'):
         s = line
@@ -112,7 +112,7 @@ def source_gates():
             fails.append(f'批量铺底缺少如实回报字段：{tok}')
 
     # a④：切分期间必须"看得见 + 能取消"（C，2026-10-11）——
-    #     真实反馈：「提示已切出 415 块，实际上在 414 卡了很久」并「到处乱点，更卡」。
+    #     真实反馈：“提示已切出 415 块，实际上在 414 卡了很久”并“到处乱点，更卡”。
     #     判据两条：① 让出主线程必须是**等下一帧**（rAF），不是 setTimeout(0)
     #     （后者只回定时器队列，浏览器不保证插进一次渲染 → 进度形同不动）；
     #     ② 取消通道必须存在（store 收 token + 组件有取消按钮/遮罩）。
@@ -324,7 +324,7 @@ JS = r""" (async () => {
       provinceIds: ['c92a'], sites: sites2, seed: 2, jitter: 0.3, token, yieldEvery: 2,
       onProgress: (p) => {
         cancelAt += 1;
-        if (p.phase === 'cells' && p.done >= 4) token.cancelled = true;   // 切到一半点「取消」
+        if (p.phase === 'cells' && p.done >= 4) token.cancelled = true;   // 切到一半点“取消”
       },
     });
     ok('f1 取消后被拒绝（rejected=cancelled）并有可读说明',
@@ -355,17 +355,17 @@ JS_UI = r""" (async () => {
     .find((b) => visible(b) && (b.title || '').includes(frag));
 
   // ── f1 两个新工具的入口真的在工具栏上、点了真能切过去 ──────────────────────
-  sc.moreOpen = true;                    // 「更多」展开 → 省份选项行常驻
+  sc.moreOpen = true;                    // “更多”展开 → 省份选项行常驻
   await tick();
   const polyBtn = btnByTitle('折线切割 (D)');
   const vorBtn = btnByTitle('批量铺底 (A)');
-  ok('f1 工具栏找得到「折线切割」入口', !!polyBtn, polyBtn ? polyBtn.title.slice(0, 20) : '无');
-  ok('f1 工具栏找得到「批量铺底」入口', !!vorBtn, vorBtn ? vorBtn.title.slice(0, 20) : '无');
+  ok('f1 工具栏找得到“折线切割”入口', !!polyBtn, polyBtn ? polyBtn.title.slice(0, 20) : '无');
+  ok('f1 工具栏找得到“批量铺底”入口', !!vorBtn, vorBtn ? vorBtn.title.slice(0, 20) : '无');
   if (polyBtn) { polyBtn.click(); await tick(); }
-  ok('f1 点「折线切割」真的切到该工具', sc.tool === 'polySplit', String(sc.tool));
+  ok('f1 点“折线切割”真的切到该工具', sc.tool === 'polySplit', String(sc.tool));
   ok('f1 折线切割的设置面板出现', !!document.querySelector('[data-testid="polysplit-settings"]'));
   const fin = document.querySelector('[data-testid="polysplit-finish"]');
-  ok('f1 不足两个点时「切开」是禁用的', !!fin && fin.disabled === true, fin ? String(fin.disabled) : '无按钮');
+  ok('f1 不足两个点时“切开”是禁用的', !!fin && fin.disabled === true, fin ? String(fin.disabled) : '无按钮');
 
   // ── f2 画布上真点两下 = 两个顶点（折线工具的核心交互）──────────────────────
   const cv = document.querySelector('.scenario-map-container canvas');
@@ -381,20 +381,20 @@ JS_UI = r""" (async () => {
     ok('f2 画布点击累积成折线顶点', (sc.polySplitPoints || []).length === 2,
        JSON.stringify((sc.polySplitPoints || []).length));
     const fin2 = document.querySelector('[data-testid="polysplit-finish"]');
-    ok('f2 两个点后「切开」可用', !!fin2 && fin2.disabled === false, fin2 ? String(fin2.disabled) : '无按钮');
+    ok('f2 两个点后“切开”可用', !!fin2 && fin2.disabled === false, fin2 ? String(fin2.disabled) : '无按钮');
     notes.poly = '已点 ' + (sc.polySplitPoints || []).length + ' 点';
   }
 
   // ── f3 换工具要清干净（折线预览不许残留到别的工具上）─────────────────────
   if (vorBtn) { vorBtn.click(); await tick(); }
-  ok('f3 点「批量铺底」切到该工具', sc.tool === 'voronoi', String(sc.tool));
+  ok('f3 点“批量铺底”切到该工具', sc.tool === 'voronoi', String(sc.tool));
   ok('f3 换工具后折线顶点已清空', (sc.polySplitPoints || []).length === 0);
   ok('f3 换工具后折线预览已清空', !sc.polySplitPreview || (sc.polySplitPreview.a ? false : true));
   ok('f3 批量铺底的设置面板出现', !!document.querySelector('[data-testid="voronoi-settings"]'));
   const cnt = document.querySelector('[data-testid="voronoi-count"]');
   ok('f3 块数输入框在位且有默认值', !!cnt && Number(cnt.value) >= 2, cnt ? cnt.value : '无');
   const runBtn = document.querySelector('[data-testid="voronoi-run"]');
-  ok('f3 没有种子点「一键切分」是禁用的（不会空跑）', !!runBtn && runBtn.disabled === true,
+  ok('f3 没有种子点“一键切分”是禁用的（不会空跑）', !!runBtn && runBtn.disabled === true,
      runBtn ? String(runBtn.disabled) : '无按钮');
 
   // ── f4 播种 → 预览出线 → 清空（不真的切，避免动 harness 基线项目）──────────
@@ -406,7 +406,7 @@ JS_UI = r""" (async () => {
   sc.baseMapKey = KEY;
   await tick();
   const auto = document.querySelector('[data-testid="voronoi-autoseed"]');
-  ok('f4 找得到「自动播种」按钮', !!auto);
+  ok('f4 找得到“自动播种”按钮', !!auto);
   if (auto) {
     auto.click();
     for (let i = 0; i < 40 && !(sc.batchSeeds || []).length; i++) await tick(100);
@@ -415,7 +415,7 @@ JS_UI = r""" (async () => {
   ok('f4 播种后出现 Voronoi 预览', (sc.batchPreviewCells || []).length > 0,
      (sc.batchPreviewCells || []).length + ' 块');
   const runBtn2 = document.querySelector('[data-testid="voronoi-run"]');
-  ok('f4 有种子后「一键切分」可用', !!runBtn2 && runBtn2.disabled === false,
+  ok('f4 有种子后“一键切分”可用', !!runBtn2 && runBtn2.disabled === false,
      runBtn2 ? String(runBtn2.disabled) : '无按钮');
   notes.seeds = (sc.batchSeeds || []).length + ' 个种子 / ' + (sc.batchPreviewCells || []).length + ' 块预览';
   sc.clearBatchSeeds();

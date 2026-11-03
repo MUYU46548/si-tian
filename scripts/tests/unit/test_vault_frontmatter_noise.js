@@ -2,14 +2,14 @@
 /**
  * Node 单测：frontmatter 噪声健壮性（2026-10-22，读料桥补强）
  *
- * 用户提醒（原话）：「真实场景中用户的 frontmatter 可能随便乱写，根本没有你预期的归类。
- * 你永远想不到用户怎么写 .md，甚至可能不按标准格式来，或者混了一堆插件产物。」
+ * 用户提醒（原话）：“真实场景中用户的 frontmatter 可能随便乱写，根本没有你预期的归类。
+ * 你永远想不到用户怎么写 .md，甚至可能不按标准格式来，或者混了一堆插件产物。”
  *
- * 所以这里不测「规范长什么样」，专测**不规范时不许崩、不许静默丢**：
+ * 所以这里不测“规范长什么样”，专测**不规范时不许崩、不许静默丢**：
  *   ① 值里带空格 / 全角空格 / wikilink / 引号 → 仍然能认；
  *   ② tags 写成 `"#地点 #港口"`（字符串）、对象、数字 → 不崩，能用的就用；
  *   ③ 没有闭合 `---`、YAML 语法错、BOM、正文里 dataview `key:: value` → 条目不丢，
- *      该进「待人工」的进，且原因里能看出是解析失败；
+ *      该进“待人工”的进，且原因里能看出是解析失败；
  *   ④ 插件产物键（cssclasses / banner / dg-publish / dataview）不改变归类；
  *   ⑤ 上层写 `[[北境|北]]` / 裸名 / 别名 → 能解析；
  *   ⑥ 总数守恒：报告里的条目数 = 库里的笔记数（一个都不许吞）。
@@ -83,16 +83,16 @@ async function main() {
   const layer = (rel) => (index.files[rel] && index.files[rel].classification.layer) || null;
 
   await check('一：值里的空格 / 全角空格 / wikilink / 引号都能认', () => {
-    eq(layer('杂/全角.md'), 'city', '全角空格包围的「城市」');
+    eq(layer('杂/全角.md'), 'city', '全角空格包围的“城市”');
     eq(layer('杂/链接值.md'), 'town', '层级写成 [[城镇]]');
-    eq(cat('杂/引号值.md'), 'character', '单引号「主要角色」');
+    eq(cat('杂/引号值.md'), 'character', '单引号“主要角色”');
     return '空格/wikilink/引号 3 种写法都对';
   });
 
   await check('二：tags 写成井号串 / 对象 / 数字 —— 不崩，能用的就用', () => {
     eq(cat('杂/井号tags.md'), 'geo', '"#地点 #港口" 应认出地点');
     eq(layer('杂/井号tags.md'), 'location', '地点 → location');
-    eq(layer('杂/对象tags.md'), 'facility', '标签是对象时靠「层级」兜住');
+    eq(layer('杂/对象tags.md'), 'facility', '标签是对象时靠“层级”兜住');
     eq(cat('杂/数字tags.md'), 'unknown', '标签是数字 → 待人工（不猜）');
     return '井号串=geo / 对象靠层级 / 数字=待人工';
   });
@@ -112,18 +112,18 @@ async function main() {
   });
 
   await check('四：插件产物键不改变归类', () => {
-    eq(layer('杂/插件键.md'), 'planet', 'cssclasses/banner/dg-publish 不影响「层级: 行星」');
+    eq(layer('杂/插件键.md'), 'planet', 'cssclasses/banner/dg-publish 不影响“层级: 行星”');
     return '插件键 4 个 → 仍是行星';
   });
 
-  await check('五：上层三种写法 —— 带显示名双链 / 裸名 / 明确「无」', () => {
+  await check('五：上层三种写法 —— 带显示名双链 / 裸名 / 明确“无”', () => {
     const geo = Object.fromEntries(report.geo.map((g) => [g.path, g]));
     eq(geo['杂/父级-别名.md'].parentTitle, '北境', '[[北境|北]] 应解析到北境');
     eq(geo['杂/父级-裸名.md'].parentTitle, '北境', '裸名 北境 应解析到北境');
-    eq(geo['杂/父级-无.md'].parentTitle, '', '「无」= 没有上层');
+    eq(geo['杂/父级-无.md'].parentTitle, '', '“无”= 没有上层');
     assert(!report.needsHuman.some((n) => n.path === '杂/父级-无.md' && /不存在/.test((n.reasons || []).join(''))),
-      '「无」不该被当成断链');
-    return '双链/裸名都解析；「无」不误报';
+      '“无”不该被当成断链');
+    return '双链/裸名都解析；“无”不误报';
   });
 
   await check('六：总数守恒 —— 报告条目 = 库里的笔记数（一个都不吞）', () => {

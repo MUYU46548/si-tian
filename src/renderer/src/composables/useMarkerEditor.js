@@ -42,7 +42,7 @@ export function useMarkerEditor({ store, props, emit, selectedMarker }) {
     emit('dirty', true);
   }
 
-  /** 选择类型 → 继承该类型的默认图标 + 颜色（P1-4「选择 type 后自动继承」） */
+  /** 选择类型 → 继承该类型的默认图标 + 颜色（P1-4“选择 type 后自动继承”） */
   function updateMarkerType(type) {
     if (!selectedMarker.value) return;
     const preset = resolveMarkerType(type);

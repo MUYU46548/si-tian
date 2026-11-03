@@ -1,4 +1,4 @@
-// src/ledger/replay.js — 回放：事件流 → 「某天每个省归谁」（**唯一实现**；2026-10-24）
+// src/ledger/replay.js — 回放：事件流 → “某天每个省归谁”（**唯一实现**；2026-10-24）
 //
 // 口径（与 `utils/scenarioLedgerV2.deriveFrom` 逐省一致，由 `test_ledger_core.js` 的 a5 段对拍）：
 //   · 基线：`epoch.baseline` 事件（day 0）里的 ownership 就是"本代开始时谁归谁"；

@@ -1,13 +1,13 @@
 // utils/scenarioSlices.js
-// 历史剧本「逐年切片导出」的纯函数层（无 DOM、无 Vue、无 store 依赖）
+// 历史剧本“逐年切片导出”的纯函数层（无 DOM、无 Vue、无 store 依赖）
 //
 // 为什么需要它：
-//   ① 「哪些时刻各出一帧」是一个**判定**，不是遍历结果 —— 真实数据 12 剧本 / 3488 年，
-//      按年出帧 = 3488 张（没人要）；按「状态真的变了」出帧 ≈ 十张出头。
-//      这个判定若写在组件里，导出对话框与导出链就各有一份（本仓已三次踩到「改一处另一处不变」）。
+//   ① “哪些时刻各出一帧”是一个**判定**，不是遍历结果 —— 真实数据 12 剧本 / 3488 年，
+//      按年出帧 = 3488 张（没人要）；按“状态真的变了”出帧 ≈ 十张出头。
+//      这个判定若写在组件里，导出对话框与导出链就各有一份（本仓已三次踩到“改一处另一处不变”）。
 //   ② 切片能不能信，取决于**日期是不是真的**：`computeEraChanges` 在缺显式值时会在本剧本
-//      区间内**均匀铺开**一个合成日期（确定性、看起来很像真的）。于是「切片很漂亮」与
-//      「这些日期是编的」可以同时成立 —— 必须能把两者分开计数并摆在用户面前。
+//      区间内**均匀铺开**一个合成日期（确定性、看起来很像真的）。于是“切片很漂亮”与
+//      “这些日期是编的”可以同时成立 —— 必须能把两者分开计数并摆在用户面前。
 //   ③ 帧文件名要**确定性**（同一份数据重复导出得到同一批名字），主进程写入与渲染层载荷
 //      必须用同一条命名规则，否则对不上账。
 //
@@ -18,14 +18,14 @@
 //     这条判定见 `currentOwnerRef` / `baseOwnerRef`；切片只是**挑时刻**，不碰状态推导。
 //
 // 🔴 月日精度 + 切片书签（2026-10-05，《月日精度与切片书签》执行单）：
-//   帧从「一年一张」变成「一个日期一张」，且由**两类来源**组成：
+//   帧从“一年一张”变成“一个日期一张”，且由**两类来源**组成：
 //     · **书签帧**（`slicePoints`，人指定、有名字、可增删改）—— 默认必出；
 //     · **自动帧**（剧本起点 + 每次易主）—— 逐帧可勾选。
 //   两者**同一天合并展示**（一条时间点不出两张图）。日期比较一律走 `utils/scenarioDates.js`。
 import { eraIndexOfYear, formatDate } from './scenarioTimeline';
 import { cmpDate, normalizeDate, dateKey, dateToken, daysInMonth } from './scenarioDates';
 
-/** 一帧一张图，帧数超过这个量级就不是「切片」而是「逐帧动画」了 —— 导不动也不该导 */
+/** 一帧一张图，帧数超过这个量级就不是“切片”而是“逐帧动画”了 —— 导不动也不该导 */
 export const MAX_SLICE_FRAMES = 400;
 
 /**
@@ -35,7 +35,7 @@ export const MAX_SLICE_FRAMES = 400;
  *
  * 为什么必须有它（真实数据实测）：415 省 / 13 段剧本的真实项目里有 **1642 个易主日期**
  * （全部是自动铺开的合成值）→ 全部剧本 = **1088 帧** ≫ 上限 400 ⇒ 对话框按钮直接灰掉，
- * 「导切片 PNG 拿去真用」在真实项目上一次都做不了。而按本剧本算，最大的那段是 184 帧
+ * “导切片 PNG 拿去真用”在真实项目上一次都做不了。而按本剧本算，最大的那段是 184 帧
  * （≤400），完全可导。所以范围不是"功能加法"，是**真实数据下的可用性**。
  */
 export const SLICE_SCOPE = { ALL: 'all', ERA: 'era' };
@@ -57,7 +57,7 @@ export function pickSliceScope(allCount, eraCount, max = MAX_SLICE_FRAMES) {
   return SLICE_SCOPE.ALL;
 }
 
-/** 帧来源标记（frames.json 与对话框都用它说明「这一帧为什么存在」） */
+/** 帧来源标记（frames.json 与对话框都用它说明“这一帧为什么存在”） */
 export const FRAME_SOURCE = { BOOKMARK: 'bookmark', ERA: 'era', CHANGE: 'change' };
 
 /** 日期 → 扁平三元组（外部载荷 / 用例断言用；`m`/`d` 缺省为 null） */
@@ -76,7 +76,7 @@ export function frameLabel(frame) {
 /**
  * 易主**日期**体检：显式录入 vs 自动推算各多少，以及落在本剧本区间外的。
  * 分账口径（`explicit` / `synthesized` / `outOfRange`）与 2026-10-02 那版一致，
- * 只是单位从「年份」变成「事件」—— 同省同年多次易主现在会各算一条。
+ * 只是单位从“年份”变成“事件”—— 同省同年多次易主现在会各算一条。
  *
  * @returns {{total:number, explicit:number, synthesized:number,
  *            explicitProvinces:number, outOfRange:Array, multiPerProvince:Array}}
@@ -116,10 +116,10 @@ export function changeDateStats(tl) {
 }
 
 /**
- * 易主**日期**的合法性判定（带「剧本序号 → 区间」的便利入口）。
+ * 易主**日期**的合法性判定（带“剧本序号 → 区间”的便利入口）。
  * 🔴 真正的判定核心是下面的 `validateChangeDateInRange`（**唯一实现**）；
- *    本函数只多做一步「按 era 序号取区间」。src 里目前**没有调用者**（面板与 store 都拿
- *    得到区间，直接用 InRange 那份）—— 保留它是为了让「有 tl 却没有区间」的调用方不必自己
+ *    本函数只多做一步“按 era 序号取区间”。src 里目前**没有调用者**（面板与 store 都拿
+ *    得到区间，直接用 InRange 那份）—— 保留它是为了让“有 tl 却没有区间”的调用方不必自己
  *    拼区间（那才是第二套比较的来源）。新增调用者请优先用 InRange。
  *
  * @param {object} tl 时间轴模型
@@ -173,8 +173,8 @@ export { daysInMonth as daysInMonthOf };
 /**
  * 规整书签列表：去脏值、按日期升序、字段平整。
  * **不生成 id**（id 由 store 在新增时给，见 `scenarioEditing.addSlicePoint`）——
- * 纯函数层不引入随机性，否则「同一份数据重复导出得到同一批名字」这条契约会被打破。
- * ⚠️ 本函数与 store 的 `sanitizeSlicePoints` 是**同一套规整**、只差「同 id 去重」
+ * 纯函数层不引入随机性，否则“同一份数据重复导出得到同一批名字”这条契约会被打破。
+ * ⚠️ 本函数与 store 的 `sanitizeSlicePoints` 是**同一套规整**、只差“同 id 去重”
  *    （store 需要去重是因为 id 要当列表 key；这里不需要，因为帧是按日期合并的）。
  *    改字段口径时**两处一起改** —— 单测 t9 会守这里，test_82 f3 会守 store 那份。
  *
@@ -201,7 +201,7 @@ export function normalizeSlicePoints(points) {
 }
 
 /**
- * 切片索引：把「时间轴模型 + 书签」压成「需要出图的时间点」。
+ * 切片索引：把“时间轴模型 + 书签”压成“需要出图的时间点”。
  *
  * 三类来源，**按日期合并**（一个时间点只出一张图）：
  *   - `bookmark` 人在时间轴上存的切片书签（`slicePoints`）—— **默认必出**；
@@ -209,7 +209,7 @@ export function normalizeSlicePoints(points) {
  *                （polity id 每代全新，见 scenarioTimeline 的文件头注释），漏了就少了整代底图；
  *   - `change`   每次易主一帧。
  *
- * `frame.era` 一律取 `eraIndexOfYear(date.y)`（「这一帧属于哪个剧本」），
+ * `frame.era` 一律取 `eraIndexOfYear(date.y)`（“这一帧属于哪个剧本”），
  * 与 `buildScenarioSVG({ era, date })` 的调用口径完全一致 —— 不搞两套规则。
  *
  * 每帧都带 `date`（`{y,m,d}`）与 `sources`（来源标记数组）；
@@ -267,8 +267,8 @@ export function collectSliceFrames(tl, slicePoints, opts = {}) {
   }
 
   // ② 剧本起点帧
-  // ⚠️ 起点帧的日期是「起点年 + 月日缺省」= 该年 1 月 1 日（`dateKey` 口径）→
-  //    判「是不是起点帧」必须比**完整日期**而不是比年份：只比年份会让同一年里
+  // ⚠️ 起点帧的日期是“起点年 + 月日缺省”= 该年 1 月 1 日（`dateKey` 口径）→
+  //    判“是不是起点帧”必须比**完整日期**而不是比年份：只比年份会让同一年里
   //    任何一次年中易主都被标成 `mixed`（纯函数用例 t5 抓到）。
   const startKeys = new Set(eraList.map((k) => dateKey({ y: years[k].start, m: null, d: null })));
   for (const k of eraList) {
@@ -312,7 +312,7 @@ export function collectSliceFrames(tl, slicePoints, opts = {}) {
     if (f.sources.includes(FRAME_SOURCE.BOOKMARK) && !hasChange && !isStart) f.kind = 'bookmark';
     else if (hasChange) f.kind = isStart ? 'mixed' : 'change';
     else f.kind = 'era';
-    // 展示名：书签名优先（人给的名字比「2010」有用）
+    // 展示名：书签名优先（人给的名字比“2010”有用）
     f.label = f.labels.length ? f.labels.join(' / ') : '';
     f.changed.sort();
     f.changes.sort((a, b) => cmpDate(a.date, b.date) || String(a.provinceId).localeCompare(String(b.provinceId)));

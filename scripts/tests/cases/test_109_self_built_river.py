@@ -3,14 +3,14 @@
 """用例 109：**司天自己画的地必须能长出河**（2026-10-17，暮雨定的方向）
 
 用户原话（这一条改变了整个方向）：
-    「用户甚至不是必须用外部软件导出地图再放进司天做历史剧本的，
-      司天自身的编辑能力必须过硬，**不要指望靠用户导出高度数据地图来救河流生成**。」
+    “用户甚至不是必须用外部软件导出地图再放进司天做历史剧本的，
+      司天自身的编辑能力必须过硬，**不要指望靠用户导出高度数据地图来救河流生成**。”
 
 修之前的产品事实（三条串起来就是一个死结，而且**全都不报错**）：
   ① `generateRivers()` 遇到 `!hasGrid(hm)` 直接返回 `no-heightmap` —— 自建底图**没有河**；
-  ② 「建高度图」按钮建出来的是 `new Float32Array(n)`（**全 0**），而海平面是 20
+  ② “建高度图”按钮建出来的是 `new Float32Array(n)`（**全 0**），而海平面是 20
      → 整张图变成**全海平面的平地** → 平地没有坡 → 自动河流**永远是 0 条**；
-  ③ 于是「画大陆 → 建高度图 → 点自动河流」这条路走不通，用户被推向外部工具 ——
+  ③ 于是“画大陆 → 建高度图 → 点自动河流”这条路走不通，用户被推向外部工具 ——
      而那正是暮雨明确否掉的那条路。
 
 本用例守四件事：
@@ -20,7 +20,7 @@
      ① 有真实起伏（不是常数）② 内陆高于海岸 ③ **每一格都排得出去**（无洼地）。
   c **端到端**：自建底图（**完全没有高度图**）→ 点自动河流 → 必须出河，
      且河网必须**真的汇聚**（`segMaxFlow` 远大于 1）。
-  d **对照组必须有判别力**：同样的底图，若把高度图换成"全 0 平地"（旧「建高度图」的产物），
+  d **对照组必须有判别力**：同样的底图，若把高度图换成"全 0 平地"（旧“建高度图”的产物），
      自动河流必须**明显更差/为 0** —— 否则 c 段的绿不能证明推演起了作用。
 """
 import json
@@ -101,7 +101,7 @@ def source_gates():
 
     # a③ UI 可发现性：必须有 data-testid + **可见文字**（只靠图标/ title 不算）
     if 'data-testid="basemap-synthesize-terrain"' not in smv:
-        fails.append('🔴 没有「按轮廓生成地形」按钮（`data-testid="basemap-synthesize-terrain"`）')
+        fails.append('🔴 没有“按轮廓生成地形”按钮（`data-testid="basemap-synthesize-terrain"`）')
     if '按轮廓生成地形' not in smv:
         fails.append('🔴 按钮没有**可见文字**（暮雨实测过：只有图标 = 找不到）')
 
@@ -136,7 +136,7 @@ JS_MAKE_BASEMAP = r"""
 })()
 """
 
-# 对照组：造一份"全 0 平地"高度图（旧「建高度图」的产物），验证它确实长不出河
+# 对照组：造一份"全 0 平地"高度图（旧“建高度图”的产物），验证它确实长不出河
 JS_FLAT_CONTRAST = r"""
 (async () => {
   const store = __STORE__;
@@ -184,7 +184,7 @@ JS_SYNTH_AND_TRACE = r"""
   out.pre = { ok: !!pre.ok, reason: pre.reason || null, rivers: (pre.rivers || []).length,
     synthesized: !!pre.synthesized };
 
-  // ② 显式「按轮廓生成地形」→ 落库
+  // ② 显式“按轮廓生成地形”→ 落库
   const syn = store.synthesizeBaseMapTerrain(KEY);
   out.syn = { ok: !!syn.ok, reason: syn.reason || null, cells: syn.cellCount || 0, spacing: syn.spacing || 0 };
   const hm = store.getHeightmapFor(KEY);
@@ -240,7 +240,7 @@ def run(cdp):
     eval_json(cdp,
               "(() => { const b = Array.from(document.querySelectorAll('button'))"
               ".find(x => (x.textContent || '').includes('历史剧本')); if (b) b.click(); return 'ok'; })()",
-              required=None, desc='点「历史剧本」')
+              required=None, desc='点“历史剧本”')
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=25, desc='剧本模式挂载')
     time.sleep(1.2)
 
@@ -259,7 +259,7 @@ def run(cdp):
     # b 推演本身是对的
     ter = res.get('terrain') or {}
     if not res.get('hasHm'):
-        fails.append('🔴 「按轮廓生成地形」没有落库（`getHeightmapFor` 仍为空）')
+        fails.append('🔴 “按轮廓生成地形”没有落库（`getHeightmapFor` 仍为空）')
     if (ter.get('max', 0) - ter.get('min', 0)) < 20:
         fails.append(f"🔴 推演出来的地形没有起伏（min={ter.get('min')} / max={ter.get('max')}）—— 平地长不出河")
     if (ter.get('land', 0) or 0) < 100:
@@ -271,7 +271,7 @@ def run(cdp):
         fails.append('🔴 自建底图上自动河流仍然是 0 条 —— 这正是暮雨否掉的死结')
     if (after.get('segMaxFlow') or 0) < 20:
         fails.append(f"🔴 河网没有真正汇聚（`segMaxFlow={after.get('segMaxFlow')}`，"
-                     "应远大于 1；否则只是「每格一根小棍」）")
+                     "应远大于 1；否则只是“每格一根小棍”）")
     if (res.get('chainLenMax') or 0) < 10:
         fails.append(f"🔴 最长河链只有 {res.get('chainLenMax')} 个点 —— 画出来仍是短棍，不是河")
 

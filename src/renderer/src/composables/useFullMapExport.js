@@ -133,7 +133,7 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
 
     // 地形表示（M2/A2 第二步）：与画布**同一份判定**。
     // 🔴 本轮之前这里**只有 `drawTerrain`** —— 高度图驱动的行星导出后地形是**空的**：
-    //    导出图与画布不一致，属既存缺陷，本次随「terrain 降为覆盖物」一并修掉。
+    //    导出图与画布不一致，属既存缺陷，本次随“terrain 降为覆盖物”一并修掉。
     //    ⚠️ 高度图必须 `{ full: true }`：默认的视口剔除是**屏幕**优化，导出时会把
     //    屏幕外的地形整块丢掉（不报错，只是悄悄缺一大片）。
     {
@@ -408,7 +408,7 @@ export function useFullMapExport({ store, props, emit, renderer, currentMapData,
     if (vis('rivers')) {
       for (const river of md.rivers || []) {
         const raw = river.points || river;
-        // 导入河是「去 + 原路回」的闭合路径（2026-10-21，160/160 实测）→ 导出也要折成中心线，
+        // 导入河是“去 + 原路回”的闭合路径（2026-10-21，160/160 实测）→ 导出也要折成中心线，
         // 否则画布单线、导出双线（同一份数据两个读口各画一套 = 本项目反复踩的"双源"）。
         const pts = String(river.id || '').indexOf('river_') === 0
           ? raw

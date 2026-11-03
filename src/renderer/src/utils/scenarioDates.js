@@ -1,26 +1,26 @@
 // utils/scenarioDates.js
-// 历史剧本「月日精度日期」的纯函数层（无 DOM、无 Vue、无 store 依赖）
+// 历史剧本“月日精度日期”的纯函数层（无 DOM、无 Vue、无 store 依赖）
 //
 // 为什么需要它（2026-10-05，执行单《月日精度与切片书签》）：
 //   ① 旧模型是 `scenario.changeYears[pid] = 1993`（一省一剧本最多易主一次、只有年精度）。
-//      「切片点要到月日」要求同省同年**多次**易主，年单值装不下 → 改成
+//      “切片点要到月日”要求同省同年**多次**易主，年单值装不下 → 改成
 //      `scenario.changeEvents[pid] = [{ y, m, d, owner }, …]`（按日期升序的列表）。
-//   ② 这是**破坏性**数据模型变更，但只要「旧键读取兼容」就安全 —— 关键在**幂等**：
+//   ② 这是**破坏性**数据模型变更，但只要“旧键读取兼容”就安全 —— 关键在**幂等**：
 //      迁移函数必须能被跑任意多次（载入 / 快照回放 / 合并 / 导入），
-//      第二次跑必须是 no-op。写成「有旧键才转」而不检查新键，就会在
-//      「新旧同时存在」时用旧值覆盖新值（静默丢数据）。
+//      第二次跑必须是 no-op。写成“有旧键才转”而不检查新键，就会在
+//      “新旧同时存在”时用旧值覆盖新值（静默丢数据）。
 //   ③ `m`/`d` 允许为 null（只录到年），语义 = 该年 **1 月 1 日**。这条口径必须只有一处实现：
 //      比较、格式化、区间校验、切片帧名全部走本模块，任何一处自己写 `m || 1` 就是第二事实源。
 //
 // 🔴 迁移的唯一实现 = `normalizeScenarioDates()`：
 //   发现 `changeYears` → 转 `changeEvents` 并**删旧键**；对已是新格式的输入必须是 no-op。
 //   保存只写新键，**不双写**（双写 = 第二事实源，迟早漂移）。
-//   调用点见 `AGENTS.md`「月日精度与切片书签」条目：载入 / 撤销重放 / 导入 / 写入口。
+//   调用点见 `AGENTS.md`“月日精度与切片书签”条目：载入 / 撤销重放 / 导入 / 写入口。
 //
 // ⚠️ 全程**不改入参**（返回新对象）。入参可能是 Vue 响应式代理或
 //    `JSON.parse(JSON.stringify(...))` 出来的裸对象，两种情况都得能跑。
 
-/** 月份缺省（= 1 月）与日缺省（= 1 日）—— 「只录到年」的语义锚点 */
+/** 月份缺省（= 1 月）与日缺省（= 1 日）—— “只录到年”的语义锚点 */
 export const DEFAULT_MONTH = 1;
 export const DEFAULT_DAY = 1;
 
@@ -31,7 +31,7 @@ export function parseYear(v) {
   return Number.isFinite(n) ? n : NaN;
 }
 
-/** 整数解析：非整数/空 → null（`m`/`d` 的「缺省」就是 null，不是 1） */
+/** 整数解析：非整数/空 → null（`m`/`d` 的“缺省”就是 null，不是 1） */
 function intOrNull(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
@@ -60,12 +60,12 @@ export function daysInMonth(y, m) {
  *   · **裸年份**（数字或数字字符串）→ 视为 `{ y, m: null, d: null }`
  *     ⚠️ 这条必须有：`normalizeEventList` 早就按裸年份容错，而 store 的
  *     `setOwnership` / `batchSetOwnership` / `setChangeEventsBulk` 三个写入口的文档都写着
- *     「或裸年份」。此前这里只认对象 → 裸年份被判非法，症状分两类且**都不报错**：
+ *     “或裸年份”。此前这里只认对象 → 裸年份被判非法，症状分两类且**都不报错**：
  *     `setOwnership` 直接拒绝（连归属都不写）、`batchSetOwnership` 把日期**静默丢掉**却返回
  *     `success:true`（调用方以为日期记下了）。2026-10-05 由子代理审查抓出。
  *
  * 规则：`m`/`d` 各自可为 null；**`m` 为 null 时 `d` 一律归 null**
- * （「只到年」和「有日没月」是同一件事，后者是脏数据）。
+ * （“只到年”和“有日没月”是同一件事，后者是脏数据）。
  */
 export function normalizeDate(raw) {
   let src = raw;
@@ -88,7 +88,7 @@ export function toOrdinal(date) {
 
 /**
  * 🔴 日期比较的**唯一实现**（先 y 后 m 后 d，null 按 1 月 1 日）。
- * 返回 <0 / 0 / >0，可直接喂 `Array.prototype.sort`。非法日期一律「小于」任何合法日期。
+ * 返回 <0 / 0 / >0，可直接喂 `Array.prototype.sort`。非法日期一律“小于”任何合法日期。
  */
 export function cmpDate(a, b) {
   const oa = toOrdinal(a);
@@ -102,7 +102,7 @@ export function sameDate(a, b) {
   return cmpDate(a, b) === 0;
 }
 
-/** `cmpDate` 的别名 —— 时间轴侧按「比较函数」语义命名更顺口，同一条实现 */
+/** `cmpDate` 的别名 —— 时间轴侧按“比较函数”语义命名更顺口，同一条实现 */
 export const compareDates = cmpDate;
 
 /** 取较晚 / 较早的一个（都非法时返回 a），null 安全 */
@@ -120,8 +120,8 @@ export function minDate(a, b) {
 
 /**
  * 日期 → 展示文本。`{1993,null,null}` → `'1993'`；`{1993,5,null}` → `'1993-05'`；
- * `{1993,5,12}` → `'1993-05-12'`。缺省分量**不显示**（显示成 1993-01-01 会把「只录到年」谎报成精确日期）。
- * 负数年：`-350` → `'前350'`（`n` 只在文件名里用，界面用「前」，与 era 的写法一致）。
+ * `{1993,5,12}` → `'1993-05-12'`。缺省分量**不显示**（显示成 1993-01-01 会把“只录到年”谎报成精确日期）。
+ * 负数年：`-350` → `'前350'`（`n` 只在文件名里用，界面用“前”，与 era 的写法一致）。
  */
 export function formatDate(date) {
   const n = normalizeDate(date);
@@ -153,7 +153,7 @@ export function yearToken(y) {
 /**
  * 帧名/文件名用的**日期段**（年月日连写，全部补零、无分隔符）。
  *   `{1993,5,12}` → `'19930512'`；`{1993,null,null}` → `'19930000'`；`{-350,null,null}` → `'n3500000'`
- * 月日缺省补 `00` 而不是 `01`：文件名要能**如实**反映「只录到年」，
+ * 月日缺省补 `00` 而不是 `01`：文件名要能**如实**反映“只录到年”，
  * 补 01 会让 `frame_..._19930000` 与真·1 月 1 日的 `frame_..._19930101` 看起来是同一天。
  */
 export function dateToken(date) {
@@ -164,13 +164,13 @@ export function dateToken(date) {
   return `${yearToken(n.y)}${mm}${dd}`;
 }
 
-/** 一个事件是否是「显式录入」（相对运行时合成的推算值） */
+/** 一个事件是否是“显式录入”（相对运行时合成的推算值） */
 export function isExplicitEvent(ev) {
   return !!(ev && ev.explicit);
 }
 
 /**
- * 规整「一个省的易主事件列表」→ 升序、去重（同日期只留最后一条）、字段干净的数组。
+ * 规整“一个省的易主事件列表”→ 升序、去重（同日期只留最后一条）、字段干净的数组。
  *
  * @param {Array} list 原始事件数组（可能是旧格式数字、脏对象、字符串年份）
  * @returns {Array<{y:number, m:number|null, d:number|null, owner:string|null}>} 新数组
@@ -180,7 +180,7 @@ export function normalizeEventList(list) {
   const out = [];
   const seen = new Set();
   for (const raw of list) {
-    // 容错：列表里塞了裸数字/字符串（旧 changeYears 的值被手写进新键）→ 当「只到年」
+    // 容错：列表里塞了裸数字/字符串（旧 changeYears 的值被手写进新键）→ 当“只到年”
     const date = normalizeDate(typeof raw === 'object' && raw !== null ? raw : { y: raw });
     if (!date) continue;
     const owner = (raw && typeof raw === 'object' && raw.owner !== undefined && raw.owner !== null)
@@ -204,7 +204,7 @@ export function normalizeEventList(list) {
 /**
  * 旧 → 新：`changeYears[pid] = y` ⇒ `changeEvents[pid] = [{ y, m: null, d: null, owner }]`。
  * `owner` 取该省在该剧本快照里的归属（`scenario.ownership[pid]`），
- * 因为「易主到谁」在旧模型里是隐含的（= 本剧本的 ownership）。
+ * 因为“易主到谁”在旧模型里是隐含的（= 本剧本的 ownership）。
  */
 function migrateChangeYears(scenario) {
   const old = scenario.changeYears;
@@ -229,7 +229,7 @@ function migrateChangeYears(scenario) {
  *     旧键只补新键里没有的省），然后**删掉 `changeYears`**；
  *   · 没有 `changeYears` → 只做规整（列表排序 / 去重 / 字段清洗），不新增键；
  *   · 已经是新格式 → **no-op 级**（规整后深比较，相同则**原样返回入参**，不制造新对象）。
- *     这条很关键：`scenarioDates.test` 判的「幂等」就是「第二次跑返回同一引用 / 无字段差异」。
+ *     这条很关键：`scenarioDates.test` 判的“幂等”就是“第二次跑返回同一引用 / 无字段差异”。
  *
  * @returns {object} 新剧本对象（无改动时可能返回入参本身）
  */
@@ -284,11 +284,11 @@ function sameEventMap(a, b) {
 /**
  * 整个剧本字典的日期迁移（载入 / 快照回放 / 导入 / 时间轴构建的统一入口）。
  * 无任何改动的剧本**保持原引用**（避免把整表换新对象 → 触发无谓重渲染 / 让
- * 「就地改字段」的纪律失效，见 geodata.refreshEntitiesFromProject 的教训）。
+ * “就地改字段”的纪律失效，见 geodata.refreshEntitiesFromProject 的教训）。
  *
  * ⚠️ **入参可以是数组或字典，出参保持同形** —— `buildTimeline` 手里是数组
  *    （`sortedScenarios`），若这里一律返回字典，下游的 `[...scenarios]` 会变成
- *    「对象不可迭代」直接抛错。类型必须原样往返。
+ *    “对象不可迭代”直接抛错。类型必须原样往返。
  *
  * @param {Record<string, object>|Array<object>} scenarios
  * @returns {{ ok: boolean, scenarios: (Record<string, object>|Array<object>), migrated: string[], normalized: string[] }}
@@ -330,15 +330,15 @@ export function dateInYearRange(date, start, end) {
   return { ok: true };
 }
 
-// ⚠️ 「易主日期是否合法」的判定**不在这里** —— 它在 `utils/scenarioSlices.js` 的
+// ⚠️ “易主日期是否合法”的判定**不在这里** —— 它在 `utils/scenarioSlices.js` 的
 //    `validateChangeDate` / `validateChangeDateInRange`。理由：那条规则同时是
-//    「切片帧名能不能确定地造出来」的前提（年月日要能拼进文件名），
+//    “切片帧名能不能确定地造出来”的前提（年月日要能拼进文件名），
 //    而切片帧名也在 `scenarioSlices.js`。把校验与命名放在同一模块，
-//    「合法日期」与「能命名的日期」就不会各说各话。
+//    “合法日期”与“能命名的日期”就不会各说各话。
 //    本模块只提供它需要的原语：`normalizeDate` / `daysInMonth` / `dateInYearRange`。
 
 // ============================================================
-// 归属查询（月日精度）—— 「某个日期这一刻，这个省归谁」
+// 归属查询（月日精度）—— “某个日期这一刻，这个省归谁”
 // ============================================================
 
 /**
@@ -362,9 +362,9 @@ export function hasSettledAt(events, atDate) {
 // 文本日期（命令行 / 导入 JSON 的入口）—— 唯一实现
 // ============================================================
 //
-// 为什么放在这个模块：本模块已经是「日期口径的唯一出处」（`m`/`d` 为 null = 1 月 1 日、
+// 为什么放在这个模块：本模块已经是“日期口径的唯一出处”（`m`/`d` 为 null = 1 月 1 日、
 // 负数年、比较、格式化）。文本解析若散落在命令行工具/导入器里，就会出现
-// 「工具认 `前1350`、界面不认」这类两套口径。
+// “工具认 `前1350`、界面不认”这类两套口径。
 //
 // 接受（**保守**，只认下面这几种；其余一律 null，由调用方报错，不猜）：
 //   `1350` / `-1350` / `前1350` / `1350-06` / `1350-06-01` / `1350/6/1` / `1350.6.1`
@@ -381,7 +381,7 @@ export function parseDateText(text) {
   // `前1350` = 公元前 1350 年（与 `formatDate` 的显示口径互逆）
   const m = s.match(/^(前)?\s*(-?\d+)\s*(?:[-/.]\s*(\d{1,2}))?\s*(?:[-/.]\s*(\d{1,2}))?\s*$/);
   if (!m) return null;
-  // 前导零的年份（`06-01` 想写 6 月 1 日却少了年）一律拒绝 —— 猜成「公元 6 年」比报错更坏
+  // 前导零的年份（`06-01` 想写 6 月 1 日却少了年）一律拒绝 —— 猜成“公元 6 年”比报错更坏
   const yearText = m[2];
   if (yearText.length > 1 && /^-?0/.test(yearText)) return null;
   const hasBc = !!m[1];
@@ -391,7 +391,7 @@ export function parseDateText(text) {
   const mm = m[3] === undefined ? null : Number(m[3]);
   const dd = m[4] === undefined ? null : Number(m[4]);
   if (mm !== null && (!(mm >= 1 && mm <= 12))) return null;
-  if (dd !== null && mm === null) return null;       // 「有日没月」是脏数据（同 normalizeDate）
+  if (dd !== null && mm === null) return null;       // “有日没月”是脏数据（同 normalizeDate）
   if (dd !== null && (!(dd >= 1 && dd <= daysInMonth(year, mm)))) return null;
   return { y: Math.trunc(year), m: mm, d: dd };
 }

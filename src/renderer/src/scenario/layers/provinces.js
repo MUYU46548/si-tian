@@ -1,4 +1,4 @@
-// scenario/layers/provinces.js — 剧本视图「省界」层（N1 刀 1，2026-10-30）
+// scenario/layers/provinces.js — 剧本视图“省界”层（N1 刀 1，2026-10-30）
 //
 // 从 `ScenarioMap.vue` 搬出来：**省份填色/描边（含 EU4 斜线、选中描边）** 与 **省界两遍法**。
 // 口径原样保留（改观感的事不在这一刀里）：

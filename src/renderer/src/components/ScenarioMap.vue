@@ -15,7 +15,7 @@
               @click="immersive = false">退出沉浸 (Ctrl+I)</button>
     </div>
     <!-- D3：地形注记面板 —— **必须放在顶栏之外**。
-         面板曾跟着「造陆」放在 `toolbar-more`（v-if=moreOpen）里：底图编辑模式下「更多」是收起的，
+         面板曾跟着“造陆”放在 `toolbar-more`（v-if=moreOpen）里：底图编辑模式下“更多”是收起的，
          于是"按钮点了、面板不出现"（test_154 实测）。Teleport 的目标在 body，但 **Teleport 自身
          仍在 v-if 的子树里** —— 父节点不渲染，它就不存在。 -->
     <Teleport to="body">
@@ -36,13 +36,13 @@
     </Teleport>
     <!-- 顶栏：工具 + 模式切换 -->
     <div class="scenario-toolbar" :class="{ dim: capsuleDim }" @mousemove="pokeCapsule">
-      <!-- 第 1 行：**按任务分层的 4 个主工具** + 「更多」（P3）
+      <!-- 第 1 行：**按任务分层的 4 个主工具** + “更多”（P3）
            默认可见控件 = 6 个（退出剧本 / 选择 / 自由绘制 / 涂归属 / 顶点编辑 / 更多），
-           其余工具与开关全部收进「更多」—— 能力一个都不减，只是不再糊在一排里。 -->
-      <!-- 🔴 2026-10-18 第十七修（暮雨：「我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，
-           不要和日常的剧本编辑混在一起」）：底图/地理类工具从「更多」里拎出来，收进一个**显式模式**。
+           其余工具与开关全部收进“更多”—— 能力一个都不减，只是不再糊在一排里。 -->
+      <!-- 🔴 2026-10-18 第十七修（暮雨：“我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，
+           不要和日常的剧本编辑混在一起”）：底图/地理类工具从“更多”里拎出来，收进一个**显式模式**。
            此前的形态是"日常动作（选择/画省份/改归属/改形状）+ 地理类（河流/地形/高度/群系/文化/宗教/
-           道路/地貌/地名/标记/聚落）全糊在同一个「更多」里"——**编辑对象不同（地块 vs 覆盖其上的历史归属），
+           道路/地貌/地名/标记/聚落）全糊在同一个“更多”里"——**编辑对象不同（地块 vs 覆盖其上的历史归属），
            却在同一排按钮里**，这正是用户说的"混"。
            ⚠️ 只是**分组与可见性**，不改任何工具语义：既有用例点工具仍走同一个 `setTool()`，
            模式没开时自动打开（见 `setTool` 的门），所以 60+ 个既有用例零迁移。
@@ -75,23 +75,23 @@
           :title="t.title"
           @click="setTool(t.id)"
         ><Icon :name="t.icon" :size="14"/>{{ t.label }}</button>
-        <!-- 「笔刷建省」= 像画图软件一样**涂出一块地**（2026-10-22）。
-             与「画省份」的分工：画省份 = 描一圈精确边界（要闭合、会贴骨架）；
+        <!-- “笔刷建省”= 像画图软件一样**涂出一块地**（2026-10-22）。
+             与“画省份”的分工：画省份 = 描一圈精确边界（要闭合、会贴骨架）；
              笔刷建省 = 抹一条就成一块省（不闭合、涂抹过程就是最终形状）。
-             放在「改省界」旁边而不是主行：主行的可见控件数由 test_97 硬守（日常 4 / 底图编辑 6）。 -->
+             放在“改省界”旁边而不是主行：主行的可见控件数由 test_97 硬守（日常 4 / 底图编辑 6）。 -->
         <button
           :class="{ active: tool === 'provincePaint' }"
           data-testid="basemap-tool-provincePaint"
           title="笔刷建省 (Shift+B) — 按住左键像涂色一样抹，松手把抹过的范围长成**一个省**：不用闭合、不会画出自交怪形，涂抹过程就是最终形状。已有省份的地不会被抢（新省只长在空地上）；一笔 = 一条撤销"
           @click="setTool('provincePaint')"
         ><Icon name="brush" :size="14"/>笔刷建省</button>
-        <!-- 「改省界」= 原先挂在日常行的那个几何笔刷（把笔迹并进所选省份）。
-             2026-10-20：它与「涂归属」同名不同义，用户实测「好像在生造省份」。
+        <!-- “改省界”= 原先挂在日常行的那个几何笔刷（把笔迹并进所选省份）。
+             2026-10-20：它与“涂归属”同名不同义，用户实测“好像在生造省份”。
              现在改名并收进底图编辑 —— 日常行只留**真的改归属**那一个。 -->
         <button
           :class="{ active: tool === 'provinceBrush' }"
           data-testid="basemap-tool-provinceBrush"
-          title="改省界 (Shift+Q) — 按住涂抹，把笔迹并进下面「划归到」所选的那个省（**改的是省界形状，不是势力归属**）；相交的邻省会相应让出这块地。一笔 = 一条撤销。想改「这块地归哪个势力」请回日常行点「涂归属」"
+          title="改省界 (Shift+Q) — 按住涂抹，把笔迹并进下面“划归到”所选的那个省（**改的是省界形状，不是势力归属**）；相交的邻省会相应让出这块地。一笔 = 一条撤销。想改“这块地归哪个势力”请回日常行点“涂归属”"
           @click="setTool('provinceBrush')"
         ><Icon name="pencil" :size="14"/>改省界</button>
         <!-- D3（2026-10-26）：**地形注记** —— 山系名沿脊线排。它是**地理数据**（不是历史归属），
@@ -103,8 +103,8 @@
           title="地形注记 —— 从高度图抽山脊候选，逐条命名；名字沿脊线排（一条 Ctrl+Z 可退回）"
           @click="toggleTerrainLabelsPanel"
         ><Icon name="type" :size="14"/>地形注记</button>
-        <!-- 2026-10-21：出口就在工作行末尾。用户「误进入底图编辑、又找不到退出口，
-             点左上角返回把整个剧本退了」——不能只靠顶栏那个按钮。 -->
+        <!-- 2026-10-21：出口就在工作行末尾。用户“误进入底图编辑、又找不到退出口，
+             点左上角返回把整个剧本退了”——不能只靠顶栏那个按钮。 -->
         <button class="basemap-exit" data-testid="basemap-exit"
                 title="退出底图编辑，回到日常剧本编辑（省份 / 归属 / 剧本）—— 不会离开历史剧本"
                 @click="toggleBasemapEditMode()">← 日常视图</button>
@@ -113,13 +113,13 @@
       <div class="toolbar-row primary-row">
 
         <!-- 🔴 2026-10-21：这个按钮**先退子模式、再退模块**。
-             暮雨实测：在底图编辑里点左上角「← 返回」，以为是退底图编辑，结果整个历史剧本被退掉。
-             现在：底图编辑中 = 「← 返回日常」（只关底图编辑）；日常态 = 「← 退出剧本」（才离开模块）。
-             模块级退出还有顶部「世界观」页签，这里不再是唯一出口。 -->
+             暮雨实测：在底图编辑里点左上角“← 返回”，以为是退底图编辑，结果整个历史剧本被退掉。
+             现在：底图编辑中 = “← 返回日常”（只关底图编辑）；日常态 = “← 退出剧本”（才离开模块）。
+             模块级退出还有顶部“世界观”页签，这里不再是唯一出口。 -->
         <button @click="onBackClick" class="back-btn" data-testid="scenario-back-btn"
                 :title="basemapEditMode
                   ? '退出底图编辑，回到日常剧本编辑（不会离开历史剧本）'
-                  : '退出历史剧本，回到世界页（顶部「世界观」页签同样可以离开）'">
+                  : '退出历史剧本，回到世界页（顶部“世界观”页签同样可以离开）'">
           {{ basemapEditMode ? '← 日常视图' : '← 退出剧本' }}
         </button>
         <button
@@ -155,16 +155,16 @@
       </div>
 
       <!-- 第 2 行：省份 —— 几何只有一个来源（多边形）；网格只是涂抹时的中间层 -->
-      <!-- 「变更归属」的省份选项：选到省份类工具（或自己打开「更多」）才出现 ——
+      <!-- “变更归属”的省份选项：选到省份类工具（或自己打开“更多”）才出现 ——
            默认那 6 个可见控件里没有它（见 P3 / test_65）。 -->
       <div class="toolbar-row province-row" v-if="provinceRowVisible">
         <label class="row-label">省份：</label>
-        <!-- 日常模式里原本没有「画省份」（它只在底图编辑的主行出现）→ 空底图上无从下手。
-             这个入口点一下 = 自动进「底图编辑」+ 选好画省份（`setTool` 的门在 2681 行）。 -->
+        <!-- 日常模式里原本没有“画省份”（它只在底图编辑的主行出现）→ 空底图上无从下手。
+             这个入口点一下 = 自动进“底图编辑”+ 选好画省份（`setTool` 的门在 2681 行）。 -->
         <button
           v-if="!basemapEditMode"
           data-testid="province-draw-entry"
-          title="画省份 · 自由绘制 (B) — 会先进入「底图编辑」；按住左键绕一圈，松手成省"
+          title="画省份 · 自由绘制 (B) — 会先进入“底图编辑”；按住左键绕一圈，松手成省"
           @click="startDrawingProvince()"
         ><Icon name="pencil" :size="15"/>画省份</button>
         <!-- 2026-10-22：空底图上"想随便涂一块地"的人不该被要求先画一个闭合圈 ——
@@ -172,12 +172,12 @@
         <button
           v-if="!basemapEditMode"
           data-testid="province-paint-entry"
-          title="笔刷建省 (Shift+B) — 会先进入「底图编辑」；按住左键像涂色一样抹，松手就是一块省（不用闭合）"
+          title="笔刷建省 (Shift+B) — 会先进入“底图编辑”；按住左键像涂色一样抹，松手就是一块省（不用闭合）"
           @click="startPaintingProvince()"
         ><Icon name="brush" :size="15"/>笔刷建省</button>
-        <!-- 2026-10-20：这里原先还有第二个「涂归属」，点了却是**改省界几何**（把地并进某个省）。
-             两个同名按钮两种语义 = 用户实测「好像在生造省份」的直接来源。
-             现在这个几何笔刷只出现在「底图编辑」行、并改名「改省界」。 -->
+        <!-- 2026-10-20：这里原先还有第二个“涂归属”，点了却是**改省界几何**（把地并进某个省）。
+             两个同名按钮两种语义 = 用户实测“好像在生造省份”的直接来源。
+             现在这个几何笔刷只出现在“底图编辑”行、并改名“改省界”。 -->
         <button
           :class="{ active: tool === 'provinceLasso' }"
           @click="setTool('provinceLasso')"
@@ -200,7 +200,7 @@
           title="批量铺底 (A) — 在陆地范围内播 N 个点，一次性按 Voronoi 切成 N 块省份：共边无缝、不动海岸线、归属与易主记录自动继承给新块、一整批 = 一条撤销"
         ><Icon name="grid" :size="15"/>批量铺底</button>
         <!-- E（2026-10-11）：用户要的"线跟着笔走、相邻省自动重算" ——
-             手势与「画省份」相同（按住拖一圈），但做的是**改已有边界**而不是新建省。 -->
+             手势与“画省份”相同（按住拖一圈），但做的是**改已有边界**而不是新建省。 -->
         <button
           :class="{ active: tool === 'outline' }"
           data-testid="province-outline-btn"
@@ -210,16 +210,16 @@
       <!-- ═══ 描轮廓（E）：区域 = 笔迹围出的那块；默认**改判给贴得最紧的邻省** ═══ -->
       <div class="tool-group brush-settings" v-if="tool === 'outline'" data-testid="outline-settings">
         <span class="row-hint"
-              title="这套语义是「先并给目标省、再从被碰到的省挖掉」：贴着边界描时基本无缝；区域若探进别省地盘，那块地会两省各留一份（会如实提示百分比）">
+              title="这套语义是“先并给目标省、再从被碰到的省挖掉”：贴着边界描时基本无缝；区域若探进别省地盘，那块地会两省各留一份（会如实提示百分比）">
           沿边界拖一圈 → 松手改判
         </span>
         <label class="check-label" data-testid="outline-to-neighbor"
-               title="开（默认）：围住的那块地改判给**贴着描的那个邻省**——这是「把这块地划过去」。关：归**它原本所属的省**（等于原地修形状，通常看不出变化）">
+               title="开（默认）：围住的那块地改判给**贴着描的那个邻省**——这是“把这块地划过去”。关：归**它原本所属的省**（等于原地修形状，通常看不出变化）">
           <input type="checkbox" v-model="outlineToNeighbor" /> 改判给邻省
         </label>
       </div>
       <!-- ═══ 涂归属（2026-10-20 重做）：**只改势力归属，不动省界几何** ═══
-           旧的同名按钮是几何笔刷（把笔迹并进所选省份），用户实测「好像在生造省份」。
+           旧的同名按钮是几何笔刷（把笔迹并进所选省份），用户实测“好像在生造省份”。
            这一块是日常剧本编辑的主路径：选势力 → 按住涂 → 碰到的省一次改归属。 -->
       <div class="tool-group brush-settings" v-if="tool === 'ownerBrush'" data-testid="owner-brush-settings">
         <span class="row-label">涂归属：</span>
@@ -228,7 +228,7 @@
           <template v-else-if="selectedPolity">当前势力：
             <b :style="{ color: selectedPolity.color || undefined }">{{ selectedPolity.name }}</b>
           </template>
-          <template v-else>当前势力：<b>未选</b>（点地图上方「势力：」里的色块）</template>
+          <template v-else>当前势力：<b>未选</b>（点地图上方“势力：”里的色块）</template>
         </span>
         <label class="check-label" title="笔刷半径（屏幕像素）">
           半径
@@ -238,7 +238,7 @@
         <span class="row-hint">按住涂 · 一笔一条撤销 · Alt 吸管</span>
       </div>
       <!-- ═══ 笔刷建省（2026-10-22）：像画图软件一样涂出一块地 ═══
-           它不选目标省 —— 每一笔都**新建**一个省（要改已有省就切「改省界」）。 -->
+           它不选目标省 —— 每一笔都**新建**一个省（要改已有省就切“改省界”）。 -->
       <div class="tool-group brush-settings" v-if="tool === 'provincePaint'" data-testid="province-paint-settings">
         <span class="row-label">笔刷建省：</span>
         <label class="check-label" title="笔刷半径（屏幕像素）—— 画布缩放时手感一致；世界半径 = 像素 / 当前缩放">
@@ -247,7 +247,7 @@
           {{ provBrushRadius }}px
         </label>
         <span class="row-hint ready"
-              title="新省只长在空地上：已有省份覆盖的地方涂不上（免得省份压叠）。要改已有省份的形状请用「改省界」。">
+              title="新省只长在空地上：已有省份覆盖的地方涂不上（免得省份压叠）。要改已有省份的形状请用“改省界”。">
           按住涂 → 松手成一个省 · 一笔一条撤销
         </span>
       </div>
@@ -270,15 +270,15 @@
           </label>
         </template>
         <!-- 🔴 锁定海岸线（默认开）：涂归属 / 圈选只在**已有省份范围内**易手，绝不扩张到海面 ——
-             海岸线只由「底图编辑」调整（暮雨 2026-10-09 明确要求：「平时维持锁定状态」）。 -->
+             海岸线只由“底图编辑”调整（暮雨 2026-10-09 明确要求：“平时维持锁定状态”）。 -->
         <label class="check-label" data-testid="lock-coast"
-               title="开启后：涂归属 / 圈选只在已有省份范围内生效，「不会改动海岸线」；要改海岸线请到「底图编辑」里做">
+               title="开启后：涂归属 / 圈选只在已有省份范围内生效，“不会改动海岸线”；要改海岸线请到“底图编辑”里做">
           <input type="checkbox" v-model="lockCoast" /> 锁定海岸线
         </label>
-        <button @click="addEmptyProvince" title="新建一个空省份 —— 用「底图编辑 → 改省界」笔刷涂出它的地盘即可"><Icon name="plus" :size="13"/> 新建省份</button>
+        <button @click="addEmptyProvince" title="新建一个空省份 —— 用“底图编辑 → 改省界”笔刷涂出它的地盘即可"><Icon name="plus" :size="13"/> 新建省份</button>
         <button @click="clearAllProvinceShapes" title="清空所有省份的边界（一次撤销可回退）"><Icon name="refresh-cw" :size="13"/> 重置省界</button>
         <!-- 🔴 P2：边界是**矢量布尔**的结果（目标省并集 / 相交省差集），不经过任何格点 —— -->
-        <!-- 旧版那层「格点即时反馈」已删除：格子是 10525 点海岸线被退化成 22 点的根因 -->
+        <!-- 旧版那层“格点即时反馈”已删除：格子是 10525 点海岸线被退化成 22 点的根因 -->
         <span class="row-hint ready"
               title="涂完抬手即按多边形布尔改边界：目标省并集、相交省差集，几何只可能更精细">
           矢量边界（精确）
@@ -349,15 +349,15 @@
 
       <!-- ═══ 河流编辑器：节点操作（2026-10-17）═══════════════════════════════════
            为什么必须做成**带可见文字的常驻行**（而不是只留快捷键）：节点编辑的三个能力
-           （加拐点 / 删节点 / 删整条）在没有可见文字时等于没有 —— 本项目的「可发现性纪律」：
+           （加拐点 / 删节点 / 删整条）在没有可见文字时等于没有 —— 本项目的“可发现性纪律”：
            面板入口必须带可见文字，`title` 要悬停才知道、图标认不出来，都不算。
-           🔴 位置（这里踩过一脚）：它一度被放进「更多」面板里 —— 而**「河流」这个按钮本身
-              就在「更多」里**，用户不展开「更多」时这一行根本不在 DOM 里（真机探针实测
+           🔴 位置（这里踩过一脚）：它一度被放进“更多”面板里 —— 而**“河流”这个按钮本身
+              就在“更多”里**，用户不展开“更多”时这一行根本不在 DOM 里（真机探针实测
               `river-edit-row: false`）。所以与 `.province-row` 同款：挂在 `.toolbar-more`
               **外面**、只随工具出现（它是"当前这条河的选项"，不是"工具入口"）。 -->
-      <!-- 🔴 2026-10-17 第八修·再修（用户：「河流删除也非常不好用」）：
+      <!-- 🔴 2026-10-17 第八修·再修（用户：“河流删除也非常不好用”）：
             选中一条河之后，**不管当前是什么工具**都要有一条可见的操作行。
-            此前只有「河流」工具里才有这一行 —— 用户用「选择」工具点中河之后
+            此前只有“河流”工具里才有这一行 —— 用户用“选择”工具点中河之后
             界面上**没有任何删除入口**，只能猜着按 Delete（他报的正是这个）。
             这一行只放三个动作：删这条 / 进河流工具拖节点 / 取消选中。 -->
       <div
@@ -403,7 +403,7 @@
         <label class="row-label">河流编辑：</label>
         <template v-if="selectedRiver">
           <span class="river-edit-name" :title="`当前选中：${selectedRiver.name || '未命名'}（${(selectedRiver.points || []).length} 个节点）`">
-            已选中「{{ selectedRiver.name || '未命名' }}」· {{ (selectedRiver.points || []).length }} 点
+            已选中“{{ selectedRiver.name || '未命名' }}”· {{ (selectedRiver.points || []).length }} 点
           </span>
           <button
             data-testid="river-del-node"
@@ -431,7 +431,7 @@
         </span>
       </div>
 
-      <!-- 「更多」（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
+      <!-- “更多”（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
       <div v-if="moreOpen" class="toolbar-more">
         <div class="toolbar-row">
           <label class="row-label">高级工具：</label>
@@ -469,11 +469,11 @@
                   <button 
                 :class="{ active: autoRivers.length > 0 }" 
                 @click="generateAndShowRivers"
-                title="自动河流（预览）— 按地形高度从高到低追踪入海路径。⚠️ 结果只画在画布上、**不会存进项目**：切走视图或换底图就没了；要长期保留请用「河流 (W)」手画。"
+                title="自动河流（预览）— 按地形高度从高到低追踪入海路径。⚠️ 结果只画在画布上、**不会存进项目**：切走视图或换底图就没了；要长期保留请用“河流 (W)”手画。"
               ><Icon name="waves" :size="15"/>自动河流</button>
                   <!-- 🔴 源头高度闸门（2026-10-14 第三轮）：实测在这份地形上**它决定条数**
                        （默认 60 → 3 条；40 → 67 条）。做成一枚**紧挨着按钮**的数字输入，
-                       因为它与"点一下自动河流"是同一个动作的两个参数，藏进『更多』里
+                       因为它与"点一下自动河流"是同一个动作的两个参数，藏进‘更多’里
                        等于还是够不着（本项目反复踩的正是这一条）。 -->
                   <input
                 v-model.number="riverSourceHeight"
@@ -490,26 +490,26 @@
                 v-model="riverSource"
                 data-testid="river-source"
                 class="river-source-select"
-                title="画哪一套河 —— 实测自动河与底图自带河是**两套不同的水系**（中位相距约 1.3 格）。「两套都画」= 一直以来的行为；想只留一套就选另一个（自动河要先点「自动河流」生成）"
+                title="画哪一套河 —— 实测自动河与底图自带河是**两套不同的水系**（中位相距约 1.3 格）。“两套都画”= 一直以来的行为；想只留一套就选另一个（自动河要先点“自动河流”生成）"
               >
                 <option value="both">河流：两套都画</option>
                 <option value="base">只画底图自带</option>
                 <option value="auto">只画自动生成</option>
               </select>
-                  <!-- 🔴 2026-10-17 第八修·再修（用户：「这个长河受限有一大串很难看清的一闪而过的文本，
-                        放在已经很拥挤的工具栏里真的有必要吗？」）—— **没必要，已移除**。
-                        原先这里常驻一枚「⚠️ 长河受限」标签，状态栏还会追一句「悬停看原因」。
+                  <!-- 🔴 2026-10-17 第八修·再修（用户：“这个长河受限有一大串很难看清的一闪而过的文本，
+                        放在已经很拥挤的工具栏里真的有必要吗？”）—— **没必要，已移除**。
+                        原先这里常驻一枚“⚠️ 长河受限”标签，状态栏还会追一句“悬停看原因”。
                         问题是：① 工具栏本来就挤，多一个角标只会让人以为界面坏了；
                         ② 真正的信息（这份地形为什么长不出长河）**长到放不进 tooltip**，
                            而且它是一句"解释"不是"动作"，常驻在操作区没有价值；
-                        ③ 现在已经有**真正的解法**（「按轮廓生成地形」）—— 提示该变成一次性的指路，
+                        ③ 现在已经有**真正的解法**（“按轮廓生成地形”）—— 提示该变成一次性的指路，
                            不该长期占位。
                         ⇒ 只在**生成回执里说一次**（见 `generateAndShowRivers`），做完就消失。 -->
                   <!-- 🔴 追踪前先平滑（2026-10-16）：实测这是唯一能让河"长出主干"的方向
                        （最长河 140→270 世界单位）。默认关 = 零行为变更。 -->
                   <label
                 class="check-label river-smooth-label"
-                title="追踪前先平滑地形 —— 实测能让最长河道翻倍（140→270 世界单位）、河网铺开全岛。原理：抹掉粗网格上的微洼地，让水顺着大谷走。⚠️ 代价：平滑会压低山头，源头变少 → 勾上时会**自动把「源头高度」降到 40**（否则可能一条河都没有）"
+                title="追踪前先平滑地形 —— 实测能让最长河道翻倍（140→270 世界单位）、河网铺开全岛。原理：抹掉粗网格上的微洼地，让水顺着大谷走。⚠️ 代价：平滑会压低山头，源头变少 → 勾上时会**自动把“源头高度”降到 40**（否则可能一条河都没有）"
               ><input type="checkbox" v-model="riverSmooth" data-testid="river-smooth" />平滑</label>
                   <button 
                 :class="{ active: tool === 'relief' }" 
@@ -616,9 +616,9 @@
           </option>
         </select>
         <button @click="triggerMapImport" title="导入 .map 底图 —— 同名且一笔未改：只补缺；同名且改过：重导为新底图并迁移旧归属"><Icon name="plus" :size="15"/></button>
-        <!-- 2026-10-22：**已有底图时也能新建空底图**。以前只有「空项目空态」能建，
+        <!-- 2026-10-22：**已有底图时也能新建空底图**。以前只有“空项目空态”能建，
              已有底图的项目只能导 .map —— 用户想试笔刷却没有干净画布，只能对着真实底图下手
-             （「连新底图都建不了」/「怕改坏不敢测」的直接来源）。 -->
+             （“连新底图都建不了”/“怕改坏不敢测”的直接来源）。 -->
         <button
           data-testid="basemap-add-empty"
           :disabled="store.isReadOnly"
@@ -661,8 +661,8 @@
           @click="triggerCoastlineRebuild"
         ><Icon name="mountain" :size="15"/></button>
         <!-- A1（2026-09-24）：底图的高度图此前**只有 .map 导入**一条来源 —— 新建的底图里
-             高度/群系/文化/宗教笔刷与一键派生全都「点了没反应」（没有网格 → 直接 return）。
-             这个按钮补上「从零开始画」，同时它也是「剧情上已毁灭、不打算再建行星的星球」
+             高度/群系/文化/宗教笔刷与一键派生全都“点了没反应”（没有网格 → 直接 return）。
+             这个按钮补上“从零开始画”，同时它也是“剧情上已毁灭、不打算再建行星的星球”
              唯一可走的路径：**不绑定行星，底图自己持有一份高度图**。 -->
         <button
           v-if="baseMapCanCreateHeightmap"
@@ -670,9 +670,9 @@
           title="为这张底图创建高度图网格（创建后即可用高度 / 群系 / 文化 / 宗教笔刷与一键派生）"
           @click="createBaseMapHeightmap"
         ><Icon name="layers" :size="15"/>建高度图</button>
-        <!-- 🔴 2026-10-17 第八修·改向（暮雨：「司天自身的编辑能力必须过硬，**不要指望靠
-              用户导出高度数据地图来救河流生成**」）。
-              上面那个「建高度图」建出来的是一张**全 0 的平地**（h 全 0 < 海平面 20），
+        <!-- 🔴 2026-10-17 第八修·改向（暮雨：“司天自身的编辑能力必须过硬，**不要指望靠
+              用户导出高度数据地图来救河流生成**”）。
+              上面那个“建高度图”建出来的是一张**全 0 的平地**（h 全 0 < 海平面 20），
               于是自建底图的完整路径是：画大陆 → 建高度图 → 点自动河流 → **永远是 0 条河**
               （平地没有坡，水不知道该往哪流），且不报错。这就是"核心能力只对外部导入的
               地图可用"的真身。
@@ -725,13 +725,13 @@
           @click="toggleDerivePanel"
         ><Icon name="users" :size="15"/>派生</button>
         <!-- P5（2026-10-14）：高度图**分辨率**。
-             真实来由：用户实测「地形模模糊糊」「高度图分辨率帮我调整。注意性能」。
+             真实来由：用户实测“地形模模糊糊”“高度图分辨率帮我调整。注意性能”。
              量出来的事实是源网格 133×75 / spacing 14.4，在 1900×1080 上每格约 3.6 屏幕像素
              —— 这是**数据分辨率**，不是渲染 bug。唯一真正有效的做法是把格子变密。
 
-             🔴 2026-10-15：**必须带可见文字**。第一版只有一枚 `grid` 图标，而「更多」里
+             🔴 2026-10-15：**必须带可见文字**。第一版只有一枚 `grid` 图标，而“更多”里
              它左右邻居全都有文字（拆分 / ⊕合并 / 删除 / 高度 / 群系 …）→ 暮雨实测
-             「分辨率按钮不知道在哪里，『更多』中没有找到」。诊断（`test_xdiag_resample_button`）
+             “分辨率按钮不知道在哪里，‘更多’中没有找到”。诊断（`test_xdiag_resample_button`）
              证实按钮**一直在**（`data-testid="basemap-resample"`），是**看不见名字**。
              纪律：按钮的可发现性不能只靠 `title`（要悬停才知道）+ 图标（认不出来）。 -->
         <button
@@ -768,7 +768,7 @@
             <option :value="3">半径 3 格</option>
           </select>
           <button class="rp-btn" data-testid="smooth-apply" @click="applySmooth">平滑地形</button>
-          <span class="rp-hint">平滑只改高度；气候/群系要另点「重算派生图层」</span>
+          <span class="rp-hint">平滑只改高度；气候/群系要另点“重算派生图层”</span>
         </div>
         <div class="rp-actions">
           <button
@@ -787,7 +787,7 @@
       </div>
 
       <!-- P0-1：地形生成参数面板（**浮层**：2026-10-25 实测被左侧剧本列表的 `slp-empty` 盖住，
-           真人点不到「应用」——`el.click()` 绕过命中测试所以用例一直绿）。
+           真人点不到“应用”——`el.click()` 绕过命中测试所以用例一直绿）。
            三个生成面板统一 Teleport 到 body + 固定定位 + 高层级，不再受工具栏布局/滚动裁剪影响。 -->
       <Teleport to="body">
         <div v-if="terrainGenOpen" class="gen-float" data-testid="terrain-gen-wrap">
@@ -860,10 +860,10 @@
         </div>
       </Teleport>
 
-      <!-- 外交表（N3a-2，2026-11-02）：浮层，点「外交」开/关。
+      <!-- 外交表（N3a-2，2026-11-02）：浮层，点“外交”开/关。
            ⚠️ 这里**不用 `<Teleport to="body">`**（同目录其它浮层是那个写法）：2026-11-02 实测，
               在本仓的无头 Edge 回归环境里 Teleport 的子节点一个都进不了 body（连早就交付的
-              派生/FMG 浮层也一起不出现），于是「外交」点了没反应、也没法截图验收。
+              派生/FMG 浮层也一起不出现），于是“外交”点了没反应、也没法截图验收。
               改用 `fixed` + `z-[80]` 直接挂在组件树里：位置一样，且 **DOM 里能查到**。
               关闭时 v-if 移除，DOM 里零节点，不会抢画布指针事件（开着时只有卡片本身可点）。 -->
       <div v-if="diplomacyOpen" class="fixed inset-0 z-[80] pointer-events-none" data-testid="diplomacy-wrap">
@@ -906,13 +906,13 @@
         <button
           data-testid="basemap-bind-planet"
           :disabled="!pickPlanetId || terrainInfo.mode === 'following'"
-          title="让这张底图**跟随**该行星的地形（共用同一份：在剧本里涂山会改到行星，反之亦然）—— 适合与行星同步构建的当代地图。历史存档请改用「冻结导入」"
+          title="让这张底图**跟随**该行星的地形（共用同一份：在剧本里涂山会改到行星，反之亦然）—— 适合与行星同步构建的当代地图。历史存档请改用“冻结导入”"
           @click="bindTerrainToPlanet"
         >跟随</button>
         <button
           v-if="terrainInfo.mode === 'following'"
           data-testid="basemap-unbind"
-          title="解除跟随（行星那份不受影响；本底图回到「没有地形」，可再用「冻结导入」拿一份副本）"
+          title="解除跟随（行星那份不受影响；本底图回到“没有地形”，可再用“冻结导入”拿一份副本）"
           @click="unbindTerrainFromPlanet"
         >解绑</button>
       </div>
@@ -935,7 +935,7 @@
           <option value="base">底图编辑</option>
           <option value="scenario">剧本模式</option>
         </select>
-        <!-- 🔴 两个模式**工具栏是同一套**，用户看不出差别（暮雨实测：「根本看不懂」）。
+        <!-- 🔴 两个模式**工具栏是同一套**，用户看不出差别（暮雨实测：“根本看不懂”）。
              它们真正的区别在**着色与图层**：底图编辑按群系看自然面貌，剧本模式按势力看政治版图。
              一句话写在旁边，省得用户来回切着猜。 -->
         <span class="row-hint" data-testid="view-mode-hint" :title="viewModeHint">{{ viewModeHint }}</span>
@@ -960,10 +960,10 @@
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
         <label class="check-label" title="显示导入的城镇名 / 河流名（FMG 数据多为英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
-        <label class="check-label" title="显示「地形注记」里的山系/海域名（沿走向排字；名字要自己给：检测山脊或手动画一条，见「地形注记」面板）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
+        <label class="check-label" title="显示“地形注记”里的山系/海域名（沿走向排字；名字要自己给：检测山脊或手动画一条，见“地形注记”面板）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
         <label class="check-label" title="EU4 式分级标注：缩小看势力名（可简称），放大再加上省名"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
-        <label class="check-label" title="放大到最详档时显示省名（未命名的省显示「新省份 N」，是改名的线索）"><input type="checkbox" v-model="showProvinceNames" data-testid="toggle-province-names" /> 省名</label>
-        <label class="check-label" title="只显示你自己起过名的省 —— 程序生成的「新省份 N」整层不画（415 省项目里通常只有几十个有真名，其余会把画面糊满）"><input type="checkbox" v-model="showNamedProvincesOnly" data-testid="toggle-named-provinces" /> 仅已命名省</label>
+        <label class="check-label" title="放大到最详档时显示省名（未命名的省显示“新省份 N”，是改名的线索）"><input type="checkbox" v-model="showProvinceNames" data-testid="toggle-province-names" /> 省名</label>
+        <label class="check-label" title="只显示你自己起过名的省 —— 程序生成的“新省份 N”整层不画（415 省项目里通常只有几十个有真名，其余会把画面糊满）"><input type="checkbox" v-model="showNamedProvincesOnly" data-testid="toggle-named-provinces" /> 仅已命名省</label>
         <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
       </div>
       <div class="tool-group">
@@ -979,13 +979,13 @@
         </select>
         <label class="check-label"><input type="checkbox" v-model="showRivers" /> 河流</label>
         <label class="check-label"><input type="checkbox" v-model="showRoutes" /> 道路</label>
-        <!-- 🔴 山体阴影（2026-10-17 第七修）：用户「地形怎么3D表现」的落点。
-             默认**关**（零行为变更）。只对「陆海底色 / 地形高度」两档生效 ——
+        <!-- 🔴 山体阴影（2026-10-17 第七修）：用户“地形怎么3D表现”的落点。
+             默认**关**（零行为变更）。只对“陆海底色 / 地形高度”两档生效 ——
              温度/降水是**专题图**，给它们加阴影会把数值读成地形（那是错的口径）。 -->
         <label
           class="check-label terrain-shade-label"
           data-testid="terrain-shade"
-          title="山体阴影 —— 按相邻格高差算明暗，让地形「立起来」（制图惯例：光从左上来）。默认关；只对「陆海底色 / 地形高度」生效。⚠️ 我们的高度图可能是粗网格（例如 133×75），阴影会跟着粗 —— 这是数据本身的粒度，不是渲染问题。"
+          title="山体阴影 —— 按相邻格高差算明暗，让地形“立起来”（制图惯例：光从左上来）。默认关；只对“陆海底色 / 地形高度”生效。⚠️ 我们的高度图可能是粗网格（例如 133×75），阴影会跟着粗 —— 这是数据本身的粒度，不是渲染问题。"
         ><input type="checkbox" v-model="terrainShade" data-testid="terrain-shade-box" /> 立体</label>
       </div>
       <div class="tool-group">
@@ -1003,13 +1003,13 @@
       <div class="tool-group">
         <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/></button>
         <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/></button>
-        <!-- 外交表（N3a-2，2026-11-02）：回答「某年 A 与 B 什么关系」——
-             关系标签 / 该年生效事件 / 「为什么」+ 势力关系矩阵。**只读**（不走 undo、不写盘）。
-             与「势力谱系」分工：谱系管继承与易主年份，这里管两两关系（战争/同盟/臣属…）。 -->
+        <!-- 外交表（N3a-2，2026-11-02）：回答“某年 A 与 B 什么关系”——
+             关系标签 / 该年生效事件 / “为什么”+ 势力关系矩阵。**只读**（不走 undo、不写盘）。
+             与“势力谱系”分工：谱系管继承与易主年份，这里管两两关系（战争/同盟/臣属…）。 -->
         <button
           data-testid="diplomacy-open"
           :class="{ active: diplomacyOpen }"
-          title="外交 —— 查「某年 A 与 B 什么关系」：关系 / 该年生效事件 / 为什么，附势力关系矩阵（只读，不改任何数据）"
+          title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么，附势力关系矩阵（只读，不改任何数据）"
           @click="diplomacyOpen = !diplomacyOpen"
         ><Icon name="flag" :size="15"/>外交</button>
         <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/></button>
@@ -1030,7 +1030,7 @@
     <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代）
          ⚠️ 组件契约仍是 `year: Number`（轨道位置与播放是年尺度），**月日只由父级 tlDate 持有**；
             从轨道拖/点回来时只给得到年 → 月日归 null（= 该年 1 月 1 日），这是刻意的：
-            轨道拖拽表达的本来就是「到某一年」，要精确到日请用切片点或面板录入。 -->
+            轨道拖拽表达的本来就是“到某一年”，要精确到日请用切片点或面板录入。 -->
     <scenario-timeline
       v-if="timeline.years.length"
       :timeline="timeline"
@@ -1046,16 +1046,16 @@
       @save-slice-point="onSaveSlicePoint"
     />
 
-    <!-- 省份多选批量条（2026-10-02）：选中 ≥1 个省时出现，把「一次一批」接上 batchSetOwnership -->
+    <!-- 省份多选批量条（2026-10-02）：选中 ≥1 个省时出现，把“一次一批”接上 batchSetOwnership -->
     <div v-if="hasMultiSelection" class="province-batch-bar" data-testid="province-batch-bar">
       <span class="pbb-count" data-testid="pbb-count">已选 <b>{{ selectedProvinceIds.length }}</b> 省</span>
       <span class="pbb-sep"></span>
       <button class="pbb-primary" data-testid="pbb-assign"
               :disabled="store.isReadOnly || !selectedPolity"
               :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
-                : (selectedPolity ? `把这 ${selectedProvinceIds.length} 个省一次指派给「${selectedPolity.name}」（一条撤销）`
+                : (selectedPolity ? `把这 ${selectedProvinceIds.length} 个省一次指派给“${selectedPolity.name}”（一条撤销）`
                   : '先在上面的色板里选一个势力，再点这里批量指派')"
-              @click="onBatchAssign">指派给{{ selectedPolity ? `「${selectedPolity.name}」` : '…' }}</button>
+              @click="onBatchAssign">指派给{{ selectedPolity ? `“${selectedPolity.name}”` : '…' }}</button>
       <button class="pbb-btn" data-testid="pbb-clear"
               :disabled="store.isReadOnly"
               :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '把这些省的势力归属清空（一条撤销）'"
@@ -1088,16 +1088,16 @@
         :class="{ active: clearOwnerMode }"
         data-testid="polity-clear"
         @click="selectClearOwnership()"
-        title="清除归属：选中它之后，用「涂归属」涂过 / 用油漆桶点过的省份会变成**无主**（可 Ctrl+Z 撤回）"
+        title="清除归属：选中它之后，用“涂归属”涂过 / 用油漆桶点过的省份会变成**无主**（可 Ctrl+Z 撤回）"
       ><Icon name="x" :size="14"/></div>
       <!-- 外交表快速入口（N3a-2）：剧本模式 + 已选剧本时常驻在势力色板这一行。
-           与「更多 → 外交」是同一个面板的两条路（能力一份实现、入口可以有两个 —— 与「剧本管理」同款）；
-           这里点开就是"选甲 / 选乙"两步，不用先展开「更多」。 -->
+           与“更多 → 外交”是同一个面板的两条路（能力一份实现、入口可以有两个 —— 与“剧本管理”同款）；
+           这里点开就是"选甲 / 选乙"两步，不用先展开“更多”。 -->
       <button
         class="polity-add diplomacy-quick"
         data-testid="diplomacy-open-palette"
         :class="{ active: diplomacyOpen }"
-        title="外交 —— 查「某年 A 与 B 什么关系」：关系 / 该年生效事件 / 为什么 + 势力关系矩阵（只读）"
+        title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么 + 势力关系矩阵（只读）"
         @click="diplomacyOpen = !diplomacyOpen"
       ><Icon name="flag" :size="13"/> 外交</button>
       <!-- 新建势力（2026-10-01）：此前 polities **只能由 Azgaar .map 导入带进来** ——
@@ -1106,7 +1106,7 @@
       <button class="polity-add" data-testid="add-polity" :disabled="store.isReadOnly"
               :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '新建一个势力（自定义名称与配色，可撤销）'"
               @click="onAddPolity"><Icon name="plus" :size="13"/> 势力</button>
-      <!-- A8：选中势力后可改「显示名称 / 简称」—— .map 带来的是 FMG 国名，用户要换成自己世界的叫法。
+      <!-- A8：选中势力后可改“显示名称 / 简称”—— .map 带来的是 FMG 国名，用户要换成自己世界的叫法。
            简称只在缩小档使用（放大档与中档都用全名），留空即回落全名。 -->
       <div v-if="selectedPolity" class="polity-editor" data-testid="polity-editor">
         <label>名称
@@ -1135,13 +1135,13 @@
     <!-- 画布 -->
     <div class="scenario-canvas-wrap" ref="canvasWrap">
       <canvas ref="canvas"></canvas>
-      <!-- 2026-10-20：删掉「① 右侧选一个势力 ② 点涂归属 ③ 在地图上涂」的浮动引导条。
-           理由（用户实测）：① 色板不在右侧（它在地图上方的「势力：」行），文案是错的；
+      <!-- 2026-10-20：删掉“① 右侧选一个势力 ② 点涂归属 ③ 在地图上涂”的浮动引导条。
+           理由（用户实测）：① 色板不在右侧（它在地图上方的“势力：”行），文案是错的；
            ② 三步流程本身就是噪音——色板、工具、地图都在眼前，不需要一段解说占着画布。
            工具自己的状态（当前势力 / 未选）已经在工具栏那一行里，不再重复。 -->
       <!-- C（2026-10-11）：批量铺底进行中的**遮罩**。
            为什么必须有它（不是装饰）：切 500 块 = 逐块多边形布尔，实测 ~19s 全在主线程上；
-           这段时间里用户在画布上点/拖，事件只是排队 → 回来一起执行，观感是「越点越卡」，
+           这段时间里用户在画布上点/拖，事件只是排队 → 回来一起执行，观感是“越点越卡”，
            而且用户会以为程序死了。遮罩做两件事：① 吃掉所有指针事件（不让操作排队）；
            ② 明确告诉他"在算什么、算到第几块、可以取消"。 -->
       <div v-if="batchBusy" class="scenario-busy-overlay" data-testid="scenario-busy-overlay">
@@ -1149,21 +1149,21 @@
           <Icon name="loader" :size="22" class="busy-spin"/>
           <div class="busy-title">正在切分省份…</div>
           <div class="busy-sub" data-testid="busy-progress">{{ batchStatus || '准备中' }}</div>
-          <div class="busy-hint">期间画布不响应是正常的（正在算几何）；不想等就点「取消」，省份与归属都不会改动。</div>
+          <div class="busy-hint">期间画布不响应是正常的（正在算几何）；不想等就点“取消”，省份与归属都不会改动。</div>
           <button class="busy-cancel" @click="cancelBatchSubdivide()" data-testid="busy-cancel">
             <Icon name="x" :size="13"/> 取消切分
           </button>
         </div>
       </div>
-      <!-- 没有可用底图：说清现状 + 差异 + 去处（不是「点了没反应」）
+      <!-- 没有可用底图：说清现状 + 差异 + 去处（不是“点了没反应”）
            P-0 实测：只读态（未打开项目）时底图导入被写闸门拒绝 → 底图永远进不来，
-           此时画布是空的，用户必须知道原因是「没开项目」而不是「程序卡住了」。 -->
+           此时画布是空的，用户必须知道原因是“没开项目”而不是“程序卡住了”。 -->
       <div v-if="!baseMap" class="scenario-empty-hint" data-testid="scenario-empty-hint">
         <template v-if="store.isReadOnly">
           <p class="eh-title">只读：没有可用底图</p>
           <p class="eh-line">
             当前未打开项目，剧本与底图不会载入，也不会保存。
-            先到工具栏「项目」面板新建或打开一个项目，再回到这里绘制。
+            先到工具栏“项目”面板新建或打开一个项目，再回到这里绘制。
           </p>
         </template>
         <template v-else>
@@ -1172,9 +1172,9 @@
             剧本画在底图上（省份 → 归属 → 时期）。先导入一份 Azgaar <b>.map</b> 底图，
             也可以直接选个绘制/笔刷工具画一张空底图。
           </p>
-          <!-- 🔴 这里必须有**按钮**，不能只写"用上方「+」"（P0-3，2026-10-17 第三轮）：
-               「+」在「更多」面板里 = 提示指向一个用户当刻**看不见**的入口 ——
-               本项目已在行星视图踩过同一条（交接文档 §2.2「.map 导入入口不可达」）。 -->
+          <!-- 🔴 这里必须有**按钮**，不能只写"用上方“+”"（P0-3，2026-10-17 第三轮）：
+               “+”在“更多”面板里 = 提示指向一个用户当刻**看不见**的入口 ——
+               本项目已在行星视图踩过同一条（交接文档 §2.2“.map 导入入口不可达”）。 -->
           <div class="eh-actions">
             <button class="eh-btn primary" data-testid="empty-import-map"
                     :disabled="store.isReadOnly"
@@ -1188,21 +1188,21 @@
         </template>
       </div>
 
-      <!-- 有底图、但一个省都没有：把「第一笔怎么落」摆在画布中央（2026-10-22 用户实测）。
-           他说"可以建空底图了，但是不知道怎么写，使用手册看不懂"——手册里写的「主行画省份」
-           其实要先切「底图编辑」，日常模式里根本没有这个按钮。 -->
+      <!-- 有底图、但一个省都没有：把“第一笔怎么落”摆在画布中央（2026-10-22 用户实测）。
+           他说"可以建空底图了，但是不知道怎么写，使用手册看不懂"——手册里写的“主行画省份”
+           其实要先切“底图编辑”，日常模式里根本没有这个按钮。 -->
       <div v-if="baseMap && provinceCount === 0 && tool === 'select' && !emptyHintDismissed && !batchBusy && !renderPaused"
            class="empty-province-hint" data-testid="empty-province-hint">
-        <button class="eph-close" data-testid="empty-province-dismiss" title="先不看这张提示（随时可用左上「底图编辑」回来）"
+        <button class="eph-close" data-testid="empty-province-dismiss" title="先不看这张提示（随时可用左上“底图编辑”回来）"
                 @click="emptyHintDismissed = true">×</button>
         <template v-if="store.isReadOnly">
           <p class="eph-title">只读：不能画省份</p>
-          <p class="eph-note">{{ store.readOnlyReason }}（先到「项目」面板新建 / 打开一个项目）</p>
+          <p class="eph-note">{{ store.readOnlyReason }}（先到“项目”面板新建 / 打开一个项目）</p>
         </template>
         <template v-else>
           <p class="eph-title">这张底图还没有省份</p>
           <ol class="eph-steps">
-            <li><b>点下面的「开始画省份」</b>（＝ 左上「底图编辑」+ 主行「画省份」）</li>
+            <li><b>点下面的“开始画省份”</b>（＝ 左上“底图编辑”+ 主行“画省份”）</li>
             <li>在画布上<b>按住左键，绕一圈</b>画一个闭合形状</li>
             <li><b>松手</b> → 这块就是一个省（右侧可改名）</li>
           </ol>
@@ -1211,14 +1211,14 @@
           <button class="eph-btn" data-testid="empty-province-brush" @click="startPaintingProvince()">像画图一样涂一块（笔刷建省）</button>
           <p class="eph-note">
             画歪了 Ctrl+Z；没围成圈的一笔会被拒绝（不会造怪形状）。第二个省贴着第一个的边走会自动吸住。
-            <br />「笔刷建省」不用闭合：按住左键像涂色一样抹，松手抹过的范围就是一个省。
+            <br />“笔刷建省”不用闭合：按住左键像涂色一样抹，松手抹过的范围就是一个省。
           </p>
         </template>
       </div>
 
       <!-- 🔴 渲染护栏的**横幅**（2026-10-14）。
-           为什么不再只放状态栏：用户原话「给我来一个渲染已暂停……后面就什么都看不到了，
-           点什么都没反应，地图出不来，卡死了。一点提示都没有吗？」—— 状态栏那行**确实**在，
+           为什么不再只放状态栏：用户原话“给我来一个渲染已暂停……后面就什么都看不到了，
+           点什么都没反应，地图出不来，卡死了。一点提示都没有吗？”—— 状态栏那行**确实**在，
            但它在一个 12px 的状态栏里、而且用户正在盯的是空白的画布中央。
            现在暂停时在画布正中给一张卡：说明发生了什么、错误原文、以及"继续渲染 / 复制错误"。
            卡片吃掉指针事件（渲染已经停了，画布上的点击本来就没意义）。 -->
@@ -1227,7 +1227,7 @@
         <div class="rp-sub">连续 {{ renderErrorCount }} 帧绘制失败，画布停止刷新（数据没有丢，改动仍在内存里）。</div>
         <pre class="rp-err" data-testid="render-paused-error">{{ renderError }}</pre>
         <div class="rp-hint">
-          常见原因：某个工具刚改了数据但画布画不动它。可以先点「继续渲染」重试；
+          常见原因：某个工具刚改了数据但画布画不动它。可以先点“继续渲染”重试；
           若立刻又暂停，请把上面的错误原文复制反馈（右键可复制）。
         </div>
         <div class="rp-actions">
@@ -1237,21 +1237,21 @@
       </div>
 
       <!-- ══ 历史剧本站首：剧本列表常驻左栏（2026-10-09）═══════════════════════════
-           暮雨实测「根本找不到在哪选剧本 / 上一剧本·下一剧本语义不清」——根因是
-           「选择历史时期」这件事在司天只有一个**图标按钮藏在工具栏『更多』里**（打开是弹窗），
+           暮雨实测“根本找不到在哪选剧本 / 上一剧本·下一剧本语义不清”——根因是
+           “选择历史时期”这件事在司天只有一个**图标按钮藏在工具栏‘更多’里**（打开是弹窗），
            而 EU4 里它是进游戏就摆在左边的列表。
-           本面板把那份列表提出来常驻，并把「点一条」定义成**选时期**的完整动作：
+           本面板把那份列表提出来常驻，并把“点一条”定义成**选时期**的完整动作：
            切剧本 + 地图跳到该时期起始年 + 时间轴游标同步（见 selectScenarioAt）。
-           ⚠️ 与「上一剧本/下一剧本」的分工：那两个是**按顺序推进**（翻页），
+           ⚠️ 与“上一剧本/下一剧本”的分工：那两个是**按顺序推进**（翻页），
               这个列表是**选择**（跳转）—— 两种语义都留，别互相取代。 -->
       <div class="scenario-list-panel" :class="{ collapsed: !showScenarioList }" data-testid="scenario-list-panel">
         <div class="slp-head">
           <span class="slp-title">历史剧本</span>
           <span class="slp-hint">选一条，地图切到该时期</span>
-          <!-- 换剧本（P0-1，2026-10-17 第三轮）：此前从编辑器回卡片墙只能「返回世界」再点一次
-               「历史剧本」（三步），而「返回」的语义是**离开剧本域**（去世界选择页），
+          <!-- 换剧本（P0-1，2026-10-17 第三轮）：此前从编辑器回卡片墙只能“返回世界”再点一次
+               “历史剧本”（三步），而“返回”的语义是**离开剧本域**（去世界选择页），
                不该兼职"选另一个剧本"。这里给一条**一步回到卡片墙**的路。
-               ⚠️ 放在 `.slp-head` 而不是工具栏主行：主行受 P3「恰好 6 个可见控件」闸门管
+               ⚠️ 放在 `.slp-head` 而不是工具栏主行：主行受 P3“恰好 6 个可见控件”闸门管
                （test_65/test_97），而"换剧本"属于剧本导航、与左侧剧本列表同族。 -->
           <button class="slp-picker" data-testid="slp-picker" title="回到剧本选择（卡片墙）换一个时期"
                   @click="$emit('picker')">换剧本</button>
@@ -1269,7 +1269,7 @@
             class="slp-group-select"
             :value="activeGroupId"
             data-testid="scenario-group-switch"
-            title="一组 = 一条独立时间线。切换后左栏、时间轴、播放与切片导出的「全部剧本」都只取这一组。"
+            title="一组 = 一条独立时间线。切换后左栏、时间轴、播放与切片导出的“全部剧本”都只取这一组。"
             @change="switchGroup($event.target.value)"
           >
             <option v-for="g in groupOptions" :key="g.id" :value="g.id">
@@ -1282,7 +1282,7 @@
         </div>
         <template v-if="showScenarioList">
           <div v-if="!sortedScenarios.length" class="slp-empty" data-testid="slp-empty">
-            还没有剧本 —— 打开下方「新建 / 管理剧本…」创建第一个时期。<br />
+            还没有剧本 —— 打开下方“新建 / 管理剧本…”创建第一个时期。<br />
             <b>一个剧本 = 一个时间点的版图快照</b>（谁占了哪些省）。
           </div>
           <div v-else class="slp-list">
@@ -1290,7 +1290,7 @@
                  class="slp-item"
                  :class="{ active: selectedScenario?.id === s.id }"
                  :data-testid="'scenario-list-item-' + i"
-                 :title="`切到「${s.name}」——地图跳到 ${s.era?.startYear || '?'} 年并同步时间轴`"
+                 :title="`切到“${s.name}”——地图跳到 ${s.era?.startYear || '?'} 年并同步时间轴`"
                  @click="selectScenarioAt(s)">
               <div class="slp-row1">
                 <span class="slp-era">{{ s.era?.roman || '·' }}</span>
@@ -1333,7 +1333,7 @@
       <span v-if="provinceHint" class="draw-hint">{{ provinceHint }}</span>
       <span v-if="tool === 'ownerBrush'" class="draw-hint" data-testid="owner-brush-hint">
         <template v-if="clearOwnerMode">涂归属：按住涂 → 清空归属（无主）· 一笔一条撤销</template>
-        <template v-else>涂归属：按住涂 → 碰到的省改成「{{ selectedPolity ? selectedPolity.name : '（未选）' }}」· 一笔一条撤销</template>
+        <template v-else>涂归属：按住涂 → 碰到的省改成“{{ selectedPolity ? selectedPolity.name : '（未选）' }}”· 一笔一条撤销</template>
       </span>
       <span v-if="tool === 'provinceBrush' || tool === 'provinceLasso'" class="draw-hint">
         {{ tool === 'provinceBrush' ? '改省界：按住涂抹 → 整笔并进所选省份（改的是省界形状）' : '自由轮廓：按住画一圈 → 圈内整批划归' }}
@@ -1350,7 +1350,7 @@
       <span v-if="selectedBurg" class="selected-burg">城镇：{{ selectedBurg.name }}（人口 {{ formatPopulation(selectedBurg.population) }}）</span>
       <span v-if="viewMode === 'scenario' && selectedScenario">剧本：{{ selectedScenario.name }}</span>
       <span v-if="timeline.years.length" class="tl-status" data-testid="tl-status"
-            title="「本剧本 N 省易主」= 这一段剧本里会易主的省总数；「已落定 M」= 游标日期之前已经发生过的条数（同省多次易主分别计数）">
+            title="“本剧本 N 省易主”= 这一段剧本里会易主的省总数；“已落定 M”= 游标日期之前已经发生过的条数（同省多次易主分别计数）">
         日期 <b data-testid="tl-date">{{ tlDateText }}</b>
         <template v-if="tlEra > 0"> · 本剧本 <b>{{ tlSettled.total }}</b> 省易主 · 截至本日已落定 <b data-testid="tl-settled">{{ tlSettled.settled }}</b></template>
         <template v-if="tlAxisMode === 'year' && tlInGap"> · <span class="tl-warn">空位（沿用 {{ timeline.scenarios[tlEra].name }}）</span></template>
@@ -1358,7 +1358,7 @@
       <span v-if="exportStatus" class="export-msg" data-testid="export-msg"><Icon name="info" :size="13"/> {{ exportStatus }}</span>
       <span v-if="selectedPolity" class="selected-polity">已选势力：<span class="polity-dot" :style="{ background: selectedPolity.color }"></span>{{ selectedPolity.name }}</span>
       <!-- 保存状态：两条链合并显示（见 script 的 saveDisplay）。
-           失败时**把原因写进文字本身** —— 暮雨实测「只有四个字『保存失败』」；
+           失败时**把原因写进文字本身** —— 暮雨实测“只有四个字‘保存失败’”；
            本状态栏原先连 title 都没有，靠悬停根本看不到原因。 -->
       <span class="save-status" :class="saveDisplay.state"
             :title="saveDisplay.title || saveDisplay.text"
@@ -1385,8 +1385,8 @@
       <div class="ctx-item disabled ctx-province" v-if="contextMenuProvince">
         {{ contextMenuProvince.name }} · {{ contextMenuProvince.biome || '未分类' }}
       </div>
-      <!-- 归属：2026-10-21 用户实测「右键和右上角都看不到归属」。这里必须给**当前日期**的
-           结论（与着色同一口径），无主就明说「无主」，不要留空让人猜。 -->
+      <!-- 归属：2026-10-21 用户实测“右键和右上角都看不到归属”。这里必须给**当前日期**的
+           结论（与着色同一口径），无主就明说“无主”，不要留空让人猜。 -->
       <div class="ctx-item disabled ctx-owner" v-if="contextMenuProvince" data-testid="ctx-province-owner">
         归属：
         <template v-if="contextMenuOwner"><span class="polity-dot" :style="{ background: contextMenuOwner.color }"></span>{{ contextMenuOwner.name }}</template>
@@ -1408,7 +1408,7 @@
         <input ref="provNameInput" :value="selectedProvince.name || ''" @change="onProvinceNameChange" class="props-name" />
         <button @click="showProps = false" class="props-close"><Icon name="x" :size="13"/></button>
       </div>
-      <!-- 归属：2026-10-21 用户实测「看不到归属 / 看不到省份详情」。
+      <!-- 归属：2026-10-21 用户实测“看不到归属 / 看不到省份详情”。
            归属按**时间轴当前日期**显示（与地图着色同一口径 `ownerPolityForProvince`），
            无主就明说；两个按钮都走 store（一条 undo + 写闸门），不在模板里直改活对象。 -->
       <div class="props-row props-owner" v-if="viewMode === 'scenario'" data-testid="province-owner-row">
@@ -1421,13 +1421,13 @@
           <template v-else>无主</template>
         </span>
         <button v-if="selectedProvincePolity" class="props-mini" :disabled="store.isReadOnly"
-                :title="`按当前日期 ${tlDateText} 清空归属（无主；时间轴记一条「该年变无主」，一笔撤销）`"
+                :title="`按当前日期 ${tlDateText} 清空归属（无主；时间轴记一条“该年变无主”，一笔撤销）`"
                 @click="clearSelectedProvinceOwner" data-testid="province-owner-clear">清成无主</button>
         <button v-else class="props-mini" :disabled="store.isReadOnly || !selectedPolity"
-                :title="selectedPolity ? `按当前日期 ${tlDateText} 记为「${selectedPolity.name}」` : '先在色板选一个势力'"
+                :title="selectedPolity ? `按当前日期 ${tlDateText} 记为“${selectedPolity.name}”` : '先在色板选一个势力'"
                 @click="assignSelectedProvinceOwner" data-testid="province-owner-assign">设为当前势力</button>
       </div>
-      <div class="props-sub" v-if="viewMode === 'scenario'">归属随「{{ tlDateText }}」变化（拖时间轴可看不同年份）</div>
+      <div class="props-sub" v-if="viewMode === 'scenario'">归属随“{{ tlDateText }}”变化（拖时间轴可看不同年份）</div>
       <div class="props-row">
         <label>生物群系：</label>
         <select :value="selectedProvince.biome || ''" @change="onProvinceBiomeChange">
@@ -1458,7 +1458,7 @@
       <div class="props-row">
         <label>类型：</label>
         <select :value="selectedProvince.kind === 'sea' ? 'sea' : 'land'" @change="onProvinceKindChange"
-                title="海域省份用海色渲染；陆地/海域是省份级属性（岛与飞地另见「环」）">
+                title="海域省份用海色渲染；陆地/海域是省份级属性（岛与飞地另见“环”）">
           <option value="land">陆地</option>
           <option value="sea">海域</option>
         </select>
@@ -1479,11 +1479,11 @@
       <!-- 资料（读料桥，2026-10-24）：按省名在全库资料里找**候选**。
            实现只有一份：`VaultLoreSection.vue`（省份面板与标记面板共用）——
            这一段只许 `vaultIndexSearch` + `openNote`，不猜、不建、不写；
-           找不到就明说（与「读不到笔记」的可读回落同一口径：不能静默什么都不显示）。 -->
+           找不到就明说（与“读不到笔记”的可读回落同一口径：不能静默什么都不显示）。 -->
       <VaultLoreSection testid="province-vault" :query="selectedProvince.name || ''" />
     </div>
 
-    <!-- 标记属性面板（2026-10-24，第 5 件补「点标记」）
+    <!-- 标记属性面板（2026-10-24，第 5 件补“点标记”）
          🔴 之前标记是"只画不收"的一层：放下时 `askText` 问个名字，之后**点不到它**
          （没有命中测试、没有编辑面板）→ "点标记看资料"根本无从挂起。
          现在：命中测试在 `utils/markerHitTest.js`（唯一实现，只读），本面板只走 store 写口
@@ -1556,7 +1556,7 @@
                       @click="startRenameGroup(g)">改名</button>
               <button v-if="g.id !== DEFAULT_SCENARIO_GROUP" class="sg-btn danger" data-testid="scenario-group-delete"
                       :disabled="store.isReadOnly"
-                      :title="`删除剧本集「${g.name}」—— 组内 ${groupCount(g.id)} 条剧本会退回「默认」，一条剧本都不会删`"
+                      :title="`删除剧本集“${g.name}”—— 组内 ${groupCount(g.id)} 条剧本会退回“默认”，一条剧本都不会删`"
                       @click="deleteGroup(g)">删除</button>
             </template>
           </div>
@@ -1567,7 +1567,7 @@
                     :disabled="store.isReadOnly || !newGroupName.trim()" @click="createGroup">新建剧本集</button>
           </div>
           <p class="sg-note">
-            剧本集只决定「哪些剧本一起出现在左栏和时间轴上」；删除组只是取消分类，剧本、省份、归属一条都不动。
+            剧本集只决定“哪些剧本一起出现在左栏和时间轴上”；删除组只是取消分类，剧本、省份、归属一条都不动。
           </p>
         </div>
 
@@ -1577,7 +1577,7 @@
             <span class="item-name">{{ s.name }}</span>
             <span class="item-years">{{ s.era?.startYear || '?' }} – {{ s.era?.endYear || '?' }}</span>
             <select class="item-group" :value="scenarioGroupIdOf(s)" :disabled="store.isReadOnly"
-                    :title="`把「${s.name}」移到别的剧本集（不删任何数据）`"
+                    :title="`把“${s.name}”移到别的剧本集（不删任何数据）`"
                     data-testid="scenario-item-group"
                     @change="moveScenarioToGroup(s, $event.target.value)">
               <option v-for="g in groupOptions" :key="g.id" :value="g.id">{{ g.name }}</option>
@@ -1592,7 +1592,7 @@
           </div>
         </div>
         <!-- 🔴 批量清空（2026-10-11 接活死入口 `removeAllScenarios`）：
-             它是**零调用**的（全仓只有导出表里有名字）→ 界面上「剧本只能一条一条删」。
+             它是**零调用**的（全仓只有导出表里有名字）→ 界面上“剧本只能一条一条删”。
              真实场景：暮雨的项目里塞着 12 条从年表外部导入的占位剧本（无机主日期、无标注、
              一句话描述、势力 id 是机器味英文 pol_state_a），一条条点垃圾桶既慢又容易点错。 -->
         <div class="scenario-bulk" data-testid="scenario-bulk">
@@ -1610,26 +1610,26 @@
           </span>
         </div>
         <div class="scenario-annos" data-testid="scenario-annotations">
-          <h4>「{{ selectedScenario?.name || '（未选剧本）' }}」的标注与标记</h4>
+          <h4>“{{ selectedScenario?.name || '（未选剧本）' }}”的标注与标记</h4>
           <div v-if="!annoRows.length" class="anno-empty">
-            还没有地名或标记 —— 用工具栏「更多」里的「地名 (T)」「标记 (K)」在地图上放置
+            还没有地名或标记 —— 用工具栏“更多”里的“地名 (T)”“标记 (K)”在地图上放置
           </div>
           <div v-for="row in annoRows" :key="row.key" class="anno-row" :data-testid="'anno-' + row.kind">
             <span class="anno-kind">{{ row.kind === 'label' ? '地名' : '标记' }}</span>
             <span class="anno-text">{{ row.text }}</span>
             <button class="anno-del" data-testid="anno-del" :disabled="store.isReadOnly"
                     :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
-                      : ('删除' + (row.kind === 'label' ? '地名' : '标记') + '「' + row.text + '」（可撤销）')"
+                      : ('删除' + (row.kind === 'label' ? '地名' : '标记') + '“' + row.text + '”（可撤销）')"
                     @click="deleteAnnotation(row)"><Icon name="x" :size="12"/></button>
           </div>
         </div>
         <div class="new-scenario-form">
           <h4>{{ editingScenarioId ? '编辑剧本' : '新建剧本' }}</h4>
-          <!-- 2026-10-22：把「新剧本会绑哪张底图」摆在表单第一行。
+          <!-- 2026-10-22：把“新剧本会绑哪张底图”摆在表单第一行。
                以前不显示，用户以为"新建剧本 = 新地图"，结果还是一张旧底图（真实困惑）。 -->
           <div class="form-row bound-row" data-testid="new-scenario-basemap">
             <label>底图：</label>
-            <span class="bound-basemap" :title="baseMapKey ? `新剧本将绑定底图「${baseMapKey}」` : '还没有底图'">
+            <span class="bound-basemap" :title="baseMapKey ? `新剧本将绑定底图“${baseMapKey}”` : '还没有底图'">
               {{ baseMapKey || '（还没有底图）' }}
             </span>
             <!-- 对话框里也给出口：不管有没有底图，都能"新建一张空底图再建剧本"——
@@ -1687,7 +1687,7 @@
                     @click="saveEditScenario" :disabled="store.isReadOnly || !newScenario.name">保存</button>
             <button v-else data-testid="scenario-create" @click="createNewScenario"
                     :disabled="!newScenario.name || !baseMapKey || !store.baseMaps?.[baseMapKey] || store.isReadOnly"
-                    :title="(!baseMapKey || !store.baseMaps?.[baseMapKey]) ? '还没有底图：先在下面点「＋ 新建空底图」，或用「＋」导入 .map' : ''">创建</button>
+                    :title="(!baseMapKey || !store.baseMaps?.[baseMapKey]) ? '还没有底图：先在下面点“＋ 新建空底图”，或用“＋”导入 .map' : ''">创建</button>
             <button v-if="editingScenarioId" data-testid="scenario-cancel-edit" @click="cancelEditScenario">取消编辑</button>
             <button v-else @click="closeScenarioManager">关闭</button>
           </div>
@@ -1750,12 +1750,12 @@
       @run="onRunSliceExport"
     />
 
-    <!-- 019 重导对话框：先摆映射统计/冲突，再让用户点「重导并迁移」 -->
+    <!-- 019 重导对话框：先摆映射统计/冲突，再让用户点“重导并迁移” -->
     <div v-if="reimportDialog" class="modal-overlay" @click.self="closeReimportDialog">
       <div class="modal-dialog reimport-dialog" data-testid="reimport-dialog">
         <h3>重导底图为新底图</h3>
         <p class="rd-intro">
-          这张底图已经改过（或来源未知），不能当「同一张图只补数据」。
+          这张底图已经改过（或来源未知），不能当“同一张图只补数据”。
           重导会新建一张底图，并把旧剧本的归属 / 易主迁过去；旧底图保留归档。
         </p>
         <div class="rd-grid">
@@ -1771,7 +1771,7 @@
           默认阻止，不替用户选：
           <ul>
             <li v-for="c in reimportDialog.preview.conflicts.slice(0, 6)" :key="c.newId">
-              新省「{{ c.newId }}」← 旧省 {{ c.oldIds.join(' / ') }}
+              新省“{{ c.newId }}”← 旧省 {{ c.oldIds.join(' / ') }}
             </li>
           </ul>
           <span v-if="reimportDialog.preview.conflicts.length > 6">…共 {{ reimportDialog.preview.conflicts.length }} 条</span>
@@ -1831,7 +1831,7 @@
     </div>
 
     <!-- 从留底恢复（0.2.9，2026-10-13）：留底目录里的原始 .map 清单 + 逐份恢复。
-         只读入口：读清单/读原文都不改世界观数据；「用这份恢复」走的是与「导入 .map」**同一条**链。 -->
+         只读入口：读清单/读原文都不改世界观数据；“用这份恢复”走的是与“导入 .map”**同一条**链。 -->
     <div v-if="sourceRestoreOpen" class="bmsrc-panel" data-testid="basemap-source-panel">
       <div class="bmsrc-header">
         <span>从留底恢复底图</span>
@@ -1845,7 +1845,7 @@
         <template v-else>
           <div class="bmsrc-hint">
             共 {{ sourceRestoreFiles.length }} 份（导入 .map 时自动留底，最近 10 份）。
-            恢复 = 拿它走一遍「导入 .map」：同名底图**只补缺**，你已切好的省份与归属不会被覆盖。
+            恢复 = 拿它走一遍“导入 .map”：同名底图**只补缺**，你已切好的省份与归属不会被覆盖。
           </div>
           <div
             v-for="f in sourceRestoreFiles"
@@ -1874,14 +1874,14 @@ import { ref, onMounted, onUnmounted, watch, computed, toRaw, nextTick, unref, d
 /**
  * 卡片墙进入（2026-10-17 P0）：App 从 ScenarioPicker 带来的初始剧本。
  * - `initialScenarioId`：进入后自动选中该剧本（切 era + 落起始年 + scenario 视图 = selectScenarioAt 的三件套）。
- * - `openManager`：从「新建剧本」空态进来 → 直接打开剧本管理对话框。
+ * - `openManager`：从“新建剧本”空态进来 → 直接打开剧本管理对话框。
  * 不传 = 行为与从前逐字一致（回归基线走这条：harness 注入 __SKIP_SCENARIO_PICKER 直达编辑器）。
  */
 const props = defineProps({
   initialScenarioId: { type: String, default: '' },
   openManager: { type: Boolean, default: false },
 });
-/** 模板里原来只有 `$emit`；现在「返回」需要按上下文分支，脚本侧也要能发事件 */
+/** 模板里原来只有 `$emit`；现在“返回”需要按上下文分支，脚本侧也要能发事件 */
 const emit = defineEmits(['exit', 'picker']);
 import { useGeodataStore } from '../store/geodata';
 import { useLayersStore } from '../store/layers';
@@ -1934,9 +1934,9 @@ import {
   drawRiversLayer, drawSelectedRiverHighlightLayer,
 } from '../scenario/layers/features';
 import { parseMapFile, buildScenariosJson } from '../utils/azgaar-parser';
-// 019：判断「这张底图是否一笔未改」—— 决定同图补数据还是新底图迁移
+// 019：判断“这张底图是否一笔未改”—— 决定同图补数据还是新底图迁移
 import { isBasemapPristine } from '../utils/basemapIdentity';
-// `.map` 的「文件名 → 底图名」与「原文留底」= 与行星视图共用的一份（见 utils/mapImportSource.js）
+// `.map` 的“文件名 → 底图名”与“原文留底”= 与行星视图共用的一份（见 utils/mapImportSource.js）
 import { mapNameFromFileName, backupMapSourceFile } from '../utils/mapImportSource';
 import { generateRoadPath } from '../utils/placement';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
@@ -1970,14 +1970,14 @@ import TerrainLabelsPanel from './TerrainLabelsPanel.vue';
 import DerivePanel from './DerivePanel.vue';
 // 逐年切片导出对话框（2026-10-02）：帧索引/日期体检走 utils/scenarioSlices.js，落盘走主进程一次选目录
 import ScenarioSliceExport from './ScenarioSliceExport.vue';
-// 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报「区间外易主日期」，
+// 剧本元信息编辑（2026-10-07）：改起止年后要用切片对话框**同一份**体检函数报“区间外易主日期”，
 // 不另写一套口径（两套口径漂移 = 面板说没事、时间轴悄悄不显示）。
 import { changeDateStats } from '../utils/scenarioSlices';
 // 读料桥（2026-10-24）：省份 / 标记 → 库内同名词条。
 // ⚠️ 实现只有一份：`VaultLoreSection.vue`（本文件只引用组件，不自己调 vaultIndexSearch）——
 //    两个使用点各写一份的话，"改一处另两处不变"迟早发生。
 import VaultLoreSection from './VaultLoreSection.vue';
-// 标记命中的**唯一实现**（2026-10-24，第 5 件补「点标记」）：纯函数、只读，Node 单测直接覆盖
+// 标记命中的**唯一实现**（2026-10-24，第 5 件补“点标记”）：纯函数、只读，Node 单测直接覆盖
 import { hitMarker, markerIdentity, markerIndexOf, MARKER_HIT_RADIUS_PX } from '../utils/markerHitTest';
 import {
   buildTimeline, currentOwnerRef, isStriped, polityColor,
@@ -1993,8 +1993,8 @@ import { sanitizeFreehandRing, explainFreehandRejection, selfIntersectionCount }
 // T7（H1b）：perfect-freehand 的中心线稳定器 —— 自由绘制/描轮廓先平滑再简化，减少手抖折线
 import { smoothStrokePoints } from '../utils/strokeEngine';
 import { widthsBySpeed, resampleSeries } from '../utils/strokeMath';
-// A8（2026-09-26）：历史剧本「势力标注」—— 分级判定 / 领土聚合 / 标签文本全是纯函数，
-// 放在 utils 里以便 Node 侧直接测（渲染里只剩「取数据 + 调 drawStyledLabel」）。
+// A8（2026-09-26）：历史剧本“势力标注”—— 分级判定 / 领土聚合 / 标签文本全是纯函数，
+// 放在 utils 里以便 Node 侧直接测（渲染里只剩“取数据 + 调 drawStyledLabel”）。
 import {
   polityLabelTier, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
 } from '../utils/polityLabels';
@@ -2003,7 +2003,7 @@ import { drawStyledLabel, fontString, drawTextAlongPath } from '../utils/labelSt
 import { layoutTextAlongPath, slicePathAroundPoint, pathLength } from '../utils/textOnPath';
 // 文字避让（2026-10-26）：四档标签（势力/省/城镇/河）共用一次排布 —— 纯函数，画布与导出同源
 import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
-// 缩放 → 详略档位 / 字号（2026-10-27）：Paradox 式「缩小只看势力名、放大出省名」的唯一判定
+// 缩放 → 详略档位 / 字号（2026-10-27）：Paradox 式“缩小只看势力名、放大出省名”的唯一判定
 import { zoomDetail, detailCaps, labelFontScale } from '../utils/labelZoom';
 // 文字层样式单源（用户地名 / 标记名 / 城镇名 / 河流名）—— 画布与 SVG 导出共用同一份
 import {
@@ -2027,12 +2027,12 @@ import {
   scenarioGroupNameOf, scenarioGroupCounts, firstNonEmptyGroupId,
 } from '../utils/scenarioGroups';
 // P0 第二块：省份几何的**唯一表示**（多环实体）与其配套纯函数 —— 渲染/命中/分割/合并/骨架吸附
-// 全部走这一层，画布里不再自己实现多边形算法（旧实现里那份凸包合并就是「吃掉邻居省份」的根因）。
+// 全部走这一层，画布里不再自己实现多边形算法（旧实现里那份凸包合并就是“吃掉邻居省份”的根因）。
 import {
   provinceRings, pointInProvince, provinceBBox, shapePatch,
   buildSkeleton, conformToSkeleton, ringPointsForRender,
 } from '../utils/provinceShape';
-// 省份命中的**空间索引**（2026-10-23，第 1 件 1-a）：把「全表线性扫描」换成「格子里那 1~3 个省」。
+// 省份命中的**空间索引**（2026-10-23，第 1 件 1-a）：把“全表线性扫描”换成“格子里那 1~3 个省”。
 // 实测：真实 200 省底图上 findProvinceAt 20.4ms/次 → 涂归属每 mousemove 要查 5 次 = 96.9ms。
 // 语义与旧实现**逐字节同义**（靠后的省盖在上面、洞点不中），索引按 terrain 引用缓存。
 import { createProvinceHitCache, hitProvince } from '../utils/provinceHitIndex';
@@ -2066,12 +2066,12 @@ import {
   // 🔴 2026-10-17 第七修：`riverWidthsFor` 用它们把"世界单位宽度"夹进河宽字段的量纲。
   //    ⚠️ 漏 import 的后果**不是编译错误而是运行时 ReferenceError**（Vite 不查未声明标识符）：
   //    用户每画一条河 / 每次拖节点预览都会在 `drawRiverPaths` 里抛一次，
-  //    表现是「河画了但看不见」+ 连续 3 帧后整块画布被渲染护栏暂停。
+  //    表现是“河画了但看不见”+ 连续 3 帧后整块画布被渲染护栏暂停。
   //    是 `scripts/tests/unit/test_undefined_identifiers.js`（全仓扫描）当场抓到的。
   RIVER_WIDTH_MIN, RIVER_WIDTH_MAX,
 } from '../utils/rivers';
 // 2026-10-14：自动河流的**追踪**与**画法**都是纯函数 ——
-// 「河是硬的折线、没有主次」这两条反馈的修法分别在平滑与 riverRender，
+// “河是硬的折线、没有主次”这两条反馈的修法分别在平滑与 riverRender，
 // 不在这里现写一套（三处画河共用同一套颜色与线宽口径）。
 import { smoothPolyline, TRACE_SMOOTH_ITERATIONS, TRACE_SOURCE_HEIGHT } from '../utils/riverTrace';
 // 🔴 2026-10-16（画河保底）：手画河的**抽稀 + 平滑**与行星图共用同一份实现
@@ -2081,7 +2081,7 @@ import { smoothPolyline, TRACE_SMOOTH_ITERATIONS, TRACE_SOURCE_HEIGHT } from '..
 //    （画的时候就看得见的平滑）与 **`fitPolylineToCount`**
 //    （把节点数压到目标值 —— 它是"手画河渲染成一串点"的根治）。
 import { decimatePolyline, smoothRiverNodes, fitPolylineToCount } from '../utils/polylineSmooth';
-// 🔴 2026-10-17 第八修（用户：「支气管模拟器」「你会画河吗」）：
+// 🔴 2026-10-17 第八修（用户：“支气管模拟器”“你会画河吗”）：
 //    **逐段画**从结构上画不出河。这一层把流向场还原成**河链**（沿 receiver 往上溯、
 //    沿主干继续、支流另起），渲染侧改画"链"（每条链一条曲线、逐点变宽）。
 //    与开源水文/制图工具的做法一致（Strahler 分级找主干的方式）。
@@ -2096,10 +2096,10 @@ import { planRiverErase, erasePolylineByStroke } from '../utils/riverErase';
 import { beginInteraction, endInteraction } from '../utils/interactionGate';
 import {
   RIVER_STROKE, buildRiverPolyline, strokeRiver, strokeRiverNetwork, riverWidthAt,
-  // 🔴 2026-10-16 第五修：与「地图自带河流」**逐字对齐**的画法常量/公式 ——
+  // 🔴 2026-10-16 第五修：与“地图自带河流”**逐字对齐**的画法常量/公式 ——
   //    色 `#5d97bb`、线宽 `width*6*max(sqrt(discharge)/14, 0.6)` 夹在 0.7~4 屏幕像素。
   // 🔴 2026-10-17 第六修：`RIVER_DRAW_COLOR` 是**唯一**河色；`drawCurvedRiver` 是
-  //    「会弯 + 从头到尾变粗」的唯一实现（手画河 / 预览都走它，不再逐点画圆）。
+  //    “会弯 + 从头到尾变粗”的唯一实现（手画河 / 预览都走它，不再逐点画圆）。
   BASEMAP_RIVER_COLOR, RIVER_DRAW_COLOR, RIVER_BANK_COLOR, basemapRiverWidthPx, basemapRiverWidthWorld,
   flowToDischargeEquivalent,
   drawCurvedRiver, fillRiverRibbon, smoothRiverLine, catmullRomPoints, taperWidths, pruneRiverNetwork, riverFlowGateByQuantile,
@@ -2118,7 +2118,7 @@ import { useSaveDisplay } from '../composables/useSaveDisplay';
 //    注入落盘失败态）。显示合成一律走 `useSaveDisplay()`，**不要**在这里再写第二份 computed。
 import { useStatusBarState } from '../composables/useStatusBar';
 
-// 外交表（N3a-2，2026-11-02）：按需异步加载 —— 只在用户点「外交」时才拉这份面板，
+// 外交表（N3a-2，2026-11-02）：按需异步加载 —— 只在用户点“外交”时才拉这份面板，
 // 不进首屏（与 App.vue 的面板同一条纪律）。面板本身只读，数据全部来自 store 与事件账本。
 const DiplomacyPanel = defineAsyncComponent(() => import('./DiplomacyPanel.vue'));
 
@@ -2130,22 +2130,22 @@ const layers = useLayersStore();
 //    · geodata（`store.saveStatus`）—— 把画布改动推给项目 / 直接写 scenarios.json
 //    · projectStore（写在全局 `useStatusBar` 的 `saveState` 里）—— **真正把 .sitian 写进磁盘**
 //    只盯前者的两个坏结果：① 项目落盘失败时这里毫无反应（用户以为存好了）；
-//    ② 项目态下 geodata 只到 'staged'，这里**永远显示不出「已保存」**（用户不知道到底存没存）。
-//    所以项目侧的失败优先级最高 —— 那才代表「数据没进磁盘」。
-// 🔴 另外失败必须**把原因写进文字**：暮雨实测「保存失败就是保存失败，我没看到其他内容」。
+//    ② 项目态下 geodata 只到 'staged'，这里**永远显示不出“已保存”**（用户不知道到底存没存）。
+//    所以项目侧的失败优先级最高 —— 那才代表“数据没进磁盘”。
+// 🔴 另外失败必须**把原因写进文字**：暮雨实测“保存失败就是保存失败，我没看到其他内容”。
 // 🔴 2026-10-17：合成逻辑搬到 `composables/useSaveDisplay.js`（+ 纯函数
 //    `utils/saveStatusText.js`）—— 行星地图与底部状态栏也接同一份。
-//    本组件不再保留第二份 `computed` 合成：「保存到底成没成」一旦有两套口径，
-//    先变的那一套会静默把另一套变成谎言（行星图当时仍按 `result.success` 报「保存成功」）。
+//    本组件不再保留第二份 `computed` 合成：“保存到底成没成”一旦有两套口径，
+//    先变的那一套会静默把另一套变成谎言（行星图当时仍按 `result.success` 报“保存成功”）。
 const saveDisplay = useSaveDisplay();
 const sbState = useStatusBarState();
 
-// P2：省份「矢量级归属」——笔刷 / 套索 / 点填 = 对多边形做布尔（数据在 store 的 provinceEditing 模块）
+// P2：省份“矢量级归属”——笔刷 / 套索 / 点填 = 对多边形做布尔（数据在 store 的 provinceEditing 模块）
 const provinceBrush = useProvinceBrush();
 const { radius: provBrushRadius, strength: provBrushStrength, tool: provBrushTool,
         targetIdx: provBrushTarget } = provinceBrush;
-// 🔴 P2（2026-10-09）：**多边形是唯一的几何表示**。旧的「归属标签网格」不再参与渲染或编辑 ——
-//    它在抬手时把格点轮廓反向写成多边形，10525 点的海岸线一次涂抹就变 ~22 点（用户实测的「退化」）。
+// 🔴 P2（2026-10-09）：**多边形是唯一的几何表示**。旧的“归属标签网格”不再参与渲染或编辑 ——
+//    它在抬手时把格点轮廓反向写成多边形，10525 点的海岸线一次涂抹就变 ~22 点（用户实测的“退化”）。
 //    现在涂完抬手即做**精确布尔**：目标省并集、相交省差集。详见 docs/SCENARIO_PROVINCE_FIX_PLAN.md。
 let provStrokeActive = false;             // 涂抹中（改省界 / 抹除 / 平滑）
 let provPaintActive = false;              // 笔刷建省涂抹中（2026-10-22：抬手才建省）
@@ -2154,19 +2154,19 @@ const provLassoPoints = ref([]);          // 套索轨迹（世界坐标）
 const provBrushPreview = ref(null);
 const provinceHint = ref('');             // 省份操作提示（状态栏）
 // 🔴 锁定海岸线（默认开，2026-10-09 暮雨要求）：涂归属 / 圈选只在已有省份范围内生效，
-//    笔迹被裁剪到「已有省份的并集」之内 → 海岸线不会被涂抹改掉（改它请走底图编辑）。
+//    笔迹被裁剪到“已有省份的并集”之内 → 海岸线不会被涂抹改掉（改它请走底图编辑）。
 const lockCoast = ref(true);
 /**
  * 描轮廓的改判方向（E，2026-10-11）。
- * 默认**开** = 围住的那块地改判给「贴着描的那个邻省」——
+ * 默认**开** = 围住的那块地改判给“贴着描的那个邻省”——
  * 因为围住的地本来就在**原主**手里，不换主的话这一笔必然看不出变化
  * （首版就是按"区域里占比最高的省"选的，结果 targetIdx 恒等于原主、只有 union 没有 difference）。
  */
 const outlineToNeighbor = ref(false);
 
 // ── 折线切割（A，2026-10-11）────────────────────────────────────────────────
-// 现状只有「拆分 (X)」= 两点**直线**切一刀。要沿着海岸 / 山脊 / 历史边界切，
-// 直线做不到；而切四五百块时，精修阶段真正需要的就是「任意折线」。
+// 现状只有“拆分 (X)”= 两点**直线**切一刀。要沿着海岸 / 山脊 / 历史边界切，
+// 直线做不到；而切四五百块时，精修阶段真正需要的就是“任意折线”。
 const polySplitPoints = ref([]);        // 已点下的折线顶点（世界坐标）
 const polySplitHover = ref(null);       // 橡皮筋终点（跟随鼠标）
 const polySplitKeepStart = ref(true);   // 哪一半保留原省份身份（Shift 切换）
@@ -2189,10 +2189,10 @@ const polySplitTarget = computed(() => {
 const batchScope = ref('land');         // 'land' = 全部陆地省 / 'selection' = 选中的省
 const batchCount = ref(400);            // 目标块数
 const batchJitter = ref(0.62);          // 播种抖动
-const batchSeedValue = ref(1);          // 随机种子（「换一批」= +1）
+const batchSeedValue = ref(1);          // 随机种子（“换一批”= +1）
 const batchSeeds = ref([]);             // 种子点（自动播种或手动点）
 const batchBusy = ref(false);
-const batchStatus = ref('先「自动播种」，或在画布上点几下放种子');
+const batchStatus = ref('先“自动播种”，或在画布上点几下放种子');
 /** C：当前这一批切分的取消令牌（`{cancelled:boolean}`）—— 与 store 之间唯一的取消通道 */
 let batchCancelToken = null;
 const batchTargets = computed(() => {
@@ -2232,25 +2232,25 @@ const canvasWrap = ref(null);
 // 其余 6 个画布视图（Galaxy/System/SystemDetail/Planet/Area/Interior）共用
 // `useCanvasRenderer` 的 DPR 缩放（canvas.width = CSS 宽 × devicePixelRatio + ctx.scale）；
 // 只有剧本画布自己写 `canvas.width = clientWidth` → 在 150%/200% 缩放的屏上是**位图放大**
-// = 天然发虚（而导出反而更清晰，于是「看起来不如位图」的锅落在了矢量路线头上）。
+// = 天然发虚（而导出反而更清晰，于是“看起来不如位图”的锅落在了矢量路线头上）。
 // 🔴 纪律：画布尺寸在**绘制/命中/布局**里一律读 `cw()` / `ch()`（CSS 像素空间），
 //    不要再读 `canvas.width` —— 那是设备像素；只有 resize / 导出建离屏画布时才碰它。
 let canvasDpr = 1;
 const cw = () => (canvas.value ? canvas.value.width / canvasDpr : 0);
 const ch = () => (canvas.value ? canvas.value.height / canvasDpr : 0);
 // 默认工具 = **选择**（2026-10-09 改，原为 draw）。
-// 🔴 为什么翻转：暮雨实测「打开历史剧本，本能想拖动地图查看，却意外触发绘制机制，
-//    弹窗问『仍要在这里创建吗』」—— 拖拽查看是任何地图编辑器的第一直觉动作，
-//    默认停在「自由绘制」等于把最常用的动作变成最危险的误触。想画省份显式按 B / 点工具栏。
-//    （原 P1 让 draw 当默认是为了「新建项目进来就能画」，代价是误触；两害相权，先保不误伤。）
+// 🔴 为什么翻转：暮雨实测“打开历史剧本，本能想拖动地图查看，却意外触发绘制机制，
+//    弹窗问‘仍要在这里创建吗’”—— 拖拽查看是任何地图编辑器的第一直觉动作，
+//    默认停在“自由绘制”等于把最常用的动作变成最危险的误触。想画省份显式按 B / 点工具栏。
+//    （原 P1 让 draw 当默认是为了“新建项目进来就能画”，代价是误触；两害相权，先保不误伤。）
 const tool = ref('select');
-// P3：工具栏按任务分层 —— 默认只有 6 个可见控件，其余收进「更多」（能力不减）
+// P3：工具栏按任务分层 —— 默认只有 6 个可见控件，其余收进“更多”（能力不减）
 const moreOpen = ref(false);
 
 // ── 底图编辑模式（2026-10-18 第十七修）──────────────────────────────────────
 //
-// 用户原话：「事实上我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，
-//   不要和日常的剧本编辑混在一起」。
+// 用户原话：“事实上我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，
+//   不要和日常的剧本编辑混在一起”。
 //
 // 口径（**只做分组与可见性，不改任何工具语义**）：
 //   · 日常模式（默认关）＝ 省份 / 归属 / 剧本（历史归属是"覆盖在地块上的数据"）；
@@ -2279,7 +2279,7 @@ const BASEMAP_TOOL_IDS = new Set(BASEMAP_TOOLS.map((t) => t.id));
 const ADVANCED_TOOLS = new Set(['split', 'merge', 'provinceFill', 'paint', 'river', 'relief', 'label',
   'erase', 'height', 'biome', 'burg', 'culture', 'religion', 'marker', 'road']);
 const advancedToolActive = computed(() => ADVANCED_TOOLS.has(tool.value));
-// 「变更归属」的省份选项：选到这类工具（或用户自己打开「更多」）就显示
+// “变更归属”的省份选项：选到这类工具（或用户自己打开“更多”）就显示
 const PROVINCE_TOOLS = new Set(['provinceBrush', 'provincePaint', 'provinceLasso', 'provinceFill', 'split', 'merge', 'vertex', 'polySplit', 'voronoi', 'outline', 'ownerBrush']);
 const provinceRowVisible = computed(() => moreOpen.value || PROVINCE_TOOLS.has(tool.value));
 const viewMode = ref('base');
@@ -2287,13 +2287,13 @@ const viewMode = ref('base');
  * 当前模式在做什么 —— 一句话说明。
  * 🔴 为什么必须显式写出来：两个模式的**工具栏完全相同**（同一套 setTool），
  *    差别只体现在着色与图层上（见各 viewMode 判定点）。用户切来切去只能靠猜
- *    （暮雨实测：「搞了半天依然没搞懂」）。
+ *    （暮雨实测：“搞了半天依然没搞懂”）。
  */
 const viewModeHint = computed(() => (viewMode.value === 'scenario'
   ? '改政治版图：势力归属 / 易主 —— 省份按势力着色'
   : '改自然面貌：地形高度 / 群系 / 河流 —— 省份按群系着色'));
 // ── 底图高度图（A1，2026-09-24）──────────────────────────────────────────────
-// 底图的高度图此前只有「.map 导入」一条来源 → 新建的底图用不了任何高度类工具（静默 return）。
+// 底图的高度图此前只有“.map 导入”一条来源 → 新建的底图用不了任何高度类工具（静默 return）。
 /** 当前底图绑定到的行星 id（绑定了则高度图归行星侧，底图不该再自建） */
 /** 当前底图绑定到的行星 id（绑定了则高度图归行星侧，底图不该再自建） */
 const baseMapBoundPlanet = computed(() => (baseMapKey.value ? store.getBoundPlanetId(baseMapKey.value) : null));
@@ -2302,19 +2302,19 @@ const baseMapHasHeightmap = computed(() => {
   if (!baseMapKey.value) return false;
   return hasGrid(store.getHeightmapFor(baseMapKey.value));
 });
-/** 当前底图是否已有**地形内容**（空壳高度图不算）—— 用于状态栏与「缺什么」诊断 */
+/** 当前底图是否已有**地形内容**（空壳高度图不算）—— 用于状态栏与“缺什么”诊断 */
 const baseMapHasTerrainContent = computed(() =>
   hasHeightmapContent(store.getHeightmapFor ? store.getHeightmapFor(baseMapKey.value) : null));
 
-/** 是否显示「创建高度图」按钮：已选底图 + 未绑定行星 + 还没有网格 */
+/** 是否显示“创建高度图”按钮：已选底图 + 未绑定行星 + 还没有网格 */
 const baseMapCanCreateHeightmap = computed(() =>
   !!baseMapKey.value && !baseMapBoundPlanet.value && !baseMapHasHeightmap.value);
 
 /**
- * 是否显示「按轮廓生成地形」按钮（2026-10-17 第八修·改向）：
+ * 是否显示“按轮廓生成地形”按钮（2026-10-17 第八修·改向）：
  * 已选底图 + 未绑定行星 + **已经画了陆地**。
  *
- * 🔴 2026-10-17 再修（用户实测：「工具『更多』没找到按轮廓生成地形，不知道点哪个」）：
+ * 🔴 2026-10-17 再修（用户实测：“工具‘更多’没找到按轮廓生成地形，不知道点哪个”）：
  *    第一版的显示条件里还有 `!baseMapHasHeightmap` —— 于是**正好在用户找它的时候把它藏了**
  *    （他的底图有导入的高度图）。这是本项目第 N 次同一类错误：**条件式隐藏 = 等于没做**。
  *    现在：只要有底图 + 有陆地就**一直显示**；已经存在高度图时按钮改为"重新推演"语义，
@@ -2325,16 +2325,16 @@ const baseMapCanSynthesizeTerrain = computed(() =>
   && !baseMapBoundPlanet.value
   && Array.isArray(rawTerrain()) && rawTerrain().length > 0);
 
-/** 「按轮廓生成地形」—— 见按钮注释：给自建底图一个能长出河流的本地地形起点 */
+/** “按轮廓生成地形”—— 见按钮注释：给自建底图一个能长出河流的本地地形起点 */
 // synthesizeBaseMapTerrainFromShape 已搬到 misc.js（2026-10-31）
 
 
 // ── P0-1（2026-10-25）：地形生成参数面板 ─────────────────────────────────────
-// 「按轮廓生成地形」保留为**一键最快路径**（默认参数）；想调/想挑形状走这个面板。
+// “按轮廓生成地形”保留为**一键最快路径**（默认参数）；想调/想挑形状走这个面板。
 // 两条路都走同一个 store 入口（`synthesizeBaseMapTerrain`），所以 undo/落盘/绑定行星
 // 的行为天然一致 —— 不许给面板再写一条"直接改 baseMaps"的捷径。
 const terrainGenOpen = ref(false);
-/** B 阶段 2（2026-10-29）：FMG 模板地形面板开关（与「生成参数」是两个引擎，各自一个入口） */
+/** B 阶段 2（2026-10-29）：FMG 模板地形面板开关（与“生成参数”是两个引擎，各自一个入口） */
 const fmgOpen = ref(false);
 
 
@@ -2342,7 +2342,7 @@ const fmgOpen = ref(false);
 // 名字由用户给（面板里逐条命名），几何来自 `ridges.detectRidges` 的候选；
 // 落库走 store 的 `applyTerrainLabels`（整表一条 undo）。
 const terrainLabelsOpen = ref(false);
-/** 与「自动地名」分开：FMG 的英文城镇名可以关，山系名是自己的数据、默认开 */
+/** 与“自动地名”分开：FMG 的英文城镇名可以关，山系名是自己的数据、默认开 */
 const showTerrainNames = ref(true);
 
 
@@ -2350,20 +2350,20 @@ const showTerrainNames = ref(true);
 
 // ── D3 手绘（2026-10-27）：山系/海域拖一条线、平原点一个点 ──────────────────
 // 为什么几何采集放这里而不是面板里：只有画布知道相机与屏幕→世界的换算，
-// 也只有它能画「拖到一半」的预览。面板负责命名与整表落库（`applyTerrainLabels`），
+// 也只有它能画“拖到一半”的预览。面板负责命名与整表落库（`applyTerrainLabels`），
 // 两边合成的仍是**同一条数据形状**与**同一个写口**。
 const terrainLabelPick = ref(null);
 const TERRAIN_PICK_MIN_STEP = 3;     // 屏幕像素：采样抽稀，别让一条线攒出上千点
 
 
 
-/** 面板「完成」→ 采到的点已经变成一行（面板负责），这里只收尾 */
+/** 面板“完成”→ 采到的点已经变成一行（面板负责），这里只收尾 */
 
 
 /** 面板应用回执：与一键入口做同样的画布侧收尾（缓存失效 + 切到地形高度 + 重绘） */
 
 // ── P0-2（2026-10-25）：造陆面板 ─────────────────────────────────────────────
-// 「造陆」= 生成轮廓 + 现有铺底切省（store 里合成**一条 undo**）。
+// “造陆”= 生成轮廓 + 现有铺底切省（store 里合成**一条 undo**）。
 // 只读态/绑定行星都不影响省份创建；已有陆地时面板里会先问一次（覆盖 = 整张替换）。
 const landmassOpen = ref(false);
 
@@ -2378,7 +2378,7 @@ const deriveOpen = ref(false);
 /** 派生回执：文化层变了要清栅格缓存；势力归属变了会走既有渲染路径 */
 
 // ── P5：高度图分辨率（2026-10-14）────────────────────────────────────────────
-// 「地形模模糊糊」的量出来的事实：源网格 133×75 / spacing 14.4，在 1900×1080 的画布上
+// “地形模模糊糊”的量出来的事实：源网格 133×75 / spacing 14.4，在 1900×1080 的画布上
 // **每格约 3.6 屏幕像素**（放大到 400% 时 1 格占一屏）。渲染侧已经在做子格双线性，但
 // 每格的颜色是固定的 → 唯一真正有效的做法是把格子变密。
 const resampleOpen = ref(false);
@@ -2408,7 +2408,7 @@ const smoothRadius = ref(1);
 const riverSourceHeight = ref(TRACE_SOURCE_HEIGHT);
 
 /**
- * 🔴 **追踪前先平滑地形**（2026-10-16 用户实测截图：「很丑的折线，有种恐怖感」）。
+ * 🔴 **追踪前先平滑地形**（2026-10-16 用户实测截图：“很丑的折线，有种恐怖感”）。
  *
  * 根因不是配色也不是线宽，是**几何分辨率**：真实底图高度图只有 **133×75 / 格距 14.4**
  * （岛宽 1700），最长代表路径只有 **140 世界单位 = 岛宽的 8%**、段长中位 **1.2 格**
@@ -2427,7 +2427,7 @@ const riverSmooth = ref(false);
 const riverSmoothRadius = ref(2);       // 与实测最优 r=2 p=1 对齐
 const riverSmoothPasses = ref(1);
 /**
- * 山体阴影（2026-10-17 第七修）—— 用户「地形怎么3D表现」的落点。
+ * 山体阴影（2026-10-17 第七修）—— 用户“地形怎么3D表现”的落点。
  * 🔴 **默认关**（零行为变更）：开了会改变所有既有底图的观感，必须由用户自己选。
  * `terrainShadeStrength` 是强度（1 = 默认；`buildShadeMap` 里按本幅图高度标准差归一化）。
  */
@@ -2461,12 +2461,12 @@ const riverTerrainAdvice = computed(() => {
     + `**22 格** → 最长河约 ${approxLen} 世界单位（量级），只有底图宽度的两成。`
     + `**长河在这份数据里不存在**（原始 .map 是 Azgaar 的 10000 格最小档、高度还取整到 0~100；`
     + `导入链路没有降采样 —— 已查证）。想要长河：在 Azgaar 里把 cellsDesired 调大重导；`
-    + `或直接用「河流来源 → 只画底图自带」（那 160 条自带河好看得多）。`;
+    + `或直接用“河流来源 → 只画底图自带”（那 160 条自带河好看得多）。`;
 });
 
 
 // ── 地形来源（M1c，2026-09-25）────────────────────────────────────────────────
-// 用户决策：「历史剧本 = 一次施工永久存档」，强行绑到行星上会有风险（改行星会连带改剧本）。
+// 用户决策：“历史剧本 = 一次施工永久存档”，强行绑到行星上会有风险（改行星会连带改剧本）。
 // 所以两种模式并存、**冻结为默认**：
 //   · 冻结导入 → 复制一份独立副本（互不影响）→ 历史存档
 //   · 跟随行星 → 共用同一份（互相影响）      → 当代、与行星同步构建的地图
@@ -2495,16 +2495,16 @@ const terrainModeTitle = computed(() => {
   const t = terrainInfo.value;
   if (t.mode === 'following') {
     return t.dangling
-      ? '这张底图跟随的行星已不存在（绑定失效）—— 建议「解绑」后改用「冻结导入」'
-      : `地形与「${planetNameById(t.planetId)}」共用同一份：在剧本里编辑会改到那颗行星，行星改地形也会改到这里`;
+      ? '这张底图跟随的行星已不存在（绑定失效）—— 建议“解绑”后改用“冻结导入”'
+      : `地形与“${planetNameById(t.planetId)}”共用同一份：在剧本里编辑会改到那颗行星，行星改地形也会改到这里`;
   }
   if (t.mode === 'frozen') {
     return t.from
-      ? `独立副本，冻结自「${t.from.name}」（${String(t.from.at || '').slice(0, 16).replace('T', ' ')}）—— 之后行星改地形不会影响它`
+      ? `独立副本，冻结自“${t.from.name}”（${String(t.from.at || '').slice(0, 16).replace('T', ' ')}）—— 之后行星改地形不会影响它`
       : '这张底图自持一份独立地形（不跟随任何行星）';
   }
   if (t.mode === 'empty') {
-    return '这张底图还没有地形：可用「冻结导入」从行星复制一份，或点底图旁的图层按钮从零创建';
+    return '这张底图还没有地形：可用“冻结导入”从行星复制一份，或点底图旁的图层按钮从零创建';
   }
   return '';
 });
@@ -2513,18 +2513,18 @@ const terrainModeTitle = computed(() => {
 
 /** 跟随行星：共用同一份（会二次确认，并提示存档场景应改用冻结导入） */
 
-/** 解绑：行星那份不动，本底图回到「没有地形」 */
+/** 解绑：行星那份不动，本底图回到“没有地形” */
 const baseMapKey = ref('');   // 空 = 当前项目还没有底图（onMounted 里解析：上次的 → 项目里第一张 → 空）
 const selectedScenario = ref(null);
 // ⚠️ 势力对象必须随数据**自愈重指向**：`updatePolity`（改名/简称）、撤销、导入都会整体替换
-//    `polities` 数组 → 持有旧对象会让「改完名界面还显示旧名」，而且**不报错**。
-//    这里刻意用「可写 ref + 刷新 watch」，而**不是** computed：
+//    `polities` 数组 → 持有旧对象会让“改完名界面还显示旧名”，而且**不报错**。
+//    这里刻意用“可写 ref + 刷新 watch”，而**不是** computed：
 //    computed 只读，任何 `selectedPolity.value = x` 都会**静默失效** ——
 //    实测其代价是 test_65 的 `sc.selectedPolity = …` 被无声吞掉（写失败却不报错）。
-//    同理 `selectedScenario` 也是「可写 ref + 刷新 watch」，两处保持一致。
+//    同理 `selectedScenario` 也是“可写 ref + 刷新 watch”，两处保持一致。
 const selectedPolity = ref(null);
 /**
- * 「清除归属」模式（2026-10-20）—— 色板上的 ✕。
+ * “清除归属”模式（2026-10-20）—— 色板上的 ✕。
  *
  * 为什么必须是一个**显式模式**：`selectedPolity = null` 同时表示"还没选"和"要清空"，
  * 而涂归属在"没选"时会自动落到第一个势力（否则工具表现成"涂不了"）。两者混在一起，
@@ -2547,7 +2547,7 @@ const showScenarioManager = ref(false);
 const immersive = ref(false);
 const capsuleDim = ref(false);
 watch(immersive, () => { pokeCapsule(); nextTick(() => { if (baseMap.value?.terrain?.length) fitToView(); }); });
-/** 「历史剧本」常驻左栏是否展开（收起后只留一条标题栏，腾出画布空间） */
+/** “历史剧本”常驻左栏是否展开（收起后只留一条标题栏，腾出画布空间） */
 const showScenarioList = ref(true);
 const showLayerPanel = ref(false);
 const showHistoryPanel = ref(false);
@@ -2586,10 +2586,10 @@ const showBurgs = ref(true);
 // A8：势力名/省名的分级标注（默认开 —— 势力名是历史剧本的主要读物）。
 // 与 showLabels 分开：showLabels 管的是用户**手放**的浮动文本，两者是不同性质的东西。
 const showPolityLabels = ref(true);
-/** 省名单独一层（2026-10-27）：旧实现与「势力名」共用一个开关，关掉势力名会连省名一起消失 ——
+/** 省名单独一层（2026-10-27）：旧实现与“势力名”共用一个开关，关掉势力名会连省名一起消失 ——
  *  用户排查 A4 时就被这一点误导过。现在两个开关各管一层，默认都开。 */
 const showProvinceNames = ref(true);
-/** C3（2026-10-29）：「只显示已命名的省」。415 省项目里绝大多数名字是程序起的「新省份 N」，
+/** C3（2026-10-29）：“只显示已命名的省”。415 省项目里绝大多数名字是程序起的“新省份 N”，
  *  它们盖住真正起了名的几十个 —— 开关默认关（保持现有观感），打开后占位名整层不画。
  *  判据复用 `polityLabels.isPlaceholderProvinceName`（与导出链同一份，不另写正则）。 */
 const showNamedProvincesOnly = ref(false);
@@ -2599,7 +2599,7 @@ const cameraX = ref(0);
 const cameraY = ref(0);
 const cameraScale = ref(1);
 
-// 🔴 屏幕像素长度 → 世界单位：所有「屏幕空间尺寸/线宽/半径」的换算**一律走 px()**。
+// 🔴 屏幕像素长度 → 世界单位：所有“屏幕空间尺寸/线宽/半径”的换算**一律走 px()**。
 // 内部把相机缩放夹正数，从根上杜绝 `N / cameraScale` 在 scale 异常时算出负半径/负线宽
 // （2026-09-20 实测：fitToView 在窄高窗口算出负 scale → `3 / cameraScale` 变负 →
 //  ctx.arc 抛 IndexSizeError，而抛在 render 路径里会把整页交互一起拖死，后续用例连环 CDP 超时）。
@@ -2645,7 +2645,7 @@ const snapMarker = ref(null);        // { x, y } 最近吸附点，用于十字�
 let snapMarkerTimer = null;
 let lastFitKey = '';                 // 自动适屏：上次适配的底图键
 let lastFitCount = 0;                // 自动适屏：上次适配时的省份数
-// 首次进入的「适屏收尾」：布局还在定稿（时间轴占位会让画布变矮）期间允许重新适屏，
+// 首次进入的“适屏收尾”：布局还在定稿（时间轴占位会让画布变矮）期间允许重新适屏，
 // 用户一旦交互（滚轮/按下）就交还控制权，绝不跟用户抢镜头。
 let initialFitPending = false;
 let settleFitTimer = null;
@@ -2785,7 +2785,7 @@ function toggleRiverSelection(id) {
 }
 
 /**
- * 「点选一条河」的唯一落点（2026-10-27 抽出来：mousedown 记账、mouseup 结算、click 兜底
+ * “点选一条河”的唯一落点（2026-10-27 抽出来：mousedown 记账、mouseup 结算、click 兜底
  * 三条路都走它，避免"点了没反应/选不中"那类三套实现）。
  */
 // applyRiverPick 已搬到 riverOps.js（2026-10-31）
@@ -2840,7 +2840,7 @@ let suppressTerrainPickClick = false;
 /** 这一笔是否已经顶到 `RIVER_MAX_DRAFT_POINTS`（顶到只说一次，不要每帧刷屏） */
 let riverDraftCapped = false;
 /**
- * 「选择」工具下**这次按下已被河流命中消费掉**的标记（2026-10-17 第八修·三修）。
+ * “选择”工具下**这次按下已被河流命中消费掉**的标记（2026-10-17 第八修·三修）。
  * 为什么需要：那条分支会 `return`（不进平移），但紧随其后的 `click` 仍会派发到
  * `onCanvasClick` —— 那里会再跑一遍"选省"逻辑，把刚选中的河**当场取消**。
  * 所以按下时置位、click 时消费并复位。
@@ -2849,7 +2849,7 @@ let riverPressHandled = false;
 /** 河流节点/河身的命中容差（屏幕像素；换算世界单位要除以相机缩放） */
 const RIVER_HIT_PX = 12;
 /**
- * 「选择」工具里点河的命中半径（屏幕像素）。
+ * “选择”工具里点河的命中半径（屏幕像素）。
  * 比河流工具的 `RIVER_HIT_PX` 更大：河流是一条细线（屏幕上常只有 1.8~2.5px），
  * 用 12px 意味着"必须点在线上"，用户会觉得"点不中"（实测原话）。
  * 24px ≈ 一根手指/一枚光标的宽容度 —— 而这个工具下**没有别的争抢对象**（河优先于省）。
@@ -2886,7 +2886,7 @@ const selectedBurg = ref(null);
 const rasterLayer = ref('landsea');  // none | landsea | height | temp | prec（互斥单选）
 const showRivers = ref(true);
 /**
- * 🔴 **河流来源**（2026-10-16 第五修，用户第四条「依旧和底图自带河流各画各的」）。
+ * 🔴 **河流来源**（2026-10-16 第五修，用户第四条“依旧和底图自带河流各画各的”）。
  *
  * 实测（`scripts/tests/tools/_probe_river_align.mjs`，真实 desite 底图）：
  *   · 自动河网段到自带河的最近距离 **中位 18.78 世界单位**（≈1.3 格），只有 **10%** 在 3 单位内；
@@ -2896,10 +2896,10 @@ const showRivers = ref(true);
  * ⚠️ 所以**不能悄悄隐藏自带河** —— 会丢掉用户原来那 160 条河覆盖的真实地理。
  *   两套并存又是用户抱怨的"各画各的"→ 唯一的正确答案是**把选择权交出去**：
  *   `both`（默认，零行为变更）/ `base`（只看底图自带）/ `auto`（只看自动生成）。
- *   用户在「自动河流」面板里点一下就能只留一套 —— 那才是他要的"一套河"。
+ *   用户在“自动河流”面板里点一下就能只留一套 —— 那才是他要的"一套河"。
  *
- * ⚠️ 我**没有**把默认值改成 `auto`：那会让「自动河流」按钮一点就把他原来的河藏起来，
- *   属于改变既有语义的破坏性默认（本项目在「隐式载入覆盖项目数据」上吃过这种亏）。
+ * ⚠️ 我**没有**把默认值改成 `auto`：那会让“自动河流”按钮一点就把他原来的河藏起来，
+ *   属于改变既有语义的破坏性默认（本项目在“隐式载入覆盖项目数据”上吃过这种亏）。
  */
 const riverSource = ref('both');           // 'both' | 'base' | 'auto'
 const showRiverBase = computed(() => showRivers.value && riverSource.value !== 'auto');
@@ -2912,14 +2912,14 @@ const activeVertexIdx = ref(-1);
 // Alt 临时直线（P0-T1）；不参与响应式，只在绘制时读取
 let altStraight = false;
 
-// 自由绘制（B）：**2026-10-09 起不再是默认工具**（默认翻成「选择」= 拖拽平移，
-// 见上方 `const tool` 处的说明）。它仍是「建省」的唯一入口：空底图上打开就能画（不必先「新建省份」）。
+// 自由绘制（B）：**2026-10-09 起不再是默认工具**（默认翻成“选择”= 拖拽平移，
+// 见上方 `const tool` 处的说明）。它仍是“建省”的唯一入口：空底图上打开就能画（不必先“新建省份”）。
 // 精确定点（描点）是同一个工具里的第二条路径（单击落顶点），选择/移动另在工具栏。
 
 // P1：新建省份的色板轮转（确定性 —— 颜色不随机，测试可断言、用户可预期）
 // 定义已移到 `utils/scenarioPalette.js`（画布 / SVG 导出 / 省界网格三处共用一份）。
 
-// P4：海域（kind='sea'）有自己的视觉 —— 淡色水面 + **淡虚线海界**（虚线是「这是水域」的约定），
+// P4：海域（kind='sea'）有自己的视觉 —— 淡色水面 + **淡虚线海界**（虚线是“这是水域”的约定），
 // 且**不参与势力归属着色**（海不是谁的领土）。着色常量同样在 `utils/scenarioPalette.js`。
 
 // 海岸线吸附（P0-T2）
@@ -2934,7 +2934,7 @@ const rasterCache = new Map();
 // 分层设色盘（低→高；海洋/陆地分段）
 // 色带与陆海底色（HYPSO_WATER/LAND、TEMP_RAMP、PREC_RAMP、LAND/SEA_BASE_COLOR）
 // 2026-09-25 已迁到 `utils/heightmapRaster.js` —— 见文件上方说明。此处不再保留副本，
-// 避免「改了一处配色、另一个视图没变」这种又一处双源。
+// 避免“改了一处配色、另一个视图没变”这种又一处双源。
 
 // 右键菜单
 const contextMenu = ref({ show: false, x: 0, y: 0, provId: null });
@@ -2947,7 +2947,7 @@ const selectedProvince = ref(null);
  * 为什么按 id 反查而不是存对象：`terrain[]` 在编辑后可能换新数组（撤销/导入/合并），
  * 存对象会让菜单指向一个"已经不在列表里"的副本 —— 与 `selectedRiverId` 同一条纪律。
  * 归属查询走 `ownerPolityForProvince`（与地图着色/势力标注同一口径），
- * 所以「看到的颜色」和「菜单里写的名字」不可能不一致。
+ * 所以“看到的颜色”和“菜单里写的名字”不可能不一致。
  */
 const contextMenuProvince = computed(() => {
   const id = contextMenu.value.provId;
@@ -2960,7 +2960,7 @@ const contextMenuOwner = computed(() => (contextMenu.value.show
 
 // ── 省份多选（2026-10-02）────────────────────────────────────────────────────
 // 用途：一次把多个省指派给同一个势力（`store.batchSetOwnership` —— 此前是零调用的死入口）。
-// 交互刻意只绑「选择」工具 + Ctrl/⌘ 点击：Ctrl/⌘ 在组件内原本完全空闲（全局只被 App.vue 的
+// 交互刻意只绑“选择”工具 + Ctrl/⌘ 点击：Ctrl/⌘ 在组件内原本完全空闲（全局只被 App.vue 的
 // 撤销占用），而 Shift 在这个组件里已被三处语义占满（禁吸附 / 决定拆分哪半 / 滚轮第二轴）。
 // 多选**不进导出**（与选中描边同一策略：那是编辑期的辅助，不是图面内容）。
 const selectedProvinceIds = ref([]);
@@ -3040,7 +3040,7 @@ const scenarios = computed(() => {
 
 // ── 剧本集（2026-10-25）────────────────────────────────────────────────────
 // 一组 = 一条独立时间线（通常一张底图 + 一段连续年代）。
-// 左栏 / 时间轴 / 播放 / 切片导出的「全部剧本」都只取**当前组**；
+// 左栏 / 时间轴 / 播放 / 切片导出的“全部剧本”都只取**当前组**；
 // 组表在 project 文件里（`scenarios.groups`），默认组是虚拟的（旧项目零迁移）。
 const activeGroupId = ref(DEFAULT_SCENARIO_GROUP);
 const groupOptions = computed(() => scenarioGroupOptions(store.scenarioGroups || []));
@@ -3061,7 +3061,7 @@ const sortedScenarios = computed(() => {
 
 /**
  * 切剧本集：选择第一段并同步游标；空组则清空选中（时间轴无帧）。
- * 不走 `selectScenarioAt` 的「找不到就 return」—— 空组是合法状态。
+ * 不走 `selectScenarioAt` 的“找不到就 return”—— 空组是合法状态。
  */
 // switchGroup 已搬到 misc.js（2026-10-31）
 
@@ -3100,10 +3100,10 @@ function onModeChange() {
       selectScenario(sortedScenarios.value[0]);
     }
   }
-  // 🔴 切模式后必须重绘（2026-10-09 修）：旧实现只在「首次进入剧本模式（selectedScenario 为空）」
+  // 🔴 切模式后必须重绘（2026-10-09 修）：旧实现只在“首次进入剧本模式（selectedScenario 为空）”
   //    时经 selectScenario 顺带 render 一次 —— 第二次切回来 `selectedScenario` 已有值，
   //    一个 render 都不会走，画面停留在上一次的底图态。
-  //    用户观感：「切了模式没反应，得用鼠标在画布上点一下才更新」（暮雨实测）。
+  //    用户观感：“切了模式没反应，得用鼠标在画布上点一下才更新”（暮雨实测）。
   //    render() 幂等：上面若已 selectScenario，这里重复一次无害。
   render();
 }
@@ -3117,14 +3117,14 @@ function selectScenario(s) {
 // ══════════════════════════════════════════════════════════════════════════
 // 涂归属（2026-10-20 重做）—— **只改势力归属，不动省界几何**
 //
-// 为什么重做：此前叫「涂归属」的按钮实际是**几何笔刷**（把笔迹并进所选省份，
-// 相交的邻省被挖掉）→ 用户实测「我不知道涂归属到底在干嘛，好像在生造省份」。
-// 而真正做对事的是「势力」油漆桶（点一次改一个省），但一次只能一个省，慢。
+// 为什么重做：此前叫“涂归属”的按钮实际是**几何笔刷**（把笔迹并进所选省份，
+// 相交的邻省被挖掉）→ 用户实测“我不知道涂归属到底在干嘛，好像在生造省份”。
+// 而真正做对事的是“势力”油漆桶（点一次改一个省），但一次只能一个省，慢。
 //
 // 现在的语义：选一个势力 → 按住涂 → 笔刷**碰到哪些省**就把哪些省的归属改成它，
 // 抬手一次性落库（`batchSetOwnership` = 一条 undo）。不碰任何多边形：
 //   · 省界一个点都不变（用例判据：涂完 points 逐字节相同）；
-//   · 不触发多边形布尔（旧路径「松开卡几秒」的根因），也不重建省界缓存。
+//   · 不触发多边形布尔（旧路径“松开卡几秒”的根因），也不重建省界缓存。
 //
 // 采样：每 `OWNER_BRUSH_SAMPLE_PX` 屏幕像素取一个点，每个采样点测
 // 圆心 + 上下左右 4 个偏移（≈ 半径 0.65）。拖动期只做**只读**命中，
@@ -3149,7 +3149,7 @@ function ownerStrokeSample(wx, wy) {
 
 /**
  * 吸管：取该省当前的势力并选中它（Alt+点击）。
- * 找不到时返回 null —— 调用方负责说清「这个省本来没有归属」。
+ * 找不到时返回 null —— 调用方负责说清“这个省本来没有归属”。
  */
 function pickPolityAt(wx, wy) {
   const prov = findProvinceAt(wx, wy);
@@ -3178,7 +3178,7 @@ const diplomacyOpen = ref(false);
 // 时间轴（P1）：月日精度游标 + EU4 斜线占领
 // ═══════════════════════════════════════════
 // 🔴 游标真源是 **tlDate**（`{y,m,d}`，月日可缺省 = 该年 1 月 1 日），不是 tlYear。
-//    为什么不用「浮点年份 + 月日另存」：两处状态 = 迟早不一致（滑动改一个、日期录入改另一个）。
+//    为什么不用“浮点年份 + 月日另存”：两处状态 = 迟早不一致（滑动改一个、日期录入改另一个）。
 //    `tlYear` 只作为**只读派生**给轨道/播放用（`dateToYearValue` 供年内插值）。
 //    年 = 剧本边界的唯一判据（边界仍是年精度，见《月日精度与切片书签》执行单 §0.4），
 //    月日只进易主事件与切片点。
@@ -3192,7 +3192,7 @@ const tlPlaying = ref(false);
 
 /** 游标年份（只读派生）—— 轨道位置 / 播放 / 旧调用点用 */
 const tlYear = computed(() => dateToYearValue(tlDate.value));
-/** 游标年份（整数）—— 状态栏显示与「上色即易主」的显式日期用 */
+/** 游标年份（整数）—— 状态栏显示与“上色即易主”的显式日期用 */
 /** 状态栏日期文本（只到年时只显示年，不谎报 1 月 1 日） */
 const tlDateText = computed(() => formatDate(tlDate.value));
 
@@ -3253,7 +3253,7 @@ const sliceExportBusy = ref(false);
 
 
 /**
- * 单省易主日期（面板的「年-月-日」三格或「自动」按钮）—— 月日精度后是**整列表替换**。
+ * 单省易主日期（面板的“年-月-日”三格或“自动”按钮）—— 月日精度后是**整列表替换**。
  * `date = null` → 清除该省全部显式日期（回到自动推算）。
  * @param {{scenarioId:string, provinceId:string, date:object|null, done?:Function}} p
  *   `done` 由面板传入：无论成败都回调，让面板把输入框草稿清掉（成败都要显示库里真值）。
@@ -3262,7 +3262,7 @@ const sliceExportBusy = ref(false);
 
 
 /**
- * 批量设置易主日期（面板的「统一设为该日 / 固化推算值 / 全部清空」）—— 一条 undo。
+ * 批量设置易主日期（面板的“统一设为该日 / 固化推算值 / 全部清空”）—— 一条 undo。
  * 回执必须点名改了几省、清了几省（否则用户不知道这次批量到底动了什么）。
  */
 // onSetChangeDatesBulk 已搬到 riverOps.js（2026-10-31）
@@ -3295,7 +3295,7 @@ watch(tlPlaying, (v) => {
     tlEra.value = 0;
     tlDate.value = { y: timeline.value.years[0].start, m: null, d: null };
   } else {
-    // 从「当前剧本起点 + 年内进度」续播；月日归零，避免播放中途从 6 月 1 日开始插值
+    // 从“当前剧本起点 + 年内进度”续播；月日归零，避免播放中途从 6 月 1 日开始插值
     const y = timeline.value.years[tlEra.value];
     tlPlayT = Math.max(0, Math.min(1,
       (tlDate.value.y - y.start) / Math.max(1, y.end - y.start)));
@@ -3306,10 +3306,10 @@ watch(tlPlaying, (v) => {
 });
 
 // 时间轴的**唯一真源是 tlDate**：era 必须由它的**年**派生。
-// 否则拖动游标后 era 不跟着变 → 地图仍按旧剧本的归属渲染、HUD 的「已易主」也是错的。
+// 否则拖动游标后 era 不跟着变 → 地图仍按旧剧本的归属渲染、HUD 的“已易主”也是错的。
 // 🔴 注册点必须在 **onMounted 里**（见 onMounted 末尾）：在 setup 期直接
 //    `watch(() => tlDate.value.y, …)` 会在组件挂载前**触发一次 render()** —— 那一帧用的是
-//    还没适屏的相机 (0,0,1)，于是「首帧 = 空画布」（test_61 实测帧序：
+//    还没适屏的相机 (0,0,1)，于是“首帧 = 空画布”（test_61 实测帧序：
 //    t=1059 空帧 → t=1067 才适屏）。与本文件 `watch(sortedScenarios…)` 同一条纪律。
 
 // era 变化 → 编辑目标（selectedScenario）跟着走
@@ -3433,11 +3433,11 @@ function provincePathFor(prov, straight = false) {
   return path;
 }
 
-/** 活动环的顶点（顶点编辑作用于「活动环」；多环省份可在属性面板切换环） */
+/** 活动环的顶点（顶点编辑作用于“活动环”；多环省份可在属性面板切换环） */
 const activeRingIdx = ref(0);
 
 
-/** 把「活动环」的新顶点写回省份（主环 → points；额外环 → extraRings[i-1]），返回可 merge 的补丁 */
+/** 把“活动环”的新顶点写回省份（主环 → points；额外环 → extraRings[i-1]），返回可 merge 的补丁 */
 
 /** 省份的全部环的顶点数组（去响应式）——多环感知的度量 / 小地图 都走它 */
 
@@ -3450,7 +3450,7 @@ const activeRingIdx = ref(0);
 // ═══════════════════════════════════════════
 let isPanning = false;
 /**
- * 「按下时命中了河、但还没决定要选中」—— 2026-10-27 用户实测「随便一拖就选中河流」。
+ * “按下时命中了河、但还没决定要选中”—— 2026-10-27 用户实测“随便一拖就选中河流”。
  * 旧实现 mousedown 命中就立刻选中并吃掉按下，于是想拖地图查看时只要起点靠近河（10px）就变成选河。
  * 现在：按下只记候选，**照常进平移**；松手时位移 ≤4px 才算"点选"。
  */
@@ -3471,7 +3471,7 @@ function markCameraMotion() {
 let panStart = { x: 0, y: 0 };
 
 // ═══════════════════════════════════════════
-// Phase 3：省份「归属标签网格」（笔刷 / 套索 / 自动省界）
+// Phase 3：省份“归属标签网格”（笔刷 / 套索 / 自动省界）
 //   数据 = store.provinceEditing（按 baseMaps[key] 走 undo）；本处只做交互与渲染。
 // ═══════════════════════════════════════════
 const provinceTargets = computed(() => baseMap.value?.terrain || []);
@@ -3481,9 +3481,9 @@ const provinceTargetOptions = computed(() => provinceTargets.value
   .map((p, i) => ({ p, idx: i + 1 }))
   .filter((o) => !o.p.empty));
 
-// 🔴 P2（2026-10-09）：原先这一整段「省份网格即时反馈」已删除 ——
+// 🔴 P2（2026-10-09）：原先这一整段“省份网格即时反馈”已删除 ——
 //    `provinceMeshColorOf` / `scheduleProvinceGrid` / `provinceMeshOn` / `drawProvinceMesh`
-//    全部服务于「把归属格画到画布上」。而格点正是 10525 点海岸线退化成 ~22 点的根源
+//    全部服务于“把归属格画到画布上”。而格点正是 10525 点海岸线退化成 ~22 点的根源
 //    （见 provinceEditing.js 文件头 / docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
 //    现在：涂抹期间画布只画笔迹预览（`drawProvinceBrushOverlay`），抬手时多边形被精确布尔替换。
 
@@ -3507,14 +3507,14 @@ function statusMsg(text) {
 }
 
 // ── 底图懒建（Phase 3 收尾）─────────────────────────────────────────────
-// 项目里一张底图都没有时，**在第一次真正落笔前**建一张空底图，避免「点了没反应」。
-// ⚠️ 名字绝不借用任何真实剧本名（曾硬编码「德斯特星」= 拿暮雨自用剧本当示例，已移除）。
+// 项目里一张底图都没有时，**在第一次真正落笔前**建一张空底图，避免“点了没反应”。
+// ⚠️ 名字绝不借用任何真实剧本名（曾硬编码“德斯特星”= 拿暮雨自用剧本当示例，已移除）。
 const CREATES_CONTENT_TOOLS = new Set([
   'draw', 'height', 'biome', 'culture', 'religion', 'burg', 'river', 'relief',
   'label', 'marker', 'road', 'provinceBrush', 'provincePaint', 'provinceLasso', 'provinceFill',
 ]);
 
-/** 依赖「省份归属网格」的工具（落笔前要确保网格就位；也是 tools 图层/提示的判定依据） */
+/** 依赖“省份归属网格”的工具（落笔前要确保网格就位；也是 tools 图层/提示的判定依据） */
 const PROVINCE_GRID_TOOLS = new Set(['provinceBrush', 'provinceLasso', 'provinceFill']);
 
 /** 空底图命名：底图 1 / 底图 2 …（避开已有名字） */
@@ -3546,7 +3546,7 @@ function createEmptyBaseMap() {
 }
 
 /**
- * 工具栏「空底图」与「新建剧本 → 新建空底图」的唯一动作：建好 → 切过去 → 回执。
+ * 工具栏“空底图”与“新建剧本 → 新建空底图”的唯一动作：建好 → 切过去 → 回执。
  *
  * 为什么独立成函数：切换底图不只是改 `baseMapKey` —— 还要清选中、持久化当前键、按新底图重绘
  * （`onBaseMapChange` 就是这条唯一收口）。三处入口各写一遍，迟早有一处忘了清选中/持久化。
@@ -3556,7 +3556,7 @@ async function addEmptyBaseMap() {
   if (!r.ok) { statusMsg(`新建底图已停用：${r.reason}`); return null; }
   baseMapKey.value = r.name;
   await onBaseMapChange();
-  statusMsg(`已新建空底图「${r.name}」—— 之后画的省份 / 河流 / 道路都落在这张图上，不影响现有底图；要地形数据时用「＋」导入 .map 补`);
+  statusMsg(`已新建空底图“${r.name}”—— 之后画的省份 / 河流 / 道路都落在这张图上，不影响现有底图；要地形数据时用“＋”导入 .map 补`);
   return r.name;
 }
 
@@ -3570,24 +3570,24 @@ function ensureBaseMap() {
     return false;
   }
   baseMapKey.value = r.name;
-  statusMsg(`项目里还没有底图：已新建空底图「${r.name}」（可用工具栏「+」导入 .map 覆盖）`);
+  statusMsg(`项目里还没有底图：已新建空底图“${r.name}”（可用工具栏“+”导入 .map 覆盖）`);
   return true;
 }
 
 /**
- * 空态提示里的「新建空底图，自己画」（P0-3）。
+ * 空态提示里的“新建空底图，自己画”（P0-3）。
  * 与绘制工具触发的懒建是**同一条路**（`ensureBaseMap`）—— 这里只补一句针对按钮的回执：
  * 按钮点下去必须有回音（"没反应"是本项目反复出现的一类投诉）。
  */
 /**
- * 「第一笔」入口（2026-10-22）：确保有底图 → 进底图编辑 → 选「画省份」。
+ * “第一笔”入口（2026-10-22）：确保有底图 → 进底图编辑 → 选“画省份”。
  *
  * 为什么需要它：空底图上日常模式的省份行只有 圈选/点填/折线/铺底/描轮廓，全都要"已有省份或陆地"；
- * 真正能开第一笔的「画省份」只在「底图编辑」主行里（`v-if="basemapEditMode"`）——
- * 用户卡在这里，无路可走（原话：「可以建空底图了，但是我不知道怎么画，于是又卡住了」）。
+ * 真正能开第一笔的“画省份”只在“底图编辑”主行里（`v-if="basemapEditMode"`）——
+ * 用户卡在这里，无路可走（原话：“可以建空底图了，但是我不知道怎么画，于是又卡住了”）。
  *
  * ⚠️ 不能只靠 `setTool('draw')` 自动开模式：`BASEMAP_TOOL_IDS` 里**没有** draw/vertex
- *    （它们是从主行去的），所以这里显式走 `toggleBasemapEditMode()`（它同时收起「更多」并给回执）。
+ *    （它们是从主行去的），所以这里显式走 `toggleBasemapEditMode()`（它同时收起“更多”并给回执）。
  */
 function startDrawingProvince() {
   if (store.isReadOnly) {
@@ -3602,12 +3602,12 @@ function startDrawingProvince() {
 }
 
 /**
- * 「笔刷建省」入口（2026-10-22）：确保有底图 → 进底图编辑 → 选笔刷建省。
+ * “笔刷建省”入口（2026-10-22）：确保有底图 → 进底图编辑 → 选笔刷建省。
  *
  * 与 `startDrawingProvince` 是**两条并列的第一笔路径**（不是同一个工具的两个名字）：
  *   · 画省份 = 绕一圈描边界（精确、会贴骨架）
  *   · 笔刷建省 = 抹一条（快、像画图；不闭合也能成省）
- * 用户原话：「按住左键像涂色一样抹，松手自动把抹过的范围长成一个省」——
+ * 用户原话：“按住左键像涂色一样抹，松手自动把抹过的范围长成一个省”——
  * 空底图上"不知道怎么落第一笔"的人，绝大多数想的是前者那种笔，不是套索。
  */
 function startPaintingProvince() {
@@ -3625,7 +3625,7 @@ function startPaintingProvince() {
 async function createEmptyBaseMapFromHint() {
   const name = await addEmptyBaseMap();
   if (name) {
-    statusMsg(`已新建空底图「${name}」—— 用「画省份」或笔刷工具直接开始；之后随时可用「导入 .map 底图」补地形/河流数据`);
+    statusMsg(`已新建空底图“${name}”—— 用“画省份”或笔刷工具直接开始；之后随时可用“导入 .map 底图”补地形/河流数据`);
   }
   return !!name;
 }
@@ -3636,7 +3636,7 @@ function addEmptyProvince() {
   if (!res || res.blocked) { statusMsg((res && res.message) || '新建省份失败'); return; }
   provBrushTarget.value = res.idx;
   provinceBrush.invalidateBorders();
-  statusMsg(`已新建「${res.name}」——按住涂抹即可给它划地（边界在抬手时生成）`);
+  statusMsg(`已新建“${res.name}”——按住涂抹即可给它划地（边界在抬手时生成）`);
   render();
 }
 
@@ -3687,9 +3687,9 @@ function onCanvasMouseLeave() {
  *    而 **浏览器对右键根本不派发 `click`**（只派发 `contextmenu` / `auxclick`）——
  *    当时唯一的 contextmenu 监听器只写了 `e.preventDefault()` → 真机上**右键菜单整片打不开**。
  *    该菜单里的四条失效后果（据实说，别夸大）：
- *      · 「重命名」「更改生物群系」 —— 属性面板另有入口（改名输入框 / 群系下拉）；
- *      · 「删除」                   —— 「更多 → 删除 (E)」工具另有入口（点击省份即删）；
- *      · 「复制省份」               —— **此前只有这个菜单有**（唯一真正独有的能力）。
+ *      · “重命名”“更改生物群系” —— 属性面板另有入口（改名输入框 / 群系下拉）；
+ *      · “删除”                   —— “更多 → 删除 (E)”工具另有入口（点击省份即删）；
+ *      · “复制省份”               —— **此前只有这个菜单有**（唯一真正独有的能力）。
  *    即便如此，一个"点了没反应"的右键仍是真缺陷（用户第一反应就是右键）。
  *    ⚠️ 之所以长期没被发现：测试里自己 `dispatchEvent(new MouseEvent('click', {button:2}))`
  *    就能把菜单"打开"，于是源码/行为守卫双双为真 —— **合成事件比真实浏览器更宽松**
@@ -3723,7 +3723,7 @@ function onCanvasDblClick(event) {
   if (tool.value === 'river' && riverDraft.value.length >= 2) {
     finishRiverDraft();
   }
-  // A：折线切割 —— 双击 = 收口切开（与「自由绘制」同一套手感）
+  // A：折线切割 —— 双击 = 收口切开（与“自由绘制”同一套手感）
   if (tool.value === 'polySplit' && polySplitPoints.value.length >= 2) {
     finishPolySplit();
   }
@@ -3739,19 +3739,19 @@ function isEditableTarget(t) {
 // finishDraw 已搬到 misc.js（2026-10-31）
 
 
-// ── 「绘制」工具的**按住拖动自由绘制**（原型 v7 的手感）─────────────────────
+// ── “绘制”工具的**按住拖动自由绘制**（原型 v7 的手感）─────────────────────
 //
-// 用户实测：「绘制功能有退化为早期版本描点连线模拟器的风险，我之前测的手动绘制原型不是
-// 已经很好用了吗？……这和原型里流畅的手绘体验完全不一样。」
+// 用户实测：“绘制功能有退化为早期版本描点连线模拟器的风险，我之前测的手动绘制原型不是
+// 已经很好用了吗？……这和原型里流畅的手绘体验完全不一样。”
 // 描点（单击加顶点）是必要的精确手段，保留；但**按住拖动**要能像手绘一样一笔成型：
 //   按住 → 采样轨迹（屏幕像素间距）→ 松手 → 闭环 RDP 保形简化（utils/regionTrace，
-//   与「区域勾轮廓」同一套：旋转到离质心最远点当锚点，容差 = 包围盒 span 的 2%~5%）
+//   与“区域勾轮廓”同一套：旋转到离质心最远点当锚点，容差 = 包围盒 span 的 2%~5%）
 //   → 直接落成省份多边形（不做凸包、不栅格化，保原始形状）。
 // 两条路径共用同一份省份数据模型（terrain[] 多边形），不新增第二套事实源。
 const FREE_TRACE_MIN_POINTS = 10;   // 少于这个采样数 = 用户只是点了一下（交给描点分支）
 let freeTrace = null;
 let freeTraceActive = false;
-// 上一笔被净化层拒绝的原因（松手时 statusMsg 用它说人话，不再只报「轨迹太短」）
+// 上一笔被净化层拒绝的原因（松手时 statusMsg 用它说人话，不再只报“轨迹太短”）
 let freeTraceRejectReason = '';
 /** 用户点了提示卡的 ×（本次进剧本内不再弹；换底图/新建省后自然也不需要） */
 const emptyHintDismissed = ref(false);
@@ -3760,7 +3760,7 @@ let suppressDrawClick = false;      // 一笔成型后紧随的 click 不要再�
 /* ══════════════════════════════════════════════════════════════════════════
  * 自由绘制的**唯一几何链**：预览 = 落库（2026-10-17 第四轮）
  *
- * 暮雨的说法：「主要是编辑体验这一块，不要搞成描点连线模拟器就行」。
+ * 暮雨的说法：“主要是编辑体验这一块，不要搞成描点连线模拟器就行”。
  * 此前松手**前**的预览是一条**手抖折线**（`tracePath(freeTrace)`），而松手**后**落库的是
  * 另一条形状（简化 → 贴骨架 → 贝塞尔平滑）—— 两条不一样，预览就只是"笔迹"，不是
  * "你将得到的那块地"。现在预览与落库都走 `freeTraceRing()`，做到**按什么看到什么**。
@@ -3798,7 +3798,7 @@ function previewTraceRing() {
   return tracePreviewCache.ring;
 }
 
-/** 新建省份的公共收尾：选中它 + 打开属性面板并把光标放进名字框（P1「名字输入」） */
+/** 新建省份的公共收尾：选中它 + 打开属性面板并把光标放进名字框（P1“名字输入”） */
 const provNameInput = ref(null);
 function focusNewProvince(id, fallback) {
   const found = (baseMap.value?.terrain || []).find((q) => q.id === id) || fallback;
@@ -3814,7 +3814,7 @@ function focusNewProvince(id, fallback) {
 /**
  * 描轮廓落库（E，2026-10-11）：把笔迹**围住的那块地**从邻省手里改到目标省。
  *
- * 语义与「画省份」的区别（同一个手势，两件事）：
+ * 语义与“画省份”的区别（同一个手势，两件事）：
  *   · 画省份 = 新建一个省（区域是笔迹**描出的轮廓**）
  *   · 描轮廓 = 改已有省份的边界（区域是笔迹**围出的闭合形状**，目标省 = 区域里占比最高的那个）
  * 落库只在 store（`applyProvinceOutline`）—— 判定与几何**单源**，组件只负责翻译结果。
@@ -3830,8 +3830,8 @@ function focusNewProvince(id, fallback) {
  * 新建省份的**统一落库口**（含压叠闸门）—— 描点 / 自由绘制两条路径共用。
  *
  * 判定在 store（`addBaseProvince` → `utils/provinceOverlap.js`，单源），这里只负责**问人**：
- *   被拦 → 把「压了多少、压在谁身上」摆出来 → 用户确认才带 `allowOverlap` 重试。
- * 为什么是「问」而不是「硬拒」：确实会有人照着一张更大的范围重画，硬拒会让他无路可走；
+ *   被拦 → 把“压了多少、压在谁身上”摆出来 → 用户确认才带 `allowOverlap` 重试。
+ * 为什么是“问”而不是“硬拒”：确实会有人照着一张更大的范围重画，硬拒会让他无路可走；
  * 但**默默压上去**更坏 —— 压叠会让点选、归属上色、势力标签三处互相打架。
  * @returns {object|null} null = 没建成（被拦且用户放弃 / 其它拒绝）
  */
@@ -3902,11 +3902,11 @@ function collectLinkedPatches(preview) {
  * 与新建省份的闸门（`addProvinceWithOverlapGate`）共用同一份度量 —— 但**判定单源在 store**：
  * 这里只调 `store.previewProvinceOverlap()`（`test_79` f0 硬断言组件里连那个纯函数的名字都不许出现），
  * 组件只负责"问人"。差别只在两点：
- *   ① **先量后写**：候选几何是 `{...prov, ...patch}`（还没落库），用户点「取消」就什么也不发生，
+ *   ① **先量后写**：候选几何是 `{...prov, ...patch}`（还没落库），用户点“取消”就什么也不发生，
  *      不需要"写完再撤销"那套（那会给一次拖拽留下两条历史）。
  *   ② **只对"恶化"发问**：真实数据里有**本来就互相压着**的省份（格点时代留下的），
  *      若只要 `ratio > 阈值` 就问，用户每拖一个顶点都会被弹一次 —— 把一个既存问题算到
- *      这一下手势头上，很快就会练成"闭眼点确定"。所以判据是「这次拖动让它更压了吗」。
+ *      这一下手势头上，很快就会练成"闭眼点确定"。所以判据是“这次拖动让它更压了吗”。
  *
  * @param {object} before 拖动前的省份对象（当前库里的那份）
  * @param {object} after  拖动后的候选省份对象（未落库）
@@ -3955,15 +3955,15 @@ const RIVER_MAX_DRAFT_POINTS = 600;
 const RIVER_HANDLE_MAX = 120;
 const RIVER_HANDLE_MIN_ZOOM = 1.2;
 /**
- * 抬笔时低于这个点数视为「只是点了一下」→ **不落库**（当作选河/加拐点，见 onCanvasClick）。
+ * 抬笔时低于这个点数视为“只是点了一下”→ **不落库**（当作选河/加拐点，见 onCanvasClick）。
  * 与行星图 `RIVER_BRUSH_MIN_POINTS` 同一口径：拖 2px 手抖不该被当成画一条河。
  */
 const RIVER_BRUSH_MIN_POINTS = 4;
 
 // ══════════════════════════════════════════════════════════════════════════
 // 河流橡皮（2026-10-18 第十八修·三）—— 暮雨原话：
-//   「河流要不要尝试其他画法？应该更偏向手绘吗（甚至有橡皮擦来擦除）。
-//     事实上整个司天所有涉及地图编辑的地方，都应该优先参考现成各类绘图软件。」
+//   “河流要不要尝试其他画法？应该更偏向手绘吗（甚至有橡皮擦来擦除）。
+//     事实上整个司天所有涉及地图编辑的地方，都应该优先参考现成各类绘图软件。”
 //
 // 现成绘图软件的橡皮是**同一件事**：按住抹过去，笔迹就没了 —— 不需要先选中对象、
 // 不需要挑节点、不需要按 Delete。这里照抄这条交互，只是墨水换成了折线几何：
@@ -4010,7 +4010,7 @@ const riverEraseStroke = ref([]);
 /**
  * 一条手画河的**逐点宽度序列**（源头细 → 河口粗）—— 见 `drawCurvedRiver`/`taperWidths`。
  *
- * 🔴 用户原话「不会有粗细变化吗？你没看过真实的地图吗？」：
+ * 🔴 用户原话“不会有粗细变化吗？你没看过真实的地图吗？”：
  *    手画河此前是**一个线宽画到底**，所以形状再对也像一根管子。
  *    这里按 `width` 字段（"河口宽度"）反推源头宽度，中间用三次方根过渡 ——
  *    **同一份数据在两个视图里给同一条河同样的粗细比**。
@@ -4041,8 +4041,8 @@ const riverEraseStroke = ref([]);
  *   · `RIVER_WORLD_FLOOR = 0.4`：世界单位硬下限（防 width=0 的病态数据画出 0 宽）。
  *     ⚠️ 这个数字**刻意避开某个两位小数**：`test_73` 有一条"ScenarioMap 的脚本区里
  *       不许出现省名档阈值（一个 0.xx 字面量）"的源码守卫，它唯一可判据的形态就是裸子串。
- *       该守卫第二次误伤时留下的纪律是「遇到时先看是不是省名档逻辑，不是就**改数字**、
- *       别改守卫」—— 这里照办（**连注释里也不要写出那个数**，否则守卫照样红）。
+ *       该守卫第二次误伤时留下的纪律是“遇到时先看是不是省名档逻辑，不是就**改数字**、
+ *       别改守卫”—— 这里照办（**连注释里也不要写出那个数**，否则守卫照样红）。
  */
 const RIVER_WIDTH_DATA_SCALE = 2.4;
 const RIVER_WIDTH_DEFAULT = 3.5;
@@ -4062,7 +4062,7 @@ const RIVER_MEANDER_MAX_PX = 1.8;
 /**
  * 把**河链**画成曲线（自动河的唯一画法，2026-10-17 第八修）。
  *
- * 与逐段画法的本质区别（用户「支气管模拟器」的根因）：
+ * 与逐段画法的本质区别（用户“支气管模拟器”的根因）：
  *   · 逐段：N 根一格长小棍，每根独立 `beginPath/stroke` → 分叉处像"劈开的三根棍"，
  *     而且每根都是直线、段与段之间**没有共享几何** → 结构上不可能连成一条河；
  *   · 按链：一条链是"源头 → 汇流点/河口"的**完整折线**，压到 8~14 个控制点后
@@ -4101,7 +4101,7 @@ const RIVER_NET_CELL_PX_OK = 6;
 /**
  * 河网的**最细屏幕像素**（`minPx`）。
  * 🔴 1.2 而不是 0.7：实测在 100% 缩放下（cellPx=14.4）0.7px 的线**几乎看不见**
- *    （用户：「自动河流依旧恐怖谷」的另一半是"看不清"）。1.2px 仍然比自带河细，
+ *    （用户：“自动河流依旧恐怖谷”的另一半是"看不清"）。1.2px 仍然比自带河细，
  *    但干流能站住 —— 真实地图上的主干河也是这个量级。
  */
 const RIVER_NET_MIN_PX_BASE = 1.2;
@@ -4123,8 +4123,8 @@ const RIVER_CURVE_SUBDIV = 7;
 // ══════════════════════════════════════════════════════════════════════════
 // 剧本底图的**河流节点编辑**（2026-10-17）
 //
-// 为什么必须补：底图侧的河此前只有 add / remove —— 「画完之后想微调」在数据层
-// 与交互层**两个地方都没有出口**（行星图早就有的「拖节点 / 加拐点 / 删整条」）。
+// 为什么必须补：底图侧的河此前只有 add / remove —— “画完之后想微调”在数据层
+// 与交互层**两个地方都没有出口**（行星图早就有的“拖节点 / 加拐点 / 删整条”）。
 // 用户原话是"保底也要做，强化地图编辑器本身，让用户可以随心所欲画河流"。
 //
 // 🔴 底图河的坐标是**底图自身坐标系**，与行星图的高度图不是一回事 ——
@@ -4139,8 +4139,8 @@ const RIVER_CURVE_SUBDIV = 7;
 
 // ── 支流（2026-10-18 第十五修）──────────────────────────────────────────────
 //
-// 用户原话：「河流的手动绘制依旧画不好……而且依旧不能给河流画支流。似乎只能加拐点。
-// 依旧描点连线模拟器。我又画了一条想模拟河流汇聚，结果给我整出来什么交叉怪物。」
+// 用户原话：“河流的手动绘制依旧画不好……而且依旧不能给河流画支流。似乎只能加拐点。
+// 依旧描点连线模拟器。我又画了一条想模拟河流汇聚，结果给我整出来什么交叉怪物。”
 //
 // 拆成两条互相独立的保证：
 //   ① **能画支流**：起笔落在已有河的河身上 → 起点吸附到河身、笔迹沿路吸附（`snapToPolyline`）；
@@ -4180,12 +4180,12 @@ const RIVER_BRANCH_SNAP_PX = 22;
  * 删完重新平滑一次 —— 少了拐点之后原来的弧线要跟着收（与"画完一次就平滑"同一口径）。
  */
 /**
- * 从「已选中河流」那一行切进河流工具（2026-10-17 第八修·再修）。
+ * 从“已选中河流”那一行切进河流工具（2026-10-17 第八修·再修）。
  *
  * 为什么要这个按钮：`Delete` 能删整条河，但**改节点**必须在河流工具里。
- * 用户在「选择」工具里点中一条河之后，如果只给"删除"，他能做的就只有删 ——
+ * 用户在“选择”工具里点中一条河之后，如果只给"删除"，他能做的就只有删 ——
  * 而"这条河的弯不对，我要调一下"是最常见的诉求。所以给一个**一步到位**的入口
- * （与「选中后按 Delete」互补，不是替代）。
+ * （与“选中后按 Delete”互补，不是替代）。
  */
 function enterRiverToolForSelected() {
   if (!selectedRiver.value) { statusMsg('没有选中的河流'); return; }
@@ -4239,7 +4239,7 @@ function clearPolySplit() {
 
 /**
  * 折线预览**防抖**：一次布尔（10525 点的省 ≈ 20ms ×2）不能挂在 mousemove 上。
- * 只在「点了一个点」之后算一次 —— 拖橡皮筋那段不需要重新切。
+ * 只在“点了一个点”之后算一次 —— 拖橡皮筋那段不需要重新切。
  */
 function schedulePolySplitPreview() {
   if (polySplitPreviewTimer) clearTimeout(polySplitPreviewTimer);
@@ -4261,7 +4261,7 @@ function onPolySplitClick(world) {
   if (n === 1) {
     const t = polySplitTarget.value;
     statusMsg(t
-      ? `折线切割：起点在「${t.name || t.id}」上 —— 继续点，沿想要的边界走；双击 / Enter 切开`
+      ? `折线切割：起点在“${t.name || t.id}”上 —— 继续点，沿想要的边界走；双击 / Enter 切开`
       : '折线切割：起点不在任何省份上 —— 继续画，折线穿过哪个省就切哪个');
   } else {
     statusMsg(`折线切割：已点 ${n} 个点 —— 双击 / Enter 切开，Esc 取消`);
@@ -4296,7 +4296,7 @@ function rerollBatchSeed() {
 
 function clearBatchSeeds() {
   batchSeeds.value = [];
-  batchStatus.value = '种子已清空 —— 可以在画布上手动点几下放种子，或「自动播种」';
+  batchStatus.value = '种子已清空 —— 可以在画布上手动点几下放种子，或“自动播种”';
   render();
 }
 
@@ -4411,10 +4411,10 @@ function onProvinceCoastChange(e) {
 /**
  * 命中测试：**自顶向下**（数组末尾 = 画得最上面）。
  *
- * 🔴 2026-10-02 修正：此前是正序遍历「第一个命中就返回」，而 `drawProvinces` 是正序 fill
+ * 🔴 2026-10-02 修正：此前是正序遍历“第一个命中就返回”，而 `drawProvinces` 是正序 fill
  * （数组靠后的盖在上面）→ 两个省压叠时点中的是**视觉上被压在下面**的那个（越叠越明显）。
  * 两者口径必须相反才自洽：画 = 后面的在上，命中 = 从后面往前找。
- * 新省创建侧另有压叠闸门（`utils/provinceOverlap.js`），这条是「已经压叠了也要点得准」。
+ * 新省创建侧另有压叠闸门（`utils/provinceOverlap.js`），这条是“已经压叠了也要点得准”。
  *
  * 🔴 2026-10-23（第 1 件 1-a）：实现换成**空间索引**，语义逐字节不变（候选按原下标降序、
  *    洞点不中、飞地点得中）。旧实现在真实 200 省底图上 20.4ms/次，涂归属每次 mousemove
@@ -4438,7 +4438,7 @@ function findProvinceAt(x, y) {
  * 为当前底图创建高度图网格（A1，2026-09-24）。
  *
  * 底图的高度图此前**只有 `.map` 导入**一条来源 → 新建的底图里高度 / 群系 / 文化 / 宗教笔刷
- * 与一键派生全部因为「没有网格」直接 return，用户看到的是「工具点了没反应」。
+ * 与一键派生全部因为“没有网格”直接 return，用户看到的是“工具点了没反应”。
  * 创建后这些工具即可使用；范围按底图已有地形的包围盒外扩（空底图给默认方框）。
  */
 function createBaseMapHeightmap() {
@@ -4452,9 +4452,9 @@ function createBaseMapHeightmap() {
 }
 
 /**
- * 🔴 2026-10-17：`.map` 的「文件名 → 底图名」与「原文留底」搬到
+ * 🔴 2026-10-17：`.map` 的“文件名 → 底图名”与“原文留底”搬到
  * `utils/mapImportSource.js` —— 行星视图（`PlanetMap`）现在也能导入 `.map`，
- * 两处各写一份的代价不是报错，而是「只有一边留了原文 / 只有一边剥掉日期后缀」这种静默不一致。
+ * 两处各写一份的代价不是报错，而是“只有一边留了原文 / 只有一边剥掉日期后缀”这种静默不一致。
  * 详见该文件头部说明。
  */
 
@@ -4537,10 +4537,10 @@ const editGroupName = ref('');
 /**
  * 清空全部剧本（2026-10-11 接活 `removeAllScenarios` 这个零调用死入口）。
  *
- * 语义边界（**必须说清**，否则用户不敢点）：只删「剧本」这一层 ——
+ * 语义边界（**必须说清**，否则用户不敢点）：只删“剧本”这一层 ——
  *   名称 / 罗马数字 / 起止年 / 势力 / `ownership` / `changeEvents` / 标注 / 标记。
  *   **底图（`baseMaps`）与省份多边形（`terrain`）一个字都不动** ——
- *   清完还能直接把省份批量铺底重切，或用「导入剧本数据」灌一份干净的进来。
+ *   清完还能直接把省份批量铺底重切，或用“导入剧本数据”灌一份干净的进来。
  * 一条 undo：`removeAllScenarios` 里是整份 `scenarios` 的快照替换。
  */
 // clearAllScenarios 已搬到 misc.js（2026-10-31）
@@ -4550,7 +4550,7 @@ const editGroupName = ref('');
 // 剧本元信息编辑（2026-10-07）
 // ═══════════════════════════════════════════
 // 🔴 `updateScenario` 此前是**零调用的死入口**：剧本的 名称 / 罗马数字 / 时代标签 /
-//    **起止年** 建完就改不了 —— 年份填错只能「删剧本重建」，而重建会连带丢掉
+//    **起止年** 建完就改不了 —— 年份填错只能“删剧本重建”，而重建会连带丢掉
 //    ownership / changeEvents / 标注 / 标记（那是真丢数据）。这里复用新建表单做编辑。
 const editingScenarioId = ref(null);
 
@@ -4559,7 +4559,7 @@ const editingScenarioId = ref(null);
 
 
 
-// 每次打开管理对话框：新建表单落到**当前剧本集**（否则在自定义组里打开，默认会建到「默认」组）
+// 每次打开管理对话框：新建表单落到**当前剧本集**（否则在自定义组里打开，默认会建到“默认”组）
 watch(showScenarioManager, (open) => {
   if (!open || editingScenarioId.value) return;
   newScenario.value = scenarioFormBlank();
@@ -4572,8 +4572,8 @@ watch(showScenarioManager, (open) => {
 // 标注 / 标记的删除（2026-10-07）
 // ═══════════════════════════════════════════
 // 此前 `removeScenarioLabel` / `removeScenarioMarker` 是零调用的死入口
-// → 地名与标记「只能加不能删」（只有一次性的撤销兜底）。
-// ⚠️ FMG `.map` 导入的标注/标记**没有 id** → 一律带上下标，交 store 按「id 或下标」解析；
+// → 地名与标记“只能加不能删”（只有一次性的撤销兜底）。
+// ⚠️ FMG `.map` 导入的标注/标记**没有 id** → 一律带上下标，交 store 按“id 或下标”解析；
 //    否则 `undefined === undefined` 命中同类型第一条（点第 3 条删掉第 1 条，且不报错）。
 const annoRows = computed(() => {
   const s = selectedScenario.value;
@@ -4592,7 +4592,7 @@ function deleteAnnotation(row) {
   const sid = selectedScenario.value?.id;
   if (!sid || !row) return;
   const what = row.kind === 'label' ? '地名' : '标记';
-  if (!confirm(`确定删除${what}「${row.text}」？`)) return;
+  if (!confirm(`确定删除${what}“${row.text}”？`)) return;
   const r = row.kind === 'label'
     ? store.removeScenarioLabel(sid, row.ref)
     : store.removeScenarioMarker(sid, row.ref);
@@ -4600,7 +4600,7 @@ function deleteAnnotation(row) {
     statusMsg(`删除${what}失败（${(r && r.reason) || '未知原因'}）`);
     return;
   }
-  statusMsg(`已删除${what}「${row.text}」（可撤销）`);
+  statusMsg(`已删除${what}“${row.text}”（可撤销）`);
   render();
 }
 
@@ -4696,19 +4696,19 @@ function resolveSnapPoint(world, shiftKey) {
  * 当前底图的高度图栅格（M2/A2，2026-09-25）。
  *
  * 构建逻辑已抽到 `utils/heightmapRaster.js`：同一份高度图以前有两个视图两套渲染算法与配色，
- * 现在是同一套。本函数只负责「用哪一份高度图」（底图当前的那份）。
+ * 现在是同一套。本函数只负责“用哪一份高度图”（底图当前的那份）。
  *
  * 红线不变：大数据量必须预渲染，不逐帧重绘（几万格逐格画 = 每帧几十毫秒）。
  */
 function buildCellRaster(kind) {
   // 🔴 必须走 `getHeightmapFor`（A1 的**唯一**读取口），不能摸 `baseMap.heightmap`：
-  //    绑定行星后底图侧那份是空的/过期的，照它画就会「涂了看不见、地形凭空没了」，
+  //    绑定行星后底图侧那份是空的/过期的，照它画就会“涂了看不见、地形凭空没了”，
   //    而且不报错。本组件此前读的是 `baseMap.value?.heightmap`（2026-10-14 改）。
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
-  // 山体阴影（2026-10-17 第七修，用户：「地形怎么3D表现」）：默认关 = 零行为变更。
+  // 山体阴影（2026-10-17 第七修，用户：“地形怎么3D表现”）：默认关 = 零行为变更。
   // 只对"读地形的档"生效（`buildHeightmapRaster` 内部自己判，专题图档不会加阴影）。
-  // `landAsSea`（2026-10-27）：剧本画布的「陆海底色」只当海面纸 —— 陆地由省份多边形负责，
-  // 否则省份平滑后的海岸会漏出一圈块状浅米色（B1「白一块」）。
+  // `landAsSea`（2026-10-27）：剧本画布的“陆海底色”只当海面纸 —— 陆地由省份多边形负责，
+  // 否则省份平滑后的海岸会漏出一圈块状浅米色（B1“白一块”）。
   return buildHeightmapRaster(hm, kind, {
     shade: terrainShade.value ? terrainShadeStrength.value
       : ((kind === 'satellite' || kind === 'terrain') ? 1 : 0),
@@ -4717,7 +4717,7 @@ function buildCellRaster(kind) {
 }
 
 function getRaster(kind) {  // 🔴 键里必须含**高度图对象引用**（2026-10-14）：只按 `底图键|档位` 存的话，
-  //    「调整分辨率 / 平滑 / 涂抹 / 撤销」之后画布还是旧图 —— 缓存命中，什么都不重画，
+  //    “调整分辨率 / 平滑 / 涂抹 / 撤销”之后画布还是旧图 —— 缓存命中，什么都不重画，
   //    而且没有任何提示。`commitHeightmap` 每次都换对象 → 引用变 = 内容变。
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
   // ⚠️ 缓存键必须含**阴影开关与强度**：否则"勾了阴影画布不变"（缓存命中）——
@@ -4735,7 +4735,7 @@ function drawRasterLayer(c, kind, alpha) {
   if (!r) return;
   c.save();
   c.globalAlpha = alpha;
-  // 平滑档（RASTER_SMOOTH，2026-10-09 反「拼豆」）：源画布是格级分辨率，靠插值放大成渐变。
+  // 平滑档（RASTER_SMOOTH，2026-10-09 反“拼豆”）：源画布是格级分辨率，靠插值放大成渐变。
   // 方块档是 1 世界单位 1 像素并 1:1 贴回，插值与否无差别。
   c.imageSmoothingEnabled = RASTER_SMOOTH;
   c.imageSmoothingQuality = 'high';
@@ -4747,8 +4747,8 @@ function drawRasterLayer(c, kind, alpha) {
 // 地形浮雕底（2026-11-03，EU4 构图比例）
 //
 // 用户对照《欧陆风云4》的原话：EU4 一屏约 65% 地形纹理 + 25% 政治水洗 + 10% 线字；
-// 我们 90% 是平涂色块 —— 参数怎么调都不像，因为缺的是那 65% 的「地形」。
-// 做法：底图本来就有高度图 → 复用 `heightmapRaster` 的「地形色 + 山体阴影」档，
+// 我们 90% 是平涂色块 —— 参数怎么调都不像，因为缺的是那 65% 的“地形”。
+// 做法：底图本来就有高度图 → 复用 `heightmapRaster` 的“地形色 + 山体阴影”档，
 // 铺在政治色**下面**；省份填色按 `view.politicalWash`（0.42）水洗上去。
 //
 // 只跑政治档（landsea / none）：height/temp/prec 这些栅格档自己就是地形图，再叠一层会糊。
@@ -4780,9 +4780,9 @@ function getReliefRaster() {
 }
 
 /**
- * 导出的地形底图快照（2026-10-27）：「导出 = 你看到的那张图」。
+ * 导出的地形底图快照（2026-10-27）：“导出 = 你看到的那张图”。
  *
- * 触发条件：用户的「地形表示」选的是 height / temp / prec（这三档是**地形/专题底图**，
+ * 触发条件：用户的“地形表示”选的是 height / temp / prec（这三档是**地形/专题底图**，
  * 画布上省份只描边不填色，政治色块不参与）。这时导出若仍是纯政治色块，成品图与屏幕上是两张图。
  *
  * 返回 `{ kind, raster, isobaths, coasts }`：
@@ -4797,7 +4797,7 @@ function exportTerrainSnapshot() {
   const raster = r
     ? { dataUrl: r.canvas.toDataURL('image/png'), minX: r.minX, minY: r.minY, w: r.w, h: r.h }
     : null;
-  // 只有「高度」档有海深/等深线（温度/降水是专题图，加海深会被读成地形 —— 与画布同一条口径）
+  // 只有“高度”档有海深/等深线（温度/降水是专题图，加海深会被读成地形 —— 与画布同一条口径）
   const sea = kind === 'height' ? getSeaDetail() : null;
   const isobaths = sea && Array.isArray(sea.isobaths) ? sea.isobaths : [];
   const coasts = sea && Array.isArray(sea.coasts) ? sea.coasts : [];
@@ -4855,14 +4855,14 @@ function polylineInView(pts, minX, minY, maxX, maxY) {
   return false;
 }
 
-// ── 导入河/路的「海岸线裁剪」缓存（2026-10-14）──────────────────────────────
-// 🔴 为什么必须有缓存：`drawRivers` 每帧都跑，而判定「这一点在不在陆地上」是逐环射线法
+// ── 导入河/路的“海岸线裁剪”缓存（2026-10-14）──────────────────────────────
+// 🔴 为什么必须有缓存：`drawRivers` 每帧都跑，而判定“这一点在不在陆地上”是逐环射线法
 //    （真实底图 415 个环 / 24018 个顶点）。每帧现算 = 把"改好了观感"换成"卡成幻灯片"。
 //    缓存键用**引用**（`baseMap.terrain` / `baseMap.rivers` 的数组引用）：
 //    改省份会换 terrain 数组引用、导入会换 rivers 数组引用 —— 引用没变就不可能变，
 //    所以这层缓存不会"陈旧"（比按 key 名缓存安全：同名换数据不会漏失效）。
 let displayRiverCache = { terrain: null, rivers: null, out: [] };
-// 导入河的「绘制计划」与「分块 Path2D」两套缓存已随 `drawRivers` 搬进
+// 导入河的“绘制计划”与“分块 Path2D”两套缓存已随 `drawRivers` 搬进
 // `scenario/layers/features.js`（它们是渲染独占，组件这边不再需要）。
 let landMaskCache = { terrain: null, mask: null };
 
@@ -4879,7 +4879,7 @@ function getLandMask() {
 /**
  * 河流的**陆地判定** —— 自动河流裁剪专用，**单一实现**。
  *
- * 🔴 口径 = **省份掩膜独占**（2026-10-16 第五修）。上一轮这里是「掩膜 ∪ 高度场」，
+ * 🔴 口径 = **省份掩膜独占**（2026-10-16 第五修）。上一轮这里是“掩膜 ∪ 高度场”，
  *    并据"实测 9/2785 越界"认为已修好 —— 实际上并集**让越界变多了**，理由与实测见函数体内注释。
  *    一句话：**掩膜在时高度场不许插话**；掩膜不在（还没画省份的空底图）才用高度场兜底。
  *
@@ -4914,12 +4914,12 @@ let autoRiverNetCache = { terrain: null, rivers: null, out: [] };
 
 
 /**
- * 自动河「要画的那几段折线」—— **按数据引用缓存的纯几何**（2026-10-18 第十八修）。
+ * 自动河“要画的那几段折线”—— **按数据引用缓存的纯几何**（2026-10-18 第十八修）。
  *
  * 这一段原来整块写在 `renderFrame` 里，于是**每帧**都要：算流量闸门 → 剪枝 → 沿 receiver
  * 成链 → 抽稀到控制点 → 重建陆地掩膜 → 逐链裁到海岸线。全部与相机无关，纯属白付。
  * 实测（真实 desite 底图 / 1710 段 / 755 段过闸门）：一帧 7.3ms → **14.3ms**，
- * 其中 `pruneRiverNetwork` 一项就 4.2ms；用户侧表现是「点过自动河流之后到处都卡」。
+ * 其中 `pruneRiverNetwork` 一项就 4.2ms；用户侧表现是“点过自动河流之后到处都卡”。
  *
  * 缓存键 = `(net, terrain, segMax)` 三个**引用/标量**：`net` 由 `getAutoRiverNetwork()`
  * 按 `(segments, terrain)` 引用缓存，`segMax` 随生成换值，`terrain` 写入一律换数组
@@ -4980,7 +4980,7 @@ const layerAvailability = computed(() => {
   const hm = baseMap.value?.heightmap;
   return {
     // 🔴 只报**有地形内容**的格数（2026-10-11）：空壳高度图（有点、无 h）此前会被报成
-    //    「N 网格」，于是用户看到纯色扁平图 + 状态栏说"有网格"，只能去找一个不存在的显示开关。
+    //    “N 网格”，于是用户看到纯色扁平图 + 状态栏说"有网格"，只能去找一个不存在的显示开关。
     cells: hasHeightmapContent(hm) ? (hm?.grid?.points?.length || 0) : 0,
     temp: (hm?.temp?.length || 0) > 0,
     prec: (hm?.prec?.length || 0) > 0,
@@ -5040,10 +5040,10 @@ function render() {
     if (renderErrorCount.value) { renderErrorCount.value = 0; renderError.value = ''; }
   } catch (e) {
     // ── 渲染护栏 ─────────────────────────────────────────────────────────
-    // render() 里抛出的异常会在 rAF / 事件回调里反复抛出：用户看到的是「画布黑掉 + 整页交互失效」；
+    // render() 里抛出的异常会在 rAF / 事件回调里反复抛出：用户看到的是“画布黑掉 + 整页交互失效”；
     // 回归里表现为后续用例连环 CDP 超时（2026-09-20 一次负半径 IndexSizeError 连坐 12 个用例）。
     // 策略：捕获 → 只记录一次（console + 主进程错误日志）→ 连续 3 帧仍失败则**暂停渲染循环**
-    // 并在状态栏给可见提示 + 「继续渲染」按钮（可见、可恢复，绝不静默黑屏）。
+    // 并在状态栏给可见提示 + “继续渲染”按钮（可见、可恢复，绝不静默黑屏）。
     renderErrorCount.value += 1;
     renderError.value = String((e && e.message) || e);
     if (!renderErrorLogged) {
@@ -5071,7 +5071,7 @@ function resumeRender() {
   render();       // 护栏解除必须**立刻**出图（用户点了按钮就要看到变化）
 }
 
-/** 把渲染错误原文复制到剪贴板（横幅上的「复制错误」）—— 用户反馈时最需要的那个字符串 */
+/** 把渲染错误原文复制到剪贴板（横幅上的“复制错误”）—— 用户反馈时最需要的那个字符串 */
 async function copyRenderError() {
   const text = `渲染已暂停（连续 ${renderErrorCount.value} 帧异常）：${renderError.value}`;
   try {
@@ -5085,14 +5085,14 @@ async function copyRenderError() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// 手势期「底图基帧」缓存（2026-10-18 第十八修·二）—— 卡顿的主刀
+// 手势期“底图基帧”缓存（2026-10-18 第十八修·二）—— 卡顿的主刀
 //
 // 🔴 为什么是这个做法（而不是"给每个图层各加一层缓存"）：CPU 采样实测，拖一圈省份的 4 秒里
 //    **(program) 占 67%** —— 也就是**原生 canvas 光栅化本身**（fill / stroke / lineTo /
 //    drawImage），不是任何一段 JS。当时的每一帧都把**整张地图**重画一遍（200 省 / 160 河 /
 //    24018 个顶点 / 9975 格高度图）。绘图软件遇到这件事的标准答案就是**分层**：底图只在需要
-//    时画一次，笔迹画在它上面。这里用最小代价实现同一件事 —— 手势按下时把「没有草稿的那一帧」
-//    渲染进一张离屏画布，手势期间每帧改成「贴这张图 + 画在动的浮层」。
+//    时画一次，笔迹画在它上面。这里用最小代价实现同一件事 —— 手势按下时把“没有草稿的那一帧”
+//    渲染进一张离屏画布，手势期间每帧改成“贴这张图 + 画在动的浮层”。
 //    它与 `renderCoalesced` 是同一条纪律：**只在明确的高频手势里启用**，手势一结束就丢掉，
 //    `render()` 的同步语义与全量重画路径一个字不改。
 //
@@ -5101,7 +5101,7 @@ async function copyRenderError() {
 //    且相机不动 —— 相机一动立刻弃用并**解甲**（`blitStrokeBase`），否则"重建 + 贴图"会比
 //    全量重画还贵一倍。⚠️ 涂抹 / 高度 / 群系笔刷**不启用**（它们每帧真的在改底图数据）。
 //
-// 口径：基帧只装「草稿之下的静态层」。草稿之上的静态层（省名 / 势力名 / 浮雕 / 标记）与
+// 口径：基帧只装“草稿之下的静态层”。草稿之上的静态层（省名 / 势力名 / 浮雕 / 标记）与
 //    屏幕空间浮层（小地图 / 图例 / 统计）在手势帧里**照常逐帧画** ⇒ 贴图帧与全量帧的
 //    **层叠顺序逐层相同**、像素应当逐点相同（回归 `test_121` 就按这条判）。
 // ══════════════════════════════════════════════════════════════════════════
@@ -5140,7 +5140,7 @@ function strokeBaseLayer() {
   return { canvas: cv, ctx: c, w, h };
 }
 
-/** 把「草稿之下的静态层」渲染进离屏画布（**临时把 `ctx` 换到离屏**，见函数内注释） */
+/** 把“草稿之下的静态层”渲染进离屏画布（**临时把 `ctx` 换到离屏**，见函数内注释） */
 function buildStrokeBase() {
   const layer = strokeBaseLayer();
   if (!layer) return;
@@ -5163,7 +5163,7 @@ function buildStrokeBase() {
   strokeBaseStats.builds += 1;
 }
 
-/** 有可用基帧就贴回来；返回 true = 这一帧的「草稿之下的静态层」已经画好了 */
+/** 有可用基帧就贴回来；返回 true = 这一帧的“草稿之下的静态层”已经画好了 */
 function blitStrokeBase() {
   const b = strokeBase;
   if (!b) return false;
@@ -5224,11 +5224,11 @@ function makePreviewView() {
 }
 
 // ── N1 刀 1：渲染层注册表（2026-10-30）─────────────────────────────────────────
-// 这一步只把「谁先谁后」变成数据（绘制实现仍在本文件），所以判据是**逐像素一致**
+// 这一步只把“谁先谁后”变成数据（绘制实现仍在本文件），所以判据是**逐像素一致**
 // （`python scripts/tests/drill_scenario_pixels.py --compare before after`）。
 // 顺序口径（照抄原来的 if 链，一个字都没改）：
 //   · 栅格图层只有"陆海底色"是给省份兜底的；height/temp/prec/satellite/terrain 是**地形底图**，
-//     必须画在省份之前、且不透明（2026-10-26 用户原话「看不出地形」就是两层半透明互相洗成的）；
+//     必须画在省份之前、且不透明（2026-10-26 用户原话“看不出地形”就是两层半透明互相洗成的）；
 //   · 海岸（浅海带 `landsea` / 等深线 `rasterBase`）画在栅格之上、省界之下 —— 海岸属地形，压在行政边界以下；
 //   · 省份**永远画**（存下来/导出的就是它）；地形底图模式下只描边不填色（`fills:false`），否则地形被色块盖住。
 const RASTER_BASE_KINDS = new Set(['height', 'temp', 'prec', 'satellite', 'terrain']);
@@ -5236,7 +5236,7 @@ const isRasterBase = () => RASTER_BASE_KINDS.has(rasterLayer.value);
 const isAnyRaster = () => rasterLayer.value === 'landsea' || isRasterBase();
 
 /**
- * 一帧的「层可见世界」——**渲染层唯一的数据入口**（N1 接口化的核心）。
+ * 一帧的“层可见世界”——**渲染层唯一的数据入口**（N1 接口化的核心）。
  *
  * 为什么是一个显式的 view 而不是让层直接摸组件状态：
  *   ① 每层读什么写在它自己的文件头里，改一层不用通读 14k 行；
@@ -5273,7 +5273,7 @@ function makeLayerView() {
     selectedPolity: selectedPolity.value,
     multiSelect: multiSelectSet.value,
     mergeProvId: mergeProvId.value,
-    // 文字层的五个开关 + 河名开关（都是「这一帧画不画」的判据，不是选项面板状态）
+    // 文字层的五个开关 + 河名开关（都是“这一帧画不画”的判据，不是选项面板状态）
     showLabels: showLabels.value,
     showPlaceNames: showPlaceNames.value,
     showPolityLabels: showPolityLabels.value,
@@ -5425,7 +5425,7 @@ function renderFrame() {
     if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());
   }
   if (!strokeBaseBuilding) drawRiverPathsLayer(ctx.value, makeLayerView());
-  // 选中河流的高亮（2026-10-17 暮雨实测「缺乏视觉提示……只能通过工具栏突然往下挤」）：
+  // 选中河流的高亮（2026-10-17 暮雨实测“缺乏视觉提示……只能通过工具栏突然往下挤”）：
   // 选中的河画两遍 —— 外层宽半透明光晕 + 内层亮芯，任何底色上都一眼可辨（EU4 选中单位的光圈语义）。
   if (!strokeBaseBuilding) drawSelectedRiverHighlightLayer(ctx.value, makeLayerView());
 
@@ -5435,13 +5435,13 @@ function renderFrame() {
   //    于是**只要画布上有自动河流，第一帧渲染就抛** `ctx.save is not a function`（压缩后
   //    `Ce.save is not a function`）。它抛在 renderFrame 里 → 从这一行起**后面全不画
   //    （省界/标签/小地图/势力名全没了）+ 3 帧后渲染护栏自我暂停**，用户看到的就是
-  //    「点了自动河流之后一片空白、点什么都没反应」。
-  //    为什么以前没被发现：`autoRivers` 只由「自动河流」按钮填充，默认是空数组 →
+  //    “点了自动河流之后一片空白、点什么都没反应”。
+  //    为什么以前没被发现：`autoRivers` 只由“自动河流”按钮填充，默认是空数组 →
   //    这一整块**默认永远不执行**；而 92 个 CDP 用例没有一个点过那个按钮。
   //    教训：`<script setup>` 里的 ref 只有模板会解包；**函数体里一律 `.value`**。
   //    守卫见 scripts/tests/unit/test_vue_ref_unwrap.js。
   //
-  // 🔴 2026-10-14 第二修（用户实测「很丑，是僵硬的折线」）：三条一起改 ——
+  // 🔴 2026-10-14 第二修（用户实测“很丑，是僵硬的折线”）：三条一起改 ——
   //    ① 格心连成的折线先过 `smoothPolyline`（Chaikin 角切割，只切角不外扩，
   //       端点不动 → 河口/源头位置一字不差）；真实底图实测转角中位数 41.6°、最大 113°，
   //       不平滑就是一眼假的锯齿。
@@ -5455,11 +5455,11 @@ function renderFrame() {
   //    "主干忽然变细"。升序画则粗的永远最后落笔，下游不会被细线覆盖。
   //
   // 🔴 2026-10-14 第四修（用户实测截图三条一起改）：
-  //    ① 「根本画不出树枝状汇聚」→ **改画河网段**（`strokeRiverNetwork`）：段是流向场本身
+  //    ① “根本画不出树枝状汇聚”→ **改画河网段**（`strokeRiverNetwork`）：段是流向场本身
   //       （实测 1717 段），支流逐格汇进干流；代表路径只有 12~270 个点，画不出这个结构。
-  //    ② 「并没有越往下游越宽」→ 线宽改**归一化口径**（`flowWidthScale(flow, segMaxFlow)`）：
+  //    ② “并没有越往下游越宽”→ 线宽改**归一化口径**（`flowWidthScale(flow, segMaxFlow)`）：
   //       旧绝对口径在这份地形上只有 1.4 倍变化，等于一样粗。
-  //    ③ 「依然过度延伸到海洋」→ 段在 `getAutoRiverNetwork()` 里已逐段裁到海岸线。
+  //    ③ “依然过度延伸到海洋”→ 段在 `getAutoRiverNetwork()` 里已逐段裁到海岸线。
   if (!blitted && autoRivers.value.length > 0 && showRiverAuto.value) {
     const spacing = baseMap.value?.heightmap?.grid?.spacing || 14.4;
     const toPx = (w) => px(w);
@@ -5472,7 +5472,7 @@ function renderFrame() {
       //      · 自带河 `#5d97bb` 单遍，屏幕线宽 p50 **0.70px** / max 2.55px；
       //      · 上一轮自动河 `#3B82F6` @0.35 宽×2.4 + 亮芯 `#93c5fd` → p50 **0.80px 实心 + 1.92px 光晕**。
       //    于是自动河像"发光的中蓝带子"、自带河像"贴着地形的细暗线"，一眼两套东西（用户原话：
-      //    「依旧色差，依旧和底图自带河流各画各的」）。
+      //    “依旧色差，依旧和底图自带河流各画各的”）。
       //    ⚠️ 宽度必须走**屏幕像素**（`widthPx`）：自带河就是屏幕像素口径、不随缩放变粗；
       //       若继续走世界单位（`px(w)`），放大后自动河会比自带河粗一倍以上，色对齐了粗细仍不对。
       //    ⚠️ `flow`（汇流格数）→ `discharge`（自带河口径）必须按本幅图段流量上界归一化，
@@ -5482,9 +5482,9 @@ function renderFrame() {
       //    200 省 / 1710 段 / 755 段过闸门）：`render` 从 **7.3ms → 14.3ms**，翻了一倍，
       //    其中 `pruneRiverNetwork` **4.2ms**、`riverFlowGate` 0.5ms，另外每帧还在
       //    重建陆地掩膜（24018 个顶点）+ 逐链裁到海岸线。用户侧的表现就是
-      //    「点过自动河流之后，画什么、拖什么都卡」—— 因为每一帧都要付这笔钱。
+      //    “点过自动河流之后，画什么、拖什么都卡”—— 因为每一帧都要付这笔钱。
       //    现在整段几何**按数据引用缓存**（`autoRiverPartsFor`）：闸门 / 剪枝 / 成链 /
-      //    抽稀 / 裁岸线全是**与相机无关**的纯几何，只在「河网换了或地形换了」时才重算。
+      //    抽稀 / 裁岸线全是**与相机无关**的纯几何，只在“河网换了或地形换了”时才重算。
       const netParts = autoRiverPartsFor(net, rawTerrain(), segMax);
       if (netParts.length) {
         strokeRiverNetworkAsPaths(ctx.value, netParts, {
@@ -5528,7 +5528,7 @@ function renderFrame() {
   if (!strokeBaseBuilding) drawPreviewOverlayLayer(ctx.value, makePreviewView());
   // ── 以下四层画在**草稿之上**（省名/势力名/浮雕/标记）——
   //    基帧里**不含**它们（`!strokeBaseBuilding`），所以贴图帧与全量帧的层叠顺序逐层相同：
-  //    「基帧（草稿之下的静态层）→ 草稿 → 这四层 → 屏幕空间浮层」。
+  //    “基帧（草稿之下的静态层）→ 草稿 → 这四层 → 屏幕空间浮层”。
   // 地形注记（山系名沿脊线）：画在用户地名之下、河流/城镇名之上
   if (!strokeBaseBuilding && !cameraMotion) labelLayers.drawTerrain(ctx.value, makeLayerView());
   if (!strokeBaseBuilding && showLabels.value && !cameraMotion) labelLayers.drawScenarioLabels(ctx.value, makeLayerView());
@@ -5581,7 +5581,7 @@ function mixHexColor(a, b, t) {
 }
 
 /**
- * 无主省份的底色（2026-10-27，用户 B1「黑一块白一块」）。
+ * 无主省份的底色（2026-10-27，用户 B1“黑一块白一块”）。
  *
  * 旧实现：剧本模式里**没有势力归属**的省一律刷 `#4a5568`（深灰蓝）—— 真实 415 省项目
  * 大部分省在早期年份是无主的，于是整块大陆变成一块灰蓝，中间夹几个有主色/湖泊色，
@@ -5597,7 +5597,7 @@ function unownedProvinceColor(prov) {
 // getProvinceColor 已搬到 province.js（2026-10-31）
 
 
-/** 把轨迹画成**平滑**路径（中点二次曲线）：手绘的观感就是曲线，逐点 lineTo 会变成「描点连线」 */
+/** 把轨迹画成**平滑**路径（中点二次曲线）：手绘的观感就是曲线，逐点 lineTo 会变成“描点连线” */
 function tracePath(c, pts, close) {
   if (!pts || pts.length < 2) return false;
   c.moveTo(pts[0].x, pts[0].y);
@@ -5626,9 +5626,9 @@ function tracePath(c, pts, close) {
 // A8：势力标注（EU4 式分级）—— 放大看省名，缩小只留势力名（可简称），全名点开省份详情才给
 // ─────────────────────────────────────────────────────────────
 
-// 分级依据 = 「视口可见世界宽度 ÷ 地图世界宽度」。
+// 分级依据 = “视口可见世界宽度 ÷ 地图世界宽度”。
 // ⚠️ 刻意**不用绝对 cameraScale**：它依赖数据量纲（FMG 导入 ≈1 量级、合成 fixture ≈0.2 量级），
-//    换一份数据阈值就整体失准 —— 表现为「同一档位在一份数据里全画省名、另一份里全画简称」。
+//    换一份数据阈值就整体失准 —— 表现为“同一档位在一份数据里全画省名、另一份里全画简称”。
 // 缓存只按 `terrain` 数组**引用**失效（编辑一律替换数组）→ 每帧不再重扫 25930 个顶点。
 let _mapSizeCache = { src: null, w: 0, h: 0 };
 // mapWorldSize 已搬到 helpers.js（2026-10-31）
@@ -5642,14 +5642,14 @@ const polityLabelTierNow = computed(() => polityLabelTier(mapVisibleRatio()));
 // ── 缩放 → 详略档位 / 字号（2026-10-27）──────────────────────────────────────
 // 用户口径（Paradox）：缩小只看见势力名；放大才出省名；再大出城镇/河名；字号随缩放略变。
 // 判定本体在 `utils/labelZoom.js`（纯函数：档位表 + 12% 滞回 + 字号系数）。
-// 滞回状态放**模块级**（不是 ref）：它只影响「这一帧算多细」，不进响应式、不该触发渲染。
+// 滞回状态放**模块级**（不是 ref）：它只影响“这一帧算多细”，不进响应式、不该触发渲染。
 
 /** 字号系数（放大略大 / 缩小略小；见 `labelZoom.labelFontScale`） */
 
 
 
 /**
- * 当前选中省份所属势力 —— 「全名只在点开省份详情时给」那条诉求的落点
+ * 当前选中省份所属势力 —— “全名只在点开省份详情时给”那条诉求的落点
  * （地图上缩小时只画简称，全名要能查到）。
  * 2026-10-21：抽到 `ownerPolityForProvince`，右键菜单与属性面板共用同一口径。
  */
@@ -5657,9 +5657,9 @@ const selectedProvincePolity = computed(() => ownerPolityForProvince(selectedPro
 
 // ===== 库内资料检索 → 已抽成 `VaultLoreSection.vue`（2026-10-24，读料桥）=====
 // 唯一实现只在那一个组件里（省份面板 / 标记面板共用），本文件**不再自己调** `vaultIndexSearch`。
-// 纪律不变：只读检索 + 打开阅读器；没命中就明说「库里没有同名词条」；不猜、不自动建。
+// 纪律不变：只读检索 + 打开阅读器；没命中就明说“库里没有同名词条”；不猜、不自动建。
 
-// ===== 标记 → 命中 / 面板（2026-10-24，第 5 件补「点标记」）=====
+// ===== 标记 → 命中 / 面板（2026-10-24，第 5 件补“点标记”）=====
 //
 // 为什么现在才有：标记此前是"只画不收"的一层 —— 放下时 `askText` 问个名字，
 // 之后**点不到它**（选择工具只认河流 / 城镇 / 省份）。所以"点标记看资料"的前置是
@@ -5698,8 +5698,8 @@ function updateBurgHover(event) {
  * 某省在**时间轴当前日期**的归属势力（唯一口径）。
  *
  * 与 `drawProvinces` / `drawPolityLabels` 共用 `polityLabelSources()`：
- * 含「演变铺开」与 EU4 斜线占领的旧主口径，并在 **owner 所属的那个剧本**里查 polity。
- * 返回 null = 该日期下无主（UI 必须明说「无主」，不能留空）。
+ * 含“演变铺开”与 EU4 斜线占领的旧主口径，并在 **owner 所属的那个剧本**里查 polity。
+ * 返回 null = 该日期下无主（UI 必须明说“无主”，不能留空）。
  *
  * @param {string|null|undefined} provId
  * @returns {object|null} polity
@@ -5743,7 +5743,7 @@ watch(selectedScenario, () => { refreshSelectedMarker(); });
 
 /**
  * 势力标注的**归属查询**：必须与 `getProvinceColor` 走同一口径
- * （含「演变铺开」与 EU4 斜线占领的旧主底色），否则会出现「颜色是甲、名字写乙」。
+ * （含“演变铺开”与 EU4 斜线占领的旧主底色），否则会出现“颜色是甲、名字写乙”。
  * 势力对象还必须在 **owner 所属的那个剧本**里查 —— 真实数据每个剧本的 polity id 全新
  * （`pol_ou → pol_li`），跨剧本查会落空 → 标签整片消失（颜色那条路径已因此踩过一次）。
  */
@@ -5798,10 +5798,10 @@ onMounted(async () => {
     }
   }
 
-  // 🔴 不再默默造一张叫「德斯特星」的空底图（2026-09-20 用户决策）：
+  // 🔴 不再默默造一张叫“德斯特星”的空底图（2026-09-20 用户决策）：
   //    ① 那是暮雨自用剧本地图的名字，硬编码进产品 = 用真实剧本当示例；
   //    ② 每个新项目一打开剧本模式就凭空多出一张假底图（还会随保存写进项目文件）。
-  //    现在：没有可用底图就留空 → 画布显示「还没有底图」提示，由用户导入 .map 或懒建。
+  //    现在：没有可用底图就留空 → 画布显示“还没有底图”提示，由用户导入 .map 或懒建。
   if (!store.baseMaps?.[baseMapKey.value]) {
     baseMapKey.value = availableBaseMaps.value[0]?.id || '';
   }
@@ -5827,7 +5827,7 @@ onMounted(async () => {
   lastFitCount = baseMap.value?.terrain?.length || 0;
   // 🔴 先算镜位、再画第一帧（P-0 实测）：不这么做，首帧用的是未适屏相机 (0,0,1)，
   //    画布上只有底网格（非背景像素 7%），适屏帧要等 setTimeout(100) 才来 ——
-  //    用户观感就是「打开底图编辑卡住 / 画布空白，滚一下才出现」。
+  //    用户观感就是“打开底图编辑卡住 / 画布空白，滚一下才出现”。
   if (baseMap.value?.terrain?.length) {
     fitToView();               // fitToView 内部已 render()
   } else {
@@ -5843,7 +5843,7 @@ onMounted(async () => {
   // 剧本集：数据到了才定"当前是哪一组"（落到第一条剧本所在的组；全空则默认组）
   resetGroupForBaseMap();
   // 数据**晚于挂载**到达（scenarios.json / 导入项目）时兜底：当前组一条都没有、别的组有 → 跟过去。
-  // 只在这条「当前组为空」的窄条件下切，用户手动切到空组不会被弹走（空组是合法状态）。
+  // 只在这条“当前组为空”的窄条件下切，用户手动切到空组不会被弹走（空组是合法状态）。
   watch(allSortedScenarios, (list) => {
     if (!list.length) return;
     if (!list.some((x) => scenarioGroupIdOf(x) === activeGroupId.value)) {
@@ -5873,7 +5873,7 @@ onMounted(async () => {
   if (props.openManager) showScenarioManager.value = true;
 
   // 🔴 游标监听必须**在这里**注册（不能在 setup 顶层）：顶层 watch 会在挂载前求值一次并
-  //    触发 render()，那一帧用的是未适屏相机 (0,0,1) →「首帧 = 空画布」（test_61 抓到的帧序：
+  //    触发 render()，那一帧用的是未适屏相机 (0,0,1) →“首帧 = 空画布”（test_61 抓到的帧序：
   //    t=1059 空帧 → t=1067 才适屏）。与上面 `watch(sortedScenarios…)` 同一条纪律。
   watch(() => tlDate.value.y, (yy) => {
     const tl = timeline.value;
@@ -5889,7 +5889,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect();
   if (settleFitTimer) { clearTimeout(settleFitTimer); settleFitTimer = null; }
-  // 🔴 帧合并的 rAF 也要清（与「谁建了定时器就要清」同一条纪律）：
+  // 🔴 帧合并的 rAF 也要清（与“谁建了定时器就要清”同一条纪律）：
   //    卸载后回调仍会跑 `render()` → `ctx` 已失效 → 抛进渲染护栏 → 控制台刷错误。
   if (rafRenderId != null && typeof cancelAnimationFrame === 'function') {
     cancelAnimationFrame(rafRenderId);
@@ -5899,7 +5899,7 @@ onUnmounted(() => {
   //    于是卸载时这里必抛 `ReferenceError: provinceGridTimer is not defined`（0.2.3 用户实测崩溃，
   //    Vue 报在 `runtime-um`＝卸载钩子上）。网格渲染已随 P2 退役，正确做法是删掉它。
   //    顺带补上真正缺的一条：折线预览的 30ms 防抖定时器此前**没人清**（卸载后回调仍会跑
-  //    `store.previewSplitAlong` + `render()`）—— 卸载清理清单要与「谁建了定时器」一一对应。
+  //    `store.previewSplitAlong` + `render()`）—— 卸载清理清单要与“谁建了定时器”一一对应。
   if (polySplitPreviewTimer) { clearTimeout(polySplitPreviewTimer); polySplitPreviewTimer = null; }
   if (tlRafId != null) { cancelAnimationFrame(tlRafId); tlRafId = null; }
   window.removeEventListener('keydown', onKeyDown);
@@ -5952,11 +5952,11 @@ watch([() => selectedProvince.value?.id, activeRingIdx], () => {
   vertexLinkCtx = null;
 });
 
-// 🔴 底图数据可能**晚于组件挂载**到达：只读态（未打开项目）下底图导入被写闸门拒绝、//    项目里暂时没有底图后再「导入知识库内容」、外部导入 scenarios.json……
+// 🔴 底图数据可能**晚于组件挂载**到达：只读态（未打开项目）下底图导入被写闸门拒绝、//    项目里暂时没有底图后再“导入知识库内容”、外部导入 scenarios.json……
 //    而 baseMapKey 只在 onMounted 解析一次 → key 停在 '' ⇒ baseMap 恒 undefined
 //    ⇒ watch(baseMap) 永不触发 ⇒ 画布永久空白（P-0 实测：注入真实载荷后 0 帧重绘，
-//    连按 F 都没用，因为 fitToView 在「没有省份」时直接 return）。
-//    数据到了必须自动选中一张，「打开就空白」不能再靠用户重启/重进。
+//    连按 F 都没用，因为 fitToView 在“没有省份”时直接 return）。
+//    数据到了必须自动选中一张，“打开就空白”不能再靠用户重启/重进。
 watch(availableBaseMaps, (list) => {
   if (!list.length) return;
   if (!baseMapKey.value || !store.baseMaps?.[baseMapKey.value]) {
@@ -5980,7 +5980,7 @@ watch([baseMapKey, () => baseMap.value?.terrain?.length || 0], ([key, count]) =>
   const mapChanged = key !== lastFitKey;
   lastFitKey = key;
   lastFitCount = count;
-  // 🔴 2026-10-24（镜头语义一刀）：「省数变了」**不再**是适屏的理由。
+  // 🔴 2026-10-24（镜头语义一刀）：“省数变了”**不再**是适屏的理由。
   //    原来只豁免 `provincePaint`（笔刷建省），自由绘制没豁免 —— 实测（`_probe_land_camera.js`）：
   //    先把镜头挪到 {x:67.6,y:-53.5,scale:0.3549}，画一个省，松手后 800ms 内镜头变成
   //    {x:45.3,y:-50.3,scale:0.4894} —— **每画一个省，镜头自己重新适屏**，既是第三遍全量重绘，
@@ -5994,7 +5994,7 @@ watch([baseMapKey, () => baseMap.value?.terrain?.length || 0], ([key, count]) =>
   setTimeout(fitToView, 50);
 });
 
-// 🔴 2026-10-24（1-b 收口）：**去掉 deep** —— 这里要的只是「这张底图换对象了」。
+// 🔴 2026-10-24（1-b 收口）：**去掉 deep** —— 这里要的只是“这张底图换对象了”。
 //    原来 `{ deep: true }` 让 Vue 每次变化都 `traverse` **整份底图**（200 省 + 160 河 + 9975 格高度图）：
 //    CPU 采样里 **77ms/次**，比它触发的那次重绘（冷帧 35ms）还贵，且每次都发生在松手后的同一帧里。
 //    为什么可以只认引用：本仓所有底图写入都是**整体替换**（`baseMaps.value = {...baseMaps.value, [key]: {...bm, …}}`，
@@ -6269,7 +6269,7 @@ const { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, autoS
 });
 
 // ── N1.5：城镇悬停 / 标注档位与归属 / 标记面板 / 派生与聚落编辑 / 撤销后重对齐 ──
-// 档位滞回状态（`labelDetailState`）随函数搬进模块 —— 它只影响「这一帧算多细」，不进响应式
+// 档位滞回状态（`labelDetailState`）随函数搬进模块 —— 它只影响“这一帧算多细”，不进响应式
 const { mapVisibleRatio, labelDetailNow, labelScaleNow, findMarkerAt, closeMarkerEditor, openMarkerEditor, refreshSelectedMarker, markerRefOf, applyMarkerPatch, onMarkerNameChange, onMarkerTypeChange, onMarkerCoordChange, deleteSelectedMarker, deriveLayers, openBurgEditor, closeBurgEditor, onHistoryJump } = createMarkerActions({
   MARKER_TYPES,
   MIN_CAMERA_SCALE,
@@ -6916,7 +6916,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 
 /* 🔴 工具栏是**多行**结构（P0 第二块重整）：原来 `.scenario-toolbar` 在第 128 行就被提前
    `</div>` 闭合，后面十几组控件全都掉到容器层 → 只有第一行有工具栏底色，其余几行是裸的
-   （「工具看着挤在一起 / 分不清哪排管什么」的真因）。现在：工具栏 = 竖直列，每行一个
+   （“工具看着挤在一起 / 分不清哪排管什么”的真因）。现在：工具栏 = 竖直列，每行一个
    `.toolbar-row`（自动换行、有底色与分隔），行内才是 `.tool-group`。 */
 .scenario-toolbar {
   display: flex;
@@ -6938,7 +6938,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 /* 整行为空（该行的控件都被 v-if 关掉）→ 不留空档 */
 .toolbar-row:not(:has(> *)) { display: none; }
 
-/* P3：按任务分层 —— 主行只放 4 个任务工具 + 「更多」；高级工具与开关收在 .toolbar-more 里。
+/* P3：按任务分层 —— 主行只放 4 个任务工具 + “更多”；高级工具与开关收在 .toolbar-more 里。
    ⚠️ 不要把这些控件再摊回主行：主行的可见控件数由 test_65 守着（≤6）。 */
 .primary-row { gap: 4px; }
 /* 剧本视图引导条：先选势力 → 涂归属 → 地图上涂 */
@@ -7054,8 +7054,8 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 }
 
 .tool-group button {
-  /* 2026-10-09：按钮从「纯图标」改为「图标 + 文字」——
-     暮雨实测「上面一堆工具但是根本看不懂」。固定 32px 方块保留为**最小**尺寸，
+  /* 2026-10-09：按钮从“纯图标”改为“图标 + 文字”——
+     暮雨实测“上面一堆工具但是根本看不懂”。固定 32px 方块保留为**最小**尺寸，
      有文字时自动撑开（横排规则见 .scenario-toolbar button）。 */
   min-width: 32px;
   height: 32px;
@@ -7097,7 +7097,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
   vertical-align: middle;
 }
 
-/* 批量铺底的「块数」数字输入（2026-10-11）：与下拉同一套配色 —— preflight 已关，
+/* 批量铺底的“块数”数字输入（2026-10-11）：与下拉同一套配色 —— preflight 已关，
    表单控件不会自带 color: inherit，不显式设色就会是黑字黑底 */
 .brush-number {
   width: 64px;
@@ -7111,7 +7111,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 }
 
 
-/* 旧「按钮式时间轴条」的样式已随入口一起移除（现由 ScenarioTimeline.vue 承载） */
+/* 旧“按钮式时间轴条”的样式已随入口一起移除（现由 ScenarioTimeline.vue 承载） */
 .tl-status { color: #94a3b8; }
 .tl-status b { color: #e2e8f0; font-variant-numeric: tabular-nums; }
 .tl-warn { color: #fbbf24; }
@@ -7260,7 +7260,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .polity-add:disabled,
 .polity-del:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* 外交表快速入口（N3a-2）：与「新建势力」同款尺寸，但用实线 + 蓝调区分「查询」与「建势力」 */
+/* 外交表快速入口（N3a-2）：与“新建势力”同款尺寸，但用实线 + 蓝调区分“查询”与“建势力” */
 .diplomacy-quick {
   margin-left: 6px;
   border-style: solid;
@@ -7371,8 +7371,8 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
   overflow: hidden;
 }
 /* 🔴 2026-10-20：收起 = **整块收起**，不是只藏内容留一个 236×全高的空窗
-   （用户实测：「那个侧边栏的收起按钮根本不能正确收起整个侧边栏，只是隐藏剧本内容，
-   留下一个空窗占地方」）。收起后只剩一个 40px 的展开按钮，贴着左上角。 */
+   （用户实测：“那个侧边栏的收起按钮根本不能正确收起整个侧边栏，只是隐藏剧本内容，
+   留下一个空窗占地方”）。收起后只剩一个 40px 的展开按钮，贴着左上角。 */
 .scenario-list-panel.collapsed {
   width: 40px;
   bottom: auto;
@@ -7456,7 +7456,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 }
 .slp-manage:hover { background: #334155; }
 
-/* 「还没有底图」空态提示：居中、不拦事件（绝不挡住画布交互） */
+/* “还没有底图”空态提示：居中、不拦事件（绝不挡住画布交互） */
 .scenario-empty-hint {
   position: absolute;
   top: 50%;
@@ -7475,7 +7475,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .scenario-empty-hint .eh-line { margin: 0; font-size: 12px; line-height: 1.6; }
 .scenario-empty-hint .eh-line b { color: #e2e8f0; }
 /* 🔴 空态容器是 `pointer-events: none`（不许挡住画布交互）—— 里面的按钮必须**逐个**收回
-   事件（`auto`），否则「导入 .map 底图」是个看得见、点不动的假按钮。 */
+   事件（`auto`），否则“导入 .map 底图”是个看得见、点不动的假按钮。 */
 .scenario-empty-hint .eh-actions {
   display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap;
 }
@@ -7488,7 +7488,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .scenario-empty-hint .eh-btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 .scenario-empty-hint .eh-btn.primary:hover:not(:disabled) { filter: brightness(1.12); }
 .scenario-empty-hint .eh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-/* 空底图上的「第一笔」提示卡（2026-10-22） */
+/* 空底图上的“第一笔”提示卡（2026-10-22） */
 .empty-province-hint {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: 400px; max-width: calc(100% - 40px);
@@ -7576,7 +7576,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .render-paused-card .rp-btn.primary { color: #0f172a; background: #fbbf24; border-color: #fbbf24; font-weight: 600; }
 .render-paused-card .rp-btn:hover { filter: brightness(1.12); }
 
-/* 源头高度闸门（紧挨「自动河流」按钮）：宽度收窄，别把工具栏挤爆 */
+/* 源头高度闸门（紧挨“自动河流”按钮）：宽度收窄，别把工具栏挤爆 */
 .river-source-height {
   width: 54px;
   margin: 0 2px 0 4px;
@@ -7640,8 +7640,8 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
    为什么按需展开而不是常驻：这组操作**不常做**（一次调整管很久），常驻会在工具栏上
    再加一排控件，把"每屏能看几个工具"进一步挤没。 */
 /* 生成类面板的浮层容器（P0-1/P0-2/P0-4 共用）：固定定位 + 高层级。
-   🔴 2026-10-25 用户实测「按钮根本点不了」：内联在工具栏里时，左栏剧本列表的
-   `.slp-empty` 正好压在「造陆并铺 N 省」上方 —— 真人点击命中的是它，而 `el.click()`
+   🔴 2026-10-25 用户实测“按钮根本点不了”：内联在工具栏里时，左栏剧本列表的
+   `.slp-empty` 正好压在“造陆并铺 N 省”上方 —— 真人点击命中的是它，而 `el.click()`
    绕过命中测试，所以用例一直绿。浮层化后既不被遮挡，也不受工具栏高度裁剪。 */
 .gen-float {
   position: fixed;
@@ -7740,7 +7740,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .save-status.error { color: #f87171; font-weight: 600; }
 .save-status.saving { color: #fbbf24; }
 /* staged（2026-10-17）：已交给项目、还在等磁盘写入 / 有改动未落盘 ——
-   与 saved 的绿标**必须不同色**，否则「还在内存里」和「已经进磁盘」在界面上又混成一件事 */
+   与 saved 的绿标**必须不同色**，否则“还在内存里”和“已经进磁盘”在界面上又混成一件事 */
 .save-status.staged { color: #fbbf24; }
 .save-status.idle { color: #94a3b8; }
 
@@ -7881,7 +7881,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .props-mini.danger { color: #f87171; border-color: #7f1d1d; }
 .props-mini.danger:not(:disabled):hover { background: rgba(248, 113, 113, 0.16); }
 
-/* 归属行（2026-10-21）：值占满剩余宽度，右侧一个「清成无主 / 设为当前势力」小按钮 */
+/* 归属行（2026-10-21）：值占满剩余宽度，右侧一个“清成无主 / 设为当前势力”小按钮 */
 .props-row .owner-value {
   flex: 1;
   display: flex;
@@ -8085,7 +8085,7 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 .item-edit:disabled, .item-delete:disabled { opacity: 0.25; cursor: not-allowed; }
 
 /* 批量清空剧本（2026-10-11）：危险动作 → 单独一行、带文字（本仓纪律：工具栏/对话框按钮
-   一律「图标 + 文字」，纯图标被判过"根本看不懂"），并把"不动底图与省份"写在旁边 */
+   一律“图标 + 文字”，纯图标被判过"根本看不懂"），并把"不动底图与省份"写在旁边 */
 .scenario-bulk {
   display: flex;
   align-items: center;
@@ -8483,8 +8483,8 @@ const { onCanvasClick, triggerMapImport, triggerCoastlineRebuild, runBatchSubdiv
 }
 
 /* ── 工具栏可读性（2026-10-09）───────────────────────────────────────────────
-   暮雨实测：「上面一堆工具但是根本看不懂」—— 根因是所有工具按钮**只有图标没有文字**，
-   名字只藏在 title 里（要悬停 1 秒才出）。这里统一改成「图标 + 文字」横排。
+   暮雨实测：“上面一堆工具但是根本看不懂”—— 根因是所有工具按钮**只有图标没有文字**，
+   名字只藏在 title 里（要悬停 1 秒才出）。这里统一改成“图标 + 文字”横排。
    ⚠️ 用 min-width 而非 width：无文字的按钮仍旧是 32×32 方块，观感不变。 */
 .scenario-toolbar button {
   display: inline-flex;

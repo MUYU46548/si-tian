@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 73：A8 —— 历史剧本「势力标注」（自定义势力名 + EU4 式分级）
+"""用例 73：A8 —— 历史剧本“势力标注”（自定义势力名 + EU4 式分级）
 
 背景（暮雨 2026-09-26 定案）：
-  · A5「政治」不再是「编辑 azgaarProvinces 顶点」，而是**手动标记的势力（Tag）名称**；
+  · A5“政治”不再是“编辑 azgaarProvinces 顶点”，而是**手动标记的势力（Tag）名称**；
   · 历史剧本要能**自定义显示的势力名称**，并照 EU4 的做法分级 ——
     放大看省名、缩小只看势力名（**可简称**），**全名只在点开省份详情时给**。
 
@@ -11,16 +11,16 @@
   f0 源码守卫：分级判定的**唯一实现**在 `utils/polityLabels.js`，组件里不许再写一套阈值；
      `drawPolityLabels` 必须被主渲染路径与导出路径**都**调用（少一处 = 导出的图和画布不一样，
      M2/A2 已经因为这个栽过一次，而且**不报错**）
-  f1 分级：三档随「视口可见宽度 ÷ 地图宽度」切换，且与缩放**单调**（看得越远 → 名字越简）
+  f1 分级：三档随“视口可见宽度 ÷ 地图宽度”切换，且与缩放**单调**（看得越远 → 名字越简）
   f2 真的画出来了：劫持 `fillText` 记录实际绘制的文本 ——
      放大档有**省名**且**没有**势力名；中档有势力**全名**且没有省名；缩小档是**简称**
   f3 改名落库：`updatePolity` 走 undo（撤销还原、重做再改）；无实质改动不入栈；空名不写
-  f4 UI + 详情：勾选框存在；选中势力出现「名称/简称」编辑；受控输入改名生效；
+  f4 UI + 详情：勾选框存在；选中势力出现“名称/简称”编辑；受控输入改名生效；
      **真实点击省份** → 状态栏显示该省所属势力的**全名**
 
-为什么要「互为反面」地断言：
-  「放大档画省名」与「中档画势力名」必须成对断言 —— 只测一边的话，
-  「档位根本没接上、永远只画一种」这种实现能同时骗过两条单边断言。
+为什么要“互为反面”地断言：
+  “放大档画省名”与“中档画势力名”必须成对断言 —— 只测一边的话，
+  “档位根本没接上、永远只画一种”这种实现能同时骗过两条单边断言。
 """
 import sys, os, io, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -46,7 +46,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉 `//` 行注释与 `/* */` 块注释 —— 修完 bug 后注释里天然会写「此前如何如何」，
+    """剥掉 `//` 行注释与 `/* */` 块注释 —— 修完 bug 后注释里天然会写“此前如何如何”，
     纯子串判据会把注释当违规（test_71 首版就吃过这个假红）。"""
     out, i, n = [], 0, len(src)
     in_block = False
@@ -75,7 +75,7 @@ def _code_only(src):
 
 def _function_body(src, fn):
     """按括号配对截取函数体（跳过字符串与行注释）—— 照 test_54 的写法。
-    判据必须落在**函数体**上：只判「文件里出现过某符号」的话，
+    判据必须落在**函数体**上：只判“文件里出现过某符号”的话，
     真正违规的那个函数会被同文件别处的合法调用掩盖（test_54 记过的漏报型假绿）。"""
     import re as _re
     m = _re.search(r'\n[ \t]*(?:export\s+)?(?:async\s+)?function\s+' + _re.escape(fn) + r'\s*\(', src)
@@ -123,7 +123,7 @@ def sub_source_guards(cdp):
             bad.append(f'polityLabels.js 缺少 {sym}')
     if "from '../utils/polityLabels'" not in sm:
         bad.append('ScenarioMap 没有引用 utils/polityLabels（分级判定被写回了组件？）')
-    # 组件里不许再写一套阈值（「两套判定」唯一可判据的形态）。
+    # 组件里不许再写一套阈值（“两套判定”唯一可判据的形态）。
     # 🔴 判据必须**先剥掉 <style> 块**：`0.35` 在 CSS 里是极常见的透明度
     #    （`box-shadow: ... rgba(0, 0, 0, 0.35)`），那不是档位阈值。
     #    裸子串匹配会被任何 alpha / 字号误伤 —— 2026-10-09 给剧本左栏加个面板阴影就撞红了一次
@@ -151,11 +151,11 @@ def sub_source_guards(cdp):
     if 'drawPlanned(' not in labels_layer:
         bad.append('文字层模块里找不到 drawPlanned（四档标签没走统一排布）')
 
-    # ③ 组件里不许自己实现「档位 → 文本」（必须在纯函数里）
+    # ③ 组件里不许自己实现“档位 → 文本”（必须在纯函数里）
     if _re.search(r"(?:tier|polityLabelTierNow)\s*===\s*'abbr'", sm):
         bad.append("ScenarioMap 自己写了档位→文本的分支（应调用 labelTextFor）")
     # 🔴 2026-10-01：标签判定抽到 `utils/scenarioLabels.js`（画布 + PNG + **SVG 导出**三处共用）。
-    #   判据随之升级 —— 不再是「组件函数体里出现了这两个调用」，而是
+    #   判据随之升级 —— 不再是“组件函数体里出现了这两个调用”，而是
     #   ① 单源模块里真有 文本选择 / 领土聚合；② 画布与**导出链**都调 collectScenarioLabels。
     #   ⚠️ 2026-10-26：画布侧多了"避让排布"这一层（`utils/labelLayout.js`），
     #      collectScenarioLabels 从 drawPolityLabels 挪进了 getLabelPlan —— 守卫跟着挪，意图不变。
@@ -180,11 +180,11 @@ def sub_source_guards(cdp):
     if "from '../../utils/scenarioLabels'" not in labels_layer:
         bad.append('文字层模块没有引用 utils/scenarioLabels（判定被写回了组件？）')
 
-    # ④ C3（2026-10-29）「只显示已命名省」：开关在 UI 上、过滤在纯函数里（组件不许自己写正则）
+    # ④ C3（2026-10-29）“只显示已命名省”：开关在 UI 上、过滤在纯函数里（组件不许自己写正则）
     if 'toggle-named-provinces' not in sm:
-        bad.append('ScenarioMap 缺少「仅已命名省」开关（data-testid="toggle-named-provinces"）')
+        bad.append('ScenarioMap 缺少“仅已命名省”开关（data-testid="toggle-named-provinces"）')
     if plan_body is None or 'skipPlaceholderProvinces' not in plan_body:
-        bad.append('getLabelPlan 没把「仅已命名省」传进 collectScenarioLabels')
+        bad.append('getLabelPlan 没把“仅已命名省”传进 collectScenarioLabels')
     if 'skipPlaceholderProvinces' not in labels_mod:
         bad.append('utils/scenarioLabels.js 没有 skipPlaceholderProvinces 选项（判据应只有一份）')
 
@@ -259,8 +259,8 @@ JS = r"""(async () => {
     return seen;
   };
   const has = (arr, s) => arr.some((t) => t.indexOf(s) >= 0);
-  // ⚠️ 断言「画的是简称」必须用**精确相等**：简称是全名的子串（甲午 ⊂ 甲午王朝），
-  //    用 indexOf 的话「根本没走简称」也能通过（探针实测：只抓到一半）。
+  // ⚠️ 断言“画的是简称”必须用**精确相等**：简称是全名的子串（甲午 ⊂ 甲午王朝），
+  //    用 indexOf 的话“根本没走简称”也能通过（探针实测：只抓到一半）。
   const hasExact = (arr, s) => arr.some((t) => t === s);
 
   // ── f1 档位三档 + 单调 ──────────────────────────────────────────────
@@ -283,7 +283,7 @@ JS = r"""(async () => {
   // ── f2 真的画出来了（互为反面的两档）────────────────────────────────
   setTier(0.2, 220, 220);
   let texts = record(() => pm.render());
-  ck('f2 放大档画出了省名「青原省」', has(texts, '青原省'), texts.slice(0, 12));
+  ck('f2 放大档画出了省名“青原省”', has(texts, '青原省'), texts.slice(0, 12));
   ck('f2 ★ 放大档**不该**画势力名（省名与势力名是同批数据的两种呈现）',
      !has(texts, '甲午王朝') && !has(texts, '乙卯王朝'), null);
   setTier(0.2, 460, 220);
@@ -301,7 +301,7 @@ JS = r"""(async () => {
   texts = record(() => pm.render());
   ck('f2 缩小档画的是**简称**（精确相等，不用子串 —— 简称是全名的子串）',
      hasExact(texts, '甲午') && hasExact(texts, '乙卯'), texts.slice(0, 12));
-  ck('f2 ★ 缩小档不再画全名（「缩小只显示势力名称（可简写）」）',
+  ck('f2 ★ 缩小档不再画全名（“缩小只显示势力名称（可简写）”）',
      !hasExact(texts, '甲午王朝') && !hasExact(texts, '乙卯王朝'), null);
 
   // 关掉图层 → 一条势力标注都不该出现（接线真的通到开关上）
@@ -310,7 +310,7 @@ JS = r"""(async () => {
   pm.showProvinceNames = false;
   await tick(80);
   const off = record(() => pm.render());
-  ck('f2 关掉「势力名 + 省名」图层 → 不再画任何势力/省名',
+  ck('f2 关掉“势力名 + 省名”图层 → 不再画任何势力/省名',
      !has(off, '甲午') && !has(off, '乙卯') && !has(off, '青原省'), off.slice(0, 12));
   pm.showPolityLabels = true;
   pm.showProvinceNames = true;
@@ -332,20 +332,20 @@ JS = r"""(async () => {
   store.undo();
   setTier(0.8, 460, 220);
   texts = record(() => pm.render());
-  ck('f3 ★ 撤销 → 名字回到「甲午王朝」', has(texts, '甲午王朝') && !has(texts, '丙申王朝'), texts.slice(0, 12));
+  ck('f3 ★ 撤销 → 名字回到“甲午王朝”', has(texts, '甲午王朝') && !has(texts, '丙申王朝'), texts.slice(0, 12));
   store.redo();
   setTier(0.8, 460, 220);
   texts = record(() => pm.render());
-  ck('f3 重做 → 又回到「丙申王朝」', has(texts, '丙申王朝'), texts.slice(0, 12));
+  ck('f3 重做 → 又回到“丙申王朝”', has(texts, '丙申王朝'), texts.slice(0, 12));
 
   // ── f4 UI + 省份详情给全名 ──────────────────────────────────────────
-  ck('f4 「势力名」勾选框存在', !!document.querySelector('[data-testid="toggle-polity-labels"]'), null);
+  ck('f4 “势力名”勾选框存在', !!document.querySelector('[data-testid="toggle-polity-labels"]'), null);
 
   const polA = store.scenarios[SCID].polities.find(p => p.id === POLA);
   pm.selectPolity(polA);
   await tick(120);
   const editor = document.querySelector('[data-testid="polity-editor"]');
-  ck('f4 选中势力后出现「名称/简称」编辑区', !!editor, null);
+  ck('f4 选中势力后出现“名称/简称”编辑区', !!editor, null);
   const nameInput = document.querySelector('[data-testid="polity-name-input"]');
   const abbrInput = document.querySelector('[data-testid="polity-abbr-input"]');
   ck('f4 名称输入框已渲染且值 = 当前势力名', !!(nameInput && nameInput.value === '丙申王朝'), nameInput && nameInput.value);
@@ -410,7 +410,7 @@ def run(cdp):
       return 'ok';
     })()""")
     if entered != 'ok':
-        return False, f'未找到「历史剧本」入口（{entered}）'
+        return False, f'未找到“历史剧本”入口（{entered}）'
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=20, desc='ScenarioMap 挂载')
     time.sleep(1.0)
 
@@ -419,9 +419,9 @@ def run(cdp):
         return False, f'底图 fixture 未就位: {bm_info}'
     time.sleep(0.4)
 
-    # ⚠️ 「势力名」勾选框在工具栏「更多」里（默认收起）—— 不展开则 DOM 里根本没有
+    # ⚠️ “势力名”勾选框在工具栏“更多”里（默认收起）—— 不展开则 DOM 里根本没有
     if not H.open_toolbar_more(cdp):
-        return False, '未能展开剧本工具栏「更多」'
+        return False, '未能展开剧本工具栏“更多”'
 
     js = (JS.replace('PLACEHOLDER_STORE', STORE)
             .replace('PLACEHOLDER_PM', PM)

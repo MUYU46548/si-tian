@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""P0「第一张图」真实数据端到端演练（真实 415 省项目 → 画势力范围 → 选时间点 → 导出 PNG）
+"""P0“第一张图”真实数据端到端演练（真实 415 省项目 → 画势力范围 → 选时间点 → 导出 PNG）
 
 与 `drill_quit_flush.py` 的分工：
   · `drill_quit_flush.py` = **真 Electron + dist 产物 + 真实项目文件**，判据只有磁盘（数据安全）；
-  · 本演练 = **Vite dev + Edge headless + 真实项目数据的副本**，判据是「产品自己的链路 + 像素」。
+  · 本演练 = **Vite dev + Edge headless + 真实项目数据的副本**，判据是“产品自己的链路 + 像素”。
     为什么不走真 Electron：本演练要读 `__vue_app__._instance.setupState`（Vue 的 `_instance`
     是 **dev-only**；生产构建里是 `null`），而真机演练刻意不碰 store。两条演练互补，不重复。
 
@@ -14,18 +14,18 @@
   2. 复用 `run_tests` 的 `setup_mock`（**只改仓库内 `index.html` 与 `mock-data/`**），
      额外把真实项目 JSON 的**副本**写进 `mock-data/real_project.json`（真实文件只读，绝不写）。
   3. 注入 `window.__projects['mock/projects/real-desite.sitian']` 并 `projectStore.openProject()`
-     —— 走**产品自己的**「打开项目 → applyProjectToCanvas → applyScenarioState」链路。
-  4. 主动作 1「画一个势力范围」：油漆桶点某个真实省份内部 → 断言 ①页面内 ownership 变了
+     —— 走**产品自己的**“打开项目 → applyProjectToCanvas → applyScenarioState”链路。
+  4. 主动作 1“画一个势力范围”：油漆桶点某个真实省份内部 → 断言 ①页面内 ownership 变了
      ②**读盘载荷**（`__probe.lastProject()`）也变了 ③状态栏点名。
      🔴 点的取法（三条纪律，缺一条就会"点在省外/别的省上"而查不出原因）：
        · 先在世界坐标里找**离边界最远**的内部点（顶点平均/面积形心对凹省可能落在省外）；
        · 再换算成屏幕坐标并**取整** —— `MouseEvent.clientX` 的 IDL 类型是 `long`，
          浏览器会把小数**截断**，所以产品真正收到的是整数像素（≈1.5 世界单位/px）；
        · 用取整后的屏幕坐标**反算**产品将会算出的世界坐标，重新做一次"在目标省内"判定，
-         并先用「选择」工具让**产品自己的** `findProvinceAt` 回答命中的是哪个省（不假设）。
-  5. 主动作 2「选一个时间点」：同一年代内换年份 → 如实报告导出物有没有变化
+         并先用“选择”工具让**产品自己的** `findProvinceAt` 回答命中的是哪个省（不假设）。
+  5. 主动作 2“选一个时间点”：同一年代内换年份 → 如实报告导出物有没有变化
      （这份数据的 12 个剧本 `changeEvents` 都是 0，逐年变化可能看不出来 —— 不编造差异）。
-  6. 主动作 3「导出一张 PNG」：真鼠标点导出按钮 → 分块取回 dataUrl → 存盘 + Pillow 像素判据；
+  6. 主动作 3“导出一张 PNG”：真鼠标点导出按钮 → 分块取回 dataUrl → 存盘 + Pillow 像素判据；
      另留应用界面截图。
   7. 收尾：`teardown_mock()` 还原 index.html / 删 mock-data / 停掉自己起的进程 / 校验真实文件未变。
 
@@ -82,7 +82,7 @@ def file_stat(path):
 # ══════════════════════════════════════════════════════════════════════════
 # 几何（世界坐标）：找一个**离边界最远**的省内点
 #   凹多边形的顶点平均会落到省外；面积形心也可能落到省外（L 形省）。
-#   所以：包围盒内铺格 → 逐点判「在本省内」且「不在任何别的省内」→ 取离边界最远者。
+#   所以：包围盒内铺格 → 逐点判“在本省内”且“不在任何别的省内”→ 取离边界最远者。
 #   ⚠️ "不在别的省内"必须带包围盒预筛：415 省 × 3136 格点 × 逐环 even-odd ≈ 7.5e7 次内层
 #      迭代（分钟级）；预筛后只剩个位数候选省。
 # ══════════════════════════════════════════════════════════════════════════
@@ -242,7 +242,7 @@ SETUP_JS = r"""(async () => {
   return JSON.stringify({ fails, notes });
 })()"""
 
-# 用「选择」工具让**产品自己**回答这个屏幕点命中的是哪个省（走它自己的 findProvinceAt）
+# 用“选择”工具让**产品自己**回答这个屏幕点命中的是哪个省（走它自己的 findProvinceAt）
 #   🔴 为什么要带"再试一次"：`select` 分支**先判城镇**（`findBurgAt` → 命中就开城镇编辑器，
 #      根本不选省）。真实底图有 **617 个 burg**，点落在一个城镇上时 `selectedProvince` 会是 null
 #      —— 那不是"点歪了"，而是产品的既定优先级。所以：第一发如实记录（含是否被城镇截胡），
@@ -285,7 +285,7 @@ SELECT_JS = r"""(async () => {
     notes.attempt2 = a2;
     if (a2.prov) { notes.hitProvince = a2.prov; notes.hitProvinceName = a2.provName; }
   }
-  // 关掉被城镇截胡时弹出来的「聚落编辑」面板 —— 它是个模态，留着会盖住后续截图
+  // 关掉被城镇截胡时弹出来的“聚落编辑”面板 —— 它是个模态，留着会盖住后续截图
   // （留着不算错，但会让证据图看起来像"点歪了"；本仓纪律：证据要能自证）
   if (typeof SM.closeBurgEditor === 'function') SM.closeBurgEditor();
   else SM.burgEditorOpen = false;
@@ -385,7 +385,7 @@ EXPORT_JS = r"""(async () => {
   const SM = __SM__;
   const btn = document.querySelector('[data-testid="export-png"]');
   if (!btn) {
-    return JSON.stringify({ fails: ['导出按钮不在 DOM（工具栏「更多」没展开？）'],
+    return JSON.stringify({ fails: ['导出按钮不在 DOM（工具栏“更多”没展开？）'],
       notes: { more: !!document.querySelector('.toolbar-more'),
                testids: Array.from(document.querySelectorAll('[data-testid]')).map(e => e.getAttribute('data-testid')) } });
   }
@@ -435,7 +435,7 @@ SVGHEAD_JS = r"""(() => {
     texts: (svg.match(/<text /g) || []).length,
     patterns: (svg.match(/<pattern /g) || []).length,
     hasTitle: svg.indexOf('诸侯割据') >= 0,
-    // 2026-10-25：占位省名（「新省份 N」）不进成品图 —— 415 条灰字曾是「文本显示效果很差」的主因
+    // 2026-10-25：占位省名（“新省份 N”）不进成品图 —— 415 条灰字曾是“文本显示效果很差”的主因
     hasPlaceholder: svg.indexOf('新省份') >= 0,
   });
 })()"""
@@ -450,7 +450,7 @@ DISK_JS = r"""(() => {
     owner: sc ? ((sc.ownership || {})['__TARGET__'] || null) : '__NO_SCENARIO__',
     terrain: bm.terrain ? bm.terrain.length : -1,
     scenarioCount: Object.keys((p.scenarios || {}).scenarios || {}).length,
-    // 🔴 落盘载荷的 meta.name：真实项目叫「绒花计划」，harness 基线项目叫「harness 基线项目」。
+    // 🔴 落盘载荷的 meta.name：真实项目叫“绒花计划”，harness 基线项目叫“harness 基线项目”。
     //    两者实体数都是 120、名字也高度重合（fixture 就是从这份真实项目派生的），
     //    所以**只有 meta.name 能证明打开的是真实项目而不是基线项目**。
     metaName: (p.meta || {}).name || null,
@@ -579,7 +579,7 @@ def main():
         ck('剧本数 == 12', inj.get('scenarioCount') == 12,
            '实测 %s：%s' % (inj.get('scenarioCount'), json.dumps(inj.get('scKeys'), ensure_ascii=False)))
         own = inj.get('ownCounts') or {}
-        ck('剧本「%s」ownership 条数 == 415' % SC, own.get(SC) == 415, '实测 %s' % own.get(SC))
+        ck('剧本“%s”ownership 条数 == 415' % SC, own.get(SC) == 415, '实测 %s' % own.get(SC))
         ck('12 个剧本 ownership 全是 415 条', all(v == 415 for v in own.values()),
            json.dumps(own, ensure_ascii=False))
         print('  · 实测 ownership 条数/剧本：%s' % json.dumps(own, ensure_ascii=False), flush=True)
@@ -600,15 +600,15 @@ def main():
           const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('历史剧本'));
           if (!b) return 'no-btn'; b.click(); return 'ok';
         })()""")
-        ck('进入剧本模式（点「历史剧本」）', r == 'ok', r)
+        ck('进入剧本模式（点“历史剧本”）', r == 'ok', r)
         wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=30, desc='ScenarioMap 挂载')
         time.sleep(1.5)
-        ck('工具栏「更多」已展开（导出按钮在 v-if="moreOpen" 里）', open_toolbar_more(cdp))
+        ck('工具栏“更多”已展开（导出按钮在 v-if="moreOpen" 里）', open_toolbar_more(cdp))
 
         era = real['scenarios']['scenarios'][SC]['era']
         y0, y1 = int(era['startYear']), int(era['endYear'])
         year = y0 + (y1 - y0) // 2
-        print('  · 剧本「%s」年代 %s~%s（roman=%s）→ 取中点年份 %d'
+        print('  · 剧本“%s”年代 %s~%s（roman=%s）→ 取中点年份 %d'
               % (SC, era['startYear'], era['endYear'], era.get('roman'), year), flush=True)
         sok, sres = eval_json(cdp, _sub(SETUP_JS, KEY=KEY, YEAR=int(year)),
                               required=('fails', 'notes'), desc='场景布置')
@@ -649,7 +649,7 @@ def main():
         qok, qres = eval_json(cdp, _sub(SELECT_JS, SX=int(sx), SY=int(sy)),
                               required=('fails', 'notes'), desc='选择工具命中测试')
         qn = qres['notes'] if qok else {}
-        ck('① 用「选择」工具让产品自己回答命中省（不假设）',
+        ck('① 用“选择”工具让产品自己回答命中省（不假设）',
            bool(qok) and qn.get('hitProvince') == prov['id'],
            '产品命中 %s（%s，来源=%s；直接 findProvinceAt=%s/%s）vs 目标 %s（%s）；screen=(%d,%d) 画布内=%s 顶层元素=%s；'
            '第一发 %s；被城镇截胡=%s；第二发（关掉城镇图层）%s'
@@ -679,7 +679,7 @@ def main():
               pn.get('ownerAfter'), pn.get('ownerAfterName'), len(pn.get('changed') or [])))
         ck('③ 状态栏点名了这次易主', bool(pn.get('hint')) and str(prov.get('name')) in str(pn.get('hint')),
            pn.get('hint'))
-        print('  · 归属：%s(%s) → %s(%s)；该省 ownership 总条数 %s；全表变化 %s；易主日期 %s；状态栏「%s」'
+        print('  · 归属：%s(%s) → %s(%s)；该省 ownership 总条数 %s；全表变化 %s；易主日期 %s；状态栏“%s”'
               % (pn.get('ownerBefore'), pn.get('ownerBeforeName'), pn.get('ownerAfter'),
                  pn.get('ownerAfterName'), pn.get('ownedTotal'),
                  json.dumps(pn.get('changed'), ensure_ascii=False),
@@ -740,7 +740,7 @@ def main():
         en = eres['notes']
         if eres['fails']:
             ck('主动作3 探针内部断言', False, '；'.join(eres['fails']))
-        ck('真鼠标点导出按钮 → 恰好一次 IPC → 状态栏「已导出 PNG」',
+        ck('真鼠标点导出按钮 → 恰好一次 IPC → 状态栏“已导出 PNG”',
            en.get('hitTarget') and en.get('calls') == 1 and '已导出 PNG' in str(en.get('status')),
            'hitTarget=%s calls=%s 等待 %sms status=%s' % (en.get('hitTarget'), en.get('calls'),
                                                         en.get('waitedMs'), en.get('status')))
@@ -785,7 +785,7 @@ def main():
         text_px = png.count_near_any(img, labs, 8)
         ctrl = png.count_near_any(img, png.name_text_candidates((0, 255, 0), png.LABEL_ALPHA, pol_rgb), 8)
         # 🔴 上面这个判据有已知的假阳性地板（合成 fixture 上实测 ~4.8k 像素来自省界/过渡色）。
-        #    所以再导一张**关掉标注**的图，用「两导之差」给出**精确**的标注层像素数。
+        #    所以再导一张**关掉标注**的图，用“两导之差”给出**精确**的标注层像素数。
         text_exact = label_stroke = None
         try:
             e2ok, e2res = eval_json(cdp, EXPORT_JS.replace('__SM__', SM).replace('__SHOW_LABELS__', 'false'),
@@ -799,8 +799,8 @@ def main():
                 img2 = png.open_png(png.decode_data_url(du2))
                 text_exact, _ = png.diff_pixels(img, img2)
                 label_stroke = png.label_text_pixels(img, img2, png.LABEL_COLOR, png.LABEL_ALPHA, 8)
-                # 2026-10-25：占位省名（「新省份 N」）已不进导出图 → 这份全占位名项目的
-                # 「开/关标注」两导之差应为 0。这里只核对尺寸一致并打印数字；
+                # 2026-10-25：占位省名（“新省份 N”）已不进导出图 → 这份全占位名项目的
+                # “开/关标注”两导之差应为 0。这里只核对尺寸一致并打印数字；
                 # "占位名有没有被过滤"由下面的 SVG 内容判据负责（更直接、不依赖像素）。
                 ck('关标注导出与开标注同尺寸（像素对照前提）', img2.size == img.size,
                    '开 %d×%d / 关 %d×%d' % (img.size[0], img.size[1], img2.size[0], img2.size[1]))
@@ -811,7 +811,7 @@ def main():
                    json.dumps((e2res or {}).get('notes'), ensure_ascii=False)[:300])
         except Exception as e:
             ck('关标注的第二次导出（用于精确文字像素）', False, '异常：%s' % e)
-        ck('导出图不含占位省名（「新省份 N」是成品图噪音，2026-10-25 起过滤）',
+        ck('导出图不含占位省名（“新省份 N”是成品图噪音，2026-10-25 起过滤）',
            bool(head.get('hasPlaceholder')) is False, 'hasPlaceholder=%s' % head.get('hasPlaceholder'))
         if text_px > 1000:
             # 用户改过真名时白字省名会有像素；全占位名的项目应当是 0 —— 这里不设通过条件，
@@ -825,7 +825,7 @@ def main():
 
         shot3 = os.path.join(OUT_DIR, 'ui-3-after-export.png')
         ok3, i3 = _screenshot(cdp, shot3)
-        ck('应用界面截图 3（导出后的状态栏「已导出 PNG」）', ok3, i3)
+        ck('应用界面截图 3（导出后的状态栏“已导出 PNG”）', ok3, i3)
         # 三张截图必须**互不相同**（否则"三张证据"其实是同一张，等于只有一张）
         sizes = [os.path.getsize(p) for p in (shot1, shot2, shot3)]
         hashes = [sha256(p) for p in (shot1, shot2, shot3)]

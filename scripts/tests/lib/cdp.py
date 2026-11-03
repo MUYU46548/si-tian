@@ -20,7 +20,7 @@ def find_page_ws(port=CDP_PORT, timeout=30, prefer_prefix='http://localhost:5180
 
     🔴 必须优先挑**应用页**（2026-10-19 实测）：Edge 在一次 PNG 导出后会打开
     `edge://downloads-hub/`，且它会排在 `/json` 的第一个 —— 直接取第一个 page 会让
-    后续新建的 CDP 客户端连到下载页，表现为「用例超时/莫名其妙的空结果」。
+    后续新建的 CDP 客户端连到下载页，表现为“用例超时/莫名其妙的空结果”。
     先按 URL 前缀挑应用页，挑不到才退回第一个 page（保持旧行为）。
     """
     deadline = time.time() + timeout
@@ -44,7 +44,7 @@ class CDP:
     def __init__(self, ws_url=None, port=CDP_PORT):
         # suppress_origin=True：Chromium 111+ 默认**拒绝带 Origin 的 DevTools WebSocket 握手**
         # （websocket-client 会自动带一个 http://127.0.0.1:<port>）。Edge 不在意，但
-        # Electron 直接回 403 Forbidden —— 表现为「连不上 CDP」，排查起来很像环境坏了。
+        # Electron 直接回 403 Forbidden —— 表现为“连不上 CDP”，排查起来很像环境坏了。
         # Origin 头对本地 CDP 毫无用途，直接不发即可（比给 Electron 加 --remote-allow-origins 稳）。
         self.ws = websocket.create_connection(
             ws_url or find_page_ws(port), timeout=15, suppress_origin=True)
@@ -96,9 +96,9 @@ def eval_json(cdp, expr, required=('fails',), desc=''):
     """求值并要求返回**含 required 字段的 JSON 结果**。
 
     🔴 为什么必须有这个函数（本项目真实踩过）：`cdp.eval` 在 JS 抛异常时返回
-    `{'__err__': '...'}`。若调用方写成「没有 fails 字段 → 当成通过」，用例会**静默假绿**——
+    `{'__err__': '...'}`。若调用方写成“没有 fails 字段 → 当成通过”，用例会**静默假绿**——
     test_46 的 projectStore 子测试就因一个下游 TypeError 被当成通过，掩盖了
-    「主进程 project-create 不回显 project → 新建项目在生产环境必然失败」的真实缺陷。
+    “主进程 project-create 不回显 project → 新建项目在生产环境必然失败”的真实缺陷。
     判定一律走本函数：异常 / 非 JSON / 缺字段 = 失败，绝不等于通过。
 
     :param required: 必须存在的字段名；传 None 表示接受任意 JSON 值（调用方自查类型）

@@ -70,14 +70,14 @@ def sub_no_bare_names(cdp):
             continue
         path = os.path.join(CASES, fn)
         _src, edits, _left = alias_tool.plan_file(path)
-        # 改写器只认「ASCII 引号包裹的 fixture 专名」。还有待办 = 又有裸专名写进来了。
+        # 改写器只认“ASCII 引号包裹的 fixture 专名”。还有待办 = 又有裸专名写进来了。
         if edits:
             bad.append('%s 还有 %d 处裸专名（应写成 A(...) / __alias(...)）' % (fn, len(edits)))
         # 收集该文件实际引用到的名字，逐个检查是否有真实对应物
         src = io.open(path, encoding='utf-8').read()
         for m in re.finditer(r"\b(?:A|__alias)\((['\"])([^'\"]+)\1\)", src):
             used.add(m.group(2))
-    # 只对「确实是 fixture 节点名、却没有真实对应物」报错 —— 那才是"忘登记"
+    # 只对“确实是 fixture 节点名、却没有真实对应物”报错 —— 那才是"忘登记"
     missing = sorted(n for n in used if n in fixture_names and n not in KNOWN_FIXTURE_NAMES)
     if missing:
         bad.append('这些 fixture 节点名没有"真实库对应名"（需补进 make_vault_fixture.KEY_NAMES）：%s' % missing)

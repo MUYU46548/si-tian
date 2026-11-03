@@ -1,9 +1,9 @@
-// store/quitFlush.js — 「退出前落盘」的注册表（数据安全：不把用户手绘时间留在内存里丢掉）
+// store/quitFlush.js — “退出前落盘”的注册表（数据安全：不把用户手绘时间留在内存里丢掉）
 //
 // 为什么单独一个模块（而不是让 App.vue 直接调各 store）：
 //   1. App.vue 有一条静态闸门 —— 不得出现 `projectStore` 字样（面板/组件才连项目 store）。
-//      退出钩子却是 App 级行为，所以走这个中立注册表，沿用 `canvasBridge` 那套「注册口」手法。
-//   2. 各 store 自己知道「什么算未落盘的改动」，外部不该猜。谁 dirty 谁注册。
+//      退出钩子却是 App 级行为，所以走这个中立注册表，沿用 `canvasBridge` 那套“注册口”手法。
+//   2. 各 store 自己知道“什么算未落盘的改动”，外部不该猜。谁 dirty 谁注册。
 //
 // 时序：主进程在真正 quit 前发 `app-flush-before-quit` → 渲染层 `flushAll()` →
 //       无论成败都回 `app-flush-done`（主进程另有 2.5s 超时兜底，退不掉比丢 800ms 更糟）。

@@ -3,7 +3,7 @@
 """用例 105：高度图**分辨率与平滑**（P5，2026-10-14）
 
 真实来由（暮雨实测原话）：
-  「地形模模糊糊，是分辨率不够吗？高度图分辨率帮我调整。⚠️ 注意性能」
+  “地形模模糊糊，是分辨率不够吗？高度图分辨率帮我调整。⚠️ 注意性能”
 
 量出来的事实（不是感觉）：真实底图源网格 **133×75 = 9975 格 / spacing 14.4**，
 画到 1900×1080 的画布上每格约 **3.6 屏幕像素**（放大到 400% 时 1 格占满一屏）。
@@ -13,7 +13,7 @@
 本用例守五类判据：
   a 源码闸门（剥注释）：重采样/平滑的算法在纯函数层，store 侧**不许自己写插值**；
      两个新写口都登记进 `MEMORY_WRITE_CALLSITES` 且函数首行有守卫；栅格缓存键含高度图引用
-  b 端到端：真 UI 打开分辨率面板 → 成本预估在场 → 点「应用分辨率」→ 格数真的变成
+  b 端到端：真 UI 打开分辨率面板 → 成本预估在场 → 点“应用分辨率”→ 格数真的变成
      (cols-1)*f+1 × (rows-1)*f+1、格距真的变小、**渲染没崩**
   c 不变量：最外圈格心世界坐标一字不动（否则整张地形平移半格，几乎查不出来）
   d 一条 undo 能回到原分辨率（撤销必须**逐字段**回到原状态）
@@ -153,7 +153,7 @@ def run(cdp):
   const hm2 = s.getHeightmapFor(KEY);
   const src = { cols: hm2.grid.cellsX, rows: hm2.grid.cellsY, spacing: hm2.grid.spacing,
                 p0: hm2.grid.points[0], pLast: hm2.grid.points[hm2.grid.points.length - 1] };
-  // 「调整高度图分辨率」按钮在工具栏「更多」里（默认收起）—— 必须先展开，它才进 DOM。
+  // “调整高度图分辨率”按钮在工具栏“更多”里（默认收起）—— 必须先展开，它才进 DOM。
   // ⚠️ 别绕过 UI 直接调 store：那会把"按钮在不在、点了有没有反应"整条路径漏掉。
   const toggle = document.querySelector('.more-toggle');
   if (toggle) toggle.click();
@@ -173,11 +173,11 @@ def run(cdp):
     src = r['src']
     notes.append(f"源网格 {src['cols']}×{src['rows']} / spacing {src['spacing']}")
     if not r.get('hasButton'):
-        fails.append('「调整高度图分辨率」按钮不在 DOM 里（底图没有高度图？）')
+        fails.append('“调整高度图分辨率”按钮不在 DOM 里（底图没有高度图？）')
 
-    # 🔴 可发现性（2026-10-15 补；用户实测「分辨率按钮不知道在哪里，『更多』中没有找到」）：
+    # 🔴 可发现性（2026-10-15 补；用户实测“分辨率按钮不知道在哪里，‘更多’中没有找到”）：
     #    按钮**一直在**（诊断 `test_xdiag_resample_button` 证实），但第一版只有一枚
-    #    `grid` 图标、**没有文字**，而「更多」里它左右邻居全都有文字（拆分/合并/高度/群系…）
+    #    `grid` 图标、**没有文字**，而“更多”里它左右邻居全都有文字（拆分/合并/高度/群系…）
     #    → 用户扫过去只看见一排有名字的按钮，那枚没名字的就被跳过了。
     #    这条守卫钉死"面板入口必须有可见文字"：靠 title（要悬停）+ 图标（认不出）不算。
     label_js = r""" (() => {
@@ -187,16 +187,16 @@ def run(cdp):
     lab = eval_json(cdp, label_js, required=None, desc='按钮文字')
     lab = lab[1] if isinstance(lab, tuple) and lab[0] else {}
     if not (lab.get('text') or '').strip():
-        fails.append('🔴 「分辨率」按钮没有可见文字（只有图标 + title）—— '
-                     '「更多」里左右邻居都有名字，没名字的那个会被跳过（用户就是这么找不到的）')
+        fails.append('🔴 “分辨率”按钮没有可见文字（只有图标 + title）—— '
+                     '“更多”里左右邻居都有名字，没名字的那个会被跳过（用户就是这么找不到的）')
     else:
-        notes.append(f"入口按钮文字：「{lab.get('text')}」")
+        notes.append(f"入口按钮文字：“{lab.get('text')}”")
 
     # ── 真 UI：打开面板 → 看成本预估 → 选 ×2 → 应用 ──────────────────────────
     panel_js = r""" (async () => {
   const sm = __SC__;
   const out = {};
-  // 工具栏「更多」默认收起；按钮不在 DOM 里时先展开（找不到按钮必须**带回现场**，
+  // 工具栏“更多”默认收起；按钮不在 DOM 里时先展开（找不到按钮必须**带回现场**，
   // 而不是就地抛异常 —— 本项目在 test_65 上踩过"查空即抛"掩盖真实原因）
   let btn = document.querySelector('[data-testid="basemap-resample"]');
   if (!btn) {
@@ -228,7 +228,7 @@ def run(cdp):
     const b = document.querySelector('[data-testid="resample-apply"]');
     return b ? !!b.disabled : null;
   })();
-  // ⚠️ 必须**真的换一个值**再换回来，否则「切换倍数后读数有没有变」这条判据是空转
+  // ⚠️ 必须**真的换一个值**再换回来，否则“切换倍数后读数有没有变”这条判据是空转
   //    （默认就是 ×2，setTimeout 之后再读同一档，读数当然一样 —— 首版就是这么假绿的）
   await setFactor(4);
   out.costText4 = costText();
@@ -258,11 +258,11 @@ def run(cdp):
         return False, f'分辨率面板探针失败：{got[1] if isinstance(got, tuple) else got}'
     got = got[1]
     if not got.get('clicked'):
-        return False, f'点不动「调整高度图分辨率」按钮：{got}'
+        return False, f'点不动“调整高度图分辨率”按钮：{got}'
     if not got.get('panelOpen'):
         fails.append('点了按钮但面板没打开（用户会以为按钮坏了）')
     if not got.get('costText'):
-        fails.append('面板没有显示成本预估（格数/内存/耗时）—— 「注意性能」这条就没有落点')
+        fails.append('面板没有显示成本预估（格数/内存/耗时）—— “注意性能”这条就没有落点')
     else:
         notes.append(f"成本预估 ×2：{got['costText']}")
         if got.get('costText4'):
@@ -270,7 +270,7 @@ def run(cdp):
     if got.get('costText4') and got['costText4'] == got.get('costText2'):
         fails.append(f"切换倍数（×2 / ×4）成本预估**读数一样**：{got.get('costText2')} —— 预估没接上倍数")
     if got.get('applyDisabled'):
-        fails.append('「应用分辨率」是禁用的（预估没问题却点不动）')
+        fails.append('“应用分辨率”是禁用的（预估没问题却点不动）')
 
     after = got.get('after') or {}
     exp_cols = (src['cols'] - 1) * 2 + 1
@@ -300,7 +300,7 @@ def run(cdp):
 
     # ── d 一条 undo 回到原状态（逐字段）──────────────────────────────────────
     # 用 `store.undo()`（与 test_102 同款：撤销这件事本身由 test_47/54 守，
-    # 这里要判的是「调整分辨率 = 一条 undo」这条纪律）。
+    # 这里要判的是“调整分辨率 = 一条 undo”这条纪律）。
     undo_js = r""" (async () => {
   const sm = __SC__, s = __STORE__;
   s.undo();
@@ -314,7 +314,7 @@ def run(cdp):
     un = un[1] if isinstance(un, tuple) and un[0] else {'err': un}
     if un.get('cols') != src['cols'] or un.get('rows') != src['rows']:
         fails.append(f"撤销没有回到原网格（应为 {src['cols']}×{src['rows']}，实际 "
-                     f"{un.get('cols')}×{un.get('rows')}）—— 「一次调整 = 一条 undo」没成立")
+                     f"{un.get('cols')}×{un.get('rows')}）—— “一次调整 = 一条 undo”没成立")
     elif abs(float(un.get('spacing') or 0) - float(src['spacing'])) > 1e-6:
         fails.append(f"撤销后格距不对（应 {src['spacing']}，实际 {un.get('spacing')}）")
     else:

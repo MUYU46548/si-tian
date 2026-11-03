@@ -165,7 +165,7 @@ export function scatterAlongPath(path, params = {}, existing = []) {
   const out = [];
   let walk = 0;          // 已走过的弧长
   // 相位对齐：沿用调用方传入的 startOffset，让多段拖动的间距连续
-  // 第一个落点落在「全局弧长 = step 的整数倍」处 → 换算成本段内的局部弧长
+  // 第一个落点落在“全局弧长 = step 的整数倍”处 → 换算成本段内的局部弧长
   const startOffset = Number(p.startOffset) || 0;
   let nextAt = step * Math.ceil(startOffset / step) - startOffset;
   let segIndex = 0;      // 段序号（参与哈希，保证不同段不重复）

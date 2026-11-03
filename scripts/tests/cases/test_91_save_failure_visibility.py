@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 91：保存失败必须**说得出原因**（2026-10-09，暮雨实测反馈）
 
-暮雨原话：「保存失败就是保存失败，我没看到其他内容。只提示红色的保存失败。」
+暮雨原话：“保存失败就是保存失败，我没看到其他内容。只提示红色的保存失败。”
 
 查证出**三个**独立缺陷（不是同一件事）：
 
@@ -10,10 +10,10 @@
      `saveStatus='error'` 只表达"失败了"；项目态那条 `syncCanvasToProject` 返回的 `r.error`
      就地丢弃；而且 error 还有 5s TTL 自动回 idle —— 一闪而过等于没提示。
 
-  ② **状态栏只显示了「保存」这件事的一半**（`ScenarioMap.vue`）
+  ② **状态栏只显示了“保存”这件事的一半**（`ScenarioMap.vue`）
      它读 `store.saveStatus`（geodata 侧），而**真正把 .sitian 写进磁盘的是 projectStore**
      （状态写在全局 `useStatusBar` 的 `saveState` 里）。后果：项目落盘失败时这里毫无反应；
-     项目态下 geodata 只到 'staged'，这里**永远显示不出「已保存」**。
+     项目态下 geodata 只到 'staged'，这里**永远显示不出“已保存”**。
 
   ③ 🔴 **`store.saveStatus.value` 恒为 undefined**（真 bug，同一处代码）
      `geodata` 是 Pinia **setup store** → 它 return 的 ref **已被 Pinia 自动解包**
@@ -75,7 +75,7 @@ def source_gates():
         ('unref(store.saveStatus)', '用 unref 读 store（Pinia setup store 会解包 ref）'),
         ('unref(store.lastSaveError)', '失败原因也走 unref 读'),
         ('saveState: sbState.saveState', '接 projectStore 写进全局状态栏的落盘状态'),
-        ('pending: !!sbState.savePending', '「有改动未落盘」也要进显示（只有 saveState 时看不出脏了）'),
+        ('pending: !!sbState.savePending', '“有改动未落盘”也要进显示（只有 saveState 时看不出脏了）'),
         ('resolveSaveDisplay(', '交给纯函数判定（可 Node 单测）'),
     ]:
         if needle not in sd:
@@ -85,9 +85,9 @@ def source_gates():
     for needle, label in [
         ("if (s && s.kind === 'err')", '项目落盘失败优先级最高（那才代表数据没进磁盘）'),
         ("if (canvas.status === 'error')", '画布侧失败也要有分支（连"交给项目"都没成）'),
-        ('if (project.pending)', '「有改动待写入磁盘」是独立一档（旧实现停在绿标）'),
-        ('r.persisted === true', 'persisted 才报「已保存到磁盘」'),
-        ('r.staged === true', 'staged 只说「已交给项目」（项目态不得谎报已落盘）'),
+        ('if (project.pending)', '“有改动待写入磁盘”是独立一档（旧实现停在绿标）'),
+        ('r.persisted === true', 'persisted 才报“已保存到磁盘”'),
+        ('r.staged === true', 'staged 只说“已交给项目”（项目态不得谎报已落盘）'),
     ]:
         if needle not in st:
             fails.append(f'saveStatusText 缺：{label}（`{needle}`）')
@@ -103,7 +103,7 @@ def source_gates():
         if needle not in sm:
             fails.append(f'ScenarioMap 缺：{label}（`{needle}`）')
     if '> 保存失败</template>' in sm:
-        fails.append('状态栏还在用无原因的旧文案「保存失败」')
+        fails.append('状态栏还在用无原因的旧文案“保存失败”')
     if 'store.saveStatus.value' in sm:
         fails.append('ScenarioMap 仍在写 `store.saveStatus.value`（Pinia 已解包 → 恒 undefined）')
     if 'const saveDisplay = computed' in sm:
@@ -119,11 +119,11 @@ def source_gates():
 
     ps = _code_only(_read('src/renderer/src/store/projectStore.js'))
     if 'setSaveState(null);' not in ps:
-        fails.append('projectStore 的 TTL 到期没清全局 saveState（底部会永远停在「已保存」）')
+        fails.append('projectStore 的 TTL 到期没清全局 saveState（底部会永远停在“已保存”）')
     if '`保存失败：${errText' not in ps:
         fails.append('projectStore 的失败文案没有把原因写进 text（只放 title 等于没提示）')
     if 'setSavePending(!!d)' not in ps:
-        fails.append('projectStore 没有把 dirty 同步到状态栏（「有改动未落盘」必须可见）')
+        fails.append('projectStore 没有把 dirty 同步到状态栏（“有改动未落盘”必须可见）')
 
     notes.append('源码闸门 20 项' + ('全过' if not fails else f'缺 {len(fails)} 项'))
     return fails, notes
@@ -155,11 +155,11 @@ PROBE_JS = """(() => {
   const g1 = read();
   notes.geodataErr = g1;
   ok('① 剧本侧失败 → 状态栏变 error', g1.state === 'error', g1.state);
-  ok('① 文字以「保存失败：」开头', g1.text.indexOf('保存失败：') === 0, g1.text);
+  ok('① 文字以“保存失败：”开头', g1.text.indexOf('保存失败：') === 0, g1.text);
   ok('① 失败原因出现在文字里（不是只有四个字）', /EBUSY/.test(g1.text), g1.text);
   ok('① title 给完整原因', /EBUSY/.test(g1.title), g1.title);
 
-  // ② 项目落盘失败优先级更高 —— 那才代表「数据没进磁盘」
+  // ② 项目落盘失败优先级更高 —— 那才代表“数据没进磁盘”
   sb.saveState = { kind: 'err', text: '保存失败', title: '写入 E:/x.sitian 失败：EACCES' };
   const g2 = read();
   notes.projectErr = g2;
@@ -233,6 +233,6 @@ def run(cdp):
         f'基线 {json.dumps(n.get("baseline"), ensure_ascii=False)}；'
         f'剧本侧失败 → {json.dumps(n.get("geodataErr"), ensure_ascii=False)}；'
         f'项目侧失败 → {json.dumps(n.get("projectErr"), ensure_ascii=False)}；'
-        f'DOM 实际显示「{n.get("dom", {}).get("text")}」'
+        f'DOM 实际显示“{n.get("dom", {}).get("text")}”'
     )
     return (not fails), ' | '.join(fails) if fails else ' | '.join(notes)

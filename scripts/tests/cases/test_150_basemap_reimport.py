@@ -4,7 +4,7 @@
 
 语义（暮雨 2026-10-25）：
   · 换新 .map = **新底图 + 旧归属迁过去**；
-  · 「同一底图只补数据」只限一笔未改（走 updateBaseMapData，本用例不测）；
+  · “同一底图只补数据”只限一笔未改（走 updateBaseMapData，本用例不测）；
   · 并省（多旧→一新）默认**阻止**，不替用户选。
 
 判据：
@@ -106,7 +106,7 @@ def run(cdp):
     if fails:
         return False, '；'.join(fails)[:1000] + ' | 实测：' + json.dumps(notes, ensure_ascii=False)[:600]
 
-    # 源码守卫：UI 必须真的接上「非 pristine → reimport」这条路
+    # 源码守卫：UI 必须真的接上“非 pristine → reimport”这条路
     # 2026-10-31：重导对话框逻辑搬进 scenario/interaction/helpers.js —— 判据读合集
     from lib.rsrc import render_src as _rsrc_all
     sm = _rsrc_all()

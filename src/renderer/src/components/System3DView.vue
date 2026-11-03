@@ -97,7 +97,7 @@ const picked = ref(null);       // { id, name, classId, kind }（选中那颗）
 /** 可点对象：mesh 用于射线检测，mat 用于换贴图（改类型当场生效，不必重开 3D） */
 const pickables = [];
 let raycaster = null;
-let downAt = null;              // pointerdown 位置：用来区分「点选」与「拖拽旋转」
+let downAt = null;              // pointerdown 位置：用来区分“点选”与“拖拽旋转”
 
 const classLabel = (id) => planetClassLabel(id);
 

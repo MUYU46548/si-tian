@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 100：剧本 PNG 导出（P0「第一张图最小闭环」的机器验证）
+"""用例 100：剧本 PNG 导出（P0“第一张图最小闭环”的机器验证）
 
 🔴 为什么需要这个用例：**PNG 导出此前全仓零覆盖** ——
    `grep -n "export-png|exportScenarioPNG|rasterizeSvg" scripts/` 无命中；
@@ -11,7 +11,7 @@
 
 本用例的三条纪律：
   · **真鼠标事件**点 `[data-testid="export-png"]`（不是直接调 `exportScenarioPNG()`）——
-    后者会绕过按钮的挂载态 / 「更多」面板展开态 / `@click` 绑定这三层。
+    后者会绕过按钮的挂载态 / “更多”面板展开态 / `@click` 绑定这三层。
     导出按钮在 `.toolbar-more`（模板里是 `v-if="moreOpen"`）里 → **不展开就查不到该元素**。
   · **分块取回** dataUrl（`lib/cdp.fetch_string`）：CDP 读超时 15s，一次取几 MB 必炸。
   · 判据是**像素级**的（Pillow）：合法 PNG / 尺寸 == SVG 头解析出的 `W*2 × H*2` /
@@ -19,7 +19,7 @@
     "调用了 IPC" 不算判据。
 
 覆盖：
-  f0 前置：2 省 / 2 剧本 / 3 势力（`#c23b3b` `#4a90d9` `#e6a23c`），游标落到「乙时代」。
+  f0 前置：2 省 / 2 剧本 / 3 势力（`#c23b3b` `#4a90d9` `#e6a23c`），游标落到“乙时代”。
   f1 PNG 像素判据（真鼠标点击 + 分块取回 + Pillow）。
   f2 反向：`SM.showLabels = false` 重导 → **省名文字像素归零**（实测数字见下），
      且除标注外逐像素一致；另有一枚"连导两次完全一致"的对照，证明 f1 的差异不是光栅化噪声。
@@ -48,8 +48,8 @@ C1, C2, C3 = '#c23b3b', '#4a90d9', '#e6a23c'
 # ══════════════════════════════════════════════════════════════════════════
 TOL = 8                     # 逐通道容差（任务要求 ≤8；实测原色/合成色的偏差为 0）
 MIN_UNIQUE_COLORS = 4       # 实测 840×440 的图上 2524 色
-MIN_COLOR_PIXELS = 1000     # 实测「原色 + 0.72 合成色」合计：C1=27208 C2=43261 C3=18848
-MIN_TEXT_PIXELS = 1500      # 实测「标注层贡献的像素」（有/无标注两导之差，2026-10-25 白字档 = 9256）
+MIN_COLOR_PIXELS = 1000     # 实测“原色 + 0.72 合成色”合计：C1=27208 C2=43261 C3=18848
+MIN_TEXT_PIXELS = 1500      # 实测“标注层贡献的像素”（有/无标注两导之差，2026-10-25 白字档 = 9256）
 MIN_LABEL_PIXELS = 250      # 白字实心笔画（2026-10-25 实测 977；旧深灰字档曾为 904）
 # ⚠️ 诚实交代：上面两条**文字**阈值是按按钮的默认档 `exportScenarioPNG()`（= `scale=2`）标定的。
 #    反向探针把默认档改成 `scale=1` 后，这两条会跟着红（同时尺寸判据先红）。这是**正确**的红
@@ -80,7 +80,7 @@ SEED_JS = r"""
   SM.baseMapKey = KEY;
   if (typeof SM.onBaseMapChange === 'function') await SM.onBaseMapChange();
   SM.tlDiffMode = 'eu4';
-  // 落到「乙时代末年」：此时 prov_b 已易主（EU4 斜线 = 旧主底色 + 新主斜线）
+  // 落到“乙时代末年”：此时 prov_b 已易主（EU4 斜线 = 旧主底色 + 新主斜线）
   const scIds = SM.timeline.scenarios.map(x => x.id);
   SM.tlDate = { y: 2020, m: null, d: null };
   SM.tlEra = scIds.indexOf(KEY + '/乙时代');
@@ -136,7 +136,7 @@ EXPORT_JS = r"""(async () => {
   // ── 尺寸判据的真源 = SVG 头 ──────────────────────────────────────────────
   // 🔴 `buildScenarioSVG` **不是** setupState 顶层绑定（组件只解构了 `export*` 那几个；
   //    它挂在 composable 返回对象 `scenarioExport` 上）。三条路依次取，取不到就带回现场：
-  //      ① setupState 顶层 → ② `SM.scenarioExport` 上 → ③ 真鼠标点「导出 SVG」按钮拿 IPC 载荷
+  //      ① setupState 顶层 → ② `SM.scenarioExport` 上 → ③ 真鼠标点“导出 SVG”按钮拿 IPC 载荷
   let svgText = '', svgSource = '';
   const direct = (typeof SM.buildScenarioSVG === 'function') ? SM.buildScenarioSVG
     : (SM.scenarioExport && typeof SM.scenarioExport.buildScenarioSVG === 'function')
@@ -178,7 +178,7 @@ EXPORT_JS = r"""(async () => {
 
   const btn = document.querySelector('[data-testid="export-png"]');
   if (!btn) {
-    return JSON.stringify({ fails: fails.concat('导出按钮不在 DOM —— 工具栏「更多」没展开？（它在 v-if="moreOpen" 的 .toolbar-more 里）'),
+    return JSON.stringify({ fails: fails.concat('导出按钮不在 DOM —— 工具栏“更多”没展开？（它在 v-if="moreOpen" 的 .toolbar-more 里）'),
       notes: { more: !!document.querySelector('.toolbar-more'),
                testids: Array.from(document.querySelectorAll('[data-testid]')).map(e => e.getAttribute('data-testid')) } });
   }
@@ -193,7 +193,7 @@ EXPORT_JS = r"""(async () => {
   notes.waitedMs = waited;
   ck('点一次只发生一次 saveExportFile 调用', window.__EXPORT_CALLS__ === 1, window.__EXPORT_CALLS__);
   ck('走到了 saveExportFile（不是"点了没反应"）', !!window.__LAST_EXPORT__);
-  ck('状态栏报「已导出 PNG」', /已导出 PNG/.test(String(SM.exportStatus || '')), SM.exportStatus);
+  ck('状态栏报“已导出 PNG”', /已导出 PNG/.test(String(SM.exportStatus || '')), SM.exportStatus);
   if (!window.__LAST_EXPORT__) {
     return JSON.stringify({ fails, notes });
   }
@@ -288,7 +288,7 @@ def run(cdp):
     time.sleep(0.8)
     # 导出按钮在 .toolbar-more（v-if="moreOpen"）里 —— 不展开就是"查不到元素"，不是产品缺陷
     if not open_toolbar_more(cdp):
-        return False, '工具栏「更多」面板没展开（导出按钮就在里面）—— 先查 .scenario-toolbar 的按钮 title'
+        return False, '工具栏“更多”面板没展开（导出按钮就在里面）—— 先查 .scenario-toolbar 的按钮 title'
 
     # ══════════════ f1：有标注 → PNG（真鼠标点击 → 分块取回） ══════════════
     ok, notes1, du_a = _do_export(cdp, True, True, 'f1 导出 PNG（含标注）')
@@ -333,11 +333,11 @@ def run(cdp):
         if exact + blend < MIN_COLOR_PIXELS:
             fails.append(f'势力色 {name} 在图上像素过少：原色 {exact} + 0.72 合成 {blend} = {exact + blend} < {MIN_COLOR_PIXELS}')
 
-    # ── 标注（省名）的判据：**两套互补口径**，都出自「有标注 / 无标注」两张独立导出 ──
+    # ── 标注（省名）的判据：**两套互补口径**，都出自“有标注 / 无标注”两张独立导出 ──
     #   ① `text_px` = 两份导出逐像素差 = **标注这一层贡献的全部像素**（含抗锯齿边缘）
     #   ② `label_px` = 其中**实心笔画**：`b` 就是文字底下真实的背景，白字 alpha=1 →
     #      期望色就是纯白，落在 ±TOL 内的即是省名笔画（2026-10-25 起与画布同一份样式）
-    #   ③ 反向 = 两次**独立**的「关掉 labels」导出之差：同一算子在"开"时给正数，在"关"时必须给 0
+    #   ③ 反向 = 两次**独立**的“关掉 labels”导出之差：同一算子在"开"时给正数，在"关"时必须给 0
     # 为什么不用"数某个候选色"当独立判据（实测过，已弃用）：省界 / 网格 与省份填充的过渡色
     # 会落进候选集合，产生 **~4.8k 的假阳性地板**（实测 4843 vs 真实 39），比值判据因此失效。
     text_px, _ = png.diff_pixels(img_a, img_b)
@@ -370,7 +370,7 @@ def run(cdp):
     if not (notes1['svgHasProvA'] and notes1['svgHasProvB']):
         fails.append(f'SVG 文本里缺省名：aprov={notes1["svgHasProvA"]} bprov={notes1["svgHasProvB"]}')
     if not notes1['svgHasLegend']:
-        fails.append('SVG 缺势力图例（「势力」+ 势力名）')
+        fails.append('SVG 缺势力图例（“势力”+ 势力名）')
     if not notes1['svgHasTitle']:
         fails.append('SVG 缺剧本名标题')
     if not notes1.get('svgHasScaleBar'):
@@ -407,4 +407,4 @@ def run(cdp):
         f' / 非真空对照 #00ff00={ctrl_stats["#00ff00"]} #ff00ff={ctrl_stats["#ff00ff"]}'
         f' / SVG {notes1["svgPathCount"]} path {notes1["svgTextCount"]} text {notes1["svgPatternCount"]} pattern'
         f'（源: {notes1.get("svgSource")}）'
-        f' / 状态栏「{notes1["exportStatus"]}」')
+        f' / 状态栏“{notes1["exportStatus"]}”')

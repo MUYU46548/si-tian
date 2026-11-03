@@ -4,14 +4,14 @@
 
 为什么单独立一个模块：`cases/test_100_scenario_png_export.py`（合成 fixture）与
 `drill_p0_first_map.py`（真实 415 省项目）要下的像素判据是同一套（合法 PNG / 尺寸 /
-非空白 / 势力色 / 文字像素）。两处各写一份就是下一个「改一处另两处不变」——
+非空白 / 势力色 / 文字像素）。两处各写一份就是下一个“改一处另两处不变”——
 而且这种偏差**不会报错**，只会让其中一处静默失去判别力。
 
 🔴 全部走 Pillow 的 C 层算子（`ImageChops` / `histogram`）而不是 Python 逐像素循环：
    真实 415 省底图导出的 PNG 是 **3680×1752 ≈ 645 万像素**，解释器逐像素要跑几分钟
    （而 CDP 那侧还等着），用 C 层算子则是亚秒级。
 
-🔴 「势力色」判据为什么要分两种（`count_near` / `count_near_blend`）：
+🔴 “势力色”判据为什么要分两种（`count_near` / `count_near_blend`）：
    `useScenarioExport.js` 的省份填充是 `fill-opacity: 0.72`（**半透明**，与背景 `#1a2a3a`
    合成），而图例色块是**不透明**的。所以同一个 `#c23b3b` 在图上有两个完全不同的落点色：
      · 图例色块 / EU4 斜线描边 / 斜线 pattern  → **原色**（`exact`）
@@ -65,7 +65,7 @@ def _solid(size, color):
 
 
 def _maxdiff_mask(img, other, tol):
-    """逐像素「最大通道差 ≤ tol」的二值掩码（255 = 命中）。
+    """逐像素“最大通道差 ≤ tol”的二值掩码（255 = 命中）。
 
     用 `ImageChops.lighter` 取三通道**最大值**，而不是 `convert('L')` 的亮度加权：
     亮度是凸组合，`L ≤ 8` 并不蕴含"每个通道都 ≤ 8"（实测反例 R=20,G=0,B=0 → L≈6）。
@@ -128,7 +128,7 @@ def name_text_candidates(label=LABEL_COLOR, alpha=LABEL_ALPHA, polity_colors=(),
 def diff_pixels(a, b):
     """两张同尺寸图**逐像素任一通道不同**的像素数 + 该掩码（0/255 L 图）。
 
-    用途：`a` = 有标注导出、`b` = 关掉标注导出 → 差集就是「标注这一层画出来的像素」。
+    用途：`a` = 有标注导出、`b` = 关掉标注导出 → 差集就是“标注这一层画出来的像素”。
     比"猜一个文字颜色再数"稳得多：文字压在什么底色上是**逐像素精确知道**的。
     """
     ra, rb = rgb(a), rgb(b)
@@ -141,7 +141,7 @@ def diff_pixels(a, b):
 
 
 def label_text_pixels(a, b, label=LABEL_COLOR, alpha=LABEL_ALPHA, tol=8):
-    """统计「确实由 **LABEL_COLOR 的省名文字**画出来的」像素数。
+    """统计“确实由 **LABEL_COLOR 的省名文字**画出来的”像素数。
 
     🔴 为什么这个判据是**精确**而不是近似：`b`（关掉标注的那次导出）就是文字底下
        真实的背景（省份填充 / 网格 / 边界 / 背景色全都在），所以期望色

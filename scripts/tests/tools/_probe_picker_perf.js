@@ -1,12 +1,12 @@
-// _probe_picker_perf.js —— 卡片墙「第二次进墙仍然要 1.2 秒」到底花在哪（量，不猜）
+// _probe_picker_perf.js —— 卡片墙“第二次进墙仍然要 1.2 秒”到底花在哪（量，不猜）
 //
 // 来历：`_shot_story_20261017.py` 的读数里，缩略图成品缓存命中 10/10、`bakingLeft=0`，
-// 但「点换剧本 → 卡片墙可用」仍花了 1247ms。所以瓶颈**不在烘焙**了，得找出来。
+// 但“点换剧本 → 卡片墙可用”仍花了 1247ms。所以瓶颈**不在烘焙**了，得找出来。
 // 本探针把卡片墙这条路上的每一段分别计时（都用产品自己的实现，不另写一份）：
 //   ① 省份净面积全量（`provinceNetArea` × 400 省）
 //   ② `buildTimeline` 一组
 //   ③ `openingSituation` 一条 / 十条
-//   ④ 真正的「点换剧本 → 卡片 DOM 齐」墙钟（rAF 计时）
+//   ④ 真正的“点换剧本 → 卡片 DOM 齐”墙钟（rAF 计时）
 (async () => {
   const out = {};
   const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
@@ -81,7 +81,7 @@
   out.openingSituationAllSharedIndex = Math.round((performance.now() - t) * 10) / 10;
   out.speedup = Math.round((out.openingSituationAll / Math.max(0.01, out.openingSituationAllSharedIndex)) * 10) / 10;
 
-  // ── 真·墙钟：进编辑器 → 点「换剧本」→ 卡片 DOM 齐 + 缩略图全非空 ──
+  // ── 真·墙钟：进编辑器 → 点“换剧本”→ 卡片 DOM 齐 + 缩略图全非空 ──
   const clickText = (txt) => {
     const b = Array.from(document.querySelectorAll('button')).find((x) => (x.textContent || '').includes(txt));
     if (b) { b.click(); return true; }

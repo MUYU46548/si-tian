@@ -113,7 +113,7 @@
         <span class="tgen-cand-name">候选 {{ ['一', '二', '三', '四'][i] || i + 1 }}</span>
         <span class="tgen-cand-meta">种子 {{ c.seed }}</span>
       </button>
-      <div v-if="!candidates.length && !busy" class="tgen-empty">还没有候选 —— 点「重新出候选」</div>
+      <div v-if="!candidates.length && !busy" class="tgen-empty">还没有候选 —— 点“重新出候选”</div>
     </div>
 
     <div v-if="warn" class="tgen-warn">{{ warn }}</div>
@@ -308,7 +308,7 @@ defineExpose({ summary, keepHandEdits });
 </script>
 
 <style scoped>
-/* 颜色与「分辨率」面板（.resample-panel）同口径：那一片是深色面板，不跟主题切；
+/* 颜色与“分辨率”面板（.resample-panel）同口径：那一片是深色面板，不跟主题切；
    这里若用 --text-primary，浅色主题下会变成深字压深底（读不出来）。 */
 .tgen {
   display: flex;

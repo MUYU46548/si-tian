@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 141：读料桥 · 设定卡「读不到笔记」的可读回落（2026-10-24）
+"""用例 141：读料桥 · 设定卡“读不到笔记”的可读回落（2026-10-24）
 
-读料桥（第 5 件）的判据之一是「**换库不崩**」：库被切换 / 笔记被改名或删除时，
+读料桥（第 5 件）的判据之一是“**换库不崩**”：库被切换 / 笔记被改名或删除时，
 节点上的 `sourcePath` 会指向一个不存在的文件。此前这里只是 `note = null` →
 正文区**静默消失**（用户以为"内容没了"，且不知道去哪儿找）。
 
 本用例守三件事：
 1. 正常态：选中一个有词条的节点 → 面板里真的有设定卡内容（frontmatter / 正文）
 2. 坏链路：把 sourcePath 改成一个不存在的路径 → 出现可读回落（路径 + 原因 + 两个出口），
-   **不抛异常**；点「全库搜索」→ 搜索面板打开且**带上了节点名**
+   **不抛异常**；点“全库搜索”→ 搜索面板打开且**带上了节点名**
 3. 复原：把 sourcePath 改回去 → 回落消失、内容回来（不残留、不静默）
 
 另加源码守卫：`loadNote` 只许调 `readObsidianNote`（读料层只读），回落块里不许出现任何写 IPC。
@@ -194,12 +194,12 @@ def run(cdp):
     if broken.get('bodyLen', 0) > 0 or broken.get('fmRows', 0) > 0:
         fails.append('坏链路下仍显示着旧内容（会让人以为是新库里的内容）')
 
-    # ③ 点「全库搜索」→ 搜索面板打开 + 带上节点名
+    # ③ 点“全库搜索”→ 搜索面板打开 + 带上节点名
     if _j(cdp, OPEN_SEARCH) == 'ok':
         time.sleep(0.8)
         st = _j(cdp, SEARCH_STATE)
         if not st.get('open'):
-            fails.append('点「全库搜索」没打开搜索面板')
+            fails.append('点“全库搜索”没打开搜索面板')
         elif st.get('query') != broken.get('nodeName'):
             fails.append(f'搜索面板没预填节点名（{st.get("query")!r} ≠ {broken.get("nodeName")!r}）')
         _j(cdp, CLOSE_SEARCH)
@@ -220,7 +220,7 @@ def run(cdp):
 
     detail = (f'正常态：frontmatter {card.get("fmRows")} 行 / 正文 {card.get("bodyLen")} 字；'
               f'坏链路：回落点名路径 + 出口齐全（重试/搜索）、旧内容不再显示；'
-              f'「全库搜索」带节点名「{broken.get("nodeName")}」预填；复原后内容回来；源码守卫：{sg_detail}')
+              f'“全库搜索”带节点名“{broken.get("nodeName")}”预填；复原后内容回来；源码守卫：{sg_detail}')
     if fails:
         return False, '；'.join(fails)[:900]
     return True, detail

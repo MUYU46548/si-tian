@@ -9,7 +9,7 @@
 //   · 一个剧本 = 一个账本段（epochId = 剧本键），day = 该剧本内的绝对日（可负）；
 //   · `initialOwnership` → 一条 `epoch.baseline`（day 0，**不可撤**）；
 //   · `changeEvents[i]` → `province.owner.changed`（`provenance: import`，合成事件 `migrate`；
-//     groupId 按「同省 / 同日」聚合 —— 同一天同一省的多个改动本来就是一次操作的结果）。
+//     groupId 按“同省 / 同日”聚合 —— 同一天同一省的多个改动本来就是一次操作的结果）。
 //
 // 🔴 迁移必须**无损可核对**：`projectOwnership(迁移结果)` 必须与迁移前的 `ownership` **逐省相等**，
 //    不等就拒绝（宁可不动，也不写一份自相矛盾的数据）。核对函数见 `verifyMigration`。

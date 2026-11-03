@@ -3,7 +3,7 @@
 """用例 46：`.sitian` 项目文件（Phase 1：独立运行基础）
 
 背景：司天当前的事实源是 Obsidian 库（`<vault>/.sitian/geodata.json`）。要让它成为
-「独立运行的世界观编辑器」，需要一个自有的项目文件（`.sitian`）：项目元信息 + 实体树 +
+“独立运行的世界观编辑器”，需要一个自有的项目文件（`.sitian`）：项目元信息 + 实体树 +
 剧本 + 地图数据 + 自动快照，不依赖知识库即可新建/打开/保存。
 
 本用例守三件事（Phase 1 的验收靶子）：
@@ -11,7 +11,7 @@
      createEntity 归一化、validateProject 的修复清单（悬空 parentId / 自引用 / 父子循环 /
      未知 layer / 坏快照 / 缺 meta）、高版本拒载、版本迁移入口
   b) 快照环形缓冲：**就地 diff**（不是整份拷贝）→ 恢复必须精确、裁剪后旧快照仍可恢复、
-     keep 参数、校验后仍可回放（「1 份 base + ≤50 份 diff」不变式）
+     keep 参数、校验后仍可回放（“1 份 base + ≤50 份 diff”不变式）
   c) projectStore 端到端（走 mock 的 sitianAPI）：创建项目 → 实体 CRUD（重名去重/重命名不改 id/
      循环移动拒绝/级联删除+undo）→ 保存（快照累积、saveStatus、dirty）→ 回滚快照 + 可撤销
   d) 静态一致性：main 注册 / preload 暴露的**通道名必须一一对应**、handler 顶层不得依赖 electron
@@ -252,7 +252,7 @@ STORE_JS = """(async () => {
   // 1) 创建项目
   const cr = await s.createProject({ name: 'test46项目', dir: 'mock/projects' });
   ck('createProject 成功', cr.success === true, cr);
-  // 前置失败立即中止：后续断言会因 store 空态抛 TypeError，那会把「失败」变成看不懂的异常
+  // 前置失败立即中止：后续断言会因 store 空态抛 TypeError，那会把“失败”变成看不懂的异常
   if (cr.success !== true) return JSON.stringify({ fails: fails, aborted: 'createProject 失败：' + (cr.error || '') });
   ck('isOpen + meta.name', s.isOpen === true && s.meta.name === 'test46项目', s.meta);
   ck('filePath 指向 .sitian', String(s.filePath).indexOf('test46项目.sitian') > 0, s.filePath);
@@ -270,7 +270,7 @@ STORE_JS = """(async () => {
   same('entityTree 根数', s.entityTree.length, 1);
   same('entityTree 子数', s.entityTree[0].children.length, 2);
   same('childrenOf', s.childrenOf('世界').length, 2);
-  // 父级候选：排除「自身 + 全部后代」。世界是根 → 其余实体都是它的后代 → 候选为空
+  // 父级候选：排除“自身 + 全部后代”。世界是根 → 其余实体都是它的后代 → 候选为空
   same('parentCandidates（根实体：无候选）', s.parentCandidates('世界').map(x => x.id).sort(), []);
   // 青崖城此刻还没有后代 → 只排除自身，兄弟（青崖城_2）与父级（世界）仍可选
   same('parentCandidates（仅排除自身）', s.parentCandidates('青崖城').map(x => x.id).sort(), ['世界', '青崖城_2']);
@@ -378,7 +378,7 @@ def sub_static(cdp):
         if sym not in store:
             bad.append(f'projectStore 缺少 {sym}')
 
-    # Phase 2.4 接线后的**依赖方向不变式**（取代 Phase 1 的「不得接线」闸门）：
+    # Phase 2.4 接线后的**依赖方向不变式**（取代 Phase 1 的“不得接线”闸门）：
     #   · geodata 与 projectStore 之间**不得互相 import** —— 只许经 store/canvasBridge.js 通信，
     #     否则会形成循环依赖、也会长成两套事实源（这正是接线最危险的形态）。
     #   · 两侧都必须真的接上桥：geodata 注册适配器，projectStore 在 打开/保存/关闭 时调用它。
@@ -401,8 +401,8 @@ def sub_static(cdp):
         if token not in bridge:
             bad.append(f'canvasBridge.js 缺少 {token}')
 
-    # 旧「Phase 1 未接线」遗留断言：App 不得**直接 import** projectStore（应经 canvasBridge 注册表）。
-    # 🔴 判据必须是 import 语句，不能是子串 —— 注释里写「不 import projectStore」这种说明文字会误报
+    # 旧“Phase 1 未接线”遗留断言：App 不得**直接 import** projectStore（应经 canvasBridge 注册表）。
+    # 🔴 判据必须是 import 语句，不能是子串 —— 注释里写“不 import projectStore”这种说明文字会误报
     #    （2026-09-22 真踩：给 App.vue 加了一句解释性注释，两条静态断言同时变红，看着像功能回归）。
     for rel in ('src/renderer/src/App.vue',):
         if re.search(r"from\s+['\"][^'\"]*projectStore['\"]|import\s*\(\s*['\"][^'\"]*projectStore['\"]", _read(rel)):
@@ -427,7 +427,7 @@ def sub_static(cdp):
     # 🔴 2026-10-11：原来写成 `invoke('(project-[^']+)'` + **集合相等** —— 只要主进程注册了
     #    任何非 `project-` 前缀的通道（本轮的 `basemap-source-save/-list`）就必然假红。
     #    改成**按前缀族分别对齐**：每个族内部仍要求集合相等（这才是"漏注册/漏暴露"的判据），
-    #    但加新族不会再撞到「数条数」式的假红。
+    #    但加新族不会再撞到“数条数”式的假红。
     families = {
         'project-': r"ipcRenderer\.invoke\('(project-[^']+)'",
         'basemap-source-': r"ipcRenderer\.invoke\('(basemap-source-[^']+)'",
@@ -439,8 +439,8 @@ def sub_static(cdp):
         have = {c for c in ch_handler if c.startswith(family)}
         if have != want:
             bad.append(f'通道族 {family} 名不一致 handler={sorted(have)} preload={sorted(want)}')
-    # 下限守卫（**不写死条数**）：双向一致性已由上面的「集合相等」保证，
-    # 这里只防「通道被整体删空 / 改名成非 project- 前缀」这类塌方。
+    # 下限守卫（**不写死条数**）：双向一致性已由上面的“集合相等”保证，
+    # 这里只防“通道被整体删空 / 改名成非 project- 前缀”这类塌方。
     # 2026-09-24：原来写死 `!= 8`，新增 project-get-last-path 后必然假红 —— 数条数不是它的职责。
     if len({c for c in ch_handler if c.startswith('project-')}) < 8:
         bad.append('注册的 project-* 通道数异常（不应少于 8）')

@@ -147,5 +147,5 @@ def run(cdp):
     # 清场
     _j(cdp, f"(() => {{ const s = {STORE}; s.undo(); s.undo(); return 'ok'; }})()")
     time.sleep(0.3)
-    return True, (f'区域笔刷通过：涂抹 → 自动命名「{z["name"]}」{z["n"]} 顶点单块区域'
+    return True, (f'区域笔刷通过：涂抹 → 自动命名“{z["name"]}”{z["n"]} 顶点单块区域'
                   f'（颜色 {z["color"]}、贴合涂抹范围）、一次 undo 全撤 + redo 恢复、描边模式仍正常')

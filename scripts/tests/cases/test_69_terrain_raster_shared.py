@@ -11,7 +11,7 @@
 本用例守 M2 的第一步（`utils/heightmapRaster.js` 抽取 + 两视图共用）：
 
   f0 源码守卫：两处都**引用同一个共享模块**，且组件里**没有留下副本**
-     （色带常量 / `cellColor` / `fillPixelBlock`）—— 「又复制一份」是这类重构最常见的回退方式，
+     （色带常量 / `cellColor` / `fillPixelBlock`）—— “又复制一份”是这类重构最常见的回退方式，
      而且它不会报错，只会让两个视图慢慢再次分叉
   f1 纯函数层：`buildHeightmapRaster` 对四种配色都产出 canvas；`landsea` 只有两色（陆/海），
      `height` 是多色（色带）—— 证明配色真的接上了，而不是"生成了个空图也能算过"
@@ -79,7 +79,7 @@ JS_PURE = r"""(async () => {
       const i = r * cols + c;
       pts.push([c * spacing, r * spacing]);
       // ⚠️ 必须是**连续梯度**，不能只给两档（如 8 / 60）：`height` 是线性插值色带，
-      //    两档数据只命中两个采样点 → 「多色」断言会失败（实测踩到，一度误判成配色没接上）。
+      //    两档数据只命中两个采样点 → “多色”断言会失败（实测踩到，一度误判成配色没接上）。
       h[i] = (i * 7) % 100;
       temp[i] = -20 + (i % 40);
       prec[i] = (i * 3) % 100;
@@ -104,13 +104,13 @@ JS_PURE = r"""(async () => {
       const s = new Set();
       for (let i = 0; i < d.length; i += 4) {
         // ⚠️ 必须跳过透明像素：栅格按包围盒外扩 pad 建画布，边角没被覆盖 → alpha=0、RGB 读出 (0,0,0)。
-        //    把它算进去会让「landsea 只有两色」变成 3 色（实测踩到）。
+        //    把它算进去会让“landsea 只有两色”变成 3 色（实测踩到）。
         if (d[i + 3] === 0) continue;
         s.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
       }
       return s;
     };
-    // 「配色真的接上了」用**方块档**判：精确二色 / 多色是那一档的性质。
+    // “配色真的接上了”用**方块档**判：精确二色 / 多色是那一档的性质。
     // 平滑档（2026-10-09 起为默认）会把边界混成过渡色，颜色数天然多于 2 —— 见下面单独断言。
     const blk = (k) => M.buildHeightmapRaster(hm, k, { smooth: false });
     const seaUniq = uniq(blk('landsea'));
@@ -118,7 +118,7 @@ JS_PURE = r"""(async () => {
     ck('f1 ★ 方块档 landsea 只有两种颜色（陆 / 海）', seaUniq.size === 2, { colors: seaUniq.size });
     ck('f1 ★ 方块档 height 是多色色带（配色真的接上了，不是空图）', hygUniq.size >= 3, { colors: hygUniq.size });
 
-    // ★ 平滑档（反「拼豆」）：① 画布是**子格分辨率**（比世界尺寸小，靠绘制端插值放大）；
+    // ★ 平滑档（反“拼豆”）：① 画布是**子格分辨率**（比世界尺寸小，靠绘制端插值放大）；
     //    ② 陆海边界因此出现**过渡色**（渐变），颜色数严格多于方块档。
     const smL = built.landsea;
     ck('f1 ★ 平滑档画布为子格分辨率（边长远小于世界尺寸）',
@@ -207,13 +207,13 @@ JS_PIXEL = r"""(async () => {
     return { n, maxD };
   };
 
-  // 着色方案下拉只在「高度模式」下渲染 → 必须在这里取（装置断言也顺带守了这条 UI 约定）
+  // 着色方案下拉只在“高度模式”下渲染 → 必须在这里取（装置断言也顺带守了这条 UI 约定）
   const sel = document.querySelector('[data-testid="heightmap-raster-kind"]');
   ck('装置：着色方案下拉已渲染（高度模式下出现）', !!sel, null);
   if (!sel) return JSON.stringify({ fails, notes });
 
   // 走**真实用户路径**：改下拉 + 派发 change（`v-model` 绑的正是 change）——
-  // 直接写 setupState 会绕过「下拉 → ref → 重绘」整条链，抓不到漏接 watch 这类缺陷。
+  // 直接写 setupState 会绕过“下拉 → ref → 重绘”整条链，抓不到漏接 watch 这类缺陷。
   const setKind = async (v) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
     setter.call(sel, v);
@@ -253,7 +253,7 @@ JS_PIXEL = r"""(async () => {
 def run(cdp):
     # ⚠️ 各段**累积**失败而不是 fail-fast：
     #    反向探针实测过 —— f1 一旦先红就 return，f2 根本不跑，于是 f2 的探针
-    #    （删掉「切方案→重绘」接线）看起来"没生效"。多段用例必须让每段都有机会说话。
+    #    （删掉“切方案→重绘”接线）看起来"没生效"。多段用例必须让每段都有机会说话。
     fails = []
 
     problems, _ = _static_guard()

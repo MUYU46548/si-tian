@@ -5,10 +5,10 @@
 护栏本身（`main/index.js` 的 `before-quit` → `app-flush-before-quit` → 渲染层 `flushAll()`
 → `app-flush-done` 回执 → 真退出，2.5s 超时兜底）已有单测与源码守卫。
 **但从来没有人真的在真机上"改完立刻退出"过**：单测跑模块，CDP 用例跑 mock
-（`saveMapData` 不写盘）—— 两者都到不了「真实 before-quit 拦截 → 真实 IPC 回执 → 真实磁盘」。
+（`saveMapData` 不写盘）—— 两者都到不了“真实 before-quit 拦截 → 真实 IPC 回执 → 真实磁盘”。
 
 做法：起**真实 Electron 进程（dist 产物 + 真实 preload + 真实知识库 + 真实项目文件）**，
-用**纯 UI 操作**制造一次「改完立刻退出」，然后**读盘**核对。
+用**纯 UI 操作**制造一次“改完立刻退出”，然后**读盘**核对。
 
 ⚠️ 为什么不用 `__vue_app__._instance.setupState.store`（CDP 用例的常规手法）：
    那是 **dev-only** 的 —— Vue 只在 `__DEV__ || PROD_DEVTOOLS` 分支里给 `app._instance` 赋值，
@@ -31,7 +31,7 @@
 用法：
   python scripts/tests/drill_quit_flush.py            # 三阶段全跑
   python scripts/tests/drill_quit_flush.py --phase p2 # 只跑某一阶段
-  python scripts/tests/drill_quit_flush.py --phase p4 # 只跑「剧本基础操作」真机演练
+  python scripts/tests/drill_quit_flush.py --phase p4 # 只跑“剧本基础操作”真机演练
      （建省 / 拖边界 / 右键删省 / 剧本 增·改·删 —— 每步都**读项目文件**核对落盘）
 """
 import argparse
@@ -144,7 +144,7 @@ def sha(path):
 class App:
     """起一个真实 Electron 实例（生产路径：加载 dist，用真实 preload 与真实 IPC）。
 
-    `require_import=False` 供「项目非空」的剧本演练用：那种情况下「导入知识库内容」
+    `require_import=False` 供“项目非空”的剧本演练用：那种情况下“导入知识库内容”
     按钮根本不存在（它只渲染在**空项目**的世界视图），不能拿它当就绪探针。
     """
 
@@ -180,12 +180,12 @@ class App:
         self.cdp = CDP(port=CDP_PORT)
         self.owner_pid = port_owner_pid() or self.proc.pid   # 真正的浏览器主进程
         wait_for(self.cdp, "!!document.querySelector('.app-layout')", timeout=45, desc='应用挂载')
-        # 「导入知识库内容」按钮只在 **项目态 + 空项目 + 世界视图** 下渲染 ——
-        # 它同时证明「应用起来了」与「上次的项目已被自动恢复」，是最好用的就绪探针。
+        # “导入知识库内容”按钮只在 **项目态 + 空项目 + 世界视图** 下渲染 ——
+        # 它同时证明“应用起来了”与“上次的项目已被自动恢复”，是最好用的就绪探针。
         # ⚠️ 超时必须把**页面文字**打出来：超时也可能是"停在只读态/世界列表"等别的原因，
-        #    只报「等待超时」等于把最有用的一条线索丢掉。
+        #    只报“等待超时”等于把最有用的一条线索丢掉。
         # 项目**非空**时该按钮不存在（剧本演练 p4 就是这种情况，见 require_import）→
-        # 退到「世界视图已挂载 + 历史剧本入口在」。
+        # 退到“世界视图已挂载 + 历史剧本入口在”。
         probe = ("!!" + IMPORT_BTN) if self.require_import else (
             "!!document.querySelector('.app-layout')"
             " && Array.from(document.querySelectorAll('button'))"
@@ -225,7 +225,7 @@ class App:
 
 def ctrl_q(cdp):
     """按 Ctrl+Q —— 2026-10-09 起这只是**第一步**：主进程会把退出请求交回渲染层弹确认框，
-    必须再点「退出司天」才真退。要用完整动作请调 quit_via_ctrl_q()。"""
+    必须再点“退出司天”才真退。要用完整动作请调 quit_via_ctrl_q()。"""
     for t in ('rawKeyDown', 'keyUp'):
         cdp.send('Input.dispatchKeyEvent', {
             'type': t, 'modifiers': 2, 'key': 'q', 'code': 'KeyQ',
@@ -234,11 +234,11 @@ def ctrl_q(cdp):
 
 
 def quit_via_ctrl_q(cdp, confirm_timeout=10):
-    """Ctrl+Q 两段式退出的**完整动作**：按键 → 等退出确认框 → 点「退出司天」。
+    """Ctrl+Q 两段式退出的**完整动作**：按键 → 等退出确认框 → 点“退出司天”。
 
     🔴 为什么必须有这一步（2026-10-09 交互改动）：Ctrl+Q 不再一路直退，主进程只发
-       'app-request-quit'，由渲染层弹确认框，用户选「退出司天」才回 'app-confirm-quit'。
-       本演练若不点确认框 → 进程一直活着 → wait_exit 超时 → 会**误报**「Ctrl+Q 退不掉」，
+       'app-request-quit'，由渲染层弹确认框，用户选“退出司天”才回 'app-confirm-quit'。
+       本演练若不点确认框 → 进程一直活着 → wait_exit 超时 → 会**误报**“Ctrl+Q 退不掉”，
        看上去像产品缺陷，实际是演练没跟上交互。返回 False 表示没走完确认动作。
     """
     from lib.cdp import wait_for
@@ -248,7 +248,7 @@ def quit_via_ctrl_q(cdp, confirm_timeout=10):
                  desc='退出确认框弹出')
     except Exception:
         return False
-    # 「留在窗口」排在第一位（防误触），所以要按文字找「退出」
+    # “留在窗口”排在第一位（防误触），所以要按文字找“退出”
     r = cdp.eval("""(() => {
       const b = Array.from(document.querySelectorAll('.prompt-choice'))
         .find(x => (x.textContent || '').includes('退出'));
@@ -260,15 +260,15 @@ def quit_via_ctrl_q(cdp, confirm_timeout=10):
 
 
 def click_import_and_wait_applied(cdp, timeout=45):
-    """点「导入知识库内容」→ 等画布真的被填充（按钮消失 = 空态结束）。
+    """点“导入知识库内容”→ 等画布真的被填充（按钮消失 = 空态结束）。
 
-    为什么必须等到这一刻再动手：要把「改动已产生、但 800ms 防抖还没跑」这个窗口卡死，
+    为什么必须等到这一刻再动手：要把“改动已产生、但 800ms 防抖还没跑”这个窗口卡死，
     否则 P1/P2 都可能变成空转（P1 假绿：改动本来就没产生；P2 假绿：防抖早已落盘）。
     """
     from lib.cdp import wait_for
     r = cdp.eval("(() => { const b = %s; if (!b) return 'no-btn'; b.click(); return 'ok'; })()" % IMPORT_BTN)
     if r != 'ok':
-        return False, '找不到/点不动「导入知识库内容」：%r' % r
+        return False, '找不到/点不动“导入知识库内容”：%r' % r
     try:
         wait_for(cdp, "!" + IMPORT_BTN, timeout=timeout, desc='导入已落到画布')
     except Exception:
@@ -303,7 +303,7 @@ def main():
     print('备份：%s' % bak)
     print('⚠️ 会弹出真实应用窗口，十几秒后自动退出\n')
 
-    # 「all」= 退出链三段 + 剧本基础操作一段；p4 只做 UI 操作 + 读盘，不碰退出语义
+    # “all”= 退出链三段 + 剧本基础操作一段；p4 只做 UI 操作 + 读盘，不碰退出语义
     phases = ['p1', 'p2', 'p3', 'p4'] if args.phase == 'all' else [args.phase]
     try:
         for ph in phases:
@@ -328,9 +328,9 @@ def main():
 
 # ---------------------------------------------------------------- 剧本基础操作（p4）
 #
-# 为什么另开一段：p1~p3 只演练「退出前落盘」，而**剧本视图的基础操作**（建省 / 拆分裂界 /
+# 为什么另开一段：p1~p3 只演练“退出前落盘”，而**剧本视图的基础操作**（建省 / 拆分裂界 /
 # Ctrl+Z 撤销 / 右键删省 / 剧本增改删）从来没在真机上走过 —— CDP 用例跑的是 mock（`saveScenarios` 不写盘），
-# 到不了「真实组件 → 真实 store → 真实防抖 → 真实项目文件」。本段**纯 UI 驱动 + 读盘核对**，
+# 到不了“真实组件 → 真实 store → 真实防抖 → 真实项目文件”。本段**纯 UI 驱动 + 读盘核对**，
 # 因此能跑在生产构建上（`__vue_app__._instance` 在 dist 里是 null，碰不到 store）。
 #
 # ⚠️ 只在**没有真实任务在跑**时用：会开一个真实窗口；跑前备份项目、跑后还原。
@@ -368,7 +368,7 @@ def wait_disk(proj, pred, timeout=20.0, interval=0.4):
 
 
 def open_toolbar_more(cdp):
-    """展开剧本工具栏的「更多」。
+    """展开剧本工具栏的“更多”。
 
     ⚠️ 底图下拉、剧本管理入口、图层行**都在 `.toolbar-more` 里**（P3 起默认收起，
     `v-if="moreOpen"` → 不展开的话 `querySelector` 直接查不到）。幂等。
@@ -405,7 +405,7 @@ DRAW_JS = r"""(async () => {
   const mk = (t, x, y) => new MouseEvent(t, {
     clientX: rr.left + x, clientY: rr.top + y, bubbles: true, cancelable: true, button: 0,
   });
-  // 抖动的圆：≥10 个采样点才会被当成「一笔成型」（FREE_TRACE_MIN_POINTS=10）
+  // 抖动的圆：≥10 个采样点才会被当成“一笔成型”（FREE_TRACE_MIN_POINTS=10）
   const cx = Math.round(rr.width / 2), cy = Math.round(rr.height / 2);
   const R = Math.max(50, Math.round(Math.min(rr.width, rr.height) * 0.2));
   const pts = [];
@@ -429,9 +429,9 @@ DRAW_JS = r"""(async () => {
 })()"""
 
 
-# 扫描定位：用「选择」工具逐点点击，谁让 `.props-name` 等于目标省名，谁就是命中点。
+# 扫描定位：用“选择”工具逐点点击，谁让 `.props-name` 等于目标省名，谁就是命中点。
 # 为什么不记坐标：新增省份会触发 `setTimeout(fitToView, 50)` 自动适屏 → 屏幕几何会变。
-# 为什么取**命中点的质心**而不是第一个命中点：后续「拆分」要在省内取两个点，
+# 为什么取**命中点的质心**而不是第一个命中点：后续“拆分”要在省内取两个点，
 # 靠边界的命中点会让切割线一端落到省外（拆分直接失败）。质心才稳。
 SCAN_JS = r"""(async () => {
   const cvs = document.querySelector('.scenario-map-container canvas');
@@ -481,7 +481,7 @@ SCAN_JS = r"""(async () => {
 })()"""
 
 
-# 「拆分」工具：两次点击定义切割线（两点都要落在同一个省内）
+# “拆分”工具：两次点击定义切割线（两点都要落在同一个省内）
 SPLIT_JS = r"""(async () => {
   const cvs = document.querySelector('.scenario-map-container canvas');
   const settle = (ms) => new Promise((r) => setTimeout(r, ms || 80));
@@ -545,8 +545,8 @@ def province_names_in(doc, key):
 def select_tool(cdp, title_part):
     """按 title 片段点工具按钮。
 
-    ⚠️ 片段要够独特：**「更多」按钮的 title 里把所有高级工具名都列了一遍**
-    （"拆分 / 合并 / 点击填充 / …"），按 '拆分' 找会先命中「更多」。用 '拆分省份' 这类才是唯一。
+    ⚠️ 片段要够独特：**“更多”按钮的 title 里把所有高级工具名都列了一遍**
+    （"拆分 / 合并 / 点击填充 / …"），按 '拆分' 找会先命中“更多”。用 '拆分省份' 这类才是唯一。
     """
     return cdp.eval(
         "(() => { const b = Array.from(document.querySelectorAll('.scenario-toolbar button'))"
@@ -685,7 +685,7 @@ def run_phase_scenario(proj):
         # 🔴 必须在**有底图之后**读这个键：项目里一张底图都没有时 `.basemap-select` 的值是 `''`，
         #    拿空键去查磁盘会永远查不到（本轮实测：三条 ck 全错，其中"删除已落盘（回到 0）"还
         #    因为期望值也是 0 而**空转通过** —— 基线取错 = 断言作废）。
-        #    底图是「第一次落笔时懒建」的，所以先用一笔落笔把底图催出来。
+        #    底图是“第一次落笔时懒建”的，所以先用一笔落笔把底图催出来。
         key = basemap_key(cdp)
         if not key:
             r0 = jsobj(cdp, DRAW_JS)
@@ -700,22 +700,22 @@ def run_phase_scenario(proj):
         n_before = len(province_names_in(doc, key))
         names_before = set(province_names_in(doc, key))   # 建省前的名字集合（判定"真的是新的"）
 
-        # ① 创建省份边界（自由绘制「一笔成型」）
+        # ① 创建省份边界（自由绘制“一笔成型”）
         # 🔴 必须先**显式选中绘制工具**（2026-10-11 修，演练脚本跟不上交互的又一例）：
         #    默认工具在 8b8c8fe 从 `draw` 改成了 `select`，于是这段 DRAW_JS 变成
-        #    「拖一下 + 点一下」= **只是选中了画布上已有的某个省**，`.props-name` 照样非空
+        #    “拖一下 + 点一下”= **只是选中了画布上已有的某个省**，`.props-name` 照样非空
         #    → 断言"拿到新省名"假绿；接着 SCAN/拆分全作用在**那个既存省**上
         #    （真实项目上正好是 10525 点的 `Province 2`）→ 大几何切割把渲染进程卡住
         #    → 15s CDP 读超时，整段演练崩在 WebSocketTimeoutException 而不是给结论。
         #    片段用 '自由绘制 (B)'：'画省份' 也唯一，但带上快捷键与源码 title 逐字一致，最稳。
-        ck('p4', '切到「画省份 · 自由绘制」工具', select_tool(cdp, '自由绘制 (B)') == 'ok', '')
+        ck('p4', '切到“画省份 · 自由绘制”工具', select_tool(cdp, '自由绘制 (B)') == 'ok', '')
         time.sleep(0.3)
         r = jsobj(cdp, DRAW_JS)
         ck('p4', '自由绘制一笔成型，并拿到新省名', bool(r.get('ok') and r.get('name')), '省名=%r' % r.get('name'))
         if not r.get('ok') or not r.get('name'):
             return
         pname = r['name']
-        # 🔴 「拿到名字」不等于「建出来了」：上面那个假绿就是靠这条兜住的 ——
+        # 🔴 “拿到名字”不等于“建出来了”：上面那个假绿就是靠这条兜住的 ——
         #    新省名必须在**建省前**那份名单里不存在。
         ck('p4', '🔴 新省名在建省前不存在（拿到的名字不是"选中的旧省"）',
            pname not in names_before, '省名=%r ｜ 建省前已有 %d 个省' % (pname, n_before))
@@ -723,19 +723,19 @@ def run_phase_scenario(proj):
         ck('p4', '🔴 新建省份**已落盘**（terrain %d → %d）' % (n_before, n_before + 1), ok,
            '磁盘省份数=%d' % len(province_names_in(doc, key)))
 
-        # ② 编辑省份边界：用「拆分省份」工具把这一省切成两块 → 磁盘 terrain +1
+        # ② 编辑省份边界：用“拆分省份”工具把这一省切成两块 → 磁盘 terrain +1
         #    为什么选拆分：它是**真正的边界编辑**（几何被切开、两半各自成型），
         #    而顶点手柄拖拽要靠 8px 命中，真机上没有 store 可查，稳定性差。
-        # ⚠️ 片段必须唯一：'选择' 会先命中**「返回世界选择」**（title 里含"选择"且排在最前）
+        # ⚠️ 片段必须唯一：'选择' 会先命中**“返回世界选择”**（title 里含"选择"且排在最前）
         #    → 一次点击直接退出剧本视图（画布没了，后面全错）。必须写 '选择 (V)'。
         # ⚠️ 片段必须唯一且**与源码 title 逐字对得上**：
-        #    · '选择' 会先命中「返回世界选择」（排在最前）→ 一次点击直接退出剧本视图（画布没了，后面全错）；
-        #    · 2026-10-11 又发现 `'选择 (V)'` 也已失配 —— 源码 title 是「选择 (V**，默认**) — 拖动平移画布…」，
+        #    · '选择' 会先命中“返回世界选择”（排在最前）→ 一次点击直接退出剧本视图（画布没了，后面全错）；
+        #    · 2026-10-11 又发现 `'选择 (V)'` 也已失配 —— 源码 title 是“选择 (V**，默认**) — 拖动平移画布…”，
         #      中间是全角逗号，`"选择 (V，默认)".includes("选择 (V)")` 为 **false** → 点了不中 ('no-btn')，
         #      于是这段"切工具"一直是失败的（后面靠点击命中刚好没炸，属于运气）。
         #      改用 title 里的一句话 `'拖动平移画布'`：唯一、且不依赖快捷键括号的写法。
         sel = select_tool(cdp, '拖动平移画布')
-        ck('p4', '切到「选择」工具（按 title 里的"拖动平移画布"找）', sel == 'ok', 'select_tool → %r' % sel)
+        ck('p4', '切到“选择”工具（按 title 里的"拖动平移画布"找）', sel == 'ok', 'select_tool → %r' % sel)
         time.sleep(0.3)
         scan = jsobj(cdp, SCAN_JS.replace('WANT_NAME', json.dumps(pname)))
         ck('p4', '在画布上定位到刚建的省份（取命中点质心）', bool(scan.get('ok')),
@@ -745,7 +745,7 @@ def run_phase_scenario(proj):
         if not scan.get('ok'):
             return
 
-        ck('p4', '切到「拆分省份」工具', select_tool(cdp, '拆分省份') == 'ok', '')
+        ck('p4', '切到“拆分省份”工具', select_tool(cdp, '拆分省份') == 'ok', '')
         time.sleep(0.3)
         sp = jsobj(cdp, SPLIT_JS.replace('HIT_X', str(scan['x'])).replace('HIT_Y', str(scan['y'])))
         ok, doc2 = wait_disk(proj, lambda d: len(province_names_in(d, key)) == n_before + 2)
@@ -757,7 +757,7 @@ def run_phase_scenario(proj):
         #    App.vue 的全局快捷键第一句就是 `if (typing) return;` —— 焦点在 input/textarea 里时
         #    Ctrl+Z **有意**不接管（否则在文本框里按撤销会去撤地图，那是更坏的 bug）。
         #    而上一段刚读过 `.props-name`（属性面板的省份名输入框），焦点很可能正停在那儿 →
-        #    演练实测「Ctrl+Z 后磁盘仍是 23」就是这个原因，不是撤销坏了。
+        #    演练实测“Ctrl+Z 后磁盘仍是 23”就是这个原因，不是撤销坏了。
         cdp.eval("(() => { const a = document.activeElement; if (a && a.blur) a.blur(); return 'ok'; })()")
         time.sleep(0.2)
         if ok:
@@ -818,7 +818,7 @@ def run_phase_scenario(proj):
         ck('p4', '🔴 删除剧本**已落盘**', bool(r.get('ok')) and ok,
            '删除返回：%s ｜ 磁盘已无该名=%s' % (json.dumps(r, ensure_ascii=False), ok))
 
-        # ⑤ 收尾：正常退出一次（顺带验证剧本改动也走「退出前落盘」那条链）
+        # ⑤ 收尾：正常退出一次（顺带验证剧本改动也走“退出前落盘”那条链）
         # 2026-10-09：Ctrl+Q 改为两段式（确认框），演练必须点掉它
         quit_via_ctrl_q(cdp)
         exited = app.wait_exit(40)

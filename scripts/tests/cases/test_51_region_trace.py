@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 51：Phase 2.6 区域勾轮廓管线 —— 闭环简化 + 离屏校验「落地内 + 不重叠」
+"""用例 51：Phase 2.6 区域勾轮廓管线 —— 闭环简化 + 离屏校验“落地内 + 不重叠”
 
 覆盖：
   a) 纯函数层：手抖闭环 → simplifyClosedTrace 顶点数大降且**保形**（面积偏差 ≤ 8%）
@@ -10,7 +10,7 @@
   e) 端到端（拒绝路径·重叠）：盖在已有区域上 → 区域数不变 + 状态栏给出重叠原因
   f) 端到端（拒绝路径·落地内）：行星边界设小后画在界外 → 区域数不变 + 状态栏给出范围原因
 
-判定一律走 lib/cdp.py 的 eval_json（异常/非 JSON/缺字段 = 失败），不用「没有 fails 就算过」。
+判定一律走 lib/cdp.py 的 eval_json（异常/非 JSON/缺字段 = 失败），不用“没有 fails 就算过”。
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -46,7 +46,7 @@ JS_MODULE = r"""
   if (!(simp.length <= 40)) fails.push('简化无效：' + raw.length + ' → ' + simp.length + '（期望 ≤ 40）');
   const areaErr = Math.abs(a1 - a0) / a0;
   if (!(areaErr <= 0.10)) fails.push('简化后形状失真 ' + (areaErr * 100).toFixed(1) + '%（面积 ' + a0.toFixed(1) + ' → ' + a1.toFixed(1) + '）');
-  // 简化必须与「从哪一格起笔」无关（锚点=离质心最远点）
+  // 简化必须与“从哪一格起笔”无关（锚点=离质心最远点）
   const rot = raw.slice(37).concat(raw.slice(0, 37));
   same('简化结果对起笔位置敏感', simplifyClosedTrace(rot, 2).length, simp.length);
 
@@ -190,7 +190,7 @@ def run(cdp):
     time.sleep(0.4)
 
     try:
-        # ── d) 接受路径：在视口中心附近画一圈（远离已有「区域 1」）──
+        # ── d) 接受路径：在视口中心附近画一圈（远离已有“区域 1”）──
         obj, err = _region_setup(cdp)
         if obj is None:
             return False, f'区域绘制准备失败：{err}'
@@ -229,7 +229,7 @@ def run(cdp):
         cdp.eval(f"(() => {{ {STORE}.redo(); return 'ok'; }})()")
         time.sleep(0.3)
 
-        # ── e) 拒绝路径·重叠：盖在已有「区域 1」上 ──
+        # ── e) 拒绝路径·重叠：盖在已有“区域 1”上 ──
         base = st2['base']
         if not base:
             return False, '没有可用的已有区域做重叠用例'
@@ -244,7 +244,7 @@ def run(cdp):
             return False, f'重叠被拒但状态栏没说原因：{st3["toolLabel"]!r}'
 
         # ── f) 拒绝路径·落地内：行星边界设小（±150）后画在界外 ──
-        # 落点取远离已有区域的固定世界坐标 (900,900)：保证触发的是「落地内」判定而不是先被重叠拦下
+        # 落点取远离已有区域的固定世界坐标 (900,900)：保证触发的是“落地内”判定而不是先被重叠拦下
         # （区域 1 在 (-274,-480)，接受路径新建的区域在视口中心附近 r≈120，都够远）。
         cdp.eval(f"(() => {{ {PM}.canvasSizePreset = '150'; return 'ok'; }})()")
         time.sleep(0.2)
@@ -267,4 +267,4 @@ def run(cdp):
         cdp.eval(f"(() => {{ {PM}.canvasSizePreset = 'auto'; return 'ok'; }})()")
 
     return True, (f'区域勾轮廓管线通过：手抖闭环简化保形（{pure_summary}）、自由绘制落库 {accepted} 顶点 + 一条 undo；'
-                  f'拒绝路径（重叠 / 落地内）均不改区域数 —— 落地内消息「{outsideMsg}」')
+                  f'拒绝路径（重叠 / 落地内）均不改区域数 —— 落地内消息“{outsideMsg}”')

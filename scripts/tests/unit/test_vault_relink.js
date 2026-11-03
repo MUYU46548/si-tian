@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：笔记改名「断线检测 + 重连候选打分」（src/renderer/src/utils/vaultRelink.js）
+ * Node 单元测试：笔记改名“断线检测 + 重连候选打分”（src/renderer/src/utils/vaultRelink.js）
  *
  * 背景（R15 / A-0，2026-09-27）：
  *   司天认亲依据是 `sourcePath`（笔记在库里的相对路径）。项目态下知识库的 add/unlink 事件被
- *   整条拦掉（防两套事实源混流）→ 改名之后司天既不知道也不提示，下次「导入知识库内容」把新名
+ *   整条拦掉（防两套事实源混流）→ 改名之后司天既不知道也不提示，下次“导入知识库内容”把新名
  *   当新实体补进来、旧实体成孤儿。本模块把那个洞变成**一份可解释的候选清单**。
  *
  * 判错的后果都是静默的：
  *   · 把"用户自建实体"（无 sourcePath）算进断线 → 面板天天报警，用户学会无视它；
- *   · 候选不过滤「已被别的实体占用」的笔记 → 一次重连把两个实体指到同一篇笔记上；
- *   · 打分把不相干的笔记也标成「推荐」→ 用户照单全收 = 机器替他认错亲（比不推荐更坏）。
+ *   · 候选不过滤“已被别的实体占用”的笔记 → 一次重连把两个实体指到同一篇笔记上；
+ *   · 打分把不相干的笔记也标成“推荐”→ 用户照单全收 = 机器替他认错亲（比不推荐更坏）。
  *
  * 用法：node scripts/tests/unit/test_vault_relink.js
  * 退出码：0 = 全通过，1 = 有失败（run_tests.py 作为前置步骤计入）
@@ -67,17 +67,17 @@ async function main() {
   });
 
   // ---------- 2. 名字相似度 ----------
-  check('t3 用最长公共**子串**而不是子序列（否则「甲乙城 / 甲城乙」会被判成高度相似）', () => {
-    eq(commonSubstrLen('霜寒城', '霜寒主城'), 2, '「霜寒」是公共子串');
+  check('t3 用最长公共**子串**而不是子序列（否则“甲乙城 / 甲城乙”会被判成高度相似）', () => {
+    eq(commonSubstrLen('霜寒城', '霜寒主城'), 2, '“霜寒”是公共子串');
     eq(commonSubstrLen('甲乙城', '甲城乙'), 1, '只有单字相邻 → 子串长度 1（子序列会是 2）');
     eq(commonSubstrLen('完全一样', '完全一样'), 4, '全等');
     eq(commonSubstrLen('', '任意'), 0, '空串');
     eq(commonSubstrLen('青崖城', '青崖城'), 3, '自比');
-    return '中文地名以「前缀+层级词」为主，子串能抓住「霜寒城→霜寒主城」，子序列会顺带抓噪声';
+    return '中文地名以“前缀+层级词”为主，子串能抓住“霜寒城→霜寒主城”，子序列会顺带抓噪声';
   });
 
   // ---------- 3. 候选打分 ----------
-  check('t4 同目录 + 名字相近 → 够「推荐」线；只沾一样 → 不推荐', () => {
+  check('t4 同目录 + 名字相近 → 够“推荐”线；只沾一样 → 不推荐', () => {
     const both = scoreCandidate({
       entityName: '霜寒城', entityPath: '03 设定/02 场景地点/霜寒城.md',
       noteName: '霜寒主城', notePath: '03 设定/02 场景地点/霜寒主城.md',
@@ -112,10 +112,10 @@ async function main() {
     ];
     const r = detectBrokenLinks({ entities, notes });
     eq(r.checked, 2, '两个实体都参与对账');
-    eq(r.dangling.length, 1, '只有「霜寒城」断了线');
+    eq(r.dangling.length, 1, '只有“霜寒城”断了线');
     eq(r.dangling[0].id, 'a', '断线的是 a');
     eq(r.clean, false, '有断线 → clean=false');
-    eq(r.unclaimed.length, 1, '「霜寒主城」是唯一无主笔记');
+    eq(r.unclaimed.length, 1, '“霜寒主城”是唯一无主笔记');
     eq(r.unclaimed[0].sourcePath, '03 设定/02 场景地点/霜寒主城.md', '无主的是改名后的新笔记');
     const sug = r.suggestions.a || [];
     assert(sug.length === 1, `应给出 1 个候选，实际 ${sug.length}`);
@@ -148,12 +148,12 @@ async function main() {
     ];
     const r = detectBrokenLinks({ entities, notes });
     eq(r.dangling.length, 1, '只有甲城断线（乙城的笔记还在）');
-    eq(r.unclaimed.length, 1, '无主笔记只有「甲城新」');
+    eq(r.unclaimed.length, 1, '无主笔记只有“甲城新”');
     assert(!r.unclaimed.some((n) => n.name === '乙城'), '被引用的笔记不得进无主池');
     return '占用中的笔记不会出现在候选里';
   });
 
-  check('t8 多个候选按分数降序；明显领先才标「推荐」（不领先就不替用户拍板）', () => {
+  check('t8 多个候选按分数降序；明显领先才标“推荐”（不领先就不替用户拍板）', () => {
     const entities = [{ id: 'a', name: '霜寒城', sourcePath: 'dir1/霜寒城.md' }];
     const notes = [
       { sourcePath: 'dir1/霜寒主城.md', name: '霜寒主城' },        // 同目录 + 名字像 → 高分
@@ -166,7 +166,7 @@ async function main() {
     eq(sug[0].recommended, true, '分最高且明显领先 → 推荐');
     eq(sug[1].recommended, false, '第二名不推荐');
 
-    // 假造一个「两个候选分数并列」的情形：此时**都不推荐**（让用户自己挑）
+    // 假造一个“两个候选分数并列”的情形：此时**都不推荐**（让用户自己挑）
     const tie = detectBrokenLinks({
       entities: [{ id: 'z', name: '某地', sourcePath: 'd/某地.md' }],
       notes: [
@@ -198,7 +198,7 @@ async function main() {
 
   check('t10 候选理由文案走 describeCandidate 单源（UI 不另写一套措辞）', () => {
     const s = describeCandidate({ reasons: ['同目录', '名字相近（公共 2 字）'] });
-    eq(s, '同目录 + 名字相近（公共 2 字）', '按「 + 」拼接');
+    eq(s, '同目录 + 名字相近（公共 2 字）', '按“ + ”拼接');
     assert(describeCandidate(null).includes('不在原目录'), '无候选时给中性说明，不留空白');
     return '理由串由纯函数产出，面板只负责显示';
   });

@@ -1,7 +1,7 @@
 // store/geodataModules/spaceEditing.js — 单恒星系视图的太空实体编辑数据（批次 B6/B7）
 // - spaceMarkers 太空标记：异常/资源点/古战场/太空兽群（菱形图标，B6）
 // - fleetCards  部队卡片：太空舰队/行星军（信息提示卡片，无策略玩法，B7）
-// 两者均为扁平数组（区别于 areaEditing 的按 areaId 分桶），坐标为「相对恒星」的系内偏移。
+// 两者均为扁平数组（区别于 areaEditing 的按 areaId 分桶），坐标为“相对恒星”的系内偏移。
 // 所有 CRUD 走 store/undo.js 的 execute()（undo 栈），模式镜像 areaEditing.js。
 // ctx: { execute, scheduleAutoSave }
 import { ref } from 'vue';

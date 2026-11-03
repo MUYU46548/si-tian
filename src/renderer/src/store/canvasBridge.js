@@ -2,11 +2,11 @@
 //
 // 为什么需要这一层：
 //   七层视图 / 所有编辑器都只认 `store/geodata.js` 的工作内存（nodes / hyperlanes / mapData / scenarios）。
-//   「有项目用项目文件、无项目回退知识库」这套决策如果让两个 store 互相 import，会形成循环依赖
+//   “有项目用项目文件、无项目回退知识库”这套决策如果让两个 store 互相 import，会形成循环依赖
 //   （geodata ← 保存去向 → projectStore ← 打开时装载 → geodata），也容易演成两套事实源。
 //   所以两边都只依赖本模块的**注册表**：
 //     · geodata 在 store setup 时 `setCanvasAdapter({ applyProject, releaseProject, exportCanvas })`
-//     · projectStore 在「打开 / 保存 / 关闭」项目时 `getCanvasAdapter()` 调用它
+//     · projectStore 在“打开 / 保存 / 关闭”项目时 `getCanvasAdapter()` 调用它
 //   依赖方向：geodata → canvasBridge ← projectStore，无环。
 //
 // 纪律：本模块不持有世界观数据，只做转发；不要在别处再实现第二套 switch 逻辑。
@@ -41,8 +41,8 @@ export function canvasSource() {
   return adapter && typeof adapter.source === 'function' ? adapter.source() : 'vault';
 }
 
-// ── 第三条注册口（2026-09-21）：面板 → 画布的「聚焦某实体」请求 ───────────────
-// 背景：项目面板/实体向导不允许 import geodata（test_46/test_48 静态守），但「前往编辑」
+// ── 第三条注册口（2026-09-21）：面板 → 画布的“聚焦某实体”请求 ───────────────
+// 背景：项目面板/实体向导不允许 import geodata（test_46/test_48 静态守），但“前往编辑”
 // 需要把画布切到该实体所在的视图。所以沿用同一套注册表模式：geodata 注册实现，面板只发请求。
 let gotoHandler = null;
 
@@ -67,9 +67,9 @@ export function gotoEntity(entityOrId) {
   }
 }
 
-// ── 第四条注册口（2026-09-22）：App/面板 → 「把知识库内容导入当前项目」 ────────
+// ── 第四条注册口（2026-09-22）：App/面板 → “把知识库内容导入当前项目” ────────
 // 背景：用户建了空项目后**没有任何入口**把知识库的既有内容带进来
-// （「新建并导入知识库内容」只覆盖新建那条路；「重新提取」在项目态被正确拒绝）。
+// （“新建并导入知识库内容”只覆盖新建那条路；“重新提取”在项目态被正确拒绝）。
 // 与 gotoHandler 同款：projectStore 注册实现，App.vue 只发请求（App 禁止 import projectStore）。
 let importHandler = null;
 

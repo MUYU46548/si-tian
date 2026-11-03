@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把用例里**写死的 fixture 专名**改成「按当前数据源解析」（2026-10-06）。
+"""把用例里**写死的 fixture 专名**改成“按当前数据源解析”（2026-10-06）。
 
-背景：`--real-data` 下 19 个失败里 17 个是「写死了合成 fixture 的名字」。用例应当写
+背景：`--real-data` 下 19 个失败里 17 个是“写死了合成 fixture 的名字”。用例应当写
 `A('曜川星')`（Python 侧）或 `__alias('曜川星')`（页面 JS 侧），由 harness 在真实数据下
 解析成真实库里的对应名字（表在 fixtures/name_map.py）。
 
@@ -44,7 +44,7 @@ NAMES = sorted(KNOWN_FIXTURE_NAMES, key=len, reverse=True)
 # 尚未包装的名字引用（负向后视：已是 A(...) / __alias(...) 实参的不动）
 _LOOKBEHIND = r'(?<!A\()(?<!__alias\()'
 
-#: 「这段字面量是不是 JS 源码」的判据 —— 防止把 Python 的**失败提示串**当 JS 改坏。
+#: “这段字面量是不是 JS 源码”的判据 —— 防止把 Python 的**失败提示串**当 JS 改坏。
 #: 实测踩过：`return False, '搜索"沧屿"无结果'` 里的 `"沧屿"` 被换成 `__alias("沧屿")`
 #: （只坏文案不影响断言，但属于静默走形，必须挡住）。
 _IS_JS = re.compile(r'=>|;|\{|\}|!==|===|\|\||&&|\.\w+\(')
@@ -114,7 +114,7 @@ def plan_file(path):
             edits.append((start, start + len(raw), "A(%r)" % val, val, 'py'))
             continue
         if not (isinstance(val, str) and _IS_JS.search(val)):
-            continue    # 既不是「纯值」也不是「JS 源码」→ 散文串（失败提示等），别动
+            continue    # 既不是“纯值”也不是“JS 源码”→ 散文串（失败提示等），别动
         for n in NAMES:
             for m in _quoted_pattern(n).finditer(raw):
                 if _WORDY.match(m.group(0)[:1]) or (m.start() > 0 and _WORDY.match(raw[m.start() - 1])):

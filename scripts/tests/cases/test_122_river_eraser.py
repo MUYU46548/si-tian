@@ -3,14 +3,14 @@
 """用例 122：**河流橡皮 + 预览＝落库**（2026-10-18 第十八修·三/四）
 
 暮雨原话：
-  「而且节点的设计是不是本来就有问题？有变成描点连线模拟器的风险。河流要不要尝试其他画法？
+  “而且节点的设计是不是本来就有问题？有变成描点连线模拟器的风险。河流要不要尝试其他画法？
     应该更偏向手绘吗（**甚至有橡皮擦来擦除**）。事实上整个司天所有涉及地图编辑的地方，
-    都应该优先参考现成各类绘图软件，而不是放着一堆现成的东西都抄不好。」
+    都应该优先参考现成各类绘图软件，而不是放着一堆现成的东西都抄不好。”
 
 本轮照抄两件现成的东西：
   ① **绘图软件的分层笔迹** —— 预览就是"你将得到的那条河"。
      修前：拖动预览走 `smoothWhileDrawing(…, 1, 18)`、宽度写死 `0.7`；抬手落库走
-     「抽稀 → 按弧长压到目标点数 → Chaikin」、宽度 `RIVER_WIDTH_DEFAULT`(3.5) ——
+     “抽稀 → 按弧长压到目标点数 → Chaikin”、宽度 `RIVER_WIDTH_DEFAULT`(3.5) ——
      **形状与粗细都不是同一条**（画一条细发丝，松手变成 8.4 屏幕像素的宽河）。
      修后：两边共用 `riverNodesFromDraft()`，宽度也共用 `RIVER_WIDTH_DEFAULT`。
   ② **橡皮擦** —— 按住抹过去就擦掉那一段，不需要先选中对象、不需要挑节点、不需要 Delete。
@@ -117,7 +117,7 @@ def source_gates():
         fails.append('🔴 预览没有用落库那个宽度（RIVER_WIDTH_DEFAULT）')
     # ③ 支流 = 一条撤销（同一批：加河 + 改母河 走同一个原子口）
     if 'store.updateBaseMapRiver(baseMapKey.value, parentId' in sm:
-        fails.append('🔴 支流仍在用第二条 undo（updateBaseMapRiver）—— 「加河 + 插母河拐点」必须原子')
+        fails.append('🔴 支流仍在用第二条 undo（updateBaseMapRiver）—— “加河 + 插母河拐点”必须原子')
     # ④ store 侧：新写口存在、只有一处 execute、首行守卫、写闸门已登记
     if 'function applyBaseMapRiverEdit(' not in se:
         fails.append('🔴 store 没有 applyBaseMapRiverEdit（原子写口缺失）')
@@ -353,7 +353,7 @@ def run(cdp):
     if not e.get('impAfterErase'):
         fails.append('🔴 抹过导入河时数据被改了（应一字未动）')
     if '只擦' not in (e.get('statusNoHit') or ''):
-        fails.append(f"🔴 抹到导入河上时状态栏没有说明「只擦手画的河」：{e.get('statusNoHit')!r}（静默 no-op）")
+        fails.append(f"🔴 抹到导入河上时状态栏没有说明“只擦手画的河”：{e.get('statusNoHit')!r}（静默 no-op）")
     if not e.get('emptyStrokeNoPush'):
         fails.append('🔴 空手一抹压了撤销栈（撤销撤到的不是上一条真实动作）')
     notes.append('c 擦断：擦前 %s → 擦后 %s；一次 Ctrl+Z 回原样=%s'

@@ -53,7 +53,7 @@ async function main() {
       id: 's2', order: 2, era: { startYear: '2010', endYear: '2020' },
       polities: [{ id: 'B1', name: '甲', lineage: 'L1' }, { id: 'B2', name: '乙', lineage: 'L2' }],
       ownership: { p1: 'B1', p2: 'B1', p3: 'B1', p4: 'B2' },
-      // p2 在本代内由「乙(B2)」变「甲(B1)」—— 显式事件与终态一致
+      // p2 在本代内由“乙(B2)”变“甲(B1)”—— 显式事件与终态一致
       changeEvents: { p2: [{ y: 2015, m: 6, d: 1, owner: 'B1' }] },
     },
     {

@@ -90,13 +90,13 @@ export function installDevFallback() {
     setVaultPath: async () => ({ success: false, canceled: true }),
     selectReferenceImage: async () => ({ success: false, canceled: true }),
     saveExportFile: async () => ({ success: false, canceled: true }),
-    // 浏览器模式没有主进程对话框 → 切片批量导出只能走「逐个下载」回退（见 useScenarioExport）
+    // 浏览器模式没有主进程对话框 → 切片批量导出只能走“逐个下载”回退（见 useScenarioExport）
     exportScenarioFrames: async () => ({ success: false, error: 'browser-dev-mode' }),
     readObsidianNote: async () => ({ success: false, error: 'browser-dev-mode' }),
     revealInExplorer: fail,
     openExternal: async (url) => { window.open(url, '_blank', 'noopener'); return { success: true }; },
 
-    // 订阅类必须返回「取消订阅函数」，不能返回 Promise
+    // 订阅类必须返回“取消订阅函数”，不能返回 Promise
     onNodeUpdated: noopSub,
     onNodeRemoved: noopSub,
     onOpenSettings: noopSub,

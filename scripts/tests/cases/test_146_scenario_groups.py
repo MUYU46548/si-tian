@@ -3,9 +3,9 @@
 """用例 146：剧本集（多时间线 / 多底图）—— 数据层 + 左栏 + 时间轴 + 切片范围
 
 为什么需要这条用例：
-  · 剧本集不是「左栏文件夹」：时间轴/播放/切片导出的「全部剧本」都必须**只取当前组**。
+  · 剧本集不是“左栏文件夹”：时间轴/播放/切片导出的“全部剧本”都必须**只取当前组**。
     如果只有左栏过滤了，时间轴会把两条时间线混在一条年份轴上 —— 图是对的、时间是错的，
-    而且不报任何错（正是本项目反复出现的「同屏两个世界」）。
+    而且不报任何错（正是本项目反复出现的“同屏两个世界”）。
   · 组是用户数据：新建/改名/删除/移动必须一条 undo，删除组**不能删剧本**（只退回默认组）。
   · 旧项目没有 `groups` 字段 → 必须零迁移地全部落默认组。
 
@@ -164,7 +164,7 @@ JS_MAIN = r"""(async () => {
     await tick(60);
     const hit = (s.scenarioGroups || []).find(g => g.name === '丙线');
     createdId = hit ? hit.id : null;
-    ck('f3 点「新建剧本集」真的建出来', !!createdId, (s.scenarioGroups || []).map(g => g.name));
+    ck('f3 点“新建剧本集”真的建出来', !!createdId, (s.scenarioGroups || []).map(g => g.name));
     ck('f3 新组立刻出现在左栏下拉',
        Array.from(document.querySelectorAll('[data-testid="scenario-group-switch"] option')).some(o => o.textContent.includes('丙线')), null);
     ck('f3 新建后自动切到该组', SM.activeGroupId === createdId, SM.activeGroupId);
@@ -172,7 +172,7 @@ JS_MAIN = r"""(async () => {
   SM.showScenarioManager = false;
   await tick(30);
 
-  // ── f3b 切片对话框：范围写「本组」，清单带 groupName ────────
+  // ── f3b 切片对话框：范围写“本组”，清单带 groupName ────────
   SM.activeGroupId = SEED.g1;
   await tick(40);
   SM.showSliceExport = true;
@@ -180,7 +180,7 @@ JS_MAIN = r"""(async () => {
   const scopeSel = document.querySelector('[data-testid="slice-scope"]');
   const scopeText = scopeSel ? (scopeSel.options[scopeSel.selectedIndex] || {}).textContent || '' : '';
   notes.scopeText = scopeText.replace(/\s+/g, ' ').trim();
-  ck('f3b 切片范围写明「本组」', /本组/.test(scopeText), notes.scopeText);
+  ck('f3b 切片范围写明“本组”', /本组/.test(scopeText), notes.scopeText);
   SM.showSliceExport = false;
 
   // ── f4 移动 + 删组 + 一条 undo ─────────────────────────────
@@ -208,8 +208,8 @@ JS_MAIN = r"""(async () => {
 
   // ── f5 项目载荷 + 重开项目：组表必须原样往返 ────────────────
   // `exportCanvasToProject()` 是画布→项目的唯一载荷出口（projectStore 只落盘）；
-  // `applyScenarioState(..., {fresh:true})` 是「打开项目/回滚快照」的唯一装载口。
-  // 先造一条「组表里没有的孤儿组」剧本 —— 导入包/旧数据会出现这种形状，
+  // `applyScenarioState(..., {fresh:true})` 是“打开项目/回滚快照”的唯一装载口。
+  // 先造一条“组表里没有的孤儿组”剧本 —— 导入包/旧数据会出现这种形状，
   // 若收养逻辑失效，它会在**所有组**里都不可见（用户看到剧本凭空消失）。
   s.createScenario(KEY + '/孤儿剧本', {
     ownerKey: KEY, name: '孤儿剧本', order: 20, group: 'grp_orphan',
@@ -228,7 +228,7 @@ JS_MAIN = r"""(async () => {
   }, { fresh: true });
   await tick(40);
   const restored = (s.scenarioGroups || []).map(g => g.name);
-  ck('f5「重开项目」后组表还在（不是保存一次就丢）',
+  ck('f5“重开项目”后组表还在（不是保存一次就丢）',
      JSON.stringify(restored) === JSON.stringify([...notes.groupsAfterUndo, 'grp_orphan']), { restored, before: notes.groupsAfterUndo });
   ck('f5 重开后剧本的组归属还在',
      s.getScenario(KEY + '/乙二') && s.getScenario(KEY + '/乙二').group === SEED.g2,
@@ -271,6 +271,6 @@ def run(cdp):
     return True, (
         f'两组四剧本 → 甲线 {{list:{notes.get("g1", {}).get("list")}, tl:{notes.get("g1", {}).get("tl")}}}'
         f' / 乙线 {{list:{notes.get("g2", {}).get("list")}, year:{notes.get("g2", {}).get("year")}}}'
-        f' / 切片范围「{notes.get("scopeText")}」'
+        f' / 切片范围“{notes.get("scopeText")}”'
         f' / 删组+undo 还原 {notes.get("groupsAfterUndo")}'
     )

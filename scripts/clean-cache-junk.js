@@ -5,10 +5,10 @@
  * 背景：三类垃圾都由历史 bug 产生，现行代码不再生成
  *   1. terrain  空名地形 —— PlanetMap 旧凸包笔刷产出的 `name: ''` 多边形（本库实测 22 个），
  *      在画布上渲染成无标识图块，地形列表/图例里也会出现空条目。
- *   2. basemap  空壳底图 —— 早期「打开剧本模式就凭空建一张默认底图」的产物（本库实测 `德斯特星`：
+ *   2. basemap  空壳底图 —— 早期“打开剧本模式就凭空建一张默认底图”的产物（本库实测 `德斯特星`：
  *      terrain 为空、无 heightmap、无参考图、没有任何剧本的 ownerKey 指向它）。该默认行为已删除。
  *   3. testnode 测试残留节点 —— 历史测试/联调把节点写进真实库缓存的产物（如 `测试建筑`）。
- *   4. testpoly 自动编号测试地形（2026-10-09 加）—— 早期「描点连线时代」在真实库里手绘的测试多边形：
+ *   4. testpoly 自动编号测试地形（2026-10-09 加）—— 早期“描点连线时代”在真实库里手绘的测试多边形：
  *      id 为 `poly_<时间戳>_<随机>`、名称是自动编号（`海洋 2` / `陆地 1 2 + 陆地 1 1 1 + …`）、
  *      批次集中在 8 月中～9 月初、互相重叠、且**没有任何字段引用**。本库实测 22 个。
  *      另有**无条件垃圾**：面积≈0 或顶点 < 3 的退化多边形（无论名字）。
@@ -23,7 +23,7 @@
  *   6. 删测试地形前自检：① 无字段引用；② 不会清空该行星的 terrain。
  *      ⚠️ **不设包围盒守卫**：`useTerrainCanvasBrush.resampleInto` 是按**世界坐标**重采样，
  *      且网格原点恒为 `ax + 整数×cell`（ax = 高度图首点）→ 包围盒变化只会让原点整体平移**整数格**，
- *      已涂 `terrainGrid` 逐格无损。（旧脚本注释里「原点重推会错位」的担心在现行代码已不成立，
+ *      已涂 `terrainGrid` 逐格无损。（旧脚本注释里“原点重推会错位”的担心在现行代码已不成立，
  *      `useTerrainCanvasBrush.js:176-192`。）
  *
  * 用法
@@ -50,11 +50,11 @@ const CATS = onlyArg
   : ['terrain', 'basemap', 'testnode', 'testpoly'];
 const on = (c) => CATS.includes(c);
 
-// 「测试地形」的时间闸门：只动**早于**该时刻创建的多边形（id 里的时间戳可解析）。
-// 默认 2026-09-15 —— 早于此的都是「描点连线时代」的产物（本库实测全部在 08-16 ~ 09-12）。
+// “测试地形”的时间闸门：只动**早于**该时刻创建的多边形（id 里的时间戳可解析）。
+// 默认 2026-09-15 —— 早于此的都是“描点连线时代”的产物（本库实测全部在 08-16 ~ 09-12）。
 const beforeArg = ARGS.find(a => a.startsWith('--before='));
 const BEFORE_MS = Date.parse((beforeArg ? beforeArg.slice('--before='.length) : '2026-09-15') + 'T00:00:00');
-// 允许把某行星的 terrain 清空（只作用于 testpoly 类）：产品本身就有「清空行星地图内容」
+// 允许把某行星的 terrain 清空（只作用于 testpoly 类）：产品本身就有“清空行星地图内容”
 // 功能（mapDataEditing.clearPlanetContent，走写闸门 + undo），terrain 为空时
 // useTerrainCanvasBrush.terrainBounds 会回落默认范围 → 不崩。仍整文件备份 + 原条目存档。
 const ALLOW_EMPTY = ARGS.includes('--allow-empty');
@@ -65,7 +65,7 @@ function polyCreatedAt(id) {
   const ms = Number(m[1]);
   return Number.isFinite(ms) ? ms : null;
 }
-/** 自动编号名：「类型名 + 数字」（数字可能是空格分隔的多段，如 `陆地 1 2`），
+/** 自动编号名：“类型名 + 数字”（数字可能是空格分隔的多段，如 `陆地 1 2`），
  *  或若干段用 '+' 拼起来（合并多边形的产物，如 `陆地 1 2 + 陆地 1 1 1 + …`）。 */
 const AUTO_TERRAIN_TYPES = '海洋|陆地|森林|雨林|草原|沙滩|海岸|湿地|山脉|火山|石漠|苔原|荒地|湖泊|沙漠|平原';
 const AUTO_NAME_RE = new RegExp(
@@ -175,7 +175,7 @@ if (on('terrain') && needMapdata) {
 // ─── 1b) 自动编号测试地形（2026-10-09 加）────────────────────────────────────
 // 判据（任一命中）：
 //   · **退化**（顶点 < 3 或面积 ≈ 0）—— 无条件垃圾，无论叫什么名字；
-//   · **自动编号的测试多边形**—— id `poly_…` + 名称是「类型名+数字」（可含 '+' 合并段）+ 建于 --before 之前。
+//   · **自动编号的测试多边形**—— id `poly_…` + 名称是“类型名+数字”（可含 '+' 合并段）+ 建于 --before 之前。
 // 自检：① 无字段引用；② 不会清空该行星的 terrain。**不设包围盒守卫**（见文件头第 6 条说明）。
 if (on('testpoly') && needMapdata) {
   const mapdata = mapdataDoc;

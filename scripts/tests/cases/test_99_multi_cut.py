@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 99：折线切割「一次切多块」（0.2.6 目标里的第三件）
+"""用例 99：折线切割“一次切多块”（0.2.6 目标里的第三件）
 
-原先「一次只切一个省」是**刻意的**：跨省连切时，折线两端沿切向延长出来的那一段会替邻居做决定
+原先“一次只切一个省”是**刻意的**：跨省连切时，折线两端沿切向延长出来的那一段会替邻居做决定
 （误切比多切更坏）。但暮雨的目标是"切四五百块"，一刀一个省太慢，而这条限制其实**可以绕开**：
-  · 每个省只取「折线**在它内部**的那一段」（`extractInsideSegment`）→ 延长段只作用于它自己；
+  · 每个省只取“折线**在它内部**的那一段”（`extractInsideSegment`）→ 延长段只作用于它自己；
   · 单省切分只改 `terrain[idx]` + **表尾追加**新省 ⇒ 既有下标一个都不动，逐个切互不干扰。
 
 本用例守五类判据：
@@ -13,7 +13,7 @@
   c 端到端：一条折线穿过 3 个省 → 3 个都被切开（3 → 6 个省）、总面积守恒、
      每个省的原 id 仍在原位（身份不丢）
   d 护栏：横向折线（只贴着一个省走）不误切；穿过太多省 → 明确拒绝并给上限；只读态走契约
-  e UI：折线工具的「切开」按钮到位（点一次就切多块）
+  e UI：折线工具的“切开”按钮到位（点一次就切多块）
 """
 import json
 import os
@@ -207,13 +207,13 @@ JS = r""" (async () => {
     await new Promise((r) => setTimeout(r, 80));
     const bar = document.querySelector('.scenario-toolbar');
     const btn = Array.from(bar.querySelectorAll('button')).find((b) => (b.title || '').includes('折线切割'));
-    ok('e1 「折线切割」入口在位', !!btn, '按钮不在');
+    ok('e1 “折线切割”入口在位', !!btn, '按钮不在');
     if (btn) {
       btn.click();
       await new Promise((r) => setTimeout(r, 60));
       ok('e1 点了切到该工具', sc.tool === 'polySplit', String(sc.tool));
       const fin = document.querySelector('[data-testid="polysplit-finish"]');
-      ok('e1 「切开」按钮在位（复用它执行多块切分）', !!fin, '按钮不在');
+      ok('e1 “切开”按钮在位（复用它执行多块切分）', !!fin, '按钮不在');
     }
     // 🔴 e2 源码层：收口必须真的走**多块**入口 —— 否则界面说"切开 N 块"而实际只切一块（假绿）
     sc.setTool('select');

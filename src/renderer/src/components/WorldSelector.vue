@@ -18,7 +18,7 @@
       <p>从 Obsidian 库提取地理节点，加载示例世界观，或创建一个空世界开始绘制。</p>
       <div class="empty-actions">
         <!-- 🔴 只读态（无项目）：**一切编辑入口都会被写闸门拒绝** —— 所以首要动作必须换成
-             「新建/打开项目」。旧空态只给了「新建世界 / 加载示例」，两者在只读态必被拒
+             “新建/打开项目”。旧空态只给了“新建世界 / 加载示例”，两者在只读态必被拒
              （用户点完只看到一句拒绝），而真正的起点（项目面板）根本不在这个页面上，新人无从下手。
              2026-09-24 修：只读态与可写态**分成两组**，避免把走不通的按钮摆在最显眼的位置。 -->
         <template v-if="readOnly">
@@ -28,17 +28,17 @@
                   @click="$emit('open-project')"><Icon name="folder-open" :size="14"/> 打开已有项目</button>
         </template>
         <template v-else>
-          <!-- 已打开项目但项目是空的（2026-09-22 用户实测）：这里原来的「从 Obsidian 重新提取」在项目态
+          <!-- 已打开项目但项目是空的（2026-09-22 用户实测）：这里原来的“从 Obsidian 重新提取”在项目态
                被正确拒绝（两套事实源混流），用户就卡在"项目里空空的" → 项目态下把首要动作换成导入，
-               并加 `import-primary` 让它与「加载示例 / 新建世界」区分开（2026-10-09：入口要显眼）。 -->
+               并加 `import-primary` 让它与“加载示例 / 新建世界”区分开（2026-10-09：入口要显眼）。 -->
           <button v-if="projectOpen" class="create-btn import-primary" data-testid="import-from-vault-empty" @click="$emit('import-from-vault')"><Icon name="folder-open" :size="14"/> 导入知识库内容</button>
           <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
           <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
         </template>
         <button class="vault-btn" data-testid="open-vault-empty" @click="$emit('open-vault')"><Icon name="book" :size="14"/> 打开 Obsidian 知识库</button>
-        <!-- 只读态下「重新提取」是落盘写、必然被拒 → 灰禁 + 说明去处（只拦不灰禁＝点完才被拒，坏交互）。
+        <!-- 只读态下“重新提取”是落盘写、必然被拒 → 灰禁 + 说明去处（只拦不灰禁＝点完才被拒，坏交互）。
              项目态（projectOpen）下**直接隐藏**：此时画布事实源=项目文件，重提取必被拒；
-             该情形首要是上面的「导入知识库内容」。 -->
+             该情形首要是上面的“导入知识库内容”。 -->
         <button
           v-if="!projectOpen"
           class="extract-btn"
@@ -52,7 +52,7 @@
         {{ readOnlyHint }}
       </p>
       <p v-else-if="projectOpen" class="empty-import-hint" data-testid="empty-import-hint">
-        项目是空的？知识库里的既有内容可用上面的「导入知识库内容」一次性带进来 —— 只补缺、不覆盖，一条撤销可回退。
+        项目是空的？知识库里的既有内容可用上面的“导入知识库内容”一次性带进来 —— 只补缺、不覆盖，一条撤销可回退。
       </p>
     </div>
     <div v-else class="world-grid">
@@ -94,10 +94,10 @@ const props = defineProps({
   galaxies: { type: Array, default: () => [] },
   planets: { type: Array, default: () => [] },
   locations: { type: Array, default: () => [] },
-  // 只读态（无项目）：用于灰禁「从 Obsidian 重新提取」并给出能力说明 + 去处
+  // 只读态（无项目）：用于灰禁“从 Obsidian 重新提取”并给出能力说明 + 去处
   readOnly: { type: Boolean, default: false },
   readOnlyHint: { type: String, default: '' },
-  // 已打开项目（画布事实源 = 项目文件）：空态时把首要动作换成「导入知识库内容」
+  // 已打开项目（画布事实源 = 项目文件）：空态时把首要动作换成“导入知识库内容”
   projectOpen: { type: Boolean, default: false },
 });
 
@@ -154,8 +154,8 @@ function getLocationCount(worldId) {
   flex-direction: column;
   align-items: center;
   /* 🔴 不要用 justify-content: center —— 内容比容器高时（小窗口 / 卡片多）flex 居中会把**顶部裁掉**，
-     而且滚也滚不到（实测：756×441 下「打开知识库 / 历史剧本 / 新建世界」那一行 y = -20，完全够不着）。
-     改用「flex-start + 首尾 auto 外距」的标准手法：有富余时垂直居中，超出时从头排布且可滚动。 */
+     而且滚也滚不到（实测：756×441 下“打开知识库 / 历史剧本 / 新建世界”那一行 y = -20，完全够不着）。
+     改用“flex-start + 首尾 auto 外距”的标准手法：有富余时垂直居中，超出时从头排布且可滚动。 */
   justify-content: flex-start;
   height: 100%;
   padding: 40px;
@@ -290,7 +290,7 @@ function getLocationCount(worldId) {
 }
 .extract-btn:hover { background: var(--btn-bg-hover); }
 
-/* 「打开知识库」按钮：与 create-btn 同规格，用中性/信息色区分（不是创建动作） */
+/* “打开知识库”按钮：与 create-btn 同规格，用中性/信息色区分（不是创建动作） */
 .vault-btn {
   padding: 8px 18px;
   border: 1px solid var(--toolbar-border);
@@ -304,7 +304,7 @@ function getLocationCount(worldId) {
 }
 .vault-btn:hover { background: var(--btn-bg-hover); }
 
-/* 只读态说明（空状态卡片内）：正文级字号，说明「为什么被禁 + 去哪儿」 */
+/* 只读态说明（空状态卡片内）：正文级字号，说明“为什么被禁 + 去哪儿” */
 .empty-readonly-hint {
   margin: 2px 0 0 !important;
   font-size: 12.5px !important;
@@ -312,7 +312,7 @@ function getLocationCount(worldId) {
   line-height: 1.6;
 }
 
-/* 项目态空项目：「导入知识库内容」提为首要动作 —— 同 create-btn 规格，加粗 + 强调环与并列项区分。
+/* 项目态空项目：“导入知识库内容”提为首要动作 —— 同 create-btn 规格，加粗 + 强调环与并列项区分。
    不反转配色，避免亮/暗主题下文字对比度失控。 */
 .empty-actions .import-primary {
   font-weight: 600;

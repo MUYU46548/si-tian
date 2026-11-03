@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""S0 截图差分（不是回归用例）：把「这一笔画了多大一块」量出来。
+"""S0 截图差分（不是回归用例）：把“这一笔画了多大一块”量出来。
 
 用途：`_probe_brush_matrix.py` 为每个工具留了 `<id>-before.png` / `<id>.png`。
 本脚本用 Pillow/numpy 比较两张图，输出：

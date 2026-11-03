@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：省份几何「唯一表示」（src/renderer/src/utils/provinceShape.js）
+ * Node 单元测试：省份几何“唯一表示”（src/renderer/src/utils/provinceShape.js）
  *
- * 为什么必须有这一层：P0 第二块把省份从「单环多边形」升级成「多环实体（外环 + 洞 + 飞地
- * + land/sea）」，并把合并从「凸包」换成「共边抵消的精确并集」。这两件事都在**纯几何**里，
- * CDP 用例只能看像素结果，定位不到「并集面积多了 50」「洞被填了」这种错误。本文件直接对
+ * 为什么必须有这一层：P0 第二块把省份从“单环多边形”升级成“多环实体（外环 + 洞 + 飞地
+ * + land/sea）”，并把合并从“凸包”换成“共边抵消的精确并集”。这两件事都在**纯几何**里，
+ * CDP 用例只能看像素结果，定位不到“并集面积多了 50”“洞被填了”这种错误。本文件直接对
  * 纯函数下断言。
  *
  * 用法：node scripts/tests/unit/test_province_shape.js
@@ -402,7 +402,7 @@ async function main() {
   });
 
   // ── 9b. 合并的规模量纲与两处省钱（2026-10-02）─────────────────────────────
-  check('合并回报规模量纲：work / edges / nodes / maxWork / overflow（UI 才能说「超阈 N 倍」）', () => {
+  check('合并回报规模量纲：work / edges / nodes / maxWork / overflow（UI 才能说“超阈 N 倍”）', () => {
     const a = { id: 'a', points: sq(0, 0, 100, 100) };
     const b = { id: 'b', points: sq(100, 0, 100, 100) };
     const m = mergeProvinceShapes([a, b]);

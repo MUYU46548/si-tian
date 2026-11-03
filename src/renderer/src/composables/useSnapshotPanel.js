@@ -16,7 +16,7 @@ export function useSnapshotPanel({ store, props, emit, renderer, currentMapData 
     if (snap) {
       emit('dirty', true);
       renderer.requestRender();
-      saveStatus.value = `已拍摄快照「${snap.name}」`;
+      saveStatus.value = `已拍摄快照“${snap.name}”`;
       saveStatusKind.value = 'ok';
       if (saveStatusTimer) clearTimeout(saveStatusTimer);
       saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 2500);
@@ -24,18 +24,18 @@ export function useSnapshotPanel({ store, props, emit, renderer, currentMapData 
   }
 
   function restoreSnapshot(snap) {
-    if (!confirm(`确定恢复快照「${snap.name}」？\n当前地图内容将被快照替换（可撤销）。`)) return;
+    if (!confirm(`确定恢复快照“${snap.name}”？\n当前地图内容将被快照替换（可撤销）。`)) return;
     store.restoreMapSnapshot(props.planet.id, snap.id);
     emit('dirty', true);
     renderer.requestRender();
-    saveStatus.value = `已恢复快照「${snap.name}」`;
+    saveStatus.value = `已恢复快照“${snap.name}”`;
     saveStatusKind.value = 'ok';
     if (saveStatusTimer) clearTimeout(saveStatusTimer);
     saveStatusTimer = setTimeout(() => { saveStatus.value = ''; }, 2500);
   }
 
   function removeSnapshot(snap) {
-    if (!confirm(`删除快照「${snap.name}」？`)) return;
+    if (!confirm(`删除快照“${snap.name}”？`)) return;
     store.removeMapSnapshot(props.planet.id, snap.id);
     emit('dirty', true);
     renderer.requestRender();

@@ -4,9 +4,9 @@
 
 覆盖：
   1. 工具栏入口 → 面板渲染（谱系表行数 = 有省份的势力数）
-  2. 「承自」下拉指向前一剧本势力 → 写入 polity.successorOf → 变化省数随之改变（真影响 diff）
+  2. “承自”下拉指向前一剧本势力 → 写入 polity.successorOf → 变化省数随之改变（真影响 diff）
   3. undo → successorOf 移除且变化省数回滚
-  4. 易主日期页：改 input → 写入 scenario.changeEvents（显式，月日精度）→ 点「自动」清除
+  4. 易主日期页：改 input → 写入 scenario.changeEvents（显式，月日精度）→ 点“自动”清除
   5. 面板关闭
 """
 import sys, os, json, time
@@ -74,7 +74,7 @@ def run(cdp):
     time.sleep(0.4)
 
     # ---------- 1. 打开面板 ----------
-    # P3 起「谱系」入口收在「更多」里（默认只露 6 个主控件）→ 先展开再点
+    # P3 起“谱系”入口收在“更多”里（默认只露 6 个主控件）→ 先展开再点
     open_toolbar_more(cdp)
     panel_ok, panel = eval_json(cdp, """(() => {
       const btn = document.querySelector('[data-testid="open-lineage"]');
@@ -100,13 +100,13 @@ def run(cdp):
         return False, f'谱系面板 DOM 探针失败: {dom}'
     if not dom.get('mounted'):
         return False, '谱系面板未渲染'
-    # 甲时代 1 行 + 乙时代 2 行 = 3 行；只有乙时代有「承自」下拉（2 个）
+    # 甲时代 1 行 + 乙时代 2 行 = 3 行；只有乙时代有“承自”下拉（2 个）
     if dom.get('eras') != 2 or dom.get('rows') != 3 or dom.get('selects') != 2:
         return False, f'谱系表结构不符: {dom}'
     if not dom.get('hasYearsTab'):
         return False, f'缺易主日期页签: {dom}'
 
-    # ---------- 2. 承自纠正：B2 承自 A1 → prov_b 不再计为「变化」 ----------
+    # ---------- 2. 承自纠正：B2 承自 A1 → prov_b 不再计为“变化” ----------
     corr_ok, corr = eval_json(cdp, f"""(() => {{
       const s = {SM};
       const before = s.timeline.eraChg[1].changed;
@@ -118,9 +118,9 @@ def run(cdp):
       return JSON.stringify({{before, options}});
     }})()""", required=('before', 'options'), desc='承自下拉')
     if not corr_ok:
-        return False, f'乙时代缺 B2 的「承自」下拉（或探针抛异常）: {corr}'
+        return False, f'乙时代缺 B2 的“承自”下拉（或探针抛异常）: {corr}'
     if corr['options'] != ['A1']:
-        return False, f'「承自」下拉候选应只有前一剧本的 A1: {corr}'
+        return False, f'“承自”下拉候选应只有前一剧本的 A1: {corr}'
     time.sleep(0.35)
     after_ok, after = eval_json(cdp, f"""(() => {{
       const s = {SM};
@@ -156,7 +156,7 @@ def run(cdp):
     # ---------- 4. 易主日期页（月日精度：`changeEvents[pid] = [{y,m,d,owner}, …]`） ----------
     years_ok, years = eval_json(cdp, f"""(async () => {{
       const s = {SM};
-      // 「易主日期」页展示的是**当前剧本**的变化省 → 先把游标移到乙时代
+      // “易主日期”页展示的是**当前剧本**的变化省 → 先把游标移到乙时代
       // 月日精度：游标真源是 tlDate（`s.tlYear = 2010` 现在写的是只读 computed，静默无效）
       s.tlDate = {{ y: 2010, m: null, d: null }};
       await new Promise(r => setTimeout(r, 150));
@@ -167,7 +167,7 @@ def run(cdp):
       if (!input) return JSON.stringify({{err:'no-input', era: s.tlEra}});
       // 合成值（未录入时的推算日期）—— 期望被显式值取代
       const autoEv = (s.timeline.eraChg[1].byProvince.prov_b || [])[0] || null;
-      // 刻意写一个**不同于合成值**的年份：否则「显式值是否真的生效」分辨不出来（合成值恰好同年 → 假绿）
+      // 刻意写一个**不同于合成值**的年份：否则“显式值是否真的生效”分辨不出来（合成值恰好同年 → 假绿）
       input.value = '2016';
       input.dispatchEvent(new Event('change', {{bubbles:true}}));
       await new Promise(r => setTimeout(r, 200));
@@ -187,7 +187,7 @@ def run(cdp):
     auto_ev = years['autoEvent'] or {}
     if auto_ev.get('explicit'):
         return False, f'用例前提不成立（此时应是自动推算的合成日期）: {years}'
-    # 显式值必须是「整列表替换」写入 changeEvents，形状 {y,m,d,owner}
+    # 显式值必须是“整列表替换”写入 changeEvents，形状 {y,m,d,owner}
     w = years['written'] or {}
     wl = w.get('prov_b') or []
     if list(w.keys()) != ['prov_b'] or len(wl) != 1:
@@ -200,9 +200,9 @@ def run(cdp):
     if eff.get('y') != 2016 or not eff.get('explicit'):
         return False, f'显式日期未生效于时间轴（且须标 explicit）: {years}'
     if not years['hadClearBtn']:
-        return False, f'显式值应出现「自动」清除按钮: {years}'
+        return False, f'显式值应出现“自动”清除按钮: {years}'
     if years['cleared'] != {}:
-        return False, f'「自动」未清除显式日期（应回到无 changeEvents 键的空表）: {years}'
+        return False, f'“自动”未清除显式日期（应回到无 changeEvents 键的空表）: {years}'
     back = years['backEvent'] or {}
     if back.get('y') != auto_ev.get('y') or back.get('explicit'):
         return False, f'清除后未回到自动推算值（期望 y={auto_ev.get("y")} 且 explicit=false）: {years}'

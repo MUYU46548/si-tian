@@ -3,7 +3,7 @@
 """用例 95：底图侧的河流 / 道路 / 聚落写入必须落盘（D，2026-10-11）
 
 真实来由（暮雨实测）：
-  「河流道路之类的东西在哪里？怎么画上去？一堆图层但是好像根本没编辑入口。」
+  “河流道路之类的东西在哪里？怎么画上去？一堆图层但是好像根本没编辑入口。”
   查下来是三件事：
     ① **手画的河从来没有落过盘** —— 组件里 `finishRiverDraft` 只 push 进一个组件本地数组
        （`riverPaths`），全仓没有任何一处写进 store；重开应用河就没了，而且一声不响。
@@ -14,7 +14,7 @@
   所以"画布上一条河一条路都没有"——这一点由 test_94 的刷新覆盖。
 
 本用例守四类判据：
-  a 源码闸门（剥注释）：写入只在 store 单源；组件里不许再出现「手搓 store.baseMaps」与本地 riverPaths
+  a 源码闸门（剥注释）：写入只在 store 单源；组件里不许再出现“手搓 store.baseMaps”与本地 riverPaths
   b store CRUD：加/删各一条 undo；redo/undo 幂等；**删除后撤销放回原位**（层叠顺序）；
      找不到 id 时给明确回执（不静默）
   c 端到端落盘：画一条河 / 一条路 → flush → **项目文件载荷里真的有它们**（含样式字段）
@@ -77,7 +77,7 @@ def source_gates():
         (se, 'function removeBaseMapRoute(', 'store：删道路'),
         (se, 'function updateBaseMapBurg(', 'store：改聚落'),
         # ⚠️ 2026-10-18 第十八修·三：组件画河改走**原子写口** `applyBaseMapRiverEdit`
-        #    （「加河 + 在母河插拐点」= 一条撤销；橡皮擦断一条河也是它）。判据的**意思没变**：
+        #    （“加河 + 在母河插拐点”= 一条撤销；橡皮擦断一条河也是它）。判据的**意思没变**：
         #    手画的河必须经 store，不许再出现组件本地数组。
         (sc, 'store.applyBaseMapRiverEdit(', '组件：画河流走 store（原子写口）'),
         (se, 'function applyBaseMapRiverEdit(', 'store：原子写口（改/加/删合计一条撤销）'),
@@ -94,7 +94,7 @@ def source_gates():
         if needle not in src:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
 
-    # 🔴 红线：组件里不许再有「手搓 store.baseMaps = {...}」这条绕过路
+    # 🔴 红线：组件里不许再有“手搓 store.baseMaps = {...}”这条绕过路
     if 'store.baseMaps = {' in sc:
         fails.append('🔴 组件里仍存在 `store.baseMaps = {...}` 手搓替换（绕开 undo 与自动保存调度）')
     # 🔴 红线：本地 riverPaths 这条平行事实源不许复活
@@ -205,7 +205,7 @@ def run(cdp):
 
     // 🔴 b7 旧数据里的聚落（2026-10-13，2026-10-11 轮 1 留下的尾巴）
     //    早期 `.map` 导入只把首都写进**剧本 markers**，底图侧没有 `burgs` → 组件把 markers
-    //    派生出来当城镇显示（看得见、点得开编辑器），可一按保存就报「这个聚落不在这张底图上」＝
+    //    派生出来当城镇显示（看得见、点得开编辑器），可一按保存就报“这个聚落不在这张底图上”＝
     //    **用户改不了**。现在第一次编辑时把整批登记成真城镇，并与这次编辑共用**一条 undo**。
     s.baseMaps = { ...s.baseMaps, [KEY]: { ...s.baseMaps[KEY], burgs: [] } };
     const seeds = [
@@ -229,7 +229,7 @@ def run(cdp):
        !!(again && again.ok) && (s.baseMaps[KEY].burgs || []).length === 2,
        JSON.stringify({ n: (s.baseMaps[KEY].burgs || []).length, r: again }));
     s.undo();
-    ok('b7 🔴 一条 undo 把「登记 + 编辑」一起退回（拆两条会留下半吊子状态）',
+    ok('b7 🔴 一条 undo 把“登记 + 编辑”一起退回（拆两条会留下半吊子状态）',
        (s.baseMaps[KEY].burgs || []).length === 0,
        JSON.stringify((s.baseMaps[KEY].burgs || []).map((b) => b.id)));
     s.redo();

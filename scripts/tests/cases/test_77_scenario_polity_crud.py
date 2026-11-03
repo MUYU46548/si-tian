@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 77：历史剧本「势力增删 + 省份级联 + 导出同源 + 属性面板写路径」
+"""用例 77：历史剧本“势力增删 + 省份级联 + 导出同源 + 属性面板写路径”
 
-来源：2026-10-01 只读审计（三路并行）查出的四类问题，暮雨拍板「四块一起做」：
+来源：2026-10-01 只读审计（三路并行）查出的四类问题，暮雨拍板“四块一起做”：
   ① **势力只能改名，不能新建/删除** —— `polities` 只有 Azgaar `.map` 导入一条来路，
      自建底图 + 自建剧本 = `polities: []` → 色板空空、油漆桶点了**静默无反应**；
      删除同样没有 → 错导入的 FMG 国名永久留在地图与谱系里。
   ② 删省份**不级联** `scenarios[*].ownership` / `changeEvents`（键就是省份 id；2026-10-05
      月日精度后旧键 `changeYears` 已由 `utils/scenarioDates.js#normalizeScenarioDates` 读时迁移）
-     → 孤儿键看不见却参与 `groupMap` 分组与谱系继承的重叠度 → 「势力继承莫名断裂」。
+     → 孤儿键看不见却参与 `groupMap` 分组与谱系继承的重叠度 → “势力继承莫名断裂”。
   ③ SVG 导出**与画布不同源**：只画主环（洞被填实、飞地丢）、海域照样按归属上色、
      没有势力名标签（而真实数据 21 个省份名里 20 个是 `Province N`，会被过滤器跳过）
      → 导出的 SVG 是一张**没有字的色块图**。
@@ -46,7 +46,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再判子串 —— 本仓三次踩到「注释里的字样被当成实现」（test_59/71/75）。"""
+    """剥掉注释后再判子串 —— 本仓三次踩到“注释里的字样被当成实现”（test_59/71/75）。"""
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
     src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
     return re.sub(r'(?m)//[^\n]*', '', src)
@@ -165,7 +165,7 @@ CRUD_JS = r"""(async () => {
 
   // ③ 指派 + 改色（改色此前有 store 能力、无 UI；这里同时守 store 侧）
   // 🔴 月日精度（2026-10-05）：第 4 参是**日期对象** `{y,m,d}` —— 不再接受裸年份
-  //    （`scenarioDates.normalizeDate` 对非对象一律 null → 裸年份会被判「日期无法识别」
+  //    （`scenarioDates.normalizeDate` 对非对象一律 null → 裸年份会被判“日期无法识别”
   //      并且**整条命令被拒**，连 ownership 都不会写；见报告里的源码疑点）。
   s.setOwnership(SC, 'p77a', pid, { y: 1050, m: null, d: null });
   const r2 = s.updatePolity(SC, pid, { color: '#123456' });
@@ -312,7 +312,7 @@ EXPORT_JS = r"""(async () => {
 
   ck('SVG 文档成型', t.startsWith('<?xml') && t.includes('</svg>'));
   // ① 势力名（此前 SVG 完全没有这一层）
-  ck('导出图里有势力名「甲国」（旧实现：一个字都没有）', t.includes('甲国'), t.slice(0, 200));
+  ck('导出图里有势力名“甲国”（旧实现：一个字都没有）', t.includes('甲国'), t.slice(0, 200));
   // ② 海域填充 + 虚线海界（与画布 SEA_FILL / SEA_EDGE 同源）
   ck('海域用 SEA_FILL 填充（水陆一眼可分）', t.includes('rgba(74, 118, 158, 0.42)'), null);
   ck('海界是虚线（stroke-dasharray）', t.includes('stroke-dasharray'));
@@ -387,11 +387,11 @@ def sub_panel_write_path(cdp):
 
 
 def _enter_scenario_mode(cdp):
-    """点「历史剧本」进入剧本模式。
+    """点“历史剧本”进入剧本模式。
 
-    ⚠️ 为什么不是「查一次就点」（2026-10-05 实测踩到）：harness 的 `wait_for` 把
+    ⚠️ 为什么不是“查一次就点”（2026-10-05 实测踩到）：harness 的 `wait_for` 把
     `cdp.eval` 的 `{'__err__': …}` 当成**真值** —— 应用尚未挂载时表达式抛错会被当作
-    「已就绪」，于是探针可能在「文档正在导航 / `#app` 还没 mount」的窗口里跑，
+    “已就绪”，于是探针可能在“文档正在导航 / `#app` 还没 mount”的窗口里跑，
     症状就是 `no-btn`（与用例逻辑无关，且只在 harness 抖动时出现）。
     这里改成**轮询等按钮出现**（最多 ~10s），仍然没有才把现场带回去。
     """

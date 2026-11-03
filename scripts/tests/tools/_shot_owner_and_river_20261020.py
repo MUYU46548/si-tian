@@ -3,7 +3,7 @@
 """出图：2026-10-20 两件改动的真机观感（lab 必须先 up）。
 
   ① 涂归属 = **只改势力归属**（一笔划过几个省 → 整片换色，省界不动）
-  ② 河流 = **实心变宽丝带**（不再逐段描边 → 放大后没有「铁轨」）
+  ② 河流 = **实心变宽丝带**（不再逐段描边 → 放大后没有“铁轨”）
 
 产物：docs/assets/owner-brush-river-20261020/*.png
 用法：python scripts/tests/tools/_lab.py up && python scripts/tests/tools/_shot_owner_and_river_20261020.py

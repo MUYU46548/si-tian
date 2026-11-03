@@ -3,19 +3,19 @@
 // ── 为什么需要它 ─────────────────────────────────────────────────────────────
 // `.map` 导入此前只有剧本视图一条入口：它把数据装进**底图**（`baseMaps[key]`：省份多边形 +
 // 高度图 + 河流 + 道路）。行星视图（`mapData[planetId]`）是**另一个容器**，此前根本没有导入路径 ——
-// 于是「空行星上想用自己那张 Azgaar 地图起步」这件事，界面上做不到（只能先画省份再补地形）。
+// 于是“空行星上想用自己那张 Azgaar 地图起步”这件事，界面上做不到（只能先画省份再补地形）。
 //
-// 本文件负责「解析产物 → 行星容器」的**唯一映射**（纯函数，无 store / 无 DOM，可 Node 单测）。
+// 本文件负责“解析产物 → 行星容器”的**唯一映射**（纯函数，无 store / 无 DOM，可 Node 单测）。
 // 落库（undo / 落盘 / 写闸门）在 `store/geodataModules/mapDataEditing.js#importPlanetMapBundle`。
 //
 // ── 三条映射纪律（都有代价，写在这里免得下次"顺手改一下"）────────────────────
-// ① **省份只搬几何与名字**，颜色由行星侧「地形类型」决定 —— 行星画布按 `terrainTypes` 上色
+// ① **省份只搬几何与名字**，颜色由行星侧“地形类型”决定 —— 行星画布按 `terrainTypes` 上色
 //    （见 `planetDrawing.drawTerrain`），搬 `stateColor` 进来也不会被用；`stateId/cultureId/…`
 //    原样留着，参考图层（政治/文化/宗教）靠它们关联。
 // ② **高度图必须补齐四个通道**（h/temp/prec/biome）：行星侧的 `ensureHeightmap` 只有在四层
 //    长度全都对得上时才不重算；缺 `biome` 会把文件里的温度/降水**直接换成估值**（静默失真）。
 // ③ **河流/道路按行星侧字段名落**（`nodes` / `points`），不是底图的 `points` 一套 ——
-//    两边的 `drawRivers` 读的字段不同，写错不会报错，只会「导入了但画不出来」。
+//    两边的 `drawRivers` 读的字段不同，写错不会报错，只会“导入了但画不出来”。
 //
 // ⚠️ 不做的事：不建底图、不写剧本、不弹确认（要不要覆盖已有内容由调用方问用户）。
 //    行星容器与剧本底图是**两份**（`mapData` / `baseMaps` 的双向同步是已知的未完成项），
@@ -47,7 +47,7 @@ function finitePoints(list) {
  * `.map` 的政治 / 文化 / 宗教 → 参考图层（唯一映射）。
  *
  * 同一份映射此前写在 `scenarioEditing.importPlanetLayerData` 里；行星侧导入也要它，
- * 抽到这里供**两处共用**（否则「参考图层的 id 口径」迟早一边变一边不变）。
+ * 抽到这里供**两处共用**（否则“参考图层的 id 口径”迟早一边变一边不变）。
  * @param {{provinces?:Array, states?:Array, cultures?:Array, religions?:Array}} parsed
  */
 export function buildAzgaarReferenceLayers(parsed) {
@@ -91,7 +91,7 @@ export function buildAzgaarReferenceLayers(parsed) {
 /**
  * 高度图 → 行星侧四通道（h / temp / prec / biome）。
  *
- * 🔴 「缺 biome 会被 `ensureHeightmap` 当成派生层损坏、重算 temp/prec」—— 也就是说
+ * 🔴 “缺 biome 会被 `ensureHeightmap` 当成派生层损坏、重算 temp/prec”—— 也就是说
  *    只搬 h 的后果不是画不出来，而是**文件里的温度/降水被静默换成估值**（看起来一切正常）。
  *    所以这里一次补齐：temp/prec 优先用文件里的（长度对得上才算数），biome 由三者推。
  * @returns {object|null} 没有可画的内容时返回 null（行星侧保持原样，不写空壳）
@@ -213,7 +213,7 @@ export function buildPlanetMapBundle(parsed) {
     heightmap,
     // ⚠️ 参考图层的省份来源是解析器的 `terrain`（不是 `provinces`）——
     //    `importPlanetLayerData` 那条路传进来的键名才是 `provinces`。两边都要照顾：
-    //    键名弄错不会报错，只会「政治 / 文化图层点了没反应」（映射出空数组）。
+    //    键名弄错不会报错，只会“政治 / 文化图层点了没反应”（映射出空数组）。
     ...buildAzgaarReferenceLayers({ ...p, provinces: p.provinces || p.terrain }),
     stats: {
       provinces: terrain.length,
@@ -243,7 +243,7 @@ export function planetMapContentCounts(mapData) {
 export function describePlanetImportReceipt(name, bundle) {
   const b = bundle || {};
   const s = b.stats || {};
-  const parts = [`已导入「${name}」到本行星：省份 ${s.provinces || 0} 块`];
+  const parts = [`已导入“${name}”到本行星：省份 ${s.provinces || 0} 块`];
   parts.push(`河流 ${s.rivers || 0} 条`, `道路 ${s.routes || 0} 条`);
   parts.push(s.hasHeightmap ? '高度图 有' : '高度图 ⚠️ 这份 .map 里就没有');
   if (s.burgs) parts.push(`城镇 ${s.burgs} 个未导入（行星图没有城镇图层）`);

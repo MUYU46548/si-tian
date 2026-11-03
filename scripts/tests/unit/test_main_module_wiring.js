@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：主进程「模块接线」不变式（src/main/index.js ↔ 同目录模块）
+ * Node 单元测试：主进程“模块接线”不变式（src/main/index.js ↔ 同目录模块）
  *
  * 为什么需要这一层：
  *   index.js 顶部的 `const { A, B } = require('./config')` 是主进程唯一的导入点。
  *   **少写一个名字不会报错**——Node 照常启动、应用照常开，直到那个 IPC 通道被调用时才抛
  *   `ReferenceError: xxx is not defined`（错误只出现在渲染进程的弹窗里，主进程日志也难看懂）。
  *   实测事故（2026-09-19）：`getCurrentBaseMapKey` / `setCurrentBaseMapKey` 漏解构
- *   → 用户打开「历史剧本」必报 `Error invoking remote method 'get-current-basemap-key':
+ *   → 用户打开“历史剧本”必报 `Error invoking remote method 'get-current-basemap-key':
  *   ReferenceError: getCurrentBaseMapKey is not defined`。
  *
  * 本文件守三条：
@@ -45,7 +45,7 @@ function eq(actual, expected, label) {
 
 /**
  * 去注释（行注释 + 块注释），**保留行号**（注释内容替换成空白/换行）。
- * 不能用「正则一把梭」：本仓库 index.js 里有 `/[\\/:*?"<>|]/g` 这类正则字面量，
+ * 不能用“正则一把梭”：本仓库 index.js 里有 `/[\\/:*?"<>|]/g` 这类正则字面量，
  * 里面的 `/*` 和引号会让朴素正则把接下来上百行代码一起当注释吃掉
  * （实测：785 行的文件被吃到 645 行，连 `get-current-basemap-key` 的那一行都不见了 →
  *  断言静默失效）。这里用带状态的扫描器：区分 代码/字符串/模板串/正则 四种上下文。
@@ -143,7 +143,7 @@ function parseLocalRequires(src) {
  * 必要性：index.js 里可能有与某模块导出**同名但本地自建**的实现
  * （实测：`BACKUP_KEEP` / `ILLEGAL_CHARS` / `sanitizeFileName` 是 index.js 自己的，
  *  `getVaultPath` 来自 './config' 而 './vault-watcher' 也导出了同名函数）。
- * 只有「模块导出了 + index.js 用了 + 谁都没声明」才是真接线漏项。
+ * 只有“模块导出了 + index.js 用了 + 谁都没声明”才是真接线漏项。
  */
 function parseDeclaredNames(src) {
   const src2 = stripComments(src);
@@ -162,7 +162,7 @@ function parseDeclaredNames(src) {
   return set;
 }
 
-/** 给「用途扫描」用的源码：把 require 解构语句整段抹掉（否则解构行自己就算一次「使用」） */
+/** 给“用途扫描”用的源码：把 require 解构语句整段抹掉（否则解构行自己就算一次“使用”） */
 function sourceWithoutRequireLines(src) {
   return stripComments(src).replace(
     /const\s*\{[^}]*\}\s*=\s*require\(\s*(['"])([^'"]+)\1\s*\)\s*;?/g,
@@ -212,7 +212,7 @@ async function main() {
   assert(requires.length >= 3, `index.js 里的本地 require 只解析出 ${requires.length} 个，解析器可能失效了`);
 
   // ── 1/2) 解构 ↔ 导出 双向一致 ───────────────────────────────────────────
-  await check('index.js 的本地 require 无「用到却没解构」/「解构了却没导出」', async () => {
+  await check('index.js 的本地 require 无“用到却没解构”/“解构了却没导出”', async () => {
     const problems = [];
     const report = [];
     for (const r of requires) {
@@ -272,7 +272,7 @@ async function main() {
   });
 
   // ── 4) 🔴 IPC 通道名双向对齐（preload 的 invoke ↔ 主进程的 handle）───────
-  // 为什么需要它：`test_main_module_wiring` 原来只查「解构 ↔ 导出」一致性 ——
+  // 为什么需要它：`test_main_module_wiring` 原来只查“解构 ↔ 导出”一致性 ——
   // 那只覆盖"模块接线"，**覆盖不到通道名**。而 handler 忘了注册 / 通道名拼错时，
   // 渲染层调用会抛 `Error: No handler registered for 'x'`，**只在那个按钮被点时才炸**，
   // 平静时期一片绿。本轮加 `basemap-source-save` / `basemap-source-list` /
@@ -305,9 +305,9 @@ async function main() {
 
     // 🔴 反方向（2026-10-14 补，审计抓到的真缺陷）：
     //    `ipcMain.handle('get-watcher-status')` / `'set-watcher-status'` 注册了很久，
-    //    但 preload **从来没暴露** → 渲染层的「Vault 监听」勾选框只写 localStorage，
+    //    但 preload **从来没暴露** → 渲染层的“Vault 监听”勾选框只写 localStorage，
     //    主进程那个开关**根本没人能拨到**（假开关，关了也照跑）。
-    //    上面那条只查了「暴露了必须有注册」，查不到「注册了没人能调」这个反方向。
+    //    上面那条只查了“暴露了必须有注册”，查不到“注册了没人能调”这个反方向。
     //    现在两个方向都守：注册的通道**必须**有 preload 暴露面。
     //    （真要做纯内部通道，就在这里加白名单并写明理由 —— 目前 57/57 全部有暴露面。）
     const notExposed = [...handled].filter(c => !invoked.has(c));
@@ -316,20 +316,20 @@ async function main() {
     return `invoke ${invoked.size} 个通道，handle ${handled.size} 个，**双向**全部对得上`;
   });
 
-  // ── 5) 🔴 「Vault 监听」开关必须是**真开关**（2026-10-14）────────────────────
-  // 上面那条守卫保证「注册的通道都暴露了」；这条保证**暴露了真的被接上**。
+  // ── 5) 🔴 “Vault 监听”开关必须是**真开关**（2026-10-14）────────────────────
+  // 上面那条守卫保证“注册的通道都暴露了”；这条保证**暴露了真的被接上**。
   // 两条是两件事：暴露面只是"拨得到"，还得有人拨。
   // 判据（读源码，剥注释）：设置面板里的勾选框 change 处理必须调用 setWatcherStatus；
-  // 光有 `saveSettings`（只写 localStorage）就是本项目那次「假开关」的原样。
+  // 光有 `saveSettings`（只写 localStorage）就是本项目那次“假开关”的原样。
   await check('Vault 监听开关：勾选框的 change 处理器必须真的拨到主进程', async () => {
     const src = stripComments(await fsp.readFile(
       path.join(ROOT, 'src', 'renderer', 'src', 'components', 'SettingsPanel.vue'), 'utf-8'));
     assert(src.includes('data-testid="vault-watcher-toggle"'),
-      '设置面板里找不到「Vault 监听」勾选框（判据锚点失效，需同步更新本用例）');
+      '设置面板里找不到“Vault 监听”勾选框（判据锚点失效，需同步更新本用例）');
     const m = src.match(/function\s+onVaultWatcherChange\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
     assert(m, '找不到 onVaultWatcherChange（勾选框的 change 处理器）');
     // ⚠️ 这里曾经误判过一次：直接在 `onVaultWatcherChange` 里调 `setWatcherStatus` 与
-    //    「调 syncWatcherStatus（它内部再调）」**都对**。判据要认这两种写法，
+    //    “调 syncWatcherStatus（它内部再调）”**都对**。判据要认这两种写法，
     //    否则会把正确的实现判红（假红和假绿一样坏）。
     const reachesApi = /setWatcherStatus\s*\(/.test(m[1]) || /syncWatcherStatus\s*\(/.test(m[1]);
     assert(reachesApi,

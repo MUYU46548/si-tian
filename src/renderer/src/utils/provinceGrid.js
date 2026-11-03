@@ -1,13 +1,13 @@
-// utils/provinceGrid.js — 省份「归属标签网格」纯函数层（Phase 3）
+// utils/provinceGrid.js — 省份“归属标签网格”纯函数层（Phase 3）
 //
 // 模型（skill `canvas-brush-integration` §7）：省份不再只靠多边形顶点编辑，而是
 //   · `labels: Uint8Array(cols*rows)` —— **每格一个归属序号**，`0 = 无主`（海域 / 未划归）
 //   · 序号 = `baseMaps[key].terrain[]` 的下标 + 1（**复用既有的省份定义表，不另建第二张表** ——
-//     否则「多边形省份」与「网格省份」会变成两套事实源）
+//     否则“多边形省份”与“网格省份”会变成两套事实源）
 //   · 省界不由顶点给出，而是**差异边 → 链 → Chaikin 平滑**自动提取
 //
 // 为什么这套模型值得存在：轮廓走笔刷 = 用户不需要描点连线也能得到省界（§7 的核心论点）。
-// 副作用是「删除省份必须重编号」——`labels` 里所有 > 被删序号的格子要减 1，否则标签会
+// 副作用是“删除省份必须重编号”——`labels` 里所有 > 被删序号的格子要减 1，否则标签会
 // 指向不存在的省份（取色函数越界）。这类操作的 undo **必须记整表快照**，差量记录还原不了。
 //
 // 本模块是**纯函数**（不碰 store / DOM / 响应式），所以 Node 侧也能读；网格几何与高度图
@@ -81,7 +81,7 @@ export function rasterizeProvinces(provinces, grid) {
 
 /**
  * 省界提取：格边 → 邻接表 → 走链 → 世界坐标点链。
- * 判据是**相邻格归属不同**（含「有主格 ↔ 网格外框」—— 否则贴着地图边缘的一段没有边界线）。
+ * 判据是**相邻格归属不同**（含“有主格 ↔ 网格外框”—— 否则贴着地图边缘的一段没有边界线）。
  * @returns {Array<Array<{x:number,y:number}>>} 若干条链（可能开口，也可能闭合）
  */
 export function extractBorders(labels, grid) {
@@ -203,7 +203,7 @@ export function stampBrush(labels, grid, { c, r, radius = 4, strength = 0.8, too
 
 /**
  * 自由轮廓（套索）：世界多边形 → 圈内的格全部划归 target。
- * 一笔成形、零次描点 —— 这是「涂」之外唯一值得有的轮廓入口。
+ * 一笔成形、零次描点 —— 这是“涂”之外唯一值得有的轮廓入口。
  * @returns {Array<[number, number]>} 差量 `[[i, 旧值], ...]`
  */
 export function lassoCells(labels, grid, worldPoly, target = 0) {
@@ -239,15 +239,15 @@ export function lassoCells(labels, grid, worldPoly, target = 0) {
 //   —— `test_79:96` 当时断言 `'export function lassoInsideCount' in provinceGrid.js`，
 //   而 `AGENTS.md` 的套索段也还写着"闸门分子必须是几何圈入量（lassoInsideCount）"。
 //   三处一起构成"这个函数是活的"的假象，后来人按文档去改闸门就会改到一个没人调的函数上。
-//   （本项目第五次「零调用死入口」，且这次是**守卫在骗人**，比单纯死代码更坏。）
+//   （本项目第五次“零调用死入口”，且这次是**守卫在骗人**，比单纯死代码更坏。）
 // 现在 test_79 已**反转**成"它不许回来"，真正生效的 area-gate 仍被同一条用例守着。
 
 /**
  * 删除某省份后的重编号（**就地**改 labels），两步缺一不可：
- *   ① 被删省份**自己的格置无主**（0）—— 否则它们会「继承」给顶替它序号的那个省份，
+ *   ① 被删省份**自己的格置无主**（0）—— 否则它们会“继承”给顶替它序号的那个省份，
  *      等于把地盘白送给邻居（原型实测：漏这步时删完省份地图上那块地还在，只是换了主人）；
- *   ② 序号 > deletedIdx 的全部减 1（保持「序号 = 定义表下标 + 1」不变式）。
- * 🔴 两步都会改动「未被删除的格」→ 这类操作的 undo 必须记整表快照，差量记录还原不了。
+ *   ② 序号 > deletedIdx 的全部减 1（保持“序号 = 定义表下标 + 1”不变式）。
+ * 🔴 两步都会改动“未被删除的格”→ 这类操作的 undo 必须记整表快照，差量记录还原不了。
  * @returns {{ cleared:number, renumbered:number }}
  */
 export function renumberAfterDelete(labels, deletedIdx) {
@@ -279,7 +279,7 @@ export function serializeLabels(labels) {
 
 /**
  * 读回自愈：长度不符 / 元素超范围 / 不是数字 → 返回 null（调用方按省份多边形重建）。
- * 不要「尽力修补」——半坏的标签网格比没有更难看懂。
+ * 不要“尽力修补”——半坏的标签网格比没有更难看懂。
  */
 export function deserializeLabels(raw, expectedLen) {
   if (!Array.isArray(raw) || raw.length !== expectedLen) return null;

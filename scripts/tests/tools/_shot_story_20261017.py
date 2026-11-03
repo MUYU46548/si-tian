@@ -4,7 +4,7 @@
 
 为什么需要它（而不是 `_lab.py run <file>`）：lab 一次只出**最后一张**图，而本轮要看的
 恰恰全是**过程态** ——
-  · 卡片墙刚挂载时的那枚「正在生成地图缩略图 N / M」进度胶囊（烘完就消失）；
+  · 卡片墙刚挂载时的那枚“正在生成地图缩略图 N / M”进度胶囊（烘完就消失）；
   · 空态（没有底图）与编辑器空态里的两个真按钮；
   · 选中河流的高亮在 **1× 与 4×** 缩放下到底有多粗（上一轮改成屏幕像素口径后
     只跑过用例，暮雨还没确认过观感）。
@@ -67,7 +67,7 @@ STORY = r"""
     return false;
   };
   try {
-    // ── 造一张「有点重量」的底图：400 省 × 100 点（烘焙成本接近真实底图量级）
+    // ── 造一张“有点重量”的底图：400 省 × 100 点（烘焙成本接近真实底图量级）
     //    为什么故意造重：进度胶囊只在烘焙期间存在，图太轻就永远拍不到它。
     const KEY = 'storyMap';
     const provs = [], gpts = [], h = [];
@@ -388,7 +388,7 @@ def main():
         time.sleep(1.0)
         # RecoveryPanel（z-index 1100，全屏 + backdrop-filter）会在"上次没正常退出"时弹出来挡住一切：
         # 出图脚本上一轮是被 taskkill 杀的 → 下次进来必弹。它与本轮改动无关，但会污染每一张图
-        # （`elementFromPoint` 全指向它、合成开销也会混进耗时读数），出图前先按「丢弃备份」关掉。
+        # （`elementFromPoint` 全指向它、合成开销也会混进耗时读数），出图前先按“丢弃备份”关掉。
         ditched = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button'))"
                            ".find((x) => (x.textContent || '').includes('丢弃备份'));"
                            " if (b) { b.click(); return true; } return false; })()")

@@ -28,7 +28,7 @@ def set_real_data(flag):
 
 
 def A(name):
-    """把用例里的 **fixture 专名** 解析成「当前数据源里的名字」。
+    """把用例里的 **fixture 专名** 解析成“当前数据源里的名字”。
 
     只在 `--real-data` 下做替换；默认（合成 fixture）恒等 —— 所以既有用例的行为零变化。
     页面内等价物是 `window.__alias(name)`（由 MOCK_SCRIPT 注入同一张表），
@@ -38,7 +38,7 @@ def A(name):
 
 
 def open_toolbar_more(cdp, settle=0.4):
-    """展开司天剧本工具栏的「更多」（P3 起高级工具/吸附/图层/底图默认收起）。
+    """展开司天剧本工具栏的“更多”（P3 起高级工具/吸附/图层/底图默认收起）。
 
     幂等：已展开直接返回 True。点完必须等一拍 —— **Vue 的 DOM 更新是异步的**（nextTick），
     立刻查 `.toolbar-more` / 省份行必然是空的（test_52/62/43 都曾因此假红）。
@@ -53,7 +53,7 @@ def open_toolbar_more(cdp, settle=0.4):
 
 
 def close_toolbar_more(cdp, settle=0.3):
-    """收起「更多」（把工具栏还原成默认 6 个可见控件的状态）。幂等。"""
+    """收起“更多”（把工具栏还原成默认 6 个可见控件的状态）。幂等。"""
     cdp.eval(
         "(() => { const b = Array.from(document.querySelectorAll('.scenario-toolbar button'))"
         ".find((x) => (x.title || '').includes('更多'));"
@@ -88,7 +88,7 @@ def ensure_data_ready(cdp, timeout=45):
 #     事实源 = 项目文件、写模式 = 'project'（可写）、画布内容 = 知识库数据。
 #   项目只存在于 `window.__projects`（mock 内存），**不落盘 → 对真实库零污染**。
 #   ⚠️ 播种走 `exportCanvasToProject()`（生产同一份转换代码），不是手工造 JSON ——
-#      否则「实体 ⇄ 节点」的字段丢失/归一化问题会被 harness 掩盖。
+#      否则“实体 ⇄ 节点”的字段丢失/归一化问题会被 harness 掩盖。
 # ─────────────────────────────────────────────────────────────
 HARNESS_PROJECT_PATH = 'mock/projects/harness-baseline.sitian'
 HARNESS_PROJECT_NAME = 'harness 基线项目'
@@ -103,7 +103,7 @@ OPEN_HARNESS_JS = r"""(async () => {
   const proj = useProjectStore(pinia);
   const filePath = '__PATH__';
 
-  // 记录「项目文件落盘」载荷（projectSave 是项目文件的唯一写 IPC）
+  // 记录“项目文件落盘”载荷（projectSave 是项目文件的唯一写 IPC）
   window.__savedProject = window.__savedProject || [];
   if (!window.sitianAPI.__projectSaveHooked) {
     const orig = window.sitianAPI.projectSave;
@@ -145,7 +145,7 @@ OPEN_HARNESS_JS = r"""(async () => {
   }
   // 用当前知识库工作态播种项目（实体树 / 航道 / 地图 / 编辑器容器 / 剧本）
   // ⚠️ 先补齐懒加载的行星地图：项目模式下 loadMapData 不再回退知识库缓存
-  //    （Phase 2.5 消除两套事实源），漏了这一步用例会看到「项目里没有行星图」。
+  //    （Phase 2.5 消除两套事实源），漏了这一步用例会看到“项目里没有行星图”。
   if (typeof store.loadAllMapDataForExport === 'function') {
     try { await store.loadAllMapDataForExport(); } catch (e) { console.warn('[harness] 预加载行星地图失败', e); }
   }
@@ -193,10 +193,10 @@ def ensure_case_state(cdp):
 
 # ─────────────────────────────────────────────────────────────
 # 底图 fixture（用例自带，**不依赖产品默认值**）
-#   2026-09-20 起司天不再硬编码/凭空注入任何示例底图（曾默认叫「云陇大陆」—— 那是暮雨自用剧本名，
-#   已按用户决策移除：新项目打开剧本模式就是「还没有底图」）。所以凡需要底图的用例必须自己声明：
+#   2026-09-20 起司天不再硬编码/凭空注入任何示例底图（曾默认叫“云陇大陆”—— 那是暮雨自用剧本名，
+#   已按用户决策移除：新项目打开剧本模式就是“还没有底图”）。所以凡需要底图的用例必须自己声明：
 #   建一张 + 让 ScenarioMap 选中它。否则 store.baseMaps 为空、组件 baseMapKey 为 ''，
-#   时间轴/谱系/像素断言全部会看到空数据（「底图未加载 / eraChg = [] / eras: 0」）。
+#   时间轴/谱系/像素断言全部会看到空数据（“底图未加载 / eraChg = [] / eras: 0”）。
 # ─────────────────────────────────────────────────────────────
 OPEN_TEST_BASEMAP_JS = r"""(() => {
   const s = PLACEHOLDER_STORE;
@@ -239,7 +239,7 @@ def open_test_base_map(cdp, key='用例底图', name=None):
 
 # ─────────────────────────────────────────────────────────────
 # 建筑 fixture（用例自带，**不依赖真实库里的残留节点**）
-#   历史遗留：真实库缓存里曾有 1 个测试产物节点「测试建筑」，用例 25 一直靠它进建筑内部
+#   历史遗留：真实库缓存里曾有 1 个测试产物节点“测试建筑”，用例 25 一直靠它进建筑内部
 #   （测试对真实数据的隐式依赖）。2026-09-21 清理该节点后改为用例自带 fixture：
 #   有建筑就用，没有就自建一个（挂到首个城市下，无城市则挂到首个行星下）。
 # ─────────────────────────────────────────────────────────────
@@ -313,9 +313,9 @@ def goto_planet(cdp, planet_name='曜川星'):
     `planet_name` 的默认值 `曜川星` 是**合成 fixture** 里的名字。真实知识库（`--real-data`）
     的行星不叫这个（实测真实库有 `乐园星 / 余白 / 克索斯星…`，且**没有** `曜川星`）
     → 旧实现直接返回 `no-planet`，于是**二十多个用例在真实数据上集体变红**，
-    看上去像「司天在真实库上跑不起来」，其实只是测试把 fixture 的专名写死了。
+    看上去像“司天在真实库上跑不起来”，其实只是测试把 fixture 的专名写死了。
     现在：先按名字找（**合成数据路径完全不变**，名字先命中）；找不到再退到
-    「自底向上、四层链路贯通的任意一颗行星」。这样 `--real-data` 才是一个有意义的闸门。
+    “自底向上、四层链路贯通的任意一颗行星”。这样 `--real-data` 才是一个有意义的闸门。
     """
     ensure_data_ready(cdp)
     expr = f"""(() => {{
@@ -377,8 +377,8 @@ def enter_edit(cdp):
     """进入行星地图编辑模式。
 
     选择器不依赖图标文本（图标已从 emoji 字形改为 <Icon> 组件）：
-    优先用入口按钮的 class，其次按按钮文案「编辑地图」兜底（恒星系/星域视图的
-    编辑开关是切换式按钮，文案在「编辑地图 / 完成编辑」之间变化）。
+    优先用入口按钮的 class，其次按按钮文案“编辑地图”兜底（恒星系/星域视图的
+    编辑开关是切换式按钮，文案在“编辑地图 / 完成编辑”之间变化）。
     """
     ensure_data_ready(cdp)
     return cdp.eval("""(() => {

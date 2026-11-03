@@ -165,7 +165,7 @@ function auditOne(file) {
       for (const ring of [p.points, ...((p.extraRings) || [])]) points += ringPoints(ring);
       if (Array.isArray(p.holes)) for (const h of p.holes) points += ringPoints(h);
     }
-    console.log(`  底图「${k}」：${terrain.length} 块省份 / ${points} 个顶点`);
+    console.log(`  底图“${k}”：${terrain.length} 块省份 / ${points} 个顶点`);
   }
 
   if (true) {

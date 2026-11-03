@@ -5,10 +5,10 @@
 要回答的问题（全部靠 DOM 实测，不靠读代码猜）：
   A. 卡片墙是否真的盖满视口、左下角有没有露出导航树/工具栏（穿帮）。
   B. 编辑器（ScenarioMap）在 `.main-content` 里是否与**行星地图**同屏共存 —— 也就是
-     「历史剧本是一个大号图层盖在顶上」这条反馈能不能被复现。
+     “历史剧本是一个大号图层盖在顶上”这条反馈能不能被复现。
   C. 若共存：谁的 z-index / DOM 次序在上、画布中心点 elementFromPoint 命中的是谁
      （命中谁 = 用户点得到谁，这是"被盖住"最硬的判据）。
-  D. 用树的「双击 → jumpToNode」这条**产品路径**制造共存（不是直接改 viewLevel），
+  D. 用树的“双击 → jumpToNode”这条**产品路径**制造共存（不是直接改 viewLevel），
      保证复现的是用户真实走过的路。
 用法（lab 必须先 up）：
   python scripts/tests/tools/_probe_module_layout.py
@@ -104,7 +104,7 @@ def main():
     out = {}
     out['s0_世界选择页'] = json.loads(cdp.eval(layout_probe('s0')))
 
-    # ── s1：点「历史剧本」→ 卡片墙
+    # ── s1：点“历史剧本”→ 卡片墙
     cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button'))"
              ".find(x => (x.textContent || '').includes('历史剧本')); if (b) b.click(); return 'ok'; })()")
     time.sleep(1.2)
@@ -119,7 +119,7 @@ def main():
     except Exception as e:
         print('shot picker failed:', e)
 
-    # ── s2：进编辑器（卡片墙有卡就点第一张，否则走空态的「进入编辑器」）
+    # ── s2：进编辑器（卡片墙有卡就点第一张，否则走空态的“进入编辑器”）
     has_cards = cdp.eval("!!document.querySelector('[data-testid=sp-cards]')")
     print('has_cards =', has_cards)
     if has_cards:

@@ -5,12 +5,12 @@
  * 背景
  *   P2-2 起 mapdata.json 的写盘 key 变为 `worldId/planetId`（如 `幻境/乐园星`），
  *   内存索引仍是 planetId。loadMapData（store/geodata.js）与主进程 get-map-data
- *   都保留了「新 key 无数据 → 回退读旧 key」的兼容分支，因此旧 key 永不参与
+ *   都保留了“新 key 无数据 → 回退读旧 key”的兼容分支，因此旧 key 永不参与
  *   读路径却一直留在文件里（本库实测：`乐园星` 5.8KB 陈旧快照 vs `幻境/乐园星` 1.5MB 现行数据）。
  *
  * 策略（不丢数据优先）
  *   1. 脚本默认 **只报告**（dry-run）；加 `--apply` 才写盘。
- *   2. 只处理「存在对应新 key」的旧 key —— 没有对应新 key 的旧 key 仍然会被
+ *   2. 只处理“存在对应新 key”的旧 key —— 没有对应新 key 的旧 key 仍然会被
  *      回退分支读到，删除即数据丢失，一律保留并单独列在报告里。
  *   3. 写盘前先整体备份 mapdata.json 到项目目录 backups/，
  *      并把被移除的旧条目原样存档到项目目录 backups/archived-mapdata-legacy-<ts>.json。
@@ -75,7 +75,7 @@ function main() {
     process.exit(2);
   }
   if (!fs.existsSync(GEODATA_PATH)) {
-    console.error(`未找到 ${GEODATA_PATH}：无法推导「世界/行星」新 key，本脚本拒绝在缺少 geodata 时删除任何 key`);
+    console.error(`未找到 ${GEODATA_PATH}：无法推导“世界/行星”新 key，本脚本拒绝在缺少 geodata 时删除任何 key`);
     process.exit(2);
   }
 

@@ -2,7 +2,7 @@
 /**
  * Node 单元测试：星系/星域视图的共享布局与配色（src/renderer/src/utils/galaxyLayout.js）
  *
- * 为什么必须有这一层：这份模块是「画布与导出 PNG(全图)**同源**」的载体（§bug 导出与画布不同源）。
+ * 为什么必须有这一层：这份模块是“画布与导出 PNG(全图)**同源**”的载体（§bug 导出与画布不同源）。
  * 它的口径错一条，就会出现"导出的图和屏幕上的不是一回事"——而**一条都不会报错**。
  * 这里把每条口径钉死（含两条**反向口径**：遗留坐标不许采信、星系数 < 3 的星域不许消失）。
  *
@@ -29,7 +29,7 @@ function check(name, fn) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
-/** 射线法：点是否在闭合环内（边界按内处理）—— 判「色块包住自己的中心 / 两家不重叠」用 */
+/** 射线法：点是否在闭合环内（边界按内处理）—— 判“色块包住自己的中心 / 两家不重叠”用 */
 function pointInLoop(loop, x, y) {
   let inside = false;
   for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
@@ -202,7 +202,7 @@ async function main() {
     const domains = G.layoutDomains([dom('a'), dom('b')], {});
     const galaxies = G.layoutGalaxies([gal('g1', 'a'), gal('g2', 'a'), gal('g3', 'b')], domains, {});
     const borders = G.factionBorders({ domainNodes: domains, galaxyNodes: galaxies, overrides: {} });
-    // 2026-11-02 改口径：边界不再是「凸包 / 12 边形」，而是**所有权场 φ 派生的软轮廓**。
+    // 2026-11-02 改口径：边界不再是“凸包 / 12 边形”，而是**所有权场 φ 派生的软轮廓**。
     // 守的东西不变：**每个星域都必须有边界**（导出原先在这里直接 continue），且轮廓是闭合环。
     assert(borders.length === 2, `应有 2 条边界（软轮廓），实测 ${borders.length}`);
     for (const b of borders) {
@@ -339,7 +339,7 @@ async function main() {
 
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
-  // `run_tests.py` 的摘要按 `===` 开头的行取（没有这行时它只能记「无输出」，即使全绿也难看懂）
+  // `run_tests.py` 的摘要按 `===` 开头的行取（没有这行时它只能记“无输出”，即使全绿也难看懂）
   console.log(`\n=== 星系布局 ${results.length - failed.length}/${results.length} 通过 ===`);
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* ignore */ }
   process.exit(failed.length ? 1 : 0);

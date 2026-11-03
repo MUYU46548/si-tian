@@ -5,7 +5,7 @@
  * ① **纯函数**：只依赖另外两个纯函数模块（scenarioTimeline / provinceShape），无 store 无 IO → Node 可单测。
  * ② **归属查询必须走 `currentOwnerRef`**（scenarioTimeline 的唯一实现）——
  *    开局年早于第一条易主日时，真实主是**上一代**的势力（era = k-1），
- *    自己再写一套「看 ownership 就好」的口径必然错（跨代 polity id 不通用，颜色会全查成灰）。
+ *    自己再写一套“看 ownership 就好”的口径必然错（跨代 polity id 不通用，颜色会全查成灰）。
  * ③ **势力名/色必须在 owner 所属的那个剧本里查**（聚合键带 era），同上一条根因。
  * ④ 海域（kind==='sea'）不进任何统计 —— 海不参与归属（P4 既定口径）。
  */
@@ -13,7 +13,7 @@ import { currentOwnerRef, polityOf } from './scenarioTimeline.js';
 import { provinceNetArea } from './provinceShape.js';
 
 /**
- * 一次性算好「每个省的净面积」（`provId -> area`）。
+ * 一次性算好“每个省的净面积”（`provId -> area`）。
  *
  * 🔴 为什么需要它（2026-10-17 第三轮实测，量出来的不是猜的）：
  *    卡片墙有 N 条剧本、每条都要算一遍开局态势，而态势里的 `area` 是**逐省现算**的
@@ -112,7 +112,7 @@ export function openingSituation(tl, k, terrain, opts = {}) {
 
 /**
  * 卡片标题行的年份文本：`1220 – 1450`（负年原样带 - 号；缺省给 ?）。
- * 不做历法前缀 —— 「历年」这种纪年名属于世界观，schema 里没有，不许编。
+ * 不做历法前缀 —— “历年”这种纪年名属于世界观，schema 里没有，不许编。
  */
 export function cardYearsText(scenario) {
   const a = scenario?.era?.startYear, b = scenario?.era?.endYear;

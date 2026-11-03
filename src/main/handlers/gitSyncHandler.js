@@ -1,13 +1,13 @@
-// src/main/handlers/gitSyncHandler.js — 「一键同步到远程仓库」的文件系统侧
+// src/main/handlers/gitSyncHandler.js — “一键同步到远程仓库”的文件系统侧
 //
-// 目标（用户需求 2026-09-21 / 08）：**傻瓜式** —— 用户只填一个仓库地址，点「同步」就把司天数据推到远端，
-// 不要求他敲任何 git 命令、也不要求他懂分支/暂存区；反向还要能「从远程恢复」（拉取，带明确警告）。
+// 目标（用户需求 2026-09-21 / 08）：**傻瓜式** —— 用户只填一个仓库地址，点“同步”就把司天数据推到远端，
+// 不要求他敲任何 git 命令、也不要求他懂分支/暂存区；反向还要能“从远程恢复”（拉取，带明确警告）。
 //
 // 设计边界（与 projectHandler 同一套纪律）：
 //   · 本文件**顶层不 require('electron')** —— 核心 git 函数必须能被纯 Node require，
-//     这样 `scripts/tests/unit/test_git_sync.js` 能用「本地 bare 仓库当远程」做真实端到端测试（无需网络）。
+//     这样 `scripts/tests/unit/test_git_sync.js` 能用“本地 bare 仓库当远程”做真实端到端测试（无需网络）。
 //   · 本文件只碰 git（init / remote / add / commit / push / fetch / reset），**不解释司天项目内容**。
-//   · 用户可见文案一律「人话」，不要回显 git 原始报错堆栈。
+//   · 用户可见文案一律“人话”，不要回显 git 原始报错堆栈。
 //
 // 安全约定（2026-09-22 加固，见 gitCredentialStore.js 头部的真实事故说明）：
 //   · 令牌**由本应用保管**（加密落盘），推送/拉取时通过**临时 credential helper + 环境变量**喂给 git：
@@ -83,7 +83,7 @@ function sanitize(text, secrets = []) {
   return out;
 }
 
-/** 从仓库地址里取域名（给「保存令牌」用，免去用户手填；已去掉内嵌凭据） */
+/** 从仓库地址里取域名（给“保存令牌”用，免去用户手填；已去掉内嵌凭据） */
 function hostFromUrl(url) {
   const m = String(url || '').match(/^https?:\/\/(?:[^@/]+@)?([^/:]+)/i);
   return m ? m[1] : '';
@@ -110,7 +110,7 @@ function extractUrlCredential(url) {
 function humanize(res, fallback = '操作失败') {
   const text = sanitize(`${res.stderr || ''} ${res.stdout || ''} ${res.error || ''}`);
   // ① 令牌被明确拒绝（远端给了 401/403 / Authentication failed）——
-  //    与「压根没找到凭据」区分开：这两种要给完全不同的指引（本次事故就是混为一谈）
+  //    与“压根没找到凭据”区分开：这两种要给完全不同的指引（本次事故就是混为一谈）
   if (/Authentication failed|Invalid username or password|Support for password authentication|\b40[13]\b|Bad credentials|Permission to .* denied/i.test(text)) {
     return '远程仓库拒绝了这个令牌：请确认令牌没有过期、且有该仓库的读写权限'
       + '（GitHub: 经典令牌勾 repo；细粒度令牌勾 Contents: Read and write，并把该仓库加入授权列表）';
@@ -123,7 +123,7 @@ function humanize(res, fallback = '操作失败') {
     return '远程仓库需要登录：请在下方填一次访问令牌（私有仓库必须）';
   }
   if (/non-fast-forward|rejected|fetch first/i.test(text)) {
-    return '远程仓库里有你本地没有的内容（可能来自另一台设备）：先点「从远程恢复」拉取，或先在另一台设备同步';
+    return '远程仓库里有你本地没有的内容（可能来自另一台设备）：先点“从远程恢复”拉取，或先在另一台设备同步';
   }
   if (/Connection|resolve host|Could not|network|timed out|unable to access/i.test(text)) {
     return '连不上远程仓库：检查网络/代理，或仓库地址是否可访问';
@@ -141,12 +141,12 @@ function humanize(res, fallback = '操作失败') {
  * `-c credential.helper=` 先清空继承来的 helper，再接上我们自己的（令牌走环境变量）。
  *
  * 🔴 **无令牌时也必须清空**（2026-09-24 修，用户实测被 GUI 弹窗打断）：
- *    旧实现 `cred === null → return []`，于是任何「**还没填令牌就访问远程**」的路径
- *    （典型：点「测试连接」，或 `remoteHeads`）都会让 git 去用**系统配置的凭据助手** ——
+ *    旧实现 `cred === null → return []`，于是任何“**还没填令牌就访问远程**”的路径
+ *    （典型：点“测试连接”，或 `remoteHeads`）都会让 git 去用**系统配置的凭据助手** ——
  *    Windows 上通常是 Git Credential Manager，它会弹出一个
- *    「Credential Helper Selector」GUI 窗口打断用户。
+ *    “Credential Helper Selector”GUI 窗口打断用户。
  *    ⚠️ `GIT_TERMINAL_PROMPT=0` 只挡得住**终端**输入，**挡不住外部 GUI 助手**。
- *    清空后 git 会直接失败，由 `humanize()` 给出「请先填令牌」的人话提示 —— 这才是正确交互。
+ *    清空后 git 会直接失败，由 `humanize()` 给出“请先填令牌”的人话提示 —— 这才是正确交互。
  */
 function credentialArgs(cred) {
   const reset = ['-c', 'credential.helper='];
@@ -226,7 +226,7 @@ async function getRemoteRaw(dir) {
   return r.ok ? r.stdout.trim() : '';
 }
 
-/** 远程分支清单（--heads）：既用于「测试连接」，也用于判断"远程是空的/分支名不一样" */
+/** 远程分支清单（--heads）：既用于“测试连接”，也用于判断"远程是空的/分支名不一样" */
 async function remoteHeads(dir, { credential = null, timeout = 60000 } = {}) {
   const r = await runGit(dir, [...credentialArgs(credential), 'ls-remote', '--heads', 'origin'], {
     timeout, env: credentialEnv(credential),
@@ -297,7 +297,7 @@ async function gitStatus(dir, { credentialStore = null } = {}) {
       out.lastCommit = (lines[1] || '').trim();
     }
   }
-  // 「令牌已保存？」——面板据此给明确回执（用户最恨「我明明填了却还说没登录」）
+  // “令牌已保存？”——面板据此给明确回执（用户最恨“我明明填了却还说没登录”）
   if (credentialStore && out.remote) {
     try {
       const cred = await credentialStore.get(hostFromUrl(out.remote));
@@ -320,7 +320,7 @@ async function syncOnce(dir, { message = '', branch = '', credential = null } = 
   if (!ensured.ok) return { success: false, error: ensured.error };
 
   const remote = await getRemote(dir);
-  if (!remote) return { success: false, error: '还没有填远程仓库地址（面板里填一次「仓库地址」并保存）' };
+  if (!remote) return { success: false, error: '还没有填远程仓库地址（面板里填一次“仓库地址”并保存）' };
 
   await writeDefaultGitignore(dir);
 
@@ -360,12 +360,12 @@ async function syncOnce(dir, { message = '', branch = '', credential = null } = 
 }
 
 /**
- * 「测试连接」：用当前凭据访问远端（ls-remote），把失败原因在人话层就分清。
- * 价值：用户填完令牌立刻知道能不能用，而不是等 push 时撞一句含糊的「需要登录」。
+ * “测试连接”：用当前凭据访问远端（ls-remote），把失败原因在人话层就分清。
+ * 价值：用户填完令牌立刻知道能不能用，而不是等 push 时撞一句含糊的“需要登录”。
  */
 async function testRemote(dir, { credential = null, timeout = 60000 } = {}) {
   if (!dir) return { success: false, error: '没有指定同步目录' };
-  if (!(await isGitRepo(dir))) return { success: false, error: '这个目录还没建成仓库（先点「保存并连接」）' };
+  if (!(await isGitRepo(dir))) return { success: false, error: '这个目录还没建成仓库（先点“保存并连接”）' };
   const remote = await getRemote(dir);
   if (!remote) return { success: false, error: '还没有填远程仓库地址' };
   const r = await runGit(dir, [...credentialArgs(credential), 'ls-remote', '--heads', 'origin'], {
@@ -384,17 +384,17 @@ async function testRemote(dir, { credential = null, timeout = 60000 } = {}) {
 }
 
 /**
- * 「从远程恢复」（拉取）。⚠️ 破坏性：会把本地改成与远端一致。
+ * “从远程恢复”（拉取）。⚠️ 破坏性：会把本地改成与远端一致。
  *
  * 安全设计（两道闸门，缺一不可）：
  *   1. 非 confirm 调用**只做 fetch 探测**并回报差异（behind/ahead/dirty），不改动工作区。
  *   2. 真拉取前先把本地当前内容 `add -A + commit` 一次 —— 于是 `reset --hard FETCH_HEAD`
- *      不会丢任何东西（旧状态仍在本地 git 历史里），同时也解决了「未跟踪文件挡住 reset」的问题。
+ *      不会丢任何东西（旧状态仍在本地 git 历史里），同时也解决了“未跟踪文件挡住 reset”的问题。
  *      界面文案必须如实说明这一点。
  */
 async function pullOnce(dir, { branch = '', credential = null, confirm = false } = {}) {
   if (!dir) return { success: false, error: '没有指定同步目录' };
-  if (!(await isGitRepo(dir))) return { success: false, error: '这个目录还没建成仓库（先点「保存并连接」）' };
+  if (!(await isGitRepo(dir))) return { success: false, error: '这个目录还没建成仓库（先点“保存并连接”）' };
   const remote = await getRemote(dir);
   if (!remote) return { success: false, error: '还没有填远程仓库地址' };
   let br = branch || (await currentBranch(dir)) || 'main';
@@ -438,7 +438,7 @@ async function pullOnce(dir, { branch = '', credential = null, confirm = false }
     behind = b.ok ? parseInt(b.stdout.trim(), 10) || 0 : 0;
     ahead = a.ok ? parseInt(a.stdout.trim(), 10) || 0 : 0;
   } else {
-    behind = -1;   // 本地还没有任何提交 → 差异无法按提交数计算，一律按「有内容要恢复」处理
+    behind = -1;   // 本地还没有任何提交 → 差异无法按提交数计算，一律按“有内容要恢复”处理
   }
 
   const st = await runGit(dir, ['status', '--porcelain']);
@@ -597,7 +597,7 @@ function registerGitSyncHandlers(deps) {
     } catch (err) { return fail(err); }
   });
 
-  // 「测试连接」：立即验证地址 + 令牌是否真的能用（用户最需要的确定性）
+  // “测试连接”：立即验证地址 + 令牌是否真的能用（用户最需要的确定性）
   ipcMain.handle('git-sync-test', async (event, payload = {}) => {
     try {
       const dir = payload.dir || getDefaultSyncDir();
@@ -615,7 +615,7 @@ function registerGitSyncHandlers(deps) {
     } catch (err) { return fail(err); }
   });
 
-  // 「从远程恢复」：不带 confirm 时只探测差异（只 fetch，不动工作区）
+  // “从远程恢复”：不带 confirm 时只探测差异（只 fetch，不动工作区）
   ipcMain.handle('git-sync-pull', async (event, payload = {}) => {
     try {
       const dir = payload.dir || getDefaultSyncDir();

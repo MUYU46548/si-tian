@@ -70,7 +70,7 @@ export function clampRiverNode(nodes, index, point, heightAt) {
 
   if (target.h <= hi && target.h >= lo) return { point: target, clamped: false, reason: null };
 
-  // 越界：把目标点沿「上游→下游」连线投影到合法高度带的边界上
+  // 越界：把目标点沿“上游→下游”连线投影到合法高度带的边界上
   const a = prev || { x: target.x, y: target.y, h: hi === Infinity ? target.h : hi };
   const b = next || { x: target.x, y: target.y, h: lo === -Infinity ? target.h : lo };
   const bound = target.h > hi ? hi : lo;
@@ -172,7 +172,7 @@ export function distanceToPolyline(px, py, nodes) {
  * 命中一条河流（离点击点最近的、且在容差内的）。
  *
  * 与 `findRiverSegment` 的分工：本函数回答**哪条河**，`findRiverSegment` 回答**哪一段**。
- * 少任何一半都接不上「点河身加拐点」：只有段没河 → 不知道改哪条；只有河没段 → 不知道插哪。
+ * 少任何一半都接不上“点河身加拐点”：只有段没河 → 不知道改哪条；只有河没段 → 不知道插哪。
  *
  * @param {Array<{id:string,nodes?:Array,points?:Array}>} list
  * @param {number} x @param {number} y @param {number} radius 容差（世界单位）
@@ -200,7 +200,7 @@ export function hitTestRiver(list, x, y, radius, nodesOf) {
  *
  * 为什么单独一个函数而不是在组件里 `nodes[i] = p`：拖动期间组件确实要"就地改"
  * 才不卡（见 ScenarioMap 的拖动分支），但**落库前**必须有一份与拖动无关的纯计算 ——
- * 否则「拖动预览」与「最终写入」就是两条算路（撤回来的位置与看到的不一样）。
+ * 否则“拖动预览”与“最终写入”就是两条算路（撤回来的位置与看到的不一样）。
  *
  * @param {Array} nodes @param {number} index
  * @param {{x:number,y:number,h?:number}} point
@@ -223,8 +223,8 @@ export function replaceRiverNode(nodes, index, point) {
  *
  * 🔴 2026-10-16 补：`insertNodeBetween(nodes, index, point, heightAt)` 要的是**线段起点下标**
  * （它做 `splice(index + 1, …)`），但本文件原先只有 `findRiverPointIndex`（最近**顶点**）——
- * 于是「点边上插入节点」这个能力**在几何上根本够不着**：只有恰好点在某个顶点上才知道插哪。
- * 这就是 `insertNodeBetween` 长期**零调用**的直接原因（本项目第五次「零调用死入口」）。
+ * 于是“点边上插入节点”这个能力**在几何上根本够不着**：只有恰好点在某个顶点上才知道插哪。
+ * 这就是 `insertNodeBetween` 长期**零调用**的直接原因（本项目第五次“零调用死入口”）。
  *
  * @param {Array<{x:number,y:number}>} nodes
  * @param {number} x @param {number} y

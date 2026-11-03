@@ -86,7 +86,7 @@ def main():
     except Exception as e:
         print('shot failed:', e)
 
-    # 3) 点「返回」按钮 → 回到世界选择页
+    # 3) 点“返回”按钮 → 回到世界选择页
     cdp.eval("(() => { const b = Array.from(document.querySelectorAll('.scenario-map-container button'))"
              ".find(x => (x.textContent || '').includes('返回')); if (b) b.click(); return 'ok'; })()")
     time.sleep(1.2)

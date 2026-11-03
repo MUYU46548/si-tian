@@ -3,10 +3,10 @@
 """用例 37：P2-2 InteriorView 独立测试（建筑内部专项）
 
 此前 InteriorView 只有 test_25（房间模板单条）与 test_27（跨楼层批量）两个切片，
-没有一条从「进入建筑内部」开始的完整用例。本用例覆盖：
+没有一条从“进入建筑内部”开始的完整用例。本用例覆盖：
 
   a) 基础导航：selectBuilding(building) → viewLevel=interior + 内部画布挂载
-  b) 房间模板：5 个模板齐备且件数与定义一致；实测放置「卧室」→ 整间落位/命名/吸附 + 一条 undo
+  b) 房间模板：5 个模板齐备且件数与定义一致；实测放置“卧室”→ 整间落位/命名/吸附 + 一条 undo
   c) 家具放置：选类型 → 真实点击 → 输入对话框 → 放置；验证网格吸附步长 20 与默认尺寸
   d) 跨楼层批量：准备两层 → 复制 → 目标层 +N 且源层不变、id 不共用；移动 → 源层 -N、选中清空
   e) 楼层切换：两层数据互不串（currentFloorId 切换后当前层家具集合随之变化）
@@ -41,7 +41,7 @@ def goto_interior_view(cdp, building_name=None):
     """导航到建筑内部（模拟从区域地图点击建筑节点下钻）。
 
     返回 { id, name, level, canvas }；失败返回 {'err': ...}
-    ⚠️ 建筑 fixture：真实库缓存里已不再保留测试残留节点「测试建筑」（2026-09-21 清理），
+    ⚠️ 建筑 fixture：真实库缓存里已不再保留测试残留节点“测试建筑”（2026-09-21 清理），
        所以这里必须**自己保证有建筑**（缺则现场建一个），否则用例会退化成对真实数据的隐式依赖。
     """
     okb, _b = ensure_test_building(cdp)
@@ -130,7 +130,7 @@ def sub_navigation(cdp):
         return False, f'画布 props.buildingNode 与选中建筑不一致 {info}', nav['id']
     if info['w'] < 100 or info['h'] < 100:
         return False, f'内部画布尺寸异常 {info}', nav['id']
-    return True, (f'导航通过：building「{nav["name"]}」→ viewLevel=interior，'
+    return True, (f'导航通过：building“{nav["name"]}”→ viewLevel=interior，'
                   f'画布 {info["w"]}×{info["h"]}、scale={info["scale"]:.2f}、已有 {info["floors"]} 层'), nav['id']
 
 
@@ -197,7 +197,7 @@ def sub_room_template(cdp, building_id):
     names = [p['name'] for p in placed['added']]
     for need in ('床', '衣柜', '床头柜', '挂饰'):
         if need not in names:
-            return False, f'模板缺件「{need}」 {names}'
+            return False, f'模板缺件“{need}” {names}'
     bad_snap = [p for p in placed['added'] if p['x'] % 20 or p['y'] % 20]
     if bad_snap:
         return False, f'整间未按网格(20)吸附 {bad_snap}'
@@ -282,7 +282,7 @@ def sub_furniture_place(cdp, building_id):
     if not res.get('opened'):
         return False, f'点击后未弹出放置对话框 {res}'
     if not res.get('clicked'):
-        return False, f'对话框缺少「放置」按钮 {res}'
+        return False, f'对话框缺少“放置”按钮 {res}'
     if res['after'] != res['before'] + 1:
         return False, f'家具未落位（{res["before"]} → {res["after"]}，期望 +1）{res}'
     it = res['item']
@@ -304,7 +304,7 @@ def sub_furniture_place(cdp, building_id):
     undone = floor_furniture(cdp, building_id, fid)
     if undone['n'] != res['before']:
         return False, f'家具未走 undo（撤销后 {undone["n"]}，期望 {res["before"]}）'
-    return True, (f'家具放置通过：点击 → 对话框 → 名称「{it["name"]}」落位 ({it["x"]},{it["y"]})'
+    return True, (f'家具放置通过：点击 → 对话框 → 名称“{it["name"]}”落位 ({it["x"]},{it["y"]})'
                   f'（网格 20 吸附）、类型 {it["type"]}、默认尺寸 {it["width"]}×{it["height"]}、'
                   f'一条 undo 撤销')
 
@@ -513,7 +513,7 @@ def sub_floor_switch(cdp, building_id):
     # 回滚：移除二层专属家具 + 可能的新增层
     _j(cdp, f"(() => {{ {STORE}.undo(); return 'ok'; }})()")
     time.sleep(0.3)
-    return True, (f'楼层切换通过：A「{names_a}」{res["onA"]["n"]} 件 / B「{names_b}」{res["onB"]["n"]} 件，'
+    return True, (f'楼层切换通过：A“{names_a}”{res["onA"]["n"]} 件 / B“{names_b}”{res["onB"]["n"]} 件，'
                   f'currentFloorId 与当前层家具集合同步、二层专属家具不串到一层、楼层 tab 激活互斥')
 
 

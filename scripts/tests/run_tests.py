@@ -16,9 +16,9 @@
 
 数据源（2026-09-21 解耦）：
     默认用 `scripts/tests/fixtures/vault-fixture/*.json` —— **合成 fixture**，由
-    `scripts/tests/fixtures/make_vault_fixture.py` 从真实库「派生 + 脱敏」（结构同构、内容全替换）。
-    这样「用户改自己的世界观数据」不再让用例变红，公开仓库里也不出现任何真实专名/真实地图几何。
-    要验证「真实数据能不能加载」时显式加 --real-data（或 SITIAN_TEST_REAL_VAULT=1）。
+    `scripts/tests/fixtures/make_vault_fixture.py` 从真实库“派生 + 脱敏”（结构同构、内容全替换）。
+    这样“用户改自己的世界观数据”不再让用例变红，公开仓库里也不出现任何真实专名/真实地图几何。
+    要验证“真实数据能不能加载”时显式加 --real-data（或 SITIAN_TEST_REAL_VAULT=1）。
 
 注意：mock 的 saveMapData 不写盘 → 测试对真实 .sitian/ 数据零污染。
 """
@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests'))
 # 🔴 控制台编码（2026-10-11 修）：本编排器的每一条结论都带 ✅/❌，而 Windows 控制台默认是
 #    GBK（cp936）—— 于是**单测失败时**那一句 `print(f'... ❌ {detail}')` 自己抛
 #    UnicodeEncodeError，整个编排器在"报告失败"这一步崩掉，用户看到的是 traceback 而不是结论
-#    （实测：本机没设 PYTHONIOENCODING 时必现）。这与「失败必须看得见」直接冲突，所以在这里
+#    （实测：本机没设 PYTHONIOENCODING 时必现）。这与“失败必须看得见”直接冲突，所以在这里
 #    显式把标准输出降级成 utf-8 + errors='replace'：坏字符只损坏那一行，不能吃掉整轮结果。
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -130,7 +130,7 @@ def disclaimer_ack_key_expr():
 
     🔴 为什么不在这里写死 `'sitian_disclaimer_ack_v1.0.0'`：
        产品升 `DISCLAIMER_VERSION` 时，写死的键会**静默失配** —— 于是每个用例都被
-       首启阻断层盖住，几十个用例**一起红**，看起来像「大回归」而不是「一行键名过期」。
+       首启阻断层盖住，几十个用例**一起红**，看起来像“大回归”而不是“一行键名过期”。
        解析失败返回 None（用例会照常跑，只是首启层会挡住 —— 由 test_83 之外的现象暴露）。
     """
     try:
@@ -147,8 +147,8 @@ def disclaimer_ack_key_expr():
 MOCK_SCRIPT = """<script>
     window.__SITIAN_MOCK__ = true;
     // ===== 剧本卡片墙跳过开关（2026-10-17 P0）=====
-    // 产品默认：点「历史剧本」先见卡片墙（ScenarioPicker），点卡片才进编辑器。
-    // 30+ 个既有用例的路径是「点历史剧本 → ScenarioMap 直接挂载」——
+    // 产品默认：点“历史剧本”先见卡片墙（ScenarioPicker），点卡片才进编辑器。
+    // 30+ 个既有用例的路径是“点历史剧本 → ScenarioMap 直接挂载”——
     // 注入本开关让 enterScenarioMode 跳过卡片墙（同免责声明种子的手法）。
     // test_111（卡片墙自身）用 sessionStorage 开关关掉它并重载（跨导航存活，用例收尾必须清）。
     (function () {
@@ -163,7 +163,7 @@ MOCK_SCRIPT = """<script>
     window.__ALIAS__ = __ALIAS_MAP__;
     window.__alias = function (n) { return (window.__ALIAS__ && window.__ALIAS__[n]) || n; };
     // ===== 免责声明（UI 基座试点，test_83 守）=====
-    // 回归基线默认视为「已确认当前版本条款」—— 否则首启阻断层（模态 + 拦截点击）
+    // 回归基线默认视为“已确认当前版本条款”—— 否则首启阻断层（模态 + 拦截点击）
     // 会盖住整个界面，所有点击类用例一起变红（"一起红"的假失败最难定位）。
     // 🔴 键名与版本号由 harness 从 src/renderer/src/utils/disclaimer.js 解析后注入（见上），
     //    不在这里写死。test_83 用 sessionStorage 的跳过开关清掉该键并重载，专门验证阻断行为。
@@ -175,7 +175,7 @@ MOCK_SCRIPT = """<script>
     // 本 <script> 之后的 <script type="module"> 是 defer 执行，只要这里的安装是同步的，
     // 应用 mount 时 sitianAPI 必然已存在。历史 bug：原来用 async fetch → 若 fetch 解析
     // 慢于应用 mount，`await store.loadGeodata()` 抛 TypeError → store.nodes 恒为 0 →
-    // 用例报「no-world / 树节点未渲染 / 地理数据加载超时」这类**假失败**（跨多个会话反复出现）。
+    // 用例报“no-world / 树节点未渲染 / 地理数据加载超时”这类**假失败**（跨多个会话反复出现）。
     (function () {
       const loadJson = (url) => {
         const x = new XMLHttpRequest();
@@ -206,15 +206,15 @@ MOCK_SCRIPT = """<script>
         getMapData: async (planetId) => ({ success: true, data: mapdata[planetId] ?? mapdata[String(planetId).split('/').pop()] ?? null }),
         saveMapData: async () => ({ success: true }),
         saveScenarios: async () => ({ success: true }),
-        // 「当前底图键」持久化（产品在导入 .map / 切换底图后调它）。mock 里必须存在：
+        // “当前底图键”持久化（产品在导入 .map / 切换底图后调它）。mock 里必须存在：
         // ScenarioMap 用的是 `window.sitianAPI?.setCurrentBaseMapKey` 可选调用，缺了不会报错，
         // 但**导入路径的后半段会被静默截断**（`?.` 不炸，只是什么都不发生）——
-        // 用例若想断言「导入后确实把当前底图记下来了」，就得先有这个口子。
+        // 用例若想断言“导入后确实把当前底图记下来了”，就得先有这个口子。
         setCurrentBaseMapKey: async () => ({ success: true }),
         getCurrentBaseMapKey: async () => ({ success: true, key: '' }),
-        // 默认空 → 保持既有用例行为不变；并记调用次数供 test_84 断言「确实读了库」。
-        // test_84 会在点击「历史剧本」之前塞 window.__scenarioVaultStub，用来验证
-        // 「知识库 → 画布的隐式载入必须只补缺、不许覆盖项目里已有的剧本与底图」。
+        // 默认空 → 保持既有用例行为不变；并记调用次数供 test_84 断言“确实读了库”。
+        // test_84 会在点击“历史剧本”之前塞 window.__scenarioVaultStub，用来验证
+        // “知识库 → 画布的隐式载入必须只补缺、不许覆盖项目里已有的剧本与底图”。
         loadScenarios: async () => {
           window.__scenarioLoadCalls = (window.__scenarioLoadCalls || 0) + 1;
           return { success: true, data: window.__scenarioVaultStub || { version: 2, baseMaps: {}, scenarios: {} } };
@@ -235,7 +235,7 @@ MOCK_SCRIPT = """<script>
         },
         gitSyncCredential: async (p) => {
           window.__gitCalls = window.__gitCalls || [];
-          // 只记录「被调过 + 是否带了令牌」，**不记录令牌内容**（mock 也不碰明文）
+          // 只记录“被调过 + 是否带了令牌”，**不记录令牌内容**（mock 也不碰明文）
           window.__gitCalls.push({ op: 'credential', hasToken: !!(p && p.token) });
           window.__gitState = window.__gitState || {};
           const st = window.__gitState[p && p.dir] || {};
@@ -355,10 +355,10 @@ MOCK_SCRIPT = """<script>
         projectBackupNow: async () => ({ success: true, backedUp: true, backupPath: 'mock/x.sitian' }),
         projectGitSnapshot: async () => ({ success: false, skipped: true, reason: 'mock 环境非 git 仓库' }),
         // 🔴 原始底图来源备份（2026-10-11）：mock 里要**如实回报成功**，
-        //    否则「导入后状态栏有没有说"已留底"」这类断言会在 mock 层被静默跳过。
+        //    否则“导入后状态栏有没有说"已留底"”这类断言会在 mock 层被静默跳过。
         //    真实落盘在 scripts/tests/unit/test_basemap_source_backup.js 里测（那里有真文件系统）。
         // 2026-10-13：save/list/read 三者改成**有状态**（`window.__MOCK_BMSRC`）——
-        //    「留底 → 列清单 → 读回 → 当底图导入」整条恢复链才能在 mock 层真跑（test_101）。
+        //    “留底 → 列清单 → 读回 → 当底图导入”整条恢复链才能在 mock 层真跑（test_101）。
         projectCurrentPath: async () => ({ success: true, filePath: 'mock/项目.sitian', exists: true }),
         saveBaseMapSource: async (payload) => {
           window.__MOCK_BMSRC = window.__MOCK_BMSRC || {};
@@ -408,7 +408,7 @@ MOCK_SCRIPT = """<script>
           return { success: true, path: '/mock/' + ((opts && opts.defaultName) || 'export.txt') };
         },
         exportScenarioFrames: async (payload) => {
-          // 逐年切片批量导出：**累积**记录（与 saveTextFile 的「只记最后一次」不同 ——
+          // 逐年切片批量导出：**累积**记录（与 saveTextFile 的“只记最后一次”不同 ——
           // 批量是一次调用带 N 个文件，用例要断言的是整批内容与清单）
           window.__FRAMES_EXPORTS__ = window.__FRAMES_EXPORTS__ || [];
           window.__FRAMES_EXPORTS__.push(payload || null);
@@ -430,7 +430,7 @@ MOCK_SCRIPT = """<script>
         },
         // ===== 全库只读索引（D1）=====
         // 主进程的真实扫描/解析在 unit/test_vault_index.js 里验（临时目录 + 真文件）；
-        // 这里只给 UI 一个稳定的内存态，用来守「设置面板的入口/按钮/候选列表」接线。
+        // 这里只给 UI 一个稳定的内存态，用来守“设置面板的入口/按钮/候选列表”接线。
         vaultIndexStatus: async () => ({
           success: true, exists: true, root: 'E:/合成测试库',
           builtAt: '2026-10-19T00:00:00.000Z', sizeBytes: 2048,
@@ -443,11 +443,11 @@ MOCK_SCRIPT = """<script>
         vaultEntityCandidates: async () => ({
           success: true, count: 2, byLayer: { city: 1, region: 1 },
           candidates: [
-            { path: '03 设定/11 地理系统/行星/曜川星/霜寒城.md', title: '霜寒城', layer: 'city', layerLabel: '城市', confidence: 'high', reasons: ['有「层级」'], tags: [] },
+            { path: '03 设定/11 地理系统/行星/曜川星/霜寒城.md', title: '霜寒城', layer: 'city', layerLabel: '城市', confidence: 'high', reasons: ['有“层级”'], tags: [] },
             { path: '03 设定/11 地理系统/行星/曜川星/北境.md', title: '北境', layer: 'region', layerLabel: '区域', confidence: 'medium', reasons: ['目录含层级词'], tags: [] },
           ],
         }),
-        // 读料报告（第二刀）：mock 给一份固定分布，供设置面板展示「地图/资料/待人工」
+        // 读料报告（第二刀）：mock 给一份固定分布，供设置面板展示“地图/资料/待人工”
         vaultClassifyReport: async () => ({
           success: true,
           report: {
@@ -531,11 +531,11 @@ class ProcessHandle:
             pass
 
 
-# 🔴 2026-10-27：**代理环境把「等端口」等死的坑**
+# 🔴 2026-10-27：**代理环境把“等端口”等死的坑**
 # 本机装了 HTTP 代理（`HTTP_PROXY=http://127.0.0.1:7897`，NO_PROXY 里只有 localhost/127.0.0.1）。
 # `urllib.request.urlopen()` 默认读环境代理：`http://localhost:5180/` 能不能通，
 # 取决于 NO_PROXY 里有没有它 —— 换个终端（NO_PROXY 不同/没设）就变成
-# 「Vite 明明 400ms 就起来了，脚本等 40 秒然后报『Vite dev server 启动超时』」。
+# “Vite 明明 400ms 就起来了，脚本等 40 秒然后报‘Vite dev server 启动超时’”。
 # 所以：**Vite 用 socket 级探测（直连、不过代理、IPv6 ::1 也认）**；
 # CDP 仍要 HTTP（要确认 `/json` 真能回），但走一个显式空代理的 opener。
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -632,7 +632,7 @@ def teardown_mock():
 
 # 回归视口：**显式设置**，不要用 headless 的默认 756×441。
 # 为什么（2026-09-22 实测）：默认视口下 App 工具栏会折成 3 行（占 180px），画布只剩 ~100px 高，
-# 于是「视口内找一块陆地」这类用例直接找不到候选点（test_24 报 ch:101 / points:[]）、
+# 于是“视口内找一块陆地”这类用例直接找不到候选点（test_24 报 ch:101 / points:[]）、
 # 依赖画布几何的点击用例也贴边失败（test_08）。默认视口比真实窗口小得多，跑出来的失败不代表产品问题，
 # 反而会掩盖真问题（也会让"给用户看的截图"失真，见 skill §121）。
 TEST_VIEWPORT = (1280, 800)
@@ -652,7 +652,7 @@ def apply_viewport(cdp):
 def _harness_open(cdp, first=False):
     """打开 harness 基线项目（见 lib/helpers.py 说明）。
 
-    决策 1 终态（READONLY_WITHOUT_PROJECT=true）下「无项目 = 只读」，而绝大多数用例都要落盘写，
+    决策 1 终态（READONLY_WITHOUT_PROJECT=true）下“无项目 = 只读”，而绝大多数用例都要落盘写，
     所以每个用例重载后都必须在**打开的项目**状态下跑。项目用当前知识库内容播种（mock 内存，零污染）。
     """
     try:
@@ -830,8 +830,8 @@ def main():
                 wait_for(cdp, "!!document.querySelector('.app-layout')", desc='重载')
                 apply_viewport(cdp)
                 # 用例前统一等数据就绪：mock 是异步注入的（geodata + 2MB mapdata），
-                # 只等 .app-layout 会让下一个用例的首个断言撞上空 store，报「no-world /
-                # 树节点未渲染 / 地理数据加载超时」这类**假失败**（历史上曾据此误判
+                # 只等 .app-layout 会让下一个用例的首个断言撞上空 store，报“no-world /
+                # 树节点未渲染 / 地理数据加载超时”这类**假失败**（历史上曾据此误判
                 # test_07/test_12 为回归失败）。超时只告警不中断：由用例自己给出有意义的失败原因。
                 try:
                     wait_for(cdp,

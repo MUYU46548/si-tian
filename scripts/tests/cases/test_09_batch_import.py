@@ -22,7 +22,7 @@ def run(cdp):
     if not cdp.eval("!!document.querySelector('.settings-overlay')"):
         return False, '设置面板未打开'
 
-    # 2. 点「📥 批量导入」按钮
+    # 2. 点“📥 批量导入”按钮
     click_import = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('.settings-overlay button')).find(x => x.textContent.includes('批量导入')); if (!b) return 'no-btn'; b.click(); return 'ok'; })()")
     if click_import != 'ok':
         return False, f'批量导入按钮未找到: {click_import}'
@@ -48,7 +48,7 @@ def run(cdp):
     if not form or '"hasTextarea":false' in str(form):
         return False, f'表单元素异常: {form}'
 
-    # 4. 点击「开始导入」（mock 返回 created）
+    # 4. 点击“开始导入”（mock 返回 created）
     clicked = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('.batch-import-panel button')).find(x => x.textContent.includes('开始导入')); if (!b) return 'no-btn'; b.click(); return 'ok'; })()")
     if clicked != 'ok':
         return False, f'开始导入按钮未找到: {clicked}'

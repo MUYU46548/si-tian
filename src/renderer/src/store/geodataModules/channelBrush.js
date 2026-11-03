@@ -10,9 +10,9 @@
 // 补到行星侧。
 //
 // ── 为什么不是"抄一份剧本侧的实现"（设计取向）────────────────────────────────
-// 剧本侧那两个函数的形态是「**每次 mousemove 都 execute 一次** + 靠 `merge` 合栈」，
+// 剧本侧那两个函数的形态是“**每次 mousemove 都 execute 一次** + 靠 `merge` 合栈”，
 // 每一次移动都会全量拷贝一遍通道数组（26910 格 × 2 次）并整体替换 heightmap 对象。
-// 本模块改用**本项目自己已经验证过的**「抬手 diff」模式
+// 本模块改用**本项目自己已经验证过的**“抬手 diff”模式
 // （`provinceEditing.applyProvinceStroke` / `endProvinceStroke`，2026-09-20 起在生产跑）：
 //
 //   1. `beginChannelStroke` —— 只建一个**非响应式**的差量账本（`Map<格下标, 旧值>`）
@@ -32,7 +32,7 @@
 // ── 唯一写口 ─────────────────────────────────────────────────────────────────
 // 只有 `endChannelStroke` 会写 store（→ 已登记 `writeGate.MEMORY_WRITE_CALLSITES` id 9）。
 // 涂抹期改的是内存里的通道数组，所以 `beginChannelStroke` 也做了首行 `guardWrite`：
-// 没有它，只读态会「涂了一堆、看着生效、其实永不落盘」——正是本项目最忌讳的静默失败。
+// 没有它，只读态会“涂了一堆、看着生效、其实永不落盘”——正是本项目最忌讳的静默失败。
 
 import { guardWrite } from '../writeGate';
 import {

@@ -16,7 +16,7 @@ import {
   currentOwnerRef, isStriped, polityColor, settledCount,
 } from '../utils/scenarioTimeline';
 import {
-  // 多环省份（洞/飞地）+ 「网格派生的环要不要 Chaikin」—— 与画布同一份实现
+  // 多环省份（洞/飞地）+ “网格派生的环要不要 Chaikin”—— 与画布同一份实现
   provinceRings, ringPointsForRender,
 } from '../utils/provinceShape';
 import {
@@ -27,7 +27,7 @@ import {
   polityLabelTier, ringAreaCentroid, POLITY_LABEL_STYLE, PROVINCE_LABEL_STYLE,
   isPlaceholderProvinceName,
 } from '../utils/polityLabels';
-// 剧本标签「该写哪些字、写在哪」的唯一判定 —— 画布与 SVG 导出共用
+// 剧本标签“该写哪些字、写在哪”的唯一判定 —— 画布与 SVG 导出共用
 import { collectScenarioLabels } from '../utils/scenarioLabels';
 // C2（2026-10-29）：国名的走向/折行决策（与画布同一份纯函数，导出不许自己另算）
 import { planPolityShape } from '../utils/labelOrient';
@@ -45,7 +45,7 @@ import {
 import {
   collectBurgLabels, collectRiverLabels, EXPORT_BURG_TIER, EXPORT_RIVER_TIER,
 } from '../utils/scenarioTextPlacement';
-// 文字避让排布（2026-10-26）：画布与导出**同一份**「放不放得下」的判定
+// 文字避让排布（2026-10-26）：画布与导出**同一份**“放不放得下”的判定
 import { layoutLabels, AREA_LABEL_PLACEMENTS } from '../utils/labelLayout';
 // 沿路径排字（2026-10-27）：山系/海域名沿走向排 —— 与画布同一份几何（`textOnPath`）
 import { layoutTextAlongPath, slicePathAroundPoint } from '../utils/textOnPath';
@@ -60,7 +60,7 @@ let exportLabelMeasureCtx = null;
  * 弧度 → 度（SVG 的 `rotate(a cx cy)` 只吃角度；`layoutTextAlongPath` 给的是弧度）。
  *
  * ⚠️ **不要写成内联的 `angle * 180 / Math.PI`**：`test_71` 的源码闸门正是用这个子串
- *    在抓「把参考图 `rotation`（象限索引 0/1/2/3）当弧度换算」的老 bug（转 1 次导出成 57°）。
+ *    在抓“把参考图 `rotation`（象限索引 0/1/2/3）当弧度换算”的老 bug（转 1 次导出成 57°）。
  *    这里把换算收成一个常量，既不给闸门误伤的机会，也让"角度换算"在文件里只出现一次。
  */
 const RAD_TO_DEG = 180 / Math.PI;
@@ -86,7 +86,7 @@ function exportLabelMeasure(text, cand) {
  * 画布标签样式（`utils/polityLabels.js` 的 `*_LABEL_STYLE`）→ SVG `<text>` 属性。
  *
  * 🔴 导出与画布必须同源：旧实现给省名写 `#3c4150`、`opacity 0.85`、无描边，
- *    而画布是**白字 + 3px 深色描边** —— 用户实测「导出的图里文本显示效果很差」。
+ *    而画布是**白字 + 3px 深色描边** —— 用户实测“导出的图里文本显示效果很差”。
  *    字号 / 颜色 / 描边 / 字重全部取同一份常量，两处不会再各说各话。
  */
 function svgLabelTextStyle(style, extra = {}) {
@@ -172,18 +172,18 @@ export function useScenarioExport({
 
   // ⚠️ 这里原先有个 `centroid()`（算术平均）只服务省名落点 —— 已删除：
   //    落点改为 `ringAreaCentroid`（面积加权，与画布同口径）。算术平均会把长条省的名字拽偏，
-  //    而且两份"形心"实现就是下一个「改一处另一处不变」。
+  //    而且两份"形心"实现就是下一个“改一处另一处不变”。
 
   /**
    * 构建**指定剧本 / 指定日期**的 SVG（省略 era/date/year 时 = 当前时间轴状态）。
    * 画布逻辑与 ScenarioMap.render 对齐：底色 → 省份 → EU4 斜线 → 边界 → 名称 → 标签/标记 → 图例。
    *
    * 🔴 2026-10-02 参数化 `(era, year)`（逐年切片导出要用）：此前它只读注入的
-   *    `currentEra`/`currentYear` 两个 ref → 想导出「另一年」只能先改时间轴游标再导出
+   *    `currentEra`/`currentYear` 两个 ref → 想导出“另一年”只能先改时间轴游标再导出
    *    （批量出帧会边导边动用户的时间轴，且无法并行/回放）。参数化后**帧序列与当前游标无关**。
    *    默认值保持原行为（不传 = 当前），既有调用与用例一行不改。
    * 🔴 2026-10-05 再加 `date`（月日精度）：同一年内 6 月前后归属不同，只给年份
-   *    会把「1444-11-11」导成「1444-01-01」的状态（图与时间点不符）。
+   *    会把“1444-11-11”导成“1444-01-01”的状态（图与时间点不符）。
    *    **`date` 优先，`year` 仅作兼容**（裸年份 = 该年 1 月 1 日）。
    */
   function buildScenarioSVG({ legend = true, title = true, scaleBar = true, grid = true, era, date: dateOpt, year: yearOpt } = {}) {
@@ -218,7 +218,7 @@ export function useScenarioExport({
     // 外层平移（世界坐标 → SVG 用户坐标）
     body.push(`<g transform="translate(${Math.round(tx)},${Math.round(ty)})">`);
 
-    // ── 地形底图（2026-10-27）：「导出 = 你看到的那张图」───────────────────────
+    // ── 地形底图（2026-10-27）：“导出 = 你看到的那张图”───────────────────────
     // `rasterLayer` 是 height/temp/prec 时，画布画的是**地形/专题底图**（省份只描边不填色）。
     // 底图本身是栅格（高度图逐格分带设色 + 海深渐变 + 山体阴影），矢量格式里只能内联位图
     // （与行星侧导出、参考底图同一手法）；等深线/海岸线是**几何**，就画成矢量 `<path>`
@@ -296,15 +296,15 @@ export function useScenarioExport({
     }
 
     // 省份填充 + EU4 斜线占领
-    // 🔴 2026-10-01「导出与画布同源」三件事：
+    // 🔴 2026-10-01“导出与画布同源”三件事：
     //   ① 多环省份要把**所有环**拼进一条 path + `fill-rule="evenodd"` —— 旧实现只画
     //      `prov.points`（主环），洞会被填实、飞地直接丢（画布走 `traceProvincePath` + evenodd）。
     //   ② 海域（`kind === 'sea'`）用 `SEA_FILL` —— 旧实现照样按归属上色/回落灰，
     //      导出图里水陆分不开（画布在 `getProvinceColor` 里**最先**判海域）。
     //   ③ 网格派生的环走 `ringPointsForRender`（与画布同一条 Chaikin 规则）。
     //   ④ 地形底图模式下**不填省色**（`!terrainSnap`）：画布在 rasterLayer=height/temp/prec 时
-    //      也是 `drawProvinces({ fills:false })` —— 否则地形被色块盖住（用户原话「看不出地形」）。
-    //      省界仍在后面的 `flags.borders` 段里画 → 这张图是「地形 + 省界 + 文字」。
+    //      也是 `drawProvinces({ fills:false })` —— 否则地形被色块盖住（用户原话“看不出地形”）。
+    //      省界仍在后面的 `flags.borders` 段里画 → 这张图是“地形 + 省界 + 文字”。
     for (let i = 0; i < terrain.length && !terrainSnap; i++) {
       const prov = terrain[i];
       const rings = ringCache[i];
@@ -385,7 +385,7 @@ export function useScenarioExport({
     // 省名（跳过无名 / 自动占位名）
     // 🔴 2026-10-25：占位名判据补上**司天自己的默认名**（`新省份 35`）——
     //    真实 415 省项目里 415 条全是它，旧过滤只认 `Province N` / `feature_`，
-    //    于是导出图上糊满 "新省份 35"（这正是「文本显示效果很差」的主因）。
+    //    于是导出图上糊满 "新省份 35"（这正是“文本显示效果很差”的主因）。
     //    落点用**面积加权形心**（与画布 `ringAreaCentroid` 同口径）。
     if (flags.labels !== false) {
       for (let i = 0; i < terrain.length; i++) {
@@ -404,7 +404,7 @@ export function useScenarioExport({
     }
 
     // 势力名（A8）：**与画布同一份判定**（`utils/scenarioLabels.js`）——
-    // 整图导出等价于画布缩到「全球可见」那一档（`polityLabelTier(1)` → 中档 = 势力名）。
+    // 整图导出等价于画布缩到“全球可见”那一档（`polityLabelTier(1)` → 中档 = 势力名）。
     // 此前 SVG **完全没有这一层**：真实数据 21 个省份名里 20 个是 FMG 的 `Province N`，
     // 会被上面那条过滤器整片跳过 → 导出的图一个字都没有（"拿 SVG 当版图"最致命的一条）。
     const labels = collectScenarioLabels({
@@ -421,7 +421,7 @@ export function useScenarioExport({
     });
     for (const lb of labels) {
       if (lb.kind !== 'polity') continue;        // 省名上面已收进候选（带占位名过滤）
-      // 2026-10-27：与画布同一条「领土面积 → 字号」口径（EU4 参考图），
+      // 2026-10-27：与画布同一条“领土面积 → 字号”口径（EU4 参考图），
       // 上限 = 地图宽度的 10%，所以同一张大图在画布和导出里的相对大小一致。
       let style = POLITY_LABEL_STYLE;
       if (Number.isFinite(lb.area) && lb.area > 0) {
@@ -448,7 +448,7 @@ export function useScenarioExport({
     // 剧本标签 / 标记（2026-10-25：与画布共用 `mapTextStyles`，不再各写一套颜色/字号/描边）
     for (const lb of (s.labels || [])) {
       body.push(svgTextEl(lb.x, lb.y, lb.text || '', svgTextAttrsFromStyle(scenarioLabelTextStyle(lb), {
-        // 画布地名是「左上角锚点」；导出必须同锚点，否则整体偏半个字宽
+        // 画布地名是“左上角锚点”；导出必须同锚点，否则整体偏半个字宽
         'text-anchor': 'start',
         'dominant-baseline': 'alphabetic',
       })));
@@ -466,7 +466,7 @@ export function useScenarioExport({
     // 城镇名 / 河流名（2026-10-25）：与画布共用分级与样式。
     // 导出是"出版档"：只标首都 + 流量前 12 的河 —— 617 个城镇名会把成品图糊满。
     // ⚠️ 默认关闭（`placeNames` 为 false）：FMG 导入的自动地名多为英文，中文地图上会突然冒出
-    //    "Scorcreden / Navarak" 这类标注。用户要时在「图层 → 自动地名」打开。
+    //    "Scorcreden / Navarak" 这类标注。用户要时在“图层 → 自动地名”打开。
     //    默认关闭 → 只认显式 true（其它调用方不传 flags 时也不会偷偷带上）。
     if (flags.labels !== false && flags.placeNames === true) {
       const bm = baseMap.value || {};
@@ -555,7 +555,7 @@ export function useScenarioExport({
 
     // ── 地形注记（2026-10-27）：山系/海域沿走向、平原落点横排 ──────────────────
     // 数据与画布同一份（`baseMap.terrainLabels`）、样式同一份（`terrainLabelTextStyle`）、
-    // 几何同一份（`layoutTextAlongPath`）—— 不接这一步就是「画布上有山名、导出图上没有」，
+    // 几何同一份（`layoutTextAlongPath`）—— 不接这一步就是“画布上有山名、导出图上没有”，
     // 用户导出的成品地形图会白导一次。沿路径的字在 SVG 里是**逐字 `<text>` + rotate**
     // （SVG 1.1 没有"沿路径文字"，与画布逐字 rotate 同一口径）。
     if (flags.terrainNames !== false) {
@@ -742,9 +742,9 @@ export function useScenarioExport({
   }
 
   /**
-   * 构建整批切片帧（**不落盘**）：一次把每个「状态真的变了」的年份渲染成一张图。
+   * 构建整批切片帧（**不落盘**）：一次把每个“状态真的变了”的年份渲染成一张图。
    *
-   * 为什么先整批构建再交给主进程写：主进程只该管「选目录 + 写文件」，渲染与几何
+   * 为什么先整批构建再交给主进程写：主进程只该管“选目录 + 写文件”，渲染与几何
    * 在渲染层做一次就是一份实现。也让用例能拦在 IPC 这一层断言整批内容。
    *
    * @returns {Promise<{files:Array, manifest:Object, stats:Object, warnings:string[]}>}
@@ -760,24 +760,24 @@ export function useScenarioExport({
     let model;
     try {
       // 帧索引只算一次（与对话框共用同一份判定）；书签帧默认必出 → 必须把切片点传进去，
-      // 否则「我在对话框里看到 8 帧、导出来 5 帧」（书签帧被吞）= 同屏两个数字对不上
+      // 否则“我在对话框里看到 8 帧、导出来 5 帧”（书签帧被吞）= 同屏两个数字对不上
       model = collectSliceFrames(tl, slicePoints, { era: scopeEra });
     } catch (e) {
       throw new Error(`切片索引失败：${e.message}`);
     }
     const frames = model.frames;
-    const scopeName = scopeEra === null ? '全部剧本' : `「${tl.scenarios[scopeEra]?.name || ('第 ' + (scopeEra + 1) + ' 段')}」`;
+    const scopeName = scopeEra === null ? '全部剧本' : `“${tl.scenarios[scopeEra]?.name || ('第 ' + (scopeEra + 1) + ' 段')}”`;
     if (!frames.length) throw new Error(`没有可导出的帧（${scopeName}没有剧本起点或易主日期）`);
     if (frames.length > MAX_SLICE_FRAMES) {
       throw new Error(`需要 ${frames.length} 帧（${scopeName}），超过上限 ${MAX_SLICE_FRAMES} —— `
-        + '把范围切到「本剧本」、或先合并/精简剧本');
+        + '把范围切到“本剧本”、或先合并/精简剧本');
     }
 
     const warnings = [];
     const dates = changeDateStats(tl);
     if (dates.synthesized > 0) {
       warnings.push(`${dates.synthesized}/${dates.total} 个易主日期是**自动铺开的合成值**（未录入真实日期），`
-        + '导出的是「按现有剧本推出来的时间轴」，不是史料');
+        + '导出的是“按现有剧本推出来的时间轴”，不是史料');
     }
     if (dates.outOfRange.length) {
       warnings.push(`${dates.outOfRange.length} 个易主日期落在本剧本年代区间之外（帧仍会出，但日期本身该修）`);
@@ -792,7 +792,7 @@ export function useScenarioExport({
       const f = frames[i];
       if (onProgress) onProgress(i + 1, frames.length, f);
       // 🔴 传 `date`（不是 year）：月日精度下同一年可能有多个帧状态，
-      //    只给年份会让「1444-11-11」渲染成「1444-01-01」的状态（图与时间点不符）。
+      //    只给年份会让“1444-11-11”渲染成“1444-01-01”的状态（图与时间点不符）。
       const built = buildScenarioSVG({ era: f.era, date: f.date, year: f.year });
       if (!size) size = { width: built.width, height: built.height };
       if (png) {
@@ -818,7 +818,7 @@ export function useScenarioExport({
         mode: scopeEra === null ? 'all' : 'era',
         era: scopeEra,
         eraName: scopeEra === null ? '' : (tl.scenarios[scopeEra]?.name || ''),
-        // 2026-10-25：scope=all 的含义已收窄为「**当前剧本集**的全部剧本」；
+        // 2026-10-25：scope=all 的含义已收窄为“**当前剧本集**的全部剧本”；
         // 清单里写明是哪一组，外部工具/字幕才不会把它当成整个项目的时间线。
         groupName: String(groupName || ''),
       },
@@ -826,7 +826,7 @@ export function useScenarioExport({
         total: dates.total, explicit: dates.explicit, synthesized: dates.synthesized,
         outOfRange: dates.outOfRange.length,
       },
-      // 每帧「哪一天 / 哪个剧本 / 哪些省易主 / 为什么存在」—— 交给外部 ffmpeg 或做字幕都要它
+      // 每帧“哪一天 / 哪个剧本 / 哪些省易主 / 为什么存在”—— 交给外部 ffmpeg 或做字幕都要它
       frames: frames.map((f, i) => ({
         index: i + 1,
         file: files[i] ? files[i].name : '',
@@ -863,7 +863,7 @@ export function useScenarioExport({
         png, scale, slicePoints, era, groupName,
         onProgress: (i, n, f) => setStatus(`正在生成第 ${i}/${n} 帧（${formatDate(f.date)}）…`, 0),
       });
-      // 目录名用「首个剧本名 + 日期跨度」：一批切片本来就跨多个剧本，
+      // 目录名用“首个剧本名 + 日期跨度”：一批切片本来就跨多个剧本，
       // 只写某一个剧本名会让人以为这批只覆盖那一代（曾写成 frames[0].era → 甲时代 + 乙时代的帧）
       const first = bundle.manifest.frames[0] || {};
       const last = bundle.manifest.frames[bundle.manifest.frames.length - 1] || {};
@@ -971,7 +971,7 @@ export function useScenarioExport({
           }
           const modeLabel = mode === 'replace' ? '替换（现有底图/剧本会被清空）' : '合并（同 key 覆盖）';
           const ok = confirm(
-            `即将导入「${file.name}」\n\n` +
+            `即将导入“${file.name}”\n\n` +
             `底图 ${maps.length} 个：${maps.slice(0, 6).join('、')}${maps.length > 6 ? '…' : ''}\n` +
             `剧本 ${scen.length} 个\n` +
             `导入方式：${modeLabel}\n\n继续？`

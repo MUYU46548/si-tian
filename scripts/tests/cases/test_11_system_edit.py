@@ -3,9 +3,9 @@
 """用例 11：恒星系内编辑（批次 B3）
 链路：进入 曜川星系 单系视图 → 开编辑模式 → 真实事件链拖拽行星编辑轨道
       （系内相对坐标 ↔ 域地图绝对坐标换算断言）→ undo 恢复
-      → 头部「＋ 天体」添加（stub window.prompt，落下一轨道槽公式位）→ undo
-      → 右键空白「＋ 添加天体（此位置）」原地添加 → undo
-      → 右键行星「删除该节点」→ nodes.length -1 → undo 恢复
+      → 头部“＋ 天体”添加（stub window.prompt，落下一轨道槽公式位）→ undo
+      → 右键空白“＋ 添加天体（此位置）”原地添加 → undo
+      → 右键行星“删除该节点”→ nodes.length -1 → undo 恢复
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -41,7 +41,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.system-detail-container')", desc='单系视图挂载')
     time.sleep(0.6)  # 等 fitSystem 初始视野稳定
 
-    # b) 开编辑模式：点头部「✎ 编辑地图」按钮 → editMode=true + 编辑 hint 出现
+    # b) 开编辑模式：点头部“✎ 编辑地图”按钮 → editMode=true + 编辑 hint 出现
     em = _js_obj(cdp, """(() => {
       const el = document.querySelector('.system-detail-container');
       if (!el) return 'no-el';
@@ -127,7 +127,7 @@ def run(cdp):
     if not isinstance(rc, dict) or (rc['x'], rc['y']) != (drag['before']['x'], drag['before']['y']):
         return False, f'undo 未恢复坐标 {rc} (期望 {drag["before"]})'
 
-    # d) 添加天体：点「＋ 天体」→ 模态选「卫星」→ 落下一轨道槽公式位（批次D1 后走 PromptDialog）
+    # d) 添加天体：点“＋ 天体”→ 模态选“卫星”→ 落下一轨道槽公式位（批次D1 后走 PromptDialog）
     add = _js_obj(cdp, """(async () => {
       const el = document.querySelector('.system-detail-container');
       const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('＋ 天体'));
@@ -176,7 +176,7 @@ def run(cdp):
     if not isinstance(ub, dict) or ub['nodes'] != add['before'] or ub['sys'] != add['sysBefore']:
         return False, f'undo 添加未恢复 {ub} (期望 {add["before"]}/{add["sysBefore"]})'
 
-    # d3) 右键空白处 → 「＋ 添加天体（此位置）」原地添加（模态选「空间站」）
+    # d3) 右键空白处 → “＋ 添加天体（此位置）”原地添加（模态选“空间站”）
     spot_info = _js_obj(cdp, """(() => {
       const el = document.querySelector('.system-detail-container');
       const st = el.__vueParentComponent.setupState;
@@ -245,7 +245,7 @@ def run(cdp):
         return False, '添加后右键菜单未关闭'
     cdp.eval("document.querySelector('#app').__vue_app__._instance.setupState.store.undo()")  # 清场恢复
 
-    # e) 右键行星 → 「🗑 删除该节点」→ nodes.length -1，undo 恢复
+    # e) 右键行星 → “🗑 删除该节点”→ nodes.length -1，undo 恢复
     dele = _js_obj(cdp, """(() => {
       const el = document.querySelector('.system-detail-container');
       const st = el.__vueParentComponent.setupState;

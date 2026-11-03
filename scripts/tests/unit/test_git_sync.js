@@ -3,7 +3,7 @@
  * Node 单元测试：一键同步（src/main/handlers/gitSyncHandler.js）
  *
  * 为什么单独一层：CDP 用例里 `window.sitianAPI` 是 mock，主进程的真实 git 行为**零覆盖**。
- * 而「同步」一旦出错后果是用户数据没推上去（以为备份了其实没有），必须有真实落地的闸门。
+ * 而“同步”一旦出错后果是用户数据没推上去（以为备份了其实没有），必须有真实落地的闸门。
  *
  * 手法：**用本地 bare 仓库当远程**（`git init --bare`）→ push 走本地文件协议，
  * 不需要网络、不需要凭证、可在 CI/离线环境跑，但走的是**真实 git**（不是 mock）。
@@ -23,7 +23,7 @@ const H = require(path.join(ROOT, 'src', 'main', 'handlers', 'gitSyncHandler.js'
 
 // 🔴 测试必须**完全隔离用户的全局 git 配置**（2026-09-24 修，实测踩到）：
 //    `git credential approve / fill` 会去用**用户系统里配置的凭据助手** —— Windows 上通常是
-//    Git Credential Manager，它会弹出「Credential Helper Selector」GUI 窗口**打断用户**，
+//    Git Credential Manager，它会弹出“Credential Helper Selector”GUI 窗口**打断用户**，
 //    还可能把测试用的假令牌写进用户的凭据库。
 //    做法：把 `GIT_CONFIG_GLOBAL` 指到测试自己的临时配置（含提交必需的 user.name/email），
 //    再用 `GIT_CONFIG_NOSYSTEM=1` 忽略系统级配置 —— 本进程后续所有 git 调用都不再碰用户环境。
@@ -209,7 +209,7 @@ async function main() {
     assert(s.lastCommit === '失败路径', `lastCommit 不对：${s.lastCommit}`);
     const empty = await H.gitStatus(path.join(TMP, 'never-inited'));
     eq(empty.isRepo, false, '未初始化目录的 isRepo');
-    return `待同步 ${s.dirty} 项 / 最后提交「${s.lastCommit}」`;
+    return `待同步 ${s.dirty} 项 / 最后提交“${s.lastCommit}”`;
   });
 
   await check('凭据：只经 stdin 交给 git，且不落进 .git/config', async () => {
@@ -225,7 +225,7 @@ async function main() {
 
   // ── 6. 令牌注入机制（本次事故的修复点）──────────────────────────────────
   // 旧实现只把令牌交给系统凭据管理器 → 推送时取不回来（用户填了令牌仍被要求登录）。
-  // 现在用「临时 credential helper + 环境变量」把令牌直接喂给 git。这里用 `git credential fill`
+  // 现在用“临时 credential helper + 环境变量”把令牌直接喂给 git。这里用 `git credential fill`
   // 验证机制本身（无需网络），并断言令牌**不进 argv、不出现在返回值里**。
   await check('令牌注入：credential helper + 环境变量，git 能取到且 argv 里没有令牌', async () => {
     const TOKEN = 'ghp_fake_token_for_credential_helper_test';
@@ -291,13 +291,13 @@ async function main() {
     return s;
   });
 
-  await check('humanize：区分「令牌被拒」与「没找到凭据」（本次事故的关键）', async () => {
+  await check('humanize：区分“令牌被拒”与“没找到凭据”（本次事故的关键）', async () => {
     const a = H.humanize({ stderr: 'remote: Invalid username or password.\nfatal: Authentication failed for ...' });
     assert(/令牌/.test(a), `认证失败应指向令牌：${a}`);
     const b = H.humanize({ stderr: "fatal: could not read Username for 'https://github.com': terminal prompts disabled" });
     assert(/需要登录|令牌/.test(b), `缺凭据应指向"去填令牌"：${b}`);
     assert(a !== b, '两种情形必须给出不同指引');
-    return `被拒 →「${a.slice(0, 22)}…」；缺凭据 →「${b.slice(0, 22)}…」`;
+    return `被拒 →“${a.slice(0, 22)}…”；缺凭据 →“${b.slice(0, 22)}…”`;
   });
 
   // ── 7. 测试连接（ls-remote）─────────────────────────────────────────────
@@ -375,7 +375,7 @@ async function main() {
     return `落后 ${probe.behind} 项 → 内容与远端一致，本地改动留在分支 ${pulled.rescueBranch}`;
   });
 
-  await check('拉取：已是最新时如实回报「远程没有新内容」', async () => {
+  await check('拉取：已是最新时如实回报“远程没有新内容”', async () => {
     const r = await H.pullOnce(WORK, { confirm: false });
     eq(r.success, true, `应成功探测：${r.error}`);
     eq(r.pulled, false, '不该有内容可拉');
@@ -410,7 +410,7 @@ async function main() {
   }
 
   await fsp.rm(TMP, { recursive: true, force: true }).catch(() => {});
-  // 顺手清掉为「隔离用户全局 git 配置」建的临时配置文件
+  // 顺手清掉为“隔离用户全局 git 配置”建的临时配置文件
   await fsp.rm(TEST_GITCONFIG, { force: true }).catch(() => {});
   return failed.length ? 1 : 0;
 }

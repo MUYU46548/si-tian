@@ -9,13 +9,13 @@
 
   这一版把河名接上：
     · `collectRiverLabels` 把折线一并带出（只给中点就只能写水平字）；
-    · 排布（`labelLayout`）仍决定「放在哪一段河道附近」——不许沿整条河的中点乱跑；
+    · 排布（`labelLayout`）仍决定“放在哪一段河道附近”——不许沿整条河的中点乱跑；
     · 绘制时先把落点**投到河道上**、取它两侧一段（`slicePathAroundPoint`），再沿这段逐字排；
     · 弯太急导致缺字时**退回水平字**（缺字的名字比横排更难读）。
 
 判据（像素级，不靠读代码猜）：
   1. 排布结论里 river 条目带 `path`（折线真的传到了绘制层）；
-  2. 45° 斜河的河名：开关「自动地名」的前后像素差 → 变化像素的主轴斜率 |slope| ≥ 0.55、
+  2. 45° 斜河的河名：开关“自动地名”的前后像素差 → 变化像素的主轴斜率 |slope| ≥ 0.55、
      纵向跨度 ≥ 30px（水平字的主轴斜率≈0、纵向只有一行字高）；
   3. 反向对照（同一套算子）：把河改成水平直线，同一测法 slope ≤ 0.25、纵向跨度 ≤ 26px
      —— 证明判据能区分"沿河"与"横排"，不是空转；
@@ -44,12 +44,12 @@ def _read(rel):
     return io.open(os.path.join(os.path.dirname(__file__), '..', '..', '..', rel), encoding='utf-8').read()
 
 
-# 同一个测量算子：开着/关掉「自动地名」各抓一帧，差集就是这批字；
+# 同一个测量算子：开着/关掉“自动地名”各抓一帧，差集就是这批字；
 # 再对差集做最小二乘 → 主轴斜率（水平字≈0，45° 沿河字≈1）。
 MEASURE_JS = r"""(async () => {
   const SM = __SM__;
   const tick = (ms) => new Promise(r => setTimeout(r, ms || 0));
-  // 相机：让「可见比例」落在 near 档（ratio≈0.5）—— 河名在 mid/far 档刻意不标
+  // 相机：让“可见比例”落在 near 档（ratio≈0.5）—— 河名在 mid/far 档刻意不标
   // （2026-10-27 起档位按可见比例判定，不是绝对 scale；见 utils/labelZoom.js）。
   // 同时把河道中点放到视口中心，否则字排在屏外、差集里一个像素都没有。
   const MAP_W = 580;
@@ -234,13 +234,13 @@ def run(cdp):
     if 'drawRiverNameAlongPath' not in labels_src:
         fails.append('文字层缺 drawRiverNameAlongPath（沿河排字入口）')
     if 'layout.placed.length < chars.length' not in labels_src:
-        fails.append('缺少「字没排全就退回水平字」的保护（缺字的名字比横排更难读）')
+        fails.append('缺少“字没排全就退回水平字”的保护（缺字的名字比横排更难读）')
 
     if fails:
         return False, '；'.join(fails)[:900] + ' | 实测：' + json.dumps(
             {'diag': diag, 'flat': flat}, ensure_ascii=False)[:600]
 
-    # 可选截图：人眼看「字是不是真的顺着河道弯」（对 45° 斜河最直观）
+    # 可选截图：人眼看“字是不是真的顺着河道弯”（对 45° 斜河最直观）
     shot_dir = os.environ.get('SITIAN_SHOT_DIR')
     if shot_dir:
         import base64

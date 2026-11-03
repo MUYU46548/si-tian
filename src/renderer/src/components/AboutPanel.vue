@@ -26,9 +26,9 @@
         <!-- 快速开始 -->
         <section class="about-section">
           <h3><Icon name="book" :size="16" style="margin-right:6px"/>快速开始</h3>
-          <!-- 🔴 2026-10-11：这段文案此前停在「五层视图 + 数据全在 Obsidian」的时代 ——
+          <!-- 🔴 2026-10-11：这段文案此前停在“五层视图 + 数据全在 Obsidian”的时代 ——
                既没提项目文件（终态下无项目 = 只读，不建项目什么都改不了），也没提剧本/省份。
-               暮雨的原话是「司天内没有教程…很简陋没什么用」。手册本体在 GuidePanel（14 节，
+               暮雨的原话是“司天内没有教程…很简陋没什么用”。手册本体在 GuidePanel（14 节，
                可搜索），这里只留一个入口 + 四句话，别再把两处文案各写一份。 -->
           <div class="guide-entry">
             <Button variant="outline" size="sm" data-testid="about-open-guide" @click="openGuide">
@@ -39,7 +39,7 @@
           <ul class="guide-list">
             <li><b>先建项目</b>：编辑都写进项目文件（<code>.sitian</code>）；没有项目时是<b>只读浏览</b>，画布改不动</li>
             <li><b>七层视图</b>：世界 → 星域 → 星系总览 → 单系详情 → 行星 → 区域 → 建筑内部</li>
-            <li><b>历史剧本</b>：世界选择页的「历史剧本」进去画省份、排时间轴、导出切片</li>
+            <li><b>历史剧本</b>：世界选择页的“历史剧本”进去画省份、排时间轴、导出切片</li>
             <li><b>撤销/重做</b>：Ctrl+Z / Ctrl+Y 全程可回溯（一整批切分也只算一条）</li>
           </ul>
         </section>
@@ -164,8 +164,8 @@
         <section class="about-section">
           <h3><Icon name="shield" :size="16" style="margin-right:6px"/>免责声明</h3>
           <p class="description">
-            司天是**完全本地**的桌面工具：不接入云端 AI、没有账号、没有遥测，仅「检查更新」与
-            「你自配的 Git 同步」两处联网。完整条款共 13 节，其中
+            司天是**完全本地**的桌面工具：不接入云端 AI、没有账号、没有遥测，仅“检查更新”与
+            “你自配的 Git 同步”两处联网。完整条款共 13 节，其中
             第 3 节（内容合规责任）与第 6 节（数据安全与备份）尤其建议逐字阅读。
           </p>
           <div class="disclaimer-row">
@@ -220,7 +220,7 @@ const guideCount = guideStats().sections;
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
 const copiedVersion = ref(false);
 
-// 免责声明：关于面板只负责「入口 + 当前确认状态」，弹窗本体在 App.vue（唯一实例，
+// 免责声明：关于面板只负责“入口 + 当前确认状态”，弹窗本体在 App.vue（唯一实例，
 // 首启阻断与随时查看共用，避免两份实现漂移）。
 function openDisclaimer() {
   window.dispatchEvent(new CustomEvent('sitian:open-disclaimer'));
@@ -277,7 +277,7 @@ async function doUninstall() {
       // 开发模式或找不到卸载器：给出手动指引
       uninstallHint.value = result?.dev
         ? '当前为开发模式，未安装到系统，无需卸载。发布版中此按钮将启动系统卸载程序。'
-        : (result?.error || '未能定位卸载程序，请通过「设置 → 应用 → 司天 → 卸载」手动卸载。');
+        : (result?.error || '未能定位卸载程序，请通过“设置 → 应用 → 司天 → 卸载”手动卸载。');
       uninstalling.value = false;
     }
     // success=true 时主进程已打开卸载器，模态可保留或关闭均可
@@ -305,7 +305,7 @@ defineExpose({ open, close });
 
 <style scoped>
 /* 免责声明入口（试点）：布局用司天自己的 scoped CSS，
-   只把「按钮本体」交给 shadcn-vue —— 试点范围刻意收窄，降低回归面。 */
+   只把“按钮本体”交给 shadcn-vue —— 试点范围刻意收窄，降低回归面。 */
 .disclaimer-row {
   display: flex;
   align-items: center;
@@ -413,7 +413,7 @@ defineExpose({ open, close });
   margin: 0;
 }
 
-/* 使用手册入口（2026-10-11）：按钮 + 一行说明，说明里写清「能搜、多少节」，
+/* 使用手册入口（2026-10-11）：按钮 + 一行说明，说明里写清“能搜、多少节”，
    否则用户不会点开一个不知道有什么的东西 */
 .guide-entry {
   display: flex;

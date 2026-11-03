@@ -13,9 +13,9 @@ const state = reactive({
   snap: '', // 吸附状态描述，空串隐藏
   // 保存状态（B5，2026-09-24）：{ kind: 'ok'|'warn'|'err'|'busy', text, title } | null
   saveState: null,
-  // 「有改动还没进磁盘」（= projectStore 的 dirty）与最后一次成功落盘的时间（2026-10-17）。
+  // “有改动还没进磁盘”（= projectStore 的 dirty）与最后一次成功落盘的时间（2026-10-17）。
   // 🔴 只有 saveState 是不够的：它只表达"某次保存尝试的结果"，表达不了
-  //    「上次保存成功之后用户又改了 20 分钟」—— 那正是「保存诚实」的缺口。
+  //    “上次保存成功之后用户又改了 20 分钟”—— 那正是“保存诚实”的缺口。
   savePending: false,
   savedAt: '',
 });
@@ -25,7 +25,7 @@ const state = reactive({
  *
  * 为什么必须放**常驻状态栏**而不是只在项目面板里：
  *   面板可能是关着的，用户在行星图里连着画几小时时，落盘失败**完全看不出来**
- *   （旧实现把失败写进项目面板的 statusLine，5 秒后自动回 idle）。而「我这几小时的成果到底存没存」
+ *   （旧实现把失败写进项目面板的 statusLine，5 秒后自动回 idle）。而“我这几小时的成果到底存没存”
  *   是用户最需要常驻可见的信息。失败状态**不自动消失**，由用户下一次成功保存来清。
  */
 export function setSaveState(next) {
@@ -33,7 +33,7 @@ export function setSaveState(next) {
 }
 
 /**
- * 「有改动还没进磁盘」标记（2026-10-17）—— 由 `store/projectStore` 跟随 `dirty` 写入。
+ * “有改动还没进磁盘”标记（2026-10-17）—— 由 `store/projectStore` 跟随 `dirty` 写入。
  * 语义：true = 内存里比磁盘新（自动保存窗口内也算 true，那是事实）。
  */
 export function setSavePending(pending) {

@@ -3,24 +3,24 @@
 """用例 110：河流的**可发现性**与**可删性**（2026-10-17，暮雨实测三条）
 
 用户原话（三条，都指向"做不到"而不是"做得不好"）：
-  ① 「工具「更多」没找到按轮廓生成地形，不知道点哪个」
-  ② 「河流逐条点根本点不中」
-  ③ 「之前画的测试河流无法删除」
+  ① “工具“更多”没找到按轮廓生成地形，不知道点哪个”
+  ② “河流逐条点根本点不中”
+  ③ “之前画的测试河流无法删除”
 
 定性（都是**条件式隐藏 / 门控过窄**造成的"能力存在但用户够不着"）：
-  ① 第一版「按轮廓生成地形」的显示条件里含 `!baseMapHasHeightmap` ——
+  ① 第一版“按轮廓生成地形”的显示条件里含 `!baseMapHasHeightmap` ——
      于是**正好在用户找它的时候把它藏了**（他的底图有导入的高度图）。
      这是本项目第 N 次同一类错误：**条件式隐藏 = 等于没做**。
   ②③ 河流的命中判定与 `Delete` 处理此前**只在河流工具里**（`tool === 'river'`）。
-     用户用「选择」工具点河 = 什么都没发生；`selectedRiver` 为空 → `Delete` 不删。
+     用户用“选择”工具点河 = 什么都没发生；`selectedRiver` 为空 → `Delete` 不删。
      → 画错的河**没法删**。
 
 本用例守四件事（全部走**真事件**，不直接改 setupState）：
   a 源码闸门：按钮条件里**不许**再出现"没有高度图"这种把按钮藏掉的条件；
      选择工具的点击分支里必须有河流命中；`Delete` 处理必须覆盖非河流工具。
-  b 按钮真能找到：切到「更多」面板后，`[data-testid="basemap-synthesize-terrain"]`
+  b 按钮真能找到：切到“更多”面板后，`[data-testid="basemap-synthesize-terrain"]`
      存在、**有可见文字**、可点。
-  c 河真能点中：在「选择」工具下对河身中点派发真 mousedown/up/click → `selectedRiverId` 命中。
+  c 河真能点中：在“选择”工具下对河身中点派发真 mousedown/up/click → `selectedRiverId` 命中。
   d 河真能删：按 `Delete` → store 里那条河消失，另一条**不受影响**（不能一把全删）。
 """
 import os
@@ -79,19 +79,19 @@ def source_gates():
     else:
         seg = smv[i:i + 400]
         if 'baseMapHasHeightmap' in seg and '!' not in seg.split('baseMapHasHeightmap')[0][-3:]:
-            fails.append('🔴 按钮条件里仍用「没有高度图」来隐藏 —— 正好在用户找它时藏掉')
+            fails.append('🔴 按钮条件里仍用“没有高度图”来隐藏 —— 正好在用户找它时藏掉')
 
     # a② 选择工具分支里必须有河流命中（命中函数可能在 SFC，也可能在同目录 riverGeometry.js）
     j = smv.find("if (tool.value === 'select') {\n    // 🔴 2026-10-17")
     if j < 0 and 'hitTestRiver(' not in smv and 'hitTestRiver(' not in rivergeo:
-        fails.append('🔴 「选择」工具里没有河流命中判定（`hitTestRiver`）—— 点不中河')
+        fails.append('🔴 “选择”工具里没有河流命中判定（`hitTestRiver`）—— 点不中河')
     # a③ Delete 必须覆盖非河流工具
     # 2026-10-31：键盘处理搬进 `scenario/interaction/keyboard.js` —— 判据跟着搬家
     _kbd_path = os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'interaction', 'keyboard.js')
     with open(_kbd_path, encoding='utf-8') as f:
         kbd = _code_only(f.read())
     if 'tool.value !== \'river\' && selectedRiver.value' not in kbd:
-        fails.append('🔴 `Delete` 只在河流工具里生效 —— 在「选择」里选中河也删不掉')
+        fails.append('🔴 `Delete` 只在河流工具里生效 —— 在“选择”里选中河也删不掉')
     return fails
 
 
@@ -135,7 +135,7 @@ JS_MAKE = r"""
   sc.baseMapKey = KEY;
   if (typeof sc.onBaseMapChange === 'function') sc.onBaseMapChange();
   await new Promise(r => setTimeout(r, 320));
-  // 真按钮：切到「选择」
+  // 真按钮：切到“选择”
   const sel = Array.from(document.querySelectorAll('button'))
     .find(b => (b.textContent || '').includes('选择 (V)') || (b.textContent || '').trim() === '选择');
   if (sel) sel.click();
@@ -201,7 +201,7 @@ def run(cdp):
     eval_json(cdp,
               "(() => { const b = Array.from(document.querySelectorAll('button'))"
               ".find(x => (x.textContent || '').includes('历史剧本')); if (b) b.click(); return 'ok'; })()",
-              required=None, desc='点「历史剧本」')
+              required=None, desc='点“历史剧本”')
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=25, desc='剧本模式挂载')
     time.sleep(1.2)
 
@@ -212,15 +212,15 @@ def run(cdp):
     if mk.get('rivers') != 2:
         fails.append(f"🔴 测试河没造出来（{mk.get('rivers')} 条，应为 2）")
     if mk.get('tool') != 'select':
-        fails.append(f"🔴 没切到「选择」工具（tool={mk.get('tool')}）")
+        fails.append(f"🔴 没切到“选择”工具（tool={mk.get('tool')}）")
 
     # b 按钮真能找到
-    btn = _ev(cdp, JS_BUTTON, '「更多」里的按轮廓生成地形')
+    btn = _ev(cdp, JS_BUTTON, '“更多”里的按轮廓生成地形')
     if not isinstance(btn, dict) or btn.get('__err__'):
         fails.append(f'🔴 按钮探测失败：{btn}')
     else:
         if not btn.get('exists'):
-            fails.append('🔴 「更多」里找不到 `basemap-synthesize-terrain` 按钮')
+            fails.append('🔴 “更多”里找不到 `basemap-synthesize-terrain` 按钮')
         if not (btn.get('text') or '').strip():
             fails.append('🔴 按钮没有可见文字（只靠图标 = 用户找不到，暮雨实测过这个坑）')
         if btn.get('disabled'):
@@ -232,16 +232,16 @@ def run(cdp):
         fails.append(f'🔴 点选/删除求值失败：{cd}')
         return False, ' | '.join(fails)
     if cd.get('selected') != 'river_test1':
-        fails.append(f"🔴 「选择」工具点河没选中（selectedRiverId={cd.get('selected')}）"
-                     " —— 用户报的「逐条点根本点不中」"
+        fails.append(f"🔴 “选择”工具点河没选中（selectedRiverId={cd.get('selected')}）"
+                     " —— 用户报的“逐条点根本点不中”"
                      "（判据用的是 mousedown+1px 抖动、不派发 click，即真人的手）")
     if not cd.get('rowExists'):
         fails.append('🔴 选中河之后没有出现操作栏（`river-selected-row`）—— 用户看不到任何可操作的入口')
     if not (cd.get('deleteText') or '').strip():
-        fails.append('🔴 操作栏里没有可见的「删除这条河」按钮')
+        fails.append('🔴 操作栏里没有可见的“删除这条河”按钮')
     if cd.get('after') != 1:
         fails.append(f"🔴 删除没生效（{cd.get('before')} → {cd.get('after')}）"
-                     " —— 用户报的「测试河流无法删除」")
+                     " —— 用户报的“测试河流无法删除”")
     ids = cd.get('leftIds') or []
     if 'river_test2' not in ids:
         fails.append(f'🔴 删一条时把别的河也删了（剩 {ids}）—— 必须只删选中的那条')

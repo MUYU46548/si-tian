@@ -3,7 +3,7 @@
 """用例 153：**文化 / 宗教 / 势力派生**（P0-4，2026-10-25）
 
 背景：一张自建底图切完省之后，用户面对的是几百块没有文化、没有势力归属的空省。
-P0-4 的拍板是「**自动建势力 + 自动分归属，但永远保留手动编辑能力**」。
+P0-4 的拍板是“**自动建势力 + 自动分归属，但永远保留手动编辑能力**”。
 
 本用例守七类判据：
   a 源码闸门（剥注释）：派生只有 `utils/cultureDerive.js` 一份；面板只调 store；
@@ -11,7 +11,7 @@ P0-4 的拍板是「**自动建势力 + 自动分归属，但永远保留手动�
   b 端到端：造陆 80 省 → 生成地形 → 建剧本 → 打开派生面板 → 预览 → 生成文化/宗教 →
     逐格网格有值、每省有文化；一次 undo 全退。
   c **手改保护**：派生 → 手改一省/一格 → 再派生（只补空）→ 手改不被覆盖。
-  d **覆盖模式**：切「覆盖已有」→ 手改被替换（且弹确认）；撤销回手改状态。
+  d **覆盖模式**：切“覆盖已有”→ 手改被替换（且弹确认）；撤销回手改状态。
   e 势力：补空派生建出势力并给无主省铺初始归属；已有归属的省不动；一条 undo。
   f 规模：400 省底图上派生 < 8s（逐格规模 7k 格量级）。
   g 只读态：派生入口被拒（不写任何数据）。
@@ -106,7 +106,7 @@ def source_gates():
     if 'store.applyPolityDerive' not in panel:
         fails.append('🔴 派生面板没有势力派生入口')
     if 'data-testid="basemap-derive-culture"' not in smv:
-        fails.append('🔴 缺少「派生」按钮')
+        fails.append('🔴 缺少“派生”按钮')
     for tid in ('dgen-preview', 'dgen-apply-culture', 'dgen-apply-polity',
                 'dgen-strategy-fill', 'dgen-strategy-overwrite', 'dgen-seed'):
         if tid not in panel:
@@ -214,7 +214,7 @@ JS_HAND_EDIT = r""" (async () => {
 
 JS_REFILL = r""" (async () => {
   const s = __STORE__, K = __KEY__;
-  // 重新点一次「只补空」
+  // 重新点一次“只补空”
   const btn = document.querySelector('[data-testid="dgen-apply-culture"]');
   if (btn) btn.click();
   await new Promise(r => setTimeout(r, 900));
@@ -330,13 +330,13 @@ def run(cdp):
     if opened.get('__err__') or not opened.get('clicked'):
         return False, f'派生入口不可用：{opened}'
     if not opened.get('panel'):
-        fails.append('🔴 点了「派生」面板没打开')
+        fails.append('🔴 点了“派生”面板没打开')
     if not opened.get('hasPreview'):
         fails.append('🔴 面板没有预览（用户看不到会派生成什么）')
     else:
         notes.append(f"预览：{opened.get('previewText', '')[:80]}")
     if not (opened.get('cultureBtn') and opened.get('polityBtn')):
-        fails.append('🔴 面板缺少「生成文化/宗教」或「生成势力与归属」按钮')
+        fails.append('🔴 面板缺少“生成文化/宗教”或“生成势力与归属”按钮')
 
     applied = _ev(cdp, JS_APPLY_CULTURE, '生成文化/宗教（只补空）')
     if applied.get('__err__'):

@@ -11,7 +11,7 @@
   **遇 Proxy 一律抛 "An object could not be cloned."** → **每一次项目保存都失败**（连空项目也存不下），
   `.sitian` 文件永远停在新建时那个 367 字节空壳。失败只写进 `lastError` + 底部状态栏，
   而 `StatusBar.vue` 的根节点是 `v-if="state.visible"` → **世界选择页（没有画布）里那条提示根本不在 DOM 中**。
-  合成的症状就是暮雨那句「导入过、看着有内容、重开是空的」。
+  合成的症状就是暮雨那句“导入过、看着有内容、重开是空的”。
 
 为什么 84 个用例全绿却漏了它（本用例存在的理由）：
   CDP 用例的 `window.sitianAPI.projectSave` 是 **mock**，旧实现只做
@@ -24,7 +24,7 @@
   g0 源码守卫：saveProject 的 IPC 实参必须过 `toIpcPlain`（且不许再直接传 `withSnapshot`）；
      `toIpcPlain`/`jsonSafeReplacer` 单一事实源；MOCK 必须真做 `structuredClone`。
   g1 反向探针：mock 的序列化边界**确实生效**（reactive 代理必被拒、纯 JSON 必通过）——
-     没有这一段，g2 可能是「空转通过」（边界根本不检查，自然什么都过）。
+     没有这一段，g2 可能是“空转通过”（边界根本不检查，自然什么都过）。
   g2 端到端：项目态新建实体 → 等 800ms 防抖 → 载荷真的落进项目文件
      （mock 项目文件里出现新实体 + `dirty=false` + `saveStatus='saved'`）。
 """
@@ -50,7 +50,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再判子串 —— 本仓五次踩到「注释里的字样被当成实现」。"""
+    """剥掉注释后再判子串 —— 本仓五次踩到“注释里的字样被当成实现”。"""
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
     src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
     return re.sub(r'(?m)//[^\n]*', '', src)
@@ -73,7 +73,7 @@ def sub_source_guards(cdp):
         bad.append('saveProject 的 IPC 实参没有过 toIpcJson（落盘文本必须走统一下载口）')
     if not re.search(r'export function toIpcJson\(', schema):
         bad.append('projectSchema 没有导出 toIpcJson（落盘文本的下载口）')
-    # ② 反证：不许再回到「直接传项目对象」的旧写法（代理不可克隆 / 二次 stringify）
+    # ② 反证：不许再回到“直接传项目对象”的旧写法（代理不可克隆 / 二次 stringify）
     if re.search(r'project:\s*withSnapshot\b', proj):
         bad.append('saveProject 又直接把 withSnapshot 交给 IPC 了（代理不可克隆）')
     if re.search(r'project:\s*toIpcPlain\(withSnapshot\)', proj):

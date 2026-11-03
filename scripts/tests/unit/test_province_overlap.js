@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：新建省份的「压叠闸门」纯函数（src/renderer/src/utils/provinceOverlap.js）
+ * Node 单元测试：新建省份的“压叠闸门”纯函数（src/renderer/src/utils/provinceOverlap.js）
  *
- * 为什么必须有这一层：CDP 用例只能看「store 有没有拒」这个结论；度量本身错了
+ * 为什么必须有这一层：CDP 用例只能看“store 有没有拒”这个结论；度量本身错了
  * （恒 0 → 永远不拦；把点数组当省份传 → `pointInProvince` 恒 false → 假绿）在端到端里
  * 表现完全一样。这里直接对度量下断言。
  *
@@ -157,7 +157,7 @@ async function main() {
     const asProv = measureProvinceOverlap(candProv, [a]);
     eq(asArray.total, asProv.total, '格数一致');
     eq(asArray.occupied, asProv.occupied, '占用格数一致');
-    // 🔴 反向判据：把点数组直接当省份传进 `pointInProvince` 会恒 false —— 这里锁住「不会」
+    // 🔴 反向判据：把点数组直接当省份传进 `pointInProvince` 会恒 false —— 这里锁住“不会”
     assert(asArray.occupied > 0, '点数组形态也必须真的判出重叠');
     return '两形态同结果';
   });
@@ -167,7 +167,7 @@ async function main() {
     const outer = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
     const hole = [{ x: 20, y: 20 }, { x: 20, y: 80 }, { x: 80, y: 80 }, { x: 80, y: 20 }];
     const a = { id: 'a', name: '带洞省', kind: 'land', points: outer, extraRings: [{ points: hole, kind: 'land' }] };
-    // 新省只盖住洞的范围 → 应判「几乎不重叠」
+    // 新省只盖住洞的范围 → 应判“几乎不重叠”
     const inHole = measureProvinceOverlap(rect('n', '洞中省', 25, 25, 75, 75), [a]);
     assert(inHole.ratio < 0.1, `洞内不该算重叠（实际 ${inHole.ratio.toFixed(2)}）`);
     // 反过来：盖住整个外环（含洞）→ 解析值 = (10000 - 3600) / 12100 ≈ 0.53

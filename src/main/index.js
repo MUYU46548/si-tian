@@ -123,7 +123,7 @@ function createWindow() {
   restartIndexWatcher();
 
 // 窗口关闭拦截：默认（closeQuitsApp=false）点 × 时最小化到托盘，而非退出；
-// closeQuitsApp=true 时直接退出。退出方式：托盘菜单「退出」/ Alt+F4 / Ctrl+Q。
+// closeQuitsApp=true 时直接退出。退出方式：托盘菜单“退出”/ Alt+F4 / Ctrl+Q。
 // 每次最小化到托盘都显示气泡提示，让用户始终知道去哪了（批次A12 → 改进：不限首次）。
 mainWindow.on('close', (event) => {
   if (getIsQuitting()) return;
@@ -149,17 +149,17 @@ mainWindow.on('close', (event) => {
 });
 
 // Ctrl+Q 退出 —— **先问渲染层**（2026-10-09 改）
-// 旧实现直接 `setIsQuitting(true) + app.quit()`：一个「按了就退、没有任何确认」的隐藏快捷键
+// 旧实现直接 `setIsQuitting(true) + app.quit()`：一个“按了就退、没有任何确认”的隐藏快捷键
 // （暮雨实测：根本不知道它存在，担心误触丢数据）。`before-quit` 的 flush 是**兜底**不是**确认** ——
 // 它只在落盘失败时才吭声；落盘成功时用户什么都看不见，窗口就没了。
 // 现在：决定权交回渲染层（只有它知道 dirty / 有没有未保存改动），
-// 它弹完确认框、用户选了「退出司天」后才调 `app-confirm-quit`，我们才真退。
+// 它弹完确认框、用户选了“退出司天”后才调 `app-confirm-quit`，我们才真退。
 mainWindow.webContents.on('before-input-event', (event, input) => {
   if (input.control && input.key.toLowerCase() === 'q') {
     event.preventDefault();
     try {
       mainWindow.webContents.send('app-request-quit', 'ctrl-q');
-    } catch (e) { /* 渲染层已不可达（正在关闭）→ 忽略：用户可再按一次，或走托盘「退出」 */ }
+    } catch (e) { /* 渲染层已不可达（正在关闭）→ 忽略：用户可再按一次，或走托盘“退出” */ }
   }
 });
 
@@ -191,10 +191,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// 🔴 退出前落盘（数据安全承诺）：把「还没写进磁盘的改动」写完再退。
+// 🔴 退出前落盘（数据安全承诺）：把“还没写进磁盘的改动”写完再退。
 // 拦截点选 `before-quit`：**所有退出路径**（托盘退出 / Ctrl+Q / 点 × 且 closeQuitsApp / 内部 IPC 触发）
 // 都会经过它 —— 一处改动覆盖全部入口，不必逐个调用点去改（漏一个就是一条静默丢数据的路）。
-// 渲染层无响应时 **2.5s 超时放行**：「退不掉」比「丢最后 800ms」更糟（用户会去任务管理器强杀，那才真丢）。
+// 渲染层无响应时 **2.5s 超时放行**：“退不掉”比“丢最后 800ms”更糟（用户会去任务管理器强杀，那才真丢）。
 const FLUSH_BEFORE_QUIT_MS = 2500;
 let quitFlushDone = false;
 
@@ -232,15 +232,15 @@ app.on('before-quit', (event) => {
     event.preventDefault();
     flushRendererBeforeQuit().then(({ payload }) => {
       // 🔴 落盘失败必须让用户**看见**（2026-09-24 修）：旧实现只把失败写进渲染层的
-      //    `console.warn`，窗口随即关闭 —— 用户以为「已正常退出、改动已保存」，实际未落盘。
+      //    `console.warn`，窗口随即关闭 —— 用户以为“已正常退出、改动已保存”，实际未落盘。
       //    退出前是唯一能触达用户的时机，所以用**原生对话框**（不依赖渲染层是否还活着），
-      //    并给出「留在窗口」这个出口（数据还在内存里，用户可以导出为文件）。
+      //    并给出“留在窗口”这个出口（数据还在内存里，用户可以导出为文件）。
       const failed = (payload && Array.isArray(payload.failed)) ? payload.failed : [];
       if (failed.length) {
-        // 🔴 2026-10-09 修（真事故：暮雨实测「托盘里的退出退不掉」）：
+        // 🔴 2026-10-09 修（真事故：暮雨实测“托盘里的退出退不掉”）：
         //    原来是无父窗口的 `dialog.showMessageBoxSync({...})` —— 它是**同步阻塞**的，
         //    而原生模态框若落在主窗口后面 / 屏幕外 / 窗口正藏在托盘里，用户**看不到也点不到**，
-        //    主进程就卡在这一句上，表现就是「点了退出毫无反应、也退不掉」（只能去任务管理器）。
+        //    主进程就卡在这一句上，表现就是“点了退出毫无反应、也退不掉”（只能去任务管理器）。
         //    修法：先确保主窗口可见并聚焦，再把它作为**父窗口**传入（模态、居中在其上）。
         const parentWin = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
         try {
@@ -259,7 +259,7 @@ app.on('before-quit', (event) => {
           title: '有改动未能保存',
           message: `退出前保存失败，${failed.length} 项改动可能丢失。`,
           detail: failed.map(f => `· ${f.name}${f.error ? '：' + f.error : ''}`).join('\n')
-            + '\n\n选择「留在窗口」可返回手动处理（例如把改动导出为文件）。',
+            + '\n\n选择“留在窗口”可返回手动处理（例如把改动导出为文件）。',
         };
         let choice = 0;
         try {
@@ -357,7 +357,7 @@ ipcMain.handle('load-scenarios', async () => {
 
 // ===== 数据备份（P1-2）：.sitian/ → .sitian/backups/ 带时间戳，保留最近 3 批 =====
 // 2026-10-30 用户拍板：备份目录统一**保留最近 3 份**（原 10 批 = 21MB，其中一大半是同一份
-// scenarios.json 的重复快照）。缓存本身可由「重新提取」重建，3 批足够回溯最近几次误操作。
+// scenarios.json 的重复快照）。缓存本身可由“重新提取”重建，3 批足够回溯最近几次误操作。
 const BACKUP_KEEP = 3;
 
 async function backupSitianCache() {
@@ -400,7 +400,7 @@ ipcMain.handle('get-vault-path', () => getVaultPath());
 
 // ===== .sitian 项目文件（Phase 1：独立运行基础）=====
 // 文件 I/O 在 handlers/projectHandler.js（内容结构解释在 renderer 的 utils/projectSchema.js）。
-// 默认项目目录：用户「文档」下的 SiTianProjects（可通过 project-pick-dir 更改）。
+// 默认项目目录：用户“文档”下的 SiTianProjects（可通过 project-pick-dir 更改）。
 registerProjectHandlers({
   ipcMain, dialog, shell,
   getMainWindow: () => mainWindow,
@@ -410,7 +410,7 @@ registerProjectHandlers({
 });
 
 // ===== 一键同步到远程仓库（git）=====
-// 「傻瓜式」：用户填一次仓库地址 → 点「立即同步」，不需要敲任何 git 命令。
+// “傻瓜式”：用户填一次仓库地址 → 点“立即同步”，不需要敲任何 git 命令。
 // git 调用全在 handlers/gitSyncHandler.js（该文件顶层不 require electron →
 // 单测能用本地 bare 仓库当远程做**真实 git 端到端**，无需网络与凭证）。
 // 默认同步目录 = 最近项目文件所在目录（渲染层也可显式传 dir）。
@@ -484,7 +484,7 @@ ipcMain.handle('set-window-mode', async (event, mode) => {
   return { success: true, mode: applied };
 });
 
-// IPC: 关闭行为（批次A12）：读取 / 设置「点 × 直接退出」开关（持久化）
+// IPC: 关闭行为（批次A12）：读取 / 设置“点 × 直接退出”开关（持久化）
 ipcMain.handle('get-close-quits-app', () => getCloseQuitsApp());
 ipcMain.handle('set-close-quits-app', async (event, v) => {
   const applied = await setCloseQuitsApp(v);
@@ -562,7 +562,7 @@ ipcMain.handle('create-obsidian-note', async (event, payload) => {
   if (!vault) return { success: false, error: '未设置知识库路径' };
 
   try {
-    // 用户在设置里指定的「新笔记目录」优先于调用方传的（设置是长期意愿，payload 是一次性）
+    // 用户在设置里指定的“新笔记目录”优先于调用方传的（设置是长期意愿，payload 是一次性）
     let configured = '';
     try {
       const p = sitianConfigPath('noteTarget');
@@ -598,7 +598,7 @@ ipcMain.handle('create-obsidian-note', async (event, payload) => {
     const fileContent = matter.stringify(content || `# ${name}\n\n`, frontmatter);
     await fs.writeFile(filePath, fileContent, 'utf-8');
 
-    // filename 一并返回：渲染端转正流程要用「文件名主干」推导节点 id（normalizeId(文件名)），
+    // filename 一并返回：渲染端转正流程要用“文件名主干”推导节点 id（normalizeId(文件名)），
     // 与 extract-data 的 id 生成规则对齐；仅从 path 反推在语义上不够明确，故显式给出
     return {
       success: true,
@@ -735,14 +735,14 @@ ipcMain.handle('batch-import-notes', async (event, payload) => {
   }
 });
 
-// IPC: 列出知识库笔记清单（**只读**，供「笔记改名 → 断线检测」对账）
+// IPC: 列出知识库笔记清单（**只读**，供“笔记改名 → 断线检测”对账）
 //
 // 为什么需要这条通道：项目态下知识库的 add/unlink 事件在渲染层被整条拦掉（防两套事实源混流，
 // 见 geodata 的 `handleNodeUpdated`）→ 用户在 Obsidian 里改名，司天既不知道、也不提示，
-// 下次「导入知识库内容」就把新名当新实体补进来、旧实体成孤儿（R15，2026-09-27 稽核）。
+// 下次“导入知识库内容”就把新名当新实体补进来、旧实体成孤儿（R15，2026-09-27 稽核）。
 //
 // 🔴 扫描实现**复用提取器的 `listScannedNotes`**，不在这里另写一套目录常量：
-//    两份口径漂移会让「断线」误报（把正常笔记说成丢了），比不检测更坏。
+//    两份口径漂移会让“断线”误报（把正常笔记说成丢了），比不检测更坏。
 //    `scripts/tests/cases/test_75_*` 守卫直接读本文件，确认没有第二份 walk 实现。
 ipcMain.handle('list-vault-notes', async () => {
   try {
@@ -921,7 +921,7 @@ ipcMain.handle('uninstall-app', async () => {
       return { success: false, error: '读取安装目录失败：' + e.message };
     }
     if (!uninstaller) {
-      // 回退：打开系统「程序和功能」供手动卸载
+      // 回退：打开系统“程序和功能”供手动卸载
       shell.openExternal('control.exe /name Microsoft.ProgramsAndFeatures').catch(() => {});
       return { success: false, error: '未找到卸载程序，已为你打开系统卸载面板' };
     }
@@ -1095,8 +1095,8 @@ ipcMain.handle('save-text-file', async (event, { text, defaultName, kind }) => {
 });
 
 // IPC: 逐年切片批量导出 —— **一次选目录，写 N 帧 + frames.json 清单**（2026-10-02）
-// 为什么不是「多调几次 save-text-file」：那两个通道每次调用都弹一个模态保存框，
-// 11 帧 = 用户按 11 次「保存」。批次落盘逻辑全在 handlers/exportFramesHandler.js（可单测）。
+// 为什么不是“多调几次 save-text-file”：那两个通道每次调用都弹一个模态保存框，
+// 11 帧 = 用户按 11 次“保存”。批次落盘逻辑全在 handlers/exportFramesHandler.js（可单测）。
 ipcMain.handle('export-scenario-frames', async (event, payload = {}) => {
   try {
     const result = await dialog.showOpenDialog(mainWindow, {

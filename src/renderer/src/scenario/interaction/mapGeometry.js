@@ -45,10 +45,10 @@ function resolvePoints(prov) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 绘制用的「去响应式」几何（P-0 实测：单帧 94ms 的主因）
+// 绘制用的“去响应式”几何（P-0 实测：单帧 94ms 的主因）
 //   `baseMap.value.terrain` 是 Pinia ref 里的对象 → 走 `.value` 读到的每个省份/顶点都是
 //   Vue 响应式代理；drawProvinces / traceShapePath / 小地图每帧对 25930 个顶点做属性读取，
-//   CPU profiler 里「Vue 响应式 get 陷阱」占 27%、`reactive()` 占 6%，`vx/vy` 占 9%。
+//   CPU profiler 里“Vue 响应式 get 陷阱”占 27%、`reactive()` 占 6%，`vx/vy` 占 9%。
 //   渲染是纯读场景，取 toRaw 后的原始数组即可（toRaw 是 WeakMap 查表，可忽略成本）。
 //   ⚠️ 只在**绘制**路径用；命中检测、编辑、store 写入仍走原来的响应式引用（避免脱钩）。
 // ─────────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ function writeRingsPatch(prov, ringChanges) {
     rings[i] = { ...rings[i], points };   // 形状被手工改过 → 不再是网格派生的，去掉 fromGrid
   }
   const patch = shapePatch(rings);
-  // fromGrid 显式给出：手工改过的环不再算「网格派生」→ 渲染端不再对它做平滑
+  // fromGrid 显式给出：手工改过的环不再算“网格派生”→ 渲染端不再对它做平滑
   return { kind: patch.kind || 'land', points: patch.points, extraRings: patch.extraRings, fromGrid: !!patch.fromGrid };
 }
 

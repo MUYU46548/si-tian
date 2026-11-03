@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 75：笔记改名「断线检测 + 重连」（R15 / A-0）
+"""用例 75：笔记改名“断线检测 + 重连”（R15 / A-0）
 
 来源：`IMPROVEMENT_BACKLOG.md` §四 的 R15（2026-09-27 稽核新增）＋ `ROADMAP_NEXT` D5
-「搬家线前置 = 断线检测」。症状是**静默**：
+“搬家线前置 = 断线检测”。症状是**静默**：
 
   项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流，见 geodata `handleNodeUpdated`）
-  → 用户在 Obsidian 里把笔记改名，司天**既不知道也不提示**；下次「导入知识库内容」把新名当
+  → 用户在 Obsidian 里把笔记改名，司天**既不知道也不提示**；下次“导入知识库内容”把新名当
   新实体补进来、旧实体成孤儿（坐标与地图/区域/建筑内部数据留在旧 id 上，用户看到"多一个、少一个"）。
 
 本用例覆盖：
@@ -14,9 +14,9 @@
      主进程不自己写目录遍历（复用提取器的 listScannedNotes → 口径单源），
      preload / 适配器 / 面板接线齐全，面板不复制打分逻辑。
   f1 端到端：造一个带来源笔记的实体（带坐标 + 地图 + 区域数据）→ 库里改名 →
-     查出断线并给出**可读理由**的推荐候选 → 点「重连」→
+     查出断线并给出**可读理由**的推荐候选 → 点“重连”→
      **id 不变、坐标与编辑成果全部保留**、来源路径与名字更新 → 一条 undo 全部还原。
-  f2 边界：目标笔记已被别的实体占用 → 拒绝（保持一对一）；库里的笔记都在 → 明确回「未发现断线」。
+  f2 边界：目标笔记已被别的实体占用 → 拒绝（保持一对一）；库里的笔记都在 → 明确回“未发现断线”。
 """
 import sys, os, io, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -34,7 +34,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再做子串判据 —— 修完 bug 之后注释里天然会出现「此前如何如何」的字样，
+    """剥掉注释后再做子串判据 —— 修完 bug 之后注释里天然会出现“此前如何如何”的字样，
     纯子串判据会把注释当成违规（test_71 首版踩过）。"""
     out, i, n, in_block = [], 0, len(src), False
     while i < n:
@@ -86,7 +86,7 @@ def sub_source_guards(cdp):
 
     main_src = _code_only(_read('src/main/index.js'))
     # 🔴 主进程不得**自己**遍历知识库目录：口径必须复用提取器的 `listScannedNotes`
-    #    （两份扫描漂移会让「断线」误报，把正常笔记说成丢了）。
+    #    （两份扫描漂移会让“断线”误报，把正常笔记说成丢了）。
     #    ⚠️ 判据必须收在**这个 handler 的函数体内**（函数级粒度）—— index.js 里另有 2 处
     #    `fs.readdir` 属备份目录/卸载目录，全文件级判据会把它们当成违规（假红）。
     if "ipcMain.handle('list-vault-notes'" not in main_src:
@@ -163,8 +163,8 @@ JS = r"""(async () => {
 
   // 🔴 装置纪律：注入的清单必须**覆盖项目里全部实体的来源笔记**。
   //    首跑踩到过：只注入一条 → 其余 119 个实体（harness 基线项目）全被报成"断线"，
-  //    tips 说「发现 120 处断线」，后续断言全被噪声淹没。
-  //    真实场景里清单就是整库扫描结果，所以这里按「整库 + 一处改名」构造。
+  //    tips 说“发现 120 处断线”，后续断言全被噪声淹没。
+  //    真实场景里清单就是整库扫描结果，所以这里按“整库 + 一处改名”构造。
   const noteOf = (p) => ({
     sourcePath: p,
     name: String(p).split('/').pop().replace(/\.md$/i, ''),
@@ -190,7 +190,7 @@ JS = r"""(async () => {
   ck('装置：项目里存在世界级实体（作为父级）', !!world, null);
   const worldId = world ? world.id : null;
 
-  // ── 造一个「来自笔记」的实体 + 编辑成果（坐标 / 地图 / 区域）──
+  // ── 造一个“来自笔记”的实体 + 编辑成果（坐标 / 地图 / 区域）──
   store.addNode({ id: P, name: 'R15旧名', layer: 'planet', parentId: worldId, tags: [],
                   sourcePath: OLD_PATH, coordinate: { x: 33, y: 44 } });
   store.addNode({ id: R, name: 'R15区域', layer: 'region', parentId: P, tags: [],
@@ -217,24 +217,24 @@ JS = r"""(async () => {
   const sug = ((scan && scan.suggestions) || {})[P] || [];
   ck('f1 ★ 给出候选', sug.length >= 1, sug.length);
   if (sug.length) {
-    ck('f1 ★ 同目录 + 名字相近的候选被标为「推荐」', sug[0].recommended === true, sug[0]);
+    ck('f1 ★ 同目录 + 名字相近的候选被标为“推荐”', sug[0].recommended === true, sug[0]);
     ck('f1 候选理由可读（同目录）', (sug[0].reasons || []).join('|').indexOf('同目录') >= 0, sug[0].reasons);
     same('f1 候选指向改名后的那篇笔记', sug[0].sourcePath, NEW_PATH);
   }
   ck('f1 无主清单里出现改名后的新笔记',
      ((scan && scan.unclaimed) || []).some(n => n.sourcePath === NEW_PATH), (scan && scan.unclaimed) || []);
 
-  // ── f1 面板：点「检查笔记改名」→ 看到断线与推荐理由 ──
+  // ── f1 面板：点“检查笔记改名”→ 看到断线与推荐理由 ──
   const toolBtn = Array.from(document.querySelectorAll('button'))
     .find(b => (b.getAttribute('title') || '').indexOf('.sitian') >= 0);
-  ck('装置：工具栏有「项目」入口', !!toolBtn, null);
+  ck('装置：工具栏有“项目”入口', !!toolBtn, null);
   if (toolBtn && !q('.project-panel')) {
     toolBtn.click();
     for (let i = 0; i < 40 && !q('.project-panel'); i++) await tick(100);   // 懒加载 chunk
   }
   ck('装置：项目面板已渲染', !!q('.project-panel'), null);
   const scanBtn = q('[data-testid="check-broken-links"]');
-  ck('f1 面板有「检查笔记改名」按钮', !!scanBtn, null);
+  ck('f1 面板有“检查笔记改名”按钮', !!scanBtn, null);
   if (scanBtn) {
     scanBtn.click();
     await tick(400);
@@ -249,9 +249,9 @@ JS = r"""(async () => {
       ck('f1 推荐项被标出来', /推荐/.test(optText), optText);
     }
 
-    // ── 点「重连」 ──
+    // ── 点“重连” ──
     const relinkBtn = q('[data-testid="relink-' + P + '"]');
-    ck('f1 有「重连」按钮', !!relinkBtn, null);
+    ck('f1 有“重连”按钮', !!relinkBtn, null);
     if (relinkBtn) {
       relinkBtn.click();
       await tick(500);
@@ -285,7 +285,7 @@ JS = r"""(async () => {
   // ── f2 边界 ──
   // f2a 目标笔记已被别的实体占用 → 拒绝（保持一对一）
   // ⚠️ 先把 P 的来源改回旧路径：f1 之后 P 已指向 NEW_PATH，若不还原，
-  //    relink(P, NEW_PATH) 会先命中「重连到自己当前的来源」分支 → 测不到占用冲突（首跑踩到）
+  //    relink(P, NEW_PATH) 会先命中“重连到自己当前的来源”分支 → 测不到占用冲突（首跑踩到）
   proj.updateEntity(P, { sourcePath: OLD_PATH });
   await tick(250);
   ck('装置：P 的来源已还原为旧路径', (proj.entities[P] || {}).sourcePath === OLD_PATH, (proj.entities[P] || {}).sourcePath);
@@ -303,7 +303,7 @@ JS = r"""(async () => {
   // f2b 重连到自己当前的来源 → 明确拒绝（不是静默成功）
   const self = proj.relinkEntity(P, { sourcePath: OLD_PATH });
   ck('f2 ★ 重连到自己当前的来源 → 明确拒绝', self.success === false, self);
-  // f2c 库里笔记都在 → 明确回「未发现断线」
+  // f2c 库里笔记都在 → 明确回“未发现断线”
   window.__vaultNotes = vaultNotesOf();
   const clean = await proj.scanBrokenLinks();
   ck('f2 ★ 笔记都在 → clean=true（且报出对账了几篇）',
@@ -312,7 +312,7 @@ JS = r"""(async () => {
   if (scanBtn) {
     const btn2 = q('[data-testid="check-broken-links"]');
     if (btn2) { btn2.click(); await tick(400); }
-    ck('f2 ★ 面板给「未发现断线」的正向回音',
+    ck('f2 ★ 面板给“未发现断线”的正向回音',
        /未发现断线/.test(text('[data-testid="broken-clean"]')), text('[data-testid="broken-clean"]'));
     ck('f2 断线清单区域消失', !q('[data-testid="broken-list"]'), null);
   }
@@ -349,5 +349,5 @@ def run(cdp):
             return False, f'断言失败 {len(fails)} 项：' + '；'.join(str(x) for x in fails[:10])
         return True, ('f0 检测/打分单源 + 主进程复用提取器扫描口径 + 接线齐全；'
                       'f1 改名 → 断线 → 可读理由的推荐候选 → 重连后 id/坐标/地图/区域数据全保留，一条 undo 还原；'
-                      'f2 占用冲突与自我重连被拒、笔记都在时明确回「未发现断线」—— 全部通过')
+                      'f2 占用冲突与自我重连被拒、笔记都在时明确回“未发现断线”—— 全部通过')
     return False, f'用例返回值异常：{str(res)[:200]}'

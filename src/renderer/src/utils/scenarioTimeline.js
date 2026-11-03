@@ -4,7 +4,7 @@
 // 为什么需要它：
 //   1. `era.startYear` / `endYear` 是**字符串且可为负**（'-1350' → '2138'），任何算术先解析。
 //   2. 每个剧本的 polity id 都是全新的（pol_ou → pol_li → …），直接比 id 会得出
-//      「每代 100% 省份全变」→ 差异图层零区分度。必须先把世代串成「谱系」。
+//      “每代 100% 省份全变”→ 差异图层零区分度。必须先把世代串成“谱系”。
 //   3. 时代长度极不均（真朝 6 年 vs 炎太帝国 603 年）且**之间存在年份断层**，
 //      按年线性排轨道会让短时代缩到 0.17% 宽。
 //
@@ -21,7 +21,7 @@
 //    易主日期从 `changeYears[pid] = 1993`（年单值）升级为
 //    `changeEvents[pid] = [{ y, m, d, owner }, …]`（**按日期升序的列表**，同省同年多次合法）。
 //    `m`/`d` 可为 null，语义 = 该年 1 月 1 日。旧键 → 新键的迁移、比较、校验、格式化
-//    全部在 `utils/scenarioDates.js`（**唯一实现**）——本模块只负责「谁在什么时候归谁」。
+//    全部在 `utils/scenarioDates.js`（**唯一实现**）——本模块只负责“谁在什么时候归谁”。
 //    ⚠️ 剧本边界（startYear/endYear）仍保持**年精度**（刻意，防变更面无限扩大）。
 import {
   parseYear, cmpDate, normalizeDate, normalizeScenarioDict,
@@ -30,14 +30,14 @@ import {
 
 export { parseYear };
 
-/** 日精度阈值：年内插值的粒度。1/400 年 ≈ 一天，再细没有意义（且会让「同一天」判定抖动） */
+/** 日精度阈值：年内插值的粒度。1/400 年 ≈ 一天，再细没有意义（且会让“同一天”判定抖动） */
 const DAY_SCORE = 1 / 400;
 
 /**
  * 数字年份（可为小数，年内插值用）→ 精确日期。
  * 小数部分按**天数线性**换算成月日 —— 与旧 `yearToU` 的年线性口径一致，
- * 只是把「半年」落到 7 月 1 日而不是继续显示成 2015.5（月日精度下后者已无意义）。
- * 负数年（公元前）不换算月日：负年没有「月份」的通用约定，给了反而是编的。
+ * 只是把“半年”落到 7 月 1 日而不是继续显示成 2015.5（月日精度下后者已无意义）。
+ * 负数年（公元前）不换算月日：负年没有“月份”的通用约定，给了反而是编的。
  */
 export function yearValueToDate(value) {
   const v = Number(value);
@@ -57,7 +57,7 @@ export function yearValueToDate(value) {
 
 /**
  * 日期 → 数字年份（可在年内插值）。轨道位置 / 播放进度都用它。
- * `yearValueToDate` 的逆（只到「年内第几天」的粒度，不保证逐位往返 —— 不必保证）。
+ * `yearValueToDate` 的逆（只到“年内第几天”的粒度，不保证逐位往返 —— 不必保证）。
  */
 export function dateToYearValue(date) {
   const n = normalizeDate(date);
@@ -69,7 +69,7 @@ export function dateToYearValue(date) {
   return n.y + Math.min(1, dayOfYear / 365.25);
 }
 
-/** 日期 → 展示文本（`1993` / `1993-05` / `1993-05-12`）；负数年显示「前N」 */
+/** 日期 → 展示文本（`1993` / `1993-05` / `1993-05-12`）；负数年显示“前N” */
 export { formatDate, dateKey, dateToken } from './scenarioDates';
 
 /** 按 order 排序剧本（不改原数组） */
@@ -174,7 +174,7 @@ export function computeLineage(scenarios) {
  * 变化省份 = 该省在本剧本继承到的谱系 ≠ 上一剧本的谱系
  * 变化事件 = `changeEvents[pid]`（显式，按日期升序、可多条）；
  *            缺省时在本剧本内**均匀铺开**一个合成日期（确定性，`{y, m:1, d:1}`）——
- *            「入库即显式、缺省运行时合成」这条语义不变，合成的日期在 `explicit[pid]` 上为 false。
+ *            “入库即显式、缺省运行时合成”这条语义不变，合成的日期在 `explicit[pid]` 上为 false。
  *
  * @returns {Array<{changed:string[], events:Array, firstDate:Object, lastDate:Object,
  *                  explicit:Record<string,boolean>, years:Array}>}
@@ -260,7 +260,7 @@ export function computeEraChanges(scenarios, lineageOf, years) {
       changed.forEach((pid, i) => build(pid, i, changed.length));
     }
 
-    // 帧索引要的是「所有事件按日期排序」的扁平表（同一天多省合并由 scenarioSlices 负责）
+    // 帧索引要的是“所有事件按日期排序”的扁平表（同一天多省合并由 scenarioSlices 负责）
     const events = [];
     for (const pid of changed) for (const ev of (byProvince[pid] || [])) events.push(ev);
     events.sort((a, b) => cmpDate(a, b) || String(a.provinceId).localeCompare(String(b.provinceId)));
@@ -328,7 +328,7 @@ export function summarizeLineages(scenarios, lineageOf) {
  *
  * 🔴 入参先过 `normalizeScenarioDict`（`utils/scenarioDates.js` 的**唯一迁移实现**）：
  *    即使某个入口忘了迁移，时间轴自己也不会把旧 `changeYears` 当成新键读漏
- *    （表现为「明明录过易主日期，时间轴上却全是合成值」—— 静默、不报错）。
+ *    （表现为“明明录过易主日期，时间轴上却全是合成值”—— 静默、不报错）。
  *    无改动的剧本保持原引用，不会把整表换新对象。
  */
 export function buildTimeline(scenarios) {
@@ -358,21 +358,21 @@ export function buildTimeline(scenarios) {
       changes: eraChg.reduce((a, e) => a + e.changed.length, 0),
       changeEvents: evTotal,
       explicitChangeEvents: exEv,
-      // 兼容别名（旧名字；含义已从「显式易主年份数」变为「有显式日期的省份数」）
+      // 兼容别名（旧名字；含义已从“显式易主年份数”变为“有显式日期的省份数”）
       explicitChangeYears: exEv,
       missingYears: years.filter((y) => y.missing).length,
     },
   };
-  // 统一账本（B 的第一块）：把「基线 + 事件」显式化，供日期回放/切片/迁移共用。
+  // 统一账本（B 的第一块）：把“基线 + 事件”显式化，供日期回放/切片/迁移共用。
   tl.ledger = buildLedger(tl);
   return tl;
 }
 
 /**
- * **统一账本**（2026-10-21，大修 B 第一块）——把时间轴里隐含的「时代边界易主」
+ * **统一账本**（2026-10-21，大修 B 第一块）——把时间轴里隐含的“时代边界易主”
  * 与逐省事件整理成一份**可按日期回放**的数据。
  *
- * 为什么需要它：现有模型是「每代一份 ownership 快照 + 少量 changeEvents」，
+ * 为什么需要它：现有模型是“每代一份 ownership 快照 + 少量 changeEvents”，
  * 回放要同时读两套结构（`currentOwnerRef` 里那一串 if）。账本把它们压成同一形状：
  *
  *   era = {
@@ -441,7 +441,7 @@ export function buildLedger(tl) {
 }
 
 /**
- * 账本里「某代、某省、某日期」的归属 —— `currentOwnerRef` 的等价实现（事件表走 byPid）。
+ * 账本里“某代、某省、某日期”的归属 —— `currentOwnerRef` 的等价实现（事件表走 byPid）。
  * @returns {{owner:(string|null|undefined), era:number, settled:boolean}}
  *   `settled` = 命中了本代事件（UI 的斜线占领/已易主计数可直接用）
  */
@@ -505,7 +505,7 @@ export function uToYear(tl, u, axisMode = 'year') {
   return tl.minYear + uu * (tl.maxYear - tl.minYear);
 }
 
-/** 轨道刻度：给出「好看」的年份步长（1/2/5×10^n） */
+/** 轨道刻度：给出“好看”的年份步长（1/2/5×10^n） */
 export function axisTicks(minYear, maxYear, target = 8) {
   const span = maxYear - minYear;
   if (!(span > 0)) return [minYear];
@@ -520,7 +520,7 @@ export function axisTicks(minYear, maxYear, target = 8) {
 }
 
 // ============================================================
-// 归属查询（含「演变铺开」与 EU4 斜线占领）—— **月日精度**
+// 归属查询（含“演变铺开”与 EU4 斜线占领）—— **月日精度**
 // ============================================================
 // 🔴 `atDate` 一律是 `{y, m?, d?}`（`m`/`d` 可缺省 = 该年 1 月 1 日）。
 //    为兼容既有调用点，数字年份会被当作 `{y, m:null, d:null}` 处理（见 `asDate`）。
@@ -555,9 +555,9 @@ export function currentOwnerRef(tl, k, pid, atDate) {
   const e = tl.eraChg[k];
   const at = asDate(atDate);
   if (e && e.byProvince && e.byProvince[pid]) {
-    // `lastEventAtOrBefore` 已保证「事件日期 ≤ 查询日期」，所以只要非 null 就是已落定。
+    // `lastEventAtOrBefore` 已保证“事件日期 ≤ 查询日期”，所以只要非 null 就是已落定。
     // （早先这里多写了一次 `cmpDate(ev, at) <= 0`，等于重复判定；真正的漏洞是**漏了 null 分支**
-    //   —— 没有任何事件落定时会直接返回本剧本的归属，于是「6 月易主、查 5 月」返回新主。
+    //   —— 没有任何事件落定时会直接返回本剧本的归属，于是“6 月易主、查 5 月”返回新主。
     //   纯函数用例 e1 抓到：期望旧主、实际新主。）
     const ev = lastEventAtOrBefore(e.byProvince[pid], at);
     if (ev) return { owner: ev.owner, era: k };
@@ -583,7 +583,7 @@ export function isStriped(tl, k, pid, atDate) {
 /**
  * 底色归属的 **{owner, era}**：颜色必须在 owner 所属的那个剧本里查！
  * 真实数据每个剧本的 polity id 全新（pol_ou → pol_li），跨剧本用当前剧本查旧主
- * 会查不到 → 落到回退灰（实测：EU4 斜线变成「灰底 + 新主斜线」，观感全废）。
+ * 会查不到 → 落到回退灰（实测：EU4 斜线变成“灰底 + 新主斜线”，观感全废）。
  */
 export function baseOwnerRef(tl, k, pid, atDate) {
   if (k <= 0) return { owner: tl.scenarios[0]?.ownership?.[pid], era: 0 };
@@ -600,7 +600,7 @@ export function baseOwnerAt(tl, k, pid, atDate) {
   return baseOwnerRef(tl, k, pid, atDate).owner;
 }
 
-/** 该省在本剧本是否属于「谱系变化」集合 */
+/** 该省在本剧本是否属于“谱系变化”集合 */
 export function isChangedInEra(tl, k, pid) {
   const e = tl.eraChg[k];
   return !!e && e.changed.includes(pid);
@@ -608,7 +608,7 @@ export function isChangedInEra(tl, k, pid) {
 
 /**
  * 该省在本剧本内的易主事件条数（HUD / 面板用）。
- * 同省同年多次易主是月日精度带来的新能力 → UI 要能说出「这个省在这一代换了 3 次」。
+ * 同省同年多次易主是月日精度带来的新能力 → UI 要能说出“这个省在这一代换了 3 次”。
  */
 export function eventCountInEra(tl, k, pid) {
   const e = tl.eraChg[k];

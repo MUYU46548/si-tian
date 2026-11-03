@@ -31,7 +31,7 @@ export function basenameNoExt(p) {
 }
 
 /**
- * 由「笔记名 / 笔记路径」推导节点 id —— 转正流程的统一入口。
+ * 由“笔记名 / 笔记路径”推导节点 id —— 转正流程的统一入口。
  * @param {{ filename?: string, path?: string }} result 主进程 create-obsidian-note 的返回值
  * @param {string} [fallbackName] 兜底名称（通常为节点自身 name）
  * @returns {string} 规范化后的 id（空输入返回 'unknown'）

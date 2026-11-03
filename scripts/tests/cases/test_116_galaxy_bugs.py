@@ -4,16 +4,16 @@
 
 对应上一轮交接 §6 的侦查结论（`docs/SITIAN_HANDOFF_20261018_ROUND7.md`）：
 
-  ① **坐标拖拽是死代码**：提示文案写着「拖拽恒星编辑坐标」，但 `onDragStart` 从不返回
+  ① **坐标拖拽是死代码**：提示文案写着“拖拽恒星编辑坐标”，但 `onDragStart` 从不返回
      `{mode:'node'}` → `onDragMove/onDragEnd` 里那两条分支**不可达**，`isDraggingMultiple`
-     也恒 false。修法 = 照 SystemView 的既有形态补「拖手 / 移动」两个工具，并把链路接通。
+     也恒 false。修法 = 照 SystemView 的既有形态补“拖手 / 移动”两个工具，并把链路接通。
   ② **势力改色不重绘、也不落库**：`factionColorOverrides` 既没有 watch 也没有 `requestRender()`，
      而且渲染取色读的是**布局期快照**；更糟的是它拿 `domain.faction` 当键 —— 真实库该值是
-     `undefined` → 所有星域共用一个键「undefined」，改一个色 = 改全部。
+     `undefined` → 所有星域共用一个键“undefined”，改一个色 = 改全部。
   ③ **星域不可命中**：`hitTest` 只返回 `galaxy` / `domain-label` / `boundary-vertex`，
      而 `domain-label` 被 `!editMode` 门控 → **编辑模式下星域一个分支都命中不到**，
      连带四处 `type === 'domain'` 全是死代码。
-  ④ **右键不看 editMode**：浏览态右键就能弹「创建恒星 / 删除节点 / 删除航道」这些**写操作**。
+  ④ **右键不看 editMode**：浏览态右键就能弹“创建恒星 / 删除节点 / 删除航道”这些**写操作**。
 
 另外顺手修掉一条**静默**的颜色缺陷（`border.color + '12'` 对 `hsl()` 是非法 CSS，
 `fillStyle` 赋值被**静默忽略** → 星域颜色串了且不报错），改走 `utils/colorUtil.js` 的唯一实现。
@@ -133,15 +133,15 @@ def source_gates():
     if 'isDraggingMultiple = true;' not in gm:
         fails.append('🔴 isDraggingMultiple 仍然永远是 false（多选拖动那条分支仍是死代码）')
     if 'data-testid="galaxy-move-tool"' not in gm:
-        fails.append('🔴 缺「移动」工具的 data-testid（用例/演练点不到它）')
-    if '「移动」工具下拖拽' not in gm:
+        fails.append('🔴 缺“移动”工具的 data-testid（用例/演练点不到它）')
+    if '“移动”工具下拖拽' not in gm:
         fails.append('🔴 提示文案没有说清"移动工具下才能拖"（与实现一致才行）')
     if '拖拽空白处平移 · 拖拽恒星编辑坐标' in gm:
         fails.append('🔴 旧的无条件"拖拽恒星编辑坐标"文案还在（那句话骗人）')
 
     # ⑤ 颜色拼 alpha 的旧写法必须绝迹（对 hsl 是非法 CSS，会被静默忽略）
     #   ⚠️ 2026-11-02 口径搬家：星域色块的画法从 GalaxyMap 搬进 `galaxy/domainPaint.js`
-    #      （画布与「导出 PNG(全图)」共用同一份 —— 这才是"唯一实现"该在的位置）。
+    #      （画布与“导出 PNG(全图)”共用同一份 —— 这才是"唯一实现"该在的位置）。
     #      所以这里守的是**接口**：GalaxyMap 必须调到那份共享实现，且真正拼 alpha 的地方
     #      走 `toRgba()` 而不是字符串拼接。`InteriorView` 照旧直接用它自己的 withAlpha。
     dp = _code_only(_read('src/renderer/src/galaxy/domainPaint.js'))
@@ -167,7 +167,7 @@ def source_gates():
     #    ⚠️ 第十二修后这段数学搬进 `utils/galaxyLayout.js#layoutDomains`（画布与导出共用），判据跟着搬家
     glj = _code_only(_read('src/renderer/src/utils/galaxyLayout.js'))
     if 'domain.userMoved || domain.id === opts.draggingId' not in glj:
-        fails.append('🔴 共享布局缺「只在 userMoved（或拖动期）才采信星域 coordinate」这道门 '
+        fails.append('🔴 共享布局缺“只在 userMoved（或拖动期）才采信星域 coordinate”这道门 '
                      '—— 提取器给每个星域都写了遗留坐标，无条件采信会让老项目一次性全部错位')
     if 'layoutDomains(props.domains' not in gm:
         fails.append('🔴 GalaxyMap 的画布布局没有走共享 layoutDomains（会与导出又分家）')
@@ -178,7 +178,7 @@ def source_gates():
     if "hit.type === 'domain-label'" not in gm:
         fails.append("🔴 移动工具没把 domain-label 当星域手柄（浏览态拖动正要命中它，否则鼠标落在域中心时拖不动）")
     if '星域位置目前由布局决定、不可拖动' in gm:
-        fails.append('🔴 上一轮的「星域不可拖动」回执文案还在（现在能拖了）')
+        fails.append('🔴 上一轮的“星域不可拖动”回执文案还在（现在能拖了）')
 
     # ⑦ faction 写入路径（此前**一个写口都没有** → 图例永远同一个默认色）
     if 'function commitFaction(' not in gm:
@@ -274,7 +274,7 @@ def run(cdp):
 
   // ② 进编辑模式 → 同一次右键必须弹菜单（否则"不许弹"就成了"永远弹不出来"的假修）
   const editBtn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('编辑地图'));
-  if (!editBtn) return { fails: ['找不到「编辑地图」按钮'], note: 'no-edit-btn' };
+  if (!editBtn) return { fails: ['找不到“编辑地图”按钮'], note: 'no-edit-btn' };
   editBtn.click();
   await tick(); await tick();
   const editing = st.editMode;
@@ -361,13 +361,13 @@ def run(cdp):
     notes.append(f"f2 改色：预览变化 {r2.get('diffPreview')} 像素 / 落库后变化 {r2.get('diff')} 像素 / 落库 + undo 复原 {'ok' if not r2.get('fails') else 'FAIL'}")
 
     # ══════════════════════════════════════════════════════════════════════
-    # f3 星域可命中（§bug hitTest）：编辑模式下右键星域 → 菜单含「删除该节点」→ 删除 → 一次 undo 复原
+    # f3 星域可命中（§bug hitTest）：编辑模式下右键星域 → 菜单含“删除该节点”→ 删除 → 一次 undo 复原
     # ══════════════════════════════════════════════════════════════════════
     r3 = _probe(cdp, """
   const fails = [];
   const store = document.querySelector('#app').__vue_app__._instance.setupState.store;
   const editBtn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('编辑地图'));
-  if (!editBtn) return { fails: ['找不到「编辑地图」按钮'] };
+  if (!editBtn) return { fails: ['找不到“编辑地图”按钮'] };
   editBtn.click();
   await tick(); await tick();
   if (!st.editMode) return { fails: ['进不了编辑模式'] };
@@ -385,7 +385,7 @@ def run(cdp):
   if (hitType !== 'domain') fails.push(`hitTest 在星域重心返回 ${hitType}（期望 domain）—— 星域点不到`);
   if (hitId !== border.domainId) fails.push(`命中到别的节点（${hitId} ≠ ${border.domainId}）`);
 
-  // ② 端到端：真实右键 → 菜单里必须有「删除该节点」
+  // ② 端到端：真实右键 → 菜单里必须有“删除该节点”
   const vt2 = st.renderer.viewTransform;
   st.renderer.focusOn(wx, wy, 0.6);
   await raf2();
@@ -396,7 +396,7 @@ def run(cdp):
   await tick();
   const items = Array.from(document.querySelectorAll('.sitian-context-menu .menu-item')).map(d => (d.textContent || '').trim());
   const delItem = Array.from(document.querySelectorAll('.sitian-context-menu .menu-item')).find(d => (d.textContent || '').includes('删除该节点'));
-  if (!delItem) fails.push(`编辑态右键星域没有「删除该节点」项：${JSON.stringify(items)}`);
+  if (!delItem) fails.push(`编辑态右键星域没有“删除该节点”项：${JSON.stringify(items)}`);
 
   // ③ 点它 → 节点数 -1 → 一次 undo 复原
   const n0 = store.nodes.length;
@@ -464,9 +464,9 @@ def run(cdp):
   if (!c0 || !c1) return { fails: ['拿不到节点坐标'] };
   if (c1.x !== c0.x || c1.y !== c0.y) fails.push(`拖手模式下坐标变了（${c0.x},${c0.y} → ${c1.x},${c1.y}）—— 防误触失效`);
 
-  // ② 切「移动」工具 → 同一次拖拽必须改坐标，且 userMoved 为真
+  // ② 切“移动”工具 → 同一次拖拽必须改坐标，且 userMoved 为真
   const btn = document.querySelector('[data-testid="galaxy-move-tool"]');
-  if (!btn) return { fails: ['找不到「移动」工具按钮'], note: 'no-move-btn' };
+  if (!btn) return { fails: ['找不到“移动”工具按钮'], note: 'no-move-btn' };
   btn.click();
   await tick();
   // ⚠️ 基准必须**先快照**：拖动时 `galaxy.x = wx` 改的就是 `st.galaxyNodes` 里这个对象本身
@@ -540,7 +540,7 @@ def run(cdp):
 
   // ② 移动工具拖星域 → 写 coordinate + userMoved
   const btn = document.querySelector('[data-testid="galaxy-move-tool"]');
-  if (!btn) return { fails: ['找不到「移动」工具按钮'] };
+  if (!btn) return { fails: ['找不到“移动”工具按钮'] };
   btn.click();
   await tick();
   const gals = st.galaxyNodes.filter(g => g.domainId === dn.id && !g.userMoved);

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """S0 笔刷矩阵探针（**不是回归用例**，会话结束前可删）。
 
-目的：把「每个笔刷画出来是什么」变成 12 张图 + 一组读数，而不是靠读代码猜。
+目的：把“每个笔刷画出来是什么”变成 12 张图 + 一组读数，而不是靠读代码猜。
 - 真实 `docs/mockups/desite.map`（200 省）导入剧本底图；
 - 每个工具用真实 CDP 鼠标事件画一笔；
 - 抬手后截图（`docs/assets/s0-brush-20261019/`），读 store 的省份/河/点数/撤销；
@@ -72,7 +72,7 @@ LOAD_JS = r"""
         status: (document.querySelector('.scenario-status-bar') || {}).innerText || '',
       };
     },
-    // 找一个「确定在陆地里」的画布点：取面积最大的省，用包围盒中心/四角试探，
+    // 找一个“确定在陆地里”的画布点：取面积最大的省，用包围盒中心/四角试探，
     // 再用 findProvinceAt 复核（避免点落在洞里或海上）。
     landPoint() {
       const r = sc.canvas.getBoundingClientRect();
@@ -129,7 +129,7 @@ LOAD_JS = r"""
       }
       return null;
     },
-    // 海面点：给「自由绘制」用，避免一画就撞上已有省份的压叠闸门。
+    // 海面点：给“自由绘制”用，避免一画就撞上已有省份的压叠闸门。
     seaPoint() {
       const r = sc.canvas.getBoundingClientRect();
       const scale = Number(sc.cameraScale) || 1;
@@ -151,7 +151,7 @@ LOAD_JS = r"""
       }
       return null;
     },
-    // 边界点：扫一个省的顶点，找「偏离 6px 就落到另一个省」的那一段 —— 描轮廓要贴着这种点画。
+    // 边界点：扫一个省的顶点，找“偏离 6px 就落到另一个省”的那一段 —— 描轮廓要贴着这种点画。
     borderPoint() {
       const r = sc.canvas.getBoundingClientRect();
       const terr = (sc.baseMap && sc.baseMap.terrain) || [];
@@ -185,8 +185,8 @@ LOAD_JS = r"""
       sc.selectedProvince = p || null;
       return JSON.stringify({ idx, name: p && p.name });
     },
-    // ── 几何度量：把「诡异」拆成可比的数 ────────────────────────────────
-    // maxBulgeWorld = 渲染贝塞尔在 t=0.5 处离「数据多边形那条弦」的最远距离（世界单位）
+    // ── 几何度量：把“诡异”拆成可比的数 ────────────────────────────────
+    // maxBulgeWorld = 渲染贝塞尔在 t=0.5 处离“数据多边形那条弦”的最远距离（世界单位）
     // maxBulgeRatio = 上述距离 / 该段弦长；>0.05 就说明“看到的边界”明显不是数据边界
     // spikes        = 相邻线段夹角 >150°（近似折返）的顶点数
     // maxEdgeRatio  = 最长边 / 周长（开口笔迹用弦收口时，这个值会很大）
@@ -535,7 +535,7 @@ def main():
                 y0 = max(rect['t'] + 18, py - 22)
                 y1 = min(rect['t'] + rect['h'] - 18, py + 22)
                 # 自由绘制放在海面：避免一画就撞已有省份的压叠闸门；
-                # 描轮廓贴着「陆地/邻省」的边界点；其余都在陆地省内部。
+                # 描轮廓贴着“陆地/邻省”的边界点；其余都在陆地省内部。
                 if tid == '07-river-erase':
                     # 先画一条河，再擦它
                     cdp.eval("(() => { const sc = document.querySelector('.scenario-map-container')"
@@ -570,7 +570,7 @@ def main():
                 item['lastProv'] = _json(cdp, "JSON.stringify(window.__S0.lastProv())", None)
                 item['riverStats'] = _json(cdp, "JSON.stringify(window.__S0.riverStats())", [])
                 item['shot'] = shot(cdp, tid)
-                # 只对「改省份/河流」的工具做撤销复原；高度/群系/文化/宗教改的是
+                # 只对“改省份/河流”的工具做撤销复原；高度/群系/文化/宗教改的是
                 # 各自独立的图层（高度图/群系网格/通道），累积着正好能看出后一笔有没有被前一笔影响。
                 if tool in ('draw', 'outline', 'provinceBrush', 'provinceLasso',
                             'polySplit', 'river', 'riverErase'):

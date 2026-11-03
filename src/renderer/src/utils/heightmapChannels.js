@@ -1,12 +1,12 @@
-// utils/heightmapChannels.js — 高度图上「逐格 Uint8 通道」（文化 / 宗教）的**纯逻辑**
+// utils/heightmapChannels.js — 高度图上“逐格 Uint8 通道”（文化 / 宗教）的**纯逻辑**
 //
 // ── 为什么要有这一层（2026-10-08）─────────────────────────────────────────────
-// 文化 / 宗教在数据上就是与 `biome` 同构的「每格一个下标」（`Uint8Array`，0 = 无主），
+// 文化 / 宗教在数据上就是与 `biome` 同构的“每格一个下标”（`Uint8Array`，0 = 无主），
 // 但此前只有剧本侧能涂（`scenarioEditing.applyCultureBrush`），行星主编辑器没有入口。
 // 把能力搬到行星侧时，有三个口径必须在**一处**定义，否则就会分叉：
 //   ① 落盘/读回后数组的**归一化**（TypedArray ↔ 普通数组 ↔ JSON 退化的 `{0:..}`）
 //   ② 通道 ↔ 元数据列表（`mapData[pid].cultures` / `.religions`）的对应关系
-//   ③ 「无主」（下标 0）该显示成什么颜色
+//   ③ “无主”（下标 0）该显示成什么颜色
 //
 // ⚠️ 本文件**只放纯函数**（不碰 Vue / 不碰 store），Node 侧可直接单测
 //    （`scripts/tests/unit/test_heightmap_channels.js`）。
@@ -26,7 +26,7 @@ export const CHANNEL_LIST_KEY = {
   religion: 'religions',
 };
 
-/** 「无主」（下标 0）的底色 —— 中性灰，便于与有主区域区分但又不抢视线 */
+/** “无主”（下标 0）的底色 —— 中性灰，便于与有主区域区分但又不抢视线 */
 export const CHANNEL_UNASSIGNED_HEX = '#e8e6e0';
 
 /** 通道下标的硬上限（Uint8Array 装得下，但列表不该无限长） */
@@ -83,12 +83,12 @@ export function channelValueAt(hm, channel, index) {
 }
 
 /**
- * 列表里「下一个可用的**位置**」—— 通道值就是**位置**（1 起），不是元数据的 `id`。
+ * 列表里“下一个可用的**位置**”—— 通道值就是**位置**（1 起），不是元数据的 `id`。
  *
  * 🔴 为什么不能用 `id`：`mapData[pid].cultures` 里的 `id` 是 `Date.now()`（`NodeDetailPanel`
  *    建文化时就是这么写的，见该组件 `createCulture`）。时间戳 1.7e12 塞进 `Uint8Array`
  *    会被截成低 8 位 —— 那是**静默的数据错乱**（两个文化抢同一个下标、颜色名字全乱、不报错）。
- *    所以通道值一律取「列表位置」，并且上限 255（`CHANNEL_MAX_INDEX`）。
+ *    所以通道值一律取“列表位置”，并且上限 255（`CHANNEL_MAX_INDEX`）。
  */
 export function nextChannelIndex(list) {
   const n = Array.isArray(list) ? list.length : 0;

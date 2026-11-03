@@ -1,16 +1,16 @@
 /**
- * utils/placeTypes.js — 「地点类型（placeType）」的**唯一判定与选项实现**（A-3 中文点选糙版）
+ * utils/placeTypes.js — “地点类型（placeType）”的**唯一判定与选项实现**（A-3 中文点选糙版）
  *
  * 背景（`docs/ROADMAP_NEXT.md` 线 A A-3 + 2026-09-28 在线审查补刀线审查补刀①②）：
- *   搬家线把「层级 / 上层挂靠 / 地点类型」从笔记 frontmatter 收进 `.sitian` 之后，
+ *   搬家线把“层级 / 上层挂靠 / 地点类型”从笔记 frontmatter 收进 `.sitian` 之后，
  *   笔记里**本来就没写**的空白只有这个点选界面能填。审查补刀两条硬要求：
  *     ① 下拉选项 = 8 枚举 ∪ 实体当前值 —— 笔记手写可能冒出第 9 种枚举外值，
  *        下拉只给 8 枚举会**一打开就静默改值**（本仓刚防完 A-2 的静默覆盖，同族缺陷）；
- *     ② 「只看空白」过滤必须**按层级判空白** —— 2026-09-29 拿真 ROSA 缓存实测：
+ *     ② “只看空白”过滤必须**按层级判空白** —— 2026-09-29 拿真 ROSA 缓存实测：
  *        placeType 空 45 个里 **39 个是 world/star_domain/galaxy/planet 宇宙层**
  *        （这些层级本来就不该有地点类型），聚落 5 个按约定也不标（有独立渲染样式），
  *        真正该填的只有 region/facility/location；parentId 空 9 个里 4 个是 world（本来就该顶层）。
- *        不分层就过滤 = 用户点开「类型为空」看到 39 行无意义噪音，过滤器等于没做。
+ *        不分层就过滤 = 用户点开“类型为空”看到 39 行无意义噪音，过滤器等于没做。
  *
  * 本模块纯函数、无 DOM / 无 store 依赖 → Node 层可直接跑（test_place_types.js）。
  * 单源纪律：ProjectPanel / NodeDetailPanel / geodata 的枚举与层级判定**都从这里取**，
@@ -28,12 +28,12 @@ export const PLACE_TYPES = ['自然', '宗教', '皇室', '商业', '工业', '�
  */
 export const PLACE_TYPE_LAYERS = ['facility', 'location', 'region'];
 
-/** 该实体是否**应当**有地点类型（= 「类型为空」过滤的计数口径） */
+/** 该实体是否**应当**有地点类型（= “类型为空”过滤的计数口径） */
 export function expectsPlaceType(entity) {
   return !!(entity && PLACE_TYPE_LAYERS.includes(entity.layer));
 }
 
-/** 该实体的地点类型是否是「该填却没填」的空白 */
+/** 该实体的地点类型是否是“该填却没填”的空白 */
 export function missingPlaceType(entity) {
   return expectsPlaceType(entity) && !(entity && entity.placeType);
 }
@@ -70,7 +70,7 @@ export const GAP_MODES = [
   { value: 'any', label: '任一为空' },
 ];
 
-/** 「只看空白」过滤判定（mode 见 GAP_MODES；all 恒真 = 显示整棵树） */
+/** “只看空白”过滤判定（mode 见 GAP_MODES；all 恒真 = 显示整棵树） */
 export function matchesGap(entity, mode) {
   if (mode === 'type') return missingPlaceType(entity);
   if (mode === 'parent') return missingParent(entity);

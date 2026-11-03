@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 84：剧本「隐式载入」的优先级 —— 知识库缓存只补缺，不许覆盖项目
+"""用例 84：剧本“隐式载入”的优先级 —— 知识库缓存只补缺，不许覆盖项目
 
-来源：2026-10-06 审「历史剧本能不能真用」时读代码抓出的**静默数据毁伤**。
+来源：2026-10-06 审“历史剧本能不能真用”时读代码抓出的**静默数据毁伤**。
 
 缺陷原貌（修复前）：
-  `App.enterScenarioMode()`（点「历史剧本」）无条件
+  `App.enterScenarioMode()`（点“历史剧本”）无条件
   `sitianAPI.loadScenarios()` → `store.importFromScenariosJson(data)`，
   而后者走的是 `applyScenarioState(data, {fresh:false})` 的**默认合并** `{...旧, ...新}`
   —— **新值赢**。项目态下画布事实源是项目文件，于是：
@@ -13,22 +13,22 @@
        势力谱系 / 标注 / 标记全没了）；
     ② 库里同名的**底图**同样被替换（用户在司天里画过的省份、涂过的地形全没了）；
     ③ 紧接着 `saveScenarios()` 把覆盖结果推给项目并落盘 = **不可逆**。
-  触发时机还是最坏的那种：**每次启动后第一次点「历史剧本」**（`restoreLastProject` 打开项目、
+  触发时机还是最坏的那种：**每次启动后第一次点“历史剧本”**（`restoreLastProject` 打开项目、
   WorldSelector 上就摆着那个按钮）。
 
 修法（本用例守的契约）：
   · `applyScenarioState(data, { fillMissingOnly: true })` = **内存里已有的优先，只补缺**；
-  · 「同 key 覆盖」保留给**显式**动作（剧本工具栏「导入剧本数据（合并：同 key 覆盖）」）；
+  · “同 key 覆盖”保留给**显式**动作（剧本工具栏“导入剧本数据（合并：同 key 覆盖）”）；
   · 无事可补时**保持原引用**（`changed:false`）→ 调用方不再排一次保存，
-    避免每次进「历史剧本」都把项目标脏 + 触发写盘与备份轮转。
+    避免每次进“历史剧本”都把项目标脏 + 触发写盘与备份轮转。
 
 本用例覆盖：
-  f0 源码守卫：隐式载入必须传 `fillMissingOnly`；装载口必须支持该语义且保留「新值赢」的显式分支；
+  f0 源码守卫：隐式载入必须传 `fillMissingOnly`；装载口必须支持该语义且保留“新值赢”的显式分支；
      切片点在补缺语义下不许被塞进来。
-  f1 端到端（项目态，反向探针在此）：先造「项目里已编辑过的剧本 + 底图」，再把同名旧值塞进
-     知识库桩 → 点「历史剧本」→ 项目值必须**原样活着**，库里独有的剧本必须被补进来，
-     且确实读了库（调用计数 = 1，排除「干脆不读」的空转通过）。
-  f2 显式导入仍是「新值赢」（证明两种语义没有被合并成一种）。
+  f1 端到端（项目态，反向探针在此）：先造“项目里已编辑过的剧本 + 底图”，再把同名旧值塞进
+     知识库桩 → 点“历史剧本”→ 项目值必须**原样活着**，库里独有的剧本必须被补进来，
+     且确实读了库（调用计数 = 1，排除“干脆不读”的空转通过）。
+  f2 显式导入仍是“新值赢”（证明两种语义没有被合并成一种）。
   f3 无事可补时是纯 no-op（引用不变 + 没有排保存），执行一次 `changed:false`。
 """
 
@@ -53,7 +53,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再判子串 —— 本仓五次踩到「注释里的字样被当成实现」。"""
+    """剥掉注释后再判子串 —— 本仓五次踩到“注释里的字样被当成实现”。"""
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
     src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
     return re.sub(r'(?m)//[^\n]*', '', src)
@@ -67,7 +67,7 @@ def sub_source_guards(cdp):
     app = _code_only(_read(APP))
     se = _code_only(_read(SE))
 
-    # ① 隐式载入必须显式要求「只补缺」
+    # ① 隐式载入必须显式要求“只补缺”
     if 'fillMissingOnly: true' not in app:
         bad.append('App.vue 的隐式载入没有传 fillMissingOnly: true（会覆盖项目里的剧本与底图）')
     m = re.search(r'importFromScenariosJson\(result\.data([^)]*)\)', app)
@@ -80,7 +80,7 @@ def sub_source_guards(cdp):
     if '{ ...scenarios.value, ...migrated }' not in se.replace(' ', ' ').replace('  ', ' '):
         # 允许空白差异：退一步用更宽松的判据
         if not re.search(r'\{\s*\.\.\.scenarios\.value\s*,\s*\.\.\.migrated\s*\}', se):
-            bad.append('「新值赢」的显式合并分支被删了（显式导入会被改成补缺）')
+            bad.append('“新值赢”的显式合并分支被删了（显式导入会被改成补缺）')
     if not re.search(r'importFromScenariosJson\(data,\s*opts\s*=\s*\{\}\)', se):
         bad.append('importFromScenariosJson 没有 opts 透传（调用方无法选语义）')
 
@@ -88,15 +88,15 @@ def sub_source_guards(cdp):
     if 'if (!fillMissingOnly) {' not in se:
         bad.append('补缺语义下没有把切片点排除在外')
 
-    # ④ 无事可补必须保持原引用（否则每次进「历史剧本」都会排一次写盘）
+    # ④ 无事可补必须保持原引用（否则每次进“历史剧本”都会排一次写盘）
     if 'changed: baseMaps.value !== prevBaseMaps' not in se:
-        bad.append('applyScenarioState 没有 changed 回报（调用方无法判「要不要排保存」）')
+        bad.append('applyScenarioState 没有 changed 回报（调用方无法判“要不要排保存”）')
     if "r.changed !== false) saveScenarios();" not in se:
         bad.append('importFromScenariosJson 没有按 changed 决定是否排保存')
 
-    # ⑤ 反证：不许有人把隐式载入改成「干脆不读库」（那会丢掉库里独有的剧本）
+    # ⑤ 反证：不许有人把隐式载入改成“干脆不读库”（那会丢掉库里独有的剧本）
     if re.search(r'if\s*\(\s*!?\s*canvasIsProject[^)]*\)\s*\{\s*const result = await window\.sitianAPI\.loadScenarios', app):
-        bad.append('隐式载入被改成「项目态直接不读库」（库里独有的剧本就再也进不来了）')
+        bad.append('隐式载入被改成“项目态直接不读库”（库里独有的剧本就再也进不来了）')
 
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
@@ -111,7 +111,7 @@ F1_JS = r"""(async () => {
   const s = __STORE__;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // ① 造「项目里已编辑过的剧本与底图」—— 走真实装载口（fresh = 打开项目的语义）
+  // ① 造“项目里已编辑过的剧本与底图”—— 走真实装载口（fresh = 打开项目的语义）
   s.applyScenarioState({
     baseMaps: { desite: { name: '项目底图', marker: 'PROJECT', provinces: [{ id: 'p84' }] } },
     scenarios: {
@@ -143,9 +143,9 @@ F1_JS = r"""(async () => {
   };
   window.__scenarioLoadCalls = 0;
 
-  // ③ 点「历史剧本」—— 走的是产品自己的入口，不是直接调函数
+  // ③ 点“历史剧本”—— 走的是产品自己的入口，不是直接调函数
   const btn = Array.from(document.querySelectorAll('button')).find((x) => (x.textContent || '').includes('历史剧本'));
-  if (!btn) return JSON.stringify({ fails: ['世界选择页上找不到「历史剧本」按钮'] });
+  if (!btn) return JSON.stringify({ fails: ['世界选择页上找不到“历史剧本”按钮'] });
   btn.click();
   await wait(900);
 
@@ -197,7 +197,7 @@ def sub_project_wins(cdp):
 
 
 # ══════════════════════════════════════════════════════════════════
-# f2 显式导入仍是「新值赢」
+# f2 显式导入仍是“新值赢”
 # ══════════════════════════════════════════════════════════════════
 def sub_explicit_still_overwrites(cdp):
     expr = """(async () => {
@@ -206,7 +206,7 @@ def sub_explicit_still_overwrites(cdp):
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const before = s.scenarios['desite/甲王朝'];
       if (!before) return JSON.stringify({ fails: ['上一段之后同名剧本不在了'] });
-      // 显式导入（不传 fillMissingOnly）—— 用户明确按下「导入剧本数据（合并：同 key 覆盖）」的语义
+      // 显式导入（不传 fillMissingOnly）—— 用户明确按下“导入剧本数据（合并：同 key 覆盖）”的语义
       s.importFromScenariosJson({
         scenarios: { 'desite/甲王朝': { id: 'A84', name: '甲王朝', marker: 'EXPLICIT' } },
       });
@@ -223,7 +223,7 @@ def sub_explicit_still_overwrites(cdp):
         return False, res
     if res['fails']:
         return False, '显式导入语义断言失败：' + '；'.join(res['fails'])
-    return True, f"显式导入仍为「同 key 覆盖」（marker={res.get('marker')}）—— 两种语义确实分开"
+    return True, f"显式导入仍为“同 key 覆盖”（marker={res.get('marker')}）—— 两种语义确实分开"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -235,7 +235,7 @@ def sub_noop_when_nothing_missing(cdp):
       const s = __STORE__;
       const scenRef = s.scenarios;
       const baseRef = s.baseMaps;
-      // 与内存完全同键的「库」——无事可补
+      // 与内存完全同键的“库”——无事可补
       const r = s.applyScenarioState({
         baseMaps: { desite: { name: '库底图', marker: 'VAULT' } },
         scenarios: { 'desite/甲王朝': { id: 'A84', name: '甲王朝', marker: 'VAULT' } },

@@ -251,11 +251,11 @@ export function convexHull(points) {
 /**
  * 对称绘制：把一个点沿对称轴镜像。
  *
- * 🔴 这是「对称绘制」这条能力**唯一**的镜像数学实现（2026-10-11 抽出）。
+ * 🔴 这是“对称绘制”这条能力**唯一**的镜像数学实现（2026-10-11 抽出）。
  *    抽出来的原因不是洁癖：此前 `PlanetMap.vue` 里有一份局部 `mirrorPoint`，
  *    而绘图层 `composables/planetDrawing.js` 里直接引用了**同名但不在作用域里的**
  *    `mirrorPoint`（`s.currentPath.map(mirrorPoint)`）—— 那是个未声明标识符，
- *    一打开「对称绘制」画路径/描点就 `ReferenceError`（由 test_93 的静态守卫抓出）。
+ *    一打开“对称绘制”画路径/描点就 `ReferenceError`（由 test_93 的静态守卫抓出）。
  *    两份实现还各自可能漂移：镜像轴语义（axis='y' 指"左右镜像"，镜像的是 x 坐标）必须只有一处定义。
  *
  * @param {{x:number,y:number}} p
@@ -357,7 +357,7 @@ export function splitPolygon(points, lineA, lineB) {
   if (n < 4) return null;
 
   const cuts = [];
-  // 用「无限直线」求交：切割线两端可能都在多边形内部（用户在多边形内点两点），
+  // 用“无限直线”求交：切割线两端可能都在多边形内部（用户在多边形内点两点），
   // 线段求交会因端点在内而找不到交点（bug 2026-08-16：20→380 内部切割失败）
   for (let i = 0; i < n; i++) {
     const p1 = points[i], p2 = points[(i + 1) % n];

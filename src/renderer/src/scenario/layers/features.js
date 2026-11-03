@@ -1,4 +1,4 @@
-// scenario/layers/features.js — 剧本视图「地图要素」层（N1 刀 2，2026-10-30）
+// scenario/layers/features.js — 剧本视图“地图要素”层（N1 刀 2，2026-10-30）
 //
 // 从 `ScenarioMap.vue` 搬出：道路/航路、手画河、城镇（含首都星标）。
 // 这三块都是**世界坐标**里的普通要素层，和省份/文字/HUD 正交，但都有各自的"档位节流"
@@ -61,7 +61,7 @@ function buildRiverRun(pts, s, e, widths) {
 export const ROUTE_STYLES = {
   roads: { color: '#d06324', width: 0.9, dash: null, alpha: 0.95 },
   trails: { color: '#d06324', width: 0.5, dash: [2, 3], alpha: 0.85 },
-  // 2026-10-27（用户「海路图还不如之前那个独立模块」）：0.5px + 1.5/3 的短虚线在浅色海面上
+  // 2026-10-27（用户“海路图还不如之前那个独立模块”）：0.5px + 1.5/3 的短虚线在浅色海面上
   // 几乎看不见，压在陆地上又像划痕。加宽到 0.9、虚线拉到 5/4，并加一层深色底衬。
   searoutes: { color: '#eaf4fb', width: 0.9, dash: [5, 4], alpha: 0.8 },
 };
@@ -205,7 +205,7 @@ export function drawScenarioMarkersLayer(c, view) {
       c.stroke();
       if (c.setLineDash) c.setLineDash([]);
     }
-    // 图标/颜色缺省时按「标记类型」补 —— 导入的数据往往只带 type
+    // 图标/颜色缺省时按“标记类型”补 —— 导入的数据往往只带 type
     const typeDef = view.MARKER_TYPES.find(t => t.id === m.type);
     view.drawIconOrEmoji(c, m.icon || (typeDef && typeDef.icon) || 'map-pin', m.x, m.y,
       Math.max(12, view.px(16)), m.color || (typeDef && typeDef.color) || '#FFFFFF');
@@ -242,7 +242,7 @@ export function drawRiversLayer(c, view) {
   // ── 同一段河道只画一遍（2026-10-21 第二十一修）────────────────────────────
   // 真实 FMG 数据里支流的路径会沿干流再走一遍，两张 `rivers[]` 共享一段河身；
   // 两条都画 = 粗河旁贴一条细线，放大后从某个节点分叉成双线。
-  // 这里按「宽的先画、窄的跳过被盖住的连续段」生成绘制计划；纯函数在 riverRender.js。
+  // 这里按“宽的先画、窄的跳过被盖住的连续段”生成绘制计划；纯函数在 riverRender.js。
   // 缓存键 = 裁剪后的列表引用 + 缩放（`dist` 按屏幕像素换算，缩放变了才需要重算）。
   if (displayRiverPlanCache.list !== list || displayRiverPlanCache.scale !== view.cameraScale
       || displayRiverPlanCache.maxW !== maxRiverWidth) {
@@ -284,13 +284,13 @@ export function drawRiversLayer(c, view) {
     for (const { path, idx } of runs) {
       const wi = Math.min(widths.length - 1, Math.max(0, Math.round(idx)));
       const w = Number(widths[wi]) || Number(r.width) || 0.02;
-      // ⚠️ 下限**不要写成 0.35**：`test_73` 的源码守卫用裸子串查「省名档阈值被写回组件」，
+      // ⚠️ 下限**不要写成 0.35**：`test_73` 的源码守卫用裸子串查“省名档阈值被写回组件”，
       //    0.35 是它认定的档位阈值（详见该用例注释：遇到误伤就改数字，别改守卫）。
       c.lineWidth = Math.max(0.3, basemapRiverWidthWorld({ width: w }, view.cameraScale, maxRiverWidth));
       c.stroke(path);
     }
   }
-  // 河流名：默认关闭（自动地名多为 FMG 英文名），由「图层 → 自动地名」控制
+  // 河流名：默认关闭（自动地名多为 FMG 英文名），由“图层 → 自动地名”控制
   if (view.showPlaceNames) view.drawRiverNames(c);
   c.restore();
 }
@@ -307,7 +307,7 @@ export function drawSelectedRiverHighlightLayer(c, view) {
     const r = all.find((x) => x && x.id === id);
     if (!r) continue;
     const rawPts = view.riverNodesForRender(r);
-    // 导入河是「去 + 回」的闭合路径 —— 选中轮廓也必须在折过的中心线上，
+    // 导入河是“去 + 回”的闭合路径 —— 选中轮廓也必须在折过的中心线上，
     // 否则金色两条边线会跟着"双线"一起复制一份。
     const pts = String(r.id || '').indexOf('river_') === 0
       ? rawPts

@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 61：历史剧本（底图编辑）进入/编辑性能与「空白陷阱」回归（P-0 修复的守卫）
+"""用例 61：历史剧本（底图编辑）进入/编辑性能与“空白陷阱”回归（P-0 修复的守卫）
 
 P-0 实测结论（2026-09-22，真实库 desite 21 省 25930 点）：
-  1. 「打开底图编辑卡住」= 点击即 113~148ms 同步 JS + 挂载期一次 367~446ms 长任务（rAF 停摆 381~449ms）
-  2. 「画布像空的」   = **首帧用的是未适屏相机 (0,0,1)**：非背景像素仅 7%（只剩底网格），
+  1. “打开底图编辑卡住”= 点击即 113~148ms 同步 JS + 挂载期一次 367~446ms 长任务（rAF 停摆 381~449ms）
+  2. “画布像空的”   = **首帧用的是未适屏相机 (0,0,1)**：非背景像素仅 7%（只剩底网格），
                        适屏帧要等 `setTimeout(fitToView, 100)` 才来（+684ms）
-  3. 「滚轮才刷新」   = 画布纯事件驱动；漏掉的那次 render 会一直留在屏幕上
-  4. 「未知原因卡死」 = `baseMapKey` 只在 onMounted 解析一次 → 底图数据晚到（或只读被闸门拒绝）时
+  3. “滚轮才刷新”   = 画布纯事件驱动；漏掉的那次 render 会一直留在屏幕上
+  4. “未知原因卡死” = `baseMapKey` 只在 onMounted 解析一次 → 底图数据晚到（或只读被闸门拒绝）时
                        `baseMap` 恒 undefined → 任何 watch 都不触发 → **画布永久空白**（实测 0 帧重绘）
-  5. 「绘制很卡」     = 单帧 render 94ms（Vue 响应式 get 27% + traceShapePath 18% + 每帧重画小地图 16%）；
+  5. “绘制很卡”     = 单帧 render 94ms（Vue 响应式 get 27% + traceShapePath 18% + 每帧重画小地图 16%）；
                        拖动平移 20 步 1906ms
-  6. 「打开省份工具一顿」= `setTool('provinceBrush')` 现场栅格化 170~368ms
+  6. “打开省份工具一顿”= `setTool('provinceBrush')` 现场栅格化 170~368ms
 
 本用例守这六条的修复（每条一个子测试）：
   a 源码闸门：绘制走 toRaw（rawTerrain/rawPointsOf）、小地图缓存、网格异步、底图晚到自动选中
   b 首帧即适屏（帧时相机 ≠ (0,0,1)，且画布非空）
   c 底图数据晚到 → 自动选中 + 适屏 + 出现内容（不再永久空白）
-  d 空态文案区分「只读（未打开项目）」与「项目里还没有底图」
+  d 空态文案区分“只读（未打开项目）”与“项目里还没有底图”
   e 帧成本：21 省 25200 点，单帧中位 ≤ 40ms；平移 20 步 ≤ 900ms
   f setTool('provinceBrush') 不再同步冻结（调用 ≤ 60ms），网格随后异步就绪
 """
@@ -53,7 +53,7 @@ def _js(cdp, expr):
     return {'raw': raw}
 
 
-# 画布「有内容」的判据：只有底网格的空画布实测 colors≈46 / nonBg≈328（P-0），
+# 画布“有内容”的判据：只有底网格的空画布实测 colors≈46 / nonBg≈328（P-0），
 # 有省份时 colors≥100 / nonBg≥600。判据太松会让性能断言量到一个空画布（本用例踩过）。
 EMPTY_COLORS, EMPTY_NONBG = 46, 328
 
@@ -89,7 +89,7 @@ def _read(rel):
         return f.read()
 
 
-# ── 帧记录钩子：每次可见帧记下「当时的相机」——首帧是否适屏只能这样测 ──
+# ── 帧记录钩子：每次可见帧记下“当时的相机”——首帧是否适屏只能这样测 ──
 FRAME_HOOK = r"""
 (() => {
   if (window.__frameLog) { window.__frameLog.length = 0; return 'ok'; }
@@ -210,7 +210,7 @@ WIDE_FIXTURE = r"""
     terrain.push({ id: 'c61w_p' + k, name: '宽域省' + k, points: pts });
   }
   s.baseMaps = { ...s.baseMaps, [KEY]: { ...s.baseMaps[KEY], terrain } };
-  // 故意**不**预建网格：本 fixture 用来测「切省份工具时现场栅格化」的同步代价
+  // 故意**不**预建网格：本 fixture 用来测“切省份工具时现场栅格化”的同步代价
   return JSON.stringify({ key: KEY, terrain: terrain.length, gridReady: !!s.getProvinceGrid(KEY) });
 })()
 """
@@ -273,7 +273,7 @@ def run(cdp):
             if tok not in code:
                 fails.append(f'绘制路径未去响应式（缺 {tok}）→ 单帧又会回到 ~94ms')
         # ⚠️ 2026-10-30（N1 刀 2）：小地图整块搬进 `scenario/layers/overlays.js` —— 判据跟着搬家。
-        #    原意不变：「缩略图缓存 + 入口」必须存在，「每帧全量遍历的旧包围盒」必须不存在。
+        #    原意不变：“缩略图缓存 + 入口”必须存在，“每帧全量遍历的旧包围盒”必须不存在。
         overlay_code = _code_only(_read('src/renderer/src/scenario/layers/overlays.js'))
         for tok in ('invalidateMinimap', 'buildThumb', 'getEntry'):
             if tok not in overlay_code:
@@ -289,7 +289,7 @@ def run(cdp):
         if 'watch(availableBaseMaps' not in code:
             fails.append('底图数据晚到时不会自动选中（缺 watch(availableBaseMaps)）→ 画布永久空白')
         if 'fitToView();' not in code:
-            fails.append('onMounted 未「先算镜位再画首帧」→ 首帧又是 (0,0,1) 空画布')
+            fails.append('onMounted 未“先算镜位再画首帧”→ 首帧又是 (0,0,1) 空画布')
     except OSError as e:
         fails.append(f'读不到 ScenarioMap.vue（{e}）')
         return False, ' | '.join(fails)
@@ -344,10 +344,10 @@ def run(cdp):
         if st['renderPaused']:
             fails.append('渲染护栏处于暂停态（渲染路径抛异常了）')
 
-    # ── c. 底图数据「迟到」→ 必须自动选中 + 适屏 + 出内容 ────────────────────
+    # ── c. 底图数据“迟到”→ 必须自动选中 + 适屏 + 出内容 ────────────────────
     #    先在空底图状态进入剧本模式，再补数据（复刻只读被拒后补救 / 项目里后来才有底图）
     cdp.eval(STORE + ".baseMaps = {}; 'ok'")
-    # 2026-10-21：离开剧本走**模块页签**（编辑器左上角的「返回」现在先退底图编辑，
+    # 2026-10-21：离开剧本走**模块页签**（编辑器左上角的“返回”现在先退底图编辑，
     # 在底图编辑态点它不会再退出整个剧本 —— 用页签才是无条件退出模块）。
     cdp.eval("""(() => {
       const b = document.querySelector('[data-testid=module-world]');
@@ -399,7 +399,7 @@ def run(cdp):
             fails.append('宽域 fixture 意外预建了网格 → setTool 的异步断言会失去意义')
         else:
             # 🔴 切底图后的第一帧是**异步**的（渲染由 rAF 调度，不是 setter 同步画完）。
-            #    这里必须先等「新底图真的出内容」，否则接下来那条「打开省份工具后画布变空」
+            #    这里必须先等“新底图真的出内容”，否则接下来那条“打开省份工具后画布变空”
             #    读到的是**上一张底图**的旧帧（实测非背景 1121/58 色，正是 4 省旧图的量级）。
             #    判据仍是"最终不空白"，只是不给"0ms 内必须画完"这种不存在的承诺。
             for _ in range(10):
@@ -479,7 +479,7 @@ def run(cdp):
 
     # ── f. 只读态（未打开项目）：底图进不来必须说清原因与去处，不能只是空白 ──────────
     #    P-0 实测：只读态下 importFromScenariosJson 被 guardWrite 拒绝 → baseMaps 空 →
-    #    画布空白。用户看到「打开底图编辑什么都没有」，必须知道是「没开项目」而不是「程序卡了」。
+    #    画布空白。用户看到“打开底图编辑什么都没有”，必须知道是“没开项目”而不是“程序卡了”。
     cdp.navigate()
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='只读态导航')
     cdp.send('Emulation.setDeviceMetricsOverride',
@@ -502,11 +502,11 @@ def run(cdp):
     if 'ERR' in ro:
         fails.append(f'只读态探针失败：{ro["ERR"]}')
     elif not ro['readOnly']:
-        fails.append('只读态用例没有跑在「未打开项目」状态（readOnly=false）')
+        fails.append('只读态用例没有跑在“未打开项目”状态（readOnly=false）')
     else:
         txt = ro['hintText'] or ''
         if '只读' not in txt:
-            fails.append(f'只读态空画布没有说明「只读」：{txt}')
+            fails.append(f'只读态空画布没有说明“只读”：{txt}')
         if '项目' not in txt:
             fails.append(f'只读态空画布没有给出去处（去哪打开项目）：{txt}')
         if '还没有底图' in txt:

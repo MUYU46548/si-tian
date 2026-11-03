@@ -89,14 +89,14 @@ async function main() {
       { polities, era, nameOf });
     assert(ghost.ok, '不存在的势力应只是警告，不该拒绝录入（用户可能先录事件再建势力）');
     assert(ghost.warnings.some((w) => w.includes('pol_ghost')), `未知势力没警告：${ghost.warnings}`);
-    return `id=ev1 / 标题「${ok.event.title}」/ 坏草稿报 ${bad.errors.length} 条`;
+    return `id=ev1 / 标题“${ok.event.title}”/ 坏草稿报 ${bad.errors.length} 条`;
   });
 
   check('二：时间窗口 [from, to) —— 开战日已生效，停战日已失效', () => {
     const events = [L.makeEvent(warDraft, { existing: [], polities, era, nameOf }).event];
     const r = (d) => L.relationBetween(events, 'pol_jia', 'pol_yi', d);
     assert(r('1348-05-31').relation === 'Neutral', '开战前一天不应敌对');
-    assert(r('1348-05-31').known === false, '开战前一天不应有「已知事件」');
+    assert(r('1348-05-31').known === false, '开战前一天不应有“已知事件”');
     assert(r('1348-06-01').relation === 'Enemy', `开战当日应敌对，实际 ${r('1348-06-01').relation}`);
     assert(r('1351-12-31').relation === 'Enemy', '战争期间应敌对');
     assert(r('1352-06-01').relation === 'Neutral', `停战当日不应再敌对，实际 ${r('1352-06-01').relation}`);
@@ -222,7 +222,7 @@ async function main() {
     return `入参未被改 / 敌对 2 方向 / 和约后 0 条`;
   });
 
-  check('八：文案与清点 —— 「X 年 A 和 B 什么关系」能直接答人话', () => {
+  check('八：文案与清点 —— “X 年 A 和 B 什么关系”能直接答人话', () => {
     const events = [
       L.makeEvent(warDraft, { existing: [], polities, era, nameOf }).event,
       L.makeEvent(peaceDraft, { existing: [], polities, era, nameOf }).event,
@@ -233,14 +233,14 @@ async function main() {
     assert(after.includes('中立') && after.includes('和约'), `和约后文案不对：${after}`);
     const none = L.describeRelation([], 'pol_jia', 'pol_yi', '1349-06-01', { nameOf });
     assert(none.includes('没有已记录'), `空账本文案不对：${none}`);
-    // 只录了战争、没录和约：终止之后不能说「没有记录」，要说「此前那场仗已终止」
+    // 只录了战争、没录和约：终止之后不能说“没有记录”，要说“此前那场仗已终止”
     const ended = L.describeRelation([events[0]], 'pol_jia', 'pol_yi', '1360', { nameOf });
     assert(ended.includes('没有生效中') && ended.includes('已终止') && ended.includes('甲梁战争'),
       `终止后文案不对：${ended}`);
 
     const st = L.ledgerStats(events, { polities, era });
     assert(st.total === 2 && st.byType.war === 1 && st.byType.peace === 1, `清点不对：${JSON.stringify(st)}`);
-    assert(st.ongoing === 0, `和约/战争都不该算「至今未终」：${st.ongoing}`);
+    assert(st.ongoing === 0, `和约/战争都不该算“至今未终”：${st.ongoing}`);
     return at;
   });
 
@@ -279,7 +279,7 @@ async function main() {
     ok('-350', -350, null, null);
     ok({ y: 1348, m: 6, d: 1 }, 1348, 6, 1);
     for (const bad of ['', 'abc', '1350-13-01', '1350-02-30', '1350-00-10', '06-01']) {
-      assert(D.parseDateText(bad) === null, `「${bad}」不该被解析出来：${JSON.stringify(D.parseDateText(bad))}`);
+      assert(D.parseDateText(bad) === null, `“${bad}”不该被解析出来：${JSON.stringify(D.parseDateText(bad))}`);
     }
     return '6 种写法对 / 6 种坏输入返回 null';
   });

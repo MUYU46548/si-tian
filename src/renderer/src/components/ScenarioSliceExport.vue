@@ -4,7 +4,7 @@
       <div class="sse-head">
         <span class="sse-title"><Icon name="layers" :size="15"/> 逐年切片导出</span>
         <span class="sse-sub">
-          按「状态真的变了」出帧 · 一次选目录写一批<span v-if="groupName"> · 剧本集「{{ groupName }}」</span>
+          按“状态真的变了”出帧 · 一次选目录写一批<span v-if="groupName"> · 剧本集“{{ groupName }}”</span>
         </span>
         <span class="sse-spacer"></span>
         <button class="sse-x" data-testid="slice-export-close" @click="emit('close')" title="关闭">
@@ -25,7 +25,7 @@
         <div v-if="dates.synthesized > 0" class="sse-warn" data-testid="slice-date-warn">
           <strong>{{ dates.synthesized }}/{{ dates.total }}</strong> 个易主日期是
           <strong>自动铺开的合成值</strong>（没有录入真实日期）—— 导出的时间轴是按剧本推出来的，
-          不是史料。可到「势力谱系管理 → 易主日期」逐个录入真值（支持精确到月日）。
+          不是史料。可到“势力谱系管理 → 易主日期”逐个录入真值（支持精确到月日）。
         </div>
         <div v-if="dates.outOfRange.length" class="sse-warn" data-testid="slice-range-warn">
           有 <strong>{{ dates.outOfRange.length }}</strong> 个易主日期落在本剧本年代区间之外
@@ -40,7 +40,7 @@
           <strong>多次易主</strong>（月日精度支持）—— 每一次都会单独出一帧。
         </div>
         <div v-if="!slicePoints.length" class="sse-dim-block" data-testid="slice-nopoint-hint">
-          还没有切片点 —— 在时间轴上把游标拖到想导的那天，点「存为切片点」即可命名保存。
+          还没有切片点 —— 在时间轴上把游标拖到想导的那天，点“存为切片点”即可命名保存。
         </div>
 
         <div class="sse-row">
@@ -52,7 +52,7 @@
           </select>
           <span v-if="autoSwitched" class="sse-dim" data-testid="slice-scope-auto">
             本组全部剧本共 {{ allFrameCount }} 帧，超过上限 {{ MAX_SLICE_FRAMES }} →
-            已默认切到「本剧本」（{{ eraFrameCount }} 帧）
+            已默认切到“本剧本”（{{ eraFrameCount }} 帧）
           </span>
           <span class="sse-kv">帧数 <b data-testid="slice-frame-count">{{ frames.length }}</b></span>
           <span class="sse-kv">切片点 <b data-testid="slice-point-count">{{ slicePoints.length }}</b></span>
@@ -61,11 +61,11 @@
         </div>
 
         <div v-if="frames.length > MAX_SLICE_FRAMES" class="sse-warn" data-testid="slice-over-limit">
-          帧数超过上限 {{ MAX_SLICE_FRAMES }} —— 把范围切到「本剧本」，或先合并/精简剧本
+          帧数超过上限 {{ MAX_SLICE_FRAMES }} —— 把范围切到“本剧本”，或先合并/精简剧本
           （当前是一天一帧就会变成逐帧动画）。
         </div>
         <!-- 体量提示（2026-10-24）：真实项目一段剧本就有 184 帧，PNG 2× 每帧数 MB。
-             不编造精确总量，只说量级与减负办法 —— 用户按「导出」之前该知道这一下会写多少。 -->
+             不编造精确总量，只说量级与减负办法 —— 用户按“导出”之前该知道这一下会写多少。 -->
         <div v-if="frames.length >= 60" class="sse-warn" data-testid="slice-size-hint">
           {{ frames.length }} 帧：PNG 每帧通常数 MB（整张 415 省地图），一段剧本就可能占数百 MB 磁盘；
           只要矢量图请保持 SVG（每帧几十 KB），或在下面把倍率降到 1×。
@@ -88,7 +88,7 @@
                   <span v-else>{{ changedText(f) }}</span>
                 </td>
                 <td class="sse-src">
-                  <span v-if="f.sources.includes(bookmarkSrc)" class="sse-pill-bm">切片点{{ f.label ? `「${f.label}」` : '' }}</span>
+                  <span v-if="f.sources.includes(bookmarkSrc)" class="sse-pill-bm">切片点{{ f.label ? `“${f.label}”` : '' }}</span>
                   <span v-if="f.sources.includes(eraSrc)" class="sse-pill-era">起点</span>
                   <span v-if="f.sources.includes(changeSrc)" class="sse-pill-ch">易主</span>
                 </td>
@@ -129,7 +129,7 @@
 <script setup>
 // 逐年切片导出对话框：**纯展示 + 事件**。
 // 帧索引与日期体检都来自纯函数层 `utils/scenarioSlices.js`（与导出链、与用例同一份判定），
-// 这里不重算「哪些日期要出帧」——重算就是第二个事实源。
+// 这里不重算“哪些日期要出帧”——重算就是第二个事实源。
 import { computed, ref } from 'vue';
 import Icon from './Icon.vue';
 import {
@@ -146,7 +146,7 @@ const props = defineProps({
   provinceNames: { type: Object, default: () => ({}) },
   status: { type: String, default: '' },
   busy: { type: Boolean, default: false },
-  /** 当前时间轴所在的那一段（「本剧本」范围用它；导出请求也带回去） */
+  /** 当前时间轴所在的那一段（“本剧本”范围用它；导出请求也带回去） */
   currentEra: { type: Number, default: 0 },
   /** 当前剧本集名（只用于标题/清单说明；范围过滤已在父级 timeline 里做过） */
   groupName: { type: String, default: '' },
@@ -199,7 +199,7 @@ const outOfRangeText = computed(() => dates.value.outOfRange
   .slice(0, 6)
   // 🔴 这里原写 `provinceNames.value[…]` —— 那是**未声明标识符**（props 已在 120 行用
   //    `const props = defineProps(...)` 取出，`provinceNames` 这个名字全文件不存在），
-  //    一执行就 `ReferenceError`。触发条件是「易主日期落在时间窗之外」——
+  //    一执行就 `ReferenceError`。触发条件是“易主日期落在时间窗之外”——
   //    正是用户在切片对话框最需要看到的那句提示。由 test_93 的静态守卫抓出。
   .map((d) => `${props.provinceNames[d.provinceId] || d.provinceId} ${d.text || d.year} ∉ [${d.start},${d.end}]`)
   .join('；') + (dates.value.outOfRange.length > 6 ? ` …（另有 ${dates.value.outOfRange.length - 6} 条）` : ''));

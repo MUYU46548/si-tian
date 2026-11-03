@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 账本 v2 迁移（2026-10-21，大修 B 第二块）
 //
-// 做什么：把每个剧本从「ownership 终态快照 + 少量 changeEvents」迁到
+// 做什么：把每个剧本从“ownership 终态快照 + 少量 changeEvents”迁到
 //   initialOwnership（本代开始时的归属）+ changeEvents（显式 + 合成事件，带 synthesized 标记）
 // `ownership` **保留**为缓存（双写），旧版本仍能读；v2 的派生值必须与它逐省一致。
 //

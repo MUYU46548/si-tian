@@ -3,13 +3,13 @@
 """用例 90：历史剧本站首 + 三处交互修复（2026-10-09，暮雨实测报告）
 
 覆盖四件事：
-  ① 「打开剧本 → 本能想拖动地图查看，却意外触发绘制、弹『仍要在这里创建吗』」
+  ① “打开剧本 → 本能想拖动地图查看，却意外触发绘制、弹‘仍要在这里创建吗’”
      → 默认工具从 draw 翻成 select（拖拽 = 平移）
-  ② 「底图编辑要点一下地图才更新」→ onModeChange 补 render()，切模式即重绘
-  ③ 「根本找不到在哪选剧本 / 上一剧本·下一剧本语义不清」
+  ② “底图编辑要点一下地图才更新”→ onModeChange 补 render()，切模式即重绘
+  ③ “根本找不到在哪选剧本 / 上一剧本·下一剧本语义不清”
      → 剧本列表常驻左栏；点一条 = 切剧本 + 地图切到该时期起始年 + 同步切剧本模式
-  ④ 「神秘隐藏快捷键 Ctrl+Q 无确认就退出」→ 改两段式：主进程只发 app-request-quit，
-     渲染层弹确认框，用户点「退出司天」才回 app-confirm-quit 真退
+  ④ “神秘隐藏快捷键 Ctrl+Q 无确认就退出”→ 改两段式：主进程只发 app-request-quit，
+     渲染层弹确认框，用户点“退出司天”才回 app-confirm-quit 真退
 
 判定口径：
   * 源码闸门 —— 一律先剥注释再判（注释里写着旧实现会自己判自己，见 test_59/71 惯例）
@@ -49,17 +49,17 @@ def _code_only(src):
 
 
 def source_gates():
-    """纯源码判据：这些是「改完不该再回去」的契约，比行为断言更早失败、更好定位。"""
+    """纯源码判据：这些是“改完不该再回去”的契约，比行为断言更早失败、更好定位。"""
     fails, notes = [], []
 
     sc = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
-    # 2026-11-02 N1.5：剧本站首的「点条目 = 选时期」受理函数搬进 scenario/interaction/timeline.js ——
+    # 2026-11-02 N1.5：剧本站首的“点条目 = 选时期”受理函数搬进 scenario/interaction/timeline.js ——
     # 判据把那份源码一起读；实质不变（`selectScenarioAt` 仍只许有一处实现）。
     sc += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/timeline.js'))
 
     # ① 默认工具
     if "const tool = ref('select')" not in sc:
-        fails.append("默认工具不是「选择」——拖地图又会误触建省（应写 const tool = ref('select')）")
+        fails.append("默认工具不是“选择”——拖地图又会误触建省（应写 const tool = ref('select')）")
     if "const tool = ref('draw')" in sc:
         fails.append("默认工具仍写着 draw（2026-10-09 已翻转为 select）")
 
@@ -73,7 +73,7 @@ def source_gates():
     # ③ 剧本站首面板
     for needle, label in [
         ('data-testid="scenario-list-panel"', '剧本站首面板挂到画布上'),
-        ('data-testid="slp-manage"', '面板里的「新建 / 管理剧本」入口'),
+        ('data-testid="slp-manage"', '面板里的“新建 / 管理剧本”入口'),
         ('function selectScenarioAt(', '点条目 = 选时期（切剧本+切年份）的唯一受理函数'),
     ]:
         if needle not in sc:
@@ -180,8 +180,8 @@ PROBE_JS = """(() => {
   // ── ③ 站首面板在位 ──────────────────────────────────────────────────────
   const panel = document.querySelector('[data-testid="scenario-list-panel"]');
   ok('剧本站首面板存在', !!panel);
-  ok('面板标题写着「历史剧本」', !!panel && panel.textContent.includes('历史剧本'));
-  ok('「新建 / 管理剧本」按钮在位', !!document.querySelector('[data-testid="slp-manage"]'));
+  ok('面板标题写着“历史剧本”', !!panel && panel.textContent.includes('历史剧本'));
+  ok('“新建 / 管理剧本”按钮在位', !!document.querySelector('[data-testid="slp-manage"]'));
   const items = Array.from(document.querySelectorAll('.slp-item'));
   notes.items = items.length;
   ok('列表条目数 = 剧本数（3）', items.length === 3, items.length);

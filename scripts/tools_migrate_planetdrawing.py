@@ -32,7 +32,7 @@ for ref in refs:
 body = body.replace('terrainTypes', 's.terrainTypes')
 body = body.replace('refImageObjs', 's.refImageObjs')
 
-# 保留的函数内局部变量检查：drawFog 的 fillText 文本含「编辑地图」无影响
+# 保留的函数内局部变量检查：drawFog 的 fillText 文本含“编辑地图”无影响
 
 header = '''/**
  * composables/planetDrawing.js — 行星地图 Canvas 绘制函数（批次 2a：从 PlanetMap.vue 拆分）

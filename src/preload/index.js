@@ -22,8 +22,8 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   saveGeodata: (data) => ipcRenderer.invoke('save-geodata', data),
   getVaultPath: () => ipcRenderer.invoke('get-vault-path'),
   // 🔴 知识库监听开关（2026-10-14 补暴露）：这两个 channel 在 `main/index.js:710/713`
-  //    **注册了很久但 preload 从来没暴露过** → 设置面板里那个「监听 Obsidian 文件变更
-  //    自动刷新」勾选框只写进 localStorage，主进程的 `vaultWatcherEnabled` 是硬编码 true，
+  //    **注册了很久但 preload 从来没暴露过** → 设置面板里那个“监听 Obsidian 文件变更
+  //    自动刷新”勾选框只写进 localStorage，主进程的 `vaultWatcherEnabled` 是硬编码 true，
   //    于是**关了也照跑**（假开关），重启后勾选态也不还原。
   //    与 projectHandler / gitSyncHandler 的暴露方式保持一致（invoke + 返回结构化结果）。
   getWatcherStatus: () => ipcRenderer.invoke('get-watcher-status'),
@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   notifyFlushDone: (payload) => ipcRenderer.send('app-flush-done', payload || { failed: [] }),
 
   // Ctrl+Q 退出确认（2026-10-09）：主进程收到 Ctrl+Q 后不再直接退，改发 'app-request-quit'
-  // 让渲染层判断「有没有未保存的改动」并弹确认框；用户选「退出司天」后才调 confirmQuit()。
+  // 让渲染层判断“有没有未保存的改动”并弹确认框；用户选“退出司天”后才调 confirmQuit()。
   onRequestQuit: (cb) => {
     if (typeof cb !== 'function') return () => {};
     const h = (_e, reason) => cb(reason);
@@ -86,7 +86,7 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   loadScenarios: () => ipcRenderer.invoke('load-scenarios'),
 
   // ===== 一键同步到远程仓库（git）=====
-  // 「傻瓜式」：状态 / 存地址 / 存令牌 / 测连接 / 立即同步 / 从远程恢复 —— 渲染层看不到任何 git 细节（逻辑在主进程）
+  // “傻瓜式”：状态 / 存地址 / 存令牌 / 测连接 / 立即同步 / 从远程恢复 —— 渲染层看不到任何 git 细节（逻辑在主进程）
   gitSyncStatus: (dir) => ipcRenderer.invoke('git-sync-status', dir),
   gitSyncConfigure: (payload) => ipcRenderer.invoke('git-sync-configure', payload),
   gitSyncCredential: (payload) => ipcRenderer.invoke('git-sync-credential', payload),
@@ -114,10 +114,10 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   //    而那份文件是"地形/河流/道路能否重新导入"的唯一凭据（真实丢过一轮，见 handler 头注）。
   saveBaseMapSource: (payload) => ipcRenderer.invoke('basemap-source-save', payload),
   listBaseMapSources: (payload) => ipcRenderer.invoke('basemap-source-list', payload),
-  // 只读：把一份留底**读回来**（2026-10-13「从留底恢复」）。
+  // 只读：把一份留底**读回来**（2026-10-13“从留底恢复”）。
   // 为什么补：留底只有"列清单"没有"读回来"时，UI 上等于不存在 —— 备份读不回来就不算备份。
   readBaseMapSource: (payload) => ipcRenderer.invoke('basemap-source-read', payload),
-  /** 只读：主进程侧「当前项目路径」（权威）—— 组件不必为拿路径去引 projectStore */
+  /** 只读：主进程侧“当前项目路径”（权威）—— 组件不必为拿路径去引 projectStore */
   projectCurrentPath: () => ipcRenderer.invoke('project-current-path'),
 
   // 导出文件（保存对话框 + 写入）

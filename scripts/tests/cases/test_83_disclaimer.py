@@ -4,8 +4,8 @@
 
 来源：`docs/PROPOSAL_DISCLAIMER_AND_UI.md` 方案 A（2026-10-06 定稿落地）。
   ① 条款 13 节，**保留未成年人条款**（暮雨拍板）；
-  ② 首启强制确认：滚到底才可勾选 / Esc 不关 / 点遮罩不关 / 「不同意并退出」；
-  ③ 「关于 → 免责声明」随时可查，条款升版本后再次要求确认；
+  ② 首启强制确认：滚到底才可勾选 / Esc 不关 / 点遮罩不关 / “不同意并退出”；
+  ③ “关于 → 免责声明”随时可查，条款升版本后再次要求确认；
   ④ 试点 UI 基座：Tailwind utilities-only（不引 preflight）+ shadcn-vue Button/Dialog/Card。
 
 本用例覆盖：
@@ -13,11 +13,11 @@
      aria-modal + trapFocus 显式传参、App 挂点在 loadGeodata 之前、引导层守卫、
      harness 基线已播种 ack（否则几十个用例会被阻断层一起挡住）。
   g1 首启阻断：清掉 ack 重载 → 弹窗出现 / role+aria-modal 正确 / 勾选框禁用 /
-     未勾选不能同意 / 阻断态没有「关闭」/ 新手引导不同屏。
+     未勾选不能同意 / 阻断态没有“关闭”/ 新手引导不同屏。
   g2 强制模式不可绕过：Esc 按下去不关；点遮罩不关。
   g3 滚到底才解锁 → 勾选 → 同意 → 弹窗关闭 + ack 落到 localStorage（ISO 时间戳）。
   g4 已确认后重载不再弹（版本化 ack 真的生效）。
-  g5 随时可查：F1 关于面板 → 入口存在 → 点开查看模式（无门槛、有「关闭」）→ Esc 可关。
+  g5 随时可查：F1 关于面板 → 入口存在 → 点开查看模式（无门槛、有“关闭”）→ Esc 可关。
 """
 
 import io
@@ -41,7 +41,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再判子串 —— 本仓四次踩到「注释里的字样被当成实现」。"""
+    """剥掉注释后再判子串 —— 本仓四次踩到“注释里的字样被当成实现”。"""
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
     src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
     return re.sub(r'(?m)//[^\n]*', '', src)
@@ -68,7 +68,7 @@ def sub_source_guards(cdp):
     cfg = _code_only(_read('tailwind.config.js'))
     if 'preflight: false' not in cfg:
         bad.append('tailwind.config.js 没关 preflight（会直接打坏 Markdown 列表与全局行高）')
-    # ⚠️ 必须**先剥注释**：本文件头部注释里就写着「绝不加 @tailwind base」以及
+    # ⚠️ 必须**先剥注释**：本文件头部注释里就写着“绝不加 @tailwind base”以及
     #    `ol,ul{list-style:none}` 的解释 —— 不剥注释，守卫会被自己的注释判红（首版实测）。
     css = _code_only(_read('src/renderer/src/assets/tailwind.css'))
     if '@tailwind base' in css or '@tailwind components' in css:
@@ -117,7 +117,7 @@ def sub_source_guards(cdp):
     else:
         i_tpl = app.find('<disclaimer-dialog')
         # 🔴 必须 rfind：App.vue 有多处内联 `<template v-if>`，find('</template>') 会命中
-        #    工具栏下拉那处（第 45 行左右），把正常挂载点误判成「在模板外」（首版实测踩到）。
+        #    工具栏下拉那处（第 45 行左右），把正常挂载点误判成“在模板外”（首版实测踩到）。
         i_end = app.rfind('</template>')
         if not (0 < i_tpl < i_end):
             bad.append('disclaimer-dialog 不在模板内')
@@ -187,14 +187,14 @@ G1_JS = r"""(() => {
   else if (!cb.disabled) fails.push('还没滚到底，勾选框却是可用的');
 
   const hint = q('[data-testid="disclaimer-gate-hint"]');
-  if (!hint || !/滚动/.test(hint.textContent || '')) fails.push('缺少「请滚动阅读完整条款」提示');
+  if (!hint || !/滚动/.test(hint.textContent || '')) fails.push('缺少“请滚动阅读完整条款”提示');
 
   const acc = q('[data-testid="disclaimer-accept"]');
-  if (!acc) fails.push('缺「同意并继续」按钮');
-  else if (!acc.disabled) fails.push('还没勾选就能点「同意并继续」');
+  if (!acc) fails.push('缺“同意并继续”按钮');
+  else if (!acc.disabled) fails.push('还没勾选就能点“同意并继续”');
 
-  if (!q('[data-testid="disclaimer-decline"]')) fails.push('缺「不同意并退出」按钮');
-  if (q('[data-testid="disclaimer-close"]')) fails.push('阻断态不应出现「关闭」按钮（可绕过确认）');
+  if (!q('[data-testid="disclaimer-decline"]')) fails.push('缺“不同意并退出”按钮');
+  if (q('[data-testid="disclaimer-close"]')) fails.push('阻断态不应出现“关闭”按钮（可绕过确认）');
   if (q('.onboarding-overlay')) fails.push('新手引导与免责声明同屏（声明会被盖住）');
 
   // 13 节都渲染出来了
@@ -205,7 +205,7 @@ G1_JS = r"""(() => {
   const ae = document.activeElement;
   if (!ae || !dlg.contains(ae)) fails.push('初始焦点不在弹窗内（焦点陷阱没生效）');
 
-  // ── 底部按钮对比度（2026-10-09 暮雨实测：「不同意并退出」黑底黑字，鼠标放上去才看见）──
+  // ── 底部按钮对比度（2026-10-09 暮雨实测：“不同意并退出”黑底黑字，鼠标放上去才看见）──
   // 根因：preflight 关闭 → 缺 `button { color: inherit }` → <button> 落回 UA 的 buttontext
   //（Windows 浅色系统 = 近黑），而 outline 变体底色是深色 --ui-background → 黑底黑字。
   // 判据与 test_58 的 CONTRAST_JS 同款：逐层合成背景 + WCAG 小字阈值 4.5。
@@ -230,7 +230,7 @@ G1_JS = r"""(() => {
   }
   for (const [name, v] of Object.entries(contrast)) {
     if (v !== null && v < 4.5) {
-      fails.push(`「${name}」按钮对比度 ${v} < 4.5（小字阈值）—— 文字与底色太近，悬停才可见`);
+      fails.push(`“${name}”按钮对比度 ${v} < 4.5（小字阈值）—— 文字与底色太近，悬停才可见`);
     }
   }
 
@@ -314,12 +314,12 @@ def sub_scroll_then_accept(cdp):
           + (q('[data-testid="disclaimer-gate-hint"]') || {}).textContent + '）');
       }
 
-      // ③ 勾选 → 「同意并继续」应解锁
+      // ③ 勾选 → “同意并继续”应解锁
       cb.click();
       await wait(250);
       const acc = q('[data-testid="disclaimer-accept"]');
       if (!acc) return JSON.stringify({ fails: fails.concat('同意按钮消失') });
-      if (acc.disabled) fails.push('勾选后「同意并继续」仍禁用');
+      if (acc.disabled) fails.push('勾选后“同意并继续”仍禁用');
 
       // ④ 点同意
       acc.click();
@@ -346,10 +346,10 @@ def sub_scroll_then_accept(cdp):
 # g4 已确认后重载不再弹
 # ══════════════════════════════════════════════════════════════════
 def sub_no_regate(cdp):
-    # 注意：跳过种子开关仍开着 → 页面不会重新播种 ack，所以这里测的正是「产品写下的 ack 生效」
+    # 注意：跳过种子开关仍开着 → 页面不会重新播种 ack，所以这里测的正是“产品写下的 ack 生效”
     _reload(cdp)
     ensure_data_ready(cdp)
-    time.sleep(1.2)   # 异步组件 chunk 可能稍晚挂载；给足时间再判「没弹」
+    time.sleep(1.2)   # 异步组件 chunk 可能稍晚挂载；给足时间再判“没弹”
     if _dialog_open(cdp):
         return False, '已确认后重载仍然弹出了免责声明（ack 没生效）'
     # 反证：把 ack 删掉再重载 → 必须重新弹（证明上面的"没弹"不是断言空转）
@@ -412,7 +412,7 @@ def sub_view_mode(cdp):
       const q = (s) => document.querySelector(s);
       const dlg = q('[data-testid="disclaimer-dialog"]');
       if (!dlg) return JSON.stringify({ fails: ['点了入口没打开弹窗'] });
-      if (!q('[data-testid="disclaimer-close"]')) fails.push('查看模式缺「关闭」按钮');
+      if (!q('[data-testid="disclaimer-close"]')) fails.push('查看模式缺“关闭”按钮');
       if (q('[data-testid="disclaimer-ack-checkbox"]')) fails.push('查看模式不该出现勾选框（已确认过的条款不必再勾）');
       if (q('[data-testid="disclaimer-scroll"]')) {
         // 查看模式仍有全文可读
@@ -440,7 +440,7 @@ def sub_view_mode(cdp):
 def sub_guide_entry(cdp):
     """g6 使用手册（2026-10-11）：入口在关于面板里，点开真能看到内容、能搜、能切章、Esc 能关。
 
-    为什么挂在同一个用例里：暮雨的原话就是「右上角问号点进去是关于，司天内没有教程」——
+    为什么挂在同一个用例里：暮雨的原话就是“右上角问号点进去是关于，司天内没有教程”——
     手册的**入口**与免责声明的入口是同一块面板（AboutPanel），一起改一起守最省事。
     判据不写死节数（加一节不该让用例变红），只要求"TOC 与内容都不是空的、搜索真的在筛"。
     """
@@ -461,11 +461,11 @@ def sub_guide_entry(cdp):
       const qa = (s) => Array.from(document.querySelectorAll(s));
       const wait = (ms) => new Promise((r) => setTimeout(r, ms || 80));
       const btn = q('[data-testid="about-open-guide"]');
-      if (!btn) return JSON.stringify({ fails: ['关于面板里没有「使用手册」入口'] });
+      if (!btn) return JSON.stringify({ fails: ['关于面板里没有“使用手册”入口'] });
       btn.click();
       await wait(400);
       const ov = q('[data-testid="guide-overlay"]');
-      if (!ov) return JSON.stringify({ fails: ['点了「使用手册」没打开手册'] });
+      if (!ov) return JSON.stringify({ fails: ['点了“使用手册”没打开手册'] });
       // 关于面板必须同时关掉（两层浮层同屏会互相压住）
       if (q('.about-overlay')) fails.push('打开手册时关于面板没关（两层浮层同屏）');
       const toc = qa('[data-testid^="guide-toc-"]');
@@ -473,7 +473,7 @@ def sub_guide_entry(cdp):
       const title = q('[data-testid="guide-title"]');
       const first = title ? (title.textContent || '') : '';
       if (!first) fails.push('手册内容区没有标题');
-      // 搜「铺底」→ 应把批量铺底那一节筛出来，且标题真的换了
+      // 搜“铺底”→ 应把批量铺底那一节筛出来，且标题真的换了
       const box = q('[data-testid="guide-search"]');
       if (!box) fails.push('没有搜索框');
       else {
@@ -484,7 +484,7 @@ def sub_guide_entry(cdp):
         if (!hit.length || hit.length >= toc.length) {
           fails.push('搜索没有起到筛选作用：' + hit.length + '/' + toc.length);
         }
-        if (!q('[data-testid="guide-toc-province-batch"]')) fails.push('搜「铺底」没命中「批量铺底」一节');
+        if (!q('[data-testid="guide-toc-province-batch"]')) fails.push('搜“铺底”没命中“批量铺底”一节');
         const t2 = q('[data-testid="guide-title"]');
         if (!t2 || !/铺底/.test(t2.textContent || '')) fails.push('搜索后内容区没跟着切：' + (t2 ? t2.textContent : '无'));
         // 清空恢复全量
@@ -500,7 +500,7 @@ def sub_guide_entry(cdp):
         await wait(200);
         const t3 = q('[data-testid="guide-title"]');
         if (!t3 || !/快捷键/.test(t3.textContent || '')) fails.push('点章节没切换内容：' + (t3 ? t3.textContent : '无'));
-      } else fails.push('没有「快捷键」一节（TOC 不完整）');
+      } else fails.push('没有“快捷键”一节（TOC 不完整）');
       // Esc 关闭（手册自带 keydown，必须能关；关不掉 = 用户被卡在浮层里）
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
       await wait(300);
@@ -511,7 +511,7 @@ def sub_guide_entry(cdp):
         return False, res
     if res['fails']:
         return False, '使用手册断言失败：' + '；'.join(res['fails'])
-    return True, f"入口可开（{res.get('sections')} 节，首节「{res.get('firstTitle')}」）+ 搜索筛选 + 切章 + Esc 可关"
+    return True, f"入口可开（{res.get('sections')} 节，首节“{res.get('firstTitle')}”）+ 搜索筛选 + 切章 + Esc 可关"
 
 
 # ══════════════════════════════════════════════════════════════════

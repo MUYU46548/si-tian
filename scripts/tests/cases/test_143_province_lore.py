@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """用例 143：点省份 → 库内资料候选（读料桥收口，2026-10-24）
 
-第 5 件的判据是「点图看设定、换库不崩、一个字节都不写」。实体节点走详情面板（test_141），
-**省份/标记这类"非实体"** 以前点了没有任何资料入口 —— 这一刀在剧本视图的省份属性区加了「资料」段：
+第 5 件的判据是“点图看设定、换库不崩、一个字节都不写”。实体节点走详情面板（test_141），
+**省份/标记这类"非实体"** 以前点了没有任何资料入口 —— 这一刀在剧本视图的省份属性区加了“资料”段：
 按省名走 `vaultIndexSearch`（主进程只读索引、元数据命中）列出候选，点候选进阅读器；
-**没命中就明说「库里没有同名词条」**（不猜、不自动建 —— 与「认不出就进待人工」同一纪律）。
+**没命中就明说“库里没有同名词条”**（不猜、不自动建 —— 与“认不出就进待人工”同一纪律）。
 
 验收点：
-1. 选中省份 → 属性区出现「资料」段，检索关键词**就是省名**
+1. 选中省份 → 属性区出现“资料”段，检索关键词**就是省名**
 2. 命中 → 列出候选（标题 + 路径）；点一条 → 阅读器打开该路径
 3. 没命中 → 明确空态（不是"什么都不显示"）
 4. **只读**：整个过程 `createObsidianNote` / `setSitianConfig` / `projectSave` 的调用次数**一次都不增加**
@@ -132,7 +132,7 @@ STATE = r"""(() => {
 def sub_source_guards():
     """源码守卫：资料段**只有一份实现**（`VaultLoreSection.vue`），且全程只读。
 
-    2026-10-24（第 5 件补「点标记」）：省份资料与标记资料合并到同一个组件里，
+    2026-10-24（第 5 件补“点标记”）：省份资料与标记资料合并到同一个组件里，
     原来"在 ScenarioMap 里找 `searchVaultForProvince`"的守卫随之改口径 ——
     行为判据（关键词=名字 / 候选可点开 / 空态 / 只读计数）一条都没动，
     改的只是"实现住在哪个文件"。顺带把"只许一份实现"也钉死：
@@ -149,7 +149,7 @@ def sub_source_guards():
     if 'vaultIndexSearch' in code:
         bad.append('ScenarioMap 自己又调了 vaultIndexSearch（资料段必须只有一份实现）')
     if 'testid="province-vault"' not in code:
-        bad.append('属性区没有把 province-vault 传给资料组件（「资料」段丢了）')
+        bad.append('属性区没有把 province-vault 传给资料组件（“资料”段丢了）')
     if 'testid + \'-empty\'' not in lore:
         bad.append('没有"库里没有同名词条"的空态')
     if 'openNoteSearch' not in lore:
@@ -183,13 +183,13 @@ def run(cdp):
     if not st1.get('propsOpen'):
         fails.append('省份属性面板没打开（无法看到资料段）')
     if not st1.get('hasBox'):
-        fails.append('属性区没有「资料」段')
+        fails.append('属性区没有“资料”段')
     if not st1.get('rows'):
         fails.append(f'有命中却没列出候选（{st1}）')
     else:
         titles = [r.get('title') for r in st1['rows']]
         if '雾隐城' not in titles:
-            fails.append(f'候选里没有「雾隐城」：{titles}')
+            fails.append(f'候选里没有“雾隐城”：{titles}')
     if PROV_NAME not in (st1.get('calls') or []):
         fails.append(f'检索关键词不是省名（calls={st1.get("calls")}）')
 
@@ -206,7 +206,7 @@ def run(cdp):
     # ③ 空态：改成"库里没有" → 明确空态
     _j(cdp, RESTUB_NONE)
     if _j(cdp, CLICK_SEARCH) != 'ok':
-        fails.append('找不到「全库搜索」按钮')
+        fails.append('找不到“全库搜索”按钮')
     time.sleep(0.6)
     st3 = _j(cdp, STATE)
     if not st3.get('empty'):
@@ -228,10 +228,10 @@ def run(cdp):
     if not sg_ok:
         fails.append(sg_detail)
 
-    detail = (f'选中「{PROV_NAME}」→ 检索关键词命中省名、候选 {len(st1.get("rows") or [])} 条'
+    detail = (f'选中“{PROV_NAME}”→ 检索关键词命中省名、候选 {len(st1.get("rows") or [])} 条'
               f'（{", ".join(str(r.get("title")) for r in (st1.get("rows") or []))}）；'
               f'点候选打开阅读器={st2.get("reader") if st1.get("rows") else "n/a"}；'
-              f'空态「{st3.get("emptyText")}」；写调用 {writes}；源码守卫：{sg_detail}')
+              f'空态“{st3.get("emptyText")}”；写调用 {writes}；源码守卫：{sg_detail}')
     if fails:
         return False, '；'.join(fails)[:900]
     return True, detail

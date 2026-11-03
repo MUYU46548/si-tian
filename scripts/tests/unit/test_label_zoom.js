@@ -2,7 +2,7 @@
 /**
  * Node 单元测试：缩放 → 详略档位 / 字号（src/renderer/src/utils/labelZoom.js）
  *
- * 这是「Paradox 式文字分层」的判定层（2026-10-27 用户点名要做）：
+ * 这是“Paradox 式文字分层”的判定层（2026-10-27 用户点名要做）：
  *   · 缩小只看见势力名（far 档：城镇/河流/地形注记全隐）；
  *   · 放大才出城镇/河名，再大出省名（省名档与 `polityLabels` 的 0.35 同一刻）；
  *   · 档位切换带**滞回**：滚轮停在阈值上不许逐帧抖档；
@@ -89,7 +89,7 @@ async function main() {
   check('z4 滞回不会卡死在更细的档（反复越界仍能一路变粗）', () => {
     let d = 'close';
     const seen = [d];
-    // 每步都明确越过「边界 × 1.12」，验证的是"能一路走到底"，不是步长粒度
+    // 每步都明确越过“边界 × 1.12”，验证的是"能一路走到底"，不是步长粒度
     for (const r of [0.4, 0.7, 1.0, 1.4, 1.8, 3.0]) {
       d = zoomDetail(r, d);
       if (seen[seen.length - 1] !== d) seen.push(d);
@@ -114,7 +114,7 @@ async function main() {
     assert(zoomedIn > near, `放大应变大：${zoomedIn}`);
     assert(moreIn >= zoomedIn, '更大不低于前一档（可封顶）');
     assert(moreIn <= 1.75 + 1e-9, `封顶 1.75：${moreIn}`);
-    // 2026-10-27（用户「缩小后几乎看不清字」）：缩小时字号**不缩小**（下限 1.0）——
+    // 2026-10-27（用户“缩小后几乎看不清字”）：缩小时字号**不缩小**（下限 1.0）——
     // 这一档只剩势力名，再缩 5% 就是雪上加霜。
     const zoomedOut = labelFontScale(5);
     assert(Math.abs(zoomedOut - 1) < 1e-9, `缩小时保持 1.0：${zoomedOut}`);

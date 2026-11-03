@@ -1,6 +1,6 @@
-// 探针（第 1 件 · 1-c「AreaMap / InteriorView 先量再定」，2026-10-24）。
-// 判据照第 1 件：**连画 30 秒零帧 >50ms**（这里是 20s，两者都不是主战场）；量不出 >50ms 帧就记「不需要做」。
-//   A. 区域地图：**区域笔刷**（凸包合并那条链）连涂 20 秒 —— 指南 03 说它「走凸包」。
+// 探针（第 1 件 · 1-c“AreaMap / InteriorView 先量再定”，2026-10-24）。
+// 判据照第 1 件：**连画 30 秒零帧 >50ms**（这里是 20s，两者都不是主战场）；量不出 >50ms 帧就记“不需要做”。
+//   A. 区域地图：**区域笔刷**（凸包合并那条链）连涂 20 秒 —— 指南 03 说它“走凸包”。
 //   B. 室内：**拖家具**连拖 10 秒（DOM 之外唯一的连续手势）。
 // 由 `_probe_jank_real.py _probe_1c_area_interior.js __C1` 驱动。只测量，不改产品代码。
 window.__C1 = { stage: 'boot', out: {}, fails: [] };
@@ -64,7 +64,7 @@ window.alert = () => {};
       const el = document.querySelector('.area-map-container');
       const am = el.__vueParentComponent.setupState;
       const cvs = el.querySelector('canvas');
-      // 进编辑模式 + 区域笔刷（与用户点「编辑 → 区域 → 笔刷」同一条状态）
+      // 进编辑模式 + 区域笔刷（与用户点“编辑 → 区域 → 笔刷”同一条状态）
       if (typeof am.enterEditMode === 'function') am.enterEditMode();
       await tick(200);
       am.interactionMode = 'zone';

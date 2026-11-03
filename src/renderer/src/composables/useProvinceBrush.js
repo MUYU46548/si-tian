@@ -4,7 +4,7 @@
 // 数据写入一律走 store 的 provinceEditing 模块（一笔 = 一条 undo），本文件不改数据。
 //
 // 🔴 P2（2026-10-09）**网格渲染已退役**：`drawProvinceGrid` / `provinceOutlines` / `borderChains` /
-//    `meshStats` 这四支不再被调用（保留仅为不打断既有 import 与用例）。原因：把「归属格」
+//    `meshStats` 这四支不再被调用（保留仅为不打断既有 import 与用例）。原因：把“归属格”
 //    画到画布上是用户口中"密集恐惧症的恶心视图"的直接来源，而格点本身又是 10525 点海岸线
 //    退化成 ~22 点的根因（见 docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
 //    现在画布只渲染**省份多边形**（ScenarioMap 的 `drawProvinces`）+ 这里的笔迹预览。
@@ -22,7 +22,7 @@ export const PROVINCE_TOOLS = [
   { key: 'lasso', label: '自由轮廓', hint: '按住画一圈 → 圈内整块划归（一笔成形，不用描点）' },
 ];
 
-/** 取色失败时的兜底色板（保证「有主的格一定看得见」—— 渲染成透明=用户以为没生效） */
+/** 取色失败时的兜底色板（保证“有主的格一定看得见”—— 渲染成透明=用户以为没生效） */
 const FALLBACK_PALETTE = [
   '#c4956a', '#5b8c5a', '#d4a857', '#4a90d9', '#c23b3b', '#6b5b95', '#e6a23c', '#8b7355',
   '#2ecc71', '#8e44ad', '#3498db', '#e74c3c', '#16a085', '#f39c12', '#7f8c8d', '#2980b9',
@@ -43,7 +43,7 @@ export function useProvinceBrush() {
   const showBorders = ref(true);
   const showNoStar = ref(false);
 
-  // 省界 / 轮廓缓存：只跟「网格 + 版本号」走（提取 + 平滑 ~2ms，但不能每帧重算）
+  // 省界 / 轮廓缓存：只跟“网格 + 版本号”走（提取 + 平滑 ~2ms，但不能每帧重算）
   let borderToken = 0;
   const cache = { key: null, token: -1, chains: [], segs: 0 };
   const cellCache = { key: null, token: -1, fast: false, outlines: null, loops: 0, pts: 0, cost: 0 };

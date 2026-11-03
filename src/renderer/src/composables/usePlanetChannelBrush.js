@@ -1,4 +1,4 @@
-// composables/usePlanetChannelBrush.js — 行星侧「文化 / 宗教」逐格笔刷的**交互层**（A3，2026-10-08）
+// composables/usePlanetChannelBrush.js — 行星侧“文化 / 宗教”逐格笔刷的**交互层**（A3，2026-10-08）
 //
 // ── 分工（别混）──────────────────────────────────────────────────────────────
 //   · `store/geodataModules/channelBrush.js` = **数据层**：抬手 diff、一次 stroke 一条 undo、
@@ -60,7 +60,7 @@ export function usePlanetChannelBrush({ store, renderer, currentMapData, onStatu
   /**
    * 保证列表里有东西可涂：空列表时**自动建第一条**。
    * 为什么自动建而不是弹输入框：笔刷一旦"点了没反应"就等同于功能没做
-   * （本项目已把「工具点了没反应」列为一类缺陷）。命名可事后在聚落详情面板里改。
+   * （本项目已把“工具点了没反应”列为一类缺陷）。命名可事后在聚落详情面板里改。
    */
   function ensureList(channel) {
     if (!planetId()) return 0;
@@ -68,7 +68,7 @@ export function usePlanetChannelBrush({ store, renderer, currentMapData, onStatu
     return createEntry(channel) ? 1 : 0;
   }
 
-  /** 面板上的「＋ 新建」按钮 */
+  /** 面板上的“＋ 新建”按钮 */
   function createEntry(channel) {
     const pid = planetId();
     if (!pid) return 0;
@@ -82,7 +82,7 @@ export function usePlanetChannelBrush({ store, renderer, currentMapData, onStatu
     const created = channel === 'culture' ? store.addCulture(pid, item) : store.addReligion(pid, item);
     if (!created) { onStatus && onStatus('新建失败（可能未打开项目）'); return 0; }
     setValue(channel, n);          // 通道值 = 位置（1 起），与数据层口径一致
-    onStatus && onStatus(`已新建「${created.name}」`);
+    onStatus && onStatus(`已新建“${created.name}”`);
     return 1;
   }
 
@@ -113,7 +113,7 @@ export function usePlanetChannelBrush({ store, renderer, currentMapData, onStatu
     if (!res || res.ok !== true) {
       onStatus && onStatus(res && res.reason === 'readonly'
         ? `编辑已停用：${store.readOnlyReason || '未打开项目'}`
-        : `无法涂抹${CHANNEL_LABELS[channel]}：这张地图还没有高度图（先点工具栏「创建高度图」）`);
+        : `无法涂抹${CHANNEL_LABELS[channel]}：这张地图还没有高度图（先点工具栏“创建高度图”）`);
       return false;
     }
     lastPaintPos = null;
@@ -166,7 +166,7 @@ export function usePlanetChannelBrush({ store, renderer, currentMapData, onStatu
     if (!v) { onStatus && onStatus(`吸管：这一格还没有${CHANNEL_LABELS[channel]}归属`); return 0; }
     if (v > listOf(channel).length) { onStatus && onStatus(`吸管：这一格指向第 ${v} 号${CHANNEL_LABELS[channel]}，但列表里只有 ${listOf(channel).length} 条`); return 0; }
     setValue(channel, v);
-    onStatus && onStatus(`吸管：已取「${nameOfValue(channel, v)}」—— 现在可以直接涂`);
+    onStatus && onStatus(`吸管：已取“${nameOfValue(channel, v)}”—— 现在可以直接涂`);
     renderer && renderer.requestRender();
     return v;
   }

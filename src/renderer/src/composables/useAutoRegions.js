@@ -12,7 +12,7 @@ export function useAutoRegions({ store, props, emit, renderer, currentMapData })
   // 迷雾：仅在地图**真的什么都没画**且非编辑模式时显示。
   // 🔴 2026-11-01 修：旧口径只认 `terrain` / `regions` 两个数组 →
   //    用笔刷涂出来的图（terrainGrid / heightmap.h / 文化宗教通道 / 河流 / 道路 / 标记 / 文字 /
-  //    .map 导入的省份）全被判成「空」，于是既盖雾又弹「这张行星地图还是空的」。
+  //    .map 导入的省份）全被判成“空”，于是既盖雾又弹“这张行星地图还是空的”。
   //    现在判定收进 `utils/mapContent.js`（唯一实现，`test_map_content.js` 守）。
   const fogMode = computed(() => {
     if (!currentMapData.value) return false;

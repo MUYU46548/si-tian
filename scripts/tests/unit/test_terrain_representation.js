@@ -4,11 +4,11 @@
  *
  * 背景（`docs/A1_DATA_MODEL_DECISION.md` §十 · M2/A2 第二步）：
  * PlanetMap 的地形此前以 `terrain[]` 多边形为**主表示**（不透明实色），高度图只是个默认关闭的
- * 叠加层 —— 这是「手绘几何编辑器」观感的根因。本步把地形改为**高度图驱动**，多边形退为可选覆盖物。
+ * 叠加层 —— 这是“手绘几何编辑器”观感的根因。本步把地形改为**高度图驱动**，多边形退为可选覆盖物。
  *
  * 这条规则判错的后果是**静默**的：
- *   · 判成「有多边形就画多边形」→ 高度图又被挡住，回到原点；
- *   · 判成「旧地图也走高度图」→ **旧地图打开后地形整片消失**（没有高度图可画），用户只会看到空地图；
+ *   · 判成“有多边形就画多边形”→ 高度图又被挡住，回到原点；
+ *   · 判成“旧地图也走高度图”→ **旧地图打开后地形整片消失**（没有高度图可画），用户只会看到空地图；
  *   · 多边形覆盖物不透明 → 覆盖物把高度图遮死，等于没打开。
  * 该模块无 DOM / 无 store 依赖，正好放 Node 层跑真实断言。
  *
@@ -103,7 +103,7 @@ async function main() {
     eq(r.drawPolygons, false, 'drawPolygons');
   });
 
-  check('h5 正在编辑多边形 → 强制显示（否则「看不见也点不到」）', () => {
+  check('h5 正在编辑多边形 → 强制显示（否则“看不见也点不到”）', () => {
     const r = resolveTerrainRepresentation({ heightmap: hm(), terrainVisible: false, polygonsVisible: false, editing: true });
     eq(r.drawPolygons, true, 'drawPolygons');
     eq(r.polygonAlpha, 1, '编辑时实色，便于看清轮廓与顶点');

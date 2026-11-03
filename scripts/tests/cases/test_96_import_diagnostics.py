@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 96：导入 .map 的「可诊断性」——「没有高度图」必须当场说清（B2 收口，2026-10-11）
+"""用例 96：导入 .map 的“可诊断性”——“没有高度图”必须当场说清（B2 收口，2026-10-11）
 
 为什么值得单独守（真实经历，不是设想）：
   暮雨看到的地图是**纯色扁平图**、看不到任何山，于是去找一个"显示开关"——而根本不存
-  在那个开关：解析器早就把「未解析到 cells.h（高度图不可用）」收进 `warnings` 了，
+  在那个开关：解析器早就把“未解析到 cells.h（高度图不可用）”收进 `warnings` 了，
   但 `.map` 导入路径**一个字都不报**（只有状态栏角落一个小三角徽章，要悬停才看见）。
   这类"静默降级 + 用户去找不存在的开关"是本项目最贵的一种缺陷形态。
 
@@ -58,7 +58,7 @@ def _code_only(src):
 
 # 一份**故意缺 cells.h** 的 .map：结构齐、SVG 有 feature_1（否则解析器直接抛），
 # 但 data[7] 那一行换成一句无关的文字 → `pickCsv(7, cellCount)` 长度为 0 → warnings 里有
-# 「未解析到 cells.h（高度图不可用）」。这是 2026-09-10 那版解析器产出物的真实写照。
+# “未解析到 cells.h（高度图不可用）”。这是 2026-09-10 那版解析器产出物的真实写照。
 NO_HM_LINES = [
     "1.151.2|File can be loaded in azgaar.github.io/Fantasy-Map-Generator|2026-10-11|97",
     "km|4|square|m|2|\u00b0C|||||||1000|1||||||",
@@ -179,7 +179,7 @@ def run(cdp):
   const bundle = json.baseMaps.case96;
 
   // ⚠️ 先把同名底图清掉：本用例中断时会在 harness 项目里留下 `case96`，
-  //    下一次导入就会撞上「同名底图 → 只补缺」那条**另一条**分支（用例之间互相污染）。
+  //    下一次导入就会撞上“同名底图 → 只补缺”那条**另一条**分支（用例之间互相污染）。
   if (s.baseMaps.case96) { const { case96: _drop, ...rest } = s.baseMaps; s.baseMaps = rest; }
   s.importFromScenariosJson(json);
   const bm = s.baseMaps.case96;
@@ -217,11 +217,11 @@ def run(cdp):
      P_ACC.hasGrid(REAL_HM) === true && P_TR.hasHeightmapContent(REAL_HM) === true);
   ok('b4 🔴 空壳（有点无 h）在"地形内容"判据下为假 —— 状态栏/缺项诊断必须用这个',
      P_TR.hasHeightmapContent(SHELL_HM) === false, JSON.stringify(P_TR.hasHeightmapContent(SHELL_HM)));
-  ok('b4 「能否开始笔刷编辑」在空壳上仍为真（历史数据形态；收窄它会打断笔刷/派生/绑定）',
+  ok('b4 “能否开始笔刷编辑”在空壳上仍为真（历史数据形态；收窄它会打断笔刷/派生/绑定）',
      P_ACC.hasGrid(SHELL_HM) === true, JSON.stringify(P_ACC.hasGrid(SHELL_HM)));
 
   // ══ 组件层：导入路径必须把这件事**说给用户** ═════════════════════════════
-  // 走**真实入口** triggerMapImport：它就是「建 input → onchange(file)」，我们接管 input。
+  // 走**真实入口** triggerMapImport：它就是“建 input → onchange(file)”，我们接管 input。
   // 先清掉同名底图，保证走的是"导入为新底图"那条路（而不是"只补缺刷新"）。
   if (s.baseMaps.case96) { const { case96: _d3, ...rest3 } = s.baseMaps; s.baseMaps = rest3; }
   const TEXT = __TEXT__;                        // 一份**真实可解析**的 FMG .map（故意不含 cells.h）
@@ -251,7 +251,7 @@ def run(cdp):
   ok('b5 导入后状态栏有回音（不是一声不响）', shown.length > 0, shown.slice(0, 60));
   // 两份可能的可诊断文案都算数（取决于解析器把这份文件的 cells.h 读成什么样）：
   //   · 源文件里就没有 → "地形高度图 ⚠️ **这份 .map 里就没有**…纯色扁平图…不是显示开关的问题"
-  //   · 源文件里有、底图没有 → "这张底图还缺：地形高度图 —— 可用工具栏「刷新底图数据」…"
+  //   · 源文件里有、底图没有 → "这张底图还缺：地形高度图 —— 可用工具栏“刷新底图数据”…"
   // 两条都要求**点名地形高度图**；而"一声不响"与"报成已齐"都必须被这条判据抓住。
   ok('b5 🔴 回音点名了"地形高度图"这个缺项（用户不必去找不存在的显示开关）',
      shown.indexOf('高度图') >= 0, shown.slice(0, 300));

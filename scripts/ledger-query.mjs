@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// 事件账本查询 / 录入 —— 三刀序列·第一刀的「能问能答」入口（2026-10-22）
+// 事件账本查询 / 录入 —— 三刀序列·第一刀的“能问能答”入口（2026-10-22）
 //
 // 为什么先给命令行而不是先做面板：
-//   账本引擎是**数据层**（施工单原话）。数据层立住的判据是「问一句话能答对」，
+//   账本引擎是**数据层**（施工单原话）。数据层立住的判据是“问一句话能答对”，
 //   而面板一旦先做，所有精力都会花在布局上，账本本身的边界（同日多事件/跨年/冲突）
 //   反而没人测。命令行 + Node 单测 = 最便宜的验收；外交表面板等账本立住后另出。
 //
@@ -108,9 +108,9 @@ function resolveActor(era, who) {
   const hits = list.filter((p) => String(p.name || '').startsWith(String(who)));
   if (hits.length === 1) return { ok: true, id: String(hits[0].id), name: hits[0].name || String(hits[0].id) };
   if (hits.length > 1) {
-    return { ok: false, error: `「${who}」在本代有 ${hits.length} 个候选：${hits.map((p) => `${p.name}(${p.id})`).join(' / ')} —— 请写 id` };
+    return { ok: false, error: `“${who}”在本代有 ${hits.length} 个候选：${hits.map((p) => `${p.name}(${p.id})`).join(' / ')} —— 请写 id` };
   }
-  return { ok: false, error: `本代没有势力叫「${who}」（现有：${(list.map((p) => p.name).filter(Boolean).join(' / ') || '无')}）` };
+  return { ok: false, error: `本代没有势力叫“${who}”（现有：${(list.map((p) => p.name).filter(Boolean).join(' / ') || '无')}）` };
 }
 
 function dumpProject(project, file) {
@@ -170,7 +170,7 @@ async function main() {
       const resolved = [];
       for (const who of draftActors) {
         const r = resolveActor(picked, who);
-        if (!r.ok) { console.error(r.error || `无法解析参与方「${who}」`); return 2; }
+        if (!r.ok) { console.error(r.error || `无法解析参与方“${who}”`); return 2; }
         resolved.push(r.id);
       }
       const existing = Array.isArray(picked.timelineEvents) ? picked.timelineEvents : [];
@@ -262,7 +262,7 @@ async function main() {
         const related = L.eventsBetween(events, A.id, B.id);
         if (related.length) {
           console.log('\n涉及这两方的事件：');
-          for (const ev of related) console.log(`  · ${L.typeLabel(ev.type)}「${ev.title || ev.id}」${L.formatEventSpan(ev)}`);
+          for (const ev of related) console.log(`  · ${L.typeLabel(ev.type)}“${ev.title || ev.id}”${L.formatEventSpan(ev)}`);
         }
       }
       const conflicts = L.findConflicts(events, { polities: picked.polities || [], era: picked.era || {} });
@@ -288,14 +288,14 @@ async function main() {
         const key = [p.a, p.b].sort().join('|') + (directed ? '|' + p.relation : '');
         if (seen.has(key)) continue;
         seen.add(key);
-        console.log(`  · ${nameOf(p.a)} × ${nameOf(p.b)}：${p.label}（${L.typeLabel(p.type)}「${p.title}」，${L.formatEventSpan({ from: p.since, to: p.until })}）`);
+        console.log(`  · ${nameOf(p.a)} × ${nameOf(p.b)}：${p.label}（${L.typeLabel(p.type)}“${p.title}”，${L.formatEventSpan({ from: p.since, to: p.until })}）`);
       }
     }
     const ongoing = events.filter((ev) => L.isWindowEvent(ev) && L.isActiveAt(ev, at));
     if (ongoing.length) {
       console.log('\n仍在生效的事件：');
       for (const ev of ongoing) {
-        console.log(`  · ${L.typeLabel(ev.type)}「${ev.title || ev.id}」${L.formatEventSpan(ev)}`);
+        console.log(`  · ${L.typeLabel(ev.type)}“${ev.title || ev.id}”${L.formatEventSpan(ev)}`);
       }
     }
     const st = L.ledgerStats(events, { polities: picked.polities || [], era: picked.era || {} });

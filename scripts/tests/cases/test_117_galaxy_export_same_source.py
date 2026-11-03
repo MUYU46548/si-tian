@@ -18,10 +18,10 @@
 另外把导出的 PNG 抓下来做像素检查（证明它真的被画进了图里）。
 
 ⚠️ **2026-10-30 口径修正（用户报障驱动）**：修前这条用例的 `expected` 里还包含
-`store.nodes` 中**所有世界**的更深层节点（planet / city / facility…），等于把「导出画了它们」写成了判据。
+`store.nodes` 中**所有世界**的更深层节点（planet / city / facility…），等于把“导出画了它们”写成了判据。
 实测后果：它们的 `coordinate` 来自提取器的同心圆布局（真实 415 省项目 ±1300 世界单位），
 把图幅撑到 2734×2759，星系挤在一角、大片空白、10px 标签在 5468px 位图上几乎不可读 ——
-用户原话「全是画得一坨狗屎的星系地图」。画布（GalaxyMap）**从不画**这些节点，所以：
+用户原话“全是画得一坨狗屎的星系地图”。画布（GalaxyMap）**从不画**这些节点，所以：
 - `expected` 现在只有 **星域 + 星系**；
 - 新增反向判据：更深层节点的坐标上**不许再出现节点圆**；
 - 新增落盘判据：导出走**主进程保存对话框**（`saveExportFile`），不再 `a.download` 往下载目录里堆。
@@ -139,12 +139,12 @@ def run(cdp):
         return False, f'未进入 domain 视图（{view_level(cdp)}）'
     wait_for(cdp, "!!document.querySelector('.galaxy-map-container')", desc='GalaxyMap 挂载')
 
-    # ⚠️ 「导出 PNG (全图)」在工具栏的导出菜单里（默认不挂载）—— 先点开导出面板。
+    # ⚠️ “导出 PNG (全图)”在工具栏的导出菜单里（默认不挂载）—— 先点开导出面板。
     #    再⚠️：**Vue 的 DOM 更新是异步的**，点完必须等一拍才查得到菜单（本仓踩过多次）
     ok_menu, opened = eval_json(cdp, """(async () => {
       const btn = Array.from(document.querySelectorAll('.toolbar-actions button'))
         .find(b => (b.getAttribute('title') || '') === '导出');
-      if (!btn) return JSON.stringify({ fails: ['找不到标题为「导出」的工具栏按钮'], r: 'no-toolbar-btn' });
+      if (!btn) return JSON.stringify({ fails: ['找不到标题为“导出”的工具栏按钮'], r: 'no-toolbar-btn' });
       btn.click();
       await new Promise(r => setTimeout(r, 0));
       return JSON.stringify({ fails: [], r: document.querySelector('.export-menu') ? 'ok' : 'menu-missing',
@@ -213,7 +213,7 @@ def run(cdp):
   let clicked = false;
   try {
     const btn = Array.from(document.querySelectorAll('button')).find(b => (b.textContent || '').includes('导出 PNG (全图)'));
-    if (!btn) { out.fails.push('找不到「导出 PNG (全图)」按钮'); return JSON.stringify(out); }
+    if (!btn) { out.fails.push('找不到“导出 PNG (全图)”按钮'); return JSON.stringify(out); }
     btn.click();
     clicked = true;
     // 导出是"同步绘制 + 异步 toBlob"：图很大（世界包围盒 × dpr2 ≈ 千万像素），

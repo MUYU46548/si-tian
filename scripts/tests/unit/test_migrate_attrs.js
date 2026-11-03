@@ -3,7 +3,7 @@
  * Node 单元测试：A-1 存量机器属性搬家工具（scripts/migrate-vault-attrs.js）
  *
  * 背景（《机器属性搬家》报告 ①③④）：
- *   「层级 / 上层挂靠 / 地点类型」这套机器属性现在由笔记 frontmatter 承载，用户得人肉维护。
+ *   “层级 / 上层挂靠 / 地点类型”这套机器属性现在由笔记 frontmatter 承载，用户得人肉维护。
  *   定案：结构归 `.sitian`，内容归笔记。本工具把**存量**搬过去（搬家 + 清点 + 反向档）。
  *
  * 判错的后果都是**静默**的，所以每条都要有专门断言：
@@ -22,7 +22,7 @@ const os = require('os');
 const path = require('path');
 
 // ⚠️ 端到端**不 spawn 子进程**：本仓的单测运行环境里 node 无法再 spawn 一个 node（EBUSY）。
-//    所以脚本被刻意切成「薄 CLI 外壳 + 可调用逻辑层（parseArgs / runMigration）」，
+//    所以脚本被刻意切成“薄 CLI 外壳 + 可调用逻辑层（parseArgs / runMigration）”，
 //    用例直接调逻辑层做真实的文件读写 —— 覆盖的仍是"真落盘"，只是不经进程边界。
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'migrate-vault-attrs.js');
@@ -74,7 +74,7 @@ async function main() {
   const M = require(SCRIPT);
   const { buildMigrationPlan, applyPatches, isBlank, parseArgs, runMigration } = M;
 
-  // 父级占位实体：`Note 给的 parentId` 必须在项目里存在，否则会被正确地判成「父级缺失」
+  // 父级占位实体：`Note 给的 parentId` 必须在项目里存在，否则会被正确地判成“父级缺失”
   const parentStub = { id: '曜川星', name: '曜川星', layer: 'planet', sourcePath: '' };
 
   // ─────────────────────────────────────────────
@@ -95,7 +95,7 @@ async function main() {
     return '正/反斜杠两种 sourcePath 都能对上同一篇笔记';
   });
 
-  await check('t2 只补「项目侧为空」的字段：空 / unknown / null / 空串都算空', () => {
+  await check('t2 只补“项目侧为空”的字段：空 / unknown / null / 空串都算空', () => {
     assert(isBlank({ layer: 'unknown' }, 'layer'), 'unknown 视为空（提取器推断不出时写的就是它）');
     assert(isBlank({ layer: '' }, 'layer'), '空串');
     assert(isBlank({ layer: undefined }, 'layer'), 'undefined');
@@ -118,7 +118,7 @@ async function main() {
     return '空白判据：undefined / null / 空串 / unknown';
   });
 
-  await check('t3 ★ 项目侧已有值 → 一律不覆盖；与笔记不同时进「冲突」清单交人判断', () => {
+  await check('t3 ★ 项目侧已有值 → 一律不覆盖；与笔记不同时进“冲突”清单交人判断', () => {
     const entities = {
       '曜川星': parentStub,
       a: entFor('a', '青崖城', { layer: 'town', layerLabel: '城镇' }),   // 用户改过：笔记说 city
@@ -143,13 +143,13 @@ async function main() {
 
   await check('t4 ★ 补 parentId 前必须校验父实体存在 —— 否则补出悬空引用，会被项目校验静默置空', () => {
     const entities = { a: entFor('a', '青崖城', { parentId: null }) };
-    // 笔记给的父级是「不存在的星」，项目里没有这个实体
+    // 笔记给的父级是“不存在的星”，项目里没有这个实体
     const plan = buildMigrationPlan({
       entities,
       vaultNodes: [noteFor('n1', '青崖城', { parentId: '不存在的星' })],
     });
     assert(!plan.patches.some(p => p.field === 'parentId'), '父实体不存在时绝不能补 parentId');
-    eq(plan.parentMissing.length, 1, '要单独列出「父级缺失」而不是静默跳过');
+    eq(plan.parentMissing.length, 1, '要单独列出“父级缺失”而不是静默跳过');
     eq(plan.parentMissing[0].wantParentId, '不存在的星', '点名期望的父级');
 
     // 父实体存在 → 正常补
@@ -170,18 +170,18 @@ async function main() {
     const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '青崖城')] });
     eq(plan.matched, 1, '只有带 sourcePath 的那个参与');
     assert(!plan.patches.some(p => p.id === 'mine'), '自建实体不该被补');
-    assert(!plan.unmatchedEntities.some(u => u.id === 'mine'), '也不该被列进「认不到」（那是改名场景，和自建是两回事）');
+    assert(!plan.unmatchedEntities.some(u => u.id === 'mine'), '也不该被列进“认不到”（那是改名场景，和自建是两回事）');
     return '无来源笔记 = 用户自建 → 直接跳过';
   });
 
-  await check('t6 认不到的实体（来源笔记不在库里）单独列出 —— 那是「改名」信号，指向 A-0 的重连', () => {
+  await check('t6 认不到的实体（来源笔记不在库里）单独列出 —— 那是“改名”信号，指向 A-0 的重连', () => {
     const entities = { a: entFor('a', '已改名的城') };
     const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '青崖城')] });
     eq(plan.matched, 0, '认不到就不参与');
     eq(plan.unmatchedEntities.length, 1, '单独列出');
     eq(plan.unmatchedEntities[0].sourcePath, `${NOTE_DIR}/已改名的城.md`, '带上原路径供人核对');
     eq(plan.patches.length, 0, '认不到就不补');
-    return '认不到 → 提示「先跑检查笔记改名」';
+    return '认不到 → 提示“先跑检查笔记改名”';
   });
 
   await check('t7 补 layer 时把 layerLabel 一起补（否则树上的徽标显示英文 code）', () => {
@@ -237,7 +237,7 @@ async function main() {
   // ─────────────────────────────────────────────
   // 3. 端到端：真跑脚本（临时目录，不碰真实库与真实项目）
   // ─────────────────────────────────────────────
-  /** 造一个临时「库 + 项目」环境：库用 fixture 的 geodata.json（--from-cache 的来源） */
+  /** 造一个临时“库 + 项目”环境：库用 fixture 的 geodata.json（--from-cache 的来源） */
   function makeEnv(tag, projectEntities) {
     const dir = tmpDir(tag);
     const vault = path.join(dir, 'vault');
@@ -320,7 +320,7 @@ async function main() {
       eq(res.archivePath, archivePath, 'runMigration 要回报反向档路径');
       const arc = JSON.parse(fs.readFileSync(archivePath, 'utf-8'));
       eq(arc.kind, 'migrate-vault-attrs', '反向档类型');
-      assert(arc.applied.length >= 1, '反向档要逐条记「从什么改成什么」');
+      assert(arc.applied.length >= 1, '反向档要逐条记“从什么改成什么”');
       const one = arc.applied.find(a => a.field === 'layer');
       eq(one.from, 'unknown', '反向档记着原值');
       eq(one.to, 'planet', '反向档记着新值');

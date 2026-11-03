@@ -3,20 +3,20 @@
 """用例 63：自由绘制**不再是默认工具**（2026-10-09 反转）+ 落笔建省（空底图可画 / 名字 / 色板轮转 / 骨架吸附 + Shift 旁路）
 
 ⚠️ 2026-10-09 变更：默认工具从 `draw` 翻成 `select`。
-   原因：暮雨实测「打开历史剧本，本能想拖动地图查看，却意外触发绘制、弹出『仍要在这里创建吗』」——
-   拖拽查看是任何地图编辑器的第一直觉动作，默认停在『自由绘制』等于把最常用动作变成最危险误触。
-   本用例此后守的判据是「默认**不是** draw」：想画省份必须显式选工具（B / 点工具栏）。
+   原因：暮雨实测“打开历史剧本，本能想拖动地图查看，却意外触发绘制、弹出‘仍要在这里创建吗’”——
+   拖拽查看是任何地图编辑器的第一直觉动作，默认停在‘自由绘制’等于把最常用动作变成最危险误触。
+   本用例此后守的判据是“默认**不是** draw”：想画省份必须显式选工具（B / 点工具栏）。
 
 对应验收行（P1）：
   ① 一圈 → 1 个省（名字 / 颜色正确、1 条 undo）
-  ② 空底图上也能直接画（不再需要「新建省份」）
+  ② 空底图上也能直接画（不再需要“新建省份”）
   ③ 吸附后相邻省共享边界顶点序列完全一致（零缝）
   ④ Shift = 旁路吸附（顶点保持用户摆的位置）
 
 手法说明（为什么要这么写）：
   * 自由绘制是**真鼠标**路径（mousedown → mousemove 采样 → mouseup 一笔成型），
     探针不能直接调内部函数（`freeTraceActive` 是组件里的普通 let）。
-  * 把相机固定成 scale=1 / (0,0) → **屏幕坐标 == 世界坐标**，于是「共享边」可以直接用
+  * 把相机固定成 scale=1 / (0,0) → **屏幕坐标 == 世界坐标**，于是“共享边”可以直接用
     画布相对坐标构造，阈值（`SNAP_EDGE_THRESHOLD = 10` 世界单位）也换算得明明白白。
   * ④ 与 ③ 用**同一条轨迹**，只差一个 `shiftKey` —— 受控对照，失败时能直接指出是吸附还是别的问题。
 """
@@ -51,8 +51,8 @@ def _js(cdp, src):
 def _palette():
     """从**单一事实源**里取省份色板（2026-10-01 起在 `utils/scenarioPalette.js`）。
 
-    ⚠️ 别在用例里抄一份色板，也别再回组件里找 —— 那条判据会随「单源搬家」假红
-    （本仓的守卫要跟着单源的位置走，见 AGENTS.md「导出与画布同源」条目）。
+    ⚠️ 别在用例里抄一份色板，也别再回组件里找 —— 那条判据会随“单源搬家”假红
+    （本仓的守卫要跟着单源的位置走，见 AGENTS.md“导出与画布同源”条目）。
     """
     import re
     src = _read('src/renderer/src/utils/scenarioPalette.js')
@@ -80,13 +80,13 @@ def source_gates():
     sc = _rsrc_all()
     checks = [
         ("const tool = ref('select')", '默认工具 = 选择（2026-10-09 反转：拖拽=平移，不误触建省）'),
-        # 色板常量已移入 utils/scenarioPalette.js（单源）；组件这边只守「引了它、没抄一份」
+        # 色板常量已移入 utils/scenarioPalette.js（单源）；组件这边只守“引了它、没抄一份”
         ("from '../utils/scenarioPalette'", '组件引用配色单源（不许再抄一份色板）'),
         ('nextProvinceColor(', '色板轮转函数（来自单源）'),
         ('function commitFreeTrace(pts, shiftKey)', '自由绘制受理 shiftKey'),
         # 2026-10-17 第四轮：贴骨架这段挪进了 `freeTraceRing(rawPts, { snap })`（预览与落库共用），
-        # 所以判据跟着落到「落库时把 shiftKey 翻成 snap」+「freeTraceRing 里 snap=false 直接返回」——
-        # 语义仍然是「Shift = 旁路骨架吸附」，只是实现位置变了。
+        # 所以判据跟着落到“落库时把 shiftKey 翻成 snap”+“freeTraceRing 里 snap=false 直接返回”——
+        # 语义仍然是“Shift = 旁路骨架吸附”，只是实现位置变了。
         ('freeTraceRing(pts, { snap: !shiftKey })', 'Shift = 旁路骨架吸附'),
         ('if (!snap) return {',
          'freeTraceRing 的不吸附分支'),
@@ -97,13 +97,13 @@ def source_gates():
     for needle, label in checks:
         if needle not in sc:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
-    # 单源那边必须还真的有那份色板（否则「引了单源」是假接线）
+    # 单源那边必须还真的有那份色板（否则“引了单源”是假接线）
     pal = _code_only(_read('src/renderer/src/utils/scenarioPalette.js'))
     if 'export const PROVINCE_PALETTE' not in pal:
         fails.append('源码闸门缺失：配色单源里的省份色板（utils/scenarioPalette.js）')
     if "const PROVINCE_PALETTE = [" in sc:
         fails.append('ScenarioMap 又抄了一份省份色板（单源被破坏）')
-    # 旧行为必须消失：新建省份不能再用「弹窗问名字」阻塞画布
+    # 旧行为必须消失：新建省份不能再用“弹窗问名字”阻塞画布
     if 'prompt(' in sc.split('function commitFreeTrace')[1].split('function ')[0]:
         fails.append('自由绘制仍在用 prompt 弹窗问名字（P1 改为建完即选中 + 名字框聚焦）')
     notes.append(f'源码闸门 {len(checks)} 项' + ('全过' if not fails else '有缺'))
@@ -187,7 +187,7 @@ def build_probe(pal):
   ok('① 一圈 = 1 条 undo', tAfterUndo.length === 0, tAfterUndo.length);
 
   // ── ③④ 相邻省：同一条轨迹，只差 Shift（受控对照）──────────────────────
-  // 先把「省 1」重新画出来（① 的 undo 已经撤掉了它）
+  // 先把“省 1”重新画出来（① 的 undo 已经撤掉了它）
   dragPath(square, false);
   const tBase = (sc.baseMap && sc.baseMap.terrain) || [];
   ok('③ 前置：省 1 已重建', tBase.length === 1, tBase.length);

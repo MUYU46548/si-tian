@@ -44,7 +44,7 @@ def run(cdp):
     if not t['actions'] or t['active'] != '概览' or len(t['tabs']) != 3:
         return False, f'tab 栏异常 ({t})'
 
-    # 2) 概览下 frontmatter 默认折叠（存在「展开详情」按钮），点击后展开
+    # 2) 概览下 frontmatter 默认折叠（存在“展开详情”按钮），点击后展开
     has_collapse = q(cdp, """
       const b = Array.from(document.querySelectorAll('.frontmatter-block .expand-btn'))
         .find(x => x.textContent.includes('展开详情'));

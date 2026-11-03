@@ -69,7 +69,7 @@ async function main() {
     eq(resolveStatus('nonsense'), DEFAULT_STATUS, '未知 id');
   });
 
-  // ── 3. 「已毁灭」类状态必须淡化；但**只是淡化**（数据仍完整） ─────────────
+  // ── 3. “已毁灭”类状态必须淡化；但**只是淡化**（数据仍完整） ─────────────
   await check('isFaded：destroyed / ruined / sealed / lost 淡化；active / unknown 不淡化', () => {
     eq(isFaded('active'), false, 'active');
     eq(isFaded('unknown'), false, 'unknown（尚未确定 ≠ 已消失）');
@@ -192,7 +192,7 @@ async function main() {
 
   // ── 11. ★ 提取侧一致性：两处 CJS 副本必须与前端注册表同步 ────────────────
   // 为什么守：`status` 是**笔记侧字段**，用户写在 frontmatter 里、由提取脚本读进节点。
-  // 别名表一旦漂移，用户在 Obsidian 里写「已毁灭」就会静默失效（节点仍是 active）——
+  // 别名表一旦漂移，用户在 Obsidian 里写“已毁灭”就会静默失效（节点仍是 active）——
   // 不报错、只是不生效，是最难发现的一类坏。
   await check('★ 提取侧一致性：extract-data / vault-watcher 的别名表与 entityStatus 对齐', () => {
     const extract = require(path.join(ROOT, 'scripts', 'extract-data.js'));
@@ -202,13 +202,13 @@ async function main() {
     // 正向：每个状态的 id / label / short 都必须映射到它自己
     for (const st of ENTITY_STATUSES) {
       for (const key of [st.id, st.label, st.short].filter(Boolean)) {
-        eq(extract.STATUS_ALIASES[key], st.id, `extract-data 的别名「${key}」`);
-        eq(watcher.STATUS_ALIASES[key], st.id, `vault-watcher 的别名「${key}」`);
+        eq(extract.STATUS_ALIASES[key], st.id, `extract-data 的别名“${key}”`);
+        eq(watcher.STATUS_ALIASES[key], st.id, `vault-watcher 的别名“${key}”`);
       }
     }
     // 反向：别名表不许指向未知 id
     for (const [k, v] of Object.entries(extract.STATUS_ALIASES)) {
-      assert(ids.has(v), `extract-data 别名「${k}」指向未知状态 ${v}`);
+      assert(ids.has(v), `extract-data 别名“${k}”指向未知状态 ${v}`);
     }
     // 两处副本逐项相同（照 normalizeId 的既有做法：复制 + 测试守卫，不强行共享模块）
     eq(Object.keys(extract.STATUS_ALIASES).sort().join(','),

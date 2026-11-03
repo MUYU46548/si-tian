@@ -14,14 +14,14 @@
  *   1. 行号不是固定的：SVG 段跨多行，所以 data[i]（i>=6）的实际行号 = grid 行号 + (i-6)。
  *      旧实现硬编码 lines[2]/[3]/[140]/[155]/[160]/[165]，会取到完全无关的数据（cellsData 变成
  *      coordinates 字典、cultures 取到 markers、religions 取到 cells.good）。本实现改为
- *      「先按内容嗅探定位，再按 grid 锚点做位置回退」。
+ *      “先按内容嗅探定位，再按 grid 锚点做位置回退”。
  *   2. grid 级数组（h/temp/prec/f/t，长度 = 网格点数）与 packed 级数组（culture/religion/biome/…，
  *      长度 = packed 细胞数，两者不同源）必须区分：packed 细胞是网格点的子集 + 海岸中点，
  *      无法从文件反推（需要 Delaunay）。因此本解析器：
  *        · 高度/温度/降水 → 直接用 grid 级数组（精确）
  *        · 文化/宗教 → 用 provinces[] → burg → burg.culture 的精确映射，落到省份粒度
  *        · 河流/道路 → 直接用 SVG 中已渲染的 path 几何（精确）
- *   3. SVG 中只包含「导出时可见」的图层：provincesBody / rivers / roads / trails / searoutes /
+ *   3. SVG 中只包含“导出时可见”的图层：provincesBody / rivers / roads / trails / searoutes /
  *      coastline / oceanLayers / ice 等有几何；biomes / cults / relig / terrs 等被隐藏的图层是空组。
  *      所以生物群系、文化、宗教只能走数据侧，不能走 SVG。
  */
@@ -58,7 +58,7 @@ function rn1(n) {
   return Math.round(n * 10) / 10;
 }
 
-/** 闭合环去重尾点：RDP 对「首尾重合」的环会因零长度弦坍塌，必须先去掉重复尾点 */
+/** 闭合环去重尾点：RDP 对“首尾重合”的环会因零长度弦坍塌，必须先去掉重复尾点 */
 function dedupeRing(points) {
   const n = points.length;
   if (n > 1 && Math.abs(points[0].x - points[n - 1].x) < 1e-6 && Math.abs(points[0].y - points[n - 1].y) < 1e-6) {
@@ -180,7 +180,7 @@ function findGridLineIndex(lines) {
 
 /**
  * 内容嗅探：按结构特征识别各 JSON 段，返回 { key: value }。
- * 这是对「硬编码行号」的根治——行号随 SVG 行数漂移，结构特征不会。
+ * 这是对“硬编码行号”的根治——行号随 SVG 行数漂移，结构特征不会。
  */
 function sniffJsonBlocks(lines) {
   const found = {};
@@ -219,7 +219,7 @@ function sniffJsonBlocks(lines) {
   return found;
 }
 
-/** 从 SVG 段提取「<g id="xxx" ...>…</g>」内部文本（不解析嵌套，取到下一个同级 g 之前） */
+/** 从 SVG 段提取“<g id="xxx" ...>…</g>”内部文本（不解析嵌套，取到下一个同级 g 之前） */
 function svgGroup(svg, gid) {
   const open = svg.indexOf('<g id="' + gid + '"');
   if (open < 0) return '';
@@ -357,7 +357,7 @@ export function parseMapFile(text) {
   // ── 5. 省份（FMG provincesBody 里的精确多边形 + provinces[] 元数据）
   const cultureById = new Map(cultures.map(c => [c.i, c]));
   const stateById = new Map(states.map(s => [s.i, s]));
-  // 宗教：优先取「与文化同源」的宗教
+  // 宗教：优先取“与文化同源”的宗教
   const religionByCulture = new Map();
   for (const r of religions) {
     if (!r || r.i === 0) continue;

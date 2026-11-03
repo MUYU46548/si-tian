@@ -81,7 +81,7 @@ export function createDownHandlers(ctx) {
 
 function onMouseDown(event) {
   if (event.button === 2) return; // 右键留给 context menu
-  // 手势闸门（第十九修·一）：左键按住 = 「人手还在画布上」→ 到点的自动保存一律顺延。
+  // 手势闸门（第十九修·一）：左键按住 = “人手还在画布上”→ 到点的自动保存一律顺延。
   // 本组件**所有**编辑手势（拖笔/河笔/拖节点/框选/涂抹/高度·群系·文化·宗教笔刷）都从
   // mousedown 起笔，所以这一处接线即全量生效。**配对**靠 `st.canvasGateArmed`（不能无条件
   // 在 onMouseUp 里 end —— mouseleave 也会走 onMouseUp，会刷一堆"没有 begin 的 end"）。
@@ -91,7 +91,7 @@ function onMouseDown(event) {
   }
   st.initialFitPending = false;      // 用户开始操作 → 不再自动抢镜头（见 onMounted 的适屏收尾）
 
-  // 地形注记手绘（2026-10-27）：面板点「画山系/画海域/点平原」后画布进入取点态。
+  // 地形注记手绘（2026-10-27）：面板点“画山系/画海域/点平原”后画布进入取点态。
   // 必须排在所有工具分支之前：这一刻用户就是在给这条注记取几何，不许被别的工具抢走这一击。
   if (terrainLabelPick.value && event.button === 0) {
     const rect = canvas.value.getBoundingClientRect();
@@ -103,12 +103,12 @@ function onMouseDown(event) {
       dragging: p.kind !== 'plain',
       finished: p.kind === 'plain',
     };
-    if (p.kind === 'plain') statusMsg('已落点：点面板「完成」再命名');
+    if (p.kind === 'plain') statusMsg('已落点：点面板“完成”再命名');
     render();
     return;
   }
 
-  // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会「点了没反应」）
+  // 写类工具先确保有底图：项目里一张都没有时懒建一张（否则用户会“点了没反应”）
   if (CREATES_CONTENT_TOOLS.has(tool.value) && !ensureBaseMap()) return;
 
   // 涂归属（2026-10-20 重做）：只改**势力归属** —— 起笔只记省 id，抬手一次落库。
@@ -121,8 +121,8 @@ function onMouseDown(event) {
       // 吸管：把该省当前的势力选成当前笔刷（"照着已有的涂"最常用）
       const { prov, polity } = pickPolityAt(world.x, world.y);
       if (!prov) statusMsg('吸管：这里没有省份');
-      else if (!polity) statusMsg(`吸管：「${prov.name || '这个省'}」目前没有势力归属`);
-      else { selectPolity(polity); statusMsg(`吸管：当前势力 = 「${polity.name}」`); }
+      else if (!polity) statusMsg(`吸管：“${prov.name || '这个省'}”目前没有势力归属`);
+      else { selectPolity(polity); statusMsg(`吸管：当前势力 = “${polity.name}”`); }
       render();
       return;
     }
@@ -131,14 +131,14 @@ function onMouseDown(event) {
       // 自动落到本剧本第一个势力，并说清"用的是谁、去哪换"——一笔一条撤销，画错了按 Ctrl+Z。
       const first = (selectedScenario.value?.polities || [])[0] || null;
       if (!first) {
-        statusMsg('涂归属：这个剧本还没有势力 —— 先在地图上方的「势力：」行点「＋ 势力」');
+        statusMsg('涂归属：这个剧本还没有势力 —— 先在地图上方的“势力：”行点“＋ 势力”');
         return;
       }
       selectPolity(first);
-      statusMsg(`涂归属：没选势力，先用「${first.name}」—— 点地图上方的色块可以换`);
+      statusMsg(`涂归属：没选势力，先用“${first.name}”—— 点地图上方的色块可以换`);
     }
     // 手势期基帧（2026-10-21）：拖动期画布**只贴基帧 + 画笔刷圈/已碰省份的预览色**，
-    // 不再每帧重画 415 个省（用户反复报的「涂归属卡顿」）。落库仍在抬手（一笔一条撤销），
+    // 不再每帧重画 415 个省（用户反复报的“涂归属卡顿”）。落库仍在抬手（一笔一条撤销），
     // 所以基帧与数据在整笔期间天然一致 —— 与河流拖笔/框选同一条纪律。
     beginStrokeBase();
     st.ownerStrokeActive = true;
@@ -152,7 +152,7 @@ function onMouseDown(event) {
   }
 
   // ── 笔刷建省（2026-10-22）：涂抹期只收轨迹（零落库），**抬手才建省** ──────────────
-  //    与「改省界」共用同一套采样（`applyProvinceStroke`，按 0.35×半径 抽稀），
+  //    与“改省界”共用同一套采样（`applyProvinceStroke`，按 0.35×半径 抽稀），
   //    但落库走另一条路（`endProvinceStroke` 里按 tool 分派到 createProvinceFromBrush）。
   //    ⚠️ 这里**不要求已有省份**（空底图正是它最该能用的地方）——这是与上面那段的根本差别。
   if (tool.value === 'provincePaint' && event.button === 0) {
@@ -187,7 +187,7 @@ function onMouseDown(event) {
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     if (!provinceTargets.value.length) {
-      statusMsg('还没有省份：先点工具栏「新建省份」，再涂抹划地');
+      statusMsg('还没有省份：先点工具栏“新建省份”，再涂抹划地');
       return;
     }
     if (tool.value === 'provinceFill') {
@@ -213,20 +213,20 @@ function onMouseDown(event) {
     return;
   }
 
-  // 「绘制」工具：按住拖动 = 自由绘制（原型 v7 的手感）。轨迹太短（其实只是单击）则不接管，
+  // “绘制”工具：按住拖动 = 自由绘制（原型 v7 的手感）。轨迹太短（其实只是单击）则不接管，
   // 仍由 onClick 的描点分支落一个顶点 —— 两条路径并存，能力不减。
-  // 「描轮廓」（E，2026-10-11）复用**同一条采样**（同一个手势，只是松手后做的事不同）：
+  // “描轮廓”（E，2026-10-11）复用**同一条采样**（同一个手势，只是松手后做的事不同）：
   //   画省份 = 新建一个省；描轮廓 = 把围住的这块地从邻省手里改到目标省。
   if ((tool.value === 'draw' || tool.value === 'outline') && event.button === 0) {
     if (store.isReadOnly) {
       statusMsg(`${tool.value === 'outline' ? '描轮廓' : '绘制'}已停用：${store.readOnlyReason}（新建/打开项目后即可编辑）`);
       return;
     }
-    // 上一笔成型后若「那次 click 没送到」（松手点落在画布外），这里顺手清掉残留标记，
+    // 上一笔成型后若“那次 click 没送到”（松手点落在画布外），这里顺手清掉残留标记，
     // 免得下一次单击描点被静默吞掉（click 必定先于下一次 mousedown）
     st.suppressDrawClick = false;
     if (tool.value === 'outline' && !(baseMap.value?.terrain || []).length) {
-      statusMsg('描轮廓：这张底图还没有省份 —— 先用「画省份」或「批量铺底」切出块来');
+      statusMsg('描轮廓：这张底图还没有省份 —— 先用“画省份”或“批量铺底”切出块来');
       return;
     }
     const rect = canvas.value.getBoundingClientRect();
@@ -258,9 +258,9 @@ function onMouseDown(event) {
 
   // ── 河流编辑器（2026-10-17 重做手势）────────────────────────────────────────
   // 🔴 核实过的真实现状（读代码 + 真机探针，不是猜的）：`onMouseMove` 里**根本没有**
-  //    river 分支，而 `finishRiverDraft` 只挂在小双击上 —— 于是「河流 (W)」这个工具
-  //    在真机上的全部能力是「点一下落一个点」，画布上的提示却写着"按住拖出笔迹"。
-  //    用户要的是「流畅的笔刷绘制 + 事后可编辑可撤除」，所以这里补齐三件事：
+  //    river 分支，而 `finishRiverDraft` 只挂在小双击上 —— 于是“河流 (W)”这个工具
+  //    在真机上的全部能力是“点一下落一个点”，画布上的提示却写着"按住拖出笔迹"。
+  //    用户要的是“流畅的笔刷绘制 + 事后可编辑可撤除”，所以这里补齐三件事：
   //      ① 按住拖动 = 连续采点（`onMouseMove` 的 river 分支）
   //      ② 松手 = 落库（`onMouseUp`），不再要求双击
   //      ③ 点河身加拐点 / 拖节点微调（本函数 + `onMouseMove` + `onMouseUp`）
@@ -277,7 +277,7 @@ function onMouseDown(event) {
     //    按下的落点可能**同时**命中"某个节点"与"某条河的河身"（节点就在河身上），
     //    而节点的命中容差是 24 屏像素（河很细，容差不放大就点不中）—— 于是**几乎整条河**
     //    都在节点容差里，支流永远起不了笔。实测症状极具误导性：状态栏显示
-    //    「已移动第 10 个节点」而河身没动（那个"节点"其实是投影出来的最近节点）。
+    //    “已移动第 10 个节点”而河身没动（那个"节点"其实是投影出来的最近节点）。
     //
     //    所以支流给一个**无歧义**的触发方式，顺序即语义：
     //      ① **Shift + 在河身上按下** → 画支流（Shift 是本仓既有的"第二功能"修饰键）；
@@ -323,11 +323,11 @@ function onMouseDown(event) {
 
   // 笔刷工具：左键抬高 / 右键降低
   if (tool.value === 'height' && (event.button === 0 || event.button === 2)) {
-    // 2026-10-27（B3「三个都画了，地形仿佛根本没变」）：高度笔刷只改高度图，而画布默认
-    // 「陆海底色」档根本不吃高度 → 涂了完全看不出来。第一次落笔自动切到「地形高度」。
+    // 2026-10-27（B3“三个都画了，地形仿佛根本没变”）：高度笔刷只改高度图，而画布默认
+    // “陆海底色”档根本不吃高度 → 涂了完全看不出来。第一次落笔自动切到“地形高度”。
     if (rasterLayer.value !== 'height') {
       rasterLayer.value = 'height';
-      statusMsg('已切到「地形高度」图层 —— 高度笔刷的改动只在这档看得见（涂完可用右上「底图图层」换回）');
+      statusMsg('已切到“地形高度”图层 —— 高度笔刷的改动只在这档看得见（涂完可用右上“底图图层”换回）');
     }
     st.isBrushing = true;
     st.brushMode = event.button === 0 ? 'raise' : 'lower';
@@ -340,7 +340,7 @@ function onMouseDown(event) {
     // 湖泊（2026-10-27，SP-1025 语义）：平底 18/19；松手后按 h 重标海陆。
     if (rasterLayer.value !== 'height') {
       rasterLayer.value = 'height';
-      statusMsg('已切到「地形高度」图层 —— 湖泊的改动只在这档看得见');
+      statusMsg('已切到“地形高度”图层 —— 湖泊的改动只在这档看得见');
     }
     st.isBrushing = true;
     st.brushMode = 'lake';
@@ -354,7 +354,7 @@ function onMouseDown(event) {
     // 不是笔刷坏了，是当前视图把它盖住了。落笔时自动切到看得见的那一档。
     if (viewMode.value !== 'base') {
       viewMode.value = 'base';
-      statusMsg('已切到「底图编辑」视图 —— 群系色在剧本模式会被势力色盖住（涂完可切回剧本）');
+      statusMsg('已切到“底图编辑”视图 —— 群系色在剧本模式会被势力色盖住（涂完可切回剧本）');
     }
     st.isBrushing = true;
     st.brushMode = 'biome';
@@ -364,10 +364,10 @@ function onMouseDown(event) {
     return;
   }
   if (tool.value === 'culture' && event.button === 0) {
-    // 文化/宗教色由「着色」下拉决定；不切这一档，笔画再对也看不出来
+    // 文化/宗教色由“着色”下拉决定；不切这一档，笔画再对也看不出来
     if (colorMode.value !== 'culture') {
       colorMode.value = 'culture';
-      statusMsg('已切到「着色：文化」—— 文化笔刷只在这档看得见');
+      statusMsg('已切到“着色：文化”—— 文化笔刷只在这档看得见');
     }
     st.isBrushing = true;
     st.brushMode = 'culture';
@@ -379,7 +379,7 @@ function onMouseDown(event) {
   if (tool.value === 'religion' && event.button === 0) {
     if (colorMode.value !== 'religion') {
       colorMode.value = 'religion';
-      statusMsg('已切到「着色：宗教」—— 宗教笔刷只在这档看得见');
+      statusMsg('已切到“着色：宗教”—— 宗教笔刷只在这档看得见');
     }
     st.isBrushing = true;
     st.brushMode = 'religion';
@@ -391,8 +391,8 @@ function onMouseDown(event) {
   // marker 和 road 在 onCanvasClick 处理
 
   if (event.button === 0 && (tool.value === 'select' || tool.value === 'vertex')) {
-    // 🔴 2026-10-17 第八修·三修（用户：「选择根本无法选中河」）：
-    //    上一版我把河流命中放在 `onCanvasClick` 里。但「选择」工具在 **mousedown** 时
+    // 🔴 2026-10-17 第八修·三修（用户：“选择根本无法选中河”）：
+    //    上一版我把河流命中放在 `onCanvasClick` 里。但“选择”工具在 **mousedown** 时
     //    就已经进入平移拖拽态（见下面 `st.panStart = …`）—— 只要手抖 1px，浏览器就不发
     //    `click`（click 要求按下与抬起在同一元素且无拖动）→ **河永远选不中**。
     //    这是"能力挂在错误的时机上"，不是判据问题。
@@ -407,12 +407,12 @@ function onMouseDown(event) {
       const hit = hitTestRiver(list, world0.x, world0.y, radiusWorld, (r) => riverNodesForRender(r));
       if (hit) {
         // 不在这里选中（2026-10-27）：只记候选，**照常进平移** —— 松手位移 ≤4px 才算点选。
-        // 这样「在河附近按住拖动看地图」不会变成选河，而点一下照旧能选中。
+        // 这样“在河附近按住拖动看地图”不会变成选河，而点一下照旧能选中。
         st.pendingRiverPick = { id: hit.id, shift: !!event.shiftKey, x: event.clientX, y: event.clientY };
       } else {
         st.pendingRiverPick = null;
       }
-      // 🔴 第五轮（2026-10-17）：Shift + 拖动 = **框选一批河**（用户点名「框选批量删河」）。
+      // 🔴 第五轮（2026-10-17）：Shift + 拖动 = **框选一批河**（用户点名“框选批量删河”）。
       //    只在不命中任何河时生效 —— 命中时 Shift 是"加选这一条"（上面那段）。
       if (!hit && event.shiftKey) {
         riverMarquee.value = { x0: world0.x, y0: world0.y, x1: world0.x, y1: world0.y };
@@ -492,8 +492,8 @@ function onMouseDown(event) {
       }
     }
     // 🔴 2026-10-14：顶点模式下 Shift+拖动**必须永远起得来框**，哪怕当前没有选中省份 /
-    //    落点在选中省之外。为什么：这个手势的**前置条件**（先在「选择」里点一个省）
-    //    完全不可见 —— 用户实测「我按 Shift 键似乎没什么作用」，而真实输入演练证明
+    //    落点在选中省之外。为什么：这个手势的**前置条件**（先在“选择”里点一个省）
+    //    完全不可见 —— 用户实测“我按 Shift 键似乎没什么作用”，而真实输入演练证明
     //    手势本身是通的（test_104）。所以问题不在手势、在**没有回音**：
     //    条件不满足时它就静默变成平移，用户看到的是"Shift 没用"。
     //    现在无论条件是否满足都给一条说明，并且框照样能拉（松手时告诉他框到了几个、
@@ -506,7 +506,7 @@ function onMouseDown(event) {
       canvas.value.style.cursor = 'crosshair';
       beginStrokeBase();
       if (!currentProvince()) {
-        statusMsg('框选只作用于**当前选中的省份**：先用「选择 (V)」点一下要精修的省，再按 Shift 拖框（现在也可以先拖，松手后会提示）');
+        statusMsg('框选只作用于**当前选中的省份**：先用“选择 (V)”点一下要精修的省，再按 Shift 拖框（现在也可以先拖，松手后会提示）');
       }
       render();
       return;

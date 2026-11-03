@@ -28,7 +28,7 @@ def _scenario_map(cdp):
 
 
 def _enter_scenario_mode(cdp):
-    """点击 WorldSelector 的「⏳ 历史剧本」按钮进入剧本模式"""
+    """点击 WorldSelector 的“⏳ 历史剧本”按钮进入剧本模式"""
     return cdp.eval("""(() => {
       const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('历史剧本'));
       if (!btn) return 'no-btn';
@@ -38,7 +38,7 @@ def _enter_scenario_mode(cdp):
 
 
 def _exit_scenario_mode(cdp):
-    """退出历史剧本模块（2026-10-21：走顶部模块页签；编辑器「返回」在底图编辑态只退子模式）"""
+    """退出历史剧本模块（2026-10-21：走顶部模块页签；编辑器“返回”在底图编辑态只退子模式）"""
     return cdp.eval("""(() => {
       const btn = document.querySelector('[data-testid=module-world]');
       if (!btn) return 'no-btn';

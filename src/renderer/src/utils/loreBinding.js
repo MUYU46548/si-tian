@@ -1,9 +1,9 @@
-// utils/loreBinding.js — 「库内笔记 ↔ 画布节点」的**稳定身份绑定**纯函数层（N3a-3，2026-11-02）
+// utils/loreBinding.js — “库内笔记 ↔ 画布节点”的**稳定身份绑定**纯函数层（N3a-3，2026-11-02）
 //
 // ── 为什么需要这一层 ──────────────────────────────────────────────────────
 // 今天节点与笔记的关联只有 `sourcePath`（相对路径）。Obsidian 里改一次名 / 挪一次目录，
 // 路径就变了 —— 节点 id 是 `normalizeId(文件名)`，于是**同一篇笔记变成另一个实体**，
-// 坐标、地图数据、剧本归属全留在旧 id 上，用户看到的是「多了一个、少了一个」。
+// 坐标、地图数据、剧本归属全留在旧 id 上，用户看到的是“多了一个、少了一个”。
 // 本模块不写任何数据，只回答三个问题：
 //   · 这篇笔记的**身份**是什么（`bindingKey` / `fingerprintOf`）；
 //   · 上一轮的绑定在新索引里还对不对得上、哪条其实是**改名**、哪条**认不出来**（`reconcileBindings`）；
@@ -12,13 +12,13 @@
 // ── 三条纪律（都不许破）──
 //   ① 纯函数：无 DOM、无 IPC、无文件系统、**不读当前时间**（`noteRefOf` 的时间戳由调用方传入）；
 //      所以可以直接在 Node 单测里跑（`scripts/tests/unit/test_lore_binding.js`）。
-//   ② 不猜：指纹不唯一就进 `lost`，**绝不**按「名字像」去配 —— 乱认一条比不认更坏
-//      （用户会照单全收，等于让机器替他认错亲；与「认不出就进待人工」同一条纪律）。
+//   ② 不猜：指纹不唯一就进 `lost`，**绝不**按“名字像”去配 —— 乱认一条比不认更坏
+//      （用户会照单全收，等于让机器替他认错亲；与“认不出就进待人工”同一条纪律）。
 //   ③ 确定：同样的输入永远产出同样的键 / 指纹 / 节点 id；`candidateToNodeDraft` 导两次必须同 id。
 //
 // ── bindingKey 的优先级（**就是**这份清单，改它等于改数据契约）────────────────
 //   1. **显式稳定 id**：frontmatter 的 `sitian-id` / `sitian_id` / `sitianId`（索引条目上是 `sitianId`）
-//      → `id:<值>`。这是唯一「改名 + 移动都不变」的身份；真实库里几乎没人写，但位置先留好。
+//      → `id:<值>`。这是唯一“改名 + 移动都不变”的身份；真实库里几乎没人写，但位置先留好。
 //   2. **库内相对路径**（统一 `/`、去 `./`、去重斜杠）→ `path:<路径>`。索引里本来就有且唯一，
 //      是当前默认档 —— 代价是**改名/移动即换键**（这一档靠 `fingerprintOf` 兜底认亲）。
 //   3. **标题** → `title:<标题>`。只有"没有路径的合成条目"（用例 / 外部调用）才会落到这一档。
@@ -26,7 +26,7 @@
 //   ⚠️ 别名（`aliases`）**不参与 key**：别名是用户随时可改的显示名，把可变值当键 =
 //      "加个别名，链接就断了"。它只用在指纹里（见 `fingerprintOf`）。
 //
-// ── 与既有实现的关系（「同一能力只许一份实现」）──
+// ── 与既有实现的关系（“同一能力只许一份实现”）──
 //   · 路径归一化：复用 `utils/vaultRelink.js` 的 `normalizeRelPath`（断线对账用的同一份）；
 //   · 节点 id 规范化：复用 `utils/normalizeId.js`（提取器 / 转正 / 本模块同一个口径）；
 //   · 归类（"这条候选是不是地图实体"）：**不在本模块**做决定，只读主进程索引给的 `kind`/`layer`
@@ -39,7 +39,7 @@ import { normalizeId } from './normalizeId';
 /** 导入候选建的节点都带这个标签（可反查、可在画布上筛出来） */
 export const VAULT_IMPORT_TAG = 'vault-import';
 
-/** frontmatter 里被认作「显式稳定 id」的字段名（顺序 = 优先级） */
+/** frontmatter 里被认作“显式稳定 id”的字段名（顺序 = 优先级） */
 const EXPLICIT_ID_KEYS = ['sitianId', 'sitian-id', 'sitian_id', 'uid', 'UID'];
 
 function asText(v) {
@@ -97,10 +97,10 @@ export function aliasesOf(entry) {
 }
 
 /**
- * 这篇笔记「如果成为地图节点会用的 id」—— 与提取器同一口径（`normalizeId(文件名)`）。
+ * 这篇笔记“如果成为地图节点会用的 id”—— 与提取器同一口径（`normalizeId(文件名)`）。
  *
  * 为什么单独留一个字段：它告诉你"这篇笔记现在对应哪个实体"，方便 UI 说人话
- * （「这篇笔记就是节点『雾隐城』」）。但它**不能当绑定键** —— 改文件名它就变了，
+ * （“这篇笔记就是节点‘雾隐城’”）。但它**不能当绑定键** —— 改文件名它就变了，
  * 而"改名不掉线"正是本模块要解决的问题。
  */
 export function noteIdOf(entry) {
@@ -125,7 +125,7 @@ export function bindingKey(entry) {
 }
 
 /**
- * 指纹 = **与位置无关**的身份，用来认「同一篇笔记换了 path」。
+ * 指纹 = **与位置无关**的身份，用来认“同一篇笔记换了 path”。
  *
  * 组成：显式 id（若有）→ `id:<…>`；否则 `标题 + 排序后的别名`。
  *
@@ -181,7 +181,7 @@ export function noteRefOf(entry, at = '') {
 }
 
 /**
- * 两条引用是不是同一篇笔记（UI 用来点亮「已绑定」/ 判断重复绑定）。
+ * 两条引用是不是同一篇笔记（UI 用来点亮“已绑定”/ 判断重复绑定）。
  * 先比身份键，再比路径（键可能因升级/迁移缺失）。
  */
 export function sameNoteRef(a, b) {
@@ -209,11 +209,11 @@ function hash8(text) {
  * 候选 → 节点草稿（**不写任何数据**，只产出形状；写由 store 的 `importVaultCandidate` 走 `addNode`）。
  *
  * id 由**绑定键**派生（`vault_<规范化标题>_<身份键 hash8>`）：
- *   · 同一篇笔记导两次 → 同一个 id → 第二次被 store 拒为「已经导入过」，不会出现两个节点；
+ *   · 同一篇笔记导两次 → 同一个 id → 第二次被 store 拒为“已经导入过”，不会出现两个节点；
  *   · 不用裸 `normalizeId(标题)`：库里同名不同目录的两篇笔记会撞成同一个 id，
  *     而那两个确实是两个地方（"撞 id" 比"多一个草稿"更难收拾）。
  *   · 代价（诚实写下来）：笔记**移动过之后**再导入，id 会不同（键是路径档）；
- *     这种情形该走「绑定 / 重连」，不是再导一次。
+ *     这种情形该走“绑定 / 重连”，不是再导一次。
  *
  * @param {object} candidate 索引候选 / 搜索命中（需要 title|name + path，或显式 id）
  * @param {{layer?:string, parentId?:string|null}} [opts]
@@ -344,7 +344,7 @@ export function reconcileBindings(prevBindings, nextIndexEntries) {
         lost.push({
           entityId: b.entityId,
           noteId: b.noteId,
-          why: `库里有 ${fpHits.length} 篇「${b.title || b.key}」同名笔记，指纹不唯一，不猜（请人工重绑）`,
+          why: `库里有 ${fpHits.length} 篇“${b.title || b.key}”同名笔记，指纹不唯一，不猜（请人工重绑）`,
         });
         continue;
       } else if (ownCount > 1) {

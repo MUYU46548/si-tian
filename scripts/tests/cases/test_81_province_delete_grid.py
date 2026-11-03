@@ -67,7 +67,7 @@ def sub_source_guards(cdp):
     seg = pe[pe.find('function shiftProvinceGridForDelete'):pe.find('function shiftProvinceGridForDelete') + 1200]
     if 'execute(' in seg:
         bad.append('shiftProvinceGridForDelete 自己压了一条 undo（会把删除拆成两条撤销）')
-    # 旧函数的「撤销写孤儿」缺陷：apply 里必须重新取缓存
+    # 旧函数的“撤销写孤儿”缺陷：apply 里必须重新取缓存
     for fn in ('function removeProvinceWithGrid', 'function clearProvinceLabels'):
         body = pe[pe.find(fn):pe.find(fn) + 1800]
         if 'const cur = cache[key]' not in body:
@@ -91,7 +91,7 @@ def sub_source_guards(cdp):
     ps = _code_only(_read('src/renderer/src/utils/provinceShape.js'))
     # `mergeProvinceShapes` 保留为**纯函数参考实现**（有 Node 单测），量纲字段自然还在；
     # 但它已不再被产品代码调用（见下）。
-    for sym, why in (('crossScanSkipped', '超阈时没标记「跳过相交扫描」'),
+    for sym, why in (('crossScanSkipped', '超阈时没标记“跳过相交扫描”'),
                      ('pairsTested', '没回报实际测了几对环')):
         if sym not in ps:
             bad.append(f'provinceShape 合并{why}')
@@ -99,12 +99,12 @@ def sub_source_guards(cdp):
     pei = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     # 🔴 P2（2026-10-09）：合并改**布尔精确并集** —— `maxWork`/`overflow`/`raster` 这套
     #    "超阈降级"的量纲概念整体消失（布尔没有阈值）。旧守卫要求回报量纲，现在**反转为**
-    #    「不许再出现降级路径」。
+    #    “不许再出现降级路径”。
     for sym in ('unionMulti', 'polygonClipping'):
         if sym not in pei:
             bad.append(f'mergeProvinces 没走布尔精确并集（缺 {sym}）')
     if 'maxWork' in pei or "'raster'" in pei:
-        bad.append('provinceEditing 仍有「超阈降级到栅格」的残留（P2 后应完全消失）')
+        bad.append('provinceEditing 仍有“超阈降级到栅格”的残留（P2 后应完全消失）')
     sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
     # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集，不再绑文件位置
     from lib.rsrc import render_src_code_only as _rsrc_all
@@ -112,7 +112,7 @@ def sub_source_guards(cdp):
     if '布尔精确并集' not in sm:
         bad.append('合并文案没说明走的是布尔精确并集（用户看不出会不会降精度）')
     if '精度降级' in sm:
-        bad.append('合并文案仍提「精度降级」→ 该分支应已删除')
+        bad.append('合并文案仍提“精度降级”→ 该分支应已删除')
 
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
@@ -178,7 +178,7 @@ DELETE_JS = r"""(async () => {
   const labels = () => s.baseMaps[KEY].provinceLabels.data;
   const terrainIds = () => s.baseMaps[KEY].terrain.map(p => p.id);
 
-  // 先涂一笔，让标签不是「刚栅格化出来的那样」（同时也验证重编号动的是用户涂过的格）
+  // 先涂一笔，让标签不是“刚栅格化出来的那样”（同时也验证重编号动的是用户涂过的格）
   s.applyProvinceLasso(KEY, [{x:0,y:0},{x:100,y:0},{x:100,y:100},{x:0,y:100}], 2);
   await tick(150);
   const before = Array.from(labels());

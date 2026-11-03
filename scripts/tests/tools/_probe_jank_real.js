@@ -2,7 +2,7 @@
 // 由 `_probe_jank_real.py` 驱动（**不是** `_lab.py run`：整段要跑 40s+，单次 eval 会撞 CDP 15s 读超时）。
 // 结果写进 `window.__JANK`（Python 侧轮询）。前提：`src/renderer/public/__real_desite.map` 存在。
 window.__JANK = { stage: 'boot', out: {}, fails: [] };
-// 🔴 探针必须先掐掉 modal：真实底图（415 省满铺）上「圈个地」松手会撞**压叠闸门**的
+// 🔴 探针必须先掐掉 modal：真实底图（415 省满铺）上“圈个地”松手会撞**压叠闸门**的
 //    `window.confirm`；无 dialog handler 的 headless 页面会**永久阻塞**在对话框上
 //    （第一版实测：整整 180s 连 `Page.enable` 都不回）。探针要量的是"落库那条链多长"，
 //    不是"人在对话框前坐多久" —— 所以这里把 confirm 一律当"确认"。

@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：**序列化边界**上「去 Vue 代理」与「TypedArray 兜底」的判定
+ * Node 单元测试：**序列化边界**上“去 Vue 代理”与“TypedArray 兜底”的判定
  * （src/renderer/src/utils/projectSchema.js 的 `toIpcPlain` / `deepClone` / `snapshotBytes`）。
  *
  * 背景（1-b，2026-10-24）：画布载荷不再在 `buildProjectPayload` 里深拷贝，深拷贝挪到落盘唯一出口。
- * 于是这三个函数成了**唯一**保证「无代理跨 IPC / TypedArray 变数组」的地方 —— 它们静默退化的后果
+ * 于是这三个函数成了**唯一**保证“无代理跨 IPC / TypedArray 变数组”的地方 —— 它们静默退化的后果
  * 都是数据事故级：
  *   · 代理跨进程 → V8 抛 "An object could not be cloned." → **每次保存都失败**（2026-10-06 T2）；
  *   · TypedArray 不过 replacer → 主进程 `JSON.stringify` 写出 `{"0":..}`（丢 length）→ 读回是空数组；
  *   · `deepClone` 走 structuredClone 时被代理抛错 → 每次都退 JSON 降级（慢 4 倍，且丢 TypedArray 类型）。
  *
- * ⚠️ 本文件用「形如代理的普通对象」模拟 Vue 代理（`__v_raw` 指回原始对象）：
+ * ⚠️ 本文件用“形如代理的普通对象”模拟 Vue 代理（`__v_raw` 指回原始对象）：
  *    不去 import vue —— 这一层判定的是**读取 `__v_raw` 的契约**，与框架版本无关。
- *    「真代理」那一半由 CDP 用例（test_85 的 IPC 边界 / test_55 的落盘）守。
+ *    “真代理”那一半由 CDP 用例（test_85 的 IPC 边界 / test_55 的落盘）守。
  *
  * 用法：node scripts/tests/unit/test_project_plain.js
  * 退出码：0 = 全通过，1 = 有失败（run_tests.py 作为前置步骤计入）

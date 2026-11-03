@@ -8,7 +8,7 @@
   · 项目里的 `desite` 底图建于 2026-09-10，当时解析器还不读高度图 →
     少了高度图 / 陆地轮廓 / 河流 / 道路 / 城镇（415 块省份与归属**在**）。
 
-做法：在**真机 Electron**里调与「刷新底图数据」按钮**同一个** store 接口
+做法：在**真机 Electron**里调与“刷新底图数据”按钮**同一个** store 接口
 （`updateBaseMapData`，只补缺、不覆盖），然后走一次 `rebuildCoastline` 修海岸线。
 
 安全（照 diag_t2_save.py 的模式）：
@@ -141,7 +141,7 @@ def basemap_facts(path):
     return out
 
 
-# 刷新：与「刷新底图数据」按钮同一条 store 接口
+# 刷新：与“刷新底图数据”按钮同一条 store 接口
 REFRESH_JS = r""" (async () => {
   const app = document.querySelector('#app').__vue_app__;
   if (!app || !app._instance) return { __err__: 'no __vue_app__._instance' };

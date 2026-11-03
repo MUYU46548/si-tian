@@ -1,7 +1,7 @@
 // src/main/handlers/projectHandler.js — `.sitian` 项目文件的文件系统侧（Phase 1：独立运行基础）
 //
 // 职责边界（刻意划死）：
-//   本文件 = 「路径 + 磁盘 I/O + 备份」；**不解释项目内容**
+//   本文件 = “路径 + 磁盘 I/O + 备份”；**不解释项目内容**
 //   内容结构 / 校验 / 迁移 / 快照 → `src/renderer/src/utils/projectSchema.js`
 //   内存态 + UI 交互                  → `src/renderer/src/store/projectStore.js`
 //
@@ -12,7 +12,7 @@
 //
 // 安全约定：
 //   · 只写 `.sitian` 扩展名的文件（防路径穿越/误覆盖用户的 md）
-//   · 落盘一律「先备份旧文件 → 写临时文件 → rename 覆盖」（断电不会留半个 JSON）
+//   · 落盘一律“先备份旧文件 → 写临时文件 → rename 覆盖”（断电不会留半个 JSON）
 //   · 备份目录 `<项目名>.backups/` 与项目文件同目录，保留最近 BACKUP_KEEP 份
 
 const path = require('path');
@@ -25,9 +25,9 @@ const PROJECT_EXT = '.sitian';
 // 更早的历史由**会话基线**（下面那条，不参与轮转）和 git 同步兜底。
 const BACKUP_KEEP = 3;
 
-// 会话基线：每次「打开项目」时把文件原样复制一份，固定文件名、覆盖式（永远只有 1 份）。
+// 会话基线：每次“打开项目”时把文件原样复制一份，固定文件名、覆盖式（永远只有 1 份）。
 // 为什么必须要它：滚轮转（BACKUP_KEEP=3）会被高频自动保存迅速刷光 —— 打开项目大改一场后，
-// 备份目录里剩的全是最近几分钟的状态，「打开时的样子」永久丢失。基线不参与轮转，专门兜这一层。
+// 备份目录里剩的全是最近几分钟的状态，“打开时的样子”永久丢失。基线不参与轮转，专门兜这一层。
 // （用户原话：没有数据安全承诺的系统，投进去的手绘时间是无担保贷款。）
 const BASELINE_TAG = '.session-baseline' + PROJECT_EXT;
 
@@ -40,8 +40,8 @@ const BASE_MAP_SRC_KEEP = 10;
 // 与 `src/main/index.js` 的 sanitizeFileName（batch-import-notes 用）共用同一套非法字符表。
 // ⚠️ 清洗顺序与 index.js 相反：**先替换非法字符、再取 basename**。
 //    index.js 先 basename 是因为它处理的只是一个词条名；项目名里用户可能写 `世界/子项目`，
-//    先 basename 会把「世界/」整段丢掉（实测：'我的世界/A:B' → 'A_B'）。
-//    先替换则 `/` 变 `_`，basename 仅作为「绝不产生目录层级」的第二道闸门。
+//    先 basename 会把“世界/”整段丢掉（实测：'我的世界/A:B' → 'A_B'）。
+//    先替换则 `/` 变 `_`，basename 仅作为“绝不产生目录层级”的第二道闸门。
 const ILLEGAL_CHARS = /[\\/:*?"<>|]/g;
 
 function sanitizeFileName(name) {
@@ -107,7 +107,7 @@ async function makeBackup(filePath, keep = BACKUP_KEEP) {
   const dest = await uniquePath(path.join(dir, `${base}-${stamp()}.sitian`));
   await fs.copyFile(filePath, dest);
   // 轮转：只保留最近 keep 份
-  // ⚠️ 排除会话基线（BASELINE_TAG）：它是「打开时状态」的唯一留底，绝不能被轮转删掉。
+  // ⚠️ 排除会话基线（BASELINE_TAG）：它是“打开时状态”的唯一留底，绝不能被轮转删掉。
   try {
     const all = (await fs.readdir(dir))
       .filter(f => f.endsWith(PROJECT_EXT) && !f.endsWith(BASELINE_TAG))
@@ -127,8 +127,8 @@ function sessionBaselinePath(filePath) {
 }
 
 /**
- * 写入/覆盖「会话基线」= 当前磁盘上项目文件的副本（打开项目时调用）。
- * 覆盖式（恒定 1 份）、不参与轮转 → 「本次会话开始前的数据」永远可回滚。
+ * 写入/覆盖“会话基线”= 当前磁盘上项目文件的副本（打开项目时调用）。
+ * 覆盖式（恒定 1 份）、不参与轮转 → “本次会话开始前的数据”永远可回滚。
  */
 async function makeSessionBaseline(filePath) {
   try {
@@ -168,7 +168,7 @@ async function atomicWriteJson(filePath, project) {
   //    实测暮雨的真实项目：正文 39853484 字节 → 紧凑后 10302398 字节 = **缩进占 74%**。
   //    原因很具体：`scenarios.baseMaps[*].terrain[].points` 是 `[{x,y},…]` 的**上万点数组**，
   //    每点两行缩进 → 一个省的海岸线就是几十万行。项目文件是机器管理的产物，
-  //    「人能读」换不来 4 倍体积，而体积直接决定**每次自动保存要写多少字节**（低配机的瓶颈）。
+  //    “人能读”换不来 4 倍体积，而体积直接决定**每次自动保存要写多少字节**（低配机的瓶颈）。
   //    代价（如实记录）：git 侧的一行 = 整个文件，`.sitian` 的 diff 不再逐行可读。
   //    若要恢复可读缩进，只改这一行；不要再在别处另写一份序列化（`serializeProject` 是给测试用的）。
   return atomicWriteText(filePath, JSON.stringify(project));
@@ -341,7 +341,7 @@ async function saveBaseMapSource(projectFilePath, payload = {}) {
   }
   // 轮转：只保留最近 BASE_MAP_SRC_KEEP 份 `.map`。
   // 🔴 **必须按 mtime 排序，不能按文件名** —— 首版用 `.sort()` 按名字排，于是
-  //    「刚写进去的 `reverse.map`」因为字母序靠前被当成"最旧"删掉（单测 e3 当场抓到：
+  //    “刚写进去的 `reverse.map`”因为字母序靠前被当成"最旧"删掉（单测 e3 当场抓到：
   //    ENOENT，刚留的底还没用就没了）。文件名（`desite.map` / `旧版.map` / `x-2.map`）
   //    与写入先后**没有任何关系**，只有 mtime 是真相。
   let pruned = 0;
@@ -442,8 +442,8 @@ function registerProjectHandlers(deps) {
       const dir = payload.dir || getDefaultProjectDir();
       const res = await createProjectFile(dir, payload.name || '未命名项目', payload.project || {});
       await setLastProjectPath(res.filePath);
-      // ⚠️ 必须回显项目正文：渲染层 adopt() 的入参是「{filePath, project}」，
-      // 只回路径会让「新建项目」解析到 undefined → validateProject 报「项目内容不是对象」→ 新建失败。
+      // ⚠️ 必须回显项目正文：渲染层 adopt() 的入参是“{filePath, project}”，
+      // 只回路径会让“新建项目”解析到 undefined → validateProject 报“项目内容不是对象”→ 新建失败。
       // （该缺陷曾被 CDP 用例的假绿掩盖，由 Node 单测的通道级断言补上真实覆盖。）
       return ok({ ...res, project: payload.project || {} });
     } catch (err) {
@@ -466,16 +466,16 @@ function registerProjectHandlers(deps) {
         target = res.filePaths[0];
       }
       const read = await readProjectFile(target);
-      // 数据安全：打开时留一份「会话基线」（覆盖式，1 份，不参与轮转）
-      //   → 本次会话里无论自动保存刷了多少次，「打开时的样子」永远能取回。
+      // 数据安全：打开时留一份“会话基线”（覆盖式，1 份，不参与轮转）
+      //   → 本次会话里无论自动保存刷了多少次，“打开时的样子”永远能取回。
       // ⚠️ 基线失败**不阻塞打开**，但也**不能静默**（2026-09-24 修）：用户会以为有回滚点，
-      //    等 10 份轮转备份把它刷掉后就永久失去「打开时的样子」→ 必须把告警带回渲染层。
+      //    等 10 份轮转备份把它刷掉后就永久失去“打开时的样子”→ 必须把告警带回渲染层。
       let baseline = { backedUp: false };
       let baselineWarning = '';
       try {
         baseline = await makeSessionBaseline(target);
       } catch (e) {
-        baselineWarning = `会话基线未能创建（${(e && e.message) || e}）：「打开时的样子」没有留底，本次会话不可回滚到打开时状态`;
+        baselineWarning = `会话基线未能创建（${(e && e.message) || e}）：“打开时的样子”没有留底，本次会话不可回滚到打开时状态`;
         console.warn('[project] 会话基线创建失败:', e);
       }
       await setLastProjectPath(target);
@@ -511,7 +511,7 @@ function registerProjectHandlers(deps) {
   });
 
   // 上次打开的项目路径（B4，2026-09-24）—— 供启动时自动恢复。
-  // ⚠️ 只回报「文件确实还在」的路径：否则渲染层会为一个已删除/已移动的项目反复报错，
+  // ⚠️ 只回报“文件确实还在”的路径：否则渲染层会为一个已删除/已移动的项目反复报错，
   //    而这条路径是**启动时**用的，报错会发生在用户还没做任何事的时候。
   ipcMain.handle('project-get-last-path', async () => {
     try {
@@ -560,10 +560,10 @@ function registerProjectHandlers(deps) {
   });
 
   /**
-   * 🔴 只读：主进程侧「当前项目路径」的**权威回答**（2026-10-11）。
+   * 🔴 只读：主进程侧“当前项目路径”的**权威回答**（2026-10-11）。
    * 为什么要它：底图来源备份发生在 `ScenarioMap` 的导入流程里，而那个组件**不该**为了
    * 一个路径去 import projectStore（组件与 store 的接线越少越好，且 geodata 侧已有
-   * 「只经 canvasBridge」的纪律）。主进程本来就通过 `setLastProjectPath` 记着这个值
+   * “只经 canvasBridge”的纪律）。主进程本来就通过 `setLastProjectPath` 记着这个值
    * （每次新建/打开都会写），所以直接问它即可 —— 也顺带避免了"渲染层记住了陈旧路径"。
    * 只读、不写盘、不改配置。
    */
@@ -588,10 +588,10 @@ function registerProjectHandlers(deps) {
 
   // 🔴 Git 快照（补注册，2026-10-11）：`gitSnapshot()` 一直存在且已导出、
   //    preload 也一直暴露着 `projectGitSnapshot`，但**这个通道从来没注册过** ——
-  //    `ProjectPanel.vue` 的「司天快照」按钮在真机上必然抛
+  //    `ProjectPanel.vue` 的“司天快照”按钮在真机上必然抛
   //    `Error: No handler registered for 'project-git-snapshot'`（只在被点时才炸）。
   //    CDP 用例里 `window.sitianAPI` 是 mock，这条漏接在那层**永远看不见**；
-  //    抓出它的是新加的「IPC 通道名双向对齐」单测（preload invoke ↔ 主进程 handle）。
+  //    抓出它的是新加的“IPC 通道名双向对齐”单测（preload invoke ↔ 主进程 handle）。
   ipcMain.handle('project-git-snapshot', async (event, payload = {}) => {
     try {
       return ok(await gitSnapshot(payload));

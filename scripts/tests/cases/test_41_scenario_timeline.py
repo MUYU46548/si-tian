@@ -11,7 +11,7 @@
   6. 播放 → 游标自动前进；再点暂停
   7. 轴向切换：按年比例 16 块（含断层块）/ 等宽 3 块
 
-预期谱系变化（由「省份集合重叠度贪心继承」推得，见下方数据集设计）：
+预期谱系变化（由“省份集合重叠度贪心继承”推得，见下方数据集设计）：
   eraChg = [[], ['prov_b'], ['prov_c']]
 """
 import sys, os, json, time
@@ -93,8 +93,8 @@ def run(cdp):
         return False, f'底图 fixture 未就位: {bm_info}'
 
     # ⚠️ 这个探针返回的是 {provCount, scCount} 而**不是** {fails} —— 必须显式声明 required，
-    #    否则 eval_json 会按默认的 ('fails',) 判「缺字段」而把一次**成功**的造数报成失败
-    #    （文案还写成「疑似异常被当成通过」，方向正好相反）。
+    #    否则 eval_json 会按默认的 ('fails',) 判“缺字段”而把一次**成功**的造数报成失败
+    #    （文案还写成“疑似异常被当成通过”，方向正好相反）。
     seed_ok, seed = eval_json(cdp, _seed_js(cdp), required=('provCount', 'scCount'),
                               desc='注入 3 省 + 3 剧本')
     if not seed_ok:
@@ -154,8 +154,8 @@ def run(cdp):
 
     # ---------- 3. 拖动游标 ----------
     # ⚠️ 月日精度（2026-10-05）：游标真源是 `tlDate`（`{y,m,d}` ref），`tlYear` 已降为**只读 computed**
-    #    （`dateToYearValue(tlDate)`）。所以这里读年份、同时把 tlDate 带回来断言「月日归 null」——
-    #    轨道表达的是「到某一年」，保留旧月日会让「拖到 2003 年」实际停在 2003-06-01（用户看不见却影响归属判定）。
+    #    （`dateToYearValue(tlDate)`）。所以这里读年份、同时把 tlDate 带回来断言“月日归 null”——
+    #    轨道表达的是“到某一年”，保留旧月日会让“拖到 2003 年”实际停在 2003-06-01（用户看不见却影响归属判定）。
     drag_ok, drag = eval_json(cdp, """(() => {
       const root = document.querySelector('[data-testid="scenario-timeline"]');
       const wrap = root.querySelector('.tl-railwrap');
@@ -185,7 +185,7 @@ def run(cdp):
         if drag[key] != want_date:
             return False, f'轨道拖动后 tlDate 应为 {want_date}（月日归 null），实得 {drag[key]}'
     # 状态栏日期文本（`tl-status` 里的 `tl-date`）：只到年时**只显示年**（显示成 2015-01-01
-    # 会把「只录到年」谎报成精确日期）
+    # 会把“只录到年”谎报成精确日期）
     dt_ok, dt = eval_json(cdp, """(() => {
       const el = document.querySelector('[data-testid="tl-date"]');
       return JSON.stringify({text: el ? el.textContent.trim() : ''});

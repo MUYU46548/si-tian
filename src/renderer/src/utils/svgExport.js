@@ -88,7 +88,7 @@ export const svgImageEl = (x, y, w, h, href, o = {}) =>
  * 参考底图 → SVG `<g>` 组（内联位图 + 旋转 / 翻转 / 90° 宽高互换）。
  *
  * 🔴 **几何必须与画布绘制（`planetDrawing.drawReferenceImage`）逐字一致**，
- *    否则「导出的底图角度、占位和画布不一样」—— 而这类不一致**不会报错**。
+ *    否则“导出的底图角度、占位和画布不一样”—— 而这类不一致**不会报错**。
  *    画布侧的约定（三处视图 AreaMap / InteriorView / PlanetMap 都一样）：
  *      · `rotation` 是**象限索引 0/1/2/3**（不是弧度！）→ 角度 = `rot × 90`
  *      · 90/270 时**交换绘制宽高**（`drawW/drawH`）—— 保持用户校准好的占位框
@@ -176,7 +176,7 @@ export function svgToBlobUrl(svg) {
 }
 
 /**
- * 把 SVG 光栅化为 PNG dataURL（用于「同一份矢量资产顺带出 PNG」，保证与 SVG 完全一致）。
+ * 把 SVG 光栅化为 PNG dataURL（用于“同一份矢量资产顺带出 PNG”，保证与 SVG 完全一致）。
  * @param {string} svg
  * @param {number} scale 2 = 2 倍分辨率
  */

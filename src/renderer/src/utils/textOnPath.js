@@ -42,7 +42,7 @@ function cleanPoints(points) {
 }
 
 /**
- * 折线上离目标点最近的投影（河名沿河时用来把「避让排布给的落点」投到河道上）。
+ * 折线上离目标点最近的投影（河名沿河时用来把“避让排布给的落点”投到河道上）。
  * @returns {{x:number,y:number,s:number,dist:number}|null} `s` = 从起点算的弧长；无有效折线 → null
  */
 export function nearestPointOnPath(points, target) {
@@ -68,10 +68,10 @@ export function nearestPointOnPath(points, target) {
 }
 
 /**
- * 取折线上「以某点为中心、总长不超过 span」的一段。
+ * 取折线上“以某点为中心、总长不超过 span”的一段。
  *
  * 为什么需要它：河名沿河排字时若把**整条河**喂给 `layoutTextAlongPath`，字会跑到河的中点，
- * 而避让排布刚刚判定「这个名字放在这里放得下」——两处位置不一致，避让就白做了。
+ * 而避让排布刚刚判定“这个名字放在这里放得下”——两处位置不一致，避让就白做了。
  * 这里先把排布给的落点投到河道上（最近投影），再取它两侧的一段，字数才落在判定过的位置。
  *
  * 边界：span 超过整条河 → 整条返回（由调用方判断字是否放得下，**不压缩字距**）；

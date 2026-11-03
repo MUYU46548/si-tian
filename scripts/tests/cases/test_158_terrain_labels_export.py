@@ -12,7 +12,7 @@
      · 山系/海域是**逐字 `<text>` + `transform="rotate(...)"`**（SVG 没有沿路径文字，
        与画布逐字 rotate 同一口径）；
      · 平原是**一个完整 `<text>`**（不带 rotate）；
-  2. 反向对照：把画布的「地形名称」开关关掉再导 → 这些字一个都不出现、rotate 归零
+  2. 反向对照：把画布的“地形名称”开关关掉再导 → 这些字一个都不出现、rotate 归零
      （证明判据不是恒真）；
   3. 顺序/样式单源：导出侧的地形样式取自 `mapTextStyles.terrainLabelTextStyle`
      （ScenarioMap 里不再有第二份常量），沿路径几何取自 `utils/textOnPath`。
@@ -132,11 +132,11 @@ def run(cdp):
     # ③ 反向对照：关掉开关 → 一个字都不出现、rotate 归零
     off_chars = out.get('offChars') or []
     if any(int(n) > 0 for n in off_chars):
-        fails.append(f'关掉「地形名称」后导出仍有地形注记（逐字计数={off_chars}）')
+        fails.append(f'关掉“地形名称”后导出仍有地形注记（逐字计数={off_chars}）')
     if int(out.get('offRotate') or 0) != 0:
-        fails.append(f'关掉「地形名称」后仍有 rotate 文字（{out.get("offRotate")} 处）')
+        fails.append(f'关掉“地形名称”后仍有 rotate 文字（{out.get("offRotate")} 处）')
     if out.get('plainOff'):
-        fails.append('关掉「地形名称」后导出仍有平原名')
+        fails.append('关掉“地形名称”后导出仍有平原名')
 
     # ④ 单源闸门：样式只在 mapTextStyles 一份、几何只在 textOnPath 一份
     ex_src = _read('src/renderer/src/composables/useScenarioExport.js')

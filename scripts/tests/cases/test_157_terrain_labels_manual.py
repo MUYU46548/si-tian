@@ -5,17 +5,17 @@
 背景（D3 收口，2026-10-27）：
   数据形状早就支持 `kind:'range'|'sea'|'plain'`，面板却只能从高度图抽 `range` 候选：
   · **没有高度图**的底图（老 97×45 导入图、手画的空底图）一条注记都做不出来；
-  · 海域/平原连入口都没有 —— 而参考图里「第勒尼安海」「波河平原」这类名字占了一半信息量。
+  · 海域/平原连入口都没有 —— 而参考图里“第勒尼安海”“波河平原”这类名字占了一半信息量。
   更糟的是画布侧 `drawTerrainLabels` 写着 `pts.length < 2 → continue`：**平原（1 点）永远不画**。
 
 判据（全部走真实 UI 事件 + 真实 store）：
-  1. 无高度图 →「检测山脊」灰禁，但「点平原 / 画山系 / 画海域」可点（手动不依赖高度图）；
-  2. 点平原：点一下画布 → 面板报「已取点」→ 完成 → 命名 → 应用 → store 里 1 条 `kind:'plain'`、
-     `origin:'user'`、**1 个点**；且画布真的有像素变化（关掉「地形名称」前后差 > 100 px ——
-     这一条专门守上面那个「平原永远不画」的缺陷）；
+  1. 无高度图 →“检测山脊”灰禁，但“点平原 / 画山系 / 画海域”可点（手动不依赖高度图）；
+  2. 点平原：点一下画布 → 面板报“已取点”→ 完成 → 命名 → 应用 → store 里 1 条 `kind:'plain'`、
+     `origin:'user'`、**1 个点**；且画布真的有像素变化（关掉“地形名称”前后差 > 100 px ——
+     这一条专门守上面那个“平原永远不画”的缺陷）；
   3. 画山系（拖一条线）+ 画海域（拖一条线）：各成一条，点数 ≥2，`kind` 分别对；
   4. 三次应用后共 3 条（顺序 range/plain/sea 无关），全部 `origin:'user'`，一次 undo 退回 2 条（最后一次）；
-  5. 面板「取消」与 Esc 都能退出采集态，且**数据一个字节没变**。
+  5. 面板“取消”与 Esc 都能退出采集态，且**数据一个字节没变**。
 """
 import json
 import os
@@ -69,7 +69,7 @@ def run(cdp):
     if not ok or not seeded.get('ok'):
         return False, f'造数失败：{seeded}'
 
-    # ② 进「底图编辑」→ 打开地形注记面板
+    # ② 进“底图编辑”→ 打开地形注记面板
     mode_js = """(() => {
       const btn = Array.from(document.querySelectorAll('[data-testid="toolbar-modes"] button'))
         .find(b => (b.textContent || '').includes('底图编辑'));
@@ -78,7 +78,7 @@ def run(cdp):
       return 'ok';
     })()"""
     if cdp.eval(mode_js) != 'ok':
-        return False, '找不到「底图编辑」模式按钮'
+        return False, '找不到“底图编辑”模式按钮'
     try:
         wait_for(cdp, "!!document.querySelector('[data-testid=\"basemap-row\"]')", desc='底图工具行', timeout=6)
     except Exception:
@@ -90,7 +90,7 @@ def run(cdp):
       return 'ok';
     })()""")
     if opened != 'ok':
-        return False, '找不到「地形注记」按钮'
+        return False, '找不到“地形注记”按钮'
     try:
         wait_for(cdp, "!!document.querySelector('[data-testid=\"terrain-labels-panel\"]')", desc='面板', timeout=6)
     except Exception:
@@ -112,10 +112,10 @@ def run(cdp):
         av = {}
     fails = []
     if not av.get('detect'):
-        fails.append(f"没有高度图时「检测山脊」应灰禁（实际可点）：{av}")
+        fails.append(f"没有高度图时“检测山脊”应灰禁（实际可点）：{av}")
     for k in ('range', 'sea', 'plain'):
         if not av.get(k):
-            fails.append(f'手动入口「{k}」不可点（没有高度图也不该灰禁）：{av}')
+            fails.append(f'手动入口“{k}”不可点（没有高度图也不该灰禁）：{av}')
 
     # ③ 点平原：真实鼠标事件 → 完成 → 命名 → 应用 → 画布有像素变化
     plain_js = r"""(async () => {
@@ -137,7 +137,7 @@ def run(cdp):
         }));
       };
       const grab = async () => {
-        // 取景：把已落库的第一条注记点放到视口中心，并让「可见比例」落在 mid 档
+        // 取景：把已落库的第一条注记点放到视口中心，并让“可见比例”落在 mid 档
         // （2026-10-27 起 far 档刻意不画地形注记；不设相机 = 适屏比例 ≈2.7，会落进 far → 差 0 像素）
         const pt = ((((s.baseMaps[__KEY__] || {}).terrainLabels) || [])[0] || {}).points?.[0];
         const el0 = cv();
@@ -203,16 +203,16 @@ def run(cdp):
     if ps.get('kind') != 'plain' or int(ps.get('n') or 0) != 1 or not ps.get('finished'):
         fails.append(f'点平原后采集态不对（应 finished + 1 点）：{plain.get("pickState")}')
     if '已取点' not in str(plain.get('statusInPanel') or ''):
-        fails.append(f'面板没报「已取点」：{plain.get("statusInPanel")!r}')
+        fails.append(f'面板没报“已取点”：{plain.get("statusInPanel")!r}')
     if int(plain.get('count') or 0) != 1:
         fails.append(f'平原注记没落库：{plain.get("labels")}')
     pl = (plain.get('labels') or [{}])[0]
     if pl.get('kind') != 'plain' or pl.get('origin') != 'user' or int(pl.get('n') or 0) != 1:
         fails.append(f'平原注记形状不对（应 plain/user/1 点）：{pl}')
     if int(plain.get('diff') or 0) < 100:
-        fails.append(f"平原名没画出来（开关「地形名称」前后只差 {plain.get('diff')} 像素）")
+        fails.append(f"平原名没画出来（开关“地形名称”前后只差 {plain.get('diff')} 像素）")
 
-    # ④ 画山系 + 画海域（拖一条线），沿用「完成 → 命名 → 应用」同一流程
+    # ④ 画山系 + 画海域（拖一条线），沿用“完成 → 命名 → 应用”同一流程
     drag_js = r"""(async () => {
       const SM = __SM__, s = __STORE__;
       const tick = (ms) => new Promise(r => setTimeout(r, ms || 0));
@@ -288,7 +288,7 @@ def run(cdp):
         if l.get('kind') != 'plain' and int(l.get('n') or 0) < 2:
             fails.append(f"线状注记点数不足：{l}")
     if drawn.get('pickLeft'):
-        fails.append('「完成」之后采集态没有收尾（pick 还在）')
+        fails.append('“完成”之后采集态没有收尾（pick 还在）')
     if drawn.get('renderError'):
         fails.append(f"落库后重绘抛异常：{drawn.get('renderError')}")
     if drawn.get('renderPaused'):
@@ -332,7 +332,7 @@ def run(cdp):
     if ok and int(undone.get('count') or 0) != 2:
         fails.append(f"一次 undo 应退回 2 条（实际 {undone.get('count')}）")
 
-    # ⑥ 取消通路：开始采集 → 面板「取消」→ 采集态清空、数据未动；Esc 同理
+    # ⑥ 取消通路：开始采集 → 面板“取消”→ 采集态清空、数据未动；Esc 同理
     cancel_js = r"""(async () => {
       const SM = __SM__, s = __STORE__, KEY = __KEY__;
       const tick = (ms) => new Promise(r => setTimeout(r, ms || 0));
@@ -361,7 +361,7 @@ def run(cdp):
         fails.append(f'取消通路求值失败：{cancelled}')
     else:
         if not (cancelled.get('active1') and cancelled.get('cleared1')):
-            fails.append(f'面板「取消」没退出采集态：{cancelled}')
+            fails.append(f'面板“取消”没退出采集态：{cancelled}')
         if not (cancelled.get('active2') and cancelled.get('cleared2')):
             fails.append(f'Esc 没退出采集态：{cancelled}')
         if not cancelled.get('same'):

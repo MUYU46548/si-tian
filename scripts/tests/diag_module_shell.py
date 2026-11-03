@@ -4,8 +4,8 @@
 
 判据（读真实 DOM / 真实组件状态，不读源码）：
   ① 世界页：module-switch 在场、世界观 tab 高亮、历史剧本 tab 不高亮；
-  ② 点「历史剧本」→ 卡片墙（模块入场页）；选一张卡 → ScenarioMap 在场、WorldSelector 不在；
-  ③ 点「世界观」→ ScenarioMap 消失、WorldSelector 回来、activeModule='world'（不叠层）。
+  ② 点“历史剧本”→ 卡片墙（模块入场页）；选一张卡 → ScenarioMap 在场、WorldSelector 不在；
+  ③ 点“世界观”→ ScenarioMap 消失、WorldSelector 回来、activeModule='world'（不叠层）。
 
 用法：python scripts/tests/diag_module_shell.py（工作副本，跑完还原配置）
 产物：docs/assets/diag-module-shell-20261021/{1-world,2-picker,3-editor,4-back}.png + result.json
@@ -164,7 +164,7 @@ def main():
         if s1.get('activeModule') != 'world':
             fails.append('世界页的 activeModule 不是 world：%r' % s1.get('activeModule'))
         if not any(t['t'] == '世界观' and t['active'] for t in s1.get('tabs') or []):
-            fails.append('世界页「世界观」tab 没有高亮')
+            fails.append('世界页“世界观”tab 没有高亮')
         if not s1.get('worldSelector'):
             fails.append('世界页没有 WorldSelector')
 
@@ -175,9 +175,9 @@ def main():
         print('2 点历史剧本:', json.dumps(s2, ensure_ascii=False))
         print('  shot:', shot('2-picker.png'))
         if s2.get('activeModule') != 'scenario':
-            fails.append('点「历史剧本」后 activeModule 不是 scenario：%r' % s2.get('activeModule'))
+            fails.append('点“历史剧本”后 activeModule 不是 scenario：%r' % s2.get('activeModule'))
         if not s2.get('pickerDom'):
-            fails.append('点「历史剧本」后没有卡片墙（模块入场页）')
+            fails.append('点“历史剧本”后没有卡片墙（模块入场页）')
 
         cdp.eval("(() => { const c = document.querySelector('.sp-card'); if (c) c.click(); return c ? 'ok' : 'none'; })()")
         try:
@@ -196,7 +196,7 @@ def main():
         if s3.get('worldSelector'):
             fails.append('编辑器里 WorldSelector 还在（两个模块同屏）')
         if not any(t['t'] == '历史剧本' and t['active'] for t in s3.get('tabs') or []):
-            fails.append('编辑器里「历史剧本」tab 没有高亮')
+            fails.append('编辑器里“历史剧本”tab 没有高亮')
 
         cdp.eval("(() => { const b = document.querySelector('[data-testid=module-world]');"
                  " if (b) b.click(); return 'ok'; })()")

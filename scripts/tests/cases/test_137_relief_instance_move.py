@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 137：地貌图标的「实例可选中可移动」（第 2 件，2026-10-24）
+"""用例 137：地貌图标的“实例可选中可移动”（第 2 件，2026-10-24）
 
 验收点（每一条都有反证，不做"看着对"）：
 1. 点中一颗图标 = 选中（`selectedReliefId` 有值）且**零写入**（undo 栈与图标数不变）
-2. 拖动它 = 位置真的变、图标数不变、**一次拖动 = 一条 undo**（label「移动地貌图标」）
+2. 拖动它 = 位置真的变、图标数不变、**一次拖动 = 一条 undo**（label“移动地貌图标”）
 3. 撤销 = 回到原位置（逐位相等）
 4. 点空白 = 收掉选中
-5. 只读态：拖得动预览但落不了库 —— 图标留在原位、undo 栈不多命令、状态栏有「只读」回音
+5. 只读态：拖得动预览但落不了库 —— 图标留在原位、undo 栈不多命令、状态栏有“只读”回音
 6. 清空 / 散点仍是原能力（点空白不会误挪已有的）
 """
 import json
@@ -184,7 +184,7 @@ def run(cdp):
     time.sleep(0.5)
     s2 = _state(cdp)
     if s2['undoLabel'] != '移动地貌图标':
-        return False, f'拖动后 undo label 不是「移动地貌图标」（{s2["undoLabel"]}）'
+        return False, f'拖动后 undo label 不是“移动地貌图标”（{s2["undoLabel"]}）'
     if s2['icons'] != s0['icons']:
         return False, f'移动把图标数量改了（{s0["icons"]} → {s2["icons"]}）'
     if abs(s2['first']['x'] - s0['first']['x']) < 1 and abs(s2['first']['y'] - s0['first']['y']) < 1:
@@ -229,7 +229,7 @@ def run(cdp):
     _j(cdp, f"(() => {{ {PM}.setInteractionMode('pan'); return 'ok'; }})()")
     return True, (
         f'实例可选中可移动：散布 {s0["icons"]} 颗 → 点中选中（{s1["selected"]}）、零写入；'
-        f'拖动位移 ({s2["first"]["x"]:.0f},{s2["first"]["y"]:.0f}) 且条数不变、一条 undo「{s2["undoLabel"]}」；'
+        f'拖动位移 ({s2["first"]["x"]:.0f},{s2["first"]["y"]:.0f}) 且条数不变、一条 undo“{s2["undoLabel"]}”；'
         f'撤销逐位回原位；点空白收选中且不误挪（{s4["icons"]} 颗）；'
-        f'只读态留在原位 + 回音「只读」'
+        f'只读态留在原位 + 回音“只读”'
     )

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """用例 97：描轮廓 —— 线跟着笔走、相邻省自动重算（E，2026-10-11）
 
-用户原话（第 6 条）：「如何调整轮廓雏形？我没找到单独调整省份轮廓的地方，显然我不应该选择
-拆分或合并，而是随心所欲描画轮廓，线跟着笔（鼠标）走，相邻省份自动重算更新轮廓。」
+用户原话（第 6 条）：“如何调整轮廓雏形？我没找到单独调整省份轮廓的地方，显然我不应该选择
+拆分或合并，而是随心所欲描画轮廓，线跟着笔（鼠标）走，相邻省份自动重算更新轮廓。”
 
 四条既有路都不满足它：
   · 顶点编辑：一次拖一个点，**只改被拖那一个省**（拖出去会与邻居压叠/留缝）
@@ -21,7 +21,7 @@
      一笔 = 一条 undo（undo/redo 双向）
   d 闸门与护栏：围太大 → `area-gate` + 零副作用；没围住省 → `no-target`；
      点太少 → 明确回执；**如实回报"有多少探到了邻省地盘"**
-  e UI：工具按钮在「更多」里、点了真能切过去、按 Y 也能；主行仍是 6 个可见控件（不回归）
+  e UI：工具按钮在“更多”里、点了真能切过去、按 Y 也能；主行仍是 6 个可见控件（不回归）
 """
 import json
 import os
@@ -263,7 +263,7 @@ JS = r""" (async () => {
     sc.moreOpen = true;
     await new Promise((r) => setTimeout(r, 80));
     const btn = bar.querySelector('[data-testid="province-outline-btn"]');
-    ok('e1 「更多」里有「描轮廓」按钮', !!btn, '按钮不在');
+    ok('e1 “更多”里有“描轮廓”按钮', !!btn, '按钮不在');
     if (btn) {
       btn.click();
       await new Promise((r) => setTimeout(r, 60));
@@ -278,7 +278,7 @@ JS = r""" (async () => {
     await new Promise((r) => setTimeout(r, 60));
     ok('e1 快捷键 Y 切到描轮廓', sc.tool === 'outline', String(sc.tool));
     // 🔴 2026-10-25：Ctrl/⌘+字母是系统组合键（复制/粘贴），不能当工具快捷键。
-    //    用户实测事故：选中状态栏文字按 Ctrl+C 复制 → 工具被静默切成「文化笔刷」。
+    //    用户实测事故：选中状态栏文字按 Ctrl+C 复制 → 工具被静默切成“文化笔刷”。
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true }));
     await new Promise((r) => setTimeout(r, 60));
     ok('e1b Ctrl+C 不切工具（复制文字不该召唤笔刷）', sc.tool === 'outline', String(sc.tool));
@@ -286,7 +286,7 @@ JS = r""" (async () => {
     // 🔴 2026-10-20：底图编辑模式落地后，日常行 = 4（返回/选择/涂归属/更多），
     //    开模式 = 6（+画省份 +改形状）。旧断言写死 6 是模式化之前的数字（自 10-18 起已红）。
     const primary = Array.from(bar.querySelectorAll('.primary-row button')).filter(visible);
-    ok('e2 日常行仍是 4 个可见控件（新工具进「更多」）',
+    ok('e2 日常行仍是 4 个可见控件（新工具进“更多”）',
        primary.length === 4, primary.length + ' 个：' + primary.map((b) => (b.textContent || '').trim()).join('/'));
     sc.basemapEditMode = true;
     await new Promise((r) => setTimeout(r, 80));

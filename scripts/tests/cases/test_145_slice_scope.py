@@ -4,17 +4,17 @@
 
 为什么这一刀必须存在（真实数据实测，不是假想）：
   415 省 / 13 段剧本的真实项目里有 **1642 个易主日期**（全是自动铺开的合成值）
-  → 「全部剧本」= **1088 帧** ≫ 上限 400 ⇒ 对话框按钮直接灰掉，
-  「导切片 PNG 拿去真用」在真实项目上一次都做不了。按本剧本算最大那段是 184 帧（≤400），完全可导。
+  → “全部剧本”= **1088 帧** ≫ 上限 400 ⇒ 对话框按钮直接灰掉，
+  “导切片 PNG 拿去真用”在真实项目上一次都做不了。按本剧本算最大那段是 184 帧（≤400），完全可导。
   所以范围不是功能加法，是真实数据下的**可用性**。
 
 验收点：
-1. 对话框有「范围」下拉；本仓的默认值由纯函数 `pickSliceScope` 判定
+1. 对话框有“范围”下拉；本仓的默认值由纯函数 `pickSliceScope` 判定
    （全部超限、本段没超 → 默认本段；否则保持全部 —— 夹具 4 帧，所以默认仍是全部）；
-2. 切到「本剧本」→ 帧数**立刻**变成该段帧数，列表里不再有别段的帧；
+2. 切到“本剧本”→ 帧数**立刻**变成该段帧数，列表里不再有别段的帧；
 3. 点导出 → 载荷 `manifest.scope = {mode:'era', era:N, eraName}`，文件数 = 对话框帧数
-   （「看到的帧数」与「导出的帧数」不许对不上）；
-4. 切回「全部」→ 帧数与载荷都回到全量；
+   （“看到的帧数”与“导出的帧数”不许对不上）；
+4. 切回“全部”→ 帧数与载荷都回到全量；
 5. 源码守卫：范围过滤只在 `utils/scenarioSlices` 一处，对话框与外层都只**透传** era；
    默认范围判定只有 `pickSliceScope` 一份（模板里不许写 `count > 400 ? ...`）。
 """
@@ -192,7 +192,7 @@ def sub_source_guards():
         bad.append('manifest 没写 scope（外部工具不知道这批覆盖哪一段）')
     if 'exportSliceFrames({ png = false, scale = 2, slicePoints, era = null' not in exp:
         bad.append('exportSliceFrames 没有 era 参数')
-    # 2026-10-25：scope=all 已收窄为「当前剧本集」→ 清单必须写明是哪一组
+    # 2026-10-25：scope=all 已收窄为“当前剧本集”→ 清单必须写明是哪一组
     if "groupName: String(groupName || '')" not in exp:
         bad.append('manifest.scope 没写 groupName（外部工具会把"本组全部"误读成整个项目）')
 
@@ -233,9 +233,9 @@ def run(cdp):
     if st_all.get('__err__'):
         return False, f'对话框没渲染：{st_all}'
     if not st_all.get('hasScope'):
-        fails.append('对话框没有「范围」下拉')
+        fails.append('对话框没有“范围”下拉')
     if st_all.get('scope') != 'all':
-        fails.append(f'夹具只有 4 帧（未超限）时默认范围应是「全部」，实际 {st_all.get("scope")!r}')
+        fails.append(f'夹具只有 4 帧（未超限）时默认范围应是“全部”，实际 {st_all.get("scope")!r}')
     if st_all.get('autoHint'):
         fails.append('没超限却显示了"自动切到本剧本"的提示')
     if st_all.get('frameCount') != 4:
@@ -244,9 +244,9 @@ def run(cdp):
     if opts != ['era', 'all']:
         fails.append(f'范围选项应为 era/all，实际 {opts}')
 
-    # ① 切到「本剧本」
+    # ① 切到“本剧本”
     if _j(cdp, SET_SCOPE.replace('V', json.dumps('era'))) != 'ok':
-        fails.append('切不到「本剧本」')
+        fails.append('切不到“本剧本”')
     time.sleep(0.4)
     st_era = _j(cdp, STATE)
     if st_era.get('scope') != 'era':
@@ -277,9 +277,9 @@ def run(cdp):
         if '乙时代' not in (ex1.get('dirName') or ''):
             fails.append(f'目录名没带这一段的名字：{ex1.get("dirName")!r}')
 
-    # ③ 切回「全部」→ 帧数与载荷都回到全量
+    # ③ 切回“全部”→ 帧数与载荷都回到全量
     if _j(cdp, SET_SCOPE.replace('V', json.dumps('all'))) != 'ok':
-        fails.append('切不回「全部」')
+        fails.append('切不回“全部”')
     time.sleep(0.4)
     st_back = _j(cdp, STATE)
     if st_back.get('frameCount') != 4:

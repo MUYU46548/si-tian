@@ -89,8 +89,8 @@ function openMarkerEditor(marker, index) {
   selectedProvince.value = null;
   showProps.value = false;
   contextMenu.value.show = false;
-  statusMsg(`已选中标记「${marker.name || '（未命名标记）'}」—— 面板里可改名 / 改类型 / 改坐标 / 删除，`
-    + '下面「资料」按名字只读检索库内词条');
+  statusMsg(`已选中标记“${marker.name || '（未命名标记）'}”—— 面板里可改名 / 改类型 / 改坐标 / 删除，`
+    + '下面“资料”按名字只读检索库内词条');
 }
 
 function refreshSelectedMarker() {
@@ -137,14 +137,14 @@ function onMarkerNameChange(e) {
     statusMsg('标记名不能留空 —— 已恢复原值（没写任何东西）');
     return;
   }
-  if (applyMarkerPatch({ name })) statusMsg(`标记已改名「${name}」（可 Ctrl+Z 撤回）`);
+  if (applyMarkerPatch({ name })) statusMsg(`标记已改名“${name}”（可 Ctrl+Z 撤回）`);
 }
 
 function onMarkerTypeChange(e) {
   const def = MARKER_TYPES.find(t => t.id === String(e.target.value || '')) || MARKER_TYPES[0];
   // 图标/颜色跟着类型走：画布按 m.icon / m.color 渲染，只改 type 会"类型变了、图标没变"
   if (applyMarkerPatch({ type: def.id, icon: def.icon, color: def.color })) {
-    statusMsg(`标记类型已改为「${def.name}」（可 Ctrl+Z 撤回）`);
+    statusMsg(`标记类型已改为“${def.name}”（可 Ctrl+Z 撤回）`);
   }
 }
 
@@ -170,7 +170,7 @@ function deleteSelectedMarker() {
   const res = store.removeScenarioMarker(sc.id, markerRefOf());
   if (!res || res.ok === false) { statusMsg(`删除标记失败（${(res && res.reason) || '未知原因'}）`); return; }
   closeMarkerEditor();
-  statusMsg(`已删除标记「${name}」（可 Ctrl+Z 撤回；底图与省份一个都没动）`);
+  statusMsg(`已删除标记“${name}”（可 Ctrl+Z 撤回；底图与省份一个都没动）`);
   render();
 }
 

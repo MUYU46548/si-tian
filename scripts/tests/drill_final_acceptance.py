@@ -18,9 +18,9 @@
 与其它两个演练的分工（**不重复**）：
   · `drill_quit_flush.py` = 真 Electron + dist + 真实项目：判据只有磁盘（退出落盘/强杀）；
   · `drill_p0_first_map.py` = 真实数据副本 + 无头浏览器：画范围 / 时间点 / 导 PNG；
-  · **本脚本** = 同一套副本制思路，但覆盖「三步 + 手感五件 + 数据不丢 + 反向探针 + 切片 PNG」，
+  · **本脚本** = 同一套副本制思路，但覆盖“三步 + 手感五件 + 数据不丢 + 反向探针 + 切片 PNG”，
     并且把落盘载荷**写成真文件再从磁盘读回**（mock 环境里主进程不落盘，所以判据是
-    「应用交给保存 IPC 的字节」+「这些字节写盘/读回后仍自洽」；真实磁盘链路由 drill_quit_flush 守）。
+    “应用交给保存 IPC 的字节”+“这些字节写盘/读回后仍自洽”；真实磁盘链路由 drill_quit_flush 守）。
 
 用法（**不要传 `--` 开头的参数**：run_tests 顶层会把它们当用例名解析）：
     python scripts/tests/drill_final_acceptance.py
@@ -238,7 +238,7 @@ def polyline_clearance(x, y, pts):
 
 
 def river_clearance(x, y, rivers):
-    """点到所有河的最近距离 —— 「选择」工具里河**优先于省**（既定口径），
+    """点到所有河的最近距离 —— “选择”工具里河**优先于省**（既定口径），
     所以要用 Ctrl+点击选省的点必须离河够远，否则会被河截胡（实测：多选只剩 1 个省）。"""
     best = float('inf')
     for r in rivers or []:
@@ -379,7 +379,7 @@ SETUP_JS = r"""(async () => {
   const era = SM.timeline.years[k];
   notes.eraRange = era;
   // 🔴 对比模式钉到 off：`eu4` 模式下**底色归属**取的是旧主（新主画成斜线），
-  //    面板的「归属」也按底色口径读旧主 —— 那是既定语义，不是缺陷；
+  //    面板的“归属”也按底色口径读旧主 —— 那是既定语义，不是缺陷；
   //    本演练要看的是"归属随时间变化"，所以用标准模式（用户终验时也建议先关对比）。
   SM.tlDiffMode = 'off';
   const yearPaint = Math.round(era.start + (era.end - era.start) * 0.5);
@@ -740,7 +740,7 @@ TIME_JS = r"""(async () => {
   return JSON.stringify({ fails, notes });
 })()"""
 
-# 切片导出：真 UI（工具栏「更多」→ 切片导出）→ 选范围 → PNG 1× → 载荷
+# 切片导出：真 UI（工具栏“更多”→ 切片导出）→ 选范围 → PNG 1× → 载荷
 SLICE_OPEN_JS = r"""(async () => {
   const fails = [], notes = {};
   const SM = __SM__;
@@ -758,7 +758,7 @@ SLICE_OPEN_JS = r"""(async () => {
   notes.tlEra = SM.tlEra;
   notes.scenario = SM.timeline.scenarios[SM.tlEra] ? SM.timeline.scenarios[SM.tlEra].id : null;
   const btn = document.querySelector('[data-testid="open-slice-export"]');
-  if (!btn) return JSON.stringify({ fails: ['工具栏「更多」里没有切片导出入口'], notes });
+  if (!btn) return JSON.stringify({ fails: ['工具栏“更多”里没有切片导出入口'], notes });
   btn.click();
   await tick(600);
   const panel = document.querySelector('[data-testid="slice-export-panel"]');
@@ -942,7 +942,7 @@ def main():
               % (snap_before['provinceCount'], len(snap_before['scenarios']),
                  snap_before['baseMapKeys'], snap_before['rivers'], snap_before['burgs']), flush=True)
         ck('基线：desite 省份数 == 415', snap_before['provinceCount'] == 415, snap_before['provinceCount'])
-        ck('基线：剧本数 == 13（12 段 desite + 1 段「底图 1/测试」）',
+        ck('基线：剧本数 == 13（12 段 desite + 1 段“底图 1/测试”）',
            len(snap_before['scenarios']) == 13, len(snap_before['scenarios']))
 
         # ── 2. 起服务 ────────────────────────────────────────────────────
@@ -998,15 +998,15 @@ def main():
            inj.get('filePath') == MOCK_PROJECT_PATH, inj.get('filePath'))
 
         # ── 4. 进剧本 + 布置 ─────────────────────────────────────────────
-        print('5/9 进剧本模式 + 布置（剧本「诸侯割据」，年份取中）…', flush=True)
+        print('5/9 进剧本模式 + 布置（剧本“诸侯割据”，年份取中）…', flush=True)
         r = cdp.eval("""(() => {
           const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('历史剧本'));
           if (!b) return 'no-btn'; b.click(); return 'ok';
         })()""")
-        ck('进入剧本模式（点「历史剧本」）', r == 'ok', r)
+        ck('进入剧本模式（点“历史剧本”）', r == 'ok', r)
         wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=30, desc='ScenarioMap 挂载')
         time.sleep(1.5)
-        # ⚠️ 「更多」展开会把画布压矮（实测 633 → 223px），而本演练要在画布上**真点**。
+        # ⚠️ “更多”展开会把画布压矮（实测 633 → 223px），而本演练要在画布上**真点**。
         #    所以先保持收起（切片导出那一步再展开，那时只用对话框、不看画布）。
         cdp.eval("(() => { const SM2 = %s; SM2.moreOpen = false; return 'ok'; })()" % SM)
 
@@ -1023,7 +1023,7 @@ def main():
                  cam['scale'], json.dumps({k: round(v, 1) for k, v in cr.items()})), flush=True)
         ck('游标落在目标剧本与年份', sn.get('tlEra') == sn['k'] and sn.get('tlYear') == year_paint,
            'tlEra=%s tlYear=%s' % (sn.get('tlEra'), sn.get('tlYear')))
-        ck('画布高度够真点（≥400px；「更多」收起后不再被压成 223px）', cr['h'] >= 400,
+        ck('画布高度够真点（≥400px；“更多”收起后不再被压成 223px）', cr['h'] >= 400,
            json.dumps({k: round(v, 1) for k, v in cr.items()}))
 
         # 候选深点（多给一些）：再按**屏幕坐标是否落在画布内**筛，最后挑 3 个彼此分得开的
@@ -1038,7 +1038,7 @@ def main():
             ssx, ssy = _scr(wx, wy)
             if 30 <= ssx <= cr['w'] - 30 and 30 <= ssy <= cr['h'] - 30:
                 usable_all.append((prov, wx, wy, clr, ssx, ssy, river_clearance(wx, wy, rivers)))
-        # 「选择」工具里河**优先于省**（既定口径）→ 优先挑离河远的点；实在不够再逐级放宽
+        # “选择”工具里河**优先于省**（既定口径）→ 优先挑离河远的点；实在不够再逐级放宽
         usable = []
         for thr in (80, 60, 40, 25, 12):
             pool = [u for u in usable_all if u[6] >= thr]
@@ -1200,22 +1200,22 @@ def main():
         ck('截图 2（拖完时间轴，年份与归属都变了）', ok2, i2)
         evidence.append(shot2)
 
-        # 到这里画布证据已拍完 → 可以展开「更多」拿切片导出入口（对话框是模态，不再需要画布）
-        ck('展开「更多」（切片导出入口在里面）', open_toolbar_more(cdp))
+        # 到这里画布证据已拍完 → 可以展开“更多”拿切片导出入口（对话框是模态，不再需要画布）
+        ck('展开“更多”（切片导出入口在里面）', open_toolbar_more(cdp))
         time.sleep(0.6)
 
         # ── 8. 三步 3/3：切片 PNG（真实数据 + 真 UI + 真文件） ───────────
         print('9/9 三步③：切片导出（真实 1088 帧 vs 本剧本 2 帧 → 真导 PNG）…', flush=True)
-        year_slice = 900                      # 落在「炎太帝国」（793~1396）
+        year_slice = 900                      # 落在“炎太帝国”（793~1396）
         ook, ores = eval_json(cdp, _sub(SLICE_OPEN_JS, YEAR=year_slice),
                               required=('fails', 'notes'), desc='打开切片导出')
         if not ook or ores['fails']:
             ck('切片导出对话框打开', False, json.dumps((ores or {}).get('fails'), ensure_ascii=False))
             return 1
         on = ores['notes']
-        ck('拖到「炎太帝国」：当前剧本 = 该段', on.get('scenario') == SC_SLICE,
+        ck('拖到“炎太帝国”：当前剧本 = 该段', on.get('scenario') == SC_SLICE,
            '%s（年份 %s）' % (on.get('scenario'), on.get('tlYear')))
-        ck('真实数据下**默认范围自动切到「本剧本」**（全部 1088 帧 > 上限 400）',
+        ck('真实数据下**默认范围自动切到“本剧本”**（全部 1088 帧 > 上限 400）',
            on.get('scope') == 'era' and bool(on.get('autoHint')),
            '范围=%s 帧数=%s 提示=%s' % (on.get('scope'), on.get('frameCount'), on.get('autoHint')))
         ck('本剧本（炎太帝国）帧数 == 2（起点 + 唯一一次易主）',
@@ -1230,11 +1230,11 @@ def main():
             an = ares['notes']
         # ⚠️ 不写死 1088：本次刚在诸侯割据多涂了一个省（多一条易主日期），全部帧数可能 +1。
         #    判据只认"远超上限"，具体数字如实回传。
-        ck('切「全部剧本」→ 帧数远超上限、超限警示出现、导出按钮灰',
+        ck('切“全部剧本”→ 帧数远超上限、超限警示出现、导出按钮灰',
            int(an.get('frameCountAll') or 0) > 400 and an.get('overLimit') and an.get('runDisabled'),
            '帧数=%s 超限=%s 按钮灰=%s 提示=%s'
            % (an.get('frameCountAll'), an.get('overLimit'), an.get('runDisabled'), an.get('overLimitText')))
-        ck('切回「本剧本」→ 帧数回到 2（范围是唯一变量）',
+        ck('切回“本剧本”→ 帧数回到 2（范围是唯一变量）',
            an.get('frameCountEra') == 2, an.get('frameCountEra'))
 
         rok, rres = eval_json(cdp, _sub(SLICE_RUN_JS), required=('fails', 'notes'), desc='切片 PNG 导出')
@@ -1245,10 +1245,10 @@ def main():
             ck('切片导出执行', False, '；'.join(rres['fails']))
             return 1
         rn = rres['notes']
-        ck('真点「导出 2 帧」→ 走到 exportScenarioFrames、载荷范围 = 本剧本',
+        ck('真点“导出 2 帧”→ 走到 exportScenarioFrames、载荷范围 = 本剧本',
            rn.get('files') == 2 and (rn.get('scope') or {}).get('mode') == 'era'
            and (rn.get('scope') or {}).get('eraName') == '炎太帝国',
-           '文件 %s；范围 %s；耗时 %sms；状态「%s」'
+           '文件 %s；范围 %s；耗时 %sms；状态“%s”'
            % (rn.get('names'), rn.get('scope'), rn.get('waitedMs'), rn.get('status')))
         ck('状态栏明说导出了几帧、写到哪', '已导出' in str(rn.get('status')) and '帧' in str(rn.get('status')),
            rn.get('status'))

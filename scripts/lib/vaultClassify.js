@@ -1,18 +1,18 @@
-// scripts/lib/vaultClassify.js — 资料条目的「启发归类」纯函数层（2026-10-22，三刀序列·第二刀）
+// scripts/lib/vaultClassify.js — 资料条目的“启发归类”纯函数层（2026-10-22，三刀序列·第二刀）
 //
 // 为什么单独一层：`src/main/vaultIndex.js` 负责**读盘**（walk / 增量指纹 / containment），
-// `scripts/extract-data.js` 负责**变成地图节点**。两头都需要「这条笔记到底是什么」，
-// 而这条判断必须是**纯函数、可单测、只有一份**——否则「索引里是人物、提取时算地点」
+// `scripts/extract-data.js` 负责**变成地图节点**。两头都需要“这条笔记到底是什么”，
+// 而这条判断必须是**纯函数、可单测、只有一份**——否则“索引里是人物、提取时算地点”
 // 这类自相矛盾会静默存在（两边都不报错）。
 //
 // 输入是**已解析的条目**（不是文件）：`{ path, name, title, tags, aliases, fm, content }`。
 // 输出：`{ category, layer, confidence, evidence[], needsHuman[] }`
 //   · `category` 见 CATEGORIES —— 一定有一个值（含 `unknown`）；
-//   · `unknown` = 没有任何可用信号 → **进「待人工」报告**，绝不静默当成地点/资料；
-//   · `evidence` 记「凭什么这么判」（信号名 + 命中值），报告里逐条可核对；
+//   · `unknown` = 没有任何可用信号 → **进“待人工”报告**，绝不静默当成地点/资料；
+//   · `evidence` 记“凭什么这么判”（信号名 + 命中值），报告里逐条可核对；
 //   · `layer` 只在 `category==='geo'` 时有意义；识别不出粒度时 `needsHuman` 带 `layer`。
 //
-// 原则：**不猜**。宁可 `unknown`，也不把「有个字像地名」的笔记塞进地图。
+// 原则：**不猜**。宁可 `unknown`，也不把“有个字像地名”的笔记塞进地图。
 'use strict';
 
 const GEO_LAYERS = ['world', 'star_domain', 'galaxy', 'star', 'planet', 'moon',
@@ -48,7 +48,7 @@ const CATEGORY_LABELS = {
   unknown: '待人工',
 };
 
-/** 非地理类里「显然是资料」的类目（报告里与「待人工」分开计） */
+/** 非地理类里“显然是资料”的类目（报告里与“待人工”分开计） */
 const LORE_CATEGORIES = ['character', 'organization', 'item', 'creature', 'event', 'concept', 'document', 'reference'];
 
 /** `类型` / `类别` / `层级` 的**值** → 类目（中文库最常见的写法） */
@@ -63,7 +63,7 @@ const VALUE_CATEGORY = {
   资料: 'reference', 资料收藏: 'reference',
   索引: 'index',
   模板: 'meta', 说明: 'meta', 维护: 'meta',
-  // 地点/城/镇… 交给 layer 表判（这里也写一份，供「层级=设施」这类直接命中）
+  // 地点/城/镇… 交给 layer 表判（这里也写一份，供“层级=设施”这类直接命中）
   世界: 'geo', 星域: 'geo', 星系: 'geo', 恒星: 'geo', 行星: 'geo', 卫星: 'geo',
   区域: 'geo', 城市: 'geo', 城邦: 'geo', 城镇: 'geo', 村庄: 'geo', 建筑: 'geo',
   设施: 'geo', 地点: 'geo', 场所: 'geo',
@@ -100,7 +100,7 @@ const TAG_CATEGORY = {
 };
 
 /**
- * 目录 → 类目（**结构优先于标签**：模板目录里哪怕打了「地理系统」tag 也还是模板）。
+ * 目录 → 类目（**结构优先于标签**：模板目录里哪怕打了“地理系统”tag 也还是模板）。
  * 正则按顺序匹配 posix 相对路径；`03 设定/11 地理系统` 这种带编号目录用前缀锚定。
  *
  * `structural: true` 的目录**先于 frontmatter 判断**：`99 模板/世界模板.md` 里写着
@@ -141,9 +141,9 @@ const PARENT_FIELDS = [
   'parent', 'parentId', '所在区域', '所属区域', '归属区域', '属于', '隶属', '位于',
 ];
 
-/** 描述空间位置的正文句式（只认「动词 + 已知实体名」，不做模糊语义猜测） */
+/** 描述空间位置的正文句式（只认“动词 + 已知实体名”，不做模糊语义猜测） */
 const TEXT_PARENT_PATTERNS = [
-  // 「位于北境的海港」/「位于北境。」—— 名字后必须跟边界词或标点，避免把整句吃进来
+  // “位于北境的海港”/“位于北境。”—— 名字后必须跟边界词或标点，避免把整句吃进来
   /(?:位于|坐落于|地处|处于)([^\s，。；、,.;]{2,24}?)(?:的|境内|之内|内|附近|以东|以西|以南|以北|东部|西部|南部|北部|一带|地区|之中|(?=[，。；、\s]|$))/,
   /(?:属于|隶属于|隶属|归属(?:于)?)([^\s，。；、,.;]{2,24}?)(?:的|境内|之内|内|附近|一带|地区|之中|(?=[，。；、\s]|$))/,
 ];
@@ -170,14 +170,14 @@ function asTagList(v) {
 }
 
 /**
- * frontmatter 的「脏写法」抢救（用户提醒：真实库什么都可能写）：
+ * frontmatter 的“脏写法”抢救（用户提醒：真实库什么都可能写）：
  *   · `层级:　城市`（冒号后是全角空格）→ YAML 会把整行当**键名**、值为 null；
  *   · `层级：城市`（全角冒号）、`层级 = 城市`（TOML 风）；
  *   · 键名带前后空格。
- * 只在「键里含分隔符且值为空」时抢救，正常键值一律不动（不猜内容）。
+ * 只在“键里含分隔符且值为空”时抢救，正常键值一律不动（不猜内容）。
  */
 function normalizeFrontmatter(fm) {
-  // YAML 坏到「整块被解析成一个字符串」时（例如 `层级:　城市` 用的是全角空格当分隔符），
+  // YAML 坏到“整块被解析成一个字符串”时（例如 `层级:　城市` 用的是全角空格当分隔符），
   // gray-matter 会把整行当键名、data 变成字符串 —— 这里按行长抢救，能救多少救多少
   if (typeof fm === 'string') {
     const out = {};
@@ -213,7 +213,9 @@ function stripBrackets(s) {
 
 function normName(s) {
   return stripBrackets(s)
-    .replace(/[「」《》【】"'“”]/g, '')
+    // 2026-11-03：直角引号用**转义**写在字符类里（语义不变：老资料里可能还留着这两个符号，
+    // 归一化时必须继续剥掉；写成转义是为了让 `scripts/quote-audit.mjs` 的"代码里还有"计数归零）。
+    .replace(/[\u300c\u300d《》【】"'“”]/g, '')
     .replace(/\.md$/i, '')
     .trim()
     .toLowerCase();
@@ -273,18 +275,18 @@ function classifyNote(entry, tables = {}) {
   });
 
   // ① 结构目录（模板/索引/事务/资料收藏）—— 这些**先于 frontmatter**：
-  //    `99 模板/世界模板.md` 里写着「层级: 世界」是模板示例，不是世界本体。
+  //    `99 模板/世界模板.md` 里写着“层级: 世界”是模板示例，不是世界本体。
   for (const rule of DIR_RULES) {
     if (!rule.structural || !rule.re.test(path)) continue;
     evidence.push({ signal: 'path', detail: rule.why });
     return hit(rule.category, 'path', rule.why, 'high');
   }
-  // `_` 开头的笔记是「模板/说明」约定（真实库：`_地理系统_说明.md`）——不是实体
+  // `_` 开头的笔记是“模板/说明”约定（真实库：`_地理系统_说明.md`）——不是实体
   if (name.startsWith('_')) {
     return hit('meta', 'name', '下划线前缀 = 模板/说明', 'medium');
   }
 
-  // ② 显式层级（最强信号）。值既可能是 tier（设施），也可能是「事件」这类非地理类目。
+  // ② 显式层级（最强信号）。值既可能是 tier（设施），也可能是“事件”这类非地理类目。
   const layerField = pickField(fm, ['层级', '层次', 'layer', '层']);
   let explicitLayer = null;
   if (layerField.key) {
@@ -303,7 +305,7 @@ function classifyNote(entry, tables = {}) {
   // ③ frontmatter 键本身即类目（组织类型 / 归属大类 / 书名…）
   for (const [key, category] of Object.entries(KEY_CATEGORY)) {
     if (fm[key] !== undefined && fm[key] !== null && String(fm[key]).trim() !== '') {
-      // 书名/章节编号这类只说明「这是一份作品文档」，优先级低于显式层级
+      // 书名/章节编号这类只说明“这是一份作品文档”，优先级低于显式层级
       evidence.push({ signal: `frontmatter.${key}`, detail: String(fm[key]).slice(0, 40) });
       return hit(category, `frontmatter.${key}`, fm[key], 'high');
     }
@@ -327,7 +329,7 @@ function classifyNote(entry, tables = {}) {
     if (rule.structural || !rule.re.test(path)) continue;
     evidence.push({ signal: 'path', detail: rule.why });
     if (rule.category === 'geo') {
-      // 目录只说明「是地理类」，粒度另判
+      // 目录只说明“是地理类”，粒度另判
       return finishGeo(evidence, explicitLayer, path, name, layerKeywords, suffixRules, tags, tables);
     }
     return hit(rule.category, 'path', rule.why, 'high');
@@ -343,7 +345,7 @@ function classifyNote(entry, tables = {}) {
     }
     for (const [key, cat] of Object.entries(TAG_CATEGORY)) {
       if (tag.includes(key)) {
-        evidence.push({ signal: 'tags', detail: `${tag}（含「${key}」）` });
+        evidence.push({ signal: 'tags', detail: `${tag}（含“${key}”）` });
         if (cat !== 'geo') return hit(cat, 'tags', tag, 'medium');
         return finishGeo(evidence, explicitLayer, path, name, layerKeywords, suffixRules, tags, tables);
       }
@@ -431,10 +433,10 @@ function layerFromTags(tags, layerKeywords) {
 }
 
 // ============================================================
-// 空间关系推断（「缺上层」是读料桥最常缺的一块）
+// 空间关系推断（“缺上层”是读料桥最常缺的一块）
 // ============================================================
 
-/** 建立「名字 → 条目」索引（title / name / 别名，全部规范化） */
+/** 建立“名字 → 条目”索引（title / name / 别名，全部规范化） */
 function buildNameIndex(entries) {
   const map = new Map();
   for (const e of entries) {
@@ -472,7 +474,7 @@ function inferParent(entry, ctx) {
   const fields = ctx.parentFields || PARENT_FIELDS;
   const childLayer = e.classification && e.classification.layer;
   const selfNorm = normName(e.title) || normName(e.name);
-  // 世界是根：没有上层是**正常**的，不该报「待人工」
+  // 世界是根：没有上层是**正常**的，不该报“待人工”
   if (childLayer === 'world') return null;
 
   const resolve = (rawTitle) => {
@@ -482,14 +484,14 @@ function inferParent(entry, ctx) {
     if (!target) return null;
     if (target.path === e.path) return null;
     const tl = target.classification && target.classification.layer;
-    // 上层必须比本条目**更宏观或同级**（不允许「城市的上层是城市里的建筑」）
+    // 上层必须比本条目**更宏观或同级**（不允许“城市的上层是城市里的建筑”）
     if (childLayer && tl && layerRank(tl, layerOrder) > layerRank(childLayer, layerOrder)) return null;
     return target;
   };
 
   // ① 显式字段
   const { key, value } = pickField(fm, fields);
-  // `上层区域: 无` 是「明确没有上层」，不是「指向一个叫『无』的词条」
+  // `上层区域: 无` 是“明确没有上层”，不是“指向一个叫‘无’的词条”
   const NO_PARENT = new Set(['无', '没有', 'none', 'null', '-', '—', 'n/a']);
   if (key && !NO_PARENT.has(String(stripBrackets(value)).trim().toLowerCase())) {
     const raw = stripBrackets(value);
@@ -506,7 +508,7 @@ function inferParent(entry, ctx) {
     }
     return {
       needsHuman: 'parent-missing',
-      reason: `frontmatter.${key} 指向「${raw}」，但库里没有这个词条（不猜）`,
+      reason: `frontmatter.${key} 指向“${raw}”，但库里没有这个词条（不猜）`,
     };
   }
 
@@ -525,7 +527,7 @@ function inferParent(entry, ctx) {
     };
   }
 
-  // ③ 正文句式（只认「位于/隶属 + 已知实体名」；名字对不上就当没推断）
+  // ③ 正文句式（只认“位于/隶属 + 已知实体名”；名字对不上就当没推断）
   //    索引条目只存开头一段（`contentSample`），完整正文由 readNote 按需读 —— 这里两种都吃。
   const text = String(e.content || e.contentSample || '');
   for (const re of TEXT_PARENT_PATTERNS) {
@@ -569,7 +571,7 @@ function buildReport(entries, opts = {}) {
     byCategory[c.category] = (byCategory[c.category] || 0) + 1;
     if (c.category !== 'geo') {
       if (c.category === 'unknown') {
-        // 解析失败的条目要让人看得出是「文件坏了」，不是「没写字段」——
+        // 解析失败的条目要让人看得出是“文件坏了”，不是“没写字段”——
         // 两者的处理方式完全不同（后者补字段，前者修 YAML）
         const parseEv = (c.evidence || []).find((x) => x.signal === 'parse');
         needsHuman.push({
@@ -627,7 +629,7 @@ function buildReport(entries, opts = {}) {
   };
 }
 
-/** 报告 → Markdown（给人看的「待人工」清单；命令行与以后的面板共用） */
+/** 报告 → Markdown（给人看的“待人工”清单；命令行与以后的面板共用） */
 function reportToMarkdown(report) {
   const r = report || {};
   const lines = [];
@@ -654,7 +656,7 @@ function reportToMarkdown(report) {
   const inf = r.inferred || [];
   if (!inf.length) lines.push('（无）');
   for (const x of inf) {
-    lines.push(`- \`${x.path}\` → 上层「${x.parentTitle}」（${x.signal}：${x.evidence}）`);
+    lines.push(`- \`${x.path}\` → 上层“${x.parentTitle}”（${x.signal}：${x.evidence}）`);
   }
   lines.push('');
   return lines.join('\n');

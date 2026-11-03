@@ -3,10 +3,10 @@
 """用例 36：P2-1 AreaMap 独立测试（区域地图专项）
 
 此前 AreaMap 无独立用例（仅有 test_26 覆盖 R5-2 区域笔刷一条路径）。本用例把
-「进入区域地图 → 区域 / 道路 / 标记 / 文本 四类编辑」拉成一条完整链路：
+“进入区域地图 → 区域 / 道路 / 标记 / 文本 四类编辑”拉成一条完整链路：
 
   a) 基础导航：selectArea(region) → viewLevel=area + 画布挂载
-  b) 区域笔刷：涂抹 → 恰好 +1 块「笔刷区域 N」+ 一条 undo 全撤
+  b) 区域笔刷：涂抹 → 恰好 +1 块“笔刷区域 N”+ 一条 undo 全撤
   c) 多边形编辑：点空白命中区域面 → 选中；拖顶点 → 坐标变化；一条 undo 复原
   d) 道路工具：连点 3 点 → 双击收尾 → areaRoutes +1（顶点数=3）+ 一条 undo
   e) 标记放置：点击 → areaMarkers +1，落点与点击世界坐标一致
@@ -110,7 +110,7 @@ def sub_navigation(cdp):
         return False, f'画布 props.areaNode 与选中区域不一致 {info}', nav['id']
     if info['w'] < 100 or info['h'] < 100:
         return False, f'区域画布尺寸异常 {info}', nav['id']
-    return True, f'导航通过：region「{nav["name"]}」→ viewLevel=area，画布 {info["w"]}×{info["h"]}、scale={info["scale"]:.2f}', nav['id']
+    return True, f'导航通过：region“{nav["name"]}”→ viewLevel=area，画布 {info["w"]}×{info["h"]}、scale={info["scale"]:.2f}', nav['id']
 
 
 # ─────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ def sub_zone_brush(cdp, area_id):
     if not z:
         return False, f'未取到新区域 {res}', None
     if not (z['name'] or '').startswith('笔刷区域'):
-        return False, f'区域未自动命名「笔刷区域 N」（得到 {z["name"]!r}）', None
+        return False, f'区域未自动命名“笔刷区域 N”（得到 {z["name"]!r}）', None
     if z['n'] < 3:
         return False, f'区域顶点数不足 {z}', None
     if z['color'] != '#4ECDC4':
@@ -192,7 +192,7 @@ def sub_zone_brush(cdp, area_id):
     redone = zone_ids(cdp, area_id)
     if redone['n'] != res['before'] + 1:
         return False, f'重做未恢复笔刷区域 {redone}', z
-    return True, (f'区域笔刷通过：涂抹 → 自动命名「{z["name"]}」{z["n"]} 顶点单块区域'
+    return True, (f'区域笔刷通过：涂抹 → 自动命名“{z["name"]}”{z["n"]} 顶点单块区域'
                   f'（颜色 {z["color"]}、贴合涂抹范围）、一条 undo 全撤 + redo 恢复'), z
 
 
@@ -354,7 +354,7 @@ def sub_route(cdp, area_id):
     after_undo = counts(cdp, area_id)['routes']
     if after_undo != before:
         return False, f'道路未走 undo（撤销后 {after_undo}，期望 {before}）'
-    return True, (f'道路工具通过：连点 3 点（draft=3）→ 双击收尾生成「{rt["name"]}」'
+    return True, (f'道路工具通过：连点 3 点（draft=3）→ 双击收尾生成“{rt["name"]}”'
                   f'{rt["n"]} 顶点道路（颜色 {rt["color"]}）、一条 undo 撤销')
 
 
@@ -469,7 +469,7 @@ def sub_text(cdp, area_id):
     if not res.get('opened'):
         return False, f'点击后未弹出输入对话框 {res}'
     if not res.get('clicked'):
-        return False, f'对话框缺少「确定」按钮 {res}'
+        return False, f'对话框缺少“确定”按钮 {res}'
     if res['after'] != before + 1:
         return False, f'文本标签未生成（{before} → {res["after"]}，期望 +1）{res}'
     lb = res['label']
@@ -487,7 +487,7 @@ def sub_text(cdp, area_id):
     after_undo = counts(cdp, area_id)['texts']
     if after_undo != before:
         return False, f'文本标签未走 undo（撤销后 {after_undo}，期望 {before}）'
-    return True, (f'文本标签通过：点击 → 输入对话框（含确定）→ 内容「{lb["text"]}」落位 '
+    return True, (f'文本标签通过：点击 → 输入对话框（含确定）→ 内容“{lb["text"]}”落位 '
                   f'({lb["x"]:.1f},{lb["y"]:.1f})、字号 {lb["fontSize"]}、颜色 {lb["color"]}、'
                   f'对话框关闭、一条 undo 撤销')
 

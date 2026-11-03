@@ -92,8 +92,8 @@ async function main() {
     assert(searchGuide('').length === GUIDE_SECTIONS.length, '空查询必须返回全部（手册顺序 = 推荐阅读顺序）');
     assert(searchGuide('   ').length === GUIDE_SECTIONS.length, '空白查询等同空查询');
     const hit = searchGuide('铺底');
-    assert(hit.length >= 1 && hit.some((s) => s.id === 'province-batch'), `搜「铺底」应命中批量铺底节：${hit.map((s) => s.id)}`);
-    assert(searchGuide('快照').some((s) => s.id === 'save-safety'), '搜「快照」应命中数据安全节');
+    assert(hit.length >= 1 && hit.some((s) => s.id === 'province-batch'), `搜“铺底”应命中批量铺底节：${hit.map((s) => s.id)}`);
+    assert(searchGuide('快照').some((s) => s.id === 'save-safety'), '搜“快照”应命中数据安全节');
     assert(searchGuide('zzzz-not-a-word').length === 0, '乱码查询应返回空');
     // 多词是 AND：命中的节必须两个词都在
     const and = searchGuide('省份 撤销');
@@ -101,7 +101,7 @@ async function main() {
       const hay = (s.title + ' ' + s.keywords.join(' ') + ' ' + JSON.stringify(s.blocks)).toLowerCase();
       return hay.includes('省份') && hay.includes('撤销');
     }), '多词查询必须是 AND 语义');
-    return `「铺底」→${hit.length} 节`;
+    return `“铺底”→${hit.length} 节`;
   });
 
   await check('关键操作在场：批量铺底 / 折线切割 / 顶点压叠 / 清空剧本 / 只读 / 快捷键', () => {
@@ -112,19 +112,19 @@ async function main() {
     const all = JSON.stringify(GUIDE_SECTIONS);
     // 这些是 0.2.4 之后用户最常问的几件事，手册必须正面回答（不靠"看仓库文档"）
     for (const tok of ['一键切分', '折线切割', '压叠', '清空全部剧本', '只读', 'Ctrl+Z', '快照', '描轮廓', '重建省份外环']) {
-      assert(all.includes(tok), `手册里没有提到「${tok}」`);
+      assert(all.includes(tok), `手册里没有提到“${tok}”`);
     }
     return `10 个必备章节 + 8 个必备词在场`;
   });
 
   await check('手册里不许出现真实项目/隔壁项目的专名（示例一律虚构）', () => {
     // 产品是面向公开的（README 也这么写），手册又是**随包发布**的文案 ——
-    // 把暮雨自己的项目名、隔壁「绒花墨坊」的名字写进示例，等于把私人素材塞进公开包。
+    // 把暮雨自己的项目名、隔壁“绒花墨坊”的名字写进示例，等于把私人素材塞进公开包。
     // 这一条与 test_86（fixture 专名）同一性质：**白名单/黑名单都得有人守**，否则改文案时必然漂回来。
     const all = JSON.stringify(GUIDE_SECTIONS);
     const forbidden = ['绒花计划', '绒花墨坊', '德斯特星', '瓯王朝', '乐园星'];
     const hit = forbidden.filter((w) => all.includes(w));
-    assert(hit.length === 0, `手册示例里出现真实专名：${hit.join('、')}（请换成虚构示例，如「示例世界」）`);
+    assert(hit.length === 0, `手册示例里出现真实专名：${hit.join('、')}（请换成虚构示例，如“示例世界”）`);
     return `${forbidden.length} 个专名一个都没出现`;
   });
 

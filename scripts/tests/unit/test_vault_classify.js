@@ -9,7 +9,7 @@
  *   ④ 空间关系逐级推断：显式字段 → 正文双链 → 正文句式；推断的标 inferred，找不到的进待人工，
  *      **不造名字、不把没解析到的父级当成事实**；
  *   ⑤ 只读：`buildIndex({write:false})` 不在库里建 `.sitian`、不改任何笔记（文件数+mtime 快照对比）；
- *   ⑥ 结构目录优先于 frontmatter（`99 模板/世界模板.md` 写着「层级: 世界」也还是模板）。
+ *   ⑥ 结构目录优先于 frontmatter（`99 模板/世界模板.md` 写着“层级: 世界”也还是模板）。
  *
  * 用法：node scripts/tests/unit/test_vault_classify.js
  */
@@ -95,11 +95,11 @@ async function main() {
     eq(entry('杂/深林.md').classification.category, 'geo', 'tags=[森林] → geo');
     eq(entry('杂/深林.md').classification.layer, 'location', '森林 → location（后缀/标签）');
     eq(entry('资料收藏/剪报.md').classification.category, 'reference', '资料收藏目录 → reference');
-    assert(entry('区域/北境.md').classification.evidence.length > 0, '必须留「凭什么这么判」的证据');
+    assert(entry('区域/北境.md').classification.evidence.length > 0, '必须留“凭什么这么判”的证据');
     return '8 类信号各命中；证据非空';
   });
 
-  await check('二：结构目录优先于 frontmatter（模板里的「层级: 世界」不是世界）', () => {
+  await check('二：结构目录优先于 frontmatter（模板里的“层级: 世界”不是世界）', () => {
     eq(entry('99 模板/世界模板.md').classification.category, 'meta', '模板目录 → meta');
     eq(entry('99 模板/世界模板.md').classification.layer, null, '模板不应产出 layer');
     return '99 模板/世界模板.md → meta';
@@ -121,7 +121,7 @@ async function main() {
     const geo = Object.fromEntries(report.geo.map((g) => [g.path, g]));
     eq(geo['区域/北境.md'].parentTitle, '潮汐界', '显式上层');
     eq(geo['区域/北境.md'].parentInferred, false, '显式上层不算推断');
-    eq(geo['城/风岬港.md'].parentTitle, '北境', '正文「位于北境的海港」');
+    eq(geo['城/风岬港.md'].parentTitle, '北境', '正文“位于北境的海港”');
     eq(geo['城/风岬港.md'].parentInferred, true, '正文推断必须标记');
     eq(geo['城/风岬港.md'].signal, 'text', '推断信号 = text');
     eq(geo['城/桥头镇.md'].parentTitle, '北境', '正文双链');
@@ -130,12 +130,12 @@ async function main() {
     // 找不到上层 → 待人工，不硬塞一个
     eq(geo['城/孤港.md'].parentTitle, '', '孤港不该被猜出上层');
     assert(report.needsHuman.some((n) => n.path === '城/孤港.md' && /上层/.test((n.reasons || []).join(''))),
-      '孤港应进「找不到上层」待人工');
+      '孤港应进“找不到上层”待人工');
     // 指了不存在的地方 → 点名断链，不是静默丢
     const broken = report.needsHuman.find((n) => n.path === '城/断链城.md');
     assert(broken && /不存在的地方/.test(broken.reasons.join('')), `断链父级要点名：${JSON.stringify(broken)}`);
     // 世界是根，不该被要求有上层
-    assert(!report.needsHuman.some((n) => n.path === '世界/潮汐界.md'), '世界不该进「找不到上层」');
+    assert(!report.needsHuman.some((n) => n.path === '世界/潮汐界.md'), '世界不该进“找不到上层”');
     return '显式 1 / 句式 1 / 双链 1 / 待人工 2（孤港+断链）';
   });
 

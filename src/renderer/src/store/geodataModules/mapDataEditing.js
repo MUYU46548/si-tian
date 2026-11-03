@@ -574,7 +574,7 @@ export function createMapDataEditingModule(ctx) {
     // 走 undo：恢复可撤销
     execute({
       type: 'restore-snapshot',
-      label: `恢复快照「${snapshot.name}」`,
+      label: `恢复快照“${snapshot.name}”`,
       undo: () => { mapData.value[planetId] = oldMap; },
       redo: () => { mapData.value[planetId] = restored; },
     });
@@ -728,7 +728,7 @@ export function createMapDataEditingModule(ctx) {
 
   /** 清空全部地貌图标（单条 undo） */
   /**
-   * 移动一批地貌图标 —— 「实例可选中可移动」的落库口（第 2 件，2026-10-24）。
+   * 移动一批地貌图标 —— “实例可选中可移动”的落库口（第 2 件，2026-10-24）。
    *
    * 与散布/擦除**同一套快照式 undo**（只换数组内容，不记下标）：一次拖动 = 一条命令。
    * ⚠️ 只接受 `{id, x, y}`：**不许**顺手改 size/type/rotation —— 那些是散布生成的属性，
@@ -757,7 +757,7 @@ export function createMapDataEditingModule(ctx) {
     return { ok: true, moved: moves.length };
   }
 
-  /** 「清空地图内容」会被重置的字段；**其余字段一律原样保留**（见下方说明） */
+  /** “清空地图内容”会被重置的字段；**其余字段一律原样保留**（见下方说明） */
   const CLEARED_CONTENT_KEYS = ['terrain', 'regions', 'markers', 'routes', 'textLabels', 'clusters'];
 
   /**
@@ -767,7 +767,7 @@ export function createMapDataEditingModule(ctx) {
    *  ① **不再丢非地面数据**：旧实现只列了 7 个键，整体替换会连带丢掉 `heightmap` / `terrainGrid`
    *     （及其 `gridWidth/gridHeight/gridOriginX/gridOriginY/cellWorldSize`）/ `azgaarProvinces…` /
    *     `rivers` / `cultures` / `reliefIcons` / `referenceImages` / `snapshots` ——
-   *     用户点「清空省份」，实际被删的是**整张地图的所有非地面数据**，而提示语一个字都没提（谎报范围）。
+   *     用户点“清空省份”，实际被删的是**整张地图的所有非地面数据**，而提示语一个字都没提（谎报范围）。
    *     现在只重置上面 6 个数组，其余键原样保留。
    *  ② **走写闸门 + undo 栈**：旧实现两者都绕 —— 只读态下照改内存（永不落盘 = 静默假成功），
    *     可写态下真的不可撤销（提示语自己都写着"不可撤销"）。现在只读态被守卫拒绝，
@@ -807,11 +807,11 @@ export function createMapDataEditingModule(ctx) {
    *
    * 为什么需要它：`.map` 导入此前只有剧本视图一条入口（装进**底图** `baseMaps[key]`），
    * 行星视图（`mapData[pid]`，另一个容器）根本没有导入路径 —— 用户想在空行星上用自己那张
-   * Azgaar 地图起步，界面上做不到。行星空态因此只能引导「手动画」，而高度笔刷还提示
-   * 「先导入 Azgaar .map」，指向一个当刻看不见的入口（暮雨点名的「起步闭环」缺口）。
+   * Azgaar 地图起步，界面上做不到。行星空态因此只能引导“手动画”，而高度笔刷还提示
+   * “先导入 Azgaar .map”，指向一个当刻看不见的入口（暮雨点名的“起步闭环”缺口）。
    *
    * 🔴 **只覆盖导入清单里的 8 个键**，其余（区域 / 标记 / 文本 / 地点簇 / 参考图 / 快照 /
-   *    地貌图标 / 涂色网格…）一律原样保留 —— `confirmClear` 当年「整体替换 mapData」
+   *    地貌图标 / 涂色网格…）一律原样保留 —— `confirmClear` 当年“整体替换 mapData”
    *    连带删掉这些数据的教训（2026-09-24）就在隔壁。
    * 🔴 源里**没有高度图**时**不动**现有的高度图：不能因为导入一份没带 cells.h 的文件，
    *    就把用户已经涂好的地形删掉（回执里由调用方说明"这份文件里没有"）。
@@ -995,10 +995,10 @@ export function createMapDataEditingModule(ctx) {
   }
 
   // ===== P1-3 文化 / 宗教列表（行星级共享数据）=====
-  //  · 文化：供聚落「文化归属」下拉（`NodeDetailPanel`）
+  //  · 文化：供聚落“文化归属”下拉（`NodeDetailPanel`）
   //  · 宗教：供行星侧宗教笔刷的取色与命名（2026-10-08，A3）
   // 两份列表**结构完全同构**（`[{id,name,color,note}]`），所以写路径只实现一次、用 `listKey` 参数化
-  // —— 复制三份的下场是「改一处另两处不变」，而这正是本项目反复吃亏的模式。
+  // —— 复制三份的下场是“改一处另两处不变”，而这正是本项目反复吃亏的模式。
   // ⚠️ 契约登记按**函数名**，所以守卫落在下面三个具名内部函数的首行；
   //    对外的 `addCulture` / `addReligion` 等 6 个只是薄转发（供既有调用点与 UI 使用）。
   function addChannelListItem(listKey, planetId, item) {

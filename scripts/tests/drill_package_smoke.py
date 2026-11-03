@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""**打包产物**冒烟演练：剧本视图「挂载 → 离开」不抛错（2026-10-11 新增）
+"""**打包产物**冒烟演练：剧本视图“挂载 → 离开”不抛错（2026-10-11 新增）
 
 为什么需要它（本轮真事故）：
   0.2.3 的 `provinceGridTimer is not defined` 只在 `ScenarioMap` 的 **onUnmounted** 上抛
@@ -9,10 +9,10 @@
   而两道既有闸门都够不到它：
     · 93 个 CDP 用例跑在 **Vite dev server** 上，不是打包产物；
     · `drill_quit_flush.py` 的 p4 虽在真机上跑，但**从不离开剧本视图** → 卸载钩子没被执行过。
-  本脚本补的就是这个洞：在**打包出来的 app.asar** 上走一遍「进历史剧本 → 返回世界选择」。
+  本脚本补的就是这个洞：在**打包出来的 app.asar** 上走一遍“进历史剧本 → 返回世界选择”。
 
 三条判据（都带阳性对照，避免"探测器是瞎的"造成假绿）：
-  ① 剧本视图真的挂载、点「返回」后真的卸载（否则根本没走到卸载钩子 = 空转）；
+  ① 剧本视图真的挂载、点“返回”后真的卸载（否则根本没走到卸载钩子 = 空转）；
   ② 卸载全程**没有** `#sitian-error-overlay`（应用自带的错误覆盖层）；
   ③ 应用自己的错误通道（electron-log → `<userData>/logs/main.log`）**一个字都没写**。
   ⚠️ 阳性对照实测：控制台钩子**会漏**（overlay 与主进程日志才是可靠通道），
@@ -191,7 +191,7 @@ def main():
         r = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button'))"
                      ".find(x => (x.textContent || '').includes('历史剧本'));"
                      " if (!b) return 'nobtn'; b.click(); return 'clicked'; })()")
-        ck('找得到「历史剧本」入口并点了', r == 'clicked', r)
+        ck('找得到“历史剧本”入口并点了', r == 'clicked', r)
         mounted = False
         try:
             wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=30, desc='剧本视图挂载')
@@ -207,7 +207,7 @@ def main():
         back = cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button'))"
                         ".find(x => (x.title || '').includes('返回世界选择'));"
                         " if (!b) return 'noback'; b.click(); return 'back'; })()")
-        ck('点得到「返回」（离开剧本视图）', back == 'back', back)
+        ck('点得到“返回”（离开剧本视图）', back == 'back', back)
         time.sleep(2.5)
         left = not cdp.eval("!!document.querySelector('.scenario-map-container')")
         ck('剧本视图真的卸载了（否则没走到卸载钩子）', left, '')
@@ -219,7 +219,7 @@ def main():
             errs = ['<unparsable>' + str(errs)[:120]]
         bad = [e for e in errs if ('is not defined' in e or 'ReferenceError' in e or 'provinceGridTimer' in e)]
         # ⚠️ 控制台只是**辅助通道**：阳性对照实测它会漏（overlay 与主进程日志才是可靠通道）。
-        #    所以这条不作为硬判据，只作参考 —— 硬判据是下面的「无覆盖层」+「日志零字节」。
+        #    所以这条不作为硬判据，只作参考 —— 硬判据是下面的“无覆盖层”+“日志零字节”。
         ck('（辅助）控制台捕获里没有未声明标识符', not bad, bad[:2] or ('捕获 %d 条其它日志' % len(errs)))
         overlay = bool(cdp.eval("!!document.getElementById('sitian-error-overlay')"))
         ck('卸载剧本视图没有弹出应用内错误覆盖层 #sitian-error-overlay', not overlay, '')

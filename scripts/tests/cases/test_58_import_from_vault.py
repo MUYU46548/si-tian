@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 58：「导入知识库内容」+ 面板暗色可读性（2026-09-22 用户实测反馈）
+"""用例 58：“导入知识库内容”+ 面板暗色可读性（2026-09-22 用户实测反馈）
 
 用户实测三条里两条是"卡住"级的：
-  · 「司天能联动打开 Obsidian 库，但这不意味着可以从 Obsidian 导入数据……我设法找到了重新提取数据的按钮，
-     点下去没有反应。我的项目依然是空的。」
-    → 真因：**已存在的（空）项目没有任何把知识库内容带进来的入口** ——「新建并导入知识库内容」只管新建那条路，
-      「重新提取」在项目态被正确拒绝（两套事实源混流），用户就卡在"项目里空空的"。
-  · 「面板部分文本在暗色模式背景下难以阅读」
+  · “司天能联动打开 Obsidian 库，但这不意味着可以从 Obsidian 导入数据……我设法找到了重新提取数据的按钮，
+     点下去没有反应。我的项目依然是空的。”
+    → 真因：**已存在的（空）项目没有任何把知识库内容带进来的入口** ——“新建并导入知识库内容”只管新建那条路，
+      “重新提取”在项目态被正确拒绝（两套事实源混流），用户就卡在"项目里空空的"。
+  · “面板部分文本在暗色模式背景下难以阅读”
     → 真因：面板底色是 PanelShell 的 `--panel-bg`（暗色主题 = #161b22），而面板里写死了深色文字 → 深底深字。
 
 本用例守：
-  a) 空项目下**世界视图空态**有「导入知识库内容」入口，且真的能导入（实体进项目 + 节点上画布）
-  b) 项目面板有「导入知识库内容」按钮 + 说明文案（能导入多少、只补缺、可撤销）
+  a) 空项目下**世界视图空态**有“导入知识库内容”入口，且真的能导入（实体进项目 + 节点上画布）
+  b) 项目面板有“导入知识库内容”按钮 + 说明文案（能导入多少、只补缺、可撤销）
   c) 导入是**一条 undo**（Ctrl+Z 能整体撤销）且**不覆盖**项目里已有的实体
   d) 面板文字在**亮色与暗色两套主题**下都达到对比度底线（WCAG 小字 4.5）
   e) 静态：canvasBridge 有第四个注册口（导入）、App/面板不经 geodata 直连
   f) **机器属性读优先级（A-2，2026-09-27）**：已有实体的 `layer` / `parentId` / `placeType`
-     以**项目为准** —— 纯函数 `mergeVaultPayload` 与「重复导入」两条路径都不许用笔记值覆盖它们
+     以**项目为准** —— 纯函数 `mergeVaultPayload` 与“重复导入”两条路径都不许用笔记值覆盖它们
 """
 import json
 import os
@@ -146,17 +146,17 @@ def run(cdp):
       });
     })()"""), '世界视图空态导入入口')
     if not ws.get('exists'):
-        return False, ('空项目下世界视图没有「导入知识库内容」入口 —— '
+        return False, ('空项目下世界视图没有“导入知识库内容”入口 —— '
                        '这正是用户卡住的地方（"项目里空空的"，只有一条被拒绝的重新提取）')
     if '导入' not in (ws.get('text') or ''):
         return False, f'入口文案没说清是导入：{ws.get("text")!r}'
     if not ws.get('inViewport'):
-        return False, '「导入知识库内容」按钮不在视口内（看不见等于没有）'
+        return False, '“导入知识库内容”按钮不在视口内（看不见等于没有）'
 
-    # ── a2) 反向守卫（2026-10-09）：项目态下「重新提取」入口必须**不出现** ──────
+    # ── a2) 反向守卫（2026-10-09）：项目态下“重新提取”入口必须**不出现** ──────
     # 项目态下画布事实源=项目文件，重提取必被事实源冲突拒绝（
-    # `geodata.reextract` → '已打开项目…'）→ 若入口仍在且可点 = 「点了才发现没用」的坏交互。
-    # 三处入口（工具栏 / 世界视图空态 / 设置面板）已统一：项目态隐藏或灰禁并改指「导入知识库内容」。
+    # `geodata.reextract` → '已打开项目…'）→ 若入口仍在且可点 = “点了才发现没用”的坏交互。
+    # 三处入口（工具栏 / 世界视图空态 / 设置面板）已统一：项目态隐藏或灰禁并改指“导入知识库内容”。
     # ⚠️ 只读态（无项目）保留工具栏按钮且 disabled（test_57 ⑤ 依赖），因此这里只断言"项目态不存在"。
     ro = _j(cdp.eval("""(() => {
       const bar = Array.from(document.querySelectorAll('.toolbar-actions button'))
@@ -171,11 +171,11 @@ def run(cdp):
       });
     })()"""), '项目态死按钮反向守卫')
     if ro.get('toolbarReextract'):
-        return False, '项目态下工具栏仍显示「重新提取」（点了必被拒 = 坏交互，应隐藏）'
+        return False, '项目态下工具栏仍显示“重新提取”（点了必被拒 = 坏交互，应隐藏）'
     if ro.get('wsReextract'):
-        return False, '项目态下世界视图仍显示「从 Obsidian 重新提取」（死按钮，应隐藏、只留导入入口）'
+        return False, '项目态下世界视图仍显示“从 Obsidian 重新提取”（死按钮，应隐藏、只留导入入口）'
     if not ro.get('hintExists') or '导入' not in (ro.get('hintText') or ''):
-        return False, f'项目态空项目没有「导入知识库内容」引导说明：{ro}'
+        return False, f'项目态空项目没有“导入知识库内容”引导说明：{ro}'
 
     # ── b) 点它 → 真的导入（实体进项目 + 节点上画布） ─────────────────────────
     before = _j(cdp.eval("""(async () => {
@@ -202,7 +202,7 @@ def run(cdp):
       });
     })()""" % APP), '导入后计数')
     if after.get('entities', 0) <= before.get('entities', 0):
-        return False, f'点了「导入知识库内容」但项目实体没有增加：{before} → {after}'
+        return False, f'点了“导入知识库内容”但项目实体没有增加：{before} → {after}'
     if after.get('nodes', 0) != after.get('entities', 0):
         return False, (f'导入后画布节点数与项目实体数不一致（导入没有落到画布上）：'
                        f'entities={after.get("entities")} nodes={after.get("nodes")}')
@@ -250,10 +250,10 @@ def run(cdp):
     if keep.get('name') != '我改过的名字':
         return False, f'重复导入把项目里已有实体覆盖了（应只补缺）：{keep}'
 
-    # ── c3) 机器属性同样不被覆盖（A-2，2026-09-27）＝ 搬家协议定的「读优先级」──────────
-    # 背景：报告定案「结构归司天（.sitian），内容归笔记」→ 已有实体的 layer / parentId / placeType
+    # ── c3) 机器属性同样不被覆盖（A-2，2026-09-27）＝ 搬家协议定的“读优先级”──────────
+    # 背景：报告定案“结构归司天（.sitian），内容归笔记”→ 已有实体的 layer / parentId / placeType
     #   以**项目为准**；笔记里的 `层级` / `上层区域` / `地点类型` 只在**该实体第一次进项目**时当初始值。
-    #   ⚠️ 不许改成「先查新、缺失回落旧」—— 并存观察期里旧值会在新值缺失时**静默顶替**。
+    #   ⚠️ 不许改成“先查新、缺失回落旧”—— 并存观察期里旧值会在新值缺失时**静默顶替**。
     # 两层判据：① 纯函数 mergeVaultPayload 喂一份**故意冲突**的载荷 → 项目值必须逐一原样；
     #           ② 端到端：在项目里改这三项（模拟用户在司天界面改过）→ 重复导入 → 仍是我改的。
     attrs = _j(cdp.eval("""(async () => {
@@ -270,7 +270,7 @@ def run(cdp):
       const mergedRes = proj.mergeVaultPayload(proj.project, probe);
       // ⚠️ 断言必须瞄**合并结果**（mergedRes.next），不是 proj.entities ——
       //    mergeVaultPayload 是**纯函数**、本来就不会动 proj；瞄 proj 的话，
-      //    「用载荷覆盖已有实体」这个缺陷照样绿（实测：探针 B 就这样溜过去一次，
+      //    “用载荷覆盖已有实体”这个缺陷照样绿（实测：探针 B 就这样溜过去一次，
       //    只覆盖 layer 时整条用例仍是绿的）。契约的产物是 next，判据就得瞄 next。
       const kept = JSON.parse(JSON.stringify(mergedRes.next.entities[id]));
       const merged = mergedRes.merged;
@@ -305,7 +305,7 @@ def run(cdp):
         return False, f'载荷里同 id 的实体被算成"新增"了（只补缺的判据就是这一句）：{attrs}'
     if attrs.get('kept') != attrs.get('src'):
         return False, (f'★ 纯函数 mergeVaultPayload 用载荷覆盖了已有实体的机器属性'
-                       f'（读优先级必须「项目为准」）：src={attrs.get("src")} kept={attrs.get("kept")}')
+                       f'（读优先级必须“项目为准”）：src={attrs.get("src")} kept={attrs.get("kept")}')
     if attrs.get('after') != ['town', '商业', attrs.get('targetId')]:
         return False, (f'★ 重复导入把用户在司天里改过的机器属性覆盖了（应按项目为准）：'
                        f'期望 [town, 商业, {attrs.get("targetId")}] 实际 {attrs.get("after")}')
@@ -325,13 +325,13 @@ def run(cdp):
       });
     })()"""), '面板导入按钮')
     if not panel.get('hasBtn'):
-        return False, '项目面板没有「导入知识库内容」按钮（用户找不到入口的地方之一）'
+        return False, '项目面板没有“导入知识库内容”按钮（用户找不到入口的地方之一）'
     if panel.get('disabled') is not False:
-        return False, f'面板里「导入知识库内容」按钮不可用（有留底时应当可用）：{panel}'
+        return False, f'面板里“导入知识库内容”按钮不可用（有留底时应当可用）：{panel}'
     if '导入' not in (panel.get('hint') or '') or '撤销' not in (panel.get('hint') or ''):
         return False, f'面板缺少说明（能导入多少 / 可撤销）：{panel.get("hint")!r}'
 
-    # ── d2) 面板文字可读性（用户实测「面板部分文本在暗色模式背景下难以阅读」）────────
+    # ── d2) 面板文字可读性（用户实测“面板部分文本在暗色模式背景下难以阅读”）────────
     # 判据：逐层合成背景 + WCAG 比值（skill §122 同款手法）；小字 ≥4.5 / 大字 ≥3.0
     # 覆盖本轮改动过的两个面板（同步面板 / 项目面板），两套主题各测一遍。
     PANELS = (('git-sync', '.git-sync-panel', '同步面板'), ('project', '.project-panel', '项目面板'))
@@ -388,7 +388,7 @@ def run(cdp):
         static.append('geodata 未提供知识库载荷（exportVaultPayload）')
     import re as _re
     # ⚠️ 只认 import 语句，不要用 'projectStore' 子串判断 —— 注释里出现同名会误报（本次真踩：
-    #    App.vue 里那句「不 import projectStore」的说明文字把子串判据打红了）
+    #    App.vue 里那句“不 import projectStore”的说明文字把子串判据打红了）
     if _re.search(r"from\s+['\"][^'\"]*projectStore['\"]", app_src):
         static.append('App.vue 直接 import 了 projectStore（应只走 canvasBridge 注册表）')
     if _re.search(r"from\s+['\"][^'\"]*geodata['\"]", panel_src):

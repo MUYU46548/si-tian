@@ -3,13 +3,13 @@
 """用例 53：可用性加固（2026-09-20 用户实测反馈的 5 条）
 
 覆盖：
-  a) 项目面板「新建项目」输入框：面板一打开就自动聚焦（不依赖点击）、占位文字不再硬编码 ROSA、
-     聚焦有可见描边、行内间隙点击也能聚焦、能真的输入并让「新建」变可用
-  b) 「Git 快照」按钮在位，且 title/回执说明了「司天不会自动初始化 git 仓库」（目录非仓库时给去处）
-  c) 新建的空项目：剧本模式**不再**凭空造出「云陇大陆」空底图（那曾把自用剧本名硬编码进产品），
-     而是显示「还没有底图」提示；真正落笔时才懒建「底图 N」
+  a) 项目面板“新建项目”输入框：面板一打开就自动聚焦（不依赖点击）、占位文字不再硬编码 ROSA、
+     聚焦有可见描边、行内间隙点击也能聚焦、能真的输入并让“新建”变可用
+  b) “Git 快照”按钮在位，且 title/回执说明了“司天不会自动初始化 git 仓库”（目录非仓库时给去处）
+  c) 新建的空项目：剧本模式**不再**凭空造出“云陇大陆”空底图（那曾把自用剧本名硬编码进产品），
+     而是显示“还没有底图”提示；真正落笔时才懒建“底图 N”
   d) 世界选择空态卡片：三个按钮不再溢出卡片边界（宽/窄窗口都断言）
-  e) 渲染护栏：绘制路径全部走 px()（裸「数字 / cameraScale」清零、坐标变换仍用真实 scale）；
+  e) 渲染护栏：绘制路径全部走 px()（裸“数字 / cameraScale”清零、坐标变换仍用真实 scale）；
      renderFrame 抛异常被捕获（不冒泡）、连续 3 帧后暂停渲染并给出可见 + 可恢复的提示
 """
 import json
@@ -74,9 +74,9 @@ JS_PANEL = r"""(() => {
 JS_GIT_BTN = r"""(() => {
   const fails = [];
   const b = Array.from(document.querySelectorAll('.project-panel .pp-btn')).find(x => x.textContent.trim() === 'Git 快照');
-  if (!b) return JSON.stringify({ fails: ['没有「Git 快照」按钮'] });
+  if (!b) return JSON.stringify({ fails: ['没有“Git 快照”按钮'] });
   const title = b.getAttribute('title') || '';
-  if (!/不会自动初始化|自行在项目目录 git init/.test(title)) fails.push('按钮 title 未说明「不会自动初始化仓库」：' + title);
+  if (!/不会自动初始化|自行在项目目录 git init/.test(title)) fails.push('按钮 title 未说明“不会自动初始化仓库”：' + title);
   b.click();
   return JSON.stringify({ fails, title });
 })()"""
@@ -91,11 +91,11 @@ JS_SCENARIO_EMPTY = r"""(() => {
   const keys = Object.keys(s.baseMaps || {});
   ok('空项目里没有任何底图', keys.length === 0, JSON.stringify(keys));
   same('baseMapKey 为空（不再默认云陇大陆）', sc.baseMapKey, '');
-  ok('没有凭空造出「云陇大陆」', !keys.includes('云陇大陆'), JSON.stringify(keys));
-  ok('画布给出「还没有底图」提示', !!document.querySelector('[data-testid="scenario-empty-hint"]'));
+  ok('没有凭空造出“云陇大陆”', !keys.includes('云陇大陆'), JSON.stringify(keys));
+  ok('画布给出“还没有底图”提示', !!document.querySelector('[data-testid="scenario-empty-hint"]'));
   ok('状态栏提示未加载底图', String(sc.statusText).includes('未加载底图'), sc.statusText);
 
-  // 懒建：切到绘制工具后真实落笔一次 → 才建「底图 N」（名字不借用任何真实剧本）
+  // 懒建：切到绘制工具后真实落笔一次 → 才建“底图 N”（名字不借用任何真实剧本）
   sc.setTool('draw');
   const cvs = document.querySelector('.scenario-canvas-wrap canvas');
   const r = cvs.getBoundingClientRect();
@@ -142,18 +142,18 @@ JS_SRC = r"""(() => {
   if (!txt) return JSON.stringify({ fails: ['未取到 ScenarioMap 源码'] });
   const pxUses = (txt.match(/px\(/g) || []).length;
   // 2026-10-31：绘制体已分批搬进 scenario/layers/*（那边用同一份 px，形参化成 view.px），
-  // 组件里剩的是交互/预览接线 —— 门槛随之下调（实质判据仍是下面的「裸除法 = 0」）。
+  // 组件里剩的是交互/预览接线 —— 门槛随之下调（实质判据仍是下面的“裸除法 = 0”）。
   // 2026-10-31：绘制体已分批搬进 scenario/layers/*（那边用同一份 px，形参化成 view.px），
-  // 组件里剩的是交互/预览接线 —— 门槛随之下调（实质判据仍是下面的「裸除法 = 0」）。
+  // 组件里剩的是交互/预览接线 —— 门槛随之下调（实质判据仍是下面的“裸除法 = 0”）。
   // 2026-10-31：绘制/交互体继续搬出，组件里只剩接线 —— 门槛随之下调；
-  // 实质判据仍是下面的「裸除法 = 0」（那一条不会因为搬家而放松）。
+  // 实质判据仍是下面的“裸除法 = 0”（那一条不会因为搬家而放松）。
   // 2026-10-31：绘制/交互体已陆续搬出组件（那边统一用 view.px，同一份换算），
   // 这条只剩“组件里还有没有用 px”的意义 —— 实质判据是下面的裸除法 = 0。
   // 2026-11-02 N1.5：几何/绘制体又搬走 8 个模块（那边同样用 px；`裸除法 = 0` 那条更硬的判据在下面）。
-  // 组件里实测剩 4 处（坐标换算/命中接线），门槛随之降到 3；实质判据仍是「裸除法 = 0」。
+  // 组件里实测剩 4 处（坐标换算/命中接线），门槛随之降到 3；实质判据仍是“裸除法 = 0”。
   ok('px() 助手覆盖绘制路径', pxUses >= 3, pxUses);
   const raw = (txt.match(/[^\w.]\d+(?:\.\d+)?\s*\/\s*cameraScale\.value/g) || []).length;
-  ok('裸「数字 / cameraScale」已清零', raw === 0, raw);
+  ok('裸“数字 / cameraScale”已清零', raw === 0, raw);
   ok('坐标变换仍用真实 scale', /\(sx - cameraX\.value\) \/ cameraScale\.value/.test(txt));
   ok('渲染护栏在位', /renderPaused/.test(txt) && /function resumeRender/.test(txt));
   ok('不再硬编码默认底图云陇大陆', !/ref\('云陇大陆'\)/.test(txt));
@@ -190,7 +190,7 @@ JS_GUARD = r"""(() => {
   sc.cameraScale = good;
   ok('相机缩放已还原', sc.cameraScale > 0, sc.cameraScale);
 
-  // 注入一个「读取坐标即抛错」的城镇 → 让 renderFrame 真的抛（护栏必须吞掉并计数，不能冒泡）
+  // 注入一个“读取坐标即抛错”的城镇 → 让 renderFrame 真的抛（护栏必须吞掉并计数，不能冒泡）
   const bm = s.baseMaps[key];
   const bad = { capital: 0, get x() { throw new Error('护栏测试异常'); }, get y() { return 0; } };
   s.baseMaps = { ...s.baseMaps, [key]: { ...bm, burgs: [bad] } };
@@ -221,14 +221,14 @@ def run(cdp):
     ensure_data_ready(cdp)
     cdp.send('Emulation.setDeviceMetricsOverride',
              {'width': 1600, 'height': 900, 'deviceScaleFactor': 1, 'mobile': False})
-    # headless 下 document 默认为「未聚焦」→ `:focus` 样式不生效（computed outline 读不到）。
-    # 打开焦点模拟，才能验证「聚焦有可见描边」这一条（用例结束再关掉）。
+    # headless 下 document 默认为“未聚焦”→ `:focus` 样式不生效（computed outline 读不到）。
+    # 打开焦点模拟，才能验证“聚焦有可见描边”这一条（用例结束再关掉）。
     cdp.send('Emulation.setFocusEmulationEnabled', {'enabled': True})
     time.sleep(0.3)
 
     # ── a) 项目面板：输入框自动聚焦 / 占位文字 / 可见描边 / 能输入 ─────────────
     if _click_toolbar(cdp, '项目') != 'ok':
-        return False, '未找到工具栏「项目」按钮'
+        return False, '未找到工具栏“项目”按钮'
     try:
         wait_for(cdp, "!!document.querySelector('.project-panel .pp-input')", timeout=20, desc='项目面板挂载')
     except Exception as e:
@@ -242,21 +242,21 @@ def run(cdp):
         return False, '面板输入框失败：' + '；'.join(obj['fails'])
     panel_note = '面板打开即自动聚焦、占位文字无硬编码、聚焦描边可见'
 
-    # 行内间隙（输入框与「新建」之间的空档）点击也要聚焦
+    # 行内间隙（输入框与“新建”之间的空档）点击也要聚焦
     cdp.eval("document.activeElement && document.activeElement.blur()")
     time.sleep(0.15)
     _real_click(cdp, obj['gapX'], obj['gapY'])
     time.sleep(0.25)
     if cdp.eval("document.activeElement === document.querySelector('.project-panel .pp-input')") is not True:
-        return False, '点击「项目名称」行空档后输入框未聚焦（命中区没生效）'
+        return False, '点击“项目名称”行空档后输入框未聚焦（命中区没生效）'
 
-    # 真实输入 → 「新建」按钮解锁
+    # 真实输入 → “新建”按钮解锁
     typed = _type(cdp, '用例53空项目')
     if typed != '用例53空项目':
         return False, f'输入框写不进内容（得到 {typed!r}）'
     disabled = cdp.eval("document.querySelector('.project-panel .pp-btn.primary').disabled")
     if disabled is not False:
-        return False, '输入名称后「新建」按钮仍disabled'
+        return False, '输入名称后“新建”按钮仍disabled'
 
     # ── b) Git 快照按钮 ────────────────────────────────────────────────
     obj, err = _j(cdp, JS_GIT_BTN, desc='Git 快照按钮')
@@ -272,7 +272,7 @@ def run(cdp):
     if not (isinstance(tip, str) and 'git' in tip.lower() and 'init' in tip.lower()):
         return False, f'Git 快照回执未说明去处（司天不自动 git init）：{tip!r}'
 
-    # ── c) 用 UI 新建空项目（真实流程：输入名称 → 点「新建」）──────────────────
+    # ── c) 用 UI 新建空项目（真实流程：输入名称 → 点“新建”）──────────────────
     cdp.eval("document.querySelector('.project-panel .pp-btn.primary').click()")
     wait_for(cdp, """(async () => {
       const app = document.querySelector('#app').__vue_app__;
@@ -309,7 +309,7 @@ def run(cdp):
       b.click();
       return 'ok';
     })()""") != 'ok':
-        return False, '未找到「历史剧本」入口'
+        return False, '未找到“历史剧本”入口'
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=20, desc='ScenarioMap 挂载')
     time.sleep(1.0)
     obj, err = _j(cdp, JS_SCENARIO_EMPTY.replace('PLACEHOLDER_STORE', STORE).replace('PLACEHOLDER_SC', SC),
@@ -322,7 +322,7 @@ def run(cdp):
 
     # ── f) 渲染护栏（静态 + 行为）────────────────────────────────────────
     # 2026-11-02 N1.5：坐标换算（`screenToWorld`）搬进 scenario/interaction/mapGeometry.js ——
-    # 静态检查读**组件 + 那份模块**（否则「坐标变换仍用真实 scale」会因为搬家而假红）。
+    # 静态检查读**组件 + 那份模块**（否则“坐标变换仍用真实 scale”会因为搬家而假红）。
     cdp.eval("""(async () => {
       const r = await fetch('/src/components/ScenarioMap.vue?raw');
       const g = await fetch('/src/scenario/interaction/mapGeometry.js?raw');

@@ -244,7 +244,7 @@ export function __clearTextureCache() {
 // ===== 2D 行星圆盘（恒星系 2D 观景用；2026-11-01）=====
 // 复用同一份 `getPlanetTexture`（3D 球面贴图）——**不新造一套配色**，只是把它按球面明暗压成圆盘。
 // 为什么要它：`SystemDetailView` 原先每颗行星是一个纯色圆点（7px），一堆行星长得一模一样，
-// 与原型「下钻恒星系视图」差着一整个美术层（`refs/src/sp1025-system-drilldown.png`）。
+// 与原型“下钻恒星系视图”差着一整个美术层（`refs/src/sp1025-system-drilldown.png`）。
 const discCache = new Map();
 
 /** 贴图取样高度（等距圆柱的赤道带；取太高会把极区压扁） */

@@ -1,5 +1,5 @@
 // 探针（第 1 件 1-b · 第三刀：**消融实验**，2026-10-24）。
-// 目的：把「松手 287ms」里"深拷贝占多少"用一个不靠拆段的办法量出来 ——
+// 目的：把“松手 287ms”里"深拷贝占多少"用一个不靠拆段的办法量出来 ——
 // 临时把 JSON.stringify/parse 的打桩，让 buildProjectPayload 的 6 次深拷贝空转（消融），
 // 其余一切照旧，再量同一个 mouseup。差值 = 深拷贝在松手里的净成本；余量 = 还要修的别的。
 // 打桩只活在本次测量里（测完立刻还原），产品代码一行不改。
@@ -51,7 +51,7 @@ window.alert = () => {};
     }
   } catch (e) { J.fails.push('vue import: ' + String(e).slice(0, 120)); }
 
-  // 底图上的「代理读 vs 原始读」（这次 toRaw 真的生效）
+  // 底图上的“代理读 vs 原始读”（这次 toRaw 真的生效）
   const bench = (fn, n) => {
     const arr = [];
     for (let i = 0; i < n; i++) {
@@ -116,7 +116,7 @@ window.alert = () => {};
   J.stage = 'land-real';
   OUT.land_real = await runLand('原样');
   J.stage = 'land-ablated';
-  // 消融：让「对象/数组的 stringify」直接返回空壳（parse 照旧）→ 6 次深拷贝只剩遍历外壳
+  // 消融：让“对象/数组的 stringify”直接返回空壳（parse 照旧）→ 6 次深拷贝只剩遍历外壳
   window.JSON = Object.assign(Object.create(OJSON), {
     stringify: (v, r) => {
       if (v && typeof v === 'object') return Array.isArray(v) ? '[]' : '{}';

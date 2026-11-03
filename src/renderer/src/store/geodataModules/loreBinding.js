@@ -2,7 +2,7 @@
 // （N3a-3，2026-11-02）
 //
 // 为什么单独一个模块：`store/geodata.js` 已经 2100+ 行，而这三件事只碰 `nodes` + `execute`；
-// 放进壳里会让本就最大的文件更难读（本仓的分模块口径见 geodata.js 的「领域子模块组装」）。
+// 放进壳里会让本就最大的文件更难读（本仓的分模块口径见 geodata.js 的“领域子模块组装”）。
 //
 // ── 三条纪律 ────────────────────────────────────────────────────────────────
 //   ① 每个写口**首行** `guardWrite()`（无项目 = 只读，拒绝时零副作用、并通过 writeGate 留回音）；
@@ -15,7 +15,7 @@
 //      UI 直接把 `error` 显示出来，绝不"点了没反应"。
 //
 // ── 与 `node.notePaths` 的关系（别混！）───────────────────────────────────
-//   · `node.notePaths`（关联资料，NodeDetailPanel 的「+ 绑定笔记」）= **可挂多篇**、只存路径、
+//   · `node.notePaths`（关联资料，NodeDetailPanel 的“+ 绑定笔记”）= **可挂多篇**、只存路径、
 //     给"这篇设定的补充材料"用；它不参与改名对账。
 //   · `node.lore`（本模块）= **主词条的那一篇**，带稳定身份快照 `{noteId,path,title,at,key,fingerprint}`，
 //     供 `utils/loreBinding.js#reconcileBindings` 判"改名/失联"。
@@ -106,7 +106,7 @@ export function createLoreBindingModule(ctx) {
   }
 
   /**
-   * 把一条「读料候选」导入成草稿节点（**一条 undo**，复用 `addNode`）。
+   * 把一条“读料候选”导入成草稿节点（**一条 undo**，复用 `addNode`）。
    *
    * 为什么是草稿：候选是**机器认出来的**，还没经过人确认；草稿节点虚线边框、可再编辑/转正，
    * 这正是"认不出/拿不准就交给人"的形状。`sourcePath` 直接写上 = 节点已经指向那篇笔记。
@@ -128,7 +128,7 @@ export function createLoreBindingModule(ctx) {
     const draft = candidateToNodeDraft(c, { layer, parentId });
     if (!draft) return { ok: false, error: '这条候选没有可用的名字或身份（无法生成稳定 id），未导入' };
     const exists = findNode(draft.id);
-    if (exists) return { ok: false, already: true, node: exists, error: `已经导入过：节点「${exists.name}」` };
+    if (exists) return { ok: false, already: true, node: exists, error: `已经导入过：节点“${exists.name}”` };
     // 唯一写入点 = 既有的 addNode（一条 undo + 自动保存）。这里只补上节点需要的显示字段。
     const node = addNode({
       ...draft,

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed, toRaw } from 'vue';
 import { execute, undo as undoCmd, redo as redoCmd, canUndo as undoCanUndo, canRedo as undoCanRedo, getLastCommandLabel } from './undo';
-// 单一写闸门（Phase 2）：本文件是「世界观数据落盘」的主要入口，所有 save*/re-extract 必须先过 guardWrite。
+// 单一写闸门（Phase 2）：本文件是“世界观数据落盘”的主要入口，所有 save*/re-extract 必须先过 guardWrite。
 // 无项目只读态下这些调用会被拒绝（不写散文件、不写回 Obsidian）。见 store/writeGate.js 的入口清单。
 import {
   guardWrite, isReadOnly as gateIsReadOnly, writeMode as gateWriteMode,
@@ -19,14 +19,14 @@ import { createChannelBrushModule } from './geodataModules/channelBrush';
 import { createLoreBindingModule } from './geodataModules/loreBinding';
 // 示例星系生成器（原型 SP-1025 的 generator/topology/metrics 整包移植，2026-11-02）
 import { generateGalaxy, presetParams as genPresetParams, toSiTianEntities } from '../galaxy/generator';
-// 项目文件接线（Phase 2.4）：画布事实源可在「知识库缓存」与「.sitian 项目文件」之间切换。
+// 项目文件接线（Phase 2.4）：画布事实源可在“知识库缓存”与“.sitian 项目文件”之间切换。
 // 与 projectStore 之间**不互相 import**，只经本注册表通信（防循环依赖，见该文件头注释）。
 import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge';
 // 退出前落盘（数据安全）：注册到中立注册表，App 退出时统一调用（App 不直接碰 store）
 import { registerFlush } from './quitFlush';
 // 纯函数：实体的规范化构造（保证写进项目文件的实体形状统一；不引入任何 IO）
 import { createEntity as createProjectEntity } from '../utils/projectSchema';
-// 剧本集：落盘前收养「剧本引用了、组表里却没有」的组 id —— 否则这条剧本在所有组里都不可见
+// 剧本集：落盘前收养“剧本引用了、组表里却没有”的组 id —— 否则这条剧本在所有组里都不可见
 import { adoptOrphanGroups } from '../utils/scenarioGroups';
 // 地点类型枚举单源（A-3）：搜索筛选 / 详情面板 / 项目面板共用一份，组件里不许再抄 `['自然', …]`
 import { PLACE_TYPES } from '../utils/placeTypes';
@@ -62,7 +62,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 预留三个扩展方向（接入前不要提前建状态/路由，保持零副作用）：
   // 1. 'universe' 宇宙总览 —— 多世界之上的宏观层。接入步骤：
   //    a. App.vue 增加 v-if="store.viewLevel === 'universe'" 路由分支（新组件 UniverseView）
-  //    b. 面包屑最左插入「宇宙」段；store 增加 currentUniverse ref
+  //    b. 面包屑最左插入“宇宙”段；store 增加 currentUniverse ref
   //    c. layers.js 新增 universe 图层栈（各世界卡片/世界间连线）
   //    d. select 动作：UniverseView 点击世界 → selectWorld（现有链路直接复用）
   // 2. 'timeline' 时间维度 —— 同一地理在不同时代的切片。推荐做成现有视图的横切过滤而非新视图级：
@@ -102,7 +102,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap,
     provinceGridOps,
   });
-  // Phase 3：省份「归属标签网格」（笔刷/套索/自动省界）。省份定义表就是 baseMaps[key].terrain，
+  // Phase 3：省份“归属标签网格”（笔刷/套索/自动省界）。省份定义表就是 baseMaps[key].terrain，
   // 所以这里只借用 scenarioEditing 的 baseMaps ref，不另建第二套表。
   const provinceEditingModule = createProvinceEditingModule({
     execute, baseMaps: scenarioEditingModule.baseMaps, scheduleAutoSaveScenarios,
@@ -121,13 +121,13 @@ export const useGeodataStore = defineStore('geodata', () => {
   const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });
-  // 太空实体编辑（B6 太空标记 / B7 部队卡片）：扁平数组，坐标系为「相对恒星」的系内偏移
+  // 太空实体编辑（B6 太空标记 / B7 部队卡片）：扁平数组，坐标系为“相对恒星”的系内偏移
   const spaceEditingModule = createSpaceEditingModule({ execute, scheduleAutoSave });
   const mapDataEditingModule = createMapDataEditingModule({
     mapData, nodes, execute, scheduleAutoSave, scheduleAutoSaveMap,
   });
   // A3（2026-10-08）：高度图**逐格通道笔刷**（文化 / 宗教）—— 行星主编辑器补齐文化/宗教涂抹能力。
-  // 走「抬手 diff」模式（见模块头注释），与本仓 provinceEditing 的省份笔刷同一套手感与粒度。
+  // 走“抬手 diff”模式（见模块头注释），与本仓 provinceEditing 的省份笔刷同一套手感与粒度。
   const channelBrushModule = createChannelBrushModule({ mapData, execute, scheduleAutoSaveMap });
 
   // 从模块解构常用 state（保持原 store 内引用）
@@ -331,8 +331,8 @@ export const useGeodataStore = defineStore('geodata', () => {
    * 返回 { nodes: 清理后的节点数组, violations: 层级越级违规数 }（B1）
    *
    * @param {Array} rawNodes 要校验的节点
-   * @param {Set<string>} [knownIds] 额外可见的节点 id 集合 —— 「增量新增」时必须传：
-   *   只校验新增节点时，它们的父级（既有节点）不在 rawNodes 里，会误判为「parentId 不存在」而置空
+   * @param {Set<string>} [knownIds] 额外可见的节点 id 集合 —— “增量新增”时必须传：
+   *   只校验新增节点时，它们的父级（既有节点）不在 rawNodes 里，会误判为“parentId 不存在”而置空
    *   （实测：项目面板新建的实体在画布上被摘掉父子关系，实体树缩进全变成 0 级）。
    */
   function validateNodes(rawNodes, knownIds = null) {
@@ -465,7 +465,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     const gate = guardWrite('重新提取');
     if (!gate.ok) return gate;
     // Phase 2.4：已打开项目时画布的事实源是项目文件 —— 重提取会把知识库数据倒进当前画布，
-    // 与「有项目用项目」直接冲突。明确拒绝并给出可行做法（不是静默失败）。
+    // 与“有项目用项目”直接冲突。明确拒绝并给出可行做法（不是静默失败）。
     if (canvasSourceRef.value === 'project') {
       return { ok: false, error: '已打开项目：画布数据来自项目文件，重提取请先关闭项目' };
     }
@@ -484,7 +484,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     const gate = guardWrite('保存地理数据');
     if (!gate.ok) return gate;
     // Phase 2.4：已打开项目 → 落盘去向是项目文件（projectStore 是项目文件的唯一写者）
-    // ⚠️ 同上：只承诺「已推给 projectStore」，不承诺已落盘（staged/persisted 显式标明）。
+    // ⚠️ 同上：只承诺“已推给 projectStore”，不承诺已落盘（staged/persisted 显式标明）。
     if (canvasSourceRef.value === 'project') {
       const r = syncCanvasToProject('保存地理数据');
       return { success: r.ok !== false, source: 'project', staged: true, persisted: false, reason: r.reason };
@@ -514,8 +514,8 @@ export const useGeodataStore = defineStore('geodata', () => {
    * 最近一次保存失败的**原因**（2026-10-09）。
    *
    * 🔴 为什么必须存下来：原来 `saveStatus === 'error'` 只表达"失败了"，原因当场丢掉 ——
-   *    用户屏幕上只有四个字「保存失败」，既不知道发生了什么，也不知道该怎么办
-   *    （暮雨实测：「保存失败就是保存失败，我没看到其他内容」）。
+   *    用户屏幕上只有四个字“保存失败”，既不知道发生了什么，也不知道该怎么办
+   *    （暮雨实测：“保存失败就是保存失败，我没看到其他内容”）。
    *    现在与 `projectStore.lastError` 对齐：失败留下原因，下一次成功保存才清。
    * ⚠️ 同时**取消了 error 的 5s 自动回 idle**：一闪而过的失败提示等于没提示
    *    （projectStore 的 setSaveStatus 注释里早已写明这条，画布侧当时漏了）。
@@ -526,7 +526,7 @@ export const useGeodataStore = defineStore('geodata', () => {
    * 叙事状态变更指纹（2026-09-24）。
    *
    * 🔴 为什么必须显式给信号：`updateNode` 是 `Object.assign(node, updates)` —— **就地改字段**，
-   *    既不换 `nodes` 数组引用、也不换节点对象。于是所有「监听数组 / 对象引用」的浅 watch
+   *    既不换 `nodes` 数组引用、也不换节点对象。于是所有“监听数组 / 对象引用”的浅 watch
    *    都不会触发 —— 状态改了，画布上的淡化却不生效（用户只会以为功能没做）。
    *    这里提供一个单调递增的重绘信号，由各画布 watch。
    * ⚠️ undo / redo 也会就地回填 status，所以两处都要 ++，否则**撤销后淡化不还原**。
@@ -541,7 +541,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     // Phase 2.4：已打开项目 → 剧本随项目文件落盘
     // ⚠️ 项目态**不得宣称 'saved'**（2026-09-24 修）：这里只是把改动推给 projectStore，
     //    真正的落盘由 projectStore 的 800ms 防抖自动保存完成（成败由 projectStore.saveStatus 表达）。
-    //    旧实现在此直接设 'saved' = **谎报成功**：状态栏说「已保存」时数据还在内存里。
+    //    旧实现在此直接设 'saved' = **谎报成功**：状态栏说“已保存”时数据还在内存里。
     if (canvasSourceRef.value === 'project') {
       saveStatus.value = 'saving';
       const r = syncCanvasToProject('保存剧本');
@@ -549,11 +549,11 @@ export const useGeodataStore = defineStore('geodata', () => {
         lastSaveError.value = '';
         saveStatus.value = 'staged';   // staged = 已交给项目，等待落盘
       } else {
-        // ⚠️ 这个分支以前把 `r.error` 就地丢掉了 —— 用户只看到「保存失败」四个字
+        // ⚠️ 这个分支以前把 `r.error` 就地丢掉了 —— 用户只看到“保存失败”四个字
         lastSaveError.value = r.error || '项目接线未就绪（projectStore 未装载）';
         saveStatus.value = 'error';
       }
-      // 「已交给项目」是瞬时态，3s 后回落；**error 不设 TTL**（见 lastSaveError 说明）
+      // “已交给项目”是瞬时态，3s 后回落；**error 不设 TTL**（见 lastSaveError 说明）
       if (saveStatusTimer) clearTimeout(saveStatusTimer);
       saveStatusTimer = setTimeout(() => {
         if (saveStatus.value === 'staged') saveStatus.value = 'idle';
@@ -613,7 +613,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 手势闸门的顺延状态（每链一份：景况不同、上限各自计）
   const autoSaveDeferrer = createSaveDeferrer();
   const mapSaveDeferrer = createSaveDeferrer();
-  // 待保存的行星集合：flush 时用它把「还在防抖窗口里」的地图改动真正写掉。
+  // 待保存的行星集合：flush 时用它把“还在防抖窗口里”的地图改动真正写掉。
   // 🔴 原 flushSave 只是 clearTimeout —— **清掉定时器等于把改动直接扔掉**（退出/关闭时丢手绘）。
   const pendingMapIds = new Set();
 
@@ -656,7 +656,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   /**
-   * 把「还没落盘的改动」立刻写完（退出 / 关闭项目 / 切库前调用）。
+   * 把“还没落盘的改动”立刻写完（退出 / 关闭项目 / 切库前调用）。
    * ⚠️ 三条链路都要真的保存：地理数据、行星地图（防抖窗口内的）、剧本。
    *    只 clearTimeout 不保存 = 静默丢改动（曾经的实现就是这样，用户手绘时间直接蒸发）。
    */
@@ -713,9 +713,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       // 清除坐标缓存时 App 侧会整体重置 mapData，不会供旧数据）
       if (mapData.value[planetId]) return mapData.value[planetId];
       // Phase 2.5：项目模式下**不回退知识库缓存** —— 项目就是唯一事实源。
-      // 否则「项目里没有这张行星图」会从知识库缓存回填，下一次保存又把它写进项目文件
+      // 否则“项目里没有这张行星图”会从知识库缓存回填，下一次保存又把它写进项目文件
       // （静默把知识库数据灌进项目 = 两套事实源混流，正是接线要消灭的形态）。
-      // 需要把知识库的行星图带进项目，走「新建项目时以知识库为基底」（projectStore.createProjectFromVault）。
+      // 需要把知识库的行星图带进项目，走“新建项目时以知识库为基底”（projectStore.createProjectFromVault）。
       if (canvasSourceRef.value === 'project') return null;
       const key = getMapDataKey(planetId);
       const result = await window.sitianAPI.getMapData(key);
@@ -744,8 +744,8 @@ export const useGeodataStore = defineStore('geodata', () => {
     const gate = guardWrite('保存行星地图');
     if (!gate.ok) return gate;
     // Phase 2.4：已打开项目 → 地图数据落进项目文件（mapData 已在内存态更新，这里只触发项目侧落盘）
-    // ⚠️ 返回值只承诺「已推给 projectStore」，**不承诺已落盘**（落盘由 projectStore 的 800ms 防抖完成）——
-    //    旧实现恒返回 `{success:true}`，调用方会误判成「已写入磁盘」（2026-09-24 修）。
+    // ⚠️ 返回值只承诺“已推给 projectStore”，**不承诺已落盘**（落盘由 projectStore 的 800ms 防抖完成）——
+    //    旧实现恒返回 `{success:true}`，调用方会误判成“已写入磁盘”（2026-09-24 修）。
     if (canvasSourceRef.value === 'project') {
       const r = syncCanvasToProject(`保存行星地图 ${planetId || ''}`.trim());
       return { success: r.ok !== false, source: 'project', staged: true, persisted: false };
@@ -957,7 +957,7 @@ export const useGeodataStore = defineStore('geodata', () => {
 
     // R7（2026-09-26）：**孤儿数据**——挂在被删节点 id 名下的地图 / 区域级 / 建筑内部 / 边界覆盖 / 参考图。
     // 旧实现只删节点与航道 → 删掉行星后它的 `mapData` 永远留在项目文件里（重建同名 id 的行星会
-    // 「继承」上一张地图，而且不报错）；删掉区域/建筑同理。这里连同 undo 一起处理。
+    // “继承”上一张地图，而且不报错）；删掉区域/建筑同理。这里连同 undo 一起处理。
     // ⚠️ 只按**节点 id 键**清理，不碰 `scenarios[*].ownership`（其键是省份 id，见 idKeyedDataDicts 注释）。
     const orphanDicts = idKeyedDataDicts()
       .filter(d => d && Object.prototype.hasOwnProperty.call(d, nodeId))
@@ -1010,7 +1010,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       oldState[key] = node[key];
     }
     // 叙事状态变更 → 递增重绘指纹（见 statusRevision 的说明）。
-    // undo / redo 都要 ++：两者都是**就地回填**，不会换引用 —— 漏了就会「撤销后淡化不还原」。
+    // undo / redo 都要 ++：两者都是**就地回填**，不会换引用 —— 漏了就会“撤销后淡化不还原”。
     const touchedStatus = Object.prototype.hasOwnProperty.call(updates, 'status');
     const bumpStatus = () => { if (touchedStatus) statusRevision.value++; };
 
@@ -1079,7 +1079,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // scripts/extract-data.js 的提取结果对齐 —— 否则重提取会产出第二个节点（新 id），
   // 而子节点的 parentId、地图数据、剧本归属仍指向那张"消失了的脸"（幽灵引用）。
   //
-  // ★ 引用清单（新增任何以节点 id 为「值」或为「键」的结构时必须在此登记，漏一处 = 幽灵引用）
+  // ★ 引用清单（新增任何以节点 id 为“值”或为“键”的结构时必须在此登记，漏一处 = 幽灵引用）
   //   值槽（字段值 === 旧 id → 改写为新 id）：
   //     nodes[].parentId                      子节点归属
   //     hyperlanes[].fromId / toId             航道端点
@@ -1105,7 +1105,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 深度遍历跳过的重字段（大数组，不可能承载节点 id 字符串引用）
   const ID_REF_SKIP_KEYS = new Set(['terrainGrid', 'heightmap', 'data', 'points', 'grid']);
 
-  // 深度收集「值槽 / 数组槽」——显式记录旧值，undo 直接回填（不做反向推断）
+  // 深度收集“值槽 / 数组槽”——显式记录旧值，undo 直接回填（不做反向推断）
   function collectIdRefSlots(root, oldId, slots, seen) {
     if (!root || typeof root !== 'object' || seen.has(root)) return;
     seen.add(root);
@@ -1130,10 +1130,10 @@ export const useGeodataStore = defineStore('geodata', () => {
     }
   }
 
-  // 以节点 id 为「字典键」的容器集合（改名而非改字段值）
+  // 以节点 id 为“字典键”的容器集合（改名而非改字段值）
   /**
-   * 「以节点 id 为**字典键**的数据容器」的**唯一清单**（名字 → 取当前 ref 值）。
-   * 删节点 / 删实体时要连带清掉它们名下那份数据；名字同时用于「清出来暂存 → 撤销时灌回」。
+   * “以节点 id 为**字典键**的数据容器”的**唯一清单**（名字 → 取当前 ref 值）。
+   * 删节点 / 删实体时要连带清掉它们名下那份数据；名字同时用于“清出来暂存 → 撤销时灌回”。
    *
    * 与 `idRefDicts()` 的区别（**这不是重复清单，是刻意分成两个用途**）：
    *   · 本清单 = **数据容器**，键就是节点 id；
@@ -1172,8 +1172,8 @@ export const useGeodataStore = defineStore('geodata', () => {
    * 并把清掉的内容**原样返回**，供调用方暂存 —— 撤销时用 `mergeOrphanData` 灌回。
    *
    * 供**项目侧**删除实体时调用：项目态下画布才是 `mapData` / `editor` 的**活副本**，
-   * 只在项目文件里删是没用的 —— 下一次「画布 → 项目」保存会把画布那份**原样写回去**
-   * （表现为「删了行星，地图过一会儿又回来了」）。
+   * 只在项目文件里删是没用的 —— 下一次“画布 → 项目”保存会把画布那份**原样写回去**
+   * （表现为“删了行星，地图过一会儿又回来了”）。
    *
    * @returns {Object<string, Object<string, any>>} 形如 `{ mapData: { 行星id: {...} }, interiorData: {…} }`
    */
@@ -1216,7 +1216,7 @@ export const useGeodataStore = defineStore('geodata', () => {
    * @param {string} newId 目标 id（通常为 normalizeId(笔记文件名)）
    * @returns {{success: boolean, changed?: boolean, oldId?: string, newId?: string,
    *            reason?: string, collidesWith?: string, refs?: number, dictKeys?: number, warnings?: string[]}}
-   *   冲突（目标 id 已存在）时返回 success:false —— 调用方应降级为「只回填 sourcePath，id 不变」，不阻断转正。
+   *   冲突（目标 id 已存在）时返回 success:false —— 调用方应降级为“只回填 sourcePath，id 不变”，不阻断转正。
    */
   function changeNodeId(oldId, newId) {
     if (!guardWrite('节点 id 变更').ok) return { success: false, reason: '只读：未打开项目文件' };
@@ -1243,9 +1243,9 @@ export const useGeodataStore = defineStore('geodata', () => {
     collectIdRefSlots(areaReferenceImages.value, oldId, slots, seen);
     collectIdRefSlots(interiorData.value, oldId, slots, seen);
     collectIdRefSlots(interiorReferenceImages.value, oldId, slots, seen);
-    // A1/M1b（2026-09-25）：底图的**绑定字段** `baseMaps[k].planetId` 是「以节点 id 为值」的引用，必须跟随改名 ——
+    // A1/M1b（2026-09-25）：底图的**绑定字段** `baseMaps[k].planetId` 是“以节点 id 为值”的引用，必须跟随改名 ——
     // 否则行星改名（转正 / 改名）后绑定就会悬空，而绑定迁移时底图侧那份 heightmap 已被 `delete`
-    // → 底图表现为「空地图」（数据还在 mapData[旧id] 里，只是没人指得到）。
+    // → 底图表现为“空地图”（数据还在 mapData[旧id] 里，只是没人指得到）。
     // ⚠️ 只采集**值槽**：baseMaps 的**键**刻意不列入（键语义混用，既可能是行星名称又可能是 id，见 idRefDicts 上方注释）。
     if (scenarioEditingModule) {
       collectIdRefSlots(scenarioEditingModule.baseMaps.value, oldId, slots, seen);
@@ -1324,7 +1324,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     }
     const worldId = opts.worldId || (worlds.value[0] && worlds.value[0].id) || null;
     if (!worldId) {
-      return { ok: false, rejected: 'no-world', message: '还没有世界：先在「世界选择」里建一个世界' };
+      return { ok: false, rejected: 'no-world', message: '还没有世界：先在“世界选择”里建一个世界' };
     }
     const params = { ...genPresetParams(opts.preset || 'A'), ...(opts.params || {}) };
     let gen;
@@ -1660,7 +1660,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 决策：有项目文件 → 画布的事实源 = 项目文件（实体树 / 航道 / 地图 / 剧本）；
   //       无项目 → 知识库缓存（legacy，行为与接线前一致）。
   // 实现要点：
-  //   · geodata 仍是**唯一工作内存** —— 七层视图与全部编辑器一行不改，只切换「装载来源」与「落盘去向」；
+  //   · geodata 仍是**唯一工作内存** —— 七层视图与全部编辑器一行不改，只切换“装载来源”与“落盘去向”；
   //   · 与 projectStore 之间不互相 import，只经 store/canvasBridge.js 注册表通信（防循环依赖）；
   //   · 打开项目时把打开前的知识库工作态**留底**，关闭项目时原样恢复
   //     （否则用户关掉项目后画布会变空 —— 那是数据看起来"丢了"的最坏观感）。
@@ -1716,19 +1716,19 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   const numOrNull = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
 
-  /** 实体结构的「已知字段」；之外的字段是画布侧的编辑数据，必须随实体一起往返。 */
+  /** 实体结构的“已知字段”；之外的字段是画布侧的编辑数据，必须随实体一起往返。 */
   const ENTITY_SHAPE_KEYS = new Set([
     'id', 'name', 'layer', 'layerLabel', 'parentId', 'tags', 'coordinate',
     'origin', 'sourcePath', 'uuid', 'createdAt', 'updatedAt',
   ]);
 
   /**
-   * 取出实体上「项目 schema 不认识」的字段（placeType / wikilinks / population / cultureId /
+   * 取出实体上“项目 schema 不认识”的字段（placeType / wikilinks / population / cultureId /
    * sizeScale / locked …）。
    *
    * 🔴 为什么必须显式往返：这些字段丢了**不会报任何错**，只会让项目模式下的能力静默退化 ——
    *   丢 `placeType` → 行星图/区域图上聚落与地点的图标、配色全部退化；
-   *   丢 `population` → 聚落图标不按人口分级；丢 `wikilinks` → 搜索的「提及」命中整块消失。
+   *   丢 `population` → 聚落图标不按人口分级；丢 `wikilinks` → 搜索的“提及”命中整块消失。
    *   本仓真实数据（ROSA 121 节点）里 117 个带 placeType、120 个带 wikilinks，一开项目就全丢。
    */
   function entityExtras(e) {
@@ -1845,7 +1845,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   /**
-   * 由「一组画布状态」构建项目载荷（实体形状与 exportCanvasToProject 完全一致）。
+   * 由“一组画布状态”构建项目载荷（实体形状与 exportCanvasToProject 完全一致）。
    * 抽成纯函数是为了让**知识库快照**能走同一条构造路径 —— 项目态下画布已被项目内容替换，
    * 知识库内容只存在于 vaultSnapshot，不能靠读 nodes.value 拿到（2026-09-22）。
    */
@@ -1890,11 +1890,11 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   /**
-   * 知识库内容的「项目载荷」——**与当前画布事实源无关**（2026-09-22，用户实测反馈）。
+   * 知识库内容的“项目载荷”——**与当前画布事实源无关**（2026-09-22，用户实测反馈）。
    *
    * 背景：用户新建了一个项目（空的），却发现没有任何入口把知识库的 120 个词条带进来
-   * ——「新建并导入知识库内容」只覆盖「新建」这一条路，已存在的项目没有任何入口；
-   * 而「重新提取」在项目态被正确拒绝（两套事实源混流），于是用户卡在「项目里空空的」。
+   * ——“新建并导入知识库内容”只覆盖“新建”这一条路，已存在的项目没有任何入口；
+   * 而“重新提取”在项目态被正确拒绝（两套事实源混流），于是用户卡在“项目里空空的”。
    *
    * 做法：项目态下从 `vaultSnapshot`（打开项目时留下的知识库工作态）重建同形载荷；
    * 知识库态下直接用当前画布。`includeMaps` 时按需读知识库**缓存**补齐行星地图
@@ -1984,7 +1984,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       // 🔴 一律走 `applyScenarioState`（**唯一的日期迁移入口**）：它会跑 `normalizeScenarioDates`
       //    把旧 `changeYears` 转成 `changeEvents`，并带上切片书签。
       //    在这里自己写 `scenarios.value = sc.scenarios` 就是漏掉迁移的经典写法 ——
-      //    症状是「载入旧项目后易主日期全成了推算值」，不报错（纯函数与用例都守不住这条）。
+      //    症状是“载入旧项目后易主日期全成了推算值”，不报错（纯函数与用例都守不住这条）。
       scenarioEditingModule.applyScenarioState(
         { baseMaps: sc.baseMaps, scenarios: sc.scenarios, slicePoints: sc.slicePoints, groups: sc.groups },
         { fresh: true },
@@ -1992,15 +1992,15 @@ export const useGeodataStore = defineStore('geodata', () => {
     }
     canvasSourceRef.value = 'project';
     // ⚠️ **不要在这里清 undo 栈**（P3 的清理点在 projectStore 的项目生命周期里，2026-09-25）。
-    //    本函数不只服务「打开项目」—— `seedFromPayload`（导入知识库内容）末尾也会调它
-    //    「重新装载一次画布」。若在这里 clearHistory()，刚 push 进栈的导入命令会被清掉，
-    //    「导入 = 一条可撤销命令」立刻失效（test_50 实测抓到）。
+    //    本函数不只服务“打开项目”—— `seedFromPayload`（导入知识库内容）末尾也会调它
+    //    “重新装载一次画布”。若在这里 clearHistory()，刚 push 进栈的导入命令会被清掉，
+    //    “导入 = 一条可撤销命令”立刻失效（test_50 实测抓到）。
     backToWorld();   // 别停在项目里不存在的节点上
     return { ok: true, source: 'project', nodes: nodes.value.length, hyperlanes: hyperlanes.value.length };
   }
 
   /**
-   * 实体 → 画布节点上「可被项目侧覆盖」的字段集（与 entityToNode 同形，但**不含坐标** —— 坐标以画布为准）。
+   * 实体 → 画布节点上“可被项目侧覆盖”的字段集（与 entityToNode 同形，但**不含坐标** —— 坐标以画布为准）。
    */
   function entityNodeFields(e) {
     const fields = entityToNode(e);
@@ -2015,12 +2015,12 @@ export const useGeodataStore = defineStore('geodata', () => {
    * 下一次画布保存会把撤销结果覆盖掉）。
    *
    * 🔴 两个不变量，都踩过（症状全是静默的）：
-   *   ① **就地更新，绝不重建节点对象**。本函数挂在「项目实体变化」的 watch 上，而**画布每次保存
+   *   ① **就地更新，绝不重建节点对象**。本函数挂在“项目实体变化”的 watch 上，而**画布每次保存
    *      都会改项目实体** → 调用频率极高。若重建对象，`store.selectedNode` / `currentPlanet` /
-   *      AreaMap 的本地选中…… 一切按**对象引用**持有的「当前节点」立刻变成脱离数组的旧对象：
+   *      AreaMap 的本地选中…… 一切按**对象引用**持有的“当前节点”立刻变成脱离数组的旧对象：
    *      · 详情面板显示陈旧数据（实测：文化下拉选中后色块不出现）；
    *      · 转正按钮更狠 —— `promoteDraft` 里 `changeNodeId(n.id, newId)` 之后写
-   *        `updateNode(n.id, {sourcePath})` 靠的是「n 是同一个对象、id 已被就地改掉」，
+   *        `updateNode(n.id, {sourcePath})` 靠的是“n 是同一个对象、id 已被就地改掉”，
    *        对象一旦脱钩，`updateNode` 就打在**已不存在的旧 id** 上 → sourcePath 静默没回填。
    *   ② 新增节点才走 `validateNodes`（旧节点进画布时已校验过；重建它们等于放弃 ①）。
    */
@@ -2040,8 +2040,8 @@ export const useGeodataStore = defineStore('geodata', () => {
       kept.push(n);
     }
     const added = [...byId.values()].map(entityToNode);   // 项目里新增 → 画布补上
-    // ⚠️ 新增节点单独校验时必须把既有节点 id 一并告知（knownIds），否则它们的父级「看不见」
-    //    会被判成「parentId 不存在」而置空 —— 实体树层级会整片塌成 0 级（实测踩过）。
+    // ⚠️ 新增节点单独校验时必须把既有节点 id 一并告知（knownIds），否则它们的父级“看不见”
+    //    会被判成“parentId 不存在”而置空 —— 实体树层级会整片塌成 0 级（实测踩过）。
     const knownIds = new Set([...kept.map(n => n.id), ...added.map(n => n.id)]);
     nodes.value = added.length ? [...kept, ...validateNodes(added, knownIds).nodes] : kept;
     return { ok: true, nodes: nodes.value.length };
@@ -2078,7 +2078,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   /**
-   * 「以知识库为基底新建项目」前的地图补齐：行星地图是按需懒加载的，
+   * “以知识库为基底新建项目”前的地图补齐：行星地图是按需懒加载的，
    * 不补齐的话 `exportCanvasToProject()` 会把空 maps 导出去（新项目里行星图全丢）。
    * 只在知识库态调用（项目态下 loadMapData 不回退知识库缓存）。
    */
@@ -2099,7 +2099,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   }
 
   /**
-   * 面板 → 画布的「聚焦某实体」（2026-09-21）：把画布切到该实体所在的视图并选中它。
+   * 面板 → 画布的“聚焦某实体”（2026-09-21）：把画布切到该实体所在的视图并选中它。
    * 由 `canvasBridge.setGotoHandler` 调用（面板/向导禁止 import geodata）。
    * 视图链：world → domain → system → system_detail → planet → area → interior。
    */
@@ -2164,11 +2164,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     // （而且因为画布是活副本，下一次保存还会把"数据已没了"写进项目文件）。
     pruneData: pruneOrphanDataFor,
     mergeData: mergeOrphanData,
-    // 知识库内容载荷（项目态下由 vaultSnapshot 重建）—— 「导入知识库内容」的唯一取数口
+    // 知识库内容载荷（项目态下由 vaultSnapshot 重建）—— “导入知识库内容”的唯一取数口
     exportVaultPayload,
     // R15/A-0：**当前**库里的笔记清单（只读）—— 项目态下知识库事件被拦，笔记改名靠它主动对账
     listVaultNotes,
-    // 「以知识库为基底新建项目」前的异步准备（补齐懒加载的行星地图）—— 唯一异步适配器方法
+    // “以知识库为基底新建项目”前的异步准备（补齐懒加载的行星地图）—— 唯一异步适配器方法
     prepareExport: loadAllMapDataForExport,
     describe: () => ({
       attached: true,
@@ -2177,14 +2177,14 @@ export const useGeodataStore = defineStore('geodata', () => {
       hyperlanes: hyperlanes.value.length,
       maps: Object.keys(mapData.value).length,
       hasVaultSnapshot: !!vaultSnapshot,
-      // 快照里的知识库规模：面板据此告诉用户「能导入多少」（项目态下 nodes 是项目自己的）
+      // 快照里的知识库规模：面板据此告诉用户“能导入多少”（项目态下 nodes 是项目自己的）
       vaultNodes: vaultSnapshot ? (vaultSnapshot.nodes || []).length : 0,
       vaultHyperlanes: vaultSnapshot ? (vaultSnapshot.hyperlanes || []).length : 0,
       vaultMaps: vaultSnapshot ? Object.keys(vaultSnapshot.mapData || {}).length : 0,
     }),
   });
 
-  // 注册「聚焦实体」实现：项目面板/实体向导的「前往编辑」经此把画布切到对应视图
+  // 注册“聚焦实体”实现：项目面板/实体向导的“前往编辑”经此把画布切到对应视图
   setGotoHandler(focusEntityOnCanvas);
 
   return {
@@ -2199,7 +2199,7 @@ export const useGeodataStore = defineStore('geodata', () => {
     availablePlaceTypes, searchPlaceTypeFilter, togglePlaceTypeFilter,
     toggleLayerFilter, isFilterOpen,
     canUndo, canRedo, undoLabel, mapData, domainBorderOverrides,
-    // 单一写闸门状态（Phase 2）：UI 侧据此做灰禁与「只读」提示
+    // 单一写闸门状态（Phase 2）：UI 侧据此做灰禁与“只读”提示
     isReadOnly: gateIsReadOnly, writeMode: gateWriteMode, readOnlyReason: gateWriteModeReason,
     writeBlockedHint: WRITE_BLOCKED_HINT,
     // 面板 → 画布的聚焦入口（canvasBridge 注册的实现；也直接暴露给测试）
@@ -2209,11 +2209,11 @@ export const useGeodataStore = defineStore('geodata', () => {
     // R15/A-0：当前知识库笔记清单（只读；断线检测用，也直接暴露给用例）
     listVaultNotes,
     idKeyedDataDicts,
-    // 实体「已知形状之外的字段」提取（placeType / wikilinks / population / uuid …）。
+    // 实体“已知形状之外的字段”提取（placeType / wikilinks / population / uuid …）。
     // R6：导出地图配置时用它一次性带走全部编辑侧字段 —— 白名单只有 ENTITY_SHAPE_KEYS 一份，
-    // 不再由调用方手抄字段名（手抄必漏，漏了不报错、只让图标配色退化 / 搜索「提及」消失）。
+    // 不再由调用方手抄字段名（手抄必漏，漏了不报错、只让图标配色退化 / 搜索“提及”消失）。
     entityExtras,
-    // R6：实体 → 画布节点的**唯一构造入口**（项目装载与「导入地图配置」共用同一份形状定义）
+    // R6：实体 → 画布节点的**唯一构造入口**（项目装载与“导入地图配置”共用同一份形状定义）
     entityToNode,
     loadGeodata, reextract, saveGeodata, validateNodes, saveScenarios,
     saveStatus,

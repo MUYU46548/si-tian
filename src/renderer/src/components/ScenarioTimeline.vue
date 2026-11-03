@@ -10,7 +10,7 @@
         <div v-for="(t, i) in ticks" :key="'t' + i" class="tl-tickline" :style="{ left: tickPct(t) + '%' }"></div>
         <div v-for="(t, i) in ticks" :key="'tl' + i" class="tl-tick" :style="{ left: tickPct(t) + '%' }">{{ t }}</div>
 
-        <!-- 切片点书签（月日精度）：在轨道上标出来，用户才看得见「我存过哪些时间点」 -->
+        <!-- 切片点书签（月日精度）：在轨道上标出来，用户才看得见“我存过哪些时间点” -->
         <div v-for="sp in pointMarks" :key="sp.id" class="tl-bookmark"
              :class="{ 'is-on': sp.onCursor }"
              :style="{ left: sp.pct + '%' }"
@@ -123,8 +123,8 @@ const playheadPct = computed(() => yearToU(props.timeline, props.year, props.axi
 
 /**
  * 切片点在轨道上的位置（0..100）。
- * ⚠️ 位置必须与播放头**同一口径**（`yearToU`）—— 各算一套就会出现「标记画在这里、
- *    游标拖动到这里却是另一年」这种只有对齐时才发现的不一致。
+ * ⚠️ 位置必须与播放头**同一口径**（`yearToU`）—— 各算一套就会出现“标记画在这里、
+ *    游标拖动到这里却是另一年”这种只有对齐时才发现的不一致。
  */
 const pointMarks = computed(() => (props.slicePoints || []).map((p) => {
   const v = dateToYearValue({ y: p.y, m: p.m ?? null, d: p.d ?? null });
@@ -133,7 +133,7 @@ const pointMarks = computed(() => (props.slicePoints || []).map((p) => {
     label: p.label || formatDate(p),
     text: formatDate(p),
     pct: yearToU(props.timeline, v, props.axisMode) * 100,
-    // 「游标正停在这个切片点上」——同年同日才算，月日不同就是不同时刻
+    // “游标正停在这个切片点上”——同年同日才算，月日不同就是不同时刻
     onCursor: Math.abs(v - props.year) < 1e-6,
   };
 }));
@@ -207,7 +207,7 @@ async function fitLabels() {
   if (!el) return;
   const nodes = [...el.querySelectorAll('.tl-block')];
   tinyFlags.value = {};
-  // 第一趟：全部按「展开」量真实文字宽度
+  // 第一趟：全部按“展开”量真实文字宽度
   const need = nodes.map((b) => {
     b.classList.remove('is-tiny');
     const l = b.querySelector('.tl-l');

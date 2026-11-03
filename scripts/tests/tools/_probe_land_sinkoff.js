@@ -90,7 +90,7 @@ window.alert = () => {};
   OUT.sink_on = await phase('真实 sink', 5);
 
   J.stage = 'sink-off';
-  // 只测量：把「画布 → 项目」入水口换成空实现（不写 project.value、不触发 watch 链）
+  // 只测量：把“画布 → 项目”入水口换成空实现（不写 project.value、不触发 watch 链）
   CB.setProjectSink({ syncFromCanvas: () => ({ success: true, probe: 'sink-off' }) });
   OUT.sink_off = await phase('sink 架空', 5);
 
@@ -99,7 +99,7 @@ window.alert = () => {};
   {
     const M = await import('/src/store/projectStore.js');
     // 用 store 里真实存在的入水口还原：projectStore 在 setup 时注册过一次，
-    // 这里拿不到闭包 → 用「打开项目」同一条路重新注册不现实；改为直接调 ps 的公开 API 验证是否还通。
+    // 这里拿不到闭包 → 用“打开项目”同一条路重新注册不现实；改为直接调 ps 的公开 API 验证是否还通。
     OUT.restore_note = 'sink 已架空（探针结束自动丢弃，页面会重载）';
     OUT.ps_has_sync = typeof M.useProjectStore(pinia).syncFromCanvas;
   }

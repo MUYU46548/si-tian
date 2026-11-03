@@ -1,6 +1,6 @@
 // 量尺：自动河网 vs 地图自带河流（FMG 导入）的**几何重合度**。
 //
-// 为什么必须量这一条：用户第四条反馈是「依旧和底图自带河流**各画各的**」。
+// 为什么必须量这一条：用户第四条反馈是“依旧和底图自带河流**各画各的**”。
 // 上一轮我只统一了**画法**（色/线宽），没有量**几何**。要决定"能不能只画一套"，
 // 必须先知道两套河到底是不是同一条河：
 //   · 若自动河大部分落在自带河的**笔画覆盖范围内**（自带河线宽 p50 仅 0.70px，
@@ -76,7 +76,7 @@ dists.sort((a, b) => a - b);
 const q = (p) => dists[Math.min(dists.length - 1, Math.round((dists.length - 1) * p))];
 const within = (t) => dists.filter((d) => d <= t).length;
 
-console.log('== 自动河网段到「自带河」的最近距离（世界单位 ≈ 屏幕像素 @zoom=1）==');
+console.log('== 自动河网段到“自带河”的最近距离（世界单位 ≈ 屏幕像素 @zoom=1）==');
 console.log(`段数 ${segs.length}，自带河 ${imported.length} 条 / ${PTS.length} 个顶点`);
 console.log(`距离分位: min=${q(0).toFixed(2)} p25=${q(0.25).toFixed(2)} p50=${q(0.5).toFixed(2)} p75=${q(0.75).toFixed(2)} p90=${q(0.9).toFixed(2)} max=${q(1).toFixed(2)}`);
 console.log(`平均 ${(dists.reduce((a, b) => a + b, 0) / dists.length).toFixed(2)}`);
@@ -118,11 +118,11 @@ function nearestAuto(x, y) {
 }
 const inv = PTS.map(([x, y]) => nearestAuto(x, y)).sort((a, b) => a - b);
 const qi = (p) => inv[Math.min(inv.length - 1, Math.round((inv.length - 1) * p))];
-console.log('\n== 自带河顶点到最近「自动河段」的距离 ==');
+console.log('\n== 自带河顶点到最近“自动河段”的距离 ==');
 console.log(`距离分位: p50=${qi(0.5).toFixed(2)} p75=${qi(0.75).toFixed(2)} p90=${qi(0.9).toFixed(2)} max=${qi(1).toFixed(2)}`);
 for (const t of [2, 3, 5, 8]) {
   const n = inv.filter((d) => d <= t).length;
   console.log(`  距自动河 ≤ ${t} : ${n}/${inv.length} = ${(n / inv.length * 100).toFixed(1)}% 的自带河顶点附近有自动河`);
 }
-console.log('\n判读口径：若「≤3」的比例很高（双侧都高）→ 两套河在走同一条水系 → 可只画一套；');
+console.log('\n判读口径：若“≤3”的比例很高（双侧都高）→ 两套河在走同一条水系 → 可只画一套；');
 console.log('          若一侧低 → 自动河在自带河没画的山谷里跑 → 不能悄悄隐藏自带河。');

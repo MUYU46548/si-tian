@@ -1,11 +1,11 @@
 // src/main/gitCredentialStore.js — 远程仓库访问令牌的**应用侧**保管（2026-09-22）
 //
 // ── 为什么需要它（真实事故）──────────────────────────────────────────────
-// 用户按面板提示填了 Personal Access Token，点「立即同步」仍报「远程仓库需要登录」。
+// 用户按面板提示填了 Personal Access Token，点“立即同步”仍报“远程仓库需要登录”。
 // 原因：旧实现把令牌**只**交给 `git credential approve`（系统凭据管理器 / GCM），
 // 推送时能不能取回来取决于 **路径里的那一个 git 与它的 credential.helper 配置**
 // （应用进程 spawn 的 git 与用户 shell 里的 git 未必是同一个，helper 也可能是 store/cache/none）。
-// 也就是说：**令牌存进去了 ≠ 推送时能取回来**，而失败表现是「我明明填了令牌」。
+// 也就是说：**令牌存进去了 ≠ 推送时能取回来**，而失败表现是“我明明填了令牌”。
 //
 // 现在：推送/拉取一律由本模块提供的令牌直接喂给 git（见 gitSyncHandler 的 credentialArgs），
 // 系统凭据管理器只作为**附加**写入（让用户在命令行里也能用），不再是推送的必要条件。
@@ -14,7 +14,7 @@
 // · 令牌在磁盘上**必须加密**（Windows: safeStorage/DPAPI）。加解密函数由调用方注入，
 //   本文件顶层**不 require electron**（这样纯 Node 单测能直接 require 它）。
 // · 拿不到加密能力时**宁可不落盘**，只保留在进程内存里（当前会话可用），
-//   并如实告知「本次会话有效」—— 不写明文、不假装已保存。
+//   并如实告知“本次会话有效”—— 不写明文、不假装已保存。
 // · 令牌绝不回传渲染层：`get()` 只给主进程内部用，IPC 只回 `{hasToken, username}`。
 const path = require('path');
 const fs = require('fs').promises;
@@ -79,7 +79,7 @@ function createCredentialStore({ dir = '', encrypt = null, decrypt = null } = {}
   }
 
   return {
-    /** 是否具备「跨会话保存」能力（false = 只在本次会话内存里） */
+    /** 是否具备“跨会话保存”能力（false = 只在本次会话内存里） */
     persistent: canPersist,
     file: canPersist ? file : '',
 
@@ -122,7 +122,7 @@ function createCredentialStore({ dir = '', encrypt = null, decrypt = null } = {}
       return !!(await get(host));
     },
 
-    /** 清除（换仓库/退出时用；面板提供「清除令牌」入口） */
+    /** 清除（换仓库/退出时用；面板提供“清除令牌”入口） */
     async clear(host = '') {
       const h = normHost(host);
       session.delete(h);

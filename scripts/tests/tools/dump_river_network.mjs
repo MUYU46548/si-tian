@@ -40,7 +40,7 @@ for (const sh of [60, 50, 40]) {
   }
   console.log(`   与其他河路径重叠的条数：${overlapRivers} / ${t.rivers.length}`);
   console.log(`   河网段（树枝状几何本体）：${t.segments.length} 段 / segMaxFlow=${t.segMaxFlow}`);
-  // 🔴 内流盆地（到不了海的洼地）—— 用户问的「内流河」到底有没有数据基础
+  // 🔴 内流盆地（到不了海的洼地）—— 用户问的“内流河”到底有没有数据基础
   const big = t.basins.filter((b) => b.cells >= 5);
   const land = H.filter((v) => v >= 20).length;
   console.log(`   内流：**${t.endorheicCells} 格**陆地水出不去`

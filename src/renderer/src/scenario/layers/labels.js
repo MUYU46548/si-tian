@@ -1,4 +1,4 @@
-// scenario/layers/labels.js — 剧本视图「文字标注」层（N1 刀 1，2026-10-30）
+// scenario/layers/labels.js — 剧本视图“文字标注”层（N1 刀 1，2026-10-30）
 //
 // 从 `ScenarioMap.vue` 搬出来：**四档标签的统一避让排布**（势力名 / 省名 / 城镇名 / 河名）
 // + **地形注记**（山系沿脊线、海域疏排、平原落点）+ **剧本浮动地名**。
@@ -45,7 +45,7 @@ function scaleStyle(style, k) {
  * 沿路径排出来的字在**屏幕上**是否互相压住（2026-10-27）。
  *
  * 沿路径推进不重叠 ≠ 屏幕上不重叠：急弯/回环处两个不同弧长的字会落到同一块像素上，
- * 这正是「河名/山名诡异折叠」的形态。判据只看**非相邻**字对（相邻字本来就该挨着）。
+ * 这正是“河名/山名诡异折叠”的形态。判据只看**非相邻**字对（相邻字本来就该挨着）。
  */
 function placedCharsOverlap(placed, fontSize) {
   const list = Array.isArray(placed) ? placed : [];
@@ -91,7 +91,7 @@ export function createLabelLayers() {
 
   /**
    * 地形注记的**保留走廊**（2026-10-27，用户 gap #6）：山系/海域名沿脊线排，占的是一条线；
-   * 别的标签压上去就白排了。这里把「名字实际会占的那一段」算成框交给 `layoutLabels` 当障碍物。
+   * 别的标签压上去就白排了。这里把“名字实际会占的那一段”算成框交给 `layoutLabels` 当障碍物。
    */
   function terrainReserveBoxes(view, style, toScreen) {
     const out = [];
@@ -138,7 +138,7 @@ export function createLabelLayers() {
     const riversRef = baseMapRef?.rivers || null;
     const ownRef = view.selectedScenario?.ownership || null;
     // ⚠️ `timeline` 必须进缓存键：势力**改名**不改 ownership/terrain 的引用，
-    //    漏了它就会出现「撤销后画布上还是旧名字」（test_73 f3 实测）。
+    //    漏了它就会出现“撤销后画布上还是旧名字”（test_73 f3 实测）。
     // ⚠️ `terrainLabels` 同理（2026-10-27）：它们现在是**排布的保留区**（会挪动别的字）。
     const terrainLabelsRef = baseMapRef?.terrainLabels || null;
     const refs = [terrainRef, burgsRef, riversRef, terrainLabelsRef, ownRef, view.selectedPolity,
@@ -150,7 +150,7 @@ export function createLabelLayers() {
       // C3（2026-10-29）：只显示已命名省 —— 换个开关就换了一批候选，必须进缓存键
       view.showNamedProvincesOnly ? 1 : 0,
       view.eraIndex, view.date, view.diffMode,
-      // 档位与字号必须进缓存键：滚轮跨档时「候选集/字号」都变，漏了就会画面不动（假"没反应"）
+      // 档位与字号必须进缓存键：滚轮跨档时“候选集/字号”都变，漏了就会画面不动（假"没反应"）
       view.labelDetail(), view.labelScale().toFixed(3),
       // 地形注记的保留区（显示开关 + 档位）也改变排布结论
       view.showTerrainNames ? 1 : 0,
@@ -177,8 +177,8 @@ export function createLabelLayers() {
     const cands = [];
 
     // ① 省名 / 势力名
-    //    🔴 2026-10-27：旧代码在这里**跳过占位名**（真实 415 省全叫「新省份 N」）→ 放大到省名档时
-    //    一个省名都画不出来；而约定是「画布 → 保留，导出 → 过滤」。现在画布照约定保留。
+    //    🔴 2026-10-27：旧代码在这里**跳过占位名**（真实 415 省全叫“新省份 N”）→ 放大到省名档时
+    //    一个省名都画不出来；而约定是“画布 → 保留，导出 → 过滤”。现在画布照约定保留。
     if ((view.showPolityLabels || view.showProvinceNames) && terrainRef && terrainRef.length) {
       const provinces = [];
       for (const prov of terrainRef) {
@@ -276,7 +276,7 @@ export function createLabelLayers() {
           x: sp.x, y: sp.y,
           style: scaleStyle(riverLabelTextStyle(), fontScale),
           placements: [{ mode: 'above', gap: 5 }, { mode: 'below', gap: 5 }, { mode: 'right', gap: 7 }],
-          // 河名沿河：排布只决定「放在哪一段河道附近」，实际落字沿折线排（drawRiverNameAlongPath）
+          // 河名沿河：排布只决定“放在哪一段河道附近”，实际落字沿折线排（drawRiverNameAlongPath）
           path: lb.path || null,
         });
       }
@@ -312,7 +312,7 @@ export function createLabelLayers() {
   /**
    * 河名沿河排字。
    *
-   * 为什么不把整条河喂给 `layoutTextAlongPath`：避让排布已经判定「这个名字放在此处放得下」，
+   * 为什么不把整条河喂给 `layoutTextAlongPath`：避让排布已经判定“这个名字放在此处放得下”，
    * 按整条河的中点排字会让字跑离判定过的位置（那个位置可能正压着省名）。所以先把落点**投到河道上**，
    * 只取它两侧一段，再喂给沿路径排字 —— 判定与落字看的是同一处。
    */
@@ -393,7 +393,7 @@ export function createLabelLayers() {
   /** 省名 + 势力名（门控在层里：两个开关各自生效） */
   function drawPolity(c, view) {
     if (!view.showPolityLabels && !view.showProvinceNames) {
-      // 旧实现只判 showPolityLabels；两个开关都在时也得「单开省名」能出字
+      // 旧实现只判 showPolityLabels；两个开关都在时也得“单开省名”能出字
       if (!view.showProvinceNames) return;
     }
     if (view.mode !== 'scenario') return;
@@ -406,7 +406,7 @@ export function createLabelLayers() {
    */
   function drawTerrain(c, view) {
     if (!view.showTerrainNames) return;
-    // 档位闸门：最粗的 far 档不画地形注记（与城镇/河名同一条「缩小只剩势力名」的纪律）
+    // 档位闸门：最粗的 far 档不画地形注记（与城镇/河名同一条“缩小只剩势力名”的纪律）
     if (!detailCaps(view.labelDetail()).terrainNames) return;
     const labels = (view.baseMap && view.baseMap.terrainLabels) || [];
     if (!labels.length) return;
@@ -473,7 +473,7 @@ export function createLabelLayers() {
   function drawScenarioLabels(c, view) {
     if (view.mode !== 'scenario' || !view.selectedScenario || !view.selectedScenario.labels) return;
     view.selectedScenario.labels.forEach(label => {
-      // `align/baseline` 保持旧画布的「左上角锚点」，避免地名整体位移
+      // `align/baseline` 保持旧画布的“左上角锚点”，避免地名整体位移
       drawStyledLabel(c, label.text || '', label.x, label.y, scenarioLabelTextStyle(label), {
         align: 'left', baseline: 'alphabetic',
       });

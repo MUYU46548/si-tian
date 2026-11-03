@@ -227,7 +227,7 @@
           <div class="setting-item" data-testid="note-target-section">
             <div class="setting-info">
               <span class="setting-name">新笔记目录</span>
-              <span class="setting-desc">转正 / 批量导入新建的笔记落在库里哪个目录。留空 = 自动：有「03 设定」就用层级子目录，否则落库根；填了就必须在知识库内</span>
+              <span class="setting-desc">转正 / 批量导入新建的笔记落在库里哪个目录。留空 = 自动：有“03 设定”就用层级子目录，否则落库根；填了就必须在知识库内</span>
             </div>
             <div class="vault-path-row">
               <input class="note-target-input" data-testid="note-target-dir" v-model="noteTargetDir"
@@ -301,7 +301,7 @@
             </div>
             <p v-if="!vaultCandidates.length" class="setting-desc">没有候选；先重建索引。</p>
           </div>
-          <!-- 待人工：认不出的**每一条**都在这里，附「为什么」（不静默吞） -->
+          <!-- 待人工：认不出的**每一条**都在这里，附“为什么”（不静默吞） -->
           <div v-if="showVaultMissing" class="vault-candidate-list" data-testid="vault-missing-list">
             <div v-for="m in vaultNeedsHuman.slice(0, 30)" :key="m.path + '|' + (m.reasons || []).join('；')" class="vault-candidate">
               <span class="vc-layer">待人工</span>
@@ -310,7 +310,7 @@
             </div>
             <p v-if="!vaultNeedsHuman.length" class="setting-desc">没有待人工条目。</p>
             <p v-else-if="vaultNeedsHuman.length > 30" class="setting-desc">
-              其余 {{ vaultNeedsHuman.length - 30 }} 条见命令行 `scripts/vault-scan.mjs` 的「待人工.md」。
+              其余 {{ vaultNeedsHuman.length - 30 }} 条见命令行 `scripts/vault-scan.mjs` 的“待人工.md”。
             </p>
           </div>
           <p class="setting-desc">只读索引：不改笔记、不碰画布。阅读器 / 要素绑定在下一轮（D2）。</p>
@@ -622,7 +622,7 @@
 
 <script setup>
 import Icon from './Icon.vue';
-// UI 基座试点（2026-10-06）：设置面板「通用」段的免责声明入口复用 shadcn-vue Button
+// UI 基座试点（2026-10-06）：设置面板“通用”段的免责声明入口复用 shadcn-vue Button
 import { Button } from './ui/button';
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { storeToRefs } from 'pinia';
@@ -641,7 +641,7 @@ import { useProjectStore } from '../store/projectStore';
 import { useVaultIndexStore } from '../store/vaultIndex';
 // 单一写闸门状态：只读态下涉及落盘写的按钮灰禁（并给出原因，能力说明不减）
 import { isReadOnly as gateReadOnly, writeModeReason as gateReason } from '../store/writeGate';
-// 「打开知识库」三级兜底（Obsidian → 资源管理器 → 提示去设路径）
+// “打开知识库”三级兜底（Obsidian → 资源管理器 → 提示去设路径）
 import { openVault, revealVault } from '../utils/vault';
 import { openNoteSearch } from '../utils/noteReader';
 import { usePromptDialog } from '../composables/usePromptDialog';
@@ -726,7 +726,7 @@ async function saveCurrentAsPreset() {
   const created = saveAsPreset(name, activePreset.value);
   activeKey.value = created.key;
   nextTick(renderPreview);
-  alert(`已保存预设「${created.name}」`);
+  alert(`已保存预设“${created.name}”`);
 }
 
 function resetActivePreset() {
@@ -822,7 +822,7 @@ function deleteMarkerType(type) {
     alert('内置类型不可删除（可以改名/改色/换图标）');
     return;
   }
-  if (!confirm(`删除类型「${t.label}」？该类型下的标记会自动转为「自定义」类型。`)) return;
+  if (!confirm(`删除类型“${t.label}”？该类型下的标记会自动转为“自定义”类型。`)) return;
   // 先把引用该类型的标记转为 custom（避免出现悬空 type）
   const store = window.__sitianStore;
   if (store?.mapData) {
@@ -879,7 +879,7 @@ const windowMode = ref(null);
 // 关闭行为（批次A12）：点 × 直接退出应用
 const closeQuitsApp = ref(false);
 
-// 默认设置（对外发布打磨 P1.2）：「恢复默认设置」与「导入校验」的单一事实来源
+// 默认设置（对外发布打磨 P1.2）：“恢复默认设置”与“导入校验”的单一事实来源
 const DEFAULT_SETTINGS = Object.freeze({
   autoSave: true,
   snapEnabled: true,
@@ -918,7 +918,7 @@ function open() {
 }
 
 /**
- * 把「监听知识库改动」这个开关与**主进程的真实状态**对齐。
+ * 把“监听知识库改动”这个开关与**主进程的真实状态**对齐。
  *
  * 🔴 为什么必须有这一步（2026-10-14，审计抓到的真缺陷）：
  *   `main/index.js` 早就注册了 `get-watcher-status` / `set-watcher-status`，但
@@ -932,11 +932,11 @@ function open() {
  *   要彻底解决得让主进程在启动时读 config（属于 main 侧重构，不在本轮范围）。
  */
 /**
- * 用户拨动「Vault 监听」开关：**先存意图、再真的去开/关主进程的 watcher**。
+ * 用户拨动“Vault 监听”开关：**先存意图、再真的去开/关主进程的 watcher**。
  *
  * 🔴 旧写法只有 `@change="saveSettings"`（只写 localStorage）—— 见 `syncWatcherStatus()`
  *    的注释：这是"勾选框是个假开关"的另一半。两半必须一起改，缺一半就是
- *    「界面变了、行为没变」这种最难查的静默不一致。
+ *    “界面变了、行为没变”这种最难查的静默不一致。
  */
 function onVaultWatcherChange() {
   saveSettings();
@@ -947,7 +947,7 @@ async function syncWatcherStatus() {
   const api = window.sitianAPI;
   if (!api?.setWatcherStatus) return;      // 旧 preload（未重建）：保持原行为，不假装成功
   try {
-    // 🔴 **方向不能搞反**：真相是「用户存的意图」（`settings.vaultWatcher`，由
+    // 🔴 **方向不能搞反**：真相是“用户存的意图”（`settings.vaultWatcher`，由
     //    `loadSettings()` 从 localStorage 读回来）；主进程那个 `true` 只是**默认值**。
     //    反过来"以主进程为准显示"会让每次打开设置面板都把用户关掉的开关又点亮
     //    （"关了它自己又开了"）—— 那是比假开关更难解释的行为。
@@ -1000,7 +1000,7 @@ async function onWindowModeChange() {
   }
 }
 
-// 关闭行为（批次A12）：读取 / 切换「点 × 直接退出应用」
+// 关闭行为（批次A12）：读取 / 切换“点 × 直接退出应用”
 async function loadCloseQuitsApp() {
   try {
     closeQuitsApp.value = await window.sitianAPI.getCloseQuitsApp();
@@ -1028,7 +1028,7 @@ const { askText } = usePromptDialog();
 const canReextractBlocked = computed(() => gateReadOnly.value || proj.isOpen);
 const reextractBlockedHint = computed(() => (gateReadOnly.value
   ? `${gateReason.value}；重新提取会重写知识库坐标缓存 —— 请先在项目面板新建或打开项目`
-  : '当前画布数据来自项目文件：要把知识库内容带进项目，请用项目面板的「导入知识库内容」（只补缺、可撤销）'));
+  : '当前画布数据来自项目文件：要把知识库内容带进项目，请用项目面板的“导入知识库内容”（只补缺、可撤销）'));
 
 // ===== 资料索引（D1）=====
 // 只读索引：扫描全库 .md（1,353 篇量级），不改笔记、不碰画布；候选必须人确认后才谈导入。
@@ -1077,7 +1077,7 @@ async function toggleVaultCandidates() {
   }
 }
 
-/** 看「待人工」时按需取一次读料报告（不在打开设置时白扫一遍） */
+/** 看“待人工”时按需取一次读料报告（不在打开设置时白扫一遍） */
 async function ensureVaultReport() {
   if (vaultReport.value) return;
   await vaultIndexStore.loadReport();
@@ -1095,13 +1095,13 @@ function openNoteSearchPanel() {
 /** 打开 Obsidian 知识库（打不开则退化为在资源管理器里定位库目录） */
 async function openVaultNow() {
   const res = await openVault();
-  if (!res.ok) alert('取不到知识库路径：请先在「知识库路径」里选择你的 Obsidian 库目录');
+  if (!res.ok) alert('取不到知识库路径：请先在“知识库路径”里选择你的 Obsidian 库目录');
 }
 
 /** 在资源管理器中打开知识库目录 */
 async function openVaultFolder() {
   const res = await revealVault();
-  if (!res.ok) alert('取不到知识库路径：请先在「知识库路径」里选择你的 Obsidian 库目录');
+  if (!res.ok) alert('取不到知识库路径：请先在“知识库路径”里选择你的 Obsidian 库目录');
 }
 
 // ===== 知识库路径（2026-08-16 可配置化） =====
@@ -1141,10 +1141,10 @@ async function chooseVaultPath() {
     const result = await window.sitianAPI.selectVaultPath();
     if (result?.success) {
       vaultPath.value = result.path;
-      // 库路径已变更 → 重新提取数据（只读/项目态会被闸门拒绝，此时不能谎报「已重新提取」）
+      // 库路径已变更 → 重新提取数据（只读/项目态会被闸门拒绝，此时不能谎报“已重新提取”）
       window.dispatchEvent(new CustomEvent('sitian:reextract'));
       setTimeout(() => alert(canReextractBlocked.value
-        ? '知识库路径已更新。当前未打开项目（只读）或画布来自项目文件，数据未重新提取 —— 打开/新建项目后再点「重新提取数据」。'
+        ? '知识库路径已更新。当前未打开项目（只读）或画布来自项目文件，数据未重新提取 —— 打开/新建项目后再点“重新提取数据”。'
         : '知识库路径已更新，数据已重新提取'), 300);
     } else if (result?.error) {
       alert(result.error);

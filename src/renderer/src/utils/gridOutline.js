@@ -1,8 +1,8 @@
 /**
- * gridOutline.js — 把「标签网格」转成平滑闭合轮廓（纯函数，无 DOM 依赖 → 可进 Node 单测）
+ * gridOutline.js — 把“标签网格”转成平滑闭合轮廓（纯函数，无 DOM 依赖 → 可进 Node 单测）
  *
  * 用途：地形涂色网格（terrainGrid，8 种地形）与生物群系高度图（heightmap.biome）
- * 这类「每格一个标签」的栅格数据 —— 逐格 fillRect/roundRect 渲染出来的就是马赛克方块。
+ * 这类“每格一个标签”的栅格数据 —— 逐格 fillRect/roundRect 渲染出来的就是马赛克方块。
  * 本模块把栅格边界抽成矢量闭合环 → 共线塌缩 → RDP 简化 → Chaikin 平滑，
  * 绘制端即可得到有机的、像手绘地形块的轮廓。
  *
@@ -10,7 +10,7 @@
  * 输出环的坐标是**格单位**（角点整数坐标），由调用方乘 cell 并加原点转世界坐标。
  *
  * 🔴 两条实现纪律（都踩过）：
- *  ① 边界边的方向必须首尾相接成环，否则走链会散架。本模块用「左手侧 = 本格」统一取向：
+ *  ① 边界边的方向必须首尾相接成环，否则走链会散架。本模块用“左手侧 = 本格”统一取向：
  *     东 x=c+1 (c+1,r+1)→(c+1,r)   西 x=c   (c,r)  →(c,r+1)
  *     南 y=r+1 (c,r+1)  →(c+1,r+1) 北 y=r   (c+1,r)→(c,r)
  *     西边的起点是 (c, r) 而不是 (c+1, r)（写成 c+1 会丢掉最左一列格子的西边，
@@ -139,7 +139,7 @@ export function collapseCollinear(loop) {
   return outLoop.length >= 3 ? outLoop : loop.map(p => [p[0], p[1]]);
 }
 
-/** 闭合环 RDP：以「离质心最远的点」为锚点破环，结果与起点无关（同 regionTrace 的手法） */
+/** 闭合环 RDP：以“离质心最远的点”为锚点破环，结果与起点无关（同 regionTrace 的手法） */
 export function simplifyLoop(loop, eps) {
   const n = loop.length;
   if (n < 5 || eps <= 0) return loop.map(p => [p[0], p[1]]);

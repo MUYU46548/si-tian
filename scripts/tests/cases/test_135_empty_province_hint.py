@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 135：空底图上的「第一笔」提示卡（2026-10-22 用户实测反馈）
+"""用例 135：空底图上的“第一笔”提示卡（2026-10-22 用户实测反馈）
 
-用户原话：「可以建空底图了，但是我不知道怎么画，于是又卡住了。使用手册看不懂。」
+用户原话：“可以建空底图了，但是我不知道怎么画，于是又卡住了。使用手册看不懂。”
 真因（代码实证）：
-  · 「画省份」按钮只在 `basemapEditMode`（底图编辑）下渲染；
+  · “画省份”按钮只在 `basemapEditMode`（底图编辑）下渲染；
   · 日常模式的省份行只有 圈选/点填/折线/铺底/描轮廓 —— 空底图上这些都要"已有省份或陆地"；
-  · 使用手册第九节写「用主行的『画省份』」，但日常模式的主行里根本没有它。
+  · 使用手册第九节写“用主行的‘画省份’”，但日常模式的主行里根本没有它。
 本用例守：
-  a 0 省时画布中央有提示卡（三步 + 「开始画省份」按钮），文案是人话；
-  b 点「开始画省份」→ 真的进底图编辑 + 选好 draw 工具 + 状态栏教怎么落笔；
+  a 0 省时画布中央有提示卡（三步 + “开始画省份”按钮），文案是人话；
+  b 点“开始画省份”→ 真的进底图编辑 + 选好 draw 工具 + 状态栏教怎么落笔；
   c 有省之后提示卡消失（不挡视线）；
-  d 日常模式的省份行也能找到「画省份」入口（不用自己猜先去切模式）；
-  e 源码闸门：手册第九节有「最短路径」；提示卡/入口/函数都在。
+  d 日常模式的省份行也能找到“画省份”入口（不用自己猜先去切模式）；
+  e 源码闸门：手册第九节有“最短路径”；提示卡/入口/函数都在。
 """
 import json
 import os
@@ -31,15 +31,15 @@ def _gates():
     src = open(os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vue'), encoding='utf-8').read()
     for needle, label in [
         ('data-testid="empty-province-hint"', '空底图第一笔提示卡'),
-        ('data-testid="empty-province-start"', '提示卡里的「开始画省份」'),
+        ('data-testid="empty-province-start"', '提示卡里的“开始画省份”'),
         ('function startDrawingProvince(', '第一笔入口函数'),
-        ('data-testid="province-draw-entry"', '省份行的「画省份」入口'),
+        ('data-testid="province-draw-entry"', '省份行的“画省份”入口'),
     ]:
         if needle not in src:
             fails.append(f'源码闸门缺：{label}（{needle}）')
     guide = open(os.path.join(ROOT, 'src', 'renderer', 'src', 'utils', 'userGuide.js'), encoding='utf-8').read()
     if '最短路径（空底图' not in guide:
-        fails.append('使用手册第九节缺「最短路径（空底图）」段')
+        fails.append('使用手册第九节缺“最短路径（空底图）”段')
     return fails
 
 
@@ -81,12 +81,12 @@ def run(cdp):
     })()""", required=None, desc='提示卡文案')
     for token in ('还没有省份', '按住左键', '松手'):
         if token not in str(text):
-            fails.append(f'提示卡里缺「{token}」：{text}')
+            fails.append(f'提示卡里缺“{token}”：{text}')
     ok_btn, has_btn = eval_json(cdp, """(() => JSON.stringify({
       has: !!document.querySelector('[data-testid="empty-province-start"]')
     }))()""", required=None, desc='开始画省份按钮')
     if not (isinstance(has_btn, dict) and has_btn.get('has')):
-        fails.append('提示卡里没有「开始画省份」按钮')
+        fails.append('提示卡里没有“开始画省份”按钮')
 
     # b 点它 → 底图编辑 + draw
     cdp.eval("document.querySelector('[data-testid=\"empty-province-start\"]').click()")
@@ -96,9 +96,9 @@ def run(cdp):
       return JSON.stringify({ tool: sm.tool, edit: sm.basemapEditMode, hint: String(sm.provinceHint || '') });
     })()""".replace('__SM__', SM), required=None, desc='点完之后的状态')
     if not (isinstance(st, dict) and st.get('tool') == 'draw'):
-        fails.append(f"点「开始画省份」没切到画省份：{st}")
+        fails.append(f"点“开始画省份”没切到画省份：{st}")
     if not (isinstance(st, dict) and st.get('edit') is True):
-        fails.append(f"点「开始画省份」没进底图编辑：{st}")
+        fails.append(f"点“开始画省份”没进底图编辑：{st}")
     if '按住左键' not in str(st.get('hint')):
         fails.append(f'状态栏没教怎么落笔：{st.get("hint")}')
 
@@ -130,7 +130,7 @@ def run(cdp):
       text: (document.querySelector('[data-testid="province-draw-entry"]') || {}).innerText || '',
     }))()""", required=None, desc='省份行画省份入口')
     if not (isinstance(entry, dict) and entry.get('has')):
-        fails.append('日常模式的省份行里没有「画省份」入口')
+        fails.append('日常模式的省份行里没有“画省份”入口')
 
     # 收尾
     eval_json(cdp, """(() => {
@@ -145,4 +145,4 @@ def run(cdp):
 
     if fails:
         return False, '；'.join(fails)
-    return True, '提示卡三步 + 「开始画省份」→ 底图编辑/draw + 有省后消失 + 省份行入口在'
+    return True, '提示卡三步 + “开始画省份”→ 底图编辑/draw + 有省后消失 + 省份行入口在'

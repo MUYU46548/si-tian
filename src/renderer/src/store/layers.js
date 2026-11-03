@@ -29,7 +29,7 @@ export const useLayersStore = defineStore('layers', () => {
       fleetCards: { visible: true, label: '部队卡片', order: 4 },  // B7：太空舰队/行星军（信息卡片）
     },
     planet: {
-      // 「地形」= 地形**总开关**，内容由数据驱动（M2/A2 第二步）：
+      // “地形”= 地形**总开关**，内容由数据驱动（M2/A2 第二步）：
       //   有高度图 → 高度图是主表示；没有高度图（旧多边形地图）→ 多边形照旧。
       //   判定见 `utils/terrainRepresentation.js`（渲染 / 命中 / 导出三处共用同一份）。
       terrain: { visible: true, label: '地形', order: 0 },

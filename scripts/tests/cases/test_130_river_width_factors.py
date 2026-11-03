@@ -1,7 +1,7 @@
-"""用例 130：手画河的「速度→宽度因子」真的写进数据，并被渲染宽度读取。
+"""用例 130：手画河的“速度→宽度因子”真的写进数据，并被渲染宽度读取。
 
 H2 的 `widthFactors` 首版被 `addBaseMapRiver` / `applyBaseMapRiverEdit` 静默丢掉
-（store 只挑 points/width/discharge）—— 暮雨实测「河流没修」的一部分原因就在这里。
+（store 只挑 points/width/discharge）—— 暮雨实测“河流没修”的一部分原因就在这里。
 本用例守：
   · 两条写口都保留 `widthFactors`（长度/数值原样）；
   · `riverWidthsFor` 在读到时改变头/尾宽度（不是只存不用）。

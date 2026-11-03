@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """用例 151：地形生成**参数面板**（P0-1）+ 气候真实输入（P0-3），2026-10-25
 
-真实来由（暮雨 2026-10-25 拍板「程序化生成收口」）：
-  旧入口「按轮廓生成地形」一点就按写死的常量推演（种子 7 / 山脉权重 0.26 / 裂谷 0.26）。
+真实来由（暮雨 2026-10-25 拍板“程序化生成收口”）：
+  旧入口“按轮廓生成地形”一点就按写死的常量推演（种子 7 / 山脉权重 0.26 / 裂谷 0.26）。
   用户既不知道这次是什么种子、也无法换一种地形 —— 不满意只能反复点，而每次都长一样。
   同时气候派生一直传的是 `null, null`（纬度当 0、离岸距离当 100）→ 群系几乎只由高度决定。
 
@@ -16,7 +16,7 @@
   d 一条 undo：撤销回到应用前（原来是"没有高度图"就回到没有）
   e 气候：temp/prec/biome 都在、北冷南暖、群系不是单一值；重算派生图层结果一致
   f 预览只读：出候选不写任何数据（高度图仍为空）
-  g 「重生成保留手绘」开关（2026-10-28，补 §3.2）：默认开 → 手绘按坐标写回；
+  g “重生成保留手绘”开关（2026-10-28，补 §3.2）：默认开 → 手绘按坐标写回；
     关掉 → handEdits 清空、该格回到新地形值（不是只改回执）。
 """
 import os
@@ -85,7 +85,7 @@ def source_gates():
 
     # ③ 入口按钮必须有可见文字（本项目实测：只有图标的按钮用户找不到）
     if 'data-testid="basemap-terrain-params"' not in smv:
-        fails.append('🔴 缺少「生成参数」按钮（`data-testid="basemap-terrain-params"`）')
+        fails.append('🔴 缺少“生成参数”按钮（`data-testid="basemap-terrain-params"`）')
 
     # ④ 气候必须真的接线：派生了却还传 null,null 就是回退
     i = se.find('function deriveAllLayers')
@@ -113,10 +113,10 @@ def source_gates():
         if tid not in panel:
             fails.append(f'🔴 面板缺少 `{tid}` 锚点（用户/用例都够不着）')
 
-    # ⑦ 「重生成保留手绘」开关（2026-10-28，补 §3.2 欠账）：
+    # ⑦ “重生成保留手绘”开关（2026-10-28，补 §3.2 欠账）：
     #    之前恒开 —— 用户想彻底重来只能手动把地形涂回去。现在面板有 checkbox，且**传给 store**。
     if 'data-testid="tgen-keep-hand"' not in panel:
-        fails.append('🔴 面板缺少「重生成保留手绘」checkbox（`tgen-keep-hand`）')
+        fails.append('🔴 面板缺少“重生成保留手绘”checkbox（`tgen-keep-hand`）')
     if 'keepHandEdits: keepHandEdits.value' not in panel:
         fails.append('🔴 面板没有把 keepHandEdits 传给 store（勾了也不生效）')
     if 'opts.keepHandEdits !== false' not in se:
@@ -133,7 +133,7 @@ def source_gates():
     if 'commitHeightmap' in fmg_panel or 'execute(' in fmg_panel:
         fails.append('🔴 FMG 面板自己写了落库（必须复用 store 的唯一写口）')
     if 'data-testid="basemap-fmg-terrain"' not in smv or 'data-testid="planet-fmg-terrain"' not in pmv:
-        fails.append('🔴 缺「FMG 地形」入口（剧本侧 / 行星侧各一个）')
+        fails.append('🔴 缺“FMG 地形”入口（剧本侧 / 行星侧各一个）')
     for anchor in ('function previewFmgTerrain', 'function applyFmgTerrain', 'generateHeightmap('):
         if anchor not in se:
             fails.append(f'🔴 store 缺 `{anchor}`（FMG 接线不完整）')
@@ -236,7 +236,7 @@ JS_SETUP = r""" (async () => {
   sm.baseMapKey = K;
   if (typeof sm.onBaseMapChange === 'function') sm.onBaseMapChange();
   await new Promise(r => setTimeout(r, 360));
-  // 工具栏「更多」默认收起：不展开就没有按钮（可发现性判据的一部分）
+  // 工具栏“更多”默认收起：不展开就没有按钮（可发现性判据的一部分）
   const toggle = document.querySelector('.more-toggle');
   if (toggle) toggle.click();
   await new Promise(r => setTimeout(r, 160));
@@ -431,7 +431,7 @@ JS_UNDO = r""" (async () => {
   };
   const before = s.getHeightmapFor(K);
   const hBefore = before && before.h ? digest(before.h) : null;
-  s.undo();                       // 撤销「重算派生图层」
+  s.undo();                       // 撤销“重算派生图层”
   const afterUndo = s.getHeightmapFor(K);
   const hAfter = afterUndo && afterUndo.h ? digest(afterUndo.h) : null;
   return JSON.stringify({
@@ -473,12 +473,12 @@ def run(cdp):
     if setup.get('__err__'):
         return False, f'造底图探针求值失败：{setup}'
     if not setup.get('hasBtn'):
-        fails.append('🔴 「生成参数」按钮不在 DOM 里（有陆地就该一直显示，不许条件式隐藏）')
+        fails.append('🔴 “生成参数”按钮不在 DOM 里（有陆地就该一直显示，不许条件式隐藏）')
         return False, ' | '.join(fails)
     if not (setup.get('text') or '').strip():
-        fails.append('🔴 「生成参数」按钮没有可见文字（只有图标 + title，用户找不到）')
+        fails.append('🔴 “生成参数”按钮没有可见文字（只有图标 + title，用户找不到）')
     else:
-        notes.append(f"入口按钮：「{setup['text']}」")
+        notes.append(f"入口按钮：“{setup['text']}”")
     if setup.get('hasHm'):
         fails.append('🔴 这张底图不该一开始就有高度图（用例前提错了）')
 
@@ -536,7 +536,7 @@ def run(cdp):
     if not det.get('differs'):
         fails.append('🔴 换 seed 后地形一模一样 —— seed 是摆设')
     if not det.get('climateSame'):
-        fails.append('🔴 「重算派生图层」两次结果不一致（气候派生不确定）')
+        fails.append('🔴 “重算派生图层”两次结果不一致（气候派生不确定）')
     else:
         notes.append('气候重复派生一致 ✓')
     if not (det.get('climateSpec') or {}).get('latitudeSpanDeg'):
@@ -546,7 +546,7 @@ def run(cdp):
     if undo.get('__err__'):
         fails.append(f'撤销探针求值失败：{undo}')
     elif not undo.get('undoKeptH'):
-        fails.append(f"🔴 撤销「重算派生图层」把高度图也改了：{undo.get('hBefore')} → {undo.get('hAfter')}")
+        fails.append(f"🔴 撤销“重算派生图层”把高度图也改了：{undo.get('hBefore')} → {undo.get('hAfter')}")
     elif not undo.get('hasHm'):
         fails.append('🔴 撤销后高度图整个丢了（撤销粒度错了：应只回滚派生数组）')
     else:
@@ -583,9 +583,9 @@ def run(cdp):
         fails.append(f'FMG 探针求值失败：{fmg}')
     else:
         if not fmg.get('hasBtn'):
-            fails.append('🔴 工具栏没有「FMG 地形」入口（basemap-fmg-terrain）')
+            fails.append('🔴 工具栏没有“FMG 地形”入口（basemap-fmg-terrain）')
         if not fmg.get('panelOpen'):
-            fails.append('🔴 点了「FMG 地形」面板没打开')
+            fails.append('🔴 点了“FMG 地形”面板没打开')
         if (fmg.get('cands') or 0) < 3:
             fails.append(f"🔴 FMG 候选只有 {fmg.get('cands')} 张（要求 3 张）")
         elif any(b is True for b in (fmg.get('blank') or [])):

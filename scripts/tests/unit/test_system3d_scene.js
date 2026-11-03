@@ -2,13 +2,13 @@
 /**
  * Node 单元测试：星系 3D 观景的数据适配层（src/renderer/src/utils/system3dScene.js）
  *
- * 为什么必须有这一层：3D 观景里「轨道半径 / 行星类别 / 卫星挂靠 / 初始相位」全是**换算**，
+ * 为什么必须有这一层：3D 观景里“轨道半径 / 行星类别 / 卫星挂靠 / 初始相位”全是**换算**，
  * 而 WebGL 在 CDP 用例里能开、在 CI 上不一定能开 —— 换算错的时候不能再靠"截张图看看"。
  * 本用例把四条口径钉死：
  *   · 确定性：同一份节点两次构景结果逐字节一致（禁 Math.random，判据可复现）；
  *   · 轨道单调：2D 轨道半径越大 → 3D 半径越大，第一圈恒为 6；
  *   · 卫星挂对母星：`parentId` 不匹配的卫星不许跑到恒星上；
- *   · 类别映射：关键字命中顺序（「气态巨行星」不能被「巨行星」或「行星」抢走）+ 认不出时落默认池。
+ *   · 类别映射：关键字命中顺序（“气态巨行星”不能被“巨行星”或“行星”抢走）+ 认不出时落默认池。
  *
  * 另外守两条**源码闸门**（实现搬家/退化时先红）：
  *   · 3D 组件必须走 `defineAsyncComponent(() => import('./System3DView.vue'))`；
@@ -139,7 +139,7 @@ async function main() {
     ];
     for (const [node, want] of cases) {
       const got = S.planetClassForNode({ id: `x:${node.name}`, layer: 'planet', tags: [], ...node });
-      assert(got === want, `「${node.name}」应映射为 ${want}，实得 ${got}`);
+      assert(got === want, `“${node.name}”应映射为 ${want}，实得 ${got}`);
     }
     // 认不出 → 落在默认池里（不能返回 undefined / 越界）
     const pool = ['continental', 'ocean', 'tropical', 'savanna', 'arid', 'desert', 'tundra', 'arctic', 'alpine', 'gaia'];
@@ -215,7 +215,7 @@ async function main() {
     return 'ok';
   });
 
-  check('a5 空间站：tags 记「空间站」→ kind=station 且尺寸固定', () => {
+  check('a5 空间站：tags 记“空间站”→ kind=station 且尺寸固定', () => {
     const s = S.buildSystem3dScene({
       starName: '衡佑',
       planets: [planet('st1', '衡佑站', 75, { tags: ['空间站'] })],
@@ -225,7 +225,7 @@ async function main() {
     assert(b.kind === 'station', `kind 应为 station，实得 ${b.kind}`);
     assert(b.size === S.SYS3D_GEOM.stationSize, `空间站尺寸应为 ${S.SYS3D_GEOM.stationSize}，实得 ${b.size}`);
     assert(s.counts.planets === 0 && s.counts.stations === 1, `counts 不对：${JSON.stringify(s.counts)}`);
-    // 「有 ≥1 颗行星」判据：只有空间站时按钮该灰禁 → hasPlanets 必须为 false
+    // “有 ≥1 颗行星”判据：只有空间站时按钮该灰禁 → hasPlanets 必须为 false
     assert(s.hasPlanets === false, '只有空间站时 hasPlanets 应为 false（按钮判据）');
     return 'ok';
   });

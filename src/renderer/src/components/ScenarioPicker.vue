@@ -1,5 +1,5 @@
 <template>
-  <!-- 🔴 Teleport 到 body（2026-10-17 暮雨二次实测「左侧导航树依旧盖不住」）：
+  <!-- 🔴 Teleport 到 body（2026-10-17 暮雨二次实测“左侧导航树依旧盖不住”）：
        卡片墙即使改成 position:fixed，DOM 上仍在 `.main-content` 内 —— 而
        `.main-content > *` 的入场动画（view-fade-in）带 `transform`，
        **动画期间 transform 会把 fixed 的包含块从视口改写成 main-content**，
@@ -33,8 +33,8 @@
         </label>
         <span class="sp-count" data-testid="sp-count">共 {{ filteredCards.length }} / {{ cards.length }} 个剧本</span>
       </div>
-      <!-- 全局烘焙进度（2026-10-17 暮雨实测「进入的时候有点卡（且没有任何加载提示）」，
-           二测反馈「可能位置太奇怪，我的期望是正中间或中下部」）：
+      <!-- 全局烘焙进度（2026-10-17 暮雨实测“进入的时候有点卡（且没有任何加载提示）”，
+           二测反馈“可能位置太奇怪，我的期望是正中间或中下部”）：
            做成屏幕**中下部**的浮动胶囊（fixed 定位，不随卡片排布移动）——
            骨架卡片先出来，缩略图逐张补齐，"在等什么、等到几"始终在视线正中下方。 -->
       <div v-if="bakeTotal > 0 && bakedIds.size < bakeTotal" class="sp-progress" data-testid="sp-progress">
@@ -44,14 +44,14 @@
 
       <div v-if="!cards.length" class="sp-empty" data-testid="sp-empty">
         <!-- 空态分两种（P0-3，2026-10-17 第三轮）：**这个项目有没有底图**决定用户下一步做什么。
-             旧实现只有一句「进入编辑器后新建剧本」—— 纯新项目里用户照做也建不出东西
+             旧实现只有一句“进入编辑器后新建剧本”—— 纯新项目里用户照做也建不出东西
              （省份/归属都画在底图上），于是"点了没反应"的观感又回来了。 -->
         <template v-if="!hasBaseMap">
           <div class="sp-empty-text" data-testid="sp-empty-nobasemap">这个项目还没有底图</div>
           <div class="sp-empty-sub">
             剧本画在底图上（省份 → 归属 → 时期）。<br />
-            进编辑器后，<b>画布中央</b>会有「导入 .map 底图」按钮，选一份 Azgaar <b>.map</b> 即可；<br />
-            也可以在那里点「新建空底图，自己画」。底图进来后回到这里就能建剧本了。
+            进编辑器后，<b>画布中央</b>会有“导入 .map 底图”按钮，选一份 Azgaar <b>.map</b> 即可；<br />
+            也可以在那里点“新建空底图，自己画”。底图进来后回到这里就能建剧本了。
           </div>
           <div class="sp-empty-actions">
             <button class="sp-btn primary" data-testid="sp-empty-editor"
@@ -61,7 +61,7 @@
         </template>
         <template v-else>
           <div class="sp-empty-text">还没有剧本</div>
-          <div class="sp-empty-sub">进入编辑器后，在「剧本管理」里新建第一条剧本</div>
+          <div class="sp-empty-sub">进入编辑器后，在“剧本管理”里新建第一条剧本</div>
           <button class="sp-btn primary" data-testid="sp-new" @click="$emit('edit', { openManager: true })">
             ＋ 新建剧本
           </button>
@@ -105,7 +105,7 @@
         </button>
         <button class="sp-btn" data-testid="sp-back" @click="$emit('exit')">返回世界</button>
       </div>
-      <div class="sp-foot-hint">点一张卡片直接进入该剧本的起始年 · 「进入编辑器」打开地图编辑与剧本管理</div>
+      <div class="sp-foot-hint">点一张卡片直接进入该剧本的起始年 · “进入编辑器”打开地图编辑与剧本管理</div>
     </div>
   </div>
   </Teleport>
@@ -125,7 +125,7 @@
  *    命中成品位图缓存（`scenarioThumb` 模块级缓存）时**不让出**：那一步零绘制成本，
  *    全命中时卡片墙应当同一拍就完整。
  * ③ **跳过开关**：`window.__SKIP_SCENARIO_PICKER`（harness 注入）= 不经过本视图直达编辑器 ——
- *    保 30+ 个既有用例「点历史剧本 → ScenarioMap 挂载」的路径不变。
+ *    保 30+ 个既有用例“点历史剧本 → ScenarioMap 挂载”的路径不变。
  * ④ **空态分流**（P0-3）：项目里有底图 → 引导建剧本；**没有底图** → 引导先导 .map
  *    （旧实现只有前者：纯新项目照做也建不出东西，"点了没反应"的观感又回来了）。
  */
@@ -144,7 +144,7 @@ const baker = createThumbBaker();
 /** 卡片数据 = 全部剧本（跨底图/跨剧本集），按起始年升序；每张卡记自己的底图 key、剧本集与组内下标 */
 const cards = computed(() => {
   const all = store.scenarios || {};
-  // 按「底图 + 剧本集」分组 buildTimeline：谱系/易主是**同一条时间线内**的语义。
+  // 按“底图 + 剧本集”分组 buildTimeline：谱系/易主是**同一条时间线内**的语义。
   // 2026-10-25 起只按底图分组已经不够 —— 同一张底图上可以有多条互不相干的时间线，
   // 混在一起 buildTimeline 会让岁序、谱系继承、开局态势全部错位（且不报错）。
   const byGroup = new Map();
@@ -166,7 +166,7 @@ const cards = computed(() => {
     const tl = buildTimeline(payload);
     // 🔴 面积索引**按底图算一次、该底图的每条剧本复用**（2026-10-17 第三轮，实测）：
     //    逐条剧本现算面积 = 同一份净面积被算 N 遍，400 省 × 10 剧本实测 597.7ms，
-    //    是「第二次进卡片墙仍要 1 秒」的真凶（缩略图那时已全命中缓存）。
+    //    是“第二次进卡片墙仍要 1 秒”的真凶（缩略图那时已全命中缓存）。
     //    ⚠️ 刻意**不跨渲染缓存**这份索引：几何改了就该重算，缓存只会换来"面积悄悄是旧的"。
     const terrain = store.baseMaps?.[ownerKey]?.terrain || [];
     const areaOf = provinceAreaIndex(terrain);
@@ -231,7 +231,7 @@ const filteredCards = computed(() => {
 const canvasMap = new Map();   // cardId -> HTMLCanvasElement
 // 🔴 已烘完的卡片 id 集合必须是**响应式**的（reactive Set）——
 //    computed 返回的卡片对象是普通对象，直接改 `c.baking` 不触发重渲染，
-//    「烘图中…」会永远挂着（本项目"改了没反应"的经典形态）。
+//    “烘图中…”会永远挂着（本项目"改了没反应"的经典形态）。
 const bakedIds = reactive(new Set());
 /** 还需要烘图的卡片总数（全局进度条的分母；= 0 表示无需烘图，进度行不显示） */
 const bakeTotal = computed(() => cards.value.filter((c) => c.hasMap).length);

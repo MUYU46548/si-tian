@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 """用例 88：剧本视图的省份右键菜单**必须由真实的 contextmenu 事件打开**
 
-来源：2026-10-07 做「剧本专用真机演练」时发现的真缺陷。
+来源：2026-10-07 做“剧本专用真机演练”时发现的真缺陷。
 
 缺陷原貌（修复前）：
   `contextMenu.value = { show: true, … }` 只出现在 `onCanvasClick` 的
   `if (event.button === 2)` 分支里 —— 而 **浏览器对右键根本不派发 `click`**
   （只派发 `contextmenu` / `auxclick`），当时唯一的 contextmenu 监听器是
   `(e) => e.preventDefault()`，**只拦不弹** → 真机上**右键菜单整片打不开**。
-  失效后果据实说：菜单里「重命名」「更改生物群系」在属性面板另有入口、「删除」在
-  「更多 → 删除 (E)」工具另有入口，**真正只剩这个菜单有的能力是「复制省份」**；
+  失效后果据实说：菜单里“重命名”“更改生物群系”在属性面板另有入口、“删除”在
+  “更多 → 删除 (E)”工具另有入口，**真正只剩这个菜单有的能力是“复制省份”**；
   但"右键点了没反应"本身就是真缺陷（用户第一反应就是右键）。
 
   为什么长期没被发现：CDP 用例里自己 `dispatchEvent(new MouseEvent('click', {button:2}))`
@@ -115,7 +115,7 @@ SETUP_JS = r"""(async () => {
   if (!made || made.success === false) return JSON.stringify({ fails: ['造省失败：' + JSON.stringify(made)] });
   await wait(500);
 
-  // 画布可能因「省份数变化」自动适屏 → 扫一遍屏幕网格，找出这台相机下真的能命中的点
+  // 画布可能因“省份数变化”自动适屏 → 扫一遍屏幕网格，找出这台相机下真的能命中的点
   let hit = null;
   for (let y = 30; y < ch && !hit; y += 30) {
     for (let x = 30; x < cw; x += 30) {
@@ -184,7 +184,7 @@ F1_JS = r"""(async () => {
   const items = Array.from(menu.querySelectorAll('.ctx-item')).map((x) => (x.textContent || '').trim());
   notes.items = items;
   for (const want of ['重命名', '更改生物群系', '复制省份', '删除']) {
-    if (!items.some((t) => t.includes(want))) fails.push('菜单缺少「' + want + '」');
+    if (!items.some((t) => t.includes(want))) fails.push('菜单缺少“' + want + '”');
   }
   if (!sc.selectedProvince || sc.selectedProvince.id !== 'p88a') {
     fails.push('右键没有选中该省份：' + JSON.stringify(sc.selectedProvince && sc.selectedProvince.id));

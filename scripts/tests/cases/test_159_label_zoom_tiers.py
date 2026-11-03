@@ -3,7 +3,7 @@
 """用例 159：文字层随缩放分层 + 字号自适应（Paradox 式）
 
 背景（2026-10-27，用户点名）：
-  「放大清晰显示省份名，缩小只看见势力名称」——这是 EU4/Paradox 的成熟做法。
+  “放大清晰显示省份名，缩小只看见势力名称”——这是 EU4/Paradox 的成熟做法。
   我们此前三件事各走各的：
     · 势力名/省名按**可见比例**分档（正确）；
     · 城镇名/河名却按**绝对 cameraScale** 分档 —— 绝对 scale 依赖数据量纲
@@ -57,7 +57,7 @@ def run(cdp):
         { id: 1, name: '首都甲', x: 270, y: 318, capital: 1, group: 'capital', population: 90 },
         { id: 2, name: '大城乙', x: 392, y: 318, capital: 0, population: 80 },
       ];
-      // 河道与山系都放在「省形心」附近：close 档视口只有 ~145×54 世界单位，
+      // 河道与山系都放在“省形心”附近：close 档视口只有 ~145×54 世界单位，
       // 放远了会被视口裁剪掉，handler 里就查不到它（第一版就栽在这）。
       bm.rivers = [{ id: 'r159', name: '测试河', points: [{x:250,y:300},{x:330,y:296},{x:410,y:300}],
                      discharge: 900, width: 2 }];
@@ -109,7 +109,7 @@ def run(cdp):
         }
         return n;
       };
-      // 用「可见比例」反推相机：ratio = (cw / scale) / MAPW
+      // 用“可见比例”反推相机：ratio = (cw / scale) / MAPW
       const setRatio = async (ratio) => {
         const W = SM.cw(), H = SM.ch();
         SM.cameraScale = W / (ratio * MAPW);
@@ -153,7 +153,7 @@ def run(cdp):
       const far = await snapshot(3.0);
       const mid = await snapshot(1.0);
       // 2026-10-27：势力名改成 EU4 式大字后，会盖住同一形心附近的河名/省名（产品上是对的：
-      // 国家名优先级最高）。本用例测的是「档位 → 该出哪几层」，所以从 near 档起**关掉
+      // 国家名优先级最高）。本用例测的是“档位 → 该出哪几层”，所以从 near 档起**关掉
       // 势力名图层**，让低优先级的河名/省名有位置可放 —— 不是在测避让。
       SM.showPolityLabels = false;
       await tick(80);
@@ -228,7 +228,7 @@ def run(cdp):
         if k_far < 1.0 - 1e-6:
             fails.append(f'缩小档系数不该小于 1.0（缩小时不缩字）：{k_far}')
         # 排布字号：2026-10-27 起势力名**按领土屏幕面积**给大小（EU4 参考图），
-        # 所以不再与字号系数成固定比例；判据改为「放大后只增不减 + 落在 20~110px」。
+        # 所以不再与字号系数成固定比例；判据改为“放大后只增不减 + 落在 20~110px”。
         # 用 far / mid 两档取字号（near 起势力名图层已关，见上）。
         sp_far, sp_near = far.get('sizePolity') or 0, mid.get('sizePolity') or 0
         if sp_far and sp_near:

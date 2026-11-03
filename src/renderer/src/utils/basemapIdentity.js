@@ -1,8 +1,8 @@
-// utils/basemapIdentity.js — 底图「一笔未改」判定 + 重导时的旧省→新省映射（纯函数，2026-10-25）
+// utils/basemapIdentity.js — 底图“一笔未改”判定 + 重导时的旧省→新省映射（纯函数，2026-10-25）
 //
 // 019 的语义（暮雨 2026-10-25 拍板）：
 //   · 换新 .map = **新底图 + 旧归属迁过去**；
-//   · 「同一底图只补数据」只限这张底图**一笔未改**；
+//   · “同一底图只补数据”只限这张底图**一笔未改**；
 //   · 只要用户动过一笔，它就和原底图不是一个东西。
 //
 // 所以需要两件纯函数：
@@ -112,7 +112,7 @@ export function stampBasemapSource(bm, { file = '', at = new Date().toISOString(
   };
 }
 
-/** 「一笔未改」= 当前指纹 == 导入时指纹；没有指纹（旧数据）→ 一律视为改过（保守） */
+/** “一笔未改”= 当前指纹 == 导入时指纹；没有指纹（旧数据）→ 一律视为改过（保守） */
 export function isBasemapPristine(bm) {
   const stored = bm && bm.source && bm.source.contentHash;
   if (!stored) return false;
@@ -209,7 +209,7 @@ export function mapProvinces(oldTerrain, newTerrain) {
 }
 
 /**
- * 把「属于旧底图」的剧本迁到新底图 key，并按 `mapping.byOld` 重映射归属/易主。
+ * 把“属于旧底图”的剧本迁到新底图 key，并按 `mapping.byOld` 重映射归属/易主。
  *
  * 语义（见 REIMPORT_019_20261025.md）：
  *   · 只动 `ownerKey === oldKey` 的剧本；其它底图的剧本原样返回（同引用）。

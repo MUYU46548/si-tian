@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""N1 判据工具：剧本视图「同机位像素指纹」（2026-10-30）
+"""N1 判据工具：剧本视图“同机位像素指纹”（2026-10-30）
 
-N1（渲染层接口化）的第一条判据是「**重构前后同机位截图逐像素一致**」。
+N1（渲染层接口化）的第一条判据是“**重构前后同机位截图逐像素一致**”。
 它需要一个能重复的取景 + 一个能比较的指纹，这就是本工具：
 
-  · 取景固定：同一份 fixture 数据 → 进「历史剧本」→ 适屏 → 记录 camera(x,y,scale) 与画布尺寸；
+  · 取景固定：同一份 fixture 数据 → 进“历史剧本”→ 适屏 → 记录 camera(x,y,scale) 与画布尺寸；
   · 指纹两枚：
       ① `hash`          —— 整张画布 RGBA 的 FNV-1a（**逐像素**，抗"看起来差不多"）；
       ② `hashNoLabels`  —— 关掉文字标注后的同一张画布（把"文字层"与"几何层"分开比：
@@ -148,7 +148,7 @@ def main():
         wait_for(cdp, "!!document.querySelector('.scenario-map-container canvas')", timeout=60, desc='剧本画布挂载')
         time.sleep(1.2)
 
-        # 场景固定：自带底图 + 3 个省份（含一个沿海省，好把「海岸浅滩」那层也纳入画面）。
+        # 场景固定：自带底图 + 3 个省份（含一个沿海省，好把“海岸浅滩”那层也纳入画面）。
         # 为什么要自带：harness 项目里没有剧本底图，空画布拍出来是一片纯色 —— 那种基线什么都守不住。
         scene = eval_json(cdp, """(() => {
           const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
@@ -203,7 +203,7 @@ def main():
           ];
           s.baseMaps[KEY].rivers = [
             { id: 'river_pix', name: '基线河', points: [{ x: 80, y: 260 }, { x: 160, y: 230 }, { x: 240, y: 210 }, { x: 320, y: 190 }], width: 1.2 },
-            // 导入河（id 不以 river_ 开头）：走 drawRivers 那条路；选中它才能覆盖「选中高亮」那层
+            // 导入河（id 不以 river_ 开头）：走 drawRivers 那条路；选中它才能覆盖“选中高亮”那层
             { id: 'imp_pix', name: '导入河', discharge: 300, width: 2,
               points: [{ x: 40, y: 120 }, { x: 140, y: 140 }, { x: 240, y: 120 }, { x: 340, y: 100 }, { x: 440, y: 130 }] },
           ];
@@ -218,7 +218,7 @@ def main():
         ck('场景已铺设', bool(scene[0]) and scene[1].get('ok'), scene[1])
         time.sleep(0.5)
 
-        # 可选：把画布切到「编辑态」再拍（顶点手柄 / 框选 / 笔刷圈那几层只在这时候出现，
+        # 可选：把画布切到“编辑态”再拍（顶点手柄 / 框选 / 笔刷圈那几层只在这时候出现，
         # 默认场景里它们整体不触发 —— 只拍静态场景等于没给那几刀留判据）
         if scene_name == 'edit':
             edit = eval_json(cdp, """(() => {

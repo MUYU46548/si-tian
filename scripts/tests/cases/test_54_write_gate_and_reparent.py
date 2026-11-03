@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 54：只读一致性（内存编辑闸门）+ 批量归位 + 「前往编辑」直达画布
+"""用例 54：只读一致性（内存编辑闸门）+ 批量归位 + “前往编辑”直达画布
 
-背景（2026-09-21 用户反馈：「各种建筑物散落在行星地图上」「当前各功能是否完善」）：
-  a) **内存编辑闸门**：写闸门原来只守 11 条「落盘入口」，而画布上的编辑（行星笔刷/区域/内部家具/
+背景（2026-09-21 用户反馈：“各种建筑物散落在行星地图上”“当前各功能是否完善”）：
+  a) **内存编辑闸门**：写闸门原来只守 11 条“落盘入口”，而画布上的编辑（行星笔刷/区域/内部家具/
      剧本染色）在只读态仍能改内存 —— 改动看起来生效（画布变了、列表多了），但永远不会落盘 = 静默丢数据。
-     现在 `execute()` 与若干「直接写数据、不走 undo 栈」的 store 函数同样过 `guardWrite`，
+     现在 `execute()` 与若干“直接写数据、不走 undo 栈”的 store 函数同样过 `guardWrite`，
      且任何拒绝都会留下**回音**（`writeGate.lastRejection` → App.vue 状态栏），绝不静默。
-  b) **批量归位**：ProjectPanel 支持 Ctrl/⌘ 多选 → 「移到此父级」（`projectStore.moveEntities`，**一条** undo），
+  b) **批量归位**：ProjectPanel 支持 Ctrl/⌘ 多选 → “移到此父级”（`projectStore.moveEntities`，**一条** undo），
      用来把散落在行星下的设施/地点一次性归入城镇/区域。
-  c) **前往编辑直达画布**：向导结果卡片的「前往编辑」经 `canvasBridge` 的 goto 注册口
+  c) **前往编辑直达画布**：向导结果卡片的“前往编辑”经 `canvasBridge` 的 goto 注册口
      （面板不 import geodata）把画布切到该实体所在视图并选中。
 
 覆盖：
@@ -53,13 +53,13 @@ def _prelude():
 def _function_body(src, fn):
     """截取指定函数的函数体（括号配对；跳过字符串与行注释）。找不到返回 None。
 
-    为什么要这么麻烦：旧校验按**文件**判「出现过 guardWrite(」——
+    为什么要这么麻烦：旧校验按**文件**判“出现过 guardWrite(”——
     一个文件里只要有一个守卫，整行就算通过，同文件里其余裸奔的写函数永远查不出来。
-    现在必须精确到**函数体**，才能发现「同文件内漏守」（2026-09-24 修，实测踩到过）。
+    现在必须精确到**函数体**，才能发现“同文件内漏守”（2026-09-24 修，实测踩到过）。
 
     ⚠️ 2026-10-02 修一处**误报**：旧实现是 `src.find('{', m.end() - 1)` —— 只要参数表里出现
     对象字面量（如 `opts = {}` 或解构默认值），它就把**参数表里那个 `{`** 当函数体起点，
-    于是配对立刻闭合、截出来的是空串 → 明明有守卫也报「没有 guardWrite/blocked」。
+    于是配对立刻闭合、截出来的是空串 → 明明有守卫也报“没有 guardWrite/blocked”。
     实测踩到：给 `applyProvinceLasso` 加第 5 参 `opts = {}` 后 test_54 a 段立刻红。
     正确做法：先跳过**参数表**（圆括号配对，同样跳过字符串），再找参数表之后的第一个 `{`。
     """
@@ -167,14 +167,14 @@ def sub_source_contract(cdp):
 
 
 # ── 反向校验：是写口却**没登记**（2026-10-08 补）──────────────────────────────
-# 为什么必须有：上面那条只回答「登记了 ⇒ 必须有守卫」。于是「新增写口忘了登记」永远不上报 ——
+# 为什么必须有：上面那条只回答“登记了 ⇒ 必须有守卫”。于是“新增写口忘了登记”永远不上报 ——
 # 这正是本项目的**结构性漏网**：2026-10-08 用同一套规则干跑，实测漏了 18 个
 # （文化/宗教笔刷、底图绑定/迁移、切片点 4 个、省份笔刷族 5 个、清空行星内容、重算派生…），
 # 其中 `applyCultureBrush` / `applyReligionBrush` / `deriveAllLayers` 连首行守卫都没有。
 #
 # 判据：函数体出现 `guardWrite(` / `blocked(` / `commitHeightmap(` ⇒ 它**就是**写口
 #   （作者显式想过只读态，或在写共享高度图）⇒ 必须在契约里。
-# 为什么用这三个信号而不是「赋值给 baseMaps.value / mapData.value」：后者会把
+# 为什么用这三个信号而不是“赋值给 baseMaps.value / mapData.value”：后者会把
 #   `execute()` 内部 redo 的写入也算进来 —— 那类函数是**安全**的（拒绝发生在 redo 之前），
 #   全算进来会得到 27 个"候选"、需要一张很长的白名单，等于把闸门变成摆设。
 WRITE_SIGNAL = re.compile(r'guardWrite\(|blocked\(|commitHeightmap\(')
@@ -289,7 +289,7 @@ def sub_writable_works(cdp):
   const nameBefore = node.name;
   G.setWriteMode('project', '用例：可写态');
   // ⚠️ 先加楼层再改名：addFloor 不进 undo 栈（已知不一致，见用例尾部说明），
-  //    所以「一次 undo」只能撤销改名 —— 这里按现状断言，不掩盖。
+  //    所以“一次 undo”只能撤销改名 —— 这里按现状断言，不掩盖。
   const floor = s.addFloor('rw_building', '可写层');
   const nowFloors = ((s.interiorData['rw_building'] || {}).floors || []).length;
   const undoBefore = U.historyLength.value;
@@ -374,7 +374,7 @@ def sub_batch_reparent(cdp):
         fails.append(f"批量移动未成功 → {info}")
     if info.get('afterParents') != [info.get('targetId'), info.get('targetId')]:
         fails.append(f"移动后 parentId 不对 → {info}")
-    # 「一条 undo」的判据：① 栈顶就是那条批量命令（label 可辨识）；② 一次 undo 把两个实体都还原
+    # “一条 undo”的判据：① 栈顶就是那条批量命令（label 可辨识）；② 一次 undo 把两个实体都还原
     # （不比对历史长度 —— 历史有 100 条上限，到顶后长度不再增长，Δ 会骗人）
     if '批量改父级' not in str(info.get('lastLabel')):
         fails.append(f"批量移动未进 undo 栈（lastLabel={info.get('lastLabel')}）full={info}")
@@ -386,12 +386,12 @@ def sub_batch_reparent(cdp):
         fails.append(f"undo 未恢复原父级 → {info}")
     if fails:
         return False, '；'.join(fails)
-    return True, (f"批量改父级：2 个实体 → 城市「{info.get('targetId')}」，一条 undo 可撤可还原；"
+    return True, (f"批量改父级：2 个实体 → 城市“{info.get('targetId')}”，一条 undo 可撤可还原；"
                   f"已在目标下跳过；循环被拒（{info.get('cycleErr')[:24]}…）")
 
 
 def sub_goto_canvas(cdp):
-    """e) 「前往编辑」直达画布：行星/区域/建筑三种目标"""
+    """e) “前往编辑”直达画布：行星/区域/建筑三种目标"""
     expr = "(async () => {" + PRELUDE.replace('STORE_E', STORE) + """
   const planet = s.nodes.find(n => n.layer === 'planet');
   const region = s.nodes.find(n => n.layer === 'region');
@@ -455,7 +455,7 @@ def sub_goto_canvas(cdp):
         fails.append('导航用例建筑未清场')
     if fails:
         return False, '；'.join(fails)
-    return True, (f"「前往编辑」直达画布：行星 → {info.get('viewPlanet')}（currentPlanet 一致）、"
+    return True, (f"“前往编辑”直达画布：行星 → {info.get('viewPlanet')}（currentPlanet 一致）、"
                   f"区域 → {info.get('viewRegion')}（currentArea 一致）、"
                   f"建筑 → {info.get('viewBuilding')}（{info.get('label')}，currentBuilding 一致）；"
                   f"canvasBridge.gotoEntity 注册口可用")
@@ -492,4 +492,4 @@ def run(cdp):
         return False, f'[e] 前往编辑直达画布：{msg}'
 
     return True, ('内存编辑闸门（只读零副作用 + 拒绝回音 + 可写恢复）；批量改父级一条 undo（跳过/防循环）；'
-                  '「前往编辑」经 canvasBridge 直达 行星/区域/建筑 三种视图')
+                  '“前往编辑”经 canvasBridge 直达 行星/区域/建筑 三种视图')

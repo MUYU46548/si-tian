@@ -1,4 +1,4 @@
-// utils/heightmapAccess.js — 「一张底图到底该用哪份高度图」的唯一判定（A1/M1，2026-09-24）
+// utils/heightmapAccess.js — “一张底图到底该用哪份高度图”的唯一判定（A1/M1，2026-09-24）
 //
 // ── 要解决的问题 ─────────────────────────────────────────────────────────────
 // 剧本底图（`baseMaps[key]`）与行星（`mapData[planetId]`）**各持一份高度图**，互不相通：
@@ -10,10 +10,10 @@
 //   · 没绑定  → 用底图自己那份，行为与从前**完全一致**（自建底图 / 旧项目 → 向后兼容）
 //
 // ── 为什么必须读写一起切 ─────────────────────────────────────────────────────
-// 剧本侧原来的写入模式是「整体替换 baseMap 对象」：
+// 剧本侧原来的写入模式是“整体替换 baseMap 对象”：
 //     `baseMaps.value = { ...baseMaps.value, [key]: { ...baseMap, heightmap: { ...hm, h } } }`
-// 这种写法**天然与"共享引用"冲突**（一写就把引用换掉了）。所以只把「读」切到访问器、
-// 而「写」还写回底图自己，会得到「读行星 / 写自己」—— 比不改更糟。
+// 这种写法**天然与"共享引用"冲突**（一写就把引用换掉了）。所以只把“读”切到访问器、
+// 而“写”还写回底图自己，会得到“读行星 / 写自己”—— 比不改更糟。
 // 结论：**同一处代码的读与写必须一起走本模块的解析 + store 的 commit**。
 //
 // ── 本文件只放纯函数（不碰 store / 不碰 Vue）──────────────────────────────────
@@ -45,10 +45,10 @@ export function resolveHeightmap(baseMap, mapDataById) {
     const planet = mapDataById && mapDataById[pid];
     if (!planet) {
       // 🔴 **悬空绑定**（行星已被删除 / 改名 / 从未建立地图数据）：
-      //    绝不能静默返回 null —— 那会让底图的高度图凭空消失，用户只看到「地图怎么空了」。
-      //    改为**回落到自身**（若还留着）并回报 `dangling`，由调用方提示「此底图绑定的行星已不存在」，
+      //    绝不能静默返回 null —— 那会让底图的高度图凭空消失，用户只看到“地图怎么空了”。
+      //    改为**回落到自身**（若还留着）并回报 `dangling`，由调用方提示“此底图绑定的行星已不存在”，
       //    引导用户解绑或重新绑定。
-      //    ⚠️ 与下面的「行星存在但还没高度图」严格区分：那种情况是**正常**的"还没创建"，
+      //    ⚠️ 与下面的“行星存在但还没高度图”严格区分：那种情况是**正常**的"还没创建"，
       //       必须返回 planet/null（不能回落到 self —— 那正是双源漂移的起点）。
       return {
         heightmap: (baseMap && baseMap.heightmap) || null,
@@ -70,7 +70,7 @@ export function resolveHeightmap(baseMap, mapDataById) {
  *    本仓既有 fixture（`test_39` / `test_67` / `test_68`）用的是**只有网格点、没有 h 的历史高度图**
  *    —— 那种形状在真实数据里也存在（旧版本写过）。收紧会让 `resolveHeightmap` 返回 null，
  *    于是笔刷 / 派生 / 绑定全线 `Cannot read properties of null (reading 'h')`。
- *    「**有没有地形**」（用于"缺项诊断"与状态栏）是**另一个问题**，判据在
+ *    “**有没有地形**”（用于"缺项诊断"与状态栏）是**另一个问题**，判据在
  *    `utils/heightmapRaster.buildHeightmapRaster`（空高度 → 返回 null，不画错）与
  *    `utils/terrainRepresentation.hasHeightmapContent`；解析器也不再产出空壳（见 azgaar-parser）。
  */
@@ -79,7 +79,7 @@ export function hasGrid(heightmap) {
 }
 
 /**
- * 规划「把底图绑定到行星」这一步要做的改动 —— **纯函数，只返回计划，不改数据**。
+ * 规划“把底图绑定到行星”这一步要做的改动 —— **纯函数，只返回计划，不改数据**。
  *
  * 迁移规则（一次性）：
  *   · 底图有自己的高度图、行星没有 → 把**底图那份搬到行星**（`migrate` 字段），底图侧不再保留。
@@ -98,10 +98,10 @@ export function planBindBaseMapToPlanet(baseMap, planetId, mapDataById, allBaseM
   if (!baseMap) return { ok: false, error: '底图不存在' };
   if (!planetId) return { ok: false, error: '没有指定要绑定的行星' };
   const planet = mapDataById && mapDataById[planetId];
-  if (!planet) return { ok: false, error: `行星「${planetId}」还没有地图数据，请先进入该行星地图` };
+  if (!planet) return { ok: false, error: `行星“${planetId}”还没有地图数据，请先进入该行星地图` };
 
   // ★ R2（2026-09-25）：**一星一图** —— 同一颗行星的高度图不能被两张底图同时绑定。
-  //   否则两张「历史时期」地图会共用一份地形：在时期 A 涂的山会立刻出现在时期 B 上，
+  //   否则两张“历史时期”地图会共用一份地形：在时期 A 涂的山会立刻出现在时期 B 上，
   //   而用户以为每张地图各有自己的地形。这类串味**不会报错**，往往几周后才被发现。
   //   只有调用方传了 `allBaseMaps`（整个 baseMaps 对象）才检查；用**引用比较**排除自身
   //   —— 底图的键既可能是行星名也可能是 id（见 store/geodata.js 的 idRefDicts 注释），不可靠。
@@ -114,8 +114,8 @@ export function planBindBaseMapToPlanet(baseMap, planetId, mapDataById, allBaseM
         ok: false,
         conflict: true,
         conflictKind: 'planet-taken',
-        error: `行星「${planetId}」已被底图「${holder}」绑定 —— 一份地形不能同时服务两张地图`
-             + `（否则两张图会共享地形）。请先解绑「${holder}」`,
+        error: `行星“${planetId}”已被底图“${holder}”绑定 —— 一份地形不能同时服务两张地图`
+             + `（否则两张图会共享地形）。请先解绑“${holder}”`,
         holderKey: k,
         holderName: holder,
         planetId,
@@ -151,8 +151,8 @@ export const DEFAULT_GRID_SPACING = 14.4;
  * 由地形多边形的包围盒推出一套栅格（原点对齐、行列取整）—— 供**未绑定底图**创建高度图用。
  *
  * 为什么需要它：底图的高度图此前**只有 `.map` 导入一条来源**，用户新建一张底图后
- * 高度/群系/文化笔刷与一键派生全都因为「没有 heightmap」而直接 return（==画不了==，且几乎没有反馈）。
- * 这个函数补上「从零开始」的能力：没有地形时给一个默认方框，有地形时按它的包围盒外扩。
+ * 高度/群系/文化笔刷与一键派生全都因为“没有 heightmap”而直接 return（==画不了==，且几乎没有反馈）。
+ * 这个函数补上“从零开始”的能力：没有地形时给一个默认方框，有地形时按它的包围盒外扩。
  *
  * @param {Array} terrain 地形多边形数组（可为空）
  * @param {number} spacing 格子间距（世界单位）
@@ -187,7 +187,7 @@ export function buildGridFromTerrain(terrain, spacing = DEFAULT_GRID_SPACING, ma
   return { points, spacing, cellsX: cols, cellsY: rows, count: points.length };
 }
 
-/** 「解绑」：只摘掉绑定字段（行星侧那份保持不动，底图侧从 null 开始 —— 由 ensure 懒创建） */
+/** “解绑”：只摘掉绑定字段（行星侧那份保持不动，底图侧从 null 开始 —— 由 ensure 懒创建） */
 export function planUnbindBaseMap(baseMap) {
   const next = { ...(baseMap || {}) };
   delete next[BASEMAP_PLANET_KEY];
@@ -200,7 +200,7 @@ export function planUnbindBaseMap(baseMap) {
  * 为什么抽出来：这个"最近点"在项目里已经是第三次被写（`scenarioEditing.getHeightAt`、
  * 各处笔刷的空间索引、现在的吸管拾取）。各写一份的代价不是报错，而是**口径漂移** ——
  * 有人用 `Math.hypot` 有人用平方距离、有人卡 `spacing` 有人卡 `spacing*1.5`，
- * 于是「吸管吸到的格子」与「笔刷刷到的格子」慢慢不是同一格。
+ * 于是“吸管吸到的格子”与“笔刷刷到的格子”慢慢不是同一格。
  *
  * @param {{points: Array, spacing?: number}} grid 网格（`heightmap.grid`）
  * @param {number} x 世界坐标

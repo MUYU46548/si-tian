@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Node 单测：「这张行星地图有没有东西」的判定（`src/renderer/src/utils/mapContent.js`）
+ * Node 单测：“这张行星地图有没有东西”的判定（`src/renderer/src/utils/mapContent.js`）
  *
- * 触发（用户 2026-11-01 原话）：「行星地图有一堆早期测试遗留笔刷产物，
- * 却每次都告诉我『这张行星地图还是空的』，令人忍俊不禁。」
+ * 触发（用户 2026-11-01 原话）：“行星地图有一堆早期测试遗留笔刷产物，
+ * 却每次都告诉我‘这张行星地图还是空的’，令人忍俊不禁。”
  *
  * 修前口径：`useAutoRegions.js#fogMode` = `!(terrain.length || regions.length)` ——
  * 只认两个数组，于是**笔刷涂出来的图**（terrainGrid / heightmap 通道 / 河流 / 道路 / 标记 /
- * 文字 / .map 省份）一律被判空：既盖雾、又弹「还是空的」提示。
+ * 文字 / .map 省份）一律被判空：既盖雾、又弹“还是空的”提示。
  *
  * 判据：
  *   a1 空对象 / null / 无字段 → 空
@@ -104,7 +104,7 @@ async function main() {
   });
 
   check('a6b 反向口径：**纯标注**（标记/文字/聚簇）不算底图有内容', () => {
-    // 空态卡给的是「导入 .map 底图 / 开始绘制」—— 只有标注时底图仍然是空的，卡片该在。
+    // 空态卡给的是“导入 .map 底图 / 开始绘制”—— 只有标注时底图仍然是空的，卡片该在。
     // （test_115 正是靠这条：它先塞标记/聚簇，再点空态里的导入按钮。）
     eq(mapHasContent({ markers: [{ id: 'm1', x: 1, y: 2 }] }), false, '只有标记');
     eq(mapHasContent({ textLabels: [{ id: 'l1', text: '甲' }] }), false, '只有文字');
@@ -122,7 +122,7 @@ async function main() {
     assert(/from '\.\.\/utils\/mapContent'/.test(code), 'useAutoRegions 没有 import mapContent');
     assert(/mapHasContent\(/.test(code), 'useAutoRegions 没有调用 mapHasContent');
     assert(!/terrain\?\.length > 0\) \|\| \(currentMapData\.value\.regions\?\.length/.test(code),
-      'useAutoRegions 还留着「只认 terrain/regions」的旧判定');
+      'useAutoRegions 还留着“只认 terrain/regions”的旧判定');
     const util = fs.readFileSync(path.join(SRC_UTILS, 'mapContent.js'), 'utf8');
     assert(/export function mapHasContent/.test(util), 'mapContent.js 缺 mapHasContent');
     assert(/export function hasAnyValue/.test(util), 'mapContent.js 缺 hasAnyValue');

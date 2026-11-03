@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""T2 取证：真机上「导入知识库内容 → 保存链断在哪」（2026-10-06）
+"""T2 取证：真机上“导入知识库内容 → 保存链断在哪”（2026-10-06）
 
 背景：`drill_quit_flush.py` 观察到导入后磁盘 12 秒零变化，但生产构建里
 `__vue_app__._instance` 是 null，读不到 store，只能看到"没落盘"这个结果。
 
 本脚本用 **dev 模式**（`NODE_ENV=development` + vite dev server）复现同一条链路 ——
-dev 下 `_instance` 可用，于是能把「没落盘」拆成可判定的几步：
+dev 下 `_instance` 可用，于是能把“没落盘”拆成可判定的几步：
   exportCanvas 是否抛 / saveProject 是否被调用 / 是否抛 / 抛在哪儿 / writeMode 是什么。
 
 安全措施（务必保留）：
@@ -305,7 +305,7 @@ def main():
         sn = cdp.eval(SNAP_PROBE)
         print(json.dumps(sn, ensure_ascii=False, indent=2))
 
-        print('\n-- D) 点「导入知识库内容」并观察 %d 秒 --' % obs)
+        print('\n-- D) 点“导入知识库内容”并观察 %d 秒 --' % obs)
         r = cdp.eval("(() => { const b = %s; if (!b) return 'no-btn'; b.click(); return 'ok'; })()" % IMPORT_BTN)
         ck('点击导入按钮', r == 'ok', r)
         for i in range(0, obs, 2):

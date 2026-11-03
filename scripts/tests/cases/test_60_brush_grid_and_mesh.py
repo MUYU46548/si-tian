@@ -3,22 +3,22 @@
 """用例 60：涂色网格覆盖整张地图 + 生物群系层反马赛克 + 剧本底图的手绘/性能
 
 用户实测三条（2026-09-22 第三轮）：
-  A「地形笔刷……似乎无法越过某条隐藏界限，在画布某些区域无法绘制，形成明显的真空区」
-  B「群系（高度）笔刷一画就卡，是整个司天卡死的级别……约二十秒后地图上出现神秘草绿色方块」
-  C「历史剧本的绘制（底图编辑）很卡……绘制功能有退化为早期版本描点连线模拟器的风险……
-     自由轮廓视图下这个让人产生密集恐惧症的恶心视图」
+  A“地形笔刷……似乎无法越过某条隐藏界限，在画布某些区域无法绘制，形成明显的真空区”
+  B“群系（高度）笔刷一画就卡，是整个司天卡死的级别……约二十秒后地图上出现神秘草绿色方块”
+  C“历史剧本的绘制（底图编辑）很卡……绘制功能有退化为早期版本描点连线模拟器的风险……
+     自由轮廓视图下这个让人产生密集恐惧症的恶心视图”
 
 量化归因（CDP 实测，真实库 `乐园星`）：
   A 涂色网格 = 高度图范围 + 16 格 → 世界矩形 [-1759,-1259]~[1682,1074]，而 worldBounds 是
     [-1550,-1050]~[1867,1629]：**网格只盖住地图的 87.7%**，底部 555m 的条带看得见却涂不上，
     落点在网格外时 paint() 的 clamp 让整笔静默无效。
-  B `planetDrawing.drawHeightmap` 还是上一轮「反马赛克」只改 terrainGrid 时**漏掉的另一半**：
+  B `planetDrawing.drawHeightmap` 还是上一轮“反马赛克”只改 terrainGrid 时**漏掉的另一半**：
     逐格 roundRect + `ctx.filter = blur(1.4/zoom)` + 13 个分桶各一次 fill（画布滤镜每次 fill
     都要整层重做）。headless 实测高度图模式中位帧 **66ms**（关掉该层 33ms）；草绿色方块就是
     这一堆圆角格（草地色）终于画完的样子。
   C `rasterizeProvinces` 走 Vue 响应式代理做 O(格数 × 点数) 热循环：6 省 3600 点 / 3124 格实测
     **838.6ms**（真实库 desite 是 21 省 25930 点）；省份网格又是逐格 roundRect（格间缝隙连成
-    深色网格、四角交汇处露出「点」= 用户说的密集恐惧症视图）；「绘制」只有描点一条路。
+    深色网格、四角交汇处露出“点”= 用户说的密集恐惧症视图）；“绘制”只有描点一条路。
 
 验收点（每条对应一个真实症状）：
 1. 涂色网格范围 = 高度图 ∪ 地图可见范围 ∪ 已涂内容 → 网格世界矩形必须**包住 worldBounds**
@@ -26,7 +26,7 @@
 3. 生物群系层源码零 roundRect / 零 ctx.filter，改走 buildLabelOutlines + 内容哈希缓存
 4. 生物群系层不再是空白也不再有方块：图层开关前后画布唯一色数有可观差异，轮廓环数 > 0
 5. 省份网格不再逐格 roundRect（改矢量轮廓）；`rasterizeProvinces` 热循环不再走响应式代理
-6. 「绘制」工具按住拖动 = 一笔成型的自由绘制（轨迹 → RDP 简化 → 省份），且描点仍可用
+6. “绘制”工具按住拖动 = 一笔成型的自由绘制（轨迹 → RDP 简化 → 省份），且描点仍可用
 """
 import json
 import os
@@ -111,7 +111,7 @@ PAINT_AT = r"""
   if (!b.terrainGrid.value) b.initTerrainGrid();
   if (!b.terrainGrid.value) return JSON.stringify({ err: 'no-grid' });
   // 每次都现读 terrainGrid.value：一笔结束后 applySnapshot 会**整体替换**数组对象，
-  // 缓存旧引用会数到「没涂过的那一份」（第一版探针就踩了这个假红）
+  // 缓存旧引用会数到“没涂过的那一份”（第一版探针就踩了这个假红）
   const count = () => { const G = b.terrainGrid.value; let n = 0; for (let i = 0; i < G.length; i++) if (G[i] !== 255) n++; return n; };
   b.terrainBrushSize.value = 8;
   const g0 = b.gridGeometry();
@@ -215,7 +215,7 @@ SC_FIXTURE = r"""
 })()
 """
 
-# ⚠️ 网格现在是**内部中间层**（P0 第二块删掉了「网格视图」开关）：它只在**涂抹进行中**
+# ⚠️ 网格现在是**内部中间层**（P0 第二块删掉了“网格视图”开关）：它只在**涂抹进行中**
 # 叠一层即时反馈。所以量它必须真的进入一次涂抹 —— 而且要走**真鼠标**（mousedown）：
 # `provStrokeActive` 是组件里的普通 let，探针改不动，只有真事件才能把它置真。
 SC_MESH = r"""
@@ -254,7 +254,7 @@ FREE_DRAW = r"""
     canvasEl.dispatchEvent(mk('mousemove', cx + Math.cos(a) * 150, cy + Math.sin(a) * 100));
   }
   canvasEl.dispatchEvent(mk('mouseup', cx + 150, cy));
-  // 浏览器在 mouseup 之后还会派发 click —— 用例手动补一发，验证「不会再落一个描点顶点」
+  // 浏览器在 mouseup 之后还会派发 click —— 用例手动补一发，验证“不会再落一个描点顶点”
   canvasEl.dispatchEvent(mk('click', cx + 150, cy));
   const after = sc.baseMap.terrain.length;
   const prov = sc.baseMap.terrain[after - 1];
@@ -292,7 +292,7 @@ def run(cdp):
         if 'getWorldBounds' not in code:
             fails.append('涂色网格未接入世界范围（useTerrainCanvasBrush 未用 getWorldBounds）→ 仍会有真空区')
         if 'ensureCoverage' not in code:
-            fails.append('涂色网格没有「落点越界 → 自动扩网格」的入口（ensureCoverage）')
+            fails.append('涂色网格没有“落点越界 → 自动扩网格”的入口（ensureCoverage）')
         if 'beginGridSnapshot' in code or 'endGridStroke' in code:
             fails.append('涂色网格仍用 beginGridSnapshot/endGridStroke：网格扩长后 undo 会抛 RangeError')
     except OSError as e:
@@ -434,8 +434,8 @@ def run(cdp):
     # 🔴 2026-10-02：新建省份现在带**压叠闸门**（新省压住已有省 >25% 时弹确认，见 test_79）。
     #    本用例这一段的自由绘制/描点**刻意画在 6 个合成省份上面** → 会弹确认；
     #    headless 下没人点它 → **渲染进程被模态对话框阻塞** → CDP 命令永不返回
-    #    （实测症状就是「异常: Connection timed out」，而不是某条断言红）。
-    #    所以这里按本仓惯例先把 confirm/prompt 打桩（用例要测「取消」时再单独覆盖）。
+    #    （实测症状就是“异常: Connection timed out”，而不是某条断言红）。
+    #    所以这里按本仓惯例先把 confirm/prompt 打桩（用例要测“取消”时再单独覆盖）。
     cdp.eval("window.confirm = () => true; window.prompt = (m, d) => d;")
 
     fx = _js(cdp, SC_FIXTURE.replace('__STORE__', STORE).replace('__SC__', SC))
@@ -455,7 +455,7 @@ def run(cdp):
     if 'ERR' in mesh:
         fails.append(f'网格渲染探针失败：{mesh["ERR"]}')
     else:
-        # 🔴 P2（2026-10-09）反转：涂抹期间**不再叠「格点中间层」**（格点已退役）。
+        # 🔴 P2（2026-10-09）反转：涂抹期间**不再叠“格点中间层”**（格点已退役）。
         #    旧断言把"涂抹时能画出网格轮廓"当成正确行为 —— 而那层格点正是用户说的
         #    "密集恐惧症的恶心视图"，更是 10525 点海岸线退化成 ~22 点的根因。
         if mesh.get('meshOn') != 'undefined':

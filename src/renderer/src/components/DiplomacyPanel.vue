@@ -1,6 +1,6 @@
 <script setup>
 // components/DiplomacyPanel.vue
-// 外交表 UI（N3a-2，2026-11-02）—— 回答「某年 A 与 B 什么关系」。
+// 外交表 UI（N3a-2，2026-11-02）—— 回答“某年 A 与 B 什么关系”。
 //
 // 数据来源（**只读**，不新建第二份真值）：
 //   · 剧本对象 / 势力表：`store.getScenario(id)` —— 剧本只有 store 一份，势力就是 `scenario.polities`；
@@ -81,7 +81,7 @@ const eraText = computed(() => {
 function setYear(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return;
-  // 只改年 → 月日原样带回（否则「在面板里点一下年份」会把用户精确到日的游标悄悄抹成 1-1）
+  // 只改年 → 月日原样带回（否则“在面板里点一下年份”会把用户精确到日的游标悄悄抹成 1-1）
   emit('update:date', {
     y: Math.trunc(n),
     m: queryDate.value.m ?? null,
@@ -132,7 +132,7 @@ function pickPair(rowId, colId) {
   bId.value = colId;
 }
 
-// ── 单个配对：关系 + 生效事件 + 「为什么」 ──────────────────────────────────
+// ── 单个配对：关系 + 生效事件 + “为什么” ──────────────────────────────────
 const pair = computed(() => {
   if (!scenario.value || !props.scenarioId) return null;
   if (aId.value === '' || bId.value === '' || sameId(aId.value, bId.value)) return null;
@@ -159,15 +159,15 @@ const spanText = computed(() => {
   return formatEventSpan({ from: p.since, to: p.until });
 });
 
-/** 「为什么」：点名是哪条事件把关系写成现在的样子（没记录就直说没记录） */
+/** “为什么”：点名是哪条事件把关系写成现在的样子（没记录就直说没记录） */
 const why = computed(() => {
   const p = pair.value;
   if (!p) return '';
   if (!p.known) {
-    return `账本里没有针对「${nameA.value} × ${nameB.value}」、在 ${dateText.value} 生效的关系事件`
+    return `账本里没有针对“${nameA.value} × ${nameB.value}”、在 ${dateText.value} 生效的关系事件`
       + '（中立 ≠ 确定和平：也可能只是还没录）';
   }
-  const what = `${typeLabel(p.type)}${p.title ? `「${p.title}」` : ''}`;
+  const what = `${typeLabel(p.type)}${p.title ? `“${p.title}”` : ''}`;
   const tail = p.eventId ? ` · ${p.eventId}` : '';
   return `由 ${what} 确立（${spanText.value || dateText.value}${tail}）`;
 });
@@ -213,7 +213,7 @@ function cellStyle(rowId, colId) {
 }
 function cellTitle(row, col) {
   const cell = cellFor(row.id, col.id);
-  const rel = cell ? `${cell.label}（${typeLabel(cell.type)}${cell.title ? `「${cell.title}」` : ''} ${formatEventSpan({ from: cell.since, to: cell.until })}）` : NEUTRAL_LABEL;
+  const rel = cell ? `${cell.label}（${typeLabel(cell.type)}${cell.title ? `“${cell.title}”` : ''} ${formatEventSpan({ from: cell.since, to: cell.until })}）` : NEUTRAL_LABEL;
   return `${row.name || row.id} × ${col.name || col.id}：${rel}\n点这里把这一对设为甲 / 乙`;
 }
 function shortName(p) {
@@ -254,7 +254,7 @@ function shortName(p) {
       class="rounded-lg border border-dashed border-slate-600 bg-slate-800/40 px-4 py-6 text-center text-[12px] leading-relaxed text-slate-400"
       data-testid="diplomacy-empty-scenario"
     >
-      没有剧本 —— 先在左侧「历史剧本」里选一个时期（或用「新建 / 管理剧本…」建一个），
+      没有剧本 —— 先在左侧“历史剧本”里选一个时期（或用“新建 / 管理剧本…”建一个），
       外交关系表才有事件可查。
     </div>
 
@@ -330,14 +330,14 @@ function shortName(p) {
         data-testid="diplomacy-empty-events"
       >
         没有时间线事件 —— 这个剧本的 <code class="text-slate-300">timelineEvents</code> 还是空的。
-        先录一条「谁和谁、什么事、起止」（战争 / 同盟 / 臣属 / 和约…），这里才会出现关系。
+        先录一条“谁和谁、什么事、起止”（战争 / 同盟 / 臣属 / 和约…），这里才会出现关系。
       </div>
 
       <template v-else>
         <!-- 结果 -->
         <div class="mb-3 rounded-lg border border-slate-700 bg-slate-800/60 p-3" data-testid="diplomacy-result">
           <div v-if="!pair" class="text-[12px] leading-relaxed text-slate-400">
-            选择两个<b>不同</b>的势力（甲 / 乙），就能查出「这一年的它们是什么关系」。
+            选择两个<b>不同</b>的势力（甲 / 乙），就能查出“这一年的它们是什么关系”。
           </div>
           <template v-else>
             <div class="flex flex-wrap items-center gap-2">
@@ -434,8 +434,8 @@ function shortName(p) {
           </div>
 
           <div class="mt-2 text-[10px] leading-relaxed text-slate-500">
-            「{{ NEUTRAL_LABEL }}」有两层意思：账本里没有这一对的事件，或事件已到期 ——
-            想知道是哪一种，点开该格子看上方结果里的「为什么」。
+            “{{ NEUTRAL_LABEL }}”有两层意思：账本里没有这一对的事件，或事件已到期 ——
+            想知道是哪一种，点开该格子看上方结果里的“为什么”。
           </div>
         </div>
       </template>

@@ -68,7 +68,7 @@ export function useCanvasRenderer(canvasRef, options = {}) {
   let fastMode = false;
   // P2-3 脏矩形：只重绘笔刷影响的区域。以下三种情况强制全画布——
   // ① viewTransform 变化（缩放/平移）② fastMode 切换（快/全质量混用会留残影）
-  // ③ tracker.markFull()；另加「脏面积 > 50% 画布」的面积兜底（见 shouldFullRedraw）
+  // ③ tracker.markFull()；另加“脏面积 > 50% 画布”的面积兜底（见 shouldFullRedraw）
   let tracker = dirtyTracker;
   let forceFullNextRender = true;
   let lastVT = { x: NaN, y: NaN, scale: NaN };
@@ -779,8 +779,8 @@ export function useCanvasRenderer(canvasRef, options = {}) {
     markDirtyRect: (rect) => { if (tracker) tracker.add(rect); },
     markFullRedraw: () => { forceFullNextRender = true; if (tracker) tracker.markFull(); requestRender(); },
     /**
-     * 同步画一帧（测试/诊断用）。正常交互仍走 rAF；这里只给「需要确定性地读像素」的用例，
-     * 避免 headless 下 rAF 被节流导致「数据已变、像素还是上一帧」的偶发假红（test_140 踩过）。
+     * 同步画一帧（测试/诊断用）。正常交互仍走 rAF；这里只给“需要确定性地读像素”的用例，
+     * 避免 headless 下 rAF 被节流导致“数据已变、像素还是上一帧”的偶发假红（test_140 踩过）。
      */
     renderNow: () => {
       if (rafId) { cancelAnimationFrame(rafId); rafId = null; }

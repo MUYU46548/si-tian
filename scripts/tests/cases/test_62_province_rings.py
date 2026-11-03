@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 62：P0 第二块 —— 省份「多环实体」+ 共享边界 + 渲染单一路径
+"""用例 62：P0 第二块 —— 省份“多环实体”+ 共享边界 + 渲染单一路径
 
 背景（用户三条投诉的数据层根因，见 skill §143 / AGENTS.md）：
   ① **丑东西**：省份只能有一个 `points` 环 → 飞地 / 带洞的行政区表达不了；涂色网格与多边形
-     两套几何各自演化，「网格视图」一开看到的和存下来的不是同一个东西。
+     两套几何各自演化，“网格视图”一开看到的和存下来的不是同一个东西。
   ② **圈不着**：手绘描点的省份彼此不共享顶点 → 相邻省之间必然留缝、边界对不上。
-  ③ **功能打架**：合并只能退化成「凸包」（实测吃掉邻居省份）；网格视图开关 vs 多边形渲染
+  ③ **功能打架**：合并只能退化成“凸包”（实测吃掉邻居省份）；网格视图开关 vs 多边形渲染
      两条渲染路径并存。
 
 本用例守 P0 第二块的修复：
-  a 源码闸门（剥注释）：多环几何层 / 渲染单一路径 / 无凸包 / 无「网格视图」开关 / 工具栏分层
+  a 源码闸门（剥注释）：多环几何层 / 渲染单一路径 / 无凸包 / 无“网格视图”开关 / 工具栏分层
   b 纯函数层：多环往返（洞真的空、飞地真的画）、共边抵消合并、骨架整段插顶点、签名敏感度、
      环 → 栅格不漂移、点击填充 cap 闸门
   c store 层：涂抹抬手**把网格结果写回多边形**（fromGrid 标记、多环）、相邻省共享边界顶点、
      labels 与多边形**一起**撤销/重做（一条 undo）
   d 点击填充：面积闸门拒绝 + **零副作用**；小区域填充成功且可撤销
   e 分割 / 合并：一条 undo 内改几何 + 网格作废重建；合并走精确并集（不是凸包）
-  f UI：工具栏 5 行 `.toolbar-row`（不再有 tool-group 掉到容器层）；无「网格视图」复选框；
-     展开「更多」后：≥4 行 .toolbar-row、tool-group 全在工具栏内、省份笔刷/自由轮廓/点击填充入口在位；
-     属性面板有「类型（陆地/海域）」与「编辑环」
+  f UI：工具栏 5 行 `.toolbar-row`（不再有 tool-group 掉到容器层）；无“网格视图”复选框；
+     展开“更多”后：≥4 行 .toolbar-row、tool-group 全在工具栏内、省份笔刷/自由轮廓/点击填充入口在位；
+     属性面板有“类型（陆地/海域）”与“编辑环”
 """
 import json
 import os
@@ -43,8 +43,8 @@ def _read(rel):
 def _code_only(src):
     """剥掉注释（行注释 + 块注释）后的源码。
 
-    🔴 静态判据必须先剥注释：本项目已三次踩到「注释里写着旧实现的名字，子串判据把自己的
-    注释判成违规」的坑（textures/provinceShape/test_54 各一次）。
+    🔴 静态判据必须先剥注释：本项目已三次踩到“注释里写着旧实现的名字，子串判据把自己的
+    注释判成违规”的坑（textures/provinceShape/test_54 各一次）。
     """
     out, in_block = [], False
     for line in src.split('\n'):
@@ -90,11 +90,11 @@ def _source_gate():
     pe = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     ps = _code_only(_read('src/renderer/src/utils/provinceShape.js'))
 
-    # ① 渲染单一路径：永远画多边形；「网格视图」开关不得回来
+    # ① 渲染单一路径：永远画多边形；“网格视图”开关不得回来
     if 'showProvinceMesh' in sc:
-        fails.append('「网格视图」开关又回来了 → 又会变成两条渲染路径（看到的 ≠ 存下来的）')
+        fails.append('“网格视图”开关又回来了 → 又会变成两条渲染路径（看到的 ≠ 存下来的）')
     if 'if (provinceMeshOn.value) drawProvinces' in sc:
-        fails.append('渲染仍在「网格 / 多边形」之间二选一 → 必须永远画多边形')
+        fails.append('渲染仍在“网格 / 多边形”之间二选一 → 必须永远画多边形')
     # 2026-10-26：`drawProvinces` 多了第二个参数（地形底图模式下只描边不填色），
     # 所以按"调用点"判，而不是按带分号的字面量。
     # 2026-10-30（N1 刀 1）：绘制体搬进 `scenario/layers/provinces.js`，SFC 里只剩接线
@@ -109,9 +109,9 @@ def _source_gate():
             fails.append(f'ScenarioMap 未接多环几何层：{tok}')
     if 'convexHull' in sc:
         fails.append('凸包合并还在（会把两个省之间的凹陷与邻居一起吞掉）→ 必须走精确并集')
-    # 🔴 P2（2026-10-09）**反向守卫**：`reprojectRings` 必须不存在 —— 它就是「把格点轮廓
-    #    反向写成多边形」的元凶（10525 点海岸线一次涂抹变 ~22 点）。旧版本这条守卫写的是
-    #    「缺件检查」（tok not in pe），等于**把退化行为当成正确行为**来守 → 91 用例全绿
+    # 🔴 P2（2026-10-09）**反向守卫**：`reprojectRings` 必须不存在 —— 它就是“把格点轮廓
+    #    反向写成多边形”的元凶（10525 点海岸线一次涂抹变 ~22 点）。旧版本这条守卫写的是
+    #    “缺件检查”（tok not in pe），等于**把退化行为当成正确行为**来守 → 91 用例全绿
     #    而用户数据被毁。见 docs/SCENARIO_PROVINCE_FIX_PLAN.md。
     if 'reprojectRings' in pe:
         fails.append('`reprojectRings` 又回来了 → 涂归属会再次把高精度多边形降级成格点轮廓')
@@ -165,7 +165,7 @@ JS_PURE = r"""
   same('往返：主环 fromGrid 落省份级', roundP.fromGrid, true);
   same('往返：渲染端能据此平滑', P.provinceRings(roundP).filter(r => r.fromGrid).length, 2);
 
-  // ③ 签名：网格「是不是这套多边形派生的」的唯一判据（对坐标与环数都敏感）
+  // ③ 签名：网格“是不是这套多边形派生的”的唯一判据（对坐标与环数都敏感）
   const sig = P.shapeSignature([prov]);
   ok('签名对坐标敏感', sig !== P.shapeSignature([{ id:'p', points:[{x:0,y:0},{x:101,y:0},{x:100,y:100},{x:0,y:100}] }]));
   ok('签名对额外环敏感', sig !== P.shapeSignature([{ id:'p', points:outer, extraRings:[] }]));
@@ -195,7 +195,7 @@ JS_PURE = r"""
   const farPts = [{x:0,y:0},{x:200,y:0},{x:200,y:200},{x:0,y:200}];
   same('骨架：绕远路不被拉过去（maxDetour 保护）', P.conformToSkeleton(farPts, skeleton, 10).length, 4);
 
-  // ⑥ 环 ← 栅格：相邻两省共享同一条边界（数据层的「零缝」保证）
+  // ⑥ 环 ← 栅格：相邻两省共享同一条边界（数据层的“零缝”保证）
   const grid = G.makeGrid({ minX:0, minY:0, maxX:200, maxY:120 }, { cell:10, extraCells:0 });
   const labels = new Uint8Array(grid.cols * grid.rows);
   for (let r = 0; r < grid.rows; r++) {
@@ -206,7 +206,7 @@ JS_PURE = r"""
   const setA = new Set(m.get(1)[0].map(key));
   const shared = m.get(2)[0].filter(p => setA.has(key(p))).length;
   ok('相邻省共享边界顶点 ≥ 2', shared >= 2, shared);
-  // 环 → 栅格 不漂移（写回多边形后重栅格化必须得到同一副网格，否则涂抹会「自己漂移」）
+  // 环 → 栅格 不漂移（写回多边形后重栅格化必须得到同一副网格，否则涂抹会“自己漂移”）
   const provs = [1, 2].map(k => Object.assign({ id:'x' + k }, P.shapePatch(m.get(k).map(pts => ({ points:pts, kind:'land', fromGrid:true })))));
   const re = G.rasterizeProvinces(provs, grid);
   let drift = 0;
@@ -280,7 +280,7 @@ JS_STORE = r"""
         points: [{x:700,y:400},{x:800,y:400},{x:800,y:600},{x:700,y:600}] },
     ],
   }});
-  // 用**总点数**（主环 + 额外环）：在内部挖洞会产生 extraRings，只看主环会误判成「点数变少」
+  // 用**总点数**（主环 + 额外环）：在内部挖洞会产生 extraRings，只看主环会误判成“点数变少”
   const hdCount = () => P.provinceRings(s.baseMaps[HD].terrain[0]).reduce((n, r) => n + r.points.length, 0);
   const hdBefore = hdCount();
   s.beginProvinceStroke();
@@ -288,10 +288,10 @@ JS_STORE = r"""
   s.endProvinceStroke('用例62抹除');
   const hdAfter = hdCount();
   // 判据是**不降级**（不是逐点相等）：布尔运算会清理少量共线/极近顶点（实测量级 ~0.4%），
-  // 而旧实现是 1000 → 22/65（格子边界）。所以守「同量级 + 远高于格点量级」。
+  // 而旧实现是 1000 → 22/65（格子边界）。所以守“同量级 + 远高于格点量级”。
   ok('🔴 高精度保护：1000 点省被涂抹后仍在同量级（不降级成格点轮廓）',
      hdAfter >= hdBefore * 0.9 && hdAfter >= 200, hdBefore + ' → ' + hdAfter);
-  s.undo();                                   // 撤销这次抹除（否则会顶掉下面「涂归属的 undo」断言）
+  s.undo();                                   // 撤销这次抹除（否则会顶掉下面“涂归属的 undo”断言）
   delete s.baseMaps[HD];
   s.baseMaps = Object.assign({}, s.baseMaps);
 
@@ -314,7 +314,7 @@ JS_STORE = r"""
 
   // ⑦ 点击填充（矢量语义）：吞并点击处的那个省
   const beforeCount = s.baseMaps[KEY].terrain.length;
-  // ⚠️ 不能点 (50,60) —— 那一带已被上面的「涂归属」划给了乙，会返回「已属于该省份」
+  // ⚠️ 不能点 (50,60) —— 那一带已被上面的“涂归属”划给了乙，会返回“已属于该省份”
   const filled = s.fillProvinceRegion(KEY, { x: 10, y: 20 }, 2);
   ok('点填：吞并成功', !!(filled && filled.changed), JSON.stringify(filled));
   same('点填：省份数 -1', s.baseMaps[KEY].terrain.length, beforeCount - 1);
@@ -368,36 +368,36 @@ JS_UI = r"""
   // 后面十几组控件全成了 .scenario-map-container 的直接子元素 → 只有第一行有工具栏底色）
   const bar = document.querySelector('.scenario-toolbar');
   ok('工具栏存在', !!bar);
-  // P3：高级工具/吸附/图层/底图收进「更多」（默认只露 6 个主控件，由 test_65 守）→ 先展开再数。
+  // P3：高级工具/吸附/图层/底图收进“更多”（默认只露 6 个主控件，由 test_65 守）→ 先展开再数。
   // ⚠️ 必须先点、再 await 一拍：Vue 的 DOM 更新是异步的。
   const moreBtn = Array.from(document.querySelectorAll('.scenario-toolbar button'))
     .find((b) => (b.title || '').includes('更多'));
-  ok('工具栏有「更多」按钮（默认收起）', !!moreBtn);
+  ok('工具栏有“更多”按钮（默认收起）', !!moreBtn);
   if (moreBtn && !document.querySelector('.toolbar-more')) moreBtn.click();
   await wait(150);
-  ok('点开「更多」后面板出现', !!document.querySelector('.toolbar-more'));
+  ok('点开“更多”后面板出现', !!document.querySelector('.toolbar-more'));
   const rows = bar ? Array.from(bar.querySelectorAll('.toolbar-row')) : [];
-  ok('工具栏分层：展开「更多」后 ≥ 4 行 .toolbar-row', rows.length >= 4, rows.length);
+  ok('工具栏分层：展开“更多”后 ≥ 4 行 .toolbar-row', rows.length >= 4, rows.length);
   const container = document.querySelector('.scenario-map-container');
   const stray = container ? Array.from(container.children).filter(el => el.classList.contains('tool-group')) : [];
   ok('没有 tool-group 掉到容器层（工具栏提前闭合的存量 bug）', stray.length === 0, stray.length);
   const allGroups = document.querySelectorAll('.scenario-toolbar .tool-group').length;
   ok('工具组都在工具栏里', allGroups >= 10, allGroups);
 
-  // 「网格视图」复选框已删除；「点击填充」入口在位
+  // “网格视图”复选框已删除；“点击填充”入口在位
   const labels = Array.from(document.querySelectorAll('.scenario-toolbar label'));
-  ok('「网格视图」复选框已删除', !labels.some(l => (l.textContent || '').indexOf('网格视图') >= 0));
-  // 🔴 2026-10-20：几何笔刷改名「改省界」并收进底图编辑行（日常行只留「涂归属」=势力归属）
+  ok('“网格视图”复选框已删除', !labels.some(l => (l.textContent || '').indexOf('网格视图') >= 0));
+  // 🔴 2026-10-20：几何笔刷改名“改省界”并收进底图编辑行（日常行只留“涂归属”=势力归属）
   sc.basemapEditMode = true;
   await wait(150);
   const titles = Array.from(document.querySelectorAll('.scenario-toolbar button')).map(b => b.getAttribute('title') || '');
-  ok('工具栏有「点击填充」按钮', titles.some(t => t.indexOf('点击填充') >= 0));
-  ok('工具栏有「改省界 / 自由轮廓」按钮',
+  ok('工具栏有“点击填充”按钮', titles.some(t => t.indexOf('点击填充') >= 0));
+  ok('工具栏有“改省界 / 自由轮廓”按钮',
      titles.some(t => t.indexOf('改省界') >= 0) && titles.some(t => t.indexOf('自由轮廓') >= 0));
   sc.basemapEditMode = false;
   await wait(50);
 
-  // 属性面板：多环省份 → 「类型」+「编辑环」
+  // 属性面板：多环省份 → “类型”+“编辑环”
   sc.setTool('select');
   sc.selectedProvince = {
     id: 'case62_props', name: '用例62多环', kind: 'land', biome: '', culture: '', coast: false,
@@ -410,8 +410,8 @@ JS_UI = r"""
   ok('属性面板打开', !!panel);
   if (panel) {
     const txt = panel.textContent || '';
-    ok('属性面板有「类型」（陆地/海域）', txt.indexOf('类型') >= 0);
-    ok('属性面板有「编辑环」（多环实体可切换）', txt.indexOf('编辑环') >= 0);
+    ok('属性面板有“类型”（陆地/海域）', txt.indexOf('类型') >= 0);
+    ok('属性面板有“编辑环”（多环实体可切换）', txt.indexOf('编辑环') >= 0);
     ok('属性面板显示环数 2', txt.indexOf('环数: 2') >= 0 || txt.indexOf('环数：2') >= 0, txt.slice(0, 120));
     const sel = Array.from(panel.querySelectorAll('select')).map(s => Array.from(s.options).map(o => o.textContent.trim()).join('/'));
     ok('类型下拉含 陆地/海域', sel.some(o => o.indexOf('陆地') >= 0 && o.indexOf('海域') >= 0), JSON.stringify(sel));
@@ -452,7 +452,7 @@ def run(cdp):
       return 'ok';
     })()""")
     if entered != 'ok':
-        return False, f'未找到「历史剧本」入口（{entered}）'
+        return False, f'未找到“历史剧本”入口（{entered}）'
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=25, desc='ScenarioMap 挂载')
     time.sleep(1.2)
 
@@ -477,6 +477,6 @@ def run(cdp):
         f'1000 点省涂抹后顶点 {st["hdBefore"]} → {st["hdAfter"]}（只增不减）；'
         f'套索面积闸门拒绝并零副作用、点填吞并可撤销；合并走**布尔并集**（面积 {st["mergedArea"]}）、'
         f'分割一条 undo；纯函数层：洞真空 / 飞地真画 / 环→栅格 {pure["drift"]} 漂移、骨架共享 {pure["shared"]} 顶点；'
-        f'UI：工具栏 {ui["rows"]} 行 {ui["groups"]} 组（无 tool-group 掉出）、无「网格视图」开关、'
-        f'属性面板含「类型 / 编辑环」'
+        f'UI：工具栏 {ui["rows"]} 行 {ui["groups"]} 组（无 tool-group 掉出）、无“网格视图”开关、'
+        f'属性面板含“类型 / 编辑环”'
     )

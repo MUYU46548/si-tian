@@ -7,23 +7,23 @@
 ── 为什么要这两件 ────────────────────────────────────────────────────────────
 ① **起步闭环**：`.map` 导入此前只有剧本视图一条入口（装进**底图** `baseMaps[key]`），
    而行星图看的是 `mapData[planetId]` —— 另一个容器、此前**没有任何导入路径**。
-   于是「空行星上想用自己的 Azgaar 地图起步」在界面上做不到；更糟的是高度笔刷会提示
-   「先导入 Azgaar .map」，**指向一个当刻看不见、甚至不存在的入口**
-   （与剧本侧 0.2.9 修掉的「提示指向看不见的入口」是同一类问题）。
+   于是“空行星上想用自己的 Azgaar 地图起步”在界面上做不到；更糟的是高度笔刷会提示
+   “先导入 Azgaar .map”，**指向一个当刻看不见、甚至不存在的入口**
+   （与剧本侧 0.2.9 修掉的“提示指向看不见的入口”是同一类问题）。
 ② **保存诚实**：项目态（`.sitian`）下保存是两段的 —— geodata 把改动推给 projectStore
    （`{ staged: true, persisted: false }`），再由它的 800ms 防抖写进磁盘。
-   行星图「保存地图」只看 `result.success` 就报「保存成功」= 在数据还没进磁盘时说它进了。
+   行星图“保存地图”只看 `result.success` 就报“保存成功”= 在数据还没进磁盘时说它进了。
 
 ── 判据（不看源码也能解释清楚）───────────────────────────────────────────────
   f0 源码闸门：入口在**空态里**且是真的按钮；命名/留底/解析走**共用件**（不许组件内各写一份）；
      落库走新写口且登记进写闸门契约；保存回执必须走 `describeSaveAction`（不许再看 `result.success`）；
-     旧的「指向看不见入口」的提示语必须消失
-  f1 端到端：清空某行星 → 点空态「导入 .map 底图」（真按钮 + 真 File）→
+     旧的“指向看不见入口”的提示语必须消失
+  f1 端到端：清空某行星 → 点空态“导入 .map 底图”（真按钮 + 真 File）→
      省份 / 高度图四通道 / 河流真的进了 **mapData**（不是底图）；**标记/区域/地点簇原样保留**
   f2 一条撤销：Ctrl+Z（store.undo）一次 → 省份回到 0、高度图回到导入前
   f3 覆盖语义：已有内容时弹一次确认；**取消 → 一字不动**；确认 → **替换**（不是累加）
   f4 保存诚实：stub `saveMapData` 返回 `{staged:true,persisted:false}` → 横幅必须说
-     「已交给项目」且**不含**「保存成功」；返回 `persisted:true` → 才说「已保存到磁盘」
+     “已交给项目”且**不含**“保存成功”；返回 `persisted:true` → 才说“已保存到磁盘”
 
 ⚠️ 本用例的主探针**拆成多段**：CDP 客户端的读超时是 15s（`lib/cdp.py`），
    而"喂文件 → 等异步导入 → 断言"本身就要几秒。写成一个大 eval 会崩在
@@ -50,8 +50,8 @@ def _read(rel):
 
 def _code_only(src):
     """剥掉注释（`<!-- -->` / `//` / `/* */`）—— 判据只能对代码成立：
-    注释里写「旧实现会报『保存成功』」不该被当成"代码里还有那句谎话"；
-    模板注释里写「旧版提示『先导入 Azgaar .map』」也不该被判成"还在提示"。
+    注释里写“旧实现会报‘保存成功’”不该被当成"代码里还有那句谎话"；
+    模板注释里写“旧版提示‘先导入 Azgaar .map’”也不该被判成"还在提示"。
     """
     import re
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
@@ -122,7 +122,7 @@ def source_gates():
 
     # ① 入口：必须在**空态**里，且是真按钮（不是一句"请去别处导入"）
     for needle, label in [
-        ('data-testid="planet-import-map"', '空态里有「导入 .map」按钮'),
+        ('data-testid="planet-import-map"', '空态里有“导入 .map”按钮'),
         ('@click="triggerPlanetMapImport()"', '按钮真的接上了导入函数'),
         ('data-testid="planet-import-map-height"', '高度笔刷面板里也有入口（"无高度图数据"的提示必须指向看得见的地方）'),
         ('async function importPlanetMapFile(', '导入实现（读文件 → 留底 → 解析 → 落库 → 回执）'),
@@ -135,8 +135,8 @@ def source_gates():
 
     # ② 共用件：命名 / 留底 / 读文本不许在组件里各写一份
     for needle, label in [
-        ('export function mapNameFromFileName(', '「文件名 → 底图名」唯一实现'),
-        ('export async function backupMapSourceFile(', '「原文留底」唯一实现'),
+        ('export function mapNameFromFileName(', '“文件名 → 底图名”唯一实现'),
+        ('export async function backupMapSourceFile(', '“原文留底”唯一实现'),
         ('export async function readMapSourceText(', '读文件文本的唯一入口'),
     ]:
         if needle not in mis:
@@ -149,7 +149,7 @@ def source_gates():
         if needle not in pm:
             fails.append(f'PlanetMap 缺：{label}（`{needle}`）')
     if '.replace(/\\.map$/i' in pm or '.replace(/\\s*\\d{4}-\\d{2}-\\d{2}' in pm:
-        fails.append('PlanetMap 自己又写了一份「文件名 → 底图名」（两份实现必然漂移）')
+        fails.append('PlanetMap 自己又写了一份“文件名 → 底图名”（两份实现必然漂移）')
     if 'saveBaseMapSource(' in pm:
         fails.append('PlanetMap 自己直连留底 IPC（应走 utils/mapImportSource.backupMapSourceFile）')
 
@@ -189,7 +189,7 @@ def source_gates():
 
     # ⑦ 旧提示（指向不可达入口）必须消失
     if '先导入 Azgaar .map' in pm:
-        fails.append('行星视图还在提示「先导入 Azgaar .map」——那句话指向的是不存在的入口')
+        fails.append('行星视图还在提示“先导入 Azgaar .map”——那句话指向的是不存在的入口')
 
     notes.append('源码闸门 24 项' + ('全过' if not fails else f'缺 {len(fails)} 项'))
     return fails, notes
@@ -206,7 +206,7 @@ JS_SETUP = r"""(() => {
   s.mapData[pid] = {
     planetId: pid, version: 1,
     terrain: [],
-    // ⚠️ 区域先留空：fogMode（空态提示）判的是「没有地形**且**没有区域」，
+    // ⚠️ 区域先留空：fogMode（空态提示）判的是“没有地形**且**没有区域”，
     //    放一个区域进去，空态卡片就不会出现 —— 那样测的就不是空态入口了。
     regions: [],
     markers: [{ id: 'case115-marker', x: 1, y: 1, name: '用例标记' }],
@@ -422,7 +422,7 @@ def run(cdp):
     if err:
         return False, err
     if res.get('err') == 'no-btn':
-        return False, f'空态里找不到「导入 .map 底图」按钮（空态提示在？{res.get("empty")}）'
+        return False, f'空态里找不到“导入 .map 底图”按钮（空态提示在？{res.get("empty")}）'
     if not res.get('injected'):
         return False, f'按钮没有打开文件选择器（{res}）'
 
@@ -509,7 +509,7 @@ def run(cdp):
                 fails.append(err)
                 continue
             if call.get('err'):
-                fails.append(f'装置：找不到「保存地图」按钮（{call}）')
+                fails.append(f'装置：找不到“保存地图”按钮（{call}）')
                 continue
             time.sleep(0.5)
             read, err = _eval(cdp, JS_SAVE_READ, f'115 读横幅-{label}')
@@ -517,11 +517,11 @@ def run(cdp):
                 fails.append(err)
                 continue
             text, testid = read.get('text', ''), read.get('testid', '')
-            notes.append(f'{label}: 「{text}」/ {testid}')
+            notes.append(f'{label}: “{text}”/ {testid}')
             if want_text not in text:
-                fails.append(f'f4 {label} → 横幅应含「{want_text}」（实际「{text[:80]}」）')
+                fails.append(f'f4 {label} → 横幅应含“{want_text}”（实际“{text[:80]}”）')
             if label == 'staged' and ('保存成功' in text or '已保存到磁盘' in text):
-                fails.append(f'f4 ★ staged 时说了已落盘的话（实际「{text[:80]}」）')
+                fails.append(f'f4 ★ staged 时说了已落盘的话（实际“{text[:80]}”）')
             if testid != want_testid:
                 fails.append(f'f4 {label} → 档位应是 {want_testid}（实际 {testid}）')
 

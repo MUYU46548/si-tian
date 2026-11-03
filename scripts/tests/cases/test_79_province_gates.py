@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 79：省份「压叠闸门」+ 套索面积上限
+"""用例 79：省份“压叠闸门”+ 套索面积上限
 
 来源：2026-10-01 收尾时留下的两条未做项 ——
   ① **省份可以互相压叠**：命中原先按 terrain 数组**正序**返回第一个命中的省，而画布是正序
      `fill`（数组靠后的盖在上面）→ 两个省叠在一起时，**点中的是视觉上被压在下面的那个**。
-     压叠还会污染归属上色与势力标签的面积加权质心（「名字跑到别人地界里」）。
+     压叠还会污染归属上色与势力标签的面积加权质心（“名字跑到别人地界里”）。
   ② **套索没有面积上限、也不校验目标省份**：`target = 0`（上方下拉没选）会把圈内整片格子
-     **静默擦成无主**；一口吞掉全图也照做（闸门此前只管「点一下」的点击填充）。
+     **静默擦成无主**；一口吞掉全图也照做（闸门此前只管“点一下”的点击填充）。
   另有一处主线程风险：套索采样点无上限（`mousemove` 每次落一点），圈一大片会有上千点，
   而 `lassoCells` 是 O(bbox 格 × 顶点数)。
 
@@ -20,7 +20,7 @@
   f3 真鼠标路径：拖一圈压在既有省上 → confirm=false 拒绝 / confirm=true 通过；
      空地那一圈**不问**（证明闸门不是一刀切）；压叠处命中的是最后画上去的那个。
   f4 套索闸门：无目标拒 / 面积闸门拒 / 格数上限拒（阈值可注入）+ 全部零副作用；
-     正常小套索照常生效且回报「圈入量」与「轨迹简化」；上千点的轨迹必须被简化。
+     正常小套索照常生效且回报“圈入量”与“轨迹简化”；上千点的轨迹必须被简化。
 """
 import io
 import json
@@ -47,7 +47,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再判子串 —— 本仓三次踩到「注释里的字样被当成实现」。"""
+    """剥掉注释后再判子串 —— 本仓三次踩到“注释里的字样被当成实现”。"""
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
     src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
     return re.sub(r'(?m)//[^\n]*', '', src)
@@ -85,7 +85,7 @@ def sub_source_guards(cdp):
     lasso = pe[pe.find('function applyProvinceLasso'):pe.find('function applyProvinceLasso') + 3200]
     if "rejected: 'no-target'" not in lasso:
         bad.append('套索没校验目标省份（target=0 会把圈内格子静默擦成无主）')
-    # 🔴 P2（2026-10-09）：套索闸门改**面积占比**（矢量模型没有「格数」这个概念）。
+    # 🔴 P2（2026-10-09）：套索闸门改**面积占比**（矢量模型没有“格数”这个概念）。
     #    旧两条判据（'too-big' 格数上限 / `lassoInsideCount` 圈入量）随网格一起退役。
     if 'area-gate' not in lasso:
         bad.append('套索缺面积闸门（area-gate）')
@@ -97,7 +97,7 @@ def sub_source_guards(cdp):
     #    那条守卫在给一个**零生产调用的退役函数发"存活证明"**：`lassoInsideCount` 至今没有任何
     #    调用点（P2 矢量迁移后套索闸门改判**面积占比**），而它只判"字符串在场、没有任何行为"。
     #    后果是**后来人跟着它和 AGENTS.md 的旧描述去改闸门，会改到一个没人调的函数上**
-    #    （本项目第五次「零调用死入口」，且这次是**守卫在骗人**，比单纯死代码更坏）。
+    #    （本项目第五次“零调用死入口”，且这次是**守卫在骗人**，比单纯死代码更坏）。
     #    现在反向断言：它**不许**回来。真正生效的判据（area-gate）已在上面 90-93 行守着。
     if 'export function lassoInsideCount' in pg:
         bad.append('provinceGrid 里又出现了退役的 lassoInsideCount —— 它**零调用**，'
@@ -107,10 +107,10 @@ def sub_source_guards(cdp):
     # 2026-10-31：绘制/交互体已分批搬到 scenario/{layers,interaction}/* —— 判据读合集，不再绑文件位置
     from lib.rsrc import render_src_code_only as _rsrc_all
     sm = _rsrc_all()
-    # 2026-10-23（第 1 件 1-a）：命中从「全表线性扫描」换成**空间索引**（20.4ms → 0.18ms/次），
+    # 2026-10-23（第 1 件 1-a）：命中从“全表线性扫描”换成**空间索引**（20.4ms → 0.18ms/次），
     # "自顶向下"的保证也随之搬进 `utils/provinceHitIndex.js`：候选必须按**原下标降序**排、
     # 第一个命中的赢。所以守卫改成查"两半"——组件走索引 + 索引里有降序；
-    # 行为断言（下面 f2 的「压叠处命中的是最后画上去的那个」）不变，仍然是最终判据。
+    # 行为断言（下面 f2 的“压叠处命中的是最后画上去的那个”）不变，仍然是最终判据。
     hitidx = _code_only(_read('src/renderer/src/utils/provinceHitIndex.js'))
     if 'hitProvince(' not in sm:
         bad.append('findProvinceAt 没有走空间索引 hitProvince（第 1 件 1-a 的实现入口）')
@@ -187,7 +187,7 @@ PURE_JS = r"""(async () => {
     points: [{x:0,y:0},{x:100,y:0},{x:100,y:100},{x:0,y:100}],
     extraRings: [{ points: [{x:20,y:20},{x:20,y:80},{x:80,y:80},{x:80,y:20}], kind: 'land' }] };
   const inHole = measureProvinceOverlap(rect('n', '洞中', 25, 25, 75, 75), [holed]);
-  ck('只压住「洞」不算压叠（洞不是地盘）', inHole.blocked === false, inHole.ratio);
+  ck('只压住“洞”不算压叠（洞不是地盘）', inHole.blocked === false, inHole.ratio);
 
   const sea = rect('s', '近海', 0, 0, 100, 100, { kind: 'sea' });
   const overSea = measureProvinceOverlap(rect('n', '压海', 0, 0, 100, 100), [sea]);
@@ -228,7 +228,7 @@ STORE_JS = r"""(async () => {
   const ids = () => (s.baseMaps[KEY] ? s.baseMaps[KEY].terrain.map(p => p.id) : null);
   const mk = (id, name, x0, y0, x1, y1) => ({ id, name, kind: 'land',
     points: [{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}] });
-  /** 一直撤销到 terrain 空，返回步数 —— 「有没有多压一条命令」的判据不能靠数单次撤销 */
+  /** 一直撤销到 terrain 空，返回步数 —— “有没有多压一条命令”的判据不能靠数单次撤销 */
   const undoStepsToEmpty = () => {
     let steps = 0;
     while (steps < 12 && s.baseMaps[KEY] && (s.baseMaps[KEY].terrain || []).length) { s.undo(); steps++; }

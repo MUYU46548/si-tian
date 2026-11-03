@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 68：M1c —— 剧本地形的「冻结导入 / 跟随行星」双模式
+"""用例 68：M1c —— 剧本地形的“冻结导入 / 跟随行星”双模式
 
 背景（用户决策 2026-09-25）：
-  「历史剧本是三大模块中最独立完整的、一次施工永久存档」—— 强行把剧本绑到行星数据上**有风险**：
+  “历史剧本是三大模块中最独立完整的、一次施工永久存档”—— 强行把剧本绑到行星数据上**有风险**：
   跟随 = 共用同一份 → 行星后来怎么改，剧本跟着变。对**当代、与行星同步构建的地图**这是对的；
   对**历史存档剧本**是灾难（存档要的就是冻住）。
-  A1 文档最初否掉「复制」方案（理由：复制即双源、漂移必然回归）—— 那条判断在**同步构建**场景
+  A1 文档最初否掉“复制”方案（理由：复制即双源、漂移必然回归）—— 那条判断在**同步构建**场景
   成立，在**存档**场景恰恰相反。所以最终形态是**两种模式并存、冻结为默认、跟随需显式选择**。
 
 覆盖：
   f1 **冻结导入**：副本独立 —— 与行星**不是同一个对象**（连 h 数组也是副本）；
      在剧本涂山**不影响行星**，行星改地形**不影响剧本**；标注来源；`describeBaseMapTerrain` = frozen
   f2 **跟随**：读取命中行星**同一对象**（真单源）；在剧本涂山**会改到行星**；解绑后底图回到
-     「没有地形」且**行星那份不受影响**（这是 R2/M1c 的语义边界）
+     “没有地形”且**行星那份不受影响**（这是 R2/M1c 的语义边界）
   f3 **覆盖需确认**：底图已有地形时冻结导入返回 conflict；`force:true` 才覆盖
   f4 **UI**：地形来源控件 / 两个按钮 / 模式标签真实渲染；按钮 title 写清取舍
-     （「复制一份」vs「会改到行星」—— 用户看的就是这句话）
+     （“复制一份”vs“会改到行星”—— 用户看的就是这句话）
 
 设计要点（为什么这样断言）：f1 与 f2 是**互为反面**的一对 ——
-同一句「在剧本里涂山」，冻结模式下行星必须**不变**，跟随模式下行星必须**变**。
+同一句“在剧本里涂山”，冻结模式下行星必须**不变**，跟随模式下行星必须**变**。
 只测一边等于没测：任何"两边其实是同一份"或"其实从来没接上"的实现都能骗过单边断言。
 """
 import sys, os, json, time
@@ -74,7 +74,7 @@ JS = r"""(async () => {
   const pBefore = sumArr(pHmNow.h);
   store.applyHeightBrush(K1, c1[0], c1[1], 140, 50, 'raise');       // 在**剧本**里涂山
   const pAfter = sumArr(store.mapData[pid].heightmap.h);
-  ck('f1 ★ 在剧本里涂山 **不影响行星**（这正是「冻结」的全部意义）',
+  ck('f1 ★ 在剧本里涂山 **不影响行星**（这正是“冻结”的全部意义）',
      pAfter === pBefore, { before: +pBefore.toFixed(1), after: +pAfter.toFixed(1) });
   ck('f1 底图自己确实变了（不是"什么也没发生"）',
      sumArr(store.baseMaps[K1].heightmap.h) > pBefore, null);
@@ -122,13 +122,13 @@ JS = r"""(async () => {
   ck('f4 地形来源控件已渲染', !!box, { scenarioMounted: !!document.querySelector('.scenario-map-container') });
   const fBtn = document.querySelector('[data-testid="basemap-freeze-import"]');
   const bBtn = document.querySelector('[data-testid="basemap-bind-planet"]');
-  ck('f4 「冻结导入」按钮存在', !!fBtn, null);
-  ck('f4 「跟随」按钮存在', !!bBtn, null);
+  ck('f4 “冻结导入”按钮存在', !!fBtn, null);
+  ck('f4 “跟随”按钮存在', !!bBtn, null);
   ck('f4 模式标签存在', !!document.querySelector('[data-testid="basemap-terrain-mode"]'), null);
   const ft = fBtn ? (fBtn.getAttribute('title') || '') : '';
   const bt = bBtn ? (bBtn.getAttribute('title') || '') : '';
-  ck('f4 冻结按钮的说明写了「复制」（用户看的就是这句话）', /复制/.test(ft), ft.slice(0, 80));
-  ck('f4 跟随按钮的说明写明了「会改到行星」', /改到行星/.test(bt), bt.slice(0, 80));
+  ck('f4 冻结按钮的说明写了“复制”（用户看的就是这句话）', /复制/.test(ft), ft.slice(0, 80));
+  ck('f4 跟随按钮的说明写明了“会改到行星”', /改到行星/.test(bt), bt.slice(0, 80));
   notes.push('UI 模式标签 = ' + (document.querySelector('[data-testid="basemap-terrain-mode"]') || {}).textContent);
 
   return JSON.stringify({ fails, notes });
@@ -147,7 +147,7 @@ def run(cdp):
       return 'ok';
     })()""")
     if entered != 'ok':
-        return False, f'未找到「历史剧本」入口（{entered}）'
+        return False, f'未找到“历史剧本”入口（{entered}）'
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=20, desc='ScenarioMap 挂载')
     time.sleep(1.0)
 
@@ -157,10 +157,10 @@ def run(cdp):
         return False, f'底图 fixture 未就位（scenarios 加载链路没走通）: {bm_info}'
     time.sleep(0.4)
 
-    # ⚠️ 底图选择器与「地形来源」控件都在工具栏的「更多」里（P3 起默认收起）——
+    # ⚠️ 底图选择器与“地形来源”控件都在工具栏的“更多”里（P3 起默认收起）——
     #    不展开的话 DOM 里根本没有这些节点，f4 会整片假红（实测踩到）。
     if not H.open_toolbar_more(cdp):
-        return False, '未能展开剧本工具栏「更多」（底图与地形来源控件在里面）'
+        return False, '未能展开剧本工具栏“更多”（底图与地形来源控件在里面）'
 
     ok, res = eval_json(cdp, JS.replace('PLACEHOLDER_STORE', STORE), desc='M1c 地形双模式')
     if not ok:

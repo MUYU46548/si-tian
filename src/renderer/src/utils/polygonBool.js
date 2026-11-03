@@ -1,12 +1,12 @@
 // utils/polygonBool.js — 矢量级多边形布尔层（P2：省份归属 = 直接改多边形）
 //
 // ── 为什么有这一层 ────────────────────────────────────────────────────────
-// 旧模型用「归属标签网格」当中间层（14.4 世界单位一格），编辑后用**格点轮廓反向覆盖多边形**
+// 旧模型用“归属标签网格”当中间层（14.4 世界单位一格），编辑后用**格点轮廓反向覆盖多边形**
 //   —— 10525 点的真实海岸线一次涂抹就变 ~22 点（详见 docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
 // P2 起：涂抹 = 对多边形做**并集 / 差集**。几何精度只取决于用户输入，**永不降级**。
 //
 // 🔴 本文件**不 import 任何裸模块**：布尔引擎（polygon-clipping）由调用方**注入**。
-//    原因：本仓 Node 单测靠「把源文件复制到临时目录 + 写 package.json{type:module}」加载 ESM，
+//    原因：本仓 Node 单测靠“把源文件复制到临时目录 + 写 package.json{type:module}”加载 ESM，
 //    裸模块在那样的临时目录里解析不到。注入之后，本文件的纯几何部分可被单测覆盖，
 //    引擎本身由 CDP 用例端到端验证。
 //
@@ -69,7 +69,7 @@ export function xyToPoints(ring) {
  *    飞地（互不嵌套的外环）本来就应该各自成组，这条顺带正确。
  *
  * 嵌套判定复用 `ringSigns`（+1 实心 / −1 洞）——与渲染的 nonzero 填充**同源**，
- * 不另造一套「谁是洞」的判据（两套判据迟早分家）。
+ * 不另造一套“谁是洞”的判据（两套判据迟早分家）。
  */
 export function groupRingsIntoPolygons(rings) {
   const list = (rings || []).filter((r) => r && isValidRing(r.points));
@@ -142,7 +142,7 @@ export function isEmptyMulti(mp) {
   return true;
 }
 
-/** MultiPolygon 的总顶点数（诊断/用例：判「几何有没有被降级」） */
+/** MultiPolygon 的总顶点数（诊断/用例：判“几何有没有被降级”） */
 export function countMultiPoints(mp) {
   let n = 0;
   for (const poly of mp || []) for (const ring of poly || []) n += (ring ? ring.length : 0);
@@ -161,7 +161,7 @@ function ringArea2(ring) {
 
 /**
  * MultiPolygon 的**净面积**（外环加、洞减）。
- * 🔴 与 `provinceNetArea` 同口径：毛面积会把洞算成两份地，「面积守恒」断言会因此误判。
+ * 🔴 与 `provinceNetArea` 同口径：毛面积会把洞算成两份地，“面积守恒”断言会因此误判。
  */
 export function multiNetArea(mp) {
   let s = 0;
@@ -218,7 +218,7 @@ export function snapMulti(mp, quantum = 1e-3) {
  *    `Unable to find segment #N … in SweepLine tree`（2026-10-11 实测：500 个 cell 一次性 union 必炸）。
  * 策略：直接算 → 抛错则把**坐标吸附到 1e-3 世界单位**再算一次。
  *    1e-3 世界单位在任何缩放下都远小于一个像素（真实底图跨度 ~1800），而且**只影响失败的那一次**，
- *    不改变正常路径的精度（本项目对「静默降级」零容忍，所以这里也**绝不静默**：
+ *    不改变正常路径的精度（本项目对“静默降级”零容忍，所以这里也**绝不静默**：
  *    结果里带 `snapped: true` 供调用方如实告知）。
  * @returns {{ multi:*, snapped:boolean, error?:string }}
  */
@@ -300,7 +300,7 @@ export function brushDiscRing(x, y, r, sides = 20) {
   return ring;
 }
 
-/** 一段笔迹的「胶囊」矩形 Ring（宽度 2r，沿 a→b） */
+/** 一段笔迹的“胶囊”矩形 Ring（宽度 2r，沿 a→b） */
 export function segmentQuadRing(a, b, r) {
   const dx = b.x - a.x, dy = b.y - a.y;
   const len = Math.hypot(dx, dy);
@@ -416,7 +416,7 @@ export function intersectsMulti(clip, a, b) {
 // 四、折线切割（A 方案：画任意折线把省份切成两半）
 // ══════════════════════════════════════════════════════════════════════════
 //
-// ── 为什么不用「沿无限直线切」（`splitProvinceShape` 的 `splitRingByLine`）────
+// ── 为什么不用“沿无限直线切”（`splitProvinceShape` 的 `splitRingByLine`）────
 // 直线切割的每一侧都是**半平面**，环与它的交是良定义的、可以直接按边分类。
 // 折线的两侧**不是凸集**，"点在折线的哪一侧"没有全局含义 —— 于是这里换一条路：
 //
@@ -460,7 +460,7 @@ export function clipSegmentToRect(a, b, r) {
   ];
 }
 
-/** 折线按矩形裁剪 → 若干段「界内连续段」 */
+/** 折线按矩形裁剪 → 若干段“界内连续段” */
 export function clipPolylineToRect(pts, r) {
   const runs = [];
   let cur = null;

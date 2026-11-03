@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""真机取证：真实项目（工作副本）上，用**真实鼠标**复现「涂归属涂不了 / 河流铁轨 / 侧栏收起」。
+"""真机取证：真实项目（工作副本）上，用**真实鼠标**复现“涂归属涂不了 / 河流铁轨 / 侧栏收起”。
 
 安全措施（与 diag_t2_save.py 同一套）：
   · 绝不写真实项目：复制成 work-copy.sitian，临时改 config.lastProjectPath 指它，finally 还原；
@@ -220,7 +220,7 @@ def main():
         time.sleep(0.4)
         print('\n选势力后：', cdp.eval(PROBE))
 
-        # 真鼠标：点「涂归属」
+        # 真鼠标：点“涂归属”
         cdp.eval("(() => { const b = document.querySelector('[data-testid=owner-brush-btn]');"
                  " if (b) b.click(); return b ? 'ok' : 'none'; })()")
         time.sleep(0.4)

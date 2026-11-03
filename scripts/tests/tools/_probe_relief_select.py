@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""第 2 件「实例可选中可移动」的验收探针（2026-10-24）。
+"""第 2 件“实例可选中可移动”的验收探针（2026-10-24）。
 
 判据（全部只读，不改产品代码）：
   ① 点中图标 = 选中（`selectedReliefId` 有值）且**零写入**（undo 栈不动）
-  ② 拖动它 = 位置真的变了，且**一次拖动 = 一条 undo**（label「移动地貌图标」）
+  ② 拖动它 = 位置真的变了，且**一次拖动 = 一条 undo**（label“移动地貌图标”）
   ③ 撤销 = 回到原位（位置逐位相等）
   ④ 点空白 = 收掉选中；**散布一笔仍是新图标**（点空白不会误挪已有的）
 
@@ -250,7 +250,7 @@ def main():
         if s1.get('undoLabel') != s0.get('undoLabel') or s1.get('icons') != s0.get('icons'):
             fails.append('"只选中"发生了写入（undo/图标数变了）')
         if s2.get('undoLabel') != '移动地貌图标':
-            fails.append('拖动后 undo label 不是「移动地貌图标」（实际 %s）' % s2.get('undoLabel'))
+            fails.append('拖动后 undo label 不是“移动地貌图标”（实际 %s）' % s2.get('undoLabel'))
         if s2.get('icons') != s0.get('icons'):
             fails.append('移动把图标数量改了（%s → %s）' % (s0.get('icons'), s2.get('icons')))
         if s3.get('icons') != s0.get('icons'):

@@ -7,27 +7,27 @@
 //   · **多边形（`terrain[].points` + `extraRings`）是省份的唯一事实源**，画布只渲染它。
 //   · 涂抹（笔刷 / 套索 / 点填） = 对多边形做**布尔运算**（并集 / 差集），完全不经网格：
 //       - 笔刷 / 套索 → 笔迹多边形 → 目标省 `union`、相交省 `difference`（`applyRegionToTerrain`）
-//       - 点填       → 「把点击处那个省整块给目标省」（复用 `mergeProvinces`）
+//       - 点填       → “把点击处那个省整块给目标省”（复用 `mergeProvinces`）
 //   · 几何算法在 `utils/polygonBool.js`（纯转换 + 注入式布尔引擎，Node 有单测）。
 //
-// 🔴 **为什么必须删掉旧的「网格 → 多边形写回」**：旧实现（`reprojectRings`）在抬手时把
-//    「归属格轮廓」反向写成多边形 —— 精度上限 = 一个格子一条边（`DEFAULT_GRID_CELL = 14.4`
-//    世界单位）→ 10525 点的真实海岸线**一次涂抹就变 ~22 点**。这是用户实测「一绘制整张图
-//    就退化、很丑」的根因。详见 `docs/SCENARIO_PROVINCE_FIX_PLAN.md`。
+// 🔴 **为什么必须删掉旧的“网格 → 多边形写回”**：旧实现（`reprojectRings`）在抬手时把
+//    “归属格轮廓”反向写成多边形 —— 精度上限 = 一个格子一条边（`DEFAULT_GRID_CELL = 14.4`
+//    世界单位）→ 10525 点的真实海岸线**一次涂抹就变 ~22 点**。这是用户实测“一绘制整张图
+//    就退化、很丑”的根因。详见 `docs/SCENARIO_PROVINCE_FIX_PLAN.md`。
 //
 // ⚠️ **`provinceLabels` 网格（下方 ensure/rebuild/clear/remove 一族）保留但已"退役"**：
 //    它不再参与任何编辑或渲染，只为**兼容旧项目里的存量数据**与既有用例而留着。
 //    新代码**不要**再往它里面写东西 —— 它一旦重新成为几何来源，退化就会回来。
 //
 // 🔴 **只读态（无项目）下的纪律**：画布编辑入口暂不灰禁，但**绝不能产生意外改动** ——
-//   本模块的每个写操作都先过 `guardWrite`，被拒时返回「什么都没发生」。这样「看着能画」
+//   本模块的每个写操作都先过 `guardWrite`，被拒时返回“什么都没发生”。这样“看着能画”
 //   也不会留下任何会污染知识库/项目文件的状态。UI 侧另给一句能力说明（见 ScenarioMap）。
 //
 // 设计要点：
 //   · **不另建省份定义表**：`labels` 的值 = `terrain[]` 下标 + 1（仅网格时代遗留）。
 //   · **涂抹期不碰数据**：一笔拖动只累积轨迹点，抬手时才做一次布尔并压成**一条** undo 命令。
 //   · 🔴 **会重编号的操作（删除省份 / 清空归属）必须记整表快照**：删除时 `labels[i] > idx`
-//     的格子会被减 1，动的是「未被删除的格子」，差量记录还原不了。
+//     的格子会被减 1，动的是“未被删除的格子”，差量记录还原不了。
 //   · **分割 / 合并也在这里**：分割走多边形直线裁剪（`splitProvinceShape`），
 //     合并走布尔并集（`unionMulti`）—— 都已**不再经网格**。
 
@@ -81,16 +81,16 @@ import { toRaw } from 'vue';
 import { forkScenarioProvince, remapScenarioOwnership } from '../../../../ledger/index';
 
 /**
- * 套索的**面积闸门**：轮廓包围盒占「全部省份包围盒」的比例上限。
- * 套索是**刻意画**出来的，所以阈值宽松（允许圈半个图）；但「一口吞掉全图」几乎总是误操作。
- * 🔴 P2 起语义变了：旧值按「格数」衡量并搭 `MAX_LASSO_CELLS`；矢量模型下没有格子，
- *    改为**面积占比**（`applyProvinceLasso` 仍保证「拒绝 = 零副作用」）。
+ * 套索的**面积闸门**：轮廓包围盒占“全部省份包围盒”的比例上限。
+ * 套索是**刻意画**出来的，所以阈值宽松（允许圈半个图）；但“一口吞掉全图”几乎总是误操作。
+ * 🔴 P2 起语义变了：旧值按“格数”衡量并搭 `MAX_LASSO_CELLS`；矢量模型下没有格子，
+ *    改为**面积占比**（`applyProvinceLasso` 仍保证“拒绝 = 零副作用”）。
  */
 export const LASSO_AREA_SHARE = 0.5;
 /**
  * ⚠️ **已退役（P2）**：格点时代的闸门常量。
  * `applyRegionToTerrain` / `mergeProvinces` 都是**精确布尔**（不存在"一口吞掉整片海"的机制），
- * 点击填充的语义也已改成「吞并点击处的那个省份」。保留导出只为不打断旧用例的 import；
+ * 点击填充的语义也已改成“吞并点击处的那个省份”。保留导出只为不打断旧用例的 import；
  * **新代码不要再用**（保留它们当"闸门"= 把栅格思维带回来）。
  */
 export const MAX_FILL_CELLS = 60000;
@@ -112,11 +112,11 @@ export function createProvinceEditingModule(ctx) {
   const commitHeightmap = ctx.commitHeightmap || (() => {});
   /**
    * 剧本容器（**批量铺底要迁移归属/易主**，见 `batchSubdivide`）。
-   * ⚠️ 只在「批量切分」这一条链上读它 —— 省份几何本身仍然只住 `baseMaps[key].terrain`。
+   * ⚠️ 只在“批量切分”这一条链上读它 —— 省份几何本身仍然只住 `baseMaps[key].terrain`。
    */
   const scenarios = ctx.scenarios || { value: {} };
 
-  /** 只读态统一拒绝：返回「什么都没发生」的结果 */
+  /** 只读态统一拒绝：返回“什么都没发生”的结果 */
   function blocked(action) {
     const gate = guardWrite(action);
     return { blocked: true, readOnly: true, changed: 0, message: gate.error || `${action}被拒绝（只读）` };
@@ -141,7 +141,7 @@ export function createProvinceEditingModule(ctx) {
    * 🔴 为什么必须这么写：栅格化是 O(格数 × 点数) 的双重循环，逐点读 `points[i].x` 时
    *    若对象是 Vue 响应式代理，每次读都要过一层 proxy trap。CDP 实测（6 个省份 / 3600 点
    *    / 3124 格）：走代理 **838.6ms**，同一份数据去代理后只要几十毫秒 ——
-   *    真实库 desite 是 21 省 / 25930 点，量级差一个数量级就是「卡死几十秒」。
+   *    真实库 desite 是 21 省 / 25930 点，量级差一个数量级就是“卡死几十秒”。
    *    两层 toRaw：容器与被元素都可能是代理（`{...m, terrain}` 这种展开会把代理原样带走）。
    *    P0 第二块起还要把 `extraRings`（多环）一起剥 —— 只剥主环会让带飞地的省退回代理读取。
    */
@@ -169,7 +169,7 @@ export function createProvinceEditingModule(ctx) {
     });
   }
 
-  // ── 形状签名：网格「是不是这套多边形派生的」的唯一判据 ────────────────────
+  // ── 形状签名：网格“是不是这套多边形派生的”的唯一判据 ────────────────────
   //    WeakMap 按 terrain 数组记忆化：本模块与 scenarioEditing 的每次写入都**整体替换**数组
   //    （`{...m, terrain: next}`）→ 换数组即换签名，天然失效，且零额外开销。
   const sigCache = new WeakMap();
@@ -292,11 +292,11 @@ export function createProvinceEditingModule(ctx) {
    *
    * 为什么需要它：`removeBaseProvince`（在 scenarioEditing）只换 terrain 数组 → 形状签名失配 →
    * 下次用网格时**整表重新栅格化**（真实库 21 省 / 25930 点实测 170~368ms 的主线程停顿），
-   * 而且用户涂过的格子会被重采样一次。这里把「自身格置 0 + 序号 > idx 的减 1」就地做完并盖上
+   * 而且用户涂过的格子会被重采样一次。这里把“自身格置 0 + 序号 > idx 的减 1”就地做完并盖上
    * **新签名**，网格保持有效 → **省掉那次重建**。
    *
    * 🔴 **不 `execute`**：调用方的删除命令要把这一步包进**同一条 undo**（test_77 f2 断言
-   * 「一条 undo 把省份 + ownership + changeYears 一起还原」；这里再压一条会把它拆成两条）。
+   * “一条 undo 把省份 + ownership + changeYears 一起还原”；这里再压一条会把它拆成两条）。
    * 因此重编号动过的格子要交回**整表快照**（差量还原不了 —— 动的是别的省份的格）。
    * 签名不符（这份网格本来就是别的几何派生的）→ 不硬改，交给既有的自愈重建。
    * @returns {{snapshot:Uint8Array, cleared:number, renumbered:number}|{skipped:string}}
@@ -304,7 +304,7 @@ export function createProvinceEditingModule(ctx) {
   function shiftProvinceGridForDelete(key, deletedIdx) {
     const entry = cache[key];
     if (!entry) return { skipped: 'no-grid' };
-    // ⚠️ 必须在**调用方换掉 terrain 之前**调：签名校验比的是「当前 terrain」，
+    // ⚠️ 必须在**调用方换掉 terrain 之前**调：签名校验比的是“当前 terrain”，
     //    换完再调必然是 stale（首版实测 gridShifted:false、网格被白白作废）。
     if (entry.shape !== terrainShape(key)) return { skipped: 'stale' };
     const snapshot = new Uint8Array(entry.labels);
@@ -335,9 +335,9 @@ export function createProvinceEditingModule(ctx) {
   // 涂抹 → 多边形（**矢量布尔**）：归属的唯一表示是多边形
   // ============================================================
   //
-  // 🔴 P2（2026-10-09）**删掉了旧的 `reprojectRings`** —— 它把「归属格轮廓」反向写回多边形，
+  // 🔴 P2（2026-10-09）**删掉了旧的 `reprojectRings`** —— 它把“归属格轮廓”反向写回多边形，
   //    精度上限 = 一个格子一条边（`DEFAULT_GRID_CELL = 14.4` 世界单位）→ 10525 点的真实海岸线
-  //    一次涂抹就变 ~22 点（用户实测「退化 / 恶心」的根因，见 docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
+  //    一次涂抹就变 ~22 点（用户实测“退化 / 恶心”的根因，见 docs/SCENARIO_PROVINCE_FIX_PLAN.md）。
   //    现在：笔迹 → 多边形 → 对目标省 union、对相交省 difference。
   //    **几何只可能变精细，永不被格点重采样。**
 
@@ -358,7 +358,7 @@ export function createProvinceEditingModule(ctx) {
    * 把一块几何（笔迹轮廓 / 套索多边形）**并进目标省**、并从其他相交省里**挖掉**。
    *
    * @param {Array} brushRings Ring 列表（每项 = [[x,y],…] 闭合）
-   * @param {number} targetIdx 1-based 目标省序号；**0 = 只挖不并**（等价「抹除」）
+   * @param {number} targetIdx 1-based 目标省序号；**0 = 只挖不并**（等价“抹除”）
    * @returns {{ terrain:Array, ops:Array<{id,op,emptied?}> }|null} null = 什么都没碰到
    *
    * 性能：先按**包围盒**预筛（真实数据里通常只剩 1~3 个省），再用 `intersectsMulti` 真判相交 ——
@@ -374,8 +374,8 @@ export function createProvinceEditingModule(ctx) {
     let bb = multiBBox(brushMulti);
 
     // 🔴 **锁定海岸线**（默认开；2026-10-09 暮雨要求）：
-    //    「海岸线就应该只靠专门的底图编辑调整，平时维持锁定状态」。
-    //    做法：把笔迹**裁剪到「已有省份的并集」之内** —— 涂抹只能在大陆内部易手，
+    //    “海岸线就应该只靠专门的底图编辑调整，平时维持锁定状态”。
+    //    做法：把笔迹**裁剪到“已有省份的并集”之内** —— 涂抹只能在大陆内部易手，
     //    永远不会往海面 / 空白区扩张（旧行为：笔迹压到海岸线上，轮廓就跟着被改掉）。
     //    ⚠️ 连带效果：新建省份（空省，不在并集里）也只能**从已有大陆里挖一块**，
     //    不会再画出一块悬在海上、与大陆无关的地。
@@ -406,7 +406,7 @@ export function createProvinceEditingModule(ctx) {
         return {
           changed: 0, rejected: 'geometry-failed',
           message: `这块笔迹的轮廓自交了，几何引擎算不出来（${String(interRes.error || '').slice(0, 80)}）。`
-            + ' 请把圈画得简单一些再试，或用「变更归属」涂一笔。',
+            + ' 请把圈画得简单一些再试，或用“变更归属”涂一笔。',
         };
       }
       if (interRes.snapped) geomWarn = (geomWarn || '') + (geomWarn ? '；' : '') + '轮廓已吸附坐标后重算';
@@ -425,7 +425,7 @@ export function createProvinceEditingModule(ctx) {
       const kind = kindOf(p);
 
       // 🔴 目标省**不做包围盒预筛**：涂/圈在别人地盘上、与目标省并不相邻时，它本来就该
-      //    长出一块「飞地」。预筛一挡，这一笔就变成「从原省挖掉、却没人接」＝**凭空少一块地**
+      //    长出一块“飞地”。预筛一挡，这一笔就变成“从原省挖掉、却没人接”＝**凭空少一块地**
       //    （实跑抓到：套索划给不相邻的省 → 总面积少了一整块）。
       if (idx === targetIdx) {
         // 并集也走兜底（`unionMulti` 内部：自交净化 → 逐个并 → 失败回报，不抛）
@@ -492,7 +492,7 @@ export function createProvinceEditingModule(ctx) {
    * 把**一条闭合笔迹**变成"要把哪块地交给谁"。
    *
    * 🔴 目标省的默认取向（2026-10-11 实测纠偏，**这一条最容易想反**）：
-   *    「围住的那块地」本来就在**原主**手里，所以"区域里占比最高的省"**永远**是原主 ——
+   *    “围住的那块地”本来就在**原主**手里，所以"区域里占比最高的省"**永远**是原主 ——
    *    而用户描一条边界，想要的恰恰是**改判给邻省**。首版就是按"占比最高"选的，
    *    结果 `targetIdx` 恒等于原主 → 只有 union、没有 difference，画面纹丝不动
    *    （test_97 c 段当场抓到：`{"t":1,"cov":1,"area":3000,"out":0}`）。
@@ -538,7 +538,7 @@ export function createProvinceEditingModule(ctx) {
     }
 
     const rbox = multiBBox(regionMulti);
-    // 原主 = 「这块地的多大比例是它的」最高者（区域跨省时按占比，不按绝对面积）
+    // 原主 = “这块地的多大比例是它的”最高者（区域跨省时按占比，不按绝对面积）
     let owner = -1, ownerShare = 0, ownerInter = 0;
     const near = [];
     for (let i = 0; i < terrain.length; i++) {
@@ -630,7 +630,7 @@ export function createProvinceEditingModule(ctx) {
         changed: 0, rejected: 'province-gate',
         affected: resolved.affected, affectedIds: resolved.affectedIds,
         message: `描轮廓会同时影响 ${resolved.affected} 个省（上限 ${maxAffected}）：${names}${resolved.affected > 6 ? ' 等' : ''}。`
-          + ' 请只贴着要改的那一条边界描；确实要一次改这么多，再点「仍要执行」。',
+          + ' 请只贴着要改的那一条边界描；确实要一次改这么多，再点“仍要执行”。',
       };
     }
     const targetIdx = opts.targetIdx && opts.targetIdx > 0 ? opts.targetIdx : resolved.targetIdx;
@@ -668,7 +668,7 @@ export function createProvinceEditingModule(ctx) {
       affectedIds: resolved.affectedIds,
       targetId: resolved.targetId,
       ownerId: resolved.ownerId,
-      // 原主 / 是否换主（UI 要据此说人话："从「甲」改判给「乙」"）
+      // 原主 / 是否换主（UI 要据此说人话："从“甲”改判给“乙”"）
       ownerIdx: resolved.ownerIdx,
       switched: !!resolved.switched,
       neighborIdx: resolved.neighborIdx || null,
@@ -686,7 +686,7 @@ export function createProvinceEditingModule(ctx) {
    * 🔴 描轮廓专用的落库几何（E，2026-10-11）：**按 transfer 做精确划分**，而不是"先并后挖"。
    *
    * 为什么不能直接用 `applyRegionToTerrain`（首版就是那样，test_97 c 段量出数字才看出来）：
-   *   那条路是「先给目标省并上 region、再从被碰到的省挖掉 region」。区域跨过边界时，
+   *   那条路是“先给目标省并上 region、再从被碰到的省挖掉 region”。区域跨过边界时，
    *   目标省拿到的其实只有 `region ∩ 目标省`（并集里已经有的部分不变），而邻省被挖掉的是
    *   `region ∩ 邻省` —— 用户**描出来的那块并没有整块过去**：
    *   实测 3000 的区域只搬过去 1429（乙涨 1429、甲掉 1429，各自守恒但"意图没实现"）。
@@ -836,15 +836,15 @@ export function createProvinceEditingModule(ctx) {
   /**
    * 把若干省份的形状补丁**作为一条命令**写下去。
    *
-   * 为什么必须是一条：拖动共边顶点时，动的是「目标省 + 跟着走的邻省」两到三家，
+   * 为什么必须是一条：拖动共边顶点时，动的是“目标省 + 跟着走的邻省”两到三家，
    * 而在用户心里那是**一件事**。若沿用 `updateBaseProvince`（一次一个省），
    * 拖一下要按 N 次 Ctrl+Z 才退得回去 —— 与 0.2.7 折线切割"每省一条 undo"同类；
    * 那次的结论是**如实告诉用户**，但形状微调比切分频繁得多，如实告知也没法用，所以做成一条。
    *
    * undo 用**整表快照**（`setTerrain(key, terrain0)`）：与描轮廓/合并同一条路 ——
-   * 差量还原在"几个省的环同时变了"时最容易漏（本项目「撤销看着执行了、数据没变」踩过两次）。
+   * 差量还原在"几个省的环同时变了"时最容易漏（本项目“撤销看着执行了、数据没变”踩过两次）。
    *
-   * @param {Array<{id:string, patch:object}>} patches 每个 = 「改哪个省 + 它的补丁」
+   * @param {Array<{id:string, patch:object}>} patches 每个 = “改哪个省 + 它的补丁”
    * @param {{label?:string}} [opts]
    * @returns {{changed:number, message?:string, rejected?:string}}
    */
@@ -890,8 +890,8 @@ export function createProvinceEditingModule(ctx) {
    * 一次落点：**只累积轨迹**（不碰任何数据）。
    *
    * 🔴 与旧实现的关键差别：旧版每个 mousemove 都往格子里 stamp，抬手再按格轮廓重投影几何；
-   *    现在落点只记「笔走过哪里」，抬手时一次性把轨迹变成多边形再做布尔 ——
-   *    **涂抹期零几何运算**，帧预算与「抬手 diff」的手感与 `channelBrush` 一致。
+   *    现在落点只记“笔走过哪里”，抬手时一次性把轨迹变成多边形再做布尔 ——
+   *    **涂抹期零几何运算**，帧预算与“抬手 diff”的手感与 `channelBrush` 一致。
    * @param radius 笔刷半径（**世界单位**；不再以"格"计 —— 网格已不是归属的表示）
    */
   function applyProvinceStroke(key, { x, y, radius = 60, strength = 0.8, tool = 'paint', target = 0 } = {}) {
@@ -921,7 +921,7 @@ export function createProvinceEditingModule(ctx) {
   //      所以内陆边界与相邻关系不受影响；
   //   ② 相邻省**仍然无缝**（对每个省取同一个 L 的交集，划分关系被保持）；
   //   ③ 海岸线那一段换成新 .map 的**原顶点**（不是重采样出来的）；
-  //   ④ 一整次 = 一条 undo；如实回报「变了几个省 / 面积增减 / 有没有省被清空」。
+  //   ④ 一整次 = 一条 undo；如实回报“变了几个省 / 面积增减 / 有没有省被清空”。
   //
   // ⚠️ 依赖：必须在 parser 之前读到的 `landFeatures` 上做（`buildScenariosJson` 已经把它们
   //    带进 `baseMaps[key].landFeatures`）。老底图没有这个字段 → 明确拒绝，并告诉用户去选一份 .map。
@@ -1007,7 +1007,7 @@ export function createProvinceEditingModule(ctx) {
       if (!box || !landBox || !bboxHit(box, landBox)) { next.push(p); afterTotal += before[i].area; continue; }
       // 完全落在陆地内部 → 布尔之后逐点不变，直接跳过省一次大运算（**纯优化**，不影响结果）。
       // ⚠️ 不能用"点在边界上"判（`pointInMulti` 对边界点行为不可依赖）：这里判的是
-      //    「省的包围盒完全在**放大一圈**的陆地包围盒内」——保守，宁可多算几个省也不误跳。
+      //    “省的包围盒完全在**放大一圈**的陆地包围盒内”——保守，宁可多算几个省也不误跳。
       const pad = Math.max((box.maxX - box.minX), (box.maxY - box.minY)) * 0.01;
       const insideBox = box.minX >= landBox.minX + pad && box.maxX <= landBox.maxX - pad
         && box.minY >= landBox.minY + pad && box.maxY <= landBox.maxY - pad;
@@ -1101,7 +1101,7 @@ export function createProvinceEditingModule(ctx) {
       return Promise.resolve({
         ok: false, rejected: 'no-land',
         message: '这张底图里没有陆地轮廓数据 —— 老底图没有这个字段；'
-          + '请点「地形/数据」区的刷新按钮选一份生成器导出的 .map',
+          + '请点“地形/数据”区的刷新按钮选一份生成器导出的 .map',
       });
     }
     return rebuildCoastline(key, feats, opts);
@@ -1114,7 +1114,7 @@ export function createProvinceEditingModule(ctx) {
     return ops.map((o) => {
       const p = list.find((q) => q.id === o.id);
       const name = (p && p.name) || o.id;
-      return o.op === 'union' ? `并入「${name}」` : `从「${name}」挖去${o.emptied ? '（已清空）' : '一块'}`;
+      return o.op === 'union' ? `并入“${name}”` : `从“${name}”挖去${o.emptied ? '（已清空）' : '一块'}`;
     }).join('、');
   }
 
@@ -1128,14 +1128,14 @@ export function createProvinceEditingModule(ctx) {
     if (!s || !s.path.length) return null;
     const key = s.key;
     // 🔴 只读态第二道门：`applyProvinceStroke` 已经不记轨迹，这里是防御性的 ——
-    //    本模块的每个写操作都必须能回答「只读态下会不会改内存 / 落盘」（test_54 的写口契约）。
+    //    本模块的每个写操作都必须能回答“只读态下会不会改内存 / 落盘”（test_54 的写口契约）。
     if (isRO()) return blocked(label);
     if (!bm(key)) return null;
 
-    // 「笔刷建省」（2026-10-22）：这一笔**不是**改已有省份，而是长出一个新省 —— 走另一条落库路。
+    // “笔刷建省”（2026-10-22）：这一笔**不是**改已有省份，而是长出一个新省 —— 走另一条落库路。
     if (s.tool === 'provincePaint') return createProvinceFromBrush(key, s, label, opts);
 
-    // 「平滑」在矢量语义下 = 对边界做 RDP 简化（格点时代那个"3×3 邻域众数"已无对象）
+    // “平滑”在矢量语义下 = 对边界做 RDP 简化（格点时代那个"3×3 邻域众数"已无对象）
     if (s.tool === 'smooth') return smoothProvinceBoundary(key, s, label);
 
     const target = s.tool === 'erase' ? 0 : (s.target || 0);
@@ -1156,7 +1156,7 @@ export function createProvinceEditingModule(ctx) {
     return { changed: res.ops.length, label, ops: res.ops, detail: describeRegionOps(key, res.ops) };
   }
 
-  /** 「平滑」工具：RDP 简化目标省边界（容差 = 笔刷半径的 15%） */
+  /** “平滑”工具：RDP 简化目标省边界（容差 = 笔刷半径的 15%） */
   function smoothProvinceBoundary(key, s, label) {
     const terrain = provincesOf(key);
     const idx = (s.target || 0) - 1;
@@ -1186,8 +1186,8 @@ export function createProvinceEditingModule(ctx) {
   /**
    * 笔刷建省（2026-10-22）：一笔涂抹 → **一个省**。
    *
-   * 用户原话：「按住左键像涂色一样抹，松手自动把抹过的范围长成一个省（不用闭合、不会出现
-   * 一团自交线，涂抹过程就是最终形状）。」—— 这是"画图软件的手感"，和「画省份（描轮廓）」
+   * 用户原话：“按住左键像涂色一样抹，松手自动把抹过的范围长成一个省（不用闭合、不会出现
+   * 一团自交线，涂抹过程就是最终形状）。”—— 这是"画图软件的手感"，和“画省份（描轮廓）”
    * 是两件事：描轮廓要求"画一圈"，笔刷要求"抹一条"。
    *
    * 与既有四条路的分工（**别混**）：
@@ -1198,7 +1198,7 @@ export function createProvinceEditingModule(ctx) {
    *
    * 🔴 为什么"新省只长在空地上"（减掉已有省份）而不像描点那样弹确认框问人：
    *    笔刷是高频手势，每笔弹一次确认 = 完全没法用。所以改成**不覆盖**：
-   *    已有省份的地涂不上（用户看得见），要改那些地的形状就走「改省界」。
+   *    已有省份的地涂不上（用户看得见），要改那些地的形状就走“改省界”。
    *    这样既没有压叠（点选/上色/标签三处口径一致），也不需要任何弹窗。
    *
    * @param {object} s 这一笔：`{ path:[{x,y}], radius, tool }`（来自 `applyProvinceStroke`）
@@ -1251,7 +1251,7 @@ export function createProvinceEditingModule(ctx) {
       cutRatio: res.cutRatio || 0, cut: res.cut || 0,
       points: patch.points.length, strokePoints: path.length,
       ...(geomWarn ? { geomWarn } : {}),
-      detail: `「${prov.name}」${patch.points.length} 个顶点`
+      detail: `“${prov.name}”${patch.points.length} 个顶点`
         + (pct > 0 ? `；笔迹有 ${pct}% 压在已有省份上，那部分没算进来` : '')
         + (geomWarn ? `；⚠️ ${geomWarn}` : ''),
     };
@@ -1261,7 +1261,7 @@ export function createProvinceEditingModule(ctx) {
    * 自由轮廓（套索）：圈出的多边形 → **并进目标省 / 从相交省挖掉**（矢量布尔）。
    *
    * 与旧实现的两点差别：
-   *   ① 不再有「格数闸门」——那是栅格概念；改为**面积闸门**（轮廓包围盒 > 全图包围盒的
+   *   ① 不再有“格数闸门”——那是栅格概念；改为**面积闸门**（轮廓包围盒 > 全图包围盒的
    *      `LASSO_AREA_SHARE` → 拒绝），仍然保证"拒绝必须零副作用"。
    *   ② 目标合法性校验保留（`target = 0` 会把圈住的地静默擦成无主 —— 这是曾经的裸奔缺口）。
    */
@@ -1300,7 +1300,7 @@ export function createProvinceEditingModule(ctx) {
         return {
           changed: 0, rejected: 'area-gate', share,
           message: `这一次圈住了全图约 ${Math.round(share * 100)}%（超过 ${Math.round(maxShare * 100)}%）`
-            + '——多半是圈歪了或想整块陆地，请改小轮廓，或用「涂归属」笔刷分次涂',
+            + '——多半是圈歪了或想整块陆地，请改小轮廓，或用“涂归属”笔刷分次涂',
         };
       }
     }
@@ -1326,9 +1326,9 @@ export function createProvinceEditingModule(ctx) {
   /**
    * 点击填充：把**点击处所属的省份**整块并入目标省（矢量语义）。
    *
-   * 🔴 语义变更（P2）：格点时代它是「把点击处所在的**连通格子区域**整块划归」——
+   * 🔴 语义变更（P2）：格点时代它是“把点击处所在的**连通格子区域**整块划归”——
    *    但"连通格子区域"只有栅格才存在。矢量模型下等价的、且更有用的语义是
-   *    **「把这一整块地给某个省」**：目标省吸收被点中的省（保留目标省自己的 id 与名字，
+   *    **“把这一整块地给某个省”**：目标省吸收被点中的省（保留目标省自己的 id 与名字，
    *    因为 id 是它在时间轴 / 势力归属里的身份）。
    *    复用 `mergeProvinces`（精确并集 + 一条 undo），不再有"一点吞掉整片海"的风险 ——
    *    吞并的对象是**一个有边界的省份**，不是无限的连通区域。
@@ -1343,7 +1343,7 @@ export function createProvinceEditingModule(ctx) {
     if (hitIdx < 0) {
       return {
         changed: 0, rejected: 'no-province',
-        message: '这里没有省份（点在空白或海洋上）——先用「画省份」画一块，或点到别的省份上',
+        message: '这里没有省份（点在空白或海洋上）——先用“画省份”画一块，或点到别的省份上',
       };
     }
     if (hitIdx + 1 === target) return { changed: 0, message: '这一块已经属于该省份' };
@@ -1353,27 +1353,27 @@ export function createProvinceEditingModule(ctx) {
     if (!res || res.blocked || res.rejected) return res || { changed: 0, message: '填充失败' };
     return {
       changed: 2,
-      label: `点击填充：「${hitProv.name || hitProv.id}」并入「${targetProv.name || targetProv.id}」`,
+      label: `点击填充：“${hitProv.name || hitProv.id}”并入“${targetProv.name || targetProv.id}”`,
       swallowed: hitProv.name || hitProv.id,
       into: targetProv.name || targetProv.id,
     };
   }
 
   // ============================================================
-  // 分割 / 折线切割 / 合并（几何在纯函数层；这里只管「一条 undo + 网格作废」）
+  // 分割 / 折线切割 / 合并（几何在纯函数层；这里只管“一条 undo + 网格作废”）
   // ============================================================
 
   /**
-   * 把「切成两半」的结果落成**一条 undo**（直线分割与折线切割共用）。
+   * 把“切成两半”的结果落成**一条 undo**（直线分割与折线切割共用）。
    *
    * 🔴 占原位的那一半必须**连 id 一起继承**：省份 id 是它在时间轴 / 归属 / 引用里的身份，
-   *    换了 id 等于「那块地换了一个省」—— 历史归属会整段对不上（这类静默错数据最难发现）。
-   *    `side`（+1 / -1）决定**哪一半占原位序号**：序号决定「时间轴 / 归属里那条历史的省
-   *    还是不是这块地」，所以用户必须能选边。
+   *    换了 id 等于“那块地换了一个省”—— 历史归属会整段对不上（这类静默错数据最难发现）。
+   *    `side`（+1 / -1）决定**哪一半占原位序号**：序号决定“时间轴 / 归属里那条历史的省
+   *    还是不是这块地”，所以用户必须能选边。
    *
    * ⚠️ 本函数**不含** `guardWrite`/`blocked`：它自己不改任何数据，写入全在 `execute` 的
    *    redo 回调里（`execute` 内部先过闸门）。写口契约（test_54）因此不登记它 —— 登记了反而
-   *    会让「函数首行守卫」那条判据把一次**只读**操作算成写口。
+   *    会让“函数首行守卫”那条判据把一次**只读**操作算成写口。
    */
   function commitSplit(key, idx, res, side, label) {
     const terrain = provincesOf(key);
@@ -1407,7 +1407,7 @@ export function createProvinceEditingModule(ctx) {
    * 默认原省占原位（序号不变 → 标签继续有效），新省追加到表尾（新序号原本无主）。
    *
    * **侧符号（P2）**：`side`（+1 / -1）决定**哪一半占原位序号** ——
-   * 序号决定「时间轴 / 归属里那条历史的省还是不是这块地」，所以用户必须能选边：
+   * 序号决定“时间轴 / 归属里那条历史的省还是不是这块地”，所以用户必须能选边：
    * 默认 a 侧留原位，`side:-1` 则 b 侧留原位（另一侧拿新序号）。
    *
    * 网格按新多边形重建（几何变化很大，增量改格没有意义）。
@@ -1419,12 +1419,12 @@ export function createProvinceEditingModule(ctx) {
     if (idx < 0) return null;
     const res = splitProvinceShape(terrain[idx], p1, p2);
     if (!res) return { rejected: 'no-cut', message: '切割线没有穿过这个省份（两点要落在它的两侧）' };
-    return commitSplit(key, idx, res, side, `分割省份「${terrain[idx].name || provinceId}」`);
+    return commitSplit(key, idx, res, side, `分割省份“${terrain[idx].name || provinceId}”`);
   }
 
   /**
    * 沿**折线**把省份切成两半（A 方案：`splitProvinceShape` 只能切直线，见 polygonBool 头注）。
-   * 与直线分割共用 `commitSplit` —— 「哪一半继承原 id」的规则只此一处。
+   * 与直线分割共用 `commitSplit` —— “哪一半继承原 id”的规则只此一处。
    */
   function splitProvinceAlong(key, provinceId, polyline, { side = 1 } = {}) {
     if (isRO()) return blocked('折线切割');
@@ -1433,7 +1433,7 @@ export function createProvinceEditingModule(ctx) {
     if (idx < 0) return { rejected: 'not-found', message: '要切的省份已不存在' };
     const res = splitProvinceByPolyline(polygonClipping, rawProvinces(key)[idx], polyline);
     if (!res) return { rejected: 'no-cut', message: '这条折线没有把这个省份切成两块（折线要横穿它，两端可以落在省外）' };
-    const r = commitSplit(key, idx, res, side, `折线切割「${terrain[idx].name || provinceId}」`);
+    const r = commitSplit(key, idx, res, side, `折线切割“${terrain[idx].name || provinceId}”`);
     return { ...r, snapped: !!res.snapped, cutPoints: res.cutPoints, runs: res.runs };
   }
 
@@ -1496,7 +1496,7 @@ export function createProvinceEditingModule(ctx) {
    *
    * 为什么现在可以（原先"一次只切一个"的理由已不成立）：单省切分只改 `terrain[idx]` +
    * **表尾追加**新省 ⇒ 既有下标一个都不动，逐个切互不干扰。每个省用的是
-   * 「折线**在它内部**的那一段」而不是整条折线 —— 否则延长段会替邻居做决定，
+   * “折线**在它内部**的那一段”而不是整条折线 —— 否则延长段会替邻居做决定，
    * 那正是当初要防的事。
    *
    * ⚠️ **undo 粒度**：每个省一条 undo（复用 `commitSplit`，不另造批量命令）——
@@ -1568,7 +1568,7 @@ export function createProvinceEditingModule(ctx) {
   function mergeProvinces(key, provinceIds, { name = '' } = {}) {
     if (isRO()) return blocked('合并省份');
     let ids = (provinceIds || []).filter(Boolean);
-    ids = Array.from(new Set(ids));      // 去重：同一个省被选两次不该算「两个」（否则合并静默失败）
+    ids = Array.from(new Set(ids));      // 去重：同一个省被选两次不该算“两个”（否则合并静默失败）
     if (ids.length < 2) return { rejected: 'too-few', message: '至少选择两个省份才能合并' };
     const terrain = provincesOf(key);
     const picked = terrain.filter((p) => ids.includes(p.id));
@@ -1621,12 +1621,12 @@ export function createProvinceEditingModule(ctx) {
   // B 方案：**批量铺底**（Voronoi 一次切出 N 块）
   // ============================================================
   //
-  // 暮雨的最终目标：一张底图上「少说也要切四五百块省份」。`splitProvince` 一次只切一刀，
-  // 切 400 块 = 400 次精确点击 —— 不可行。这里把「播种 N 个点 → Voronoi → 与陆地求交」
+  // 暮雨的最终目标：一张底图上“少说也要切四五百块省份”。`splitProvince` 一次只切一刀，
+  // 切 400 块 = 400 次精确点击 —— 不可行。这里把“播种 N 个点 → Voronoi → 与陆地求交”
   // 做成一次动作。
   //
   // 🔴 三条不许违反的约束：
-  //   ① **不动海岸线**：每个 cell 都与「目标省的并集」求交，切出来的边界里，
+  //   ① **不动海岸线**：每个 cell 都与“目标省的并集”求交，切出来的边界里，
   //      海岸那一段就是**原多边形的原顶点**（布尔交集不是重采样）→ 海岸线逐点保留。
   //   ② **不丢归属**：旧省要被删掉，如果只是删，12 个剧本里 20 条归属键就成了孤儿
   //      （画布上看不见、却仍参与 groupMap / 谱系重叠度计算）。所以每个新省**承接**
@@ -1660,7 +1660,7 @@ export function createProvinceEditingModule(ctx) {
     }
     const all = provincesOf(key);
     if (!all.length) {
-      return { error: { ok: false, rejected: 'no-province', message: '这张底图还没有省份 —— 先用「自由绘制 (B)」画一块大陆，再铺底' } };
+      return { error: { ok: false, rejected: 'no-province', message: '这张底图还没有省份 —— 先用“自由绘制 (B)”画一块大陆，再铺底' } };
     }
     const wanted = (provinceIds && provinceIds.length)
       ? all.filter((p) => provinceIds.includes(p.id))
@@ -1674,7 +1674,7 @@ export function createProvinceEditingModule(ctx) {
 
   /**
    * 目标省 → 铺底范围（并集）+ 区域探针。
-   * 只有一个目标省时**不做并集**（真实底图上「整块大陆就是一个省」是最常见的情形，
+   * 只有一个目标省时**不做并集**（真实底图上“整块大陆就是一个省”是最常见的情形，
    * 而 10525 点自并要 1 秒多 —— 没必要白花）。
    */
   function buildBatchRegion(key, targets, synthetic = false) {
@@ -1762,7 +1762,7 @@ export function createProvinceEditingModule(ctx) {
   }
 
   /**
-   * 归属迁移：新省承接「它的落点所在旧省」的归属与易主记录；旧省的键**删掉**。
+   * 归属迁移：新省承接“它的落点所在旧省”的归属与易主记录；旧省的键**删掉**。
    * 四处一起迁（ownership / initialOwnership / changeEvents / 账本）——纯函数在 `src/ledger`。
    * @param before `collectOwnershipBefore` 的结果
    * @param link   `[{ newId, srcId }]`
@@ -1843,11 +1843,11 @@ export function createProvinceEditingModule(ctx) {
      *
      * 旧实现是 `await new Promise(r => setTimeout(r, 0))` —— 它只把控制权交回**定时器队列**，
      * 浏览器并不因此插进一次渲染：一次 rAF 里排的定时器回调会在下一次绘制之前被清空。
-     * 暮雨实测的现象正是这条：进度提示「卡在 414 很久」（跨 400→414 的一段一直在算，
+     * 暮雨实测的现象正是这条：进度提示“卡在 414 很久”（跨 400→414 的一段一直在算，
      * 中间一声不响），而如果切的是**屏幕上的**进度条，症状会更明显。
-     * rAF 让出的语义就是「等下一帧」—— 一帧一个批次，进度真的会动。
+     * rAF 让出的语义就是“等下一帧”—— 一帧一个批次，进度真的会动。
      *
-     * 同时把「取消」检查放在这里：用户在遮罩上点取消 → 立即返回，**不落库、不压 undo**。
+     * 同时把“取消”检查放在这里：用户在遮罩上点取消 → 立即返回，**不落库、不压 undo**。
      */
     const yieldToPaint = () => new Promise((r) => {
       const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
@@ -1954,7 +1954,7 @@ export function createProvinceEditingModule(ctx) {
     const link = [];
     const newProvs = cells.map((c, i) => {
       const id = `prov_batch_${stamp}_${i}`;
-      // 归属来源 = 新省「落点」所在的旧省（种子点必定在范围内；边界上兜底用 cell 内一点）
+      // 归属来源 = 新省“落点”所在的旧省（种子点必定在范围内；边界上兜底用 cell 内一点）
       let src = targets.find((p) => pointInProvince(c.site.x, c.site.y, p));
       if (!src) src = targets.find((p) => pointInProvince(c.mp[0][0][0], c.mp[0][0][1], p));
       link.push({ newId: id, srcId: src ? src.id : null });
@@ -1974,7 +1974,7 @@ export function createProvinceEditingModule(ctx) {
     const ownBefore = collectOwnershipBefore(key);
     const ownAfter = buildOwnershipAfter(ownBefore, targetIds, link);
 
-    // P0-2：造陆要「造陆 + 切省」**一条 undo** —— 所以铺底只算不写，把结果交回调用方，
+    // P0-2：造陆要“造陆 + 切省”**一条 undo** —— 所以铺底只算不写，把结果交回调用方，
     // 由它拼一条命令同时恢复/写入。真实行政区也要这条：先看方案再落库。
     if (opts.planOnly) {
       return {
@@ -2041,7 +2041,7 @@ export function createProvinceEditingModule(ctx) {
   /**
    * **上次造陆用的图幅**（记在高度图上，A5 修 2026-10-29）。
    *
-   * 🔴 为什么必须记：旧实现每次都从「现有省份包围盒外扩 4%」重推图幅，而省份只占环的
+   * 🔴 为什么必须记：旧实现每次都从“现有省份包围盒外扩 4%”重推图幅，而省份只占环的
    *    一小部分（实测 ≈0.87）→ **每重跑一次造陆，整块大陆缩 ≈9.5%**（实测图幅
    *    1800 → 1628 → 1473 世界单位，连跑三次缩 18%）。缩的不只是画面：所有按绝对坐标
    *    摆的标记/道路/手绘地形都会相对陆地漂移；手绘也因此只能"图幅相对位置"搬。
@@ -2057,8 +2057,8 @@ export function createProvinceEditingModule(ctx) {
   }
 
   /**
-   * 造陆区域：① 优先沿用上次的图幅（见 `recordedLandBBox`，不缩）；② 与「现有省份包围盒
-   * 外扩 4%」取并集（用户手涂到框外时跟着长，不会被裁掉）；③ 都没有 → 默认区域。
+   * 造陆区域：① 优先沿用上次的图幅（见 `recordedLandBBox`，不缩）；② 与“现有省份包围盒
+   * 外扩 4%”取并集（用户手涂到框外时跟着长，不会被裁掉）；③ 都没有 → 默认区域。
    */
   function landmassBBox(key) {
     let box = null;
@@ -2141,7 +2141,7 @@ export function createProvinceEditingModule(ctx) {
     if (!m) return { ok: false, rejected: 'no-basemap', message: '先选一张底图' };
     const existing = provincesOf(key);
     if (existing.length && !opts.force) {
-      // A5：把「手绘地形也会被整张换掉」写进拒绝理由 —— 不写清，用户以为只有省被替换
+      // A5：把“手绘地形也会被整张换掉”写进拒绝理由 —— 不写清，用户以为只有省被替换
       const pendingHand = activeHandEdits(getHeightmapFor(key)).length;
       return {
         ok: false, rejected: 'has-terrain',
@@ -2174,7 +2174,7 @@ export function createProvinceEditingModule(ctx) {
     });
     if (!plan || plan.ok === false) return plan || { ok: false, rejected: 'subdivide-failed', message: '铺底计划失败' };
 
-    // ── N3a-1（2026-11-02）：生成账本的「旧值」必须在**任何写入之前**抓住 ──────────
+    // ── N3a-1（2026-11-02）：生成账本的“旧值”必须在**任何写入之前**抓住 ──────────
     // 写进 undo 的必须是"命令执行前那一份"，否则撤销会把这次的新账当成旧账填回去
     // （= 撤了数据、账还在，正是这条红线要防的半截状态）。
     const provenanceBefore = Array.isArray(m.provenance) ? m.provenance : [];
@@ -2191,10 +2191,10 @@ export function createProvinceEditingModule(ctx) {
     const heightmapAfter = gen.terrain || null;
     // ── 地形特征级锁定（A5，2026-10-29）：造陆 = 整张底图重来，手绘地形默认**搬过去** ─────
     // 口径（改之前先想清楚，别写成"看起来能保留"）：
-    //   ① 新图与旧图共享**世界坐标系**，但**不是同一张网格**：包围盒由「现有省份包围盒外扩 4%」
+    //   ① 新图与旧图共享**世界坐标系**，但**不是同一张网格**：包围盒由“现有省份包围盒外扩 4%”
     //      推出来、格距随崎岖度变 → 逐点同坐标几乎一定落空（实测：同种子重跑一次命中率≈0）。
-    //      所以按「图幅相对位置」搬（`transferHandEdits`），落在新图海里的"抬高型"手绘如实丢弃。
-    //   ② **换 seed = 全新世界**：不搬（与地形面板「同种子才有效」同一条口径）。
+    //      所以按“图幅相对位置”搬（`transferHandEdits`），落在新图海里的"抬高型"手绘如实丢弃。
+    //   ② **换 seed = 全新世界**：不搬（与地形面板“同种子才有效”同一条口径）。
     //   ③ 用户显式关掉开关 → 不搬，并在回执里写明丢了多少格（不做静默保留）。
     const prevHand = activeHandEdits(heightmapBefore);
     const keepHand = opts.keepHandEdits !== false;
@@ -2315,7 +2315,7 @@ export function createProvinceEditingModule(ctx) {
     if (!hm || !hm.grid || !Array.isArray(hm.grid.points) || !hm.grid.points.length) {
       return {
         ok: false, rejected: 'no-heightmap',
-        message: '文化/宗教是**逐格**数据：这张底图还没有高度图网格 —— 先「按轮廓生成地形」或导入 .map，再派生',
+        message: '文化/宗教是**逐格**数据：这张底图还没有高度图网格 —— 先“按轮廓生成地形”或导入 .map，再派生',
       };
     }
     const norm = normalizeCultureParams(paramsIn);
@@ -2496,7 +2496,7 @@ export function createProvinceEditingModule(ctx) {
   // 省份定义表（新增 / 删除 / 清空）—— 与 terrain[] 同步
   // ============================================================
 
-  /** 建一个「纯网格省份」（没有多边形轮廓：边界由 labels 自动提取）并返回它的序号 */
+  /** 建一个“纯网格省份”（没有多边形轮廓：边界由 labels 自动提取）并返回它的序号 */
   function addBrushProvince(key, { name = '', color = '' } = {}) {
     if (isRO()) return blocked('新建省份');
     const m = bm(key);
@@ -2506,12 +2506,12 @@ export function createProvinceEditingModule(ctx) {
     const province = normalizeProvince({
       id: `prov_grid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: name || `省份 ${idx}`,
-      points: [],                 // 空省：还没有几何，等「涂归属」把笔迹并进来
+      points: [],                 // 空省：还没有几何，等“涂归属”把笔迹并进来
       kind: 'land',
       color: color || '#8b7355',
       biome: '', culture: '', coast: false,
       // ⚠️ 不再写 `fromGrid: true`：空省没有几何，那个标记无意义；一旦带上它，
-      //    任何后来写回几何的路径都会被渲染端当成「格点派生」而 Chaikin 平滑（点 ×4 + 改形状）。
+      //    任何后来写回几何的路径都会被渲染端当成“格点派生”而 Chaikin 平滑（点 ×4 + 改形状）。
     });
     const before = provinces;
     const after = [...provinces, province];
@@ -2526,7 +2526,7 @@ export function createProvinceEditingModule(ctx) {
 
   /**
    * 删除省份（**重编号安全**）：labels 里所有 > idx 的序号减 1，并把 terrain 数组同步缩短。
-   * 🔴 整表快照：重编号改动的是「别的省份的格子」，差量还原不了。
+   * 🔴 整表快照：重编号改动的是“别的省份的格子”，差量还原不了。
    *
    * ⚠️ 2026-10-02 修掉一条**撤销静默失效**：旧实现的 `apply` 闭包捕获了**当时的** `entry`
    *    （`ensureProvinceGrid` 的返回值），而 `commit()` 读的是 `cache[key]`。删除之后再发生
@@ -2557,7 +2557,7 @@ export function createProvinceEditingModule(ctx) {
     };
     execute({
       type: 'remove-province-grid',
-      label: `删除省份「${provinces[idx].name || provinceId}」`,
+      label: `删除省份“${provinces[idx].name || provinceId}”`,
       undo: () => apply(before.terrain, before.labels),
       redo: () => apply(afterTerrain, afterLabels),
     });
@@ -2629,7 +2629,7 @@ export function createProvinceEditingModule(ctx) {
   //     —— 存这个字段只为了**筛选/重检测**时能只覆盖自动项，绝不碰用户手绘的。
   //
   // 为什么整表替换（而不是逐条 CRUD）：一张图上的注记是**十几条**量级，逐条 undo 会让
-  // 「检测出 7 条 → 命名 → 应用」变成按 7 次 Ctrl+Z 才退得回去。整表 = 一条命令，
+  // “检测出 7 条 → 命名 → 应用”变成按 7 次 Ctrl+Z 才退得回去。整表 = 一条命令，
   // 与 `setTerrain` / `setBaseMapRivers` 同一口径。
   function normalizeTerrainLabels(labels) {
     const list = Array.isArray(labels) ? labels : [];
@@ -2716,7 +2716,7 @@ export function createProvinceEditingModule(ctx) {
     getProvinceStrokePath: () => (stroke && stroke.path ? stroke.path : []),
     // E（2026-10-11）：描轮廓 —— 笔迹围住的那块地并进目标省、从邻省挖掉（邻省自动重算）
     resolveOutlineRegion, applyProvinceOutline,
-    // C（0.2.6）：折线切割「一次切多块」——按折线在各国内的局部段逐个切（每个省一条 undo）
+    // C（0.2.6）：折线切割“一次切多块”——按折线在各国内的局部段逐个切（每个省一条 undo）
     splitProvincesAlong,
     // F（2026-10-11）：用新 .map 的海岸线重建现有省份的外环（只裁不加，一条 undo）
     rebuildCoastline, rebuildCoastlineFromBaseMap, buildLandMulti,

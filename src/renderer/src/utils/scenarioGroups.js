@@ -1,9 +1,9 @@
-// utils/scenarioGroups.js — 历史剧本「剧本集」纯函数层（2026-10-25）
+// utils/scenarioGroups.js — 历史剧本“剧本集”纯函数层（2026-10-25）
 //
 // 为什么需要独立一层：剧本集是**数据语义**（哪几条剧本属于同一条时间线），
 // 左栏、时间轴、切片导出、剧本管理、导入导出五处都要用同一套判定。
-// 五处各写一遍 `s.group || 'default'` 不会报错 —— 只会出现「左栏按组过滤了、
-// 时间轴没有」这种同屏两个世界（本项目在「省份色 / 派生命名 / 海色」上各栽过一次）。
+// 五处各写一遍 `s.group || 'default'` 不会报错 —— 只会出现“左栏按组过滤了、
+// 时间轴没有”这种同屏两个世界（本项目在“省份色 / 派生命名 / 海色”上各栽过一次）。
 //
 // 纯函数：不碰 store / DOM / 响应式，Node 侧可直接测。
 
@@ -20,7 +20,7 @@ export function scenarioGroupIdOf(scenario) {
 
 /**
  * 规整组表：丢掉没有 id 的行、去重、补 name/order，按 order 稳定排序。
- * ⚠️ 不在这里塞「默认」——默认组是虚拟的，只在 `scenarioGroupOptions` 里出现。
+ * ⚠️ 不在这里塞“默认”——默认组是虚拟的，只在 `scenarioGroupOptions` 里出现。
  */
 export function sanitizeScenarioGroups(list) {
   const out = [];
@@ -102,11 +102,11 @@ export function collectUsedGroupIds(scenarios) {
 }
 
 /**
- * 收养「剧本引用了、组表里却没有」的组 id（2026-10-25）。
+ * 收养“剧本引用了、组表里却没有”的组 id（2026-10-25）。
  *
  * 为什么必须做：剧本的可见性 = `scenario.group ∈ 当前组选项`。如果导入包/旧数据里
  * 只有 `scenario.group` 而组表丢了，这条剧本**不会出现在任何组里**（默认组也不收它）——
- * 用户看到的是「剧本凭空消失」，且没有任何报错。这里把孤儿 id 收编成同名组，
+ * 用户看到的是“剧本凭空消失”，且没有任何报错。这里把孤儿 id 收编成同名组，
  * **不改剧本**（只补组表），保住可见性；用户可在管理对话框里改名。
  */
 export function adoptOrphanGroups(groups, scenarios) {

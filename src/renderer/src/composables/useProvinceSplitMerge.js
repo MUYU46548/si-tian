@@ -59,7 +59,7 @@ export function useProvinceSplitMerge({ store, props, emit, renderer, currentMap
     selectedProvince.value = null;
     emit('dirty', true);
     renderer.requestRender();
-    exportStatus.value = `已拆分「${base}」为两个省份`;
+    exportStatus.value = `已拆分“${base}”为两个省份`;
     setTimeout(() => { exportStatus.value = ''; }, 3000);
   }
 

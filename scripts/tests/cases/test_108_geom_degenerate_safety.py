@@ -5,7 +5,7 @@
 用户真机报错（原文）：
     `Unable to complete output ring starting at [1057.19…]. Last matching segment found ends at [1186.26…]`
     组件: window.onerror / 堆栈: polygon-clipping → unionMulti → applyRegionToTerrain → applyProvinceLasso
-    用户在做的动作：「视图圈选来批量删除」那些画错的测试河流。
+    用户在做的动作：“视图圈选来批量删除”那些画错的测试河流。
 
 🔴 定性：**手画的套索环自交是常态**（人手下笔画不出一条严格简单多边形）。
    `polygon-clipping` 在自交/精度退化的环上会抛 `Unable to complete output ring …`，

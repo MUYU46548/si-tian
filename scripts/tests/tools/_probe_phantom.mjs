@@ -86,7 +86,7 @@ for (const s of segs) {
 console.log(`\n== 段清点（共 ${segs.length} 段）==`);
 console.log(`🔴 至少一端在幻影格上的段: ${touchPhantom} (${(touchPhantom / segs.length * 100).toFixed(1)}%)  涉及幻影格 ${touchedPhantom.size}/${phantom}`);
 console.log(`   至少一端在"掩膜陆/高度海"格上的段: ${touchMaskOnly} (${(touchMaskOnly / segs.length * 100).toFixed(1)}%)`);
-console.log(`\n== 「两端都判陆 → clipSegmentToLand 整段跳过裁剪」 ==`);
+console.log(`\n== “两端都判陆 → clipSegmentToLand 整段跳过裁剪” ==`);
 console.log(`  并集口径（上一轮 = 现状的历史）: ${skipUnion}`);
 console.log(`  掩膜口径（本轮修法）          : ${skipMask}`);
 console.log(`  → **${skipUnion - skipMask} 段**在并集下"不用裁"，其中相当一部分正是画进海里的那些`);

@@ -392,7 +392,7 @@ export class HeightmapGenerator {
       case 'Multiply': return this.modify(a3, 0, +a2);
       case 'Smooth': return this.smooth(+a2);
       default:
-        throw new Error(`高度图模板：未知工具「${tool}」`);
+        throw new Error(`高度图模板：未知工具“${tool}”`);
     }
   }
 
@@ -410,7 +410,7 @@ export class HeightmapGenerator {
       const text = line.trim();
       if (!text) continue;
       const el = text.split(/\s+/);
-      if (el.length < 2) throw new Error(`高度图模板：步骤字段不足 ——「${text}」`);
+      if (el.length < 2) throw new Error(`高度图模板：步骤字段不足 ——“${text}”`);
       this.addStep(el[0], el[1], el[2] ?? '0', el[3] ?? '0', el[4] ?? '0');
     }
     return this.heights || new Uint8Array(initialHeights.length);

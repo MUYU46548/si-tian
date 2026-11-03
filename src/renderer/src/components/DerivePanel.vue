@@ -47,7 +47,7 @@
     <div class="dgen-note">
       · 文化/宗教：逐格写 `heightmap.culture/religion` + 省份摘要；**覆盖**会替换整层（会先问）。
       · 势力归属：**只补空**（只给没有任何归属/易主记录的省铺初始归属）。已有历史不动 ——
-      改朝换代请用「涂归属」笔刷，它会按日期记账本。
+      改朝换代请用“涂归属”笔刷，它会按日期记账本。
     </div>
 
     <div v-if="warn" class="dgen-warn">{{ warn }}</div>
@@ -109,7 +109,7 @@ function refresh() {
 async function applyCulture() {
   if (strategy.value === 'overwrite') {
     const ok = confirm(
-      '「覆盖」会把这张底图现有的文化/宗教网格与省份文化摘要**整层替换**（手改也会被覆盖）。\n\n'
+      '“覆盖”会把这张底图现有的文化/宗教网格与省份文化摘要**整层替换**（手改也会被覆盖）。\n\n'
       + '只补空会保留已有数据。确定覆盖吗？',
     );
     if (!ok) return;

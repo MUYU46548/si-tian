@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * A-1：把存量「机器属性」从笔记搬进项目文件（搬家协议里的「搬家 + 清点 + 反向档」）
+ * A-1：把存量“机器属性”从笔记搬进项目文件（搬家协议里的“搬家 + 清点 + 反向档”）
  *
  * 背景（《机器属性搬家——最终定案报告》①③④）
- *   现在「这是什么层级 / 挂在谁下面 / 属于哪类地点」这套**机器属性**由笔记 frontmatter 承载
+ *   现在“这是什么层级 / 挂在谁下面 / 属于哪类地点”这套**机器属性**由笔记 frontmatter 承载
  *   （`层级` / `上层区域` / `地点类型`）。用户必须人肉维护：看不懂的值要查表、还容易漏记 ——
- *   这就是「人肉替机器录数据」。定案：**结构归司天（`.sitian`），内容归笔记（vault）**。
- *   本脚本负责把**存量**搬过去；之后的「读路径切换」与「中文点选界面」是另外两步。
+ *   这就是“人肉替机器录数据”。定案：**结构归司天（`.sitian`），内容归笔记（vault）**。
+ *   本脚本负责把**存量**搬过去；之后的“读路径切换”与“中文点选界面”是另外两步。
  *
  *   报告 ③ 的协议是：备份 → 搬家（纯复制）→ 清点 → 新旧并存跑一段 →（真要删时）删字段。
  *   本脚本实现前三件：**默认 dry-run 出清点表**，`--apply` 才写盘，写前整份备份 + 落反向档。
@@ -14,8 +14,8 @@
  * 🔴 三条硬约束（不许破）
  *   1. **绝不覆盖项目里已有的值**。项目文件是构建层权威（用户可能在司天界面里改过）。
  *      只在项目侧**空**的时候补（layer 空 / `unknown`、parentId 空、placeType 空）；
- *      不一致一律进「冲突」清单**报告给人看**，不自动改。
- *   2. **绝不动笔记**。只读 —— 笔记里的原字段原地不动，这本身就是报告 ④ 里的「后悔药级」保险。
+ *      不一致一律进“冲突”清单**报告给人看**，不自动改。
+ *   2. **绝不动笔记**。只读 —— 笔记里的原字段原地不动，这本身就是报告 ④ 里的“后悔药级”保险。
  *   3. **补 parentId 前必须校验目标父实体在项目里存在**，否则补上去就是悬空引用
  *      （项目校验会把悬空 parentId 静默置空 → 搬了个寂寞，还看不出为什么）。
  *
@@ -41,7 +41,7 @@ const DEFAULT_VAULT = 'E:/图书馆/ROSA';
 /**
  * 解析命令行参数（**纯函数**：不读全局 argv，便于单测直接喂数组）。
  * 抽出它的原因：本仓的 Node 单测环境**无法再 spawn 一个 node 进程**（EBUSY），
- * 所以 CLI 外壳必须薄到「只有 parseArgs + runMigration」两层，逻辑层能被直接调用做端到端。
+ * 所以 CLI 外壳必须薄到“只有 parseArgs + runMigration”两层，逻辑层能被直接调用做端到端。
  */
 function parseArgs(argv = []) {
   const has = (f) => argv.includes(f);
@@ -71,7 +71,7 @@ const MIGRATABLE_FIELDS = ['layer', 'parentId', 'placeType'];
 const FIELD_LABELS = { layer: '层级', parentId: '上层挂靠', placeType: '地点类型' };
 
 /**
- * 项目侧该字段是否「空」（需要补）。
+ * 项目侧该字段是否“空”（需要补）。
  * `layer` 额外把 `unknown` 当空 —— 提取器推断不出时写的就是它，等价于"没有层级"。
  */
 function isBlank(entity, field) {
@@ -92,7 +92,7 @@ function isBlank(entity, field) {
  *   patches          待补的字段（只含"项目侧为空"的）
  *   conflicts        项目侧已有值且与笔记不同 → **不自动改**，交人看
  *   parentMissing    笔记给了父级，但那个父实体在项目里不存在 → 跳过并点名
- *   unmatchedEntities 有 sourcePath 但库里找不到对应笔记（多半是改名了 → 先跑「检查笔记改名」）
+ *   unmatchedEntities 有 sourcePath 但库里找不到对应笔记（多半是改名了 → 先跑“检查笔记改名”）
  */
 function buildMigrationPlan({ entities = {}, vaultNodes = [] } = {}) {
   const byPath = new Map();
@@ -197,10 +197,10 @@ function renderReport({ projectPath, srcLabel, entityCount, plan, limit }) {
   L.push('');
   L.push(`  待补属性  ${plan.patches.length} 处    ${fmtCounts(countByField(plan.patches))}`);
   L.push(`  已一致    ${plan.already} 处`);
-  // 「见下」只在真有冲突时写 —— 0 条时还写「见下」而下面空着，读起来像出错
+  // “见下”只在真有冲突时写 —— 0 条时还写“见下”而下面空着，读起来像出错
   L.push(`  冲突      ${plan.conflicts.length} 处    ${fmtCounts(countByField(plan.conflicts))}${plan.conflicts.length ? '（**不改动**，见下）' : ''}`);
   L.push(`  父级缺失  ${plan.parentMissing.length} 处（笔记给的父实体不在项目里 → 跳过）`);
-  L.push(`  认不到    ${plan.unmatchedEntities.length} 个实体（来源笔记不在库里 → 先跑「检查笔记改名」重连）`);
+  L.push(`  认不到    ${plan.unmatchedEntities.length} 个实体（来源笔记不在库里 → 先跑“检查笔记改名”重连）`);
 
   if (plan.patches.length) {
     L.push('');
@@ -307,9 +307,9 @@ async function runMigration({ projectPath, vault = DEFAULT_VAULT, fromCache = fa
   log(`   项目文件已写：${res.filePath}（${res.bytes} 字节）`);
   log(`   旧文件备份：  ${res.backupPath || '（无 —— 文件原本不存在）'}`);
   log(`   反向档：      ${archivePath}`);
-  log('倒回办法：反向档逐条记着「哪个实体的哪个字段从什么改成了什么」；没再做别的改动时，');
+  log('倒回办法：反向档逐条记着“哪个实体的哪个字段从什么改成了什么”；没再做别的改动时，');
   log('          直接用上面那份旧文件备份覆盖回去即可。');
-  log('⚠️ 笔记未被改动（原字段原地不动）—— 这是报告 ④ 的「后悔药级」保险。');
+  log('⚠️ 笔记未被改动（原字段原地不动）—— 这是报告 ④ 的“后悔药级”保险。');
 
   return {
     ok: true, plan, written: true, bytes: res.bytes, backupPath: res.backupPath || null,

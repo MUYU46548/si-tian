@@ -2,26 +2,26 @@
 # -*- coding: utf-8 -*-
 """用例 87：剧本元信息可编辑 + 标注/标记可删除（两个"零调用死入口"接活）
 
-来源：2026-10-07 复查「历史剧本模块到底能不能用」时，把 `scenarioEditing.js` 的 66 个导出
+来源：2026-10-07 复查“历史剧本模块到底能不能用”时，把 `scenarioEditing.js` 的 66 个导出
 逐个对产品侧引用数了一遍，抓出三个**零调用的死入口**：
 
   🔴 `updateScenario`             —— 剧本的 名称 / 罗马数字 / 时代标签 / **起止年**
-                                     建完就改不了：年份填错只能「删剧本重建」，
+                                     建完就改不了：年份填错只能“删剧本重建”，
                                      而重建会连带丢掉 ownership / changeEvents / 标注 / 标记。
-  ⚠️ `removeScenarioLabel`        —— 地名「只能加不能删」（只有一次性的撤销兜底）
+  ⚠️ `removeScenarioLabel`        —— 地名“只能加不能删”（只有一次性的撤销兜底）
   ⚠️ `removeScenarioMarker`       —— 标记同上
 
 这类"声明了却没接 UI"的缺口在本项目已出过三次（`clearOwnership`、`batchSetOwnership`、本批），
 所以本轮不只接活，还立一条**反向探针**（下面 f2）：FMG `.map` 导入的标注/标记**没有 id**
 （`utils/azgaar-parser.js` 只造 `{x,y,text,size,color}` / `{x,y,name,type}`），
 若删除写口按 id 匹配，`undefined === undefined` 会命中同类型的**第一条** ——
-「点第 3 条删掉第 1 条」且不报错。故写口必须支持**下标**寻址，且撤销要放回**原位**。
+“点第 3 条删掉第 1 条”且不报错。故写口必须支持**下标**寻址，且撤销要放回**原位**。
 
 本用例覆盖：
-  f0 源码守卫：两个写口已被产品调用；支持「id 或下标」；撤销 splice 回原位；
+  f0 源码守卫：两个写口已被产品调用；支持“id 或下标”；撤销 splice 回原位；
      `MEMORY_WRITE_CALLSITES` 不许登记它们（走 execute 总闸门，登记了反而说明绕开了）；
      只读灰禁落在新按钮上。
-  f1 端到端：走真实 UI（工具栏「剧本管理」→ 编辑 → 改名称/起止年 → 保存）→
+  f1 端到端：走真实 UI（工具栏“剧本管理”→ 编辑 → 改名称/起止年 → 保存）→
      元信息真的变了、**已录内容（ownership / changeEvents / 标注 / 标记）一字未动**；undo 可还原。
   f2 反向探针：删掉**第 3 条（无 id）**必须是第三条消失，第一条照旧在（互为反面）。
   f3 写口有回执、零副作用：不存在的剧本 / 越界下标 → `{ok:false, reason}`，且列表一格不动。
@@ -50,7 +50,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再判子串 —— 本仓五次踩到「注释里的字样被当成实现」。"""
+    """剥掉注释后再判子串 —— 本仓五次踩到“注释里的字样被当成实现”。"""
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
     src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
     return re.sub(r'(?m)//[^\n]*', '', src)
@@ -76,7 +76,7 @@ def sub_source_guards(cdp):
         if call not in sm:
             bad.append(why)
 
-    # ② 「id 或下标」双寻址 —— FMG 导入的条目没有 id，只按 id 匹配会误删第一条
+    # ② “id 或下标”双寻址 —— FMG 导入的条目没有 id，只按 id 匹配会误删第一条
     if 'typeof labelRef === \'number\'' not in se:
         bad.append('removeScenarioLabel 不支持下标寻址（无 id 的导入标签会被误删第一条）')
     if 'typeof markerRef === \'number\'' not in se:
@@ -160,9 +160,9 @@ SETUP_JS = r"""(async () => {
   sc.selectScenario(made);
   await wait(120);
 
-  // 打开「剧本管理」（入口在工具栏「更多」里）
+  // 打开“剧本管理”（入口在工具栏“更多”里）
   const btn = document.querySelector('.scenario-toolbar button[title="剧本管理"]');
-  if (!btn) return JSON.stringify({ fails: ['工具栏里找不到「剧本管理」入口'] });
+  if (!btn) return JSON.stringify({ fails: ['工具栏里找不到“剧本管理”入口'] });
   btn.click();
   await wait(320);
 
@@ -179,7 +179,7 @@ SETUP_JS = r"""(async () => {
 
 
 def _setup(cdp):
-    # ① 先点「历史剧本」进入剧本视图（工具栏只在剧本视图里存在）
+    # ① 先点“历史剧本”进入剧本视图（工具栏只在剧本视图里存在）
     cdp.eval(
         "(() => { const b = Array.from(document.querySelectorAll('button'))"
         ".find(x => (x.textContent || '').includes('历史剧本')); if (b) b.click(); return 'ok'; })()"
@@ -189,9 +189,9 @@ def _setup(cdp):
     except RuntimeError as e:
         return False, f'剧本模式未挂载：{e}'
     time.sleep(1.2)
-    # ② 再展开「更多」（「剧本管理」入口在里面；本函数幂等）
+    # ② 再展开“更多”（“剧本管理”入口在里面；本函数幂等）
     if not open_toolbar_more(cdp):
-        return False, '工具栏「更多」没展开（剧本管理入口在里面）'
+        return False, '工具栏“更多”没展开（剧本管理入口在里面）'
     ok, res = eval_json(cdp, SETUP_JS.replace('__STORE__', STORE).replace('__SC__', SC),
                         desc='装置：造剧本', required=('fails',))
     if not ok:
@@ -217,7 +217,7 @@ F1_JS = r"""(async () => {
     el.dispatchEvent(new Event('change', { bubbles: true }));
   };
 
-  // ① 点该剧本那一行的「编辑」
+  // ① 点该剧本那一行的“编辑”
   const items = Array.from(document.querySelectorAll('.scenario-item'));
   const mine = items.find((it) => (it.textContent || '').includes('旧名'));
   if (!mine) return JSON.stringify({ fails: ['剧本列表里找不到造的那一条'] });
@@ -234,7 +234,7 @@ F1_JS = r"""(async () => {
   const filled = { name: valOf('第一时代'), roman: valOf('Ⅰ'), startYear: valOf('2006'), endYear: valOf('2008') };
   if (filled.name !== '旧名') fails.push('编辑时名称没有回填：' + JSON.stringify(filled));
   if (filled.startYear !== '2000' || filled.endYear !== '2010') fails.push('编辑时起止年没有回填：' + JSON.stringify(filled));
-  if (!document.querySelector('[data-testid="scenario-save-edit"]')) fails.push('编辑态没有出现「保存」按钮');
+  if (!document.querySelector('[data-testid="scenario-save-edit"]')) fails.push('编辑态没有出现“保存”按钮');
 
   // ③ 改值 → 保存
   const nameEl = inputs.find((x) => (x.placeholder || '').includes('第一时代'));
@@ -266,7 +266,7 @@ F1_JS = r"""(async () => {
   if (JSON.stringify(after.markers) !== JSON.stringify(before.markers)) fails.push('编辑元信息把标记动了');
   // ⑤ 保存后退出编辑态（按钮回到"创建"、且不再是编辑态）
   if (document.querySelector('[data-testid="scenario-save-edit"]')) fails.push('保存后没有退出编辑态');
-  if (!document.querySelector('[data-testid="scenario-create"]')) fails.push('保存后没回到「创建」按钮');
+  if (!document.querySelector('[data-testid="scenario-create"]')) fails.push('保存后没回到“创建”按钮');
 
   // ⑥ 一条 undo 还原元信息
   s.undo();
@@ -296,7 +296,7 @@ def sub_meta_edit(cdp):
 
 
 # ══════════════════════════════════════════════════════════════════
-# f2 反向探针：删「无 id」的第 3 条，必须是第 3 条消失（不是第 1 条）
+# f2 反向探针：删“无 id”的第 3 条，必须是第 3 条消失（不是第 1 条）
 # ══════════════════════════════════════════════════════════════════
 F2_JS = r"""(async () => {
   const fails = [];
@@ -320,10 +320,10 @@ F2_JS = r"""(async () => {
     return JSON.stringify({ fails: ['标注/标记清单一共应有 5 行，实际 ' + notes.listBefore.length], notes });
   }
 
-  // ① 删「无id地名二」= 列表里的第 3 行（它没有 id）
+  // ① 删“无id地名二”= 列表里的第 3 行（它没有 id）
   const rows = Array.from(document.querySelectorAll('[data-testid="anno-label"]'));
   const target = rows.find((r) => r.textContent.includes('无id地名二'));
-  if (!target) return JSON.stringify({ fails: ['清单里找不到「无id地名二」'], notes });
+  if (!target) return JSON.stringify({ fails: ['清单里找不到“无id地名二”'], notes });
   target.querySelector('[data-testid="anno-del"]').click();
   await wait(300);
 
@@ -338,7 +338,7 @@ F2_JS = r"""(async () => {
   // ② 删有 id 的标记（走 id 寻址那条路）
   const mrows = Array.from(document.querySelectorAll('[data-testid="anno-marker"]'));
   const mt = mrows.find((r) => r.textContent.includes('有id标记'));
-  if (!mt) return JSON.stringify({ fails: ['清单里找不到「有id标记」'], notes });
+  if (!mt) return JSON.stringify({ fails: ['清单里找不到“有id标记”'], notes });
   mt.querySelector('[data-testid="anno-del"]').click();
   await wait(300);
   const afterM = s.getScenario(SID).markers || [];

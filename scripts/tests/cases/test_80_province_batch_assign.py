@@ -4,11 +4,11 @@
 
 来源：2026-10-01 收尾时留下的第三件 ——
   `scenarioEditing.batchSetOwnership` 是**零调用的死入口**：骨架（一条 undo / 直通写闸门）
-  早就在，缺的是「省份多选」这个交互，以及三处语义不完整：
+  早就在，缺的是“省份多选”这个交互，以及三处语义不完整：
     ① `polityId` 假值会写 `ownership[id] = null`（**留键**），而 `clearOwnership` 是 delete 真删键 ——
-       `groupMap` / 谱系重叠度判的是「键在不在」，于是"清空"会留下指向 null 的孤儿键；
+       `groupMap` / 谱系重叠度判的是“键在不在”，于是"清空"会留下指向 null 的孤儿键；
     ② **海域不跳过**：单省油漆桶在 UI 侧拒 sea（海不参与势力归属、不进时间轴/谱系），
-       批量照写就会出现「有些海莫名其妙有了归属」；
+       批量照写就会出现“有些海莫名其妙有了归属”；
     ③ 空 / 无改动照样 execute + save（无操作噪音），且**没有回执**（UI 只能自己数个数）。
 
 本用例覆盖：
@@ -17,7 +17,7 @@
   f1 store 行为：3 个省（2 陆 + 1 海）→ 批量指派（含易主**日期** `{y,m,d}`）→ 海域被跳过后回报 →
      一条 undo 全还原；`polityId=null` → 真删键 + 连带清 `changeEvents`；重复 id 去重；
      不存在的 id 计入 skippedMissing；**同值重复指派 = noop 且不多压一条 undo**。
-  f2 真鼠标多选：Ctrl+点击加选两个省 → 批量条显示「已选 2 省」→ 点「指派」→ 归属落库 +
+  f2 真鼠标多选：Ctrl+点击加选两个省 → 批量条显示“已选 2 省”→ 点“指派”→ 归属落库 +
      状态栏点名；再 Ctrl+点击同一个省 = 减选；普通点击 = 回单选并清空多选。
   f3 全选陆地省 / 取消选择 / 只读灰禁（无项目时按钮禁用且带原因）。
 """
@@ -100,7 +100,7 @@ def sub_source_guards(cdp):
                      ('toggleProvinceSelection', '缺少加选/减选切换'),
                      ('function onBatchAssign', '缺少批量指派处理'),
                      ('store.batchSetOwnership', '批量条没接到 store'),
-                     ('selectedLandProvinces', '缺少「全选陆地省」的数据源')):
+                     ('selectedLandProvinces', '缺少“全选陆地省”的数据源')):
         if sym not in sm:
             bad.append(f'ScenarioMap 缺 {sym}（{why}）')
     for tid in ('data-testid="province-batch-bar"', 'data-testid="pbb-assign"',
@@ -197,8 +197,8 @@ STORE_JS = r"""(async () => {
   ck('redo 再落一次', own().p80a === 'A1' && own().p80b === 'A1');
 
   // ② noop 不入栈：跑**同一串真实操作**，只在其中一次后面多插一发同值指派 ——
-  //    「撤空 terrain 需要几步」会把中途那些不改 terrain 的命令也算进去，所以判据必须是
-  //    两条支路的**步数之差**，而不是拿它跟「只有 seed」的基线比（那样必然多一步而假红）。
+  //    “撤空 terrain 需要几步”会把中途那些不改 terrain 的命令也算进去，所以判据必须是
+  //    两条支路的**步数之差**，而不是拿它跟“只有 seed”的基线比（那样必然多一步而假红）。
   const stepsRealOnly = (() => {
     seed(); s.batchSetOwnership(SC, ['p80a', 'p80b'], 'A1', D1050);
     return undoStepsToEmpty();
@@ -311,7 +311,7 @@ UI_JS = r"""(async () => {
      ['pbb-assign', 'pbb-clear', 'pbb-select-land', 'pbb-cancel']
        .every(id => !!bar().querySelector('[data-testid="' + id + '"]')));
 
-  // ② 点「指派」→ 归属落库 + 状态栏点名
+  // ② 点“指派”→ 归属落库 + 状态栏点名
   bar().querySelector('[data-testid="pbb-assign"]').click();
   await tick(300);
   ck('两个省的归属都写进了当前势力', own().p80a === 'A1' && own().p80b === 'A1', own());
@@ -343,7 +343,7 @@ UI_JS = r"""(async () => {
   await tick(250);
   ck('取消选择清空多选并收起批量条', SM.selectedProvinceIds.length === 0 && !bar());
 
-  // ⑦ 批量的撤销也是「一条」
+  // ⑦ 批量的撤销也是“一条”
   clickWorld(200, 200, { ctrlKey: true });
   await tick(200);
   clickWorld(420, 200, { ctrlKey: true });
@@ -397,8 +397,8 @@ READONLY_JS = r"""(async () => {
     ck('只读态批量条仍在（只读 ≠ 看不见）', !!bar);
     const assign = bar && bar.querySelector('[data-testid="pbb-assign"]');
     const clear = bar && bar.querySelector('[data-testid="pbb-clear"]');
-    ck('只读态「指派」禁用', !!(assign && assign.disabled));
-    ck('只读态「清除归属」禁用', !!(clear && clear.disabled));
+    ck('只读态“指派”禁用', !!(assign && assign.disabled));
+    ck('只读态“清除归属”禁用', !!(clear && clear.disabled));
     ck('禁用带原因（title 里说明去哪儿开）', /只读/.test(assign ? assign.title : ''), assign && assign.title);
     const before = JSON.stringify(s.scenarios[SC].ownership || {});
     if (assign && !assign.disabled) assign.click();
@@ -427,11 +427,11 @@ def sub_readonly(cdp):
 
 
 def _enter_scenario_mode(cdp):
-    """点「历史剧本」进入剧本模式。
+    """点“历史剧本”进入剧本模式。
 
-    ⚠️ 为什么不是「查一次就点」（2026-10-05 实测踩到）：harness 的 `wait_for` 把
+    ⚠️ 为什么不是“查一次就点”（2026-10-05 实测踩到）：harness 的 `wait_for` 把
     `cdp.eval` 的 `{'__err__': …}` 当成**真值** —— 应用尚未挂载时表达式抛错会被当作
-    「已就绪」，于是探针可能在「文档正在导航 / `#app` 还没 mount」的窗口里跑，
+    “已就绪”，于是探针可能在“文档正在导航 / `#app` 还没 mount”的窗口里跑，
     症状就是 `no-btn`（与用例逻辑无关，且只在 harness 抖动时出现）。
     这里改成**轮询等按钮出现**（最多 ~10s），仍然没有才把现场带回去。
     """

@@ -4,7 +4,7 @@
  *
  * 背景（2026-10-17）：`.map` 导入此前只装进**剧本底图**（`baseMaps[key]`），而行星图看的是
  * `mapData[planetId]` —— 另一个容器，此前没有任何导入路径。补上之后，映射写错不会报错：
- *   · 河流写成 `points`（行星侧 `drawRivers` 读 `nodes`）→ 「导入了但画不出来」；
+ *   · 河流写成 `points`（行星侧 `drawRivers` 读 `nodes`）→ “导入了但画不出来”；
  *   · 高度图只给 `h`（缺 temp/prec/biome）→ 行星侧会判成派生层损坏，把文件里的
  *     **温度/降水静默换成估值**（看起来一切正常）；
  *   · 退化环（<3 点）不跳过 → 画布上不可见，却占一个省份条目。
@@ -61,7 +61,7 @@ function fakeParsed() {
     heightmap: {
       grid,
       h: [10, 30, 50, 70],
-      // 故意给一个"不像估值"的温度，用来验证「文件里的值被保留」
+      // 故意给一个"不像估值"的温度，用来验证“文件里的值被保留”
       temp: [11, 22, 33, 44],
       prec: [66, 55, 44, 33],
     },
@@ -197,7 +197,7 @@ async function main() {
     eq(b.azgaarStates.length, 1, 'azgaarStates');
   });
 
-  check('d2 缺字段时不产出空图层（避免「图层开关亮了但什么都没有」）', () => {
+  check('d2 缺字段时不产出空图层（避免“图层开关亮了但什么都没有”）', () => {
     const layers = buildAzgaarReferenceLayers({});
     eq(Object.keys(layers).length, 0, '键数');
   });

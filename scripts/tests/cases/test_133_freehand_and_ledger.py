@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 133：手绘笔刷「画得出正常的东西」+ 涂色=录事件 + 载入→改→存→再载入（第三刀）
+"""用例 133：手绘笔刷“画得出正常的东西”+ 涂色=录事件 + 载入→改→存→再载入（第三刀）
 
-用户原话（2026-10-22）：「当前手绘笔刷只画诡异几何」。
+用户原话（2026-10-22）：“当前手绘笔刷只画诡异几何”。
 几何边界（8 字自交、松手回勾、一条线）由 `unit/test_freehand_ring.js` 在 Node 里逐值判；
-本用例用**真实鼠标**守「接线 + 落库 + 账本 + 往返」：
+本用例用**真实鼠标**守“接线 + 落库 + 账本 + 往返”：
 
   a 方框：成一个省；顶点少、fill 高、**零自交**；一笔 = 一条 undo（undo/redo）；
   b 直线：**不建省**，状态栏给可读原因（不再画出一个怪多边形）；
@@ -13,7 +13,7 @@
   d 载入→改→存→再载入：项目载荷里的省界与内存逐点一致，重载后不丢。
 
 ⚠️ 原生 `confirm()` 会**阻塞渲染进程**（CDP 命令一起卡住）：用例里把它换成计数桩，
-   顺带断言「方框/直线这两笔根本不该触发压叠确认」。
+   顺带断言“方框/直线这两笔根本不该触发压叠确认”。
 """
 import json
 import time
@@ -218,7 +218,7 @@ def _run(cdp):
     _drag(cdp, line)
     after_line = _state(cdp)
     if after_line.get('count') != base_count:
-        fails.append(f"一条直线竟然建出了省（{base_count} → {after_line.get('count')}）—— 又回到『诡异几何』")
+        fails.append(f"一条直线竟然建出了省（{base_count} → {after_line.get('count')}）—— 又回到‘诡异几何’")
     if '没围出面积' not in str(after_line.get('hint')) and '太细' not in str(after_line.get('hint')):
         fails.append(f"直线被拒时没有可读原因：{after_line.get('hint')}")
 

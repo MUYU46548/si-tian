@@ -3,7 +3,7 @@
 // 与官方源码的差异只有三处，都在 tailwind.css / tailwind.config.js 的注释里写了原因：
 //   ① 颜色走 `--ui-*` 变量（R7：接司天主题，不用 shadcn 自己的调色板）；
 //   ② 不加 `border`（preflight 关掉了，border-style 需要 shim 才可见）；
-//   ③ 不用 `/90` 这类透明度修饰符 —— Tailwind 对「值是 CSS 变量」的颜色算不出 alpha，
+//   ③ 不用 `/90` 这类透明度修饰符 —— Tailwind 对“值是 CSS 变量”的颜色算不出 alpha，
 //      会静默退化成不透明；hover 改用 `opacity-90`，效果等价且确定。
 //   ④ `outline` / `ghost` 变体**显式写 `text-foreground`**。官方 shadcn 靠 preflight 里的
 //      `button { color: inherit }` 拿到前景色；本仓 preflight 关闭（R1/R2）→ 这条复位缺席，

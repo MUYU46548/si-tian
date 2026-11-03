@@ -3,14 +3,14 @@
 """用例 56：一键同步到远程仓库（面板可达性 + 傻瓜式契约）
 
 主进程的真实 git 行为由 `scripts/tests/unit/test_git_sync.js` 覆盖（本地 bare 仓库当远程，真 git 端到端）。
-本用例只守**用户看得到的那一层**——因为「按钮点了没反应 / 输入框点不进去」这类问题
+本用例只守**用户看得到的那一层**——因为“按钮点了没反应 / 输入框点不进去”这类问题
 只有 UI 层用例能抓到（历史教训：§130.2）：
 
   a) 工具栏有同步入口，点了会打开面板（面板是懒加载 → 必须等它挂载，不能点完就断言）
-  b) 面板内容齐备：同步目录 / 仓库地址输入 / 「立即同步」按钮 / 令牌是 password 且不回显
+  b) 面板内容齐备：同步目录 / 仓库地址输入 / “立即同步”按钮 / 令牌是 password 且不回显
   c) 填地址 → 保存 → 真的调到了主进程（mock 记录调用），并给出成功提示
-  d) 点「立即同步」→ 真的调到主进程
-  e) 没有项目时：面板给出空态 + 「去项目面板」的去处（而不是一个点了没反应的按钮）
+  d) 点“立即同步”→ 真的调到主进程
+  e) 没有项目时：面板给出空态 + “去项目面板”的去处（而不是一个点了没反应的按钮）
   f) 静态：App.vue 懒加载挂载 + 工具栏入口 + preload 四通道 + handler 顶层不依赖 electron
 """
 import json
@@ -45,7 +45,7 @@ def _open_panel(cdp):
       return 'ok';
     })()""")
     if btn != 'ok':
-        return False, '工具栏未找到「同步到远程仓库」按钮'
+        return False, '工具栏未找到“同步到远程仓库”按钮'
     if not _wait(cdp, "!!document.querySelector('.git-sync-panel')"):
         return False, '点了同步按钮但面板没有出现（懒加载挂载失败）'
     return True, ''
@@ -85,7 +85,7 @@ def run(cdp):
     if shape.get('pwdType') != 'password':
         return False, f'令牌输入框不是 password（会明文显示）：{shape.get("pwdType")}'
     if not any('立即同步' in b for b in shape.get('buttons', [])):
-        return False, f'缺少「立即同步」按钮：{shape.get("buttons")}'
+        return False, f'缺少“立即同步”按钮：{shape.get("buttons")}'
 
     # ── c) 填地址 → 保存 → 真的调到主进程 + 有回音 ─────────────────────────
     cdp.eval("""(() => {
@@ -118,7 +118,7 @@ def run(cdp):
     except Exception:
         return False, f'保存结果读取失败：{str(saved)[:200]}'
     if saved.get('calls', 0) < 1:
-        return False, '点了「保存并连接」但主进程没收到调用（按钮是死的）'
+        return False, '点了“保存并连接”但主进程没收到调用（按钮是死的）'
     if saved.get('lastUrl') != 'https://example.com/demo/world.git':
         return False, f'传给主进程的地址不对：{saved.get("lastUrl")}'
     if not saved.get('hasDir'):
@@ -146,11 +146,11 @@ def run(cdp):
     except Exception:
         return False, f'测试连接结果读取失败：{str(tested)[:200]}'
     if tested.get('calls', 0) < 1:
-        return False, '没有「测试连接」按钮，或点了没调到主进程'
+        return False, '没有“测试连接”按钮，或点了没调到主进程'
     if not (tested.get('tip') or '').strip():
         return False, '测试连接没有可见回音'
 
-    # ── c3) 令牌：保存后状态要变成「令牌已保存」（用户最恨"我明明填了却还说没登录"）──
+    # ── c3) 令牌：保存后状态要变成“令牌已保存”（用户最恨"我明明填了却还说没登录"）──
     cdp.eval("""(() => {
       const p = document.querySelector('.git-sync-panel');
       const pwd = Array.from(p.querySelectorAll('input')).find(i => i.type === 'password');
@@ -185,7 +185,7 @@ def run(cdp):
     except Exception:
         return False, f'令牌状态读取失败：{str(tok)[:200]}'
     if tok.get('calls', 0) < 1:
-        return False, '点了「保存令牌」但主进程没收到调用'
+        return False, '点了“保存令牌”但主进程没收到调用'
     if not tok.get('sentToken'):
         return False, '保存令牌时没有把令牌传给主进程'
     if not tok.get('inputCleared'):
@@ -215,7 +215,7 @@ def run(cdp):
     except Exception:
         return False, f'同步结果读取失败：{str(synced)[:200]}'
     if synced.get('calls', 0) < 1:
-        return False, '点了「立即同步」但主进程没收到调用'
+        return False, '点了“立即同步”但主进程没收到调用'
     if not (synced.get('tip') or '').strip():
         return False, '同步后没有可见回音'
 
@@ -235,7 +235,7 @@ def run(cdp):
     except Exception:
         return False, f'恢复区读取失败：{str(warn)[:200]}'
     if not warn.get('hasSection') or not warn.get('hasBtn'):
-        return False, '缺少「从远程恢复」入口（用户要的恢复数据能力）'
+        return False, '缺少“从远程恢复”入口（用户要的恢复数据能力）'
     if '一致' not in (warn.get('text') or '') or '⚠' not in (warn.get('text') or ''):
         return False, f'恢复区缺少破坏性警告（用户明确要求"伴随相应警告"）：{warn.get("text")[:120]!r}'
 
@@ -263,13 +263,13 @@ def run(cdp):
     except Exception:
         return False, f'恢复第一步读取失败：{str(step1)[:200]}'
     if step1.get('calls', 0) < 1:
-        return False, '点了「读取远程版本」但主进程没收到调用'
+        return False, '点了“读取远程版本”但主进程没收到调用'
     if step1.get('lastConfirm') is not False:
         return False, f'第一步不该直接改数据（必须以 confirm=false 探测）：{step1.get("lastConfirm")}'
     if not step1.get('hasBar'):
         return False, '远程有新内容时没有出现二次确认条（会静默覆盖本地）'
     if '确认恢复' not in (step1.get('barText') or ''):
-        return False, f'确认条里没有「确认恢复」按钮：{step1.get("barText")!r}'
+        return False, f'确认条里没有“确认恢复”按钮：{step1.get("barText")!r}'
 
     # 第二步：确认恢复 → confirm=true + 项目重新载入
     before_opens = cdp.eval("(() => (window.__projectCalls || []).filter(c => c.op === 'open').length)()")
@@ -342,7 +342,7 @@ def run(cdp):
     if not empty.get('panel'):
         return False, '无项目时面板不存在（按钮点不开）'
     if not empty.get('hasGo'):
-        return False, '无项目时没有给出「去项目面板」的去处'
+        return False, '无项目时没有给出“去项目面板”的去处'
     if '项目' not in (empty.get('text') or ''):
         return False, f'空态文案没说清怎么才有可同步目录：{empty.get("text")!r}'
 
@@ -397,5 +397,5 @@ def run(cdp):
         return False, '同步面板接线不完整：' + '；'.join(static)
 
     return True, ('同步面板可达性通过：工具栏入口→面板挂载（懒加载等待）、目录/地址/令牌(password)/立即同步 齐备、'
-                  '保存与同步都真的调到主进程且都有可见回音、无项目时空态给出「去项目面板」去处；'
+                  '保存与同步都真的调到主进程且都有可见回音、无项目时空态给出“去项目面板”去处；'
                   '静态接线（懒加载/挂载/入口/preload 四通道/handler 注册 + 无 electron 依赖 + 禁交互提示）齐备')

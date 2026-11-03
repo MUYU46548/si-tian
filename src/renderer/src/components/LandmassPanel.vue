@@ -79,7 +79,7 @@
         <span class="lgen-cand-name">候选 {{ ['一', '二', '三', '四'][i] || i + 1 }}</span>
         <span class="lgen-cand-meta">种子 {{ c.seed }} · {{ (c.stats.landRatio * 100).toFixed(0) }}% 陆地</span>
       </button>
-      <div v-if="!candidates.length && !busy" class="lgen-empty">还没有候选 —— 点「重新出候选」</div>
+      <div v-if="!candidates.length && !busy" class="lgen-empty">还没有候选 —— 点“重新出候选”</div>
     </div>
 
     <div v-if="warn" class="lgen-warn">{{ warn }}</div>
@@ -96,7 +96,7 @@
       已有归属键会随旧省份一起退回 —— 不会只退一半。
       手绘地形（笔刷刷过的高度）**默认按图幅相对位置搬到新地形**，可在上方关掉；换种子 = 全新世界，不保留。
       缩略图里**海岸线来自轮廓、山地河湖来自同一份地形高度图**（绿=低地、褐=山地、灰=高山），
-      所以预览里看到的地形就是铺底后地形层的那份；铺底本身在点「造陆」后才算。
+      所以预览里看到的地形就是铺底后地形层的那份；铺底本身在点“造陆”后才算。
     </div>
   </div>
 </template>
@@ -131,7 +131,7 @@ const busy = ref(false);
 const previewMs = ref(null);
 const warn = ref('');
 const progress = ref('');
-// A5：默认保留（与「地形生成参数」面板的 tgen-keep-hand 同一默认值）
+// A5：默认保留（与“地形生成参数”面板的 tgen-keep-hand 同一默认值）
 const keepHandEdits = ref(true);
 const canvases = new Map();
 
@@ -354,7 +354,7 @@ async function apply() {
   progress.value = '正在铺底切省…';
   try {
     // 轮廓参数用**选中那张候选**（保证应用结果与缩略图一致）；
-    // 「铺底块数」只影响切分密度、不影响轮廓，所以取滑块当前值（改完不必重新出候选）。
+    // “铺底块数”只影响切分密度、不影响轮廓，所以取滑块当前值（改完不必重新出候选）。
     const applyParams = { ...c.params, provinceCount: Number(params.provinceCount) };
     const r = await store.generateLandmass(props.baseMapKey, applyParams, {
       force: props.hasTerrain,
@@ -386,7 +386,7 @@ defineExpose({ summary: () => describeLandParams(snapshot()) });
 </script>
 
 <style scoped>
-/* 与「分辨率 / 生成参数」面板同口径：深色面板，不跟主题切（.resample-panel 是深底） */
+/* 与“分辨率 / 生成参数”面板同口径：深色面板，不跟主题切（.resample-panel 是深底） */
 .lgen { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 6px; width: 100%; max-width: 700px; font-size: 12px; color: #cbd5e1; }
 .lgen-head { display: flex; align-items: baseline; gap: 10px; }
 .lgen-head strong { font-size: 13px; color: #e2e8f0; }

@@ -11,14 +11,14 @@
     <div class="gs-body">
       <p class="gs-lead">
         把你司天项目所在目录推到你的远程仓库（GitHub / Gitee / 自建 git 都行）。
-        <b>不需要敲任何 git 命令</b>：填一次地址 → 以后只点「立即同步」。
+        <b>不需要敲任何 git 命令</b>：填一次地址 → 以后只点“立即同步”。
       </p>
 
       <!-- 无项目：先说清去哪儿建 -->
       <div v-if="!dir" class="gs-empty">
         <div class="gs-empty-title">还没有可同步的目录</div>
         <div class="gs-empty-body">
-          同步的对象是<b>项目文件所在目录</b>。请先在「项目」面板里新建或打开一个项目，再回到这里。
+          同步的对象是<b>项目文件所在目录</b>。请先在“项目”面板里新建或打开一个项目，再回到这里。
         </div>
         <button class="gs-btn gs-btn-ghost" @click="$emit('open-project')">去项目面板</button>
       </div>
@@ -97,7 +97,7 @@
               <button v-if="hasToken" class="gs-btn gs-btn-ghost" :disabled="busy === 'forget'" @click="forgetToken">清除令牌</button>
             </div>
             <div class="gs-dim gs-tip">
-              GitHub 令牌在「Settings → Developer settings → Personal access tokens」生成：
+              GitHub 令牌在“Settings → Developer settings → Personal access tokens”生成：
               经典令牌勾 <b>repo</b>；细粒度令牌勾 <b>Contents: Read and write</b> 并把该仓库加入授权列表。
               令牌加密保存在本机、不回显、不写日志、不写进仓库配置。
             </div>
@@ -149,10 +149,10 @@
 
 <script setup>
 /**
- * GitSyncPanel —— 「傻瓜式」远程同步面板（用户需求 2026-09-21）。
+ * GitSyncPanel —— “傻瓜式”远程同步面板（用户需求 2026-09-21）。
  *
  * 设计原则：
- *   · 用户只需要两件事：填一次仓库地址 → 点「立即同步」。不出现 push/branch/commit 这些词。
+ *   · 用户只需要两件事：填一次仓库地址 → 点“立即同步”。不出现 push/branch/commit 这些词。
  *   · 同步目录 = 当前项目的目录（projectDir / 项目文件所在目录），面板只读展示，不给用户选路径的负担。
  *   · 令牌是可选的进阶项，默认折叠；面板**不回显**令牌（保存即清空输入框）。
  *   · 所有错误文案来自主进程的人话化处理（gitSyncHandler.humanize），面板只负责显示。
@@ -359,7 +359,7 @@ async function confirmPull() {
     const reopened = filePath ? await proj.openProject(filePath) : null;
     if (filePath && (!reopened || reopened.success !== true)) {
       setTip(`已恢复到远程版本（更新 ${files} 个文件），但重新载入项目失败：`
-        + `${(reopened && reopened.error) || '未知原因'}｜请在「项目」面板手动打开：${filePath}`, 'err');
+        + `${(reopened && reopened.error) || '未知原因'}｜请在“项目”面板手动打开：${filePath}`, 'err');
     } else {
       const rescue = res.rescueBranch
         ? `；恢复前的本地内容已留底（本地快照 ${res.rescueBranch}，不会被推送上去）`
@@ -375,7 +375,7 @@ async function confirmPull() {
 
 onMounted(async () => {
   await refresh();
-  // 输入框可用性（§130.2 同款教训）：面板是异步挂载的，先给焦点，用户不必「点得准」
+  // 输入框可用性（§130.2 同款教训）：面板是异步挂载的，先给焦点，用户不必“点得准”
   await nextTick();
   if (!remoteUrl.value) urlInput.value?.focus?.();
 });
@@ -507,7 +507,7 @@ onMounted(async () => {
 .gs-tip-line.ok { background: #e7f4ec; color: #1b6b3a; }
 .gs-tip-line.err { background: #fdecea; color: #b3261e; }
 
-/* 从远程恢复（拉取）：破坏性操作用危险色独立成块，避免和「同步」混在一起误点 */
+/* 从远程恢复（拉取）：破坏性操作用危险色独立成块，避免和“同步”混在一起误点 */
 .gs-danger-section {
   margin-top: 4px;
   border: 1px solid #f3c8c3;

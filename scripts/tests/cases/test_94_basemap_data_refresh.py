@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 94：底图级数据的「只补缺刷新」（B2，2026-10-11）
+"""用例 94：底图级数据的“只补缺刷新”（B2，2026-10-11）
 
 真实来由（暮雨实测，不是设想）：
-  他打开「绒花计划」时，剧本底图 `desite` 是**纯色扁平图** —— 没有地形、河流、道路。
+  他打开“绒花计划”时，剧本底图 `desite` 是**纯色扁平图** —— 没有地形、河流、道路。
   逐层查下来结论是：**数据不是丢的，是从来没有过**。那张底图建于 2026-09-10（`d07c1d1`），
   而当时那版解析器的返回对象只有 `terrain / polities / ownership / labels / markers`
   —— 高度图、河流、道路、城镇**根本没被读出来**（解析器直到 `1c2a4d2` 才有网格能力）。
   今天同一份 `desite.map` 能读出 9975 格高度 + 160 条河 + 496 条路，但**没有入口**把它们
-  补进一张"已经切了几百块省份"的底图：重导走的是「同 key 整体替换」，会把省份与归属一起盖掉。
+  补进一张"已经切了几百块省份"的底图：重导走的是“同 key 整体替换”，会把省份与归属一起盖掉。
 
 本用例守四类判据：
   a 源码闸门（剥注释）：刷新入口在 store 单源；组件只负责问人，不许自己再写一套归一化
@@ -16,7 +16,7 @@
   c 🔴 绝不动省份：terrain / provinceLabels / planetId / 归属一字不变；一整次刷新 = 一条 undo
   d 端到端：真解析一份小 FMG `.map` → 装载成新底图 → 把它"降级"回旧形状（模拟 2026-09-10 那张）
      → 刷新 → 高度图/河流/道路真的补回来了
-  e UI：缺数据时「刷新底图数据」按钮出现，数据齐了就不出现（不挂一个点了没用的按钮）
+  e UI：缺数据时“刷新底图数据”按钮出现，数据齐了就不出现（不挂一个点了没用的按钮）
 
 ⚠️ 与 test_79/80/92 同一条纪律：可能弹 `confirm` 的路径一律先接管 `window.confirm`。
 """
@@ -39,7 +39,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释（本仓已多次踩到「注释里的旧名字把自己的判据判红」）。"""
+    """剥掉注释（本仓已多次踩到“注释里的旧名字把自己的判据判红”）。"""
     out, in_block = [], False
     for line in src.split('\n'):
         s = line
@@ -105,7 +105,7 @@ def source_gates():
 
 # 🔴 端到端那一段用**仓库里那份真实 FMG 导出件**（`docs/mockups/desite.map`，4.3MB，公开仓库已带）。
 # 为什么不自己捏一份小的：本用例首版试过，捏出来的 .map 在 `at()` 行号锚点上极脆
-# （解析器文件头就写着「行号不是固定的」，我自己那份的 notes 段让锚点前移一格 → cells.h 取到 features
+# （解析器文件头就写着“行号不是固定的”，我自己那份的 notes 段让锚点前移一格 → cells.h 取到 features
 #  → provinces=1 / burgs=0，全链读数全错）。**拿被产品真正喂过的那份文件测**，比拿我编的测有意义。
 MAP_REL = 'docs/mockups/desite.map'
 MAP_FIXTURE_KEY = 'case94map'
@@ -214,7 +214,7 @@ def run(cdp):
   s.undo();
   {
     const bmU = s.baseMaps[KEY] || {};
-    ok('b14 撤销后回到「旧高度图」状态（b13 之前）', !bmU.heightmap || bmU.heightmap.h[0] !== 4,
+    ok('b14 撤销后回到“旧高度图”状态（b13 之前）', !bmU.heightmap || bmU.heightmap.h[0] !== 4,
        JSON.stringify({ has: !!bmU.heightmap, h0: bmU.heightmap ? bmU.heightmap.h[0] : null }));
     ok('b14 撤销不改省份', JSON.stringify(bmU.terrain) === before.terrainJson);
     ok('b14 撤销不改归属', JSON.stringify(s.scenarios[SCID].ownership) === before.ownJson);
@@ -249,7 +249,7 @@ def run(cdp):
     const bar = document.querySelector('.scenario-toolbar');
     const btn = () => Array.from((bar || document).querySelectorAll('[data-testid="basemap-refresh-data"]'))
       .find((b) => b.getClientRects().length);
-    sc.moreOpen = true;                     // 「底图」那一组在「更多」里
+    sc.moreOpen = true;                     // “底图”那一组在“更多”里
     sc.baseMapKey = KEY;                    // KEY 现在数据齐了（b 段刷过）
     await new Promise((r) => setTimeout(r, 120));
     const btnWhenComplete = !!btn();
@@ -258,7 +258,7 @@ def run(cdp):
     sc.baseMapKey = K3;
     await new Promise((r) => setTimeout(r, 150));
     const btnWhenMissing = !!btn();
-    ok('e1 底图缺数据时「刷新底图数据」按钮出现', btnWhenMissing, '按钮不在');
+    ok('e1 底图缺数据时“刷新底图数据”按钮出现', btnWhenMissing, '按钮不在');
     notes.ui = '缺=' + btnWhenMissing + ' 齐=' + btnWhenComplete;
     delete s.baseMaps[K3];
   }

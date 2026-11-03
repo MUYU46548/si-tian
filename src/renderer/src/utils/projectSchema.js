@@ -27,7 +27,7 @@
 //   · 提取器写入：`wikilinks`（本仓真实数据 120/121 带）、`placeType`（117/121 带）、`draft`（1/121）
 //   · 七层编辑器写入：`population` / `cultureId` / `sizeScale` / `locked` / `description` …
 //   这些是**画布侧的编辑数据**，不属于项目结构契约，但丢了**一个字都不会报错、能力静默退化**：
-//   丢 placeType → 聚落/地点图标与配色退化；丢 wikilinks → 搜索「提及」整块消失；
+//   丢 placeType → 聚落/地点图标与配色退化；丢 wikilinks → 搜索“提及”整块消失；
 //   丢 population → 聚落图标不按人口分级。
 //   契约边界（改动前先读这两条）：
 //     · 本模块天然透传 —— `validateProject` 用 `{ ...value, … }` 展开，未知字段一律原样保留。
@@ -36,17 +36,17 @@
 //       新增此类字段**不需要动本模块**，只需确认它没被加进 `ENTITY_SHAPE_KEYS`。
 //     · 例外：`draft` 由 `sourcePath` 派生，不随实体往返（见 `entityToNode`）。
 //
-// 为什么快照用「就地 diff 环形缓冲」而不是整份 JSON 拷贝：
+// 为什么快照用“就地 diff 环形缓冲”而不是整份 JSON 拷贝：
 //   地图数据是 MB 级（实测 mapdata.json ~2MB）。50 份整拷贝 = 100MB 级别，不可接受。
 //   所以 snapshots 只存 SNAPSHOT_DIFF_KEYS（entities/scenarios/hyperlanes/meta，KB 级）的差异：
 //     第 0 份存完整 base（= 快照时刻的状态），第 i 份存 patch_i = diff(state_{i-1}, state_i)。
 //     恢复第 i 份 = base 依次应用 patch_1..patch_i。
 //     缓冲溢出丢最旧的 1 份时，把它的 patch 折进新 base（state_1 = apply(base_0, p_1)），
-//     所以缓冲恒定是「1 份 base + ≤keep 份 diff」。
+//     所以缓冲恒定是“1 份 base + ≤keep 份 diff”。
 //   重量级 `maps` **不进快照** —— 它另有兜底：projectHandler 每次落盘的整文件备份（保留 10 份）。
 //   需要把 maps 也纳入快照时，调用方显式传 keys（并自行承担体积）。
 //
-// 🔴 2026-09-25 修正（A1/R1）：「entities/scenarios 是 KB 级」这个假设**是错的**。
+// 🔴 2026-09-25 修正（A1/R1）：“entities/scenarios 是 KB 级”这个假设**是错的**。
 //   `diffWalk` 对数组是**整体替换**，而 `scenarios.baseMaps[*].heightmap` 里躺着四个
 //   26910 长度的数组（实测单份 1263 KB）→ **每涂一笔就有 1.26 MB 进 patch**，满 50 份 = **38.23 MB**
 //   （实测；同期项目正文才 1.33 MB）。所以现在：
@@ -54,7 +54,7 @@
 //     · `restoreSnapshot` 回滚时把它们从**当前项目**补回（不补 = 回滚删数据）；
 //     · 这些字段的保护交给 projectHandler 的**整文件备份 10 份**（含完整内容，实测足够）。
 //   副作用（有意为之）：快照回滚**不再恢复**地形/参考图 —— 这在绑定行星前后**行为一致**，
-//   不会出现「绑定了就突然不能回滚地形」这种状态相关的意外。
+//   不会出现“绑定了就突然不能回滚地形”这种状态相关的意外。
 
 import { normalizeId } from './normalizeId';
 
@@ -69,7 +69,7 @@ export const SNAPSHOT_KEEP = 50;
 //   25 份快照 = 7.68 MB，占整个项目正文（10.3 MB 紧凑）的 **75%**；正文另加缩进后 39.9 MB。
 //   份数上限 50 在这种量级下等于没有上限（50 × 700 KB = 35 MB）。
 // 判据：保留份数的同时，总字节超上限就**从最旧的丢**（折进 base，见 dropOldestSnapshot，
-//   「1 份 base + N 份 diff」的不变式不破）。**最新那一份永远保留** —— 丢它等于丢当前状态。
+//   “1 份 base + N 份 diff”的不变式不破）。**最新那一份永远保留** —— 丢它等于丢当前状态。
 // 代价（如实写在这里）：极致连切几百块时，能回滚的**地形**步数会少于 50 份（可能只剩个位数）。
 //   项目的另一条恢复路径（关闭司天后用 `.backups/` 里的整文件备份覆盖）不受此限。
 export const SNAPSHOT_MAX_BYTES = 3 * 1024 * 1024;
@@ -78,7 +78,7 @@ export const SNAPSHOT_MAX_BYTES = 3 * 1024 * 1024;
 export const SNAPSHOT_DIFF_KEYS = ['meta', 'entities', 'hyperlanes', 'scenarios'];
 
 // 实体层级 → 中文标签。与 `store/geodata.js` 的 layerLabels（约 209 行）保持一致：
-// 两处都是「层级 → 显示名」的只读映射，新增层级时两处都要加（有测试用例守）。
+// 两处都是“层级 → 显示名”的只读映射，新增层级时两处都要加（有测试用例守）。
 export const LAYER_LABELS = {
   world: '世界', star_domain: '星域', galaxy: '星系', star: '恒星',
   planet: '行星', moon: '卫星', region: '区域', city: '城市',
@@ -117,7 +117,7 @@ const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 /**
  * 取 Vue 响应式代理底下的**原始对象**（2026-10-24，1-b）。
  *
- * 为什么不 import `vue`：本模块的契约是「纯函数、无 DOM / 无 IPC / Node 侧可读」，
+ * 为什么不 import `vue`：本模块的契约是“纯函数、无 DOM / 无 IPC / Node 侧可读”，
  * 而 Vue 的 `reactive()` 代理自带 `__v_raw`（`ReactiveFlags.RAW`）—— 读一个可选属性就够了。
  * 对普通对象是恒等（读到 `undefined` 立即停），所以可以无脑先过一遍。
  *
@@ -145,8 +145,8 @@ function unwrapRaw(value) {
  *      本项目最严重的一次数据事故（2026-10-06 真机定位，T2）正是漏了这一步：`projectStore.saveProject`
  *      直接传 `project.value`（Vue 深响应式代理）→ **每一次项目保存都失败，连空项目都存不下**，
  *      失败只写进 `lastError`，而那条提示在世界选择页根本不在 DOM 里 → 表现为
- *      「导入过、看着有内容、重开是空的」。`saveGeodata`/`saveMapData`/`saveScenarios` 早就这么做了
- *      （见 `store/geodata.js` 的注释），**只有「项目文件」这一条落盘路漏了**。
+ *      “导入过、看着有内容、重开是空的”。`saveGeodata`/`saveMapData`/`saveScenarios` 早就这么做了
+ *      （见 `store/geodata.js` 的注释），**只有“项目文件”这一条落盘路漏了**。
  *   ② 结构化克隆/深拷贝之后 `Float32Array` 会退化成 `{"0":..}`（无 length），读回
  *      `new Float32Array(obj)` 即空数组 → 高度图 / 地形网格静默丢失。浮点保留 3 位小数以控体积。
  *
@@ -219,7 +219,7 @@ export function randomId(rand = Math.random) {
 }
 
 /**
- * 由「实体名」推导实体 id。
+ * 由“实体名”推导实体 id。
  * 复用 normalizeId（与提取器同一实现），并做**同项目内去重**（重名 → name_2 / name_3）。
  * @param {string} name 实体显示名
  * @param {Iterable<string>} [existingIds] 已占用的 id 集合
@@ -307,7 +307,7 @@ export function forbiddenParentIds(entities, entityId) {
 }
 
 /**
- * 合并「画布导出的实体表」时**保住时间戳**（2026-10-11）。
+ * 合并“画布导出的实体表”时**保住时间戳**（2026-10-11）。
  *
  * 背景（真事故）：`mergeCanvasPayload` 是整体替换 `entities`，而画布侧的实体由
  * `nodeToProjectEntity(n, now)` 生成 —— 它原来只传 `now`，于是**每次保存**都把所有实体的
@@ -338,7 +338,7 @@ export function preserveEntityTimestamps(prev, next) {
   return out;
 }
 
-/** 两个实体在「除两个时间戳之外」是否逐字段一致（preserveEntityTimestamps 的判据） */
+/** 两个实体在“除两个时间戳之外”是否逐字段一致（preserveEntityTimestamps 的判据） */
 function entityContentEqual(a, b) {
   const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
   for (const k of keys) {
@@ -386,7 +386,7 @@ export function validateProject(raw) {
     const id = typeof value.id === 'string' && value.id ? value.id : key;
     if (typeof id !== 'string' || !id) { problems.push('存在缺 id 的实体，已丢弃'); continue; }
     const layer = LAYER_ORDER.includes(value.layer) ? value.layer : 'unknown';
-    if (layer !== value.layer) problems.push(`实体 ${id} 的 layer「${value.layer}」未知，已按 unknown 处理`);
+    if (layer !== value.layer) problems.push(`实体 ${id} 的 layer“${value.layer}”未知，已按 unknown 处理`);
     const coord = isPlainObject(value.coordinate) ? value.coordinate : {};
     entities[id] = {
       ...value,
@@ -407,7 +407,7 @@ export function validateProject(raw) {
   // 悬空 / 自引用 parentId
   for (const e of Object.values(entities)) {
     if (e.parentId && !entities[e.parentId]) {
-      problems.push(`实体 ${e.id} 的 parentId「${e.parentId}」不存在，已置空`);
+      problems.push(`实体 ${e.id} 的 parentId“${e.parentId}”不存在，已置空`);
       e.parentId = null;
     }
     if (e.parentId === e.id) {
@@ -502,7 +502,7 @@ export function validateProject(raw) {
 
 /**
  * 版本迁移：把任意可识别的旧版本项目升到 PROJECT_VERSION。
- * 当前只有 1.0.0（无迁移步骤），函数保留以便将来「只改 MIGRATIONS、不动调用方」。
+ * 当前只有 1.0.0（无迁移步骤），函数保留以便将来“只改 MIGRATIONS、不动调用方”。
  * @returns {{ ok: boolean, project: object|null, from: string, to: string, steps: string[], problems: string[] }}
  */
 export function migrateProject(raw) {
@@ -511,7 +511,7 @@ export function migrateProject(raw) {
   if (compareVersion(from, PROJECT_VERSION) > 0) {
     return { ok: false, project: null, from, to: PROJECT_VERSION, steps, problems: [`项目文件版本 ${from} 高于当前支持的 ${PROJECT_VERSION}`] };
   }
-  // 🔴 迁移/校验**任何一步抛错都必须变成「拒绝加载」，绝不能让异常冒泡上去：
+  // 🔴 迁移/校验**任何一步抛错都必须变成“拒绝加载”，绝不能让异常冒泡上去：
   //    异常冒出去 = 加载中断 = 画布空 = 用户以为文件坏了（更糟：接着一存就覆盖磁盘上的好数据）。
   //    拒绝加载时磁盘文件一个字节都不动，用户随时能用备份/基线回退。
   let cur = null;
@@ -549,9 +549,9 @@ export function migrateProject(raw) {
 // ============================================================
 
 // 快照**不管理**的重字段（体积考量；A1/R1，2026-09-25）
-//   「编辑器密集型产物」：一次涂抹 / 换图就是整份重写，进快照会让**每一份 patch 都带上一整份**。
+//   “编辑器密集型产物”：一次涂抹 / 换图就是整份重写，进快照会让**每一份 patch 都带上一整份**。
 //   实测：单个行星的高度图 1263 KB（h/temp/prec/biome 各 26910 个元素 + grid.points）——
-//   而 `diffWalk` 对数组是**整体替换**，所以「涂一笔」= 整份数组进 patch，满 50 份 = 38.23 MB。
+//   而 `diffWalk` 对数组是**整体替换**，所以“涂一笔”= 整份数组进 patch，满 50 份 = 38.23 MB。
 export const SNAPSHOT_HEAVY_FIELDS = ['heightmap', 'terrainGrid', 'referenceImages'];
 
 /**
@@ -575,7 +575,7 @@ function stripHeavyFromValue(key, value) {
  * 回滚方向：把**当前项目**里的重字段补回快照结果。
  *
  * 🔴 这是本机制最容易写错的一步：快照既然不含这些字段，回滚自然也不恢复它们 ——
- *    但 `restoreProjectSnapshot` 是**整体替换** `scenarios` 键，不补回来就等于「回滚删数据」
+ *    但 `restoreProjectSnapshot` 是**整体替换** `scenarios` 键，不补回来就等于“回滚删数据”
  *    （用户的几小时地形会在一瞬间消失，且没有任何报错）。有 test_46 守卫。
  */
 function carryHeavyIntoValue(key, restored, current) {
@@ -602,8 +602,8 @@ export function snapshotState(project, keys = SNAPSHOT_DIFF_KEYS) {
 }
 
 /**
- * 取「**含**重字段」的当前状态 —— 专门给回滚的 `before` 用。
- * undo 闭包必须能原样还原当时的项目（包括快照不管理的那些字段），否则一次「回滚 + 撤销」
+ * 取“**含**重字段”的当前状态 —— 专门给回滚的 `before` 用。
+ * undo 闭包必须能原样还原当时的项目（包括快照不管理的那些字段），否则一次“回滚 + 撤销”
  * 就会把地形吃掉。
  */
 export function snapshotStateWithHeavy(project, keys = SNAPSHOT_DIFF_KEYS) {
@@ -681,7 +681,7 @@ function diffIdArray(prev, next, path, set, del) {
 }
 
 // 递归 diff：对象递归到键级；**带 id 的对象数组**按 id 局部化（见 `diffIdArray`）；
-// 其它数组/原始值整体替换（路径式 diff 不索引普通数组，否则「数组插入一项」会产出几十条索引位移改动）
+// 其它数组/原始值整体替换（路径式 diff 不索引普通数组，否则“数组插入一项”会产出几十条索引位移改动）
 function diffWalk(prev, next, path, set, del) {
   if (deepEqual(prev, next)) return;
   if (isPlainObject(prev) && isPlainObject(next)) {
@@ -852,7 +852,7 @@ function replayTo(snapshots, index) {
   return state;
 }
 
-// 缓冲溢出：丢弃最旧的 1 份，把它的状态折进新的第 0 份（保持「1 base + N diff」不变式）
+// 缓冲溢出：丢弃最旧的 1 份，把它的状态折进新的第 0 份（保持“1 base + N diff”不变式）
 function dropOldestSnapshot(snapshots) {
   if (snapshots.length < 2) { snapshots.shift(); return; }
   // ⚠️ 这里只深拷一次（旧写法 `applyPatch(deepClone(...))` 会在 applyPatch 里**再拷一遍**）
@@ -863,7 +863,7 @@ function dropOldestSnapshot(snapshots) {
 }
 
 /**
- * 快照计数（顶层键级）：用于 UI 展示「本份快照改了多少东西」
+ * 快照计数（顶层键级）：用于 UI 展示“本份快照改了多少东西”
  */
 export function countChanges(patch) {
   return ((patch && patch.set) ? patch.set.length : 0) + ((patch && patch.del) ? patch.del.length : 0);
@@ -914,7 +914,7 @@ export function pushSnapshot(project, opts = {}) {
   while (snapshots.length > Math.max(1, keep)) dropOldestSnapshot(snapshots);
   // ② 体积上限（`> 1` 保证最新那份不会被丢）
   if (maxBytes > 0) {
-    // 🔴 2026-10-29（F 实测）：旧写法是「每丢一份就 `snapshotBytes(整串)` 重算一遍」= O(n²)。
+    // 🔴 2026-10-29（F 实测）：旧写法是“每丢一份就 `snapshotBytes(整串)` 重算一遍”= O(n²)。
     //   真实 415 省项目上一次"改一个省"（补丁里带整张 839KB 的省表）会连续丢 12 份 →
     //   光是数体积就 1.2s。改成**增量记账**：先各份量一次，之后每丢一份只重算新的第 0 份。
     const sizeOf = (s) => JSON.stringify(s, jsonSafeReplacer).length;

@@ -22,7 +22,7 @@ import { getCanvasAdapter, setProjectSink, setImportHandler } from './canvasBrid
 import { registerFlush } from './quitFlush';
 // B5（2026-09-24）：保存状态同步到底部**常驻**状态栏 —— 项目面板可能是关着的，
 // 用户不能只在打开面板时才知道落盘失败。
-// 2026-10-17 补：还要同步「有改动未落盘」（`dirty`）与最后落盘时间 ——
+// 2026-10-17 补：还要同步“有改动未落盘”（`dirty`）与最后落盘时间 ——
 // 只有 saveState 时，界面上看不出"上次保存成功之后又改了半小时"这件事。
 import { setSaveState, setSavePending, setSavedAt } from '../composables/useStatusBar';
 // R15/A-0（2026-09-27）：笔记改名断线检测与重连 —— 纯函数与候选打分在 utils/vaultRelink.js
@@ -119,10 +119,10 @@ export const useProjectStore = defineStore('project', () => {
   }, { flush: 'sync' });   // 🔴 必须同步：默认 'pre' 是异步的 → 面板刚建好的实体还没推给画布时，
                            //    一次画布保存就会以"还没有它"的画布状态覆盖项目（真实数据丢失路径）
 
-  // 注册「画布 → 项目」入水口（geodata 的 saveGeodata/saveMapData/saveScenarios 会调它）
+  // 注册“画布 → 项目”入水口（geodata 的 saveGeodata/saveMapData/saveScenarios 会调它）
   setProjectSink({ syncFromCanvas });
 
-  // 注册「把知识库内容导入当前项目」实现（canvasBridge 第四条注册口）：
+  // 注册“把知识库内容导入当前项目”实现（canvasBridge 第四条注册口）：
   // App.vue / 面板 只发请求，不 import 本 store（App 有静态闸门守这条）
   setImportHandler(importFromVault);
 
@@ -131,8 +131,8 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   // 保存状态 → 状态栏文案（B5）。'idle' 表示无待显示信息。
-  // 2026-10-17：文案改成分得清「已落盘 / 已交给项目 / 有改动待写入」三种 ——
-  //   旧的 `已保存` 与 `已交给项目，待写入` 混用了同一个「保存」词，用户没法判断数据在不在磁盘上。
+  // 2026-10-17：文案改成分得清“已落盘 / 已交给项目 / 有改动待写入”三种 ——
+  //   旧的 `已保存` 与 `已交给项目，待写入` 混用了同一个“保存”词，用户没法判断数据在不在磁盘上。
   const SAVE_STATE_TEXT = {
     saving: { kind: 'busy', text: '正在写入磁盘…' },
     saved: { kind: 'ok', text: '已保存到磁盘' },
@@ -156,7 +156,7 @@ export const useProjectStore = defineStore('project', () => {
         ? {
           ...s,
           // 🔴 失败原因必须**写进文字**，不能只放在 title（2026-10-09，暮雨实测：
-          //    「保存失败就是保存失败，我没看到其他内容」）—— 底部状态栏只显示 4 个字，
+          //    “保存失败就是保存失败，我没看到其他内容”）—— 底部状态栏只显示 4 个字，
           //    而浏览器原生 tooltip 要悬停 1 秒才出，等于没有。
           text: status === 'error'
             ? `保存失败：${errText.length > 60 ? errText.slice(0, 60) + '…' : errText}`
@@ -173,22 +173,22 @@ export const useProjectStore = defineStore('project', () => {
         saveStatus.value = 'idle';
         // 🔴 必须**同步清全局 saveState**（2026-10-09）：旧实现只改 ref，而 `setSaveState`
         //    只在 setSaveStatus 里调 —— TTL 到期这条路径不经过它。结果底部状态栏**永远停在
-        //    「已保存」**（陈旧绿标）：用户以为"刚存过"，其实早过了 3 秒，此后任何视图看到的
+        //    “已保存”**（陈旧绿标）：用户以为"刚存过"，其实早过了 3 秒，此后任何视图看到的
         //    都是一个与真实 saveStatus 不符的状态。
         try { setSaveState(null); } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
       }, ttl);
     }
   }
 
-  // ===== 「有改动未落盘」与「最后落盘时间」→ 常驻状态栏（2026-10-17）=====
+  // ===== “有改动未落盘”与“最后落盘时间”→ 常驻状态栏（2026-10-17）=====
   // 🔴 为什么不能只靠 setSaveStatus：它只在**某次保存尝试**时被调用。用户改完最后一个字之后的
   //    800ms 窗口里、以及"改了但自动保存还没触发"的整段时间里，状态栏会停在**上一次的绿标**
-  //    「已保存到磁盘」—— 而那批改动根本还没进磁盘（正是「保存诚实」要消掉的那种乐观）。
+  //    “已保存到磁盘”—— 而那批改动根本还没进磁盘（正是“保存诚实”要消掉的那种乐观）。
   //    `dirty` 是这件事唯一的真相，所以直接跟随它。
   watch(dirty, (d) => { try { setSavePending(!!d); } catch (e) { /* Node 单测环境忽略 */ } }, { immediate: true });
   watch(lastSavedAt, (t) => { try { setSavedAt(t || ''); } catch (e) { /* 同上 */ } }, { immediate: true });
 
-  // 从主进程返回值装载项目（统一做「迁移 → 校验 → 装载」）
+  // 从主进程返回值装载项目（统一做“迁移 → 校验 → 装载”）
   function adopt(payload) {
     const migrated = migrateProject(payload.project);
     if (!migrated.ok) {
@@ -204,20 +204,20 @@ export const useProjectStore = defineStore('project', () => {
     // 有项目 → 允许写（写进项目文件）
     setWriteMode('project', `已打开项目：${migrated.project.meta.name}`);
     // 🔴 P3（2026-09-25）：**接管项目时清空 undo 栈**。
-    //    undo 命令的 undo/redo 闭包捕获的是「它当时操作的那个数据对象」（上一个项目 / 知识库态的
-    //    `nodes.value`、`baseMaps.value`…）。不清栈就会出现「在新项目里按 Ctrl+Z，把上一个项目
-    //    （或知识库工作态）的形状回滚进来」—— 而画布此刻画的是新项目的数据，用户看到的是一次
+    //    undo 命令的 undo/redo 闭包捕获的是“它当时操作的那个数据对象”（上一个项目 / 知识库态的
+    //    `nodes.value`、`baseMaps.value`…）。不清栈就会出现“在新项目里按 Ctrl+Z，把上一个项目
+    //    （或知识库工作态）的形状回滚进来”—— 而画布此刻画的是新项目的数据，用户看到的是一次
     //    无法解释的改动（文档 P3 记的正是这条）。
     //    ⚠️ 只放在这里，**不要**下沉到 geodata 的 `applyProjectToCanvas`：那个函数还被
-    //    `seedFromPayload`（导入知识库内容）复用来「重新装载一次画布」，放在那里会把刚入栈的
-    //    导入命令一起清掉 —— 「导入 = 一条 undo」立刻失效（test_50 实测抓到）。
+    //    `seedFromPayload`（导入知识库内容）复用来“重新装载一次画布”，放在那里会把刚入栈的
+    //    导入命令一起清掉 —— “导入 = 一条 undo”立刻失效（test_50 实测抓到）。
     clearHistory();
     // Phase 2.4 接线：画布切到项目文件（实体树/航道/地图/剧本），并保留关闭时的回退留底
     const adapter = getCanvasAdapter();
     if (adapter && typeof adapter.applyProject === 'function') {
       adapter.applyProject(project.value);
     }
-    // 🔴 主进程的告警必须传出来（2026-09-24）：典型是「会话基线未能创建」——
+    // 🔴 主进程的告警必须传出来（2026-09-24）：典型是“会话基线未能创建”——
     //    静默吞掉会让用户以为有回滚点。App.vue 不能 import 本 store（静态闸门），
     //    所以经全局事件转达（沿用 sitian:label-styles-changed 那套）。
     if (payload.baselineWarning) {
@@ -238,22 +238,22 @@ export const useProjectStore = defineStore('project', () => {
 
   /**
    * 把知识库载荷**合并**进项目（只补缺、绝不覆盖项目里已有的东西）。
-   * 与 seedFromPayload 的区别：seedFromPayload 是「以载荷为基底重建」（新建项目时用），
-   * 本函数是「往已有项目里补」—— 直接用 seedFromPayload 会把用户已经画好的内容清掉。
+   * 与 seedFromPayload 的区别：seedFromPayload 是“以载荷为基底重建”（新建项目时用），
+   * 本函数是“往已有项目里补”—— 直接用 seedFromPayload 会把用户已经画好的内容清掉。
    *
-   * 🔴 **本函数就是搬家协议定的「读优先级」**（A-2，2026-09-27 定案）：
+   * 🔴 **本函数就是搬家协议定的“读优先级”**（A-2，2026-09-27 定案）：
    *    已有实体的机器属性（`layer` / `parentId` / `placeType`）**以项目文件为准**；
    *    笔记里的 `层级` / `上层区域` / `地点类型` 只在**该实体第一次进项目**时当初始值。
    *    之后用户再改笔记里的字段，司天**不再采纳**（项目态下知识库的 add/unlink/change 事件
    *    同样被整条拦掉，见 geodata 的 `handleNodeUpdated`）—— 两处行为加起来才是完整语义。
    *
-   *    ⚠️ **不许改成「先查新、缺失回落旧」**：并存观察期里旧值会在新值缺失时**静默顶替**，
-   *    与 A1/M1b 的「一读行星那份 / 一写自己那份」是同一个静默分裂形态。
+   *    ⚠️ **不许改成“先查新、缺失回落旧”**：并存观察期里旧值会在新值缺失时**静默顶替**，
+   *    与 A1/M1b 的“一读行星那份 / 一写自己那份”是同一个静默分裂形态。
    *    判据在 `scripts/tests/cases/test_58_import_from_vault.py` 的机器属性段（c3）。
    *
-   *    ⚠️ **「新笔记的首次进料」必须继续读字段 + 目录/后缀推断** —— 报告 ⑤「发现机制照旧」
-   *    不能砍：发布场景里别人的笔记**根本没有**这些字段（暮雨 2026-09-27：「用户的笔记里
-   *    根本不一定有这些字段，实际中就是当作没有处理」），只能靠推断兜住。
+   *    ⚠️ **“新笔记的首次进料”必须继续读字段 + 目录/后缀推断** —— 报告 ⑤“发现机制照旧”
+   *    不能砍：发布场景里别人的笔记**根本没有**这些字段（暮雨 2026-09-27：“用户的笔记里
+   *    根本不一定有这些字段，实际中就是当作没有处理”），只能靠推断兜住。
    *
    * @returns {{next: object, merged: object}}
    */
@@ -311,9 +311,9 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   /**
-   * 「导入知识库内容」（2026-09-22，用户实测反馈）：
-   * 用户新建了空项目后**没有任何入口**把知识库既有内容带进来 —— 「新建并导入知识库内容」只覆盖新建那条路，
-   * 而「重新提取」在项目态被正确拒绝（两套事实源混流）。本函数补上唯一的缺口：
+   * “导入知识库内容”（2026-09-22，用户实测反馈）：
+   * 用户新建了空项目后**没有任何入口**把知识库既有内容带进来 —— “新建并导入知识库内容”只覆盖新建那条路，
+   * 而“重新提取”在项目态被正确拒绝（两套事实源混流）。本函数补上唯一的缺口：
    * 项目态下从打开项目时的知识库留底（`vaultSnapshot`，经适配器 `exportVaultPayload`）取数，
    * **只补缺不覆盖**，一条 undo，导入后立刻把项目重新装载到画布。
    */
@@ -348,11 +348,11 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   /**
-   * 检测「笔记改名 / 移动」造成的断线（R15 / A-0，2026-09-27）。**只读，不改任何数据。**
+   * 检测“笔记改名 / 移动”造成的断线（R15 / A-0，2026-09-27）。**只读，不改任何数据。**
    *
    * 为什么项目态必须主动检测：项目打开后，知识库的 add/unlink 事件在渲染层被整条拦掉
    * （防两套事实源混流，见 geodata 的 `handleNodeUpdated`）→ 用户在 Obsidian 里改名，
-   * 司天既不知道、也不提示；下次「导入知识库内容」就把新名当新实体补进来、旧实体成孤儿。
+   * 司天既不知道、也不提示；下次“导入知识库内容”就把新名当新实体补进来、旧实体成孤儿。
    * 这条检测把那个洞显式化：**断线清单 + 可解释的候选**（理由由 utils/vaultRelink.js 给出）。
    *
    * @returns {Promise<{success:boolean, checked?:number, dangling?:Array, unclaimed?:Array,
@@ -381,16 +381,16 @@ export const useProjectStore = defineStore('project', () => {
    * 🔴 为什么 id 必须不变：坐标 `coordinate`、`mapData[planetId]`、`areaZones[regionId]`、
    *    `interiorData[buildingId]` …这些编辑成果**全部按 id 索引**。改 id 就得走 `changeNodeId`
    *    做级联迁移（9 个容器 + 4 个字典键，任一处漏登记就是幽灵引用）；而重连的语义本来就是
-   *    「同一个地点，换了篇笔记在写它」—— **身份没变**，所以只改来源、不动身份，编辑成果天然全保留。
+   *    “同一个地点，换了篇笔记在写它”—— **身份没变**，所以只改来源、不动身份，编辑成果天然全保留。
    *
    * 与 `renameEntity` 的区别：那个改的是司天里**显示的名字**，这个改的是**认亲依据**。
-   * 与本函数配套的另一半是「加回来」：被改名的旧路径若还留着笔记，它只会出现在「无主」清单里，
+   * 与本函数配套的另一半是“加回来”：被改名的旧路径若还留着笔记，它只会出现在“无主”清单里，
    * 由用户决定是重连回去还是当新笔记导入 —— 机器不替人做这个决定。
    */
   function relinkEntity(id, { sourcePath = '', name = '' } = {}) {
     if (!project.value) return { success: false, error: '没有打开的项目' };
     const before = entities.value[id];
-    if (!before) return { success: false, error: `实体「${id}」不存在` };
+    if (!before) return { success: false, error: `实体“${id}”不存在` };
     const nextPath = normalizeRelPath(sourcePath);
     if (!nextPath) return { success: false, error: '缺少目标笔记路径' };
     if (normalizeRelPath(before.sourcePath) === nextPath) {
@@ -401,13 +401,13 @@ export const useProjectStore = defineStore('project', () => {
       (e) => e.id !== id && normalizeRelPath(e.sourcePath) === nextPath,
     );
     if (holder) {
-      return { success: false, error: `该笔记已经连到「${holder.name}」`, conflictId: holder.id };
+      return { success: false, error: `该笔记已经连到“${holder.name}”`, conflictId: holder.id };
     }
     const nextName = String(name || '').trim() || baseNameOf(nextPath) || before.name;
     const from = { ...before };
     // ⚠️ `id: before.id` 是**刻意显式写出来**的（虽然 `...before` 已含 id）：
     //    重连最容易被误改成"顺手把 id 也换成新名字派生的 id"，而那样做就要级联迁移全部编辑成果。
-    //    test_75 的 f0 守卫据此断言「重连不改 id」。
+    //    test_75 的 f0 守卫据此断言“重连不改 id”。
     const to = { ...before, id: before.id, sourcePath: nextPath, name: nextName, origin: 'obsidian', updatedAt: new Date().toISOString() };
     // ⚠️ 只改 `project.value.entities` —— 画布同步由本 store 的 `watch(entities)` 统一推送
     //    （既有的 sync flush 通道）。这里**不要**调 `applyProjectToCanvasNow()`：
@@ -419,7 +419,7 @@ export const useProjectStore = defineStore('project', () => {
     };
     execute({
       type: 'relink-note',
-      label: `重连笔记「${nextName}」`,
+      label: `重连笔记“${nextName}”`,
       category: 'property',
       undo: () => write(from),
       redo: () => write(to),
@@ -478,7 +478,7 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   /**
-   * 以当前知识库工作态为基底新建项目（「从知识库导入」）—— 终态下把既有内容带进项目文件的唯一路径。
+   * 以当前知识库工作态为基底新建项目（“从知识库导入”）—— 终态下把既有内容带进项目文件的唯一路径。
    *
    * 🔴 顺序不能反：载荷必须在 `createProject` **之前**取。`adopt()` 会立刻
    * `adapter.applyProject()` 把画布换成空项目，之后画布上就导不出知识库内容了。
@@ -539,7 +539,7 @@ export const useProjectStore = defineStore('project', () => {
   /**
    * 启动时恢复上次打开的项目（B4，2026-09-24）。
    *
-   * 背景：每次启动都从「无项目 = 只读」开始，老用户每天第一件事都是去项目面板开项目。
+   * 背景：每次启动都从“无项目 = 只读”开始，老用户每天第一件事都是去项目面板开项目。
    * ⚠️ 这里**只负责尝试**：没有记录 / 文件已被删除或移动 / 解析失败，一律返回失败，
    *    由调用方静默回落到只读 —— **绝不阻塞启动**（启动期报错是最糟的用户体验）。
    */
@@ -573,9 +573,9 @@ export const useProjectStore = defineStore('project', () => {
    * 保存失败必须**看得见**（2026-10-06，T2 真机定位）。
    *
    * 旧实现只写 `lastError` + 状态栏 —— 但 `StatusBar.vue` 的根节点是 `v-if="state.visible"`，
-   * **世界选择页（没有画布）里那条"保存失败"根本不在 DOM 中**。于是「导入过 → 看着有内容 →
-   * 重开是空的」这套观感里，用户从头到尾**看不到任何报错**。
-   * 这里复用 App.vue 已监听的全局告警通道（`sitian:project-warning`，与「会话基线未能创建」同路），
+   * **世界选择页（没有画布）里那条"保存失败"根本不在 DOM 中**。于是“导入过 → 看着有内容 →
+   * 重开是空的”这套观感里，用户从头到尾**看不到任何报错**。
+   * 这里复用 App.vue 已监听的全局告警通道（`sitian:project-warning`，与“会话基线未能创建”同路），
    * 任何视图下都能提示。同时落一条 `console.error`：真机演练/诊断脚本的日志里能直接抓到。
    */
   function reportSaveFailure(message) {
@@ -610,7 +610,7 @@ export const useProjectStore = defineStore('project', () => {
       // 🔴 竞态守卫（2026-09-24）：`await` 期间用户可能继续编辑 —— `syncFromCanvas` 会把
       //    `project.value` 换成**新对象**并置 `dirty = true`。若返回后无条件回写 `withSnapshot`
       //    并清 dirty，那批新编辑会被旧快照覆盖、且此后 `scheduleAutoSave` 看到 dirty=false 不再保存
-      //    = 静默丢数据（画布突然回退到保存前）。所以先记下「落盘时的项目引用」，
+      //    = 静默丢数据（画布突然回退到保存前）。所以先记下“落盘时的项目引用”，
       //    返回后只在**未被改动**时才确认；已改动则保留新态、维持 dirty 并立刻重排一次保存。
       const snapshotOf = project.value;
       // 🔴 IPC 边界（2026-10-06 真机定位，T2）：**不能直接传 `project.value`**。
@@ -690,7 +690,7 @@ export const useProjectStore = defineStore('project', () => {
         setSaveStatus('error');   // B5：失败态不自动消失，由下次成功保存来清
         return {
           success: false,
-          error: `还有未保存的改动，且保存失败（${why}）—— 项目**未关闭**，数据仍在内存里；请重试保存（工具栏「项目」→ 保存）或先「备份」再关`,
+          error: `还有未保存的改动，且保存失败（${why}）—— 项目**未关闭**，数据仍在内存里；请重试保存（工具栏“项目”→ 保存）或先“备份”再关`,
         };
       }
       saved = true;
@@ -705,9 +705,9 @@ export const useProjectStore = defineStore('project', () => {
     dirty.value = false;
     lastError.value = '';
     setSaveStatus('idle');
-    // 回到「无项目」默认模式：READONLY_WITHOUT_PROJECT=true 时即切换为只读（决策 1）
+    // 回到“无项目”默认模式：READONLY_WITHOUT_PROJECT=true 时即切换为只读（决策 1）
     resetWriteMode('项目已关闭');
-    // P3（2026-09-25）：关闭项目后「撤销」不该回退到项目内的编辑 —— 那些闭包指向已下线的数据对象
+    // P3（2026-09-25）：关闭项目后“撤销”不该回退到项目内的编辑 —— 那些闭包指向已下线的数据对象
     clearHistory();
     // E6（2026-10-29）：3D 行星纹理缓存（18 张 canvas）**跨开关常驻**是收益（二次打开瞬时），
     // 但项目都关了还留着就是纯占内存 —— 在"项目生命周期"这一层释放，而不是每次关 3D 就清。
@@ -771,7 +771,7 @@ export const useProjectStore = defineStore('project', () => {
     if (!res.ok) return res;
     const keys = includeMaps ? [...SNAPSHOT_DIFF_KEYS, 'maps'] : SNAPSHOT_DIFF_KEYS;
     // ⚠️ before 必须用**含重字段**的那份：快照不管理高度图/参考图（体积），
-    //    若这里用裁剪过的 snapshotState，一次「回滚 + 撤销」就会把地形吃掉。
+    //    若这里用裁剪过的 snapshotState，一次“回滚 + 撤销”就会把地形吃掉。
     const before = snapshotStateWithHeavy(project.value, keys);
     const after = { ...before, ...res.state };
     execute({
@@ -820,14 +820,14 @@ export const useProjectStore = defineStore('project', () => {
       existingIds: Object.keys(entities.value),
     });
     if (input.id && entities.value[input.id]) {
-      return { success: false, error: `实体 id「${input.id}」已存在` };
+      return { success: false, error: `实体 id“${input.id}”已存在` };
     }
     if (entity.parentId && !entities.value[entity.parentId]) {
-      return { success: false, error: `父实体「${entity.parentId}」不存在` };
+      return { success: false, error: `父实体“${entity.parentId}”不存在` };
     }
     execute({
       type: 'project-add-entity',
-      label: `新建实体「${entity.name}」`,
+      label: `新建实体“${entity.name}”`,
       category: 'property',
       undo: () => {
         const { [entity.id]: _dropped, ...rest } = project.value.entities;
@@ -846,7 +846,7 @@ export const useProjectStore = defineStore('project', () => {
    * 批量创建实体（B7，2026-09-24）—— **一条 undo**。
    *
    * 为什么必须批量化：`createEntity` 逐条调会生成 N 条 undo 记录 ——
-   * 用户粘 30 个城市名，要按 30 次 Ctrl+Z 才能撤回；而真实建世界观本来就是「一次建一批」。
+   * 用户粘 30 个城市名，要按 30 次 Ctrl+Z 才能撤回；而真实建世界观本来就是“一次建一批”。
    * 语义：**每行一个名称**；空行忽略；与已有实体同名的**跳过并回报**（不静默吞掉）。
    * @param {string[]} names
    * @param {{parentId?: string|null, layer?: string}} opts
@@ -856,7 +856,7 @@ export const useProjectStore = defineStore('project', () => {
     const wanted = (Array.isArray(names) ? names : []).map(n => String(n || '').trim()).filter(Boolean);
     if (!wanted.length) return { success: false, error: '没有可创建的名称（每行一个）' };
     if (!layer) return { success: false, error: '请先选择层级' };
-    if (parentId && !entities.value[parentId]) return { success: false, error: `父实体「${parentId}」不存在` };
+    if (parentId && !entities.value[parentId]) return { success: false, error: `父实体“${parentId}”不存在` };
 
     const existingIds = Object.keys(entities.value);
     const usedNames = new Set(Object.values(entities.value).map(e => e.name));
@@ -895,9 +895,9 @@ export const useProjectStore = defineStore('project', () => {
   function updateEntity(id, patch = {}) {
     if (!project.value) return { success: false, error: '没有打开的项目' };
     const before = entities.value[id];
-    if (!before) return { success: false, error: `实体「${id}」不存在` };
+    if (!before) return { success: false, error: `实体“${id}”不存在` };
     if (patch.parentId !== undefined && patch.parentId) {
-      if (!entities.value[patch.parentId]) return { success: false, error: `目标父实体「${patch.parentId}」不存在` };
+      if (!entities.value[patch.parentId]) return { success: false, error: `目标父实体“${patch.parentId}”不存在` };
       if (forbiddenParentIds(entities.value, id).includes(patch.parentId)) {
         return { success: false, error: '不能把实体移到自己或自己的后代下（会形成循环）' };
       }
@@ -907,7 +907,7 @@ export const useProjectStore = defineStore('project', () => {
     const prevCopy = { ...before };
     execute({
       type: 'project-update-entity',
-      label: `修改实体「${before.name}」`,
+      label: `修改实体“${before.name}”`,
       category: 'property',
       undo: () => { project.value = { ...project.value, entities: { ...project.value.entities, [id]: prevCopy } }; dirty.value = true; scheduleAutoSave(); },
       redo: () => { project.value = { ...project.value, entities: { ...project.value.entities, [id]: next } }; dirty.value = true; scheduleAutoSave(); },
@@ -924,7 +924,7 @@ export const useProjectStore = defineStore('project', () => {
   /** 删除实体（默认连带后代，一条 undo 整体恢复） */
   function deleteEntity(id, { cascade = true } = {}) {
     if (!project.value) return { success: false, error: '没有打开的项目' };
-    if (!entities.value[id]) return { success: false, error: `实体「${id}」不存在` };
+    if (!entities.value[id]) return { success: false, error: `实体“${id}”不存在` };
     const doomed = cascade ? [id, ...descendantsOf(id)] : [id];
     const doomedSet = new Set(doomed);
     // 不连带时，子实体上提到被删实体的父级，避免产生悬空 parentId
@@ -947,7 +947,7 @@ export const useProjectStore = defineStore('project', () => {
 
     // ── R7（2026-09-26）：孤儿数据 ─────────────────────────────────────────
     // 项目态下**画布才是 `mapData` / `editor` 的活副本** → 只删项目文件里的没用，
-    // 下一次「画布 → 项目」保存会把画布那份原样写回去（症状：「删了行星，地图过一会儿又回来了」）。
+    // 下一次“画布 → 项目”保存会把画布那份原样写回去（症状：“删了行星，地图过一会儿又回来了”）。
     // 所以：redo 时让画布**清掉**这些 id 名下的数据，并把清出来的内容**暂存在本命令的闭包里**；
     // undo 时原样灌回。两半成对，撤销后数据不丢。
     const adapter = getCanvasAdapter();
@@ -965,7 +965,7 @@ export const useProjectStore = defineStore('project', () => {
 
     execute({
       type: 'project-delete-entity',
-      label: `删除实体「${before[id].name}」${doomed.length > 1 ? `（含 ${doomed.length - 1} 个子实体）` : ''}`,
+      label: `删除实体“${before[id].name}”${doomed.length > 1 ? `（含 ${doomed.length - 1} 个子实体）` : ''}`,
       category: 'property',
       undo: () => {
         project.value = { ...project.value, entities: prevEntities, hyperlanes: prevHyper };
@@ -990,7 +990,7 @@ export const useProjectStore = defineStore('project', () => {
 
   /**
    * 批量改父级（**一条** undo）：把多个实体挂到同一父级下。
-   * 用途：把散落在行星下的设施/地点一次性归入城市或区域（用户反馈「建筑物散落在行星图上」）。
+   * 用途：把散落在行星下的设施/地点一次性归入城市或区域（用户反馈“建筑物散落在行星图上”）。
    * 校验：目标父级存在；不得把实体移到自己或自己的后代下（防循环）；已在目标下的实体跳过。
    * @returns {{ success: boolean, moved?: string[], unchanged?: string[], error?: string }}
    */
@@ -999,15 +999,15 @@ export const useProjectStore = defineStore('project', () => {
     const list = Array.from(new Set((ids || []).filter(Boolean)));
     if (!list.length) return { success: false, error: '没有选中实体' };
     const target = newParentId || null;
-    if (target && !entities.value[target]) return { success: false, error: `目标父实体「${target}」不存在` };
+    if (target && !entities.value[target]) return { success: false, error: `目标父实体“${target}”不存在` };
 
     const unchanged = [];
     for (const id of list) {
       const e = entities.value[id];
-      if (!e) return { success: false, error: `实体「${id}」不存在` };
+      if (!e) return { success: false, error: `实体“${id}”不存在` };
       if ((e.parentId || null) === target) { unchanged.push(id); continue; }
       if (target && (target === id || forbiddenParentIds(entities.value, id).includes(target))) {
-        return { success: false, error: `不能把「${e.name}」移到自己或自己的后代下（会形成循环）` };
+        return { success: false, error: `不能把“${e.name}”移到自己或自己的后代下（会形成循环）` };
       }
     }
     const moved = list.filter(id => !unchanged.includes(id));
@@ -1065,15 +1065,15 @@ export const useProjectStore = defineStore('project', () => {
     return { success: true };
   }
 
-  // ===== 导入/导出（Phase 1 只提供「装载外部实体列表」入口，供 Phase 2 的提取结果接入）=====
-  /** 用一组「已校验的实体」替换/合并进当前项目（Phase 2 接 geodata 时调用） */
+  // ===== 导入/导出（Phase 1 只提供“装载外部实体列表”入口，供 Phase 2 的提取结果接入）=====
+  /** 用一组“已校验的实体”替换/合并进当前项目（Phase 2 接 geodata 时调用） */
   function importEntities(list, { mode = 'merge' } = {}) {
     if (!project.value) return { success: false, error: '没有打开的项目' };
     const incoming = {};
     for (const raw of (list || [])) {
       const e = createEntityShape({ ...raw, existingIds: Object.keys(entities.value) });
       // schema 之外的编辑字段（placeType / wikilinks / population …）一并保留 ——
-      // 导入知识库实体时丢掉它们同样不报错，只会让图标/搜索「提及」静默退化（见 geodata 的 entityExtras）
+      // 导入知识库实体时丢掉它们同样不报错，只会让图标/搜索“提及”静默退化（见 geodata 的 entityExtras）
       for (const [k, v] of Object.entries(raw || {})) {
         if (k === 'draft' || k in e) continue;
         e[k] = v;

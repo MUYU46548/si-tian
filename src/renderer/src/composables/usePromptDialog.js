@@ -2,7 +2,7 @@
  * composables/usePromptDialog.js — 模态输入对话框（批次D1）
  *
  * 替代 window.prompt：Electron 渲染进程不支持 window.prompt（抛
- * "prompt() is and will not be supported"），此前的「＋ 天体」等入口
+ * "prompt() is and will not be supported"），此前的“＋ 天体”等入口
  * 在 Electron 内全部静默失效。
  *
  * 单例状态 + Promise 接口，语义与 window.prompt 对齐（取消返回 null）：
@@ -52,7 +52,7 @@ export function usePromptDialog() {
     });
   }
 
-  /** 选项列表（按钮式，替代「输入数字 1/2/3」）；点选即返回该 option，取消返回 null */
+  /** 选项列表（按钮式，替代“输入数字 1/2/3”）；点选即返回该 option，取消返回 null */
   function askChoice({ title, label = '', options = [] }) {
     return new Promise((resolve) => {
       Object.assign(state, {

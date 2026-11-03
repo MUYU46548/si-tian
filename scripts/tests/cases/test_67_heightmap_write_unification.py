@@ -3,25 +3,25 @@
 """用例 67：A1/M1b —— 底图高度图**写入**统一走 commitHeightmap
 
 背景（2026-09-25，`docs/A1_DATA_MODEL_DECISION.md`）：
-A1 的决策是「**行星的高度图为单一真源，剧本底图按 `planetId` 绑定代理，不复制**」。
+A1 的决策是“**行星的高度图为单一真源，剧本底图按 `planetId` 绑定代理，不复制**”。
 M1 已把**读取点**切到 `getHeightmapFor`；本用例守 **M1b = 写入点**。
 
 为什么必须单独守（而不是只跑既有用例）：
-  底图侧原本的写入形态是「**整体替换 baseMap 对象**」
+  底图侧原本的写入形态是“**整体替换 baseMap 对象**”
   —— `baseMaps.value = { ...baseMaps.value, [k]: { ...baseMap, heightmap: { ...hm, h } } }`。
-  这种写法**一写就换引用**，与「共享同一份高度图」天然冲突。绑定行星之后若还这么写，
-  就会变成「**读行星那份 / 写自己那份**」：用户以为改了、画布却不变（静默分裂）。
+  这种写法**一写就换引用**，与“共享同一份高度图”天然冲突。绑定行星之后若还这么写，
+  就会变成“**读行星那份 / 写自己那份**”：用户以为改了、画布却不变（静默分裂）。
   既有用例（39/19/46）都在**未绑定**路径上跑 → 这个缺陷对它们是隐形的。
 
 覆盖：
   f0 静态守卫（读源码）：5 个写入入口的函数体内都必须出现 `commitHeightmap`，且不得残留
-     「整体替换 + heightmap」的旧形态 —— 防有人改回去（漏报型风险，比误报隐蔽得多）
+     “整体替换 + heightmap”的旧形态 —— 防有人改回去（漏报型风险，比误报隐蔽得多）
   f1 **未绑定**（底图自持）：写入落在底图自己那份；undo 复原 **且不打 `updatedAt`**
      （与 M1b 之前逐字段一致 —— 原 undo 闭包不写时间戳）
   f2 **绑定行星**：写入落在 `mapData[pid]`（真单源），底图侧不产生副本；undo 复原行星那份
-  f3 **R3 绑定字段级联**：`baseMaps[*].planetId` 是「以节点 id 为值」的引用 → `changeNodeId`
+  f3 **R3 绑定字段级联**：`baseMaps[*].planetId` 是“以节点 id 为值”的引用 → `changeNodeId`
      必须级联它。否则行星改名（转正）后绑定悬空，而绑定迁移时底图侧那份 heightmap 已被
-     `delete` → 底图表现为「空地图」（数据还在 mapData 里，只是没人指得到）
+     `delete` → 底图表现为“空地图”（数据还在 mapData 里，只是没人指得到）
   f4 **悬空绑定回落**：绑定的行星不存在时，写入必须**回落到底图自身**，绝不静默丢弃
      （`commitHeightmap` 在 2026-09-25 之前是 `if (!planet) return;` = 静默吞掉这次编辑）
 
@@ -59,11 +59,11 @@ def _static_guard():
         if 'commitHeightmap(' not in body:
             problems.append(f'{fn} 的高度图写入未走 commitHeightmap（绑定行星后会写进无人读的副本）')
 
-    # 旧形态残留：「整体替换 baseMap 对象 + 写 heightmap」
+    # 旧形态残留：“整体替换 baseMap 对象 + 写 heightmap”
     legacy = re.findall(
         r'\[baseMapKey\]:\s*\{\s*\.\.\.(?:baseMaps\.value\[baseMapKey\]|baseMap)\s*,\s*heightmap:', src)
     if legacy:
-        problems.append(f'仍有 {len(legacy)} 处旧形态「整体替换 baseMap 对象 + heightmap:」')
+        problems.append(f'仍有 {len(legacy)} 处旧形态“整体替换 baseMap 对象 + heightmap:”')
 
     return problems, len(re.findall(r'commitHeightmap\(baseMapKey', src))
 
@@ -155,10 +155,10 @@ JS = r"""(async () => {
       const s2 = sumArr(store.mapData[pid].heightmap.h);
       // 容差口径（2026-10-07 定性 —— 这是**精度差**，不是"放宽阈值了事"）：
       //   `h` 在真库里带小数（实测 709/26910 个非整数），而笔刷管线把 h 拷进 `Float32Array`
-      //   （applyHeightBrush 的 newH / oldH）→ undo 恢复的是「float32 化后的原值」，
+      //   （applyHeightBrush 的 newH / oldH）→ undo 恢复的是“float32 化后的原值”，
       //   与 JSON 里的 float64 原值在双精度下天然不严格相等（实测相对差 6.6e-11）。
       //   fixture 的 h **全是整数**（float32 可精确表示）→ 差值恒 0，故这条在合成数据下一直是 `===`。
-      //   真正的「undo 失败」表现为差 ≈ 整笔抬升量（本用例 s1-s0 与 s0 同量级），
+      //   真正的“undo 失败”表现为差 ≈ 整笔抬升量（本用例 s1-s0 与 s0 同量级），
       //   比本容差大 10^5 倍以上 —— 容差不会掩盖真缺陷。
       const tol67 = Math.max(1e-6, Math.abs(s0) * 1e-8);
       const d67 = Math.abs(s2 - s0);
@@ -168,11 +168,11 @@ JS = r"""(async () => {
       notes.push('f2 绑定行星 ' + pid + '（' + n0 + ' 格）：写入和 ' + s0.toFixed(1) + ' → ' + s1.toFixed(1));
     }
 
-    // R4（2026-09-25）：行星侧「用地形多边形重建高度图」时会波及所有绑定它的剧本，
-    // 所以必须能反查「谁绑了这颗行星」，才能把受影响的名字写进提示（否则用户只会看到
-    // 「剧本的地形怎么变了」）。
+    // R4（2026-09-25）：行星侧“用地形多边形重建高度图”时会波及所有绑定它的剧本，
+    // 所以必须能反查“谁绑了这颗行星”，才能把受影响的名字写进提示（否则用户只会看到
+    // “剧本的地形怎么变了”）。
     const boundList = store.getBaseMapsBoundToPlanet(pid) || [];
-    ck('f2（R4）能反查「哪些底图绑了这颗行星」（重建提示要点名受影响者）',
+    ck('f2（R4）能反查“哪些底图绑了这颗行星”（重建提示要点名受影响者）',
        boundList.some(x => x.key === K2), boundList);
   }
 
@@ -232,7 +232,7 @@ JS = r"""(async () => {
   // ══════════════════════════════════════════════════════
   // f6（R2）一星一图：同一颗行星不能被第二张底图绑定
   // ══════════════════════════════════════════════════════
-  // 为什么必须挡：两张「历史时期」地图共用一份地形时，在时期 A 涂的山会立刻出现在时期 B 上
+  // 为什么必须挡：两张“历史时期”地图共用一份地形时，在时期 A 涂的山会立刻出现在时期 B 上
   // —— 这类串味不会报错，往往几周后才发现，而那时已经分不清哪一笔是给谁画的。
   if (pid) {
     const K6 = 'M1b一星一图用例底图';
@@ -248,8 +248,8 @@ JS = r"""(async () => {
   // ══════════════════════════════════════════════════════
   // f7（P3）切换项目 / 事实源必须清空 undo 栈
   // ══════════════════════════════════════════════════════
-  // undo 命令的闭包捕获的是「它当时操作的那个数据对象」。跨项目/跨事实源留着它们，
-  // 就会出现「在新项目里 Ctrl+Z，把上一个项目的形状回滚进来」—— 一次无法解释的改动。
+  // undo 命令的闭包捕获的是“它当时操作的那个数据对象”。跨项目/跨事实源留着它们，
+  // 就会出现“在新项目里 Ctrl+Z，把上一个项目的形状回滚进来”—— 一次无法解释的改动。
   const U = await import('/src/store/undo.js');
   const K7 = 'M1b撤销栈用例底图';
   if (!store.baseMaps[K7]) store.addBaseMap(K7, { name: K7 });
@@ -280,7 +280,7 @@ def run(cdp):
         fails.extend(problems)
     # 计数口径：5 个写入入口各 2 处（undo/redo）= 10，外加 createBaseMapHeightmap 的 2 处
     # 与 `function commitHeightmap(` 定义行 1 处 = 13。真正的守卫是上面**按函数体**逐个断言，
-    # 计数只是「有人整段删掉」的护栏。
+    # 计数只是“有人整段删掉”的护栏。
     if n_commit < 12:
         fails.append(f'commitHeightmap(baseMapKey 调用点只有 {n_commit} 处（应为 13：5 入口×2 + 创建入口×2 + 定义行）')
 

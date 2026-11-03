@@ -127,12 +127,12 @@ async function onCanvasClick(event) {  if (event.button === 2) {
 
   if (tool.value === 'erase') {
     const prov = findProvinceAt(world.x, world.y);
-    if (prov && confirm(`确定删除省份「${prov.name}」？\n\n该省在各剧本里的势力归属与易主年份会一并清空（可用 Ctrl+Z 整体撤回）。`)) {
+    if (prov && confirm(`确定删除省份“${prov.name}”？\n\n该省在各剧本里的势力归属与易主年份会一并清空（可用 Ctrl+Z 整体撤回）。`)) {
       if (store.isReadOnly) { statusMsg(`删除省份已停用：${store.readOnlyReason || '只读：未打开项目'}`); return; }
       const r = store.removeBaseProvince(baseMapKey.value, prov.id);
       statusMsg(r && r.cascadedScenarios
-        ? `已删除省份「${prov.name}」（连带清理 ${r.cascadedScenarios} 个剧本里的归属键，可 Ctrl+Z 撤回）`
-        : `已删除省份「${prov.name}」`);
+        ? `已删除省份“${prov.name}”（连带清理 ${r.cascadedScenarios} 个剧本里的归属键，可 Ctrl+Z 撤回）`
+        : `已删除省份“${prov.name}”`);
       render();
     }
     return;
@@ -196,8 +196,8 @@ async function onCanvasClick(event) {  if (event.button === 2) {
       st.riverPressHandled = false;
       return;
     }
-    // 🔴 2026-10-17 第八修·补（用户实测：「河流逐条点根本点不中，之前画的测试河流无法删除」）：
-    //    河流的命中判定此前**只在河流工具里**（`tool === 'river'`）。于是用「选择」工具
+    // 🔴 2026-10-17 第八修·补（用户实测：“河流逐条点根本点不中，之前画的测试河流无法删除”）：
+    //    河流的命中判定此前**只在河流工具里**（`tool === 'river'`）。于是用“选择”工具
     //    点河 = 什么都没发生；而 `Delete` 也因为 `selectedRiver` 为空而不删。
     //    结果：画错的河**没法删**（用户的原话是"噩梦"）。
     //    现在：选择工具里**河优先于省**（河是压在地形上的一层细线，用户点它就是要选它），
@@ -212,7 +212,7 @@ async function onCanvasClick(event) {  if (event.button === 2) {
       applyRiverPick(hitRiver.id, event.shiftKey);
       return;
     }
-    // 点空白 / 城镇 / 省份 = 取消河流选中（2026-10-27 用户 C3：「特别难取消选中」）。
+    // 点空白 / 城镇 / 省份 = 取消河流选中（2026-10-27 用户 C3：“特别难取消选中”）。
     // 旧实现只换 selectedProvince，selectedRiverId 留着 → 河一直高亮、手柄一直在。
     if (riverSelIds().length) {
       setRiverSelection([]);
@@ -239,8 +239,8 @@ async function onCanvasClick(event) {  if (event.button === 2) {
         selectedProvince.value = prov;
         showProps.value = true;
         statusMsg(selectedProvinceIds.value.includes(prov.id)
-          ? `已加入多选：「${prov.name}」（共 ${selectedProvinceIds.value.length} 省；用下面的批量条指派）`
-          : `已移出多选：「${prov.name}」（还剩 ${selectedProvinceIds.value.length} 省）`);
+          ? `已加入多选：“${prov.name}”（共 ${selectedProvinceIds.value.length} 省；用下面的批量条指派）`
+          : `已移出多选：“${prov.name}”（还剩 ${selectedProvinceIds.value.length} 省）`);
       } else {
         if (selectedProvinceIds.value.length) clearProvinceSelection();   // 普通点击 = 回到单选
         selectedProvince.value = prov;
@@ -293,7 +293,7 @@ async function onCanvasClick(event) {  if (event.button === 2) {
     selectedRiverId.value = hit.id;
     riverActiveNode.value = -1;
     // 提示里写明"再点河身加拐点 / 拖节点" —— 不然这个能力照样没人知道（可发现性纪律）
-    statusMsg(`已选中河流「${hit.name || '未命名'}」（${(hit.points || []).length} 个节点）`
+    statusMsg(`已选中河流“${hit.name || '未命名'}”（${(hit.points || []).length} 个节点）`
       + ' —— 再点河身=加拐点，拖节点=微调，鼠标移到节点上按 Delete=删这个节点');
     render();
     return;
@@ -312,30 +312,30 @@ async function onCanvasClick(event) {  if (event.button === 2) {
     if (prov) {
       if (selectedPolity.value) {
         // 把时间轴当前**日期**一并记为显式易主日期 ——
-        // 「拖到某日再上色 = 该日易主」，这是易主日期最自然的录入路径（月日精度：现在就带上月日）
+        // “拖到某日再上色 = 该日易主”，这是易主日期最自然的录入路径（月日精度：现在就带上月日）
         const wr = store.setOwnership(
           selectedScenario.value.id, prov.id, selectedPolity.value.id, tlDate.value,
         );
         if (wr && wr.success === false) {
-          statusMsg(`「${prov.name}」归属已改，但易主日期没记：${wr.reason}`);
+          statusMsg(`“${prov.name}”归属已改，但易主日期没记：${wr.reason}`);
         } else {
-          statusMsg(`「${prov.name}」→ ${selectedPolity.value.name}（易主日期 ${tlDateText.value}）`);
+          statusMsg(`“${prov.name}”→ ${selectedPolity.value.name}（易主日期 ${tlDateText.value}）`);
         }
       } else {
-        // 色板上的「✕ 清除归属」过去只是 `selectPolity(null)`：title 承诺"清除归属"，
+        // 色板上的“✕ 清除归属”过去只是 `selectPolity(null)`：title 承诺"清除归属"，
         // 行为却是"取消选中"，再点省份则因旧条件 `&& selectedPolity.value` 而**静默无反应**
         // （而 store 里 `clearOwnership` 明明已实现、还带 undo —— 全仓零调用 = 死入口）。
         // 现在：没选势力 + 油漆桶 = 真的清除该省的归属，与 title 一致。
         const had = !!(selectedScenario.value.ownership || {})[prov.id];
-        if (!had) { statusMsg(`「${prov.name}」本来就没有势力归属`); return; }
+        if (!had) { statusMsg(`“${prov.name}”本来就没有势力归属`); return; }
         store.clearOwnership(selectedScenario.value.id, prov.id, tlDate.value);
-        statusMsg(`已清除「${prov.name}」的势力归属（可 Ctrl+Z 撤回）`);
+        statusMsg(`已清除“${prov.name}”的势力归属（可 Ctrl+Z 撤回）`);
       }
       render();
     } else {
       statusMsg(selectedPolity.value
         ? `没点到省份 —— 油漆桶只对省份多边形生效（当前已选势力：${selectedPolity.value.name}）`
-        : '没点到省份；另外：「✕ 清除归属」模式下油漆桶点省份 = 清空该省归属，想指派请先点一个势力色块');
+        : '没点到省份；另外：“✕ 清除归属”模式下油漆桶点省份 = 清空该省归属，想指派请先点一个势力色块');
     }
   } else if (tool.value === 'label') {
     const text = await askText({ title: '输入地名' });
@@ -361,7 +361,7 @@ async function onCanvasClick(event) {  if (event.button === 2) {
       const exist = findMarkerAt(world);
       if (exist) {
         openMarkerEditor(exist.marker, exist.index);
-        statusMsg(`这里已有标记「${exist.marker.name || '（未命名标记）'}」—— 已打开它的面板；`
+        statusMsg(`这里已有标记“${exist.marker.name || '（未命名标记）'}”—— 已打开它的面板；`
           + '要新放一个请挪开一点（同一位置叠两个谁也点不准）');
         render();
         return;
@@ -469,16 +469,16 @@ async function onCanvasClick(event) {  if (event.button === 2) {
 
 async function triggerMapImport(opts = {}) {
   const refreshOnly = !!(opts && opts.refreshOnly);
-  // 🔴 2026-10-13：「拿到一份 .map 之后」的处理体 = **唯一实现**，两条入口共用 ——
-  //    ① 用户选文件（下面建 input）；② 「从留底恢复」（`opts.source` = basemap-sources 里的原文）。
-  //    刻意不另写一条导入链：两条入口一旦分叉，「只有一条会留底 / 只有一条会补缺」
+  // 🔴 2026-10-13：“拿到一份 .map 之后”的处理体 = **唯一实现**，两条入口共用 ——
+  //    ① 用户选文件（下面建 input）；② “从留底恢复”（`opts.source` = basemap-sources 里的原文）。
+  //    刻意不另写一条导入链：两条入口一旦分叉，“只有一条会留底 / 只有一条会补缺”
   //    这类静默不一致迟早发生（本仓已踩过多次"两份实现"）。
   const handle = async (file) => {
     if (!file) return;
     try {
       const text = await file.text();
       // 先留底（在任何解析/写入之前）—— 解析失败也该留下这份素材。
-      // ⚠️ 「从留底恢复」进来的这一份**不再留底**：它本身就是那份留底，
+      // ⚠️ “从留底恢复”进来的这一份**不再留底**：它本身就是那份留底，
       //    再写一份只会多占一个轮转位（`name-2.map`）、把更早的版本挤掉。
       const srcNote = file.__fromBackup
         ? '（用的就是项目备份目录里的留底，未重复留底）'
@@ -489,7 +489,7 @@ async function triggerMapImport(opts = {}) {
       const bundle = json.baseMaps?.[name];
 
       // ── 已有同名底图：**只补数据，绝不覆盖**（B2，2026-10-11）─────────────────
-      // 🔴 为什么必须分这条路：`importFromScenariosJson` 的合并语义是「同 key 整体替换」
+      // 🔴 为什么必须分这条路：`importFromScenariosJson` 的合并语义是“同 key 整体替换”
       //     —— 拿它去"补高度图"会把用户已切好的几百块省份、归属、易主记录一起盖掉。
       //     真实场景：`desite` 底图现在有 415 块省份，而它建图时（2026-09-10）解析器
       //     还读不出高度图/河流/道路 → 用户需要的是"给这张图补上"，不是"重画一张"。
@@ -500,10 +500,10 @@ async function triggerMapImport(opts = {}) {
         //   · 改过一笔（或旧数据没有指纹）→ **不能再只补数据**：新底图 + 旧归属迁移。
         // 旧行为会把"改过的底图"当成同一张图补数据；用户明确说过：动过一笔就不是一个东西了。
         if (!isBasemapPristine(existing)) {
-          // 「刷新底图数据」入口只给未改过的底图补缺；改过的底图必须走「+ 导入」重导，
+          // “刷新底图数据”入口只给未改过的底图补缺；改过的底图必须走“+ 导入”重导，
           // 否则用户点刷新却被弹重导对话框，按钮语义就错了。
           if (refreshOnly) {
-            statusMsg(`「${name}」这张底图改过，不能只补数据；要换新 .map 请用「+ 导入 .map 底图」重导（会迁移旧归属）。刷新入口只给一笔未改的底图补缺。`);
+            statusMsg(`“${name}”这张底图改过，不能只补数据；要换新 .map 请用“+ 导入 .map 底图”重导（会迁移旧归属）。刷新入口只给一笔未改的底图补缺。`);
             return;
           }
           // 不直接写：先开重导对话框，把映射统计/冲突摆出来（019）
@@ -514,10 +514,10 @@ async function triggerMapImport(opts = {}) {
         const srcStats = parsed.stats || {};
         const missing = describeBaseMapMissing(store.baseMaps[name], bundle);
         if (!missing.length) {
-          statusMsg(`「${name}」的底图数据已经齐了（高度图 / 河流 / 道路 / 城镇都有），无需刷新`);
+          statusMsg(`“${name}”的底图数据已经齐了（高度图 / 河流 / 道路 / 城镇都有），无需刷新`);
           return;
         }
-        if (!confirm(`「${name}」这张底图已经存在了。\n\n`
+        if (!confirm(`“${name}”这张底图已经存在了。\n\n`
           + `可以把它缺的底图级数据补上：${missing.join(' / ')}\n`
           + `文件里带着：${srcStats.cells || 0} 格高度、${srcStats.rivers || 0} 条河流、`
           + `${srcStats.routes || 0} 条道路、${srcStats.burgs || 0} 个城镇。\n\n`
@@ -534,7 +534,7 @@ async function triggerMapImport(opts = {}) {
             + srcNote
             + '（可用 Ctrl+Z 撤回）');
           baseMapKey.value = name;
-          // 刷新后画布上要能立刻看见：默认切到「地形高度」档（高度图刚到，用户就是为它来的）
+          // 刷新后画布上要能立刻看见：默认切到“地形高度”档（高度图刚到，用户就是为它来的）
           if (r.added.heightmap) rasterLayer.value = 'height';
           render();
         } else {
@@ -544,9 +544,9 @@ async function triggerMapImport(opts = {}) {
       }
 
       if (refreshOnly && !store.baseMaps?.[name]) {
-        // 走「刷新」入口却选了一个新名字的底图 → 不能悄悄新建（那会多出一张空底图）
-        if (!confirm(`这张底图（${name}）还不存在。「刷新」只给已有底图补数据，不会新建底图。\n\n`
-          + '改成「导入为新底图」？')) {
+        // 走“刷新”入口却选了一个新名字的底图 → 不能悄悄新建（那会多出一张空底图）
+        if (!confirm(`这张底图（${name}）还不存在。“刷新”只给已有底图补数据，不会新建底图。\n\n`
+          + '改成“导入为新底图”？')) {
           statusMsg('刷新底图数据：已取消（没有新建底图）');
           return;
         }
@@ -580,17 +580,17 @@ async function triggerMapImport(opts = {}) {
       }
 
       // 🔴 导入结果必须**当场说清**（B2 的"明确可诊断"，2026-10-11）：
-      //    解析器早就把「未解析到 cells.h（高度图不可用）」这类问题收进 `warnings` 了，
+      //    解析器早就把“未解析到 cells.h（高度图不可用）”这类问题收进 `warnings` 了，
       //    但导入路径一个字都不报 —— 用户只会看到"地图是纯色扁平的"，
       //    然后去找一个根本不存在的显示开关。这就是他这次的实际经历。
       const newBm = store.baseMaps?.[name];
       const srcBundle = json.baseMaps?.[name];
       const missing = newBm ? describeBaseMapMissing(newBm, srcBundle) : [];
       const warns = parsed.warnings || [];
-      // 「源文件里压根没有高度图」是另一回事（不是"这张底图缺"，而是"这份 .map 没带"）——
+      // “源文件里压根没有高度图”是另一回事（不是"这张底图缺"，而是"这份 .map 没带"）——
       // 两种都要说，而且要说成不同的话，否则用户会以为"刷新一下就有了"。
       const srcHasTerrain = Array.isArray(srcBundle?.heightmap?.h) && srcBundle.heightmap.h.length > 0;
-      const parts = [`已导入「${name}」：省份 ${(newBm?.terrain || []).length} 块`];
+      const parts = [`已导入“${name}”：省份 ${(newBm?.terrain || []).length} 块`];
       if (srcHasTerrain) parts.push('高度图 有');
       parts.push(`河流 ${(newBm?.rivers || []).length} 条`, `道路 ${(newBm?.routes || []).length} 条`);
       if (!srcHasTerrain) {
@@ -598,16 +598,16 @@ async function triggerMapImport(opts = {}) {
           + ' —— 所以地图会是纯色扁平图，这不是显示开关的问题');
       }
       if (missing.length) {
-        parts.push(`这张底图还缺：${missing.join(' / ')} —— 可用工具栏「刷新底图数据」从另一份 .map 补`);
+        parts.push(`这张底图还缺：${missing.join(' / ')} —— 可用工具栏“刷新底图数据”从另一份 .map 补`);
       }
       if (warns.length) parts.push(`解析提示（${warns.length} 条）：${warns.slice(0, 2).join('；')}`);
-      // 「原始 .map 已留底 / 留底失败」并入同一句回执（备份失败也要看得见，不能静默）
+      // “原始 .map 已留底 / 留底失败”并入同一句回执（备份失败也要看得见，不能静默）
       statusMsg(parts.join('、').replace(/、地形高度图/, '；地形高度图') + srcNote);
     } catch (err) {
       alert('导入失败: ' + err.message);
     }
   };
-  // 「从留底恢复」：把留底原文按 `{ name, text() }` 的形状喂进同一条链（不经过文件选择器）
+  // “从留底恢复”：把留底原文按 `{ name, text() }` 的形状喂进同一条链（不经过文件选择器）
   if (opts.source) return handle(opts.source);
   const input = document.createElement('input');
   input.type = 'file';
@@ -673,7 +673,7 @@ async function triggerCoastlineRebuild() {
         return;
       }
       const totalPts = feats.reduce((n, f) => n + ((f.points || []).length), 0);
-      if (!confirm(`用「${file.name}」的海岸线重建省份外环？\n\n`
+      if (!confirm(`用“${file.name}”的海岸线重建省份外环？\n\n`
         + `· 这份文件里的陆地轮廓：${feats.length} 块 / 合计 ${totalPts} 点\n`
         + `· **只借它的海岸线** —— 省份、归属、易主记录都不作废\n`
         + `· 做法：每个省 = 省 ∩ 新陆地；内陆省逐点不动、相邻省仍无缝\n`
@@ -694,14 +694,14 @@ async function runBatchSubdivide() {
   if (store.isReadOnly) { statusMsg(`批量铺底已停用：${store.readOnlyReason}`); return; }
   const o = batchOpts();
   const seeds = batchSeeds.value.slice();
-  if (!seeds.length) { statusMsg('批量铺底：先「自动播种」或在画布上点几个种子点'); return; }
+  if (!seeds.length) { statusMsg('批量铺底：先“自动播种”或在画布上点几个种子点'); return; }
   const inside = batchPreviewInside.value.filter(Boolean).length;
   if (!confirm(`批量铺底：在 ${o.provinceIds ? o.provinceIds.length + ' 个选中的省' : '全部陆地'}范围内，`
     + `用 ${seeds.length} 个种子点切分（其中 ${seeds.length - inside} 个落在范围外会被忽略）。\n\n`
     + '· 范围内的旧省份会被替换成新块（归属 / 易主记录自动继承给新块）\n'
     + '· 海岸线不会被动到（每块都与陆地边界精确求交）\n'
     + '· 一整批只算一次撤销，Ctrl+Z 可整批撤回\n'
-    + '· 过程中画布会短暂不响应（正在算几何），可以点「取消切分」放弃这一批 —— 不改动任何数据\n\n继续？')) {
+    + '· 过程中画布会短暂不响应（正在算几何），可以点“取消切分”放弃这一批 —— 不改动任何数据\n\n继续？')) {
     statusMsg('批量铺底：已取消');
     return;
   }
@@ -797,7 +797,7 @@ async function restoreFromSource(f) {
     await triggerMapImport({
       source: { name: r.name, text: async () => r.text, __fromBackup: true },
     });
-    sourceRestoreMsg.value = `已按留底「${r.name}」（${fmtSrcBytes(r.bytes)}）走完导入链 —— `
+    sourceRestoreMsg.value = `已按留底“${r.name}”（${fmtSrcBytes(r.bytes)}）走完导入链 —— `
       + '同名底图只补缺，你已切好的省份与归属不会被覆盖；详细结果见底部状态栏';
   } catch (e) {
     sourceRestoreMsg.value = `恢复失败：${e.message}`;

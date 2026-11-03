@@ -4,7 +4,7 @@
 
 覆盖：
   a) DirtyRectTracker 语义：add/merge/getRects/clear、负宽高归一化、相邻矩形合并、
-     「脏面积 > 50% 画布」判定
+     “脏面积 > 50% 画布”判定
   b) 渲染器接线：PlanetMap 挂了 tracker；真实笔刷拖动期间存在 **partial** 帧，
      且单帧重绘面积远小于全画布
   c) 面积兜底：注入一个覆盖 >50% 视口的脏矩形 → 自动回退全画布
@@ -81,7 +81,7 @@ def sub_tracker_unit(cdp):
       // 75x75 = 56.25% > 50% → 回退全画布
       t3.add({ x: 0, y: 0, w: 75, h: 75 });
       out.bigFull = t3.shouldFullRedraw(100, 100, 1);
-      // 缩放折算：scale=0.5 时同一世界矩形只占 1/4 画布面积 → 不再是「大面积」
+      // 缩放折算：scale=0.5 时同一世界矩形只占 1/4 画布面积 → 不再是“大面积”
       out.scaledSmall = t3.shouldFullRedraw(100, 100, 0.5);
       // markFull 强制
       const t4 = new DirtyRectTracker({ marginPx: 0 });

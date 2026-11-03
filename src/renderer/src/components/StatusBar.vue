@@ -1,12 +1,12 @@
 <template>
   <footer v-if="state.visible" class="status-bar">
     <span class="sb-item sb-view">{{ state.viewLabel }}</span>
-    <!-- 单一写闸门（Phase 2）：无项目只读态必须常驻可见，否则用户会以为「保存坏了」 -->
+    <!-- 单一写闸门（Phase 2）：无项目只读态必须常驻可见，否则用户会以为“保存坏了” -->
     <span v-if="isReadOnly" class="sb-item sb-readonly" :title="readOnlyReason">{{ READONLY_BADGE }}</span>
     <!-- 保存状态（B5，2026-09-24）：常驻可见，失败**不自动消失** —— 项目面板可能关着，
-         「画了几小时的东西到底存没存」必须在任何时候一眼看到。
+         “画了几小时的东西到底存没存”必须在任何时候一眼看到。
          2026-10-17：文案不再直接读 `state.saveState`，而是走 `useSaveDisplay()`
-         —— 它把「已落盘 / 已交给项目 / 有改动未落盘 / 失败原因」合成一句（唯一实现），
+         —— 它把“已落盘 / 已交给项目 / 有改动未落盘 / 失败原因”合成一句（唯一实现），
          和剧本工具条、行星图保存横幅同一份口径。 -->
     <span
       v-if="saveChip.state !== 'idle'"
@@ -37,7 +37,7 @@ const state = useStatusBarState();
 const coordText = computed(() => formatWorldCoord(state.mouseWorld?.x, state.mouseWorld?.y));
 // 保存 chip：`useSaveDisplay()` 是唯一实现（geodata 的两段保存 + projectStore 的 dirty 合成）
 const saveChip = useSaveDisplay();
-// 只读徽标的说明文案：写闸门给的人类可读原因（含「打开项目后即可编辑」的能力说明）
+// 只读徽标的说明文案：写闸门给的人类可读原因（含“打开项目后即可编辑”的能力说明）
 const readOnlyReason = writeModeReason;
 </script>
 
@@ -69,7 +69,7 @@ const readOnlyReason = writeModeReason;
 .sb-selection {
   color: var(--accent, #4a90d9);
 }
-/* 只读徽标：常驻可见 + 悬停给出「打开项目后即可编辑」的能力说明（能力不减） */
+/* 只读徽标：常驻可见 + 悬停给出“打开项目后即可编辑”的能力说明（能力不减） */
 .sb-readonly {
   padding: 0 8px;
   border-radius: 9px;

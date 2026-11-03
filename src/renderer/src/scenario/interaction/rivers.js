@@ -72,7 +72,7 @@ function finishRiverDraft(fromBrush = false) {
     render();
     return null;
   }
-  // ── 支流的两道闸门（2026-10-18 第十五修；「交叉怪物」的结构性防线）──────────
+  // ── 支流的两道闸门（2026-10-18 第十五修；“交叉怪物”的结构性防线）──────────
   //    ① **穿回母河**：与母河的交点 ≥ 2 = 这一笔又拐回来了（第 1 个交点是它长出去的
   //       那个起点，不算）→ 丢弃；
   //    ② **自交**：自己打了个结 → 丢弃。
@@ -119,7 +119,7 @@ function finishRiverDraft(fromBrush = false) {
   // 那条路既不进撤销栈、也不落盘（重开应用河就没了，且一声不响）。
   // 线宽按点数分级（与行星侧河流同一口径：越长的河越宽）。
   // 🔴 2026-10-17 第七修：落库宽度改用**河宽字段自己的量纲**（`RIVER_WIDTH_MIN..MAX` = 1..12）。
-  //    以前压在 0.4~1.6，于是「把这条河调宽」调到 1.6 就到顶、再调没反应
+  //    以前压在 0.4~1.6，于是“把这条河调宽”调到 1.6 就到顶、再调没反应
   //    （数据层说"能到 12"，渲染层只认到 2.7 屏幕像素）—— 那是**能力存在但够不着**。
   //    现在默认给 `RIVER_WIDTH_DEFAULT`（3.5 → 8.4 屏幕像素 @100%），用户可继续调到 12。
   const width = RIVER_WIDTH_DEFAULT;
@@ -129,7 +129,7 @@ function finishRiverDraft(fromBrush = false) {
   //    "接在"干流上（而且在节点稀疏处会差出好几个世界单位）。
   //    🔴 2026-10-18 第十八修·三：这一步以前是**第二条 undo**（`addBaseMapRiver` 已经压了一条），
   //    用户按一次 Ctrl+Z 只撤掉"拐点插入"、支流还在 —— 而他的心理模型是"我刚画了一条支流"。
-  //    现在「加这条河 + 改母河」走**同一个原子写口**（`applyBaseMapRiverEdit`）= 一条 undo。
+  //    现在“加这条河 + 改母河”走**同一个原子写口**（`applyBaseMapRiverEdit`）= 一条 undo。
   let parentPatch = null;
   if (parentId) {
     const parent = handDrawnRivers().find((x) => x && x.id === parentId);
@@ -173,10 +173,10 @@ function finishRiverDraft(fromBrush = false) {
 function riverWidthsFor(river, count) {
   // 🔴 2026-10-17 第七修：`width` 是**显示宽度**（世界单位），量纲 = 河宽字段自己的
   //    `RIVER_WIDTH_MIN..MAX`（1..12）。以前落库压在 0.4~1.6，于是
-  //    「把这条河调宽」调到 1.6 就到顶、再调没反应 —— **能力存在但够不着**。
+  //    “把这条河调宽”调到 1.6 就到顶、再调没反应 —— **能力存在但够不着**。
   //
-  // 🔴 2026-10-18 第十五修（暮雨：「河流在较小的缩放率下正常，放大后表现为空心铁轨，
-  //    中间的水色渲染块没了，只剩两边的轨道」）—— 真正的病根在**调用方**：
+  // 🔴 2026-10-18 第十五修（暮雨：“河流在较小的缩放率下正常，放大后表现为空心铁轨，
+  //    中间的水色渲染块没了，只剩两边的轨道”）—— 真正的病根在**调用方**：
   //    `drawOneHandRiver` 曾经传 `toPx: (w) => px(w)`，而画布在该处已经
   //    `scale(cameraScale)` ⇒ 把世界宽度**又除了一次**缩放，屏幕宽度于是恒为
   //    8.4px（实测 1×/2×/4×/8×/16× 全是 6~8 屏幕像素；把 `river.width` 放大 10 倍
@@ -199,7 +199,7 @@ function riverWidthsFor(river, count) {
     }
   }
 
-  // 「整条等比抬起」而不是逐点夹：逐点夹会把"源头细 → 河口粗"的渐变夹平（那是用户要的）。
+  // “整条等比抬起”而不是逐点夹：逐点夹会把"源头细 → 河口粗"的渐变夹平（那是用户要的）。
   // 判据只看河口（最粗那点）。
   const scale = cameraScale.value;
   if (scale > 0) {
@@ -237,7 +237,7 @@ function makeRiverLandCheck(mask) {
   };
   const useMask = !!(mask && typeof mask.lookup === 'function');
   if (!useMask && !ok) return null;   // 两份判据都没有 → 调用方按"不裁"处理
-  // 🔴 2026-10-16 第五修（用户第三次报「依然过度延伸进海洋」）：
+  // 🔴 2026-10-16 第五修（用户第三次报“依然过度延伸进海洋”）：
   //    **掩膜在时必须独占** —— 不能 `mask.lookup(x,y) || heightIsLand(x,y)`（那是并集）。
   //    为什么并集是错的（实测真实底图 desite，`scripts/tests/tools/_probe_phantom.mjs`，
   //    掩膜走**产品自己的** `buildLandMask`）：
@@ -247,9 +247,9 @@ function makeRiverLandCheck(mask) {
   //      · **145 / 1710 段 = 8.5%** 至少一端踩在幻影格上（涉及 90 个幻影格）；
   //      · 踩在幻影格上的段在**并集**下**两端都判陆** → `clipSegmentToLand` 走
   //        `if (aLand && bLand) return {...seg}` → **一次裁剪都不做**，河照格心画进海里。
-  //        实测「两端都判陆 → 跳过裁剪」的段数：并集 **1034** vs 掩膜独占 **854**
+  //        实测“两端都判陆 → 跳过裁剪”的段数：并集 **1034** vs 掩膜独占 **854**
   //        → **180 段**在并集下"不用裁"，其中相当一部分正是画进海里的那些。
-  //      · 上一轮我据「9/2785 越界」认为已修好 —— 那个数**量的是"裁剪之后仍越界"**，
+  //      · 上一轮我据“9/2785 越界”认为已修好 —— 那个数**量的是"裁剪之后仍越界"**，
   //        量不到"压根没进裁剪"（同一件事上第三次给自己发假证据）。
   //    🔴 **可复用的判据**：当两份判据对同一件事给不同答案时，取**真正决定画面**的那一份。
   //       这里画出来的陆地是省份多边形（海岸线由它重建），高度场只是**格心采样**的近似 ——
@@ -306,7 +306,7 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
 function autoRiverPartsFor(net, terrain, segMax) {
   const c = st.autoRiverPartsCache;
   if (c.net === net && c.terrain === terrain && c.segMax === segMax) return c.out;
-  // 🔴 2026-10-17 第六修（用户：「恐怖谷，我都懒得说了」）：
+  // 🔴 2026-10-17 第六修（用户：“恐怖谷，我都懒得说了”）：
   //    一万多根"每格一根"的小棍铺满全图 = 一片平行斜线网格，那不是河。两条一起上：
   //      ① **按流量剪枝**（`pruneRiverNetwork`）—— 细支流不画，干支流拓扑保留；
   //         闸门按本幅图流量上界归一化（`riverFlowGate`：绝对数字换个地形就失效）。
@@ -314,7 +314,7 @@ function autoRiverPartsFor(net, terrain, segMax) {
   //         有没有 2px"决定最细的河有多粗；缩到格子只有 1px 时退成一层薄雾而不是网格。
   const gate = riverFlowGate(segMax, net);
   const pruned = pruneRiverNetwork(net, gate);
-  // 🔴 2026-10-17 第八修（用户：「支气管模拟器」「你会画河吗」）：
+  // 🔴 2026-10-17 第八修（用户：“支气管模拟器”“你会画河吗”）：
   //    **逐段画**从结构上就画不出河 —— 每根小棍独立描边、每根都是直线、段与段之间
   //    没有共享几何。就算给每段加个小弧，观感仍是"分叉处劈开的三根棍"。
   //    正确做法：**先把流向场还原成河链，再画河链**（见 `utils/riverChains.js`）：
@@ -328,7 +328,7 @@ function autoRiverPartsFor(net, terrain, segMax) {
     minLen: RIVER_PATH_MIN_POINTS,
     maxPaths: RIVER_PATH_MAX,
   });
-  // 🔴 2026-10-17 第八修·补（用户：「各种超出陆地进入海洋，《文明6》等游戏都不这样」）：
+  // 🔴 2026-10-17 第八修·补（用户：“各种超出陆地进入海洋，《文明6》等游戏都不这样”）：
   //    实测（`_probe_river_sea_overrun.js`）：段一级已经 99.2% 在陆地，但**河链**里
   //    仍有 **4.1% 的末端落在海里**，而且 Catmull-Rom 会把链尾那一小段拖到岸外 ——
   //    看起来就是"河伸进大海"。
@@ -364,7 +364,7 @@ function clipSelectedRiversToCoast() {
   if (!ids.length) { statusMsg('裁海岸线：先选中要裁的河流（点它的河身，或 Shift+拖动框选）'); return false; }
   const terrain = baseMap.value?.terrain || [];
   if (!terrain.length) {
-    statusMsg('裁海岸线：这张底图还没有省份 —— 没有海岸线可裁（先画省份，或改用「自动河流」）');
+    statusMsg('裁海岸线：这张底图还没有省份 —— 没有海岸线可裁（先画省份，或改用“自动河流”）');
     return false;
   }
   const isLand = makeRiverLandCheck(getLandMask());
@@ -402,13 +402,13 @@ function generateAndShowRivers() {
   // 旧实现在这里同步跑分钟级循环，用户看到的是"点了没反应、然后就卡死"。
   // 现在算法是索引版（秒级以内），但**必须给回执**：画了几条、丢了几条、多久。
   // ⚠️ 回执走 `statusMsg`（它写的是 `provinceHint`，显示为状态栏里的 .draw-hint），
-  //    不是 `statusText`（那是「N 省份 | M 网格」那行）—— test_103 按这个口径断言。
+  //    不是 `statusText`（那是“N 省份 | M 网格”那行）—— test_103 按这个口径断言。
   //
   // 🔴 2026-10-14 补（第三轮）：回执必须**把闸门读数一起报出来**。
   //    缘由是实测：这份地形的源头高度闸门恰好是"条数"的主宰 —— 默认 60 只出 **3 条**，
   //    而把它降到 40 立刻变 **67 条**（同一份数据）。用户只看到"生成 3 条河流"会以为
   //    河就是少的，**看不到"是闸门卡住了、而且可以调"**。所以：
-  //      · 回执里写明「源头高度 >N / 离海 ≥M 格」；
+  //      · 回执里写明“源头高度 >N / 离海 ≥M 格”；
   //      · 面板上给一个可调输入（`river-source-height`），让这个闸门**够得着**。
   const r = store.generateRivers(baseMapKey.value, {
     sourceHeight: Number.isFinite(riverSourceHeight.value) ? riverSourceHeight.value : undefined,
@@ -444,7 +444,7 @@ function generateAndShowRivers() {
   autoRiverDrawn.value = pruneRiverNetwork(
     autoRiverSegments.value, riverFlowGate(autoRiverMaxFlow.value, autoRiverSegments.value)).kept.length;
   // 🔴 2026-10-17 第六修：**状态栏只说结论，长解释进 tooltip**。
-  //    用户原话：「底下还有一堆废话文本，这些根本不该显示出来给用户看」。
+  //    用户原话：“底下还有一堆废话文本，这些根本不该显示出来给用户看”。
   //    那段解释（河长上限为什么低、两套河为什么并存）本身没错，但它是**读一次就够的**，
   //    不该每次点按钮都铺满状态栏（实测占到两行、把画布压矮）。
   //    现在：**一行**结论 + 悬停看详情（`riverTerrainAdvice` 那份计算已存在，直接复用）。
@@ -464,11 +464,11 @@ function generateAndShowRivers() {
   if (r.smoothed) brief.push(`已先平滑地形 → 闸门按 ${riverSourceHeight.value} 起算`);
   brief.push(`${Math.round(r.elapsedMs || 0)} ms`);
   // 🔴 2026-10-17：地形建议从"常驻角标 + 悬停"改为**一次性指路**（只在这一行里说一遍）。
-  //    用户明确否掉了工具栏上那枚常驻「长河受限」（"放在已经很拥挤的工具栏里真的有必要吗"）。
+  //    用户明确否掉了工具栏上那枚常驻“长河受限”（"放在已经很拥挤的工具栏里真的有必要吗"）。
   //    现在只在**长河确实受限**时追一句**可执行的**建议，而且带上解决入口的名字。
   statusMsg(
     `${brief.join(' · ')}`
-    + (riverTerrainAdvice.value ? ' · 这份地形缺长河：点「更多 → 按轮廓生成地形」重建地形后更明显' : ''),
+    + (riverTerrainAdvice.value ? ' · 这份地形缺长河：点“更多 → 按轮廓生成地形”重建地形后更明显' : ''),
   );
   render();
 }

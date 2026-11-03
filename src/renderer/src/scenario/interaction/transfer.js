@@ -3,7 +3,7 @@
 // 由 `build/_n15.cjs` 从 ScenarioMap.vue **逐字搬出**（只搬函数）：onRunSliceExport /
 // importScenariosJson / fmtSrcBytes / fmtSrcTime / openReimportDialog / closeReimportDialog /
 // describeBaseMapMissing。
-// 依赖约定：`st` = 组件侧那个「普通 let 的 get/set 门面」（`pendingReimportBundle` 是裸 `let`，
+// 依赖约定：`st` = 组件侧那个“普通 let 的 get/set 门面”（`pendingReimportBundle` 是裸 `let`，
 //   直接传值只会拷一份 —— 与 pointerState 同一条纪律）；其余 ref / const / 函数走 `ctx`；
 //   纯函数工具直接 import。
 //
@@ -59,7 +59,7 @@ function fmtSrcTime(iso) {
 }
 
 /**
- * 019 重导对话框（2026-10-25）：先把映射统计/冲突摆出来，再让用户点「重导并迁移」。
+ * 019 重导对话框（2026-10-25）：先把映射统计/冲突摆出来，再让用户点“重导并迁移”。
  * 预览走 `store.previewReimportBasemap`（只读），真正写盘在 `applyReimportDialog`。
  */
 function openReimportDialog(oldKey, bundle, fileName = '') {

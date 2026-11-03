@@ -1,5 +1,5 @@
 // utils/genProvenanceReplay.js — **账本的重放路径**（N3a-1）：拿一条记录重新跑一次生成，
-// 用 digest 判「重跑出来的是不是同一张图」（2026-11-02）
+// 用 digest 判“重跑出来的是不是同一张图”（2026-11-02）
 //
 // 为什么单开一个文件而不是塞进 `genProvenance.js`：
 //   `genProvenance.js` 是**零依赖**的规范层（谁也 import 得起，用例直接 import 就跑）；

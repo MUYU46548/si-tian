@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 25：R5-1 建筑内部「房间模板」—— 一键铺好整间，一次操作 = 一条 undo
+"""用例 25：R5-1 建筑内部“房间模板”—— 一键铺好整间，一次操作 = 一条 undo
 覆盖：
   a) 选中模板后点击画布 → 整间家具按模板相对偏移落位（数量/名称/包围盒）
   b) 落位遵守网格吸附（开启时）
@@ -58,7 +58,7 @@ def furniture_of_floor(cdp, building_id, floor_id):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    # 进入建筑内部（用例自带 fixture：真实库里已不再保留测试残留节点「测试建筑」）
+    # 进入建筑内部（用例自带 fixture：真实库里已不再保留测试残留节点“测试建筑”）
     okb, setup = ensure_test_building(cdp)
     if not okb:
         return False, f'未进入建筑内部视图 {setup}'
@@ -121,7 +121,7 @@ def run(cdp):
     names = [p['name'] for p in items_placed]
     for need in ('长桌', '椅·左', '椅·右', '装饰·左'):
         if need not in names:
-            return False, f'模板缺件「{need}」 {names}'
+            return False, f'模板缺件“{need}” {names}'
     xs = [p['x'] for p in items_placed]
     ys = [p['y'] for p in items_placed]
     if max(xs) - min(xs) > 500 or max(ys) - min(ys) > 500:
@@ -149,5 +149,5 @@ def run(cdp):
     # 清场
     _j(cdp, f"(() => {{ {STORE}.undo(); return 'ok'; }})()")
     time.sleep(0.3)
-    return True, (f'房间模板通过：模板「大厅」{expect} 件整间落位（含长桌/四椅/双装饰）、'
+    return True, (f'房间模板通过：模板“大厅”{expect} 件整间落位（含长桌/四椅/双装饰）、'
                   f'网格吸附正常、一次 undo 全撤 + 重做全回、放置后整间选中')

@@ -1,19 +1,19 @@
 """用例 131：涂归属 = **只改势力归属**（2026-10-20 重做）。
 
 背景（用户 2026-10-19 实测原话）：
-  「我不知道「涂归属」到底在干嘛，反正肯定不是我理解的效果，好像在生造省份。
-    两个同名笔刷，两种描述，同样的奇怪效果，同样的卡顿（画完松开卡几秒才有反应）。」
+  “我不知道“涂归属”到底在干嘛，反正肯定不是我理解的效果，好像在生造省份。
+    两个同名笔刷，两种描述，同样的奇怪效果，同样的卡顿（画完松开卡几秒才有反应）。”
 
-病因（代码实证）：此前两个叫「涂归属」的按钮都指向 `provinceBrush` —— 那是**几何笔刷**
+病因（代码实证）：此前两个叫“涂归属”的按钮都指向 `provinceBrush` —— 那是**几何笔刷**
 （`applyProvinceStroke` + 多边形布尔：目标省并集、相交省差集），一笔会把沿途各省挖掉一块
-并进所选省份。真正改势力归属的是「势力」油漆桶（`setOwnership`，一次一个省）。
+并进所选省份。真正改势力归属的是“势力”油漆桶（`setOwnership`，一次一个省）。
 
 本用例守四件事（全部走**真实鼠标输入**，不用合成事件）：
-  e1 主行那个「涂归属」按钮切到的是 `ownerBrush`（不是几何笔刷）；
+  e1 主行那个“涂归属”按钮切到的是 `ownerBrush`（不是几何笔刷）；
   e2 一笔划过 2 个省 → 两个省的 `ownership` 都变成所选势力，且**省界多边形逐字节不变**；
   e3 整笔 = 一条撤销（`undo()` 一次回到原状）；
   e4 没选势力时涂 = 一个省都不改，并给出可读回执（不许静默）。
-  e5 几何笔刷只在「底图编辑」行里（主行不再出现第二个同名按钮）。
+  e5 几何笔刷只在“底图编辑”行里（主行不再出现第二个同名按钮）。
 """
 import json
 import time
@@ -128,10 +128,10 @@ def run(cdp):
     before = _state(cdp, '涂之前')
     notes.append(f"相机 scale={seed['scale']:.3f}；三点 {a} {b} {c}")
 
-    # ── e1 主行的「涂归属」按钮 → ownerBrush（不是几何笔刷）────────────────────
+    # ── e1 主行的“涂归属”按钮 → ownerBrush（不是几何笔刷）────────────────────
     tool = eval_json(cdp, """(() => {
       const btn = document.querySelector('[data-testid="owner-brush-btn"]');
-      if (!btn) return JSON.stringify({ fails: ['主行找不到 data-testid=owner-brush-btn 的「涂归属」'] });
+      if (!btn) return JSON.stringify({ fails: ['主行找不到 data-testid=owner-brush-btn 的“涂归属”'] });
       btn.click();
       const sm = %s;
       return JSON.stringify({ fails: [], tool: sm.tool });
@@ -140,7 +140,7 @@ def run(cdp):
     if tool.get('fails'):
         fails += tool['fails']
     elif tool.get('tool') != 'ownerBrush':
-        fails.append(f"点「涂归属」切到的是 {tool.get('tool')}（应为 ownerBrush —— 几何笔刷必须改名收进底图编辑）")
+        fails.append(f"点“涂归属”切到的是 {tool.get('tool')}（应为 ownerBrush —— 几何笔刷必须改名收进底图编辑）")
 
     # ── e2 一笔从甲省划到乙省 → 两省归属都变，省界不动 ──────────────────────────
     eval_json(cdp, """(() => {
@@ -164,13 +164,13 @@ def run(cdp):
     if after['own'].get('prov_c') != 'A1':
         fails.append(f"丙省被误改（{after['own'].get('prov_c')}）—— 笔没碰到的省也被改了")
     if after['geom'] != before['geom']:
-        fails.append('🔴 涂归属**改了省界多边形**（它应该只改归属）—— 用户说的「生造省份」又回来了')
+        fails.append('🔴 涂归属**改了省界多边形**（它应该只改归属）—— 用户说的“生造省份”又回来了')
     if '涂归属' not in after['hint']:
         fails.append(f"状态栏没有涂归属回执：{after['hint']}")
     ev_a = (after['events'] or {}).get('prov_a') or []
     if not ev_a or ev_a[-1].get('owner') != 'A2':
         fails.append(f"易主日期没落库：prov_a.changeEvents={ev_a}")
-    notes.append(f"一笔 → 甲/乙=A2、丙={after['own'].get('prov_c')}；回执「{after['hint'][:70]}」")
+    notes.append(f"一笔 → 甲/乙=A2、丙={after['own'].get('prov_c')}；回执“{after['hint'][:70]}”")
 
     # ── e3 整笔 = 一条撤销 ─────────────────────────────────────────────────────
     eval_json(cdp, "(() => { %s.undo(); return JSON.stringify({ fails: [] }); })()" % STORE,
@@ -192,7 +192,7 @@ def run(cdp):
     _drag(cdp, [c, {'x': c['x'] - 30, 'y': c['y']}])
     guarded = _state(cdp, '没选势力涂之后')
     if guarded.get('polity') != '甲国':
-        fails.append(f"没选势力时没有自动落到第一个势力（selected={guarded.get('polity')}）—— 工具会表现为「涂了没反应」")
+        fails.append(f"没选势力时没有自动落到第一个势力（selected={guarded.get('polity')}）—— 工具会表现为“涂了没反应”")
     if '涂归属' not in guarded['hint']:
         fails.append(f"没选势力时没有可读回执：{guarded['hint']}")
 
@@ -200,14 +200,14 @@ def run(cdp):
     okc = eval_json(cdp, """(() => {
       const sm = %s;
       const b = document.querySelector('[data-testid="polity-clear"]');
-      if (!b) return JSON.stringify({ fails: ['色板里没有「清除归属」色块'] });
+      if (!b) return JSON.stringify({ fails: ['色板里没有“清除归属”色块'] });
       b.click();
       sm.setTool('ownerBrush');
       return JSON.stringify({ fails: [], clear: sm.clearOwnerMode });
     })()""" % SM, required=None, desc='点清除归属')
     okc = okc[1] if isinstance(okc, tuple) and okc[0] else {}
     if not okc.get('clear'):
-        fails.append('点色板 ✕ 没有进入「清除归属」模式 —— 涂归属会把它当成"没选势力"')
+        fails.append('点色板 ✕ 没有进入“清除归属”模式 —— 涂归属会把它当成"没选势力"')
     _drag(cdp, [b, {'x': b['x'] - 30, 'y': b['y']}])
     cleared = _state(cdp, '清除归属之后')
     if 'prov_b' in cleared['own']:
@@ -215,7 +215,7 @@ def run(cdp):
     if '清空' not in cleared['hint']:
         fails.append(f"清除归属没有可读回执：{cleared['hint']}")
 
-    # ── e5 几何笔刷只活在「底图编辑」行 ────────────────────────────────────────
+    # ── e5 几何笔刷只活在“底图编辑”行 ────────────────────────────────────────
     geo = eval_json(cdp, """(async () => {
       const sm = %s;
       const tick = () => new Promise(r => setTimeout(r, 0));
@@ -232,11 +232,11 @@ def run(cdp):
     })()""" % SM, required=None, desc='几何笔刷位置')
     geo = geo[1] if isinstance(geo, tuple) and geo[0] else {}
     if geo.get('off'):
-        fails.append('底图编辑模式关着时也能看到「改省界」按钮（应只在底图编辑行出现）')
+        fails.append('底图编辑模式关着时也能看到“改省界”按钮（应只在底图编辑行出现）')
     if not geo.get('on'):
-        fails.append('底图编辑模式开着时找不到「改省界」按钮（几何笔刷被藏没了）')
+        fails.append('底图编辑模式开着时找不到“改省界”按钮（几何笔刷被藏没了）')
     if geo.get('rowText', '').count('涂归属') != 1:
-        fails.append(f"主行「涂归属」出现 {geo.get('rowText', '').count('涂归属')} 次（应恰好 1 次，两个同名按钮=用户实测的混淆源）")
+        fails.append(f"主行“涂归属”出现 {geo.get('rowText', '').count('涂归属')} 次（应恰好 1 次，两个同名按钮=用户实测的混淆源）")
 
     if fails:
         return False, ' | '.join(notes) + ' ⇒ ' + ' ；'.join(fails)

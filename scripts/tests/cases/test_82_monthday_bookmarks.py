@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 82：历史剧本「月日精度 + 切片点书签」
+"""用例 82：历史剧本“月日精度 + 切片点书签”
 
 来源：《司天-月日精度与切片书签-执行单-20260510》——
   ① 切片时间点要**由人指定**、可精确到**月日**（EU4 bookmark 式静态切片）；
   ② 时间点要有**名字**、可增删改；
-  ③ 旧模型 `changeYears[pid] = 1993`（年单值、一省一剧本最多一次）装不下「同省同年多次易主」；
+  ③ 旧模型 `changeYears[pid] = 1993`（年单值、一省一剧本最多一次）装不下“同省同年多次易主”；
   ④ 帧文件名要含日期；`frames.json` 每帧要有日期与来源（bookmark / era / change）。
 
 本用例覆盖：
@@ -13,7 +13,7 @@
      日期比较唯一实现（`cmpDate`）、旧键**只出现在迁移与注释里**（不许还有第二处读 `changeYears`）、
      日期校验唯一实现（`validateChangeDateInRange`）、store 三个装载口都走 `applyScenarioState`。
   f1 月日精度真的生效（端到端）：同一剧本内 6-1 易主 → 5-31 仍是旧主、6-1 起是新主；
-     状态栏日期文本随之变化；旧的「只到年」入库不受影响。
+     状态栏日期文本随之变化；旧的“只到年”入库不受影响。
   f2 同省同年多次易主：一省两条事件 → 按日期逐条落定，末主决定最终归属。
   f3 切片点书签 CRUD（各一条 undo）：新增/改名/改日期/删除 + 撤销还原。
   f4 书签帧 ∪ 自动帧：切片对话框里书签帧默认必出、与易主同日只出一帧、来源标记都在。
@@ -42,7 +42,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再判子串 —— 本仓三次踩到「注释里的字样被当成实现」。"""
+    """剥掉注释后再判子串 —— 本仓三次踩到“注释里的字样被当成实现”。"""
     src = re.sub(r'<!--.*?-->', '', src, flags=re.S)
     src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
     return re.sub(r'(?m)//[^\n]*', '', src)
@@ -64,7 +64,7 @@ def sub_source_guards(cdp):
     if 'delete next.changeYears' not in dt:
         bad.append('迁移没删旧键（双写 = 第二事实源，迟早漂移）')
 
-    # ② 旧键只允许出现在「迁移实现 + 注释」里：别处出现就是第二处读旧格式
+    # ② 旧键只允许出现在“迁移实现 + 注释”里：别处出现就是第二处读旧格式
     tl = _code_only(_read('src/renderer/src/utils/scenarioTimeline.js'))
     if 'e.year[' in tl:
         bad.append('scenarioTimeline 仍在读 e.year（年份 map 已删，应读 byProvince/lastDate）')
@@ -116,7 +116,7 @@ def sub_source_guards(cdp):
     if 'tl-bookmark-' not in st:
         bad.append('ScenarioTimeline 没画书签标记')
     if "save-slice-point" not in st:
-        bad.append('ScenarioTimeline 没有「存为切片点」入口')
+        bad.append('ScenarioTimeline 没有“存为切片点”入口')
 
     if bad:
         return False, '源码守卫失败：' + '；'.join(bad)
@@ -128,8 +128,8 @@ def sub_source_guards(cdp):
 # 公共造数：**照抄 test_78 f5 那个已实证的谱系形状**
 #   甲代 A1 占 p82a + p82b；乙代 B1 占 p82b、B2 占 p82a
 #   ⇒ 贪心继承让 **B1 承 A1**（重叠 p82b，且 B1 省多先配对），于是
-#     **p82a 是易主省、且它的旧主 A1 有主**（否则「易主日前是旧主」会拿到 undefined = 假断言）。
-# 🔴 别自己设计「看起来像易主」的夹具：`computeLineage` 的贪心继承几乎总能把新势力配到旧势力上，
+#     **p82a 是易主省、且它的旧主 A1 有主**（否则“易主日前是旧主”会拿到 undefined = 假断言）。
+# 🔴 别自己设计“看起来像易主”的夹具：`computeLineage` 的贪心继承几乎总能把新势力配到旧势力上，
 #    于是 `changed` 静默为空、事件根本不会被认出来（本轮为此白跑了 2 轮用例）。
 # ══════════════════════════════════════════════════════════════════
 SEED_JS = r"""
@@ -167,11 +167,11 @@ def _seed(extra_wait_ms=500):
 
 
 def _expr(js, name):
-    # 🔴 归属查询用**产品自己的纯函数**（动态 import 拿），不在用例里重写一份「谁归谁」——
+    # 🔴 归属查询用**产品自己的纯函数**（动态 import 拿），不在用例里重写一份“谁归谁”——
     #    自己写一份判定 = 同义反复：被测代码错了测试照样绿。
     #    路径 `/src/utils/scenarioTimeline.js` 在 Vite dev（root = src/renderer）下可解析。
     # ⚠️ `await import(...)` 必须放在**async IIFE 内部**：`cdp.eval` 求值的是一个**表达式**
-    #    （不是 module），顶层 await 会直接 SyntaxError「await is only valid in async functions」。
+    #    （不是 module），顶层 await 会直接 SyntaxError“await is only valid in async functions”。
     #    首版就在这里踩了（6 个子测试全部报同一个 SyntaxError）。
     inject = ("const M = await import('/src/utils/scenarioTimeline.js');"
               " const OWN = (tl, k, pid, at) => M.currentOwnerRef(tl, k, pid, at).owner;")
@@ -351,7 +351,7 @@ F3_JS = r"""(async () => {
   await tick(200);
   ck('改名生效', list().find(p => p.id === a.id).label === '甲午会战', list());
   s.undo(); await tick(250);
-  ck('改名可撤销（回到「会战」）', list().find(p => p.id === a.id).label === '会战', list());
+  ck('改名可撤销（回到“会战”）', list().find(p => p.id === a.id).label === '会战', list());
   s.redo(); await tick(200);
   ck('重做回到新名字', list().find(p => p.id === a.id).label === '甲午会战', list());
 
@@ -437,7 +437,7 @@ F4_JS = r"""(async () => {
   ck('合并帧的来源里既有切片点也有易主',
      !!merged && /切片点/.test(merged.textContent) && /易主/.test(merged.textContent),
      merged ? merged.textContent.replace(/\s+/g, ' ').trim() : null);
-  ck('纯书签帧的来源显示「切片点」', kinds.some((k, i) => k === 'bookmark'), kinds);
+  ck('纯书签帧的来源显示“切片点”', kinds.some((k, i) => k === 'bookmark'), kinds);
   ck('切片点计数角标 = 2',
      Number((panel.querySelector('[data-testid="slice-point-count"]') || {}).textContent) === 2,
      (panel.querySelector('[data-testid="slice-point-count"]') || {}).textContent);

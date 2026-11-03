@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 """用例 50：决策 1 终态的可用性收尾（Phase 2.5）
 
-终态「无项目 = 只读」翻开后暴露的三个缺口，本用例逐条守：
+终态“无项目 = 只读”翻开后暴露的三个缺口，本用例逐条守：
 
   a) 只读徽标在**世界/选择视图**也可见（状态栏只在画布视图出现，那里原本没有任何提示），
      title 带能力说明，且点击能到达去处（项目面板）——不是死标。
-  b) 「新建并导入知识库内容」：终态下把既有内容带进项目的唯一路径。
+  b) “新建并导入知识库内容”：终态下把既有内容带进项目的唯一路径。
      实体树 / 航道 / 地图一并导入，且画布立即切到该项目。
   c) 导入是**一条 undo**（误点可撤销），redo 可恢复。
   d) 项目模式下 `loadMapData` **不回退知识库缓存**（两套事实源的最后一条缝隙）：
@@ -41,7 +41,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     ensure_data_ready(cdp)
 
-    # harness 已打开基线项目 → 本用例从「无项目（只读）」起步
+    # harness 已打开基线项目 → 本用例从“无项目（只读）”起步
     closed = _j(cdp, f"""(async () => {{
       const M = await import('/src/store/projectStore.js');
       const W = await import('/src/store/writeGate.js');
@@ -94,7 +94,7 @@ def run(cdp):
       }});
     }})()""", 'seed-ui')
     if not seed_ui.get('hasBtn'):
-        return False, '面板缺少「新建并导入知识库内容」入口（终态下无法把知识库内容带进项目）'
+        return False, '面板缺少“新建并导入知识库内容”入口（终态下无法把知识库内容带进项目）'
     if not seed_ui.get('btnDisabled'):
         return False, f'名称为空时导入口应禁用（避免建出无名项目）：{seed_ui}'
     if str(seed_ui.get('vaultNodes')) not in (seed_ui.get('hint') or ''):
@@ -236,7 +236,7 @@ def run(cdp):
     if not vault_read.get('hasMap') or vault_read.get('terrain', 0) <= 0:
         return False, f'无项目时知识库行星图仍应可读（只读 ≠ 看不了）：{vault_read}'
 
-    return True, (f'只读徽标在世界视图常驻且可点达项目面板；「新建并导入知识库内容」'
+    return True, (f'只读徽标在世界视图常驻且可点达项目面板；“新建并导入知识库内容”'
                   f'{seeded.get("entities")} 实体 / {seeded.get("hyperlanes")} 航道 / {seeded.get("maps")} 张行星图，'
                   f'一条 undo 可撤可重做；项目模式缺图不回退知识库（{leak.get("hasMap")}，IPC {leak.get("ipcCalls")} 次）；'
                   f'关闭项目后回到只读且知识库行星图照旧可读（地形 {vault_read.get("terrain")} 块）')

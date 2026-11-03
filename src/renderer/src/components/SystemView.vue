@@ -7,7 +7,7 @@
           <h2>{{ domain?.name }} — 域内恒星系总览</h2>
         </div>
         <p class="hint">
-          <span v-if="!editMode">点击节点查看详情 · 滚动缩放 · 拖拽空白处平移 · <b>「移动」工具下拖拽节点调整坐标</b>（默认拖手模式防误触）</span>
+          <span v-if="!editMode">点击节点查看详情 · 滚动缩放 · 拖拽空白处平移 · <b>“移动”工具下拖拽节点调整坐标</b>（默认拖手模式防误触）</span>
           <span v-else class="edit-hint">编辑模式：拖拽恒星间创建航道 · 右键航道删除 · 点击空白取消</span>
         </p>
       </div>
@@ -421,7 +421,7 @@ function drawSystemStar(ctx, system) {
   const isTarget = editMode.value && targetNode && targetNode.id === system.id;
 
   // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
-  // 命中匹配 / 悬停 / 选中 / 拖拽中不淡化（你正在关注或操作它 → 「编辑优先于装饰」）。
+  // 命中匹配 / 悬停 / 选中 / 拖拽中不淡化（你正在关注或操作它 → “编辑优先于装饰”）。
   // ⚠️ 本函数**无中途 return**，所以 save/restore 可包住整个函数体。
   const fade = fadedAlpha(system.status, {
     focused: matched || isHovered || isSource || isTarget || selectedSystemId.value === system.id,
@@ -655,7 +655,7 @@ const renderer = useCanvasRenderer(canvas, {
     }
   },
   onContextMenu: (wx, wy) => {
-    // 🔴 浏览态不许弹菜单（§bug6）：菜单里的「创建 / 删除」全是写操作。
+    // 🔴 浏览态不许弹菜单（§bug6）：菜单里的“创建 / 删除”全是写操作。
     //    写法照抄 `SystemDetailView.vue:1143-1145` 的既有闸门（星系三层里那一层早就修好了，
     //    GalaxyMap 与 SystemView 是漏网的）。
     if (!editMode.value) return;
@@ -739,7 +739,7 @@ watch(() => [store.searchResults, store.searchMatchIndex], () => {
 
 // 叙事状态变更 → 重绘（2026-09-24）。
 // ⚠️ 必须走这个指纹：`updateNode` 是 `Object.assign(node, …)` **就地改字段** —— 既不换数组引用、
-//    也不换节点对象，所以基于「数组/对象引用」的浅 watch 全都捕捉不到 status 变化。
+//    也不换节点对象，所以基于“数组/对象引用”的浅 watch 全都捕捉不到 status 变化。
 // ⚠️ `systemLayouts` 是本地缓存（由 applyLayout 重建、status 为拷贝值），所以这里必须重建，
 //    不能只 requestRender。（上面的 props deep watch 其实覆盖了同一条路径，这里是显式声明 +
 //    防止 props 来源变化后静默失效。）

@@ -112,7 +112,7 @@ function exportPNG() {
 
 function createNewScenario() {
   if (!baseMapKey.value || !store.baseMaps?.[baseMapKey.value]) {
-    statusMsg('新建剧本失败：还没有选中底图（先在「底图」行点「空底图」，或「＋」导入 .map）');
+    statusMsg('新建剧本失败：还没有选中底图（先在“底图”行点“空底图”，或“＋”导入 .map）');
     return;
   }
   const targetGroup = newScenario.value.group || activeGroupId.value || DEFAULT_SCENARIO_GROUP;
@@ -180,10 +180,10 @@ function saveEditScenario() {
     const st = changeDateStats(timeline.value);
     const n = (st.outOfRange || []).length;
     statusMsg(n
-      ? `剧本「${name}」已保存 —— 注意：新区间下有 ${n} 条易主日期落在区间外，时间轴/切片不会显示`
-      : `剧本「${name}」已保存（区间已更新，没有易主日期落到区间外）`);
+      ? `剧本“${name}”已保存 —— 注意：新区间下有 ${n} 条易主日期落在区间外，时间轴/切片不会显示`
+      : `剧本“${name}”已保存（区间已更新，没有易主日期落到区间外）`);
   } else {
-    statusMsg(`剧本「${name}」已保存`);
+    statusMsg(`剧本“${name}”已保存`);
   }
 }
 
@@ -193,7 +193,7 @@ function onSetChangeDate({ scenarioId, provinceId, date, done }) {
       statusMsg(`只读：${store.readOnlyReason || '未打开项目'} —— 易主日期未写入`);
       return;
     }
-    // `date = null` 走「整列表清空」；单条日期则保留同剧本里其它事件（面板只编辑生效的那一条）
+    // `date = null` 走“整列表清空”；单条日期则保留同剧本里其它事件（面板只编辑生效的那一条）
     const sc = store.scenarios?.[scenarioId];
     const existing = Array.isArray(sc?.changeEvents?.[provinceId])
       ? sc.changeEvents[provinceId].map(e => ({ y: e.y, m: e.m ?? null, d: e.d ?? null, owner: e.owner ?? null }))
@@ -245,7 +245,7 @@ function tlFrame(t) {
   }
   if (tlPlaying.value) {
     const y = timeline.value.years[tlEra.value];
-    // 年内插值按**天数**线性（执行单 §1.3）：先把进度换成「年内第几天」，再落到月日
+    // 年内插值按**天数**线性（执行单 §1.3）：先把进度换成“年内第几天”，再落到月日
     const days = Math.max(1, y.end - y.start);
     const dayOfYear = Math.min(365, Math.max(1, Math.round(st.tlPlayT * days * 365.25 / days) + 1));
     let rest = Math.min(dayOfYear, 365);
@@ -322,9 +322,9 @@ function saveBurgEditor() {
   // 直改 store 活对象 = 绕开写闸门与撤销栈，而且"改了内存但没排保存"，
   // 只能碰巧赶上别的落盘（与手画道路同款缺陷）。现在走 store 的一条 undo。
   //
-  // 🔴 2026-10-13「旧数据里的聚落」：早期 `.map` 导入只把首都写进**剧本 markers**，
+  // 🔴 2026-10-13“旧数据里的聚落”：早期 `.map` 导入只把首都写进**剧本 markers**，
   //    底图侧没有 `burgs` —— 上面那个 computed 会把 markers 派生成城镇**显示**出来，
-  //    于是这些点看得见、点得开编辑器，一保存却报「这个聚落不在这张底图上」＝ 改不了。
+  //    于是这些点看得见、点得开编辑器，一保存却报“这个聚落不在这张底图上”＝ 改不了。
   //    现在第一次编辑它们时，把**整批**登记成真城镇再应用这次编辑：
   //      · 只登记被编辑的那一个 → `burgs` 一旦非空，派生回退分支就不再兜底，
   //        其余几个会**从地图上凭空消失**（用户会以为"保存把我的城镇弄没了"）；
@@ -338,9 +338,9 @@ function saveBurgEditor() {
   if (r && r.ok) {
     if (r.materialized) {
       statusMsg(`这些聚落以前只存在旧版数据里（剧本标注）—— 已把 ${r.materialized} 个登记成底图上的城镇，`
-        + `并保存了这次编辑「${editingBurg.value.name || ''}」（Ctrl+Z 可一并撤回）`);
+        + `并保存了这次编辑“${editingBurg.value.name || ''}”（Ctrl+Z 可一并撤回）`);
     } else {
-      statusMsg(r.changed ? `已更新聚落「${editingBurg.value.name || ''}」` : '聚落没有改动');
+      statusMsg(r.changed ? `已更新聚落“${editingBurg.value.name || ''}”` : '聚落没有改动');
     }
   } else {
     statusMsg(`聚落没改成：${(r && r.message) || '未知原因'}`);
@@ -363,7 +363,7 @@ function commitOwnerStroke() {
   }
   if (!sc) { statusMsg('涂归属：还没有选中剧本'); return null; }
   const clearing = clearOwnerMode.value || !pol;
-  if (!clearing && !pol) { statusMsg('涂归属：没有选中的势力（点地图上方「势力：」里的色块）'); return null; }
+  if (!clearing && !pol) { statusMsg('涂归属：没有选中的势力（点地图上方“势力：”里的色块）'); return null; }
   const res = store.batchSetOwnership(sc.id, ids, clearing ? null : pol.id, tlDate.value, {
     // 第 4 件接线点：带上这一笔的 groupId → store 会把它落成账本事件组（一笔一组）
     // 2026-11-02 修：原来读的是 `st.ownerStrokeId`，而 `pointerState` 没有它的 get/set →
@@ -377,11 +377,11 @@ function commitOwnerStroke() {
   if (res.noop) {
     statusMsg(clearing
       ? `涂归属：这 ${ids.length} 个省本来就是无主`
-      : `涂归属：这 ${ids.length} 个省本来就属于「${pol.name}」（${tlDateText.value}）`);
+      : `涂归属：这 ${ids.length} 个省本来就属于“${pol.name}”（${tlDateText.value}）`);
   } else {
     statusMsg(clearing
       ? `涂归属：清空 ${res.cleared} 个省的归属（无主）· 整笔 = 1 条撤销`
-      : `涂归属：${res.affected} 个省份 → 「${pol.name}」（${tlDateText.value}）`
+      : `涂归属：${res.affected} 个省份 → “${pol.name}”（${tlDateText.value}）`
         + `${res.skippedSea ? ` · 跳过 ${res.skippedSea} 片海` : ''} · 整笔 = 1 条撤销`);
   }
   return res;

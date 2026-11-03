@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：历史剧本「势力标注」分级纯函数（src/renderer/src/utils/polityLabels.js）
+ * Node 单元测试：历史剧本“势力标注”分级纯函数（src/renderer/src/utils/polityLabels.js）
  *
  * 背景（A8，2026-09-26 暮雨诉求）：
  *   历史剧本要能**自定义显示的势力名称**，并照 EU4 的做法分级 —— 放大看省名、缩小只看势力名
  *   （可简称），全名只在点开省份详情时给。分级判定 / 领土聚合 / 文本选择全部收在
- *   `polityLabels.js` 一处，避免「渲染顺手写一套、导出再写一套」——那种双源**不会报错**，
+ *   `polityLabels.js` 一处，避免“渲染顺手写一套、导出再写一套”——那种双源**不会报错**，
  *   只会让导出的图和画布不一样。
  *
  * 判错的后果都是静默的：
  *   · 分级方向反了 → 放大反而只剩势力简称（用户以为名字丢了）；
  *   · 质心不加面积权 → 势力标签被小碎省拽到别的势力地界里；
- *   · 退化环返回 NaN 坐标 → `fillText(NaN)` **不画也不报错** → 「有些势力的名字凭空消失」。
+ *   · 退化环返回 NaN 坐标 → `fillText(NaN)` **不画也不报错** → “有些势力的名字凭空消失”。
  *
  * 用法：node scripts/tests/unit/test_polity_labels.js
  * 退出码：0 = 全通过，1 = 有失败（run_tests.py 作为前置步骤计入）
@@ -117,7 +117,7 @@ async function main() {
       prev = o;
       if (samples.length < 3 && samples[samples.length - 1] !== o) samples.push(o);
     }
-    // 三档都必须出现过，否则「单调」是空转（全落一档也满足非递减）
+    // 三档都必须出现过，否则“单调”是空转（全落一档也满足非递减）
     assert(new Set(samples).size === 3, `样本未覆盖三档：${JSON.stringify(samples)}`);
     return `200 个采样点单调，覆盖 ${JSON.stringify(samples)}`;
   });

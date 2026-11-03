@@ -1,4 +1,4 @@
-// utils/regionTrace.js — 区域「勾轮廓」管线：闭环保形简化 + 离屏光栅校验（Phase 2.6）
+// utils/regionTrace.js — 区域“勾轮廓”管线：闭环保形简化 + 离屏光栅校验（Phase 2.6）
 //
 // 用户勾完一条自由轮廓后，落库前统一走三步：
 //   ① 闭环保形简化（RDP，去掉手抖毛刺；保证顶点数可控、轮廓不抖）
@@ -10,9 +10,9 @@
 // 为什么用离屏 canvas 光栅化而不是手写多边形布尔运算：
 //   手写裁剪（Sutherland-Hodgman）**只对凸裁剪窗口成立** —— 地图上的凹轮廓会被静默裁空
 //   （不报错、返回空数组）。Canvas 的 fill 天然支持任意凹多边形与自交路径；
-//   我们只需要「面积占比」这类统计量，一次光栅化算完。见 skill 铁律 §111 / §112。
+//   我们只需要“面积占比”这类统计量，一次光栅化算完。见 skill 铁律 §111 / §112。
 //
-// ⚠️ 本模块**不改数据**：只做「算 + 判」，落库由调用方（PlanetMap / AreaMap）负责。
+// ⚠️ 本模块**不改数据**：只做“算 + 判”，落库由调用方（PlanetMap / AreaMap）负责。
 //    唯一的 DOM 依赖是离屏 canvas，所以不能进 Node 单元测试（走 CDP 用例）。
 
 import { polygonArea } from './geometry';
@@ -21,10 +21,10 @@ import { simplifyPath } from './geometry';
 export const TRACE_LIMITS = {
   simplifyEps: 2,        // 简化容差（世界单位）
   maxRasterDim: 512,     // 光栅化单边最大像素（控成本：512² = 26 万格）
-  minInsideRatio: 0.5,   // 低于此比例视为「基本画在可绘制范围之外」→ 拒绝
+  minInsideRatio: 0.5,   // 低于此比例视为“基本画在可绘制范围之外”→ 拒绝
   warnInsideRatio: 0.98, // 低于此比例但通过 → 仅提示（不算失败）
   maxOverlapRatio: 0.05, // 与单个已有区域重叠超过此比例 → 拒绝（与地形重叠阈值一致）
-  minArea: 1,            // 面积下限（世界单位²）：挡掉「点一下」产生的退化多边形
+  minArea: 1,            // 面积下限（世界单位²）：挡掉“点一下”产生的退化多边形
 };
 
 /** 取环的点数组：接受 `[{x,y}]` 或 `{ points:[…] }`（区域/地形条目）两种形态 */
@@ -76,8 +76,8 @@ export function closedRing(points) {
  *
  * 为什么不能直接用 geometry.simplifyPath：那是**开曲线**算法，以首尾点为基线；
  * 闭合环的首尾是同一点 → 基线长度 0 → 简化结果退化。做法是先旋转到
- * 「离质心最远的点」当锚点（该点几乎必然被保留），把环拆成开链再简化。
- * 锚点选最远点而不是固定下标，是为了让结果与「从哪一格起笔」无关（可复现）。
+ * “离质心最远的点”当锚点（该点几乎必然被保留），把环拆成开链再简化。
+ * 锚点选最远点而不是固定下标，是为了让结果与“从哪一格起笔”无关（可复现）。
  */
 export function simplifyClosedTrace(points, eps = TRACE_LIMITS.simplifyEps) {
   const ring = closedRing(points);
@@ -86,7 +86,7 @@ export function simplifyClosedTrace(points, eps = TRACE_LIMITS.simplifyEps) {
   const bbox = bboxOf(ring);
   const span = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
   // 容差必须跟着形状尺寸走，不能是固定世界单位：
-  //   · 行星图的世界单位是「米」量级（边界 ±1500），适配视图后 1 像素 ≈ 3~5 世界单位，
+  //   · 行星图的世界单位是“米”量级（边界 ±1500），适配视图后 1 像素 ≈ 3~5 世界单位，
   //     手抖的幅度本身就是几个像素 → 固定 eps=2 什么都削不掉（实测 200 点只降到 111 点）；
   //   · 取 span 的 2%（手抖下限）到 5%（上限）：小轮廓不至于被压成三角形，大轮廓也不会被削掉细节。
   const useEps = Math.max(Math.min(eps, span / 20), Math.min(span * 0.02, span / 20));
@@ -167,7 +167,7 @@ export function traceStats({ trace, containers = [], siblings = [], limits = {} 
     insideRatio = hit / pixels;
   }
 
-  // 只跟「包围盒与本次轮廓相交」的兄弟区域比 —— 数量与成本都可控
+  // 只跟“包围盒与本次轮廓相交”的兄弟区域比 —— 数量与成本都可控
   const overlaps = [];
   for (const s of siblings) {
     const sRing = ringOf(s);
@@ -197,7 +197,7 @@ const pct = (r) => `${Math.round(r * 100)}%`;
  *
  * @param {object}   o
  * @param {Array}    o.points      用户勾出的原始轮廓（世界坐标）
- * @param {Array}    o.containers  「可绘制范围」多边形（数组套数组）。空数组 = 不定范围 → 跳过落地内检查
+ * @param {Array}    o.containers  “可绘制范围”多边形（数组套数组）。空数组 = 不定范围 → 跳过落地内检查
  * @param {Array}    o.siblings    已有区域（`{id,name,points}` 或裸点数组）
  * @param {boolean}  o.simplify    是否做闭环保形简化（自由绘制 true；点描顶点 false，那是刻意摆的）
  * @param {number}   o.eps         简化容差
@@ -237,7 +237,7 @@ export function validateRegionTrace({
     const extra = stats.overlaps.length > 1 ? ` 等 ${stats.overlaps.length} 个已有区域` : '';
     return {
       ok: false, code: 'overlap', points: cleaned, stats, warnings: [],
-      message: `区域与「${top.name}」${extra}重叠 ${pct(top.ratio)}，已取消（区域之间不应互相覆盖）`,
+      message: `区域与“${top.name}”${extra}重叠 ${pct(top.ratio)}，已取消（区域之间不应互相覆盖）`,
     };
   }
   if (containers.length && stats.insideRatio < L.minInsideRatio) {

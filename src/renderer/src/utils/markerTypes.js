@@ -1,6 +1,6 @@
 // utils/markerTypes.js — 标记类型系统（P1-4 Marker Types）
 //
-// 目标：把「标记只有坐标+名称+颜色」升级成有类型语义的数据模型：
+// 目标：把“标记只有坐标+名称+颜色”升级成有类型语义的数据模型：
 //   每种类型 = 图标 + 颜色 + 中文名；标记可以选择类型并继承之，也可单个覆盖。
 //
 // 单一事实来源：此前 type 定义硬编码在 composables/useMarkerEditor.js 的 MARKER_TYPES 里
@@ -56,7 +56,7 @@ const CONFIG_NAME = 'markerTypes';
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
 
 function builtinsDeep() {
-  // 注意：必须显式打上 builtin:true —— 「内置类型不可删除」的判断依赖它
+  // 注意：必须显式打上 builtin:true —— “内置类型不可删除”的判断依赖它
   return BUILTIN_MARKER_TYPES.map(t => ({ ...clone(t), builtin: true }));
 }
 

@@ -60,8 +60,8 @@ function createTray(mainWindow) {
       click: () => {
         // 2026-10-09：与 Ctrl+Q 对齐 —— 不再直接退，先把请求交给渲染层弹确认框
         // （`app-confirm-quit` 会回来调 app.quit()）。
-        // 为什么托盘也要问：**「退出前问一句」要么处处有、要么处处没有** ——
-        // 只在 Ctrl+Q 上问、托盘上不问，用户学到的是「司天退出不用确认」，反而更危险。
+        // 为什么托盘也要问：**“退出前问一句”要么处处有、要么处处没有** ——
+        // 只在 Ctrl+Q 上问、托盘上不问，用户学到的是“司天退出不用确认”，反而更危险。
         // 兜底：渲染层不可达（正在关闭 / 已崩）→ 退回直接退，绝不把用户卡在退不掉的状态。
         const win = mainWindow;
         if (!win || win.isDestroyed() || !win.webContents) {
@@ -111,7 +111,7 @@ function destroyTray() {
  *    `{ createTray, destroyTray, getIsQuitting, setIsQuitting }` —— 那边写 `tray`
  *    就是一个**未声明标识符**。实测：点 × 关窗时 `main/index.js:107` 的 `if (tray)`
  *    抛 `ReferenceError: tray is not defined`（主进程 uncaughtException，每次点 × 都抛），
- *    **「已最小化到托盘」的气泡提示永远不弹** —— 而托盘是用户唯一能把窗口找回来的入口，
+ *    **“已最小化到托盘”的气泡提示永远不弹** —— 而托盘是用户唯一能把窗口找回来的入口，
  *    提示失灵 = 用户以为程序把自己关了。2026-10-06 由真机演练（`scripts/tests/drill_quit_flush.py`）抓到。
  */
 function getTray() {

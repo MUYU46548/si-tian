@@ -3,11 +3,11 @@
 """用例 104：顶点编辑的 Shift 框选 —— 用**真实鼠标输入**验（2026-10-14）
 
 真实来由（暮雨实测）：
-  0.3.0 交付时我在报告里承认过：「演练里"拖动"的选中集是**程序化设置**的（等价于 Shift+框选）；
-  框选手势本身由 test_102 用真实鼠标事件守」—— 但 test_102 用的是
+  0.3.0 交付时我在报告里承认过：“演练里"拖动"的选中集是**程序化设置**的（等价于 Shift+框选）；
+  框选手势本身由 test_102 用真实鼠标事件守”—— 但 test_102 用的是
   `new MouseEvent(...)` **合成事件**，它比真实浏览器宽松（本项目已有前科：test_88 的右键菜单
   在合成 click 下"能打开"，真机上整片点不到）。
-  本轮用户实测「我按 Shift 键似乎没什么作用」→ 必须用 CDP 的 `Input.dispatchMouseEvent`
+  本轮用户实测“我按 Shift 键似乎没什么作用”→ 必须用 CDP 的 `Input.dispatchMouseEvent`
   （浏览器**真实**输入管线：命中测试、指针捕获、事件顺序都走一遍）来验。
 
 ⚠️ 本用例**不做**"合成事件再验一遍"那种自证：判据只有真实输入这一条。
@@ -30,7 +30,7 @@ FIXTURE_JS = r""" (async () => {
   const KEY = 'case104';
   // 🔴 必须**经 store** 建省（`addBaseProvince`），不能直接手搓 `s.baseMaps = {...}` ——
   //    后者只是把对象塞进去，省份编辑的内部缓存/选中解析看不到它，
-  //    `currentProvince()` 会返回 undefined → 框选块整段被跳过 → 「框里没有顶点」。
+  //    `currentProvince()` 会返回 undefined → 框选块整段被跳过 → “框里没有顶点”。
   //    （本用例第一版就是这么假红的：提示语一字不差地指出来了。）
   if (!s.baseMaps[KEY]) s.addBaseMap(KEY, { name: '用例104底图' });
   const bm = s.baseMaps[KEY];
@@ -50,7 +50,7 @@ FIXTURE_JS = r""" (async () => {
   sm.activeRingIdx = 0;
   sm.snapToGridEnabled = false;
   sm.snapToEdgeEnabled = false;
-  // ⚠️ 关掉「布局定稿后再适屏一次」（onMounted 里 250ms 的 settleFitTimer）——
+  // ⚠️ 关掉“布局定稿后再适屏一次”（onMounted 里 250ms 的 settleFitTimer）——
   //    它会在用例拖到一半时把相机改掉，坐标准星当场漂移（本用例第一版就是这么假红的）。
   sm.initialFitPending = false;
   // 相机：把 (0,0)-(400,400) 的省摆进画布中央（留出边距，确保拖拽端点落在画布内 ——
@@ -162,7 +162,7 @@ def run(cdp):
         return False, f'结果探针失败：{res[1] if isinstance(res, tuple) else res}'
     res = res[1]
     notes.append(f"拖动中 marquee={'有' if mid.get('marquee') else '无'}；松手后选中 {res.get('selCount')} 个")
-    notes.append(f"提示：「{str(res.get('hint'))[:60]}」")
+    notes.append(f"提示：“{str(res.get('hint'))[:60]}”")
 
     if not mid.get('marquee'):
         fails.append('🔴 按住 Shift 拖动时**没有**出现框选矩形（真实输入下手势不通）')

@@ -33,7 +33,7 @@ const emit = defineEmits(['close']);
 function onSelect(item) {
   if (item.disabled) return;
   // 先执行动作再关闭：动作可能读取 ctxTarget 等菜单状态；
-  // keepOpen 项（如「设为卫星」切换菜单内容）由动作自行控制菜单去留
+  // keepOpen 项（如“设为卫星”切换菜单内容）由动作自行控制菜单去留
   item.action?.();
   if (!item.keepOpen) emit('close');
 }

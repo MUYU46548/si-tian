@@ -134,7 +134,7 @@ export function createSearchModule(ctx) {
     const q = query.trim();
     const filters = [searchLayerFilter.value, searchPlaceTypeFilter.value];
     // 两段式：名称/标签直配优先，正文提及（wikilinks）随后 —— 结果顺序既保证
-    // 「搜索词条名直达该词条」（第 1 条即目标），又不丢失反向链接价值。
+    // “搜索词条名直达该词条”（第 1 条即目标），又不丢失反向链接价值。
     const direct = [];
     const linked = [];
     for (const n of nodes.value) {
@@ -161,7 +161,7 @@ export function createSearchModule(ctx) {
     wikilinkMatchIds.value = new Set();
   }
 
-  /** 该结果是否靠「正文提及」命中（UI 用徽标区分，不参与导航逻辑） */
+  /** 该结果是否靠“正文提及”命中（UI 用徽标区分，不参与导航逻辑） */
   function isWikilinkMatch(nodeId) {
     return wikilinkMatchIds.value.has(nodeId);
   }

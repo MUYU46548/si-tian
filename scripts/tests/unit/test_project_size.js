@@ -117,7 +117,7 @@ async function main() {
     const pretty = Buffer.byteLength(JSON.stringify(project, null, 2), 'utf8');
     const compact = Buffer.byteLength(raw, 'utf8');
     // 这份样例没有点数组，缩进收益很小（2 倍级的判据放在 A2 的"真实量级"里）。
-    // 这里只要**严格更小**即可 —— 但必须非零差异，否则「落盘紧凑」这条是空转。
+    // 这里只要**严格更小**即可 —— 但必须非零差异，否则“落盘紧凑”这条是空转。
     assert(pretty > compact, `反向判据：缩进版必须确实更大（pretty=${pretty} compact=${compact}）`);
     return `紧凑 ${compact} B vs 缩进 ${pretty} B`;
   });

@@ -5,7 +5,7 @@
  * 2026-10-20 第十九修：河流唯一的画法是 `strokeTaperedLine`（中心线**分块描边**）。
  * 上一版是"左右岸合成一个多边形再一次 fill"—— 实测真实项目 **90/90 条河都自交**
  * （弯急处左右偏移互相穿过），nonzero 填充在交叠处抵消成洞 → 屏幕上就是
- * 「两条边夹一条缝」，放大后更明显（用户截图）。
+ * “两条边夹一条缝”，放大后更明显（用户截图）。
  *
  * 本用例守的就是"结构上不可能出洞"：
  *   ① 只描边、**一次 fill 都不调**（有 fill = 又回到多边形路线）；
@@ -194,7 +194,7 @@ async function main() {
     return '四种边界都对';
   });
 
-  check('八：导入河「去 + 原路回」的闭合路径折成一条中心线', () => {
+  check('八：导入河“去 + 原路回”的闭合路径折成一条中心线', () => {
     const outbound = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 1 }, { x: 30, y: 2 }];
     const roundTrip = outbound.concat(outbound.slice(0, -1).reverse().map((p) => ({ ...p })));
     const got = RR.collapseReversedRiverPoints(roundTrip);

@@ -4,7 +4,7 @@
 
 
 import { ref, toRaw } from 'vue';
-// 内存编辑闸门：本模块有 2 个「不走 execute()」的直接写（剧本导入 / .map 图层同步），只读态必须同样拦
+// 内存编辑闸门：本模块有 2 个“不走 execute()”的直接写（剧本导入 / .map 图层同步），只读态必须同样拦
 import { guardWrite } from '../writeGate';
 
 // ── A1/M1（2026-09-24）：高度图归属访问 ──────────────────────────────────────
@@ -42,8 +42,8 @@ import {
 } from '../../utils/scenarioGroups';
 // ── 月日精度（2026-10-05）：易主日期的规整 / 比较 / 校验 ──────────────────────
 // 🔴 `changeYears[pid] = 1993` → `changeEvents[pid] = [{y,m,d,owner}, …]` 的迁移**唯一实现**
-//    在 `utils/scenarioDates.js`。本模块只做「何时搬」与「搬到哪」，绝不自己写第二套日期逻辑：
-//    自己写一份 `m || 1` 就会出现「入库 1-1、比较按 null」这类只在边界暴露的静默不一致。
+//    在 `utils/scenarioDates.js`。本模块只做“何时搬”与“搬到哪”，绝不自己写第二套日期逻辑：
+//    自己写一份 `m || 1` 就会出现“入库 1-1、比较按 null”这类只在边界暴露的静默不一致。
 import {
   normalizeScenarioDict, normalizeDate, cmpDate, dateKey,
 } from '../../utils/scenarioDates';
@@ -59,27 +59,27 @@ import {
 } from '../../../../ledger/index';
 // 事件账本（2026-10-22，三刀序列·第一刀）：`scenario.timelineEvents` 的纯函数层。
 // 🔴 校验 / 排序 / 关系查询 / 冲突检出**只有一份**（`utils/scenarioEventLedger.js`），
-//    本模块只做「走 undo 写进哪个剧本」—— 在这里再写一遍日期窗口比较，就是第二套真值。
+//    本模块只做“走 undo 写进哪个剧本”—— 在这里再写一遍日期窗口比较，就是第二套真值。
 import {
   appendEvent, replaceEvent, removeEvent, timelineEventsOf,
   relationBetween, describeRelation, findConflicts,
 } from '../../utils/scenarioEventLedger';
 // ── 自动河流（2026-10-14 重写）──────────────────────────────────────────────
 // 🔴 算法与口径的**单一实现**在 `utils/riverTrace.js`（纯函数 + Node 单测）。
-//    本模块只做「取哪份高度图 / 把不算数的情况变成可读回执」——
+//    本模块只做“取哪份高度图 / 把不算数的情况变成可读回执”——
 //    在这里再写一遍追踪逻辑，就是本项目反复踩的"两条实现慢慢不一样且不报错"。
 import { traceRivers } from '../../utils/riverTrace';
 // 陆地掩膜（省份多边形 → 射线法判定）：画布侧裁导入河、store 侧挡"海边起步"的源头都用它。
 // ⚠️ 掩膜按 terrain **引用**缓存 —— 真实底图 415 个环 / 24018 个顶点，每次点按钮重建一次
 //    就是白花的几十毫秒；而 terrain 一改就换引用，缓存不会陈旧。
 import { buildLandMask } from '../../utils/coastline';
-// 🔴 2026-10-17 第八修·改向（暮雨：「司天自身的编辑能力必须过硬，不要指望靠用户导出
-//    高度数据地图来救河流生成」）：**按陆地轮廓推演地形** —— 自建底图没有高度图时，
+// 🔴 2026-10-17 第八修·改向（暮雨：“司天自身的编辑能力必须过硬，不要指望靠用户导出
+//    高度数据地图来救河流生成”）：**按陆地轮廓推演地形** —— 自建底图没有高度图时，
 //    自动河流不再直接拒绝，而是用这条推演结果当输入（只读、不写数据）。
 import { synthesizeHeightmapFromTerrain } from '../../utils/terrainSynthesis';
 // ── 地形生成参数（P0-1，2026-10-25）──────────────────────────────────────────
 // 🔴 参数的字段/范围/默认值/夹取/中文摘要**只有 `utils/terrainParams.js` 一份**。
-//    本模块只做「归一化 → 映射成推演 opts → 走 undo 落库」，绝不在这里另抄一组数字
+//    本模块只做“归一化 → 映射成推演 opts → 走 undo 落库”，绝不在这里另抄一组数字
 //    （否则面板拖到 1.4、算法读到的还是 1.0，而且两边都不报错）。
 import {
   normalizeTerrainParams, toSynthesisOptions, toClimateOptions,
@@ -89,9 +89,9 @@ import {
 // P0-4（2026-10-25）：势力方案（按文化区分组）—— 纯函数层
 import { planPolities } from '../../utils/cultureDerive';
 // ── 高度图分辨率（2026-10-14）───────────────────────────────────────────────
-// 🔴 「地形模模糊糊」的**唯一**解药是把格子变密（每格有自己的高度），而这件事的算法、
+// 🔴 “地形模模糊糊”的**唯一**解药是把格子变密（每格有自己的高度），而这件事的算法、
 //    性能护栏、内存估算全在 `utils/heightmapResample.js`（纯函数 + Node 单测）。
-//    本模块只做「走 undo 落盘 + 回执」。**绝不**在这里现写一份插值。
+//    本模块只做“走 undo 落盘 + 回执”。**绝不**在这里现写一份插值。
 import {
   resampleHeightmap, smoothHeightmapGrid, estimateResampleCost, fmtBytes,
 } from '../../utils/heightmapResample';
@@ -112,12 +112,12 @@ export function createScenarioEditingModule(ctx) {
   const scenarios = ref({});
   /**
    * 剧本集表（2026-10-25）：`[{ id, name, order }]`，**只存自定义组**。
-   * 「默认」是虚拟组（`DEFAULT_SCENARIO_GROUP`），不在表里 —— 旧项目零迁移。
+   * “默认”是虚拟组（`DEFAULT_SCENARIO_GROUP`），不在表里 —— 旧项目零迁移。
    * 归属写在 `scenario.group`（空/缺省 = 默认组）。
    */
   const scenarioGroups = ref([]);
 
-  // P2-4：派生计算世代号。异步派生回来时必须确认「这仍是当前这条命令的结果」，
+  // P2-4：派生计算世代号。异步派生回来时必须确认“这仍是当前这条命令的结果”，
   // 否则会把旧 h 的派生值写到新 h 上（脏写）。
   const deriveEpoch = {};
 
@@ -146,10 +146,10 @@ export function createScenarioEditingModule(ctx) {
   /**
    * **哪些底图正绑定到这颗行星**（A1/R4，2026-09-25）。
    *
-   * 用途：行星侧在高度图损坏时会用「地形多边形的 `elevation` 估值」**重建**它
+   * 用途：行星侧在高度图损坏时会用“地形多边形的 `elevation` 估值”**重建**它
    * （`usePlanetHeightBrush.ensureHeightmap`）。绑定之后那份数据是**共享的** ——
    * 重建不是行星自己的私事，它会把共用这份地形的剧本一起改掉。
-   * 所以重建的提示必须点名受影响的底图，否则用户只会看到「剧本的地形怎么变了」。
+   * 所以重建的提示必须点名受影响的底图，否则用户只会看到“剧本的地形怎么变了”。
    */
   function getBaseMapsBoundToPlanet(planetId) {
     if (!planetId) return [];
@@ -163,7 +163,7 @@ export function createScenarioEditingModule(ctx) {
   /**
    * 写入该底图的高度图 —— **绑定了行星就写行星那份**。
    *
-   * 🔴 为什么必须有这个函数：底图侧原来的写入模式是「整体替换 baseMap 对象」
+   * 🔴 为什么必须有这个函数：底图侧原来的写入模式是“整体替换 baseMap 对象”
    *    （`{ ...baseMap, heightmap: {...} }`），**天然与"共享引用"冲突** —— 一写就把引用换掉了。
    *    绑定之后若还这么写，就会写到一份**无人读取的副本**上（静默分裂：用户以为改了，画布不变）。
    *    所以：绑定后的读与写都必须落在行星那份上，二者必须**同时**走本模块。
@@ -174,7 +174,7 @@ export function createScenarioEditingModule(ctx) {
     const bm = baseMaps.value[baseMapKey];
     if (!bm) return { owner: 'none' };
     const pid = boundPlanetId(bm);
-    // `touch=false` 供 undo 使用：撤销回填不打时间戳 —— 与 M1b 之前「undo 闭包里不写 updatedAt」逐字段一致。
+    // `touch=false` 供 undo 使用：撤销回填不打时间戳 —— 与 M1b 之前“undo 闭包里不写 updatedAt”逐字段一致。
     const stamp = touch ? { updatedAt: new Date().toISOString() } : {};
     if (pid) {
       const planet = mapData.value[pid];
@@ -199,8 +199,8 @@ export function createScenarioEditingModule(ctx) {
    * 🔴 为什么必须有这个入口：底图的高度图此前**只有 `.map` 导入一条来源**
    *    （全仓 `ScenarioMap.vue` / 本文件里没有任何创建 heightmap 的代码）。
    *    后果是：用户新建一张底图后，高度笔刷 / 群系 / 文化 / 宗教 / 一键派生**全部**因为
-   *    `!hasGrid(hm)` 而直接 return —— 表现为「工具点了没反应」，而且几乎没有反馈。
-   *    这也正是「剧情上已毁灭、不打算再建行星的星球」唯一可走的路径：
+   *    `!hasGrid(hm)` 而直接 return —— 表现为“工具点了没反应”，而且几乎没有反馈。
+   *    这也正是“剧情上已毁灭、不打算再建行星的星球”唯一可走的路径：
    *    **不绑定行星，底图自己持有一份高度图**（不是兼容兜底，是一等场景）。
    *
    * 范围：优先按底图已有地形的包围盒外扩；空底图给一个默认方框（之后用笔刷涂即可）。
@@ -287,18 +287,18 @@ export function createScenarioEditingModule(ctx) {
     return { ok: true };
   }
 
-  // ══ M1c「导入并冻结」（2026-09-25）══════════════════════════════════════════
-  // 🔴 为什么必须有这条路径（而不是让大家都用「跟随行星」）：
-  //    「跟随」= 共用同一份数据 → 行星后来怎么改，剧本跟着变。这对**正在与行星同步构建的
-  //    当代地图**是对的；但对**历史存档剧本**是灾难 —— 存档要的就是「冻住」。
-  //    A1 文档最初否掉「复制」方案，理由是「复制即双源、漂移必然回归」；那条判断在**同步构建**
+  // ══ M1c“导入并冻结”（2026-09-25）══════════════════════════════════════════
+  // 🔴 为什么必须有这条路径（而不是让大家都用“跟随行星”）：
+  //    “跟随”= 共用同一份数据 → 行星后来怎么改，剧本跟着变。这对**正在与行星同步构建的
+  //    当代地图**是对的；但对**历史存档剧本**是灾难 —— 存档要的就是“冻住”。
+  //    A1 文档最初否掉“复制”方案，理由是“复制即双源、漂移必然回归”；那条判断在**同步构建**
   //    场景下成立，在**存档**场景下恰恰相反：漂移才是要防的，冻结才是目的。
   //    用户决策（2026-09-25）：**两种模式并存，冻结为默认，跟随需显式选择。**
 
   /**
    * 深拷贝一份高度图（冻结导入用）。
    *
-   * ⚠️ 必须逐数组复制：直接引用会让「副本」与行星那份共享同一个 TypedArray ——
+   * ⚠️ 必须逐数组复制：直接引用会让“副本”与行星那份共享同一个 TypedArray ——
    *    之后在剧本里涂山照样会改到行星（看起来像绑定了，却没有任何绑定的提示）。
    * ⚠️ 不复制 `_spatialIndex`（运行期缓存，与 grid 绑定，用时会按需重建）。
    */
@@ -316,7 +316,7 @@ export function createScenarioEditingModule(ctx) {
     return out;
   }
 
-  /** 删除底图自持的 heightmap 字段（冻结导入的 undo 用：原本没有就该回到「没有」，而不是留个 null） */
+  /** 删除底图自持的 heightmap 字段（冻结导入的 undo 用：原本没有就该回到“没有”，而不是留个 null） */
   function dropHeightmap(baseMapKey) {
     const bm = baseMaps.value[baseMapKey];
     if (!bm) return;
@@ -325,7 +325,7 @@ export function createScenarioEditingModule(ctx) {
     baseMaps.value = { ...baseMaps.value, [baseMapKey]: next };
   }
 
-  /** 写/清「这份地形冻结自行星 X」的**标注**（纯展示，不是真相、不是引用 —— 真相只有 planetId） */
+  /** 写/清“这份地形冻结自行星 X”的**标注**（纯展示，不是真相、不是引用 —— 真相只有 planetId） */
   function setFrozenNotice(baseMapKey, frozen) {
     const bm = baseMaps.value[baseMapKey];
     if (!bm) return;
@@ -336,7 +336,7 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * 把行星当前的高度图**复制**一份到底图 —— M1c 的「导入并冻结」。
+   * 把行星当前的高度图**复制**一份到底图 —— M1c 的“导入并冻结”。
    *
    * @param {string} baseMapKey
    * @param {string} planetId
@@ -352,13 +352,13 @@ export function createScenarioEditingModule(ctx) {
     if (boundPlanetId(bm)) {
       return {
         ok: false,
-        error: '该底图正在「跟随」行星 —— 已经是同一份地形了，不需要再导入；'
-             + '想改成独立副本，请先「解绑」再导入',
+        error: '该底图正在“跟随”行星 —— 已经是同一份地形了，不需要再导入；'
+             + '想改成独立副本，请先“解绑”再导入',
       };
     }
     const planet = mapData.value[planetId];
     if (!planet || !hasGrid(planet.heightmap)) {
-      return { ok: false, error: `行星「${planetName || planetId}」还没有地形可导入（先到行星地图里画一张或导入）` };
+      return { ok: false, error: `行星“${planetName || planetId}”还没有地形可导入（先到行星地图里画一张或导入）` };
     }
     if (hasGrid(bm.heightmap) && !force) {
       return {
@@ -397,13 +397,13 @@ export function createScenarioEditingModule(ctx) {
     };
   }
 
-  /** 这份底图的「地形来源」状态（UI 显示用；真相仍是 `planetId` 与 `heightmap`） */
+  /** 这份底图的“地形来源”状态（UI 显示用；真相仍是 `planetId` 与 `heightmap`） */
   function describeBaseMapTerrain(baseMapKey) {
     const bm = baseMaps.value[baseMapKey];
     if (!bm) return { mode: 'none' };
     const pid = boundPlanetId(bm);
     if (pid) {
-      // 悬空绑定（行星已不存在）要点出来 —— 否则用户只看到「地形空了」，不知道是绑定失效
+      // 悬空绑定（行星已不存在）要点出来 —— 否则用户只看到“地形空了”，不知道是绑定失效
       const dangling = !mapData.value[pid];
       return { mode: 'following', planetId: pid, dangling };
     }
@@ -478,7 +478,7 @@ export function createScenarioEditingModule(ctx) {
   // 9975 格高度、98 种取值、160 条河流、496 条道路）。
   //
   // 所以问题不是"数据丢了"，而是**没有路把新数据补进一张已经在用的底图**：
-  // `.map` 导入走的 `applyScenarioState` 是「同 key 整体替换」，会把用户攒下的省份边界、
+  // `.map` 导入走的 `applyScenarioState` 是“同 key 整体替换”，会把用户攒下的省份边界、
   // 归属、易主记录一起覆盖掉 —— 那条路绝不能用来"补数据"。
   //
   // 🔴 三条不许违反：
@@ -599,8 +599,8 @@ export function createScenarioEditingModule(ctx) {
         blocked.push({
           group: 'heightmap',
           reason: 'basemap-bound-to-planet',
-          message: `这张底图绑定了行星「${bound}」，高度图的家在行星侧 —— 刷新底图数据不会往底图写第二份。`
-            + '要地形请用「地形：跟随该行星」或「冻结导入」（工具栏「更多 → 地形」）。',
+          message: `这张底图绑定了行星“${bound}”，高度图的家在行星侧 —— 刷新底图数据不会往底图写第二份。`
+            + '要地形请用“地形：跟随该行星”或“冻结导入”（工具栏“更多 → 地形”）。',
         });
       }
     }
@@ -661,7 +661,7 @@ export function createScenarioEditingModule(ctx) {
         planetId: target.planetId || null,
       },
       blocked,
-      message: `已刷新「${baseMapKey}」的底图数据：`
+      message: `已刷新“${baseMapKey}”的底图数据：`
         + [
           added.heightmap ? '高度图' : '',
           added.rivers ? `${added.rivers} 条河流` : '',
@@ -673,7 +673,7 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * 019 预检（只读）：不写任何数据，只算「旧省→新省」统计与冲突，供重导对话框展示。
+   * 019 预检（只读）：不写任何数据，只算“旧省→新省”统计与冲突，供重导对话框展示。
    * 判据与 `reimportBasemapAsNew` 共用 `mapProvinces`，不会出现"对话框说能导、实际冲突"。
    */
   function previewReimportBasemap(oldKey, bundle) {
@@ -725,7 +725,7 @@ export function createScenarioEditingModule(ctx) {
         ok: false,
         rejected: 'merge-conflicts',
         conflicts: mapping.conflicts,
-        message: `有 ${mapping.conflicts.length} 处「多个旧省并成一个新省」的冲突，未写入任何数据`,
+        message: `有 ${mapping.conflicts.length} 处“多个旧省并成一个新省”的冲突，未写入任何数据`,
       };
     }
 
@@ -759,7 +759,7 @@ export function createScenarioEditingModule(ctx) {
       // 🔴 2026-10-25 真机演练抓到：**撤销 / 重做必须自己安排落盘**。
       //    命令的 undo/redo 只替换 baseMaps / scenarios 两个 ref，不像 `commitHeightmap`
       //    那样内部会 scheduleAutoSave —— 而 App 的全局 Ctrl+Z 只调 `store.undo()`，
-      //    不补保存。结果是「内存里撤了、磁盘还是重导后的样子」，强杀/断电就会带着迁移后的街。
+      //    不补保存。结果是“内存里撤了、磁盘还是重导后的样子”，强杀/断电就会带着迁移后的街。
       //    真机判据：`scripts/tests/drill_reimport_019.py`（Ctrl+Z 后读盘回基线）。
       undo: () => { baseMaps.value = prevMaps; scenarios.value = prevScen; saveScenarios(); },
       redo: () => { baseMaps.value = nextMaps; scenarios.value = remap.scenarios; saveScenarios(); },
@@ -781,13 +781,13 @@ export function createScenarioEditingModule(ctx) {
       unmappedOld: mapping.unmappedOld,
       unmappedNew: mapping.unmappedNew,
       droppedOldProvinces: remap.droppedOldProvinces,
-      message: `已重导为新底图「${newName}」：迁 ${remap.moved.length} 条剧本 / `
+      message: `已重导为新底图“${newName}”：迁 ${remap.moved.length} 条剧本 / `
         + `${mapping.exact.length} 个省按 id 直配；未映射旧省 ${mapping.unmappedOld.length} 个、新省 ${mapping.unmappedNew.length} 个`,
     };
   }
 
   /**
-   * 压叠**预检**（只读，不写任何数据）—— 给「顶点编辑」用（2026-10-11）。
+   * 压叠**预检**（只读，不写任何数据）—— 给“顶点编辑”用（2026-10-11）。
    *
    * 为什么放在 store 而不是组件里直接调度量函数：
    *   本仓有一条硬纪律（`test_79` f0 源码守卫会判红）—— **判定必须在 store / 纯函数层单源**，
@@ -818,7 +818,7 @@ export function createScenarioEditingModule(ctx) {
    *
    * 🔴 **压叠闸门（2026-10-02）**：省份之间没有任何排他约束，画一个压住邻居的新省完全合法，
    *    而画布按 terrain 数组序依次 fill → 数组靠后的盖在上面。后果是三重的：命中口径与
-   *    视觉不一致（「点中的是被压在下面的那个」，命中侧另修 `findProvinceAt` 自顶向下）、
+   *    视觉不一致（“点中的是被压在下面的那个”，命中侧另修 `findProvinceAt` 自顶向下）、
    *    归属上色看不出谁是谁、势力标签的面积加权质心被拽到别人的地界里。
    *
    * 判定在纯函数层 `utils/provinceOverlap.js`（Node 可测），这里只做**策略**：
@@ -967,8 +967,8 @@ export function createScenarioEditingModule(ctx) {
     // 🔴 级联（2026-10-01，2026-10-05 随月日精度改名）：`scenarios[*].ownership` 的**键就是省份 id**
     //    （不是节点 id —— 见 `idRefDicts()` 的注释），`changeEvents` 同理。删省不摘这两个键 =
     //    留下指向不存在省份的孤儿键：画布上看不见（渲染按 `terrain` 遍历），却仍参与 `groupMap`
-    //    分组、`summarizeLineages` 的省列表与谱系继承的重叠度计算 → 观感是「势力继承
-    //    关系莫名断裂/粘连」。与 R7「删节点清孤儿数据」同一条纪律：**级联必须同一条 undo**。
+    //    分组、`summarizeLineages` 的省列表与谱系继承的重叠度计算 → 观感是“势力继承
+    //    关系莫名断裂/粘连”。与 R7“删节点清孤儿数据”同一条纪律：**级联必须同一条 undo**。
     const cascadeBefore = {};
     for (const [scId, sc] of Object.entries(scenarios.value || {})) {
       if (!sc || sc.ownerKey !== baseMapKey) continue;
@@ -1021,7 +1021,7 @@ export function createScenarioEditingModule(ctx) {
 
     // 删除时的**序号**：撤销要放回原位（不是追加到表尾）。
     //   🔴 为什么必须原位：归属标签网格的序号 = terrain 下标 + 1。网格的重编号/回灌按序号对齐，
-    //   把省份挪到表尾会让「回灌的标签」指向别的省份（几何集合虽相同，语义全错）。
+    //   把省份挪到表尾会让“回灌的标签”指向别的省份（几何集合虽相同，语义全错）。
     //   顺带也让 `terrain` 顺序在 undo 后与删除前逐项一致。
     const idx = (baseMap.terrain || []).findIndex(p => p.id === provinceId);
     const removeTerrain = (terrain) => ({
@@ -1380,10 +1380,10 @@ export function createScenarioEditingModule(ctx) {
     const now = new Date().toISOString();
 
     // ⚠️ 刻意**不**继承 `changeEvents`（2026-10-02 定，2026-10-05 随月日精度维持原行为）：
-    //    易主日期的语义是「该省在**本剧本年代区间内**哪一天换的主」。继承来的日期一律落在
+    //    易主日期的语义是“该省在**本剧本年代区间内**哪一天换的主”。继承来的日期一律落在
     //    **上一个**剧本的区间里，对新剧本而言按定义就是越界数据
     //    （`utils/scenarioSlices.js#changeDateStats` 会把它标出来）。
-    //    与其造一批越界日期，不如让新剧本走自动推算，由用户在「势力谱系管理 → 易主日期」里录真值。
+    //    与其造一批越界日期，不如让新剧本走自动推算，由用户在“势力谱系管理 → 易主日期”里录真值。
     const newScenario = {
       id: newScenarioId,
       ownerKey: base?.ownerKey || overrides.ownerKey,
@@ -1424,8 +1424,8 @@ export function createScenarioEditingModule(ctx) {
   // ============================================================
   //
   // 语义：`scenario.group` 决定它属于哪一条时间线；左栏 / 时间轴 / 播放 /
-  // 切片导出的「全部剧本」都只取**当前组**。组本身只存 名字 + 顺序，不承载剧本内容。
-  // 「默认」是虚拟组（不在 `scenarioGroups` 里）—— 旧项目打开即默认组，零迁移。
+  // 切片导出的“全部剧本”都只取**当前组**。组本身只存 名字 + 顺序，不承载剧本内容。
+  // “默认”是虚拟组（不在 `scenarioGroups` 里）—— 旧项目打开即默认组，零迁移。
 
   /** 新建剧本集（返回新组；调用方据此切过去） */
   function addScenarioGroup({ name, id } = {}) {
@@ -1471,7 +1471,7 @@ export function createScenarioEditingModule(ctx) {
 
   /**
    * 删除剧本集：**不删剧本**，组内剧本全部退回默认组（一条 undo）。
-   * 这是「删文件夹」而不是「删内容」—— 剧本是真数据，删组只是取消分类。
+   * 这是“删文件夹”而不是“删内容”—— 剧本是真数据，删组只是取消分类。
    */
   function removeScenarioGroup(groupId) {
     const id = String(groupId || '');
@@ -1543,7 +1543,7 @@ export function createScenarioEditingModule(ctx) {
 
   /**
    * 该省在本剧本内的易主事件（升序副本）。**没有**时返回空数组（不写空键）。
-   * 所有写入口都走它 —— 「读一份、改、写回」三处各写一遍 = 迟早有一处忘排序。
+   * 所有写入口都走它 —— “读一份、改、写回”三处各写一遍 = 迟早有一处忘排序。
    */
   function eventsOf(scenario, provinceId) {
     const raw = scenario?.changeEvents?.[provinceId];
@@ -1783,7 +1783,7 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * 指派势力。可选 `changeDate`（`{y,m,d}` 或裸年份）：把「易主日期」一并记为显式值 ——
+   * 指派势力。可选 `changeDate`（`{y,m,d}` 或裸年份）：把“易主日期”一并记为显式值 ——
    * 这是日期最自然的录入路径：把游标拖到某日再上色 = 该日易主。
    *
    * 语义（月日精度后明确下来）：
@@ -1791,7 +1791,7 @@ export function createScenarioEditingModule(ctx) {
    *   · 没有 → 追加一条（同省同年多次易主因此天然成立）。
    */
   /**
-   * 易主日期（v2 事件表）的**唯一落库口**：把「某省的显式事件整列表替换」落成账本事件。
+   * 易主日期（v2 事件表）的**唯一落库口**：把“某省的显式事件整列表替换”落成账本事件。
    *
    * 为什么它也必须走账本（第 4 件第二刀续）：`changeEvents` 是**投影缓存**，
    * 面板只改缓存不改账本 → 下一次归属编辑按投影重算缓存时，**用户刚录的日期会被抹掉**。
@@ -1895,7 +1895,7 @@ export function createScenarioEditingModule(ctx) {
     if (!scenario) return { success: false, reason: 'no-scenario' };
 
     // 🔴 越界日期**写不进库**（与面板内联提示同一份判定）：用户拖到剧本区间外再上色
-    //    会造出一条必然 outOfRange 的显式事件 —— 切片对话框会把它当「数据该修」列出来。
+    //    会造出一条必然 outOfRange 的显式事件 —— 切片对话框会把它当“数据该修”列出来。
     //    宁可这次不记日期（并回报原因），也不要写一条自己都知道是错的数据。
     const date = normalizeDate(changeDate);
     if (changeDate !== undefined && changeDate !== null && changeDate !== '' && !date) {
@@ -1959,11 +1959,11 @@ export function createScenarioEditingModule(ctx) {
    *
    * 此前这里是**零调用的死入口**，且有三处语义不完整（都已补齐，逐条都有回归断言）：
    *   ① `polityId` 为假值时旧实现写 `ownership[id] = null` —— **留键**。而 `clearOwnership` 是
-   *      `delete` 真删键，`groupMap` / 谱系重叠度判的是「键在不在」，于是"清空"会留下
+   *      `delete` 真删键，`groupMap` / 谱系重叠度判的是“键在不在”，于是"清空"会留下
    *      一堆指向 `null` 的孤儿键（画布看不出、谱系统计却算进去）。现在统一成**真删键**，
    *      并连带清该省的 `changeEvents`（与 `clearOwnership` 同口径）。
    *   ② **海域必须跳过**：单省油漆桶在 UI 侧拒 sea（海不参与势力归属、不进时间轴/谱系），
-   *      批量若照写就会出现「有些海莫名其妙有了归属」。跳过并回报数量。
+   *      批量若照写就会出现“有些海莫名其妙有了归属”。跳过并回报数量。
    *   ③ 空 / 无改动时**不压栈**（旧实现照样 execute + save = 无操作噪音）。
    * 另加**回执**（`changed` / `cleared` / `skippedSea` / `skippedMissing`）供 UI 点名。
    *
@@ -1978,7 +1978,7 @@ export function createScenarioEditingModule(ctx) {
     const scenario = scenarios.value[scenarioId];
     if (!scenario) return { success: false, reason: 'no-scenario' };
 
-    // 省份表：用来判「存在」与「是不是海域」（ownerKey → baseMaps[key].terrain）
+    // 省份表：用来判“存在”与“是不是海域”（ownerKey → baseMaps[key].terrain）
     const terrain = baseMaps.value?.[scenario.ownerKey]?.terrain || [];
     const byId = new Map(terrain.map(p => [p.id, p]));
 
@@ -2107,13 +2107,13 @@ export function createScenarioEditingModule(ctx) {
   /**
    * 修改势力的显示信息（`name` / `abbr` / `color`），走 undo。
    *
-   * A8（2026-09-26 暮雨定案）：「自定义显示的势力名称」的**唯一写入口**。
+   * A8（2026-09-26 暮雨定案）：“自定义显示的势力名称”的**唯一写入口**。
    * `abbr` = 可选简称 —— 缩小到只画势力名时优先用它；没填回落全名。
-   * **绝不自动截断**：机器截断会造出「大明帝国 → 大明」这类看着合理、实则臆造的名字。
+   * **绝不自动截断**：机器截断会造出“大明帝国 → 大明”这类看着合理、实则臆造的名字。
    *
    * ⚠️ 走 `execute()` 而非裸写 —— `execute` 就是内存写的总闸门（只读态拒绝在这里生效）。
    *    所以本函数**不需要**补 `guardWrite`、也**不该**登记进 `MEMORY_WRITE_CALLSITES`
-   *    （该表只收「自己改内存」与「先改内存后 execute」两类，见 `writeGate.js` 注释）。
+   *    （该表只收“自己改内存”与“先改内存后 execute”两类，见 `writeGate.js` 注释）。
    * ⚠️ 撤销必须**显式回填旧值**（照采集期记录的对象整体写回），不做反向推断 —— 与
    *    `changeNodeId` 同一条纪律：改名的补丁不可逆，推断必然漏。
    */
@@ -2130,7 +2130,7 @@ export function createScenarioEditingModule(ctx) {
       if (patch[k] === undefined) continue;
       const raw = patch[k];
       const v = typeof raw === 'string' ? raw.trim() : raw;
-      // name 是必填：清空视为「没输入」，保留原名（不留无名势力 → 标签整条消失且无法解释）
+      // name 是必填：清空视为“没输入”，保留原名（不留无名势力 → 标签整条消失且无法解释）
       if (k === 'name' && (v === '' || v === null)) continue;
       if (v === '' || v === null) { delete next[k]; continue; }
       next[k] = v;
@@ -2219,7 +2219,7 @@ export function createScenarioEditingModule(ctx) {
    *    `changeEvents` 同理按省份 id 记显式易主日期。只把 polity 从数组里摘掉，
    *    那些省的归属会指向一个不存在的势力 —— 画布上回落 `#4a5568` 灰、
    *    标签因 `labelTextFor(null) === ''` 被**静默跳过**（一片没名字的灰块），
-   *    而时间轴 / 谱系照样给它留槽位。与 R7「删节点清孤儿数据」同一条纪律。
+   *    而时间轴 / 谱系照样给它留槽位。与 R7“删节点清孤儿数据”同一条纪律。
    *
    * 返回 `affected`（受影响的省数）供 UI 二次确认时点名。
    */
@@ -2291,9 +2291,9 @@ export function createScenarioEditingModule(ctx) {
    * 显式设置 / 清除某省的易主**日期列表**（走 undo）—— 易主日期面板的单省入口。
    *
    * @param {Array|null} list 完整的事件列表（`[{y,m,d,owner}]`）；null/空数组 = **删除显式值**
-   *                          （该省回到「按谱系变化推算」的合成日期）
-   * 为什么整列表替换而不是「逐条增删」：面板上用户可能一次改日期 + 改归属，
-   * 拆成多条命令会让「一条 undo 撤回这次编辑」失效。列表本身是个位数，整表快照不心疼。
+   *                          （该省回到“按谱系变化推算”的合成日期）
+   * 为什么整列表替换而不是“逐条增删”：面板上用户可能一次改日期 + 改归属，
+   * 拆成多条命令会让“一条 undo 撤回这次编辑”失效。列表本身是个位数，整表快照不心疼。
    */
   function setChangeEvents(scenarioId, provinceId, list) {
     const scenario = scenarios.value[scenarioId];
@@ -2337,7 +2337,7 @@ export function createScenarioEditingModule(ctx) {
    *
    * 为什么必须有批量口：`computeEraChanges` 在缺显式值时会在区间内**均匀铺开**一个合成日期。
    * 一个一个改（`setChangeEvents`）会出现：① N 个省 = N 条 undo（`MAX_HISTORY=100`
-   * 会把更早的几何操作静默挤出栈）；② 「把这一代都定在某日」这类操作要写 N 遍。
+   * 会把更早的几何操作静默挤出栈）；② “把这一代都定在某日”这类操作要写 N 遍。
    *
    * @param {string} scenarioId
    * @param {Record<string, object|number|Array|null>} patch 省 id → 日期（`{y,m,d}` / 裸年份 /
@@ -2406,7 +2406,7 @@ export function createScenarioEditingModule(ctx) {
   // ============================================================
   //
   // 为什么是**第二张表**而不是塞进 changeEvents：
-  //   `changeEvents[provinceId]` 是「这块地归谁」（每省一本小账）；外交/战争/同盟的主体是
+  //   `changeEvents[provinceId]` 是“这块地归谁”（每省一本小账）；外交/战争/同盟的主体是
   //   **势力对**，语义与键都不同。混在一起，归属回放要把非归属事件全过滤一遍，
   //   两边的校验也会互相误伤。两本账各管一件事，查询时按需合读，绝不双写。
   //
@@ -2537,7 +2537,7 @@ export function createScenarioEditingModule(ctx) {
       }
       const id = String(made.event.id);
       if (usedIds.has(id)) {
-        errors.push(`第 ${i + 1} 条：事件 id「${id}」与已有事件重复`);
+        errors.push(`第 ${i + 1} 条：事件 id“${id}”与已有事件重复`);
         continue;
       }
       usedIds.add(id);
@@ -2556,7 +2556,7 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * 只读查询：「`at` 这一刻，a 与 b 是什么关系」（命令行 / 面板共用同一实现）。
+   * 只读查询：“`at` 这一刻，a 与 b 是什么关系”（命令行 / 面板共用同一实现）。
    * @returns {{ok:boolean, relation?:string, label?:string, text?:string, since?:object,
    *            until?:object, eventId?:string|null, title?:string, type?:string|null}}
    */
@@ -2586,16 +2586,16 @@ export function createScenarioEditingModule(ctx) {
   }
 
   // ============================================================
-  // 切片书签（slicePoints）—— 项目级「人指定的时间点」（2026-10-05）
+  // 切片书签（slicePoints）—— 项目级“人指定的时间点”（2026-10-05）
   // ============================================================
   //
   // 为什么放在这里而不是新建一个 store：书签是**时间轴上的点**，与剧本同一份语义
   // （日期、区间归属都由 scenarioTimeline/scenarioDates 判定）。
-  // 🔴 区间归属**不落盘**（运行时由 `eraIndexOfYear` 判），避免「剧本边界改了、书签上的
-  //    区间却还是旧的」这种静默不一致。
+  // 🔴 区间归属**不落盘**（运行时由 `eraIndexOfYear` 判），避免“剧本边界改了、书签上的
+  //    区间却还是旧的”这种静默不一致。
   //
   // 存储位置：`slicePoints` 是**顶层 ref**（不进 scenarios 字典）—— 因为 scenarios 字典
-  // 的键是「底图 key/剧本名」，把书签混进去会被画布与导出链当成一个剧本遍历。
+  // 的键是“底图 key/剧本名”，把书签混进去会被画布与导出链当成一个剧本遍历。
   // 落盘由 geodata 的载荷构造带上（见 `exportCanvasToProject`）。
 
   const slicePoints = ref([]);
@@ -2627,7 +2627,7 @@ export function createScenarioEditingModule(ctx) {
   }
   let slicePointSeq = 0;
 
-  /** 替换整表（走 undo）—— 所有增删改都经它，保证「一条 undo 撤回一次编辑」 */
+  /** 替换整表（走 undo）—— 所有增删改都经它，保证“一条 undo 撤回一次编辑” */
   function commitSlicePoints(next, label) {
     const before = JSON.parse(JSON.stringify(slicePoints.value || []));
     const after = sanitizeSlicePoints(next);
@@ -2707,7 +2707,7 @@ export function createScenarioEditingModule(ctx) {
         version: 1,
         baseMaps: JSON.parse(JSON.stringify(baseMaps.value || {})),
         scenarios: JSON.parse(JSON.stringify(scenarios.value || {})),
-        // 剧本集随包走（否则「导到另一个项目」会全部落回默认组，多时间线语义丢失）
+        // 剧本集随包走（否则“导到另一个项目”会全部落回默认组，多时间线语义丢失）
         groups: JSON.parse(JSON.stringify(adoptOrphanGroups(scenarioGroups.value, scenarios.value))),
         updatedAt: new Date().toISOString(),
       };
@@ -2738,15 +2738,15 @@ export function createScenarioEditingModule(ctx) {
     if (!Object.keys(maps).length) warns.push('没有任何底图（剧本将没有省份可渲染）');
     for (const [k, s] of Object.entries(scen)) {
       const owner = s?.ownerKey;
-      if (!owner) { warns.push(`剧本「${s?.name || k}」缺 ownerKey`); continue; }
-      if (!maps[owner]) warns.push(`剧本「${s?.name || k}」指向的底图「${owner}」不在导出范围内`);
-      if (!Array.isArray(s?.polities) || !s.polities.length) warns.push(`剧本「${s?.name || k}」没有势力`);
+      if (!owner) { warns.push(`剧本“${s?.name || k}”缺 ownerKey`); continue; }
+      if (!maps[owner]) warns.push(`剧本“${s?.name || k}”指向的底图“${owner}”不在导出范围内`);
+      if (!Array.isArray(s?.polities) || !s.polities.length) warns.push(`剧本“${s?.name || k}”没有势力`);
       const own = Object.keys(s?.ownership || {}).length;
-      if (!own) warns.push(`剧本「${s?.name || k}」没有省份归属`);
-      if (s?.era?.startYear === undefined || s?.era?.startYear === '') warns.push(`剧本「${s?.name || k}」缺起始年份`);
+      if (!own) warns.push(`剧本“${s?.name || k}”没有省份归属`);
+      if (s?.era?.startYear === undefined || s?.era?.startYear === '') warns.push(`剧本“${s?.name || k}”缺起始年份`);
       // 组引用悬空 = 导入后它会静默落回默认组（分组语义丢失，且不报错）
       if (s?.group && s.group !== DEFAULT_SCENARIO_GROUP && !groupIds.has(s.group)) {
-        warns.push(`剧本「${s?.name || k}」指向的剧本集「${s.group}」不在导出范围内`);
+        warns.push(`剧本“${s?.name || k}”指向的剧本集“${s.group}”不在导出范围内`);
       }
     }
     return warns;
@@ -2768,7 +2768,7 @@ export function createScenarioEditingModule(ctx) {
     const snapPts = JSON.parse(JSON.stringify(slicePoints.value || []));
     const snapGroups = JSON.parse(JSON.stringify(scenarioGroups.value || []));
     // 🔴 导入的剧本可能是**旧格式**（外部包/老备份）→ 必须过迁移，否则这份数据一进来
-    //    就被当成「没有显式日期」，全部退回合成值。
+    //    就被当成“没有显式日期”，全部退回合成值。
     const inScenMigrated = inScen ? normalizeScenarioDatesDict(JSON.parse(JSON.stringify(inScen))) : null;
     const nextMaps = mode === 'replace'
       ? JSON.parse(JSON.stringify(inMaps || {}))
@@ -2777,7 +2777,7 @@ export function createScenarioEditingModule(ctx) {
       ? JSON.parse(JSON.stringify(inScenMigrated || {}))
       : { ...snapScen, ...JSON.parse(JSON.stringify(inScenMigrated || {})) };
     // 剧本集随包往返：替换 = 用包里的（没有就清空，剧本全落默认组）；
-    // 合并 = 按 id 合并，同 id 以**包里**的名字/顺序为准（「同 key 覆盖」与底图/剧本同一口径）
+    // 合并 = 按 id 合并，同 id 以**包里**的名字/顺序为准（“同 key 覆盖”与底图/剧本同一口径）
     const inGroups = data.groups !== undefined ? sanitizeScenarioGroups(data.groups) : null;
     const nextGroups = mode === 'replace'
       ? (inGroups || [])
@@ -2813,7 +2813,7 @@ export function createScenarioEditingModule(ctx) {
         scenarioGroups.value = nextGroupsAdopted;
       },
     });
-    // 只读态：execute 被闸门拒绝 → 绝不回报「导入成功」（否则用户看到「导入完成」却什么都没进来）
+    // 只读态：execute 被闸门拒绝 → 绝不回报“导入成功”（否则用户看到“导入完成”却什么都没进来）
     if (gate && gate.ok === false) return { success: false, error: gate.error };
 
     saveScenarios();
@@ -2938,7 +2938,7 @@ export function createScenarioEditingModule(ctx) {
       y: marker.y,
       name: marker.name || '',
       type: marker.type || 'default',
-      // 🔴 icon / color 必须带上：ScenarioMap 放置标记时按「预设类型」取图标与颜色，
+      // 🔴 icon / color 必须带上：ScenarioMap 放置标记时按“预设类型”取图标与颜色，
       //    而画布用 m.icon / m.color 渲染 —— 只存 type 的话图标与颜色全部落回兜底值，
       //    用户看到的永远是同一个图标（"选了类型但没变化"，2026-09-22 修）。
       icon: marker.icon || '',
@@ -2975,7 +2975,7 @@ export function createScenarioEditingModule(ctx) {
   /**
    * 更新剧本标记（名字 / 类型 / 图标 / 颜色 / 坐标）—— **一条 undo**，不碰别的字段。
    *
-   * 2026-10-24（第 5 件补「点标记」）：标记面板之前不存在，于是"改标记"也没有写口 ——
+   * 2026-10-24（第 5 件补“点标记”）：标记面板之前不存在，于是"改标记"也没有写口 ——
    * 组件里直改 `m.name = …` 会绕开 `execute()`（只读态照改内存、撤销把新值当旧值还原），
    * 与省份面板 2026-10-01 那次修复是同一类缺陷。这里就是把那条路堵上：
    *   · 只认白名单字段（`name/type/icon/color/x/y`），别的键一律不写；
@@ -3082,14 +3082,14 @@ export function createScenarioEditingModule(ctx) {
    * 剧本数据 → 画布（外部 `.json` 与知识库缓存两条来源共用）。
    * @param {object} data
    * @param {{fillMissingOnly?:boolean}} opts 见 `applyScenarioState`。
-   *   🔴 **隐式**载入（进入「历史剧本」时读知识库缓存）必须传 `true`：
-   *      默认的「新值赢」合并会覆盖项目里已有的剧本与底图（静默丢编辑）。
+   *   🔴 **隐式**载入（进入“历史剧本”时读知识库缓存）必须传 `true`：
+   *      默认的“新值赢”合并会覆盖项目里已有的剧本与底图（静默丢编辑）。
    */
   function importFromScenariosJson(data, opts = {}) {
     if (!guardWrite('导入剧本').ok) return null;
     // 外部 .json 可能是旧格式 → 走统一装载口（内部已含迁移）
     const r = applyScenarioState(data, { fresh: false, ...opts });
-    // 只有真的改了内存才排保存：隐式载入在「无事可补」时是纯 no-op，
+    // 只有真的改了内存才排保存：隐式载入在“无事可补”时是纯 no-op，
     // 不该把项目标脏、更不该触发一次写盘 + 备份轮转。
     if (r && r.ok && r.changed !== false) saveScenarios();
     return r;
@@ -3100,7 +3100,7 @@ export function createScenarioEditingModule(ctx) {
    * 供 PlanetMap 渲染参考图层使用
    *
    * ⚠️ 字段映射（provinces → azgaarProvinces 等）在 `utils/planetMapBundle.buildAzgaarReferenceLayers`
-   *    —— 行星视图的 `.map` 导入也要同一份口径，两处各写一份就会「同一个 .map 在两处导出不同 id」。
+   *    —— 行星视图的 `.map` 导入也要同一份口径，两处各写一份就会“同一个 .map 在两处导出不同 id”。
    */
   function importPlanetLayerData(planetId, data) {
     if (!guardWrite('导入 .map 图层').ok) return;
@@ -3129,16 +3129,16 @@ export function createScenarioEditingModule(ctx) {
   // ============================================================
   //
   // 🔴 为什么必须有这个函数：`changeYears` → `changeEvents` 的兼容是**读时迁移**，
-  //    于是「要不要迁移」取决于**入口有没有想起来**。入口有三类，各自最容易漏：
+  //    于是“要不要迁移”取决于**入口有没有想起来**。入口有三类，各自最容易漏：
   //      ① 打开项目（geodata.applyProjectToCanvas）
   //      ② 快照回滚 / 知识库快照还原（vaultSnapshot 里存的是旧格式）
   //      ③ 撤销栈回放（旧命令闭包捕获的是迁移**之前**的对象）
-  //    漏掉任何一处，症状都是同一句：「我明明录过易主日期，时间轴上却全是合成值」（不报错）。
+  //    漏掉任何一处，症状都是同一句：“我明明录过易主日期，时间轴上却全是合成值”（不报错）。
   //    所以装载一律走这里，而不是在各处各写一遍 normalize。
   //
   // ⚠️ `list` 可能是**数组**（时间轴）也可能是**字典**（项目文件里的 scenarios）——
   //    `normalizeScenarioDict` 保持同形往返。无改动的条目**保持原引用**
-  //    （避免整表换新对象 → 触发无谓重渲染 / 让「就地改字段」的纪律失效）。
+  //    （避免整表换新对象 → 触发无谓重渲染 / 让“就地改字段”的纪律失效）。
 
   /** 剧本字典/数组 → 迁移后的同形结果（带迁移点名） */
   function normalizeScenarioDatesDict(list) {
@@ -3167,18 +3167,18 @@ export function createScenarioEditingModule(ctx) {
    *   · `fresh:true`      —— 整体替换（打开项目 / 知识库快照还原）。内存被入参完全接管。
    *   · `fillMissingOnly` —— **内存里已有的优先，只补缺**（知识库 → 画布的**隐式**载入）。
    *   · 两者都不给         —— 合并且**新值赢**（`{...旧, ...新}`）。这是**显式**导入
-   *     外部剧本包（`.json`）的既有语义，按钮 title 就写着「合并：同 key 覆盖」。
+   *     外部剧本包（`.json`）的既有语义，按钮 title 就写着“合并：同 key 覆盖”。
    *
    * 🔴 `fillMissingOnly` 的存在理由（2026-10-06 修的**真缺陷**，不是洁癖）：
-   *   `App.enterScenarioMode()` 在打开「历史剧本」时会从**知识库缓存**
+   *   `App.enterScenarioMode()` 在打开“历史剧本”时会从**知识库缓存**
    *   （`<库>/.sitian/scenarios.json`）载入并走合并。项目态下画布事实源是**项目文件**，
-   *   而那条路径用的是「新值赢」的合并 → 库里同名的剧本与底图会**整体替换**项目里那一份，
+   *   而那条路径用的是“新值赢”的合并 → 库里同名的剧本与底图会**整体替换**项目里那一份，
    *   紧接着 `saveScenarios()` 把覆盖结果推给项目并落盘 =
-   *   **用户一进「历史剧本」就把自己的剧本/底图编辑静默回退**（每次启动后第一次进入都会回退一次）。
-   *   隐式载入的语义只能是「补缺」；要覆盖必须由用户在剧本工具栏**明确按下**导入按钮。
+   *   **用户一进“历史剧本”就把自己的剧本/底图编辑静默回退**（每次启动后第一次进入都会回退一次）。
+   *   隐式载入的语义只能是“补缺”；要覆盖必须由用户在剧本工具栏**明确按下**导入按钮。
    *
    * ⚠️ 无改动时**保持原引用**（`fillMissingOnly` 分支无事可补就不换对象）——
-   *    调用方据此判断「要不要排一次保存」，避免每次进「历史剧本」都把项目标脏 + 触发写盘与备份轮转。
+   *    调用方据此判断“要不要排一次保存”，避免每次进“历史剧本”都把项目标脏 + 触发写盘与备份轮转。
    */
   function applyScenarioState(data, { fresh = false, fillMissingOnly = false } = {}) {
     if (!data || typeof data !== 'object') return { ok: false, error: '没有剧本数据' };
@@ -3246,7 +3246,7 @@ export function createScenarioEditingModule(ctx) {
     }
     return {
       ok: true,
-      // 调用方用它决定「要不要排一次保存」：只有引用变了才算真的改了内存
+      // 调用方用它决定“要不要排一次保存”：只有引用变了才算真的改了内存
       changed: baseMaps.value !== prevBaseMaps
         || scenarios.value !== prevScenarios
         || slicePoints.value !== prevSlicePoints
@@ -3268,7 +3268,7 @@ export function createScenarioEditingModule(ctx) {
 
   function applyHeightBrush(baseMapKey, cx, cy, radius, strength, mode) {
     // ⚠️ 本函数**先改内存、后 execute**（涂抹期直接写 baseMaps）→ 只读态必须守函数首行，
-    //    否则「拒绝」发生在数据已经改完之后（改了不落盘 = 静默丢数据）
+    //    否则“拒绝”发生在数据已经改完之后（改了不落盘 = 静默丢数据）
     if (!guardWrite('高度笔刷').ok) return;
     if (!hasGrid(getHeightmapFor(baseMapKey))) return;
 
@@ -3354,7 +3354,7 @@ export function createScenarioEditingModule(ctx) {
 
     // 重新派生温度/降水/生物群系
     // P2-4：小网格同步（一次 postMessage 往返的开销 ≥ 计算量本身），大网格把派生挪到 Worker。
-    // 大网格时本帧先复用「上一条命令的派生数组」（派生是 h 的纯函数，短时陈旧无害），
+    // 大网格时本帧先复用“上一条命令的派生数组”（派生是 h 的纯函数，短时陈旧无害），
     // 真值由 redo 里的 scheduleDerive 在 300ms 防抖后回写，主线程不再被 O(n) 循环占住。
     const canDefer = newH.length > getAsyncThreshold()
       && isWorkerAvailable()
@@ -3395,7 +3395,7 @@ export function createScenarioEditingModule(ctx) {
           handEdits: newHand,
         });
         // P2-4：异步派生挂在 redo 内 —— execute() 首帧与后续 redo 都会走到，
-        // 所以「撤销后再重做」同样能拿回正确派生值（否则重做会留下陈旧图层）。
+        // 所以“撤销后再重做”同样能拿回正确派生值（否则重做会留下陈旧图层）。
         if (canDefer) {
           const epoch = (deriveEpoch[baseMapKey] = (deriveEpoch[baseMapKey] || 0) + 1);
           scheduleDerive(newH, (res) => {
@@ -3430,7 +3430,7 @@ export function createScenarioEditingModule(ctx) {
 
   function applyBiomeBrush(baseMapKey, cx, cy, radius, biomeKey) {
     // ⚠️ 本函数**先改内存、后 execute**（涂抹期直接写 baseMaps）→ 只读态必须守函数首行，
-    //    否则「拒绝」发生在数据已经改完之后（改了不落盘 = 静默丢数据）
+    //    否则“拒绝”发生在数据已经改完之后（改了不落盘 = 静默丢数据）
     if (!guardWrite('生物群系笔刷').ok) return;
     if (!hasGrid(getHeightmapFor(baseMapKey))) return;
 
@@ -3507,7 +3507,7 @@ export function createScenarioEditingModule(ctx) {
         };
       },
     });
-    // 🔴 2026-10-17 暮雨实测「点一下卡一下」：这里原来是**同步** `saveScenarios()` ——
+    // 🔴 2026-10-17 暮雨实测“点一下卡一下”：这里原来是**同步** `saveScenarios()` ——
     //    每画/删一条河都全量 `JSON.parse(JSON.stringify(整个项目载荷))`（真实项目 415 省 +
     //    2.7 万点 + 高度图 → 一次几百 ms 主线程阻塞）。高频小编辑一律走 300ms 防抖
     //    （`scheduleAutoSaveScenarios`），退出前 `flushSave()` 会兜底真正落盘。
@@ -3690,10 +3690,10 @@ export function createScenarioEditingModule(ctx) {
    * **一次动作 = 一条撤销**的河流批量写口（改 / 加 / 删三样一起，原子）。
    *
    * 🔴 2026-10-18 第十八修·三补这个口，是为了两件**产品里真的发生**的事：
-   *   ① **河流橡皮**：擦断一条河 = 「改这条（留下的第一段）+ 加几条（其余段）+ 删掉没被擦到的…
-   *      不，是被擦干净的那些」。三个动作必须同进同退 —— 分成 3 条 undo 的话，用户按一次
+   *   ① **河流橡皮**：擦断一条河 = “改这条（留下的第一段）+ 加几条（其余段）+ 删掉没被擦到的…
+   *      不，是被擦干净的那些”。三个动作必须同进同退 —— 分成 3 条 undo 的话，用户按一次
    *      Ctrl+Z 只回一半，画面变成"半擦"的怪状态（本仓在 `applyBaseMapRiverPatches` 的注释里
-   *      已经写明过这条心理模型：「我做了**一次**擦除」）。
+   *      已经写明过这条心理模型：“我做了**一次**擦除”）。
    *   ② **画支流**：此前是 `addBaseMapRiver` + `updateBaseMapRiver` **两条 undo**
    *      （代码里诚实记着"要在数据层做成一条 undo 得加批量写口 —— 本轮没做"）。现在做了。
    *
@@ -3783,8 +3783,8 @@ export function createScenarioEditingModule(ctx) {
    * 改一条**已有**的手画河（节点移动 / 加拐点 / 删单个节点 / 改宽·名）。
    *
    * 🔴 2026-10-17 补这个写口的原因（与 `insertNodeBetween` 那次同源，属同一个缺口）：
-   *    底图侧此前只有 `add` 与 `remove` —— **没有 update**。于是「画完之后想微调」
-   *    在数据层根本没有出口：拖节点、加拐点、删一个点，全都只能「删掉整条重画」，
+   *    底图侧此前只有 `add` 与 `remove` —— **没有 update**。于是“画完之后想微调”
+   *    在数据层根本没有出口：拖节点、加拐点、删一个点，全都只能“删掉整条重画”，
    *    而重画会换 id/名字、丢掉调好的 width（这就是行星图早就有的 `updateRiver`）。
    *
    * 入口只有一条（`opts.removeNodeAt` 与 `patch.nodes` 互斥，见下方），
@@ -3836,14 +3836,14 @@ export function createScenarioEditingModule(ctx) {
       }
       next.points = kept;
       // 线宽按**点数**分级（与 `addBaseMapRiver` 落库时同一口径）——
-      // 否则删点会让「越长越宽」悄悄失真
+      // 否则删点会让“越长越宽”悄悄失真
       next.width = Math.max(0.4, Math.min(1.6, 0.3 + kept.length * 0.05));
     }
 
     if (JSON.stringify(next) === JSON.stringify(old)) return { ok: true, changed: false };
 
     // 整份河流列表快照当撤销档：与 `updateBaseMapBurg` 同款 ——
-    // 「就地只改这一条」在 undo 时无法还原**位置**（数组顺序 = 渲染层叠顺序）
+    // “就地只改这一条”在 undo 时无法还原**位置**（数组顺序 = 渲染层叠顺序）
     const before = bm0;
     execute({
       type: removeAt >= 0 ? 'remove-basemap-river-node' : 'update-basemap-river',
@@ -3942,9 +3942,9 @@ export function createScenarioEditingModule(ctx) {
    *
    * @param {object} [opts]
    * @param {Array} [opts.materialize] 这个 id 在底图上**还不存在**时，先把这批聚落落进来再改
-   *   （2026-10-13「旧数据里的聚落」）。为什么需要：早期 `.map` 导入只把首都写进**剧本 markers**，
+   *   （2026-10-13“旧数据里的聚落”）。为什么需要：早期 `.map` 导入只把首都写进**剧本 markers**，
    *   底图侧根本没有 `burgs`，组件于是把 markers 派生出来当城镇**显示** —— 用户看得见、点得开编辑器，
-   *   一按保存却报「这个聚落不在这张底图上」，等于**改不了**（2026-10-11 轮 1 留下的尾巴）。
+   *   一按保存却报“这个聚落不在这张底图上”，等于**改不了**（2026-10-11 轮 1 留下的尾巴）。
    *
    *   🔴 与编辑**同一条 undo**：拆成两次 `execute` 后 Ctrl+Z 只退一半 —— 名字回退了、
    *      多出来的城镇还在（"半吊子状态"比不做更坏）。所以登记与改写在同一个 redo 里。
@@ -4119,13 +4119,13 @@ export function createScenarioEditingModule(ctx) {
   }
 
   function generateRivers(baseMapKey, opts = {}) {
-    // 🔴 2026-10-14 重写：旧实现是「每个源头格全表扫描找最低邻居」= O(源头 × 格数 × 步数)。
+    // 🔴 2026-10-14 重写：旧实现是“每个源头格全表扫描找最低邻居”= O(源头 × 格数 × 步数)。
     //    真实底图实测量级（desite 9975 格 / 399 源头；行星 26910 格 / 281 源头，
     //    单点全表 7.46 ms）→ **分钟级**，而它是同步跑的：点下按钮主线程就不再响应，
     //    用户看到"毫无征兆直接卡住"。算法与口径全部搬到纯函数层 `utils/riverTrace.js`
-    //    （有独立的 Node 单测），这里只负责「取哪份高度图 + 注入陆地判定」。
+    //    （有独立的 Node 单测），这里只负责“取哪份高度图 + 注入陆地判定”。
     //
-    // 🔴 2026-10-14 第二修（用户实测「河流依旧随机出海」）：把**陆地判定**注入追踪器，
+    // 🔴 2026-10-14 第二修（用户实测“河流依旧随机出海”）：把**陆地判定**注入追踪器，
     //    源头必须离海 ≥ 2 格。高程是格心采样，海岸线从格子里穿过 → 一批泡在水里的格子
     //    高度 ≥ 20，够高时就被当源头，河道从海边起步直接射进大洋。判定用省份多边形
     //    （= 画布上真正画出来的陆地；`utils/coastline.js` 的同一份实现，掩膜按 terrain
@@ -4134,10 +4134,10 @@ export function createScenarioEditingModule(ctx) {
     let hmForTrace = hm;
     let synthesized = null;
     if (!hasGrid(hm)) {
-      // 🔴 2026-10-17 第八修·改向（暮雨原话：「司天自身的编辑能力必须过硬，
-      //    **不要指望靠用户导出高度数据地图来救河流生成**」）。
+      // 🔴 2026-10-17 第八修·改向（暮雨原话：“司天自身的编辑能力必须过硬，
+      //    **不要指望靠用户导出高度数据地图来救河流生成**”）。
       //    旧行为：`!hasGrid(hm)` → 直接 `no-heightmap` 拒绝。
-      //    后果：用户在司天里自己画了一块大陆（有省份多边形 = 有陆地），点「自动河流」
+      //    后果：用户在司天里自己画了一块大陆（有省份多边形 = 有陆地），点“自动河流”
       //    却被告知"没有地形"—— 等于核心能力只对**外部导入**的地图可用。
       //    现在：**按陆地轮廓推演一份地形**（`utils/terrainSynthesis.js`）当作追踪输入。
       //    ⚠️ 只读推演、**不写数据**（不碰 commitHeightmap / undo 栈）—— 用户没要求造地形，
@@ -4153,7 +4153,7 @@ export function createScenarioEditingModule(ctx) {
         return {
           rivers: [], ok: false, reason: 'no-terrain',
           message: '这张底图既没有地形高度图、也没有画好的陆地 —— 自动河流不知道从哪里流起。'
-            + ' 先用「自由绘制 / 套索」画出一块大陆，再点自动河流。',
+            + ' 先用“自由绘制 / 套索”画出一块大陆，再点自动河流。',
         };
       }
       hmForTrace = synthesized;
@@ -4173,11 +4173,11 @@ export function createScenarioEditingModule(ctx) {
    *
    * 与 `generateRivers` 里那次"临时推演"的区别：这是**显式动作**，结果写进底图
    * （走 `commitHeightmap` = 一条 undo），此后：
-   *   · 「底图图层 → 地形高度 / 陆海底色」能看见地形；
+   *   · “底图图层 → 地形高度 / 陆海底色”能看见地形；
    *   · 地形笔刷 / 平滑 / 分辨率调整 / 自动河流全都正常工作；
    *   · 用户可以在推演结果上继续手改（推演只是个**起点**，不是最终答案）。
    *
-   * 为什么需要它（暮雨 2026-10-17）：「不要指望靠用户导出高度数据地图来救河流生成」——
+   * 为什么需要它（暮雨 2026-10-17）：“不要指望靠用户导出高度数据地图来救河流生成”——
    * 自建底图必须有本地起点：画完大陆 → 一键有地形 → 有河 → 再手调。
    *
    * P0-1（2026-10-25）三处变化，都是把"只能撞运气"变成"能调、能复现"：
@@ -4191,7 +4191,7 @@ export function createScenarioEditingModule(ctx) {
    * @returns {{ok:boolean, reason?:string, message:string, cellCount?:number, spacing?:number}}
    */
   /**
-   * **地形目标**（A6，2026-10-29）：同一套「按轮廓推演地形」要能用在**两种容器**上 ——
+   * **地形目标**（A6，2026-10-29）：同一套“按轮廓推演地形”要能用在**两种容器**上 ——
    * 剧本底图（`baseMaps[key]`）与行星（`mapData[planetId]`）。
    *
    * 两者的差别只有三处：轮廓多边形从哪读、高度图从哪读/写、保存排给谁。
@@ -4253,12 +4253,12 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * **行星侧「按轮廓生成地形」**（A6，2026-10-29）：与底图侧**同一个**推演/手绘/气候实现。
+   * **行星侧“按轮廓生成地形”**（A6，2026-10-29）：与底图侧**同一个**推演/手绘/气候实现。
    *
    * 为什么需要它：行星侧一直**有** `mapData[planetId].heightmap`（高度笔刷 / 群系 / 通道笔刷都在用），
    * 但**没有"从轮廓推演一份"的入口** —— 只有 `usePlanetHeightBrush.ensureHeightmap`（按多边形
    * elevation 估个底稿，只在损坏/首次时跑）。于是行星地图永远只能靠导入 `.map` 才有地形，
-   * 「地形生成参数面板」那套（种子/山脉/高原/裂谷 + 候选缩略图）在行星侧完全够不着。
+   * “地形生成参数面板”那套（种子/山脉/高原/裂谷 + 候选缩略图）在行星侧完全够不着。
    */
   function synthesizePlanetTerrain(planetId, opts = {}) {
     const t = resolveTerrainTarget({ kind: 'planet', planetId });
@@ -4267,7 +4267,7 @@ export function createScenarioEditingModule(ctx) {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // N3a-1（2026-11-02）：生成账本 —— 容器「取 / 写」各一份实现
+  // N3a-1（2026-11-02）：生成账本 —— 容器“取 / 写”各一份实现
   //   底图 → `baseMaps[key].provenance`；行星 → `mapData[pid].provenance`
   //   （两种容器都必须能存：A6 之后同一条推演链服务两个目标，账本不能只记一半）。
   //   ⚠️ 只在这里拼容器对象：散落的 `{...bm, provenance}` 写两处，改一处另一处就不变。
@@ -4350,7 +4350,7 @@ export function createScenarioEditingModule(ctx) {
     const prevHand = activeHandEdits(prev);
     const genSeed = opts.genSeed == null ? norm.params.seed : opts.genSeed;
     const sameSeed = !prev || !Number.isFinite(prev.genSeed) || prev.genSeed === genSeed;
-    // 「重生成保留手绘」开关（2026-10-28，补 §3.2 欠账）：默认开；关掉 = 按用户明确选择丢弃手绘。
+    // “重生成保留手绘”开关（2026-10-28，补 §3.2 欠账）：默认开；关掉 = 按用户明确选择丢弃手绘。
     // 之前这里恒开 —— 用户想"彻底重来"时只能先把地形笔刷涂回去，等于没有出口。
     const keepHand = opts.keepHandEdits !== false;
     let handKept = [];
@@ -4383,16 +4383,16 @@ export function createScenarioEditingModule(ctx) {
       temp: derivedLayers.temperature,
       prec: derivedLayers.precipitation,
       biome: derivedLayers.biome,
-      // 纬度跨度随这份高度图落盘：之后「重算派生图层」按同一个跨度算，
+      // 纬度跨度随这份高度图落盘：之后“重算派生图层”按同一个跨度算，
       // 否则"生成时 ±60°、重算时 ±90°"会让用户以为地形自己变了（静默不一致）。
       climateSpec: { latitudeSpanDeg: climate.latitudeSpanDeg },
     };
     const had = hasGrid(prev);
-    // 🔴 2026-10-17 第八修·再修（用户实测：「现在地图上的改动全都无法撤销，撤销是灰色的」）：
+    // 🔴 2026-10-17 第八修·再修（用户实测：“现在地图上的改动全都无法撤销，撤销是灰色的”）：
     //    第一版我在这里**直接调 `commitHeightmap`**，没有套 `execute()` ——
     //    那是本项目明令禁止的写法（`undo.js` 的契约：数据修改必须发生在 redo 回调里）。
     //    后果：这次写盘**不进 undo 栈**，而且它与 undo 栈里记录的"旧高度图"对不上，
-    //    用户随后就发现「撤销灰了、什么都没法撤」。
+    //    用户随后就发现“撤销灰了、什么都没法撤”。
     //    现在按 `smoothBaseMapHeightmap` 的同一套写法收口：
     //      · `undo` 把**原来那份**（可能是 null）填回去，`touch:false` 不打时间戳；
     //      · `redo` 写入推演结果；
@@ -4696,7 +4696,7 @@ export function createScenarioEditingModule(ctx) {
 
   /**
    * 🔴 **高度图分辨率**（P5，2026-10-14）—— 用户实测第 5、2 条：
-   *    「地形模模糊糊」/「高度图分辨率帮我调整。注意性能」。
+   *    “地形模模糊糊”/“高度图分辨率帮我调整。注意性能”。
    *
    * 为什么必须做：真实底图的源网格是 **133×75 / spacing 14.4**（FMG 生成的），画到
    * 1900×1080 上**每格约 3.6 屏幕像素**，放大到 400% 时一格占满一屏。渲染侧其实已经在做
@@ -4755,11 +4755,11 @@ export function createScenarioEditingModule(ctx) {
   }
 
   /**
-   * 地形平滑（P5 配套）—— 「地形模模糊糊、一块一块」的另一半。
+   * 地形平滑（P5 配套）—— “地形模模糊糊、一块一块”的另一半。
    *
-   * ⚠️ 只平滑 `h`；`temp/prec/biome` 是**派生量**，平滑完地形应让用户自己点「重算派生图层」。
+   * ⚠️ 只平滑 `h`；`temp/prec/biome` 是**派生量**，平滑完地形应让用户自己点“重算派生图层”。
    *    在这里顺手改气候/群系，会让"平滑地形"变成一次静默的气候改动（本项目最忌讳的那类）。
-   * ⚠️ 「双击平滑」那条老路径（`heightMath.smoothHeightmap`）是 O(n²) 且**零调用** ——
+   * ⚠️ “双击平滑”那条老路径（`heightMath.smoothHeightmap`）是 O(n²) 且**零调用** ——
    *    本轮不接它，接的是 `heightmapResample.smoothHeightmapGrid`（分离式盒滤波，O(n·半径)）。
    */
   function smoothBaseMapHeightmap(baseMapKey, { radius = 1, passes = 1 } = {}) {
@@ -4782,7 +4782,7 @@ export function createScenarioEditingModule(ctx) {
       cells: rr.stats.cells,
       elapsedMs: Math.round(t1 - t0),
       message: `已平滑地形（半径 ${rr.stats.radius} 格 × ${rr.stats.passes} 次，${rr.stats.cells} 格，${Math.round(t1 - t0)} ms）`
-        + ` —— 气候/群系是派生量，需要的话请点「重算派生图层」`,
+        + ` —— 气候/群系是派生量，需要的话请点“重算派生图层”`,
     };
   }
 
@@ -4793,7 +4793,7 @@ export function createScenarioEditingModule(ctx) {
    * （写 `initialOwnership` + `ownership`，**不写 `changeEvents`**）。
    * 为什么不覆盖已有归属：归属是两本账里"按日回放"的那本 —— 用一个**没有日期**的铺底
    * 去改已有历史，要么得编一个日期（等于伪造历史），要么清空事件（等于删历史）。
-   * 想改朝换代请用「涂归属」笔刷/批量指派（它们会按选定日期记事件）。
+   * 想改朝换代请用“涂归属”笔刷/批量指派（它们会按选定日期记事件）。
    *
    * 势力按文化区分组（省上的 `cultureId` 来自文化派生）：一组一个势力；势力多于文化时
    * 同一文化按形心 x 再切。所有新省的归属与势力**同一条命令**，一次 Ctrl+Z 全退回。
@@ -4804,7 +4804,7 @@ export function createScenarioEditingModule(ctx) {
     if (!guardWrite('派生势力').ok) return { ok: false, reason: 'readonly', message: '只读：未打开项目' };
     const terrain = (baseMaps.value[scenario.ownerKey] || {}).terrain || [];
     if (!terrain.length) {
-      return { ok: false, reason: 'no-province', message: '这张底图还没有省份 —— 先用「造陆」或画省' };
+      return { ok: false, reason: 'no-province', message: '这张底图还没有省份 —— 先用“造陆”或画省' };
     }
     const norm = normalizeCultureParams(paramsIn);
     // 省上的文化摘要（没有文化派生时全部落进 cultureId=0 一组，仍能生成一个势力）
@@ -4823,7 +4823,7 @@ export function createScenarioEditingModule(ctx) {
     if (!eligible.length) {
       return {
         ok: true, changed: false, noop: true,
-        message: `所有可分配的省都已经有归属了（只补空；想改朝换代请用「涂归属」）—— 候选势力 ${plan.polities.length} 个`,
+        message: `所有可分配的省都已经有归属了（只补空；想改朝换代请用“涂归属”）—— 候选势力 ${plan.polities.length} 个`,
       };
     }
     const nextPolities = [...(scenario.polities || []), ...addPolities];
@@ -4878,7 +4878,7 @@ export function createScenarioEditingModule(ctx) {
     const oldPrec = hm.prec ? new Float32Array(hm.prec) : null;
     const oldBiome = hm.biome ? new Uint8Array(hm.biome) : null;
     // ── P0-3（2026-10-25）：这里以前是 `deriveLayers(hm.h, pts, null, null)` ─────────
-    // 后果：这次「重算派生图层」把纬度当 0、离岸距离当 100 → 温度只剩赤道基准 + 海拔惩罚，
+    // 后果：这次“重算派生图层”把纬度当 0、离岸距离当 100 → 温度只剩赤道基准 + 海拔惩罚，
     // 群系几乎只由高度决定（同一纬度上寒带针叶林与热带雨林并存）。现在补真实输入：
     //   纬度 = 行号线性（北为上，跨度取 `hm.climateSpec.latitudeSpanDeg`，缺省 ±60°）；
     //   离岸距离 = 海格到陆格的 8 邻域 BFS 格数（降水按它吃海洋奖励）。
@@ -4948,7 +4948,7 @@ export function createScenarioEditingModule(ctx) {
     applyScenarioState,
     exportScenariosPayload, auditScenariosPayload, importScenariosPayload, removeAllScenarios,
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
-    // 2026-10-24（第 5 件补「点标记」）：标记面板的唯一写口（一条 undo；只认白名单字段）
+    // 2026-10-24（第 5 件补“点标记”）：标记面板的唯一写口（一条 undo；只认白名单字段）
     updateScenarioMarker,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
@@ -4961,7 +4961,7 @@ export function createScenarioEditingModule(ctx) {
     previewPlanetTerrainSynthesis,
     // B 阶段 2（2026-10-29）：FMG 模板高度图（生成在 utils/fmg，落库复用 `synthesizeTerrainInto`）
     previewFmgTerrain, applyFmgTerrain, normalizeFmgParams,
-    // P5（2026-10-14）：高度图分辨率与平滑 —— 「地形模模糊糊」的入口
+    // P5（2026-10-14）：高度图分辨率与平滑 —— “地形模模糊糊”的入口
     resampleBaseMapHeightmap, smoothBaseMapHeightmap, estimateResampleCost,
     getDeriveStats,
     addBaseMapBurg, applyCultureBrush, applyReligionBrush,

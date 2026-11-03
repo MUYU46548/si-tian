@@ -1,4 +1,4 @@
-// _shot02b_autoriver_unpruned_zoom.js —— 补充图 02b「自动河-剪枝前-放大」
+// _shot02b_autoriver_unpruned_zoom.js —— 补充图 02b“自动河-剪枝前-放大”
 //
 // 为什么要这一张：02 是**看全图**（相机缩放 0.267）—— 那时一格的屏幕尺寸只有 5.3px，
 // 而线宽 = `max(netMinPx, …) × 缩放` ≈ **0.35px**，整片河网在图上只是一层很淡的纹路

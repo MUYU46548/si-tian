@@ -7,7 +7,7 @@
 
 外加两条 P2 明写的语义：
   * 笔刷与套索**只作用于多边形**（网格只是中间层 → 抬手必须写回多边形，写回环带 fromGrid 标记）
-  * 分割的**侧符号**：哪一半占原位序号由 side（Shift）决定 —— 序号 = 时间轴/归属里「那块地」的身份
+  * 分割的**侧符号**：哪一半占原位序号由 side（Shift）决定 —— 序号 = 时间轴/归属里“那块地”的身份
 
 与本用例无关但必须守住的边界：只读态一律拒绝（gate），且拒绝时**零副作用**。
 """
@@ -51,7 +51,7 @@ def source_gates():
     se = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     checks = [
         (se, 'function splitProvince(key, provinceId, p1, p2, { side = 1 } = {})', 'store：拆分带侧符号'),
-        (se, 'const keptPick = keepA ? res.a : res.b;', 'store：侧符号真的换「哪一半占原位」'),
+        (se, 'const keptPick = keepA ? res.a : res.b;', 'store：侧符号真的换“哪一半占原位”'),
         (se, 'id: orig.id, name: orig.name', 'store：占原位的一半**继承原 id/名字**（身份不换人）'),
         (se, 'side: keepA ? 1 : -1', 'store：回报实际生效的侧'),
         # 🔴 P2（2026-10-09）反转：这三条整体改判 —— 不再是"把网格结果写回多边形"，
@@ -91,7 +91,7 @@ JS = r"""(() => {
 
   const A = () => s.baseMaps[KEY].terrain;
   // 🔴 面积必须用**净面积**：gross（provinceArea）是各环绝对值之和，带洞时会把洞算两份地，
-  //    「面积守恒」会被洞误判成「涨了 12%」（本用例第一版实测 26957 vs 24000 就是它）。
+  //    “面积守恒”会被洞误判成“涨了 12%”（本用例第一版实测 26957 vs 24000 就是它）。
   const area = (p) => P.provinceNetArea(p);
   const verts = (p) => P.provinceRings(p).reduce((n, r) => n + r.points.length, 0);
   const totalArea = () => A().reduce((n, p) => n + area(p), 0);
@@ -122,7 +122,7 @@ JS = r"""(() => {
   ok('① 一条 undo 回到 2 省', A().length === 2, A().length);
 
   // ── ② 侧符号：哪一半占原位序号 ──────────────────────────────────────────
-  // 语义：**原位序号的「身份」永远属于原省**（id 不换人 —— 时间轴/归属都挂在 id 上），
+  // 语义：**原位序号的“身份”永远属于原省**（id 不换人 —— 时间轴/归属都挂在 id 上），
   // 侧符号决定**哪一半地坐在那个序号上**。
   const ptsBefore = snapPts();
   const spA = s.splitProvince(KEY, 'c64a', cut[0], cut[1], { side: 1 });
@@ -177,7 +177,7 @@ JS = r"""(() => {
 
   // ── ⑤ 连续 5 次操作不膨胀（面积 / 顶点数都稳）────────────────────────────
   // 每次循环：把 0 号省沿自己的包围盒中线切成两半，再把两半合回去 —— 干净的一来一回。
-  // 「膨胀」的两种表现都在这里被量：面积漂移（吃掉了别人的地）与顶点数单调增长（每次合并
+  // “膨胀”的两种表现都在这里被量：面积漂移（吃掉了别人的地）与顶点数单调增长（每次合并
   // 都留一圈多余顶点 / 环没被抵消）。
   const bboxOf = (p) => {
     const xs = [], ys = [];
@@ -255,7 +255,7 @@ def run(cdp):
     fails += res.get('fails', [])
     n = res.get('notes', {})
     notes.append(
-        f'P2 探针：基准 {n.get("base")}（净面积/顶点）；5 轮「切—合」{n.get("seq")} → {n.get("after5")}；'
+        f'P2 探针：基准 {n.get("base")}（净面积/顶点）；5 轮“切—合”{n.get("seq")} → {n.get("after5")}；'
         f'色板 {n.get("paletteSize")} 色'
     )
     return (not fails), ' | '.join(fails) if fails else ' | '.join(notes)

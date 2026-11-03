@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 136：笔刷建省（2026-10-22，暮雨「像画图一样涂出一块地」）
+"""用例 136：笔刷建省（2026-10-22，暮雨“像画图一样涂出一块地”）
 
 背景（上一轮他拍板 A 方案的原话）：
-  「按住左键像涂色一样抹，松手自动把抹过的范围长成一个省（不用闭合、不会出现一团自交线，
-    涂抹过程就是最终形状）」「必须先做 A。说破了司天本质就是地图编辑器……连 Windows 画图都不如
-    也太难绷了。」
+  “按住左键像涂色一样抹，松手自动把抹过的范围长成一个省（不用闭合、不会出现一团自交线，
+    涂抹过程就是最终形状）”“必须先做 A。说破了司天本质就是地图编辑器……连 Windows 画图都不如
+    也太难绷了。”
 
 本用例守的是**接线与交互**（几何本身由 Node 单测 `test_brush_province.js` 用真布尔引擎断言）：
-  a 入口：底图编辑行有「笔刷建省」按钮且真的切到 `provincePaint`；日常省份行/空底图提示卡也有入口；
+  a 入口：底图编辑行有“笔刷建省”按钮且真的切到 `provincePaint`；日常省份行/空底图提示卡也有入口；
   b 空底图上**真鼠标拖一笔** → 只多出 1 个省，顶点 ≥ 3、没有自交怪形（面积 > 0）；
   c **涂抹期零落库**：按住拖动时省份数仍为 0（只有轨迹），松手才建省；
-  d 整笔压在已有省份上 → 拒绝（可读回执提到「空地」），省份数不变、已有省界**逐字节不动**；
+  d 整笔压在已有省份上 → 拒绝（可读回执提到“空地”），省份数不变、已有省界**逐字节不动**；
   e 一笔 = 一条撤销（`undo()` 一次回到只有 1 个省）；
   f 两笔两块省**互不压叠**（顶点采样判据）；
   g 源码闸门：按钮/函数/提示/写闸门登记/快捷键都在（防"改一处另两处不变"）。
@@ -279,7 +279,7 @@ def run(cdp):
       sm.basemapEditMode = true;
       await tick();
       const btn = document.querySelector('[data-testid="basemap-tool-provincePaint"]');
-      if (!btn) return JSON.stringify({ fails: ['底图编辑行找不到「笔刷建省」按钮'] });
+      if (!btn) return JSON.stringify({ fails: ['底图编辑行找不到“笔刷建省”按钮'] });
       btn.click();
       await tick();
       const hint = document.querySelector('[data-testid="province-paint-hint"]');
@@ -289,7 +289,7 @@ def run(cdp):
     if isinstance(entry, dict) and entry.get('fails'):
         fails += entry['fails']
     elif not isinstance(entry, dict) or entry.get('tool') != 'provincePaint':
-        fails.append(f"点「笔刷建省」切到的是 {entry.get('tool') if isinstance(entry, dict) else entry}（应为 provincePaint）")
+        fails.append(f"点“笔刷建省”切到的是 {entry.get('tool') if isinstance(entry, dict) else entry}（应为 provincePaint）")
     elif not entry.get('hint'):
         fails.append('切到笔刷建省后没有画布提示（用户不知道这一笔会干什么）')
 
@@ -311,20 +311,20 @@ def run(cdp):
 
     one = _state(cdp, '第一笔之后')
     if one['count'] != 1:
-        fails.append(f"空底图上拖一笔没有建出**一个**省（省份数 {one['count']}）—— 回执「{one['hint'][:80]}」")
+        fails.append(f"空底图上拖一笔没有建出**一个**省（省份数 {one['count']}）—— 回执“{one['hint'][:80]}”")
     elif one['pts'][0] < 3:
         fails.append(f"建出来的省只有 {one['pts'][0]} 个顶点（形状退化）")
     if '笔刷建省' not in one['hint']:
         fails.append(f"建省后状态栏没有回执：{one['hint'][:100]}")
     if '撤销' not in one['hint']:
-        fails.append(f"回执没说「一笔 = 一条撤销」：{one['hint'][:100]}")
+        fails.append(f"回执没说“一笔 = 一条撤销”：{one['hint'][:100]}")
     if any(one['fromGrid']):
         fails.append('新省带 fromGrid=true —— 渲染端会把它 Chaikin 平滑（点数×4、形状变形）')
     geom1 = one['geom']
-    notes.append(f"第一笔 → {one['count']} 个省 / {one['pts']} 顶点；回执「{one['hint'][:60]}」")
+    notes.append(f"第一笔 → {one['count']} 个省 / {one['pts']} 顶点；回执“{one['hint'][:60]}”")
 
     # ── d 整笔压在已有省份上 → 拒绝，且省界逐字节不动 ────────────────────────────
-    # 建省后组件会「自动适屏」（省份数变化 → 50ms 后 fitToView），此时唯一的省占满画布 →
+    # 建省后组件会“自动适屏”（省份数变化 → 50ms 后 fitToView），此时唯一的省占满画布 →
     # 画布正中央必然在它里面（正好是这条要测的场景）。
     time.sleep(0.3)
     pos = _place_first(cdp)
@@ -336,7 +336,7 @@ def run(cdp):
         fails.append('被拒绝的那一笔改了已有省份的几何（应零副作用）')
     if '空地' not in after_click['hint'] and '改省界' not in after_click['hint']:
         fails.append(f'拒绝分支没有说清原因与下一步：{after_click["hint"][:120]}')
-    notes.append(f"压在已有省份上 → 拒绝且省界未动（回执「{after_click['hint'][:50]}」）")
+    notes.append(f"压在已有省份上 → 拒绝且省界未动（回执“{after_click['hint'][:50]}”）")
 
     # ── e 一笔 = 一条撤销 ──────────────────────────────────────────────────────────
     eval_json(cdp, "(() => { %s.undo(); return 'ok'; })()" % STORE, required=None, desc='撤销')
@@ -362,7 +362,7 @@ def run(cdp):
         _drag(cdp, [second['b1'], {'x': round((second['b1']['x'] + second['b2']['x']) / 2), 'y': second['b1']['y']}, second['b2']])
     two = _state(cdp, '第二笔之后')
     if two['count'] != 2:
-        fails.append(f"第二笔没有建出第二个省（省份数 {two['count']}）—— 回执「{two['hint'][:80]}」")
+        fails.append(f"第二笔没有建出第二个省（省份数 {two['count']}）—— 回执“{two['hint'][:80]}”")
     ov = eval_json(cdp, _js(OVERLAP_JS), required=None, desc='压叠判据')
     ov = ov[1] if isinstance(ov, tuple) and ov[0] else {}
     if isinstance(ov, dict) and ov.get('fails'):
@@ -411,11 +411,11 @@ def run(cdp):
         if daily.get('fails'):
             fails += daily['fails']
         if not daily.get('rowEntry'):
-            fails.append('日常模式的省份行里没有「笔刷建省」入口')
+            fails.append('日常模式的省份行里没有“笔刷建省”入口')
         elif daily.get('tool1') != 'provincePaint':
             fails.append(f"省份行入口点了切到 {daily.get('tool1')}（应为 provincePaint）")
         if not daily.get('cardBtn'):
-            fails.append('空底图提示卡里没有「像画图一样涂一块（笔刷建省）」按钮')
+            fails.append('空底图提示卡里没有“像画图一样涂一块（笔刷建省）”按钮')
         elif daily.get('tool2') != 'provincePaint' or not daily.get('edit2'):
             fails.append(f"提示卡按钮没有进底图编辑 + 笔刷建省（tool={daily.get('tool2')} edit={daily.get('edit2')}）")
 

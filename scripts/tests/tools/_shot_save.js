@@ -1,7 +1,7 @@
 // _shot_save.js —— 把 _lab.py 刚截的整页图 `docs/assets/lab-shot.png` 另存成交付图之一。
 //
 // 为什么要有这个文件（而不是直接 Copy-Item）：
-//   项目纪律是「禁止用 PowerShell / shell 读写任何含非 ASCII 字符的文件」——
+//   项目纪律是“禁止用 PowerShell / shell 读写任何含非 ASCII 字符的文件”——
 //   交付图的文件名是中文，走 shell 传中文参数有编码风险。这里把**中文文件名写在
 //   本文件里**（UTF-8 源码），命令行只传 ASCII 的序号，shell 上不出现任何非 ASCII 字符。
 //

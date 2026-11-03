@@ -1,4 +1,4 @@
-// scenario/layers/overlays.js — 剧本视图「屏幕空间浮层」（N1 刀 2 起手，2026-10-30）
+// scenario/layers/overlays.js — 剧本视图“屏幕空间浮层”（N1 刀 2 起手，2026-10-30）
 //
 // 从 `ScenarioMap.vue` 搬出四块**画在屏幕坐标系**（不受缩放影响）的浮层：
 //   · 小地图（含缩略图烘到离屏 canvas 的缓存 —— 每帧只 drawImage + 画视口框）
@@ -6,7 +6,7 @@
 //   · 数据分布图（左下，文化/宗教网格点统计）
 //   · 城镇悬浮卡（悬停/选中城镇时）
 //
-// 为什么它们单独一刀：这四块的输入几乎全是「当前状态 + 画布尺寸」，
+// 为什么它们单独一刀：这四块的输入几乎全是“当前状态 + 画布尺寸”，
 // 与省份/地形几何无耦合，是刀 2 里最干净的一块。
 //
 // `view` 字段：w, h, baseMap, baseMapKey, colorMode, dataChartType, showDataChart,

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 // 启发归类（三刀序列·第二刀，2026-10-22）：**纯函数层**，与主进程索引共用同一份判断。
-// 提取器只决定「哪些笔记能成为地图节点」，但「这条笔记到底是什么」必须只有一处口径。
+// 提取器只决定“哪些笔记能成为地图节点”，但“这条笔记到底是什么”必须只有一处口径。
 const classify = require('./lib/vaultClassify');
 
 // Vault 路径可配置化（2026-08-16）：模块级可变，extractGeodata(targetVault) 入口覆盖；
@@ -11,7 +11,7 @@ const DEFAULT_VAULT = ''; // 留空：主进程调用时传入用户配置的路
 let vaultPath = DEFAULT_VAULT;
 
 // 提取范围：单一事实源。审计脚本 scripts/audit-coverage.js 直接 require 本常量，
-// 避免「审计脚本自己硬编码目录 → 与提取器漂移 → 覆盖率报告失真」。
+// 避免“审计脚本自己硬编码目录 → 与提取器漂移 → 覆盖率报告失真”。
 // 注意：范围外的笔记（如 03 设定/01 人物、00 基础）本就不该成为地图节点，不计入覆盖率缺口。
 const SCAN_SCOPE = {
   geoSystem: '03 设定/11 地理系统',
@@ -128,7 +128,7 @@ function parseMdFile(filePath) {
 // 读料（2026-10-22，三刀序列·第二刀）：字段别名 + 归类 + 报告
 // ============================================================
 //
-// 旧实现只认 `层级` / `上层区域` / `地点类型` 三个键，且「认不出层级就默认 location」——
+// 旧实现只认 `层级` / `上层区域` / `地点类型` 三个键，且“认不出层级就默认 location”——
 // 前者让换一种写法的库整批读不到，后者把人物/事件笔记静默变成地点。
 // 现在：字段别名全扫（`readLayerField` / `readParentLink`），归类交给纯函数层
 // （`scripts/lib/vaultClassify.js`），**认不出就跳过并记进报告**，绝不静默放进地图。
@@ -136,7 +136,7 @@ const scanReport = {
   skipped: [],          // 在扫描范围内、但归类不是地理 → 跳过（lore/unknown）
   layerInferred: [],    // 认得出是地点、认不出粒度 → 用了回退层（location）
   noParent: [],         // 没有上层线索（父节点留空，交人判断）
-  inferredParent: [],   // 从双链推出来的上级（导出/界面必须标注「推断」）
+  inferredParent: [],   // 从双链推出来的上级（导出/界面必须标注“推断”）
   collisions: [],       // 跨目录重名 → 只留一个（以前只有 console.warn，用户看不见）
   total: 0,             // 进过分类的笔记数
 };
@@ -230,7 +230,7 @@ function scanGeoSystem() {
         if (!parsed) continue;
         const c = classifyParsed(parsed, parsed.relativePath);
         scanReport.total += 1;
-        // 明确写了「层级」就信它；否则归类不是地理的（人物/事件/组织…）不进地图，落报告
+        // 明确写了“层级”就信它；否则归类不是地理的（人物/事件/组织…）不进地图，落报告
         const explicitLayer = readLayerField(parsed.frontmatter);
         if (!explicitLayer && c.category !== 'geo') {
           scanReport.skipped.push({
@@ -322,7 +322,7 @@ function scanLocations() {
 // 索引文件行缓存（批次C3）：extractWorldsAndStars 与 worldStarMap 构建共用一次读取
 // 🔴 B0（S0 实测，2026-10-19）：索引文件**不是每个库都有**。旧实现裸 `readFileSync`，
 //    缺 `01 索引/地理系统索引.md` 时直接 ENOENT，把前面已经扫到的地理节点整次作废；
-//    用户换一个“不听话的库”就得到「数据加载失败」而不是「少了世界/星域索引」。
+//    用户换一个“不听话的库”就得到“数据加载失败”而不是“少了世界/星域索引”。
 //    现在：读不到就返回空行集，世界/星域由目录树 + frontmatter 推；单项缺失不再致命。
 let _indexLines = null;
 function getIndexLines() {
@@ -592,7 +592,7 @@ function normalizeId(name) {
  * 读取 frontmatter 里的坐标（编辑器元数据外置除外，词条自带 coordinate 时优先采用）。
  *
  * 为什么需要：司天的转正流程（create-obsidian-note）会把节点的 coordinate 写进
- * frontmatter「供后续提取时保留」（main/index.js），若提取时不读回，重提取后该节点
+ * frontmatter“供后续提取时保留”（main/index.js），若提取时不读回，重提取后该节点
  * 会落到环形布局的默认位置 —— 用户在地图上摆好的位置被静默重置。
  * 兼容 { x, y } 对象与 "x,y" / "x y" 字符串两种写法；非法值一律返回 null（交给布局分配）。
  */
@@ -626,12 +626,12 @@ const STATUS_ALIASES = {
 };
 
 /**
- * 从 frontmatter 读「叙事状态」→ 归一化为状态 id；读不出就返回 **null（视作未设置）**。
+ * 从 frontmatter 读“叙事状态”→ 归一化为状态 id；读不出就返回 **null（视作未设置）**。
  * 字段本身仍会落在节点上（值为 null），与既有 `placeType` 同一风格。
  *
  * 为什么认不出要返回 null 而不是原样带着：脏值在渲染侧虽会被 `resolveStatus` 回落成 active，
  * 但它会被**原样写进项目文件并长期留存**（重提取也带回来）—— 用户之后看到更困惑。
- * `active` 同样返回 null：「显式写了存在」与「没写」的行为完全等价（渲染侧 `resolveStatus` 会把 null 也当 active）。
+ * `active` 同样返回 null：“显式写了存在”与“没写”的行为完全等价（渲染侧 `resolveStatus` 会把 null 也当 active）。
  */
 function readFrontmatterStatus(fm) {
   const raw = fm && (fm.status != null ? fm.status : fm['状态']);
@@ -726,7 +726,7 @@ function mergeNodes(geo, loc, worlds, galaxies) {
   if (collisions.length > 0) {
     console.warn(`[提取] 发现 ${collisions.length} 个跨目录重名节点（后出现的被忽略，可能导致多世界数据丢失）:`);
     collisions.forEach(c => console.warn(`  - "${c.name}" (${c.existing} vs ${c.incoming})`));
-    // 报告里也要有：控制台 warn 用户看不到，重名丢节点属于「静默丢失」的一种
+    // 报告里也要有：控制台 warn 用户看不到，重名丢节点属于“静默丢失”的一种
     for (const c of collisions) scanReport.collisions.push(c);
   }
   
@@ -757,7 +757,7 @@ function resolveParents(nodes, worldStarMap) {
       const lid = normalizeId(link);
       if (map.has(lid) && isHigherLayer(map.get(lid).layer, n.layer)) {
         n.parentId = lid;
-        // 标注「这是从双链推出来的」——导出/界面不能把它当成用户写的上层
+        // 标注“这是从双链推出来的”——导出/界面不能把它当成用户写的上层
         n.parentInferred = true;
         n.parentSource = 'wikilink';
         scanReport.inferredParent = scanReport.inferredParent || [];
@@ -967,7 +967,7 @@ function buildGenericNodes(targetVault) {
   const vaultIndex = require('../src/main/vaultIndex');
   const { index } = vaultIndex.buildIndex(targetVault, { forceFull: true, write: false });
   const report = vaultIndex.classifyReport(index);
-  // 节点身份用「名称 || 文件名」，**不用 H1**：真实库里大量笔记的 H1 是「概述」「宏观特征」，
+  // 节点身份用“名称 || 文件名”，**不用 H1**：真实库里大量笔记的 H1 是“概述”“宏观特征”，
   // 拿它当名字会让几十个节点撞成同一个 id（mergeNodes 只留一个 = 静默丢失）。
   const displayName = (entry) => {
     const fm = (entry && entry.fm) || {};
@@ -1129,7 +1129,7 @@ async function extractGeodata(targetVault, options = {}) {
  * 改一处漏改另一处会立刻变红。
  *
  * 为什么必须归一化：Windows 上 `path.relative` 给反斜杠（`03 设定\02 场景地点\x.md`），
- * 而手工/其它平台来的路径可能是正斜杠 —— 不归一化则「同一篇笔记」会被判成两篇。
+ * 而手工/其它平台来的路径可能是正斜杠 —— 不归一化则“同一篇笔记”会被判成两篇。
  */
 function normalizeRelPath(p) {
   if (!p) return '';
@@ -1137,14 +1137,14 @@ function normalizeRelPath(p) {
 }
 
 /**
- * 只读列出「提取范围内」的笔记（不解析内容、不碰任何缓存、不落盘）。
+ * 只读列出“提取范围内”的笔记（不解析内容、不碰任何缓存、不落盘）。
  *
  * 用途（R15 / A-0 断线检测）：项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流），
- * 笔记改名因此**无声无息**；主进程借此把「当前库里的笔记清单」交给渲染层，
+ * 笔记改名因此**无声无息**；主进程借此把“当前库里的笔记清单”交给渲染层，
  * 与项目实体的 `sourcePath` 对账（检测实现在 `utils/vaultRelink.js`）。
  *
  * 🔴 必须与 `extractGeodata` 共用同一份 `SCAN_SCOPE` 与排除规则 —— 这里若另写一套目录常量，
- *    「断线」就会误报（把正常存在的笔记说成丢了），那比不检测更坏。
+ *    “断线”就会误报（把正常存在的笔记说成丢了），那比不检测更坏。
  *    `test_75` 守卫直接读本文件与主进程源码，确认扫描只有这一份实现。
  *
  * @param {string} [targetVault] 库根目录；省略则用模块级 `vaultPath`

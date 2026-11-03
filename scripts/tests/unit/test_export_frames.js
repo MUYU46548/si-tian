@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：逐年切片「批量落盘」（src/main/handlers/exportFramesHandler.js）
+ * Node 单元测试：逐年切片“批量落盘”（src/main/handlers/exportFramesHandler.js）
  *
  * 为什么必须有这一层：CDP 用例里的 `window.sitianAPI` 是 **mock**，主进程真正的
- * 「选目录 + 写 N 个文件」一行都跑不到。而这是整个功能里唯一会**动用户磁盘**的一段：
+ * “选目录 + 写 N 个文件”一行都跑不到。而这是整个功能里唯一会**动用户磁盘**的一段：
  *   ① 名字没消毒 → 帧名里的 `../` 能写到目录之外（用户数据被覆盖）；
  *   ② 不是原子写 → 中途失败留半个文件（本项目的数据安全承诺明确禁止）；
  *   ③ 同名子目录重复导出 → 把上一次的帧冲掉（用户以为"两批都在"）。
@@ -25,7 +25,7 @@ const results = [];
 /**
  * ⚠️ **必须 async/await**：本文件的被测函数全是 Promise。写成同步 `check(name, fn)` 时
  * `fn()` 返回的是 Promise → 里面的断言失败了也抓不到（`ok: true` + `[object Promise]` 的
- * **假绿**，实测踩过），而未捕获的 rejection 还会把退出码变成 1、摘要却写着「全通过」。
+ * **假绿**，实测踩过），而未捕获的 rejection 还会把退出码变成 1、摘要却写着“全通过”。
  */
 async function check(name, fn) {
   try {

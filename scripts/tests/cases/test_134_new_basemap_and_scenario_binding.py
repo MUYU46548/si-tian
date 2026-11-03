@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 134：已有底图时也能「新建空底图」+ 新建剧本显示绑定哪张底图（2026-10-22）
+"""用例 134：已有底图时也能“新建空底图”+ 新建剧本显示绑定哪张底图（2026-10-22）
 
-用户原话：「连新底图都建不了，是功能缺失」；起因是他新建的剧本还是旧底图
+用户原话：“连新底图都建不了，是功能缺失”；起因是他新建的剧本还是旧底图
 （新建剧本表单不选底图，直接绑**当前**底图，界面上也没写）。
 
 本用例守：
-  a 工具栏「空底图」按钮（在「更多」的底图行里）：已有底图时点一下 → 真的多一张**空**底图并切过去；
+  a 工具栏“空底图”按钮（在“更多”的底图行里）：已有底图时点一下 → 真的多一张**空**底图并切过去；
     一笔 = 一条 undo（undo 收回 / redo 再建），状态栏有回执；
-  b 新建剧本表单第一行显示「底图：<当前底图>」，点旁边的「＋ 新建空底图」能当场建一张并绑定；
-  c 没有底图时「创建」按钮禁用，直接调 `createNewScenario()` 也会被拦（不生成 ownerKey 为空的孤儿剧本）；
+  b 新建剧本表单第一行显示“底图：<当前底图>”，点旁边的“＋ 新建空底图”能当场建一张并绑定；
+  c 没有底图时“创建”按钮禁用，直接调 `createNewScenario()` 也会被拦（不生成 ownerKey 为空的孤儿剧本）；
   d 建出来的剧本 ownerKey = 新底图、id 前缀 = 新底图；
   e 源码闸门：三个入口（工具栏 / 空态 / 表单）共用 `createEmptyBaseMap` / `addEmptyBaseMap`，
     只读态有 disabled（不靠点了才拒）。
@@ -33,19 +33,19 @@ def _source_gates():
     from lib.rsrc import render_src as _rsrc_all
     src = _rsrc_all()
     checks = [
-        ('data-testid="basemap-add-empty"', '工具栏「空底图」按钮'),
+        ('data-testid="basemap-add-empty"', '工具栏“空底图”按钮'),
         ('function createEmptyBaseMap(', '建空底图的唯一核心'),
         ('function addEmptyBaseMap(', '建空底图 + 切过去的唯一动作'),
         ('data-testid="new-scenario-basemap"', '新建剧本表单显示绑定底图'),
-        ('data-testid="new-scenario-basemap-add"', '表单里的「＋ 新建空底图」出口'),
-        ('!store.baseMaps?.[baseMapKey]', '「创建」在无底图/底图已删时禁用'),
+        ('data-testid="new-scenario-basemap-add"', '表单里的“＋ 新建空底图”出口'),
+        ('!store.baseMaps?.[baseMapKey]', '“创建”在无底图/底图已删时禁用'),
         ('新建剧本失败：还没有选中底图', '直接调创建函数也会被拦'),
     ]
     for needle, label in checks:
         if needle not in src:
             fails.append(f'源码闸门缺：{label}（{needle}）')
     if ':disabled="store.isReadOnly"' not in src:
-        fails.append('底图「空底图」按钮没有只读禁用')
+        fails.append('底图“空底图”按钮没有只读禁用')
     return fails
 
 
@@ -64,7 +64,7 @@ def _state(cdp):
 
 
 def _seed_base(cdp):
-    """基线项目不一定有底图 —— 先种一张（否则「已有底图时再加一张」无从谈起）。"""
+    """基线项目不一定有底图 —— 先种一张（否则“已有底图时再加一张”无从谈起）。"""
     st = _state(cdp)
     if st.get('baseMaps'):
         return st
@@ -80,7 +80,7 @@ def _seed_base(cdp):
 
 
 def _open_more(cdp):
-    """「更多」默认收起 —— 底图行（含「空底图」按钮）在它里面。"""
+    """“更多”默认收起 —— 底图行（含“空底图”按钮）在它里面。"""
     cdp.eval("""(() => {
       const b = Array.from(document.querySelectorAll('button'))
         .find(x => (x.textContent || '').trim().startsWith('更多'));
@@ -119,7 +119,7 @@ def run(cdp):
     if not before.get('baseMaps'):
         return False, '种底图失败：基线项目里仍然没有底图'
 
-    # ── a 工具栏「空底图」（更多 → 底图行） ─────────────────────────────────
+    # ── a 工具栏“空底图”（更多 → 底图行） ─────────────────────────────────
     _open_more(cdp)
     wait_for(cdp, "!!document.querySelector('[data-testid=\"basemap-add-empty\"]')", timeout=8, desc='空底图按钮')
     ok_btn, btn = eval_json(cdp, """(() => {
@@ -127,7 +127,7 @@ def run(cdp):
       return JSON.stringify({ exists: !!b, disabled: !!(b && b.disabled), text: b ? b.textContent.trim() : '' });
     })()""", required=None, desc='空底图按钮')
     if not (isinstance(btn, dict) and btn.get('exists')):
-        return False, '工具栏（更多 → 底图行）找不到「空底图」按钮'
+        return False, '工具栏（更多 → 底图行）找不到“空底图”按钮'
     if btn.get('disabled'):
         return False, f"'空底图'按钮被禁用（当前不该是只读态）：{btn}"
 
@@ -136,7 +136,7 @@ def run(cdp):
     after = _state(cdp)
     new_keys = [k for k in after.get('baseMaps', []) if k not in before['baseMaps']]
     if len(new_keys) != 1:
-        fails.append(f"点「空底图」没有建出新底图（{before['baseMaps']} → {after.get('baseMaps')}）：{after.get('hint')}")
+        fails.append(f"点“空底图”没有建出新底图（{before['baseMaps']} → {after.get('baseMaps')}）：{after.get('hint')}")
         return False, '；'.join(fails)
     tool_key = new_keys[0]
     if after.get('current') != tool_key:
@@ -178,14 +178,14 @@ def run(cdp):
     }))()""", required=None, desc='表单内新建底图按钮')
     has_add = isinstance(add_info, dict) and add_info.get('has')
     if not has_add:
-        fails.append('表单里没有「＋ 新建空底图」出口')
+        fails.append('表单里没有“＋ 新建空底图”出口')
     else:
         cdp.eval("document.querySelector('[data-testid=\"new-scenario-basemap-add\"]').click()")
         time.sleep(0.7)
         after_add = _state(cdp)
         scn_keys = [k for k in after_add.get('baseMaps', []) if k not in before['baseMaps'] and k != tool_key]
         if not scn_keys:
-            fails.append(f"表单里点「＋ 新建空底图」没有建出新底图：{after_add.get('baseMaps')}")
+            fails.append(f"表单里点“＋ 新建空底图”没有建出新底图：{after_add.get('baseMaps')}")
         else:
             scn_key = scn_keys[0]
             ok_b2, bound2 = eval_json(cdp, """(() => {
@@ -227,7 +227,7 @@ def run(cdp):
                     parent: el.closest('.new-scenario-form') ? 'form' : '?',
                   })));
                 })()""", required=None, desc='按钮清单')
-                fails.append(f"有底图、有名字时「创建」仍被禁用：diag={diag} list={lst}")
+                fails.append(f"有底图、有名字时“创建”仍被禁用：diag={diag} list={lst}")
             cdp.eval("document.querySelector('[data-testid=\"scenario-create\"]').click()")
             time.sleep(0.5)
             made = _state(cdp)
@@ -250,7 +250,7 @@ def run(cdp):
     }))()""", required=None, desc='无底图时创建按钮状态')
     no_base_disabled = isinstance(nd_info, dict) and nd_info.get('disabled')
     if not no_base_disabled:
-        fails.append('没有底图时「创建」按钮仍可点（会建出孤儿剧本）')
+        fails.append('没有底图时“创建”按钮仍可点（会建出孤儿剧本）')
     _fill_name(cdp, '用例134孤儿')
     count_before = len(_state(cdp).get('scenarios', {}))
     cdp.eval("(() => { const sm = %s; sm.createNewScenario(); return 'ok'; })()" % SM)
@@ -281,4 +281,4 @@ def run(cdp):
 
     if fails:
         return False, '；'.join(fails)
-    return True, f"工具栏「空底图」建出「{tool_key}」并切换 / 一笔撤销 / 表单内建图并绑定 / 无底图时拦住"
+    return True, f"工具栏“空底图”建出“{tool_key}”并切换 / 一笔撤销 / 表单内建图并绑定 / 无底图时拦住"

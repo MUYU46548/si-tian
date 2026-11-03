@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Node 单测：读料桥「稳定身份绑定」纯函数层（N3a-3，2026-11-02）
+ * Node 单测：读料桥“稳定身份绑定”纯函数层（N3a-3，2026-11-02）
  *
  * 守什么（施工单点名的五条 + 两条防线）：
  *   ① **改名检测**：笔记换了路径、还是同一篇 → 重绑并上报 `renamed`（from/to 都是路径）；
@@ -101,7 +101,7 @@ function entry(over = {}) {
   };
 }
 
-/** 一条「上一轮的绑定」（= 节点上的 node.lore） */
+/** 一条“上一轮的绑定”（= 节点上的 node.lore） */
 function binding(over = {}) {
   return { path: OLD_PATH, title: '雾隐城', noteId: '雾隐城', at: '2026-11-01T00:00:00.000Z', ...over };
 }
@@ -348,7 +348,7 @@ async function main() {
       assert(body.includes('execute(') || body.includes('addNode('),
         `${fn}() 既没走 execute 也没走 addNode（没有 undo，一条操作就不是一条撤销）`);
     }
-    // 「一次操作 = 一条撤销」：导入的写入点必须是既有的 addNode，不许自带第二个建节点逻辑
+    // “一次操作 = 一条撤销”：导入的写入点必须是既有的 addNode，不许自带第二个建节点逻辑
     const importBody = chunks.find((c) => c.startsWith('function importVaultCandidate('));
     assert(importBody.includes('addNode('), 'importVaultCandidate 必须复用既有的 addNode（不写第二个建节点函数）');
     for (const banned of ['nodes.value.push(', 'nodes.value =']) {

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """用例 152：**造陆**（P0-2，2026-10-25）—— 参数生成大陆轮廓 + 铺底切省 + 一条 undo
 
-背景（暮雨 2026-10-25 拍板「程序化生成收口」）：
-  此前「从零开始」的第一步是让用户自己画大陆：手画多是圆饼，而且永远只有一块中央大陆。
+背景（暮雨 2026-10-25 拍板“程序化生成收口”）：
+  此前“从零开始”的第一步是让用户自己画大陆：手画多是圆饼，而且永远只有一块中央大陆。
   P0-2 要补的是**陆地轮廓本身**：陆块数 / 陆地占比 / 形状 / 崎岖度 / 大小差异 → 一组闭合环，
   再用现有 Voronoi 铺底管线切成省 —— **一条 Ctrl+Z 全部退回**。
 
@@ -19,7 +19,7 @@
     半岛骗到）；群岛环数 > 陆块数。
   f 规模：400 省量级一次造陆 + 铺底 < 30s（会分批让帧），且撤销仍是**一条**。
   g 手绘地形（A5，2026-10-29）：图上已有手绘高度 → 同种子重生成**按图幅相对位置搬过去**
-    （回执照写保留格数、逐格核对写回值）；关掉「保留手绘地形」→ 一条不留且回执写明。
+    （回执照写保留格数、逐格核对写回值）；关掉“保留手绘地形”→ 一条不留且回执写明。
 """
 import base64
 import json
@@ -103,7 +103,7 @@ def source_gates():
     if 'setTerrain' in panel or 'batchSubdivide' in panel:
         fails.append('🔴 面板里出现 setTerrain / batchSubdivide —— 写口与切分都必须在 store')
     if 'data-testid="basemap-generate-landmass"' not in smv:
-        fails.append('🔴 缺少「造陆」按钮（data-testid="basemap-generate-landmass"）')
+        fails.append('🔴 缺少“造陆”按钮（data-testid="basemap-generate-landmass"）')
     for tid in ('lgen-preview', 'lgen-apply', 'lgen-seed', 'lgen-cand-', 'lgen-provinceCount'):
         if tid not in panel:
             fails.append(f'🔴 面板缺少 `{tid}` 锚点')
@@ -111,7 +111,7 @@ def source_gates():
     if 'transferHandEdits' not in pe or 'keepHandEdits !== false' not in pe:
         fails.append('🔴 造陆没有接手绘地形（A5）：store 应走 transferHandEdits + opts.keepHandEdits')
     if 'lgen-keep-hand' not in panel or 'keepHandEdits: keepHandEdits.value' not in panel:
-        fails.append('🔴 造陆面板缺少「保留手绘地形」开关（A5）：lgen-keep-hand → store.keepHandEdits')
+        fails.append('🔴 造陆面板缺少“保留手绘地形”开关（A5）：lgen-keep-hand → store.keepHandEdits')
     # 图幅必须记在高度图上：不记 → 每次重跑按省份包围盒重推，大陆每次缩 ≈9.5%
     if 'genBBox' not in pe or 'recordedLandBBox' not in pe:
         fails.append('🔴 造陆没把图幅（genBBox）记到高度图 —— 重跑会越造越小')
@@ -157,7 +157,7 @@ JS_OPEN = r""" (async () => {
   out.hasPreview = !!document.querySelector('[data-testid="lgen-preview"]');
   out.hasApply = !!document.querySelector('[data-testid="lgen-apply"]');
   out.applyText = (() => { const b = document.querySelector('[data-testid="lgen-apply"]'); return b ? (b.textContent || '').trim() : null; })();
-  // 🔴 命中检查（2026-10-25 用户实测「按钮根本点不了」）：
+  // 🔴 命中检查（2026-10-25 用户实测“按钮根本点不了”）：
   //    `el.click()` 会绕过命中测试 —— 只有 elementFromPoint 才能发现"被别的元素盖住"。
   const hitBtn = document.querySelector('[data-testid="lgen-apply"]');
   if (hitBtn) {
@@ -365,7 +365,7 @@ JS_KEEP_HAND = r""" (async () => {
   const hmC = s.getHeightmapFor(K);
   out.storedDrop = ((hmC && hmC.handEdits) || []).length;
 
-  // 探针自己把这两条命令撤回去（否则后面「一次 undo 归零」的判据会被探针污染）
+  // 探针自己把这两条命令撤回去（否则后面“一次 undo 归零”的判据会被探针污染）
   s.undo();
   s.undo();
   await new Promise(r => setTimeout(r, 420));
@@ -402,12 +402,12 @@ def run(cdp):
     if setup.get('__err__'):
         return False, f'造底图失败：{setup}'
     if not setup.get('hasBtn'):
-        fails.append('🔴 「造陆」按钮不在 DOM 里（有底图就该一直显示）')
+        fails.append('🔴 “造陆”按钮不在 DOM 里（有底图就该一直显示）')
         return False, ' | '.join(fails)
     if not (setup.get('text') or '').strip():
-        fails.append('🔴 「造陆」按钮没有可见文字')
+        fails.append('🔴 “造陆”按钮没有可见文字')
     else:
-        notes.append(f"入口：「{setup['text']}」")
+        notes.append(f"入口：“{setup['text']}”")
     if setup.get('terrain'):
         fails.append('🔴 起始底图不该有陆地（用例前提错了）')
 
@@ -415,7 +415,7 @@ def run(cdp):
     if opened.get('__err__'):
         return False, f'面板探针失败：{opened}'
     if not opened.get('panelOpen'):
-        fails.append('🔴 点了「造陆」面板没打开')
+        fails.append('🔴 点了“造陆”面板没打开')
     if (opened.get('cands') or 0) < 3:
         fails.append(f"🔴 候选只有 {opened.get('cands')} 张（要求 3 张）")
     else:
@@ -426,7 +426,7 @@ def run(cdp):
         fails.append('🔴 面板没有应用按钮')
     hit = opened.get('hit') or {}
     if hit.get('covered'):
-        fails.append(f"🔴 「造陆」按钮被别的元素盖住，真人点不到：{hit.get('top')} (testid={hit.get('topTestId')}) rect={hit.get('rect')}")
+        fails.append(f"🔴 “造陆”按钮被别的元素盖住，真人点不到：{hit.get('top')} (testid={hit.get('topTestId')}) rect={hit.get('rect')}")
     elif hit:
         notes.append(f"按钮命中正常（{hit.get('rect', {}).get('w')}×{hit.get('rect', {}).get('h')}，disabled={hit.get('disabled')}）")
 
@@ -493,7 +493,7 @@ def run(cdp):
         if not keep.get('okDrop'):
             fails.append(f"🔴 关掉开关那次造陆失败：{keep.get('msgDrop')}")
         elif (keep.get('storedDrop') or 0) != 0 or (keep.get('handDrop') or 0) != 0:
-            fails.append(f"🔴 关掉「保留手绘」后仍留了手绘：stored={keep.get('storedDrop')} handKept={keep.get('handDrop')}")
+            fails.append(f"🔴 关掉“保留手绘”后仍留了手绘：stored={keep.get('storedDrop')} handKept={keep.get('handDrop')}")
         elif '未保留' not in (keep.get('msgDrop') or ''):
             fails.append(f"🔴 关掉开关后回执没写明未保留：{keep.get('msgDrop')!r}")
         else:

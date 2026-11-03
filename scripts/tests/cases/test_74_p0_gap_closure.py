@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 74：P0 三条「提过多次但从未实装」的修复（R5 / R6 / R7）
+"""用例 74：P0 三条“提过多次但从未实装”的修复（R5 / R6 / R7）
 
 来源：`docs/IMPROVEMENT_BACKLOG.md` §四 的稽核清单。这三条的共同症状都是**静默**——
 点了没反应、导出再导入丢东西、删了节点数据永久留下，全都不报错。
@@ -74,7 +74,7 @@ def sub_source_guards(cdp):
     for lv in ["'planet'", "'area'", "'interior'"]:
         if lv not in app.split('function getActiveRenderer')[1].split('function getActiveCanvas')[0]:
             bad.append(f'getActiveRenderer 未覆盖 {lv}')
-    # 「不再静默」：两个书签入口都必须有可见回音
+    # “不再静默”：两个书签入口都必须有可见回音
     for fn in ['handleAddBookmark', 'handleBookmarkNavigate']:
         seg = app.split(f'function {fn}')[1][:2600] if f'function {fn}' in app else ''
         if not seg:
@@ -88,7 +88,7 @@ def sub_source_guards(cdp):
     if 'handleExportMapConfig' in app and 'buildMapConfig()' not in app.split('function handleExportMapConfig')[1][:400]:
         bad.append('handleExportMapConfig 没有走 buildMapConfig()（存在第二处载荷构造）')
     seg = app.split('function configNodeOf')[1][:900] if 'function configNodeOf' in app else ''
-    # 必须断言**取值**，不能只断言「出现了 parentId:」——`parentId: null` 也能过（实测漏掉过一次）
+    # 必须断言**取值**，不能只断言“出现了 parentId:”——`parentId: null` 也能过（实测漏掉过一次）
     if not _re.search(r'parentId:\s*n\.parentId', seg):
         bad.append('configNodeOf 没有把 parentId 取自节点（层级会整片丢失）')
     if 'store.entityToNode(' not in app:
@@ -97,7 +97,7 @@ def sub_source_guards(cdp):
     # ── R7 ──
     rem = geo.split('function removeNode')[1][:3000] if 'function removeNode' in geo else ''
     if 'deleteOrphans' not in rem or 'restoreOrphans' not in rem:
-        bad.append('removeNode 没有「清孤儿 / 撤销回灌」两半')
+        bad.append('removeNode 没有“清孤儿 / 撤销回灌”两半')
     if 'pruneData' not in geo or 'mergeData' not in geo:
         bad.append('画布适配器没有注册 pruneData / mergeData（项目侧删除无法清画布活副本）')
     if 'adapter.pruneData' not in proj and 'pruneData(' not in proj:
@@ -184,9 +184,9 @@ JS = r"""(async () => {
   ck('装置：有 world 与 planet 节点', !!(worldNode && planetNode), null);
   // ⚠️ 层级的**真值**要从数据里读，不能假设行星挂在世界下（fixture 里实际挂在星系下）
   const planetParent = planetNode.parentId;
-  ck('装置：行星节点确有父级（否则「层级往返」这条断言无意义）', !!planetParent, planetParent);
+  ck('装置：行星节点确有父级（否则“层级往返”这条断言无意义）', !!planetParent, planetParent);
 
-  // ★ 用**真实导出载荷**做往返 —— 手写配置测不出「导出端漏字段」
+  // ★ 用**真实导出载荷**做往返 —— 手写配置测不出“导出端漏字段”
   //   （实测教训：把 configNodeOf 的 parentId 改成恒 null，手写配置的版本照样全绿）
   const cfg = st.buildMapConfig();
   const shaped = (cfg.nodes || []).find(n => n.id === planetNode.id) || {};
@@ -301,7 +301,7 @@ JS = r"""(async () => {
   store.interiorData[B8] = { buildingId: B8, floors: [{ id: 'f8' }] };
   if (typeof store.flushSave === 'function') store.flushSave();
   await tick(700);
-  ck('f3b 装置：项目侧已有这三个实体且父子关系正确（否则「项目删除」路径测成空转）',
+  ck('f3b 装置：项目侧已有这三个实体且父子关系正确（否则“项目删除”路径测成空转）',
      !!(proj.entities[P8] && proj.entities[R8] && proj.entities[B8]),
      { p: !!proj.entities[P8], r: !!proj.entities[R8], b: !!proj.entities[B8] });
   ck('f3b 装置：后代链完整（P8 → R8 → B8）',

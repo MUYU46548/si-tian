@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 """用例 101：**从留底恢复底图**（0.2.9，2026-10-13）
 
-来源：2026-10-11 暮雨那句「司天自身没办法备份用户的原始底图文件」催生了 0.2.8 的
-「导入 `.map` 时把原文留底」；但那一版**只做了 save + list**，没有入口、也没有"读回来"的通道 ——
+来源：2026-10-11 暮雨那句“司天自身没办法备份用户的原始底图文件”催生了 0.2.8 的
+“导入 `.map` 时把原文留底”；但那一版**只做了 save + list**，没有入口、也没有"读回来"的通道 ——
 留底写在 `<项目>.sitian.backups/basemap-sources/` 里，用户在界面上**够不着**
 （只能自己去资源管理器翻目录）。**备份读不回来就不算备份**，所以本轮补齐：
-只读通道 `basemap-source-read` + 底图组里的「从留底恢复」入口 + 与「导入 .map」**同一条链**。
+只读通道 `basemap-source-read` + 底图组里的“从留底恢复”入口 + 与“导入 .map”**同一条链**。
 
 判据分三组：
   f0 源码闸门：跨三层的链（组件入口 → 只读 IPC → 主进程注册）都在，且"恢复不重复留底"
-  f1 行为：面板列出留底 → 点「用这份恢复」→ 底图真的建起来了 + 状态栏有回音
+  f1 行为：面板列出留底 → 点“用这份恢复”→ 底图真的建起来了 + 状态栏有回音
            🔴 而且**没有再多留一份底**（`saveBaseMapSource` 调用次数 = 0）；
               紧接着用**普通导入**做对照（同一计数器必须变成 1）—— 否则那个 0 是空转
   f2 失败路径：读回失败必须在面板里说话（不静默）；只读态必须拒绝
@@ -81,7 +81,7 @@ def source_gates():
         ('backupMapSourceFile(file.name, text)', '组件：普通导入仍然留底（分流没把两侧一起关掉）'),
         ('opts.source', '组件：恢复走的是**同一条**导入链（不是另写一份）'),
         ('store.isReadOnly', '组件：只读态拒绝恢复'),
-        ('data-testid="basemap-source-restore"', '组件：工具栏有「从留底恢复」入口'),
+        ('data-testid="basemap-source-restore"', '组件：工具栏有“从留底恢复”入口'),
         ('data-testid="basemap-source-panel"', '组件：留底面板有唯一容器'),
     ]:
         if needle not in sc:
@@ -108,7 +108,7 @@ def run(cdp):
     except RuntimeError as e:
         return False, f'剧本模式未挂载：{e}'
     time.sleep(1.2)
-    # 「底图」那一组在「更多」里（模板 `v-if="moreOpen"`）—— 不展开则按钮**根本不在 DOM**
+    # “底图”那一组在“更多”里（模板 `v-if="moreOpen"`）—— 不展开则按钮**根本不在 DOM**
     open_toolbar_more(cdp)
 
     js = r""" (async () => {
@@ -125,7 +125,7 @@ def run(cdp):
   window.__MOCK_BMSRC = {};
   window.__MOCK_BMSRC[NAME + '.map'] = { text: TEXT, at: Date.now() };
 
-  // 统计「又多留了一份底」的次数（恢复路径必须一次都不调）
+  // 统计“又多留了一份底”的次数（恢复路径必须一次都不调）
   let saveCalls = 0;
   const origSave = window.sitianAPI.saveBaseMapSource;
   window.sitianAPI.saveBaseMapSource = async (p) => { saveCalls++; return origSave(p); };
@@ -147,7 +147,7 @@ def run(cdp):
      !!panel() && /只补缺/.test(panel().textContent), panel() ? panel().textContent.slice(0, 240) : '');
 
   const use = panel() ? panel().querySelector('.bmsrc-use') : null;
-  ok('每行有「用这份恢复」按钮', !!use);
+  ok('每行有“用这份恢复”按钮', !!use);
   if (use) {
     use.click();
     for (let i = 0; i < 40; i++) await tick(100);

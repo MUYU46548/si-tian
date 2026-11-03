@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// scripts/quote-audit.mjs —— 直角引号「」审计（只读，不改文件）
+// scripts/quote-audit.mjs —— 直角引号（日式角括号）审计（只读，不改文件）
 //
 // 背景（用户 2026-11-02）：
-//   「」不是常规中文标点（那是日式/竖排的角括号用法），正常中文里几十万字也用不到一次。
+//   那个符号不是常规中文标点（那是日式/竖排的角括号用法），正常中文里几十万字也用不到一次。
 //   界面上该用的是中文双引号 “ ” 与单引号 ‘ ’（不是英文直引号 " '，代码里除外）。
 //   现在这个符号在仓里被当成"引用/强调"的默认写法滥用了 —— 先量清楚，再谈改。
+//   ⚠ 本文件**故意**不写真字面量：输出里的符号用下面的 OPEN/CLOSE 拼，清理器也跳过本文件。
 //
 // 用法：
 //   node scripts/quote-audit.mjs            # 人读报告（按文件，从多到少）
@@ -23,8 +24,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OPEN = '\u300c';   // 「
-const CLOSE = '\u300d';  // 」
+const OPEN = '\u300c';   // 开角括号
+const CLOSE = '\u300d';  // 收角括号
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
@@ -121,10 +122,10 @@ if (asJson) {
   process.exit(0);
 }
 
-console.log('=== 直角引号「」审计（只读）===');
+console.log(`=== 直角引号${OPEN}${CLOSE}审计（只读）===`);
 console.log(`扫描文件 ${files.length} 个，命中 ${rows.length} 个`);
-console.log(`「 ${totalOpen} 次 / 」 ${totalClose} 次  —— 其中界面文案 ${totalUi}、代码/字符串里 ${totalCode}`);
-console.log('（口径：中文文案该用 “ ” 与 ‘ ’；「」是日式角括号，正常中文极少用）');
+console.log(`${OPEN} ${totalOpen} 次 / ${CLOSE} ${totalClose} 次  —— 其中界面文案 ${totalUi}、代码/字符串里 ${totalCode}`);
+console.log(`（口径：中文文案该用 “ ” 与 ‘ ’；${OPEN}${CLOSE} 是日式角括号，正常中文极少用）`);
 console.log('');
 for (const r of shown.slice(0, TOP)) {
   const tag = r.inCode ? `代码 ${r.inCode}` : (r.inUi ? `界面 ${r.inUi}` : '仅文档/注释');

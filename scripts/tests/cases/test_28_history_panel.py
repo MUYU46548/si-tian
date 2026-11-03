@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 28：撤销历史面板（P0-3）
 
-验收点（对应提示词 P0-3 的「验收标准」逐条）：
+验收点（对应提示词 P0-3 的“验收标准”逐条）：
 1. 面板实时显示操作历史 —— 两次编辑后条目数 == undo 历史长度
 2. 当前步高亮正确 —— 仅最后一条 data-state=current，其余 applied
 3. 点击任意条目跳转到对应状态 —— 点 #0 → 指针回 0，第 2 次编辑的数据被回退
@@ -92,7 +92,7 @@ def _panel_state(cdp):
 
 
 def _click_panel_button(cdp):
-    """点击 PlanetMap 内的「撤销历史面板」按钮（限定在 .planet-map-container 内）"""
+    """点击 PlanetMap 内的“撤销历史面板”按钮（限定在 .planet-map-container 内）"""
     return cdp.eval("""(() => {
       const root = document.querySelector('.planet-map-container');
       if (!root) return 'no-root';
@@ -124,7 +124,7 @@ def run(cdp):
         return False, f'读不到 undo 历史模块 {h0}'
     base = h0['len']
 
-    # ── 造两次真实编辑（智能聚落 = 一条「放置聚落」命令） ────────────────
+    # ── 造两次真实编辑（智能聚落 = 一条“放置聚落”命令） ────────────────
     picks = _land_points(cdp, count=2, gap=250)
     if not isinstance(picks, dict) or 'points' not in picks:
         return False, f'高度图不可用 {picks}'
@@ -149,7 +149,7 @@ def run(cdp):
     # ── 打开面板 ────────────────────────────────────────────────────────
     click_ret = _click_panel_button(cdp)
     if click_ret != 'ok':
-        return False, f'找不到「撤销历史面板」工具栏按钮（PlanetMap 未接线？）{click_ret}'
+        return False, f'找不到“撤销历史面板”工具栏按钮（PlanetMap 未接线？）{click_ret}'
     time.sleep(0.5)
     st = _panel_state(cdp)
     if not st.get('open'):
@@ -164,7 +164,7 @@ def run(cdp):
     if st['count'] != h1['len']:
         return False, f'面板条目数 {st["count"]} ≠ 历史长度 {h1["len"]}（未实时同步）'
     if any(not (l or '').strip() for l in st['labels']):
-        return False, f'存在空白操作名（应回退为「未命名操作 #N」）：{st["labels"][-5:]}'
+        return False, f'存在空白操作名（应回退为“未命名操作 #N”）：{st["labels"][-5:]}'
 
     # 2. 当前步高亮正确
     if st['currentCount'] != 1:
@@ -228,12 +228,12 @@ def run(cdp):
     st5 = _panel_state(cdp)
     last = (st5['labels'] or [''])[-1]
     if '未命名操作' not in last:
-        return False, f'无 label 的命令未回退为「未命名操作 #N」，实际显示「{last}」'
+        return False, f'无 label 的命令未回退为“未命名操作 #N”，实际显示“{last}”'
 
     _j(cdp, f"(() => {{ {PM}.setInteractionMode('pan'); return 'ok'; }})()")
     return True, (
         f'撤销历史面板通过：{st["count"]} 条记录实时同步（当前步高亮 #{st["currentIndex"] + 1}、'
         f'未来步骤 {st2["states"].count("future")} 条置灰）；点 #0 跳转后 nodes {nodes_now}→{nodes_after_jump} 且面板跟随；'
         f'redo 后当前步移回 #{st3["currentIndex"] + 1}；折叠/展开正常；'
-        f'无 label 命令显示「{last}」'
+        f'无 label 命令显示“{last}”'
     )

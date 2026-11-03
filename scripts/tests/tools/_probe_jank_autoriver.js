@@ -1,4 +1,4 @@
-// 探针（之二）：**自动河流在场时**的每帧成本 —— 用来验证「卡顿发生在方方面面」的假说：
+// 探针（之二）：**自动河流在场时**的每帧成本 —— 用来验证“卡顿发生在方方面面”的假说：
 //   `renderFrame` 里那段自动河几何（`getAutoRiverNetwork` → `riverFlowGate` → `pruneRiverNetwork`
 //   → `buildRiverPaths` → `thinRiverPath` → **`buildLandMask` + `clipPolylinesToCoast`**）
 //   有没有按帧缓存。若无，则**只要画过自动河**，此后每一次拖动（省份/河流/平移）都要付这笔钱。
@@ -85,7 +85,7 @@ window.prompt = (q, d) => d;
     OUT.autoRivers.segments = (sm.autoRiverSegments || []).length;
     OUT.autoRivers.drawn = sm.autoRiverDrawn;
     OUT.autoRivers.maxFlow = sm.autoRiverMaxFlow;
-    // ── 每帧成本：render() 与「分段单独测」────────────────────────────────
+    // ── 每帧成本：render() 与“分段单独测”────────────────────────────────
     J.stage = 'auto-render';
     for (const zoom of [1, 2, 4]) {
       sm.cameraScale = zoom;

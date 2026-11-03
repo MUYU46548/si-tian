@@ -2,18 +2,18 @@
 # -*- coding: utf-8 -*-
 """用例 57：UI 可点性 / 样式统一 / 只读提示 / 图标语义（2026-09-22 用户实测反馈的守卫）
 
-用户这一轮报的问题里有三条是「界面上看起来能用、实际点不到 / 认不出」：
+用户这一轮报的问题里有三条是“界面上看起来能用、实际点不到 / 认不出”：
   ① 行星地图非编辑模式下无法进入编辑 —— 真因是 `.view-actions`（地点簇/对象/快照/导出）
-     用绝对定位压在 `.map-header` 的「编辑地图」上（同右边界 + DOM 在后 ⇒ 整片盖住）。
+     用绝对定位压在 `.map-header` 的“编辑地图”上（同右边界 + DOM 在后 ⇒ 整片盖住）。
      → 必须用**命中测试**（元素中心点 elementsFromPoint）守住，单纯"元素存在"是假绿。
   ② 部分按钮是浏览器默认样式（Azgaar 参考图层那四个：非激活态 class 为空）。
      → 用 computed style 的 `border-style: outset` 全站扫描（Chrome 默认按钮的签名）。
   ③ 只读态除了工具栏小徽标没有任何提示。
-     → 断言全宽提示条存在 + 大字 + 可点达去处；且「重新提取」在只读/项目态被灰禁并说明去处。
+     → 断言全宽提示条存在 + 大字 + 可点达去处；且“重新提取”在只读/项目态被灰禁并说明去处。
 另守两条本次的交付：
-  ④ 导出按钮必须用「导出」语义图标（不是下载图标）；ScenarioMap 的 15 个预设图标必须是
+  ④ 导出按钮必须用“导出”语义图标（不是下载图标）；ScenarioMap 的 15 个预设图标必须是
      矢量图标名，且双端（Icon.vue / canvasIcon.js）都有几何 —— emoji 会随字体变形、画风不统一。
-  ⑤ 有一键可达的「打开知识库」入口（用户："连我都不知道去哪里打开知识库"）。
+  ⑤ 有一键可达的“打开知识库”入口（用户："连我都不知道去哪里打开知识库"）。
 """
 import json
 import os
@@ -34,7 +34,7 @@ def _j(raw, label):
 
 
 def _hit_test(cdp, selector, label):
-    """返回元素中心点的命中栈（最上层在前）。用于守「按钮真的点得到」。"""
+    """返回元素中心点的命中栈（最上层在前）。用于守“按钮真的点得到”。"""
     raw = cdp.eval("""(() => {
       const el = document.querySelector(%s);
       if (!el) return JSON.stringify({ missing: true });
@@ -53,7 +53,7 @@ def _hit_test(cdp, selector, label):
 def run(cdp):
     ensure_case_state(cdp)
 
-    # ══ ① 行星地图：非编辑态下「编辑地图」必须可点中 + 不得与视图动作条重叠 ══
+    # ══ ① 行星地图：非编辑态下“编辑地图”必须可点中 + 不得与视图动作条重叠 ══
     lvl = goto_planet(cdp)
     if lvl != 'planet':
         return False, f'导航行星失败（viewLevel={lvl}）'
@@ -61,12 +61,12 @@ def run(cdp):
 
     hit = _hit_test(cdp, '.planet-map-container .edit-entry-btn', '编辑地图按钮命中测试')
     if hit.get('missing'):
-        return False, '行星地图上没有「编辑地图」按钮（入口消失）'
+        return False, '行星地图上没有“编辑地图”按钮（入口消失）'
     if hit.get('zero'):
-        return False, f'「编辑地图」按钮尺寸为 0（被布局压扁）：{hit.get("rect")}'
+        return False, f'“编辑地图”按钮尺寸为 0（被布局压扁）：{hit.get("rect")}'
     top = (hit.get('stack') or [''])[0]
     if 'edit-entry-btn' not in top:
-        return False, ('「编辑地图」按钮被别的元素盖住，点它点不到 → 用户以为"无法编辑地图"：'
+        return False, ('“编辑地图”按钮被别的元素盖住，点它点不到 → 用户以为"无法编辑地图"：'
                        f'命中栈最上层 = {top}（完整栈 {hit.get("stack")}，位置 {hit.get("x")},{hit.get("y")}）')
 
     overlap = _j(cdp.eval("""(() => {
@@ -141,12 +141,12 @@ def run(cdp):
                       ('src/renderer/src/components/SettingsPanel.vue', '设置面板')):
         src = read(rel)
         if 'name="download"' in src and '导出' in src:
-            # 允许「导入」用 download；只禁「导出 …」与 download 同行
+            # 允许“导入”用 download；只禁“导出 …”与 download 同行
             for line in src.splitlines():
                 if 'name="download"' in line and '导出' in line:
                     return False, f'{what} 的导出按钮仍用下载图标：{line.strip()[:120]}'
     if 'name="export"' not in read('src/renderer/src/components/PlanetMap.vue'):
-        return False, '行星地图的导出按钮没有使用「导出」语义图标（Icon name="export"）'
+        return False, '行星地图的导出按钮没有使用“导出”语义图标（Icon name="export"）'
 
     # ScenarioMap 预设：必须是 ASCII 图标名，且双端都有几何
     scen = read('src/renderer/src/components/ScenarioMap.vue')
@@ -179,7 +179,7 @@ def run(cdp):
         return False, (f'这些预设图标在 canvasIcon.js 里没有几何 → 画布上会**留白**（看起来"图标消失了"）：'
                        f'{not_canvas}')
 
-    # ══ ④ 世界视图：一键可达的「打开知识库」 + 空态断言（如为空态） ══
+    # ══ ④ 世界视图：一键可达的“打开知识库” + 空态断言（如为空态） ══
     cdp.eval("""(() => {
       const s = %s._instance.setupState.store;
       s.backToWorld ? s.backToWorld() : s.selectWorld(null);
@@ -203,11 +203,11 @@ def run(cdp):
       });
     })()"""), '打开知识库入口')
     if not vault.get('exists'):
-        return False, '世界视图没有「打开知识库」入口（用户："连我都不知道去哪里打开知识库"）'
+        return False, '世界视图没有“打开知识库”入口（用户："连我都不知道去哪里打开知识库"）'
     if '知识库' not in (vault.get('text') or ''):
-        return False, f'「打开知识库」按钮文案说不清是什么：{vault.get("text")!r}'
+        return False, f'“打开知识库”按钮文案说不清是什么：{vault.get("text")!r}'
     if not vault.get('inViewport'):
-        return False, (f'「打开知识库」按钮不在视口内（看不见等于没有）：按钮 {vault.get("rect")}，'
+        return False, (f'“打开知识库”按钮不在视口内（看不见等于没有）：按钮 {vault.get("rect")}，'
                        f'容器 {vault.get("selectorRect")}，视口 {vault.get("vp")}，'
                        f'scrollTop={vault.get("scrollTop")}/{vault.get("scrollHeight")}')
 
@@ -245,7 +245,7 @@ def run(cdp):
       return JSON.stringify({ urls: urls, status: (document.querySelector('.status') || {}).textContent || '' });
     })()"""), '打开知识库结果')
     if not opened.get('urls'):
-        return False, '点了「打开知识库」但没有发出任何请求（按钮是死的）'
+        return False, '点了“打开知识库”但没有发出任何请求（按钮是死的）'
     if 'obsidian://' not in opened['urls'][0]:
         return False, f'打开知识库没有走 obsidian:// 协议：{opened["urls"][0]}'
 
@@ -284,9 +284,9 @@ def run(cdp):
     if ro.get('clickable') != 'pointer':
         return False, '只读提示条不可点（应点击直达项目面板 = 给出去处）'
     if ro.get('reextractDisabled') is not True:
-        return False, '只读态下「重新提取」没有灰禁（用户点了会得到一句拒绝，属坏交互）'
+        return False, '只读态下“重新提取”没有灰禁（用户点了会得到一句拒绝，属坏交互）'
     if '项目' not in (ro.get('reextractTitle') or ''):
-        return False, f'「重新提取」的 title 没说明去处：{ro.get("reextractTitle")!r}'
+        return False, f'“重新提取”的 title 没说明去处：{ro.get("reextractTitle")!r}'
 
     # 提示条点击 → 打开项目面板
     cdp.eval("""(() => {
@@ -309,7 +309,7 @@ def run(cdp):
       return 'ok';
     })()""" % APP)
 
-    return True, ('可点性/样式/只读提示守卫通过：行星图「编辑地图」命中测试在最上层（不再被视图动作条盖住）、'
+    return True, ('可点性/样式/只读提示守卫通过：行星图“编辑地图”命中测试在最上层（不再被视图动作条盖住）、'
                   '标题栏与视图动作条零重叠且未回到绝对定位、行星图（浏览态+编辑态）无浏览器默认样式按钮、'
                   '导出按钮用 export 图标、ScenarioMap 15 个预设图标全为矢量名且双端有几何、'
-                  '世界视图「打开知识库」可点且走 obsidian://、只读态有大字可点提示条 + 重新提取灰禁并说明去处')
+                  '世界视图“打开知识库”可点且走 obsidian://、只读态有大字可点提示条 + 重新提取灰禁并说明去处')

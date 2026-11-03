@@ -347,7 +347,7 @@ const props = defineProps({
 // 🔴 `emit` 此前**全文件没有声明**，而 2119 / 2166 两处 `emit('dirty', true)` 会直接
 //    `ReferenceError`（模块作用域是严格模式，不是"静默写全局"）。App.vue 上
 //    `<area-map @back @select-node @dirty>` 三个监听器是早就写好的 —— 说明声明是漏掉了，
-//    于是「区域视图里改完东西」不会把 dirty 传上去（该存盘的状态可能一直停在"干净"）。
+//    于是“区域视图里改完东西”不会把 dirty 传上去（该存盘的状态可能一直停在"干净"）。
 //    三个事件一次补齐：只声明 'dirty' 会让另外两个监听器变成落到根元素的 attrs。
 const emit = defineEmits(['back', 'select-node', 'dirty']);
 
@@ -1042,7 +1042,7 @@ function drawNodes(ctx, vp) {
     const isMultiSelected = selectedNodeIds.value.includes(node.id);
     const isDraft = node.draft === true;
     // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
-    // 单选 / 多选时不淡化（你正在操作它 → 「编辑优先于装饰」）。本函数无中途 return。
+    // 单选 / 多选时不淡化（你正在操作它 → “编辑优先于装饰”）。本函数无中途 return。
     const fade = fadedAlpha(node.status, { focused: isSelected || isMultiSelected });
     if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
     const color = getNodeColor(node.layer);
@@ -1715,7 +1715,7 @@ function finishZoneDrawing() {
     zoneDraftPoints.value = [];
     return;
   }
-  // Phase 2.6：拖拽勾出的区域块先过「闭环简化 + 不重叠」。
+  // Phase 2.6：拖拽勾出的区域块先过“闭环简化 + 不重叠”。
   // 区域地图没有固定边界（可绘制范围随底图变化）→ 只判重叠，不判落地内。
   const check = validateRegionTrace({
     points: zoneDraftPoints.value,
@@ -1743,7 +1743,7 @@ function finishZoneDrawing() {
 
 /**
  * R5-2 区域笔刷收尾：把涂抹落点合并成**一块有名字的区域**。
- * 为什么不用「一次涂抹=一个多边形」就完事：PlanetMap 的旧凸包笔刷正是那样产出 22 个
+ * 为什么不用“一次涂抹=一个多边形”就完事：PlanetMap 的旧凸包笔刷正是那样产出 22 个
  * 无名多边形（垃圾数据 + 与新网格笔刷双套并存，已按 UX 铁律移除）。这里的做法是
  * 落点 → 每点采样圆 → 凸包 → 简化为单块命名区域，一次 addAreaZone（走 undo，一条）。
  */
@@ -1852,7 +1852,7 @@ function confirmAddPlace() {
 
 function deleteSelected() {
   if (!selectedNode.value) return;
-  if (!confirm(`确定删除「${selectedNode.value.name}」？`)) return;
+  if (!confirm(`确定删除“${selectedNode.value.name}”？`)) return;
   store.removeNode(selectedNode.value.id);
   selectedNode.value = null;
   renderer.requestRender();
@@ -1878,7 +1878,7 @@ function openInObsidian() {
 // （批次 R2：AreaMap 曾是唯一无转正入口的视图，draft 建筑/地点只能永远留在缓存里）
 // ★ id 连续性（2026-09-16）：转正后节点 id 由随机 id 切换为 normalizeId(文件名)，
 //   并级联更新全部引用（子节点 parentId / 建筑内部数据键 / 地图数据 / 剧本归属 …）。
-//   目标 id 已被占用时降级为「只回填 sourcePath，id 不变」，不阻断转正并在浮层内提示。
+//   目标 id 已被占用时降级为“只回填 sourcePath，id 不变”，不阻断转正并在浮层内提示。
 const promoting = ref(false);
 // 转正结果提示（id 同步 / 同名冲突降级）—— 用 kind 区分样式，不靠 emoji 前缀
 const promoteNotice = ref(null);
@@ -1910,7 +1910,7 @@ async function promoteDraft() {
     if (changeResult.success) {
       store.updateNode(n.id, { sourcePath: result.path, draft: false });
       promoteNotice.value = changeResult.changed
-        ? { kind: 'ok', text: `已转正：节点 id 同步为「${changeResult.newId}」，级联更新 ${changeResult.refs} 处引用、${changeResult.dictKeys} 个数据字典` }
+        ? { kind: 'ok', text: `已转正：节点 id 同步为“${changeResult.newId}”，级联更新 ${changeResult.refs} 处引用、${changeResult.dictKeys} 个数据字典` }
         : { kind: 'ok', text: '已转正：节点 id 与笔记名一致，无需变更' };
     } else {
       store.updateNode(n.id, { sourcePath: result.path, draft: false });
@@ -2099,7 +2099,7 @@ watch(areaPlaces, () => {
 
 // 叙事状态变更 → 重绘（2026-09-24）。
 // ⚠️ 必须走这个指纹：`updateNode` 是 `Object.assign(node, …)` **就地改字段** —— 既不换数组引用、
-//    也不换节点对象，所以基于「数组/对象引用」的浅 watch 全都捕捉不到 status 变化。
+//    也不换节点对象，所以基于“数组/对象引用”的浅 watch 全都捕捉不到 status 变化。
 // `areaPlaces` 的元素是 store 里的响应式对象本身（computed 只做 filter，不拷贝），
 // 绘制时读到的就是最新 status → 这里只 requestRender 即可。
 watch(() => store.statusRevision, () => {

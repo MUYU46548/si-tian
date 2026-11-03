@@ -25,7 +25,7 @@
     </div>
 
     <!-- 手动新建（2026-10-27）：山系/海域 = 在地图上拖一条线；平原 = 点一下落个点。
-         几何由 ScenarioMap 采集（`terrainLabelPick`），本面板只负责「命名 + 应用」——
+         几何由 ScenarioMap 采集（`terrainLabelPick`），本面板只负责“命名 + 应用”——
          与山脊候选同一条落库路径（整表一条 undo）。 -->
     <div class="tlab-manual">
       <span class="tlab-manual-label">手动新建：</span>
@@ -40,7 +40,7 @@
     </div>
 
     <div v-if="!rows.length" class="tlab-empty">
-      还没有注记。点「检测山脊」抽候选，或手动「画/点」一条；填名字后再「应用」——
+      还没有注记。点“检测山脊”抽候选，或手动“画/点”一条；填名字后再“应用”——
       没名字的不会落库（不自动编专名）。
     </div>
 
@@ -61,7 +61,7 @@
 
     <div class="tlab-note">
       自动项只来自高度图抽出的脊线（候选可筛、可删）；用户手绘的注记永远不会被“重新检测”覆盖。
-      手绘的走同一条落库路径：填名字 →「应用」= 一条 Ctrl+Z。
+      手绘的走同一条落库路径：填名字 →“应用”= 一条 Ctrl+Z。
     </div>
   </div>
 </template>
@@ -124,7 +124,7 @@ function detect() {
       maxRidges: 10,
       smooth: (pts) => smoothPolyline(pts, 2),
     });
-    // 「检测」只替换**没命名的自动候选**：已命名的（用户正在编辑的）与手绘的一条都不动。
+    // “检测”只替换**没命名的自动候选**：已命名的（用户正在编辑的）与手绘的一条都不动。
     const kept = rows.value.filter((r) => !(r.origin === 'auto' && !String(r.name || '').trim()));
     const stamp = Date.now().toString(36);
     // 平滑后的脊线点数会被 Chaikin 放大 4 倍（实测 148 点/条）→ 落库前 RDP 抽稀，
@@ -144,7 +144,7 @@ function detect() {
     });
     rows.value = [...kept, ...added];
     status.value = cands.length
-      ? `检测到 ${cands.length} 条山脊候选 —— 填名字后「应用」（没名字的不会落库）`
+      ? `检测到 ${cands.length} 条山脊候选 —— 填名字后“应用”（没名字的不会落库）`
       : '没检测到山脊（地形太平缓，或这张图没有起伏）';
   } catch (err) {
     status.value = `检测失败：${(err && err.message) || err}`;
@@ -159,7 +159,7 @@ function removeRow(i) {
 
 // ── 手动新建（2026-10-27）───────────────────────────────────────────────────
 // 几何采集在 ScenarioMap（它才知道相机/屏幕坐标）；本面板只把采到的点做成一行，
-// 跟着「应用」一起整表落库 —— 与山脊候选同一条路（一条 undo）。
+// 跟着“应用”一起整表落库 —— 与山脊候选同一条路（一条 undo）。
 const pickReady = computed(() => {
   const p = props.pick;
   if (!p) return false;
@@ -172,9 +172,9 @@ const pickStatus = computed(() => {
   const n = (p.points || []).length;
   const name = KIND_LABEL[p.kind] || '注记';
   if (p.kind === 'plain') {
-    return n >= 1 ? `${name}：已取点，点「完成」再命名` : `${name}：在地图上点一下`;
+    return n >= 1 ? `${name}：已取点，点“完成”再命名` : `${name}：在地图上点一下`;
   }
-  return `${name}：已取 ${n} 点${n >= 2 ? '，点「完成」再命名' : ' —— 在地图上拖一条线'}`;
+  return `${name}：已取 ${n} 点${n >= 2 ? '，点“完成”再命名' : ' —— 在地图上拖一条线'}`;
 });
 
 function finishPick() {
@@ -189,7 +189,7 @@ function finishPick() {
     meta: `${KIND_LABEL[p.kind] || ''} · ${(p.points || []).length} 点 · 手绘`,
   }];
   emit('pick-done');
-  status.value = `已加入一条手绘${KIND_LABEL[p.kind] || '注记'} —— 填名字后「应用」才会落库`;
+  status.value = `已加入一条手绘${KIND_LABEL[p.kind] || '注记'} —— 填名字后“应用”才会落库`;
 }
 
 function apply() {
@@ -208,7 +208,7 @@ function apply() {
 </script>
 
 <style scoped>
-/* 与「地形生成参数」面板同一套深色口径（.resample-panel 里不跟主题切） */
+/* 与“地形生成参数”面板同一套深色口径（.resample-panel 里不跟主题切） */
 .tlab {
   display: flex;
   flex-direction: column;

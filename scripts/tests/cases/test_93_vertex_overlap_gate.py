@@ -3,15 +3,15 @@
 """
 test_93_vertex_overlap_gate — 顶点编辑的**压叠闸门**（2026-10-11）
 
-背景（这是 2026-10-01 明确写进文档的一条「已知边界」）：
-    「顶点编辑造成的压叠不在任何闸门范围内」—— 因为拖顶点是细粒度动作，
+背景（这是 2026-10-01 明确写进文档的一条“已知边界”）：
+    “顶点编辑造成的压叠不在任何闸门范围内”—— 因为拖顶点是细粒度动作，
     当时判断"拖到一半弹确认更坏"，于是干脆不守。代价：把 A 省的一个顶点拖到 B 省肚子里，
     两个省就压在一起了，而**点选 / 归属上色 / 势力标签三处都会开始互相打架**
     （命中口径 `findProvinceAt` 是自顶向下，视觉上被压在下面的那个才点得到）。
 
 本轮的收口方式（不是"拖到一半弹窗"，恰好相反）：
     · 判定点放在**抬手那一帧、写库之前** —— 候选几何 `{...prov, ...patch}` 还没进 store，
-      用户点「取消」就什么都不发生，形状原地保持拖动前（不需要"写完再撤销"那套，
+      用户点“取消”就什么都不发生，形状原地保持拖动前（不需要"写完再撤销"那套，
       也就不会给一次拖拽留下两条历史）。
     · 只在**这次拖动让它更压**时才问（`after.ratio > 阈值 且 恶化量 > 5%`）：
       真实数据里有**本来就互相压着**的省份（格点时代留下的），见谁都弹 = 把既存问题
@@ -99,7 +99,7 @@ def source_gates():
     if 'confirmVertexMoveOverlap(prov, { ...prov, ...patch })' not in (sc + '\n' + _ptr_src):
         fails.append('源码闸门缺失：顶点拖拽的写库必须被 confirmVertexMoveOverlap 守卫（先量后写）')
 
-    # g3 「只对恶化发问」这条语义必须在场（否则既存压叠会天天弹窗）
+    # g3 “只对恶化发问”这条语义必须在场（否则既存压叠会天天弹窗）
     if 'VERTEX_OVERLAP_WORSEN_MARGIN' not in sc:
         fails.append('源码闸门缺失：VERTEX_OVERLAP_WORSEN_MARGIN（只对"这次拖动让它更压"发问）')
 
@@ -140,7 +140,7 @@ JS = r""" (async () => {
   sc.setTool('vertex');
   sc.selectedProvince = { id: 'g93b' };
   sc.activeRingIdx = 0;
-  // 🔴 关掉两种吸附：50px 网格吸附会把「拖到 710」变成「拖到 709.57」，
+  // 🔴 关掉两种吸附：50px 网格吸附会把“拖到 710”变成“拖到 709.57”，
   //    而下一次 mousedown 按 700 找顶点就落空（距离 9.57 > px(8) 阈值）→
   //    拖拽根本没开始，闸门自然不会被触发（首版实测 h2/h3 双双假红）。
   //    用例要测的是**闸门**，不是吸附 —— 吸附另有 test_66/72 守。
@@ -182,7 +182,7 @@ JS = r""" (async () => {
     ok('h1 不构成压叠时拖动**真的生效**（不是"一律不写"的假绿）', pos(B0()) !== before, pos(B0()).slice(0, 60));
   }
 
-  // ── h2 拖进甲省（一个顶点拖到 x=0）→ 必须弹窗；回答「取消」= 一个字都不准写 ──
+  // ── h2 拖进甲省（一个顶点拖到 x=0）→ 必须弹窗；回答“取消”= 一个字都不准写 ──
   let afterDecline = '';
   {
     const before = pos(B0());
@@ -194,13 +194,13 @@ JS = r""" (async () => {
     ok('h2 会把省拖到别人身上 → 弹一次确认', window.__c93.calls === 1, window.__c93.calls + ' 次');
     ok('h2 弹窗点名占用者与百分比（用户要知道压到了谁）',
        /大省甲/.test(window.__c93.last) && /\d+%/.test(window.__c93.last), window.__c93.last.slice(0, 90));
-    ok('h2 「取消」= 形状原地保持拖动前（先量后写，不需要撤销兜底）',
+    ok('h2 “取消”= 形状原地保持拖动前（先量后写，不需要撤销兜底）',
        pos(B0()) === before, pos(B0()).slice(0, 60));
     afterDecline = pos(B0());
     notes.decline = (window.__c93.last.match(/\d+%/g) || []).join('/');
   }
 
-  // ── h3 同一动作回答「确定」→ 必须写进去（闸门是"问"，不是"硬拒"）─────────
+  // ── h3 同一动作回答“确定”→ 必须写进去（闸门是"问"，不是"硬拒"）─────────
   {
     window.__c93.calls = 0;
     window.__c93.answer = true;
@@ -208,7 +208,7 @@ JS = r""" (async () => {
     drag(q, { x: 0, y: q.y });
     await tick(60);
     ok('h3 确认后弹窗只问一次', window.__c93.calls === 1, window.__c93.calls + ' 次');
-    ok('h3 「确定」= 真的应用这次移动', pos(B0()) !== afterDecline, pos(B0()).slice(0, 60));
+    ok('h3 “确定”= 真的应用这次移动', pos(B0()) !== afterDecline, pos(B0()).slice(0, 60));
     ok('h3 应用后乙省确实伸进了甲省（几何真的变了，不是同一形状换了个壳）',
        (B0().points || []).some((q) => q.x <= 5), JSON.stringify((B0().points || []).map((q) => [q.x, q.y])));
   }
@@ -226,7 +226,7 @@ JS = r""" (async () => {
   }
 
   // ── h5 一次拖拽 = **一条** undo（闸门不能把一次拖拽拆成两条历史）──────────
-  //    顺序很重要：h3「确认后应用」与 h4「微调」各是一条命令，所以第一次撤销还原的是 h4。
+  //    顺序很重要：h3“确认后应用”与 h4“微调”各是一条命令，所以第一次撤销还原的是 h4。
   {
     s.undo();
     await tick(40);
@@ -235,7 +235,7 @@ JS = r""" (async () => {
        !!q1 && Math.abs(q1.x - 800) < 1e-6, JSON.stringify(q1));
     s.undo();
     await tick(40);
-    ok('h5 再撤一次 = 连「确认后应用」那次移动也还原（闸门不给一次拖拽留两条历史）',
+    ok('h5 再撤一次 = 连“确认后应用”那次移动也还原（闸门不给一次拖拽留两条历史）',
        !(B0().points || []).some((q) => q.x <= 5),
        JSON.stringify((B0().points || []).map((q) => [q.x, q.y])).slice(0, 80));
   }
@@ -243,12 +243,12 @@ JS = r""" (async () => {
   // ── h6 清空全部剧本（2026-10-11 接活死入口 removeAllScenarios）──────────
   //    这条闸门的价值在于**语义边界**：只删剧本，底图与省份一个字都不许动。
   {
-    // 造一条剧本 + 一个底图，然后走「清空全部剧本」的组件函数
+    // 造一条剧本 + 一个底图，然后走“清空全部剧本”的组件函数
     s.scenarios = { ...s.scenarios, [KEY + '/甲']: { id: KEY + '/甲', ownerKey: KEY, name: '甲', ownership: { g93a: 'pol_x' } } };
     sc.showScenarioManager = true;
     await tick(80);
     const btn = document.querySelector('[data-testid="scenario-clear-all"]');
-    ok('h6 「清空全部剧本」按钮在剧本管理对话框里', !!btn);
+    ok('h6 “清空全部剧本”按钮在剧本管理对话框里', !!btn);
     const terrainBefore = JSON.stringify((s.baseMaps[KEY].terrain || []).map((p) => p.id));
     // ⚠️ confirm 是在 click() 里**同步**调用的 → 返回值必须在 click **之前**设好
     window.__c93.answer = false;          // 第一次：取消 → 什么都不该发生

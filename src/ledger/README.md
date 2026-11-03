@@ -53,7 +53,7 @@ ledger = { ledgerVersion, worldId: 'default', epochId: <剧本 id>, calendar: {y
 
 改省界 / 合并 / 批量铺底 / 删省 / 删势力动的是归属的**键**（省份 id），易主日期面板动的是**事件表**。
 两者都必须同时改四处（`ownership` / `initialOwnership` / `changeEvents` / `ledger`），否则
-「账本投影 == 缓存」会断，之后这个剧本**再也不进账**（不报错，只是账本停止增长）。唯一实现：
+“账本投影 == 缓存”会断，之后这个剧本**再也不进账**（不报错，只是账本停止增长）。唯一实现：
 
 - `remapScenarioOwnership(scenario, {provinceRename, provinceRemove})` —— 改名/删省（无改动返回原引用）
 - `forkScenarioProvince(scenario, newId, srcId)` —— 一省拆多省：新省继承归属 + v2 事件 + 账本历史

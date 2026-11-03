@@ -3,13 +3,13 @@
 """用例 155：地形注记（`terrainLabels`）随项目落盘 / 重开还原
 
 背景（D3 收口，2026-10-27）：
-  `test_154` 只验到「面板 → 检测 → 命名 → 落进内存 + 一次 undo」。
+  `test_154` 只验到“面板 → 检测 → 命名 → 落进内存 + 一次 undo”。
   但地形注记住在 `baseMaps[key]` 里 —— 这条链要经过三层才到磁盘：
     ① 画布 → 项目载荷：`exportCanvasToProject()` → `exportScenariosPayload()`（整份 baseMaps 深拷贝）
     ② 项目 → 磁盘：`saveProject()` → `toIpcJson` → 主进程原子写
     ③ 磁盘 → 画布：`openProject()` → `applyProjectToCanvas()` → `applyScenarioState(fresh)`
-  其中任何一层若是「按字段白名单重建底图对象」，`terrainLabels` 就会**静默消失**
-  （不报错、不告警；重开项目后山系名凭空不见 —— 与「坐标缓存被当事实源」同一类事故）。
+  其中任何一层若是“按字段白名单重建底图对象”，`terrainLabels` 就会**静默消失**
+  （不报错、不告警；重开项目后山系名凭空不见 —— 与“坐标缓存被当事实源”同一类事故）。
   这条用例就是给这条链上闸：**逐字段**比对落盘载荷与重开后的内存态。
 
 判据（全部读真实状态/落盘载荷）：

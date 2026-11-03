@@ -6,7 +6,7 @@
  *   · src/renderer/src/utils/heightmapAccess.js 的 nearestIndexAt
  *
  * 为什么值得单测（2026-10-08，A3 文化/宗教笔刷）：
- *   这三处都是「判错不会报错、只会静默错乱」的地方 ——
+ *   这三处都是“判错不会报错、只会静默错乱”的地方 ——
  *     · 通道数组读回形态（TypedArray / 普通数组 / JSON 退化的 {0:..}）判错 → 整层数据丢失
  *     · 通道值与元数据列表的对应关系判错（用 id 而不是位置）→ 涂 A 显示 B 的颜色
  *     · 空间索引分桶判错 → 笔刷刷到邻格 / 吸管吸到别处
@@ -186,9 +186,9 @@ async function main() {
     eq(ACC.hasGrid({ grid: { points: [] } }), false, 'hasGrid 空点集 = false');
     // 🔴 2026-10-11 反向纪律（试过、被全量回归打回，写在这里防复辟）：
     //    **不要**把 hasGrid 收紧成"必须有 h"。本仓既有 fixture（test_39/67/68）用的是
-    //    「只有网格点、没有 h」的历史高度图，收紧后 resolveHeightmap 返回 null →
+    //    “只有网格点、没有 h”的历史高度图，收紧后 resolveHeightmap 返回 null →
     //    笔刷 / 派生 / 绑定全线 `Cannot read properties of null (reading 'h')`。
-    //    「有没有**地形内容**」是另一个问题，判据在 `terrainRepresentation.hasHeightmapContent`。
+    //    “有没有**地形内容**”是另一个问题，判据在 `terrainRepresentation.hasHeightmapContent`。
     eq(ACC.hasGrid({ grid: { points: [[0, 0]], h: [] } }), true,
        'hasGrid 只判"能否开始编辑"（历史数据里有点无 h 也存在）—— 收窄会被打回');
   });

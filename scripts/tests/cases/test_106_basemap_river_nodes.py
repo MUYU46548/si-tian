@@ -3,9 +3,9 @@
 """用例 106：剧本底图的**河流节点编辑**（2026-10-17）
 
 真实来由（读代码 + 真机探针核实，不是猜的）：
-  用户定调「保底也要做，强化地图编辑器本身，让用户可以随心所欲画河流」，
-  并明确要「流畅的笔刷绘制 + 事后可编辑可撤除」。核实后底图侧的真实状态是：
-    ① `onMouseMove` 里**根本没有 river 分支** → 「按住拖出笔迹」画不出来
+  用户定调“保底也要做，强化地图编辑器本身，让用户可以随心所欲画河流”，
+  并明确要“流畅的笔刷绘制 + 事后可编辑可撤除”。核实后底图侧的真实状态是：
+    ① `onMouseMove` 里**根本没有 river 分支** → “按住拖出笔迹”画不出来
        （`onMouseDown` 每按一下落一个点，移动过程零采样）；
     ② `finishRiverDraft` **只挂在小双击上** → 画布写着"按住拖"，松手却什么也不发生；
     ③ 底图侧只有 add / remove，**没有 update** → 画完之后想微调（拖节点 / 加拐点 /
@@ -79,9 +79,9 @@ def source_gates():
     rv = _code_only(_read('src/renderer/src/utils/rivers.js'))
 
     checks = [
-        # ── store：新增的「改已有河」写口（底图侧此前只有 add / remove）────────
+        # ── store：新增的“改已有河”写口（底图侧此前只有 add / remove）────────
         (se, 'function updateBaseMapRiver(', 'store：改已有河流的写口'),
-        (se, 'removeNodeAt', 'store：支持「删单个节点」这一路'),
+        (se, 'removeNodeAt', 'store：支持“删单个节点”这一路'),
         (wg, "'updateBaseMapRiver'", '写口契约：改河流已登记（否则只读态会漏网）'),
         # ── 组件：三个手势必须都接上 ────────────────────────────────────────
         (sc, 'finishRiverDraft(true)', '组件：**松手**成河（不是只有双击）'),
@@ -89,8 +89,8 @@ def source_gates():
         (sc, 'store.removeBaseMapRiver(', '组件：删整条走 store'),
         (sc, 'function hitRiverNodeIndex(', '组件：节点命中'),
         (sc, 'riverNodesForRender', '组件：拖动期间画草稿（预览与落库同一份点列）'),
-        (sc, 'data-testid="river-del-node"', '可发现性：面板上有可见的「删这个节点」'),
-        (sc, 'data-testid="river-del-all"', '可发现性：面板上有可见的「删整条河」'),
+        (sc, 'data-testid="river-del-node"', '可发现性：面板上有可见的“删这个节点”'),
+        (sc, 'data-testid="river-del-all"', '可发现性：面板上有可见的“删整条河”'),
         # ⚠️ 2026-10-18 第十八修·四：预览不再走 `smoothWhileDrawing(riverDraft.value, …)` ——
         #    那条链与落库**不是同一条**（形状与粗细都会跳，用户报的"描点连线模拟器"的一半）。
         #    现在预览与落库共用 `riverNodesFromDraft`。判据的**意思没变**：画的时候必须看得见
@@ -197,7 +197,7 @@ JS_UI = r""" (async () => {
   await new Promise((r) => setTimeout(r, 150));
   const cvs = sc.canvas;
   if (!cvs) return JSON.stringify({ fails: ['画布不在 DOM 里'], notes: {} });
-  // 🔴 每次都重读 rect：切换到河流工具会多出一行「河流编辑」→ 工具栏变高 →
+  // 🔴 每次都重读 rect：切换到河流工具会多出一行“河流编辑”→ 工具栏变高 →
   //    canvas 下移。用旧 rect 算出来的点击位置会整体偏一行（我为此白查过一轮）。
   const R = () => cvs.getBoundingClientRect();
   const ev = (t, x, y) => {
@@ -309,13 +309,13 @@ JS_UI = r""" (async () => {
   const row = document.querySelector('[data-testid="river-edit-row"]');
   const dNode = document.querySelector('[data-testid="river-del-node"]');
   const dAll = document.querySelector('[data-testid="river-del-all"]');
-  ok('c5 河流编辑行在 DOM 里（且不在默认收起的「更多」里）',
+  ok('c5 河流编辑行在 DOM 里（且不在默认收起的“更多”里）',
      !!row && !!dAll && !!dNode, JSON.stringify({ row: !!row, delNode: !!dNode, delAll: !!dAll }));
   ok('c5 按钮有可见文字（可发现性纪律：图标+title 不算）',
      !!dAll && /删/.test(dAll.textContent || ''), dAll ? dAll.textContent.trim() : 'null');
   cvs.dispatchEvent(ev('mousemove', 900, 560));
   await tick(15);
-  ok('c5 鼠标离开节点后「删这个节点」自动禁用（删哪个一清二楚）',
+  ok('c5 鼠标离开节点后“删这个节点”自动禁用（删哪个一清二楚）',
      !!dNode && dNode.disabled === true, String(dNode && dNode.disabled));
 
   // c6 Delete 空手 → 删整条

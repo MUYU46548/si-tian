@@ -288,7 +288,7 @@ import { drawIconOrEmoji } from '../utils/canvasIcon';
 import Icon from './Icon.vue';
 import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import { useGeodataStore } from '../store/geodata';
-// 单一写闸门（2026-09-21 补齐）：只读态下「进入编辑模式」也要拦 —— 内部视图的楼层/家具改动
+// 单一写闸门（2026-09-21 补齐）：只读态下“进入编辑模式”也要拦 —— 内部视图的楼层/家具改动
 // 曾经可以照改内存、但不会落盘（静默丢数据）。
 import { guardWrite } from '../store/writeGate';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
@@ -477,7 +477,7 @@ const newFurnitureHeight = ref(40);
 const addFurnitureWorldPos = ref({ x: 0, y: 0 });
 
 // ===== 房间模板（R5-1）：一键铺好整间，一次操作 = 一条 undo =====
-// 坐标是相对「点击点」的偏移；尺寸取 getDefaultSize（单一事实源，不重复写死宽高）
+// 坐标是相对“点击点”的偏移；尺寸取 getDefaultSize（单一事实源，不重复写死宽高）
 // ⚠️ 偏移必须是网格步长（20）的整数倍 —— 开启网格吸附时基点会被吸附，
 // 若偏移不整则整间里会有家具落在网格外（test_25 会守这条）
 const ROOM_TEMPLATES = [
@@ -1129,7 +1129,7 @@ function confirmAddFurniture() {
 
 function deleteSelected() {
   if (!selectedFurniture.value || !currentFloorId.value) return;
-  if (!confirm(`确定删除「${selectedFurniture.value.name}」？`)) return;
+  if (!confirm(`确定删除“${selectedFurniture.value.name}”？`)) return;
   store.removeFurniture(props.buildingNode.id, currentFloorId.value, selectedFurniture.value.id);
   selectedFurniture.value = null;
   renderer.requestRender();

@@ -182,7 +182,7 @@ export function strokePayload(stroke) {
   };
 }
 
-/** 造一条「笔画落库」事件（type = stroke.committed；groupId 建议 = strokeId，一笔一组便于撤销） */
+/** 造一条“笔画落库”事件（type = stroke.committed；groupId 建议 = strokeId，一笔一组便于撤销） */
 export function strokeEvent(stroke, opts = {}) {
   return makeEvent({
     worldId: opts.worldId || 'default',

@@ -1,13 +1,13 @@
-// utils/saveStatusText.js — 「保存到底成没成」的唯一文案判定（2026-10-17）
+// utils/saveStatusText.js — “保存到底成没成”的唯一文案判定（2026-10-17）
 //
 // ── 要解决的问题 ─────────────────────────────────────────────────────────────
 // 项目态（`.sitian`）下保存是**两段**的：
 //   ① geodata 把画布改动**推给 projectStore**（返回 `{ staged: true, persisted: false }`）
 //   ② projectStore 的 800ms 防抖把项目**写进磁盘**（成功才 `saveStatus = 'saved'`）
 // 只要有一处把 ① 当成"存好了"，界面就会在最不该乐观的时刻乐观：
-//   · 行星图「保存地图」看 `result.success` 就报「**保存成功**」—— 项目态下事实是"还在内存里"；
+//   · 行星图“保存地图”看 `result.success` 就报“**保存成功**”—— 项目态下事实是"还在内存里"；
 //   · 底部状态栏只在 ② 有变化时才动，① 与"有改动还没落盘"这段**完全看不见**。
-// 暮雨的要求是「保存诚实显示（项目模式 staged/persisted 差异）」—— 本文件就是这层判定，
+// 暮雨的要求是“保存诚实显示（项目模式 staged/persisted 差异）”—— 本文件就是这层判定，
 // 供 `composables/useSaveDisplay`（视图 chip / 状态栏）与各视图的单次保存回执共用。
 //
 // ⚠️ 纯函数：无 store / 无 DOM，Node 有单测（`scripts/tests/unit/test_save_status_text.js`）。
@@ -31,7 +31,7 @@ function cutReason(raw) {
  * 判据用**返回值自己声明的语义**，不猜：
  *   · `persisted === true` → 真进磁盘了；
  *   · `staged === true`（且没 persisted）→ 只是交给项目，还在等磁盘；
- *   · 两者都没有（legacy：直接写 scenarios.json / 地图文件的旧路径）→ 旧行为，报「已保存」。
+ *   · 两者都没有（legacy：直接写 scenarios.json / 地图文件的旧路径）→ 旧行为，报“已保存”。
  * @param {{success?:boolean, staged?:boolean, persisted?:boolean, error?:string}} [result]
  * @returns {{state:string, kind:string, text:string, title:string}}
  */
@@ -64,9 +64,9 @@ export function describeSaveAction(result) {
  *   ② 画布侧失败（`canvas.status === 'error'`）—— 连"交给项目"都没成；
  *   ③ 正在写入磁盘 / 正在交给项目；
  *   ④ **有改动未落盘**（`project.pending`，即 `dirty`）—— 旧的诚实缺口就在这里；
- *   ⑤ 「已交给项目，待写入」；
+ *   ⑤ “已交给项目，待写入”；
  *   ⑥ 已保存到磁盘；
- *   ⑦ 其余 → 空闲（显示「自动保存」）。
+ *   ⑦ 其余 → 空闲（显示“自动保存”）。
  *
  * @param {{project?:{saveState?:object|null, pending?:boolean, lastSavedAt?:string},
  *          canvas?:{status?:string, error?:string}}} [input]

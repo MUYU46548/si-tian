@@ -81,7 +81,7 @@ export function planLedgerV2(scenarios) {
  * 从 initial + changeEvents 派生 ownership（纯函数；owner=null 表示无主 → 删键）
  *
  * 🔴 2026-10-24（第 3 件）：判定逻辑**搬进账本引擎**（`src/ledger/replay.js`），这里只做
- *    「v2 形状 → 事件流」的适配后调用它 —— 全仓"某省某天归谁"仍然只有一份实现。
+ *    “v2 形状 → 事件流”的适配后调用它 —— 全仓"某省某天归谁"仍然只有一份实现。
  *    等价性由两处守：① `src/ledger/replay.js` 的口径注释（同日按流内先后、null = 删键）；
  *    ② 单元测试 `test_ledger_core.js` 的 a5 段拿本函数与账本回放**逐省对拍**。
  */
@@ -160,7 +160,7 @@ export function normalizeLedgerDict(dict) {
       const shape = ledgerAssertShape(sc.ledger);
       if (!shape.ok) {
         ledgerBad.push(sc.id || key);
-        console.warn(`[ledger] 剧本「${sc.id || key}」的账本形状不合法（${shape.problems.slice(0, 3).join('；')}）—— 本次只按 v2 缓存归一，不动账本`);
+        console.warn(`[ledger] 剧本“${sc.id || key}”的账本形状不合法（${shape.problems.slice(0, 3).join('；')}）—— 本次只按 v2 缓存归一，不动账本`);
       } else {
         const proj = ledgerToV2Projection(sc.ledger);
         const ownDiff = !sameOwnership(proj.ownership, sc.ownership);

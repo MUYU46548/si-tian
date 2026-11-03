@@ -58,7 +58,7 @@ function handleSplitClick(world, shiftKey) {
   }
   provinceBrush.invalidateBorders();
   const which = res.side === -1 ? '另一侧' : '起始侧（a）';
-  statusMsg(`已把「${target.name}」拆成两块：${which}保留原序号「${target.name}」，`
+  statusMsg(`已把“${target.name}”拆成两块：${which}保留原序号“${target.name}”，`
     + '另一半追加到表尾 — 一次拆分 = 1 条撤销（按住 Shift 可换边）');
   render();
 }
@@ -66,7 +66,7 @@ function handleSplitClick(world, shiftKey) {
 function ctxDuplicateProvince() {
   if (!selectedProvince.value) return;
   const prov = selectedProvince.value;
-  // 偏移量取「包围盒 span 的 5%，但不小于 20 屏幕像素」——旧实现固定 `px(20)`：
+  // 偏移量取“包围盒 span 的 5%，但不小于 20 屏幕像素”——旧实现固定 `px(20)`：
   // 该省的边界在屏幕上只有几个像素的位移，副本几乎**完全压在原省身上**（看不见、点不到、
   // 又要过压叠闸门），"复制省份"等于没复制。现在至少挪开可见的一段。
   const bb = provinceBBox(prov);
@@ -87,7 +87,7 @@ function ctxDuplicateProvince() {
   }, { allowOverlap: true });
   statusMsg(r && r.success === false
     ? `复制省份失败：${r.message || r.rejected}`
-    : `已复制「${prov.name}」→「${prov.name} 副本」（偏移 ${Math.round(offset)} 世界单位，可 Ctrl+Z 撤回）`);
+    : `已复制“${prov.name}”→“${prov.name} 副本”（偏移 ${Math.round(offset)} 世界单位，可 Ctrl+Z 撤回）`);
   render();
   contextMenu.value.show = false;
 }
@@ -97,19 +97,19 @@ function addProvinceWithOverlapGate(prov) {
   if (r && r.rejected === 'overlap') {
     const pct = Math.round((r.ratio || 0) * 100);
     const names = (r.offenders || []).slice(0, 3).map(o => o.name).join('、');
-    // 🔴 压叠率很高时，**「再建一个」根本不是正解** —— 说明这块地已被一个省占满
+    // 🔴 压叠率很高时，**“再建一个”根本不是正解** —— 说明这块地已被一个省占满
     //    （真实案例：导入的底图把整块大陆做成一个省，用户在图里画哪儿都 100% 压叠，
-    //    连试几次都只能点「确定」硬压，然后以为「司天不能画省份」）。
+    //    连试几次都只能点“确定”硬压，然后以为“司天不能画省份”）。
     //    这时该引导他去**拆分**那个大省，而不是批准又一次叠罗汉。
     const tip = pct >= 80
-      ? '（这块地已被一个省占满 —— 更合适的做法是用「拆分」(X) 把它切开，而不是叠一个新省上去）'
-      : '（创建后可用「改形状」(G) 调整，或用「删除」(E) 去掉）';
+      ? '（这块地已被一个省占满 —— 更合适的做法是用“拆分”(X) 把它切开，而不是叠一个新省上去）'
+      : '（创建后可用“改形状”(G) 调整，或用“删除”(E) 去掉）';
     if (!confirm(`${r.message}\n\n压叠 ${pct}%${names ? `（${names}）` : ''}。仍要在这里创建吗？\n${tip}`)) {
-      statusMsg(`已取消创建：「${prov.name}」压在已有省份上（${pct}%）`);
+      statusMsg(`已取消创建：“${prov.name}”压在已有省份上（${pct}%）`);
       return null;
     }
     const r2 = store.addBaseProvince(baseMapKey.value, prov, { allowOverlap: true });
-    statusMsg(`已按确认创建「${prov.name}」——与已有省份压叠 ${pct}%，记得稍后调整`);
+    statusMsg(`已按确认创建“${prov.name}”——与已有省份压叠 ${pct}%，记得稍后调整`);
     return r2;
   }
   if (r && r.success === false) {
@@ -160,11 +160,11 @@ function confirmVertexBatchOverlap(entries) {
     worsened.push({ name: e.prov.name || e.prov.id, pct: Math.round(res.ratio * 100), prevPct: Math.round(prevRatio * 100), names });
   }
   if (!worsened.length) return true;
-  const lines = worsened.slice(0, 4).map((w) => `「${w.name}」压叠 ${w.pct}%（拖动前 ${w.prevPct}%）${w.names ? `：${w.names}` : ''}`).join('\n');
+  const lines = worsened.slice(0, 4).map((w) => `“${w.name}”压叠 ${w.pct}%（拖动前 ${w.prevPct}%）${w.names ? `：${w.names}` : ''}`).join('\n');
   const okApply = window.confirm(
     `这次拖动会让跟随移动的邻省压到别的省身上：\n\n${lines}\n\n`
     + '压叠会让点选、归属上色和势力标签互相打架。\n\n'
-    + '点「确定」= 应用这次移动；点「取消」= 放弃（目标省与邻省都保持拖动前，什么都不写）。'
+    + '点“确定”= 应用这次移动；点“取消”= 放弃（目标省与邻省都保持拖动前，什么都不写）。'
   );
   if (okApply) return true;
   statusMsg(`已放弃这次顶点移动（会让 ${worsened.length} 个邻省压到别人身上）`);
@@ -206,16 +206,16 @@ function confirmVertexMoveOverlap(before, after) {
   const names = (res.offenders || []).slice(0, 3)
     .map(o => `${o.name}${o.kind === 'sea' ? '（海域）' : ''}`).join('、');
   const okApply = window.confirm(
-    `这次顶点移动让「${before.name || before.id}」与已有省份压叠 ${pct}%`
+    `这次顶点移动让“${before.name || before.id}”与已有省份压叠 ${pct}%`
     + `（拖动前 ${prevPct}%）${names ? `：${names}` : ''}。\n\n`
     + '压叠会让点选、归属上色和势力标签互相打架。\n\n'
-    + '点「确定」= 应用这次移动；点「取消」= 放弃这次移动（形状保持拖动前）。'
+    + '点“确定”= 应用这次移动；点“取消”= 放弃这次移动（形状保持拖动前）。'
   );
   if (okApply) {
-    statusMsg(`已应用顶点移动 —— 与「${names || '已有省份'}」压叠 ${pct}%（拖动前 ${prevPct}%），记得稍后调整`);
+    statusMsg(`已应用顶点移动 —— 与“${names || '已有省份'}”压叠 ${pct}%（拖动前 ${prevPct}%），记得稍后调整`);
     return true;
   }
-  statusMsg(`已放弃这次顶点移动（会把「${before.name || before.id}」压到「${names || '已有省份'}」上 ${pct}%）`);
+  statusMsg(`已放弃这次顶点移动（会把“${before.name || before.id}”压到“${names || '已有省份'}”上 ${pct}%）`);
   return false;
 }
 

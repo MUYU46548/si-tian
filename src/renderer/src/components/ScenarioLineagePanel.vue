@@ -21,8 +21,8 @@
       <!-- Tab 1：谱系纠正 -->
       <div v-if="tab === 'lineage'" class="slp-body">
         <p class="slp-note">
-          自动匹配按「相邻剧本的省份重叠度」推断继承关系。若推断错了，用
-          <b>承自</b> 指向前一剧本的势力即可 —— 这会同时改变「变化图层」的判定。
+          自动匹配按“相邻剧本的省份重叠度”推断继承关系。若推断错了，用
+          <b>承自</b> 指向前一剧本的势力即可 —— 这会同时改变“变化图层”的判定。
         </p>
 
         <div class="slp-era" v-for="k in eraList" :key="'e' + k">
@@ -70,14 +70,14 @@
       <!-- Tab 2：易主日期（月日精度） -->
       <div v-else class="slp-body">
         <p class="slp-note">
-          未显式指定时，易主日期按「本剧本内均匀铺开」推算（<b>合成值</b>，不是史料）。
+          未显式指定时，易主日期按“本剧本内均匀铺开”推算（<b>合成值</b>，不是史料）。
           日期可精确到<b>月日</b>：月/日留空 = 只到年（语义 = 该年 1 月 1 日）。
           同一年可以录<b>多次</b>易主（在这一代里换了两次主人），逐条按日期生效。
           在时间轴上任一日期用油漆桶上色，也会自动写入该日的显式值。清空即回到推算。
         </p>
         <div v-if="!yearRows.length" class="slp-empty">当前剧本没有谱系变化省份。</div>
         <template v-else>
-          <!-- 录入进度 + 批量操作（2026-10-02）：逐个改是 N 条 undo，且「这一代都定在某日」要写 N 遍 -->
+          <!-- 录入进度 + 批量操作（2026-10-02）：逐个改是 N 条 undo，且“这一代都定在某日”要写 N 遍 -->
           <div class="slp-bulk">
             <span class="slp-stat" data-testid="slp-cy-stat">
               本剧本 <b>{{ yearRows.length }}</b> 省易主（{{ eventTotal }} 条事件）：显式
@@ -249,7 +249,7 @@ const yearRows = computed(() => {
     const find = (sc, id) => (sc.polities || []).find((p) => p.id === id);
     ctx.old = find(prev, oldPol);
     ctx.new = find(s, newPol);
-    // 「这一行显示什么日期」：显式事件优先；没有显式就用合成的那个（同一条判定来自时间轴）
+    // “这一行显示什么日期”：显式事件优先；没有显式就用合成的那个（同一条判定来自时间轴）
     const events = (e.byProvince && e.byProvince[pid]) || [];
     const display = pickDisplayEvent(events);
     const check = validateChangeDateInRange(display, r.start, r.end);
@@ -262,7 +262,7 @@ const yearRows = computed(() => {
       newName: ctx.new?.name || newPol || '（无主）',
       newColor: ctx.new?.color || '#4a5468',
       // 这一行对应的**新主 id**：批量设日期/固化推算值时必须一起写回，
-      // 否则事件会变成「那天起无主」（见 applyBulkSet 的注释）
+      // 否则事件会变成“那天起无主”（见 applyBulkSet 的注释）
       owner: newPol || null,
       oldOwner: oldPol || null,
       // 生效日期（合成时就是那条合成日期）；月日为 null 表示只到年
@@ -270,7 +270,7 @@ const yearRows = computed(() => {
       eventCount: events.length,
       explicit: !!e.explicit[pid],
       hasMonth: (display.m ?? null) !== null,
-      // 只有「显式录入且越界」才提示 —— 合成值必然落在区间内，不必刷屏
+      // 只有“显式录入且越界”才提示 —— 合成值必然落在区间内，不必刷屏
       warn: (!check.ok && e.explicit[pid]) ? check.reason : '',
       // 该省是否有多条事件（同省同年多次易主）—— UI 上标出来，否则用户不知道能录多次
       multi: events.length > 1,
@@ -342,8 +342,8 @@ function applyBulkSet() {
   if (!bulkDateValid.value || !yearRows.value.length) return;
   const d = bulkDate.value;
   const patch = {};
-  // 🔴 必须**带上新主**（2026-10-24）：v2 的 `changeEvents` 是「某天归谁」，只写日期不写 owner
-  //    等于在写「那天起变成无主」。旧实现只传 `{y,m,d}` → `owner` 落到 null，
+  // 🔴 必须**带上新主**（2026-10-24）：v2 的 `changeEvents` 是“某天归谁”，只写日期不写 owner
+  //    等于在写“那天起变成无主”。旧实现只传 `{y,m,d}` → `owner` 落到 null，
   //    平时看不出来（缓存 ownership 没跟着改），但账本按事件回放时那一片会**直接变无主**。
   //    单省输入框一直是对的（带 `sc.ownership[pid]`），批量条漏了 —— 这里补上。
   for (const r of yearRows.value) patch[r.pid] = { y: d.y, m: d.m, d: d.d, owner: r.owner };
@@ -369,7 +369,7 @@ function applyBulkClear() {
 
 /**
  * 面板自用的体检（供 Tab 头部/调试：显式 vs 合成、同省多次易主）；与导出对话框同一份实现。
- * `multiPerProvince` 是月日精度带来的新信息 —— 面板上要能说出「有 N 个省在这一代换了多次」。
+ * `multiPerProvince` 是月日精度带来的新信息 —— 面板上要能说出“有 N 个省在这一代换了多次”。
  */
 const dates = computed(() => changeDateStats(props.timeline));
 const multiText = computed(() => {
@@ -472,7 +472,7 @@ const multiText = computed(() => {
   max-width: 220px;
 }
 .slp-input { width: 84px; font-variant-numeric: tabular-nums; }
-/* 月日精度：日期三格（年-月-日）。年宽、月日窄；「-」不可点选，避免复制出脏文本 */
+/* 月日精度：日期三格（年-月-日）。年宽、月日窄；“-”不可点选，避免复制出脏文本 */
 .slp-date { display: inline-flex; align-items: center; gap: 3px; }
 .slp-input.slp-y { width: 70px; }
 .slp-input.slp-md { width: 46px; }

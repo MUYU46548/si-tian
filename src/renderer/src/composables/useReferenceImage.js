@@ -147,7 +147,7 @@ export function useReferenceImage({ store, props, emit, renderer, currentMapData
   function removeRefListItem(idx) {
     const ref = referenceImages.value[idx];
     if (!ref) return;
-    if (!confirm(`删除底图「${ref.name || '底图 ' + (idx + 1)}」？`)) return;
+    if (!confirm(`删除底图“${ref.name || '底图 ' + (idx + 1)}”？`)) return;
     store.removeReferenceImageById(props.planet.id, ref.id);
     delete refImageObjs[ref.id];
     if (activeRefIndex.value >= referenceImages.value.length) {

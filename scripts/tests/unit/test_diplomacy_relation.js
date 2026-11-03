@@ -2,14 +2,14 @@
 /**
  * Node 单测：外交表 UI（N3a-2）所依赖的**关系查询语义**（`utils/scenarioEventLedger.js`）
  *
- * 为什么单独有此文件：`DiplomacyPanel.vue` 只做展示 —— 它把「某年甲与乙什么关系」
+ * 为什么单独有此文件：`DiplomacyPanel.vue` 只做展示 —— 它把“某年甲与乙什么关系”
  * 整个交给 `relationBetween` / `describeRelation`（store 的 `queryRelationAt` 同源）
  * 与 `relationsAt`（矩阵）。面板本身没有第二套日期窗口比较，因此这里必须把
  * **面板真正依赖的语义**逐条钉住：
  *   ① 两个时间窗重叠时：后开始（更晚）的那条生效（不是先录的、也不是"优先级更高"的）；
  *   ② 先开始的那条到期后自动回落到仍在有效期内的更早关系；全部到期 → 中立且 `known=false`；
- *   ③ 一对**没有任何事件**的势力 → 默认「中立」标签 + `known=false`（面板据此显示
- *      「该年两方无关系」，而不是谎称"确定和平"）；
+ *   ③ 一对**没有任何事件**的势力 → 默认“中立”标签 + `known=false`（面板据此显示
+ *      “该年两方无关系”，而不是谎称"确定和平"）；
  *   ④ 关系随时间变化（敌对 → 同盟 → 中立）；和约把中立"写实"（`known=true`、type=peace）；
  *   ⑤ 矩阵 `relationsAt`：双向、只报非中立（和约后该对从矩阵消失 → 面板格子显示中立）；
  *   ⑥ 只读：查询不改入参；`timelineEventsOf` 对空/非法剧本返回 `[]`（面板空状态判据）。
@@ -90,7 +90,7 @@ async function main() {
       `战争终止当日应回落到同盟，实际 ${at('1352-06-01').relation}`);
     assert(at('1359-12-31').relation === 'Ally', '同盟有效期内应一直同盟');
     assert(at('1361-01-01').relation === 'Neutral' && at('1361-01-01').known === false,
-      `全部到期后应是「中立且无已知事件」，实际 ${JSON.stringify(at('1361-01-01'))}`);
+      `全部到期后应是“中立且无已知事件”，实际 ${JSON.stringify(at('1361-01-01'))}`);
     return '1349 敌对 / 1351 同盟（重叠时后起者胜）/ 1352-06-01 回落同盟 / 1361 中立未知';
   });
 
@@ -104,15 +104,15 @@ async function main() {
     assert(L.formatEventSpan(war) === '1348-06-01 ~ 1352-06-01',
       `战争时间窗文案不对：${L.formatEventSpan(war)}`);
     assert(L.formatEventSpan({ from: ally.from, to: null }) === '1350-01-01 起',
-      `未终止事件的文案应为「… 起」，实际 ${L.formatEventSpan({ from: ally.from, to: null })}`);
+      `未终止事件的文案应为“… 起”，实际 ${L.formatEventSpan({ from: ally.from, to: null })}`);
     return `${active.length} 条生效；${L.formatEventSpan(war)}`;
   });
 
-  // ── ③ 没有事件的一对 → 默认/未知（面板空状态「该年两方无关系」的判据）──
-  check('③ 没有事件的一对 → 中立 + known=false + eventId=null；文案说「没有已记录」，不谎称确定和平', () => {
+  // ── ③ 没有事件的一对 → 默认/未知（面板空状态“该年两方无关系”的判据）──
+  check('③ 没有事件的一对 → 中立 + known=false + eventId=null；文案说“没有已记录”，不谎称确定和平', () => {
     const empty = L.relationBetween([], 'pol_jia', 'pol_bing', '1350');
     assert(empty.relation === L.RELATIONS.NEUTRAL, `默认关系应为 Neutral，实际 ${empty.relation}`);
-    assert(empty.label === '中立', `默认标签应为「中立」，实际 ${empty.label}`);
+    assert(empty.label === '中立', `默认标签应为“中立”，实际 ${empty.label}`);
     assert(empty.known === false, '没有事件时 known 必须是 false（面板据此显示"无关系"而不是"和平"）');
     assert(empty.eventId === null && empty.since === null, `无事件时不该有来源：${JSON.stringify(empty)}`);
 
@@ -133,7 +133,7 @@ async function main() {
     assert(at('1351').relation === 'Ally', '1351 应同盟');
     const p = at('1352-06-01');
     assert(p.relation === 'Neutral' && p.known === true,
-      `和约当天应是「来自事件的中立」，实际 ${JSON.stringify(p)}`);
+      `和约当天应是“来自事件的中立”，实际 ${JSON.stringify(p)}`);
     assert(p.type === 'peace' && p.eventId === peace.id,
       `和约中立必须点名 peace 事件，实际 ${p.type}/${p.eventId}`);
     assert(at('1361').relation === 'Neutral' && at('1361').known === true,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 52：Phase 3 省份「归属标签网格」——笔刷 / 自由轮廓 / 自动省界 / 重编号安全撤销
+"""用例 52：Phase 3 省份“归属标签网格”——笔刷 / 自由轮廓 / 自动省界 / 重编号安全撤销
 
 覆盖：
   a) 纯函数层：多边形 → 格归属栅格化（面积降序、命中即停）；差异边 → 省界链；Chaikin 平滑；
@@ -103,7 +103,7 @@ JS_STORE = r"""
   if (!base) return JSON.stringify({ fails: ['底图 ' + KEY + ' 不存在'] });
 
   // mock 底图可能没有任何省份 → 注入 3 个面积不同的测试省份（大/中/小，中省在大省内部）
-  // ⚠️ 这里**刻意让中省完全落在大省内部**（本用例测的是「标签网格」，嵌套是它的前提）。
+  // ⚠️ 这里**刻意让中省完全落在大省内部**（本用例测的是“标签网格”，嵌套是它的前提）。
   //    2026-10-02 起 `addBaseProvince` 默认带**压叠闸门**（新省压住已有省 >25% 会拒绝，等 UI 确认），
   //    程序化造数必须显式跳过 —— 否则中省静默建不出来，后面所有序号/target 断言整体错位。
   const rects = [
@@ -193,7 +193,7 @@ JS_STORE = r"""
   ok('重置后所有省几何为空',
      s.baseMaps[KEY].terrain.every(p => (p.points || []).length === 0),
      JSON.stringify(s.baseMaps[KEY].terrain.map(p => (p.points || []).length)));
-  s.undo();   // 撤销「重置省界」→ 几何回来，网格重建才有东西可栅格化
+  s.undo();   // 撤销“重置省界”→ 几何回来，网格重建才有东西可栅格化
   const rebuilt = s.rebuildProvinceGrid(KEY);
   ok('重建网格（退役但仍可用）', rebuilt && rebuilt.owned > 0, JSON.stringify(rebuilt));
 
@@ -227,7 +227,7 @@ JS_READONLY = r"""
   G.setWriteMode('readonly', '');
   same('已进入只读态', G.isReadOnly.value, true);
 
-  // 用一个「与当前值不同的目标」落笔 —— 可写时这一笔必然改动该格，只读时必然零改动
+  // 用一个“与当前值不同的目标”落笔 —— 可写时这一笔必然改动该格，只读时必然零改动
   const cx = entry.grid.ox + 10 * entry.grid.cell, cy = entry.grid.oy + 10 * entry.grid.cell;
   const roIdx = 10 * entry.grid.cols + 10;
   const roPre = entry.labels[roIdx];
@@ -302,9 +302,9 @@ JS_WIRING = r"""
   ok('存在省份笔刷工具分支', typeof sc.setTool === 'function');
   sc.setTool('provinceBrush');
   ok('切到省份笔刷', sc.tool === 'provinceBrush', sc.tool);
-  // 🔴 P2（2026-10-09）：**多边形是唯一几何表示** —— 网格（含「网格视图」开关、异步补建）
+  // 🔴 P2（2026-10-09）：**多边形是唯一几何表示** —— 网格（含“网格视图”开关、异步补建）
   //    整体退役。这三条反过来守：谁把格点层加回来就红。
-  ok('P2：没有「网格视图」开关（只有多边形一个渲染路径）',
+  ok('P2：没有“网格视图”开关（只有多边形一个渲染路径）',
      sc.showProvinceMesh === undefined, String(sc.showProvinceMesh));
   ok('P2：不再暴露 provinceMeshOn（格点中间层已删）',
      typeof sc.provinceMeshOn === 'undefined', String(sc.provinceMeshOn));
@@ -315,21 +315,21 @@ JS_WIRING = r"""
   ok('切到自由轮廓', sc.tool === 'provinceLasso' && sc.provBrushTool === sc.provBrushTool);
   ok('目标省份列表可读', Array.isArray(sc.provinceTargets));
   // 🔴 布局守卫（2026-09-20 存量 bug）：全屏视图组件必须**单根**，否则 height:100%+flex:1 链断，
-  // 画布只剩 <canvas> 固有高度 150px（症状就是「历史剧本打开只有工具栏，地图看不到」）
+  // 画布只剩 <canvas> 固有高度 150px（症状就是“历史剧本打开只有工具栏，地图看不到”）
   const main = document.querySelector('.main-content');
   const kids = main ? main.children.length : -1;
   ok('全屏视图在 .main-content 下只有一个根', kids === 1, kids + ' 个根（≥2 = 根容器提前闭合）');
   const cvsH = sc.canvas ? Math.round(sc.canvas.getBoundingClientRect().height) : -1;
   ok('画布真的撑开了（不是 canvas 固有 150px）', cvsH > 150, cvsH + 'px');
   // 工具栏按钮存在（用 title 定位，不用图标文本）
-  // 🔴 2026-10-20：几何笔刷（把笔迹并进某个省）改名为「改省界」并收进**底图编辑**行 ——
-  //    日常行只留「涂归属」（势力归属）。所以先开模式再查按钮（DOM 更新是异步的，等一拍）。
+  // 🔴 2026-10-20：几何笔刷（把笔迹并进某个省）改名为“改省界”并收进**底图编辑**行 ——
+  //    日常行只留“涂归属”（势力归属）。所以先开模式再查按钮（DOM 更新是异步的，等一拍）。
   sc.basemapEditMode = true;
   await new Promise(r => setTimeout(r, 0));
   const btns = Array.from(document.querySelectorAll('.scenario-toolbar button'));
   const hasBrush = btns.some(b => (b.getAttribute('title') || '').includes('改省界'));
   const hasLasso = btns.some(b => (b.getAttribute('title') || '').includes('自由轮廓'));
-  ok('工具栏有「改省界」按钮（几何笔刷）', hasBrush);
+  ok('工具栏有“改省界”按钮（几何笔刷）', hasBrush);
   ok('工具栏有自由轮廓按钮', hasLasso);
   sc.basemapEditMode = false;
   return JSON.stringify({ fails, buttons: btns.length, nProv: sc.provinceTargets.length });
@@ -361,7 +361,7 @@ def run(cdp):
       return 'ok';
     })()""")
     if entered != 'ok':
-        return False, f'未找到「历史剧本」入口（{entered}）'
+        return False, f'未找到“历史剧本”入口（{entered}）'
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=20, desc='ScenarioMap 挂载')
     time.sleep(1.2)
 
@@ -386,7 +386,7 @@ def run(cdp):
     store_summary = (f'笔刷一笔 = 一条 undo（改 {obj["brushChanged"]} 格）、自由轮廓一笔改 {obj["lassoChanged"]} 格')
 
     # g) 接线：ScenarioMap 工具/按钮在位
-    # P3：省份笔刷/自由轮廓/点击填充等入口都在「变更归属」组与「更多」里 → 先展开工具栏
+    # P3：省份笔刷/自由轮廓/点击填充等入口都在“变更归属”组与“更多”里 → 先展开工具栏
     H.open_toolbar_more(cdp)
     obj2, err = _j(cdp, JS_WIRING.replace('PLACEHOLDER_SC', SC), desc='ScenarioMap 接线')
     H.close_toolbar_more(cdp)

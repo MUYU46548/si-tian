@@ -1,14 +1,14 @@
-// utils/scenarioTextPlacement.js — 剧本侧「城镇名 / 河流名」的取数与分级（纯函数，2026-10-25）
+// utils/scenarioTextPlacement.js — 剧本侧“城镇名 / 河流名”的取数与分级（纯函数，2026-10-25）
 //
 // 为什么单独一层：617 个城镇、160 条河，全画名字就是一张糊掉的图。分级规则必须
-// 画布与导出**共用**，否则「画布上只标首都、导出图里标了 617 个」这种不一致不会报错，
+// 画布与导出**共用**，否则“画布上只标首都、导出图里标了 617 个”这种不一致不会报错，
 // 只会让成品图没法用。
 //
 // ⚠️ 2026-10-27：**画布的档位不再由这里决定**。原先 `burgLabelTier(scale)` /
 //    `riverLabelTier(scale)` 按**绝对 cameraScale** 分级，而绝对 scale 依赖数据量纲
 //    （FMG 导入 ≈1.0、合成图 ≈0.2）→ 换一份数据阈值整体失准。现在画布统一按
-//    「可见比例」在 `utils/labelZoom.js` 里分档（close/near/mid/far），与势力名/省名同一口径；
-//    本模块只保留「各档最多标几条」的取数能力（`collectBurgLabels` / `collectRiverLabels`）。
+//    “可见比例”在 `utils/labelZoom.js` 里分档（close/near/mid/far），与势力名/省名同一口径；
+//    本模块只保留“各档最多标几条”的取数能力（`collectBurgLabels` / `collectRiverLabels`）。
 //
 // 导出是固定分辨率图，用**出版档**：首都 + 流量前 12 的河（`EXPORT_*`）。
 //

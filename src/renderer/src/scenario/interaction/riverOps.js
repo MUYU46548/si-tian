@@ -39,12 +39,12 @@ function applyRiverPick(id, shift = false) {
   if (!r) return false;
   if (shift) {
     const added = toggleRiverSelection(id);
-    statusMsg(`已${added ? '加选' : '移出'}河流「${r.name || '未命名'}」`
-      + `（当前选中 ${riverSelIds().length} 条）—— Delete 批量删 / 或点「裁到海岸线」`);
+    statusMsg(`已${added ? '加选' : '移出'}河流“${r.name || '未命名'}”`
+      + `（当前选中 ${riverSelIds().length} 条）—— Delete 批量删 / 或点“裁到海岸线”`);
   } else {
     setRiverSelection([id], id);
     const imported = String(r.id || '').indexOf('river_') !== 0;
-    statusMsg(`已选中${imported ? '导入' : ''}河流「${r.name || '未命名'}」（${(r.points || []).length} 个点）`
+    statusMsg(`已选中${imported ? '导入' : ''}河流“${r.name || '未命名'}”（${(r.points || []).length} 个点）`
       + (imported
         ? ' —— 上面有一条操作栏：删除 / 裁海岸线 / 取消选中（Esc 同效）；导入河不支持拖节点'
         : ' —— 上面有一条操作栏：删除 / 编辑节点 / 裁海岸线 / 取消选中（Esc 同效）'));
@@ -74,7 +74,7 @@ function deleteSelectedRiver() {
   const res = store.removeBaseMapRiver(baseMapKey.value, r.id);
   setRiverSelection([]);
   statusMsg(res && res.ok
-    ? `已删除河流「${res.removed || '未命名'}」—— Ctrl+Z 可撤回`
+    ? `已删除河流“${res.removed || '未命名'}”—— Ctrl+Z 可撤回`
     : `删除失败：${(res && res.message) || '未知原因'}`);
   render();
   return !!(res && res.ok);
@@ -117,7 +117,7 @@ function drawOneHandRiver(c, nodes, river, opts = {}) {
     subdiv: RIVER_CURVE_SUBDIV,
     color: opts.color || RIVER_DRAW_COLOR,
     bankColor: opts.bankColor || RIVER_BANK_COLOR,
-    // 🔴 2026-10-20：默认**不画岸线**（用户反复报的「两条边夹一条缝 / 铁轨」）。
+    // 🔴 2026-10-20：默认**不画岸线**（用户反复报的“两条边夹一条缝 / 铁轨”）。
     //    需要堤岸的调用方显式传 bankPx。
     bankPx: opts.bankPx === undefined ? 0 : opts.bankPx,
     // 不透明（同 `strokeTaperedLine`）：接缝叠自己不改颜色，半透明会压出深色细芯

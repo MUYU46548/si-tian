@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：历史剧本「月日精度日期」纯函数（src/renderer/src/utils/scenarioDates.js）
+ * Node 单元测试：历史剧本“月日精度日期”纯函数（src/renderer/src/utils/scenarioDates.js）
  *
  * 为什么必须有这一层：
  *   ① `changeYears` → `changeEvents` 是**破坏性**数据模型变更。迁移函数若不幂等，
- *      第二次跑就会用旧值覆盖新值 —— 用户会看到「我录的月日又变回 1 月 1 日了」，且不报错。
- *      这条只能靠纯函数层守：CDP 用例跑的是真实项目往返，成本高且不容易覆盖「跑两次」。
+ *      第二次跑就会用旧值覆盖新值 —— 用户会看到“我录的月日又变回 1 月 1 日了”，且不报错。
+ *      这条只能靠纯函数层守：CDP 用例跑的是真实项目往返，成本高且不容易覆盖“跑两次”。
  *   ② `m`/`d` 允许 null（只录到年），语义 = 该年 1 月 1 日。这个口径只要有两份实现，
  *      比较与格式化就会漂移（例如闰年 2-29 在一处合法、另一处越界）。
  *   ③ 负数年份（公元前）要能在文件名与界面里都活下来 —— 文件名里不能出现 `-`。
@@ -111,7 +111,7 @@ async function main() {
     eq(normalizeDate({ y: '不是年' }), null, '非数字年份');
     eq(normalizeDate(null), null, 'null');
     deepEq(normalizeDate({ year: 1993, month: 5, day: 12 }), { y: 1993, m: 5, d: 12 }, '长字段名也吃');
-    // 🔴 裸年份必须被接受：store 三个写入口的文档都写着「或裸年份」，
+    // 🔴 裸年份必须被接受：store 三个写入口的文档都写着“或裸年份”，
     //    而 normalizeEventList 早就按裸年份容错 —— 只认对象会让裸年份**静默失效**
     //    （setOwnership 直接拒绝 / batchSetOwnership 把日期丢掉却返回 success:true）。
     deepEq(normalizeDate(1993), { y: 1993, m: null, d: null }, '裸数字年份');
@@ -147,7 +147,7 @@ async function main() {
     return '键与序数同源';
   });
 
-  check('a4 formatDate：只录到年就只显示年（不许谎报成 1 月 1 日）；数字补零；负数年显示「前N」', () => {
+  check('a4 formatDate：只录到年就只显示年（不许谎报成 1 月 1 日）；数字补零；负数年显示“前N”', () => {
     eq(formatDate({ y: 1993 }), '1993', '只到年');
     eq(formatDate({ y: 1993, m: 5 }), '1993-05', '到月');
     eq(formatDate({ y: 1993, m: 5, d: 2 }), '1993-05-02', '到日补零');
@@ -191,7 +191,7 @@ async function main() {
     ]);
     deepEq(out.map((e) => [e.y, e.m, e.d, e.owner]),
       [[1990, 1, 1, 'A'], [1993, 5, 12, 'C']], '升序 + 去重留后');
-    deepEq(normalizeEventList([1993]), [{ y: 1993, m: null, d: null, owner: null }], '裸数字当「只到年」');
+    deepEq(normalizeEventList([1993]), [{ y: 1993, m: null, d: null, owner: null }], '裸数字当“只到年”');
     deepEq(normalizeEventList('nope'), [], '非数组给空');
     return '升序 / 去重 / 容错';
   });
@@ -316,13 +316,13 @@ async function main() {
   // ══ E. 归属查询（月日精度真的生效）══
   // 🔴 为什么这一段的夹具是**手搓时间轴模型**而不是 `buildTimeline(...)`（踩了五次才定）：
   //    `changed`（= 谁算易主）判的是**谱系差异**，而谱系由 `computeLineage` 的
-  //    「相邻剧本省份集合重叠度**贪心继承**」推出。那套规则有两条很反直觉的后果：
-  //      ① 与上代有重叠的「新」势力会**继承旧谱系**（不看谁先谁后）→「甲国改名叫丙国」
+  //    “相邻剧本省份集合重叠度**贪心继承**”推出。那套规则有两条很反直觉的后果：
+  //      ① 与上代有重叠的“新”势力会**继承旧谱系**（不看谁先谁后）→“甲国改名叫丙国”
   //         会被判成继承 → 谱系没变 → **不进 changed**（易主事件根本认不出来）；
-  //      ② 重叠度平局由 `localeCompare`（还依赖 ICU 排序）裁决 →「谁变了」变得**依赖省数**，
+  //      ② 重叠度平局由 `localeCompare`（还依赖 ICU 排序）裁决 →“谁变了”变得**依赖省数**，
   //         实测同一个夹具改一个省名就能从 changed=[] 翻成 changed=['c']。
   //    结论：**别拿 buildTimeline 驱动的夹具去断言日期行为** —— 那是在测谱系匹配器，
-  //    会把「测日期」变成「猜贪心配对」。这里改成手搓模型（只喂 `byProvince`，其余字段无关），
+  //    会把“测日期”变成“猜贪心配对”。这里改成手搓模型（只喂 `byProvince`，其余字段无关），
   //    把日期逻辑与谱系逻辑彻底解耦；谱系那一层已有 `test_41` / `test_scenario_slices` 在守。
   const stubEra = (y, byProvince, changed) => ({
     changed, explicit: {}, byProvince, events: [], firstDate: {}, lastDate: {},
@@ -363,7 +363,7 @@ async function main() {
     eq(currentOwnerRef(tl, 1, 'A', { y: 1045 }).owner, '甲国', '只给年 = 1 月 1 日 → 仍是旧主');
     eq(currentOwnerRef(tl, 1, 'A', { y: 1046 }).owner, '乙国', '下一年是新主');
     eq(currentOwnerRef(tl, 1, 'A', { y: 1045, m: 1, d: 1 }).owner, '甲国', '显式 1-1 与缺省同判');
-    // 数字年份入参（旧调用点）按「该年 1 月 1 日」处理 —— 与上面显式 1-1 同判
+    // 数字年份入参（旧调用点）按“该年 1 月 1 日”处理 —— 与上面显式 1-1 同判
     eq(currentOwnerRef(tl, 1, 'A', 1045).owner, '甲国', '裸数字年份 = 该年 1-1');
     eq(currentOwnerRef(tl, 1, 'A', 1046).owner, '乙国', '裸数字下一年');
     return '年内前后半段归属相反 + 斜线/落定随动';
@@ -392,7 +392,7 @@ async function main() {
       { A: '丙国' }, ['A'],
     );
     // 关键：即使已经换过两轮，`baseOwnerRef` 仍必须回上一代（甲国）——
-    // 否则 EU4 斜线会变成「新主底色 + 新主斜线」= 看不出谁占了谁
+    // 否则 EU4 斜线会变成“新主底色 + 新主斜线”= 看不出谁占了谁
     eq(baseOwnerRef(tl, 1, 'A', { y: 1045, m: 5 }).owner, '甲国', '底色 = 上一代');
     eq(baseOwnerRef(tl, 1, 'A', { y: 1045, m: 5 }).era, 0, '底色颜色去上一代查');
     eq(currentOwnerRef(tl, 1, 'A', { y: 1045, m: 5 }).owner, '乙国', '当前归属 = 中间主');
@@ -424,13 +424,13 @@ async function main() {
   // ══ F. 迁移网：旧 changeYears 在真实时间轴里也必须被认成显式日期 ══
   // 🔴 这条守的是本轮**最危险**的静默失效：入口若漏了迁移，旧键读不出来 →
   //    `computeEraChanges` 会退回**合成值**（区间内均匀铺开、看起来很像真的）→
-  //    用户「明明录过易主年份」却看到一堆编出来的日期，而且**不报错**。
+  //    用户“明明录过易主年份”却看到一堆编出来的日期，而且**不报错**。
   //    用 `successorOf` 把谱系显式连起来（不依赖重叠度贪心配对），夹具才是确定的。
   check('f1 🔴 buildTimeline 自带迁移网：喂旧 changeYears → 认成显式日期 + 单条 + 月日 null，且不再残留旧键', () => {
     const raw = [
       // ⚠️ 谱系夹具必须照抄已实证能产出非空 changed 的形状（见 t1）：甲代只持有 A，
       //    乙代有三个势力且**多变出来的省**（B/C）上一代无人持有 → 谱系必然不同 → 判为易主。
-      //    别自己设计「看起来像易主」的夹具：`computeLineage` 按重叠度贪心继承，
+      //    别自己设计“看起来像易主”的夹具：`computeLineage` 按重叠度贪心继承，
       //    几乎总能把新势力配到旧势力上，于是 changed 静默为空（这一段踩了六次）。
       scen('甲', 1000, 1050, { A: '甲国' }, { polities: [{ id: '甲国', name: '甲国' }] }),
       scen('乙', 1050, 1100, { A: '乙国', B: '丙国', C: '丁国' }, {

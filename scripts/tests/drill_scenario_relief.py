@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""剧本视图「地形浮雕底」判据（2026-11-03）
+"""剧本视图“地形浮雕底”判据（2026-11-03）
 
-背景：用户对照 EU4 的原话是「一屏 65% 地形 + 25% 政治水洗 + 10% 线字」，而司天剧本视图
+背景：用户对照 EU4 的原话是“一屏 65% 地形 + 25% 政治水洗 + 10% 线字”，而司天剧本视图
 90% 是平涂色块。这一刀把底图高度图（山体阴影 + 地形色）铺到政治色**下面**，
 省份填色降到 ~0.42 水洗。
 
@@ -110,7 +110,7 @@ SCENE_JS = """(() => {
   sm.baseMapKey = KEY;
   if (typeof sm.onBaseMapChange === 'function') sm.onBaseMapChange();
 
-  // ① 省份：地形推演需要「画好的陆地」当掩膜 —— **必须先有轮廓再生成**（顺序反了会拿不到高度图）
+  // ① 省份：地形推演需要“画好的陆地”当掩膜 —— **必须先有轮廓再生成**（顺序反了会拿不到高度图）
   const rects = [];
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 2; c++) {
@@ -127,7 +127,7 @@ SCENE_JS = """(() => {
   }
   const provIds = (s.baseMaps[KEY].terrain || []).map(p => p.id);
 
-  // ② 高度图：走产品自己的「按轮廓推演地形」（不是测试另造一套假数据）
+  // ② 高度图：走产品自己的“按轮廓推演地形”（不是测试另造一套假数据）
   const gen = typeof s.synthesizeBaseMapTerrain === 'function'
     ? s.synthesizeBaseMapTerrain(KEY, { seed: 7 })
     : { ok: false, reason: 'no-api' };

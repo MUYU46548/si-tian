@@ -64,7 +64,7 @@ export function createMiscActions(ctx) {
 function ctxDeleteProvince() {
   const prov = selectedProvince.value;
   if (!prov) { contextMenu.value.show = false; return; }
-  if (!confirm(`确定删除省份「${prov.name}」？\n\n该省在各剧本里的势力归属与易主年份会一并清空（可用 Ctrl+Z 整体撤回）。`)) {
+  if (!confirm(`确定删除省份“${prov.name}”？\n\n该省在各剧本里的势力归属与易主年份会一并清空（可用 Ctrl+Z 整体撤回）。`)) {
     contextMenu.value.show = false;
     return;
   }
@@ -75,8 +75,8 @@ function ctxDeleteProvince() {
   }
   const r = store.removeBaseProvince(baseMapKey.value, prov.id);
   statusMsg(r && r.cascadedScenarios
-    ? `已删除省份「${prov.name}」（连带清理 ${r.cascadedScenarios} 个剧本里的归属键，可 Ctrl+Z 撤回）`
-    : `已删除省份「${prov.name}」`);
+    ? `已删除省份“${prov.name}”（连带清理 ${r.cascadedScenarios} 个剧本里的归属键，可 Ctrl+Z 撤回）`
+    : `已删除省份“${prov.name}”`);
   selectedProvince.value = null;
   showProps.value = false;
   render();
@@ -93,7 +93,7 @@ function clearAllScenarios() {
   const okGo = window.confirm(
     `清空全部 ${n} 条剧本（所有剧本集）？\n\n`
     + '只删剧本本身（名称 / 年份 / 势力归属 / 易主记录 / 标注与标记）。\n'
-    + '**底图与省份边界一个都不动** —— 省份还在，可以直接用「批量铺底 (A)」重切。\n'
+    + '**底图与省份边界一个都不动** —— 省份还在，可以直接用“批量铺底 (A)”重切。\n'
     + '剧本集本身保留（只是会变成空组）。\n\n'
     + '这一步可以用 Ctrl+Z 撤销。'
   );
@@ -130,7 +130,7 @@ function getAutoRiverNetwork() {
 function getDisplayRivers() {
   const rivers = baseMap.value?.rivers || [];
   const terrain = baseMap.value?.terrain || null;
-  // 🔴 2026-10-21：`.map` 导入的河是「去 + 原路回」的闭合往返（160/160 实测），
+  // 🔴 2026-10-21：`.map` 导入的河是“去 + 原路回”的闭合往返（160/160 实测），
   //    不折成中心线就会画成两条平行线（用户截图里的"从某个节点开始分支"）。
   //    在**显示列表**里折，不改用户数据；手画河（river_ 前缀）原样。
   // 🔴 缓存检查必须在**折叠/裁剪之前**：160 条河的全点折叠是每帧 20~25ms（CPU 采样实测），
@@ -152,7 +152,7 @@ function getDisplayRivers() {
 function finishDraw() {
   const id = `prov_${Date.now()}`;
   // ① 先贴**共享边界骨架**（P0 第二块）：相邻省份的轮廓走同一条线 → 零缝。
-  //    只吸端点会在两省之间斜切一条缝，`conformToSkeleton` 是「整段插中间顶点」。
+  //    只吸端点会在两省之间斜切一条缝，`conformToSkeleton` 是“整段插中间顶点”。
   const rawPts = drawPoints.value.map(p => ({ x: p.x, y: p.y }));
   const skeleton = buildSkeleton(baseMap.value?.terrain || []);
   const conformed = skeleton.length ? conformToSkeleton(rawPts, skeleton, SNAP_EDGE_THRESHOLD) : rawPts;
@@ -283,7 +283,7 @@ function switchGroup(gid) {
     tlDate.value = { y: 0, m: null, d: null };
     render();
   }
-  statusMsg(`已切到剧本集「${groupNameOf(id)}」${list.length ? `（${list.length} 条剧本）` : '（空）'}`);
+  statusMsg(`已切到剧本集“${groupNameOf(id)}”${list.length ? `（${list.length} 条剧本）` : '（空）'}`);
 }
 
 function onDeletePolity() {
@@ -293,13 +293,13 @@ function onDeletePolity() {
   // 二次确认必须**点名影响面**：删势力会连带清掉它占着的省份归属（一条 undo 可整体还原）
   const owned = Object.values(sc.ownership || {}).filter(pid => pid === polity.id).length;
   const msg = owned
-    ? `删除势力「${polity.name}」？\n\n它当前占着 ${owned} 个省份 —— 这些省的归属会一并清空（画布上变灰）。\n可用 Ctrl+Z 整体撤回。`
-    : `删除势力「${polity.name}」？\n\n它当前没有占任何省份。可用 Ctrl+Z 撤回。`;
+    ? `删除势力“${polity.name}”？\n\n它当前占着 ${owned} 个省份 —— 这些省的归属会一并清空（画布上变灰）。\n可用 Ctrl+Z 整体撤回。`
+    : `删除势力“${polity.name}”？\n\n它当前没有占任何省份。可用 Ctrl+Z 撤回。`;
   if (!confirm(msg)) return;
   const r = store.removePolity(sc.id, polity.id);
   if (!r || !r.success) { statusMsg('删除势力失败'); return; }
   selectedPolity.value = null;
-  statusMsg(`已删除势力「${r.name}」（连带清空 ${r.affected} 个省的归属，可 Ctrl+Z 撤回）`);
+  statusMsg(`已删除势力“${r.name}”（连带清空 ${r.affected} 个省的归属，可 Ctrl+Z 撤回）`);
   render();
 }
 
@@ -310,13 +310,13 @@ function applyLandmassResult(r) {
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
   const hasHm = !!(hm && hm.grid && (hm.grid.points || []).length);
   rasterLayer.value = hasHm ? 'height' : 'landsea';
-  // 同时打开「立体」（山体阴影）：高度图只有分层设色时，山地与平地同样是"一片色"，
-  // 用户原话「看不出地形」。⚠️ 全局默认仍是**关**（既有底图不擅自改观感，
+  // 同时打开“立体”（山体阴影）：高度图只有分层设色时，山地与平地同样是"一片色"，
+  // 用户原话“看不出地形”。⚠️ 全局默认仍是**关**（既有底图不擅自改观感，
   // 见 `terrainShade` 的注释）；这里只是在"刚造完陆、正在看地形"的这一刻替用户打开。
   if (hasHm) terrainShade.value = true;
   landmassOpen.value = false;
   statusMsg(hasHm
-    ? `${(r && r.message) || '已造陆'}（已切到「高度」着色 + 开启「立体」）`
+    ? `${(r && r.message) || '已造陆'}（已切到“高度”着色 + 开启“立体”）`
     : ((r && r.message) || '已造陆'));
   render();
 }
@@ -325,7 +325,7 @@ function synthesizeBaseMapTerrainFromShape() {
   const had = !!baseMapHasHeightmap.value;
   if (had && !confirm(
     '这张底图已经有地形高度图了。\n\n'
-    + '「按轮廓生成地形」会用**推演结果替换**现有地形（可 Ctrl+Z 撤回）。\n'
+    + '“按轮廓生成地形”会用**推演结果替换**现有地形（可 Ctrl+Z 撤回）。\n'
     + '已有的手工涂改会一并被替换。\n\n'
     + '继续吗？',
   )) return;

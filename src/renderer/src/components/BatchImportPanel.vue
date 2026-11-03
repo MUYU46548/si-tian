@@ -63,7 +63,7 @@
           </template>
         </div>
 
-        <p class="import-tip">导入后需在设置面板执行「<Icon name="refresh" :size="12"/>重新提取数据」，新节点才会出现在地图中。</p>
+        <p class="import-tip">导入后需在设置面板执行“<Icon name="refresh" :size="12"/>重新提取数据”，新节点才会出现在地图中。</p>
       </div>
       <div class="panel-footer">
         <button class="btn-secondary" @click="close">取消</button>

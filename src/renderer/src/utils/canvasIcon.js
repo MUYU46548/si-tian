@@ -258,7 +258,7 @@ export const CANVAS_ICON_PATHS = {
 // 已缓存的 Path2D 实例（避免每帧重复解析路径字符串）
 const pathCache = new Map();
 
-// 图标名形态（小写字母/数字/连字符）：用于区分「漏登记的图标名」与「用户自定义 emoji」
+// 图标名形态（小写字母/数字/连字符）：用于区分“漏登记的图标名”与“用户自定义 emoji”
 const IDENT_RE = /^[a-z0-9-]+$/i;
 
 function getPaths(name) {
@@ -303,7 +303,7 @@ export function drawCanvasIcon(ctx, name, cx, cy, size, color = '#FFFFFF') {
  * 兼容入口：传入值为已知图标名时画矢量图标；
  * 否则按历史数据（用户自定义 emoji）用 fillText 回退，保证旧缓存可正常显示。
  *
- * 注意：仅对「非标识符形态」的值做 fillText 回退。纯 ASCII 标识符若缺几何，
+ * 注意：仅对“非标识符形态”的值做 fillText 回退。纯 ASCII 标识符若缺几何，
  * 说明是漏登记的图标名——此时宁可留白，也不能把 'table' 这种字样画到画布上。
  * @returns {boolean} 是否以矢量图标绘制
  */

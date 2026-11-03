@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Node 单元测试：「保存到底成没成」的文案判定（src/renderer/src/utils/saveStatusText.js）
+ * Node 单元测试：“保存到底成没成”的文案判定（src/renderer/src/utils/saveStatusText.js）
  *
- * 背景（2026-10-17，暮雨要求「保存诚实显示」）：
+ * 背景（2026-10-17，暮雨要求“保存诚实显示”）：
  * 项目态（`.sitian`）下保存是**两段**的 ——
  *   ① geodata 把画布改动推给 projectStore（`{ staged: true, persisted: false }`）
  *   ② projectStore 的 800ms 防抖把项目写进磁盘（成功才 `saveStatus = 'saved'`）
  * 把 ① 当成"存好了"的代价不是报错，而是**在最不该乐观的时刻乐观**：
- *   · 行星图「保存地图」按 `result.success` 报「保存成功」（事实：还在内存里）；
+ *   · 行星图“保存地图”按 `result.success` 报“保存成功”（事实：还在内存里）；
  *   · 底部状态栏在"改了但还没落盘"的整段时间停在上一枚绿标。
  *
  * 这些判定全是纯函数，正好在 Node 层用真实断言钉住（不依赖 CDP / 不依赖真实磁盘）。
@@ -39,7 +39,7 @@ function eq(actual, expected, label) {
   }
 }
 function has(text, sub, label) {
-  assert(String(text).indexOf(sub) >= 0, `${label}: 文字里没有「${sub}」（实际：${text}）`);
+  assert(String(text).indexOf(sub) >= 0, `${label}: 文字里没有“${sub}”（实际：${text}）`);
 }
 
 async function main() {
@@ -47,16 +47,16 @@ async function main() {
   const { describeSaveAction, resolveSaveDisplay, SAVE_ERR_MAX } = await load(SRC);
 
   // ══ a. 单次保存动作的返回值 ═══════════════════════════════════════════════
-  check('a1 🔴 项目态 staged（只交给项目）**不得**报「已保存」', () => {
+  check('a1 🔴 项目态 staged（只交给项目）**不得**报“已保存”', () => {
     const d = describeSaveAction({ success: true, staged: true, persisted: false });
     eq(d.state, 'staged', 'state');
     eq(d.kind, 'warn', 'kind（必须与成功态不同色）');
     has(d.text, '已交给项目', 'text');
-    assert(d.text.indexOf('已保存') < 0, `staged 文案里不许出现「已保存」（实际：${d.text}）`);
+    assert(d.text.indexOf('已保存') < 0, `staged 文案里不许出现“已保存”（实际：${d.text}）`);
     return d.text;
   });
 
-  check('a2 真落盘（persisted）才报「已保存到磁盘」', () => {
+  check('a2 真落盘（persisted）才报“已保存到磁盘”', () => {
     const d = describeSaveAction({ success: true, staged: true, persisted: true });
     eq(d.state, 'saved', 'state');
     eq(d.kind, 'ok', 'kind');
@@ -83,7 +83,7 @@ async function main() {
     return `${d.text.length} 字`;
   });
 
-  check('a5 legacy（没有 staged/persisted 字段）→ 照旧报「已保存」', () => {
+  check('a5 legacy（没有 staged/persisted 字段）→ 照旧报“已保存”', () => {
     const d = describeSaveAction({ success: true });
     eq(d.state, 'saved', 'state');
     eq(d.text, '已保存', 'text（旧路径直接写文件，旧说法是对的）');
@@ -115,7 +115,7 @@ async function main() {
     return d.text;
   });
 
-  check('b3 🔴 有改动未落盘（pending）不得显示「已保存」', () => {
+  check('b3 🔴 有改动未落盘（pending）不得显示“已保存”', () => {
     const d = resolveSaveDisplay({
       project: { saveState: { kind: 'ok', text: '已保存到磁盘' }, pending: true },
     });
@@ -135,14 +135,14 @@ async function main() {
     return `${a.text} / ${b.text}`;
   });
 
-  check('b5 项目态「已交给项目」（warn）是中间档，不是成功', () => {
+  check('b5 项目态“已交给项目”（warn）是中间档，不是成功', () => {
     const d = resolveSaveDisplay({ project: { saveState: { kind: 'warn', text: '已交给项目，待写入磁盘…' } } });
     eq(d.state, 'staged', 'state');
     eq(d.kind, 'warn', 'kind');
     return d.text;
   });
 
-  check('b6 画布侧 staged 也照实说「正在写入磁盘」', () => {
+  check('b6 画布侧 staged 也照实说“正在写入磁盘”', () => {
     const d = resolveSaveDisplay({ canvas: { status: 'staged' } });
     eq(d.state, 'staged', 'state');
     has(d.text, '已交给项目', 'text');

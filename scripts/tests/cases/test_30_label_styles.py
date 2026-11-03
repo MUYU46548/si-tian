@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 30：标签样式预设（P0-2 Aesthetic Labels）
 
-验收点（对应提示词 P0-2 的「验收标准」逐条）：
+验收点（对应提示词 P0-2 的“验收标准”逐条）：
 1. 6 种预设可切换，视觉效果明显区分 —— 预设字段两两不同 + 预览画布像素签名随切换变化
 2. 自定义样式实时预览 —— 改字号后预览画布立即重绘
 3. 预设保存/加载正常，重启后保留 —— 落盘 .sitian/config（mock 记在 window.__uiConfig）
@@ -119,7 +119,7 @@ def run(cdp):
       t.click();
       return 'ok';
     })()""") != 'ok':
-        return False, '设置面板缺少「标签样式」分页'
+        return False, '设置面板缺少“标签样式”分页'
     time.sleep(0.4)
 
     # 1. 6 种预设存在
@@ -151,7 +151,7 @@ def run(cdp):
     time.sleep(0.35)
     sig_village = _canvas_signature(cdp, '[data-testid="label-preview"]')
     if sig_village.get('hash') == sig_city.get('hash'):
-        return False, f'切换到「村庄」预设后预览画布无变化（{sig_city} → {sig_village}）'
+        return False, f'切换到“村庄”预设后预览画布无变化（{sig_city} → {sig_village}）'
 
     # 改字号（滑块 @input 路径）→ 预览立即重绘
     _j(cdp, """(async () => {
@@ -249,7 +249,7 @@ def run(cdp):
           return JSON.stringify({ color: mod.getPreset('town').color, scratchMagenta: n, sample });
         })()""")
         return False, (f'行星画布上找不到自定义颜色的标签像素（品红 {magenta}，'
-                       f'聚焦城镇「{town["name"]}」@{town["x"]:.0f},{town["y"]:.0f} 后）——'
+                       f'聚焦城镇“{town["name"]}”@{town["x"]:.0f},{town["y"]:.0f} 后）——'
                        f'诊断={diag} 渲染器自检={scratch}')
 
     # 7. lockScreenSize 可写可读

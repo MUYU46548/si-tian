@@ -11,7 +11,7 @@
  *   }
  *
  * 两条硬约束（2026-09-13 踩坑）：
- * 1. 写入必须走「stroke 快照」：按下时快照 + 换新数组，拖动期间就地改，
+ * 1. 写入必须走“stroke 快照”：按下时快照 + 换新数组，拖动期间就地改，
  *    抬起时压一条 undo。逐帧 execute 会把一次拖动拆成几百条撤销记录。
  * 2. 持久化的是普通数组（TypedArray 过 JSON 会退化成无 length 的对象），
  *    因此 load 后必须校验并重建，否则高度图会静默变成空数组。
@@ -30,15 +30,15 @@ import {
 // 统一成 Uint8Array 的口径在 `utils/heightmapChannels.js`（单一实现，勿在这里再写一份）
 import { CHANNEL_KEYS, normalizeChannel } from '../utils/heightmapChannels';
 // A6（2026-10-29）：行星侧也要登记**手绘地形**（特征级锁定）。不登记的话
-// 「重生成保留手绘」在行星侧永远是空开关 —— 手绘一个都没记，重生成自然"保留 0 格"。
+// “重生成保留手绘”在行星侧永远是空开关 —— 手绘一个都没记，重生成自然"保留 0 格"。
 import { mergeHandEdits } from '../utils/handEdits';
 
 const DEFAULT_SPACING = 14.4;
 const ELEV_MAP = { '深海': 5, '浅海': 15, '平原': 30, '丘陵': 50, '高原': 70, '山地': 85, '高山': 95 };
 const round3 = (v) => Math.round(v * 1000) / 1000;
 
-// 取「原始对象」（双层 unwrap）：
-// - 只 toRaw 一次，遇到「容器的原始对象里存着代理值」的场景（{...reactiveObj} 保存过）
+// 取“原始对象”（双层 unwrap）：
+// - 只 toRaw 一次，遇到“容器的原始对象里存着代理值”的场景（{...reactiveObj} 保存过）
 //   拿到的仍是代理 → 重循环里逐点 proxy get，2 万点级别直接卡死十几秒
 // - toRaw 幂等，双调用对已是原始对象的值无副作用
 const unwrap = (v) => (v && typeof v === 'object') ? toRaw(toRaw(v)) : v;
@@ -71,7 +71,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
   }
   // 重循环必须读原始对象：网格点数动辄 2 万+，逐点读 Vue 响应式代理
   // （每点数次 proxy get）会让建立高度图从毫秒级变成几十秒（实测卡死 CDP 15s）。
-  // 注意两级 toRaw：store.mapData 的容器里可能存着「代理」值（{...proxy} 保存过），
+  // 注意两级 toRaw：store.mapData 的容器里可能存着“代理”值（{...proxy} 保存过），
   // 只对容器做 toRaw 拿到的仍是代理 → 优化静默失效。
   function rawEntry() {
     const id = planetId();
@@ -81,7 +81,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     return entry ? unwrap(entry) : null;
   }
 
-  // 判断高度图各层是否是「长度正确的数值序列」
+  // 判断高度图各层是否是“长度正确的数值序列”
   function arraysValid(hm, count) {
     const ok = (a) => a && typeof a.length === 'number' && a.length === count;
     return ok(hm.h) && ok(hm.temp) && ok(hm.prec) && ok(hm.biome);
@@ -94,13 +94,13 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
    */
   /**
    * 高度图被**重建**时的回音（2026-09-24）。
-   * 「重建」= 用 `terrain[]` 多边形按 `elevation` 估值重算一份高度 —— 会覆盖用户涂过的地形，
-   * 且原数据不可恢复。以前完全静默，用户只会看到「山不见了」而不知道该怪谁。
+   * “重建”= 用 `terrain[]` 多边形按 `elevation` 估值重算一份高度 —— 会覆盖用户涂过的地形，
+   * 且原数据不可恢复。以前完全静默，用户只会看到“山不见了”而不知道该怪谁。
    */
   /**
    * 绑定到当前行星的底图（A1/R4，2026-09-25）。
-   * 绑定 = 剧本与行星**共用同一份高度图**，所以「行星侧重建高度图」不是行星的私事 ——
-   * 它会把共用这份地形的剧本一起改掉。重建前必须点名，否则用户只会看到「剧本的地形怎么变了」。
+   * 绑定 = 剧本与行星**共用同一份高度图**，所以“行星侧重建高度图”不是行星的私事 ——
+   * 它会把共用这份地形的剧本一起改掉。重建前必须点名，否则用户只会看到“剧本的地形怎么变了”。
    */
   function boundBaseMaps(id) {
     try {
@@ -115,7 +115,7 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
     const shared = users.length
       ? `；⚠️ 这张高度图还被 ${users.length} 张剧本底图共用（${users.map(u => u.name).join('、')}），它们的地形会一起被改变`
       : '';
-    console.warn('[heightmap] 高度图网格/数组损坏，已按「地形多边形」重建 —— 之前涂抹的高度无法恢复' + shared);
+    console.warn('[heightmap] 高度图网格/数组损坏，已按“地形多边形”重建 —— 之前涂抹的高度无法恢复' + shared);
     try {
       setSaveState({
         kind: 'warn',
@@ -136,8 +136,8 @@ export function usePlanetHeightBrush({ store, renderer, currentMapData }) {
       && grid.cellsX * grid.cellsY === grid.points.length;
 
     if (!gridOk) {
-      // 🔴 **不静默覆盖**（2026-09-24）：`md.heightmap` 已存在却要重建 = 用「地形多边形」重算高度，
-      //    等于把用户涂过的高度换成多边形的估值。旧实现完全无声 —— 用户只会觉得「我的山没了」，
+      // 🔴 **不静默覆盖**（2026-09-24）：`md.heightmap` 已存在却要重建 = 用“地形多边形”重算高度，
+      //    等于把用户涂过的高度换成多边形的估值。旧实现完全无声 —— 用户只会觉得“我的山没了”，
       //    甚至以为是别处把数据弄丢的。首次初始化（本来就没有 heightmap）不算覆盖，不提示。
       const overwriting = !!md.heightmap;
       const rebuilt = buildFromTerrain(rawEntry()?.terrain || []);

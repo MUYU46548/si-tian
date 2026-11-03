@@ -67,8 +67,8 @@
  * preflight 里那条 `*, ::before, ::after { border-width:0; border-style:solid }`
  * 被整层关掉了。后果：`class="border"` 只给到 `border-width:1px`，
  * 而 `border-style` 保持浏览器默认的 `none` → **边框不可见，且不报错**。
- * 处置：只给「确实带了 border 类」的元素补 border-style，绝不写 `*` 选择器
- * （那等于把 preflight 从后门请回来，R6 的「双 reset 双源」重演）。
+ * 处置：只给“确实带了 border 类”的元素补 border-style，绝不写 `*` 选择器
+ * （那等于把 preflight 从后门请回来，R6 的“双 reset 双源”重演）。
  * 撞车审计：全仓既有标记没有任何元素使用这些类名（提交说明附审计输出）。
  */
 .border,
@@ -85,7 +85,7 @@
  * 1) 定位放在这里而不是组件里：组件根元素是 reka-ui 的组件链，
  *    scoped 样式能不能落到真实 DOM 根上依赖 Vue 的作用域继承，不如显式属性钩子确定。
  *    `inset:0 + margin:auto` = 居中，**刻意不用 translate** —— 进场动画要用 transform:scale，
- *    两者同时用 transform 会互相覆盖（表现为「动画结束瞬间位置跳一下」）。
+ *    两者同时用 transform 会互相覆盖（表现为“动画结束瞬间位置跳一下”）。
  * 2) shadcn 官方靠 `tailwindcss-animate` 提供 animate-in/out；这里只为一个 Dialog
  *    多引一个依赖不划算，直接用 `data-state` 写 CSS（reka-ui 会自动带 open|closed）。
  * 3) z-index：高于全仓既有浮层（AboutPanel 1000 / 卸载确认 1100）——

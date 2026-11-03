@@ -120,7 +120,7 @@ async function main() {
   });
 
   check('🔴 铺满无缝：包围盒内每个采样点**恰好**落在一个 cell 里', () => {
-    // 逐点判「在几个 cell 内」：0 = 有缝（丢地），≥2 = 压叠（错归属）
+    // 逐点判“在几个 cell 内”：0 = 有缝（丢地），≥2 = 压叠（错归属）
     let zero = 0, multi = 0, total = 0;
     for (let i = 0; i <= 60; i++) {
       for (let j = 0; j <= 40; j++) {
@@ -141,7 +141,7 @@ async function main() {
   check('🔴 面积守恒：所有 cell 面积之和 = cell 被裁到的矩形面积（无重叠无缺口）', () => {
     let s = 0;
     for (const r of rings) s += B.multiNetArea([[r]]);
-    // cell 会被裁到「包围盒外扩 pad」的矩形里（外圈 cell 是无界的，必须有个框）
+    // cell 会被裁到“包围盒外扩 pad”的矩形里（外圈 cell 是无界的，必须有个框）
     const rect = built.rect;
     const box = Math.abs((rect[2][0] - rect[0][0]) * (rect[2][1] - rect[0][1]));
     assert(near(s, box, box * 1e-6), `合计 ${s.toFixed(4)} vs 裁剪矩形 ${box.toFixed(4)}`);
@@ -261,7 +261,7 @@ async function main() {
   });
 
   check('🔴 cutRingForPolyline：折线两侧互补（并集覆盖整个包围盒）', () => {
-    // 用「点在环内」的布尔值构造两侧，采样验证每个点恰好属于一侧
+    // 用“点在环内”的布尔值构造两侧，采样验证每个点恰好属于一侧
     const box = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
     const line = [{ x: -10, y: 0 }, { x: 40, y: 60 }, { x: 110, y: 30 }];
     const cut = B.cutRingForPolyline(line, box);

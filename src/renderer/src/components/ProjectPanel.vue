@@ -66,9 +66,9 @@
             <button class="pp-btn danger" @click="doClose">关闭</button>
           </template>
         </div>
-        <!-- 「导入知识库内容」（2026-09-22 用户实测反馈）：
-             新建的空项目此前**没有任何入口**把知识库既有内容带进来（「新建并导入知识库内容」只管新建那条路，
-             而「重新提取」在项目态被正确拒绝）→ 用户卡在"项目里空空的"。这里补上唯一的缺口。 -->
+        <!-- “导入知识库内容”（2026-09-22 用户实测反馈）：
+             新建的空项目此前**没有任何入口**把知识库既有内容带进来（“新建并导入知识库内容”只管新建那条路，
+             而“重新提取”在项目态被正确拒绝）→ 用户卡在"项目里空空的"。这里补上唯一的缺口。 -->
         <div v-if="proj.isOpen" class="pp-row">
           <button
             class="pp-btn primary"
@@ -85,7 +85,7 @@
 
         <!-- 笔记改名 → 断线检测与重连（R15 / A-0，2026-09-27）
              项目态下知识库的 add/unlink 事件被整条拦掉（防两套事实源混流）→ 用户在 Obsidian 里
-             改名/移动笔记，司天既不知道也不提示；下次「导入知识库内容」会把新名当新实体补进来、
+             改名/移动笔记，司天既不知道也不提示；下次“导入知识库内容”会把新名当新实体补进来、
              旧实体成孤儿。这里把它**显式化**：查一次 → 给出可读理由 → 点一下重连。
              重连保持实体 id 不变，所以坐标与编辑成果（地图/区域/建筑内部）天然全部保留。 -->
         <div v-if="proj.isOpen" class="pp-row">
@@ -93,7 +93,7 @@
             class="pp-btn"
             data-testid="check-broken-links"
             :disabled="scanning"
-            title="对账「项目实体指向的笔记」与「库里现有的笔记」，找出被改名 / 移动的笔记"
+            title="对账“项目实体指向的笔记”与“库里现有的笔记”，找出被改名 / 移动的笔记"
             @click="doScanBrokenLinks"
           >{{ scanning ? '检查中…' : '检查笔记改名' }}</button>
           <span
@@ -149,7 +149,7 @@
               {{ it.entityCount || 0 }} 实体<span v-if="it.mtime"> · {{ fmtTime(it.mtime) }}</span>
             </div>
             <!-- 🔴 2026-10-25：同名副本只显示 meta.name 时无法分辨（用户实测：
-                 「两个同名同时的项目中随便选了一个」，以为副本不存在）。
+                 “两个同名同时的项目中随便选了一个”，以为副本不存在）。
                  文件名才是目录里唯一的标识 —— meta.name 与文件名不一致时才多给这一行。 -->
             <div v-if="fileHint(it)" class="pp-item-file" :title="it.filePath">{{ fileHint(it) }}</div>
           </div>
@@ -164,11 +164,11 @@
           <button class="link-btn" :disabled="!proj.isOpen" :title="proj.isOpen ? '' : '先新建或打开项目'" @click="creatorOpen = true">+ 新建实体</button>
         </div>
         <div v-if="!proj.isOpen" class="pp-empty">打开项目后可在这里浏览实体树</div>
-        <div v-else-if="!proj.entityCount" class="pp-empty">还没有实体。点「+ 新建实体」开始。</div>
+        <div v-else-if="!proj.entityCount" class="pp-empty">还没有实体。点“+ 新建实体”开始。</div>
         <template v-else>
           <!-- 只看空白（A-3 补刀②）：**按层级判空白** —— 真 ROSA 实测 placeType 空 45 个里 39 个是
                宇宙层（本就不携带该字段）、parentId 空 9 个里 4 个是 world（本就该顶层）；
-               不分层就过滤 = 用户点开「类型为空」看到 39 行无意义噪音，过滤器等于没做。
+               不分层就过滤 = 用户点开“类型为空”看到 39 行无意义噪音，过滤器等于没做。
                空白口径的唯一实现在 utils/placeTypes.js（matchesGap），这里只负责显示。 -->
           <div class="pp-gap-row">
             <select
@@ -176,7 +176,7 @@
               class="pp-gap-filter"
               data-testid="gap-filter"
               :disabled="isReadOnly"
-              :title="isReadOnly ? READONLY_REASON : '只显示「该填却没填」的实体；空白口径按层级判定（utils/placeTypes.js）'"
+              :title="isReadOnly ? READONLY_REASON : '只显示“该填却没填”的实体；空白口径按层级判定（utils/placeTypes.js）'"
             >
               <option v-for="m in GAP_MODES" :key="m.value" :value="m.value">
                 {{ m.label }}{{ m.value === 'all' ? '' : '（' + gapCount(m.value) + '）' }}
@@ -227,8 +227,8 @@
                 @click.stop
               />
               <span v-else class="pp-node-name" @dblclick.stop="startRename(row)">{{ row.name }}</span>
-              <!-- 叙事状态徽标（2026-09-24）：**只对非 active 显示** —— 满屏「存在」是噪音。
-                   背景：用户决策「毁灭只是叙事状态，不是数据删除」，实体保留 + 状态标记。 -->
+              <!-- 叙事状态徽标（2026-09-24）：**只对非 active 显示** —— 满屏“存在”是噪音。
+                   背景：用户决策“毁灭只是叙事状态，不是数据删除”，实体保留 + 状态标记。 -->
               <span
                 v-if="hasNonDefaultStatus(row)"
                 class="pp-status-badge"
@@ -277,7 +277,7 @@
           </div>
           <div v-if="pendingDelete" class="pp-confirm">
             <span class="pp-confirm-text">
-              删除「{{ pendingDelete.name }}」{{ pendingDelete.kids ? `及其 ${pendingDelete.kids} 个子实体` : '' }}？
+              删除“{{ pendingDelete.name }}”{{ pendingDelete.kids ? `及其 ${pendingDelete.kids} 个子实体` : '' }}？
             </span>
             <button class="pp-btn danger" @click="confirmDelete">删除</button>
             <button class="pp-btn" @click="pendingDelete = null">取消</button>
@@ -314,7 +314,7 @@
         <div data-testid="snapshot-scope-note" style="font-size: 11px; line-height: 1.5; color: #4a5568; margin: 2px 0 6px;">
           快照记的是实体 / 航道 / 剧本结构（<b>含省份边界多边形</b> —— 切省切坏了可以直接回滚）；
           <b>不含地形高度图与参考图</b>（体积考量）。
-          地形另有「备份」按钮的整文件副本（保留 10 份），回滚不会改动它。
+          地形另有“备份”按钮的整文件副本（保留 10 份），回滚不会改动它。
         </div>
         <div v-if="snapshotSizeText" data-testid="snapshot-size-note"
              style="font-size: 11px; line-height: 1.5; color: #4a5568; margin: 0 0 6px;">
@@ -322,7 +322,7 @@
         </div>
         <div v-if="!proj.snapshots.length" class="pp-empty">还没有快照：保存一次即可生成第一份</div>
         <!-- 🔴 2026-10-09 修：原来只列最近 5 条 → 更早的快照在 UI 里**根本点不到**
-             （真事故：26 份快照里，靠前的「14:33」那份才是完好版本，用户找不到只能干看着废图）。
+             （真事故：26 份快照里，靠前的“14:33”那份才是完好版本，用户找不到只能干看着废图）。
              现在全量倒序 + 容器滚动（最新在最上）。 -->
         <div v-else class="pp-snapshot-list">
           <div v-for="s in allSnapshots" :key="s.index" class="pp-item">
@@ -346,7 +346,7 @@
 // 职责：`.sitian` 项目的日常操作面（新建 / 打开 / 保存 / 备份 / 关闭 / 列表）+ 实体浏览器 + 快照回滚。
 // 数据全部来自 `store/projectStore.js`，本组件不直接碰 IPC / 文件系统。
 //
-// ⚠️ 阶段说明（2026-09-18）：Phase 2.4「接线」尚未落地 —— 打开项目只会切换写模式，
+// ⚠️ 阶段说明（2026-09-18）：Phase 2.4“接线”尚未落地 —— 打开项目只会切换写模式，
 //    七层视图仍读 Obsidian 缓存。所以本面板的实体树只反映**项目文件里的实体**，
 //    与当前画布内容暂时是两套。接线后二者合一。
 
@@ -380,23 +380,23 @@ const nameInputEl = ref(null);
 const tip = ref('');
 const tipKind = ref('ok');
 const selectedId = ref('');
-// 多选（2026-09-21）：Ctrl/⌘ 点击加选 → 出现「批量改父级」操作条。
-// 用途：把散落在行星下的设施/地点一次性归入城市或区域（用户反馈「建筑物散落在行星地图上」）。
+// 多选（2026-09-21）：Ctrl/⌘ 点击加选 → 出现“批量改父级”操作条。
+// 用途：把散落在行星下的设施/地点一次性归入城市或区域（用户反馈“建筑物散落在行星地图上”）。
 const selectedIds = ref([]);
 const batchParentId = ref('');
 const creatorOpen = ref(false);
 
 /**
- * 面板一挂载就把焦点放进「项目名称」输入框。
+ * 面板一挂载就把焦点放进“项目名称”输入框。
  *
  * 为什么必须这样（用户实测反馈：打开面板后**点不进**这个输入框，乱点一通才偶然能输入）：
  * 面板是 `defineAsyncComponent` + `v-if` 挂载的，从点工具栏按钮到 DOM 出现之间有加载窗口，
- * 这期间的点击落到底下的画布/世界选择视图上（用户看到的就是「点不了」）。
+ * 这期间的点击落到底下的画布/世界选择视图上（用户看到的就是“点不了”）。
  * 自动聚焦让这个入口**不依赖点击**：面板一出现就能直接打字。同理 `.pp-name-row` 整行可点。
  */
 onMounted(() => { nextTick(() => nameInputEl.value?.focus?.()); });
 
-/** 点「项目名称」这一行的空白处也聚焦输入框（扩大命中区；点到按钮时不抢焦点） */
+/** 点“项目名称”这一行的空白处也聚焦输入框（扩大命中区；点到按钮时不抢焦点） */
 function focusNameInput(e) {
   if (e && e.target && e.target.tagName === 'BUTTON') return;
   nameInputEl.value?.focus?.();
@@ -410,7 +410,7 @@ const draggingId = ref('');         // 拖动中的实体（HTML5 DnD）
 const dropTargetId = ref('');
 const pendingDelete = ref(null);    // { id, name, kids } —— 两段式删除确认（不用原生 confirm：headless 下会被自动拒绝）
 
-const canCreate = computed(() => !!newName.value.trim());   // 项目文件的新建不受「世界观数据落盘」闸门管辖：
+const canCreate = computed(() => !!newName.value.trim());   // 项目文件的新建不受“世界观数据落盘”闸门管辖：
                                                             // 无项目=只读时若也灰禁，就永远打不开第一个项目（死锁）
 
 const seeding = ref(false);
@@ -422,7 +422,7 @@ const brokenScan = ref(null);        // proj.scanBrokenLinks() 的只读结果�
 const relinkChoice = ref({});        // { [entityId]: sourcePath } —— 每条断线当前选中的候选
 
 /**
- * 「新建并导入知识库内容」的可用性与说明。
+ * “新建并导入知识库内容”的可用性与说明。
  * 走画布桥的 describe()（本面板不直接依赖 geodata，test_48 有静态断言守），
  * ⚠️ canvasBridge 是命令式注册表、自身不响应式 → 显式依赖 proj.isOpen 触发重算。
  */
@@ -439,7 +439,7 @@ const vaultSeed = computed(() => {
 });
 
 /**
- * 「导入知识库内容」的可用性与说明（2026-09-22）。
+ * “导入知识库内容”的可用性与说明（2026-09-22）。
  * 项目态下画布是项目自己的节点，所以可用性看的是**打开项目时留下的知识库留底**（vaultNodes）。
  * 同样只经 canvasBridge 描述（本面板不直接依赖 geodata，test_48 有静态断言守）。
  */
@@ -486,12 +486,12 @@ const selectedEntity = computed(() => (selectedId.value ? proj.getEntity(selecte
 // ── 只看空白（A-3）＋ 行内类型下拉 ──────────────────────────────────────────
 // 空白口径（matchesGap）在 utils/placeTypes.js 单源；这里只做显示与写入。
 const gapMode = ref('all');
-const READONLY_REASON = '只读：当前没有打开项目 —— 先在上方「新建项目」或「打开已有项目」再编辑';
+const READONLY_REASON = '只读：当前没有打开项目 —— 先在上方“新建项目”或“打开已有项目”再编辑';
 
 const visibleRows = computed(() =>
   (gapMode.value === 'all' ? flatTree.value : flatTree.value.filter(r => matchesGap(r, gapMode.value))));
 
-/** 过滤器选项后面括号里的计数（不含 all —— 那个数字随时都在，写成「全部」即可） */
+/** 过滤器选项后面括号里的计数（不含 all —— 那个数字随时都在，写成“全部”即可） */
 function gapCount(mode) {
   if (mode === 'all') return flatTree.value.length;
   return flatTree.value.filter(r => matchesGap(r, mode)).length;
@@ -499,7 +499,7 @@ function gapCount(mode) {
 
 /**
  * 行内改地点类型：**只走 proj.updateEntity**（undo 栈 + 落 .sitian），绝不直接改内存 ——
- * 直接改内存 = 撤不掉、且与「项目为准」的读优先级打架。
+ * 直接改内存 = 撤不掉、且与“项目为准”的读优先级打架。
  * 失败（只读 / 实体不存在）时回滚下拉显示并把原因说出来，不静默。
  */
 function onPlaceTypeChange(row, ev) {
@@ -513,8 +513,8 @@ function onPlaceTypeChange(row, ev) {
     return;
   }
   setTip(next
-    ? `已把「${row.name}」的地点类型设为「${next}」（写入 .sitian，Ctrl+Z 可撤销）`
-    : `已清除「${row.name}」的地点类型（Ctrl+Z 可撤销）`, 'ok');
+    ? `已把“${row.name}”的地点类型设为“${next}”（写入 .sitian，Ctrl+Z 可撤销）`
+    : `已清除“${row.name}”的地点类型（Ctrl+Z 可撤销）`, 'ok');
 }
 
 // 选中实体的合法父级候选（`parentCandidates` 已排除自身与全部后代 —— 防循环）
@@ -522,7 +522,7 @@ const parentOptionsForSelected = computed(() =>
   selectedEntity.value ? proj.parentCandidates(selectedEntity.value.id) : []);
 
 // 🔴 2026-10-09 修：原来 `slice(-5)` 只给 5 条 —— 更早的快照在 UI 里**无法访问**。
-//    真事故：26 份快照里，从末尾数第 6 条靠前的「14:33」那份才是完好版本，用户找不到 →
+//    真事故：26 份快照里，从末尾数第 6 条靠前的“14:33”那份才是完好版本，用户找不到 →
 //    只能拿废图继续用。现在**全量倒序**（最新在最上），高度由容器滚动承载；
 //    保留上限（KEEP=50）仍由主进程 `pushSnapshot` 控制。
 const allSnapshots = computed(() => proj.snapshots.slice().reverse());
@@ -555,7 +555,7 @@ function fmtTime(iso) {
 
 /**
  * 列表里第二个身份标识：**文件名**（只有当它和显示名不一致时才给）。
- * 复制出来的副本 meta.name 仍叫「绒花计划」，但文件名是「绒花计划-终验.sitian」——
+ * 复制出来的副本 meta.name 仍叫“绒花计划”，但文件名是“绒花计划-终验.sitian”——
  * 只显示 meta.name 时两条目一模一样，用户没法选。
  */
 function fileHint(it) {
@@ -580,7 +580,7 @@ async function doCreate() {
   const res = await proj.createProject({ name: newName.value.trim() });
   if (res.success) {
     newName.value = '';
-    setTip(`已新建项目「${proj.meta.name}」`, 'ok');
+    setTip(`已新建项目“${proj.meta.name}”`, 'ok');
     await refresh();
   } else {
     setTip(res.error || '新建失败', 'err');
@@ -596,7 +596,7 @@ async function doCreateFromVault() {
     if (res.success) {
       const s = res.seeded || {};
       newName.value = '';
-      setTip(`已新建「${proj.meta.name}」并导入知识库：${s.entities || 0} 个词条 / ${s.hyperlanes || 0} 条航道 / ${s.maps || 0} 张行星图（Ctrl+Z 可撤销导入）`, 'ok');
+      setTip(`已新建“${proj.meta.name}”并导入知识库：${s.entities || 0} 个词条 / ${s.hyperlanes || 0} 条航道 / ${s.maps || 0} 张行星图（Ctrl+Z 可撤销导入）`, 'ok');
       await refresh();
     } else {
       setTip(res.error || '导入知识库失败', 'err');
@@ -606,7 +606,7 @@ async function doCreateFromVault() {
   }
 }
 
-/** 「导入知识库内容」：把知识库（打开项目时的留底）合并进**当前**项目，一条 undo */
+/** “导入知识库内容”：把知识库（打开项目时的留底）合并进**当前**项目，一条 undo */
 async function doImportFromVault() {
   if (!vaultImport.available || importing.value) return;
   importing.value = true;
@@ -631,11 +631,11 @@ async function doImportFromVault() {
 /**
  * 查一次断线（R15/A-0）。**只读**：不改任何数据，只把对账结果摆出来。
  *
- * 检查后**立刻回一句话**（「未发现断线」也算回音）—— 静默是这条缺陷的本体：
+ * 检查后**立刻回一句话**（“未发现断线”也算回音）—— 静默是这条缺陷的本体：
  * 旧行为是"改名之后什么都不说"，所以修复的第一半必须是**每次检查都有可见结论**。
  *
  * @param {{silent?: boolean}} opts silent=true 时只刷新清单、**不动提示条**
- *   （重连成功后要留着重连回执，不能被这次重查的「发现 N 处断线」盖掉 —— 实测踩到）
+ *   （重连成功后要留着重连回执，不能被这次重查的“发现 N 处断线”盖掉 —— 实测踩到）
  */
 async function doScanBrokenLinks({ silent = false } = {}) {
   if (scanning.value) return;
@@ -658,7 +658,7 @@ async function doScanBrokenLinks({ silent = false } = {}) {
     relinkChoice.value = pick;
     if (silent) return;
     if (res.clean) setTip(`未发现断线：${res.notes} 篇笔记全部对得上`, 'ok');
-    else setTip(`发现 ${res.dangling.length} 处断线，确认候选后点「重连」`, 'warn');
+    else setTip(`发现 ${res.dangling.length} 处断线，确认候选后点“重连”`, 'warn');
   } finally {
     scanning.value = false;
   }
@@ -672,7 +672,7 @@ async function doRelink(d) {
   if (res.success) {
     // 先静默重查（把刚处理掉的那条从清单里去掉），再写回执 —— 顺序反了回执就被覆盖
     await doScanBrokenLinks({ silent: true });
-    setTip(`已把「${d.name}」重连到 ${res.to}（id 与坐标、地图/区域/建筑内部数据都保留；Ctrl+Z 可撤销）`, 'ok');
+    setTip(`已把“${d.name}”重连到 ${res.to}（id 与坐标、地图/区域/建筑内部数据都保留；Ctrl+Z 可撤销）`, 'ok');
   } else {
     setTip(res.error || '重连失败', 'err');
   }
@@ -687,7 +687,7 @@ async function openExisting() {
   const res = await proj.openProject();
   if (res.canceled) return;
   if (res.success) {
-    setTip(`已打开「${proj.meta.name}」`, 'ok');
+    setTip(`已打开“${proj.meta.name}”`, 'ok');
     await refresh();
   } else {
     setTip(res.error || '打开失败', 'err');
@@ -697,7 +697,7 @@ async function openExisting() {
 async function openAt(item) {
   if (item.error) return setTip('该文件读取失败，请检查是否为损坏的 JSON', 'err');
   const res = await proj.openProject(item.filePath);
-  if (res.success) setTip(`已打开「${proj.meta.name}」`, 'ok');
+  if (res.success) setTip(`已打开“${proj.meta.name}”`, 'ok');
   else setTip(res.error || '打开失败', 'err');
 }
 
@@ -716,7 +716,7 @@ async function doBackup() {
  * Git 快照（显式触发，从不自动提交）。
  * ⚠️ 司天**不会**替用户 `git init`：把整个项目目录变成仓库要额外维护一套仓库与提交历史，
  *    属用户自己的选择（后期也可以装 Obsidian/司天 的 git 备份插件）。目录不是 git 仓库时，
- *    主进程返回 skipped + 原因，这里原样告诉用户「怎么才能用」。
+ *    主进程返回 skipped + 原因，这里原样告诉用户“怎么才能用”。
  */
 async function doGitSnapshot() {
   const res = await proj.gitSnapshot('司天快照');
@@ -773,7 +773,7 @@ function clearMulti() {
   batchParentId.value = '';
 }
 
-/** 批量改父级的候选父级：对所有选中实体取「合法父级」的交集 */
+/** 批量改父级的候选父级：对所有选中实体取“合法父级”的交集 */
 const batchParentOptions = computed(() => {
   if (selectedIds.value.length < 2) return [];
   let cand = null;
@@ -794,12 +794,12 @@ function doBatchMove() {
   if (!res.success) return setTip(res.error || '批量改父级失败', 'err');
   const moved = (res.moved || []).length;
   setTip(moved
-    ? `已把 ${moved} 个实体移到「${targetName}」（Ctrl+Z 可撤销）`
-    : `这 ${ids.length} 个实体已经在「${targetName}」下了`, 'ok');
+    ? `已把 ${moved} 个实体移到“${targetName}”（Ctrl+Z 可撤销）`
+    : `这 ${ids.length} 个实体已经在“${targetName}”下了`, 'ok');
 }
 
 // ── 叙事状态徽标（2026-09-24）────────────────────────────────────────────────
-// 用户决策：毁灭只是叙事状态，实体保留 + 状态标记（不建实体的情况走「底图自持高度图」）。
+// 用户决策：毁灭只是叙事状态，实体保留 + 状态标记（不建实体的情况走“底图自持高度图”）。
 // 只对非 active 显示徽标：正常状态满屏标一遍是噪音。
 import { resolveStatus, statusBadge, statusMeta, DEFAULT_STATUS } from '../utils/entityStatus';
 
@@ -828,7 +828,7 @@ function commitRename() {
   if (!id || !before || !next || before.name === next) return;
   const res = proj.renameEntity(id, next);
   setTip(res.success
-    ? `已把「${before.name}」改名为「${next}」（Ctrl+Z 可撤销）`
+    ? `已把“${before.name}”改名为“${next}”（Ctrl+Z 可撤销）`
     : (res.error || '改名失败'), res.success ? 'ok' : 'err');
 }
 
@@ -848,7 +848,7 @@ function confirmDelete() {
     // R7：连带清掉的地图 / 区域 / 建筑内部数据要**说出来**（静默删数据是本项目最忌讳的一类）
     const cleaned = res.cleanedData
       ? `，并清理了它名下的 ${res.cleanedData} 份地图/区域/内部数据` : '';
-    setTip(`已删除「${pd.name}」${pd.kids ? `及 ${pd.kids} 个子实体` : ''}${cleaned}（Ctrl+Z 可撤销）`, 'ok');
+    setTip(`已删除“${pd.name}”${pd.kids ? `及 ${pd.kids} 个子实体` : ''}${cleaned}（Ctrl+Z 可撤销）`, 'ok');
   } else {
     setTip(res.error || '删除失败', 'err');
   }
@@ -888,7 +888,7 @@ function onDrop(row) {
   if (!canDropInto(row.id)) {
     const src = proj.getEntity(draggingId.value);
     onDragEnd();
-    setTip(`不能把「${src ? src.name : draggingId.value}」移到它自己或它的后代下（会形成循环）`, 'err');
+    setTip(`不能把“${src ? src.name : draggingId.value}”移到它自己或它的后代下（会形成循环）`, 'err');
     return;
   }
   reparent(draggingId.value, row.id);
@@ -906,7 +906,7 @@ function reparent(id, parentId) {
   const res = proj.moveEntity(id, parentId);
   const toName = parentId ? ((proj.getEntity(parentId) || {}).name || parentId) : '顶层';
   setTip(res.success
-    ? `已把「${src.name}」移到「${toName}」（Ctrl+Z 可撤销）`
+    ? `已把“${src.name}”移到“${toName}”（Ctrl+Z 可撤销）`
     : (res.error || '移动失败'), res.success ? 'ok' : 'err');
 }
 
@@ -917,7 +917,7 @@ function onParentChange(e) {
   reparent(selectedEntity.value.id, target);
 }
 
-/** 向导「前往编辑」落到本面板：选中新实体并滚到可见处 */
+/** 向导“前往编辑”落到本面板：选中新实体并滚到可见处 */
 function onGoto(entity) {
   creatorOpen.value = false;
   pendingDelete.value = null;
@@ -931,16 +931,16 @@ function onGoto(entity) {
   // 直达画布：项目面板不 import geodata（test_48 静态守），经 canvasBridge 的注册口请求画布切视图
   const nav = gotoEntity(entity.id);
   if (nav && nav.ok) {
-    setTip(`已选中「${entity.name}」并把画布切到${nav.viewLabel || nav.view}：可在下方改父级、用行内铅笔改名或删除`, 'ok');
+    setTip(`已选中“${entity.name}”并把画布切到${nav.viewLabel || nav.view}：可在下方改父级、用行内铅笔改名或删除`, 'ok');
   } else {
-    setTip(`已选中「${entity.name}」（画布未能定位：${(nav && nav.error) || '未知原因'}）`
+    setTip(`已选中“${entity.name}”（画布未能定位：${(nav && nav.error) || '未知原因'}）`
       + '；可在下方改父级、用行内铅笔改名或删除', 'err');
   }
 }
 
 function doRestore(s) {
   const res = proj.restoreProjectSnapshot(s.index);
-  setTip(res.success ? `已回滚到「${s.label || '快照 ' + (s.index + 1)}」（可用 Ctrl+Z 撤销；地形高度图不在快照范围内，未被改动）` : (res.error || '回滚失败'),
+  setTip(res.success ? `已回滚到“${s.label || '快照 ' + (s.index + 1)}”（可用 Ctrl+Z 撤销；地形高度图不在快照范围内，未被改动）` : (res.error || '回滚失败'),
     res.success ? 'ok' : 'err');
 }
 
@@ -1028,7 +1028,7 @@ refresh();
   align-items: center;
 }
 .pp-row.wrap { flex-wrap: wrap; }
-/* 「项目名称」整行都是点击区（面板刚打开时用户不用精确点中 24px 高的输入框） */
+/* “项目名称”整行都是点击区（面板刚打开时用户不用精确点中 24px 高的输入框） */
 .pp-name-row { cursor: text; }
 .pp-input {
   flex: 1;
@@ -1074,7 +1074,7 @@ refresh();
   color: var(--planet-text-secondary);
   font-size: 11px;
 }
-/* 「新建并导入知识库内容」的说明：要写清「会导入什么」，不能只留一个按钮 */
+/* “新建并导入知识库内容”的说明：要写清“会导入什么”，不能只留一个按钮 */
 .pp-seed {
   white-space: normal;
   line-height: 1.5;
@@ -1096,7 +1096,7 @@ refresh();
 .pp-tip.warn { color: #8a5a00; border-color: #8a6a2a; background: rgba(230, 180, 60, 0.12); }
 
 /* ── R15/A-0：笔记改名断线清单 ─────────────────────────────────────────
-   每条断线 = 一块（实体名 + 原路径 + 候选下拉 + 「重连」按钮）。
+   每条断线 = 一块（实体名 + 原路径 + 候选下拉 + “重连”按钮）。
    候选的**理由**直接写在下拉选项文本里（措辞与纯函数同源），不另加小字 —— 面板本来就窄。 */
 .pp-broken-clean { font-size: 11.5px; color: #1b6b3a; }
 .pp-broken {
@@ -1183,7 +1183,7 @@ refresh();
 }
 .pp-node-row:hover { background: var(--planet-btn-hover); }
 .pp-node-row.sel { background: rgba(74, 144, 217, 0.16); }
-/* 多选（Ctrl/⌘ 点击）：比单选更明显的整体高亮，方便确认「要归位的是哪几个」 */
+/* 多选（Ctrl/⌘ 点击）：比单选更明显的整体高亮，方便确认“要归位的是哪几个” */
 .pp-node-row.multi { background: rgba(47, 95, 208, 0.14); box-shadow: inset 2px 0 0 #2f5fd0; }
 .pp-batch {
   margin: 6px 0 0;

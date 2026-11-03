@@ -3,36 +3,36 @@
 """用例 48：项目面板 + 实体创建向导（Phase 2.1 / 2.2 / 2.3）
 
 用户决策（2026-09-18）：
-  · 实体创建走 **C 方案「分派式向导」**——表单填「名称/层级/父级」，创建后按层级走不同的
+  · 实体创建走 **C 方案“分派式向导”**——表单填“名称/层级/父级”，创建后按层级走不同的
     落位/绘制流程；画布交互一律复用各视图现有工具，不在弹窗里再造一套画布。
-  · region 层级的边界用**专用自由绘制工具**（沿用 v7 原型）→ 向导里对应「按住拖动勾轮廓 + 离屏校验」的说明。
+  · region 层级的边界用**专用自由绘制工具**（沿用 v7 原型）→ 向导里对应“按住拖动勾轮廓 + 离屏校验”的说明。
   · building 已纳入向导（2026-09-21 决策反转：原本只能在区域地图里建 → 两条入口不一致）。
 
 用户决策（2026-09-19，本轮）：
   · 面板位置的现状（右上 340px）保持；
   · 实体树要能**改名 / 删除 / 拖动改父级**（都走 undo）；
   · 向导的层级下拉**按已选父级自动过滤**；
-  · 分派说明改为**创建完成后的结果卡片**，按钮文案用「前往编辑」（不是「前往落位」）。
+  · 分派说明改为**创建完成后的结果卡片**，按钮文案用“前往编辑”（不是“前往落位”）。
 
 本用例守：
-  a) 入口可用：工具栏「项目」按钮 → 面板出现 → 再点关闭（不是死按钮）
+  a) 入口可用：工具栏“项目”按钮 → 面板出现 → 再点关闭（不是死按钮）
   b) 未打开项目时的空态文案（决策 1 终态：无项目 = 只读 —— 文案写清现状 + 去处；
-     且只读态下「新建」按钮仍必须可用，否则永远打不开第一个项目 = 死锁）
+     且只读态下“新建”按钮仍必须可用，否则永远打不开第一个项目 = 死锁）
   c) 面板内新建项目 → 状态条 + 项目列表 + 实体/快照区就位
   d) 向导：分派说明随层级变化（region / galaxy / city 三种文案必须不同且有层级特征词）
   e) 层级下拉按父级过滤（顶层=全量 13；父级 world → 仅 star_domain 且自动切换）
-  f) 创建实体 → **结果卡片**（成功文案 + 该层级步骤 + 「前往编辑」）→ 点「前往编辑」关向导并在面板选中该实体
+  f) 创建实体 → **结果卡片**（成功文案 + 该层级步骤 + “前往编辑”）→ 点“前往编辑”关向导并在面板选中该实体
   g) 实体树改名（走 undo：撤销后名字还原）
   h) 实体树删除（两段式确认：先出现确认条，取消不删、确认才删）
-  i) 实体树拖动改父级（拖到别的行=挂到它下面；拖到「顶层」条=回到根；拖到自己后代=拒绝且不写入）
+  i) 实体树拖动改父级（拖到别的行=挂到它下面；拖到“顶层”条=回到根；拖到自己后代=拒绝且不写入）
   j) 详情区父级下拉改父级（拖动之外的等价入口，且不含自身）
-  k) 保存 → 快照区出现一条 + 状态条「已保存」；关闭面板 → 面板消失
+  k) 保存 → 快照区出现一条 + 状态条“已保存”；关闭面板 → 面板消失
   l) 静态：面板是懒加载 chunk、不引用 geodata（接线属 Phase 2.4，本阶段不得偷跑）；向导含 building
 
 ⚠️ 测试写法提醒（本次踩过）：
   · **不要缓存 DOM 引用**：向导/面板会被 v-if 卸载重建，缓存的元素会变成脱离文档的旧节点，
     断言会读到过期的选项列表（静默假绿/假红）。
-  · **行名比较用 `.pp-node-name` 精确相等**：`textContent.indexOf('测试世界')` 会命中「测试世界改」。
+  · **行名比较用 `.pp-node-name` 精确相等**：`textContent.indexOf('测试世界')` 会命中“测试世界改”。
 """
 import sys, os, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -72,8 +72,8 @@ PANEL_JS = r"""(async () => {
   const W = await import('/src/store/writeGate.js');
 
   // harness 每个用例前会打开基线项目（决策 1 终态：无项目 = 只读，用例得有项目才可写）。
-  // 本用例守的就是面板的**空态**，所以先关掉它 —— 顺带验证「关闭 → 无项目 → 只读」的终态，
-  // 以及「只读态下「新建」按钮必须仍可用」（否则永远打不开第一个项目 = 死锁）。
+  // 本用例守的就是面板的**空态**，所以先关掉它 —— 顺带验证“关闭 → 无项目 → 只读”的终态，
+  // 以及“只读态下“新建”按钮必须仍可用”（否则永远打不开第一个项目 = 死锁）。
   if (ps.isOpen) { await ps.closeProject(); await tick(300); }
   ck('用例起点：无项目 + 只读（决策 1 终态）', ps.isOpen === false && W.isReadOnly.value === true,
      { open: ps.isOpen, gate: W.describeWriteGate() });
@@ -107,7 +107,7 @@ PANEL_JS = r"""(async () => {
   // ---- a) 入口：工具栏按钮真实可用 ----
   const btn = Array.from(document.querySelectorAll('button'))
     .find(b => (b.getAttribute('title') || '').indexOf('.sitian') >= 0);
-  ck('工具栏存在「项目」入口', !!btn, btn ? btn.getAttribute('title') : 'not-found');
+  ck('工具栏存在“项目”入口', !!btn, btn ? btn.getAttribute('title') : 'not-found');
   if (!btn) return JSON.stringify({ fails: fails, aborted: '无项目入口，后续步骤跳过' });
   ck('入口 title 说明是 .sitian 项目文件', String(btn.getAttribute('title')).indexOf('.sitian') >= 0, btn.getAttribute('title'));
 
@@ -117,14 +117,14 @@ PANEL_JS = r"""(async () => {
   ck('点击后面板出现', !!q('.project-panel'));
   if (!q('.project-panel')) return JSON.stringify({ fails: fails, aborted: '面板未渲染（懒加载 chunk 失败？）' });
 
-  // ---- b) 空态（决策 1 终态：无项目 = 只读 —— 文案要写清现状 + 去处，不能只说「停用」）----
+  // ---- b) 空态（决策 1 终态：无项目 = 只读 —— 文案要写清现状 + 去处，不能只说“停用”）----
   await tick();
   same('空态项目名', text('.pp-status-name'), '未打开项目');
   const sub = text('.pp-status-sub') || '';
   ck('空态说明写清只读现状', /只读/.test(sub), sub);
   ck('空态说明给出可行去处（新建 / 打开项目）', /新建/.test(sub) && /打开/.test(sub), sub);
   ck('实体区空态提示', (text('.pp-section .pp-empty') || '').length > 0);
-  ck('实体区空态提示先打开项目', document.body.innerHTML.indexOf('点「+ 新建实体」开始') < 0);
+  ck('实体区空态提示先打开项目', document.body.innerHTML.indexOf('点“+ 新建实体”开始') < 0);
 
   // ---- c) 新建项目（面板内完成）----
   const input = q('.project-panel .pp-input');
@@ -133,8 +133,8 @@ PANEL_JS = r"""(async () => {
   input.dispatchEvent(new Event('input', { bubbles: true }));
   await tick(60);
   const createBtn = btnIn('.project-panel .pp-btn', '新建');
-  ck('有「新建」按钮', !!createBtn);
-  ck('名称非空时「新建」可用', createBtn && !createBtn.disabled);
+  ck('有“新建”按钮', !!createBtn);
+  ck('名称非空时“新建”可用', createBtn && !createBtn.disabled);
   createBtn.click();
   await tick(400);
   same('状态条显示项目名', text('.pp-status-name'), '面板测试项目');
@@ -142,7 +142,7 @@ PANEL_JS = r"""(async () => {
   const listItems = qa('.project-panel .pp-item');
   ck('项目列表出现该项', listItems.some(el => el.textContent.indexOf('面板测试项目') >= 0), listItems.length);
   ck('mock 收到 create 调用', (window.__projectCalls || []).some(c => c.op === 'create'), window.__projectCalls);
-  ck('打开项目后实体区空态变成「还没有实体」', document.body.innerHTML.indexOf('还没有实体') >= 0);
+  ck('打开项目后实体区空态变成“还没有实体”', document.body.innerHTML.indexOf('还没有实体') >= 0);
 
   // ---- 向导操作器（**每次都现查 DOM**，绝不缓存元素）----
   const openWizard = async () => {
@@ -191,7 +191,7 @@ PANEL_JS = r"""(async () => {
   ck('region 分派提到自由绘制', regionTxt.indexOf('自由绘制') >= 0, regionTxt);
   ck('region 分派含离屏校验说明', regionTxt.indexOf('离屏') >= 0, regionTxt);
   ck('三种层级的分派文案互不相同', new Set([cityTxt, galaxyTxt, regionTxt]).size === 3);
-  ck('创建前说明「前往编辑会把画布切到对应视图」', (text('.ec-note') || '').indexOf('前往编辑') >= 0, text('.ec-note'));
+  ck('创建前说明“前往编辑会把画布切到对应视图”', (text('.ec-note') || '').indexOf('前往编辑') >= 0, text('.ec-note'));
 
   // ---- e) 创建第一个实体（world，顶层）----
   await fillName('测试世界');
@@ -203,21 +203,21 @@ PANEL_JS = r"""(async () => {
   ck('创建后出现结果卡片', !!q('.ec-card-done'));
   ck('卡片成功文案含实体名', (cardText() || '').indexOf('测试世界') >= 0, cardText());
   ck('卡片内含该层级（world）的分派步骤', cardSteps().indexOf('世界卡片') >= 0, cardSteps());
-  ck('卡片说明「前往编辑直达画布」', (text('.ec-card-done .ec-note') || '').indexOf('前往编辑') >= 0, text('.ec-card-done .ec-note'));
+  ck('卡片说明“前往编辑直达画布”', (text('.ec-card-done .ec-note') || '').indexOf('前往编辑') >= 0, text('.ec-card-done .ec-note'));
   const gotoBtn = btnIn('.ec-btn', '前往编辑');
-  ck('卡片按钮文案是「前往编辑」', !!gotoBtn);
-  ck('全页面不再出现「前往落位」字样', document.body.innerHTML.indexOf('前往落位') < 0);
+  ck('卡片按钮文案是“前往编辑”', !!gotoBtn);
+  ck('全页面不再出现“前往落位”字样', document.body.innerHTML.indexOf('前往落位') < 0);
   gotoBtn.click();
   await tick(350);
-  ck('点「前往编辑」后向导关闭', !q('.ec-overlay'));
-  ck('点「前往编辑」后面板选中该实体', !!q('.project-panel .pp-node-row.sel'), rowNames());
+  ck('点“前往编辑”后向导关闭', !q('.ec-overlay'));
+  ck('点“前往编辑”后面板选中该实体', !!q('.project-panel .pp-node-row.sel'), rowNames());
   ck('面板提示说明当前可编辑什么', (text('.pp-tip') || '').indexOf('已选中') >= 0, text('.pp-tip'));
   same('落库：实体数量 1', entCount(), 1);
   ck('落库：父级为空（顶层）', ent('测试世界').parentId === null, ent('测试世界'));
 
   // ---- g) 改名（走 undo）----
   const renameBtn = q('.project-panel .pp-node-row [title="改名"]');
-  ck('行内有「改名」按钮', !!renameBtn);
+  ck('行内有“改名”按钮', !!renameBtn);
   renameBtn.click();
   await tick(200);
   const renameInput = q('.pp-rename');
@@ -245,7 +245,7 @@ PANEL_JS = r"""(async () => {
   // ---- e3) 层级按父级过滤：父级 = world → 只剩 star_domain 且自动切换 ----
   btnIn('.ec-btn', '再建一个').click();
   await tick(300);
-  ck('「再建一个」后回到表单（预告重现、卡片消失）', !!q('.ec-dispatch') && !q('.ec-card-done'));
+  ck('“再建一个”后回到表单（预告重现、卡片消失）', !!q('.ec-dispatch') && !q('.ec-card-done'));
   await fillName('北星域');
   await setLayer('city');
   const worldId = entId('测试世界');
@@ -283,14 +283,14 @@ PANEL_JS = r"""(async () => {
   ck('拖动后缩进变深', rowPad('独立星域') === rowPad('北星域'), [rowPad('独立星域'), rowPad('北星域')]);
   ck('拖动后有结果提示', (text('.pp-tip') || '').indexOf('移到') >= 0, text('.pp-tip'));
 
-  // ---- h2) 拖到「顶层」条 = 回到根 ----
+  // ---- h2) 拖到“顶层”条 = 回到根 ----
   {
     const src = rowOfName('独立星域');
     const dt = mkDT();
     fireDrag('dragstart', src, dt);
     await tick(200);
     const rootZone = q('.pp-drop-root');
-    ck('拖动中出现「松开以移到顶层」投放条', !!rootZone, (rootZone || {}).textContent);
+    ck('拖动中出现“松开以移到顶层”投放条', !!rootZone, (rootZone || {}).textContent);
     fireDrag('dragover', rootZone, dt);
     fireDrag('drop', rootZone, dt);
     await tick(300);
@@ -353,7 +353,7 @@ PANEL_JS = r"""(async () => {
   ck('快照区出现', document.body.innerHTML.indexOf('快照（保留最近 50 份') >= 0);
   ck('快照条目出现（手动保存）', document.body.innerHTML.indexOf('手动保存') >= 0);
   // 🔴 2026-10-09 加：快照列表必须**全量可滚动**，不许再 `slice(-5)` 截断。
-  //    真事故：26 份快照里，靠前的「14:33」那份才是完好版本，UI 只给 5 条 → 用户找不到，
+  //    真事故：26 份快照里，靠前的“14:33”那份才是完好版本，UI 只给 5 条 → 用户找不到，
   //    只能拿废图继续用。守卫：滚动容器存在 + 源码里不许再出现 `slice(-5)`。
   ck('快照列表可滚动容器就位', !!q('.pp-snapshot-list'), '');
 
@@ -375,7 +375,7 @@ def sub_panel(cdp):
     fails = res.get('fails') or []
     if fails:
         return False, f'面板断言失败 {len(fails)} 项：' + '；'.join(fails[:8])
-    return True, ('入口开关/空态文案/新建项目/分派说明三层级差异/层级按父级过滤/结果卡片与「前往编辑」'
+    return True, ('入口开关/空态文案/新建项目/分派说明三层级差异/层级按父级过滤/结果卡片与“前往编辑”'
                   '/改名(可撤销)/拖动改父级(含顶层与防循环)/两段式删除/详情区父级下拉/保存+快照 全部通过')
 
 
@@ -407,7 +407,7 @@ def sub_static(cdp):
         if token not in pp:
             bad.append(f'ProjectPanel 实体树缺少拖动改父级要素：{token}')
     if '@goto' not in pp:
-        bad.append('ProjectPanel 未接 EntityCreator 的 goto 事件（「前往编辑」会是死按钮）')
+        bad.append('ProjectPanel 未接 EntityCreator 的 goto 事件（“前往编辑”会是死按钮）')
 
     ec = _read('src/renderer/src/components/EntityCreator.vue')
     creatable = ec.split('const CREATABLE')[1].split('];')[0]
@@ -422,7 +422,7 @@ def sub_static(cdp):
         if token not in ec:
             bad.append(f'EntityCreator 缺少结果卡片要素：{token}')
     if '前往落位' in ec:
-        bad.append('EntityCreator 里仍有「前往落位」（用户已改为「前往编辑」）')
+        bad.append('EntityCreator 里仍有“前往落位”（用户已改为“前往编辑”）')
     if bad:
         return False, '；'.join(bad)
     return True, ('面板为懒加载 chunk、入口齐全；两个新组件均不引用 geodata/sitianAPI（接线属 Phase 2.4）；'

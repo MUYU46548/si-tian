@@ -62,7 +62,7 @@ const props = defineProps({
   elements: { type: Array, default: () => [] },
   /** 整体地图边界 */
   worldBounds: { type: Object, default: () => ({ minX: -500, maxX: 500, minY: -500, maxY: 500 }) },
-  /** 边长（px），默认 200（提示词「尺寸约 200x200px（可配置）」） */
+  /** 边长（px），默认 200（提示词“尺寸约 200x200px（可配置）”） */
   size: { type: Number, default: 200 },
 });
 

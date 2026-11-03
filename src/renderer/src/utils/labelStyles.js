@@ -1,6 +1,6 @@
 // utils/labelStyles.js — 标签样式预设系统（P0-2 Aesthetic Labels）
 //
-// 目标：把散落在各画布里的「写死字号 + 写死颜色」的文本渲染，收敛成一套可配置的预设：
+// 目标：把散落在各画布里的“写死字号 + 写死颜色”的文本渲染，收敛成一套可配置的预设：
 //   · 6 种内置预设（city / town / village / region / building / custom），视觉上明显区分
 //   · 每种预设：字体族 / 字号 / 粗细 / 颜色 / 描边 / 阴影（外发光）/ 背景条 / 是否锁定屏幕像素
 //   · 用户改过的预设落盘到 .sitian/config/label-presets.json（经 IPC，不直接碰文件系统）
@@ -19,7 +19,7 @@ const NO_STROKE = { enabled: false, color: '#101820', width: 2 };
 const NO_SHADOW = { enabled: false, color: 'rgba(0,0,0,0.6)', blur: 6 };
 const NO_BG = { enabled: false, color: '#000000', opacity: 0.4, padding: 3 };
 
-/** 6 种内置预设 —— 视觉上刻意拉开差距（提示词「6 种预设可切换，视觉效果明显区分」） */
+/** 6 种内置预设 —— 视觉上刻意拉开差距（提示词“6 种预设可切换，视觉效果明显区分”） */
 export const BUILTIN_PRESETS = {
   city: {
     key: 'city',
@@ -214,7 +214,7 @@ export function updatePreset(key, patch, opts = {}) {
   return labelPresets.value[key];
 }
 
-/** 以当前样式另存为新预设（提示词「支持保存当前样式为预设」） */
+/** 以当前样式另存为新预设（提示词“支持保存当前样式为预设”） */
 export function saveAsPreset(name, style) {
   const key = `user-${Date.now().toString(36)}`;
   const preset = normalizePreset({ ...style, name }, key);
@@ -515,7 +515,7 @@ export function drawTextAlongPath(ctx, placed, style, opts = {}) {
   return drawn;
 }
 
-/** 生成一行「预览用」的样式摘要（设置面板展示） */
+/** 生成一行“预览用”的样式摘要（设置面板展示） */
 export function describePreset(style) {
   if (!style) return '';
   const bits = [

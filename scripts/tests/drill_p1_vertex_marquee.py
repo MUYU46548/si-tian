@@ -1,9 +1,9 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""P1 顶点编辑「共边联动」在**真实 415 省项目**上的演练（2026-10-13）
+"""P1 顶点编辑“共边联动”在**真实 415 省项目**上的演练（2026-10-13）
 
 为什么必须跑真实数据（而不是再加一个合成用例）：
-  方案甲（拖动共边顶点时邻省同位顶点跟着走）的**全部前提**是「相邻省的共边顶点坐标逐位相同」。
+  方案甲（拖动共边顶点时邻省同位顶点跟着走）的**全部前提**是“相邻省的共边顶点坐标逐位相同”。
   这个前提在网格派生 / 骨架吸附的省份上由构造保证，但暮雨那张 `desite` 底图的省份来自
   **FMG `.map` 的 SVG 路径** —— 相邻两省的共边到底是不是"同一批坐标"，只有量了才知道。
   如果量出来不是（比如差 1e-6 级或压根各画各的），那么这套功能在他真实地图上**根本不生效**，
@@ -277,7 +277,7 @@ def main():
         year = int(era['startYear']) + (int(era['endYear']) - int(era['startYear'])) // 2
         sok, sres = eval_json(cdp, p0._sub(p0.SETUP_JS, KEY=p0.KEY, YEAR=year),
                               required=('fails', 'notes'), desc='场景布置')
-        ck('场景布置（选中 desite 底图 / 剧本「%s」/ %d 年）' % (p0.SC, year), sok and not sres.get('fails'),
+        ck('场景布置（选中 desite 底图 / 剧本“%s”/ %d 年）' % (p0.SC, year), sok and not sres.get('fails'),
            '；'.join(sres.get('fails', [])) if sok else sres)
 
         pok, pres = eval_json(cdp, p0._sub(PROBE_JS, SC=p0.SC, KEY=p0.KEY),

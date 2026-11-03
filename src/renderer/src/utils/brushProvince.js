@@ -1,13 +1,13 @@
-// utils/brushProvince.js — 「笔刷建省」的纯几何层（2026-10-22）
+// utils/brushProvince.js — “笔刷建省”的纯几何层（2026-10-22）
 //
 // ── 为什么需要这一层 ──────────────────────────────────────────────────────
-// 用户的诉求（原话）：「按住左键像涂色一样抹，松手自动把抹过的范围长成一个省
-//   （不用闭合、不会出现一团自交线，涂抹过程就是最终形状）」。
+// 用户的诉求（原话）：“按住左键像涂色一样抹，松手自动把抹过的范围长成一个省
+//   （不用闭合、不会出现一团自交线，涂抹过程就是最终形状）”。
 //
-// 「画省份（自由绘制）」是**描轮廓**：要闭合、要自交净化、要贴骨架 —— 那是"套索/多边形"
+// “画省份（自由绘制）”是**描轮廓**：要闭合、要自交净化、要贴骨架 —— 那是"套索/多边形"
 // 工具，不是笔。这一层做的是另一件事：**笔迹扫过的范围本身就是省**。
 //
-//   笔迹点 → 每点一个圆盘 + 每段一个胶囊矩形（`traceBrushRings`，与「改省界」笔刷同一条管线）
+//   笔迹点 → 每点一个圆盘 + 每段一个胶囊矩形（`traceBrushRings`，与“改省界”笔刷同一条管线）
 //          → 并成一个实心 MultiPolygon
 //          → **减掉已有省份**（新省只长在空地上）
 //
@@ -15,7 +15,7 @@
 //    不一致 / 归属上色看不出谁是谁 / 势力标签质心被拽走）—— 见 `scenarioEditing.addBaseProvince`
 //    的压叠闸门。描点/自由绘制那条路上是"画完问人一句"，而**笔刷每笔弹一个确认框等于不能用**，
 //    所以这里改用法：不覆盖，**只占空地**（用户看到的是"已有省份的地涂不上"，
-//    要改那块地的形状就用「改省界」）。
+//    要改那块地的形状就用“改省界”）。
 //
 // ⚠️ 本文件**不 import 任何裸模块**：布尔引擎由调用方注入（与 `polygonBool.js` 同约定），
 //    这样 Node 单测可以直接把真引擎（polygon-clipping）注进来跑几何断言。
@@ -31,7 +31,7 @@ import {
  */
 export const BRUSH_KEEP_MIN_R2 = 0.3;
 /**
- * 笔迹被已有省份切掉多少才算「几乎没长出东西」（按画出来的面积比例）。
+ * 笔迹被已有省份切掉多少才算“几乎没长出东西”（按画出来的面积比例）。
  * 5%：贴着海岸线往外糊一大片时通常还剩 30%~90%，远高于它；只有"整笔压在别人地盘上"才触发。
  */
 export const BRUSH_KEEP_MIN_SHARE = 0.05;
@@ -102,7 +102,7 @@ export function subtractProvinces(clip, paintedMulti, provinces, opts = {}) {
     const res = robustOp(clip, 'difference', acc, own);
     if (!res.multi) {
       failed++;
-      if (onWarn) onWarn(`「${p.name || p.id || '省份'}」差集失败，这一笔可能压到它`);
+      if (onWarn) onWarn(`“${p.name || p.id || '省份'}”差集失败，这一笔可能压到它`);
       continue;
     }
     acc = res.multi;
@@ -147,7 +147,7 @@ export function paintProvinceShape(clip, path, radius, provinces, opts = {}) {
     return {
       rejected: 'all-covered', paintedArea, area: 0, cutRatio: 1, cut: carved.cut, warnings,
       message: '这一笔整个压在已有省份上了 —— 新省只长在空地上（已有省份的地不会被抢）。'
-        + '要改已有省份的边界，用「底图编辑 → 改省界」；要改归属，用「涂归属」。',
+        + '要改已有省份的边界，用“底图编辑 → 改省界”；要改归属，用“涂归属”。',
     };
   }
   const minArea = Math.max(r * r * BRUSH_KEEP_MIN_R2, paintedArea * BRUSH_KEEP_MIN_SHARE);
@@ -156,7 +156,7 @@ export function paintProvinceShape(clip, path, radius, provinces, opts = {}) {
       rejected: 'too-thin', paintedArea, area, cutRatio, cut: carved.cut, warnings,
       message: `这一笔只有 ${Math.round((area / Math.max(paintedArea, AREA_EPS)) * 100)}% 落在空地上，`
         + '剩下都被已有省份占着 —— 没有建省（免得造出头发丝细的怪省）。'
-        + '要改那块地的形状请用「改省界」。',
+        + '要改那块地的形状请用“改省界”。',
     };
   }
   return {

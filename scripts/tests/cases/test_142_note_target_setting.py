@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用例 142：设置面板「新笔记目录」（2026-10-24，用户拍板：能用约定目录才用、否则库根）
+"""用例 142：设置面板“新笔记目录”（2026-10-24，用户拍板：能用约定目录才用、否则库根）
 
 为什么守它：落点规则（`src/main/noteTarget.js`）有单测，但**用户改不到**就等于没有 ——
 这条用例只守"用户能在界面上把自己的目录写进去、能读回来、能清空回自动"，以及
 "这个值真的会传到主进程的落点入口"（harness 的 mock 把 `setSitianConfig` 记在 `window.__uiConfig`）。
 
 验收点：
-1. 设置面板有「新笔记目录」段（输入框 + 保存按钮 + 说明"留空 = 自动"）
+1. 设置面板有“新笔记目录”段（输入框 + 保存按钮 + 说明"留空 = 自动"）
 2. 填 `99 我的沙盒` → 保存 → mock 收到 `noteTarget.dir`，界面给出"已保存"
 3. 重新打开设置面板 → 输入框回显上次保存的值（不是只在内存里）
 4. 清空 → 保存 → `dir === ''`（= 回到自动规则），界面文案说明"留空 = 自动"
@@ -85,11 +85,11 @@ def sub_source_guards():
     bad = []
     settings = _code_only(_read(SETTINGS))
     if 'data-testid="note-target-dir"' not in settings or 'data-testid="save-note-target"' not in settings:
-        bad.append('设置面板缺「新笔记目录」输入/保存')
+        bad.append('设置面板缺“新笔记目录”输入/保存')
     if "setSitianConfig('noteTarget'" not in settings:
         bad.append('设置面板没把目录写进 noteTarget 配置')
     # 🔴 设置面板不许自己拼落点（那会变成第二份规则）。
-    #    说明文案里出现「03 设定」是允许的（那是给用户看的）；要抓的是**拼路径**。
+    #    说明文案里出现“03 设定”是允许的（那是给用户看的）；要抓的是**拼路径**。
     for banned in ("path.join(", "from 'path'", '02 场景地点', '11 地理系统'):
         if banned in settings:
             bad.append(f'设置面板里出现了落点规则片段 {banned}（应是唯一实现在 noteTarget.js）')
@@ -100,7 +100,7 @@ def sub_source_guards():
     if 'resolveNoteTarget(' not in seg:
         bad.append('create 段没用 resolveNoteTarget')
     if "sitianConfigPath('noteTarget')" not in seg:
-        bad.append('create 段没读用户的「新笔记目录」设置')
+        bad.append('create 段没读用户的“新笔记目录”设置')
     if 'target.reason' not in seg:
         bad.append('越界目录被拒时没把原因回给界面（会静默落根）')
     if not os.path.exists(os.path.join(ROOT, NOTE_TARGET)):
@@ -123,7 +123,7 @@ def run(cdp):
     st0 = _j(cdp, STATE)
     fails = []
     if not st0.get('hasSection') or not st0.get('hasSave'):
-        fails.append(f'设置面板没有「新笔记目录」段：{st0}')
+        fails.append(f'设置面板没有“新笔记目录”段：{st0}')
 
     # ② 填 → 保存
     fill = _j(cdp, FILL.replace('VALUE', json.dumps('99 我的沙盒')))
@@ -164,8 +164,8 @@ def run(cdp):
     if not sg_ok:
         fails.append(sg_detail)
 
-    detail = (f'设置段在位；保存 → cfg={st1.get("cfg")!r}、回执「{st1.get("status")}」；'
-              f'重开回显 {st2.get("input")!r}；清空 → cfg={st3.get("cfg")!r}、回执「{st3.get("status")}」；'
+    detail = (f'设置段在位；保存 → cfg={st1.get("cfg")!r}、回执“{st1.get("status")}”；'
+              f'重开回显 {st2.get("input")!r}；清空 → cfg={st3.get("cfg")!r}、回执“{st3.get("status")}”；'
               f'源码守卫：{sg_detail}')
     if fails:
         return False, '；'.join(fails)[:900]

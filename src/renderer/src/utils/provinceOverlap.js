@@ -1,19 +1,19 @@
 // utils/provinceOverlap.js
-// 新建省份的「压叠闸门」纯函数层（无 DOM、无 Vue、无 store）
+// 新建省份的“压叠闸门”纯函数层（无 DOM、无 Vue、无 store）
 //
 // 为什么需要它：
 //   ① 省份是**互相独立的多边形**，没有任何排他约束 —— 画一个压住邻居的新省完全合法，
-//      而画布渲染是「按 terrain 数组序依次 fill」→ 数组靠后的盖在上面。于是「看得见的那块」
-//      未必是「点得到的那块」（命中口径另有一处修复：`findProvinceAt` 改为自顶向下）。
+//      而画布渲染是“按 terrain 数组序依次 fill”→ 数组靠后的盖在上面。于是“看得见的那块”
+//      未必是“点得到的那块”（命中口径另有一处修复：`findProvinceAt` 改为自顶向下）。
 //   ② 压叠还会污染一切按面积算的东西：`ownership` 归属显示、势力标签的面积加权质心、
-//      谱系继承的重叠度 —— 两个省压在一起时，观感是「名字跑到别人地界里」。
-//   ③ 但**不能硬拒**：用户确实会想「照着一张更大的范围重画」或「先画再修」。所以本模块只做
+//      谱系继承的重叠度 —— 两个省压在一起时，观感是“名字跑到别人地界里”。
+//   ③ 但**不能硬拒**：用户确实会想“照着一张更大的范围重画”或“先画再修”。所以本模块只做
 //      **度量**（返回比例与占用者），由调用方决定拦还是问；阈值也作为参数传入（用例可注入）。
 //
 // 度量口径（明说，不装作精确）：
 //   · 在**候选省**的包围盒上铺一张 ≤ `OVERLAP_MAX_DIM²` 的采样格，取格心；
 //   · `total` = 格心落在候选省内的格数；`occupied` = 其中同时落在**别的省**内的格数；
-//   · `ratio = occupied / total` —— 即「这个新省有多大比例压在别人身上」。
+//   · `ratio = occupied / total` —— 即“这个新省有多大比例压在别人身上”。
 //   · 大省（顶点数 > `MAX_POINTS_PER_PROVINCE`）按步长抽稀后再判，结果带 `approx: true`
 //     ——**不抽稀的话**：真实库有两个 1 万点的省，格心数 × 顶点数会到千万级，卡在抬手那一帧。
 //     抽稀只用于**度量**，绝不写回任何几何。
@@ -23,7 +23,7 @@ import { pointInProvince, provinceBBox, provinceRings, ringSigns } from './provi
  * 环 + 环向预计算（2026-11-02，N2 手感）：
  *   `pointInProvince(x, y, prov)` 在不传 `cached` 时会**每次重算** `provinceRings` / `ringSigns` ——
  *   而压叠度量要对 40×40=1600 个格心各调一次、且每个格心还要对若干个邻省调一次。
- *   实测（真实 200 省底图、新省一圈地形）这一段 **80.5ms**，占了「松手」的 88%。
+ *   实测（真实 200 省底图、新省一圈地形）这一段 **80.5ms**，占了“松手”的 88%。
  *   环与环向只跟形状有关，预计算一次即可 —— **结果逐字节不变**（同一份几何、同一套判定）。
  */
 function ringCacheOf(shape) {
@@ -34,7 +34,7 @@ function ringCacheOf(shape) {
   }
 }
 
-/** 新省与已有省的重叠比例超过这个值 → 判为「压叠」（调用方通常据此二次确认） */
+/** 新省与已有省的重叠比例超过这个值 → 判为“压叠”（调用方通常据此二次确认） */
 export const OVERLAP_REJECT_RATIO = 0.25;
 /** 采样格上限（每边）。40×40 = 1600 个格心，够判断 25% 量级，又不至于卡帧 */
 export const OVERLAP_MAX_DIM = 40;
@@ -62,7 +62,7 @@ function subsample(points, max) {
   return out;
 }
 
-/** 省份对象 → 抽稀后的「同形状」代理（保留 extraRings，洞/飞地语义不丢） */
+/** 省份对象 → 抽稀后的“同形状”代理（保留 extraRings，洞/飞地语义不丢） */
 function approxShape(prov) {
   const main = subsample(prov.points || prov.d || [], MAX_POINTS_PER_PROVINCE);
   const extraRings = (prov.extraRings || []).map((r) => {
@@ -112,7 +112,7 @@ export function measureProvinceOverlap(candidate, existing, opts = {}) {
 
   // 只留与候选包围盒相交的已有省（大多数省的包围盒离得很远 → 这一步省掉绝大部分顶点）
   // ⚠️ 抽稀必须作用在**省份对象**上（`pointInProvince` 要 `points` + `extraRings` 才能算洞/飞地），
-  //    传点数组进去会退化成「不在任何省内」= 恒不重叠的假绿。
+  //    传点数组进去会退化成“不在任何省内”= 恒不重叠的假绿。
   const list = [];
   const seen = new Set();
   for (const p of (existing || [])) {

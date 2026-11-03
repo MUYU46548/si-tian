@@ -154,7 +154,7 @@ function riverWidthSeries(river, pts) {
       const end = pickRiverMouthEnd(pts, (x, y) => sampleGridAt(hm, field.dist, x, y), { fallback: 'last' });
       reversed = end === 'first';
     }
-    // 🔴 2026-10-27（C2「粗细几乎完全平均」）：线性因子 0.35→1 落到像素口径只差 ~1.5 倍
+    // 🔴 2026-10-27（C2“粗细几乎完全平均”）：线性因子 0.35→1 落到像素口径只差 ~1.5 倍
     //    （被 1.2~4.6 的区间和归一化一起压平了）。平方后源头只剩 12%，河口仍是满宽 ——
     //    这样一条河自己能看出"越往下游越宽"，而不只是河与河之间不同。
     series = riverWidthFactors(pts, { reversed }).map((f) => base * f * f);
@@ -196,7 +196,7 @@ function autoSeedBatch() {
   if (store.isReadOnly) { statusMsg(`批量铺底已停用：${store.readOnlyReason}`); return; }
   const o = batchOpts();
   if (o.provinceIds && !o.provinceIds.length) {
-    batchStatus.value = '「选中的省份」是空的 —— 先在选择工具下 Ctrl+点击选几个省，或把范围改成「全部陆地」';
+    batchStatus.value = '“选中的省份”是空的 —— 先在选择工具下 Ctrl+点击选几个省，或把范围改成“全部陆地”';
     statusMsg(batchStatus.value);
     return;
   }
@@ -211,7 +211,7 @@ function autoSeedBatch() {
     }
     batchSeeds.value = r.seeds;
     batchStatus.value = `已播 ${r.seeds.length} 个点（范围 ${r.targets} 省 / ${r.regionPoints} 点边界，第 ${r.attempt + 1} 轮凑够）`
-      + '—— 满意就点「一键切分」';
+      + '—— 满意就点“一键切分”';
     statusMsg(batchStatus.value);
     render();
   }, 0);
@@ -293,7 +293,7 @@ function handleResize() {
   if ((w < 700 || h < 400) && !st.smallCanvasWarned) {
     st.smallCanvasWarned = true;
     // 🔴 2026-10-20：布局提示**不许覆盖刚发生的操作回执**（实测：导入完成的回执被
-    //    「画布只有 1065×200」顶掉 → 用户以为导入没发生 = 又一次"静默失败"）。
+    //    “画布只有 1065×200”顶掉 → 用户以为导入没发生 = 又一次"静默失败"）。
     //    3 秒内的操作回执优先；纯布局提示自己可以被下一条布局提示覆盖。
     const recentOp = Date.now() - st.lastStatusAt < 3000;
     const prev = provinceHint.value || '';

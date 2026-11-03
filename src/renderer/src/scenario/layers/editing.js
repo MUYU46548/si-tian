@@ -1,4 +1,4 @@
-// scenario/layers/editing.js — 剧本视图「编辑期覆盖层」（N1 刀 2，2026-10-30）
+// scenario/layers/editing.js — 剧本视图“编辑期覆盖层”（N1 刀 2，2026-10-30）
 //
 // 从 `ScenarioMap.vue` 搬出两块**只在你动手时才出现**的层：
 //   · 顶点手柄：跟随移动的邻省环 / 当前激活顶点的切线手柄 / 顶点圆点 / 顶点与河流的框选矩形；
@@ -173,8 +173,8 @@ export function drawProvinceBrushOverlayLayer(c, view) {
     c.restore();
   }
   // ── 笔刷建省（2026-10-22）：笔迹带**就是**最终形状（圆盘 ∪ 胶囊），不画任何"预测环" ──
-  //    为什么用「粗描边 + 圆头」而不是把 ring 算出来再填：算环要走布尔（每帧白算一次，
-  //    正是「画省份」那条路上一团交叉白线的来源）；粗描边在覆盖范围上与
+  //    为什么用“粗描边 + 圆头”而不是把 ring 算出来再填：算环要走布尔（每帧白算一次，
+  //    正是“画省份”那条路上一团交叉白线的来源）；粗描边在覆盖范围上与
   //    `traceBrushRings`（每点一个圆盘 + 每段一个胶囊）一致，观感就是笔。
   if (view.tool === 'provincePaint') {
     const path = view.store.getProvinceStrokePath();
@@ -216,7 +216,7 @@ export function drawProvinceBrushOverlayLayer(c, view) {
     c.lineJoin = 'round';
     c.lineCap = 'round';
     c.beginPath();
-    // 平滑轨迹（中点二次曲线）：手绘一圈就应该是曲线，逐点 lineTo 会读成「描点连线」
+    // 平滑轨迹（中点二次曲线）：手绘一圈就应该是曲线，逐点 lineTo 会读成“描点连线”
     view.tracePath(c, pts, !view.provLassoActive);
     c.stroke();
     if (!view.provLassoActive) { c.fillStyle = 'rgba(196,181,253,.18)'; c.fill(); }

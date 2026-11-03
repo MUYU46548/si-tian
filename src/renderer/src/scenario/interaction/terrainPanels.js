@@ -47,11 +47,11 @@ export function createTerrainPanelActions(ctx) {
   } = ctx;
 
 function toggleBasemapEditMode() {
-  basemapEditMode.value = !basemapEditMode.value;  // 🔴 开模式**顺手收起「更多」**（2026-10-18 第十七修·出图实测）：
-  //    第一版是"开模式就展开「更多」"，结果工具栏从 ~120px 撑到 **~470px**（出图
+  basemapEditMode.value = !basemapEditMode.value;  // 🔴 开模式**顺手收起“更多”**（2026-10-18 第十七修·出图实测）：
+  //    第一版是"开模式就展开“更多”"，结果工具栏从 ~120px 撑到 **~470px**（出图
   //    `docs/assets/basemap-mode-20261018/02-basemap-edit-mode.png` 一眼可见）——
   //    画布被压掉一半，而"模式分区"的收益全被这个面板吃掉了。
-  //    地理类工具**已经在模式行里**；「更多」里的那几件（参考图 / 自带-自动河源 / 着色档 / 吸附）
+  //    地理类工具**已经在模式行里**；“更多”里的那几件（参考图 / 自带-自动河源 / 着色档 / 吸附）
   //    是**进阶开关**，想用再点开。同理：`setTool` 的自动开模式更不该碰 `moreOpen`
   //    （那会让"切一下工具"就展开 42vh 面板，实测把 `test_61` 的画布内容判空判红）。
   if (basemapEditMode.value) moreOpen.value = false;
@@ -61,18 +61,18 @@ function toggleBasemapEditMode() {
 }
 
 /**
- * 左上角「返回」：**先退子模式，再退模块**（2026-10-21，暮雨实测误触）。
+ * 左上角“返回”：**先退子模式，再退模块**（2026-10-21，暮雨实测误触）。
  *
- * 旧行为：底图编辑里点「← 返回」→ 直接 `exit`，整个历史剧本被退掉。
+ * 旧行为：底图编辑里点“← 返回”→ 直接 `exit`，整个历史剧本被退掉。
  * 新行为：
- *   · 底图编辑中 → 只关底图编辑，留在历史剧本（按钮显示「← 返回日常」）；
- *   · 日常态   → 才退出历史剧本（按钮显示「← 退出剧本」）。
- * 模块级退出另有顶部「世界观」页签，这里不再是唯一出口。
+ *   · 底图编辑中 → 只关底图编辑，留在历史剧本（按钮显示“← 返回日常”）；
+ *   · 日常态   → 才退出历史剧本（按钮显示“← 退出剧本”）。
+ * 模块级退出另有顶部“世界观”页签，这里不再是唯一出口。
  */
 function onBackClick() {
   if (basemapEditMode.value) {
     basemapEditMode.value = false;
-    statusMsg('已退出底图编辑 —— 回到日常剧本编辑（历史剧本还在；要离开请点「← 退出剧本」或顶部「世界观」）');
+    statusMsg('已退出底图编辑 —— 回到日常剧本编辑（历史剧本还在；要离开请点“← 退出剧本”或顶部“世界观”）');
     render();
     return;
   }
@@ -95,11 +95,11 @@ function applyTerrainLabelsResult(msg) {
 }
 
 /**
- * 「地形名」勾选（2026-10-27 用户 A2/B2：「勾了地形名完全看不见」）。
+ * “地形名”勾选（2026-10-27 用户 A2/B2：“勾了地形名完全看不见”）。
  *
  * 真相：这张底图 `terrainLabels = 0` —— 地形注记是**用户命名**的数据（检测山脊候选或手绘），
  * 没有名字就没有东西可画。旧界面勾上后**一声不响**，看起来像渲染坏了。
- * 现在：勾上且一条都没有 → 直接把「地形注记」面板打开并说清下一步。
+ * 现在：勾上且一条都没有 → 直接把“地形注记”面板打开并说清下一步。
  */
 function onTerrainNamesToggle(e) {
   const on = !!(e && e.target && e.target.checked);
@@ -107,7 +107,7 @@ function onTerrainNamesToggle(e) {
   const n = (baseMap.value?.terrainLabels || []).length;
   if (n === 0) {
     if (baseMapKey.value) terrainLabelsOpen.value = true;
-    statusMsg('这张底图还没有地形注记（0 条）—— 已打开「地形注记」面板：点「检测山脊」或用「画山系 / 画海域 / 点平原」自己画一条，命名后「应用」');
+    statusMsg('这张底图还没有地形注记（0 条）—— 已打开“地形注记”面板：点“检测山脊”或用“画山系 / 画海域 / 点平原”自己画一条，命名后“应用”');
   }
   render();
 }
@@ -197,7 +197,7 @@ function freezeTerrainFromPlanet() {
     r = store.importHeightmapFromPlanet(baseMapKey.value, pid, { force: true, planetName: name });
   }
   if (!r || r.ok === false) { statusMsg((r && r.error) || '导入地形失败'); return; }
-  statusMsg(`已冻结导入「${name}」的地形（${r.cellsX}×${r.cellsY}，${r.cells} 格）—— 这是独立副本，之后行星改地形不会影响它`);
+  statusMsg(`已冻结导入“${name}”的地形（${r.cellsX}×${r.cellsY}，${r.cells} 格）—— 这是独立副本，之后行星改地形不会影响它`);
   render();
 }
 
@@ -206,25 +206,25 @@ function bindTerrainToPlanet() {
   if (!pid) return;
   const name = planetNameById(pid);
   const okGo = window.confirm(
-    `让「${baseMapKey.value}」跟随「${name}」的地形？\n\n`
+    `让“${baseMapKey.value}”跟随“${name}”的地形？\n\n`
     + '跟随 = 两边共用同一份：在剧本里涂山会改到行星，行星改地形也会改到这张剧本。\n\n'
-    + '如果这是要长期存档的历史剧本，请改用「冻结导入」（复制一份、互不影响）。'
+    + '如果这是要长期存档的历史剧本，请改用“冻结导入”（复制一份、互不影响）。'
   );
   if (!okGo) return;
   const r = store.bindBaseMapToPlanet(baseMapKey.value, pid);
   if (!r || r.ok === false) { statusMsg((r && r.error) || '跟随失败'); return; }
-  statusMsg(`已跟随「${name}」的地形 —— 现在两边是同一份：在剧本里编辑会改到那颗行星`);
+  statusMsg(`已跟随“${name}”的地形 —— 现在两边是同一份：在剧本里编辑会改到那颗行星`);
   render();
 }
 
 function unbindTerrainFromPlanet() {
   const okGo = window.confirm(
-    '解除跟随？\n\n行星那份地形不受影响；这张底图会回到「没有地形」（可再用「冻结导入」拿一份独立副本）。'
+    '解除跟随？\n\n行星那份地形不受影响；这张底图会回到“没有地形”（可再用“冻结导入”拿一份独立副本）。'
   );
   if (!okGo) return;
   const r = store.unbindBaseMap(baseMapKey.value);
   if (!r || r.ok === false) { statusMsg((r && r.error) || '解绑失败'); return; }
-  statusMsg('已解除跟随 —— 行星那份没动；可用「冻结导入」从行星拿一份独立副本');
+  statusMsg('已解除跟随 —— 行星那份没动；可用“冻结导入”从行星拿一份独立副本');
   render();
 }
 

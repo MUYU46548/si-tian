@@ -4,10 +4,10 @@
  * 基于高度图数据计算最佳聚落位置和道路路径。纯函数，无副作用。
  *
  * ⚠️ 性能铁律（2026-09-14 重写）：真实行星高度图有 ~27,000 格，
- * 旧实现按「每格 × 全表」找邻居/水源（O(n²) ≈ 7 亿次 hypot），单次调用足以卡死 UI。
+ * 旧实现按“每格 × 全表”找邻居/水源（O(n²) ≈ 7 亿次 hypot），单次调用足以卡死 UI。
  * 现全部改为：**一次 O(n) 建空间哈希桶（桶边长 = 邻居半径）→ 邻居只查 3×3 桶**；
  * A* 的开放集改二叉堆（旧的 `open.includes()` + 线性找最小是 O(k²)）。
- * 任何在此文件新增的「按格遍历」都必须走 buildSpatialIndex，禁止写双重全表循环。
+ * 任何在此文件新增的“按格遍历”都必须走 buildSpatialIndex，禁止写双重全表循环。
  */
 import { SEA_LEVEL } from './heightMath';
 
@@ -112,7 +112,7 @@ export function distanceToWater(heightmap, grid, index) {
  * 规则：避开海洋(h<SEA_LEVEL)和高山(h>70)，偏好中等海拔、靠近水源、远离陡坡
  *
  * 复杂度：O(n) 建索引 + O(候选数 × 水点数)；候选只取点击半径内的格，
- * 不做「全表逐格算水源距离」（旧实现正是这里卡死）。
+ * 不做“全表逐格算水源距离”（旧实现正是这里卡死）。
  */
 export function findOptimalBurgPosition(heightmap, grid, clickX, clickY) {
   const idx = buildSpatialIndex(grid);

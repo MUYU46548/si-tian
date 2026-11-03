@@ -1,8 +1,8 @@
-// _probe_map_provinces.mjs —— 「真实底图中间那个神秘大三角」是什么（量，不猜）
+// _probe_map_provinces.mjs —— “真实底图中间那个神秘大三角”是什么（量，不猜）
 //
 // 用法：node scripts/tests/tools/_probe_map_provinces.mjs [--map <路径>]
 // 读 docs/mockups/desite.map → 走产品自己的解析器（azgaar-parser）→ 逐省报告
-//   点数 / 包围盒 / 面积占整图比，并对「几何可疑」的省点名：
+//   点数 / 包围盒 / 面积占整图比，并对“几何可疑”的省点名：
 //     · 点数 < 5（画出来必然是三角形/细条）
 //     · 包围盒占整图 > 20%（一条跨全图的线也能画出巨大三角）
 //     · 面积 > 整图 25%（一个省吃掉四分之一张图）
@@ -65,7 +65,7 @@ console.log('完全没点的省：', empty.length, empty.slice(0, 8).map((b) => 
 
 // 三角形嫌疑：点数少 + 包围盒大
 const suspects = valid.filter((b) => b.n < 8 && (b.w * b.h) / mapArea > 0.05);
-console.log('\n「巨大三角」嫌疑（点数<8 且包围盒 >5% 整图）：', suspects.length);
+console.log('\n“巨大三角”嫌疑（点数<8 且包围盒 >5% 整图）：', suspects.length);
 for (const b of suspects) {
   console.log(`  #${b.i} ${b.id} ${b.name || ''} 点数 ${b.n} 包围盒 ${Math.round(b.w)}×${Math.round(b.h)} = ${((b.w * b.h) / mapArea * 100).toFixed(1)}%`);
 }

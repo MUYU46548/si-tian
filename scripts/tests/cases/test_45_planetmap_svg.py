@@ -87,9 +87,9 @@ def run(cdp):
     if not built['hasLegend']:
         return False, f'SVG 缺地形图例: {built}'
 
-    # ---------- 3. 图层开关被尊重（M2/A2 第二步：开关对象改为「多边形覆盖物」）----------
-    # ⚠️ 有高度图的行星上，「地形」总开关现在管的是**高度图**（位图，不是 path），
-    #    地形 path 由「多边形(覆盖物)」图层控制 —— 所以这条断言必须跟着换开关对象，
+    # ---------- 3. 图层开关被尊重（M2/A2 第二步：开关对象改为“多边形覆盖物”）----------
+    # ⚠️ 有高度图的行星上，“地形”总开关现在管的是**高度图**（位图，不是 path），
+    #    地形 path 由“多边形(覆盖物)”图层控制 —— 所以这条断言必须跟着换开关对象，
     #    否则它测的其实是"高度图有没有被关掉"，与"地形 path"无关（会变成假绿/假红）。
     off = json.loads(cdp.eval("""(() => {
       const pm = document.querySelector('.planet-map-container').__vueParentComponent.setupState;

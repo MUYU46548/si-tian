@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 32：标记类型系统（P1-4）
 
-验收点（对应提示词 P1-4 的「验收标准」逐条）：
+验收点（对应提示词 P1-4 的“验收标准”逐条）：
 1. 6 种默认类型存在（interest/settlement/battle/resource/danger/custom），旧类型保留不丢
 2. 类型创建/删除正常（内置不可删；删除自定义类型时其标记转 custom）
 3. 标记继承类型和颜色（新建标记 type/icon/color 来自类型定义）
@@ -110,7 +110,7 @@ def run(cdp):
     if info['overrideIcon'] != 'star' or info['overrideColor'] != '#123456':
         return False, f'单点覆盖未生效：{info}'
 
-    # ── 2. 设置面板「标记类型」页 ──────────────────────────────────────
+    # ── 2. 设置面板“标记类型”页 ──────────────────────────────────────
     if _open_settings(cdp) != 'ok':
         return False, '找不到设置按钮'
     time.sleep(0.4)
@@ -120,7 +120,7 @@ def run(cdp):
       t.click();
       return 'ok';
     })()""") != 'ok':
-        return False, '设置面板缺少「标记类型」分页'
+        return False, '设置面板缺少“标记类型”分页'
     time.sleep(0.4)
     rows = _j(cdp, """JSON.stringify(
       Array.from(document.querySelectorAll('[data-testid^="marker-type-"]'))

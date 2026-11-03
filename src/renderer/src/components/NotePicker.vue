@@ -36,7 +36,7 @@
 </template>
 
 <script setup>
-// NotePicker.vue — 给节点/标记绑定「附加笔记」的搜索选择器（D2）
+// NotePicker.vue — 给节点/标记绑定“附加笔记”的搜索选择器（D2）
 // 只负责选路径；写项目/撤销由调用方（NodeDetailPanel → store.updateNode）负责。
 import { ref, watch, nextTick } from 'vue';
 import { useVaultIndexStore } from '../store/vaultIndex';

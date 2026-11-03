@@ -3,21 +3,21 @@
  * Node 单元测试：`<script setup>` 里 **同一个 ref 有的地方写 `.value`、有的地方漏了** 的静态守卫
  *
  * ── 为什么必须有这一层（2026-10-14 用户实测崩溃）──────────────────────────────
- * `ScenarioMap.vue` 的「自动河流」绘制块里写的是裸 `ctx.save()` / `ctx.moveTo(...)`，
+ * `ScenarioMap.vue` 的“自动河流”绘制块里写的是裸 `ctx.save()` / `ctx.moveTo(...)`，
  * 而同一个文件里其它地方一律写 `ctx.value.xxx`。`ctx` 是 `const ctx = ref(null)`，
  * 在 `<script setup>` 里 **只有模板**会自动解包 ref —— 函数体里 `ctx` 就是 `{ value }`，
  * 于是 `ctx.save` 是 `undefined`：
  *   · 压缩后报 `Ce.save is not a function`（用户看到的原话）；
  *   · 它抛在 `renderFrame()` 里 → **从那一行起后面全不画**（省界/标签/小地图/势力名都没了）；
- *   · 连续 3 帧 → 渲染护栏暂停 → 用户看到「地图出不来，点什么都没反应」。
+ *   · 连续 3 帧 → 渲染护栏暂停 → 用户看到“地图出不来，点什么都没反应”。
  *
  * 为什么既有守卫都没抓到：
- *   · `test_undefined_identifiers.js` 查的是「**未声明**的标识符」—— `ctx` 声明得好好的；
+ *   · `test_undefined_identifiers.js` 查的是“**未声明**的标识符”—— `ctx` 声明得好好的；
  *   · `npm run build` 不报错（属性访问在运行时才炸）；
- *   · 102 个 CDP 用例没有一个点过「自动河流」，那一整块**默认永远不执行**。
+ *   · 102 个 CDP 用例没有一个点过“自动河流”，那一整块**默认永远不执行**。
  *
  * ── 判据（刻意收窄，宁可漏报不可误报）────────────────────────────────────────
- * 报的是「**自相矛盾**」：同一个顶层 ref 的名字
+ * 报的是“**自相矛盾**”：同一个顶层 ref 的名字
  *   ① 在本文件里出现过 ≥2 次 `.value`（说明作者知道它要解包，不是模板 ref 那种惯用裸写）；
  *   ② **同时**又在值位置被裸用（`.方法(...)` 或 `X(...)`）；
  *   ③ 且这个裸用**不是**白名单里的"故意存元素/组件引用的 ref"（名字以 Ref 结尾等）。
@@ -338,10 +338,10 @@ function f() { ctx.value.save(); ctx.save(); }
     all.push(...r.findings);
   }
 
-  check(`全仓 ${scanned} 个 .vue 里没有「同一个 ref 有的写 .value 有的漏」`, () => {
+  check(`全仓 ${scanned} 个 .vue 里没有“同一个 ref 有的写 .value 有的漏”`, () => {
     if (!all.length) return `${scanned} 个组件 / ${refTotal} 个顶层 ref / 0 条`;
     const lines = all.map((it) =>
-      `  · ${it.file}:${it.line}:${it.col}  裸用 ref「${it.name}」（同文件另有 ${it.valueCount} 处写了 .value）→ 补 .value`
+      `  · ${it.file}:${it.line}:${it.col}  裸用 ref“${it.name}”（同文件另有 ${it.valueCount} 处写了 .value）→ 补 .value`
     ).join('\n');
     throw new Error(`发现 ${all.length} 处漏写 .value（运行时会 undefined，且**不会**在构建期报错）：\n${lines}`);
   });

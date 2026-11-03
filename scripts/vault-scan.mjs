@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// scripts/vault-scan.mjs — 读料桥：把任意知识库**只读**扫成「地图实体 + 资料条目 + 待人工」
+// scripts/vault-scan.mjs — 读料桥：把任意知识库**只读**扫成“地图实体 + 资料条目 + 待人工”
 //
 // 三刀序列·第二刀的验收入口（`02-司天-三刀序列.md` 任务二）：
 //   · 不挑目录结构：任意路径/文件名都扫（标准目录存在时行为与提取器一致，缺失时自动全库归类）；
@@ -68,7 +68,7 @@ function snapshotVault(vault) {
   }
   walk(vault);
   rows.sort((a, b) => a[0].localeCompare(b[0]));
-  // `.sitian` 里的缓存也是「库内文件」：只读取料一个字节都不该动它（实测证据靠这行）
+  // `.sitian` 里的缓存也是“库内文件”：只读取料一个字节都不该动它（实测证据靠这行）
   const sitianDir = path.join(vault, '.sitian');
   const sitian = [];
   if (fs.existsSync(sitianDir)) {

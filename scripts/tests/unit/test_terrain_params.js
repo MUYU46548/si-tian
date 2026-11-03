@@ -152,7 +152,7 @@ async function main() {
     return `7→${r1}→${r2}`;
   });
 
-  check('a5 参数映射：默认值必须等于「原常量 × 1.0」（山脉/高原/裂谷三处）', () => {
+  check('a5 参数映射：默认值必须等于“原常量 × 1.0”（山脉/高原/裂谷三处）', () => {
     const o = P.toSynthesisOptions(P.DEFAULT_TERRAIN_PARAMS);
     const st = TS.TERRAIN_STRUCTURE;
     assert(o.structureOverrides.rangeWeight === st.rangeWeight, 'rangeWeight 默认 ≠ 原常量');
@@ -336,7 +336,7 @@ async function main() {
   check('c4 确定性源码扫描：terrainParams / heightMath 里没有 Math.random（生成必须可复现）', () => {
     for (const f of ['terrainParams.js', 'heightMath.js']) {
       const raw = fs.readFileSync(path.join(SRC_DIR, f), 'utf8');
-      // 去掉注释再扫 —— 注释里写「不许用 Math.random()」不算违规
+      // 去掉注释再扫 —— 注释里写“不许用 Math.random()”不算违规
       const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
       assert(!/Math\.random\s*\(/.test(code), `${f} 里出现 Math.random —— 同参数将无法复现`);
     }

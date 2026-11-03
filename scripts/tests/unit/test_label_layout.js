@@ -36,7 +36,7 @@ function assertNoOverlap(placed, pad = 0) {
       const a = placed[i], b = placed[j];
       const hit = !(a.box.x1 + pad <= b.box.x0 || b.box.x1 + pad <= a.box.x0
         || a.box.y1 + pad <= b.box.y0 || b.box.y1 + pad <= a.box.y0);
-      if (hit) throw new Error(`「${a.text}」与「${b.text}」重叠：${JSON.stringify([a.box, b.box])}`);
+      if (hit) throw new Error(`“${a.text}”与“${b.text}”重叠：${JSON.stringify([a.box, b.box])}`);
     }
   }
 }

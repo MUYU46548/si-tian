@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 31：Relief Icons 地貌图标笔刷（P0-1）
 
-验收点（对应提示词 P0-1 的「验收标准」逐条）：
+验收点（对应提示词 P0-1 的“验收标准”逐条）：
 1. 拖动后图标沿线散布，自然不重叠 —— 图标贴合路径且两两不重叠；散点算法确定性（同 seed 同结果）
 2. 4 种图标类型可以切换 —— 面板 4 个类型按钮，换类型后新笔迹用新类型
 3. 调整大小/间距实时生效 —— 同长度拖动，间距 8 明显比间距 80 落点更多
@@ -182,7 +182,7 @@ def run(cdp):
       return 'ok';
     })()""")
     if entered != 'ok':
-        return False, '工具栏缺少「地貌图标笔刷」按钮'
+        return False, '工具栏缺少“地貌图标笔刷”按钮'
     time.sleep(0.4)
     panel = _j(cdp, """JSON.stringify({
       mode: document.querySelector('.planet-map-container').__vueParentComponent.setupState.interactionMode,
@@ -244,7 +244,7 @@ def run(cdp):
     time.sleep(0.6)
     typed = _icons(cdp)
     if 'tree' not in (typed['types'] or []):
-        return False, f'切到「树木」后新笔迹未产生 tree 类型图标：{typed["types"]}'
+        return False, f'切到“树木”后新笔迹未产生 tree 类型图标：{typed["types"]}'
     if typed['n'] <= after['n']:
         return False, '第二次绘制没有新增图标'
 

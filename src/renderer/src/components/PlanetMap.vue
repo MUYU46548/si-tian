@@ -12,7 +12,7 @@
           </template>
           <template v-else>
             <strong>编辑模式</strong> —
-            <template v-if="interactionMode === 'cluster'">{{ clusterSelectMode ? '簇框选中：按住左键拖一个框圈住地点，松开完成选择' : '簇工具：从工具栏「地点簇」进入后按住拖动框选地点 → 弹窗创建簇' }}</template>
+            <template v-if="interactionMode === 'cluster'">{{ clusterSelectMode ? '簇框选中：按住左键拖一个框圈住地点，松开完成选择' : '簇工具：从工具栏“地点簇”进入后按住拖动框选地点 → 弹窗创建簇' }}</template>
             <template v-else-if="interactionMode === 'marker'">选择类型后点击画布放置标记</template>
             <template v-else-if="interactionMode === 'route'">{{ autoRoadEnabled ? '自动寻路：点起点 → 点终点，沿等高线生成道路（右键取消）' : '点击放置路线顶点，双击结束' }}</template>
             <template v-else-if="interactionMode === 'river'">河流编辑器：连续点击描点 → 双击完成（自动从高到低排序，保持流向）；点击已有河流可选中，拖中间节点调整路径（不会反向），空格脱离拖动</template>
@@ -42,8 +42,8 @@
 
     <!-- 视图级动作条（非编辑模式）：地点簇 / 对象 / 快照 / 导出
          ⚠️ 必须**在流内**（此前是 position:absolute;top:12px;right:16px + z-index:5），
-         与 .map-header 右侧的「编辑地图 / 采用自动区域 / 重新生成」同处右上角 →
-         后者被整片压住、完全不可见也点不到（用户反馈「行星图无法编辑地图」的真因，2026-09-22 实测命中栈确认）。
+         与 .map-header 右侧的“编辑地图 / 采用自动区域 / 重新生成”同处右上角 →
+         后者被整片压住、完全不可见也点不到（用户反馈“行星图无法编辑地图”的真因，2026-09-22 实测命中栈确认）。
          不要在流内恢复绝对定位；下面的 .view-actions 样式也不再设 position。 -->
     <div v-if="!editMode" class="view-actions">
       <button class="adopt-btn" @click="openPlanetPanel('cluster')" title="地点簇大纲"><Icon name="folder-open" :size="13"/> 地点簇</button>
@@ -148,7 +148,7 @@
               <input type="range" v-model.number="planetHeightBrush.brushStrength.value" min="0.5" max="10" step="0.5" class="brush-slider" />
             </template>
             <span v-else class="toolbar-label" title="湖泊是平底（盆底 18 / 浅缘 19），没有强度可调">平底</span>
-            <!-- 补高度图的入口（2026-10-17）：自动寻路 / 智能聚落会说「无高度图数据」，
+            <!-- 补高度图的入口（2026-10-17）：自动寻路 / 智能聚落会说“无高度图数据”，
                  而这句话曾经指向一个**行星视图里不存在**的入口。现在入口就在这个面板里。 -->
             <button
               data-testid="planet-import-map-height"
@@ -158,8 +158,8 @@
                 ? store.readOnlyReason
                 : '选一份 Azgaar（FMG）导出的 .map：把高度图（连同省份 / 河流 / 道路）装进这张行星地图'"
             ><Icon name="upload" :size="13"/> 导入 .map</button>
-            <!-- A6（2026-10-29）：行星侧自己的「地形起点」——以前只有导入 .map 才有地形，
-                 「地形生成参数」那套（种子/山脉/高原/裂谷 + 候选缩略图）只有剧本底图能用。 -->
+            <!-- A6（2026-10-29）：行星侧自己的“地形起点”——以前只有导入 .map 才有地形，
+                 “地形生成参数”那套（种子/山脉/高原/裂谷 + 候选缩略图）只有剧本底图能用。 -->
             <button
               data-testid="planet-gen-terrain"
               :disabled="store.isReadOnly"
@@ -168,7 +168,7 @@
                 : '按这颗行星的地貌轮廓推演一份地形高度图：种子/起伏/山脉/高原/裂谷可调，3 张候选，一条 Ctrl+Z 可撤回'"
               @click="terrainGenOpen = true"
             ><Icon name="sparkles" :size="13"/> 生成地形</button>
-            <!-- B 阶段 2（2026-10-29）：FMG 模板地形（14 套 Azgaar 模板；与「生成地形」共用落库写口） -->
+            <!-- B 阶段 2（2026-10-29）：FMG 模板地形（14 套 Azgaar 模板；与“生成地形”共用落库写口） -->
             <button
               data-testid="planet-fmg-terrain"
               :disabled="store.isReadOnly"
@@ -298,7 +298,7 @@
         <div class="toolbar-group" title="图层可见性">
           <button :class="{ active: layers.isVisible('planet', 'terrain') }" @click="layers.toggleLayer('planet', 'terrain')" title="地形总开关：有高度图时以高度图为主表示，没有高度图时显示地形多边形">▣ 地形</button>
           <button :class="{ active: layers.isVisible('planet', 'terrainPolygons') }" @click="layers.toggleLayer('planet', 'terrainPolygons')" title="地形多边形（覆盖物）：有高度图时默认隐藏，打开后**半透明**叠在高度图上，便于对照两者" data-testid="layer-terrain-polygons">▦ 多边形</button>
-          <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="toggleTerrainNameLayer" title="切换地形名称显示（名字来自「地形多边形」的 name；用笔刷涂出来的地形格没有名字）"><Icon name="mountain" :size="13"/> 地名</button>
+          <button :class="{ active: layers.isVisible('planet', 'terrainLabels') }" @click="toggleTerrainNameLayer" title="切换地形名称显示（名字来自“地形多边形”的 name；用笔刷涂出来的地形格没有名字）"><Icon name="mountain" :size="13"/> 地名</button>
           <button :class="{ active: layers.isVisible('planet', 'regions') }" @click="layers.toggleLayer('planet', 'regions')" title="切换区域图层显示">▥ 区域</button>
           <button @click="showExtraLayers = !showExtraLayers" title="更多图层（海拔/气候/降水）"><Icon name="more-horizontal" :size="13"/> 更多</button>
         </div>
@@ -398,7 +398,7 @@
     <div v-if="editMode && interactionMode === 'river'" class="terrain-picker relief-picker" data-testid="river-panel">
       <span class="picker-label">河流：</span>
       <span class="relief-hint">
-        描点 {{ riverDraftPoints.length }} · 共 {{ (currentMapData?.rivers || []).length }} 条<template v-if="selectedRiver"> · 选中「{{ selectedRiver.name || '未命名' }}」</template>
+        描点 {{ riverDraftPoints.length }} · 共 {{ (currentMapData?.rivers || []).length }} 条<template v-if="selectedRiver"> · 选中“{{ selectedRiver.name || '未命名' }}”</template>
       </span>
       <span class="picker-label">线宽</span>
       <input type="range" class="relief-range" min="1" max="12" step="0.5"
@@ -434,7 +434,7 @@
         <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份"><Icon name="pencil" :size="15"/></button>
         <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域"><Icon name="map" :size="15"/></button>
         <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记"><Icon name="map-pin" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线（路线工具内可开「自动寻路」）"><Icon name="route" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线（路线工具内可开“自动寻路”）"><Icon name="route" :size="15"/></button>
         <button :class="{ active: interactionMode === 'settle' }" @click="setInteractionMode('settle')" title="智能聚落 — 点击放置，自动吸附到最优位置（避开海洋/高山，偏好缓坡近水）"><Icon name="home" :size="15"/></button>
         <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本"><Icon name="type" :size="15"/></button>
         <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
@@ -473,8 +473,8 @@
       />
       <zoom-controls :renderer="renderer" :on-fit-all="fitAllContent" :on-fit-selection="fitSelection" />
       <!-- 空地图引导。
-           🔴 2026-10-17：这里必须给出**当刻就能点的起步入口**（暮雨点名要修的「起步闭环」）——
-           旧版只有一句"点击「编辑地图」开始绘制"，而高度笔刷还会提示"先导入 Azgaar .map"，
+           🔴 2026-10-17：这里必须给出**当刻就能点的起步入口**（暮雨点名要修的“起步闭环”）——
+           旧版只有一句"点击“编辑地图”开始绘制"，而高度笔刷还会提示"先导入 Azgaar .map"，
            指向一个行星视图里根本不存在的入口。现在两条路都摆在这里：导入 .map / 从零画。 -->
       <div v-if="!editMode && fogMode" class="empty-map-hint" data-testid="planet-empty-hint">
         <div class="empty-map-icon"><Icon name="map" :size="34"/></div>
@@ -923,7 +923,7 @@
         <button class="adopt-btn" style="width:100%" @click="importReferenceImage" :disabled="refImageLoading">
           {{ refImageLoading ? '加载中...' : (referenceImages.length > 0 ? '添加底图' : '选择图片') }}
         </button>
-        <p class="ref-hint">点击「编辑地图」后，从「更多」图层旁打开此面板或从工具栏进入</p>
+        <p class="ref-hint">点击“编辑地图”后，从“更多”图层旁打开此面板或从工具栏进入</p>
       </div>
       <div class="editor-field" v-if="referenceImages.length > 0">
         <label>底图列表（{{ referenceImages.length }}）</label>
@@ -1046,7 +1046,7 @@
       </div>
     </div>
   </div>
-  <!-- A6（2026-10-29）：行星侧「生成地形」浮面板 —— 与剧本视图**共用** TerrainGenPanel，
+  <!-- A6（2026-10-29）：行星侧“生成地形”浮面板 —— 与剧本视图**共用** TerrainGenPanel，
        只把目标从 baseMapKey 换成 planetId（store 侧同一份推演实现）。 -->
   <Teleport to="body">
     <div v-if="terrainGenOpen" class="planet-gen-float" data-testid="planet-gen-terrain-wrap">
@@ -1134,8 +1134,8 @@ import { generateRoadPath, findOptimalBurgPosition, findNearestGridPoint } from 
 import { validatePolygon, pointInPolygon as geoPointInPolygon, convexHull, expandPolygon, splitPolygon, mergePolygons, simplifyPath, mirrorPointAcross } from '../utils/geometry';
 import { validateRegionTrace } from '../utils/regionTrace';
 // `.map` 导入（2026-10-17）：行星视图自己的起步入口。
-// ⚠️ 「文件名 → 底图名」「原文留底」与剧本视图**共用** utils/mapImportSource.js；
-//    「解析产物 → 行星容器」的映射在 utils/planetMapBundle.js（纯函数，Node 有单测）。
+// ⚠️ “文件名 → 底图名”“原文留底”与剧本视图**共用** utils/mapImportSource.js；
+//    “解析产物 → 行星容器”的映射在 utils/planetMapBundle.js（纯函数，Node 有单测）。
 import { parseMapFile } from '../utils/azgaar-parser';
 import { mapNameFromFileName, backupMapSourceFile, readMapSourceText } from '../utils/mapImportSource';
 import {
@@ -1171,7 +1171,7 @@ const canvas = ref(null);
 const skeletonReady = ref(false);
 const drawMode = ref(true);
 const heightTool = ref('raise');
-// A6（2026-10-29）：行星侧「生成地形」浮面板开关（候选 → 应用 = 一条 undo，走 store 唯一实现）
+// A6（2026-10-29）：行星侧“生成地形”浮面板开关（候选 → 应用 = 一条 undo，走 store 唯一实现）
 const terrainGenOpen = ref(false);
 /** B 阶段 2（2026-10-29）：FMG 模板地形面板开关 */
 const fmgOpen = ref(false);
@@ -1227,7 +1227,7 @@ function updateHoverTip(hit) {
   } else if (t === 'province' && hit.polygon) {
     const p = hit.polygon;
     const meta = [p.elevation, p.climate, p.ecology].filter(Boolean).join(' · ');
-    // 全匿名地形（本库有 20+ 个空名多边形）不弹提示 —— 只有「(未命名地形) · 地形」是噪声
+    // 全匿名地形（本库有 20+ 个空名多边形）不弹提示 —— 只有“(未命名地形) · 地形”是噪声
     if (!p.name && !meta) return;
     next = { kind: 'province', title: p.name || '(未命名地形)', meta: meta || '地形' };
   } else if (t === 'region' && hit.region) {
@@ -1281,7 +1281,7 @@ const floodPreview = ref(null);
 const editMode = ref(false);
 const selectedTerrain = ref('land');
 // ===== R4 统一笔刷/智能工具 =====
-const autoRoadEnabled = ref(false);  // 路线工具内的「自动寻路」开关
+const autoRoadEnabled = ref(false);  // 路线工具内的“自动寻路”开关
 const roadStyle = ref(DEFAULT_ROAD_STYLE);  // P1-2 道路样式预设（官道/普通/山路/小径）
 // ===== P1-1 河流编辑器状态 =====
 const selectedRiver = ref(null);
@@ -1308,9 +1308,9 @@ const interactionMode = ref('pan');
 //   · 'biome'（默认）= 原有的矢量群系着色（`drawHeightmap`：平滑闭合环 + 反马赛克）
 //   · 其余四种 = `drawHeightmapRaster` 走 `utils/heightmapRaster.js` ——
 //     **与 ScenarioMap 底图图层同一套配色与实现**（M2 的目标：同一份高度图，两个视图一个观感）
-// 为什么默认不改：矢量那套是为解决「逐格绘制 + 画布滤镜卡死」重写的（见 planetDrawing 352 行），
-// 群系着色信息量也更大；栅格是**补上**「与剧本视图对齐」的那一档选择，不是替代。
-// 2026-10-27（SP-1025 集成 · 阶段 0）：新增「卫星影像 / 地形色」两个栅格档，
+// 为什么默认不改：矢量那套是为解决“逐格绘制 + 画布滤镜卡死”重写的（见 planetDrawing 352 行），
+// 群系着色信息量也更大；栅格是**补上**“与剧本视图对齐”的那一档选择，不是替代。
+// 2026-10-27（SP-1025 集成 · 阶段 0）：新增“卫星影像 / 地形色”两个栅格档，
 // 默认切到 `satellite` —— 海面是近岸青绿→深海的连续色带 + 卫星陆色/阴影，
 // 这是用户参照的独立模块（SP-1025 planet-map）里那张海陆图的观感。
 // `biome` 仍保留（矢量群系轮廓，海岸更锐利）。
@@ -1370,7 +1370,7 @@ const currentMapData = computed(() => {
   return store.mapData[props.planet.id] || { planetId: props.planet.id, version: 1, terrain: [], regions: [], markers: [], routes: [], textLabels: [] };
 });
 
-/** A6（2026-10-29）：「生成地形」的写入目标 —— 与 `currentMapData` 同一套解析口径
+/** A6（2026-10-29）：“生成地形”的写入目标 —— 与 `currentMapData` 同一套解析口径
  *  （有真实条目就用行星 id 这个键；旧数据缺 `planetId` 也不回空串） */
 const terrainGenTargetId = computed(() => {
   if (!props.planet) return '';
@@ -1381,14 +1381,14 @@ const terrainGenTargetId = computed(() => {
 // ===== 地形表示（M2/A2 第二步）=====
 // 数据驱动：有高度图 → 高度图是**地形主表示**，`terrain[]` 退为可选覆盖物；
 // 没有高度图（自建底图 / 旧多边形地图）→ 多边形照旧是主表示（**零行为变更**，兼容性底线）。
-// ⚠️ 图层开关是全局单例，而「有没有高度图」是每颗行星各自的 —— 所以只能数据驱动判定，
+// ⚠️ 图层开关是全局单例，而“有没有高度图”是每颗行星各自的 —— 所以只能数据驱动判定，
 //    不能靠改某个开关的默认值。判定与命中检测 / 导出（PNG·SVG）**共用同一份**：
 //    `utils/terrainRepresentation.js`
 const terrainRep = computed(() => resolveTerrainRepresentation({
   heightmap: currentMapData.value?.heightmap,
   terrainVisible: layers.isVisible('planet', 'terrain'),
   polygonsVisible: layers.isVisible('planet', 'terrainPolygons'),
-  // 正在画/移多边形 → 强制显示，否则「看不见也点不到」
+  // 正在画/移多边形 → 强制显示，否则“看不见也点不到”
   editing: editMode.value && (interactionMode.value === 'draw' || interactionMode.value === 'move'),
   // 高度笔刷进行中强制显示高度图（涂了必须看得见）—— A3：文化/宗教同属"涂了必须看得见"
   forceHeightmap: editMode.value && (
@@ -1398,7 +1398,7 @@ const terrainRep = computed(() => resolveTerrainRepresentation({
   ),
 }));
 // 多边形命中 = 正在被渲染（`drawPolygons`）且总开关未锁定。
-// 「降为覆盖物」的必然推论：**看得见才点得到** —— 关掉图层后不该还能点中它。
+// “降为覆盖物”的必然推论：**看得见才点得到** —— 关掉图层后不该还能点中它。
 const terrainHit = computed(() => terrainRep.value.drawPolygons && !layers.isLocked('planet', 'terrain'));
 
 // Azgaar .map 参考数据是否可用
@@ -1541,7 +1541,7 @@ function onRender(ctx, w, h) {
   if (fogMode.value) drawing.drawFog(ctx, w, h);
   // 地形表示（M2/A2 第二步）：**数据驱动** —— 有高度图则以高度图为主表示，多边形退为可选覆盖物。
   // ⚠️ 这里与命中检测 / 导出三处必须读同一份判定（`utils/terrainRepresentation.js`）；
-  //    各写一套 `if` 就是「改一处另两处不变」的又一个双源，而且不会报错。
+  //    各写一套 `if` 就是“改一处另两处不变”的又一个双源，而且不会报错。
   const rep = terrainRep.value;
   if (rep.drawHeightmap) {
     if (heightmapRasterKind.value === 'biome') drawing.drawHeightmap(ctx, rep.heightmapAlpha);
@@ -1594,8 +1594,8 @@ function onRender(ctx, w, h) {
   }
 
   // 画布地形笔刷网格渲染（P3 验证通过的原型集成）
-  // M2/A2 第二步：涂色网格属于「地形显示」的一部分 —— 它有**自己的**开关（`terrainGridEnabled`），
-  // 所以只要地形有显示（高度图 或 多边形覆盖物）就画，而不是死绑在「地形」总开关上。
+  // M2/A2 第二步：涂色网格属于“地形显示”的一部分 —— 它有**自己的**开关（`terrainGridEnabled`），
+  // 所以只要地形有显示（高度图 或 多边形覆盖物）就画，而不是死绑在“地形”总开关上。
   // （死绑的后果：关掉总开关改看多边形覆盖物时，涂色层凭空消失。）
   if ((layers.isVisible('planet', 'terrain') || layers.isVisible('planet', 'terrainPolygons'))
       && terrainGridEnabled.value) {
@@ -1621,7 +1621,7 @@ function onRender(ctx, w, h) {
     drawing.drawHeightBrushPreview(ctx);
   }
   if (editMode.value && interactionMode.value === 'terrain') {
-    // L3「将涂格」高亮（第 4 件）：拖动中先把"这笔会填哪些格"以半透明叠出来，
+    // L3“将涂格”高亮（第 4 件）：拖动中先把"这笔会填哪些格"以半透明叠出来，
     // **松手才落库** —— 数据判据是"预览格集 == 落库格集"（test_140）。
     terrainCanvasBrush.drawTerrainPendingToCtx(ctx);
     if (terrainCanvasBrush.strokePath.value.length > 1) {
@@ -1896,7 +1896,7 @@ const renderer = useCanvasRenderer(canvas, {
   onClick: (hit, wx, wy) => {
     if (referenceImage.refDragMode.value && referenceImage.referenceImage.value && !referenceImage.referenceImage.value.locked) return;
     if (referenceImage.calibrationMode.value && referenceImage.handleCalibrationClick(wx, wy)) return;
-    // R4：自动寻路 / 智能聚落（在通用命中分发之前拦截，二者都是「点画布做事」的工具）
+    // R4：自动寻路 / 智能聚落（在通用命中分发之前拦截，二者都是“点画布做事”的工具）
     if (editMode.value && !isSpacebarDown.value) {
       if (interactionMode.value === 'route' && autoRoadEnabled.value) { handleAutoRoadClick(wx, wy); return; }
       if (interactionMode.value === 'river') { handleRiverClick(wx, wy); return; }
@@ -1940,12 +1940,12 @@ const renderer = useCanvasRenderer(canvas, {
       const m = hit.marker;
       items.push({ key: 'ctx-marker-edit', label: '编辑标记', icon: 'pencil', action: () => { multiSel.value = []; setPrimarySelection('marker', m); } });
       items.push({ key: 'ctx-marker-copy', label: '复制标记', icon: 'clipboard', action: () => { setClipboard('markers', [m], 'planet'); } });
-      items.push({ key: 'ctx-marker-del', label: '删除标记', icon: 'trash', danger: true, action: () => { if (!confirm(`确定删除标记「${m.name || '未命名'}」吗？`)) return; store.removeMarker(props.planet.id, m.id); if (selectedMarker.value?.id === m.id) selectedMarker.value = null; emit('dirty', true); renderer.requestRender(); } });
+      items.push({ key: 'ctx-marker-del', label: '删除标记', icon: 'trash', danger: true, action: () => { if (!confirm(`确定删除标记“${m.name || '未命名'}”吗？`)) return; store.removeMarker(props.planet.id, m.id); if (selectedMarker.value?.id === m.id) selectedMarker.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (hit?.type === 'textLabel') {
       const l = hit.label;
       items.push({ key: 'ctx-text-edit', label: '编辑文本', icon: 'pencil', action: () => { multiSel.value = []; setPrimarySelection('textLabel', l); startInlineTextEdit(l); } });
       items.push({ key: 'ctx-text-copy', label: '复制文本', icon: 'clipboard', action: () => { setClipboard('textLabels', [l], 'planet'); } });
-      items.push({ key: 'ctx-text-del', label: '删除文本', icon: 'trash', danger: true, action: () => { if (!confirm(`确定删除文本「${l.text || l.name || '未命名'}」吗？`)) return; store.removeTextLabel(props.planet.id, l.id); if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null; emit('dirty', true); renderer.requestRender(); } });
+      items.push({ key: 'ctx-text-del', label: '删除文本', icon: 'trash', danger: true, action: () => { if (!confirm(`确定删除文本“${l.text || l.name || '未命名'}”吗？`)) return; store.removeTextLabel(props.planet.id, l.id); if (selectedTextLabel.value?.id === l.id) selectedTextLabel.value = null; emit('dirty', true); renderer.requestRender(); } });
     } else if (!hit) {
       const clip = getClipboard();
       if (clip && ['markers', 'textLabels', 'planetObjects'].includes(clip.kind)) { items.push({ key: 'ctx-paste', label: '粘贴', icon: 'clipboard', action: () => pasteClipboard() }); }
@@ -1979,7 +1979,7 @@ const renderer = useCanvasRenderer(canvas, {
 });
 
 /**
- * A6（2026-10-29）：行星「生成地形」应用后的收口。
+ * A6（2026-10-29）：行星“生成地形”应用后的收口。
  * 三件事，缺一件用户都会以为"没生效"：
  *   ① 着色档切到**海拔**（不切就还是群系矢量图，看不出地形来了）；
  *   ② 把回执原样打到状态行（保留了几格手绘、含多少山脉/裂谷 —— store 已经写好了）；
@@ -2051,7 +2051,7 @@ function onChannelValueChange(e) {
 
 // ===== 画布地形笔刷 composable =====
 // `getWorldBounds` 让涂色网格的范围能覆盖**整张地图**（地形/区域/路线/标记/文本/地点坐标），
-// 否则地图上会留下「看得见却涂不上」的真空区（详见 useTerrainCanvasBrush 的 targetGeometry）
+// 否则地图上会留下“看得见却涂不上”的真空区（详见 useTerrainCanvasBrush 的 targetGeometry）
 const terrainCanvasBrush = useTerrainCanvasBrush({
   store, props, renderer, canvas,
   getWorldBounds: () => worldBounds.value,
@@ -2071,7 +2071,7 @@ function onWrapperWheel(e) {
   // 🔴 Ctrl/⌘ + 滚轮 = **画布缩放**（画笔模式也放行），必须在下面各分支 preventDefault 之前返回。
   //    原来滚轮在 height/terrain/culture/religion/relief 五个模式里被彻底吃掉（preventDefault +
   //    stopPropagation，且没有修饰键分支）→ 一进画笔就再也缩放不了图（2026-10-09 暮雨实测：
-  //    「鼠标滚轮锁死只能调画笔半径」）。「滚轮=半径」仍是默认手感，这里只是补一个逃生口。
+  //    “鼠标滚轮锁死只能调画笔半径”）。“滚轮=半径”仍是默认手感，这里只是补一个逃生口。
   if (e.ctrlKey || e.metaKey) return;
   const up = e.deltaY < 0;
   const d = up ? 1 : -1;
@@ -2191,7 +2191,7 @@ const focusHighlight = useFocusHighlight({ renderer });
 const fullMapExport = useFullMapExport({
   store, props, emit, renderer, currentMapData, layers,
   drawing, referenceImage, places, provinceEditor, markerEditor, lodRef, ruler,
-  // M2/A2 第二步：导出与画布读**同一份**地形表示判定，否则「导出图 ≠ 画布」会再次分叉
+  // M2/A2 第二步：导出与画布读**同一份**地形表示判定，否则“导出图 ≠ 画布”会再次分叉
   terrainRep, heightmapRasterKind,
 });
 
@@ -2335,7 +2335,7 @@ function snapDrawPoint(p) { const edge = snapToNearestEdge(p); if (edge !== p) {
 // ===== 对称绘制 =====
 // 镜像数学在 `utils/geometry.mirrorPointAcross`（**唯一实现**）：绘图层
 // （composables/planetDrawing.js 的镜像预览）也直接用它 —— 此前绘图层引的是本文件里这个名字，
-// 而它在那个模块的作用域之外（未声明标识符）。这里只保留「组件态 → 纯函数参数」的适配。
+// 而它在那个模块的作用域之外（未声明标识符）。这里只保留“组件态 → 纯函数参数”的适配。
 function mirrorPoint(p) { if (!mirrorMode.value) return p; return mirrorPointAcross(p, mirrorAxis.value, mirrorAxisOffset.value); }
 function getMirroredPath(points) { if (!mirrorMode.value || points.length < 2) return points; const mirrored = points.map(mirrorPoint).reverse(); return [...points, ...mirrored]; }
 
@@ -2392,7 +2392,7 @@ function handleDrop(e) {
   highlightedPlaceId.value = nodeId;
   if (highlightTimer) clearTimeout(highlightTimer);
   highlightTimer = setTimeout(() => { highlightedPlaceId.value = null; renderer.requestRender(); }, 2500);
-  saveStatus.value = `已放置「${node.displayName || node.name}」，镜头已定位`;
+  saveStatus.value = `已放置“${node.displayName || node.name}”，镜头已定位`;
   saveStatusKind.value = 'ok';
   setTimeout(() => { saveStatus.value = ''; }, 2500);
 }
@@ -2539,35 +2539,35 @@ function deleteSelected() {
     return;
   }
   if (selectedProvince.value) {
-    if (confirm(`确定删除地形「${selectedProvince.value.name || '未命名'}」吗？`)) {
+    if (confirm(`确定删除地形“${selectedProvince.value.name || '未命名'}”吗？`)) {
       store.removeTerrainPolygon(props.planet.id, selectedProvince.value.id);
       selectedProvince.value = null;
       emit('dirty', true);
     }
   }
   if (selectedRegion.value) {
-    if (confirm(`确定删除区域「${selectedRegion.value.name || '未命名'}」吗？`)) {
+    if (confirm(`确定删除区域“${selectedRegion.value.name || '未命名'}”吗？`)) {
       store.removeRegion(props.planet.id, selectedRegion.value.id);
       selectedRegion.value = null;
       emit('dirty', true);
     }
   }
   if (selectedMarker.value) {
-    if (confirm(`确定删除标记「${selectedMarker.value.name || '未命名'}」吗？`)) {
+    if (confirm(`确定删除标记“${selectedMarker.value.name || '未命名'}”吗？`)) {
       store.removeMarker(props.planet.id, selectedMarker.value.id);
       selectedMarker.value = null;
       emit('dirty', true);
     }
   }
   if (selectedRoute.value) {
-    if (confirm(`确定删除路线「${selectedRoute.value.name || '未命名'}」吗？`)) {
+    if (confirm(`确定删除路线“${selectedRoute.value.name || '未命名'}”吗？`)) {
       store.removeRoute(props.planet.id, selectedRoute.value.id);
       selectedRoute.value = null;
       emit('dirty', true);
     }
   }
   if (selectedTextLabel.value) {
-    if (confirm(`确定删除文本「${selectedTextLabel.value.text || selectedTextLabel.value.name || '未命名'}」吗？`)) {
+    if (confirm(`确定删除文本“${selectedTextLabel.value.text || selectedTextLabel.value.name || '未命名'}”吗？`)) {
       store.removeTextLabel(props.planet.id, selectedTextLabel.value.id);
       selectedTextLabel.value = null;
       emit('dirty', true);
@@ -2610,7 +2610,7 @@ function smoothPolygonBoundary() {
  * 🔴 旧代码写 `snapshotPanel.saveStatusTimer.value = setTimeout(…)`：那个字段在
  *    `useSnapshotPanel` 里是普通 `let saveStatusTimer = null`，composable 返回时已经被
  *    快照成 `null` → **`.value` 必然抛 TypeError**。而 saveMap 里这段在 `.then()` 内、
- *    被 `.catch()` 接住 → 用户点「保存」，看到的是「保存失败」，即使保存其实成功了。
+ *    被 `.catch()` 接住 → 用户点“保存”，看到的是“保存失败”，即使保存其实成功了。
  *    （更糟：这个异常把"项目态只是 staged"的真问题一起盖住了。）
  * 现在统一走 setBanner：一个计时器、一条路径、失败也说得清。
  */
@@ -2629,7 +2629,7 @@ function saveMap() {
     // 🔴 2026-10-17：文案必须按**返回值自己声明的语义**说。
     //    项目态下 `saveMapData` 返回 `{ success: true, staged: true, persisted: false }`
     //    —— 那只代表"已交给 projectStore"，真正的磁盘写入在它的 800ms 防抖里。
-    //    旧实现只看 `result.success` 就报「保存成功」= 在数据还没进磁盘时说它进了（谎报）。
+    //    旧实现只看 `result.success` 就报“保存成功”= 在数据还没进磁盘时说它进了（谎报）。
     const d = describeSaveAction(result);
     setBanner(d.text, d.kind, 3000);
   }).catch((err) => {
@@ -2638,12 +2638,12 @@ function saveMap() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 导入 `.map`（2026-10-17）：行星视图自己的「起步入口」
+// 导入 `.map`（2026-10-17）：行星视图自己的“起步入口”
 //
 // 为什么必须在这里：`.map` 导入此前只有剧本视图一条路（装进**底图** baseMaps[key]），
 // 而行星图看的是 `mapData[planetId]` —— 另一个容器、此前没有任何导入路径。
-// 于是「空行星上想用自己那张 Azgaar 地图起步」在界面上做不到，而高度笔刷还会提示
-// 「先导入 Azgaar .map」——**指向一个当刻看不见的入口**（与剧本侧 0.2.9 修的是同一类问题）。
+// 于是“空行星上想用自己那张 Azgaar 地图起步”在界面上做不到，而高度笔刷还会提示
+// “先导入 Azgaar .map”——**指向一个当刻看不见的入口**（与剧本侧 0.2.9 修的是同一类问题）。
 //
 // 三个入口点（同一个函数）：空态主按钮、空态副按钮（data-testid 区分）、高度笔刷面板里的补数据按钮。
 // ⚠️ 落库写口是 `store.importPlanetMapBundle`（一整次导入 = 一条撤销；8 个键以外一律不动）。
@@ -2691,7 +2691,7 @@ async function importPlanetMapFile(file) {
     const name = mapNameFromFileName(file.name) || '导入底图';
     const bundle = buildPlanetMapBundle(parsed);
     if (!bundle.stats.provinces && !bundle.heightmap && !bundle.stats.rivers) {
-      _importBanner(`「${name}」里没有可导入的内容（省份 / 高度图 / 河流都没有）—— 地图未改动`, 'err', 8000);
+      _importBanner(`“${name}”里没有可导入的内容（省份 / 高度图 / 河流都没有）—— 地图未改动`, 'err', 8000);
       return;
     }
 
@@ -2707,7 +2707,7 @@ async function importPlanetMapFile(file) {
       ].filter(Boolean).join(' / ');
       const go = confirm(
         `本行星地图上已经有 ${oldBits}。\n\n`
-        + `导入「${name}」会用这份数据替换它们；`
+        + `导入“${name}”会用这份数据替换它们；`
         + '区域、标记、文本、地点簇、参考底图、地貌图标与地图快照**都会保留**。\n'
         + (bundle.heightmap ? '' : '这份 .map 里没有高度图 —— 现有高度图不会被删掉。\n')
         + '一整次导入 = 一条 Ctrl+Z（可整体撤回）。\n\n继续？',
@@ -2729,9 +2729,9 @@ async function importPlanetMapFile(file) {
     const receipt = describePlanetImportReceipt(name, bundle) + srcNote
       + '（本行星自己的地图；剧本侧要用同一份 .map 请那边再导一次 —— 两个容器各存一份）';
     _importBanner(receipt, bundle.heightmap ? 'ok' : 'warn', 12000);
-    setStatus({ toolLabel: `已导入「${name}」：省份 ${bundle.stats.provinces} 块` });
+    setStatus({ toolLabel: `已导入“${name}”：省份 ${bundle.stats.provinces} 块` });
     emit('dirty', true);
-    // 地形刚到 → 直接切到「海拔」着色档，让用户当场看见（与剧本侧「刷新后切地形高度」同一口径）
+    // 地形刚到 → 直接切到“海拔”着色档，让用户当场看见（与剧本侧“刷新后切地形高度”同一口径）
     if (bundle.heightmap) heightmapRasterKind.value = 'height';
     // 整张地图被换掉 → 请求**全画布重绘**（渲染器默认按脏矩形局部重绘；
     // 整批替换数据不属于"某个脏矩形"，不该让其它区域沿用上一帧）。
@@ -2781,9 +2781,9 @@ function confirmClear() {
 // ===== 路线草稿/描点绘制（2026-09-05 回填自 8c1962d，拆分时丢失）=====
 
 /**
- * 区域「可绘制范围」多边形（Phase 2.6）。
- * = 行星地图边界：工具栏「行星地图边界」显式设定数字时才有固定范围；
- *   `auto` 模式下边界随内容增长（worldBounds 是内容的包围盒），不存在「画到范围外」这回事
+ * 区域“可绘制范围”多边形（Phase 2.6）。
+ * = 行星地图边界：工具栏“行星地图边界”显式设定数字时才有固定范围；
+ *   `auto` 模式下边界随内容增长（worldBounds 是内容的包围盒），不存在“画到范围外”这回事
  *   → 返回空数组表示**跳过**落地内检查（宁可不判，也不产生莫名其妙的拒绝）。
  */
 function regionTraceContainers() {
@@ -2796,7 +2796,7 @@ function regionTraceContainers() {
 }
 
 /**
- * 区域落库前统一校验（Phase 2.6）：闭环保形简化 → 离屏校验「落地内 + 不重叠」。
+ * 区域落库前统一校验（Phase 2.6）：闭环保形简化 → 离屏校验“落地内 + 不重叠”。
  * @returns {{ ok:boolean, points:Array }} ok=false 时调用方应把 message 写到状态栏并放弃本次绘制
  */
 function checkRegionTrace(points, { simplify = true } = {}) {
@@ -2826,7 +2826,7 @@ function finishDrawing() {
     : (currentMapData.value?.terrain?.filter(t => t.type === type).length || 0) + 1;
   let finalPoints = getMirroredPath(simplified);
 
-  // Phase 2.6：区域先过「落地内 + 不重叠」的离屏校验，不通过就丢弃本次绘制（原因写到状态栏）
+  // Phase 2.6：区域先过“落地内 + 不重叠”的离屏校验，不通过就丢弃本次绘制（原因写到状态栏）
   if (isRegion) {
     const check = checkRegionTrace(finalPoints);
     if (!check.ok) return;
@@ -2838,7 +2838,7 @@ function finishDrawing() {
     const existing = currentMapData.value?.terrain || [];
     const overlapList = existing.filter(t => polygonOverlapRatio(finalPoints, t.points) > 0.05);
     if (overlapList.length > 0) {
-      const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「边缘吸附」对齐边界。仍要创建吗？`;
+      const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用“边缘吸附”对齐边界。仍要创建吗？`;
       if (!confirm(msg)) {
         currentPath.value = [];
         renderer.requestRender();
@@ -2879,7 +2879,7 @@ function finishPointDrawing() {
   // 对称模式：原路径 + 镜像路径合并
   const finalPoly = { ...poly, points: getMirroredPath(poly.points) };
   if (finalPoly.type === 'region') {
-    // Phase 2.6：点描出来的区域同样过「落地内 + 不重叠」。
+    // Phase 2.6：点描出来的区域同样过“落地内 + 不重叠”。
     // 这里 simplify=false —— 点描的顶点是用户刻意摆的，RDP 会把有意画的细节削掉。
     const check = checkRegionTrace(finalPoly.points, { simplify: false });
     if (!check.ok) {
@@ -2895,7 +2895,7 @@ function finishPointDrawing() {
       const existing = currentMapData.value?.terrain || [];
       const overlapList = existing.filter(t => polygonOverlapRatio(finalPoly.points, t.points) > 0.05);
       if (overlapList.length > 0) {
-        const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用「边缘吸附」对齐边界。仍要创建吗？`;
+        const msg = `新地形与 ${overlapList.length} 个已有地形重叠（${overlapList.map(t => t.name).join('、')}）。\n重叠会互相覆盖，建议取消后用“边缘吸附”对齐边界。仍要创建吗？`;
         if (!confirm(msg)) {
           drawingPolygon.value = null;
           renderer.requestRender();
@@ -2973,7 +2973,7 @@ function handleRiverClick(wx, wy) {
   if (hit && riverDraftPoints.value.length === 0) {
     // 🔴 2026-10-16（保底项）：**点已选中河流的河身 = 在那一段插一个节点**。
     //    原来这里只有"选中"，想加拐点**只能删整条重画**（会换 id/名字、丢掉调好的 width）——
-    //    而 `insertNodeBetween` 早就写好了却零调用（第五次「零调用死入口」）。
+    //    而 `insertNodeBetween` 早就写好了却零调用（第五次“零调用死入口”）。
     //    现在接上：命中已选中的**同一条**河 → 在最近线段的投影处插点（一条 undo）。
     if (selectedRiver.value && hit.id === selectedRiver.value.id) {
       const tol = 14 / (renderer.viewTransform.scale || 1);
@@ -2996,7 +2996,7 @@ function handleRiverClick(wx, wy) {
     riverWidth.value = hit.width || RIVER_DEFAULT_WIDTH;
     // 提示里写明"再点河身加拐点" —— 不然这个能力照样没人知道（可发现性纪律）
     setStatus({
-      toolLabel: `已选中河流「${hit.name || '未命名'}」（${hit.nodes.length} 个节点）— 再点河身=加拐点，拖节点=微调，Delete=删除`,
+      toolLabel: `已选中河流“${hit.name || '未命名'}”（${hit.nodes.length} 个节点）— 再点河身=加拐点，拖节点=微调，Delete=删除`,
     });
     renderer.requestRender();
     return;
@@ -3053,7 +3053,7 @@ function deleteSelectedRiver() {
   store.removeRiver(props.planet.id, r.id);
   selectedRiver.value = null;
   emit('dirty', true);
-  setStatus({ toolLabel: `已删除河流「${r.name || '未命名'}」` });
+  setStatus({ toolLabel: `已删除河流“${r.name || '未命名'}”` });
   renderer.requestRender();
   return true;
 }
@@ -3187,7 +3187,7 @@ function moveRiverNode(wx, wy) {
   r.nodes[drag.index] = res.point;
   riverFlowHint.value = res.clamped ? res.reason : '';
   if (res.clamped) setStatus({ toolLabel: res.reason });
-  // P2-3 脏矩形：覆盖「拖动前 + 拖动后」节点位置（含节点高亮圆与河宽），否则节点会拖出残影
+  // P2-3 脏矩形：覆盖“拖动前 + 拖动后”节点位置（含节点高亮圆与河宽），否则节点会拖出残影
   renderer.markDirtyRect(brushSegmentRect(prev, res.point, Math.max(24, (r.width || riverWidth.value || 10) * 2)));
   renderer.requestRender();
 }
@@ -3216,7 +3216,7 @@ function applyRoadStyle(key) {
     const r = (currentMapData.value?.routes || []).find(x => x.id === selectedRoute.value.id);
     if (r) selectedRoute.value = r;
     emit('dirty', true);
-    setStatus({ toolLabel: `已把选中道路改为「${st.label}」` });
+    setStatus({ toolLabel: `已把选中道路改为“${st.label}”` });
   } else {
     setStatus({ toolLabel: `道路样式：${st.label}（新生成的道路将使用该样式）` });
   }
@@ -3226,7 +3226,7 @@ function applyRoadStyle(key) {
 function handleAutoRoadClick(wx, wy) {
   const hm = planetHeightBrush.ensureHeightmap();
   if (!hm || !hm.grid || !hm.grid.points || !hm.h) {
-    setStatus({ toolLabel: '无高度图数据：到高度笔刷面板点「导入 .map」补一份，或先用高度笔刷涂抹一笔' });
+    setStatus({ toolLabel: '无高度图数据：到高度笔刷面板点“导入 .map”补一份，或先用高度笔刷涂抹一笔' });
     return;
   }
   if (!roadStart.value) {
@@ -3277,7 +3277,7 @@ function handleAutoRoadClick(wx, wy) {
 function handleSmartSettle(wx, wy) {
   const hm = planetHeightBrush.ensureHeightmap();
   if (!hm || !hm.grid || !hm.grid.points || !hm.h) {
-    setStatus({ toolLabel: '无高度图数据：到高度笔刷面板点「导入 .map」补一份，或先用高度笔刷涂抹一笔' });
+    setStatus({ toolLabel: '无高度图数据：到高度笔刷面板点“导入 .map”补一份，或先用高度笔刷涂抹一笔' });
     return;
   }
   const best = findOptimalBurgPosition(hm.h, hm.grid, wx, wy);
@@ -3369,7 +3369,7 @@ function zoomFit() {
 }
 
 /**
- * 「地名」图层开关（2026-10-27，用户 B2「勾了地形名完全看不见」）。
+ * “地名”图层开关（2026-10-27，用户 B2“勾了地形名完全看不见”）。
  * 地名读的是 `terrain[].name`（地形**多边形**的名字）——笔刷涂的是 `terrainGrid` 色格，
  * 压根没有名字。没有名字时勾上只会"什么都没发生"，所以这里把原因说出来。
  */
@@ -3380,7 +3380,7 @@ function toggleTerrainNameLayer() {
   const named = (currentMapData.value?.terrain || [])
     .filter((t) => t && String(t.name || '').trim()).length;
   if (!named) {
-    setStatus({ toolLabel: '地名层已开，但这张行星图还没有命名地形 —— 地名来自「多边形」的名字，笔刷涂的地形格不带名字' });
+    setStatus({ toolLabel: '地名层已开，但这张行星图还没有命名地形 —— 地名来自“多边形”的名字，笔刷涂的地形格不带名字' });
   }
 }
 
@@ -3392,10 +3392,10 @@ watch(() => store.mapData[props.planet?.id], () => { renderer.requestRender(); }
 // 只需一次 requestRender。用指纹而不是 `watch(places)`：节点是**就地改字段**，浅 watch 不会触发。
 watch(() => store.statusRevision, () => { renderer.requestRender(); });
 // M2/A2（2026-09-25）：切换高度图**着色方案**必须触发重绘。
-// 漏了这条的后果是「下拉改了、画布没反应」——test_69 的像素断言实测抓到过（diffPixels: 0）。
+// 漏了这条的后果是“下拉改了、画布没反应”——test_69 的像素断言实测抓到过（diffPixels: 0）。
 watch(heightmapRasterKind, () => { renderer.requestRender(); });
 
-// A3（2026-10-08）文化 / 宗教模式：进入时自动切到对应着色（否则「涂了看不见」），
+// A3（2026-10-08）文化 / 宗教模式：进入时自动切到对应着色（否则“涂了看不见”），
 // 并保证列表里有可涂条目；离开时**中止**未提交的笔画（半截编辑不该留在画布上）。
 watch(interactionMode, (mode, prev) => {
   if (mode === 'culture' || mode === 'religion') {
@@ -3449,7 +3449,7 @@ onUnmounted(() => {
   focusHighlight.clearFocusHighlightTimer();
 });
 
-// ⚠️ 对外暴露 `renderer` / `canvas`：App 的视口书签（R5）与「当前视图导出」都要靠它取相机。
+// ⚠️ 对外暴露 `renderer` / `canvas`：App 的视口书签（R5）与“当前视图导出”都要靠它取相机。
 // 此前**没有 defineExpose** → App 里 `ref="planetMapRef"` 拿到的是空对象（模板 ref 能绑上，
 // 但没有可读属性）→ 行星图 / 区域图 / 建筑内部三层的书签**静默失效**（点了没反应也不报错）。
 defineExpose({ canvas, renderer });
@@ -3670,7 +3670,7 @@ defineExpose({ canvas, renderer });
 
 /* Azgaar 参考图层条（不随编辑模式隐藏，位置在编辑工具栏之外）
    ⚠️ 此前这些按钮只有 `:class="{ active: ... }"`、非激活态 class 为空 → 浏览器**默认按钮样式**
-   （灰底 + 2px outset 边框），与周围工具栏格格不入（用户反馈「部分按钮风格不统一，疑似默认样式」）。
+   （灰底 + 2px outset 边框），与周围工具栏格格不入（用户反馈“部分按钮风格不统一，疑似默认样式”）。
    这里把 .edit-toolbar button 那套视觉语言复制过来统一；不给它加呼吸动画（图层开关是常驻状态）。 */
 .azgaar-layers {
   padding: 0 16px 8px;
@@ -3951,7 +3951,7 @@ defineExpose({ canvas, renderer });
 /* 起步入口（2026-10-17）：两个真按钮 + 一行"容器各存一份"的说明 */
 .empty-map-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
 /* 主入口（导入）稍作强调；⚠️ 类名刻意**不含** `edit-entry-btn` —— 测试助手与
-   「进入编辑模式」都按那个类找按钮，混用会让"点导入"变成"进编辑" */
+   “进入编辑模式”都按那个类找按钮，混用会让"点导入"变成"进编辑" */
 .empty-map-actions .empty-primary {
   border-color: var(--accent, #4a90d9);
   color: var(--accent, #4a90d9);
@@ -4049,8 +4049,8 @@ canvas {
 .save-banner.error {
   background: rgba(248, 81, 73, 0.95);
 }
-/* staged / 提示态（2026-10-17）：**不能是绿的** —— 「已交给项目、还在等磁盘」与
-   「已保存到磁盘」在界面上必须是两种颜色（保存诚实的基本要求） */
+/* staged / 提示态（2026-10-17）：**不能是绿的** —— “已交给项目、还在等磁盘”与
+   “已保存到磁盘”在界面上必须是两种颜色（保存诚实的基本要求） */
 .save-banner.warn {
   background: rgba(210, 153, 34, 0.95);
 }
@@ -4413,7 +4413,7 @@ canvas {
 
 /* 视图级动作条（非编辑模式）：地点簇 / 对象 / 快照 / 导出
    🔴 必须留在**文档流**内 —— 曾经的 position:absolute;top:12px;right:16px 会与
-   .map-header 右侧的「编辑地图 / 采用自动区域 / 重新生成」重叠（同行同右边界必然撞），
+   .map-header 右侧的“编辑地图 / 采用自动区域 / 重新生成”重叠（同行同右边界必然撞），
    且因 DOM 顺序在后而把后者整片盖住 = 编辑入口完全不可见、点不到。 */
 .view-actions {
   display: flex;
@@ -4538,7 +4538,7 @@ canvas {
   line-height: 1.4;
 }
 
-/* A6（2026-10-29）：行星侧「生成地形」浮面板 —— 与剧本视图的 .gen-float 同口径（深色、不跟主题），
+/* A6（2026-10-29）：行星侧“生成地形”浮面板 —— 与剧本视图的 .gen-float 同口径（深色、不跟主题），
    因为它装的是深色参数面板（TerrainGenPanel），浅色主题下浅底会压成"读不出来的深字"。 */
 .planet-gen-float {
   position: fixed;

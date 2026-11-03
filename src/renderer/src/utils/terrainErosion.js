@@ -236,7 +236,7 @@ export function inciseByFlow(hm, opts = {}) {
   const carveTotal = new Float64Array(n);
 
   for (let it = 0; it < iterations; it++) {
-    // ① 流向场（**唯一实现**：与画布「自动河流」同一份 traceRivers）
+    // ① 流向场（**唯一实现**：与画布“自动河流”同一份 traceRivers）
     const traced = traceRivers(hm, {
       seaLevel,
       sourceHeight: seaLevel + 0.5,      // 让**所有**陆格参与流向场（不是只从高处起河）

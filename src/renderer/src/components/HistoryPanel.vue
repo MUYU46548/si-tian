@@ -50,7 +50,7 @@ import { getHistory, jumpTo as jumpToIndex, currentIndex } from '../store/undo';
 // 跳转后广播 sitian:history-jump，各画布监听后 requestRender 刷新
 //
 // P0-3 补强：
-//   1. 操作名称兜底 —— 命令未写 label 时显示「未命名操作 #N」，不再出现空白行
+//   1. 操作名称兜底 —— 命令未写 label 时显示“未命名操作 #N”，不再出现空白行
 //   2. header 内显示步数（折叠后仍可见当前进度）
 //   3. 面板展开/历史变化时自动把"当前步"滚进可视区（历史长了不用手翻）
 //   4. data-testid / data-index / data-state 供回归测试无歧义定位（不依赖文案与 emoji）

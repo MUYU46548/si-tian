@@ -1,4 +1,4 @@
-// utils/riverErase.js — 河流「橡皮擦」的**纯几何**：按擦除轨迹把一条折线切成留下的几段。
+// utils/riverErase.js — 河流“橡皮擦”的**纯几何**：按擦除轨迹把一条折线切成留下的几段。
 //
 // 为什么单开一个文件（而不是写在组件里）：这是**几何规则**，必须能被 Node 单测钉住
 // （断成几段、边界算不算、单点段留不留、结点会不会被摊爆）。组件那份只负责把结果
@@ -9,7 +9,7 @@
 //      河节点间距是按屏幕像素算的（`RIVER_NODE_SPACING_PX`=30px），橡皮半径 18px ⇒
 //      直径 36px。正常情况相邻两点都进圈，但一条很长的河会被 `RIVER_MAX_NODES`（72）
 //      截住 ⇒ 节点间距可以远超那个直径，那时"只判节点"的橡皮会出现**明明擦过去却没反应**。
-//      所以先把折线按 `radius/2` **虚拟加密**一遍再判，最后只保留「原节点 + 每段切口」——
+//      所以先把折线按 `radius/2` **虚拟加密**一遍再判，最后只保留“原节点 + 每段切口”——
 //      既不会漏，也不会把节点数摊爆（切口最多每段两个）。
 //   ② **边界算"留"不算"擦"**（严格 `dist < radius` 才算命中，与仓里 `conformToSkeleton`
 //      的阈值口径一致）。切口落在"圈外的第一个采样点"上，误差 ≤ radius/2（亚像素级）。
@@ -44,7 +44,7 @@ export function strokeBounds(stroke, pad = 0) {
   return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
 }
 
-/** 点到「擦除轨迹」这条折线的最短距离（轨迹只有 1 个采样点时退化成点到点） */
+/** 点到“擦除轨迹”这条折线的最短距离（轨迹只有 1 个采样点时退化成点到点） */
 export function distanceToStroke(x, y, stroke) {
   const list = stroke || [];
   if (!list.length) return Infinity;
@@ -128,7 +128,7 @@ export function erasePolylineByStroke(points, stroke, radius, { minRunPoints = 2
     return { runs: pts.length >= minRunPoints ? [copy()] : [], touched: false,
              erasedNodes: 0, droppedNodes: pts.length >= minRunPoints ? 0 : pts.length, total: pts.length };
   }
-  // 连续「未擦」段 → 只保留原节点与两端（切口）
+  // 连续“未擦”段 → 只保留原节点与两端（切口）
   const runs = [];
   let dropped = 0;
   let i = 0;
@@ -156,7 +156,7 @@ export function erasePolylineByStroke(points, stroke, radius, { minRunPoints = 2
 }
 
 /**
- * 把「擦除结果」翻译成**一次原子写**的载荷（改 / 加 / 删三样）。
+ * 把“擦除结果”翻译成**一次原子写**的载荷（改 / 加 / 删三样）。
  *
  * 规则（与 store 写口同口径）：
  *   · 整条被擦干净 → `removes`；

@@ -3,10 +3,10 @@
 """用例 120：**底图编辑模式** —— 地理类工具与日常剧本编辑分开（2026-10-18 第十七修）
 
 暮雨原话（2026-10-18 下午）：
-  「事实上我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，不要和日常的剧本编辑混在一起。」
+  “事实上我甚至觉得这玩意得进底图编辑，**底图编辑要单开一个编辑模式**，不要和日常的剧本编辑混在一起。”
 
 修前的形态（读代码确认）：主行是日常动作（选择 / 画省份 / 改归属 / 改形状 / 更多），
-而「更多」里**同时**装着两类东西 ——
+而“更多”里**同时**装着两类东西 ——
   · 底图/地理：河流 / 自动河流 / 道路 / 地貌 / 地名 / 标记 / 聚落 / 文化 / 宗教 / 高度 / 群系 / 裁到海岸线 / 着色档
   · 省份批量：拆分 / 合并 / 点击填充 / 描轮廓 / Voronoi 铺底 / 删除
 即**编辑对象不同（地块 vs 覆盖其上的历史归属），却在同一排按钮里** —— 这正是用户说的"混"。
@@ -98,9 +98,9 @@ def source_gates():
         for tid in ('height', 'biome', 'river', 'road', 'culture', 'religion', 'label', 'marker'):
             if f"id: '{tid}'" not in block:
                 fails.append(f'🔴 BASEMAP_TOOLS 里少了地理工具 {tid}')
-    # 主行的「更多」标题不该再宣称它自己装着河流/地貌/地名（那些已经搬走了）
+    # 主行的“更多”标题不该再宣称它自己装着河流/地貌/地名（那些已经搬走了）
     if 'title="更多 — 拆分 / 合并 / 点击填充 / 描轮廓 / 河流 / 地貌' in sm:
-        fails.append('🔴 「更多」的 title 还在宣称它装着河流/地貌（文案与结构不一致）')
+        fails.append('🔴 “更多”的 title 还在宣称它装着河流/地貌（文案与结构不一致）')
     return fails
 
 
@@ -172,11 +172,11 @@ def run(cdp):
         fails.append(f"地理行里的工具太少（{s1['toolCount']} 个：{s1['toolIds']}）—— 分组没分干净")
     if not s1['toggleActive']:
         fails.append('开关开着但没有 active 视觉态（用户看不出在模式里）')
-    # 🔴 开模式**不许**顺手展开「更多」：第一版这么写，工具栏从 ~120px 撑到 ~470px
+    # 🔴 开模式**不许**顺手展开“更多”：第一版这么写，工具栏从 ~120px 撑到 ~470px
     #    （出图 `02-basemap-edit-mode.png` 一眼可见），画布被压掉一半 ——
-    #    "模式分区"的收益会被这个面板全吃掉。判据：开模式后「更多」面板不在 DOM 里。
+    #    "模式分区"的收益会被这个面板全吃掉。判据：开模式后“更多”面板不在 DOM 里。
     if s1.get('moreOpen'):
-        fails.append('🔴 开底图编辑模式时「更多」被自动展开了（工具栏会撑到近 500px、画布被压一半）')
+        fails.append('🔴 开底图编辑模式时“更多”被自动展开了（工具栏会撑到近 500px、画布被压一半）')
     _ev(cdp, "(() => { document.querySelector('[data-testid=basemap-edit-toggle]').click(); return 'ok'; })()", '关模式')
     time.sleep(0.5)
     s2 = _state(cdp)
@@ -197,22 +197,22 @@ def run(cdp):
         fails.append(f"setTool('river') 后 tool={s3['tool']}（应为 river）")
     notes.append(f"d 零迁移：setTool('river') → 模式自动开={s3['mode']} / 行={s3['rowPresent']}")
 
-    # ── e 日常工具：模式关时主行不出现「画省份」（它属于底图编辑），但「涂归属」在 ──
+    # ── e 日常工具：模式关时主行不出现“画省份”（它属于底图编辑），但“涂归属”在 ──
     _ev(cdp, "(() => { %s.basemapEditMode = false; %s.setTool('select'); return 'ok'; })()" % (SM, SM),
         '显式关模式')
     time.sleep(0.3)
     off_row = _ev(cdp, "(() => { const r = document.querySelector('.primary-row');"
                         " return r ? r.textContent : ''; })()", '读主行（模式关）')
     if '画省份' in off_row:
-        fails.append('模式关时主行仍出现「画省份」—— 剧本视图与底图编辑没有分开')
+        fails.append('模式关时主行仍出现“画省份”—— 剧本视图与底图编辑没有分开')
     if '涂归属' not in off_row:
-        fails.append('主行里找不到「涂归属」—— 剧本视图的核心动作不可见')
+        fails.append('主行里找不到“涂归属”—— 剧本视图的核心动作不可见')
     _ev(cdp, "(() => { %s.basemapEditMode = true; return 'ok'; })()" % SM, '开底图编辑')
     time.sleep(0.3)
     on_row = _ev(cdp, "(() => { const r = document.querySelector('.primary-row');"
                        " return r ? r.textContent : ''; })()", '读主行（模式开）')
     if '画省份' not in on_row:
-        fails.append('开底图编辑后主行没有「画省份」—— 底图能力被藏没了')
+        fails.append('开底图编辑后主行没有“画省份”—— 底图能力被藏没了')
     _ev(cdp, "(() => { %s.setTool('provinceBrush'); return 'ok'; })()" % SM, '切日常工具')
     time.sleep(0.4)
     s4 = _state(cdp)
@@ -220,27 +220,27 @@ def run(cdp):
         fails.append('切回日常工具就把模式关了 —— 用户连着画几条河时会被踢出模式')
     notes.append(f"e 日常工具可用且不关模式：tool={s4['tool']} 模式={s4['mode']}")
 
-    # ── g 左上角「返回」的上下文语义（2026-10-21 用户误触）──────────────────
-    #    底图编辑中必须是「← 日常视图」（只退模式、不退出剧本）；
-    #    日常态才是「← 退出剧本」；底图行末尾也有「← 日常视图」出口。
+    # ── g 左上角“返回”的上下文语义（2026-10-21 用户误触）──────────────────
+    #    底图编辑中必须是“← 日常视图”（只退模式、不退出剧本）；
+    #    日常态才是“← 退出剧本”；底图行末尾也有“← 日常视图”出口。
     back = _ev(cdp, "(() => { const b = document.querySelector('.scenario-toolbar .back-btn');"
                     " return b ? b.textContent.trim() : 'none'; })()", '读返回按钮')
     if '日常视图' not in back:
-        fails.append(f'底图编辑中返回按钮应是「← 日常视图」，实际「{back}」')
+        fails.append(f'底图编辑中返回按钮应是“← 日常视图”，实际“{back}”')
     _ev(cdp, "(() => { const b = document.querySelector('.scenario-toolbar .back-btn');"
              " if (b) b.click(); return 'ok'; })()", '点返回（应只退模式）')
     time.sleep(0.4)
     still = _ev(cdp, "!!document.querySelector('.scenario-map-container')", '编辑器仍在')
     g1 = _state(cdp)
     if not still:
-        fails.append('🔴 底图编辑中点「返回」直接退出了整个历史剧本（用户踩过的那个）')
+        fails.append('🔴 底图编辑中点“返回”直接退出了整个历史剧本（用户踩过的那个）')
     if g1['mode']:
-        fails.append('点「返回」后底图编辑模式还开着')
+        fails.append('点“返回”后底图编辑模式还开着')
     back2 = _ev(cdp, "(() => { const b = document.querySelector('.scenario-toolbar .back-btn');"
                      " return b ? b.textContent.trim() : 'none'; })()", '读日常态返回按钮')
     if '退出剧本' not in back2:
-        fails.append(f'日常态返回按钮应是「← 退出剧本」，实际「{back2}」')
-    # 行内出口：开模式 → 点「← 日常视图」→ 仍在剧本、模式关
+        fails.append(f'日常态返回按钮应是“← 退出剧本”，实际“{back2}”')
+    # 行内出口：开模式 → 点“← 日常视图”→ 仍在剧本、模式关
     _ev(cdp, "(() => { %s.basemapEditMode = true; return 'ok'; })()" % SM, '再开底图编辑')
     time.sleep(0.3)
     _ev(cdp, "(() => { const b = document.querySelector('[data-testid=basemap-exit]');"
@@ -249,8 +249,8 @@ def run(cdp):
     still2 = _ev(cdp, "!!document.querySelector('.scenario-map-container')", '编辑器仍在 2')
     g2 = _state(cdp)
     if not still2 or g2['mode']:
-        fails.append('底图行末尾「← 日常视图」没有把模式关掉（或退出了剧本）')
-    notes.append(f"g 返回语义：底图编辑「{back}」→ 仍挂载={still} / 模式={g1['mode']}；日常「{back2}」")
+        fails.append('底图行末尾“← 日常视图”没有把模式关掉（或退出了剧本）')
+    notes.append(f"g 返回语义：底图编辑“{back}”→ 仍挂载={still} / 模式={g1['mode']}；日常“{back2}”")
 
     # ── f 收尾：关模式回日常 + 退出剧本域 ──
     _ev(cdp, "(() => { const sm = %s; if (sm.basemapEditMode) sm.toggleBasemapEditMode();"

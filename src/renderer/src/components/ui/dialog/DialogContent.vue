@@ -10,7 +10,7 @@
 //
 //  2. 🔴 **显式传 `trapFocus`**。reka-ui 的 DialogContentModal 对 `trapFocus` 只声明了
 //     Boolean 而**没给默认值** → 不传就是 false → FocusScope 不做焦点陷阱。
-//     「Tab 困在弹窗内」是知情同意的证据力所在，不能靠默认值。
+//     “Tab 困在弹窗内”是知情同意的证据力所在，不能靠默认值。
 //
 //  3. 🔴 **手动补 `aria-modal="true"`**。reka-ui 只给 `role="dialog"`，
 //     全仓此前 0 处 aria-modal —— 这是本仓第一个真锁模态，属性由我们自己写死。
@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 
 const props = defineProps({
   class: { type: [String, Array, Object], default: undefined },
-  /** 焦点陷阱：默认开。关掉只应出现在「非模态提示」这种场景 */
+  /** 焦点陷阱：默认开。关掉只应出现在“非模态提示”这种场景 */
   trapFocus: { type: Boolean, default: true },
   /** 点遮罩是否关闭（默认开；强制模式由使用方传 false） */
   dismissOnOutsideClick: { type: Boolean, default: true },

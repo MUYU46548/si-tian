@@ -44,7 +44,7 @@
         <p
           v-if="readOnly"
           class="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200"
-        >只读：{{ readOnlyReason }} —— 第②步「一键生成 / 导入 .map」与第③步「画省份」需要先有项目（第①步）。</p>
+        >只读：{{ readOnlyReason }} —— 第②步“一键生成 / 导入 .map”与第③步“画省份”需要先有项目（第①步）。</p>
       </header>
 
       <!-- ── 第 ① 步：打开或新建项目 ─────────────────────────────────── -->
@@ -61,7 +61,7 @@
             </p>
             <p class="mt-2 text-xs text-slate-300">
               <template v-if="projectName">
-                已打开：<b class="text-sky-300">「{{ projectName }}」</b>
+                已打开：<b class="text-sky-300">“{{ projectName }}”</b>
                 <span class="text-slate-500">{{ projectFile ? `（${projectFile}）` : '（还没有落盘位置）' }}</span>
               </template>
               <template v-else>还没有打开项目</template>
@@ -110,7 +110,7 @@
               一键生成则从零造一块大陆并自动切成省份（一整次 = 一条 Ctrl+Z）。
             </p>
             <p class="mt-2 text-xs text-slate-300">
-              共 <b class="text-sky-300">{{ baseMapKeys.length }}</b> 张底图<template v-if="activeKey">；当前「<b class="text-sky-300">{{ activeKey }}</b>」
+              共 <b class="text-sky-300">{{ baseMapKeys.length }}</b> 张底图<template v-if="activeKey">；当前“<b class="text-sky-300">{{ activeKey }}</b>”
                 <template v-if="provinceCount > 0">已经有 {{ provinceCount }} 块省份</template>
                 <template v-else>还没有省份</template></template><template v-else>；还没有底图</template>
             </p>
@@ -164,12 +164,12 @@
           <div class="min-w-0 flex-1">
             <h3 class="text-sm font-semibold text-slate-100">画省份</h3>
             <p class="mt-1 text-xs leading-relaxed text-slate-400">
-              省份只能在历史剧本编辑器里画（左侧工具栏的「画省份 / 批量铺底」），这里把你送到那个编辑器 ——
+              省份只能在历史剧本编辑器里画（左侧工具栏的“画省份 / 批量铺底”），这里把你送到那个编辑器 ——
               工具与手感跟完整模式完全一样，一笔一条撤销。
             </p>
             <p class="mt-2 text-xs text-slate-300">
-              <template v-if="provinceCount > 0">已有 <b class="text-sky-300">{{ provinceCount }}</b> 块省份（当前底图「{{ activeKey }}」）</template>
-              <template v-else-if="activeKey">当前底图「{{ activeKey }}」还没有省份</template>
+              <template v-if="provinceCount > 0">已有 <b class="text-sky-300">{{ provinceCount }}</b> 块省份（当前底图“{{ activeKey }}”）</template>
+              <template v-else-if="activeKey">当前底图“{{ activeKey }}”还没有省份</template>
               <template v-else>还没有底图 —— 先做第②步</template>
             </p>
             <div class="mt-3">
@@ -225,31 +225,31 @@
 
 <script setup>
 /**
- * SimpleMode.vue —— 简易模式（M3 / N3b-2）：「新手一小时画完第一张图」的外壳。
+ * SimpleMode.vue —— 简易模式（M3 / N3b-2）：“新手一小时画完第一张图”的外壳。
  *
  * 设计口径：
  *   · **零新增数据模型**：本组件不定义状态、不写持久化，只读 store 的真实状态 + 调既有写口；
  *   · **同一能力只一份实现**：能交给现有入口的就交（画省份、导出 PNG 在剧本编辑器里），
  *     绝不在这里复制几何 / 落库 / 导出逻辑；
- *   · 状态诚实：读不到就是读不到，做不到就灰禁并写出原因（不预填「已完成」）。
+ *   · 状态诚实：读不到就是读不到，做不到就灰禁并写出原因（不预填“已完成”）。
  *
  * 四个动作各自复用的既有入口（逐条列在这里，便于 review 与源码闸门对照）：
  *   ① 新建 / 打开项目 → `projectStore.createProject()` / `projectStore.openProject()`
- *      （ProjectPanel 的「新建」「打开项目…」调的就是这两个函数）。
- *   ② 一键生成 → `store.addBaseMap()` + `store.generateLandmass()`（LandmassPanel「应用」同一个 store 动作）；
+ *      （ProjectPanel 的“新建”“打开项目…”调的就是这两个函数）。
+ *   ② 一键生成 → `store.addBaseMap()` + `store.generateLandmass()`（LandmassPanel“应用”同一个 store 动作）；
  *      导入 .map → `utils/azgaar-parser.parseMapFile` + `buildScenariosJson`（**解析唯一实现**）
  *      → `store.importFromScenariosJson()`（**落库唯一写口**，ScenarioMap 的导入最后也调它）。
- *      同名底图的「只补缺 / 重导迁移」两条分支**只在** ScenarioMap.triggerMapImport 里，
+ *      同名底图的“只补缺 / 重导迁移”两条分支**只在** ScenarioMap.triggerMapImport 里，
  *      这里**不复制**：遇到同名一律拒绝并指向完整模式（不拿半条链去赌用户的数据）。
  *   ③ 画省份 → 交回剧本编辑器：emit('enter-scenario') → App 走 `switchModule('scenario')`
- *      （顶部「历史剧本」按钮同一条调用）。
+ *      （顶部“历史剧本”按钮同一条调用）。
  *   ④ 导出 PNG → 同上，只是 App 会额外把状态栏指向剧本工具栏的导出按钮
  *      （`useScenarioExport.exportScenarioPNG` 依赖 ScenarioMap 的 canvas/timeline，只能在那边跑）。
  */
 import { computed, ref } from 'vue';
 import { useGeodataStore } from '../store/geodata';
 import { useProjectStore } from '../store/projectStore';
-// .map 的解析与「拿到一份 .map 之后」的三件共用件：与 ScenarioMap / PlanetMap 同源，不另写一份
+// .map 的解析与“拿到一份 .map 之后”的三件共用件：与 ScenarioMap / PlanetMap 同源，不另写一份
 import { buildScenariosJson, parseMapFile } from '../utils/azgaar-parser';
 import { backupMapSourceFile, mapNameFromFileName, readMapSourceText } from '../utils/mapImportSource';
 
@@ -309,7 +309,7 @@ const generateReason = computed(() => {
   if (busy.value) return '正在处理，请稍等…';
   if (provinceCount.value > 0) {
     return `这张底图已经有 ${provinceCount.value} 块省份 —— 一键生成会整张替换（连同归属键）。`
-      + '简易模式不提供"重生成"；要重来请到完整模式的「造陆」面板（那儿会先给你看候选，再问你确认）。';
+      + '简易模式不提供"重生成"；要重来请到完整模式的“造陆”面板（那儿会先给你看候选，再问你确认）。';
   }
   return '';
 });
@@ -335,7 +335,7 @@ const exportReason = computed(() => {
 
 /** 没有回执时的汇总（全部来自 store 的真实值） */
 const summary = computed(() => {
-  const which = projectName.value ? `「${projectName.value}」` : '未打开项目';
+  const which = projectName.value ? `“${projectName.value}”` : '未打开项目';
   return `当前：${which} · ${baseMapKeys.value.length} 张底图 · ${provinceCount.value} 块省份 · ${baseScenarios.value.length} 段剧本`;
 });
 const statusLine = computed(() => message.value || summary.value);
@@ -344,7 +344,7 @@ const statusLine = computed(() => message.value || summary.value);
 /**
  * 切走之前先把当前项目的改动落盘（数据安全优先于手感）。
  *
- * `projectStore.flushSave()` 是「把还没落盘的改动立刻写完」的唯一入口（退出 / 关项目也用它）。
+ * `projectStore.flushSave()` 是“把还没落盘的改动立刻写完”的唯一入口（退出 / 关项目也用它）。
  * 保存失败就**不切**：切换会把内存里的改动丢掉，而新手最可能就是在这个入口连点两下。
  */
 async function flushBeforeSwitch() {
@@ -367,7 +367,7 @@ async function createProjectNow() {
     const res = await proj.createProject({ name: String(newName.value || '').trim() || '未命名项目' });
     if (res && res.success) {
       const problems = Array.isArray(res.problems) ? res.problems.filter(Boolean) : [];
-      message.value = `已新建项目「${projectName.value}」`
+      message.value = `已新建项目“${projectName.value}”`
         + (projectFile.value ? `（${projectFile.value}）` : '')
         + ' —— 下面三步可以开始了'
         + (problems.length ? ` ⚠️ ${problems.join('；')}` : '');
@@ -393,7 +393,7 @@ async function openProjectNow() {
     }
     const res = await proj.openProject();
     if (res && res.success) {
-      message.value = `已打开「${projectName.value}」`
+      message.value = `已打开“${projectName.value}”`
         + (projectFile.value ? `（${projectFile.value}）` : '')
         + ' —— 数据就是原来那份，没有复制';
     } else if (res && res.canceled) {
@@ -411,9 +411,9 @@ async function openProjectNow() {
 // ===== 第 ② 步：底图 =====
 /**
  * 空底图的键名。
- * 完整模式里空底图叫「底图 N」（`ScenarioMap.nextBaseMapName`，那是它的 UI 逻辑）。
+ * 完整模式里空底图叫“底图 N”（`ScenarioMap.nextBaseMapName`，那是它的 UI 逻辑）。
  * 简易模式**不复制**那条命名，用项目名派生一个不重名的键（只影响这一张新底图叫什么），
- * 避免和完整模式抢「底图 N」的编号。
+ * 避免和完整模式抢“底图 N”的编号。
  */
 function newBaseMapKey() {
   const base = `${projectName.value || '我的'} 底图`;
@@ -444,7 +444,7 @@ async function generateNow() {
       }
       pickedKey.value = key;
     }
-    // 造陆 + 铺底切省：store 的既有动作，LandmassPanel 的「应用」调的是同一个函数
+    // 造陆 + 铺底切省：store 的既有动作，LandmassPanel 的“应用”调的是同一个函数
     const r = await store.generateLandmass(key, {}, {
       onProgress: (p) => { message.value = (p && p.message) || '正在生成…'; },
     });
@@ -469,7 +469,7 @@ function pickMapFile() {
  * 拿到一份 .map → 装进当前项目。
  * 解析 / 组装复用 `utils/azgaar-parser.js`（唯一解析实现），落库复用
  * `store.importFromScenariosJson`（唯一写口）。**同名底图不在这里处理**：
- * 「只补缺 / 重导迁移」只在 ScenarioMap.triggerMapImport 里，仿一份必然静默分叉。
+ * “只补缺 / 重导迁移”只在 ScenarioMap.triggerMapImport 里，仿一份必然静默分叉。
  */
 async function handleMapFile(event) {
   const input = event && event.target;
@@ -477,7 +477,7 @@ async function handleMapFile(event) {
   if (input) input.value = '';   // 允许再次选同一个文件
   if (!file || busy.value) return;
   busy.value = 'import';
-  message.value = `正在解析「${file.name}」…`;
+  message.value = `正在解析“${file.name}”…`;
   try {
     const text = await readMapSourceText(file);
     // 先留底（在任何解析/写入之前）—— 解析失败也该留下这份素材，与剧本侧同一顺序
@@ -491,8 +491,8 @@ async function handleMapFile(event) {
     }
     const name = mapNameFromFileName(file.name) || '导入的底图';
     if (store.baseMaps && store.baseMaps[name]) {
-      message.value = `「${name}」这张底图已经存在 —— 简易模式不重导，免得盖掉你已经切好的省份。`
-        + '请到完整模式的剧本工具栏点「+ 导入 .map 底图」：那边会先给你看映射与冲突，再决定只补数据还是重导。'
+      message.value = `“${name}”这张底图已经存在 —— 简易模式不重导，免得盖掉你已经切好的省份。`
+        + '请到完整模式的剧本工具栏点“+ 导入 .map 底图”：那边会先给你看映射与冲突，再决定只补数据还是重导。'
         + srcNote;
       return;
     }
@@ -503,7 +503,7 @@ async function handleMapFile(event) {
       return;
     }
     pickedKey.value = name;
-    message.value = `已导入「${name}」：` + `共 ${baseMapKeys.value.length} 张底图，当前这张 ${provinceCount.value} 块省份${srcNote}`;
+    message.value = `已导入“${name}”：` + `共 ${baseMapKeys.value.length} 张底图，当前这张 ${provinceCount.value} 块省份${srcNote}`;
   } catch (err) {
     message.value = `导入失败：${(err && err.message) || err}`;
   } finally {

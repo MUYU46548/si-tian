@@ -1,5 +1,5 @@
 /**
- * utils/vertexSharing.js — 「共边顶点」的配对与联动移动（P1，2026-10-13）
+ * utils/vertexSharing.js — “共边顶点”的配对与联动移动（P1，2026-10-13）
  *
  * ## 为什么需要这一层
  *
@@ -14,10 +14,10 @@
  * 在"共边顶点坐标相同"这个前提下，**让邻省的同位顶点跟着一起平移**就是他要的效果：
  * 边界线整体移动 —— A 缩多少 B 就涨多少，**无缝、无压叠**，而且**不碰任何别的省**。
  * 关键好处是**不需要任何布尔运算**：几十万点的底图上，一次拖动只是改几个坐标，
- * 不存在「先并后挖」跨边界压叠那一类问题（本仓在布尔路径上踩过的坑都在 AGENTS 里）。
+ * 不存在“先并后挖”跨边界压叠那一类问题（本仓在布尔路径上踩过的坑都在 AGENTS 里）。
  *
  * 三条纪律：
- *   ① **只认坐标，不认"谁是邻居"**：配对判据是「坐标落在同一个量化格里」，
+ *   ① **只认坐标，不认"谁是邻居"**：配对判据是“坐标落在同一个量化格里”，
  *      不做拓扑推断（拓扑推断要有洞/飞地的正确归属，代价高且容易静默出错）。
  *   ② **差量平移**：邻省同位顶点按"与参考顶点的偏差"一起移动，而不是直接写同一个坐标 ——
  *      两侧本来就相差 1e-9 级的浮点误差时，各自动各自的分量，重合关系不会被磨掉。
@@ -53,7 +53,7 @@ export function vertexKey(x, y, quantum = VERTEX_QUANTUM) {
 }
 
 /**
- * 全底图的「坐标 → 顶点」索引。
+ * 全底图的“坐标 → 顶点”索引。
  * @param {Array} provinces `baseMap.terrain`
  * @returns {{ index: Map<string, Array<{provIdx:number, ringIdx:number, vertexIdx:number, x:number, y:number}>>, total: number, shared: number }}
  *   `shared` = 落在"不止一个顶点"的格里的顶点数（= 参与共边的顶点数，诊断用）
@@ -83,7 +83,7 @@ export function buildCoincidentIndex(provinces, { quantum = VERTEX_QUANTUM } = {
 }
 
 /**
- * 找出「这些顶点在别的省份里的同位顶点」。
+ * 找出“这些顶点在别的省份里的同位顶点”。
  *
  * @param {Array} provinces
  * @param {{provIdx:number, ringIdx:number}} ref 参考顶点所在的省与环

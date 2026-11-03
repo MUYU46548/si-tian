@@ -59,7 +59,7 @@ function onDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 
   // P0-1 Relief 笔刷：左键散布 / 右键擦除。
   // 必须放在 button!==0 早退之前——右键拖拽是"擦除"的主要入口。
-  // 第 2 件（2026-10-24）：左键先问「点中已有图标了吗」——点中就是**选中并拖它**（实例可移动），
+  // 第 2 件（2026-10-24）：左键先问“点中已有图标了吗”——点中就是**选中并拖它**（实例可移动），
   // 点空白才开始散布新图标。两条链互斥，且拖动期间只改预览（不碰存储）。
   if (s.interactionMode === 'relief' && s.editMode && s.reliefBrush) {
     s.reliefBrush.resetClickCredit?.();          // 每次按下都复位（见 useReliefBrush 里的注释）
@@ -504,7 +504,7 @@ function onDragEnd(wx, wy, dragInfo) {
   }
 
   // P0-1 Relief 笔刷松手：整次拖动 = 一条 undo
-  // 第 2 件：拖着实例松手 → 落库一条「移动地貌图标」（没动过 = 零写入，只是选中）
+  // 第 2 件：拖着实例松手 → 落库一条“移动地貌图标”（没动过 = 零写入，只是选中）
   if (mode === 'relief' && s.editMode && s.reliefBrush) {
     if (s.reliefBrush.reliefDrag.value) {
       const r = s.reliefBrush.endInstanceDrag();

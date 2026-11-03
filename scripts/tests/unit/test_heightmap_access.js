@@ -2,8 +2,8 @@
 /**
  * Node 单元测试：高度图归属判定（src/renderer/src/utils/heightmapAccess.js）
  *
- * 为什么要有这一层：A1（docs/A1_DATA_MODEL_DECISION.md）决定「以行星的高度图为单一真源，
- * 剧本底图按 planetId 绑定代理过去」。这条规则一旦判错，后果不是报错而是**静默分裂**：
+ * 为什么要有这一层：A1（docs/A1_DATA_MODEL_DECISION.md）决定“以行星的高度图为单一真源，
+ * 剧本底图按 planetId 绑定代理过去”。这条规则一旦判错，后果不是报错而是**静默分裂**：
  * 在剧本里涂的山行星看不见（双源),或者绑定后悄悄回落到旧的一份、让用户以为绑定生效了。
  * 该模块无 DOM / 无 store 依赖，正好放 Node 层跑真实断言。
  *
@@ -186,7 +186,7 @@ async function main() {
     eq(r.nextBaseMap.terrain.length, 1, '其余字段保留');
   });
 
-  // ── 11. buildGridFromTerrain（未绑定底图的「从零开始」） ──────────────────
+  // ── 11. buildGridFromTerrain（未绑定底图的“从零开始”） ──────────────────
   check('buildGridFromTerrain：空底图给默认方框，行列与点数自洽', () => {
     const g = buildGridFromTerrain([], 100, 1);
     eq(g.spacing, 100, 'spacing');

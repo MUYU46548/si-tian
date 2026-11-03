@@ -116,7 +116,7 @@ function onMouseMove(event) {
     render();
     return;
   }
-  // 「绘制」/「描轮廓」的自由绘制采样：按**屏幕像素**间距取样（世界单位随缩放差几十倍，
+  // “绘制”/“描轮廓”的自由绘制采样：按**屏幕像素**间距取样（世界单位随缩放差几十倍，
   // 用世界阈值会在大缩放时采得过密、小缩放时采得过疏）
   if (st.freeTraceActive && (tool.value === 'draw' || tool.value === 'outline')) {
     const rect = canvas.value.getBoundingClientRect();
@@ -147,7 +147,7 @@ function onMouseMove(event) {
     return;
   }
 
-  // 笔刷建省：拖动期连续采点（与「改省界」同一套抽稀），落库仍在抬手
+  // 笔刷建省：拖动期连续采点（与“改省界”同一套抽稀），落库仍在抬手
   if (tool.value === 'provincePaint') {
     const rect = canvas.value.getBoundingClientRect();
     const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);

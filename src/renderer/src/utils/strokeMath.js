@@ -1,7 +1,7 @@
 // utils/strokeMath.js — 笔迹纯函数层（T7，2026-10-19）
 //
 // 为什么单独一层：perfect-freehand 是 ESM 裸模块，Node 单测的 data: 导入解析不到；
-// 把「点格式转换 / 速度→宽度 / outline→SVG」这些纯函数放这里，Node 可直接单测，
+// 把“点格式转换 / 速度→宽度 / outline→SVG”这些纯函数放这里，Node 可直接单测，
 // `strokeEngine.js` 只做对 perfect-freehand 的薄封装（由 Vite/CDP 覆盖）。
 
 /** 司天点（{x,y,pressure?} 或 [x,y,p]）→ perfect-freehand 输入点 */

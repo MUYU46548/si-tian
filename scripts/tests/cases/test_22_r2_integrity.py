@@ -3,9 +3,9 @@
 """用例 22：R2 数据完整性四项（代码实证回归）
 覆盖：
   a) 搜索覆盖正文 wikilinks（反向链接）—— 只在别人正文里出现的词条名也能被搜到，
-     并带「提及」徽标；名称直配优先于提及（两级排序）
+     并带“提及”徽标；名称直配优先于提及（两级排序）
   b) 暂存（draft）节点转正入口 —— 详情面板对无 sourcePath 的节点给出
-     「创建 Obsidian 笔记」，转正后回填 sourcePath 并切换为「在 Obsidian 中打开」
+     “创建 Obsidian 笔记”，转正后回填 sourcePath 并切换为“在 Obsidian 中打开”
      （转正同时会把节点 id 同步为 normalizeId(文件名)，详见用例 40；此处按名称查找）
   c) 库名动态化 —— obsidian:// URI 的 vault 参数取自当前配置库名，不再硬编码 ROSA
   d) mapdata 旧 key 清理的运行时前提 —— saveMapDataImmediate 不得直写无世界前缀 key
@@ -63,7 +63,7 @@ def run(cdp):
     ensure_data_ready(cdp)
 
     # ============ a) 搜索覆盖正文 wikilinks ============
-    # 「叠翠原」不是任何节点的名称，只作为 wikilink 出现在 拾光小筑 / 缄默工坊 正文中
+    # “叠翠原”不是任何节点的名称，只作为 wikilink 出现在 拾光小筑 / 缄默工坊 正文中
     do_search(cdp, A('叠翠原'))
     res = read_results(cdp)
     if not isinstance(res, list) or len(res) == 0:
@@ -72,9 +72,9 @@ def run(cdp):
     if not names.issubset({A('拾光小筑'), A('缄默工坊')}):
         return False, f'wikilink 命中集合异常 {sorted(names)}'
     if not all(r['mention'] for r in res):
-        return False, f'wikilink 结果未标记「提及」 {res}'
+        return False, f'wikilink 结果未标记“提及” {res}'
 
-    # 名称直配优先：搜一个自身即节点名的词，第 1 条（current）必须是直配（无「提及」徽标）
+    # 名称直配优先：搜一个自身即节点名的词，第 1 条（current）必须是直配（无“提及”徽标）
     do_search(cdp, A('归岚星域'))
     res2 = read_results(cdp)
     if not isinstance(res2, list) or len(res2) == 0:
@@ -85,11 +85,11 @@ def run(cdp):
     if cur[0]['name'] != A('归岚星域'):
         return False, f'第 1 条应是名称直配节点 (实际 {cur[0]})'
     if any(r['mention'] for r in cur):
-        return False, f'第 1 条不应是「提及」命中 {cur[0]}'
+        return False, f'第 1 条不应是“提及”命中 {cur[0]}'
     # 同一查询里，自身即命中的 归岚星域 不得被标成提及
     own = [r for r in res2 if r['name'] == A('归岚星域')]
     if own and own[0]['mention']:
-        return False, f'名称直配节点被误标为「提及」 {own[0]}'
+        return False, f'名称直配节点被误标为“提及” {own[0]}'
 
     # 清空搜索（避免影响后续断言）
     cdp.eval("(() => { const i = document.querySelector('.search-input-wrapper input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()")
@@ -123,9 +123,9 @@ def run(cdp):
     if not any('创建 Obsidian 笔记' in t for t in labels):
         return False, f'暂存节点缺少转正入口 {labels}'
     if any('在 Obsidian 中打开' in t for t in labels):
-        return False, f'暂存节点不应显示「在 Obsidian 中打开」（无 sourcePath） {labels}'
+        return False, f'暂存节点不应显示“在 Obsidian 中打开”（无 sourcePath） {labels}'
     if any('在文件夹中显示' in t for t in labels):
-        return False, f'暂存节点不应显示「在文件夹中显示」 {labels}'
+        return False, f'暂存节点不应显示“在文件夹中显示” {labels}'
 
     promoted = _j(cdp, f"""(async () => {{
       const sec = document.querySelector('.detail-panel .actions-section-top');
@@ -135,7 +135,7 @@ def run(cdp):
       await new Promise(r => setTimeout(r, 300));
       const s = {APP_STORE};
       // 注意：转正会同步把 id 换成 normalizeId(文件名)（用例 40 的核心行为），
-      // 因此这里按**名称**查找而不是旧随机 id —— 否则会误报「sourcePath 未回填」。
+      // 因此这里按**名称**查找而不是旧随机 id —— 否则会误报“sourcePath 未回填”。
       const n = s.nodes.find(x => x.name === '暂存测试地点');
       const oldIdGone = !s.nodes.some(x => x.id === {json.dumps(draft_id)});
       const sec2 = document.querySelector('.detail-panel .actions-section-top');
@@ -152,7 +152,7 @@ def run(cdp):
     if not promoted['sourcePath']:
         return False, f'转正后未回填 sourcePath {promoted}'
     if not any('在 Obsidian 中打开' in t for t in promoted.get('labels2', [])):
-        return False, f'转正后按钮未切换为「在 Obsidian 中打开」 {promoted}'
+        return False, f'转正后按钮未切换为“在 Obsidian 中打开” {promoted}'
 
     # ============ c) 库名动态化 ============
     vaultprobe = _j(cdp, f"""(async () => {{
@@ -186,7 +186,7 @@ def run(cdp):
 
     # ============ d) 旧 key 不复活（落盘去向已改项目文件） ============
     # ⚠️ Phase 2.4 接线 + 决策 1 终态后，`saveMapData` 不再走 legacy IPC（写盘去向 = 项目文件），
-    #    所以「写盘 key 必须带世界前缀」这条断言改为守两件事（都在等价的不变量上）：
+    #    所以“写盘 key 必须带世界前缀”这条断言改为守两件事（都在等价的不变量上）：
     #      ① 运行时：项目模式下 saveMapDataImmediate **绝不**直写知识库缓存（IPC 零调用）——
     #         不写知识库就谈不上旧 key 复活；且数据确实进了项目文件。
     #      ② 源码：saveMapDataImmediate 的函数体必须经由 saveMapData（legacy 路径的前缀化入口），

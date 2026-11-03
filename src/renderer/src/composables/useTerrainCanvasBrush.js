@@ -1,7 +1,7 @@
 /**
  * useTerrainCanvasBrush.js — 画布地形涂色笔刷 composable
  *
- * 与「高度图笔刷」共用同一套网格几何（同一数据源 = mapData[planetId].heightmap.grid）：
+ * 与“高度图笔刷”共用同一套网格几何（同一数据源 = mapData[planetId].heightmap.grid）：
  * - 同样的格宽（heightmap.grid.spacing，14.4 世界单位）→ 两套笔刷的像素**完全对齐**，
  *   不再出现"两团不同规格的像素打架"
  * - 原点对齐高度图网格，但**四周多留 EXTRA_CELLS 圈**（涂色范围比高度图数据区更大，
@@ -27,12 +27,12 @@ const MAX_COLS = 512;
 const MAX_ROWS = 512;
 const DEFAULT_EXTENT = 1200;  // 无地形数据时的兜底覆盖半径
 
-// ===== 有机轮廓渲染参数（替代「逐格 roundRect + 5 档噪点」的马赛克画法）=====
+// ===== 有机轮廓渲染参数（替代“逐格 roundRect + 5 档噪点”的马赛克画法）=====
 const OUTLINE_EPS_CELLS = 0.75;      // RDP 容差，**以格为单位**（格宽会变，固定世界单位阈值会失效）
 const OUTLINE_CHAIKIN_ITERS = 2;     // 圆角细分次数
 const OUTLINE_MIN_AREA_CELLS = 0.5;  // 小于半格的碎块不画（纯噪声）
 const OUTLINE_MIN_THROTTLE_MS = 50;  // 涂抹中轮廓重算的最小间隔
-// ⚠️ 不要在这里再叠「纸感颗粒 / 噪点瓦片」：任何逐像素级的随机变化，在真实缩放下
+// ⚠️ 不要在这里再叠“纸感颗粒 / 噪点瓦片”：任何逐像素级的随机变化，在真实缩放下
 //    都会被读成细密马赛克（这正是本次要修的东西）。要质感就做**大尺度**明暗。
 
 export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorldBounds }) {
@@ -52,7 +52,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   const strokePath = ref([]);
   const STROKE_PATH_MAX = 320;
   /**
-   * L3「将涂格」高亮（第 4 件，2026-10-24）：拖动中**只算不写**，把这些格以半透明色叠在画面上；
+   * L3“将涂格”高亮（第 4 件，2026-10-24）：拖动中**只算不写**，把这些格以半透明色叠在画面上；
    * 松手时沿同一条笔迹一次性落库。`{col,row}` 是**这一笔起笔时的格点**（世界格，无界）。
    * 松手前数据一格都不动 —— 这就是"所见即所得"的判据基础（预览格集 == 落库格集）。
    */
@@ -110,8 +110,8 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   // 目标几何：与高度图同粒度、同原点（像素对齐，铁律 89），范围取**并集**：
   //   ① 高度图数据区  ② 地图可见范围（worldBounds：地形/区域/路线/标记/文本/地点坐标）
   //   ③ 已落盘的涂色数据范围
-  // 🔴 只按高度图定范围会在地图上留下「画不进去的真空区」（用户实测原话：「似乎无法越过某条
-  //    隐藏界限，在画布某些区域无法绘制，形成明显的真空区」）——真实库 `乐园星` 的
+  // 🔴 只按高度图定范围会在地图上留下“画不进去的真空区”（用户实测原话：“似乎无法越过某条
+  //    隐藏界限，在画布某些区域无法绘制，形成明显的真空区”）——真实库 `乐园星` 的
   //    高度图只覆盖 843→-1029，而地图内容一直排到 y=1629：底部 555m 的条带**看得见却涂不上**。
   function paintedBounds(md) {
     const raw = md?.terrainGrid;
@@ -166,8 +166,8 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
       maxX = Math.max(maxX, pb.maxX); maxY = Math.max(maxY, pb.maxY);
     }
 
-    // 原点对齐到「与高度图同相位」的格点：否则地形格与高度图格会差半个格，两套笔刷的
-    // 像素不再对齐（铁律 89 的「两团不同规格的像素打架」）。无高度图时以 0 为锚点。
+    // 原点对齐到“与高度图同相位”的格点：否则地形格与高度图格会差半个格，两套笔刷的
+    // 像素不再对齐（铁律 89 的“两团不同规格的像素打架”）。无高度图时以 0 为锚点。
     const ax = hasHm ? ptX(hmPts[0]) : 0;
     const ay = hasHm ? ptY(hmPts[0]) : 0;
     const originX = ax + (Math.floor((minX - ax) / cell) - EXTRA_CELLS) * cell;
@@ -186,7 +186,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     return g;
   }
 
-  // 已涂内容按「世界坐标」重采样到新几何：格宽/原点变了也绝不丢已涂地形
+  // 已涂内容按“世界坐标”重采样到新几何：格宽/原点变了也绝不丢已涂地形
   // （典型场景：早期 30m 格数据 → 统一到 14.4m 格；或高度图重建后原点微移）
   function resampleInto(raw, from, geom) {
     const out = emptyGrid(geom);
@@ -290,14 +290,14 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     return Math.max(1, (terrainBrushSize.value * cellWorldSize.value) / 2);
   }
 
-  /** 把「上一落点 → 本落点」的覆盖范围交给脏矩形追踪器（缺一就会留拖尾） */
+  /** 把“上一落点 → 本落点”的覆盖范围交给脏矩形追踪器（缺一就会留拖尾） */
   function markBrushDirty(prev, cur) {
     if (!renderer.markDirtyRect) return;
     renderer.markDirtyRect(brushSegmentRect(prev, cur, brushWorldRadius()));
   }
 
   /**
-   * 「将涂格」的脏矩形：**覆盖整批 pending 格**，而不是只覆盖笔刷圆心轨迹。
+   * “将涂格”的脏矩形：**覆盖整批 pending 格**，而不是只覆盖笔刷圆心轨迹。
    *
    * 为什么需要（2026-10-25，test_140 偶发红）：局部重绘只画脏矩形内的内容；
    * 笔刷轨迹矩形与 pending 格的外接框并不总是重合（格点对齐、扩网格平移、沿笔迹外侧的格），
@@ -329,7 +329,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   }
 
   /**
-   * L3「将涂格」高亮：拖动中**只算不写**，把这些格以半透明色叠在画面上；松手时一次性落库。
+   * L3“将涂格”高亮：拖动中**只算不写**，把这些格以半透明色叠在画面上；松手时一次性落库。
    * 判据（"所见即所得"）：预览的格集 == 松手后真正被写的格集 —— 靠**同一份枚举**保证
    * （`terrainBrush.forEachCell/forEachInterpolatedCell` 被预览与落库共用）。
    *
@@ -420,7 +420,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     return runs;
   }
 
-  /** 把「将涂格」叠到画布上（世界坐标；PlanetMap 在地形网格之后调用） */
+  /** 把“将涂格”叠到画布上（世界坐标；PlanetMap 在地形网格之后调用） */
   function drawTerrainPendingToCtx(ctx) {
     if (!isTerrainBrushing.value || !pendingMap || !pendingMap.size || !pendingOrigin) return;
     const { x: ox, y: oy, cell } = pendingOrigin;
@@ -451,8 +451,8 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   // ===== 覆盖范围按需扩张 =====
   //
   // 🔴 网格是定长 TypedArray，笔刷的 paint() 会把列/行下标 clamp 进 [0, cols-1] —— 落在网格外
-  //    的落点**静默无效**，用户看到的就是「有一条看不见的墙，怎么涂都涂不上」。所以每个落点先
-  //    确保「落点 ± 笔刷半径」在网格内：不够就把网格按世界坐标重采样扩出去（已涂内容不丢），
+  //    的落点**静默无效**，用户看到的就是“有一条看不见的墙，怎么涂都涂不上”。所以每个落点先
+  //    确保“落点 ± 笔刷半径”在网格内：不够就把网格按世界坐标重采样扩出去（已涂内容不丢），
   //    扩张后的几何记进本笔的撤销快照里（撤销要能还原**几何**，不只是像素）。
   function snapshotGeometry() {
     return {
@@ -514,7 +514,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     lastBrushX.value = wx;
     lastBrushY.value = wy;
     syncBrush();
-    // 🔴 第 4 件（2026-10-24）：拖动中**不写格**，只累积「将涂格」高亮；松手才落库。
+    // 🔴 第 4 件（2026-10-24）：拖动中**不写格**，只累积“将涂格”高亮；松手才落库。
     //    顺序很讲究：`beginPending` 要在起笔的 `ensureCoverage` **之后** —— 原点必须与
     //    本笔最终用的格点对齐（扩网格只会整体平移整数格，对齐关系不变）。
     beginPending();
@@ -534,7 +534,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     // ① 原始落点：落库回放用它（不是 L2 显示用的抽稀路径 —— 那条会丢中间点，边角必然对不上）
     const lastRaw = rawPath[rawPath.length - 1];
     if (!lastRaw || Math.hypot(wx - lastRaw.x, wy - lastRaw.y) > 1e-3) rawPath.push({ x: wx, y: wy });
-    // ② 把这一段会碰到的格记进「将涂格」（不写网格）
+    // ② 把这一段会碰到的格记进“将涂格”（不写网格）
     accumulateSegment(prev.x, prev.y, wx, wy);
     // ③ 覆盖范围拖到**松手**再统一扩（拖动中不写数据 → 没有"涂不上的真空区"）
     lastBrushX.value = wx;
@@ -581,7 +581,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     if (!before) return;
     const after = { grid: Uint8Array.from(terrainGrid.value), geom: snapshotGeometry() };
     const label = before.label;
-    // execute 内部立即调 redo()：这里 redo 只是把「当前已是的结果」再写一遍（幂等），
+    // execute 内部立即调 redo()：这里 redo 只是把“当前已是的结果”再写一遍（幂等），
     // 与既有 stroke 写法一致（铁律 §undo：数据修改必须落在 redo 回调里）。
     execute({
       type: 'terrain-paint',
@@ -617,8 +617,8 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
   // ===== 渲染（世界坐标：onRender 传入的 ctx 已带 camera transform） =====
   //
   // 🔴 为什么不再逐格画：逐格 roundRect + 5 档噪点抖动，在真实缩放下（1 格 ≈ 2~3 屏幕像素）
-  // 渲染出来的就是一片细密马赛克（用户实测原话「依然是马赛克方块填色，不是自然的笔刷」）。
-  // 现在改为「栅格 → 矢量」：拿格边界抽平滑闭合环（utils/gridOutline：共线塌缩 + RDP + Chaikin），
+  // 渲染出来的就是一片细密马赛克（用户实测原话“依然是马赛克方块填色，不是自然的笔刷”）。
+  // 现在改为“栅格 → 矢量”：拿格边界抽平滑闭合环（utils/gridOutline：共线塌缩 + RDP + Chaikin），
   // 再一次性 fill。同色描边把相邻区域之间因圆角内收产生的细缝一起堵掉。
   function markOutlineDirty(force = false) {
     outlineRevision++;
@@ -649,7 +649,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
     if (!terrainGridEnabled.value || !terrainGrid.value) return;
 
     // 重建闸门：轮廓重算是 O(格数)（真实库 3.9 万格实测 ~17ms），未变更则复用；
-    // 涂抹中按「上次耗时的 2.5 倍」自适应节流，抬手/起笔强制重建。
+    // 涂抹中按“上次耗时的 2.5 倍”自适应节流，抬手/起笔强制重建。
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const stale = outlineForce || outlineBuiltRev !== outlineRevision || !outlineCache;
     if (stale && !(isTerrainBrushing.value && !outlineForce
@@ -692,9 +692,9 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
       ctx.fillStyle = color;
       ctx.strokeStyle = color;
       // 同色描边 ≈ 外扩半线宽：既柔化轮廓，也堵住相邻区域圆角内收留下的细缝。
-      // 🔴 2026-10-27（用户 B1「莫名其妙的阴影」）：旧值是 `cell*0.9`（真实图 = 13 世界单位），
+      // 🔴 2026-10-27（用户 B1“莫名其妙的阴影”）：旧值是 `cell*0.9`（真实图 = 13 世界单位），
       //    在 1× 下就是一圈 13px 的彩色光晕 —— 相邻色块互相叠成一团，看起来像阴影。
-      //    缝只有亚像素级，所以取「≈1.2 屏幕像素」并把上限压到 0.9 格。
+      //    缝只有亚像素级，所以取“≈1.2 屏幕像素”并把上限压到 0.9 格。
       const viewScale = (renderer.getViewTransform && renderer.getViewTransform().scale) || 1;
       ctx.lineWidth = Math.min(cell * 0.9, Math.max(0.4, 1.2 / Math.max(viewScale, 1e-6)));
       ctx.stroke();
@@ -754,7 +754,7 @@ export function useTerrainCanvasBrush({ store, props, renderer, canvas, getWorld
       cols: gridWidth.value, rows: gridHeight.value,
     }),
     drawTerrainGridToCtx,
-    /** L3「将涂格」高亮：拖动中叠在画布上的半透明格（第 4 件） */
+    /** L3“将涂格”高亮：拖动中叠在画布上的半透明格（第 4 件） */
     drawTerrainPendingToCtx,
     /** 诊断/用例：这一笔当前"将涂"的格（无界格点，相对这一笔的格点原点） */
     pendingCells,

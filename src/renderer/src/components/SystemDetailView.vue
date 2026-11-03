@@ -8,7 +8,7 @@
         </div>
         <p class="hint">
           <span v-if="!editMode">点击行星进入行星地图 · 点击箭头跳转相邻恒星系 · 点击标记/部队卡看信息 · 滚动缩放 · 拖拽空白处平移</span>
-          <span v-else class="edit-hint">编辑模式：拖拽行星编辑轨道 · 头部「＋ 天体」落下一轨道槽 · 右键空白处在原地添加天体/太空标记/部队卡片 · 右键天体/标记/卡片删除</span>
+          <span v-else class="edit-hint">编辑模式：拖拽行星编辑轨道 · 头部“＋ 天体”落下一轨道槽 · 右键空白处在原地添加天体/太空标记/部队卡片 · 右键天体/标记/卡片删除</span>
         </p>
       </div>
       <div class="header-actions">
@@ -103,7 +103,7 @@ const System3DView = defineAsyncComponent(() => import('./System3DView.vue'));
  * - 行星手动坐标以"相对恒星偏移"保留（坐标缓存是域地图绝对坐标，此处取相对量）
  * - 邻系箭头基于真实 hyperlanes 邻接（B5）：静态指向 + 点击跳转相邻系
  * - 系内编辑（B3）：编辑模式拖拽行星改轨道（相对坐标 ↔ 域地图绝对坐标换算基准 system.coordinate）、
- *   头部「＋ 天体」落下一轨道槽、右键原地添加/删除（layer:'planet'，类型记入 tags 第二项）
+ *   头部“＋ 天体”落下一轨道槽、右键原地添加/删除（layer:'planet'，类型记入 tags 第二项）
  * - 太空标记（B6）：菱形图标（确定性颜色表），坐标为相对恒星偏移，CRUD 走 undo execute
  * - 部队卡片（B7）：圆角矩形小卡片（阵营色边框 + kind 图标），仅信息提示、无任何策略行为
  */
@@ -245,7 +245,7 @@ const planetLayouts = computed(() => {
   return layouts;
 });
 
-// 「设为卫星」母行星候选：系内恒星直接子，排除自身（卫星不能绕自己）
+// “设为卫星”母行星候选：系内恒星直接子，排除自身（卫星不能绕自己）
 const pickHostCandidates = computed(() =>
   systemBodies.value.planets.filter(p => p.id !== ctxPickHostFor.value)
 );
@@ -273,7 +273,7 @@ const spec3d = computed(() => buildSystem3dScene({
 const hasPlanets3d = computed(() => (spec3d.value?.counts?.planets || 0) > 0);
 function openSystem3d() {
   // 2026-11-01：**不再要求"至少 1 颗行星"**。
-  // 原来 0 行星时按钮是灰的 —— 用户点了没反应，就直接判成「3D 观景没做」。
+  // 原来 0 行星时按钮是灰的 —— 用户点了没反应，就直接判成“3D 观景没做”。
   // 0 行星也该能进（至少能看恒星、能确认观景可用），所以只留一句说明，不再拦。
   show3d.value = true;
 }
@@ -452,7 +452,7 @@ function worldToScreen(wx, wy) {
 }
 
 function buildMenuItems() {
-  // 「选择母行星」模式：菜单切换为系内行星列表（批次D5）
+  // “选择母行星”模式：菜单切换为系内行星列表（批次D5）
   if (ctxPickHostFor.value) {
     const items = [{ key: 'pick-header', header: true, label: '选择母行星', icon: 'satellite' }];
     for (const p of pickHostCandidates.value) {
@@ -491,7 +491,7 @@ function buildMenuItems() {
 
 function openContextMenu(wx, wy, target) {
   ctxTarget.value = target;
-  ctxPickHostFor.value = null; // 批次D5：每次打开重置「选择母行星」模式
+  ctxPickHostFor.value = null; // 批次D5：每次打开重置“选择母行星”模式
   ctxWorld.value = { x: wx, y: wy };
   lastMenuPos = worldToScreen(wx, wy);
   ctxMenu.open(buildMenuItems(), lastMenuPos, canvas.value?.parentElement);
@@ -505,7 +505,7 @@ function closeContextMenu() {
 
 // ===== 天体 CRUD =====
 // 类型选择：模态选项列表（批次D1：window.prompt 在 Electron 渲染进程不被支持，
-// 此前「＋ 天体」点击即抛 "prompt() is and will not be supported" 静默失效），取消返回 null（中止创建）
+// 此前“＋ 天体”点击即抛 "prompt() is and will not be supported" 静默失效），取消返回 null（中止创建）
 async function promptBodyType() {
   // askChoice 原样返回选项对象（含 prefix），取消返回 null
   return usePromptDialogState.askChoice({ title: '选择天体类型', options: BODY_TYPES });
@@ -536,7 +536,7 @@ async function createBodyAt(wx, wy) {
   return newBody;
 }
 
-// 头部「＋ 天体」：落下一轨道槽公式位（与 planetLayouts 布局公式一致，无随机）
+// 头部“＋ 天体”：落下一轨道槽公式位（与 planetLayouts 布局公式一致，无随机）
 function createBody() {
   if (!props.system) return null;
   const sorted = sortPlanetsByOrbit(store.currentSystemPlanets);
@@ -694,7 +694,7 @@ function ctxViewNode() {
   }
 }
 
-// 进入「选择母行星」模式：菜单切换为系内行星列表（排除自身）
+// 进入“选择母行星”模式：菜单切换为系内行星列表（排除自身）
 function ctxBeginPickHost() {
   const node = ctxTarget.value?.node;
   if (!node) return;
@@ -839,7 +839,7 @@ function drawOrbitDragPreview(ctx) {
   ctx.fillText(`r=${snapped}`, px, py - 8);
 }
 
-// 轨道分级（2026-11-02，吸收 `refs/MANIFEST.md` 里「恒星系 2D」那条待吸收项：远景细线 / 近景带刻度）：
+// 轨道分级（2026-11-02，吸收 `refs/MANIFEST.md` 里“恒星系 2D”那条待吸收项：远景细线 / 近景带刻度）：
 //   远景（scale<0.55）：只留极淡的实线细环 —— 十条虚线在远景会糊成一圈"参考线"；
 //   中景：虚线，且**有行星的轨道**比空槽亮一档（用户关心的是"我摆了几条轨道"，不是网格）；
 //   近景（scale>1.1）：实线细环 + 沿环的短刻度（12 格），像仪表盘而不是网格纸。
@@ -897,7 +897,7 @@ function drawStar(ctx) {
   const starColor = getStarColor(primary?.starType);
 
   // 叙事状态淡化（2026-09-24）：**降视觉权重，不隐藏、不删数据**。
-  // 命中匹配时不淡化（你正在看它 → 「编辑优先于装饰」）。本函数无中途 return。
+  // 命中匹配时不淡化（你正在看它 → “编辑优先于装饰”）。本函数无中途 return。
   const fade = fadedAlpha((primary || props.system).status, { focused: matched });
   if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
 
@@ -1070,10 +1070,10 @@ function drawPlanets(ctx) {
         ctx.fillText(planetLabel, planet.x, planet.y + r + pFont * 1.2);
       } else if (planetCount < 3) {
         // 1~2 颗行星时**切向排字反而更差**（实测截图 s1：字被压在球面上、旋转后像乱码）——
-        // 切向排字是为「一圈行星各占一个角」服务的；行星少时横排在下方最好读。
+        // 切向排字是为“一圈行星各占一个角”服务的；行星少时横排在下方最好读。
         ctx.fillText(planetLabel, planet.x, planet.y + r + pFont * 1.35);
       } else {
-        // 行星名**沿轨道切向排字**（2026-11-02，吸收参照图「行星名沿轨道」那条）：
+        // 行星名**沿轨道切向排字**（2026-11-02，吸收参照图“行星名沿轨道”那条）：
         // 旧写法是往行星正下方横着糊一行字，行星一多就互相压；切向排字天然沿环散开。
         // 角度翻转过 0/π 时把文字翻正，否则左半边行星的名字会倒着显示。
         const ang = Math.atan2(planet.y, planet.x);
@@ -1437,7 +1437,7 @@ defineExpose({
   transition: all 0.2s;
 }
 .header-actions button:hover { background: var(--map-btn-hover); }
-/* 3D 观景：无行星时灰禁（司天「无项目 = 只读」同款灰禁语言：点不动 + title 说明原因） */
+/* 3D 观景：无行星时灰禁（司天“无项目 = 只读”同款灰禁语言：点不动 + title 说明原因） */
 .header-actions button:disabled {
   opacity: 0.42;
   cursor: not-allowed;

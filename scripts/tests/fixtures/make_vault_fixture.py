@@ -3,11 +3,11 @@
 """从知识库缓存**派生一份合成测试数据**（fixtures/vault-fixture/）。
 
 为什么要它（2026-09-21 用户决策）：
-    回归基线的 mock 数据一直是「复制真实库的 .sitian/*.json」→ 用户改自己的世界观数据，
+    回归基线的 mock 数据一直是“复制真实库的 .sitian/*.json”→ 用户改自己的世界观数据，
     测试就可能变红（清掉一个测试残留节点就让 3 个用例失败）。测试应当只依赖**自己声明的 fixture**。
-    用户原话：「直接编一套就行了，不需要用真实内容。」
+    用户原话：“直接编一套就行了，不需要用真实内容。”
 
-    但「另编一套」如果与真实数据的形状差太多，55 个用例会集体变红 —— 所以本脚本的做法是
+    但“另编一套”如果与真实数据的形状差太多，55 个用例会集体变红 —— 所以本脚本的做法是
     **派生 + 脱敏**：保留层级结构/数量/分布等形状（用例依赖这些），把一切内容换掉：
       · 所有名字（节点 / 航道 / 底图 key / tags 里的专名）→ 虚构词表
       · sourcePath → `合成数据/...`
@@ -22,7 +22,7 @@
     scripts/tests/fixtures/vault-fixture/geodata.json
     scripts/tests/fixtures/vault-fixture/mapdata.json
 
-⚠️ 重新生成只在「真实库结构发生有意义变化且需要 fixture 跟进」时做；平时用例应该只依赖 fixture。
+⚠️ 重新生成只在“真实库结构发生有意义变化且需要 fixture 跟进”时做；平时用例应该只依赖 fixture。
 """
 import argparse
 import hashlib
@@ -46,12 +46,12 @@ KEY_NAMES = {
     '月球': '沧屿',            # 主行星的卫星（test_10 轨道顺序 / test_03 搜索）
     '庆云岛': '青螺岛',        # 区域节点（test_36）
     '两城流域': '双溪流域',    # 区域节点（planet 下第二个 region）
-    '若空之境': '流岚之境',    # test_12 借用的「任意真实节点名」
+    '若空之境': '流岚之境',    # test_12 借用的“任意真实节点名”
     '丰竹镇': '苇塘镇',        # town 节点（test_30 标签渲染用它的名字）
     '哈伦的住所': '拾光小筑',  # test_22 wikilink 命中的两个节点之一
     '卡莉的工作室': '缄默工坊',  # test_22 另一个
 }
-# 非节点专名（只作为 wikilink 出现在正文里 → 搜索「提及」用例 test_22 用它）
+# 非节点专名（只作为 wikilink 出现在正文里 → 搜索“提及”用例 test_22 用它）
 NON_NODE_TERMS = {'白芝原': '叠翠原'}
 
 # ── 2. 其余节点：虚构词表（确定性生成，保证唯一）──────────────────────────
@@ -91,7 +91,7 @@ class Namer:
 
 
 class NonNodeNamer:
-    """正文 wikilink 里「不是节点名」的词 → 虚构词（保持「不是任何节点名」这一语义）。"""
+    """正文 wikilink 里“不是节点名”的词 → 虚构词（保持“不是任何节点名”这一语义）。"""
 
     def __init__(self, node_names):
         self.node_names = set(node_names)
@@ -115,7 +115,7 @@ class NonNodeNamer:
 
 
 # ── 3. 节点坐标变换（纯平移：只让坐标值与真实库不同，不改布局结构）──────────
-#    为什么不再旋转/缩放：地图几何已 100% 重新合成，节点坐标只需与「合成地图的覆盖范围」对齐。
+#    为什么不再旋转/缩放：地图几何已 100% 重新合成，节点坐标只需与“合成地图的覆盖范围”对齐。
 ROT_DEG = 0.0
 SCALE = 1.0
 DX, DY = 137.0, -89.0
@@ -151,7 +151,7 @@ def map_points(points, jitter, rnd):
 
 
 def make_scrubber(name_map):
-    """按「长键优先」替换字符串里出现的真实专名（用于 id / 名字里嵌名字的字段）。"""
+    """按“长键优先”替换字符串里出现的真实专名（用于 id / 名字里嵌名字的字段）。"""
     keys = sorted((k for k in name_map if isinstance(k, str) and k), key=len, reverse=True)
 
     def scrub(s):
@@ -168,8 +168,8 @@ def make_scrubber(name_map):
 def synth_map(planet_key, planet_name, cells_x=207, cells_y=130, spacing=14.4, seed=777):
     """**从零合成**一张行星地图（不基于真实地图做任何变换 —— 几何/高度图/多边形全部程序生成）。
 
-    为什么不用「真实地图 + 仿射变换」：那仍是用户的作品轮廓（只是缩放平移），进公开仓库不妥；
-    而且真数据里「涂色网格原点由高度图推导」是**持久化**的 —— 只改几何不改网格参数会让笔刷
+    为什么不用“真实地图 + 仿射变换”：那仍是用户的作品轮廓（只是缩放平移），进公开仓库不妥；
+    而且真数据里“涂色网格原点由高度图推导”是**持久化**的 —— 只改几何不改网格参数会让笔刷
     落在网格外（实测 test_21/test_38 直接红）。
 
     形状对齐（用例依赖）：网格同尺度（207×130 @ 14.4）、22 个稀疏地形小块、1 个区域、2 个标记、
@@ -177,7 +177,7 @@ def synth_map(planet_key, planet_name, cells_x=207, cells_y=130, spacing=14.4, s
     """
     rnd = random.Random(seed)
     ph = [rnd.uniform(0, 6.28) for _ in range(4)]
-    # 网格原点取负值：让地图覆盖「原点附近的 ±1500 世界单位」区间，
+    # 网格原点取负值：让地图覆盖“原点附近的 ±1500 世界单位”区间，
     # 与节点坐标（提取脚本自动生成的同心圆，量级 ±1200）落在同一片区域里 —— 行星图才能把点画在图上。
     ox, oy = -1520.0, -1030.0
     h, temp, prec, biome = [], [], [], []
@@ -212,7 +212,7 @@ def synth_map(planet_key, planet_name, cells_x=207, cells_y=130, spacing=14.4, s
         for i in range(cells_x):
             grid_points.append([ox + i * spacing, oy + j * spacing])
     # 地形类型必须用**真实同一套 type 值**（英文枚举）：渲染取色 / SVG 图例都按 type 查表，
-    # 换了值域就会「颜色变少 + 图例缺失」（首轮实测 test_06/test_45 直接红）。
+    # 换了值域就会“颜色变少 + 图例缺失”（首轮实测 test_06/test_45 直接红）。
     kind_seq = (['land'] * 8 + ['ocean'] * 3 + ['desert'] * 3 + ['volcano'] * 3
                 + ['mountain'] * 2 + ['forest'] * 1 + ['lake'] * 1 + ['coast'] * 1)
     cn = {'land': '陆地', 'ocean': '海洋', 'desert': '沙漠', 'volcano': '火山',
@@ -247,7 +247,7 @@ def synth_map(planet_key, planet_name, cells_x=207, cells_y=130, spacing=14.4, s
     # 🔴 必须是**连续有机色块**，不能是逐格随机撒点：真实库实测 935 格 / 仅 6 个连通分量
     #   （373/296/147/78/40 格的大块 + 1 个单格）。早先写成 `rnd.random() < 0.35` 随机撒点，
     #   造出 8207 格 / 6863 个碎块 —— 任何渲染方式都只会得到一片雪花噪点，
-    #   于是「地形绘制观感」类断言全都在拿假数据下结论（2026-09-22 实测踩到）。
+    #   于是“地形绘制观感”类断言全都在拿假数据下结论（2026-09-22 实测踩到）。
     tg_w, tg_h = cells_x + 32, cells_y + 32
     tgrid = [255] * (tg_w * tg_h)
     land_cells = [(i, j) for j in range(cells_y) for i in range(cells_x) if h[j * cells_x + i] >= 20]
@@ -315,7 +315,7 @@ def build(geodata, mapdata, seed=20260921):
 
     def conv_link(term):
         """wikilink 目标的映射：非节点专名 → 专用映射；精确节点名 → 节点映射；
-        含真实专名的派生词（如「xx文明」「xx之盟」）→ 按子串替换；其余 → 虚构非节点词。"""
+        含真实专名的派生词（如“xx文明”“xx之盟”）→ 按子串替换；其余 → 虚构非节点词。"""
         if term in NON_NODE_TERMS:
             return NON_NODE_TERMS[term]
         if term in name_map:
@@ -362,7 +362,7 @@ def build(geodata, mapdata, seed=20260921):
 
     # ── 地图数据：**从零合成**（不基于真实地图做任何变换，见 synth_map 的注释）────
     #    真实地图的几何与高度图是用户的作品内容，不该以任何形式进公开仓库；
-    #    而「只改几何不改「网格参数」会让笔刷落在网格外（test_21/test_38 实测红）——
+    #    而“只改几何不改“网格参数”会让笔刷落在网格外（test_21/test_38 实测红）——
     #    所以这里连网格一起重新生成，参数自洽。
     out_map = {}
     if mapdata:
@@ -383,7 +383,7 @@ def build(geodata, mapdata, seed=20260921):
 
 
 def assert_no_leak(out_g, out_m, real_names):
-    """硬闸门：合成 fixture 里不得残留任何真实专名（防「脱敏漏一处」静默泄露到公开仓库）。"""
+    """硬闸门：合成 fixture 里不得残留任何真实专名（防“脱敏漏一处”静默泄露到公开仓库）。"""
     blob = json.dumps([out_g, out_m], ensure_ascii=False)
     leaked = sorted({n for n in real_names if n and len(n) >= 2 and n in blob})
     if leaked:

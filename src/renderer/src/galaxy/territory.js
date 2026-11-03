@@ -1,25 +1,25 @@
-// galaxy/territory.js —— 星域「所有权场 φ」软融合边界（**吸收自 SP-1025 `core/territory.ts` + `render/regions.ts`**）
+// galaxy/territory.js —— 星域“所有权场 φ”软融合边界（**吸收自 SP-1025 `core/territory.ts` + `render/regions.ts`**）
 //
-// ── 为什么不再是凸包（用户 2026-11-01 的原话：「星域总览还是旧版，一坨狗屎」）──────────────
+// ── 为什么不再是凸包（用户 2026-11-01 的原话：“星域总览还是旧版，一坨狗屎”）──────────────
 // 凸包是**折线**：它在两颗星之间拉一条直边，旁边留一个尖角，星域之间互不相让 ——
-// 观感像「几个多边形贴纸」而不是「一片片领土」。原型那套不用多边形，用**场**：
+// 观感像“几个多边形贴纸”而不是“一片片领土”。原型那套不用多边形，用**场**：
 //
 //   effD_i(p) = (d_i(p) + wobble_i(p)·fade(d_i)) / weight_i
 //   φ_i(p)    = min( claim_i − d_i(p),  min_{j≠i} effD_j(p) − effD_i(p) )
 //
 // 性质（`scripts/tests/unit/test_galaxy_territory.js` 固化）：
 //   ① argmin 互斥 ⇒ 任意 p 至多属于一个星域，**色块零重叠**；
-//   ② 相邻两个星域在「谁更近」翻转的那条线上**共享同一条零等值线** ⇒ 贴合、无缝；
+//   ② 相邻两个星域在“谁更近”翻转的那条线上**共享同一条零等值线** ⇒ 贴合、无缝；
 //   ③ wobble 是低频正弦（波长 ~600 世界单位）并在成员附近归零 ⇒ 边界走大波浪，不抖成锯齿；
 //   ④ claim 半径把领土截在自己的星星附近 ⇒ 不会顺着坐标系漫到天边。
 //
 // ⚠️ 与原型的两处差异（司天必须这样）：
-//   · 司天的星系是**稀疏**的（一个星域几颗），原型是 120 颗铺满盘面。直接用「最近成员距离」当 d
+//   · 司天的星系是**稀疏**的（一个星域几颗），原型是 120 颗铺满盘面。直接用“最近成员距离”当 d
 //     会让边界变成一串小圆（花瓣状）→ 这里 d 取到**星域中心**的距离，成员数量只影响权重 claim。
 //   · 边界必须**可编辑**：用户拖过的星域仍走覆盖点（`points` 逐点可拖）。
-//     场派生的形状只给到「重采样后的 14 点」当手柄（`border.soft = true`），点一下才转成覆盖点。
+//     场派生的形状只给到“重采样后的 14 点”当手柄（`border.soft = true`），点一下才转成覆盖点。
 //
-// 本模块是**纯函数**（无 DOM、无 store），画布与「导出 PNG(全图)」都调它（同源红线）。
+// 本模块是**纯函数**（无 DOM、无 store），画布与“导出 PNG(全图)”都调它（同源红线）。
 
 /** 场的默认参数（画布与导出同值；改这里 = 改两边） */
 export const TERRITORY = {
@@ -27,7 +27,7 @@ export const TERRITORY = {
   wobbleAmp: 42,        // 边界波浪幅值（世界单位；实际按 claim 的比例自适应，见 buildFieldInputs）
   wobbleFadeDist: 150,  // d 小于它的地方波浪归零（保证色块包住自己的星）
   claimPad: 1.16,       // claim 半径 = 中心到最远恒星 × 该系数
-  claimGapRatio: 0.62,  // claim 要**超过**与邻居的中点（0.5）才有「两家共享同一条边」的融合感，
+  claimGapRatio: 0.62,  // claim 要**超过**与邻居的中点（0.5）才有“两家共享同一条边”的融合感，
                         // 只到 0.47 时四块领土之间永远隔着一条真空带（第一版实测：像四个圆点）
   claimMin: 210,        // 没有恒星时的兜底半径（星域半径 350 的 0.6，比 12 边形好看）
   claimMax: 900,
@@ -42,7 +42,7 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 /**
  * 有机轮廓扰动：**按角度**的三组低频正弦叠加（相对星域中心）。
  * 旧实现用世界坐标上的平面正弦 —— 得到的是"稍微不圆的圆"，半径 400 的领土上看起来仍是正圆。
- * 按角度取 2/3/5 阶 lobes 才能得到参照图那种「两三个大瓣」的轮廓；
+ * 按角度取 2/3/5 阶 lobes 才能得到参照图那种“两三个大瓣”的轮廓；
  * 幅值按半径归一（返回 [-amp, amp]），所以小星域不会抖成锯齿。
  */
 export function wobbleAt(px, py, cx, cy, salt, amp) {
@@ -65,7 +65,7 @@ export function wobbleFade(d, fadeDist) {
 
 /**
  * 单个星域在 p 点的**原始**归属判定量（无 claim 截断）。
- * 拆出来是为了让 Node 单测能直接验「argmin 互斥」而不必跑整张网格。
+ * 拆出来是为了让 Node 单测能直接验“argmin 互斥”而不必跑整张网格。
  */
 export function effectiveDistance(domain, p, salt) {
   const d = Math.hypot(p.x - domain.x, p.y - domain.y);
@@ -76,7 +76,7 @@ export function effectiveDistance(domain, p, salt) {
   return (d + wob) / w;
 }
 
-/** 星域的「带波浪的距离」（不含权重）—— claim 截断与 bisector 必须吃同一个 wobble */
+/** 星域的“带波浪的距离”（不含权重）—— claim 截断与 bisector 必须吃同一个 wobble */
 export function wobbleDistance(domain, p, salt) {
   const d = Math.hypot(p.x - domain.x, p.y - domain.y);
   const amp = domain.wobbleAmp || TERRITORY.wobbleAmp;
@@ -86,7 +86,7 @@ export function wobbleDistance(domain, p, salt) {
 
 /**
  * φ_i(p)：星域 i 在 p 点的所有权裕度（>0 = i 的领土）。
- * 单星域文档退化为「以自己为中心、claim 为半径的圆盘」。
+ * 单星域文档退化为“以自己为中心、claim 为半径的圆盘”。
  */
 export function ownershipGap(domains, i, p, salt) {
   const own = effectiveDistance(domains[i], p, salt);
@@ -223,7 +223,7 @@ export function loopCentroid(loop) {
   return { x: cx / (6 * a), y: cy / (6 * a) };
 }
 
-/** 按弧长等距重采样成 n 个点（给「软形状 → 可拖手柄」用） */
+/** 按弧长等距重采样成 n 个点（给“软形状 → 可拖手柄”用） */
 export function resampleLoop(loop, n = TERRITORY.resampleN) {
   if (!loop || loop.length < 3) return [];
   const pts = loop.concat([loop[0]]);
@@ -252,7 +252,7 @@ export function resampleLoop(loop, n = TERRITORY.resampleN) {
   return out;
 }
 
-/** 点到折线（闭合）的最近距离 —— 编辑态「点边界就开始改」的命中判定 */
+/** 点到折线（闭合）的最近距离 —— 编辑态“点边界就开始改”的命中判定 */
 export function distanceToLoop(loop, x, y) {
   let best = Infinity;
   for (let i = 0; i < loop.length; i++) {
@@ -290,8 +290,8 @@ export function buildFieldInputs(domainNodes, galaxyNodes, opts = {}) {
       const dd = Math.hypot(g.x - d.x, g.y - d.y);
       if (dd > maxDist) maxDist = dd;
     }
-    // 最近邻星域距离：只用来判「星域排得开不开」（决定 wobble 幅值上限），**不再参与 claim**。
-    // 第一版把 claim 抬到「最近邻的一半以上」去消灭真空带，结果四块领土变成四条**扇形楔子**，
+    // 最近邻星域距离：只用来判“星域排得开不开”（决定 wobble 幅值上限），**不再参与 claim**。
+    // 第一版把 claim 抬到“最近邻的一半以上”去消灭真空带，结果四块领土变成四条**扇形楔子**，
     // 环心成了四家对撞点（实测图 t5：一条"米"字分割线，比凸包还难看）。
     let nn = Infinity;
     for (const other of list) {

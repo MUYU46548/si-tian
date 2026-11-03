@@ -37,7 +37,7 @@ function createGroup() {
   if (!r || !r.success) { statusMsg(`新建剧本集失败：${(r && r.error) || '未知原因'}`); return; }
   newGroupName.value = '';
   activeGroupId.value = r.group.id;
-  statusMsg(`已新建剧本集「${r.group.name}」—— 新建剧本会默认落在这一组；也可在列表里把已有剧本移进来`);
+  statusMsg(`已新建剧本集“${r.group.name}”—— 新建剧本会默认落在这一组；也可在列表里把已有剧本移进来`);
   render();
 }
 
@@ -60,7 +60,7 @@ function commitRenameGroup() {
   const r = store.renameScenarioGroup(id, name);
   if (!r || !r.success) { statusMsg(`改名失败：${(r && r.error) || '未知原因'}`); return; }
   cancelRenameGroup();
-  statusMsg(`剧本集已改名为「${name}」`);
+  statusMsg(`剧本集已改名为“${name}”`);
 }
 
 function deleteGroup(g) {
@@ -70,8 +70,8 @@ function deleteGroup(g) {
   if (!r || !r.success) { statusMsg(`删除失败：${(r && r.error) || '未知原因'}`); return; }
   if (activeGroupId.value === g.id) activeGroupId.value = DEFAULT_SCENARIO_GROUP;
   statusMsg(n
-    ? `已删除剧本集「${g.name}」—— ${n} 条剧本退回「默认」组（一条都没删，Ctrl+Z 可撤销）`
-    : `已删除空剧本集「${g.name}」（Ctrl+Z 可撤销）`);
+    ? `已删除剧本集“${g.name}”—— ${n} 条剧本退回“默认”组（一条都没删，Ctrl+Z 可撤销）`
+    : `已删除空剧本集“${g.name}”（Ctrl+Z 可撤销）`);
   render();
 }
 
@@ -85,7 +85,7 @@ function moveScenarioToGroup(s, groupId) {
     activeGroupId.value = target;
     selectScenarioAt(store.getScenario(s.id));
   }
-  statusMsg(`「${s.name}」已移到剧本集「${groupNameOf(target)}」${r.unchanged ? '（本来就在这一组）' : ''}`);
+  statusMsg(`“${s.name}”已移到剧本集“${groupNameOf(target)}”${r.unchanged ? '（本来就在这一组）' : ''}`);
   render();
 }
 
@@ -93,7 +93,7 @@ function moveScenarioToGroup(s, groupId) {
 
 
 function deleteScenario(s) {
-  if (!confirm(`确定删除剧本「${s.name}」？`)) return;
+  if (!confirm(`确定删除剧本“${s.name}”？`)) return;
   store.removeScenario(s.id);
   if (selectedScenario.value?.id === s.id) {
     selectedScenario.value = sortedScenarios.value[0] || null;
@@ -118,7 +118,7 @@ function scenarioToForm(s) {
     endYear: s.era?.endYear != null ? String(s.era.endYear) : '',
     description: s.description || '',
     hook: s.hook || '',
-    inherit: false,   // 编辑既有剧本时没有「继承上一时代」的语义
+    inherit: false,   // 编辑既有剧本时没有“继承上一时代”的语义
     group: scenarioGroupIdOf(s),
   };
 }

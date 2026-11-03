@@ -1,4 +1,4 @@
-// scenario/layers/preview.js — 剧本视图「交互预览层」（N1 刀 2 收尾，2026-10-31）
+// scenario/layers/preview.js — 剧本视图“交互预览层”（N1 刀 2 收尾，2026-10-31）
 //
 // 这是 `ScenarioMap.vue` 里最大的一块绘制函数（原 317 行）：**所有"正在做但还没落库"的预览**。
 // 它与静态层正交：只有对应的工具/手势在跑时才有内容，所以判据是"不在那个工具里就一个像素都不多画"。
@@ -26,7 +26,7 @@ export function drawPreviewOverlayLayer(c, view) {
     const pts = view.polySplitPoints;
     const pv = view.polySplitPreview;
     if (pv) {
-      // 「绿 = 保留原省份身份，橙 = 新生块」—— 不需要用户理解 a/b 或左右，看颜色即可
+      // “绿 = 保留原省份身份，橙 = 新生块”—— 不需要用户理解 a/b 或左右，看颜色即可
       const halves = [
         { mp: view.polySplitKeepStart ? pv.a : pv.b, fill: 'rgba(34, 197, 94, 0.26)', line: '#22c55e', dash: [] },
         { mp: view.polySplitKeepStart ? pv.b : pv.a, fill: 'rgba(249, 115, 22, 0.22)', line: '#f97316', dash: [view.px(5), view.px(4)] },
@@ -103,7 +103,7 @@ export function drawPreviewOverlayLayer(c, view) {
     c.restore();
   }
 
-  // 「绘制」工具的自由绘制实时轨迹（一笔跟着走，松手才简化成型）
+  // “绘制”工具的自由绘制实时轨迹（一笔跟着走，松手才简化成型）
   // 🔴 这里画**两样东西**：① 手感线（细、淡）② **将要落库的地块**（与落库同一套几何）
   if (view.freeTraceActive && view.freeTrace && view.freeTrace.length > 1) {
     const isOutline = view.tool === 'outline';

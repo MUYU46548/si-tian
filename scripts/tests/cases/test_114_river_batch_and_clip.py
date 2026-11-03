@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 114：河流编辑三件（暮雨点名要过的）—— 框选批量删河 / 多选可视反馈 / 裁到海岸线按钮
 
-来历：暮雨在「地图编辑器」那条反馈里明确要过三件（`docs/SITIAN_PROGRESS_AND_GAPS_20261017.md` §2.1）：
+来历：暮雨在“地图编辑器”那条反馈里明确要过三件（`docs/SITIAN_PROGRESS_AND_GAPS_20261017.md` §2.1）：
   ① **框选/批量删河**（现在只能逐条点选删除）
   ② **手画河裁到海岸线**（按钮，不是自动 —— 有人就是要画三角洲）
   ③ **多条河同时选中时的可视反馈**
@@ -98,9 +98,9 @@ def source_gates():
         fails.append('🔴 没有河流框选状态（Shift+拖动）')
     # a⑤ 两个入口都要有按钮（可发现性：文字按钮，不许只有快捷键）
     if 'river-clip-coast' not in sm:
-        fails.append('🔴 选中行没有「裁到海岸线」按钮')
+        fails.append('🔴 选中行没有“裁到海岸线”按钮')
     if 'river-clip-coast-row' not in sm:
-        fails.append('🔴 河流工具行没有「裁到海岸线」按钮')
+        fails.append('🔴 河流工具行没有“裁到海岸线”按钮')
     return fails
 
 
@@ -143,7 +143,7 @@ JS_CLICK = r"""
   const C = window.__C114, sm = C.sm, cvs = C.cvs;
   const tick = C.tick;
   const s = __STORE__;
-  // 🔴 每次点击都**重新量** canvas 的 rect：选中一条河之后，上面会多出「已选中河流」那一行
+  // 🔴 每次点击都**重新量** canvas 的 rect：选中一条河之后，上面会多出“已选中河流”那一行
   //    toolbar-row，画布整体下移 ~30px —— 用开头那份 rect 会让第二次点击落到河的上方
   //    （实测症状：Shift+点 river_b 完全没命中，后面整串断言跟着错）。
   const box = () => cvs.getBoundingClientRect();
@@ -324,7 +324,7 @@ def run(cdp):
     if sorted(b.get('ids') or []) != ['river_a', 'river_b']:
         fails.append(f"🔴 Shift+点没加选（ids={b.get('ids')}）")
     if '共 2 条' not in (sel.get('rowText') or ''):
-        fails.append(f"🔴 选中 2 条时行内没显示「共 2 条」（实际：{(sel.get('rowText') or '')[:80]}）")
+        fails.append(f"🔴 选中 2 条时行内没显示“共 2 条”（实际：{(sel.get('rowText') or '')[:80]}）")
     if not sel.get('marqueeShown') or not sel.get('marqueeGone'):
         fails.append(f"🔴 Shift+拖动没有画框/收框（shown={sel.get('marqueeShown')} gone={sel.get('marqueeGone')}）")
     mid = sorted(sel.get('afterMarquee') or [])
@@ -344,7 +344,7 @@ def run(cdp):
     if dele.get('before') != 3:
         fails.append(f"🔴 删除前河数不对（{dele.get('before')}）")
     if '删除选中的 3 条' not in (dele.get('label') or ''):
-        fails.append(f"🔴 多选时按钮文案没变成「删除选中的 N 条」（{dele.get('label')}）")
+        fails.append(f"🔴 多选时按钮文案没变成“删除选中的 N 条”（{dele.get('label')}）")
     if dele.get('afterDelete') != 0:
         fails.append(f"🔴 批量删除没删干净（剩 {dele.get('afterDelete')}）")
     if sorted(dele.get('afterUndo') or []) != ['river_a', 'river_b', 'river_c']:
@@ -358,7 +358,7 @@ def run(cdp):
     if clip.get('selected') != ['river_c']:
         fails.append(f"🔴 裁之前没选中 river_c（{clip.get('selected')}）")
     if not clip.get('haveBtn'):
-        fails.append('🔴 找不到「裁到海岸线」按钮')
+        fails.append('🔴 找不到“裁到海岸线”按钮')
     if (clip.get('beforeLastX') or 0) <= 800:
         fails.append(f"🔴 用例数据有问题：river_c 末端应该在海上（lastX={clip.get('beforeLastX')}）")
     if (clip.get('afterLastX') or 999) > 800.5:
@@ -366,7 +366,7 @@ def run(cdp):
     if (clip.get('statusClip') or '').find('裁') < 0:
         fails.append(f"🔴 裁完没有回执（{(clip.get('statusClip') or '')[:80]}）")
     if (clip.get('statusSecond') or '').find('已经在陆地上') < 0:
-        fails.append(f"🔴 再点一次没有明确说「已经在陆地上」（{(clip.get('statusSecond') or '')[:80]}）")
+        fails.append(f"🔴 再点一次没有明确说“已经在陆地上”（{(clip.get('statusSecond') or '')[:80]}）")
     if (clip.get('afterUndoPts') or 0) != (clip.get('beforePts') or -1):
         fails.append(f"🔴 裁海岸线不能一条撤销（点数 {clip.get('beforePts')} → "
                      f"{clip.get('afterUndoPts')}）")

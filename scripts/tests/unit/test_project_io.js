@@ -250,19 +250,19 @@ async function main() {
     });
 
     // 通道清单：正向（都应注册）+ 反向（不得有未登记的通道）。
-    // 2026-09-24：原来用 `eq(handlers.size, expected.length)` 判「预期之外」—— 那是**数条数**，
-    // 新增通道时只会得到一句「注册了预期之外的通道」，看不出该如何处置。改成集合差并写明动作。
+    // 2026-09-24：原来用 `eq(handlers.size, expected.length)` 判“预期之外”—— 那是**数条数**，
+    // 新增通道时只会得到一句“注册了预期之外的通道”，看不出该如何处置。改成集合差并写明动作。
     const expected = ['project-create', 'project-open', 'project-save', 'project-list',
       'project-pick-dir', 'project-reveal', 'project-backup-now', 'project-git-snapshot',
       // 🔴 2026-10-11：`project-git-snapshot` 此前**只在 preload 暴露、主进程从未注册**
-      //    （ProjectPanel 的「司天快照」按钮在真机上必然抛 No handler registered）。
+      //    （ProjectPanel 的“司天快照”按钮在真机上必然抛 No handler registered）。
       //    本轮补注册后，它才真正出现在 handlers 里 —— 也就是说**这条正向断言此前是假绿的**：
       //    它写在 expected 里，却因为 handlers 集合来自真实注册表而"顺带"通过检查，
-      //    真正抓出漏接的是新加的「IPC 通道名双向对齐」单测（preload invoke ↔ 主进程 handle）。
-      // B4（2026-09-24）：启动时恢复上次项目 —— 只回报「文件确实还在」的路径
+      //    真正抓出漏接的是新加的“IPC 通道名双向对齐”单测（preload invoke ↔ 主进程 handle）。
+      // B4（2026-09-24）：启动时恢复上次项目 —— 只回报“文件确实还在”的路径
       'project-get-last-path',
       // 原始底图来源备份（2026-10-11）：导入 `.map` 时把原文留一份到项目备份目录
-      // 2026-10-13：补 `basemap-source-read`（只读读回 —— 「从留底恢复」用）
+      // 2026-10-13：补 `basemap-source-read`（只读读回 —— “从留底恢复”用）
       'basemap-source-save', 'basemap-source-list', 'basemap-source-read', 'project-current-path'];
     for (const ch of expected) assert(handlers.has(ch), `未注册通道 ${ch}`);
     const unregistered = [...handlers.keys()].filter(c => !expected.includes(c));
@@ -300,7 +300,7 @@ async function main() {
     eq(opened.success, true, `open 失败：${opened.error}`);
     eq(opened.project.meta.name, 'IPC测试-改', 'open 读到的内容不对');
     assert(opened.dir === path.dirname(created.filePath), 'open 未返回 dir');
-    // 数据安全：打开项目时必须留一份「会话基线」（覆盖式，1 份，不受备份轮转影响）
+    // 数据安全：打开项目时必须留一份“会话基线”（覆盖式，1 份，不受备份轮转影响）
     assert(opened.baselinePath && opened.baselinePath.endsWith(H.BASELINE_TAG),
       `open 未建立会话基线：${opened.baselinePath}`);
 
@@ -331,7 +331,7 @@ async function main() {
 
   // ── 9. 数据安全：会话基线（打开时留底，且不被备份轮转删掉）─────────────────
   //    为什么单列一条：rolling 备份上限很小（BACKUP_KEEP，2026-10-30 起 = 3），
-  //    被高频自动保存刷光后，「打开项目时的样子」就再也取不回来了 —— 基线是这一层的唯一兜底。
+  //    被高频自动保存刷光后，“打开项目时的样子”就再也取不回来了 —— 基线是这一层的唯一兜底。
   await check('会话基线：留底不受轮转影响、内容恒为打开时的状态', async () => {
     const base = await H.createProjectFile(DIR, '基线测试', sampleProject('基线·原始'));
     const p = base.filePath;
@@ -351,7 +351,7 @@ async function main() {
       .filter(f => f.endsWith('.sitian') && !f.endsWith(H.BASELINE_TAG));
     assert(rolling.length <= H.BACKUP_KEEP, `滚动备份未轮转：${rolling.length} 份（上限 ${H.BACKUP_KEEP}）`);
 
-    // 再打开一次 → 基线刷新成「这一次打开时的状态」（覆盖，仍只有 1 份）
+    // 再打开一次 → 基线刷新成“这一次打开时的状态”（覆盖，仍只有 1 份）
     const r2 = await H.makeSessionBaseline(p);
     eq(r2.backedUp, true, '第二次基线失败');
     eq(JSON.parse(await fsp.readFile(bl, 'utf-8')).meta.name, '基线·第13次', '再次打开未刷新基线');

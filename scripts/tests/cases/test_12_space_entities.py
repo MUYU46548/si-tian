@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """用例 12：太空实体（批次 B6 太空标记 + B7 部队卡片 + B1 层级校验）
 链路：进入 曜川星系 单系视图 → 开编辑模式
-      → 右键空白「◈ 添加太空标记（此位置）」（stub prompt 选类型/输名称）
+      → 右键空白“◈ 添加太空标记（此位置）”（stub prompt 选类型/输名称）
       → setupState 辅助函数 createFleetCardAt 添加部队卡片（stub prompt）
       → 断言 spaceMarkers/fleetCards 数据形状与组件 computed
       → 浏览模式点击标记/卡片 → selectedNode 伪节点信息提示
@@ -52,7 +52,7 @@ def run(cdp):
     wait_for(cdp, "!!document.querySelector('.system-detail-container')", desc='单系视图挂载')
     time.sleep(0.6)  # 等 fitSystem 初始视野稳定
 
-    # b) 开编辑模式（点头部「✎ 编辑地图」按钮）
+    # b) 开编辑模式（点头部“✎ 编辑地图”按钮）
     em = _js_obj(cdp, f"""(() => {{
       const el = {DETAIL_EL};
       const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent.includes('编辑地图'));
@@ -63,7 +63,7 @@ def run(cdp):
     if not isinstance(em, dict) or not em.get('on'):
         return False, f'编辑模式未开启 {em}'
 
-    # c) 右键空白处 → 菜单应含三个添加项 → 点「◈ 添加太空标记（此位置）」（prompt 选资源点 + 名称）
+    # c) 右键空白处 → 菜单应含三个添加项 → 点“◈ 添加太空标记（此位置）”（prompt 选资源点 + 名称）
     rc = _js_obj(cdp, f"""(() => {{
       const st = {DETAIL_ST};
       // 在恒星与第一圈轨道之间找一个远离行星/箭头标签的空位（确定性角度扫描）
@@ -97,10 +97,10 @@ def run(cdp):
         return False, f'右键空白未弹出菜单 {menu}'
     for need in ('添加天体', '添加太空标记', '添加部队卡片'):
         if not any(need in t for t in menu['items']):
-            return False, f'空白菜单缺少「{need}」项 {menu}'
+            return False, f'空白菜单缺少“{need}”项 {menu}'
 
     marker = _js_obj(cdp, f"""(async () => {{
-      // 模态序列（批次D1 后走 PromptDialog，替代 window.prompt）：类型选资源点 → 名称「银矿带」
+      // 模态序列（批次D1 后走 PromptDialog，替代 window.prompt）：类型选资源点 → 名称“银矿带”
       const el = {DETAIL_EL};
       const item = Array.from(el.querySelectorAll('.context-menu .menu-item')).find(m => m.textContent.includes('添加太空标记'));
       if (!item) return 'no-item';
@@ -157,7 +157,7 @@ def run(cdp):
             Math.hypot(mm.x - x, mm.y - y) > 180) spot = {{ x, y }};
       }}
       if (!spot) return 'no-spot';
-      // 模态序列（批次D1）：类型行星军 → 名称「第七行星军」→ 阵营「蓝镜帝国」
+      // 模态序列（批次D1）：类型行星军 → 名称“第七行星军”→ 阵营“蓝镜帝国”
       const p = st.createFleetCardAt(spot.x, spot.y);
       const step = async (matchText, inputValue) => {{
         await new Promise(r => setTimeout(r, 80));
@@ -238,7 +238,7 @@ def run(cdp):
       const iconName = icon && icon.dataset ? icon.dataset.icon : null;
       const layer = pn.querySelector('.hero-layer');
       const tabBtns = Array.from(pn.querySelectorAll('.detail-tab-btn')).map(b => b.textContent);
-      // 伪节点：应含「概览/关系」tab，「编辑」tab 应隐藏
+      // 伪节点：应含“概览/关系”tab，“编辑”tab 应隐藏
       const hasEditTab = tabBtns.includes('编辑');
       // 操作按钮区应隐藏
       const actionsHidden = !pn.querySelector('.actions-section');
@@ -255,7 +255,7 @@ def run(cdp):
     if not (panel.get('icon') in ('crosshair', 'flag') and panel.get('layer') in ('太空标记', '部队卡片')):
         return False, f'伪节点图标/层级显示异常 {panel}'
     if panel.get('hasEditTab'):
-        return False, f'伪节点不应显示「编辑」tab {panel}'
+        return False, f'伪节点不应显示“编辑”tab {panel}'
     if not panel.get('actionsHidden'):
         return False, f'伪节点不应显示操作按钮区 {panel}'
 

@@ -4,18 +4,18 @@
 
 验收判据（与 docs/plan/REMAINING_BACKLOG_20261027.md §1 一一对应）：
 
-  A. **入口**：`SystemDetailView` 头部有「3D 观景」；有 ≥1 颗行星时可用，
+  A. **入口**：`SystemDetailView` 头部有“3D 观景”；有 ≥1 颗行星时可用，
      无行星时灰禁且 `title` 说明原因（只读态不禁 —— 3D 是纯查看，不写数据）。
   B. **打开**：点一下 → 出现 3D canvas、无错误面板、渲染在跑（frames 增长），
      three chunk 是**动态加载**的（dev 下按需 import，构建侧由单测 b2 守源码）。
-  C. **关闭**：Esc / 「返回 2D」都能关；关掉后 3D 根节点消失、画布只剩 2D 那张、
+  C. **关闭**：Esc / “返回 2D”都能关；关掉后 3D 根节点消失、画布只剩 2D 那张、
      2D 视图没有重建（canvas 引用不变 = "原样恢复"）。
   D. **资源归零**：每次关闭后 `renderer.info.memory` 的 geometries / textures 都是 0
      —— 这是"遍历 dispose + forceContextLoss"的直接证据。
   E. **反复开关不涨**：连开连关 6 轮，每轮资源都归零、页面 canvas 数不增长。
   F. **E1/E2（2026-10-29）**：点中一颗行星 → 出现操作卡片（类型下拉 + 下钻）；
      改类型 → `node.planetClass` 落库（推断被显式值压过，单测 a4b 守优先级）；
-     点「进入行星地图」→ 3D 关闭且 `viewLevel === 'planet'` 且 `currentPlanet` 就是那颗。
+     点“进入行星地图”→ 3D 关闭且 `viewLevel === 'planet'` 且 `currentPlanet` 就是那颗。
      （射线点选本身用真实鼠标坐标不好稳定复现：相机在动、行星在公转 —— 这里只喂"选中态"，
       验证点中之后那两条链。）
 
@@ -151,7 +151,7 @@ def run(cdp):
     if gate['level'] != 'system_detail' or not gate['mounted']:
         return False, f'没进 system_detail（{gate["level"]}, mounted={gate["mounted"]}）'
     if not gate['button']:
-        return False, '头部没有「3D 观景」按钮'
+        return False, '头部没有“3D 观景”按钮'
     if gate['planets'] < 1:
         return False, f'该系行星数异常（{gate["planets"]}），用例前提不成立'
     if gate['disabled']:

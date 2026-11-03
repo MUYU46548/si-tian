@@ -3,8 +3,8 @@
 """用例 103：自动河流 —— 渲染不崩、算法是索引版、河口不出海（2026-10-14）
 
 真实来由（暮雨实测，逐条对应用户原话）：
-  1. 「试按钮点到了『自动河流』，毫无征兆直接卡住了……一点提示都没有吗？这么卡的操作连确认
-     机会都没有吗？`渲染已暂停：Ce.save is not a function 继续渲染`」
+  1. “试按钮点到了‘自动河流’，毫无征兆直接卡住了……一点提示都没有吗？这么卡的操作连确认
+     机会都没有吗？`渲染已暂停：Ce.save is not a function 继续渲染`”
      → 两个独立缺陷叠在一起：
        a) **渲染崩溃**：`ScenarioMap.renderFrame` 里画自动河流那一段写的是裸 `ctx.save()`，
           而 `ctx` 是 `ref(null)`（`<script setup>` 只有模板会解包 ref）→
@@ -12,7 +12,7 @@
           （省界/标签/小地图/势力名都没了）+ 3 帧后渲染护栏暂停。
        b) **同步分钟级循环**：旧 `generateRivers` 对每个高地格**全表扫描**找最低邻居。
           真实底图实测量级（26910 格 / 281 源头 / 单点全表 7.46ms）→ 分钟级，主线程全程不响应。
-  2. 「河流的界限似乎有问题，有好几条过度延伸到海洋中」
+  2. “河流的界限似乎有问题，有好几条过度延伸到海洋中”
      → 省份轮廓是**后来**按新海岸线重建的，而河里还是那次导入留下的 → 尾巴露在海面上。
      现在导入的河在渲染前裁到当前海岸线（`utils/coastline.js`）。
 
@@ -23,7 +23,7 @@
     **掩膜独占**、河流裁海岸线的接线在场、渲染护栏横幅在场、三个控件（源头高度 / 河流来源 /
     平滑）在 DOM 里可达
   b 端到端：造一张斜地形（75×75 格 / spacing 14.4 / 高度沿 x 从 100 递减到 0）→ **真的点画布上
-    那颗「自动河流」按钮** → 出河、`renderErrorCount === 0`、渲染没暂停
+    那颗“自动河流”按钮** → 出河、`renderErrorCount === 0`、渲染没暂停
   c 画布像素（**帧差**，不锁颜色）：把自动河"装上 / 摘掉"各渲一帧再逐像素比 —— 变了多少像素
     就是"用户看得见多少河"（实测真值 12296 个变化像素）。
     🔴 为什么不能数"某个通色值的像素"：河网线宽收到 1.2 屏幕像素后，抗锯齿让线上**没有纯色
@@ -37,8 +37,8 @@
   f 源头高度闸门**够得着**：设 0 → 河数明显变多；设 90 → 明显变少（同数据、同算法，
     只差这一个参数 —— 它若是个摆设，本条必红）
   g 河流来源**三档**（走真下拉控件）：`both / base / auto` 三档画出来的像素必须真的不同；
-    再用两条探针河反证「**底图自带河也能被藏掉**」（这是用户「各画各的」的出口）
-  h 平滑开关（走真复选框）：勾上后回执必须含「已先平滑地形」、且条数不为 0
+    再用两条探针河反证“**底图自带河也能被藏掉**”（这是用户“各画各的”的出口）
+  h 平滑开关（走真复选框）：勾上后回执必须含“已先平滑地形”、且条数不为 0
     （勾平滑会压低山头 → 必须**同时**降源头闸门，否则用户看到的是"开平滑反而没河了"）
 
 ⭐ 判据纪律（本文件反复踩过，所以写在最前面）：**要量 X 在不在，就在"有 X / 无 X"之间做帧差**；
@@ -123,7 +123,7 @@ def source_gates():
 
     # ① 渲染块必须走 ctx.value（裸 ctx. 就是 2026-10-14 那次崩溃）
     #    ⚠️ 锚点必须在**改动渲染条件时要一起改**（2026-10-16 第五修这里加上了 `showRiverAuto`
-    #       —— 锚点没跟着改会让整个源码闸门报「找不到锚点」，那是**判据失效**不是产品缺陷；
+    #       —— 锚点没跟着改会让整个源码闸门报“找不到锚点”，那是**判据失效**不是产品缺陷；
     #       本条只认 `showRiverAuto` 那一版，因为它是当前唯一的渲染门控）。
     #    ⚠️ 2026-10-18 第十八修：锚点前面多了 `!blitted &&`（手势期基帧缓存 —— 贴图帧里这一块
     #       已经画在基帧上了，不能再画第二遍）。锚点改成**不含前缀**的子串：无论前面挂多少
@@ -208,33 +208,33 @@ def source_gates():
     #     · 树枝状汇聚 → 必须画**河网**（不是只画代表路径）
     #     · 越往下游越宽 → 必须把 `segMaxFlow`（归一化上界）传给画法
     #     · 不伸进海里 → 自动河的段也必须过 `clipSegmentToLand`（与导入河**同一份掩膜**）
-    # 🔴 2026-10-17 第八修（用户「支气管模拟器」）：画法从**逐段**升级成**逐链** ——
+    # 🔴 2026-10-17 第八修（用户“支气管模拟器”）：画法从**逐段**升级成**逐链** ——
     #    `strokeRiverNetwork(segments)` 换成 `buildRiverPaths()` + `strokeRiverNetworkAsPaths()`。
     #    为什么必须换：逐段画是"一格一根小棍"，每根独立描边、每根都是直线、段与段之间没有共享几何
     #    → 分叉处像"劈开的三根棍"，结构上不可能连成一条河。判据跟着产品口径改，
     #    但**守的东西不变**：必须有"从河网还原成链"这一步，且链仍要过线宽/裁剪/上界。
     if 'strokeRiverNetwork' not in sc and 'strokeRiverNetworkAsPaths' not in sc:
         fails.append('🔴 ScenarioMap 没有画河网（`strokeRiverNetwork` / `strokeRiverNetworkAsPaths`）—— '
-                     '只画代表路径时「树枝状汇聚」结构上画不出来')
+                     '只画代表路径时“树枝状汇聚”结构上画不出来')
     if 'buildRiverPaths' not in sc:
         fails.append('🔴 没有把河网还原成**河链**（`buildRiverPaths`）—— '
                      '逐段画会退回"支气管"观感（一格一根小棍，接不成河）')
     if 'getAutoRiverNetwork' not in sc:
         fails.append('没有 getAutoRiverNetwork（段的裁剪缓存没接上 → 河会伸进海里）')
     if 'clipSegmentToLand' not in sc:
-        fails.append('🔴 自动河的段没有裁到海岸线（`clipSegmentToLand`）—— 「过度延伸到海洋」会复发')
+        fails.append('🔴 自动河的段没有裁到海岸线（`clipSegmentToLand`）—— “过度延伸到海洋”会复发')
     if 'function clipSegmentToLand' not in cl:
         fails.append('utils/coastline.js 缺 clipSegmentToLand（段裁剪实现）')
     if 'maxFlow: autoRiverMaxFlow' not in sc:
         fails.append('🔴 画河网时没有传 `segMaxFlow` —— 线宽退回绝对口径，'
-                     '这份地形上只有 1.4 倍变化（用户实测：「并没有越往下游越宽」）')
+                     '这份地形上只有 1.4 倍变化（用户实测：“并没有越往下游越宽”）')
 
     # ⑤ 🔴 陆地判据必须是**掩膜独占**（2026-10-16 第五修）
     #    缘由：上一轮这里写的是并集（`mask.lookup(x,y) || heightIsLand(x,y)`），而真实底图实测
     #    （`scripts/tests/tools/_probe_phantom.mjs`，掩膜走产品自己的 buildLandMask）：
     #    **幻影格（高度说陆 / 省份说海）203 格 = 全部格点的 2.04%**，
     #    **145/1710 = 8.5%** 的段至少一端踩在上面 → 这些段在并集下两端都判陆 →
-    #    `clipSegmentToLand` **整段跳过裁剪**。实测「两端都判陆」的段数：
+    #    `clipSegmentToLand` **整段跳过裁剪**。实测“两端都判陆”的段数：
     #    并集 **1034** vs 掩膜独占 **854** → **180 段**在并集下"不用裁"，其中相当一部分正是入海的。
     anchor_lc = 'function makeRiverLandCheck(mask)'
     i = sc.find(anchor_lc)
@@ -257,8 +257,8 @@ def source_gates():
         if not ('mask.lookup(x, y) || heightIsLand' in _probe_union):
             fails.append('并集判据的反向探针失效（抓不到并集写法）')
 
-    # ⑥ 🔴 与「地图自带河流」的画法对齐（2026-10-16 第五修）
-    #    用户三次报「色差 / 各画各的」。实测自带河 = `#5d97bb` 单遍、屏幕线宽 0.7~2.55px；
+    # ⑥ 🔴 与“地图自带河流”的画法对齐（2026-10-16 第五修）
+    #    用户三次报“色差 / 各画各的”。实测自带河 = `#5d97bb` 单遍、屏幕线宽 0.7~2.55px；
     #    上一轮自动河 = `#3B82F6` @0.35 宽×2.4 + 亮芯 → 一眼两套东西。
     rr = _code_only(_read('src/renderer/src/utils/riverRender.js'))
     if "export const BASEMAP_RIVER_COLOR = '#5d97bb'" not in rr:
@@ -288,7 +288,7 @@ def source_gates():
     # 🔴 2026-10-20 第十七修：**一条链 = 一个实心多边形**。逐段 beginPath/stroke 的画法
     #    在放大后是"竹节/铁轨"（用户 N 次报的原话），且 900 链 ≈ 8 万次调用。
     if 'fillRiverRibbon' not in sc:
-        fails.append('🔴 自动河没有走实心丝带（`fillRiverRibbon`）—— 逐段描边会让河长回「铁轨 / 竹节」')
+        fails.append('🔴 自动河没有走实心丝带（`fillRiverRibbon`）—— 逐段描边会让河长回“铁轨 / 竹节”')
     if "c.strokeStyle = '#5d97bb'" in sc:
         fails.append("🔴 ScenarioMap 里仍有写死的 '#5d97bb' —— 该走 BASEMAP_RIVER_COLOR 常量")
     if 'const scaleW = r.discharge ?' in sc:
@@ -300,25 +300,25 @@ def source_gates():
     #    → 既不能悄悄隐藏自带河（丢真实地理），也不能让用户永远看两套（"各画各的"）。
     #    判据要三件：开关在场、**两条渲染路径各自被它门控**、默认值没被改成破坏性的 `auto`。
     if "const riverSource = ref('both')" not in sc:
-        fails.append("🔴 找不到 `const riverSource = ref('both')`（默认必须是「两套都画」= 零行为变更）")
+        fails.append("🔴 找不到 `const riverSource = ref('both')`（默认必须是“两套都画”= 零行为变更）")
     if 'const showRiverBase = computed(' not in sc:
         fails.append('🔴 缺 `showRiverBase`（自带河的门控）')
     if 'const showRiverAuto = computed(' not in sc:
         fails.append('🔴 缺 `showRiverAuto`（自动河的门控）')
     if 'if (showRiverBase.value) drawRiversLayer(ctx.value' not in sc:
-        fails.append('🔴 `drawRivers`（自带河）没有走 `showRiverBase` —— 选「只画自动生成」时自带河藏不掉')
+        fails.append('🔴 `drawRivers`（自带河）没有走 `showRiverBase` —— 选“只画自动生成”时自带河藏不掉')
     if 'autoRivers.value.length > 0 && showRiverAuto.value' not in sc:
-        fails.append('🔴 自动河没有走 `showRiverAuto` —— 选「只画底图自带」时自动河藏不掉')
+        fails.append('🔴 自动河没有走 `showRiverAuto` —— 选“只画底图自带”时自动河藏不掉')
     _watch = sc.split('watch([', 1)[1].split('], () => render())', 1)[0] if 'watch([' in sc else ''
     if 'riverSource' not in _watch:
         fails.append('🔴 `riverSource` 没进 render 的 watch 列表 —— 下拉改了画布不会重画（test_69 踩过同一条）')
     if 'data-testid="river-source"' not in sc:
         fails.append('🔴 缺 `data-testid="river-source"`（用例/演练要能点得到它）')
     if '只画底图自带' not in sc or '只画自动生成' not in sc:
-        fails.append('🔴 河流来源下拉缺选项文字（只画底图自带 / 只画自动生成）—— 同「入口必须有可见文字」纪律')
+        fails.append('🔴 河流来源下拉缺选项文字（只画底图自带 / 只画自动生成）—— 同“入口必须有可见文字”纪律')
     # ⑦b 源头高度闸门**够得着**（2026-10-14 第三轮 + 2026-10-17 第七修补进源码闸门）
     #     为什么它必须同时出现在源码闸门里：行为段测的是"调它条数会变"，而行为段只有在
-    #     **控件存在**时才跑得下去；控件被谁挪进「更多」里（本项目真实发生过：用户找不到
+    #     **控件存在**时才跑得下去；控件被谁挪进“更多”里（本项目真实发生过：用户找不到
     #     分辨率按钮）时，行为段会以"找不到输入"红掉，但那时已经跑完一整套浏览器环境。
     #     源码层先钉住 testid，是让"入口被挪走/改名"这条**最早**被指出，且指出得具体。
     if 'data-testid="river-source-height"' not in sc:
@@ -353,7 +353,7 @@ def source_gates():
                      '常量一改这个还原值就不再是默认值（会把非默认闸门留给后续用例）。'
                      '请同步更新收尾里的 `inp.value = \'60\'`')
 
-    # ④ 渲染护栏必须给出**画布上的**横幅 + 错误原文（用户原话「一点提示都没有吗」）
+    # ④ 渲染护栏必须给出**画布上的**横幅 + 错误原文（用户原话“一点提示都没有吗”）
     if 'render-paused-card' not in sc:
         fails.append('渲染护栏没有画布横幅（状态栏那行不足以让用户看到）')
     if 'data-testid="render-paused-error"' not in sc:
@@ -415,7 +415,7 @@ def run(cdp):
   out.cells = n; out.cols = cols; out.rows = rows;
   out.land = Array.from(hm2.h).filter(v => v >= 20).length;
   out.sea = Array.from(hm2.h).filter(v => v < 20).length;
-  // 打开「更多」工具栏，让「自动河流」按钮真的进 DOM（它是 UI 入口，不能绕过）
+  // 打开“更多”工具栏，让“自动河流”按钮真的进 DOM（它是 UI 入口，不能绕过）
   const toggle = document.querySelector('.more-toggle');
   if (toggle) toggle.click();
   await new Promise(r => setTimeout(r, 60));
@@ -431,7 +431,7 @@ def run(cdp):
     if not r.get('ok'):
         return False, f'造地形失败：{r}'
     if not r.get('hasButton'):
-        fails.append('「自动河流」按钮不在 DOM 里（更多工具栏没打开？）')
+        fails.append('“自动河流”按钮不在 DOM 里（更多工具栏没打开？）')
     if not r.get('land') or not r.get('sea'):
         return False, f'地形数据不对（land={r.get("land")} sea={r.get("sea")}）'
     notes.append(f"地形 {r['cols']}×{r['rows']}={r['cells']} 格，陆 {r['land']} / 海 {r['sea']}")
@@ -464,15 +464,15 @@ def run(cdp):
 
     got = eval_json(cdp, click_js, required=None, desc='点自动河流')
     if not (isinstance(got, tuple) and got[0]):
-        return False, f'点「自动河流」探针失败：{got[1] if isinstance(got, tuple) else got}'
+        return False, f'点“自动河流”探针失败：{got[1] if isinstance(got, tuple) else got}'
     got = got[1]
     if not got.get('clicked'):
-        return False, f'没找到/点不动「自动河流」按钮：{got}'
+        return False, f'没找到/点不动“自动河流”按钮：{got}'
     notes.append(f"点一次：{got.get('count')} 条 / {got.get('pts')} 点 / {got.get('ms')} ms"
-                 f" / 状态栏「{got.get('status')}」")
+                 f" / 状态栏“{got.get('status')}”")
 
     if got.get('count', 0) <= 0:
-        fails.append('点了「自动河流」一条河都没出（斜地形上必然有源头）')
+        fails.append('点了“自动河流”一条河都没出（斜地形上必然有源头）')
     if got.get('withPoints', 0) != got.get('count'):
         fails.append(f"有 {got.get('count', 0) - got.get('withPoints', 0)} 条河没有 points 数组"
                      f"（渲染块按 river[0] 取点会首帧崩）")
@@ -483,7 +483,7 @@ def run(cdp):
     if got.get('renderError') or (got.get('renderErrorCount') or 0) > 0:
         fails.append(f"🔴 渲染抛了异常（这正是 2026-10-14 的崩溃）：{got.get('renderError')}")
     if '生成' not in str(got.get('status', '')) or '条河流' not in str(got.get('status', '')):
-        fails.append(f"状态栏没有回执（用户原话「一点提示都没有吗」）：{got.get('status')}")
+        fails.append(f"状态栏没有回执（用户原话“一点提示都没有吗”）：{got.get('status')}")
 
     # ── 闸门**够得着**（2026-10-14 第三轮；这条是"参数存在但用户碰不到"的守卫）─────
     # 实测背景：这份地形的源头高度闸门恰好决定条数（默认 60 → 3 条；40 → 67 条）。
@@ -530,10 +530,10 @@ def run(cdp):
         fails.append(f'闸门探针求值异常：{gate.get("err")}')
     else:
         if not gate.get('hasInput'):
-            fails.append('🔴 找不到「源头高度」输入（`river-source-height`）—— 闸门决定条数却够不着，'
+            fails.append('🔴 找不到“源头高度”输入（`river-source-height`）—— 闸门决定条数却够不着，'
                          '用户只会看到"就 3 条河"')
         if not gate.get('statusHasGate'):
-            fails.append(f"状态栏回执里没有闸门读数（「源头高度」）：{gate.get('statusLoose')}")
+            fails.append(f"状态栏回执里没有闸门读数（“源头高度”）：{gate.get('statusLoose')}")
         # 闸门必须**真的**改变出图条数：松 → 多、严 → 少（同输入同算法，只差这一个参数）
         if not (gate.get('loose', 0) > gate.get('strict', 0)):
             fails.append(f"🔴 调闸门没有改变条数（松 {gate.get('loose')} vs 严 {gate.get('strict')}）"
@@ -592,7 +592,7 @@ def run(cdp):
     #   ① 画布上出现河的颜色；② 点按钮**之后**画布真的多了像素（对照点之前）。
     #   🔴 2026-10-16 第五修：颜色口径改了 —— 自动河现在画的是**自带河那个色**（`#5d97bb`），
     #      不再是 `#3B82F6` 描边 + `#93c5fd` 亮芯（那是"三种蓝"与色差的来源）。
-    #      ⚠️ 判据必须跟着产品口径走：这里若还数旧色，会出现「明明画了却说画布上没有」的**假红**
+    #      ⚠️ 判据必须跟着产品口径走：这里若还数旧色，会出现“明明画了却说画布上没有”的**假红**
     #         （本轮实测就是这样：hits=0，而画布上确实有河）—— 反过来，判据比产品宽又会假绿。
     #   探针返回：自带河色的像素数（`base`）+ 旧两色（`legacy`，正常情况下应为 0）。
     #   🔴 2026-10-17 第六修：判据改成**帧差**（这是"画出来了"的唯一严谨定义）。
@@ -710,7 +710,7 @@ def run(cdp):
     time.sleep(0.3)
     before = eval_json(cdp, pix_js, required=None, desc='点之前的画布')
     before = before[1] if isinstance(before, tuple) and before[0] else {'err': before}
-    # ⚠️ 「点之前」这一张是**负向对照**：此刻自动河已被清空，探针必须读出 0。
+    # ⚠️ “点之前”这一张是**负向对照**：此刻自动河已被清空，探针必须读出 0。
     #    它若不是 0，说明帧差里混进了与自动河无关的变化（判据就没有判别力）。
     notes.append(f"负向对照（清掉自动河后）帧差 {before.get('hits') if isinstance(before, dict) else before}"
                  f"{_probe_err(before)}")
@@ -725,7 +725,7 @@ def run(cdp):
     pix = eval_json(cdp, pix_js, required=None, desc='画布像素')
     pix = pix[1] if isinstance(pix, tuple) and pix[0] else {'err': pix}
     if not isinstance(pix, dict) or pix.get('hits', 0) <= 0:
-        fails.append(f"画布**帧差为 0** —— 点完「自动河流」画布上没有任何变化"
+        fails.append(f"画布**帧差为 0** —— 点完“自动河流”画布上没有任何变化"
                      f"（hits={pix.get('hits') if isinstance(pix, dict) else pix}）"
                      f"{_probe_err(pix)}"
                      f"—— 没有崩溃却什么都没画（或探针没走同步口 renderNow 拿到了上一帧）")
@@ -747,8 +747,8 @@ def run(cdp):
         fails.append(f"🔴 负向对照不为 0：清空自动河之后画布仍有 {before.get('hits')} 个像素在变"
                      f"—— 帧差里混进了与自动河无关的变化，判据失去判别力")
     if isinstance(pix, dict) and isinstance(before, dict) and pix.get('hits', 0) <= (before.get('hits') or 0):
-        fails.append(f"点了「自动河流」之后画布**没有变化**（{before.get('hits')} → {pix.get('hits')}）"
-                     f"{_probe_err(pix)}—— 「找到了颜色的像素」可能是画布上本来就有的东西")
+        fails.append(f"点了“自动河流”之后画布**没有变化**（{before.get('hits')} → {pix.get('hits')}）"
+                     f"{_probe_err(pix)}—— “找到了颜色的像素”可能是画布上本来就有的东西")
 
     # ── 树枝状汇聚 + 越往下游越宽 + 不伸进海里（2026-10-15 第四修，用户实测截图）────
     # 三条都是**用户拿截图报的**，所以判据必须是"结构 + 几何 + 线宽"三件，
@@ -812,18 +812,18 @@ def run(cdp):
         fails.append(f'河网探针求值异常：{net.get("err") or net}')
     else:
         if not net.get('segs'):
-            fails.append('🔴 没有河网段（`autoRiverSegments` 为空）—— 「树枝状汇聚」结构上画不出来'
-                         '（用户实测原话：「根本画不出复杂的河流汇聚」）')
+            fails.append('🔴 没有河网段（`autoRiverSegments` 为空）—— “树枝状汇聚”结构上画不出来'
+                         '（用户实测原话：“根本画不出复杂的河流汇聚”）')
         else:
             notes.append(f"河网 {net['segs']} 段 / 段汇流量 {net['minF']}~{net['maxF2']}")
         if net.get('ratio', 0) <= 3:
             fails.append(f"🔴 线宽最细/最粗只有 {net.get('ratio')} 倍（要求 >3）—— "
-                         f"「越往下游越宽」看不出来（用户实测：「河流并没有越往下游越宽」）")
+                         f"“越往下游越宽”看不出来（用户实测：“河流并没有越往下游越宽”）")
         else:
             notes.append(f"线宽归一化：{net['wMin']} → {net['wMax']} 世界单位（{net['ratio']}×）")
         if net.get('rings') and net.get('outside', 0) > 0:
             fails.append(f"🔴 有 {net.get('outside')}/{net.get('checked')} 个**陆端**落在陆地掩膜之外 —— "
-                         f"河又伸进海里了（用户实测：「依然过度延伸到海洋部分」）")
+                         f"河又伸进海里了（用户实测：“依然过度延伸到海洋部分”）")
         elif net.get('rings'):
             notes.append(f"海岸线：{net['checked']} 个陆端全部在陆地内")
         if net.get('renderPaused') or net.get('renderError'):
@@ -839,7 +839,7 @@ def run(cdp):
         path_cells = net.get('pathCells') or 0
         if segs_n and path_cells and segs_n <= path_cells:
             fails.append(f"河网段覆盖（{segs_n} 格）没有超过代表路径覆盖（{path_cells} 格）—— "
-                         f'段没有起到「逐格河网」的作用（树枝状汇聚结构上画不出来）')
+                         f'段没有起到“逐格河网”的作用（树枝状汇聚结构上画不出来）')
         elif segs_n:
             notes.append(f"覆盖对比：河网 {segs_n} 格 vs 代表路径 {path_cells} 格")
 
@@ -933,7 +933,7 @@ def run(cdp):
                      f"强段 {p_strong}；非单调下游 {prune.get('nonMono')} / 合法尽头 {prune.get('terminus')}）")
         if not (0 < p_drawn < p_segs):
             fails.append(f'🔴 剪枝没生效或把河网剪空了（落笔={p_drawn} / 总段={p_segs}）—— '
-                         f'「只画河道」要么没接线、要么剪过头')
+                         f'“只画河道”要么没接线、要么剪过头')
         if p_segs and ratio < 0.05:
             fails.append(f'🔴 剪枝过头：只留 {ratio * 100:.1f}% 的段（下界 5%）—— 这正是产品踩过的那个 bug'
                          f'（格键不匹配 → 3750 段只留 26 段），表现是"画布上有河但很稀"，**不报错**')
@@ -1004,7 +1004,7 @@ def run(cdp):
   if (!(sm.autoRivers || []).length) return JSON.stringify({ err: 'no-auto-rivers' });
   // ⚠️ 走**真的下拉控件**（`select.value = …` + 派发 change），不要直接赋 `sm.riverSource`：
   //    直接赋 setupState 上的 ref 能不能被脚本侧看见取决于解包口径 —— 那是测试装置的坑
-  //    （本轮在「平滑」开关上就踩过一次：直接赋值 → 假红）。真控件才测得准。
+  //    （本轮在“平滑”开关上就踩过一次：直接赋值 → 假红）。真控件才测得准。
   const sel = document.querySelector('[data-testid="river-source"]');
   if (!sel) return JSON.stringify({ err: 'no-river-source-select' });
   const setMode = (m) => {
@@ -1035,19 +1035,19 @@ def run(cdp):
         if not rows.get('hasSelect'):
             fails.append('🔴 DOM 里找不到 `[data-testid="river-source"]` —— 开关够不着')
         if auto <= 0:
-            fails.append('🔴 档位「只画自动生成」看不到任何河 —— 门控把该画的也藏了')
+            fails.append('🔴 档位“只画自动生成”看不到任何河 —— 门控把该画的也藏了')
         if base != 0:
-            fails.append(f'🔴 档位「只画底图自带」仍有 {base} 个河色像素（这份底图自带河为 0 条，'
+            fails.append(f'🔴 档位“只画底图自带”仍有 {base} 个河色像素（这份底图自带河为 0 条，'
                          f'说明自动河没被藏掉）—— 开关是空的')
         if base == both and auto == both:
             fails.append('🔴 三个档位画出来一模一样 —— 开关没接到渲染上')
         if rows.get('backToBoth', 0) <= 0:
-            fails.append('🔴 档位切回「两套都画」后河没回来（门控没还原）')
+            fails.append('🔴 档位切回“两套都画”后河没回来（门控没还原）')
 
-    # ── ⑨ 🔴 反方向：档位「只画自动生成」必须**真的把底图自带河藏掉** ───────────────
+    # ── ⑨ 🔴 反方向：档位“只画自动生成”必须**真的把底图自带河藏掉** ───────────────
     # 为什么必须单独测这一向：⑧ 那个探针用的合成底图**自带河为 0 条**，
     # 所以它只证明了"自动河能被藏"，**证明不了"自带河能被藏"** ——
-    # 而用户抱怨的「各画各的」正是靠**藏掉自带河**来解决的（实测两套是不同水系，
+    # 而用户抱怨的“各画各的”正是靠**藏掉自带河**来解决的（实测两套是不同水系，
     # 所以只能把选择权交出去，见 `_probe_river_align.mjs`）。
     # 造一条**导入河**（id 不带 `river_` 前缀 → 走 `drawRivers` 那条路径）+ 一条手画河
     # （带前缀 → 走 `drawRiverPaths`），再切档看它们各自在不在。
@@ -1069,7 +1069,7 @@ def run(cdp):
   const draw = () => { if (typeof sm.renderNow === 'function') sm.renderNow(); else sm.render(); };
   // ⚠️ 走**真的下拉控件**（`sel.value = …` + 派发 change）而不是直接赋 `sm.riverSource`：
   //    直接赋 setupState 上的 ref 能不能被脚本侧看见取决于解包口径 —— 那是测试装置的坑
-  //    （本项目在「平滑」开关上踩过一次 → 假红），真控件才测得准。
+  //    （本项目在“平滑”开关上踩过一次 → 假红），真控件才测得准。
   const setMode = async (m) => {
     sel.value = m;
     sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1158,12 +1158,12 @@ def run(cdp):
         if imp_base <= 0:
             fails.append('🔴 校准失败：`base` 档下**导入探针河**一个像素都没画出来'
                          '（探针几何不在视口内，或 `drawRivers` 那条路断了）——'
-                         '此时「auto 档看不见它」是**空转**，不能算通过')
+                         '此时“auto 档看不见它”是**空转**，不能算通过')
         # ② 核心反方向判据：`auto` = 只画自动生成 → **底图自带（导入）河必须被藏掉**。
-        #    这是用户「依旧和底图自带河流各画各的」的出口所在。
+        #    这是用户“依旧和底图自带河流各画各的”的出口所在。
         if imp_auto > 0:
-            fails.append(f'🔴 档位「只画自动生成」仍有 {imp_auto} 个像素属于**底图自带（导入）河** —— '
-                         f'自带河没被藏掉，用户的「各画各的」解决不了'
+            fails.append(f'🔴 档位“只画自动生成”仍有 {imp_auto} 个像素属于**底图自带（导入）河** —— '
+                         f'自带河没被藏掉，用户的“各画各的”解决不了'
                          f'（判据：把那条探针河装上/摘掉各渲一帧的帧差）')
         if imp_both <= 0:
             fails.append('🔴 `both`（两套都画）档下看不到导入探针河 —— 该档本来就该画它')
@@ -1244,21 +1244,21 @@ def run(cdp):
         off_c = (smooth.get('off') or {}).get('count', 0)
         h_on = (smooth.get('on') or {}).get('h', None)
         notes.append(f"平滑开关：勾上 {on_c} 条（闸门读数 {h_on}）/ 取消 {off_c} 条；"
-                     f"回执含「已先平滑地形」={('已先平滑地形' in hint)}")
+                     f"回执含“已先平滑地形”={('已先平滑地形' in hint)}")
         if not (smooth.get('afterClick') or {}).get('checked'):
             fails.append('🔴 点了 `[data-testid="river-smooth"]` 之后复选框没变成勾选 —— 控件没接线')
         if '已先平滑地形' not in hint:
-            fails.append('🔴 勾上「平滑」后回执里没有「已先平滑地形」—— 开关没有真的传进追踪器'
+            fails.append('🔴 勾上“平滑”后回执里没有“已先平滑地形”—— 开关没有真的传进追踪器'
                          f'（回执：{hint[:140]}）')
         elif '已先平滑地形' not in dom:
-            fails.append('🔴 回执里写了「已先平滑地形」，但画布上的状态栏里看不见它'
+            fails.append('🔴 回执里写了“已先平滑地形”，但画布上的状态栏里看不见它'
                          '（`.draw-hint` 里找不到）—— 用户看不到的回执等于没有回执')
         if on_c <= 0:
             fails.append('🔴 勾上平滑后一条河都没有 —— 缺了"同时下调源头闸门"那一步')
         if '闸门按' not in hint:
             fails.append('🔴 回执没有说明闸门被降（用户会以为是数据坏了）')
         if '已先平滑地形' in hint_off:
-            fails.append('🔴 取消平滑后回执里仍写着「已先平滑地形」—— 开关关不掉（默认行为被改掉）')
+            fails.append('🔴 取消平滑后回执里仍写着“已先平滑地形”—— 开关关不掉（默认行为被改掉）')
     # ⚠️ 2026-10-17 第七修：这里原来**整段复制了两遍**（同一个探针求值两次、notes 重复、
     #    同一组断言重跑一遍）。重复不等于更严格：探针里那两次 `box.click()` + 生成**有副作用**，
     #    跑第二遍时开关状态已被第一遍拨回，于是同一段判据会给出两套读数 ——

@@ -45,7 +45,7 @@ async function onSaveSlicePoint() {
   if (label === null) return;                       // 取消
   const r = store.addSlicePoint({ y: d.y, m: d.m, d: d.d }, label || '');
   if (!r || r.success === false) { statusMsg(`切片点未保存：${r?.reason || '未知原因'}`); return; }
-  statusMsg(`已存切片点「${label || formatDate(d)}」（${formatDate(d)}）—— 切片导出会默认带上它（可 Ctrl+Z 撤回）`);
+  statusMsg(`已存切片点“${label || formatDate(d)}”（${formatDate(d)}）—— 切片导出会默认带上它（可 Ctrl+Z 撤回）`);
   render();
 }
 
@@ -59,7 +59,7 @@ function onTimelineSelectScenario(s) {
 }
 
 /**
- * 剧本列表条目的一句话摘要（EU4 那张「选择历史时期」列表里的第二行）。
+ * 剧本列表条目的一句话摘要（EU4 那张“选择历史时期”列表里的第二行）。
  * 势力数 = 本剧本定义的势力数；省数 = 本剧本 ownership 里**真有归属**的省份数
  * （值为空/缺失 = 无主，不计入 —— 地图上显示灰，不该被算成"这个势力的地盘"）。
  */
@@ -71,12 +71,12 @@ function scenarioMeta(s) {
 }
 
 /**
- * 「选择历史时期」：点列表一条 = **切剧本 + 地图跳到该时期起始年 + 时间轴游标同步**。
+ * “选择历史时期”：点列表一条 = **切剧本 + 地图跳到该时期起始年 + 时间轴游标同步**。
  *
  * 🔴 为什么必须三件事一起做（而不是只改 selectedScenario）：
  *    ① 只改 selectedScenario → 地图着色不动（游标还在旧年份）→ 看着像"设置项"不是"时期选择器"；
  *    ② 只改游标 → 编辑目标（势力色板 / 归属写入落到哪个剧本）还停在旧剧本 → **写错地方**。
- *    三件一起才是 EU4 里「点一条，地图变成那一年的世界」这个动作的完整语义。
+ *    三件一起才是 EU4 里“点一条，地图变成那一年的世界”这个动作的完整语义。
  * 年份取 `timeline.years[idx].start`（而非 `s.era.startYear`）：与轨道、播放同一口径，
  * 避免"列表说 2044、游标落到 2043"这种只有对齐时才发现的不一致。
  */
@@ -98,10 +98,10 @@ function selectScenarioAt(s) {
 }
 
 /**
- * 轨道拖拽/点击/键盘给了「年」→ 写回 tlDate。
- * 🔴 月日**归 null**（= 该年 1 月 1 日）而不是保留旧月日：轨道表达的是「到某一年」，
- *    保留 6 月 1 日会让「拖到 1045 年」实际停在 1045-06-01 —— 用户看不见、却影响归属判定。
- *    要精确到日请走「存为切片点」或谱系面板的日期录入。
+ * 轨道拖拽/点击/键盘给了“年”→ 写回 tlDate。
+ * 🔴 月日**归 null**（= 该年 1 月 1 日）而不是保留旧月日：轨道表达的是“到某一年”，
+ *    保留 6 月 1 日会让“拖到 1045 年”实际停在 1045-06-01 —— 用户看不见、却影响归属判定。
+ *    要精确到日请走“存为切片点”或谱系面板的日期录入。
  */
 function onTimelineSetYear(y) {
   const n = Number(y);
@@ -115,7 +115,7 @@ function onTimelineSetYear(y) {
 /**
  * 外交面板步进/输入年份 → 移动**同一个**时间轴游标（tlDate 仍是唯一真源）。
  * 与 `onTimelineSetYear` 的差别：面板会带回月日（它只改年时保留用户拖到的月日），
- * 所以这里不把 m/d 归 null —— 归 null 会让「面板里点一下年份」把精确到日的游标悄悄抹掉。
+ * 所以这里不把 m/d 归 null —— 归 null 会让“面板里点一下年份”把精确到日的游标悄悄抹掉。
  */
 function onDiplomacySetDate(next) {
   if (!next) return;
@@ -142,7 +142,7 @@ function resetTimelineToStart() {
   if (!tl.years.length) { tlEra.value = 0; tlDate.value = { y: 0, m: null, d: null }; return; }
   tlEra.value = 0;
   tlDate.value = { y: tl.years[0].start, m: null, d: null };
-  // 进入剧本模块时默认就是「政治视图」——否则省份按生物群系着色，时间轴等于白拖
+  // 进入剧本模块时默认就是“政治视图”——否则省份按生物群系着色，时间轴等于白拖
   if (viewMode.value !== 'scenario') viewMode.value = 'scenario';
 }
 

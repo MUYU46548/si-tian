@@ -3,7 +3,7 @@
  * 从 Azgaar/FMG `.map` 文件里抽出 **grid / 高度** 段，写成诊断用的 JSON。
  *
  * 为什么需要它：`.map` 不是单个 JSON（首行 magic + base64 缩略图 + SVG + 逐行 JSON/CSV 段），
- * 而「河流到底能长多长」「高度图分辨率够不够」这类**观感问题**只能在真实数据上量。
+ * 而“河流到底能长多长”“高度图分辨率够不够”这类**观感问题**只能在真实数据上量。
  * 抽取口径与 `src/renderer/src/utils/azgaar-parser.js` **逐字对齐**（网格 JSON 行 + data[7] CSV），
  * 免得诊断工具与产品解析器各说一套。
  *
@@ -33,7 +33,7 @@ const csv = (s) => String(s == null ? '' : s).split(',').map((x) => {
   const t = x.trim(); const v = t ? Number(t) : 0; return Number.isFinite(v) ? v : 0;
 });
 
-// ── 与解析器同一判据：SVG 之后第一个「带 cellsX 与 points 的 JSON 行」 = 网格段 ──
+// ── 与解析器同一判据：SVG 之后第一个“带 cellsX 与 points 的 JSON 行” = 网格段 ──
 let gridLine = -1;
 for (let i = 0; i < lines.length; i++) {
   const s = lines[i];

@@ -60,7 +60,7 @@ export function useReliefBrush({ store, currentMapData, renderer = null }) {
   /** 命中半径：图标半边长 × 0.8（比图标略小，免得挨着两颗时永远只选到大的那颗） */
   function _hitRadius(it) { return Math.max(10, (it.size || 24) * 0.5 * 1.6); }
 
-  // 「这一次点击来自选中图标」→ 随后的 click 不要清选中（否则刚点中就立刻被清掉）
+  // “这一次点击来自选中图标”→ 随后的 click 不要清选中（否则刚点中就立刻被清掉）
   // 🔴 用**下一次 mousedown 复位**、而不是"靠 click 消费掉"：鼠标在画布外松开、或程序化派发
   //    （用例/演练只发 mousedown+mouseup）时 click 可能永远不来 —— 那样这个信用会一直挂着，
   //    下一次点空白就清不掉选中（实测就是这样：点空白后选中还在）。
@@ -275,11 +275,11 @@ export function useReliefBrush({ store, currentMapData, renderer = null }) {
     const stored = currentMapData.value?.reliefIcons || [];
     const pendingIds = new Set(reliefPending.value.map(it => it.id));
     const alreadyRemoved = new Set(reliefRemovedIds.value);
-    // 1) 擦掉「本次刚放下的」→ 直接从 pending 撤回（等价于没放过）
+    // 1) 擦掉“本次刚放下的”→ 直接从 pending 撤回（等价于没放过）
     const { remaining: pendingLeft, removed: pendingRemoved } =
       eraseInRadius(reliefPending.value, wx, wy, reliefEraseRadius.value);
     if (pendingRemoved.length) reliefPending.value = pendingLeft;
-    // 2) 擦掉「存储里已有的」→ 记 id，松手时一次提交
+    // 2) 擦掉“存储里已有的”→ 记 id，松手时一次提交
     const { removed } = eraseInRadius(
       stored.filter(it => !alreadyRemoved.has(it.id) && !pendingIds.has(it.id)),
       wx, wy, reliefEraseRadius.value,

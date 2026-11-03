@@ -2,7 +2,7 @@
 // ctx: { execute, scheduleAutoSave }
 // 注意：interiorData ref 由本模块持有，geodata.js 通过返回值取用（load/saveGeodata、selectBuilding 等）
 import { ref } from 'vue';
-// 内存编辑闸门：本模块有 7 个「不经 undo 守卫」的写点，只读态必须同样拦（改了不落盘 = 静默丢数据）：
+// 内存编辑闸门：本模块有 7 个“不经 undo 守卫”的写点，只读态必须同样拦（改了不落盘 = 静默丢数据）：
 //   addFloor / removeFloor / updateFloor（楼层，直接改内存）
 //   removeFurniture（直接改内存）/ updateFurniture（先改内存后 execute）
 //   updateInteriorReferenceImage / removeInteriorReferenceImage（参考图）
@@ -143,7 +143,7 @@ export function createInteriorModule(ctx) {
   }
 
   // 跨楼层批量复制/移动家具（R5-3）：整批 = 一条 undo
-  // 全部用「快照 + 按 id 过滤重建」，不用闭包下标（中途增删不会错位）
+  // 全部用“快照 + 按 id 过滤重建”，不用闭包下标（中途增删不会错位）
   function transferFurnitureBatch(buildingId, fromFloorId, toFloorId, furnitureIds = [], mode = 'copy') {
     const data = interiorData.value[buildingId];
     if (!data) return [];
@@ -197,7 +197,7 @@ export function createInteriorModule(ctx) {
   // 更新家具属性（支持 undo：传 oldSnapshot 记录变更前的值）
   function updateFurniture(buildingId, floorId, furnitureId, updates, oldSnapshot = null) {
     // ⚠️ 本函数**先改内存、后 execute**（Object.assign 在 execute 之前）→ 必须守函数首行，
-    //    否则只读态下「拒绝」发生在数据已经改完之后（test_54 点名的危险形态）
+    //    否则只读态下“拒绝”发生在数据已经改完之后（test_54 点名的危险形态）
     if (!guardWrite('更新家具').ok) return;
     const data = interiorData.value[buildingId];
     if (!data) return;

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""真机测帧：真实 415 省项目里 `render()` 与「拖一个顶点 20 步」的耗时。
+"""真机测帧：真实 415 省项目里 `render()` 与“拖一个顶点 20 步”的耗时。
 
 用法：python scripts/tests/diag_edit_perf.py（工作副本，跑完还原配置）
 产物：docs/assets/diag-edit-perf-20261021/result.json

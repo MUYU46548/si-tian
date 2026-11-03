@@ -4,8 +4,8 @@
 
   01 空态：中央卡片 + 两个真按钮（导入 .map / 从零开始画）
   02 导入后：真实 `desite.map` 走**产品导入链**装进本行星 → 地形上画布 + 底部回执横幅
-  03 保存诚实（staged）：横幅必须是「已交给项目，正在写入磁盘…」**黄标**，不是「保存成功」绿标
-  04 保存诚实（persisted）：真进磁盘才「已保存到磁盘」绿标
+  03 保存诚实（staged）：横幅必须是“已交给项目，正在写入磁盘…”**黄标**，不是“保存成功”绿标
+  04 保存诚实（persisted）：真进磁盘才“已保存到磁盘”绿标
 
 做法与 `_shot_story_real_20261017.py` 一致：真实底图临时放进 Vite public 目录让页面 fetch，
 跑完（无论成败）删掉；用**真按钮点击 + 真 File 注入**走产品链路，不直接调 store。
@@ -355,7 +355,7 @@ STORY = r"""
     await tick(700);
     await S('02-planet-imported');
 
-    // ── ②b 只看多边形（关掉「地形」总开关 → 覆盖物接管）——用来核对"省份真的进来了" ──
+    // ── ②b 只看多边形（关掉“地形”总开关 → 覆盖物接管）——用来核对"省份真的进来了" ──
     if (P.layers && P.layers.toggleLayer) {
       P.layers.toggleLayer('planet', 'terrainPolygons');
       await tick(500);

@@ -53,7 +53,7 @@ let debounceTimer = null;
 
 // ⚠️ 与 scripts/extract-data.js（唯一真值来源）及 src/renderer/src/utils/normalizeId.js **逐字符一致**。
 // 2026-09-16 修正历史漂移：此处曾写作 /[\\\/\\s]/（把字面量 s 也当分隔符、反而不匹配空白），
-// 导致同一个文件名在「增量监听」与「全量提取」下得到不同 id。三处一致性由
+// 导致同一个文件名在“增量监听”与“全量提取”下得到不同 id。三处一致性由
 // scripts/tests/cases/test_40_draft_id_continuity.py 的源码比对用例守卫。
 function normalizeId(name) {
   if (!name) return 'unknown';
@@ -120,12 +120,12 @@ const STATUS_ALIASES = {
 };
 
 /**
- * 从 frontmatter 读「叙事状态」→ 归一化为状态 id；读不出就返回 **null（视作未设置）**。
+ * 从 frontmatter 读“叙事状态”→ 归一化为状态 id；读不出就返回 **null（视作未设置）**。
  * 字段本身仍会落在节点上（值为 null），与既有 `placeType` 同一风格。
  *
  * 为什么认不出要返回 null 而不是原样带着：脏值在渲染侧虽会被 `resolveStatus` 回落成 active，
  * 但它会被**原样写进项目文件并长期留存**（重提取也带回来）—— 用户之后看到更困惑。
- * `active` 同样返回 null：「显式写了存在」与「没写」的行为完全等价（渲染侧 `resolveStatus` 会把 null 也当 active）。
+ * `active` 同样返回 null：“显式写了存在”与“没写”的行为完全等价（渲染侧 `resolveStatus` 会把 null 也当 active）。
  */
 function readFrontmatterStatus(fm) {
   const raw = fm && (fm.status != null ? fm.status : fm['状态']);
@@ -183,7 +183,7 @@ function updateNodeInCache(node) {
       : node.coordinate;
     // ⚠️ 必须**先铺开旧节点再盖新字段**（2026-09-24 修）：
     //    旧写法 `{ ...node, coordinate }` 只保留坐标 —— 而 `extractSingleFile` 不产出
-    //    `placeType` / `uuid` 等**编辑器侧字段**，于是「在 Obsidian 里改一个字」就会把它们从缓存里抹掉
+    //    `placeType` / `uuid` 等**编辑器侧字段**，于是“在 Obsidian 里改一个字”就会把它们从缓存里抹掉
     //    （表现为图标配色退化、uuid 消失 —— 全是静默的，不报错）。
     //    正确语义：文件变更只更新**笔记侧字段**，编辑器侧字段原样保留。
     data.nodes[idx] = { ...data.nodes[idx], ...node, coordinate: preservedCoord };

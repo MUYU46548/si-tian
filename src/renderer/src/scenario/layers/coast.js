@@ -1,4 +1,4 @@
-// scenario/layers/coast.js — 剧本视图「海岸浅滩」层（N1 刀 1，2026-10-30）
+// scenario/layers/coast.js — 剧本视图“海岸浅滩”层（N1 刀 1，2026-10-30）
 //
 // 两档海岸，**互斥**（由 `when` 判，不在这里 if）：
 //   · `landsea`（政治档）：外侧 3px 浅海光带 + 1.1px 深青海岸线 → 让陆地"浮"在水上；
@@ -29,7 +29,7 @@ export function drawSeaDetailLayer(c, view) {
     if (!view.polylineInView(ln, minX, minY, maxX, maxY)) continue;
     view.strokeWorldPolyline(c, ln);
   }
-  // 海岸线压在省界**下面**，只露一圈蓝边（省界会盖住中心 0.9px）——「蓝海岸 + 灰省界」的层叠
+  // 海岸线压在省界**下面**，只露一圈蓝边（省界会盖住中心 0.9px）——“蓝海岸 + 灰省界”的层叠
   c.lineWidth = view.px(1.7);
   c.strokeStyle = 'rgba(44, 92, 122, 0.45)';
   for (const ln of d.coasts) {

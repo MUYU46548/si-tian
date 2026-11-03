@@ -5,7 +5,7 @@
   a) 当前层选中 N 件 → 复制到目标层：目标层 +N（名称/坐标保留、id 新分配），原层不变
   b) 移动：原层 -N、目标层 +N
   c) 两种模式各只占**一条** undo（撤销一次全回滚、重做一次全恢复）
-  d) 对话框接线（工具栏「跨楼层」→ 弹窗含方式/目标楼层选择）
+  d) 对话框接线（工具栏“跨楼层”→ 弹窗含方式/目标楼层选择）
 """
 import sys, os, time, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -29,7 +29,7 @@ def _j(cdp, expr):
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
 
-    # 进入建筑内部（用例自带 fixture：真实库已不再保留测试残留节点「测试建筑」）
+    # 进入建筑内部（用例自带 fixture：真实库已不再保留测试残留节点“测试建筑”）
     okb, prep = ensure_test_building(cdp)
     if not okb:
         return False, f'未找到建筑节点 {prep}'

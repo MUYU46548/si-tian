@@ -1,8 +1,8 @@
 """用例 128：新建势力不再用 window.prompt（Electron 渲染进程不支持）。
 
-暮雨 2026-10-19 实测：点「＋ 势力」→ `prompt() is and will not be supported`，整条建势力链卡死。
+暮雨 2026-10-19 实测：点“＋ 势力”→ `prompt() is and will not be supported`，整条建势力链卡死。
 本用例守：
-  · 点「＋ 势力」弹出 App 根部的 PromptDialog（不是原生 prompt）；
+  · 点“＋ 势力”弹出 App 根部的 PromptDialog（不是原生 prompt）；
   · 输入名称 → 确定 → 剧本里真的多了一个势力，并自动选中它；
   · 取消不产生势力。
 """
@@ -47,11 +47,11 @@ def run(cdp):
     except Exception:
         return False, f'造数据失败：{str(setup)[:300]}'
 
-    # 点「＋ 势力」
+    # 点“＋ 势力”
     clicked = cdp.eval("(() => { const b = document.querySelector('[data-testid=\"add-polity\"]');"
                        " if (!b) return 'no-button'; b.click(); return 'ok'; })()")
     if clicked != 'ok':
-        return False, f'没找到「＋ 势力」按钮：{clicked}'
+        return False, f'没找到“＋ 势力”按钮：{clicked}'
     wait_for(cdp, "!!document.querySelector('.prompt-dialog')", timeout=10, desc='PromptDialog')
     # 输入 + 确定
     cdp.eval("(() => { const el = document.querySelector('.prompt-input');"

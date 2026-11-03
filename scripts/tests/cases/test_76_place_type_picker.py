@@ -3,7 +3,7 @@
 """用例 76：A-3 中文点选糙版 —— 行内类型下拉 + 只看空白过滤
 
 来源：`docs/ROADMAP_NEXT.md` 线 A 第 4 步（A-3）＋ 2026-09-28 在线审查的三条补刀。
-搬家线把「层级 / 上层挂靠 / 地点类型」收进 `.sitian` 之后，**笔记里本来就没写的空白只有这个
+搬家线把“层级 / 上层挂靠 / 地点类型”收进 `.sitian` 之后，**笔记里本来就没写的空白只有这个
 界面能填**（报告 ⑥：搬家后给新地点设类型的唯一入口）。
 
   🔴 实测前提（2026-09-29 拿真 ROSA 缓存跑的值域统计，= 补刀①②的依据）：
@@ -11,14 +11,14 @@
      · 类型空白 45 个里 **39 个是宇宙层**（world/star_domain/galaxy/planet，本就不携带该字段），
        聚落 5 个按约定不标 → 真正该填的只有 region/facility/location；
      · parentId 空 9 个里 4 个是 world（本来就该顶层）→ 真孤儿 5 个。
-     不分层就过滤 = 用户点开「类型为空」看到 39 行无意义噪音（补刀②）。
+     不分层就过滤 = 用户点开“类型为空”看到 39 行无意义噪音（补刀②）。
 
 本用例覆盖：
   f0 源码守卫：枚举 / 层级 / 选项 / 过滤**单源**在 utils/placeTypes.js（三处组件不许再抄一份
      `['自然', …]`）；行内改类型只走 `proj.updateEntity`（undo + 落 .sitian，不许直接改内存）；
      下拉与过滤器在只读态灰禁且带原因。
-  f1 端到端：行内下拉选项 = 8 枚举；**枚举外值「秘境」保留在选项里且被显示出来**（补刀①）→
-     真实 change 事件 → 项目实体落值 + 同步画布 + 回执写明「写进 .sitian」→ undo/redo 各一步 →
+  f1 端到端：行内下拉选项 = 8 枚举；**枚举外值“秘境”保留在选项里且被显示出来**（补刀①）→
+     真实 change 事件 → 项目实体落值 + 同步画布 + 回执写明“写进 .sitian”→ undo/redo 各一步 →
      **保存载荷里带着 placeType**（落进 .sitian 的等价断言，mock 环境落点 = window.__projects）→
      清空路径同样同步。
   f2 过滤：期望集合在测试里**独立重算**（不 import 被测的 matchesGap —— 那是同义反复）：
@@ -41,7 +41,7 @@ def _read(rel):
 
 
 def _code_only(src):
-    """剥掉注释后再做子串判据 —— 本仓已三次踩到「注释里的字样被当成违规」（test_59/71/75）。"""
+    """剥掉注释后再做子串判据 —— 本仓已三次踩到“注释里的字样被当成违规”（test_59/71/75）。"""
     out, i, n, in_block = [], 0, len(src), False
     while i < n:
         c = src[i]
@@ -88,7 +88,7 @@ def sub_source_guards(cdp):
     if "'place-type-'" not in panel:
         bad.append('面板缺少行内类型下拉的 data-testid（用例与用户都找不到它）')
     if 'data-testid="gap-filter"' not in panel:
-        bad.append('面板缺少「只看空白」过滤器 gap-filter')
+        bad.append('面板缺少“只看空白”过滤器 gap-filter')
     if 'function onPlaceTypeChange' not in panel:
         bad.append('面板缺少 onPlaceTypeChange')
     else:
@@ -106,7 +106,7 @@ def sub_source_guards(cdp):
 
     detail = _code_only(_read('src/renderer/src/components/NodeDetailPanel.vue'))
     if 'placeTypeOptions' not in detail:
-        bad.append('详情面板没走 placeTypeOptions —— 枚举外值会被显示成「未设置」')
+        bad.append('详情面板没走 placeTypeOptions —— 枚举外值会被显示成“未设置”')
     if ENUM_ARR in detail:
         bad.append('NodeDetailPanel 里有内联 8 枚举数组')
 
@@ -146,7 +146,7 @@ JS = r"""(async () => {
   // ── 打开项目面板 ──
   const toolBtn = Array.from(document.querySelectorAll('button'))
     .find(b => (b.getAttribute('title') || '').indexOf('.sitian') >= 0);
-  ck('装置：工具栏有「项目」入口', !!toolBtn, null);
+  ck('装置：工具栏有“项目”入口', !!toolBtn, null);
   if (toolBtn && !q('.project-panel')) {
     toolBtn.click();
     for (let i = 0; i < 40 && !q('.project-panel'); i++) await tick(100);   // 懒加载 chunk
@@ -196,14 +196,14 @@ JS = r"""(async () => {
       if (sel2) {
         const vals2 = Array.from(sel2.options).map(o => o.value);
         ck('f1 ★ 选项 = 8 枚举 ∪ 当前值（第 9 种出现）', vals2.indexOf('秘境') >= 0, vals2);
-        ck('f1 ★ 当前值显示为「秘境」，不是静默空白', sel2.value === '秘境', sel2.value);
+        ck('f1 ★ 当前值显示为“秘境”，不是静默空白', sel2.value === '秘境', sel2.value);
 
         // 用户路径：真实 change 事件（不是直接调函数）
         sel2.value = '宗教';
         sel2.dispatchEvent(new Event('change'));
         await tick(400);
         same('f1 ★ 改下拉 → 项目实体落值', (proj.entities[TID] || {}).placeType, '宗教');
-        ck('f1 ★ 回执写明「写入 .sitian + 可撤销」（不静默）',
+        ck('f1 ★ 回执写明“写入 .sitian + 可撤销”（不静默）',
            /写入 \.sitian/.test(text('.project-panel .pp-tip')) && /撤销/.test(text('.project-panel .pp-tip')),
            text('.project-panel .pp-tip'));
         const node = store.nodes.find(n => n.id === TID);
@@ -216,7 +216,7 @@ JS = r"""(async () => {
         same('f1 ★ 一条 undo 回到上一个值（直接改内存就撤不掉）', (proj.entities[TID] || {}).placeType, '秘境');
         store.redo();
         await tick(400);
-        same('f1 redo 回到「宗教」', (proj.entities[TID] || {}).placeType, '宗教');
+        same('f1 redo 回到“宗教”', (proj.entities[TID] || {}).placeType, '宗教');
 
         // 落盘：保存载荷（mock 环境落点 = window.__projects[filePath]）必须带着 placeType
         const saveRes = await proj.saveProject({ label: 'A-3 验证' });
@@ -226,7 +226,7 @@ JS = r"""(async () => {
           ? saved.entities[TID].placeType : (saved ? '实体不在载荷里' : '没有保存载荷');
         ck('f1 ★ 落进 .sitian（保存载荷里带着 placeType）', savedPT === '宗教', savedPT);
 
-        // 清空路径：选「未设置」→ 两处同步清掉
+        // 清空路径：选“未设置”→ 两处同步清掉
         const sel3 = selOf(TID);
         if (sel3) {
           sel3.value = '';
@@ -263,7 +263,7 @@ JS = r"""(async () => {
 
   if (gapSel) {
     // ── type ──
-    ck('f2 切到「类型为空」', await setFilter('type'), null);
+    ck('f2 切到“类型为空”', await setFilter('type'), null);
     const expType = expIds('type');
     same('f2 ★ 类型过滤显示集 = 独立重算的地点层级空白集', rowIds().slice().sort(), expType);
     if (noisy) {
@@ -274,12 +274,12 @@ JS = r"""(async () => {
     ck('f2 ★ 过滤器选项标出独立重算的计数',
        !!typeOpt && typeOpt.textContent.indexOf('（' + expType.length + '）') >= 0,
        typeOpt ? typeOpt.textContent : null);
-    ck('f2 计数条显示「显示 X / Y」',
+    ck('f2 计数条显示“显示 X / Y”',
        text('.project-panel [data-testid="gap-count"]').indexOf('显示 ' + expType.length + ' / ' + allIds.length) >= 0,
        text('.project-panel [data-testid="gap-count"]'));
 
     // ── parent ──
-    ck('f2 切到「挂靠为空」', await setFilter('parent'), null);
+    ck('f2 切到“挂靠为空”', await setFilter('parent'), null);
     same('f2 ★ 挂靠过滤显示集 = 独立重算的非 world 孤儿集', rowIds().slice().sort(), expIds('parent'));
     const worlds = proj.entityList.filter(e => e.layer === 'world');
     ck('f2 ★ world 不出现在挂靠过滤里（顶层是合法的，实测 9 空里 4 个是 world）',
@@ -287,11 +287,11 @@ JS = r"""(async () => {
        worlds.filter(w => rowIds().indexOf(w.id) >= 0).map(w => w.id));
 
     // ── any ──
-    ck('f2 切到「任一为空」', await setFilter('any'), null);
+    ck('f2 切到“任一为空”', await setFilter('any'), null);
     same('f2 any = 两类空白的并集', rowIds().slice().sort(), expIds('any'));
 
     // ── all 还原 ──
-    ck('f2 切回「全部」', await setFilter('all'), null);
+    ck('f2 切回“全部”', await setFilter('all'), null);
     same('f2 全部模式恢复整树', rowIds().slice().sort(), expIds('all'));
     ck('f2 all 模式不显示计数条', !q('.project-panel [data-testid="gap-count"]'), null);
   }

@@ -1,7 +1,7 @@
 // P2: 文本标签宽度测量 — 绘制（planetDrawing.drawTextLabels）、命中
 // （planetHitTest.hitTestTextLabel）、手柄框（selectionHandles.getSelectionBox）
 // 三处共用同一 measureText，保证视觉文本、命中区、手柄框三者严丝合缝。
-// 旧实现用「字符数 × 字号 × 0.9」估算宽度，中英混排时误差可达数十字像素。
+// 旧实现用“字符数 × 字号 × 0.9”估算宽度，中英混排时误差可达数十字像素。
 
 let sharedCtx = null;
 

@@ -5,13 +5,13 @@
 施工单验收线（`02-司天-三刀序列.md` 任务一）：
   · 纯数据层：事件录入接口（谁 / 什么事 / 起 / 止）、时间轴排序、状态查询（某时间点各方关系）；
   · 全自测：录入 → 查询 → 边界（同日多事件 / 跨年事件 / 事件冲突）；
-  · 用户抽查一问（「X 年 Y 和 Z 什么关系」）账本能答对。
+  · 用户抽查一问（“X 年 Y 和 Z 什么关系”）账本能答对。
 
 本用例守的是**接线与往返**（纯函数层的判据在 `unit/test_scenario_event_ledger.js`）：
   a 源码闸门：账本只有一份实现（`utils/scenarioEventLedger.js`），store 只搬数据；
     命令行工具与迁移工具共用 `scripts/lib/loadRendererUtils.mjs`（不许再抄第三份 loader）
   b 录入：`addTimelineEvent` 走 store → 事件进 `scenario.timelineEvents`，坏输入**整条拒绝**并点名；
-  c 查询：`queryRelationAt` 答得出「2004 年甲乙什么关系」，战争终止后不会谎称「没有记录」；
+  c 查询：`queryRelationAt` 答得出“2004 年甲乙什么关系”，战争终止后不会谎称“没有记录”；
   d 冲突：同日/重叠的相反关系被 `auditTimelineEvents` 报出来（不是静默合并）；
   e 撤销：一次录入 = 一条 undo；undo/redo 前后事件表逐字节可复原；
   f 落盘：等自动保存 → 项目载荷里真有 `timelineEvents`（可 JSON 往返）；
@@ -140,7 +140,7 @@ MAIN_JS = r"""
   });
   ok('b5 起止颠倒的录入被整条拒绝', !!(bad && bad.ok === false), bad);
   ok('b6 被拒的录入没有写进事件表', events().length === 1, events().length);
-  ok('b7 拒绝理由点名了「早于」', !!(bad && (bad.errors || []).some((e) => e.indexOf('早于') >= 0)), bad && bad.errors);
+  ok('b7 拒绝理由点名了“早于”', !!(bad && (bad.errors || []).some((e) => e.indexOf('早于') >= 0)), bad && bad.errors);
 
   // ── c 查询 ────────────────────────────────────────────────────────────────
   const q1 = s.queryRelationAt(SC, 'P1', 'P2', '2004');
@@ -149,7 +149,7 @@ MAIN_JS = r"""
      && q1.text.indexOf('甲乙战争') >= 0 && q1.text.indexOf('甲国') >= 0), q1 && q1.text);
   const q2 = s.queryRelationAt(SC, 'P1', 'P2', '2009');
   ok('c3 战争终止后为中立', !!(q2 && q2.relation === 'Neutral'), q2);
-  ok('c4 🔴 终止后不许谎称「没有记录」', !!(q2 && q2.text && q2.text.indexOf('已终止') >= 0
+  ok('c4 🔴 终止后不许谎称“没有记录”', !!(q2 && q2.text && q2.text.indexOf('已终止') >= 0
      && q2.text.indexOf('甲乙战争') >= 0), q2 && q2.text);
   const q3 = s.queryRelationAt(SC, 'P1', 'P3', '2004');
   ok('c5 没打过交道的两方 = 无记录', !!(q3 && q3.text && q3.text.indexOf('没有已记录') >= 0), q3 && q3.text);
@@ -163,7 +163,7 @@ MAIN_JS = r"""
   const audit = s.auditTimelineEvents(SC);
   const conflicts = ((audit && audit.warnings) || []).filter((w) => w.code === 'conflicting-relations');
   ok('d2 重叠的相反关系被点名', conflicts.length === 1, audit && audit.warnings);
-  ok('d3 查询按「后录入者生效」给同盟', !!(s.queryRelationAt(SC, 'P1', 'P2', '2006').relation === 'Ally'), null);
+  ok('d3 查询按“后录入者生效”给同盟', !!(s.queryRelationAt(SC, 'P1', 'P2', '2006').relation === 'Ally'), null);
   const rmAlly = s.removeTimelineEvent(SC, ally.event.id);
   ok('d4 删掉同盟后又回到敌对', !!(rmAlly && rmAlly.ok && s.queryRelationAt(SC, 'P1', 'P2', '2006').relation === 'Enemy'), rmAlly);
   ok('d5 删完只剩一条冲突都不报', ((s.auditTimelineEvents(SC).warnings || []).filter((w) => w.code === 'conflicting-relations').length) === 0, null);

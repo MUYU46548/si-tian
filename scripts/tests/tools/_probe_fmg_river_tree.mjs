@@ -27,7 +27,7 @@ const mouthPts = [], headPts = [];
 for (const r of rivers) {
   const pts = r.points;
   const A = pts[0], B = pts[pts.length - 1];
-  // FMG 的 points 顺序：通常是「上游→下游」，但两种都认
+  // FMG 的 points 顺序：通常是“上游→下游”，但两种都认
   const aSea = isSea(A.x, A.y), bSea = isSea(B.x, B.y);
   if (aSea || bSea) mouthInSea++;
   if (aSea) mouthPts.push({ x: A.x, y: A.y });

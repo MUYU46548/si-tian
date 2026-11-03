@@ -7,7 +7,7 @@
 // 取值来源：主进程 getVaultPath()（userData/config.json 的 vaultPath）→ 取 basename。
 // 不做长期缓存：用户可在设置面板换库，每次跳转前重新取一次（IPC，开销可忽略）。
 //
-// 兜底（2026-09-21）：只认「上一次成功解析到的库名」（内存 + localStorage），
+// 兜底（2026-09-21）：只认“上一次成功解析到的库名”（内存 + localStorage），
 // **不内置任何库名** —— 产品不该假定用户的库叫什么（库名随时可改，写死一个名字
 // 会在换库后把跳转静默引向错误的库）。一次都没解析到时宁可不发 URI，也不乱跳。
 import { ref } from 'vue';
@@ -92,12 +92,12 @@ export async function getVaultPath() {
 
 /**
  * 打开知识库本体 —— 用户需求（2026-09-22）：
- * 「连我都不知道去哪里打开知识库」→ 任何视图都要有一键可达的入口。
+ * “连我都不知道去哪里打开知识库”→ 任何视图都要有一键可达的入口。
  *
- * 三级兜底，保证「点了必有反应」：
+ * 三级兜底，保证“点了必有反应”：
  *   ① obsidian://open?vault=<库名>（在 Obsidian 里打开这个库）
  *   ② 打不开（没装 Obsidian / 协议未注册）→ 在资源管理器里定位库目录
- *   ③ 连库路径都取不到 → 返回 { ok:false }，调用方给出「先去设置里选知识库」的提示
+ *   ③ 连库路径都取不到 → 返回 { ok:false }，调用方给出“先去设置里选知识库”的提示
  * @returns {Promise<{ok: boolean, how?: 'obsidian'|'folder', path?: string}>}
  */
 export async function openVault() {
@@ -124,7 +124,7 @@ export async function openVault() {
   return { ok: false };
 }
 
-/** 在资源管理器中定位知识库目录（用于「打开文件夹」按钮） */
+/** 在资源管理器中定位知识库目录（用于“打开文件夹”按钮） */
 export async function revealVault() {
   const path = await getVaultPath();
   if (!path) return { ok: false };

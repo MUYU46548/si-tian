@@ -14,7 +14,7 @@
     <div class="panel-content" @click="handlePanelClick">
       <!-- 回退按钮（浏览历史非空时显示） -->
       <button v-if="nodeHistory.length > 0" class="history-back-btn" @click="goBackToNode" title="返回上一个查看的节点">
-        ← 返回「{{ nodeHistory[nodeHistory.length - 1].displayName || nodeHistory[nodeHistory.length - 1].name }}」
+        ← 返回“{{ nodeHistory[nodeHistory.length - 1].displayName || nodeHistory[nodeHistory.length - 1].name }}”
       </button>
 
       <!-- 操作按钮（高频前置，任何 tab 下常驻可见） -->
@@ -101,7 +101,7 @@
           <div class="lore-missing-actions">
             <button class="action-btn" data-testid="lore-retry" @click="loadNote">重试</button>
             <button class="action-btn" data-testid="lore-search" @click="searchVaultByName"
-                    title="在全库资料里按这个名字找（只读检索，不改笔记）">全库搜索「{{ node.name }}」</button>
+                    title="在全库资料里按这个名字找（只读检索，不改笔记）">全库搜索“{{ node.name }}”</button>
           </div>
         </section>
 
@@ -124,7 +124,7 @@
         </section>
 
         <!-- 库内资料（读料桥，N3a-3）：按节点名做**只读**检索（主进程索引，不读正文）。
-             传了 node-id 才出现「绑定 / 导入为节点」两个写口 —— 两者各一条撤销、只读态灰禁；
+             传了 node-id 才出现“绑定 / 导入为节点”两个写口 —— 两者各一条撤销、只读态灰禁；
              不传就与省份/标记面板完全同形（纯只读）。实现只有 VaultLoreSection 一份。 -->
         <vault-lore-section
           :query="node.name"
@@ -289,7 +289,7 @@
           <select :value="node.placeType || ''" @change="updatePlaceType($event.target.value)">
             <option value="">未设置（回落默认样式）</option>
             <!-- 选项 = 8 枚举 ∪ 当前值（placeTypeOptions）：只给 8 枚举会把笔记手写的第 9 种值
-                 静默显示成「未设置」，用户一动下拉就把它抹掉（A-3 补刀①） -->
+                 静默显示成“未设置”，用户一动下拉就把它抹掉（A-3 补刀①） -->
             <option v-for="t in placeTypeOptions(node.placeType)" :key="t" :value="t">{{ t }}</option>
           </select>
         </div>
@@ -338,7 +338,7 @@
             <Icon name="castle" :size="13"/> Burg Editor（规模 / 人口 / 文化）
           </button>
         </div>
-        <!-- 叙事状态（2026-09-24）：用户决策「毁灭只是叙事状态，不是数据删除」——
+        <!-- 叙事状态（2026-09-24）：用户决策“毁灭只是叙事状态，不是数据删除”——
              状态只影响**怎么显示**（画布/列表淡化），坐标 / 地图 / 剧本数据一律完整保留。
              清空数据才是真的毁掉历史地图，所以这里绝不联动任何删除。 -->
         <div class="prop-field" data-testid="entity-status-field">
@@ -704,7 +704,7 @@ async function createCulture() {
   if (!pid) { alert('请先在地图上进入该聚落所属的行星'); return; }
   const name = await askText({ title: '文化名称', defaultValue: '新文化' });
   if (!name) return;
-  // 关键：文化列表存在 mapData 里，而 mapData 是「进入行星视图才懒加载」的。
+  // 关键：文化列表存在 mapData 里，而 mapData 是“进入行星视图才懒加载”的。
   // 从左侧树直接点开聚落详情时缓存可能为空 —— 先按需加载，否则写进去的文化会被当成
   // 空 mapData 覆盖写回磁盘（丢数据）。
   await store.loadMapData(pid);
@@ -858,7 +858,7 @@ function handleReparent(newParentId) {
   const currentName = currentParentId ? (store.nodes.find(n => n.id === currentParentId)?.name || '未知') : '无（顶层）';
   
   // 确认迁移
-  const confirmed = confirm(`确定将「${node.value.name}」的上级节点从「${currentName}」修改为「${targetName}」？`);
+  const confirmed = confirm(`确定将“${node.value.name}”的上级节点从“${currentName}”修改为“${targetName}”？`);
   if (!confirmed) return;
 
   const result = store.reparentNode(node.value.id, newParentId);
@@ -907,7 +907,7 @@ function goBackToNode() {
 
 // ── 叙事状态（2026-09-24）────────────────────────────────────────────────────
 // 决策：**毁灭只是叙事状态**，不是数据删除。实体可以保留（用状态标记），也可以根本不建
-// （那种情况走「剧本底图自持高度图」，见 docs/A1_DATA_MODEL_DECISION.md 第六节）。
+// （那种情况走“剧本底图自持高度图”，见 docs/A1_DATA_MODEL_DECISION.md 第六节）。
 import { statusOptions, resolveStatus, statusMeta } from '../utils/entityStatus';
 
 const statusChoices = statusOptions();
@@ -980,7 +980,7 @@ async function openSourceInObsidian() {
 // ★ id 连续性（2026-09-16）：笔记落盘后把节点 id 从随机 id 切换为 normalizeId(文件名)，
 //   并级联更新全部引用（子节点 parentId / 地图数据 / 剧本归属 / 建筑内部 …）。否则下次
 //   extract-data 会按文件名再生成一个同义节点，而引用仍指向旧 id（幽灵引用）。
-//   目标 id 已被占用时降级为「只回填 sourcePath，id 不变」，不阻断转正，并在面板内提示。
+//   目标 id 已被占用时降级为“只回填 sourcePath，id 不变”，不阻断转正，并在面板内提示。
 async function promoteDraft() {
   const n = node.value;
   if (!n || promoting.value) return;
@@ -1008,7 +1008,7 @@ async function promoteDraft() {
     if (changeResult.success) {
       store.updateNode(n.id, { sourcePath: result.path, draft: false });
       promoteNotice.value = changeResult.changed
-        ? { kind: 'ok', text: `已转正：节点 id 同步为「${changeResult.newId}」，级联更新 ${changeResult.refs} 处引用、${changeResult.dictKeys} 个数据字典` }
+        ? { kind: 'ok', text: `已转正：节点 id 同步为“${changeResult.newId}”，级联更新 ${changeResult.refs} 处引用、${changeResult.dictKeys} 个数据字典` }
         : { kind: 'ok', text: '已转正：节点 id 与笔记名一致，无需变更' };
     } else {
       store.updateNode(n.id, { sourcePath: result.path, draft: false });
@@ -1073,7 +1073,7 @@ function removeFromMap() {
   const childCount = store.nodes.filter(n => n.parentId === target.id).length;
   const linkCount = store.getHyperlanesForNode(target.id).length;
   
-  const msg = `确定从地图移除「${target.name}」吗？\n\n` +
+  const msg = `确定从地图移除“${target.name}”吗？\n\n` +
     `将同时移除 ${linkCount} 条关联航道` +
     (childCount ? `，并把 ${childCount} 个子节点置为未归属` : '') +
     `。\n\n仅移除坐标缓存，不会删除 Obsidian 笔记。可用 Ctrl+Z 撤销。`;
