@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="galaxy-map-container">
     <div class="map-header">
       <div class="header-left">
@@ -151,6 +151,7 @@ import { withAlpha, toHex6 } from '../utils/colorUtil';
 import {
   getFactionColor, resolveDomainColor as resolveDomainColorShared,
   layoutDomains, layoutGalaxies, factionBorders, hyperlaneColor, sparsifyHyperlanes,
+  lanesVisibleAt, LANE_FAR_LOD,
 } from '../utils/galaxyLayout';
 // 星系绘制美术（**吸收自 SP-1025 原型**，2026-11-01）：背景资产 / 恒星色温与归属环 / LOD 标签。
 // 🔴 这三件同时被“导出 PNG(全图)”（App.vue）调用 —— 同一份实现，不许各画一套。
@@ -560,10 +561,17 @@ const visibleHyperlanes = computed(() => {
  * 稀疏化只改渲染，不改 `store.hyperlanes`（数据一条不删）。
  */
 const _laneCache = { key: '', list: [] };
+const _EMPTY_LANES = [];
 function hyperlanesToDraw() {
   const vt = renderer.getViewTransform();
   const scale = vt.scale || 1;
   const lod = Math.min(1, Math.max(0, (scale - 0.3) / 0.7));
+  // 远景整批不画（群星全景没有连接线）。画与命中吃同一份，所以这里返回空 → 点也点不到。
+  if (!lanesVisibleAt(lod, { editMode: editMode.value, hovered: !!hoveredHyperlane })) return _EMPTY_LANES;
+  // 远景但悬停了一条：**只画那一条** —— 否则一碰鼠标，整张网突然抖出来（实测 15 条）。
+  if (!editMode.value && lod < LANE_FAR_LOD && hoveredHyperlane) {
+    return visibleHyperlanes.value.filter(h => h.id === hoveredHyperlane);
+  }
   const key = `${Math.round(scale * 100)}:${editMode.value}:${store.hyperlanes.length}:${hoveredHyperlane}:${visibleHyperlanes.value.length}`;
   if (_laneCache.key === key) return _laneCache.list;
   const list = sparsifyHyperlanes(visibleHyperlanes.value, {
@@ -692,6 +700,7 @@ function drawHyperlanes(ctx) {
   // 批次C2：视口裁剪——端点+控制点的包围盒与视口不相交的航道整条跳过
   // （bezier/quadratic 曲线必在控制点凸包内，此测试不会漏画穿屏曲线）
   const vt = renderer.getViewTransform();
+  const lod = Math.min(1, Math.max(0, ((vt.scale || 1) - 0.3) / 0.7));
   const cvs = canvas.value;
   let vp = null;
   if (cvs) {
@@ -794,7 +803,23 @@ function drawHyperlanes(ctx) {
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     ctx.restore();
-    
+
+    // ── 端点小圆点（2026-11-03，群星的航道两端有这么一颗点）────────────────────
+    // 只在中/近景画（远景整批线都不画了，点也没意义）；直径 ≈4.4 屏幕像素、与线同色。
+    // 画在**节点层之前**：恒星会盖住半个点 —— 正是要的效果（线看起来"接进"星球）。
+    if (lod >= 0.3) {
+      const dotR = 2.2 * px;
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = color;
+      for (const p of [from, to]) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
     if (editMode.value && isHovered) {
       const midX = (from.x + to.x) / 2;
       const midY = (from.y + to.y) / 2;

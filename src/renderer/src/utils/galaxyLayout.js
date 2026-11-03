@@ -461,6 +461,22 @@ export function hyperlaneColor(h, opts = {}) {
 }
 
 /**
+ * 远景整批不画航道（2026-11-03，对照群星截图）：群星的全景**一条连接线都没有** ——
+ * 远景是“星点 + 领土色块”，线一出现整幅图就变成蛛网。所以这里给一个明确的 LOD 门槛，
+ * 画布与命中测试**都**走它（`hyperlanesToDraw` 是唯一入口）：
+ *   · 编辑态 → 永远画（要能点、能改）；
+ *   · 有悬停/选中的那条 → 永远画（不能“看不见却点得到”）；
+ *   · 其余：`lod < LANE_FAR_LOD` 时整批不画。
+ * ⚠️ 导出 PNG 走的是中景（`lod: 0.45`），不受这个门槛影响。
+ */
+export const LANE_FAR_LOD = 0.22;
+
+export function lanesVisibleAt(lod, opts = {}) {
+  if (opts.editMode || opts.hovered) return true;
+  return !(Number(lod) < LANE_FAR_LOD);
+}
+
+/**
  * 航道稀疏化（2026-11-02，对应用户第 2 条“跨域航道数量本身没做稀疏化，数据多时仍偏吵”）。
  *
  * 只改**画什么**，不改数据（`hyperlanes` 一条都不删 —— 删一条就是改世界观）。

@@ -296,6 +296,20 @@ async function main() {
     return [auto, user, cross, jump].join(' / ');
   });
 
+  check('i1 远景整批不画航道（群星全景没有线）；编辑态 / 悬停例外，画与命中同一份', () => {
+    assert(typeof G.lanesVisibleAt === 'function', '缺 lanesVisibleAt（唯一实现）');
+    assert(G.lanesVisibleAt(0.1, {}) === false, '远景应不画');
+    assert(G.lanesVisibleAt(0.3, {}) === true, '中景应画');
+    assert(G.lanesVisibleAt(G.LANE_FAR_LOD, {}) === true, '边界值应画（>= 门槛）');
+    assert(G.lanesVisibleAt(0.1, { editMode: true }) === true, '编辑态必须画（要能点、能改）');
+    assert(G.lanesVisibleAt(0.1, { hovered: true }) === true, '悬停那条必须画（不能看不见却点得到）');
+    // 源码闸门：GalaxyMap 的 hyperlanesToDraw 必须走这个判据，且航道端点要有圆点
+    const gm = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'components', 'GalaxyMap.vue'), 'utf8');
+    assert(/if \(!lanesVisibleAt\(lod/.test(gm), 'GalaxyMap 没接 lanesVisibleAt（画与命中会分家）');
+    assert(/2\.2 \* px/.test(gm), 'GalaxyMap 没有航道端点圆点（2.2px）');
+    return `门槛 lod=${G.LANE_FAR_LOD}`;
+  });
+
   check('e2 节点观感：星系用势力色（导出原先固定 #ffd700）；半径按层', () => {
     assert(G.nodeColor({ layer: 'galaxy', factionColor: '#ff00ff' }) === '#ff00ff', '星系应用势力色');
     assert(G.nodeColor({ layer: 'galaxy' }) === '#4a90d9', '没势力时用默认星系色');
