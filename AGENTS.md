@@ -114,6 +114,8 @@
 - **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > `docs/guides/20261023/00-…`（指南包）> `docs/plan/SITIAN_GUIDE_DIGEST_20261023.md`（仓内对账）> 其余（历史，在 `docs/archive/`）
 
 - **现行规划（2026-10-30 起：`docs/plan/PLAN_AUDIT_20261030.md` 是唯一施工依据）**：
+  - **现状一页纸 = [docs/plan/STATUS_20261103.md](docs/plan/STATUS_20261103.md)**（接手先读这个：
+    能力 / 数字 / 性能口径 / 没做到的 / 下一轮三件）；**逐项怎么测 = [docs/plan/TEST_CHECKLIST_20261103.md](docs/plan/TEST_CHECKLIST_20261103.md)**。
   - **总入口** = [docs/plan/PLAN_AUDIT_20261030.md](docs/plan/PLAN_AUDIT_20261030.md)（阶段门 N0/N1/N2/N3/N4 + 判据 + 已拍板事项）；
     **接手先读** [docs/plan/BREAKPOINT_20261102.md](docs/plan/BREAKPOINT_20261102.md)（当前断点：**把在列的活全部做掉** ——
     星域边界所有权场 φ 软融合 / 航道稀疏化 / 恒星系轨道分级 + 日冕 / N3a-1 provenance / N3a-2 外交表 /
@@ -191,7 +193,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 83 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 84 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 46 | `grep -c "ipcMain.handle" src/main/index.js` |

@@ -17,7 +17,7 @@
 | A2 | `npm run test:overlays` | 六个浮层 × 9 条全绿 | `build/overlays-visual/<panel>.png`（6 张）+ `summary.json` |
 | A3 | `npm run test:owner-latency` | ④⑤⑥⑦ 全绿；① **目前预期是红**（实测松手中位 ≈62ms，口径 ≤50ms —— 本轮新发现，拆账见 summary：写口 3.3ms，其余 ≈59ms 在松手后的同步收尾） | `build/owner-latency/<时间戳>/summary.md` + `result.json` |
 | A4 | `npm run test:sample-galaxy` | 4 星域 / 120 恒星 / 175 航道；撤销一次回 1 节点；harness 零污染 | `build/sample-galaxy/generated.png` + `summary.json` |
-| A5 | `python scripts/tests/run_tests.py` | **163/163**（含 84 个 Node 单测） | 控制台；日志可存 `build/_regress_*.log` |
+| A5 | `python scripts/tests/run_tests.py` | **163/163**（含 84 个 Node 单测）。⚠️ 长会话里 `test_21_brushes` 会卡在第 6 步 —— 那就“其余 162 个一批 + `test_21_brushes` 单跑”，两边都绿即全部覆盖 | 控制台；日志可存 `build/_regress_*.log` |
 | A6 | `node scripts/tests/unit/test_scenario_map_split.js` | 7/7（体量 ≤7,000 行 + 六个浮层各恰好一次 + AST 祖先链闸门 + 负向探针） | 控制台 |
 | A7 | `node scripts/quote-audit.mjs` | 界面 0 / 代码 0 | 控制台 |
 
