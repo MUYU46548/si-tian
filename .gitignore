@@ -198,3 +198,7 @@ build/diplomacy-write/
 # 笔记绑定演练产物（2026-11-05）：含项目与资料库的副本（副本里会写索引），本地证据，禁止提交
 # 复现：npm run test:note-binding
 build/note-binding/
+
+# 演变过渡演练产物（2026-11-05）：过渡期逐帧像素采样 + 过渡帧截图，本地证据，禁止提交
+# 复现：npm run test:era-smooth
+build/era-smooth/

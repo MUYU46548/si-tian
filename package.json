@@ -22,6 +22,7 @@
     "test:undo-latency": "python scripts/tests/drill_undo_latency.py",
     "test:diplomacy-write": "python scripts/tests/drill_diplomacy_write.py",
     "test:note-binding": "python scripts/tests/drill_note_binding.py",
+    "test:era-smooth": "python scripts/tests/drill_era_smooth.py",
     "test:sample-galaxy": "python scripts/tests/drill_sample_galaxy.py",
     "test:packaged": "python scripts/tests/drill_packaged_app.py",
     "dist": "npm run build && electron-builder",

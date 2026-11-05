@@ -188,6 +188,25 @@
   （真机第一跑就是这么红的）。
   ⚠️ **标记的撤销以前不落盘**：`put()` / `spliceBack`（undo/redo 共用的落点）里没排保存，
   改了标记再 Ctrl+Z、关掉重开又回来 —— 这轮把调度收口进那两个写入函数（与事件表同一个坑）。
+- **演变过渡（A2，2026-11-05）**: `npm run test:era-smooth`（`drill_era_smooth.py`）——
+  Vite(5180) + Edge headless(9222) + **两代自建剧本**（时代 I 全归甲国红 → 时代 II 全归乙国蓝，
+  两代显式不同 `lineage`，所以**整代全部省**都是变化省）。页面内 rAF 采样器每帧读**同一个省中心**
+  的画布像素 + `window.__SITIAN_ERA_FADE__`，采样 180ms 后把 `tlDate` 推到 2016 触发换代，采满 1.9s
+  一次性取回。判据：① 过渡期采到**中间色**（逐通道落在两端之间）② 末样本 = 新主色（过渡会结束）
+  ③ **负向探针**：`__SITIAN_ERA_FADE_MS__ = 0` 同一套动作**一个中间色都没有**（硬跳）
+  ④ 过渡进行中 `makeLayerView({ snapshot: true })` 取到的已是新主色（**导出永不带过渡**）。
+  产物 `build/era-smooth/<ts>/{result.json,summary.md,mid.png}`。实测 17/17；过渡期 61 条中间色样本。
+  - 覆盖口：`window.__SITIAN_ERA_FADE_MS__`（默认 **320ms**，0 = 关、上限 3000；**每次换代现读**）。
+    🔴 真机判据抓到的坑：把时长缓存成模块级常量后，页面里再改覆盖口要等重载才生效
+    （drill 读到的 `dur` 一直是 320，读起来像"覆盖口没接上"）。
+  - 实现：纯函数 `utils/eraTransition.js`（进度 smoothstep / 颜色混合 / 时长口径）；取色口
+    `province.js#provinceColorAt(prov, eraIndex)` 按**指定代号**可查（上一代的颜色才算得出来），
+    `getProvinceColor(prov, fade)` 在 `t∈(0,1)` 时混合、`t=1` 直接返回新色；
+    `makeLayerView({ snapshot: true })` 把过渡钉死为 null（`exportPNG` 六处全走它）。
+  - 静态帧**一个像素没变**：`drill_scenario_pixels --tag v20261105g` 与 `v20261105f` 完全一致
+    （`hash f60036f4` / `hashNoLabels 443de52c` / `riverHash 71434f74`），基线不重立。
+  - 边界（刻意）：过渡只影响**画布那一帧的颜色**，不改数据、不是"新势力"；过渡色只是两端插值，
+    中间色不代表任何一方。年内逐日落定的单省变色的跳变不做过渡（播放一代 1300ms，那一下很小）。
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与

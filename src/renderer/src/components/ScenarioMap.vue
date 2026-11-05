@@ -2031,6 +2031,10 @@ import {
   settledCount, eraIndexOfYear, findGap,
   dateToYearValue, formatDate,
 } from '../utils/scenarioTimeline';
+// A2（2026-11-05）演变过渡：换代时“旧主色 → 新主色”的插值状态机（纯函数在 utils/eraTransition.js）
+import { createEraFade } from '../scenario/interaction/eraFade';
+// 颜色混合（唯一实现）：A2 的过渡色与“无主省 = 纸面底色 + 群系淡调”共用
+import { mixCssColor } from '../utils/eraTransition';
 import { useScenarioExport } from '../composables/useScenarioExport';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import { useProvinceBrush } from '../composables/useProvinceBrush';
@@ -3328,6 +3332,12 @@ const TL_ERA_MS = 1300;
 let tlRafId = null;
 let tlLastT = 0;
 
+// A2（2026-11-05）演变过渡：换代那一刀不再是硬跳（原话“演变动画不平滑”）。
+// 落点不在播放环（`tlFrame` 一直逐帧推进），而在 `tlEra` 一变取色立刻换成新主的那一帧。
+// 这里只装配状态机；插值口径/时长覆盖口（`window.__SITIAN_ERA_FADE_MS__`）/自驱动都在
+// `interaction/eraFade.js`，纯函数在 `utils/eraTransition.js`（含那个“时长必须现读”的真机坑）。
+const eraFade = createEraFade({ tlEra, render });
+
 
 // ⚠️ `tlPlayT` 在模块顶部声明（时间轴区域）—— 播放环与 watch 都要用，别在这里再 let 一次（重复声明会静默遮蔽）
 // tlFrame 已搬到 actions.js（2026-10-31）
@@ -3362,12 +3372,14 @@ watch(tlPlaying, (v) => {
 //    t=1059 空帧 → t=1067 才适屏）。与本文件 `watch(sortedScenarios…)` 同一条纪律。
 
 // era 变化 → 编辑目标（selectedScenario）跟着走
-watch(tlEra, (k) => {
+// A2：顺带启动演变过渡（`oldK` = 上一代的代号，它的颜色才是“淡出”的起点）
+watch(tlEra, (k, oldK) => {
   const s = timeline.value.scenarios[k];
   if (s && selectedScenario.value?.id !== s.id) {
     selectedScenario.value = s;
     selectedPolity.value = null;   // 同上：polity id 跨剧本不通用
   }
+  eraFade.start(oldK);
   render();
 });
 
@@ -5360,9 +5372,12 @@ const isAnyRaster = () => rasterLayer.value === 'landsea' || isRasterBase();
  *   ② 将来"在整张图之上套质感"时，质感层拿到的是同一份 view，而不是 28 个各画各的闭包；
  *   ③ 导出（`exportPNG`）与画布用同一份 view，天然同源（此前导出各写一套 → 导出与画布不一致且不报错）。
  */
-function makeLayerView() {
+function makeLayerView(opts) {
   // 浮雕底只在政治档开（见 reliefOn 上方注释）；每帧算一次，别让每个层各算一遍
   const relief = reliefOn();
+  // A2：过渡态只属于**画布这一帧**。`snapshot: true`（导出/切片）永远是确定态 ——
+  // 导两次必须逐像素一致，不能因为"正好赶上过渡"就导出一张中间色。
+  const eraFadeNow = (opts && opts.snapshot) ? null : eraFade.current();
   return {
     w: cw(),
     h: ch(),
@@ -5408,7 +5423,9 @@ function makeLayerView() {
     rawTerrain,
     rawProvOf,
     provincePathFor,
-    getProvinceColor,
+    // A2：取色口把过渡固定进这一帧的 view（层只管 `view.getProvinceColor(prov)`，
+    // 不用知道过渡的存在；导出走 `snapshot` → 这里恒为 null）
+    getProvinceColor: (prov) => getProvinceColor(prov, eraFadeNow),
     // 国界（三级线宽中间一级）：共边两侧归属不同的那些边 + 画法常量
     polityBorderEdges,
     POLITY_BORDER_COLOR,
@@ -5698,33 +5715,17 @@ const PROVINCE_BORDER_COLOR = BORDER_COLOR;
  *  见 BREAKPOINT 第十一节）/ 省界 0.7（本值）。 */
 const PROVINCE_BORDER_PX = 0.7;
 
-/** 十六进制色混合：`t=0` 全 a、`t=1` 全 b（非 6 位色退回 a） */
-function mixHexColor(a, b, t) {
-  const pa = String(a || '').match(/^#([0-9a-f]{6})$/i);
-  const pb = String(b || '').match(/^#([0-9a-f]{6})$/i);
-  if (!pa) return a;
-  if (!pb) return a;
-  const k = Math.max(0, Math.min(1, Number(t) || 0));
-  const av = parseInt(pa[1], 16), bv = parseInt(pb[1], 16);
-  const ch = (sh) => {
-    const x = (av >> sh) & 255, y = (bv >> sh) & 255;
-    return Math.round(x + (y - x) * k);
-  };
-  return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0')}`;
-}
-
 /**
  * 无主省份的底色（2026-10-27，用户 B1“黑一块白一块”）。
- *
- * 旧实现：剧本模式里**没有势力归属**的省一律刷 `#4a5568`（深灰蓝）—— 真实 415 省项目
- * 大部分省在早期年份是无主的，于是整块大陆变成一块灰蓝，中间夹几个有主色/湖泊色，
- * 就是"黑一块白一块"。EU4 的读法是：**无主 = 露出地形本色**，只有有主的地方才上势力色。
- * 这里同理：纸面底色 + 群系淡淡一调（有群系时），有主省仍由势力色覆盖。
+ * 旧实现：剧本模式里无主的省一律刷 `#4a5568`（深灰蓝）—— 真实 415 省项目大部分省在早期年份
+ * 无主，于是整块大陆变成灰蓝夹几个有主色，就是"黑一块白一块"。EU4 的读法是：无主 = 露出地形
+ * 本色，只有有主的地方才上势力色。这里同理：纸面底色 + 群系淡淡一调。
+ * ⚠️ 混合走 `utils/eraTransition.js#mixCssColor`（2026-11-05 收口，本文件不再留第二份实现）。
  */
 const UNOWNED_LAND_HEX = '#d8d2c2';
 function unownedProvinceColor(prov) {
   const b = showBiomes.value && prov && prov.biome ? BIOME_COLORS[prov.biome] : '';
-  return b ? mixHexColor(UNOWNED_LAND_HEX, b, 0.28) : UNOWNED_LAND_HEX;
+  return b ? mixCssColor(UNOWNED_LAND_HEX, b, 0.28) : UNOWNED_LAND_HEX;
 }
 
 // getProvinceColor 已搬到 province.js（2026-10-31）

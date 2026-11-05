@@ -77,18 +77,20 @@ function exportPNG() {
   ctxRef.scale(cameraScale.value, cameraScale.value);
   // 导出与画布**同一份 view / 同一批层函数**（N1 刀 1）——
   // 此前导出各写一套，"导出的东西画布上看不见"且不报错（M2/A2 的教训）
-  const exportView = makeLayerView();
+  // ⚠️ `snapshot: true`（A2，2026-11-05）：导出必须是**确定态**，不带演变过渡的中间色 ——
+  //   否则同一份数据正好在过渡期导两次会得到不同像素（"导出诚实"的延伸）。
+  const exportView = makeLayerView({ snapshot: true });
   drawBackgroundLayer(ctxRef, exportView);
   drawProvincesLayer(ctxRef, exportView);
   // 国界（2026-11-03）：导出与画布同一份判定（`view.polityBorderEdges` 是同一份缓存）
   drawPolityBordersLayer(ctxRef, exportView);
   if (showBurgs.value) {
-    drawBurgsLayer(ctxRef, makeLayerView());
-    if (showPlaceNames.value) labelLayers.drawPlanned(ctxRef, makeLayerView(), ['capital', 'town']);
+    drawBurgsLayer(ctxRef, makeLayerView({ snapshot: true }));
+    if (showPlaceNames.value) labelLayers.drawPlanned(ctxRef, makeLayerView({ snapshot: true }), ['capital', 'town']);
   }
-  labelLayers.drawScenarioLabels(ctxRef, makeLayerView());
+  labelLayers.drawScenarioLabels(ctxRef, makeLayerView({ snapshot: true }));
   // A8：导出必须与画布一致（M2/A2 的教训：导出各写一套 → 导出的东西画布上看不见，且不报错）
-  labelLayers.drawPolity(ctxRef, makeLayerView());
+  labelLayers.drawPolity(ctxRef, makeLayerView({ snapshot: true }));
   ctxRef.font = '14px "PingFang SC", sans-serif';
   ctxRef.fillStyle = 'rgba(255,255,255,0.7)';
   const scenarioName = selectedScenario?.value?.name || '未命名剧本';

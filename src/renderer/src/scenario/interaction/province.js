@@ -5,6 +5,7 @@
 //   其余 ref / const / 函数走 `ctx`；纯函数工具直接 import。
 
 import { SEA_FILL, nextProvinceColor } from '../../utils/scenarioPalette';
+import { mixCssColor } from '../../utils/eraTransition';
 import { conformToSkeleton } from '../../utils/provinceShape';
 import { currentOwnerRef, isStriped, polityColor } from '../../utils/scenarioTimeline';
 import { explainFreehandRejection, sanitizeFreehandRing, selfIntersectionCount } from '../../utils/freehandRing';
@@ -355,7 +356,14 @@ function handleMergeClick(world) {
   render();
 }
 
-function getProvinceColor(prov) {
+/**
+ * 某省在**指定剧本代号**下的底色（不含过渡）。
+ *
+ * 为什么要把 `k` 变成参数（A2，2026-11-05）：演变过渡要在“上一代”和“本代”两个
+ * 归属状态之间插值，所以取色必须能按代号查；原先它硬读 `tlEra.value`，
+ * 于是“上一代的颜色”根本算不出来。
+ */
+function provinceColorAt(prov, eraIndex) {
   // P4：海域**不参与归属着色**（海不是谁的领土）→ 永远用水面色，与剧本/时间轴无关
   if (prov && prov.kind === 'sea') return SEA_FILL;
 
@@ -367,7 +375,7 @@ function getProvinceColor(prov) {
   // 而不是用选中剧本的静态快照 —— 否则拖时间轴时地图不会随年份变。
   if (viewMode.value === 'scenario') {
     const tl = timeline.value;
-    const k = tlEra.value;
+    const k = Number.isFinite(eraIndex) ? eraIndex : tlEra.value;
     // 🔴 本函数自己取日期，**不要**依赖调用方作用域里的 `at`：它被 `drawProvinces`（有 `at`）
     //    之外的多条路径调用（导出、色板预览等），靠外层变量就是一个 `ReferenceError`，
     //    而渲染路径里的异常会被 render 护栏吞成“连续 3 帧失败 → 暂停渲染”——
@@ -378,7 +386,8 @@ function getProvinceColor(prov) {
       //   EU4 斜线占领 → 底色刻意保持**旧主**色（新主由斜线表达，两方本色）
       //   其他模式    → 底色 = **当前实际**持有者（关掉图层就该看到真实归属）
       // 颜色必须在 owner 所属的那个剧本里查（旧主 id 属于上一个剧本，跨剧本查会落到灰）
-      const ref = (tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, at))
+      const striped = tlDiffMode.value === 'eu4' && isStriped(tl, k, prov.id, at);
+      const ref = (striped && k > 0)
         ? { owner: tl.scenarios[k - 1].ownership?.[prov.id], era: k - 1 }
         : currentOwnerRef(tl, k, prov.id, at);
       // 无主 → 地形本色（不再刷一块深灰蓝；见 `unownedProvinceColor`）
@@ -402,6 +411,26 @@ function getProvinceColor(prov) {
 
   if (viewMode.value === 'scenario' && selectedScenario.value) return unownedProvinceColor(prov);
   return prov.biomeColor || '#bccda0';
+}
+
+/**
+ * 省份底色（画布与导出的唯一取色口）。
+ *
+ * @param {object} prov 省（`rawProvOf` 之后的渲染用省对象）
+ * @param {{t:number, fromEra:number}|null} [fade] 演变过渡（A2）：`t` 0→1 旧色→新色，
+ *        `fromEra` = 换代前那一代的代号。不传 / `t<=0` / `t>=1` / 两边同代 → 确定态颜色。
+ *        过渡色只是两端插值，**不落库、不是新势力**（见 `utils/eraTransition.js` 文件头）。
+ */
+function getProvinceColor(prov, fade) {
+  const base = provinceColorAt(prov, tlEra.value);
+  if (!fade) return base;
+  const t = Number(fade.t);
+  const fromEra = Number(fade.fromEra);
+  if (!(t > 0) || t >= 1) return base;
+  if (!Number.isFinite(fromEra) || fromEra < 0 || fromEra === tlEra.value) return base;
+  const prev = provinceColorAt(prov, fromEra);
+  if (!prev || prev === base) return base;     // 两代同色（没易主的省）不必混合
+  return mixCssColor(prev, base, t);
 }
 
 function setTool(t) {
