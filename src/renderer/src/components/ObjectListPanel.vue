@@ -29,8 +29,8 @@
           </span>
           <span class="row-tag">{{ terrainLabel(poly.type) }}</span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('terrain', poly)" title="重命名"><Icon name="pencil" :size="12"/></button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'terrain', id: poly.id })" title="删除"><Icon name="trash" :size="12"/></button>
+            <button class="mini-btn" @click="startRename('terrain', poly)" title="重命名"><Icon name="pencil" :size="12"/> 改名</button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'terrain', id: poly.id })" title="删除"><Icon name="trash" :size="12"/> 删除</button>
           </div>
         </div>
       </div>
@@ -49,8 +49,8 @@
             {{ m.name || markerLabel(m.type) }}
           </span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('marker', m)" title="重命名"><Icon name="pencil" :size="12"/></button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'marker', id: m.id })" title="删除"><Icon name="trash" :size="12"/></button>
+            <button class="mini-btn" @click="startRename('marker', m)" title="重命名"><Icon name="pencil" :size="12"/> 改名</button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'marker', id: m.id })" title="删除"><Icon name="trash" :size="12"/> 删除</button>
           </div>
         </div>
       </div>
@@ -71,8 +71,8 @@
           </span>
           <span class="row-tag">{{ r.dashed ? '虚线' : '实线' }}</span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('route', r)" title="重命名"><Icon name="pencil" :size="12"/></button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'route', id: r.id })" title="删除"><Icon name="trash" :size="12"/></button>
+            <button class="mini-btn" @click="startRename('route', r)" title="重命名"><Icon name="pencil" :size="12"/> 改名</button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'route', id: r.id })" title="删除"><Icon name="trash" :size="12"/> 删除</button>
           </div>
         </div>
       </div>
@@ -91,8 +91,8 @@
             {{ t.text || '文本' }}
           </span>
           <div class="row-actions">
-            <button class="mini-btn" @click="startRename('text', t)" title="重命名"><Icon name="pencil" :size="12"/></button>
-            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'text', id: t.id })" title="删除"><Icon name="trash" :size="12"/></button>
+            <button class="mini-btn" @click="startRename('text', t)" title="重命名"><Icon name="pencil" :size="12"/> 改名</button>
+            <button class="mini-btn danger" @click="$emit('delete-object', { type: 'text', id: t.id })" title="删除"><Icon name="trash" :size="12"/> 删除</button>
           </div>
         </div>
       </div>
@@ -327,28 +327,37 @@ function commitRename() {
   flex-shrink: 0;
 }
 
+/* 行内操作：以前是 opacity:0（悬停才出现）—— 用户实测“分不清删还是复制、也找不到”。
+   现在默认淡显（0.45），悬停/聚焦到行才变实。既不再要求“先悬停才知道这里有按钮”，也不会把行塞满。 */
 .row-actions {
   display: flex;
   gap: 2px;
-  opacity: 0;
+  opacity: 0.45;
   transition: opacity 0.15s;
   flex-shrink: 0;
 }
 
-.row:hover .row-actions {
+.row:hover .row-actions,
+.row:focus-within .row-actions {
   opacity: 1;
 }
 
+/* 2026-11-05：按钮不再锁死 19×19 —— 加了文字之后锁死尺寸会裁字（UI 坑 #5）。
+   现在是“图标 + 2 字”，宽度随内容长，高度仍 19px 保持行高一致。 */
 .mini-btn {
   background: none;
   border: 1px solid var(--panel-border);
   color: var(--text-tertiary);
   cursor: pointer;
   font-size: 10px;
-  width: 19px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   height: 19px;
+  padding: 0 4px;
   border-radius: 3px;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .mini-btn:hover {

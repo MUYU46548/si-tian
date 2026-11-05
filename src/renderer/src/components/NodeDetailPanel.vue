@@ -117,7 +117,7 @@
               <a class="linked-note" :title="p" @click="openLinkedNote(p)">
                 <Icon name="file-text" :size="12"/> <span class="linked-note-path">{{ p }}</span>
               </a>
-              <button class="linked-note-remove" :disabled="store.isReadOnly" title="解除绑定" @click="removeLinkedNote(p)">×</button>
+              <button class="linked-note-remove" :disabled="store.isReadOnly" title="解除绑定" @click="removeLinkedNote(p)">解绑</button>
             </div>
           </div>
           <p v-else class="linked-note-empty">还没有附加笔记；主笔记就是该节点的词条。</p>
@@ -207,7 +207,7 @@
             </select>
             <button class="hyperlane-remove" :disabled="store.isReadOnly"
                     :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '删除航道'"
-                    @click.stop="removeHyperlane(h.id)">×</button>
+                    @click.stop="removeHyperlane(h.id)">删除</button>
           </div>
         </div>
       </section>
@@ -346,13 +346,13 @@
               v-if="currentCulture" class="culture-swatch"
               :style="{ background: currentCulture.color }" :title="currentCulture.name"
             ></span>
-            <button class="mini-add" title="新建文化" data-testid="settlement-add-culture" @click="createCulture">＋</button>
+            <button class="mini-add" title="新建文化" data-testid="settlement-add-culture" @click="createCulture">新建</button>
           </div>
         </div>
         <div class="prop-field" v-if="isSettlementNode">
           <label>高级编辑</label>
           <button class="burg-editor-btn" data-testid="open-burg-editor" @click="burgEditorOpen = true">
-            <Icon name="castle" :size="13"/> Burg Editor（规模 / 人口 / 文化）
+            <Icon name="castle" :size="13"/> 聚落编辑（规模 / 人口 / 文化）
           </button>
         </div>
         <!-- 叙事状态（2026-09-24）：用户决策“毁灭只是叙事状态，不是数据删除”——
@@ -377,7 +377,7 @@
           <div class="tag-editor">
             <span v-for="tag in node.tags || []" :key="tag" class="tag-badge removable">
               {{ tag }}
-              <button class="tag-remove" @click="removeTag(tag)" title="移除标签">×</button>
+              <button class="tag-remove" @click="removeTag(tag)" title="移除标签">移除</button>
             </span>
             <span v-if="!(node.tags || []).length" class="tag-empty">无标签</span>
             <input
@@ -428,8 +428,8 @@
   <div v-if="burgEditorOpen && node" class="burg-editor-backdrop" @click.self="burgEditorOpen = false">
     <div class="burg-editor" data-testid="burg-editor">
       <div class="burg-header">
-        <h3><Icon name="castle" :size="16"/> Burg Editor — {{ node.displayName || node.name }}</h3>
-        <button class="burg-close" @click="burgEditorOpen = false">×</button>
+        <h3><Icon name="castle" :size="16"/> 聚落编辑 — {{ node.displayName || node.name }}</h3>
+        <button class="burg-close" @click="burgEditorOpen = false">关闭</button>
       </div>
       <div class="burg-body">
         <div class="burg-row">
@@ -453,7 +453,7 @@
             <option :value="-1">无归属</option>
             <option v-for="c in cultures" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
-          <button class="mini-add" @click="createCulture" title="新建文化">＋</button>
+          <button class="mini-add" @click="createCulture" title="新建文化">新建</button>
           <span v-if="currentCulture" class="culture-swatch" :style="{ background: currentCulture.color }"></span>
         </div>
         <div class="burg-row">
@@ -1260,10 +1260,12 @@ function updateCoordinate(axis, value) {
   border: 1px solid rgba(255, 255, 255, 0.25);
   flex-shrink: 0;
 }
+/* 2026-11-05：不再锁死 22×22 —— “新建”两个字会被裁掉（UI 坑 #5） */
 .mini-add {
-  width: 22px;
   height: 22px;
-  padding: 0;
+  padding: 0 6px;
+  font-size: 11px;
+  white-space: nowrap;
   line-height: 1;
   background: var(--btn-bg);
   border: 1px solid var(--panel-border);
@@ -1332,11 +1334,13 @@ function updateCoordinate(axis, value) {
 }
 .burg-close {
   background: none;
-  border: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
   color: var(--text-tertiary);
-  font-size: 18px;
+  font-size: 11px;
   cursor: pointer;
   line-height: 1;
+  padding: 3px 8px;
 }
 .burg-body {
   padding: 14px 16px;
@@ -1677,8 +1681,10 @@ function updateCoordinate(axis, value) {
   background: none;
   border: none;
   color: var(--text-tertiary);
-  font-size: 15px;
+  font-size: 11px;
   line-height: 1;
+  padding: 0 3px;
+  white-space: nowrap;
   cursor: pointer;
 }
 .linked-note-remove:hover { color: #e06c75; }
@@ -2049,11 +2055,12 @@ function updateCoordinate(axis, value) {
   background: none;
   border: none;
   color: var(--text-tertiary);
-  font-size: 14px;
+  font-size: 11px;
   line-height: 1;
-  padding: 0 3px;
+  padding: 0 4px;
+  white-space: nowrap;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 3px;
 }
 
 .hyperlane-remove:hover {
@@ -2194,11 +2201,12 @@ function updateCoordinate(axis, value) {
   background: none;
   border: none;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1;
-  padding: 0 2px;
+  padding: 0 3px;
+  white-space: nowrap;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 3px;
 }
 
 .tag-remove:hover {

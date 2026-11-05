@@ -1,12 +1,12 @@
 <template>
   <!-- 关闭状态：迷你展开按钮 -->
-  <button v-if="!visible" class="eagle-eye-toggle" @click="open" title="显示小地图导航"><Icon name="map" :size="14"/></button>
+  <button v-if="!visible" class="eagle-eye-toggle" @click="open" title="显示小地图导航"><Icon name="map" :size="14"/> 小地图</button>
   <!-- 打开状态：小地图主体 -->
   <div v-else class="eagle-eye minimap" data-testid="minimap" :style="{ width: size + 'px' }">
     <div class="minimap-header">
       <span class="minimap-title"><Icon name="navigation" :size="12"/> 小地图</span>
       <div class="minimap-actions">
-        <button class="minimap-btn" :title="`缩小到 ${nextSmaller}px`" @click="cycleSize">▣</button>
+        <button class="minimap-btn" :title="`缩小到 ${nextSmaller}px`" @click="cycleSize">大小</button>
         <button class="minimap-close" title="隐藏小地图" @click="close">×</button>
       </div>
     </div>
@@ -390,14 +390,17 @@ watch(
   top: 8px;
   right: 8px;
   z-index: 20;
-  width: 34px;
+  /* 2026-11-05：不再锁死 34×30 —— 按钮上现在写着“小地图”（UI 坑 #5） */
+  min-width: 34px;
   height: 30px;
+  padding: 0 6px;
+  white-space: nowrap;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   background: var(--panel-bg);
   color: var(--text-tertiary);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 11px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .eagle-eye-toggle:hover {

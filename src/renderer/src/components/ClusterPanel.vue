@@ -1,7 +1,7 @@
 <template>
   <PanelShell class="cluster-panel" title="地点簇" :open="open" @close="$emit('close')">
     <template #actions>
-      <button class="icon-btn" @click="$emit('create-cluster')" title="创建地点簇（框选地点后创建）">＋</button>
+      <button class="icon-btn" @click="$emit('create-cluster')" title="创建地点簇（框选地点后创建）">新建</button>
     </template>
     <div class="panel-body">
       <div v-if="clusters.length === 0" class="empty-hint">
@@ -37,8 +37,8 @@
           </div>
         </div>
         <div class="cluster-actions">
-          <button class="mini-btn" @click="$emit('edit-cluster', cluster.id)" title="重命名/改色"><Icon name="pencil" :size="12"/></button>
-          <button class="mini-btn" @click="$emit('disband-cluster', cluster.id)" title="解散簇（成员恢复独立）"><Icon name="x" :size="12"/></button>
+          <button class="mini-btn" @click="$emit('edit-cluster', cluster.id)" title="重命名/改色"><Icon name="pencil" :size="12"/> 改名</button>
+          <button class="mini-btn" @click="$emit('disband-cluster', cluster.id)" title="解散簇（成员恢复独立）"><Icon name="x" :size="12"/> 解散</button>
         </div>
       </div>
     </div>
@@ -90,12 +90,15 @@ function getMemberName(memberId) {
 
 /* header/关闭/折叠由 PanelShell 提供，这里只留 actions 槽里的自定义按钮 */
 .icon-btn {
+  /* 2026-11-05：不再锁死 22×22 —— “新建”要放得下字（UI 坑 #5） */
+  min-width: 22px;
+  padding: 0 6px;
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--panel-border);
   color: var(--accent);
   cursor: pointer;
-  font-size: 14px;
-  width: 22px;
+  font-size: 11px;
   height: 22px;
   border-radius: var(--radius-sm);
   line-height: 1;
@@ -229,12 +232,15 @@ function getMemberName(memberId) {
 }
 
 .mini-btn {
+  /* 2026-11-05：不再锁死 20×20 —— “改名 / 解散”要放得下字 */
+  min-width: 20px;
+  padding: 0 4px;
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--panel-border);
   color: var(--text-tertiary);
   cursor: pointer;
   font-size: 11px;
-  width: 20px;
   height: 20px;
   border-radius: 3px;
   line-height: 1;

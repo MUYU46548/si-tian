@@ -11,8 +11,8 @@
       <option v-for="p in presets" :key="p" :value="p">{{ p }}%</option>
     </select>
     <button class="zoom-btn" title="放大" @click="zoomStep(1)">＋</button>
-    <button v-if="onFitAll" class="zoom-btn zoom-fit" title="适配全部" @click="onFitAll">⤢</button>
-    <button v-if="onFitSelection" class="zoom-btn zoom-fit" title="适配选中" @click="onFitSelection">⊞</button>
+    <button v-if="onFitAll" class="zoom-btn zoom-fit" title="适配全部" @click="onFitAll">全图</button>
+    <button v-if="onFitSelection" class="zoom-btn zoom-fit" title="适配选中" @click="onFitSelection">选区</button>
   </div>
 </template>
 
@@ -62,9 +62,12 @@ function onPresetChange(e) {
   border-radius: var(--radius-md, 8px);
   box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.3));
 }
+/* 2026-11-05：不再锁死 26×26 —— “全图 / 选区”两个按钮要放得下字（UI 坑 #5） */
 .zoom-btn {
-  width: 26px;
+  min-width: 26px;
   height: 26px;
+  padding: 0 6px;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   justify-content: center;

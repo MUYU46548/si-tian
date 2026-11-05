@@ -30,28 +30,42 @@
 | 行星视图（源码） | `node scripts/tests/unit/test_toolbar_ux_planet.js` | 4/4（dock 全有名字 / 无文字按钮只允许符号·色块·插值） |
 | 行星视图（真机） | `python scripts/tests/tools/shot_planet_ux.py` | 9/9 + 截图 `build/planet-ux/dock.png` |
 | 区域视图 | `node scripts/tests/unit/test_toolbar_ux_area.js` | 4/4 |
+| **面板类（2026-11-05 晚）** | `node scripts/tests/unit/test_toolbar_ux_panels.js` | **18/18**：ObjectListPanel / NodeDetailPanel / ClusterPanel / ZoomControls / EagleEye 每个按钮都有名字 + 可见文字零术语 + 行内操作不许退回"悬停才出现"，带三条负向探针 |
 
-三张判据都带**负向探针**（删按钮文字 / 塞“落库”必须红），改判据时别把探针删了。
+四张判据都带**负向探针**（删按钮文字 / 塞“落库”必须红），改判据时别把探针删了。
 
 ## 四、没做完（按优先级）
 
-### A. UI 扫尾（起点 157 → 现在 110 个纯图标按钮 / 37 组件）
+### A. UI 扫尾（起点 157 → **89** 个纯图标按钮 / 36 组件；2026-11-05 晚清了两批）
 
 `python build/_count_icon_buttons.py` 可复算（启发式，是**上界**）。
+
+**2026-11-05 晚已清（110 → 89，−21）**：
+
+| 组件 | 改法 |
+|---|---|
+| ObjectListPanel | 9 个按钮里 8 个只有铅笔/垃圾桶 → 全部“图标 + 改名/删除”；`.mini-btn` 从锁死 19×19 改成自适应宽（否则裁字）；行内操作从 `opacity:0`（悬停才出现）改成 **0.45 常显**，悬停/聚焦变实 —— 用户原话“分不清删还是复制”就是这么来的 |
+| NodeDetailPanel | `×`/`＋` 六个动作按钮改成“解绑 / 删除 / 移除 / 新建 / 关闭”；顺带把用户可见的 **“Burg Editor”** 全改成“聚落编辑”（工程术语，红线上点名的） |
+| ClusterPanel | `＋` → “新建”；铅笔 → “改名”；`×` → “解散” |
+| ZoomControls | `⤢` / `⊞`（谁都猜不出）→ **“全图” / “选区”**；`−`/`＋` 仍是通用符号，不动 |
+| EagleEye | 打开按钮补“小地图”；`▣`（缩到多大）→ “大小”；`×` 关闭保留 |
+
+闸门：`node scripts/tests/unit/test_toolbar_ux_panels.js`（**18/18**，含“行内操作不许退回 opacity: 0”这条）。
 
 | 组件 | 纯图标 / 全部 | 说明 |
 |---|---|---|
 | PlanetMap | 21 / 161 | 剩下几乎都是色块 / 关闭 × / 缩放，已有白名单 |
-| **ObjectListPanel** | **8 / 9** | 面板里 9 个按钮 8 个只有图标 —— “分不清删还是复制” |
-| NodeDetailPanel | 7 / 25 | 同上 |
+| ScenarioMap | 11 / 137 | 都在浮层里（工具栏已清） |
 | AreaMap | 7 / 59 | 色块 + 标记图标选择器（白名单） |
-| ScenarioMap | 11 / 138 | 都在浮层里（工具栏已清） |
-| SettingsPanel / InteriorView / ClusterPanel / ZoomControls / EagleEye / WorldSelector… | 各 1–5 | 逐个看 |
+| SettingsPanel | 5 / 32 | 逐个看（多半是色块/开关） |
+| InteriorView | 4 / 33 | 同上 |
+| 其余 31 个组件 | 各 1–3 | 逐个看 |
 
-**下一块建议：ObjectListPanel + NodeDetailPanel（面板里的列表操作）**，做法同前：
-补 2–3 字 → 加一张 `test_toolbar_ux_panels.js`（可以把 area 那张拷过来改文件路径与作用域）。
-⚠️ 区域视图**还没跑真机截图**：给 `shot_planet_ux.py` 加 `--view area`（选择器换
-`.area-map-container` / `.edit-toolbar`，进视图用 `store.selectPlanet()` → `store.selectArea()`）。
+**下一块建议：SettingsPanel + ProjectPanel + InteriorView**（各 3–5 个），做法同上：补 2–3 字 →
+把组件名加进 `test_toolbar_ux_panels.js` 的 `FILES` 表（一行）。
+⚠️ **面板类还没跑真机截图**：`shot_planet_ux.py` 已经有 `editMode` 那套骨架，
+下一步加一段“`sm.objectPanelOpen = true` → 量每个 `.mini-btn` 的 `scrollWidth <= clientWidth+1`”
+（这一轮改的全是**自适应宽**，裁字风险低但不为零）。区域视图的 `--view area` 仍未做。
 
 ### B. 历史剧本（清点在卡 `阶段目标历史剧本做到勉强可用出口判据---1af58f0b`）
 
