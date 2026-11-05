@@ -186,3 +186,7 @@ build/sample-gen/
 
 # 行星视图工具坞真机检查的产物（2026-11-05）：截图 + 示例副本，本地证据
 build/planet-ux/
+
+# 撤销/重做时延演练产物（2026-11-05）：含真实项目的工作副本与 CPU 样本，本地证据，禁止提交
+# 复现：npm run test:undo-latency
+build/undo-latency/

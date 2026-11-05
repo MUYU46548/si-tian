@@ -192,6 +192,17 @@
   真实 415 省项目的工作副本**（原项目只读：跑前后 sha256 一致），量四段：松手同步段（口径 ≤50ms）/
   交给项目 / 松手→磁盘（含 800ms 自动保存防抖）/ 显式 flush→磁盘；并从**磁盘**核对归属、`changeEvents`、
   一笔一组的 `groupId`。产物 `build/owner-latency/<ts>/{result.json,summary.md}`。
+- **撤销/重做的端到端时延（C2，2026-11-05）**: `npm run test:undo-latency`（`drill_undo_latency.py`）——
+  真机（Vite 5180 + 真实 Electron（隔离 profile、CDP 9227）+ **真实 415 省项目副本**，原项目只读），
+  量四类撤销：涂归属一笔（账本组撤）/ 编辑省份（快照 + 整图重绘）/ 添加标记 / 连续撤销。
+  口径：同步段（`undo` 回调）、**按键到下一帧**、撤销本身长任务、撤销后 300ms 自动保存、掉帧；
+  另采 A1 与 D 两段 CPU 样本（`profile-*.json`，按"按键后 220ms"窗口聚合）。
+  读数（本机 / 绒花计划 8.2MB）：同步段 **0.1~2.5ms**（撤销命令本身一点都不慢）；到下一帧
+  **57~104ms**（大头是整图重绘）；连续撤销会被保存链拖出 **1~3 秒**主线程占满（另案，不设闸门）。
+  产物 `build/undo-latency/<ts>/{result.json,summary.md,profile-*.json}`。
+  ⚠️ 帧时刻**必须用回调里的 `performance.now()`**，不能用 rAF 的 vsync 参数 —— 后者会把 75ms 读成 8ms
+  （主线程被占住时回调拿到的仍是原定的帧起点）；⚠️ CPU 采样窗口的坐标是 `performance.now()`，
+  混用 `Date.now()` 会一条样本都留不下。
 - **示例星系的验收（自建临时世界，不碰 harness）**: `npm run test:sample-galaxy`（`drill_sample_galaxy.py`）
   —— 只读态断言 → 新建临时项目 + **用例自建世界** → 生成（4 星域 / 120 恒星 / 175 航道）→ 整页截图
   `build/sample-galaxy/generated.png` → 一次撤销精确回退 → **反面对照**：harness 基线项目从头到尾没被
