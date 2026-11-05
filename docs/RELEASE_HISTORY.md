@@ -63,3 +63,27 @@ path: sitian-setup-0.4.0.exe
 2. 发布说明落 `docs/RELEASE_NOTES_x.y.z.md`，release 用 `--notes-file` 引用同一份（单一事实源）。
 3. 发完在 release 页核对三件事：`latest.yml` 在、exe 名与 `latest.yml` 一致、size 与本地一致。
 4. 版本号 **不要跳号**（0.1.3 → 0.1.5 这种跳号会让"到底少了哪些版本"永远说不清）。
+
+## 四、v0.5.2（2026-11-05）—— 第一次按纪律走完
+
+| 项 | 值 |
+|---|---|
+| tag | `v0.5.2`（`f9e5669`，与 `main` 同步推送） |
+| release | <https://github.com/MUYU46548/si-tian/releases/tag/v0.5.2>（**已发布，非 draft**） |
+| 资产 | `sitian-setup-0.5.2.exe` 79,102,647 B（sha512 `CMLfti…`）、`sitian-setup-0.5.2.exe.blockmap` 83,515 B、`latest.yml` 340 B |
+| 本地 ↔ 远端 | 发布后对资产做 HEAD：`Content-Length: 79102647`，与本地一致；`latest.yml` 里的 sha512 与本地文件逐位相同 |
+
+做法上有两点是冲 0.4.0 那两个坑去的：
+
+1. **资产名在源头钉死**：`build.nsis.artifactName = "sitian-setup-${version}.${ext}"` ——
+   本地产出的文件名就是 `latest.yml` 里写的名字，不靠上传时改名
+   （0.4.0 就是上传后变成 `Setup.0.4.0.exe`，与 `latest.yml` 对不上 → 自动更新 404）。
+2. **发布前三道闸**：`node scripts/privacy-scan.mjs`（三作用域 0 命中）/
+   `python scripts/tests/drill_diag_package.py` / `npm run test:packaged`（22 条：asar 内容、
+   安装包内 `app.asar` 与本地构建 sha256 一致、打包版真机开示例 → 存盘 → 导诊断包）。
+
+判定：`package.json` 版本 = 本地 tag = 远端 release tag = `latest.yml` 版本 = **0.5.2**，四处一致。
+`0.5.0` / `0.5.1` 只 bump 过版本号，从未打 tag、从未发布（内部构建）。
+
+已知遗留：**0.4.0 → 0.5.2 不能自动更新**（0.4.0 的资产名不匹配），需手动装一次；
+0.5.2 之后链路是对的。
