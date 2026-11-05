@@ -10,6 +10,8 @@ import { extractIsoLines } from '../../utils/contour';
 import { pickRiverMouthEnd, riverWidthFactors } from '../../utils/riverRender';
 import { provinceRings } from '../../utils/provinceShape';
 import { smoothPolyline } from '../../utils/riverTrace';
+// B3（2026-11-05）：并省冲突的裁决判据与 store 共用同一个纯函数（不各写一套）
+import { unresolvedConflicts } from '../../utils/basemapIdentity';
 import { toRaw } from 'vue';
 
 export function createHelperActions(ctx) {
@@ -167,12 +169,15 @@ function applyReimportDialog() {
   const d = reimportDialog.value;
   const bundle = st.pendingReimportBundle;
   if (!d || !bundle) return;
-  if (!d.preview.canApply) {
-    statusMsg('重导被阻止：存在并省冲突，先处理冲突再导');
+  // B3：冲突逐条裁决 —— 还有没选的就不许应用（与 store 共用同一个纯函数判据）
+  const pending = unresolvedConflicts(d.preview, d.conflictChoices);
+  if (pending.length) {
+    statusMsg(`还有 ${pending.length} 处并省冲突没选归属 —— 每处都要选一次（或选“合并 / 都不要”），重导才会写`);
     return;
   }
   const r = store.reimportBasemapAsNew(d.oldKey, bundle, {
     copyReferenceImages: !!d.copyReferenceImages,
+    conflictChoices: d.conflictChoices,
   });
   if (!r || !r.ok) {
     statusMsg(`重导失败：${(r && r.message) || '未知原因'}`);
@@ -190,6 +195,15 @@ function applyReimportDialog() {
     + (r.unmappedOld?.length ? `；⚠️ ${r.unmappedOld.length} 个旧省没映射上（归属会丢）` : '')
     + (r.droppedOldProvinces?.length ? `；丢弃归属 ${r.droppedOldProvinces.length} 条` : '')
     + '（Ctrl+Z 可整次撤回）');
+}
+
+/** B3：给某个并省冲突记一条裁决（对话框逐条选；空串 = 回到“没选”） */
+function setReimportConflictChoice(newId, choice) {
+  const d = reimportDialog.value;
+  if (!d || !newId) return;
+  const next = { ...(d.conflictChoices || {}) };
+  if (choice) next[newId] = choice; else delete next[newId];
+  d.conflictChoices = next;
 }
 
 function autoSeedBatch() {
@@ -309,5 +323,5 @@ function handleResize() {
   else render();
 }
 
-  return { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, autoSeedBatch, onWheel, fitToView, handleResize };
+  return { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, setReimportConflictChoice, autoSeedBatch, onWheel, fitToView, handleResize };
 }

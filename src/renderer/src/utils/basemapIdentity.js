@@ -275,3 +275,97 @@ export function remapScenariosForReimport(scenarios, oldKey, newKey, mapping) {
 
   return { scenarios: out, moved, droppedOldProvinces: [...dropped] };
 }
+
+// ── B3（2026-11-05）：并省冲突的“逐条裁决”口径 ───────────────────────────────
+// 为什么要有：以前多个旧省并成一个新省时只能**整单拒绝**（对话框上“有冲突，不能重导”），
+// 用户没有任何出路 —— 只能放弃重导、或者手工先去改旧项目的归属。数据安全是对的（不替用户选），
+// 但“不替用户选”不等于“不给用户选”。
+//
+// 裁决三选一（每个冲突的新省各选一次）：
+//   `'<oldId>'`  → 归属取这个旧省的（其余旧省的归属丢弃，进 droppedOldProvinces）
+//   `'__merge__'`→ 合并：按旧省顺序依次写入（后者覆盖前者，保持历史语义）
+//   `'__drop__'` → 都别要：这个新省重导后无主
+export const CONFLICT_MERGE = '__merge__';
+export const CONFLICT_DROP = '__drop__';
+
+/** 还没裁决的冲突新省 id（**空数组才算全部处理完**）；`__merge__`/`__drop__` 也算已裁决 */
+export function unresolvedConflicts(mapping, choices) {
+  const conflicts = (mapping && mapping.conflicts) || [];
+  const pick = (choices && typeof choices === 'object') ? choices : {};
+  return conflicts
+    .filter((c) => {
+      const v = pick[c.newId];
+      if (v === CONFLICT_MERGE || v === CONFLICT_DROP) return false;
+      return !(Array.isArray(c.oldIds) && c.oldIds.includes(v));
+    })
+    .map((c) => c.newId);
+}
+
+/**
+ * 按裁决结果改写映射（**纯函数**：`mapping` 与 `choices` 都不改）。
+ * 未裁决的冲突保持原样（调用方先用 `unresolvedConflicts` 拦住）。
+ */
+export function applyConflictChoices(mapping, choices) {
+  const src = mapping || {};
+  const byOldIn = src.byOld || {};
+  const byNewIn = src.byNew || {};
+  const pick = (choices && typeof choices === 'object') ? choices : {};
+
+  const byOld = {};
+  for (const [oldId, list] of Object.entries(byOldIn)) {
+    byOld[oldId] = Array.isArray(list) ? list.slice() : [];
+  }
+  const byNew = {};
+  for (const [newId, list] of Object.entries(byNewIn)) {
+    byNew[newId] = Array.isArray(list) ? list.slice() : [];
+  }
+
+  for (const newId of Object.keys(byNew)) {
+    const olds = byNew[newId];
+    if (olds.length <= 1) continue;              // 拆省 / 一对一：不动
+    const choice = pick[newId];
+    if (choice === undefined || choice === null || choice === CONFLICT_MERGE) continue;
+
+    if (choice === CONFLICT_DROP) {
+      for (const oldId of olds) {
+        byOld[oldId] = (byOld[oldId] || []).filter((x) => x !== newId);
+      }
+      byNew[newId] = [];
+      continue;
+    }
+
+    const keep = String(choice);
+    if (!olds.includes(keep)) continue;          // 非法/过期选择 → 当没选（仍由 unresolved 拦住）
+    for (const oldId of olds) {
+      if (oldId === keep) continue;
+      byOld[oldId] = (byOld[oldId] || []).filter((x) => x !== newId);
+    }
+    byNew[newId] = [keep];
+  }
+
+  return { ...src, byOld, byNew };
+}
+
+/**
+ * 冲突的**可读描述**（对话框用）：每个新省列上候选旧省。
+ * 名称与势力归属由调用方给（纯函数层不碰 state）。
+ *
+ * @param {Array} conflicts `mapping.conflicts`
+ * @param {(id:string)=>string} [nameOfOld] 旧省 id → 显示名
+ * @param {(id:string)=>string} [nameOfNew] 新省 id → 显示名
+ */
+export function describeConflicts(conflicts, nameOfOld, nameOfNew) {
+  // 名称一律“取不到就回 id”：对话框里出现空名字 = 用户没法判断该选哪个
+  const wrap = (fn) => (id) => {
+    if (typeof fn !== 'function') return id;
+    const v = fn(id);
+    return (v === undefined || v === null || v === '') ? id : v;
+  };
+  const nOld = wrap(nameOfOld);
+  const nNew = wrap(nameOfNew);
+  return (Array.isArray(conflicts) ? conflicts : []).map((c) => ({
+    newId: c.newId,
+    newName: nNew(c.newId),
+    candidates: (Array.isArray(c.oldIds) ? c.oldIds : []).map((id) => ({ id, name: nOld(id) })),
+  }));
+}

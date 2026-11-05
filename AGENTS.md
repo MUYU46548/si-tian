@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**164 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**102 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**104 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -239,6 +239,23 @@
   - 没做（刻意）：撤销**栈本身**不跨会话持久化（重开项目历史为空）—— 要序列化命令闭包，另一个命题。
   - ⚠️ `drill_quit_flush.py --phase p4` 在本机当前 dist 上**红**（点“历史剧本”后画布 30s 不挂载；
     旧 dist 同样红，与本改动无关）—— 已建卡，别把它当 B2 的判据。
+- **底图重导的“待人工冲突”口径（B3，2026-11-05）**: `test_150_basemap_reimport`（扩了 f1b 逐条裁决）
+  + `unit/test_reimport_conflicts.js`（10 条）—— 并省冲突（多个旧省并成一个新省）以前只能**整单放弃**
+  （对话框上“有冲突，不能重导”），用户没有任何出路。现在每处冲突**逐条三选一**：
+  归属取某一个旧省 / 合并（按旧省顺序，后者覆盖）/ 都不要（新省无主）。
+  - 🔴 **默认仍然是拒绝**：`conflictChoices` 一条没选 → `unresolvedConflicts` 非空 → 零写入。
+    “不替用户选”这条线不动，只是不再“不给用户选”（单测 c1 守着，带负向）。
+  - 口径单源：`utils/basemapIdentity.js#unresolvedConflicts / applyConflictChoices / describeConflicts`
+    （纯函数；单测守“入参 mapping 不许被改”“拆省的一对多映射一个字不许动”）。
+  - 对话框搬成独立组件 `ReimportDialog.vue`（自包含样式，ScenarioMap 回到 **6,970 行**）：
+    冲突行摆出**省名** + “这个旧省在各剧本里归谁” + 候选下拉；未映射清单也给人话（可展开全部）。
+    组件只 emit（`apply`/`close`/`choose`/`toggle-reference`），不碰 store、不直接改 props。
+  - ⚠️ 源码守卫教训：`lib/rsrc.py#render_src()` 只拼 ScenarioMap + layers + interaction + styles，
+    **不含其它 components** —— 对话框搬成组件后 test_150 的守卫会“假红”（说没有对话框），
+    用例里必须显式把组件文件拼进合集。
+  - ⚠️ 真机 `drill_reimport_019.py` 本轮 **8/10**：A 段（冲突拒绝 + 磁盘一字节不变）全绿；
+    B 段两条红是既有判据问题（把其它底图的剧本也算进“归属键”+ Ctrl+Z 靠 CDP 按键但窗口未聚焦），
+    已建卡 `drill_reimport_019-两-a9be8e2f`，与本改动无关。
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与
@@ -416,7 +433,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 164 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 102 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 104 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |

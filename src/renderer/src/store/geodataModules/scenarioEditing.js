@@ -34,6 +34,8 @@ import { measureProvinceOverlap, describeOverlap } from '../../utils/provinceOve
 // ── 019 底图重导（2026-10-25）：指纹 / 旧省→新省映射 / 剧本归属重映射（纯函数，Node 有单测）──
 import {
   stampBasemapSource, mapProvinces, remapScenariosForReimport,
+  // B3（2026-11-05）：并省冲突逐条裁决 —— 三选一（保留某个旧省 / 合并 / 丢弃）
+  unresolvedConflicts, applyConflictChoices, describeConflicts,
 } from '../../utils/basemapIdentity';
 // ── 剧本集（2026-10-25）：组判定/规整/计数**只有一份实现**（utils/scenarioGroups.js）──
 // 左栏、时间轴、切片、管理对话框、导入导出都从这里取；store 只做 CRUD 与落盘。
@@ -688,6 +690,27 @@ export function createScenarioEditingModule(ctx) {
       return { ok: false, rejected: 'no-terrain', message: '新 .map 里没有省份多边形' };
     }
     const mapping = mapProvinces(old.terrain || [], bundle.terrain || []);
+    // B3：冲突要能**逐条判** —— 只给 id 用户看不懂（真实数据里是 prov_batch_xxx），
+    // 所以这里把省名与“这个旧省在各剧本里归谁”一并算好交给对话框（纯展示，不写任何数据）。
+    const oldById = new Map((old.terrain || []).map((p) => [p.id, p]));
+    const newById = new Map((bundle.terrain || []).map((p) => [p.id, p]));
+    const nameOfOld = (id) => (oldById.get(id) || {}).name || id;
+    const nameOfNew = (id) => (newById.get(id) || {}).name || id;
+    const ownerSummaryOf = (pid) => {
+      const out = [];
+      for (const s of Object.values(scenarios.value || {})) {
+        if (!s || s.ownerKey !== oldKey) continue;
+        const owner = s.ownership && s.ownership[pid];
+        if (!owner) continue;
+        const pol = (s.polities || []).find((p) => p.id === owner);
+        out.push({ scenario: s.name || s.id, ownerId: owner, owner: pol ? (pol.name || owner) : owner });
+      }
+      return out;
+    };
+    const conflictDetails = describeConflicts(mapping.conflicts, nameOfOld, nameOfNew).map((c) => ({
+      ...c,
+      candidates: c.candidates.map((x) => ({ ...x, owners: ownerSummaryOf(x.id) })),
+    }));
     return {
       ok: true,
       oldKey,
@@ -696,7 +719,10 @@ export function createScenarioEditingModule(ctx) {
       totalNew: (bundle.terrain || []).length,
       exact: mapping.exact.length,
       conflicts: mapping.conflicts,
+      conflictDetails,
+      // 未映射清单也给人话（用户要判断“丢的是哪些地”）
       unmappedOld: mapping.unmappedOld,
+      unmappedOldNames: mapping.unmappedOld.map(nameOfOld),
       unmappedNew: mapping.unmappedNew,
       canApply: mapping.conflicts.length === 0,
     };
@@ -724,15 +750,23 @@ export function createScenarioEditingModule(ctx) {
       return { ok: false, rejected: 'no-terrain', message: '新 .map 里没有省份多边形' };
     }
 
-    const mapping = mapProvinces(old.terrain || [], bundle.terrain || []);
-    if (mapping.conflicts.length) {
+    const mapping0 = mapProvinces(old.terrain || [], bundle.terrain || []);
+    // B3（2026-11-05）：冲突不再只能“整单放弃” —— 调用方可以带逐条裁决（conflictChoices）。
+    // 默认（不传）仍是拒绝：不替用户选，这是数据安全那条线。
+    const choices = (opts && opts.conflictChoices) || {};
+    const pending = unresolvedConflicts(mapping0, choices);
+    if (pending.length) {
       return {
         ok: false,
         rejected: 'merge-conflicts',
-        conflicts: mapping.conflicts,
-        message: `有 ${mapping.conflicts.length} 处“多个旧省并成一个新省”的冲突，未写入任何数据`,
+        conflicts: mapping0.conflicts,
+        unresolved: pending,
+        message: pending.length === mapping0.conflicts.length
+          ? `有 ${mapping0.conflicts.length} 处“多个旧省并成一个新省”的冲突，未写入任何数据 —— 请先逐条选归属`
+          : `还有 ${pending.length} 处并省冲突没选，未写入任何数据`,
       };
     }
+    const mapping = mapping0.conflicts.length ? applyConflictChoices(mapping0, choices) : mapping0;
 
     const now = new Date();
     const p = (n) => String(n).padStart(2, '0');

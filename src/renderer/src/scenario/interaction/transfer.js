@@ -74,6 +74,9 @@ function openReimportDialog(oldKey, bundle, fileName = '') {
     fileName,
     preview,
     copyReferenceImages: false,
+    // B3：并省冲突的逐条裁决（newId → '<oldId>' | '__merge__' | '__drop__'）；
+    // 空 = 一条都没选 → 应用按钮不可用（不替用户选，也不让用户没得选）
+    conflictChoices: {},
   };
 }
 

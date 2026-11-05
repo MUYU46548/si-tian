@@ -1807,49 +1807,10 @@
       @run="onRunSliceExport"
     />
 
-    <!-- 019 重导对话框：先摆映射统计/冲突，再让用户点“重导并迁移” -->
-    <div v-if="reimportDialog" class="modal-overlay" @click.self="closeReimportDialog">
-      <div class="modal-dialog reimport-dialog" data-testid="reimport-dialog">
-        <h3>重导底图为新底图</h3>
-        <p class="rd-intro">
-          这张底图已经改过（或来源未知），不能当“同一张图只补数据”。
-          重导会新建一张底图，并把旧剧本的归属 / 易主迁过去；旧底图保留归档。
-        </p>
-        <div class="rd-grid">
-          <span>旧底图</span><b>{{ reimportDialog.preview.oldName }}</b>
-          <span>新文件</span><b>{{ reimportDialog.fileName || '（未命名）' }}</b>
-          <span>省份</span><b>{{ reimportDialog.preview.totalOld }} → {{ reimportDialog.preview.totalNew }}</b>
-          <span>按 id 直配</span><b>{{ reimportDialog.preview.exact }} 省</b>
-          <span>未映射</span>
-          <b>旧 {{ reimportDialog.preview.unmappedOld.length }} / 新 {{ reimportDialog.preview.unmappedNew.length }}</b>
-        </div>
-        <div v-if="reimportDialog.preview.conflicts.length" class="rd-warn" data-testid="reimport-conflicts">
-          <strong>{{ reimportDialog.preview.conflicts.length }} 处并省冲突</strong>（多个旧省 → 同一新省），
-          默认阻止，不替用户选：
-          <ul>
-            <li v-for="c in reimportDialog.preview.conflicts.slice(0, 6)" :key="c.newId">
-              新省“{{ c.newId }}”← 旧省 {{ c.oldIds.join(' / ') }}
-            </li>
-          </ul>
-          <span v-if="reimportDialog.preview.conflicts.length > 6">…共 {{ reimportDialog.preview.conflicts.length }} 条</span>
-        </div>
-        <div v-if="reimportDialog.preview.unmappedOld.length" class="rd-warn" data-testid="reimport-unmapped">
-          有 {{ reimportDialog.preview.unmappedOld.length }} 个旧省没映射到新省；继续的话这些省的归属会丢：
-          <code>{{ reimportDialog.preview.unmappedOld.slice(0, 8).join(' / ') }}</code>
-          <span v-if="reimportDialog.preview.unmappedOld.length > 8"> …</span>
-        </div>
-        <label class="rd-check">
-          <input type="checkbox" v-model="reimportDialog.copyReferenceImages" />
-          带上旧底图的参考图（默认不带；新 .map 通常有自己的地理）
-        </label>
-        <div class="rd-actions">
-          <button @click="closeReimportDialog">取消</button>
-          <button class="primary" :disabled="!reimportDialog.preview.canApply" @click="applyReimportDialog">
-            {{ reimportDialog.preview.canApply ? '重导并迁移' : '有冲突，不能重导' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 019 重导对话框（B3：并省冲突可逐条裁决；组件自包含，不占本文件行数） -->
+    <ReimportDialog v-if="reimportDialog" :state="reimportDialog"
+                    @close="closeReimportDialog" @apply="applyReimportDialog"
+                    @choose="onReimportConflictChoice" @toggle-reference="onToggleReimportReference" />
 
     <!-- 聚落编辑器面板 -->
     <div v-if="burgEditorOpen && editingBurg" class="burg-editor-panel">
@@ -2015,6 +1976,8 @@ import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）
 import ScenarioGroupOverview from './ScenarioGroupOverview.vue';
+// B3（2026-11-05）：重导对话框独立成组件（并省冲突可逐条裁决，不占本文件行数）
+import ReimportDialog from './ReimportDialog.vue';
 // 地形生成参数面板（P0-1，2026-10-25）：种子/起伏/山脉/高原/裂谷 + 3 张候选缩略图 → 应用（一条 undo）。
 // 参数模型唯一实现在 utils/terrainParams.js（本组件只做展示与触发）。
 import TerrainGenPanel from './TerrainGenPanel.vue';
@@ -4541,6 +4504,18 @@ const sourceRestoreMsg = ref('');
 
 
 // applyReimportDialog 已搬到 helpers.js（2026-10-31）
+// B3（2026-11-05）：对话框只负责“显示与转发”，裁决落到 helpers 的唯一写点
+function onReimportConflictChoice(payload) {
+  if (!payload) return;
+  setReimportConflictChoice(payload.newId, payload.choice);
+}
+function onToggleReimportReference() {
+  if (!reimportDialog.value) return;
+  reimportDialog.value = {
+    ...reimportDialog.value,
+    copyReferenceImages: !reimportDialog.value.copyReferenceImages,
+  };
+}
 
 
 // triggerMapImport 已搬到 canvasClick.js（2026-10-31）
@@ -6369,7 +6344,7 @@ const { riverNodesFromDraft, riverPreviewNodes, draftWorldLength, riverFlowGate,
   store,
 });
 // 河流动作工厂要在指针三件**之前**：它们的 ctx 直接引用 finishRiverDraft 等 const
-const { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, autoSeedBatch, onWheel, fitToView, handleResize } = createHelperActions({
+const { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, setReimportConflictChoice, autoSeedBatch, onWheel, fitToView, handleResize } = createHelperActions({
   st: pointerState,
   baseMap,
   baseMapKey,

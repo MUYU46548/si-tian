@@ -65,6 +65,33 @@ def run(cdp):
          JSON.stringify(Object.keys(s.baseMaps).sort()) === JSON.stringify(oldKeys),
          Object.keys(s.baseMaps));
 
+      // ── ①b B3：逐条裁决 —— 给了出路，但默认仍然是拒绝 ──────────
+      const conflictNewId = (conflict.conflicts || [])[0] && conflict.conflicts[0].newId;
+      ck('f1b 冲突项带 newId', !!conflictNewId, conflict.conflicts);
+      // 默认拒绝这条不能被顺手改掉（空 choices = 一条都没选）
+      const stillBlocked = s.reimportBasemapAsNew(KEY, mergeBundle, { conflictChoices: {} });
+      ck('f1b 🔴 一条都没选 → 仍然拒绝、零写入',
+         stillBlocked.ok === false && stillBlocked.rejected === 'merge-conflicts'
+           && (stillBlocked.unresolved || []).length === 1,
+         { rejected: stillBlocked.rejected, unresolved: stillBlocked.unresolved });
+      ck('f1b 拒绝时底图集合仍未变',
+         JSON.stringify(Object.keys(s.baseMaps).sort()) === JSON.stringify(oldKeys),
+         Object.keys(s.baseMaps));
+      // 选“归属取 old1” → 能导；old2 的归属丢弃，且**列在 droppedOldProvinces 里**（不静默）
+      const choices = {}; choices[conflictNewId] = 'old1';
+      const r3 = s.reimportBasemapAsNew(KEY, mergeBundle, { conflictChoices: choices });
+      notes.conflictResolved = { ok: r3.ok, newKey: r3.newKey, dropped: (r3.droppedOldProvinces || []) };
+      ck('f1b 选完之后能导（不再是死路）', r3.ok === true && !!r3.newKey, notes.conflictResolved);
+      const sc3 = s.getScenario(scenId);
+      ck('f1b 归属取被选中的那个旧省',
+         !!sc3 && !!sc3.ownership && sc3.ownership[conflictNewId] === 'P1', sc3 && sc3.ownership);
+      ck('f1b 没被选的旧省归属被丢弃、且点名列出（不静默）',
+         (r3.droppedOldProvinces || []).includes('old2'), r3.droppedOldProvinces);
+      s.undo();
+      await tick(40);
+      ck('f1b 一次 undo 回到基线', JSON.stringify(Object.keys(s.baseMaps).sort()) === JSON.stringify(oldKeys),
+         Object.keys(s.baseMaps));
+
       // ── ② 正常重导：id 相同的两个省 ─────────────────────────
       const newBundle = {
         terrain: [rect('old1', 0, 100), rect('old2', 100, 100)],
@@ -108,14 +135,22 @@ def run(cdp):
 
     # 源码守卫：UI 必须真的接上“非 pristine → reimport”这条路
     # 2026-10-31：重导对话框逻辑搬进 scenario/interaction/helpers.js —— 判据读合集
-    from lib.rsrc import render_src as _rsrc_all
+    # 2026-11-05（B3）：对话框本体搬成独立组件 ReimportDialog.vue —— 合集里要把它带上，
+    #   否则 `render_src()`（只含 ScenarioMap + layers + interaction + styles）查不到 data-testid → 假红
+    from lib.rsrc import render_src as _rsrc_all, read as _rsrc_read
     sm = _rsrc_all()
+    try:
+        sm += '\n' + _rsrc_read('src/renderer/src/components/ReimportDialog.vue')
+    except Exception:
+        pass
     if 'isBasemapPristine' not in sm:
         return False, 'ScenarioMap 没有引用 isBasemapPristine（无法判断同图补数据/重导）'
     if 'reimportBasemapAsNew(' not in sm:
         return False, 'ScenarioMap 没有调用 reimportBasemapAsNew（用户点不到重导）'
     if 'previewReimportBasemap' not in sm or 'data-testid="reimport-dialog"' not in sm:
         return False, 'ScenarioMap 没有重导对话框（previewReimportBasemap / reimport-dialog）'
+    if 'reimport-conflict-' not in sm or 'reimport-choice-' not in sm:
+        return False, '重导对话框没有逐条裁决控件（B3：并省冲突要能一条条选）'
 
     return True, (
         f'并省冲突阻止（{notes.get("conflict")}）；正常重导 newKey={notes.get("result", {}).get("newKey")}'
