@@ -64,14 +64,14 @@
         <div class="toolbar-group" title="操作">
           <button @click="deleteSelected" :disabled="!selectedNode && selectedNodeIds.length === 0" title="删除选中节点 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <template v-if="selectedNodeIds.length >= 2">
-            <button @click="alignSelected('left')" title="左对齐">⇤</button>
-            <button @click="alignSelected('hcenter')" title="水平居中对齐">⇹</button>
-            <button @click="alignSelected('right')" title="右对齐">⇥</button>
-            <button @click="alignSelected('top')" title="顶对齐">⇧</button>
-            <button @click="alignSelected('vcenter')" title="垂直居中对齐">⇳</button>
-            <button @click="alignSelected('bottom')" title="底对齐">⇩</button>
-            <button @click="distributeSelected('h')" title="水平等间距分布">⋯</button>
-            <button @click="distributeSelected('v')" title="垂直等间距分布">⋮</button>
+            <button @click="alignSelected('left')" title="左对齐">⇤ 左</button>
+            <button @click="alignSelected('hcenter')" title="水平居中对齐">⇹ 中</button>
+            <button @click="alignSelected('right')" title="右对齐">⇥ 右</button>
+            <button @click="alignSelected('top')" title="顶对齐">⇧ 顶</button>
+            <button @click="alignSelected('vcenter')" title="垂直居中对齐">⇳ 中</button>
+            <button @click="alignSelected('bottom')" title="底对齐">⇩ 底</button>
+            <button @click="distributeSelected('h')" title="水平等间距分布">⋯ 横</button>
+            <button @click="distributeSelected('v')" title="垂直等间距分布">⋮ 纵</button>
           </template>
           <button @click="undo" :disabled="!store.canUndo" :title="'撤销: ' + undoLabel">↶ 撤销</button>
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
@@ -80,8 +80,8 @@
 
         <div class="toolbar-group" title="视图">
           <button :class="{ active: showRefImagePanel }" @click="showRefImagePanel = !showRefImagePanel" title="参考底图"><Icon name="image" :size="13"/> 参考图</button>
-          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="指北针"><Icon name="compass" :size="13"/></button>
-          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="比例尺"><Icon name="ruler" :size="13"/></button>
+          <button :class="{ active: compassVisible }" @click="compassVisible = !compassVisible" title="指北针"><Icon name="compass" :size="13"/><span class="toolbar-label">指南针</span></button>
+          <button :class="{ active: scaleBarVisible }" @click="scaleBarVisible = !scaleBarVisible" title="比例尺"><Icon name="ruler" :size="13"/><span class="toolbar-label">比例尺</span></button>
         </div>
 
         <div class="toolbar-group toolbar-group-exit">
