@@ -99,11 +99,36 @@ export function execute(command) {
 }
 
 // 撤销
+// ── 统一落盘钩子（B2，2026-11-05）────────────────────────────────────────────
+// 为什么必须有：`undo()/redo()` 本身不落盘，纪律是"每个写口自己安排保存"。
+// 但那只覆盖了**第一次 execute**（调用方在 execute 之后补一次 save），撤销时没人补 ——
+// 于是"改了 → Ctrl+Z → 关掉重开又回来"这类数据安全 bug 会反复出现（事件表 / 标记都踩过）。
+// 做法：装配处（`geodata.js`）注册一个钩子，undo/redo 成功后统一调度一次保存
+// （内部是防抖，连按撤销不会写盘风暴）。写口自己的保存**不删**：它们覆盖的是首次写入。
+let historyPersistHook = null;
+
+/** 由 store 装配处注册（geodata.js）；传 null 注销。返回函数本身便于单测。 */
+export function setHistoryPersistHook(fn) {
+  historyPersistHook = typeof fn === 'function' ? fn : null;
+  return historyPersistHook;
+}
+
+function persistAfterHistory() {
+  if (!historyPersistHook) return;
+  try {
+    historyPersistHook();
+  } catch (e) {
+    // 落盘调度失败**不许影响撤销本身**（内存已经撤了，磁盘下一拍还会补）
+    console.warn('[undo] 撤销后的落盘调度失败：', e);
+  }
+}
+
 export function undo() {
   if (!canUndo.value) return null;
   const cmd = history.value[pointer.value];
   cmd.undo();
   pointer.value -= 1;
+  persistAfterHistory();
   return cmd;
 }
 
@@ -113,6 +138,7 @@ export function redo() {
   pointer.value += 1;
   const cmd = history.value[pointer.value];
   cmd.redo();
+  persistAfterHistory();
   return cmd;
 }
 

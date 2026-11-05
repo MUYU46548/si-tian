@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed, toRaw } from 'vue';
-import { execute, undo as undoCmd, redo as redoCmd, canUndo as undoCanUndo, canRedo as undoCanRedo, getLastCommandLabel } from './undo';
+import { execute, undo as undoCmd, redo as redoCmd, canUndo as undoCanUndo, canRedo as undoCanRedo, getLastCommandLabel, setHistoryPersistHook } from './undo';
 // 单一写闸门（Phase 2）：本文件是“世界观数据落盘”的主要入口，所有 save*/re-extract 必须先过 guardWrite。
 // 无项目只读态下这些调用会被拒绝（不写散文件、不写回 Obsidian）。见 store/writeGate.js 的入口清单。
 import {
@@ -627,6 +627,16 @@ export const useGeodataStore = defineStore('geodata', () => {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(runAutoSave, AUTO_SAVE_DELAY);
   }
+
+  // ── B2（2026-11-05）：撤销/重做也要落盘 ─────────────────────────────────
+  // 写口自己的保存只覆盖"第一次 execute"；撤销时没人补，于是"改了 → Ctrl+Z → 重开又回来"
+  // 会反复出现（事件表 / 标记 / 019 重导都踩过）。这里把两条链都挂到统一钩子上：
+  // 剧本层（300ms）+ 画布层（800ms，项目态会 syncCanvasToProject），都是防抖，连按撤销不会写盘风暴。
+  // 两条链各自有"只读 / 自动保存关闭 / 手势闸门"的判定，钩子不绕过它们。
+  setHistoryPersistHook(() => {
+    scheduleAutoSaveScenarios();
+    scheduleAutoSave();
+  });
 
   // 手势闸门（第十九修·一）：到点先问"人手还在画布上吗"，在就顺延（上限 5s，见 interactionGate.js）
   function runAutoSave() {

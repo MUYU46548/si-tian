@@ -82,5 +82,26 @@
   - **"保存挪线程"因此暂不必要**：一次保存 ≈ 序列化 53ms + 快照 100ms，且走 800ms 防抖。
     重估条件：项目 >15MB 或补丁回到 MB 级。
 
+## 2026-11-05：撤销/重做不落盘 —— 统一落盘钩子（B2）
 
+**症状（反复出现的一类）**：改 → Ctrl+Z → 关掉重开，改动又回来了。此前每遇到一处就单独打补丁
+（事件表 `timelineEvents`、标记 `put()/spliceBack`、019 重导 `reimportBasemapAsNew`）。
 
+**清点**（`node scripts/tests/tools/audit-undo-persist.js`）：store 里共 **162 处 `execute()`**，
+其中 **137 处的 undo/redo 闭包里没有安排保存** —— 它们的保存靠调用方在 execute 之后补一次，
+而撤销时没人补。逐条贴表没有意义（新命令又会犯），所以修在时序上。
+
+**修法**：`store/undo.js` 加统一落盘钩子
+- `setHistoryPersistHook(fn)`：由 `geodata.js` 注册（它掌握两条链）；
+- `undo()/redo()` 成功后调 `persistAfterHistory()` → `scheduleAutoSaveScenarios()`（剧本层 300ms）
+  + `scheduleAutoSave()`（画布层 800ms，项目态会 `syncCanvasToProject`）；
+- 钩子抛错**不影响撤销本身**（内存已回退）；写口自己的保存**不删**（覆盖首次写入）。
+
+**判据**
+- `test_165_undo_persist`（新，mock IPC）：剧本元信息域 + 实体属性域，**撤销后出现新的保存调用**，重做同样；
+- `unit/test_undo_persist_hook.js`（7 条）：execute 不触发 / undo+1 / redo+1 / 空历史不触发 /
+  钩子抛错不影响撤销 / 写闸门拒绝零副作用 / geodata 钩子覆盖两域；
+- 真机：`drill_quit_flush.py --phase p4`（读盘核对）仍绿。
+
+**没做（刻意）**：撤销**栈本身**不跨会话持久化（重开项目后历史为空）—— 那是另一个命题
+（要序列化命令闭包），不在“撤了不落盘”这类数据安全问题的范围里。

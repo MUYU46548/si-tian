@@ -222,6 +222,23 @@
     （单测 b1 守着，带负向探针）。
   - 顺带收口：`BIOME_COLORS` 从 `ScenarioMap` 与 `PlanetMap` 两份定义抽成 `utils/biomeColors.js`
     —— 两份已经漂移（行星那份漏了 `land`）。
+- **撤销/重做也落盘（B2，2026-11-05）**: `python scripts/tests/run_tests.py test_165_undo_persist`
+  + `unit/test_undo_persist_hook.js`（7 条）—— `store/undo.js` 加**统一落盘钩子**：
+  `setHistoryPersistHook(fn)`（由 `geodata.js` 注册），`undo()/redo()` 成功后调
+  `persistAfterHistory()` → `scheduleAutoSaveScenarios()`（剧本层 300ms）+ `scheduleAutoSave()`
+  （画布层 800ms）。写口自己的保存**不删**（它们覆盖首次 execute）；钩子抛错**不影响撤销本身**
+  （内存已回退，磁盘下一拍还会补）；两条链各自的“只读 / 自动保存关闭 / 手势闸门”照旧生效（钩子不绕过）。
+  - 清点工具：`node scripts/tests/tools/audit-undo-persist.js` —— store 里 **162 处 `execute()`**、
+    **137 处**闭包里没有安排保存（保存靠调用方在 execute 之后补一次，撤销时没人补）。
+    所以修在**时序**上，不逐条打补丁（事件表 / 标记 / 019 重导都曾单独补过，还会再犯）。
+  - 判据 `test_165_undo_persist`（mock IPC）：剧本元信息域 + 实体属性域，**撤销后出现新的保存调用**，
+    重做同样；单测 7 条含“钩子抛错不影响撤销”“写闸门拒绝零副作用”两条负向探针。
+  - 🔴 踩坑：第一跑把**写口自己那次保存的延迟**（300+800ms 链路）算到了撤销头上 → 假绿。
+    用例里改成“先等改名那次保存落完，再取基线”，否则撤销前后是同一个 save 计数。
+    实测链路：剧本域撤销 → 约 1.1s 落盘；画布域撤销 → 约 1.6s（800+800）。判据窗口取 2.6s。
+  - 没做（刻意）：撤销**栈本身**不跨会话持久化（重开项目历史为空）—— 要序列化命令闭包，另一个命题。
+  - ⚠️ `drill_quit_flush.py --phase p4` 在本机当前 dist 上**红**（点“历史剧本”后画布 30s 不挂载；
+    旧 dist 同样红，与本改动无关）—— 已建卡，别把它当 B2 的判据。
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与
