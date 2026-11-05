@@ -72,6 +72,8 @@
   background: #1e293b;
   border-bottom: 1px solid #334155;
   align-items: stretch;
+  /* 「更多」工具面板是 `position:absolute` 浮层 —— 锚点必须是工具栏本身 */
+  position: relative;
 }
 
 .toolbar-row {
@@ -136,30 +138,81 @@
 }
 .basemap-exit:hover { background: rgba(120, 53, 15, 0.5); }
 .toolbar-more {
-  display: flex; flex-direction: column; gap: 2px;
-  border-top: 1px solid var(--border, #2a3038);
-  max-height: 42vh;
-  /* 2026-11-05：**只许竖向滚**。原来 overflow-y:auto 而 x 轴是 visible → 计算成 auto，
-     于是那一条永远放不下的工具组把整个面板拉出**横向滚动条**，用户看到的就是
-     “一堆按钮还看不全”。纵向滚动 + 组内换行才是对的。 */
+  /* 2026-11-05 第二次改向（用户原话：“分组把原本就紧张的地图观测空间又压扁了一大截”）：
+     它原来是**文档流里的一块**，展开就把画布往下推半屏。现在改成**浮在画布上的工具面板**
+     （position:absolute）：地图高度一点不动，面板按用途分成 5 张卡片、自适应成多列。
+     参照的是画图软件的老办法（工具面板浮层），不是把按钮越藏越深。 */
+  position: absolute;
+  left: 12px;
+  top: calc(100% + 6px);
+  z-index: 45;
+  /* 🔴 宽度按**容器**（工具栏 = 画布区）算，不能用 100vw —— 左侧还有导航栏，
+     100vw 会让面板宽出画布、把整页拉出横向滚动条（2026-11-05 截图真踩）。
+     上限 640px = 两列，右半边地图仍然看得见。 */
+  width: min(640px, calc(100% - 24px));
+  max-height: min(72vh, 620px);
   overflow-y: auto;
   overflow-x: hidden;
+  display: grid;
+  /* 显式两列（auto-fit 在这里算不出两列：卡片里有宽行，实测退化成单列、面板变得又高又窄）。 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  background: rgba(23, 33, 51, 0.985);
+  border: 1px solid #334155;
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
 }
-.toolbar-more .toolbar-row { background: transparent; }
-/* 🔴 「更多」是**固定高度 + 竖向滚动**的列容器：里面的行必须 `flex: 0 0 auto`。
-   默认 `flex-shrink:1` 会在总高超出 max-height 时把每一行**压扁**，内容挤出来盖在下一行上 ——
-   实测观感就是文字重影（同一格里同时看到“网格吸附”和“生物群系”），像界面坏了。 */
-.toolbar-more > * { flex: 0 0 auto; }
-/* 「更多」里的分区标题（省份几何 / 地形·底图·生成 / 图层·着色 / 剧本·导入导出）：
-   自己占一行、吸顶，滚到哪儿都知道这一段是什么。 */
-.toolbar-more > [data-testid^="more-sec-"] {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 3px 0 2px;
-  background: #1e293b;
+.tm-title {
+  width: 100%;
+  margin: 2px 0 4px;
+  padding-bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
+.tm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: transparent;
+}
+.tm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 9px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.6);
+}
+.tm-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+.tm-head strong { font-size: 12px; color: #e2e8f0; }
+.tm-head .tm-sub { flex: 1; font-size: 11px; color: #94a3b8; }
+.tm-head .tm-close {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid #475569;
+  background: #334155;
+  color: #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.tm-head .tm-close:hover { background: #475569; }
+.toolbar-more .toolbar-row { background: transparent; }
+/* 卡片里的行：竖向排、彼此留 4px；卡片内的按钮组继续按行内换行 */
+.tm-card .toolbar-row { min-height: 0; gap: 6px; }
 
 .row-label {
   color: #94a3b8;

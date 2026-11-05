@@ -534,11 +534,18 @@
       </div>
 
       <!-- “更多”（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
+      <!-- 点面板以外的任何地方就收起（浮层惯例；不必再回来找“更多”按钮） -->
+      <div v-if="moreOpen" class="tm-backdrop" @click="moreOpen = false"></div>
       <div v-if="moreOpen" class="toolbar-more">
-        <div
-          data-testid="more-sec-province"
-          style="width:100%;margin:2px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
-        >省份与笔刷</div>
+        <!-- 2026-11-05 第二次改向：这块不再是“往下推的抽屉”，而是**浮在画布上的工具面板**。
+             用户原话：“分组把原本就紧张的地图观测空间又压扁了一大截，显然不是好主意。”
+             所以：地图不动、面板浮层 + 按用途分卡片（5 张自适应多列），并给一个明确的“收起”。 -->
+        <div class="tm-head">
+          <strong>工具</strong><span class="tm-sub">按用途分组；最常用的四个留在上面那条工具栏上</span>
+          <button class="tm-close" data-testid="more-close" @click="moreOpen = false" title="收起工具面板">收起</button>
+        </div>
+      <section class="tm-card">
+        <div class="tm-title" data-testid="more-sec-province">省份与笔刷</div>
         <div class="toolbar-row">
           <label class="row-label">省份：</label>
           <div class="tool-group">
@@ -559,10 +566,9 @@
               ><Icon name="trash" :size="15"/>删除</button>
           </div>
         </div>
-        <div
-          data-testid="more-sec-brush"
-          style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
-        >笔刷与绘制</div>
+      </section>
+      <section class="tm-card">
+        <div class="tm-title" data-testid="more-sec-brush">笔刷与绘制</div>
         <div class="toolbar-row">
           <label class="row-label">笔刷：</label>
           <div class="tool-group">
@@ -694,10 +700,9 @@
            地形生成参数 / 派生 / 分辨率）就混在这一行里 —— 这就是“找了五分钟没找到”的直接原因。
            这里只加**一个 div 标题**，不动任何按钮：`test_65` 数的是 `.primary-row` 的可见控件
            与“更多”里的 `button` 数量，加 div 不影响计数。 -->
-      <div
-        data-testid="more-sec-terrain"
-        style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
-      >地形 · 底图 · 生成</div>
+      </section>
+      <section class="tm-card">
+        <div class="tm-title" data-testid="more-sec-terrain">地形 · 底图 · 生成</div>
       <!-- 第 3 行：地形/群系等笔刷设置 + 底图与视图操作 -->
       <div class="toolbar-row">
       <!-- 笔刷设置 -->
@@ -985,10 +990,9 @@
       </div>
       </div>
 
-      <div
-        data-testid="more-sec-layers"
-        style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
-      >图层 · 着色</div>
+      </section>
+      <section class="tm-card">
+        <div class="tm-title" data-testid="more-sec-layers">图层 · 着色</div>
       <!-- 第 4 行：图层显示 / 底图图层 / 着色 -->
       <div class="toolbar-row">
       <div class="tool-group">
@@ -1036,10 +1040,9 @@
       </div>
       </div>
 
-      <div
-        data-testid="more-sec-script"
-        style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
-      >剧本 · 导入导出</div>
+      </section>
+      <section class="tm-card">
+        <div class="tm-title" data-testid="more-sec-script">剧本 · 导入导出</div>
       <!-- 第 5 行：剧本与导入导出 -->
       <div class="toolbar-row">
       <div class="tool-group">
@@ -1066,6 +1069,7 @@
         <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/>导入替换</button>
       </div>
       </div>
+      </section>
       </div>   <!-- /.toolbar-more -->
     </div>
 
