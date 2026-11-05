@@ -181,8 +181,13 @@ export function createPointerHandlers(ctx) {
     if (!pts.length || baseMap.value === beforeTrace) render();
   }
   if (st.ownerStrokeActive) {
-    commitOwnerStroke();
-    render();
+    const res = commitOwnerStroke();
+    // 🔴 2026-11-05（A4）：数据**真的变了**就不再在这里同步重绘 —— 与上面自由绘制（2026-10-24）同一条纪律：
+    //    归属一改，`scenarios` 就换引用 → `watch(sortedScenarios)` 会在**同一帧 pre-flush** 里重画一次；
+    //    这里再画一遍 = 同一份内容整图重绘两次（实测松手同步段 54ms，其中一遍纯属重复）。
+    //    只有"没变"（空笔 / 值本来就一样 / 写口失败）时才必须自己补一帧：笔刷预览圈画在主画布上，
+    //    没有一次全量重绘就擦不掉。
+    if (!res || res.success === false || res.noop) render();
   }
   // 笔刷建省：抬手 → 整笔长成一个省（一笔 = 一条撤销；拒绝分支零副作用）
   if (st.provPaintActive) {

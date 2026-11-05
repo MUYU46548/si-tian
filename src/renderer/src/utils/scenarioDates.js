@@ -233,8 +233,20 @@ function migrateChangeYears(scenario) {
  *
  * @returns {object} 新剧本对象（无改动时可能返回入参本身）
  */
+const normalizeDatesCache = new WeakMap();
 export function normalizeScenarioDates(scenario) {
   if (!scenario || typeof scenario !== 'object') return scenario;
+  // 🔴 纯函数 + 写口一律换引用（项目红线：嵌套属性不原地改）⇒ 同一个剧本对象只需要算一次。
+  //    415 省项目里这步每次 `buildTimeline` 要 4~5ms；而涂一笔归属会重算**整条时间轴**，
+  //    13 段里 12 段的 changeEvents 根本没动，白白陪着算（A4，2026-11-05）。
+  const cached = normalizeDatesCache.get(scenario);
+  if (cached !== undefined) return cached;
+  const out = normalizeScenarioDatesUncached(scenario);
+  normalizeDatesCache.set(scenario, out);
+  return out;
+}
+/** 规整/迁移的实际实现（唯一实现在这里；上面那层只负责缓存） */
+function normalizeScenarioDatesUncached(scenario) {
   const hasOld = Object.prototype.hasOwnProperty.call(scenario, 'changeYears');
   const hasNew = Object.prototype.hasOwnProperty.call(scenario, 'changeEvents');
   if (!hasOld && !hasNew) return scenario;

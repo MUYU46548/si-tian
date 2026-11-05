@@ -133,8 +133,8 @@ STROKE_JS = r"""(async () => {
   const pol = polities[0] || null;
   const pol2 = polities[1] || null;
 
-  /** 一笔：按下 → 3 次 mousemove → 松手；返回**松手那一下**的同步耗时 */
-  const strike = (targets, tgt) => {
+  /** 一笔：按下 → 3 次 mousemove → 松手；返回**松手那一下**的同步耗时 + 到下一帧的时间 */
+  const strike = async (targets, tgt) => {
     SM.selectedPolity = tgt;
     SM.clearOwnerMode = !tgt;
     const ms = [];
@@ -146,11 +146,18 @@ STROKE_JS = r"""(async () => {
     }
     const t = performance.now();
     cvs.dispatchEvent(mk('mouseup', pr.sx + 9, pr.sy + 6));
-    return { commitMs: Math.round((performance.now() - t) * 100) / 100, moveMs: ms };
+    const commitMs = Math.round((performance.now() - t) * 100) / 100;
+    // 「松手 → 下一帧」：同步段变短不代表用户变快（可能只是把重绘挪到微任务里）。
+    // 这一枚读数就是用来防"账面变绿、手感没变"的（A4 加）。
+    const frameMs = await new Promise((res) => {
+      const fin = () => res(Math.round((performance.now() - t) * 100) / 100);
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fin); else setTimeout(fin, 16);
+    });
+    return { commitMs, frameMs, moveMs: ms, perf: t };
   };
 
   // ① 预热一笔（冷启动的 JIT / 命中索引 / 基帧都在这笔里付掉，不该算进稳态口径）
-  const warm = strike(null, pol);
+  const warm = await strike(null, pol);
 
   // 把归属写口包一层计时：60ms 到底花在"写口"还是"事件/渲染"上，得能拆开说
   let storeMs = 0, storeCalls = 0;
@@ -169,8 +176,8 @@ STROKE_JS = r"""(async () => {
   for (let i = 0; i < 4; i++) {
     const tgt = (i % 2 === 0) ? (pol2 || null) : pol;
     const t = Date.now();
-    const r = strike(null, tgt);
-    strokes.push({ i, commitMs: r.commitMs, moveMs: r.moveMs,
+    const r = await strike(null, tgt);
+    strokes.push({ i, commitMs: r.commitMs, frameMs: r.frameMs, moveMs: r.moveMs, perf: r.perf,
                    target: tgt ? (tgt.id || String(tgt)) : null, wall: t });
   }
   s.batchSetOwnership = origBatch;
@@ -184,6 +191,7 @@ STROKE_JS = r"""(async () => {
   const changed = [];
   for (const k of Object.keys(own)) if (own[k] !== before[k]) changed.push(k);
   const raw = strokes.map(x => x.commitMs).slice().sort((a, b) => a - b);
+  const rawF = strokes.map(x => x.frameMs).slice().sort((a, b) => a - b);
   // 内存侧这一笔的 groupId（账本里最后一条属于本省的事件）
   let gidMem = '';
   const led = (scNow && scNow.ledger && scNow.ledger.events) || [];
@@ -206,6 +214,11 @@ STROKE_JS = r"""(async () => {
       : (raw[raw.length / 2 - 1] + raw[raw.length / 2]) / 2) * 100) / 100,
     maxMs: Math.round(raw[raw.length - 1] * 100) / 100,
     minMs: Math.round(raw[0] * 100) / 100,
+    // 「松手 → 下一帧」：用来防"同步段变绿、手感没变"（重绘只是被挪到微任务/rAF 里）
+    medianFrameMs: Math.round(((rawF.length % 2)
+      ? rawF[(rawF.length - 1) / 2]
+      : (rawF[rawF.length / 2 - 1] + rawF[rawF.length / 2]) / 2) * 100) / 100,
+    maxFrameMs: Math.round(rawF[rawF.length - 1] * 100) / 100,
     lastTarget,
     // 60ms 拆账：写口（batchSetOwnership）自己占多少 / 其余是事件派发+渲染+回执
     storeMs: Math.round(storeMs * 100) / 100,
@@ -356,6 +369,74 @@ def ck(name, ok, detail=''):
     return bool(ok)
 
 
+# ── 画布中心像素（目标省的中心）：改完之后**画布真的更新了**吗 ────────────────
+# 为什么需要它：松手同步段可以靠"把重绘挪到别处"变好看，但用户要的是**画面变了**。
+# 只看时间不看画面 = 判据可能空转（2026-11-05 A4 这一轮加）。
+PIX_JS = r"""(() => {
+  const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+  const cv = SM.canvas;
+  const dpr = cv.width / cv.clientWidth;
+  const d = cv.getContext('2d').getImageData(
+    Math.round(cv.clientWidth / 2 * dpr), Math.round(cv.clientHeight / 2 * dpr), 1, 1).data;
+  return JSON.stringify({ r: d[0], g: d[1], b: d[2], a: d[3], hint: SM.provinceHint || '' });
+})()"""
+
+
+# ── CPU 采样（把"松手后那 50ms 到底花在谁身上"说清）─────────────────────────
+def profile_start(cdp):
+    """开始采样，返回页面时钟（performance.now()）。
+
+    🔴 不能拿 Date.now() 当窗口坐标：Profiler.startTime 与 performance.now() 是同一套单调时钟，
+       混用会一条样本都留不下（drill_undo_latency 第一版踩过）。
+    """
+    cdp.send('Profiler.enable')
+    cdp.send('Profiler.setSamplingInterval', {'interval': 500})
+    cdp.send('Profiler.start')
+    try:
+        return float(cdp.eval('performance.now()'))
+    except Exception:                                        # noqa: BLE001
+        return None
+
+
+def profile_stop(cdp, path, topn=12, offset_ms=None, span_ms=None):
+    prof = (cdp.send('Profiler.stop') or {}).get('profile') or {}
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(prof, f)
+    except Exception as e:                                        # noqa: BLE001
+        print(f'  ⚠️ profile 落盘失败：{e}')
+    return agg_profile(prof, topn, offset_ms, span_ms)
+
+
+def agg_profile(prof, topn=12, offset_ms=None, span_ms=None):
+    """按 self time 聚合到函数（timeDeltas 单位是微秒）。"""
+    nodes = {n.get('id'): n for n in (prof.get('nodes') or [])}
+    samples = prof.get('samples') or []
+    deltas = prof.get('timeDeltas') or []
+    start_us = prof.get('startTime') or 0
+    cur = start_us
+    self_us = {}
+    covered_us = 0
+    for i, sid in enumerate(samples):
+        d = deltas[i] if i < len(deltas) else 0
+        cur += d
+        rel_ms = (cur - start_us) / 1000.0
+        if offset_ms is not None and not (offset_ms <= rel_ms <= offset_ms + (span_ms or 220)):
+            continue
+        self_us[sid] = self_us.get(sid, 0) + d
+        covered_us += d
+    rows = []
+    for sid, us in self_us.items():
+        cf = (nodes.get(sid) or {}).get('callFrame') or {}
+        url = cf.get('url') or ''
+        rows.append({'fn': cf.get('functionName') or '(anonymous)',
+                     'file': url.split('/')[-1] if url else '',
+                     'line': cf.get('lineNumber'), 'ms': round(us / 1000.0, 1)})
+    rows.sort(key=lambda r: -r['ms'])
+    return {'totalMs': round(covered_us / 1000.0, 1), 'top': rows[:topn],
+            'window': [round(offset_ms, 1), span_ms] if offset_ms is not None else None}
+
+
 def main():
     args = sys.argv[1:]
     real = args[args.index('--project') + 1] if '--project' in args else ''
@@ -467,6 +548,9 @@ def main():
         sig0 = (stat0.st_mtime_ns, stat0.st_size)
 
         # ── 真鼠标：预热 1 笔 + 稳态 5 笔（松手同步段逐笔计时）──
+        no_profile = '--no-profile' in args
+        px0 = eval_json(cdp, PIX_JS, required=('r',), desc='涂之前的中心像素')[1]
+        perf0 = profile_start(cdp) if not no_profile else None
         ok_st, stroke = eval_json(cdp, STROKE_JS, required=('ok',), desc='涂一笔 ×6')
         bad += 0 if ck('鼠标事件走完了（预热 1 笔 + 稳态 5 笔）', bool(ok_st) and stroke.get('ok'),
                        json.dumps(stroke, ensure_ascii=False)[:160]) else 1
@@ -476,6 +560,8 @@ def main():
         print(f"  · 松手同步段：预热 {stroke.get('warmMs')} ms · 稳态 "
               f"min {stroke.get('minMs')} / 中位 {median_ms} / max {stroke.get('maxMs')} ms", flush=True)
         print(f"  · 逐笔：{[s.get('commitMs') for s in (stroke.get('strokes') or [])]}", flush=True)
+        print(f"  · 松手 → 下一帧：中位 {stroke.get('medianFrameMs')} ms · max {stroke.get('maxFrameMs')} ms"
+              f"（同步段短不代表用户变快 —— 这一枚防的是“把重绘挪走”的假绿）", flush=True)
         print(f"  · 拆账：归属写口 batchSetOwnership 每次 {stroke.get('storePerCallMs')} ms"
               f"（{stroke.get('storeCalls')} 次共 {stroke.get('storeMs')} ms）"
               f" → 其余 {round((median_ms or 0) - (stroke.get('storePerCallMs') or 0), 1)} ms 是事件/渲染/回执",
@@ -488,6 +574,27 @@ def main():
         bad += 0 if ck('前置：画布正中确实是目标省（相机没被布局改掉）',
                        bool(stroke.get('centerMatches')),
                        f"正中命中 {stroke.get('centerProvince')} / 目标 {pid}") else 1
+
+        # ── CPU 归因：松手后那一段到底花在谁身上（Profile 窗口 = 最后一笔松手 + 260ms）──
+        prof = None
+        if perf0 is not None:
+            sts = stroke.get('strokes') or []
+            if sts:
+                offset = float(sts[-1].get('perf') or 0) - perf0
+                prof = profile_stop(cdp, os.path.join(out_dir, 'profile-stroke.json'),
+                                    offset_ms=max(0.0, offset - 5), span_ms=260)
+                if prof:
+                    print(f"  · CPU 样本（最后一笔松手 + 260ms）：覆盖 {prof.get('totalMs')} ms", flush=True)
+                    for r in (prof.get('top') or [])[:8]:
+                        print(f"      {r['ms']:>7.1f} ms  {r['fn']}  ({r['file']}:{r['line']})", flush=True)
+
+        # ── 画布真的更新了吗（松手同步段可以靠"把重绘挪走"变好看，画面不能因此丢掉）──
+        time.sleep(0.25)
+        px1 = eval_json(cdp, PIX_JS, required=('r',), desc='涂之后的中心像素')[1]
+        px_same = (px0.get('r'), px0.get('g'), px0.get('b')) == (px1.get('r'), px1.get('g'), px1.get('b'))
+        bad += 0 if ck('⑧ 松手后画布真的重画了（目标省中心像素变了）', not px_same,
+                       f"前 {(px0.get('r'), px0.get('g'), px0.get('b'))} → 后 "
+                       f"{(px1.get('r'), px1.get('g'), px1.get('b'))}") else 1
         print(f"  · 这几笔改了 {stroke.get('changedCount')} 个省：{stroke.get('changed')}", flush=True)
         print(f"  · 回执：{str(stroke.get('statusMsg'))[:80]}", flush=True)
 

@@ -80,15 +80,25 @@ export function sortScenarios(scenarios) {
 }
 
 /** 集团映射：{ polityId: [provinceId, ...] }（按 provinceId 排序，保证确定性） */
+// 🔴 按 `ownership` 对象引用缓存（A4，2026-11-05）：`computeLineage` 会为每一代算两次集团映射
+//    （作为 k 与 k-1），415 省项目一次约 6ms；涂一笔归属 → 整条时间轴重算 → 13 段里 12 段
+//    的 ownership 引用没变，缓存直接命中。ownership 的写口一律换新对象（项目红线）。
+const groupMapCache = new WeakMap();
 export function groupMap(scenario) {
+  const own = scenario?.ownership;
+  const cacheable = !!own && typeof own === 'object';
+  if (cacheable) {
+    const hit = groupMapCache.get(own);
+    if (hit) return hit;
+  }
   const g = {};
-  const own = scenario?.ownership || {};
-  for (const pid of Object.keys(own)) {
+  for (const pid of Object.keys(own || {})) {
     const pol = own[pid];
     if (!pol) continue;
     (g[pol] || (g[pol] = [])).push(pid);
   }
   for (const k of Object.keys(g)) g[k].sort();
+  if (cacheable) groupMapCache.set(own, g);
   return g;
 }
 

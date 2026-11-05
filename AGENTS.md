@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**99 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**101 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -232,10 +232,24 @@
   包装节点**恰好 1 个**（重复 = 两块面板精确重叠，2026-11-03 真实踩到）、可见面积、完整在视口内、
   `elementFromPoint(面板中心)` 没被盖、背景不透明、正文对比度 ≥4.5:1（暗色）、不整块挡死画布、
   关掉后零节点、关掉后画布可再命中；每块面板留一张整页截图 `build/overlays-visual/<panel>.png`。
-- **「涂归属」一笔的端到端时延**: `npm run test:owner-latency`（`drill_owner_latency.py`）—— **真实 Electron +
-  真实 415 省项目的工作副本**（原项目只读：跑前后 sha256 一致），量四段：松手同步段（口径 ≤50ms）/
-  交给项目 / 松手→磁盘（含 800ms 自动保存防抖）/ 显式 flush→磁盘；并从**磁盘**核对归属、`changeEvents`、
-  一笔一组的 `groupId`。产物 `build/owner-latency/<ts>/{result.json,summary.md}`。
+- **一笔“涂归属”的端到端时延（A4，2026-11-05 收口）**: `npm run test:owner-latency`
+  （`drill_owner_latency.py`）—— **真实 Electron + 真实 415 省项目的工作副本**（原项目只读：跑前后
+  sha256 一致），量四段：松手同步段（口径 ≤50ms）/ 交给项目 / 松手→磁盘（含 800ms 自动保存防抖）/
+  显式 flush→磁盘；并从**磁盘**核对归属、`changeEvents`、一笔一组的 `groupId`。
+  产物 `build/owner-latency/<ts>/{result.json,summary.md,profile-*.json}`。
+  - 读数（本机 / 8.2MB 真实项目）：松手同步段 **51.65ms → 3.25ms**；松手→下一帧 **80.95 → 58.95ms**。
+  - 归因（`--profile` → `profile-stroke.json`，按“最后一笔松手 + 260ms”窗口聚合）：那 51ms **既不是**
+    写口（`batchSetOwnership` 只占 3.3ms）**也不是**原生光栅化 —— 是 `buildTimeline` 整条重算：
+    `buildLedger` 13.1ms + `groupMap` 11.6ms + `computeEraChanges` 7.1ms + 日期归一 4.9ms。
+  - 两刀：① **去掉重复整图重绘** —— 归属一改 `scenarios` 换引用，`watch(sortedScenarios)` 会在同一帧
+    pre-flush 重画一次，`pointer.js` 里那次 `render()` 是第二遍（与自由绘制 2026-10-24 同一个坑）；
+    只有 noop / 失败 / 空笔才自己补一帧（笔刷预览圈画在主画布上，必须擦）。② **时间轴重算的纯函数缓存**：
+    `groupMap` 按 `ownership` 引用、`normalizeScenarioDates` 按剧本对象缓存（写口一律换引用 → 12/13 段命中）。
+  - 🔴 这枚判据要看**两段时间**：同步段变短可能只是“把重绘挪到微任务”（假绿）。所以 drill 另加
+    ①「松手 → 下一帧」读数、②**画布中心像素真的变了**（第 ⑧ 条）—— 像素没变 = 重绘丢了，直接红。
+  - ⚠️ `--profile` 期间**不判时间**：采样会改变读数（同机同项目 50ms → 53.85ms）。口径只在 `--no-profile` 下算。
+  - 还剩的：58.95ms 的“到下一帧”全是一次整图重绘（timeline 重算已缓存，剩下是光栅化）——
+    再往下要分层/脏区渲染（`buildLedger` 也可按代缓存，本轮没做）。
 - **撤销/重做的端到端时延（C2，2026-11-05）**: `npm run test:undo-latency`（`drill_undo_latency.py`）——
   真机（Vite 5180 + 真实 Electron（隔离 profile、CDP 9227）+ **真实 415 省项目副本**，原项目只读），
   量四类撤销：涂归属一笔（账本组撤）/ 编辑省份（快照 + 整图重绘）/ 添加标记 / 连续撤销。
@@ -338,7 +352,7 @@
   查关系走 `utils/scenarioEventLedger.js`；**不许**把归属复制进事件表（或反过来）——
   两份真值迟早漂移，且归属回放会被无关事件拖慢（`test_132` / `unit/test_scenario_event_ledger.js` 守）。
 - **读料必须只读**（2026-10-22）：扫知识库（`vaultIndex.buildIndex` / `vault-scan.mjs` / `vault-classify-report`）一律 `write:false` / `writeCache:false`，**连 `.sitian` 都不碰**；要产物就写 `--out` 指定的库外目录。归类/推断只有一份实现（`scripts/lib/vaultClassify.js`），认不出就进「待人工」，不许默认成地点（`unit/test_vault_classify.js` 用库指纹快照守）。
-- **不要整读大文件**：`ScenarioMap.vue`（**6,920 行**，2026-11-03 把 1,649 行样式搬到
+- **不要整读大文件**：`ScenarioMap.vue`（**6,998 行**，2026-11-03 把 1,649 行样式搬到
   `scenario-map.css`，原来 8,554 行）/ `PlanetMap.vue`（4,559 行）是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
   （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。
   `ScenarioMap` 的体量与浮层落点有闸门：`unit/test_scenario_map_split.js`（≤7,000 行 + 六个浮层各恰好一次 +
@@ -370,7 +384,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 99 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 101 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |
