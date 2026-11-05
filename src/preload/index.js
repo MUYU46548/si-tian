@@ -189,6 +189,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // P0.4: 渲染进程错误上报（主进程 electron-log 落盘）
   reportError: (payload) => ipcRenderer.invoke('report-error', payload),
 
+  // 诊断包（发布门槛④）：版本/环境/最近错误 + 项目**计数**；不含世界观正文（主进程侧脱敏 + 打包）
+  diagExport: (payload) => ipcRenderer.invoke('diag-export', payload || {}),
+
   // 平台信息
   platform: process.platform,
 

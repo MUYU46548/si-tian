@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
 const path = require('path');
+const os = require('os');
 const fs = require('fs').promises;
 const matter = require('gray-matter');
 const { extractGeodata, listScannedNotes } = require('../../scripts/extract-data');
@@ -16,6 +17,8 @@ const { registerProjectHandlers } = require('./handlers/projectHandler');
 const { registerGitSyncHandlers } = require('./handlers/gitSyncHandler');
 // 逐年切片批量落盘（顶层不 require electron 的纯文件层 → 可被 Node 单测直接调用）
 const { writeFrames } = require('./handlers/exportFramesHandler');
+// 诊断包（发布门槛④）：纯函数 + 零依赖 zip；包内容不含世界观正文，路径全部脱敏
+const { buildDiagnostics, writeDiagnostics } = require('./diagPackage');
 const { createCredentialStore } = require('./gitCredentialStore');
 // 全库只读索引（D1）：与提取器分工 —— 提取器决定“地图节点”，本模块回答“库里有什么”
 const vaultIndex = require('./vaultIndex');
@@ -1091,6 +1094,61 @@ ipcMain.handle('save-text-file', async (event, { text, defaultName, kind }) => {
     return { success: true, path: result.filePath, bytes: Buffer.byteLength(String(text ?? ''), 'utf8') };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+});
+
+// IPC: 导出诊断包（发布门槛④，2026-11-05）
+// 包内容 = 版本 / 环境 / 配置摘要（脱敏）/ 最近日志尾 / 最近一次错误 / 项目**计数**；
+// 绝不读项目文件与笔记正文。`payload.target` 给了就不弹对话框（演练/用例用）。
+ipcMain.handle('diag-export', async (event, payload = {}) => {
+  try {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+    let target = typeof payload.target === 'string' && payload.target ? payload.target : '';
+    if (!target) {
+      const r = await dialog.showSaveDialog(mainWindow, {
+        title: '导出诊断包（不含世界观正文）',
+        defaultPath: path.join(app.getPath('documents'), `sitian-diagnostics-${stamp}.zip`),
+        filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }],
+      });
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+      target = r.filePath;
+    }
+    let logDir = '';
+    try { logDir = path.dirname(log.transports.file.getFile().path); } catch (_) { logDir = ''; }
+    if (!logDir) { try { logDir = app.getPath('logs'); } catch (_) { logDir = ''; } }
+    let screen = null;
+    try {
+      const { screen: sc } = require('electron');
+      const d = sc.getPrimaryDisplay();
+      screen = { w: d.size.width, h: d.size.height, scale: d.scaleFactor };
+    } catch (_) { screen = null; }
+    const vault = getVaultPath();
+    const lastProject = getLastProjectPath();
+    const diag = buildDiagnostics({
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      locale: app.getLocale(),
+      versions: process.versions,
+      platform: process.platform,
+      arch: process.arch,
+      osRelease: `${os.type()} ${os.release()}`,
+      cpuCount: (os.cpus() || []).length,
+      totalMemoryGB: os.totalmem() / (1024 * 1024 * 1024),
+      screen,
+      vaultPath: vault,
+      lastProjectPath: lastProject,
+      secrets: [vault, lastProject].filter(Boolean),
+      stats: payload.stats || {},
+      logDir,
+      logOptions: { maxFiles: 3, maxLines: 400 },
+    });
+    const res = writeDiagnostics(target, diag);
+    if (res.ok) log.info('[diag] 诊断包已导出：', target);
+    // `logDir` 回给界面做“日志在哪”的提示；包里的日志目录只写占位符
+    return { ...res, logDir };
+  } catch (err) {
+    log.error('[diag] 导出失败:', err);
+    return { ok: false, error: (err && err.message) || String(err) };
   }
 });
 

@@ -175,6 +175,22 @@
             <span class="disclaimer-state" data-testid="about-disclaimer-state">{{ disclaimerState }}</span>
           </div>
         </section>
+
+        <!-- 诊断包（发布门槛④，2026-11-05）：陌生人崩了只有一张截图时，这是唯一能发回来的东西 -->
+        <section class="about-section" data-testid="about-diagnostics">
+          <h3><Icon name="wrench" :size="16" style="margin-right:6px"/>诊断</h3>
+          <p class="description">
+            导出<b>诊断包</b>：版本号、系统环境、配置摘要（库/项目路径只报盘符）、最近日志与最近一次错误、
+            当前项目的<b>条目计数</b>。<b>不含任何世界观正文</b>，路径全部脱敏。出问题时把它发给作者即可。
+          </p>
+          <div class="disclaimer-row">
+            <Button variant="outline" size="sm" data-testid="about-export-diag" :disabled="diagBusy" @click="exportDiagnostics">
+              {{ diagBusy ? '正在导出…' : '导出诊断包' }}
+            </Button>
+            <span class="disclaimer-state" data-testid="about-diag-state">{{ diagState }}</span>
+          </div>
+          <p class="description" data-testid="about-log-dir">日志在：{{ logDirHint }}</p>
+        </section>
       </div>
 
       <div class="about-footer">
@@ -214,11 +230,71 @@ import { Button } from './ui/button';
 import { DISCLAIMER_VERSION, ackedDisclaimerAt } from '../utils/disclaimer';
 // 节数从手册本体取（不要在这里写死数字 —— 加一节手册就会让这句话变成假话）
 import { guideStats } from '../utils/userGuide';
+import { useProjectStore } from '../store/projectStore';
 
 const isOpen = ref(false);
 const guideCount = guideStats().sections;
 const appVersion = computed(() => window.sitianAPI?.version || '0.1.0');
 const copiedVersion = ref(false);
+
+// ── 诊断包（发布门槛④，2026-11-05）─────────────────────────────────────────
+// 只看**计数**：实体/底图/省份/剧本/网格格/河/路。一个世界观的专名都不取。
+const diagBusy = ref(false);
+const diagState = ref('含版本/环境/最近错误与项目计数，不含世界观正文');
+const logDirHint = ref('导出后会显示本机实际路径');
+
+function projectStats() {
+  try {
+    const ps = useProjectStore();
+    const p = ps && ps.project ? ps.project : null;
+    if (!p) return {};
+    const sc = (p.scenarios && typeof p.scenarios === 'object') ? p.scenarios : {};
+    const bms = sc.baseMaps || {};
+    let provinces = 0, rivers = 0, gridCells = 0;
+    for (const b of Object.values(bms)) {
+      if (Array.isArray(b && b.terrain)) provinces += b.terrain.length;
+      if (Array.isArray(b && b.rivers)) rivers += b.rivers.length;
+      const n = b && b.heightmap && b.heightmap.grid && b.heightmap.grid.points
+        ? b.heightmap.grid.points.length : 0;
+      if (Number.isFinite(n)) gridCells += n;
+    }
+    return {
+      entities: p.entities ? Object.keys(p.entities).length : 0,
+      baseMaps: Object.keys(bms).length,
+      provinces,
+      rivers,
+      gridCells,
+      scenarios: sc.scenarios ? Object.keys(sc.scenarios).length : 0,
+    };
+  } catch (_) { return {}; }
+}
+
+async function exportDiagnostics() {
+  if (diagBusy.value) return;
+  diagBusy.value = true;
+  diagState.value = '正在导出…';
+  try {
+    const api = window.sitianAPI;
+    if (!api || typeof api.diagExport !== 'function') {
+      diagState.value = '当前环境不支持导出（需要桌面版）';
+      return;
+    }
+    const res = await api.diagExport({ stats: projectStats() });
+    if (res && res.ok) {
+      const kb = Math.max(1, Math.round((Number(res.bytes) || 0) / 1024));
+      diagState.value = `已导出 ${(res.entries || []).length} 个文件 · ${kb} KB → ${res.path}`;
+      if (res.logDir) logDirHint.value = res.logDir;
+    } else if (res && res.canceled) {
+      diagState.value = '已取消';
+    } else {
+      diagState.value = '导出失败：' + ((res && res.error) || '未知错误');
+    }
+  } catch (e) {
+    diagState.value = '导出失败：' + ((e && e.message) || e);
+  } finally {
+    diagBusy.value = false;
+  }
+}
 
 // 免责声明：关于面板只负责“入口 + 当前确认状态”，弹窗本体在 App.vue（唯一实例，
 // 首启阻断与随时查看共用，避免两份实现漂移）。
