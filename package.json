@@ -76,6 +76,7 @@
       "!build/_*.png",
       "src/main/**/*",
       "src/preload/**/*",
+      "sample/**/*",
       "scripts/extract-data.js",
       "scripts/lib/**/*",
       "!scripts/tests/**/*",

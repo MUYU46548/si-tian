@@ -172,3 +172,9 @@ build/.noop*
 build/.verify-*
 # 诊断包真机演练产物（含本机日志摘要，本地证据）
 build/diag-package/
+
+# 示例世界生成器的中间产物（备份/日志；只入 .sitian 与预览图）
+sample/*.backups/
+sample/gen-*.log
+# 示例生成器的隔离 profile（真机跑批用）
+build/.sample-profile/

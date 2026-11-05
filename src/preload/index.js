@@ -106,6 +106,8 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   projectPickDir: () => ipcRenderer.invoke('project-pick-dir'),
   projectReveal: (filePath) => ipcRenderer.invoke('project-reveal', filePath),
   projectBackupNow: (filePath) => ipcRenderer.invoke('project-backup-now', filePath),
+  /** 示例项目（2026-11-05）：主进程把安装包里的示例复制到文档目录，返回可写路径 */
+  sampleProjectOpen: () => ipcRenderer.invoke('sample-project-open'),
   projectGitSnapshot: (payload) => ipcRenderer.invoke('project-git-snapshot', payload),
   // 🔴 原始底图来源备份（2026-10-11）：导入 `.map` 时把**原文**留一份到
   //    `<项目>.sitian.backups/basemap-sources/`（原子写 + 轮转 10 份；项目文件本身按

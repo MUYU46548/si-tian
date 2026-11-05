@@ -122,7 +122,10 @@ async function main() {
     // 把暮雨自己的项目名、隔壁“姊妹项目”的名字写进示例，等于把私人素材塞进公开包。
     // 这一条与 test_86（fixture 专名）同一性质：**白名单/黑名单都得有人守**，否则改文案时必然漂回来。
     const all = JSON.stringify(GUIDE_SECTIONS);
-    const forbidden = ['示例项目', '姊妹项目', '示例行星', '瓯王朝', '乐园星'];
+    // 黑名单 = 隐私扫描的**同一份词表**（scripts/privacy-terms.js，base64）——
+    // 两边各写一份就会出现“改名之后互相打架”（本轮：“示例王朝”被当成禁词）。
+    const { decodeTerms } = require('../../../scripts/privacy-terms.js');
+    const forbidden = decodeTerms();
     const hit = forbidden.filter((w) => all.includes(w));
     assert(hit.length === 0, `手册示例里出现真实专名：${hit.join('、')}（请换成虚构示例，如“示例世界”）`);
     return `${forbidden.length} 个专名一个都没出现`;

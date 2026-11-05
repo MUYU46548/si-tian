@@ -54,6 +54,12 @@
         <div class="pp-label">项目操作</div>
         <div class="pp-row wrap">
           <button class="pp-btn" @click="openExisting">打开项目…</button>
+          <button
+            class="pp-btn"
+            data-testid="pp-open-sample"
+            title="自带示例：72 省 / 4 势力 / 两段时代；会复制一份到文档目录再打开（安装包里的原件不动）"
+            @click="openSample"
+          >示例项目</button>
           <template v-if="proj.isOpen">
             <button class="pp-btn" :disabled="proj.saveStatus === 'saving'" @click="doSave">保存</button>
             <button class="pp-btn" @click="doBackup">备份</button>
@@ -681,6 +687,23 @@ async function doRelink(d) {
 /** 候选理由文案（走纯函数单源，UI 不另写一套措辞） */
 function describeCand(c) {
   return describeCandidate(c);
+}
+
+// 示例项目（2026-11-05）：主进程复制到文档目录 → 这里照常 openProject(path)
+async function openSample() {
+  try {
+    const r = await window.sitianAPI.sampleProjectOpen();
+    if (!r || !r.ok) return setTip((r && r.error) || '示例项目不可用', 'err');
+    const res = await proj.openProject(r.path);
+    if (res.success) {
+      setTip(`已打开示例项目（${r.path}）`, 'ok');
+      await refresh();
+    } else {
+      setTip(res.error || '打开示例失败', 'err');
+    }
+  } catch (e) {
+    setTip('打开示例失败：' + ((e && e.message) || e), 'err');
+  }
 }
 
 async function openExisting() {

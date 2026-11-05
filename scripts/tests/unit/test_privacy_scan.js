@@ -34,7 +34,7 @@ function ok(name, cond, detail) {
     `${terms.length} 个词`);
 
   // ① 仓里 0 命中
-  for (const scope of ['code', 'docs', 'root']) {
+  for (const scope of ['code', 'docs', 'root', 'sample']) {
     const files = S.SCOPES[scope]();
     const r = S.scanFiles(files, terms);
     ok(`[${scope}] 0 命中（扫了 ${r.scanned} 个文件）`, r.hits.length === 0,

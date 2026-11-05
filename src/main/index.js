@@ -1152,6 +1152,32 @@ ipcMain.handle('diag-export', async (event, payload = {}) => {
   }
 });
 
+// IPC: 打开示例项目（发布门槛②，2026-11-05）
+// 安装包自带一份**自造**示例（`sample/示例世界.sitian`：72 省 / 4 势力 / 两段时代）。
+// 🔴 必须**复制到文档目录再打开**：asar 里的文件是只读的，直接开会话里一保存就失败，
+//    而且会把“只读”伪装成“保存不了”的 bug。
+ipcMain.handle('sample-project-open', async () => {
+  try {
+    const src = path.join(app.getAppPath(), 'sample', '示例世界.sitian');
+    try { await fs.access(src); } catch (_) {
+      return { ok: false, error: '安装包内没有示例项目（sample/示例世界.sitian）' };
+    }
+    const dir = path.join(app.getPath('documents'), 'SiTianProjects');
+    await fs.mkdir(dir, { recursive: true });
+    let target = path.join(dir, '示例世界.sitian');
+    for (let i = 2; i < 100; i++) {
+      try { await fs.access(target); } catch (_) { break; }
+      target = path.join(dir, `示例世界-${i}.sitian`);
+    }
+    await fs.copyFile(src, target);
+    log.info('[sample] 示例项目已复制到：', target);
+    return { ok: true, path: target };
+  } catch (err) {
+    log.error('[sample] 打开示例项目失败:', err);
+    return { ok: false, error: (err && err.message) || String(err) };
+  }
+});
+
 // IPC: 逐年切片批量导出 —— **一次选目录，写 N 帧 + frames.json 清单**（2026-10-02）
 // 为什么不是“多调几次 save-text-file”：那两个通道每次调用都弹一个模态保存框，
 // 11 帧 = 用户按 11 次“保存”。批次落盘逻辑全在 handlers/exportFramesHandler.js（可单测）。

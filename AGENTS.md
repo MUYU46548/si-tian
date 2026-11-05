@@ -47,6 +47,14 @@
   的 IPC），再用 Python `zipfile` **真实解压**核对：两条目、版本/Electron 版本非空、项目计数原样、
   配置只有“空不空 + 盘符”、包内无盘符绝对路径与 `\Users\`。产物 `build/diag-package/`。
   ⚠️ 也会开真实窗口；Windows 重定向 stdout 默认 GBK，脚本里已 `reconfigure(encoding='utf-8')`。
+- **示例项目（发布门槛②，2026-11-05）**: 仓里带一份**自造**示例 `sample/示例世界.sitian`
+  （72 省 / 4 势力 / 两段时代 / 656 河 / 22,002 格；预览 `sample/示例世界-预览.png`）。
+  入口：项目面板 →「示例项目」→ 主进程把它**复制到文档目录**再打开（asar 只读，直接开会保存失败）。
+  重新生成：`python scripts/tests/tools/make_sample_world.py --provinces 72` —— 起真实 Electron
+  走产品自己的 store 入口（造陆 → 铺底 → 地形/河/注记 → 两段剧本 → 存盘），并**断言只有 sample_land**
+  （否则宁可失败，防止把别的项目数据混进示例）。验收：`python scripts/tests/drill_sample_project.py`
+  （复制到文档目录 / 副本能打开 72 省 2 剧本 / 仓里原件 sha256 不变）。
+  ⚠️ 生成器必须用隔离的 `--user-data-dir`，且开关要放在 app 路径 **前面**（放后面会被当成 App 参数丢掉）。
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 退出前落盘真机演练: `python scripts/tests/drill_quit_flush.py`（起真实 Electron + dist + 真实库/项目，
   **纯 UI 驱动 + 读盘核对**；P1 强杀做负向探针 / P2 Ctrl+Q / P3 点 ×；跑前自动备份并还原项目与配置。
@@ -252,7 +260,7 @@
 | Node 单测文件数 | 93 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
-| IPC handle 数 | 47 | `grep -c "ipcMain.handle" src/main/index.js` |
+| IPC handle 数 | 48 | `grep -c "ipcMain.handle" src/main/index.js` |
 | 项目文件 IPC 通道数 | 10 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
 | 同步 IPC 通道数 | 7 | `grep -c "ipcMain.handle('git-sync-" src/main/handlers/gitSyncHandler.js` |
 | 七层视图组件 | 7 个齐全 | `ls src/renderer/src/components/` |

@@ -40,7 +40,7 @@ const ROOT = path.resolve(HERE, '..');
 /** 默认私人专名表：来自 `scripts/privacy-terms.js`（base64，明文不在仓里） */
 export const DEFAULT_TERMS = decodeTerms();
 
-const TEXT_EXT = new Set(['.js', '.mjs', '.cjs', '.vue', '.py', '.json', '.md', '.html', '.css', '.yml', '.yaml', '.txt', '.ts']);
+const TEXT_EXT = new Set(['.js', '.mjs', '.cjs', '.vue', '.py', '.json', '.md', '.html', '.css', '.yml', '.yaml', '.txt', '.ts', '.sitian']);
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist', 'build', 'release', 'release-018', 'release-018b', 'release-019',
   'release-green', 'release-inst', 'release-internal', 'release-p2', 'release-p3', 'release-p4', 'release-p5',
   'refs', 'backups', '.test-edge-profile', '.lab-edge-profile', '.workbuddy', '.hermes', '__pycache__',
@@ -58,6 +58,7 @@ export function walkFiles(baseDir, opts = {}) {
       const rel = path.relative(ROOT, abs).replace(/\\/g, '/');
       if (e.isDirectory()) {
         if (SKIP_DIR.has(e.name)) continue;
+        if (/\.backups$/.test(e.name)) continue;   // 项目备份目录（本地产物，gitignore 已忽略）
         if (skipArchive && (rel === 'docs/archive' || rel === 'docs/agents-archive')) continue;
         walk(abs);
       } else if (e.isFile()) {
@@ -101,6 +102,8 @@ export const SCOPES = {
   docs: () => walkFiles(path.join(ROOT, 'docs')),
   root: () => ['README.md', 'LICENSE', 'package.json', 'THIRD_PARTY_NOTICES.md', 'vite.config.js', 'tailwind.config.js']
     .filter((f) => fs.existsSync(path.join(ROOT, f))),
+  // 2026-11-05：示例项目也是**发布物**（随安装包走）—— 它里面的底图名/剧本名同样是“私人世界内容”
+  sample: () => (fs.existsSync(path.join(ROOT, 'sample')) ? walkFiles(path.join(ROOT, 'sample')) : []),
 };
 
 /** 署名检查：LICENSE 与 README 里的作者必须逐字还在 */
