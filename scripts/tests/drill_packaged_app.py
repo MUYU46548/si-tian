@@ -214,7 +214,13 @@ def main():
     unpacked = os.path.join(ROOT, 'release', 'win-unpacked')
     exe = os.path.join(unpacked, product + '.exe')
     asar_path = os.path.join(unpacked, 'resources', 'app.asar')
-    installer = os.path.join(ROOT, 'release', '%s Setup %s.exe' % (product, version))
+    # 安装包名：2026-11-05 起 `nsis.artifactName` = `sitian-setup-<版本>.exe`（**ASCII**）。
+    # 为什么必须 ASCII：0.4.0 那次上传后资产名变成 `Setup.0.4.0.exe`，而 `latest.yml` 里写的是
+    # `sitian-setup-0.4.0.exe` → 自动更新 404（见 docs/RELEASE_HISTORY.md 第二节）。
+    # 旧名（`<产品> Setup <版本>.exe`）留作兜底，方便验历史包。
+    installer = os.path.join(ROOT, 'release', 'sitian-setup-%s.exe' % version)
+    if not os.path.exists(installer):
+        installer = os.path.join(ROOT, 'release', '%s Setup %s.exe' % (product, version))
 
     print('=== 打包版真机演练 ===')
     print('  产品 %s %s' % (product, version))

@@ -93,7 +93,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "artifactName": "sitian-setup-${version}.${ext}"
     },
     "mac": {
       "icon": "build/icon.icns",
