@@ -164,8 +164,7 @@
         <section class="about-section">
           <h3><Icon name="shield" :size="16" style="margin-right:6px"/>免责声明</h3>
           <p class="description">
-            司天是**完全本地**的桌面工具：不接入云端 AI、没有账号、没有遥测，仅“检查更新”与
-            “你自配的 Git 同步”两处联网。完整条款共 13 节，其中
+            {{ LOCAL_ONLY_SUMMARY }}本版本不含任何 AI 入口；完整条款共 13 节，其中
             第 3 节（内容合规责任）与第 6 节（数据安全与备份）尤其建议逐字阅读。
           </p>
           <div class="disclaimer-row">
@@ -227,7 +226,7 @@ import BrandMark from './BrandMark.vue';
 // UI 基座试点（2026-10-06）：关于面板是选型的试点落点 —— 只引无配色依赖的
 // shadcn-vue 组件（Button），配色走 tailwind.config.js 映射到司天 token。
 import { Button } from './ui/button';
-import { DISCLAIMER_VERSION, ackedDisclaimerAt } from '../utils/disclaimer';
+import { DISCLAIMER_VERSION, ackedDisclaimerAt, LOCAL_ONLY_SUMMARY } from '../utils/disclaimer';
 // 节数从手册本体取（不要在这里写死数字 —— 加一节手册就会让这句话变成假话）
 import { guideStats } from '../utils/userGuide';
 import { useProjectStore } from '../store/projectStore';

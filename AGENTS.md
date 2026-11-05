@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**164 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**107 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**108 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -400,6 +400,12 @@
 - **保存诚实**：`persisted === true` 才说「已保存到磁盘」；项目态只到 `staged`
   （`utils/saveStatusText.js` 是唯一实现）。
 - **数据安全优先于手感**：退出 / 关项目 / 显式保存一律绕过自动保存的手势闸门（`utils/interactionGate.js` 口径①）。
+- **默认不联网、AI 只能可选**（2026-11-05 用户拍板 **B 档**：默认不联网 + 可选 AI）：
+  `utils/disclaimer.js` 的 `LOCAL_ONLY_SUMMARY` 与 `AI_STANCE` 是**唯一口径**（四条：默认关闭 / 自带密钥 /
+  只发那一次请求 / 只建议、不落库），`AboutPanel` 与 `README.md` 都跟着它；**不许再写“不接入任何云端 AI”
+  这类绝对承诺**（与 S17「AI 只建议不落库」打架，也挡死了“从资料库提取设定”）。
+  条款实质变更必须升 `DISCLAIMER_VERSION`（老 ack 才会失效、全员重新确认）。
+  守门：`unit/test_disclaimer_copy.js`（7 条 + 三条负向探针）；现状：**本版本仍没有任何 AI 入口**。
 - **按钮必须有名字、文案必须说人话**（2026-11-05 用户拍板：“不要再让我看到一大堆乱七八糟的按钮和
   根本看不懂的文字”）：① 工具栏/面板里的按钮**不许只有图标**（只有 `title` 不算 —— 要悬停才知道，
   用户实测“找了五分钟没找到”）；② 用户可见文字里不许出现**工程内部术语**
@@ -466,7 +472,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 164 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 107 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 108 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |
