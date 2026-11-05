@@ -735,6 +735,45 @@ export function buildRiverNetwork(hm, opts = {}) {
   // 允许 14 个世界单位（约 1.5 格）。实测真实项目：122 条内陆断头里，前两刀收掉 93 条，
   // 剩下的都是“parent 太远（>6）”或 parent 已被裁掉的那种。
   snapRiverTails(Array.from(byId.values()), { spacing, maxGap: 14, onlyDeadEnds: true, ignoreParent: true });
+
+  // ── ③.6 尾巴落回 cells（2026-11-05）──────────────────────────────────────────
+  // 🔴 snapRiverTails / weldRiverJunctions 只改 `points`，**不动 `cells`** ——
+  //    于是“几何上已经接在干流上”的支流，`cells` 的末格还停在旧位置：
+  //    test_103 判成 detached（12/16），导出/统计也读不到汇流点。
+  //    这里只补**宿主那一格**（与上游 flowDown 的口径一致：汇流点同属两条河），
+  //    **不动 mouth/discharge** —— 支流的 discharge 是它自己的水，用宿主的格会把它吹胖。
+  {
+    let patched = 0;
+    for (const r of byId.values()) {
+      if (r.endInSea || r.endInLake || r.endAtEdge) continue;
+      if (!r.parent) continue;
+      const host = byId.get(r.parent);
+      if (!host || !Array.isArray(host.cells) || !host.cells.length) continue;
+      const pts0 = r.points || [];
+      if (pts0.length < 2) continue;
+      const tail = pts0[pts0.length - 1];
+      const lastCell = r.cells[r.cells.length - 1];
+      const hLast = Number.isFinite(h[lastCell]) ? h[lastCell] : Infinity;
+      let hostCell = -1;
+      let bestD = Infinity;
+      for (const c of host.cells) {
+        const p = pts[c];
+        if (!p) continue;
+        // 🔴 只能接**不高于**自己尾巴那格：水不往高处流（a6 就是守这条的）。
+        //    宿主的“最近格”可能落在汇流点的上游侧，直接接上去会造出一段上坡。
+        if (Number.isFinite(h[c]) && h[c] > hLast + 1e-6) continue;
+        const d = (p[0] - tail.x) * (p[0] - tail.x) + (p[1] - tail.y) * (p[1] - tail.y);
+        if (d < bestD) { bestD = d; hostCell = c; }
+      }
+      // 超过 1.5 格就不算“接上了”（snap 的 maxGap 14 世界单位 ≈ 1.5 格），别硬塞
+      if (hostCell < 0 || Math.sqrt(bestD) > spacing * 1.5) continue;
+      if (!r.cells.includes(hostCell)) {
+        r.cells.push(hostCell);
+        patched++;
+      }
+      r.endsAtJunction = true;
+    }
+  }
   // 焊接可能把一条“原本没有 parent”的支流挂到某条河上，而那条河原本又挂在它下面（湖进出口
   // 那种双向关系）→ 成环，分级/流域根会走到死循环。这里剪环，并**优先保住焊接出来的边**
   // （有 `endsAtJunction` 的那一端是几何真的断在这里，剪了就会露出一根浮空的棍子）。
