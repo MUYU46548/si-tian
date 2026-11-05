@@ -570,6 +570,31 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   /**
+   * 打开安装包自带的示例项目（2026-11-05，发布门槛②）。
+   *
+   * 两件事：主进程把 `sample/示例世界.sitian` **复制到文档目录**（asar 只读，就地打开
+   * 会变成“保存不了”），然后走同一条 `openProject`。
+   *
+   * 🔴 为什么放在 store 里而不是面板里各写一遍：
+   *   ① `test_48` 的静态约定是「面板不许直接调 sitianAPI，一律经 projectStore」——
+   *      两个入口（世界选择页 / 项目面板）各自调 IPC 就是 2 份实现，当场被判红（2026-11-05 真踩）；
+   *   ② 同一能力只许一份实现（本仓红线）—— 复制+打开的顺序与报错口径只该写一次。
+   */
+  async function openSampleProject() {
+    const a = api();
+    if (!a || !a.sampleProjectOpen) return { success: false, error: API_MISSING };
+    let r = null;
+    try {
+      r = await a.sampleProjectOpen();
+    } catch (e) {
+      return { success: false, error: (e && e.message) || String(e) };
+    }
+    if (!r || !r.ok) return { success: false, error: (r && r.error) || '示例项目不可用' };
+    const res = await openProject(r.path);
+    return { ...(res || { success: false, error: '打开项目失败' }), path: r.path };
+  }
+
+  /**
    * 保存失败必须**看得见**（2026-10-06，T2 真机定位）。
    *
    * 旧实现只写 `lastError` + 状态栏 —— 但 `StatusBar.vue` 的根节点是 `v-if="state.visible"`，
@@ -1105,7 +1130,7 @@ export const useProjectStore = defineStore('project', () => {
     // computed
     isOpen, meta, entities, entityList, entityTree, entityCount, snapshots, stats,
     // project CRUD
-    createProject, createProjectFromVault, seedFromPayload, openProject, saveProject, scheduleAutoSave, flushSave, closeProject,
+    createProject, createProjectFromVault, seedFromPayload, openProject, openSampleProject, saveProject, scheduleAutoSave, flushSave, closeProject,
     importFromVault, mergeVaultPayload,
     // R15/A-0：笔记改名断线检测 + 重连（id 不变 → 编辑成果保留）
     scanBrokenLinks, relinkEntity,

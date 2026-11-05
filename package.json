@@ -1,6 +1,6 @@
 {
   "name": "sitian",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "世界观动态构建系统 — 示例项目",
   "main": "src/main/index.js",
   "scripts": {
@@ -20,6 +20,7 @@
     "test:overlays": "python scripts/tests/drill_scenario_overlays_visual.py",
     "test:owner-latency": "python scripts/tests/drill_owner_latency.py",
     "test:sample-galaxy": "python scripts/tests/drill_sample_galaxy.py",
+    "test:packaged": "python scripts/tests/drill_packaged_app.py",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
     "dist:publish": "npm run build && electron-builder --publish always",
@@ -76,7 +77,7 @@
       "!build/_*.png",
       "src/main/**/*",
       "src/preload/**/*",
-      "sample/**/*",
+      "sample/示例世界.sitian",
       "scripts/extract-data.js",
       "scripts/lib/**/*",
       "!scripts/tests/**/*",

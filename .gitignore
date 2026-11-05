@@ -178,3 +178,8 @@ sample/*.backups/
 sample/gen-*.log
 # 示例生成器的隔离 profile（真机跑批用）
 build/.sample-profile/
+
+# 打包链路演练产物（2026-11-05）：asar 探针 / 诊断包 zip / 隔离 user-data-dir，本地证据
+build/packaged-app/
+# 示例世界生成器的进程日志（原先写进 sample/，2026-11-05 搬到这里）
+build/sample-gen/

@@ -13,6 +13,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -93,6 +94,7 @@ def main():
     exe = subprocess.run([node, '-e', 'process.stdout.write(require("electron"))'],
                          cwd=ROOT, capture_output=True, text=True, timeout=60).stdout.strip()
     dev = el = None
+    created = ''
     try:
         dev = subprocess.Popen([node, os.path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'),
                                 '--config', 'vite.config.js'], cwd=ROOT,
@@ -147,6 +149,7 @@ def main():
 
         after = sha(SRC)
         ck('仓里的原件一个字节没变（复制而非就地打开）', before == after, before[:12] + ' / ' + after[:12])
+        created = path
         return 0 if not fails else 1
     finally:
         for p in (el, dev):
@@ -156,6 +159,20 @@ def main():
             except Exception:
                 pass
         time.sleep(1.0)
+        # 收尾：删掉本轮复制进文档目录的那份副本（2026-11-05 打包演练补的纪律）
+        # 不删的话每跑一次就多一个 `示例世界-N.sitian` + `.backups`，用户文档目录会积垃圾。
+        safe = bool(created) and created.endswith('.sitian') and 'SiTianProjects' in created
+        if safe:
+            for target in (created, created + '.backups'):
+                try:
+                    if os.path.isdir(target):
+                        shutil.rmtree(target)
+                        print('  🧹 已删除 %s' % target)
+                    elif os.path.exists(target):
+                        os.remove(target)
+                        print('  🧹 已删除 %s' % target)
+                except Exception as e:
+                    print('  ⚠️ 删除 %s 失败：%s' % (target, e))
 
 
 if __name__ == '__main__':

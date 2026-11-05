@@ -34,6 +34,11 @@ ROOT = os.path.abspath(os.path.join(TESTS, '..', '..'))
 DEV_PORT = 5180
 CDP_PORT = 9224
 OUT_DIR = os.path.join(ROOT, 'sample')
+# 🔴 生成器的进程日志**不许落在 sample/ 里**（2026-11-05 打包链路真踩）：`build.files` 里
+#    是 `sample/示例世界.sitian`（白名单），但在这之前是 `sample/**/*` —— 生成日志与
+#    `*.sitian.backups/` 就会被打进安装包：日志里有 5 处 `E:\…` 绝对路径（隐私），
+#    备份是多份 2MB 的重复载荷（0.5.2 之前的包实测多出 8MB）。日志一律挪到 build/ 下。
+LOG_DIR = os.path.join(ROOT, 'build', 'sample-gen')
 
 
 def port_open(port):
@@ -107,6 +112,7 @@ def main():
             print('端口 %d 被占用 —— 先停掉正在跑的回归/演练' % p)
             return 2
     os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
     target = os.path.join(OUT_DIR, args.out)
     # 旧示例先清掉：createProject 遇到同名会加 `-2` 后缀，残留文件会让“到底哪份是示例”失焦
     for old in os.listdir(OUT_DIR):
@@ -121,7 +127,7 @@ def main():
     try:
         dev = subprocess.Popen([node, os.path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'),
                                 '--config', 'vite.config.js'], cwd=ROOT,
-                               stdout=open(os.path.join(OUT_DIR, 'gen-vite.log'), 'a', encoding='utf-8'),
+                               stdout=open(os.path.join(LOG_DIR, 'gen-vite.log'), 'a', encoding='utf-8'),
                                stderr=subprocess.STDOUT)
         if not wait_http('http://localhost:%d/' % DEV_PORT):
             print('vite 未就绪')
@@ -139,7 +145,7 @@ def main():
                                '--remote-debugging-port=%d' % CDP_PORT,
                                '--disable-gpu', '--remote-allow-origins=*', '.'],
                               cwd=ROOT, env=env,
-                              stdout=open(os.path.join(OUT_DIR, 'gen-electron.log'), 'a', encoding='utf-8'),
+                              stdout=open(os.path.join(LOG_DIR, 'gen-electron.log'), 'a', encoding='utf-8'),
                               stderr=subprocess.STDOUT)
         if not wait_port(CDP_PORT):
             print('Electron CDP 未就绪')

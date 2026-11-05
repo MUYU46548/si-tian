@@ -689,14 +689,13 @@ function describeCand(c) {
   return describeCandidate(c);
 }
 
-// 示例项目（2026-11-05）：主进程复制到文档目录 → 这里照常 openProject(path)
+// 示例项目（2026-11-05）：复制+打开**只在 projectStore 里写一次**（面板不直接碰 preload 接口，
+// 见 test_48 的静态约定；世界选择页走的是同一个方法）
 async function openSample() {
   try {
-    const r = await window.sitianAPI.sampleProjectOpen();
-    if (!r || !r.ok) return setTip((r && r.error) || '示例项目不可用', 'err');
-    const res = await proj.openProject(r.path);
+    const res = await proj.openSampleProject();
     if (res.success) {
-      setTip(`已打开示例项目（${r.path}）`, 'ok');
+      setTip(`已打开示例项目（${res.path}）`, 'ok');
       await refresh();
     } else {
       setTip(res.error || '打开示例失败', 'err');

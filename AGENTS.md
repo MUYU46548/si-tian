@@ -56,6 +56,20 @@
   （否则宁可失败，防止把别的项目数据混进示例）。验收：`python scripts/tests/drill_sample_project.py`
   （复制到文档目录 / 副本能打开 72 省 2 剧本 / 仓里原件 sha256 不变）。
   ⚠️ 生成器必须用隔离的 `--user-data-dir`，且开关要放在 app 路径 **前面**（放后面会被当成 App 参数丢掉）。
+  生成器日志落 `build/sample-gen/`（**不许落 sample/**：`build.files` 里是白名单
+  `sample/示例世界.sitian`，日志带绝对路径、备份是重复载荷）。
+- **打包链路真机演练（2026-11-05）**: `npm run dist` 之后跑 `npm run test:packaged`
+  （= `python scripts/tests/drill_packaged_app.py`）—— 定义是“**验包**，不替你打包”。
+  静态段用 `@electron/asar` 读 `release/win-unpacked/resources/app.asar`：示例在里面且
+  `sample/` **只有示例本身**（生成器日志 / `*.backups` / 预览图都不许进）、没有
+  `scripts/tests/**` 与 `__real_desite.map`、`dist/index.html` 里没有 `__SITIAN_MOCK__`；
+  再用 7za 从 NSIS 安装包里取出 `resources/app.asar`，与 win-unpacked 的 **sha256 对拍**
+  （用户下载的就是刚验的这份载荷）。真机段**直接启动打包版 exe**（不是 `electron .`，
+  隔离 `--user-data-dir`、CDP 9226）：页面必须是 `file://`、**真实点**“示例地图项目”按钮 →
+  副本打开 72 省 / 2 段剧本 / 实体树含 world → 存一次盘**字节变了**（证明副本可写、没踩 asar
+  只读）→ 导诊断包核对 `packaged=true`、版本一致、无绝对路径。收尾删掉本轮复制的那份副本。
+  ⚠️ 打包版里**不能** `import('/src/store/projectStore.js')`（那是 Vite 源码路径）——
+  只能走 `#app.__vue_app__.config.globalProperties.$pinia._s.get('project')` 取同一个 store 实例。
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 退出前落盘真机演练: `python scripts/tests/drill_quit_flush.py`（起真实 Electron + dist + 真实库/项目，
   **纯 UI 驱动 + 读盘核对**；P1 强杀做负向探针 / P2 Ctrl+Q / P3 点 ×；跑前自动备份并还原项目与配置。
