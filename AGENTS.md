@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**98 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**99 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -177,6 +177,17 @@
   并 `Page.bringToFront`；另注意**程序化 `.click()` 不移动焦点**，而 App 的全局 Ctrl+Z 在
   INPUT/TEXTAREA 上**故意让路** —— 两件都要处理（本脚本留了页面内 KeyboardEvent 兜底，
   并在汇总里写明走的是哪条路）。
+- **标记 / 剧本 ↔ 资料笔记绑定（B1，2026-11-05）**: `npm run test:note-binding`（`drill_note_binding.py`）——
+  真机 + 项目**副本** + **资料库副本**（`vault-fixture-messy` 复制到 build 里建索引；仓内 fixture
+  跑前后**同指纹**；隔离 profile、CDP 9229，配置里 `vaultPath` 指向副本）。
+  判据：面板“资料”段按标记名搜到笔记 → 点“绑定” → 标记 `notePath` + 面板“已绑定” + **读盘核对** →
+  真按 Ctrl+Z → **内存与磁盘一起回**；反向探针（绑一个不存在的路径 → 面板必须“找不到了”，
+  绑回真笔记 → 提示消失；非字符串的 notePath 整条拒绝）；剧本侧 `setScenarioNotePath` 同形状。
+  ⚠️ 判“这篇还在不在”要用 **全库索引路径**（新 IPC `vault-index-paths`），**不能**用
+  `listVaultNotes()` —— 那个只列“扫描范围内的地图笔记”，会把绑得好好的资料笔记误报成“找不到了”
+  （真机第一跑就是这么红的）。
+  ⚠️ **标记的撤销以前不落盘**：`put()` / `spliceBack`（undo/redo 共用的落点）里没排保存，
+  改了标记再 Ctrl+Z、关掉重开又回来 —— 这轮把调度收口进那两个写入函数（与事件表同一个坑）。
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与
@@ -340,10 +351,10 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 98 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 99 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
-| IPC handle 数 | 48 | `grep -c "ipcMain.handle" src/main/index.js` |
+| IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |
 | 项目文件 IPC 通道数 | 10 | `grep -c "ipcMain.handle('project-" src/main/handlers/projectHandler.js` |
 | 同步 IPC 通道数 | 7 | `grep -c "ipcMain.handle('git-sync-" src/main/handlers/gitSyncHandler.js` |
 | 七层视图组件 | 7 个齐全 | `ls src/renderer/src/components/` |

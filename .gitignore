@@ -194,3 +194,7 @@ build/undo-latency/
 # 外交可写演练产物（2026-11-05）：含示例项目的工作副本与日志，本地证据，禁止提交
 # 复现：npm run test:diplomacy-write
 build/diplomacy-write/
+
+# 笔记绑定演练产物（2026-11-05）：含项目与资料库的副本（副本里会写索引），本地证据，禁止提交
+# 复现：npm run test:note-binding
+build/note-binding/
