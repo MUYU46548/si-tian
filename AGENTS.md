@@ -42,6 +42,11 @@
   （**署名要保留**，作者名不在黑名单里）。词表存 `scripts/privacy-terms.js`（base64，明文不落库 ——
   否则扫描器自己就是最大的泄漏点）；`--self-test` 是负向探针，`unit/test_privacy_scan.js`
   把它接进回归（塞真专名必须报；词表文件里也不许出现明文）。
+- **诊断包真机演练（发布门槛④，2026-11-05）**: `python scripts/tests/drill_diag_package.py` —— 起
+  Vite(5180) + **真实 Electron**（CDP 9224），页面里调 `sitianAPI.diagExport({target})`（走**与按钮完全相同**
+  的 IPC），再用 Python `zipfile` **真实解压**核对：两条目、版本/Electron 版本非空、项目计数原样、
+  配置只有“空不空 + 盘符”、包内无盘符绝对路径与 `\Users\`。产物 `build/diag-package/`。
+  ⚠️ 也会开真实窗口；Windows 重定向 stdout 默认 GBK，脚本里已 `reconfigure(encoding='utf-8')`。
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 退出前落盘真机演练: `python scripts/tests/drill_quit_flush.py`（起真实 Electron + dist + 真实库/项目，
   **纯 UI 驱动 + 读盘核对**；P1 强杀做负向探针 / P2 Ctrl+Q / P3 点 ×；跑前自动备份并还原项目与配置。
