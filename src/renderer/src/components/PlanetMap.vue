@@ -212,7 +212,7 @@
             >
               <option v-for="o in channelOptions" :key="o.value" :value="o.value">{{ o.name }}</option>
             </select>
-            <button @click="planetChannelBrush.createEntry(interactionMode)" title="新建一条文化 / 宗教（自动轮转取色）" data-testid="channel-add"><Icon name="plus" :size="13"/></button>
+            <button @click="planetChannelBrush.createEntry(interactionMode)" title="新建一条文化 / 宗教（自动轮转取色）" data-testid="channel-add"><Icon name="plus" :size="13"/><span class="td-label">新建</span></button>
             <button
               :class="{ active: planetChannelBrush.pickMode.value === interactionMode }"
               @click="planetChannelBrush.armPick(interactionMode)"
@@ -261,14 +261,14 @@
           <button v-if="selectedPlaceIds.size > 1" @click="openArrangeDialog(selectedPlaceIds)" title="批量排列选中节点">⊞ 排列</button>
           <template v-if="selectedPlaceIds.size >= 2">
             <div class="toolbar-group" title="对齐与分布 (E3)">
-              <button @click="alignSelected('left', selectedPlaceIds)" title="左对齐">⇤</button>
-              <button @click="alignSelected('hcenter', selectedPlaceIds)" title="水平居中对齐">⇹</button>
-              <button @click="alignSelected('right', selectedPlaceIds)" title="右对齐">⇥</button>
-              <button @click="alignSelected('top', selectedPlaceIds)" title="顶对齐">⇧</button>
-              <button @click="alignSelected('vcenter', selectedPlaceIds)" title="垂直居中对齐">⇳</button>
-              <button @click="alignSelected('bottom', selectedPlaceIds)" title="底对齐">⇩</button>
-              <button @click="distributeSelected('h', selectedPlaceIds)" title="水平等间距分布">⋯</button>
-              <button @click="distributeSelected('v', selectedPlaceIds)" title="垂直等间距分布">⋮</button>
+              <button @click="alignSelected('left', selectedPlaceIds)" title="左对齐">⇤ 左</button>
+              <button @click="alignSelected('hcenter', selectedPlaceIds)" title="水平居中对齐">⇹ 中</button>
+              <button @click="alignSelected('right', selectedPlaceIds)" title="右对齐">⇥ 右</button>
+              <button @click="alignSelected('top', selectedPlaceIds)" title="顶对齐">⇧ 顶</button>
+              <button @click="alignSelected('vcenter', selectedPlaceIds)" title="垂直居中对齐">⇳ 中</button>
+              <button @click="alignSelected('bottom', selectedPlaceIds)" title="底对齐">⇩ 底</button>
+              <button @click="distributeSelected('h', selectedPlaceIds)" title="水平等间距分布">⋯ 横</button>
+              <button @click="distributeSelected('v', selectedPlaceIds)" title="垂直等间距分布">⋮ 纵</button>
             </div>
           </template>
           <button v-if="selectedPlaceIds.size > 0" @click="openReparentDialog(selectedPlaceIds)" title="批量移入区域"><Icon name="arrow-up" :size="13"/> 移入区域</button>
@@ -429,27 +429,27 @@
       <transition name="skeleton-fade"><canvas-skeleton v-if="!skeletonReady" /></transition>
       <!-- U1 工具箱 dock -->
       <div v-if="editMode" class="tool-dock" @mousedown.stop @dblclick.stop @wheel.stop>
-        <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)"><Icon name="hand" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象"><Icon name="move" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份"><Icon name="pencil" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域"><Icon name="map" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记"><Icon name="map-pin" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线（路线工具内可开“自动寻路”）"><Icon name="route" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'settle' }" @click="setInteractionMode('settle')" title="智能聚落 — 点击放置，自动吸附到最优位置（避开海洋/高山，偏好缓坡近水）"><Icon name="home" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本"><Icon name="type" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度 / 群系笔刷（14.4m 格，改高度自动派生温度降水群系）"><Icon name="trending-up" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'terrain' }" @click="setInteractionMode('terrain')" title="地形涂色笔刷（同 14.4m 格，直接铺地表类型：海洋/草地/森林…）"><Icon name="brush" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'culture' }" @click="setInteractionMode('culture')" title="文化笔刷 (Shift+C) — 拖动涂抹文化区域；滚轮调半径、Shift+滚轮调硬度；一次拖动 = 一条撤销" data-testid="tool-culture"><Icon name="users" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'religion' }" @click="setInteractionMode('religion')" title="宗教笔刷 (Shift+G) — 拖动涂抹宗教区域；一次拖动 = 一条撤销" data-testid="tool-religion"><Icon name="church" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'relief' }" @click="setInteractionMode('relief')" title="地貌图标笔刷 (R) — 左键拖动散布山脉/树木/沙漠/岩石，右键拖动擦除，滚轮调间距"><Icon name="mountain" :size="15"/></button>
-        <button :class="{ active: interactionMode === 'river' }" @click="setInteractionMode('river')" title="河流编辑器 (Shift+R) — 连续点击描点、双击完成（自动按高度从高到低排序），拖节点保持流向"><Icon name="waves" :size="15"/></button>
-        <button v-if="hasAzgaarData" :class="{ active: interactionMode === 'political' }" @click="setInteractionMode('political')" title="编辑政治实体边界"><Icon name="flag" :size="15"/></button>
+        <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)"><Icon name="hand" :size="15"/><span class="td-label">拖动</span></button>
+        <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象"><Icon name="move" :size="15"/><span class="td-label">移动</span></button>
+        <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份"><Icon name="pencil" :size="15"/><span class="td-label">省份</span></button>
+        <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域"><Icon name="map" :size="15"/><span class="td-label">区域</span></button>
+        <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记"><Icon name="map-pin" :size="15"/><span class="td-label">标记</span></button>
+        <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线（路线工具内可开“自动寻路”）"><Icon name="route" :size="15"/><span class="td-label">道路</span></button>
+        <button :class="{ active: interactionMode === 'settle' }" @click="setInteractionMode('settle')" title="智能聚落 — 点击放置，自动吸附到最优位置（避开海洋/高山，偏好缓坡近水）"><Icon name="home" :size="15"/><span class="td-label">聚落</span></button>
+        <button :class="{ active: interactionMode === 'text' }" @click="setInteractionMode('text')" title="放置浮动文本"><Icon name="type" :size="15"/><span class="td-label">文字</span></button>
+        <button :class="{ active: interactionMode === 'cluster' }" @click="setInteractionMode('cluster'); openPlanetPanel('cluster')" title="框选地点创建簇"><Icon name="folder-open" :size="15"/><span class="td-label">聚簇</span></button>
+        <button :class="{ active: interactionMode === 'height' }" @click="setInteractionMode('height')" title="高度 / 群系笔刷（14.4m 格，改高度自动派生温度降水群系）"><Icon name="trending-up" :size="15"/><span class="td-label">高度</span></button>
+        <button :class="{ active: interactionMode === 'terrain' }" @click="setInteractionMode('terrain')" title="地形涂色笔刷（同 14.4m 格，直接铺地表类型：海洋/草地/森林…）"><Icon name="brush" :size="15"/><span class="td-label">涂色</span></button>
+        <button :class="{ active: interactionMode === 'culture' }" @click="setInteractionMode('culture')" title="文化笔刷 (Shift+C) — 拖动涂抹文化区域；滚轮调半径、Shift+滚轮调硬度；一次拖动 = 一条撤销" data-testid="tool-culture"><Icon name="users" :size="15"/><span class="td-label">文化</span></button>
+        <button :class="{ active: interactionMode === 'religion' }" @click="setInteractionMode('religion')" title="宗教笔刷 (Shift+G) — 拖动涂抹宗教区域；一次拖动 = 一条撤销" data-testid="tool-religion"><Icon name="church" :size="15"/><span class="td-label">宗教</span></button>
+        <button :class="{ active: interactionMode === 'relief' }" @click="setInteractionMode('relief')" title="地貌图标笔刷 (R) — 左键拖动散布山脉/树木/沙漠/岩石，右键拖动擦除，滚轮调间距"><Icon name="mountain" :size="15"/><span class="td-label">地貌</span></button>
+        <button :class="{ active: interactionMode === 'river' }" @click="setInteractionMode('river')" title="河流编辑器 (Shift+R) — 连续点击描点、双击完成（自动按高度从高到低排序），拖节点保持流向"><Icon name="waves" :size="15"/><span class="td-label">河流</span></button>
+        <button v-if="hasAzgaarData" :class="{ active: interactionMode === 'political' }" @click="setInteractionMode('political')" title="编辑政治实体边界"><Icon name="flag" :size="15"/><span class="td-label">边界</span></button>
         <div class="tool-dock-sep"></div>
-        <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="15"/></button>
-        <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="15"/></button>
+        <button :class="{ active: objectPanelOpen }" @click="openPlanetPanel('object')" title="对象列表"><Icon name="list" :size="15"/><span class="td-label">对象</span></button>
+        <button :class="{ active: snapshotPanelOpen }" @click="openPlanetPanel('snapshot')" title="地图版本快照"><Icon name="camera" :size="15"/><span class="td-label">快照</span></button>
         <div class="tool-dock-flex"></div>
-        <button class="tool-dock-exit" @click="exitEditMode" title="退出编辑模式"><Icon name="check" :size="15"/></button>
+        <button class="tool-dock-exit" @click="exitEditMode" title="退出编辑模式"><Icon name="check" :size="15"/><span class="td-label">完成</span></button>
       </div>
       <!-- E9 内联文本编辑覆盖层 -->
       <div v-if="inlineEdit" class="inline-text-edit" :style="{ left: inlineEdit.sx + 'px', top: inlineEdit.sy + 'px' }" @mousedown.stop @dblclick.stop @wheel.stop>
@@ -775,7 +775,7 @@
           <input type="number" v-model.number="editingRouteOffsetX" @input="updateRouteOffset" placeholder="0" />
           <span>Y</span>
           <input type="number" v-model.number="editingRouteOffsetY" @input="updateRouteOffset" placeholder="0" />
-          <button class="mini-reset" @click="resetRouteOffset" title="重置偏移">↺</button>
+          <button class="mini-reset" @click="resetRouteOffset" title="重置偏移">↺ 重置</button>
         </div>
         <p class="ref-hint">调整标签相对路线的位置（世界坐标像素）</p>
       </div>
@@ -896,14 +896,14 @@
       <div class="editor-field">
         <label>对齐与分布（P2）</label>
         <div class="line-style-row">
-          <button @click="alignMultiSel('left')" title="左对齐">⇤</button>
-          <button @click="alignMultiSel('hcenter')" title="水平居中对齐">⇹</button>
-          <button @click="alignMultiSel('right')" title="右对齐">⇥</button>
-          <button @click="alignMultiSel('top')" title="顶对齐">⇧</button>
-          <button @click="alignMultiSel('vcenter')" title="垂直居中对齐">⇳</button>
-          <button @click="alignMultiSel('bottom')" title="底对齐">⇩</button>
-          <button @click="distributeMultiSel('h')" title="水平等间距分布">⋯</button>
-          <button @click="distributeMultiSel('v')" title="垂直等间距分布">⋮</button>
+          <button @click="alignMultiSel('left')" title="左对齐">⇤ 左</button>
+          <button @click="alignMultiSel('hcenter')" title="水平居中对齐">⇹ 中</button>
+          <button @click="alignMultiSel('right')" title="右对齐">⇥ 右</button>
+          <button @click="alignMultiSel('top')" title="顶对齐">⇧ 顶</button>
+          <button @click="alignMultiSel('vcenter')" title="垂直居中对齐">⇳ 中</button>
+          <button @click="alignMultiSel('bottom')" title="底对齐">⇩ 底</button>
+          <button @click="distributeMultiSel('h')" title="水平等间距分布">⋯ 横</button>
+          <button @click="distributeMultiSel('v')" title="垂直等间距分布">⋮ 纵</button>
         </div>
       </div>
 
@@ -3727,7 +3727,7 @@ defineExpose({ canvas, renderer });
   display: flex;
   flex-direction: column;
   gap: 3px;
-  width: 46px;
+  width: 104px;
   max-height: calc(100% - 24px);
   padding: 7px 5px;
   background: var(--panel-glass);
@@ -3740,19 +3740,30 @@ defineExpose({ canvas, renderer });
 }
 .tool-dock::-webkit-scrollbar { display: none; }
 .tool-dock button {
-  width: 36px;
-  height: 36px;
+  width: 100%;
+  height: 30px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 16px;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 0 8px;
+  font-size: 12px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
   color: var(--planet-text);
   transition: background 0.15s, border-color 0.15s;
+}
+/* 2026-11-05：dock 从“纯图标 46px 竖条”改成 **图标 + 名字**（用户原话：
+   “不要再让我看到一大堆乱七八糟的按钮和根本看不懂的文字”）。
+   一个按钮只对应一个工具，不做“同一位置藏多个工具还要手动替换”的嵌套。 */
+.tool-dock .td-label {
+  font-size: 11px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  opacity: 0.94;
 }
 .tool-dock button:hover { background: var(--planet-btn-hover); }
 .tool-dock button.active {
