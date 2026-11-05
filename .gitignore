@@ -183,3 +183,6 @@ build/.sample-profile/
 build/packaged-app/
 # 示例世界生成器的进程日志（原先写进 sample/，2026-11-05 搬到这里）
 build/sample-gen/
+
+# 行星视图工具坞真机检查的产物（2026-11-05）：截图 + 示例副本，本地证据
+build/planet-ux/

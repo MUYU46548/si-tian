@@ -4327,6 +4327,8 @@ canvas {
 .line-style-row {
   display: flex;
   gap: 4px;
+  /* 对齐/分布的按钮也走这一行，补了文字后会变宽 → 允许换行，别撑破面板 */
+  flex-wrap: wrap;
 }
 .line-style-row button {
   padding: 4px 10px;
@@ -4367,8 +4369,11 @@ canvas {
   color: var(--planet-text-secondary);
   cursor: pointer;
   font-size: 12px;
-  width: 24px;
+  /* 2026-11-05：按钮现在有文字（“↺ 重置”）→ 不能再锁 24×24，否则字被裁掉 */
+  width: auto;
   height: 24px;
+  padding: 0 8px;
+  white-space: nowrap;
   border-radius: var(--radius-sm);
   line-height: 1;
 }

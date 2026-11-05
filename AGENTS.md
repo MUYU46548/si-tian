@@ -93,6 +93,16 @@
   **插值**（`{{ label }}` 运行时就是文字）；③ 可见文字零工程术语；④ 三条负向探针。
   ⚠️ 两个假阳性教训：`格距` 会命中“网**格距**离”（用负向后视 `(?<!网)格距`）；
   AST 里 `{{ … }}` 是 type 5 插值节点，不认它就会把一大片**有文字**的按钮判成纯图标。
+- **行星视图工具坞真机检查（2026-11-05）**: `python scripts/tests/tools/shot_planet_ux.py` ——
+  Vite(5180) + 真实 Electron（隔离 profile、CDP 9224）→ 打开示例副本 → `store.selectPlanet()`
+  → `editMode = true` → 量 `.tool-dock`：按钮数 / 每个都有文字 / **文字没被裁**
+  （`scrollWidth <= clientWidth+1`，纯图标时代不会出现、加字之后才会 —— `.mini-reset` 就差点被 24×24 裁掉）/
+  坞宽 ≤140px / 不横向压住 >15% 画布，最后截图 `build/planet-ux/dock.png`。
+  ⚠️ 三个只在真机上踩到的点：① `Page.captureScreenshot` 在这张宽画布上会**超 15s 读超时**，
+  用 `fromSurface:false` 才拍得到（本脚本两档都试，失败只警告不算失败）；
+  ② **浮层顺序**：先关免责声明再跳新手引导 —— 反过来接受声明之后引导层会再弹一次，截图整页是弹窗；
+  ③ 免责声明的勾选框是 reka-ui 的 `button[role=checkbox]`，程序化 `.click()` 不稳 ——
+  直接置组件 `setupState.agreed = true` 再点“同意并继续”（仍走组件自己的 `accept()`）。
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 退出前落盘真机演练: `python scripts/tests/drill_quit_flush.py`（起真实 Electron + dist + 真实库/项目，
   **纯 UI 驱动 + 读盘核对**；P1 强杀做负向探针 / P2 Ctrl+Q / P3 点 ×；跑前自动备份并还原项目与配置。
