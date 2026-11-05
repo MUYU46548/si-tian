@@ -235,6 +235,24 @@ def main():
         })()""")
         print('剧本:', sc)
 
+        # 3.5) 小实体树（世界 → 行星 → 3 区域）：示例不该是“左侧导航空着”的一张裸图
+        nodes_js = '''(() => {
+          const S = window.__SAMPLE__;
+          const mk = (id, name, layer, label, parentId, x, y) => ({
+            id, name, layer, layerLabel: label, parentId, tags: [], sourcePath: '',
+            coordinate: { x, y },
+          });
+          S.st.addNode(mk('sample_world', '示例世界', 'world', '世界', null, 0, 0));
+          S.st.addNode(mk('sample_planet', '示例行星', 'planet', '行星', 'sample_world', 0, 0));
+          ['北部', '中部', '南部'].forEach((n, i) => {
+            S.st.addNode(mk('sample_region_' + (i + 1), '示例' + n + '区', 'region', '区域',
+              'sample_planet', (i - 1) * 120, 0));
+          });
+          return JSON.stringify({ ok: true, nodes: (S.st.nodes || []).length });
+        })()'''
+        nodes = cdp.eval(nodes_js)
+        print('实体:', nodes)
+
         # 4) 存盘
         saved = cdp.eval("""(async () => {
           const r = await window.__SAMPLE__.ps.saveProject({ label: '示例世界生成' });

@@ -49,7 +49,8 @@
   ⚠️ 也会开真实窗口；Windows 重定向 stdout 默认 GBK，脚本里已 `reconfigure(encoding='utf-8')`。
 - **示例项目（发布门槛②，2026-11-05）**: 仓里带一份**自造**示例 `sample/示例世界.sitian`
   （72 省 / 4 势力 / 两段时代 / 656 河 / 22,002 格；预览 `sample/示例世界-预览.png`）。
-  入口：项目面板 →「示例项目」→ 主进程把它**复制到文档目录**再打开（asar 只读，直接开会保存失败）。
+  入口：世界选择页的「示例地图项目」或项目面板的「示例项目」→ 主进程把它**复制到文档目录**再打开
+  （asar 只读，直接开会保存失败）。示例带一棵小实体树（世界 → 行星 → 3 区域）。
   重新生成：`python scripts/tests/tools/make_sample_world.py --provinces 72` —— 起真实 Electron
   走产品自己的 store 入口（造陆 → 铺底 → 地形/河/注记 → 两段剧本 → 存盘），并**断言只有 sample_land**
   （否则宁可失败，防止把别的项目数据混进示例）。验收：`python scripts/tests/drill_sample_project.py`

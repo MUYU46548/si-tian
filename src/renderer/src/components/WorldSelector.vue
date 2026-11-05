@@ -33,6 +33,8 @@
                并加 `import-primary` 让它与“加载示例 / 新建世界”区分开（2026-10-09：入口要显眼）。 -->
           <button v-if="projectOpen" class="create-btn import-primary" data-testid="import-from-vault-empty" @click="$emit('import-from-vault')"><Icon name="folder-open" :size="14"/> 导入知识库内容</button>
           <button class="create-btn" @click="$emit('load-sample')"><Icon name="sparkles" :size="14"/> 加载示例世界观</button>
+          <button class="create-btn" data-testid="world-open-sample" @click="openSampleProject" title="自带示例地图：72 省 / 4 势力 / 两段时代；会复制一份到文档目录再打开"><Icon name="sparkles" :size="14"/> 示例地图项目</button>
+          <p v-if="sampleTip" class="sample-tip">{{ sampleTip }}</p>
           <button class="create-btn" @click="$emit('create-world')">＋ 新建世界</button>
         </template>
         <button class="vault-btn" data-testid="open-vault-empty" @click="$emit('open-vault')"><Icon name="book" :size="14"/> 打开 Obsidian 知识库</button>
@@ -94,6 +96,8 @@
 
 <script setup>
 import Icon from './Icon.vue';
+import { ref } from 'vue';
+import { useProjectStore } from '../store/projectStore';
 const props = defineProps({
   worlds: { type: Array, default: () => [] },
   domains: { type: Array, default: () => [] },
@@ -108,6 +112,20 @@ const props = defineProps({
 });
 
 defineEmits(['select', 'create-world', 'delete-world', 'rename-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault', 'import-from-vault', 'create-project', 'open-project']);
+
+// 示例地图项目（发布门槛②，2026-11-05）：主进程把安装包里的示例复制到文档目录，再走同一条 openProject。
+const proj = useProjectStore();
+const sampleTip = ref('');
+async function openSampleProject() {
+  try {
+    const r = await window.sitianAPI.sampleProjectOpen();
+    if (!r || !r.ok) { sampleTip.value = (r && r.error) || '示例项目不可用'; return; }
+    const res = await proj.openProject(r.path);
+    sampleTip.value = res && res.success ? `已打开示例项目：${r.path}` : ((res && res.error) || '打开失败');
+  } catch (e) {
+    sampleTip.value = '打开示例失败：' + ((e && e.message) || e);
+  }
+}
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {
@@ -154,6 +172,8 @@ function getLocationCount(worldId) {
 </script>
 
 <style scoped>
+.sample-tip { font-size: 11px; color: var(--text-tertiary); margin: 6px 0 0; }
+
 .world-selector {
   position: relative;
   display: flex;

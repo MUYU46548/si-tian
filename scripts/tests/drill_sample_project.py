@@ -130,14 +130,20 @@ def main():
           const sc = p.scenarios || {};
           const bms = sc.baseMaps || {};
           const k = Object.keys(bms)[0] || '';
-          return JSON.stringify({ ok: !!(r && r.success), provinces: (bms[k] && bms[k].terrain || []).length,
-            rivers: (bms[k] && bms[k].rivers || []).length, scenarios: Object.keys(sc.scenarios || {}).length });
+          return JSON.stringify({ ok: !!(r && r.success),
+            provinces: (bms[k] && bms[k].terrain || []).length,
+            rivers: (bms[k] && bms[k].rivers || []).length,
+            scenarios: Object.keys(sc.scenarios || {}).length,
+            entities: Object.keys(p.entities || {}).length,
+            hasWorld: Object.values(p.entities || {}).some((e) => e && e.layer === 'world') });
         })()""" % json.dumps(path))
         o = json.loads(opened) if isinstance(opened, str) else opened
         ck('副本能打开且不是空壳', bool(o and o.get('ok')), o)
         ck('示例规模：72 省 / 2 段剧本 / 有河',
            int((o or {}).get('provinces') or 0) >= 60 and int((o or {}).get('scenarios') or 0) >= 1
            and int((o or {}).get('rivers') or 0) > 0, o)
+        ck('示例带实体树（世界 → 行星 → 区域）',
+           int((o or {}).get('entities') or 0) >= 4 and bool((o or {}).get('hasWorld')), o)
 
         after = sha(SRC)
         ck('仓里的原件一个字节没变（复制而非就地打开）', before == after, before[:12] + ' / ' + after[:12])
