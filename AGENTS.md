@@ -219,6 +219,10 @@
 - **文档权威顺序**: 代码 > `docs/ARCHITECTURE_MAP.md`（脚本生成部分）> 本文件 > `docs/guides/20261023/00-…`（指南包）> `docs/plan/SITIAN_GUIDE_DIGEST_20261023.md`（仓内对账）> 其余（历史，在 `docs/archive/`）
 
 - **现行规划（2026-10-30 起：`docs/plan/PLAN_AUDIT_20261030.md` 是唯一施工依据）**：
+  - **UI/UX 交接页（2026-11-05）**：[docs/plan/HANDOFF_20261105_UIUX.md](docs/plan/HANDOFF_20261105_UIUX.md)
+    —— 用户四条硬要求 / 已完成四个提交 / 三个视图的“可读性闸门”命令 / 剩下的 110 个纯图标按钮与
+    剧本 10 条 / 九个真机坑（浮层宽度、flex-basis、auto-fit、裁字、截图超时…）/ 下一步顺序。
+    **动任何工具栏或面板按钮之前先读它。**
   - **现状一页纸 = [docs/plan/STATUS_20261103.md](docs/plan/STATUS_20261103.md)**（接手先读这个：
     能力 / 数字 / 性能口径 / 没做到的 / 下一轮三件）；**逐项怎么测 = [docs/plan/TEST_CHECKLIST_20261103.md](docs/plan/TEST_CHECKLIST_20261103.md)**。
   - **总入口** = [docs/plan/PLAN_AUDIT_20261030.md](docs/plan/PLAN_AUDIT_20261030.md)（阶段门 N0/N1/N2/N3/N4 + 判据 + 已拍板事项）；
