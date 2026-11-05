@@ -47,6 +47,14 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests'))
 
+# Windows 下 stdout 被重定向（agent / CI 跑都是这样）时默认是 GBK —— 脚本里的 ⚠️ 会直接抛
+# UnicodeEncodeError 把演练崩在打印那一行（2026-11-05 真机踩到：p4 还没跑就 traceback 退出）。
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 CDP_PORT = 9223
 APP_CFG = os.path.join(os.environ.get('APPDATA', ''), 'SiTian', 'config.json')
 IMPORT_BTN = "document.querySelector('[data-testid=\"import-from-vault-empty\"]')"
