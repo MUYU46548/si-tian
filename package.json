@@ -20,6 +20,7 @@
     "test:overlays": "python scripts/tests/drill_scenario_overlays_visual.py",
     "test:owner-latency": "python scripts/tests/drill_owner_latency.py",
     "test:undo-latency": "python scripts/tests/drill_undo_latency.py",
+    "test:diplomacy-write": "python scripts/tests/drill_diplomacy_write.py",
     "test:sample-galaxy": "python scripts/tests/drill_sample_galaxy.py",
     "test:packaged": "python scripts/tests/drill_packaged_app.py",
     "dist": "npm run build && electron-builder",

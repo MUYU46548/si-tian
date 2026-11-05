@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**93 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**98 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -163,6 +163,20 @@
   截图走 `Page.captureScreenshot`（DOM 浮层只有它能拍），落 `build/diplomacy-overlay/open.png`。
   ⚠️ 这类断言必须查 **DOM**，不能查状态：2026-11-03 的 bug 正是 `open:true / panel:false`
   （浮层被写在 `.toolbar-more`（`v-if=moreOpen`）里，下拉一关整个子树就不存在）。
+- **外交关系可写的端到端判据（A1，2026-11-05）**: `npm run test:diplomacy-write`
+  （`drill_diplomacy_write.py`）—— 真机 + 项目**副本**（默认仓内示例 `sample/示例世界.sitian`，
+  源文件只读：跑前后 sha256 一致；隔离 profile、CDP 9228），全走产品入口：
+  面板里填甲 / 乙 / 类型 / 起止 → 点“记下这条” → ① 面板当场变同盟 ② **读磁盘**核对
+  `scenarios.<id>.timelineEvents` ③ 真按 Ctrl+Z → ④ **内存与磁盘都退回基线**。
+  另带反向探针（起止颠倒必须整条拒绝、事件表一条都不许多）与“栈顶就是这条录入”的前置断言。
+  产物 `build/diplomacy-write/<ts>/{result.json,summary.md}`。
+  ⚠️ 两个真机坑：① 色板行的外交入口只在 `viewMode==='scenario' && selectedScenario` 时渲染，
+  卡片进来没选中剧本时它不在 DOM —— 脚本回落“更多 → 外交”，不是缺陷；
+  ② **CDP 的按键事件需要前台页**：窗口没被 OS 聚焦时 `Input.dispatchKeyEvent` 一条都到不了渲染进程
+  （页面里挂的 keydown 探针收到 0 条），读起来像“撤销没生效”。按之前先点一下面板标题区（给窗口焦点）
+  并 `Page.bringToFront`；另注意**程序化 `.click()` 不移动焦点**，而 App 的全局 Ctrl+Z 在
+  INPUT/TEXTAREA 上**故意让路** —— 两件都要处理（本脚本留了页面内 KeyboardEvent 兜底，
+  并在汇总里写明走的是哪条路）。
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与
@@ -197,7 +211,7 @@
   量四类撤销：涂归属一笔（账本组撤）/ 编辑省份（快照 + 整图重绘）/ 添加标记 / 连续撤销。
   口径：同步段（`undo` 回调）、**按键到下一帧**、撤销本身长任务、撤销后 300ms 自动保存、掉帧；
   另采 A1 与 D 两段 CPU 样本（`profile-*.json`，按"按键后 220ms"窗口聚合）。
-  读数（本机 / 绒花计划 8.2MB）：同步段 **0.1~2.5ms**（撤销命令本身一点都不慢）；到下一帧
+  读数（本机 / 8.2MB 真实项目副本）：同步段 **0.1~2.5ms**（撤销命令本身一点都不慢）；到下一帧
   **57~104ms**（大头是整图重绘）；连续撤销会被保存链拖出 **1~3 秒**主线程占满（另案，不设闸门）。
   产物 `build/undo-latency/<ts>/{result.json,summary.md,profile-*.json}`。
   ⚠️ 帧时刻**必须用回调里的 `performance.now()`**，不能用 rAF 的 vsync 参数 —— 后者会把 75ms 读成 8ms
@@ -326,7 +340,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 93 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 98 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 48 | `grep -c "ipcMain.handle" src/main/index.js` |

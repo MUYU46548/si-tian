@@ -566,7 +566,7 @@ def resolve_project(args):
             return p
     except Exception:
         pass
-    # 兜底：文档目录里最大的那个项目（今天真实数据在 绒花计划.sitian，1005 省 14 剧本）
+    # 兜底：文档目录里最大的那个项目（今天真实数据是 1005 省 / 14 段剧本；专名不进仓，见隐私扫描）
     d = os.path.join(os.environ.get('USERPROFILE', ''), 'Documents', 'SiTianProjects')
     cands = []
     if os.path.isdir(d):

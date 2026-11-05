@@ -190,3 +190,7 @@ build/planet-ux/
 # 撤销/重做时延演练产物（2026-11-05）：含真实项目的工作副本与 CPU 样本，本地证据，禁止提交
 # 复现：npm run test:undo-latency
 build/undo-latency/
+
+# 外交可写演练产物（2026-11-05）：含示例项目的工作副本与日志，本地证据，禁止提交
+# 复现：npm run test:diplomacy-write
+build/diplomacy-write/
