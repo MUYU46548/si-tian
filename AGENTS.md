@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**164 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**105 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**107 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -369,7 +369,7 @@
 
 - **现行规划（2026-10-30 起：`docs/plan/PLAN_AUDIT_20261030.md` 是唯一施工依据）**：
   - **UI/UX 交接页（2026-11-05）**：[docs/plan/HANDOFF_20261105_UIUX.md](docs/plan/HANDOFF_20261105_UIUX.md)
-    —— 用户四条硬要求 / 已完成四个提交 / 三个视图的“可读性闸门”命令 / 剩下的 110 个纯图标按钮与
+    —— 用户四条硬要求 / 已完成四个提交 / 四张“可读性闸门”命令 / 剩下的 89 个纯图标按钮与
     剧本 10 条 / 九个真机坑（浮层宽度、flex-basis、auto-fit、裁字、截图超时…）/ 下一步顺序。
     **动任何工具栏或面板按钮之前先读它。**
   - **现状一页纸 = [docs/plan/STATUS_20261103.md](docs/plan/STATUS_20261103.md)**（接手先读这个：
@@ -404,8 +404,10 @@
   根本看不懂的文字”）：① 工具栏/面板里的按钮**不许只有图标**（只有 `title` 不算 —— 要悬停才知道，
   用户实测“找了五分钟没找到”）；② 用户可见文字里不许出现**工程内部术语**
   （`provenance` / `落库` / `单源` / `格距` / `回执` / `幂等` / `N3a` / `φ`），第三方产品名
-  （Azgaar / FMG）只在**导入向导这类确实需要指路**的地方保留。守门：`unit/test_toolbar_ux.js`（剧本视图），
-  改其它视图的工具栏时照此扩一张「每个按钮都有文字」的判据。
+  （Azgaar / FMG）只在**导入向导这类确实需要指路**的地方保留。守门：`unit/test_toolbar_ux.js`（剧本视图）、
+  `unit/test_toolbar_ux_planet.js`（行星）、`unit/test_toolbar_ux_area.js`（区域）、
+  `unit/test_toolbar_ux_panels.js`（面板类：列表行内操作 / 缩放 / 小地图 / 地点簇，另含
+  “行内操作不许退回悬停才出现”一条）；改其它视图时照此扩一张「每个按钮都有文字」的判据。
 - **同一能力只许一份实现**（画河几何、河宽换算、导出参考图、保存文案、`.map` 导入…）：
   两份实现不会报错，只会"改一处另两处不变"。
 - **方寸：过程与结论写任务卡，不写执行日志**（2026-11-04 用户拍板）：`create_log` 的条目是**用户自己调度**用的，
@@ -464,7 +466,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 164 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 105 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 107 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |
