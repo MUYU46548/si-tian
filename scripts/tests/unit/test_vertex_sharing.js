@@ -98,6 +98,7 @@ async function main() {
   const mod = await import(pathToFileURL(path.join(tmp, 'vertexSharing.js')).href);
   const {
     vertexKey, buildCoincidentIndex, findLinkedVertices, shiftPoints, verticesInBox, VERTEX_QUANTUM,
+    buildEdgeIndex, edgeIndexFor, buildPolityBorderEdges, buildPolityBordersFromEdges,
   } = mod;
 
   // ── 1. 索引与配对 ───────────────────────────────────────────────────────
@@ -280,6 +281,66 @@ async function main() {
     assert(built.total > 15000, `顶点数应上万，实际 ${built.total}`);
     assert(r.links.length >= 3, `右边缘该配到邻省的 3 个同位顶点，实际 ${r.links.length}`);
     return `${built.total} 点 / ${built.shared} 共享 / 配对 ${r.links.length} 点 / ${dt}ms`;
+  });
+
+  // ── 5. 国界边：几何按引用缓存 ────────────────────────────────────────────
+  // 为什么这一节单独守（2026-11-05）：撤销一笔归属只改 `ownership`，几何一个字节都没动，
+  // 但旧实现每次都把全底图顶点重新量化一遍（415 省实测 70~160ms）—— 真机读数里
+  // “Ctrl+Z 之后画面卡一下才变”的长任务就是它。这里用**对象身份**钉住"没有重建"。
+  check('e1 国界边：缓存索引分拣 与 一次性重建 **逐边等价**', () => {
+    const [A, B] = twoProvinces();
+    const terrain = [A, B];
+    const ownersOf = (o) => (p) => o[p.id] || '';
+    const o1 = { A: 'p1', B: 'p2' };
+    const direct = buildPolityBorderEdges(terrain, ownersOf(o1));
+    const viaCache = buildPolityBordersFromEdges(edgeIndexFor(terrain), [o1.A, o1.B]);
+    eq(direct.length, viaCache.length, '国界边条数');
+    const sig = (list) => list
+      .map((e) => `${e.a.x},${e.a.y}~${e.b.x},${e.b.y}:${e.provs.join('/')}`)
+      .sort().join('|');
+    eq(sig(viaCache), sig(direct), '逐边（两端坐标 + 参与省）必须一致');
+    assert(direct.length > 0, '两块省分属不同势力 → 那条共边应该被认成国界（判据不是空转）');
+    return `${direct.length} 条国界边（两条路径一致）`;
+  });
+
+  check('e2 只换归属（撤销一笔归属的那条路）→ **几何索引不重建**', () => {
+    const [A, B] = twoProvinces();
+    const terrain = [A, B];
+    const idx0 = edgeIndexFor(terrain);
+    assert(idx0 === edgeIndexFor(terrain), '同一个地形数组两次取索引应是同一个对象');
+    const one = buildPolityBorderEdges(terrain, (p) => (p.id === 'A' ? 'p1' : 'p2'));
+    const two = buildPolityBorderEdges(terrain, (p) => (p.id === 'A' ? 'p1' : 'p1')); // 归属换成一个势力
+    assert(idx0 === edgeIndexFor(terrain), '换归属之后索引还是原来那一个（说明没有重建）');
+    eq(one.length, 4, '两侧归属不同 → 那条共边上的 4 段（5 个顶点间）都是国界');
+    eq(two.length, 0, '两侧归属相同 → 没有国界（判据真的在看归属）');
+    return `索引复用；国界 ${one.length} → ${two.length}`;
+  });
+
+  check('e3 反向探针：地形数组换了 → 索引必须重算（缓存不许把几何改动吃掉）', () => {
+    const [A, B] = twoProvinces();
+    const terrain1 = [A, B];
+    const idx1 = edgeIndexFor(terrain1);
+    // 把 B 整体右移：共用那条边不再重合 → 国界边归零
+    const B2 = { id: 'B', points: B.points.map((p) => ({ x: p.x + 50, y: p.y })) };
+    const terrain2 = [A, B2];
+    const idx2 = edgeIndexFor(terrain2);
+    assert(idx1 !== idx2, '换了地形数组必须重算索引（否则边界改动会被缓存吃掉）');
+    eq(buildPolityBorderEdges(terrain2, (p) => (p.id === 'A' ? 'p1' : 'p2')).length, 0,
+      'B 平移后不再共边 → 没有国界边');
+    return `新数组 → 新索引；平移后国界 0 条`;
+  });
+
+  check('e4 源码闸门：buildPolityBorderEdges 只许走 edgeIndexFor（热路径不许重建）', () => {
+    const src = fs.readFileSync(path.join(SRC_DIR, 'vertexSharing.js'), 'utf8').replace(/\r\n/g, '\n');
+    const at = src.indexOf('export function buildPolityBorderEdges');
+    assert(at >= 0, '找不到 buildPolityBorderEdges');
+    const end = src.indexOf('\n}', at);
+    assert(end > at, '函数体切片失败');
+    const body = src.slice(at, end);
+    assert(body.includes('edgeIndexFor('), '必须走引用缓存 edgeIndexFor()');
+    assert(!body.includes('buildEdgeIndex('),
+      '不许直接调 buildEdgeIndex() —— 那正是“撤销一笔归属要重算 41.5 万顶点”的根因');
+    return '走 edgeIndexFor 引用缓存';
   });
 
   // ── 汇总 ────────────────────────────────────────────────────────────────

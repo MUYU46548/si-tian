@@ -117,28 +117,66 @@ export function buildEdgeIndex(provinces, { quantum = VERTEX_QUANTUM } = {}) {
 }
 
 /**
+ * 共边索引的**引用缓存**（2026-11-05，撤销卡顿的根因之一）。
+ *
+ * 为什么按引用缓存是安全的：本仓的地形写入**一律换数组引用**（`province.js` 的注释、
+ * `mapGeometry.skeletonForTerrain` / `coincidentIndexFor` 同一口径）——顶点真的改了就是新数组。
+ * 于是"只改归属、不动几何"的那些动作（涂归属、撤销一笔归属、换时间轴年份）都能直接复用几何索引。
+ *
+ * 为什么必须有它（真机实测，415 省 / 8.2MB 项目）：撤销一笔归属只改 `ownership`，
+ * 旧实现却把 **41.5 万个顶点的量化重做一遍**（`buildEdgeIndex` 70~160ms），
+ * 正好压在 Ctrl+Z 之后的那一帧上 —— 用户看到的就是"按了撤销，画面卡一下才变"。
+ * 同一份几何只需要算一次；之后每次归属变化只做"按归属分拣"（几千条边，个位数毫秒）。
+ *
+ * @param {Array} terrain `baseMap.terrain`（**原始数组**，不是响应式代理）
+ * @returns {Map<string, {a:{x:number,y:number}, b:{x:number,y:number}, provs:number[]}>}
+ */
+let _edgeIndexCache = null;
+export function edgeIndexFor(terrain, { quantum = VERTEX_QUANTUM } = {}) {
+  if (quantum === VERTEX_QUANTUM && _edgeIndexCache && _edgeIndexCache.terrain === terrain) {
+    return _edgeIndexCache.index;
+  }
+  const index = buildEdgeIndex(terrain, { quantum });
+  if (quantum === VERTEX_QUANTUM) _edgeIndexCache = { terrain, index };
+  return index;
+}
+
+/**
+ * 按归属把共边索引分拣成国界边（纯函数，**不碰几何** —— 可以接引用缓存的索引）。
+ * 口径与 `buildPolityBorderEdges` 逐条相同：两侧都无主 → 不算国界。
+ * @param {Map} index `buildEdgeIndex` / `edgeIndexFor` 的产物
+ * @param {string[]} owners 每个省下标的势力 id（空串 = 无主）
+ */
+export function buildPolityBordersFromEdges(index, owners) {
+  const out = [];
+  const own = owners || [];
+  for (const e of (index || new Map()).values()) {
+    if (e.provs.length < 2) continue;
+    const first = own[e.provs[0]] || '';
+    let differs = false;
+    for (let k = 1; k < e.provs.length; k++) {
+      if ((own[e.provs[k]] || '') !== first) { differs = true; break; }
+    }
+    if (!differs) continue;
+    if (e.provs.every(i => !(own[i] || ''))) continue;   // 两侧都无主 → 不是国界
+    out.push(e);
+  }
+  return out;
+}
+
+/**
  * 国界边（2026-11-03）：共边索引里**两侧归属不同**的那些边。
  * 口径：两侧都无主 → 不算国界（无主地之间没有国界；否则整张图会被画满）。
+ *
+ * ⚠️ 几何走引用缓存、归属每次现算：撤销一笔归属（ownership 换新对象）不会再重建索引。
  * @param {Array} provinces
  * @param {(prov:object, idx:number)=>string} ownerOf 势力 id（空串 = 无主）
  * @returns {Array<{a:{x:number,y:number}, b:{x:number,y:number}, provs:number[]}>}
  */
 export function buildPolityBorderEdges(provinces, ownerOf, { quantum = VERTEX_QUANTUM } = {}) {
-  const index = buildEdgeIndex(provinces, { quantum });
+  const index = edgeIndexFor(provinces, { quantum });
   const owners = (provinces || []).map((p, i) => String((ownerOf ? ownerOf(p, i) : '') || ''));
-  const out = [];
-  for (const e of index.values()) {
-    if (e.provs.length < 2) continue;
-    const first = owners[e.provs[0]] || '';
-    let differs = false;
-    for (let k = 1; k < e.provs.length; k++) {
-      if ((owners[e.provs[k]] || '') !== first) { differs = true; break; }
-    }
-    if (!differs) continue;
-    if (e.provs.every(i => !owners[i])) continue;   // 两侧都无主 → 不是国界
-    out.push(e);
-  }
-  return out;
+  return buildPolityBordersFromEdges(index, owners);
 }
 
 /**
