@@ -208,6 +208,14 @@ READ_JS = r"""(() => {
                           longtaskTotal: U.longtasks.length, saveTotal: U.saves.length });
 })()"""
 
+# 保存流水线的分段读数（`projectStore.saveProject` 每段都打点，见 `window.__SITIAN_SAVE_LOG__`）。
+# 为什么要它：以前只有"这一段里有个长任务"这种页面级读数，只能推测病根；有了分段读数，
+# "是快照深拷慢 / 序列化慢 / IPC 慢"一眼可读（卡「撤销连按被保存链拖住」第一步就是这句）。
+SAVE_LOG_JS = r"""(() => {
+  const log = (window.__SITIAN_SAVE_LOG__ || []).slice(0, 12);
+  return JSON.stringify({ ok: true, runs: (window.__SITIAN_SAVE_LOG__ || []).length, log });
+})()"""
+
 # 国界几何的成本拆解（撤销卡顿的嫌疑对象）：重建索引 vs 只按归属分拣。
 # 直接调产品自己的纯函数（不是另写一份），量出来的就是渲染路径上那一段。
 DIAG_JS = r"""(async () => {
@@ -306,10 +314,28 @@ SETUP_STROKE_JS = r"""(async () => {
 
   const wCenter = SM.screenToWorld(rect.width / 2, rect.height / 2);
   const verify = SM.findProvinceAt(wCenter.x, wCenter.y);
-  window.__UPROBE__ = { provinceId: hit.id, polityId: pol.id, scenarioId: sc.id,
-                        baseMapKey: SM.baseMapKey, beforeOwner: hit.curId };
-  return JSON.stringify({ ok: true, province: hit.id, polity: pol.id,
-    verify: verify ? verify.id : null, verifySame: !!verify && verify.id === hit.id,
+  // 🔴 目标**以画布中心命中的那个省为准**（2026-11-05）：这一笔是打在画布中心的，而"居中"这一步
+  //    受相机夹取 / 取整影响，扫到的小省会偏出中心点 —— 真机踩过：目标是 `_229`、中心点却落在 `_194`，
+  //    于是"相机对准目标省"这条前置判据随机变红（同一份代码两次跑一红一绿）。判据口径改成
+  //    "中心点落在哪个省就涂哪个省"，既不会假红，也不放过真的没对准（中心点是海 / 已归目标势力仍报失败）。
+  if (!verify || verify.kind === 'sea') {
+    return JSON.stringify({ ok: false, why: 'center-is-sea', target: hit.id, verify: verify ? verify.id : null });
+  }
+  let target = hit;
+  if (verify.id !== hit.id) {
+    const centerOwner = SM.ownerPolityForProvince(verify.id);
+    const centerOwnerId = centerOwner && (centerOwner.id || centerOwner);
+    if (centerOwnerId === pol.id) {
+      return JSON.stringify({ ok: false, why: 'center-owned-by-target-polity',
+                              target: hit.id, verify: verify.id });
+    }
+    target = { id: verify.id, curId: centerOwnerId || null };
+  }
+  window.__UPROBE__ = { provinceId: target.id, polityId: pol.id, scenarioId: sc.id,
+                        baseMapKey: SM.baseMapKey, beforeOwner: target.curId,
+                        scanned: hit.id };
+  return JSON.stringify({ ok: true, province: target.id, polity: pol.id,
+    verify: verify.id, verifySame: true, scanned: hit.id,
     canvas: [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)] });
 })()"""
 
@@ -590,6 +616,9 @@ def main():
     ap.add_argument('--budget-longtask', type=float, default=150.0)
     ap.add_argument('--budget-save', type=float, default=200.0,
                     help='撤销 300ms 后自动保存的长任务上限（用户同样看得见这一顿）')
+    ap.add_argument('--budget-chain', type=float, default=200.0,
+                    help='连续撤销（D 段）里单段长任务上限；口径来自卡「撤销连按被保存链拖住」：'
+                         '任何一段 ≤200ms 且每次都能出帧')
     ap.add_argument('--report-only', action='store_true', help='只出读数、不下结论（定阈值用）')
     ap.add_argument('--no-profile', action='store_true', help='不采 CPU 样本（默认采 A1 与 D）')
     args = ap.parse_args()
@@ -637,9 +666,17 @@ def main():
         env.pop('OPEN_DEVTOOLS', None)
         env.pop('ELECTRON_RUN_AS_NODE', None)
         # 隔离 profile（开关必须在 app 路径之前）+ 不关 GPU：量的是产品默认配置下的手感
+        # ⚠️ 三个「别让窗口被判定为不可见」的开关（2026-11-05）：演练是**无人值守**跑的，Electron 窗口
+        #    常常被别的窗口盖住；Windows 的原生遮挡检测 + Chromium 的后台节流会把 rAF 停掉，
+        #    于是整段窗口"一帧都没有"——那读起来像"产品卡死"，其实是**测量环境**没在出帧
+        #    （历史读数里好/坏交替出现、坏的那几次 frameCount 全是 0，就是这件事）。
         el = subprocess.Popen([exe, '--user-data-dir=%s' % profile,
                                '--remote-debugging-port=%d' % CDP_PORT,
-                               '--remote-allow-origins=*', '.'],
+                               '--remote-allow-origins=*',
+                               '--disable-backgrounding-occluded-windows',
+                               '--disable-renderer-backgrounding',
+                               '--disable-background-timer-throttling',
+                               '--disable-features=CalculateNativeWinOcclusion', '.'],
                               cwd=ROOT, env=env,
                               stdout=open(os.path.join(out_dir, 'electron.log'), 'w'),
                               stderr=subprocess.STDOUT)
@@ -838,6 +875,9 @@ def main():
             g['case'] = 'D'
         d_marks.extend(got)
 
+        # 保存链分段读数（活了就打印：连按撤销到底卡在哪一段，一眼可读）
+        save_log = eval_json(cdp, SAVE_LOG_JS, required=('ok',), desc='保存链分段读数')[1]
+
         # ── 汇总与判据 ─────────────────────────────────────────────────────
         all_marks = a_marks + b_marks + c_marks + d_marks
         def pre_save_long(m):
@@ -858,6 +898,18 @@ def main():
                   f"{pre_save_long(m):>13}{post_save_long(m):>12}"
                   f"{str(sum(1 for g in (m.get('gaps') or []) if g > 33.4)):>7}"
                   f"{str(m.get('frameCount')):>7}", flush=True)
+
+        if save_log and save_log.get('log'):
+            print('\n=== 保存链分段（projectStore.saveProject；最近 %d 次）===' % len(save_log['log']),
+                  flush=True)
+            print(f"  {'label':<10}{'export':>9}{'snapshot':>10}{'push':>8}{'seq':>8}{'ipc':>8}"
+                  f"{'总计':>9}{'字节':>10}", flush=True)
+            for r in save_log['log']:
+                st = r.get('stages') or {}
+                print(f"  {(r.get('label') or '')[:8]:<10}{str(st.get('exportCanvas')):>9}"
+                      f"{str(st.get('snapshotState')):>10}{str(st.get('pushSnapshot')):>8}"
+                      f"{str(st.get('serialize')):>8}{str(st.get('ipc')):>8}"
+                      f"{str(r.get('total')):>9}{str(r.get('bytes')):>10}", flush=True)
 
         if profiles:
             print('\n=== CPU 采样（self time 前 8）===', flush=True)
@@ -913,17 +965,27 @@ def main():
                 ck(f'{case}：撤销 300ms 后的自动保存 ≤{args.budget_save:g}ms（最差 {worst_save}ms）',
                    worst_save <= args.budget_save, f'{worst_save}ms')
             if d_marks:
-                # ⚠️ 连续撤销**不设闸门**：这一档的瓶颈不在撤销命令，而在"每撤销一次都重排一次
-                #    保存"（剧本 300ms + 项目 800ms 两层防抖，8MB 项目一次落盘要几百 ms）——
-                #    卡在 `涂归属松手 62ms / 保存链` 那张卡上，不该用一个时红时绿的阈值糊住。
-                #    这里只如实记录，并在汇总里写清"这一步是几毫秒 / 有没有出帧"。
+                # 连续撤销（D 段）以前**不设闸门**：那时瓶颈是"每撤销一次都重排一次保存"，
+                # 8MB 项目一次落盘几百 ms，连按就叠成 1~3 秒主线程占满（一帧都不出）。
+                # 2026-11-05 保存链改成**分块 + 串行**之后，这里补上闸门（卡里写的验收口径）：
+                #   ① 每一步都得真的出帧（以前最坏是 3 秒窗口零帧）；
+                #   ② 连续撤销里单段长任务 ≤ --budget-chain（默认 200ms）。
                 frames = [(m.get('toNextFrame') if m.get('toNextFrame') is not None else None)
                           for m in d_marks]
-                print(f'  · D 连续撤销（记录，不设闸门）：每步到下一帧 {frames}；'
+                blind = [m for m in d_marks if not m.get('frameCount')]
+                worst_chain = max((m.get('longMax') or 0) for m in d_marks)
+                print(f'  · D 连续撤销：每步到下一帧 {frames}；'
                       f'长任务 {[m.get("longMax") for m in d_marks]}', flush=True)
                 ck('D 连续撤销：每一步都真的撤销了（按到的条数 = 撤销条数）',
                    len(d_marks) == painted and all(m.get('sync') is not None for m in d_marks),
                    f'{len(d_marks)}/{painted} 步')
+                ck('D 连续撤销：每一步都出帧（不再出现"整段窗口零帧"）',
+                   not blind,
+                   f'{len(blind)}/{len(d_marks)} 步零帧：'
+                   + json.dumps([{ 'label': m.get('label'), 'frameCount': m.get('frameCount') }
+                                 for m in blind], ensure_ascii=False)[:200])
+                ck(f'D 连续撤销：没有 >{args.budget_chain:g}ms 的长任务（最差 {worst_chain}ms）',
+                   worst_chain <= args.budget_chain, f'{worst_chain}ms')
 
         # 只读纪律：真实项目一个字节都没动
         sha_after = sha256(real)
@@ -931,7 +993,8 @@ def main():
 
         summary = {
             'budgets': {'sync': args.budget_sync, 'frame': args.budget_frame,
-                        'longtask': args.budget_longtask, 'save': args.budget_save},
+                        'longtask': args.budget_longtask, 'save': args.budget_save,
+                        'chain': args.budget_chain},
             'median': {
                 'sync': median([m.get('sync') or 0 for m in all_marks]),
                 'toNextFrame': median([m.get('toNextFrame') for m in all_marks
@@ -939,6 +1002,8 @@ def main():
                 'preSaveLong': median([pre_save_long(m) for m in all_marks]),
                 'postSaveLong': median([post_save_long(m) for m in all_marks]),
             },
+            'saveRuns': (save_log or {}).get('runs'),
+            'saveLog': (save_log or {}).get('log') or [],
             'byCase': {c: [m for m in all_marks if m.get('case') == c] for c in ('A', 'B', 'C', 'D')},
             'profiles': {k: {'totalMs': v.get('totalMs'), 'top': v.get('top'),
                              'window': v.get('window')}
@@ -973,7 +1038,8 @@ def main():
                f"{summary['median']['preSaveLong']} ms / 300ms 后保存 "
                f"{summary['median']['postSaveLong']} ms",
                f"- 阈值：同步 ≤{args.budget_sync:g}ms / 到下一帧 ≤{args.budget_frame:g}ms / "
-               f"撤销本身长任务 ≤{args.budget_longtask:g}ms / 撤销后保存 ≤{args.budget_save:g}ms",
+               f"撤销本身长任务 ≤{args.budget_longtask:g}ms / 撤销后保存 ≤{args.budget_save:g}ms / "
+               f"连续撤销单段 ≤{args.budget_chain:g}ms 且每一步都出帧",
                f'- 真实项目 sha256 跑前后一致：{sha_after == real_sha_before}']
         for tag, p in (summary.get('profiles') or {}).items():
             md.append('')
@@ -985,6 +1051,18 @@ def main():
             md.append('|---|---|---|')
             for r in (p.get('top') or [])[:6]:
                 md.append(f"| {r.get('ms')} | `{r.get('fn')}` | {r.get('file')}:{r.get('line')} |")
+        if summary.get('saveLog'):
+            md.append('')
+            md.append(f"**保存链分段**（`projectStore.saveProject`，最近 {len(summary['saveLog'])} 次；单位 ms）")
+            md.append('')
+            md.append('| 标签 | exportCanvas | snapshotState | pushSnapshot | 序列化(分块) | IPC | 总计 | 字节 | 结果 |')
+            md.append('|---|---|---|---|---|---|---|---|---|')
+            for r in summary['saveLog']:
+                st = r.get('stages') or {}
+                md.append(f"| {r.get('label') or ''} | {st.get('exportCanvas')} | "
+                          f"{st.get('snapshotState')} | {st.get('pushSnapshot')} | "
+                          f"{st.get('serialize')} | {st.get('ipc')} | {r.get('total')} | "
+                          f"{r.get('bytes')} | {'成功' if r.get('ok') else '失败：' + str(r.get('error'))} |")
         md += ['', f'结论：**{len(fails)} 项没过**' + ('（--report-only，未判阈值）' if args.report_only else '')]
         with open(os.path.join(out_dir, 'summary.md'), 'w', encoding='utf-8') as f:
             f.write('\n'.join(md) + '\n')

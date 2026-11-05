@@ -194,6 +194,156 @@ export function toIpcJson(value) {
   return JSON.stringify(unwrapRaw(value), jsonSafeReplacer);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 分块序列化（2026-11-05，卡「撤销连按被保存链拖住：主线程占满 1~3 秒」）
+//
+// 病灶（真机 + CPU 样本）：8.2MB 项目一次落盘 = `exportCanvas` + `snapshotState` +
+//   `pushSnapshot`（重放 + diff + 逐份数体积）+ `toIpcJson`（88ms 一整段）。连按 Ctrl+Z
+//   时两层防抖交错，几段几百毫秒的同步工作**首尾相接** → 3 秒窗口里 rAF 一帧都没有。
+//
+// 修法不是"把这些工作变快"（它本来就该有这些字节要处理），而是**把它切成小块**：
+//   · 每个叶子块用原生 `JSON.stringify` 序列化（不改口径，JSON 转义/数字格式全交给原生）；
+//   · 块之间 `await yieldToEventLoop()` 让出一拍，浏览器就能插进一次渲染。
+// 判据（`drill_undo_latency.py` D 段）：连按 5 次撤销，任一段 ≤200ms 且每次都能出帧。
+//
+// 为什么切在"结构边界"而不是写个流式序列化器：切边界之后每块仍是**原生 stringify**，
+// 出来的文本与 `toIpcJson(整份)` **逐字节相同**（单测 `test_save_chain_chunked.js` 守着）；
+// 自己写一遍 JSON 转义规则迟早和原生漂移（孤代理对、控制字符、数字格式都是坑）。
+// ═══════════════════════════════════════════════════════════════════════════
+const JSON_SPLIT_RULES = {
+  '': 'keys',
+  scenarios: 'keys',
+  'scenarios.baseMaps': 'keys',
+  'scenarios.baseMaps.*': 'keys',
+  maps: 'keys',
+  'maps.mapData': 'keys',
+  'maps.editor': 'keys',
+  snapshots: 'array',
+};
+
+/** 这一层要不要再切（返回 'keys' / 'array' / null=整块序列化） */
+function splitModeFor(path) {
+  if (!path.length) return JSON_SPLIT_RULES[''] || null;
+  const exact = JSON_SPLIT_RULES[path.join('.')];
+  if (exact) return exact;
+  const wildcard = path.map((seg, i) => (i === path.length - 1 ? '*' : seg)).join('.');
+  return JSON_SPLIT_RULES[wildcard] || null;
+}
+
+/**
+ * 让出一拍给事件循环（保存链分块的落点）。
+ *
+ * 为什么不是 `await Promise.resolve()`：微任务不会让浏览器插进一次渲染 —— 连按撤销时
+ * 那 900ms 的连续占用照旧一帧都不出。必须是**宏任务**。
+ * 为什么优先 MessageChannel：`setTimeout(0)` 在嵌套 5 层之后被夹到 4ms，一次保存分十来块
+ * 就白多几十毫秒；MessageChannel 是 0.1ms 级，且同样是一个宏任务（渲染照样能插进来）。
+ *
+ * 🔴 两个真机踩过的坑（2026-11-05，第一版把**保存彻底卡死**了，页面里 `saveProject` 永不返回）：
+ *   ① **必须 `onmessage` + 显式 `start()`**：用 `addEventListener('message', …)` 在这台 Electron 的
+ *      渲染进程里**收不到**消息（实测 race 3s 超时；同一条通道换成 `onmessage` 立刻 0ms 返回）；
+ *   ② **这一拍绝不允许"不返回"**：加一条墙钟兜底（8ms），消息通道万一不投递也照样醒过来 ——
+ *      保存链上任何一环挂住 = 用户改了东西永远落不了盘，比卡顿严重得多。连续三次走兜底就
+ *      认定通道在这台机器上不可用，永久改用 `setTimeout(0)`。
+ */
+const YIELD_FALLBACK_MS = 8;
+const YIELD_BROKEN = 'broken';
+let yieldChannel = null;
+let yieldSeq = 0;
+let yieldFallbacks = 0;
+
+export function yieldToEventLoop() {
+  if (yieldChannel === YIELD_BROKEN || typeof MessageChannel !== 'function') {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  if (!yieldChannel) {
+    try {
+      yieldChannel = new MessageChannel();
+    } catch (e) {
+      yieldChannel = YIELD_BROKEN;
+      return new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  const { port1, port2 } = yieldChannel;
+  const token = ++yieldSeq;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (viaFallback) => {
+      if (settled) return;
+      settled = true;
+      try { port1.onmessage = null; } catch (e) { /* 端口已关 */ }
+      clearTimeout(timer);
+      if (viaFallback) {
+        yieldFallbacks += 1;
+        if (yieldFallbacks >= 3) yieldChannel = YIELD_BROKEN;   // 这台机器不投递 → 永久退 setTimeout
+      } else {
+        yieldFallbacks = 0;
+      }
+      resolve();
+    };
+    // 兜底（见上面 ②）：先挂墙钟，再走通道
+    const timer = setTimeout(() => finish(true), YIELD_FALLBACK_MS);
+    port1.onmessage = (ev) => {
+      // 迟到的旧 token（上一次的兜底已经结算过）不许把这一拍提前叫醒
+      if (ev && ev.data && ev.data.__sitianYield !== token) return;
+      finish(false);
+    };
+    try { port1.start?.(); } catch (e) { /* 已 start 过 */ }
+    port2.postMessage({ __sitianYield: token });
+  });
+}
+
+async function buildJsonNode(nodeRaw, path, yieldFn, onPiece) {
+  // 先去代理（见 unwrapRaw：走代理序列化 3.6MB 是 237ms，原始对象 60ms）
+  const node = unwrapRaw(nodeRaw);
+  const mode = splitModeFor(path);
+  const isBranch = mode
+    && node !== null && typeof node === 'object'
+    && !ArrayBuffer.isView(node)
+    && typeof node.toJSON !== 'function'
+    && (mode === 'array' ? Array.isArray(node) : !Array.isArray(node));
+  if (!isBranch) {
+    await yieldFn(path);
+    const text = JSON.stringify(node, jsonSafeReplacer);
+    if (typeof onPiece === 'function') onPiece(path, text);
+    return text;
+  }
+  await yieldFn(path);
+  const parts = [];
+  if (mode === 'array') {
+    for (let i = 0; i < node.length; i += 1) {
+      const text = await buildJsonNode(node[i], [...path, String(i)], yieldFn, onPiece);
+      parts.push(text === undefined ? 'null' : text);   // 数组里的 undefined → null（与原生一致）
+    }
+    return `[${parts.join(',')}]`;
+  }
+  for (const key of Object.keys(node)) {
+    const child = node[key];
+    // 对象里 undefined / 函数 / symbol 一律**整个键省略**（与原生一致）
+    if (child === undefined || typeof child === 'function' || typeof child === 'symbol') continue;
+    const text = await buildJsonNode(child, [...path, key], yieldFn, onPiece);
+    if (text === undefined) continue;
+    parts.push(`${JSON.stringify(key)}:${text}`);
+  }
+  return `{${parts.join(',')}}`;
+}
+
+/**
+ * `toIpcJson` 的**分块版**：同一份文本（逐字节相同），但块与块之间让出事件循环。
+ * @param {any} value
+ * @param {{ yieldFn?: (path: string[]) => Promise<void>|void, onPiece?: (path: string[], text: string) => void }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function toIpcJsonChunked(value, opts = {}) {
+  const { yieldFn = yieldToEventLoop, onPiece } = opts;
+  const root = unwrapRaw(value);
+  if (root === undefined || root === null) return '{}';
+  if (typeof root !== 'object' || ArrayBuffer.isView(root) || typeof root.toJSON === 'function') {
+    return JSON.stringify(root, jsonSafeReplacer) ?? '{}';
+  }
+  const text = await buildJsonNode(root, [], yieldFn, onPiece);
+  return text === undefined ? '{}' : text;
+}
+
 // 深拷贝（项目数据只含 JSON-safe 值；structuredClone 优先，退化 JSON 往返）
 // ⚠️ 注意：`project.value` 里全是 Vue 代理 → `structuredClone` 分支**必然抛错**再退 JSON
 //    （见 deepClone 的 catch）。这里保留 structuredClone 是为了保住 TypedArray 的原生类型
@@ -572,6 +722,21 @@ function stripHeavyFromValue(key, value) {
 }
 
 /**
+ * `stripHeavyFromValue` 的**浅拷贝版**（不深拷，只换壳 + 去重字段）—— 给"先剔、再深拷"用。
+ *
+ * 🔴 2026-11-05：旧顺序是 `deepClone(...)` 之后才剔重字段 —— 等于把 1.2MB 的高度图
+ *    （`Float32Array`）**拷一遍再扔掉**。真机分段读数里 `snapshotState` 因此是 150ms
+ *    （离屏基准只要 55ms）。顺序反过来，输出逐字节完全一样（单测 c 守着）。
+ */
+function stripHeavyForClone(key, value) {
+  const raw = unwrapRaw(value);
+  if (key !== 'scenarios' || !isPlainObject(raw)) return raw;
+  const rawBaseMaps = unwrapRaw(raw.baseMaps);
+  if (!isPlainObject(rawBaseMaps)) return raw;
+  return stripHeavyFromValue('scenarios', { ...raw, baseMaps: rawBaseMaps });
+}
+
+/**
  * 回滚方向：把**当前项目**里的重字段补回快照结果。
  *
  * 🔴 这是本机制最容易写错的一步：快照既然不含这些字段，回滚自然也不恢复它们 ——
@@ -597,7 +762,23 @@ function carryHeavyIntoValue(key, restored, current) {
 // 取出项目中被快照覆盖的那部分状态（**已剔除重字段**，见 SNAPSHOT_HEAVY_FIELDS）
 export function snapshotState(project, keys = SNAPSHOT_DIFF_KEYS) {
   const out = {};
-  for (const k of keys) out[k] = stripHeavyFromValue(k, deepClone(project ? project[k] : undefined));
+  for (const k of keys) out[k] = deepClone(stripHeavyForClone(k, project ? project[k] : undefined));
+  return out;
+}
+
+/**
+ * `snapshotState` 的分块版（2026-11-05，保存链不再一次占住主线程）。
+ *
+ * 逐键深拷，键与键之间让出一拍 —— 真实 415 省项目上一次 55ms 的深拷被切成
+ * `scenarios`（大头）+ 三个小键，最大一块约 30ms。
+ */
+export async function snapshotStateChunked(project, keys = SNAPSHOT_DIFF_KEYS, opts = {}) {
+  const { yieldFn = yieldToEventLoop } = opts;
+  const out = {};
+  for (const k of keys) {
+    await yieldFn(['snapshot', k]);
+    out[k] = deepClone(stripHeavyForClone(k, project ? project[k] : undefined));
+  }
   return out;
 }
 
@@ -882,6 +1063,35 @@ export function snapshotBytes(snapshots) {
 }
 
 /**
+ * 每份快照序列化后的**字节数**缓存（2026-11-05）。
+ *
+ * 旧写法每次 push 都 `snapshots.map(sizeOf)` —— 最多 50 份、合计 3MB 上限，
+ * 真机样本里这一项自成一个 **45ms** 的忙段（每存一次盘就数一遍全部快照）。
+ * 快照条目是不可变的（push 只 push / shift / 换第 0 份的引用，从不改内容），
+ * 所以「一份量一次」就够：`WeakMap` 以条目对象为键，丢掉的份自然被回收。
+ */
+const snapshotSizeCache = new WeakMap();
+function snapshotSizeOf(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return JSON.stringify(snapshot, jsonSafeReplacer).length;
+  const cached = snapshotSizeCache.get(snapshot);
+  if (cached !== undefined) return cached;
+  const bytes = JSON.stringify(snapshot, jsonSafeReplacer).length;
+  snapshotSizeCache.set(snapshot, bytes);
+  return bytes;
+}
+
+/**
+ * 上一份快照状态的缓存（2026-11-05）：免掉每次保存都 `replayTo` 整条补丁链。
+ *
+ * `replayTo` 第一件事是 `deepClone(base)`（真实项目 3.6MB 级，真机样本里 70ms/次）。
+ * 但顺序保存时“上一份快照的状态”**就是上一次刚算出来的 state** —— 没必要重放。
+ * 只在同时满足两条时才复用（否则老实重放，宁可慢也不能错）：
+ *   ① `project.snapshots` 仍是上次返回的那个数组（引用相等 —— 回滚/重开/外部改动都会换数组）；
+ *   ② 该数组的最后一份仍是上次我们推入的那份（引用相等）。
+ */
+let lastSnapshotStateCache = null;
+
+/**
  * 追加一份快照（返回新 project，不改入参）。落盘前调用。
  *
  * 两条 2026-10-11 的裁剪纪律（都是为了"体积"这个真实瓶颈）：
@@ -893,22 +1103,49 @@ export function snapshotBytes(snapshots) {
  * @param {{ label?: string, at?: string, keep?: number, keys?: string[], maxBytes?: number }} [opts]
  */
 export function pushSnapshot(project, opts = {}) {
+  const { keys = SNAPSHOT_DIFF_KEYS } = opts;
+  return pushSnapshotWithState(project, snapshotState(project, keys), opts);
+}
+
+/**
+ * 同上，但状态由调用方给 —— 保存链用这条：状态由 `snapshotStateChunked` **分块**算好，
+ * 不再在一个同步函数里一次深拷。口径与 `pushSnapshot` 完全一致（单测逐份对拍）。
+ *
+ * @param {object} project
+ * @param {object} state `snapshotState(...)` 的结果
+ * @param {{ label?: string, at?: string, keep?: number, keys?: string[], maxBytes?: number }} [opts]
+ */
+export function pushSnapshotWithState(project, state, opts = {}) {
   const {
     label = '', at = '', keep = SNAPSHOT_KEEP, keys = SNAPSHOT_DIFF_KEYS,
     maxBytes = SNAPSHOT_MAX_BYTES,
   } = opts;
-  const snapshots = (project.snapshots || []).map(s => ({ ...s }));
-  const state = snapshotState(project, keys);
+  const prevSnapshots = project.snapshots || [];
+  // ⚠️ `slice()` 而不是 `map(s => ({ ...s }))`：快照条目本身**不会被改**（只 push / shift /
+  //    换第 0 份的引用），共享条目对象才能让字节缓存命中；旧写法每存一次盘就把全部条目
+  //    重新克隆一遍，WeakMap 缓存等于永远 miss。
+  const snapshots = prevSnapshots.slice();
   const ts = at || new Date().toISOString();
 
   if (!snapshots.length) {
     snapshots.push({ at: ts, label, base: state, patch: { set: [], del: [] }, changes: 0 });
+    lastSnapshotStateCache = { snapshots, lastEntry: snapshots[snapshots.length - 1], state };
   } else {
-    const prevState = replayTo(snapshots, snapshots.length - 1);
+    const lastEntry = snapshots[snapshots.length - 1];
+    const cached = lastSnapshotStateCache;
+    // 顺序保存（99% 的情况）→ 直接复用上次算出的状态，跳过 replayTo 的整份深拷
+    const prevState = (cached && cached.snapshots === prevSnapshots && cached.lastEntry === lastEntry)
+      ? cached.state
+      : replayTo(snapshots, snapshots.length - 1);
     const patch = diffStates(prevState, state, keys);
     // ① 没有任何改动 → 不留空快照（原对象返回，引用不变）
-    if (!patch.set.length && !patch.del.length) return project;
+    if (!patch.set.length && !patch.del.length) {
+      // 缓存仍然有效（“上一份的状态”没变），留着它，下次照样免重放
+      lastSnapshotStateCache = { snapshots: prevSnapshots, lastEntry, state: prevState };
+      return project;
+    }
     snapshots.push({ at: ts, label, patch, changes: countChanges(patch) });
+    lastSnapshotStateCache = { snapshots, lastEntry: snapshots[snapshots.length - 1], state };
   }
 
   while (snapshots.length > Math.max(1, keep)) dropOldestSnapshot(snapshots);
@@ -917,7 +1154,7 @@ export function pushSnapshot(project, opts = {}) {
     // 🔴 2026-10-29（F 实测）：旧写法是“每丢一份就 `snapshotBytes(整串)` 重算一遍”= O(n²)。
     //   真实 415 省项目上一次"改一个省"（补丁里带整张 839KB 的省表）会连续丢 12 份 →
     //   光是数体积就 1.2s。改成**增量记账**：先各份量一次，之后每丢一份只重算新的第 0 份。
-    const sizeOf = (s) => JSON.stringify(s, jsonSafeReplacer).length;
+    const sizeOf = snapshotSizeOf;
     const sizes = snapshots.map(sizeOf);
     let total = sizes.reduce((a, b) => a + b, 0);
     while (snapshots.length > 1 && total > maxBytes) {

@@ -319,12 +319,28 @@
   量四类撤销：涂归属一笔（账本组撤）/ 编辑省份（快照 + 整图重绘）/ 添加标记 / 连续撤销。
   口径：同步段（`undo` 回调）、**按键到下一帧**、撤销本身长任务、撤销后 300ms 自动保存、掉帧；
   另采 A1 与 D 两段 CPU 样本（`profile-*.json`，按"按键后 220ms"窗口聚合）。
-  读数（本机 / 8.2MB 真实项目副本）：同步段 **0.1~2.5ms**（撤销命令本身一点都不慢）；到下一帧
-  **57~104ms**（大头是整图重绘）；连续撤销会被保存链拖出 **1~3 秒**主线程占满（另案，不设闸门）。
+  读数（本机 / 8.2MB 真实项目副本）：同步段 **0.9~4.7ms**（撤销命令本身一点都不慢）；到下一帧
+  **39~107ms**（大头是整图重绘）；连续撤销的"每一步都出帧 + 单段 ≤200ms"**已设闸门**（见下一条：
+  保存链分块化把它们从"1~3 秒主线程占满 / 5 步全零帧"压到"单段 ≤74ms / 5 步全出帧"）。
   产物 `build/undo-latency/<ts>/{result.json,summary.md,profile-*.json}`。
   ⚠️ 帧时刻**必须用回调里的 `performance.now()`**，不能用 rAF 的 vsync 参数 —— 后者会把 75ms 读成 8ms
   （主线程被占住时回调拿到的仍是原定的帧起点）；⚠️ CPU 采样窗口的坐标是 `performance.now()`，
   混用 `Date.now()` 会一条样本都留不下。
+  ⚠️ 演练的两个环境坑：**窗口被别的窗口盖住时 rAF 会停**（Windows 遮挡检测 + 后台节流 → 整段"零帧"，
+  历史读数好/坏交替就是这么来的；启动参数带 `--disable-backgrounding-occluded-windows
+  --disable-renderer-backgrounding --disable-background-timer-throttling
+  --disable-features=CalculateNativeWinOcclusion`）；A 段"目标省"以**画布中心命中**的省为准
+  （小省居中后会偏出中心点，旧判据一红一绿随机翻）。
+- **保存链分块化（C2 余项，2026-11-05）**: `unit/test_save_chain_chunked.js`（11 条）+
+  `python scripts/tests/tools/probe_save_chain.py`；细节（分段读数 / 四刀 / 两个真机坑）见
+  [docs/plan/HANDOFF_20261105_SAVE_CHAIN.md](docs/plan/HANDOFF_20261105_SAVE_CHAIN.md)。
+  一句话：连按撤销卡 1~3 秒的真因是**保存链上一串同步工作首尾相接 + 两份保存并行**（不是撤销命令，它 1~5ms）；
+  现在保存**串行**、深拷/序列化**分块并让出一拍**（产物与 `toIpcJson(整份)` **逐字节相同**）、
+  快照侧三处白干的活去掉（体积一份只量一次 / 顺序保存免重放 / 重字段先剔再拷）、另加 20s 看门狗。
+  读数：连按 5 次撤销 **5/5 步都出帧**、单段长任务 **≤57ms**（以前 5/5 步零帧、305~953ms）。
+  ⚠️ 改这条链必读：`MessageChannel` 必须 `onmessage` + 显式 `start()` —— 用 `addEventListener` 在这台
+  Electron 里**收不到消息**，第一版因此把保存整个卡死（`saveProject` 永不返回、零字节落盘、无任何报错）；
+  "改了没落盘"别靠时延读数判断，用 `probe_save_chain.py` 直接问 store。
 - **示例星系的验收（自建临时世界，不碰 harness）**: `npm run test:sample-galaxy`（`drill_sample_galaxy.py`）
   —— 只读态断言 → 新建临时项目 + **用例自建世界** → 生成（4 星域 / 120 恒星 / 175 航道）→ 整页截图
   `build/sample-galaxy/generated.png` → 一次撤销精确回退 → **反面对照**：harness 基线项目从头到尾没被

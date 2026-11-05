@@ -34,7 +34,9 @@ import {
   createEntity as createEntityShape,
   validateProject,
   migrateProject,
-  pushSnapshot,
+  pushSnapshotWithState,
+  snapshotStateChunked,
+  toIpcJsonChunked,
   restoreSnapshot as restoreSnapshotState,
   snapshotSummaries,
   snapshotState,
@@ -51,10 +53,13 @@ import {
   // 跨 IPC 载荷的统一下载口（去 Vue 代理 / TypedArray 兜底）—— 见下方 saveProject 注释
   // 跨 IPC / 落盘载荷的统一下载口（`toIpcPlain` = 对象版，`toIpcJson` = 文本版，同一口径）
   toIpcPlain,
-  toIpcJson,
+  // 分块版（2026-11-05）：同一份文本，块之间让出事件循环 —— 连按撤销不再把主线程占满
 } from '../utils/projectSchema';
 
 const AUTO_SAVE_DELAY = 800;
+// 保存看门狗：超过这个秒数还没落完，就把失败摆到界面上（`__SITIAN_SAVE_LOG__` 里有分段读数）。
+// 8MB 真实项目一次保存实测 200~400ms；20s 只可能是"卡住"，不是"慢"。
+const SAVE_WATCHDOG_SEC = 20;
 const API_MISSING = '项目文件 API 不可用（请用 Electron 运行：npm run dev:watch）';
 
 export const useProjectStore = defineStore('project', () => {
@@ -613,8 +618,45 @@ export const useProjectStore = defineStore('project', () => {
     } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
   }
 
+  // ── 保存流水线（2026-11-05，卡「撤销连按被保存链拖住」）──────────────────────
+  // `saveChain`：同一时刻只允许一条保存流水线在跑（连按撤销时以前会叠成两三份同时在跑）。
+  let saveChain = Promise.resolve();
+  /** 单调时钟（性能口径一律用它，不用 Date.now —— 后者会被系统校时扰动） */
+  function nowMs() {
+    try {
+      if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
+        return performance.now();
+      }
+    } catch (e) { /* 忽略 */ }
+    return Date.now();
+  }
+  /**
+   * 保存读数留痕（真机演练 `drill_undo_latency.py` / `diag_t2_save.py` 直接读它）：
+   * 每段耗时一眼看到，下次再"连按卡住"就能指到是哪一段，而不是只知道"这一段里有个长任务"。
+   * 只在浏览器环境挂；Node 单测下静默跳过。
+   */
+  function recordSaveRun(entry) {
+    try {
+      if (typeof window === 'undefined' || !window) return;
+      const log = window.__SITIAN_SAVE_LOG__ || (window.__SITIAN_SAVE_LOG__ = []);
+      log.unshift({ at: new Date().toISOString(), ...entry });
+      if (log.length > 80) log.length = 80;
+    } catch (e) { /* 非浏览器 / 冻结环境忽略 */ }
+  }
+
   /** 保存项目（先追加一份快照，再落盘；主进程另存整文件备份） */
   async function saveProject({ label = '', keep } = {}) {
+    // 🔴 2026-11-05（卡「撤销连按被保存链拖住」）：**串行化**，同一时刻只允许一条保存流水线。
+    //    以前没有这道闸：连按 Ctrl+Z 时（剧本层 300ms + 项目层 800ms 两层防抖交错）
+    //    会出现两份保存同时在跑 —— 一份在 `await IPC`、另一份已经开始快照/序列化，
+    //    主线程上的同步段就首尾相接。真机 3 秒窗口里一帧都没有，就是这么来的。
+    const run = () => saveProjectNow({ label, keep });
+    const p = saveChain.then(run, run);
+    saveChain = p.then(() => {}, () => {});
+    return p;
+  }
+
+  async function saveProjectNow({ label = '', keep } = {}) {
     if (!project.value) return { success: false, error: '没有打开的项目' };
     const a = api();
     if (!a || !a.projectSave) {
@@ -625,13 +667,38 @@ export const useProjectStore = defineStore('project', () => {
       return { success: false, error: API_MISSING };
     }
     setSaveStatus('saving');
+    // 分段计时（真机演练把这份读数打进 result.json：快了/慢了都能指到是哪一段）
+    const stages = {};
+    let markAt = nowMs();
+    const lap = (name) => { const t = nowMs(); stages[name] = +(t - markAt).toFixed(1); markAt = t; };
+    const startedAt = markAt;
+    let bytes = 0;
+    // 🔴 看门狗（2026-11-05）：保存链改成"分块 + 让出一拍"之后，任何一环**挂住**都会表现成
+    //    `saveStatus = 'saving'` 永远不动、`dirty` 一直为 true，而用户看不到任何报错 ——
+    //    这正是第一版（让出一拍没返回）的形状：页面里 `saveProject()` 永不 resolve，改的东西
+    //    一个字节都没落盘，却没有任何提示。这里兜住这一类：超时就把失败**说出来**。
+    //    不取消流水线（它可能只是慢）：真跑完了会照旧把状态写成 `saved`。
+    let watchdogFired = false;
+    const watchdog = setTimeout(() => {
+      watchdogFired = true;
+      const why = `保存超过 ${SAVE_WATCHDOG_SEC} 秒未完成（内部卡住）`;
+      lastError.value = why;
+      setSaveStatus('error');
+      reportSaveFailure(why);
+      recordSaveRun({ label, stages, ok: false, error: why, total: +(nowMs() - startedAt).toFixed(1) });
+    }, SAVE_WATCHDOG_SEC * 1000);
     try {
       // Phase 2.4：落盘前把画布当前状态并进项目（画布是用户看到的真相，项目文件必须与之一致）
       const adapter = getCanvasAdapter();
       const merged = (adapter && typeof adapter.exportCanvas === 'function')
         ? mergeCanvasPayload(project.value, adapter.exportCanvas())
         : project.value;
-      const withSnapshot = pushSnapshot(merged, { label, keep });
+      lap('exportCanvas');
+      // 快照状态改成**分块深拷**（键与键之间让出一拍）：以前是同步 55ms 一整段
+      const state = await snapshotStateChunked(merged, SNAPSHOT_DIFF_KEYS);
+      lap('snapshotState');
+      const withSnapshot = pushSnapshotWithState(merged, state, { label, keep });
+      lap('pushSnapshot');
       // 🔴 竞态守卫（2026-09-24）：`await` 期间用户可能继续编辑 —— `syncFromCanvas` 会把
       //    `project.value` 换成**新对象**并置 `dirty = true`。若返回后无条件回写 `withSnapshot`
       //    并清 dirty，那批新编辑会被旧快照覆盖、且此后 `scheduleAutoSave` 看到 dirty=false 不再保存
@@ -648,9 +715,15 @@ export const useProjectStore = defineStore('project', () => {
       //    克隆一遍、主进程再 stringify 一遍写盘 —— 三份开销。现在只 old 一份序列化：
       //    `toIpcJson` 出文本 → 主进程直接写（见 projectHandler 的 atomicWriteText）。
       //    ⚠️ 两种形态必须**逐字节同形**：都过 `unwrapRaw` + `jsonSafeReplacer`（同一份实现）。
-      const res = await a.projectSave({ filePath: filePath.value, projectJson: toIpcJson(withSnapshot) });
+      // 2026-11-05：改成**分块序列化**（同一份文本，逐字节与 `toIpcJson` 相同；块之间让出一拍）。
+      const projectJson = await toIpcJsonChunked(withSnapshot);
+      lap('serialize');
+      const res = await a.projectSave({ filePath: filePath.value, projectJson });
+      lap('ipc');
       if (!res || !res.success) throw new Error((res && res.error) || '写入失败');
+      bytes = projectJson.length;
       lastSavedAt.value = new Date().toISOString();
+      recordSaveRun({ label, stages, bytes, ok: true, total: +(nowMs() - startedAt).toFixed(1) });
       if (project.value !== snapshotOf) {
         // 保存期间有新编辑：以内存为准，稍后再落一次盘（本次写入的内容已成为历史）
         dirty.value = true;
@@ -666,7 +739,13 @@ export const useProjectStore = defineStore('project', () => {
       lastError.value = err.message || String(err);
       setSaveStatus('error');   // B5：失败态不自动消失，由下次成功保存来清
       reportSaveFailure(lastError.value);
+      recordSaveRun({ label, stages, bytes, ok: false, error: lastError.value, total: +(nowMs() - startedAt).toFixed(1) });
       return { success: false, error: lastError.value };
+    } finally {
+      clearTimeout(watchdog);
+      if (watchdogFired) {
+        try { console.warn('[project] 保存看门狗触发过（上次读数见 __SITIAN_SAVE_LOG__）'); } catch (e) { /* 忽略 */ }
+      }
     }
   }
 
