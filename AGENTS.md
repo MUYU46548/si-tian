@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**164 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**104 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**105 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -237,8 +237,9 @@
     用例里改成“先等改名那次保存落完，再取基线”，否则撤销前后是同一个 save 计数。
     实测链路：剧本域撤销 → 约 1.1s 落盘；画布域撤销 → 约 1.6s（800+800）。判据窗口取 2.6s。
   - 没做（刻意）：撤销**栈本身**不跨会话持久化（重开项目历史为空）—— 要序列化命令闭包，另一个命题。
-  - ⚠️ `drill_quit_flush.py --phase p4` 在本机当前 dist 上**红**（点“历史剧本”后画布 30s 不挂载；
-    旧 dist 同样红，与本改动无关）—— 已建卡，别把它当 B2 的判据。
+  - ⚠️ `drill_quit_flush.py --phase p4` 当时在本机 dist 上红（点“历史剧本”页签后画布 30s 不挂载）
+    —— **已在 `5521d37` 修**：点完页签要点第一张卡片才进编辑器；定位不到新建的小省时**显式跳过**
+    拆分/删省并打印原因（生产构建读不到相机，别指望组件 setupState）。
 - **底图重导的“待人工冲突”口径（B3，2026-11-05）**: `test_150_basemap_reimport`（扩了 f1b 逐条裁决）
   + `unit/test_reimport_conflicts.js`（10 条）—— 并省冲突（多个旧省并成一个新省）以前只能**整单放弃**
   （对话框上“有冲突，不能重导”），用户没有任何出路。现在每处冲突**逐条三选一**：
@@ -255,7 +256,21 @@
     用例里必须显式把组件文件拼进合集。
   - ⚠️ 真机 `drill_reimport_019.py` 本轮 **8/10**：A 段（冲突拒绝 + 磁盘一字节不变）全绿；
     B 段两条红是既有判据问题（把其它底图的剧本也算进“归属键”+ Ctrl+Z 靠 CDP 按键但窗口未聚焦），
-    已建卡 `drill_reimport_019-两-a9be8e2f`，与本改动无关。
+    已建卡 `drill_reimport_019-两-a9be8e2f`，与本改动无关。**2026-11-05 晚已修并 11/11 全绿**（见上一条）。
+- **行星/区域/建筑三层文字样式收口（A5，2026-11-05）**: `unit/test_map_text_unified.js`（5 条）——
+  历史剧本层的六类文字早已收口到 `utils/mapTextStyles.js`，但那三层还各自硬编码 `'10px sans-serif'`
+  （同一个软件两套字体口径：剧本层中文走雅黑/苹方，那三层退回浏览器默认 sans-serif，小字号下发虚）。
+  现在三层统一走 `mapTextStyles.js#canvasFont(size, { bold, family })`：**字号仍由各层自己给**
+  （各层信息密度不同，不该强行同号），**字体族只有一份**（复用 `fontFamilyCss`）。
+  - 改动：`planetDrawing.js` 18 处 → 0、`AreaMap.vue` 4 → 0、`InteriorView.vue` 1 → 0 的
+    `px sans-serif` 字面量换成了 `canvasFont(N)` / `canvasFont(N, { bold: true })`；
+    行星侧那处模板字符串也改成 `canvasFont(size, { bold: weight === 'bold' })`。
+  - 判据：`canvasFont` 逐档输出精确（**加粗必须在前缀** —— `10px bold` 不是合法 CSS）、
+    三层源码 **0 处**硬编码字体、三层都真的用到（import 了没用也算红）、剧本层 5 类默认值没丢。
+  - 功能回归：`test_16`（行星渲染 / 拖拽 avg 8.0ms）、`test_36`（区域 6/6）、`test_37`（建筑 5/5）全过；
+    **105 个 Node 单测全过**。
+  - 没做（刻意）：三层**观感逐层对拍（截图基线）**没建 —— 这三个视图不在像素基线里；
+    先把“一条样式入口 + 功能判据”做掉，截图基线留给以后（`drill_scenario_pixels` 目前只覆盖剧本视图）。
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与
@@ -433,7 +448,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 164 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 104 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 105 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |

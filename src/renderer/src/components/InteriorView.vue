@@ -284,6 +284,7 @@
 </template>
 
 <script setup>
+import { canvasFont } from '../utils/mapTextStyles';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
 import Icon from './Icon.vue';
 import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
@@ -702,7 +703,7 @@ function drawGrid(ctx, w, h) {
   ctx.stroke();
   
   // 网格标签
-  ctx.font = '9px sans-serif';
+  ctx.font = canvasFont(9);
   ctx.fillStyle = 'rgba(150, 180, 200, 0.6)';
   if (step >= 50) {
     ctx.textAlign = 'left';

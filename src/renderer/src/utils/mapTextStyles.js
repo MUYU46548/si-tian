@@ -171,6 +171,26 @@ export function fontFamilyCss(style) {
 }
 
 /**
+ * 画布 `ctx.font` 字符串（**唯一入口**，A5 2026-11-05）。
+ *
+ * 为什么要有它：历史剧本层的六类文字早已收口到本文件（`*_LABEL_DEFAULTS` + `fontFamilyCss`），
+ * 但行星 / 区域 / 建筑三层还各自硬编码 `'10px sans-serif'` —— 同一个软件里两套字体口径：
+ * 剧本层中文走雅黑/苹方，那三层退回浏览器默认的 sans-serif，小字号下中文发虚。
+ *
+ * 现在三层统一走这里：**字号仍由各层自己给**（各层的信息密度不同，不该强行同号），
+ * 但**字体族只有一份**（与剧本层同一个 `fontFamilyCss`），加粗也只是 `bold ` 前缀。
+ *
+ * @param {number|string} size 字号（px）
+ * @param {{bold?:boolean, family?:('sans'|'serif')}} [opts]
+ */
+export function canvasFont(size, opts = {}) {
+  const n = Number(size);
+  const px = Number.isFinite(n) && n > 0 ? n : 10;
+  const family = opts && opts.family === 'serif' ? 'serif' : 'sans';
+  return `${opts && opts.bold ? 'bold ' : ''}${px}px ${fontFamilyCss({ fontFamily: family })}`;
+}
+
+/**
  * style → SVG `<text>` 属性。画布与导出**必须**用同一份字号/颜色/描边。
  * `lockScreenSize` 只影响画布（导出是固定分辨率图，不存在"屏幕像素"）。
  */

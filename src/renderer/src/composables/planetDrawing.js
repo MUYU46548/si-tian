@@ -5,6 +5,7 @@
  * getState() 每次渲染时调用，返回解包后的最新状态对象（ref 已在组件侧 .value 解包）。
  * 拆分原则：绘制只读状态 + 渲染，交互/修改留在组件。
  */
+import { canvasFont } from '../utils/mapTextStyles';
 import { drawCanvasIcon, drawIconOrEmoji } from '../utils/canvasIcon';
 import { getTexturePattern } from '../utils/textures';
 import { pointsBBox, bboxInViewport, pointInViewport, convexHull, mirrorPointAcross } from '../utils/geometry';
@@ -113,7 +114,7 @@ function drawReferenceImage(ctx) {
       ctx.strokeRect(-drawW / 2, -drawH / 2, drawW, drawH);
       ctx.setLineDash([]);
       ctx.fillStyle = '#4A90D9';
-      ctx.font = '12px sans-serif';
+      ctx.font = canvasFont(12);
       ctx.textAlign = 'left';
       ctx.fillText(`参考底图（可拖动）${refs.length > 1 ? ` · ${idx + 1}/${refs.length}` : ''}`, -drawW / 2, -drawH / 2 - 8);
       ctx.restore();
@@ -147,7 +148,7 @@ function drawFog(ctx, w, h) {
   }
   
   // 提示文字
-  ctx.font = '13px sans-serif';
+  ctx.font = canvasFont(13);
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(120, 140, 160, 0.5)';
   ctx.fillText('这片区域尚未绘制 — 点击“编辑地图”开始探索', 0, 0);
@@ -182,7 +183,7 @@ function drawBackground(ctx, w, h) {
     ctx.stroke();
     if (gx !== 0 && gx % labelEvery === 0 && s.gridLabels) {
       ctx.save();
-      ctx.font = '10px sans-serif';
+      ctx.font = canvasFont(10);
       ctx.fillStyle = 'rgba(100, 150, 200, 0.6)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
@@ -200,7 +201,7 @@ function drawBackground(ctx, w, h) {
     ctx.stroke();
     if (gy !== 0 && gy % labelEvery === 0 && s.gridLabels) {
       ctx.save();
-      ctx.font = '10px sans-serif';
+      ctx.font = canvasFont(10);
       ctx.fillStyle = 'rgba(100, 150, 200, 0.6)';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
@@ -236,7 +237,7 @@ function drawBackground(ctx, w, h) {
   ctx.fill();
   ctx.stroke();
   // 方向文字（N/S/E/W）
-  ctx.font = 'bold 10px sans-serif';
+  ctx.font = canvasFont(10, { bold: true });
   ctx.fillStyle = '#e2e8f0';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -291,7 +292,7 @@ function drawBackground(ctx, w, h) {
   ctx.lineTo(scaleX + barPx, scaleY + 5);
   ctx.stroke();
   // 文字
-  ctx.font = '11px sans-serif';
+  ctx.font = canvasFont(11);
   ctx.fillStyle = '#e2e8f0';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -319,7 +320,7 @@ function drawBackground(ctx, w, h) {
       ctx.lineTo(p.x, p.y + 12);
       ctx.stroke();
       // 标签
-      ctx.font = 'bold 12px sans-serif';
+      ctx.font = canvasFont(12, { bold: true });
       ctx.fillStyle = '#FFD700';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
@@ -659,7 +660,7 @@ function drawElevation(ctx) {
     // 标注文字（仅 LOD 足够时）
     if (s.lodRef > 0.5) {
       const center = getPolygonCenter(poly.points);
-      ctx.font = '10px sans-serif';
+      ctx.font = canvasFont(10);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -716,7 +717,7 @@ function drawClimate(ctx) {
     // 标注
     if (s.lodRef > 0.5) {
       const center = getPolygonCenter(poly.points);
-      ctx.font = '10px sans-serif';
+      ctx.font = canvasFont(10);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -767,7 +768,7 @@ function drawPrecipitation(ctx) {
     // 标注
     if (s.lodRef > 0.6) {
       const center = getPolygonCenter(poly.points);
-      ctx.font = '9px sans-serif';
+      ctx.font = canvasFont(9);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -857,7 +858,7 @@ function drawRegions(ctx) {
       
       if (region.name && s.lodRef > 0.3 && !fast) {
         const center = getPolygonCenter(region.points);
-        ctx.font = 'bold 10px sans-serif';
+        ctx.font = canvasFont(10, { bold: true });
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = color;
@@ -1006,7 +1007,7 @@ function drawPlaces(ctx) {
       ctx.arc(x, y, radius + 20, 0, Math.PI * 2);
       ctx.stroke();
       const labelText = place.displayName || place.name;
-      ctx.font = 'bold 12px sans-serif';
+      ctx.font = canvasFont(12, { bold: true });
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const m = ctx.measureText(labelText);
@@ -1023,7 +1024,7 @@ function drawPlaces(ctx) {
     const ownedRegion = s.placeRegionMap.get(place.id);
     if (ownedRegion?.name && s.lodRef > 0.75 && !fast) {
       const badgeY = y + radius + (place.name ? 18 : 4);
-      ctx.font = '9px sans-serif';
+      ctx.font = canvasFont(9);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const badgeText = ownedRegion.name;
@@ -1148,7 +1149,7 @@ function drawRoutes(ctx) {
       const ok = drawTextOnPath(ctx, route.label, route.points, 11, color, '#2D3436', offsetX, offsetY);
       if (!ok) {
         const mid = route.points[Math.floor(route.points.length / 2)];
-        ctx.font = 'bold 11px sans-serif';
+        ctx.font = canvasFont(11, { bold: true });
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const labelText = route.label;
@@ -1546,7 +1547,7 @@ function drawTerrainLabels(ctx) {
     const terrainColor = s.terrainTypes.find(t => t.type === poly.type)?.color || '#A3C4BC';
     const center = getPolygonCenter(poly.points);
     
-    ctx.font = `${getLabelWeight(poly.layer)} ${getLabelSize(poly.layer)}px sans-serif`;
+    ctx.font = canvasFont(getLabelSize(poly.layer), { bold: getLabelWeight(poly.layer) === 'bold' });
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = getContrastColor(terrainColor);
@@ -1591,13 +1592,13 @@ function drawClusters(ctx) {
       ctx.shadowBlur = 0;
       // 数字
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 9px sans-serif';
+      ctx.font = canvasFont(9, { bold: true });
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(members.length), cx, cy + 0.5);
       // 标签
       if (s.lodRef > 0.3 && !fast) {
-        ctx.font = '10px sans-serif';
+        ctx.font = canvasFont(10);
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#2D3436';
         const clusterLabel = `${cluster.name} (${members.length})`;
@@ -1638,7 +1639,7 @@ function drawClusters(ctx) {
         // 簇名称标签（活动簇显示）
         if (isActive && cluster.name && s.lodRef > 0.3) {
           const center = getPolygonCenter(hull);
-          ctx.font = 'bold 11px sans-serif';
+          ctx.font = canvasFont(11, { bold: true });
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';

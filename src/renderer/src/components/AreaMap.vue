@@ -316,6 +316,7 @@
 </template>
 
 <script setup>
+import { canvasFont } from '../utils/mapTextStyles';
 import { drawIconOrEmoji } from '../utils/canvasIcon';
 import { nodeIdFromNoteResult } from '../utils/normalizeId';
 import Icon from './Icon.vue';
@@ -603,7 +604,7 @@ const renderer = useCanvasRenderer(canvas, {
         ctx.moveTo(p.x, p.y - 12);
         ctx.lineTo(p.x, p.y + 12);
         ctx.stroke();
-        ctx.font = 'bold 12px sans-serif';
+        ctx.font = canvasFont(12, { bold: true });
         ctx.fillStyle = '#FFD700';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
@@ -632,7 +633,7 @@ const renderer = useCanvasRenderer(canvas, {
       ctx.arc(compassX, compassY, compassR + 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.font = 'bold 10px sans-serif';
+      ctx.font = canvasFont(10, { bold: true });
       ctx.fillStyle = '#e2e8f0';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -688,7 +689,7 @@ const renderer = useCanvasRenderer(canvas, {
       ctx.moveTo(scaleX + barPx, scaleY - 5);
       ctx.lineTo(scaleX + barPx, scaleY + 5);
       ctx.stroke();
-      ctx.font = '11px sans-serif';
+      ctx.font = canvasFont(11);
       ctx.fillStyle = '#e2e8f0';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
@@ -1009,7 +1010,7 @@ function drawGrid(ctx, w, h) {
   
   // 网格标签（每 1000 单位或每 step 标注一次，避免拥挤）
   const labelEvery = step >= 1000 ? step : Math.max(1000, Math.ceil(1000 / step) * step);
-  ctx.font = '10px sans-serif';
+  ctx.font = canvasFont(10);
   ctx.fillStyle = 'rgba(150, 180, 200, 0.7)';
   for (let x = startX; x <= worldRight; x += step) {
     if (x !== 0 && x % labelEvery === 0) {
