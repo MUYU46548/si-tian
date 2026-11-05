@@ -1102,7 +1102,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   //     scenarios[*].ownership（省份/区域归属键）
   //   不参与级联（已知例外，刻意排除）：
   //     scenarios.baseMaps —— 其键语义混用（既可能是行星**名称**又可能是 id，
-  //     如真实数据里并存 `德斯特星` 与 `desite`），按 id 改名会误伤，故不列入；
+  //     如真实数据里并存 `示例行星` 与 `desite`），按 id 改名会误伤，故不列入；
   //     底图与节点本就非同源（来自 azgaar 导入），重提取不受影响。
   const ID_REF_VALUE_FIELDS = ['nodeId', 'parentId', 'fromId', 'toId', 'systemId', 'areaId', 'buildingId', 'planetId'];
   const ID_REF_ARRAY_FIELDS = ['memberIds'];
@@ -1733,7 +1733,7 @@ export const useGeodataStore = defineStore('geodata', () => {
    * 🔴 为什么必须显式往返：这些字段丢了**不会报任何错**，只会让项目模式下的能力静默退化 ——
    *   丢 `placeType` → 行星图/区域图上聚落与地点的图标、配色全部退化；
    *   丢 `population` → 聚落图标不按人口分级；丢 `wikilinks` → 搜索的“提及”命中整块消失。
-   *   本仓真实数据（ROSA 121 节点）里 117 个带 placeType、120 个带 wikilinks，一开项目就全丢。
+   *   本仓真实数据（示例库 121 节点）里 117 个带 placeType、120 个带 wikilinks，一开项目就全丢。
    */
   function entityExtras(e) {
     const out = {};

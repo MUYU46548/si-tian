@@ -23,7 +23,7 @@ const AP = await import(pathToFileURL(path.join(tmp, 'azgaar-parser.mjs')).href)
 
 const text = fs.readFileSync(MAP, 'utf8');
 const parsed = AP.parseMapFile(text);
-const name = '德斯特';
+const name = '示例星球';
 const json = AP.buildScenariosJson(parsed, name, '当前');
 const bm = json.baseMaps[name];
 const provs = bm.terrain || [];

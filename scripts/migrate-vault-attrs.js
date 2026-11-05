@@ -36,7 +36,7 @@ const { extractGeodata, normalizeRelPath } = require('./extract-data');
 // 备份轮转、原子写都在那里**只有一份实现**，脚本不再写第二份
 const { readProjectFile, writeProjectFile, atomicWriteJson, backupDirFor } = require('../src/main/handlers/projectHandler');
 
-const DEFAULT_VAULT = 'E:/图书馆/ROSA';
+const DEFAULT_VAULT = process.env.SITIAN_VAULT || '';
 
 /**
  * 解析命令行参数（**纯函数**：不读全局 argv，便于单测直接喂数组）。

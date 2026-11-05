@@ -28,7 +28,7 @@ const WRITE_REPORT = ARGS.includes('--write-report');
 const vaultIdx = ARGS.indexOf('--vault');
 const VAULT = (vaultIdx !== -1 ? ARGS[vaultIdx + 1] : null)
   || process.env.SITIAN_VAULT
-  || 'E:/图书馆/ROSA';
+  || process.env.SITIAN_VAULT || '';
 
 const REPORT_DIR = '96 事务管理';
 const REPORT_NAME = '提取覆盖率审计报告.md';

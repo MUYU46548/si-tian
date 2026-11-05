@@ -39,7 +39,7 @@ import run_tests as rt                                        # noqa: E402
 from lib.cdp import CDP, wait_for                             # noqa: E402
 from lib.helpers import ensure_data_ready                     # noqa: E402
 
-DEFAULT_PROJECT = r'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian'
+DEFAULT_PROJECT = r'<用户目录>\Documents\SiTianProjects\示例项目.sitian'
 
 
 def arg(name, default):

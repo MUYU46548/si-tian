@@ -7,9 +7,9 @@
 // sub_impl_drift_check 用例会直接读盘比对三份源码，改一处而漏改其它会立刻测试失败。
 //
 // 语义：
-//   '[[青崖城]]' → '青崖城'
+//   '[[示例历城]]' → '示例历城'
 //   'New City'   → 'new_city'      （空白与路径分隔符 → 下划线）
-//   '青崖城·东'  → '青崖城东'      （非法字符剔除；\w 保留字母数字下划线）
+//   '示例历城·东'  → '示例历城东'      （非法字符剔除；\w 保留字母数字下划线）
 //   空值          → 'unknown'
 
 export function normalizeId(name) {
@@ -21,7 +21,7 @@ export function normalizeId(name) {
  * 取路径的文件名主干（去目录、去扩展名）。
  *
  * 为什么需要：主进程 create-obsidian-note 返回的是 vault 相对路径
- * （如 `03 设定/02 场景地点/青崖城.md`），而转正要用的新 id 来自**文件名主干**。
+ * （如 `03 设定/02 场景地点/示例历城.md`），而转正要用的新 id 来自**文件名主干**。
  * 主进程现已同时返回 filename 字段，本函数作为兜底（旧版主进程/第三方调用）。
  */
 export function basenameNoExt(p) {

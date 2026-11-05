@@ -2,7 +2,7 @@
 import fs from 'fs';
 
 const MAP = 'E:/CODE/CangKu/SiTian/docs/mockups/desite.map';
-const P = 'C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian';
+const P = '<用户目录>/Documents/SiTianProjects/示例项目.sitian';
 
 const raw = fs.readFileSync(MAP, 'utf8');
 const lines = raw.split(/\r?\n/);

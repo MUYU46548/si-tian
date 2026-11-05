@@ -181,7 +181,7 @@ function main() {
     console.log('Examples:');
     console.log('  node convert_map.js desite.map');
     console.log('  node convert_map.js desite.map ../.sitian/scenarios.json');
-    console.log('  node convert_map.js desite.map --name "德斯特星" --scenario "当前时代"');
+    console.log('  node convert_map.js desite.map --name "示例行星" --scenario "当前时代"');
     process.exit(1);
   }
 

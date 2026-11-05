@@ -24,7 +24,7 @@ import { pathToFileURL } from 'url';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\//, '')), '..', '..', '..');
 const UTILS = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
-const P = 'C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian';
+const P = '<用户目录>/Documents/SiTianProjects/示例项目.sitian';
 const SEA = 20;
 
 // 产品源码直接用（只改写相对 import 的后缀，不改逻辑）

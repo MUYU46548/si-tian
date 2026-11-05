@@ -100,7 +100,7 @@ def free_port(port, tries=3):
 
 
 def node_exe():
-    for cand in ('node', r'C:\Users\muyu\.workbuddy\binaries\node\versions\22.22.2-3\node.exe'):
+    for cand in ('node',):
         try:
             out = subprocess.run([cand, '-e', 'process.stdout.write(require("electron"))'],
                                  cwd=ROOT, capture_output=True, text=True, timeout=60)

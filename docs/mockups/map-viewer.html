@@ -859,12 +859,12 @@ function generateDemoData(){
     { id: 'zhonggu', name: '中古', sub: '炎太帝国', years: '纪年占位', desc: '以炎太帝国为代表的大型帝国出现。', ownership: { P1: 'yantai', P2: 'yantai', P3: 'yantai', P4: 'yantai', P5: 'tribal', P6: 'tribal', P9: 'yantai' }, labels: [
       { text: '炎太帝国', x: 350, y: 450, size: 30, color: '#b07d7d' },
     ]},
-    { id: 'yueguo', name: '玥国', sub: '大玥帝国', years: '……～青崖2138', desc: '玥国文明是德斯特星最后一个文明。', ownership: { P1: 'yue', P2: 'yue', P3: 'yue', P4: 'yue', P5: 'yue', P6: 'yue', P7: 'yue', P8: 'yue', P9: 'yue', P10: 'yue' }, labels: [
+    { id: 'yueguo', name: '示例国', sub: '大玥帝国', years: '……～示例历2138', desc: '示例国文明是示例行星最后一个文明。', ownership: { P1: 'yue', P2: 'yue', P3: 'yue', P4: 'yue', P5: 'yue', P6: 'yue', P7: 'yue', P8: 'yue', P9: 'yue', P10: 'yue' }, labels: [
       { text: '大玥帝国', x: 700, y: 450, size: 34, color: '#5a4d8f' },
-      { text: '⚔ 复仇之战 · 青崖2049', x: 400, y: 300, size: 15, color: '#7c4343', event: true },
+      { text: '⚔ 复仇之战 · 示例历2049', x: 400, y: 300, size: 15, color: '#7c4343', event: true },
     ]},
-    { id: 'zhongjie', name: '终结', sub: '末日灾变后', years: '青崖2138～', desc: '玥国文明迅速衰亡。', ownership: { P1: 'ash', P2: 'ash', P3: 'ash', P4: 'ash', P5: 'ash', P6: 'ash', P7: 'ash', P8: 'ash', P9: 'ash', P10: 'ash' }, labels: [
-      { text: '☄ 末日灾变 · 青崖2138', x: 600, y: 400, size: 17, color: '#55514b', event: true },
+    { id: 'zhongjie', name: '终结', sub: '末日灾变后', years: '示例历2138～', desc: '示例国文明迅速衰亡。', ownership: { P1: 'ash', P2: 'ash', P3: 'ash', P4: 'ash', P5: 'ash', P6: 'ash', P7: 'ash', P8: 'ash', P9: 'ash', P10: 'ash' }, labels: [
+      { text: '☄ 末日灾变 · 示例历2138', x: 600, y: 400, size: 17, color: '#55514b', event: true },
     ]},
   ];
   state.activeScenario = null;
@@ -901,9 +901,9 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   const data = {
     version: 2,
     baseMaps: {
-      '德斯特星': {
-        id: '德斯特星',
-        name: '德斯特星',
+      '示例行星': {
+        id: '示例行星',
+        name: '示例行星',
         terrain: state.provinces.map(p => ({
           id: p.id,
           name: p.name,
@@ -920,7 +920,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
     scenarios: state.scenarios.reduce((acc, sc) => {
       acc[sc.id] = {
         id: sc.id,
-        ownerKey: '德斯特星',
+        ownerKey: '示例行星',
         name: sc.name,
         era: { label: sc.sub, years: sc.years },
         polities: Object.entries(state.polities).map(([id, p]) => ({ id, name: p.name, color: p.color })),

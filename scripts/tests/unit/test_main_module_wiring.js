@@ -249,7 +249,7 @@ async function main() {
     }
 
     const onDisk = {
-      vaultPath: 'E:/图书馆/ROSA',
+      vaultPath: '<库根>',
       windowMode: 'default',
       closeQuitsApp: true,
       currentBaseMapKey: 'desite',
@@ -264,9 +264,9 @@ async function main() {
     eq(cfg.getCurrentBaseMapKey(), onDisk.currentBaseMapKey, 'currentBaseMapKey 未读回');
     eq(cfg.getLastProjectPath(), onDisk.lastProjectPath, 'lastProjectPath 未读回');
 
-    await cfg.setCurrentBaseMapKey('德斯特星');
+    await cfg.setCurrentBaseMapKey('示例行星');
     const written = JSON.parse(await fsp.readFile(path.join(USER_DATA, 'config.json'), 'utf-8'));
-    eq(written.currentBaseMapKey, '德斯特星', '写入未落到 config.json');
+    eq(written.currentBaseMapKey, '示例行星', '写入未落到 config.json');
     eq(written.vaultPath, onDisk.vaultPath, '写入覆盖了其它配置键');
     return '5 个配置键读回一致 + 写盘保留其它键';
   });

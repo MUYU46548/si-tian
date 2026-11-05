@@ -72,7 +72,8 @@ async function main() {
     eq(commonSubstrLen('甲乙城', '甲城乙'), 1, '只有单字相邻 → 子串长度 1（子序列会是 2）');
     eq(commonSubstrLen('完全一样', '完全一样'), 4, '全等');
     eq(commonSubstrLen('', '任意'), 0, '空串');
-    eq(commonSubstrLen('青崖城', '青崖城'), 3, '自比');
+    const SELF = '示例历城';
+    eq(commonSubstrLen(SELF, SELF), SELF.length, '自比（期望值跟名字长度走，改名不假红）');
     return '中文地名以“前缀+层级词”为主，子串能抓住“霜寒城→霜寒主城”，子序列会顺带抓噪声';
   });
 

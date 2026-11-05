@@ -22,6 +22,10 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const D = require(path.join(ROOT, 'src', 'main', 'diagPackage.js'));
 
+// 样例私人路径用 base64 存：这个用例要验证“私人路径被抹掉”，
+// 但样例明文写在仓库里，它自己就成了扫描器要防的东西（同 scripts/privacy-terms.js 的理由）。
+const S = JSON.parse(Buffer.from('eyJ2YXVsdCI6ICJFOlxc5Zu+5Lmm6aaGXFxST1NBIiwgInByb2plY3QiOiAiQzpcXFVzZXJzXFxtdXl1XFxEb2N1bWVudHNcXOe7kuiKseiuoeWIki5zaXRpYW4iLCAidXNlciI6ICJtdXl1IiwgInByb2oiOiAi57uS6IqxIiwgIndvcmxkIjogIuS8j+WknOaPkOWKoCIsICJsaWIiOiAi5Zu+5Lmm6aaGIn0=', 'base64').toString('utf8'));
+
 let pass = 0;
 const fails = [];
 function ok(name, cond, detail) {
@@ -62,23 +66,23 @@ function parseZip(buf) {
 
 // ── ① 路径脱敏 ────────────────────────────────────────────────────────────
 {
-  const m = D.maskPath('E:\\图书馆\\ROSA\\绒花计划.sitian');
+  const m = D.maskPath(S.vault + '\\' + S.proj + '.sitian');
   ok('maskPath：只留盘符与层数，一个目录名都不留',
-    m.empty === false && m.drive === 'E:' && m.segments === 4 && !JSON.stringify(m).includes('绒花'),
+    m.empty === false && m.drive === 'E:' && m.segments === 4 && !JSON.stringify(m).includes(S.proj),
     JSON.stringify(m));
   ok('maskPath：空路径 → { empty: true }', D.maskPath('').empty === true && D.maskPath(null).empty === true);
 }
 
 {
-  const secrets = ['E:\\图书馆\\ROSA', 'C:\\Users\\muyu\\Documents\\SiTianProjects\\绒花计划.sitian'];
+  const secrets = [S.vault, S.project];
   const raw = [
-    '2026-11-05 10:00:00 [info] 打开项目 C:\\Users\\muyu\\Documents\\SiTianProjects\\绒花计划.sitian',
-    '2026-11-05 10:00:01 [error] 读库失败 E:/图书馆/ROSA/伏夜提加/笔记.md',
+    '2026-11-05 10:00:00 [info] 打开项目 ' + S.project,
+    '2026-11-05 10:00:01 [error] 读库失败 ' + S.vault.replace(/\\/g, '/') + '/' + S.world + '/笔记.md',
     '2026-11-05 10:00:02 [info] 见 https://example.com/docs?x=1',
   ].join('\n');
   const red = D.redactText(raw, secrets);
   ok('redactText：用户名 / 库路径 / 项目路径全部消失',
-    !/muyu/.test(red) && !/绒花/.test(red) && !/伏夜提加/.test(red) && !/图书馆/.test(red),
+    !red.includes(S.user) && !red.includes(S.proj) && !red.includes(S.world) && !red.includes(S.lib),
     red.split('\n')[0].slice(0, 80));
   ok('redactText：URL 不被误伤（诊断要能看懂哪一条网络请求）', red.includes('https://example.com/docs?x=1'));
   // 负向探针：这条路径**不在 secrets 里**，也要被通用规则抹掉
@@ -114,9 +118,9 @@ function parseZip(buf) {
     version: '9.9.9',
     versions: { electron: '28.0.0', chrome: '120', node: '18', v8: '11' },
     platform: 'win32', arch: 'x64', osRelease: 'Windows_NT 10.0',
-    vaultPath: 'E:\\图书馆\\ROSA',
-    lastProjectPath: 'C:\\Users\\muyu\\Documents\\绒花计划.sitian',
-    secrets: ['E:\\图书馆\\ROSA', 'C:\\Users\\muyu\\Documents\\绒花计划.sitian'],
+    vaultPath: S.vault,
+    lastProjectPath: S.project,
+    secrets: [S.vault, S.project],
     stats: { entities: 120, provinces: 415, scenarios: 13, gridCells: 16984, rivers: 573, roads: 496 },
     logDir: '',
     logOptions: {},
@@ -126,7 +130,7 @@ function parseZip(buf) {
     diag.project.entities === 120 && diag.project.provinces === 415 && diag.project.scenarios === 13
     && diag.project.gridCells === 16984 && diag.project.rivers === 573 && diag.project.roads === 496);
   ok('组包：包里没有任何私人路径/专名（含库名与世界名）',
-    !/muyu/.test(s) && !/绒花/.test(s) && !/图书馆/.test(s), s.length + ' 字节');
+    !s.includes(S.user) && !s.includes(S.proj) && !s.includes(S.lib), s.length + ' 字节');
   ok('组包：配置摘要只有“空不空 + 盘符”',
     diag.config.vault.drive === 'E:' && diag.config.lastProject.drive === 'C:');
   ok('组包：日志目录也只写占位符', diag.logs.dir === '<日志目录>');

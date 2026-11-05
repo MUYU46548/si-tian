@@ -17,7 +17,8 @@ const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 
-const LOCATIONS_PATH = 'E:/图书馆/ROSA/03 设定/02 场景地点';
+const LOCATIONS_PATH = process.env.SITIAN_LOCATIONS_PATH || '';
+if (!LOCATIONS_PATH) { console.error('请先设 SITIAN_LOCATIONS_PATH（示例库的“设定/场景地点”目录）'); process.exit(1); }
 const DRY = process.argv.includes('--dry');
 
 const LAYER_ZH = { city: '城市', town: '城镇', village: '村庄', region: '区域', facility: '设施', location: '地点' };

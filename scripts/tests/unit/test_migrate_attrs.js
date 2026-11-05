@@ -82,12 +82,12 @@ async function main() {
   // ─────────────────────────────────────────────
   await check('t1 按来源笔记认亲；反斜杠 / 正斜杠两种写法必须配得上（Windows 上必然出现）', () => {
     const entities = {
-      a: entFor('a', '青崖城'),
+      a: entFor('a', '示例历城'),
       b: entFor('b', '云梦泽', { sourcePath: `合成数据\\地点\\云梦泽.md` }),   // 反斜杠形态
     };
     const plan = buildMigrationPlan({
       entities,
-      vaultNodes: [noteFor('n1', '青崖城'), noteFor('n2', '云梦泽')],
+      vaultNodes: [noteFor('n1', '示例历城'), noteFor('n2', '云梦泽')],
     });
     eq(plan.matched, 2, '两个实体都应认亲成功');
     eq(plan.unmatchedEntities.length, 0, '不该有认不到的');
@@ -106,10 +106,10 @@ async function main() {
     const plan = buildMigrationPlan({
       entities: {
         '曜川星': parentStub,
-        a: entFor('a', '青崖城'),
+        a: entFor('a', '示例历城'),
         b: entFor('b', '云泽城', { sourcePath: `${NOTE_DIR}/云泽城.md` }),
       },
-      vaultNodes: [noteFor('n1', '青崖城'), noteFor('n2', '云泽城')],
+      vaultNodes: [noteFor('n1', '示例历城'), noteFor('n2', '云泽城')],
     });
     // a 的 layer / parentId / placeType 三项都空 → 三项都要补
     const forA = plan.patches.filter(p => p.id === 'a').map(p => p.field).sort();
@@ -121,10 +121,10 @@ async function main() {
   await check('t3 ★ 项目侧已有值 → 一律不覆盖；与笔记不同时进“冲突”清单交人判断', () => {
     const entities = {
       '曜川星': parentStub,
-      a: entFor('a', '青崖城', { layer: 'town', layerLabel: '城镇' }),   // 用户改过：笔记说 city
+      a: entFor('a', '示例历城', { layer: 'town', layerLabel: '城镇' }),   // 用户改过：笔记说 city
       b: entFor('b', '云泽城', { sourcePath: `${NOTE_DIR}/云泽城.md`, layer: 'city' }),  // 与笔记一致
     };
-    const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '青崖城'), noteFor('n2', '云泽城')] });
+    const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '示例历城'), noteFor('n2', '云泽城')] });
 
     assert(!plan.patches.some(p => p.id === 'a' && p.field === 'layer'),
       '项目已有 layer=town，脚本绝不能把它改成 city');
@@ -142,11 +142,11 @@ async function main() {
   });
 
   await check('t4 ★ 补 parentId 前必须校验父实体存在 —— 否则补出悬空引用，会被项目校验静默置空', () => {
-    const entities = { a: entFor('a', '青崖城', { parentId: null }) };
+    const entities = { a: entFor('a', '示例历城', { parentId: null }) };
     // 笔记给的父级是“不存在的星”，项目里没有这个实体
     const plan = buildMigrationPlan({
       entities,
-      vaultNodes: [noteFor('n1', '青崖城', { parentId: '不存在的星' })],
+      vaultNodes: [noteFor('n1', '示例历城', { parentId: '不存在的星' })],
     });
     assert(!plan.patches.some(p => p.field === 'parentId'), '父实体不存在时绝不能补 parentId');
     eq(plan.parentMissing.length, 1, '要单独列出“父级缺失”而不是静默跳过');
@@ -154,8 +154,8 @@ async function main() {
 
     // 父实体存在 → 正常补
     const ok = buildMigrationPlan({
-      entities: { a: entFor('a', '青崖城', { parentId: null }), '曜川星': entFor('p', '曜川星', { parentId: null }) },
-      vaultNodes: [noteFor('n1', '青崖城')],
+      entities: { a: entFor('a', '示例历城', { parentId: null }), '曜川星': entFor('p', '曜川星', { parentId: null }) },
+      vaultNodes: [noteFor('n1', '示例历城')],
     });
     const patched = ok.patches.find(p => p.field === 'parentId');
     assert(!!patched && patched.to === '曜川星', '父实体在项目里 → 照常补');
@@ -165,9 +165,9 @@ async function main() {
   await check('t5 用户自建实体（无 sourcePath）不参与搬家 —— 笔记里根本没有它', () => {
     const entities = {
       mine: { id: 'mine', name: '我手建的地点', layer: 'unknown', sourcePath: '' },
-      a: entFor('a', '青崖城'),
+      a: entFor('a', '示例历城'),
     };
-    const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '青崖城')] });
+    const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '示例历城')] });
     eq(plan.matched, 1, '只有带 sourcePath 的那个参与');
     assert(!plan.patches.some(p => p.id === 'mine'), '自建实体不该被补');
     assert(!plan.unmatchedEntities.some(u => u.id === 'mine'), '也不该被列进“认不到”（那是改名场景，和自建是两回事）');
@@ -176,7 +176,7 @@ async function main() {
 
   await check('t6 认不到的实体（来源笔记不在库里）单独列出 —— 那是“改名”信号，指向 A-0 的重连', () => {
     const entities = { a: entFor('a', '已改名的城') };
-    const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '青崖城')] });
+    const plan = buildMigrationPlan({ entities, vaultNodes: [noteFor('n1', '示例历城')] });
     eq(plan.matched, 0, '认不到就不参与');
     eq(plan.unmatchedEntities.length, 1, '单独列出');
     eq(plan.unmatchedEntities[0].sourcePath, `${NOTE_DIR}/已改名的城.md`, '带上原路径供人核对');
@@ -186,8 +186,8 @@ async function main() {
 
   await check('t7 补 layer 时把 layerLabel 一起补（否则树上的徽标显示英文 code）', () => {
     const plan = buildMigrationPlan({
-      entities: { a: entFor('a', '青崖城', { layer: 'unknown', layerLabel: '未知' }) },
-      vaultNodes: [noteFor('n1', '青崖城', { layer: 'city', layerLabel: '城市' })],
+      entities: { a: entFor('a', '示例历城', { layer: 'unknown', layerLabel: '未知' }) },
+      vaultNodes: [noteFor('n1', '示例历城', { layer: 'city', layerLabel: '城市' })],
     });
     const p = plan.patches.find(x => x.field === 'layer');
     eq(p.to, 'city', '补的取值是 layer code');
@@ -201,12 +201,12 @@ async function main() {
   await check('t8 applyPatches 是纯函数（不改入参），并且只动 patches 里的字段', () => {
     const project = {
       version: '1.0.0', meta: { name: 'P', updated: 'old' },
-      entities: { a: entFor('a', '青崖城'), b: entFor('b', '云泽城', { sourcePath: `${NOTE_DIR}/云泽城.md` }) },
+      entities: { a: entFor('a', '示例历城'), b: entFor('b', '云泽城', { sourcePath: `${NOTE_DIR}/云泽城.md` }) },
     };
     const snapshot = JSON.stringify(project);
     const plan = buildMigrationPlan({
       entities: project.entities,
-      vaultNodes: [noteFor('n1', '青崖城')],
+      vaultNodes: [noteFor('n1', '示例历城')],
     });
     const next = applyPatches(project, plan.patches, { now: '2026-09-27T00:00:00.000Z' });
 
@@ -224,7 +224,7 @@ async function main() {
   });
 
   await check('t9 计划里出现不存在的实体 id 时跳过（不抛、不造新实体）', () => {
-    const project = { entities: { a: entFor('a', '青崖城') } };
+    const project = { entities: { a: entFor('a', '示例历城') } };
     const next = applyPatches(project, [
       { id: 'ghost', field: 'layer', to: 'city' },
       { id: 'a', field: 'layer', to: 'city', label: '城市' },

@@ -93,7 +93,7 @@
 现在三条统一走一份 `savePngBlob()`（`App.vue`，全仓唯一实现），SVG 走 `saveTextFile(kind:'svg')`；
 纯浏览器（`npm run dev` 无 Electron API）才回退 `a.download`。
 
-**已清理**：`C:\Users\muyu\Downloads` 下 21 份重复 PNG → 删 20 份，**保留 1 份**作证据
+**已清理**：`<用户目录>\Downloads` 下 21 份重复 PNG → 删 20 份，**保留 1 份**作证据
 （`build/_downloads-evidence/sitian-full-1793264346736.png`，已 gitignore；想删随时删）。
 释放 **359 MB**。
 

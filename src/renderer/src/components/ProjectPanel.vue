@@ -166,7 +166,7 @@
         <div v-if="!proj.isOpen" class="pp-empty">打开项目后可在这里浏览实体树</div>
         <div v-else-if="!proj.entityCount" class="pp-empty">还没有实体。点“+ 新建实体”开始。</div>
         <template v-else>
-          <!-- 只看空白（A-3 补刀②）：**按层级判空白** —— 真 ROSA 实测 placeType 空 45 个里 39 个是
+          <!-- 只看空白（A-3 补刀②）：**按层级判空白** —— 真 示例库 实测 placeType 空 45 个里 39 个是
                宇宙层（本就不携带该字段）、parentId 空 9 个里 4 个是 world（本就该顶层）；
                不分层就过滤 = 用户点开“类型为空”看到 39 行无意义噪音，过滤器等于没做。
                空白口径的唯一实现在 utils/placeTypes.js（matchesGap），这里只负责显示。 -->
@@ -555,7 +555,7 @@ function fmtTime(iso) {
 
 /**
  * 列表里第二个身份标识：**文件名**（只有当它和显示名不一致时才给）。
- * 复制出来的副本 meta.name 仍叫“绒花计划”，但文件名是“绒花计划-终验.sitian”——
+ * 复制出来的副本 meta.name 仍叫“示例项目”，但文件名是“示例项目-终验.sitian”——
  * 只显示 meta.name 时两条目一模一样，用户没法选。
  */
 function fileHint(it) {

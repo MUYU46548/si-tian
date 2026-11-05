@@ -21,8 +21,8 @@
 ## 数据流
 
 ```
-Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
-  └─ scripts/extract-data.js ──→ E:/图书馆/ROSA/.sitian/geodata.json + mapdata.json (坐标缓存)
+Obsidian vault (<库根>/, Markdown 唯一事实源)
+  └─ scripts/extract-data.js ──→ <库根>/.sitian/geodata.json + mapdata.json (坐标缓存)
        └─ src/main/index.js (IPC: 35 个 handle, 读 vault/写缓存)
             └─ src/preload/index.js (contextBridge → window.sitianAPI)
                  └─ renderer (Vue 3)

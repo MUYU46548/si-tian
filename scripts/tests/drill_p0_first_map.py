@@ -49,7 +49,7 @@ from lib.cdp import CDP, wait_for, eval_json, fetch_string                # noqa
 from lib.helpers import open_harness_project, ensure_data_ready, open_toolbar_more  # noqa: E402
 import lib.pngcheck as png                                                # noqa: E402
 
-REAL_PROJECT = r'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian'
+REAL_PROJECT = r'<用户目录>\Documents\SiTianProjects\示例项目.sitian'
 REAL_PROJECT_IN_MOCK = os.path.join(ROOT, 'src', 'renderer', 'mock-data', 'real_project.json')
 MOCK_PROJECT_PATH = 'mock/projects/real-desite.sitian'
 OUT_DIR = os.path.join(ROOT, 'build', 'p0-first-map')
@@ -450,7 +450,7 @@ DISK_JS = r"""(() => {
     owner: sc ? ((sc.ownership || {})['__TARGET__'] || null) : '__NO_SCENARIO__',
     terrain: bm.terrain ? bm.terrain.length : -1,
     scenarioCount: Object.keys((p.scenarios || {}).scenarios || {}).length,
-    // 🔴 落盘载荷的 meta.name：真实项目叫“绒花计划”，harness 基线项目叫“harness 基线项目”。
+    // 🔴 落盘载荷的 meta.name：真实项目叫“示例项目”，harness 基线项目叫“harness 基线项目”。
     //    两者实体数都是 120、名字也高度重合（fixture 就是从这份真实项目派生的），
     //    所以**只有 meta.name 能证明打开的是真实项目而不是基线项目**。
     metaName: (p.meta || {}).name || null,
@@ -698,8 +698,8 @@ def main():
            'terrain=%s scenarios=%s' % (disk.get('terrain'), disk.get('scenarioCount')))
         # 🔴 证明"打开的是真实项目"而不是 harness 基线项目：两者实体数都是 120、名字也高度重合
         #    （fixture 就是从这份真实项目派生的）→ 只有 meta.name 与保存路径能区分。
-        ck('打开与落盘的确实是真实项目（meta.name=绒花计划 / 保存路径=real-desite.sitian）',
-           disk.get('metaName') == '绒花计划'
+        ck('打开与落盘的确实是真实项目（meta.name=示例项目 / 保存路径=real-desite.sitian）',
+           disk.get('metaName') == '示例项目'
            and all(p == MOCK_PROJECT_PATH for p in (disk.get('savePaths') or []))
            and inj.get('filePath') == MOCK_PROJECT_PATH,
            'meta.name=%s filePath=%s 保存次数=%s 保存路径=%s'

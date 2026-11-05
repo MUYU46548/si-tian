@@ -1,7 +1,7 @@
 {
   "name": "sitian",
   "version": "0.5.1",
-  "description": "世界观动态构建系统 — 绒花计划",
+  "description": "世界观动态构建系统 — 示例项目",
   "main": "src/main/index.js",
   "scripts": {
     "dev": "vite --config vite.config.js",

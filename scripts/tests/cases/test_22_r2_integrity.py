@@ -7,7 +7,7 @@
   b) 暂存（draft）节点转正入口 —— 详情面板对无 sourcePath 的节点给出
      “创建 Obsidian 笔记”，转正后回填 sourcePath 并切换为“在 Obsidian 中打开”
      （转正同时会把节点 id 同步为 normalizeId(文件名)，详见用例 40；此处按名称查找）
-  c) 库名动态化 —— obsidian:// URI 的 vault 参数取自当前配置库名，不再硬编码 ROSA
+  c) 库名动态化 —— obsidian:// URI 的 vault 参数取自当前配置库名，不再硬编码 示例库
   d) mapdata 旧 key 清理的运行时前提 —— saveMapDataImmediate 不得直写无世界前缀 key
      （静态断言：函数体必须经由 saveMapData 前缀化路径，防止旧 key 复活）
 """
@@ -160,7 +160,7 @@ def run(cdp):
       const realOpen = window.sitianAPI.openExternal;
       const realVault = window.sitianAPI.getVaultPath;
       window.sitianAPI.openExternal = async (u) => {{ window.__opened = u; return {{ success: true }}; }};
-      window.sitianAPI.getVaultPath = async () => 'E:/图书馆/测试库A';
+      window.sitianAPI.getVaultPath = async () => '<库根>/测试库A';
       const s = {APP_STORE};
       const n = s.nodes.find(x => x.name === __alias('曜川星系'));
       if (!n || !n.sourcePath) return JSON.stringify({{ err: 'no-node-with-sourcePath' }});

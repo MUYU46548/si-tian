@@ -443,7 +443,7 @@ python scripts/tests/tools/_lab.py down          # 收工：杀进程 + 还原 i
 | a5 | 与 v2 `deriveFrom` **逐省对拍** | 4 份样本（负年份 / 无月日 / null 无主 / 同日两条）0 处不一致 |
 | a6 | 纯数据层守卫（`src/ledger/*` 不 import vue/store/组件、不碰 DOM）+ **反向探针** | 5 个文件零外部依赖；把 null 删键改成挂 null → 结论立刻不同 |
 
-**415 省孤本试算（只读）**：`node scripts/ledger-dryrun.mjs --project <绒花计划.sitian>`
+**415 省孤本试算（只读）**：`node scripts/ledger-dryrun.mjs --project <示例项目.sitian>`
 ——13 段、**冲突 0**、11ms、跑完文件大小/mtime 未变（只读自证在脚本里）；
 事件量与日区间见表格（例：玦王朝 158 事件 / -148680..-51840）。
 

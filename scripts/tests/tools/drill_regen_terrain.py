@@ -45,7 +45,7 @@ def _watchdog(seconds):
 def main():
     import threading
     threading.Thread(target=_watchdog, args=(600,), daemon=True).start()
-    project = arg('project', r'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian')
+    project = arg('project', r'<用户目录>\Documents\SiTianProjects\示例项目.sitian')
     key = arg('key', 'desite')
     cells = int(arg('cells', '192'))
     if not os.path.isfile(project):

@@ -15,12 +15,12 @@
 | 字段 | 司天读取点 | 司天之外的读取点 | 结论 |
 |:---|:---|:---|:---|
 | `层级` | `scripts/extract-data.js:155-160`（主）、`src/main/vault-watcher.js:142`、`src/main/vaultIndex.js:87` | `rosa_index_gen.py:104/220`（祖先链的星域/星系/行星分组） | 共享 → 保留 |
-| `上层区域` | `scripts/extract-data.js:163-168`，在 `:249/:301` 调用 | `rosa_index_gen.py:105/221`（**场景地点索引自动树的唯一数据源**）；`ROSA/01 索引/场景地点索引.md` 头部填写说明 | 共享 → 保留 |
+| `上层区域` | `scripts/extract-data.js:163-168`，在 `:249/:301` 调用 | `rosa_index_gen.py:105/221`（**场景地点索引自动树的唯一数据源**）；`示例库/01 索引/场景地点索引.md` 头部填写说明 | 共享 → 保留 |
 | `地点类型` | `scripts/extract-data.js:171-174` | 无（`rosa_index_gen.py` 不读） | 司天专用 → 可删候选 |
 | `coordinate` | `extract-data.js:592-608`（读）、`src/main/index.js:588-589`（转正时写） | 无 | 库内 0 条 |
 | `status`/`状态` | `extract-data.js:636-641`（只读、不回写） | 无 | 库内 0 条 |
 
-普查范围：`E:/CODE/CangKu` 全域（含 Python_Workspace）、`E:/AI/rosa_rag`、`E:/图书馆/quartz`。
+普查范围：`E:/CODE/CangKu` 全域（含 Python_Workspace）、`E:/AI/rosa_rag`、`<库根>/quartz`。
 非司天代码消费者**只有 `rosa_index_gen.py` 一个**。库内 `.obsidian/plugins` 清单核过：无 Dataview 类查询插件，Obsidian 侧没有任何东西消费这三个字段。
 RAG / Quartz / agent-context 对字段缺失容忍（只是正文文本变化，RAG 可择机重索引）。
 
@@ -36,12 +36,12 @@ RAG / Quartz / agent-context 对字段缺失容忍（只是正文文本变化，
 
 ## 索引自动化现状（外部工具，非插件）
 
-- 工具：`E:/CODE/CangKu/Python_Workspace/ROSA_Index_Editor/rosa_index_gen.py`（报告型：默认只产预览 + 漂移统计，**绝不写盘**；`--apply` 存在但铁律禁用提议）。
+- 工具：`E:/CODE/CangKu/Python_Workspace/示例库_Index_Editor/rosa_index_gen.py`（报告型：默认只产预览 + 漂移统计，**绝不写盘**；`--apply` 存在但铁律禁用提议）。
 - 模式：`--index scene`（默认，场景地点索引）/ `--index geo`（地理系统索引，手写流程的对照预览）。
 - 实测基线：场景地点 树状 73 / 移动 2 / 异质 1 / 忽略 4 / 回溯失败 0；预览输出 `E:/AI/Hermes_Workspace/output/场景地点索引_预览.md`。
 - 忽略区 4 条 = 缺 `上层区域` 的刻意保留区（铁律维持，不补上游）。
 - 新鲜度：正式索引与最新预览**逐条对账零漂移**（双方 80 条条目完全一致）——索引当前处于健康同步态。
-- 手动入口（2026-10-24）：`ROSA/96 事务管理/索引预览.bat`（桌面副本同名）—— 双击即出只读预览，产物落 `96 事务管理/`，模式白名单（scene/geo/role/book），**结构上够不到 `--apply`**；批处理必须 GBK 编码（UTF-8 中文批处理在 cmd 下会被拆行误执行，实测）。
+- 手动入口（2026-10-24）：`示例库/96 事务管理/索引预览.bat`（桌面副本同名）—— 双击即出只读预览，产物落 `96 事务管理/`，模式白名单（scene/geo/role/book），**结构上够不到 `--apply`**；批处理必须 GBK 编码（UTF-8 中文批处理在 cmd 下会被拆行误执行，实测）。
 
 ## 裁决：不自创索引插件
 
@@ -52,7 +52,7 @@ RAG / Quartz / agent-context 对字段缺失容忍（只是正文文本变化，
 1. 整库快照（git 提交或整目录复制 —— 移动/删除是“只剩一份”的时刻，保险全挂在这步之前）。
 2. 只删 `地点类型` 一行，**不动 `层级` / `上层区域`**。
 3. 对账：重跑 `extract-data.js` 确认司天无损（树/父链不变）；重跑 `rosa_index_gen.py` 确认树状 73 保持、漂移不增。
-4. 同步更新文档：`ROSA/02 帮助/编写规范/司天地图数据规范.md`、`ROSA/01 索引/场景地点索引.md` 头部填写说明、本仓 `SITIAN_VAULT_SPEC.md` 删除边界清单。
+4. 同步更新文档：`示例库/02 帮助/编写规范/司天地图数据规范.md`、`示例库/01 索引/场景地点索引.md` 头部填写说明、本仓 `SITIAN_VAULT_SPEC.md` 删除边界清单。
 5. 删后新词条不再填该字段；司天项目面板“类型为空”过滤 + 中文点选补值即为唯一维护口。
 
 ## 司天内部待修（两条，与库无关但应随改造处理）

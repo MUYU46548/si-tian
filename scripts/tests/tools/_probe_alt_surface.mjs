@@ -38,7 +38,7 @@ for (const k of [1, 2, 3, 4, 5]) {
 console.log(`  五条数组合起来共用 ${uniqAll.size} 个不同整数（说明它们可能共享同一套"高度档位"）`);
 
 // ── 用候选面做择路，看汇流上限 ──
-const j = JSON.parse(fs.readFileSync('C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian', 'utf8'));
+const j = JSON.parse(fs.readFileSync('<用户目录>/Documents/SiTianProjects/示例项目.sitian', 'utf8'));
 const mask = (await import(pathToFileURL(path.join(ROOT, 'src/renderer/src/utils/coastline.js')).href)).buildLandMask(j.scenarios.baseMaps.desite.terrain);
 const cols = gridRaw.cellsX, rows = gridRaw.cellsY, n = cols * rows, sp = gridRaw.spacing;
 

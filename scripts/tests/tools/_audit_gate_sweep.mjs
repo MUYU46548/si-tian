@@ -10,7 +10,7 @@ const R = await import(pathToFileURL(path.join(UTILS, 'fmg', 'rivers.js')).href)
 const TS = await import(pathToFileURL(path.join(UTILS, 'terrainSynthesis.js')).href);
 const C = await import(pathToFileURL(path.join(UTILS, 'coastline.js')).href);
 
-const j = JSON.parse(fs.readFileSync('C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian', 'utf8'));
+const j = JSON.parse(fs.readFileSync('<用户目录>/Documents/SiTianProjects/示例项目.sitian', 'utf8'));
 const terrain = j.scenarios.baseMaps.desite.terrain.filter((t) => t && t.kind !== 'sea' && Array.isArray(t.points));
 const mask = C.buildLandMask(terrain);
 const hm = TS.synthesizeHeightmapFromTerrain(terrain, { cellsAcross: 256, seed: 7, isLand: mask.lookup });

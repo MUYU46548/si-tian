@@ -34,7 +34,7 @@ import tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 SRC_UTILS = os.path.join(ROOT, 'src', 'renderer', 'src', 'utils')
-DEFAULT_PROJECT = os.path.join(os.path.expanduser('~'), 'Documents', 'SiTianProjects', '绒花计划.sitian')
+DEFAULT_PROJECT = os.path.join(os.path.expanduser('~'), 'Documents', 'SiTianProjects', '示例项目.sitian')
 PURE_FILES = ('riverTrace.js', 'coastline.js', 'gridSpatialIndex.js', 'heightmapAccess.js', 'heightmapResample.js')
 
 

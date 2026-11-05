@@ -96,7 +96,7 @@
 ### 命令行（只读，推荐先跑这个）
 
 ```bash
-node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta-scan" --geodata
+node scripts/vault-scan.mjs --vault "<库根>" --out "$env:TEMP\rosetta-scan" --geodata
 ```
 
 产物（全在 `--out` 下，**不在库里**）：
@@ -120,7 +120,7 @@ node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta
 点“待人工”逐条看原因。归类与推断在**主进程**完成（`vault-classify-report` IPC），
 渲染层只展示，不读盘。
 
-## 六、真实库取证（2026-10-22，ROSA，只读）
+## 六、真实库取证（2026-10-22，示例库，只读）
 
 ```
 扫描：1353 篇 / 218 ms（解析错误 0）

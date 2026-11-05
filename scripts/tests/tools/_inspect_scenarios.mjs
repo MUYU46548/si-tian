@@ -1,8 +1,8 @@
 // 临时诊断：看真实项目 / 知识库缓存里的剧本与底图结构（用完即删）
 import fs from 'fs';
 
-const P = 'C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian';
-const CACHE = 'E:/图书馆/ROSA/.sitian/';
+const P = '<用户目录>/Documents/SiTianProjects/示例项目.sitian';
+const CACHE = (process.env.SITIAN_VAULT || '') + '/.sitian/';
 
 function shape(v, label, depth = 1, max = 22) {
   if (Array.isArray(v)) {

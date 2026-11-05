@@ -3,7 +3,7 @@
 //
 // 为什么需要它（2026-10-30 用户拍板“备份目录保留最近 3 份”）：
 //   · 应用侧已经把**新**的滚动备份收成 3 份（`src/main/handlers/projectHandler.js#BACKUP_KEEP`），
-//     但盘上已有的旧备份不会自己消失：真实项目 `绒花计划.sitian.backups` 实测 75.9MB / 10 份；
+//     但盘上已有的旧备份不会自己消失：真实项目 `示例项目.sitian.backups` 实测 75.9MB / 10 份；
 //   · 演练残留（`__019_drill_*.sitian.backups`）、迁移留底等目录也在按"每次一份"长大。
 //
 // 口径（写死，别在这里加启发式）：
@@ -34,7 +34,7 @@ const getArg = (name, fallback) => {
 const KEEP = Number(getArg('--keep', '3'));
 const HOME = os.homedir();
 const PROJECTS_DIR = getArg('--projects', path.join(HOME, 'Documents', 'SiTianProjects'));
-const VAULT_CACHE_BACKUPS = getArg('--vault-backups', 'E:/图书馆/ROSA/.sitian/backups');
+const VAULT_CACHE_BACKUPS = getArg('--vault-backups', process.env.SITIAN_VAULT ? path.join(process.env.SITIAN_VAULT, '.sitian', 'backups') : '');
 const ARCHIVE = getArg('--archive', path.join('E:/归档', `司天备份-${new Date().toISOString().slice(0, 10)}`));
 
 const MB = (n) => `${(n / 1048576).toFixed(1)}MB`;

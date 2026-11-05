@@ -6,7 +6,7 @@
  *   笔记里**本来就没写**的空白只有这个点选界面能填。审查补刀两条硬要求：
  *     ① 下拉选项 = 8 枚举 ∪ 实体当前值 —— 笔记手写可能冒出第 9 种枚举外值，
  *        下拉只给 8 枚举会**一打开就静默改值**（本仓刚防完 A-2 的静默覆盖，同族缺陷）；
- *     ② “只看空白”过滤必须**按层级判空白** —— 2026-09-29 拿真 ROSA 缓存实测：
+ *     ② “只看空白”过滤必须**按层级判空白** —— 2026-09-29 拿真 示例库 缓存实测：
  *        placeType 空 45 个里 **39 个是 world/star_domain/galaxy/planet 宇宙层**
  *        （这些层级本来就不该有地点类型），聚落 5 个按约定也不标（有独立渲染样式），
  *        真正该填的只有 region/facility/location；parentId 空 9 个里 4 个是 world（本来就该顶层）。
@@ -40,7 +40,7 @@ export function missingPlaceType(entity) {
 
 /**
  * 挂靠空白：非世界级实体没有父级 = 孤儿（世界级本来就在顶层，不算）。
- * 真 ROSA 实测：空 9 个里 4 个是 world（合法），facility 3 + city 1 + location 1 才是真孤儿。
+ * 真 示例库 实测：空 9 个里 4 个是 world（合法），facility 3 + city 1 + location 1 才是真孤儿。
  */
 export function missingParent(entity) {
   return !!(entity && entity.layer !== 'world' && !entity.parentId);

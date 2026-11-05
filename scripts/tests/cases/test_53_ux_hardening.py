@@ -3,7 +3,7 @@
 """用例 53：可用性加固（2026-09-20 用户实测反馈的 5 条）
 
 覆盖：
-  a) 项目面板“新建项目”输入框：面板一打开就自动聚焦（不依赖点击）、占位文字不再硬编码 ROSA、
+  a) 项目面板“新建项目”输入框：面板一打开就自动聚焦（不依赖点击）、占位文字不再硬编码 示例库、
      聚焦有可见描边、行内间隙点击也能聚焦、能真的输入并让“新建”变可用
   b) “Git 快照”按钮在位，且 title/回执说明了“司天不会自动初始化 git 仓库”（目录非仓库时给去处）
   c) 新建的空项目：剧本模式**不再**凭空造出“云陇大陆”空底图（那曾把自用剧本名硬编码进产品），
@@ -62,7 +62,7 @@ JS_PANEL = r"""(() => {
   if (!inp) return JSON.stringify({ fails: ['面板输入框不存在'] });
   ok('面板打开后输入框自动聚焦（不依赖点击）', document.activeElement === inp,
      document.activeElement && (document.activeElement.tagName + '.' + document.activeElement.className));
-  ok('占位文字不硬编码 ROSA', !/rosa/i.test(inp.placeholder || ''), inp.placeholder);
+  ok('占位文字不硬编码 示例库', !/rosa/i.test(inp.placeholder || ''), inp.placeholder);
   const cs = getComputedStyle(inp);
   ok('聚焦有可见描边', cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) >= 2,
      cs.outlineStyle + '/' + cs.outlineWidth);

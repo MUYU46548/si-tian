@@ -65,7 +65,7 @@ async function main() {
   });
 
   check('a3 失败带原因（截断进文字、全文进 title）', () => {
-    const err = 'EBUSY: resource busy or locked, rename E:/图书馆/ROSA/项目.sitian.tmp-1699';
+    const err = 'EBUSY: resource busy or locked, rename <库根>/项目.sitian.tmp-1699';
     const d = describeSaveAction({ success: false, error: err });
     eq(d.state, 'error', 'state');
     has(d.text, '保存失败：', 'text');

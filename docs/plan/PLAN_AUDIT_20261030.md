@@ -25,7 +25,7 @@
 | **已交付** | **`release/司天 Setup 0.4.0.exe`，2026-10-25 15:29** | `ls -la release/*.exe` |
 | **未交付** | `v0.4.0` 之后 **61 个提交 / 123 个文件 / +23,734 行**，全部停在仓库里 | `git diff --stat v0.4.0..HEAD \| tail -1` |
 | **未推送** | 其中 **27 个提交连远端都没有**（最早一条 `4d27024` 真机验收六条） | `git log origin/main..HEAD --oneline \| wc -l` |
-| 真实项目 | `绒花计划.sitian` 7.4 MB / 415 省 / 13 段剧本；同名 `.backups/` **76 MB** | `Documents/SiTianProjects/` |
+| 真实项目 | `示例项目.sitian` 7.4 MB / 415 省 / 13 段剧本；同名 `.backups/` **76 MB** | `Documents/SiTianProjects/` |
 | 文档 | `docs/` 下 **97 份 md**，其中规划类 20+ 份，多份互相取代 | `find docs -name "*.md" \| wc -l` |
 | 代码内债标记 | `TODO/FIXME/XXX` = **0 处** | 说明债不在注释里，在结构里 |
 
@@ -99,7 +99,7 @@
 
 - `build/` 下 40+ 个未跟踪临时件（`_append_doc*.mjs` / `_commit_*.txt` / `_regress_*.log`）→
   "到底哪些东西变了"这件事变得要靠猜。
-- `Documents/SiTianProjects/` 下 drill 残留备份目录两个（**34 MB**）、`绒花计划.sitian.backups` **76 MB**。
+- `Documents/SiTianProjects/` 下 drill 残留备份目录两个（**34 MB**）、`示例项目.sitian.backups` **76 MB**。
 - 处置：`build/_*` 进 `.gitignore`（**不删文件**）；备份目录只做**清点报告**，删不删你定。
 
 ### A7【P2】性能真痛点已被测出来，但没有"改完了"的记录

@@ -49,7 +49,7 @@ STORY = r"""
     // ① 真实底图（产品导入链）
     const AP = await import('/src/utils/azgaar-parser.js');
     const text = await (await fetch('/__real_desite.map')).text();
-    const NAME = '德斯特';
+    const NAME = '示例星球';
     s.importFromScenariosJson(AP.buildScenariosJson(AP.parseMapFile(text), NAME, '当前'));
     await tick(2500);
     const el = document.querySelector('.scenario-map-container');

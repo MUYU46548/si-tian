@@ -105,8 +105,8 @@ async function main() {
   });
 
   await check('a2 中文 / emoji / 大数组都不被破坏', async () => {
-    const text = '名：德斯特星 🌏\r\n' + JSON.stringify({ h: Array.from({ length: 2000 }, (_, i) => (i * 7) % 101) });
-    const r = await H.saveBaseMapSource(projPath, { name: '德斯特星.map', text });
+    const text = '名：示例行星 🌏\r\n' + JSON.stringify({ h: Array.from({ length: 2000 }, (_, i) => (i * 7) % 101) });
+    const r = await H.saveBaseMapSource(projPath, { name: '示例行星.map', text });
     const back = await fsp.readFile(r.path, 'utf-8');
     assert(back === text, '内容不一致');
     return `${r.bytes} 字节`;

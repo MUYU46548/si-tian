@@ -15,7 +15,7 @@ fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
 const R = await import(pathToFileURL(path.join(tmp, 'riverTrace.js')).href);
 const C = await import(pathToFileURL(path.join(tmp, 'coastline.js')).href);
 
-const j = JSON.parse(fs.readFileSync('C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian', 'utf8'));
+const j = JSON.parse(fs.readFileSync('<用户目录>/Documents/SiTianProjects/示例项目.sitian', 'utf8'));
 const bm = j.scenarios.baseMaps.desite;
 const hm = bm.heightmap;
 const mask = C.buildLandMask(bm.terrain);

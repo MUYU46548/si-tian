@@ -119,10 +119,10 @@ async function main() {
 
   await check('手册里不许出现真实项目/隔壁项目的专名（示例一律虚构）', () => {
     // 产品是面向公开的（README 也这么写），手册又是**随包发布**的文案 ——
-    // 把暮雨自己的项目名、隔壁“绒花墨坊”的名字写进示例，等于把私人素材塞进公开包。
+    // 把暮雨自己的项目名、隔壁“姊妹项目”的名字写进示例，等于把私人素材塞进公开包。
     // 这一条与 test_86（fixture 专名）同一性质：**白名单/黑名单都得有人守**，否则改文案时必然漂回来。
     const all = JSON.stringify(GUIDE_SECTIONS);
-    const forbidden = ['绒花计划', '绒花墨坊', '德斯特星', '瓯王朝', '乐园星'];
+    const forbidden = ['示例项目', '姊妹项目', '示例行星', '瓯王朝', '乐园星'];
     const hit = forbidden.filter((w) => all.includes(w));
     assert(hit.length === 0, `手册示例里出现真实专名：${hit.join('、')}（请换成虚构示例，如“示例世界”）`);
     return `${forbidden.length} 个专名一个都没出现`;

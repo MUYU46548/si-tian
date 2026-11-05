@@ -5,7 +5,7 @@
  * 背景：三类垃圾都由历史 bug 产生，现行代码不再生成
  *   1. terrain  空名地形 —— PlanetMap 旧凸包笔刷产出的 `name: ''` 多边形（本库实测 22 个），
  *      在画布上渲染成无标识图块，地形列表/图例里也会出现空条目。
- *   2. basemap  空壳底图 —— 早期“打开剧本模式就凭空建一张默认底图”的产物（本库实测 `德斯特星`：
+ *   2. basemap  空壳底图 —— 早期“打开剧本模式就凭空建一张默认底图”的产物（本库实测 `示例行星`：
  *      terrain 为空、无 heightmap、无参考图、没有任何剧本的 ownerKey 指向它）。该默认行为已删除。
  *   3. testnode 测试残留节点 —— 历史测试/联调把节点写进真实库缓存的产物（如 `测试建筑`）。
  *   4. testpoly 自动编号测试地形（2026-10-09 加）—— 早期“描点连线时代”在真实库里手绘的测试多边形：
@@ -42,7 +42,7 @@ const APPLY = ARGS.includes('--apply');
 const vaultIdx = ARGS.indexOf('--vault');
 const VAULT = (vaultIdx !== -1 ? ARGS[vaultIdx + 1] : null)
   || process.env.SITIAN_VAULT
-  || 'E:/图书馆/ROSA';
+  || process.env.SITIAN_VAULT || '';
 
 const onlyArg = ARGS.find(a => a.startsWith('--only='));
 const CATS = onlyArg

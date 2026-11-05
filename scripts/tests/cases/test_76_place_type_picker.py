@@ -6,7 +6,7 @@
 搬家线把“层级 / 上层挂靠 / 地点类型”收进 `.sitian` 之后，**笔记里本来就没写的空白只有这个
 界面能填**（报告 ⑥：搬家后给新地点设类型的唯一入口）。
 
-  🔴 实测前提（2026-09-29 拿真 ROSA 缓存跑的值域统计，= 补刀①②的依据）：
+  🔴 实测前提（2026-09-29 拿真 示例库 缓存跑的值域统计，= 补刀①②的依据）：
      · 已填 75 个全部落在 8 枚举内，**枚举外 0 个** —— 但手写笔记随时可能冒出第 9 种，兜底照做；
      · 类型空白 45 个里 **39 个是宇宙层**（world/star_domain/galaxy/planet，本就不携带该字段），
        聚落 5 个按约定不标 → 真正该填的只有 region/facility/location；
@@ -256,7 +256,7 @@ JS = r"""(async () => {
   const gapSel = q('.project-panel [data-testid="gap-filter"]');
   ck('f2 过滤器存在', !!gapSel, null);
 
-  // 宇宙层噪音样本：真 ROSA 有 39 个（补刀②的动机）
+  // 宇宙层噪音样本：真 示例库 有 39 个（补刀②的动机）
   const noisy = proj.entityList.find(e =>
     PLACE_LAYERS.indexOf(e.layer) < 0 && e.layer !== 'world' && !e.placeType) || null;
   ck('f2 装置：宇宙层里存在类型空白（否则本段测不到噪音）', !!noisy, noisy ? null : proj.entityList.slice(0, 5).map(e => e.layer));

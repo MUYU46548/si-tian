@@ -73,9 +73,9 @@ SCHEMA_JS = """(async () => {
   ck('高版本校验被拒', vHi.ok === false && vHi.project === null);
 
   // ---- 实体 id 推导 + 去重 ----
-  same('entityIdFromName 中文保留', S.entityIdFromName('青崖城', []), '青崖城');
-  same('entityIdFromName 去重', S.entityIdFromName('青崖城', ['青崖城']), '青崖城_2');
-  same('entityIdFromName 二次去重', S.entityIdFromName('青崖城', ['青崖城','青崖城_2']), '青崖城_3');
+  same('entityIdFromName 中文保留', S.entityIdFromName('示例历城', []), '示例历城');
+  same('entityIdFromName 去重', S.entityIdFromName('示例历城', ['示例历城']), '示例历城_2');
+  same('entityIdFromName 二次去重', S.entityIdFromName('示例历城', ['示例历城','示例历城_2']), '示例历城_3');
   same('entityIdFromName 英文归一', S.entityIdFromName('New City', []), 'new_city');
 
   // ---- createEntity 归一化 ----
@@ -262,50 +262,50 @@ STORE_JS = """(async () => {
   // 2) 实体 CRUD
   const w = s.createEntity({ name: '世界', layer: 'world' });
   ck('createEntity（含 id 推导）', w.success === true && w.entity.id === '世界', w);
-  s.createEntity({ name: '青崖城', layer: 'city', parentId: '世界', coordinate: { x: 1, y: 2 } });
-  const c2 = s.createEntity({ name: '青崖城', layer: 'city', parentId: '世界' });
-  same('重名自动去重', c2.entity.id, '青崖城_2');
+  s.createEntity({ name: '示例历城', layer: 'city', parentId: '世界', coordinate: { x: 1, y: 2 } });
+  const c2 = s.createEntity({ name: '示例历城', layer: 'city', parentId: '世界' });
+  same('重名自动去重', c2.entity.id, '示例历城_2');
   same('entityCount', s.entityCount, 3);
-  same('previewEntityId', s.previewEntityId('青崖城'), '青崖城_3');
+  same('previewEntityId', s.previewEntityId('示例历城'), '示例历城_3');
   same('entityTree 根数', s.entityTree.length, 1);
   same('entityTree 子数', s.entityTree[0].children.length, 2);
   same('childrenOf', s.childrenOf('世界').length, 2);
   // 父级候选：排除“自身 + 全部后代”。世界是根 → 其余实体都是它的后代 → 候选为空
   same('parentCandidates（根实体：无候选）', s.parentCandidates('世界').map(x => x.id).sort(), []);
-  // 青崖城此刻还没有后代 → 只排除自身，兄弟（青崖城_2）与父级（世界）仍可选
-  same('parentCandidates（仅排除自身）', s.parentCandidates('青崖城').map(x => x.id).sort(), ['世界', '青崖城_2']);
+  // 示例历城此刻还没有后代 → 只排除自身，兄弟（示例历城_2）与父级（世界）仍可选
+  same('parentCandidates（仅排除自身）', s.parentCandidates('示例历城').map(x => x.id).sort(), ['世界', '示例历城_2']);
   const badParent = s.createEntity({ name: '孤儿', layer: 'city', parentId: '不存在' });
   ck('父实体不存在时拒绝创建', badParent.success === false, badParent);
   const dupId = s.createEntity({ id: '世界', name: '重复世界', layer: 'world' });
   ck('id 冲突时拒绝创建', dupId.success === false, dupId);
 
-  // 3) 重命名不改 id、不动子实体的父子关系（此刻青崖城_2 仍挂在世界下）
-  const rn = s.renameEntity('青崖城', '青崖新城');
-  ck('重命名成功且 id 不变', rn.success === true && !!s.getEntity('青崖城') && s.getEntity('青崖城').name === '青崖新城', rn);
-  ck('重命名未动子实体父子关系', s.getEntity('青崖城_2').parentId === '世界', s.getEntity('青崖城_2').parentId);
-  ck('空名拒绝', s.renameEntity('青崖城', '   ').success === false);
+  // 3) 重命名不改 id、不动子实体的父子关系（此刻示例历城_2 仍挂在世界下）
+  const rn = s.renameEntity('示例历城', '示例历新城');
+  ck('重命名成功且 id 不变', rn.success === true && !!s.getEntity('示例历城') && s.getEntity('示例历城').name === '示例历新城', rn);
+  ck('重命名未动子实体父子关系', s.getEntity('示例历城_2').parentId === '世界', s.getEntity('示例历城_2').parentId);
+  ck('空名拒绝', s.renameEntity('示例历城', '   ').success === false);
 
   // 4) 循环移动拒绝 / 合法移动
-  const cyc = s.moveEntity('世界', '青崖城');
+  const cyc = s.moveEntity('世界', '示例历城');
   ck('移到自己的后代下被拒', cyc.success === false, cyc);
-  const mv = s.moveEntity('青崖城_2', '青崖城');
-  ck('合法移动生效', mv.success === true && s.childrenOf('青崖城').length === 1, mv);
+  const mv = s.moveEntity('示例历城_2', '示例历城');
+  ck('合法移动生效', mv.success === true && s.childrenOf('示例历城').length === 1, mv);
   // 有了真正的后代之后，后代必须从父级候选里消失（防循环的 UI 入口）
-  same('parentCandidates 排除自己的后代', s.parentCandidates('青崖城').map(x => x.id).sort(), ['世界']);
+  same('parentCandidates 排除自己的后代', s.parentCandidates('示例历城').map(x => x.id).sort(), ['世界']);
   const self = s.moveEntity('世界', '世界');
   ck('移到自己下被拒', self.success === false, self);
 
   // 5) 级联删除 + 单条 undo
-  const del = s.deleteEntity('青崖城');
-  same('级联删除包含后代', (del.deleted || []).sort(), ['青崖城', '青崖城_2']);
+  const del = s.deleteEntity('示例历城');
+  same('级联删除包含后代', (del.deleted || []).sort(), ['示例历城', '示例历城_2']);
   same('删除后计数', s.entityCount, 1);
   U.undo();
   same('undo 恢复计数', s.entityCount, 3);
-  ck('undo 恢复父子关系', s.getEntity('青崖城_2').parentId === '青崖城');
-  const delOne = s.deleteEntity('青崖城', { cascade: false });
+  ck('undo 恢复父子关系', s.getEntity('示例历城_2').parentId === '示例历城');
+  const delOne = s.deleteEntity('示例历城', { cascade: false });
   ck('不级联删除时子实体上提到被删者的父级',
-     delOne.success === true && !s.getEntity('青崖城') && s.getEntity('青崖城_2').parentId === '世界',
-     { delOne: delOne, orphanParent: s.getEntity('青崖城_2') ? s.getEntity('青崖城_2').parentId : null });
+     delOne.success === true && !s.getEntity('示例历城') && s.getEntity('示例历城_2').parentId === '世界',
+     { delOne: delOne, orphanParent: s.getEntity('示例历城_2') ? s.getEntity('示例历城_2').parentId : null });
   U.undo();
   same('上提删除可撤销', s.entityCount, 3);
 

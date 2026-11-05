@@ -32,7 +32,7 @@ window.confirm = () => true; window.alert = () => {}; window.prompt = (q, d) => 
   const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
   const AP = await import('/src/utils/azgaar-parser.js');
   const text = await (await fetch('/__real_desite.map')).text();
-  const NAME = '德斯特';
+  const NAME = '示例星球';
   s.importFromScenariosJson(AP.buildScenariosJson(AP.parseMapFile(text), NAME, '当前'));
   await new Promise((r) => setTimeout(r, 2500));
   const el = document.querySelector('.scenario-map-container');

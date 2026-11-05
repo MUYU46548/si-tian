@@ -25,7 +25,7 @@
 
 用法：
   python scripts/tests/drill_reimport_019.py
-  python scripts/tests/drill_reimport_019.py --project "C:/Users/.../绒花计划.sitian"
+  python scripts/tests/drill_reimport_019.py --project "C:/Users/.../示例项目.sitian"
 """
 import argparse
 import json
@@ -44,7 +44,7 @@ from lib.cdp import CDP, eval_json, wait_for      # noqa: E402
 CDP_PORT = 9224
 VITE_PORT = 5180
 APP_CFG = os.path.join(os.environ.get('APPDATA', ''), 'SiTian', 'config.json')
-DEFAULT_PROJECT = os.path.join(os.path.expanduser('~'), 'Documents', 'SiTianProjects', '绒花计划.sitian')
+DEFAULT_PROJECT = os.path.join(os.path.expanduser('~'), 'Documents', 'SiTianProjects', '示例项目.sitian')
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
 
 R = []

@@ -30,7 +30,7 @@ const APPLY = ARGS.includes('--apply');
 const vaultIdx = ARGS.indexOf('--vault');
 const VAULT = (vaultIdx !== -1 ? ARGS[vaultIdx + 1] : null)
   || process.env.SITIAN_VAULT
-  || 'E:/图书馆/ROSA';
+  || process.env.SITIAN_VAULT || '';
 
 const SITIAN_DIR = path.join(VAULT, '.sitian');
 const MAPDATA_PATH = path.join(SITIAN_DIR, 'mapdata.json');

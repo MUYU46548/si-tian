@@ -35,7 +35,7 @@ window.prompt = (q, d) => d;
   const text = await (await fetch('/__real_desite.map')).text();
   OUT.mapBytes = text.length;
   const parsed = AP.parseMapFile(text);
-  const NAME = '德斯特';
+  const NAME = '示例星球';
   const json = AP.buildScenariosJson(parsed, NAME, '当前');
   s.importFromScenariosJson(json);
   await tick(2500);

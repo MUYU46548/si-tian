@@ -1,7 +1,7 @@
 // 路线 A 可行性核实：160 条 FMG 河**是不是一棵能挂支流的树**（端点在不在海里 / 彼此接不接得上）。
 import fs from 'fs';
 
-const P = 'C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian';
+const P = '<用户目录>/Documents/SiTianProjects/示例项目.sitian';
 const j = JSON.parse(fs.readFileSync(P, 'utf8'));
 const bm = j.scenarios.baseMaps.desite;
 const rivers = (bm.rivers || []).filter((r) => (r.points || []).length >= 2);

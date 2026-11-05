@@ -11,7 +11,7 @@ import { pathToFileURL } from 'url';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\//, '')), '..', '..', '..');
 const UTILS = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
-const P = 'C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian';
+const P = '<用户目录>/Documents/SiTianProjects/示例项目.sitian';
 const SEA = 20;   // 与 heightMath.SEA_LEVEL / riverTrace.TRACE_SEA_LEVEL / SEA_LEVEL_FOR_RIVER 同口径
 
 // 纯函数层带无扩展名 import → 拷到临时 ESM 目录（与 Node 单测同一套做法）

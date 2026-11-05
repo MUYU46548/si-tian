@@ -16,7 +16,7 @@
     结果：与真实库**无对应关系**（几何已变换、内容全替换），但形状同构 → 用例依赖全部满足。
 
 用法：
-    python scripts/tests/fixtures/make_vault_fixture.py            # 用默认库 E:/图书馆/ROSA
+    python scripts/tests/fixtures/make_vault_fixture.py            # 用默认库 <库根>
     python scripts/tests/fixtures/make_vault_fixture.py --vault D:/X --out <dir>
 输出（入库，供 run_tests.py 默认使用）：
     scripts/tests/fixtures/vault-fixture/geodata.json
@@ -37,10 +37,10 @@ DEFAULT_OUT = os.path.join(HERE, 'vault-fixture')
 # ── 1. 关键节点：显式映射（用例直接引用这些名字，改一处即可）────────────────
 KEY_NAMES = {
     '幻境': '潮汐界',          # 主测试世界（有星域子节点；test_09 下拉选它）
-    '伏夜提加': '寂原',        # 空壳世界（无星域子节点，helpers 注释里提到的那个）
+    '示例世界': '寂原',        # 空壳世界（无星域子节点，helpers 注释里提到的那个）
     '绒兽世界': '雪岭界',
     '粘土世界': '陶土界',
-    '净土星域': '归岚星域',    # 主星域（曜川星系所在）
+    '示例星域甲': '归岚星域',    # 主星域（曜川星系所在）
     '乐园星系': '曜川星系',    # 主星系（test_10/11/12/17 都用它）
     '乐园星': '曜川星',        # 主行星（108 处引用，行星地图挂它）
     '月球': '沧屿',            # 主行星的卫星（test_10 轨道顺序 / test_03 搜索）
@@ -393,7 +393,7 @@ def assert_no_leak(out_g, out_m, real_names):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--vault', default=os.environ.get('SITIAN_VAULT', r'E:/图书馆/ROSA'))
+    ap.add_argument('--vault', default=os.environ.get('SITIAN_VAULT', ''))
     ap.add_argument('--out', default=DEFAULT_OUT)
     args = ap.parse_args()
 
@@ -406,7 +406,7 @@ def main():
     real_names = {n.get('name') for n in geodata.get('nodes', []) if n.get('name')}
     real_names |= set(NON_NODE_TERMS.keys())
     # 真实底图/剧本 key 也算内容（只查 baseMap 名，不查 desite 这类短词避免误报）
-    real_names |= {'德斯特星'}
+    real_names |= {'示例行星'}
     assert_no_leak(out_g, out_m, real_names)
 
     os.makedirs(args.out, exist_ok=True)

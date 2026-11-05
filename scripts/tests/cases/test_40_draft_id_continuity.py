@@ -88,9 +88,9 @@ def sub_normalize_semantics(cdp):
     res = _j(cdp, """(async () => {
       const N = await import('/src/utils/normalizeId.js');
       const cases = [
-        ['[[青崖城]]', '青崖城'],
+        ['[[示例历城]]', '示例历城'],
         ['New City', 'new_city'],
-        ['青崖城·东', '青崖城东'],
+        ['示例历城·东', '示例历城东'],
         ['A/B\\\\C', 'a_b_c'],
         ['', 'unknown'],
         [null, 'unknown'],
@@ -100,16 +100,16 @@ def sub_normalize_semantics(cdp):
         const got = N.normalizeId(input);
         if (got !== expect) fails.push({ input, expect, got });
       }
-      const base = N.basenameNoExt('03 设定/02 场景地点/青崖城.md');
-      if (base !== '青崖城') fails.push({ base });
+      const base = N.basenameNoExt('03 设定/02 场景地点/示例历城.md');
+      if (base !== '示例历城') fails.push({ base });
       const base2 = N.basenameNoExt('a\\\\b\\\\New City.MD');
       if (base2 !== 'New City') fails.push({ base2 });
-      const r1 = N.nodeIdFromNoteResult({ filename: '青崖城' });
+      const r1 = N.nodeIdFromNoteResult({ filename: '示例历城' });
       const r2 = N.nodeIdFromNoteResult({ path: 'a/b/New City.md' });
-      const r3 = N.nodeIdFromNoteResult({ path: '' }, '青崖城');
-      if (r1 !== '青崖城') fails.push({ r1 });
+      const r3 = N.nodeIdFromNoteResult({ path: '' }, '示例历城');
+      if (r1 !== '示例历城') fails.push({ r1 });
       if (r2 !== 'new_city') fails.push({ r2 });
-      if (r3 !== '青崖城') fails.push({ r3 });
+      if (r3 !== '示例历城') fails.push({ r3 });
       return JSON.stringify({ fails });
     })()""")
     if not isinstance(res, dict):

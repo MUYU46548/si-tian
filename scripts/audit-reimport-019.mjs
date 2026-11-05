@@ -19,7 +19,7 @@
  *
  * 用法：
  *   node scripts/audit-reimport-019.mjs
- *   node scripts/audit-reimport-019.mjs --project "C:/.../绒花计划.sitian" --map src/renderer/public/__real_desite.map
+ *   node scripts/audit-reimport-019.mjs --project "C:/.../示例项目.sitian" --map src/renderer/public/__real_desite.map
  *
  * 产物：`build/reimport-019/audit.json` + `report.md`（控制台同时打印）
  */
@@ -35,7 +35,7 @@ const argOf = (name, dflt) => {
   const i = argv.indexOf('--' + name);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : dflt;
 };
-const PROJECT = path.resolve(argOf('project', path.join(os.homedir(), 'Documents', 'SiTianProjects', '绒花计划.sitian')));
+const PROJECT = path.resolve(argOf('project', path.join(os.homedir(), 'Documents', 'SiTianProjects', '示例项目.sitian')));
 const MAP = path.resolve(argOf('map', path.join(ROOT, 'src', 'renderer', 'public', '__real_desite.map')));
 const OUT = path.resolve(argOf('out', path.join(ROOT, 'build', 'reimport-019')));
 

@@ -539,7 +539,7 @@ function readAsset(root, name, fromNote) {
   return { path: rel, mime, size: st.size, dataUrl: `data:${mime};base64,${b64}` };
 }
 
-/** 实体发现规则（默认 = 现有 SCAN_SCOPE，保证 ROSA 行为零变化） */
+/** 实体发现规则（默认 = 现有 SCAN_SCOPE，保证 示例库 行为零变化） */
 function defaultRules() {  return {
     scanDirs: [...DEFAULT_SCAN_DIRS],
     fieldKeys: ['层级', '上层区域', '地点类型'],

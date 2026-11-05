@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const P = 'C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian';
+const P = '<用户目录>/Documents/SiTianProjects/示例项目.sitian';
 const j = JSON.parse(fs.readFileSync(P, 'utf8'));
 const bm = j.scenarios.baseMaps.desite;
 console.log('== source 字段 ==');
@@ -15,7 +15,7 @@ console.log(`cellsX*cellsY=${g.cellsX * g.cellsY}`);
 
 console.log('\n== 项目备份目录里有没有原始 .map ==');
 const projDir = path.dirname(P);
-const backups = path.join(projDir, '绒花计划.sitian.backups');
+const backups = path.join(projDir, '示例项目.sitian.backups');
 for (const dir of [projDir, backups, path.join(projDir, 'basemap-source'), path.join(backups, 'basemap-source')]) {
   if (!fs.existsSync(dir)) { console.log(`  (不存在) ${dir}`); continue; }
   console.log(`  --- ${dir} ---`);

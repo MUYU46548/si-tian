@@ -5,7 +5,7 @@
  * 背景（`docs/ROADMAP_NEXT.md` 线 A A-3 + 2026-09-28 在线审查三条补刀）：
  *   搬家后“笔记里本来就没写”的机器属性只有点选界面能填，本模块是**唯一实现**：
  *     ① 下拉选项 = 8 枚举 ∪ 实体当前值（补刀①：枚举外第 9 种值不许被静默吞掉）；
- *     ② “只看空白”按**层级**判空白（补刀②：真 ROSA 实测 45 个类型空白里 39 个是宇宙层，
+ *     ② “只看空白”按**层级**判空白（补刀②：真 示例库 实测 45 个类型空白里 39 个是宇宙层，
  *        9 个 parentId 空白里 4 个是 world —— 不分层过滤 = 39 行无意义噪音）。
  *   判错的后果都是静默的：吞值 = 用户手写类型一打开下拉就没；不分层 = 过滤器形同虚设。
  *
@@ -112,7 +112,7 @@ const ENUM = ['自然', '宗教', '皇室', '商业', '工业', '居住', '公�
         expectsPlaceType({ layer: 'region' })], [true, true, true], '三个地点层级');
     return 'facility/location/region = true';
   });
-  check('t7 ★ 宇宙层与聚落不算“类型空白”（真 ROSA 实测 45 个空白里 39 个是宇宙层）', () => {
+  check('t7 ★ 宇宙层与聚落不算“类型空白”（真 示例库 实测 45 个空白里 39 个是宇宙层）', () => {
     const layers = ['world', 'star_domain', 'galaxy', 'planet', 'star', 'moon', 'city', 'town', 'village', 'building'];
     const wrong = layers.filter(l => missingPlaceType({ layer: l, placeType: null }));
     eq(wrong, [], '这些层级不该被判成类型空白');

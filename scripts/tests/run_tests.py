@@ -57,7 +57,7 @@ INDEX_HTML = os.path.join(ROOT, 'src', 'renderer', 'index.html')
 MOCK_DATA_DIR = os.path.join(ROOT, 'src', 'renderer', 'mock-data')
 # 环境相关常量：可用环境变量覆盖（SITIAN_VAULT / SITIAN_EDGE_EXE），也可用 --vault / --edge 覆盖
 # 例：python scripts/tests/run_tests.py --vault D:/MyVault --edge "C:/path/to/msedge.exe"
-VAULT = os.environ.get('SITIAN_VAULT', r'E:/图书馆/ROSA')
+VAULT = os.environ.get('SITIAN_VAULT', '')
 EDGE_EXE = os.environ.get('SITIAN_EDGE_EXE', r'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
 
 # 跨平台（2026-09-30，A-3 模式 B 回归时补）：非 Windows 且未显式指定浏览器时，
@@ -268,7 +268,7 @@ MOCK_SCRIPT = """<script>
             return { success: false, needsConfirm: true, behind: st.pullBehind === undefined ? 2 : st.pullBehind,
                      ahead: 0, dirty: st.dirty || 0, error: '远程有新内容：恢复会把本地改成与远端一致' };
           }
-          return { success: true, pulled: true, behind: 2, ahead: 0, changedFiles: ['绒花计划.sitian'],
+          return { success: true, pulled: true, behind: 2, ahead: 0, changedFiles: ['示例项目.sitian'],
                    branch: 'main', localSnapshot: true, rescueBranch: 'sitian-rescue-mock' };
         },
         gitSyncNow: async (p) => {

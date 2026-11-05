@@ -1,6 +1,6 @@
 # SiTian (司天)
 
-为世界构建者设计的本地桌面应用（Electron 28），以 Obsidian 库（默认 `E:/图书馆/ROSA/`）为事实源之一，通过七层视图呈现世界观地理层级，为 Markdown 附加可编辑的坐标元数据，实现画布与笔记的双向同步。
+为世界构建者设计的本地桌面应用（Electron 28），以 Obsidian 库（默认 `<库根>/`）为事实源之一，通过七层视图呈现世界观地理层级，为 Markdown 附加可编辑的坐标元数据，实现画布与笔记的双向同步。
 
 > **独立运行化（Phase 1 已落地 2026-09-18；Phase 2.4 接线 + 终态翻开 2026-09-20）**：司天另有一套自有项目文件（`.sitian`，JSON 单文件：实体树 + 剧本 + 地图 + 自动快照），目标是脱离知识库也能新建/编辑/保存世界观。
 > 接线已完成：**打开项目 → 画布事实源切到项目文件；关闭项目 → 还原打开前的知识库工作态**（`store/canvasBridge.js` 是唯一接线点）；**无项目 = 只读**（`READONLY_WITHOUT_PROJECT = true`，UI 已灰禁且灰禁带能力说明）。细节（写闸门 / 接线 / 快照 / 退出落盘）见 [`docs/agents-archive/project-save.md`](docs/agents-archive/project-save.md)。
@@ -10,7 +10,7 @@
 - 桌面壳: Electron 28
 - UI 框架: Vue 3 + Pinia
 - 构建工具: Vite 5
-- 数据格式: Markdown + YAML frontmatter + JSON 缓存层（`E:/图书馆/ROSA/.sitian/`）+ `.sitian` 项目文件
+- 数据格式: Markdown + YAML frontmatter + JSON 缓存层（`<库根>/.sitian/`）+ `.sitian` 项目文件
 - 前端画布: 原生 Canvas 2D（无外部渲染库）；**星系 3D 观景**按需加载 `three@0.128.0`（动态 import，不进首屏，见 views 归档）
 - UI 基座（2026-10-06 试点）: Tailwind CSS 3（**只出 utilities 层**）+ shadcn-vue 源码组件（`components/ui/`，基于 reka-ui）
 
@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**92 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**93 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -36,6 +36,12 @@
 - **读料扫描（2026-10-22，三刀第二刀）**: `node scripts/vault-scan.mjs --vault <库根> --out <目录> [--geodata]` —— 全库只读归类（地图实体 / 资料 / 待人工），产物 `scan-report.json` + `待人工.md`（每条带原因与凭据）+ 可选 `geodata.json` 试导；输出目录在库内会被拒绝，跑完自动对比库指纹证明一个字节都没写。归类口径见 [docs/VAULT_BRIDGE.md](docs/VAULT_BRIDGE.md)
 - `.sitian` 缓存垃圾清理: `npm run clean-cache-junk`（默认 dry-run，`-- --apply` 才写盘；清空名地形 / 空壳底图 / 测试残留节点，删前自检「引用 / 包围盒 / 子节点」，备份落 `backups/cleanup-<ts>/`）
 - **备份目录瘦身（2026-10-30 用户拍板：保留最近 3 份）**: `npm run prune-backups`（默认 dry-run，`-- --apply` 才动盘）。每个 `<项目>.sitian.backups/` 与 `<库>/.sitian/backups/` 按 mtime 留最近 N 份（`-- --keep 5` 可改），**超出的"复制 → 校验大小 → 删源"移到归档盘**（默认 `E:\归档\司天备份-<日期>`，不删）；`*.session-baseline.sitian`（打开时的样子）**不参与轮转**。应用侧同口径：`projectHandler.js#BACKUP_KEEP = 3`、`main/index.js` 缓存备份 = 3
+- **隐私与署名扫描（发布门槛③，2026-11-05）**: `node scripts/privacy-scan.mjs` —— 三个作用域
+  （`code` = `src/` + `scripts/`、`docs` 非归档区、`root` = README/LICENSE/package.json/构建配置）
+  扫私人专名与私人路径，**必须 0 命中**；`--signature` 断言 LICENSE / README 的“暮雨”还在
+  （**署名要保留**，作者名不在黑名单里）。词表存 `scripts/privacy-terms.js`（base64，明文不落库 ——
+  否则扫描器自己就是最大的泄漏点）；`--self-test` 是负向探针，`unit/test_privacy_scan.js`
+  把它接进回归（塞真专名必须报；词表文件里也不许出现明文）。
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 退出前落盘真机演练: `python scripts/tests/drill_quit_flush.py`（起真实 Electron + dist + 真实库/项目，
   **纯 UI 驱动 + 读盘核对**；P1 强杀做负向探针 / P2 Ctrl+Q / P3 点 ×；跑前自动备份并还原项目与配置。
@@ -43,7 +49,7 @@
   - **P4 = 剧本专用演练（2026-10-07 加）**：`--phase p4`（或 `all`）。空底图下第一次落笔懒建底图 → 建省 → 定位该省 → **拆分改边界** → Ctrl+Z 撤销 → 真右键菜单删省 → 剧本 增·改·删，**每一步都读项目文件核对落盘**（判据只有磁盘，因为剧本/地图各有 300ms + 800ms 两层防抖）。与 p1~p3 不同：**不要求空项目**（全程相对基线，可在有内容的项目上跑），跑完由 main() 还原项目文件。
     - ⚠️ **四个只在真机上才暴露的坑（改这段前必读）**：① **Vue 的 DOM 更新是异步的** —— 同一个 tick 里 `querySelector('.props-name')` 永远是空、`btn.disabled` 永远是旧值，读 DOM 前一律 `await new Promise(r => setTimeout(r, 0))`；② 对 **`:disabled` 按钮 `el.click()` 是静默 no-op**（既不执行也不报错）—— 填完表单必须等一拍再点，并回传 `disabled` 供诊断；③ 按 title 找工具按钮时 **片段必须唯一**：写 `'选择'` 会先命中 **「返回世界选择」**（排在最前）→ 一次点击直接退出剧本视图，必须写 `'选择 (V)'`；④ **CDP 客户端的读超时是 15s** —— 任何"扫描式"探测都要自带**墙钟上限**（本段取 8s）并在超限时**返回可读失败**，否则演练会崩在 `WebSocketTimeoutException` 上而不是给结论。另：底图是懒建的，**必须在落笔之后再读 `.basemap-select`**，用空键查盘会永远查不到（曾导致一条断言期望值也是 0 → **空转通过**）。
 - **019 重导真机演练（2026-10-25）**: `python scripts/tests/drill_reimport_019.py` —— 起 **Vite(5180) + 真实 Electron(9224)**
-  + **真实项目副本**（默认 `绒花计划.sitian`，415 省 / 13 段剧本），两段判据**全读盘**：
+  + **真实项目副本**（默认 `示例项目.sitian`，415 省 / 13 段剧本），两段判据**全读盘**：
   A 原样重导 `__real_desite.map` → 89 处并省冲突被拒、磁盘 sha256 一字节不变；
   B id 直配（403 省）→ 新底图/旧底图归档/ownerKey 迁移落盘 → **一次 Ctrl+Z 磁盘回基线**。
   跑前备份并还原配置、删副本；⚠️ 也会开真实窗口（不要在别的人工任务进行时跑）。
@@ -165,8 +171,8 @@
     `docs/plan/CHASSIS_BASELINE_20261023.md`（性能基线）、`docs/plan/INTEGRATION_AUDIT_20261030.md`（模块集成审计）。
   - **已被取代的规划/交接件已全部移入 [`docs/archive/`](docs/archive/)**（TODO_REMAINING_20261028 / REMAINING_BACKLOG_20261027 /
     NEXT_STAGE_20261025 / 各 HANDOFF 等 14 份；只作证据，不再具备施工效力）。
-  - 415 省孤本 `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份
-    （2026-10-23 已留：`…_施工留底\绒花计划-20261023-203520.sitian`，SHA256 一致）。
+  - 415 省孤本 `<用户目录>\Documents\SiTianProjects\示例项目.sitian`（6.5MB / 415 省 / 13 剧本）施工前后各留底一份
+    （2026-10-23 已留：`…_施工留底\示例项目-20261023-203520.sitian`，SHA256 一致）。
   - 已完成的历史条目（3D 观景 / 阶段 0-1 欠账 / FMG 管线 / 保存链提速…）见 `docs/archive/TODO_REMAINING_20261028.md` 与
     本文件「文档权威顺序」以下各节。
 
@@ -238,7 +244,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 92 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 93 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 47 | `grep -c "ipcMain.handle" src/main/index.js` |

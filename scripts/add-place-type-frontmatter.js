@@ -13,7 +13,8 @@ const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 
-const LOCATIONS_PATH = 'E:/图书馆/ROSA/03 设定/02 场景地点';
+const LOCATIONS_PATH = process.env.SITIAN_LOCATIONS_PATH || '';
+if (!LOCATIONS_PATH) { console.error('请先设 SITIAN_LOCATIONS_PATH（示例库的“设定/场景地点”目录）'); process.exit(1); }
 const DRY = process.argv.includes('--dry');
 
 // 名称关键词 → 地点类型（最长优先匹配）
@@ -108,13 +109,13 @@ const OVERRIDES = {
   '雨神宫': '宗教',          // 神宫（神祇居所）优先于 宫→皇室
   '尼特加的花园': '公共',     // 花园 → 休闲公共设施
   '凤凰同盟临时据点': '特殊',  // 军事临时据点
-  '绒花宫地下室': '特殊',     // 地宫
+  '示例宫地下室': '特殊',     // 地宫
   '边境临时居住站': '居住',   // 居住站
   '蓝箭台': '工业',          // 军械库
   '墓园': '公共',            // 市政殡葬设施
   '海底墓场': '公共',
   '纷花号': '特殊',          // 飞船/移动设施
-  '有求必应厅': '公共',       // 绒花宫内部大厅
+  '有求必应厅': '公共',       // 示例宫内部大厅
   '智能体学校': '公共',       // 学校（tags 含"智能体庇护所"误伤）
   '记忆图书馆': '公共',       // 图书馆（tags 含"地下室"误伤）
   '特拉图雅中学地下防空洞': '公共', // 防空洞（tags 含"地下室"误伤）

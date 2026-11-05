@@ -36,7 +36,7 @@
 | # | 指南怎么说 | 仓内实况（2026-10-23 实测/读码） | 结论 |
 |---|---|---|---|
 | 1 | 基线 `9f981ad`（"10-19 后零新 push"） | `origin/main = 9f981ad` 属实；本地 `feature/map-editing-rework` 比它**多 52 个提交**（10-19~10-23 全部工作：省份矢量化、136 用例、账本 v2、基帧缓存、笔刷建省、指南包入库） | ✅ **已推远端**（20:55，`origin/feature/map-editing-rework`）；本地 `main` 已 FF 到同一提交。**`origin/main` 仍在 9f981ad**，等用户点头再推（见 §7） |
-| 2 | 415 省孤本待留底 | `C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian`，6,502,567 字节；`desite` 地图 **415 省**、13 剧本、36 势力、4968 条归属键、**1668 条 changeEvents**、21 个快照 | ✅ **已留底**：`…\_施工留底\绒花计划-20261023-203520.sitian`，SHA256 与原件一致 |
+| 2 | 415 省孤本待留底 | `<用户目录>\Documents\SiTianProjects\示例项目.sitian`，6,502,567 字节；`desite` 地图 **415 省**、13 剧本、36 势力、4968 条归属键、**1668 条 changeEvents**、21 个快照 | ✅ **已留底**：`…\_施工留底\示例项目-20261023-203520.sitian`，SHA256 与原件一致 |
 | 3 | 病灶 #1“保存整块冻结 596ms，修法①已落、②③未做” | ①属实（`utils/interactionGate.js` 手势闸门在）；②属实：`buildProjectPayload`（`geodata.js:1743`）对 hyperlanes / mapData / editor / baseMaps / scenarios / slicePoints 做 **6 次 `JSON.parse(JSON.stringify)`** | ✅ 照做（修法②③） |
 | 4 | 病灶 #3“PlanetMap / AreaMap / InteriorView 无基帧缓存” | `grep StrokeBase\|baseFrame` 在这三个 SFC 里 **0 命中**；只有 `ScenarioMap.vue` 有 | ✅ 照做（平移） |
 | 5 | 病灶 #4“全部笔刷不进基帧/脏矩形” | `applyCultureBrush` 每次 move：**拷两份通道数组**（`oldCultures`/`newCultures`）+ 全格遍历；`applyHeightBrush` 同类 | ✅ 照做 |
@@ -159,7 +159,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
   **回放只有一份实现**：`utils/scenarioLedgerV2.deriveFrom` 改为把 v2 形状喂给 `ledger/replay.js`（旧 cmpDate 实现已删）。
   单测 `unit/test_ledger_core.js` **6/6**：日换算/校验、回放五条口径、**400 省×2000 事件 0.6ms**、组撤销逐省还原、
   与 v2 `deriveFrom` **逐省对拍 0 处不一致**、纯数据层守卫 + 反向探针。
-  415 孤本只读试算：`node scripts/ledger-dryrun.mjs --project <绒花计划.sitian>` → 13 段 / **冲突 0** / 11ms / 文件未动。
+  415 孤本只读试算：`node scripts/ledger-dryrun.mjs --project <示例项目.sitian>` → 13 段 / **冲突 0** / 11ms / 文件未动。
   ⏳ 剩：**笔画对象模型**（`{strokeId, generator, params, rawPoints, geometry}`，原话见 §一-C 三处改法）
   与四笔总装（第 4 件）。
 - ✅ **笔画对象模型已落（2026-10-24）**：`src/ledger/stroke.js` —— 三支笔共用一套 `{strokeId, kind, generator,
@@ -261,7 +261,7 @@ day: number;                   // 绝对天（可负），由 CalendarConfig 从
 - 三步齐 + 五件 + 415 省数据不丢 + 自测链证据（副本制 / 反向探针 / 读盘 / 三张无头截图）。
 - ✅ **自测链已就位（2026-10-24）**：`python scripts/tests/drill_final_acceptance.py`，**62/62 通过**。
   一次跑完并出证据：
-  - **副本制**：真实 `绒花计划.sitian` 全程只读（跑前/跑后 sha256+size 一致），动作全在
+  - **副本制**：真实 `示例项目.sitian` 全程只读（跑前/跑后 sha256+size 一致），动作全在
     `mock-data` 副本上（跑完随 mock-data 删除）；
   - **三步齐**：真点油漆桶涂一个省（撤销/重做往返）→ 真拖时间轴（起点/末日/涂色年三处归属与
     像素指纹都不同）→ 真开切片对话框导 **PNG**（真实项目 1088 帧 → 本剧本 2 帧，自动切范围），
@@ -324,8 +324,8 @@ git log --oneline -1; git status --short; git rev-list --left-right --count HEAD
 (Get-ChildItem scripts\tests\cases\test_*.py | Measure-Object).Count      # 期望 143
 (Get-ChildItem scripts\tests\unit\*.js | Measure-Object).Count            # 期望 53
 # 3. 孤本仍在（只读核对）
-Get-Item 'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian' | Select-Object Length,LastWriteTime
-Get-ChildItem 'C:\Users\muyu\Documents\SiTianProjects\_施工留底' | Select-Object Name,Length
+Get-Item '<用户目录>\Documents\SiTianProjects\示例项目.sitian' | Select-Object Length,LastWriteTime
+Get-ChildItem '<用户目录>\Documents\SiTianProjects\_施工留底' | Select-Object Name,Length
 # 4. 全量回归（开工前基线）
 python scripts/tests/run_tests.py
 ```

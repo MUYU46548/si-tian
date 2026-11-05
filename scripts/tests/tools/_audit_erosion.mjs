@@ -27,7 +27,7 @@ const UTILS = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : d; };
 
-const PROJECT = arg('project', 'C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian');
+const PROJECT = arg('project', '<用户目录>/Documents/SiTianProjects/示例项目.sitian');
 const KEY = arg('key', 'desite');
 const SEED = Number(arg('seed', '7'));
 const CELLS = Number(arg('cells', '256'));

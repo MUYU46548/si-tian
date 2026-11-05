@@ -190,7 +190,7 @@ python scripts/tests/tools/sweep_rivers.py --grid-json "$env:TEMP/desite.grid.js
 python scripts/tests/tools/compare_river_opts.py --grid-json "$env:TEMP/desite.grid.json"
 
 # ⑤ 直接读项目文件里的行星高度图（不用 ①）
-python scripts/tests/tools/diag_rivers.py --project "$env:USERPROFILE\Documents\SiTianProjects\绒花计划.sitian"
+python scripts/tests/tools/diag_rivers.py --project "$env:USERPROFILE\Documents\SiTianProjects\示例项目.sitian"
 ```
 
 **为什么单列这几个工具**：这些都是“观感问题”，不量就只能靠感觉争论。它们是**量尺**不是守卫

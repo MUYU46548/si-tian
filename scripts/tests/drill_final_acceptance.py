@@ -11,7 +11,7 @@
      三张互不相同的无头截图
 
 为什么用**副本**（副本制）：
-  · 真实项目 `C:\\Users\\muyu\\Documents\\SiTianProjects\\绒花计划.sitian` 全程只读 ——
+  · 真实项目 `<用户目录>/Documents/SiTianProjects/示例项目.sitian` 全程只读 ——
     跑前记录 sha256/size/mtime，跑完三项必须逐字节一致（本脚本最后一条判据）；
   · 所有动作都发生在 `src/renderer/mock-data/real_project.json` 这份副本上（跑完随 mock-data 删除）。
 
@@ -48,7 +48,7 @@ from lib.cdp import CDP, wait_for, eval_json, fetch_string                # noqa
 from lib.helpers import open_harness_project, ensure_data_ready, open_toolbar_more  # noqa: E402
 import lib.pngcheck as png                                                # noqa: E402
 
-REAL_PROJECT = r'C:\Users\muyu\Documents\SiTianProjects\绒花计划.sitian'
+REAL_PROJECT = r'<用户目录>\Documents\SiTianProjects\示例项目.sitian'
 REAL_PROJECT_IN_MOCK = os.path.join(ROOT, 'src', 'renderer', 'mock-data', 'real_project.json')
 MOCK_PROJECT_PATH = 'mock/projects/real-desite.sitian'
 OUT_DIR = os.path.join(ROOT, 'build', 'final-acceptance')
@@ -1020,7 +1020,7 @@ def main():
         ck('打开后 terrain == 415 省', inj.get('terrain') == 415, inj.get('terrain'))
         ck('打开后剧本数与文件一致', inj.get('scenarioCount') == EXPECT_SCENARIOS,
            '%s（文件里 %d）' % (inj.get('scenarioCount'), EXPECT_SCENARIOS))
-        ck('打开的是真实项目（meta.name=绒花计划）', inj.get('metaName') == '绒花计划', inj.get('metaName'))
+        ck('打开的是真实项目（meta.name=示例项目）', inj.get('metaName') == '示例项目', inj.get('metaName'))
         ck('打开/保存路径都在副本上（真实项目没被打开）',
            inj.get('filePath') == MOCK_PROJECT_PATH, inj.get('filePath'))
 
@@ -1332,8 +1332,8 @@ def main():
                               .replace('__P1__', p1['id']), required=('has', 'saves'), desc='落盘载荷')
         ck('读盘载荷存在（应用确实把项目交给了保存 IPC）', dok and disk.get('has'),
            '保存次数=%s 路径=%s' % (disk.get('saves'), json.dumps(disk.get('savePaths'), ensure_ascii=False)))
-        ck('落盘载荷：meta=绒花计划 / 省份与剧本数与文件一致 / 保存路径只在副本',
-           disk.get('metaName') == '绒花计划' and disk.get('terrain') == EXPECT_PROVINCES
+        ck('落盘载荷：meta=示例项目 / 省份与剧本数与文件一致 / 保存路径只在副本',
+           disk.get('metaName') == '示例项目' and disk.get('terrain') == EXPECT_PROVINCES
            and disk.get('scenarioCount') == EXPECT_SCENARIOS
            and all(p == MOCK_PROJECT_PATH for p in (disk.get('savePaths') or [])),
            'meta=%s terrain=%s scenarios=%s paths=%s'

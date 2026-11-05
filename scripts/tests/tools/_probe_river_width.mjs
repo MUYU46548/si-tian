@@ -14,7 +14,7 @@ for (const f of ['riverRender.js', 'rivers.js']) {
 fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
 const RR = await import(pathToFileURL(path.join(tmp, 'riverRender.js')).href);
 
-const j = JSON.parse(fs.readFileSync('C:/Users/muyu/Documents/SiTianProjects/绒花计划.sitian', 'utf8'));
+const j = JSON.parse(fs.readFileSync('<用户目录>/Documents/SiTianProjects/示例项目.sitian', 'utf8'));
 const rivers = j.scenarios.baseMaps.desite.rivers;
 const px = rivers.map((r) => RR.basemapRiverWidthPx(r));
 const sorted = px.slice().sort((a, b) => a - b);

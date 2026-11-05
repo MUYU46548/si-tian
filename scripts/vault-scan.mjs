@@ -10,7 +10,7 @@
 //     输出目录在库内会直接拒绝；跑完再对库做一次指纹对比（文件数 + mtime + .sitian 有无）。
 //
 // 用法：
-//   node scripts/vault-scan.mjs --vault "E:\图书馆\ROSA" --out "$env:TEMP\rosetta-scan"
+//   node scripts/vault-scan.mjs --vault "<库根>" --out "$env:TEMP\rosetta-scan"
 //   node scripts/vault-scan.mjs --vault <库> --out <目录> --geodata     # 另存 geodata.json（试导）
 //   node scripts/vault-scan.mjs --vault <库> --list-missing            # 只打印待人工
 //

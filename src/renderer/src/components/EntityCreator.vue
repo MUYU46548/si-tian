@@ -22,7 +22,7 @@
             ref="nameInput"
             v-model="name"
             class="ec-input"
-            placeholder="如 青崖城 / 东部荒原"
+            placeholder="如 示例历城 / 东部荒原"
             @keydown.enter="create"
           />
           <span class="ec-id" :title="'实体 id（由名称规范化，重名自动加序号）'">id: {{ previewId || '—' }}</span>
@@ -37,7 +37,7 @@
             class="ec-input ec-textarea"
             rows="6"
             data-testid="ec-batch-names"
-            placeholder="每行一个名称，例如：&#10;青崖城&#10;落雁关&#10;碧水镇"
+            placeholder="每行一个名称，例如：&#10;示例历城&#10;落雁关&#10;碧水镇"
           ></textarea>
           <span class="ec-id">将创建 {{ batchCount }} 个实体 · 与已有实体同名的会自动跳过并列出</span>
         </div>

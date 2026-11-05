@@ -233,4 +233,4 @@ python scripts/tests/run_tests.py test_48    # 只跑某个用例
 
 如果喜欢司天，欢迎来[爱发电](https://afdian.com/a/muyu46548B?utm_source=copylink&utm_medium=link)支持作者！
 
-您也可以在爱发电获取绒花计划相关资讯或部分作品资料。
+您也可以在爱发电获取示例项目相关资讯或部分作品资料。

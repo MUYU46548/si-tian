@@ -1,6 +1,6 @@
 /**
  * 示例世界观数据 — 用于首次启动时展示 SiTian 完整能力
- * 独立于 ROSA 正典，可随时删除
+ * 独立于 示例库 正典，可随时删除
  */
 export function createSampleWorld() {
   const now = Date.now();

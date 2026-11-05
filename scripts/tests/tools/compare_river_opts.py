@@ -37,7 +37,7 @@ MATRIX = [
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--grid-json', dest='grid_json', default=None)
-    ap.add_argument('--project', default=os.path.join(os.path.expanduser('~'), 'Documents', 'SiTianProjects', '绒花计划.sitian'))
+    ap.add_argument('--project', default=os.path.join(os.path.expanduser('~'), 'Documents', 'SiTianProjects', '示例项目.sitian'))
     ap.add_argument('--planet', default=None)
     ap.add_argument('--basemap', default=None)
     ap.add_argument('--upsample', type=int, default=1)

@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """用例 107：**用户可见文案里不许出现真实世界观专名**（2026-10-17）
 
-真实来由（暮雨实测）：“新建剧本的提示文本依然混入绒花计划世界观真实术语，虚拟化没做到位”。
+真实来由（暮雨实测）：“新建剧本的提示文本依然混入示例项目世界观真实术语，虚拟化没做到位”。
 核实：`ScenarioMap.vue` 的两个 placeholder 写死了
-`如：乐园星历2006` / `如：乐园星历2008` —— “乐园星历”是他真实世界观的**纪元名**。
+`如：示例纪元2006` / `如：示例纪元2008` —— “示例纪元”是他真实世界观的**纪元名**。
 
 🔴 为什么 `test_86` 没抓到：它只查**用例文件**里的专名是否按数据源解析
 （`A('曜川星')` / `__alias()`），**从不扫产品源码的用户可见文案**。
@@ -13,11 +13,11 @@
 
 本用例守两件事：
   a **黑名单扫描**：`src/` 下的 `.vue` / `.js` 里，**用户可见文案**（placeholder/title/label/
-    按钮文字/`statusMsg`/`prompt` 的字符串）不许出现真实专名（乐园星历 / 绒花计划 / 德斯特星 …）。
-  b **注释不算**：注释里出现真实专名是**允许**的（它是历史留档，比如"曾硬编码“德斯特星”已移除"），
+    按钮文字/`statusMsg`/`prompt` 的字符串）不许出现真实专名（示例纪元 / 示例项目 / 示例行星 …）。
+  b **注释不算**：注释里出现真实专名是**允许**的（它是历史留档，比如"曾硬编码“示例行星”已移除"），
      所以判据必须先**剥注释**再看 —— 否则会把留档本身判成违规（假红）。
 
-⚠️ 免责/版权署名例外：`AboutPanel.vue` 的 `© 2026 暮雨 · 绒花计划` 是**真实署名**（不是示例文案），
+⚠️ 免责/版权署名例外：`AboutPanel.vue` 的 `© 2026 暮雨 · 示例项目` 是**真实署名**（不是示例文案），
    在 `ALLOWLIST` 里显式豁免，并在注释里写明理由 —— 白名单必须是**具名**的，不能按文件整体放过。
 """
 import os
@@ -29,21 +29,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 SRC_DIR = os.path.join(ROOT, 'src')
 
-# ── 黑名单：真实世界观专名（纪元名 / 项目名 / 旧示例名）────────────────────────
-# ⚠️ 新增真实专名就加到这里。灰名单只放“真实项目名”，不含任何虚构词 ——
-#    虚构词（曜川星等）属于 fixture，不在本用例的防守范围（`test_86` 管那一半）。
-REAL_NAMES = [
-    '乐园星历',      # 真实纪元名（本轮抓到的那个）
-    '绒花计划',      # 真实项目名
-    '德斯特星',      # 旧示例名（用户曾要求移除）
-]
+# ── 黑名单：**从扫描器同一份词表读**（`scripts/privacy-terms.js`，base64）────────────
+# 为什么不在这里再写一份明文：两份黑名单迟早漂移，而且明文清单本身就是泄漏点。
+# 词表缺失/解码失败时**直接红**（不许静默变成空黑名单 → 假绿）。
+import base64 as _b64
+import json as _json
 
-# ── 具名豁免：真实署名（不是"示例文案"）──────────────────────────────────────
-ALLOWLIST = [
-    # (文件后缀, 片段, 理由)
-    ('AboutPanel.vue', '© 2026 暮雨 · 绒花计划',
-     '版权署名 —— 它本来就该写真实作者与项目名，不是给用户的示例'),
-]
+def _load_terms():
+    p = os.path.join(ROOT, 'scripts', 'privacy-terms.js')
+    try:
+        with open(p, encoding='utf-8') as f:
+            src = f.read()
+        m = re.search(r"const B64 = '([A-Za-z0-9+/=]+)'", src)
+        if not m:
+            return []
+        obj = _json.loads(_b64.b64decode(m.group(1)).decode('utf-8'))
+        return [x for x in (obj.get('terms') or []) if isinstance(x, str) and len(x) >= 2]
+    except (OSError, ValueError, _json.JSONDecodeError):
+        return []
+
+REAL_NAMES = _load_terms()
+
+# 不再需要“版权署名”豁免：中性化之后，署名行里不再出现私人项目名。
+ALLOWLIST = []
 
 
 def _strip_comments(src):
@@ -110,17 +118,19 @@ def scan_user_facing():
 def run(cdp):
     # 不需要浏览器：纯源码扫描（但保持用例签名一致，供 run_tests 调度）
     fails = []
+    if not REAL_NAMES:
+        return False, '🔴 黑名单为空（privacy-terms.js 缺失或解码失败）—— 判据空转'
     hits = scan_user_facing()
     for rel, ln, name, line in hits:
         fails.append(f'🔴 用户可见文案里出现真实专名“{name}”：{rel}:{ln}  `{line}`')
 
     # 反向探针：确认这个扫描器**真抓得住**（否则"0 命中"可能只是因为正则写错）
-    probe = 'const t = "如：乐园星历2006";'
+    probe = f'const t = "如：{REAL_NAMES[0] if REAL_NAMES else "示例"}2006";'
     code_only = _strip_comments(probe)
     if not any(n in code_only for n in REAL_NAMES):
         fails.append('🔴 反向探针失败：扫描器对"代码里的真实专名"没有反应（判据无判别力）')
     # 反向探针 2：注释里的专名**不该**被算作违规
-    if _strip_comments('// 曾硬编码“乐园星历”已移除').strip():
+    if _strip_comments('// 曾硬编码“' + (REAL_NAMES[0] if REAL_NAMES else '示例') + '”已移除').strip():
         fails.append('🔴 反向探针失败：注释没有被剥掉（会把历史留档判成违规）')
 
     if fails:

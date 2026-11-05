@@ -4,7 +4,7 @@
  *
  * 用法：
  *   npm run audit-project-size                         # 自动找默认目录里最大的 .sitian
- *   npm run audit-project-size -- --project "C:\...\绒花计划.sitian"
+ *   npm run audit-project-size -- --project "C:\...\示例项目.sitian"
  *   npm run audit-project-size -- --all                # 列出默认目录下所有项目
  *
  * 为什么需要它：项目文件"变大"是没有报错的 —— 用户只会觉得"软件变卡、盘被占满"。

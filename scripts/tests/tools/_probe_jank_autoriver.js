@@ -30,7 +30,7 @@ window.prompt = (q, d) => d;
     const AP = await import('/src/utils/azgaar-parser.js');
     const text = await (await fetch('/__real_desite.map')).text();
     const parsed = AP.parseMapFile(text);
-    const NAME = '德斯特';
+    const NAME = '示例星球';
     const json = AP.buildScenariosJson(parsed, NAME, '当前');
     s.importFromScenariosJson(json);
     await tick(2500);
