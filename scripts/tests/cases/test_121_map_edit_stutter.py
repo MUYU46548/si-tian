@@ -99,15 +99,23 @@ def source_gates():
     if _i_gate < 0 or _i_run < 0 or (_i_run - _i_gate) > 200:
         fails.append('🔴 静态层没有受“贴图帧”门控：`scenarioLayers.run(...)` 不在 `if (!blitted) {` 里'
                      '（贴图帧会把它们再画一遍）')
-    for gate in ('if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());\n  }\n'
-                 '  if (!strokeBaseBuilding) drawRiverPathsLayer',
+    # 🔴 2026-11-05：字面量跟上 11-04 那批改动 —— 底图河流改成**静态层**
+    #   （进基帧、贴图帧不再重画），并补上 `showRiverBase` 门控（取消“河流”勾选后真的不画）；
+    #   选中高亮仍是动态层（基帧不许烙它），同样受 `showRiverBase` 管。
+    #   旧断言里的 `if (!strokeBaseBuilding) drawRiverPathsLayer` 已经不存在了，
+    #   如果它又冒出来，说明有人把河流移回动态层（每帧重画 → 白花时间）。
+    for gate in ('if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());\n  }\n',
+                 'if (!blitted && showRiverBase.value) drawRiverPathsLayer',
                  'if (!blitted && showBorders.value) drawProvinceBordersLayer',
                  # 2026-10-21：相机移动期还会跳过聚落/标签/小地图（cameraMotion），
                  # 门控条件因此变长；判据只要求"同一行里既有 !blitted 又有 drawBurgs"。
                  'if (!blitted && showBurgs.value && !cameraMotion) {\n    drawBurgsLayer'):
         if gate not in sm:
             fails.append(f'🔴 静态层没有受“贴图帧”门控：{gate!r}（贴图帧会把它们再画一遍）')
-    for gate in ('if (!strokeBaseBuilding) drawRiverPathsLayer', 'if (!strokeBaseBuilding) drawSelectedRiverHighlightLayer',
+    if 'if (!strokeBaseBuilding) drawRiverPathsLayer' in sm:
+        fails.append('🔴 底图河流又变回动态层了（`!strokeBaseBuilding` 且无 `!blitted`）'
+                     '—— 贴图帧每帧重画一遍，白花时间；它应当在基帧里')
+    for gate in ('if (!strokeBaseBuilding && showRiverBase.value) drawSelectedRiverHighlightLayer',
                  'if (!strokeBaseBuilding) drawVertexHandlesLayer', 'if (!strokeBaseBuilding) drawPreviewOverlayLayer'):
         if gate not in sm:
             fails.append(f'🔴 动态层没有从基帧里排除：{gate!r}（基帧会把草稿烙进去 → 拖笔留鬼影）')
