@@ -141,6 +141,8 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   // 与 listVaultNotes 的分工：那个只列“扫描范围内的地图笔记”；这里索引全库 .md。
   vaultIndexBuild: (opts) => ipcRenderer.invoke('vault-index-build', opts || {}),
   vaultIndexStatus: () => ipcRenderer.invoke('vault-index-status'),
+  // 索引里的全部笔记路径（只读；标记/剧本绑定判“这篇还在不在”用它，不用“扫描范围内的地图笔记”）
+  vaultIndexPaths: () => ipcRenderer.invoke('vault-index-paths'),
   vaultIndexSearch: (query, limit) => ipcRenderer.invoke('vault-index-search', query, limit),
   vaultEntityCandidates: (rules) => ipcRenderer.invoke('vault-entity-candidates', rules || {}),
   vaultClassifyReport: () => ipcRenderer.invoke('vault-classify-report'),

@@ -15,6 +15,7 @@
 
 import { hitMarker, markerIdentity, markerIndexOf, MARKER_HIT_RADIUS_PX } from '../../utils/markerHitTest';
 import { zoomDetail, labelFontScale } from '../../utils/labelZoom';
+import { normalizeNotePath } from '../../utils/noteBinding';
 
 export function createMarkerActions(ctx) {
   const {
@@ -176,6 +177,60 @@ function deleteSelectedMarker() {
 
 // placeSmartBurg 已搬到 actions.js（2026-10-31）
 
+// ===== B1（2026-11-05）：标记 / 剧本 ↔ 资料笔记的绑定 =====
+// 为什么放在这里：两者都长在**当前剧本**上（标记是 `scenario.markers[i]`、剧本是 `scenario.notePath`），
+// 写口也都是 `store.updateScenarioMarker` / `store.setScenarioNotePath`（各一条 undo）。
+// 组件侧（`VaultLoreSection` 的 `binding` 形态）只显示与转发，**不写数据** —— 这一层是唯一的落地点。
+// 返回形状统一 `{ ok, error? }`：面板要能直接显示拒绝原因，不能"点了没反应"。
+
+/** 标记绑一篇笔记（`hit` 是读料候选行，取它的 `path`） */
+function bindMarkerNote(hit) {
+  const sc = selectedScenario.value;
+  if (!sc || !selectedMarker.value) return { ok: false, error: '没有选中的标记' };
+  const path = normalizeNotePath((hit && (hit.path || hit.sourcePath)) || '');
+  if (!path) return { ok: false, error: '这条候选没有路径，绑不了（换一条试试）' };
+  const res = store.updateScenarioMarker(sc.id, markerRefOf(), { notePath: path });
+  if (!res || res.ok === false) return { ok: false, error: `绑定失败（${(res && res.reason) || '未知原因'}）` };
+  selectedMarker.value = res.marker;
+  statusMsg(`已把这个标记绑到“${path}”（可 Ctrl+Z 撤回）`);
+  render();
+  return { ok: true, notePath: path };
+}
+
+function unbindMarkerNote() {
+  const sc = selectedScenario.value;
+  if (!sc || !selectedMarker.value) return { ok: false, error: '没有选中的标记' };
+  const res = store.updateScenarioMarker(sc.id, markerRefOf(), { notePath: '' });
+  if (!res || res.ok === false) return { ok: false, error: `解绑失败（${(res && res.reason) || '未知原因'}）` };
+  selectedMarker.value = res.marker;
+  statusMsg('已解除这个标记的笔记绑定（可 Ctrl+Z 撤回）');
+  render();
+  return { ok: true };
+}
+
+/** 剧本绑一篇笔记（写 `scenario.notePath`；与标记同一条 undo 纪律） */
+function bindScenarioNote(hit) {
+  const sc = selectedScenario.value;
+  if (!sc) return { ok: false, error: '还没有选中剧本' };
+  const path = normalizeNotePath((hit && (hit.path || hit.sourcePath)) || '');
+  if (!path) return { ok: false, error: '这条候选没有路径，绑不了（换一条试试）' };
+  const res = store.setScenarioNotePath(sc.id, path);
+  if (!res || res.ok === false) return { ok: false, error: `绑定失败（${(res && res.reason) || '未知原因'}）` };
+  statusMsg(`已把剧本“${sc.name || sc.id}”绑到“${path}”（可 Ctrl+Z 撤回）`);
+  render();
+  return res;
+}
+
+function unbindScenarioNote() {
+  const sc = selectedScenario.value;
+  if (!sc) return { ok: false, error: '还没有选中剧本' };
+  const res = store.setScenarioNotePath(sc.id, '');
+  if (!res || res.ok === false) return { ok: false, error: `解绑失败（${(res && res.reason) || '未知原因'}）` };
+  statusMsg('已解除这个剧本的笔记绑定（可 Ctrl+Z 撤回）');
+  render();
+  return res;
+}
+
 
 function openBurgEditor(burg) {
   editingBurg.value = { ...burg };
@@ -227,5 +282,10 @@ function onHistoryJump() {
     openBurgEditor,
     closeBurgEditor,
     onHistoryJump,
+    // B1：标记 / 剧本 ↔ 笔记（VaultLoreSection 的 binding 写口）
+    bindMarkerNote,
+    unbindMarkerNote,
+    bindScenarioNote,
+    unbindScenarioNote,
   };
 }

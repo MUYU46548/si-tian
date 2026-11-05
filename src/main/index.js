@@ -788,6 +788,22 @@ ipcMain.handle('vault-index-status', async () => {
   }
 });
 
+// 索引里的**全部笔记路径**（只读；B1 2026-11-05）。
+// 为什么不用 `list-vault-notes`：那个只列“扫描范围内的地图笔记”（断线对账口径），
+// 而标记/剧本绑的是**任意资料笔记** —— 用错清单会把"绑得好好的"笔记误报成“找不到了”。
+// 这里只回路径（不回正文、不回索引全文），判断「绑着的那篇还在不在」够用。
+ipcMain.handle('vault-index-paths', async () => {
+  try {
+    const vault = getVaultPath();
+    if (!vault) return { success: false, error: '未设置知识库路径', paths: [] };
+    const idx = vaultIndex.loadIndex(vault);
+    if (!idx) return { success: false, error: '资料索引尚未建立（设置 → 资料索引 → 重建索引）', paths: [] };
+    return { success: true, paths: Object.keys(idx.files || {}) };
+  } catch (err) {
+    return { success: false, error: err.message, paths: [] };
+  }
+});
+
 ipcMain.handle('vault-note-read', async (event, relPath) => {
   try {
     const vault = getVaultPath();

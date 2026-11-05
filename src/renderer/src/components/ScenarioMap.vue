@@ -1530,12 +1530,8 @@
       <VaultLoreSection testid="province-vault" :query="selectedProvince.name || ''" />
     </div>
 
-    <!-- 标记属性面板（2026-10-24，第 5 件补“点标记”）
-         🔴 之前标记是"只画不收"的一层：放下时 `askText` 问个名字，之后**点不到它**
-         （没有命中测试、没有编辑面板）→ "点标记看资料"根本无从挂起。
-         现在：命中测试在 `utils/markerHitTest.js`（唯一实现，只读），本面板只走 store 写口
-         （`updateScenarioMarker` / `removeScenarioMarker`），模板里不直改 marker 对象
-         （与省份面板 2026-10-01 那次修复同一条纪律：v-model 直改活对象会绕开写闸门 + 弄坏 undo）。 -->
+    <!-- 标记属性面板（2026-10-24）：命中测试在 `utils/markerHitTest.js`（唯一实现，只读）；
+         本面板只走 store 写口（`updateScenarioMarker` / `removeScenarioMarker`），模板里不直改 marker 对象。 -->
     <div v-if="selectedMarker && showMarkerPanel && viewMode === 'scenario'"
          class="province-props marker-props" data-testid="marker-props">
       <div class="props-header">
@@ -1572,8 +1568,10 @@
                   : '删除这个标记（可 Ctrl+Z 撤回；底图与省份不动）'"
                 @click="deleteSelectedMarker">删除标记</button>
       </div>
-      <!-- 资料：**同一份实现**（与省份面板共用一个组件）—— 按标记名查只读索引 -->
-      <VaultLoreSection testid="marker-vault" :query="selectedMarker.name || ''" />
+      <!-- 资料：同一份实现（与省份面板共用一个组件）——按标记名查索引；绑定走父面板写口（B1） -->
+      <VaultLoreSection testid="marker-vault" :query="selectedMarker.name || ''"
+                        :binding="{ path: selectedMarker.notePath || '', label: '这个标记' }"
+                        :bind-fn="bindMarkerNote" :unbind-fn="unbindMarkerNote" />
     </div>
 
     <!-- 剧本管理对话框 -->
@@ -1638,10 +1636,8 @@
                     @click="deleteScenario(s)"><Icon name="trash" :size="15"/></button>
           </div>
         </div>
-        <!-- 🔴 批量清空（2026-10-11 接活死入口 `removeAllScenarios`）：
-             它是**零调用**的（全仓只有导出表里有名字）→ 界面上“剧本只能一条一条删”。
-             真实场景：暮雨的项目里塞着 12 条从年表外部导入的占位剧本（无机主日期、无标注、
-             一句话描述、势力 id 是机器味英文 pol_state_a），一条条点垃圾桶既慢又容易点错。 -->
+        <!-- 🔴 批量清空（2026-10-11 接活死入口 `removeAllScenarios`）：真实场景是导入的年表塞了 12 条占位剧本，
+             一条条点垃圾桶又慢又容易点错 —— 这里给一条撤销可回退的整批清空（只删剧本，不动底图/省份）。 -->
         <div class="scenario-bulk" data-testid="scenario-bulk">
           <button
             class="btn-clear-all"
@@ -1670,6 +1666,10 @@
                     @click="deleteAnnotation(row)"><Icon name="x" :size="12"/></button>
           </div>
         </div>
+        <!-- B1：剧本 ↔ 笔记（候选来自同一个资料段；写口在父面板，一条撤销） -->
+        <VaultLoreSection testid="scenario-vault" :query="selectedScenario?.name || ''"
+                          :binding="{ path: selectedScenario?.notePath || '', label: '这个剧本' }"
+                          :bind-fn="bindScenarioNote" :unbind-fn="unbindScenarioNote" />
         <div class="new-scenario-form">
           <h4>{{ editingScenarioId ? '编辑剧本' : '新建剧本' }}</h4>
           <!-- 2026-10-22：把“新剧本会绑哪张底图”摆在表单第一行。
@@ -6403,7 +6403,7 @@ const { getSeaDetail, mapWorldSize, riverWidthSeries, applyReimportDialog, autoS
 
 // ── N1.5：城镇悬停 / 标注档位与归属 / 标记面板 / 派生与聚落编辑 / 撤销后重对齐 ──
 // 档位滞回状态（`labelDetailState`）随函数搬进模块 —— 它只影响“这一帧算多细”，不进响应式
-const { mapVisibleRatio, labelDetailNow, labelScaleNow, findMarkerAt, closeMarkerEditor, openMarkerEditor, refreshSelectedMarker, markerRefOf, applyMarkerPatch, onMarkerNameChange, onMarkerTypeChange, onMarkerCoordChange, deleteSelectedMarker, deriveLayers, openBurgEditor, closeBurgEditor, onHistoryJump } = createMarkerActions({
+const { mapVisibleRatio, labelDetailNow, labelScaleNow, findMarkerAt, closeMarkerEditor, openMarkerEditor, refreshSelectedMarker, markerRefOf, applyMarkerPatch, onMarkerNameChange, onMarkerTypeChange, onMarkerCoordChange, deleteSelectedMarker, deriveLayers, openBurgEditor, closeBurgEditor, onHistoryJump, bindMarkerNote, unbindMarkerNote, bindScenarioNote, unbindScenarioNote } = createMarkerActions({
   MARKER_TYPES,
   MIN_CAMERA_SCALE,
   baseMap,

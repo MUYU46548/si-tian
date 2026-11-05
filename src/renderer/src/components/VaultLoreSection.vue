@@ -1,8 +1,8 @@
 <template>
-  <!-- 资料段（读料桥）——**唯一实现**：省份面板 / 标记面板 / 节点详情面板都用这一个组件，不复制第二份。
+  <!-- 资料段（读料桥）——**唯一实现**：省份面板 / 标记面板 / 节点详情面板 / 剧本表单都用这一个组件。
        只做三件事：`vaultIndexSearch`（主进程只读索引、元数据命中，不读正文）+ `openNote`（阅读器）
-       + 给了 `nodeId` 时的**显式写操作**（绑定 / 导入，各走 store 的一条 undo 写口）。
-       🔴 不猜、不自动建：没命中就明说“库里没有同名词条”——“认不出就进待人工”同一条纪律。 -->
+       + **显式绑定**：实体走 `nodeId`（写 node.lore），标记/剧本走 `binding` + 父面板的写口
+       （写各自的 notePath，一条 undo）。🔴 不猜、不自动建：没命中就明说“库里没有同名词条”——“认不出就进待人工”同一条纪律。 -->
   <div class="props-vault" :data-testid="testid">
     <div class="props-vault-head">
       <span>资料</span>
@@ -26,22 +26,24 @@
       </span>
     </div>
 
-    <!-- 当前绑定（只在给了 nodeId 时出现；省份/标记面板完全看不到这一块 = 那边依旧纯只读） -->
+    <!-- 当前绑定（只在给了 nodeId / binding 时出现；省份面板完全看不到这一块 = 那边依旧纯只读） -->
     <div v-if="canBind" class="pv-bound" :data-testid="testid + '-bound'">
       <template v-if="bound">
         <span class="pv-bound-tag">已绑定</span>
         <a class="pv-bound-note" :title="bound.path" @click="openNote(bound.path)">{{ bound.title || bound.path }}</a>
+        <span v-if="dangling" class="pv-dangling" :data-testid="testid + '-dangling'"
+              title="绑定的这篇笔记在库里已经找不到了（可能被改名 / 移动 / 删除）—— 可以在这里重新绑一篇">· 找不到了</span>
         <button
           type="button"
           class="props-mini"
           :data-testid="testid + '-unbind'"
           :disabled="readOnly"
-          :title="readOnly ? readOnlyReason : '解除这个节点与笔记的绑定（可撤销）'"
+          :title="readOnly ? readOnlyReason : `解除${bindTargetLabel}与这篇笔记的绑定（可撤销）`"
           @click="unbind"
         >解绑</button>
       </template>
       <span v-else class="pv-bound-none" :data-testid="testid + '-unbound'">
-        未绑定笔记（点候选右侧“绑定”把库内笔记挂到这个节点）
+        未绑定笔记（点下方候选右侧“绑定”，把库内笔记挂到{{ bindTargetLabel }}）
       </span>
     </div>
 
@@ -111,12 +113,18 @@
 //   · “绑定”→ `store.bindNodeToNote`（写 `node.lore`，一条 undo；重复绑同一篇不进撤销栈）；
 //   · “导入为节点”→ `store.importVaultCandidate`（建草稿节点，一条 undo；已导入过会拒绝并说原因）。
 //   两者都在只读态灰禁 + 给出原因（`store.readOnlyReason`），不做"点了才知道不行"的交互。
+//
+// B1（2026-11-05）加的第三形态：**标记 / 剧本**的绑定（传 `binding` + `bindFn`/`unbindFn`）。
+//   与实体那套的区别只在"绑到哪儿"：实体写 `node.lore`（带身份快照），标记/剧本写各自的
+//   `notePath`（单个库内相对路径）。**判定漂移**（绑着的那篇还在不在）走 `utils/noteBinding.js`，
+//   组件只显示结论 —— 三处（标记 / 剧本 / 将来别的）共用同一份判定，不各写一套。
 //   ⚠️ 归类（"这条命中是不是地图实体"）**不在组件里判**：读主进程索引给的 `kind` / `layerHint`，
 //      唯一实现是 `scripts/lib/vaultClassify.js`。组件只读结论，绝不自己再猜一次。
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { openNote, openNoteSearch } from '../utils/noteReader';
 import { useGeodataStore } from '../store/geodata';
 import { sameNoteRef } from '../utils/loreBinding';
+import { normalizeNotePath, noteBasename, noteLinkState, knownPathsFrom } from '../utils/noteBinding';
 
 const props = defineProps({
   /** 检索关键词（省名 / 标记名 / 节点名）。空串或全空白 = 还没名字 */
@@ -125,8 +133,18 @@ const props = defineProps({
   testid: { type: String, required: true },
   /** 最多取几条候选（默认 5，与 test_143 的判据一致） */
   limit: { type: Number, default: 5 },
-  /** 归属节点 id。**给了才有绑定/导入能力**；不给 = 纯只读资料段（省份 / 标记面板） */
+  /** 归属节点 id。**给了才有绑定/导入能力**；不给 = 纯只读资料段（省份面板） */
   nodeId: { type: String, default: '' },
+  /**
+   * B1（2026-11-05）：**非实体目标**的绑定（标记 / 剧本）。给了就出现"绑定/解绑"，
+   * 但组件**不写数据** —— 点击只调 `bindFn` / `unbindFn`（由父面板走各自的 store 写口）。
+   * 形状：`{ path: string, label?: string }`（label 只用于按钮/提示文案，如“绑到标记”）。
+   */
+  binding: { type: Object, default: null },
+  /** `(hit) => {ok, error?, unchanged?}` —— binding 模式下的写口（父面板决定写哪个字段） */
+  bindFn: { type: Function, default: null },
+  /** `() => {ok, error?}` —— binding 模式下的解绑 */
+  unbindFn: { type: Function, default: null },
 });
 
 const hits = ref([]);
@@ -135,27 +153,69 @@ const msg = ref('');
 let seq = 0;
 
 const q = computed(() => String(props.query || '').trim());
-const canBind = computed(() => !!String(props.nodeId || '').trim());
+/** 绑定模式：'node' = 实体的 lore；'binding' = 标记/剧本的 notePath；'none' = 纯只读资料段 */
+const bindMode = computed(() => {
+  if (props.binding) return 'binding';
+  return String(props.nodeId || '').trim() ? 'node' : 'none';
+});
+const canBind = computed(() => bindMode.value !== 'none');
+/** 绑定目标的中文说法（按钮/提示用；不写死“节点”两个字） */
+const bindTargetLabel = computed(() => {
+  if (bindMode.value === 'binding') return String((props.binding && props.binding.label) || '这个标记');
+  return '这个节点';
+});
 
-// ===== 绑定态（只在有归属节点时读；null = 没绑）=====
+// ===== 绑定态（只在有绑定目标时读；null = 没绑）=====
 const store = useGeodataStore();
 const readOnly = computed(() => !!store.isReadOnly);
 const readOnlyReason = computed(() => store.readOnlyReason || '只读：未打开项目文件');
 const currentNode = computed(() => {
-  if (!canBind.value) return null;
+  if (bindMode.value !== 'node') return null;
   const list = store.nodes || [];
   return list.find((n) => n && n.id === props.nodeId) || null;
 });
-const bound = computed(() => (currentNode.value && currentNode.value.lore) || null);
+/** 库里的笔记清单（判“绑着的那篇还在不在”）；`null` = 还没取到，不许武断说找不到 */
+const knownNotes = ref(null);
+const bindingPath = computed(() => normalizeNotePath(props.binding && props.binding.path));
+const bindingState = computed(() => noteLinkState(bindingPath.value, knownNotes.value));
+const bound = computed(() => {
+  if (bindMode.value === 'node') return (currentNode.value && currentNode.value.lore) || null;
+  if (bindMode.value === 'binding') {
+    return bindingPath.value
+      ? { path: bindingPath.value, title: noteBasename(bindingPath.value) }
+      : null;
+  }
+  return null;
+});
+/** 绑定漂移：绑着但库里已经没有这篇（改名/移动/删除）—— 必须显示出来，不能装作还在 */
+const dangling = computed(() => bindMode.value === 'binding' && bindingState.value.state === 'dangling');
+
+async function loadKnownNotes() {
+  if (bindMode.value !== 'binding') return;
+  try {
+    // 🔴 用**全库索引**的路径清单，不是 `listVaultNotes()`（那个只列扫描范围内的地图笔记，
+    //    会把绑得好好的资料笔记误报成“找不到了” —— 真机第一跑踩过）
+    const api = window.sitianAPI;
+    const res = api && typeof api.vaultIndexPaths === 'function' ? await api.vaultIndexPaths() : null;
+    knownNotes.value = knownPathsFrom(res);      // 读不到 → null（不是空数组）
+  } catch (e) {
+    knownNotes.value = null;
+  }
+}
+// 换目标 / 绑定变化 → 重新判一次漂移（只读 IPC，很轻）
+watch([bindMode, bindingPath, () => props.nodeId], () => { loadKnownNotes(); }, { immediate: true });
 
 function isBound(hit) {
+  if (bindMode.value === 'binding') {
+    return !!bindingPath.value && normalizeNotePath(hit && hit.path) === bindingPath.value;
+  }
   return !!(bound.value && sameNoteRef(bound.value, hit));
 }
 
 function bindTitle(hit) {
   if (readOnly.value) return readOnlyReason.value;
   if (isBound(hit)) return '当前绑定的就是这篇（再点一次不会重复入栈）';
-  return `把这个节点绑到“${hit.title || hit.path}”上（一条撤销；只存路径与身份，不改笔记）`;
+  return `把${bindTargetLabel.value}绑到“${hit.title || hit.path}”上（一条撤销；只存路径，不改笔记）`;
 }
 
 function importTitle(hit) {
@@ -170,7 +230,7 @@ function importTitle(hit) {
  * `kind` 缺省（老索引 / 第三方调用）时才退回 `layerHint` 这一档。
  */
 function canImport(hit) {
-  if (!canBind.value || !hit) return false;
+  if (bindMode.value !== 'node' || !hit) return false;
   if (hit.kind === 'map') return true;
   if (hit.kind == null || hit.kind === '') return !!hit.layerHint;
   return false;
@@ -208,6 +268,17 @@ function openGlobalSearch() {
 // ===== 写操作（各一条 undo；全部经 store 的写口，组件不直接改数据）=====
 function bind(hit) {
   if (!canBind.value) return;
+  if (bindMode.value === 'binding') {
+    // 标记 / 剧本：组件不写数据 —— 交给父面板的写口（各自一条 undo + 自己的白名单）
+    if (typeof props.bindFn !== 'function') { msg.value = '这里没有绑定写口（父面板没接上）'; return; }
+    const r = props.bindFn(hit);
+    msg.value = r && r.ok
+      ? (r.unchanged
+        ? `“${hit.title || hit.path}”已经是当前绑定`
+        : `已把“${hit.title || hit.path}”绑到${bindTargetLabel.value}（可 Ctrl+Z 撤回）`)
+      : ((r && r.error) || '绑定失败');
+    return;
+  }
   const res = store.bindNodeToNote(props.nodeId, hit);
   msg.value = res && res.ok
     ? (res.unchanged ? `“${hit.title || hit.path}”已经是当前绑定` : `已绑定“${hit.title || hit.path}”`)
@@ -216,6 +287,12 @@ function bind(hit) {
 
 function unbind() {
   if (!canBind.value) return;
+  if (bindMode.value === 'binding') {
+    if (typeof props.unbindFn !== 'function') { msg.value = '这里没有解绑写口（父面板没接上）'; return; }
+    const r = props.unbindFn();
+    msg.value = r && r.ok ? '已解绑（可 Ctrl+Z 撤回）' : ((r && r.error) || '解绑失败');
+    return;
+  }
   const res = store.unbindNodeNote(props.nodeId);
   msg.value = res && res.ok ? '已解绑（可撤销）' : ((res && res.error) || '解绑失败');
 }
@@ -316,6 +393,8 @@ onUnmounted(() => { seq += 1; });                   // 卸载后回来的结果�
 }
 .pv-bound-note:hover { text-decoration: underline; }
 .pv-bound-none { color: #64748b; line-height: 1.5; }
+/* 绑定漂移：绑着的那篇在库里没了 —— 必须看得见（不许装作还在） */
+.pv-dangling { flex-shrink: 0; color: #fbbf24; }
 .pv-msg {
   margin: 3px 0 0;
   font-size: 11px;

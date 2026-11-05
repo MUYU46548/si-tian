@@ -5,6 +5,7 @@
 
 import { ref, toRaw } from 'vue';
 // 内存编辑闸门：本模块有 2 个“不走 execute()”的直接写（剧本导入 / .map 图层同步），只读态必须同样拦
+import { normalizeNotePath } from '../../utils/noteBinding';
 import { guardWrite } from '../writeGate';
 
 // ── A1/M1（2026-09-24）：高度图归属访问 ──────────────────────────────────────
@@ -1358,6 +1359,45 @@ export function createScenarioEditingModule(ctx) {
     
     saveScenarios();
     return gate;
+  }
+
+  /**
+   * 剧本绑定一篇笔记（**一条 undo**，B1 2026-11-05）。
+   *
+   * 为什么单开一个写口而不是走 `updateScenario(updates)`：那个是**无白名单**的整体覆盖，
+   * 谁拿到都能顺手续写任意字段。绑定只该改 `notePath` 一个键 —— 空串 = 解绑（键一起摘掉，
+   * 不留空指针），非字符串整条拒绝。与标记侧的 `updateScenarioMarker` 同一口径。
+   *
+   * @param {string} scenarioId
+   * @param {string|null} notePath 库内相对路径（`null` / `''` = 解绑）
+   * @returns {{ok:true, notePath:string, unchanged?:true} | {ok:false, reason:string}}
+   */
+  function setScenarioNotePath(scenarioId, notePath) {
+    const scenario = scenarios.value[scenarioId];
+    if (!scenario) return { ok: false, reason: 'no-scenario' };
+    if (notePath !== null && notePath !== undefined && typeof notePath !== 'string') {
+      return { ok: false, reason: 'bad-note-path' };
+    }
+    const p = normalizeNotePath(notePath);
+    const before = normalizeNotePath(scenario.notePath || '');
+    if (before === p) return { ok: true, notePath: p, unchanged: true };
+    const put = (val) => {
+      const cur = scenarios.value[scenarioId];
+      if (!cur) return;
+      const next = { ...cur };
+      if (val) next.notePath = val; else delete next.notePath;
+      next.updatedAt = new Date().toISOString();
+      scenarios.value = { ...scenarios.value, [scenarioId]: next };
+    };
+    execute({
+      type: 'set-scenario-note',
+      label: p ? '绑定剧本笔记' : '解绑剧本笔记',
+      undo: () => put(before),
+      redo: () => put(p),
+    });
+    // 与事件表同一条防抖（撤销也落盘；8MB 项目一次同步导出 100ms+，不值得为绑一篇笔记卡一下）
+    scheduleAutoSaveScenarios();
+    return { ok: true, notePath: p };
   }
 
   function removeScenario(scenarioId) {
@@ -2957,6 +2997,10 @@ export function createScenarioEditingModule(ctx) {
       //    用户看到的永远是同一个图标（"选了类型但没变化"，2026-09-22 修）。
       icon: marker.icon || '',
       color: marker.color || '',
+      // B1（2026-11-05）：放标记时可以顺带绑一篇笔记（库内相对路径，空 = 不绑）。
+      //   只收字符串；别的一律当"没给"（不往数据里塞对象）。
+      ...(typeof marker.notePath === 'string' && normalizeNotePath(marker.notePath)
+        ? { notePath: normalizeNotePath(marker.notePath) } : {}),
     };
     
     execute({
@@ -2970,6 +3014,7 @@ export function createScenarioEditingModule(ctx) {
             markers: scenarios.value[scenarioId].markers.filter(m => m.id !== newMarker.id),
           },
         };
+        scheduleAutoSaveScenarios();   // 撤销也落盘（B1 2026-11-05：否则撤了重开又回来）
       },
       redo: () => {
         scenarios.value = {
@@ -2980,14 +3025,16 @@ export function createScenarioEditingModule(ctx) {
             updatedAt: new Date().toISOString(),
           },
         };
+        scheduleAutoSaveScenarios();
       },
     });
     
-    saveScenarios();
+    // 走 300ms 防抖（与涂归属/事件表同口径）：标记增删是高频小编辑，不必同步导出整份剧本
+    scheduleAutoSaveScenarios();
   }
 
   /**
-   * 更新剧本标记（名字 / 类型 / 图标 / 颜色 / 坐标）—— **一条 undo**，不碰别的字段。
+   * 更新剧本标记（名字 / 类型 / 图标 / 颜色 / 坐标 / 笔记）—— **一条 undo**，不碰别的字段。
    *
    * 2026-10-24（第 5 件补“点标记”）：标记面板之前不存在，于是"改标记"也没有写口 ——
    * 组件里直改 `m.name = …` 会绕开 `execute()`（只读态照改内存、撤销把新值当旧值还原），
@@ -3014,6 +3061,14 @@ export function createScenarioEditingModule(ctx) {
     for (const k of ['name', 'type', 'icon', 'color']) {
       if (patch && patch[k] !== undefined) next[k] = patch[k];
     }
+    // B1（2026-11-05）：标记 ↔ 笔记绑定。只认 `notePath` 一个字段：
+    //   空串 / 空白 = 解绑（键一起摘掉，不留空指针）；非字符串一律拒绝（不把对象塞进数据）。
+    if (patch && patch.notePath !== undefined) {
+      const raw = patch.notePath;
+      if (raw !== null && typeof raw !== 'string') return { ok: false, reason: 'bad-note-path' };
+      const p = normalizeNotePath(raw);
+      if (p) next.notePath = p; else delete next.notePath;
+    }
     for (const k of ['x', 'y']) {
       if (patch && patch[k] !== undefined) {
         const n = Number(patch[k]);
@@ -3021,10 +3076,12 @@ export function createScenarioEditingModule(ctx) {
         next[k] = n;
       }
     }
-    const KEYS = ['name', 'type', 'icon', 'color', 'x', 'y'];
+    const KEYS = ['name', 'type', 'icon', 'color', 'x', 'y', 'notePath'];
     if (KEYS.every(k => next[k] === oldMarker[k])) return { ok: true, marker: oldMarker, unchanged: true };
 
     // 按下标替换：撤销/重做都放回**原位**（标记顺序 = 绘制层叠顺序，追加到末尾会改变压叠）
+    // 🔴 落盘挂在 put 里（2026-11-05，B1 真机抓到的）：以前只有 execute 之后那一句排保存，
+    //    **撤销回调里没有** —— 改了标记再 Ctrl+Z，内存回去了、磁盘上还是新值，重开又回来。
     const put = (val) => {
       const cur = scenarios.value[scenarioId];
       if (!cur) return;
@@ -3037,6 +3094,7 @@ export function createScenarioEditingModule(ctx) {
         ...scenarios.value,
         [scenarioId]: { ...cur, markers: arr, updatedAt: new Date().toISOString() },
       };
+      scheduleAutoSaveScenarios();
     };
     execute({
       type: 'update-marker',
@@ -3045,7 +3103,7 @@ export function createScenarioEditingModule(ctx) {
       redo: () => { put(next); },
     });
 
-    saveScenarios();
+    // 落盘由 put（undo/redo 共用）调度 —— 这里不再重复
     return { ok: true, marker: next };
   }
 
@@ -3065,6 +3123,7 @@ export function createScenarioEditingModule(ctx) {
       const arr = [...(cur.markers || [])];
       arr.splice(Math.min(idx, arr.length), 0, oldMarker);
       scenarios.value = { ...scenarios.value, [scenarioId]: { ...cur, markers: arr } };
+      scheduleAutoSaveScenarios();     // 撤销也落盘（B1 2026-11-05）
     };
     execute({
       type: 'remove-marker',
@@ -3081,10 +3140,11 @@ export function createScenarioEditingModule(ctx) {
           ...scenarios.value,
           [scenarioId]: { ...cur, markers: arr, updatedAt: new Date().toISOString() },
         };
+        scheduleAutoSaveScenarios();
       },
     });
 
-    saveScenarios();
+    // 落盘已由 undo/redo 各自调度（同一条防抖）——不在这里再同步导出一次
     return { ok: true, removed: oldMarker };
   }
 
@@ -5011,6 +5071,8 @@ export function createScenarioEditingModule(ctx) {
     addScenarioLabel, removeScenarioLabel, addScenarioMarker, removeScenarioMarker,
     // 2026-10-24（第 5 件补“点标记”）：标记面板的唯一写口（一条 undo；只认白名单字段）
     updateScenarioMarker,
+    // B1（2026-11-05）：剧本 ↔ 笔记绑定（只认 notePath 一个字段，一条 undo）
+    setScenarioNotePath,
     importFromScenariosJson, importPlanetLayerData, loadScenarioState,
     applyHeightBrush, applyBiomeBrush, getHeightAt, generateRivers, deriveAllLayers,
     // 2026-10-17 第八修·改向：自建底图的**本地地形起点**（按陆地轮廓生成，落库进 undo）
