@@ -263,6 +263,14 @@ def main():
               return JSON.stringify({ ok: true, baseMapKey: sm.baseMapKey });
             })()""")
             time.sleep(1.5)
+            # 隔离 profile = 首启 → 引导层会挡住整张图；截图前先点「跳过」
+            cdp.eval("""(() => {
+              const b = Array.from(document.querySelectorAll('button'))
+                .find((x) => (x.textContent || '').trim() === '跳过');
+              if (b) { b.click(); return 'skipped'; }
+              return 'no-onboarding';
+            })()""")
+            time.sleep(1.2)
         except Exception as e:
             print('切视图失败（不影响产物）:', e)
         try:
