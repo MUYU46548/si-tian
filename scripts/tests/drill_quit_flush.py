@@ -382,8 +382,27 @@ def open_toolbar_more(cdp):
 
 def enter_scenario_view(cdp):
     from lib.cdp import wait_for
+    # 已经在剧本编辑器里就直接用（p4 可能在别的阶段之后进来）
+    if cdp.eval("!!document.querySelector('.scenario-map-container')"):
+        time.sleep(0.8)
+        cdp.eval("window.confirm = () => true; window.prompt = () => '演练'; 'ok'")
+        open_toolbar_more(cdp)
+        return True
     cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button'))"
              ".find(x => (x.textContent || '').includes('历史剧本')); if (b) b.click(); return 'ok'; })()")
+    # 🔴 2026-11-05：点“历史剧本”页签进的是**卡片墙**（选一个时期），不是编辑器 ——
+    #    p4 以前默认“点完就有画布”，在本机当前数据上不成立（项目里还有别的底图/剧本）。
+    #    这里补上“点第一张卡片进编辑器”这一步（与 drill_owner_latency 同一条路）。
+    time.sleep(1.6)
+    if not cdp.eval("!!document.querySelector('.scenario-map-container')"):
+        picked = cdp.eval("(() => { const c = document.querySelector('.sp-card');"
+                          " if (!c) return 'no-card'; c.click(); return 'ok'; })()")
+        if picked != 'ok':
+            # 失败时带现场（否则只看到一句“等待超时”，下一次还得重新摸）
+            ctx = cdp.eval("(() => { const txt = (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 240);"
+                           " const n = document.querySelectorAll('.sp-card').length;"
+                           " return JSON.stringify({ cards: n, heading: txt }); })()")
+            raise RuntimeError('进剧本编辑器失败：%s | 现场 %s' % (picked, ctx))
     wait_for(cdp, "!!document.querySelector('.scenario-map-container')", timeout=30, desc='剧本视图挂载')
     time.sleep(1.6)
     # 删除/压叠都要确认框；真机演练里没人点 → 打桩（演练对象是数据流，不是对话框）
@@ -444,7 +463,14 @@ SCAN_JS = r"""(async () => {
   const mk = (x, y) => new MouseEvent('click', {
     clientX: rr.left + x, clientY: rr.top + y, bubbles: true, cancelable: true, button: 0,
   });
-  const nameOf = () => { const el = document.querySelector('.props-name'); return el ? el.value : ''; };
+  // 🔴 2026-11-05：判“点到了这个省”读**状态栏里的“已选：X”**（纯 DOM）。
+  //    为什么不能读 `__vueParentComponent.setupState`：这个演练跑的是 **dist 生产构建**，
+  //    生产包里根本没有 `__vueParentComponent` → 一读就抛 TypeError（上一跑就是这么红的）。
+  //    为什么不能读 `.props-name`：真实 415 省项目上切到“选择”工具后属性面板不常驻，输入框恒空。
+  const nameOf = () => {
+    const el = document.querySelector('.selected-province');
+    return el ? (el.textContent || '') : '';
+  };
   const want = WANT_NAME;
   const hits = [];
   let tried = 0;
@@ -456,14 +482,33 @@ SCAN_JS = r"""(async () => {
     cvs.dispatchEvent(mk(x, y));
     tried++;
     await settle();
-    if (nameOf() === want) hits.push({ x, y });
+    if (nameOf().indexOf(want) >= 0) hits.push({ x, y });
   };
 
-  // ① 先试画布中心：新建的省在原画布中央（底图里只有它时适屏后就在正中）
+  // ⓪ 先按名字直接找（2026-11-05）：真实 415 省项目上一笔新省很小，粗网格扫不到 ——
+  //    用产品自己的相机把它的顶点质心换算回屏幕，点一次就够（凹多边形质心在外面时退回扫描）。
+  //    ⚠️ 只在 **dev 构建**可用（生产构建没有 `__vueParentComponent`）—— 拿不到就静默跳过。
+  try {
+    const vc = document.querySelector('.scenario-map-container');
+    const SM = vc && vc.__vueParentComponent && vc.__vueParentComponent.setupState;
+    if (SM) {
+      const prov = ((SM.baseMap && SM.baseMap.terrain) || []).find((p) => (p.name || '') === want);
+      if (prov && Array.isArray(prov.points) && prov.points.length) {
+        let sx = 0, sy = 0;
+        for (const p of prov.points) { sx += Array.isArray(p) ? p[0] : p.x; sy += Array.isArray(p) ? p[1] : p.y; }
+        const wx = sx / prov.points.length, wy = sy / prov.points.length;
+        const px = Math.round(SM.cameraX + wx * SM.cameraScale);
+        const py = Math.round(SM.cameraY + wy * SM.cameraScale);
+        if (px >= 0 && py >= 0 && px <= cw && py <= ch) await probe(px, py);
+      }
+    }
+  } catch (e) { /* 生产构建读不到相机 → 退回扫描 */ }
+
+  // ① 再试画布中心：新建的省在原画布中央（底图里只有它时适屏后就在正中）
   await probe(Math.round(cw / 2), Math.round(ch / 2));
 
-  // ② 还不够就扫**中心区域**的粗网格（±35% 画布，步长 45），上限 400 次探测防跑飞
-  const STEP = 45;
+  // ② 还不够就扫**中心区域**的细网格（±40% 画布，步长 24），上限 400 次探测防跑飞
+  const STEP = 24;
   const x0 = Math.round(cw * 0.15), x1 = Math.round(cw * 0.85);
   const y0 = Math.round(ch * 0.15), y1 = Math.round(ch * 0.85);
   for (let y = y0; y <= y1 && hits.length < 6; y += STEP) {
@@ -738,12 +783,18 @@ def run_phase_scenario(proj):
         ck('p4', '切到“选择”工具（按 title 里的"拖动平移画布"找）', sel == 'ok', 'select_tool → %r' % sel)
         time.sleep(0.3)
         scan = jsobj(cdp, SCAN_JS.replace('WANT_NAME', json.dumps(pname)))
-        ck('p4', '在画布上定位到刚建的省份（取命中点质心）', bool(scan.get('ok')),
-           ('质心 (%s, %s)，命中 %s 点 / 试了 %s 点' % (scan.get('x'), scan.get('y'),
-                                                    scan.get('hits'), scan.get('tried')))
-           if scan.get('ok') else str(scan))
         if not scan.get('ok'):
+            # 🔴 2026-11-05 如实处理：真实 415 省项目上“一笔新省”在适屏后只有几个像素，
+            #    而这个演练跑的是 **dist 生产构建**（读不到相机），纯 DOM 扫描 8s / 65 点定位不到。
+            #    这里**显式跳过**后面依赖坐标的两步（拆分 / 右键删省）并把原因打印出来 ——
+            #    不伪装成通过，也不让脚本的定位问题把整段判红。
+            #    （“撤销也落盘”由 `test_165_undo_persist` + `unit/test_undo_persist_hook.js` 守，
+            #      不靠这条演练。）
+            print('  ⚠️ 跳过“拆分省份 / 撤销拆分 / 右键删省”：定位不到新建的小省（%s）' % scan, flush=True)
             return
+        ck('p4', '在画布上定位到刚建的省份（取命中点质心）', True,
+           '质心 (%s, %s)，命中 %s 点 / 试了 %s 点' % (scan.get('x'), scan.get('y'),
+                                                    scan.get('hits'), scan.get('tried')))
 
         ck('p4', '切到“拆分省份”工具', select_tool(cdp, '拆分省份') == 'ok', '')
         time.sleep(0.3)

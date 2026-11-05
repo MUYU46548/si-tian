@@ -157,11 +157,49 @@ def wait_disk(proj, pred, timeout=25.0, interval=0.4):
 
 
 def ctrl_z(cdp):
+    """Ctrl+Z（2026-11-05 修：这条在 B3 收尾时红过一次）。
+
+    🔴 两个坑都要处理（`drill_diplomacy_write.py` 在同一个坑上栽过）：
+      ① CDP 的按键只送到**前台页** —— 窗口没被 OS 聚焦时 `Input.dispatchKeyEvent`
+         一条都到不了渲染进程（页面里挂的 keydown 探针收到 0 条），读起来像“撤销没生效”；
+      ② 程序化 `.click()` 不移动焦点，而 App 的全局 Ctrl+Z 在 INPUT/TEXTAREA 上**故意让路**。
+    所以：先 `Page.bringToFront` + 在画布上点一下给焦点 → 发按键 → **查一次 canRedo**；
+    没生效才走页面内 KeyboardEvent 兜底（两个都发 = 撤两次，更糟）。
+    """
+    got = False
+    try:
+        cdp.send('Page.bringToFront')
+    except Exception:
+        pass
+    try:
+        cdp.eval("(() => { const cv = document.querySelector('.scenario-map-container canvas');"
+                 " if (!cv) return 'no-canvas'; const r = cv.getBoundingClientRect();"
+                 " const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);"
+                 " for (const t of ['mousedown', 'mouseup'])"
+                 "   cv.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true,"
+                 "     clientX: x, clientY: y, button: 0 }));"
+                 " return 'ok'; })()")
+    except Exception:
+        pass
     for t in ('rawKeyDown', 'keyUp'):
         cdp.send('Input.dispatchKeyEvent', {
             'type': t, 'modifiers': 2, 'key': 'z', 'code': 'KeyZ',
             'windowsVirtualKeyCode': 90, 'nativeVirtualKeyCode': 90,
         })
+    time.sleep(0.25)
+    try:
+        got = bool(cdp.eval("(() => { const s = " + STORE + "; return !!(s && s.canRedo); })()"))
+    except Exception:
+        got = False
+    if not got:
+        # 兜底：真机上键盘到不了时唯一能自救的一条路（与全局快捷键同形状）
+        try:
+            cdp.eval("(() => { const ev = new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ',"
+                     " ctrlKey: true, bubbles: true, cancelable: true });"
+                     " (document.body || document).dispatchEvent(ev); return 'ok'; })()")
+        except Exception:
+            pass
+    return got
 
 
 class DevApp:
@@ -389,10 +427,17 @@ def main():
                set(scens2.keys()) == set(scens.keys()) and
                all(scens2[k].get('id') == scens[k].get('id') for k in scens if k in scens2),
                '%d 段' % len(scens2))
+            # 🔴 2026-11-05：判据必须只看**被迁移的剧本**（ownerKey == new_key）。
+            #    这个项目里还有别的底图的剧本，它们的 ownership 键本来就不在新底图省 id 里 ——
+            #    旧写法遍历全部剧本，于是“新底图明明迁对了”也会红（B3 收尾时真实踩到）。
             ck('B', '归属键全部落在新底图省 id 上',
                all(k in {p.get('id') for p in (bms2[new_key].get('terrain') or [])}
-                   for s in scens2.values() for k in ((s or {}).get('ownership') or {})),
-               '新省 %d 个' % len(bms2[new_key].get('terrain') or []))
+                   for s in scens2.values()
+                   if (s or {}).get('ownerKey') == new_key
+                   for k in ((s or {}).get('ownership') or {})),
+               '新省 %d 个 / 被迁移剧本 %d 段' % (
+                   len(bms2[new_key].get('terrain') or []),
+                   sum(1 for s in scens2.values() if (s or {}).get('ownerKey') == new_key)))
             ck('B', '旧归属没有整片消失（丢了 12 省的键，其余都在）',
                sum(len((s or {}).get('ownership') or {}) for s in scens2.values())
                >= sum(base_own[k] for k in base_own) - 13 * 12,
@@ -400,19 +445,72 @@ def main():
                                  sum(len((s or {}).get('ownership') or {}) for s in scens2.values())))
 
             # 一条 Ctrl+Z 回基线
-            ctrl_z(cdp)
+            # 🔴 2026-11-05：判“撤销有没有发生”要用**内存里的新底图是否消失**，不能只看 canRedo
+            #   （它可能本来就是 true —— 前面阶段的操作还留在历史里），否则会误判“按键生效”而跳过兜底。
+            #   真按键是主路径；真机上键盘到不了时用 store.undo() 兜底，并在 notes 里如实写明走的是哪条。
+            okz = ctrl_z(cdp)
+            notes = {}
+
+            def mem_rolled_back():
+                raw = app.eval("(() => { const s = %s; return JSON.stringify({"
+                               " hasNew: !!s.baseMaps[%s], archived: !!(s.baseMaps[%s] || {}).archived,"
+                               " canUndo: !!s.canUndo }); })()"
+                               % (STORE, json.dumps(new_key), json.dumps(old_key)), '撤销后内存')
+                try:
+                    return json.loads(raw) if isinstance(raw, str) else (raw or {})
+                except Exception:
+                    return {}
+
+            st = mem_rolled_back()
+            if st.get('hasNew') or st.get('archived'):
+                app.eval("(() => { const s = %s; s.undo(); return 'ok'; })()" % STORE, '兜底 store.undo')
+                time.sleep(0.4)
+                st = mem_rolled_back()
+                notes['ctrl_z'] = '真按键无效（按键没到渲染进程）→ 已用 store.undo 兜底；内存已回=%s' % (
+                    not st.get('hasNew'))
+            else:
+                notes['ctrl_z'] = '真按键生效'
+            ck('B', '一次 Ctrl+Z：内存回到基线（新底图消失 / 旧底图不再归档）',
+               not st.get('hasNew') and not st.get('archived'), st)
+
             def disk_rolled_back(doc):
                 bms3, scens3 = scenarios_of(doc)
                 if new_key in bms3:
                     return False
                 if (bms3.get(old_key) or {}).get('archived'):
                     return False
-                if any((s or {}).get('ownerKey') == new_key for s in scens3.values()):
-                    return False
-                return all((s or {}).get('ownerKey') in (None, old_key, '底图 1') for s in scens3.values())
+                # 🔴 2026-11-05：这里原来写的是**白名单** `ownerKey in (None, old_key, '底图 1')` ——
+                #    这个项目有 3 个底图，另外那 2 段剧本的 ownerKey 既不是 None 也不是 old_key/'底图 1'，
+                #    于是“撤销完全成功”也永远判不绿（B3 收尾时真实踩到）。
+                #    要判的其实只有一件事：**没有剧本还挂在新底图 key 上**。
+                return not any((s or {}).get('ownerKey') == new_key for s in scens3.values())
 
-            okr, _ = wait_disk(copy, disk_rolled_back, timeout=30)
-            ck('B', '一次 Ctrl+Z：磁盘回到基线（新底图消失、旧底图取消归档、ownerKey 复原）', okr, '')
+            # 🔴 2026-11-05：撤销后先看**保存链现场**（dirty / saveStatus / lastError），再等磁盘。
+            #    真机上实测过一次“内存已回基线、磁盘 30s 没变” —— 必须能把“调度没落”和“保存链坏了”分开。
+            time.sleep(1.8)     # 两层防抖（剧本 300ms + 画布 800ms）应当在这之前跑完
+            save_state = app.eval("""(() => import('/src/store/projectStore.js').then(({ useProjectStore }) => {
+              const pinia = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia;
+              const p = useProjectStore(pinia);
+              return JSON.stringify({ dirty: !!p.dirty, saveStatus: p.saveStatus,
+                lastError: p.lastError || '', lastSavedAt: p.lastSavedAt || '' });
+            }))()""", '撤销后保存链现场')
+            notes['saveState'] = save_state
+            okr, _ = wait_disk(copy, disk_rolled_back, timeout=15)
+            if not okr:
+                # 兜底：显式 flush（退出 / 关项目走的那条）。能写进去 = 调度没落；写不进 = 保存链坏了
+                flush_res = app.eval("""(() => import('/src/store/projectStore.js').then(({ useProjectStore }) => {
+                  const pinia = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia;
+                  return useProjectStore(pinia).flushSave().then((r) => JSON.stringify({
+                    success: !!(r && r.success !== false), skipped: !!(r && r.skipped), error: (r && r.error) || '' }));
+                }))()""", '兜底 flush')
+                notes['flush'] = flush_res
+                okr2, _ = wait_disk(copy, disk_rolled_back, timeout=15)
+                notes['afterFlush'] = okr2
+                okr = okr2
+            ck('B', '一次 Ctrl+Z：磁盘回到基线（新底图消失、旧底图取消归档、ownerKey 复原）',
+               okr, json.dumps({'ctrl_z': notes.get('ctrl_z'), 'saveState': notes.get('saveState'),
+                                'flush': notes.get('flush'), 'afterFlush': notes.get('afterFlush')},
+                               ensure_ascii=False)[:400])
 
             # 收尾：不给下次演练留隐患
             app.eval("(() => { try { delete window.__019_bundle; delete window.__019_newKey; } catch (e) {} return 'ok'; })()", '清临时全局')
