@@ -110,13 +110,17 @@ function problemsScenarioMap(src) {
   return out;
 }
 
-/** #3/#4 生成入口正名：按钮可见文字必须与用户/手册里的叫法一致 */
+/** #3/#4 生成入口正名：按钮可见文字必须与用户/手册里的叫法一致
+ *  2026-11-05：`FMG 模板` → **现成模板**（用户反馈“看不懂 FMG 是什么”；手册里仍保留
+ *  “FMG 模板 / FMG地形”作**搜索关键词**，两个叫法都能搜到 —— 见下方 #3 手册那条）。 */
 function problemsGenButtons(src) {
   const out = [];
   if (!src.includes('>地形生成参数</button>')) out.push('按钮可见文字不是“地形生成参数”');
-  if (!src.includes('>FMG 模板</button>')) out.push('按钮可见文字不是“FMG 模板”');
+  if (!src.includes('>现成模板</button>')) out.push('模板地形入口没有可见文字（应为“现成模板”）');
   if (src.includes('>生成参数</button>')) out.push('仍残留旧名“生成参数”（手册/口耳相传都叫“地形生成参数”）');
-  if (src.includes('>FMG 地形</button>')) out.push('仍残留旧名“FMG 地形”（手册/口耳相传都叫“FMG 模板”）');
+  if (src.includes('>FMG 地形</button>') || src.includes('>FMG 模板</button>')) {
+    out.push('仍残留旧名“FMG 地形 / FMG 模板”（2026-11-05 起改叫“现成模板”，FMG 只留在手册关键词里）');
+  }
   return out;
 }
 

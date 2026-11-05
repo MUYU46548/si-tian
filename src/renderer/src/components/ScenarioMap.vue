@@ -537,10 +537,10 @@
       <div v-if="moreOpen" class="toolbar-more">
         <div
           data-testid="more-sec-province"
-          style="flex-basis:100%;width:100%;margin:2px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
-        >省份几何</div>
+          style="width:100%;margin:2px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+        >省份与笔刷</div>
         <div class="toolbar-row">
-          <label class="row-label">高级工具：</label>
+          <label class="row-label">省份：</label>
           <div class="tool-group">
                             <button 
                 :class="{ active: tool === 'split' }" 
@@ -557,6 +557,15 @@
                 @click="setTool('erase')"
                 title="删除 (E) — 点击省份删除"
               ><Icon name="trash" :size="15"/>删除</button>
+          </div>
+        </div>
+        <div
+          data-testid="more-sec-brush"
+          style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+        >笔刷与绘制</div>
+        <div class="toolbar-row">
+          <label class="row-label">笔刷：</label>
+          <div class="tool-group">
                   <button 
                 :class="{ active: tool === 'height' }" 
                 @click="setTool('height')"
@@ -675,8 +684,8 @@
                   <button 
                 :class="{ active: tool === 'derive' }" 
                 @click="deriveLayers"
-                title="重算派生图层 — 基于高度重算温度/降水/生物群系"
-              ><Icon name="refresh-cw" :size="15"/>重算派生</button>
+                title="重算气候 —— 按当前高度重新算温度/降水/群系（不动地形本身）"
+              ><Icon name="refresh-cw" :size="15"/>重算气候</button>
           </div>
         </div>
       <!-- 分区小标题（2026-11-03 第 9 刀，#6）：
@@ -687,7 +696,7 @@
            与“更多”里的 `button` 数量，加 div 不影响计数。 -->
       <div
         data-testid="more-sec-terrain"
-        style="flex-basis:100%;width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+        style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
       >地形 · 底图 · 生成</div>
       <!-- 第 3 行：地形/群系等笔刷设置 + 底图与视图操作 -->
       <div class="toolbar-row">
@@ -731,7 +740,7 @@
             {{ bm.name }} ({{ bm.count }}省)
           </option>
         </select>
-        <button @click="triggerMapImport" title="导入 .map 底图 —— 同名且一笔未改：只补缺；同名且改过：重导为新底图并迁移旧归属"><Icon name="plus" :size="15"/></button>
+        <button @click="triggerMapImport" title="导入 .map 底图 —— 同名且一笔未改：只补缺；同名且改过：重导为新底图并迁移旧归属"><Icon name="plus" :size="15"/>导入底图</button>
         <!-- 2026-10-22：**已有底图时也能新建空底图**。以前只有“空项目空态”能建，
              已有底图的项目只能导 .map —— 用户想试笔刷却没有干净画布，只能对着真实底图下手
              （“连新底图都建不了”/“怕改坏不敢测”的直接来源）。 -->
@@ -751,7 +760,7 @@
           class="has-advanced"
           title="从留底恢复底图 —— 列出项目备份目录里留存的原始 .map（导入时自动留底），选一份重新导入；同名底图只补缺，省份与归属不动"
           @click="openSourceRestore"
-        ><Icon name="history" :size="15"/></button>
+        ><Icon name="history" :size="15"/>恢复底图</button>
         <!-- B2（2026-10-11）：给**已经在用**的底图补 FMG 数据（高度图 / 河流 / 道路 / 城镇）。
              真实缘由：`desite` 是 2026-09-10 那次导入建的，而当时解析器只读 SVG 省份多边形，
              高度图/河流/道路根本没被读出来 —— 今天解析器能读全（实测 9975 格高度 + 160 河 + 496 路），
@@ -760,10 +769,10 @@
           v-if="basemapDataMissing.length"
           data-testid="basemap-refresh-data"
           class="has-advanced"
-          :title="`刷新底图数据 — 这张底图还缺：${basemapDataMissing.join(' / ')}。选一个 FMG .map 文件补齐，` +
+          :title="`刷新底图数据 — 这张底图还缺：${basemapDataMissing.join(' / ')}。选一个 .map 文件补齐，` +
                   '省份边界（' + provinceCount + ' 块）与归属记录一个字都不会动'"
           @click="triggerMapImport({ refreshOnly: true })"
-        ><Icon name="refresh" :size="15"/></button>
+        ><Icon name="refresh" :size="15"/>补齐数据</button>
         <!-- F（0.2.6）：用新 .map 的海岸线重建现有省份外环 —— 只换海岸那一段，不作废省份。
              为什么需要它：生成器原始海岸线 10525 点，导出时被简化成 778 点，落到底图上
              每个省只剩几十个点（地图上那条海岸线又糙又不对）；而"重导为新底图"会把
@@ -775,7 +784,7 @@
             ? '用新 .map 的海岸线重建省份外环 — 只换海岸那一段；内陆省逐点不动、相邻省仍无缝、一整次 = 一条撤销'
             : '用新 .map 的海岸线重建省份外环（这张底图里没有陆地轮廓数据，会先让你选一份 .map）'"
           @click="triggerCoastlineRebuild"
-        ><Icon name="mountain" :size="15"/></button>
+        ><Icon name="mountain" :size="15"/>重建海岸</button>
         <!-- A1（2026-09-24）：底图的高度图此前**只有 .map 导入**一条来源 —— 新建的底图里
              高度/群系/文化/宗教笔刷与一键派生全都“点了没反应”（没有网格 → 直接 return）。
              这个按钮补上“从零开始画”，同时它也是“剧情上已毁灭、不打算再建行星的星球”
@@ -818,9 +827,9 @@
           v-if="baseMapKey"
           data-testid="basemap-fmg-terrain"
           :class="{ active: fmgOpen }"
-          title="FMG 模板 —— 14 套 Azgaar 模板（大陆 / 群岛 / 环礁 / 地中海…）直接出高度图，同一条撤销"
+          title="现成模板 —— 14 套做好的大陆形状（大陆 / 群岛 / 环礁 / 地中海…），挑一套直接出高度图，一条撤销可退回"
           @click="fmgOpen = !fmgOpen"
-        ><Icon name="sparkles" :size="15"/>FMG 模板</button>
+        ><Icon name="sparkles" :size="15"/>现成模板</button>
         <!-- P0-2（2026-10-25）：**造陆**。此前"从零开始"的第一步是让用户自己画大陆 ——
              手画出来多是圆饼，而且只会画一块中央大陆。这里按参数生成大陆/群岛轮廓，
              再用现有铺底管线切成省（一条 undo）。 -->
@@ -837,9 +846,9 @@
           v-if="baseMapKey"
           data-testid="basemap-derive-culture"
           :class="{ active: deriveOpen }"
-          title="派生文化/宗教/势力 —— 逐格文化区 + 省份摘要 + 按文化分组建势力；只补空或覆盖（会先问）"
+          title="生成文化/宗教/势力 —— 按地形与位置铺文化区，再按文化分组建势力；只补空或覆盖（会先问）"
           @click="toggleDerivePanel"
-        ><Icon name="users" :size="15"/>派生</button>
+        ><Icon name="users" :size="15"/>生成文化势力</button>
         <!-- P5（2026-10-14）：高度图**分辨率**。
              真实来由：用户实测“地形模模糊糊”“高度图分辨率帮我调整。注意性能”。
              量出来的事实是源网格 133×75 / spacing 14.4，在 1900×1080 上每格约 3.6 屏幕像素
@@ -943,8 +952,8 @@
       </div>
 
       <div class="tool-group">
-        <button @click="fitToView" title="适应画布 (F)">⊞</button>
-        <button @click="exportPNG" title="导出 PNG 图片"><Icon name="export" :size="15"/></button>
+        <button @click="fitToView" title="适应画布 (F)">适应视图</button>
+        <button @click="exportPNG" title="导出 PNG 图片"><Icon name="export" :size="15"/>导出整图</button>
         <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': saveDisplay.state === 'saving' }"
                 data-testid="scenario-save-btn">
           <Icon v-if="saveDisplay.state === 'saving'" name="loader" :size="15"/>
@@ -952,7 +961,7 @@
           <Icon v-else-if="saveDisplay.state === 'saved'" name="check-circle" :size="15"/>
           <Icon v-else-if="saveDisplay.state === 'error'" name="x-circle" :size="15"/>
           <Icon v-else name="save" :size="15"/>
-        </button>
+        保存</button>
       </div>
       <div class="tool-group">
         <label>模式：</label>
@@ -978,7 +987,7 @@
 
       <div
         data-testid="more-sec-layers"
-        style="flex-basis:100%;width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+        style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
       >图层 · 着色</div>
       <!-- 第 4 行：图层显示 / 底图图层 / 着色 -->
       <div class="toolbar-row">
@@ -988,12 +997,12 @@
         <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
-        <label class="check-label" title="显示导入的城镇名 / 河流名（FMG 数据多为英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
+        <label class="check-label" title="显示导入的城镇名 / 河流名（导入的地图数据常是英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
         <label class="check-label" title="显示“地形注记”里的山系/海域名（沿走向排字）。生成地形时会按种子自动起名（只补空）；也可以在里面自己改名或手画一条"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
         <label class="check-label" title="EU4 式分级标注：缩小看势力名（可简称），放大再加上省名"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
         <label class="check-label" title="放大到最详档时显示省名（未命名的省显示“新省份 N”，是改名的线索）"><input type="checkbox" v-model="showProvinceNames" data-testid="toggle-province-names" /> 省名</label>
         <label class="check-label" title="只显示你自己起过名的省 —— 程序生成的“新省份 N”整层不画（415 省项目里通常只有几十个有真名，其余会把画面糊满）"><input type="checkbox" v-model="showNamedProvincesOnly" data-testid="toggle-named-provinces" /> 仅已命名省</label>
-        <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/></button>
+        <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/>锁定图层</button>
       </div>
       <div class="tool-group">
         <label>底图图层：</label>
@@ -1027,11 +1036,15 @@
       </div>
       </div>
 
+      <div
+        data-testid="more-sec-script"
+        style="width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+      >剧本 · 导入导出</div>
       <!-- 第 5 行：剧本与导入导出 -->
       <div class="toolbar-row">
       <div class="tool-group">
-        <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/></button>
-        <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/></button>
+        <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/>剧本管理</button>
+        <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/>势力谱系</button>
         <!-- 外交表（N3a-2，2026-11-02）：回答“某年 A 与 B 什么关系”——
              关系标签 / 该年生效事件 / “为什么”+ 势力关系矩阵。**只读**（不走 undo、不写盘）。
              与“势力谱系”分工：谱系管继承与易主年份，这里管两两关系（战争/同盟/臣属…）。 -->
@@ -1041,16 +1054,16 @@
           title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么，附势力关系矩阵（只读，不改任何数据）"
           @click="diplomacyOpen = !diplomacyOpen"
         ><Icon name="flag" :size="15"/>外交</button>
-        <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/></button>
+        <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/>撤销历史</button>
       </div>
       <div class="tool-group" title="导出">
-        <button @click="exportScenarioPNG()" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/></button>
-        <button @click="exportScenarioSVG()" title="导出当前剧本/年份为 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-svg"><Icon name="layers" :size="15"/></button>
+        <button @click="exportScenarioPNG()" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/>导出 PNG</button>
+        <button @click="exportScenarioSVG()" title="导出当前剧本/年份为 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-svg"><Icon name="layers" :size="15"/>导出 SVG</button>
         <button @click="showSliceExport = true" data-testid="open-slice-export"
-                title="逐年切片导出（每个状态变化的年份一张图 + frames.json 清单，可交 ffmpeg 合成）"><Icon name="film" :size="15"/></button>
-        <button @click="exportScenariosJson({ scope: 'current' })" title="导出当前底图的剧本数据（scenarios.json）" data-testid="export-json"><Icon name="export" :size="15"/></button>
-        <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/></button>
-        <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/></button>
+                title="逐年切片导出（每个状态变化的年份一张图 + frames.json 清单，可交 ffmpeg 合成）"><Icon name="film" :size="15"/>切片</button>
+        <button @click="exportScenariosJson({ scope: 'current' })" title="导出当前底图的剧本数据（scenarios.json）" data-testid="export-json"><Icon name="export" :size="15"/>导出数据</button>
+        <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/>导入合并</button>
+        <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/>导入替换</button>
       </div>
       </div>
       </div>   <!-- /.toolbar-more -->
@@ -1198,8 +1211,8 @@
         <template v-else>
           <p class="eh-title">这个项目里还没有底图</p>
           <p class="eh-line">
-            剧本画在底图上（省份 → 归属 → 时期）。先导入一份 Azgaar <b>.map</b> 底图，
-            也可以直接选个绘制/笔刷工具画一张空底图。
+            剧本画在底图上（省份 → 归属 → 时期）。先导入一份 <b>.map</b> 底图
+            （Azgaar 这类地图软件导出的文件），也可以直接画一张空底图。
           </p>
           <!-- 🔴 这里必须有**按钮**，不能只写"用上方“+”"（P0-3，2026-10-17 第三轮）：
                “+”在“更多”面板里 = 提示指向一个用户当刻**看不见**的入口 ——
@@ -1207,7 +1220,7 @@
           <div class="eh-actions">
             <button class="eh-btn primary" data-testid="empty-import-map"
                     :disabled="store.isReadOnly"
-                    title="选一份 Azgaar（FMG）导出的 .map：带进省份多边形、高度图、河流、城镇"
+                    title="选一份 .map 地图文件（Azgaar 这类软件导出的）：带进省份多边形、高度图、河流、城镇"
                     @click="triggerMapImport()">导入 .map 底图</button>
             <button class="eh-btn" data-testid="empty-new-basemap"
                     :disabled="store.isReadOnly"
@@ -1536,10 +1549,10 @@
       <div class="props-row">
         <label>坐标：</label>
         <input class="coord-input" type="number" step="1" data-testid="marker-x"
-               :value="markerCoords.x" title="世界坐标（地图内部单位；改完立即落库，一条撤销）"
+               :value="markerCoords.x" title="世界坐标（地图内部单位；改完立刻生效，一条撤销可退回）"
                @change="onMarkerCoordChange('x', $event)" />
         <input class="coord-input" type="number" step="1" data-testid="marker-y"
-               :value="markerCoords.y" title="世界坐标（地图内部单位；改完立即落库，一条撤销）"
+               :value="markerCoords.y" title="世界坐标（地图内部单位；改完立刻生效，一条撤销可退回）"
                @change="onMarkerCoordChange('y', $event)" />
       </div>
       <div class="props-row">

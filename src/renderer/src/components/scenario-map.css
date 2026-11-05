@@ -138,9 +138,28 @@
 .toolbar-more {
   display: flex; flex-direction: column; gap: 2px;
   border-top: 1px solid var(--border, #2a3038);
-  max-height: 42vh; overflow-y: auto;
+  max-height: 42vh;
+  /* 2026-11-05：**只许竖向滚**。原来 overflow-y:auto 而 x 轴是 visible → 计算成 auto，
+     于是那一条永远放不下的工具组把整个面板拉出**横向滚动条**，用户看到的就是
+     “一堆按钮还看不全”。纵向滚动 + 组内换行才是对的。 */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .toolbar-more .toolbar-row { background: transparent; }
+/* 🔴 「更多」是**固定高度 + 竖向滚动**的列容器：里面的行必须 `flex: 0 0 auto`。
+   默认 `flex-shrink:1` 会在总高超出 max-height 时把每一行**压扁**，内容挤出来盖在下一行上 ——
+   实测观感就是文字重影（同一格里同时看到“网格吸附”和“生物群系”），像界面坏了。 */
+.toolbar-more > * { flex: 0 0 auto; }
+/* 「更多」里的分区标题（省份几何 / 地形·底图·生成 / 图层·着色 / 剧本·导入导出）：
+   自己占一行、吸顶，滚到哪儿都知道这一段是什么。 */
+.toolbar-more > [data-testid^="more-sec-"] {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 3px 0 2px;
+  background: #1e293b;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
 
 .row-label {
   color: #94a3b8;
@@ -174,6 +193,20 @@
   display: flex;
   gap: 4px;
   align-items: center;
+  /* 2026-11-05：组内**也换行**。原来这里没有 flex-wrap —— 一个组里塞十几个笔刷按钮时，
+     它就变成一条永远放不下的长龙，把整行撑出视口（用户看到的“乱七八糟”就是这么来的）。
+     换行后同一组仍靠在一起，但会在第二行继续排。 */
+  flex-wrap: wrap;
+  min-width: 0;
+  row-gap: 4px;
+}
+
+/* 组内的小标题（“底图：”“地形：”“图层：”“着色：”）：
+   不许被压缩、不许折行 —— 截图实测「底图：」被挤成“底/图”两行，还压到了旁边的按钮上。 */
+.tool-group > label,
+.tool-group > .row-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .tool-group label {
@@ -197,6 +230,9 @@
   font-size: 11px;
   color: #94a3b8;
   cursor: pointer;
+  /* 勾选项是**一组完整的话**（“仅已命名省”），不许折行/被压缩 */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .tool-group button {
