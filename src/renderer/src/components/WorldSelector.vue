@@ -64,6 +64,12 @@
         @click="$emit('select', world)"
       >
         <button
+          class="rename-btn"
+          data-testid="rename-world"
+          title="重命名这个世界（只改名字，不动任何子节点；Ctrl+Z 可撤销）"
+          @click.stop="$emit('rename-world', world)"
+        ><Icon name="pencil" :size="14"/></button>
+        <button
           class="delete-btn"
           title="删除世界（其下星域/星系将失去上级关联，可撤销）"
           @click.stop="$emit('delete-world', world)"
@@ -101,7 +107,7 @@ const props = defineProps({
   projectOpen: { type: Boolean, default: false },
 });
 
-defineEmits(['select', 'create-world', 'delete-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault', 'import-from-vault', 'create-project', 'open-project']);
+defineEmits(['select', 'create-world', 'delete-world', 'rename-world', 'reextract', 'load-sample', 'open-scenarios', 'open-vault', 'import-from-vault', 'create-project', 'open-project']);
 
 // ===== 世界主题色（名称哈希 → 确定性渐变，与星图风格统一） =====
 function hashName(name) {
@@ -366,6 +372,26 @@ function getLocationCount(worldId) {
 }
 .world-card:hover .delete-btn { opacity: 1; }
 .delete-btn:hover { background: rgba(255, 123, 114, 0.15); color: #ff7b72; }
+
+/* 重命名（2026-11-03 用户实测“新建了世界想重命名都做不到、右键没反应”）：
+   卡片上原来只有一枚删除按钮 —— 世界是项目里的顶层实体，却没有任何改名入口。
+   与删除同款浮动按钮，放在它左边一格。 */
+.rename-btn {
+  position: absolute;
+  top: 8px;
+  right: 40px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+}
+.world-card:hover .rename-btn { opacity: 1; }
+.rename-btn:hover { background: rgba(121, 192, 255, 0.15); color: #79c0ff; }
 
 .world-icon {
   width: 56px;

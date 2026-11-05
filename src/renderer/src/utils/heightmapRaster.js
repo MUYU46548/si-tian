@@ -58,9 +58,12 @@ export const TERRAIN_LAND_STOPS = Object.freeze([
  * **低饱和的灰绿→灰褐**，饱和度全留给政治色 —— 所以这条色带的绿/棕都往灰里压了一档。
  */
 export const RELIEF_LAND_STOPS = Object.freeze([
-  [0, 92, 98, 82],
-  [25, 120, 122, 99],
-  [50, 151, 147, 117],
+  // 2026-11-04（暮雨：“奇怪的阴影，尤其是海岸边界”）：底部原来 [92,98,82] 是**灰橄榄**，
+  // 海岸那圈陆格恰好落在最低档 → 沿岸一条灰带；双线性再把它糊进海里，看起来像投影。
+  // 改成暖砂/湿地色（仍然低饱和，不抢政治色），海岸读起来是“滩涂”而不是“脏影”。
+  [0, 176, 158, 122],
+  [25, 182, 166, 130],
+  [50, 172, 158, 124],
   [70, 173, 166, 135],
   [84, 180, 170, 149],
   [93, 199, 193, 183],
@@ -112,6 +115,20 @@ export const RASTER_SEA_LEVEL = 20;
 export const RASTER_SUBSAMPLE = 4;
 /** 平滑档默认开关（false = 回到旧的逐格方块观感；同时影响两视图与导出全图） */
 export const RASTER_SMOOTH = true;
+
+/**
+ * 等高线（2026-11-03 第 5 刀，用户：“地图糊、线却无比清晰，像好几张图叠在一起”）。
+ *
+ * 为什么是一刀**表现**而不是改数据：糊的根因是格点数（默认 96 格跨全图 ≈ 25 世界单位/格），
+ * 要变清必须加格子，而 `cellsAcross` 的默认值被 0.4.0 黄金哈希钉着（`test_terrain_params.js`）。
+ * 等高线让**地形自己长出与矢量同一套语言的边缘**：线来自高度场、和色块严丝合缝，
+ * 观感上"地形有结构"，而不是"一块糊色 + 一根钢丝"。
+ *
+ * 口径：只对 `height` 档生效；按 **6 个高度单位一条**（陆地落差 ~80 → 十几条）；
+ * 只压暗 12%（更重会变成格子布，那是另一种脏）。
+ */
+export const CONTOUR_STEP = 6;
+export const CONTOUR_DARKEN = 0.88;
 
 export function hexToRgb(hex) {
   const h = hex.charAt(0) === '#' ? hex.slice(1) : hex;
@@ -213,7 +230,9 @@ export function cellColor(kind, i, hm, palette, ctx) {
     const lakeLevel = ctx.lakes.get(i);
     if (lakeLevel !== undefined) {
       // 湖不深：取海深色带的浅端（比海面略深一点，仍与海区分得开）
-      return oceanDepthColor(0.10);
+      // 2026-11-04：0.10 → 0.30 —— 政治档的陆地是"海面纸"（近白），0.10 的湖几乎
+      // 和纸一个色，实测截图里读成"一团雾"。0.30 落在近岸青与浅海蓝之间，像水。
+      return oceanDepthColor(0.30);
     }
   }
   if (kind === 'landsea') {
@@ -500,7 +519,8 @@ export function buildHeightmapRaster(hm, kind, opts) {
         norm: soft ? 1.35 : undefined,
       })
       : null;
-    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade, ctx);
+    const contourOn = !!(opts && opts.contour) && (kind === 'height' || kind === 'relief');
+    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade, ctx, contourOn);
   }
   return buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h, ctx);
 }
@@ -509,7 +529,7 @@ export function buildHeightmapRaster(hm, kind, opts) {
  * 平滑档：格分辨率 RGB → 子格双线性上采样。
  * 输出画布边长 ≈ `w·SS/spacing`（不是 1 世界单位 1 像素），由绘制端插值放大。
  */
-function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h, shade, ctx) {
+function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h, shade, ctx, contour) {
   const ox = p0[0] - spacing / 2, oy = p0[1] - spacing / 2;   // 格 (0,0) 的左上角
   const n = cols * rows;
 
@@ -532,6 +552,8 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
   const rc = canvas.getContext('2d');
   const img = rc.createImageData(cw, ch);
   const data = img.data;
+  // 等高线（2026-11-03 第 5 刀）：插值后的高度另存一份，第二遍按“整档跳变”压暗一条线。
+  const vv = contour ? new Float32Array(cw * ch) : null;
 
   const cMax = cols - 1, rMax = rows - 1;
   for (let sy = 0; sy < ch; sy++) {
@@ -542,6 +564,7 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
     const r1 = r0 < rMax ? r0 + 1 : r0;
     const tr = fr - r0;
     const rowA = r0 * cols * 3, rowB = r1 * cols * 3;
+    const rowAi = r0 * cols, rowBi = r1 * cols;
     let p = sy * cw * 4;
     for (let sx = 0; sx < cw; sx++) {
       const wx = minX + (sx + 0.5) / ppu;
@@ -552,7 +575,10 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
       const tc = fc - c0;
       const i00 = rowA + c0 * 3, i01 = rowA + c1 * 3;
       const i10 = rowB + c0 * 3, i11 = rowB + c1 * 3;
-      // 山体阴影：与颜色**共用同一套双线性权重**（各格一个乘子 → 同一段插值，不会错位）
+      // ⚠️ 2026-11-04 试过“海陆不混色”（把少数派权重清零后归一化）：海岸**变硬了**，
+      //    但高度图的陆格边界与矢量海岸线不是同一条（相差可达一格）→ 陆地内侧露出一圈
+      //    海色的白边，比原来的灰影更显眼。这里退回双线性混合；海陆错位要在**绘制端**
+      //    用矢量海岸线裁切浮雕栅格来解决（见 2026-11-04 新卡“海岸浮雕裁切”）。
       let sh = 1;
       if (shade) {
         const s00 = shade[r0 * cols + c0], s01 = shade[r0 * cols + c1];
@@ -560,6 +586,69 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
         const stop = s00 + (s01 - s00) * tc;
         const sbot = s10 + (s11 - s10) * tc;
         sh = stop + (sbot - stop) * tr;
+      }
+      // 插值高度（等高线要用；浮雕的海陆分界也要用同一份，保证与矢量海岸线同一条边）
+      const a00 = values[rowAi + c0], a01 = values[rowAi + c1];
+      const a10 = values[rowBi + c0], a11 = values[rowBi + c1];
+      const hTopPx = a00 + (a01 - a00) * tc;
+      const hBotPx = a10 + (a11 - a10) * tc;
+      const hh = hTopPx + (hBotPx - hTopPx) * tr;
+      if (vv) vv[sy * cw + sx] = hh;
+
+      // ── 浮雕档：**不在海陆之间混色**（2026-11-04 第二十四修）───────────────────
+      // 🔴 现象：海岸一圈灰蓝“脏影”。原因是四邻双线性把**陆格（暖褐）**与**海格（青）**
+      //    混成一种中间色，而混色带的宽度 = 一格（真实项目 9.16 世界单位 ≈ 30px @336%）。
+      //    早先试过“少数派权重清零再归一化”，因为**格边界**与**矢量海岸线**不是同一条而露出白边。
+      //    这次按**插值高度**分界（`hh < RASTER_SEA_LEVEL` 即海）—— 那是与海岸线等高线同一个阈值，
+      //    所以分界与画出来的海岸线是同一条边；陆侧只从陆格取色，海侧只从海深场取色。
+      if (kind === 'relief') {
+        if (hh < RASTER_SEA_LEVEL) {
+          let tt = 0;
+          const seaT = ctx && ctx.sea && ctx.sea.t;
+          if (seaT) {
+            const t00 = seaT[rowAi + c0] || 0, t01 = seaT[rowAi + c1] || 0;
+            const t10 = seaT[rowBi + c0] || 0, t11 = seaT[rowBi + c1] || 0;
+            const u = t00 + (t01 - t00) * tc;
+            const w2 = t10 + (t11 - t10) * tc;
+            tt = u + (w2 - u) * tr;
+          } else {
+            tt = clamp01((RASTER_SEA_LEVEL - hh) / RASTER_SEA_LEVEL);
+          }
+          const seaCol = oceanDepthColor(0.06 + 0.64 * clamp01(tt));
+          data[p] = seaCol[0];
+          data[p + 1] = seaCol[1];
+          data[p + 2] = seaCol[2];
+          data[p + 3] = 255;
+          p += 4;
+          continue;
+        }
+        // 陆侧：只在**陆格**上重新归一化权重（海格不许参与混色）
+        let wSum = 0, rr = 0, gg = 0, bb = 0;
+        const one = (idx, colOff, wgt) => {
+          if (wgt <= 0) return;
+          if (values[idx] < RASTER_SEA_LEVEL) return;
+          wSum += wgt;
+          rr += cellRgb[colOff] * wgt;
+          gg += cellRgb[colOff + 1] * wgt;
+          bb += cellRgb[colOff + 2] * wgt;
+        };
+        one(rowAi + c0, i00, (1 - tc) * (1 - tr));
+        one(rowAi + c1, i01, tc * (1 - tr));
+        one(rowBi + c0, i10, (1 - tc) * tr);
+        one(rowBi + c1, i11, tc * tr);
+        if (wSum > 1e-3) {
+          data[p] = Math.min(255, (rr / wSum) * sh);
+          data[p + 1] = Math.min(255, (gg / wSum) * sh);
+          data[p + 2] = Math.min(255, (bb / wSum) * sh);
+        } else {
+          // 四个邻居全是海（只会发生在海侧的亚像素上）：退回最近陆格或海色
+          data[p] = cellRgb[i00];
+          data[p + 1] = cellRgb[i00 + 1];
+          data[p + 2] = cellRgb[i00 + 2];
+        }
+        data[p + 3] = 255;
+        p += 4;
+        continue;
       }
       for (let k = 0; k < 3; k++) {
         const top = cellRgb[i00 + k] + (cellRgb[i01 + k] - cellRgb[i00 + k]) * tc;
@@ -570,6 +659,23 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
       }
       data[p + 3] = 255;
       p += 4;
+    }
+  }
+  // ③ 等高线：只在“读地形”的档、且插值高度跨过整档时压暗 12%
+  if (vv) {
+    for (let sy = 0; sy < ch; sy++) {
+      for (let sx = 0; sx < cw; sx++) {
+        const i = sy * cw + sx;
+        const band = Math.floor(vv[i] / CONTOUR_STEP);
+        let edge = false;
+        if (sx > 0 && Math.floor(vv[i - 1] / CONTOUR_STEP) !== band) edge = true;
+        if (!edge && sy > 0 && Math.floor(vv[i - cw] / CONTOUR_STEP) !== band) edge = true;
+        if (!edge) continue;
+        const q = i * 4;
+        data[q] *= CONTOUR_DARKEN;
+        data[q + 1] *= CONTOUR_DARKEN;
+        data[q + 2] *= CONTOUR_DARKEN;
+      }
     }
   }
   rc.putImageData(img, 0, 0);

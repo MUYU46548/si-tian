@@ -12,7 +12,7 @@ import { pathToFileURL } from 'url';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\//, '')), '..', '..', '..');
 const SRC = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
 const OUT = path.join(ROOT, 'docs', 'assets', 'terrain-structure-20261018');
-const DEPS = ['terrainSynthesis.js', 'riverTrace.js', 'gridSpatialIndex.js', 'heightmapResample.js', 'polylineSmooth.js'];
+const DEPS = ['terrainSynthesis.js', 'lakes.js', 'riverTrace.js', 'gridSpatialIndex.js', 'heightmapResample.js', 'polylineSmooth.js'];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-tstruct-'));
 for (const f of DEPS) {

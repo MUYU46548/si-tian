@@ -676,6 +676,45 @@ async function main() {
     return '探针有效';
   });
 
+  // ══════════════════════════════════════════════════════════════════════
+  // 五、河口越线常量 + 落库渲染路径（2026-11-05）
+  //   用户报的“河捅进海洋”在第 19 刀之后又回来了：不是裁剪算法坏了，是**换了路径** ——
+  //   生成即落库以后，屏幕上的河走 `layers/features.js#drawRiverPathsLayer`，那条路一次都没裁。
+  // ══════════════════════════════════════════════════════════════════════
+  check('MOUTH_OVERSHOOT：够“咬住”海面、不够“捅穿”（0 < x ≤ 1 世界单位）', () => {
+    assert(Number.isFinite(C.MOUTH_OVERSHOOT) && C.MOUTH_OVERSHOOT > 0 && C.MOUTH_OVERSHOOT <= 1,
+      `常量不合法：${C.MOUTH_OVERSHOOT}`);
+    return `${C.MOUTH_OVERSHOOT} 世界单位（旧魔法数 6 会放行 p90 的越线）`;
+  });
+
+  check('用 MOUTH_OVERSHOOT 裁一条越线 5 单位的河 → 尾巴停在“岸线 + 常量”', () => {
+    const m2 = C.buildLandMask([rect(0, 0, 100, 100)]);
+    const out = C.clipPolylineToCoast(
+      [{ x: 60, y: 50 }, { x: 95, y: 50 }, { x: 105, y: 50 }],
+      m2.lookup,
+      { keepOvershoot: C.MOUTH_OVERSHOOT },
+    );
+    assert(out.trimmed && out.points.length >= 2, '应当被裁且仍是一条折线');
+    const tail = out.points[out.points.length - 1];
+    assert(Math.abs(tail.x - (100 + C.MOUTH_OVERSHOOT)) < 0.05,
+      `尾巴没有停在岸线+常量：x=${tail.x}`);
+    return `尾 x=${tail.x.toFixed(3)}`;
+  });
+
+  check('🔴 落库河的渲染路径也裁海岸线（features.js 的 drawRiverPathsLayer 必须调用裁剪）', () => {
+    const file = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js');
+    const src = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+    const i = src.indexOf('function drawRiverPathsLayer');
+    const j = src.indexOf('function drawReliefIconsLayer');
+    assert(i > 0 && j > i, '找不到 drawRiverPathsLayer 的边界（改名了？同步改用例）');
+    const body = src.slice(i, j);
+    assert(body.indexOf('clipPolylineToCoast') >= 0,
+      'drawRiverPathsLayer 没有裁海岸线 —— 生成河会照旧画进海里（这一条就是 2026-11-04~05 的回归）');
+    assert(body.indexOf('MOUTH_OVERSHOOT') >= 0,
+      '越线长度没走 MOUTH_OVERSHOOT（又出现了魔法数 6 → 放行 p90 的捅进海）');
+    return '裁剪在落库渲染路径上，越线长度单源';
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
   console.log(`\n${results.length - failed.length}/${results.length} 通过`);

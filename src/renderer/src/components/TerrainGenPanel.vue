@@ -92,6 +92,16 @@
       <span class="tgen-sub">（同种子才有效；关掉等于彻底重来）</span>
     </label>
 
+    <label
+      v-if="!isPlanet"
+      class="tgen-check"
+      title="生成地形时顺手给山系/海域/平原起名（同种子同名字）。只补空：这类注记你已经有了，就一条都不加；关掉 = 不生成注记"
+    >
+      <input type="checkbox" v-model="autoLabels" data-testid="tgen-auto-labels" />
+      同时生成地形注记
+      <span class="tgen-sub">（山系/海域/平原自动起名；只补空，可在“地形注记”面板改）</span>
+    </label>
+
     <div class="tgen-cands-head">
       <span>候选（同参数、不同种子）</span>
       <button class="tgen-mini" :disabled="busy" data-testid="tgen-preview" @click="runPreview">
@@ -171,6 +181,9 @@ const elapsedMs = ref(null);
 const warn = ref('');
 const paramWarn = ref('');
 const keepHandEdits = ref(true);
+// 生成即出地形注记（2026-11-04）：默认开 —— 用户不该为了有山名/海名再点一遍面板逐条起名。
+// 只补空：已有山系/海域/平原注记的那一种一条都不加（见 utils/terrainLabels.js#mergeAutoTerrainLabels）。
+const autoLabels = ref(true);
 const canvases = new Map();
 
 function setCanvas(i, el) {
@@ -281,6 +294,7 @@ function apply() {
         params: c.params,
         force: true,
         keepHandEdits: keepHandEdits.value,
+        labels: autoLabels.value,
       });
     busy.value = false;
     if (!r || r.ok === false) {
@@ -304,7 +318,7 @@ const summary = computed(() => describeTerrainParams(paramSnapshot()));
 
 // 打开面板即出一组候选（用户不用先猜"先在哪儿点"）
 if (props.baseMapKey || props.planetId) runPreview();
-defineExpose({ summary, keepHandEdits });
+defineExpose({ summary, keepHandEdits, autoLabels });
 </script>
 
 <style scoped>

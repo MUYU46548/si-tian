@@ -4,7 +4,7 @@
 // 依赖约定：`st` = 手势/工具期的普通 `let`（组件侧带 get/set，读写同一份）；
 //   其余 ref / const / 函数走 `ctx`；纯函数工具直接 import。
 
-import { RIVER_BANK_COLOR, RIVER_DRAW_COLOR, drawCurvedRiver } from '../../utils/riverRender';
+import { RIVER_BANK_COLOR, RIVER_DRAW_COLOR, drawCurvedRiver, taperRiverMouth } from '../../utils/riverRender';
 
 export function createRiverOps(ctx) {
   const { st, ...rest } = ctx;
@@ -104,7 +104,15 @@ function commitRiverDrag() {
 
 function drawOneHandRiver(c, nodes, river, opts = {}) {
   if (!nodes || nodes.length < 2) return 0;
-  const widths = riverWidthsFor(river, nodes.length);
+  const widths = riverWidthsFor(river, nodes.length, { widthMax: opts.widthMax });
+  // 汇流口收窄（2026-11-04 第二十一修）：支流端点落在主干中心线上，若不收窄就是“戳进去”，
+  // 两条支流从两侧同时汇入时读成 X。只压河口端，主干后画会把这截尖端盖住（见 `taperRiverMouth`）。
+  // ⚠️ 收窄必须**跨过至少一个分块**：`strokeTaperedLine` 是“每块一个定宽”（取块中点），
+  //    只压最后 3 个点的话，最后一块的宽度取的是中点，收窄完全看不见（第一版就是这么白改的）。
+  if (opts.taperTail) {
+    const span = Math.max(6, Math.min(24, Math.round(nodes.length * 0.04)));
+    taperRiverMouth(widths, { points: span, minFactor: 0.15 });
+  }
   // ⚠️ 曲线在 `drawCurvedRiver` 里生成（它内部就是 `catmullRomPoints(..., subdiv)`），
   //    这里**不要**先自己加密一遍 —— 那会变成"对已经加密过的点再加密"（点数平方级）
   const res = drawCurvedRiver(c, nodes, widths[0], widths[widths.length - 1], {
@@ -115,6 +123,11 @@ function drawOneHandRiver(c, nodes, river, opts = {}) {
     widths,
     toPx: (w) => w,
     subdiv: RIVER_CURVE_SUBDIV,
+    // 收口的河才切细块（48 块 ≈ 每条 0.75 世界单位一块）——否则收窄落在块中点之外，看不见
+    chunks: opts.taperTail ? 48 : undefined,
+    // 调用方已经平滑（并在曲线级别焊过交叉）→ 这里不许再平滑一遍：
+    // 二次样条会重新过冲，把刚焊好的汇流点又画成交叉（2026-11-04）
+    curve: opts.curve,
     color: opts.color || RIVER_DRAW_COLOR,
     bankColor: opts.bankColor || RIVER_BANK_COLOR,
     // 🔴 2026-10-20：默认**不画岸线**（用户反复报的“两条边夹一条缝 / 铁轨”）。

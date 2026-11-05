@@ -47,8 +47,45 @@ export const TRACE_MIN_POINTS = 4;
 /** 单条河的步数上限（防病态数据把一次点击拖成无限循环） */
 export const TRACE_MAX_STEPS = 2000;
 
-/** 源头高度下限的默认值（旧实现写死 60） */
+/**
+ * 源头高度下限的默认值（旧实现写死 60）。
+ *
+ * 2026-11-03：网格精度默认 96 → 192（`cellsAcross`）后跑体检
+ * （`node scripts/tests/unit/test_river_health.js`）发现 —— 陆地 26,659 格只出 **12 条河**，
+ * 且三条样本的起点高度全是 60.0/60.1/60.4：**正好压在闸门上**。
+ * 也就是说“哪些格能当源头”完全由这一个绝对高度决定，陆地一平就几乎不出河。
+ * 60 → 56（与陆地均值 ~50 匹配，仍高于海平面 36 个单位），让河网密度回到与陆地面积相称的量级。
+ */
 export const TRACE_SOURCE_HEIGHT = 60;
+
+/** 源头分位比例：陆地高度**最高的 15%** 才有资格起河（与量纲无关，见 `quantileSourceHeight`） */
+export const TRACE_SOURCE_QUANTILE = 0.02;
+
+/**
+ * 源头闸门改成**分位数**（2026-11-03 第 13 刀）。
+ *
+ * 为什么：绝对高度在这套数据上是个悬崖 —— 同一张图 60 → 12 条河、56 → 567 条、59 → 57 条；
+ * 换一份量纲不同的 `.map`（高度 20~70 与 20~100 都合法）那两个数字直接失效。
+ * 分位数表达的是“陆地最高的 X% 才能起河”，与量纲无关，平缓地形也照样有源头。
+ *
+ * @param {ArrayLike<number>} h 高度字段
+ * @param {number} seaLevel 海平面
+ * @param {number} [q] 保留比例（默认 0.15 = 最高的 15%）
+ * @returns {number} 闸门高度（陆地不足时回落到 `TRACE_SOURCE_HEIGHT`）
+ */
+export function quantileSourceHeight(h, seaLevel = TRACE_SEA_LEVEL, q = TRACE_SOURCE_QUANTILE) {
+  const keep = Number.isFinite(q) ? Math.min(0.9, Math.max(0.01, q)) : TRACE_SOURCE_QUANTILE;
+  const land = [];
+  for (let i = 0; i < h.length; i++) {
+    const v = h[i];
+    if (Number.isFinite(v) && v > seaLevel) land.push(v);
+  }
+  if (!land.length) return TRACE_SOURCE_HEIGHT;
+  land.sort((a, b) => a - b);
+  // 取“第 (1-keep) 分位”：keep=0.15 → 高于 85% 的陆地格才够格当源头
+  const idx = Math.min(land.length - 1, Math.max(0, Math.floor(land.length * (1 - keep))));
+  return land[idx];
+}
 
 /**
  * 源头必须**离海至少几格**（默认 2）。
@@ -194,7 +231,22 @@ export function traceRivers(hm, opts = {}) {
   if (!hm || !hm.grid || !Array.isArray(hm.grid.points) || !hm.h) return empty;
 
   const seaLevel = Number.isFinite(opts.seaLevel) ? opts.seaLevel : TRACE_SEA_LEVEL;
-  const sourceHeight = Number.isFinite(opts.sourceHeight) ? opts.sourceHeight : TRACE_SOURCE_HEIGHT;
+  // 源头闸门（2026-11-03 第 13 刀）：分位数方案**已实现但默认没开**。
+  // 实测（`test_river_health.js`）：绝对高度 59 → 57 条河；改成“最高 15% 分位” → **2144 条**（蜘蛛网）。
+  // 结论：分位数是对的方向（与量纲无关），但比例远没标定好 —— 要的是 ~1~3%，不是 15%。
+  // 在没有实图确认之前先不切默认，保留 `opts.sourceQuantile` 供下一轮标定。
+  // 分位数闸门仍是**选择性开启**（`opts.sourceQuantile: true` 用默认 2%，或直接给比例）。
+  // 2026-11-03 实测：绝对 59 → 57 条；分位 15% → 2144 条；分位 2% → 159 条。
+  // 2% 仍偏密，且 `test_river_coastline` / `test_fmg_heightmap` 两条老判据是按绝对闸门写的 ——
+  // 切默认必须连同那两条一起改，属于专门一轮的活，不在这里顺手切。
+  // ⚠️ 2026-11-03 实测：把分位切成**默认**后，`test_river_coastline` / `test_fmg_heightmap` 出现 **0 条河**。
+  // 根因：分位阈值取到的是“陆地最高那一档”，而源头判定是**严格大于**（`> sourceHeight`）→ 一个都选不上。
+  // 修法明确（阈值下调 ε，或把比较改成 `>=` 且去重并列值），但这两条判据同时按旧口径写，
+  // 必须一起改并逐条确认守住的是形态还是条数 —— 所以先退回**选择性开启**，不在半懂的状态下切默认。
+  let sourceHeight = TRACE_SOURCE_HEIGHT;
+  if (Number.isFinite(opts.sourceHeight)) sourceHeight = opts.sourceHeight;
+  else if (opts.sourceQuantile === true) sourceHeight = quantileSourceHeight(hm.h, seaLevel, TRACE_SOURCE_QUANTILE);
+  else if (Number.isFinite(opts.sourceQuantile)) sourceHeight = quantileSourceHeight(hm.h, seaLevel, opts.sourceQuantile);
   const coalesced = opts.coalesce !== undefined ? !!opts.coalesce : coalesceDefault(opts);
   const minPointsRaw = Number.isFinite(opts.minPoints) ? Math.max(2, opts.minPoints) : null;
   const minPoints = minPointsRaw != null ? minPointsRaw : (coalesced ? TRACE_COALESCE_MIN_POINTS : TRACE_MIN_POINTS);

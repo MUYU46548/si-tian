@@ -16,6 +16,32 @@
 /** 星域视图的固定世界矩形（星域环形半径 630 + 星域半径 350 + 余量） */
 export const GALAXY_SKY_RECT = { x: -1600, y: -1600, w: 3200, h: 3200 };
 
+/** 没有世界可依时用的种子（= 2026-11-01 内化原型时的原值，老截图/老基线认得它） */
+export const DEFAULT_SKY_SEED = 20261031;
+
+/**
+ * 世界 id → 背景种子（FNV-1a 32 位；纯函数、无状态、不碰 `Math.random`）。
+ *
+ * 2026-11-03 用户实测：“中间背景图是固定的吗？好丑。不能每次随机生成吗？”
+ * 事实是：此前**所有世界共用一张天**（`galaxySkySpec(20261031)` 写死）。
+ *
+ * 口径（刻意与“每次打开换一张”不同）：
+ *   · **每个世界一片固定的天** —— 换世界换一片，回到同一个世界还是那一片。
+ *     真随机会让同一份截图/像素基线/导出图每次都不一样，等于把可复核性换掉了；
+ *   · 派生用 id 而不是名字：改名不该换天（名字是显示层，id 才是身份）。
+ */
+export function skySeedFor(key) {
+  const s = String(key == null ? '' : key);
+  if (!s) return DEFAULT_SKY_SEED;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  h = h >>> 0;
+  return h || DEFAULT_SKY_SEED;
+}
+
 /** 确定性伪随机（mulberry32，与 FMG/原型同族；不碰全局 Math.random） */
 function rng(seed) {
   let a = seed >>> 0;
@@ -32,7 +58,7 @@ const NEBULA_TINTS = ['#5b3f9e', '#2e6f6a', '#7a3560', '#3a4f9e', '#6b4fa8'];
 const STAR_TINTS = ['#ffffff', '#dfe9ff', '#cfe0ff', '#ffd9a0', '#ffc9b8'];
 
 /** 纯函数：种子 → 背景构图（星场 / 星云 / 尘埃带 / 远景星系抹痕）。同 seed 恒定。 */
-export function galaxySkySpec(seed = 20261031) {
+export function galaxySkySpec(seed = DEFAULT_SKY_SEED) {
   const r = rng((seed ^ 0x9e3779b9) >>> 0);
   const range = (a, b) => a + r() * (b - a);
   const int = (n) => Math.floor(r() * n);
@@ -113,7 +139,7 @@ function hexAlpha(hex, alpha) {
  * @param {number} px 资产边长（像素）
  * @param {number} seed
  */
-export function paintSkyAsset(px = 1024, seed = 20261031) {
+export function paintSkyAsset(px = 1024, seed = DEFAULT_SKY_SEED) {
   const key = `${px}:${seed}`;
   const hit = _cache.get(key);
   if (hit) return hit;
@@ -238,7 +264,7 @@ export function paintGalaxySky(ctx, rect, opts = {}) {
     px = need > 1500 ? 2048 : need > 900 ? 1536 : 1024;
     if (opts.maxPx) px = Math.min(px, opts.maxPx);
   }
-  const asset = paintSkyAsset(px, opts.seed || 20261031);
+  const asset = paintSkyAsset(px, opts.seed || DEFAULT_SKY_SEED);
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(asset, rect.x, rect.y, rect.w, rect.h);

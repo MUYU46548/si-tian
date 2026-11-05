@@ -159,7 +159,7 @@ import {
 } from '../utils/galaxyLayout';
 // 星系绘制美术（**吸收自 SP-1025 原型**，2026-11-01）：背景资产 / 恒星色温与归属环 / LOD 标签。
 // 🔴 这三件同时被“导出 PNG(全图)”（App.vue）调用 —— 同一份实现，不许各画一套。
-import { paintGalaxySky, GALAXY_SKY_RECT } from '../galaxy/sky';
+import { paintGalaxySky, GALAXY_SKY_RECT, skySeedFor } from '../galaxy/sky';
 import { paintDomainBorders } from '../galaxy/domainPaint';
 import { distanceToLoop } from '../galaxy/territory';
 import { paintStar } from '../galaxy/starArt';
@@ -682,7 +682,10 @@ function onRender(ctx, w, h) {
 // 原先这里是“径向渐变 + 200 世界单位的坐标网格 + 谐波点子”——网格像坐标纸、点子成斜纹。
 // 现在整片天由 `galaxy/sky.js` 生成（同 seed 恒同），画布与“导出 PNG(全图)”共用这份。
 function drawStarfield(ctx) {
-  paintGalaxySky(ctx, GALAXY_SKY_RECT);
+  // 2026-11-03 用户实测：“中间背景图是固定的吗？好丑，不能每次随机生成吗？”
+  // 真因：这里从不传 seed → 所有世界共用 `galaxySkySpec(20261031)` 那一张天。
+  // 现在按**世界 id** 派生（同世界恒同、换世界换一片），与 App 的“导出 PNG(全图)”同源。
+  paintGalaxySky(ctx, GALAXY_SKY_RECT, { seed: skySeedFor(props.world && props.world.id) });
 }
 // ===== 势力边界（2026-11-02：所有权场 φ 软融合；画法在 `galaxy/domainPaint.js`，导出共用）=====
 function drawFactionBorders(ctx, lod) {
@@ -1081,6 +1084,10 @@ function drawFocusHighlight(ctx, node) {
 
 // ===== Canvas Renderer =====
 const renderer = useCanvasRenderer(canvas, {
+  // 2026-11-03 用户实测（B3）：“能放大的倍数太小了，不够看，还想再放大已经滚不动了。”
+  // 默认上限 3 倍对星域总览太紧：120 颗恒星铺在 4 个星域里时，3 倍下相邻恒星仍会叠在一起。
+  // 画布内的线宽/手柄本来就按 `1/scale` 折算成屏幕像素，放大不会把线拖粗；放到 8 倍仍可读。
+  maxScale: 8,
   onRender,
   onHitTest: (wx, wy) => hitTest(wx, wy),
   onPointerMove: (wx, wy) => {
@@ -1547,6 +1554,11 @@ onUnmounted(() => {
 // 浅 watch 即可触发重布局；deep 遍历全部节点对象属无谓开销（批次A3）
 watch([() => props.galaxies, () => props.domains], () => {
   applyStableLayout();
+  renderer.requestRender();
+});
+
+// 换世界 = 换一片天（背景种子按世界 id 派生）：不重绘的话新世界会顶着上一个世界的那片天。
+watch(() => props.world && props.world.id, () => {
   renderer.requestRender();
 });
 

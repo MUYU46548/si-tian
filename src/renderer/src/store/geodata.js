@@ -118,6 +118,10 @@ export const useGeodataStore = defineStore('geodata', () => {
   provinceGridOps.shiftForDelete = provinceEditingModule.shiftProvinceGridForDelete;
   provinceGridOps.restore = provinceEditingModule.restoreProvinceGrid;
   provinceGridOps.stamp = provinceEditingModule.stampProvinceGrid;
+  // 生成地形时同一条 undo 里写河（scenarioEditing 调，写口仍在 provinceEditing）
+  provinceGridOps.setBaseMapRivers = provinceEditingModule.setBaseMapRivers;
+  // 生成地形时同一条 undo 里写地形注记（2026-11-04；与河同一笔，写口在 provinceEditing）
+  provinceGridOps.setTerrainLabels = provinceEditingModule.setTerrainLabels;
   const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
   const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });

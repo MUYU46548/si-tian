@@ -114,6 +114,30 @@ export async function restoreLastProject() {
   return { success: false, reason: 'unavailable' };
 }
 
+// ── 第五条注册口（2026-11-03）：App → “改项目里某个实体的名字” ────────────────
+// 背景：用户实测“新建了一个世界，想重命名都做不到；右键没反应，点进去也没地方编辑”。
+// 世界卡只有删除按钮；而 App.vue 有一条静态闸门**不得 import projectStore**（test_46/test_55）。
+// 与 restoreLastProject 同款：动态 import，既避开静态闸门也避开循环依赖。
+/**
+ * 改项目里实体的显示名（一条 undo；不改 id、不级联引用）。
+ * @returns {Promise<{success:boolean, error?:string, reason?:string}>}
+ */
+export async function renameEntityInProject(id, name) {
+  const next = String(name == null ? '' : name).trim();
+  if (!id) return { success: false, error: '缺少实体 id' };
+  if (!next) return { success: false, error: '名称不能为空' };
+  try {
+    const mod = await import('./projectStore');
+    const store = mod.useProjectStore();
+    if (!store) return { success: false, error: '项目 store 尚未装载' };
+    if (!store.isOpen) return { success: false, reason: 'readonly', error: '还没有打开项目' };
+    if (typeof store.renameEntity !== 'function') return { success: false, error: '项目 store 不支持改名' };
+    return store.renameEntity(id, next) || { success: false, error: '改名无返回' };
+  } catch (e) {
+    return { success: false, error: String((e && e.message) || e) };
+  }
+}
+
 export function describeCanvasBridge() {
   const base = adapter && typeof adapter.describe === 'function'
     ? adapter.describe()

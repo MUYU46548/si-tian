@@ -24,7 +24,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**84 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**91 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -62,12 +62,34 @@
   `--tag after` 再拍一次、`--compare before after` 比 —— 起 Vite(5180)+Edge(9222)，用**自带底图（3 省）**固定取景，
   落 `build/pixel-baseline/<tag>.json`（整图 FNV-1a + **关标注**后的几何层指纹 + camera）与同名 PNG。
   非 0 退出 = 逐像素判据没过。⚠️ 不要与 `run_tests.py` / 其它要 5180/9222 的演练同时跑
-  - **当前基线 = `v20261103e`**（2026-11-03 重立：含合成高度图 + 浮雕专用色带；同代码再拍 `v20261103f` 与它逐像素一致，
-    `hash 903c5dc` / `hashNoLabels 80ce735c` / `camera scale 1.1375` / 颜色数 4,096）。改动观感后**必须重立**，
-    并在这里写新 tag —— 旧基线一比就是"到处都变了"。`v20261103a|b|c|d` 已作废。
+  - **当前基线 = `v20261105f`**（2026-11-05 立：**主帧一个像素没变**（与 v20261104e 同 hash），
+    新增的是一枚**河层指纹** —— 以前 fixture 铺底时把 `baseMaps[key].rivers` 换成了两条手画河，
+    生成河从来不在像素基线里，于是河线几何/河宽改了多少轮都“逐像素一致”：不是没坏，是**判据看不见河**。
+    现在每拍一次会再生成一次地形（河一起落库）、关掉河以外的层、相机钉在最长那条河上（3.5×）；
+    拍前做负向探针（最宽 20 条河压细 40% → 指纹必须变），并断言 `river_gen_*` > 20 条。
+    读数：`hash f60036f4` / `hashNoLabels 443de52c` / **`riverHash 71434f74`** / riverCamera scale 3.5（v20261105e 版在河入海裁剪落地后作废）；
+    `--no-river-frame` 可关河层帧；旧帧文件 `v20261104e` 并存（主帧仍然有效）。两次连拍逐字节一致。
+  - `v20261104e`（2026-11-04 21:41）：**浮雕海岸不再跨海陆混色** —— 按插值高度在
+    `RASTER_SEA_LEVEL` 处把海/陆分开取色，海侧只吃海深场、陆侧只在陆格上归一化双线性；
+    最低陆色带再暖一档 `rgb(148,137,112)` → `rgb(176,158,122)`（`hash f60036f4` / 颜色数 4,096）。
+    更早 `v20261104d`（`hash 6a4d1aad` / `hashNoLabels 8447d6cb`，河网汇流焊接 + 端点半切样条）。
+    再上一版 `v20261104c`：地形浮雕底修整 —— **山体阴影 1.25→0.85**、
+    明暗区间 0.80~1.03 → **0.90~1.02**、最低陆色带从灰橄榄 `rgb(92,98,82)` 换成暖砂 `rgb(148,137,112)`；
+    用户点名“地图上这些奇怪的阴影，尤其是海岸边界”，二分证据：`build/regen-terrain/coast-on-zoom.png`
+    与 `coast-off-zoom.png`（同一机位关掉 `window.__SITIAN_SCENARIO_RELIEF__`）。
+    `hash a6beab4c` / `hashNoLabels c1581028`）。
+    上一版 `v20261104b`（`hash 69398d98`，生成即出地形注记）、`v20261105b`（`hash 7306f2b4`，
+    默认地形 = 分级河网 + 260 丘陵、丘陵盆比例 0.16→0.10）、`v20261105a`（`hash 79af1fe0`）、
+    `v20261104a`（`hash 9800b3e0`）已作废。
+    改动观感后**必须重立**，并在这里写新 tag —— 旧基线一比就是"到处都变了"。
+    `v20261103a|b|c|d|e|f|g` 已作废。
   - 基线覆盖：地形浮雕底（`relief` 专用色带）/ 政治水洗 / 海岸带 / 国界 / 航道 / 文字层（fixture 在铺完省之后调
     `synthesizeBaseMapTerrain(KEY,{seed:7})` 生成高度图，并有判据守着"确实有高度图"）。
     浮雕的开/关两帧另有 `scripts/tests/drill_scenario_relief.py` 单独守。
+  - **`--raster <landsea|height|temp|prec>`（2026-11-03 第 6 刀）**：拍到哪一层网格数据。
+    默认 `landsea`（政治档）—— 这之前的**所有**地形观感讨论都建立在政治档截图上，等于没有地形判据。
+    地形层的参考帧：`build/pixel-baseline/terrain-on.png`（`--raster height`，含等高线，`hash afe60c81`）
+    与对照帧 `terrain-off.png`（等高线关，`hash b26fa4b8`）。改地形观感必须重拍这两张并并排看。
 - **浮层直判（外交表等）**: `python scripts/tests/drill_diplomacy_overlay.py` —— 整页加载（不是 HMR）后
   点「更多 → 外交」与势力色板那条捷径，断言 `[data-testid=diplomacy-panel]` **真的在 DOM 里**、
   **收起「更多」后仍在**、关掉后零节点；顺带复测 `Teleport` 落点（`body > [data-testid=fmg-wrap]`）。
@@ -77,8 +99,24 @@
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与
-  `v20261103e` 对拍）。日志与汇总落 `build/visual-suite/<时间戳>/summary.md`；任一步非 0 → 整体非 0。
+  `v20261105f` 对拍）。日志与汇总落 `build/visual-suite/<时间戳>/summary.md`；任一步非 0 → 整体非 0。
   `--list` 列步骤、`--only relief,pixels` 跑子集、`--no-compare` 只拍不比。⚠️ 独占 5180/9222。
+- **真实项目截图（2026-11-04，一条命令）**: `python scripts/tests/tools/shot_real_project.py --zoom 6 --focus longest`
+  —— Vite(5180)+Edge headless(9222)+mock IPC，`projectStore.openProject()` 与 Electron **同一个** adopt 路径；
+  **只读**（不写项目文件），产物 `build/regen-terrain/<tag>.png` 与 `<tag>-zoom.png`（按 `--focus longest|center|x,y`
+  居中放大），并打印各阶段耗时 / 页面错误 / 心跳空洞。实测真实 415 省项目（7.6MB / 16,984 格 / 573 河）：
+  adopt 215–364ms、进剧本→画布 <1s、最长一帧 964ms、console 错误 0。
+  - **排障口（2026-11-04 第十九修，专治“截图和几何对不上”）**：`--dump-rivers` 把**本帧真正要描的折线**
+    导出成 `<tag>-drawn.json`；`--set key=value` 直接改 setupState 做二分；`--probe-capture` 在**同一页面里**
+    做“画布指纹 × 截图哈希”四态对照（base → 关河流 → 抽掉河数据 → 放回），画布变而 PNG 不变才叫“截图旧了”；
+    `--probe-cross` 用渲染器自己的 camera 把**页内算出的真横穿**画成红圈再截图。
+    配套 `window.__SITIAN_FRAME_LOG__`（最近 120 帧：帧号 / 耗时 / 是否贴基帧 / 相机 / 河流几何版本 `riverVer`）。
+    ⚠️ `--set` 里写 **ref**（如 `showRivers`），别写 computed（`showRiverBase` 赋值抛 readonly，看着像“改了没生效”）。
+  🔴 写这类脚本的三条纪律（2026-11-04 连踩三次，最后被误判成“渲染器崩溃”）：① 往页面塞大载荷时表达式
+  **只回标量** —— `window.x += 块` 的返回值是累积整串，`returnByValue` 会一路回传 300KB→8MB，注入 8MB 项目
+  从 0.2s 变 28s，看着像卡死；② 大动作**先发起、再轮询一句短话**，别把大 adopt 包进 `awaitPromise`
+  （15s WS 超时会被读成“挂了”）；③ **stdout/stderr 分开落盘**（`1>out.log 2>err.log`）：PowerShell 的
+  `Tee-Object` 只收 stdout，Python traceback 在 stderr，只看日志会把异常退出读成“静默死亡”。
 - **六个浮层的视觉直判**: `npm run test:overlays`（`drill_scenario_overlays_visual.py`）—— 每块面板 9 条：
   包装节点**恰好 1 个**（重复 = 两块面板精确重叠，2026-11-03 真实踩到）、可见面积、完整在视口内、
   `elementFromPoint(面板中心)` 没被盖、背景不透明、正文对比度 ≥4.5:1（暗色）、不整块挡死画布、
@@ -144,6 +182,13 @@
 - **数据安全优先于手感**：退出 / 关项目 / 显式保存一律绕过自动保存的手势闸门（`utils/interactionGate.js` 口径①）。
 - **同一能力只许一份实现**（画河几何、河宽换算、导出参考图、保存文案、`.map` 导入…）：
   两份实现不会报错，只会"改一处另两处不变"。
+- **方寸：过程与结论写任务卡，不写执行日志**（2026-11-04 用户拍板）：`create_log` 的条目是**用户自己调度**用的，
+  agent 写进去会把工作台搅乱（原话：“分不清哪个派了哪个做完了”）。做完事的留痕 = `update_task` 补正文 + `move_status`；
+  新问题 = `create_task`。日志默认**只读**（除非用户明确要求）。
+- **问之前先查档**（2026-11-04 用户拍板）：任何“要不要做 X / 选哪一档”的问题，先 `grep` 决策档
+  （[docs/plan/DECISIONS_20261104.md](docs/plan/DECISIONS_20261104.md)、`LICENSE`、`README.md`、本文件）与代码，
+  **已有拍板的不许再问**（2026-11-04 我把“免费开源”和“没有示例世界”两条写错，LICENSE 与 `sampleData.js` 都在仓里）。
+  问卷/裁决题里的【现状】必须带一条本仓证据（grep 结果或文件路径）贴在题上。
 - **直角引号 `「」` 不是中文标点**（2026-11-02 用户拍板）：界面文案、回执、注释都不许拿它当引用/强调，
   该用中文双引号 `“ ”` 与单引号 `‘ ’`（代码里的英文引号除外）。**新写的代码/文案一律不许再用**。
   **2026-11-03 已清完 product + 用例 + docs 非归档区**：`src/` + `scripts/` 共 **10,269 处 / 498 文件**、
@@ -161,7 +206,7 @@
   查关系走 `utils/scenarioEventLedger.js`；**不许**把归属复制进事件表（或反过来）——
   两份真值迟早漂移，且归属回放会被无关事件拖慢（`test_132` / `unit/test_scenario_event_ledger.js` 守）。
 - **读料必须只读**（2026-10-22）：扫知识库（`vaultIndex.buildIndex` / `vault-scan.mjs` / `vault-classify-report`）一律 `write:false` / `writeCache:false`，**连 `.sitian` 都不碰**；要产物就写 `--out` 指定的库外目录。归类/推断只有一份实现（`scripts/lib/vaultClassify.js`），认不出就进「待人工」，不许默认成地点（`unit/test_vault_classify.js` 用库指纹快照守）。
-- **不要整读大文件**：`ScenarioMap.vue`（**6,903 行**，2026-11-03 把 1,649 行样式搬到
+- **不要整读大文件**：`ScenarioMap.vue`（**6,920 行**，2026-11-03 把 1,649 行样式搬到
   `scenario-map.css`，原来 8,554 行）/ `PlanetMap.vue`（4,559 行）是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
   （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。
   `ScenarioMap` 的体量与浮层落点有闸门：`unit/test_scenario_map_split.js`（≤7,000 行 + 六个浮层各恰好一次 +
@@ -175,7 +220,7 @@
 | 主题 | 什么时候读它 | 文件 |
 |---|---|---|
 | 卡顿与性能 | 帧间隔 / 基帧缓存 / 空间索引 / 自动保存占住主线程 / 测量方法 | [perf-jank](docs/agents-archive/perf-jank.md)（3 条） |
-| 河流与地形 | 河流画法与橡皮 / 河网路由 / 地形推演 / 高度图与笔刷 / 海岸线 / 地形注记与沿路径排字 / 缩放分层 / 汇流台阶 / 粗格图等深线 | [map-river-terrain](docs/agents-archive/map-river-terrain.md)（30 条） |
+| 河流与地形 | 河流画法与橡皮 / 河网路由 / 地形推演 / 高度图与笔刷 / 海岸线 / 地形注记与沿路径排字 / 缩放分层 / 汇流台阶 / 粗格图等深线 | [map-river-terrain](docs/agents-archive/map-river-terrain.md)（31 条） |
 | 省份与顶点 | 省份绘制与布尔 / 顶点与共边 / 骨架吸附 / 框选与分割 / 省界观感 | [map-province](docs/agents-archive/map-province.md)（11 条） |
 | 底图与导入导出 | .map 导入 / 参考图 / 标记与聚落 / 道路 / 导出 / 底图编辑模式 / 导出地形底图 | [map-basemap](docs/agents-archive/map-basemap.md)（8 条） |
 | 项目文件与保存链 | 写闸门 / 快照 / 落盘与恢复 / 只读 / 备份 / 退出落盘 / git 同步 | [project-save](docs/agents-archive/project-save.md)（12 条） |
@@ -193,7 +238,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 84 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 91 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 46 | `grep -c "ipcMain.handle" src/main/index.js` |

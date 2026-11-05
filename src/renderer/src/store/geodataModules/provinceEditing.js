@@ -2660,7 +2660,11 @@ export function createProvinceEditingModule(ctx) {
     return out;
   }
 
-  /** 内部：只改 `baseMaps[key].terrainLabels`（不加 undo；undo/redo 各调一次） */
+  /**
+   * 内部：只改 `baseMaps[key].terrainLabels`（不加 undo；undo/redo 各调一次）。
+   * 2026-11-04 起也**导出**给生成链用：`synthesizeTerrainInto` 把注记塞进地形那一条 undo
+   * （生成即出名字，不用用户再点面板逐条命名）。
+   */
   function setTerrainLabels(key, labels) {
     const m = bm(key);
     if (!m) return;
@@ -2733,6 +2737,10 @@ export function createProvinceEditingModule(ctx) {
     addBrushProvince, removeProvinceWithGrid, clearProvinceLabels,
     // 删除省级联用（**不 execute**：由删除命令把这一步包进同一条 undo）
     shiftProvinceGridForDelete, restoreProvinceGrid, stampProvinceGrid,
+    // 生成地形时同一条 undo 里写河（2026-11-04）
+    setBaseMapRivers,
+    // 生成地形时同一条 undo 里写地形注记（**不加 undo**：由生成命令的 undo/redo 各调一次）
+    setTerrainLabels,
     provinceGridStats, provinceRingStats,
   };
 }

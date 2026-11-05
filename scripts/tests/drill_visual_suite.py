@@ -15,7 +15,7 @@
   python scripts/tests/drill_visual_suite.py                 # 全跑（默认比像素基线）
   python scripts/tests/drill_visual_suite.py --list          # 只列步骤
   python scripts/tests/drill_visual_suite.py --only relief,pixels
-  python scripts/tests/drill_visual_suite.py --baseline v20261103e --tag my-run
+  python scripts/tests/drill_visual_suite.py --baseline v20261104a --tag my-run
   python scripts/tests/drill_visual_suite.py --no-compare     # 只拍，不比
 
 判据：任一步非 0 → 整体非 0；退出码 = 失败步数。
@@ -45,7 +45,11 @@ DEV_PORT = 5180
 CDP_PORT = 9222
 
 # 当前像素基线（改动观感后必须重立，并把这里与 AGENTS.md 一起改）
-DEFAULT_BASELINE = 'v20261103e'
+# 2026-11-05 重立：主帧不变，**新增河层指纹**（riverHash）—— 以前生成河不在判据里，
+#   河线/河宽改了多少轮都“逐像素一致”（不是没坏，是看不见）。河层帧同 seed 再生成地形、
+#   只留河、相机钉在最长的河上，并用“压细最宽 20 条河 → 指纹必须变”自证敏感。
+# 上一版 v20261104e：海岸不再跨海陆混色（hash f60036f4 / hashNoLabels 443de52c）。
+DEFAULT_BASELINE = 'v20261105f'
 
 STEPS = [
     dict(key='relief', title='浮雕底开/关（同机位两帧必须不同）',

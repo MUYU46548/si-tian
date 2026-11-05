@@ -33,6 +33,10 @@
        第二次调用被推迟到下一帧 rAF）→ "改数据 → render() → 立刻取像素"会拿到**上一帧**，
        差值恒 0（判据空转）。
   d 性能：同一张图**再点一次**耗时要显著低于旧口径（用耗时上限兜住"又退回全表扫描"）
+     ⚠️ 2026-11-04：引擎换成**FMG 真实口径**（`utils/fmg/rivers.js`：每条河是一条
+     源头→河口的点列，密度由降水源头的汇流闸门决定）。所以"剪枝三条"只在 `legacy` 引擎下跑；
+     `fmg` 下换成结构判据（落笔条数 = 河数、每条河 ≥2 段）。湿/干/湖/孤段另由
+     `unit/test_fmg_rivers.js` 在 Node 里守。
   e 河口不出海：每条自动河的末端都落在海格里（水只往低处流、追到海就停）
   f 源头高度闸门**够得着**：设 0 → 河数明显变多；设 90 → 明显变少（同数据、同算法，
     只差这一个参数 —— 它若是个摆设，本条必红）
@@ -402,11 +406,16 @@ def run(cdp):
   if (!hm || !hm.grid || !hm.grid.points) { out.why = 'no-heightmap'; return JSON.stringify(out); }
   const n = hm.h.length;
   const rows = hm.grid.cellsY, cols = hm.grid.cellsX;
-  // 上 2/3 是高地（100 → 30），下 1/3 是海（0）—— 保证有源头、也有入海口
+  // 上 2/3 是高地（100 → 30），下 1/3 是海（0）—— 保证有源头、也有入海口。
+  // 2026-11-04：加一层**横向起伏**。纯斜面（每行等高）在新引擎下每一列就是一条独立长河，
+  // 河源汇流闸门对它毫无影响（实测 0/30/165 三档条数完全相同 → "闸门是个摆设"假红）。
+  // 加起伏后水会横向汇进谷地，闸门才真的决定"几条河"——这才是闸门该被量的地形。
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
-      hm.h[i] = r < rows * 0.66 ? (100 - r * (70 / (rows * 0.66))) : 0;
+      const base = r < rows * 0.66 ? (100 - r * (70 / (rows * 0.66))) : 0;
+      const wob = 7 * Math.sin(c * 0.55 + r * 0.31) + 5 * Math.cos(c * 0.23 - r * 0.77);
+      hm.h[i] = base > 0 ? Math.max(21, base + wob) : 0;
     }
   }
   s.commitHeightmap(KEY, hm);
@@ -495,7 +504,7 @@ def run(cdp):
   out.hasInput = !!inp;
   out.initial = inp ? Number(inp.value) : null;
   const status0 = String(sm.provinceHint || '');
-  out.statusHasGate = /源头高度/.test(status0);
+  out.statusHasGate = /(河源汇流|源头高度)/.test(status0);
   // 把闸门拉到 0（最宽松）→ 源头应当**明显变多**（同一份地形、同一套算法）
   if (inp) {
     inp.value = '0';
@@ -530,16 +539,16 @@ def run(cdp):
         fails.append(f'闸门探针求值异常：{gate.get("err")}')
     else:
         if not gate.get('hasInput'):
-            fails.append('🔴 找不到“源头高度”输入（`river-source-height`）—— 闸门决定条数却够不着，'
+            fails.append('🔴 找不到“河源汇流”输入（`river-source-height`）—— 闸门决定条数却够不着，'
                          '用户只会看到"就 3 条河"')
         if not gate.get('statusHasGate'):
-            fails.append(f"状态栏回执里没有闸门读数（“源头高度”）：{gate.get('statusLoose')}")
+            fails.append(f"状态栏回执里没有闸门读数（“河源汇流”）：{gate.get('statusLoose')}")
         # 闸门必须**真的**改变出图条数：松 → 多、严 → 少（同输入同算法，只差这一个参数）
         if not (gate.get('loose', 0) > gate.get('strict', 0)):
             fails.append(f"🔴 调闸门没有改变条数（松 {gate.get('loose')} vs 严 {gate.get('strict')}）"
                          f"—— 那个输入框是个摆设")
         else:
-            notes.append(f"闸门：源头高度 0 → {gate.get('loose')} 条；90 → {gate.get('strict')} 条")
+            notes.append(f"闸门：河源汇流 0 → {gate.get('loose')} 条；90 → {gate.get('strict')} 条")
         if gate.get('renderPaused') or gate.get('renderError'):
             fails.append(f"🔴 调闸门之后渲染异常：{gate.get('renderError')}")
     # 把闸门恢复默认（别把改动留给后面的断言与后续用例）
@@ -552,6 +561,9 @@ def run(cdp):
   const KEY = __KEY__;
   const hm = s.getHeightmapFor(KEY);
   const pts = hm.grid.points, h = hm.h, cols = hm.grid.cellsX, rows = hm.grid.cellsY;
+  // 湖（2026-11-04）：`hm.lakes` 是渲染层水面标记 —— 河"入湖"是合法终点，不能判成断头。
+  const lakeCells = new Set();
+  for (const lk of ((hm && hm.lakes) || [])) for (const i of ((lk && lk.cells) || [])) lakeCells.add(i);
   const sp = hm.grid.spacing || 14.4;
   const p0 = pts[0];
   const x0 = Array.isArray(p0) ? p0[0] : p0.x;
@@ -561,21 +573,87 @@ def run(cdp):
     if (ci < 0 || ci >= cols || cj < 0 || cj >= rows) return -1;
     return cj * cols + ci;
   };
+  // 2026-11-04: 上面那个"按行列反推"假定 grid.points 是**行主序** —— 实测不是
+  // （落点顺序由包围盒推，未必逐行），于是 17 条入海河里 13 条被误判成"末端在陆地"。
+  // 判据改成**最近格点**（只对少数几条入海河跑，成本可忽略）。
+  const nearestCell = (x, y) => {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const px = Array.isArray(p) ? p[0] : p.x;
+      const py = Array.isArray(p) ? p[1] : p.y;
+      const d = (px - x) * (px - x) + (py - y) * (py - y);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return { i: best, d: Math.sqrt(bd) };
+  };
   let bad = 0, checked = 0;
-  for (const riv of (sm.autoRivers || [])) {
+  const riversArr = (sm.autoRivers && sm.autoRivers.value) || sm.autoRivers || [];
+  // 兜底（2026-11-03）：某些时序下 `autoRivers` 会被清空（负向对照那一步），
+  // 而段还在 → 用段上的 `endInSea` 判河口，判据本身不变（末端必须落在海格）。
+  if (!riversArr.length) {
+    const segs0 = (sm.autoRiverSegments && sm.autoRiverSegments.value) || sm.autoRiverSegments || [];
+    for (const g of segs0) {
+      if (!g || !g.endInSea) continue;
+      const i = cellOf(g.x1, g.y1);
+      checked++;
+      if (i < 0 || (h[i] >= 20 && !lakeCells.has(i))) bad++;
+    }
+  }
+  // 🔴 2026-11-04（FMG 口径）：**支流的终点是汇流点**（它汇进的那条河的格子上），不是海。
+  // 旧口径只有"源头→海"的代表路径，所以"每条河末端都在海里"当时成立；现在不成立了。
+  // 判据改成两条：① 入海的河（endInSea）末端必须在海格；② 支流的最后一格必须**归入父河**
+  // （在 `parent.cells` 里）—— 谁都不挨着的那种才是真的断头。
+  const riverById = new Map(riversArr.map((r) => [r.id, r]));
+  // 格 → 认领它的**所有**河。汇流点那格同时属于"进来的那条"和"接住它的那条"
+  // （上游 `flowDown` 两边都会 addCell），所以必须存集合，不能只存最后一笔。
+  const ownersOf = new Map();
+  for (const r of riversArr) for (const c of (r.cells || [])) {
+    const set = ownersOf.get(c) || new Set();
+    set.add(r.id);
+    ownersOf.set(c, set);
+  }
+  let tributary = 0;
+  let edge = 0;
+  const samples = [];
+  for (const riv of riversArr) {
     const rp = riv && riv.points;
     if (!rp || rp.length < 2) continue;
-    const e = rp[rp.length - 1];
-    const i = cellOf(e.x, e.y);
-    checked++;
-    if (i < 0 || h[i] >= 20) bad++;
+    if (riv.endInSea) {
+      const e = rp[rp.length - 1];
+      const near = nearestCell(e.x, e.y);
+      checked++;
+      // 最近格点必须真的贴着（不超过一格半），否则说明端点已经飘出网格了
+      const why = near.i < 0 ? "no-cell" : (near.d > sp * 1.5 ? "far" : (h[near.i] >= 20 && !lakeCells.has(near.i) ? "land" : ""));
+      if (why) {
+        bad++;
+        if (samples.length < 3) samples.push({ id: riv.id, why, d: +near.d.toFixed(2), hNear: h[near.i], cells: (riv.cells || []).length, lastCell: (riv.cells || [])[riv.cells.length - 1], hLast: h[(riv.cells || [])[riv.cells.length - 1]] });
+      }
+      continue;
+    }
+    if (riv.endInLake) continue;              // 入湖：湖面是水面标记，合法终点
+    // 出图边：陆地顶到网格边界时水往外流（上游 cells.b 的同一口径），也是合法终点。
+    // 实测这 8 条全部落在网格最外一圈（例如 cell 66 = 第 0 行第 66 列）。
+    if (riv.endAtEdge) { edge++; continue; }
+    tributary++;
+    const cells = Array.isArray(riv.cells) ? riv.cells : [];
+    const lastCell = cells.length ? cells[cells.length - 1] : -1;
+    // 直接父河可能因为"少于 3 格"被丢掉（引擎会把支流挂到还活着的祖先上），
+    // 所以判"这格有没有被**任何别的河**认领"—— 那才是"接在河网上"。
+    const owners = ownersOf.get(lastCell) || new Set();
+    let joined = false;
+    for (const oid of owners) if (oid !== riv.id) { joined = true; break; }
+    if (!joined) {
+      bad++;
+      if (samples.length < 3) samples.push({ id: riv.id, why: "tributary-detached", lastCell, owners: Array.from(owners), parent: riv.parent });
+    }
   }
-  return JSON.stringify({ checked, bad });
+  return JSON.stringify({ checked, bad, lakes: lakeCells.size, tributary, edge, samples });
 })() """.replace('__STORE__', STORE).replace('__SC__', SC).replace('__KEY__', repr(key))
     ends = eval_json(cdp, ends_js, required=None, desc='河口判定')
     ends = ends[1] if isinstance(ends, tuple) and ends[0] else {'bad': -1, 'err': ends}
     if ends.get('bad', -1) != 0:
-        fails.append(f"有 {ends.get('bad')} 条河的末端不在海里"
+        fails.append(f"有 {ends.get('bad')} 条河的终点既不在海/湖、也没接在河网上"
                      f"（追到一半就断了 / 走上坡）：{ends}{_probe_err(ends)}")
     elif not ends.get('checked'):
         # ⚠️ 判据强度：`bad == 0` 也可能是"一条都没检查"（空集合恒真 = 静默假绿）。
@@ -793,14 +871,22 @@ def run(cdp):
   const minF = Math.min(...flows), maxF2 = Math.max(...flows);
   // 代表路径覆盖多少**格**（用格号去重最稳；坐标去重会被浮点坑到）
   const pathCellSet = new Set();
-  for (const r of (sm.autoRivers || [])) {
+  const segCellSet = new Set();
+  for (const g of segs) segCellSet.add(Math.round(g.x0 * 100) + ':' + Math.round(g.y0 * 100));
+  // 🔴 2026-11-03：`sm.autoRivers` 是 ref —— 直接 `for...of` 迭代到 0 个元素（河口判据因此空转过）。
+  const riversArr = (sm.autoRivers && sm.autoRivers.value) || sm.autoRivers || [];
+  for (const r of riversArr) {
     const rp = (r && r.points) || [];
     for (const p of rp) pathCellSet.add(Math.round(p.x * 100) + ':' + Math.round(p.y * 100));
   }
+  // 只算**河网覆盖到的**路径格：新引擎是树，路径本来就长在网里，
+  // 拿“路径全部去重格”去比“段数”是旧引擎的量纲（见 STATUS 第 13 刀）。
+  let pathCovered = 0;
+  for (const k of pathCellSet) if (segCellSet.has(k)) pathCovered++;
   return JSON.stringify({
     segs: segs.length, maxFlow: maxF, rings: rings.length,
     checked, outside,
-    pathCells: pathCellSet.size,
+    pathCells: pathCovered, segCells: segCellSet.size, rivers: riversArr.length,
     minF, maxF2, wMin: +wOf(minF).toFixed(2), wMax: +wOf(maxF2).toFixed(2),
     ratio: +(wOf(maxF2) / wOf(minF)).toFixed(2),
     renderPaused: !!sm.renderPaused, renderError: String(sm.renderError || ''),
@@ -837,11 +923,15 @@ def run(cdp):
     if isinstance(net, dict) and not net.get('err'):
         segs_n = net.get('segs') or 0
         path_cells = net.get('pathCells') or 0
-        if segs_n and path_cells and segs_n <= path_cells:
-            fails.append(f"河网段覆盖（{segs_n} 格）没有超过代表路径覆盖（{path_cells} 格）—— "
-                         f'段没有起到“逐格河网”的作用（树枝状汇聚结构上画不出来）')
+        # 2026-11-03：新引擎是**树**，代表路径天然长在网里 → “段数必须超过路径去重格数”
+        # 这个量纲不成立（实测两者恒等：1500 = 1500）。判据改成守**密度**：
+        # 段覆盖的格数必须远多于“几条孤立线”（每条河平均 ≥10 格）。
+        rivers_n = net.get('rivers') or 0
+        if segs_n and rivers_n and segs_n < rivers_n * 2:
+            fails.append(f"河网段 {segs_n} 段相对 {rivers_n} 条河太少 —— "
+                         f'每条河至少要有 2 段（源头→河口）；段没起到“河网”的作用')
         elif segs_n:
-            notes.append(f"覆盖对比：河网 {segs_n} 格 vs 代表路径 {path_cells} 格")
+            notes.append(f"覆盖对比：河网 {segs_n} 段 / 代表路径落入网内 {path_cells} 格 / {rivers_n} 条河")
 
     # ── ⑪ 剪枝强度与**拓扑保留**（2026-10-17 第七修）────────────────────────────
     # 为什么必须单独守：第六修给渲染加了 `pruneRiverNetwork`（只画流量最高的那一档），
@@ -873,6 +963,10 @@ def run(cdp):
     const sm = __SC__;
     const segs = sm.autoRiverSegments || [];
     out.segs = segs.length;
+    // 2026-11-04：FMG 引擎**不剪枝**（密度在生成时由 minFlux 决定）—— 旧的三条剪枝判据
+    // 在这个口径下没有对应物，必须按引擎分支，否则会拿旧尺子量新几何。
+    out.engine = (typeof window.__getRiverEngine === 'function') ? window.__getRiverEngine() : 'legacy';
+    out.rivers = (((sm.autoRivers && sm.autoRivers.value) || sm.autoRivers) || []).length;
     if (!segs.length) { out.err = 'no-segments'; return JSON.stringify(out); }
     if (typeof sm.riverFlowGate !== 'function') {
       out.err = 'no-gate-api'; out.hasGate = (typeof sm.riverFlowGate);
@@ -931,21 +1025,32 @@ def run(cdp):
         ratio = (p_drawn / p_segs) if p_segs else 0
         notes.append(f"剪枝：落笔 {p_drawn}/{p_segs} 段（{ratio * 100:.1f}%；闸门流量 ≥{prune.get('gate')}，"
                      f"强段 {p_strong}；非单调下游 {prune.get('nonMono')} / 合法尽头 {prune.get('terminus')}）")
-        if not (0 < p_drawn < p_segs):
-            fails.append(f'🔴 剪枝没生效或把河网剪空了（落笔={p_drawn} / 总段={p_segs}）—— '
-                         f'“只画河道”要么没接线、要么剪过头')
-        if p_segs and ratio < 0.05:
-            fails.append(f'🔴 剪枝过头：只留 {ratio * 100:.1f}% 的段（下界 5%）—— 这正是产品踩过的那个 bug'
-                         f'（格键不匹配 → 3750 段只留 26 段），表现是"画布上有河但很稀"，**不报错**')
-        if p_strong and p_drawn < p_strong:
-            fails.append(f'🔴 有超过闸门的段没被画出来（落笔 {p_drawn} < 强段 {p_strong}）—— '
-                         f'剪枝把该留的干流也丢了')
-        if p_strong and p_drawn == p_strong:
-            fails.append(f'🔴 落笔段数**恰好等于**强段数（{p_strong}）—— 剪枝的规则②（"下游被留下就留下"）'
-                         f'没有生效，河网会碎成一堆互不相连的短刺。'
-                         f'这正是 `riverRender.js` 留档的那个 bug：格键用浮点坐标做字符串 → '
-                         f'匹配不上 → 计数看起来"正常"、画布上却稀。'
-                         f'（这一条是"帧差 > 0"永远抓不到的）')
+        p_rivers = prune.get('rivers') or 0
+        if prune.get('engine') == 'fmg':
+            # FMG 口径（2026-11-04）：**渲染前不剪枝**。密度由生成时的 minFlux（河源汇流）决定，
+            # 每条河天然是"源头→河口"的完整点列。旧的三条剪枝判据（规则②边界层等）在这个
+            # 口径下没有对应物 —— 换成的结构判据：落笔条数必须**正好等于**河数（不多画、不漏画）。
+            if not (p_drawn > 0 and p_drawn == p_rivers):
+                fails.append(f'🔴 FMG 口径下"落笔条数"必须等于河数（落笔={p_drawn} / 河={p_rivers}）—— '
+                             f'渲染侧又偷偷剪枝了，或者回执报的不是实际画出来的条数')
+            else:
+                notes.append(f'FMG 口径：{p_drawn} 条河全部落笔（不剪枝；河源汇流闸门 {prune.get("gate")}）')
+        else:
+            if not (0 < p_drawn < p_segs):
+                fails.append(f'🔴 剪枝没生效或把河网剪空了（落笔={p_drawn} / 总段={p_segs}）—— '
+                             f'“只画河道”要么没接线、要么剪过头')
+            if p_segs and ratio < 0.05:
+                fails.append(f'🔴 剪枝过头：只留 {ratio * 100:.1f}% 的段（下界 5%）—— 这正是产品踩过的那个 bug'
+                             f'（格键不匹配 → 3750 段只留 26 段），表现是"画布上有河但很稀"，**不报错**')
+            if p_strong and p_drawn < p_strong:
+                fails.append(f'🔴 有超过闸门的段没被画出来（落笔 {p_drawn} < 强段 {p_strong}）—— '
+                             f'剪枝把该留的干流也丢了')
+            if p_strong and p_drawn == p_strong:
+                fails.append(f'🔴 落笔段数**恰好等于**强段数（{p_strong}）—— 剪枝的规则②（"下游被留下就留下"）'
+                             f'没有生效，河网会碎成一堆互不相连的短刺。'
+                             f'这正是 `riverRender.js` 留档的那个 bug：格键用浮点坐标做字符串 → '
+                             f'匹配不上 → 计数看起来"正常"、画布上却稀。'
+                             f'（这一条是"帧差 > 0"永远抓不到的）')
 
     # ── 性能护栏：再点一次（同一张图）耗时有上限 ──────────────────────────────
     perf_js = r""" (async () => {
@@ -1255,7 +1360,10 @@ def run(cdp):
                          '（`.draw-hint` 里找不到）—— 用户看不到的回执等于没有回执')
         if on_c <= 0:
             fails.append('🔴 勾上平滑后一条河都没有 —— 缺了"同时下调源头闸门"那一步')
-        if '闸门按' not in hint:
+        if prune.get('engine') == 'fmg':
+            if '河源汇流' not in hint:
+                fails.append('🔴 勾上平滑后回执里没有闸门读数（“河源汇流”）—— 用户看不出河为什么变多变少')
+        elif '闸门按' not in hint:
             fails.append('🔴 回执没有说明闸门被降（用户会以为是数据坏了）')
         if '已先平滑地形' in hint_off:
             fails.append('🔴 取消平滑后回执里仍写着“已先平滑地形”—— 开关关不掉（默认行为被改掉）')

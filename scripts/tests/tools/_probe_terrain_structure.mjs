@@ -14,7 +14,7 @@ import { pathToFileURL } from 'url';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\//, '')), '..', '..', '..');
 const UTILS = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-ts-'));
-for (const f of ['terrainSynthesis.js', 'riverTrace.js', 'riverChains.js', 'coastline.js',
+for (const f of ['terrainSynthesis.js', 'lakes.js', 'riverTrace.js', 'riverChains.js', 'coastline.js',
   'gridSpatialIndex.js', 'heightmapAccess.js', 'heightmapResample.js', 'polylineSmooth.js']) {
   fs.writeFileSync(path.join(tmp, f),
     fs.readFileSync(path.join(UTILS, f), 'utf8').replace(/from '\.\/([A-Za-z0-9_-]+)'/g, "from './$1.js'"));

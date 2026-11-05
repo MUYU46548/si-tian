@@ -285,9 +285,24 @@ def main():
             print(f"  浮雕开：全图颜色 {on['colors']} / 陆地像素 {on['landPx']} / 补丁 {on.get('patch')}", flush=True)
             print(f"  浮雕关：全图颜色 {off['colors']} / 陆地像素 {off['landPx']} / 补丁 {off.get('patch')}", flush=True)
             bad += 0 if ck('开/关两帧不同（浮雕真的画了）', on['hash'] != off['hash']) else 1
-            # 判据①：地形色 + 阴影让全图颜色数明显变多（平涂时是"每省一色 + 省界/标签"）
-            bad += 0 if ck('全图颜色数明显变多（地形色 + 阴影）', on['colors'] >= off['colors'] * 1.5,
-                           f"{off['colors']} → {on['colors']}") else 1
+            # 判据①（2026-11-04 改口径）：**颜色数会撞上限**（`colors.size < 8192` 封顶），
+            # 真实项目/新底图两边都到 8192 → 这条判据失去区分度（实测 8192 → 8192 恒红）。
+            # 改成直接拿两帧 PNG 做逐像素比对：浮雕开/关必须在画布上留下可观差异。
+            try:
+                from PIL import Image, ImageChops
+                A = Image.open(on_png).convert('RGB')
+                B = Image.open(off_png).convert('RGB')
+                dif = ImageChops.difference(A, B)
+                data = list(dif.getdata())
+                npx = len(data) or 1
+                changed = sum(1 for p in data if max(p) > 6)
+                mean = sum(sum(p) for p in data) / (3.0 * npx)
+                frac = changed / npx * 100.0
+                bad += 0 if ck('开/关两帧逐像素确有可观差异（>6 的像素 ≥ 20% 且平均差 ≥ 1.5）',
+                               frac >= 20.0 and mean >= 1.5,
+                               f"差异像素 {frac:.1f}% / 平均差 {mean:.2f}") else 1
+            except Exception as e:                             # noqa: BLE001
+                bad += 0 if ck('开/关两帧逐像素比对', False, f'PIL 比对失败：{e}') else 1
             # ⚠️ 补丁/方差这类**像素统计**只作参考：无头环境下取景与标签位置会漂，
             #    真正逐条钉死"水洗 0.42 / 浮雕 drawImage"的是 `unit/test_scenario_relief.js`（假 ctx 记账）。
             print('  （参考）水洗与浮雕的接线判据见 unit/test_scenario_relief.js', flush=True)

@@ -19,8 +19,11 @@ import { HeightmapGenerator } from './generator';
 import { fbm } from '../landmassField';
 // B④（2026-10-29）：洼地填平复用 `terrainSynthesis.fillDepressions`（priority-flood，唯一实现）
 import { fillDepressions } from '../terrainSynthesis';
+// 2026-11-04：湖的判定搬进 `utils/lakes.js`（两条生成路径共用一份，见该文件头）
+import { detectBasinLakes } from '../lakes.js';
 
 export { HEIGHT_TEMPLATES, TEMPLATE_IDS };
+export { detectBasinLakes };
 
 export const FMG_SEA_LEVEL = 20;
 
@@ -57,83 +60,7 @@ export function applyRoughness(heights, lattice, roughness, seed) {
   return out;
 }
 
-/**
- * **盆地 → 湖**（B④ 的"湖"这一步，2026-10-29）。
- *
- * 🔴 关键口径：**不动高度场**。这里只产出 `{level, cells}` 这份**渲染层水面标记**，
- * 高度仍然是"填平之后、处处可排水"的那份。理由写在计划表里（也踩过）：
- * 把湖格挖成 18/19 会在高度场上造出**没有出水口**的盆地 → 河流在湖边断头（本项目明令禁止的形态）。
- * 保留可排水高度 + 单独标记水面，等于"湖是水面，不是地形洞"—— 河照样从湖里穿过去。
- *
- * 判定：被 `fillBasins` 抬起来、且**抬升量 ≥ minDepth**（默认 0.5）的陆格按 8 邻居聚成连通块，
- * 面积 ≥ `minArea` 的才算湖；水位取块内**最高的填充高度**（≈ 溢出口高度）。
- *
- * 🔴 为什么要 `minDepth`：priority-flood 会沿"排水通道"把整条平坦路径一格一档地抬（ε≈0.04），
- * 实测 974 个抬高格里 **p50 = 0.00 / p90 = 0.04** —— 绝大多数是通道噪声，不是盆地。
- * 不设深度门槛会把整条流路当成一个"488 格的湖"（实测），水位还被算到 97（接近峰顶）。
- *
- * @param {Float32Array} filled 填洼后的高度
- * @param {Array<{i:number,before:number,after:number}>} basins `fillBasins` 的 basins
- * @param {number} cellsX @param {number} cellsY
- * @param {{minArea?:number, minDepth?:number, maxLakes?:number, maxCells?:number}} [opts]
- * @returns {Array<{level:number, cells:number[]}>} 按面积从大到小
- */
-export function detectBasinLakes(filled, basins, cellsX, cellsY, opts = {}) {
-  const n = filled ? filled.length : 0;
-  if (!n || cellsX < 2 || cellsY < 2) return [];
-  const minArea = Math.max(4, Math.floor(Number(opts.minArea) || 8));
-  const minDepth = Number.isFinite(opts.minDepth) ? Math.max(0, Number(opts.minDepth)) : 0.5;
-  const maxLakes = Math.max(1, Math.floor(Number(opts.maxLakes) || 40));
-  const maxCells = Math.max(100, Math.floor(Number(opts.maxCells) || 6000));
-
-  const raised = new Uint8Array(n);
-  for (const b of (basins || [])) {
-    if (!b || !Number.isInteger(b.i) || b.i < 0 || b.i >= n) continue;
-    if (Number(b.after) - Number(b.before) >= minDepth) raised[b.i] = 1;
-  }
-  const seen = new Uint8Array(n);
-  const out = [];
-  for (let start = 0; start < n; start++) {
-    if (!raised[start] || seen[start]) continue;
-    const comp = [];
-    const queue = [start];
-    seen[start] = 1;
-    let level = -Infinity;
-    while (queue.length) {
-      const cur = queue.pop();
-      comp.push(cur);
-      if (filled[cur] > level) level = filled[cur];
-      const ci = cur % cellsX;
-      const cj = (cur - ci) / cellsX;
-      for (let dj = -1; dj <= 1; dj++) {
-        for (let di = -1; di <= 1; di++) {
-          if (!di && !dj) continue;
-          const ni = ci + di;
-          const nj = cj + dj;
-          if (ni < 0 || nj < 0 || ni >= cellsX || nj >= cellsY) continue;
-          const idx = nj * cellsX + ni;
-          if (!raised[idx] || seen[idx]) continue;
-          seen[idx] = 1;
-          queue.push(idx);
-        }
-      }
-    }
-    if (comp.length >= minArea) {
-      comp.sort((a, b) => a - b);
-      out.push({ level: Math.round(level * 100) / 100, cells: comp });
-    }
-  }
-  out.sort((a, b) => (b.cells.length - a.cells.length) || (a.cells[0] - b.cells[0]));
-  // 体积上限：湖是**元数据**，最大的一条也可能是几百格；只留最大的若干条 + 总格数封顶
-  const kept = [];
-  let budget = maxCells;
-  for (const lake of out) {
-    if (kept.length >= maxLakes || lake.cells.length > budget) continue;
-    budget -= lake.cells.length;
-    kept.push(lake);
-  }
-  return kept;
-}
+// 湖的判定已搬到 utils/lakes.js（2026-11-04）：FMG 模板地形与按轮廓推演共用一份。
 /**
  * **洼地填平**（B④，2026-10-29）：FMG 模板地形有大量封闭盆地 → 司天的自动河流在它上面
  * **一条都长不出来**（实测 8k 格：continents / archipelago / oldWorld 全部 0 条）。

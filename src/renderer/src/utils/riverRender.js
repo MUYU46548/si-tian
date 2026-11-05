@@ -501,28 +501,84 @@ export function riverFlowGateByQuantile(segments, keepRatio = 0.12) {
  *
  * @param {Array<{x:number,y:number}>} points
  * @param {number} [subdiv] 每段细分数（1 = 不加密）
+ * @param {number} [tension] 张力 0~1（0 = 标准 Catmull-Rom，1 = 直线）。
+ *   🔴 2026-11-04（暮雨：“过穿的河流”）：汇流焊接把河网几何的交叉压到 **0** 之后，
+ *   画布上仍然看得见 X —— 数出来是**样条自己过冲**造成的 **27 处**（`audit_river_network.mjs`
+ *   的 `[draw]` 一栏）。急弯处标准 Catmull-Rom 的切线不受控，会把曲线甩到邻河那一侧。
+ *   默认取 **0.5**（切线减半）：弯还是弯的，但不再越过控制点形成的折线两侧。
  * @returns {Array<{x:number,y:number}>} 新数组
  */
-export function catmullRomPoints(points, subdiv = 8) {
+export function catmullRomPoints(points, subdiv = 8, tension = 0.5) {
   const src = Array.isArray(points) ? points : [];
   if (src.length < 3) return src.map((p) => ({ x: p.x, y: p.y }));
   const n = Math.max(2, Math.min(32, Math.floor(subdiv) || 8));
+  const c01 = Math.max(0, Math.min(1, Number.isFinite(tension) ? tension : 0.5));
+  const s = 0.5 * (1 - c01);   // 切线缩放：c01=0 → 0.5（Catmull-Rom），c01=1 → 0（直线）
   const at = (i) => src[Math.max(0, Math.min(src.length - 1, i))];
   const out = [{ x: src[0].x, y: src[0].y }];
-  const c = (p0, p1, p2, p3, t) => {
+  // Hermite 形式：p(t) = h00·p1 + h10·m1 + h01·p2 + h11·m2（切线按张力缩放）
+  const hermite = (p1, p2, m1, m2, t) => {
     const t2 = t * t, t3 = t2 * t;
-    return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+    return h00 * p1 + h10 * m1 + h01 * p2 + h11 * m2;
   };
   for (let i = 0; i + 1 < src.length; i++) {
     const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    // 🔴 端点切线**不许外推**：最后一段的标准写法会拿 p2 当 p3，切线指向“继续往前”，
+    //    曲线就会冲过终点再回来 —— 而终点正是汇流点（焊接后落在干流线上），一冲就穿过去。
+    //    首/末段的切线改成单侧差分（i===0 / i+2 越界），端点处收敛为 0 曲率。
+    const lastSeg = i + 2 >= src.length;
+    const firstSeg = i === 0;
+    const mx0 = ((firstSeg ? p2.x - p1.x : p2.x - p0.x)) * s;
+    const my0 = ((firstSeg ? p2.y - p1.y : p2.y - p0.y)) * s;
+    const mx1 = ((lastSeg ? p2.x - p1.x : p3.x - p1.x)) * s;
+    const my1 = ((lastSeg ? p2.y - p1.y : p3.y - p1.y)) * s;
     for (let k = 1; k <= n; k++) {
       const t = k / n;
-      out.push({ x: c(p0.x, p1.x, p2.x, p3.x, t), y: c(p0.y, p1.y, p2.y, p3.y, t) });
+      out.push({
+        x: hermite(p1.x, p2.x, mx0, mx1, t),
+        y: hermite(p1.y, p2.y, my0, my1, t),
+      });
     }
   }
   // 末点逐字归位（浮点累加不能动用户看见的河口坐标）
   out[out.length - 1] = { x: src[src.length - 1].x, y: src[src.length - 1].y };
   return out;
+}
+
+/**
+ * **Chaikin 角切平滑**（2026-11-04）——样条过冲会把“不该相交的河”画成交叉，角切不会。
+ *
+ * 为什么换掉 Catmull-Rom：样条的切线由前后点外推，急弯/汇流尖角处曲线会**冲出控制折线**两侧；
+ * 实测真实项目：几何交叉 0 的河网，细分后反而多出 **26 处**交叉（`audit_river_network.mjs` 的 `[draw]`）。
+ * Chaikin 的每个新点都是相邻两点的凸组合（0.75/0.25）→ 曲线**永远落在控制折线形成的带状区域里**，
+ * 不可能越过另一条河的线；同时它天然是圆角，看上去仍然是手绘的弯。
+ *
+ * 纪律与 `catmullRomPoints` 相同：端点逐字保留、点数可预测（每遍 ×2）。
+ *
+ * @param {Array<{x:number,y:number}>} points
+ * @param {number} [passes=3] 角切遍数（3 遍 ≈ 8 段/原始段，和原来的 subdiv 8 同量级）
+ * @returns {Array<{x:number,y:number}>}
+ */
+export function chaikinPoints(points, passes = 3) {
+  const src = Array.isArray(points) ? points : [];
+  if (src.length < 3) return src.map((p) => ({ x: p.x, y: p.y }));
+  const n = Math.max(1, Math.min(6, Math.floor(passes) || 3));
+  let cur = src.map((p) => ({ x: p.x, y: p.y }));
+  for (let it = 0; it < n; it++) {
+    const out = [cur[0]];
+    for (let i = 0; i + 1 < cur.length; i++) {
+      const a = cur[i], b = cur[i + 1];
+      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    out.push(cur[cur.length - 1]);
+    cur = out;
+  }
+  return cur;
 }
 
 /**
@@ -559,6 +615,36 @@ export function taperWidths(count, w0, w1) {
     out[i] = a + (b - a) * Math.pow(t, 1.6);
   }
   return out;
+}
+
+/**
+ * **汇流口的“收口”**（2026-11-04 第二十一修，暮雨：12 倍下汇流点读成 X 交叉）。
+ *
+ * 问题不在拓扑：`--probe-cross` 页内实测 0 横穿、0 自交；焊接后的支流端点就落在主干中心线上。
+ * 显式的 X 来自**画法**：两条支流从主干两侧落到同一个点，各自带着自己的宽度直插到主干中心线，
+ * 四条臂一凑就是十字。真实地图上支流在汇口是**没入**干流（宽度收到接近 0），不是“戳进去”。
+ *
+ * 口径：
+ *   · 只压**河口端**（`widths` 最后一个点），压到 `minFactor`（默认 12%），向前 `points` 个点内线性回到 1；
+ *   · 就地改数组（调用方拿到的是本次绘制专用的一份）；
+ *   · 汇口落在主干中心线上，主干又**后画**（按汇流量升序），收窄的尖端会被主干带宽盖住 ⇒ 读成汇流。
+ *
+ * @param {number[]} widths 逐点宽度（世界单位），会被就地修改
+ * @param {{points?:number, minFactor?:number}} [opts]
+ * @returns {number[]} 同一个数组（便于链式写法）
+ */
+export function taperRiverMouth(widths, opts = {}) {
+  const n = Array.isArray(widths) ? widths.length : 0;
+  if (n < 3) return widths;
+  const k = Math.max(1, Math.min(n - 1, Math.floor(Number(opts.points) > 0 ? Number(opts.points) : 3)));
+  const f0 = Number.isFinite(opts.minFactor) ? Math.max(0.02, Math.min(1, opts.minFactor)) : 0.12;
+  for (let i = 0; i < k; i++) {
+    const idx = n - 1 - i;
+    const t = k > 1 ? i / (k - 1) : 1;            // 0 = 河口端，1 = 最内侧那一点
+    const f = f0 + (1 - f0) * t;
+    widths[idx] = Math.max(0.01, widths[idx] * f);
+  }
+  return widths;
 }
 
 /**
@@ -672,6 +758,8 @@ export function drawCurvedRiver(ctx, controlPts, headWidth, mouthWidth, opts = {
     bankColor: opts.bankColor || '#3f6478',
     bankWidth: outline,
     alpha,
+    // 分块数决定“宽度按段取”的粒度：收口的锥形要靠更细的块才看得见（见 `taperRiverMouth`）
+    chunks: opts.chunks,
   });
   return { drawn, curvePoints: curve.length };
 }

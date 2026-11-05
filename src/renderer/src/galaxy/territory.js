@@ -317,7 +317,10 @@ export function buildFieldInputs(domainNodes, galaxyNodes, opts = {}) {
       claim,
       // 波浪幅值跟着 claim 走：半径 430 的领土上 42 的幅值只是"稍微不圆"，
       // 要的是能看到 2~3 个大瓣（参照原型成品图7 的轮廓）。
-      wobbleAmp: clamp(claim * 0.26, 30, 88),
+      // 2026-11-03 用户实测 #13（“近就老老实实贴边，隔得远真空”）：原来 claim*0.26（振幅 30~88 世界单位）
+      // 把等值线推成大波瓣 —— 相邻星域不是一条中垂线，而是一对鼓包（截图 build/sample-galaxy/generated.png）。
+      // 降到 0.10 / 12~34：边界仍是有机的，但主体改由**距离差**决定，贴近 Voronoi 中垂线。
+      wobbleAmp: clamp(claim * 0.10, 12, 34),
       weight,
       saltOffset: (idx * 17.17) + (opts.salt || 0),
       galaxyCount: galaxies.length,

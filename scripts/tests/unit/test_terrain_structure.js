@@ -32,7 +32,7 @@ const { pathToFileURL } = require('url');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const SRC_DIR = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
-const DEPS = ['terrainSynthesis.js', 'riverTrace.js', 'gridSpatialIndex.js', 'heightmapResample.js', 'polylineSmooth.js'];
+const DEPS = ['terrainSynthesis.js', 'lakes.js', 'drainageBasins.js', 'riverTrace.js', 'gridSpatialIndex.js', 'heightmapResample.js', 'polylineSmooth.js'];
 
 const SEA = 20;
 const SEEDS = [7, 11, 23];

@@ -24,7 +24,12 @@ import {
   smoothRiverLine, planRiverCoveredRuns, catmullRomPoints,
   collapseReversedRiverPoints, offsetPolyline, offsetPolylineVariable, riverSelGapForWidth,
 } from '../../utils/riverRender';
+import { weldRiverJunctions, snapRiverTails } from '../../utils/fmg/rivers';
+import { clipPolylineToCoast, MOUTH_OVERSHOOT } from '../../utils/coastline';
 
+/** 本图河曲线缓存（键 = 底图 rivers 数组引用；焊接/接尾巴与相机无关） */
+// `ver` = 曲线重建次数（排障用：`window.__RIVER_DRAW__.ver` 能证明“这一帧描的到底是哪一版几何”）
+let riverCurveCache = { rivers: null, items: [], ver: 0 };
 /** 导入河的绘制计划缓存（键 = 裁剪后列表引用 + 缩放 + 最宽河） */
 let displayRiverPlanCache = { list: null, scale: 0, maxW: 0, smoothed: [], plans: [] };
 /** 河道曲线 + 分块 Path2D 缓存：键 = 该河的 smoothed 数组（缩放变会换数组） */
@@ -142,21 +147,118 @@ export function drawRoutesLayer(c, view) {
 
 /** 手画河（id 前缀 `river_`；导入河由 drawRivers 负责 —— 两边都画会把同一份数据画两遍） */
 export function drawRiverPathsLayer(c, view) {
-  const list = ((view.baseMap && view.baseMap.rivers) || [])
-    .filter((r) => r && String(r.id || '').indexOf('river_') === 0);
+  const rivers = (view.baseMap && view.baseMap.rivers) || [];
+  const list = rivers.filter((r) => r && String(r.id || '').indexOf('river_') === 0);
   if (!list.length) return;
   const tl = view.screenToWorld(0, 0);
   const br = view.screenToWorld(view.w, view.h);
   const pad = view.px(40);
   const minX = tl.x - pad, maxX = br.x + pad, minY = tl.y - pad, maxY = br.y + pad;
+  // ── 只建一次，按“底图河流数组引用”缓存（2026-11-04 的关键修正）──────────────────
+  // 🔴 之前是“先按视口裁剪、再焊接”：同一张地图在不同缩放下会被切成不同的几何 ——
+  //    12 倍看见交叉、全图看不见，就是因为交叉的另一半被裁在视口外没参与焊接。
+  //    现在**全量建一次**（平滑 → 接尾巴 → 焊接），再按视口裁剪去画；几何与相机无关，
+  //    顺带把每帧 4~15ms 的焊接成本变成只在“河流/底图变了”时付一次。
+  // 🔴 2026-11-05：缓存键多一个 terrain —— 裁剪用的陆地掩膜来自省份多边形，
+  //    省份变了（同一 rivers 引用）不重建就会拿旧海岸线裁新陆地。
+  const terrainRef = (view.baseMap && view.baseMap.terrain) || null;
+  const cacheHit = riverCurveCache.rivers === rivers && riverCurveCache.terrain === terrainRef;
+  let items = cacheHit ? riverCurveCache.items : null;
+  // 本图最宽的河（= 归一化参照）：生成河存的是**相对量纲**，不归一化就会被 1.0 世界单位夹平
+  // （真实项目 562/573 条夹成同一个宽度 —— 用户说的“所有河一样宽”）。按数组引用缓存。
+  let widthMax = cacheHit ? riverCurveCache.widthMax : 0;
+  if (!widthMax) {
+    for (const r of list) {
+      const w = Number(r && r.width);
+      if (Number.isFinite(w) && w > widthMax) widthMax = w;
+    }
+  }
+  if (!items) {
+    const t0 = (typeof performance !== "undefined" ? performance.now() : 0);
+    const built = [];
+    // 🔴 2026-11-05（用户：“河流过穿捅进海洋，为什么修了十几轮还在”）：
+    //    真凶不是画法，是**路径**：生成即落库之后，屏幕上的河来自 `baseMaps.rivers`
+    //    （`river_gen_*`），走的就是本函数；而裁剪只存在于 FMG 内存预览那条路
+    //    （`autoRiverPartsFor`）。于是“结构性保证不可能画出海”只保护了预览，落库那套一条没裁。
+    //    实测（真实 415 省项目 / 573 条）：尾端出陆 267 条，中位 2.77 / p90 6.80 / max 10.90 世界单位。
+    //    这里与导入河/手画河**共用同一个** `clipPolylineToCoast` + `MOUTH_OVERSHOOT`，不另写一份。
+    const coastMask = (typeof view.getLandMask === 'function') ? view.getLandMask() : null;
+    let coastClipped = 0;
+    let coastDroppedKept = 0;
+    for (const r of list) {
+      const path = view.riverNodesForRender(r);
+      if (path.length < 2) continue;
+      let curve = path.length >= 3
+        ? catmullRomPoints(path.map((p) => ({ x: p.x, y: p.y })), 6)
+        : path.map((p) => ({ x: p.x, y: p.y }));
+      // 平滑之后再裁：Catmull-Rom 本身会把链尾拖出岸外一小段（旧注释已记过这笔）。
+      if (coastMask && curve.length >= 2) {
+        const res = clipPolylineToCoast(curve, coastMask.lookup, { keepOvershoot: MOUTH_OVERSHOOT });
+        if (res.dropped) coastDroppedKept++;          // 整条都在水里：宁可画着让它可选中/可删，也不静默消失
+        else if (res.trimmed) { curve = res.points; coastClipped++; }
+      }
+      built.push({ r, curve, discharge: Number(r && (r.discharge || r.width)) || 0 });
+    }
+    let cuts = 0;
+    if (built.length > 1) {
+      const wrappers = built.map((it, i) => ({
+        id: i + 1,
+        discharge: it.discharge,
+        points: it.curve,
+      }));
+      snapRiverTails(wrappers, { spacing: 8 });
+      // 先接尾巴、再焊接（顺序反了会把刚切好的断面又拉出一小段交叉）
+      const wst = weldRiverJunctions(wrappers, { spacing: 8 });
+      cuts = wst.cut;
+      for (let i = 0; i < built.length; i++) {
+        built[i].curve = wrappers[i].points;
+        // 尾巴被焊在别的河上 ⇒ 汇流口要收窄（否则支流是“戳进”主干中心线，见 taperRiverMouth）
+        built[i].atJunction = wrappers[i].endsAtJunction === true;
+      }
+    }
+    // 分层绘制（卡里的 B 项，2026-11-04 第二十修）：**细的先画、粗的后画**。
+    // 几何已经平面化（真横穿 0，见 `--probe-cross`），但两条支流常从主干两侧同时汇入同一个点：
+    // 主干先画就会被两条支流的断面压出十字，读起来正是用户说的“X 交叉”。
+    // 按汇流量升序落笔，主干的带宽会把两个断面盖住 → 读成汇流（Y）。
+    // 排序在建曲线时做一次（缓存里顺序稳定），不在每帧排。
+    built.sort((a, b) => (a.discharge - b.discharge));
+    items = built;
+    riverCurveCache = { rivers, terrain: terrainRef, items, widthMax, ver: (riverCurveCache.ver || 0) + 1 };
+    const ms = (typeof performance !== "undefined" ? performance.now() : 0) - t0;
+    if (typeof window !== 'undefined') {
+      window.__RIVER_DRAW__ = {
+        jobs: items.length, cuts, coastClipped, coastDroppedKept, ms: Math.round(ms * 10) / 10,
+        ver: riverCurveCache.ver, at: Date.now(),
+      };
+      // 排障口（`window.__SITIAN_DUMP_RIVERS__ = true` 才录）：把**真正要描的折线**吐出来
+      if (window.__SITIAN_DUMP_RIVERS__) {
+        window.__RIVER_DRAWN__ = items.slice(0, 1000).map((it) => ({
+          id: String(it.r && it.r.id),
+          w: Number(it.r && it.r.width) || 0,
+          j: it.atJunction === true,
+          pts: it.curve.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100]),
+        }));
+      }
+    }
+  }
+  // 排障导出也覆盖「缓存命中」的帧：缓存只在建曲线那次写，之后要靠这里补 dump
+  if (typeof window !== 'undefined' && window.__SITIAN_DUMP_RIVERS__ && !window.__RIVER_DRAWN__) {
+    window.__RIVER_DRAWN__ = items.slice(0, 1000).map((it) => ({
+      id: String(it.r && it.r.id),
+      w: Number(it.r && it.r.width) || 0,
+      j: it.atJunction === true,
+      pts: it.curve.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100]),
+    }));
+  }
   c.save();
   c.lineCap = 'round';
   c.lineJoin = 'round';
-  for (const r of list) {
-    const path = view.riverNodesForRender(r);
-    if (path.length < 2) continue;
-    if (!view.polylineInView(path, minX, minY, maxX, maxY)) continue;
-    view.drawOneHandRiver(c, path, r);
+  for (const it of items) {
+    if (!it.curve || it.curve.length < 2) continue;
+    if (!view.polylineInView(it.curve, minX, minY, maxX, maxY)) continue;
+    // `curve: false` —— 曲线已经在上面算好并焊过，这里不许再平滑一遍（会重新过冲）
+    // `taperTail` —— 尾巴焊在主干上的河，河口端要收窄（否则两条支流从两侧汇入会读成 X）
+    view.drawOneHandRiver(c, it.curve, it.r, { curve: false, taperTail: it.atJunction === true, widthMax });
   }
   c.restore();
 }

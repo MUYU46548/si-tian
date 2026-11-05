@@ -53,12 +53,20 @@ export const TERRAIN_PARAM_FIELDS = Object.freeze([
     hint: '留空 = 随种子推；填 0~179 强制一个方向（度）',
   },
   {
-    key: 'cellsAcross', label: '网格精度', kind: 'choice', options: [64, 96, 128, 160], def: 96,
-    hint: '长边格数。越大越细，越费内存/时间（96 = 旧默认）',
+    key: 'cellsAcross', label: '网格精度', kind: 'choice', options: [64, 96, 128, 160, 192, 256], def: 192,
+    hint: '长边格数。越大越细，越费内存/时间（96 = 0.4.0 旧默认；192 = 2026-11-03 用户拍板“A”后的新默认）',
   },
   {
     key: 'latitudeSpanDeg', label: '纬度跨度', kind: 'float', min: 40, max: 180, step: 10, def: 120,
     hint: '地图上下两端跨越的纬度（度）。只影响气候派生（温度/降水/群系），不影响高度',
+  },
+  {
+    key: 'drainageOutlets', label: '排水河口', kind: 'int', min: 0, max: 16, step: 1, def: 8,
+    hint: '分级河网的河口数（0 = 关）。8 = 实测达标的默认：干流 + 支流，入海口约 286 个（原来 500 个）',
+  },
+  {
+    key: 'hills', label: '丘陵数量', kind: 'int', min: 0, max: 400, step: 20, def: 260,
+    hint: '多尺度丘与盆（0 = 不撒）。它负责打散“平行坡面”——没有它，扇状度停在 0.83（参照 0.715）',
   },
 ]);
 
@@ -156,6 +164,15 @@ export function toSynthesisOptions(params, extra = {}) {
     structureOverrides,
     ...extra,
   };
+  // P2.1（2026-11-04）：排水骨架 + 丘陵。两者都是 `synthesizeTerrain()` 的选项
+  // （产品路径走 `terrainPipeline`，它再叠丘陵；直接调 `synthesizeHeightmapFromTerrain`
+  // 的旧代码只会吃到排水那一半 —— 不要再在调用处另拼这些字段）。
+  if (p.drainageOutlets > 0) {
+    opts.drainageTree = p.drainageOutlets;
+    opts.drainageDepth = 4;
+    opts.drainageBranching = 3;
+  }
+  if (p.hills > 0) opts.hills = p.hills;
   // `null` = 随种子：传 undefined 才会让推演回落到 `rangeAxisFromSeed(seed)`
   if (p.rangeAxisDeg != null) opts.rangeAxisDeg = p.rangeAxisDeg;
   return opts;

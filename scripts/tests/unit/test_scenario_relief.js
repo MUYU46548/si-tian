@@ -142,7 +142,7 @@ async function main() {
     return 'alpha=1';
   });
 
-  check('c6 三级线宽：政治档海岸线 1.6px（最重一级），浅海光带 5px', () => {
+  check('c6 三级线宽：政治档海岸线 1.2px（仍重于省界 0.7），浅海光带 3px', () => {
     const widths = [];
     const view = {
       rasterLayer: 'landsea', w: 800, h: 600, px: (v) => v,
@@ -154,9 +154,12 @@ async function main() {
     const ctx = makeCtx();
     C.drawPoliticalCoastLayer(ctx, view);
     assert(widths.length === 2, `应画两遍（浅海光带 + 海岸线），实测 ${widths.length}`);
-    assert(widths[0] === 5, `浅海光带应 5px，实测 ${widths[0]}`);
-    assert(widths[1] === 1.6, `海岸线应 1.6px（三级最重），实测 ${widths[1]}`);
-    return `5px 带 + 1.6px 岸线`;
+    // 2026-11-03 第 2 刀：5px/0.38 的青带在深色底上会发光（probe1.png 实证），降到 3px；
+    // 海岸线 1.6 → 1.2，但**层级不变**：海岸仍重于省界（0.7），这是三级线宽的设计意图。
+    assert(widths[0] === 3, `浅海光带应 3px，实测 ${widths[0]}`);
+    assert(widths[1] === 1.2, `海岸线应 1.2px（三级里仍重于省界），实测 ${widths[1]}`);
+    assert(widths[1] > 0.7, `海岸线必须重于省界 0.7，实测 ${widths[1]}`);
+    return `3px 带 + 1.2px 岸线`;
   });
 
   check('c7 源码守卫：省界线宽常量 = 0.7（三级里最细的一级）', () => {

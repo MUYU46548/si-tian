@@ -43,6 +43,12 @@
 
 import { traceRivers } from './riverTrace';
 import { buildGridIndexWithCellSize, pointXY } from './gridSpatialIndex';
+// 2026-11-04（P2-A）：**坡面侵蚀**的迭代核要用 D8 与汇流量。这两样只许有一份实现
+// （`fmg/rivers.js`：河网引擎自己也在用），所以直接引过来，不在本文件另写一套。
+import { downslope, accumulateFlux } from './fmg/rivers';
+
+/** 坡面侵蚀迭代核的版本号（P2-A 实验报告要写明是哪一版跑出的数） */
+export const GRID_EROSION_VERSION = 1;
 
 /** 默认强度（每一轮的最大下切量，高度点） */
 export const INCISE_STRENGTH = 2.2;
@@ -682,4 +688,133 @@ export function erodeTerrain(hm, opts = {}) {
   out.timings.guard = guard.ms;
   out.ms = Math.round(nowMs() - t0);
   return out;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P2-A（2026-11-04）：**坡面侵蚀的迭代核** —— 让“圆顶地形”自己长出可汇的谷
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// 与上面 `erodeTerrain` 的分工（两个函数、一件事的两个阶段，不是两套算法）：
+//   · `erodeGridSurface`（本段）= **迭代核**：只做“D8 → 汇流 → 下切 → 坡面扩散”，
+//     一轮一次流向场，代价 O(n log n)，13k 格实测 ~2ms/轮 → 20~50 轮仍在预算内。
+//     它不需要 `traceRivers`（那套要 ~80ms/轮，跑 30 轮就是 2.4s，产品里不可能接受）。
+//   · `erodeTerrain` = **后处理**：在已定型的河网上做 V 形谷 / 削峰 / 断头河守卫
+//     （造陆路径用它，见 `landmass.js` ⑤c）。两者读同一份 D8 与汇流量实现（`fmg/rivers.js`）。
+//
+// 为什么“迭代核”能让平行流变成树枝流（P1 审计的结论）：
+//   合成地形的主体是离岸距离场（一座圆顶）→ 每处坡向都一样 → 水只能平行下流。
+//   流水下切是正反馈：$Δh = k · (A/A_land)^m · drop$，汇流大的沟切得更深 → 下一轮吸引更多水
+//   → 相邻的平行沟被“抢水”合并，最后收敛成有分叉的主干 + 支流。这正是真实地貌的成因，
+//   也是本卡要的“谷”。
+
+/** 迭代核的默认参数（**单一事实源**：实验工具/用例/将来接进产品都读这一份） */
+export const GRID_EROSION_PARAMS = {
+  /** 迭代轮数。0 = 关闭（整体回 0 的开关就是它） */
+  iterations: 30,
+  /** 下切强度：每轮切掉“本格到下游落差的多少”，再按汇流比例加权 */
+  strength: 0.35,
+  /** 汇流面积指数 m（stream power 的 A^m） */
+  areaExp: 0.55,
+  /** 坡面扩散系数（每轮向 8 邻均值挪多少；0 = 不扩散，会留下单格针孔） */
+  thermal: 0.12,
+  /** 单轮单格下切上限 = 与下游落差的倍数（>1 会把坡向翻过来 → 切出反坡坑） */
+  maxIncisionFrac: 0.5,
+};
+
+/**
+ * 对**规则格网**高度图跑 N 轮坡面侵蚀（纯函数：不改入参，返回新数组）。
+ *
+ * @param {{h:ArrayLike<number>, grid:{cellsX:number, cellsY:number, spacing?:number}}} hm
+ * @param {Partial<typeof GRID_EROSION_PARAMS>} [opts]
+ * @param {{seaLevel?:number}} [env] 默认 20（与 `terrainSynthesis` 同一口径）
+ * @returns {{h:Float64Array, stats:{applied:boolean, version:number, iterations:number,
+ *            strength:number, landCells:number, meanDrop:number, maxDrop:number, ms:number}}}
+ */
+export function erodeGridSurface(hm, opts = {}, env = {}) {
+  const t0 = nowMs();
+  const p = { ...GRID_EROSION_PARAMS, ...(opts && typeof opts === 'object' ? opts : {}) };
+  const cols = hm && hm.grid ? (hm.grid.cellsX | 0) : 0;
+  const rows = hm && hm.grid ? (hm.grid.cellsY | 0) : 0;
+  const n = cols * rows;
+  const h0 = hm && hm.h;
+  const seaLevel = Number.isFinite(env.seaLevel) ? env.seaLevel : 20;
+  const iterations = clamp(Math.floor(Number(p.iterations) || 0), 0, 400);
+  const stats = {
+    applied: false, version: GRID_EROSION_VERSION, iterations, strength: p.strength,
+    landCells: 0, meanDrop: 0, maxDrop: 0, ms: 0,
+  };
+  if (!(cols > 1 && rows > 1) || !h0 || h0.length !== n) {
+    return { h: Float64Array.from(h0 || []), stats };
+  }
+  const h = Float64Array.from(h0);
+  for (let i = 0; i < n; i++) if (h[i] >= seaLevel) stats.landCells++;
+  // 开关（判据要求“能整体关掉”）：轮数或强度为 0 → 一个字节都不动
+  if (iterations <= 0 || !(p.strength > 0) || !stats.landCells) {
+    stats.ms = Math.round(nowMs() - t0);
+    return { h, stats };
+  }
+  stats.applied = true;
+  const next = new Float64Array(n);
+  const nbr = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+  const maxFrac = clamp(Number(p.maxIncisionFrac) || 0.5, 0.05, 0.9);
+  const thermal = clamp(Number(p.thermal) || 0, 0, 0.45);
+  const landA = stats.landCells || 1;
+  const aExp = Number.isFinite(p.areaExp) ? p.areaExp : GRID_EROSION_PARAMS.areaExp;
+  const strength = Number(p.strength);
+  let sumBefore = 0;
+  for (let i = 0; i < n; i++) if (h[i] >= seaLevel) sumBefore += h[i];
+
+  for (let it = 0; it < iterations; it++) {
+    // ① 流向（与河网引擎同一份 downslope）+ 汇流量（同一份 accumulateFlux）
+    const down = downslope(h, cols, rows);
+    const A = accumulateFlux(h, down, seaLevel);
+    // ② 下切：只降不升；按“到下游的落差”封顶 → 不会翻坡向、不会切出反坡坑
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const idx = j * cols + i;
+        const hi = h[idx];
+        if (hi < seaLevel) { next[idx] = hi; continue; }
+        const d = down[idx];
+        if (d < 0) { next[idx] = hi; continue; }
+        const drop = hi - h[d];
+        if (!(drop > 1e-6)) { next[idx] = hi; continue; }
+        const a = Math.min(1, A[idx] / landA);          // 相对汇流面积：换格数不改口径
+        const incise = Math.min(drop * maxFrac, strength * Math.pow(a, aExp) * drop);
+        next[idx] = Math.max(seaLevel + 0.02, hi - incise);
+      }
+    }
+    // ③ 坡面扩散：只治“单格针孔”，并把陡壁按休止角摊平（海格原样）
+    if (thermal > 0) {
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const idx = j * cols + i;
+          if (next[idx] < seaLevel) continue;
+          let sum = 0, cnt = 0;
+          for (const [dx, dy] of nbr) {
+            const ci = i + dx, cj = j + dy;
+            if (ci < 0 || cj < 0 || ci >= cols || cj >= rows) continue;
+            const v = next[cj * cols + ci];
+            if (v < seaLevel) { sum += next[idx]; cnt++; continue; }  // 岸格别被海拉低
+            sum += v; cnt++;
+          }
+          if (!cnt) continue;
+          next[idx] += (sum / cnt - next[idx]) * thermal;
+        }
+      }
+    }
+    h.set(next);
+  }
+
+  let sumAfter = 0;
+  for (let i = 0; i < n; i++) if (h[i] >= seaLevel) sumAfter += h[i];
+  stats.meanDrop = stats.landCells ? Math.max(0, (sumBefore - sumAfter) / stats.landCells) : 0;
+  let maxDrop = 0;
+  for (let i = 0; i < n; i++) {
+    if (h0[i] < seaLevel) continue;
+    const dv = h0[i] - h[i];
+    if (dv > maxDrop) maxDrop = dv;
+  }
+  stats.maxDrop = maxDrop;
+  stats.ms = Math.round(nowMs() - t0);
+  return { h, stats };
 }

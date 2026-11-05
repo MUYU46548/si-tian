@@ -41,6 +41,12 @@
 /** 版本标记（探针/用例可读）：改了推演口径就 +1 —— 用来确认"页面跑的是不是这份代码" */
 export const TERRAIN_SYNTHESIS_VERSION = 2;
 
+// 湖的判定（2026-11-04）：与 FMG 模板地形**共用一份实现**（`utils/lakes.js`，纯函数无依赖）。
+import { detectBasinLakes } from './lakes.js';
+// 排水盆地骨架（P2，2026-11-04）：给水**少数几个真正的出口**，它才有谷可汇。
+// 默认关（`drainageBasins: 0`）→ 老路径逐字节不变；细节见该文件头与 `_audit_erosion.mjs`。
+import { buildDrainageBasins, buildDrainageTree } from './drainageBasins.js';
+
 /** 结构参数（**单一事实源**：用例按同一份口径取阈值，不许在用例里另抄一组数） */
 export const TERRAIN_STRUCTURE = {
   /** 主导走向（度）。`null` = 由 seed 推（同一份输入仍确定） */
@@ -146,7 +152,7 @@ function makeHeap() {
  * 不填平的话司天的自动河流在 8k 格上一**条**都长不出来（实测：水只能停在盆里）。填平是纯函数、
  * 与地形从哪来无关，所以只留这一份实现（不要再抄一份到 fmg/）。
  */
-export function fillDepressions(h, land, cols, rows, seaLevel, epsilon) {  const n = cols * rows;
+export function fillDepressions(h, land, cols, rows, seaLevel, epsilon, basinsOut) {  const n = cols * rows;
   const visited = new Uint8Array(n);
   const out = Float64Array.from(h);
   const heap = makeHeap();
@@ -173,6 +179,11 @@ export function fillDepressions(h, land, cols, rows, seaLevel, epsilon) {  const
       visited[nidx] = 1;
       // 抬到"能流出去"的最低高度；ε 保证严格下降（不产生新的平层）
       const raised = Math.max(out[nidx], elev + epsilon);
+      // 2026-11-04：`basinsOut` 是可选的**旁路账**（抬高了多少、抬之前多少）——
+      // 湖的判定（`utils/lakes.js#detectBasinLakes`）要读它；不给就不记，行为一字不变。
+      if (basinsOut && raised > out[nidx]) {
+        basinsOut.push({ i: nidx, before: h[nidx], after: raised });
+      }
       out[nidx] = raised;
       heap.push(raised, nidx);
     }
@@ -299,6 +310,11 @@ export function rangeAxisFromSeed(seed) {
  *   `structure` —— **默认 true**：叠山脉走向 / 高原面 / 裂谷（v2）。
  *                 传 `false` 得到 v1 的"坡面 + 噪声"（**只给对照组用**：用例靠它证明
  *                 "结构真的改变了地形"，产品路径不许用它）。
+ *   `drainageBasins` —— **默认 0（关）**：>0 时先挑 N 个海岸出水口，海拔改由
+ *                 “到最近出水口的距离”主导（P2，2026-11-04）。见 `drainageBasins.js`。
+ *   `drainageTree` —— **默认 0（关）**：>0 时建**递归分级河网**（河口 N 个），
+ *                 海拔改由“沿水面到出口的距离”势场主导（P2.1）。`drainageDepth`
+ *                 （默认 3）与 `drainageBranching`（默认 2）控制分级；见 `buildDrainageTree`。
  * @returns {{h:number[], grid:{points:Array<[number,number]>, cellsX:number, cellsY:number,
  *            spacing:number}, synthesized:true, cellCount:number, landCells:number,
  *            effectiveCellSize:number, structure?:{version:number,rangeAxisDeg:number,
@@ -387,6 +403,36 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
   for (let i = 0; i < n; i++) landCells += land[i];
   // 没有任何陆格（多边形的点都在掩膜外，或没传 isLand 又取不到几何）→ 放弃
   if (!landCells) return null;
+
+  // ── ⓪ 排水盆地骨架（P2，2026-11-04；默认关）────────────────────────────────
+  //   为什么放在“离岸距离场”之前：离岸距离把**每个海岸格**都当出水口 → 水各走各的，
+  //   再怎样侵蚀也只是把同一批径向直线切深（实测扇状度 0.852 → 0.884，更平行）。
+  //   这里先挑少数几个出水口，让“海拔 = 到最近出水口的距离”，于是盆地交界处最高（分水岭）、
+  //   盆地内部向出口收敛（谷可汇）。侵蚀只是在这套骨架上做精修。
+  const basinCount = Math.max(0, Math.floor(Number(opts.drainageBasins) || 0));
+  const drainage = basinCount > 0
+    ? buildDrainageBasins(land, cols, rows, {
+      outlets: basinCount,
+      px: (i) => px[i],
+      py: (i) => py[i],
+    })
+    : null;
+  const basinMax = drainage && drainage.maxDist > 0 ? drainage.maxDist : 1;
+  const trunkMax = drainage && drainage.trunkMax > 0 ? drainage.trunkMax : 1;
+
+  // ── ⓪b 递归分级河网骨架（P2.1，2026-11-04；默认关）──────────────────────────
+  //   单层盆地实测只到扇状度 0.827（参照 0.715）：支流是一条条**垂直于干谷**的平行短线。
+  //   这里把“盆地 + 主干”递归下去（干流上挂支流、支流上挂更小的沟），
+  //   得到“沿水面到出口的距离”势场；把它单调映射成海拔，水就沿骨架分级汇入。
+  const treeOutlets = Math.max(0, Math.floor(Number(opts.drainageTree) || 0));
+  const tree = treeOutlets > 0
+    ? buildDrainageTree(land, cols, rows, {
+      outlets: treeOutlets,
+      depth: opts.drainageDepth,
+      branching: opts.drainageBranching,
+    })
+    : null;
+  const treeMax = tree && tree.maxP > 0 ? tree.maxP : 1;
 
   // ── ① 离岸距离场（**chamfer 3-4 距离变换**，近似欧氏）──────────────────────────
   // 🔴 2026-10-17 实测（第一版用 4 邻域 BFS）：等距线是**菱形**（曼哈顿距离），
@@ -477,6 +523,19 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
       const d = dc > 0 ? dc : 0.34;
       // ① 离岸距离 → 0..1（平方根：靠岸一段保持低平，内陆才抬起来 —— 大陆架感）
       const t = Math.sqrt(Math.min(1, d * invMax));
+      // ①b 盆地 / 主干谷 / 分级河网（P2）：**海拔主导量**改成“到本盆地主干谷的距离”
+      //     （有递归河网时用“沿水面到出口的距离”势场，支流与干流一起给方向）。
+      //     再掺一点“到出口的距离”保证沿干谷向下游单调降低。
+      //     只按“到出口的距离”时盆地内部仍是光滑径向扇（实测扇状度 0.852 → 0.901 更平行）；
+      //     谷是**线**，按到谷线的距离抬升，支流才会从两侧斜着汇进来。
+      //     两者都没开时 `tb === t`，老路径逐字节不变。
+      const tb = tree
+        ? Math.sqrt(Math.min(1, tree.p[idx] / treeMax))
+        : drainage
+          ? Math.sqrt(Math.min(1,
+            0.30 * (drainage.dist[idx] / basinMax)
+            + 0.70 * (drainage.trunkDist[idx] / trunkMax)))
+          : t;
       // ② 起伏：**两个频段**，缺一个就会长出"梳齿"。
       //    🔴 2026-10-17 实测（只用一个低频起伏时）：坡面上所有格高度几乎相同 →
       //       水只会**平行**下流 → 画面上是一排排等距的竖线（"梳子"），永远汇不起来。
@@ -516,7 +575,7 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
         const wxm = nx + wAmp * (fbm(nx * 1.6 + 7.3, ny * 1.6 - 2.1, seed + 401, 2) - 0.5) * 2;
         const wym = ny + wAmp * (fbm(nx * 1.6 - 3.7, ny * 1.6 + 5.9, seed + 433, 2) - 0.5) * 2;
         // 内陆权重：山脉 / 高原 / 裂谷都只长在内陆（海岸带保持低平，水才出得去）
-        const interior = Math.pow(t, 0.45);
+        const interior = Math.pow(tb, 0.45);
         // ① 山脉走向：主导走向 + 次走向（真实造山带不止一条方向，但主走向占优）
         const [rx, ry] = rot2(wxm, wym, -rangeAxisDeg);
         const ridgeMain = ridgeNoise(rx, ry, seed + 101, 4, 2.6, 8.5);
@@ -540,7 +599,7 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
         //    （`TRACE_SOURCE_HEIGHT = 60`）。实测第一版（0.72/0.46 + 高原 0.66）把陆地均值从
         //    45.6 抬到 63.1 → **85% 的陆格都在闸门之上** → 一点自动河流就是 2400 个源头。
         //    现值（0.62/0.36 + 高原 0.60）实测均值 ≈ 50、>60 占比 ≈ 20%（与 v1 同量级）。
-        const base = t * (0.52 + 0.34 * undulate * relief);
+        const base = tb * (0.52 + 0.34 * undulate * relief);
         const mountain = clamp01(ranges * interior * 1.15);
         v = 0.50 * base + st.rangeWeight * mountain;
         const pw = plateauMask * st.plateauWeight;
@@ -556,7 +615,14 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
       v = Math.max(0, Math.min(1, v));
       // 海岸格（d ≤ 2）压到刚过海平面，保证"能出河口、不悬空"
       let elev = seaLevel + v * landSpan;
-      if (d <= 2) elev = Math.min(elev, seaLevel + 1.5);
+      if (drainage) {
+        // 有盆地骨架时不能把整条海岸拍平（那会把河口又变成“处处都能出”），
+        // 只做一条**向外倾斜的窄带**：最外 3~4 格压低，但保留朝出口的坡度。
+        const taper = 0.28 + 0.72 * smoothstep01(0, 3.5, d);
+        elev = seaLevel + (elev - seaLevel) * taper;
+      } else if (d <= 2) {
+        elev = Math.min(elev, seaLevel + 1.5);
+      }
       h[idx] = Math.max(seaLevel + 0.5, Math.round(elev * 100) / 100);
     }
   }
@@ -564,10 +630,16 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
   // ── ④ 洼地填平：保证每格都有一条**严格下降**的路通向海 ─────────────────────────
   //    ε 取 landSpan 的 1/2000（≈0.04 高度单位）—— 小到不影响观感，
   //    大到足以让"同高邻居"变成"严格更低的下游"，从而消掉平流（梳齿）。
-  const filled = fillDepressions(h, land, cols, rows, seaLevel, Math.max(1e-3, landSpan / 2000));
+  // 2026-11-04：顺手把"被抬起来多少"记进 `basins` —— 湖的判定要读它（同一趟遍历，不多算）。
+  const basins = [];
+  const filled = fillDepressions(h, land, cols, rows, seaLevel, Math.max(1e-3, landSpan / 2000), basins);
   for (let i = 0; i < n; i++) {
     h[i] = land[i] ? Math.round(filled[i] * 100) / 100 : (seaLevel - 8);
   }
+  // ── ④b 湖（2026-11-04）：被填平的盆地 ≥ 一定面积/深度 → `hm.lakes` 水面标记。
+  // 判据与 FMG 模板地形那条路**共用一份实现**（`utils/lakes.js`），所以两条生成路径
+  // 的湖口径不会漂移。高度场不动（见该文件头：挖湖会造出没有出水口的盆地）。
+  const lakes = detectBasinLakes(filled, basins, cols, rows);
 
   const points = new Array(n);
   for (let i = 0; i < n; i++) points[i] = [px[i], py[i]];
@@ -578,6 +650,9 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
     synthesized: true,
     cellCount: n,
     landCells,
+    // 湖（2026-11-04）：`{level, cells}` 水面标记，渲染层读（`heightmapRaster.buildLakeCellMap`）。
+    // 没有湖就不带这个字段 —— 老项目/老用例的载荷逐字节不变。
+    ...(lakes.length ? { lakes } : {}),
     effectiveCellSize: Math.round(cellSize * 1000) / 1000,
     maxInlandCells: maxDist,
     // 结构自述（回执/用例读它；`structure:false` 时不给这个字段）
@@ -588,6 +663,12 @@ export function synthesizeHeightmapFromTerrain(terrain, opts = {}) {
         rifts: rifts.length,
         plateauLevel: st.plateauLevel,
         plateauCells,
+        // P2（2026-11-04）：0 = 未开盆地骨架（老路径），>0 = 实际出水口数
+        drainageOutlets: drainage ? drainage.count : 0,
+        // P2.1：递归分级河网（0 = 未开；>0 = 实际出水口数 / 河道段数）
+        drainageTreeOutlets: tree ? tree.outlets.length : 0,
+        drainageTreeChannels: tree ? tree.channels : 0,
+        drainageTreeCells: tree ? tree.streamCells : 0,
       },
     } : {}),
   };

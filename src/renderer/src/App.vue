@@ -249,6 +249,7 @@
           @select="store.selectWorld"
           @create-world="handleCreateWorld"
           @delete-world="handleDeleteWorld"
+          @rename-world="handleRenameWorld"
           @reextract="reextract"
           @open-vault="openVaultFromToolbar"
           @import-from-vault="doImportFromVault"
@@ -432,7 +433,7 @@ import {
 // 星系美术（2026-11-01 吸收 SP-1025 原型）：背景资产 / 恒星色温与归属环 / LOD 标签。
 // 🔴 画布（GalaxyMap.vue）与本导出**调同一份** —— 任何一边自己再画一套，就又回到
 //    “导出的图和屏幕上的不是一回事”（§bug 导出与画布不同源）那条老病。
-import { paintGalaxySky } from './galaxy/sky';
+import { paintGalaxySky, skySeedFor } from './galaxy/sky';
 import { paintDomainBorders } from './galaxy/domainPaint';
 import { paintStar, paintDomainMarker } from './galaxy/starArt';
 import { collectStarLabels, cullStarLabels, paintStarLabels } from './galaxy/labels';
@@ -440,7 +441,7 @@ import { withAlpha } from './utils/colorUtil';
 // 打开知识库本体（用户需求：一键可达的“打开 Obsidian 知识库”入口）
 import { openVault } from './utils/vault';
 // 导入知识库内容：App 只跟注册表打交道（不 import projectStore）
-import { importFromVault, restoreLastProject } from './store/canvasBridge';
+import { importFromVault, restoreLastProject, renameEntityInProject } from './store/canvasBridge';
 // B8（2026-09-24）：导入地图配置也要进 undo 栈 —— 数据修改一律放 redo 回调内（项目 undo 纪律）
 import { execute } from './store/undo';
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
@@ -1049,7 +1050,8 @@ async function handleExportFullPNG() {
   //    🔴 2026-11-01：旧实现是“径向渐变 + 6 团固定星云 + 300 个取模点”——
   //       与画布那片天不是一回事（§bug 导出与画布不同源）。现在两边都调 `paintGalaxySky`。
   if (isDark) {
-    paintGalaxySky(ctx, { x: minX, y: minY, w: width, h: height });
+    // 种子必须与画布同源（按世界 id 派生），否则“导出预览”和画布上天不一样 —— 同源红线。
+    paintGalaxySky(ctx, { x: minX, y: minY, w: width, h: height }, { seed: skySeedFor(store.currentWorld && store.currentWorld.id) });
   } else {
     const bg = ctx.createLinearGradient(0, minY, 0, maxY);
     bg.addColorStop(0, '#f8fafc');
@@ -1667,6 +1669,35 @@ function exitScenarioMode() {
   scenarioPickerVisible.value = false;
   scenarioInitialId.value = '';
   scenarioOpenManager.value = false;
+}
+
+/**
+ * 重命名世界（2026-11-03 用户实测：“新建了一个世界……想重命名都做不到。右键没反应，点进去也没地方编辑”）。
+ *
+ * 世界卡上原来只有一枚删除按钮。名称在项目态归 `.sitian` 项目文件所有（改名不改 id、不级联），
+ * 而 App.vue 有一条静态闸门**不得 import projectStore**（test_46/test_55 守）→
+ * 走 canvasBridge 的 `renameEntityInProject`（动态 import，与 restoreLastProject 同款）。
+ */
+async function handleRenameWorld(world) {
+  if (!world) return;
+  if (isReadOnly.value) {
+    statusText.value = '改名被拒绝：还没有打开项目 —— 先新建或打开项目';
+    statusKind.value = 'warn';
+    panelsStore.toggle('project');
+    return;
+  }
+  const { askText } = usePromptDialog();
+  const next = await askText({ title: '重命名世界', label: '世界名称', defaultValue: world.name || '' });
+  if (!next || next === world.name) return;
+  const res = await renameEntityInProject(world.id, next);
+  if (res && res.success) {
+    statusText.value = `已把“${world.name}”改名为“${next}”（Ctrl+Z 可撤销）`;
+    statusKind.value = 'ok';
+  } else {
+    statusText.value = (res && (res.error || res.reason)) || '改名失败';
+    statusKind.value = 'err';
+  }
+  setTimeout(() => { statusText.value = ''; statusKind.value = ''; }, 4000);
 }
 
 function handleDeleteWorld(world) {

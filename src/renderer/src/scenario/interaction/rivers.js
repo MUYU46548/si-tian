@@ -4,12 +4,30 @@
 // 依赖约定：`st` = 手势/工具期的普通 `let`（组件侧带 get/set，读写同一份）；
 //   其余 ref / const / 函数走 `ctx`；纯函数工具直接 import。
 
-import { RIVER_WIDTH_MIN, RIVER_WIDTH_MAX } from '../../utils/rivers';
+import { RIVER_WIDTH_MIN, RIVER_WIDTH_MAX, riverMouthWorldWidth } from '../../utils/rivers';
 import { TRACE_SOURCE_HEIGHT } from '../../utils/riverTrace';
 import { buildRiverPaths, thinRiverPath } from '../../utils/riverChains';
+import { buildRiverNetwork, getOffset, widthFromOffset, MIN_FLUX_TO_FORM_RIVER, weldRiverJunctions, snapRiverTails } from '../../utils/fmg/rivers';
 import { catmullRomPoints, fillRiverRibbon, pruneRiverNetwork, taperWidths } from '../../utils/riverRender';
-import { clipPolylineToCoast, clipPolylinesToCoast } from '../../utils/coastline';
+import { clipPolylineToCoast, clipPolylinesToCoast, MOUTH_OVERSHOOT } from '../../utils/coastline';
 import { resampleSeries, widthsBySpeed } from '../../utils/strokeMath';
+
+// ── 河网引擎 A/B 开关（2026-11-03）────────────────────────────────────────────
+// 'legacy' = `utils/riverTrace`（绝对高度闸门 + 格点步进，实测有梳齿/断段/不分级）
+// 'fmg'    = `utils/fmg/rivers`（flux 源头 + 必须入海 + 河宽分级；抄 FMG 口径）
+// 为什么做成开关而不是直接替换：两者画出来的差别必须**同机位截图对照**才能下结论，
+// 而截图脚本需要一个不改 UI 的切换口。验收完再决定删哪一边。
+let _riverEngine = 'fmg';
+export function setRiverEngine(name) {
+  _riverEngine = name === 'fmg' ? 'fmg' : 'legacy';
+  return _riverEngine;
+}
+export function getRiverEngine() { return _riverEngine; }
+if (typeof window !== 'undefined') {
+  window.__setRiverEngine = setRiverEngine;
+  // 只读取值口：用例/演练要能确认"页面里跑的是哪一份实现"（写口只留给对照开关）
+  window.__getRiverEngine = getRiverEngine;
+}
 
 export function createRiverActions(ctx) {
   const { st, ...rest } = ctx;
@@ -170,7 +188,7 @@ function finishRiverDraft(fromBrush = false) {
   return newRiverId ? (baseMap.value?.rivers || []).find((x) => x && x.id === newRiverId) || null : null;
 }
 
-function riverWidthsFor(river, count) {
+function riverWidthsFor(river, count, opts = {}) {
   // 🔴 2026-10-17 第七修：`width` 是**显示宽度**（世界单位），量纲 = 河宽字段自己的
   //    `RIVER_WIDTH_MIN..MAX`（1..12）。以前落库压在 0.4~1.6，于是
   //    “把这条河调宽”调到 1.6 就到顶、再调没反应 —— **能力存在但够不着**。
@@ -187,8 +205,13 @@ function riverWidthsFor(river, count) {
   //        跟着地图一起变宽（这正是"放大后该有的样子"）；
   //      · 缩小时 floorScreen 起作用 ⇒ 河不会细到看不见。
   //    ⚠️ 不封顶会出现"越放大越细"（老写法在放大端的失效方式）。
-  const dataW = Number.isFinite(Number(river && river.width)) ? Number(river.width) : RIVER_WIDTH_DEFAULT;
-  const mouthWorld = Math.max(RIVER_WIDTH_MIN, Math.min(RIVER_WIDTH_MAX, dataW * RIVER_WIDTH_DATA_SCALE));
+  // 生成河是**相对量纲**（`widthFromOffset`，本图 max < 2），和显示量纲 1..12 不是一套数。
+  // 不归一化的话 `Math.max(RIVER_WIDTH_MIN, …)` 会把 562/573 条河夹成同一个宽度
+  // （用户反复说的“所有河一样宽”）。换算的**唯一实现**在 `utils/rivers.js#riverMouthWorldWidth`。
+  const mouthWorld = riverMouthWorldWidth(river, {
+    widthMax: opts.widthMax,
+    dataScale: RIVER_WIDTH_DATA_SCALE,
+  });
   const headWorld = Math.max(0.3, mouthWorld * 0.22);
   const tapered = taperWidths(count, headWorld, mouthWorld);
   // T7：手画河可带“速度→宽度因子”（相对值）；导入河/自动河没有这个字段 → 行为不变。
@@ -201,6 +224,10 @@ function riverWidthsFor(river, count) {
 
   // “整条等比抬起”而不是逐点夹：逐点夹会把"源头细 → 河口粗"的渐变夹平（那是用户要的）。
   // 判据只看河口（最粗那点）。
+  //
+  // 🔴 2026-11-04 试过也给下限分档（小支流 1.3px / 主干 2.6px）—— 真机概览实测**画面反而更淡**
+  //    （56% 下河网本来就是细发丝，再压就变成“河不见了”），已回退，概览档保持统一 1.8px。
+  //    结论：60 倍的宽度跨度在概览档表达不出来，层次只在 ≥300% 有意义。
   const scale = cameraScale.value;
   if (scale > 0) {
     let curMax = 0;
@@ -266,29 +293,63 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
   const subdiv = Number.isFinite(opts.subdiv) ? opts.subdiv : 6;
   const flowMax = Number.isFinite(opts.maxFlow) && opts.maxFlow > 1 ? opts.maxFlow : 1;
   // 先画细的、后画粗的：粗干流压在支流上，分叉处不会出现"细线横切粗线"的接缝
-  const ordered = paths.slice().sort((a, b) => {
-    const fa = Math.max(...a.map((p) => p.flow || 0));
-    const fb = Math.max(...b.map((p) => p.flow || 0));
-    return fa - fb;
-  });
+  const flowOf = (pts) => Math.max(...pts.map((p) => (Number.isFinite(p && p.flow) ? p.flow : 0)));
+  const ordered = paths.slice().sort((a, b) => flowOf(a) - flowOf(b));
+  // 2026-11-04（FMG 口径）：每条河的点自带**相对宽度** `w`（引擎按 getOffset 算好）——
+  // 有 `w` 就走它，没有就退回旧的"按链流量对数映射"（老引擎/手画河）。
+  let wMax = 0;
+  for (const pts of ordered) for (const p of pts) if (Number.isFinite(p && p.w) && p.w > wMax) wMax = p.w;
+  const minPx = Number.isFinite(opts.minPx) ? opts.minPx : 1.2;
+  const maxPx = minPx * 2.6;
+  // ── 两遍：先全部平滑成曲线，**再焊一次**，最后描边 ─────────────────────────
+  // 为什么不是“一条条平滑 → 直接画”（2026-11-04，暮雨：“过穿的河流”）：
+  //   引擎里的折线已经焊成 0 交叉，但 Catmull-Rom 的切线是外推的，急弯/并流尖角处会冲出
+  //   控制折线两侧 —— 实测真实项目细分后**又长出 26 处交叉**（`audit_river_network.mjs`）。
+  //   所以在“真正要画的曲线”上再焊一次：支流截在干流曲线上，X 变 Y。
+  const jobs = [];
   for (const pts of ordered) {
     if (!pts || pts.length < 2) continue;
     const curve = pts.length >= 3
       ? catmullRomPoints(pts.map((p) => ({ x: p.x, y: p.y })), subdiv)
       : pts.map((p) => ({ x: p.x, y: p.y }));
-    // 逐点宽度：按该链的流量量级给"河口宽度"，链内用与手画河同一口径过渡到源头
-    const ownFlow = Math.max(1, ...pts.map((p) => p.flow || 0));
+    const ownFlow = Math.max(1, ...pts.map((p) => (Number.isFinite(p && p.flow) ? p.flow : 0)));
+    jobs.push({ pts, curve, ownFlow });
+  }
+  if (jobs.length > 1) {
+    const wrappers = jobs.map((j, i) => ({ id: i + 1, discharge: j.ownFlow, points: j.curve }));
+    snapRiverTails(wrappers, { spacing: 8 });
+    weldRiverJunctions(wrappers, { spacing: 8 });
+
+    for (let i = 0; i < jobs.length; i++) jobs[i].curve = wrappers[i].points;
+  }
+
+  for (const job of jobs) {
+    const { pts, curve, ownFlow } = job;
+    if (!curve || curve.length < 2) continue;
+    // 逐点宽度（屏幕像素）：有 `w` 按 w/wMax 归一（FMG 的源头细→河口粗本来就在 w 里），
+    // 否则按这条链自己的流量量级给"河口宽度"（旧口径，一字未改）。
     const t = Math.min(1, Math.log(1 + ownFlow) / Math.log(1 + flowMax));
-    // 河口宽度（屏幕像素）：最细 `minPx`，最粗 ≈ minPx×3.2（干流与支流拉开差距）
-    const mouthPx = Math.max(opts.minPx, opts.minPx * (1 + 2.2 * t));
-    const headPx = Math.max(opts.minPx * 0.75, mouthPx * 0.28);
+    const mouthPx = Math.max(minPx, minPx * (1 + 2.2 * t));
+    const headPx = Math.max(minPx * 0.75, mouthPx * 0.28);
     const nC = curve.length;
-    // 逐点宽度（世界单位）：屏幕像素 → 世界单位；链内按 1.6 次幂从源头过渡到河口
     const pxToWorld = 1 / Math.max(1e-6, cameraScale.value || 1);
     const widths = [];
-    for (let i = 0; i < nC; i++) {
-      const u = nC > 1 ? i / (nC - 1) : 1;
-      widths.push(Math.max(headPx * pxToWorld * 0.5, (headPx + (mouthPx - headPx) * Math.pow(u, 1.6)) * pxToWorld));
+    if (wMax > 0 && Number.isFinite(pts[0] && pts[0].w)) {
+      // 逐点插值：curve 的第 i 点落在原折线的 i/(subdiv) 段上，这里按弧长近似取样
+      const src = pts;
+      for (let i = 0; i < nC; i++) {
+        const u = nC > 1 ? (i / (nC - 1)) * (src.length - 1) : 0;
+        const a = src[Math.floor(u)], b = src[Math.min(src.length - 1, Math.ceil(u))];
+        const f = u - Math.floor(u);
+        const w = (Number.isFinite(a.w) ? a.w : 0) * (1 - f) + (Number.isFinite(b.w) ? b.w : 0) * f;
+        const rel = Math.min(1, Math.max(0, w / wMax));
+        widths.push((minPx + (maxPx - minPx) * Math.sqrt(rel)) * pxToWorld);
+      }
+    } else {
+      for (let i = 0; i < nC; i++) {
+        const u = nC > 1 ? i / (nC - 1) : 1;
+        widths.push(Math.max(headPx * pxToWorld * 0.5, (headPx + (mouthPx - headPx) * Math.pow(u, 1.6)) * pxToWorld));
+      }
     }
     // 🔴 2026-10-20 第十七修：一条链 = **一次闭合多边形 fill**（旧写法每 1~2px 一段
     //    `beginPath/stroke`，900 链 × ~90 点 = 8 万次调用，既慢又长成"竹节"）。
@@ -305,13 +366,51 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
 
 function autoRiverPartsFor(net, terrain, segMax) {
   const c = st.autoRiverPartsCache;
-  if (c.net === net && c.terrain === terrain && c.segMax === segMax) return c.out;
+  // FMG 引擎（2026-11-04）：渲染的**唯一口径**是 `autoRivers` 本身（每条河 = 源头→河口一条点列）。
+  // 不再"段 → 剪枝 → 拼链"—— 那三步会把一条河切成很多条（实测 v13 的羽状分叉就是这么来的）。
+  const source = _riverEngine === 'fmg' ? autoRivers.value : net;
+  if (c.net === source && c.terrain === terrain && c.segMax === segMax) return c.out;
+  if (_riverEngine === 'fmg' && Array.isArray(source) && source.length) {
+    const fluxMax = Number.isFinite(segMax) && segMax > 0 ? segMax : 1;
+    let paths = source
+      .map((rv) => {
+        const wf = Number.isFinite(rv && rv.widthFactor) && rv.widthFactor > 0 ? rv.widthFactor : 1;
+        const sw = Number.isFinite(rv && rv.sourceWidth) ? rv.sourceWidth : 0;
+        const pts = (rv && Array.isArray(rv.points) ? rv.points : []).map((p, k) => ({
+          x: p.x,
+          y: p.y,
+          flow: Number.isFinite(p.flux) ? p.flux : 0,
+          // 逐点**相对宽度**（同一份 getOffset 公式，渲染侧只做归一化 → 屏幕像素）
+          w: widthFromOffset(getOffset({
+            flux: p.flux || 0, pointIndex: k, widthFactor: wf, startingWidth: sw, fluxMax,
+          })),
+        }));
+        return pts;
+      })
+      .filter((pts) => pts.length >= 2);
+    // 链级硬裁剪（与旧口径同一条）：河**不可能**画到海面上 —— 结构性保证，不是调参。
+    if (paths.length && Array.isArray(terrain) && terrain.length) {
+      const coastMask = getLandMask();
+      if (coastMask) {
+        paths = paths
+          .map((pts) => clipPolylineToCoast(pts, coastMask.lookup, { keepOvershoot: MOUTH_OVERSHOOT }).points)
+          .filter((pts) => pts.length >= 2);
+      }
+    }
+    st.autoRiverPartsCache = { net: source, terrain, segMax, out: paths };
+    return paths;
+  }
   // 🔴 2026-10-17 第六修（用户：“恐怖谷，我都懒得说了”）：
   //    一万多根"每格一根"的小棍铺满全图 = 一片平行斜线网格，那不是河。两条一起上：
   //      ① **按流量剪枝**（`pruneRiverNetwork`）—— 细支流不画，干支流拓扑保留；
   //         闸门按本幅图流量上界归一化（`riverFlowGate`：绝对数字换个地形就失效）。
   //      ② **屏幕像素下限**（`riverMinWidthForNet`，留在渲染侧算）—— 让"本网络在屏幕上
   //         有没有 2px"决定最细的河有多粗；缩到格子只有 1px 时退成一层薄雾而不是网格。
+  // 🔴 2026-11-03 第十五修（用户：“非正常的断流” + 参考图都是连续曲线）：
+  //    这里的剪枝闸门是**流量上界的 94.6%**（本幅图归一化），实测把 75% 的段砍掉 →
+  //    `buildRiverPaths` 拿到的是一条条**碎链** → 既画不出大尺度弯，又出现断流。
+  //    2026-11-04 起 `fmg` 引擎已在上面**提前返回**（它不需要剪枝：密度由 `minFlux` 在
+  //    生成时决定、每条河天然是完整链）；这一段只剩老引擎在用，保持原样。
   const gate = riverFlowGate(segMax, net);
   const pruned = pruneRiverNetwork(net, gate);
   // 🔴 2026-10-17 第八修（用户：“支气管模拟器”“你会画河吗”）：
@@ -347,7 +446,7 @@ function autoRiverPartsFor(net, terrain, segMax) {
     }));
     const coastMask = (Array.isArray(terrain) && terrain.length) ? getLandMask() : null;
     if (coastMask) {
-      const clipped = clipPolylinesToCoast(chainObjs, coastMask.lookup, { keepOvershoot: 6 });
+      const clipped = clipPolylinesToCoast(chainObjs, coastMask.lookup, { keepOvershoot: MOUTH_OVERSHOOT });
       out = clipped.list
         .filter((c) => c.points && c.points.length >= 2)
         .map((c) => c.points);
@@ -399,6 +498,42 @@ function clipSelectedRiversToCoast() {
 }
 
 function generateAndShowRivers() {
+  // ── 新引擎（2026-11-04，FMG 真实口径重抄）────────────────────────────────
+  // 只做一件事：把 `buildRiverNetwork` 的结果灌进同一组 ref（`autoRivers` /
+  // `autoRiverSegments` / `autoRiverMaxFlow`）—— 渲染、命中、导出都走既有链路，不重复实现。
+  if (_riverEngine === 'fmg') {
+    const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
+    if (!hm) { statusMsg('FMG 河网：这张底图还没有高度图 —— 先造陆或生成地形'); return; }
+    // 面板上那个输入框（默认 60）现在映射到 FMG 的 `MIN_FLUX_TO_FORM_RIVER`：
+    // **河源汇水量的下限**，而不是绝对高度。0 = 最密（每一条小沟都算），越大越只留大江。
+    // 60 → 120（本仓实测：97×45 的真实底图上 238 条河、主干分级读得出来）。
+    const rawGate = Number.isFinite(riverSourceHeight.value) ? riverSourceHeight.value : 60;
+    const minFlux = MIN_FLUX_TO_FORM_RIVER + Math.max(0, Math.min(100, rawGate)) * 1.5;
+    // 平滑勾选框在 FMG 引擎下也**真的生效**（平滑的是"路由面"，不动用户的 h）：
+    // 高频噪声重的图上，格级小丘会把一条河切成几十段 —— 这是"河碎"的直接成因之一。
+    const smoothPasses = riverSmooth.value
+      ? Math.max(1, Math.min(4, Math.round(Number(riverSmoothRadius.value) || 1)))
+      : 0;
+    const out = buildRiverNetwork(hm, { minFlux, smoothPasses });
+    const segs = out.segments || [];
+    autoRivers.value = out.rivers || [];
+    autoRiverSegments.value = segs;
+    autoRiverMaxFlow.value = (out.stats && out.stats.maxFlux) || 0;
+    // 已画条数 = 河数（FMG 口径下每条河自己就是完整几何，不再是"段"）
+    autoRiverDrawn.value = autoRivers.value.length;
+    const st2 = out.stats || {};
+    // 回执：结论一行 + 分级/湖/闸门读数（用户看不到读数就会以为"河本来就少"）
+    const brief = [`生成 ${autoRivers.value.length} 条河流`];
+    if (st2.maxOrder > 1) brief.push(`最高 ${st2.maxOrder} 级`);
+    if (st2.endInLake) brief.push(`${st2.endInLake} 条入湖`);
+    if (st2.lakes) brief.push(`湖 ${st2.lakes} 处`);
+    brief.push(`河源汇流 ${Math.round(minFlux)}（越大河越少）`);
+    if (smoothPasses) brief.push(`已先平滑地形（${smoothPasses} 遍）`);
+    if (!autoRivers.value.length) brief.push('⚠️ 地形太碎或汇流量不足 —— 把河源汇流调低（例如 60 以下）再看');
+    statusMsg(brief.join(' · '));
+    render();
+    return;
+  }
   // 旧实现在这里同步跑分钟级循环，用户看到的是"点了没反应、然后就卡死"。
   // 现在算法是索引版（秒级以内），但**必须给回执**：画了几条、丢了几条、多久。
   // ⚠️ 回执走 `statusMsg`（它写的是 `provinceHint`，显示为状态栏里的 .draw-hint），

@@ -270,9 +270,26 @@
           <span class="section-title">属性</span>
           <span class="section-note">仅存缓存，重新提取后还原</span>
         </div>
+        <!-- 2026-11-03 用户实测：“新建了一个世界，完全无法编辑，想重命名都做不到。点进去也没地方编辑。”
+             真因：这个输入框**永远 disabled**，理由是“名称 = Markdown 文件名，去 Obsidian 改”。
+             可项目态下实体的名字存在 `.sitian` 项目文件里，跟笔记文件名毫无关系 ——
+             于是项目里新建的世界/星域是**任何地方都改不了名**的。项目态放开，走 renameEntity（一条 undo）。 -->
         <div class="prop-field">
           <label>名称</label>
-          <input type="text" :value="node.name" disabled title="名称对应 Markdown 文件名，请在 Obsidian 中重命名" />
+          <input
+            ref="nameInputEl"
+            type="text"
+            :value="node.name"
+            :disabled="!canRenameEntity"
+            data-testid="entity-name-input"
+            :title="canRenameEntity
+              ? '改的是项目文件里的实体名（不动 Markdown 笔记文件名）；Ctrl+Z 可撤销'
+              : '名称对应 Markdown 文件名，请在 Obsidian 中重命名'"
+            @change="updateName($event.target.value)"
+          />
+        </div>
+        <div v-if="nameError" class="prop-field" data-testid="entity-name-error">
+          <span style="color:#e06c75;font-size:11px">{{ nameError }}</span>
         </div>
         <div class="prop-field">
           <label>显示名称</label>
@@ -484,6 +501,8 @@ import { usePromptDialog } from '../composables/usePromptDialog';
 import { ref, computed, watch } from 'vue';
 import { marked } from 'marked';
 import { useGeodataStore } from '../store/geodata';
+// 项目态改名：走桥接的动态 import 入口（2026-11-03）；本文件不静态 import projectStore
+import { renameEntityInProject } from '../store/canvasBridge';
 // 单一写闸门：转正会新建 .md → 属落盘写，只读态必须拦（Phase 2.4 接线）
 import { guardWrite } from '../store/writeGate';
 import { openObsidianUri } from '../utils/vault';
@@ -509,6 +528,31 @@ const newTagInput = ref('');
 const reparentSearchQuery = ref('');
 
 const node = computed(() => store.selectedNode);
+
+// ── 项目态改名（2026-11-03）──────────────────────────────────────────────────
+// 项目文件的实体名归 projectStore 所有（renameEntity 不改 id、不级联引用、一条 undo）；
+// 只在项目打开时放开输入框 —— 知识库态的 name 真的是文件名，改了只会造成两份事实源。
+// 走 canvasBridge 的动态 import 入口（不在本文件静态 import projectStore：store 是惰性实例化的，
+// 一个属性面板不该在启动时就把它拉起来）。
+const canRenameEntity = computed(() => !store.isReadOnly && !!node.value);
+const nameError = ref('');
+const nameInputEl = ref(null);
+
+async function updateName(value) {
+  if (!node.value || !canRenameEntity.value) return;
+  const target = node.value;
+  const next = String(value || '').trim();
+  nameError.value = '';
+  const restore = () => { if (nameInputEl.value) nameInputEl.value.value = target.name || ''; };
+  if (!next || next === target.name) { restore(); return; }
+  const res = await renameEntityInProject(target.id, next);
+  if (!res || !res.success) {
+    nameError.value = (res && (res.error || res.reason)) || '改名失败';
+    restore();
+    return;
+  }
+  window.dispatchEvent(new CustomEvent('sitian:coordinate-updated'));
+}
 
 // ===== 关联资料（D2）：主笔记 = sourcePath；附加笔记 = notePaths（项目字段，不写笔记）=====
 const notePickerOpen = ref(false);

@@ -107,6 +107,44 @@ export const RIVER_COLOR = '#3B82F6';
 export const RIVER_WIDTH_MIN = 1;
 export const RIVER_WIDTH_MAX = 12;
 
+/**
+ * 生成河（`river_gen_*`）的**相对量纲** → 世界单位宽度的归一化区间（2026-11-04 第二十二修）。
+ *
+ * 为什么需要：`widthFromOffset` 是**相对量纲**（FMG 口径，真实项目 573 条实测 p50=0.027 / max=1.65），
+ * 而 `RIVER_WIDTH_MIN..MAX`（1..12）是**显示量纲**。两者混用之后，渲染侧那句
+ * `Math.max(1, dataW * 2.4)` 把 **562/573 条**河夹成同一个 1.0 世界单位 ——
+ * 画面上就是“所有河一样宽”，主干与支流只差 1.6 倍。
+ *
+ * 口径：按**本图最宽的河**归一化（`t = sqrt(width / maxWidth)`）再映射到下面的区间。
+ * 只在“有 `river_gen_` 前缀 **且** 全图最大 width < 2（仍是相对量纲）”时启用 ——
+ * 手画河的 1..12 不受影响；将来生成侧改写显示量纲后，这条兼容路径自动失效。
+ */
+export const RIVER_WIDTH_REL_MIN = 0.35;
+export const RIVER_WIDTH_REL_MAX = 2.4;
+
+/**
+ * 河口（最宽处）的**世界单位宽度** —— 河宽量纲的唯一换算实现（2026-11-04 第二十二修）。
+ *
+ * @param {{id?:string, width?:number}} river
+ * @param {{widthMax?:number, dataScale?:number}} [opts] `widthMax` = 本图最宽河（生成河的归一化参照）
+ * @returns {number} 世界单位宽度
+ */
+export function riverMouthWorldWidth(river, opts = {}) {
+  const dataScale = Number(opts.dataScale) > 0 ? Number(opts.dataScale) : 2.4;
+  const dataW = Number.isFinite(Number(river && river.width)) ? Number(river.width) : RIVER_DEFAULT_WIDTH;
+  const maxW = Number(opts.widthMax) > 0 ? Number(opts.widthMax) : 0;
+  const relativeUnits = String((river && river.id) || '').indexOf('river_gen_') === 0 && maxW > 0 && maxW < 2;
+  if (relativeUnits) {
+    // 线性按本图最宽归一化：**保住比例**才是重点。第一版用 sqrt + 0.85 次方（想做“细支流占更多段”），
+    // 结果把 3 倍的差距压成 1.4 倍 —— 比改之前还平。线性后主干与一级支流回到 2~3 倍，
+    // 小到 1px 的那些由 `riverWidthsFor` 的屏幕下限兜底。
+    return RIVER_WIDTH_REL_MAX * (Math.max(0, dataW) / maxW);
+  }
+  return Math.min(RIVER_WIDTH_MAX, Math.max(RIVER_WIDTH_MIN, dataW * dataScale));
+}
+
+
+
 export function clampRiverWidth(w) {
   const n = Number(w);
   if (!Number.isFinite(n)) return RIVER_DEFAULT_WIDTH;

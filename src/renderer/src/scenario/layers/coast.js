@@ -24,14 +24,16 @@ export function drawSeaDetailLayer(c, view) {
   c.lineCap = 'round';
   c.lineJoin = 'round';
   c.lineWidth = view.px(0.6);
-  c.strokeStyle = 'rgba(48, 96, 128, 0.20)';
+  c.strokeStyle = 'rgba(48, 96, 128, 0.14)';
   for (const ln of d.isobaths) {
     if (!view.polylineInView(ln, minX, minY, maxX, maxY)) continue;
     view.strokeWorldPolyline(c, ln);
   }
   // 海岸线压在省界**下面**，只露一圈蓝边（省界会盖住中心 0.9px）——“蓝海岸 + 灰省界”的层叠
-  c.lineWidth = view.px(1.7);
-  c.strokeStyle = 'rgba(44, 92, 122, 0.45)';
+  // 2026-11-03（用户实测第 2 刀）：1.7px/0.45 在这张图上就是"地图糊成一团、线却无比清晰"里的那条线。
+  // 地形档的陆地/海色差本身已经分了界，描边只该补一点点定义，不该抢戏 → 1.1px / 0.30。
+  c.lineWidth = view.px(1.1);
+  c.strokeStyle = 'rgba(44, 92, 122, 0.30)';
   for (const ln of d.coasts) {
     if (!view.polylineInView(ln, minX, minY, maxX, maxY)) continue;
     view.strokeWorldPolyline(c, ln, true);
@@ -51,18 +53,21 @@ export function drawPoliticalCoastLayer(c, view) {
   c.save();
   c.lineCap = 'round';
   c.lineJoin = 'round';
-  // 浅海光带（2026-11-03：0.55 → 0.38）—— 原先在浮雕底上像一圈发光的青色塑料；
-  // 参考图的海岸是"深色岸线 + 一点点亮"，不是霓虹。
-  c.lineWidth = view.px(5);
-  c.strokeStyle = 'rgba(150, 210, 215, 0.38)';
+  // 浅海光带（2026-11-03：0.55 → 0.38 → **0.18 / 3px**）。
+  // 用户实测原话：“有疑似海岸线的线条倒是无比清晰，但是这玩意根本没必要存在吧？”
+  // 真机截图（build/pixel-baseline/probe1.png）复核：5px 宽、0.38 alpha 的青带在深色底上会**发光**，
+  // 像给陆地套了一圈塑料边 —— 它压过了地形本身，正是“好几张地图叠在一起”的来源之一。
+  // 现在的口径：只要海侧有一点点更亮的浅水，不许成环、不许发亮。
+  c.lineWidth = view.px(3);
+  c.strokeStyle = 'rgba(120, 180, 190, 0.18)';
   for (const ln of d.coasts) {
     if (!view.polylineInView(ln, minX, minY, maxX, maxY)) continue;
     view.strokeWorldPolyline(c, ln, true);
   }
   // 2026-11-03 三级线宽：海岸 1.6 > 国界 1.2 > 省界 0.7 —— 海岸最重，因为它是"地形/海"的界，
   // 也是 EU4 里最粗的一级（原先 1.1 与省界 0.9 几乎一样粗，读不出层级）。
-  c.lineWidth = view.px(1.6);
-  c.strokeStyle = 'rgba(44, 92, 122, 0.55)';
+  c.lineWidth = view.px(1.2);
+  c.strokeStyle = 'rgba(44, 92, 122, 0.42)';
   for (const ln of d.coasts) {
     if (!view.polylineInView(ln, minX, minY, maxX, maxY)) continue;
     view.strokeWorldPolyline(c, ln, true);

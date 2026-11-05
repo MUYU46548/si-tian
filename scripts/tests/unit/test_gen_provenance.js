@@ -43,27 +43,30 @@ function assertThrows(fn, m) {
 }
 
 /** 收集相对 import 的依赖闭包（与 test_landmass.js 同一套做法：复制到临时目录 + 补 .js 后缀） */
+/** 收集依赖（支持 ./x、./sub/x、../y；统一补 .js）—— 复刻浏览器侧的无后缀导入 */
 function collectDeps(entries) {
-  const seen = new Set();
+  const seen = new Map();
   const queue = [...entries];
   while (queue.length) {
-    const f = queue.pop();
+    const f = queue.pop().replace(/\\/g, '/');
     if (seen.has(f)) continue;
-    seen.add(f);
     const src = fs.readFileSync(path.join(UTILS, f), 'utf8');
-    for (const m of src.matchAll(/from '\.\/([A-Za-z0-9_.-]+)'/g)) {
-      const dep = m[1].endsWith('.js') ? m[1] : m[1] + '.js';
-      if (!seen.has(dep)) queue.push(dep);
+    seen.set(f, src);
+    for (const m of src.matchAll(/from '(\.\.?\/[^']+)'/g)) {
+      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(f), m[1]));
+      queue.push(rel.endsWith('.js') ? rel : rel + '.js');
     }
   }
-  return [...seen];
+  return seen;
 }
 
 function loadModules(names) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-prov-'));
-  const fix = (src) => src.replace(/from '\.\/([A-Za-z0-9_.-]+)'/g, (m) => (m.includes(".js'") ? m : m.slice(0, -1) + ".js'"));
-  for (const f of collectDeps(names)) {
-    fs.writeFileSync(path.join(tmp, f), fix(fs.readFileSync(path.join(UTILS, f), 'utf8')));
+  for (const [f, src] of collectDeps(names)) {
+    const fixed = src.replace(/from '(\.\.?\/[^']+)'/g, (all, spec) => (spec.endsWith('.js') ? all : `from '${spec}.js'`));
+    const dest = path.join(tmp, f);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, fixed);
   }
   fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
   return { tmp, url: (f) => pathToFileURL(path.join(tmp, f)).href };

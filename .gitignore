@@ -156,3 +156,17 @@ build/overlays-visual/
 build/owner-latency/
 build/sample-galaxy/
 build/visual-suite/
+
+# 2026-11-05锛氭渤鍏ユ捣瑁佸壀钀藉湴鍚庣殑鏈湴璇佹嵁鐩綍锛堝惈鐪熷疄 415 鐪佸湴鍥炬暟鎹紝绂佹鎻愪氦锛?
+build/regen-terrain/
+build/river-preview/
+build/scale-audit/
+build/terrain-erosion/
+
+# build/ 下的一次性探测件（脚本/临时目录，含真实地图数据的运行产物）
+build/.tmp-probe/
+build/.probe-*
+build/.check-*
+build/.diff-*
+build/.noop*
+build/.verify-*

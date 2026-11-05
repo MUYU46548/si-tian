@@ -2,7 +2,11 @@
   <div class="tlab" data-testid="terrain-labels-panel">
     <div class="tlab-head">
       <strong>地形注记</strong>
-      <span class="tlab-sub">山系名沿脊线排；名字由你给，几何由地形决定</span>
+      <span class="tlab-sub">
+        山系名沿脊线排；名字由你给，几何由地形决定。
+        <b>产出 = 地图上的地名文字</b>（山系沿海脊排、海域贴海面、平原是一个点），
+        存进这张底图的文字注记层，导出/切片时会一起出图。
+      </span>
       <button class="tlab-x" title="收起面板" @click="$emit('close')"><Icon name="x" :size="14"/></button>
     </div>
 

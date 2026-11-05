@@ -26,13 +26,28 @@ const { pathToFileURL } = require('url');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const SRC_DIR = path.join(ROOT, 'src', 'renderer', 'src', 'utils');
-const DEPS = ['terrainSynthesis.js', 'terrainParams.js', 'heightMath.js'];
+const DEPS = ['terrainPipeline.js', 'terrainSynthesis.js', 'lakes.js', 'terrainParams.js', 'heightMath.js', 'drainageBasins.js', 'terrainHills.js', 'fmg/rng.js', 'voronoiBatch.js'];
 
-/** 0.4.0（v0.4.0 = c1e5e77）实测黄金值：改版前用同一构造抓的 sha256 */
+/**
+ * 黄金值（**2026-11-04 再重立**：默认开“分级河网 8 河口 + 260 座丘陵”，P2.1 的实测配方）。
+ *
+ * 上一版（2026-11-03，只按轮廓推演、无排水骨架无丘陵）：
+ *   7  : 937e82d785f605eb92b3a217bbbe7cc02719684c25e1eb814d7c8acae8c9e183
+ *   11 : 787c010bbc98808a518c0377ebe37ac0219a995dd149e1e29cabc28d331e4f3c
+ *   23 : 62b519003d5b693088c0270c643a980a8eed350547379cb18a7eb9505862a793
+ * 更早（0.4.0 口径，cells=7081）：
+ *   7  : 98a3cb7e0971820c84d8fd6924ea9e63c94da4a34bf5e1beb711e1a9e9e332e7
+ *   11 : 50082df701ef4535bade11889c7f62ae040d14724140c2b448519f905cfde417
+ *   23 : 1688350ab23ad58df82c850d77989c6e089d738a63226f0e9f254672db42fe19
+ * 为什么改：暮雨 2026-11-04 拍板“接产品随便接，反正从未有任何真实数据”——
+ * 默认地形换成“分级河网 + 丘陵”（扇状度 0.852 → 0.75、入海口 500 → 286、最长 394 → 557）。
+ * 守的东西没变 —— 仍是“同种子 + 同参数 = 逐字节同一份地形”，只是基准挪到了新配方上。
+ * 走向（axis 53/21/169）与旧值一致，说明泵进的是**排水结构**，不是换了一套随机数。
+ */
 const GOLDEN = {
-  7: { sha: '98a3cb7e0971820c84d8fd6924ea9e63c94da4a34bf5e1beb711e1a9e9e332e7', cells: 7081, axis: 53 },
-  11: { sha: '50082df701ef4535bade11889c7f62ae040d14724140c2b448519f905cfde417', cells: 7081, axis: 21 },
-  23: { sha: '1688350ab23ad58df82c850d77989c6e089d738a63226f0e9f254672db42fe19', cells: 7081, axis: 169 },
+  7: { sha: '9a5d0e34fc8534fb147319a9b273453ce2d3f9ae9c3913e60466198d40c91c56', cells: 27792, axis: 53 },
+  11: { sha: '7944461d6f0b5d9c9b980b2a200d2e78ffedc324fee07885578cfb5f1bb8360a', cells: 27792, axis: 21 },
+  23: { sha: 'e247c99a99f9b6ec5f88bfb6fb91abfd95db28ea15cb642ac33af1db95b92314', cells: 27792, axis: 169 },
 };
 
 const results = [];
@@ -74,12 +89,29 @@ function shaOfH(h) {
 async function main() {
   const root = (process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Temp')) || os.tmpdir();
   const tmp = fs.mkdtempSync(path.join(root, 'sitian-tparams-'));
-  const fixExt = (src) => src.replace(/from '\.\/([A-Za-z0-9_-]+)'/g, "from './$1.js'");
-  for (const f of DEPS) {
-    fs.writeFileSync(path.join(tmp, f), fixExt(fs.readFileSync(path.join(SRC_DIR, f), 'utf8')));
+  // 依赖收集改**子目录感知**（2026-11-04：`terrainPipeline` 依赖 `fmg/rng`，
+  // 旧实现只拷平级 `./x`，会在 `fmg/rng` 上 ENOENT —— 与 test_landmass 同一种修法）
+  const seen = new Map();
+  const queue = [...DEPS];
+  while (queue.length) {
+    const f = queue.pop().replace(/\\/g, '/');
+    if (seen.has(f)) continue;
+    const src = fs.readFileSync(path.join(SRC_DIR, f), 'utf8');
+    seen.set(f, src);
+    for (const m of src.matchAll(/from '(\.\.?\/[^']+)'/g)) {
+      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(f), m[1]));
+      queue.push(rel.endsWith('.js') ? rel : rel + '.js');
+    }
+  }
+  for (const [f, src] of seen) {
+    const fixed = src.replace(/from '(\.\.?\/[^']+)'/g, (all, spec) => (spec.endsWith('.js') ? all : `from '${spec}.js'`));
+    const dest = path.join(tmp, f);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, fixed);
   }
   fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
   const TS = await import(pathToFileURL(path.join(tmp, 'terrainSynthesis.js')).href);
+  const PIPE = await import(pathToFileURL(path.join(tmp, 'terrainPipeline.js')).href);
   const P = await import(pathToFileURL(path.join(tmp, 'terrainParams.js')).href);
   const HM = await import(pathToFileURL(path.join(tmp, 'heightMath.js')).href);
 
@@ -104,7 +136,7 @@ async function main() {
     }
     assert(p.riftDepth === TS.TERRAIN_STRUCTURE.riftDepth,
       `riftDepth 默认 ${p.riftDepth} ≠ TERRAIN_STRUCTURE ${TS.TERRAIN_STRUCTURE.riftDepth}`);
-    assert(p.cellsAcross === 96, `cellsAcross 默认 ${p.cellsAcross} ≠ 96（0.4.0 旧口径）`);
+    assert(p.cellsAcross === 192, `cellsAcross 默认 ${p.cellsAcross} ≠ 192（2026-11-03 用户拍板 A：96 → 192）`);
     assert(p.rangeAxisDeg === null, 'rangeAxisDeg 默认应为 null（随种子）');
     return `${Object.keys(p).length} 个字段`;
   });
@@ -168,16 +200,21 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════════
   // 二、推演：黄金基线 + 可复现 + 参数真的改变地形
   // ══════════════════════════════════════════════════════════════════════
-  check('b1 黄金基线：默认参数跑出来的 h 与 0.4.0 逐字节一致（三个种子）', () => {
+  check('b1 黄金基线：默认参数跑出来的 h 与基准逐字节一致（三个种子）', () => {
+    const bad = [];
+    const seen = [];
     for (const seed of Object.keys(GOLDEN).map(Number)) {
       const g = GOLDEN[seed];
-      const syn = TS.synthesizeHeightmapFromTerrain(terrain, synOpts({ ...P.DEFAULT_TERRAIN_PARAMS, seed }));
-      assert(syn, `seed=${seed} 推演返回 null`);
+      const syn = PIPE.synthesizeTerrain(terrain, synOpts({ ...P.DEFAULT_TERRAIN_PARAMS, seed }));
+      if (!syn) { bad.push(`seed=${seed} 推演返回 null`); continue; }
       const sha = shaOfH(syn.h);
-      assert(sha === g.sha, `seed=${seed} 默认参数已改变地形！\n  期望 ${g.sha}\n  实际 ${sha}`);
-      assert(syn.cellCount === g.cells, `seed=${seed} 格数 ${syn.cellCount} ≠ ${g.cells}`);
-      assert(syn.structure.rangeAxisDeg === g.axis, `seed=${seed} 走向 ${syn.structure.rangeAxisDeg}° ≠ ${g.axis}°`);
+      seen.push(`${seed}:${sha}(cells=${syn.cellCount},axis=${syn.structure.rangeAxisDeg})`);
+      if (sha !== g.sha) bad.push(`seed=${seed} sha ${sha} ≠ ${g.sha}`);
+      if (syn.cellCount !== g.cells) bad.push(`seed=${seed} 格数 ${syn.cellCount} ≠ ${g.cells}`);
+      if (syn.structure.rangeAxisDeg !== g.axis) bad.push(`seed=${seed} 走向 ${syn.structure.rangeAxisDeg}° ≠ ${g.axis}°`);
     }
+    // 全列出来（一次只报第一个会让“重立黄金值”变成反复试错）
+    assert(bad.length === 0, bad.join('；') + '\n  实测：' + seen.join(' | '));
     return Object.keys(GOLDEN).map((s) => `${s}:${GOLDEN[s].sha.slice(0, 8)}`).join(' / ');
   });
 

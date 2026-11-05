@@ -76,7 +76,11 @@ import { buildLandMask } from '../../utils/coastline';
 // 🔴 2026-10-17 第八修·改向（暮雨：“司天自身的编辑能力必须过硬，不要指望靠用户导出
 //    高度数据地图来救河流生成”）：**按陆地轮廓推演地形** —— 自建底图没有高度图时，
 //    自动河流不再直接拒绝，而是用这条推演结果当输入（只读、不写数据）。
-import { synthesizeHeightmapFromTerrain } from '../../utils/terrainSynthesis';
+import { synthesizeTerrain } from '../../utils/terrainPipeline';
+// 生成阶段顺带把河做出来（同一份引擎；见 synthesizeTerrainInto）
+import { buildRiverNetwork, toStoredRivers, MIN_FLUX_TO_FORM_RIVER } from '../../utils/fmg/rivers';
+// 生成阶段顺带把地形注记（山系/海域/平原名）做出来（只补空；见 synthesizeTerrainInto）
+import { buildAutoTerrainLabels, mergeAutoTerrainLabels } from '../../utils/terrainLabels';
 // ── 地形生成参数（P0-1，2026-10-25）──────────────────────────────────────────
 // 🔴 参数的字段/范围/默认值/夹取/中文摘要**只有 `utils/terrainParams.js` 一份**。
 //    本模块只做“归一化 → 映射成推演 opts → 走 undo 落库”，绝不在这里另抄一组数字
@@ -4146,9 +4150,9 @@ export function createScenarioEditingModule(ctx) {
       //       `synthesizeBaseMapTerrain()`，那是**显式**动作。
       const terrain = baseMaps.value[baseMapKey]?.terrain;
       const mask = Array.isArray(terrain) && terrain.length ? landMaskFor(terrain) : null;
-      synthesized = synthesizeHeightmapFromTerrain(terrain, {
+      synthesized = synthesizeTerrain(terrain, toSynthesisOptions({}, {
         isLand: mask ? mask.lookup : undefined,
-      });
+      }));
       if (!synthesized) {
         return {
           rivers: [], ok: false, reason: 'no-terrain',
@@ -4334,7 +4338,7 @@ export function createScenarioEditingModule(ctx) {
     // 给了它就不再"按轮廓推演"，但**后面整条链路完全一样**（手绘搬移 / 气候同一笔 / 一条 undo）——
     // 这样 FMG 只是"另一个源头"，不是一个新写口。
     const provided = (opts.heightmap && hasGrid(opts.heightmap)) ? opts.heightmap : null;
-    const syn = provided || synthesizeHeightmapFromTerrain(terrain, toSynthesisOptions(norm.params, {
+    const syn = provided || synthesizeTerrain(terrain, toSynthesisOptions(norm.params, {
       isLand: mask ? mask.lookup : undefined,
       cellSize: opts.cellSize,
     }));
@@ -4399,6 +4403,43 @@ export function createScenarioEditingModule(ctx) {
     //      · 之后 `saveScenarios()`。
     // ── N3a-1（2026-11-02）：**生成即录账本**（与高度图同一条命令）─────────────────
     // 旧值必须在 `execute` 之前抓（execute 内部立刻调 redo → 一切写入都发生在之后）。
+    // ── 生成阶段把**河**一起做掉（2026-11-04；暮雨：“编辑器只做少量精修，生成阶段要搞定绝大部分”）──
+    // 以前：生成地形只写高度图，河要用户再点一次“自动河流”，而且那只是**叠加层、不落盘** ——
+    // 重开项目就没了。现在同一个 undo 命令里同时写 heightmap + rivers：
+    //   撤销 → 高度图与河一起回到生成前；重做 → 一起写回。
+    // 阈值与面板“河源汇流 60”同口径：MIN_FLUX_TO_FORM_RIVER(30) + 60×1.5 = 120。
+    let riversAfter = null;
+    if (t.kind !== 'planet' && opts.rivers !== false) {
+      try {
+        const net = buildRiverNetwork(
+          { grid: payload.grid, h: payload.h, lakes: payload.lakes },
+          { minFlux: MIN_FLUX_TO_FORM_RIVER + 90 },
+        );
+        // 2026-11-05：落库前裁到海岸线（掩膜与渲染同一个 `landMaskFor`，避免两套陆地定义）
+        riversAfter = toStoredRivers(net, { isLand: mask ? mask.lookup : undefined });
+      } catch (e) {
+        riversAfter = null;
+      }
+    }
+    const riversBefore = (baseMaps.value[t.id] && baseMaps.value[t.id].rivers) || [];
+    // ── 生成阶段把**地形注记**一起做掉（2026-11-04，与河同一笔）────────────────────
+    // 只补空：某种注记（山系 / 海域 / 平原）只要已有条目，这一种就一条都不加 ——
+    // 用户给三条山脉起过名，说明“这一带的山他自己认过”，再塞自动名字只会让他再删一遍。
+    // 行星侧没有 terrainLabels 容器（注记只属于剧本底图）→ 跳过。
+    let labelsAfter = null;
+    let labelsBefore = [];
+    if (t.kind !== 'planet' && opts.labels !== false) {
+      labelsBefore = (baseMaps.value[t.id] && Array.isArray(baseMaps.value[t.id].terrainLabels))
+        ? baseMaps.value[t.id].terrainLabels : [];
+      try {
+        const gen = buildAutoTerrainLabels(payload, { seed: genSeed, seaLevel: SEA_LEVEL });
+        const merged = mergeAutoTerrainLabels(labelsBefore, gen.labels);
+        // 没有新增就不进 undo（否则一次“生成”会多出一条空注记命令）
+        labelsAfter = JSON.stringify(merged) !== JSON.stringify(labelsBefore) ? merged : null;
+      } catch (e) {
+        labelsAfter = null;
+      }
+    }
     const provenanceBefore = genProvenanceOf(t);
     const genRecord = makeGenRecord({
       kind: 'terrain',
@@ -4420,10 +4461,14 @@ export function createScenarioEditingModule(ctx) {
       label: t.commandLabel,
       undo: () => {
         writeHeightmap(had ? prev : null, { touch: false });
+        if (riversAfter) provinceGridOps.setBaseMapRivers(t.id, riversBefore);
+        if (labelsAfter) provinceGridOps.setTerrainLabels(t.id, labelsBefore);
         writeGenProvenance(t, provenanceBefore);
       },
       redo: () => {
         writeHeightmap(payload);
+        if (riversAfter) provinceGridOps.setBaseMapRivers(t.id, riversAfter);
+        if (labelsAfter) provinceGridOps.setTerrainLabels(t.id, labelsAfter);
         writeGenProvenance(t, provenanceAfter);
       },
     });
@@ -4457,6 +4502,9 @@ export function createScenarioEditingModule(ctx) {
       recordId: genRecord.id,
       handKept: handKept.length,
       handDropped: keepHand ? 0 : prevHand.length,
+      // 地形注记（只补空）：`labels` = 生成后总数；`labelsAdded` = 这一次新增了几条
+      labels: labelsAfter ? labelsAfter.length : labelsBefore.length,
+      labelsAdded: labelsAfter ? labelsAfter.length - labelsBefore.length : 0,
       climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },
       message: `${provided ? '已按 FMG 模板生成地形' : '已按陆地轮廓生成地形'}：${cellCount} 格 / 格距 ${spacing}`
         + `${inlandText}${st} —— ${describeTerrainParams(norm.params)}；`
@@ -4466,8 +4514,11 @@ export function createScenarioEditingModule(ctx) {
           : (!keepHand && prevHand.length
             ? `按你的选择未保留 ${prevHand.length} 格手绘地形；`
             : (prevHand.length && !sameSeed ? '换 seed = 全新世界，手绘地形未保留；' : '')))
-        + `气候已按纬度 ±${Math.round(climate.latitudeSpanDeg / 2)}° 与离岸距离派生`
-        + `（可用 Ctrl+Z 撤回，也可以拿地形笔刷继续改）。`,
+        + `气候已按纬度 ±${Math.round(climate.latitudeSpanDeg / 2)}° 与离岸距离派生；`
+        + (labelsAfter
+          ? `地形注记已自动起名 ${labelsAfter.length} 条（只补空，可在地形注记面板改）；`
+          : '')
+        + '可用 Ctrl+Z 撤回，也可以拿地形笔刷继续改。',
     };
   }
 
@@ -4661,7 +4712,7 @@ export function createScenarioEditingModule(ctx) {
     for (let i = 0; i < count; i++) {
       // 候选参数 = 用户参数 + 换种子；**精度保留用户选择**（缩略图另用 previewCells）
       const params = { ...norm.params, seed: candidateSeed(norm.params.seed, i) };
-      const syn = synthesizeHeightmapFromTerrain(terrain, toSynthesisOptions(params, {
+      const syn = synthesizeTerrain(terrain, toSynthesisOptions(params, {
         isLand: mask.lookup,
         cellsAcross: previewCells,
       }));

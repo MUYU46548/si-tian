@@ -72,15 +72,15 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 330 | `scripts/tests/drill_diplomacy_overlay.py` | （待补） |
 | 1447 | `scripts/tests/drill_final_acceptance.py` | （待补） |
 | 198 | `scripts/tests/drill_galaxy_lanes.py` | （待补） |
-| 537 | `scripts/tests/drill_owner_latency.py` | （待补） |
+| 610 | `scripts/tests/drill_owner_latency.py` | （待补） |
 | 884 | `scripts/tests/drill_p0_first_map.py` | （待补） |
 | 341 | `scripts/tests/drill_p1_vertex_marquee.py` | （待补） |
-| 295 | `scripts/tests/drill_package_smoke.py` | （待补） |
+| 302 | `scripts/tests/drill_package_smoke.py` | （待补） |
 | 870 | `scripts/tests/drill_quit_flush.py` | （待补） |
 | 444 | `scripts/tests/drill_reimport_019.py` | （待补） |
 | 285 | `scripts/tests/drill_sample_galaxy.py` | （待补） |
 | 457 | `scripts/tests/drill_scenario_overlays_visual.py` | （待补） |
-| 350 | `scripts/tests/drill_scenario_pixels.py` | （待补） |
+| 389 | `scripts/tests/drill_scenario_pixels.py` | （待补） |
 | 311 | `scripts/tests/drill_scenario_relief.py` | （待补） |
 | 202 | `scripts/tests/drill_visual_suite.py` | （待补） |
 | 427 | `scripts/tests/fixtures/make_vault_fixture.py` | （待补） |
@@ -100,6 +100,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 40 | `scripts/tests/tools/_inspect_scenarios.mjs` | （待补） |
 | 128 | `scripts/tests/tools/_lab.py` | （待补） |
 | 105 | `scripts/tests/tools/_make_brush_gallery.py` | （待补） |
+| 279 | `scripts/tests/tools/_preview_rivers.mjs` | （待补） |
 | 200 | `scripts/tests/tools/_probe_1c_area_interior.js` | （待补） |
 | 144 | `scripts/tests/tools/_probe_accumulation_compare.mjs` | （待补） |
 | 87 | `scripts/tests/tools/_probe_alt_surface.mjs` | （待补） |
@@ -158,6 +159,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 155 | `scripts/tests/tools/_probe_river_edit_perf.py` | （待补） |
 | 35 | `scripts/tests/tools/_probe_river_flowdist.js` | （待补） |
 | 146 | `scripts/tests/tools/_probe_river_highlight.js` | （待补） |
+| 101 | `scripts/tests/tools/_probe_river_lab_visual.js` | （待补） |
 | 128 | `scripts/tests/tools/_probe_river_reachability.mjs` | （待补） |
 | 97 | `scripts/tests/tools/_probe_river_sea_pixels.js` | （待补） |
 | 236 | `scripts/tests/tools/_probe_river_selection_visibility.py` | （待补） |
@@ -225,9 +227,11 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 292 | `scripts/tests/unit/test_entity_status.js` | （待补） |
 | 233 | `scripts/tests/unit/test_export_frames.js` | （待补） |
 | 260 | `scripts/tests/unit/test_fmg_heightmap.js` | （待补） |
+| 258 | `scripts/tests/unit/test_fmg_rivers.js` | （待补） |
 | 184 | `scripts/tests/unit/test_freehand_ring.js` | 自由绘制几何单测：干净/手抖方框、圆、8 字、回勾、一条线、确定性、幂等 |
 | 176 | `scripts/tests/unit/test_galaxy_generator.js` | （待补） |
 | 368 | `scripts/tests/unit/test_galaxy_layout.js` | （待补） |
+| 108 | `scripts/tests/unit/test_galaxy_sky_seed.js` | （待补） |
 | 424 | `scripts/tests/unit/test_gen_provenance.js` | （待补） |
 | 186 | `scripts/tests/unit/test_git_credential_store.js` | （待补） |
 | 425 | `scripts/tests/unit/test_git_sync.js` | （待补） |
@@ -264,6 +268,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 688 | `scripts/tests/unit/test_river_coastline.js` | （待补） |
 | 638 | `scripts/tests/unit/test_river_editor_nodes.js` | （待补） |
 | 179 | `scripts/tests/unit/test_river_erase.js` | （待补） |
+| 125 | `scripts/tests/unit/test_river_health.js` | （待补） |
 | 217 | `scripts/tests/unit/test_river_ribbon.js` | （待补） |
 | 114 | `scripts/tests/unit/test_river_width_factors.js` | （待补） |
 | 90 | `scripts/tests/unit/test_river_widths.js` | （待补） |
@@ -276,7 +281,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 133 | `scripts/tests/unit/test_scenario_ledger.js` | （待补） |
 | 143 | `scripts/tests/unit/test_scenario_ledger_v2.js` | （待补） |
 | 198 | `scripts/tests/unit/test_scenario_map_split.js` | （待补） |
-| 177 | `scripts/tests/unit/test_scenario_relief.js` | （待补） |
+| 180 | `scripts/tests/unit/test_scenario_relief.js` | （待补） |
 | 462 | `scripts/tests/unit/test_scenario_slices.js` | （待补） |
 | 124 | `scripts/tests/unit/test_scenario_text_placement.js` | （待补） |
 | 188 | `scripts/tests/unit/test_sea_depth.js` | （待补） |
@@ -285,11 +290,12 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 93 | `scripts/tests/unit/test_stroke_math.js` | （待补） |
 | 333 | `scripts/tests/unit/test_system3d_scene.js` | （待补） |
 | 281 | `scripts/tests/unit/test_terrain_erosion.js` | （待补） |
-| 356 | `scripts/tests/unit/test_terrain_params.js` | （待补） |
+| 371 | `scripts/tests/unit/test_terrain_params.js` | （待补） |
 | 200 | `scripts/tests/unit/test_terrain_representation.js` | Node 单测：地形表示判定 13 条（空/损坏高度图、覆盖物开合、编辑与笔刷强制显示、**无高度图 → 多边形照旧不透明**＝兼容底线、与 `heightmapAccess.hasGrid` 的口径蕴含关系） |
 | 464 | `scripts/tests/unit/test_terrain_structure.js` | （待补） |
 | 137 | `scripts/tests/unit/test_text_on_path.js` | （待补） |
 | 369 | `scripts/tests/unit/test_undefined_identifiers.js` | （待补） |
+| 229 | `scripts/tests/unit/test_usability_20261103.js` | （待补） |
 | 162 | `scripts/tests/unit/test_user_guide.js` | （待补） |
 | 191 | `scripts/tests/unit/test_vault_classify.js` | 读料归类单测：12 类信号、结构优先、零静默丢失守恒、三档空间推断、只读快照、通用提取、输出目录守卫 |
 | 160 | `scripts/tests/unit/test_vault_frontmatter_noise.js` | （待补） |
@@ -315,7 +321,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 639 | `src/main/vaultIndex.js` | 全库只读索引（D1/D2 + 第二刀归类）：walkMarkdown/增量指纹、条目带 classification（整份 frontmatter 启发归类）、discoverCandidates/classifyReport、containment 读笔记/附件、搜索/解析链接 |
 | 79 | `src/main/vaultIndexWatcher.js` | 知识库索引 watcher：文件变更 → 250ms 防抖 → 增量重建索引并通知渲染层 |
 | 235 | `src/preload/index.js` | contextBridge 暴露 sitianAPI（版本号读 asar 内 package.json） |
-| 2839 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到“只读 · 未打开项目”并可点达项目面板） |
+| 2870 | `src/renderer/src/App.vue` | 全局布局 + 七层视图路由 + 面包屑 + 20 个低频面板异步挂载 + 只读徽标（决策 1 终态：世界视图也能看到“只读 · 未打开项目”并可点达项目面板） |
 | 722 | `src/renderer/src/components/AboutPanel.vue` | 关于面板 + 检查更新 + 卸载入口 |
 | 2640 | `src/renderer/src/components/AreaMap.vue` | 区域地图（行星下钻）：区域多边形/道路/标记/文本/建筑内部入口 |
 | 271 | `src/renderer/src/components/BatchImportPanel.vue` | 批量导入面板 |
@@ -331,7 +337,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 417 | `src/renderer/src/components/EagleEye.vue` | 鹰眼小地图 |
 | 516 | `src/renderer/src/components/EntityCreator.vue` | 实体创建向导（C 方案分派式）：表单“名称/层级/父级”+ 层级按父级过滤（CHILD_LAYERS）+ 创建后结果卡片（分派步骤 + “前往编辑”） |
 | 239 | `src/renderer/src/components/FmgPanel.vue` | （待补） |
-| 2008 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
+| 2020 | `src/renderer/src/components/GalaxyMap.vue` | 星域地图：深空风格背景 + 星系聚簇 + 跨星域航道 |
 | 552 | `src/renderer/src/components/GitSyncPanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/GuidePanel.vue` | （待补） |
 | 231 | `src/renderer/src/components/HistoryPanel.vue` | undo 历史面板 |
@@ -340,7 +346,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 269 | `src/renderer/src/components/KeyboardShortcuts.vue` | 快捷键说明面板 |
 | 425 | `src/renderer/src/components/LandmassPanel.vue` | （待补） |
 | 117 | `src/renderer/src/components/LayerPanel.vue` | 图层可见性面板 |
-| 2444 | `src/renderer/src/components/NodeDetailPanel.vue` | 节点详情（正文/层级迁移/定位；含 space_marker、fleet_card 伪节点适配） |
+| 2488 | `src/renderer/src/components/NodeDetailPanel.vue` | 节点详情（正文/层级迁移/定位；含 space_marker、fleet_card 伪节点适配） |
 | 147 | `src/renderer/src/components/NotePicker.vue` | （待补） |
 | 240 | `src/renderer/src/components/NoteReader.vue` | （待补） |
 | 171 | `src/renderer/src/components/NoteSearchPanel.vue` | （待补） |
@@ -353,7 +359,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 266 | `src/renderer/src/components/RecoveryPanel.vue` | 崩溃恢复面板（快照回滚） |
 | 41 | `src/renderer/src/components/RichText.vue` | （待补） |
 | 499 | `src/renderer/src/components/ScenarioLineagePanel.vue` | P2 势力谱系管理面板：可视化纠正 polity.successorOf / lineage 与显式易主年份（纯展示 + emit，写入交给父级） |
-| 6902 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
+| 6941 | `src/renderer/src/components/ScenarioMap.vue` | 剧本地图全屏工作台：底图省份绘制/拆分合并/顶点编辑（贝塞尔切线手柄 + 海岸线吸附 + 网格吸附）、剧本时间轴与势力染色、FMG .map 数据图层（陆海底色/地形高度/温度/降水栅格 + 河流/道路 + 文化/宗教着色与图例）、城镇图层与右键属性面板、PNG 导出 |
 | 405 | `src/renderer/src/components/ScenarioPicker.vue` | （待补） |
 | 289 | `src/renderer/src/components/ScenarioSliceExport.vue` | （待补） |
 | 511 | `src/renderer/src/components/ScenarioTimeline.vue` | 历史剧本时间轴组件：按年比例/等宽双轴向轨道、游标拖动、时代块点击、键盘导航、播放控制（状态由父级持有，多 v-model 同步） |
@@ -366,12 +372,12 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 1492 | `src/renderer/src/components/SystemDetailView.vue` | 单恒星系地图：恒星居中 + 轨道 + 邻系箭头 + 太空标记/部队卡片 |
 | 917 | `src/renderer/src/components/SystemView.vue` | 域内恒星系总览（真 hyperlanes） |
 | 383 | `src/renderer/src/components/TerrainGenPanel.vue` | （待补） |
-| 263 | `src/renderer/src/components/TerrainLabelsPanel.vue` | （待补） |
+| 267 | `src/renderer/src/components/TerrainLabelsPanel.vue` | （待补） |
 | 128 | `src/renderer/src/components/TreeItem.vue` | 树形导航节点项 |
 | 130 | `src/renderer/src/components/TreeNavigation.vue` | 树形导航面板 |
 | 407 | `src/renderer/src/components/UpdateNotification.vue` | 更新可用提示 |
 | 338 | `src/renderer/src/components/VaultLoreSection.vue` | （待补） |
-| 418 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
+| 444 | `src/renderer/src/components/WorldSelector.vue` | 世界卡片选择（第一层） |
 | 93 | `src/renderer/src/components/ZoomControls.vue` | 缩放控件 |
 | 59 | `src/renderer/src/components/ui/button/Button.vue` | （待补） |
 | 1 | `src/renderer/src/components/ui/button/index.js` | （待补） |
@@ -434,9 +440,9 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 183 | `src/renderer/src/galaxy/domainPaint.js` | （待补） |
 | 772 | `src/renderer/src/galaxy/generator.js` | （待补） |
 | 112 | `src/renderer/src/galaxy/labels.js` | （待补） |
-| 251 | `src/renderer/src/galaxy/sky.js` | （待补） |
+| 277 | `src/renderer/src/galaxy/sky.js` | （待补） |
 | 206 | `src/renderer/src/galaxy/starArt.js` | （待补） |
-| 402 | `src/renderer/src/galaxy/territory.js` | （待补） |
+| 405 | `src/renderer/src/galaxy/territory.js` | （待补） |
 | 9 | `src/renderer/src/lib/utils.js` | （待补） |
 | 33 | `src/renderer/src/main.js` | renderer 入口 |
 | 430 | `src/renderer/src/scenario/interaction/actions.js` | （待补） |
@@ -454,20 +460,20 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 254 | `src/renderer/src/scenario/interaction/provinceOps.js` | （待补） |
 | 330 | `src/renderer/src/scenario/interaction/riverGeometry.js` | （待补） |
 | 223 | `src/renderer/src/scenario/interaction/riverOps.js` | （待补） |
-| 477 | `src/renderer/src/scenario/interaction/rivers.js` | （待补） |
+| 584 | `src/renderer/src/scenario/interaction/rivers.js` | （待补） |
 | 156 | `src/renderer/src/scenario/interaction/scenarioGroupsOps.js` | （待补） |
 | 304 | `src/renderer/src/scenario/interaction/terrainPanels.js` | （待补） |
 | 160 | `src/renderer/src/scenario/interaction/timeline.js` | （待补） |
 | 113 | `src/renderer/src/scenario/interaction/transfer.js` | （待补） |
 | 85 | `src/renderer/src/scenario/layers/background.js` | （待补） |
-| 71 | `src/renderer/src/scenario/layers/coast.js` | （待补） |
+| 76 | `src/renderer/src/scenario/layers/coast.js` | （待补） |
 | 226 | `src/renderer/src/scenario/layers/editing.js` | （待补） |
 | 457 | `src/renderer/src/scenario/layers/features.js` | （待补） |
 | 484 | `src/renderer/src/scenario/layers/labels.js` | （待补） |
 | 269 | `src/renderer/src/scenario/layers/overlays.js` | （待补） |
 | 309 | `src/renderer/src/scenario/layers/preview.js` | （待补） |
 | 176 | `src/renderer/src/scenario/layers/provinces.js` | （待补） |
-| 127 | `src/renderer/src/store/canvasBridge.js` | 画布↔项目文件**唯一接线点**（Phase 2.4）：双向注册表 —— geodata 注册画布适配器（applyProject/releaseProject/refreshEntities/exportCanvas），projectStore 注册入水口（syncFromCanvas）。两个 store 不互相 import（防循环依赖与两套事实源） |
+| 151 | `src/renderer/src/store/canvasBridge.js` | 画布↔项目文件**唯一接线点**（Phase 2.4）：双向注册表 —— geodata 注册画布适配器（applyProject/releaseProject/refreshEntities/exportCanvas），projectStore 注册入水口（syncFromCanvas）。两个 store 不互相 import（防循环依赖与两套事实源） |
 | 2253 | `src/renderer/src/store/geodata.js` | store 壳：defineStore + 装配 6 个 geodataModules + 视图导航 + 项目↔画布接线（画布适配器注册；项目模式下行星图不回退知识库缓存） |
 | 241 | `src/renderer/src/store/geodataModules/areaEditing.js` | areaZones/areaReferenceImages 增删改（走 undo） |
 | 289 | `src/renderer/src/store/geodataModules/channelBrush.js` | （待补） |
@@ -502,8 +508,9 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 113 | `src/renderer/src/utils/errorReport.js` | 全局错误捕获 + 主进程落盘 |
 | 295 | `src/renderer/src/utils/floodfill.js` | 泛洪填充（地形快速绘制） |
 | 418 | `src/renderer/src/utils/fmg/generator.js` | （待补） |
-| 356 | `src/renderer/src/utils/fmg/index.js` | （待补） |
+| 283 | `src/renderer/src/utils/fmg/index.js` | （待补） |
 | 156 | `src/renderer/src/utils/fmg/lattice.js` | （待补） |
+| 687 | `src/renderer/src/utils/fmg/rivers.js` | （待补） |
 | 71 | `src/renderer/src/utils/fmg/rng.js` | （待补） |
 | 258 | `src/renderer/src/utils/fmg/templates.js` | （待补） |
 | 195 | `src/renderer/src/utils/freehandRing.js` | 自由绘制闭环净化（第三刀）：自交检测、在自交点切环只留最大一块、面积/填充比闸门；拒绝原因给人话（不造怪多边形、不引布尔库） |
@@ -519,7 +526,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 44 | `src/renderer/src/utils/heightThumb.js` | （待补） |
 | 229 | `src/renderer/src/utils/heightmapAccess.js` | （待补） |
 | 105 | `src/renderer/src/utils/heightmapChannels.js` | （待补） |
-| 620 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap“着色”档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |
+| 665 | `src/renderer/src/utils/heightmapRaster.js` | 高度图 → 离屏栅格（**M2/A2 跨视图共享**：ScenarioMap 底图图层与 PlanetMap“着色”档位**同一套**色带与构建逻辑；含 `createRasterCache()` 工厂 —— 缓存失效时机由调用方决定，PlanetMap 用内容指纹 `hashLabels`） |
 | 387 | `src/renderer/src/utils/heightmapResample.js` | （待补） |
 | 41 | `src/renderer/src/utils/iconSvg.js` | 字符串上下文（innerHTML）用的图标 SVG 助手 |
 | 141 | `src/renderer/src/utils/interactionGate.js` | （待补） |
@@ -527,6 +534,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 144 | `src/renderer/src/utils/labelOrient.js` | （待补） |
 | 531 | `src/renderer/src/utils/labelStyles.js` | 标签样式预设系统：6 种内置预设 + 落盘/导入导出，改动后广播 sitian:label-styles-changed |
 | 123 | `src/renderer/src/utils/labelZoom.js` | （待补） |
+| 84 | `src/renderer/src/utils/lakes.js` | （待补） |
 | 1101 | `src/renderer/src/utils/landmass.js` | （待补） |
 | 492 | `src/renderer/src/utils/landmassField.js` | （待补） |
 | 69 | `src/renderer/src/utils/landmassRelief.js` | （待补） |
@@ -556,7 +564,7 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 194 | `src/renderer/src/utils/riverChains.js` | （待补） |
 | 191 | `src/renderer/src/utils/riverErase.js` | （待补） |
 | 1179 | `src/renderer/src/utils/riverRender.js` | （待补） |
-| 858 | `src/renderer/src/utils/riverTrace.js` | （待补） |
+| 910 | `src/renderer/src/utils/riverTrace.js` | （待补） |
 | 98 | `src/renderer/src/utils/riverWidths.js` | （待补） |
 | 252 | `src/renderer/src/utils/rivers.js` | 河流编辑器核心算法：按高度自动排序成从高到低、拖拽禁止“逆流”、节点随存采样高度 |
 | 69 | `src/renderer/src/utils/roadStyles.js` | 道路样式预设（官道/道路/山路/小径）：style 优先于旧 route.color/dashed，老数据向后兼容 |
@@ -589,11 +597,11 @@ Obsidian vault (E:/图书馆/ROSA/, Markdown 唯一事实源)
 | 685 | `src/renderer/src/utils/terrainErosion.js` | （待补） |
 | 371 | `src/renderer/src/utils/terrainParams.js` | （待补） |
 | 100 | `src/renderer/src/utils/terrainRepresentation.js` | 地形表示判定（**M2/A2 第二步**：`terrain[]` 降为可选覆盖物）—— 纯函数 `hasHeightmapContent` / `resolveTerrainRepresentation`：有高度图 → 高度图是主表示、多边形退为半透明覆盖物；**没有**高度图 → 多边形照旧主表示且不透明（旧地图兼容底线）。**渲染 / 命中 / 导出三处共用同一份**（各写一套 `if` = 又一个双源） |
-| 594 | `src/renderer/src/utils/terrainSynthesis.js` | （待补） |
+| 611 | `src/renderer/src/utils/terrainSynthesis.js` | （待补） |
 | 39 | `src/renderer/src/utils/textMeasure.js` | 文本宽度测量 |
 | 209 | `src/renderer/src/utils/textOnPath.js` | （待补） |
 | 245 | `src/renderer/src/utils/textures.js` | 程序化地形纹理 |
-| 420 | `src/renderer/src/utils/userGuide.js` | （待补） |
+| 482 | `src/renderer/src/utils/userGuide.js` | （待补） |
 | 137 | `src/renderer/src/utils/vault.js` | 库名解析：obsidian:// URI 的 vault 参数取自主进程配置（禁硬编码） |
 | 198 | `src/renderer/src/utils/vaultRelink.js` | 笔记改名“断线检测 + 重连候选打分”（纯函数，Node 可测）：路径归一化 / 最长公共子串 / 单候选打分 / detectBrokenLinks / 理由文案 —— **判定与打分的唯一实现**（只读、确定性、宁可少推不可乱推） |
 | 233 | `src/renderer/src/utils/vertexSharing.js` | （待补） |

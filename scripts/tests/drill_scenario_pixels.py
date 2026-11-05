@@ -6,18 +6,24 @@ N1（渲染层接口化）的第一条判据是“**重构前后同机位截图�
 它需要一个能重复的取景 + 一个能比较的指纹，这就是本工具：
 
   · 取景固定：同一份 fixture 数据 → 进“历史剧本”→ 适屏 → 记录 camera(x,y,scale) 与画布尺寸；
-  · 指纹两枚：
-      ① `hash`          —— 整张画布 RGBA 的 FNV-1a（**逐像素**，抗"看起来差不多"）；
-      ② `hashNoLabels`  —— 关掉文字标注后的同一张画布（把"文字层"与"几何层"分开比：
-                           字体的亚像素渲染会让整图哈希变，几何层的回归不受它牵连）；
-  · 同时落一张 PNG 供人眼复核（`build/pixel-baseline/<tag>.png`）。
+  · 三枚（③ 于 2026-11-05 补，A2）：
+      ① `hash`          —— 整张画布 RGBA 的 FNV-1a（逐像素，抗“看起来差不多”）；
+      ② `hashNoLabels`  —— 关掉文字标注后的同一张画布（文字层与几何层分开比，
+                            字体的亚像素渲染不会牵连几何层的回归）；
+      ③ `riverHash`     —— 只画生成河的一帧：主帧底图上没有任何 `river_gen_*`
+                            （fixture 铺底时把 rivers 换成了两条手画河），于是河线几何/
+                            河宽改了多少轮，像素基线都“逐像素一致”—— 不是没坏，
+                            是判据看不见河。这一帧同 seed 再生成一次地形（河一起落库）、
+                            关掉河以外的所有层、相机钉在最长那条河上；拍前做一次负向探针
+                            （最宽 20 条河压细 40% → 指纹必须变），确保这枚判据不空转。
+  · 同时落 PNG 供人眼复核（`build/pixel-baseline/<tag>.png` 与 `<tag>-rivers.png`）。
 
 用法：
   python scripts/tests/drill_scenario_pixels.py --tag before     # 重构前留底
   python scripts/tests/drill_scenario_pixels.py --tag after      # 重构后再跑一次
   python scripts/tests/drill_scenario_pixels.py --compare before after
 
-判据（`--compare`）：尺寸一致 + camera 一致 + 两枚哈希一致 → 0；否则 1 并逐项列出。
+判据（`--compare`）：尺寸一致 + camera 一致 + 哈希一致（有河层帧时连 riverHash/riverCamera 一起比）→ 0；否则 1 并逐项列出。
 ⚠️ 只在本机比：字体/DPR 跨机器会不同，`hashNoLabels` 才是跨机器也有意义的那枚。
 """
 import json
@@ -78,6 +84,68 @@ TOGGLE_LABELS_JS = """((on) => {
 })"""
 
 
+# ── ③ 河层帧（2026-11-05，A2「像素基线缺有河帧」）──────────────────────────
+# 同一份 fixture、同 seed 再生成一次地形（这次不覆盖 rivers）→ 生成河落在底图上。
+# 只留河：浮雕/省界/城镇/文字/道路/群系/网格数据层全关，底图色块当静态背景。
+RIVER_FRAME_JS = """(() => {
+  const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+  const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+  const KEY = '像素基线底图';
+  // ① 同 seed 同参数再生成：这次不覆盖 rivers，生成河才留在底图上
+  const r = s.synthesizeBaseMapTerrain(KEY, { force: true, seed: 7 });
+  if (!r || !r.ok) return JSON.stringify({ ok: false, why: 'regen-failed', msg: r && r.message });
+  const bm = s.baseMaps[KEY] || {};
+  const gen = (bm.rivers || []).filter(x => String(x.id || '').startsWith('river_gen_'));
+  if (gen.length < 20) return JSON.stringify({ ok: false, why: 'too-few-rivers', gen: gen.length });
+  // ② 只留河
+  for (const k of ['showBorders', 'showBurgs', 'showLabels', 'showPlaceNames', 'showPolityLabels',
+                   'showProvinceNames', 'showTerrainNames', 'showRoutes', 'showBiomes']) SM[k] = false;
+  SM.terrainShade = false;
+  SM.rasterLayer = 'none';
+  SM.showRivers = true;
+  SM.riverSource = 'base';
+  SM.selectedRiverId = null;
+  SM.selectedProvinceIds = [];
+  // 状态栏的长回执会把画布撑矮（相机读数跟着变）→ 先清掉再量画布
+  if ('provinceHint' in SM) SM.provinceHint = '';
+  return JSON.stringify({ ok: true, gen: gen.length });
+})()"""
+
+# 取景单独一步（布局稳定后）：相机钉在最长那条河的中点，固定倍率 3.5。
+RIVER_CAM_JS = """(() => {
+  const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+  const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+  const bm = s.baseMaps['像素基线底图'] || {};
+  const gen = (bm.rivers || []).filter(x => String(x.id || '').startsWith('river_gen_'));
+  if (!gen.length) return JSON.stringify({ ok: false, why: 'no-rivers' });
+  let longest = gen[0], maxLen = 0;
+  for (const g of gen) { const p = g.points || []; if (p.length > maxLen) { maxLen = p.length; longest = g; } }
+  const pts = longest.points || [];
+  const mid = pts[Math.floor(pts.length / 2)] || { x: 0, y: 0 };
+  const cv = document.querySelector('.scenario-map-container canvas');
+  const scale = 3.5;
+  SM.cameraScale = scale;
+  SM.cameraX = cv.clientWidth / 2 - mid.x * scale;
+  SM.cameraY = cv.clientHeight / 2 - mid.y * scale;
+  if (typeof SM.render === 'function') SM.render();
+  return JSON.stringify({ ok: true, gen: gen.length, longestPts: maxLen, scale,
+    canvas: { w: cv.clientWidth, h: cv.clientHeight },
+    mid: { x: Math.round(mid.x * 100) / 100, y: Math.round(mid.y * 100) / 100 } });
+})()"""
+
+# 负向探针：最宽的 20 条河压细 40% → 河层指纹必须变，否则这枚判据是摆设
+RIVER_SENS_JS = """(() => {
+  const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+  const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+  const bm = s.baseMaps['像素基线底图'] || {};
+  const gen = (bm.rivers || []).filter(x => String(x.id || '').startsWith('river_gen_'));
+  const top = gen.slice().sort((a, b) => (Number(b.width) || 0) - (Number(a.width) || 0)).slice(0, 20);
+  for (const r of top) r.width = (Number(r.width) || 0) * 0.6;
+  if (typeof SM.render === 'function') SM.render();
+  return JSON.stringify({ ok: true, n: top.length });
+})()"""
+
+
 def ck(name, ok, detail=''):
     print(('  ✅ ' if ok else '  ❌ ') + name + (f' — {detail}' if detail else ''), flush=True)
     return {'name': name, 'ok': bool(ok), 'detail': str(detail)}
@@ -91,6 +159,29 @@ def main():
         scene_name = args[args.index('--scene') + 1]
     if '--tag' in args:
         tag = args[args.index('--tag') + 1]
+    # 2026-11-03 第 6 刀：`--raster` 决定拍**哪一层网格数据**。
+    # 为什么加：默认政治档（landsea）拍不到“高度/浮雕”那一层，于是地形观感（等高线、晕渲、色带）
+    # 一直没有目视判据 —— 之前所有关于“地形糊不糊”的讨论都建立在一张政治档截图上，那本身就是错的。
+    # 值同 `ScenarioMap` 的 `rasterLayer`：none | landsea | height | temp | prec（height 是最常用来判地形的）。
+    raster_name = 'landsea'
+    if '--raster' in args:
+        raster_name = args[args.index('--raster') + 1]
+    # 2026-11-03：**任意状态都能拍**（用户：“整个司天任何一个地方都必须能截图”）。
+    # `--js '<表达式>'` 在取指纹前注入一段 JS，用来把画布摆到任何想要的状态
+    # （自动河流 / 选中某省 / 打开某个面板 …），脚本本身不用为每个状态再写一个 drill。
+    # 要求：表达式返回 JSON 字符串且含 "ok" 字段，否则判为失败（不许静默拍一张空图）。
+    js_hook = ''
+    if '--js' in args:
+        js_hook = args[args.index('--js') + 1]
+    # 2026-11-03：`--js` 收字符串在 Windows 上不可靠 —— 中文经 PowerShell → Python argv 会被截断
+    # （实测报 `SyntaxError: Invalid regular expression: missing /`，正则里的 `/` 之后整段丢了）。
+    # 所以正路是 `--js-file <路径>`：按 UTF-8 读文件，中文/引号/正则都不会坏。
+    if '--js-file' in args:
+        _jsf = args[args.index('--js-file') + 1]
+        with open(_jsf, 'r', encoding='utf-8') as _f:
+            js_hook = _f.read()
+    # 2026-11-05：默认拍河层帧（旧基线没有这枚指纹时比对会自动跳过）。
+    with_river_frame = '--no-river-frame' not in args
     if '--compare' in args:
         return compare(args[args.index('--compare') + 1], args[args.index('--compare') + 2])
 
@@ -263,6 +354,24 @@ def main():
         ck('调了 fitToView', bool(fit[0]) and fit[1].get('ok'), fit[1])
         time.sleep(0.8)
 
+        # 可选：切网格数据层（默认 landsea = 政治档）。必须在 fitToView 之后、
+        # 取指纹之前 —— 换层会重绘，先换后拍才能保证指纹与 PNG 是同一层。
+        if raster_name != 'landsea':
+            lay = eval_json(cdp, """(() => {
+              const SM = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+              const want = '%s';
+              SM.rasterLayer = want;
+              if (typeof SM.render === 'function') SM.render();
+              return JSON.stringify({ ok: true, layer: SM.rasterLayer });
+            })()""" % raster_name, required=('ok',), desc='切网格数据层')
+            ck(f'网格数据层已切到 {raster_name}', bool(lay[0]) and lay[1].get('ok'), lay[1])
+            time.sleep(0.8)
+
+        if js_hook:
+            _hok, _hres = eval_json(cdp, js_hook, required=('ok',), desc='自定义前置脚本')
+            ck('自定义前置脚本已执行', bool(_hok) and _hres.get('ok'), _hres)
+            time.sleep(0.8)
+
         fp_ok, fp = eval_json(cdp, FP_JS, required=('hash',), desc='指纹')
         if not fp_ok or fp.get('error'):
             ck('取像素指纹', False, fp)
@@ -284,6 +393,47 @@ def main():
             desc='画布 PNG dataUrl',
         )
 
+        # ── ③ 河层帧（必须在主帧 PNG 取回之后：它会把底图重生成一遍）──────────
+        river_fp, river_png, rv = None, None, None
+        if with_river_frame:
+            rv_ok, rv = eval_json(cdp, RIVER_FRAME_JS, required=('ok',), desc='河层帧')
+            if not rv_ok or not rv.get('ok'):
+                ck('河层帧已就位', False, rv)
+                return 1
+            ck('河层帧已就位', True, json.dumps(rv, ensure_ascii=False))
+            ck('河层帧里生成河 > 20 条（判据不许空转）', int(rv.get('gen') or 0) > 20,
+               f"river_gen_* = {rv.get('gen')}")
+            # 清状态栏会让画布变高 → 组件的 resize 观察者会 fitToView 盖掉相机。
+            # 先等布局稳定，再单独设相机（2026-11-05 实测：一次设完会被盖成 1.2625）。
+            time.sleep(0.6)
+            cam_ok, cam = eval_json(cdp, RIVER_CAM_JS, required=('ok',), desc='河层取景')
+            if not cam_ok or not cam.get('ok'):
+                ck('河层取景', False, cam)
+                return 1
+            ck('河层取景（最长那条河 / 3.5×）', True, json.dumps(cam, ensure_ascii=False))
+            time.sleep(0.6)
+            rf_ok, river_fp = eval_json(cdp, FP_JS, required=('hash',), desc='指纹·河层')
+            if not rf_ok or river_fp.get('error'):
+                ck('取河层指纹', False, river_fp)
+                return 1
+            river_png = fetch_string(
+                cdp,
+                "document.querySelector('.scenario-map-container canvas').toDataURL('image/png').length",
+                lambda i, j: ("document.querySelector('.scenario-map-container canvas')"
+                              f".toDataURL('image/png').slice({i}, {j})"),
+                desc='河层 PNG dataUrl',
+            )
+            # 负向探针：压细最宽的 20 条河 → 指纹必须变（敏感性自证，不进基线）
+            s_ok, s_res = eval_json(cdp, RIVER_SENS_JS, required=('ok',), desc='河层灵敏度探针')
+            time.sleep(0.5)
+            _, river_fp2 = eval_json(cdp, FP_JS, required=('hash',), desc='指纹·河层·负向')
+            sens_changed = bool(river_fp2.get('hash')) and river_fp2.get('hash') != river_fp.get('hash')
+            ck('河层判据灵敏（河宽 ×0.6 → 指纹变）', s_ok and sens_changed,
+               f"{river_fp.get('hash')} → {river_fp2.get('hash')}")
+            if not sens_changed:
+                print('  🔴 河层指纹对河宽不敏感 —— 这帧等于没有判据（先查相机/分层开关）', flush=True)
+                return 1
+
         record = {
             'tag': tag,
             'ts': time.strftime('%Y-%m-%dT%H:%M:%S'),
@@ -295,12 +445,23 @@ def main():
             'colors': fp['colors'],
             'showLabelsToggle': bool(on_ok and on.get('ok')),
         }
+        if river_fp:
+            record.update({
+                'riverHash': river_fp.get('hash'),
+                'riverCamera': river_fp.get('camera'),
+                'riverW': river_fp.get('w'), 'riverH': river_fp.get('h'),
+                'riverCount': rv.get('gen'),
+                'riverSensitivity': True,
+            })
         with open(os.path.join(OUT_DIR, f'{tag}.json'), 'w', encoding='utf-8') as f:
             json.dump(record, f, ensure_ascii=False, indent=2)
         raw = data_url.split(',', 1)[1]
         import base64
         with open(os.path.join(OUT_DIR, f'{tag}.png'), 'wb') as f:
             f.write(base64.b64decode(raw))
+        if river_png:
+            with open(os.path.join(OUT_DIR, f'{tag}-rivers.png'), 'wb') as f:
+                f.write(base64.b64decode(river_png.split(',', 1)[1]))
 
         ck('指纹已落盘', True, json.dumps(record, ensure_ascii=False))
         print(f'  → {os.path.join(OUT_DIR, f"{tag}.json")}', flush=True)
@@ -338,6 +499,16 @@ def compare(a_tag, b_tag):
     cam_same = a.get('camera') == b.get('camera')
     bad += 0 if cam_same else 1
     print(('  ✅ ' if cam_same else '  ❌ ') + f'camera: {a.get("camera")} → {b.get("camera")}')
+    if 'riverHash' in a and 'riverHash' in b:
+        rcam_same = a.get('riverCamera') == b.get('riverCamera')
+        bad += 0 if rcam_same else 1
+        print(('  ✅ ' if rcam_same else '  ❌ ') + f'riverCamera: {a.get("riverCamera")} → {b.get("riverCamera")}')
+        for k in ('riverW', 'riverH', 'riverHash'):
+            same = a.get(k) == b.get(k)
+            bad += 0 if same else 1
+            print(('  ✅ ' if same else '  ❌ ') + f'{k}: {a.get(k)} → {b.get(k)}')
+    else:
+        print('  ⚠️ 旧基线没有河层帧（riverHash）—— 只比主帧；用新 tag 重拍即可启用河层判据')
     print(f'  非背景像素 {a.get("nonBg")} → {b.get("nonBg")} · 颜色数 {a.get("colors")} → {b.get("colors")}')
     if bad:
         print(f'\n🔴 {bad} 项不一致 —— 逐像素判据没过（先看 PNG：{OUT_DIR}\\{a_tag}.png vs {b_tag}.png）')

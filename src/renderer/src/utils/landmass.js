@@ -38,6 +38,7 @@ import {
 } from './landmassField';
 import { synthesizeHeightmapFromTerrain } from './terrainSynthesis';
 import { erodeTerrain } from './terrainErosion';
+import { scatterHills } from './terrainHills';
 import { traceRivers, clipPolylineToLand } from './riverTrace';
 import { flowToDischargeEquivalent, smoothRiverLine } from './riverRender';
 import { buildRiverPaths } from './riverChains';
@@ -632,76 +633,6 @@ function rasterizeLandMask(rings, bbox, cols, rows) {
   return { mask, cols, rows, spacing: sx, isLand, landCells: land };
 }
 
-/**
- * **多尺度丘陵**：在地形里撒一批半径/高度各异的丘与盆（Azgaar 的 `addHill` / `addBlob` 同款思路）。
- *
- * 🔴 为什么必须有（第四轮实测结论，写下来免得再试）：
- *   `terrainSynthesis` 的地形 = **一个离岸距离穹顶** + 一层**各向异性**脊线。
- *   穹顶上每一格的"最陡方向"都指向海岸 → D8 流线天然是**放射状 / 平行**的；
- *   各向异性脊线又让水在平行的谷里平行下流。两者叠加，画出来就是"一片 45° 直线"
- *   （顺手做过的三件事都没救回来：加大脊线权重、局部起伏放大 1.8×、按流向场下切 3 轮 ——
- *    它们都只是把同一批直线切深/弄弯，没有改变"水往哪走"）。
- *
- *   真实地形的坡是被**一堆大小不一的丘**弄乱的：水先流进小洼、翻过鞍部、再汇进大河。
- *   所以这里按 `1/r` 的幂律撒丘（小丘多、大丘少），并让 30% 是**负丘（盆）** ——
- *   盆地正是"水留一会儿再走"的地方，也是树枝状水系的分叉点。
- *
- * @param {{h:number[], grid:{cellsX:number,cellsY:number,spacing:number}}} hm 就地修改
- * @param {{count:number, rMin:number, rMax:number, ampMin:number, ampMax:number,
- *          seaLevel?:number, rng:()=>number}} opts `rMin/rMax` 是**格**；`amp` 是高度点
- * @returns {{placed:number, skipped:number}}
- */
-function scatterHills(hm, opts) {
-  const { cellsX: cols, cellsY: rows } = hm.grid;
-  const sea = Number.isFinite(opts.seaLevel) ? opts.seaLevel : 20;
-  const rng = opts.rng;
-  const count = Math.max(0, Math.round(opts.count));
-  let placed = 0, skipped = 0, guard = 0;
-  while (placed < count && guard++ < count * 30) {
-    const ci = 2 + Math.floor(rng() * Math.max(1, cols - 4));
-    const cj = 2 + Math.floor(rng() * Math.max(1, rows - 4));
-    const ck = cj * cols + ci;
-    if (hm.h[ck] < sea + 0.6) { skipped++; continue; }        // 只落在陆地上
-    // 半径按 1/r 幂律：小丘多、大丘少（真实地形的"丘陵谱"就长这样）
-    const r = opts.rMin + (opts.rMax - opts.rMin) * Math.pow(rng(), 1.7);
-    const amp = (opts.ampMin + (opts.ampMax - opts.ampMin) * Math.pow(rng(), 1.4))
-      * (rng() < (opts.basinRate == null ? 0.3 : opts.basinRate) ? -1 : 1);
-    // 18% 是**脊**（拉长的丘）：真实大陆上"圆圆的小丘"只占一半，另一半是成串的山脊。
-    // 脊还有个副作用是我们要的：山脊两侧的坡会把水**逼到同一条谷**里。
-    const isRidge = rng() < 0.18;
-    const elong = isRidge ? 1.8 + rng() * 1.8 : 1;
-    const ang = isRidge ? rng() * Math.PI : 0;
-    const ca = Math.cos(ang), sa = Math.sin(ang);
-    const reach = r * elong;
-    const i0 = Math.max(1, Math.floor(ci - reach)), i1 = Math.min(cols - 2, Math.ceil(ci + reach));
-    const j0 = Math.max(1, Math.floor(cj - reach)), j1 = Math.min(rows - 2, Math.ceil(cj + reach));
-    for (let jj = j0; jj <= j1; jj++) {
-      for (let ii = i0; ii <= i1; ii++) {
-        let dx = ii - ci, dy = jj - cj;
-        if (isRidge) {                                    // 转到脊的坐标系里量距离
-          const rx = dx * ca + dy * sa;
-          const ry = -dx * sa + dy * ca;
-          dx = rx / elong;
-          dy = ry;
-        }
-        const d = Math.hypot(dx, dy) / r;
-        if (d >= 1) continue;
-        const f = (1 - d * d) ** 2;
-        const k = jj * cols + ii;
-        // 🔴 **只动陆地格**：丘的圆盘会越过海岸线。若把海格也抬过 20，栅格里的陆地就比
-        //    海岸环多出一圈（实测面积 +21%，a10 当场抓住），而省份是按环切的 ——
-        //    画面上就是"水里明明该有省，却没有"。
-        if (hm.h[k] < sea + 0.6) continue;
-        // 负丘（盆）不许把陆地压到海平面以下：那会在轮廓里凭空多出一个"湖"，
-        // 而海岸环并不知道它（预览里是蓝斑、省份却盖在上面）。压到 sea+0.4 就够成洼了。
-        hm.h[k] = Math.max(sea + 0.4, hm.h[k] + amp * f);
-      }
-    }
-    placed++;
-  }
-  for (let k = 0; k < hm.h.length; k++) hm.h[k] = Math.round(hm.h[k] * 100) / 100;
-  return { placed, skipped };
-}
 
 /** 高度图（`synthesizeHeightmapFromTerrain` 的产物）→ 预览栅格 */function reliefFromHeightmap(hm, seaLevel) {
   const { cellsX: w, cellsY: h, points } = hm.grid;

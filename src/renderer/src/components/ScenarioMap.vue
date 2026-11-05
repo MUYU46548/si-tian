@@ -308,6 +308,22 @@
            旧的同名按钮是几何笔刷（把笔迹并进所选省份），用户实测“好像在生造省份”。
            这一块是日常剧本编辑的主路径：选势力 → 按住涂 → 碰到的省一次改归属。 -->
       <div class="tool-group brush-settings" v-if="tool === 'ownerBrush'" data-testid="owner-brush-settings">
+        <!-- 🔴 2026-11-03 用户实测：“涂归属一开始无法选择势力，原因不明；到处乱点又突然可以选了，
+             疑似必须选中一个剧本才可以用。”—— 判断完全正确，而且这正是设计上的隐含前提：
+             归属是**按剧本（时期）记账**的，没有剧本就没有"这个年代归谁"可言。
+             但旧界面在无剧本时只是**整条势力色板不渲染**（`v-if="viewMode==='scenario' && selectedScenario"`），
+             工具本体则静默不干活 → 用户看到的是“点了没反应”。
+             这里把依赖写成一句话 + 两个直达按钮（选择剧本 / 新建剧本），不再让人靠乱点撞出来。 -->
+        <span
+          v-if="!selectedScenario"
+          class="row-hint"
+          data-testid="owner-brush-need-scenario"
+          title="涂归属记的是“某个年代这块地归谁”，所以必须挂在一条剧本（时期）上；没有剧本时连势力色板都不会出现"
+        >
+          涂归属要先有剧本：
+          <button data-testid="owner-brush-pick-scenario" @click="showScenarioList = true">用左侧剧本列表选一个</button>
+          <button data-testid="owner-brush-new-scenario" @click="showScenarioManager = true">新建剧本…</button>
+        </span>
         <span class="row-label">涂归属：</span>
         <span class="row-hint" data-testid="owner-brush-polity" :class="{ ready: !!selectedPolity || clearOwnerMode }">
           <template v-if="clearOwnerMode">当前：<b>清除归属</b>（涂到的省变无主）</template>
@@ -519,6 +535,10 @@
 
       <!-- “更多”（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
       <div v-if="moreOpen" class="toolbar-more">
+        <div
+          data-testid="more-sec-province"
+          style="flex-basis:100%;width:100%;margin:2px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+        >省份几何</div>
         <div class="toolbar-row">
           <label class="row-label">高级工具：</label>
           <div class="tool-group">
@@ -557,16 +577,16 @@
                 @click="generateAndShowRivers"
                 title="自动河流（预览）— 按地形高度从高到低追踪入海路径。⚠️ 结果只画在画布上、**不会存进项目**：切走视图或换底图就没了；要长期保留请用“河流 (W)”手画。"
               ><Icon name="waves" :size="15"/>自动河流</button>
-                  <!-- 🔴 源头高度闸门（2026-10-14 第三轮）：实测在这份地形上**它决定条数**
-                       （默认 60 → 3 条；40 → 67 条）。做成一枚**紧挨着按钮**的数字输入，
-                       因为它与"点一下自动河流"是同一个动作的两个参数，藏进‘更多’里
-                       等于还是够不着（本项目反复踩的正是这一条）。 -->
+                  <!-- 🔴 河源汇流闸门（2026-11-04，FMG 口径重抄后由“源头高度”改名）：
+                       它控制的是**河源要攒够多少汇水**（降水当量），不是绝对高度 ——
+                       旧标题那句“只有高度高于这个值的格子才能当河源”已经不成立。
+                       ⚠️ `data-testid` 保持不变：用例/演练按它定位，改名会把判据弄红。 -->
                   <input
                 v-model.number="riverSourceHeight"
                 data-testid="river-source-height"
                 type="number" min="0" max="100" step="5"
                 class="river-source-height"
-                title="源头高度闸门 — 只有高度**高于**这个值的格子才能当河源。调低 = 更多（更碎）的支流；调高 = 只留高地上的大江。实测这份底图：60 → 3 条、40 → 67 条"
+                title="河源汇流 — 河源至少要攒够这么多水（降水当量）才成河。调低 = 更多更碎的小支流；调高 = 只留大江。默认 60"
               />
                   <!-- 🔴 河流来源（2026-10-16 第五修）：实测自动河与底图自带河**是两套水系**
                        （段到自带河最近距离中位 18.78 世界单位，只有 10% 在 3 单位内）→ 并存时
@@ -659,6 +679,16 @@
               ><Icon name="refresh-cw" :size="15"/>重算派生</button>
           </div>
         </div>
+      <!-- 分区小标题（2026-11-03 第 9 刀，#6）：
+           用户原话“这么多按钮讲不清楚放不明白……派生就派生，旁边再放几十个按钮”。
+           事实是“更多”里 55 个按钮分成 4 行、行内**零标题**，生成类那一簇（造陆 / FMG 模板 /
+           地形生成参数 / 派生 / 分辨率）就混在这一行里 —— 这就是“找了五分钟没找到”的直接原因。
+           这里只加**一个 div 标题**，不动任何按钮：`test_65` 数的是 `.primary-row` 的可见控件
+           与“更多”里的 `button` 数量，加 div 不影响计数。 -->
+      <div
+        data-testid="more-sec-terrain"
+        style="flex-basis:100%;width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+      >地形 · 底图 · 生成</div>
       <!-- 第 3 行：地形/群系等笔刷设置 + 底图与视图操作 -->
       <div class="toolbar-row">
       <!-- 笔刷设置 -->
@@ -783,14 +813,14 @@
           :class="{ active: terrainGenOpen }"
           title="地形生成参数 —— 种子 / 起伏 / 山脉 / 高原 / 裂谷 / 精度 + 3 张候选预览，选一张再应用（一条撤销）"
           @click="toggleTerrainGenPanel"
-        ><Icon name="settings" :size="15"/>生成参数</button>
+        ><Icon name="settings" :size="15"/>地形生成参数</button>
         <button
           v-if="baseMapKey"
           data-testid="basemap-fmg-terrain"
           :class="{ active: fmgOpen }"
-          title="FMG 模板地形 —— 14 套 Azgaar 模板（大陆 / 群岛 / 环礁 / 地中海…）直接出高度图，同一条撤销"
+          title="FMG 模板 —— 14 套 Azgaar 模板（大陆 / 群岛 / 环礁 / 地中海…）直接出高度图，同一条撤销"
           @click="fmgOpen = !fmgOpen"
-        ><Icon name="sparkles" :size="15"/>FMG 地形</button>
+        ><Icon name="sparkles" :size="15"/>FMG 模板</button>
         <!-- P0-2（2026-10-25）：**造陆**。此前"从零开始"的第一步是让用户自己画大陆 ——
              手画出来多是圆饼，而且只会画一块中央大陆。这里按参数生成大陆/群岛轮廓，
              再用现有铺底管线切成省（一条 undo）。 -->
@@ -946,6 +976,10 @@
       </div>
       </div>
 
+      <div
+        data-testid="more-sec-layers"
+        style="flex-basis:100%;width:100%;margin:8px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-tertiary);"
+      >图层 · 着色</div>
       <!-- 第 4 行：图层显示 / 底图图层 / 着色 -->
       <div class="toolbar-row">
       <div class="tool-group">
@@ -955,7 +989,7 @@
         <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
         <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
         <label class="check-label" title="显示导入的城镇名 / 河流名（FMG 数据多为英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
-        <label class="check-label" title="显示“地形注记”里的山系/海域名（沿走向排字；名字要自己给：检测山脊或手动画一条，见“地形注记”面板）"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
+        <label class="check-label" title="显示“地形注记”里的山系/海域名（沿走向排字）。生成地形时会按种子自动起名（只补空）；也可以在里面自己改名或手画一条"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
         <label class="check-label" title="EU4 式分级标注：缩小看势力名（可简称），放大再加上省名"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
         <label class="check-label" title="放大到最详档时显示省名（未命名的省显示“新省份 N”，是改名的线索）"><input type="checkbox" v-model="showProvinceNames" data-testid="toggle-province-names" /> 省名</label>
         <label class="check-label" title="只显示你自己起过名的省 —— 程序生成的“新省份 N”整层不画（415 省项目里通常只有几十个有真名，其余会把画面糊满）"><input type="checkbox" v-model="showNamedProvincesOnly" data-testid="toggle-named-provinces" /> 仅已命名省</label>
@@ -1277,8 +1311,9 @@
         </div>
         <template v-if="showScenarioList">
           <div v-if="!sortedScenarios.length" class="slp-empty" data-testid="slp-empty">
-            还没有剧本 —— 打开下方“新建 / 管理剧本…”创建第一个时期。<br />
-            <b>一个剧本 = 一个时间点的版图快照</b>（谁占了哪些省）。
+            还没有剧本 —— 点下方“新建 / 管理剧本…”创建第一个时期。<br />
+            <b>一个剧本 = 一个时间点的版图快照</b>（谁占了哪些省）。<br />
+            “涂归属”和上方的势力色板都挂在剧本上：没有剧本时它们不出现，不是坏了。
           </div>
           <div v-else class="slp-list">
             <div v-for="(s, i) in sortedScenarios" :key="s.id"
@@ -4709,6 +4744,10 @@ function buildCellRaster(kind) {
     shade: terrainShade.value ? terrainShadeStrength.value
       : ((kind === 'satellite' || kind === 'terrain') ? 1 : 0),
     landAsSea: kind === 'landsea',
+    // 等高线（2026-11-03 第 6 刀）：只在“读地形”的两档（高度 / 浮雕）画 ——
+    // 目视判据：`drill_scenario_pixels.py --raster height --tag terrain-on`（第 6 刀新加的开关）。
+    // 对照图：`build/pixel-baseline/terrain-off.png`（纯色块，糊且脏）vs `terrain-on.png`。
+    contour: (kind === 'height' || kind === 'relief'),
   });
 }
 
@@ -4767,11 +4806,13 @@ function getReliefRaster() {
   const key = baseMapKey.value + '|relief';
   const hit = rasterCache.get(key);
   if (hit && hit.hm === hm) return hit.raster;
-  // kind 取 'relief'（2026-11-03 专用色带：低饱和灰绿→灰褐）+ 强制山体阴影：
-  // `height` 档默认不加阴影，不加阴影就是"彩色等高线"，立不起来。
-  // 为什么不再用 'terrain'：那条绿得足，铺在政治色下面会把红省带成橄榄色（§十一 留的欠账）。
-  // shade 1.25 = 比行星侧默认(1)再重一点 —— 政治水洗会把地形压掉约一半对比度。
-  const built = buildHeightmapRaster(hm, 'relief', { shade: 1.25 });
+  // kind 取 'relief'（2026-11-03 专用色带：低饱和灰绿→灰褐）+ 山体阴影。
+
+  // 🔴 2026-11-04（暮雨：“这些奇怪的阴影，尤其是海岸边界”）：原来写死 `shade: 1.25`，
+  //    在 193×88 的格子上，一格 ≈ 4~5 屏幕像素，再被双线性放大 —— 每座丘陵都变成
+  //    一块几十像素的软斑，海岸那圈更低的高度差直接糊成“投影”。改成 0.85，并把明暗区间
+  //    收到 0.90~1.02（原来是 0.80~1.03）：阴影只负责“坡向”，不再负责“脏”。
+  const built = buildHeightmapRaster(hm, 'relief', { shade: 0.85, min: 0.9, max: 1.02 });
   if (built) rasterCache.set(key, { hm, raster: built });
   return built;
 }
@@ -5110,6 +5151,36 @@ let strokeBaseBuilding = false;   // 正在渲染基帧（防递归）
 // 不靠墙钟时间（时间断言在慢机器上会假红）。
 const strokeBaseStats = { builds: 0, blits: 0 };
 
+// ── 合成链排障口（2026-11-04 第十九修）──────────────────────────────────────
+// 🔴 为什么需要：用户 12 倍截图里有 X 交叉，而同一帧导出的折线逐段算交叉 = 0；两张证据对不上时，
+//    唯一能定案的是"屏幕上那层到底由哪一帧画的"。所以每帧记一行：
+//    帧号 / 耗时 / 是否贴基帧 / 正在建基帧 / 相机 / **本帧用的河流几何版本**（`__RIVER_DRAW__.ver`）。
+//    只留最近 120 帧（有界，不参与渲染语义）；读它：`window.__SITIAN_FRAME_LOG__`。
+const FRAME_PROBE_MAX = 120;
+let frameProbeSeq = 0;
+function recordFrameProbe(blitted, t0) {
+  if (typeof window === 'undefined') return;
+  frameProbeSeq += 1;
+  const d = window.__RIVER_DRAW__ || null;
+  const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  let log = window.__SITIAN_FRAME_LOG__;
+  if (!Array.isArray(log)) log = window.__SITIAN_FRAME_LOG__ = [];
+  log.push({
+    n: frameProbeSeq,
+    t: Math.round(now),
+    ms: Math.round((now - t0) * 10) / 10,
+    blitted: !!blitted,
+    building: strokeBaseBuilding,
+    cam: [Math.round(cameraX.value), Math.round(cameraY.value), Math.round(cameraScale.value * 1000) / 1000],
+    riverVer: d ? d.ver : null,
+    jobs: d ? d.jobs : null,
+    cuts: d ? d.cuts : null,
+    dpr: canvasDpr,
+    px: [Math.round(cw()), Math.round(ch())],
+  });
+  if (log.length > FRAME_PROBE_MAX) log.splice(0, log.length - FRAME_PROBE_MAX);
+}
+
 // 手势闸门是否已开（与 onMouseDown/onMouseUp 严格配对；卸载时兜底收掉，见 onBeforeUnmount）
 let canvasGateArmed = false;
 
@@ -5434,6 +5505,7 @@ scenarioRenderLayers.register({
 
 function renderFrame() {
   if (!ctx.value) return;
+  const probeT0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const cvs = canvas.value;
   const w = cw();
   const h = ch();
@@ -5463,10 +5535,13 @@ function renderFrame() {
     if (showRoutes.value) drawRoutesLayer(ctx.value, makeLayerView());
     if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());
   }
-  if (!strokeBaseBuilding) drawRiverPathsLayer(ctx.value, makeLayerView());
+  // 底图河流（含生成河 `river_gen_*`）必须受“河流”开关管（2026-11-04 第二十修）：
+  // 原来这一行没有任何门控，于是取消“河流”勾选后河还在画布上（`--probe-capture` 的
+  // `flag-off` 探针实测画布指纹一位没变）——嘴上说关了、实际没关。
+  if (!blitted && showRiverBase.value) drawRiverPathsLayer(ctx.value, makeLayerView());
   // 选中河流的高亮（2026-10-17 暮雨实测“缺乏视觉提示……只能通过工具栏突然往下挤”）：
   // 选中的河画两遍 —— 外层宽半透明光晕 + 内层亮芯，任何底色上都一眼可辨（EU4 选中单位的光圈语义）。
-  if (!strokeBaseBuilding) drawSelectedRiverHighlightLayer(ctx.value, makeLayerView());
+  if (!strokeBaseBuilding && showRiverBase.value) drawSelectedRiverHighlightLayer(ctx.value, makeLayerView());
 
   // v2: 自动生成的河流
   // 🔴 2026-10-14 修：这一段原来写的是裸 `ctx.xxx(...)` —— `ctx` 是 `ref(null)`，
@@ -5588,6 +5663,7 @@ function renderFrame() {
     overlayLayers.drawMinimap(ctx.value, overlayView);
     overlayLayers.drawDataChart(ctx.value, overlayView);
   }
+  recordFrameProbe(blitted, probeT0);
 }
 
 
