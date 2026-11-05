@@ -270,9 +270,11 @@ def sub_source_guards():
     for banned in ('createObsidianNote', 'setSitianConfig', 'projectSave', 'updateBaseProvince', 'execute('):
         if banned in lore:
             bad.append(f'资料段里出现写口 {banned}（必须只读）')
-    if code.count('<VaultLoreSection') != 2:
-        bad.append(f'两个面板应各用一次 VaultLoreSection，实际 {code.count("<VaultLoreSection")} 次')
-    for tid in ('province-vault', 'marker-vault'):
+    # 2026-11-05（B1）：使用点从两处变**三处**（省份 / 标记 / 剧本管理 —— 剧本也要能绑笔记）。
+    # 判据的实质是“资料段只有一份实现、各面板都复用它”，不是“恰好两处”，所以改成逐一核对使用点。
+    if code.count('<VaultLoreSection') != 3:
+        bad.append(f'三处使用点应各用一次 VaultLoreSection（省份/标记/剧本），实际 {code.count("<VaultLoreSection")} 次')
+    for tid in ('province-vault', 'marker-vault', 'scenario-vault'):
         if f'testid="{tid}"' not in code:
             bad.append(f'没有把 {tid} 传给资料组件')
 
@@ -292,8 +294,15 @@ def sub_source_guards():
     else:
         if 'execute(' not in body:
             bad.append('updateScenarioMarker 没走 execute（无 undo / 无写闸门）')
-        if 'saveScenarios()' not in body:
-            bad.append('updateScenarioMarker 没有 saveScenarios（改了但没落盘）')
+        # 2026-11-05（B1）：落盘改走 300ms 防抖（`scheduleAutoSaveScenarios`），不再是同步
+        # `saveScenarios()` —— 8MB 项目一次同步导出 100ms+，标记改名/拖坐标不该卡那一下。
+        # 判据相应放宽成"两者之一必须在"，但**调度必须挂在 undo/redo 共用的 put() 里**
+        # （以前只在 execute 之后排一次 → 撤销不落盘，真机演练抓到的）。
+        if 'scheduleAutoSaveScenarios()' not in body and 'saveScenarios()' not in body:
+            bad.append('updateScenarioMarker 没有排保存（改了但没落盘）')
+        put_at = body.find('const put = (val) =>')
+        if put_at >= 0 and 'scheduleAutoSaveScenarios()' not in body[put_at:put_at + 900]:
+            bad.append('updateScenarioMarker 的 put() 里没排保存（撤销不会落盘）')
         if re.search(r'oldMarker\.\w+\s*=', body):
             bad.append('updateScenarioMarker 就地改旧对象（undo 会把新值当旧值还原）')
         for banned in ('createObsidianNote', 'setSitianConfig', 'guardWrite('):
