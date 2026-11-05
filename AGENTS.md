@@ -85,6 +85,14 @@
   （标题叠成一片文字重影）；② 浮层宽度用 `100vw` 会**宽出画布**（左边还有导航栏）并把整页
   拉出横向滚动条 —— 用 `calc(100% - 24px)`；③ `grid-template-columns: auto-fit` 在这里
   算不出两列（卡片里有宽行），要**显式** `repeat(2, minmax(0, 1fr))`。
+- **行星视图工具坞可读性闸门（2026-11-05）**: `node scripts/tests/unit/test_toolbar_ux_planet.js` ——
+  `.tool-dock` 从 46px 纯图标竖条改成「图标 + 名字」（104px，19 个工具全部有 2–3 字名字）、
+  对齐/分布 8 个符号各补一个字、`重置偏移` 补“重置”、通道 `+` 补“新建”。
+  判据：① dock 里每个按钮都有中文名字；② **全模板**无文字按钮只允许**通用符号**
+  （× 关闭 / − ＋ 缩放 / ⤢ 适屏）、**色块**（class 含 color-btn / :style 有 background）、
+  **插值**（`{{ label }}` 运行时就是文字）；③ 可见文字零工程术语；④ 三条负向探针。
+  ⚠️ 两个假阳性教训：`格距` 会命中“网**格距**离”（用负向后视 `(?<!网)格距`）；
+  AST 里 `{{ … }}` 是 type 5 插值节点，不认它就会把一大片**有文字**的按钮判成纯图标。
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 退出前落盘真机演练: `python scripts/tests/drill_quit_flush.py`（起真实 Electron + dist + 真实库/项目，
   **纯 UI 驱动 + 读盘核对**；P1 强杀做负向探针 / P2 Ctrl+Q / P3 点 ×；跑前自动备份并还原项目与配置。
