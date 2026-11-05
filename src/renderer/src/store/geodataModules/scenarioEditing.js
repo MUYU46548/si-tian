@@ -2419,13 +2419,21 @@ export function createScenarioEditingModule(ctx) {
   //   · 因此**不需要** `guardWrite`，也**不登记** `MEMORY_WRITE_CALLSITES`（execute 是内存写总闸门）。
   //   · 校验/排序/关系计算全在 `utils/scenarioEventLedger.js`（唯一实现），这里只搬数据。
 
-  /** 把一张新的事件表写回剧本（供 undo/redo 共用；`touch=false` 时不动 updatedAt） */
+  /**
+   * 把一张新的事件表写回剧本（供 undo/redo 共用；`touch=false` 时不动 updatedAt）。
+   *
+   * 🔴 落盘调度**放在这里**（2026-11-05，A1）：以前只在录入/删除之后同步 `saveScenarios()`，
+   *    undo/redo 回调里没有 —— 于是"录了一条 → Ctrl+Z 撤回 → 关掉重开，事件又回来了"。
+   *    撤销也是一次真实改动，必须与写入走同一条防抖；`scheduleAutoSaveScenarios()` 是幂等的，
+   *    redo（execute 内部首次调用）与 undo 都从这里过，只有一处要说清。
+   */
   function applyTimelineEvents(scenarioId, events, touch = true) {
     const cur = scenarios.value[scenarioId];
     if (!cur) return;
     const nextSc = { ...cur, timelineEvents: events };
     if (touch) nextSc.updatedAt = new Date().toISOString();
     scenarios.value = { ...scenarios.value, [scenarioId]: nextSc };
+    scheduleAutoSaveScenarios();
   }
 
   /** 本剧本的势力名解析（默认标题 / 查询文案用；找不到就原样显示 id，不编名字） */
@@ -2462,7 +2470,8 @@ export function createScenarioEditingModule(ctx) {
       redo: () => applyTimelineEvents(scenarioId, r.events, true),
     });
 
-    saveScenarios();
+    // 落盘由 applyTimelineEvents 统一调度（undo / redo 同一条防抖）——这里不再同步 saveScenarios()：
+    // 8MB 项目一次同步导出要 100ms+，录入一条事件不该卡一下（与涂归属 2026-10-20 的口径一致）。
     return { ok: true, event: r.event, events: r.events, warnings: r.warnings || [] };
   }
 
@@ -2491,7 +2500,8 @@ export function createScenarioEditingModule(ctx) {
       redo: () => applyTimelineEvents(scenarioId, r.events, true),
     });
 
-    saveScenarios();
+    // 落盘由 applyTimelineEvents 统一调度（undo / redo 同一条防抖）——这里不再同步 saveScenarios()：
+    // 8MB 项目一次同步导出要 100ms+，录入一条事件不该卡一下（与涂归属 2026-10-20 的口径一致）。
     return { ok: true, event: r.event, events: r.events, warnings: r.warnings || [] };
   }
 
@@ -2511,7 +2521,7 @@ export function createScenarioEditingModule(ctx) {
       redo: () => applyTimelineEvents(scenarioId, r.events, true),
     });
 
-    saveScenarios();
+    // 落盘同 applyTimelineEvents（删除也是一次真实改动）
     return { ok: true, events: r.events, removed: before.length - r.events.length };
   }
 
@@ -2555,7 +2565,7 @@ export function createScenarioEditingModule(ctx) {
       undo: () => applyTimelineEvents(scenarioId, before, false),
       redo: () => applyTimelineEvents(scenarioId, events, true),
     });
-    saveScenarios();
+    // 落盘同 applyTimelineEvents（整表替换同样要能在撤销后落回基线）
     return { ok: true, events, warnings };
   }
 

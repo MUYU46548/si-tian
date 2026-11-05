@@ -1049,12 +1049,12 @@
         <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/>剧本管理</button>
         <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/>势力谱系</button>
         <!-- 外交表（N3a-2，2026-11-02）：回答“某年 A 与 B 什么关系”——
-             关系标签 / 该年生效事件 / “为什么”+ 势力关系矩阵。**只读**（不走 undo、不写盘）。
+             关系标签 / 该年生效事件 / “为什么”+ 势力关系矩阵；面板顶部可补录一条（一次录入 = 一条撤销）。
              与“势力谱系”分工：谱系管继承与易主年份，这里管两两关系（战争/同盟/臣属…）。 -->
         <button
           data-testid="diplomacy-open"
           :class="{ active: diplomacyOpen }"
-          title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么，附势力关系矩阵（只读，不改任何数据）"
+          title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么，附势力关系矩阵；也可以补录一条（一次录入 = 一条撤销）"
           @click="diplomacyOpen = !diplomacyOpen"
         ><Icon name="flag" :size="15"/>外交</button>
         <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/>撤销历史</button>
@@ -1143,7 +1143,7 @@
         class="polity-add diplomacy-quick"
         data-testid="diplomacy-open-palette"
         :class="{ active: diplomacyOpen }"
-        title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么 + 势力关系矩阵（只读）"
+        title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么 + 势力关系矩阵；也可以补录一条"
         @click="diplomacyOpen = !diplomacyOpen"
       ><Icon name="flag" :size="13"/> 外交</button>
       <!-- 新建势力（2026-10-01）：此前 polities **只能由 Azgaar .map 导入带进来** ——
@@ -3219,7 +3219,8 @@ function pickPolityAt(wx, wy) {
 
 
 const showLineagePanel = ref(false);
-// 外交表（N3a-2，2026-11-02）：按需打开的浮层；**只读**，不写任何数据、不产生 undo。
+// 外交表（N3a-2，2026-11-02；A1 2026-11-05 起可补录关系）：按需打开的浮层。
+// 查询只读；补录走 store 的唯一写口 `addTimelineEvent`（一条 undo、撤销也落盘）。
 const diplomacyOpen = ref(false);
 
 // ═══════════════════════════════════════════

@@ -1,18 +1,22 @@
 <script setup>
 // components/DiplomacyPanel.vue
-// 外交表 UI（N3a-2，2026-11-02）—— 回答“某年 A 与 B 什么关系”。
+// 外交表 UI（N3a-2，2026-11-02；A1 补录关系 2026-11-05）—— 回答“某年 A 与 B 什么关系”，
+// 并允许**补录**一条关系事件（战争 / 同盟 / 臣属…），录入 = 一条撤销。
 //
-// 数据来源（**只读**，不新建第二份真值）：
+// 数据来源（**只有一份真值**，不新建第二份）：
 //   · 剧本对象 / 势力表：`store.getScenario(id)` —— 剧本只有 store 一份，势力就是 `scenario.polities`；
 //   · 事件表：`scenario.timelineEvents`，经 `timelineEventsOf()` 取（没录过 = 空数组，不返回 undefined）；
 //   · 单个配对的关系：`store.queryRelationAt()`（内部就是 `relationBetween` + `describeRelation`，
 //     全仓唯一实现；本组件不自己比较日期窗口）；
 //   · 矩阵：`relationsAt()`（矩阵查询的唯一实现，与单个配对同一条语义）；
+//   · **写入**：`store.addTimelineEvent()`（唯一写口：校验/规整/id/中文回执全在
+//     `utils/scenarioEventLedger`，本组件不自己造事件对象），走 `execute()` → 一条 undo。
 //   · 年份：父级 `ScenarioMap` 的 `tlDate`（时间轴游标 = 唯一真源）经 `date` prop 传入、
 //     `update:date` 回写，本组件**不持有第二个年份状态**。
 //
-// 🔴 只读纪律：这里不调用任何 store 写口、不走 undo、不落盘 —— 外交关系只从这里查。
-//    （年份步进只移动时间轴游标，改的是 UI 游标，不是世界观数据。）
+// 🔴 读写纪律：本组件不直接改 `scenario.timelineEvents`、不自己存数组 —— 只调 store 写口；
+//    落盘由 store 的防抖调度（撤销也会落盘，见 `applyTimelineEvents`）。
+//    年份步进仍然只移动时间轴游标（改的是 UI 游标，不是世界观数据）。
 //
 // 样式：只用 Tailwind utilities + 内联色值。刻意**不依赖 `.theme-*` 的 CSS 变量** ——
 //   父级把它 Teleport 到 body（与既有生成类浮层同一做法），出了主题作用域变量会断，
@@ -22,7 +26,7 @@ import { useGeodataStore } from '../store/geodata';
 import Icon from './Icon.vue';
 import {
   RELATIONS, RELATION_LABELS, typeLabel, formatEventSpan, timelineEventsOf,
-  activeEventsAt, relationsAt,
+  activeEventsAt, relationsAt, EVENT_TYPE_LIST,
 } from '../utils/scenarioEventLedger';
 import { polityName, polityColor, formatDate } from '../utils/scenarioTimeline';
 
@@ -40,7 +44,7 @@ const emit = defineEmits(['update:date', 'close']);
 
 const store = useGeodataStore();
 
-// ── 数据（全部只读）────────────────────────────────────────────────────────
+// ── 数据（查询只读；写入只经 store 写口，见下方“补录一条关系”）──────────────
 const scenario = computed(() => (props.scenarioId ? store.getScenario(props.scenarioId) : null));
 const events = computed(() => timelineEventsOf(scenario.value));
 /** 势力清单：与 store 内部所有枚举点同源（`scenario.polities`），不做第二份派生 */
@@ -125,7 +129,7 @@ watch(bId, (v) => {
   else aId.value = alt;                    // 甲/乙撞了 → 换一位（选择的仍是这两方）
 });
 
-/** 点矩阵格子 = 把这一对设为甲 / 乙（"两次点击答一个问题"的另一条路，仍然只读） */
+/** 点矩阵格子 = 把这一对设为甲 / 乙（"两次点击答一个问题"的另一条路；只改本地选择，不写数据） */
 function pickPair(rowId, colId) {
   if (sameId(rowId, colId)) return;
   aId.value = rowId;
@@ -219,6 +223,60 @@ function cellTitle(row, col) {
 function shortName(p) {
   return String(p.abbr || p.name || p.id).slice(0, 4);
 }
+
+// ── 补录一条关系（A1，2026-11-05）───────────────────────────────────────────
+// 只做“把面板里选好的东西递给 store 的唯一写口”，校验/规整/中文回执都不在这里重复。
+// 类型清单从 EVENT_TYPE_LIST 取（不含“独立”：它是有方向的一次性事件，语义容易录反，
+// 真要录可以在后续把“甲/乙谁从谁独立”单独做成一句白话，而不是塞进同一排下拉）。
+const COMPOSE_TYPES = EVENT_TYPE_LIST
+  .filter((id) => id !== 'independence')
+  .map((id) => ({ id, label: typeLabel(id) }));
+
+const draftType = ref('alliance');
+const draftFrom = ref('');      // 空 = 跟时间轴游标那一年
+const draftTo = ref('');        // 空 = 至今
+const draftTitle = ref('');
+const draftMsg = ref('');
+const draftOk = ref(true);
+
+const fromYear = computed(() => {
+  const n = Number(draftFrom.value);
+  return Number.isFinite(n) && n !== 0 ? Math.trunc(n) : year.value;
+});
+const toYear = computed(() => {
+  const n = Number(draftTo.value);
+  return Number.isFinite(n) && n !== 0 ? Math.trunc(n) : null;
+});
+const draftHint = computed(() => {
+  if (draftType.value === 'vassalage') return '臣属是有方向的：甲 = 宗主，乙 = 藩属（要反过来就把甲 / 乙对调）';
+  if (draftType.value === 'custom') return '记事只记“谁和谁、什么事、起止”，不改关系';
+  if (draftType.value === 'peace') return '和约是一次性事件：只按起始年份算，止年不生效';
+  return '';
+});
+
+function submitDraft() {
+  if (!props.scenarioId || aId.value === '' || bId.value === '') return;
+  const r = store.addTimelineEvent(props.scenarioId, {
+    type: draftType.value,
+    actors: [aId.value, bId.value],
+    from: fromYear.value,
+    to: toYear.value,
+    title: String(draftTitle.value || '').trim(),
+  });
+  if (r && r.ok) {
+    draftOk.value = true;
+    const span = formatEventSpan(r.event) || String(fromYear.value);
+    const warn = (r.warnings || []).length ? ` · 提醒：${(r.warnings || []).join('；')}` : '';
+    draftMsg.value = `已记下：${r.event.title}（${span}）${warn} · 按 Ctrl+Z 可撤回`;
+    draftTitle.value = '';
+  } else {
+    draftOk.value = false;
+    const why = (r && (r.errors || []).length)
+      ? (r.errors || []).join('；')
+      : ((r && r.reason) || '未知原因');
+    draftMsg.value = `没有记下：${why}`;
+  }
+}
 </script>
 
 <template>
@@ -226,17 +284,18 @@ function shortName(p) {
     class="w-[min(780px,calc(100vw-3rem))] max-h-[calc(100vh-8rem)] overflow-auto rounded-xl border border-slate-600 bg-slate-900/95 p-4 text-[13px] text-slate-200 shadow-2xl"
     data-testid="diplomacy-panel"
   >
-    <!-- 头部：标题 + 只读徽标 + 当前剧本 -->
+    <!-- 头部：标题 + 能力徽标 + 当前剧本 -->
     <div class="mb-3 flex items-start gap-2">
       <span class="mt-0.5 text-sky-300"><Icon name="flag" :size="16" /></span>
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-sm font-semibold text-slate-100">外交 · 某年谁与谁</span>
-          <span class="rounded border border-slate-600 px-1.5 py-0.5 text-[10px] text-slate-400">只读</span>
+          <span class="rounded border border-emerald-700/60 bg-emerald-900/30 px-1.5 py-0.5 text-[10px] text-emerald-300">可录入</span>
           <span v-if="scenario" class="truncate text-[11px] text-slate-400">{{ scenario.name }}</span>
         </div>
         <div class="mt-1 text-[11px] leading-relaxed text-slate-400">
-          数据来自当前剧本的事件账本（谁和谁 · 什么事 · 起止）。这里只查询，不写盘、不产生撤销。
+          数据来自当前剧本的事件账本（谁和谁 · 什么事 · 起止）。这里可以查关系，也可以在下面补录一条 ——
+          一次录入 = 一条撤销，写进项目文件。
         </div>
       </div>
       <button
@@ -323,6 +382,80 @@ function shortName(p) {
         <span v-if="scenario && !events.length" class="text-[11px] text-amber-200">该剧本没有时间线事件</span>
       </div>
 
+      <!-- 补录一条关系（A1，2026-11-05）：读与写在同一块面板里 —— 看的是事件账本，
+           递进去的也是同一条账本（store.addTimelineEvent = 唯一写口，一条 undo） -->
+      <div
+        v-if="polities.length >= 2"
+        class="mb-3 rounded-lg border border-slate-700 bg-slate-800/60 p-3"
+        data-testid="diplomacy-compose"
+      >
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <span class="text-[12px] font-semibold text-slate-200">补录一条关系</span>
+          <span class="text-[11px] text-slate-400">{{ nameA }} × {{ nameB }}</span>
+          <span class="text-[11px] text-slate-500">· 一次录入 = 一条撤销（Ctrl+Z 可撤回）</span>
+        </div>
+        <div class="flex flex-wrap items-end gap-x-3 gap-y-2">
+          <label class="flex flex-col gap-0.5 text-[11px] text-slate-400">
+            类型
+            <select
+              v-model="draftType"
+              class="cursor-pointer rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-200"
+              data-testid="diplomacy-type"
+              title="关系类型（战争 / 同盟 / 臣属…；记事不改关系）"
+            >
+              <option v-for="t in COMPOSE_TYPES" :key="'ct-' + t.id" :value="t.id">{{ t.label }}</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-0.5 text-[11px] text-slate-400">
+            起（年）
+            <input
+              v-model="draftFrom"
+              type="number"
+              class="w-20 rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100"
+              data-testid="diplomacy-from-year"
+              :placeholder="String(year)"
+              title="起始年份；留空 = 用上面时间轴那一年"
+            />
+          </label>
+          <label class="flex flex-col gap-0.5 text-[11px] text-slate-400">
+            止（年，可留空）
+            <input
+              v-model="draftTo"
+              type="number"
+              class="w-20 rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100"
+              data-testid="diplomacy-to-year"
+              placeholder="至今"
+              title="终止年份；留空 = 至今"
+            />
+          </label>
+          <label class="flex min-w-[9rem] flex-1 flex-col gap-0.5 text-[11px] text-slate-400">
+            标题（可留空）
+            <input
+              v-model="draftTitle"
+              type="text"
+              class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100"
+              data-testid="diplomacy-title"
+              placeholder="留空 = 自动取“甲 × 乙：类型”"
+              title="这条事件的名字（留空会自动生成）"
+            />
+          </label>
+          <button
+            type="button"
+            class="cursor-pointer rounded border border-sky-600 bg-sky-700/60 px-3 py-1 text-xs font-semibold text-sky-50 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid="diplomacy-add"
+            title="把这条事件记进当前剧本的事件账本（一条撤销）"
+            @click="submitDraft"
+          >记下这条</button>
+        </div>
+        <div v-if="draftHint" class="mt-1 text-[11px] leading-relaxed text-slate-400">{{ draftHint }}</div>
+        <div
+          v-if="draftMsg"
+          class="mt-1 text-[11px] leading-relaxed"
+          :class="draftOk ? 'text-emerald-300' : 'text-rose-300'"
+          data-testid="diplomacy-add-msg"
+        >{{ draftMsg }}</div>
+      </div>
+
       <!-- 空状态 2：没有时间线事件 -->
       <div
         v-if="!events.length"
@@ -330,7 +463,7 @@ function shortName(p) {
         data-testid="diplomacy-empty-events"
       >
         没有时间线事件 —— 这个剧本的 <code class="text-slate-300">timelineEvents</code> 还是空的。
-        先录一条“谁和谁、什么事、起止”（战争 / 同盟 / 臣属 / 和约…），这里才会出现关系。
+        用上面“补录一条关系”记一条（战争 / 同盟 / 臣属 / 和约…），关系就会出现在这里。
       </div>
 
       <template v-else>
