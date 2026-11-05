@@ -22,9 +22,9 @@
 - 构建生产版本: `npm run build`
 - 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
 - 从 Obsidian 提取数据: `npm run extract-data`
-- 回归测试: `python scripts/tests/run_tests.py`（**163 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
+- 回归测试: `python scripts/tests/run_tests.py`（**164 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**101 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**102 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - 🔴 **用例判定必须走 `lib/cdp.py` 的 `eval_json()`**：`cdp.eval` 在 JS 抛异常时返回 `{'__err__': …}`，写成「没有 `fails` 字段就算通过」会造成**静默假绿**（本项目真实踩过：假绿掩盖了「主进程不回显 project → 新建项目必失败」的生产缺陷）
 - 提取覆盖率审计: `npm run audit-coverage`（只读；`-- --write-report` 落 `96 事务管理/`）
@@ -207,6 +207,21 @@
     （`hash f60036f4` / `hashNoLabels 443de52c` / `riverHash 71434f74`），基线不重立。
   - 边界（刻意）：过渡只影响**画布那一帧的颜色**，不改数据、不是"新势力"；过渡色只是两端插值，
     中间色不代表任何一方。年内逐日落定的单省变色的跳变不做过渡（播放一代 1300ms，那一下很小）。
+- **跨剧本集“只读总览”（A3，2026-11-05）**: `python scripts/tests/run_tests.py test_164_group_overview`
+  + `unit/test_scenario_group_overview.js`（11 条）—— 左栏剧本集那一行多了“看全部”：
+  打开后按组分段列出**全部**剧本（当前组在前，显示年代与规模），当前组可点；
+  **别组的剧本是只读的**（点它只给回执、不改选中目标），要编辑就点那一行的“切到这一组”（明确动作，
+  不会悄悄换掉当前编辑目标）。组件 `ScenarioGroupOverview.vue` 自包含（模板/样式/逻辑，不占 ScenarioMap 行数）。
+  - 口径单源：`utils/scenarioGroups.js#scenarioOverviewRows`（纯函数：当前组在前 / 空组不出现 /
+    组内保持入参顺序 / 孤儿组不消失）+ `scenarioMetaText`（左栏与总览同一份摘要，原先只在 timeline.js 里）。
+  - 真机判据（`test_164`，真点 DOM）：面板真在 DOM、两组两段、只有当前组标“当前”、
+    点别组剧本**选中目标不变**且回执含“只读总览”、点“切到这一组”后 `activeGroupId` 真的变、
+    关掉后总览**零节点**且当前组列表回来。
+  - ⚠️ 两个坑：① 总览与当前组列表**必须二选一**（`v-else` 包裹）—— 否则同屏两个世界；
+    ② 组件**不碰 store**，只 emit（`select` / `switch-group` / `msg`），只读分支里绝不能出现 `emit('select')`
+    （单测 b1 守着，带负向探针）。
+  - 顺带收口：`BIOME_COLORS` 从 `ScenarioMap` 与 `PlanetMap` 两份定义抽成 `utils/biomeColors.js`
+    —— 两份已经漂移（行星那份漏了 `land`）。
 - **视觉/浮层演练套件（2026-11-03，一条命令跑完 5 步）**: `npm run test:visual`
   （= `python scripts/tests/drill_visual_suite.py`）。顺序跑：浮雕开/关 → 星域航道远景/近景 →
   六个浮层**在不在 DOM** → 六个浮层**看得清吗**（层级/遮挡/暗色对比度/逐张截图）→ 像素基线（拍 + 与
@@ -383,8 +398,8 @@
 
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
-| 测试用例数 | 163 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 101 | `ls scripts/tests/unit/*.js \| wc -l` |
+| 测试用例数 | 164 | `ls scripts/tests/cases/test_*.py \| wc -l` |
+| Node 单测文件数 | 102 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |

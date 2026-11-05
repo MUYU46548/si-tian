@@ -11,6 +11,7 @@
 //   注册顺序是行为的一部分（见 SFC 里 onMounted 的注释），搬进来就会改顺序。
 
 import { formatDate } from '../../utils/scenarioTimeline';
+import { scenarioMetaText } from '../../utils/scenarioGroups';
 
 export function createTimelineActions(ctx) {
   const {
@@ -60,14 +61,10 @@ function onTimelineSelectScenario(s) {
 
 /**
  * 剧本列表条目的一句话摘要（EU4 那张“选择历史时期”列表里的第二行）。
- * 势力数 = 本剧本定义的势力数；省数 = 本剧本 ownership 里**真有归属**的省份数
- * （值为空/缺失 = 无主，不计入 —— 地图上显示灰，不该被算成"这个势力的地盘"）。
+ * 口径单源在 `utils/scenarioGroups.js#scenarioMetaText`（A3 的总览也用同一份，2026-11-05）。
  */
 function scenarioMeta(s) {
-  const polities = (s?.polities || []).length;
-  const own = s?.ownership || {};
-  const owned = Object.keys(own).filter((pid) => own[pid]).length;
-  return `${polities} 势力 · ${owned} 省`;
+  return scenarioMetaText(s);
 }
 
 /**

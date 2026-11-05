@@ -54,6 +54,63 @@ export function scenarioGroupNameOf(groups, id) {
   return hit ? hit.name : gid;
 }
 
+/** 剧本列表条目的一句话摘要：势力数 · 真有归属的省数（左栏、总览、卡片墙同一口径） */
+export function scenarioMetaText(scenario) {
+  const polities = (scenario?.polities || []).length;
+  const own = scenario?.ownership || {};
+  const owned = Object.keys(own).filter((pid) => own[pid]).length;
+  return `${polities} 势力 · ${owned} 省`;
+}
+
+/**
+ * 跨剧本集**只读总览**（A3，2026-11-05）—— 左栏“看全部剧本集”用的行模型。
+ *
+ * 为什么要有它：剧本集 = 一条独立时间线。当前组的时间轴/播放/切片只取本组（这是对的），
+ * 但也意味着**看不见别的时间线**。总览把全部剧本按小组出来，让人能看到“还有一条 X 时代”，
+ * 同时 **别组的剧本是只读的**（`readonly: true`）：能看、能一键切过去，但不会在总览里
+ * 悄悄把当前编辑目标换掉。
+ *
+ * 口径：
+ *   · 当前组永远排第一（其余按组表 order，再按 id —— 确定性）；
+ *   · 空组不出现（总览不是组管理表）；
+ *   · 组内保持入参顺序（调用方传进来的已经按 order 排好）；
+ *   · 组名找不到时回 id；默认组叫“默认”；
+ *   · `activeGroupId` 指向一个组表里没有、但有剧本的组（导入包常见）→ 它照样排第一并标 isActive。
+ *
+ * @param {Array<object>} scenarios 全部剧本（同一张底图下的）
+ * @param {Array<object>} groups 项目级组表
+ * @param {string} activeGroupId 当前组
+ * @returns {Array<{id:string,name:string,isActive:boolean,scenarios:Array<object>}>}
+ */
+export function scenarioOverviewRows(scenarios, groups, activeGroupId) {
+  const list = Array.isArray(scenarios) ? scenarios : [];
+  const active = String(activeGroupId == null ? '' : activeGroupId).trim() || DEFAULT_SCENARIO_GROUP;
+  const options = scenarioGroupOptions(groups);
+  const byId = new Map(options.map((g) => [g.id, g]));
+  const buckets = new Map();
+  for (const s of list) {
+    const gid = scenarioGroupIdOf(s);
+    let row = buckets.get(gid);
+    if (!row) {
+      const hit = byId.get(gid);
+      row = { id: gid, name: hit ? hit.name : gid, order: hit ? hit.order : Number.MAX_SAFE_INTEGER, rows: [] };
+      buckets.set(gid, row);
+    }
+    row.rows.push(s);
+  }
+  const rows = [...buckets.values()];
+  rows.sort((a, b) => {
+    if ((a.id === active) !== (b.id === active)) return a.id === active ? -1 : 1;
+    return (a.order - b.order) || String(a.id).localeCompare(String(b.id));
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    isActive: row.id === active,
+    scenarios: row.rows.map((s) => ({ ...s, readonly: row.id !== active })),
+  }));
+}
+
 /** 只留属于某组的剧本（保持入参顺序） */
 export function filterScenariosByGroup(scenarios, groupId) {
   const gid = String(groupId == null ? '' : groupId).trim() || DEFAULT_SCENARIO_GROUP;

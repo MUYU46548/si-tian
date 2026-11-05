@@ -1325,8 +1325,17 @@
           <button class="slp-group-manage" data-testid="scenario-group-manage"
                   title="新建 / 改名 / 删除剧本集，或把某条剧本移到别的组（不删任何剧本）"
                   @click="showScenarioManager = true">管理</button>
+          <!-- A3：看全部剧本集（只读总览）—— 别的时间线只能看、要改先切过去 -->
+          <button class="slp-group-overview" :class="{ on: showGroupOverview }" data-testid="scenario-group-overview"
+                  :title="showGroupOverview ? '收起总览，只看当前剧本集' : '看全部剧本集：别的时间线只能看，要改先切过去'"
+                  @click="showGroupOverview = !showGroupOverview">{{ showGroupOverview ? '收起' : '看全部' }}</button>
         </div>
         <template v-if="showScenarioList">
+          <ScenarioGroupOverview v-if="showGroupOverview" :scenarios="allSortedScenarios"
+                                 :groups="store.scenarioGroups || []" :active-group-id="activeGroupId"
+                                 :selected-id="selectedScenario?.id || ''"
+                                 @select="selectScenarioAt" @switch-group="switchGroup" @msg="statusMsg" />
+          <template v-else>
           <div v-if="!sortedScenarios.length" class="slp-empty" data-testid="slp-empty">
             还没有剧本 —— 点下方“新建 / 管理剧本…”创建第一个时期。<br />
             <b>一个剧本 = 一个时间点的版图快照</b>（谁占了哪些省）。<br />
@@ -1349,6 +1358,7 @@
               </div>
             </div>
           </div>
+          </template>
           <button class="slp-manage" data-testid="slp-manage"
                   title="新建 / 编辑 / 删除剧本，以及管理当前剧本的地名与标记"
                   @click="showScenarioManager = true">
@@ -2003,6 +2013,8 @@ import { hasHeightmapContent } from '../utils/terrainRepresentation';
 import HistoryPanel from './HistoryPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
+// A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）
+import ScenarioGroupOverview from './ScenarioGroupOverview.vue';
 // 地形生成参数面板（P0-1，2026-10-25）：种子/起伏/山脉/高原/裂谷 + 3 张候选缩略图 → 应用（一条 undo）。
 // 参数模型唯一实现在 utils/terrainParams.js（本组件只做展示与触发）。
 import TerrainGenPanel from './TerrainGenPanel.vue';
@@ -2089,6 +2101,8 @@ import {
 import { createProvinceHitCache, hitProvince } from '../utils/provinceHitIndex';
 // 配色单一来源（2026-10-01）：省份色板 / 海域填充与海界 / 陆界 —— 画布与 SVG 导出共用一份
 import { PROVINCE_PALETTE, nextProvinceColor, SEA_FILL, SEA_EDGE, BORDER_COLOR } from '../utils/scenarioPalette';
+// 群系 → 颜色：唯一实现在 `utils/biomeColors.js`（与 PlanetMap 同源，2026-11-05 收口）
+import { BIOME_COLORS } from '../utils/biomeColors';
 // B 方案（批量铺底）：画布里要**实时预览** Voronoi 边界，所以直接复用纯几何层（与 store 同一份实现）
 import { voronoiCells } from '../utils/voronoiBatch';
 // P1（2026-10-13）顶点编辑：**共边顶点**的配对与联动 —— 拖动共边上的顶点时，邻省的同位顶点
@@ -2593,6 +2607,8 @@ watch(() => selectedScenario.value?.polities, (list) => {
 });
 const ctx = ref(null);
 const showScenarioManager = ref(false);
+// A3：左栏“看全部剧本集”总览（只读；别的时间线只能看，要改先切过去）
+const showGroupOverview = ref(false);
 // 沉浸看图模式（2026-10-17 P0，暮雨拍板）：收起顶栏/侧栏/时间轴，地图占满；Ctrl+I 切换。
 // 底部工具胶囊 8 秒无操作自动淡出（`capsuleDim`）。
 // 小地图显隐：**复用既有 `showMinimap`**（6683，此前无 UI 开关）——本轮给它补按钮与偏好持久化。
@@ -3038,26 +3054,7 @@ function pruneProvinceSelection() {
 }
 
 // 生物群系颜色
-const BIOME_COLORS = {
-  ocean: '#2E86AB',
-  hot_desert: '#E9C46A',
-  cold_desert: '#B5B887',
-  savanna: '#D2D082',
-  grassland: '#C8D68F',
-  tropical_seasonal: '#B6D95D',
-  // 🔴 `temperate` 是司天自己的**默认群系**（`scenarioEditing.js` 里 `biome || 'temperate'`），
-  //    但本表原先没有它 → 查不到色 → 省份落兜底色（2026-10-09 实测：暮雨导入的底图
-  //    整块大陆都显示成兜底色，看着像"没上色"）。表必须覆盖所有会被写进去的群系名。
-  temperate: '#5FA85C',
-  temperate_deciduous: '#29BC56',
-  tropical_rainforest: '#7DCB35',
-  temperate_rainforest: '#409C43',
-  taiga: '#4B6B32',
-  tundra: '#96784B',
-  glacier: '#D5E7EB',
-  wetland: '#0B9131',
-  land: '#A3C4BC',
-};
+// 群系 → 颜色：唯一实现在 `utils/biomeColors.js`（与 PlanetMap 同源，2026-11-05 收口）
 
 const newScenario = ref({
   name: '',

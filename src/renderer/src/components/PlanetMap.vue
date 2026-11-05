@@ -1099,6 +1099,8 @@ import { useBatchArrange } from '../composables/useBatchArrange';
 import { useTerrainCanvasBrush } from '../composables/useTerrainCanvasBrush';
 import { useReliefBrush } from '../composables/useReliefBrush';
 import { RELIEF_TYPES, RELIEF_DENSITY } from '../utils/reliefIcons';
+// 群系 → 颜色：唯一实现在 `utils/biomeColors.js`（与 ScenarioMap 同源，2026-11-05 收口）
+import { BIOME_COLORS } from '../utils/biomeColors';
 import { ROAD_STYLES, ROAD_STYLE_KEYS, DEFAULT_ROAD_STYLE } from '../utils/roadStyles';
 import {
   sampleNodes, normalizeRiverFlow, clampRiverNode, finalizeRiverNodes,
@@ -1175,14 +1177,6 @@ const heightTool = ref('raise');
 const terrainGenOpen = ref(false);
 /** B 阶段 2（2026-10-29）：FMG 模板地形面板开关 */
 const fmgOpen = ref(false);
-const BIOME_COLORS = {
-  ocean: '#2E86AB', hot_desert: '#E9C46A', cold_desert: '#B5B887',
-  savanna: '#D2D082', grassland: '#C8D68F', tropical_seasonal: '#B6D95D',
-  temperate: '#5FA85C',   // 司天默认群系（scenarioEditing 的 `|| 'temperate'`），表里原先漏了它
-  temperate_deciduous: '#29BC56', tropical_rainforest: '#7DCB35',
-  temperate_rainforest: '#409C43', taiga: '#4B6B32', tundra: '#96784B',
-  glacier: '#D5E7EB', wetland: '#0B9131',
-};
 const floodFillMode = ref(false);
 const currentPath = ref([]);
 const hoveredNode = ref(null);
