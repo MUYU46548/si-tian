@@ -74,46 +74,51 @@ PlanetMap（21）/ AreaMap（7）/ ScenarioMap（3）及其余地图组件，绝
 
 闸门：`node scripts/tests/unit/test_toolbar_ux_panels.js`（**41/41**，12 个面板组件，含“行内操作不许退回 opacity: 0”与“术语白名单不许放宽”）
 
-### A2. **2026-11-06 大文件拆分（第一批）**：ScenarioMap 开始拆
+### A2. **2026-11-06 大文件拆分（两批）**：ScenarioMap 开始拆
 
 用户原话：“大文件你自己想办法拆分，本来就不应该把各种代码堆在一个文件里。”
 判据不是“行数好看”，是**改得动且不假绿**：
 
 | 动作 | 前 | 后 |
 |---|---|---|
-| `ScenarioMap.vue` | 6,969 行 | **6,900 行**（闸门 `m1` 从 ≤7,000 收紧到 ≤6,900） |
-| `scenario-map.css` | 1,687 行 | **1,496 行**（三个浮层的样式跟着组件走） |
-| 新组件 | — | `scenario/panels/` 下 3 个：`LayerLockPanel.vue` / `BurgEditorPanel.vue` / `BasemapSourcePanel.vue` |
+| `ScenarioMap.vue` | 6,969 行 | **6,769 行**（闸门 `m1` 一轮一收紧：≤7,000 → ≤6,900 → **≤6,800**） |
+| `scenario-map.css` | 1,687 行 | **1,270 行**（四个浮层/对话框的样式跟着组件走） |
+| 新组件 | — | `scenario/panels/` 下 4 个：`LayerLockPanel` / `BurgEditorPanel` / `BasemapSourcePanel` / **`ScenarioManagerDialog`**（172 行模板 + 8 个 `defineModel` 状态 + ~200 行样式） |
 
-三条“拆分不许造出假绿”的硬规矩（都写进了闸门）：
+四条“拆分不许造出假绿”的硬规矩（都写进了闸门）：
 
-1. **样式跟着组件走**，不许两边各留一份（`m7` 会检查老 class 已不在 `scenario-map.css`、
+1. **样式跟着组件走**，不许两边各留一份（`m7` 检查老 class 已不在 `scenario-map.css`、
    且新组件自己带了这份样式）；
 2. **组件文件必须在 `scenario/panels/`**，`scripts/tests/lib/rsrc.py` 会把 `panels/*.vue`
    一起拼进“渲染层源码” —— 否则源码闸门会在搬家当天假红（**实测发生了**：
-   `test_101` 的“留底面板有唯一容器”当场红，因为 `data-testid` 跟着模板搬走了；
-   rsrc 补上 `panels/` 之后 13 项源码闸门 + 真机恢复流程全过）；
-3. **搬出去就是搬出去**：`m7` 还检查 `ScenarioMap.vue` 里确实在用 `<组件标签>` 引用。
+   `test_101` 的“留底面板有唯一容器”当场红，因为 `data-testid` 跟着模板搬走了）；
+3. **搬出去就是搬出去**：`m7` 还检查 `ScenarioMap.vue` 里确实在用 `<组件标签>` 引用；
+4. **闸门跟着代码走，但不许因为“换了写法”就放宽**（第二批实测撞到三处，全部改成
+   “接受新写法 + 补一条反证”）：
+   · `test_87`：灰禁从 `:disabled="store.isReadOnly"` 变成组件里的 `:disabled="readOnly"`
+     → 同时要求父组件有 `:read-only="store.isReadOnly"`，否则判红（**不然抽组件就成了绕过灰禁的口子**）；
+   · `test_134`：判空从 `!store.baseMaps?.[baseMapKey]` 变成 `!baseMaps?.[baseMapKey]`
+     → 同时要求 `:base-maps="store.baseMaps` 在场；
+   · `test_111`：`newScenario.hook` 跟着表单搬进组件 → 那份用例的“合集”自己加了 panels 目录。
 
-面板闸门同时扩到 **15 个组件**（新增三个拆出来的浮层 + `ScenarioMap.vue` 整页），**53/53**。
+面板闸门同时扩到 **16 个组件**（四个拆出来的浮层 + `ScenarioMap.vue` 整页），**56/56**。
 
 **剩下的拆分计划**（按“自包含程度”排序，未做）：
 
 | 目标 | 体量 | 难度 | 备注 |
 |---|---|---|---|
-| 剧本管理对话框 | 172 行模板 + ~40 行状态 + ~200 行 CSS | 中 | 需要 `defineModel`（Vue 3.5 已有）搬运 6 个表单状态；`item-edit/item-delete/anno-del` 在里面 |
 | 省份属性 / 标记属性面板 | ~120 行模板 + ~150 行处理器 | 中 | 共用 `.province-props/.props-*` 样式（~80 行） |
 | **工具栏** | **970 行模板** | 高 | 引用父组件五六十个状态，拆它要么 `provide/inject`，要么先把状态挪进 store —— 单独一轮 |
-| `<script setup>` 主体（5,080 行） | 状态 / 计算 / 处理器 / DI 装配 | 高 | 已有一批 `createX({deps})` 工厂沉在 `scenario/*`，继续按同一模式搬（每搬一块都要过 rsrc 那套闸门） |。
+| `<script setup>` 主体（~4,900 行） | 状态 / 计算 / 处理器 / DI 装配 | 高 | 已有一批 `createX({deps})` 工厂沉在 `scenario/*`，继续按同一模式搬（每搬一块都要过 rsrc 那套闸门） |
 
 | 组件 | 纯图标 / 全部 | 说明 |
 |---|---|---|
 | PlanetMap | 21 / 161 | 剩下几乎都是色块 / 关闭 × / 缩放，已有白名单 |
-| ScenarioMap | 11 / 137 | 都在浮层里（工具栏已清）；**这一块要单独排一轮**，见上面的 ⚠ |
+| ScenarioMap | **3 / 116** | 200 个按钮里 11 个纯图标 → 3 个（都是 `×`）；剩下的都随浮层搬进了 `scenario/panels/` |
 | AreaMap | 7 / 59 | 色块 + 标记图标选择器（白名单） |
 | SettingsPanel / InteriorView | 各 3 | 剩的都是 `×` 关闭（白名单） |
 | ProjectPanel | **0 / 22** | 第二批清完 |
-| 其余 29 个组件 | 各 1–2 | 逐个看（多数是 `×` 关闭 / 折叠 ▾ / 色块） |
+| 其余 31 个组件 | 各 1–2 | 逐个看（多数是 `×` 关闭 / 折叠 ▾ / 色块） |
 
 **下一块建议**：其余 29 个组件各 1–2 个（多数属白名单）—— 想继续就按“补 2–3 字 →
 把组件名加进 `test_toolbar_ux_panels.js` 的 `FILES` 表（一行）”的节奏推。闸门默认要求每个组件

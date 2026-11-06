@@ -38,12 +38,20 @@ def _source_gates():
         ('function addEmptyBaseMap(', '建空底图 + 切过去的唯一动作'),
         ('data-testid="new-scenario-basemap"', '新建剧本表单显示绑定底图'),
         ('data-testid="new-scenario-basemap-add"', '表单里的“＋ 新建空底图”出口'),
-        ('!store.baseMaps?.[baseMapKey]', '“创建”在无底图/底图已删时禁用'),
         ('新建剧本失败：还没有选中底图', '直接调创建函数也会被拦'),
     ]
     for needle, label in checks:
         if needle not in src:
             fails.append(f'源码闸门缺：{label}（{needle}）')
+    # 2026-11-06：“创建”按钮随剧本管理对话框搬进 scenario/panels/ScenarioManagerDialog.vue，
+    # 组件里拿到的是 prop `baseMaps`（不是直接读 store）。两种写法都接受，
+    # 但**必须**证明 prop 是从 store 接过来的 —— 否则"底图没了还能建"这条会静默失效。
+    if ('!store.baseMaps?.[baseMapKey]' not in src
+            and '!baseMaps?.[baseMapKey]' not in src):
+        fails.append('源码闸门缺：“创建”在无底图/底图已删时禁用（!baseMaps?.[baseMapKey]）')
+    if ('!baseMaps?.[baseMapKey]' in src
+            and ':base-maps="store.baseMaps' not in src):
+        fails.append('对话框用 prop `baseMaps` 判空，但父组件没把 `store.baseMaps` 传进来（判空失效）')
     if ':disabled="store.isReadOnly"' not in src:
         fails.append('底图“空底图”按钮没有只读禁用')
     return fails

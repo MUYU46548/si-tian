@@ -1584,176 +1584,45 @@
                         :bind-fn="bindMarkerNote" :unbind-fn="unbindMarkerNote" />
     </div>
 
-    <!-- 剧本管理对话框 -->
-    <div v-if="showScenarioManager" class="modal-overlay" @click.self="closeScenarioManager">
-      <div class="modal-dialog scenario-manager">
-        <h3>剧本管理</h3>
-
-        <!-- 剧本集管理（2026-10-25）：一组 = 一条独立时间线。删除组**不删剧本**，只退回默认组。 -->
-        <div class="scenario-groups" data-testid="scenario-groups">
-          <div class="sg-head">
-            <span class="sg-title">剧本集</span>
-            <span class="sg-hint">切换后左栏、时间轴、播放与切片导出只显示这一组</span>
-          </div>
-          <div v-for="g in groupOptions" :key="g.id" class="sg-row" :data-testid="'scenario-group-row-' + g.id">
-            <template v-if="editingGroupId === g.id">
-              <input v-model="editGroupName" class="sg-name-input" data-testid="scenario-group-rename-input"
-                     @keydown.enter="commitRenameGroup" @keydown.esc="cancelRenameGroup" />
-              <button class="sg-btn primary" data-testid="scenario-group-rename-save"
-                      :disabled="!editGroupName.trim()" @click="commitRenameGroup">保存</button>
-              <button class="sg-btn" @click="cancelRenameGroup">取消</button>
-            </template>
-            <template v-else>
-              <span class="sg-name" :class="{ current: g.id === activeGroupId }">{{ g.name }}</span>
-              <span class="sg-count">{{ groupCount(g.id) }} 条</span>
-              <button v-if="g.id !== DEFAULT_SCENARIO_GROUP" class="sg-btn" data-testid="scenario-group-rename"
-                      :disabled="store.isReadOnly" title="重命名这个剧本集"
-                      @click="startRenameGroup(g)">改名</button>
-              <button v-if="g.id !== DEFAULT_SCENARIO_GROUP" class="sg-btn danger" data-testid="scenario-group-delete"
-                      :disabled="store.isReadOnly"
-                      :title="`删除剧本集“${g.name}”—— 组内 ${groupCount(g.id)} 条剧本会退回“默认”，一条剧本都不会删`"
-                      @click="deleteGroup(g)">删除</button>
-            </template>
-          </div>
-          <div class="sg-new">
-            <input v-model="newGroupName" class="sg-name-input" placeholder="新剧本集名称（如：第二时间线 / 另一张底图）"
-                   data-testid="scenario-group-name" @keydown.enter="createGroup" />
-            <button class="sg-btn primary" data-testid="scenario-group-create"
-                    :disabled="store.isReadOnly || !newGroupName.trim()" @click="createGroup">新建剧本集</button>
-          </div>
-          <p class="sg-note">
-            剧本集只决定“哪些剧本一起出现在左栏和时间轴上”；删除组只是取消分类，剧本、省份、归属一条都不动。
-          </p>
-        </div>
-
-        <div class="scenario-list">
-          <div v-for="s in allSortedScenarios" :key="s.id" class="scenario-item" :data-testid="'scenario-item-' + s.id">
-            <span class="item-era">{{ s.era?.roman || '·' }}</span>
-            <span class="item-name">{{ s.name }}</span>
-            <span class="item-years">{{ s.era?.startYear || '?' }} – {{ s.era?.endYear || '?' }}</span>
-            <select class="item-group" :value="scenarioGroupIdOf(s)" :disabled="store.isReadOnly"
-                    :title="`把“${s.name}”移到别的剧本集（不删任何数据）`"
-                    data-testid="scenario-item-group"
-                    @change="moveScenarioToGroup(s, $event.target.value)">
-              <option v-for="g in groupOptions" :key="g.id" :value="g.id">{{ g.name }}</option>
-            </select>
-            <button class="item-edit" data-testid="scenario-edit" :disabled="store.isReadOnly"
-                    :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
-                      : '编辑剧本信息（名称 / 罗马数字 / 时代标签 / 起止年 / 描述）—— 不改动已录的省份归属与易主日期'"
-                    @click="startEditScenario(s)"><Icon name="edit" :size="15"/> 编辑</button>
-            <button class="item-delete" data-testid="scenario-delete" :disabled="store.isReadOnly"
-                    :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '删除剧本'"
-                    @click="deleteScenario(s)"><Icon name="trash" :size="15"/> 删除</button>
-          </div>
-        </div>
-        <!-- 🔴 批量清空（2026-10-11 接活死入口 `removeAllScenarios`）：真实场景是导入的年表塞了 12 条占位剧本，
-             一条条点垃圾桶又慢又容易点错 —— 这里给一条撤销可回退的整批清空（只删剧本，不动底图/省份）。 -->
-        <div class="scenario-bulk" data-testid="scenario-bulk">
-          <button
-            class="btn-clear-all"
-            data-testid="scenario-clear-all"
-            :disabled="store.isReadOnly || !allSortedScenarios.length"
-            :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
-              : ('删除全部 ' + allSortedScenarios.length + ' 条剧本（所有剧本集）。只删剧本本身（名称/年份/势力归属/易主记录/标注标记），'
-                + '底图与省份边界一个都不动；一条撤销即可回退')"
-            @click="clearAllScenarios"
-          >清空全部剧本（保留底图与省份）</button>
-          <span class="bulk-hint">
-            共 {{ allSortedScenarios.length }} 条（所有剧本集）· 底图与省份不受影响 · Ctrl+Z 可撤销
-          </span>
-        </div>
-        <div class="scenario-annos" data-testid="scenario-annotations">
-          <h4>“{{ selectedScenario?.name || '（未选剧本）' }}”的标注与标记</h4>
-          <div v-if="!annoRows.length" class="anno-empty">
-            还没有地名或标记 —— 用工具栏“更多”里的“地名 (T)”“标记 (K)”在地图上放置
-          </div>
-          <div v-for="row in annoRows" :key="row.key" class="anno-row" :data-testid="'anno-' + row.kind">
-            <span class="anno-kind">{{ row.kind === 'label' ? '地名' : '标记' }}</span>
-            <span class="anno-text">{{ row.text }}</span>
-            <button class="anno-del" data-testid="anno-del" :disabled="store.isReadOnly"
-                    :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
-                      : ('删除' + (row.kind === 'label' ? '地名' : '标记') + '“' + row.text + '”（可撤销）')"
-                    @click="deleteAnnotation(row)"><Icon name="trash" :size="12"/> 删除</button>
-          </div>
-        </div>
-        <!-- B1：剧本 ↔ 笔记（候选来自同一个资料段；写口在父面板，一条撤销） -->
-        <VaultLoreSection testid="scenario-vault" :query="selectedScenario?.name || ''"
-                          :binding="{ path: selectedScenario?.notePath || '', label: '这个剧本' }"
-                          :bind-fn="bindScenarioNote" :unbind-fn="unbindScenarioNote" />
-        <div class="new-scenario-form">
-          <h4>{{ editingScenarioId ? '编辑剧本' : '新建剧本' }}</h4>
-          <!-- 2026-10-22：把“新剧本会绑哪张底图”摆在表单第一行。
-               以前不显示，用户以为"新建剧本 = 新地图"，结果还是一张旧底图（真实困惑）。 -->
-          <div class="form-row bound-row" data-testid="new-scenario-basemap">
-            <label>底图：</label>
-            <span class="bound-basemap" :title="baseMapKey ? `新剧本将绑定底图“${baseMapKey}”` : '还没有底图'">
-              {{ baseMapKey || '（还没有底图）' }}
-            </span>
-            <!-- 对话框里也给出口：不管有没有底图，都能"新建一张空底图再建剧本"——
-                 用户的困惑就发生在这张表单前（"新建剧本怎么还是旧底图"）。 -->
-            <button
-              type="button"
-              class="bound-add"
-              data-testid="new-scenario-basemap-add"
-              :disabled="store.isReadOnly"
-              :title="store.isReadOnly ? `新建底图已停用：${store.readOnlyReason || '只读：未打开项目'}` : '新建一张空白底图，并让本剧本绑定它'"
-              @click="addEmptyBaseMap()"
-            >＋ 新建空底图</button>
-          </div>
-          <div class="form-row">
-            <label>剧本集：</label>
-            <select v-model="newScenario.group" data-testid="new-scenario-group" class="short-input"
-                    title="新剧本落在哪条时间线；切到该组后才出现在左栏与时间轴">
-              <option v-for="g in groupOptions" :key="g.id" :value="g.id">{{ g.name }}</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label>名称：</label>
-            <input v-model="newScenario.name" placeholder="如：第一时代·黑暗时代" />
-          </div>
-          <div class="form-row">
-            <label>罗马数字：</label>
-            <input v-model="newScenario.roman" placeholder="如：Ⅰ" class="short-input" />
-          </div>
-          <div class="form-row">
-            <label>时代标签：</label>
-            <input v-model="newScenario.label" placeholder="如：黑暗时代" />
-          </div>
-          <div class="form-row">
-            <label>起始年：</label>
-            <input v-model="newScenario.startYear" placeholder="如：历年 2006" />
-          </div>
-          <div class="form-row">
-            <label>结束年：</label>
-            <input v-model="newScenario.endYear" placeholder="如：历年 2008" />
-          </div>
-          <div class="form-row">
-            <label>描述：</label>
-            <textarea v-model="newScenario.description" placeholder="可选说明" rows="2"></textarea>
-          </div>
-          <div class="form-row">
-            <label title="剧本卡片墙（选剧本界面）上显示的一句钩子文案，1-2 句为宜；留空则卡片不显示这行">钩子文案：</label>
-            <textarea v-model="newScenario.hook" placeholder="可选 —— 选剧本卡片上的一句话钩子，如：五雄歃血为盟又彼此提防" rows="2"></textarea>
-          </div>
-          <div class="form-row checkbox">
-            <label>继承上一时代：</label>
-            <input type="checkbox" v-model="newScenario.inherit" />
-          </div>
-          <div class="form-actions">
-            <button v-if="editingScenarioId" data-testid="scenario-save-edit"
-                    @click="saveEditScenario" :disabled="store.isReadOnly || !newScenario.name">保存</button>
-            <button v-else data-testid="scenario-create" @click="createNewScenario"
-                    :disabled="!newScenario.name || !baseMapKey || !store.baseMaps?.[baseMapKey] || store.isReadOnly"
-                    :title="(!baseMapKey || !store.baseMaps?.[baseMapKey]) ? '还没有底图：先在下面点“＋ 新建空底图”，或用“＋”导入 .map' : ''">创建</button>
-            <button v-if="editingScenarioId" data-testid="scenario-cancel-edit" @click="cancelEditScenario">取消编辑</button>
-            <button v-else @click="closeScenarioManager">关闭</button>
-          </div>
-          <div v-if="editingScenarioId" class="edit-hint">
-            正在编辑既有剧本 —— 保存只改上面这些字段，省份归属 / 易主日期 / 标注 / 标记全部保留
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 剧本管理对话框（2026-11-06 拆成组件：scenario/panels/ScenarioManagerDialog.vue，含自己的样式）
+         状态与写口仍在父组件：这里只 v-model 草稿、emit 动作，不复制一份数据。 -->
+    <ScenarioManagerDialog
+      v-model:new-scenario="newScenario"
+      v-model:editing-scenario-id="editingScenarioId"
+      v-model:editing-group-id="editingGroupId"
+      v-model:edit-group-name="editGroupName"
+      v-model:new-group-name="newGroupName"
+      :open="showScenarioManager"
+      :scenarios="allSortedScenarios"
+      :groups="groupOptions"
+      :group-count="groupCount"
+      :scenario-group-id-of="scenarioGroupIdOf"
+      :active-group-id="activeGroupId"
+      :default-group="DEFAULT_SCENARIO_GROUP"
+      :selected-scenario="selectedScenario"
+      :anno-rows="annoRows"
+      :base-map-key="baseMapKey"
+      :base-maps="store.baseMaps || {}"
+      :read-only="store.isReadOnly"
+      :read-only-reason="store.readOnlyReason || ''"
+      :bind-note="bindScenarioNote"
+      :unbind-note="unbindScenarioNote"
+      @close="closeScenarioManager"
+      @create-group="createGroup"
+      @start-rename-group="startRenameGroup"
+      @commit-rename-group="commitRenameGroup"
+      @cancel-rename-group="cancelRenameGroup"
+      @delete-group="deleteGroup"
+      @move-scenario-to-group="moveScenarioToGroup"
+      @start-edit-scenario="startEditScenario"
+      @delete-scenario="deleteScenario"
+      @clear-all-scenarios="clearAllScenarios"
+      @delete-annotation="deleteAnnotation"
+      @save-edit-scenario="saveEditScenario"
+      @create-new-scenario="createNewScenario"
+      @cancel-edit-scenario="cancelEditScenario"
+      @add-empty-base-map="addEmptyBaseMap"
+    />
 
     <!-- 图层锁定面板（2026-11-06 拆成组件：LayerLockPanel.vue，含自己的 scoped 样式） -->
     <LayerLockPanel :open="showLayerPanel" :layers="scenarioLayers"
@@ -1902,6 +1771,8 @@ import LayerLockPanel from '../scenario/panels/LayerLockPanel.vue';
 // 2026-11-06：聚落编辑器 / 从留底恢复底图 两个浮层也拆成组件（同上，样式跟着组件走）
 import BurgEditorPanel from '../scenario/panels/BurgEditorPanel.vue';
 import BasemapSourcePanel from '../scenario/panels/BasemapSourcePanel.vue';
+// 剧本管理对话框（172 行模板 + 样式一起搬走了，2026-11-06 第二批）
+import ScenarioManagerDialog from '../scenario/panels/ScenarioManagerDialog.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

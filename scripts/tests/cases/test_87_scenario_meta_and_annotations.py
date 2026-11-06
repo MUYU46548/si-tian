@@ -95,13 +95,20 @@ def sub_source_guards(cdp):
             bad.append(f'{name} 被登记进 MEMORY_WRITE_CALLSITES（它走 execute，登记说明绕开了总闸门）')
 
     # ⑤ 只读灰禁要落在新按钮上（能力说明必须给去处，不能只是禁）
+    # 2026-11-06：这两个按钮随剧本管理对话框搬进了 `scenario/panels/ScenarioManagerDialog.vue`，
+    # 组件里拿到的是父组件传进来的 `readOnly`（不是直接读 store）。所以这里接受两种写法，
+    # 但**必须**证明 `readOnly` 是从 `store.isReadOnly` 接过来的 —— 否则"抽到组件里"就成了绕过灰禁的口子。
+    uses_prop_gate = ':disabled="readOnly"' in sm
+    if uses_prop_gate and ':read-only="store.isReadOnly"' not in sm:
+        bad.append('对话框用的是 `:disabled="readOnly"`，但父组件没有把 `store.isReadOnly` 传进来'
+                   '（灰禁被架空）')
     for anchor in ('data-testid="scenario-edit"', 'data-testid="anno-del"'):
         i = sm.find(anchor)
         if i < 0:
             bad.append(f'找不到 {anchor}（新入口没落地）')
             continue
         seg = sm[i:i + 400]
-        if ':disabled="store.isReadOnly"' not in seg:
+        if ':disabled="store.isReadOnly"' not in seg and ':disabled="readOnly"' not in seg:
             bad.append(f'{anchor} 没有只读灰禁')
         if 'readOnlyReason' not in seg:
             bad.append(f'{anchor} 的灰禁没有说明去处（readOnlyReason）')

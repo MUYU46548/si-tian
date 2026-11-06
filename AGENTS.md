@@ -412,15 +412,17 @@
   （`provenance` / `落库` / `单源` / `格距` / `回执` / `幂等` / `N3a` / `φ`），第三方产品名
   （Azgaar / FMG）只在**导入向导这类确实需要指路**的地方保留。守门：`unit/test_toolbar_ux.js`（剧本视图）、
   `unit/test_toolbar_ux_planet.js`（行星）、`unit/test_toolbar_ux_area.js`（区域）、
-  `unit/test_toolbar_ux_panels.js`（面板类 **15 个**组件：对象列表 / 节点详情 / 地点簇 / 缩放 / 小地图 /
-  设置 / 项目 / 建筑内部 / 派生 / FMG 模板 / 造陆 / 图层 / **剧本视图整页 + 两个拆出来的浮层**，
+  `unit/test_toolbar_ux_panels.js`（面板类 **16 个**组件：对象列表 / 节点详情 / 地点簇 / 缩放 / 小地图 /
+  设置 / 项目 / 建筑内部 / 派生 / FMG 模板 / 造陆 / 图层 / **剧本视图整页 + 四个拆出来的浮层**，
   另含“行内操作不许退回悬停才出现”——口径是
   **任何 `*-row-actions`**，不许只写 `.row-actions`，那样 `.pp-row-actions` 同病却全绿；术语白名单
   `jargonAllow` 只给 FmgPanel 放 `FMG`/`Azgaar`、给 ScenarioMap 放 `Azgaar`（.map 导入指路），别顺手扩大）；
-  **`ScenarioMap.vue` 的行数闸门 = ≤6,900**（`unit/test_scenario_map_split.js` m1，历史 8,554 → 6,900）：
+  **`ScenarioMap.vue` 的行数闸门 = ≤6,800**（`unit/test_scenario_map_split.js` m1，历史 8,554 → 6,800）：
   往里加东西之前先想“能不能放进 `scenario/panels/` 或 `scenario/{layers,interaction}`”；
   拆出去的浮层**样式跟着组件走**（m7 守着双源），子视图统一放 `src/renderer/src/scenario/panels/`
   —— `scripts/tests/lib/rsrc.py` 会把该目录并进“渲染层源码”，不并进去源码闸门会在搬家当天假红；
+  **闸门跟着代码走但不许放宽**：组件里拿到的是 prop（`readOnly` / `baseMaps`）时，
+  源码闸门除了认新写法，还要反查“父组件确实把 `store.isReadOnly` / `store.baseMaps` 传进来了”；
   真机两张：`tools/shot_planet_ux.py`（18/18，工具坞 + 对象面板「文字有没有被裁」）与
   `tools/shot_planet_ux.py --view area`（10/10，区域工具栏 + 截图）；改其它视图时照此扩一张「每个按钮都有文字」的判据。
 - **同一能力只许一份实现**（画河几何、河宽换算、导出参考图、保存文案、`.map` 导入…）：

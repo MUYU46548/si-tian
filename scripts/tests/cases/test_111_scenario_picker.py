@@ -77,9 +77,15 @@ def source_gates():
     app = _read(APPVUE)
     # 2026-10-31：河流绘制体搬进 scenario/layers/features.js —— 判据把那份源码一起读
     # 2026-11-03：样式搬进 `scenario-map.css`（`<style scoped src>`，N1.6）—— 一并读，断言不变
+    # 2026-11-06：剧本管理对话框搬进 `scenario/panels/ScenarioManagerDialog.vue`（“钩子文案”那个
+    #   输入框跟着走了）—— panels 目录一并读，否则“管理表单没接 hook”会假红。
+    panels = os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels')
+    panel_src = ''.join(
+        _read(os.path.join(panels, f)) for f in sorted(os.listdir(panels)) if f.endswith('.vue'))
     sm = (_read(SMV) + '\n'
           + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers', 'features.js'))
-          + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'scenario-map.css')))
+          + '\n' + _read(os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'scenario-map.css'))
+          + '\n' + panel_src)
     sp = _read(SPV)
     cards = _read(SCARDS)
     sed = _read(SEDIT)

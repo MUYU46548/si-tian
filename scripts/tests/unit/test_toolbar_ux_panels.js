@@ -53,6 +53,7 @@ const FILES = [
   { file: 'LayerLockPanel.vue', dir: 'scenario/panels', desc: '图层锁定（关闭 / 锁定 / 已锁定）', min: 2 },
   { file: 'BurgEditorPanel.vue', dir: 'scenario/panels', desc: '聚落编辑（关闭 / 保存 / 取消）' },
   { file: 'BasemapSourcePanel.vue', dir: 'scenario/panels', desc: '从留底恢复底图（关闭 / 用这份恢复）', min: 2 },
+  { file: 'ScenarioManagerDialog.vue', dir: 'scenario/panels', desc: '剧本管理对话框（剧本集 / 剧本行 / 标注 / 新建表单）' },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

@@ -108,10 +108,10 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,900（判据 ≤8,500；本轮从 8,554 → 6,900 级，并随拆分逐轮收紧）', () => {
+  check('m1 SFC 行数 ≤6,800（判据 ≤8,500；8,554 → 6,900 → 6,800，随拆分逐轮收紧）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6900, `ScenarioMap.vue 实测 ${n} 行，超过 6,900 —— 又往这个文件里堆东西了？`
-      + '新东西请进子组件或 scenario/ 下的模块，别塞回这里。');
+    assert(n <= 6800, `ScenarioMap.vue 实测 ${n} 行，超过 6,800 —— 又往这个文件里堆东西了？`
+      + '新东西请进 scenario/panels/ 的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
 
@@ -197,6 +197,7 @@ function main() {
     ['LayerLockPanel.vue', 'LayerLockPanel', '.layer-lock-panel'],
     ['BurgEditorPanel.vue', 'BurgEditorPanel', '.burg-editor-panel'],
     ['BasemapSourcePanel.vue', 'BasemapSourcePanel', '.bmsrc-panel'],
+    ['ScenarioManagerDialog.vue', 'ScenarioManagerDialog', '.modal-overlay'],
   ];
   check('m7 拆出去的三个浮层：组件文件在 + 被组件标签引用 + 老 class 不在 CSS 里（防双源）', () => {
     const bad = [];
@@ -209,7 +210,7 @@ function main() {
       if (!own.includes(cls)) bad.push(`${file} 自己没写 ${cls}（样式丢了两边都没有）`);
     }
     assert(!bad.length, bad.join('；'));
-    return '3 个';
+    return `${EXTRACTED.length} 个`;
   });
 
   const failed = results.filter((r) => !r.ok);

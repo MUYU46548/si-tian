@@ -1142,29 +1142,7 @@
 .props-sub { margin: -2px 0 8px 78px; font-size: 10px; color: #64748b; }
 
 /* 模态框 */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1100;
-}
 
-.modal-dialog {
-  background: #1e293b;
-  border: 1px solid #475569;
-  border-radius: 12px;
-  padding: 20px;
-  max-width: 500px;
-  width: 90%;
-  max-height: 80vh;
-  overflow-y: auto;
-  color: #e2e8f0;
-}
-
-.modal-dialog h3 { margin: 0 0 16px; font-size: 16px; }
 
 /* 019 重导对话框 */
 .reimport-dialog { max-width: 560px; }
@@ -1193,29 +1171,6 @@
 .rd-actions button.primary { background: rgba(124, 58, 237, 0.9); border-color: #7c3aed; color: #fff; }
 .rd-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.scenario-list { margin-bottom: 20px; }
-
-.scenario-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border-bottom: 1px solid #334155;
-}
-
-.item-era { font-weight: 600; color: #7c3aed; min-width: 20px; }
-.item-name { flex: 1; font-size: 13px; }
-.item-years { font-size: 11px; color: #64748b; }
-.item-group {
-  max-width: 92px;
-  background: #16233a;
-  border: 1px solid #475569;
-  color: #cbd5e1;
-  border-radius: 4px;
-  font-size: 10.5px;
-  padding: 1px 3px;
-  font-family: inherit;
-}
 
 /* 剧本集（2026-10-25）：左栏切换条 + 管理对话框里的组表 */
 .slp-groupbar {
@@ -1268,195 +1223,14 @@
   color: #dbeafe;
 }
 
-.scenario-groups {
-  margin: 0 0 16px;
-  padding: 8px;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.35);
-}
-.sg-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
-.sg-title { font-size: 12px; font-weight: 600; color: #e2e8f0; }
-.sg-hint { font-size: 10.5px; color: #64748b; }
-.sg-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px;
-  border-bottom: 1px solid #263449;
-}
-.sg-row:last-of-type { border-bottom: 0; }
-.sg-name { flex: 1; font-size: 12px; color: #cbd5e1; }
-.sg-name.current { color: #fff; font-weight: 600; }
-.sg-count { font-size: 10.5px; color: #64748b; font-variant-numeric: tabular-nums; }
-.sg-name-input {
-  flex: 1;
-  min-width: 0;
-  background: #16233a;
-  border: 1px solid #475569;
-  color: #e2e8f0;
-  border-radius: 4px;
-  font-size: 11px;
-  padding: 2px 5px;
-  font-family: inherit;
-}
-.sg-btn {
-  flex: none;
-  background: #1e293b;
-  border: 1px solid #475569;
-  color: #cbd5e1;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 10.5px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.sg-btn:hover:not(:disabled) { background: #334155; color: #e2e8f0; }
-.sg-btn.primary { background: rgba(124, 58, 237, 0.85); border-color: #7c3aed; color: #fff; }
-.sg-btn.danger:hover:not(:disabled) { background: rgba(180, 40, 50, 0.35); border-color: #a3474f; color: #fecaca; }
-.sg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.sg-new { display: flex; gap: 6px; margin-top: 6px; }
-.sg-note { margin: 6px 0 0; font-size: 10.5px; line-height: 1.55; color: #64748b; }
-
-.item-delete {
-  background: none;
-  border: none;
-  cursor: pointer;
-  opacity: 0.5;
-}
-
-.item-delete:hover { opacity: 1; }
 
 /* 剧本条：编辑按钮与删除同形（2026-10-07） */
-.item-edit {
-  background: none;
-  border: none;
-  cursor: pointer;
-  opacity: 0.5;
-}
-.item-edit:hover { opacity: 1; }
-.item-edit:disabled, .item-delete:disabled { opacity: 0.25; cursor: not-allowed; }
 
 /* 批量清空剧本（2026-10-11）：危险动作 → 单独一行、带文字（本仓纪律：工具栏/对话框按钮
    一律“图标 + 文字”，纯图标被判过"根本看不懂"），并把"不动底图与省份"写在旁边 */
-.scenario-bulk {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 0 0 14px;
-}
-.btn-clear-all {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-family: inherit;
-  color: #fecaca;
-  background: rgba(220, 38, 38, 0.18);
-  border: 1px solid #b91c1c;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.btn-clear-all:hover:not(:disabled) { background: rgba(220, 38, 38, 0.32); }
-.btn-clear-all:disabled { opacity: 0.4; cursor: not-allowed; }
-.bulk-hint { font-size: 11px; color: #94a3b8; }
 
 /* 标注 / 标记管理（2026-10-07）—— 此前这两个写口是死入口，条目只能加不能删 */
-.scenario-annos {
-  border-top: 1px solid #334155;
-  padding-top: 12px;
-  margin-bottom: 16px;
-}
-.scenario-annos h4 { margin: 0 0 8px; font-size: 13px; color: #cbd5e1; }
-.anno-empty { font-size: 12px; color: #64748b; line-height: 1.5; }
-.anno-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 12px;
-}
-.anno-kind {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: #a78bfa;
-  border: 1px solid #4c1d95;
-  border-radius: 3px;
-  padding: 0 4px;
-}
-.anno-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.anno-del {
-  background: none;
-  border: none;
-  cursor: pointer;
-  opacity: 0.55;
-  color: inherit;
-}
-.anno-del:hover { opacity: 1; }
-.anno-del:disabled { opacity: 0.25; cursor: not-allowed; }
 
-.edit-hint { margin-top: 8px; font-size: 11px; color: #94a3b8; line-height: 1.5; }
-
-.new-scenario-form {
-  border-top: 1px solid #334155;
-  padding-top: 16px;
-}
-
-.new-scenario-form h4 { margin: 0 0 12px; font-size: 14px; }
-.bound-row .bound-basemap {
-  flex: 1; font-size: 12px; color: var(--text-secondary, #9aa4b2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.bound-row .bound-add {
-  font-size: 12px; padding: 2px 8px; cursor: pointer;
-  background: transparent; border: 1px solid var(--border, #3a4350); border-radius: 4px;
-  color: var(--accent, #8ab4f8);
-}
-
-.form-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.form-row label {
-  min-width: 80px;
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.form-row input[type="text"], .form-row textarea {
-  flex: 1;
-  background: #334155;
-  border: 1px solid #475569;
-  border-radius: 4px;
-  padding: 6px 8px;
-  color: #e2e8f0;
-  font-size: 12px;
-}
-
-.form-row input.short-input { max-width: 60px; }
-.form-row.checkbox label { min-width: auto; }
-
-.form-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
-
-.form-actions button {
-  padding: 6px 16px;
-  border: 1px solid #475569;
-  background: #334155;
-  color: #e2e8f0;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.form-actions button:first-child { background: #5b21b6; border-color: #7c3aed; }
-.form-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
