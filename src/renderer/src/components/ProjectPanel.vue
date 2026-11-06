@@ -8,7 +8,7 @@
   >
     <template #title><Icon name="folder-open" :size="15" style="margin-right:6px" />项目</template>
     <template #actions>
-      <button class="mini-btn" title="刷新目录中的项目列表" @click="refresh"><Icon name="refresh" :size="13" /></button>
+      <button class="mini-btn" title="刷新目录中的项目列表" @click="refresh"><Icon name="refresh" :size="13" /> 刷新</button>
     </template>
 
     <div class="pp-body">
@@ -260,8 +260,8 @@
                 <option v-for="t in placeTypeOptions(row.placeType)" :key="t" :value="t">{{ t }}</option>
               </select>
               <span v-if="editingId !== row.id" class="pp-row-actions">
-                <button class="icon-btn" title="改名" @click.stop="startRename(row)"><Icon name="pencil" :size="12" /></button>
-                <button class="icon-btn" title="删除（含子实体）" @click.stop="askDelete(row)"><Icon name="trash" :size="12" /></button>
+                <button class="icon-btn" title="改名" @click.stop="startRename(row)"><Icon name="pencil" :size="12" /> 改名</button>
+                <button class="icon-btn danger" title="删除（含子实体）" @click.stop="askDelete(row)"><Icon name="trash" :size="12" /> 删除</button>
               </span>
             </div>
           </div>
@@ -1238,25 +1238,36 @@ refresh();
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 2026-11-05：行内操作以前是 opacity:0（悬停才出现）—— 与 ObjectListPanel 同一条用户反馈
+   （“分不清删还是复制、也找不到”）。现在默认淡显 0.45，悬停 / 选中 / 键盘聚焦才变实。 */
 .pp-row-actions {
   margin-left: auto;
   display: flex;
   gap: 2px;
-  opacity: 0;
+  opacity: 0.45;
   transition: opacity 0.12s;
 }
 .pp-node-row:hover .pp-row-actions,
+.pp-node-row:focus-within .pp-row-actions,
 .pp-node-row.sel .pp-row-actions { opacity: 1; }
+/* 2026-11-05：加了“改名 / 删除”文字，按钮不能再是无边框无内边距的图标位（会挤成一团字）。 */
 .icon-btn {
   background: none;
-  border: none;
-  padding: 1px 2px;
+  border: 1px solid var(--planet-btn-border);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  height: 18px;
   color: var(--planet-text-secondary);
   cursor: pointer;
   line-height: 1;
+  font-size: 10px;
+  white-space: nowrap;
   display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
-.icon-btn:hover { color: var(--planet-text); }
+.icon-btn:hover { color: var(--planet-text); background: var(--planet-btn-hover); }
+.icon-btn.danger:hover { color: #f85149; border-color: #f85149; }
 .pp-rename {
   flex: 1;
   min-width: 0;

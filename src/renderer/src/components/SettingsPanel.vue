@@ -227,7 +227,7 @@
           <div class="setting-item" data-testid="note-target-section">
             <div class="setting-info">
               <span class="setting-name">新笔记目录</span>
-              <span class="setting-desc">转正 / 批量导入新建的笔记落在库里哪个目录。留空 = 自动：有“03 设定”就用层级子目录，否则落库根；填了就必须在知识库内</span>
+              <span class="setting-desc">转正 / 批量导入新建的笔记放在库里哪个目录。留空 = 自动：有“03 设定”就用层级子目录，否则放在库根目录；填了就必须在知识库内</span>
             </div>
             <div class="vault-path-row">
               <input class="note-target-input" data-testid="note-target-dir" v-model="noteTargetDir"
@@ -537,8 +537,8 @@
                 <span v-if="t.builtin" class="marker-type-tag">内置</span>
                 <span v-if="t.legacy" class="marker-type-tag legacy">旧</span>
                 <span class="marker-type-ops">
-                  <button class="mini-btn" title="上移" :disabled="i === 0" @click.stop="moveType(t.type, -1)">↑</button>
-                  <button class="mini-btn" title="下移" :disabled="i === markerTypeList.length - 1" @click.stop="moveType(t.type, 1)">↓</button>
+                  <button class="mini-btn" title="在列表里往上挪一位" :disabled="i === 0" @click.stop="moveType(t.type, -1)">上移</button>
+                  <button class="mini-btn" title="在列表里往下挪一位" :disabled="i === markerTypeList.length - 1" @click.stop="moveType(t.type, 1)">下移</button>
                   <button
                     class="mini-btn danger" title="删除类型（该类型标记会转为自定义）"
                     :disabled="t.builtin" @click.stop="deleteMarkerType(t.type)"
@@ -1476,11 +1476,16 @@ defineExpose({ open, close });
   gap: 2px;
 }
 .mini-btn {
-  width: 20px;
+  /* 2026-11-05：不再锁死 20×20 —— 加了“上移 / 下移”之后锁死宽度会裁字（UI 坑 #5）。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
   height: 20px;
-  padding: 0;
+  padding: 0 5px;
   font-size: 11px;
   line-height: 1;
+  white-space: nowrap;
   background: transparent;
   border: 1px solid var(--panel-border);
   border-radius: 3px;

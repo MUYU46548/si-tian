@@ -15,9 +15,14 @@
   3) **没有一个按钮的文字被裁**（scrollWidth <= clientWidth + 1）—— 纯图标时代不会出现，
      加了文字之后才会（`.mini-reset` 就差点被 24×24 裁掉）
   4) 坞宽 ≤ 140px，且不横向压住超过 15% 的画布
-  5) 截图落 `build/planet-ux/dock.png`（人眼复核用）
+  5) **面板类（第二批，2026-11-05）**：开对象面板之后 —— 按钮数 ≥ 6、行数 ≥ 1（空列表上量出来的绿是假的）、
+     每个按钮都有可见文字、**没有文字被裁**（`scrollWidth <= clientWidth + 1`）、
+     行内操作的计算 opacity 不为 0（不许退回“悬停才出现”）
+  6) 截图落 `build/planet-ux/dock.png`（人眼复核用）
 
-用法：python scripts/tests/tools/shot_planet_ux.py
+用法：
+  python scripts/tests/tools/shot_planet_ux.py              # 行星视图（工具坞 + 对象面板）
+  python scripts/tests/tools/shot_planet_ux.py --view area  # 区域视图（编辑工具栏 + 截图）
 退出码：0 = 通过。
 """
 import json
@@ -46,6 +51,22 @@ CDP_PORT = 9224
 SAMPLE = os.path.join(ROOT, 'sample', '示例世界.sitian')
 
 fails = []
+
+
+def parse_args(argv):
+    """`--view planet|area`（默认 planet）。区域视图至今没拍过真机图，见交接页第四节 A。"""
+    view = 'planet'
+    i = 0
+    while i < len(argv):
+        if argv[i] == '--view' and i + 1 < len(argv):
+            view = argv[i + 1]
+            i += 2
+            continue
+        i += 1
+    if view not in ('planet', 'area'):
+        print('未知 --view：%s（只认 planet / area）' % view)
+        raise SystemExit(2)
+    return view
 
 
 def ck(name, ok, detail=''):
@@ -159,6 +180,7 @@ def shot(cdp, path):
 
 
 def main():
+    view = parse_args(sys.argv[1:])
     for p in (DEV_PORT, CDP_PORT):
         if port_open(p):
             print('端口 %d 被占用 —— 先停掉正在跑的回归/演练' % p)
@@ -175,7 +197,7 @@ def main():
                          cwd=ROOT, capture_output=True, text=True, timeout=60).stdout.strip()
     dev = el = None
     try:
-        print('=== 行星视图工具坞真机检查 ===')
+        print('=== %s ===' % ('区域视图编辑工具栏真机检查' if view == 'area' else '行星视图工具坞真机检查'))
         dev = subprocess.Popen([node, os.path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'),
                                 '--config', 'vite.config.js'], cwd=ROOT,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -214,13 +236,86 @@ def main():
         ok_open = json.loads(opened) if isinstance(opened, str) else {}
         ck('示例副本能打开', bool(ok_open.get('ok')), ok_open.get('err') or '')
 
+        # ===== 区域视图（--view area）=====
+        # 为什么单独一条：区域视图的工具栏在 2026-11-05 改成“图标 + 名字”（对齐/分布 8 个符号补字、
+        # 指南针/比例尺补字），但**至今没有一张真机图** —— 源码闸门只能证明“有字”，
+        # 证明不了“排不排得下 / 有没有被裁 / 会不会把画布压扁”。
+        if view == 'area':
+            picked = cdp.eval("""(() => {
+              const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+              const a = (s.nodes || []).find((n) => n.layer === 'region');
+              if (!a) return JSON.stringify({ ok: false, err: 'no-region-node' });
+              s.selectArea(a);
+              return JSON.stringify({ ok: true, name: a.name, id: a.id });
+            })()""")
+            ai = json.loads(picked) if isinstance(picked, str) else {}
+            ck('能进区域视图（store.selectArea）', bool(ai.get('ok')),
+               ai.get('name') or ai.get('err'))
+            wait_for(cdp, "!!document.querySelector('.area-map-container')",
+                     timeout=60, desc='区域视图挂载')
+            ck('区域地图已挂载', True, ai.get('name') or '')
+
+            # 走产品同一条路：点“编辑地图”（不是直接改 editMode，否则会绕过它的数据准备）
+            clicked = cdp.eval("""(() => {
+              const b = document.querySelector('.area-map-container .edit-entry-btn');
+              if (!b) return 'no-btn';
+              b.click();
+              return 'ok';
+            })()""")
+            has_bar = False
+            if clicked == 'ok':
+                try:
+                    wait_for(cdp, "!!document.querySelector('.edit-toolbar')",
+                             timeout=20, desc='区域编辑工具栏')
+                    has_bar = True
+                except RuntimeError:
+                    has_bar = False
+            ck('点“编辑地图”后工具栏出现', has_bar, clicked)
+
+            if has_bar:
+                am = cdp.eval("""(() => {
+                  const bar = document.querySelector('.edit-toolbar');
+                  const wrap = document.querySelector('.edit-toolbar-wrap') || bar;
+                  const btns = Array.from(bar.querySelectorAll('button'));
+                  const empty = btns.filter((b) => !(b.textContent || '').trim())
+                    .map((b) => b.getAttribute('title') || '?');
+                  const clipped = btns.filter((b) => b.scrollWidth > b.clientWidth + 1)
+                    .map((b) => ((b.textContent || '').trim() || b.getAttribute('title') || '?')
+                      + ' ' + b.scrollWidth + '>' + b.clientWidth);
+                  const r = wrap.getBoundingClientRect();
+                  const c = document.querySelector('.area-map-container canvas');
+                  return JSON.stringify({
+                    count: btns.length, empty, clipped,
+                    barH: Math.round(r.height), barW: Math.round(r.width),
+                    canvasH: c ? Math.round(c.getBoundingClientRect().height) : 0,
+                    labels: btns.map((b) => (b.textContent || '').trim()).filter(Boolean).slice(0, 24),
+                  });
+                })()""")
+                a2 = json.loads(am) if isinstance(am, str) else {}
+                ck('区域工具栏按钮数 ≥ 12', int(a2.get('count') or 0) >= 12, a2.get('count'))
+                ck('区域工具栏每个按钮都有可见文字', len(a2.get('empty') or []) == 0,
+                   ','.join(a2.get('empty') or [])[:120])
+                ck('区域工具栏没有一个按钮的文字被裁', len(a2.get('clipped') or []) == 0,
+                   ' | '.join(a2.get('clipped') or [])[:160])
+                ck('区域工具栏高度 ≤ 160px（不把画布压扁）', int(a2.get('barH') or 0) <= 160,
+                   '%spx（宽 %s）' % (a2.get('barH'), a2.get('barW')))
+                print('  区域工具：', ' / '.join(a2.get('labels') or []))
+
+            path = os.path.join(OUT, 'area.png')
+            size = shot(cdp, path)
+            if size:
+                ck('区域视图截图落盘', os.path.exists(path), '%s（%.0f KB）' % (path, size / 1024.0))
+            else:
+                print('  ⚠️ 区域视图截图拿不到帧（CDP 合成器在这一页超时）—— 判据不受影响')
+            return 0 if not fails else 1
+
         # 进行星视图（走 store 的 selectPlanet，与点导航同一个入口）
         entered = cdp.eval("""(() => {
           const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
           const p = (s.nodes || []).find((n) => n.layer === 'planet');
           if (!p) return JSON.stringify({ ok: false, err: 'no-planet-node' });
           s.selectPlanet(p);
-          return JSON.stringify({ ok: true, name: p.name });
+          return JSON.stringify({ ok: true, name: p.name, id: p.id });
         })()""")
         info = json.loads(entered) if isinstance(entered, str) else {}
         ck('行星视图能进（store.selectPlanet）', bool(info.get('ok')), info.get('name') or info.get('err'))
@@ -266,6 +361,104 @@ def main():
         ck('坞宽 ≤ 140px', int(m.get('dockW') or 0) <= 140, '%spx' % m.get('dockW'))
         share = (int(m.get('dockW') or 0) / m.get('canvasW')) if m.get('canvasW') else 1
         ck('坞不横向压住超过 15% 画布', share <= 0.15, '%.0f%%（画布 %spx）' % (share * 100, m.get('canvasW')))
+
+        # ===== 面板类（2026-11-05 第二批清完之后补的真机口）=====
+        # 为什么必须真机：`unit/test_toolbar_ux_panels.js` 只能读模板证明“按钮有字”，
+        # 证明不了“字有没有被裁”。面板行里是“图标 + 改名/删除”，一旦沿用旧的固定尺寸
+        # （ObjectListPanel 之前的 19×19、SettingsPanel 的 20×20）就会把两个字裁成一个。
+        opened_panel = cdp.eval("""(() => {
+          const el = document.querySelector('.planet-map-container');
+          const sm = el && el.__vueParentComponent && el.__vueParentComponent.setupState;
+          if (!sm) return 'no-setup';
+          if (!('objectPanelOpen' in sm)) return 'no-state';
+          sm.objectPanelOpen = true;
+          return 'ok';
+        })()""")
+        ck('对象面板能打开（store 侧 objectPanelOpen）', opened_panel == 'ok', opened_panel)
+        has_panel = False
+        if opened_panel == 'ok':
+            try:
+                wait_for(cdp, "!!document.querySelector('.object-panel')", timeout=20, desc='对象面板')
+                has_panel = True
+            except RuntimeError:
+                has_panel = False
+        ck('对象面板已挂载', has_panel)
+
+        if has_panel:
+            # 示例副本**本身没有画过任何对象**（文件里 maps.mapData 是空的）—— 在空列表上量
+            # “按钮有没有被裁”是假绿。所以先看行数：0 行就塞两行**排版夹具**（只进内存、
+            # 不落盘；副本本来就会在收尾时删掉），让行内“图标 + 改名/删除”真被渲染出来再量。
+            injected = False
+            rows0 = cdp.eval("document.querySelectorAll('.object-panel .row').length")
+            if not rows0:
+                # 只塞**标记**一行：标记行渲染不依赖几何（地形行要有 polygon 坐标，
+                # 硬塞进去会让画布渲染器读空几何而抛错）。塞完点“标记”页签再量。
+                cdp.eval("""(() => {
+                  const el = document.querySelector('.planet-map-container');
+                  const sm = el && el.__vueParentComponent && el.__vueParentComponent.setupState;
+                  const store = (sm && sm.store)
+                    || (document.querySelector('#app').__vue_app__._instance.setupState.store);
+                  if (!store) return 'no-store';
+                  const id = %s;
+                  const cur = store.mapData[id] || {};
+                  store.mapData = { ...store.mapData, [id]: {
+                    ...cur,
+                    markers: [{ id: '__ux_row_b', name: '排版测量（标记）', type: 'resource',
+                                x: 10, y: 10, color: '#3498DB' }],
+                  } };
+                  return 'ok';
+                })()""" % json.dumps(info.get('id') or ''))
+                time.sleep(0.5)
+                cdp.eval("""(() => {
+                  const p = document.querySelector('.object-panel');
+                  const btns = Array.from(p.querySelectorAll('.tab-btn'));
+                  const m = btns.find((b) => (b.textContent || '').indexOf('标记') >= 0);
+                  if (m) m.click();
+                  return m ? 'ok' : 'no-tab';
+                })()""")
+                time.sleep(0.5)
+                injected = True
+
+            # 逐个真机量：文字非空 / scrollWidth ≤ clientWidth+1（不裁字）/ 行内操作不是“悬停才出现”/
+            # 行真的有内容（空列表上量出来的绿是假的）
+            pm = cdp.eval("""(() => {
+              const p = document.querySelector('.object-panel');
+              const btns = Array.from(p.querySelectorAll('button'));
+              const empty = btns.filter((b) => !(b.textContent || '').trim())
+                .map((b) => b.getAttribute('title') || '?');
+              const clipped = btns.filter((b) => b.scrollWidth > b.clientWidth + 1)
+                .map((b) => ((b.textContent || '').trim() || b.getAttribute('title') || '?')
+                  + ' ' + b.scrollWidth + '>' + b.clientWidth);
+              const rows = p.querySelectorAll('.row').length;
+              const acts = Array.from(p.querySelectorAll('.row-actions'));
+              const hidden = acts
+                .map((e) => parseFloat(getComputedStyle(e).opacity))
+                .filter((v) => !(v > 0));
+              // 行内操作的按钮也要真量一次裁切（`.row-actions` 里就是“图标 + 改名/删除”）
+              const actClips = Array.from(p.querySelectorAll('.row-actions button'))
+                .filter((b) => b.scrollWidth > b.clientWidth + 1)
+                .map((b) => (b.textContent || '').trim() + ' ' + b.scrollWidth + '>' + b.clientWidth);
+              return JSON.stringify({
+                count: btns.length, empty, clipped, rows,
+                actCount: acts.length, hiddenActs: hidden.length, actClips,
+                labels: btns.map((b) => (b.textContent || '').trim()).filter(Boolean).slice(0, 20),
+              });
+            })()""")
+            p = json.loads(pm) if isinstance(pm, str) else {}
+            ck('对象面板按钮数 ≥ 6', int(p.get('count') or 0) >= 6, p.get('count'))
+            ck('对象面板每行真的有内容（不是空列表）', int(p.get('rows') or 0) >= 1,
+               '%s 行%s' % (p.get('rows'), '（示例副本没有对象 → 塞了一行标记排版夹具）' if injected else ''))
+            ck('对象面板每个按钮都有可见文字', len(p.get('empty') or []) == 0,
+               ','.join(p.get('empty') or [])[:120])
+            ck('对象面板没有一个按钮的文字被裁', len(p.get('clipped') or []) == 0,
+               ' | '.join(p.get('clipped') or [])[:160])
+            ck('行内操作按钮真渲染出来了（改名 / 删除）', int(p.get('actCount') or 0) >= 1,
+               '%s 组 .row-actions' % p.get('actCount'))
+            ck('行内操作按钮的文字没有被裁', len(p.get('actClips') or []) == 0,
+               ' | '.join(p.get('actClips') or [])[:160])
+            ck('对象面板行内操作不是“悬停才出现”', int(p.get('hiddenActs') or 0) == 0,
+               '%s 组计算 opacity 为 0' % p.get('hiddenActs'))
+            print('  面板按钮：', ' / '.join(p.get('labels') or []))
 
         path = os.path.join(OUT, 'dock.png')
         size = shot(cdp, path)

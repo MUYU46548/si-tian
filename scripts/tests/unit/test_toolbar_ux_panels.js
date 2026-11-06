@@ -32,6 +32,9 @@ const FILES = [
   { file: 'ClusterPanel.vue', desc: '地点簇（新建 / 改名 / 解散）' },
   { file: 'ZoomControls.vue', desc: '缩放控件（全图 / 选区）' },
   { file: 'EagleEye.vue', desc: '小地图（打开 / 大小 / 关闭）' },
+  { file: 'SettingsPanel.vue', desc: '设置面板（标记类型排序/删除、预设、数据操作）' },
+  { file: 'ProjectPanel.vue', desc: '项目面板（刷新 / 实体改名 / 删除）' },
+  { file: 'InteriorView.vue', desc: '建筑内部（楼层、工具栏、底图、家具弹窗）' },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;
@@ -147,10 +150,12 @@ function jargonHits(strings) {
     .map((s) => `L${s.line}“${s.text.slice(0, 40)}”`);
 }
 
-/** 判据 3：列表行内操作不许退回“悬停才出现”（opacity: 0） */
+/** 判据 3：列表行内操作不许退回“悬停才出现”（opacity: 0）
+ * 2026-11-05：口径从“只认 `.row-actions`”放宽到“任何 `*-row-actions`”——
+ * ProjectPanel 用的是 `.pp-row-actions`，同一处用户反馈（“找不到”），原来那条正则扫不到。 */
 function hoverOnlyActions(src) {
   const hits = [];
-  const re = /\.row-actions[^{]*\{([^}]*)\}/g;
+  const re = /\.(?:[\w-]*-)?row-actions[^{]*\{([^}]*)\}/g;
   let m;
   while ((m = re.exec(src))) {
     const body = m[1];
@@ -223,6 +228,11 @@ run('负向探针：塞工程术语必须红', () => {
 run('负向探针：把 .row-actions 改回 opacity: 0 必须红', () => {
   const hits = hoverOnlyActions('.row-actions { opacity: 0; transition: .15s; }');
   assert(hits.length === 1, '负向探针没抓住悬停才出现的样式');
+  return '抓到了';
+});
+run('负向探针：带前缀的 .pp-row-actions 也要抓住（口径不许只认一个类名）', () => {
+  const hits = hoverOnlyActions('.pp-row-actions { margin-left: auto; opacity: 0; }');
+  assert(hits.length === 1, '带前缀的 row-actions 逃过了判据');
   return '抓到了';
 });
 

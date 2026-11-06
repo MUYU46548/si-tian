@@ -182,7 +182,7 @@
         <h4 v-if="!editingPopover">{{ selectedFurniture.name }}</h4>
         <input v-else v-model="editForm.name" class="popover-title-input" placeholder="家具名称" />
         <div class="popover-header-actions">
-          <button v-if="!editingPopover" class="edit-btn" @click="startEditPopover" title="编辑"><Icon name="pencil" :size="12"/></button>
+          <button v-if="!editingPopover" class="edit-btn" @click="startEditPopover" title="编辑这件家具的名称和类型"><Icon name="pencil" :size="12"/> 编辑</button>
           <button class="close-btn" @click="cancelEditPopover">×</button>
         </div>
       </div>
@@ -1729,6 +1729,11 @@ defineExpose({ canvas, renderer });
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   line-height: 1;
+  /* 2026-11-05：从纯铅笔改成“铅笔 + 编辑”，要按内容撑开，不许裁字。 */
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
 }
 
 .edit-btn:hover {

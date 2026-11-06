@@ -28,9 +28,10 @@
 |---|---|---|
 | 剧本视图 | `node scripts/tests/unit/test_toolbar_ux.js` | 5/5（分区标题 ≥4 / 每个按钮有字 / 术语黑名单） |
 | 行星视图（源码） | `node scripts/tests/unit/test_toolbar_ux_planet.js` | 4/4（dock 全有名字 / 无文字按钮只允许符号·色块·插值） |
-| 行星视图（真机） | `python scripts/tests/tools/shot_planet_ux.py` | 9/9 + 截图 `build/planet-ux/dock.png` |
-| 区域视图 | `node scripts/tests/unit/test_toolbar_ux_area.js` | 4/4 |
-| **面板类（2026-11-05 晚）** | `node scripts/tests/unit/test_toolbar_ux_panels.js` | **18/18**：ObjectListPanel / NodeDetailPanel / ClusterPanel / ZoomControls / EagleEye 每个按钮都有名字 + 可见文字零术语 + 行内操作不许退回"悬停才出现"，带三条负向探针 |
+| 行星视图（真机） | `python scripts/tests/tools/shot_planet_ux.py` | **18/18** + 截图 `build/planet-ux/dock.png`（工具坞 9 条 + 对象面板 9 条） |
+| **区域视图（真机）** | `python scripts/tests/tools/shot_planet_ux.py --view area` | **10/10** + 截图 `build/planet-ux/area.png`（19 个按钮全有字 / 无一被裁 / 栏高 39px） |
+| 区域视图（源码） | `node scripts/tests/unit/test_toolbar_ux_area.js` | 4/4 |
+| **面板类（2026-11-05 晚）** | `node scripts/tests/unit/test_toolbar_ux_panels.js` | **28/28**：ObjectListPanel / NodeDetailPanel / ClusterPanel / ZoomControls / EagleEye / **SettingsPanel / ProjectPanel / InteriorView** 每个按钮都有名字 + 可见文字零术语 + 行内操作不许退回"悬停才出现"（口径 = 任何 `*-row-actions`），带四条负向探针 |
 
 四张判据都带**负向探针**（删按钮文字 / 塞“落库”必须红），改判据时别把探针删了。
 
@@ -50,22 +51,38 @@
 | ZoomControls | `⤢` / `⊞`（谁都猜不出）→ **“全图” / “选区”**；`−`/`＋` 仍是通用符号，不动 |
 | EagleEye | 打开按钮补“小地图”；`▣`（缩到多大）→ “大小”；`×` 关闭保留 |
 
-闸门：`node scripts/tests/unit/test_toolbar_ux_panels.js`（**18/18**，含“行内操作不许退回 opacity: 0”这条）。
+**2026-11-05 夜里第二批（89 → 83，−6；35 个组件）**：
+
+| 组件 | 改法 |
+|---|---|
+| SettingsPanel | 标记类型的 `↑`/`↓` → **“上移 / 下移”**，`.mini-btn` 从锁死 20×20 改成自适应宽；新笔记目录那句“否则**落库**根”改成“否则放在库根目录”（“落库”是术语黑名单） |
+| ProjectPanel | 面板头刷新图标 → **“刷新”**；实体行的铅笔/垃圾桶 → **“改名 / 删除”**；`.icon-btn` 从无边框图标位改成小按钮（有边框有内边距）；**`.pp-row-actions` 也从 `opacity:0` 改成 0.45 常显** —— 原来那条闸门正则只认 `.row-actions`，`.pp-row-actions` 同病却没被扫到（已把口径放宽到 `*-row-actions` 并加负向探针） |
+| InteriorView | 家具浮窗的铅笔 → **“编辑”** |
+
+剩下 83 个里 39 个在 PlanetMap（21）/ ScenarioMap（11）/ AreaMap（7）—— 绝大多数是**色块、`×` 关闭、缩放 `−/＋`**，已白名单；其余 32 个组件各 1–2 个，同病同方。
+
+闸门：`node scripts/tests/unit/test_toolbar_ux_panels.js`（**28/28**，8 个面板组件，含“行内操作不许退回 opacity: 0”这条）。
 
 | 组件 | 纯图标 / 全部 | 说明 |
 |---|---|---|
 | PlanetMap | 21 / 161 | 剩下几乎都是色块 / 关闭 × / 缩放，已有白名单 |
 | ScenarioMap | 11 / 137 | 都在浮层里（工具栏已清） |
 | AreaMap | 7 / 59 | 色块 + 标记图标选择器（白名单） |
-| SettingsPanel | 5 / 32 | 逐个看（多半是色块/开关） |
-| InteriorView | 4 / 33 | 同上 |
-| 其余 31 个组件 | 各 1–3 | 逐个看 |
+| SettingsPanel | 3 / 32 | 剩 3 个都是 `×` 关闭 |
+| InteriorView | 3 / 33 | 同上 |
+| ProjectPanel | **0 / 22** | 第二批清完 |
+| 其余 32 个组件 | 各 1–2 | 逐个看（多数是 `×` 关闭 / 折叠 ▾） |
 
-**下一块建议：SettingsPanel + ProjectPanel + InteriorView**（各 3–5 个），做法同上：补 2–3 字 →
-把组件名加进 `test_toolbar_ux_panels.js` 的 `FILES` 表（一行）。
-⚠️ **面板类还没跑真机截图**：`shot_planet_ux.py` 已经有 `editMode` 那套骨架，
-下一步加一段“`sm.objectPanelOpen = true` → 量每个 `.mini-btn` 的 `scrollWidth <= clientWidth+1`”
-（这一轮改的全是**自适应宽**，裁字风险低但不为零）。区域视图的 `--view area` 仍未做。
+**下一块建议**：其余 32 个组件各 1–2 个（多数是 `×`/`▾`，属白名单）—— 想继续就按“补 2–3 字 →
+把组件名加进 `test_toolbar_ux_panels.js` 的 `FILES` 表（一行）”的节奏推。注意那条闸门对每个组件
+断言 `buttons.length >= 3`（防“判据扫空”），只有 1–2 个按钮的组件要先想清楚门槛怎么给。
+
+✅ **面板类的真机口已经补上**（2026-11-05 夜）：
+`python scripts/tests/tools/shot_planet_ux.py` 现在 18/18 —— 开对象面板后量“每行真的有内容 /
+每个按钮有文字 / 文字没被裁 / 行内操作的**计算** opacity 不为 0”；示例副本本身没画过对象，
+所以脚本会先塞一行**标记排版夹具**（只进内存、副本收尾即删）再量。
+✅ **区域视图也有真机图了**：`python scripts/tests/tools/shot_planet_ux.py --view area` 10/10，
+截图 `build/planet-ux/area.png`（工具栏 19 个按钮全有字、无一被裁、高 39px）。
 
 ### B. 历史剧本（清点在卡 `阶段目标历史剧本做到勉强可用出口判据---1af58f0b`）
 
@@ -116,11 +133,16 @@ UI 扫尾 + 剧本剩下的活收口后：`npm run dist` → `npm run test:packa
 8. **AST 里 `{{ … }}` 是插值节点（type 5）** —— 判“按钮有没有文字”不认它会把一大片按钮误判成纯图标；
    `格距` 会命中“网**格距**离”，用负向后视 `(?<!网)格距`。
 9. **`ScenarioMap.vue` 有 ≤7,000 行闸门** —— 加模板注释会把预算吃掉，样式尽量进 `scenario-map.css`。
+10. **“悬停才出现”这类判据不能只认一个类名** —— `.row-actions` 与 `.pp-row-actions` 是同一个病，
+    第一版正则只写 `\.row-actions` → ProjectPanel 原样留着 `opacity:0` 却是绿的
+    （用户原话“分不清删还是复制、也找不到”）。**改判据时把类名放宽到 `*-row-actions`，并给新类名补一条负向探针**。
 
 ## 六、下一步建议顺序
 
-1. 面板类（ObjectListPanel / NodeDetailPanel）补名字 + 一张 `test_toolbar_ux_panels.js`；
-2. 给 `shot_planet_ux.py` 加 `--view area` 并把区域视图补一张真机截图；
+1. ~~面板类（ObjectListPanel / NodeDetailPanel）补名字 + 一张 `test_toolbar_ux_panels.js`~~
+   → **已做**（第二批 SettingsPanel / ProjectPanel / InteriorView 也在内，89 → 83，闸门 28/28）；
+2. ~~给 `shot_planet_ux.py` 加 `--view area` 并把区域视图补一张真机截图~~
+   → **已做**（`--view area` 10/10 + `area.png`；面板真机口 18/18）；
 3. 剧本 P0 已清零（C2 撤销时延已量、A1 外交可写、B1 标记绑定 2026-11-05 全做完）；
    下一步按卡上顺序：**A2 演变平滑**（顺手补 C1 用例）→ A4 涂归属时延（与保存链那张卡一起看）；
 4. 以上收口后一次性打包 0.5.3（含本页所有 UI 改动）。
