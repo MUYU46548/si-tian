@@ -1387,137 +1387,50 @@
       </div>
     </div>
 
-    <!-- 省份属性面板
-         🔴 2026-10-01：五个字段全部从 `v-model` 改成 `:value` + `@change` ——
-         `v-model="selectedProvince.name"` 是**直接改 store 里的对象**（selectedProvince
-         就是 terrain[] 里的那个活对象）：① 绕开 `guardWrite`（只读态照改内存）；
-         ② `updateBaseProvince` 采集的 `oldProv` 已被改过 → **撤销把新值当成旧值还原**
-         （改名/群系/文化/海岸/类型五项的 undo 全是空转）；③ 文本输入挂在 `@input` 上，
-         每敲一个字符 = 一条 undo + 一次落盘，100 条上限会把更早的几何操作静默挤出栈。
-         现在：值来自事件、写只走 store（`updateBaseProvince` = 一条 undo + 写闸门）。 -->
-    <div v-if="selectedProvince && showProps" class="province-props">
-      <div class="props-header">
-        <input ref="provNameInput" :value="selectedProvince.name || ''" @change="onProvinceNameChange" class="props-name" />
-        <button @click="showProps = false" class="props-close" title="收起省份面板"><Icon name="x" :size="13"/> ×</button>
-      </div>
-      <!-- 归属：2026-10-21 用户实测“看不到归属 / 看不到省份详情”。
-           归属按**时间轴当前日期**显示（与地图着色同一口径 `ownerPolityForProvince`），
-           无主就明说；两个按钮都走 store（一条 undo + 写闸门），不在模板里直改活对象。 -->
-      <div class="props-row props-owner" v-if="viewMode === 'scenario'" data-testid="province-owner-row">
-        <label>归属：</label>
-        <span class="owner-value" :class="{ none: !selectedProvincePolity }">
-          <template v-if="selectedProvincePolity">
-            <span class="polity-dot" :style="{ background: selectedProvincePolity.color }"></span>
-            {{ selectedProvincePolity.name }}
-          </template>
-          <template v-else>无主</template>
-        </span>
-        <button v-if="selectedProvincePolity" class="props-mini" :disabled="store.isReadOnly"
-                :title="`按当前日期 ${tlDateText} 清空归属（无主；时间轴记一条“该年变无主”，一笔撤销）`"
-                @click="clearSelectedProvinceOwner" data-testid="province-owner-clear">清成无主</button>
-        <button v-else class="props-mini" :disabled="store.isReadOnly || !selectedPolity"
-                :title="selectedPolity ? `按当前日期 ${tlDateText} 记为“${selectedPolity.name}”` : '先在色板选一个势力'"
-                @click="assignSelectedProvinceOwner" data-testid="province-owner-assign">设为当前势力</button>
-      </div>
-      <div class="props-sub" v-if="viewMode === 'scenario'">归属随“{{ tlDateText }}”变化（拖时间轴可看不同年份）</div>
-      <div class="props-row">
-        <label>生物群系：</label>
-        <select :value="selectedProvince.biome || ''" @change="onProvinceBiomeChange">
-          <option value="">未分类</option>
-          <option value="ocean">海洋</option>
-          <option value="hot_desert">热沙漠</option>
-          <option value="cold_desert">冷沙漠</option>
-          <option value="savanna">热带草原</option>
-          <option value="grassland">草原</option>
-          <option value="tropical_seasonal">热带季雨林</option>
-          <option value="temperate_deciduous">温带落叶林</option>
-          <option value="tropical_rainforest">热带雨林</option>
-          <option value="temperate_rainforest">温带雨林</option>
-          <option value="taiga">针叶林</option>
-          <option value="tundra">冻原</option>
-          <option value="glacier">冰川</option>
-          <option value="wetland">湿地</option>
-        </select>
-      </div>
-      <div class="props-row">
-        <label>文化：</label>
-        <input :value="selectedProvince.culture || ''" @change="onProvinceCultureChange" placeholder="文化名称" />
-      </div>
-      <div class="props-row">
-        <label>海岸：</label>
-        <input type="checkbox" :checked="!!selectedProvince.coast" @change="onProvinceCoastChange" />
-      </div>
-      <div class="props-row">
-        <label>类型：</label>
-        <select :value="selectedProvince.kind === 'sea' ? 'sea' : 'land'" @change="onProvinceKindChange"
-                title="海域省份用海色渲染；陆地/海域是省份级属性（岛与飞地另见“环”）">
-          <option value="land">陆地</option>
-          <option value="sea">海域</option>
-        </select>
-      </div>
-      <!-- 多环实体：飞地 / 洞都是独立的环。顶点编辑作用于**活动环**，这里切换 -->
-      <div class="props-row" v-if="provinceRings(selectedProvince).length > 1">
-        <label>编辑环：</label>
-        <select v-model.number="activeRingIdx">
-          <option v-for="(r, i) in provinceRings(selectedProvince)" :key="i" :value="i">
-            {{ i === 0 ? '主环' : ('环 ' + (i + 1)) }}{{ r.fromGrid ? '（网格派生）' : '' }}
-          </option>
-        </select>
-      </div>
-      <div class="props-stats">
-        环数: {{ provinceRings(selectedProvince).length }} ·
-        顶点数: {{ currentRingVertexCount }}（活动环）
-      </div>
-      <!-- 资料（读料桥，2026-10-24）：按省名在全库资料里找**候选**。
-           实现只有一份：`VaultLoreSection.vue`（省份面板与标记面板共用）——
-           这一段只许 `vaultIndexSearch` + `openNote`，不猜、不建、不写；
-           找不到就明说（与“读不到笔记”的可读回落同一口径：不能静默什么都不显示）。 -->
-      <VaultLoreSection testid="province-vault" :query="selectedProvince.name || ''" />
-    </div>
+    <!-- 省份属性面板（2026-11-06 拆成组件：scenario/panels/ProvincePropsPanel.vue，样式与标记面板共用 props-panel.css）
+         🔴 五个字段仍是 :value + @change（不许 v-model 直改活对象，2026-10-01 的纪律见组件内注释） -->
+    <ProvincePropsPanel
+      ref="provincePropsRef"
+      v-model:ring-idx="activeRingIdx"
+      :province="selectedProvince"
+      :open="showProps"
+      :scenario="viewMode === 'scenario'"
+      :polity="selectedProvincePolity"
+      :selected-polity="selectedPolity"
+      :date-text="tlDateText"
+      :read-only="store.isReadOnly"
+      :read-only-reason="store.readOnlyReason || ''"
+      :rings="provinceRings"
+      :ring-vertex-count="currentRingVertexCount"
+      @close="showProps = false"
+      @name="onProvinceNameChange"
+      @biome="onProvinceBiomeChange"
+      @culture="onProvinceCultureChange"
+      @coast="onProvinceCoastChange"
+      @kind="onProvinceKindChange"
+      @clear-owner="clearSelectedProvinceOwner"
+      @assign-owner="assignSelectedProvinceOwner"
+    />
 
-    <!-- 标记属性面板（2026-10-24）：命中测试在 `utils/markerHitTest.js`（唯一实现，只读）；
-         本面板只走 store 写口（`updateScenarioMarker` / `removeScenarioMarker`），模板里不直改 marker 对象。 -->
-    <div v-if="selectedMarker && showMarkerPanel && viewMode === 'scenario'"
-         class="province-props marker-props" data-testid="marker-props">
-      <div class="props-header">
-        <input :value="selectedMarker.name || ''" class="props-name" placeholder="标记名称"
-               data-testid="marker-name" @change="onMarkerNameChange" />
-        <button class="props-close" data-testid="marker-close" title="收起面板（标记本身不动）"
-                @click="showMarkerPanel = false"><Icon name="x" :size="13"/> ×</button>
-      </div>
-      <div class="props-row">
-        <label>类型：</label>
-        <select :value="selectedMarker.type || 'custom'" data-testid="marker-type" @change="onMarkerTypeChange">
-          <option v-for="t in MARKER_TYPES" :key="t.id" :value="t.id">{{ t.name }}</option>
-        </select>
-      </div>
-      <div class="props-row">
-        <label>坐标：</label>
-        <input class="coord-input" type="number" step="1" data-testid="marker-x"
-               :value="markerCoords.x" title="世界坐标（地图内部单位；改完立刻生效，一条撤销可退回）"
-               @change="onMarkerCoordChange('x', $event)" />
-        <input class="coord-input" type="number" step="1" data-testid="marker-y"
-               :value="markerCoords.y" title="世界坐标（地图内部单位；改完立刻生效，一条撤销可退回）"
-               @change="onMarkerCoordChange('y', $event)" />
-      </div>
-      <div class="props-row">
-        <label>剧本：</label>
-        <span class="marker-belong">{{ selectedScenario?.name || '（未选剧本）' }}</span>
-      </div>
-      <div class="props-stats">
-        标记 {{ markerOrdinal }} / {{ markerTotal }} · 点图标即选中，改动一次一条撤销
-      </div>
-      <div class="props-row">
-        <button class="props-mini danger" data-testid="marker-delete" :disabled="store.isReadOnly"
-                :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
-                  : '删除这个标记（可 Ctrl+Z 撤回；底图与省份不动）'"
-                @click="deleteSelectedMarker">删除标记</button>
-      </div>
-      <!-- 资料：同一份实现（与省份面板共用一个组件）——按标记名查索引；绑定走父面板写口（B1） -->
-      <VaultLoreSection testid="marker-vault" :query="selectedMarker.name || ''"
-                        :binding="{ path: selectedMarker.notePath || '', label: '这个标记' }"
-                        :bind-fn="bindMarkerNote" :unbind-fn="unbindMarkerNote" />
-    </div>
+    <!-- 标记属性面板（2026-11-06 拆成组件：scenario/panels/MarkerPropsPanel.vue，样式共用 props-panel.css） -->
+    <MarkerPropsPanel
+      :marker="selectedMarker"
+      :open="showMarkerPanel && viewMode === 'scenario'"
+      :types="MARKER_TYPES"
+      :coords="markerCoords"
+      :scenario-name="selectedScenario?.name || ''"
+      :ordinal="markerOrdinal"
+      :total="markerTotal"
+      :read-only="store.isReadOnly"
+      :read-only-reason="store.readOnlyReason || ''"
+      :bind-note="bindMarkerNote"
+      :unbind-note="unbindMarkerNote"
+      @close="showMarkerPanel = false"
+      @name="onMarkerNameChange"
+      @type="onMarkerTypeChange"
+      @coord="onMarkerCoordChange"
+      @delete="deleteSelectedMarker"
+    />
 
     <!-- 剧本管理对话框（2026-11-06 拆成组件：scenario/panels/ScenarioManagerDialog.vue，含自己的样式）
          状态与写口仍在父组件：这里只 v-model 草稿、emit 动作，不复制一份数据。 -->
@@ -1710,6 +1623,9 @@ import BasemapSourcePanel from '../scenario/panels/BasemapSourcePanel.vue';
 import ScenarioManagerDialog from '../scenario/panels/ScenarioManagerDialog.vue';
 // 左侧“历史剧本”列表（2026-11-06 第三批：显示层归组件，切剧本仍走本组件的 selectScenarioAt）
 import ScenarioListPanel from '../scenario/panels/ScenarioListPanel.vue';
+// 省份 / 标记属性面板（2026-11-06 第四批；两个面板共用 scenario/panels/props-panel.css）
+import ProvincePropsPanel from '../scenario/panels/ProvincePropsPanel.vue';
+import MarkerPropsPanel from '../scenario/panels/MarkerPropsPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）
@@ -3557,15 +3473,16 @@ function previewTraceRing() {
   return tracePreviewCache.ring;
 }
 
-/** 新建省份的公共收尾：选中它 + 打开属性面板并把光标放进名字框（P1“名字输入”） */
-const provNameInput = ref(null);
+/** 新建省份的公共收尾：选中它 + 打开属性面板并把光标放进名字框（P1“名字输入”）
+ *  2026-11-06：名字框随面板搬进了 `ProvincePropsPanel`，所以这里改成拿组件 ref 调它暴露的
+ *  `focusName()` —— 不再跨组件抓 DOM（跨组件 `provNameInput` 只会拿到 null）。 */
+const provincePropsRef = ref(null);
 function focusNewProvince(id, fallback) {
   const found = (baseMap.value?.terrain || []).find((q) => q.id === id) || fallback;
   if (found) selectedProvince.value = found;
   showProps.value = true;
   nextTick(() => {
-    const el = provNameInput.value;
-    if (el && typeof el.focus === 'function') { el.focus(); if (el.select) el.select(); }
+    provincePropsRef.value?.focusName?.();
   });
 }
 

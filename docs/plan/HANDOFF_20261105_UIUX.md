@@ -74,16 +74,16 @@ PlanetMap（21）/ AreaMap（7）/ ScenarioMap（3）及其余地图组件，绝
 
 闸门：`node scripts/tests/unit/test_toolbar_ux_panels.js`（**41/41**，12 个面板组件，含“行内操作不许退回 opacity: 0”与“术语白名单不许放宽”）
 
-### A2. **2026-11-06 大文件拆分（三批）**：ScenarioMap 开始拆
+### A2. **2026-11-06 大文件拆分（四批）**：ScenarioMap 开始拆
 
 用户原话：“大文件你自己想办法拆分，本来就不应该把各种代码堆在一个文件里。”
 判据不是“行数好看”，是**改得动且不假绿**：
 
 | 动作 | 前 | 后 |
 |---|---|---|
-| `ScenarioMap.vue` | 6,969 行 | **6,708 行**（闸门 `m1` 一轮一收紧：≤7,000 → ≤6,900 → ≤6,800 → **≤6,750**） |
-| `scenario-map.css` | 1,687 行 | **1,124 行**（五个浮层的样式跟着组件走；主表 + 子组件合计 1,858 行 ≥ 原始 1,639） |
-| 新组件 | — | `scenario/panels/` 下 5 个：`LayerLockPanel` / `BurgEditorPanel` / `BasemapSourcePanel` / **`ScenarioManagerDialog`**（172 行模板 + 8 个 `defineModel` 状态）/ **`ScenarioListPanel`**（左侧历史剧本列表 + 剧本集切换 + 看全部总览） |
+| `ScenarioMap.vue` | 6,969 行 | **6,625 行**（闸门 `m1` 一轮一收紧：≤7,000 → ≤6,900 → ≤6,800 → ≤6,750 → **≤6,650**） |
+| `scenario-map.css` | 1,687 行 | **1,004 行**（样式跟着组件走；主表 + 子组件合计 1,878 行 ≥ 原始 1,639） |
+| 新组件 | — | `scenario/panels/` 下 **7 个** + 一份共享 CSS：`LayerLockPanel` / `BurgEditorPanel` / `BasemapSourcePanel` / `ScenarioManagerDialog`（172 行模板 + 8 个 `defineModel` 状态）/ `ScenarioListPanel`（左栏列表 + 剧本集 + 看全部）/ **`ProvincePropsPanel` + `MarkerPropsPanel`（共用 `props-panel.css`）** |
 
 五条“拆分不许造出假绿”的硬规矩（都写进了闸门）：
 
@@ -98,24 +98,35 @@ PlanetMap（21）/ AreaMap（7）/ ScenarioMap（3）及其余地图组件，绝
    一起拼进“渲染层源码” —— 否则源码闸门会在搬家当天假红（**实测发生了**：
    `test_101` 的“留底面板有唯一容器”当场红，因为 `data-testid` 跟着模板搬走了）；
 4. **搬出去就是搬出去**：`m7` 还检查 `ScenarioMap.vue` 里确实在用 `<组件标签>` 引用；
-5. **闸门跟着代码走，但不许因为“换了写法”就放宽**（两批共撞到六处，全部改成
+5. **闸门跟着代码走，但不许因为“换了写法”就放宽**（四批共撞到八处，全部改成
    “接受新写法 + 补一条反证”）：
    · `test_87`：灰禁从 `:disabled="store.isReadOnly"` 变成组件里的 `:disabled="readOnly"`
      → 同时要求父组件有 `:read-only="store.isReadOnly"`，否则判红（**不然抽组件就成了绕过灰禁的口子**）；
    · `test_134`：判空从 `!store.baseMaps?.[baseMapKey]` 变成 `!baseMaps?.[baseMapKey]`
      → 同时要求 `:base-maps="store.baseMaps` 在场；
+   · `test_143` / `test_144`（省份 / 标记的资料段）：`province-vault`、`marker-props` 等
+     testid 跟着面板走 → 源码守卫改成读 panels 合集，**“资料段只读、写口只一处”的断言一字没改**；
    · `test_111` / `test_90` / `test_usability_20261103` / `test_scenario_group_overview`：
      搬家后“这条 testid / 这句文案在不在”都要读 **panels 合集**（显示契约在面板里，接线契约仍在 ScenarioMap）。
-   · ⚠ 直角引号红线把我**自己新写的注释**也抓了（`「历史剧本」` 5 处）——
+   · ⚠ 直角引号红线把我**自己新写的注释**也抓了（`“历史剧本”` 5 处）——
      红线对“注释”同样生效，别以为注释里能随便用。
 
-面板闸门同时扩到 **17 个组件**（五个拆出来的子视图 + `ScenarioMap.vue` 整页），**59/59**。
+面板闸门同时扩到 **20 个组件**（七个拆出来的子视图 + `ScenarioMap.vue` 整页等），**65/65**。
+
+另两条拆分时才学到的：
+
+6. **跨组件抓 DOM 会静默拿到 null**：新建省份后要把光标放进名字框，原来是父组件的
+   `ref="provNameInput"` 指向 `<input>`；输入框搬进面板后，父组件的 ref 只能拿到**组件实例**，
+   `el.focus` 直接不存在（不报错、不生效）。正解是面板 `defineExpose({ focusName })`，
+   父组件拿组件 ref 调方法 —— 这条已写进 `ProvincePropsPanel.vue` 的注释。
+7. **两个组件共用一份样式就写一份 `.css` 让两边 `src`**：省份/标记面板本来就是一壳两用，
+   样式各抄一份必然“改一处另一处不变”。共享文件放 `scenario/panels/props-panel.css`，
+   两边 `<style scoped src="./props-panel.css">`；`m7` 也跟着认这种写法（去 `src` 的那份里找 class）。
 
 **剩下的拆分计划**（按“自包含程度”排序，未做）：
 
 | 目标 | 体量 | 难度 | 备注 |
 |---|---|---|---|
-| 省份属性 / 标记属性面板 | ~120 行模板 + ~150 行处理器 | 中 | 共用 `.province-props/.props-*` 样式（~80 行）—— 两个面板共用一份，建议抽一份 `props-panel.css` 一起 `src` |
 | 画布上的工具栏与色板 | ~700 行模板 | 高 | 引用父组件五六十个状态，拆它要么 `provide/inject`，要么先把状态挪进 store —— 单独一轮 |
 | `<script setup>` 主体（~4,900 行） | 状态 / 计算 / 处理器 / DI 装配 | 高 | 已有一批 `createX({deps})` 工厂沉在 `scenario/*`，继续按同一模式搬（每搬一块都要过 rsrc 那套闸门） |
 

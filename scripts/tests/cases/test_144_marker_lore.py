@@ -233,6 +233,12 @@ RESTUB_HIT = "(() => { window.__vsearchMode = 'hit'; return 'ok'; })()"
 def sub_source_guards():
     bad = []
     code = _code_only(_read(MAP))
+    # 2026-11-06：标记/省份属性面板搬进 `scenario/panels/` —— 源码守卫读合集
+    # （面板的 testid 与“资料”段 pass-through 在面板里；写口仍在 store，判据本身没改）。
+    _pdir = os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels')
+    for _f in sorted(os.listdir(_pdir)):
+        if _f.endswith('.vue'):
+            code += '\n' + _code_only(_read('src/renderer/src/scenario/panels/' + _f))
     lore = _code_only(_read(LORE))
     store = _code_only(_read(STORE_FILE))
     hit = _code_only(_read(HIT))

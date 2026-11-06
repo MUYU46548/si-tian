@@ -412,15 +412,18 @@
   （`provenance` / `落库` / `单源` / `格距` / `回执` / `幂等` / `N3a` / `φ`），第三方产品名
   （Azgaar / FMG）只在**导入向导这类确实需要指路**的地方保留。守门：`unit/test_toolbar_ux.js`（剧本视图）、
   `unit/test_toolbar_ux_planet.js`（行星）、`unit/test_toolbar_ux_area.js`（区域）、
-  `unit/test_toolbar_ux_panels.js`（面板类 **17 个**组件：对象列表 / 节点详情 / 地点簇 / 缩放 / 小地图 /
-  设置 / 项目 / 建筑内部 / 派生 / FMG 模板 / 造陆 / 图层 / **剧本视图整页 + 五个拆出来的子视图**，
-  另含“行内操作不许退回悬停才出现”——口径是
+  `unit/test_toolbar_ux_panels.js`（面板类 **20 个**组件：对象列表 / 节点详情 / 地点簇 / 缩放 / 小地图 /
+  设置 / 项目 / 建筑内部 / 派生 / FMG 模板 / 造陆 / 图层 / **剧本视图整页 + 七个拆出来的子视图**
+  （含省份/标记属性面板），另含“行内操作不许退回悬停才出现”——口径是
   **任何 `*-row-actions`**，不许只写 `.row-actions`，那样 `.pp-row-actions` 同病却全绿；术语白名单
   `jargonAllow` 只给 FmgPanel 放 `FMG`/`Azgaar`、给 ScenarioMap 放 `Azgaar`（.map 导入指路），别顺手扩大）；
-  **`ScenarioMap.vue` 的行数闸门 = ≤6,750**（`unit/test_scenario_map_split.js` m1，历史 8,554 → 6,708）：
+  **`ScenarioMap.vue` 的行数闸门 = ≤6,650**（`unit/test_scenario_map_split.js` m1，历史 8,554 → 6,625）：
   往里加东西之前先想“能不能放进 `scenario/panels/` 或 `scenario/{layers,interaction}`”；
   拆出去的浮层**样式跟着组件走**（m7 守着双源，唯一例外是 `.scenario-map-container.xxx ...` 这种
   容器级规则 —— 它靠父 scope id 命中子组件根节点，搬走反而失效）；
+  **两个组件共用一套样式就写一份 `.css` 让两边 `<style scoped src>`**（省份/标记面板的 `props-panel.css`），
+  别各抄一份；**跨组件抓 DOM 会静默拿到 null**（父组件的 `ref` 指向子组件里的 `<input>` 时），
+  要用 `defineExpose({ focusName })` 让子组件自己负责；
   子视图统一放 `src/renderer/src/scenario/panels/`，`scripts/tests/lib/rsrc.py` 会把该目录并进
   “渲染层源码”，不并进去源码闸门会在搬家当天假红；**闸门跟着代码走但不许放宽**：
   组件里拿到的是 prop（`readOnly` / `baseMaps`）时，源码闸门除了认新写法，

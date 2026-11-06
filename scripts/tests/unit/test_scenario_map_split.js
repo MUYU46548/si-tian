@@ -108,9 +108,9 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,750（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750，随拆分逐轮收紧）', () => {
+  check('m1 SFC 行数 ≤6,650（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6750, `ScenarioMap.vue 实测 ${n} 行，超过 6,750 —— 又往这个文件里堆东西了？`
+    assert(n <= 6650, `ScenarioMap.vue 实测 ${n} 行，超过 6,650 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/ 的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
@@ -127,6 +127,7 @@ function main() {
     const panelDir = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels');
     if (fs.existsSync(panelDir)) {
       for (const f of fs.readdirSync(panelDir)) {
+        if (f.endsWith('.css')) panelCssLines += readText(path.join(panelDir, f)).split('\n').length;
         if (!f.endsWith('.vue')) continue;
         const m = readText(path.join(panelDir, f)).match(/<style scoped>([\s\S]*?)<\/style>/);
         if (m && m[1].trim()) panelCssLines += m[1].split('\n').length;
@@ -215,6 +216,8 @@ function main() {
     ['BasemapSourcePanel.vue', 'BasemapSourcePanel', '.bmsrc-panel'],
     ['ScenarioManagerDialog.vue', 'ScenarioManagerDialog', '.modal-overlay'],
     ['ScenarioListPanel.vue', 'ScenarioListPanel', '.scenario-list-panel'],
+    ['ProvincePropsPanel.vue', 'ProvincePropsPanel', '.province-props'],
+    ['MarkerPropsPanel.vue', 'MarkerPropsPanel', '.marker-props'],
   ];
   /** 取 idx 处那条规则的**选择器**（往前找到上一个 } 或 { 为止） */
   function ruleSelectorAt(css, idx) {
@@ -243,7 +246,15 @@ function main() {
         i = CSS_SRC.indexOf(cls, i + 1);
       }
       const own = readText(p);
-      if (!own.includes(cls)) bad.push(`${file} 自己没写 ${cls}（样式丢了两边都没有）`);
+      // 组件的样式可能内联（`<style scoped>…`）也可能外链（`<style scoped src="./x.css">`）——
+      // 外链时去引用的那份 CSS 里找（省份/标记面板共用 props-panel.css 就是这一种）。
+      let ownCss = own;
+      const srcM = own.match(/<style scoped src="([^"]+)"><\/style>/);
+      if (srcM) {
+        const cssPath = path.resolve(path.dirname(p), srcM[1]);
+        ownCss = fs.existsSync(cssPath) ? readText(cssPath) : '';
+      }
+      if (!ownCss.includes(cls)) bad.push(`${file} 自己（或它 src 的 CSS）没写 ${cls}（样式丢了两边都没有）`);
     }
     assert(!bad.length, bad.join('；'));
     return `${EXTRACTED.length} 个`;

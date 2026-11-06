@@ -140,6 +140,12 @@ def sub_source_guards():
     """
     bad = []
     code = _code_only(_read(MAP))
+    # 2026-11-06：省份属性面板搬进 `scenario/panels/ProvincePropsPanel.vue` —— 源码守卫读合集
+    # （“资料”段的 pass-through 契约在面板里，写口仍在 ScenarioMap；判据本身一字没改）。
+    _pdir = os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels')
+    for _f in sorted(os.listdir(_pdir)):
+        if _f.endswith('.vue'):
+            code += '\n' + _code_only(_read('src/renderer/src/scenario/panels/' + _f))
     lore = _code_only(_read(LORE))
     if 'vaultIndexSearch' not in lore:
         bad.append(f'{LORE} 里没有 vaultIndexSearch（只读索引）')

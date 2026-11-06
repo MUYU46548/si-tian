@@ -55,6 +55,8 @@ const FILES = [
   { file: 'BasemapSourcePanel.vue', dir: 'scenario/panels', desc: '从留底恢复底图（关闭 / 用这份恢复）', min: 2 },
   { file: 'ScenarioManagerDialog.vue', dir: 'scenario/panels', desc: '剧本管理对话框（剧本集 / 剧本行 / 标注 / 新建表单）' },
   { file: 'ScenarioListPanel.vue', dir: 'scenario/panels', desc: '左侧历史剧本列表（换剧本 / 收起展开 / 剧本集 / 看全部 / 管理）' },
+  { file: 'ProvincePropsPanel.vue', dir: 'scenario/panels', desc: '省份属性（收起 / 清成无主 / 设为当前势力）' },
+  { file: 'MarkerPropsPanel.vue', dir: 'scenario/panels', desc: '标记属性（收起 / 删除标记）', min: 2 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;
