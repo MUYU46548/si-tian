@@ -1282,90 +1282,25 @@
         </div>
       </div>
 
-      <!-- ══ 历史剧本站首：剧本列表常驻左栏（2026-10-09）═══════════════════════════
-           暮雨实测“根本找不到在哪选剧本 / 上一剧本·下一剧本语义不清”——根因是
-           “选择历史时期”这件事在司天只有一个**图标按钮藏在工具栏‘更多’里**（打开是弹窗），
-           而 EU4 里它是进游戏就摆在左边的列表。
-           本面板把那份列表提出来常驻，并把“点一条”定义成**选时期**的完整动作：
-           切剧本 + 地图跳到该时期起始年 + 时间轴游标同步（见 selectScenarioAt）。
-           ⚠️ 与“上一剧本/下一剧本”的分工：那两个是**按顺序推进**（翻页），
-              这个列表是**选择**（跳转）—— 两种语义都留，别互相取代。 -->
-      <div class="scenario-list-panel" :class="{ collapsed: !showScenarioList }" data-testid="scenario-list-panel">
-        <div class="slp-head">
-          <span class="slp-title">历史剧本</span>
-          <span class="slp-hint">选一条，地图切到该时期</span>
-          <!-- 换剧本（P0-1，2026-10-17 第三轮）：此前从编辑器回卡片墙只能“返回世界”再点一次
-               “历史剧本”（三步），而“返回”的语义是**离开剧本域**（去世界选择页），
-               不该兼职"选另一个剧本"。这里给一条**一步回到卡片墙**的路。
-               ⚠️ 放在 `.slp-head` 而不是工具栏主行：主行受 P3“恰好 6 个可见控件”闸门管
-               （test_65/test_97），而"换剧本"属于剧本导航、与左侧剧本列表同族。 -->
-          <button class="slp-picker" data-testid="slp-picker" title="回到剧本选择（卡片墙）换一个时期"
-                  @click="$emit('picker')">换剧本</button>
-          <button class="slp-toggle" data-testid="slp-toggle"
-                  :title="showScenarioList ? '收起列表（腾出画布）' : '展开剧本列表'"
-                  @click="showScenarioList = !showScenarioList">
-            <Icon :name="showScenarioList ? 'chevron-left' : 'chevron-right'" :size="13"/>{{ showScenarioList ? ' 收起' : ' 展开' }}
-          </button>
-        </div>
-        <!-- 剧本集切换（2026-10-25）：一组 = 一条独立时间线（同一张底图 + 连续年代）。
-             不切换 = 不同底图/不同时间线的剧本混在一条年份轴上，断层与"上一剧本"语义都会乱。 -->
-        <div v-if="showScenarioList" class="slp-groupbar" data-testid="scenario-group-bar">
-          <span class="slp-group-label">剧本集</span>
-          <select
-            class="slp-group-select"
-            :value="activeGroupId"
-            data-testid="scenario-group-switch"
-            title="一组 = 一条独立时间线。切换后左栏、时间轴、播放与切片导出的“全部剧本”都只取这一组。"
-            @change="switchGroup($event.target.value)"
-          >
-            <option v-for="g in groupOptions" :key="g.id" :value="g.id">
-              {{ g.name }}（{{ groupCount(g.id) }}）
-            </option>
-          </select>
-          <button class="slp-group-manage" data-testid="scenario-group-manage"
-                  title="新建 / 改名 / 删除剧本集，或把某条剧本移到别的组（不删任何剧本）"
-                  @click="showScenarioManager = true">管理</button>
-          <!-- A3：看全部剧本集（只读总览）—— 别的时间线只能看、要改先切过去 -->
-          <button class="slp-group-overview" :class="{ on: showGroupOverview }" data-testid="scenario-group-overview"
-                  :title="showGroupOverview ? '收起总览，只看当前剧本集' : '看全部剧本集：别的时间线只能看，要改先切过去'"
-                  @click="showGroupOverview = !showGroupOverview">{{ showGroupOverview ? '收起' : '看全部' }}</button>
-        </div>
-        <template v-if="showScenarioList">
-          <ScenarioGroupOverview v-if="showGroupOverview" :scenarios="allSortedScenarios"
-                                 :groups="store.scenarioGroups || []" :active-group-id="activeGroupId"
-                                 :selected-id="selectedScenario?.id || ''"
-                                 @select="selectScenarioAt" @switch-group="switchGroup" @msg="statusMsg" />
-          <template v-else>
-          <div v-if="!sortedScenarios.length" class="slp-empty" data-testid="slp-empty">
-            还没有剧本 —— 点下方“新建 / 管理剧本…”创建第一个时期。<br />
-            <b>一个剧本 = 一个时间点的版图快照</b>（谁占了哪些省）。<br />
-            “涂归属”和上方的势力色板都挂在剧本上：没有剧本时它们不出现，不是坏了。
-          </div>
-          <div v-else class="slp-list">
-            <div v-for="(s, i) in sortedScenarios" :key="s.id"
-                 class="slp-item"
-                 :class="{ active: selectedScenario?.id === s.id }"
-                 :data-testid="'scenario-list-item-' + i"
-                 :title="`切到“${s.name}”——地图跳到 ${s.era?.startYear || '?'} 年并同步时间轴`"
-                 @click="selectScenarioAt(s)">
-              <div class="slp-row1">
-                <span class="slp-era">{{ s.era?.roman || '·' }}</span>
-                <span class="slp-name">{{ s.name }}</span>
-              </div>
-              <div class="slp-row2">
-                <span class="slp-years">{{ s.era?.startYear || '?' }} – {{ s.era?.endYear || '?' }}</span>
-                <span class="slp-meta">{{ scenarioMeta(s) }}</span>
-              </div>
-            </div>
-          </div>
-          </template>
-          <button class="slp-manage" data-testid="slp-manage"
-                  title="新建 / 编辑 / 删除剧本，以及管理当前剧本的地名与标记"
-                  @click="showScenarioManager = true">
-            <Icon name="file-text" :size="13"/> 新建 / 管理剧本…
-          </button>
-        </template>
-      </div>
+      <!-- 左侧“历史剧本”列表（2026-11-06 拆成组件：scenario/panels/ScenarioListPanel.vue）
+           显示层归组件；切剧本 / 换组 / 开管理仍走父组件的写口（点一条 emit select）。 -->
+      <ScenarioListPanel
+        v-model:open="showScenarioList"
+        v-model:overview="showGroupOverview"
+        :groups="groupOptions"
+        :group-count="groupCount"
+        :active-group-id="activeGroupId"
+        :scenarios="allSortedScenarios"
+        :shown="sortedScenarios"
+        :scenario-groups="store.scenarioGroups || []"
+        :selected-id="selectedScenario?.id || ''"
+        :scenario-meta="scenarioMeta"
+        @picker="$emit('picker')"
+        @select="selectScenarioAt"
+        @switch-group="switchGroup"
+        @manage="showScenarioManager = true"
+        @msg="statusMsg"
+      />
     </div>
 
     <!-- 状态栏 -->
@@ -1773,6 +1708,8 @@ import BurgEditorPanel from '../scenario/panels/BurgEditorPanel.vue';
 import BasemapSourcePanel from '../scenario/panels/BasemapSourcePanel.vue';
 // 剧本管理对话框（172 行模板 + 样式一起搬走了，2026-11-06 第二批）
 import ScenarioManagerDialog from '../scenario/panels/ScenarioManagerDialog.vue';
+// 左侧“历史剧本”列表（2026-11-06 第三批：显示层归组件，切剧本仍走本组件的 selectScenarioAt）
+import ScenarioListPanel from '../scenario/panels/ScenarioListPanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

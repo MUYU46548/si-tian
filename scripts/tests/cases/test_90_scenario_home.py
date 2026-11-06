@@ -56,6 +56,13 @@ def source_gates():
     # 2026-11-02 N1.5：剧本站首的“点条目 = 选时期”受理函数搬进 scenario/interaction/timeline.js ——
     # 判据把那份源码一起读；实质不变（`selectScenarioAt` 仍只许有一处实现）。
     sc += '\n' + _code_only(_read('src/renderer/src/scenario/interaction/timeline.js'))
+    # 2026-11-06：左侧剧本列表（`scenario-list-panel` / `slp-manage`）拆进 scenario/panels ——
+    # 源码判据读合集，否则拆一次就假红一次（显示契约在面板里，接线仍在 ScenarioMap）。
+    panels_dir = os.path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels')
+    for _f in sorted(os.listdir(panels_dir)):
+        if _f.endswith('.vue'):
+            sc += '\n' + _code_only(_read(os.path.join(
+                'src/renderer/src/scenario/panels', _f)))
 
     # ① 默认工具
     if "const tool = ref('select')" not in sc:

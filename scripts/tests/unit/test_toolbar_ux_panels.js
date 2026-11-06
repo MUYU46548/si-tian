@@ -54,6 +54,7 @@ const FILES = [
   { file: 'BurgEditorPanel.vue', dir: 'scenario/panels', desc: '聚落编辑（关闭 / 保存 / 取消）' },
   { file: 'BasemapSourcePanel.vue', dir: 'scenario/panels', desc: '从留底恢复底图（关闭 / 用这份恢复）', min: 2 },
   { file: 'ScenarioManagerDialog.vue', dir: 'scenario/panels', desc: '剧本管理对话框（剧本集 / 剧本行 / 标注 / 新建表单）' },
+  { file: 'ScenarioListPanel.vue', dir: 'scenario/panels', desc: '左侧历史剧本列表（换剧本 / 收起展开 / 剧本集 / 看全部 / 管理）' },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

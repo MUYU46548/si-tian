@@ -114,6 +114,9 @@ async function main() {
   // ── 源码契约（组件/接线）────────────────────────────────────────────────
   const vue = read('src/renderer/src/components/ScenarioGroupOverview.vue');
   const map = read('src/renderer/src/components/ScenarioMap.vue');
+  // 2026-11-06：左侧剧本列表（含“看全部”总览）拆成 ScenarioListPanel.vue —— 显示契约在这里，
+  // 接线契约仍在 ScenarioMap（开关 ref / 切组 / 传全部剧本）。
+  const panel = read('src/renderer/src/scenario/panels/ScenarioListPanel.vue');
 
   check('b1 🔴 点别组剧本：只给回执，**绝不 emit select**（不然会悄悄换掉编辑目标）', () => {
     const at = vue.indexOf('function onClick(row, s) {');
@@ -137,12 +140,13 @@ async function main() {
     return '3 个 emit / 零 store';
   });
 
-  check('b3 ScenarioMap：总览与当前组列表**二选一**（不许两个世界同时显示）', () => {
+  check('b3 总览与当前组列表**二选一**（不许两个世界同时显示；显示归面板，接线归 ScenarioMap）', () => {
     assert(map.includes('const showGroupOverview = ref(false)'), '没有总览开关');
-    assert(map.includes('<ScenarioGroupOverview v-if="showGroupOverview"'), '没挂总览组件');
-    assert(/<template v-else>\s*\n\s*<div v-if="!sortedScenarios\.length"/.test(map),
+    assert(panel.includes('<ScenarioGroupOverview v-if="overview"'), '没挂总览组件');
+    assert(/<template v-else>\s*\n\s*<div v-if="!shown\.length"/.test(panel),
       '总览打开时当前组列表没有让位（v-else 包裹缺失）');
-    assert(map.includes(':scenarios="allSortedScenarios"'), '总览吃的是当前组（应吃全部剧本）');
+    assert(panel.includes(':scenarios="scenarios"'), '总览吃的是当前组（应吃全部剧本）');
+    assert(map.includes(':scenarios="allSortedScenarios"'), '没把全部剧本传给面板（总览会只看到当前组）');
     assert(map.includes('@switch-group="switchGroup"'), '切组没有接上 switchGroup（切过去才能编辑）');
     return '二选一 + 全部剧本 + 切组';
   });

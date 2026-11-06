@@ -588,108 +588,10 @@
    可收起（只留标题条）。深色系与 .polity-palette / 状态栏同族。
    ⚠️ 按钮必须显式写 color —— 关掉 preflight 后 <button> 会落回浏览器 UA 的
    buttontext（Windows 浅色系统 ≈ 近黑），深底上会黑底黑字。 */
-.scenario-list-panel {
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  bottom: 10px;
-  width: 236px;
-  z-index: 6;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  background: rgba(23, 32, 51, 0.94);
-  border: 1px solid #334155;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
-}
 /* 🔴 2026-10-20：收起 = **整块收起**，不是只藏内容留一个 236×全高的空窗
    （用户实测：“那个侧边栏的收起按钮根本不能正确收起整个侧边栏，只是隐藏剧本内容，
    留下一个空窗占地方”）。收起后只剩一个 40px 的展开按钮，贴着左上角。 */
-.scenario-list-panel.collapsed {
-  width: 40px;
-  bottom: auto;
-  padding: 6px;
-}
-.scenario-list-panel.collapsed .slp-title,
-.scenario-list-panel.collapsed .slp-hint,
-.scenario-list-panel.collapsed .slp-picker {
-  display: none;
-}
-.scenario-list-panel.collapsed .slp-head {
-  padding: 0;
-  border-bottom: 0;
-  justify-content: center;
-}
-.slp-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 0 2px 6px;
-  border-bottom: 1px solid #2b3a52;
-}
-.slp-title { color: #e2e8f0; font-size: 12px; font-weight: 600; }
-.slp-hint { color: #64748b; font-size: 10px; flex: 1; }
-.slp-toggle {
-  background: transparent;
-  border: 1px solid #475569;
-  color: #94a3b8;
-  border-radius: 4px;
-  cursor: pointer;
-  padding: 1px 4px;
-  display: inline-flex;
-  align-items: center;
-}
-.slp-toggle:hover { background: #334155; color: #e2e8f0; }
 /* 换剧本（P0-1）：与收起按钮同族的小控件，常驻剧本列表头部（列表收起时也在） */
-.slp-picker {
-  background: #1e293b;
-  border: 1px solid #475569;
-  color: #cbd5e1;
-  border-radius: 4px;
-  cursor: pointer;
-  padding: 1px 7px;
-  font-size: 10px;
-  font-family: inherit;
-  white-space: nowrap;
-}
-.slp-picker:hover { background: #334155; color: #e2e8f0; border-color: #64748b; }
-.slp-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
-.slp-item {
-  padding: 5px 7px;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  cursor: pointer;
-  background: rgba(30, 41, 59, 0.6);
-}
-.slp-item:hover { background: #334155; border-color: #64748b; }
-.slp-item.active { background: rgba(124, 58, 237, 0.22); border-color: #7c3aed; }
-.slp-row1 { display: flex; align-items: baseline; gap: 5px; }
-.slp-era { color: #94a3b8; font-size: 10px; min-width: 12px; }
-.slp-name { color: #e2e8f0; font-size: 12px; }
-.slp-item.active .slp-name { color: #fff; font-weight: 600; }
-.slp-row2 { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
-.slp-years { color: #94a3b8; font-size: 10px; font-variant-numeric: tabular-nums; }
-.slp-meta { color: #64748b; font-size: 10px; margin-left: auto; }
-.slp-empty { color: #94a3b8; font-size: 11px; line-height: 1.7; padding: 6px 2px; }
-.slp-empty b { color: #cbd5e1; }
-.slp-manage {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  background: #1e293b;
-  border: 1px solid #475569;
-  color: #cbd5e1;
-  border-radius: 6px;
-  padding: 5px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.slp-manage:hover { background: #334155; }
 
 /* “还没有底图”空态提示：居中、不拦事件（绝不挡住画布交互） */
 .scenario-empty-hint {
@@ -1173,55 +1075,7 @@
 
 
 /* 剧本集（2026-10-25）：左栏切换条 + 管理对话框里的组表 */
-.slp-groupbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px 6px;
-  border-bottom: 1px solid #263449;
-}
-.slp-group-label { font-size: 10px; color: #94a3b8; flex: none; }
-.slp-group-select {
-  flex: 1 1 auto;
-  min-width: 0;
-  background: #1e293b;
-  border: 1px solid #475569;
-  color: #e2e8f0;
-  border-radius: 5px;
-  font-size: 11px;
-  padding: 2px 4px;
-  font-family: inherit;
-}
-.slp-group-manage {
-  flex: none;
-  background: #1e293b;
-  border: 1px solid #475569;
-  color: #cbd5e1;
-  border-radius: 5px;
-  padding: 2px 6px;
-  font-size: 10.5px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.slp-group-manage:hover { background: #334155; color: #e2e8f0; }
 /* A3：看全部剧本集（只读总览）——与「管理」同族，打开时高亮成"正在看全部" */
-.slp-group-overview {
-  flex: none;
-  background: #1e293b;
-  border: 1px solid #475569;
-  color: #cbd5e1;
-  border-radius: 5px;
-  padding: 2px 6px;
-  font-size: 10.5px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.slp-group-overview:hover { background: #334155; color: #e2e8f0; }
-.slp-group-overview.on {
-  background: rgba(93, 151, 187, 0.28);
-  border-color: rgba(93, 151, 187, 0.65);
-  color: #dbeafe;
-}
 
 
 /* 剧本条：编辑按钮与删除同形（2026-10-07） */

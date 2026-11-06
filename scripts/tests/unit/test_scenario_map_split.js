@@ -108,23 +108,37 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,800（判据 ≤8,500；8,554 → 6,900 → 6,800，随拆分逐轮收紧）', () => {
+  check('m1 SFC 行数 ≤6,750（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750，随拆分逐轮收紧）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6800, `ScenarioMap.vue 实测 ${n} 行，超过 6,800 —— 又往这个文件里堆东西了？`
+    assert(n <= 6750, `ScenarioMap.vue 实测 ${n} 行，超过 6,750 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/ 的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
 
-  check('m2 样式块必须是外链（<style scoped src>），且 CSS 文件真的在', () => {
+  check('m2 样式块必须是外链（<style scoped src>）；主表 + 子组件的样式总量不许缩水', () => {
     assert(SRC.includes('<style scoped src="./scenario-map.css"></style>'),
       'ScenarioMap.vue 没有 `<style scoped src="./scenario-map.css"></style>` —— 样式块又被写回 SFC 了');
     assert(fs.existsSync(CSS), `找不到 ${CSS}`);
     const n = CSS_SRC.split('\n').length;
-    assert(n >= 1200, `scenario-map.css 只有 ${n} 行，像是被截断了（原来 1,639 行样式）`);
+    // 2026-11-06：样式开始按组件拆分，主表的行数会**合法地**变少 ——
+    // 所以判据从“主表 ≥1200 行”改成“主表 + 拆出去组件的样式总量 ≥ 原始 1,639 行”，
+    // 这样“搬走了”和“搬丢了”才分得开。
+    let panelCssLines = 0;
+    const panelDir = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels');
+    if (fs.existsSync(panelDir)) {
+      for (const f of fs.readdirSync(panelDir)) {
+        if (!f.endsWith('.vue')) continue;
+        const m = readText(path.join(panelDir, f)).match(/<style scoped>([\s\S]*?)<\/style>/);
+        if (m && m[1].trim()) panelCssLines += m[1].split('\n').length;
+      }
+    }
+    const total = n + panelCssLines;
+    assert(total >= 1639,
+      `样式总量只有 ${total} 行（主表 ${n} + 子组件 ${panelCssLines}），少于原始 1,639 —— 有样式搬丢了`);
     // 反面对照：SFC 里不许再留内联样式内容
     const inline = SRC.match(/<style scoped>([\s\S]*?)<\/style>/);
     assert(!inline || !inline[1].trim(), 'ScenarioMap.vue 里还有一个带内容的内联 <style scoped> 块（双源）');
-    return `${n} 行 CSS`;
+    return `${n} 行主表 + ${panelCssLines} 行子组件 = ${total}`;
   });
 
   check('m3 CSS 里该有的骨架选择器都在（不是空文件/搬漏）', () => {
@@ -190,22 +204,44 @@ function main() {
     return `${WRAPS.length} 个各 1 份`;
   });
 
-  // 2026-11-06 拆分第一批：三个自包含浮层搬成独立组件（模板 + 样式一起走）
-  // 判据 = **搬走了就是搬走了**：组件文件得在、ScenarioMap 里得是用组件标签引用、
-  //        老 class 不许还留在 scenario-map.css（留着就是双源，改一处另一处不变）。
+  // 2026-11-06：样式开始按组件拆。判据 = **搬走了就是搬走了**：组件文件得在、
+  // ScenarioMap 里得用组件标签引用、老 class 不许还留在 scenario-map.css（留着就是双源）。
+  // ⚠ 唯一允许留下的形态：**容器级**选择器（`.scenario-map-container.immersive .xxx`）——
+  //   它挂在父组件的根上，子组件根节点会继承父 scope id，搬进子组件反而会让它失效
+  //   （沉浸模式隐藏左栏就是这一条）。所以这类位置放行，别的一律算双源。
   const EXTRACTED = [
     ['LayerLockPanel.vue', 'LayerLockPanel', '.layer-lock-panel'],
     ['BurgEditorPanel.vue', 'BurgEditorPanel', '.burg-editor-panel'],
     ['BasemapSourcePanel.vue', 'BasemapSourcePanel', '.bmsrc-panel'],
     ['ScenarioManagerDialog.vue', 'ScenarioManagerDialog', '.modal-overlay'],
+    ['ScenarioListPanel.vue', 'ScenarioListPanel', '.scenario-list-panel'],
   ];
-  check('m7 拆出去的三个浮层：组件文件在 + 被组件标签引用 + 老 class 不在 CSS 里（防双源）', () => {
+  /** 取 idx 处那条规则的**选择器**（往前找到上一个 } 或 { 为止） */
+  function ruleSelectorAt(css, idx) {
+    let start = idx;
+    while (start > 0) {
+      const ch = css[start - 1];
+      if (ch === '}' || ch === '{' || (ch === ';' && css.slice(start - 2, start) === '*/')) break;
+      start--;
+    }
+    return css.slice(start, idx).split('\n').pop().trim();
+  }
+  check('m7 拆出去的浮层：组件文件在 + 被组件标签引用 + 老样式不在主表里（防双源）', () => {
     const bad = [];
     for (const [file, tag, cls] of EXTRACTED) {
       const p = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', file);
       if (!fs.existsSync(p)) { bad.push(`${file} 不存在（该在 scenario/panels/ 下）`); continue; }
       if (!new RegExp(`<${tag}[\\s>]`).test(SRC)) bad.push(`ScenarioMap.vue 没有引用 <${tag}>`);
-      if (CSS_SRC.includes(cls)) bad.push(`scenario-map.css 里还留着 ${cls}（样式双源：该跟着组件走）`);
+      // 主表里还留着这个 class 吗？（容器级规则除外）
+      let i = CSS_SRC.indexOf(cls);
+      while (i >= 0) {
+        const sel = ruleSelectorAt(CSS_SRC, i);
+        if (!sel.startsWith('.scenario-map-container')) {
+          bad.push(`scenario-map.css 里还留着 ${cls} 的样式（${sel}）—— 双源，该跟着组件走`);
+          break;
+        }
+        i = CSS_SRC.indexOf(cls, i + 1);
+      }
       const own = readText(p);
       if (!own.includes(cls)) bad.push(`${file} 自己没写 ${cls}（样式丢了两边都没有）`);
     }

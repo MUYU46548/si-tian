@@ -51,6 +51,12 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 const SRC = {};
 for (const [k, p] of Object.entries(F)) SRC[k] = readText(p);
+// 2026-11-06：ScenarioMap 的左侧剧本列表 / 剧本管理对话框拆进了 `scenario/panels/`。
+// 判据里“这段文案/这个 testid 在不在”必须看**合集**，否则拆一次就假红一次。
+SRC.scenarioPanels = fs.readdirSync(P('scenario', 'panels'))
+  .filter((f) => f.endsWith('.vue'))
+  .map((f) => readText(P('scenario', 'panels', f)))
+  .join('\n');
 
 // ── 判据实现（每条都写成“对一段文本返回问题清单”，供反向探针复用同一份逻辑）──
 
@@ -159,7 +165,7 @@ async function main() {
   });
 
   await check('#2 涂归属：缺剧本时给出依赖与两个直达入口', () => {
-    const bad = problemsScenarioMap(SRC.scenarioMap);
+    const bad = problemsScenarioMap(SRC.scenarioMap + '\n' + SRC.scenarioPanels);
     assert(bad.length === 0, bad.join('；'));
     return '有提示节点 + 选剧本 / 新建剧本两条路';
   });
