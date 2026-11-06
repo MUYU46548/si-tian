@@ -3,7 +3,7 @@
     <div class="dgen-head">
       <strong>文化 / 宗教 / 势力派生</strong>
       <span class="dgen-sub">逐格文化区 + 省份摘要 + 按文化分组建势力（可复现）</span>
-      <button class="dgen-x" title="收起面板" @click="$emit('close')"><Icon name="x" :size="14"/></button>
+      <button class="dgen-x" title="收起面板" @click="$emit('close')">×</button>
     </div>
 
     <div class="dgen-rows">
@@ -15,7 +15,7 @@
           <input class="dgen-num" type="number" :min="f.min" :max="f.max" :step="f.step"
                  :value="params[f.key]" data-testid="dgen-seed-num" @change="setNum(f.key, $event)">
           <button class="dgen-dice" title="换一个种子（确定性推进）" data-testid="dgen-dice" @click="dice">
-            <Icon name="refresh-cw" :size="13"/>
+            <Icon name="refresh-cw" :size="13"/> 换个种子
           </button>
         </template>
         <template v-else>
@@ -161,7 +161,7 @@ defineExpose({ refresh });
 .dgen-row input[type='range'] { width: 100%; accent-color: #a78bfa; }
 .dgen-num { width: 76px; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 .dgen-val { min-width: 24px; text-align: right; color: #94a3b8; font-variant-numeric: tabular-nums; }
-.dgen-dice { border: 1px solid #475569; background: transparent; color: #cbd5e1; border-radius: 4px; cursor: pointer; display: inline-flex; padding: 2px 5px; }
+.dgen-dice { border: 1px solid #475569; background: transparent; color: #cbd5e1; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; white-space: nowrap; padding: 2px 5px; }
 .dgen-preview { display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; background: rgba(167, 139, 250, 0.08); border: 1px solid rgba(167, 139, 250, 0.35); border-radius: 5px; }
 .dgen-line { line-height: 1.6; }
 .dgen-dim { color: #94a3b8; font-size: 11px; }

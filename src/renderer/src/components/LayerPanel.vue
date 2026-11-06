@@ -19,7 +19,7 @@
           :class="{ locked: layer.locked }"
           :title="layer.locked ? '解锁图层' : '锁定图层（不可编辑）'"
           @click="layers.toggleLayerLock(currentView, layer.id)"
-        ><Icon :name="layer.locked ? 'lock' : 'unlock'" :size="13"/></button>
+        ><Icon :name="layer.locked ? 'lock' : 'unlock'" :size="13"/> {{ layer.locked ? '已锁定' : '锁定' }}</button>
       </div>
     </div>
   </PanelShell>
@@ -70,13 +70,19 @@ const currentLayers = computed(() => layers.getViewLayers(currentView.value));
 
 .lock-btn {
   background: none;
-  border: none;
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, 0.35));
+  border-radius: 3px;
   cursor: pointer;
   font-size: 11px;
-  padding: 4px;
-  opacity: 0.5;
+  padding: 1px 5px;
+  opacity: 0.7;
   color: var(--text-tertiary);
-  line-height: 1;
+  line-height: 1.4;
+  /* 2026-11-05：从纯锁图标改成“图标 + 锁定/已锁定”（纯图标只有 title，要悬停才知道）。 */
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
 }
 
 .lock-btn:hover {

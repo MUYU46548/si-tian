@@ -3,7 +3,7 @@
     <div class="fmg-head">
       <strong>FMG 模板地形</strong>
       <span class="fmg-sub">14 套 Azgaar 模板（大陆 / 群岛 / 环礁 / 地中海…）→ 直接出高度图</span>
-      <button class="fmg-x" title="收起面板" @click="$emit('close')"><Icon name="x" :size="14"/></button>
+      <button class="fmg-x" title="收起面板" @click="$emit('close')">×</button>
     </div>
 
     <div class="fmg-rows">
@@ -17,7 +17,7 @@
         <label>种子</label>
         <input type="number" class="fmg-num" min="1" max="999999" v-model.number="params.seed" data-testid="fmg-seed" @change="runPreview" />
         <button class="fmg-dice" title="换一个种子（确定性推进，可复现）" data-testid="fmg-dice" @click="dice">
-          <Icon name="refresh-cw" :size="13"/>
+          <Icon name="refresh-cw" :size="13"/> 换个种子
         </button>
       </div>
       <div class="fmg-row">
@@ -217,7 +217,7 @@ if (props.baseMapKey || props.planetId) runPreview();
 .fmg-row select { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 .fmg-num { width: 76px; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 .fmg-val { min-width: 34px; text-align: right; color: #94a3b8; font-variant-numeric: tabular-nums; }
-.fmg-dice { border: 1px solid #475569; background: transparent; color: #cbd5e1; border-radius: 4px; cursor: pointer; display: inline-flex; padding: 2px 5px; }
+.fmg-dice { border: 1px solid #475569; background: transparent; color: #cbd5e1; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; white-space: nowrap; padding: 2px 5px; }
 .fmg-check { display: flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: 12px; cursor: pointer; }
 .fmg-check input[type='checkbox'] { accent-color: #38bdf8; }
 .fmg-cands-head { display: flex; align-items: center; gap: 8px; color: #94a3b8; }

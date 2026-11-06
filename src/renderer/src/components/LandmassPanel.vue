@@ -3,7 +3,7 @@
     <div class="lgen-head">
       <strong>造陆</strong>
       <span class="lgen-sub">参数生成大陆轮廓 → 用现有铺底切成省（一条撤销）</span>
-      <button class="lgen-x" title="收起面板" @click="$emit('close')"><Icon name="x" :size="14"/></button>
+      <button class="lgen-x" title="收起面板" @click="$emit('close')">×</button>
     </div>
 
     <div class="lgen-presets">
@@ -32,7 +32,7 @@
           <input class="lgen-num" type="number" :min="f.min" :max="f.max" :step="f.step"
                  :value="params[f.key]" data-testid="lgen-seed-num" @change="setNum(f.key, $event)">
           <button class="lgen-dice" title="换一个种子（确定性推进）" data-testid="lgen-dice" @click="dice">
-            <Icon name="refresh-cw" :size="13"/>
+            <Icon name="refresh-cw" :size="13"/> 换个种子
           </button>
         </template>
         <template v-else-if="f.key === 'provinceCount'">
@@ -402,7 +402,7 @@ defineExpose({ summary: () => describeLandParams(snapshot()) });
 .lgen-row select { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 .lgen-num { width: 76px; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 .lgen-val { min-width: 42px; text-align: right; color: #94a3b8; font-variant-numeric: tabular-nums; }
-.lgen-dice { border: 1px solid #475569; background: transparent; color: #cbd5e1; border-radius: 4px; cursor: pointer; display: inline-flex; padding: 2px 5px; }
+.lgen-dice { border: 1px solid #475569; background: transparent; color: #cbd5e1; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; white-space: nowrap; padding: 2px 5px; }
 .lgen-cands-head { display: flex; align-items: center; gap: 8px; color: #94a3b8; }
 .lgen-mini { border: 1px solid #475569; background: transparent; color: #cbd5e1; border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
 .lgen-cands { display: flex; gap: 8px; flex-wrap: wrap; }

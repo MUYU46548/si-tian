@@ -31,13 +31,13 @@
 | 行星视图（真机） | `python scripts/tests/tools/shot_planet_ux.py` | **18/18** + 截图 `build/planet-ux/dock.png`（工具坞 9 条 + 对象面板 9 条） |
 | **区域视图（真机）** | `python scripts/tests/tools/shot_planet_ux.py --view area` | **10/10** + 截图 `build/planet-ux/area.png`（19 个按钮全有字 / 无一被裁 / 栏高 39px） |
 | 区域视图（源码） | `node scripts/tests/unit/test_toolbar_ux_area.js` | 4/4 |
-| **面板类（2026-11-05 晚）** | `node scripts/tests/unit/test_toolbar_ux_panels.js` | **28/28**：ObjectListPanel / NodeDetailPanel / ClusterPanel / ZoomControls / EagleEye / **SettingsPanel / ProjectPanel / InteriorView** 每个按钮都有名字 + 可见文字零术语 + 行内操作不许退回"悬停才出现"（口径 = 任何 `*-row-actions`），带四条负向探针 |
+| **面板类（2026-11-05 晚）** | `node scripts/tests/unit/test_toolbar_ux_panels.js` | **41/41**：12 个面板组件（对象列表 / 节点详情 / 地点簇 / 缩放 / 小地图 / 设置 / 项目 / 建筑内部 / 派生 / FMG 模板 / 造陆 / 图层）每个按钮都有名字 + 可见文字零术语 + 行内操作不许退回"悬停才出现"（口径 = 任何 `*-row-actions`），带五条负向探针 |
 
 四张判据都带**负向探针**（删按钮文字 / 塞“落库”必须红），改判据时别把探针删了。
 
 ## 四、没做完（按优先级）
 
-### A. UI 扫尾（起点 157 → **89** 个纯图标按钮 / 36 组件；2026-11-05 晚清了两批）
+### A. UI 扫尾（起点 157 → **79** 个纯图标按钮 / 34 组件；2026-11-05 晚清了三批）
 
 `python build/_count_icon_buttons.py` 可复算（启发式，是**上界**）。
 
@@ -59,23 +59,31 @@
 | ProjectPanel | 面板头刷新图标 → **“刷新”**；实体行的铅笔/垃圾桶 → **“改名 / 删除”**；`.icon-btn` 从无边框图标位改成小按钮（有边框有内边距）；**`.pp-row-actions` 也从 `opacity:0` 改成 0.45 常显** —— 原来那条闸门正则只认 `.row-actions`，`.pp-row-actions` 同病却没被扫到（已把口径放宽到 `*-row-actions` 并加负向探针） |
 | InteriorView | 家具浮窗的铅笔 → **“编辑”** |
 
-剩下 83 个里 39 个在 PlanetMap（21）/ ScenarioMap（11）/ AreaMap（7）—— 绝大多数是**色块、`×` 关闭、缩放 `−/＋`**，已白名单；其余 32 个组件各 1–2 个，同病同方。
+**2026-11-05 夜里第三批（83 → 79，−4；34 个组件）**—— 三块“参数生成面板”与图层锁：
 
-闸门：`node scripts/tests/unit/test_toolbar_ux_panels.js`（**28/28**，8 个面板组件，含“行内操作不许退回 opacity: 0”这条）。
+| 组件 | 改法 |
+|---|---|
+| DerivePanel / FmgPanel / LandmassPanel | 换种子的骰子/刷新图标 → **“换个种子”**；三个面板头的收尾 `<Icon name="x">` 改成字面量 `×`（视觉不变，但闸门 AST 认得它是“谁都认得的符号”，不然它读到的是一段空文字） |
+| LayerPanel | 锁图标 → **“锁定 / 已锁定”**（`.lock-btn` 从无边框图标位改成小按钮） |
+| 闸门 | `FILES` 从 8 个组件扩到 **12 个**；新增 `min`（防判据扫空，只给真的只有一个按钮的 LayerPanel 写 1）与 `jargonAllow`（**只**给 FmgPanel 放 `FMG`/`Azgaar` 两个词，理由写在代码注释里 —— 那是“选哪套模板”的指路处，AGENTS 红线允许；另配一条负向探针“白名单外的词照样红”） |
+
+剩下 79 个里 39 个在 PlanetMap（21）/ ScenarioMap（11）/ AreaMap（7）—— 绝大多数是**色块、`×` 关闭、缩放 `−/＋`**，已白名单；其余 29 个组件各 1–2 个。
+⚠ **ScenarioMap 浮层里还有约 10 个真·图标按钮**（剧本行的编辑/删除、注释删除、图层锁、几处收起）：动它们要连带改 `scenario-map.css` 并且**可能撞像素基线**（`drill_visual_suite` 那套），所以单独排一轮，不要顺手改。
+
+闸门：`node scripts/tests/unit/test_toolbar_ux_panels.js`（**41/41**，12 个面板组件，含“行内操作不许退回 opacity: 0”与“术语白名单不许放宽”）。
 
 | 组件 | 纯图标 / 全部 | 说明 |
 |---|---|---|
 | PlanetMap | 21 / 161 | 剩下几乎都是色块 / 关闭 × / 缩放，已有白名单 |
-| ScenarioMap | 11 / 137 | 都在浮层里（工具栏已清） |
+| ScenarioMap | 11 / 137 | 都在浮层里（工具栏已清）；**这一块要单独排一轮**，见上面的 ⚠ |
 | AreaMap | 7 / 59 | 色块 + 标记图标选择器（白名单） |
-| SettingsPanel | 3 / 32 | 剩 3 个都是 `×` 关闭 |
-| InteriorView | 3 / 33 | 同上 |
+| SettingsPanel / InteriorView | 各 3 | 剩的都是 `×` 关闭（白名单） |
 | ProjectPanel | **0 / 22** | 第二批清完 |
-| 其余 32 个组件 | 各 1–2 | 逐个看（多数是 `×` 关闭 / 折叠 ▾） |
+| 其余 29 个组件 | 各 1–2 | 逐个看（多数是 `×` 关闭 / 折叠 ▾ / 色块） |
 
-**下一块建议**：其余 32 个组件各 1–2 个（多数是 `×`/`▾`，属白名单）—— 想继续就按“补 2–3 字 →
-把组件名加进 `test_toolbar_ux_panels.js` 的 `FILES` 表（一行）”的节奏推。注意那条闸门对每个组件
-断言 `buttons.length >= 3`（防“判据扫空”），只有 1–2 个按钮的组件要先想清楚门槛怎么给。
+**下一块建议**：其余 29 个组件各 1–2 个（多数属白名单）—— 想继续就按“补 2–3 字 →
+把组件名加进 `test_toolbar_ux_panels.js` 的 `FILES` 表（一行）”的节奏推。闸门默认要求每个组件
+`buttons.length >= 3`（防“判据扫空”）；真的只有 1 个按钮的组件，写 `min: 1` 并在注释里说明。
 
 ✅ **面板类的真机口已经补上**（2026-11-05 夜）：
 `python scripts/tests/tools/shot_planet_ux.py` 现在 18/18 —— 开对象面板后量“每行真的有内容 /

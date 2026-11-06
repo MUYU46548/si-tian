@@ -26,6 +26,9 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const { parse } = require(path.join(ROOT, 'node_modules', '@vue', 'compiler-sfc'));
 
 // 受闸门的组件（加新面板就往这里加一行；路径相对 components/）
+// `min` = 这个组件至少要有几个按钮（默认 3）。只给“真的只有一个按钮”的组件写小值 ——
+// 这条断言存在的理由是**防止判据扫空**（模板改了结构、一个按钮都没扫到还全绿），
+// 不是为了凑数；写 1 表示“我确认它模板里就只有这一个动作按钮”。
 const FILES = [
   { file: 'ObjectListPanel.vue', desc: '对象列表（地形/标记/路线/文本的行内操作）' },
   { file: 'NodeDetailPanel.vue', desc: '节点详情（解绑/删除航道/移除标签/新建/聚落编辑）' },
@@ -35,6 +38,13 @@ const FILES = [
   { file: 'SettingsPanel.vue', desc: '设置面板（标记类型排序/删除、预设、数据操作）' },
   { file: 'ProjectPanel.vue', desc: '项目面板（刷新 / 实体改名 / 删除）' },
   { file: 'InteriorView.vue', desc: '建筑内部（楼层、工具栏、底图、家具弹窗）' },
+  { file: 'DerivePanel.vue', desc: '文化/宗教/势力派生（换个种子、生成、收起）' },
+  // ⚠ FMG / Azgaar 按 AGENTS.md 的红线是“只在确实需要指路的地方保留”，
+  //   这块面板就是那个地方（用户要选“哪套模板”、要知道地形从哪个生态来），
+  //   所以只给这一个文件开白名单，**不是给术语松绑**（别的词照样红）。
+  { file: 'FmgPanel.vue', desc: 'FMG 模板地形（换个种子、候选缩略图、生成）', jargonAllow: ['FMG', 'Azgaar'] },
+  { file: 'LandmassPanel.vue', desc: '造陆（预设、换个种子、候选缩略图、生成）' },
+  { file: 'LayerPanel.vue', desc: '图层（锁定 / 已锁定）', min: 1 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;
@@ -143,10 +153,13 @@ function nakedButtons(buttons) {
   }).map((b) => `L${b.line}“${b.text}”(${b.cls.trim() || '无 class'})`);
 }
 
-/** 判据 2：可见文字零工程术语 */
-function jargonHits(strings) {
+/** 判据 2：可见文字零工程术语
+ * `allow` = 这个文件里**允许出现**的术语标签（默认空 = 一个都不许）。
+ * 只有 AGENTS 红线点名“确实需要指路”的地方才给白名单，且必须一个词一条地写清理由。 */
+function jargonHits(strings, allow) {
+  const ok = new Set(allow || []);
   return strings
-    .filter((s) => JARGON.some((w) => w.re.test(s.text)))
+    .filter((s) => JARGON.some((w) => !ok.has(w.label) && w.re.test(s.text)))
     .map((s) => `L${s.line}“${s.text.slice(0, 40)}”`);
 }
 
@@ -195,16 +208,19 @@ for (const item of FILES) {
   const visible = visibleStrings(ast);
 
   run(`${item.file}：每个按钮都有名字（${item.desc}）`, () => {
-    assert(buttons.length >= 3, `只找到 ${buttons.length} 个按钮 —— 判据扫空等于没测`);
+    const min = item.min || 3;
+    assert(buttons.length >= min, `只找到 ${buttons.length} 个按钮 —— 判据扫空等于没测`);
     const bad = nakedButtons(buttons);
     assert(bad.length === 0, `还有只有图标的按钮：${bad.slice(0, 8).join(' | ')}`);
     return `${buttons.length} 个按钮：都有中文 / 插值 / 白名单`;
   });
 
   run(`${item.file}：可见文字零工程术语`, () => {
-    const bad = jargonHits(visible);
+    const bad = jargonHits(visible, item.jargonAllow);
     assert(bad.length === 0, `还有工程术语：${bad.slice(0, 6).join(' | ')}`);
-    return `${visible.length} 处可见文字，0 命中`;
+    const allow = item.jargonAllow && item.jargonAllow.length
+      ? `（本文件白名单：${item.jargonAllow.join(' / ')}）` : '';
+    return `${visible.length} 处可见文字，0 命中${allow}`;
   });
 
   run(`${item.file}：行内操作不许“悬停才出现”（opacity: 0）`, () => {
@@ -234,6 +250,13 @@ run('负向探针：带前缀的 .pp-row-actions 也要抓住（口径不许只�
   const hits = hoverOnlyActions('.pp-row-actions { margin-left: auto; opacity: 0; }');
   assert(hits.length === 1, '带前缀的 row-actions 逃过了判据');
   return '抓到了';
+});
+run('负向探针：术语白名单只放它列的那个词，别的词照样红', () => {
+  assert(jargonHits([{ text: 'FMG 模板地形', line: 1 }], ['FMG', 'Azgaar']).length === 0,
+    '白名单没生效');
+  assert(jargonHits([{ text: '改完立即落库', line: 2 }], ['FMG', 'Azgaar']).length === 1,
+    '白名单把别的术语一起放过了 —— 等于给术语松绑');
+  return '只放白名单里的词';
 });
 
 const bad = results.filter((r) => !r.ok);
