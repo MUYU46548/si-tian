@@ -45,6 +45,14 @@ const FILES = [
   { file: 'FmgPanel.vue', desc: 'FMG 模板地形（换个种子、候选缩略图、生成）', jargonAllow: ['FMG', 'Azgaar'] },
   { file: 'LandmassPanel.vue', desc: '造陆（预设、换个种子、候选缩略图、生成）' },
   { file: 'LayerPanel.vue', desc: '图层（锁定 / 已锁定）', min: 1 },
+  // 剧本视图整页（137 个按钮）。这一条是 2026-11-05 补的：`item-edit` / `item-delete` /
+  // `anno-del` / `layer-lock-btn` / 五个浮层的 `×` 当时全是纯图标，只有 title。
+  { file: 'ScenarioMap.vue', desc: '剧本视图（剧本行编辑/删除、注释删除、属性面板、图层锁）', jargonAllow: ['Azgaar'] },
+  // 2026-11-06 从 ScenarioMap 拆出来的三个浮层（各自模板里就 2–3 个按钮，min 按实际情况写）。
+  // 它们放在 `scenario/panels/`（本视图自己的子视图），不是 components/。
+  { file: 'LayerLockPanel.vue', dir: 'scenario/panels', desc: '图层锁定（关闭 / 锁定 / 已锁定）', min: 2 },
+  { file: 'BurgEditorPanel.vue', dir: 'scenario/panels', desc: '聚落编辑（关闭 / 保存 / 取消）' },
+  { file: 'BasemapSourcePanel.vue', dir: 'scenario/panels', desc: '从留底恢复底图（关闭 / 用这份恢复）', min: 2 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;
@@ -195,7 +203,7 @@ function run(name, fn) {
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 for (const item of FILES) {
-  const file = path.join(ROOT, 'src', 'renderer', 'src', 'components', item.file);
+  const file = path.join(ROOT, 'src', 'renderer', 'src', item.dir || 'components', item.file);
   const src = readText(file);
   const parsed = parse(src, { filename: item.file });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;

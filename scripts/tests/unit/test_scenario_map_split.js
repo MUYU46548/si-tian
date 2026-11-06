@@ -108,9 +108,10 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤7,000（判据 ≤8,500；本轮从 8,554 降到 6,900 级）', () => {
+  check('m1 SFC 行数 ≤6,900（判据 ≤8,500；本轮从 8,554 → 6,900 级，并随拆分逐轮收紧）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 7000, `ScenarioMap.vue 实测 ${n} 行，超过 7,000 —— 样式/逻辑又涨回去了吧？`);
+    assert(n <= 6900, `ScenarioMap.vue 实测 ${n} 行，超过 6,900 —— 又往这个文件里堆东西了？`
+      + '新东西请进子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
 
@@ -187,6 +188,28 @@ function main() {
       .map(([w, n, c]) => `${w}(${n}) × ${c}`);
     assert(!bad.length, `浮层包装节点重复或缺失：${bad.join('，')} —— 模板里同一块面板只许有一份`);
     return `${WRAPS.length} 个各 1 份`;
+  });
+
+  // 2026-11-06 拆分第一批：三个自包含浮层搬成独立组件（模板 + 样式一起走）
+  // 判据 = **搬走了就是搬走了**：组件文件得在、ScenarioMap 里得是用组件标签引用、
+  //        老 class 不许还留在 scenario-map.css（留着就是双源，改一处另一处不变）。
+  const EXTRACTED = [
+    ['LayerLockPanel.vue', 'LayerLockPanel', '.layer-lock-panel'],
+    ['BurgEditorPanel.vue', 'BurgEditorPanel', '.burg-editor-panel'],
+    ['BasemapSourcePanel.vue', 'BasemapSourcePanel', '.bmsrc-panel'],
+  ];
+  check('m7 拆出去的三个浮层：组件文件在 + 被组件标签引用 + 老 class 不在 CSS 里（防双源）', () => {
+    const bad = [];
+    for (const [file, tag, cls] of EXTRACTED) {
+      const p = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', file);
+      if (!fs.existsSync(p)) { bad.push(`${file} 不存在（该在 scenario/panels/ 下）`); continue; }
+      if (!new RegExp(`<${tag}[\\s>]`).test(SRC)) bad.push(`ScenarioMap.vue 没有引用 <${tag}>`);
+      if (CSS_SRC.includes(cls)) bad.push(`scenario-map.css 里还留着 ${cls}（样式双源：该跟着组件走）`);
+      const own = readText(p);
+      if (!own.includes(cls)) bad.push(`${file} 自己没写 ${cls}（样式丢了两边都没有）`);
+    }
+    assert(!bad.length, bad.join('；'));
+    return '3 个';
   });
 
   const failed = results.filter((r) => !r.ok);

@@ -1304,7 +1304,7 @@
           <button class="slp-toggle" data-testid="slp-toggle"
                   :title="showScenarioList ? '收起列表（腾出画布）' : '展开剧本列表'"
                   @click="showScenarioList = !showScenarioList">
-            <Icon :name="showScenarioList ? 'chevron-left' : 'chevron-right'" :size="13"/>
+            <Icon :name="showScenarioList ? 'chevron-left' : 'chevron-right'" :size="13"/>{{ showScenarioList ? ' 收起' : ' 展开' }}
           </button>
         </div>
         <!-- 剧本集切换（2026-10-25）：一组 = 一条独立时间线（同一张底图 + 连续年代）。
@@ -1463,7 +1463,7 @@
     <div v-if="selectedProvince && showProps" class="province-props">
       <div class="props-header">
         <input ref="provNameInput" :value="selectedProvince.name || ''" @change="onProvinceNameChange" class="props-name" />
-        <button @click="showProps = false" class="props-close"><Icon name="x" :size="13"/></button>
+        <button @click="showProps = false" class="props-close" title="收起省份面板"><Icon name="x" :size="13"/> ×</button>
       </div>
       <!-- 归属：2026-10-21 用户实测“看不到归属 / 看不到省份详情”。
            归属按**时间轴当前日期**显示（与地图着色同一口径 `ownerPolityForProvince`），
@@ -1548,7 +1548,7 @@
         <input :value="selectedMarker.name || ''" class="props-name" placeholder="标记名称"
                data-testid="marker-name" @change="onMarkerNameChange" />
         <button class="props-close" data-testid="marker-close" title="收起面板（标记本身不动）"
-                @click="showMarkerPanel = false"><Icon name="x" :size="13"/></button>
+                @click="showMarkerPanel = false"><Icon name="x" :size="13"/> ×</button>
       </div>
       <div class="props-row">
         <label>类型：</label>
@@ -1640,10 +1640,10 @@
             <button class="item-edit" data-testid="scenario-edit" :disabled="store.isReadOnly"
                     :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
                       : '编辑剧本信息（名称 / 罗马数字 / 时代标签 / 起止年 / 描述）—— 不改动已录的省份归属与易主日期'"
-                    @click="startEditScenario(s)"><Icon name="edit" :size="15"/></button>
+                    @click="startEditScenario(s)"><Icon name="edit" :size="15"/> 编辑</button>
             <button class="item-delete" data-testid="scenario-delete" :disabled="store.isReadOnly"
                     :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目') : '删除剧本'"
-                    @click="deleteScenario(s)"><Icon name="trash" :size="15"/></button>
+                    @click="deleteScenario(s)"><Icon name="trash" :size="15"/> 删除</button>
           </div>
         </div>
         <!-- 🔴 批量清空（2026-10-11 接活死入口 `removeAllScenarios`）：真实场景是导入的年表塞了 12 条占位剧本，
@@ -1673,7 +1673,7 @@
             <button class="anno-del" data-testid="anno-del" :disabled="store.isReadOnly"
                     :title="store.isReadOnly ? (store.readOnlyReason || '只读：未打开项目')
                       : ('删除' + (row.kind === 'label' ? '地名' : '标记') + '“' + row.text + '”（可撤销）')"
-                    @click="deleteAnnotation(row)"><Icon name="x" :size="12"/></button>
+                    @click="deleteAnnotation(row)"><Icon name="trash" :size="12"/> 删除</button>
           </div>
         </div>
         <!-- B1：剧本 ↔ 笔记（候选来自同一个资料段；写口在父面板，一条撤销） -->
@@ -1755,26 +1755,9 @@
       </div>
     </div>
 
-    <!-- 图层锁定面板 -->
-    <div v-if="showLayerPanel" class="layer-lock-panel">
-      <div class="layer-lock-header">
-        <span>图层锁定</span>
-        <button @click="showLayerPanel = false" class="layer-lock-close"><Icon name="x" :size="13"/></button>
-      </div>
-      <div class="layer-lock-list">
-        <div v-for="(layer, id) in scenarioLayers" :key="id" class="layer-lock-row">
-          <span class="layer-lock-label">{{ layer.label }}</span>
-          <button
-            class="layer-lock-btn"
-            :class="{ locked: layer.locked }"
-            :title="layer.locked ? '解锁图层' : '锁定图层（不可编辑）'"
-            @click="toggleLayerLock(id)"
-          >
-            <Icon :name="layer.locked ? 'lock' : 'unlock'" :size="13"/>
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 图层锁定面板（2026-11-06 拆成组件：LayerLockPanel.vue，含自己的 scoped 样式） -->
+    <LayerLockPanel :open="showLayerPanel" :layers="scenarioLayers"
+                    @close="showLayerPanel = false" @toggle="toggleLayerLock" />
 
     <!-- 撤销历史面板 -->
     <HistoryPanel v-if="showHistoryPanel" :open="showHistoryPanel" @close="showHistoryPanel = false" />
@@ -1812,76 +1795,18 @@
                     @close="closeReimportDialog" @apply="applyReimportDialog"
                     @choose="onReimportConflictChoice" @toggle-reference="onToggleReimportReference" />
 
-    <!-- 聚落编辑器面板 -->
-    <div v-if="burgEditorOpen && editingBurg" class="burg-editor-panel">
-      <div class="burg-editor-header">
-        <span>聚落编辑</span>
-        <button @click="closeBurgEditor" class="burg-editor-close"><Icon name="x" :size="13"/></button>
-      </div>
-      <div class="burg-editor-body">
-        <div class="burg-editor-row">
-          <label>名称：</label>
-          <input v-model="editingBurg.name" placeholder="聚落名称" />
-        </div>
-        <div class="burg-editor-row">
-          <label>规模：</label>
-          <select v-model="editingBurg.size">
-            <option v-for="size in BURG_SIZES" :key="size.id" :value="size.id">{{ size.name }}</option>
-          </select>
-        </div>
-        <div class="burg-editor-row">
-          <label>人口：</label>
-          <input v-model.number="editingBurg.population" type="number" min="0" />
-        </div>
-        <div class="burg-editor-row">
-          <label>文化：</label>
-          <input v-model="editingBurg.culture" placeholder="文化归属" />
-        </div>
-        <div class="burg-editor-row checkbox-row">
-          <label>首都：</label>
-          <input type="checkbox" v-model="editingBurg.capital" :true-value="1" :false-value="0" />
-        </div>
-        <div class="burg-editor-actions">
-          <button @click="saveBurgEditor" class="burg-save-btn">保存</button>
-          <button @click="closeBurgEditor">取消</button>
-        </div>
-      </div>
-    </div>
+    <!-- 聚落编辑器面板（2026-11-06 拆成组件：BurgEditorPanel.vue，含自己的 scoped 样式） -->
+    <BurgEditorPanel :open="burgEditorOpen" :burg="editingBurg" :sizes="BURG_SIZES"
+                     @save="saveBurgEditor" @close="closeBurgEditor" />
 
     <!-- 从留底恢复（0.2.9，2026-10-13）：留底目录里的原始 .map 清单 + 逐份恢复。
-         只读入口：读清单/读原文都不改世界观数据；“用这份恢复”走的是与“导入 .map”**同一条**链。 -->
-    <div v-if="sourceRestoreOpen" class="bmsrc-panel" data-testid="basemap-source-panel">
-      <div class="bmsrc-header">
-        <span>从留底恢复底图</span>
-        <button class="bmsrc-close" data-testid="basemap-source-close" title="关闭" @click="sourceRestoreOpen = false"><Icon name="x" :size="13"/></button>
-      </div>
-      <div class="bmsrc-body">
-        <div v-if="sourceRestoreLoading" class="bmsrc-hint">正在读取清单…</div>
-        <div v-else-if="!sourceRestoreFiles.length" class="bmsrc-hint" data-testid="basemap-source-empty">
-          这里还没有留底的 .map —— 每次导入 .map 时，原文会自动留一份在项目备份目录里
-        </div>
-        <template v-else>
-          <div class="bmsrc-hint">
-            共 {{ sourceRestoreFiles.length }} 份（导入 .map 时自动留底，最近 10 份）。
-            恢复 = 拿它走一遍“导入 .map”：同名底图**只补缺**，你已切好的省份与归属不会被覆盖。
-          </div>
-          <div
-            v-for="f in sourceRestoreFiles"
-            :key="f.name"
-            class="bmsrc-row"
-            :data-testid="'basemap-source-row-' + f.name"
-          >
-            <div class="bmsrc-meta">
-              <span class="bmsrc-name" :title="f.path">{{ f.name }}</span>
-              <span class="bmsrc-sub">{{ fmtSrcBytes(f.bytes) }} · {{ fmtSrcTime(f.mtime) }}</span>
-            </div>
-            <button class="bmsrc-use" :disabled="sourceRestoreBusy" @click="restoreFromSource(f)">用这份恢复</button>
-          </div>
-        </template>
-        <div class="bmsrc-dir" v-if="sourceRestoreDir" :title="sourceRestoreDir">{{ sourceRestoreDir }}</div>
-        <div v-if="sourceRestoreMsg" class="bmsrc-msg" data-testid="basemap-source-msg">{{ sourceRestoreMsg }}</div>
-      </div>
-    </div>
+         只读入口：读清单/读原文都不改世界观数据；“用这份恢复”走的是与“导入 .map”**同一条**链。
+         2026-11-06：面板本体拆成组件（BasemapSourcePanel.vue，含自己的 scoped 样式）。 -->
+    <BasemapSourcePanel :open="sourceRestoreOpen" :loading="sourceRestoreLoading"
+                        :busy="sourceRestoreBusy" :files="sourceRestoreFiles"
+                        :dir="sourceRestoreDir" :msg="sourceRestoreMsg"
+                        :fmt-bytes="fmtSrcBytes" :fmt-time="fmtSrcTime"
+                        @restore="restoreFromSource" @close="sourceRestoreOpen = false" />
   </div>
 </template>
 
@@ -1972,6 +1897,11 @@ import { extractIsoLines } from '../utils/contour';
 import { hasGrid } from '../utils/heightmapAccess';
 import { hasHeightmapContent } from '../utils/terrainRepresentation';
 import HistoryPanel from './HistoryPanel.vue';
+// 2026-11-06：本视图自包含的浮层拆成组件（图层锁定 / 聚落编辑 / 从留底恢复），统一放 scenario/panels/
+import LayerLockPanel from '../scenario/panels/LayerLockPanel.vue';
+// 2026-11-06：聚落编辑器 / 从留底恢复底图 两个浮层也拆成组件（同上，样式跟着组件走）
+import BurgEditorPanel from '../scenario/panels/BurgEditorPanel.vue';
+import BasemapSourcePanel from '../scenario/panels/BasemapSourcePanel.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

@@ -22,15 +22,21 @@ SFC = os.path.join(ROOT, 'src', 'renderer', 'src', 'components', 'ScenarioMap.vu
 
 
 def render_files():
-    """组件 + layers/*.js + interaction/*.js + styles/*.css（按路径排序，保证结果稳定）
+    """组件 + panels/*.vue + layers/*.js + interaction/*.js + styles/*.css（按路径排序，保证结果稳定）
 
     ⚠️ 样式也算：`ScenarioMap.vue` 的 `<style scoped>` 已搬进 `styles/scenario-map.css`，
     而不少用例的源码闸门会在组件源码里找 CSS 选择器（`.toolbar-more {` 之类）。
+
+    ⚠️ `panels/*.vue` 也算（2026-11-06）：ScenarioMap 里自包含的浮层开始往
+    `scenario/panels/` 搬（图层锁定 / 聚落编辑 / 从留底恢复…），它们带着自己的模板和样式。
+    不并进这份合集的话，`data-testid`、按钮文字这类源码闸门会在搬家当天假红。
     """
     files = [SFC]
     for sub in ('layers', 'interaction'):
         files += sorted(glob.glob(os.path.join(
             ROOT, 'src', 'renderer', 'src', 'scenario', sub, '*.js')))
+    files += sorted(glob.glob(os.path.join(
+        ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', '*.vue')))
     files += sorted(glob.glob(os.path.join(
         ROOT, 'src', 'renderer', 'src', 'styles', '*.css')))
     return files
