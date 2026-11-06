@@ -546,26 +546,9 @@
         </div>
       <section class="tm-card">
         <div class="tm-title" data-testid="more-sec-province">省份与笔刷</div>
-        <div class="toolbar-row">
-          <label class="row-label">省份：</label>
-          <div class="tool-group">
-                            <button 
-                :class="{ active: tool === 'split' }" 
-                @click="setTool('split')"
-                title="拆分省份 (X) — 点击两个点定义分割线"
-              ><Icon name="scissors" :size="15"/>拆分</button>
-                  <button 
-                :class="{ active: tool === 'merge' }" 
-                @click="setTool('merge')"
-                title="合并省份 (M) — 依次点击两个省份"
-              >⊕合并</button>
-                  <button 
-                :class="{ active: tool === 'erase' }" 
-                @click="setTool('erase')"
-                title="删除 (E) — 点击省份删除"
-              ><Icon name="trash" :size="15"/>删除</button>
-          </div>
-        </div>
+        <!-- 工具栏拆分试点（2026-11-06）：这一行搬进 scenario/panels/toolbar/ProvinceOpsRow.vue
+             根元素仍是 `<div class="toolbar-row">`（test_65/test_97 按 class 数可见控件，包一层就数错）。 -->
+        <ProvinceOpsRow :tool="tool" @set-tool="setTool" />
       </section>
       <section class="tm-card">
         <div class="tm-title" data-testid="more-sec-brush">笔刷与绘制</div>
@@ -1626,6 +1609,9 @@ import ScenarioListPanel from '../scenario/panels/ScenarioListPanel.vue';
 // 省份 / 标记属性面板（2026-11-06 第四批；两个面板共用 scenario/panels/props-panel.css）
 import ProvincePropsPanel from '../scenario/panels/ProvincePropsPanel.vue';
 import MarkerPropsPanel from '../scenario/panels/MarkerPropsPanel.vue';
+// 工具栏拆分试点（2026-11-06）：先把依赖最少的一行搬出去，验证"按行拆 + 显式 props"这条决断
+// （docs/plan/DECISION_TOOLBAR_SPLIT_20261106.md 第四节第 1 步）
+import ProvinceOpsRow from '../scenario/panels/toolbar/ProvinceOpsRow.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

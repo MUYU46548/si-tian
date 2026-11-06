@@ -36,7 +36,7 @@ def render_files():
         files += sorted(glob.glob(os.path.join(
             ROOT, 'src', 'renderer', 'src', 'scenario', sub, '*.js')))
     files += sorted(glob.glob(os.path.join(
-        ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', '*.vue')))
+        ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', '**', '*.vue'), recursive=True))
     files += sorted(glob.glob(os.path.join(
         ROOT, 'src', 'renderer', 'src', 'styles', '*.css')))
     return files

@@ -123,11 +123,14 @@ PlanetMap（21）/ AreaMap（7）/ ScenarioMap（3）及其余地图组件，绝
    样式各抄一份必然“改一处另一处不变”。共享文件放 `scenario/panels/props-panel.css`，
    两边 `<style scoped src="./props-panel.css">`；`m7` 也跟着认这种写法（去 `src` 的那份里找 class）。
 
-**剩下的拆分计划**（按“自包含程度”排序，未做）：
+**剩下的拆分计划**：已单独写成决断页
+[`DECISION_TOOLBAR_SPLIT_20261106.md`](./DECISION_TOOLBAR_SPLIT_20261106.md) ——
+量过数据（工具栏 951 行 / 10 行 / 161 个绑定）、比过三个方案，**决断 = 按行拆 + 显式 props**，
+不引入 `provide/inject`、不搬 store；九步顺序与每步闸门都在那一页。
 
 | 目标 | 体量 | 难度 | 备注 |
 |---|---|---|---|
-| 画布上的工具栏与色板 | ~700 行模板 | 高 | 引用父组件五六十个状态，拆它要么 `provide/inject`，要么先把状态挪进 store —— 单独一轮 |
+| **工具栏（按行拆，9 步）** | **951 行 / 10 行 / 161 绑定** | 中→高 | **第 1 步（试点）已落地**：`scenario/panels/toolbar/ProvinceOpsRow.vue`（20 行 → 3 行，2 个绑定）。下一步 `primary-row`（7 绑定，受 `test_65` 的"6 个可见控件"管） |
 | `<script setup>` 主体（~4,900 行） | 状态 / 计算 / 处理器 / DI 装配 | 高 | 已有一批 `createX({deps})` 工厂沉在 `scenario/*`，继续按同一模式搬（每搬一块都要过 rsrc 那套闸门） |
 
 | 组件 | 纯图标 / 全部 | 说明 |
@@ -149,6 +152,36 @@ PlanetMap（21）/ AreaMap（7）/ ScenarioMap（3）及其余地图组件，绝
 所以脚本会先塞一行**标记排版夹具**（只进内存、副本收尾即删）再量。
 ✅ **区域视图也有真机图了**：`python scripts/tests/tools/shot_planet_ux.py --view area` 10/10，
 截图 `build/planet-ux/area.png`（工具栏 19 个按钮全有字、无一被裁、高 39px）。
+
+### A3. **搬前 / 搬后视觉比对**（2026-11-06，补上拆分最容易漏的一环）
+
+拆出去的 7 块面板各自带着 scoped 样式，DOM 用例能证明"行为没变"，**证明不了"长得没变"**
+（`<style scoped>` 换了 scope id、共享 CSS 走了另一个入口 —— 这类事故只在屏幕上现形）。
+
+两个新工具（都是**取证/复核**用，不是常驻闸门）：
+
+| 工具 | 干什么 |
+|---|---|
+| `python scripts/tests/drill_moved_panels_visual.py --out build/panels-visual/after` | 起 harness（Vite + Edge headless + CDP），铺一块有省份/剧本/势力归属的底图，把 7 块面板**逐一打开**：每块断 4 条（恰好 1 个节点 / 有可见面积 / 完整在视口内 / 中心点命中自己），并**整页截图后按元素裁切**存 `build/panels-visual/<key>.png` |
+| `python scripts/tests/tools/diff_panel_shots.py --before …/before --after …/after` | 逐块判 `identical` / `text-only` / `layout-shift`，出 `<key>-compare.png`（左=搬前 / 中=搬后 / 右=差异热图） |
+
+**搬前怎么拿**：`git checkout a111434 -- src/renderer/src/components/ScenarioMap.vue src/renderer/src/components/scenario-map.css`
+→ 跑一遍 → 立刻 `git checkout HEAD --` 两个文件还原（用 worktree 也行，但 worktree 里 mock 注入没生效，
+`openProject` 会回 `browser-dev-mode（未落盘）`，白跑一趟）。
+
+**2026-11-06 实测结果（7 块）**：逐像素一致 0 / 仅文案差异 4 / 尺寸变化 3 —— 每一处都有解释：
+
+| 面板 | 判定 | 差异 | 解释（都是**预期内**的） |
+|---|---|---|---|
+| 左侧剧本列表 | text-only | 16.1% 像素，差异只在标题行 | 折叠按钮补了"收起"（原来只有箭头）；提示语因此折行，可接受 |
+| 省份属性 | text-only | 0.50% | 关闭键 `<Icon name="x">` → 字面量 `×` |
+| 标记属性 | text-only | 0.28% | 同上 |
+| 剧本管理对话框 | text-only | 0.86%，差异区正是那一行按钮 | 剧本行补了"编辑 / 删除" |
+| 图层锁定 | layout-shift | 200×333 → 200×303 | 补了"锁定"文字后按钮 padding 4px → 1px 5px，6 行共省 30px（更紧凑，不是丢样式） |
+| 聚落编辑 | layout-shift | 280×252 → 280×251 | `×` 字形与图标 1px 基线差 |
+| 从留底恢复 | layout-shift | 340×86 → 340×85 | 同上 1px |
+
+结论：**没有"搬家丢了样式"的迹象**；3 处尺寸变化的成因都落在"这一轮确实改了按钮内容"上。
 
 ### B. 历史剧本（清点在卡 `阶段目标历史剧本做到勉强可用出口判据---1af58f0b`）
 

@@ -57,6 +57,8 @@ const FILES = [
   { file: 'ScenarioListPanel.vue', dir: 'scenario/panels', desc: '左侧历史剧本列表（换剧本 / 收起展开 / 剧本集 / 看全部 / 管理）' },
   { file: 'ProvincePropsPanel.vue', dir: 'scenario/panels', desc: '省份属性（收起 / 清成无主 / 设为当前势力）' },
   { file: 'MarkerPropsPanel.vue', dir: 'scenario/panels', desc: '标记属性（收起 / 删除标记）', min: 2 },
+  // 工具栏拆分试点（2026-11-06）：按行拆出来的第一行，根元素仍是 `.toolbar-row`
+  { file: 'ProvinceOpsRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·省份行（拆分 / 合并 / 删除）' },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

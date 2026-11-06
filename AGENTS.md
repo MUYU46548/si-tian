@@ -429,7 +429,14 @@
   组件里拿到的是 prop（`readOnly` / `baseMaps`）时，源码闸门除了认新写法，
   还要反查“父组件确实把 `store.isReadOnly` / `store.baseMaps` 传进来了”；
   真机两张：`tools/shot_planet_ux.py`（18/18，工具坞 + 对象面板「文字有没有被裁」）与
-  `tools/shot_planet_ux.py --view area`（10/10，区域工具栏 + 截图）；改其它视图时照此扩一张「每个按钮都有文字」的判据。
+  `tools/shot_planet_ux.py --view area`（10/10，区域工具栏 + 截图）；
+  **搬家后的视觉留影**：`drill_moved_panels_visual.py`（7 块面板逐一打开 + 按元素裁切截图）+
+  `tools/diff_panel_shots.py`（搬前/搬后逐像素判 `identical / text-only / layout-shift`）——
+  改 ScenarioMap 的浮层/面板时必须留这一组证据（scoped 样式搬家只在屏幕上现形）；
+  **工具栏怎么拆已决断**：见 `docs/plan/DECISION_TOOLBAR_SPLIT_20261106.md`
+  （按行拆 + 显式 props；**不用** `provide/inject`、**不把**状态搬进 store）；
+  工具栏各行**共用** `scenario-map.css` 的 `.toolbar-row/.tool-group`，`m7` 的"老 class 不许留在主表"
+  不适用于它们 —— 别再给工具栏行抄一份 CSS；改其它视图时照此扩一张「每个按钮都有文字」的判据。
 - **同一能力只许一份实现**（画河几何、河宽换算、导出参考图、保存文案、`.map` 导入…）：
   两份实现不会报错，只会"改一处另两处不变"。
 - **方寸：过程与结论写任务卡，不写执行日志**（2026-11-04 用户拍板）：`create_log` 的条目是**用户自己调度**用的，
