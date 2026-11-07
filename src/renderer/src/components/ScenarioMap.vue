@@ -918,32 +918,22 @@
       </section>
       <section class="tm-card">
         <div class="tm-title" data-testid="more-sec-script">剧本 · 导入导出</div>
-      <!-- 第 5 行：剧本与导入导出 -->
-      <div class="toolbar-row">
-      <div class="tool-group">
-        <button @click="showScenarioManager = true" title="剧本管理"><Icon name="file-text" :size="15"/>剧本管理</button>
-        <button @click="showLineagePanel = true" title="势力谱系管理（人工纠正继承关系 / 易主年份）" data-testid="open-lineage"><Icon name="git-branch" :size="15"/>势力谱系</button>
-        <!-- 外交表（N3a-2，2026-11-02）：回答“某年 A 与 B 什么关系”——
-             关系标签 / 该年生效事件 / “为什么”+ 势力关系矩阵；面板顶部可补录一条（一次录入 = 一条撤销）。
-             与“势力谱系”分工：谱系管继承与易主年份，这里管两两关系（战争/同盟/臣属…）。 -->
-        <button
-          data-testid="diplomacy-open"
-          :class="{ active: diplomacyOpen }"
-          title="外交 —— 查“某年 A 与 B 什么关系”：关系 / 该年生效事件 / 为什么，附势力关系矩阵；也可以补录一条（一次录入 = 一条撤销）"
-          @click="diplomacyOpen = !diplomacyOpen"
-        ><Icon name="flag" :size="15"/>外交</button>
-        <button @click="showHistoryPanel = !showHistoryPanel" title="撤销历史" :class="{ active: showHistoryPanel }"><Icon name="history" :size="15"/>撤销历史</button>
-      </div>
-      <div class="tool-group" title="导出">
-        <button @click="exportScenarioPNG()" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/>导出 PNG</button>
-        <button @click="exportScenarioSVG()" title="导出当前剧本/年份为 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-svg"><Icon name="layers" :size="15"/>导出 SVG</button>
-        <button @click="showSliceExport = true" data-testid="open-slice-export"
-                title="逐年切片导出（每个状态变化的年份一张图 + frames.json 清单，可交 ffmpeg 合成）"><Icon name="film" :size="15"/>切片</button>
-        <button @click="exportScenariosJson({ scope: 'current' })" title="导出当前底图的剧本数据（scenarios.json）" data-testid="export-json"><Icon name="export" :size="15"/>导出数据</button>
-        <button @click="importScenariosJson('merge')" title="导入剧本数据（合并：同 key 覆盖）" data-testid="import-json-merge"><Icon name="download" :size="15"/>导入合并</button>
-        <button @click="importScenariosJson('replace')" title="导入剧本数据（替换：清空现有剧本后再导入）" data-testid="import-json-replace"><Icon name="refresh" :size="15"/>导入替换</button>
-      </div>
-      </div>
+      <!-- 第 5 行：剧本与导入导出。工具栏拆分第 5 步（2026-11-07）：搬进
+           `scenario/panels/toolbar/ScenarioIoRow.vue`（2 props / 10 emits，状态仍归这里）。 -->
+      <ScenarioIoRow
+        :diplomacy-open="diplomacyOpen"
+        :history-open="showHistoryPanel"
+        @open-manager="showScenarioManager = true"
+        @open-lineage="showLineagePanel = true"
+        @toggle-diplomacy="diplomacyOpen = !diplomacyOpen"
+        @toggle-history="showHistoryPanel = !showHistoryPanel"
+        @export-png="exportScenarioPNG()"
+        @export-svg="exportScenarioSVG()"
+        @open-slice-export="showSliceExport = true"
+        @export-data="exportScenariosJson({ scope: 'current' })"
+        @import-merge="importScenariosJson('merge')"
+        @import-replace="importScenariosJson('replace')"
+      />
       </section>
       </div>   <!-- /.toolbar-more -->
     </div>
@@ -1514,6 +1504,8 @@ import BasemapRow from '../scenario/panels/toolbar/BasemapRow.vue';
 // 一组件一行：组件多根节点会丢父 scope id（`.toolbar-row` 的样式就没了）。
 import RiverSelectedRow from '../scenario/panels/toolbar/RiverSelectedRow.vue';
 import RiverEditRow from '../scenario/panels/toolbar/RiverEditRow.vue';
+// 工具栏拆分第 5 步（2026-11-07）：“更多 → 剧本 · 导入导出”那一行（剧本管理/谱系/外交/历史 + 导入导出）。
+import ScenarioIoRow from '../scenario/panels/toolbar/ScenarioIoRow.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

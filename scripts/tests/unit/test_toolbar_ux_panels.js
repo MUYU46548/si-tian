@@ -68,6 +68,8 @@ const FILES = [
   // 工具栏拆分第 4 步（2026-11-07）：河流两条行。两行各自 4 / 3 个按钮。
   { file: 'RiverSelectedRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·选中河流行（删这条河 / 编辑节点 / 裁到海岸线 / 取消选中）', min: 4 },
   { file: 'RiverEditRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·河流编辑行（删这个节点 / 删整条河 / 裁到海岸线）', min: 3 },
+  // 工具栏拆分第 5 步（2026-11-07）：“更多 → 剧本 · 导入导出”那一行（10 个按钮）。
+  { file: 'ScenarioIoRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·剧本与导入导出行（剧本管理/谱系/外交/历史 + 导出导入）', min: 10 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

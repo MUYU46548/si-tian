@@ -108,9 +108,9 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,520（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650 → 6,620 → 6,590 → 6,560 → 6,520）', () => {
+  check('m1 SFC 行数 ≤6,510（判据 ≤8,500；… → 6,560 → 6,520 → 6,510）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6520, `ScenarioMap.vue 实测 ${n} 行，超过 6,520 —— 又往这个文件里堆东西了？`
+    assert(n <= 6510, `ScenarioMap.vue 实测 ${n} 行，超过 6,510 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/（含 toolbar/）的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
@@ -186,11 +186,36 @@ function main() {
     return chain[0];
   });
 
+  // ⚠️ 2026-11-07（第 5 步）：`diplomacy-open` 随“剧本 · 导入导出”那一行搬进了
+  // `scenario/panels/toolbar/ScenarioIoRow.vue`，只扫主模板就会假红说“入口没了”。
+  // 口径改成**主模板 + 所有拆出去的子视图模板**（`scenario/panels/**/*.vue`）——
+  // 与 `lib/rsrc.py` 的合集口径一致：搬家不该让判据失效，但也不许放宽（仍是“这两条入口都得在”）。
+  function collectPanelTestids() {
+    const ids = new Set();
+    const dir = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels');
+    if (!fs.existsSync(dir)) return ids;
+    const walk = (d) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) { walk(p); continue; }
+        if (!e.name.endsWith('.vue')) continue;
+        const parsed = parse(readText(p), { filename: e.name });
+        const a = parsed.descriptor.template && parsed.descriptor.template.ast;
+        if (!a) continue;
+        for (const id of scanTemplate(a).testids) ids.add(id);
+      }
+    };
+    walk(dir);
+    return ids;
+  }
   check('m5 模板 AST：外交表两条入口都在（“更多”里 + 势力色板行）', () => {
     const ids = scanTemplate(ast).testids;
-    assert(ids.has('diplomacy-open'), '找不到“更多 → 外交”入口（data-testid="diplomacy-open"）');
+    const panelIds = collectPanelTestids();
+    const has = (id) => ids.has(id) || panelIds.has(id);
+    assert(has('diplomacy-open'), '找不到“更多 → 外交”入口（data-testid="diplomacy-open"）'
+      + '（主模板与 scenario/panels/** 里都没有）');
     assert(ids.has('diplomacy-open-palette'), '找不到势力色板行的快捷入口（diplomacy-open-palette）');
-    return '2 条入口';
+    return `2 条入口（子视图模板另供 ${panelIds.size} 个 testid）`;
   });
 
   // 2026-11-03 实地发现：修 ①② 时把“地形注记”的整块 Teleport **复制**了一份（两个都 v-if 同一状态）
