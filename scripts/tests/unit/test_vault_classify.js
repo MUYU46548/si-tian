@@ -127,16 +127,19 @@ async function main() {
     eq(geo['城/桥头镇.md'].parentTitle, '北境', '正文双链');
     eq(geo['城/桥头镇.md'].parentInferred, true, '双链推断必须标记');
     eq(geo['城/桥头镇.md'].signal, 'wikilink', '推断信号 = wikilink');
-    // 找不到上层 → 待人工，不硬塞一个
+    // 找不到上层（也没有任何线索）→ 待人工
     eq(geo['城/孤港.md'].parentTitle, '', '孤港不该被猜出上层');
     assert(report.needsHuman.some((n) => n.path === '城/孤港.md' && /上层/.test((n.reasons || []).join(''))),
       '孤港应进“找不到上层”待人工');
-    // 指了不存在的地方 → 点名断链，不是静默丢
-    const broken = report.needsHuman.find((n) => n.path === '城/断链城.md');
-    assert(broken && /不存在的地方/.test(broken.reasons.join('')), `断链父级要点名：${JSON.stringify(broken)}`);
+    // 指了**还没写**的条目 → 不催人补：进“未写引用”，不进待人工（与 Obsidian 未解析链接同一回事）
+    const missing = (report.unwritten || []).find((u) => u.path === '城/断链城.md');
+    assert(missing && /不存在的地方/.test(missing.parentTitle), `未写引用要点名：${JSON.stringify(missing)}`);
+    assert(!report.needsHuman.some((n) => n.path === '城/断链城.md'),
+      '未写引用不许进待人工（否则就演变成逼用户填表）');
+    eq(geo['城/断链城.md'].parentUnwritten, true, 'geo 行上要带 parentUnwritten 标记');
     // 世界是根，不该被要求有上层
     assert(!report.needsHuman.some((n) => n.path === '世界/潮汐界.md'), '世界不该进“找不到上层”');
-    return '显式 1 / 句式 1 / 双链 1 / 待人工 2（孤港+断链）';
+    return '显式 1 / 句式 1 / 双链 1 / 待人工 1（孤港）/ 未写引用 1（断链）';
   });
 
   await check('五：只读 —— 不建 .sitian、不改任何笔记（快照逐字节一致）', () => {

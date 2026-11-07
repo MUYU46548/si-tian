@@ -5,7 +5,8 @@
 //   · 不挑目录结构：任意路径/文件名都扫（标准目录存在时行为与提取器一致，缺失时自动全库归类）；
 //   · 字段识别不再白名单：整份 frontmatter 参与归类（`scripts/lib/vaultClassify.js`）；
 //   · 识别不了的**每条都有报告**（路径 + 为什么 + 凭据），零静默丢失；
-//   · 空间关系：显式字段 → 正文双链 → 正文句式，逐级尝试；推断的标 `inferred`，找不到的进待人工；
+//   · 空间关系：显式字段 → 正文双链 → 正文句式，逐级尝试；推断的标 `inferred`，
+//     完全没线索的进待人工；**指向还没写的条目**单列“未写引用”（正常状态，不催人补）；
 //   · **绝不往库里写任何东西**：`buildIndex({write:false})`、`extractGeodata({writeCache:false})`，
 //     输出目录在库内会直接拒绝；跑完再对库做一次指纹对比（文件数 + mtime + .sitian 有无）。
 //
@@ -172,9 +173,19 @@ async function main() {
       .map((k) => `${classify.CATEGORY_LABELS[k] || k} ${cats[k]}`);
     console.log('归类：' + parts.join(' / '));
     console.log(`地图实体：${report.geo.length}（上层为推断 ${report.inferred.length}）`
-      + ` / 待人工：${report.needsHuman.length}`);
+      + ` / 待人工：${report.needsHuman.length}`
+      + ` / 引用但还没写：${(report.unwritten || []).length}（正常，不用补）`);
     if (extraction) {
       console.log(`试导节点：${extraction.nodeCount} 个（报告见 scan-report.json）`);
+    }
+    if (report.unwritten && report.unwritten.length) {
+      console.log('\n引用但还没写的条目（不是错误，司天不催你补）：');
+      for (const u of report.unwritten.slice(0, args.sample)) {
+        console.log(`  · ${u.path}（${u.title || ''}）→ 用到“${u.parentTitle}”`);
+      }
+      if (report.unwritten.length > args.sample) {
+        console.log(`  … 其余 ${report.unwritten.length - args.sample} 条见 待人工.md`);
+      }
     }
     if (report.needsHuman.length) {
       console.log('\n待人工（前 ' + Math.min(args.sample, report.needsHuman.length) + ' 条）：');

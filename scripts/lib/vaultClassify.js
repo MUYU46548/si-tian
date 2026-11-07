@@ -506,9 +506,18 @@ function inferParent(entry, ctx) {
         resolvable: true,
       };
     }
+    // 指了库外 / 还没写的条目：**不催人补**。
+    // 这与 Obsidian 的“未解析链接”是同一种东西 —— 世界可以写三年，引用先立着。
+    // 这里标 `unwritten`（报告里单列“未写引用”），**不进待人工**：待人工是“机器判不了、要人给一句话”，
+    // 未写是“人还没写”，两件事混在一起就会变成逼用户填表（2026-11-07 用户明确反对）。
     return {
-      needsHuman: 'parent-missing',
-      reason: `frontmatter.${key} 指向“${raw}”，但库里没有这个词条（不猜）`,
+      parentTitle: raw,
+      parentPath: '',
+      inferred: false,
+      signal: `frontmatter.${key}`,
+      evidence: `${key}: ${raw}`,
+      resolvable: false,
+      unwritten: true,
     };
   }
 
@@ -564,6 +573,7 @@ function buildReport(entries, opts = {}) {
   const geo = [];
   const needsHuman = [];
   const inferred = [];
+  const unwritten = [];
 
   for (const e of list) {
     if (!e) continue;
@@ -596,11 +606,18 @@ function buildReport(entries, opts = {}) {
       parentTitle: parent.parentTitle || '',
       parentPath: parent.parentPath || '',
       parentInferred: !!parent.inferred,
+      parentUnwritten: !!parent.unwritten,
       signal: parent.signal || '',
       evidence: c.evidence || [],
     };
     geo.push(row);
     byLayer[c.layer || 'unknown'] = (byLayer[c.layer || 'unknown'] || 0) + 1;
+    if (parent.unwritten) {
+      unwritten.push({
+        path: e.path, title: e.title, parentTitle: parent.parentTitle,
+        signal: parent.signal, evidence: parent.evidence,
+      });
+    }
     if (parent.inferred) inferred.push({ path: e.path, title: e.title, ...parent, evidence: parent.evidence });
     for (const need of (c.needsHuman || [])) {
       needsHuman.push({
@@ -625,6 +642,7 @@ function buildReport(entries, opts = {}) {
     geo,
     needsHuman,
     inferred,
+    unwritten,
     categories: CATEGORY_LABELS,
   };
 }
@@ -640,6 +658,7 @@ function reportToMarkdown(report) {
   lines.push(`- 分布：${Object.keys(cats).sort().map((k) => `${CATEGORY_LABELS[k] || k} ${cats[k]}`).join(' / ')}`);
   lines.push(`- 地图实体：**${(r.geo || []).length}**（其中上层为推断 ${(r.inferred || []).length} 条）`);
   lines.push(`- 待人工：**${(r.needsHuman || []).length}**`);
+  lines.push(`- 引用但还没写：**${(r.unwritten || []).length}**（正常状态，不用补）`);
   lines.push('');
   lines.push('## 待人工（每一条都写了为什么）');
   lines.push('');
@@ -657,6 +676,19 @@ function reportToMarkdown(report) {
   if (!inf.length) lines.push('（无）');
   for (const x of inf) {
     lines.push(`- \`${x.path}\` → 上层“${x.parentTitle}”（${x.signal}：${x.evidence}）`);
+  }
+  lines.push('');
+  lines.push('## 引用但还没写的条目（正常状态，不用补）');
+  lines.push('');
+  const unw = r.unwritten || [];
+  if (!unw.length) lines.push('（无）');
+  for (const u of unw) {
+    lines.push(`- \`${u.path}\`（${u.title || ''}）→ 用到“${u.parentTitle}”（${u.signal}：${u.evidence}）`);
+  }
+  if (unw.length) {
+    lines.push('');
+    lines.push('> 这些**不是错误**：世界可以写几年，引用先立着。树上按“未写”显示即可，'
+      + '司天不会催你补，也不会因为它们挡住任何操作。');
   }
   lines.push('');
   return lines.join('\n');
