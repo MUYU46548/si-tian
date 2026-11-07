@@ -70,6 +70,9 @@ const FILES = [
   { file: 'RiverEditRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·河流编辑行（删这个节点 / 删整条河 / 裁到海岸线）', min: 3 },
   // 工具栏拆分第 5 步（2026-11-07）：“更多 → 剧本 · 导入导出”那一行（10 个按钮）。
   { file: 'ScenarioIoRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·剧本与导入导出行（剧本管理/谱系/外交/历史 + 导出导入）', min: 10 },
+  // 工具栏拆分第 6 步（2026-11-07）：“更多 → 图层 · 着色”那一行。模板里只有 1 个 <button>
+  // （锁定图层），其余是勾选框与下拉 —— 所以 min 写 1，勾选框的数量由 m8 与探针的另一侧守。
+  { file: 'LayerColorRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·图层与着色行（10 个图层开关 + 栅格层 + 着色）', min: 1 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

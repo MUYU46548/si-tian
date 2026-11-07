@@ -280,6 +280,63 @@ def collect(out_path, want_shot=True):
             json.dump(res, f, ensure_ascii=False, indent=1)
         ck(f'读数已落盘（{res.get("count")} 个按钮）', True, out_path)
 
+        # ── 功能探针：具名 v-model 的接线是否真的通 ────────────────────────────
+        # 🔴 为什么必须有这一步（2026-11-07 第 6 步）：把勾选框从 `v-model="showX"` 改成
+        #    `:checked` + `update:showX` 之后，**样式一个字节都不会变** —— 但如果 emit 名字拼错
+        #    或者父组件忘了接，点上去就是“没反应”。样式对拍看不见它，只能真点一次看状态。
+        # ⚠️ 两个坑（第一版都踩了）：
+        #    ① 这些开关住在「更多」浮层里 —— 面板没展开时 `querySelector` 拿到 null，
+        #       而当时的判定写成 `before != now`，`None != False` 恰好为真 → **假绿**。
+        #       所以先把面板打开，且两个读数都必须是真布尔值才算数。
+        #    ② 点完要复原，否则会污染后面（比如渲染路径）的状态。
+        eval_json(cdp, """(() => {
+          const sm = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+          sm.moreOpen = true;
+          return JSON.stringify({ ok: true });
+        })()""", required=('ok',), desc='打开更多（功能探针）')
+        cdp.eval("new Promise(r => setTimeout(r, 260))")
+        FUNCTIONAL = [
+            ('toggle-place-names', 'showPlaceNames'),
+            ('terrain-shade-box', 'terrainShade'),
+            ('toggle-named-provinces', 'showNamedProvincesOnly'),
+        ]
+        for testid, ref_name in FUNCTIONAL:
+            ok, res = eval_json(cdp, """(() => {
+              const sm = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+              const el = document.querySelector('[data-testid=%s]');
+              if (!el) return JSON.stringify({ ok: false, why: 'no-el' });
+              const before = !!sm.%s;
+              el.click();
+              return JSON.stringify({ ok: true, before: before });
+            })()"""
+            % (json.dumps(testid), ref_name), required=('ok',), desc='点·' + testid)
+            cdp.eval("new Promise(r => setTimeout(r, 140))")
+            got2, after = eval_json(cdp, """(() => {
+              const sm = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+              return JSON.stringify({ ok: true, now: !!sm.%s });
+            })()""" % ref_name, required=('ok',), desc='读·' + ref_name)
+            # 只有“两边都真的读到了布尔值、而且值确实翻了”才算通
+            strict = (bool(ok) and bool(res.get('ok')) and bool(got2)
+                      and isinstance(res.get('before'), bool) and isinstance(after.get('now'), bool)
+                      and res.get('before') != after.get('now'))
+            ck(f'接线通·{testid} → {ref_name}', strict,
+               f"{res.get('ok') and res.get('before')} → {after.get('now')}"
+               + ('' if res.get('ok') else f"（读不到元素：{res.get('why')}）"))
+            # 复原（别污染后面的状态）
+            eval_json(cdp, """(() => {
+              const el = document.querySelector('[data-testid=%s]');
+              if (el) el.click();
+              return JSON.stringify({ ok: true });
+            })()""" % json.dumps(testid), required=('ok',), desc='复原·' + testid)
+            cdp.eval("new Promise(r => setTimeout(r, 140))")
+        eval_json(cdp, """(() => {
+          const sm = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+          sm.moreOpen = false;
+          return JSON.stringify({ ok: true });
+        })()""", required=('ok',), desc='收起更多（功能探针收尾）')
+
+        # 顺手打印一张“按行分组”的表，肉眼也能看出一行是不是走样了
+
         # 顺手打印一张“按行分组”的表，肉眼也能看出一行是不是走样了
         by_row = {}
         for it in res['items']:

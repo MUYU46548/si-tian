@@ -868,52 +868,27 @@
       </section>
       <section class="tm-card">
         <div class="tm-title" data-testid="more-sec-layers">图层 · 着色</div>
-      <!-- 第 4 行：图层显示 / 底图图层 / 着色 -->
-      <div class="toolbar-row">
-      <div class="tool-group">
-        <label>图层：</label>
-        <label class="check-label"><input type="checkbox" v-model="showBiomes" /> 生物群系</label>
-        <label class="check-label"><input type="checkbox" v-model="showBorders" /> 边界</label>
-        <label class="check-label"><input type="checkbox" v-model="showBurgs" /> 城镇</label>
-        <label class="check-label"><input type="checkbox" v-model="showLabels" /> 标签</label>
-        <label class="check-label" title="显示导入的城镇名 / 河流名（导入的地图数据常是英文名；默认关闭，需要时再开）"><input type="checkbox" v-model="showPlaceNames" data-testid="toggle-place-names" /> 自动地名</label>
-        <label class="check-label" title="显示“地形注记”里的山系/海域名（沿走向排字）。生成地形时会按种子自动起名（只补空）；也可以在里面自己改名或手画一条"><input type="checkbox" v-model="showTerrainNames" data-testid="toggle-terrain-names" @change="onTerrainNamesToggle" /> 地形名</label>
-        <label class="check-label" title="EU4 式分级标注：缩小看势力名（可简称），放大再加上省名"><input type="checkbox" v-model="showPolityLabels" data-testid="toggle-polity-labels" /> 势力名</label>
-        <label class="check-label" title="放大到最详档时显示省名（未命名的省显示“新省份 N”，是改名的线索）"><input type="checkbox" v-model="showProvinceNames" data-testid="toggle-province-names" /> 省名</label>
-        <label class="check-label" title="只显示你自己起过名的省 —— 程序生成的“新省份 N”整层不画（415 省项目里通常只有几十个有真名，其余会把画面糊满）"><input type="checkbox" v-model="showNamedProvincesOnly" data-testid="toggle-named-provinces" /> 仅已命名省</label>
-        <button @click="showLayerPanel = !showLayerPanel" title="图层锁定设置" :class="{ active: showLayerPanel }"><Icon name="lock" :size="13"/>锁定图层</button>
-      </div>
-      <div class="tool-group">
-        <label>底图图层：</label>
-        <select v-model="rasterLayer" title="网格数据图层（一次只渲染一层，避免叠加失真）">
-          <option value="none">无</option>
-          <option value="landsea">陆海底色</option>
-          <option value="satellite">卫星影像</option>
-          <option value="terrain">地形色</option>
-          <option value="height">地形高度</option>
-          <option value="temp">温度</option>
-          <option value="prec">降水</option>
-        </select>
-        <label class="check-label"><input type="checkbox" v-model="showRivers" /> 河流</label>
-        <label class="check-label"><input type="checkbox" v-model="showRoutes" /> 道路</label>
-        <!-- 🔴 山体阴影（2026-10-17 第七修）：用户“地形怎么3D表现”的落点。
-             默认**关**（零行为变更）。只对“陆海底色 / 地形高度”两档生效 ——
-             温度/降水是**专题图**，给它们加阴影会把数值读成地形（那是错的口径）。 -->
-        <label
-          class="check-label terrain-shade-label"
-          data-testid="terrain-shade"
-          title="山体阴影 —— 按相邻格高差算明暗，让地形“立起来”（制图惯例：光从左上来）。默认关；只对“陆海底色 / 地形高度”生效。⚠️ 我们的高度图可能是粗网格（例如 133×75），阴影会跟着粗 —— 这是数据本身的粒度，不是渲染问题。"
-        ><input type="checkbox" v-model="terrainShade" data-testid="terrain-shade-box" /> 立体</label>
-      </div>
-      <div class="tool-group">
-        <label>着色：</label>
-        <select v-model="colorMode">
-          <option value="default">默认</option>
-          <option value="culture">文化</option>
-          <option value="religion">宗教</option>
-        </select>
-      </div>
-      </div>
+      <!-- 第 4 行：图层显示 / 底图图层 / 着色。工具栏拆分第 6 步（2026-11-07）：搬进
+           `scenario/panels/toolbar/LayerColorRow.vue`（15 个开关走具名 v-model，状态仍归这里）。 -->
+      <LayerColorRow
+        v-model:show-biomes="showBiomes"
+        v-model:show-borders="showBorders"
+        v-model:show-burgs="showBurgs"
+        v-model:show-labels="showLabels"
+        v-model:show-place-names="showPlaceNames"
+        v-model:show-terrain-names="showTerrainNames"
+        v-model:show-polity-labels="showPolityLabels"
+        v-model:show-province-names="showProvinceNames"
+        v-model:show-named-provinces-only="showNamedProvincesOnly"
+        v-model:raster-layer="rasterLayer"
+        v-model:show-rivers="showRivers"
+        v-model:show-routes="showRoutes"
+        v-model:terrain-shade="terrainShade"
+        v-model:color-mode="colorMode"
+        :layer-panel-open="showLayerPanel"
+        @toggle-layer-panel="showLayerPanel = !showLayerPanel"
+        @terrain-names-changed="onTerrainNamesToggle()"
+      />
 
       </section>
       <section class="tm-card">
@@ -1506,6 +1481,8 @@ import RiverSelectedRow from '../scenario/panels/toolbar/RiverSelectedRow.vue';
 import RiverEditRow from '../scenario/panels/toolbar/RiverEditRow.vue';
 // 工具栏拆分第 5 步（2026-11-07）：“更多 → 剧本 · 导入导出”那一行（剧本管理/谱系/外交/历史 + 导入导出）。
 import ScenarioIoRow from '../scenario/panels/toolbar/ScenarioIoRow.vue';
+// 工具栏拆分第 6 步（2026-11-07）：“更多 → 图层 · 着色”那一行（15 个开关，走具名 v-model）。
+import LayerColorRow from '../scenario/panels/toolbar/LayerColorRow.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）
