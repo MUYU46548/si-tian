@@ -122,23 +122,37 @@
 }
 .mode-hint { color: #94a3b8; font-size: 11px; letter-spacing: 0.5px; }
 .basemap-edit-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; font-size: 12px; }
-.basemap-edit-toggle.active {
+/* ⚠️ 2026-11-07：皮肤的 `:deep(button.active)`（(0,3,1)）比这里原来的 `.basemap-edit-toggle.active`
+   （(0,3,0)）高一级，会把这一格橙色盖成工具选中态的紫色 —— 真机读数见过的。
+   所以这条要抬到 `:deep` 版（(0,4,0)）。⚠️ 只抬**颜色**，别在这里写 padding/height：
+   几何尺寸由 `.scenario-toolbar button` 统一给，写进来会让这一格的宽度和其它按钮不一致。 */
+.basemap-edit-toggle.active,
+.scenario-toolbar :deep(.basemap-edit-toggle.active) {
   background: #78350f; border-color: #d97706; color: #fde68a; font-weight: 600;
 }
 .basemap-row {
   border-left: 3px solid #d97706; padding-left: 8px; background: rgba(120, 53, 15, 0.18);
 }
 .basemap-row-label { color: #fbbf24; }
-/* 底图编辑行末尾的出口：一眼可见、与地理工具同一条行，避免用户去点左上角的模块级返回 */
-.basemap-exit {
+/* 底图编辑行末尾的出口：一眼可见、与地理工具同一条行，避免用户去点左上角的模块级返回。
+   ⚠️ 2026-11-07：按钮皮肤提到 `.scenario-toolbar :deep(button)`（(0,2,1)）之后，
+   原来 `.basemap-exit`（(0,2,0)）就盖不住了 —— 橙色会被普通深灰皮肤吃掉。
+   所以这里用 `:deep` 版本（(0,3,0)）把它抬回去。`primary-row` 里的退回键同理但无需改
+   （它的底色/描边与皮肤完全一致，`margin-right` 皮肤也不碰）。 */
+.basemap-exit,
+.scenario-toolbar :deep(.basemap-exit) {
   margin-left: auto;
   color: #fbbf24;
   border: 1px solid rgba(217, 119, 6, 0.55);
   background: rgba(120, 53, 15, 0.28);
   border-radius: 4px;
-  padding: 2px 10px;
+  /* ⚠️ 这里**不写 padding**：那是多年前写在这条里的 `2px 10px`，但一直被
+     `.scenario-toolbar button` 的 `0 8px` 盖着（它 specificity 更高、位置更靠后）。
+     2026-11-07 把本条抬到 `:deep`（(0,3,0)）之后它会突然生效、把这枚按钮撑宽 ——
+     所以显式删掉，几何继续由 `.scenario-toolbar button` 统一给（外观一个像素都不变）。 */
 }
-.basemap-exit:hover { background: rgba(120, 53, 15, 0.5); }
+.basemap-exit:hover,
+.scenario-toolbar :deep(.basemap-exit:hover) { background: rgba(120, 53, 15, 0.5); }
 .toolbar-more {
   /* 2026-11-05 第二次改向（用户原话：“分组把原本就紧张的地图观测空间又压扁了一大截”）：
      它原来是**文档流里的一块**，展开就把画布往下推半屏。现在改成**浮在画布上的工具面板**
@@ -312,16 +326,17 @@
   white-space: nowrap;
 }
 
-/* 按钮皮肤（`:deep` 版供拆出去的行用，2026-11-07）—— 见上面那段“为什么必须 :deep”。
-   ⚠️ 作用域必须与原来**完全一样**：只给 `.tool-group` 里的按钮上皮肤。
-   2026-11-07 实测教训：先写成 `:deep(button)`（更宽）时，
-   橙色底的「底图编辑 ✓」与「← 日常视图」被这条盖掉（`.scenario-toolbar[data-v] button`
-   的 specificity 高于 `.basemap-exit` / `.basemap-edit-toggle.active`），
-   两个有意区分的模式按钮变成了普通紫色按钮。收窄回 `.tool-group` 后它们照旧。
-   ⚠️ 这里**不写 font-size**：字号由文件末尾那条 `.scenario-toolbar button`（12px）统一给；
-   写 14px 会把「更多」面板里的字号悄悄抬上去。 */
-.tool-group button,
-:deep(.tool-group) button {
+/* 按钮皮肤的**唯一入口**：整个工具栏里的按钮，不管在不在 `.tool-group` 里、不管是不是
+   拆进了子组件，都用这一套。
+   🔴 为什么从 `.tool-group button` 提到这一层（2026-11-07，用户拍板“可以，请继续”）：
+   工具栏的主行 / 省份行 / 底图行**早就不在 `.tool-group` 里**（按钮直接躺在 `.toolbar-row` 下），
+   于是皮肤一条都不命中 → 退回浏览器默认（#f0f0f0 底、黑字、2px 黑边、圆角 0、cursor default）。
+   真机实测 **28 个按钮**是这种白底黑字，在深色工具栏上像一排旧 Windows 按钮。
+   ⚠️ 提到这一层会**盖掉 specificity 更低的装饰类**，所以两处有意不同的已经跟着抬：
+   `.basemap-exit`（橙，见下）与 `.basemap-edit-toggle.active`（橙，本身 (0,3,0) 够高）。
+   `.tm-close`（26px 高）也在 (0,3,0)，不受影响。
+   ⚠️ 这里**不写 font-size**：字号由文件末尾那条 `.scenario-toolbar button`（12px）统一给。 */
+.scenario-toolbar :deep(button) {
   /* 2026-10-09：按钮从“纯图标”改为“图标 + 文字”——
      暮雨实测“上面一堆工具但是根本看不懂”。固定 32px 方块保留为**最小**尺寸，
      有文字时自动撑开（横排规则见文件末尾的 .scenario-toolbar button）。 */
@@ -334,14 +349,13 @@
   cursor: pointer;
 }
 
-.tool-group button:hover,
-:deep(.tool-group) button:hover { background: #475569; }
-.tool-group button.active,
-:deep(.tool-group) button.active { background: #5b21b6; border-color: #7c3aed; }
-.tool-group button:disabled,
-:deep(.tool-group) button:disabled { opacity: 0.4; cursor: not-allowed; }
-.tool-group button.saving,
-:deep(.tool-group) button.saving { animation: pulse 1s infinite; }
+/* `.tool-group` 里那份历史写法已并入上面这条（唯一入口）——
+   别再给 `.tool-group button` 单抄一份：两份迟早漂移（“改一处另两处不变”）。 */
+
+.scenario-toolbar :deep(button:hover) { background: #475569; }
+.scenario-toolbar :deep(button.active) { background: #5b21b6; border-color: #7c3aed; }
+.scenario-toolbar :deep(button:disabled) { opacity: 0.4; cursor: not-allowed; }
+.scenario-toolbar :deep(button.saving) { animation: pulse 1s infinite; }
 
 /* 笔刷设置 */
 .brush-settings {
