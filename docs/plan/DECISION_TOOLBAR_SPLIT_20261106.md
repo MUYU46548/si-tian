@@ -95,8 +95,8 @@
 | 1 | "更多"里的 拆分/合并/删除（row5） | 2 | 小 | **已完成**：`ProvinceOpsRow.vue` |
 | 2 | `primary-row` | 7 | 小 | **已完成**：`PrimaryRow.vue`（5 props / 3 emits；84 个按钮 computedStyle 零差异） |
 | 3 | `basemap-row` | 8 | 小 | **已完成**：`BasemapRow.vue`（4 props / 3 emits；84 个按钮零差异） |
-| 4 | `river-selected-row` / `river-edit-row` | 8 / 10 | 小 | 下一个；两行共用 `riverSelIds`/`selectedRiver`，可一起做 |
-| 5 | "外交/导出/历史/谱系"行 | 9 | 小 | |
+| 4 | `river-selected-row` / `river-edit-row` | 8 / 10 | 小 | **已完成**：`RiverSelectedRow.vue` + `RiverEditRow.vue`（140 条读数零差异） |
+| 5 | "外交/导出/历史/谱系"行 | 9 | 小 | 下一个 |
 | 6 | "图层/着色/栅格开关"行 | 16 | 中 | 16 个开关，建议按 3 个 `tm-card` 再分 |
 | 7 | "地名/聚落/标记/河流/派生"行 | 22 | 中 | |
 | 8 | 省份行（批量铺底那 221 行） | 39 | 大 | 先按 `tm-card` 分成 3–4 块 |
@@ -227,8 +227,38 @@ python scripts/tests/run_tests.py test_65 test_97         # 主行"恰好 6 个�
 
 **结论（下一步照做）**：搬完一行先看 m8，再用探针 `--compare`；两边都要绿。
 
+## 十、第 4 步结果（2026-11-07 已落地）
+
+河流两条行：`RiverSelectedRow.vue`（选中后的动作行：删这条 / 编辑节点 / 裁到海岸线 / 取消选中）
++ `RiverEditRow.vue`（河流工具里的节点编辑行：删这个节点 / 删整条河 / 裁到海岸线）。
+
+- `ScenarioMap.vue` **6,557 → 6,513 行**（m1 收紧到 ≤6,520）；
+- 契约：4 props + 3 emits 与 2 props + 4 emits；`v-if` 都留在父组件；
+- **一组件一行**（不是一行组件装两行）：组件多根节点会丢掉父 scope id，`.toolbar-row` 的样式就没了。
+
+### 探针从 3 档扩到 6 档（这两行逼出来的）
+
+河流行**只在两种状态下存在**（选中了河 / 用的是河流工具），原来那三档根本看不见它们，
+所以加了 `river-selected` / `river-edit` / `river-edit-none` 三档。
+
+🔴 **踩到的坑**：`selectedRiver` 是 computed（`selectedRiverId` → `baseMap.rivers` 里找），
+**不能直接给 `setupState.selectedRiver` 赋值**。第一版塞了一个假对象：行照样渲染，
+但内容走的是“未选中”分支 —— 读数里一个河流行按钮都没有，而日志看起来“成功了”。
+必须走 `sm.setRiverSelection([id])`，所以探针要先从 `baseMap.rivers` 里挑真实 id。
+
+对拍结果：**138 条读数逐项一致（0 差异）**，补上 `.river-edit-name` 后 140 条。覆盖到三种文案分支
+（多选“删除选中的 2 条” / 单选 / 未选中提示），河名 span 保持 `#93c5fd`。
+
+### 顺带修掉 m8 的一个误报
+
+m8 报 `RiverSelectedRow.vue 用了 .danger，父表给它写了样式但都不是 :deep`。实际是误报：
+父表那条是 `.ctx-item.danger`（右键菜单的危险项），它要求元素**同时**有 `ctx-item`。
+判据改成“选择器里那一截（compound）的 class 必须是该元素 class 的子集”才算管到它，
+并加了 **m8c 负向探针**（`.ctx-item.danger` 不算命中 / `.tool-btn.danger` 算命中）——
+两个方向都验过，没有把判据改瞎。
+
 ---
 
 **决断人**：AI（用户 2026-11-06 授权“大文件你自己想办法拆分”+“先把架构决断做掉”）
-**复核方式**：按第四节顺序继续第 4 步（`river-selected-row` + `river-edit-row`）。若某一步发现自己要往子组件塞超过 20 个 props，
+**复核方式**：按第四节顺序继续第 5 步（外交/导出/历史/谱系行，9 个绑定）。若某一步发现自己要往子组件塞超过 20 个 props，
 说明粒度选错 —— 回到第二节重新评估，而不是硬塞。
