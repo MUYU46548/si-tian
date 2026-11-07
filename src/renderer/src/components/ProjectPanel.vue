@@ -1001,14 +1001,20 @@ refresh();
   background: transparent;
   border: 1px solid var(--planet-btn-border);
   border-radius: var(--radius-sm);
-  color: var(--planet-text-secondary);
+  /* 2026-11-07：这枚按钮长在 PanelShell 的**表头**上，而表头底色是 --panel-header-bg
+     （暗色 #0d1117）—— 原来的 --planet-text-secondary(#636e72) 在那儿只有 **3.61:1**，
+     低于 WCAG AA 小字 4.5（test_58 的 1208 处探针里唯一不合格的一处）。
+     换成随主题翻转的正文次级色：暗色 #c9d1d9（≈12.4:1）/ 亮色 #656d76（≈4.9:1）。
+     悬停也跟着走 app 令牌 —— 原来配的是 --planet-btn-hover(#f0f7f4 浅底)，
+     暗色下配浅色文字会变成“浅底浅字”。 */
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 1px 5px;
   line-height: 1.2;
 }
 .mini-btn:hover {
-  color: var(--planet-text);
-  background: var(--planet-btn-hover);
+  color: var(--text-primary);
+  background: var(--btn-bg-hover);
 }
 .pp-status {
   border: 1px solid var(--planet-btn-border);

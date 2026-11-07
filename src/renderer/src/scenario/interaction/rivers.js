@@ -23,6 +23,10 @@ export function setRiverEngine(name) {
   return _riverEngine;
 }
 export function getRiverEngine() { return _riverEngine; }
+// 逐帧焊接的**预算线**（段数，细分后的）：见 `strokeRiverNetworkAsPaths` 里那段说明。
+// 4 万段 ≈ 真实 415 省项目（573 条河）量级的 2 倍余量；超过它说明这张图上的河数是病态的，
+// 这时候放弃焊接、照原样画，好过让整页卡死。
+const WELD_SEG_BUDGET = 40000;
 if (typeof window !== 'undefined') {
   window.__setRiverEngine = setRiverEngine;
   // 只读取值口：用例/演练要能确认"页面里跑的是哪一份实现"（写口只留给对照开关）
@@ -315,14 +319,24 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
     const ownFlow = Math.max(1, ...pts.map((p) => (Number.isFinite(p && p.flow) ? p.flow : 0)));
     jobs.push({ pts, curve, ownFlow });
   }
-  if (jobs.length > 1) {
+  // 🔴 预算闸门（2026-11-07 真机卡死）：下面这一遍焊接是 `O(段数 × 每格条目)`，而它**每帧**都跑
+  //    （曲线还按 subdiv 细分过，点数翻约 6 倍）。真实 415 省项目（573 条河）在这个量级上没事，
+  //    但"按轮廓生成地形"这类一次生成几千条河的场景会把它推到**分钟级** —— 现场是
+  //    渲染进程 100% 单核、内存涨到 2GB、CDP 全超时、连 Page.navigate 都进不去（只能杀进程）。
+  //    所以给一条预算线：超了就**不焊**，照原样画。宁可图上留几处交叉，也不许把应用卡死。
+  //    口径留痕在 `window.__SITIAN_RIVER_WELD__`（演练/排障可直接读，不必再猜）。
+  const segCount = jobs.reduce((n, j) => n + Math.max(0, (j.curve ? j.curve.length - 1 : 0)), 0);
+  const weldSkipped = segCount > WELD_SEG_BUDGET;
+  try {
+    window.__SITIAN_RIVER_WELD__ = { paths: jobs.length, segs: segCount, budget: WELD_SEG_BUDGET, skipped: weldSkipped };
+  } catch (e) { /* 非浏览器环境忽略 */ }
+  if (jobs.length > 1 && !weldSkipped) {
     const wrappers = jobs.map((j, i) => ({ id: i + 1, discharge: j.ownFlow, points: j.curve }));
     snapRiverTails(wrappers, { spacing: 8 });
     weldRiverJunctions(wrappers, { spacing: 8 });
 
     for (let i = 0; i < jobs.length; i++) jobs[i].curve = wrappers[i].points;
   }
-
   for (const job of jobs) {
     const { pts, curve, ownFlow } = job;
     if (!curve || curve.length < 2) continue;

@@ -323,6 +323,35 @@ async function main() {
       === JSON.stringify(again.rivers.map((r) => [r.id, r.parent, r.order, r.points]));
     ok('a21 焊接是确定性的：同输入两次构建逐字节一致', same);
 
+    // 负向探针（2026-11-07 真机卡死）：坏坐标的河**不许**把焊接拖死。
+    // 现场：渲染进程 100% 单核 + 内存涨到 2GB + 页面彻底不响应（连 Page.navigate 都进不去，只能杀进程），
+    // 调试器抓到的栈就落在 `weldRiverJunctions` 的按格扫循环上 —— `gx <= Infinity` 恒真，
+    // 每轮还新分配一个 `"gx,gy"` 字符串。没有 `cellRange` 闸门时，下面这两条会**直接挂住**
+    // （用例自己就成了受害者），所以判据里带墙钟。
+    {
+      const t0 = Date.now();
+      const bad = { id: 91, discharge: 1, points: [{ x: 0, y: 0 }, { x: Infinity, y: 0 }] };
+      const good = { id: 92, discharge: 100, points: [{ x: 0, y: 10 }, { x: 100, y: 10 }] };
+      const stx = R.weldRiverJunctions([good, bad], { spacing: 10 });
+      const dt = Date.now() - t0;
+      ok('a23 负向探针：Infinity 坐标的河不许把焊接拖死（闸门 + 墙钟）',
+        dt < 2000 && stx && typeof stx.cut === 'number', `耗时 ${dt}ms / cut=${stx && stx.cut}`);
+
+      const t1 = Date.now();
+      const huge = { id: 93, discharge: 1, points: [{ x: -1e9, y: 0 }, { x: 1e9, y: 0 }] };
+      const sty = R.weldRiverJunctions([good, huge], { spacing: 10 });
+      const dt2 = Date.now() - t1;
+      ok('a24 负向探针：跨 2e8 格的"河段"同样不许拖死',
+        dt2 < 2000 && sty && typeof sty.cut === 'number', `耗时 ${dt2}ms / cut=${sty && sty.cut}`);
+
+      // 闸门不许放宽：正常数据上的焊接行为一个字都不变
+      const n1 = { id: 94, discharge: 100, points: [{ x: 0, y: 50 }, { x: 100, y: 50 }] };
+      const n2 = { id: 95, discharge: 10, points: [{ x: 40, y: 0 }, { x: 60, y: 100 }] };
+      const stz = R.weldRiverJunctions([n1, n2], { spacing: 10 });
+      ok('a25 闸门不放宽：正常交叉照样裁、照样挂 parent',
+        stz.cut === 1 && n2.parent === 94, `cut=${stz.cut} parent=${n2.parent}`);
+    }
+
     // 落库形状（量化到 0.01）之后仍然 0 交叉：量化会把“端点正好落在干流上”挪开一丝，
     // 实测真实项目会因此长出 30 处“贴着汇流点的越线”——所以 toStoredRivers 里再焊一次。
     const stored = R.toStoredRivers(net);

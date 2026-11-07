@@ -936,10 +936,11 @@ export function snapRiverTails(rivers, opts = {}) {
     const pts = r.points || [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i], b = pts[i + 1];
-      const x0 = Math.floor(Math.min(a.x, b.x) / cell), x1 = Math.floor(Math.max(a.x, b.x) / cell);
-      const y0 = Math.floor(Math.min(a.y, b.y) / cell), y1 = Math.floor(Math.max(a.y, b.y) / cell);
-      for (let gx = x0; gx <= x1; gx++) {
-        for (let gy = y0; gy <= y1; gy++) {
+      // 坏坐标不索引（同 weldRiverJunctions 的 cellRange 说明：Infinity 会让格框循环恒真）
+      const rg = cellRange(a, b, cell);
+      if (!rg) continue;
+      for (let gx = rg.x0; gx <= rg.x1; gx++) {
+        for (let gy = rg.y0; gy <= rg.y1; gy++) {
           const k = gx + ',' + gy;
           const arr = grid.get(k);
           if (arr) arr.push({ rid: r.id, a, b });
@@ -957,6 +958,7 @@ export function snapRiverTails(rivers, opts = {}) {
     if (pts.length < 2) continue;
     if (onlyDeadEnds && (r.endInSea || r.endInLake || r.endsAtJunction)) continue;
     const tail = pts[pts.length - 1];
+    if (!safePoint(tail.x, tail.y)) continue;
     const reach = (r.parent && !ignoreParent) ? maxParentGap : maxGap;
     const gx0 = Math.floor((tail.x - reach) / cell), gx1 = Math.floor((tail.x + reach) / cell);
     const gy0 = Math.floor((tail.y - reach) / cell), gy1 = Math.floor((tail.y + reach) / cell);
@@ -994,6 +996,39 @@ export function snapRiverTails(rivers, opts = {}) {
     snapped++;
   }
   return { snapped };
+}
+
+// ── 网格索引的"安全格框"（2026-11-07 真机卡死后的补丁）────────────────────────────
+// 🔴 现场（真机 test_109，调试器抓到的栈）：
+//    weldRiverJunctions ← strokeRiverNetworkAsPaths ← renderFrame ← render ← watch 回调
+//    表现：渲染进程 100% 单核一直转、内存涨到 2GB、CDP 全部超时、连 Page.navigate 都进不去
+//    （只能杀进程）。根因是下面每个循环都长这样：
+//        for (let gx = x0; gx <= x1; gx++) { const k = gx + ',' + gy; ... }
+//    一旦某条河的坐标是 **Infinity**（或 1e9 这种离谱值），`gx <= Infinity` 恒真 ——
+//    每轮还新分配一个 `"gx,gy"` 字符串 → 死循环 + 堆增长，正好是现场那两条读数。
+//    坐标来自数据（生成器 / 导入的 .map），渲染层**绝不能**因为一条坏数据把整个应用拖死。
+// 处置：格框统一走 `cellRange()`：非有限值 / 超出量程 / 跨格数过大 → 返回 null，那条段不参与焊接
+//      （画的时候照画，只是不给它找汇流点）。宁可在图上留一处交叉，也不许把应用卡住。
+const WELD_MAX_ABS_COORD = 1e7;      // 真实世界坐标是几百~几千，差三个数量级即视为坏数据
+const WELD_MAX_CELLS_PER_SEG = 4096; // 一段跨 4096 格已不是"一条河的一段"
+
+function cellRange(a, b, cellSize) {
+  if (!a || !b) return null;
+  const ax = Number(a.x), ay = Number(a.y), bx = Number(b.x), by = Number(b.y);
+  if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) return null;
+  if (Math.abs(ax) > WELD_MAX_ABS_COORD || Math.abs(bx) > WELD_MAX_ABS_COORD
+      || Math.abs(ay) > WELD_MAX_ABS_COORD || Math.abs(by) > WELD_MAX_ABS_COORD) return null;
+  const x0 = Math.floor(Math.min(ax, bx) / cellSize), x1 = Math.floor(Math.max(ax, bx) / cellSize);
+  const y0 = Math.floor(Math.min(ay, by) / cellSize), y1 = Math.floor(Math.max(ay, by) / cellSize);
+  if (x1 - x0 > WELD_MAX_CELLS_PER_SEG || y1 - y0 > WELD_MAX_CELLS_PER_SEG) return null;
+  return { x0, x1, y0, y1 };
+}
+
+/** 单点（reach 方框）同样要有闸门：hostAt / nearestOther 也是按格扫的 */
+function safePoint(x, y) {
+  const nx = Number(x), ny = Number(y);
+  return Number.isFinite(nx) && Number.isFinite(ny)
+    && Math.abs(nx) <= WELD_MAX_ABS_COORD && Math.abs(ny) <= WELD_MAX_ABS_COORD;
 }
 
 /**
@@ -1035,10 +1070,10 @@ export function weldRiverJunctions(rivers, opts = {}) {
   const crossesIndexed = (a, b, selfId) => {
     const rx = b.x - a.x, ry = b.y - a.y;
     const EPS = 1e-6;
-    const x0 = Math.floor(Math.min(a.x, b.x) / cellSize), x1 = Math.floor(Math.max(a.x, b.x) / cellSize);
-    const y0 = Math.floor(Math.min(a.y, b.y) / cellSize), y1 = Math.floor(Math.max(a.y, b.y) / cellSize);
-    for (let gx = x0; gx <= x1; gx++) {
-      for (let gy = y0; gy <= y1; gy++) {
+    const rg = cellRange(a, b, cellSize);
+    if (!rg) return false;                       // 坏坐标：不参与（见 cellRange 的说明）
+    for (let gx = rg.x0; gx <= rg.x1; gx++) {
+      for (let gy = rg.y0; gy <= rg.y1; gy++) {
         const arr = grid.get(gx + ',' + gy);
         if (!arr) continue;
         for (const cand of arr) {
@@ -1127,10 +1162,10 @@ export function weldRiverJunctions(rivers, opts = {}) {
     const pts = r.points || [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i], b = pts[i + 1];
-      const x0 = Math.floor(Math.min(a.x, b.x) / cellSize), x1 = Math.floor(Math.max(a.x, b.x) / cellSize);
-      const y0 = Math.floor(Math.min(a.y, b.y) / cellSize), y1 = Math.floor(Math.max(a.y, b.y) / cellSize);
-      for (let gx = x0; gx <= x1; gx++) {
-        for (let gy = y0; gy <= y1; gy++) {
+      const rg = cellRange(a, b, cellSize);
+      if (!rg) continue;
+      for (let gx = rg.x0; gx <= rg.x1; gx++) {
+        for (let gy = rg.y0; gy <= rg.y1; gy++) {
           const k = gx + ',' + gy;
           const arr = grid.get(k);
           if (arr) arr.push({ rid: r.id, a, b });
@@ -1147,12 +1182,12 @@ export function weldRiverJunctions(rivers, opts = {}) {
     let hit = null;
     for (let i = 0; i + 1 < pts.length && !hit; i++) {
       const a = pts[i], b = pts[i + 1];
-      const x0 = Math.floor(Math.min(a.x, b.x) / cellSize), x1 = Math.floor(Math.max(a.x, b.x) / cellSize);
-      const y0 = Math.floor(Math.min(a.y, b.y) / cellSize), y1 = Math.floor(Math.max(a.y, b.y) / cellSize);
+      const rg = cellRange(a, b, cellSize);
+      if (!rg) continue;
       let best = null;
       const seen = new Set();
-      for (let gx = x0; gx <= x1; gx++) {
-        for (let gy = y0; gy <= y1; gy++) {
+      for (let gx = rg.x0; gx <= rg.x1; gx++) {
+        for (let gy = rg.y0; gy <= rg.y1; gy++) {
           const arr = grid.get(gx + ',' + gy);
           if (!arr) continue;
           for (const cand of arr) {
@@ -1220,6 +1255,7 @@ export function weldRiverJunctions(rivers, opts = {}) {
   // 这一遍把两类一起处理：按 discharge 从大到小认领落点，后到的若与已认领的落点 < declumpGap，
   // 就沿主干**向下游**挪到下一个顶点（顶点在线上，量化不会挪偏；挪完还验一次不横穿别的河）。
   const nearestOther = (x, y, selfId, reach) => {
+    if (!safePoint(x, y)) return null;
     const gx0 = Math.floor((x - reach) / cellSize), gx1 = Math.floor((x + reach) / cellSize);
     const gy0 = Math.floor((y - reach) / cellSize), gy1 = Math.floor((y + reach) / cellSize);
     let best = null;
@@ -1245,6 +1281,7 @@ export function weldRiverJunctions(rivers, opts = {}) {
    *  （实测 26 对同点汇入只拆掉 14 对就是这个原因）。取“最近的那一档里最大的”，
    *  既不会跳到远处的河上，又能稳定指到真正的主干。 */
   const hostAt = (x, y, selfId, reach) => {
+    if (!safePoint(x, y)) return null;
     const gx0 = Math.floor((x - reach) / cellSize), gx1 = Math.floor((x + reach) / cellSize);
     const gy0 = Math.floor((y - reach) / cellSize), gy1 = Math.floor((y + reach) / cellSize);
     const cands = [];
