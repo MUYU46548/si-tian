@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 73：A8 —— 历史剧本“势力标注”（自定义势力名 + EU4 式分级）
 
@@ -26,6 +26,7 @@ import sys, os, io, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib import helpers as H  # noqa: E402
 from lib.cdp import wait_for, eval_json  # noqa: E402
+from lib.rsrc import render_src            # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -113,7 +114,8 @@ def _function_body(src, fn):
 
 def sub_source_guards(cdp):
     import re as _re
-    sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-11-07：开关搬进 panels/toolbar/settings —— 读渲染层合集（判据不放宽）
+    sm = _code_only(render_src())
     util = _code_only(_read('src/renderer/src/utils/polityLabels.js'))
     bad = []
 

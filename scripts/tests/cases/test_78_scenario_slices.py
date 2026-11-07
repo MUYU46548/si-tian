@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 78：历史剧本“逐年切片导出 + 易主日期录入”
 
@@ -40,6 +40,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import wait_for, eval_json  # noqa: E402
+from lib.rsrc import render_src            # noqa: E402
 from lib.helpers import ensure_data_ready  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -74,7 +75,8 @@ def sub_source_guards(cdp):
             bad.append(f'utils/scenarioSlices.js 缺少 {sym}')
 
     ex = _code_only(_read('src/renderer/src/composables/useScenarioExport.js'))
-    sm = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-11-07：切片导出入口搬进 panels/toolbar —— 读渲染层合集（判据不放宽）
+    sm = _code_only(render_src())
     if "from '../utils/scenarioSlices'" not in ex:
         bad.append('导出链没引 scenarioSlices（帧索引会变成第二份实现）')
     for sym in ['collectSliceFrames', 'changeDateStats', 'sliceFrameName']:

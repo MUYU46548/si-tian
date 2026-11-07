@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 153：**文化 / 宗教 / 势力派生**（P0-4，2026-10-25）
 
@@ -24,6 +24,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import eval_json, wait_for      # noqa: E402
+from lib.rsrc import render_src             # noqa: E402
 from lib.helpers import ensure_case_state   # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -69,7 +70,8 @@ def source_gates():
     pe = _code_only(_read('src/renderer/src/store/geodataModules/provinceEditing.js'))
     se = _code_only(_read('src/renderer/src/store/geodataModules/scenarioEditing.js'))
     panel = _code_only(_read('src/renderer/src/components/DerivePanel.vue'))
-    smv = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # 2026-11-07：工具栏九步拆分后入口搬进 panels/toolbar —— 读渲染层合集（判据不放宽）
+    smv = _code_only(render_src())
     wg = _code_only(_read('src/renderer/src/store/writeGate.js'))
 
     for anchor in ('deriveCultureLayers', 'planPolities'):

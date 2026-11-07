@@ -21,6 +21,7 @@ import os
 import time
 
 from lib.cdp import eval_json, wait_for
+from lib.rsrc import render_src
 
 STORE = "document.querySelector('#app').__vue_app__._instance.setupState.store"
 SM = "document.querySelector('.scenario-map-container').__vueParentComponent.setupState"
@@ -29,8 +30,11 @@ KEY = 'case136'
 SC = KEY + '/甲时代'
 
 # ── 源码闸门（五处必须同时在：UI / 入口函数 / 画布提示 / store 写口 / 写闸门契约）─────────
+# ⚠️ 2026-11-07：第一组改读**渲染层合集**（`<render>` = ScenarioMap + scenario/{layers,interaction,panels,styles}）。
+#    工具栏九步拆分把按钮/提示搬进了 `scenario/panels/toolbar/**`，只读 ScenarioMap.vue 会假红 ——
+#    真机行为段全过（那一轮实测“第一笔 → 1 个省 / 28 顶点”），红的只是文件路径。判据本身一个字没放宽。
 GATES = [
-    ('src/renderer/src/components/ScenarioMap.vue',
+    ('<render>',
      ['data-testid="basemap-tool-provincePaint"',
       'data-testid="province-paint-entry"',
       'data-testid="empty-province-brush"',
@@ -38,7 +42,7 @@ GATES = [
       'data-testid="province-paint-hint"',
       "tool === 'provincePaint'",
       "setTool('provincePaint')"],
-     'ScenarioMap 入口 / 按钮 / 提示'),
+     'ScenarioMap 入口 / 按钮 / 提示（渲染层合集）'),
     ('src/renderer/src/store/geodataModules/provinceEditing.js',
      ['function createProvinceFromBrush(', "s.tool === 'provincePaint'", 'paintProvinceShape('],
      'store 笔刷建省写口'),
@@ -238,11 +242,14 @@ def _js_eval(cdp, tpl, desc, **subs):
 def _gates():
     fails = []
     for rel, needles, label in GATES:
-        path = os.path.join(ROOT, rel)
-        if not os.path.exists(path):
-            fails.append(f'{label}：文件不存在 {rel}')
-            continue
-        src = open(path, encoding='utf-8').read()
+        if rel == '<render>':
+            src = render_src()          # 渲染层合集（见 GATES 上的说明）
+        else:
+            path = os.path.join(ROOT, rel)
+            if not os.path.exists(path):
+                fails.append(f'{label}：文件不存在 {rel}')
+                continue
+            src = open(path, encoding='utf-8').read()
         for n in needles:
             if n not in src:
                 fails.append(f'{label}：缺 `{n}`（{rel}）')

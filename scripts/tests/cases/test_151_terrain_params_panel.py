@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 151：地形生成**参数面板**（P0-1）+ 气候真实输入（P0-3），2026-10-25
 
@@ -25,6 +25,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lib.cdp import eval_json, wait_for      # noqa: E402
+from lib.rsrc import render_src             # noqa: E402
 from lib.helpers import ensure_case_state  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -66,7 +67,9 @@ def source_gates():
     fails = []
     tp = _code_only(_read('src/renderer/src/utils/terrainParams.js'))
     panel = _code_only(_read('src/renderer/src/components/TerrainGenPanel.vue'))
-    smv = _code_only(_read('src/renderer/src/components/ScenarioMap.vue'))
+    # ⚠️ 2026-11-07：工具栏九步拆分后入口搬进 `scenario/panels/toolbar/**` —— 读渲染层合集
+    #    （`lib.rsrc.render_src`），判据一个字没放宽；行星侧入口仍只认 PlanetMap.vue（下面 pmv）。
+    smv = _code_only(render_src())
     se = _code_only(_read('src/renderer/src/store/geodataModules/scenarioEditing.js'))
 
     # ① 参数表只有一份，且映射口唯一
