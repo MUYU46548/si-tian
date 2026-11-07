@@ -224,6 +224,19 @@ def collect(out_path, want_shot=True):
                 if gb and tb.get('ok'):
                     png = os.path.join(shot_dir, phase + '.png')
                     ck(f'工具栏截图·{phase}', capture(cdp, tb['box'], png), os.path.basename(png))
+                # ⚠️ 拆出去的行大多住在“更多”这块**浮层**里（`position:absolute`，锚在工具栏上、
+                #    落在工具栏矩形**下面**）。只截工具栏会漏掉它们 —— 试点那 3 个按钮
+                #    （拆分/合并/删除）就是这么在截图里看不见的。
+                gb2, tb2 = eval_json(cdp, """(() => {
+                  const el = document.querySelector('.toolbar-more');
+                  if (!el) return JSON.stringify({ ok: false });
+                  const r = el.getBoundingClientRect();
+                  return JSON.stringify({ ok: true,
+                    box: { x: r.left, y: r.top, w: r.width, h: r.height } });
+                })()""", required=('ok',), desc='量更多面板矩形')
+                if gb2 and tb2.get('ok'):
+                    png2 = os.path.join(shot_dir, phase + '-morepanel.png')
+                    ck(f'更多面板截图·{phase}', capture(cdp, tb2['box'], png2), os.path.basename(png2))
         res['count'] = len(res['items'])
         res['ts'] = time.strftime('%Y-%m-%dT%H:%M:%S')
         res['root'] = rt.ROOT

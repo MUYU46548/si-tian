@@ -69,10 +69,18 @@ def sub_source_guards(cdp):
     # ① 跨 IPC 的载荷必须过统一下载口
     #    2026-10-24 起正式路径传**字符串**（`projectJson`）：主进程直接写盘，不做第二次 stringify、
     #    也不克隆 3.6MB 对象图。对象版 `toIpcPlain` 仍是别的 IPC 载荷（如新建项目）的下载口。
-    if not re.search(r'projectJson:\s*toIpcJson\(', proj):
-        bad.append('saveProject 的 IPC 实参没有过 toIpcJson（落盘文本必须走统一下载口）')
+    #    ⚠️ 2026-11-07：保存链改成**分块序列化**后这里不再直接调 `toIpcJson(`，
+    #    而是 `const projectJson = await toIpcJsonChunked(withSnapshot)`（88e0b97）。
+    #    两条都放行，但**必须**走项目 schema 导出的那个下载口：
+    #    `toIpcJsonChunked` 与 `toIpcJson` 产出同一份文本这件事由
+    #    `unit/test_save_chain_chunked.js` 逐字节守着，这里只守“没有绕过下载口”。
+    if not re.search(r'projectJson:\s*toIpcJson\(', proj) \
+            and not re.search(r'const projectJson\s*=\s*await\s+toIpcJsonChunked\(', proj):
+        bad.append('saveProject 的 IPC 实参没有过 toIpcJson / toIpcJsonChunked（落盘文本必须走统一下载口）')
     if not re.search(r'export function toIpcJson\(', schema):
         bad.append('projectSchema 没有导出 toIpcJson（落盘文本的下载口）')
+    if not re.search(r'export (async )?function toIpcJsonChunked\(', schema):
+        bad.append('projectSchema 没有导出 toIpcJsonChunked（分块版下载口，块间让出一拍）')
     # ② 反证：不许再回到“直接传项目对象”的旧写法（代理不可克隆 / 二次 stringify）
     if re.search(r'project:\s*withSnapshot\b', proj):
         bad.append('saveProject 又直接把 withSnapshot 交给 IPC 了（代理不可克隆）')

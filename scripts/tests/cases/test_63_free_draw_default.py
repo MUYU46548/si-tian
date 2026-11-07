@@ -91,7 +91,13 @@ def source_gates():
         ('if (!snap) return {',
          'freeTraceRing 的不吸附分支'),
         ('function focusNewProvince(', '新建后选中 + 名字输入聚焦'),
-        ('ref="provNameInput"', '属性面板名字框可聚焦（P1 名字输入）'),
+        # 2026-11-07：名字框随属性面板搬进了 `scenario/panels/ProvincePropsPanel.vue`
+        # （`ref="provNameInput"` → `<input ref="nameInput">` + `defineExpose({ focusName })`）。
+        # 语义没变（“新建后光标落进名字框”），判据跟着实现走：面板自己暴露 focusName，
+        # 父组件**真的调**它 —— 不许跨组件抓 DOM（跨组件只会静默拿到 null）。
+        ('ref="nameInput"', '属性面板名字框（面板内自有 ref）'),
+        ('defineExpose({ focusName })', '属性面板对外暴露 focusName'),
+        ('provincePropsRef.value?.focusName?.()', '新建后由父组件调用面板的 focusName'),
         ('kind: \'land\'', '新省默认 kind=land'),
     ]
     for needle, label in checks:
