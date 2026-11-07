@@ -260,6 +260,117 @@ function main() {
     return `${EXTRACTED.length} 个`;
   });
 
+  // 🔴 2026-11-07 真机抓到的事故：试点把「拆分 / 合并 / 删除」那一行拆进
+  // `scenario/panels/toolbar/ProvinceOpsRow.vue` 之后，这三个按钮退回**浏览器默认样式**
+  // （实测 h=23px / font=Arial 13.3px / display=inline-block / 白底黑字），
+  // 而同一屏其它按钮是 h=32px / 12px / flex / 深色皮肤。
+  //
+  // 根因：`<style scoped>` 的父 scope id **只贴在子组件的根元素上**，子组件内部的
+  // `<button>` / `<label>` 拿不到 `[data-v-父]`，于是 `.scenario-toolbar button`
+  // 与 `.tool-group button` 这两条“皮肤规则”一条都不命中。
+  // 这件事源码闸门看不见（class 还在、DOM 结构没变），浮层视觉演练也看不见
+  // （它只覆盖 6 个浮层，不覆盖工具栏行）—— 只有真机上量 computedStyle 才现形。
+  //
+  // 判据：工具栏的子组件模板里出现的每一个**行内 class / button 标签**，
+  // 父表（scenario-map.css）里给它写样式的规则必须带 `:deep(`（穿越组件边界）。
+  function stripCssComments(css) { return css.replace(/\/\*[\s\S]*?\*\//g, ''); }
+  /** 抽出 css 里所有规则的选择器（@ 规则本身跳过） */
+  function cssSelectors(css) {
+    const out = [];
+    const re = /([^{}]+)\{/g;
+    let m;
+    while ((m = re.exec(css))) {
+      const sel = m[1].trim().replace(/\s+/g, ' ');
+      if (!sel || sel.startsWith('@')) continue;
+      out.push(sel);
+    }
+    return out;
+  }
+  /** 某个 class 名在这条选择器里是“独立 class token”吗（`.tool-group` 不算命中 `.tool-group-x`） */
+  function hasClassToken(sel, cls) {
+    return new RegExp('\\.' + cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_-])').test(sel);
+  }
+  const TOOLBAR_DIR = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', 'toolbar');
+  /** 工具栏行组件里用到的“行内 class”与“是否用到 button 标签”（源码级，AST 太重这里不需要） */
+  function toolbarRowNeeds(src) {
+    const tpl = (src.match(/<template>([\s\S]*)<\/template>/) || [, src])[1];
+    // ⚠️ 根元素的 class **不需要** :deep —— `<style scoped>` 的父 scope id 会贴在子组件根节点上，
+    //    所以 `.toolbar-row` 这类“根上的 class”照常命中（试点那次就是这么被误判成“没事”的）。
+    //    真正的坑在**根里面**：按钮、小标签、分组框。这里先把根元素的 class 摘出去。
+    const firstTag = tpl.match(/<([a-zA-Z][\w-]*)([^>]*)>/);
+    const rootClasses = new Set();
+    if (firstTag) {
+      const cm = firstTag[2].match(/\sclass="([^"]*)"/);
+      if (cm) for (const tok of cm[1].split(/\s+/)) if (tok && !tok.includes('{')) rootClasses.add(tok);
+    }
+    const classes = new Set();
+    for (const m of tpl.matchAll(/\sclass="([^"]*)"/g)) {
+      for (const tok of m[1].split(/\s+/)) if (tok && !tok.includes('{')) classes.add(tok);
+    }
+    // `:class="{ active: … }"` 这类动态 class 只取 key（active 等是状态，不在这里管）
+    return { classes: [...classes].filter((c) => !rootClasses.has(c)),
+      rootClasses: [...rootClasses], usesButton: /<button[\s>]/.test(tpl) };
+  }
+  check('m8 拆进 scenario/panels/toolbar/ 的行：父表必须用 :deep 给行内元素上样式（真机事故守门）', () => {
+    assert(fs.existsSync(TOOLBAR_DIR), `找不到 ${TOOLBAR_DIR}`);
+    const files = fs.readdirSync(TOOLBAR_DIR).filter((f) => f.endsWith('.vue'));
+    // 这条判据必须**有东西可查**，否则组件全删了也全绿
+    assert(files.length > 0, 'scenario/panels/toolbar/ 下没有任何 .vue —— 判据空转');
+    const sels = cssSelectors(stripCssComments(CSS_SRC));
+    const bad = [];
+    let checked = 0;
+    for (const f of files) {
+      const src = readText(path.join(TOOLBAR_DIR, f));
+      const { classes, usesButton } = toolbarRowNeeds(src);
+      // ① button 标签：父表里必须有 `.scenario-toolbar :deep(button)` 这类穿越规则
+      if (usesButton) {
+        const hit = sels.some((s) => s.includes(':deep(') && /\bbutton\b/.test(s));
+        checked++;
+        if (!hit) bad.push(`${f} 用了 <button>，但 scenario-map.css 里没有一条带 :deep( 且选择 button 的规则`
+          + ' —— 子组件里的按钮会退回浏览器默认样式（h≈23px / Arial / 白底）');
+      }
+      // ② 行内 class：凡是父表给它写过样式的，就必须同时有一条 :deep 版本
+      for (const cls of classes) {
+        const styling = sels.filter((s) => hasClassToken(s, cls));
+        if (!styling.length) continue;                      // 父表根本不管这个 class，跳过
+        checked++;
+        const deep = styling.some((s) => s.includes(':deep('));
+        if (!deep) bad.push(`${f} 用了 .${cls}，父表给它写了样式但都不是 :deep(`
+          + `命中：${styling.slice(0, 2).join(' / ')}) —— 子组件里这条样式不会生效`);
+      }
+    }
+    assert(checked > 0, '一个依赖都没查到 —— 判据空转（组件模板解析规则变了？）');
+    assert(!bad.length, bad.join('；'));
+    return `${files.length} 个行组件 / ${checked} 项依赖`;
+  });
+
+  // 负向探针：合成一个“子组件里有 button 与小标签、父表却没写 :deep”的现场，
+  // 检测逻辑必须当场点名（否则 m8 是空转，下次事故照样绿灯）。
+  check('m8b 负向探针：父表只写非 :deep 的按钮规则 → 必须被判成缺 :deep', () => {
+    const probeCss = stripCssComments([
+      '.scenario-toolbar button { height: 32px; }',
+      '.row-label { color: #94a3b8; }',
+    ].join('\n'));
+    const sels = cssSelectors(probeCss);
+    const probeTpl = '<template><div class="toolbar-row"><label class="row-label">省份：</label>'
+      + '<button>拆分</button></div></template>';
+    const { classes, usesButton } = toolbarRowNeeds(probeTpl);
+    assert(usesButton, '探针模板里的 <button> 没认出来');
+    assert(classes.includes('row-label'), '探针模板里的 .row-label 没认出来');
+    const btnDeep = sels.some((s) => s.includes(':deep(') && /\bbutton\b/.test(s));
+    assert(!btnDeep, '探针对照失效：本来不该有 :deep(button)');
+    const labelDeep = sels.filter((s) => hasClassToken(s, 'row-label')).some((s) => s.includes(':deep('));
+    assert(!labelDeep, '探针对照失效：本来不该有 :deep(.row-label)');
+    // 再验“加了 :deep 就能被认出来”（避免判据永远为红）
+    const goodCss = stripCssComments('.scenario-toolbar :deep(button) { height: 32px; }'
+      + '.scenario-toolbar :deep(.row-label) { color: #94a3b8; }');
+    const gs = cssSelectors(goodCss);
+    assert(gs.some((s) => s.includes(':deep(') && /\bbutton\b/.test(s)), '加了 :deep(button) 却没认出来');
+    assert(gs.filter((s) => hasClassToken(s, 'row-label')).some((s) => s.includes(':deep(')),
+      '加了 :deep(.row-label) 却没认出来');
+    return '非 :deep → 红；加了 :deep → 绿';
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
   console.log(`\n=== ScenarioMap 体量与浮层落点 ${results.length - failed.length}/${results.length} 通过 ===`);

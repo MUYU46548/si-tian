@@ -214,21 +214,34 @@
 /* 卡片里的行：竖向排、彼此留 4px；卡片内的按钮组继续按行内换行 */
 .tm-card .toolbar-row { min-height: 0; gap: 6px; }
 
-.row-label {
+/* 🔴 2026-11-07：工具栏各行开始拆成子组件（`scenario/panels/toolbar/*.vue`）后，
+   下面这套“按钮皮肤 + 行内小标签”必须用 `:deep()` 才够得着 ——
+   `<style scoped>` 的父 scope id 只贴在子组件的**根元素**上，子组件内部那些
+   `<button>` / `<label>` 拿不到 `[data-v-父]`，于是 `.scenario-toolbar button`
+   （高度 32 / 字体 12 / flex）与 `.tool-group button`（深色皮肤）一条都不命中。
+   真机读数见过的样子：拆分/合并/删除三个按钮 h=23px、font=Arial 13.3px、display=inline-block，
+   同一屏其它按钮是 32px / 12px / flex —— 源码闸门与浮层视觉演练都看不见这种事故。
+   ⚠️ 别删这些 `:deep()`：删了就是“子组件里的按钮悄悄变成浏览器默认样式”。 */
+.row-label,
+.scenario-toolbar :deep(.row-label) {
   color: #94a3b8;
   font-size: 11px;
   white-space: nowrap;
 }
 
-.row-hint {
+.row-hint,
+.scenario-toolbar :deep(.row-hint) {
   color: #94a3b8;
   font-size: 11px;
   padding: 2px 8px;
   border: 1px dashed #475569;
   border-radius: 10px;
 }
-.row-hint.ready { color: #86efac; border-color: #3f6212; }
+.row-hint.ready,
+.scenario-toolbar :deep(.row-hint.ready) { color: #86efac; border-color: #3f6212; }
 
+/* ⚠️ `.back-btn` 别的视图也在用（AreaMap / GalaxyMap / PlanetMap…），
+   所以这里只**增加**一条工具栏内的 :deep 入口，不动基础规则。 */
 .back-btn {
   padding: 6px 12px;
   border: 1px solid #475569;
@@ -242,7 +255,8 @@
 
 .back-btn:hover { background: #475569; }
 
-.tool-group {
+.tool-group,
+.scenario-toolbar :deep(.tool-group) {
   display: flex;
   gap: 4px;
   align-items: center;
@@ -257,17 +271,21 @@
 /* 组内的小标题（“底图：”“地形：”“图层：”“着色：”）：
    不许被压缩、不许折行 —— 截图实测「底图：」被挤成“底/图”两行，还压到了旁边的按钮上。 */
 .tool-group > label,
-.tool-group > .row-label {
+.tool-group > .row-label,
+.scenario-toolbar :deep(.tool-group) > label,
+.scenario-toolbar :deep(.tool-group) > .row-label {
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
-.tool-group label {
+.tool-group label,
+.scenario-toolbar :deep(.tool-group) label {
   color: #94a3b8;
   font-size: 11px;
 }
 
-.tool-group select {
+.tool-group select,
+.scenario-toolbar :deep(.tool-group) select {
   background: #334155;
   color: #e2e8f0;
   border: 1px solid #475569;
@@ -276,7 +294,8 @@
   font-size: 12px;
 }
 
-.check-label {
+.check-label,
+.scenario-toolbar :deep(.check-label) {
   display: flex;
   align-items: center;
   gap: 3px;
@@ -288,10 +307,19 @@
   white-space: nowrap;
 }
 
-.tool-group button {
+/* 按钮皮肤（`:deep` 版供拆出去的行用，2026-11-07）—— 见上面那段“为什么必须 :deep”。
+   ⚠️ 作用域必须与原来**完全一样**：只给 `.tool-group` 里的按钮上皮肤。
+   2026-11-07 实测教训：先写成 `.scenario-toolbar :deep(button)`（更宽）时，
+   橙色底的「底图编辑 ✓」与「← 日常视图」被这条盖掉（`.scenario-toolbar[data-v] button`
+   的 specificity 高于 `.basemap-exit` / `.basemap-edit-toggle.active`），
+   两个有意区分的模式按钮变成了普通紫色按钮。收窄回 `.tool-group` 后它们照旧。
+   ⚠️ 这里**不写 font-size**：字号由文件末尾那条 `.scenario-toolbar button`（12px）统一给；
+   写 14px 会把「更多」面板里的字号悄悄抬上去。 */
+.tool-group button,
+.scenario-toolbar :deep(.tool-group) button {
   /* 2026-10-09：按钮从“纯图标”改为“图标 + 文字”——
      暮雨实测“上面一堆工具但是根本看不懂”。固定 32px 方块保留为**最小**尺寸，
-     有文字时自动撑开（横排规则见 .scenario-toolbar button）。 */
+     有文字时自动撑开（横排规则见文件末尾的 .scenario-toolbar button）。 */
   min-width: 32px;
   height: 32px;
   border: 1px solid #475569;
@@ -299,13 +327,16 @@
   color: #e2e8f0;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
 }
 
-.tool-group button:hover { background: #475569; }
-.tool-group button.active { background: #5b21b6; border-color: #7c3aed; }
-.tool-group button:disabled { opacity: 0.4; cursor: not-allowed; }
-.tool-group button.saving { animation: pulse 1s infinite; }
+.tool-group button:hover,
+.scenario-toolbar :deep(.tool-group) button:hover { background: #475569; }
+.tool-group button.active,
+.scenario-toolbar :deep(.tool-group) button.active { background: #5b21b6; border-color: #7c3aed; }
+.tool-group button:disabled,
+.scenario-toolbar :deep(.tool-group) button:disabled { opacity: 0.4; cursor: not-allowed; }
+.tool-group button.saving,
+.scenario-toolbar :deep(.tool-group) button.saving { animation: pulse 1s infinite; }
 
 /* 笔刷设置 */
 .brush-settings {
@@ -987,7 +1018,8 @@
    暮雨实测：“上面一堆工具但是根本看不懂”—— 根因是所有工具按钮**只有图标没有文字**，
    名字只藏在 title 里（要悬停 1 秒才出）。这里统一改成“图标 + 文字”横排。
    ⚠️ 用 min-width 而非 width：无文字的按钮仍旧是 32×32 方块，观感不变。 */
-.scenario-toolbar button {
+.scenario-toolbar button,
+.scenario-toolbar :deep(button) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
