@@ -327,6 +327,16 @@ m8 报 `RiverSelectedRow.vue 用了 .danger，父表给它写了样式但都不�
    以及 `.scenario-toolbar :deep(X)` 与 `:deep(X)` 视为等价（先剥前缀再判）。
    负向探针复验：去掉 `.brush-settings .check-label` 的孪生 → 当场红。
 
+### 收尾时踩到的一条：注释里写通配符会让 `rsrc` 静默吞掉后面整段
+
+我在注释里写了 `scenario/panels/toolbar/settings/*.vue`，`lib/rsrc.py#strip_comments()`
+把那个 `/*` 当成**块注释开头**，一路吞到很后面的 `*/` —— `render_src_code_only()` 里整段消失
+（含批量铺底的忙时遮罩 testid），`test_92` 报“组件缺少忙时可见/可取消”，而产品代码一行没动。
+
+**静默且凶**：合集少读一段，后面所有源码闸门都跟着变窄。已立 **m9/m9b**：
+rsrc 合集里的 .vue **`/*` 只许出现在行首**、`/*` 与 `*/` 必须配对；
+负向探针验过（内联 → 红，行首 → 绿）。写注释时路径请写成 `settings/ 下的各个 .vue`。
+
 ### 九步总账
 
 | 项 | 拆分前 | 拆分后 |
