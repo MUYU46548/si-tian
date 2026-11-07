@@ -133,7 +133,10 @@
 .basemap-row {
   border-left: 3px solid #d97706; padding-left: 8px; background: rgba(120, 53, 15, 0.18);
 }
-.basemap-row-label { color: #fbbf24; }
+/* ⚠️ 2026-11-07：底图行的“底图/地理：”小标题是琥珀色的（有意与行内其它文字区分），
+   这一行搬进 `BasemapRow.vue` 后必须靠 `:deep()` 才够得着 —— m8 源码闸门当场抓到了这条。 */
+.basemap-row-label,
+.scenario-toolbar :deep(.basemap-row-label) { color: #fbbf24; }
 /* 底图编辑行末尾的出口：一眼可见、与地理工具同一条行，避免用户去点左上角的模块级返回。
    ⚠️ 2026-11-07：按钮皮肤提到 `.scenario-toolbar :deep(button)`（(0,2,1)）之后，
    原来 `.basemap-exit`（(0,2,0)）就盖不住了 —— 橙色会被普通深灰皮肤吃掉。

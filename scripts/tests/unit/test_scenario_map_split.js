@@ -108,9 +108,9 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,590（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650 → 6,620 → 6,590）', () => {
+  check('m1 SFC 行数 ≤6,560（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650 → 6,620 → 6,590 → 6,560）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6590, `ScenarioMap.vue 实测 ${n} 行，超过 6,590 —— 又往这个文件里堆东西了？`
+    assert(n <= 6560, `ScenarioMap.vue 实测 ${n} 行，超过 6,560 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/（含 toolbar/）的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });

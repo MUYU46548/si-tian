@@ -83,11 +83,31 @@ COLLECT_JS = """(() => {
     for (const k of props) style[k] = cs[k];
     const r = btn.getBoundingClientRect();
     items.push({
+      kind: 'button',
       row: rows(btn)[0] || '(no-row)',
       inMore: !!btn.closest('.toolbar-more'),
       text: (btn.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 24),
       testid: btn.getAttribute('data-testid') || '',
       parentScopeOnButton: parentScopes.some(s => btn.hasAttribute(s)),
+      box: { w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 },
+      style,
+    });
+  }
+  // ⚠️ 行里不只有按钮：小标题（省份：/ 底图/地理：）、提示（.row-hint / .draw-hint）、勾选项
+  //    也都是父组件 scoped 表在管。只量按钮会漏掉“标签掉色”这类事故
+  //    （2026-11-07 实测：`.basemap-row-label` 的琥珀色就是这么丢的，源码闸门 m8 抓到的）。
+  for (const el of toolbar.querySelectorAll('.row-label, .basemap-row-label, .row-hint, .check-label, .draw-hint, select')) {
+    const cs = getComputedStyle(el);
+    const style = {};
+    for (const k of props) style[k] = cs[k];
+    const r = el.getBoundingClientRect();
+    items.push({
+      kind: el.tagName.toLowerCase(),
+      row: rows(el)[0] || '(no-row)',
+      inMore: !!el.closest('.toolbar-more'),
+      text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 24),
+      testid: el.getAttribute('data-testid') || '',
+      parentScopeOnButton: parentScopes.some(s => el.hasAttribute(s)),
       box: { w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 },
       style,
     });
@@ -277,7 +297,8 @@ def compare(a_path, b_path):
         b = json.load(f)
 
     def key(it):
-        return (it.get('phase', '-'), it['row'], it['inMore'], it['text'], it['testid'])
+        return (it.get('phase', '-'), it.get('kind', 'button'), it['row'], it['inMore'],
+                it['text'], it['testid'])
 
     ai = {key(it): it for it in a['items']}
     bi = {key(it): it for it in b['items']}
@@ -289,14 +310,14 @@ def compare(a_path, b_path):
         ba, bb = ai[k]['box'], bi[k]['box']
         if (ba.get('w'), ba.get('h')) != (bb.get('w'), bb.get('h')):
             diff.append(f'尺寸: {ba.get("w")}×{ba.get("h")} → {bb.get("w")}×{bb.get("h")}')
-        bad += 0 if ck(f'[{k[0]}] {k[1]} · {k[3] or k[4] or "(无字)"}',
+        bad += 0 if ck(f'[{k[0]}] {k[1]} {k[2]} · {k[4] or k[5] or "(无字)"}',
                        not diff, '; '.join(diff)) else 1
     only_a = sorted(set(ai) - set(bi))
     only_b = sorted(set(bi) - set(ai))
     for k in only_a:
-        bad += 0 if ck(f'少了按钮 [{k[0]}] {k[1]} · {k[3]}', False, 'B 里找不到') else 1
+        bad += 0 if ck(f'少了元素 [{k[0]}] {k[1]} {k[2]} · {k[4]}', False, 'B 里找不到') else 1
     for k in only_b:
-        bad += 0 if ck(f'多了按钮 [{k[0]}] {k[1]} · {k[3]}', False, 'A 里没有') else 1
+        bad += 0 if ck(f'多了元素 [{k[0]}] {k[1]} {k[2]} · {k[4]}', False, 'A 里没有') else 1
     print(f'\n=== 工具栏按钮样式对拍：{len(set(ai) & set(bi))} 个对齐，{bad} 项不同 ===', flush=True)
     return 0 if not bad else 1
 

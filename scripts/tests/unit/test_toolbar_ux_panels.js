@@ -62,6 +62,9 @@ const FILES = [
   // 工具栏拆分第 2 步（2026-11-07）：主行。⚠️ 它是 `test_65` / `test_97` 盯得最紧的那一行
   // （默认态恰好 6 个可见控件），所以这里也按“至少 6 个按钮”守 —— 少一个就说明拆漏了。
   { file: 'PrimaryRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·主行（退回 / 选择 / 画省份 / 涂归属 / 改形状 / 更多）', min: 6 },
+  // 工具栏拆分第 3 步（2026-11-07）：底图/地理行。模板里 5 个 <button> 节点
+  // （其中一个是 v-for，运行时按 BASEMAP_TOOLS 展开成 12 个），少一个就说明拆漏了。
+  { file: 'BasemapRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·底图地理行（高度/湖泊/…/笔刷建省/改省界/地形注记/出口）', min: 5 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;
