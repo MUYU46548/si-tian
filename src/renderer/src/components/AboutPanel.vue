@@ -164,7 +164,7 @@
         <section class="about-section">
           <h3><Icon name="shield" :size="16" style="margin-right:6px"/>免责声明</h3>
           <p class="description">
-            {{ LOCAL_ONLY_SUMMARY }}本版本不含任何 AI 入口；完整条款共 13 节，其中
+            {{ LOCAL_ONLY_SUMMARY }}没有任何 AI 功能；完整条款共 13 节，其中
             第 3 节（内容合规责任）与第 6 节（数据安全与备份）尤其建议逐字阅读。
           </p>
           <div class="disclaimer-row">
