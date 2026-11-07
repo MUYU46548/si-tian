@@ -111,8 +111,10 @@
   background: #1f6feb; border: 1px solid #388bfd; border-radius: 6px; color: #fff; cursor: pointer;
 }
 .scenario-onboarding .so-add:hover { filter: brightness(1.12); }
-.more-toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; }
-.more-toggle.has-advanced { box-shadow: inset 0 0 0 1px var(--accent); }
+.more-toggle,
+:deep(.more-toggle) { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; }
+.more-toggle.has-advanced,
+:deep(.more-toggle.has-advanced) { box-shadow: inset 0 0 0 1px var(--accent); }
 /* 底图编辑模式（2026-10-18 第十七修）：模式条在主行**之上**（模式是"状态"，不是工具栏按钮）。
    ⚠️ 它不能进 `.primary-row` —— 主行可见控件数由 test_65 / test_97 硬守 ≤6（放进去实测 7 个、两条红）。 */
 .toolbar-modes {
@@ -223,14 +225,14 @@
    同一屏其它按钮是 32px / 12px / flex —— 源码闸门与浮层视觉演练都看不见这种事故。
    ⚠️ 别删这些 `:deep()`：删了就是“子组件里的按钮悄悄变成浏览器默认样式”。 */
 .row-label,
-.scenario-toolbar :deep(.row-label) {
+:deep(.row-label) {
   color: #94a3b8;
   font-size: 11px;
   white-space: nowrap;
 }
 
 .row-hint,
-.scenario-toolbar :deep(.row-hint) {
+:deep(.row-hint) {
   color: #94a3b8;
   font-size: 11px;
   padding: 2px 8px;
@@ -238,11 +240,13 @@
   border-radius: 10px;
 }
 .row-hint.ready,
-.scenario-toolbar :deep(.row-hint.ready) { color: #86efac; border-color: #3f6212; }
+:deep(.row-hint.ready) { color: #86efac; border-color: #3f6212; }
 
 /* ⚠️ `.back-btn` 别的视图也在用（AreaMap / GalaxyMap / PlanetMap…），
-   所以这里只**增加**一条工具栏内的 :deep 入口，不动基础规则。 */
-.back-btn {
+   所以这里只**增加**一条工具栏内的 :deep 入口，不动基础规则 ——
+   主行拆进 `PrimaryRow.vue` 后，退回键就在子组件里面了。 */
+.back-btn,
+:deep(.back-btn) {
   padding: 6px 12px;
   border: 1px solid #475569;
   background: #334155;
@@ -253,10 +257,11 @@
   margin-right: 8px;
 }
 
-.back-btn:hover { background: #475569; }
+.back-btn:hover,
+:deep(.back-btn:hover) { background: #475569; }
 
 .tool-group,
-.scenario-toolbar :deep(.tool-group) {
+:deep(.tool-group) {
   display: flex;
   gap: 4px;
   align-items: center;
@@ -272,20 +277,20 @@
    不许被压缩、不许折行 —— 截图实测「底图：」被挤成“底/图”两行，还压到了旁边的按钮上。 */
 .tool-group > label,
 .tool-group > .row-label,
-.scenario-toolbar :deep(.tool-group) > label,
-.scenario-toolbar :deep(.tool-group) > .row-label {
+:deep(.tool-group) > label,
+:deep(.tool-group) > .row-label {
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
 .tool-group label,
-.scenario-toolbar :deep(.tool-group) label {
+:deep(.tool-group) label {
   color: #94a3b8;
   font-size: 11px;
 }
 
 .tool-group select,
-.scenario-toolbar :deep(.tool-group) select {
+:deep(.tool-group) select {
   background: #334155;
   color: #e2e8f0;
   border: 1px solid #475569;
@@ -295,7 +300,7 @@
 }
 
 .check-label,
-.scenario-toolbar :deep(.check-label) {
+:deep(.check-label) {
   display: flex;
   align-items: center;
   gap: 3px;
@@ -309,14 +314,14 @@
 
 /* 按钮皮肤（`:deep` 版供拆出去的行用，2026-11-07）—— 见上面那段“为什么必须 :deep”。
    ⚠️ 作用域必须与原来**完全一样**：只给 `.tool-group` 里的按钮上皮肤。
-   2026-11-07 实测教训：先写成 `.scenario-toolbar :deep(button)`（更宽）时，
+   2026-11-07 实测教训：先写成 `:deep(button)`（更宽）时，
    橙色底的「底图编辑 ✓」与「← 日常视图」被这条盖掉（`.scenario-toolbar[data-v] button`
    的 specificity 高于 `.basemap-exit` / `.basemap-edit-toggle.active`），
    两个有意区分的模式按钮变成了普通紫色按钮。收窄回 `.tool-group` 后它们照旧。
    ⚠️ 这里**不写 font-size**：字号由文件末尾那条 `.scenario-toolbar button`（12px）统一给；
    写 14px 会把「更多」面板里的字号悄悄抬上去。 */
 .tool-group button,
-.scenario-toolbar :deep(.tool-group) button {
+:deep(.tool-group) button {
   /* 2026-10-09：按钮从“纯图标”改为“图标 + 文字”——
      暮雨实测“上面一堆工具但是根本看不懂”。固定 32px 方块保留为**最小**尺寸，
      有文字时自动撑开（横排规则见文件末尾的 .scenario-toolbar button）。 */
@@ -330,13 +335,13 @@
 }
 
 .tool-group button:hover,
-.scenario-toolbar :deep(.tool-group) button:hover { background: #475569; }
+:deep(.tool-group) button:hover { background: #475569; }
 .tool-group button.active,
-.scenario-toolbar :deep(.tool-group) button.active { background: #5b21b6; border-color: #7c3aed; }
+:deep(.tool-group) button.active { background: #5b21b6; border-color: #7c3aed; }
 .tool-group button:disabled,
-.scenario-toolbar :deep(.tool-group) button:disabled { opacity: 0.4; cursor: not-allowed; }
+:deep(.tool-group) button:disabled { opacity: 0.4; cursor: not-allowed; }
 .tool-group button.saving,
-.scenario-toolbar :deep(.tool-group) button.saving { animation: pulse 1s infinite; }
+:deep(.tool-group) button.saving { animation: pulse 1s infinite; }
 
 /* 笔刷设置 */
 .brush-settings {
@@ -873,7 +878,9 @@
   gap: 16px;
 }
 
-.draw-hint { color: #a78bfa; font-weight: 600; }
+/* 吸附提示：`draw-hint` 在这张视图里有 12 处在工具栏之外，所以 :deep 只加在工具栏那一侧 */
+.draw-hint,
+:deep(.draw-hint) { color: #a78bfa; font-weight: 600; }
 .snap-feedback { color: #34d399; font-weight: 600; }
 .snap-feedback.edge { color: #22d3ee; }
 .layer-warn { color: #fbbf24; cursor: help; }
@@ -1018,6 +1025,10 @@
    暮雨实测：“上面一堆工具但是根本看不懂”—— 根因是所有工具按钮**只有图标没有文字**，
    名字只藏在 title 里（要悬停 1 秒才出）。这里统一改成“图标 + 文字”横排。
    ⚠️ 用 min-width 而非 width：无文字的按钮仍旧是 32×32 方块，观感不变。 */
+/* ⚠️ 这一条必须带 `.scenario-toolbar` 前缀：`:deep(button)` 没有任何限定，会命中
+   **整个剧本视图里的所有按钮**（左栏剧本行、属性面板…），把它们的字号/高度一起改掉。
+   `.scenario-toolbar :deep(button)` 编译成 `.scenario-toolbar[data-v] button`，
+   specificity 与原来的 `.scenario-toolbar button[data-v]` 完全相等，不改任何既有优先关系。 */
 .scenario-toolbar button,
 .scenario-toolbar :deep(button) {
   display: inline-flex;

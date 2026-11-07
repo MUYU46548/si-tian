@@ -196,49 +196,20 @@
                 @click="toggleBasemapEditMode()">← 日常视图</button>
       </div>
 
-      <div class="toolbar-row primary-row">
-
-        <!-- 🔴 2026-10-21：这个按钮**先退子模式、再退模块**。
-             暮雨实测：在底图编辑里点左上角“← 返回”，以为是退底图编辑，结果整个历史剧本被退掉。
-             现在：底图编辑中 = “← 返回日常”（只关底图编辑）；日常态 = “← 退出剧本”（才离开模块）。
-             模块级退出还有顶部“世界观”页签，这里不再是唯一出口。 -->
-        <button @click="onBackClick" class="back-btn" data-testid="scenario-back-btn"
-                :title="basemapEditMode
-                  ? '退出底图编辑，回到日常剧本编辑（不会离开历史剧本）'
-                  : '退出历史剧本，回到世界页（顶部“世界观”页签同样可以离开）'">
-          {{ basemapEditMode ? '← 日常视图' : '← 退出剧本' }}
-        </button>
-        <button
-          :class="{ active: tool === 'select' }"
-          @click="setTool('select')"
-          title="选择 (V，默认) — 拖动平移画布，点击选中省份"
-        ><Icon name="hand" :size="15"/>选择</button>
-        <button
-          v-if="basemapEditMode"
-          :class="{ active: tool === 'draw' }"
-          @click="setTool('draw')"
-          title="画省份 · 自由绘制 (B) — 按住沿轮廓拖一圈 = 建一个省；单击 = 描点；Shift = 不吸附骨架（属于底图编辑）"
-        ><Icon name="pencil" :size="15"/>画省份</button>
-        <button
-          :class="{ active: tool === 'ownerBrush' }"
-          data-testid="owner-brush-btn"
-          @click="setTool('ownerBrush')"
-          title="涂归属 (Q) — 按住在地图上涂：碰到的省改成当前势力。一笔 = 一条撤销；Alt 点一下 = 吸管"
-        ><Icon name="brush" :size="15"/>涂归属</button>
-        <button
-          v-if="basemapEditMode"
-          :class="{ active: tool === 'vertex' }"
-          @click="setTool('vertex')"
-          title="顶点编辑 (G) — 拖拽顶点改形状（属于底图编辑）；Shift+拖动可框选一批顶点"
-        >⬡改形状</button>
-        <button
-          class="more-toggle"
-          :class="{ active: moreOpen, 'has-advanced': advancedToolActive }"
-          @click="moreOpen = !moreOpen"
-          title="更多 — 拆分 / 合并 / 点击填充 / 描轮廓 / 擦除 / 聚落 / 标记 / 道路，以及吸附与底图"
-        ><Icon name="chevron-down" :size="13"/> 更多</button>
-        <span v-if="snapToGridEnabled && (tool === 'draw' || tool === 'vertex')" class="draw-hint">吸附：50px 网格（Shift 临时禁用）</span>
-      </div>
+      <!-- 工具栏拆分第 2 步（2026-11-07）：主行搬进 `scenario/panels/toolbar/PrimaryRow.vue`。
+           这一行是“DOM 一字节都没变”最有说服力的那一步 —— 默认态下它**恰好 6 个可见控件**
+           由 `test_65` / `test_97` 硬守，搬完两枚用例照过。
+           ⚠️ 状态仍归这里（唯一所有者）：组件只读 props、只发事件（back / setTool / toggleMore）。 -->
+      <PrimaryRow
+        :basemap-edit-mode="basemapEditMode"
+        :tool="tool"
+        :more-open="moreOpen"
+        :advanced-tool-active="advancedToolActive"
+        :snap-to-grid-enabled="snapToGridEnabled"
+        @back="onBackClick"
+        @set-tool="setTool"
+        @toggle-more="moreOpen = !moreOpen"
+      />
 
       <!-- 第 2 行：省份 —— 几何只有一个来源（多边形）；网格只是涂抹时的中间层 -->
       <!-- “变更归属”的省份选项：选到省份类工具（或自己打开“更多”）才出现 ——
@@ -1612,6 +1583,10 @@ import MarkerPropsPanel from '../scenario/panels/MarkerPropsPanel.vue';
 // 工具栏拆分试点（2026-11-06）：先把依赖最少的一行搬出去，验证"按行拆 + 显式 props"这条决断
 // （docs/plan/DECISION_TOOLBAR_SPLIT_20261106.md 第四节第 1 步）
 import ProvinceOpsRow from '../scenario/panels/toolbar/ProvinceOpsRow.vue';
+// 工具栏拆分第 2 步（2026-11-07）：主行（退回 / 选择 / 画省份 / 涂归属 / 改形状 / 更多）。
+// 选它做第二步的理由：默认态下它**恰好 6 个可见控件**由 test_65 / test_97 硬守，
+// 所以“搬完 DOM 一个字节都没变”这件事它有现成判据盯着。
+import PrimaryRow from '../scenario/panels/toolbar/PrimaryRow.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

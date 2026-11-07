@@ -59,6 +59,9 @@ const FILES = [
   { file: 'MarkerPropsPanel.vue', dir: 'scenario/panels', desc: '标记属性（收起 / 删除标记）', min: 2 },
   // 工具栏拆分试点（2026-11-06）：按行拆出来的第一行，根元素仍是 `.toolbar-row`
   { file: 'ProvinceOpsRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·省份行（拆分 / 合并 / 删除）' },
+  // 工具栏拆分第 2 步（2026-11-07）：主行。⚠️ 它是 `test_65` / `test_97` 盯得最紧的那一行
+  // （默认态恰好 6 个可见控件），所以这里也按“至少 6 个按钮”守 —— 少一个就说明拆漏了。
+  { file: 'PrimaryRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·主行（退回 / 选择 / 画省份 / 涂归属 / 改形状 / 更多）', min: 6 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

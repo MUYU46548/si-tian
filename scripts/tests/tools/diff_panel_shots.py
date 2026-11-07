@@ -129,6 +129,9 @@ def main():
                            boxBefore=pb.get('box'), boxAfter=pa.get('box'),
                            compare=os.path.basename(png) if png else None))
 
+    # ⚠️ 输出目录得先建：以前 `--out` 指到一个不存在的目录时，比对结果全算完了、
+    #    却在写 report.json 这一步崩掉（看起来像"工具坏了"，其实是少一行 makedirs）。
+    os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, 'report.json'), 'w', encoding='utf-8') as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
     n_id = sum(1 for r in report if r['verdict'] == 'identical')

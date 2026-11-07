@@ -108,9 +108,9 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,620（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650 → 6,620）', () => {
+  check('m1 SFC 行数 ≤6,590（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650 → 6,620 → 6,590）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6620, `ScenarioMap.vue 实测 ${n} 行，超过 6,620 —— 又往这个文件里堆东西了？`
+    assert(n <= 6590, `ScenarioMap.vue 实测 ${n} 行，超过 6,590 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/（含 toolbar/）的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
@@ -260,7 +260,7 @@ function main() {
     return `${EXTRACTED.length} 个`;
   });
 
-  // 🔴 2026-11-07 真机抓到的事故：试点把「拆分 / 合并 / 删除」那一行拆进
+  // 🔴 2026-11-07 真机抓到的事故：试点把“拆分 / 合并 / 删除”那一行拆进
   // `scenario/panels/toolbar/ProvinceOpsRow.vue` 之后，这三个按钮退回**浏览器默认样式**
   // （实测 h=23px / font=Arial 13.3px / display=inline-block / 白底黑字），
   // 而同一屏其它按钮是 h=32px / 12px / flex / 深色皮肤。
