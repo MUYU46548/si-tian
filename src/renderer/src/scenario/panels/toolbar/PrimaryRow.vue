@@ -62,13 +62,13 @@
 import Icon from '../../../components/Icon.vue';
 
 defineProps({
-  /** 是否在底图编辑模式（决定露出「画省份」「改形状」两个控件、以及退回键的文案） */
+  /** 是否在底图编辑模式（决定露出“画省份”“改形状”两个控件、以及退回键的文案） */
   basemapEditMode: { type: Boolean, default: false },
   /** 当前工具 id（父组件的 `tool`）；本行只关心 select / draw / ownerBrush / vertex */
   tool: { type: String, default: 'select' },
-  /** 「更多」面板是否展开 */
+  /** “更多”面板是否展开 */
   moreOpen: { type: Boolean, default: false },
-  /** 当前工具是否属于“高级工具”（决定「更多」上的强调环） */
+  /** 当前工具是否属于“高级工具”（决定“更多”上的强调环） */
   advancedToolActive: { type: Boolean, default: false },
   /** 网格吸附开没开（决定尾部的吸附提示出不出） */
   snapToGridEnabled: { type: Boolean, default: false },

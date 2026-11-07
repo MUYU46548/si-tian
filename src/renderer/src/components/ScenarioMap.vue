@@ -234,159 +234,69 @@
           title="描轮廓 (Y) — 按住贴着要改的那条边界拖一圈、松手：笔迹**围住的那块地**改判给**贴着描的那个邻省**，被碰到的邻省**自动重算边界**（共边无缝、不压叠）；未碰到的边界一个点都不动（海岸线保住）；一笔 = 一条撤销。想让它归原主（只修形状）就关掉下面那个勾"
         ><Icon name="pen-tool" :size="15"/>描轮廓</button>
       <!-- ═══ 描轮廓（E）：区域 = 笔迹围出的那块；默认**改判给贴得最紧的邻省** ═══ -->
-      <div class="tool-group brush-settings" v-if="tool === 'outline'" data-testid="outline-settings">
-        <span class="row-hint"
-              title="这套语义是“先并给目标省、再从被碰到的省挖掉”：贴着边界描时基本无缝；区域若探进别省地盘，那块地会两省各留一份（会如实提示百分比）">
-          沿边界拖一圈 → 松手改判
-        </span>
-        <label class="check-label" data-testid="outline-to-neighbor"
-               title="开（默认）：围住的那块地改判给**贴着描的那个邻省**——这是“把这块地划过去”。关：归**它原本所属的省**（等于原地修形状，通常看不出变化）">
-          <input type="checkbox" v-model="outlineToNeighbor" /> 改判给邻省
-        </label>
-      </div>
-      <!-- ═══ 涂归属（2026-10-20 重做）：**只改势力归属，不动省界几何** ═══
-           旧的同名按钮是几何笔刷（把笔迹并进所选省份），用户实测“好像在生造省份”。
-           这一块是日常剧本编辑的主路径：选势力 → 按住涂 → 碰到的省一次改归属。 -->
-      <div class="tool-group brush-settings" v-if="tool === 'ownerBrush'" data-testid="owner-brush-settings">
-        <!-- 🔴 2026-11-03 用户实测：“涂归属一开始无法选择势力，原因不明；到处乱点又突然可以选了，
-             疑似必须选中一个剧本才可以用。”—— 判断完全正确，而且这正是设计上的隐含前提：
-             归属是**按剧本（时期）记账**的，没有剧本就没有"这个年代归谁"可言。
-             但旧界面在无剧本时只是**整条势力色板不渲染**（`v-if="viewMode==='scenario' && selectedScenario"`），
-             工具本体则静默不干活 → 用户看到的是“点了没反应”。
-             这里把依赖写成一句话 + 两个直达按钮（选择剧本 / 新建剧本），不再让人靠乱点撞出来。 -->
-        <span
-          v-if="!selectedScenario"
-          class="row-hint"
-          data-testid="owner-brush-need-scenario"
-          title="涂归属记的是“某个年代这块地归谁”，所以必须挂在一条剧本（时期）上；没有剧本时连势力色板都不会出现"
-        >
-          涂归属要先有剧本：
-          <button data-testid="owner-brush-pick-scenario" @click="showScenarioList = true">用左侧剧本列表选一个</button>
-          <button data-testid="owner-brush-new-scenario" @click="showScenarioManager = true">新建剧本…</button>
-        </span>
-        <span class="row-label">涂归属：</span>
-        <span class="row-hint" data-testid="owner-brush-polity" :class="{ ready: !!selectedPolity || clearOwnerMode }">
-          <template v-if="clearOwnerMode">当前：<b>清除归属</b>（涂到的省变无主）</template>
-          <template v-else-if="selectedPolity">当前势力：
-            <b :style="{ color: selectedPolity.color || undefined }">{{ selectedPolity.name }}</b>
-          </template>
-          <template v-else>当前势力：<b>未选</b>（点地图上方“势力：”里的色块）</template>
-        </span>
-        <label class="check-label" title="笔刷半径（屏幕像素）">
-          半径
-          <input type="range" v-model.number="provBrushRadius" min="4" max="120" step="1" class="brush-slider" data-testid="owner-brush-radius" />
-          {{ provBrushRadius }}px
-        </label>
-        <span class="row-hint">按住涂 · 一笔一条撤销 · Alt 吸管</span>
-      </div>
-      <!-- ═══ 笔刷建省（2026-10-22）：像画图软件一样涂出一块地 ═══
-           它不选目标省 —— 每一笔都**新建**一个省（要改已有省就切“改省界”）。 -->
-      <div class="tool-group brush-settings" v-if="tool === 'provincePaint'" data-testid="province-paint-settings">
-        <span class="row-label">笔刷建省：</span>
-        <label class="check-label" title="笔刷半径（屏幕像素）—— 画布缩放时手感一致；世界半径 = 像素 / 当前缩放">
-          半径
-          <input type="range" v-model.number="provBrushRadius" min="1" max="200" step="1" class="brush-slider" />
-          {{ provBrushRadius }}px
-        </label>
-        <span class="row-hint ready"
-              title="新省只长在空地上：已有省份覆盖的地方涂不上（免得省份压叠）。要改已有省份的形状请用“改省界”。">
-          按住涂 → 松手成一个省 · 一笔一条撤销
-        </span>
-      </div>
-      <div class="tool-group brush-settings" v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)">
-        <label>划归到：</label>
-        <select v-model.number="provBrushTarget" class="brush-biome-select" title="要划归的目标省份">
-          <option v-for="o in provinceTargetOptions" :key="o.p.id" :value="o.idx">{{ o.p.name || ('省份 ' + o.idx) }}</option>
-        </select>
-        <template v-if="tool === 'provinceBrush'">
-          <label class="check-label">
-            工具
-            <select v-model="provBrushTool" class="brush-biome-select" title="改省界 / 抹除 / 平滑（改的是省界形状，不是势力归属）">
-              <option v-for="t in provinceBrush.PROVINCE_TOOLS.filter(t => t.key !== 'lasso')" :key="t.key" :value="t.key">{{ t.label }}</option>
-            </select>
-          </label>
-          <label class="check-label" title="笔刷半径（屏幕像素）—— 画布缩放时手感一致；世界半径 = 像素 / 当前缩放">
-            半径
-            <input type="range" v-model.number="provBrushRadius" min="1" max="200" step="1" class="brush-slider" />
-            {{ provBrushRadius }}px
-          </label>
-        </template>
-        <!-- 🔴 锁定海岸线（默认开）：涂归属 / 圈选只在**已有省份范围内**易手，绝不扩张到海面 ——
-             海岸线只由“底图编辑”调整（暮雨 2026-10-09 明确要求：“平时维持锁定状态”）。 -->
-        <label class="check-label" data-testid="lock-coast"
-               title="开启后：涂归属 / 圈选只在已有省份范围内生效，“不会改动海岸线”；要改海岸线请到“底图编辑”里做">
-          <input type="checkbox" v-model="lockCoast" /> 锁定海岸线
-        </label>
-        <button @click="addEmptyProvince" title="新建一个空省份 —— 用“底图编辑 → 改省界”笔刷涂出它的地盘即可"><Icon name="plus" :size="13"/> 新建省份</button>
-        <button @click="clearAllProvinceShapes" title="清空所有省份的边界（一次撤销可回退）"><Icon name="refresh-cw" :size="13"/> 重置省界</button>
-        <!-- 🔴 P2：边界是**矢量布尔**的结果（目标省并集 / 相交省差集），不经过任何格点 —— -->
-        <!-- 旧版那层“格点即时反馈”已删除：格子是 10525 点海岸线被退化成 22 点的根因 -->
-        <span class="row-hint ready"
-              title="涂完抬手即按多边形布尔改边界：目标省并集、相交省差集，几何只可能更精细">
-          矢量边界（精确）
-        </span>
-      </div>
-
-      <!-- ═══ 折线切割（A）：画一条折线，把省份切成两块 ═══ -->
-      <div class="tool-group brush-settings" v-if="tool === 'polySplit'" data-testid="polysplit-settings">
-        <span class="row-hint"
-              title="折线可以沿着海岸、山脊、历史边界走任意弯；两端落在省外（或省内）都行 —— 不在省上的那一段会自动沿切向延长">
-          逐点点击画折线 → 双击 / Enter 切开
-        </span>
-        <label class="check-label" data-testid="polysplit-side"
-               title="切开后哪一半继续用原省份的身份（id / 名字 / 归属 / 时间轴都跟着它）。画布上**绿色那半**就是它；按住 Shift 切换">
-          绿色那半保留原省份身份（Shift 切换）
-        </label>
-        <span class="row-hint" data-testid="polysplit-points">已点 {{ polySplitPoints.length }} 个点</span>
-        <button @click="finishPolySplit()" :disabled="polySplitPoints.length < 2"
-                data-testid="polysplit-finish"
-                title="沿折线切开（也可以双击画布 / 按 Enter）"><Icon name="check" :size="13"/> 切开</button>
-        <button @click="clearPolySplit()" title="清空这条折线（Esc 同效）"><Icon name="x" :size="13"/> 取消</button>
-      </div>
-
-      <!-- ═══ 批量铺底（B）：Voronoi 一次切出 N 块 ═══ -->
-      <div class="tool-group brush-settings" v-if="tool === 'voronoi'" data-testid="voronoi-settings">
-        <label class="check-label" title="铺底范围：默认把这张底图上所有陆地省一起重切；也可以只重切选中的那几个省">
-          范围
-          <select v-model="batchScope" class="brush-biome-select" data-testid="voronoi-scope">
-            <option value="land">全部陆地（{{ batchTargetCount }} 省）</option>
-            <option value="selection" :disabled="!selectedProvinceIds.length">
-              选中的省份（{{ selectedProvinceIds.length }} 个）
-            </option>
-          </select>
-        </label>
-        <label class="check-label" title="要切成多少块 —— 直接决定省份密度">
-          块数
-          <input type="number" v-model.number="batchCount" min="2" max="3000" step="10"
-                 class="brush-number" data-testid="voronoi-count" />
-        </label>
-        <label class="check-label" title="0 = 规整方格（像棋盘）；越大越自然。默认 0.6 左右最像手绘的政区">
-          抖动
-          <input type="range" v-model.number="batchJitter" min="0" max="0.9" step="0.05" class="brush-slider" />
-          {{ batchJitter.toFixed(2) }}
-        </label>
-        <button @click="autoSeedBatch()" :disabled="batchBusy"
-                data-testid="voronoi-autoseed"
-                title="按上面的块数自动播种（在大陆里均匀撒点）"><Icon name="sparkles" :size="13"/> 自动播种</button>
-        <button @click="rerollBatchSeed()" :disabled="batchBusy"
-                title="换一批种子点（形状重来一次，不满意就多点几次）"><Icon name="refresh-cw" :size="13"/> 换一批</button>
-        <button @click="clearBatchSeeds()" :disabled="batchBusy" title="清空种子点（可以在画布上手动点）">
-          <Icon name="x" :size="13"/> 清空种子（{{ batchSeeds.length }}）
-        </button>
-        <button @click="runBatchSubdivide()" :disabled="batchBusy || !batchSeeds.length"
-                data-testid="voronoi-run"
-                title="真的切下去：会替换掉范围内的旧省份，归属与易主记录自动继承；一整批 = 一条撤销（Ctrl+Z 可整批撤回）">
-          <Icon name="grid" :size="13"/> 一键切分
-        </button>
-        <!-- C（2026-10-11）：切分期间必须有出路。500 块的逐块布尔实测 19s，中途用户在画布上
-             乱点只会把事件排到队列里、回来一起执行（越点越卡）—— 所以忙时既**遮住画布**，
-             也给一个**取消**（取消 = 放弃这一批，落盘与内存都不动，可重来）。 -->
-        <button v-if="batchBusy" @click="cancelBatchSubdivide()" data-testid="voronoi-cancel"
-                class="batch-cancel" title="取消这一批切分（当前进度会被丢弃，省份与归属都不会改动）">
-          <Icon name="x" :size="13"/> 取消
-        </button>
-        <span class="row-hint" :class="{ ready: !batchBusy }" data-testid="voronoi-status">{{ batchStatus }}</span>
-      </div>
+      <!-- 六个“跟着当前工具出现”的设置组（2026-11-07 拆分第 8 步）：各自搬进
+           `scenario/panels/toolbar/settings/*.vue`。
+           为什么按组拆而不是整行一个组件：这一行有 39 个绑定，整行搬就要塞 39 个 props
+           （决断页那条门槛是 20）；而六组本来就各自自包含，拆开后每组 ≤10 个。
+           `v-if` 与 `data-testid` 留在这一层（属主仍是父组件）。 -->
+      <ProvinceOutlineSettings
+        v-if="tool === 'outline'"
+        data-testid="outline-settings"
+        v-model:to-neighbor="outlineToNeighbor"
+      />
+      <ProvinceOwnerSettings
+        v-if="tool === 'ownerBrush'"
+        data-testid="owner-brush-settings"
+        :has-scenario="!!selectedScenario"
+        :selected-polity="selectedPolity"
+        :clear-owner-mode="clearOwnerMode"
+        v-model:brush-radius="provBrushRadius"
+        @open-scenario-list="showScenarioList = true"
+        @new-scenario="showScenarioManager = true"
+      />
+      <ProvincePaintSettings
+        v-if="tool === 'provincePaint'"
+        data-testid="province-paint-settings"
+        v-model:brush-radius="provBrushRadius"
+      />
+      <ProvinceBrushSettings
+        v-if="['provinceBrush','provinceLasso','provinceFill'].includes(tool)"
+        :brush-target="provBrushTarget"
+        :target-options="provinceTargetOptions"
+        :show-brush-tool="tool === 'provinceBrush'"
+        :brush-tool="provBrushTool"
+        :tool-options="provinceBrush.PROVINCE_TOOLS.filter(t => t.key !== 'lasso')"
+        v-model:brush-radius="provBrushRadius"
+        v-model:lock-coast="lockCoast"
+        @update:brush-target="provBrushTarget = $event"
+        @update:brush-tool="provBrushTool = $event"
+        @add-empty-province="addEmptyProvince"
+        @clear-all-shapes="clearAllProvinceShapes"
+      />
+      <PolySplitSettings
+        v-if="tool === 'polySplit'"
+        data-testid="polysplit-settings"
+        :point-count="polySplitPoints.length"
+        @finish="finishPolySplit()"
+        @clear="clearPolySplit()"
+      />
+      <VoronoiSettings
+        v-if="tool === 'voronoi'"
+        data-testid="voronoi-settings"
+        v-model:scope="batchScope"
+        v-model:count="batchCount"
+        v-model:jitter="batchJitter"
+        :target-count="batchTargetCount"
+        :selected-count="selectedProvinceIds.length"
+        :busy="batchBusy"
+        :seed-count="batchSeeds.length"
+        :status="batchStatus"
+        @auto-seed="autoSeedBatch()"
+        @reroll="rerollBatchSeed()"
+        @clear-seeds="clearBatchSeeds()"
+        @run="runBatchSubdivide()"
+        @cancel="cancelBatchSubdivide()"
+      />
       </div>
 
       <!-- ═══ 河流编辑器：节点操作（2026-10-17）═══════════════════════════════════
@@ -1384,6 +1294,14 @@ import ScenarioIoRow from '../scenario/panels/toolbar/ScenarioIoRow.vue';
 import LayerColorRow from '../scenario/panels/toolbar/LayerColorRow.vue';
 // 工具栏拆分第 7 步（2026-11-07）：“更多 → 笔刷与绘制”那一行（笔刷类工具 + 各自参数下拉）。
 import BrushRow from '../scenario/panels/toolbar/BrushRow.vue';
+// 工具栏拆分第 8 步（2026-11-07）：省份行里六个“跟着当前工具出现”的设置组。
+// 按组拆而不是整行一个组件：整行有 39 个绑定，会超过“20 个 props 就说明粒度选错”那条门槛。
+import ProvinceOutlineSettings from '../scenario/panels/toolbar/settings/ProvinceOutlineSettings.vue';
+import ProvinceOwnerSettings from '../scenario/panels/toolbar/settings/ProvinceOwnerSettings.vue';
+import ProvincePaintSettings from '../scenario/panels/toolbar/settings/ProvincePaintSettings.vue';
+import ProvinceBrushSettings from '../scenario/panels/toolbar/settings/ProvinceBrushSettings.vue';
+import PolySplitSettings from '../scenario/panels/toolbar/settings/PolySplitSettings.vue';
+import VoronoiSettings from '../scenario/panels/toolbar/settings/VoronoiSettings.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

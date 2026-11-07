@@ -53,10 +53,18 @@ const SRC = {};
 for (const [k, p] of Object.entries(F)) SRC[k] = readText(p);
 // 2026-11-06：ScenarioMap 的左侧剧本列表 / 剧本管理对话框拆进了 `scenario/panels/`。
 // 判据里“这段文案/这个 testid 在不在”必须看**合集**，否则拆一次就假红一次。
-SRC.scenarioPanels = fs.readdirSync(P('scenario', 'panels'))
-  .filter((f) => f.endsWith('.vue'))
-  .map((f) => readText(P('scenario', 'panels', f)))
-  .join('\n');
+// ⚠️ 2026-11-07（工具栏第 8 步）：合集必须**递归** —— 省份行的设置组在
+// `scenario/panels/toolbar/settings/`，只读一层会让 `.vue` 一个都收不到，
+// 判据就变成“永远说缺”（假红），比漏测更糟。
+SRC.scenarioPanels = (function walkPanels(dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) { out.push(walkPanels(full)); continue; }
+    if (e.name.endsWith('.vue')) out.push(readText(full));
+  }
+  return out.join('\n');
+})(P('scenario', 'panels'));
 
 // ── 判据实现（每条都写成“对一段文本返回问题清单”，供反向探针复用同一份逻辑）──
 
@@ -104,11 +112,21 @@ function problemsBridge(src) {
   return out;
 }
 
-/** #2 涂归属：缺剧本时必须说清依赖，而不是静默不干活 */
+/** #2 涂归属：缺剧本时必须说清依赖，而不是静默不干活
+ *  ⚠️ 2026-11-07（工具栏第 8 步）：这一块随省份行搬进了
+ *  `scenario/panels/toolbar/settings/ProvinceOwnerSettings.vue`，判据跟着实现走：
+ *  条件变成组件里的 `v-if="!hasScenario"` + 父组件真的把 `!!selectedScenario` 传进去。
+ *  两条都查 —— 只认组件里那句就等于允许“传参忘了接”，那正是搬家最容易犯的错。
+ */
 function problemsScenarioMap(src) {
   const out = [];
   if (!src.includes('data-testid="owner-brush-need-scenario"')) out.push('涂归属缺“要先有剧本”的提示节点');
-  if (!src.includes('v-if="!selectedScenario"')) out.push('提示节点没有按“没选剧本”显示');
+  const gateOld = src.includes('v-if="!selectedScenario"');
+  const gateNew = src.includes('v-if="!hasScenario"');
+  if (!gateOld && !gateNew) out.push('提示节点没有按“没选剧本”显示');
+  if (!gateOld && gateNew && !src.includes(':has-scenario="!!selectedScenario"')) {
+    out.push('提示节点改成 prop 了，但父组件没把 selectedScenario 传进去（等于永远显示/永远不显示）');
+  }
   if (!src.includes('data-testid="owner-brush-new-scenario"')) out.push('提示里没有“新建剧本”直达入口');
   if (!src.includes('“涂归属”和上方的势力色板都挂在剧本上')) {
     out.push('左栏空态没有解释“没有剧本时势力色板不出现”（用户的原话就是“原因不明”）');

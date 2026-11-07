@@ -108,9 +108,9 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,400（判据 ≤8,500；… → 6,510 → 6,490 → 6,400）', () => {
+  check('m1 SFC 行数 ≤6,310（判据 ≤8,500；… → 6,490 → 6,400 → 6,310）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6400, `ScenarioMap.vue 实测 ${n} 行，超过 6,400 —— 又往这个文件里堆东西了？`
+    assert(n <= 6310, `ScenarioMap.vue 实测 ${n} 行，超过 6,310 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/（含 toolbar/）的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
@@ -299,7 +299,21 @@ function main() {
   // 判据：工具栏的子组件模板里出现的每一个**行内 class / button 标签**，
   // 父表（scenario-map.css）里给它写样式的规则必须带 `:deep(`（穿越组件边界）。
   function stripCssComments(css) { return css.replace(/\/\*[\s\S]*?\*\//g, ''); }
-  /** 抽出 css 里所有规则的选择器（@ 规则本身跳过） */
+  /** 抽出 css 里所有规则的选择器（@ 规则本身跳过）。
+   *  ⚠️ 逗号分隔的**要拆开**：`.a, :deep(.a) { … }` 是一条规则两个选择器 ——
+   *  不拆的话“这一组里有没有 :deep 孪生”永远为真（2026-11-07 实测：这里漏判过一次）。 */
+  function splitSelectorList(sel) {
+    const parts = [];
+    let depth = 0, cur = '';
+    for (const ch of sel) {
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    parts.push(cur);
+    return parts.map((x) => x.trim()).filter(Boolean);
+  }
   function cssSelectors(css) {
     const out = [];
     const re = /([^{}]+)\{/g;
@@ -307,7 +321,7 @@ function main() {
     while ((m = re.exec(css))) {
       const sel = m[1].trim().replace(/\s+/g, ' ');
       if (!sel || sel.startsWith('@')) continue;
-      out.push(sel);
+      for (const one of splitSelectorList(sel)) out.push(one);
     }
     return out;
   }
@@ -358,7 +372,17 @@ function main() {
   }
   check('m8 拆进 scenario/panels/toolbar/ 的行：父表必须用 :deep 给行内元素上样式（真机事故守门）', () => {
     assert(fs.existsSync(TOOLBAR_DIR), `找不到 ${TOOLBAR_DIR}`);
-    const files = fs.readdirSync(TOOLBAR_DIR).filter((f) => f.endsWith('.vue'));
+    // ⚠️ 必须递归：第 8 步把省份行的设置组放进了 `toolbar/settings/`，
+    //    只读一层会漏掉它们（判据静默变窄 = 假绿）。
+    const files = [];
+    (function walk(d) {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const q = path.join(d, e.name);
+        if (e.isDirectory()) { walk(q); continue; }
+        if (e.name.endsWith('.vue')) files.push(path.relative(TOOLBAR_DIR, q));
+      }
+    })(TOOLBAR_DIR);
+    files.sort();
     // 这条判据必须**有东西可查**，否则组件全删了也全绿
     assert(files.length > 0, 'scenario/panels/toolbar/ 下没有任何 .vue —— 判据空转');
     const sels = cssSelectors(stripCssComments(CSS_SRC));
@@ -375,15 +399,37 @@ function main() {
           + ' —— 子组件里的按钮会退回浏览器默认样式（h≈23px / Arial / 白底）');
       }
       // ② 行内 class：凡是父表给它写过样式的，就必须同时有一条 :deep 版本
+      //
+      // 🔴 2026-11-07 第 8 步收紧（原来的口径漏了一条真事故）：
+      //    旧写法只问“这个 class 有没有**任意一条** :deep 规则”。`.check-label` 有
+      //    `:deep(.check-label)` 就算过 —— 但还有一条**更具体的后代覆盖**
+      //    `.brush-settings .check-label { gap: 4px }`，它没有 :deep 孪生，
+      //    搬进子组件后勾选项就“紧 1px”（真机探针以 gap 3px vs 4px、宽度差 1~2px 抓到）。
+      //    新口径：把“会命中这个元素”的选择器按**类集合**分组（`.check-label` 与
+      //    `.brush-settings .check-label` 是两组），每组里必须至少有一条带 `:deep(`。
       const ownClasses = new Set(classes);
       for (const cls of classes) {
-        // 只要“真会命中这个元素”的规则（`.ctx-item.danger` 不算管 `.danger`）
         const styling = sels.filter((s) => selectorAppliesTo(s, cls, ownClasses));
         if (!styling.length) continue;                      // 父表根本不管这个 class，跳过
         checked++;
-        const deep = styling.some((s) => s.includes(':deep('));
-        if (!deep) bad.push(`${f} 用了 .${cls}，父表给它写了样式但都不是 :deep(`
-          + `命中：${styling.slice(0, 2).join(' / ')}) —— 子组件里这条样式不会生效`);
+        const groups = new Map();
+        for (const s of styling) {
+          // 分组口径 = **类集合**（`.check-label` 与 `.brush-settings .check-label` 是两组：
+          // 后者是更具体的后代覆盖，需要自己的 :deep 孪生）。
+          // ⚠️ 允许的区别只有一个：`.scenario-toolbar :deep(X)` 与 `:deep(X)` 等价
+          // （祖先只是收窄作用范围，不影响“能不能穿透到子组件”），所以先把那个前缀剥掉。
+          const norm = s.replace(/^\.scenario-toolbar\s+/, '');
+          const sig = Array.from(new Set(
+            (norm.match(/\.[A-Za-z_][\w-]*/g) || []).map((x) => x.slice(1))
+          )).sort().join(',');
+          if (!groups.has(sig)) groups.set(sig, []);
+          groups.get(sig).push(s);
+        }
+        for (const [sig, members] of groups) {
+          if (members.some((s) => s.includes(':deep('))) continue;
+          bad.push(`${f} 用了 .${cls}，父表里这组选择器（${sig || '(无类)'}）没有 :deep 孪生`
+            + `（命中：${members.slice(0, 2).join(' / ')}）—— 子组件里这条声明不会生效`);
+        }
       }
     }
     assert(checked > 0, '一个依赖都没查到 —— 判据空转（组件模板解析规则变了？）');

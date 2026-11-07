@@ -226,6 +226,14 @@ def collect(out_path, want_shot=True):
             ('river-edit-none',
              "sm.tool = 'river'; sm.selectedRiverId = null;"
              " sm.selectedRiverIds = []; sm.riverActiveNode = -1;"),
+            # 省份行那六个“跟着当前工具出现”的设置组（第 8 步）—— 默认态一个都不在 DOM 里，
+            # 所以每种工具各来一档，否则那 6 个组件等于没被测到。
+            ('prov-outline', "sm.moreOpen = false; sm.tool = 'outline';"),
+            ('prov-owner', "sm.tool = 'ownerBrush';"),
+            ('prov-paint', "sm.tool = 'provincePaint';"),
+            ('prov-brush', "sm.tool = 'provinceBrush';"),
+            ('prov-polysplit', "sm.tool = 'polySplit';"),
+            ('prov-voronoi', "sm.tool = 'voronoi';"),
         ]
         res = None
         for phase, act in PHASES:

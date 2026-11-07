@@ -364,10 +364,17 @@
 .brush-settings {
   gap: 8px;
 }
-.brush-settings .check-label {
+/* ⚠️ 这条是**后代规则**（`.brush-settings` 里的 `.check-label` 间距 4px 而不是 3px）——
+   第 8 步搬进子组件后它同样需要 `:deep`，否则勾选项会“紧 1px”。
+   🔴 这是 m8 的盲区：m8 只看“这个 class 有没有一条 :deep 规则”，而 `.check-label` 已经有
+   `:deep(.check-label)`，所以这条**更具体的后代覆盖**漏过去了 —— 是真机探针以
+   `gap 3px vs 4px / 宽度差 1~2px` 的形式抓到的。两边都要跑，就是这个道理。 */
+.brush-settings .check-label,
+:deep(.brush-settings .check-label) {
   gap: 4px;
 }
-.brush-slider {
+.brush-slider,
+:deep(.brush-slider) {
   width: 80px;
   vertical-align: middle;
 }
@@ -388,7 +395,8 @@
 
 /* 批量铺底的“块数”数字输入（2026-10-11）：与下拉同一套配色 —— preflight 已关，
    表单控件不会自带 color: inherit，不显式设色就会是黑字黑底 */
-.brush-number {
+.brush-number,
+:deep(.brush-number) {
   width: 64px;
   background: #334155;
   color: #e2e8f0;
@@ -621,7 +629,8 @@
 .scenario-busy-overlay .busy-sub { font-size: 12px; color: #93e6f5; font-variant-numeric: tabular-nums; }
 .scenario-busy-overlay .busy-hint { font-size: 11px; line-height: 1.6; color: #9aa7b8; }
 .scenario-busy-overlay .busy-cancel,
-.batch-cancel {
+.batch-cancel,
+:deep(.batch-cancel) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -635,7 +644,8 @@
   cursor: pointer;
 }
 .scenario-busy-overlay .busy-cancel:hover,
-.batch-cancel:hover { background: rgba(150, 40, 52, 0.65); }
+.batch-cancel:hover,
+:deep(.batch-cancel:hover) { background: rgba(150, 40, 52, 0.65); }
 
 /* ── 历史剧本站首：常驻左栏（2026-10-09）────────────────────────────────────
    浮在画布左侧（不动 flex 布局：多一个 flex 兄弟会改分配比例，风险大）。

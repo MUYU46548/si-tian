@@ -75,6 +75,14 @@ const FILES = [
   { file: 'LayerColorRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·图层与着色行（10 个图层开关 + 栅格层 + 着色）', min: 1 },
   // 工具栏拆分第 7 步（2026-11-07）：“更多 → 笔刷与绘制”那一行（13 个笔刷按钮）。
   { file: 'BrushRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·笔刷与绘制行（高度/群系/河流/自动河流/地貌/势力/文化/宗教/聚落/地名/标记/道路/重算气候）', min: 13 },
+  // 工具栏拆分第 8 步（2026-11-07）：省份行里六个“跟着当前工具出现”的设置组。
+  // ⚠️ 描轮廓 / 笔刷建省这两组**一个 <button> 都没有**（只有勾选框、滑杆、一行提示），
+  //    放进本闸门会“扫空”——0 个按钮也算通过，等于没测。它们的判据在别处：
+  //    m8（`:deep` 守门）与真机探针（`.check-label` / `.brush-slider` 的实测样式）。
+  { file: 'ProvinceOwnerSettings.vue', dir: 'scenario/panels/toolbar/settings', desc: '省份行·涂归属设置（选择剧本 / 新建剧本）', min: 2 },
+  { file: 'ProvinceBrushSettings.vue', dir: 'scenario/panels/toolbar/settings', desc: '省份行·圈选/点填/改省界设置（新建省份 / 重置省界）', min: 2 },
+  { file: 'PolySplitSettings.vue', dir: 'scenario/panels/toolbar/settings', desc: '省份行·折线切割设置（切开 / 取消）', min: 2 },
+  { file: 'VoronoiSettings.vue', dir: 'scenario/panels/toolbar/settings', desc: '省份行·批量铺底设置（自动播种 / 换一批 / 清空 / 切分 / 取消）', min: 5 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;
