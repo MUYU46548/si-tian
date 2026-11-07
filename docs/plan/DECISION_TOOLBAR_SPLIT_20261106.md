@@ -94,8 +94,8 @@
 |---|---|---|---|---|
 | 1 | "更多"里的 拆分/合并/删除（row5） | 2 | 小 | **已完成**：`ProvinceOpsRow.vue` |
 | 2 | `primary-row` | 7 | 小 | **已完成**：`PrimaryRow.vue`（5 props / 3 emits；84 个按钮 computedStyle 零差异） |
-| 3 | `basemap-row` | 8 | 小 | 下一个 |
-| 4 | `river-selected-row` / `river-edit-row` | 8 / 10 | 小 | 两行共用 `riverSelIds`/`selectedRiver`，可一起做 |
+| 3 | `basemap-row` | 8 | 小 | **已完成**：`BasemapRow.vue`（4 props / 3 emits；84 个按钮零差异） |
+| 4 | `river-selected-row` / `river-edit-row` | 8 / 10 | 小 | 下一个；两行共用 `riverSelIds`/`selectedRiver`，可一起做 |
 | 5 | "外交/导出/历史/谱系"行 | 9 | 小 | |
 | 6 | "图层/着色/栅格开关"行 | 16 | 中 | 16 个开关，建议按 3 个 `tm-card` 再分 |
 | 7 | "地名/聚落/标记/河流/派生"行 | 22 | 中 | |
@@ -190,6 +190,45 @@ python scripts/tests/run_tests.py test_65 test_97         # 主行"恰好 6 个�
 
 ---
 
-**决断人**：AI（用户 2026-11-06 授权"大文件你自己想办法拆分"+"先把架构决断做掉"）
-**复核方式**：按第四节顺序继续第 3 步（`basemap-row`）。若某一步发现自己要往子组件塞超过 20 个 props，
+## 九、第 3 步结果（2026-11-07 已落地）+ 一次“把皮肤收成一个入口”
+
+`scenario/panels/toolbar/BasemapRow.vue`（底图/地理行：高度 / 湖泊 / 群系 … 笔刷建省 / 改省界 /
+地形注记 / 出口）：
+
+- `ScenarioMap.vue` **6,586 → 6,557 行**（m1 收紧到 ≤6,560）；
+- 契约：props 4 个（`tools` / `tool` / `baseMapKey` / `terrainLabelsOpen`）、emits 3 个；
+  `v-if="basemapEditMode"` 留在父组件，工具清单仍由父组件的 `BASEMAP_TOOLS` 单源出；
+- 真机对拍：**84 个按钮 0 差异**。
+
+### 顺带收口：按钮皮肤从 `.tool-group button` 提到一个入口
+
+拆到第 3 步时暴露出一个**既有**问题（不是拆分造成的）：皮肤只写在 `.tool-group button` 上，
+而主行 / 省份行 / 底图行的按钮**早就不在 `.tool-group` 里**了 → 真机上 **28 个按钮**是浏览器默认样式
+（`#f0f0f0` 底、黑字、2px 黑边、圆角 0、`cursor: default`），在深色工具栏上像一排旧 Windows 按钮。
+（2026-10-19 的截图里就已经是这样。）用户 2026-11-07 点头后把皮肤提到
+`.scenario-toolbar :deep(button)`，`.tool-group button` 那份同值写法删掉。
+
+改动读数是**可验证**的（84 条 computedStyle 逐项对拍）：
+- 35 个白底按钮 → 深色皮肤；剩余“浏览器默认样式”读数 **0**；
+- 两个**有意不同**的橙色按钮保住颜色（`.basemap-edit-toggle.active` 与 `.basemap-exit`，
+  两者都跟着抬到 `:deep` 级），只顺带统一了 1px 描边与 `cursor: pointer`。
+- ⚠️ 抬 specificity 时踩到一个**几何**坑：`.basemap-exit` 里那句 `padding: 2px 10px`
+  十几年来一直被 `.scenario-toolbar button` 的 `0 8px` 盖着、从没生效过；一抬就把它撑宽了。
+  所以那句 padding 显式删掉，几何继续由统一入口给 —— 外观一个像素都不变。
+
+### 两步都验证到的一件事：**m8 源码闸门是必需的**
+
+第 3 步搬完后 m8 当场报：`.basemap-row-label`（“底图/地理：”那个琥珀色小标题）只有普通写法、
+没有 `:deep` 入口 —— 搬走后会掉回灰色。**真机探针当时看不见它**（它只量 button）。
+两处都补上了：
+- CSS 补 `:deep(.basemap-row-label)`；
+- 探针从“只量 button”扩到 `.row-label / .basemap-row-label / .row-hint / .check-label /
+  .draw-hint / select`（三档状态现在 84 个按钮 + 27 个行内元素一起拍）。
+
+**结论（下一步照做）**：搬完一行先看 m8，再用探针 `--compare`；两边都要绿。
+
+---
+
+**决断人**：AI（用户 2026-11-06 授权“大文件你自己想办法拆分”+“先把架构决断做掉”）
+**复核方式**：按第四节顺序继续第 4 步（`river-selected-row` + `river-edit-row`）。若某一步发现自己要往子组件塞超过 20 个 props，
 说明粒度选错 —— 回到第二节重新评估，而不是硬塞。
