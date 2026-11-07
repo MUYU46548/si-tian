@@ -111,3 +111,27 @@
   晚到的那条会被 `send()` 丢掉）；真正的判据是**墙钟上限** + 页面自报的 `state`。
 - 源码闸门要跟着代码走：工具栏九步拆分后，`data-testid` 已经搬进 `scenario/panels/toolbar/**` ——
   用例改读 `lib/rsrc.py#render_src()` 的合集，就不必每次搬家都修闸门（但仍不许放宽判据）。
+
+## 方寸：会话只挂了只读入口时怎么写入（2026-11-07）
+
+**症状**：方寸桌面版开着、DSH 插件绿灯、管道 `\\.\pipe\tegula-mcp` 在，但 `update_task` 一类调用报
+`unknown tool` —— 看起来像“方寸没开 / 未连接”。
+
+**真因**：方寸有**两套 MCP 入口**（见接线卡 `fangcun-bridge`）：
+入口 B（`python tegula.py mcp`）是**只读**的 14 个工具，入口 A（桌面版命名管道）才是全量 32 个。
+客户端挂的是 B，写工具在那一侧**根本没注册**，于是报“unknown tool”而不是“没连上”。
+🔴 结论：**“unknown tool” ≠ 没连上**；先 `tools/list` 看工具数（14 = 只读入口，32 = 全量）。
+
+**现成的写法**：`node scripts/tests/tools/fangcun-write.cjs <calls.json> --exe <方寸.exe>`
+（按入口 A spawn 桥：`ELECTRON_RUN_AS_NODE=1 <exe> <app.asar>/dist/main/mcp/bridge-standalone.js`，
+说 stdio MCP；结果全文落 `build/_fangcun-call-result.json`）。exe 路径可从
+`Get-Process 方寸 | Select-Object -First 1 -ExpandProperty Path` 拿到。
+
+**三条纪律**（都在脚本头里）：① 别用一次性管道自检（`echo ... | 方寸.exe` 必丢消息，要连着 stdin）；
+② 写之前先 `get_task` 读正文（`update_task` 是整段覆盖，方寸的 `expected_update` 传给 MCP 建的卡必冲突）；
+③ 状态最多到「待验收」，`完成/驳回` 是用户签字，方寸硬拒。
+
+**给接线卡的一条建议**（按 skill 管理纪律：不改卡，只提建议）：`fangcun-bridge/SKILL.md`
+的“工具清单”表里写着 31 个工具，但没写**“客户端可能只挂了只读入口”**这个常见故障 ——
+建议在“自检”一节补一句：**调用写工具报 `unknown tool` 时，先 `tools/list` 数工具**
+（14 = 只读入口 B / 32 = 全量入口 A），不要当成“方寸未运行”。
