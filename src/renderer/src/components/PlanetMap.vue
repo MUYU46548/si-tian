@@ -8,7 +8,7 @@
         </div>
         <p class="hint">
           <template v-if="!editMode">
-            点击省份选中 · 点击地点查看详情 · 双击在 Obsidian 打开 · 滚动缩放 · 拖拽平移 · <a href="#" @click.prevent="enterEditMode">编辑地图</a>
+            点击地形块选中 · 点击地点查看详情 · 双击在 Obsidian 打开 · 滚动缩放 · 拖拽平移 · <a href="#" @click.prevent="enterEditMode">编辑地图</a>
           </template>
           <template v-else>
             <strong>编辑模式</strong> —
@@ -21,7 +21,7 @@
             <template v-else-if="interactionMode === 'region'">按住拖动圈画区域</template>
             <template v-else-if="interactionMode === 'terrain'">地形笔刷 — 在画布上涂抹地形（海洋/草地/森林/沙漠/山脉等）</template>
             <template v-else-if="interactionMode === 'move'">点击选中对象并拖动（Shift 多选）</template>
-            <template v-else>{{ isDrawing ? '正在绘制...' : '按住拖动绘制省份边界，松开自动闭合' }}</template>
+            <template v-else>{{ isDrawing ? '正在绘制...' : '按住拖动绘制地形块边界，松开自动闭合' }}</template>
             · <a href="#" @click.prevent="exitEditMode">退出编辑</a>
           </template>
         </p>
@@ -156,7 +156,7 @@
               :disabled="store.isReadOnly || mapImportBusy"
               :title="store.isReadOnly
                 ? store.readOnlyReason
-                : '选一份 Azgaar（FMG）导出的 .map：把高度图（连同省份 / 河流 / 道路）装进这张行星地图'"
+                : '选一份 Azgaar（FMG）导出的 .map：把高度图（连同地形块 / 河流 / 道路）装进这张行星地图'"
             ><Icon name="upload" :size="13"/> 导入 .map</button>
             <!-- A6（2026-10-29）：行星侧自己的“地形起点”——以前只有导入 .map 才有地形，
                  “地形生成参数”那套（种子/山脉/高原/裂谷 + 候选缩略图）只有剧本底图能用。 -->
@@ -237,7 +237,7 @@
         </template>
 
         <div class="toolbar-group" title="绘制辅助">
-          <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻省份"><Icon name="magnet" :size="13"/> 吸附</button>
+          <button v-if="interactionMode === 'draw'" :class="{ active: snapEnabled }" @click="snapEnabled = !snapEnabled" title="边缘吸附到相邻地形块"><Icon name="magnet" :size="13"/> 吸附</button>
           <button :class="{ active: smartGuidesEnabled }" @click="smartGuidesEnabled = !smartGuidesEnabled" title="E5 智能参考线">⇔ 对齐</button>
           <button :class="{ active: gridSnapEnabled }" @click="gridSnapEnabled = !gridSnapEnabled" title="对齐网格">⊞ 网格</button>
           <template v-if="gridSnapEnabled">
@@ -255,8 +255,8 @@
         </div>
 
         <div class="toolbar-group" title="对象操作">
-          <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分省份"><Icon name="scissors" :size="13"/> 拆分</button>
-          <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并省份"><Icon name="link" :size="13"/> 合并</button>
+          <button v-if="selectedProvince" :class="{ active: splitSelectMode }" @click="startSplitMode" title="拆分地形块"><Icon name="scissors" :size="13"/> 拆分</button>
+          <button v-if="selectedProvince" :class="{ active: mergeSelectMode }" @click="startMergeMode" title="合并地形块"><Icon name="link" :size="13"/> 合并</button>
           <button @click="deleteSelected" :disabled="!selectedProvince && !selectedRegion && !selectedMarker && !selectedRoute && !selectedTextLabel && selectedPlaceIds.size === 0 && multiSel.length === 0" title="删除选中对象 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <button v-if="selectedPlaceIds.size > 1" @click="openArrangeDialog(selectedPlaceIds)" title="批量排列选中节点">⊞ 排列</button>
           <template v-if="selectedPlaceIds.size >= 2">
@@ -277,7 +277,7 @@
           <button @click="redo" :disabled="!store.canRedo">↷ 重做</button>
           <button :class="{ active: historyPanelOpen }" @click="historyPanelOpen = !historyPanelOpen" title="撤销历史面板（列出全部操作，可跳到任意一步）"><Icon name="history" :size="13"/> 历史</button>
           <button @click="saveMap" title="保存地图"><Icon name="save" :size="13"/> 保存</button>
-          <button @click="confirmClear" title="清空所有省份"><Icon name="trash" :size="13"/> 清空</button>
+          <button @click="confirmClear" title="清空所有地形块"><Icon name="trash" :size="13"/> 清空</button>
         </div>
 
         <div class="toolbar-group" title="视图与输出">
@@ -431,7 +431,7 @@
       <div v-if="editMode" class="tool-dock" @mousedown.stop @dblclick.stop @wheel.stop>
         <button :class="{ active: interactionMode === 'pan' }" @click="setInteractionMode('pan')" title="拖动画布 (空格临时切换)"><Icon name="hand" :size="15"/><span class="td-label">拖动</span></button>
         <button :class="{ active: interactionMode === 'move' }" @click="setInteractionMode('move')" title="移动对象"><Icon name="move" :size="15"/><span class="td-label">移动</span></button>
-        <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制省份"><Icon name="pencil" :size="15"/><span class="td-label">省份</span></button>
+        <button :class="{ active: interactionMode === 'draw' }" @click="setInteractionMode('draw')" title="绘制地形块"><Icon name="pencil" :size="15"/><span class="td-label">地形块</span></button>
         <button :class="{ active: interactionMode === 'region' }" @click="setInteractionMode('region')" title="圈画区域"><Icon name="map" :size="15"/><span class="td-label">区域</span></button>
         <button :class="{ active: interactionMode === 'marker' }" @click="setInteractionMode('marker')" title="放置标记"><Icon name="map-pin" :size="15"/><span class="td-label">标记</span></button>
         <button :class="{ active: interactionMode === 'route' }" @click="setInteractionMode('route')" title="绘制路线（路线工具内可开“自动寻路”）"><Icon name="route" :size="15"/><span class="td-label">道路</span></button>
@@ -480,8 +480,8 @@
         <div class="empty-map-icon"><Icon name="map" :size="34"/></div>
         <div class="empty-map-title">这张行星地图还是空的</div>
         <div class="empty-map-desc">
-          导入一份 Azgaar（FMG）导出的 <b>.map</b> —— 会带进省份、地形高度图、河流与道路；<br />
-          或者直接从零手绘（先画省份，再用高度笔刷推演地形）。
+          导入一份 Azgaar（FMG）导出的 <b>.map</b> —— 会带进地形块、地形高度图、河流与道路；<br />
+          或者直接从零手绘（先画地形块，再用高度笔刷推演地形）。
         </div>
         <div class="empty-map-actions">
           <button
@@ -491,7 +491,7 @@
             :disabled="store.isReadOnly || mapImportBusy"
             :title="store.isReadOnly
               ? store.readOnlyReason
-              : '选一份 Azgaar（FMG）导出的 .map：把省份 / 高度图 / 河流 / 道路装进这张行星地图（一整次导入 = 一条 Ctrl+Z 可撤回）'"
+              : '选一份 Azgaar（FMG）导出的 .map：把地形块 / 高度图 / 河流 / 道路装进这张行星地图（一整次导入 = 一条 Ctrl+Z 可撤回）'"
           ><Icon name="upload" :size="14"/> 导入 .map 底图</button>
           <button
             class="adopt-btn"
@@ -609,12 +609,12 @@
     <!-- 选中省份的属性编辑面板 -->
     <div v-if="editMode && selectedProvince" class="province-editor">
       <div class="editor-header">
-        <h3>编辑省份</h3>
+        <h3>编辑地形块</h3>
         <button class="close-btn" @click="selectedProvince = null">×</button>
       </div>
       <div class="editor-field">
         <label>名称</label>
-        <input v-model="editingName" @input="updateProvinceName" placeholder="省份名称" />
+        <input v-model="editingName" @input="updateProvinceName" placeholder="地形块名称" />
       </div>
       <div class="editor-field">
         <label>地形</label>
@@ -630,7 +630,7 @@
       </div>
       <div class="editor-field">
         <label>描述</label>
-        <textarea v-model="editingDescription" @input="updateProvinceDescription" placeholder="省份描述（可选）" rows="3"></textarea>
+        <textarea v-model="editingDescription" @input="updateProvinceDescription" placeholder="地形块描述（可选）" rows="3"></textarea>
       </div>
       <div class="editor-field">
         <label>海拔</label>
@@ -2685,7 +2685,7 @@ async function importPlanetMapFile(file) {
     const name = mapNameFromFileName(file.name) || '导入底图';
     const bundle = buildPlanetMapBundle(parsed);
     if (!bundle.stats.provinces && !bundle.heightmap && !bundle.stats.rivers) {
-      _importBanner(`“${name}”里没有可导入的内容（省份 / 高度图 / 河流都没有）—— 地图未改动`, 'err', 8000);
+      _importBanner(`“${name}”里没有可导入的内容（地形块 / 高度图 / 河流都没有）—— 地图未改动`, 'err', 8000);
       return;
     }
 
@@ -2694,7 +2694,7 @@ async function importPlanetMapFile(file) {
     const hasOld = cur.provinces + cur.rivers + cur.routes > 0 || cur.hasHeightmap;
     if (hasOld) {
       const oldBits = [
-        cur.provinces ? `省份 ${cur.provinces} 块` : '',
+        cur.provinces ? `地形块 ${cur.provinces} 块` : '',
         cur.rivers ? `河流 ${cur.rivers} 条` : '',
         cur.routes ? `道路 ${cur.routes} 条` : '',
         cur.hasHeightmap ? '高度图' : '',
@@ -2723,7 +2723,7 @@ async function importPlanetMapFile(file) {
     const receipt = describePlanetImportReceipt(name, bundle) + srcNote
       + '（本行星自己的地图；剧本侧要用同一份 .map 请那边再导一次 —— 两个容器各存一份）';
     _importBanner(receipt, bundle.heightmap ? 'ok' : 'warn', 12000);
-    setStatus({ toolLabel: `已导入“${name}”：省份 ${bundle.stats.provinces} 块` });
+    setStatus({ toolLabel: `已导入“${name}”：地形块 ${bundle.stats.provinces} 块` });
     emit('dirty', true);
     // 地形刚到 → 直接切到“海拔”着色档，让用户当场看见（与剧本侧“刷新后切地形高度”同一口径）
     if (bundle.heightmap) heightmapRasterKind.value = 'height';
@@ -2752,7 +2752,7 @@ function confirmClear() {
     setBanner('清空被拒绝：还没有打开项目（新建或打开项目后即可编辑）', 'err', 5000);
     return;
   }
-  if (confirm('清空省份、区域、路线、标记、文本与地点簇？\n\n高度图、涂色网格、河流、文化、地貌图标、参考图与地图快照都会保留。\n此操作可用 Ctrl+Z 撤销。')) {
+  if (confirm('清空地形块、区域、路线、标记、文本与地点簇？\n\n高度图、涂色网格、河流、文化、地貌图标、参考图与地图快照都会保留。\n此操作可用 Ctrl+Z 撤销。')) {
     const r = store.clearPlanetContent(props.planet.id);
     if (r && r.success === false) {
       saveStatus.value = r.error || '清空失败';
