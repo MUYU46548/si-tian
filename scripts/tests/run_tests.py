@@ -649,6 +649,33 @@ def apply_viewport(cdp):
         print(f'  ⚠️ 设置回归视口失败（将用默认视口跑，几何类用例可能误红）：{e}')
 
 
+def _reload_page(cdp):
+    """用例之间刷新页面（隔离状态）+ 等数据就绪 + 重开 harness 项目。
+
+    🔴 为什么单独抽出来（2026-11-07）：一次 `WebSocketTimeoutException`（15s 读超时）之后，
+    **同一个 ws 上的后续请求全排在同一个卡住的渲染进程后面** —— 表现为“一条用例超时，
+    后面 10 条连锁 Connection timed out”，整轮结论没法当发布判据（见 test_109 那张卡）。
+    所以这里把"重载"做成可重试的一步：首次失败就**重建 CDP 客户端**再试一次
+    （换根管子；真正把卡死解开的是紧接着的 Page.navigate —— 导航由**浏览器进程**处理，
+    不排在卡住的渲染进程后面）。
+    """
+    cdp.navigate()
+    wait_for(cdp, "!!document.querySelector('.app-layout')", desc='重载')
+    apply_viewport(cdp)
+    # 用例前统一等数据就绪：mock 是异步注入的（geodata + 2MB mapdata），
+    # 只等 .app-layout 会让下一个用例的首个断言撞上空 store，报“no-world /
+    # 树节点未渲染 / 地理数据加载超时”这类**假失败**（历史上曾据此误判 test_07/test_12 为回归失败）。
+    # 超时只告警不中断：由用例自己给出有意义的失败原因。
+    try:
+        wait_for(cdp,
+                 "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
+                 timeout=30, desc='用例前数据就绪')
+    except Exception:
+        print('  ⚠️ 前置数据未就绪（30s 内 store.nodes 仍为 0，冷启动抖动？）')
+    _harness_open(cdp)
+    time.sleep(0.5)
+
+
 def _harness_open(cdp, first=False):
     """打开 harness 基线项目（见 lib/helpers.py 说明）。
 
@@ -665,6 +692,63 @@ def _harness_open(cdp, first=False):
     elif first:
         print(f'  · harness 基线项目：实体 {info.get("seededEntities")} / 画布节点 {info.get("nodes")} / '
               f'航道 {info.get("hyperlanes")} / 地图 {info.get("maps")}（事实源 {info.get("source")}）')
+
+
+def _launch_edge(handles, label='edge'):
+    """起一个 headless Edge（CDP 端口 CDP_PORT），登记到 handles 并返回句柄。"""
+    free_port(CDP_PORT)
+    edge = subprocess.Popen([
+        EDGE_EXE, '--headless=new', '--disable-gpu',
+        # 跨平台（2026-09-30）：容器 /dev/shm 常只有 64MB，不开此旗标会 SIGBUS 假死
+        #（Windows 上无害，保持常开以免两套旗标漂移）
+        '--disable-dev-shm-usage',
+        '--remote-debugging-port=%d' % CDP_PORT,
+        '--remote-allow-origins=*',
+        '--user-data-dir=%s' % os.path.join(ROOT, '.test-edge-profile'),
+        '--no-first-run', '--no-default-browser-check',
+        '--disable-sync', '--disable-features=SyncConsentUI,SigninCheckoutFlow',
+        '--no-sandbox', 'about:blank',
+    ])
+    h = ProcessHandle(edge, label)
+    handles.append(h)
+    if not wait_port(CDP_PORT):
+        raise RuntimeError('Edge CDP 启动超时')
+    return h
+
+
+def _boot_page(cdp):
+    """首启引导写掉 + 数据就绪（首次导航与"重建浏览器"之后都要走一遍）。"""
+    # 首个用例前必须导航（Edge 新 profile 停在 about:blank / 首启页）
+    cdp.navigate()
+    wait_for(cdp, "!!document.querySelector('.app-layout')", desc='首次导航')
+    apply_viewport(cdp)
+    # 首启引导层（.onboarding-overlay）会挡住数据加载：此时 store.nodes 恒为 0，
+    # 第一个用例必然看到空数据（test_01 历史上因此红）。先把首启标记写掉再重载。
+    try:
+        cdp.eval("localStorage.setItem('sitian-first-run-complete', 'true')")
+        cdp.navigate()
+        wait_for(cdp, "!!document.querySelector('.app-layout')", desc='跳过首启引导后重载')
+        wait_for(cdp, "!document.querySelector('.onboarding-overlay')", timeout=30, desc='引导层已关闭')
+    except Exception as e:
+        print(f'  ⚠️ 跳过首启引导失败（首个用例可能看到空数据）：{e}')
+
+
+def _restart_browser(handles, handle):
+    """把卡死的浏览器**整个换掉**（用例连锁红的最后一道保险）。
+
+    为什么重建 websocket 不够（2026-11-07 实测）：渲染进程被一段长计算/死循环占住时，
+    连 `Page.navigate` 都过不去 —— 换管子没用，必须换浏览器。
+    """
+    try:
+        if handle:
+            handle.stop()
+    except Exception:
+        pass
+    try:
+        handles.remove(handle)
+    except ValueError:
+        pass
+    return _launch_edge(handles, 'edge-restart')
 
 
 def load_case(path):
@@ -765,39 +849,12 @@ def main():
                 '再删 `.bak` 与 `src/renderer/mock-data/`' % 40)
 
         print('3/5 启动 Edge headless...')
-        free_port(CDP_PORT)
-        edge = subprocess.Popen([
-            EDGE_EXE, '--headless=new', '--disable-gpu',
-            # 跨平台（2026-09-30）：容器 /dev/shm 常只有 64MB，不开此旗标会 SIGBUS 假死
-            #（Windows 上无害，保持常开以免两套旗标漂移）
-            '--disable-dev-shm-usage',
-            '--remote-debugging-port=%d' % CDP_PORT,
-            '--remote-allow-origins=*',
-            '--user-data-dir=%s' % os.path.join(ROOT, '.test-edge-profile'),
-            '--no-first-run', '--no-default-browser-check',
-            '--disable-sync', '--disable-features=SyncConsentUI,SigninCheckoutFlow',
-            '--no-sandbox', 'about:blank',
-        ])
-        handles.append(ProcessHandle(edge, 'edge'))
-        if not wait_port(CDP_PORT):
-            raise RuntimeError('Edge CDP 启动超时')
+        edge_handle = _launch_edge(handles)
 
         print('4/5 运行用例...')
         from lib.cdp import CDP
         cdp = CDP()
-        # 首个用例前必须导航（Edge 新 profile 停在 about:blank / 首启页）
-        cdp.navigate()
-        wait_for(cdp, "!!document.querySelector('.app-layout')", desc='首次导航')
-        apply_viewport(cdp)
-        # 首启引导层（.onboarding-overlay）会挡住数据加载：此时 store.nodes 恒为 0，
-        # 第一个用例必然看到空数据（test_01 历史上因此红）。先把首启标记写掉再重载。
-        try:
-            cdp.eval("localStorage.setItem('sitian-first-run-complete', 'true')")
-            cdp.navigate()
-            wait_for(cdp, "!!document.querySelector('.app-layout')", desc='跳过首启引导后重载')
-            wait_for(cdp, "!document.querySelector('.onboarding-overlay')", timeout=30, desc='引导层已关闭')
-        except Exception as e:
-            print(f'  ⚠️ 跳过首启引导失败（首个用例可能看到空数据）：{e}')
+        _boot_page(cdp)
         # 首个用例前同样等数据就绪（见下方循环内同款说明）
         try:
             wait_for(cdp,
@@ -826,23 +883,40 @@ def main():
                 print(f'  ❌ {name} — 异常: {e}')
             # 每个用例后刷新页面（隔离状态）
             try:
-                cdp.navigate()
-                wait_for(cdp, "!!document.querySelector('.app-layout')", desc='重载')
-                apply_viewport(cdp)
-                # 用例前统一等数据就绪：mock 是异步注入的（geodata + 2MB mapdata），
-                # 只等 .app-layout 会让下一个用例的首个断言撞上空 store，报“no-world /
-                # 树节点未渲染 / 地理数据加载超时”这类**假失败**（历史上曾据此误判
-                # test_07/test_12 为回归失败）。超时只告警不中断：由用例自己给出有意义的失败原因。
+                _reload_page(cdp)
+            except Exception as e:
+                # 🔴 一次 CDP 读超时不能连坐后面所有用例（见 _reload_page 的说明）：
+                #    先换一根 websocket；还不行就**整个换掉浏览器**（渲染进程被占死时，
+                #    连 Page.navigate 都过不去 —— 换管子没用）。
+                print(f'  ↺ 用例后刷新失败（{e}）→ 重建 CDP 客户端再试一次')
                 try:
-                    wait_for(cdp,
-                             "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
-                             timeout=30, desc='用例前数据就绪')
+                    cdp.close()
                 except Exception:
-                    print('  ⚠️ 前置数据未就绪（30s 内 store.nodes 仍为 0，冷启动抖动？）')
-                _harness_open(cdp)
-                time.sleep(0.5)
-            except Exception:
-                pass
+                    pass
+                try:
+                    cdp = CDP()
+                    _reload_page(cdp)
+                    print('  ↺ 已恢复（新客户端 + 重新导航）')
+                except Exception as e2:
+                    print(f'  ↺ 仍然失败（{e2}）→ 重启无头浏览器')
+                    try:
+                        cdp.close()
+                    except Exception:
+                        pass
+                    try:
+                        edge_handle = _restart_browser(handles, edge_handle)
+                        cdp = CDP()
+                        _boot_page(cdp)
+                        try:
+                            wait_for(cdp,
+                                     "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
+                                     timeout=30, desc='重建后数据就绪')
+                        except Exception:
+                            print('  ⚠️ 重建后数据未就绪（后续用例可能误红）')
+                        _harness_open(cdp)
+                        print('  ↺ 已恢复（重启浏览器 + 重新导航）')
+                    except Exception as e3:
+                        print(f'  ⚠️ 恢复失败（{e3}）—— 后续用例可能连锁超时')
         cdp.close()
 
         total = passed + len(failed)

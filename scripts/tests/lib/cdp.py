@@ -164,3 +164,118 @@ def skip_onboarding(cdp):
     """跳过首次引导（Onboarding overlay 全屏拦截点击）"""
     cdp.eval("(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.trim() === '跳过'); if (b) b.click(); return !!b; })()")
     time.sleep(0.5)
+
+
+class StallProbe:
+    """**卡死取证**：提前把调试器挂上，卡死之后只发一个 `Debugger.pause` 就要栈。
+
+    为什么要提前挂（2026-11-07 实测）：`Debugger.enable` 本身也要走渲染进程的主线程 ——
+    页面已经进了死循环，再 `enable + pause` 会连 `Debugger.paused` 都等不到（10s 超时），
+    取证结果只剩一句"没停下来"，而真机读数明明显示那个进程**在 100% 单核里转**
+    （CPU 每 4s +4.1s、内存涨到 2GB）。所以顺序反过来：**先挂好，再让作业跑**。
+
+    用法：
+        probe = StallProbe()
+        probe.arm()                  # 页面还活着时挂上（失败返回 False，取证降级但不影响用例）
+        ... 跑重活 ...
+        frames = probe.pause_and_stack()   # ['fn @ file.js:123', ...]
+        probe.close()
+    """
+
+    SCRIPT_PARSED = 'Debugger.scriptParsed'
+
+    def __init__(self, port=CDP_PORT):
+        self.ws = None
+        self.armed = False
+        self.port = port
+
+    def arm(self, timeout=15):
+        try:
+            self.ws = websocket.create_connection(
+                find_page_ws(self.port), timeout=timeout, suppress_origin=True)
+            self.ws.send(json.dumps({'id': 1, 'method': 'Debugger.enable'}))
+            end = time.time() + timeout
+            while time.time() < end:
+                msg = json.loads(self.ws.recv())
+                if msg.get('id') == 1:
+                    self.armed = 'error' not in msg
+                    return self.armed
+        except Exception:
+            self.armed = False
+        return False
+
+    def pause_and_stack(self, timeout=10.0, depth=14):
+        if not (self.armed and self.ws):
+            return []
+        try:
+            self.ws.send(json.dumps({'id': 2, 'method': 'Debugger.pause'}))
+            end = time.time() + timeout
+            while time.time() < end:
+                msg = json.loads(self.ws.recv())
+                if msg.get('method') != 'Debugger.paused':
+                    continue          # scriptParsed 之类的正常事件，跳过
+                frames = []
+                for fr in (msg.get('params', {}).get('callFrames') or [])[:depth]:
+                    loc = fr.get('location') or {}
+                    fn = fr.get('functionName') or '(anonymous)'
+                    url = str(fr.get('url') or '')
+                    short = url.rsplit('/', 1)[-1] if url else '<eval>'
+                    line = loc.get('lineNumber')
+                    frames.append(f'{fn} @ {short}:{"" if line is None else line + 1}')
+                return frames
+        except Exception:
+            return []
+        return []
+
+    def close(self):
+        try:
+            if self.ws:
+                self.ws.close()
+        except Exception:
+            pass
+        self.ws = None
+        self.armed = False
+
+
+def stuck_call_stack(port=CDP_PORT, timeout=10.0, depth=12):
+    """**页面卡死取证（事后版）**：让 V8 在当前位置停住，回传 JS 调用栈（"卡在哪一行"）。
+
+    为什么需要它：CDP 的读超时只会给一句 `Connection timed out`。分不清是
+    "这段算得慢"、"死循环"还是"原生死锁"，也指不到具体函数 —— 而报告里最需要的就是这一行。
+    做法：另开一条 CDP 连接（不影响调用方那根管子），`Debugger.enable` + `Debugger.pause`，
+    再从事件流里捞 `Debugger.paused`。`pause` 走 inspector 的**中断**通道，
+    页面在死循环里也能停下来（这正是"超时"读不出来的东西）。
+
+    :returns: `['fn @ file.js:123', ...]`；拿不到返回 `[]`（调用方自己决定怎么说）
+    """
+    frames = []
+    try:
+        ws = websocket.create_connection(
+            find_page_ws(port), timeout=5, suppress_origin=True)
+    except Exception:
+        return frames
+    try:
+        ws.send(json.dumps({'id': 9001, 'method': 'Debugger.enable'}))
+        ws.send(json.dumps({'id': 9002, 'method': 'Debugger.pause'}))
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                msg = json.loads(ws.recv())
+            except Exception:
+                continue
+            if msg.get('method') != 'Debugger.paused':
+                continue
+            for fr in (msg.get('params', {}).get('callFrames') or [])[:depth]:
+                loc = fr.get('location') or {}
+                fn = fr.get('functionName') or '(anonymous)'
+                url = str(fr.get('url') or '')
+                short = url.rsplit('/', 1)[-1] or ('<eval>' if not url else url[-24:])
+                line = loc.get('lineNumber')
+                frames.append(f'{fn} @ {short}:{"" if line is None else line + 1}')
+            break
+    finally:
+        try:
+            ws.close()
+        except Exception:
+            pass
+    return frames

@@ -240,14 +240,28 @@ def run(cdp):
       const M = await import('/src/store/projectStore.js');
       const proj = M.useProjectStore(pinia);
       const first = Object.keys(proj.entities)[0];
-      proj.renameEntity(first, '我改过的名字');
+      const renameRes = proj.renameEntity(first, '我改过的名字');
+      const nameNow = (proj.getEntity(first) || {}).name || null;
       await new Promise(r => setTimeout(r, 200));
       const again = await proj.importFromVault();
       await new Promise(r => setTimeout(r, 400));
       const e = proj.getEntity(first);
-      return JSON.stringify({ merged: again.merged || null, nothingNew: !!again.nothingNew, name: e ? e.name : null });
+      // 失败时能一眼看出“改名到底有没有落进内存”：闸门状态 / 写入回执 / 改完立刻读到的名字
+      const wg = await import('/src/store/writeGate.js')
+        .then(m => m.describeWriteGate()).catch(err => String(err));
+      return JSON.stringify({ merged: again.merged || null, nothingNew: !!again.nothingNew,
+        name: e ? e.name : null, renameRes: renameRes || null, nameNow: nameNow,
+        gate: wg, source: app._instance.setupState.store.canvasSource,
+        isOpen: !!proj.isOpen, filePath: proj.filePath || '' });
     })()""" % APP), '重复导入不覆盖')
     if keep.get('name') != '我改过的名字':
+        # 2026-11-07：把“改名本身没生效”与“重复导入盖掉了”分开报 —— 两者的处置完全不同。
+        # ⚠️ `updateEntity` 目前**不看** `execute()` 的返回值（写闸门拒绝时仍回 success:true），
+        #    所以回执不能当证据，只能看“改完立刻读到的名字”。
+        if keep.get('nameNow') != '我改过的名字':
+            return False, (f'前置失败：改名没落进内存（改完立刻读到 {keep.get("nameNow")!r}）'
+                           f'—— 写闸门 {keep.get("gate")} / 事实源 {keep.get("source")}；'
+                           '这**不是**导入覆盖，别修错地方')
         return False, f'重复导入把项目里已有实体覆盖了（应只补缺）：{keep}'
 
     # ── c3) 机器属性同样不被覆盖（A-2，2026-09-27）＝ 搬家协议定的“读优先级”──────────
