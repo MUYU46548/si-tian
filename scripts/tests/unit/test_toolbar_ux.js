@@ -59,6 +59,11 @@ function attrOf(node, name) {
 function textOf(node) {
   if (!node) return '';
   if (node.type === 2) return node.content || '';
+  // 🔴 2026-11-07：`{{ 表达式 }}` 是 **type 5 插值节点**，不是文本节点。
+  // 不认它，凡是“文字由插值给出”的按钮（比如退回键 `{{ basemapEditMode ? '← 日常视图' : '← 退出剧本' }}`、
+  // 批量删除 `{{ selCount > 1 ? … : '删除这条河' }}`）都会被判成“纯图标”。
+  // 行星那份可读性闸门早就踩过同一个坑（`test_toolbar_ux_planet.js`）。
+  if (node.type === 5) return String((node.content && node.content.content) || '');
   if (node.type === 3) return '';
   let out = '';
   for (const ch of node.children || []) out += textOf(ch);
@@ -67,13 +72,20 @@ function textOf(node) {
 
 /** 在 AST 里找 class 含 toolbar-more 的元素 */
 function findMore(ast) {
+  // 2026-11-07（工具栏第 9 步）：`.toolbar-more` 这块搬到
+  // `scenario/panels/toolbar/ToolbarMorePanel.vue` 了，主模板里只剩一个 `<ToolbarMorePanel>` 标签。
+  // 判据跟着实现走：先找老形态（class），找不到就认那个组件标签 —— 5 张卡片是它的插槽内容，
+  // 仍然写在主模板里，所以按钮与分区标题照旧能扫到。
   let hit = null;
+  let byComponent = false;
   const walk = (n) => {
     if (!n || typeof n !== 'object' || hit) return;
     if (n.type === 1 && /\btoolbar-more\b/.test(attrOf(n, 'class'))) { hit = n; return; }
+    if (n.type === 1 && n.tag === 'ToolbarMorePanel') { hit = n; byComponent = true; return; }
     for (const ch of n.children || []) walk(ch);
   };
   walk(ast);
+  if (hit) hit.__byComponent = byComponent;
   return hit;
 }
 
@@ -103,6 +115,26 @@ const more = findMore(ast);
 assert(more, '找不到 .toolbar-more（“更多”面板）');
 
 const { buttons, sections } = scanMore(more);
+// 🔴 2026-11-07（工具栏第 2–9 步）：`“更多”里的行`与`外壳`都已搬进
+// `scenario/panels/toolbar/**` —— 只扫主模板的插槽内容会只剩外壳那 1 个按钮（覆盖变窄 = 假绿）。
+// 所以把工具栏各子组件的模板一起并进来：它们装的就是“更多”里的那些按钮。
+// ⚠️ 这条判据此时守的是“**整个工具栏**的按钮都要有名字”，比原来更严，不是放宽。
+const TOOLBAR_DIR = path.join(path.dirname(FILE), '..', 'scenario', 'panels', 'toolbar');
+(function mergeToolbarComponents(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const q = path.join(dir, e.name);
+    if (e.isDirectory()) { mergeToolbarComponents(q); continue; }
+    if (!e.name.endsWith('.vue')) continue;
+    const a = parse(readText(q), { filename: e.name }).descriptor.template.ast;
+    if (!a) continue;
+    const extra = scanMore(a);
+    buttons.push(...extra.buttons);
+    sections.push(...extra.sections);
+  }
+})(TOOLBAR_DIR);
+// 防空转：工具栏里的按钮本来就有五十多个，少到这个数说明扫描规则坏了。
+assert(buttons.length >= 30,
+  `只扫到 ${buttons.length} 个按钮 —— 判据扫空等于没测（工具栏子组件的模板没被并进来？）`);
 const REGION = SRC.slice(more.loc.start.offset, more.loc.end.offset);
 
 /** 判据 2：每个按钮都有可见文字（中文或 ≥2 个字母数字；纯符号不行） */
@@ -174,7 +206,20 @@ check('“更多”有成型的分区标题（≥4，且都写人话）', () => 
 check('“更多”里每个按钮都有可见文字（不许只有图标/符号）', () => checkButtonText(buttons));
 check('“更多”里没有内部术语（FMG / Azgaar / 落库 / 单源 …）', () => checkNoJargon(REGION));
 
+// 🔴 2026-11-07：工具栏的文案搬进了 `scenario/panels/toolbar/**` —— 只扫主模板会让这条判据
+// 从 405 处掉到 131 处（覆盖变窄 = 假绿）。所以把那些子组件模板里的可见文字一起并进来。
 const VISIBLE = visibleStrings(ast);
+(function mergeVisible(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const q = path.join(dir, e.name);
+    if (e.isDirectory()) { mergeVisible(q); continue; }
+    if (!e.name.endsWith('.vue')) continue;
+    const a = parse(readText(q), { filename: e.name }).descriptor.template.ast;
+    if (a) VISIBLE.push(...visibleStrings(a));
+  }
+})(TOOLBAR_DIR);
+assert(VISIBLE.length >= 300,
+  `整张视图只扫到 ${VISIBLE.length} 处可见文字 —— 判据扫空等于没测（工具栏子组件没并进来？）`);
 check('整张剧本视图的可见文字（文本 + 悬停说明）零内部术语', () => checkTemplateJargon(VISIBLE));
 
 check('负向探针：按钮去文字 / 塞术语，两条判据都要红', () => {

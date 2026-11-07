@@ -338,14 +338,7 @@
       <!-- “更多”（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
       <!-- 点面板以外的任何地方就收起（浮层惯例；不必再回来找“更多”按钮） -->
       <div v-if="moreOpen" class="tm-backdrop" @click="moreOpen = false"></div>
-      <div v-if="moreOpen" class="toolbar-more">
-        <!-- 2026-11-05 第二次改向：这块不再是“往下推的抽屉”，而是**浮在画布上的工具面板**。
-             用户原话：“分组把原本就紧张的地图观测空间又压扁了一大截，显然不是好主意。”
-             所以：地图不动、面板浮层 + 按用途分卡片（5 张自适应多列），并给一个明确的“收起”。 -->
-        <div class="tm-head">
-          <strong>工具</strong><span class="tm-sub">按用途分组；最常用的四个留在上面那条工具栏上</span>
-          <button class="tm-close" data-testid="more-close" @click="moreOpen = false" title="收起工具面板">收起</button>
-        </div>
+      <ToolbarMorePanel v-if="moreOpen" @close="moreOpen = false">
       <section class="tm-card">
         <div class="tm-title" data-testid="more-sec-province">省份与笔刷</div>
         <!-- 工具栏拆分试点（2026-11-06）：这一行搬进 scenario/panels/toolbar/ProvinceOpsRow.vue
@@ -389,289 +382,91 @@
         <div class="tm-title" data-testid="more-sec-terrain">地形 · 底图 · 生成</div>
       <!-- 第 3 行：地形/群系等笔刷设置 + 底图与视图操作 -->
       <div class="toolbar-row">
-      <!-- 笔刷设置 -->
-      <div class="tool-group brush-settings" v-if="['height','biome','culture','religion'].includes(tool)">
-        <label>笔刷：</label>
-        <label class="check-label" title="笔刷半径（滚轮调节）">
-          半径
-          <input type="range" v-model.number="brushRadius" min="20" max="300" step="10" class="brush-slider" />
-          {{ brushRadius }}
-        </label>
-        <label class="check-label" v-if="tool === 'height'" title="笔刷强度（Shift+滚轮调节）">
-          强度
-          <input type="range" v-model.number="brushStrength" min="0.5" max="10" step="0.5" class="brush-slider" />
-          {{ brushStrength }}
-        </label>
-        <label class="check-label" v-if="tool === 'biome'">
-          群系
-          <select v-model="brushBiome" class="brush-biome-select">
-            <option v-for="(color, key) in BIOME_COLORS" :key="key" :value="key">{{ key }}</option>
-          </select>
-        </label>
-        <label class="check-label" v-if="tool === 'culture'">
-          文化
-          <select v-model="brushCulture" class="brush-biome-select">
-            <option v-for="c in availableCultures" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
-          </select>
-        </label>
-        <label class="check-label" v-if="tool === 'religion'">
-          宗教
-          <select v-model="brushReligion" class="brush-biome-select">
-            <option v-for="r in availableReligions" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
-          </select>
-        </label>
-      </div>
-      <!-- 底图选择器（P1 切换底图） -->
-      <div class="tool-group">
-        <label>底图：</label>
-        <select v-model="baseMapKey" @change="onBaseMapChange" class="basemap-select" :title="`当前底图: ${baseMapKey}`">
-          <option v-for="bm in availableBaseMaps" :key="bm.id" :value="bm.id">
-            {{ bm.name }} ({{ bm.count }}省)
-          </option>
-        </select>
-        <button @click="triggerMapImport" title="导入 .map 底图 —— 同名且一笔未改：只补缺；同名且改过：重导为新底图并迁移旧归属"><Icon name="plus" :size="15"/>导入底图</button>
-        <!-- 2026-10-22：**已有底图时也能新建空底图**。以前只有“空项目空态”能建，
-             已有底图的项目只能导 .map —— 用户想试笔刷却没有干净画布，只能对着真实底图下手
-             （“连新底图都建不了”/“怕改坏不敢测”的直接来源）。 -->
-        <button
-          data-testid="basemap-add-empty"
-          :disabled="store.isReadOnly"
-          :title="store.isReadOnly
-            ? `新建底图已停用：${store.readOnlyReason || '只读：未打开项目'}`
-            : '新建一张空白底图（已有底图时也能加）—— 之后画的省份 / 河流 / 道路都落在这张新图上，不动现有底图'"
-          @click="addEmptyBaseMap()"
-        ><Icon name="plus" :size="15"/>空底图</button>
-        <!-- 0.2.9（2026-10-13）：**从留底恢复** —— 导入过的 .map 原文一直留在
-             `<项目>.sitian.backups/basemap-sources/`（0.2.8 起），但此前只有"列清单"没有入口，
-             用户在界面上够不着（只能自己去资源管理器翻目录）。备份读不回来就不算备份。 -->
-        <button
-          data-testid="basemap-source-restore"
-          class="has-advanced"
-          title="从留底恢复底图 —— 列出项目备份目录里留存的原始 .map（导入时自动留底），选一份重新导入；同名底图只补缺，省份与归属不动"
-          @click="openSourceRestore"
-        ><Icon name="history" :size="15"/>恢复底图</button>
-        <!-- B2（2026-10-11）：给**已经在用**的底图补 FMG 数据（高度图 / 河流 / 道路 / 城镇）。
-             真实缘由：`desite` 是 2026-09-10 那次导入建的，而当时解析器只读 SVG 省份多边形，
-             高度图/河流/道路根本没被读出来 —— 今天解析器能读全（实测 9975 格高度 + 160 河 + 496 路），
-             但没有任何入口能把它们补进一张已经切了几百块省份的底图（重导 = 覆盖，绝不可行）。 -->
-        <button
-          v-if="basemapDataMissing.length"
-          data-testid="basemap-refresh-data"
-          class="has-advanced"
-          :title="`刷新底图数据 — 这张底图还缺：${basemapDataMissing.join(' / ')}。选一个 .map 文件补齐，` +
-                  '省份边界（' + provinceCount + ' 块）与归属记录一个字都不会动'"
-          @click="triggerMapImport({ refreshOnly: true })"
-        ><Icon name="refresh" :size="15"/>补齐数据</button>
-        <!-- F（0.2.6）：用新 .map 的海岸线重建现有省份外环 —— 只换海岸那一段，不作废省份。
-             为什么需要它：生成器原始海岸线 10525 点，导出时被简化成 778 点，落到底图上
-             每个省只剩几十个点（地图上那条海岸线又糙又不对）；而"重导为新底图"会把
-             几百块省份与归属全丢掉。这个按钮走的是第三条路：**省 ∩ 新陆地**。 -->
-        <button
-          data-testid="basemap-rebuild-coastline"
-          class="has-advanced"
-          :title="baseMapHasLandFeatures
-            ? '用新 .map 的海岸线重建省份外环 — 只换海岸那一段；内陆省逐点不动、相邻省仍无缝、一整次 = 一条撤销'
-            : '用新 .map 的海岸线重建省份外环（这张底图里没有陆地轮廓数据，会先让你选一份 .map）'"
-          @click="triggerCoastlineRebuild"
-        ><Icon name="mountain" :size="15"/>重建海岸</button>
-        <!-- A1（2026-09-24）：底图的高度图此前**只有 .map 导入**一条来源 —— 新建的底图里
-             高度/群系/文化/宗教笔刷与一键派生全都“点了没反应”（没有网格 → 直接 return）。
-             这个按钮补上“从零开始画”，同时它也是“剧情上已毁灭、不打算再建行星的星球”
-             唯一可走的路径：**不绑定行星，底图自己持有一份高度图**。 -->
-        <button
-          v-if="baseMapCanCreateHeightmap"
-          data-testid="basemap-create-heightmap"
-          title="为这张底图创建高度图网格（创建后即可用高度 / 群系 / 文化 / 宗教笔刷与一键派生）"
-          @click="createBaseMapHeightmap"
-        ><Icon name="layers" :size="15"/>建高度图</button>
-        <!-- 🔴 2026-10-17 第八修·改向（暮雨：“司天自身的编辑能力必须过硬，**不要指望靠
-              用户导出高度数据地图来救河流生成**”）。
-              上面那个“建高度图”建出来的是一张**全 0 的平地**（h 全 0 < 海平面 20），
-              于是自建底图的完整路径是：画大陆 → 建高度图 → 点自动河流 → **永远是 0 条河**
-              （平地没有坡，水不知道该往哪流），且不报错。这就是"核心能力只对外部导入的
-              地图可用"的真身。
-              这个按钮补上**本地地形起点**：按陆地轮廓推演一份有起伏的高度图
-              （离岸距离场 + 分形起伏，见 `utils/terrainSynthesis.js`），落库进 undo。
-              用户的完整路径变成：画大陆 → 按轮廓生成地形 → 有河 → 再用笔刷手调。 -->
-        <button
-          v-if="baseMapCanSynthesizeTerrain"
-          data-testid="basemap-synthesize-terrain"
-          title="按已画好的陆地轮廓推演一份地形高度图（内陆高、海岸低 + 分形起伏）—— 这是自建地图长出河流的起点，之后可用地形笔刷继续手改"
-          @click="synthesizeBaseMapTerrainFromShape"
-        ><Icon name="mountain" :size="15"/>按轮廓生成地形</button>
-        <!-- P0-1（2026-10-25）：**参数够不着 = 生成只能撞运气**。
-             旧入口一点就按写死的常量推演（种子 7 / 山脉权重 0.26 / 裂谷 0.26），
-             用户既不知道"这次是什么种子"，也无法换一种地形 —— 不满意只能反复点，
-             而每次点出来的都是同一张。这个入口带**文字**（本项目实测：只有图标的按钮
-             用户找不到），点开是面板：种子/起伏/山脉/高原/裂谷/精度 + 3 张候选缩略图，
-             选一张再应用（一条 undo）。 -->
-        <button
-          v-if="baseMapCanSynthesizeTerrain"
-          data-testid="basemap-terrain-params"
-          :class="{ active: terrainGenOpen }"
-          title="地形生成参数 —— 种子 / 起伏 / 山脉 / 高原 / 裂谷 / 精度 + 3 张候选预览，选一张再应用（一条撤销）"
-          @click="toggleTerrainGenPanel"
-        ><Icon name="settings" :size="15"/>地形生成参数</button>
-        <button
+        <!-- 工具栏拆分第 9 步（2026-11-07）：这张卡片里的 7 个 tool-group 各自搬进
+             `scenario/panels/toolbar/settings/`（笔刷参数 / 底图选择与维护 / 地形生成簇 /
+             分辨率面板 / 地形来源 / 视图与保存 / 模式 / 吸附）。
+             为什么按组拆：这一行有 62 个绑定，整行搬就要塞 62 个 props（门槛是 20）。 -->
+        <TerrainBrushSettings
+          v-if="['height','biome','culture','religion'].includes(tool)"
+          :tool="tool"
+          v-model:radius="brushRadius"
+          v-model:strength="brushStrength"
+          v-model:biome="brushBiome"
+          v-model:culture="brushCulture"
+          v-model:religion="brushReligion"
+          :biome-colors="BIOME_COLORS"
+          :cultures="availableCultures"
+          :religions="availableReligions"
+        />
+        <BasemapPickerGroup
+          v-model:base-map-key="baseMapKey"
+          :options="availableBaseMaps"
+          :is-read-only="store.isReadOnly"
+          :read-only-reason="store.readOnlyReason"
+          :missing="basemapDataMissing"
+          :province-count="provinceCount"
+          :has-land-features="baseMapHasLandFeatures"
+          @change="onBaseMapChange"
+          @import-map="triggerMapImport"
+          @add-empty="addEmptyBaseMap()"
+          @open-source-restore="openSourceRestore"
+          @refresh-data="triggerMapImport({ refreshOnly: true })"
+          @rebuild-coastline="triggerCoastlineRebuild"
+        />
+        <TerrainGenGroup
+          :has-base-map="!!baseMapKey"
+          :can-create-heightmap="baseMapCanCreateHeightmap"
+          :can-synthesize="baseMapCanSynthesizeTerrain"
+          :can-resample="baseMapCanResample"
+          :preview-src-cells="resamplePreview ? resamplePreview.srcCells : 0"
+          :terrain-gen-open="terrainGenOpen"
+          :fmg-open="fmgOpen"
+          :landmass-open="landmassOpen"
+          :derive-open="deriveOpen"
+          :resample-open="resampleOpen"
+          @create-heightmap="createBaseMapHeightmap"
+          @synthesize="synthesizeBaseMapTerrainFromShape"
+          @toggle-terrain-gen="toggleTerrainGenPanel"
+          @toggle-fmg="fmgOpen = !fmgOpen"
+          @toggle-landmass="toggleLandmassPanel"
+          @toggle-derive="toggleDerivePanel"
+          @open-resample="openResamplePanel"
+        />
+        <ResamplePanel
+          v-if="resampleOpen && resamplePreview"
+          :preview="resamplePreview"
+          v-model:factor="resampleFactor"
+          v-model:smooth-radius="smoothRadius"
+          @smooth="applySmooth"
+          @apply="applyResample"
+          @close="resampleOpen = false"
+        />
+        <TerrainSourceGroup
           v-if="baseMapKey"
-          data-testid="basemap-fmg-terrain"
-          :class="{ active: fmgOpen }"
-          title="现成模板 —— 14 套做好的大陆形状（大陆 / 群岛 / 环礁 / 地中海…），挑一套直接出高度图，一条撤销可退回"
-          @click="fmgOpen = !fmgOpen"
-        ><Icon name="sparkles" :size="15"/>现成模板</button>
-        <!-- P0-2（2026-10-25）：**造陆**。此前"从零开始"的第一步是让用户自己画大陆 ——
-             手画出来多是圆饼，而且只会画一块中央大陆。这里按参数生成大陆/群岛轮廓，
-             再用现有铺底管线切成省（一条 undo）。 -->
-        <button
-          v-if="baseMapKey"
-          data-testid="basemap-generate-landmass"
-          :class="{ active: landmassOpen }"
-          title="造陆 —— 按参数生成大陆/群岛轮廓，再用铺底切成省；一次 Ctrl+Z 可整体退回"
-          @click="toggleLandmassPanel"
-        ><Icon name="globe" :size="15"/>造陆</button>
-        <!-- P0-4（2026-10-25）：文化/宗教/势力派生 —— 空省从"没有文化、没有归属"变成
-             有连续文化区、有按文化分组的势力；只补空/覆盖两档显式选，笔刷仍可覆盖。 -->
-        <button
-          v-if="baseMapKey"
-          data-testid="basemap-derive-culture"
-          :class="{ active: deriveOpen }"
-          title="生成文化/宗教/势力 —— 按地形与位置铺文化区，再按文化分组建势力；只补空或覆盖（会先问）"
-          @click="toggleDerivePanel"
-        ><Icon name="users" :size="15"/>生成文化势力</button>
-        <!-- P5（2026-10-14）：高度图**分辨率**。
-             真实来由：用户实测“地形模模糊糊”“高度图分辨率帮我调整。注意性能”。
-             量出来的事实是源网格 133×75 / spacing 14.4，在 1900×1080 上每格约 3.6 屏幕像素
-             —— 这是**数据分辨率**，不是渲染 bug。唯一真正有效的做法是把格子变密。
-
-             🔴 2026-10-15：**必须带可见文字**。第一版只有一枚 `grid` 图标，而“更多”里
-             它左右邻居全都有文字（拆分 / ⊕合并 / 删除 / 高度 / 群系 …）→ 暮雨实测
-             “分辨率按钮不知道在哪里，‘更多’中没有找到”。诊断（`test_xdiag_resample_button`）
-             证实按钮**一直在**（`data-testid="basemap-resample"`），是**看不见名字**。
-             纪律：按钮的可发现性不能只靠 `title`（要悬停才知道）+ 图标（认不出来）。 -->
-        <button
-          v-if="baseMapCanResample"
-          data-testid="basemap-resample"
-          :class="{ active: resampleOpen }"
-          :title="`调整高度图分辨率 — 当前 ${resamplePreview ? resamplePreview.srcCells : 0} 格；`
-                  + '把格子变密能让海岸线/山坡不再一块一块（放大会更明显）。⚠️ 这是插值，不增加地形信息'"
-          @click="openResamplePanel"
-        ><Icon name="grid" :size="15"/>分辨率</button>
-      </div>
-
-      <!-- P5：分辨率面板（按需展开，不占工具栏） -->
-      <div v-if="resampleOpen && resamplePreview" class="resample-panel" data-testid="resample-panel">
-        <div class="rp-row">
-          <label>放大</label>
-          <select v-model.number="resampleFactor" data-testid="resample-factor">
-            <option :value="2">×2</option>
-            <option :value="3">×3</option>
-            <option :value="4">×4</option>
-            <option :value="6">×6</option>
-            <option :value="8">×8</option>
-          </select>
-          <span class="rp-cost" :class="'lv-' + resamplePreview.level" data-testid="resample-cost">
-            {{ resamplePreview.message }}
-          </span>
-        </div>
-        <div v-if="!resamplePreview.ok" class="rp-warn">{{ resamplePreview.message }}</div>
-        <div class="rp-row">
-          <label>平滑</label>
-          <select v-model.number="smoothRadius" data-testid="smooth-radius">
-            <option :value="1">半径 1 格</option>
-            <option :value="2">半径 2 格</option>
-            <option :value="3">半径 3 格</option>
-          </select>
-          <button class="rp-btn" data-testid="smooth-apply" @click="applySmooth">平滑地形</button>
-          <span class="rp-hint">平滑只改高度；气候/群系要另点“重算派生图层”</span>
-        </div>
-        <div class="rp-actions">
-          <button
-            class="rp-btn primary"
-            data-testid="resample-apply"
-            :disabled="!resamplePreview.ok"
-            @click="applyResample"
-          >应用分辨率</button>
-          <button class="rp-btn" @click="resampleOpen = false">取消</button>
-        </div>
-        <div class="rp-note">
-          ⚠️ 实测口径：放大**不会**让河变长（同一片地形被更细地走一遍而已）。
-          1→2→4 倍时河条数 57→287→1089，而最长河的世界长度几乎不变（111→120→110）。
-          想要更长的大河只能换更高分辨率的**源数据**。
-        </div>
-      </div>
-
-      <!-- 地形来源（M1c，2026-09-25）—— 底图的地形有两种来源，取舍完全不同，必须显式选：
-             冻结导入 = 复制一份独立副本 → 历史存档剧本（行星后来怎么改都不影响它）
-             跟随行星 = 共用同一份数据   → 当代地图（两边互相影响）
-           真相在 store（planetId 字段 / 底图自持的 heightmap），这里只管展示与触发。 -->
-      <div v-if="baseMapKey" class="tool-group" data-testid="basemap-terrain-source">
-        <label>地形：</label>
-        <span
-          data-testid="basemap-terrain-mode"
-          :title="terrainModeTitle"
-          :style="{ fontSize: '11px', padding: '1px 6px', border: '1px solid currentColor', borderRadius: '3px', opacity: 0.85, whiteSpace: 'nowrap' }"
-        >{{ terrainModeLabel }}</span>
-        <select
-          v-model="pickPlanetId"
-          class="basemap-select"
-          :disabled="terrainInfo.mode === 'following'"
-          title="选择地形来源行星"
-        >
-          <option value="">选行星…</option>
-          <option v-for="p in availablePlanets" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
-        <button
-          data-testid="basemap-freeze-import"
-          :disabled="!pickPlanetId || terrainInfo.mode === 'following'"
-          title="把该行星当前的地形**复制一份**到这张底图（副本独立：之后行星怎么改都不影响它，它也改不到行星）—— 适合历史存档剧本"
-          @click="freezeTerrainFromPlanet"
-        >冻结导入</button>
-        <button
-          data-testid="basemap-bind-planet"
-          :disabled="!pickPlanetId || terrainInfo.mode === 'following'"
-          title="让这张底图**跟随**该行星的地形（共用同一份：在剧本里涂山会改到行星，反之亦然）—— 适合与行星同步构建的当代地图。历史存档请改用“冻结导入”"
-          @click="bindTerrainToPlanet"
-        >跟随</button>
-        <button
-          v-if="terrainInfo.mode === 'following'"
-          data-testid="basemap-unbind"
-          title="解除跟随（行星那份不受影响；本底图回到“没有地形”，可再用“冻结导入”拿一份副本）"
-          @click="unbindTerrainFromPlanet"
-        >解绑</button>
-      </div>
-
-      <div class="tool-group">
-        <button @click="fitToView" title="适应画布 (F)">适应视图</button>
-        <button @click="exportPNG" title="导出 PNG 图片"><Icon name="export" :size="15"/>导出整图</button>
-        <button @click="manualSave" title="保存到磁盘" :class="{ 'saving': saveDisplay.state === 'saving' }"
-                data-testid="scenario-save-btn">
-          <Icon v-if="saveDisplay.state === 'saving'" name="loader" :size="15"/>
-          <Icon v-else-if="saveDisplay.state === 'staged'" name="clock" :size="15"/>
-          <Icon v-else-if="saveDisplay.state === 'saved'" name="check-circle" :size="15"/>
-          <Icon v-else-if="saveDisplay.state === 'error'" name="x-circle" :size="15"/>
-          <Icon v-else name="save" :size="15"/>
-        保存</button>
-      </div>
-      <div class="tool-group">
-        <label>模式：</label>
-        <select v-model="viewMode" @change="onModeChange">
-          <option value="base">底图编辑</option>
-          <option value="scenario">剧本模式</option>
-        </select>
-        <!-- 🔴 两个模式**工具栏是同一套**，用户看不出差别（暮雨实测：“根本看不懂”）。
-             它们真正的区别在**着色与图层**：底图编辑按群系看自然面貌，剧本模式按势力看政治版图。
-             一句话写在旁边，省得用户来回切着猜。 -->
-        <span class="row-hint" data-testid="view-mode-hint" :title="viewModeHint">{{ viewModeHint }}</span>
-      </div>
-      <div class="tool-group">
-        <label>吸附：</label>
-        <label class="check-label" title="绘制/顶点编辑时对齐到 50px 网格（按住 Shift 临时禁用）">
-          <input type="checkbox" v-model="snapToGridEnabled" /> 网格吸附
-        </label>
-        <label class="check-label" title="绘制时顶点吸附到已有省份边界（按住 Shift 临时禁用）">
-          <input type="checkbox" v-model="snapToEdgeEnabled" /> 海岸线吸附
-        </label>
-      </div>
+          :mode="terrainInfo.mode"
+          :mode-label="terrainModeLabel"
+          :mode-title="terrainModeTitle"
+          v-model:planet-id="pickPlanetId"
+          :planets="availablePlanets"
+          @freeze="freezeTerrainFromPlanet"
+          @bind="bindTerrainToPlanet"
+          @unbind="unbindTerrainFromPlanet"
+        />
+        <ViewSaveGroup
+          :save-state="saveDisplay.state"
+          @fit="fitToView"
+          @export-png="exportPNG"
+          @save="manualSave"
+        />
+        <ViewModeGroup
+          v-model:mode="viewMode"
+          :hint="viewModeHint"
+          @change="onModeChange"
+        />
+        <SnapGroup
+          v-model:snap-to-grid="snapToGridEnabled"
+          v-model:snap-to-edge="snapToEdgeEnabled"
+        />
       </div>
 
       </section>
@@ -719,7 +514,7 @@
         @import-replace="importScenariosJson('replace')"
       />
       </section>
-      </div>   <!-- /.toolbar-more -->
+      </ToolbarMorePanel>
     </div>
 
     <!-- 剧本时间轴（按年比例轴 + EU4 斜线占领；旧按钮式时间轴条已被取代）
@@ -1302,6 +1097,16 @@ import ProvincePaintSettings from '../scenario/panels/toolbar/settings/ProvinceP
 import ProvinceBrushSettings from '../scenario/panels/toolbar/settings/ProvinceBrushSettings.vue';
 import PolySplitSettings from '../scenario/panels/toolbar/settings/PolySplitSettings.vue';
 import VoronoiSettings from '../scenario/panels/toolbar/settings/VoronoiSettings.vue';
+// 工具栏拆分第 9 步（2026-11-07）：“更多”浮层外壳 + “地形 · 底图 · 生成”卡片里的 8 个组。
+import ToolbarMorePanel from '../scenario/panels/toolbar/ToolbarMorePanel.vue';
+import TerrainBrushSettings from '../scenario/panels/toolbar/settings/TerrainBrushSettings.vue';
+import BasemapPickerGroup from '../scenario/panels/toolbar/settings/BasemapPickerGroup.vue';
+import TerrainGenGroup from '../scenario/panels/toolbar/settings/TerrainGenGroup.vue';
+import ResamplePanel from '../scenario/panels/toolbar/settings/ResamplePanel.vue';
+import TerrainSourceGroup from '../scenario/panels/toolbar/settings/TerrainSourceGroup.vue';
+import ViewSaveGroup from '../scenario/panels/toolbar/settings/ViewSaveGroup.vue';
+import ViewModeGroup from '../scenario/panels/toolbar/settings/ViewModeGroup.vue';
+import SnapGroup from '../scenario/panels/toolbar/settings/SnapGroup.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

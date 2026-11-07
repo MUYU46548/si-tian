@@ -208,7 +208,8 @@
   border-radius: 8px;
   background: rgba(30, 41, 59, 0.6);
 }
-.tm-head {
+.tm-head,
+:deep(.tm-head) {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -216,9 +217,12 @@
   padding: 0 2px 6px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.22);
 }
-.tm-head strong { font-size: 12px; color: #e2e8f0; }
-.tm-head .tm-sub { flex: 1; font-size: 11px; color: #94a3b8; }
-.tm-head .tm-close {
+.tm-head strong,
+:deep(.tm-head strong) { font-size: 12px; color: #e2e8f0; }
+.tm-head .tm-sub,
+:deep(.tm-head .tm-sub) { flex: 1; font-size: 11px; color: #94a3b8; }
+.tm-head .tm-close,
+:deep(.tm-head .tm-close) {
   height: 26px;
   padding: 0 10px;
   font-size: 12px;
@@ -228,7 +232,8 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.tm-head .tm-close:hover { background: #475569; }
+.tm-head .tm-close:hover,
+:deep(.tm-head .tm-close:hover) { background: #475569; }
 .toolbar-more .toolbar-row { background: transparent; }
 /* 卡片里的行：竖向排、彼此留 4px；卡片内的按钮组继续按行内换行 */
 .tm-card .toolbar-row { min-height: 0; gap: 6px; }
@@ -378,7 +383,8 @@
   width: 80px;
   vertical-align: middle;
 }
-.basemap-select {
+.basemap-select,
+:deep(.basemap-select) {
   min-width: 120px;
 }
 
@@ -868,7 +874,8 @@
 }
 .gen-float .resample-panel { margin: 0; border: none; background: transparent; padding: 0; }
 
-.resample-panel {
+.resample-panel,
+:deep(.resample-panel) {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -880,28 +887,43 @@
   font-size: 12px;
   color: #cbd5e1;
 }
-.resample-panel .rp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.resample-panel label { opacity: 0.85; }
-.resample-panel select {
+.resample-panel .rp-row,
+:deep(.resample-panel .rp-row) { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.resample-panel label,
+:deep(.resample-panel label) { opacity: 0.85; }
+.resample-panel select,
+:deep(.resample-panel select) {
   background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
   border-radius: 4px; padding: 2px 6px; font-size: 12px;
 }
-.resample-panel .rp-cost { opacity: 0.9; }
-.resample-panel .rp-cost.lv-ok { color: #fbbf24; }
-.resample-panel .rp-cost.lv-slow { color: #fb923c; }
-.resample-panel .rp-cost.lv-reject { color: #f87171; }
-.resample-panel .rp-warn { color: #fca5a5; line-height: 1.6; white-space: pre-wrap; }
-.resample-panel .rp-hint { opacity: 0.65; font-size: 11px; }
-.resample-panel .rp-note { opacity: 0.6; font-size: 11px; line-height: 1.6; }
-.resample-panel .rp-actions { display: flex; gap: 8px; }
-.resample-panel .rp-btn {
+.resample-panel .rp-cost,
+:deep(.resample-panel .rp-cost) { opacity: 0.9; }
+.resample-panel .rp-cost.lv-ok,
+:deep(.resample-panel .rp-cost.lv-ok) { color: #fbbf24; }
+.resample-panel .rp-cost.lv-slow,
+:deep(.resample-panel .rp-cost.lv-slow) { color: #fb923c; }
+.resample-panel .rp-cost.lv-reject,
+:deep(.resample-panel .rp-cost.lv-reject) { color: #f87171; }
+.resample-panel .rp-warn,
+:deep(.resample-panel .rp-warn) { color: #fca5a5; line-height: 1.6; white-space: pre-wrap; }
+.resample-panel .rp-hint,
+:deep(.resample-panel .rp-hint) { opacity: 0.65; font-size: 11px; }
+.resample-panel .rp-note,
+:deep(.resample-panel .rp-note) { opacity: 0.6; font-size: 11px; line-height: 1.6; }
+.resample-panel .rp-actions,
+:deep(.resample-panel .rp-actions) { display: flex; gap: 8px; }
+.resample-panel .rp-btn,
+:deep(.resample-panel .rp-btn) {
   padding: 3px 12px; font-size: 12px; color: #e2e8f0;
   background: rgba(148, 163, 184, 0.12); border: 1px solid #475569;
   border-radius: 4px; cursor: pointer;
 }
-.resample-panel .rp-btn.primary { color: #0f172a; background: #38bdf8; border-color: #38bdf8; font-weight: 600; }
-.resample-panel .rp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.resample-panel .rp-btn:not(:disabled):hover { filter: brightness(1.12); }
+.resample-panel .rp-btn.primary,
+:deep(.resample-panel .rp-btn.primary) { color: #0f172a; background: #38bdf8; border-color: #38bdf8; font-weight: 600; }
+.resample-panel .rp-btn:disabled,
+:deep(.resample-panel .rp-btn:disabled) { opacity: 0.45; cursor: not-allowed; }
+.resample-panel .rp-btn:not(:disabled):hover,
+:deep(.resample-panel .rp-btn:not(:disabled):hover) { filter: brightness(1.12); }
 
 .scenario-status-bar {
   padding: 6px 12px;

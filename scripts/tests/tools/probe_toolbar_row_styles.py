@@ -256,6 +256,28 @@ def collect(out_path, want_shot=True):
             else:
                 res['items'].extend(r1['items'])
             ck(f'读数·{phase}', True, f'{r1.get("count")} 个按钮')
+            # 🔴 2026-11-07 第 9 步补：`.toolbar-more` 本身是**根级元素**，
+            #    它的浮层样式（position:absolute / 宽度 / 两列网格）只在“父 scope id 贴在子组件根节点上”
+            #    时才生效 —— 一旦外壳被写成多根节点，它会掉回文档流、把画布往下推半屏
+            #    （正是用户骂过的形态）。按钮的 computedStyle 对拍看不见这件事，所以在这里单量一次。
+            if phase == 'more-open':
+                gs, sh = eval_json(cdp, """(() => {
+                  const el = document.querySelector('.toolbar-more');
+                  if (!el) return JSON.stringify({ ok: false });
+                  const cs = getComputedStyle(el);
+                  const r = el.getBoundingClientRect();
+                  return JSON.stringify({ ok: true, position: cs.position, display: cs.display,
+                    cols: cs.gridTemplateColumns, w: Math.round(r.width), h: Math.round(r.height),
+                    inFlow: Math.round(r.top) });
+                })()""", required=('ok',), desc='量更多浮层本体')
+                ok_sh = bool(gs) and sh.get('ok') and sh.get('position') == 'absolute' \
+                    and sh.get('display') == 'grid' and (sh.get('w') or 0) > 200
+                ck('更多浮层仍是浮层（position:absolute + grid + 有宽度）', ok_sh,
+                   f"position={sh.get('position')} display={sh.get('display')} "
+                   f"cols={sh.get('cols')} {sh.get('w')}x{sh.get('h')}")
+                ck('更多浮层宽度按容器算（不宽出画布）', bool(gs) and (sh.get('w') or 0) <= 1080,
+                   f"宽度 {sh.get('w')}")
+
             # 留一张工具栏截图（搬前/搬后逐像素比；修样式前后也靠它说话）
             if want_shot:
                 gb, tb = eval_json(cdp, """(() => {

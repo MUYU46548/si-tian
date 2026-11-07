@@ -108,9 +108,9 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,310（判据 ≤8,500；… → 6,490 → 6,400 → 6,310）', () => {
+  check('m1 SFC 行数 ≤6,120（判据 ≤8,500；… → 6,400 → 6,310 → 6,120）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6310, `ScenarioMap.vue 实测 ${n} 行，超过 6,310 —— 又往这个文件里堆东西了？`
+    assert(n <= 6120, `ScenarioMap.vue 实测 ${n} 行，超过 6,120 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/（含 toolbar/）的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
@@ -343,11 +343,19 @@ function main() {
    * “父表给它写了样式但没写 :deep” —— 假红。真正的口径是：**选择器里那一截的 class
    * 必须是该元素 class 的子集**（`.ctx-item.danger` 要求元素同时有 ctx-item，它当然没有）。
    */
-  function selectorAppliesTo(sel, cls, ownClasses) {
+  function selectorAppliesTo(rawSel, cls, ownClasses) {
+    // `.scenario-toolbar :deep(X)` 与 `:deep(X)` 等价（祖先只收窄范围），先把那个前缀剥掉，
+    // 否则新加的“每个类都必须是本组件的类”会把它当成“别处的元素”排除掉。
+    const sel = rawSel.replace(/^\.scenario-toolbar\s+/, '');
     const compounds = sel.split(/\s*[>+~]\s*|\s+/).filter(Boolean);
     const hits = compounds.filter((c) => hasClassToken(c, cls));
     if (!hits.length) return false;
-    return hits.some((c) => compoundClasses(c).every((k) => ownClasses.has(k)));
+    // 🔴 2026-11-07 第 9 步再收紧：**选择器里出现的每个类都必须在“这个组件有的类”里**，
+    //    否则它描述的是别处的同名元素。真实误报：`.render-paused-card .rp-btn`
+    //    （渲染暂停卡片上的按钮）被判成“管到了 resample 面板的 .rp-btn” —— 那卡片根本不在
+    //    这个组件里。同理 `.ctx-item.danger` 也是这么排除的。
+    return hits.some((c) => compoundClasses(c).every((k) => ownClasses.has(k)))
+      && compoundClasses(sel).every((k) => ownClasses.has(k));
   }
   const TOOLBAR_DIR = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', 'toolbar');
   /** 工具栏行组件里用到的“行内 class”与“是否用到 button 标签”（源码级，AST 太重这里不需要） */
@@ -390,7 +398,7 @@ function main() {
     let checked = 0;
     for (const f of files) {
       const src = readText(path.join(TOOLBAR_DIR, f));
-      const { classes, usesButton } = toolbarRowNeeds(src);
+      const { classes, rootClasses, usesButton } = toolbarRowNeeds(src);
       // ① button 标签：父表里必须有 `.scenario-toolbar :deep(button)` 这类穿越规则
       if (usesButton) {
         const hit = sels.some((s) => s.includes(':deep(') && /\bbutton\b/.test(s));
@@ -407,7 +415,7 @@ function main() {
       //    搬进子组件后勾选项就“紧 1px”（真机探针以 gap 3px vs 4px、宽度差 1~2px 抓到）。
       //    新口径：把“会命中这个元素”的选择器按**类集合**分组（`.check-label` 与
       //    `.brush-settings .check-label` 是两组），每组里必须至少有一条带 `:deep(`。
-      const ownClasses = new Set(classes);
+      const ownClasses = new Set([...classes, ...rootClasses]);
       for (const cls of classes) {
         const styling = sels.filter((s) => selectorAppliesTo(s, cls, ownClasses));
         if (!styling.length) continue;                      // 父表根本不管这个 class，跳过

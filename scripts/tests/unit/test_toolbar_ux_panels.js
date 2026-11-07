@@ -83,6 +83,15 @@ const FILES = [
   { file: 'ProvinceBrushSettings.vue', dir: 'scenario/panels/toolbar/settings', desc: '省份行·圈选/点填/改省界设置（新建省份 / 重置省界）', min: 2 },
   { file: 'PolySplitSettings.vue', dir: 'scenario/panels/toolbar/settings', desc: '省份行·折线切割设置（切开 / 取消）', min: 2 },
   { file: 'VoronoiSettings.vue', dir: 'scenario/panels/toolbar/settings', desc: '省份行·批量铺底设置（自动播种 / 换一批 / 清空 / 切分 / 取消）', min: 5 },
+  // 工具栏拆分第 9 步（2026-11-07）：「更多」外壳 + 「地形 · 底图 · 生成」卡片里的 8 个组。
+  { file: 'ToolbarMorePanel.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·更多浮层外壳（收起）', min: 1 },
+  { file: 'BasemapPickerGroup.vue', dir: 'scenario/panels/toolbar/settings', desc: '地形卡·底图选择与维护（导入 / 空底图 / 恢复 / 补齐 / 重建海岸）', min: 5 },
+  { file: 'TerrainGenGroup.vue', dir: 'scenario/panels/toolbar/settings', desc: '地形卡·生成簇（建高度图 / 按轮廓生成 / 生成参数 / 现成模板 / 造陆 / 文化势力 / 分辨率）', min: 7 },
+  { file: 'ResamplePanel.vue', dir: 'scenario/panels/toolbar/settings', desc: '地形卡·分辨率面板（平滑地形 / 应用分辨率 / 取消）', min: 3 },
+  { file: 'TerrainSourceGroup.vue', dir: 'scenario/panels/toolbar/settings', desc: '地形卡·地形来源（冻结导入 / 跟随 / 解绑）', min: 3 },
+  { file: 'ViewSaveGroup.vue', dir: 'scenario/panels/toolbar/settings', desc: '地形卡·视图与保存（适应视图 / 导出整图 / 保存）', min: 3 },
+  // 笔刷参数 / 模式 / 吸附这三组没有 <button>（只有滑杆、下拉、勾选框），不入册 —— 放进来会扫空。
+
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

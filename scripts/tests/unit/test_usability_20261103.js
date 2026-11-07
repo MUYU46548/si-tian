@@ -189,7 +189,9 @@ async function main() {
   });
 
   await check('#3/#4 生成入口正名：地形生成参数 / FMG 模板', () => {
-    const bad = problemsGenButtons(SRC.scenarioMap);
+    // 2026-11-07（工具栏第 9 步）：这两个按钮随「地形 · 底图 · 生成」卡片搬进了
+  // `scenario/panels/toolbar/settings/TerrainGenGroup.vue`，判据必须看合集（否则假红）。
+  const bad = problemsGenButtons(SRC.scenarioMap + '\n' + SRC.scenarioPanels);
     assert(bad.length === 0, bad.join('；'));
     return '两个按钮的可见文字与手册叫法一致，旧名已清';
   });
