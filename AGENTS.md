@@ -417,7 +417,7 @@
   （含省份/标记属性面板），另含“行内操作不许退回悬停才出现”——口径是
   **任何 `*-row-actions`**，不许只写 `.row-actions`，那样 `.pp-row-actions` 同病却全绿；术语白名单
   `jargonAllow` 只给 FmgPanel 放 `FMG`/`Azgaar`、给 ScenarioMap 放 `Azgaar`（.map 导入指路），别顺手扩大）；
-  **`ScenarioMap.vue` 的行数闸门 = ≤6,650**（`unit/test_scenario_map_split.js` m1，历史 8,554 → 6,625）：
+  **`ScenarioMap.vue` 的行数闸门 = ≤6,120**（`unit/test_scenario_map_split.js` m1；历史 8,554 → 6,625 → 6,611 → 6,301 → **6,106 行**，2026-11-07 工具栏九步拆分收口）：
   往里加东西之前先想“能不能放进 `scenario/panels/` 或 `scenario/{layers,interaction}`”；
   拆出去的浮层**样式跟着组件走**（m7 守着双源，唯一例外是 `.scenario-map-container.xxx ...` 这种
   容器级规则 —— 它靠父 scope id 命中子组件根节点，搬走反而失效）；
@@ -437,6 +437,8 @@
   （按行拆 + 显式 props；**不用** `provide/inject`、**不把**状态搬进 store）；
   工具栏各行**共用** `scenario-map.css` 的 `.toolbar-row/.tool-group`，`m7` 的"老 class 不许留在主表"
   不适用于它们 —— 别再给工具栏行抄一份 CSS；改其它视图时照此扩一张「每个按钮都有文字」的判据。
+  **2026-11-07 九步已全部落地**：`scenario/panels/toolbar/` 下 15 个行组件 + `settings/` 下 14 个设置组，
+  每步都留了“搬前/搬后真机 computedStyle 对拍 0 差异”的读数（累计 12 档 / 250 条）。
   🔴 **但共用样式必须写成 `:deep(类)`**（2026-11-07 真机抓到）：`<style scoped>` 的父 scope id
   **只贴在子组件根节点上**，行拆进 `scenario/panels/toolbar/*.vue` 后，根**里面**的
   `<button>`/`<label>`/`.tool-group` 一条父表规则都拿不到 —— 试点那 3 个按钮当场退回浏览器默认样式
@@ -473,10 +475,10 @@
   查关系走 `utils/scenarioEventLedger.js`；**不许**把归属复制进事件表（或反过来）——
   两份真值迟早漂移，且归属回放会被无关事件拖慢（`test_132` / `unit/test_scenario_event_ledger.js` 守）。
 - **读料必须只读**（2026-10-22）：扫知识库（`vaultIndex.buildIndex` / `vault-scan.mjs` / `vault-classify-report`）一律 `write:false` / `writeCache:false`，**连 `.sitian` 都不碰**；要产物就写 `--out` 指定的库外目录。归类/推断只有一份实现（`scripts/lib/vaultClassify.js`），认不出就进「待人工」，不许默认成地点（`unit/test_vault_classify.js` 用库指纹快照守）。
-- **不要整读大文件**：`ScenarioMap.vue`（**6,998 行**，2026-11-03 把 1,649 行样式搬到
+- **不要整读大文件**：`ScenarioMap.vue`（**6,106 行**，2026-11-03 把 1,649 行样式搬到
   `scenario-map.css`，原来 8,554 行）/ `PlanetMap.vue`（4,559 行）是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
   （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。
-  `ScenarioMap` 的体量与浮层落点有闸门：`unit/test_scenario_map_split.js`（≤7,000 行 + 六个浮层各恰好一次 +
+  `ScenarioMap` 的体量与浮层落点有闸门：`unit/test_scenario_map_split.js`（≤6,120 行 + 六个浮层各恰好一次 +
   模板 AST 祖先链里不许出现 `v-if="moreOpen"`，带负向探针）。
 
 ### 索引：历史条目去哪了
