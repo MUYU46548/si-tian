@@ -444,131 +444,30 @@
       </section>
       <section class="tm-card">
         <div class="tm-title" data-testid="more-sec-brush">笔刷与绘制</div>
-        <div class="toolbar-row">
-          <label class="row-label">笔刷：</label>
-          <div class="tool-group">
-                  <button 
-                :class="{ active: tool === 'height' }" 
-                @click="setTool('height')"
-                title="高度笔刷 (H) — 左键抬高/右键降低地形"
-              ><Icon name="trending-up" :size="15"/>高度</button>
-                  <button 
-                :class="{ active: tool === 'biome' }" 
-                @click="setTool('biome')"
-                title="生物群系笔刷 (N) — 涂抹生物群系"
-              ><Icon name="palette" :size="15"/>群系</button>
-                  <button 
-                :class="{ active: tool === 'river' }" 
-                @click="setTool('river')"
-                title="河流编辑器 (W) — 按住左键拖出笔迹 = 画一条河（松手成河）；**Shift + 按在已有河的河身上拖出去 = 画支流**（起点自动吸附、松手在母河上插拐点）；点河身加拐点；拖节点微调；Delete 删节点"
-              ><Icon name="droplets" :size="15"/>河流</button>
-                  <button 
-                :class="{ active: autoRivers.length > 0 }" 
-                @click="generateAndShowRivers"
-                title="自动河流（预览）— 按地形高度从高到低追踪入海路径。⚠️ 结果只画在画布上、**不会存进项目**：切走视图或换底图就没了；要长期保留请用“河流 (W)”手画。"
-              ><Icon name="waves" :size="15"/>自动河流</button>
-                  <!-- 🔴 河源汇流闸门（2026-11-04，FMG 口径重抄后由“源头高度”改名）：
-                       它控制的是**河源要攒够多少汇水**（降水当量），不是绝对高度 ——
-                       旧标题那句“只有高度高于这个值的格子才能当河源”已经不成立。
-                       ⚠️ `data-testid` 保持不变：用例/演练按它定位，改名会把判据弄红。 -->
-                  <input
-                v-model.number="riverSourceHeight"
-                data-testid="river-source-height"
-                type="number" min="0" max="100" step="5"
-                class="river-source-height"
-                title="河源汇流 — 河源至少要攒够这么多水（降水当量）才成河。调低 = 更多更碎的小支流；调高 = 只留大江。默认 60"
-              />
-                  <!-- 🔴 河流来源（2026-10-16 第五修）：实测自动河与底图自带河**是两套水系**
-                       （段到自带河最近距离中位 18.78 世界单位，只有 10% 在 3 单位内）→ 并存时
-                       必然"各画各的"。给一个显式开关让用户只留一套，而不是替他猜。
-                       默认 `both` = 现有行为一字不变。 -->
-                  <select
-                v-model="riverSource"
-                data-testid="river-source"
-                class="river-source-select"
-                title="画哪一套河 —— 实测自动河与底图自带河是**两套不同的水系**（中位相距约 1.3 格）。“两套都画”= 一直以来的行为；想只留一套就选另一个（自动河要先点“自动河流”生成）"
-              >
-                <option value="both">河流：两套都画</option>
-                <option value="base">只画底图自带</option>
-                <option value="auto">只画自动生成</option>
-              </select>
-                  <!-- 🔴 2026-10-17 第八修·再修（用户：“这个长河受限有一大串很难看清的一闪而过的文本，
-                        放在已经很拥挤的工具栏里真的有必要吗？”）—— **没必要，已移除**。
-                        原先这里常驻一枚“⚠️ 长河受限”标签，状态栏还会追一句“悬停看原因”。
-                        问题是：① 工具栏本来就挤，多一个角标只会让人以为界面坏了；
-                        ② 真正的信息（这份地形为什么长不出长河）**长到放不进 tooltip**，
-                           而且它是一句"解释"不是"动作"，常驻在操作区没有价值；
-                        ③ 现在已经有**真正的解法**（“按轮廓生成地形”）—— 提示该变成一次性的指路，
-                           不该长期占位。
-                        ⇒ 只在**生成回执里说一次**（见 `generateAndShowRivers`），做完就消失。 -->
-                  <!-- 🔴 追踪前先平滑（2026-10-16）：实测这是唯一能让河"长出主干"的方向
-                       （最长河 140→270 世界单位）。默认关 = 零行为变更。 -->
-                  <label
-                class="check-label river-smooth-label"
-                title="追踪前先平滑地形 —— 实测能让最长河道翻倍（140→270 世界单位）、河网铺开全岛。原理：抹掉粗网格上的微洼地，让水顺着大谷走。⚠️ 代价：平滑会压低山头，源头变少 → 勾上时会**自动把“源头高度”降到 40**（否则可能一条河都没有）"
-              ><input type="checkbox" v-model="riverSmooth" data-testid="river-smooth" />平滑</label>
-                  <button 
-                :class="{ active: tool === 'relief' }" 
-                @click="setTool('relief')"
-                title="Relief 图标 (I) — 放置山脉/树木/沙漠等自然特征"
-              ><Icon name="mountain" :size="15"/>地貌</button>
-                  <select v-if="tool === 'relief'" v-model="selectedReliefIcon" class="brush-biome-select" title="Relief 图标">
-                <option v-for="icon in RELIEF_ICONS" :key="icon.id" :value="icon.id">{{ icon.name }}</option>
-              </select>
-                  <button 
-                :class="{ active: tool === 'paint' }" 
-                @click="setTool('paint')"
-                title="势力油漆桶 (P) — 点击省份指派势力"
-              ><Icon name="palette" :size="15"/>势力</button>
-                  <button 
-                :class="{ active: tool === 'culture' }" 
-                @click="setTool('culture')"
-                title="文化笔刷 (C) — 涂抹文化区域"
-              ><Icon name="users" :size="15"/>文化</button>
-                  <button 
-                :class="{ active: tool === 'religion' }" 
-                @click="setTool('religion')"
-                title="宗教笔刷 (R) — 涂抹宗教区域"
-              ><Icon name="church" :size="15"/>宗教</button>
-                  <button 
-                :class="{ active: tool === 'burg' }" 
-                @click="setTool('burg')"
-                title="智能聚落 (U) — 点击放置，自动贴合地形"
-              ><Icon name="home" :size="15"/>聚落</button>
-                  <select v-if="tool === 'burg'" v-model="selectedBurgSize" class="brush-biome-select" title="聚落规模">
-                <option v-for="size in BURG_SIZES" :key="size.id" :value="size.id">{{ size.name }}</option>
-              </select>
-                  <button 
-                :class="{ active: tool === 'label' }" 
-                @click="setTool('label')"
-                title="历史地名 (T) — 点击放置文字标记"
-              ><Icon name="tag" :size="15"/>地名</button>
-                  <select v-if="tool === 'label'" v-model="selectedLabelPreset" class="brush-biome-select" title="标签样式预设">
-                <option v-for="preset in LABEL_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
-              </select>
-                  <button 
-                :class="{ active: tool === 'marker' }" 
-                @click="setTool('marker')"
-                title="标记 (K) — 点击放置标记"
-              ><Icon name="map-pin" :size="15"/>标记</button>
-                  <select v-if="tool === 'marker'" v-model="selectedMarkerType" class="brush-biome-select" title="标记类型">
-                <option v-for="type in MARKER_TYPES" :key="type.id" :value="type.id">{{ type.name }}</option>
-              </select>
-                  <button 
-                :class="{ active: tool === 'road' }" 
-                @click="setTool('road')"
-                title="道路 (J) — 两点连线，自动生成沿等高线路径"
-              ><Icon name="git-branch" :size="15"/>道路</button>
-                  <select v-if="tool === 'road'" v-model="selectedRoadStyle" class="brush-biome-select" title="道路样式">
-                <option v-for="style in ROAD_STYLES" :key="style.id" :value="style.id">{{ style.name }}</option>
-              </select>
-                  <button 
-                :class="{ active: tool === 'derive' }" 
-                @click="deriveLayers"
-                title="重算气候 —— 按当前高度重新算温度/降水/群系（不动地形本身）"
-              ><Icon name="refresh-cw" :size="15"/>重算气候</button>
-          </div>
-        </div>
+        <!-- 第 3 行：笔刷类工具 + 各自参数。工具栏拆分第 7 步（2026-11-07）：搬进
+             `scenario/panels/toolbar/BrushRow.vue`（15 props / 11 emits；常量表仍由这里单源传入）。
+             ⚠️ 这一行控件多但**不再往下拆**：它们共用同一个 `.row-label` + `.tool-group`，
+             再拆就要为“哪个下拉属于哪个按钮”建一层嵌套，反而更难读。 -->
+        <BrushRow
+          :tool="tool"
+          :auto-river-count="autoRivers.length"
+          v-model:river-source-height="riverSourceHeight"
+          v-model:river-source="riverSource"
+          v-model:river-smooth="riverSmooth"
+          v-model:selected-relief-icon="selectedReliefIcon"
+          v-model:selected-burg-size="selectedBurgSize"
+          v-model:selected-label-preset="selectedLabelPreset"
+          v-model:selected-marker-type="selectedMarkerType"
+          v-model:selected-road-style="selectedRoadStyle"
+          :relief-icons="RELIEF_ICONS"
+          :burg-sizes="BURG_SIZES"
+          :label-presets="LABEL_PRESETS"
+          :marker-types="MARKER_TYPES"
+          :road-styles="ROAD_STYLES"
+          @set-tool="setTool"
+          @generate-rivers="generateAndShowRivers"
+          @derive-layers="deriveLayers"
+        />
       <!-- 分区小标题（2026-11-03 第 9 刀，#6）：
            用户原话“这么多按钮讲不清楚放不明白……派生就派生，旁边再放几十个按钮”。
            事实是“更多”里 55 个按钮分成 4 行、行内**零标题**，生成类那一簇（造陆 / FMG 模板 /
@@ -1483,6 +1382,8 @@ import RiverEditRow from '../scenario/panels/toolbar/RiverEditRow.vue';
 import ScenarioIoRow from '../scenario/panels/toolbar/ScenarioIoRow.vue';
 // 工具栏拆分第 6 步（2026-11-07）：“更多 → 图层 · 着色”那一行（15 个开关，走具名 v-model）。
 import LayerColorRow from '../scenario/panels/toolbar/LayerColorRow.vue';
+// 工具栏拆分第 7 步（2026-11-07）：“更多 → 笔刷与绘制”那一行（笔刷类工具 + 各自参数下拉）。
+import BrushRow from '../scenario/panels/toolbar/BrushRow.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）

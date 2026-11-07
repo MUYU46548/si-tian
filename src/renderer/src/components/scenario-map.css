@@ -375,7 +375,8 @@
   min-width: 120px;
 }
 
-.brush-biome-select {
+.brush-biome-select,
+:deep(.brush-biome-select) {
   background: #334155;
   color: #e2e8f0;
   border: 1px solid #475569;
@@ -767,7 +768,8 @@
 .render-paused-card .rp-btn:hover { filter: brightness(1.12); }
 
 /* 源头高度闸门（紧挨“自动河流”按钮）：宽度收窄，别把工具栏挤爆 */
-.river-source-height {
+.river-source-height,
+:deep(.river-source-height) {
   width: 54px;
   margin: 0 2px 0 4px;
   padding: 2px 4px;
@@ -778,7 +780,8 @@
   border-radius: 4px;
 }
 /* 河流来源（紧挨闸门输入）：选项文字比闸门数字长，给足宽度 */
-.river-source-select {
+.river-source-select,
+:deep(.river-source-select) {
   max-width: 132px;
   margin: 0 2px 0 4px;
   padding: 2px 4px;
@@ -789,7 +792,8 @@
   border-radius: 4px;
 }
 /* 平滑开关（紧挨自动河流按钮）：与邻居同字号，别把工具栏挤爆 */
-.river-smooth-label {
+.river-smooth-label,
+:deep(.river-smooth-label) {
   margin: 0 2px 0 4px;
   font-size: 12px;
   white-space: nowrap;

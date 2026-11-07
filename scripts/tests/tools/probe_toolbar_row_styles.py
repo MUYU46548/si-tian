@@ -53,7 +53,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 # 判据项：只取“会让人一眼看出按钮走样”的那些（不是全部 computedStyle）
-PROPS = ['height', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+PROPS = ['width', 'maxWidth', 'height', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
          'fontSize', 'fontFamily', 'display', 'alignItems', 'justifyContent', 'gap',
          'minWidth', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color',
          'borderTopLeftRadius', 'cursor', 'whiteSpace']
@@ -96,7 +96,8 @@ COLLECT_JS = """(() => {
   // ⚠️ 行里不只有按钮：小标题（省份：/ 底图/地理：）、提示（.row-hint / .draw-hint）、勾选项
   //    也都是父组件 scoped 表在管。只量按钮会漏掉“标签掉色”这类事故
   //    （2026-11-07 实测：`.basemap-row-label` 的琥珀色就是这么丢的，源码闸门 m8 抓到的）。
-  for (const el of toolbar.querySelectorAll('.row-label, .basemap-row-label, .river-edit-name, .row-hint, .check-label, .draw-hint, select')) {
+  for (const el of toolbar.querySelectorAll('.row-label, .basemap-row-label, .river-edit-name, .row-hint, .check-label, .draw-hint, '
+              + '.river-source-height, select')) {
     const cs = getComputedStyle(el);
     const style = {};
     for (const k of props) style[k] = cs[k];

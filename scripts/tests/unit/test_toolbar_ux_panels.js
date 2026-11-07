@@ -73,6 +73,8 @@ const FILES = [
   // 工具栏拆分第 6 步（2026-11-07）：“更多 → 图层 · 着色”那一行。模板里只有 1 个 <button>
   // （锁定图层），其余是勾选框与下拉 —— 所以 min 写 1，勾选框的数量由 m8 与探针的另一侧守。
   { file: 'LayerColorRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·图层与着色行（10 个图层开关 + 栅格层 + 着色）', min: 1 },
+  // 工具栏拆分第 7 步（2026-11-07）：“更多 → 笔刷与绘制”那一行（13 个笔刷按钮）。
+  { file: 'BrushRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·笔刷与绘制行（高度/群系/河流/自动河流/地貌/势力/文化/宗教/聚落/地名/标记/道路/重算气候）', min: 13 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;
