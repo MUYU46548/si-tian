@@ -229,6 +229,7 @@ import { Button } from './ui/button';
 import { DISCLAIMER_VERSION, ackedDisclaimerAt, LOCAL_ONLY_SUMMARY } from '../utils/disclaimer';
 // 节数从手册本体取（不要在这里写死数字 —— 加一节手册就会让这句话变成假话）
 import { guideStats } from '../utils/userGuide';
+import { buildDiagRequest } from '../utils/diagPayload';
 import { useProjectStore } from '../store/projectStore';
 
 const isOpen = ref(false);
@@ -278,7 +279,11 @@ async function exportDiagnostics() {
       diagState.value = '当前环境不支持导出（需要桌面版）';
       return;
     }
-    const res = await api.diagExport({ stats: projectStats() });
+    // 载荷形状交给 `utils/diagPayload.js`（演练在页面里调同一个函数 —— 别在这里手抄一份）
+    const res = await api.diagExport(buildDiagRequest({
+      stats: projectStats(),
+      saveLog: (typeof window !== 'undefined' ? window.__SITIAN_SAVE_LOG__ : null),
+    }));
     if (res && res.ok) {
       const kb = Math.max(1, Math.round((Number(res.bytes) || 0) / 1024));
       diagState.value = `已导出 ${(res.entries || []).length} 个文件 · ${kb} KB → ${res.path}`;

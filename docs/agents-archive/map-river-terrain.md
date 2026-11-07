@@ -708,3 +708,40 @@
 - 河名 / 编辑器侧（点河改名、改宽、沿河排字）没接 —— 现在只到“每条河有 id/parent/basin/order，能挂名字”。
 - 上游的 `downcutRivers`（河床下切）没抄：我们不动用户的高度场。
 - 观感受格距限制（见上第 4 条），要治本得换格数 + 加侵蚀，属于下一阶段（P1/P2）。
+
+## 汇流焊接把渲染进程卡死（2026-11-07，真机）
+
+**现象**：`test_109_self_built_river` 一跑，渲染进程 100% 单核一直转、内存涨到 2GB，
+CDP 全部 `Connection timed out`、连 `Page.navigate` 都进不去 —— 只能杀进程。
+之前一直读成“用例超时、后 10 条连锁红”，看着像测试环境问题。
+
+**怎么查出来的**（这套手法可复用）：卡死之后 `Debugger.enable + pause` 是**挂不上**的
+（enable 也要走渲染进程主线程）。必须**提前**挂调试器（`lib/cdp.py` 的 `StallProbe`），
+卡死时只发一个 `Debugger.pause`，拿到栈：
+
+```
+weldRiverJunctions ← strokeRiverNetworkAsPaths ← renderFrame ← render ← watch 回调 ← flushJobs
+```
+
+**两个根因叠在一起**：
+
+1. `utils/fmg/rivers.js` 里三处按格扫的循环都是 `for (gx = x0; gx <= x1; gx++)` ——
+   一个 `Infinity` 坐标让条件**恒真**，且每轮新分配一个 `"gx,gy"` 字符串（堆一直涨）。
+   现在统一走 `cellRange()`（非有限值 / |坐标| > 1e7 / 单段跨 > 4096 格 → 不参与焊接）。
+   同类循环在 `snapRiverTails` 的 `index()` 里也有一份，一起收了。
+2. 这一遍焊接**每帧都跑**，且曲线先按 `subdiv`（默认 6）细分 —— 自建地形推演出来
+   **2457 条河 / 18,644 段**，细分后 11 万段，单帧就推到分钟级。
+   真实 415 省项目（573 条河）在这个量级上没事，所以这条一直没暴露。
+   现在有**预算线** `WELD_SEG_BUDGET = 40000`（`interaction/rivers.js`）：超了就不焊、照原样画，
+   留痕在 `window.__SITIAN_RIVER_WELD__ = {paths, segs, budget, skipped}`。
+
+**判据**：`scripts/tests/unit/test_fmg_rivers.js` a23–a25（Infinity 坐标 / 跨 2e8 格的段
+不许拖死，带墙钟；正常交叉照样裁、照样挂 parent，闸门不许放宽）；`test_109` 从 120s+ 卡死
+变成 **4.8s 全绿**（同一轮读取：河 2457 条 / 段 18644 / 汇流上界 5265 / 河链最长 133 / 对照组 0 条）。
+
+**还没做（别当成已解决）**：
+
+- 焊接仍是**逐帧**重算（`strokeRiverNetworkAsPaths` 里没有按几何版本缓存）。预算线只是“不卡死”，
+  不是“够快”：真要做到 2457 条河也能焊，得按 `riverVer` 缓存焊接结果。
+- 一次推演出 2457 条河本身也值得单独看（真实 415 省项目是 573 条）—— 河源阈值/草原比例
+  与“手绘两块圆环”这种极端输入的关系没查。

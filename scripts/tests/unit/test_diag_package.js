@@ -173,10 +173,80 @@ function parseZip(buf) {
     main.includes("ipcMain.handle('diag-export'") && preload.includes('diagExport')
     && about.includes('about-export-diag') && about.includes('exportDiagnostics'));
   ok('接线：导出走的是 writeDiagnostics（不是另写一份写盘）', main.includes('writeDiagnostics(target, diag)'));
+  ok('接线：渲染侧载荷走 utils/diagPayload.js（按钮与演练共用一份，不各拼一份）',
+    about.includes('buildDiagRequest') && about.includes("from '../utils/diagPayload'")
+    && about.includes('__SITIAN_SAVE_LOG__'));
+  ok('接线：主进程把 saveChain 收进组包（渲染侧传了但主进程不接 = 白传）',
+    main.includes('saveChain: payload.saveChain') && main.includes('diag-export'));
 }
 
-console.log(`\n${pass}/${pass + fails.length} 通过`);
-if (fails.length) {
-  console.error('失败：\n' + fails.map((f) => ' - ' + f).join('\n'));
-  process.exit(1);
+// ── ⑥ 保存链分段读数（卡「保存链分段读数进诊断包」，2026-11-07）────────────────
+// 用户报“保存很慢/卡”时，诊断包里唯一能指认"是哪一段慢"的就是这张表。
+// 判据有三条，都是"不许把正文带出去"这条红线的不同切面：
+//   ① 白名单：渲染侧多传什么键都进不了包；
+//   ② 只收有限数字：stages 里混进字符串/NaN/对象一律丢；
+//   ③ label / error 过脱敏（它们可能是 IPC 报错原文，含私人路径）。
+{
+  const secrets = [S.project];
+  const raw = [
+    { at: '2026-11-07T05:00:00.000Z', label: '自动保存', ok: true, total: 312.4, bytes: 8388608,
+      stages: { exportCanvas: 41.2, snapshotState: 9.5, serialize: 180.0, ipc: 81.7, junk: 'x', nan: NaN } },
+    { at: '2026-11-07T05:00:01.000Z', label: '退出前保存', ok: false, total: 900.1,
+      error: '写入 ' + S.project + ' 失败：EBUSY', stages: { ipc: 900 } },
+    { at: 'x', label: 'y', ok: true, total: 1, junkField: 'SETTING_TEXT', nested: { secret: 'WORLD_TEXT' } },
+  ];
+  const sc = D.sanitizeSaveChain(raw, { max: 10, secrets });
+  const blob = JSON.stringify(sc);
+  ok('saveChain：白名单（stages 里的字符串/NaN、条目上的多余字段都进不了包）',
+    sc.kept === 3 && !blob.includes('junk') && !blob.includes('SETTING_TEXT') && !blob.includes('WORLD_TEXT')
+    && sc.items[0].stages.exportCanvas === 41.2,
+    blob.slice(0, 160));
+  ok('saveChain：label / error 过脱敏（报错里的私人路径必须消失）',
+    !blob.includes(S.proj) && !blob.includes(S.user) && sc.items[1].ok === false,
+    sc.items[1].error || '(no error)');
+  ok('saveChain：只有有限数字才收（NaN 不进 stages，total 保留一位小数）',
+    Object.keys(sc.items[0].stages).length === 4 && sc.items[0].total === 312.4);
+  ok('saveChain：非数组 / 超量输入都不许炸，且封顶生效',
+    D.sanitizeSaveChain(null).items.length === 0
+    && D.sanitizeSaveChain(raw, { max: 1 }).kept === 1
+    && D.sanitizeSaveChain(Array.from({ length: 80 }, (_, i) => ({ ok: true, total: i }))).kept === 10);
+  const withChain = D.buildDiagnostics({ version: '1', stats: { entities: 1 }, saveChain: raw, secrets });
+  ok('saveChain：组包后真的在 diagnostics 里，且同样是白名单口径',
+    withChain.saveChain && withChain.saveChain.kept === 3
+    && !JSON.stringify(withChain.saveChain).includes('SETTING_TEXT'));
+  ok('saveChain：没传读数时也给空表（下游不用判 undefined）',
+    D.buildDiagnostics({ version: '1' }).saveChain.kept === 0);
 }
+
+// ── ⑦ 渲染侧请求体（ESM 工具：复制到临时目录再 import，与 test_disclaimer_copy 同法）──
+// 这一段存在的原因：`drill_diag_package.py` 在页面里调的就是这个函数 ——
+// 如果按钮自己拼 payload、演练自己拼 payload，两边迟早漂移（"按钮加了字段、演练不知道"）。
+(async () => {
+  const { pathToFileURL } = require('url');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-diagpay-'));
+  let mod = null;
+  try {
+    const srcPath = path.join(ROOT, 'src', 'renderer', 'src', 'utils', 'diagPayload.js');
+    fs.copyFileSync(srcPath, path.join(dir, 'diagPayload.js'));
+    mod = await import(pathToFileURL(path.join(dir, 'diagPayload.js')).href);
+  } catch (e) {
+    ok('diagPayload：能作为 ESM 被 import', false, String(e).slice(0, 200));
+  }
+  if (mod) {
+    const many = Array.from({ length: 30 }, (_, i) => ({ label: 's' + i, ok: true, total: i }));
+    const req = mod.buildDiagRequest({ stats: { entities: 7 }, saveLog: many });
+    ok('diagPayload：默认只带最近 10 条 + 原样 stats',
+      req.saveChain.length === 10 && req.stats.entities === 7 && req.saveChain[0].label === 's0');
+    ok('diagPayload：max 封顶 50 / 非法入参不炸',
+      mod.buildDiagRequest({ saveLog: many, max: 999 }).saveChain.length === 30
+      && mod.buildDiagRequest({ saveLog: null }).saveChain.length === 0
+      && mod.buildDiagRequest().stats.entities === undefined);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+
+  console.log(`\n${pass}/${pass + fails.length} 通过`);
+  if (fails.length) {
+    console.error('失败：\n' + fails.map((f) => ' - ' + f).join('\n'));
+    process.exit(1);
+  }
+})();

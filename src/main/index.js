@@ -1155,6 +1155,9 @@ ipcMain.handle('diag-export', async (event, payload = {}) => {
       lastProjectPath: lastProject,
       secrets: [vault, lastProject].filter(Boolean),
       stats: payload.stats || {},
+      // 保存链分段读数（卡「保存链分段读数进诊断包」）：渲染侧传 `__SITIAN_SAVE_LOG__`，
+      // 白名单/脱敏/封顶全在 `diagPackage.sanitizeSaveChain` 里做（唯一出口）。
+      saveChain: payload.saveChain || [],
       logDir,
       logOptions: { maxFiles: 3, maxLines: 400 },
     });

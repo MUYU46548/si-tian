@@ -96,6 +96,57 @@ function lastErrorFrom(lines) {
 }
 
 /**
+ * 保存链分段读数（卡“保存链分段读数进诊断包”，2026-11-07）。
+ *
+ * 为什么收进来：用户报“保存很慢 / 卡住”时，我们手上只有“最近错误”，看不到是哪一段慢。
+ * `projectStore.saveProjectNow` 早就把每段耗时写进 `window.__SITIAN_SAVE_LOG__`
+ * （最近 80 条：label / stages / total / bytes / ok），但那只在真机演练里读得到；
+ * 诊断包（用户真的会发给我们的那个 zip）里一直没有这张表。
+ *
+ * 🔴 三条纪律（与“包里不带世界观正文”同一条红线）：
+ *   ① **白名单**：只留 label / at / stages / total / bytes / ok（+ 失败时的 error），
+ *      渲染侧多传什么键都进不了包；
+ *   ② `stages` 只收**有限数字**，键名截断、条数封顶（防止有人把大对象塞进来）；
+ *   ③ `label` / `error` 过 `redactText` 再截断 —— 它们可能是 IPC 报错原文，含路径。
+ *
+ * @param {Array} raw `window.__SITIAN_SAVE_LOG__`（新的在前）
+ * @param {{max?:number, secrets?:string[]}} opts
+ * @returns {{kept:number, available:number, items:Array}}
+ */
+function sanitizeSaveChain(raw, opts = {}) {
+  const max = Number.isFinite(opts.max) ? Math.max(1, Math.min(50, Math.floor(opts.max))) : 10;
+  const secrets = opts.secrets || [];
+  const list = Array.isArray(raw) ? raw : [];
+  const items = [];
+  for (const e of list.slice(0, max)) {
+    if (!e || typeof e !== 'object') continue;
+    const stages = {};
+    let n = 0;
+    const src = (e.stages && typeof e.stages === 'object') ? e.stages : {};
+    for (const k of Object.keys(src)) {
+      if (n >= 12) break;
+      const v = src[k];
+      if (!Number.isFinite(v)) continue;
+      stages[String(k).slice(0, 24)] = Math.round(v * 10) / 10;
+      n += 1;
+    }
+    const item = {
+      at: typeof e.at === 'string' ? e.at.slice(0, 32) : '',
+      label: typeof e.label === 'string' ? redactText(e.label, secrets).slice(0, 60) : '',
+      ok: !!e.ok,
+      total: Number.isFinite(e.total) ? Math.round(e.total * 10) / 10 : null,
+      bytes: Number.isFinite(e.bytes) ? e.bytes : null,
+      stages,
+    };
+    if (!item.ok && typeof e.error === 'string' && e.error) {
+      item.error = redactText(e.error, secrets).slice(0, 160);
+    }
+    items.push(item);
+  }
+  return { kept: items.length, available: list.length, items };
+}
+
+/**
  * 组包（只组数据，不写盘）。
  * @param {object} input 全部由调用方采集（见 main/index.js 的 diag-export）
  */
@@ -143,6 +194,8 @@ function buildDiagnostics(input = {}) {
       rivers: pickNumber(stats.rivers),
       roads: pickNumber(stats.roads),
     },
+    // 保存链分段读数（“保存慢”时唯一能指认是哪一段的东西；只留数字 + 标签 + 时间）
+    saveChain: sanitizeSaveChain(input.saveChain, { max: 10, secrets }),
     logs: {
       dir: '<日志目录>',
       files: logs.files,
@@ -259,6 +312,6 @@ function writeDiagnostics(target, diag) {
 }
 
 module.exports = {
-  maskPath, redactText, tailLogFiles, lastErrorFrom,
+  maskPath, redactText, tailLogFiles, lastErrorFrom, sanitizeSaveChain,
   buildDiagnostics, makeZip, crc32, writeDiagnostics, DOS_DATE, DOS_TIME,
 };

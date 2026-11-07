@@ -141,8 +141,28 @@ def main():
 
         stats = {'entities': 7, 'baseMaps': 2, 'provinces': 9, 'scenarios': 3,
                  'gridCells': 1234, 'rivers': 56, 'roads': 78}
-        expr = ("(async () => { const r = await window.sitianAPI.diagExport({ target: %s, stats: %s });"
-                " return JSON.stringify(r); })()" % (json.dumps(target), json.dumps(stats)))
+        # ── 保存链分段读数（卡「保存链分段读数进诊断包」，2026-11-07）──────────────
+        # 造两段读数（形状照 `projectStore.recordSaveRun`）：一段正常、一段失败且报错里带**私人路径**，
+        # 另塞一个多余字段 —— 三条红线（白名单 / 只收数字 / 脱敏）都要在真机链路上验一遍。
+        seeds = [
+            {'at': '2026-11-07T05:00:00.000Z', 'label': '自动保存', 'ok': True, 'total': 312.4,
+             'bytes': 8388608,
+             'stages': {'exportCanvas': 41.2, 'snapshotState': 9.5, 'serialize': 180.0, 'ipc': 81.7},
+             'junkField': 'SETTING_TEXT_MUST_NOT_LEAK'},
+            {'at': '2026-11-07T05:00:01.000Z', 'label': '退出前保存', 'ok': False, 'total': 900.1,
+             'stages': {'ipc': 900},
+             'error': '写入 ' + os.path.join(ROOT, '示例项目.sitian') + ' 失败：EBUSY'},
+        ]
+        # 载荷用**渲染侧真函数**拼（与“关于”面板按钮同一条路）—— 演练手抄一份 payload 的话，
+        # 按钮加了字段演练永远不知道（这正是本卡要堵的洞）。
+        expr = ("(async () => {\n"
+                "  window.__SITIAN_SAVE_LOG__ = %s;\n"
+                "  const P = await import('/src/utils/diagPayload.js');\n"
+                "  const req = Object.assign(P.buildDiagRequest({ stats: %s, saveLog: window.__SITIAN_SAVE_LOG__ }),"
+                " { target: %s });\n"
+                "  const r = await window.sitianAPI.diagExport(req);\n"
+                "  return JSON.stringify(r);\n"
+                "})()") % (json.dumps(seeds, ensure_ascii=False), json.dumps(stats), json.dumps(target))
         raw = cdp.eval(expr)
         if isinstance(raw, dict) and raw.get('__err__'):
             ck('IPC diag-export 可调用', False, raw['__err__'])
@@ -179,6 +199,21 @@ def main():
         blob = json.dumps(diag, ensure_ascii=False) + logs_txt
         ck('包内没有盘符绝对路径（除占位符）', ':\\' not in blob.replace('<路径:', ''), '')
         ck('包内没有用户目录字面量', '\\\\Users\\\\' not in blob and '/Users/' not in blob, '')
+
+        # ── 保存链分段读数：进包 / 只收数字 / 白名单 / 脱敏 ──────────────────────
+        sc = diag.get('saveChain') or {}
+        items = sc.get('items') or []
+        ck('保存链读数进包（最近 10 条 + 分段耗时）',
+           sc.get('kept') == 2 and len(items) == 2
+           and (items[0].get('stages') or {}).get('exportCanvas') == 41.2
+           and items[0].get('total') == 312.4,
+           json.dumps(items[:1], ensure_ascii=False)[:200])
+        ck('保存链读数：失败那条带脱敏后的 error（私人路径必须消失）',
+           (not items[1].get('ok')) and ('<路径:' in (items[1].get('error') or ''))
+           and '示例项目' not in (items[1].get('error') or ''),
+           items[1].get('error') if len(items) > 1 else '(missing)')
+        ck('保存链读数：白名单口径（塞进去的多余字段一个字都不许进包）',
+           'SETTING_TEXT_MUST_NOT_LEAK' not in blob)
 
         print('\n  产物：%s（%.1f KB）' % (target, os.path.getsize(target) / 1024))
         return 0 if not fails else 1

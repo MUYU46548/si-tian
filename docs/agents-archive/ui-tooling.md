@@ -82,3 +82,32 @@
   一保存却报"不在这张底图上"＝**改不了**。`updateBaseMapBurg(key, id, patch, { materialize })` 在找不到 id 时把
   **整批**登记成真 burg 再应用这次编辑，且与编辑**共用一条 undo**（拆两条 = "名字退了、城镇还在"的半吊子状态）。
   ⚠️ 只登记被编辑的那一个 → `burgs` 一旦非空，组件的 markers 派生回退分支就不再兜底，**其余城镇会从地图上消失**。
+
+## 回归：一条用例卡住不再把后面 10 条判红（2026-11-07）
+
+**症状**：`run_tests.py` 全量跑时，某条用例把渲染进程占死 → 之后 10 条全部
+`Connection timed out`，整轮结论没法当发布判据（分辨"真回归"要靠翻历史日志）。
+
+**两层修法（都在 `scripts/tests/`）**：
+
+1. **用例级恢复**：`run_tests.py` 的「用例之间刷新页面」抽成 `_reload_page()`；失败时
+   **重建 CDP 客户端**重试；还失败就 `_restart_browser()` **整个换掉无头浏览器** + `_boot_page()`
+   重走首启。真机读数：卡死那几轮都打印
+   `↺ 仍然失败 → 重启无头浏览器 → ↺ 已恢复`，后续用例不再被连坐。
+   ⚠️ 光是换 websocket 不够 —— 渲染进程被占死时 `Page.navigate` 也进不去（导航要渲染进程配合）。
+2. **卡死取证**：`lib/cdp.py#StallProbe`。**必须提前挂**（页面还活着时 `Debugger.enable`），
+   卡死之后只发 `Debugger.pause` 就能拿到栈 —— 事后版 `stuck_call_stack()` 只在"页面还肯回
+   一个 evaluate"时有用，进了死循环就挂不上（实测 10s 都等不到 `Debugger.paused`）。
+   靠它才把"看起来像测试环境问题"的那一轮定位到 `weldRiverJunctions`（见 map-river-terrain 归档）。
+
+**写这类用例的三条纪律**（本轮 `test_109` 全部踩过）：
+
+- **先发起、再轮询短句**：把整条链塞进一次 `Runtime.evaluate(awaitPromise)`，撞 15s 读超时后
+  连是谁慢都不知道。页面里跑作业 + 逐阶段写 `window.__XXX__`（阶段名 / 分段耗时 / 心跳 / 已写出的键），
+  Python 每 0.4s 读一次**标量**。
+- `(async () => {...})()` 会**同步**跑到第一个 `await` —— 重活仍在"发起"那次 evaluate 里。
+  要真异步就 `setTimeout(..., 0)` 包一层。
+- 轮询时把 socket 读超时临时压到 3s，超时当"还在算"继续轮询（CDP 响应 FIFO 且按 id 匹配，
+  晚到的那条会被 `send()` 丢掉）；真正的判据是**墙钟上限** + 页面自报的 `state`。
+- 源码闸门要跟着代码走：工具栏九步拆分后，`data-testid` 已经搬进 `scenario/panels/toolbar/**` ——
+  用例改读 `lib/rsrc.py#render_src()` 的合集，就不必每次搬家都修闸门（但仍不许放宽判据）。

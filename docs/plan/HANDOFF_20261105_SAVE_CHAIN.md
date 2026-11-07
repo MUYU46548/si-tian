@@ -94,5 +94,10 @@ Vite(5180) + **真实 415 省项目副本**（8.2MB / 415 省 / 27,067 顶点 / 
 - `pushSnapshot` 仍是**同步**一段（真机 11~80ms，大头是 diff）；要更细就得把 `diffStates` 也分块/按代缓存。
 - 反过来的"到下一帧 39~107ms"全在**整图重绘**（时间轴重算已缓存），再往下要分层/脏区渲染
   （与 A4“涂归属”卡的余项同源）。
-- 保存链的**分段读数目前只落页面全局**（`__SITIAN_SAVE_LOG__`），还没进诊断包（`diagExport`）。
-  要排真实用户的卡顿，下一步应把它带进诊断包。
+- 保存链的**分段读数已进诊断包**（2026-11-07 收口，原“还没进”那条作废）：
+  `window.__SITIAN_SAVE_LOG__` → 渲染侧 `utils/diagPayload.js#buildDiagRequest` →
+  主进程 `diagPackage.sanitizeSaveChain`（最近 10 条；只留 label/at/stages/total/bytes/ok，
+  stages 只收有限数字，label 与 error 过脱敏）→ 包内 `diagnostics.json.saveChain`。
+  判据：`unit/test_diag_package.js`（30 条，含“塞多余字段进不去”“报错里的私人路径必须消失”两条负向探针）
+  + `drill_diag_package.py` 真机三条（载荷由页面里**同一个** `buildDiagRequest` 拼，演练不手抄）。
+  还剩的：读数只在**页面内存**里（重开就没了），要跨会话回看就得另做环形日志落盘。
