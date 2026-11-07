@@ -235,7 +235,7 @@
         ><Icon name="pen-tool" :size="15"/>描轮廓</button>
       <!-- ═══ 描轮廓（E）：区域 = 笔迹围出的那块；默认**改判给贴得最紧的邻省** ═══ -->
       <!-- 六个“跟着当前工具出现”的设置组（2026-11-07 拆分第 8 步）：各自搬进
-           `scenario/panels/toolbar/settings/*.vue`。
+           `scenario/panels/toolbar/settings/` 下的各个 .vue。
            为什么按组拆而不是整行一个组件：这一行有 39 个绑定，整行搬就要塞 39 个 props
            （决断页那条门槛是 20）；而六组本来就各自自包含，拆开后每组 ≤10 个。
            `v-if` 与 `data-testid` 留在这一层（属主仍是父组件）。 -->

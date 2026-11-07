@@ -492,6 +492,57 @@ function main() {
     return 'ctx-item.danger 不算命中；tool-btn.danger 算命中';
   });
 
+  // 🔴 2026-11-07 实测踩到的：我在注释里写了 `scenario/panels/toolbar/settings/*.vue`，
+  //    结果 `lib/rsrc.py#strip_comments()` 把那个 `/*` 当成**块注释开头**，一路吞到很后面的 `*/`
+  //    —— 于是 `render_src_code_only()` 里整段（含忙时遮罩的 testid）消失，
+  //    `test_92` 报“组件缺少忙时可见/可取消”，而代码本身一行没动。
+  //    这类事故 Silent 且凶（后面所有源码闸门都少读一段），所以钉一条：
+  //    **`/*` 只能出现在行首（允许缩进）** —— 注释里的路径/通配符请写成 `settings/ 下的各个 .vue`。
+  function blockCommentOffenders(text) {
+    const out = [];
+    text.split('\n').forEach((line, i) => {
+      let k = line.indexOf('/*');
+      while (k >= 0) {
+        if (line.slice(0, k).trim()) out.push({ line: i + 1, text: line.trim().slice(0, 60) });
+        k = line.indexOf('/*', k + 2);
+      }
+    });
+    return out;
+  }
+  check('m9 rsrc 合集里的源码：`/*` 只许出现在行首（否则 strip_comments 会吞掉后面整段）', () => {
+    const files = [VUE];
+    const panelDir = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels');
+    (function walk(d) {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const q = path.join(d, e.name);
+        if (e.isDirectory()) { walk(q); continue; }
+        if (e.name.endsWith('.vue')) files.push(q);
+      }
+    })(panelDir);
+    const bad = [];
+    for (const f of files) {
+      const txt = readText(f);
+      for (const o of blockCommentOffenders(txt)) {
+        bad.push(`${path.relative(ROOT, f)}:${o.line} “${o.text}”`);
+      }
+      const open = (txt.match(/\/\*/g) || []).length;
+      const close = (txt.match(/\*\//g) || []).length;
+      if (open !== close) bad.push(`${path.relative(ROOT, f)} 块注释不配对（/* ${open} 个、*/ ${close} 个）`);
+    }
+    assert(!bad.length, '这些位置会让 rsrc 的 strip_comments 吞掉后面整段源码：' + bad.join(' | '));
+    return `${files.length} 个文件，/* 全在行首且配对`;
+  });
+
+  // 负向探针：合成一行“注释里写通配符”，检测器必须点名（否则 m9 是空转）
+  check('m9b 负向探针：注释里内联 `/*` 必须被点名', () => {
+    const probe = '  <!-- 见 `panels/settings/*.vue` 里那几个 -->';
+    const hit = blockCommentOffenders(probe);
+    assert(hit.length === 1 && hit[0].line === 1, `没认出内联的 /*：${JSON.stringify(hit)}`);
+    const okLine = '  /* 这是正常注释 */';
+    assert(blockCommentOffenders(okLine).length === 0, '行首的正常块注释被误报了');
+    return '内联 → 红；行首 → 绿';
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
   console.log(`\n=== ScenarioMap 体量与浮层落点 ${results.length - failed.length}/${results.length} 通过 ===`);
