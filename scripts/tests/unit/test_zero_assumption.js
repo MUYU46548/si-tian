@@ -102,15 +102,16 @@ function corpus(list) {
 
 // ── ⑥ 负向探针：拆掉任一闸门，判据必须红 ──────────────────────────────────
 {
-  const text = '他起来看了看，起来又坐下；自己也不知道是什么，自己说不清。他们后来出来了，后来就没再提。';
+  const text = '他起来看了看，起来又坐下；自己也不知道是什么，自己说不清。后来出来了，后来就没再提。';
   const c = corpus([{ path: 'z.md', text }]);
   const strict = ZA.extractEntities(c).kept.map((k) => k.name);
   ok('负向探针 A：默认黑名单下，功能词一个都不该被抽出',
-    !['起来', '自己', '什么', '他们', '出来', '后来'].some((w) => strict.includes(w)), strict.join('、') || '(空)');
+    !['起来', '自己', '什么', '出来', '后来'].some((w) => strict.includes(w)), strict.join('、') || '(空)');
 
   // 🔴 探针要打在**黑名单本身**上：走整条管线的话，这些词会先被“最小词频”挡掉，
   //    探针就成了空转（第一版就是这么写的，看起来绿了其实没验到黑名单）。
-  const words = ['起来', '自己', '什么', '他们', '出来', '后来'];
+  //    也别用 `他们` 这类**代词开头**的词 —— 它们现在被 NAME_START_BAD 挡，清空黑名单也放不出来。
+  const words = ['起来', '自己', '什么', '出来', '后来', '东西'];
   const strictVerdict = words.map((w) => ZA.isJunkName(w));
   const looseVerdict = words.map((w) => ZA.isJunkName(w, new Set()));
   ok('负向探针 B：默认判为噪声；把黑名单清空后同一条规则必须放行（证明拦住它的是黑名单）',
@@ -163,6 +164,72 @@ function corpus(list) {
   ok('脏库整库：事件 ≥6 条且每条都能回引原文一处',
     events.length >= 6 && events.every((e) => e.evidence && e.evidence.path && e.evidence.line > 0),
     `${events.length} 条`);
+}
+
+// ── ⑧ 第二轮判据（2026-11-07）：主语位 / 同小句 / 文档四分类 / 按需单篇 ──────
+{
+  // 8.1 主语位：跨 3 篇、出现多次，但只在宾语/定语位置 → 不收（真库 `姐姐` 就是这么进来的）
+  const buzz = corpus([
+    { path: 'f1.md', text: '他把砚舟的旧船票收进抽屉里。' },
+    { path: 'f2.md', text: '信里又提到砚舟的名字。' },
+    { path: 'f3.md', text: '关于砚舟的传闻很多。' },
+  ]);
+  const strict = ZA.extractEntities(buzz).kept.map((k) => k.name);
+  ok('主语位：跨 3 篇、出现多次但只在宾语/定语位置的词，不收',
+    !strict.includes('砚舟'), strict.join('、') || '(空)');
+  const loose = ZA.extractEntities(buzz, { requireSubject: false }).kept.map((k) => k.name);
+  ok('负向探针 D：拆掉主语位闸门后同一个词必须被收（证明拦住它的是这条判据）',
+    loose.includes('砚舟'), loose.join('、') || '(空)');
+
+  // 8.1b 常用词黑名单（从真库假阳性读数里长出来的；只收公共汉语词汇，不收任何私人专名）
+  const common = ['姐姐', '哥哥', '觉得', '知道', '喜欢', '一起', '样子', '关系', '角色', '世界'];
+  ok('常用词：亲属称谓 / 认知情感动词 / 抽象名词 一律判为“不是名字”',
+    common.every((w) => ZA.isJunkName(w)), common.filter((w) => !ZA.isJunkName(w)).join('、') || '全部挡住');
+  ok('常用词黑名单只收公共词汇（长度 ≤3 且不含字母数字 —— 私人专名不许进仓）',
+    ZA.COMMON_WORDS.every((w) => w.length <= 3 && !/[A-Za-z0-9]/.test(w)));
+
+  // 8.2 同小句：谓词只在**自己那一句**里算（±24 字窗口的老毛病就是跨小句恒真）
+  const line = '旧码头堆满木料，灰塔议会推举出执事。';
+  ok('同小句判据：自己小句里没有谓词 → 不算（旧码头）',
+    ZA.clausePredicates(line, line.indexOf('旧码头'), 3).length === 0,
+    ZA.clausePredicates(line, line.indexOf('旧码头'), 3).join('、') || '(空)');
+  ok('同小句判据：另一小句的谓词照常命中（灰塔议会 → 推举）',
+    ZA.clausePredicates(line, line.indexOf('灰塔议会'), 4).includes('推举'),
+    ZA.clausePredicates(line, line.indexOf('灰塔议会'), 4).join('、'));
+  const tight = ZA.subjectHit('南共主退守云岫山，砺川共和国隔岸观火。', 0, 3);
+  ok('主语位：名字后紧跟谓词 → tight=true（南共主 / 退守）',
+    tight.tight === true && tight.tightPred === '退守', JSON.stringify(tight));
+  const objText = '他们把旧码头封了。';
+  const objHit = ZA.subjectHit(objText, objText.indexOf('旧码头'), 3);
+  ok('主语位：名字在宾语位置（前面有“把”）→ atStart=false',
+    objHit.atStart === false, JSON.stringify(objHit));
+
+  // 8.3 文档四分类（真库里 mid 档灾难来自对话体与 AI 审阅稿）
+  const dialogText = '“你从哪来？”他问。\n“北边来的。”\n“北边的哪儿？”\n“说了你也不认识。”\n“那你来做什么？”\n“找姐姐。”\n“姐姐叫什么？”\n“不知道。”';
+  ok('文档四分类：对话体认得出来', ZA.classifyDocKind(dialogText) === 'dialog', ZA.classifyDocKind(dialogText));
+  const reviewText = '建议：把第三章的时间线补清楚。\n问题：人物动机不足。\n建议：删掉重复段落。\n问题：地名前后不一致。\n结论：可读性一般。\n建议：补一份人物表。\n问题：结尾仓促。\n建议：补一段后记。';
+  ok('文档四分类：AI 审阅稿认得出来', ZA.classifyDocKind(reviewText) === 'review', ZA.classifyDocKind(reviewText));
+  const proseText = fs.readFileSync(path.join(DIRTY, 'd1-prose', '黍原旧事.md'), 'utf8');
+  ok('文档四分类：纯散文设定页**不能**被误判成对话/审阅（误判 = 整页丢内容）',
+    ZA.classifyDocKind(proseText) === 'prose', ZA.classifyDocKind(proseText));
+  ok('全库预抽的跳过名单包含对话体与审阅稿', ZA.SKIP_KINDS.has('dialog') && ZA.SKIP_KINDS.has('review'));
+
+  // 8.4 按需单篇（产品形态）：单篇没有跨文件频次可依，只出现一次的真名字也要收
+  const one = ZA.extractDocument({ path: 'one.md', text: '砺川共和国吞并了白砾河谷，青栎港的管事因此与黍原王国翻脸。' });
+  const names1 = one.entities.map((e) => e.name);
+  ok('按需单篇：只出现一次的真名字也收（全库口径要求 ≥4 次，单篇会一个字都留不下）',
+    names1.includes('砺川共和国') && names1.includes('白砾河谷'), names1.join('、') || '(空)');
+  ok('按需单篇：每条输出都带原文出处', one.entities.every((e) => e.evidence.length && e.evidence[0].line > 0));
+  ok('按需单篇：docKind 随结果返回（调用方据此决定展示权重）', one.docKind === 'prose', one.docKind);
+
+  // 8.5 子串遮蔽：更稀的长碎片不许遮更常见的真名（单篇口径踩到的坑）
+  const d3Text = fs.readFileSync(path.join(DIRTY, 'd3-messy-timeline', 'D3 编年.md'), 'utf8');
+  const d3 = ZA.extractDocument({ path: 'd3.md', text: d3Text });
+  const d3names = d3.entities.map((e) => e.name);
+  ok('按需单篇：真名不会被“更稀的长碎片”遮掉（`南共主` vs `南共主与…`）',
+    d3names.includes('南共主'), d3names.join('、') || '(空)');
+  ok('按需单篇：碎片不许冒充名字（`南共主与` 这类粘了虚词的候选要剔掉）',
+    !d3names.includes('南共主与'), d3names.join('、') || '(空)');
 }
 
 console.log(`\n${pass}/${pass + fails.length} 通过`);
