@@ -437,6 +437,16 @@
   （按行拆 + 显式 props；**不用** `provide/inject`、**不把**状态搬进 store）；
   工具栏各行**共用** `scenario-map.css` 的 `.toolbar-row/.tool-group`，`m7` 的"老 class 不许留在主表"
   不适用于它们 —— 别再给工具栏行抄一份 CSS；改其它视图时照此扩一张「每个按钮都有文字」的判据。
+  🔴 **但共用样式必须写成 `:deep(类)`**（2026-11-07 真机抓到）：`<style scoped>` 的父 scope id
+  **只贴在子组件根节点上**，行拆进 `scenario/panels/toolbar/*.vue` 后，根**里面**的
+  `<button>`/`<label>`/`.tool-group` 一条父表规则都拿不到 —— 试点那 3 个按钮当场退回浏览器默认样式
+  （h=23px / Arial / 白底），而源码闸门与浮层视觉演练**全都看不见**。两条硬规矩：
+  ① 写 `:deep(类)`（编译成 `[data-v-父] 类`，与原 `.类[data-v-父]` 等权重）；
+  ② **`:deep()` 前不加 `.scenario-toolbar` 之类的前缀**（多一个 class 会改变优先关系，
+     实测把 `.back-btn` 的 padding 顶掉了；唯一例外是 `.scenario-toolbar :deep(button)`，不加限定会命中整个视图）。
+  守门 = `unit/test_scenario_map_split.js` 的 m8/m8b（负向探针验过）；
+  **动工具栏 CSS 一律先跑 `tools/probe_toolbar_row_styles.py` 留底、改完 `--compare` 对拍**
+  （84 个按钮的 computedStyle + 尺寸，别靠"看起来一样"）。
 - **同一能力只许一份实现**（画河几何、河宽换算、导出参考图、保存文案、`.map` 导入…）：
   两份实现不会报错，只会"改一处另两处不变"。
 - **方寸：过程与结论写任务卡，不写执行日志**（2026-11-04 用户拍板）：`create_log` 的条目是**用户自己调度**用的，

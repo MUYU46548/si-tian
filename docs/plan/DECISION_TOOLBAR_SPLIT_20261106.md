@@ -88,13 +88,13 @@
 
 ## 四、执行顺序（按依赖数从少到多，先小后大）
 
-> **进度**：第 1 步（试点）已于 2026-11-06 落地，见第七节。
+> **进度**：第 1 步（试点）已于 2026-11-06 落地，见第七节；第 2 步（`primary-row`）已于 2026-11-07 落地，见第八节。
 
 | 步 | 目标 | 依赖数 | 预估 | 备注 |
 |---|---|---|---|---|
-| 1 | "更多"里的 拆分/合并/删除（row5） | 2 | 小 | **试点已落地**：`scenario/panels/toolbar/ProvinceOpsRow.vue` |
-| 2 | `primary-row` | 7 | 小 | ⚠ 受 `test_65` 的"主行恰好 6 个可见控件"管，DOM 一个字节都不许变 |
-| 3 | `basemap-row` | 8 | 小 | |
+| 1 | "更多"里的 拆分/合并/删除（row5） | 2 | 小 | **已完成**：`ProvinceOpsRow.vue` |
+| 2 | `primary-row` | 7 | 小 | **已完成**：`PrimaryRow.vue`（5 props / 3 emits；84 个按钮 computedStyle 零差异） |
+| 3 | `basemap-row` | 8 | 小 | 下一个 |
 | 4 | `river-selected-row` / `river-edit-row` | 8 / 10 | 小 | 两行共用 `riverSelIds`/`selectedRiver`，可一起做 |
 | 5 | "外交/导出/历史/谱系"行 | 9 | 小 | |
 | 6 | "图层/着色/栅格开关"行 | 16 | 中 | 16 个开关，建议按 3 个 `tm-card` 再分 |
@@ -142,10 +142,54 @@ python scripts/tests/run_tests.py test_65 test_97         # 主行"恰好 6 个�
 **一条新学到的边界**：工具栏各行**共用** `.toolbar-row`/`.tool-group` 这些样式（在
 `scenario-map.css` 里，父组件的 scoped 表），所以 `m7`（"老 class 不许留在主表"）**不适用于
 工具栏行** —— 它不是"搬到组件里"，而是"同一个工具栏样式表的另一段模板"。
-子组件根节点会继承父 scope id，样式照常命中；**不要再给工具栏行单独抄一份 CSS**。
+**不要再给工具栏行单独抄一份 CSS**。
+
+> 🔴 **2026-11-07 修正（真机读数推翻了下面这段）**：原先这里写的是
+> “子组件根节点会继承父 scope id，样式照常命中”。**这句话只对根节点成立** ——
+> `<style scoped>` 的父 scope id 只贴在子组件的**根元素**上，根**里面**的
+> `<button>` / `<label>` / `.tool-group` 拿不到 `[data-v-父]`。
+> 后果是试点那一行的“拆分 / 合并 / 删除”三个按钮退回浏览器默认样式
+> （实测 h=23px / font=Arial 13.3px / inline-block / 白底黑字，而同屏其它按钮是
+> 32px / 12px / flex / 深色皮肤），而**所有源码闸门与浮层视觉演练都看不见**。
+>
+> 正确做法：工具栏那套"按钮皮肤 + 行内小标签"在 `scenario-map.css` 里写成
+> `:deep(类)` 形式（编译成 `[data-v-父] 类`，specificity 与原 `.类[data-v-父]` 相等）。
+> 两条硬规矩：
+> 1. **必须用 `:deep()`**，别再假设"根节点继承"能覆盖行内元素；
+> 2. **`:deep()` 前面不要加 `.scenario-toolbar` 之类的前缀**（那会多一个 class、
+>    改变优先关系：实测把 `.back-btn` 的 `padding: 6px 12px` 顶掉了
+>    `.scenario-toolbar button` 的 `0 8px`，退回键宽 79.6 → 87.6px）。
+>    唯一例外是 `.scenario-toolbar :deep(button)` —— 不加限定会命中**整个视图**的按钮。
+>
+> 守门：`unit/test_scenario_map_split.js` 的 **m8 + m8b**（`scenario/panels/toolbar/` 下的行
+> 组件用到的 button / 行内 class，父表给它写过样式就必须有一条 `:deep()` 版本；
+> 负向探针验过：去掉 `:deep` → 当场红）。
+> 真机读数工具：`scripts/tests/tools/probe_toolbar_row_styles.py`（三档状态 84 个按钮
+> 的 computedStyle + 尺寸，可 `--compare` 对拍）—— **动工具栏的 CSS 请都用它验一次**。
+
+---
+
+## 八、第 2 步结果（2026-11-07 已落地）
+
+`scenario/panels/toolbar/PrimaryRow.vue`（主行：退回 / 选择 / 画省份 / 涂归属 / 改形状 / 更多）：
+
+- `ScenarioMap.vue` **6,611 → 6,586 行**（m1 判据跟着收紧到 ≤6,590）；
+- 契约：props **5 个**（`basemapEditMode` / `tool` / `moreOpen` / `advancedToolActive` /
+  `snapToGridEnabled`）、emits **3 个**（`back` / `setTool` / `toggleMore`）——
+  远低于"超过 20 个 props 就说明粒度选错"那条复核口子；
+- 根元素仍是 `<div class="toolbar-row primary-row">`，`data-testid` / `title` / 顺序 / `v-if` 原样；
+- **搬前/搬后真机对拍：84 个按钮 0 个有差异**（样式 19 项 + 尺寸逐项比）；
+- `test_65` / `test_97` 照过（默认可见控件 4 个、"更多"56 项，与搬前读数一致）。
+
+**这一轮真正学到的**（已写进第七节的修正块）：`:deep` 是必需的，但**写法会改 specificity**。
+第一次写成 `.scenario-toolbar :deep(.back-btn)`，编译出来比原来的 `.back-btn[data-v]` 多一个 class，
+于是 `.back-btn` 的 padding 顶掉了 `.scenario-toolbar button` 的 padding —— 真机读数立刻现形
+（退回键 79.6 → 87.6px、“更多”那个按钮的 gap 4 → 3px）。改成等权重的 `:deep(.back-btn)` 后归零。
+**结论：搬工具栏行之前先跑一遍 `probe_toolbar_row_styles.py` 留底，搬完再跑一遍 `--compare`**，
+不要靠"看起来一样"。
 
 ---
 
 **决断人**：AI（用户 2026-11-06 授权"大文件你自己想办法拆分"+"先把架构决断做掉"）
-**复核方式**：按第四节顺序继续第 2 步（`primary-row`）。若某一步发现自己要往子组件塞超过 20 个 props，
+**复核方式**：按第四节顺序继续第 3 步（`basemap-row`）。若某一步发现自己要往子组件塞超过 20 个 props，
 说明粒度选错 —— 回到第二节重新评估，而不是硬塞。
