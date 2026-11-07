@@ -801,12 +801,16 @@
   gap: 6px;
   align-items: center;
 }
-.river-edit-row .river-edit-name {
+/* ⚠️ 2026-11-07：`.river-edit-row` 本身是子组件的根（拿得到父 scope id），但行**里面**的
+   名字 span 与按钮拿不到 —— 所以这两条要写成 `:deep()`。m8 源码闸门盯着这一对。 */
+.river-edit-row .river-edit-name,
+.river-edit-row :deep(.river-edit-name) {
   font-size: 12px;
   color: #93c5fd;
   white-space: nowrap;
 }
-.river-edit-row button:disabled {
+.river-edit-row button:disabled,
+.river-edit-row :deep(button:disabled) {
   opacity: 0.45;
   cursor: not-allowed;
 }

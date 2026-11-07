@@ -65,6 +65,9 @@ const FILES = [
   // 工具栏拆分第 3 步（2026-11-07）：底图/地理行。模板里 5 个 <button> 节点
   // （其中一个是 v-for，运行时按 BASEMAP_TOOLS 展开成 12 个），少一个就说明拆漏了。
   { file: 'BasemapRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·底图地理行（高度/湖泊/…/笔刷建省/改省界/地形注记/出口）', min: 5 },
+  // 工具栏拆分第 4 步（2026-11-07）：河流两条行。两行各自 4 / 3 个按钮。
+  { file: 'RiverSelectedRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·选中河流行（删这条河 / 编辑节点 / 裁到海岸线 / 取消选中）', min: 4 },
+  { file: 'RiverEditRow.vue', dir: 'scenario/panels/toolbar', desc: '工具栏·河流编辑行（删这个节点 / 删整条河 / 裁到海岸线）', min: 3 },
 ];
 
 const CJK = /[\u4e00-\u9fff]/;

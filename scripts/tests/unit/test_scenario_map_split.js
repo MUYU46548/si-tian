@@ -108,9 +108,9 @@ function main() {
   const parsed = parse(SRC, { filename: 'ScenarioMap.vue' });
   const ast = parsed.descriptor.template && parsed.descriptor.template.ast;
 
-  check('m1 SFC 行数 ≤6,560（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650 → 6,620 → 6,590 → 6,560）', () => {
+  check('m1 SFC 行数 ≤6,520（判据 ≤8,500；8,554 → 6,900 → 6,800 → 6,750 → 6,650 → 6,620 → 6,590 → 6,560 → 6,520）', () => {
     const n = SRC.split('\n').length;
-    assert(n <= 6560, `ScenarioMap.vue 实测 ${n} 行，超过 6,560 —— 又往这个文件里堆东西了？`
+    assert(n <= 6520, `ScenarioMap.vue 实测 ${n} 行，超过 6,520 —— 又往这个文件里堆东西了？`
       + '新东西请进 scenario/panels/（含 toolbar/）的子组件或 scenario/ 下的模块，别塞回这里。');
     return `${n} 行`;
   });
@@ -290,6 +290,26 @@ function main() {
   function hasClassToken(sel, cls) {
     return new RegExp('\\.' + cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_-])').test(sel);
   }
+  /** 这条选择器里“这一截（compound）”要求的所有 class（`.a.b:hover` -> ['a','b']） */
+  function compoundClasses(compound) {
+    const out = [];
+    for (const m of compound.matchAll(/\.([A-Za-z_][\w-]*)/g)) out.push(m[1]);
+    return out;
+  }
+  /**
+   * 这条规则**真的会命中**“只带这些 class 的那个元素”吗？
+   *
+   * 🔴 2026-11-07 必须加这一层：第一版只要选择器里出现 `.danger` 就算“父表管它”，
+   * 于是 `.ctx-item.danger`（右键菜单里的危险项）把工具栏行里的 `.tool-btn.danger` 误判成
+   * “父表给它写了样式但没写 :deep” —— 假红。真正的口径是：**选择器里那一截的 class
+   * 必须是该元素 class 的子集**（`.ctx-item.danger` 要求元素同时有 ctx-item，它当然没有）。
+   */
+  function selectorAppliesTo(sel, cls, ownClasses) {
+    const compounds = sel.split(/\s*[>+~]\s*|\s+/).filter(Boolean);
+    const hits = compounds.filter((c) => hasClassToken(c, cls));
+    if (!hits.length) return false;
+    return hits.some((c) => compoundClasses(c).every((k) => ownClasses.has(k)));
+  }
   const TOOLBAR_DIR = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'panels', 'toolbar');
   /** 工具栏行组件里用到的“行内 class”与“是否用到 button 标签”（源码级，AST 太重这里不需要） */
   function toolbarRowNeeds(src) {
@@ -330,8 +350,10 @@ function main() {
           + ' —— 子组件里的按钮会退回浏览器默认样式（h≈23px / Arial / 白底）');
       }
       // ② 行内 class：凡是父表给它写过样式的，就必须同时有一条 :deep 版本
+      const ownClasses = new Set(classes);
       for (const cls of classes) {
-        const styling = sels.filter((s) => hasClassToken(s, cls));
+        // 只要“真会命中这个元素”的规则（`.ctx-item.danger` 不算管 `.danger`）
+        const styling = sels.filter((s) => selectorAppliesTo(s, cls, ownClasses));
         if (!styling.length) continue;                      // 父表根本不管这个 class，跳过
         checked++;
         const deep = styling.some((s) => s.includes(':deep('));
@@ -369,6 +391,26 @@ function main() {
     assert(gs.filter((s) => hasClassToken(s, 'row-label')).some((s) => s.includes(':deep(')),
       '加了 :deep(.row-label) 却没认出来');
     return '非 :deep → 红；加了 :deep → 绿';
+  });
+
+  // m8c：复合选择器不许误报（2026-11-07 真实误报：`.ctx-item.danger` 把工具栏行里的
+  // `.tool-btn.danger` 判成“父表管它却没写 :deep”，于是 m8 假红）。两个方向都要验。
+  check('m8c 负向探针：复合选择器（.ctx-item.danger）不许当成“管到了 .danger”', () => {
+    const css = stripCssComments('.ctx-item.danger { color: #f87171; }'
+      + '.scenario-toolbar :deep(button) { height: 32px; }');
+    const sels = cssSelectors(css);
+    const own = new Set(['tool-btn', 'danger']);        // 真实元素只有这两个 class
+    assert(!selectorAppliesTo('.ctx-item.danger', 'danger', own),
+      '.ctx-item.danger 要求元素也有 ctx-item —— 不该算命中 .danger（这条会误报成缺 :deep）');
+    // 反过来：同一个元素自己的复合类必须认得出（别把判据改瞎）
+    const own2 = new Set(['tool-btn', 'danger']);
+    assert(selectorAppliesTo('.tool-btn.danger', 'danger', own2),
+      '元素真有 tool-btn + danger 时，.tool-btn.danger 必须算命中');
+    // 单类规则照旧命中
+    assert(selectorAppliesTo('.row-label', 'row-label', new Set(['row-label'])), '单类规则应命中');
+    // 父表里那条 :deep(button) 仍在（不然上面的对照没有意义）
+    assert(sels.some((s) => s.includes(':deep(') && /\bbutton\b/.test(s)), '探针 CSS 里的 :deep(button) 丢了');
+    return 'ctx-item.danger 不算命中；tool-btn.danger 算命中';
   });
 
   const failed = results.filter((r) => !r.ok);

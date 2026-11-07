@@ -96,7 +96,7 @@ COLLECT_JS = """(() => {
   // ⚠️ 行里不只有按钮：小标题（省份：/ 底图/地理：）、提示（.row-hint / .draw-hint）、勾选项
   //    也都是父组件 scoped 表在管。只量按钮会漏掉“标签掉色”这类事故
   //    （2026-11-07 实测：`.basemap-row-label` 的琥珀色就是这么丢的，源码闸门 m8 抓到的）。
-  for (const el of toolbar.querySelectorAll('.row-label, .basemap-row-label, .row-hint, .check-label, .draw-hint, select')) {
+  for (const el of toolbar.querySelectorAll('.row-label, .basemap-row-label, .river-edit-name, .row-hint, .check-label, .draw-hint, select')) {
     const cs = getComputedStyle(el);
     const style = {};
     for (const k of props) style[k] = cs[k];
@@ -206,10 +206,25 @@ def collect(out_path, want_shot=True):
 
         # 三档状态各拍一次：日常 / 「更多」展开（拆出去的那几行都住在这里）/ 底图编辑行
         # ⚠️ 少了「更多」那一档就会漏掉整块搬出去的按钮 —— 它们默认不在 DOM 里。
+        # ⚠️ 河流行还多要两档：它只在“选中了河”或“河流工具”时出现（默认态根本没有这两个节点）。
+        #    `selectedRiver` 是 computed（按 id 去 `baseMap.rivers` 里找），所以不能直接塞对象，
+        #    必须走 `setRiverSelection(ids)` —— 否则行虽然渲染、内容却走“未选中”那条分支（实测踩过）。
+        PICK_RIVER = """
+          const rs = (sm.baseMap && sm.baseMap.rivers) || [];
+          const ids = rs.slice(0, %d).map(function (r) { return r && r.id; }).filter(Boolean);
+          if (sm.setRiverSelection && ids.length) sm.setRiverSelection(ids);
+        """
         PHASES = [
             ('default', '(() => 1)()'),
             ('more-open', "sm.moreOpen = true;"),
             ('basemap', "sm.moreOpen = false; sm.basemapEditMode = true;"),
+            ('river-selected',
+             "sm.basemapEditMode = false; sm.tool = 'select';" + (PICK_RIVER % 2)),
+            ('river-edit',
+             "sm.tool = 'river';" + (PICK_RIVER % 1) + "sm.riverActiveNode = 0;"),
+            ('river-edit-none',
+             "sm.tool = 'river'; sm.selectedRiverId = null;"
+             " sm.selectedRiverIds = []; sm.riverActiveNode = -1;"),
         ]
         res = None
         for phase, act in PHASES:

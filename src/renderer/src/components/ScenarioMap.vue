@@ -402,76 +402,28 @@
             此前只有“河流”工具里才有这一行 —— 用户用“选择”工具点中河之后
             界面上**没有任何删除入口**，只能猜着按 Delete（他报的正是这个）。
             这一行只放三个动作：删这条 / 进河流工具拖节点 / 取消选中。 -->
-      <div
+      <!-- 工具栏拆分第 4 步（2026-11-07）：上面两条河流行分别搬进
+           `scenario/panels/toolbar/RiverSelectedRow.vue` 与 `RiverEditRow.vue`。
+           两行共用 `selectedRiver` / `riverSelIds()`，但仍然**一组件一行** ——
+           组件多根节点会丢掉父 scope id（`.toolbar-row` 的样式就没了）。 -->
+      <RiverSelectedRow
         v-if="selectedRiver && tool !== 'river'"
-        class="toolbar-row river-selected-row"
-        data-testid="river-selected-row"
-      >
-        <label class="row-label">已选中河流：</label>
-        <span class="river-edit-name" :title="`当前选中：${selectedRiver.name || '未命名'}`"
-              data-testid="river-sel-count">
-          <template v-if="riverSelIds().length > 1">共 {{ riverSelIds().length }} 条（主：{{ selectedRiver.name || '未命名' }}）</template>
-          <template v-else>{{ selectedRiver.name || '未命名' }} · {{ (selectedRiver.points || []).length }} 点</template>
-        </span>
-        <button
-          class="tool-btn danger"
-          data-testid="river-selected-delete"
-          :title="riverSelIds().length > 1
-            ? '把选中的这批河一次删掉（整批 = 一条撤销）'
-            : '删除这条河流（走撤销栈，Ctrl+Z 可恢复）'"
-          @click="deleteSelectedRiver()"
-        >{{ riverSelIds().length > 1 ? `删除选中的 ${riverSelIds().length} 条` : '删除这条河' }}</button>
-        <button
-          class="tool-btn"
-          data-testid="river-selected-edit"
-          title="切到河流工具，可以拖节点 / 点河身加拐点 / 删单个节点"
-          @click="enterRiverToolForSelected()"
-        >编辑节点</button>
-        <button
-          class="tool-btn"
-          data-testid="river-clip-coast"
-          title="把选中的河裁到海岸线（画进海里的那一段被裁掉；整批 = 一条撤销）—— 想保留三角洲/河口就别裁"
-          @click="clipSelectedRiversToCoast()"
-        >裁到海岸线</button>
-        <button
-          class="tool-btn"
-          data-testid="river-selected-clear"
-          title="取消选中（不删除任何东西）"
-          @click="setRiverSelection([]); render()"
-        >取消选中</button>
-        <span class="row-hint">Shift+点=多选 · Shift+拖动=框选一批</span>
-      </div>
-      <div v-if="tool === 'river'" class="toolbar-row river-edit-row" data-testid="river-edit-row">
-        <label class="row-label">河流编辑：</label>
-        <template v-if="selectedRiver">
-          <span class="river-edit-name" :title="`当前选中：${selectedRiver.name || '未命名'}（${(selectedRiver.points || []).length} 个节点）`">
-            已选中“{{ selectedRiver.name || '未命名' }}”· {{ (selectedRiver.points || []).length }} 点
-          </span>
-          <button
-            data-testid="river-del-node"
-            :disabled="riverActiveNode < 0"
-            @click="removeSelectedRiverNode()"
-            :title="riverActiveNode >= 0
-              ? `删掉第 ${riverActiveNode + 1} 个节点（这条河重新平滑一次）—— 等价于把鼠标移到节点上按 Delete`
-              : '删单个节点：先把鼠标移到某个节点上（它会变黄），再点这里或按 Delete'"
-          ><Icon name="x" :size="13"/>删这个节点</button>
-          <button
-            data-testid="river-del-all"
-            @click="deleteSelectedRiver()"
-            title="删掉整条河（一条撤销可撤回）—— 快捷键：鼠标不在任何节点上时按 Delete"
-          ><Icon name="trash" :size="13"/>删整条河</button>
-          <button
-            data-testid="river-clip-coast-row"
-            @click="clipSelectedRiversToCoast()"
-            title="把这条河裁到海岸线（保留陆地那一段；整条在海里时不会自动删）"
-          ><Icon name="scissors" :size="13"/>裁到海岸线</button>
-          <span class="row-hint" v-if="riverSelIds().length > 1">共选中 {{ riverSelIds().length }} 条（批量删除/裁剪都算一条撤销）</span>
-          <span class="row-hint" v-else>再点河身=加拐点，按住节点拖=微调（一次操作 = 一条撤销）</span>
-        </template>
-        <span v-else class="row-hint" data-testid="river-edit-hint">
-          按住左键拖一笔 = 画一条河（松手成河、自动平滑）；点已有河流的河身 = 选中它，再点河身 = 加拐点
-        </span>
-      </div>
+        :selected-river="selectedRiver"
+        :sel-count="riverSelIds().length"
+        @remove="deleteSelectedRiver()"
+        @edit="enterRiverToolForSelected()"
+        @clip="clipSelectedRiversToCoast()"
+        @clear="setRiverSelection([]); render()"
+      />
+      <RiverEditRow
+        v-if="tool === 'river'"
+        :selected-river="selectedRiver"
+        :active-node="riverActiveNode"
+        :sel-count="riverSelIds().length"
+        @remove-node="removeSelectedRiverNode()"
+        @remove-all="deleteSelectedRiver()"
+        @clip="clipSelectedRiversToCoast()"
+      />
 
       <!-- “更多”（默认收起）：高级工具 + 吸附开关 + 图层 + 底图 —— 原入口一个都不少 -->
       <!-- 点面板以外的任何地方就收起（浮层惯例；不必再回来找“更多”按钮） -->
@@ -1558,6 +1510,10 @@ import ProvinceOpsRow from '../scenario/panels/toolbar/ProvinceOpsRow.vue';
 import PrimaryRow from '../scenario/panels/toolbar/PrimaryRow.vue';
 // 工具栏拆分第 3 步（2026-11-07）：底图/地理行（高度 / 湖泊 / 群系 … 改省界 / 地形注记 / 出口）。
 import BasemapRow from '../scenario/panels/toolbar/BasemapRow.vue';
+// 工具栏拆分第 4 步（2026-11-07）：河流两条行（选中后的动作行 + 河流工具里的节点编辑行）。
+// 一组件一行：组件多根节点会丢父 scope id（`.toolbar-row` 的样式就没了）。
+import RiverSelectedRow from '../scenario/panels/toolbar/RiverSelectedRow.vue';
+import RiverEditRow from '../scenario/panels/toolbar/RiverEditRow.vue';
 import ScenarioTimeline from './ScenarioTimeline.vue';
 import ScenarioLineagePanel from './ScenarioLineagePanel.vue';
 // A3（2026-11-05）：跨剧本集只读总览（左栏“看全部”，别的时间线只能看、要改先切过去）
