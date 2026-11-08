@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 回归测试编排器（阶段 2：回归测试基线，2026-08-16）
@@ -6,6 +6,7 @@
 用法（在 SiTian 项目根目录）：
     python scripts/tests/run_tests.py [用例名...]
     python scripts/tests/run_tests.py --real-data      # 对着真实知识库跑（默认用仓库内合成 fixture）
+    python scripts/tests/run_tests.py --retry-env 1    # 环境没起来时自动重建浏览器重来（默认 0 = 直接中止）
 
 流程：
     1. 备份 index.html + 注入 mock sitianAPI + 准备 mock 数据（默认 = 合成 fixture）
@@ -13,6 +14,12 @@
     3. 顺序执行 scripts/tests/cases/test_*.py（每个导出 run(cdp) -> (bool, detail)）
     4. 汇总报告（✅/❌ + 失败详情）
     5. 清理：还原 index.html、删除 mock-data、杀进程、释放端口
+
+退出码（2026-11-08 起）：
+    0 = 全过 ｜ 1 = 有用例真失败 ｜ 2 = 用例名没匹配上 ｜ **3 = 环境没起来（不是产品结论）**
+    “环境没起来”= `store.nodes` 恒 0 / 页面被关掉 / harness 基线项目打不开（no-app、browser-dev-mode）。
+    这些情形下用例**一条都没跑到产品逻辑**，所以整轮中止并印一段横幅 —— 以前是每条用例各自演一遍失败，
+    一屏红全指向产品（2026-11-08 实测：一次冷启动抖动让 9 条用例集体假红）。
 
 数据源（2026-09-21 解耦）：
     默认用 `scripts/tests/fixtures/vault-fixture/*.json` —— **合成 fixture**，由
@@ -80,6 +87,7 @@ if os.name != 'nt' and not os.environ.get('SITIAN_EDGE_EXE'):
 USE_REAL_VAULT = os.environ.get('SITIAN_TEST_REAL_VAULT') == '1'
 _args = sys.argv[1:]
 _case_names = []
+_retry_env = 0
 _i = 0
 while _i < len(_args):
     if _args[_i] == '--vault' and _i + 1 < len(_args):
@@ -88,6 +96,12 @@ while _i < len(_args):
         EDGE_EXE = _args[_i + 1]; _i += 2
     elif _args[_i] == '--real-data':
         USE_REAL_VAULT = True; _i += 1
+    elif _args[_i] == '--retry-env' and _i + 1 < len(_args):
+        try:
+            _retry_env = max(0, int(_args[_i + 1]))
+        except ValueError:
+            _retry_env = 0
+        _i += 2
     else:
         _case_names.append(_args[_i]); _i += 1
 # 告知 harness 数据源：A()/__alias 在真实数据下把 fixture 专名解析成真实名
@@ -677,13 +691,15 @@ def _reload_page(cdp):
     # 用例前统一等数据就绪：mock 是异步注入的（geodata + 2MB mapdata），
     # 只等 .app-layout 会让下一个用例的首个断言撞上空 store，报“no-world /
     # 树节点未渲染 / 地理数据加载超时”这类**假失败**（历史上曾据此误判 test_07/test_12 为回归失败）。
-    # 超时只告警不中断：由用例自己给出有意义的失败原因。
+    # 🔴 2026-11-08：超时**不再只告警** —— 空 store 上跑用例只会产出一批指向产品的假红
+    #    （test_109「推演没起伏」/ test_85「没有打开的项目」/ test_48「面板没渲染」都是这么来的）。
+    #    这里抛出带签名的异常，由 main() 决定：重试重建环境（`--retry-env`）或整轮中止。
     try:
         wait_for(cdp,
                  "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
                  timeout=30, desc='用例前数据就绪')
-    except Exception:
-        print('  ⚠️ 前置数据未就绪（30s 内 store.nodes 仍为 0，冷启动抖动？）')
+    except Exception as e:
+        raise RuntimeError(f'{ENV_NOT_READY}（30s 内 store.nodes 仍为 0）：用例前数据就绪｜{e}') from e
     _harness_open(cdp)
     time.sleep(0.5)
 
@@ -697,9 +713,14 @@ def _harness_open(cdp, first=False):
     try:
         ok, info = open_harness_project(cdp)
     except Exception as e:
-        print(f'  ⚠️ harness 基线项目打开异常（用例可能因只读态失败）：{e}')
-        return
+        raise RuntimeError(f'{ENV_NOT_READY}（harness 基线项目打开异常）：{e}') from e
     if not ok:
+        # 🔴 2026-11-08：这两个错误不是“这个用例红了”，是**环境没起来** ——
+        #    `no-app`（页面没挂载）/ `browser-dev-mode（未落盘）`（mock 项目没落盘，
+        #    后面每条用例都会在自己身上重演一遍“没有打开的项目”）。抛带签名的异常让 main() 处理。
+        reason = str((info or {}).get('error') or '') if isinstance(info, dict) else ''
+        if reason in ('no-app', 'browser-dev-mode（未落盘）'):
+            raise RuntimeError(f'{ENV_NOT_READY}（harness 基线项目打不开：{reason}）')
         print(f'  ⚠️ harness 基线项目打开失败（用例可能因只读态失败）：{info}')
     elif first:
         print(f'  · harness 基线项目：实体 {info.get("seededEntities")} / 画布节点 {info.get("nodes")} / '
@@ -743,6 +764,48 @@ def _boot_page(cdp):
         wait_for(cdp, "!document.querySelector('.onboarding-overlay')", timeout=30, desc='引导层已关闭')
     except Exception as e:
         print(f'  ⚠️ 跳过首启引导失败（首个用例可能看到空数据）：{e}')
+
+
+# ── 环境就绪判定（2026-11-08，卡「回归编排器：冷启动没把数据 load 起来时，用例集体假红」）──
+# 为什么要有这一层：`store.nodes` 恒 0（前端没 load 起来 / 首启层没退 / mock 没注入）时，
+# **每个用例都会各自演一遍失败** —— test_109 说“推演没起伏”、test_85 说“没有打开的项目”、
+# test_48 说“项目面板没渲染”。一屏红全指向产品，其实**一次都没跑到产品逻辑**。
+# 口径：环境没起来 = **整轮中止**（退出码 3 + 一句可读的原因），不是 165 条用例各红一次。
+ENV_NOT_READY = '前置数据未就绪'
+ENV_READY_EXPR = "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0"
+ENV_DEATH_PATTERNS = (
+    'Inspected target navigated or closed',
+    'no-app',
+    '数据未就绪',
+    "reading '__vue_app__'",
+    'Node with given id does not belong to the document',
+    'Session with given id not found',
+    'Connection refused',
+)
+
+
+def env_failure(err):
+    """这个异常是“环境掉了”还是“用例给了个结论”？（只有前者才重试/中止）"""
+    msg = str(err or '')
+    return any(p in msg for p in ENV_DEATH_PATTERNS)
+
+
+def ensure_env_ready(cdp, what='数据就绪'):
+    """等 `store.nodes > 0`；起不来就抛**带签名**的异常（`env_failure()` 认得出）。"""
+    try:
+        wait_for(cdp, ENV_READY_EXPR, timeout=30, desc=what)
+    except Exception as e:
+        raise RuntimeError(f'{ENV_NOT_READY}（30s 内 store.nodes 仍为 0）：{what}｜{e}') from e
+
+
+def env_abort_banner(where):
+    print('')
+    print('=' * 72)
+    print(f'🛑 本轮环境没起来（{where}）：前端没有把数据 load 起来（store.nodes 恒 0 / 页面被关掉）。')
+    print('   ⚠️ 这不是产品结论：这些用例**一条都没跑到产品逻辑**，请重跑一遍再判红。')
+    print('   · 常见原因：首启引导层没退 / mock 没注入 / 上轮被强杀留下 .bak 与 mock-data / Edge 被复用')
+    print('   · 想让它自己重来一次：加 `--retry-env 1`')
+    print('=' * 72)
 
 
 def _restart_browser(handles, handle):
@@ -867,20 +930,54 @@ def main():
         from lib.cdp import CDP
         cdp = CDP()
         _boot_page(cdp)
-        # 首个用例前同样等数据就绪（见下方循环内同款说明）
-        try:
-            wait_for(cdp,
-                     "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
-                     timeout=30, desc='首个用例前数据就绪')
-        except Exception:
-            print('  ⚠️ 首个用例前置数据未就绪（30s 内 store.nodes 仍为 0）')
+        env_retries = _retry_env
+
+        def recover_env(where, cur_cdp, cur_handle):
+            """换浏览器 + 重新导航 + 等数据 + 打开 harness 项目；返回新的 (cdp, edge_handle)。
+
+            ⚠️ 参数显式传（不靠闭包里的 `edge_handle`）：闭包内赋值会被 Python 当成**局部变量**，
+            实测报 `cannot access local variable 'edge_handle'` —— 而它只在“环境掉了”那一刻才出现，
+            平时全绿。这一条是被 `--retry-env 1` + 空库的负向演练抓到的。
+            """
+            print(f'  ↺ 环境掉了（{where}）→ 重启无头浏览器并重新就绪')
+            try:
+                cur_cdp.close()
+            except Exception:
+                pass
+            new_handle = _restart_browser(handles, cur_handle)
+            new_cdp = CDP()
+            _boot_page(new_cdp)
+            ensure_env_ready(new_cdp, '重建后数据就绪')
+            _harness_open(new_cdp)
+            print('  ↺ 已恢复（重启浏览器 + 重新导航 + 数据就绪）')
+            return new_cdp, new_handle
+
+        # 首个用例前：数据必须真的 load 起来 —— 起不来就**中止**（不是把 165 条用例各红一次）
+        while True:
+            try:
+                ensure_env_ready(cdp, '首个用例前数据就绪')
+                break
+            except Exception as e:
+                if env_retries > 0:
+                    env_retries -= 1
+                    try:
+                        cdp, edge_handle = recover_env('首个用例前', cdp, edge_handle)
+                        continue
+                    except Exception as e2:
+                        env_abort_banner(f'首个用例前，重建也失败：{e2}')
+                        return 3
+                env_abort_banner(f'首个用例前：{e}')
+                return 3
         # 首个用例前打开 harness 基线项目（决策 1 终态：无项目 = 只读，用例必须跑在有项目的状态）
         _harness_open(cdp, first=True)
         passed, failed = 0, []
         if not unit['ok']:
             failed.append(('unit:test_project_io', unit['detail']))
-        for cf in case_files:
+        idx = 0
+        while idx < len(case_files):
+            cf = case_files[idx]
             name = os.path.splitext(cf)[0]
+            env_died = None
             try:
                 mod = load_case(os.path.join(cases_dir, cf))
                 ok, detail = mod.run(cdp)
@@ -891,8 +988,24 @@ def main():
                     failed.append((name, detail))
                     print(f'  ❌ {name} — {detail}')
             except Exception as e:
-                failed.append((name, f'异常: {e}'))
-                print(f'  ❌ {name} — 异常: {e}')
+                if env_failure(e):
+                    env_died = e
+                else:
+                    failed.append((name, f'异常: {e}'))
+                    print(f'  ❌ {name} — 异常: {e}')
+            if env_died is not None:
+                # 🔴 环境掉了 ≠ 用例给了结论：重试（有预算时**从这一条重跑**），没预算就整轮中止。
+                if env_retries > 0:
+                    env_retries -= 1
+                    try:
+                        cdp, edge_handle = recover_env(f'{name} 跑到一半', cdp, edge_handle)
+                        continue          # 不推进 idx：这一条要在新环境上重跑
+                    except Exception as e2:
+                        env_abort_banner(f'{name} 处掉线，重建也失败：{e2}')
+                        return 3
+                env_abort_banner(f'{name} 处掉线：{env_died}')
+                print(f'  · 已跑完 {passed} 条通过 / {len(failed)} 条真失败（这些结论仍然有效）')
+                return 3
             # 每个用例后刷新页面（隔离状态）
             try:
                 _reload_page(cdp)
@@ -912,23 +1025,11 @@ def main():
                 except Exception as e2:
                     print(f'  ↺ 仍然失败（{e2}）→ 重启无头浏览器')
                     try:
-                        cdp.close()
-                    except Exception:
-                        pass
-                    try:
-                        edge_handle = _restart_browser(handles, edge_handle)
-                        cdp = CDP()
-                        _boot_page(cdp)
-                        try:
-                            wait_for(cdp,
-                                     "document.querySelector('#app').__vue_app__._instance.setupState.store.nodes.length > 0",
-                                     timeout=30, desc='重建后数据就绪')
-                        except Exception:
-                            print('  ⚠️ 重建后数据未就绪（后续用例可能误红）')
-                        _harness_open(cdp)
-                        print('  ↺ 已恢复（重启浏览器 + 重新导航）')
+                        cdp, edge_handle = recover_env('用例后刷新失败', cdp, edge_handle)
                     except Exception as e3:
-                        print(f'  ⚠️ 恢复失败（{e3}）—— 后续用例可能连锁超时')
+                        env_abort_banner(f'用例后刷新失败，重建也失败：{e3}')
+                        return 3
+            idx += 1
         cdp.close()
 
         total = passed + len(failed)
