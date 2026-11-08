@@ -251,7 +251,8 @@ unknown 25 条分布：设定/杂项 7、作品项目目录 3、扩展术语 3�
 1. **导入前体检**：25 条非地图页判掉 + 占位名过滤 + 目录名兜底。
    判据：待人工 31 → ≤7，且剩下每条都是真地图实体。**（已落地，见 9.5）**
 2. **明确“重新导入”的语义**：**已落地（选 A，2026-11-08）** —— 见 9.6。
-3. **C2 层保留**（不改代码，只改裁决）：`scanBrokenLinks` / `relinkEntity` 留下并进回归。**（未做）**
+3. **C2 层保留**（不改代码，只改裁决）：`scanBrokenLinks` / `relinkEntity` 留下并进回归。
+   **已落地（2026-11-08）** —— 见 9.8。
 
 ### 9.5 已落地：导入前体检（2026-11-08 本轮）
 
@@ -334,4 +335,27 @@ dirParentCandidate(sourcePath, { containerDirs, skipDirNames })
 
 ⚠️ 这条**推翻了 2026-09-27 的 A-2 定案**（“机器属性一律以项目为准”）。旧的 A-2 结论留在
 `docs/plan/DECISIONS_20261104.md` 与 test_58 的历史注释里，口径以本节为准。
+
+### 9.8 已落地：C2 裁决 + 数据层两条判据（2026-11-08 第二轮）
+
+**C2 裁决（不改代码，只改口径）**：`utils/vaultRelink.js`（`detectBrokenLinks` / `scoreCandidate`
+/ `describeCandidate`）与 `projectStore.scanBrokenLinks` / `relinkEntity` **保留**，并明确写进
+`AGENTS.md` 红线：**将来砍 B/D 层（全库索引、内置阅读器、跳转、绑定 UI）时不许连带删它**。
+理由就是 §9.3 那条 —— 搬家之后库改名/删笔记，只有它会说“项目里那条对不上库了”。
+回归现状（本来就一直在跑，本轮只是把裁决钉死）：
+`unit/test_vault_relink.js`（纯函数：断线检测 / 候选打分 / 路径归一）+ `test_75_broken_link_relink`（真机重连）。
+
+**数据层两条判据（§六-7）落地**：
+
+| 判据 | 落点 | 读数 |
+|---|---|---|
+| 空值不落盘 | `utils/projectSchema.js#stripEmptyEntityValues` + `projectStore` 落盘前调用 | 100 个空实体的载荷 **28,848 → 21,348 字符**；文件里再无 `"sourcePath":""` / `"parentId":null` / `"tags":[]` / 空坐标 |
+| 没有完成态 | `unit/test_entity_empty_values.js` B 段（白名单直读 `geodata.js` 的 `ENTITY_SHAPE_KEYS`） | 12 个键零完成态；塞一个 `progress` 进去探针**必须红** |
+
+- 口径：`stripEmptyEntityValues` **只改磁盘形态** —— 返回新对象、入参一个字不动；内存里仍是完整形状，
+  载入时 `validateProject` 把四类默认值补回来，所以 125 处 `sourcePath` 消费者一行不用改。
+- 边界（刻意不剥）：`id` / `name` / `layer` / `origin` 照旧写（有默认语义，缺了读侧只能靠猜）；
+  `y = 0` 不是空值、单轴为空也不算空坐标 —— 这两条都写成了用例里的探针，防止“越剥越干净”。
+- 与 `entityStatus.js` 的 `status` 不冲突：那是**叙事状态**（在 / 已毁灭 / 封存），不是完成度。
+- 守门：`node scripts/tests/unit/test_entity_empty_values.js`（11 条）。
 

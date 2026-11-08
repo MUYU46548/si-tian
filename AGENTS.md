@@ -530,6 +530,19 @@
   `mergeVaultPayload` 按源路径认亲 → 只更新 `layer` / `layerLabel` / `parentId` / `placeType` /
   `tags` / `wikilinks` / `status`；**保留** `name`（司天里改过的显示名）、`coordinate`、`uuid`、时间戳；
   载荷里没有的条目一个字段都不许动。别再按“机器属性一律以项目为准”改回去（`test_58` c3 段守着）。
+- **对账 / 重连层（C2）保留，砍联动时不许连带删**（2026-11-08 裁决，依据
+  [docs/plan/ANALYSIS_20261108_LORE_BRIDGE.md](docs/plan/ANALYSIS_20261108_LORE_BRIDGE.md) §九）：
+  `utils/vaultRelink.js`（`detectBrokenLinks` / `scoreCandidate`）与
+  `projectStore.scanBrokenLinks` / `relinkEntity` **留**。B/D 层（全库索引、内置阅读器、跳转、绑定 UI）
+  将来要砍时，**它不是同一批东西** —— 搬家之后库一改名/一删笔记，只有它会把“项目里那条对不上库了”
+  说出来；砍了它，“140 个实体搬进来”就变成“搬进来那天的快照，之后库怎么改司天都不知道”。
+  守门：`unit/test_vault_relink.js` + `test_75_broken_link_relink`（改 tombstone / 候选打分别放宽）。
+- **数据层两条判据：空值不落盘 + 没有完成态**（2026-11-08，报告 §3-2 / §3-3）：
+  ① 实体落盘前过 `stripEmptyEntityValues()`（`utils/projectSchema.js`）—— `sourcePath: ''` /
+  `parentId: null` / `tags: []` / 空坐标**不写进文件**；它只改磁盘形态，内存仍是完整形状，
+  载入时 `validateProject` 把默认值补回来，所以读侧一行不用改。② 实体上**不许有**
+  `complete` / `progress` / `missing` 这类完成度字段（“不许把结构变成填表门槛”的落地）。
+  守门：`unit/test_entity_empty_values.js`（11 条，含“y=0 不是空值”与“塞 progress 必须红”两条探针）。
 - **不要整读大文件**：`ScenarioMap.vue`（**6,106 行**，2026-11-03 把 1,649 行样式搬到
   `scenario-map.css`，原来 8,554 行）/ `PlanetMap.vue`（4,559 行）是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
   （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。

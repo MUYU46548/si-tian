@@ -438,6 +438,44 @@ export function createEntity(input = {}) {
 }
 
 /**
+ * 落盘前把实体上的**空值**剥掉（2026-11-08，数据层判据① / 报告 §3-2）。
+ *
+ * 依据：`docs/plan/ANALYSIS_20261108_LORE_BRIDGE.md` §六-7 —— 项目文件里不许出现
+ * `sourcePath: ''` / `parentId: null` / `tags: []` / `coordinate: {x:null,y:null}` 这种
+ * “没填也写一遍”的占位值。它们不携带信息，却会 ① 把文件撑大、② 读起来像“已经填过了”、
+ * ③ 让快照与 diff 里全是噪音。
+ *
+ * 两条口径必须同时为真：
+ *   · **只改磁盘形态**：返回新对象，入参与内存里的项目一个字不动（仍是完整形状）；
+ *   · **读侧默认不变**：`validateProject()` 载入时照旧把这些键补成默认值
+ *     （`parentId: null` / `tags: []` / `coordinate: {x:null,y:null}` / `sourcePath: ''`），
+ *     所以界面、渲染层、125 处 `sourcePath` 消费者一行不用改。
+ *
+ * 只剥这四类空值。`id` / `name` / `layer` / `origin` 这类**带默认语义**的字段照旧写 ——
+ * 缺了它们读侧只能靠猜，不归本函数管。
+ *
+ * @param {object} project 项目对象
+ * @returns {object} 新项目（`entities` 里四条空值已去掉）；入参不是项目对象时原样返回
+ */
+export function stripEmptyEntityValues(project) {
+  if (!isPlainObject(project) || !isPlainObject(project.entities)) return project;
+  const entities = {};
+  for (const [id, entity] of Object.entries(project.entities)) {
+    if (!isPlainObject(entity)) { entities[id] = entity; continue; }
+    const out = { ...entity };
+    if (!out.parentId) delete out.parentId;
+    if (Array.isArray(out.tags) && out.tags.length === 0) delete out.tags;
+    const c = out.coordinate;
+    const noX = c === undefined || c === null || c.x === null || c.x === undefined;
+    const noY = c === undefined || c === null || c.y === null || c.y === undefined;
+    if (isPlainObject(c) && noX && noY) delete out.coordinate;
+    if (out.sourcePath === '') delete out.sourcePath;
+    entities[id] = out;
+  }
+  return { ...project, entities };
+}
+
+/**
  * 实体是否可作为 `parentId` 目标的候选（排除自身与后代 —— 防循环的 UI 侧入口）。
  * @returns {string[]} 不允许作为父级的 id 列表
  */

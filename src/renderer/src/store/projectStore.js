@@ -47,6 +47,8 @@ import {
   // 2026-10-11 体积/时间戳：画布实体表合并时保住 createdAt/updatedAt（否则每次保存
   // 都把 120 个实体标脏 → 快照全是噪音，见该函数注释）
   preserveEntityTimestamps,
+  // 2026-11-08 数据层判据①：落盘前剥掉实体上的空值（内存形状不变，读侧 validateProject 补回）
+  stripEmptyEntityValues,
   LAYER_LABELS,
   LAYER_ORDER,
   SNAPSHOT_DIFF_KEYS,
@@ -771,7 +773,10 @@ export const useProjectStore = defineStore('project', () => {
       //    `toIpcJson` 出文本 → 主进程直接写（见 projectHandler 的 atomicWriteText）。
       //    ⚠️ 两种形态必须**逐字节同形**：都过 `unwrapRaw` + `jsonSafeReplacer`（同一份实现）。
       // 2026-11-05：改成**分块序列化**（同一份文本，逐字节与 `toIpcJson` 相同；块之间让出一拍）。
-      const projectJson = await toIpcJsonChunked(withSnapshot);
+      // 2026-11-08：序列化前剥掉实体上的空值（`sourcePath:''` / `parentId:null` / `tags:[]` /
+      //   空坐标）—— 只改磁盘形态：`withSnapshot` 本身不动，内存里仍是完整形状；
+      //   载入时 `validateProject` 会把默认值补回来，读侧一行不用改。
+      const projectJson = await toIpcJsonChunked(stripEmptyEntityValues(withSnapshot));
       lap('serialize');
       const res = await a.projectSave({ filePath: filePath.value, projectJson });
       lap('ipc');
