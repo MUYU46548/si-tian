@@ -20,7 +20,15 @@
 - 开发模式 (仅前端): `npm run dev`（端口 **5180**）
 - 开发模式 (Electron 完整): `npm run dev:watch`（wait-on tcp:5180 后拉起 Electron）
 - 构建生产版本: `npm run build`
-- 打包安装包: `npm run dist`（electron-builder → `release/SiTian Setup <版本>.exe`）
+- 打包安装包: `npm run dist`（→ **仓库外**的产物目录，见下条；不再写 `release/`）
+- **打包产物不许落进仓库（2026-11-08 用户拍板：“构建目录本来就不应该跑到其他文件夹里污染仓库”）**：
+  输出目录由 `scripts/lib/distPaths.mjs` 算（**唯一实现**）——默认 `%LOCALAPPDATA%\sitian-build\release`
+  （macOS = `~/Library/Application Support/sitian-build`，Linux = `$XDG_DATA_HOME/sitian-build`），
+  可用环境变量 `SITIAN_DIST_ROOT` 覆盖；`npm run dist / dist:dir / dist:publish` 一律经 `scripts/dist.mjs`
+  （它把 `--config.directories.output=<算出来的>` 透传给 electron-builder）。**不要再裸调 electron-builder**，
+  也不要再靠 `release-xxx/` 换目录（历史上这么攒出 10 个目录 / 3.9 GB，已清）。
+  验包脚本 `drill_packaged_app.py` 也问同一个模块（不自己算）。守门：`unit/test_dist_paths.js`
+  （默认不在仓库内 + 三个脚本都走 dist.mjs + 反向探针）。
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**165 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
@@ -103,6 +111,28 @@
   ② **浮层顺序**：先关免责声明再跳新手引导 —— 反过来接受声明之后引导层会再弹一次，截图整页是弹窗；
   ③ 免责声明的勾选框是 reka-ui 的 `button[role=checkbox]`，程序化 `.click()` 不稳 ——
   直接置组件 `setupState.agreed = true` 再点“同意并继续”（仍走组件自己的 `accept()`）。
+- **全仓纯图标按钮闸门（2026-11-08）**: `node scripts/tests/unit/test_icon_buttons.js` —— 扫**全部 105 个 .vue**
+  （不是组件名单），口径与面板闸门同源：文字 / 通用符号（× ✕ ＋ − ⤢ ↺ ↻）/ 通用图标（x、close、plus、
+  minus、chevron-*）/ 色块 / 选图 / 展开折叠 均豁免。**基线棘轮**：未登记的文件必须是 0，
+  总数必须恰好等于基线之和（修掉一个就同步下调 `BASELINE`）。带 4 条反向探针。**现状 = 0**。
+  **顶栏的解法（同日收口，14 → 0）**：主力动作（历史 / 提取 / 保存 / 项目 / 同步 / 书签 / 导出 / 设置）
+  图标 + 2 字常驻；低频动作（打开知识库 / 图层 / 快捷键 / 变更日志 / 数据检查 / 切换主题）收进
+  `App.vue` 的 `.header-more` 浮层（每一项也是图标 + 文字）。**浮层用 `v-show` 而不是 `v-if`**：
+  菜单项常驻 DOM，既有那批按 `title` 找 `.toolbar-actions button` 的用例（test_04/117/124/30/32/47）不必改；
+  可达性由真机判据守：`python scripts/tests/tools/shot_settings_panel.py --view header`
+  （按钮全有字 / 1920 与 1280 都不横向溢出 / 浮层能开、项都有字、完整在视口内 / 点外面能收起 ——
+  收起必须用**真实鼠标事件**，`body.click()` 只派发 click 不派发 mousedown 会假红）。
+- **设置面板真机检查（2026-11-08）**: `python scripts/tests/tools/shot_settings_panel.py` —— 起 Vite(5180)
+  + **真实 Electron**（隔离 profile、CDP 9225）+ **乱库夹具副本**（`vault-fixture-messy` 复制到 build 里，
+  仓内夹具只读）→ 真点“重建索引”（不建索引时摘要行 `v-if` 不渲染，判“有没有溢出”就是**空转**）→
+  量 `[data-testid=geo-parent-dirs]` 的几何：说明文字宽 ≥220（横排压扁时会变成一列字）、输入框 ≥220×48、
+  三个按钮文字没被裁且没竖排、摘要行 `scrollWidth <= clientWidth+2`、待人工行标题**不是 H1 的“概述”**、
+  理由没被 ellipsis 吃掉；截图 `build/settings-panel/settings.png`。
+  🔴 两个只在真机上才现形的坑：① 把“说明 + 输入 + 按钮”塞进 `.setting-item`（那是横排 flex）→
+  说明被压成一列字、按钮叠在一起，**源码闸门与 test_124 全绿**（用户截图才看见）；
+  ② 首启免责声明是 gate 模式（滚到底 + 勾选两道门槛），程序化点 disabled 按钮是静默 no-op →
+  截图整页是弹窗而 DOM 判据照绿。工具里改成“拿 `DISCLAIMER_ACK_KEY` 自己写 ack 再重载”，
+  并把“免责声明已关掉”列成**硬判据**。
 - emoji 审计: `python scripts/emoji_audit.py`（`--detail` 附行号上下文，`--file <path>` 单文件）
 - 退出前落盘真机演练: `python scripts/tests/drill_quit_flush.py`（起真实 Electron + dist + 真实库/项目，
   **纯 UI 驱动 + 读盘核对**；P1 强杀做负向探针 / P2 Ctrl+Q / P3 点 ×；跑前自动备份并还原项目与配置。
@@ -488,6 +518,18 @@
   查关系走 `utils/scenarioEventLedger.js`；**不许**把归属复制进事件表（或反过来）——
   两份真值迟早漂移，且归属回放会被无关事件拖慢（`test_132` / `unit/test_scenario_event_ledger.js` 守）。
 - **读料必须只读**（2026-10-22）：扫知识库（`vaultIndex.buildIndex` / `vault-scan.mjs` / `vault-classify-report`）一律 `write:false` / `writeCache:false`，**连 `.sitian` 都不碰**；要产物就写 `--out` 指定的库外目录。归类/推断只有一份实现（`scripts/lib/vaultClassify.js`），认不出就进「待人工」，不许默认成地点（`unit/test_vault_classify.js` 用库指纹快照守）。
+- **库的目录习惯不许写进代码**（2026-11-08，用户原话：“这样永远只能我一个人用，不是通用的”）：
+  “哪个目录算地名容器”是**每个库自己的习惯**，不许硬编码（上一版把 `02 场景地点` / `11 地理系统` /
+  `杂项` / `移动设施` 写进代码，只有这台机器能用，已删）。规则是参数：
+  `dirParentCandidate(path, { containerDirs, skipDirNames })`，**默认空 = 不猜**；给一次配置才生效
+  （`config.json` 的 `geoContainerDirs` / `vault-scan --container`）；拿不到配置时只打印
+  “建议当容器”的目录（`report.containerSuggestions`），**不许自动应用**。内置的只有语言层面的
+  层级词（世界/星域/星系…）与占位名（待补充/未命名…）。
+  守门：`unit/test_import_preflight.js` 第九条（不配置就不许猜）+ `test_124`（面板只填不保存）。
+- **重新导入按 `sourcePath` 更新机器字段**（2026-11-08 用户选 A，**取代 2026-09-27 的 A-2**）：
+  `mergeVaultPayload` 按源路径认亲 → 只更新 `layer` / `layerLabel` / `parentId` / `placeType` /
+  `tags` / `wikilinks` / `status`；**保留** `name`（司天里改过的显示名）、`coordinate`、`uuid`、时间戳；
+  载荷里没有的条目一个字段都不许动。别再按“机器属性一律以项目为准”改回去（`test_58` c3 段守着）。
 - **不要整读大文件**：`ScenarioMap.vue`（**6,106 行**，2026-11-03 把 1,649 行样式搬到
   `scenario-map.css`，原来 8,554 行）/ `PlanetMap.vue`（4,559 行）是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
   （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。

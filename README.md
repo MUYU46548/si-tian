@@ -75,7 +75,7 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 | `npm run dev` | 仅前端开发服务器（5180） |
 | `npm run dev:watch` | 前端 + Electron（真实应用） |
 | `npm run build` | 构建生产前端到 `dist/` |
-| `npm run dist` / `dist:dir` | 打 Windows 安装包 / 仅解压目录（输出 `release/`） |
+| `npm run dist` / `dist:dir` | 打 Windows 安装包 / 仅解压目录（输出到**仓库外**：`%LOCALAPPDATA%\sitian-build\release`，脚本会打印路径；可用 `SITIAN_DIST_ROOT` 改） |
 | `npm run extract-data` | 从知识库提取地理节点到 `<vault>/.sitian/geodata.json` |
 | `npm run audit-coverage` | 提取覆盖率审计（只读；`-- --write-report` 落报告） |
 | `npm run audit-project-size` | **项目体积审计（只读）**：正文 / 各顶层键 / 快照 / `.backups` 各占多少，并点名"哪条路径被重复存了很多份"（默认挑默认目录里最大的 `.sitian`；`-- --all` 列全部） |
@@ -86,7 +86,7 @@ npm run dev:watch    # 完整 Electron（推荐；有真实文件系统与持久
 | `python scripts/gen_architecture_map.py` | 再生成 `docs/ARCHITECTURE_MAP.md` 的清单节（`--check` 自检） |
 | `python scripts/emoji_audit.py` / `python scripts/icon_check.py` | emoji 审计 / 图标名一致性校验 |
 | `python scripts/tests/drill_quit_flush.py` | **真机演练**：P1~P3 退出前落盘（强杀 / Ctrl+Q / 点 ×）＋ **P4 剧本基础操作**（建省 / 拖边界 / 右键删省 / 剧本增改删，每步读盘核对）；起真实应用与真实项目，会短暂开一个真实窗口。⚠️ P1~P3 要求**空项目**，有内容的项目请用 `--phase p4` |
-| `python scripts/tests/drill_package_smoke.py` | **打包产物冒烟**：在 `release-inst/win-unpacked/resources/app.asar`（安装包里的同一份代码）上走「进历史剧本 → 返回世界选择」，断言卸载钩子不抛错（0.2.3 的 `provinceGridTimer` 崩溃只在卸载时发生）。带阳性对照（故意抛错验证探测器真的会响）；userData 隔离到临时目录，真实项目与日志零改动 |
+| `python scripts/tests/drill_package_smoke.py` | **打包产物冒烟**：在打包出来的 `win-unpacked/resources/app.asar`（安装包里的同一份代码）上走「进历史剧本 → 返回世界选择」，断言卸载钩子不抛错（0.2.3 的 `provinceGridTimer` 崩溃只在卸载时发生）。带阳性对照（故意抛错验证探测器真的会响）；userData 隔离到临时目录，真实项目与日志零改动。先 `npm run dist:dir` |
 
 ### 首次启动
 

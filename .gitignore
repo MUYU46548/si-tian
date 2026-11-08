@@ -3,7 +3,8 @@ node_modules/
 
 # Build output
 dist/
-# release*/ 而非 release/：electron-builder 换输出目录时会建 release-xxx/（如 release-green/）
+# 打包产物：默认**不落仓库**（2026-11-08 起 `npm run dist*` 输出到 %LOCALAPPDATA%\sitian-build\release）。
+# 这条规则留着只做保险：万一手工把目录指回来，也不至于把几个 GB 的 exe 提交上去。
 release*/
 
 # Cache
@@ -204,3 +205,8 @@ build/note-binding/
 # 复现：npm run test:era-smooth
 build/era-smooth/
 build/probe-save/
+
+# 顶栏/设置面板/工具栏行的真机截图（2026-11-08）：本地证据，禁止提交
+# 复现：python scripts/tests/tools/shot_settings_panel.py
+build/settings-panel/
+build/toolbar-row-styles/
