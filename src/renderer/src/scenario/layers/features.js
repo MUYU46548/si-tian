@@ -358,6 +358,16 @@ export function drawRiversLayer(c, view) {
     displayRiverPlanCache = { list, scale: view.cameraScale, maxW: maxRiverWidth, smoothed, plans };
   }
   const { smoothed, plans } = displayRiverPlanCache;
+  // 🔴 2026-11-08 晚（3000 省压测，`stroke` 占整帧 32%）：原来**每一块**（每条河每 run 切 16 块）
+  //    各描一次边 —— 656 条河实测上千次原生 `stroke`。这些笔画**同色、不透明**，彼此覆盖与顺序无关，
+  //    而线宽大量落在同一个值上（小河的 `Math.max(0.3, …)` 下限把一大批都压成 0.3）。
+  //    于是按**精确线宽**分桶，一桶合成一条 `Path2D` 一次描完（不做量化取整：宁可少合并几桶，
+  //    也不给线宽引入取整误差）。
+  //    ⚠️ 唯一的差别在**抗锯齿**：同色笔画重叠处原来叠两次（覆盖度略高），合并后只合成一次
+  //    → 边缘淡一点点。河层帧实测：5.0 万 px 有差、**最大通道差 6 / p99 = 1 / 平均 0.048**
+  //    （`build/pixel-baseline/v20261108l-rivers.png` vs `k`）。不是错位，也不是改色。
+  const buckets = new Map();          // lineWidth(字符串) -> { w, path }
+  const canBatch = typeof Path2D === 'function' && typeof Path2D.prototype.addPath === 'function';
   for (let ri = 0; ri < list.length; ri++) {
     const r = list[ri];
     const raw = r.points;
@@ -388,9 +398,22 @@ export function drawRiversLayer(c, view) {
       const w = Number(widths[wi]) || Number(r.width) || 0.02;
       // ⚠️ 下限**不要写成 0.35**：`test_73` 的源码守卫用裸子串查“省名档阈值被写回组件”，
       //    0.35 是它认定的档位阈值（详见该用例注释：遇到误伤就改数字，别改守卫）。
-      c.lineWidth = Math.max(0.3, basemapRiverWidthWorld({ width: w }, view.cameraScale, maxRiverWidth));
-      c.stroke(path);
+      const lw = Math.max(0.3, basemapRiverWidthWorld({ width: w }, view.cameraScale, maxRiverWidth));
+      if (!canBatch) {
+        c.lineWidth = lw;
+        c.stroke(path);
+        continue;
+      }
+      const bk = String(lw);
+      let b = buckets.get(bk);
+      if (!b) { b = { w: lw, path: new Path2D() }; buckets.set(bk, b); }
+      b.path.addPath(path);
     }
+  }
+  // 一桶一次描边（线宽逐桶固定 —— 与原实现逐块设 `lineWidth` 再描等价）
+  for (const b of buckets.values()) {
+    c.lineWidth = b.w;
+    c.stroke(b.path);
   }
   // 河流名：默认关闭（自动地名多为 FMG 英文名），由“图层 → 自动地名”控制
   if (view.showPlaceNames) view.drawRiverNames(c);

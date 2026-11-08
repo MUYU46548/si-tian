@@ -995,6 +995,7 @@ import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
 import { renderProfiler, attachFrameTotal } from '../scenario/renderProfile';
 import { rasterProgressiveOpts, setRasterRefineHandler, bakeWidthFor } from '../scenario/rasterRefine';
+import { reliefRasterFor } from '../scenario/reliefRasterSlot';
 import { reliefPatchPass } from '../scenario/viewBake';
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
 import { drawProvincesLayer, drawProvinceBordersLayer, drawPolityBordersLayer } from '../scenario/layers/provinces';
@@ -3943,22 +3944,19 @@ function reliefOn() {
   return !!(hm && hm.grid && Array.isArray(hm.grid.points) && hm.grid.points.length);
 }
 
-/** 浮雕栅格（与导出共用同一份缓存；key 里带高度图引用，涂抹/撤销后自动失效） */
+/**
+ * 浮雕栅格（与导出共用同一份“只长不缩”槽，见 `scenario/reliefRasterSlot.js`）。
+ * 缓存键 = **高度图对象引用**（涂抹/撤销/重采样都会换对象 → 自动失效）。
+ */
 function getReliefRaster() {
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
   if (!hm) return null;
-  const key = baseMapKey.value + '|relief|bw' + bakeWidthFor(hm, cameraScale.value);
-  const hit = rasterCache.get(key);
-  if (hit && hit.hm === hm) return hit.raster;
-  // kind 取 'relief'（2026-11-03 专用色带：低饱和灰绿→灰褐）+ 山体阴影。
-
   // 🔴 2026-11-04（暮雨：“这些奇怪的阴影，尤其是海岸边界”）：原来写死 `shade: 1.25`，
   //    在 193×88 的格子上，一格 ≈ 4~5 屏幕像素，再被双线性放大 —— 每座丘陵都变成
   //    一块几十像素的软斑，海岸那圈更低的高度差直接糊成“投影”。改成 0.85，并把明暗区间
   //    收到 0.90~1.02（原来是 0.80~1.03）：阴影只负责“坡向”，不再负责“脏”。
-  const built = buildHeightmapRaster(hm, 'relief', { shade: 0.85, min: 0.9, max: 1.02, bakeWidth: bakeWidthFor(hm, cameraScale.value) });
-  if (built) rasterCache.set(key, { hm, raster: built });
-  return built;
+  return reliefRasterFor(hm, bakeWidthFor(hm, cameraScale.value),
+    (need) => buildHeightmapRaster(hm, 'relief', { shade: 0.85, min: 0.9, max: 1.02, bakeWidth: need }));
 }
 
 /**

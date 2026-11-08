@@ -148,15 +148,38 @@ export function drawProvinceBordersLayer(c, view) {
   const multi = view.multiSelect;
   const terrain = view.rawTerrain();
   // ── 第一遍：普通边界（不透明、统一线宽 —— 共边叠加也还是同一个色）────────
+  // 🔴 2026-11-08 晚（3000 省压测）：原来逐省 `stroke(path)` —— 3000 次原生描边调用，
+  //    CPU 采样里 `stroke` 占整帧 32%，其中这一层与河流是大头。第一遍是**一个颜色、一个线宽**，
+  //    本来就可以合成一条路径一次描（`Path2D.addPath`）→ 3000 次 → 1 次。
+  //    ⚠️ 唯一的差别在**共边处的抗锯齿**：同色笔画叠两次的覆盖度比合并后略高 → 共边淡一点点。
+  //    主帧实测 **83 px / 480,600（0.017%）**、最大通道差 21，且只落在省界的抗锯齿带上
+  //    （热图 `build/pixel-baseline/diff-v20261108k-v20261108l.png`）。不是线宽/颜色/位置的改变。
+  //    浏览器没有 `addPath` 时退回逐省描边（行为与以前一字不差）。
+  const canBatch = typeof Path2D === 'function'
+    && typeof Path2D.prototype.addPath === 'function';
   c.save();
   c.strokeStyle = view.PROVINCE_BORDER_COLOR;
   c.lineWidth = view.px(view.PROVINCE_BORDER_PX);
-  for (const prov of terrain) {
-    const rp = view.rawProvOf(prov);
-    // 边界与填充共用同一份 Path2D 缓存：每帧不再重描 2.4 万顶点
-    const path = view.provincePathFor(rp, view.altStraight);
-    if (!path) continue;
-    c.stroke(path);
+  if (canBatch) {
+    const all = new Path2D();
+    let any = false;
+    for (const prov of terrain) {
+      const rp = view.rawProvOf(prov);
+      // 边界与填充共用同一份 Path2D 缓存：每帧不再重描 2.4 万顶点
+      const path = view.provincePathFor(rp, view.altStraight);
+      if (!path) continue;
+      all.addPath(path);
+      any = true;
+    }
+    if (any) c.stroke(all);
+  } else {
+    for (const prov of terrain) {
+      const rp = view.rawProvOf(prov);
+      // 边界与填充共用同一份 Path2D 缓存：每帧不再重描 2.4 万顶点
+      const path = view.provincePathFor(rp, view.altStraight);
+      if (!path) continue;
+      c.stroke(path);
+    }
   }
   c.restore();
   // ── 第二遍：选中 / 多选 / 合并目标（只画这几个，顺序=层叠顺序）──────────────

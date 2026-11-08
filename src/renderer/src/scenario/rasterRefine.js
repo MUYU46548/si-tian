@@ -38,8 +38,19 @@ export function bakeHeightmap() {
 }
 
 /** 高度图覆盖的世界宽度（含一格 padding；与 `heightmapRaster` 内部同一口径） */
+// 🔴 2026-11-08 晚（3000 省 / 15.4 万格压测）：这个函数**每帧被调 2~3 次**（`bakeWidthFor`
+//    → `getReliefRaster` / `getRaster`），而它要遍历全部格点求 min/max X。15.4 万格 × 每帧 2 次
+//    实测占整帧 **21%（≈63ms/帧）**，CPU 采样里 `worldWidthOf` 排第二、Vue 响应式 `get` 排第四
+//    —— 那 63ms 全部是"每帧重算一个永远不变的常量"。
+//    世界宽度只随**高度图对象**变（换图/重采样/涂抹都会换对象）→ 按对象记忆化，一次算完。
+//    口径不变（同一个返回值的纯函数），只是不再重复算。
+const worldWidthCache = new WeakMap();
+
 export function worldWidthOf(hm) {
-  const pts = hm && hm.grid && hm.grid.points;
+  if (!hm || !hm.grid) return 1;
+  const cached = worldWidthCache.get(hm);
+  if (cached) return cached;
+  const pts = hm.grid && hm.grid.points;
   if (!Array.isArray(pts) || !pts.length) return 1;
   let minX = Infinity, maxX = -Infinity;
   for (let i = 0; i < pts.length; i++) {
@@ -48,7 +59,9 @@ export function worldWidthOf(hm) {
     if (x > maxX) maxX = x;
   }
   const sp = Number(hm.grid.spacing) || 8;
-  return Math.max(1, maxX - minX + 2 * sp);
+  const w = Math.max(1, maxX - minX + 2 * sp);
+  worldWidthCache.set(hm, w);
+  return w;
 }
 
 /**

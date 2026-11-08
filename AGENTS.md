@@ -165,8 +165,16 @@
   `--tag after` 再拍一次、`--compare before after` 比 —— 起 Vite(5180)+Edge(9222)，用**自带底图（3 省）**固定取景，
   落 `build/pixel-baseline/<tag>.json`（整图 FNV-1a + **关标注**后的几何层指纹 + camera）与同名 PNG。
   非 0 退出 = 逐像素判据没过。⚠️ 不要与 `run_tests.py` / 其它要 5180/9222 的演练同时跑
-  - **当前基线 = `v20261108k`**（2026-11-08 立，`hash 372350fc` / `hashNoLabels 4cc0feb0` /
-    **`riverHash b7c599ef`** / riverCamera scale 3.5）。变化：**视口块默认开**（`scenario/viewBake.js`）——
+  - **当前基线 = `v20261108l`**（2026-11-08 立，`hash 9910bd4` / `hashNoLabels 80b07d44` /
+    **`riverHash 7be13ef5`**）。变化来自**渲染批处理**（只为性能，不改观感，量的证据见下）：
+    省界第一遍合成一条 `Path2D` 一次描（3000 省 3000 次 `stroke` → 1 次）、导入河按**精确线宽**分桶描。
+    两张帧的实测差：主帧 **83 px / 480,600（0.017%）**、最大通道差 **21**、差异只落在共边描边的
+    抗锯齿覆盖上（热图 `build/pixel-baseline/diff-v20261108k-v20261108l.png`）；河层帧 5.0 万 px 有差
+    但**最大通道差 6 / p99 = 1 / 平均 0.048**（合并路径后重叠边缘少叠一次）——即"变淡一点点"，不是错位。
+    量差工具：`<bundled python> scripts/tests/tools/diff_pixel_baseline.py <a.png> <b.png>`
+    （Pillow 读 IHDR，不手写 `reshape` —— 上一版的假数字就是这么来的）。
+  - `v20261108k`（`hash 372350fc` / `4cc0feb0` / **`riverHash b7c599ef`** / riverCamera scale 3.5）**作废**
+    （`l` 的批处理改了共边抗锯齿）。它那轮做的事仍然有效：**视口块默认开**（`scenario/viewBake.js`）——
     相机静止 260ms 且无手势时，只为**可见世界矩形**烘一块（≤1024px），叠在整幅底图上补清晰度。
     适屏档按“每世界单位像素数”判据跳过（所以主帧与前两版逐像素一致），只有河层帧（3.5×）被更清晰的块覆盖。
     开/关两块的真机对比：逐像素平均通道差 **4**、8×8 块平均 **1.5** = 只是变锐，不是偏色/错位
@@ -357,6 +365,38 @@
   从 0.2s 变 28s，看着像卡死；② 大动作**先发起、再轮询一句短话**，别把大 adopt 包进 `awaitPromise`
   （15s WS 超时会被读成“挂了”）；③ **stdout/stderr 分开落盘**（`1>out.log 2>err.log`）：PowerShell 的
   `Tee-Object` 只收 stdout，Python traceback 在 stderr，只看日志会把异常退出读成“静默死亡”。
+- **规模帧时间探针（2026-11-08 晚，性能账的唯一入口）**: `python scripts/tests/tools/probe_scale_frames.py
+  --project build/eu4-scale/bench-p3000-g512.sitian --key sample_land --profile --profile-open`
+  —— Vite(5180)+Edge headless(9222)+mock IPC，**只读**。它量四段并给**逐层明细**：
+  ① `openProject` 落地毫秒（adopt）② 点「历史剧本」→ 画布出现（用户感知的“开图”）③ 暖帧 / 平移帧 /
+  放大帧各 8–12 拍的中位+最大 ④ `--profile` 的 CPU 自耗时、`--profile-open` 的开图段采样。
+  默认走**产品口径**（分块烘焙 + 视口块开）；`--sync-bake` / `--no-view-patch` 只用来量最坏情况。
+  压测项目生成：`node scripts/tests/tools/make_bench_project.mjs --provinces 3000 --grid 512`
+  → `build/eu4-scale/bench-p3000-g512.sitian`（3000 省 / 15.4 万格 / 656 河）。
+  **2026-11-08 晚的读数（本机，1080×634）**：
+  | 场景 | 修之前 | 修之后 |
+  |---|---|---|
+  | 3000 省 开图（点页签→画布） | 5.4s | **2.4s** |
+  | 3000 省 暖帧 | 285ms | **14ms** |
+  | 3000 省 平移帧 | 291ms | **25ms** |
+  | 3000 省 放大一档 | 2817ms | **23ms** |
+  | 415 省（真实项目副本）开图 | ~1.4s | **0.8s** |
+  | 415 省 暖帧 | — | **14.6ms** |
+  🔴 **四条归因（都靠采样，不靠猜）**：
+  ① `worldWidthOf` 每帧遍历 15.4 万格算一个**永远不变**的世界宽度 —— 占整帧 21%（≈63ms），
+     加上被它带出来的 Vue 响应式开销（`get` / `reactive` / `isDirty`）合计 ≈150ms/帧。
+     修法 = 按高度图对象 `WeakMap` 记忆化（`scenario/rasterRefine.js`）。
+  ② 浮雕整幅栅格的缓存键里带**当前缩放算出的烘焙宽度** → 适屏时重烘一张、放大跨档再重烘一张
+     （实测 2.76s）。修法 = `scenario/reliefRasterSlot.js` 的「只长不缩」槽：手里那张够宽就复用，
+     缩小时用大图 `drawImage` 缩下来；只有真需要更宽或高度图换对象才重烘。
+  ③ 省界第一遍 / 导入河：**一个颜色一个线宽**却逐省逐块 `stroke`（数千次原生调用，`stroke` 占 32%）。
+     修法 = `Path2D.addPath` 合成后一次描（河还按精确线宽分桶）。
+  ④ **上一条卡的“每帧重建 3000 条 Path2D（6.4ms）”是误判**：`provincePathFor` 的引用比较一直在命中，
+     那 6.4ms 就是 3000 次 `fill`+`stroke` 的原生开销。修完 ① 之后它只剩 3.5–6.5ms，
+     所以“省色块走位图”这件事的收益远小于它的复杂度 —— **先修量错的尺子，再谈架构**。
+  ⚠️ 探针的两个口径坑：`Page.captureScreenshot` 与 `canvas.toDataURL` 的 PNG `colorType` 不同
+  （2 = RGB / 6 = RGBA，见上一条纪律）；`__SITIAN_RASTER_SYNC__ = true` 会把“先粗后精”变成同步烘，
+  读数会看到放大器级的假冻结 —— 报数前先确认口径。
 - **六个浮层的视觉直判**: `npm run test:overlays`（`drill_scenario_overlays_visual.py`）—— 每块面板 9 条：
   包装节点**恰好 1 个**（重复 = 两块面板精确重叠，2026-11-03 真实踩到）、可见面积、完整在视口内、
   `elementFromPoint(面板中心)` 没被盖、背景不透明、正文对比度 ≥4.5:1（暗色）、不整块挡死画布、
