@@ -994,6 +994,7 @@ import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 // N1 刀 1：四层里已搬出本文件的三组（底图 / 海岸浅滩 / 省界）；文字标注层下一波
 import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
 import { renderProfiler, attachFrameTotal } from '../scenario/renderProfile';
+import { rasterProgressiveOpts, setRasterRefineHandler } from '../scenario/rasterRefine';
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
 import { drawProvincesLayer, drawProvinceBordersLayer, drawPolityBordersLayer } from '../scenario/layers/provinces';
 // N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
@@ -3887,6 +3888,8 @@ function buildCellRaster(kind) {
     // 目视判据：`drill_scenario_pixels.py --raster height --tag terrain-on`（第 6 刀新加的开关）。
     // 对照图：`build/pixel-baseline/terrain-off.png`（纯色块，糊且脏）vs `terrain-on.png`。
     contour: (kind === 'height' || kind === 'relief'),
+    // 底档固定 4096 宽烘焙（≈8–9 秒 CPU）→ 走“先粗后精”分块，精修完成时通知重画一帧
+    progressive: rasterProgressiveOpts(24),
   });
 }
 
@@ -5037,6 +5040,9 @@ onMounted(async () => {
     cvs.style.height = h + 'px';
   }
   ctx.value = cvs.getContext('2d');
+  // 底档烘焙是分块做的（4096 宽 ≈8–9 秒）→ 精修完成时重画一帧，把清晰版顶到屏幕上
+  // 异常由渲染护栏记录，这里不吞
+  setRasterRefineHandler(() => render());
 
   // P0: 恢复上次使用的底图键（全局配置）——但只在**当前项目里确实存在**这张底图时才用
   if (window.sitianAPI?.getCurrentBaseMapKey) {
@@ -5136,6 +5142,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect();
+  setRasterRefineHandler(null);
   if (settleFitTimer) { clearTimeout(settleFitTimer); settleFitTimer = null; }
   // 🔴 帧合并的 rAF 也要清（与“谁建了定时器就要清”同一条纪律）：
   //    卸载后回调仍会跑 `render()` → `ctx` 已失效 → 抛进渲染护栏 → 控制台刷错误。

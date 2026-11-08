@@ -113,6 +113,17 @@ export const RASTER_SEA_LEVEL = 20;
  * ⚠️ 顺带更省内存：输出边长 ≈ `w·SS/spacing`，面积只有旧实现的 `(SS/spacing)²` ≈ 1/13。
  */
 export const RASTER_SUBSAMPLE = 4;
+
+/**
+ * **底档烘焙宽度**（2026-11-08 用户拍板：4096）。
+ *
+ * 为什么改成固定宽度：老口径的输出画布宽 = `世界宽 × RASTER_SUBSAMPLE / 格距`——
+ * 格距越细画布越大，于是“提网格精度”会同时放大像素量与逐格工作（首帧 1.1s → 5.7s → 12.7s）。
+ * 固定宽度之后首帧只跟这个数有关。实测（`shot_real_project.py --probe-bake`）：
+ * 4096 宽 ≈ 9.9 百万像素 ≈ **8–9 秒 CPU**（0.86–1.02 ms/百万像素），
+ * 所以**必须配 `progressive` 分块**，否则每次打开/改地形都冻 9 秒。
+ */
+export const BAKE_BASE_WIDTH = 4096;
 /** 平滑档默认开关（false = 回到旧的逐格方块观感；同时影响两视图与导出全图） */
 export const RASTER_SMOOTH = true;
 
@@ -492,6 +503,15 @@ export function buildSalineLakeCellSet(hm, limit = 20000) {
  *   调用方用 `ctx.drawImage(r.canvas, r.minX, r.minY, r.w, r.h)` 贴到**世界坐标**上。
  */
 export function buildHeightmapRaster(hm, kind, opts) {
+  // 默认按**固定宽度**烘焙（见 `BAKE_BASE_WIDTH`）；调用方可用 `bakeWidth` 覆盖（粗档/瓦片）。
+  opts = opts || {};
+  if (!Number.isFinite(opts.bakeWidth)) opts = { ...opts, bakeWidth: BAKE_BASE_WIDTH };
+  // 默认**分块**烘焙：4096 宽 ≈ 7–9 秒，同步烘会把界面冻住（2026-11-08 实测 14 秒空洞）。
+  // 想要“一定烘完”的调用方（用例 / 导出要确定性）显式传 `progressive: null`，
+  // 或者设 `window.__SITIAN_RASTER_SYNC__ = true`（见下）。
+  if (!Object.prototype.hasOwnProperty.call(opts, 'progressive')) {
+    opts = { ...opts, progressive: { budgetMs: 24 } };
+  }
   const palette = (opts && opts.palette) || null;
   // 平滑档：默认取 RASTER_SMOOTH；调用方可显式传 {smooth:false} 取回旧观感（用例对照）。
   const smooth = opts && opts.smooth !== undefined ? !!opts.smooth : RASTER_SMOOTH;
@@ -560,16 +580,34 @@ export function buildHeightmapRaster(hm, kind, opts) {
       })
       : null;
     const contourOn = !!(opts && opts.contour) && (kind === 'height' || kind === 'relief');
-    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade, ctx, contourOn);
+    return buildSmoothRaster(kind, hm, values, palette, spacing, pts[0], cols, rows, minX, minY, w, h, shade, ctx, contourOn, opts);
   }
   return buildBlockRaster(kind, hm, values, palette, spacing, pts, minX, minY, w, h, ctx);
 }
 
 /**
  * 平滑档：格分辨率 RGB → 子格双线性上采样。
- * 输出画布边长 ≈ `w·SS/spacing`（不是 1 世界单位 1 像素），由绘制端插值放大。
+ *
+ * **分辨率口径（2026-11-08 用户拍板）**：底档按**固定宽度**烘焙（`opts.bakeWidth`，
+ * 默认 `BAKE_BASE_WIDTH = 4096`），不再用 `RASTER_SUBSAMPLE / spacing`。
+ *   为什么改：老口径的画布宽度 = 世界宽 × 4 / 格距 —— **格距越细画布越大**，
+ *   于是“提网格精度”会同时放大像素量与逐格工作（首帧 1.1s → 5.7s → 12.7s 就是这么来的）。
+ *   固定宽度后，首帧只跟烘焙宽度有关，与格数脱钩。
+ *   代价：4096 宽 ≈ 9.9 百万像素、≈ 8–9 秒 CPU（实测 0.86–1.02 ms/百万像素），
+ *   所以**必须分块**（`opts.progressive`）—— 否则每次打开/改地形都冻 9 秒。
+ *
+ * 分块口径：先烘一张 1/6 宽的粗档铺上去（几百毫秒内能看到地图），
+ * 再按时间预算逐带精修到目标分辨率，**完成时才 `putImageData`**（避免每带全图上传）。
  */
-function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h, shade, ctx, contour) {
+function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, minX, minY, w, h, shade, ctx, contour, opts) {
+  const __t0 = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+  const __log = (phase, extra) => {
+    if (typeof window === 'undefined' || !window) return;
+    const log = (window.__SITIAN_BAKE_LOG__ = window.__SITIAN_BAKE_LOG__ || []);
+    const now = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+    log.push({ phase, kind, ms: Math.round((now - __t0) * 10) / 10, ...(extra || {}) });
+    if (log.length > 40) log.splice(0, log.length - 40);
+  };
   const ox = p0[0] - spacing / 2, oy = p0[1] - spacing / 2;   // 格 (0,0) 的左上角
   const n = cols * rows;
 
@@ -582,10 +620,14 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
     cellRgb[i * 3 + 2] = c[2] | 0;
   }
 
-  // ② 子格双线性上采样
-  const ppu = RASTER_SUBSAMPLE / spacing;   // 输出像素 / 世界单位
+  // ② 输出分辨率：固定宽度优先（见函数头），否则退回老口径
+  const bakeW = opts && Number.isFinite(opts.bakeWidth) && opts.bakeWidth > 0 ? opts.bakeWidth : 0;
+  const ppu = bakeW > 0 ? bakeW / Math.max(1, w) : RASTER_SUBSAMPLE / spacing;
   const cw = Math.max(1, Math.ceil(w * ppu));
   const ch = Math.max(1, Math.ceil(h * ppu));
+  // 排障：这一步之前的活（逐格取色 / 海深场 / 阴影场 / 湖集）是**同步**的，
+  // 大图上是“首帧里第二笔堵”，所以要把读数摊开看（`__SITIAN_BAKE_LOG__`）。
+  __log('prep-done', { cw, ch, cells: n });
   const canvas = document.createElement('canvas');
   canvas.width = cw;
   canvas.height = ch;
@@ -596,7 +638,10 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
   const vv = contour ? new Float32Array(cw * ch) : null;
 
   const cMax = cols - 1, rMax = rows - 1;
-  for (let sy = 0; sy < ch; sy++) {
+
+  /** 逐行填充（同步与分块共用这一段 —— 两份实现必然漂移） */
+  function fillRows(sy0, sy1) {
+  for (let sy = sy0; sy < sy1; sy++) {
     const wy = minY + (sy + 0.5) / ppu;
     let fr = (wy - oy) / spacing - 0.5;
     if (fr < 0) fr = 0; else if (fr > rMax) fr = rMax;
@@ -701,24 +746,93 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
       p += 4;
     }
   }
-  // ③ 等高线：只在“读地形”的档、且插值高度跨过整档时压暗 12%
-  if (vv) {
-    for (let sy = 0; sy < ch; sy++) {
-      for (let sx = 0; sx < cw; sx++) {
-        const i = sy * cw + sx;
-        const band = Math.floor(vv[i] / CONTOUR_STEP);
-        let edge = false;
-        if (sx > 0 && Math.floor(vv[i - 1] / CONTOUR_STEP) !== band) edge = true;
-        if (!edge && sy > 0 && Math.floor(vv[i - cw] / CONTOUR_STEP) !== band) edge = true;
-        if (!edge) continue;
-        const q = i * 4;
-        data[q] *= CONTOUR_DARKEN;
-        data[q + 1] *= CONTOUR_DARKEN;
-        data[q + 2] *= CONTOUR_DARKEN;
+  }
+
+  /**
+   * 等高线：只在“读地形”的档、且插值高度跨过整档时压暗 12%。
+   * ⚠️ 它要看**上一行**（`sy - 1`）的 vv，所以必须在像素全部填完之后再跑。
+   */
+  function contourRows(sy0, sy1) {
+    if (vv) {
+      for (let sy = sy0; sy < sy1; sy++) {
+        for (let sx = 0; sx < cw; sx++) {
+          const i = sy * cw + sx;
+          const band = Math.floor(vv[i] / CONTOUR_STEP);
+          let edge = false;
+          if (sx > 0 && Math.floor(vv[i - 1] / CONTOUR_STEP) !== band) edge = true;
+          if (!edge && sy > 0 && Math.floor(vv[i - cw] / CONTOUR_STEP) !== band) edge = true;
+          if (!edge) continue;
+          const q = i * 4;
+          data[q] *= CONTOUR_DARKEN;
+          data[q + 1] *= CONTOUR_DARKEN;
+          data[q + 2] *= CONTOUR_DARKEN;
+        }
       }
     }
   }
-  rc.putImageData(img, 0, 0);
+
+  // ── 同步 或 分块 ──────────────────────────────────────────────────────────
+  // `window.__SITIAN_RASTER_SYNC__` = 用例/导出的确定性开关：一律同步烘到底，
+  // 免得截图拍到“半精修”的粗档（那会让像素基线随机翻红）。
+  const syncOnly = typeof window !== 'undefined' && window && window.__SITIAN_RASTER_SYNC__;
+  const progressive = syncOnly ? null : (opts && opts.progressive);
+  if (!progressive) {
+    fillRows(0, ch);
+    if (vv) contourRows(0, ch);
+    rc.putImageData(img, 0, 0);
+    __log('sync-done', { cw, ch });
+    return { canvas, minX, minY, w, h };
+  }
+
+  // 分块：先铺一张 1/6 宽的粗档（几百毫秒内就有地图可看，不是黑屏），再按时间预算精修。
+  const budgetMs = Math.max(8, Number(progressive.budgetMs) || 24);
+  try {
+    const coarse = buildHeightmapRaster(hm, kind, {
+      ...opts, progressive: null, bakeWidth: Math.max(160, Math.round(cw / 10)),
+    });
+    if (coarse && coarse.canvas) {
+      rc.imageSmoothingEnabled = true;
+      rc.drawImage(coarse.canvas, 0, 0, cw, ch);
+    }
+  } catch (e) { /* 粗档失败就留白，精修会补上（不吞掉精修） */ }
+
+  const clock = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+  const state = { done: false, progress: 0 };
+  canvas.__sitianBake = state;                 // 排障口：`canvas.__sitianBake.progress`（0…1）
+  let phase = 'fill';
+  let cursor = 0;
+  // 每片按**像素预算**取行数（实测 0.7–1.0 µs/像素）：
+  //   固定行数在 4096 宽时一片 ≈250ms，实测心跳空洞 700–880ms（rAF 连发、定时器拿不到槽）。
+  const msPerPx = 0.0009;
+  const rowsForBudget = (budget) => Math.max(2, Math.min(ch, Math.floor(budget / Math.max(1e-6, cw * msPerPx))));
+  const schedule = typeof setTimeout === 'function'
+    ? (fn) => setTimeout(fn, 0)
+    : (typeof requestAnimationFrame === 'function' ? (fn) => requestAnimationFrame(fn) : null);
+  const finish = () => {
+    rc.putImageData(img, 0, 0);
+    state.done = true;
+    state.progress = 1;
+    __log('progressive-done', { cw, ch, budgetMs });
+    if (typeof progressive.onDone === 'function') {
+      try { progressive.onDone(canvas); } catch (e) { /* 回调出错不影响烘焙结果 */ }
+    }
+  };
+  const step = () => {
+    const t0 = clock();
+    do {
+      const to = Math.min(ch, cursor + rowsForBudget(budgetMs));
+      if (phase === 'fill') fillRows(cursor, to); else contourRows(cursor, to);
+      cursor = to;
+      state.progress = phase === 'fill' ? 0.85 * cursor / ch : 0.85 + 0.15 * cursor / ch;
+      if (cursor >= ch) {
+        if (phase === 'fill' && vv) { phase = 'contour'; cursor = 0; continue; }
+        finish();
+        return;
+      }
+    } while (clock() - t0 < budgetMs);
+    if (schedule) schedule(step);
+  };
+  if (schedule) schedule(step);
   return { canvas, minX, minY, w, h };
 }
 

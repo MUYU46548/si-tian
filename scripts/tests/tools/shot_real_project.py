@@ -162,6 +162,9 @@ def main():
             time.sleep(0.5)
         ensure_data_ready(cdp, timeout=90)
 
+        # 底档烘焙是“先粗后精”分块的（4096 宽 ≈8–9 秒）；截图要拍**烘完的**那张，
+        # 所以默认切同步（`--progressive` 才按真实交互口径跑，用来量首帧与心跳）。
+        cdp.eval("window.__SITIAN_RASTER_SYNC__ = %s; 1" % ('false' if flag('progressive') else 'true'))
         # 心跳 + 页面错误收集（必须装在打开项目之前）
         cdp.eval("window.__WANT_RENDER_PROFILE__ = %s; 1" % ('true' if flag('profile-render') else 'false'))
         cdp.eval("""(() => {
@@ -637,6 +640,10 @@ def main():
                     f.get('px'), total, round(acc, 1),
                     round((total - acc), 1) if isinstance(total, (int, float)) else '?',
                     ' / '.join('%s %.1fms' % (k, v) for k, v in items)))
+        # 烘焙日志（2026-11-08，`__SITIAN_BAKE_LOG__`）：谁在什么时候烘了多大一张、花了多久
+        bake_log, _ = ask(cdp, "JSON.stringify((window.__SITIAN_BAKE_LOG__ || []).slice(-6))")
+        if bake_log and bake_log != '[]':
+            log('烘焙日志：%s' % bake_log)
         # `--probe-bake`：量**栅格烘焙**本身（canvas 尺寸 + 毫秒），用来算“烘焙宽度取多大”的账。
         # 只调用产品自己的 `buildHeightmapRaster`，不另写实现；不改数据、不写盘。
         if flag('probe-bake'):

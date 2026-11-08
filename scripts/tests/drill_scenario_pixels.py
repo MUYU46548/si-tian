@@ -151,6 +151,33 @@ def ck(name, ok, detail=''):
     return {'name': name, 'ok': bool(ok), 'detail': str(detail)}
 
 
+def wait_bakes(cdp, timeout=120, settle=1.2):
+    """
+    等底档烘焙精修完成（2026-11-08：固定 4096 宽烘焙 ≈7–9 秒，分块做）。
+
+    为什么不能“同步烘然后拍”：同步一张 7 秒，CDP 单次求值读超时 15 秒，
+    一个 eval 里烘两张就必挂（实测 `WebSocketTimeoutException`）。
+    所以产品保持分块，这里**轮询** `__SITIAN_BAKE_LOG__` 的 `progressive-done` 条数，
+    连续 `settle` 秒不再增长才算稳。
+    """
+    deadline = time.time() + timeout
+    last = -1
+    stable_since = None
+    while time.time() < deadline:
+        n = cdp.eval("(window.__SITIAN_BAKE_LOG__||[]).filter(e=>e.phase==='progressive-done').length")
+        try:
+            val = int(n)
+        except (TypeError, ValueError):
+            val = 0
+        if val != last:
+            last = val
+            stable_since = time.time()
+        elif val > 0 and stable_since is not None and time.time() - stable_since >= settle:
+            return val
+        time.sleep(0.4)
+    return last
+
+
 def main():
     args = sys.argv[1:]
     tag = 'before'
@@ -223,6 +250,9 @@ def main():
         wait_for(cdp, "!!document.querySelector('.app-layout')", timeout=90, desc='跳过首启后重载')
         wait_for(cdp, "!document.querySelector('.onboarding-overlay')", timeout=30, desc='引导层关闭')
         ensure_data_ready(cdp, timeout=90)
+        # ⚠️ 底档烘焙 2026-11-08 起是**固定 4096 宽 + 分块**（同步烘一张 ≈7–9 秒）。
+        #    同步模式下 CDP 的单次求值会撞 15 秒读超时（实测过一次），所以：
+        #    保持产品默认（分块），**每次拍指纹前先等烘焙精修完成**（见 wait_bakes）。
         ok, info = open_harness_project(cdp)
         ck('harness 项目已打开', ok, json.dumps(info, ensure_ascii=False)[:160])
 
@@ -372,6 +402,8 @@ def main():
             ck('自定义前置脚本已执行', bool(_hok) and _hres.get('ok'), _hres)
             time.sleep(0.8)
 
+        wait_bakes(cdp)  # 底档烘焙完成再拍（固定 4096 宽 / 分块）
+
         fp_ok, fp = eval_json(cdp, FP_JS, required=('hash',), desc='指纹')
         if not fp_ok or fp.get('error'):
             ck('取像素指纹', False, fp)
@@ -379,6 +411,7 @@ def main():
 
         on_ok, on = eval_json(cdp, TOGGLE_LABELS_JS + '(false)', required=('ok',), desc='关标注')
         time.sleep(0.4)
+        wait_bakes(cdp)
         off_ok, fp_off = eval_json(cdp, FP_JS, required=('hash',), desc='指纹·无标注')
         eval_json(cdp, TOGGLE_LABELS_JS + '(true)', required=('ok',), desc='开标注')
         time.sleep(0.3)
@@ -412,6 +445,7 @@ def main():
                 return 1
             ck('河层取景（最长那条河 / 3.5×）', True, json.dumps(cam, ensure_ascii=False))
             time.sleep(0.6)
+            wait_bakes(cdp)
             rf_ok, river_fp = eval_json(cdp, FP_JS, required=('hash',), desc='指纹·河层')
             if not rf_ok or river_fp.get('error'):
                 ck('取河层指纹', False, river_fp)
@@ -426,6 +460,7 @@ def main():
             # 负向探针：压细最宽的 20 条河 → 指纹必须变（敏感性自证，不进基线）
             s_ok, s_res = eval_json(cdp, RIVER_SENS_JS, required=('ok',), desc='河层灵敏度探针')
             time.sleep(0.5)
+            wait_bakes(cdp)
             _, river_fp2 = eval_json(cdp, FP_JS, required=('hash',), desc='指纹·河层·负向')
             sens_changed = bool(river_fp2.get('hash')) and river_fp2.get('hash') != river_fp.get('hash')
             ck('河层判据灵敏（河宽 ×0.6 → 指纹变）', s_ok and sens_changed,
