@@ -59,7 +59,7 @@
         {{ readOnlyHint }}
       </p>
       <p v-else-if="projectOpen" class="empty-import-hint" data-testid="empty-import-hint">
-        项目是空的？知识库里的既有内容可用上面的“导入知识库内容”一次性带进来 —— 只补缺、不覆盖，一条撤销可回退。
+        项目是空的？知识库里的既有内容可用上面的“导入知识库内容”一次性带进来 —— 新的补进来、已有的跟着笔记更新层级与上层，一条撤销可回退。
       </p>
     </div>
     <div v-else class="world-grid">
@@ -75,12 +75,12 @@
           data-testid="rename-world"
           title="重命名这个世界（只改名字，不动任何子节点；Ctrl+Z 可撤销）"
           @click.stop="$emit('rename-world', world)"
-        ><Icon name="pencil" :size="14"/></button>
+        ><Icon name="pencil" :size="13"/><span class="wc-btn-txt">改名</span></button>
         <button
           class="delete-btn"
           title="删除世界（其下星域/星系将失去上级关联，可撤销）"
           @click.stop="$emit('delete-world', world)"
-        ><Icon name="trash" :size="14"/></button>
+        ><Icon name="trash" :size="13"/><span class="wc-btn-txt">删除</span></button>
         <div class="world-icon" :style="{ background: getWorldIconGradient(world.name) }">{{ (world.displayName || world.name).charAt(0) }}</div>
         <h3>{{ world.displayName || world.name }}</h3>
         <p class="world-desc">{{ world.tags?.filter(t => !['世界', '地理系统'].includes(t)).slice(0, 3).join(' · ') || '暂无描述' }}</p>
@@ -381,43 +381,33 @@ function getLocationCount(worldId) {
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.delete-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: 13px;
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s;
-}
-.world-card:hover .delete-btn { opacity: 1; }
-.delete-btn:hover { background: rgba(255, 123, 114, 0.15); color: #ff7b72; }
-
-/* 重命名（2026-11-03 用户实测“新建了世界想重命名都做不到、右键没反应”）：
-   卡片上原来只有一枚删除按钮 —— 世界是项目里的顶层实体，却没有任何改名入口。
-   与删除同款浮动按钮，放在它左边一格。 */
+/* 世界卡片上的两个行内操作（改名 / 删除）
+   2026-11-08：改成**常驻 + 带文字**。原来 `opacity: 0` 悬停才出现、还只有图标 ——
+   用户实测“新建了世界想重命名都做不到”（2026-11-03），后来又明确要求“按钮不许只有图标、
+   也不许悬停才出现”。常驻会多一点视觉重量，但世界卡片通常只有两三张。 */
+.delete-btn,
 .rename-btn {
   position: absolute;
   top: 8px;
-  right: 40px;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-tertiary);
+  height: 22px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.12));
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.world-card:hover .rename-btn { opacity: 1; }
-.rename-btn:hover { background: rgba(121, 192, 255, 0.15); color: #79c0ff; }
+.delete-btn { right: 8px; }
+.rename-btn { right: 64px; }
+.delete-btn:hover { background: rgba(255, 123, 114, 0.18); color: #ff7b72; border-color: rgba(255, 123, 114, 0.5); }
+.rename-btn:hover { background: rgba(121, 192, 255, 0.18); color: #79c0ff; border-color: rgba(121, 192, 255, 0.5); }
+.wc-btn-txt { white-space: nowrap; }
 
 .world-icon {
   width: 56px;

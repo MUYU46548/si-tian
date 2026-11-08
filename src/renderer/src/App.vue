@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-layout" :class="`theme-${currentTheme}`">
     <!-- 顶部栏常驻（2026-10-21 模块壳第二轮）：卡片墙打开时也保留 ——
          用户实测“点历史剧本后再也没有地方点世界观，最接近的是返回世界”。
@@ -160,15 +160,14 @@
         <span class="toolbar-divider"></span>
         <button @click="store.undo" :disabled="!store.canUndo" :title="undoTooltip">↶</button>
         <button @click="store.redo" :disabled="!store.canRedo" title="重做 (Ctrl+Y)">↷</button>
-        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)"><Icon name="history" :size="15"/></button>
+        <button v-if="store.viewLevel !== 'world'" class="tb-btn" @click="panelsStore.toggle('history')" :class="{ active: panelsStore.isOpen('history') }" title="撤销历史面板 (E2)"><Icon name="history" :size="15"/><span class="tb-txt">历史</span></button>
         <!-- “重新提取”：项目态**隐藏** —— 画布事实源=项目文件，重提取必被事实源冲突拒绝（点完才报错的坏交互）；
              要把库内容带进项目请走项目面板“导入知识库内容”。只读态保留（灰禁 + title 说明去处）。
              ⚠️ 只读态必须仍存在且 disabled（test_57 ⑤ 按 title 含“重新提取”找它），所以只加 v-if、不动 disabled。 -->
-        <button v-if="!canvasIsProject" @click="reextract" :disabled="!canReextract" :title="reextractTitle"><Icon name="refresh" :size="15"/></button>
-        <button @click="saveData" :disabled="!dirty || isReadOnly" title="保存"><Icon name="save" :size="15"/></button>
-        <button @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/></button>
-        <button @click="panelsStore.toggle('git-sync')" :class="{ active: panelsStore.isOpen('git-sync') }" title="同步到远程仓库（一键推送到你自己的 git 仓库）"><Icon name="cloud" :size="15"/></button>
-        <button @click="openVaultFromToolbar" :title="vaultButtonTitle"><Icon name="book" :size="15"/></button>
+        <button v-if="!canvasIsProject" class="tb-btn" @click="reextract" :disabled="!canReextract" :title="reextractTitle"><Icon name="refresh" :size="15"/><span class="tb-txt">提取</span></button>
+        <button class="tb-btn" @click="saveData" :disabled="!dirty || isReadOnly" title="保存"><Icon name="save" :size="15"/><span class="tb-txt">保存</span></button>
+        <button class="tb-btn" @click="panelsStore.toggle('project')" :class="{ active: panelsStore.isOpen('project') }" title="项目（.sitian 项目文件）"><Icon name="folder-open" :size="15"/><span class="tb-txt">项目</span></button>
+        <button class="tb-btn" @click="panelsStore.toggle('git-sync')" :class="{ active: panelsStore.isOpen('git-sync') }" title="同步到远程仓库（一键推送到你自己的 git 仓库）"><Icon name="cloud" :size="15"/><span class="tb-txt">同步</span></button>
         <!-- 只读徽标（决策 1 终态）：状态栏只在画布视图出现，世界/选择视图必须靠这里常驻提示，
              否则用户只会在“点了没反应”时才发现自己处于只读（点它直接去项目面板 = 给出去处）。 -->
         <button
@@ -178,17 +177,44 @@
           @click="panelsStore.toggle('project')"
         >{{ READONLY_BADGE }}</button>
         <span class="toolbar-divider"></span>
-        <button v-if="store.viewLevel !== 'world'" @click="toggleLayersPanel" title="图层面板 (L)" :class="{ active: layersStore.panelOpen }"><Icon name="layers" :size="15"/></button>
-        <button v-if="store.viewLevel !== 'world'" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }"><Icon name="bookmark" :size="15"/></button>
+        <button v-if="store.viewLevel !== 'world'" class="tb-btn" @click="panelsStore.toggle('bookmarks')" title="视口书签" :class="{ active: panelsStore.isOpen('bookmarks') }"><Icon name="bookmark" :size="15"/><span class="tb-txt">书签</span></button>
+        <button class="tb-btn" @click="panelsStore.toggle('export')" title="导出"><Icon name="export" :size="15"/><span class="tb-txt">导出</span></button>
         <span class="toolbar-divider"></span>
-        <button @click="panelsStore.toggle('export')" title="导出"><Icon name="export" :size="15"/></button>
-        <span class="toolbar-divider"></span>
-        <button @click="settingsPanelRef?.open()" title="设置"><Icon name="settings" :size="15"/></button>
+        <button class="tb-btn" @click="settingsPanelRef?.open()" title="设置"><Icon name="settings" :size="15"/><span class="tb-txt">设置</span></button>
         <button @click="aboutPanelRef?.open()" title="帮助 (F1)">?</button>
-        <button @click="keyboardShortcutsRef?.open()" title="快捷键 (Ctrl+?)"><Icon name="keyboard" :size="15"/></button>
-        <button @click="changeLogRef?.open()" title="变更日志"><Icon name="clipboard" :size="15"/></button>
-        <button @click="validateDataIntegrity" title="数据检查"><Icon name="search" :size="15"/></button>
-        <button @click="toggleTheme" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`"><Icon :name="currentTheme === 'dark' ? 'moon' : 'sun'" :size="15"/></button>
+        <!-- 更多（2026-11-08）：顶栏原来 20 个纯图标按钮，用户两次反馈“找不到/看不懂”。
+             实测顶栏已用 ~1700px/1920，14 个按钮补文字要 +350~450px —— 1280 窗口必溢出，
+             所以把**低频动作**收进这个带文字的浮层（与剧本工具栏的“更多”同一套做法）。
+             ⚠️ 用 `v-show` 而不是 `v-if`：菜单项常驻 DOM（display:none 隐藏），
+                既有那批按 title 找按钮的用例（test_04/117/124/30/32/47）不用改一行；
+                可达性由 `shot_settings_panel.py --view header` 在真机上量（面板能开、项都可见）。 -->
+        <div class="header-more" :class="{ open: headerMoreOpen }">
+          <button class="tb-btn" :class="{ active: headerMoreOpen }" data-testid="header-more"
+                  @click.stop="headerMoreOpen = !headerMoreOpen"
+                  :title="`更多：打开知识库 / 图层 / 快捷键 / 变更日志 / 数据检查 / 切换主题`">
+            <Icon name="more-horizontal" :size="15"/><span class="tb-txt">更多</span>
+          </button>
+          <div v-show="headerMoreOpen" class="header-more-panel" data-testid="header-more-panel" @click.stop>
+            <button class="hm-item" title="在 Obsidian 里打开当前知识库（打不开时改为在文件管理器打开库目录）" @click="runMoreAction(openVaultFromToolbar)">
+              <Icon name="book" :size="14"/><span>打开知识库</span>
+            </button>
+            <button v-if="store.viewLevel !== 'world'" class="hm-item" title="图层面板 (L)" @click="runMoreAction(toggleLayersPanel)">
+              <Icon name="layers" :size="14"/><span>图层</span>
+            </button>
+            <button class="hm-item" title="快捷键 (Ctrl+?)" @click="runMoreAction(() => keyboardShortcutsRef?.open())">
+              <Icon name="keyboard" :size="14"/><span>快捷键</span>
+            </button>
+            <button class="hm-item" title="变更日志" @click="runMoreAction(() => changeLogRef?.open())">
+              <Icon name="clipboard" :size="14"/><span>变更日志</span>
+            </button>
+            <button class="hm-item" title="数据检查（扫一遍世界观数据里明显坏掉的地方）" @click="runMoreAction(validateDataIntegrity)">
+              <Icon name="search" :size="14"/><span>数据检查</span>
+            </button>
+            <button class="hm-item" :title="`切换到${currentTheme === 'dark' ? '亮色' : '暗色'}主题`" @click="runMoreAction(toggleTheme)">
+              <Icon :name="currentTheme === 'dark' ? 'moon' : 'sun'" :size="14"/><span>切换主题</span>
+            </button>
+          </div>
+        </div>
         <span class="status"><Icon v-if="statusKind === 'ok'" name="check-circle" :size="12" style="margin-right:4px"/><Icon v-else-if="statusKind === 'err'" name="x-circle" :size="12" style="margin-right:4px"/><Icon v-else-if="statusKind === 'warn'" name="info" :size="12" style="margin-right:4px"/>{{ statusText }}</span>
       </div>
     </header>
@@ -509,6 +535,26 @@ import Icon from './components/Icon.vue';
 const store = useGeodataStore();
 const layersStore = useLayersStore();
 const panelsStore = usePanelsStore();
+
+// ── 顶栏“更多”浮层（2026-11-08）────────────────────────────────────────────
+// 用户两次反馈顶栏“找不到 / 看不懂”。实测顶栏已占 ~1700px/1920，20 个纯图标按钮补文字会溢出，
+// 所以主力动作（历史/提取/保存/项目/同步/书签/导出/设置）带文字常驻，低频动作收进这个浮层。
+// ⚠️ 浮层内容是 `v-show`（常驻 DOM、display:none）：既有那几个按 title 找按钮的用例不必改。
+const headerMoreOpen = ref(false);
+/** 浮层里点一项：**先收起菜单、再执行**（反序会让菜单盖住刚打开的面板） */
+function runMoreAction(fn) {
+  headerMoreOpen.value = false;
+  try { if (typeof fn === 'function') fn(); } catch (e) { console.error('[header-more]', e); }
+}
+/** 点浮层外面收起（点在浮层内部不关，浮层自己 stop 了冒泡，这里再兜一层 closest） */
+function onDocMouseDownForMore(e) {
+  if (!headerMoreOpen.value) return;
+  const t = e && e.target;
+  if (!t || typeof t.closest !== 'function' || !t.closest('.header-more')) headerMoreOpen.value = false;
+}
+function onGlobalKeyForMore(e) {
+  if (e && e.key === 'Escape' && headerMoreOpen.value) headerMoreOpen.value = false;
+}
 const { currentTheme, toggleTheme, initTheme } = useTheme();
 const { bookmarks, currentIndex, addBookmark, removeBookmark, clearAll } = useBookmarks();
 const dirty = ref(false);
@@ -763,7 +809,7 @@ const reextractTitle = computed(() => {
   }
   if (canvasIsProject.value) {
     return '重新提取（已停用）：当前画布数据来自项目文件，重提取会让知识库数据与项目数据混流。'
-      + '要把知识库内容带进项目，请用项目面板的“导入知识库内容”（只补缺、可撤销）；'
+      + '要把知识库内容带进项目，请用项目面板的“导入知识库内容”（补新词条、按笔记更新层级与上层，可撤销）；'
       + '若要从零重建，先在项目面板关闭当前项目';
   }
   return '重新提取（把知识库最新内容读进来）';
@@ -1877,6 +1923,9 @@ window.cleanupStressTest = cleanupStressTest;
 onMounted(async () => {
   statusText.value = '正在加载数据...';
   initTheme();
+  // 顶栏“更多”浮层：点外面 / 按 Esc 收起
+  document.addEventListener('mousedown', onDocMouseDownForMore, true);
+  window.addEventListener('keydown', onGlobalKeyForMore);
   // 免责声明：未确认**当前版本**条款 → 立刻阻断（必须在数据加载与新手引导之前）
   if (!hasAckedDisclaimer()) {
     window.__sitianDisclaimerGate = true;
@@ -2076,6 +2125,8 @@ function openProjectFromSync() {
 }
 
 onUnmounted(() => {
+  document.removeEventListener('mousedown', onDocMouseDownForMore, true);
+  window.removeEventListener('keydown', onGlobalKeyForMore);
   window.removeEventListener('keydown', handleGlobalKeydown);
   window.removeEventListener('keydown', handlePerfKeydown);
   cleanupNodeUpdated?.();
@@ -2607,6 +2658,60 @@ async function clearCoordinateCache() {
 
 .toolbar-actions button:hover {
   background: var(--btn-bg-hover);
+}
+
+/* ── 顶栏“图标 + 文字”与“更多”浮层（2026-11-08）──────────────────────────
+   用户两次反馈：顶栏只有图标，“找了五分钟没找到”。主力动作补文字常驻；
+   低频动作收进浮层（浮层里每一项也是图标 + 文字）。 */
+.toolbar-actions .tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.toolbar-actions .tb-txt {
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.header-more {
+  position: relative;
+  display: inline-flex;
+}
+.header-more-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 172px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--panel-bg, #1b1f24);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  z-index: 900;
+}
+.header-more-panel .hm-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.header-more-panel .hm-item:hover {
+  background: var(--btn-bg-hover);
+  color: var(--text-primary);
 }
 
 .toolbar-actions button:disabled {

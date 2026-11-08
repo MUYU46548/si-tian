@@ -47,7 +47,7 @@
             @change="setNum(f.key, $event)"
           >
           <button class="tgen-dice" title="换一个种子（确定性推进，可复现）" data-testid="tgen-dice" @click="dice">
-            <Icon name="refresh-cw" :size="13"/>
+            <Icon name="refresh-cw" :size="13"/><span class="tgen-dice-txt">换种子</span>
           </button>
         </template>
         <template v-else-if="f.kind === 'optional-int'">
@@ -368,7 +368,10 @@ defineExpose({ summary, keepHandEdits, autoLabels });
 .tgen-dice {
   border: 1px solid #475569; background: transparent; color: #cbd5e1;
   border-radius: 4px; cursor: pointer; display: inline-flex; padding: 2px 5px;
+  /* 2026-11-08：纯图标按钮补文字 */
+  align-items: center; gap: 3px;
 }
+.tgen-dice-txt { font-size: 11px; line-height: 1; white-space: nowrap; }
 .tgen-cands-head { display: flex; align-items: center; gap: 8px; color: #94a3b8; }
 .tgen-mini {
   border: 1px solid #475569; background: transparent; color: #cbd5e1;

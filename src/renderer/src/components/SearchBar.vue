@@ -22,7 +22,7 @@
         :class="{ active: store.searchLayerFilter.length > 0 }"
         @click="store.isFilterOpen = !store.isFilterOpen"
         title="类型过滤"
-      ><Icon name="filter" :size="13"/></button>
+      ><Icon name="filter" :size="13"/><span class="btn-txt">筛选</span></button>
     </div>
 
     <!-- 浮动搜索结果面板 -->
@@ -370,6 +370,16 @@ input::placeholder {
   cursor: pointer;
   font-size: 14px;
   padding: 2px 4px;
+  /* 2026-11-08：纯图标按钮补文字（用户：“不要再让我看到只有图标的按钮”） */
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.filter-btn .btn-txt {
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .filter-btn:hover {

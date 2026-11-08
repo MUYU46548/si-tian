@@ -59,7 +59,7 @@
         >
         <span class="tlab-badge" :class="{ auto: row.origin === 'auto' }">{{ row.origin === 'auto' ? '自动' : '手绘' }}</span>
         <span class="tlab-meta">{{ row.meta || `${(row.points || []).length} 点` }}</span>
-        <button class="tlab-del" title="删掉这一条" @click="removeRow(i)"><Icon name="trash-2" :size="13"/></button>
+        <button class="tlab-del" title="删掉这一条" @click="removeRow(i)"><Icon name="trash-2" :size="13"/><span class="tlab-del-txt">删</span></button>
       </div>
     </div>
 
@@ -261,7 +261,10 @@ function apply() {
 .tlab-del {
   border: 1px solid #475569; background: transparent; color: #94a3b8;
   border-radius: 4px; cursor: pointer; display: inline-flex; padding: 2px 5px;
+  /* 2026-11-08：纯图标按钮补文字 */
+  align-items: center; gap: 3px;
 }
+.tlab-del-txt { font-size: 11px; line-height: 1; }
 .tlab-del:hover { color: #fca5a5; border-color: #fca5a5; }
 .tlab-note { color: #94a3b8; font-size: 11px; line-height: 1.6; }
 </style>
