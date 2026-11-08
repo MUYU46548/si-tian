@@ -19,6 +19,9 @@ import {
 import {
   brushFalloff, deriveLayers, SEA_LEVEL, buildClimateInputs, lakeHeightForWeight,
 } from '../../utils/heightMath';
+// 气候判湖（2026-11-08）：湖的几何判定在 utils/lakes.js，**按降水分档（淡水/盐湖）也在那儿** ——
+// store 只负责把它接在“气候已经算出来”之后（生成链路里气候与高度是同一笔）。
+import { classifyLakesByClimate } from '../../utils/lakes';
 // 地形特征级锁定（2026-10-27）：纯函数在 utils/handEdits.js（Node 可测）
 import { mergeHandEdits, activeHandEdits, reapplyHandEdits, transferHandEdits } from '../../utils/handEdits';
 // B 阶段 2（2026-10-29）：FMG 模板高度图（纯函数层，Node 有单测 `test_fmg_heightmap.js`）
@@ -4486,6 +4489,15 @@ export function createScenarioEditingModule(ctx) {
       climate.lat ? (_pt, i) => climate.lat[i] : null,
       climate.ocean ? (_pt, i) => climate.ocean[i] : null,
     );
+    // ── 气候判湖（2026-11-08，卡「干旱盆地（playa/盐湖）：判湖要读降水」）───────────────
+    // 几何判定（面积 + 深度）不知道“水从哪来”：雨林里一个浅坑成湖、沙漠里一个更深的盆地反而不成湖。
+    // 这里在**气候刚算出来**的位置按降水 + 温度把湖分档（唯一实现在 `utils/lakes.js`）：
+    //   淡水湖原样保留；**又热又干**的湖要么标 `saline`（面积门槛按缺水量放大），要么丢掉。
+    //   ⚠️ 温度必传：本项目的降水口径让高寒区天生“降水低”，只按降水判会把高原湖删光。
+    // **只降级、不新建**；`prec` 拿不到时行为一字不变。
+    const lakeClimate = classifyLakesByClimate(syn.lakes, derivedLayers.precipitation, {
+      temp: derivedLayers.temperature,
+    });
     const payload = {
       ...syn,
       temp: derivedLayers.temperature,
@@ -4495,6 +4507,9 @@ export function createScenarioEditingModule(ctx) {
       // 否则"生成时 ±60°、重算时 ±90°"会让用户以为地形自己变了（静默不一致）。
       climateSpec: { latitudeSpanDeg: climate.latitudeSpanDeg },
     };
+    // 分类后的湖只在**有条目**时才写这个键：空了就与“没有湖”同形状（老载荷不因此多一个空数组）
+    if (lakeClimate.lakes.length) payload.lakes = lakeClimate.lakes;
+    else delete payload.lakes;
     const had = hasGrid(prev);
     // 🔴 2026-10-17 第八修·再修（用户实测：“现在地图上的改动全都无法撤销，撤销是灰色的”）：
     //    第一版我在这里**直接调 `commitHeightmap`**，没有套 `execute()` ——
@@ -4609,6 +4624,14 @@ export function createScenarioEditingModule(ctx) {
       // 地形注记（只补空）：`labels` = 生成后总数；`labelsAdded` = 这一次新增了几条
       labels: labelsAfter ? labelsAfter.length : labelsBefore.length,
       labelsAdded: labelsAfter ? labelsAfter.length - labelsBefore.length : 0,
+      // 气候判湖的读数（2026-11-08）：湖在几何上是几条 / 淡水几条 / 盐湖几条 / 太干太小丢掉几条。
+      // 只在**返回值**里给（不落进高度图载荷），排障与会话回执要能说出“湖为什么少了一条”。
+      lakes: {
+        total: lakeClimate.lakes.length,
+        fresh: lakeClimate.fresh,
+        saline: lakeClimate.saline,
+        dropped: lakeClimate.dropped,
+      },
       climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },
       message: `${provided ? '已按 FMG 模板生成地形' : '已按陆地轮廓生成地形'}：${cellCount} 格 / 格距 ${spacing}`
         + `${inlandText}${st} —— ${describeTerrainParams(norm.params)}；`

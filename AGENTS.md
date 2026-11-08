@@ -548,6 +548,16 @@
   载入时 `validateProject` 把默认值补回来，所以读侧一行不用改。② 实体上**不许有**
   `complete` / `progress` / `missing` 这类完成度字段（“不许把结构变成填表门槛”的落地）。
   守门：`unit/test_entity_empty_values.js`（11 条，含“y=0 不是空值”与“塞 progress 必须红”两条探针）。
+- **判湖要读降水，别只看几何**（2026-11-08）：`detectBasinLakes`（`utils/lakes.js`）只按面积/深度判湖，
+  它不知道“水从哪来”—— 于是雨林里一个浅坑成湖、沙漠里一个更深的盆地反而不成湖。现在生成链在
+  **气候刚算出来**的位置过一遍 `classifyLakesByClimate(lakes, prec)`（同一份 `lakes.js`）：
+  降水 ≥ `minPrec`（默认 40 / FMG 0…100 标尺）→ 淡水湖**原样不动**（连字段都不加）；
+  更干 → 面积门槛按缺水量放大（`minArea × minPrec/meanPrec`，封顶 `salineAreaFactor`），
+  过不了门槛就丢掉，过了就标 `saline: true`，渲染层用咸青色 `SALT_LAKE_COLOR`
+  （`ctx.salineLakes` 只在读地形的档上叠）。**只降级、不新建**；拿不到 `prec` 时行为一字不变。
+  ⚠️ 默认值故意落在“常规地形什么都不改”的位置（暖和的地方降水恒 ≥60，只有寒冷内陆/高山湖区才低于 40
+  —— 那正是现实里盐湖最密的地方），所以**不重立像素基线**；改 `LAKE_CLIMATE` 就要重拍。
+  守门：`unit/test_lake_climate.js`（13 条，含“淡水湖同一个引用”“不给 prec 原样返回”“陆地格守恒”三条负向）。
 - **不要整读大文件**：`ScenarioMap.vue`（**6,106 行**，2026-11-03 把 1,649 行样式搬到
   `scenario-map.css`，原来 8,554 行）/ `PlanetMap.vue`（4,559 行）是全仓最大的两个 SFC —— 先 `grep` 定位再读窗口
   （行数以 `docs/ARCHITECTURE_MAP.md` 为准；这条也是 token 成本的纪律）。

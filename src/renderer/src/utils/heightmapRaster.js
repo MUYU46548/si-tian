@@ -200,6 +200,15 @@ export function oceanDepthColor(t) {
   return sampleStops(OCEAN_DEPTH_STOPS, clamp01(t));
 }
 
+/**
+ * 盐湖 / playa 的水面色（2026-11-08）。
+ *
+ * 为什么不是“淡水湖调浅一点”：干旱区的水面本来就偏**灰白**（盐壳、浅滩），
+ * 调浅仍然读成“好好的一湖水”；而调成沙色又会被读成“这不是水”。
+ * 取一个低饱和的咸青：比淡水湖（`oceanDepthColor(0.30)` 的蓝绿）明显偏灰，但在暖色陆地上仍读成水面。
+ */
+export const SALT_LAKE_COLOR = Object.freeze([150, 176, 174]);   // #96b0ae
+
 /** 卫星陆色：群系色 × 海拔（高山岩灰、雪线偏白） */
 export function satelliteLandColor(h, biome) {
   const base = BIOME_RGB[biome | 0] || BIOME_RGB[4];
@@ -229,6 +238,8 @@ export function cellColor(kind, i, hm, palette, ctx) {
   if (ctx && ctx.lakes && ctx.lakes.size) {
     const lakeLevel = ctx.lakes.get(i);
     if (lakeLevel !== undefined) {
+      // 盐湖 / playa（2026-11-08）：气候判成干旱的那批，用咸青（同上，只影响着色）
+      if (ctx.salineLakes && ctx.salineLakes.has(i)) return SALT_LAKE_COLOR;
       // 湖不深：取海深色带的浅端（比海面略深一点，仍与海区分得开）
       // 2026-11-04：0.10 → 0.30 —— 政治档的陆地是"海面纸"（近白），0.10 的湖几乎
       // 和纸一个色，实测截图里读成"一团雾"。0.30 落在近岸青与浅海蓝之间，像水。
@@ -440,6 +451,29 @@ export function buildLakeCellMap(hm, limit = 20000) {
 }
 
 /**
+ * 盐湖 / playa 的格集合（2026-11-08）：`hm.lakes` 里 `saline === true` 的那些湖格的并集。
+ *
+ * 为什么单独一张表而不是把 `buildLakeCellMap` 的返回值改成对象：那张表有多个调用方
+ * （画布、导出、卫星档），改返回类型等于同时改三个消费者，而“咸水”只是**着色**的差别。
+ *
+ * @param {object} hm @param {number} [limit]
+ * @returns {Set<number>}
+ */
+export function buildSalineLakeCellSet(hm, limit = 20000) {
+  const set = new Set();
+  const lakes = hm && Array.isArray(hm.lakes) ? hm.lakes : null;
+  if (!lakes || !lakes.length) return set;
+  for (const lake of lakes) {
+    if (!lake || lake.saline !== true || !Array.isArray(lake.cells)) continue;
+    for (const i of lake.cells) {
+      if (set.size >= limit) return set;
+      if (Number.isInteger(i)) set.add(i);
+    }
+  }
+  return set;
+}
+
+/**
  * 把高度图预渲染成一张离屏图层。
  *
  * 红线：大数据量必须预渲染，不逐帧重绘（几万格逐格画 = 每帧几十毫秒）。
@@ -503,6 +537,12 @@ export function buildHeightmapRaster(hm, kind, opts) {
     // 湖（B④）：只在"读地形的档"上叠；专题图（温度/降水/文化/宗教）不叠 —— 那会把湖读成气候
     lakes: (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain' || kind === 'relief')
       ? buildLakeCellMap(hm)
+      : null,
+    // 盐湖 / playa（2026-11-08）：同一批湖格里被气候判成干旱的那些，用**比淡水浅一号的咸水色**
+    // 单独一组。没标 `saline` 的湖（老项目、或降水没参与判定）一个像素都不受影响 —— 这也是本条
+    // 能“加而不改”的前提：新字段缺席 = 旧观感。
+    salineLakes: (kind === 'height' || kind === 'landsea' || kind === 'satellite' || kind === 'terrain' || kind === 'relief')
+      ? buildSalineLakeCellSet(hm)
       : null,
   };
 

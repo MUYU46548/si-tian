@@ -82,3 +82,102 @@ export function detectBasinLakes(filled, basins, cellsX, cellsY, opts = {}) {
   }
   return kept;
 }
+
+// ── 气候判湖（2026-11-08，卡「干旱盆地（playa/盐湖）：判湖要读降水」）────────────────
+//
+// 病灶：上面那套判定只看**几何**（被填平的面积 + 深度），与气候无关 —— 于是
+//   · 雨林里一个浅坑成湖，沙漠里一个更深的盆地反而不成湖（没有“水从哪来”这一层）；
+//   · 干旱区的洼地在真实地图上应该是**盐湖 / playa / 干盐湖**，现在要么画成湖，要么什么都没有。
+//
+// 口径（三条，改之前先读）：
+//   ① **只做降级与分类，不新建湖**：干旱区不许“凭空多出湖”，只把已有的湖判成 saline 或丢掉；
+//   ② **淡水湖一个不动**：`prec ≥ minPrec` 的湖一律原样保留，连 `saline` 字段都不加
+//      （老项目/老裁据的载荷因此逐字节不变）；
+//   ③ **干旱区不是“没有水”**：面积够大的盆地仍然是湖（现实里的盐湖/playa 就是这么来的），
+//      只是要更大的面积门槛 —— 门槛随干旱程度放大，`salineAreaFactor` 是上限倍数。
+//
+// ⚠️ 降水标尺是 FMG 的 0…100（`utils/heightMath.js#precipitationAtIndex`），不是毫米。
+//    默认 `minPrec = 40` 落在“温带森林 / 草原”的分界。
+//
+// 🔴 **必须同时看温度**（2026-11-08 真机抓到）：本项目的降水口径里 `basePrecip = temperature > 0 ? 60 : 20`
+//    —— 也就是说**高寒地区天生“降水低”**。只按降水判，会把高原上的冰川湖判成盐湖甚至直接删掉，
+//    而现实里恰恰相反：盐湖出现在**又热又干**的地方（蒸发 > 流入），高寒湖泊是淡的（蒸发几乎为零）。
+//    所以“干旱”= `降水 < minPrec` **且** `温度 > minTemp`。冷区的湖一律按淡水处理。
+
+/** 气候判湖的默认口径（改它就要重立像素基线：湖色分档会改观感） */
+export const LAKE_CLIMATE = { minPrec: 40, minTemp: 5, salineAreaFactor: 2.5, wetPrec: 60, minArea: 8 };
+
+/** 一条湖的平均降水量（只取湖格；`prec` 缺 / 长度不对 → null） */
+export function lakeMeanPrecipitation(lake, prec) {
+  return meanOverCells(lake, prec);
+}
+
+/** 一条湖的平均温度（同上；`temp` 缺 → null） */
+export function lakeMeanTemperature(lake, temp) {
+  return meanOverCells(lake, temp);
+}
+
+function meanOverCells(lake, values) {
+  if (!lake || !Array.isArray(lake.cells) || !values || !values.length) return null;
+  let sum = 0;
+  let n = 0;
+  for (const i of lake.cells) {
+    if (!Number.isInteger(i) || i < 0 || i >= values.length) continue;
+    const v = Number(values[i]);
+    if (!Number.isFinite(v)) continue;
+    sum += v;
+    n += 1;
+  }
+  return n ? sum / n : null;
+}
+
+/**
+ * 按气候把湖分档（淡水 / 盐湖）并降级**又热又干**的小湖。
+ *
+ * @param {Array<{level:number, cells:number[]}>} lakes `detectBasinLakes` 的产物
+ * @param {number[]|Float32Array|null} prec 每格降水（FMG 0…100）；**不给就原样返回**
+ * @param {{temp?:number[]|Float32Array|null, minPrec?:number, minTemp?:number,
+ *          salineAreaFactor?:number, minArea?:number}} [opts]
+ *   `temp` 给了才做“冷区豁免”（冷区不下盐）；不给就按“暖区”处理（老调用方的行为不变）
+ * @returns {{lakes:Array, dropped:number, saline:number, fresh:number,
+ *            coldKept:number}}
+ *   `coldKept` = 因为冷区豁免而保持淡水的条数（排障口要能读到，别靠猜）
+ */
+export function classifyLakesByClimate(lakes, prec, opts = {}) {
+  const list = Array.isArray(lakes) ? lakes : [];
+  if (!list.length) return { lakes: list, dropped: 0, saline: 0, fresh: 0, coldKept: 0 };
+  if (!prec || !prec.length) return { lakes: list, dropped: 0, saline: 0, fresh: 0, coldKept: 0 };
+  const minPrec = Number.isFinite(opts.minPrec) ? Number(opts.minPrec) : LAKE_CLIMATE.minPrec;
+  const minTemp = Number.isFinite(opts.minTemp) ? Number(opts.minTemp) : LAKE_CLIMATE.minTemp;
+  const factor = Number.isFinite(opts.salineAreaFactor) && opts.salineAreaFactor >= 1
+    ? Number(opts.salineAreaFactor) : LAKE_CLIMATE.salineAreaFactor;
+  const minArea = Math.max(4, Math.floor(Number(opts.minArea) || LAKE_CLIMATE.minArea));
+  const temp = opts.temp && opts.temp.length ? opts.temp : null;
+  const out = [];
+  let dropped = 0;
+  let saline = 0;
+  let fresh = 0;
+  let coldKept = 0;
+  for (const lake of list) {
+    if (!lake || !Array.isArray(lake.cells) || !lake.cells.length) { out.push(lake); continue; }
+    const mean = meanOverCells(lake, prec);
+    if (mean === null || mean >= minPrec) { out.push(lake); fresh += 1; continue; }
+    // 冷区豁免：蒸发几乎为零的高寒湖是**淡的**。这里的“降水低”只是温度口径的副作用
+    // （`basePrecip` 在 0℃ 以下直接给 20），把它当干旱处理会删掉整片高原湖。
+    if (temp) {
+      const t = meanOverCells(lake, temp);
+      if (t !== null && t <= minTemp) { out.push(lake); fresh += 1; coldKept += 1; continue; }
+    }
+    // 又热又干：**面积门槛按缺水量放大** —— “雨少几倍，面积就要大几倍才撑得起一湖水”。
+    //   ratio = minPrec / max(mean, minPrec / factor)，夹在 [1, factor]：
+    //     · 刚好到门槛（mean → minPrec）→ 门槛就还是 minArea；
+    //     · 最干（mean → 0）→ 门槛封顶在 minArea × factor（再大就没湖了，那不真实）；
+    // 用比值而不是线性插值：线性的在 mean 稍微低于门槛时几乎不动门槛，等于没判。
+    const ratio = Math.max(1, Math.min(factor, minPrec / Math.max(mean, minPrec / factor)));
+    const need = Math.round(minArea * ratio);
+    if (lake.cells.length < need) { dropped += 1; continue; }
+    out.push({ ...lake, saline: true, meanPrec: Math.round(mean * 10) / 10 });
+    saline += 1;
+  }
+  return { lakes: out, dropped, saline, fresh, coldKept };
+}
