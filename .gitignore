@@ -210,3 +210,6 @@ build/probe-save/
 # 复现：python scripts/tests/tools/shot_settings_panel.py
 build/settings-panel/
 build/toolbar-row-styles/
+
+# 侵蚀 A/B 对照图（2026-11-08）：本地证据，禁止提交
+build/erosion-evidence/
