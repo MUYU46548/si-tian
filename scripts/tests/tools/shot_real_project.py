@@ -165,6 +165,8 @@ def main():
         # 底档烘焙是“先粗后精”分块的（4096 宽 ≈8–9 秒）；截图要拍**烘完的**那张，
         # 所以默认切同步（`--progressive` 才按真实交互口径跑，用来量首帧与心跳）。
         cdp.eval("window.__SITIAN_RASTER_SYNC__ = %s; 1" % ('false' if flag('progressive') else 'true'))
+        # 视口块（`scenario/viewBake.js`）默认关；`--view-patch` 打开，用来做“开 / 关”两帧的对照。
+        cdp.eval("window.__SITIAN_VIEW_PATCH__ = %s; 1" % ('true' if flag('view-patch') else 'false'))
         # 心跳 + 页面错误收集（必须装在打开项目之前）
         cdp.eval("window.__WANT_RENDER_PROFILE__ = %s; 1" % ('true' if flag('profile-render') else 'false'))
         cdp.eval("""(() => {
@@ -640,6 +642,30 @@ def main():
                     f.get('px'), total, round(acc, 1),
                     round((total - acc), 1) if isinstance(total, (int, float)) else '?',
                     ' / '.join('%s %.1fms' % (k, v) for k, v in items)))
+        # 视口块状态（`--view-patch` 时看它到底有没有烘出来 / 有没有被画上去）
+        vb, _ = ask(cdp, """(() => {
+          const s = window.__SITIAN_VIEW_BAKE__ || null;
+          if (!s) return 'none';
+          return JSON.stringify({ busy: !!s.busy, patches: s.patches, skipped: s.skipped,
+            lastMs: s.lastMs, hasPatch: !!(s.patch && s.patch.canvas),
+            rect: s.patch ? s.patch.rect : null, key: s.key });
+        })()""")
+        log('视口块状态：%s' % vb)
+        # `--dump-patch`：把视口块那张画布本身存成 PNG —— 一眼分清“块画错了”还是“块放错位置”
+        if flag('dump-patch'):
+            du, _ = ask(cdp, """(() => {
+              const s = window.__SITIAN_VIEW_BAKE__;
+              if (!s || !s.patch || !s.patch.canvas) return '';
+              try { return s.patch.canvas.toDataURL('image/png'); } catch (e) { return 'ERR:' + e.message; }
+            })()""")
+            if isinstance(du, str) and du.startswith('data:image/png;base64,'):
+                op = os.path.join(out, '%s-patch.png' % tag)
+                with open(op, 'wb') as f:
+                    import base64 as _b64
+                    f.write(_b64.b64decode(du.split(',', 1)[1]))
+                log('视口块画布 → %s' % op)
+            else:
+                log('视口块画布导出失败：%s' % str(du)[:120])
         # 烘焙日志（2026-11-08，`__SITIAN_BAKE_LOG__`）：谁在什么时候烘了多大一张、花了多久
         bake_log, _ = ask(cdp, "JSON.stringify((window.__SITIAN_BAKE_LOG__ || []).slice(-6))")
         if bake_log and bake_log != '[]':

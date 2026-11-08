@@ -18,7 +18,7 @@
 
 import { buildHeightmapRaster } from '../utils/heightmapRaster';
 import { isInteractionActive } from '../utils/interactionGate';
-import { rasterProgressiveOpts, setRasterRefineHandler, bakeWidthFor } from './rasterRefine';
+import { rasterProgressiveOpts, bakeWidthFor, worldWidthOf, notifyRerender, bakeHeightmap } from './rasterRefine';
 
 /** 浮雕底的取色参数（与 `ScenarioMap#getReliefRaster` 同一份 —— 不许各写一份） */
 export const RELIEF_BAKE_OPTS = Object.freeze({ shade: 0.85, min: 0.9, max: 1.02 });
@@ -38,25 +38,8 @@ const state = {
   skipped: 0,
 };
 
-let getHm = () => null;
-let rerender = () => {};
-
-/** 由 ScenarioMap 在 onMounted 里装一次（`getHm` 走 `store.getHeightmapFor`，唯一读取口） */
-export function installViewBake(opts) {
-  const o = opts || {};
-  if (typeof o.getHm === 'function') getHm = o.getHm;
-  if (typeof o.rerender === 'function') rerender = o.rerender;
-}
-
-/**
- * 一次性装好“烘焙相关的重画回路”：整幅烘焙精修完成 → 重画；视口块完成 → 重画。
- * 合成一个入口的原因是 `ScenarioMap` 有 6,120 行闸门，能少一行是一行（不是偷懒：
- * 那一道闸门存在的目的是逼逻辑外移，这里就把逻辑放在模块里）。
- */
-export function installRasterShell(opts) {
-  installViewBake(opts);
-  setRasterRefineHandler(() => rerender());
-}
+// 「重画 + 取高度图」两个回调由 `rasterRefine.setRasterRefineHandler(fn, getHm)` 一起登记，
+// 所以本模块**不需要第二个安装点**（ScenarioMap 的 6,120 行闸门：能少一行是一行）。
 
 export function invalidateViewPatch() {
   state.patch = null;
@@ -71,7 +54,7 @@ export function viewPatchFor(kind, view) {
   // 🔴 必须**同时校验相机**：块是按某个机位烘的，机位一变（缩放/平移）就作废。
   //    只校验高度图的话，缩回远景时会把“上一档的清晰块”盖在糊底图上，画面出现一条边界。
   if (view && p.key !== cameraKey(view)) return null;
-  const hm = getHm();
+  const hm = bakeHeightmap();
   if (hm !== p.hm) return null;      // 高度图换了（涂抹/撤销/重生成）→ 旧块不能用
   return p;
 }
@@ -94,15 +77,16 @@ function visibleRect(view) {
 }
 
 function bake(view, rect) {
-  const hm = getHm();
+  const hm = bakeHeightmap();
   if (!hm || !hm.grid || !Array.isArray(hm.grid.points)) return;
   // 输出像素 = 这块世界矩形在屏幕上的像素数（不放大到看不见的精度）
   const scale = Number(view.cameraScale) || 1;
   const pxW = Math.max(128, Math.min(PATCH_MAX_PX, Math.ceil(rect.w * scale)));
   const pxH = Math.max(96, Math.min(PATCH_MAX_PX, Math.ceil(pxW * (rect.h / rect.w))));
-  // 整幅底图已经够清晰时不必再烘一块：否则适屏档会“烘完整张又烘一块”，白烧一遍 CPU。
-  const baseW = bakeWidthFor(hm, scale);
-  if (pxW <= baseW * 1.25) { state.skipped += 1; return; }
+  // 整幅底图已经够清晰时不必再烘一块：比较的是**每世界单位的像素数**（不是像素总数！
+  // 第一版拿 pxW 和 baseW 直接比，等于拿“视口宽度”和“整图宽度”比，永远判成“够清晰”→ 一块都没烘）。
+  const basePpu = bakeWidthFor(hm, scale) / worldWidthOf(hm);
+  if (scale <= basePpu * 1.25) { state.skipped += 1; return; }
   state.busy = true;
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   try {
@@ -116,14 +100,14 @@ function bake(view, rect) {
           state.lastMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
           state.busy = false;
           state.patches += 1;
-          rerender();
+          notifyRerender();
         },
       },
     });
     if (!built || !built.canvas) { state.busy = false; state.skipped += 1; return; }
     state.patch = { kind: 'relief', canvas: built.canvas, rect, hm, key: cameraKey(view) };
     // 粗档已经铺进去了，先重画一次（比等精修完更早看到“这一块”）——不能省，否则静止后仍是一张糊图
-    rerender();
+    notifyRerender();
   } catch (e) {
     state.busy = false;
     state.skipped += 1;
@@ -135,6 +119,7 @@ function bake(view, rect) {
  * 由 `drawRelief()` 在画完底色后调用 —— 那里正好已经算过相机与可见范围。
  */
 export function noteView(view) {
+  if (!patchEnabled()) return;          // 默认关：连烘焙都不安排，别白烧 CPU
   if (!view || !view.showRelief) return;
   const key = cameraKey(view);
   if (key === state.key) return;
@@ -154,15 +139,28 @@ export function noteView(view) {
 
 /** 把当前视口块画上去（世界坐标，与整幅底图同一坐标系） */
 export function drawViewPatch(c, kind, view) {
-  // ⚠️ 2026-11-08 晚：视口块**先默认关掉**。
-  //    实测开了之后主帧整张都变了（272,934 个像素、最大差 437）——量出来是“块叠在底图上”
-  //    造成的整体偏色，而我这轮没时间把成因拆干净。宁可先关（行为与 v20261108i 逐像素一致），
-  //    也不把一条没验完的渲染路径留在默认开启。
-  //    打开方式：`window.__SITIAN_VIEW_PATCH__ = true`（真机排查用），修好后改默认值。
-  if (typeof window !== 'undefined' && window && !window.__SITIAN_VIEW_PATCH__) return;
+  // ⚠️ 2026-11-08 晚：视口块**默认关**（`window.__SITIAN_VIEW_PATCH__ = true` 才开）。
+  //    打开时主帧整张都变了（27 万像素 / 最大通道差 437），成因还在查；
+  //    关着时这条路径一行都不执行，行为与像素基线 v20261108j 逐像素一致。
+  if (!patchEnabled()) return;
   const p = viewPatchFor(kind, view);
   if (!p) return;
   c.drawImage(p.canvas, p.rect.minX, p.rect.minY, p.rect.w, p.rect.h);
+}
+
+/** 视口块是否启用（默认关，见上） */
+function patchEnabled() {
+  return typeof window !== 'undefined' && window && window.__SITIAN_VIEW_PATCH__;
+}
+
+/**
+ * 图层侧的**唯一入口**（`makeLayerView().reliefPatch`）：先安排“相机静止后烘一块”，再把已有的块画上去。
+ * 为什么要这样一个合成回调：`scenario/layers/*` 的纪律是“依赖一律从 view 取”，
+ * 层里直接 import 渲染模块会把那条纪律破掉（`unit/test_scenario_relief.js` 当场红 —— 实测踩过）。
+ */
+export function reliefPatchPass(c, view) {
+  noteView(view);
+  drawViewPatch(c, 'relief', view);
 }
 
 if (typeof window !== 'undefined' && window) {

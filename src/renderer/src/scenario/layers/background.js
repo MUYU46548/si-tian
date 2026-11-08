@@ -12,9 +12,8 @@
 //   GRID_STEP          网格步长（世界单位）
 //   showRelief         是否画地形浮雕底（政治档 + 底图有高度图时才为真）
 //   reliefRaster()     高度图浮雕栅格 `{canvas,minX,minY,w,h}`（与导出共用同一份缓存）
-// ⚠️ 视口块（`scenario/viewBake.js`）已经写好了，但**这一版没有接上线**：
-//    接进去之后主帧整张都变了（272,934 像素 / 最大差 437），成因没拆干净就先不默认开。
-//    接法见那个文件的头注释；验收通过后再在这里加 `noteView(view)` + `drawViewPatch(...)`。
+//   reliefPatch(c,v)   视口块（可选）：整幅底图只铺底，清晰度由这块补。层的纪律是
+//                      **依赖一律从 view 取**，所以这里不 import 渲染模块，只调这个回调。
 
 /** 底色 + 地形浮雕底 + 世界坐标网格（空底图时也画，用户据此判断"这块地是没有数据还是没加载"） */
 export function drawBackgroundLayer(c, view) {
@@ -62,6 +61,7 @@ export function drawRelief(c, view) {
   c.imageSmoothingEnabled = true;
   c.imageSmoothingQuality = 'high';
   c.drawImage(r.canvas, r.minX, r.minY, r.w, r.h);
+  if (typeof view.reliefPatch === 'function') view.reliefPatch(c, view);
   c.restore();
 }
 

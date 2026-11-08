@@ -995,6 +995,7 @@ import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
 import { renderProfiler, attachFrameTotal } from '../scenario/renderProfile';
 import { rasterProgressiveOpts, setRasterRefineHandler, bakeWidthFor } from '../scenario/rasterRefine';
+import { reliefPatchPass } from '../scenario/viewBake';
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
 import { drawProvincesLayer, drawProvinceBordersLayer, drawPolityBordersLayer } from '../scenario/layers/provinces';
 // N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
@@ -3955,9 +3956,7 @@ function getReliefRaster() {
   //    在 193×88 的格子上，一格 ≈ 4~5 屏幕像素，再被双线性放大 —— 每座丘陵都变成
   //    一块几十像素的软斑，海岸那圈更低的高度差直接糊成“投影”。改成 0.85，并把明暗区间
   //    收到 0.90~1.02（原来是 0.80~1.03）：阴影只负责“坡向”，不再负责“脏”。
-  const built = buildHeightmapRaster(hm, 'relief', {
-    shade: 0.85, min: 0.9, max: 1.02, bakeWidth: bakeWidthFor(hm, cameraScale.value),
-  });
+  const built = buildHeightmapRaster(hm, 'relief', { shade: 0.85, min: 0.9, max: 1.02, bakeWidth: bakeWidthFor(hm, cameraScale.value) });
   if (built) rasterCache.set(key, { hm, raster: built });
   return built;
 }
@@ -4509,6 +4508,7 @@ function makeLayerView(opts) {
     // 地形浮雕底 + 政治水洗（2026-11-03）：有高度图才开，没有就退回旧口径（不透明填色）
     showRelief: relief,
     reliefRaster: getReliefRaster,
+    reliefPatch: reliefPatchPass,
     politicalWash: relief ? POLITICAL_WASH : 1,
     showBiomes: showBiomes.value,
     timeline: timeline.value,
@@ -5043,7 +5043,7 @@ onMounted(async () => {
     cvs.style.height = h + 'px';
   }
   ctx.value = cvs.getContext('2d');
-  setRasterRefineHandler(() => render());   // 底档烘焙精修完成时重画一帧
+  setRasterRefineHandler(() => render(), () => (baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null));
 
   // P0: 恢复上次使用的底图键（全局配置）——但只在**当前项目里确实存在**这张底图时才用
   if (window.sitianAPI?.getCurrentBaseMapKey) {

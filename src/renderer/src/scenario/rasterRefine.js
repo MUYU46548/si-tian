@@ -14,6 +14,43 @@
 
 const HANDLER_KEY = '__sitianRasterRefineHandler';
 
+// 视图侧的“重画 + 取高度图”两个回调（2026-11-08）：合成一条注册口，
+// 因为 `ScenarioMap` 有 6,120 行闸门，多一行就要挤掉别的东西。
+// 视口块（`scenario/viewBake.js`）从这里取，不需要第二个注册点。
+let _rerender = () => {};
+let _getHm = () => null;
+
+/** 视图挂载时登记：精修完成要做什么 + 高度图从哪儿取（唯一读取口 = store.getHeightmapFor） */
+export function setRasterRefineHandler(fn, getHm) {
+  _rerender = typeof fn === 'function' ? fn : () => {};
+  if (typeof getHm === 'function') _getHm = getHm;
+  if (typeof window !== 'undefined') window[HANDLER_KEY] = _rerender;
+}
+
+/** 供视口块用：重画一帧 */
+export function notifyRerender() {
+  try { _rerender(); } catch (e) { /* 渲染护栏自己记 */ }
+}
+
+/** 供视口块用：当前底图的高度图（没有 / 已换都返回 null 语义由调用方判） */
+export function bakeHeightmap() {
+  try { return _getHm(); } catch (e) { return null; }
+}
+
+/** 高度图覆盖的世界宽度（含一格 padding；与 `heightmapRaster` 内部同一口径） */
+export function worldWidthOf(hm) {
+  const pts = hm && hm.grid && hm.grid.points;
+  if (!Array.isArray(pts) || !pts.length) return 1;
+  let minX = Infinity, maxX = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i][0];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+  }
+  const sp = Number(hm.grid.spacing) || 8;
+  return Math.max(1, maxX - minX + 2 * sp);
+}
+
 /**
  * **烘焙宽度按当前缩放定**（2026-11-08 第二版，用户反馈“风扇转得很快”后的修正）。
  *
@@ -27,16 +64,7 @@ const HANDLER_KEY = '__sitianRasterRefineHandler';
  * @param {number} scale 当前相机缩放（世界单位 → 屏幕像素）
  */
 export function bakeWidthFor(hm, scale) {
-  const pts = hm && hm.grid && hm.grid.points;
-  if (!Array.isArray(pts) || !pts.length) return 1024;
-  let minX = Infinity, maxX = -Infinity;
-  for (let i = 0; i < pts.length; i++) {
-    const x = pts[i][0];
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-  }
-  const sp = Number(hm.grid.spacing) || 8;
-  const worldW = Math.max(1, maxX - minX + 2 * sp);
+  const worldW = worldWidthOf(hm);
   const s = Number(scale);
   const need = worldW * (Number.isFinite(s) && s > 0 ? s : 1) * 1.15;
   const steps = Math.max(1, Math.ceil(need / 128));      // 128 一档：别为了取整把像素量翻倍
@@ -57,12 +85,6 @@ export function rasterProgressiveOpts(budgetMs = 24) {
       } catch (e) { /* 非浏览器 / 回调出错都不影响烘焙结果 */ }
     },
   };
-}
-
-/** 视图挂载时登记“精修完成后要做什么”（通常是重画一帧）；传 null 注销 */
-export function setRasterRefineHandler(fn) {
-  if (typeof window === 'undefined') return;
-  window[HANDLER_KEY] = typeof fn === 'function' ? fn : null;
 }
 
 /** 用例/真机演练用：切成“一律同步烘”（确定性优先，牺牲首帧流畅） */
