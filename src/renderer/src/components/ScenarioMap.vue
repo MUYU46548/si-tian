@@ -994,7 +994,7 @@ import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 // N1 刀 1：四层里已搬出本文件的三组（底图 / 海岸浅滩 / 省界）；文字标注层下一波
 import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
 import { renderProfiler, attachFrameTotal } from '../scenario/renderProfile';
-import { rasterProgressiveOpts, setRasterRefineHandler } from '../scenario/rasterRefine';
+import { rasterProgressiveOpts, setRasterRefineHandler, bakeWidthFor } from '../scenario/rasterRefine';
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
 import { drawProvincesLayer, drawProvinceBordersLayer, drawPolityBordersLayer } from '../scenario/layers/provinces';
 // N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
@@ -3881,6 +3881,7 @@ function buildCellRaster(kind) {
   // `landAsSea`（2026-10-27）：剧本画布的“陆海底色”只当海面纸 —— 陆地由省份多边形负责，
   // 否则省份平滑后的海岸会漏出一圈块状浅米色（B1“白一块”）。
   return buildHeightmapRaster(hm, kind, {
+    bakeWidth: bakeWidthFor(hm, cameraScale.value),   // 按缩放定宽度（1024…4096），不为看不见的细节让风扇满转
     shade: terrainShade.value ? terrainShadeStrength.value
       : ((kind === 'satellite' || kind === 'terrain') ? 1 : 0),
     landAsSea: kind === 'landsea',
@@ -3888,8 +3889,7 @@ function buildCellRaster(kind) {
     // 目视判据：`drill_scenario_pixels.py --raster height --tag terrain-on`（第 6 刀新加的开关）。
     // 对照图：`build/pixel-baseline/terrain-off.png`（纯色块，糊且脏）vs `terrain-on.png`。
     contour: (kind === 'height' || kind === 'relief'),
-    // 底档固定 4096 宽烘焙（≈8–9 秒 CPU）→ 走“先粗后精”分块，精修完成时通知重画一帧
-    progressive: rasterProgressiveOpts(24),
+    progressive: rasterProgressiveOpts(24),   // 先粗后精，不冻界面
   });
 }
 
@@ -3899,7 +3899,8 @@ function getRaster(kind) {  // 🔴 键里必须含**高度图对象引用**（2
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
   // ⚠️ 缓存键必须含**阴影开关与强度**：否则"勾了阴影画布不变"（缓存命中）——
   //    这正是本项目反复踩的"开关改了没反应"，且不会报错。
-  const key = baseMapKey.value + '|' + kind + '|sh' + (terrainShade.value ? terrainShadeStrength.value : 0);
+  const key = baseMapKey.value + '|' + kind + '|sh' + (terrainShade.value ? terrainShadeStrength.value : 0)
+    + '|bw' + bakeWidthFor(hm, cameraScale.value);
   const hit = rasterCache.get(key);
   if (hit && hit.hm === hm) return hit.raster;
   const built = buildCellRaster(kind);
@@ -3945,7 +3946,7 @@ function reliefOn() {
 function getReliefRaster() {
   const hm = baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null;
   if (!hm) return null;
-  const key = baseMapKey.value + '|relief';
+  const key = baseMapKey.value + '|relief|bw' + bakeWidthFor(hm, cameraScale.value);
   const hit = rasterCache.get(key);
   if (hit && hit.hm === hm) return hit.raster;
   // kind 取 'relief'（2026-11-03 专用色带：低饱和灰绿→灰褐）+ 山体阴影。
@@ -3954,7 +3955,9 @@ function getReliefRaster() {
   //    在 193×88 的格子上，一格 ≈ 4~5 屏幕像素，再被双线性放大 —— 每座丘陵都变成
   //    一块几十像素的软斑，海岸那圈更低的高度差直接糊成“投影”。改成 0.85，并把明暗区间
   //    收到 0.90~1.02（原来是 0.80~1.03）：阴影只负责“坡向”，不再负责“脏”。
-  const built = buildHeightmapRaster(hm, 'relief', { shade: 0.85, min: 0.9, max: 1.02 });
+  const built = buildHeightmapRaster(hm, 'relief', {
+    shade: 0.85, min: 0.9, max: 1.02, bakeWidth: bakeWidthFor(hm, cameraScale.value),
+  });
   if (built) rasterCache.set(key, { hm, raster: built });
   return built;
 }
@@ -5040,9 +5043,7 @@ onMounted(async () => {
     cvs.style.height = h + 'px';
   }
   ctx.value = cvs.getContext('2d');
-  // 底档烘焙是分块做的（4096 宽 ≈8–9 秒）→ 精修完成时重画一帧，把清晰版顶到屏幕上
-  // 异常由渲染护栏记录，这里不吞
-  setRasterRefineHandler(() => render());
+  setRasterRefineHandler(() => render());   // 底档烘焙精修完成时重画一帧（异常交渲染护栏）
 
   // P0: 恢复上次使用的底图键（全局配置）——但只在**当前项目里确实存在**这张底图时才用
   if (window.sitianAPI?.getCurrentBaseMapKey) {

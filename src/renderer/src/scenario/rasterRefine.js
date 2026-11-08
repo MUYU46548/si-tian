@@ -14,6 +14,35 @@
 
 const HANDLER_KEY = '__sitianRasterRefineHandler';
 
+/**
+ * **烘焙宽度按当前缩放定**（2026-11-08 第二版，用户反馈“风扇转得很快”后的修正）。
+ *
+ * 为什么不能一律 4096：固定的 4096 = 9.9 百万像素 ≈ **7 秒单核满载 / 张**，
+ * 一次开图要烘两张（浮雕层 + 底图档）＝ 14 秒满载，而且**小图也一样**（原来 72 省的示例只要 0.3 秒）。
+ * 用户实际用到多少像素，就该烘多少：
+ *   `需要宽度 = 世界宽 × 当前缩放 × 1.15 余量` → 向上取 1024 的整数倍，夹在 1024…4096。
+ * 于是：整幅适屏（scale≈0.6）烘 1024（≈0.5 秒）；放大到 400% 才需要 4096（那时是用户主动放大）。
+ *
+ * @param {{grid?:{points?:Array, spacing?:number}}} hm
+ * @param {number} scale 当前相机缩放（世界单位 → 屏幕像素）
+ */
+export function bakeWidthFor(hm, scale) {
+  const pts = hm && hm.grid && hm.grid.points;
+  if (!Array.isArray(pts) || !pts.length) return 1024;
+  let minX = Infinity, maxX = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i][0];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+  }
+  const sp = Number(hm.grid.spacing) || 8;
+  const worldW = Math.max(1, maxX - minX + 2 * sp);
+  const s = Number(scale);
+  const need = worldW * (Number.isFinite(s) && s > 0 ? s : 1) * 1.15;
+  const steps = Math.max(1, Math.ceil(need / 128));      // 128 一档：别为了取整把像素量翻倍
+  return Math.max(512, Math.min(4096, steps * 128));
+}
+
 /** 给 `buildHeightmapRaster(opts.progressive)` 用：预算 + 完成回调 */
 export function rasterProgressiveOpts(budgetMs = 24) {
   return {
