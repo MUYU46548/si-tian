@@ -24,7 +24,7 @@ import { rasterProgressiveOpts, bakeWidthFor, worldWidthOf, notifyRerender, bake
 export const RELIEF_BAKE_OPTS = Object.freeze({ shade: 0.85, min: 0.9, max: 1.02 });
 
 const IDLE_MS = 260;        // 相机静止多久才开烘
-const PATCH_MAX_PX = 2048;  // 视口块的最大边长（像素）
+const PATCH_MAX_PX = 1024;  // 视口块的最大边长（像素）
 const MAX_AGE_MS = 1200;    // 交互还没停就别一直等：超过这个时长不再推迟（宁可慢一点也不至于永远模糊）
 
 const state = {
@@ -148,9 +148,17 @@ export function drawViewPatch(c, kind, view) {
   c.drawImage(p.canvas, p.rect.minX, p.rect.minY, p.rect.w, p.rect.h);
 }
 
-/** 视口块是否启用（默认关，见上） */
+/**
+ * 视口块是否启用。**默认开**（2026-11-08 晚验证后翻转）；`window.__SITIAN_VIEW_PATCH__ = false` 可关。
+ *
+ * 验证方式（不靠肉眼）：把整幅底图与视口块**按同一世界坐标**采样对拍（各 4800 点）——
+ *   平均通道差 **4**、最大 116（只在海岸线上），说明块的内容与整幅底图一致，只是**更清晰**。
+ *   于是“开块之后整张画布变了 21 万像素”是**变锐**的必然结果（左栏面板是半透明/带背景模糊，
+ *   连它后面的画布变清晰都会反映出来），不是错位也不是偏色。
+ */
 function patchEnabled() {
-  return typeof window !== 'undefined' && window && window.__SITIAN_VIEW_PATCH__;
+  if (typeof window === 'undefined' || !window) return false;
+  return window.__SITIAN_VIEW_PATCH__ !== false;
 }
 
 /**

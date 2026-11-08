@@ -165,8 +165,8 @@ def main():
         # 底档烘焙是“先粗后精”分块的（4096 宽 ≈8–9 秒）；截图要拍**烘完的**那张，
         # 所以默认切同步（`--progressive` 才按真实交互口径跑，用来量首帧与心跳）。
         cdp.eval("window.__SITIAN_RASTER_SYNC__ = %s; 1" % ('false' if flag('progressive') else 'true'))
-        # 视口块（`scenario/viewBake.js`）默认关；`--view-patch` 打开，用来做“开 / 关”两帧的对照。
-        cdp.eval("window.__SITIAN_VIEW_PATCH__ = %s; 1" % ('true' if flag('view-patch') else 'false'))
+        # 视口块（`scenario/viewBake.js`）**默认开**；`--no-view-patch` 关掉做对照。
+        cdp.eval("window.__SITIAN_VIEW_PATCH__ = %s; 1" % ('false' if flag('no-view-patch') else 'true'))
         # 心跳 + 页面错误收集（必须装在打开项目之前）
         cdp.eval("window.__WANT_RENDER_PROFILE__ = %s; 1" % ('true' if flag('profile-render') else 'false'))
         cdp.eval("""(() => {
@@ -652,7 +652,7 @@ def main():
         })()""")
         log('视口块状态：%s' % vb)
         # `--dump-patch`：把视口块那张画布本身存成 PNG —— 一眼分清“块画错了”还是“块放错位置”
-        if flag('dump-patch'):
+        if flag('dump-patch') or flag('dump-relief'):
             du, _ = ask(cdp, """(() => {
               const s = window.__SITIAN_VIEW_BAKE__;
               if (!s || !s.patch || !s.patch.canvas) return '';
@@ -666,6 +666,25 @@ def main():
                 log('视口块画布 → %s' % op)
             else:
                 log('视口块画布导出失败：%s' % str(du)[:120])
+            # 整幅底图画布 + 它的世界矩形（用来和块做“同一世界坐标”的逐像素对拍）
+            du2, _ = ask(cdp, """(() => {
+              const sm = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+              if (typeof sm.getReliefRaster !== 'function') return '';
+              const r = sm.getReliefRaster();
+              if (!r || !r.canvas) return '';
+              window.__REL_RECT__ = { minX: r.minX, minY: r.minY, w: r.w, h: r.h,
+                                      cw: r.canvas.width, ch: r.canvas.height };
+              try { return r.canvas.toDataURL('image/png'); } catch (e) { return 'ERR:' + e.message; }
+            })()""")
+            if isinstance(du2, str) and du2.startswith('data:image/png;base64,'):
+                op2 = os.path.join(out, '%s-relief.png' % tag)
+                with open(op2, 'wb') as f:
+                    import base64 as _b64
+                    f.write(_b64.b64decode(du2.split(',', 1)[1]))
+                rect2, _ = ask(cdp, 'JSON.stringify(window.__REL_RECT__)')
+                log('整幅底图 → %s  世界矩形 %s' % (op2, rect2))
+            else:
+                log('整幅底图导出失败：%s' % str(du2)[:120])
         # 烘焙日志（2026-11-08，`__SITIAN_BAKE_LOG__`）：谁在什么时候烘了多大一张、花了多久
         bake_log, _ = ask(cdp, "JSON.stringify((window.__SITIAN_BAKE_LOG__ || []).slice(-6))")
         if bake_log and bake_log != '[]':

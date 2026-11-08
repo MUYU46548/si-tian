@@ -591,6 +591,23 @@ export function buildHeightmapRaster(hm, kind, opts) {
 }
 
 /**
+ * 逐格颜色缓存（按**高度图对象** + 取色口径）。写口一律换对象 → 引用一变自然失效。
+ * 为什么需要：视口块 + 整幅底图 + 粗档，一次开图要烘 3–4 张；每张都重算同一份逐格颜色
+ * （154k 格实测 105ms/次）—— 三张就是 300ms 白烧，而且全都算在同一颗核上。
+ */
+const CELL_RGB_CACHE = new WeakMap();
+function cellRgbFor(hm, key, build) {
+  let per = CELL_RGB_CACHE.get(hm);
+  if (!per) { per = new Map(); CELL_RGB_CACHE.set(hm, per); }
+  const hit = per.get(key);
+  if (hit) return hit;
+  const made = build();
+  if (per.size > 6) per.clear();      // 有界：同一张底图最多缓存几档口径
+  per.set(key, made);
+  return made;
+}
+
+/**
  * 平滑档：格分辨率 RGB → 子格双线性上采样。
  *
  * **分辨率口径（2026-11-08 用户拍板）**：底档按**固定宽度**烘焙（`opts.bakeWidth`，
@@ -617,13 +634,19 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
   const n = cols * rows;
 
   // ① 格分辨率 RGB（每个格子一次 cellColor）
-  const cellRgb = new Uint8Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const c = cellColor(kind, i, hm, palette, ctx);
-    cellRgb[i * 3] = c[0] | 0;
-    cellRgb[i * 3 + 1] = c[1] | 0;
-    cellRgb[i * 3 + 2] = c[2] | 0;
-  }
+  // 🔴 2026-11-08 晚：**按高度图对象缓存**。视口块 + 整幅底图 + 粗档一次开图要烘 3–4 张，
+  //    每张都在这里花 100ms 重算同一份逐格颜色（154k 格实测 105ms/次）—— 三张就是 300ms 白烧。
+  //    同一个 hm 对象（写口一律换对象 → 引用变即失效）+ 同一档/同一阴影参数 = 同一份颜色。
+  const cellRgb = cellRgbFor(hm, `${kind}|${cols}x${rows}|sh${shade ? 1 : 0}|${ctx && ctx.landAsSea ? 1 : 0}`, () => {
+    const arr = new Uint8Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const c = cellColor(kind, i, hm, palette, ctx);
+      arr[i * 3] = c[0] | 0;
+      arr[i * 3 + 1] = c[1] | 0;
+      arr[i * 3 + 2] = c[2] | 0;
+    }
+    return arr;
+  });
 
   // ② 输出分辨率：固定宽度优先（见函数头），否则退回老口径
   const bakeW = opts && Number.isFinite(opts.bakeWidth) && opts.bakeWidth > 0 ? opts.bakeWidth : 0;
@@ -810,8 +833,12 @@ function buildSmoothRaster(kind, hm, values, palette, spacing, p0, cols, rows, m
   //   固定行数在 4096 宽时一片 ≈250ms，实测心跳空洞 700–880ms（rAF 连发、定时器拿不到槽）。
   const msPerPx = 0.0009;
   const rowsForBudget = (budget) => Math.max(2, Math.min(ch, Math.floor(budget / Math.max(1e-6, cw * msPerPx))));
+  // ⚠️ 让出用的是 **24ms 延迟**，不是 `setTimeout(0)`：0 延迟会让分片首尾相接连成一片
+  // （每片 16ms、100 片 = 1.6 秒连续占用，心跳照样被饿死 —— 实测就是这么读到 1.3–1.6 秒空洞的）。
+  // 24ms 工作 / 24ms 让出 ≈ 一半占空比：墙钟时间变长约一倍，但**机器不会一直满载**
+  // （用户原话：“我风扇转得很快”）。要更快就把它调小，但别调回 0。
   const schedule = typeof setTimeout === 'function'
-    ? (fn) => setTimeout(fn, 0)
+    ? (fn) => setTimeout(fn, 24)
     : (typeof requestAnimationFrame === 'function' ? (fn) => requestAnimationFrame(fn) : null);
   const finish = () => {
     rc.putImageData(img, 0, 0);
