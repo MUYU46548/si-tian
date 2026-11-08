@@ -33,17 +33,21 @@ const { extractGeodata } = require(path.join(ROOT, 'scripts', 'extract-data.js')
 const classify = require(path.join(ROOT, 'scripts', 'lib', 'vaultClassify.js'));
 
 function parseArgs(argv) {
-  const out = { vault: '', out: '', geodata: false, listMissing: false, json: false, sample: 30 };
+  const out = { vault: '', out: '', geodata: false, listMissing: false, json: false, sample: 30, containers: [], skipDirs: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--vault') out.vault = argv[++i] || '';
     else if (k === '--out') out.out = argv[++i] || '';
     else if (k === '--geodata') out.geodata = true;
+    else if (k === '--container') out.containers.push(argv[++i] || '');
+    else if (k === '--skip-dir') out.skipDirs.push(argv[++i] || '');
     else if (k === '--list-missing') out.listMissing = true;
     else if (k === '--json') out.json = true;
     else if (k === '--sample') out.sample = Number(argv[++i]) || 30;
     else if (k === '--help' || k === '-h') out.help = true;
   }
+  out.containers = out.containers.filter(Boolean);
+  out.skipDirs = out.skipDirs.filter(Boolean);
   return out;
 }
 
@@ -129,7 +133,12 @@ async function main() {
   const before = snapshotVault(vault);
   const t0 = Date.now();
   const { index, summary } = vaultIndex.buildIndex(vault, { forceFull: true, write: false });
-  const report = vaultIndex.classifyReport(index);
+  // 目录兜底（2026-11-08）：**默认不猜**。要启用就显式给容器目录（相对库根）：
+  //   --container "03 设定/02 场景地点"  [--skip-dir 杂项 --skip-dir 移动设施]
+  // 不给时只**建议**（见下面的“建议当容器”），不改变任何结果。
+  const containerDirs = args.containers || [];
+  const skipDirNames = args.skipDirs || [];
+  const report = vaultIndex.classifyReport(index, { containerDirs, skipDirNames });
   const elapsedMs = Date.now() - t0;
 
   // 提取（可选）：试导节点表；同样只读（不写库内缓存）
@@ -137,6 +146,7 @@ async function main() {
   if (args.geodata) {
     extraction = await extractGeodata(vault, {
       generic: true, writeCache: false, forceFull: true, collectReport: true,
+      containerDirs, skipDirNames,
     });
   }
 
@@ -174,9 +184,14 @@ async function main() {
     console.log('归类：' + parts.join(' / '));
     console.log(`地图实体：${report.geo.length}（上层为推断 ${report.inferred.length}）`
       + ` / 待人工：${report.needsHuman.length}`
+      + ` / 不是地图页：${(report.nonMap || []).length}（不用管）`
       + ` / 引用但还没写：${(report.unwritten || []).length}（正常，不用补）`);
     if (extraction) {
       console.log(`试导节点：${extraction.nodeCount} 个（报告见 scan-report.json）`);
+      const syn = (extraction.report && extraction.report.synthesized) || [];
+      if (syn.length) {
+        console.log(`目录兜底造出的空壳父节点：${syn.length} 个 —— ` + syn.map((x) => x.name).join('、'));
+      }
     }
     if (report.unwritten && report.unwritten.length) {
       console.log('\n引用但还没写的条目（不是错误，司天不催你补）：');
@@ -195,6 +210,15 @@ async function main() {
       if (report.needsHuman.length > args.sample) {
         console.log(`  … 其余 ${report.needsHuman.length - args.sample} 条见 待人工.md`);
       }
+    }
+    // 目录兜底是**可选**的（默认不猜）。没启用时只给建议，不改任何结果。
+    const sugg = report.containerSuggestions || [];
+    if (!containerDirs.length && sugg.length) {
+      console.log('\n建议当“容器目录”（默认不启用，只在下面这些目录下攒了 ≥2 条缺上层的条目）：');
+      for (const s of sugg.slice(0, 5)) {
+        console.log(`  · ${s.dir} —— ${s.count} 条（子目录：${s.children.slice(0, 4).join('、')}）`);
+      }
+      console.log(`  → 想启用就加参数： --container "${sugg[0].dir}"`);
     }
     console.log(`\n报告：${path.join(outDir, 'scan-report.json')}`);
     console.log(`清单：${path.join(outDir, '待人工.md')}`);

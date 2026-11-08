@@ -10,7 +10,7 @@ const { startIndexWatcher } = require('./vaultIndexWatcher');
 //    漏掉不会报错，只会在 handler 被调用时抛 `ReferenceError: xxx is not defined`（实测事故：
 //    getCurrentBaseMapKey/setCurrentBaseMapKey 漏解构 → 打开历史剧本必报错）。
 //    scripts/tests/unit/test_main_module_wiring.js 会读本源码守住这条不变式。
-const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp, getCurrentBaseMapKey, setCurrentBaseMapKey, getLastProjectPath, setLastProjectPath } = require('./config');
+const { loadConfig, getVaultPath, setVaultPath, getWindowMode, setWindowMode, getCloseQuitsApp, setCloseQuitsApp, getCurrentBaseMapKey, setCurrentBaseMapKey, getLastProjectPath, setLastProjectPath, getGeoContainerDirs, getGeoContainerSkipDirs, setGeoImportDirs } = require('./config');
 const { createTray, destroyTray, getTray, getIsQuitting, setIsQuitting } = require('./tray');
 const { initUpdater, checkForUpdates, downloadUpdate, quitAndInstall } = require('./updater');
 const { registerProjectHandlers } = require('./handlers/projectHandler');
@@ -311,7 +311,11 @@ ipcMain.handle('save-geodata', async (event, data) => {
 // IPC: 从 Markdown 重新提取
 ipcMain.handle('reextract-geodata', async () => {
   try {
-    const data = await extractGeodata(getVaultPath());
+    // 目录兜底（2026-11-08）：容器目录来自用户配置，**默认空 = 不猜**。
+    const data = await extractGeodata(getVaultPath(), {
+      containerDirs: getGeoContainerDirs(),
+      skipDirNames: getGeoContainerSkipDirs(),
+    });
     // 合并保留旧缓存中的编辑器字段（提取结果只含 nodes/hyperlanes，不含编辑器数据）。
     // 渲染层 reextract() 只更新内存态，若用户此后不触发 saveGeodata，
     // 覆盖写盘会让 interiorData/areaZones/area*/space*/interiorReferenceImages 从磁盘消失。
@@ -537,6 +541,27 @@ ipcMain.handle('set-vault-path', async (event, newPath) => {
     // 换库后重启索引监听（旧库的 watcher 必须收掉，否则会往新库里写旧索引）
     restartIndexWatcher();
     return { success: true, path: newPath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// ── 按目录补上层（2026-11-08）──────────────────────────────────────────────
+// 有些条目没写“上层区域”，但归档在一个以地名命名的目录里（`<容器目录>/<地名目录>/<条目>.md`）。
+// 这里只存**用户给的**两张表，默认空 = 不猜；判断规则在 `scripts/lib/vaultClassify.js`。
+ipcMain.handle('get-geo-import-dirs', async () => {
+  return { success: true, containerDirs: getGeoContainerDirs(), skipDirs: getGeoContainerSkipDirs() };
+});
+
+ipcMain.handle('set-geo-import-dirs', async (event, payload) => {
+  try {
+    const p = payload || {};
+    const clean = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+    const res = await setGeoImportDirs({
+      containerDirs: p.containerDirs === undefined ? undefined : clean(p.containerDirs),
+      skipDirs: p.skipDirs === undefined ? undefined : clean(p.skipDirs),
+    });
+    return { success: true, ...res };
   } catch (err) {
     return { success: false, error: err.message };
   }

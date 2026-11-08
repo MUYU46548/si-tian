@@ -106,15 +106,26 @@ async function main() {
   });
 
   await check('三：识别不了的每条都有报告；总数守恒（零静默丢失）', () => {
-    const unknown = report.needsHuman.filter((n) => n.category === 'unknown');
-    assert(unknown.some((n) => n.path === '杂/没有线索.md'), '无信号笔记应进待人工');
-    const row = unknown.find((n) => n.path === '杂/没有线索.md');
-    assert(row.reasons.length > 0, '待人工必须写原因');
+    // 2026-11-08 口径：认不出分两类 ——
+    //   · 解析失败 = 文件坏了 → 待人工（要人修 YAML）
+    //   · 没有任何分类信号 = 散文/帮助页/术语表 → nonMap（单列，不催、不进地图、也不丢）
+    const noise = (report.nonMap || []).filter((n) => n.path === '杂/没有线索.md');
+    eq(noise.length, 1, '无信号笔记应进 nonMap（不是待人工）');
+    assert((noise[0].reasons || []).length > 0, 'nonMap 也要写原因');
+    assert(!report.needsHuman.some((n) => n.path === '杂/没有线索.md'),
+      '无信号散文不许混进待人工（否则清单看起来像一堆债）');
+    // 反向探针：解析失败必须仍然留在待人工，不能被一起扫进 nonMap
+    const broken = classify.buildReport([{
+      path: '杂/坏YAML.md', title: '坏YAML', name: '坏YAML', fm: {},
+      classification: { category: 'unknown', evidence: [{ signal: 'parse', detail: '第 3 行' }], needsHuman: ['category'] },
+    }]);
+    assert(broken.needsHuman.some((n) => n.path === '杂/坏YAML.md'), '解析失败必须留在待人工');
+    eq((broken.nonMap || []).length, 0, '解析失败不算“不是地图页”');
     const sum = Object.values(report.byCategory).reduce((a, b) => a + b, 0);
     eq(sum, report.total, 'Σ各类目 = 总数');
     eq(report.total, summary.total, '报告总数 = 索引条目数');
     eq(report.total, Object.keys(FILES).length, '报告总数 = 写进库的笔记数');
-    return `待人工 ${report.needsHuman.length} 条；总数 ${report.total} 守恒`;
+    return `待人工 ${report.needsHuman.length} 条 / 不是地图页 ${(report.nonMap || []).length} 条；总数 ${report.total} 守恒`;
   });
 
   await check('四：空间关系 —— 显式字段 / 正文句式 / 双链三档，推断与事实分开', () => {

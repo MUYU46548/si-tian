@@ -431,6 +431,14 @@ MOCK_SCRIPT = """<script>
         // ===== 全库只读索引（D1）=====
         // 主进程的真实扫描/解析在 unit/test_vault_index.js 里验（临时目录 + 真文件）；
         // 这里只给 UI 一个稳定的内存态，用来守“设置面板的入口/按钮/候选列表”接线。
+        // 按目录补上层（2026-11-08）：两张表存在用户配置里，mock 用内存变量模拟“存了能读回来”
+        getGeoImportDirs: async () => ({ success: true, containerDirs: (window.__geoCtrDirs || []), skipDirs: [] }),
+        setGeoImportDirs: async (payload) => {
+          const list = payload && Array.isArray(payload.containerDirs) ? payload.containerDirs : [];
+          window.__geoCtrDirs = list;
+          window.__geoDirsSaveCalls = (window.__geoDirsSaveCalls || 0) + 1;
+          return { success: true, containerDirs: list, skipDirs: [] };
+        },
         vaultIndexStatus: async () => ({
           success: true, exists: true, root: 'E:/合成测试库',
           builtAt: '2026-10-19T00:00:00.000Z', sizeBytes: 2048,
@@ -460,6 +468,10 @@ MOCK_SCRIPT = """<script>
               { path: '03 设定/11 地理系统/_说明.md', title: '说明', category: 'geo', reasons: ['认得出是地点，但认不出粒度（世界/星域/行星/城市…）'] },
             ],
             inferred: [{ path: '03 设定/02 场景地点/风岬港.md', title: '风岬港', parentTitle: '北境', signal: 'text' }],
+            // 按目录补上层（2026-11-08）：设置面板“用建议填上”读的就是这一项
+            containerSuggestions: [
+              { dir: '03 设定/02 场景地点', count: 5, children: ['绒兽世界', '柯依尔世界'] },
+            ],
           },
         }),
         vaultIndexSearch: async (q) => ({ success: true, results: [{ path: '03 设定/人物/艾琳.md', title: '艾琳', kind: 'lore', score: 80 }] }),

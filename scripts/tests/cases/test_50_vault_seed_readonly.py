@@ -74,6 +74,33 @@ def run(cdp):
         return False, f'徽标 title 缺少能力说明：{badge}'
     if badge.get('statusBarVisible'):
         return False, f'前置假设不成立：世界视图本不该有状态栏（此时有，说明用例前提变了）{badge}'
+    # ── a2) 世界卡片上的行内操作：常驻 + 带文字（2026-11-08）──────────────
+    # 用户两条要求叠在一起：① 按钮不许只有图标；② 行内操作不许“悬停才出现”。
+    # 这两个按钮曾经是 opacity:0 + 纯图标（2026-11-03 用户报“想重命名都做不到”）。
+    wc = _j(cdp, """(() => {
+      const card = document.querySelector('.world-card');
+      if (!card) return JSON.stringify({ none: true });
+      const info = (sel) => {
+        const b = card.querySelector(sel);
+        if (!b) return null;
+        const cs = getComputedStyle(b);
+        const rc = b.getBoundingClientRect();
+        return { text: (b.textContent || '').trim(), opacity: cs.opacity,
+                 w: Math.round(rc.width), h: Math.round(rc.height) };
+      };
+      return JSON.stringify({ rename: info('.rename-btn'), del: info('.delete-btn') });
+    })()""", 'world-card-actions')
+    if wc.get('none'):
+        return False, '世界视图没有世界卡片（用例前提变了）'
+    for key, want in (('rename', '改名'), ('del', '删除')):
+        b = wc.get(key) or {}
+        if want not in (b.get('text') or ''):
+            return False, f'世界卡片的 {key} 按钮没有可见文字（只有图标/只有 title）：{wc}'
+        if str(b.get('opacity')) != '1':
+            return False, f'世界卡片的 {key} 按钮是悬停才出现的（opacity={b.get("opacity")}）：{wc}'
+        if (b.get('w') or 0) < 40:
+            return False, f'世界卡片的 {key} 按钮宽度装不下文字（{b.get("w")}px）：{wc}'
+
     # 点击去项目面板（去处可达）
     cdp.eval("document.querySelector('.toolbar-actions .readonly-badge').click()")
     time.sleep(1.0)

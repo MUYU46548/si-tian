@@ -585,6 +585,9 @@ function discoverCandidates(index, rules = defaultRules()) {
     cands.push({
       path: g.path,
       title: g.title,
+      // 2026-11-08：面板要显示**文件名**（`e.name`），不是 H1 —— 真实库里 H1 多是“概述”，
+      // 一屏几十行全写“概述”，用户根本认不出是哪一条。
+      name: g.name || entry.name || '',
       layer: g.layer,
       layerLabel: g.layer ? (LAYER_LABELS[g.layer] || g.layer) : null,
       parentTitle: g.parentTitle || '',

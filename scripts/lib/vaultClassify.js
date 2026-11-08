@@ -466,7 +466,49 @@ function layerRank(layer, order) {
  * @returns {{parentTitle:string, parentPath:string, inferred:boolean, signal:string,
  *            evidence:string, resolvable:boolean} | {needsHuman:string, reason:string}}
  */
+// ── 目录兜底（2026-11-08；2026-11-08 第二版：参数化，不写死任何库的目录习惯）─────
+// 为什么需要：真实库里有若干地点，正文没写上层、frontmatter 没写、也没有双链，
+// 但它们的**归档目录本身**就是一个容器（`<容器>/<地名目录>/<条目>.md`）。目录是人亲手分的类。
+//
+// ⚠️ **默认不猜**：`containerDirs` 为空 → 直接返回 null。
+//    上一版把「02 场景地点 / 11 地理系统 / 杂项 / 移动设施 / 旧作场景」写死在代码里 ——
+//    那只有一种库能用，换个人就是错的（用户 2026-11-08 原话：“这样永远只能我一个人用，不是通用的”）。
+//    现在这三个东西全部由调用方给：
+//      · containerDirs：**哪些目录算容器**（相对库根，例 `'03 设定/02 场景地点'`）
+//      · skipDirNames：这个库里哪些目录名明显不是地名容器（桶目录，可选）
+//      · 层级目录（世界/星域/星系…）是**语言层面的通用规则**，仍然内置 —— 那不是个人习惯。
+const LAYER_DIR_NAMES = new Set([
+  '世界', '星域', '星系', '行星', '恒星', '卫星', '区域', '城镇', '城市', '村庄', '建筑', '设施', '地点',
+]);
+
+/**
+ * 从源路径推出“目录兜底”的父候选（纯函数，不碰索引）。
+ * @param {string} sourcePath 库内相对路径
+ * @param {{containerDirs?: string[], skipDirNames?: string[]}} [opts]
+ * @returns {{name:string, folder:string, parentPath:string, dir:string}|null}
+ */
+function dirParentCandidate(sourcePath, opts = {}) {
+  const raw = opts && opts.containerDirs;
+  const containers = raw instanceof Set ? raw : new Set(Array.isArray(raw) ? raw : []);
+  if (!containers.size) return null;               // 未配置 = 不猜（通用默认）
+  const p = String(sourcePath || '').replace(/\\/g, '/');
+  const parts = p.split('/').filter(Boolean);
+  if (parts.length < 3) return null;               // 至少 容器/子目录/文件.md
+  parts.pop();                                     // 去掉文件名
+  const folder = parts[parts.length - 1];
+  const parentPath = parts.slice(0, -1).join('/');
+  if (!containers.has(parentPath)) return null;
+  const name = folder.replace(/^\d+\s*/, '').trim();
+  if (!name || LAYER_DIR_NAMES.has(name)) return null;
+  const skip = new Set(Array.isArray(opts.skipDirNames) ? opts.skipDirNames : []);
+  if (skip.has(name) || skip.has(folder)) return null;
+  return { name, folder, parentPath, dir: parts.join('/') };
+}
+
 function inferParent(entry, ctx) {
+  // ⚠️ 上层一律用 `target.name`（文件名 = 实体名），不用 `target.title`：
+  //    真实库里大量笔记的 H1 是“概述”“宏观特征”这类通用标题，用 title 会把
+  //    推断清单显示成“上层：概述”（2026-11-08 实测，读起来完全没法核对）。
   const e = entry || {};
   const fm = e.fm || {};
   const nameIndex = ctx.nameIndex || new Map();
@@ -498,7 +540,7 @@ function inferParent(entry, ctx) {
     const target = resolve(raw);
     if (target) {
       return {
-        parentTitle: target.title || target.name,
+        parentTitle: target.name || target.title,
         parentPath: target.path,
         inferred: false,
         signal: `frontmatter.${key}`,
@@ -527,7 +569,7 @@ function inferParent(entry, ctx) {
     if (!target) continue;
     if ((target.classification && target.classification.category) !== 'geo') continue;
     return {
-      parentTitle: target.title || target.name,
+      parentTitle: target.name || target.title,
       parentPath: target.path,
       inferred: true,
       signal: 'wikilink',
@@ -536,7 +578,38 @@ function inferParent(entry, ctx) {
     };
   }
 
-  // ③ 正文句式（只认“位于/隶属 + 已知实体名”；名字对不上就当没推断）
+  // ③ 目录兜底（见文件上方 `dirParentCandidate` 的边界说明）。
+  //    顺序放在双链之后：正文双链是你**明确**写的，目录只是归档习惯；两者都落空才进待人工。
+  const dirCand = dirParentCandidate(e.path, { containerDirs: ctx.containerDirs, skipDirNames: ctx.skipDirNames });
+  if (dirCand) {
+    const target = nameIndex.get(normName(dirCand.name));
+    if (target && target.path !== e.path) {
+      const tl = target.classification && target.classification.layer;
+      const okLayer = !(childLayer && tl && layerRank(tl, layerOrder) > layerRank(childLayer, layerOrder));
+      if (okLayer) {
+        return {
+          parentTitle: target.name || target.title,
+          parentPath: target.path,
+          inferred: true,
+          signal: 'directory',
+          evidence: `目录：${dirCand.folder}`,
+          resolvable: true,
+        };
+      }
+    }
+    // 目录里还没有同名笔记：父级是个**还没写的容器**（与“未写引用”同性质，不催人补）
+    return {
+      parentTitle: dirCand.name,
+      parentPath: '',
+      inferred: true,
+      signal: 'directory',
+      evidence: `目录：${dirCand.folder}（该目录还没有同名笔记）`,
+      resolvable: false,
+      synthetic: true,
+    };
+  }
+
+  // ④ 正文句式（只认“位于/隶属 + 已知实体名”；名字对不上就当没推断）
   //    索引条目只存开头一段（`contentSample`），完整正文由 readNote 按需读 —— 这里两种都吃。
   const text = String(e.content || e.contentSample || '');
   for (const re of TEXT_PARENT_PATTERNS) {
@@ -545,7 +618,7 @@ function inferParent(entry, ctx) {
     const target = resolve(m[1]);
     if (!target) continue;
     return {
-      parentTitle: target.title || target.name,
+      parentTitle: target.name || target.title,
       parentPath: target.path,
       inferred: true,
       signal: 'text',
@@ -572,8 +645,10 @@ function buildReport(entries, opts = {}) {
   const byLayer = {};
   const geo = [];
   const needsHuman = [];
+  const nonMap = [];
   const inferred = [];
   const unwritten = [];
+  const suggestBuckets = new Map();
 
   for (const e of list) {
     if (!e) continue;
@@ -584,22 +659,32 @@ function buildReport(entries, opts = {}) {
         // 解析失败的条目要让人看得出是“文件坏了”，不是“没写字段”——
         // 两者的处理方式完全不同（后者补字段，前者修 YAML）
         const parseEv = (c.evidence || []).find((x) => x.signal === 'parse');
-        needsHuman.push({
-          path: e.path, title: e.title, category: 'unknown',
-          reasons: parseEv
-            ? [`frontmatter 解析失败：${parseEv.detail}`]
-            : (c.needsHuman || []).map((r) => (r === 'category' ? '没有任何可用的分类信号' : r)),
-          evidence: c.evidence || [],
-        });
+        if (parseEv) {
+          needsHuman.push({
+            path: e.path, title: e.title, name: e.name || '', category: 'unknown',
+            reasons: [`frontmatter 解析失败：${parseEv.detail}`],
+            evidence: c.evidence || [],
+          });
+        } else {
+          // 2026-11-08：没有任何分类信号 = 散文 / 帮助页 / 术语表 / 指令脚本。
+          // 它们**永远不该成为地图实体**，混进“待人工”只会让清单看起来像 31 条债。
+          // 单列到 `nonMap`：不丢（零静默丢失）、不催、不进地图。
+          nonMap.push({
+            path: e.path, title: e.title, name: e.name || '', category: 'unknown',
+            reasons: ['没有任何分类信号（不是地图页）'],
+            evidence: c.evidence || [],
+          });
+        }
       }
       continue;
     }
     const parent = inferParent({ ...e, classification: c }, {
       nameIndex, layerOrder: opts.layerOrder, parentFields: opts.parentFields,
+      containerDirs: opts.containerDirs, skipDirNames: opts.skipDirNames,
     }) || {};
     const row = {
       path: e.path,
-      title: e.title,
+      title: e.title, name: e.name || '',
       layer: c.layer,
       layerLabel: c.layer,
       confidence: c.confidence,
@@ -607,6 +692,7 @@ function buildReport(entries, opts = {}) {
       parentPath: parent.parentPath || '',
       parentInferred: !!parent.inferred,
       parentUnwritten: !!parent.unwritten,
+      parentSynthetic: !!parent.synthetic,
       signal: parent.signal || '',
       evidence: c.evidence || [],
     };
@@ -614,24 +700,38 @@ function buildReport(entries, opts = {}) {
     byLayer[c.layer || 'unknown'] = (byLayer[c.layer || 'unknown'] || 0) + 1;
     if (parent.unwritten) {
       unwritten.push({
-        path: e.path, title: e.title, parentTitle: parent.parentTitle,
+        path: e.path, title: e.title, name: e.name || '', parentTitle: parent.parentTitle,
         signal: parent.signal, evidence: parent.evidence,
       });
     }
-    if (parent.inferred) inferred.push({ path: e.path, title: e.title, ...parent, evidence: parent.evidence });
+    if (parent.inferred) inferred.push({ path: e.path, title: e.title, name: e.name || '', ...parent, evidence: parent.evidence });
     for (const need of (c.needsHuman || [])) {
       needsHuman.push({
-        path: e.path, title: e.title, category: 'geo',
+        path: e.path, title: e.title, name: e.name || '', category: 'geo',
         reasons: [need === 'layer' ? '认得出是地点，但认不出粒度（世界/星域/行星/城市…）' : need],
         evidence: c.evidence || [],
       });
     }
     if (parent.needsHuman) {
       needsHuman.push({
-        path: e.path, title: e.title, category: 'geo',
+        path: e.path, title: e.title, name: e.name || '', category: 'geo',
         reasons: [parent.reason || '找不到上层'],
         evidence: c.evidence || [],
       });
+    }
+    // 「建议当容器」的统计：只数事实（哪个人目录下攒了 ≥2 条没上层的条目），不自动应用
+    if (!parent.parentTitle) {
+      const parts = String(e.path || '').replace(/\\/g, '/').split('/').filter(Boolean);
+      if (parts.length >= 3) {
+        const folder = parts[parts.length - 2];
+        const dir = parts.slice(0, -2).join('/');
+        if (dir) {
+          if (!suggestBuckets.has(dir)) suggestBuckets.set(dir, { dir, count: 0, children: new Set() });
+          const b = suggestBuckets.get(dir);
+          b.count += 1;
+          b.children.add(folder.replace(/^\d+\s*/, '').trim());
+        }
+      }
     }
   }
 
@@ -641,8 +741,14 @@ function buildReport(entries, opts = {}) {
     byLayer,
     geo,
     needsHuman,
+    nonMap,
     inferred,
     unwritten,
+    // 只建议、不应用：给 `containerDirs` 用的一行候选（见 `dirParentCandidate` 的说明）
+    containerSuggestions: [...suggestBuckets.values()]
+      .filter((b) => b.count >= 2)
+      .map((b) => ({ dir: b.dir, count: b.count, children: [...b.children].filter(Boolean) }))
+      .sort((a, b) => b.count - a.count),
     categories: CATEGORY_LABELS,
   };
 }
@@ -658,6 +764,7 @@ function reportToMarkdown(report) {
   lines.push(`- 分布：${Object.keys(cats).sort().map((k) => `${CATEGORY_LABELS[k] || k} ${cats[k]}`).join(' / ')}`);
   lines.push(`- 地图实体：**${(r.geo || []).length}**（其中上层为推断 ${(r.inferred || []).length} 条）`);
   lines.push(`- 待人工：**${(r.needsHuman || []).length}**`);
+  lines.push(`- 不是地图页：**${(r.nonMap || []).length}**（散文 / 帮助页 / 术语表 / 指令脚本，不用管）`);
   lines.push(`- 引用但还没写：**${(r.unwritten || []).length}**（正常状态，不用补）`);
   lines.push('');
   lines.push('## 待人工（每一条都写了为什么）');
@@ -691,6 +798,15 @@ function reportToMarkdown(report) {
       + '司天不会催你补，也不会因为它们挡住任何操作。');
   }
   lines.push('');
+  lines.push('## 不是地图页的条目（列出来只为不静默丢失，不用管）');
+  lines.push('');
+  const nm = r.nonMap || [];
+  if (!nm.length) lines.push('（无）');
+  for (const x of nm.slice(0, 40)) {
+    lines.push(`- \`${x.path}\`（${x.title || ''}）`);
+  }
+  if (nm.length > 40) lines.push(`- …… 另有 ${nm.length - 40} 条，见 scan-report.json 的 report.nonMap`);
+  lines.push('');
   return lines.join('\n');
 }
 
@@ -713,6 +829,7 @@ module.exports = {
   DIR_RULES,
   PARENT_FIELDS,
   TEXT_PARENT_PATTERNS,
+  dirParentCandidate,
   classifyNote,
   inferParent,
   buildNameIndex,

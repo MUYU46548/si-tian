@@ -12,12 +12,13 @@
 
 本用例守：
   a) 空项目下**世界视图空态**有“导入知识库内容”入口，且真的能导入（实体进项目 + 节点上画布）
-  b) 项目面板有“导入知识库内容”按钮 + 说明文案（能导入多少、只补缺、可撤销）
-  c) 导入是**一条 undo**（Ctrl+Z 能整体撤销）且**不覆盖**项目里已有的实体
+  b) 项目面板有“导入知识库内容”按钮 + 说明文案（能导入多少、导入时更新什么、可撤销）
+  c) 导入是**一条 undo**（Ctrl+Z 能整体撤销），且**不覆盖显示名**（司天里改过的名字保留）
   d) 面板文字在**亮色与暗色两套主题**下都达到对比度底线（WCAG 小字 4.5）
   e) 静态：canvasBridge 有第四个注册口（导入）、App/面板不经 geodata 直连
-  f) **机器属性读优先级（A-2，2026-09-27）**：已有实体的 `layer` / `parentId` / `placeType`
-     以**项目为准** —— 纯函数 `mergeVaultPayload` 与“重复导入”两条路径都不许用笔记值覆盖它们
+  f) **重导语义（2026-11-08 选 A，取代 A-2/2026-09-27）**：按 `sourcePath` 认亲 →
+     只更新机器字段（`layer` / `parentId` / `placeType` …），`name` / `coordinate` / `uuid` 保留；
+     载荷里没有的条目**一个字段都不许动**
 """
 import json
 import os
@@ -264,12 +265,12 @@ def run(cdp):
                            '这**不是**导入覆盖，别修错地方')
         return False, f'重复导入把项目里已有实体覆盖了（应只补缺）：{keep}'
 
-    # ── c3) 机器属性同样不被覆盖（A-2，2026-09-27）＝ 搬家协议定的“读优先级”──────────
-    # 背景：报告定案“结构归司天（.sitian），内容归笔记”→ 已有实体的 layer / parentId / placeType
-    #   以**项目为准**；笔记里的 `层级` / `上层区域` / `地点类型` 只在**该实体第一次进项目**时当初始值。
-    #   ⚠️ 不许改成“先查新、缺失回落旧”—— 并存观察期里旧值会在新值缺失时**静默顶替**。
-    # 两层判据：① 纯函数 mergeVaultPayload 喂一份**故意冲突**的载荷 → 项目值必须逐一原样；
-    #           ② 端到端：在项目里改这三项（模拟用户在司天界面改过）→ 重复导入 → 仍是我改的。
+    # ── c3) 机器属性跟着笔记走（2026-11-08 改口径，取代 A-2/2026-09-27 的“项目为准”）──
+    # 用户拍板 A：改笔记里的“上层区域 / 层级 / 地点类型”要能重导生效。
+    # 三层判据：
+    #   ① 纯函数：同 sourcePath 的载荷 → 机器字段更新、`name` 保留、merged.updated=1、merged.entities=0；
+    #   ② 端到端：在项目里改 layer → 重复导入 → 回到笔记值；
+    #   ③ 反向探针：载荷里没有这篇（笔记被删了）→ 项目里那条一点不动（不替用户删东西）。
     attrs = _j(cdp.eval("""(async () => {
       const app = %s;
       const pinia = app.config.globalProperties.$pinia;
@@ -278,21 +279,18 @@ def run(cdp):
       const id = Object.keys(proj.entities)[0];
       const before = JSON.parse(JSON.stringify(proj.entities[id]));
 
-      // ① 纯函数层：同一 id 的载荷里带着**不同**的机器属性（含一个不存在的父级）
-      const probe = { entities: { [id]: { ...before, layer: 'galaxy', layerLabel: '星系',
-                                          parentId: '不存在的父级', placeType: '宗教' } } };
+      // ① 纯函数层：同一 sourcePath 的载荷带着**不同**的机器属性（含一个不存在的父级和不同的名字）
+      const probe = { entities: { [id]: { ...before, name: '载荷里的名字', layer: 'galaxy',
+                                          layerLabel: '星系', parentId: '不存在的父级', placeType: '宗教' } } };
       const mergedRes = proj.mergeVaultPayload(proj.project, probe);
-      // ⚠️ 断言必须瞄**合并结果**（mergedRes.next），不是 proj.entities ——
-      //    mergeVaultPayload 是**纯函数**、本来就不会动 proj；瞄 proj 的话，
-      //    “用载荷覆盖已有实体”这个缺陷照样绿（实测：探针 B 就这样溜过去一次，
-      //    只覆盖 layer 时整条用例仍是绿的）。契约的产物是 next，判据就得瞄 next。
-      const kept = JSON.parse(JSON.stringify(mergedRes.next.entities[id]));
+      const nextE = JSON.parse(JSON.stringify(mergedRes.next.entities[id]));
       const merged = mergedRes.merged;
 
-      // ② 端到端：先在项目里改这三项，再重复导入
-      // 补刀③（2026-09-28 在线审查）：端到端此前只查 layer/placeType、没查 parentId（纯函数层查了）——
-      // 载荷构建侧若在 parentId 上分化，纯函数层是绿的、真导入却会把挂靠顶掉。补一个断言成本≈0。
-      // 目标父级必须**存在且不是 id 自己/后代**（否则被 updateEntity 的防循环校验拒绝 → 装置假绿）。
+      // ③ 反向探针：载荷里没有这篇 → 项目里原样（连 updated 都不该 +1）
+      const emptyRes = proj.mergeVaultPayload(proj.project, { entities: {} });
+      const keptWhenAbsent = JSON.stringify(emptyRes.next.entities[id]) === JSON.stringify(before);
+
+      // ② 端到端：先在项目里改 layer，再重复导入 → 应回到笔记里的值
       const isDescOfId = (e) => { let p = e; while (p) { if (p.id === id) return true; p = p.parentId ? proj.entities[p.parentId] : null; } return false; };
       const target = proj.entityList.find(e => e.id !== id && !isDescOfId(e) && e.id !== (before.parentId || null)) || null;
       const targetId = target ? target.id : null;
@@ -302,27 +300,33 @@ def run(cdp):
       await new Promise(r => setTimeout(r, 500));
       const after = JSON.parse(JSON.stringify(proj.entities[id]));
 
-      // 还原，别把改动留给后续步骤
-      proj.updateEntity(id, { layer: before.layer, layerLabel: before.layerLabel,
-                              placeType: before.placeType, parentId: before.parentId || null });
-      await new Promise(r => setTimeout(r, 250));
-
       return JSON.stringify({
         mergedEntities: merged.entities,
+        mergedUpdated: merged.updated,
         src: [before.layer, before.parentId, before.placeType],
-        kept: [kept.layer, kept.parentId, kept.placeType],
+        kept: [nextE.layer, nextE.parentId, nextE.placeType],
+        keptName: nextE.name,
+        srcName: before.name,
+        keptWhenAbsent,
         after: [after.layer, after.placeType, after.parentId],
         targetId,
       });
-    })()""" % APP), '机器属性不被覆盖')
+    })()""" % APP), '机器属性跟着笔记走')
     if attrs.get('mergedEntities') != 0:
-        return False, f'载荷里同 id 的实体被算成"新增"了（只补缺的判据就是这一句）：{attrs}'
-    if attrs.get('kept') != attrs.get('src'):
-        return False, (f'★ 纯函数 mergeVaultPayload 用载荷覆盖了已有实体的机器属性'
-                       f'（读优先级必须“项目为准”）：src={attrs.get("src")} kept={attrs.get("kept")}')
-    if attrs.get('after') != ['town', '商业', attrs.get('targetId')]:
-        return False, (f'★ 重复导入把用户在司天里改过的机器属性覆盖了（应按项目为准）：'
-                       f'期望 [town, 商业, {attrs.get("targetId")}] 实际 {attrs.get("after")}')
+        return False, f'载荷里同 sourcePath 的实体被算成"新增"了（应算更新）：{attrs}'
+    if attrs.get('mergedUpdated') != 1:
+        return False, f'纯函数没有把它算成更新（merged.updated 应为 1）：{attrs}'
+    if attrs.get('kept') != ['galaxy', None, '宗教']:
+        return False, (f'★ 纯函数 mergeVaultPayload 没把机器属性更新成笔记值'
+                       f'（期望 [galaxy, None(悬空父级被收口), 宗教]）：kept={attrs.get("kept")}')
+    if attrs.get('keptName') != attrs.get('srcName'):
+        return False, (f'★ 更新机器字段时把项目里的名字也顶掉了（name 必须保留）：'
+                       f'{attrs.get("keptName")!r} vs {attrs.get("srcName")!r}')
+    if not attrs.get('keptWhenAbsent'):
+        return False, f'★ 载荷里没有这篇时，项目里那条被改了（不许替用户删/改东西）：{attrs}'
+    if attrs.get('after') != [attrs.get('src', [None])[0], attrs.get('src', [None, None, None])[2], attrs.get('src', [None, None])[1]]:
+        return False, (f'★ 重复导入没有把用户在司天里改过的机器属性更新回笔记值：'
+                       f'期望 {attrs.get("src")} 实际 {attrs.get("after")}')
 
     # ── d) 面板存在 + 说明文案 + 暗色/亮色可读性 ──────────────────────────────
     if not _open_project_panel(cdp):
@@ -415,7 +419,8 @@ def run(cdp):
     dark = {'min': min(v.get('min', 99) for v in results['dark'].values())}
     light = {'min': min(v.get('min', 99) for v in results['light'].values())}
     return True, (f'导入知识库内容链路通过：空项目 → 世界视图空态有入口（可点、在视口内）→ 导入后 '
-                  f'{after["entities"]} 个实体全部落到画布（nodes 一致）→ 一次 undo 整体还原 → 重复导入只补缺'
+                  f'{after["entities"]} 个实体全部落到画布（nodes 一致）→ 一次 undo 整体还原 → '
+                  f'重复导入：已有实体按 sourcePath 更新机器字段、名字保留、载荷外的不动'
                   f'（改过的名字没被覆盖）；项目面板有按钮 + 说明；面板文字对比度 暗色 [{_mins("dark")}] / '
                   f'亮色 [{_mins("light")}] 全部达标（WCAG 小字 4.5）；'
                   f'静态接线（canvasBridge 第 4 注册口 / App 不引 projectStore / 面板不引 geodata）齐备')

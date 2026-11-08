@@ -9,7 +9,21 @@ const DEFAULT_VAULT = ''; // 留空：首次启动由用户通过设置面板指
 const WINDOW_MODES = ['maximized', 'fullscreen', 'default'];
 const DEFAULT_WINDOW_MODE = 'maximized';
 
-let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE, closeQuitsApp: false, currentBaseMapKey: '', lastProjectPath: '' };
+let config = { vaultPath: DEFAULT_VAULT, windowMode: DEFAULT_WINDOW_MODE, closeQuitsApp: false, currentBaseMapKey: '', lastProjectPath: '',
+  // 读料“目录兜底”（2026-11-08）：哪些目录下的**一级子目录**可以当地名容器（相对库根）。
+  // **默认空 = 不猜** —— 别人的库结构千奇百怪，猜错的代价是凭空造出一个世界。
+  // 由用户给一次（设置面板 / 配置文件 / 命令行 --container），之后一直用。
+  geoContainerDirs: [],
+  geoContainerSkipDirs: [],
+};
+
+/** 把配置里的目录列表收敛成干净的相对路径数组（去空、去首尾空白、统一斜杠） */
+function normDirList(v) {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x) => typeof x === 'string')
+    .map((s) => s.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, ''))
+    .filter(Boolean);
+}
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'config.json');
@@ -39,6 +53,8 @@ async function loadConfig() {
     if (typeof cfg.currentBaseMapKey === 'string') {
       config.currentBaseMapKey = cfg.currentBaseMapKey;
     }
+    config.geoContainerDirs = normDirList(cfg.geoContainerDirs);
+    config.geoContainerSkipDirs = normDirList(cfg.geoContainerSkipDirs);
   } catch (e) {
     // 无配置 → 使用默认值（兼容旧版硬编码）
   }
@@ -105,10 +121,27 @@ async function setLastProjectPath(p) {
   return config.lastProjectPath;
 }
 
+// 读料“目录兜底”的两张表（2026-11-08）。默认空数组 = 不猜。
+function getGeoContainerDirs() {
+  return [...(config.geoContainerDirs || [])];
+}
+
+function getGeoContainerSkipDirs() {
+  return [...(config.geoContainerSkipDirs || [])];
+}
+
+async function setGeoImportDirs({ containerDirs, skipDirs } = {}) {
+  if (containerDirs !== undefined) config.geoContainerDirs = normDirList(containerDirs);
+  if (skipDirs !== undefined) config.geoContainerSkipDirs = normDirList(skipDirs);
+  await writeConfig();
+  return { containerDirs: getGeoContainerDirs(), skipDirs: getGeoContainerSkipDirs() };
+}
+
 module.exports = {
   loadConfig, getVaultPath, setVaultPath, DEFAULT_VAULT,
   getWindowMode, setWindowMode,
   getCloseQuitsApp, setCloseQuitsApp,
   getCurrentBaseMapKey, setCurrentBaseMapKey,
   getLastProjectPath, setLastProjectPath,
+  getGeoContainerDirs, getGeoContainerSkipDirs, setGeoImportDirs,
 };

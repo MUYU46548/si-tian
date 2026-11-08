@@ -242,36 +242,87 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   /**
-   * 把知识库载荷**合并**进项目（只补缺、绝不覆盖项目里已有的东西）。
+   * 把知识库载荷**合并**进项目。
    * 与 seedFromPayload 的区别：seedFromPayload 是“以载荷为基底重建”（新建项目时用），
-   * 本函数是“往已有项目里补”—— 直接用 seedFromPayload 会把用户已经画好的内容清掉。
+   * 本函数是“往已有项目里补/更新”—— 直接用 seedFromPayload 会把用户已经画好的内容清掉。
    *
-   * 🔴 **本函数就是搬家协议定的“读优先级”**（A-2，2026-09-27 定案）：
-   *    已有实体的机器属性（`layer` / `parentId` / `placeType`）**以项目文件为准**；
-   *    笔记里的 `层级` / `上层区域` / `地点类型` 只在**该实体第一次进项目**时当初始值。
-   *    之后用户再改笔记里的字段，司天**不再采纳**（项目态下知识库的 add/unlink/change 事件
-   *    同样被整条拦掉，见 geodata 的 `handleNodeUpdated`）—— 两处行为加起来才是完整语义。
+   * 🔴 **读优先级（2026-11-08 改口径，取代 A-2/2026-09-27 的“机器属性一律以项目为准”）**：
+   *    - 按 **`sourcePath`** 认亲：同一篇笔记 → 同一条实体（不是按名字，名字会撞/会改）；
+   *    - 认亲成功 → **只更新机器字段**（`layer` / `layerLabel` / `parentId` / `placeType` /
+   *      `tags` / `wikilinks` / `status`），其余一律保留项目里的版本；
+   *    - 认亲失败（新笔记）→ 新增；
+   *    - 项目里有、载荷里没有 → **不动**（笔记删了，项目里那条还在，这是刻意的：不替你删东西）。
    *
-   *    ⚠️ **不许改成“先查新、缺失回落旧”**：并存观察期里旧值会在新值缺失时**静默顶替**，
-   *    与 A1/M1b 的“一读行星那份 / 一写自己那份”是同一个静默分裂形态。
-   *    判据在 `scripts/tests/cases/test_58_import_from_vault.py` 的机器属性段（c3）。
+   * ⚠️ **保留的东西为什么不能一起刷**：
+   *    - `name`：你在司天里改过的显示名，重导一次就被笔记名顶掉，等于把编辑成果吞了；
+   *    - `coordinate`：画布上拖的位置是编辑成果，笔记里没有（坐标不写进 frontmatter，见核心原则 2）；
+   *    - `uuid` / `createdAt` / `updatedAt`：身份与时间戳，跟着笔记走会让快照全变噪音。
    *
-   *    ⚠️ **“新笔记的首次进料”必须继续读字段 + 目录/后缀推断** —— 报告 ⑤“发现机制照旧”
-   *    不能砍：发布场景里别人的笔记**根本没有**这些字段（暮雨 2026-09-27：“用户的笔记里
-   *    根本不一定有这些字段，实际中就是当作没有处理”），只能靠推断兜住。
+   * ⚠️ 仍**不是**“字段级先查新、缺失回落旧”—— 那会让旧值在新值缺失时静默顶替（A1/M1b 的坑）。
+   *    这里是“整条笔记认亲成功才更新白名单里的字段”，缺失即缺失，不回落到项目值。
+   *
+   * ⚠️ “新笔记的首次进料”必须继续读字段 + 目录/后缀推断 —— 报告 ⑤“发现机制照旧”.
    *
    * @returns {{next: object, merged: object}}
    */
+  const MACHINE_FIELDS = ['layer', 'layerLabel', 'parentId', 'placeType', 'tags', 'wikilinks', 'status'];
+
   function mergeVaultPayload(base, payload = {}) {
     const next = { ...base };
 
     const entities = { ...(base.entities || {}) };
+    // sourcePath → 已有实体 id（认亲索引；空路径的实体不参与，它们不是从笔记来的）
+    const byPath = new Map();
+    for (const [id, e] of Object.entries(entities)) {
+      const p = e && typeof e.sourcePath === 'string' ? e.sourcePath : '';
+      if (p) byPath.set(p, id);
+    }
+
     let addedEntities = 0;
+    let updatedEntities = 0;
+    const touched = new Set();
     for (const [id, e] of Object.entries(payload.entities || {})) {
-      if (entities[id]) continue;                 // 已存在 → 保留项目里的版本
+      if (!e) continue;
+      const incomingPath = typeof e.sourcePath === 'string' ? e.sourcePath : '';
+      // ① 先按路径认亲（同一篇笔记，名字可能不同）
+      let targetId = incomingPath ? byPath.get(incomingPath) : '';
+      // ② 路径认不到，再看 id 是否已存在（老项目没有 sourcePath 时靠这条兜住）
+      if (!targetId && entities[id]) targetId = id;
+      if (targetId && entities[targetId]) {
+        const cur = entities[targetId];
+        let changed = false;
+        const mergedEntity = { ...cur };
+        for (const k of MACHINE_FIELDS) {
+          if (e[k] === undefined) continue;
+          const a = JSON.stringify(cur[k] === undefined ? null : cur[k]);
+          const b = JSON.stringify(e[k]);
+          if (a === b) continue;
+          mergedEntity[k] = Array.isArray(e[k]) ? [...e[k]] : e[k];
+          changed = true;
+        }
+        if (changed) {
+          entities[targetId] = mergedEntity;
+          updatedEntities += 1;
+          touched.add(targetId);
+        }
+        continue;
+      }
       entities[id] = e;
       addedEntities += 1;
+      if (incomingPath) byPath.set(incomingPath, id);
     }
+
+    // 父级可能指向还没进项目的 id：收口一次，别留悬空（读档时 validateProject 也会清，但那是下次打开的事）
+    // ⚠️ 必须**换对象**而不是就地改 `e.parentId`：`entities` 只是 `base.entities` 的浅拷贝，
+    //    就地改会把调用方（当前项目 / 纯函数用例的 before）一起改掉 —— 这条函数是纯函数。
+    let reparented = 0;
+    for (const [eid, e] of Object.entries(entities)) {
+      if (e && e.parentId && !entities[e.parentId]) {
+        entities[eid] = { ...e, parentId: null };
+        reparented += 1;
+      }
+    }
+
     next.entities = entities;
 
     const lanes = [...(base.hyperlanes || [])];
@@ -312,7 +363,7 @@ export const useProjectStore = defineStore('project', () => {
     }
     next.scenarios = { version: 2, baseMaps, scenarios };
 
-    return { next, merged: { entities: addedEntities, hyperlanes: addedLanes, maps: addedMaps, baseMaps: addedBaseMaps, scenarios: addedScenarios } };
+    return { next, merged: { entities: addedEntities, updated: updatedEntities, reparented, hyperlanes: addedLanes, maps: addedMaps, baseMaps: addedBaseMaps, scenarios: addedScenarios } };
   }
 
   /**
@@ -320,7 +371,7 @@ export const useProjectStore = defineStore('project', () => {
    * 用户新建了空项目后**没有任何入口**把知识库既有内容带进来 —— “新建并导入知识库内容”只覆盖新建那条路，
    * 而“重新提取”在项目态被正确拒绝（两套事实源混流）。本函数补上唯一的缺口：
    * 项目态下从打开项目时的知识库留底（`vaultSnapshot`，经适配器 `exportVaultPayload`）取数，
-   * **只补缺不覆盖**，一条 undo，导入后立刻把项目重新装载到画布。
+   * **新增 + 按 sourcePath 更新机器字段**（见 `mergeVaultPayload` 的读优先级），一条 undo，导入后立刻把项目重新装载到画布。
    */
   async function importFromVault({ includeMaps = true } = {}) {
     if (!project.value) return { success: false, error: '没有打开的项目' };
@@ -338,13 +389,17 @@ export const useProjectStore = defineStore('project', () => {
       return { success: false, error: '取不到知识库内容（打开项目时知识库里没有数据）：请先关闭项目、确认知识库能正常显示，再重开项目' };
     }
     const { next, merged } = mergeVaultPayload(project.value, payload);
-    const total = merged.entities + merged.hyperlanes + merged.maps;
+    // 2026-11-08：更新也算“有活要干” —— 只改了笔记里的上层、没有新笔记时，不能报 nothingNew。
+    const total = merged.entities + (merged.updated || 0) + merged.hyperlanes + merged.maps;
     if (total === 0) return { success: true, merged, nothingNew: true };
 
     const before = project.value;
+    const parts = [];
+    if (merged.entities) parts.push(`新增 ${merged.entities}`);
+    if (merged.updated) parts.push(`更新 ${merged.updated}`);
     execute({
       type: 'project-import-from-vault',
-      label: `导入知识库内容（${merged.entities} 个词条）`,
+      label: `导入知识库内容（${parts.join(' / ') || '无变化'} 个词条）`,
       category: 'property',
       undo: () => { project.value = before; dirty.value = true; applyProjectToCanvasNow(); scheduleAutoSave(); },
       redo: () => { project.value = next; dirty.value = true; applyProjectToCanvasNow(); scheduleAutoSave(); },

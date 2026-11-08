@@ -278,6 +278,30 @@
               <Icon name="refresh" :size="14"/> {{ vaultIndexBusy ? '建立中…' : '重建索引' }}
             </button>
           </div>
+          <!-- 按目录补上层（2026-11-08）：**留空 = 不猜**，缺口一律列进“待人工”；不弹必填。
+               ⚠️ 不要套 .setting-item（那是横排 flex）—— 说明 + 输入 + 按钮必须竖排，否则文字会被压成一列字。 -->
+          <div class="geo-dirs-block" data-testid="geo-parent-dirs">
+            <div class="geo-dirs-head">
+              <span class="setting-name">按目录补上层</span>
+              <span class="setting-desc">
+                有些条目没写“上层区域”，但归档在以地名命名的目录里。填上这些目录，它们就会挂到目录同名的节点下；
+                <b>留空就不猜</b>，缺口全部列进下面那份“待人工”，不影响任何操作。
+              </span>
+            </div>
+            <textarea class="geo-dirs-input" data-testid="geo-dirs-input"
+                      v-model="geoContainerDirsText" rows="3" spellcheck="false"
+                      aria-label="容器目录，一行一个"
+                      placeholder="一行一个目录，相对知识库根目录。例：03 设定/02 场景地点"></textarea>
+            <div class="geo-dirs-actions">
+              <button class="vault-btn" data-testid="geo-dirs-save" @click="saveGeoDirs" :disabled="geoDirsBusy">
+                <Icon name="check" :size="14"/> {{ geoDirsBusy ? '保存中…' : '保存' }}
+              </button>
+              <button class="link-btn" data-testid="geo-dirs-suggest" @click="fillGeoDirsFromSuggestion"
+                      title="把“缺上层的条目集中在哪个目录”填进上面的框（只填，不保存）">用建议填上</button>
+              <button class="link-btn" data-testid="geo-dirs-clear" @click="clearGeoDirs">清空</button>
+            </div>
+            <span class="setting-desc geo-dirs-status" data-testid="geo-dirs-status">{{ geoDirsStatusText }}</span>
+          </div>
           <div v-if="vaultIndexError" class="index-error">{{ vaultIndexError }}</div>
           <div v-if="vaultIndexTotal" class="index-summary">
             <span>候选地图实体：<b>{{ vaultCandidates.length }}</b></span>
@@ -296,7 +320,7 @@
           <div v-if="showVaultCandidates" class="vault-candidate-list">
             <div v-for="c in vaultCandidates.slice(0, 40)" :key="c.path" class="vault-candidate">
               <span class="vc-layer">{{ c.layerLabel || '未知' }}</span>
-              <span class="vc-title">{{ c.title }}</span>
+              <span class="vc-title">{{ c.name || c.title }}</span>
               <span class="vc-path">{{ c.path }}</span>
             </div>
             <p v-if="!vaultCandidates.length" class="setting-desc">没有候选；先重建索引。</p>
@@ -304,16 +328,15 @@
           <!-- 待人工：认不出的**每一条**都在这里，附“为什么”（不静默吞） -->
           <div v-if="showVaultMissing" class="vault-candidate-list" data-testid="vault-missing-list">
             <div v-for="m in vaultNeedsHuman.slice(0, 30)" :key="m.path + '|' + (m.reasons || []).join('；')" class="vault-candidate">
-              <span class="vc-layer">待人工</span>
-              <span class="vc-title">{{ m.title || m.path }}</span>
-              <span class="vc-path">{{ (m.reasons || []).join('；') }}</span>
+              <span class="vc-title">{{ m.name || m.title || m.path }}</span>
+              <span class="vc-reason">{{ (m.reasons || []).join('；') }}</span>
             </div>
             <p v-if="!vaultNeedsHuman.length" class="setting-desc">没有待人工条目。</p>
             <p v-else-if="vaultNeedsHuman.length > 30" class="setting-desc">
-              其余 {{ vaultNeedsHuman.length - 30 }} 条见命令行 `scripts/vault-scan.mjs` 的“待人工.md”。
+              其余 {{ vaultNeedsHuman.length - 30 }} 条在命令行工具的清单文件里（待人工.md）。
             </p>
           </div>
-          <p class="setting-desc">只读索引：不改笔记、不碰画布。阅读器 / 要素绑定在下一轮（D2）。</p>
+          <p class="setting-desc">只读索引：不改笔记、不碰画布。</p>
         </section>
 
         <!-- 配置管理（对外发布打磨 P1.2）：导出 / 导入 / 恢复默认 -->
@@ -1028,7 +1051,7 @@ const { askText } = usePromptDialog();
 const canReextractBlocked = computed(() => gateReadOnly.value || proj.isOpen);
 const reextractBlockedHint = computed(() => (gateReadOnly.value
   ? `${gateReason.value}；重新提取会重写知识库坐标缓存 —— 请先在项目面板新建或打开项目`
-  : '当前画布数据来自项目文件：要把知识库内容带进项目，请用项目面板的“导入知识库内容”（只补缺、可撤销）'));
+  : '当前画布数据来自项目文件：要把知识库内容带进项目，请用项目面板的“导入知识库内容”（补新词条、按笔记更新层级与上层，可撤销）'));
 
 // ===== 资料索引（D1）=====
 // 只读索引：扫描全库 .md（1,353 篇量级），不改笔记、不碰画布；候选必须人确认后才谈导入。
@@ -1091,6 +1114,71 @@ async function toggleVaultMissing() {
 function openNoteSearchPanel() {
   openNoteSearch();
 }
+
+// ===== 按目录补上层（2026-11-08）=====
+// 表存在**用户配置**里（不是库内文件）：哪些目录的一级子目录可以当地名容器。
+// 默认空 = 不猜 —— 别人的库结构千奇百怪，猜错的代价是凭空造出一个世界。
+// 判断规则在 `scripts/lib/vaultClassify.js#dirParentCandidate`，这里只负责存/取与填建议。
+const geoContainerDirsText = ref('');
+const geoDirsBusy = ref(false);
+const geoDirsSaved = ref([]);
+const geoDirsStatusText = computed(() => {
+  const n = geoDirsSaved.value.length;
+  return n
+    ? `已启用 ${n} 个目录：${geoDirsSaved.value.join('、')}（下次重新提取时生效）`
+    : '当前未启用（留空可用：缺上层的条目会列进“待人工”，不会要求你填）';
+});
+const geoDirsSuggestionText = computed(() => {
+  const sugg = (vaultReport.value && vaultReport.value.containerSuggestions) || [];
+  return sugg.map((s) => s.dir).join('\n');
+});
+
+async function loadGeoDirs() {
+  const api = window.sitianAPI;
+  if (!api || typeof api.getGeoImportDirs !== 'function') return;   // 老版本 preload：按未启用处理
+  try {
+    const res = await api.getGeoImportDirs();
+    if (!res || !res.success) return;
+    geoDirsSaved.value = Array.isArray(res.containerDirs) ? res.containerDirs : [];
+    geoContainerDirsText.value = geoDirsSaved.value.join('\n');
+  } catch (e) { /* 取不到就按未启用显示，不挡面板 */ }
+}
+
+async function saveGeoDirs() {
+  const api = window.sitianAPI;
+  if (!api || typeof api.setGeoImportDirs !== 'function') {
+    alert('当前版本不支持保存这个设置（接口未就绪）');
+    return;
+  }
+  const lines = String(geoContainerDirsText.value || '')
+    .split('\n').map((x) => x.trim()).filter(Boolean);
+  geoDirsBusy.value = true;
+  try {
+    const res = await api.setGeoImportDirs({ containerDirs: lines });
+    if (res && res.success) {
+      geoDirsSaved.value = Array.isArray(res.containerDirs) ? res.containerDirs : lines;
+      geoContainerDirsText.value = geoDirsSaved.value.join('\n');
+    } else {
+      alert(`保存失败：${(res && res.error) || '未知原因'}`);
+    }
+  } catch (e) {
+    alert(`保存失败：${(e && e.message) || e}`);
+  } finally {
+    geoDirsBusy.value = false;
+  }
+}
+
+/** 只填、不保存（不替用户做主；点“保存”才生效） */
+async function fillGeoDirsFromSuggestion() {
+  if (!vaultReport.value) await ensureVaultReport();
+  if (!geoDirsSuggestionText.value) {
+    alert('没有可建议的目录：先点上面的“重建索引”，或者缺口本来就分散在多个目录里');
+    return;
+  }
+  geoContainerDirsText.value = geoDirsSuggestionText.value;
+}
+
+function clearGeoDirs() { geoContainerDirsText.value = ''; }
 
 /** 打开 Obsidian 知识库（打不开则退化为在资源管理器里定位库目录） */
 async function openVaultNow() {
@@ -1248,6 +1336,7 @@ onMounted(() => {
   loadVaultPath();
   loadNoteTarget();
   loadVersion();
+  loadGeoDirs();
   nextTick(renderPreview);
   // 资料索引状态（只读）：有索引就顺手把候选数读出来，没有就显示“尚未建立”
   vaultIndexStore.refreshStatus().then(() => {
@@ -1695,6 +1784,48 @@ input:checked + .toggle-slider::before {
   opacity: 0.7;
 }
 
+/* 按目录补上层（2026-11-08）：整块竖排（**不要**套 .setting-item —— 那是横排 flex） */
+.geo-dirs-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--separator);
+}
+.geo-dirs-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.geo-dirs-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  resize: vertical;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--input-bg, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+}
+.geo-dirs-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+.geo-dirs-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.geo-dirs-status {
+  display: block;
+  line-height: 1.6;
+}
+
 /* 知识库路径（2026-08-16 可配置化） */
 .vault-path-row {
   display: flex;
@@ -1725,12 +1856,16 @@ input:checked + .toggle-slider::before {
 }
 .index-summary {
   display: flex;
+  /* 2026-11-08：窄面板（约 480px）下原来不换行 → 每项被挤到“一个字一行”（截图里 4 个字竖着排）。
+     改成可换行 + 按钮不收缩，行高也跟着稳。 */
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 6px 12px;
   margin-top: 6px;
   font-size: 12px;
   color: var(--text-secondary);
 }
+.index-summary .link-btn { flex: 0 0 auto; white-space: nowrap; }
 .index-summary b { color: var(--text-primary); }
 .link-btn {
   background: none;
@@ -1752,9 +1887,9 @@ input:checked + .toggle-slider::before {
 }
 .vault-candidate {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;      /* 说明可能换行，顶部对齐更整齐 */
   gap: 6px;
-  padding: 2px 0;
+  padding: 3px 0;
   font-size: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
@@ -1774,6 +1909,16 @@ input:checked + .toggle-slider::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-tertiary);
+}
+/* 待人工那行的第三列是“为什么”，必须换行显示全（被 ellipsis 吃掉就等于没给理由） */
+.vc-reason {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.55;
   color: var(--text-tertiary);
 }
 .vault-btn {

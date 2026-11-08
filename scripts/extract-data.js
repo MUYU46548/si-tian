@@ -138,6 +138,7 @@ const scanReport = {
   noParent: [],         // 没有上层线索（父节点留空，交人判断）
   inferredParent: [],   // 从双链推出来的上级（导出/界面必须标注“推断”）
   collisions: [],       // 跨目录重名 → 只留一个（以前只有 console.warn，用户看不见）
+  synthesized: [],      // 目录兜底造出来的空壳父节点（来源目录 + 为了谁）—— 界面要能标“推断”
   total: 0,             // 进过分类的笔记数
 };
 
@@ -147,6 +148,7 @@ function resetScanReport() {
   scanReport.noParent.length = 0;
   scanReport.inferredParent.length = 0;
   scanReport.collisions.length = 0;
+  scanReport.synthesized.length = 0;
   scanReport.total = 0;
   delete scanReport.generic;
 }
@@ -666,6 +668,20 @@ const REGION_EXCLUDE_TAGS = new Set([
   '卫星', '发布', '说明', '模板文件', '异质空间', '里世界', '移动设施',
 ]);
 
+/**
+ * 占位名（2026-11-08）：这些词是“还没想好”的标记，不是地方名。
+ * 实测来源：真实库里 `tags: [待补充]` 被 extractRegions 当成了区域节点，
+ * 于是树上多出一个叫“待补充”的区域（双链指向它，也就跟着成了壳）。
+ * 只过滤**独立成词**的占位名，不做模糊匹配 —— `待补充的酒馆` 这种是真名字，不该杀。
+ */
+const PLACEHOLDER_NAMES = new Set([
+  '待补充', '未命名', '未命名的', '无标题', '新建', '临时', 'todo', 'tbd', 'unnamed',
+]);
+
+function isPlaceholderName(name) {
+  return PLACEHOLDER_NAMES.has(String(name || '').trim().toLowerCase());
+}
+
 function extractRegions(allNodes) {
   const tagCount = {};
   const tagParents = {};
@@ -684,6 +700,7 @@ function extractRegions(allNodes) {
   Object.entries(tagCount).forEach(([tag, count]) => {
     if (count < 2) return;
     if (REGION_EXCLUDE_TAGS.has(tag)) return;
+    if (isPlaceholderName(tag)) return;          // “待补充”这类占位名不是地方
     if (existingIds.has(normalizeId(tag))) return; // tag 本身就是地点/节点名
     
     // 取共享地点的最常见父级
@@ -773,6 +790,65 @@ function isHigherLayer(l1, l2) {
   const i1 = LAYER_ORDER.indexOf(l1);
   const i2 = LAYER_ORDER.indexOf(l2);
   return i1 !== -1 && i2 !== -1 && i1 < i2;
+}
+
+/**
+ * 目录名 → 层级：只按**结尾的层级词**判（`绒兽世界` → world、`柯依尔世界` → world），
+ * 判不出就返回 null 交给调用方兜底。与“后缀推层级”同一条口径：错了只影响显示，不改结构。
+ */
+function layerFromDirName(name) {
+  const n = String(name || '').trim();
+  if (!n) return null;
+  const keys = Object.keys(LAYER_KEYWORDS).sort((a, b) => b.length - a.length);
+  for (const k of keys) if (n.endsWith(k)) return LAYER_KEYWORDS[k];
+  return classify.layerFromName(n, LAYER_SUFFIX_RULES);
+}
+
+/**
+ * 目录兜底（2026-11-08）：报告说“挂上了”而树上没挂 = 两套口径，本仓最忌讳这种假绿。
+ * 规则只有一份（`scripts/lib/vaultClassify.js#dirParentCandidate`），本函数只负责**树上怎么落地**：
+ *   · 目录同名节点已存在 → 直接挂上去（如 `07 粘土世界/至日剑封印地` → 粘土世界）；
+ *   · 不存在 → 造一个空壳父节点（`synthesized: true`），并记进 `scanReport.synthesized`。
+ * 空壳是允许的形状（红线：结构不许变成填表门槛）；它只是“目录里说明这里有个容器”，
+ * 界面上该按“待补内容”显示，而不是当成用户写过的东西。
+ */
+function resolveParentsByDirectory(nodes, opts = {}) {
+  const containerDirs = opts.containerDirs || [];
+  if (!containerDirs.length) return nodes;      // 未配置 = 不猜（通用默认，见 vaultClassify 的说明）
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const byName = new Map(nodes.map(n => [String(n.name || '').toLowerCase(), n]));
+  for (const n of nodes.slice()) {
+    if (n.parentId) continue;
+    const cand = classify.dirParentCandidate(n.sourcePath, {
+      containerDirs, skipDirNames: opts.skipDirNames || [],
+    });
+    if (!cand) continue;
+    const key = cand.name.toLowerCase();
+    let parent = byName.get(key) || byId.get(normalizeId(cand.name));
+    if (!parent) {
+      const layer = layerFromDirName(cand.name) || 'region';
+      parent = makeNode({
+        name: cand.name,
+        layer,
+        parentId: null,
+        tags: [],
+        sourcePath: '',
+        wikilinks: [],
+        extra: { synthesized: true, layerInferred: true, synthesizedFrom: cand.dir },
+      });
+      nodes.push(parent);
+      byId.set(parent.id, parent);
+      byName.set(key, parent);
+      scanReport.synthesized.push({ name: parent.name, layer, from: cand.dir, for: n.name });
+    }
+    if (parent.id === n.id) continue;
+    if (!isHigherLayer(parent.layer, n.layer)) continue;
+    n.parentId = parent.id;
+    n.parentSource = 'directory';
+    n.parentInferred = true;
+    scanReport.inferredParent.push({ name: n.name, parentId: parent.id, signal: 'directory', link: cand.folder });
+  }
+  return nodes;
 }
 
 function initializeCoordinates(nodes, oldNodes = []) {
@@ -963,10 +1039,13 @@ function validateParentReferences(nodes) {
  *    顶层互相 require 会成环（先加载的那一方拿到空 exports）。函数内 require 让两个模块
  *    都初始化完再取。
  */
-function buildGenericNodes(targetVault) {
+function buildGenericNodes(targetVault, options = {}) {
   const vaultIndex = require('../src/main/vaultIndex');
   const { index } = vaultIndex.buildIndex(targetVault, { forceFull: true, write: false });
-  const report = vaultIndex.classifyReport(index);
+  const report = vaultIndex.classifyReport(index, {
+    containerDirs: options.containerDirs || [],
+    skipDirNames: options.skipDirNames || [],
+  });
   // 节点身份用“名称 || 文件名”，**不用 H1**：真实库里大量笔记的 H1 是“概述”“宏观特征”，
   // 拿它当名字会让几十个节点撞成同一个 id（mergeNodes 只留一个 = 静默丢失）。
   const displayName = (entry) => {
@@ -1042,7 +1121,7 @@ async function extractGeodata(targetVault, options = {}) {
   let geoNodes = [];
   let locationNodes = [];
   if (generic) {
-    geoNodes = buildGenericNodes(vaultPath);
+    geoNodes = buildGenericNodes(vaultPath, options);
     console.log(`全库通用扫描：${geoNodes.length} 个地理节点（${hasStdDirs ? '强制 generic' : '未找到标准目录，自动回退'}）`);
   } else {
     geoNodes = scanGeoSystem();
@@ -1101,6 +1180,12 @@ async function extractGeodata(targetVault, options = {}) {
   }
   
   allNodes = resolveParents(allNodes, worldStarMap);
+  // 目录兜底要在坐标初始化**之前**：新造的空壳父节点也得拿到坐标，否则画布上是一团 null
+  // 2026-11-08：容器目录由调用方给（app 配置 / CLI 参数）；不给 = 不猜。
+  allNodes = resolveParentsByDirectory(allNodes, {
+    containerDirs: options.containerDirs || [],
+    skipDirNames: options.skipDirNames || [],
+  });
   allNodes = initializeCoordinates(allNodes, oldNodes);
   
   // 自动生成初始航道

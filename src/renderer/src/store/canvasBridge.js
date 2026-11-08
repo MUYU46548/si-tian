@@ -80,7 +80,7 @@ export function setImportHandler(fn) {
 }
 
 /**
- * 把知识库内容**合并**进当前项目（不覆盖已有内容，一条 undo）。
+ * 把知识库内容**合并**进当前项目（新的补进来；已有的按 sourcePath 更新机器字段，一条 undo）。
  * @returns {Promise<{success:boolean, merged?:object, error?:string}>}
  */
 export async function importFromVault(opts = {}) {

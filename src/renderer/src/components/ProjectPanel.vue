@@ -459,7 +459,7 @@ const vaultImport = computed(() => {
   else if (!d.hasVaultSnapshot) hint = '这次打开项目时知识库是空的（没有留底）—— 先关闭项目，确认知识库有内容后再打开';
   else if ((d.vaultNodes || 0) === 0) hint = '这次打开项目时知识库是空的（没有留底）—— 先关闭项目，确认知识库有内容后再打开';
   else hint = `把知识库现有内容合并进当前项目：约 ${d.vaultNodes} 个词条 / ${d.vaultHyperlanes || 0} 条航道 / ${d.vaultMaps || 0} 张行星图`
-    + '（只补缺、不覆盖项目里已有的；导入可用 Ctrl+Z 撤销）';
+    + '（导入时新的补进来；已有的按笔记更新层级与上层，名字和画布位置保留；可用 Ctrl+Z 撤销）';
   return { available, hint };
 });
 

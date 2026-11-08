@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   reextractGeodata: () => ipcRenderer.invoke('reextract-geodata'),
   saveGeodata: (data) => ipcRenderer.invoke('save-geodata', data),
   getVaultPath: () => ipcRenderer.invoke('get-vault-path'),
+  // 按目录补上层（2026-11-08）：容器目录 / 桶目录两张表，默认空 = 不猜
+  getGeoImportDirs: () => ipcRenderer.invoke('get-geo-import-dirs'),
+  setGeoImportDirs: (payload) => ipcRenderer.invoke('set-geo-import-dirs', payload),
   // 🔴 知识库监听开关（2026-10-14 补暴露）：这两个 channel 在 `main/index.js:710/713`
   //    **注册了很久但 preload 从来没暴露过** → 设置面板里那个“监听 Obsidian 文件变更
   //    自动刷新”勾选框只写进 localStorage，主进程的 `vaultWatcherEnabled` 是硬编码 true，
