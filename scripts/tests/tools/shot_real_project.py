@@ -637,6 +637,28 @@ def main():
                     f.get('px'), total, round(acc, 1),
                     round((total - acc), 1) if isinstance(total, (int, float)) else '?',
                     ' / '.join('%s %.1fms' % (k, v) for k, v in items)))
+        # `--probe-bake`：量**栅格烘焙**本身（canvas 尺寸 + 毫秒），用来算“烘焙宽度取多大”的账。
+        # 只调用产品自己的 `buildHeightmapRaster`，不另写实现；不改数据、不写盘。
+        if flag('probe-bake'):
+            bake, _ = ask(cdp, """(async () => {
+              const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+              const sm = document.querySelector('.scenario-map-container').__vueParentComponent.setupState;
+              const k = sm.baseMapKey;
+              const bm = (s.baseMaps || {})[k] || {};
+              const hm = bm.heightmap;
+              if (!hm || !hm.grid) return JSON.stringify({ ok: false, why: 'no-heightmap' });
+              const HR = await import('/src/utils/heightmapRaster.js');
+              const out = [];
+              for (const kind of ['relief', 'height']) {
+                const t0 = performance.now();
+                const r = HR.buildHeightmapRaster(hm, kind, { shade: kind === 'relief' ? 0.85 : 0, min: 0.9, max: 1.02, contour: kind === 'height' });
+                const ms = performance.now() - t0;
+                out.push({ kind, ms: Math.round(ms), w: r && r.w, h: r && r.h,
+                           cw: r && r.canvas ? r.canvas.width : null, ch: r && r.canvas ? r.canvas.height : null });
+              }
+              return JSON.stringify({ ok: true, cells: hm.h.length, spacing: Math.round(hm.grid.spacing * 100) / 100, out });
+            })()""")
+            log('烘焙自检：%s' % bake)
         return 0
     finally:
         if cdp is not None:
