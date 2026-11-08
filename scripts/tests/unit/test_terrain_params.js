@@ -404,6 +404,39 @@ async function main() {
     return '默认空 / 单条单传 / 0 与坏值不传 / 上界夹取';
   });
 
+  check('a7 侵蚀层：默认 0 轮 = 一个键都不传（逐字节不变），开了才真的改地形', () => {
+    // ① 映射口径
+    const off = P.toSynthesisOptions(P.DEFAULT_TERRAIN_PARAMS);
+    assert(!('erodeIterations' in off), `默认参数不该传 erodeIterations，实际 ${JSON.stringify(off)}`);
+    const on = P.toSynthesisOptions({ ...P.DEFAULT_TERRAIN_PARAMS, erodeIterations: 2 });
+    assert(on.erodeIterations === 2, `开侵蚀应带轮数，实际 ${on.erodeIterations}`);
+    assert(on.erodeStrength === 2.8, `开侵蚀应带强度（与造陆同一个值），实际 ${on.erodeStrength}`);
+    const zero = P.toSynthesisOptions({ ...P.DEFAULT_TERRAIN_PARAMS, erodeIterations: 0 });
+    assert(!('erodeIterations' in zero), '显式 0 轮也必须一个键都不传（0 = 老行为，不是“关到 0 轮”）');
+    // ② 真跑一遍：0 轮与不传必须逐字节相同（这条是“默认不改观感”的物理保证）
+    const baseOpts = P.toSynthesisOptions({ ...P.DEFAULT_TERRAIN_PARAMS, cellsAcross: 96, hills: 120 }, { isLand: inside });
+    const hmOff = PIPE.synthesizeTerrain(terrain, { ...baseOpts });
+    const hmZero = PIPE.synthesizeTerrain(terrain, { ...baseOpts, erodeIterations: 0, erodeStrength: 2.8 });
+    assert(shaOfH(hmOff.h) === shaOfH(hmZero.h), '显式 0 轮改变了高度场（默认路径必须与老版本逐字节一致）');
+    assert(!(hmOff.structure && 'erode' in hmOff.structure), '没侵蚀时不该往 structure 里写 erode');
+    // ③ 开 2 轮：必须真的下切（高度场变化 + 记录读数），且确定性
+    const hmOn = PIPE.synthesizeTerrain(terrain, { ...baseOpts, erodeIterations: 2, erodeStrength: 2.8 });
+    assert(shaOfH(hmOn.h) !== shaOfH(hmOff.h), '开 2 轮侵蚀高度场没变 —— 侵蚀层没接上（判据空转）');
+    assert(hmOn.structure && hmOn.structure.erode === 2, `structure.erode 应记 2，实际 ${JSON.stringify(hmOn.structure)}`);
+    assert(Number(hmOn.structure.eroded) > 0, `eroded（累计下切量）应 > 0，实际 ${hmOn.structure.eroded}`);
+    const hmOn2 = PIPE.synthesizeTerrain(terrain, { ...baseOpts, erodeIterations: 2, erodeStrength: 2.8 });
+    assert(shaOfH(hmOn.h) === shaOfH(hmOn2.h), '侵蚀不确定（同参数两次不同）');
+    // ④ 海岸线守卫：**侵蚀不许改哪一格是陆地**（真机实测 2 轮会掉 302 格陆地 → 海岸线被偷改）
+    let seaChanged = 0;
+    for (let i = 0; i < hmOff.h.length; i++) if (hmOff.h[i] < 20 && hmOn.h[i] !== hmOff.h[i]) seaChanged += 1;
+    assert(seaChanged === 0, `${seaChanged} 个海格的深度被侵蚀改了（侵蚀只该动陆地）`);
+    const landOf = (h) => h.reduce((n, v) => n + (v >= 20 ? 1 : 0), 0);
+    assert(landOf(hmOn.h) === landOf(hmOff.h),
+      `陆地格数变了（${landOf(hmOff.h)} → ${landOf(hmOn.h)}）—— 侵蚀把靠海的陆地削进了海里，海岸线被偷改`);
+    assert(Number(hmOn.structure.eroded) > 0, 'eroded 读数应 > 0');
+    return `下切 ${hmOn.structure.eroded} 点 / 陆地 ${landOf(hmOn.h)} 格不变 / 两次一致`;
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
   console.log(`\n${results.length - failed.length}/${results.length} 通过`);

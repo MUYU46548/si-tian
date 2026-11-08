@@ -82,6 +82,18 @@ export const TERRAIN_PARAM_FIELDS = Object.freeze([
     hint: '一片地方要攒够多少汇水面积（世界单位²）才成河（0 = 按格数门槛，老行为）。'
       + '老口径换算出来约 700、随格距与降水变；换网格精度时用它，河密度才不会跟着格数漂',
   },
+  // ── 河成侵蚀层（P2，2026-11-08）────────────────────────────────────────────
+  // 造陆那条路一直跑侵蚀（`landmass.js` 写死 2 轮 / 强度 2.8），而“按轮廓推演”这条路以前
+  // **完全没有** —— 两条生成路径观感不一致，也是“河没有谷可汇”的第一因。
+  // ⚠️ 默认 0 = 关：动默认值就会改观感、必须重立像素基线（那是一个产品决定，不是顺手一提）。
+  {
+    key: 'erodeIterations', label: '河成侵蚀轮数', kind: 'int', min: 0, max: 4, step: 1, def: 0,
+    hint: '按流向下切谷地（每轮 ≈ 一次全图流向场）。0 = 不侵蚀（老行为）；造陆那条路默认 2 轮',
+  },
+  {
+    key: 'erodeStrength', label: '侵蚀强度', kind: 'float', min: 0.5, max: 5, step: 0.2, def: 2.8,
+    hint: '只在下切轮数 > 0 时生效。2.8 与造陆那条路同一个值（别为了“更明显”往上顶，会挖出断头河）',
+  },
 ]);
 
 /** 默认参数（**必须与 0.4.0 的硬编码行为逐字节等价**） */
@@ -187,6 +199,11 @@ export function toSynthesisOptions(params, extra = {}) {
     opts.drainageBranching = 3;
   }
   if (p.hills > 0) opts.hills = p.hills;
+  // 河成侵蚀层（2026-11-08）：**0 轮时一个键都不传** —— 老参数重生成逐字节不变。
+  if (p.erodeIterations > 0) {
+    opts.erodeIterations = p.erodeIterations;
+    if (Number.isFinite(p.erodeStrength)) opts.erodeStrength = p.erodeStrength;
+  }
   // `null` = 随种子：传 undefined 才会让推演回落到 `rangeAxisFromSeed(seed)`
   if (p.rangeAxisDeg != null) opts.rangeAxisDeg = p.rangeAxisDeg;
   return opts;
