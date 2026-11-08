@@ -44,7 +44,9 @@ const subText = computed(() => {
   align-items: center;
   justify-content: center;
   background: rgba(10, 14, 20, 0.62);
-  backdrop-filter: blur(2px);
+  /* ⚠️ 刻意**不用** `backdrop-filter: blur()`：加载那几秒是主线程最忙的时候，
+     再让合成器为模糊去采样整张画布是白给的负担。实测带不带模糊都是 22s 上下
+     （6000 省 / 35 万格，两次连测），所以它不是“卡”的原因 —— 但也别加回去。 */
 }
 .plo-card {
   min-width: 280px;

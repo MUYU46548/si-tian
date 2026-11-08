@@ -226,6 +226,14 @@ def main():
                 if seen:
                     overlay_seen = True
                     overlay_texts.append(seen)
+                    if flag('shot-overlay'):
+                        # 只在遮罩真的在屏幕上时拍 —— 这就是“打开时不白屏”的视觉证据
+                        try:
+                            op = os.path.join(out, '%s-overlay.png' % tag)
+                            shot(cdp, op)
+                            log('加载遮罩截图 → %s' % op)
+                        except Exception as e:                      # noqa: BLE001
+                            log('遮罩截图失败：%s' % e)
             if done and done != 'null':
                 break
         log('打开中是否有加载遮罩：%s%s' % ('有' if overlay_seen else '没有（🔴 白屏）',
