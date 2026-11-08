@@ -136,6 +136,36 @@ JS_MEASURE = r""" (() => {
   });
 })() """
 
+JS_STALE = r""" (async () => {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const applyBtn = () => document.querySelector('[data-testid="tgen-apply"]');
+  // ① 打开面板 = 有一批“与当前参数同步”的候选
+  const openState = { disabled: applyBtn() ? !!applyBtn().disabled : null,
+                      stale: !!document.querySelector('[data-testid="tgen-stale"]') };
+  // ② 改一个参数（真滑块：原生 setter + input 事件）
+  const inp = document.querySelector('#tgen-erodeIterations');
+  if (!inp) return JSON.stringify({ ok: false, why: 'no-erode-input' });
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(inp, '2');
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  await sleep(150);
+  const staleState = { disabled: applyBtn() ? !!applyBtn().disabled : null,
+                       stale: !!document.querySelector('[data-testid="tgen-stale"]'),
+                       shown: (inp.closest('.tgen-row').querySelector('.tgen-val') || {}).textContent };
+  // ③ 点“重新出候选” → 应该恢复可应用
+  const pv = document.querySelector('[data-testid="tgen-preview"]');
+  if (pv) pv.click();
+  for (let i = 0; i < 40; i++) {
+    await sleep(150);
+    const b = applyBtn();
+    if (b && !b.disabled) break;
+  }
+  const freshState = { disabled: applyBtn() ? !!applyBtn().disabled : null,
+                       stale: !!document.querySelector('[data-testid="tgen-stale"]') };
+  if (document.querySelector('[data-testid="tgen-cancel"]')) document.querySelector('[data-testid="tgen-cancel"]').click();
+  return JSON.stringify({ ok: true, openState, staleState, freshState });
+})() """
+
 JS_SALT = r""" (async () => {
   const R = await import('/src/utils/heightmapRaster.js');
   const cols = 46, rows = 26, spacing = 20;
@@ -239,7 +269,25 @@ def run(cdp):
     if not any('.' in (r.get('value') or '') for r in (m.get('intRows') or [])):
         notes.append('整数参数按整数显示')
 
-    # e 盐湖着色（真栅格逐像素）
+    # e 参数改了 → 必须**当着面**说“先重新出候选”，且不许拿旧参数静默应用
+    #   （2026-11-08 实测：侵蚀拖到 2 轮直接点应用，出来的地形与 0 轮逐字节相同、`structure.erode` 还是 null）
+    st = _j(cdp.eval(JS_STALE), 'stale 守卫')
+    if not st.get('ok'):
+        fails.append(f"🔴 找不到侵蚀轮数滑杆：{st.get('why')}")
+    else:
+        if (st.get('openState') or {}).get('disabled'):
+            fails.append('🔴 刚打开面板时“应用”就是禁用的（候选明明在）')
+        if not (st.get('staleState') or {}).get('disabled'):
+            fails.append('🔴 改了参数但“应用”仍可点 —— 会用**改之前的**参数静默生成')
+        if not (st.get('staleState') or {}).get('stale'):
+            fails.append('🔴 改了参数却没提示“先重新出候选”（用户不知道应用的是旧参数）')
+        if (st.get('freshState') or {}).get('disabled'):
+            fails.append('🔴 点了“重新出候选”之后“应用”还是禁用的')
+        if (st.get('freshState') or {}).get('stale'):
+            fails.append('🔴 重新出候选后“参数已改”的提示没消失')
+        notes.append('改参数→应用被挡住并提示 / 重出候选→恢复可应用')
+
+    # f 盐湖着色（真栅格逐像素）
     cdp.eval("(() => { const b = document.querySelector('[data-testid=\"tgen-cancel\"]'); if (b) b.click(); return 'ok'; })()")
     time.sleep(0.3)
     salt = _j(cdp.eval(JS_SALT), '盐湖探针')

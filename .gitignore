@@ -216,3 +216,6 @@ build/erosion-evidence/
 
 # 地形参数面板真机证据（2026-11-08）
 build/terrain-panel-visual/
+
+# 侵蚀“产品内”前后对照截图（2026-11-08）：本地证据，禁止提交
+build/erosion-inproduct/

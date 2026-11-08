@@ -128,11 +128,16 @@
 
     <div v-if="warn" class="tgen-warn">{{ warn }}</div>
     <div v-if="paramWarn" class="tgen-warn">{{ paramWarn }}</div>
+    <!-- 🔴 2026-11-08：参数改了但候选没重出 → 应用用的是**改之前**的参数（实测：把侵蚀拖到 2 轮，
+         应用出来的地形与 0 轮一模一样，`structure.erode` 还是 null）。不静默，直接把话说出来。 -->
+    <div v-if="stale" class="tgen-warn" data-testid="tgen-stale">
+      参数已改 —— 先点“重新出候选”再应用（否则应用的是改之前的参数）
+    </div>
 
     <div class="tgen-actions">
       <button
         class="tgen-btn primary"
-        :disabled="busy || !candidates.length"
+        :disabled="busy || !candidates.length || stale"
         data-testid="tgen-apply"
         @click="apply"
       >应用所选（一条撤销）</button>
@@ -180,6 +185,9 @@ const busy = ref(false);
 const elapsedMs = ref(null);
 const warn = ref('');
 const paramWarn = ref('');
+// 参数改过、但候选还是上一批 → `apply()` 用的是**候选快照**（`c.params`），会静默用旧参数。
+// 2026-11-08 实测：侵蚀轮数拖到 2 再应用，地形与 0 轮逐字节相同、`structure.erode` 仍为 null。
+const stale = ref(false);
 const keepHandEdits = ref(true);
 // 生成即出地形注记（2026-11-04）：默认开 —— 用户不该为了有山名/海名再点一遍面板逐条起名。
 // 只补空：已有山系/海域/平原注记的那一种一条都不加（见 utils/terrainLabels.js#mergeAutoTerrainLabels）。
@@ -211,17 +219,20 @@ function setNum(key, e) {
     params[key] = v;
     activePreset.value = '';
     paramWarn.value = '';
+    stale.value = true;      // 候选还是旧参数 → 应用前必须重出候选
   }
 }
 
 function setChoice(key, e) {
   params[key] = Number(e.target.value);
   activePreset.value = '';
+  stale.value = true;
 }
 
 function setAxisMode(e) {
   params.rangeAxisDeg = e.target.value === 'auto' ? null : (params.rangeAxisDeg ?? 0);
   activePreset.value = '';
+  stale.value = true;
 }
 
 function dice() {
@@ -259,6 +270,7 @@ function runPreview() {
     }
     candidates.value = r.candidates;
     selected.value = 0;
+    stale.value = false;      // 候选与当前参数同步了
     elapsedMs.value = Math.round(performance.now() - t0);
     if (r.paramWarnings && r.paramWarnings.length) {
       paramWarn.value = `参数已自动夹取：${r.paramWarnings.map((w) => `${w.key}→${w.to}`).join('、')}`;
@@ -282,6 +294,12 @@ function drawAll() {
 function apply() {
   const c = candidates.value[selected.value];
   if (!c) return;
+  // 🔴 兜底（2026-11-08）：按钮虽然 `:disabled` 了，但**程序化 `.click()` 对 disabled 元素是静默 no-op**，
+  //    测试/脚本可能绕过去；而且万一将来有人把 disabled 去掉，这里也必须挡住“用旧参数静默生成”。
+  if (stale.value) {
+    warn.value = '参数已改 —— 先点“重新出候选”再应用（否则应用的是改之前的参数）';
+    return;
+  }
   busy.value = true;
   nextTick(() => {
     const r = isPlanet.value
@@ -309,6 +327,7 @@ function apply() {
 watch(() => [props.baseMapKey, props.planetId], () => {
   candidates.value = [];
   selected.value = 0;
+  stale.value = false;
   elapsedMs.value = null;
 });
 
