@@ -8,22 +8,70 @@
 export const SEA_LEVEL = 20;
 
 // ── 温度 ──────────────────────────────────────────────
-// 基于高度 + 纬度（FMG 温度范围 -40…20°C，映射到 0…100 索引）
+// 2026-11-08 重做（卡「气候模型没有干旱轴」）：旧口径 `30 - |lat|·0.6` 是线性，
+//   27° 纬度只有 13.8℃ —— 现实里副热带年均 20–24℃，于是"又热又干"的格子在生成地形里
+//   **一格都不存在**（hot_desert / savanna / 盐湖全部结构性不可达）。
+//   现在改成**现实地球的纬向年均温表**（分段线性插值；抄的是实测曲线，不是拍脑袋的斜率）：
+//     | 纬度   |  0  | 10  | 20  | 30   | 40 | 50  | 60  | 70  | 80   | 90   |
+//     | 年均℃ |26.5 | 26  |24.5 |20.5  |14  | 8.5 | 1.5 | -8  | -17  | -25  |
+//   高度惩罚不变（每升 1 个高度单位降 0.5℃；山高 55 单位 ≈ 降 27℃，与旧口径一致）。
+export const LATITUDE_TEMP_TABLE = Object.freeze([
+  [0, 26.5], [10, 26], [20, 24.5], [30, 20.5], [40, 14],
+  [50, 8.5], [60, 1.5], [70, -8], [80, -17], [90, -25],
+]);
+
+/** 纬度 → 海平面处的年均温（℃）。表外按端点取值，不抛错。 */
+export function baseTemperatureAtLatitude(latitude) {
+  const l = Math.min(90, Math.abs(Number(latitude) || 0));
+  const T = LATITUDE_TEMP_TABLE;
+  for (let i = 0; i + 1 < T.length; i++) {
+    const l0 = T[i][0], t0 = T[i][1], l1 = T[i + 1][0], t1 = T[i + 1][1];
+    if (l <= l1) return t0 + (t1 - t0) * ((l - l0) / (l1 - l0));
+  }
+  return T[T.length - 1][1];
+}
+
 export function temperatureAtIndex(height, latitude) {
-  // 基础温度：赤道 30°C，向两极递减
-  const baseTemp = 30 - Math.abs(latitude) * 0.6;
-  // 高度惩罚：海拔每升 10 单位，降温 5°C
+  // 基础温度：按纬度查表（赤道 26.5℃，两极 -25℃）
+  const baseTemp = baseTemperatureAtLatitude(latitude);
+  // 高度惩罚：海拔每升 1 个高度单位，降温 0.5℃
   const heightPenalty = Math.max(0, height - SEA_LEVEL) * 0.5;
   return baseTemp - heightPenalty;
 }
 
 // ── 降水 ──────────────────────────────────────────────
-// 基于温度 + 海洋距离（FMG 降水标尺 0…100）
-export function precipitationAtIndex(temperature, oceanDistance) {
+// 2026-11-08 重做（同一张卡）：旧口径只有"暖 60 / 冷 20 + 近海加分"，
+//   暖区**最低也有 60** —— 判盐湖要 <40、热荒漠要 <25，暖区一个都够不着。
+//   现在按现实的三圈环流补三条**纬度带**（其余部分保持原样，改动面最小）：
+//     · 副热带高压带（≈20–35°）：下沉气流 → 沙漠带，最干；
+//     · 赤道辐合带（≈0–13°）：上升气流 → 雨林带，最湿；
+//     · 极地（≈75°）：冷 + 干（冷海水蒸发少），但冷区本来就由温度主导。
+//   单位仍是 FMG 的 0…100 标尺，`lakes.js` 的门槛（<40）继续有效。
+export const ARIDITY_BANDS = Object.freeze({
+  subtropicalDrop: 0.66, subtropicalCenter: 27, subtropicalWidth: 10,
+  polarDrop: 0.28, polarCenter: 75, polarWidth: 16,
+  equatorialBoost: 0.12, equatorialWidth: 13,
+  floor: 0.22, cap: 1.1,
+});
+
+/** 纬度 → 干湿因子（1 = 湿带、≈0.34 = 副热带沙漠带、极地下限 0.22） */
+export function aridityFactorAtLatitude(latitude) {
+  const l = Math.abs(Number(latitude) || 0);
+  const B = ARIDITY_BANDS;
+  const subtropical = Math.exp(-Math.pow((l - B.subtropicalCenter) / B.subtropicalWidth, 2));
+  const polar = Math.exp(-Math.pow((l - B.polarCenter) / B.polarWidth, 2));
+  const equatorial = Math.exp(-Math.pow(l / B.equatorialWidth, 2));
+  const f = 1 - B.subtropicalDrop * subtropical - B.polarDrop * polar + B.equatorialBoost * equatorial;
+  return Math.max(B.floor, Math.min(B.cap, f));
+}
+
+export function precipitationAtIndex(temperature, oceanDistance, latitude = 0) {
   const basePrecip = temperature > 0 ? 60 : 20;
   // 靠近海洋降水多（距离单位：网格步数）
   const oceanBonus = Math.max(0, 50 - oceanDistance * 2);
-  return Math.min(100, basePrecip + oceanBonus);
+  // 纬度干旱轴：同一条海岸线上，27° 比赤道干一半以上（现实：撒哈拉 vs 亚马逊）
+  const wet = (basePrecip + oceanBonus) * aridityFactorAtLatitude(latitude);
+  return Math.max(0, Math.min(100, wet));
 }
 
 // ── 气候输入（P0-3，2026-10-25）─────────────────────────
@@ -114,12 +162,19 @@ function buildOceanDistanceCells(heightmap, cols, rows) {
 // 基于高度 + 温度 + 降水 → 13 种生物群系 key
 export function classifyBiome(height, temperature, precipitation) {
   if (height < SEA_LEVEL) return 'ocean';
-  if (height > 80) return 'glacier';
-  if (temperature < -10) return 'tundra';
+  // 2026-11-08：冰川改成真的够得着 —— 旧规则是 `height > 80`，而生成地形的高度上限只有
+  // 70 出头（`height > 80` 永远不成立），于是 `glacier` 在生成地图里**一次都没出现过**。
+  // 现在按温度判：低于 -15℃ = 冰盖（极地/高纬），-15…0℃ = 苔原（寒带），0℃ 以上才谈得上森林。
+  if (height > 80 || temperature < -15) return 'glacier';
+  if (temperature < 0) return 'tundra';
   if (temperature < 5 && precipitation < 30) return 'cold_desert';
   if (temperature > 20 && precipitation > 70) return 'tropical_rainforest';
   if (temperature > 20 && precipitation > 40) return 'tropical_seasonal';
   if (temperature > 20 && precipitation < 25) return 'hot_desert';
+  // 温带雨林（2026-11-08）：旧规则里这一档**从来不会被返回**（13 种里第二个死档）——
+  //   现实里它 = 凉 + 极湿（太平洋西北、智利南部、新西兰南岛），门槛按“温度 2–20℃ 且降水 >85”给。
+  //   放在 `temperate_deciduous` 之前：同样 >50 的降水，更湿的那一头才是雨林。
+  if (temperature > 2 && temperature <= 20 && precipitation > 85) return 'temperate_rainforest';
   if (temperature > 10 && precipitation > 50) return 'temperate_deciduous';
   if (temperature > 10 && precipitation < 30) return 'grassland';
   if (temperature > 10 && precipitation >= 30 && precipitation <= 50) return 'savanna';
@@ -181,7 +236,7 @@ export function deriveLayers(heightmap, gridPoints, latitudeFn, oceanDistFn) {
     const lat = latitudeFn ? latitudeFn(gridPoints[i], i) : 0;
     const ocean = oceanDistFn ? oceanDistFn(gridPoints[i], i) : 100;
     const t = temperatureAtIndex(h, lat);
-    const p = precipitationAtIndex(t, ocean);
+    const p = precipitationAtIndex(t, ocean, lat);
     temp[i] = t;
     prec[i] = p;
     biome[i] = h < SEA_LEVEL ? BIOME_OCEAN : biomeIndex(h, t, p);

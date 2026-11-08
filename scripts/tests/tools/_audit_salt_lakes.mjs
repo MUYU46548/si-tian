@@ -88,31 +88,28 @@ async function loadModuleViaTmp(entry) {
 }
 
 /** 按产品口径派生气候。不 import deriveClient：它 `import ...?worker`，Node 解析不了 Vite 后缀 */
-function climateFor(MOD, hm, latSpan, arid) {
+function climateFor(MOD, hm, latSpan, legacy) {
   const inputs = MOD.heightMath.buildClimateInputs(hm.h, hm.grid, { latitudeSpanDeg: latSpan });
   const n = hm.h.length;
+  if (legacy) {
+    // 复刻 2026-11-08 之前的旧口径（只为出“改之前”的对照图与读数；产品里已经没有了）
+    const temp = new Float32Array(n), prec = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const lat = inputs.lat ? inputs.lat[i] : 0;
+      const dist = inputs.ocean ? inputs.ocean[i] : 100;
+      const t = (30 - Math.abs(lat) * 0.6) - Math.max(0, hm.h[i] - SEA) * 0.5;
+      temp[i] = t;
+      prec[i] = Math.min(100, (t > 0 ? 60 : 20) + Math.max(0, 50 - dist * 2));
+    }
+    return { latSpan, temp, prec, biome: null, inputs };
+  }
   const layers = MOD.heightMath.deriveLayers(
     hm.h,
     (inputs.lat || inputs.ocean) ? { length: n } : null,
     inputs.lat ? (_pt, i) => inputs.lat[i] : null,
     inputs.ocean ? (_pt, i) => inputs.ocean[i] : null,
   );
-  let prec = layers.precipitation;
-  let biome = layers.biome;
-  // ── 提案（只在本审计里试，不改产品）：给降水补一条“纬度干旱轴” ─────────────────
-  // 现实口径：副热带高压（|lat| ≈ 20–35°）是下沉气流带 = 沙漠带；赤道与中纬是湿带。
-  // 产品现在完全没有这一条（`precipitationAtIndex` 只有“暖 60 / 冷 20 + 近海加分”）。
-  if (arid) {
-    prec = new Float32Array(n);
-    biome = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      const lat = inputs.lat ? inputs.lat[i] : 0;
-      const f = 1 - 0.62 * Math.exp(-Math.pow((Math.abs(lat) - 27) / 11, 2));
-      prec[i] = Math.max(5, Math.min(100, layers.precipitation[i] * f));
-      biome[i] = MOD.heightMath.biomeIndex(hm.h[i], layers.temperature[i], prec[i]);
-    }
-  }
-  return { latSpan, temp: layers.temperature, prec, biome, inputs };
+  return { latSpan, temp: layers.temperature, prec: layers.precipitation, biome: layers.biome, inputs };
 }
 
 function render(hm, prec, lakes, out, W = 860) {
@@ -268,19 +265,19 @@ async function main() {
     const hm = { h: Array.from(syn.h), grid: syn.grid };
     const lakes = Array.isArray(syn.lakes) ? syn.lakes : [];
     const clima = climateFor(MOD, hm, latSpan);
-    const r = report(`自建地形 纬度跨度 ${latSpan}°（产品现状）`, hm, clima, LK, lakes, heightMath.biomeKeyFromIndex);
+    const r = report(`自建地形 纬度跨度 ${latSpan}°（现状 = 新气候口径）`, hm, clima, LK, lakes, heightMath.biomeKeyFromIndex);
     const file = path.join(ROOT, 'build', 'salt-lakes', `self-${latSpan}.png`);
     const shot = render(hm, clima.prec, r.res.lakes, file);
     console.log(`   -> build/salt-lakes/self-${latSpan}.png`);
 
-    // 3) 提案对照：同一条地形，只给降水补“副热带干旱带”，看盐湖 / 荒漠能不能出来
-    const clima2 = climateFor(MOD, hm, latSpan, true);
-    const r2 = report(`自建地形 纬度跨度 ${latSpan}°（提案：补纬度干旱轴）`, hm, clima2, LK, lakes, heightMath.biomeKeyFromIndex);
-    const file2 = path.join(ROOT, 'build', 'salt-lakes', `self-${latSpan}-arid.png`);
-    const shot2 = render(hm, clima2.prec, r2.res.lakes, file2);
-    console.log(`   -> build/salt-lakes/self-${latSpan}-arid.png`);
-    sideBySide(shot, shot2, path.join(ROOT, 'build', 'salt-lakes', `compare-${latSpan}.png`));
-    console.log(`   -> build/salt-lakes/compare-${latSpan}.png（左 现状 / 右 提案）`);
+    // 对照：同一块地、同一批湖，只把气候换回 2026-11-08 之前的旧口径
+    const old = climateFor(MOD, hm, latSpan, true);
+    const r0 = report(`自建地形 纬度跨度 ${latSpan}°（旧口径，对照）`, hm, old, LK, lakes, heightMath.biomeKeyFromIndex);
+    const file0 = path.join(ROOT, 'build', 'salt-lakes', `legacy-${latSpan}.png`);
+    const shot0 = render(hm, old.prec, r0.res.lakes, file0);
+    console.log(`   -> build/salt-lakes/legacy-${latSpan}.png`);
+    sideBySide(shot0, shot, path.join(ROOT, 'build', 'salt-lakes', `compare-${latSpan}.png`));
+    console.log(`   -> build/salt-lakes/compare-${latSpan}.png（左 旧口径 / 右 新口径）`);
   }
 }
 

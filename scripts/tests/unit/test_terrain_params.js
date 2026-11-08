@@ -340,7 +340,9 @@ async function main() {
     const topIdx = 0 * cols + 15;                 // 顶行（北）陆格
     const midIdx = 5 * cols + 15;                 // 中行（赤道）陆格
     const diff = derived.temperature[midIdx] - derived.temperature[topIdx];
-    assert(diff > 25, `南北同高度温差只有 ${diff.toFixed(1)}°C —— 纬度没进派生`);
+    // 2026-11-08：温度改成现实纬向年均值表后，赤道 vs ±60° 的差是 25.0℃（26.5 − 1.5）；
+    // 旧线性口径是 36℃（30 vs −6）。口径换了，判据只守“纬度必须显著影响温度”，阈值下调到 20。
+    assert(diff > 20, `南北同高度温差只有 ${diff.toFixed(1)}°C —— 纬度没进派生`);
     const coast = 5 * cols + 10, inland = 5 * cols + 19;
     assert(derived.precipitation[coast] > derived.precipitation[inland],
       `靠海降水 ${derived.precipitation[coast]} 未高于内陆 ${derived.precipitation[inland]}`);
@@ -435,6 +437,70 @@ async function main() {
       `陆地格数变了（${landOf(hmOff.h)} → ${landOf(hmOn.h)}）—— 侵蚀把靠海的陆地削进了海里，海岸线被偷改`);
     assert(Number(hmOn.structure.eroded) > 0, 'eroded 读数应 > 0');
     return `下切 ${hmOn.structure.eroded} 点 / 陆地 ${landOf(hmOn.h)} 格不变 / 两次一致`;
+  });
+
+  // ── 2026-11-08：气候模型 v2（卡「气候模型没有干旱轴」）──────────────────────────
+  check('e1 温度口径：按现实纬向年均值查表（赤道 26.5 / 30° 20.5 / 60° 1.5 / 90° −25），南北对称、单调', () => {
+    const at = (lat) => HM.baseTemperatureAtLatitude(lat);
+    assert(Math.abs(at(0) - 26.5) < 1e-6, `赤道 ${at(0)}（表值 26.5）`);
+    assert(Math.abs(at(30) - 20.5) < 1e-6, `30° ${at(30)}（表值 20.5）`);
+    assert(Math.abs(at(60) - 1.5) < 1e-6, `60° ${at(60)}（表值 1.5）`);
+    assert(Math.abs(at(90) + 25) < 1e-6, `90° ${at(90)}（表值 −25）`);
+    assert(Math.abs(at(-35) - at(35)) < 1e-9, '南北不对称（同一纬度绝对值应同温）');
+    for (let lat = 0; lat < 90; lat += 1) {
+      assert(at(lat + 1) < at(lat), `纬度 ${lat}→${lat + 1} 温度没降（${at(lat)} → ${at(lat + 1)}）`);
+    }
+    // 高度惩罚口径没动：每升 1 个高度单位降 0.5℃（山越高越冷，与旧版一致）
+    const d = HM.temperatureAtIndex(21, 0) - HM.temperatureAtIndex(20, 0);
+    assert(Math.abs(d + 0.5) < 1e-6, `高度惩罚变了：${d}`);
+    return `T(0)=${at(0)} / T(30)=${at(30)} / T(60)=${at(60)} / T(90)=${at(90)}`;
+  });
+
+  check('e2 干旱轴：同一条海岸线上，副热带（≈27°）比赤道干一半以上，极地也偏干', () => {
+    const f = (lat) => HM.aridityFactorAtLatitude(lat);
+    assert(f(27) < 0.45, `副热带干湿因子 ${f(27).toFixed(2)} 不够干（沙漠带出不来）`);
+    assert(f(0) > 1.0, `赤道干湿因子 ${f(0).toFixed(2)} 没有加成（雨林带出不来）`);
+    assert(f(27) < f(15) && f(15) < f(0), '干湿带没有沿纬度平滑过渡（27° → 15° → 0° 应递增）');
+    assert(Math.abs(f(-27) - f(27)) < 1e-9, '南北不对称');
+    assert(f(75) < 1, `极地因子 ${f(75).toFixed(2)} 没有偏干`);
+    // 端到端：同一离岸距离下，副热带降水必须显著低于赤道（这是“沙漠 vs 雨林”的根）
+    const pEq = HM.precipitationAtIndex(25, 20, 0);
+    const pSub = HM.precipitationAtIndex(25, 20, 27);
+    assert(pSub < pEq * 0.6, `副热带降水 ${pSub.toFixed(1)} 没有明显低于赤道 ${pEq.toFixed(1)}`);
+    // 负向探针：暖/冷两档没被这条轴改坏 —— 冷区的底噪仍低于暖区
+    assert(HM.precipitationAtIndex(-5, 5, 22) < HM.precipitationAtIndex(5, 5, 22),
+      '冷区降水反而高于暖区（原来的冷暖两档被改坏了）');
+    return `f(0)=${f(0).toFixed(2)} / f(15)=${f(15).toFixed(2)} / f(27)=${f(27).toFixed(2)} / 降水 ${pEq.toFixed(0)} vs ${pSub.toFixed(0)}`;
+  });
+
+  check('e3 群系可达性：除 ocean/wetland 外的 11 种都必须能被气候造出来（含热荒漠、稀树草原、冰川、温带雨林）', () => {
+    const sample = (aridOn) => {
+      const seen = new Set();
+      for (let lat = -90; lat <= 90; lat += 1) {
+        for (const dist of [0, 2, 5, 10, 20, 40]) {
+          for (const h of [21, 24, 28, 34, 42, 55, 70]) {
+            const t = HM.temperatureAtIndex(h, lat);
+            const p = aridOn
+              ? HM.precipitationAtIndex(t, dist, lat)
+              // 负向探针：把干旱轴关掉（因子恒 1）= 旧模型的降水口径
+              : Math.min(100, (t > 0 ? 60 : 20) + Math.max(0, 50 - dist * 2));
+            seen.add(HM.classifyBiome(h, t, p));
+          }
+        }
+      }
+      return seen;
+    };
+    const want = ['hot_desert', 'cold_desert', 'savanna', 'grassland', 'tropical_seasonal',
+      'temperate_deciduous', 'tropical_rainforest', 'temperate_rainforest', 'taiga', 'tundra', 'glacier'];
+    const got = sample(true);
+    const missing = want.filter((k) => !got.has(k));
+    assert(!missing.length, `这些群系在气候模型下永远造不出来：${missing.join(', ')}`);
+    // 负向探针：关掉干旱轴后，热荒漠必须又消失（证明“可达”来自这条轴，不是别处顺带变的）
+    const old = sample(false);
+    assert(!old.has('hot_desert'), '关掉干旱轴还能造出热荒漠 —— 这条判据没有守住干旱轴');
+    // wetland 是刻意的例外：它是“靠水”的面（河流/沼泽），不是气候带；本用例证明其余 11 种都可达
+    assert(!got.has('wetland'), 'wetland 不该由气候带规则产生（它要水文，不是纬度）');
+    return `${want.length - missing.length}/${want.length} 可达；关掉干旱轴后热荒漠消失`;
   });
 
   const failed = results.filter((r) => !r.ok);

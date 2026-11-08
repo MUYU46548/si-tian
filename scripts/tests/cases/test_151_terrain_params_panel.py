@@ -337,6 +337,25 @@ JS_APPLY = r""" (async () => {
       out.tempMid = Math.round(hm.temp[mid] * 10) / 10;
       out.biomeTop = hm.biome ? hm.biome[top] : null;
       out.biomeMid = hm.biome ? hm.biome[mid] : null;
+      // 2026-11-08：单格取样会被**高度惩罚**淹没（同样纬度上，高 20 个单位就差 10℃），
+      // 于是“纬度有没有进派生”这条判据会被地形起伏随机翻红/翻绿。改成取**每条带里最高的温度**
+      // —— 那是该带上最低的一格，高度惩罚最小、最能代表纬度本身。
+      const bandMax = (r0, r1) => {
+        let best = -Infinity, at = -1;
+        for (let r = r0; r < r1; r++) {
+          for (let c = 0; c < cols; c++) {
+            const i = r * cols + c, v = hm.temp[i];
+            if (Number.isFinite(v) && v > best) { best = v; at = i; }
+          }
+        }
+        return { t: best, at };
+      };
+      const topBand = bandMax(0, Math.max(1, Math.floor(rows * 0.2)));
+      const midBand = bandMax(Math.floor(rows * 0.4), Math.max(Math.floor(rows * 0.4) + 1, Math.floor(rows * 0.6)));
+      out.tempTopBand = Math.round(topBand.t * 10) / 10;
+      out.tempMidBand = Math.round(midBand.t * 10) / 10;
+      out.tempTopBandH = topBand.at >= 0 && hm.h ? Math.round(hm.h[topBand.at] * 10) / 10 : null;
+      out.tempMidBandH = midBand.at >= 0 && hm.h ? Math.round(hm.h[midBand.at] * 10) / 10 : null;
     }
   }
   out.status = String(sm.provinceHint || '');
@@ -545,11 +564,15 @@ def run(cdp):
             fails.append(f'🔴 应用后没有{name}数组（P0-3 气候没随地形一起落库）')
     if applied.get('biomeKinds', 0) < 2:
         fails.append('🔴 群系只有一种 —— 气候派生没起作用（还是只由高度决定？）')
-    top, mid = applied.get('tempTop'), applied.get('tempMid')
+    # 判“纬度进没进派生”要用**同高度可比**的量：每带里温度最高的那格（= 该带最低的地面，
+    # 高度惩罚最小）。单格取样会被起伏淹没 —— 2026-11-08 气候模型 v2 换表后当场假红过一次。
+    top, mid = applied.get('tempTopBand'), applied.get('tempMidBand')
     if top is not None and mid is not None and not (mid > top + 5):
-        fails.append(f'🔴 北端温度 {top} 与中部 {mid} 没有明显差异 —— 纬度没进派生')
+        fails.append(f'🔴 北带最高温度 {top}°C 与中带最高温度 {mid}°C 没有明显差异 —— 纬度没进派生'
+                     f'（各自地面高度 {applied.get("tempTopBandH")} / {applied.get("tempMidBandH")}）')
     else:
-        notes.append(f"温度 北 {top}°C / 中 {mid}°C")
+        notes.append(f"温度 北带最高 {top}°C / 中带最高 {mid}°C"
+                     f"（地面高 {applied.get('tempTopBandH')} / {applied.get('tempMidBandH')}）")
     if applied.get('renderError'):
         fails.append(f"🔴 应用后渲染报错：{applied['renderError']}")
     if applied.get('renderPaused'):
