@@ -20,6 +20,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from lib.cdp import wait_for   # noqa: E402
 from lib.helpers import ensure_case_state, goto_planet   # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -57,7 +58,16 @@ def run(cdp):
     lvl = goto_planet(cdp)
     if lvl != 'planet':
         return False, f'导航行星失败（viewLevel={lvl}）'
-    cdp.eval("new Promise(r => setTimeout(r, 400))")
+    # 🔴 2026-11-08：这里原来是固定 `setTimeout(400)` —— **本用例长期红的第一因**是判据自己的时序，
+    #    不是产品入口消失。dev 模式下 PlanetMap 这个 4.5k 行 SFC 是**首次导航才现场编译**的，
+    #    冷启动会超过 400ms（实测 600ms 才挂上，同一套动作手点完全正常）。
+    #    改成等条件成立（上限 10s）；真的没有就走下面原有的断言，给的还是那句可读的红。
+    try:
+        wait_for(cdp, "!!document.querySelector('.planet-map-container .edit-entry-btn')",
+                 timeout=10, desc='行星地图“编辑地图”按钮出现')
+    except RuntimeError:
+        pass
+    cdp.eval("new Promise(r => setTimeout(r, 120))")
 
     hit = _hit_test(cdp, '.planet-map-container .edit-entry-btn', '编辑地图按钮命中测试')
     if hit.get('missing'):
