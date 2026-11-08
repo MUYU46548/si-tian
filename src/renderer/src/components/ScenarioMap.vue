@@ -5043,7 +5043,7 @@ onMounted(async () => {
     cvs.style.height = h + 'px';
   }
   ctx.value = cvs.getContext('2d');
-  setRasterRefineHandler(() => render());   // 底档烘焙精修完成时重画一帧（异常交渲染护栏）
+  setRasterRefineHandler(() => render());   // 底档烘焙精修完成时重画一帧
 
   // P0: 恢复上次使用的底图键（全局配置）——但只在**当前项目里确实存在**这张底图时才用
   if (window.sitianAPI?.getCurrentBaseMapKey) {

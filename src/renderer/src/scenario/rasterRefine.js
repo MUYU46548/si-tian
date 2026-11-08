@@ -40,7 +40,10 @@ export function bakeWidthFor(hm, scale) {
   const s = Number(scale);
   const need = worldW * (Number.isFinite(s) && s > 0 ? s : 1) * 1.15;
   const steps = Math.max(1, Math.ceil(need / 128));      // 128 一档：别为了取整把像素量翻倍
-  return Math.max(512, Math.min(4096, steps * 128));
+  // 上限 1,536：**整幅底图只负责“铺底”**，放大后的清晰度由视口块（`scenario/viewBake.js`）负责。
+  // 这刀是 2026-11-08 晚的实测结论：整幅底图跟着缩放到 2816 宽时，一次 4.7 百万像素
+  // ≈ 4 秒满载，而且要和视口块**抢同一颗核** —— 两件事都在烘，界面就一直在热。
+  return Math.max(512, Math.min(1536, steps * 128));
 }
 
 /** 给 `buildHeightmapRaster(opts.progressive)` 用：预算 + 完成回调 */

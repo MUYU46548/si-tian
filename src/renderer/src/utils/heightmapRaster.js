@@ -539,9 +539,14 @@ export function buildHeightmapRaster(hm, kind, opts) {
   }
   const pad = spacing;
   minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-  const w = Math.max(1, Math.ceil(maxX - minX));
-  const h = Math.max(1, Math.ceil(maxY - minY));
-
+  let w = Math.max(1, Math.ceil(maxX - minX));
+  let h = Math.max(1, Math.ceil(maxY - minY));
+  // **子区域烘焙**（2026-11-08，视口瓦片的底座）：只渲染给定的世界矩形，
+  // 输出像素由 `bakeWidth` 定 —— 于是“放大时只烘看得见的那一块”不需要另一套实现。
+  const vw = opts && opts.view;
+  if (vw && Number.isFinite(vw.minX) && Number.isFinite(vw.minY) && vw.w > 0 && vw.h > 0) {
+    minX = vw.minX; minY = vw.minY; w = vw.w; h = vw.h;
+  }
   // 只对"读地形的档"（高度）做分带归一化与海深；别的档是专题图，换量纲会把数值读成地形。
   // ⚠️ 两样都是**一次性**算好再逐格用：逐格算分位数 = 每帧 O(n log n)，逐格 BFS = 每帧几十毫秒。
   const ctx = {
