@@ -9,6 +9,7 @@ import { TRACE_SOURCE_HEIGHT } from '../../utils/riverTrace';
 import { buildRiverPaths, thinRiverPath } from '../../utils/riverChains';
 import { buildRiverNetwork, getOffset, widthFromOffset, MIN_FLUX_TO_FORM_RIVER, weldRiverJunctions, snapRiverTails } from '../../utils/fmg/rivers';
 import { catmullRomPoints, fillRiverRibbon, pruneRiverNetwork, taperWidths } from '../../utils/riverRender';
+import { createWeldCache, readWeldCache, writeWeldCache, weldCacheStats } from '../../utils/riverWeldCache';
 import { clipPolylineToCoast, clipPolylinesToCoast, MOUTH_OVERSHOOT } from '../../utils/coastline';
 import { resampleSeries, widthsBySpeed } from '../../utils/strokeMath';
 
@@ -27,6 +28,11 @@ export function getRiverEngine() { return _riverEngine; }
 // 4 万段 ≈ 真实 415 省项目（573 条河）量级的 2 倍余量；超过它说明这张图上的河数是病态的，
 // 这时候放弃焊接、照原样画，好过让整页卡死。
 const WELD_SEG_BUDGET = 40000;
+// 焊接结果的单版缓存（2026-11-08，卡「汇流焊接仍是逐帧重算」）。
+// 键 = 河网数组**引用** + subdiv（`autoRiverPartsFor` 已按河网/地形/段流量上界缓存成同一份数组，
+// 所以“几何没变”时引用相等）。命中就跳过细分 + snapRiverTails + weldRiverJunctions 三遍，
+// 只重算与相机有关的宽度。判据读 `window.__SITIAN_RIVER_WELD__` 的 cacheHits / cacheMisses。
+const _weldCache = createWeldCache();
 if (typeof window !== 'undefined') {
   window.__setRiverEngine = setRiverEngine;
   // 只读取值口：用例/演练要能确认"页面里跑的是哪一份实现"（写口只留给对照开关）
@@ -313,30 +319,55 @@ function strokeRiverNetworkAsPaths(c, paths, opts) {
   const jobs = [];
   for (const pts of ordered) {
     if (!pts || pts.length < 2) continue;
-    const curve = pts.length >= 3
-      ? catmullRomPoints(pts.map((p) => ({ x: p.x, y: p.y })), subdiv)
-      : pts.map((p) => ({ x: p.x, y: p.y }));
     const ownFlow = Math.max(1, ...pts.map((p) => (Number.isFinite(p && p.flow) ? p.flow : 0)));
-    jobs.push({ pts, curve, ownFlow });
+    jobs.push({ pts, curve: null, ownFlow });
   }
-  // 🔴 预算闸门（2026-11-07 真机卡死）：下面这一遍焊接是 `O(段数 × 每格条目)`，而它**每帧**都跑
+  // 🔴 预算闸门（2026-11-07 真机卡死）：下面这一遍焊接是 `O(段数 × 每格条目)`，而它以前**每帧**都跑
   //    （曲线还按 subdiv 细分过，点数翻约 6 倍）。真实 415 省项目（573 条河）在这个量级上没事，
   //    但"按轮廓生成地形"这类一次生成几千条河的场景会把它推到**分钟级** —— 现场是
   //    渲染进程 100% 单核、内存涨到 2GB、CDP 全超时、连 Page.navigate 都进不去（只能杀进程）。
   //    所以给一条预算线：超了就**不焊**，照原样画。宁可图上留几处交叉，也不许把应用卡死。
   //    口径留痕在 `window.__SITIAN_RIVER_WELD__`（演练/排障可直接读，不必再猜）。
-  const segCount = jobs.reduce((n, j) => n + Math.max(0, (j.curve ? j.curve.length - 1 : 0)), 0);
-  const weldSkipped = segCount > WELD_SEG_BUDGET;
-  try {
-    window.__SITIAN_RIVER_WELD__ = { paths: jobs.length, segs: segCount, budget: WELD_SEG_BUDGET, skipped: weldSkipped };
-  } catch (e) { /* 非浏览器环境忽略 */ }
-  if (jobs.length > 1 && !weldSkipped) {
-    const wrappers = jobs.map((j, i) => ({ id: i + 1, discharge: j.ownFlow, points: j.curve }));
-    snapRiverTails(wrappers, { spacing: 8 });
-    weldRiverJunctions(wrappers, { spacing: 8 });
-
-    for (let i = 0; i < jobs.length; i++) jobs[i].curve = wrappers[i].points;
+  // 🔴 2026-11-08（卡「汇流焊接仍是逐帧重算」）：细分 + snapRiverTails + weldRiverJunctions
+  //    **按河网引用 + subdiv 缓存**。命中的帧这三遍一遍都不做，只重算与相机有关的逐点宽度 ——
+  //    河网几何与相机无关，而 `autoRiverPartsFor()` 在“河网/地形/段流量上界”没变时返回**同一个数组**。
+  //    预算线保留：病态规模的第一帧仍然跳过焊接（宁可留交叉也不卡死），但之后每帧都是命中。
+  const segsOf = (curves) => curves.reduce((n, c) => n + Math.max(0, Array.isArray(c) ? c.length - 1 : 0), 0);
+  const hit = readWeldCache(_weldCache, { paths, subdiv, count: jobs.length });
+  let segCount = 0;
+  let weldSkipped = false;
+  let welded = false;
+  if (hit) {
+    for (let i = 0; i < jobs.length; i++) jobs[i].curve = hit.curves[i];
+    segCount = hit.segs;
+    weldSkipped = hit.skipped;
+    welded = hit.welded;
+  } else {
+    for (const job of jobs) {
+      const pts = job.pts;
+      job.curve = pts.length >= 3
+        ? catmullRomPoints(pts.map((p) => ({ x: p.x, y: p.y })), subdiv)
+        : pts.map((p) => ({ x: p.x, y: p.y }));
+    }
+    segCount = segsOf(jobs.map((j) => j.curve));
+    weldSkipped = segCount > WELD_SEG_BUDGET;
+    if (jobs.length > 1 && !weldSkipped) {
+      const wrappers = jobs.map((j, i) => ({ id: i + 1, discharge: j.ownFlow, points: j.curve }));
+      snapRiverTails(wrappers, { spacing: 8 });
+      weldRiverJunctions(wrappers, { spacing: 8 });
+      for (let i = 0; i < jobs.length; i++) jobs[i].curve = wrappers[i].points;
+      welded = true;
+    }
+    writeWeldCache(_weldCache, {
+      paths, subdiv, curves: jobs.map((j) => j.curve), segs: segCount, welded, skipped: weldSkipped,
+    });
   }
+  try {
+    window.__SITIAN_RIVER_WELD__ = {
+      paths: jobs.length, segs: segCount, budget: WELD_SEG_BUDGET, skipped: weldSkipped, welded,
+      cached: !!hit, ...weldCacheStats(_weldCache),
+    };
+  } catch (e) { /* 非浏览器环境忽略 */ }
   for (const job of jobs) {
     const { pts, curve, ownFlow } = job;
     if (!curve || curve.length < 2) continue;
