@@ -166,7 +166,7 @@ if (origCount >= 200 && gridCount * 5 < origCount)  →  保留原环（不覆�
 | 真机 | `drill_quit_flush.py --phase p4` 通过（脚本跑前备份跑后还原） |
 | 数据 | 涂归属后读项目文件，`Province 2` 顶点数**仍为 10525** |
 | 可见 | 归属覆盖层开关能显示色块；关掉后海岸线原样 |
-| 交付 | `npm run dist` 打包，`release-inst/…exe` 的 `app.asar` 时间戳晚于本次改动（**exe 时间 ≠ 代码时间 = 没交付**） |
+| 交付 | `npm run dist` 打包，产物目录里 `win-unpacked/…exe` 的 `app.asar` 时间戳晚于本次改动（**exe 时间 ≠ 代码时间 = 没交付**）。产物目录在仓库外（2026-11-08 起，脚本会打印路径） |
 
 ---
 

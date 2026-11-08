@@ -1,5 +1,10 @@
 # SiTian 发布流程
 
+> **产物目录不再在仓库里**（2026-11-08）：`npm run dist*` 的输出目录由 `scripts/lib/distPaths.mjs` 算，
+> 默认 `%LOCALAPPDATA%\sitian-build\release`（可用 `SITIAN_DIST_ROOT` 覆盖）。
+> 跑完脚本会打印一行“构建产物目录：…”，下文示例里的 `release/` 请按那一行替换。
+> 下层 `win-unpacked\司天.exe` 就是解包后的可执行文件。
+
 ## 省流版
 
 ### 1. 开发调试
@@ -9,7 +14,7 @@ npm run dev:watch
 ### 2. 准备发布前 — 本地生产验证
 
 npm run dist:dir
-# 手动运行 release/win-unpacked/SiTian.exe 检查
+# 手动运行 <产物目录>/win-unpacked/司天.exe 检查（目录见脚本打印的那一行）
 
 ### 3. 正式发布
 
@@ -41,6 +46,7 @@ npm run test
 
 # 生成本解包目录（不打包安装程序，快速验证）
 npm run dist:dir
+# → 打印的行就是产物目录；下面这一段命令都按它替换 <产物目录>
 ```
 
 ### 3. 发布到 GitHub Release

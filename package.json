@@ -25,9 +25,9 @@
     "test:era-smooth": "python scripts/tests/drill_era_smooth.py",
     "test:sample-galaxy": "python scripts/tests/drill_sample_galaxy.py",
     "test:packaged": "python scripts/tests/drill_packaged_app.py",
-    "dist": "npm run build && electron-builder",
-    "dist:dir": "npm run build && electron-builder --dir",
-    "dist:publish": "npm run build && electron-builder --publish always",
+    "dist": "npm run build && node scripts/dist.mjs",
+    "dist:dir": "npm run build && node scripts/dist.mjs --dir",
+    "dist:publish": "npm run build && node scripts/dist.mjs --publish always",
     "bump": "npm version --no-git-tag-version",
     "bump:patch": "npm version patch --no-git-tag-version",
     "bump:minor": "npm version minor --no-git-tag-version"

@@ -19,10 +19,11 @@
      所以脚本末尾会故意抛一个未声明标识符，验证 ②③ 真的会响 —— 不响就是失败。
 
 两种启动方式（被测代码都是同一份 app.asar）：
-  · 默认 `asar`：开发版 electron 加载 `release-inst/win-unpacked/resources/app.asar`
-    —— **本机唯一跑通的方式**（直接执行 SiTian.exe 在本环境里以 0x80000003 秒退）；
+  · 默认 `asar`：开发版 electron 加载 `<产物目录>/win-unpacked/resources/app.asar`
+    —— **本机唯一跑通的方式**（直接执行 司天.exe 在本环境里以 0x80000003 秒退）；
   · `exe`：`SITIAN_PROBE_MODE=exe python scripts/tests/drill_package_smoke.py`
-    —— 直接跑 SiTian.exe，在能正常双击启动的机器上用它。
+    —— 直接跑 司天.exe，在能正常双击启动的机器上用它。
+  · 产物目录不再在仓库里（2026-11-08 起）：跑脚本会打印实际路径，先 `npm run dist:dir`。
 
 安全（比 drill_quit_flush 更保守）：
   · userData 指到**临时目录**（`--user-data-dir`）→ 真实 `config.json` 与 `logs/main.log` 一字节不动；
@@ -56,11 +57,43 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, 'scripts', 'tests'))
 from lib.cdp import CDP, find_page_ws, wait_for  # noqa: E402
 
-EXE = os.path.join(ROOT, 'release-inst', 'win-unpacked', 'SiTian.exe')
-ASAR = os.path.join(ROOT, 'release-inst', 'win-unpacked', 'resources', 'app.asar')
-FRESH_ASAR = os.path.join(ROOT, 'release', 'win-unpacked', 'resources', 'app.asar')
+
+def _dist_dir():
+    """打包产物目录 —— 不自己算，去问 `scripts/lib/distPaths.mjs`（单一实现）。
+
+    2026-11-08：产物搬出仓库（默认 `%LOCALAPPDATA%\\sitian-build\\release`）；
+    这个 drill 以前读 `release-inst/`（手工 robocopy 的暂存目录），那个做法
+    随本次清理一起作废 —— 现在直接验 dist 目录里的那一份。
+    """
+    try:
+        out = subprocess.run(
+            ['node', '-e',
+             "import('./scripts/lib/distPaths.mjs').then(m=>process.stdout.write(m.resolveDistDir()))"],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        if out and os.path.isdir(out):
+            return out
+        if out and not os.path.isdir(os.path.join(ROOT, 'release')):
+            return out
+    except Exception:                                            # noqa: BLE001
+        pass
+    return os.path.join(ROOT, 'release')
+
+
+def _product_name():
+    try:
+        with open(os.path.join(ROOT, 'package.json'), 'r', encoding='utf-8') as f:
+            return ((json.load(f).get('build') or {}).get('productName')) or 'SiTian'
+    except Exception:                                            # noqa: BLE001
+        return 'SiTian'
+
+
+DIST = _dist_dir()
+_PRODUCT = _product_name()
+EXE = os.path.join(DIST, 'win-unpacked', _PRODUCT + '.exe')
+ASAR = os.path.join(DIST, 'win-unpacked', 'resources', 'app.asar')
 DEV_ELECTRON = os.path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-# exe  = 直接跑 SiTian.exe（最真，但本环境里它以 0x80000003 秒退）
+# exe  = 直接跑解包出来的 exe（最真，但本环境里它以 0x80000003 秒退）
 # asar = 用开发版 electron 二进制加载**同一个 app.asar**（启动路径已知可用）
 MODE = os.environ.get('SITIAN_PROBE_MODE', 'asar')
 PORT = 9224
@@ -71,21 +104,21 @@ RESULT = {'fails': [], 'notes': {}}
 
 
 def stale_asar_warning():
-    """release-inst 是**手工搬运**的暂存目录：不刷新就会拿旧版本当"打包产物"验。
+    """asar 比前端构建产物旧 → 说明验的是上一版包（**本次验的不是最新构建**）。
 
-    2026-10-13 实测踩到：`release-inst/.../app.asar` 停在 0.2.4（10-11 16:47），
-    而 release/ 已经到 0.2.9 —— 这条链**看着全绿，验的却是三个版本前的包**。
+    2026-10-13 的原始病灶是“手工搬运的 `release-inst/` 不刷新”；那个暂存目录
+    2026-11-08 已取消，改为与 `dist/index.html`（Vite 产物）比时间：asar 比它旧就报警。
     """
+    fresh = os.path.join(ROOT, 'dist', 'index.html')
     try:
-        if not os.path.exists(FRESH_ASAR):
+        if not os.path.exists(fresh):
             return None
-        a, b = os.path.getmtime(ASAR), os.path.getmtime(FRESH_ASAR)
-    except Exception:
+        a, b = os.path.getmtime(ASAR), os.path.getmtime(fresh)
+    except Exception:                                            # noqa: BLE001
         return None
     if a < b - 1:
-        return ('release-inst 里的 app.asar 比 release/ 的旧 %.0f 分钟 —— '
-                '本次验的不是最新构建；先 `robocopy release\\win-unpacked release-inst\\win-unpacked /MIR`'
-                % ((b - a) / 60))
+        return ('产物里的 app.asar 比 dist/index.html 旧 %.0f 分钟 —— '
+                '本次验的不是最新构建；先 `npm run dist:dir`' % ((b - a) / 60))
     return None
 
 

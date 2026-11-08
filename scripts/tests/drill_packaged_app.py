@@ -206,24 +206,47 @@ SAVE_JS = """(async () => {
 })()"""
 
 
+def dist_dir():
+    """构建产物目录 —— **不自己算**，去问 `scripts/lib/distPaths.mjs`（单一实现）。
+
+    2026-11-08：产物搬出仓库（默认 `%LOCALAPPDATA%\\sitian-build\\release`）。
+    这里只做两件事：问那条唯一实现；问到但不是目录时回落到仓内 `release/`（历史包）。
+    """
+    try:
+        out = subprocess.run(
+            ['node', '-e',
+             "import('./scripts/lib/distPaths.mjs').then(m=>process.stdout.write(m.resolveDistDir()))"],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        if out and os.path.isdir(out):
+            return out
+        if out and not os.path.isdir(os.path.join(ROOT, 'release')):
+            return out
+    except Exception:                                            # noqa: BLE001
+        pass
+    return os.path.join(ROOT, 'release')
+
+
 def main():
     keep = '--keep' in sys.argv
     p = pkg()
     version = p.get('version') or ''
     product = ((p.get('build') or {}).get('productName')) or '司天'
-    unpacked = os.path.join(ROOT, 'release', 'win-unpacked')
+    DIST = dist_dir()
+    unpacked = os.path.join(DIST, 'win-unpacked')
     exe = os.path.join(unpacked, product + '.exe')
     asar_path = os.path.join(unpacked, 'resources', 'app.asar')
     # 安装包名：2026-11-05 起 `nsis.artifactName` = `sitian-setup-<版本>.exe`（**ASCII**）。
     # 为什么必须 ASCII：0.4.0 那次上传后资产名变成 `Setup.0.4.0.exe`，而 `latest.yml` 里写的是
     # `sitian-setup-0.4.0.exe` → 自动更新 404（见 docs/RELEASE_HISTORY.md 第二节）。
     # 旧名（`<产品> Setup <版本>.exe`）留作兜底，方便验历史包。
-    installer = os.path.join(ROOT, 'release', 'sitian-setup-%s.exe' % version)
+    installer = os.path.join(DIST, 'sitian-setup-%s.exe' % version)
     if not os.path.exists(installer):
-        installer = os.path.join(ROOT, 'release', '%s Setup %s.exe' % (product, version))
+        installer = os.path.join(DIST, '%s Setup %s.exe' % (product, version))
 
     print('=== 打包版真机演练 ===')
     print('  产品 %s %s' % (product, version))
+    print('  产物目录 %s' % DIST)
     os.makedirs(OUT, exist_ok=True)
 
     if port_open(CDP_PORT):
