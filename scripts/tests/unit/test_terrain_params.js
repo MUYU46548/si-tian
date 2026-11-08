@@ -380,6 +380,30 @@ async function main() {
     return 'ok';
   });
 
+  check('a6 河网阈值：默认 0 时**一个键都不传**（老行为逐字节一致），拖上去才换口径', () => {
+    // ① 默认参数 → 空对象（引擎侧收到“键缺席” = 与老版本完全一样）
+    const dflt = P.toRiverOptions(P.DEFAULT_TERRAIN_PARAMS);
+    assert(Object.keys(dflt).length === 0,
+      `默认参数下不该传任何河网阈值，实际 ${JSON.stringify(dflt)}`);
+    // ② 只拖一条 → 只传那一条（不把另一条写成 0，否则引擎会把 0 当“明确关闭”）
+    const onlyRise = P.toRiverOptions({ ...P.DEFAULT_TERRAIN_PARAMS, minSourceRise: 5 });
+    assert(JSON.stringify(onlyRise) === '{"minSourceRise":5}', `只传河源海拔，实际 ${JSON.stringify(onlyRise)}`);
+    const onlyArea = P.toRiverOptions({ ...P.DEFAULT_TERRAIN_PARAMS, minDrainageArea: 1200 });
+    assert(JSON.stringify(onlyArea) === '{"minDrainageArea":1200}', `只传汇水面积，实际 ${JSON.stringify(onlyArea)}`);
+    // ③ 负值 / 非数字 / 0 都不算“开”（0 是默认值，不是“关到这个值”）
+    for (const bad of [0, -5, 'abc', null, undefined, NaN]) {
+      const o = P.toRiverOptions({ ...P.DEFAULT_TERRAIN_PARAMS, minSourceRise: bad, minDrainageArea: bad });
+      assert(Object.keys(o).length === 0, `minSourceRise=${String(bad)} 不该被传下去，实际 ${JSON.stringify(o)}`);
+    }
+    // ④ 归一化之后仍在合法范围内（面板滑杆的边界与引擎能吃得下的值一致）
+    const norm = P.normalizeTerrainParams({ minSourceRise: 99, minDrainageArea: 99999 }).params;
+    const f1 = P.TERRAIN_PARAM_FIELDS.find((f) => f.key === 'minSourceRise');
+    const f2 = P.TERRAIN_PARAM_FIELDS.find((f) => f.key === 'minDrainageArea');
+    assert(norm.minSourceRise === f1.max, `minSourceRise 上界夹取失败：${norm.minSourceRise}`);
+    assert(norm.minDrainageArea === f2.max, `minDrainageArea 上界夹取失败：${norm.minDrainageArea}`);
+    return '默认空 / 单条单传 / 0 与坏值不传 / 上界夹取';
+  });
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? '  —— ' + r.detail : ''}`);
   console.log(`\n${results.length - failed.length}/${results.length} 通过`);

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 151：地形生成**参数面板**（P0-1）+ 气候真实输入（P0-3），2026-10-25
 
@@ -273,6 +273,17 @@ JS_OPEN = r""" (async () => {
     })() }));
   out.hasPreviewBtn = !!document.querySelector('[data-testid="tgen-preview"]');
   out.hasSeed = !!document.querySelector('[data-testid="tgen-seed"]');
+  // 2026-11-08：把每个参数行的**标签 + 控件类型**抄出来 —— 判“面板到底暴不暴露某个参数”
+  // 只能看 DOM（读参数表只能证明“有定义”，证明不了“看得见、能拖”）。
+  out.rows = Array.from(document.querySelectorAll('.tgen-row')).map((r) => {
+    const inp = r.querySelector('input, select');
+    return {
+      text: (r.textContent || '').replace(/\s+/g, '').slice(0, 24),
+      tag: inp ? inp.tagName.toLowerCase() : null,
+      type: inp ? String(inp.getAttribute('type') || '') : '',
+      hint: String(r.getAttribute('title') || '').slice(0, 24),
+    };
+  });
   out.applyDisabled = (() => {
     const b = document.querySelector('[data-testid="tgen-apply"]');
     return b ? !!b.disabled : null;
@@ -501,6 +512,23 @@ def run(cdp):
         fails.append('🔴 预览写了数据（出候选后高度图不该存在）—— 预览必须只读')
     else:
         notes.append('预览只读 ✓')
+
+    # ── 2026-11-08：河网阈值两个参数必须**真的在面板上**（卡「阈值口径：面板暴露」）──────
+    # 判据只看 DOM：标签文字在、控件是可拖的 input。参数表里有定义 ≠ 用户看得见。
+    rows = opened.get('rows') or []
+    for label in ('河源海拔门槛', '成河汇水面积'):
+        hit = [r for r in rows if label in (r.get('text') or '')]
+        if not hit:
+            fails.append(f'🔴 面板上没有“{label}”这一行（参数表里有、界面上没有 = 用户调不了）')
+            continue
+        if hit[0].get('tag') != 'input' or hit[0].get('type') not in ('range', 'number'):
+            fails.append(f'🔴 “{label}”的控件不是滑杆/数字框：{hit[0]}')
+        if not hit[0].get('hint'):
+            fails.append(f'🔴 “{label}”没有悬停说明（用户不知道它是干什么的）')
+    if len(rows) < 10:
+        fails.append(f'🔴 面板只有 {len(rows)} 个参数行（地形参数应 ≥10，少的多半是渲染漏了）')
+    else:
+        notes.append(f'参数行 {len(rows)} 个（含河网阈值 2 项）')
 
     applied = _ev(cdp, JS_APPLY, '选第二张并应用')
     if applied.get('__err__'):

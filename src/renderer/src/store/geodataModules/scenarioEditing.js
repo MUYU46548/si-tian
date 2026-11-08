@@ -92,7 +92,7 @@ import { buildAutoTerrainLabels, mergeAutoTerrainLabels } from '../../utils/terr
 //    本模块只做“归一化 → 映射成推演 opts → 走 undo 落库”，绝不在这里另抄一组数字
 //    （否则面板拖到 1.4、算法读到的还是 1.0，而且两边都不报错）。
 import {
-  normalizeTerrainParams, toSynthesisOptions, toClimateOptions,
+  normalizeTerrainParams, toSynthesisOptions, toClimateOptions, toRiverOptions,
   describeTerrainParams, candidateSeed,
   normalizeCultureParams,
 } from '../../utils/terrainParams';
@@ -4441,6 +4441,9 @@ export function createScenarioEditingModule(ctx) {
     const terrain = t.terrain;
     const mask = Array.isArray(terrain) && terrain.length ? landMaskFor(terrain) : null;
     const norm = normalizeTerrainParams(opts.params || {});
+    // 河网阈值（2026-11-08）：默认 0 = 空对象（一个键都不传 → 老行为逐字节不变）。
+    // 河构建与回执共用这一份（别在回执里另算一遍，否则“说的”和“用的”会漂）。
+    const riverOpts = toRiverOptions(norm.params);
     // B 阶段 2（2026-10-29）：`opts.heightmap` = **已经生成好的**高度图（FMG 模板管线）。
     // 给了它就不再"按轮廓推演"，但**后面整条链路完全一样**（手绘搬移 / 气候同一笔 / 一条 undo）——
     // 这样 FMG 只是"另一个源头"，不是一个新写口。
@@ -4532,7 +4535,9 @@ export function createScenarioEditingModule(ctx) {
       try {
         const net = buildRiverNetwork(
           { grid: payload.grid, h: payload.h, lakes: payload.lakes },
-          { minFlux: MIN_FLUX_TO_FORM_RIVER + 90 },
+          // 河网阈值（2026-11-08）：面板上那两个可选门槛 —— **默认 0 时一个键都不传**，
+          // 所以“老参数重新生成”仍然逐字节一致（`toRiverOptions` 的注释里写了为什么）。
+          { minFlux: MIN_FLUX_TO_FORM_RIVER + 90, ...riverOpts },
         );
         // 2026-11-05：落库前裁到海岸线（掩膜与渲染同一个 `landMaskFor`，避免两套陆地定义）
         riversAfter = toStoredRivers(net, { isLand: mask ? mask.lookup : undefined });
@@ -4632,6 +4637,9 @@ export function createScenarioEditingModule(ctx) {
         saline: lakeClimate.saline,
         dropped: lakeClimate.dropped,
       },
+      // 这一轮真正用上的河网门槛（空对象 = 用的老口径）。回执里要能说出来 ——
+      // 用户拖了滑杆却没看到河变少时，第一件事是确认“到底用没用上”。
+      riverThresholds: { ...riverOpts },
       climate: { latitudeSpanDeg: climate.latitudeSpanDeg, maxOceanCells: climate.maxOceanCells },
       message: `${provided ? '已按 FMG 模板生成地形' : '已按陆地轮廓生成地形'}：${cellCount} 格 / 格距 ${spacing}`
         + `${inlandText}${st} —— ${describeTerrainParams(norm.params)}；`
@@ -4641,6 +4649,12 @@ export function createScenarioEditingModule(ctx) {
           : (!keepHand && prevHand.length
             ? `按你的选择未保留 ${prevHand.length} 格手绘地形；`
             : (prevHand.length && !sameSeed ? '换 seed = 全新世界，手绘地形未保留；' : '')))
+        + (Object.keys(riverOpts).length
+          ? `河网门槛：${[
+            Number.isFinite(riverOpts.minSourceRise) ? `河源海拔 ≥ ${riverOpts.minSourceRise}` : '',
+            Number.isFinite(riverOpts.minDrainageArea) ? `汇水面积 ≥ ${riverOpts.minDrainageArea}` : '',
+          ].filter(Boolean).join(' / ')}；`
+          : '')
         + `气候已按纬度 ±${Math.round(climate.latitudeSpanDeg / 2)}° 与离岸距离派生；`
         + (labelsAfter
           ? `地形注记已自动起名 ${labelsAfter.length} 条（只补空，可在地形注记面板改）；`

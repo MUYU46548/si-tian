@@ -68,6 +68,20 @@ export const TERRAIN_PARAM_FIELDS = Object.freeze([
     key: 'hills', label: '丘陵数量', kind: 'int', min: 0, max: 400, step: 20, def: 260,
     hint: '多尺度丘与盆（0 = 不撒）。它负责打散“平行坡面”——没有它，扇状度停在 0.83（参照 0.715）',
   },
+  // ── 河网阈值（2026-11-08，卡「阈值口径：raw flux 与格数耦合」的“面板暴露”那半）───────
+  // 两个都是**可选**：0 = 一个字都不传（老行为逐字节不变）。引擎侧早就支持
+  // （`utils/fmg/rivers.js#buildRiverNetwork` 的 `minSourceRise` / `minDrainageArea`），
+  // 只是一直没有入口 —— 用户量过“阈值 120→480 能把 897 条压到 201 条，但河仍短”，
+  // 所以这里给的是**物理量**门槛而不是又一个魔数。
+  {
+    key: 'minSourceRise', label: '河源海拔门槛', kind: 'float', min: 0, max: 20, step: 0.5, def: 0,
+    hint: '源头要比海面高出多少才算一条河（0 = 老行为，不改）。调高会砍掉高山上的短河与半截河',
+  },
+  {
+    key: 'minDrainageArea', label: '成河汇水面积', kind: 'float', min: 0, max: 8000, step: 100, def: 0,
+    hint: '一片地方要攒够多少汇水面积（世界单位²）才成河（0 = 按格数门槛，老行为）。'
+      + '老口径换算出来约 700、随格距与降水变；换网格精度时用它，河密度才不会跟着格数漂',
+  },
 ]);
 
 /** 默认参数（**必须与 0.4.0 的硬编码行为逐字节等价**） */
@@ -182,6 +196,25 @@ export function toSynthesisOptions(params, extra = {}) {
 export function toClimateOptions(params) {
   const p = normalizeTerrainParams(params).params;
   return { latitudeSpanDeg: p.latitudeSpanDeg };
+}
+
+/**
+ * 参数 → **河网阈值**（2026-11-08，卡「阈值口径：raw flux 与格数耦合」的“面板暴露”那半）。
+ *
+ * 口径（一条，改之前先读）：**0 / 缺省 = 一个字都不传** —— 引擎侧 `buildRiverNetwork` 收到这些键的
+ * 缺席时行为与老版本逐字节一致，所以老项目重新生成不会因为“多了两个默认 0 的参数”变脸。
+ * 只有用户真的把它们拖上去，才会换口径：
+ *   · `minSourceRise`（高度点）= 源头必须高出海面多少；
+ *   · `minDrainageArea`（世界单位²）= 汇水面积门槛，**换格距时河密度不跟着漂**的那一条。
+ *
+ * @returns {{minSourceRise?:number, minDrainageArea?:number}} 可能为空对象
+ */
+export function toRiverOptions(params) {
+  const p = params || {};
+  const out = {};
+  if (Number.isFinite(p.minSourceRise) && p.minSourceRise > 0) out.minSourceRise = p.minSourceRise;
+  if (Number.isFinite(p.minDrainageArea) && p.minDrainageArea > 0) out.minDrainageArea = p.minDrainageArea;
+  return out;
 }
 
 /** 稳定 key：同参数同 key（UI 缓存 / 用例断言用；字段顺序固定，不受对象字面量顺序影响） */
