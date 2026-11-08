@@ -74,6 +74,10 @@ export const useProjectStore = defineStore('project', () => {
   const lastSavedAt = ref('');
   const lastError = ref('');
   const dirty = ref(false);
+  // 打开/新建项目的**加载遮罩**（2026-11-08，用户：“打开时就不该白屏，应该有加载画面”）。
+  // `active` 期间 `ProjectLoadingOverlay` 盖住整页；`text` 说清当前阶段（打开 → 读数据 → 绘制）。
+  // ⚠️ 关键不是“有没有这个状态”，而是**它得先画出来再做重活** —— 见 `nextPaint()` 的注释。
+  const openProgress = ref({ active: false, text: '', startedAt: 0 });
 
   // ===== 计算属性 =====
   const isOpen = computed(() => !!project.value);
@@ -621,14 +625,54 @@ export const useProjectStore = defineStore('project', () => {
     return { success: false, reason: (res && res.error) || 'open-failed', path: p };
   }
 
+  /**
+   * 让浏览器**真的画一帧**再继续。
+   *
+   * 为什么需要：加载遮罩的意义是“重活之前先看见它”。可是 Vue 的 DOM 更新是异步的
+   * （微任务），如果紧接着同步跑 `adopt()`（解析 20MB 项目 + 建索引）和首帧栅格化，
+   * 那一帧永远画不出来 —— 用户看到的还是白屏，只是现在多了一个“理论上存在”的遮罩。
+   * 两帧 rAF 的含义：第一帧把遮罩刷到屏幕上，第二帧确认它已经在合成器里。
+   * Node 单测里没有 rAF → 直接 resolve，逻辑完全不变。
+   */
+  function nextPaint() {
+    return new Promise((resolve) => {
+      if (typeof requestAnimationFrame !== 'function') { resolve(); return; }
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  }
+
+  function beginOpen(text) {
+    openProgress.value = { active: true, text: String(text || '正在打开项目…'), startedAt: Date.now() };
+  }
+  function stepOpen(text) {
+    if (!openProgress.value.active) return;
+    openProgress.value = { active: true, text: String(text || ''), startedAt: openProgress.value.startedAt };
+  }
+  function endOpen() {
+    openProgress.value = { active: false, text: '', startedAt: 0 };
+  }
+
   async function openProject(path = '') {
     const a = api();
     if (!a || !a.projectOpen) return { success: false, error: API_MISSING };
-    const res = await a.projectOpen(path);
-    if (!res) return { success: false, error: '打开项目失败' };
-    if (res.canceled) return { success: false, canceled: true };
-    if (!res.success) return { success: false, error: res.error || '打开项目失败' };
-    return adopt(res);
+    beginOpen('正在打开项目文件…');
+    await nextPaint();                     // 先把遮罩画出来，再开始重活（否则它会跟重活一起被冻在队列里）
+    try {
+      const res = await a.projectOpen(path);
+      if (!res) return { success: false, error: '打开项目失败' };
+      if (res.canceled) return { success: false, canceled: true };
+      if (!res.success) return { success: false, error: res.error || '打开项目失败' };
+      stepOpen('正在载入地图与剧本…');
+      await nextPaint();
+      const out = adopt(res);
+      // 地图的第一帧很贵（大图实测几秒），所以这一句要**在**重绘之前出现，
+      // 而不是等重绘完了再说“正在绘制” —— 那时用户已经卡完了。
+      stepOpen('正在绘制地图…（图越大越久，请稍候）');
+      await nextPaint();
+      return out;
+    } finally {
+      endOpen();
+    }
   }
 
   /**
@@ -1264,6 +1308,7 @@ export const useProjectStore = defineStore('project', () => {
   return {
     // state
     project, filePath, projectDir, availableProjects, saveStatus, lastSavedAt, lastError, dirty,
+    openProgress,
     restoreLastProject,
     createEntities,
     // computed

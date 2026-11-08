@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="app-layout" :class="`theme-${currentTheme}`">
     <!-- 顶部栏常驻（2026-10-21 模块壳第二轮）：卡片墙打开时也保留 ——
          用户实测“点历史剧本后再也没有地方点世界观，最接近的是返回世界”。
@@ -446,6 +446,10 @@
       @accept="handleDisclaimerAccept"
       @decline="handleDisclaimerDecline"
     />
+    <!-- 打开/新建项目时的全屏加载遮罩（2026-11-08）：
+         放在最后、z-index 最高 —— 大图打开要几秒，这期间用户必须看见“在做什么”，
+         而不是一张白屏（原话：“打开时就不该白屏，应该有加载画面”）。 -->
+    <project-loading-overlay />
   </div>
 </template>
 
@@ -531,6 +535,7 @@ import { measurePerformance, cleanupTestNodes } from './utils/stressTest';
 // 免责声明：确认状态与文案都在 utils/disclaimer.js（文案单一事实源）
 import { hasAckedDisclaimer, ackDisclaimer } from './utils/disclaimer';
 import Icon from './components/Icon.vue';
+import ProjectLoadingOverlay from './components/ProjectLoadingOverlay.vue';
 
 const store = useGeodataStore();
 const layersStore = useLayersStore();

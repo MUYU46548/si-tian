@@ -993,6 +993,7 @@ import { useLayersStore } from '../store/layers';
 import { createLayerRegistry } from '../utils/scenarioLayerRegistry';
 // N1 刀 1：四层里已搬出本文件的三组（底图 / 海岸浅滩 / 省界）；文字标注层下一波
 import { drawBackgroundLayer, drawBiomeLegendLayer } from '../scenario/layers/background';
+import { renderProfiler, attachFrameTotal } from '../scenario/renderProfile';
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
 import { drawProvincesLayer, drawProvinceBordersLayer, drawPolityBordersLayer } from '../scenario/layers/provinces';
 // N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
@@ -4317,6 +4318,8 @@ function recordFrameProbe(blitted, t0) {
     px: [Math.round(cw()), Math.round(ch())],
   });
   if (log.length > FRAME_PROBE_MAX) log.splice(0, log.length - FRAME_PROBE_MAX);
+  // 分层计时开着时，把本帧总耗时挂到最近一条 stages 上（层内 + 层外 = 整帧，见 renderProfile.js）
+  attachFrameTotal((now - t0));
 }
 
 // 手势闸门是否已开（与 onMouseDown/onMouseUp 严格配对；卸载时兜底收掉，见 onBeforeUnmount）
@@ -4673,7 +4676,10 @@ function renderFrame() {
     // ── N1 刀 1（2026-10-30）：底图 / 栅格 / 海岸浅滩 / 等深线 / 群系 / 省界 六层走注册表 ──
     //    顺序不再是"读代码才知道"，而是每层自己声明的 `order`；每层读什么见 `makeLayerView()`。
     const layerView = makeLayerView();
-    scenarioRenderLayers.run(ctx.value, layerView, {});
+    // 分层计时（排障口，见 `scenario/renderProfile.js`）：默认 null → 一行额外工作都没有
+    const prof = renderProfiler();
+    scenarioRenderLayers.run(ctx.value, layerView, {}, prof ? prof.hooks : undefined);
+    if (prof) prof.flush([Math.round(cw()), Math.round(ch())]);
 
     if (showRoutes.value) drawRoutesLayer(ctx.value, makeLayerView());
     if (showRiverBase.value) drawRiversLayer(ctx.value, makeLayerView());

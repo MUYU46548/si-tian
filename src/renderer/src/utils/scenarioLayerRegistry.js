@@ -89,11 +89,25 @@ export function createLayerRegistry() {
     return out.sort((a, b) => (a.order - b.order) || (bornAt.get(a.id) - bornAt.get(b.id)));
   }
 
-  /** 按 order 依次画；返回真的画了的层 id（诊断/判据用） */
-  function run(ctx, view, state) {
+  /**
+   * 按 order 依次画；返回真的画了的层 id（诊断/判据用）。
+   *
+   * `hooks.onLayer(id, ms)` 是**只读**的排障口（2026-11-08）：给“整图重绘 105ms 到底花在哪一层”
+   * 一个可测的答案。不传 hooks 时行为与以前**完全一致**（不取时间、不分配对象）。
+   */
+  function run(ctx, view, state, hooks) {
     const drawn = [];
+    const onLayer = hooks && typeof hooks.onLayer === 'function' ? hooks.onLayer : null;
+    const clock = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
     for (const layer of plan(view, state)) {
+      if (!onLayer) {
+        layer.draw(ctx, view, state);
+        drawn.push(layer.id);
+        continue;
+      }
+      const t0 = clock();
       layer.draw(ctx, view, state);
+      onLayer(layer.id, clock() - t0);
       drawn.push(layer.id);
     }
     return drawn;

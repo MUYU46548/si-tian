@@ -163,6 +163,7 @@ def main():
         ensure_data_ready(cdp, timeout=90)
 
         # 心跳 + 页面错误收集（必须装在打开项目之前）
+        cdp.eval("window.__WANT_RENDER_PROFILE__ = %s; 1" % ('true' if flag('profile-render') else 'false'))
         cdp.eval("""(() => {
           window.__hb = []; window.__errs = [];
           window.__hbTimer = setInterval(() => window.__hb.push(Math.round(performance.now())), 100);
@@ -170,6 +171,8 @@ def main():
           window.addEventListener('unhandledrejection', e => window.__errs.push('reject: ' + String((e.reason && e.reason.message) || e.reason)));
           const ce = console.error;
           console.error = function () { window.__errs.push('console: ' + Array.from(arguments).map(String).join(' ').slice(0, 300)); return ce.apply(console, arguments); };
+          // 渲染分层计时口（2026-11-08）：只在被要求时开，默认不动任何逻辑。
+          if (window.__WANT_RENDER_PROFILE__) window.__SITIAN_RENDER_PROFILE__ = true;
           return 'ok';
         })()""")
 
@@ -208,11 +211,25 @@ def main():
         if started != 'started':
             log('openProject 发起失败：%s' % started)
             return 3
+        # 打开期间必须真的出现加载遮罩（2026-11-08 用户：“打开时就不该白屏，应该有加载画面”）。
+        # 判据挂在**真 DOM** 上：轮询时顺便看它出现过没有 —— 只有“状态里设了”不算，得看得见。
+        overlay_seen = False
+        overlay_texts = []
         for _ in range(60):
             time.sleep(0.2)
             done, _ = ask(cdp, "JSON.stringify(window.__openDone)")
+            if not overlay_seen:
+                seen, _ = ask(cdp, """(() => {
+                  const el = document.querySelector('[data-testid=project-loading-overlay]');
+                  return el ? (el.innerText || 'mask').slice(0, 40) : '';
+                })()""")
+                if seen:
+                    overlay_seen = True
+                    overlay_texts.append(seen)
             if done and done != 'null':
                 break
+        log('打开中是否有加载遮罩：%s%s' % ('有' if overlay_seen else '没有（🔴 白屏）',
+                                          ('  ← ' + ' | '.join(overlay_texts[:3])) if overlay_texts else ''))
         log('openProject 结果：%s' % done)
 
         # 进剧本视图（点击本身返回很快；渲染是异步的）
@@ -597,6 +614,21 @@ def main():
             arr = []
         gaps = sorted(((arr[i] - arr[i - 1], arr[i - 1]) for i in range(1, len(arr))), reverse=True)[:5]
         log('心跳 %d 点 / 最长空洞（毫秒@起点）: %s' % (len(arr), ' '.join('%d@%d' % (d, t) for d, t in gaps)))
+        # 渲染分层计时（2026-11-08，配合 `--profile-render`）：整图重绘的 105ms 到底花在哪一层
+        stages, _ = ask(cdp, "JSON.stringify((window.__SITIAN_RENDER_STAGES__ || []).slice(-2))")
+        try:
+            parsed = json.loads(stages) if isinstance(stages, str) else []
+        except Exception:                                      # noqa: BLE001
+            parsed = []
+        if parsed:
+            for f in parsed:
+                items = sorted((f.get('layers') or {}).items(), key=lambda kv: -kv[1])
+                total = f.get('total')
+                acc = sum(v for _k, v in items)
+                log('分层耗时（像素 %s · 本帧 %sms · 注册表内 %sms / 其余 %sms）: %s' % (
+                    f.get('px'), total, round(acc, 1),
+                    round((total - acc), 1) if isinstance(total, (int, float)) else '?',
+                    ' / '.join('%s %.1fms' % (k, v) for k, v in items)))
         return 0
     finally:
         if cdp is not None:
