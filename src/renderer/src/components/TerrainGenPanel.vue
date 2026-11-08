@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="tgen" data-testid="terrain-gen-panel">
     <div class="tgen-head">
       <strong>地形生成参数</strong>
@@ -77,7 +77,7 @@
             :data-testid="`tgen-${f.key}`"
             @input="setNum(f.key, $event)"
           >
-          <span class="tgen-val">{{ Number(params[f.key]).toFixed(f.step < 0.1 ? 2 : 1) }}{{ f.key === 'latitudeSpanDeg' ? '°' : '' }}</span>
+          <span class="tgen-val">{{ f.kind === 'int' ? Math.round(Number(params[f.key])) : Number(params[f.key]).toFixed(f.step < 0.1 ? 2 : 1) }}{{ f.key === 'latitudeSpanDeg' ? '°' : '' }}</span>
         </template>
       </div>
     </div>
@@ -353,7 +353,10 @@ defineExpose({ summary, keepHandEdits, autoLabels });
   color: #cbd5e1; font-size: 12px; cursor: pointer;
 }
 .tgen-check input[type='checkbox'] { accent-color: #38bdf8; }
-.tgen-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 6px; }
+/* 🔴 2026-11-08：标签列原来是**固定 64px** —— “河源海拔门槛 / 成河汇水面积”这种 6 字标签
+   会被滑杆压住最后两个字（真机截图才看得见；DOM 判据只查“文本存在”，查不出重叠）。
+   改成 `max-content`：列宽跟着**最长标签**走，滑杆吃剩下的宽度。 */
+.tgen-row { display: grid; grid-template-columns: max-content minmax(60px, 1fr) auto; align-items: center; gap: 6px; }
 .tgen-row label { color: #94a3b8; white-space: nowrap; }
 .tgen-row input[type='range'] { width: 100%; accent-color: #38bdf8; }
 .tgen-row select {
