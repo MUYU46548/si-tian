@@ -19,6 +19,41 @@ import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
 
 const DEFAULT_WALL_COLOR = '#8d7f6e';
 
+/**
+ * 两套配色（2026-11-14）：屏幕是深底、亮蓝房间；**出图必须换白纸**，
+ * 否则打印出来是一张黑纸。出图不能"另画一遍"（那是双源，改一处漏一处），
+ * 所以用同一套绘制函数，只换主题。
+ */
+export const FLOOR_THEMES = Object.freeze({
+  screen: {
+    roomFill: 'rgba(126, 176, 229, 0.26)',
+    roomStroke: 'rgba(147, 197, 253, 0.55)',
+    roomText: '#e8eef7',
+    roomTextHalo: 'rgba(10, 14, 22, 0.9)',
+    wall: DEFAULT_WALL_COLOR,
+    wallStroke: 'rgba(0,0,0,0.35)',
+    joint: DEFAULT_WALL_COLOR,
+    door: '#d9b45a',
+    window: '#7fc7e8',
+  },
+  print: {
+    roomFill: '#eef1f5',
+    roomStroke: '#c5ced8',
+    roomText: '#2f3742',
+    roomTextHalo: 'rgba(255,255,255,0.92)',
+    wall: '#3e4348',            // 平面图里墙是"涂黑"的（poche），不跟屏幕的棕色
+    wallStroke: 'rgba(0,0,0,0.55)',
+    joint: '#3e4348',
+    door: '#8a6d3b',
+    window: '#3f7391',
+  },
+});
+
+/** 取主题（未知值回落屏幕态，免得调用方写错就白纸） */
+export function floorTheme(name) {
+  return FLOOR_THEMES[name] || FLOOR_THEMES.screen;
+}
+
 /** 墙的可见长度（直线；弧墙按弦长近似） */
 function wallLen(w) {
   const dx = w.end.x - w.start.x;
@@ -114,6 +149,7 @@ function pathPolygon(ctx, pts) {
  */
 export function drawInteriorFloor(ctx, floor, opts = {}) {
   const zoom = Number(opts.zoom) > 0 ? Number(opts.zoom) : 1;
+  const theme = floorTheme(opts.theme);
   const walls = Array.isArray(floor && floor.walls) ? floor.walls : [];
   const rooms = Array.isArray(floor && floor.rooms) ? floor.rooms : [];
   const doors = Array.isArray(floor && floor.doors) ? floor.doors : [];
@@ -130,9 +166,9 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
       if (poly.length < 3) continue;
       if (!pathPolygon(ctx, poly)) continue;
       ctx.save();
-      ctx.fillStyle = room.color || 'rgba(126, 176, 229, 0.26)';
+      ctx.fillStyle = room.color || theme.roomFill;
       ctx.fill();
-      ctx.strokeStyle = room.color || 'rgba(147, 197, 253, 0.55)';
+      ctx.strokeStyle = room.color || theme.roomStroke;
       ctx.lineWidth = 1 / zoom;
       ctx.stroke();
       ctx.restore();
@@ -152,9 +188,9 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
         // 深色底 + 浅色字，描边保证压在任何底色上都读得出
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = 'rgba(10, 14, 22, 0.9)';
+        ctx.strokeStyle = theme.roomTextHalo;
         ctx.strokeText(label, 0, 0);
-        ctx.fillStyle = '#e8eef7';
+        ctx.fillStyle = theme.roomText;
         ctx.fillText(label, 0, 0);
         ctx.restore();
       }
@@ -167,7 +203,8 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
     const ownWins = windows.filter((d) => d.wallId === wall.id);
     const openings = showOpenings ? ownDoors.concat(ownWins) : [];
     const segs = wallSolidSegments(wall, openings);
-    const color = wall.color || DEFAULT_WALL_COLOR;
+    // 打印态统一用涂黑墙：木色墙在纸上印出来是脏灰，且与家具色分不开
+    const color = opts.theme === 'print' ? theme.wall : (wall.color || theme.wall);
     const selected = opts.selectedWallId && opts.selectedWallId === wall.id;
     for (const [t0, t1] of segs) {
       const quad = segmentQuad(wall, t0, t1, wall.thickness);
@@ -185,11 +222,11 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
     // 门窗符号：在世界坐标里只用屏幕恒定尺寸画简单的框 + 线
     if (showOpenings) {
       for (const d of ownDoors) {
-        drawOpeningSymbol(ctx, wall, d, zoom, 'door');
+        drawOpeningSymbol(ctx, wall, d, zoom, 'door', theme);
         stat.doors++;
       }
       for (const w of ownWins) {
-        drawOpeningSymbol(ctx, wall, w, zoom, 'window');
+        drawOpeningSymbol(ctx, wall, w, zoom, 'window', theme);
         stat.windows++;
       }
     }
@@ -216,7 +253,7 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
     if (rec.n < 2) continue;
     ctx.beginPath();
     ctx.arc(rec.p.x, rec.p.y, Math.max(1, rec.thickness / 2), 0, Math.PI * 2);
-    ctx.fillStyle = DEFAULT_WALL_COLOR;
+    ctx.fillStyle = theme.joint;
     ctx.fill();
   }
   ctx.restore();
@@ -225,7 +262,7 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
 }
 
 /** 门窗符号：在墙上挖开的缺口里画几笔（屏幕恒定线宽） */
-function drawOpeningSymbol(ctx, wall, opening, zoom, kind) {
+function drawOpeningSymbol(ctx, wall, opening, zoom, kind, theme = floorTheme('screen')) {
   const t = Math.min(1, Math.max(0, Number(opening.position) || 0.5));
   const p = wallPointAt(wall, t);
   const n = wallNormal(wall);
@@ -238,7 +275,7 @@ function drawOpeningSymbol(ctx, wall, opening, zoom, kind) {
   const jambB = { x: a.x + dir.x * half, y: a.y + dir.y * half };
 
   ctx.save();
-  ctx.strokeStyle = kind === 'door' ? '#d9b45a' : '#7fc7e8';
+  ctx.strokeStyle = kind === 'door' ? theme.door : theme.window;
   ctx.lineWidth = 1.5 / zoom;
   ctx.beginPath();
   ctx.moveTo(jambA.x, jambA.y);

@@ -40,6 +40,12 @@
                 :title="canShowExterior ? '以 3D 看这栋楼的外观（墙挤成体块 + 屋顶，可转动）' : '这栋楼还没有墙：先在“编辑地图 → 画墙”里画几面墙'">
           <Icon name="cube" :size="14" /> 外观
         </button>
+        <!-- 出图（2026-11-14，第 4 刀）：A4 横向图纸，比例尺/指北针/图例/标题栏/房间面积表 -->
+        <button class="adopt-btn export-btn" @click="exportPlanSheet" :disabled="!canShowExterior || exporting"
+                :title="canShowExterior ? '导出当前楼层的平面图（A4 横版，带比例尺、指北针、图例、标题栏、房间面积表）' : '这栋楼还没有墙，没有可出的平面图'">
+          <Icon name="export" :size="14" /> {{ exporting ? '生成中…' : '出图' }}
+        </button>
+        <span v-if="exportMsg" class="export-msg" :class="{ err: exportMsgErr }">{{ exportMsg }}</span>
         <template v-if="!editMode">
           <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
                   :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：放置/拖拽家具'"><Icon name="pencil" :size="14"/> 编辑地图</button>
@@ -327,6 +333,9 @@ import { DEFAULT_WALL_THICKNESS, formatLength, formatArea } from '../utils/inter
 // 外观（2026-11-14）：同一份楼层数据的 3D 渲染。three 只在点开时动态加载。
 import ExteriorView from './ExteriorView.vue';
 import { hasWalls } from '../interior/buildShell';
+// 出图（第 4 刀）：版式是纯函数，平面图本体仍走 drawInteriorFloor（换 print 主题）= 同源
+import { buildPlanSheet, drawPlanSheet } from '../interior/planSheet';
+import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
 
 const props = defineProps({
   buildingNode: { type: Object, default: null },
@@ -609,6 +618,103 @@ const floors = computed(() => {
 // 外观（3D）：没有墙就没什么可看的 —— 按钮灰禁并说明原因，不让用户点进去看空白
 const showExterior = ref(false);
 const canShowExterior = computed(() => hasWalls(floors.value));
+
+// ===== 出图（2026-11-14，第 4 刀）=====
+const exporting = ref(false);
+const exportMsg = ref('');
+const exportMsgErr = ref(false);
+let exportTimer = 0;
+
+function setExportMsg(text, isErr = false) {
+  exportMsg.value = text;
+  exportMsgErr.value = isErr;
+  if (exportTimer) clearTimeout(exportTimer);
+  // 失败不设 TTL（"失败要看得见"，本项目纪律）；成功 4 秒后淡出
+  exportTimer = window.setTimeout(() => {
+    if (!isErr) { exportMsg.value = ''; exportTimer = 0; }
+  }, 4000);
+}
+
+/** 本层墙端点的外接尺寸（cm）。空层给 0 —— 版式层自己会兜底。 */
+function floorFootprint(floor) {
+  const walls = (floor && floor.walls) || [];
+  if (!walls.length) return { w: 0, h: 0 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const w of walls) {
+    for (const p of [w.start, w.end]) {
+      if (!p) continue;
+      minX = Math.min(minX, Number(p.x) || 0); maxX = Math.max(maxX, Number(p.x) || 0);
+      minY = Math.min(minY, Number(p.y) || 0); maxY = Math.max(maxY, Number(p.y) || 0);
+    }
+  }
+  // 墙有厚度：外接框各边加半个墙厚，图别把墙面切掉
+  const t = Math.max(...walls.map((w) => Number(w.thickness) || 12), 12);
+  return {
+    w: Math.max(0, maxX - minX) + t,
+    h: Math.max(0, maxY - minY) + t,
+    minX, minY, t,
+  };
+}
+
+/** 房间面积（cm²）：与画布同一口径（getRoomPolygon → polygonArea） */
+function floorRoomsWithArea(floor) {
+  const walls = (floor && floor.walls) || [];
+  return ((floor && floor.rooms) || []).map((r, i) => ({
+    // 没命名的房间在面积表里会变成一行行"未命名"（用户分不清是哪间）→ 给序号
+    name: r.name || `房间 ${i + 1}`,
+    area: polygonArea(getRoomPolygon(r, walls)),
+  }));
+}
+
+const EXPORT_SCALE = 2;   // 2 倍 → 2244×1588（约 192dpi，印 A4 够）
+
+async function exportPlanSheet() {
+  const floor = currentFloor.value;
+  if (!floor || exporting.value) return;
+  exporting.value = true;
+  setExportMsg('');
+  try {
+    const fp = floorFootprint(floor);
+    const sheet = buildPlanSheet({
+      buildingName: props.buildingNode?.name || '建筑',
+      floorName: floor.name || '',
+      footprint: { w: fp.w, h: fp.h },
+      rooms: floorRoomsWithArea(floor),
+      paper: 'A4',
+      date: new Date().toISOString().slice(0, 10),
+      appName: '司天',
+      version: (typeof window !== 'undefined' && window.sitianAPI && window.sitianAPI.version) || '',
+    });
+
+    const cvs = document.createElement('canvas');
+    cvs.width = Math.round(sheet.paper.w * EXPORT_SCALE);
+    cvs.height = Math.round(sheet.paper.h * EXPORT_SCALE);
+    const ctx = cvs.getContext('2d');
+    if (!ctx) throw new Error('拿不到画布上下文');
+    ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
+
+    // 平面图本体：同一套绘制函数、print 主题；裁剪/居中由版式层负责
+    drawPlanSheet(ctx, sheet, (c) => {
+      // 世界原点平移到外接框左上（版式层已按 pxPerCm 缩放，这里是 cm 坐标）
+      c.translate(-(fp.minX - fp.t / 2), -(fp.minY - fp.t / 2));
+      drawInteriorFloor(c, floor, { zoom: sheet.pxPerCm, theme: 'print' });
+    });
+
+    const dataUrl = cvs.toDataURL('image/png');
+    const name = `${props.buildingNode?.name || '建筑'}-${floor.name || '楼层'}-平面图.png`
+      .replace(/[\/:*?"<>|]/g, '_');
+    const api = window.sitianAPI;
+    if (!api || !api.saveExportFile) throw new Error('当前环境不支持导出（缺少保存通道）');
+    const r = await api.saveExportFile({ dataUrl, defaultName: name });
+    if (r && r.success) setExportMsg(`已导出：${(r.path || name).split(/[\\/]/).pop()}`);
+    else if (r && r.canceled) setExportMsg('');
+    else setExportMsg(`导出失败：${(r && r.error) || '未知原因'}`, true);
+  } catch (e) {
+    setExportMsg(`导出失败：${e && e.message ? e.message : String(e)}`, true);
+  } finally {
+    exporting.value = false;
+  }
+}
 
 // 同区域建筑列表（用于建筑间跳转）
 const sameAreaBuildings = computed(() => {
@@ -1739,6 +1845,25 @@ defineExpose({ canvas, renderer });
 .header-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+/* 出图状态：成功淡出，失败常驻（不设 TTL，免得用户没看见就消失） */
+.export-msg {
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.export-msg.err {
+  color: #d9534f;
+}
+
+.export-btn,
+.exterior-btn {
+  min-width: 64px;
 }
 
 .adopt-btn {
