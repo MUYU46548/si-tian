@@ -285,12 +285,28 @@ async function main() {
     const three = codeOnly(read('src/renderer/src/components/System3DView.vue'));
     assert(three.includes("await import('three')"), 'System3DView 缺 await import(\'three\')');
     assert(!/from\s+['"]three['"]/.test(three), 'System3DView 里不许有静态 import three');
-    // 其余组件一律不许碰 three（否则首屏会把它背进去）
+
+    // 这条闸门守的是**“three 不进首屏”**，不是"只有星系 3D 能用 three"。
+    // 2026-11-14 加建筑外观时按目的重写了判据：要么不碰 three，要么进白名单且同时满足
+    // ① 只有动态 import（没有 `from 'three'`）；② 有完整的释放纪律。
+    // 白名单每加一个，就得在下面把纪律也断言一遍 —— 不是把文件名列进来就完事。
+    const THREE_LAZY = ['ExteriorView.vue'];
+    const DISCIPLINE = [
+      'renderer.dispose()', 'forceContextLoss()', 'onBeforeUnmount(',
+      "document.addEventListener('visibilitychange'",
+    ];
     for (const f of fs.readdirSync(COMPONENTS).filter((x) => x.endsWith('.vue'))) {
       if (f === 'System3DView.vue') continue;
       const src = codeOnly(fs.readFileSync(path.join(COMPONENTS, f), 'utf8'));
-      assert(!/from\s+['"]three['"]/.test(src) && !/import\(['"]three['"]\)/.test(src),
-        `${f} 直接引了 three（3D 只许在 System3DView 里动态加载）`);
+      assert(!/from\s+['"]three['"]/.test(src), `${f} 静态 import 了 three（首屏会被背进去）`);
+      const lazy = /import\(['"]three['"]\)/.test(src);
+      if (!lazy) continue;
+      assert(THREE_LAZY.includes(f), `${f} 动态引了 three 但不在白名单里（3D 只许在已登记的组件里动态加载）`);
+      for (const needle of DISCIPLINE) {
+        assert(src.includes(needle), `${f} 用了 three 但缺资源纪律：${needle}`);
+      }
+      // 必须在 mounted 里加载，不许模块顶层就 await（顶层会在 chunk 求值时立刻拉 three）
+      assert(src.includes('onMounted('), `${f} 用了 three 但没在 onMounted 里初始化`);
     }
     return 'ok';
   });

@@ -35,6 +35,11 @@
         </p>
       </div>
       <div class="header-actions">
+        <!-- 外观（3D）：同一份楼层数据的第二种渲染，只读预览，不进编辑态 -->
+        <button class="adopt-btn exterior-btn" @click="showExterior = true" :disabled="!canShowExterior"
+                :title="canShowExterior ? '以 3D 看这栋楼的外观（墙挤成体块 + 屋顶，可转动）' : '这栋楼还没有墙：先在“编辑地图 → 画墙”里画几面墙'">
+          <Icon name="cube" :size="14" /> 外观
+        </button>
         <template v-if="!editMode">
           <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
                   :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：放置/拖拽家具'"><Icon name="pencil" :size="14"/> 编辑地图</button>
@@ -75,6 +80,15 @@
           <button :class="{ active: interactionMode === 'pan' }" @click="interactionMode = 'pan'" title="拖拽平移 / 选中家具"><Icon name="hand" :size="13"/> 拖手</button>
           <button :class="{ active: interactionMode === 'add_furniture' }" @click="interactionMode = 'add_furniture'" title="点击空白处放置家具"><Icon name="armchair" :size="13"/> 家具</button>
           <button :class="{ active: interactionMode === 'add_room' }" @click="interactionMode = 'add_room'" title="房间模板：一键铺好整间（卧室/厨房/大厅/书房/仓库），一次操作可撤销"><Icon name="home" :size="13"/> 房间模板</button>
+          <button :class="{ active: interactionMode === 'add_wall' }" @click="interactionMode = 'add_wall'; wallDraftStart = null" title="画墙：点一下定起点，再点一下成墙（可连续画，Esc 结束）。墙围合成房间会自动出名字和面积"><Icon name="square" :size="13"/> 画墙</button>
+          <button :class="{ active: interactionMode === 'add_door' }" @click="interactionMode = 'add_door'" title="放门：点在墙上，门按点到的位置放上去"><Icon name="home" :size="13"/> 门</button>
+          <button :class="{ active: interactionMode === 'add_window' }" @click="interactionMode = 'add_window'" title="放窗：点在墙上"><Icon name="grid" :size="13"/> 窗</button>
+        </div>
+
+        <div class="toolbar-group" title="墙厚" v-if="interactionMode === 'add_wall'">
+          <span class="toolbar-label">墙厚</span>
+          <button v-for="t in [8, 12, 24]" :key="t" :class="{ active: wallThickness === t }" @click="wallThickness = t">{{ t }}cm</button>
+          <button @click="wallDraftStart = null" :disabled="!wallDraftStart" title="结束当前这段墙（Esc）">结束</button>
         </div>
 
         <div class="toolbar-group" title="房间模板" v-if="interactionMode === 'add_room'">
@@ -108,7 +122,7 @@
         </div>
 
         <div class="toolbar-group" title="操作">
-          <button @click="deleteSelected" :disabled="!selectedFurniture" title="删除选中家具 (Del)"><Icon name="trash" :size="13"/> 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedFurniture && !selectedWallId" title="删除选中家具或墙 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <button @click="rotateSelected" :disabled="!selectedFurniture" title="旋转选中家具 (R)">↻ 旋转</button>
           <button @click="openTransferDialog" :disabled="selectedFurnitureIds.length === 0" title="把选中的家具复制/移动到其他楼层（整批 = 一条 undo）"><Icon name="copy" :size="13"/> 跨楼层</button>
           <button @click="undo" :disabled="!store.canUndo">↶ 撤销</button>
@@ -280,6 +294,14 @@
         </div>
       </div>
     </div>
+
+    <!-- 外观（3D）：覆盖整个内部视图；关闭即销毁（three 不进常驻内存） -->
+    <exterior-view
+      v-if="showExterior"
+      :building-name="buildingNode?.name"
+      :floors="floors"
+      @close="showExterior = false"
+    />
   </div>
 </template>
 
@@ -298,6 +320,13 @@ import EagleEye from './EagleEye.vue';
 import { computeViewBounds } from '../utils/viewport';
 import { withAlpha } from '../utils/colorUtil';
 import { getPreset, drawStyledLabel } from '../utils/labelStyles';
+// 建筑内部（2026-11-13 第 1/3 刀）：墙由工具栏画，房间由墙自动围合
+import { detectRooms, mergeDetectedRooms } from '../utils/roomDetection';
+import { drawInteriorFloor } from '../interior/renderFloor';
+import { DEFAULT_WALL_THICKNESS, formatLength, formatArea } from '../utils/interiorUnits';
+// 外观（2026-11-14）：同一份楼层数据的 3D 渲染。three 只在点开时动态加载。
+import ExteriorView from './ExteriorView.vue';
+import { hasWalls } from '../interior/buildShell';
 
 const props = defineProps({
   buildingNode: { type: Object, default: null },
@@ -486,18 +515,18 @@ const ROOM_TEMPLATES = [
     id: 'bedroom', label: '卧室', icon: 'bed', hint: '床 + 两侧柜 + 装饰',
     items: [
       { type: 'bed', name: '床', dx: 0, dy: 0 },
-      { type: 'chest', name: '衣柜', dx: -100, dy: -80 },
-      { type: 'chest', name: '床头柜', dx: 100, dy: 0 },
-      { type: 'decoration', name: '挂饰', dx: 0, dy: 80 },
+      { type: 'chest', name: '衣柜', dx: -180, dy: -80 },
+      { type: 'chest', name: '床头柜', dx: 180, dy: 0 },
+      { type: 'decoration', name: '挂饰', dx: 0, dy: 140 },
     ],
   },
   {
     id: 'kitchen', label: '厨房', icon: 'package', hint: '餐桌 + 灶台 + 储物 + 椅',
     items: [
       { type: 'table', name: '料理台', dx: 0, dy: 0 },
-      { type: 'chest', name: '灶台', dx: -100, dy: -80 },
-      { type: 'chest', name: '储物柜', dx: 100, dy: -80 },
-      { type: 'chair', name: '凳', dx: 0, dy: 80 },
+      { type: 'chest', name: '灶台', dx: -160, dy: -80 },
+      { type: 'chest', name: '储物柜', dx: 160, dy: -80 },
+      { type: 'chair', name: '凳', dx: 0, dy: 100 },
     ],
   },
   {
@@ -508,47 +537,49 @@ const ROOM_TEMPLATES = [
       { type: 'chair', name: '椅·右', dx: 100, dy: 0 },
       { type: 'chair', name: '椅·上', dx: 0, dy: -80 },
       { type: 'chair', name: '椅·下', dx: 0, dy: 80 },
-      { type: 'decoration', name: '装饰·左', dx: -180, dy: -80 },
-      { type: 'decoration', name: '装饰·右', dx: 180, dy: -80 },
+      { type: 'decoration', name: '装饰·左', dx: -220, dy: -80 },
+      { type: 'decoration', name: '装饰·右', dx: 220, dy: -80 },
     ],
   },
   {
     id: 'study', label: '书房', icon: 'book', hint: '书桌 + 椅 + 双书柜',
     items: [
       { type: 'table', name: '书桌', dx: 0, dy: 0 },
-      { type: 'chair', name: '椅', dx: 0, dy: 80 },
-      { type: 'chest', name: '书柜·一', dx: 120, dy: -80 },
-      { type: 'chest', name: '书柜·二', dx: 120, dy: 40 },
+      { type: 'chair', name: '椅', dx: 0, dy: 100 },
+      { type: 'chest', name: '书柜·一', dx: 160, dy: -80 },
+      { type: 'chest', name: '书柜·二', dx: 160, dy: 40 },
     ],
   },
   {
     id: 'storage', label: '仓库', icon: 'archive', hint: '四组货架',
     items: [
-      { type: 'chest', name: '货架·一', dx: -100, dy: -80 },
-      { type: 'chest', name: '货架·二', dx: 100, dy: -80 },
-      { type: 'chest', name: '货架·三', dx: -100, dy: 80 },
-      { type: 'chest', name: '货架·四', dx: 100, dy: 80 },
+      { type: 'chest', name: '货架·一', dx: -120, dy: -80 },
+      { type: 'chest', name: '货架·二', dx: 120, dy: -80 },
+      { type: 'chest', name: '货架·三', dx: -120, dy: 80 },
+      { type: 'chest', name: '货架·四', dx: 120, dy: 80 },
     ],
   },
 ];
 
 function getDefaultSize(type) {
+  // 2026-11-13：从"整数凑的方块"改成**真实尺寸**（cm）。原来一张床 100×80 ——
+  // 比单人床还小，房间和家具的比例一眼就不对。坐标口径见 utils/interiorUnits.js。
   const defaults = {
-    generic: { w: 60, h: 40 },
-    table: { w: 80, h: 60 },
-    chair: { w: 40, h: 40 },
-    bed: { w: 100, h: 80 },
-    chest: { w: 60, h: 40 },
-    decoration: { w: 30, h: 30 },
-    door: { w: 40, h: 10 },
-    window: { w: 60, h: 10 },
-    courtyard: { w: 200, h: 200 },
-    garden: { w: 240, h: 180 },
-    corridor: { w: 160, h: 60 },
-    pond: { w: 120, h: 100 },
-    wall: { w: 200, h: 20 },
+    generic: { w: 80, h: 60 },
+    table: { w: 140, h: 80 },      // 餐桌/书桌
+    chair: { w: 45, h: 45 },
+    bed: { w: 200, h: 150 },       // 双人床
+    chest: { w: 120, h: 60 },      // 衣柜/书柜/货架
+    decoration: { w: 40, h: 40 },
+    door: { w: 90, h: 20 },
+    window: { w: 120, h: 20 },
+    courtyard: { w: 600, h: 600 },
+    garden: { w: 800, h: 600 },
+    corridor: { w: 200, h: 80 },
+    pond: { w: 300, h: 200 },
+    wall: { w: 600, h: 24 },
   };
-  return defaults[type] || { w: 60, h: 40 };
+  return defaults[type] || { w: 80, h: 60 };
 }
 
 // 类型变化时自动调整默认尺寸
@@ -575,6 +606,10 @@ const floors = computed(() => {
   return data?.floors || [];
 });
 
+// 外观（3D）：没有墙就没什么可看的 —— 按钮灰禁并说明原因，不让用户点进去看空白
+const showExterior = ref(false);
+const canShowExterior = computed(() => hasWalls(floors.value));
+
 // 同区域建筑列表（用于建筑间跳转）
 const sameAreaBuildings = computed(() => {
   if (!props.buildingNode?.parentId) return [];
@@ -592,6 +627,56 @@ function switchBuilding(building) {
 
 // 当前选中楼层 ID
 const currentFloorId = ref(null);
+
+// 当前楼层对象（墙/房间绘制要用整层，不只是家具）
+const currentFloor = computed(() => floors.value.find(f => f.id === currentFloorId.value) || null);
+
+// 画墙：第一次点击记起点，第二次成墙；选中墙可拖端点（第 2.5 刀的最小版）
+const wallDraftStart = ref(null);
+const selectedWallId = ref(null);
+
+/**
+ * 重新识别本层房间。
+ * 只在"墙变了"之后调用（画完/删墙/拖完端点）—— 拖拽中每帧跑 detectRooms 会掉帧。
+ */
+function recalcRooms() {
+  const floor = currentFloor.value;
+  const buildingId = props.buildingNode?.id;
+  if (!floor || !buildingId) return;
+  const walls = Array.isArray(floor.walls) ? floor.walls : [];
+  if (walls.length < 3) {
+    if ((floor.rooms || []).length) store.setFloorRooms(buildingId, floor.id, []);
+    return;
+  }
+  const detected = detectRooms(walls, { eps: 2 });
+  const merged = mergeDetectedRooms(floor.rooms || [], detected);
+  store.setFloorRooms(buildingId, floor.id, merged);
+}
+
+/** 画墙工具：两次点击成一面墙，画完自动重算房间 */
+function handleWallClick(wx, wy) {
+  const floorId = currentFloorId.value;
+  const buildingId = props.buildingNode?.id;
+  if (!floorId || !buildingId) return;
+  const p = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: Math.round(wx), y: Math.round(wy) };
+  const start = wallDraftStart.value;
+  if (!start) {
+    wallDraftStart.value = p;
+    return;
+  }
+  // 太短的墙视为误点（< 10cm 什么都画不出来）
+  if (Math.hypot(p.x - start.x, p.y - start.y) < 10) return;
+  store.addWall(buildingId, floorId, {
+    start,
+    end: p,
+    thickness: wallThickness.value,
+  });
+  // 连续画：下一段从刚才的落点起（CAD 习惯），Esc / 切工具结束
+  wallDraftStart.value = p;
+  recalcRooms();
+  renderer.requestRender();
+}
+const wallThickness = ref(DEFAULT_WALL_THICKNESS);
 
 // 当前楼层的家具列表
 const currentFurniture = computed(() => {
@@ -638,12 +723,22 @@ function removeFloor() {
 // ===== Canvas Renderer =====
 const renderer = useCanvasRenderer(canvas, {
   onRender: (ctx, w, h) => {
-    // 背景
-    const bg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+    // 🔴 背景必须铺满**整个视口**（2026-11-13 截图抓出来的既有缺陷）：
+    //    这里拿到 ctx 时相机变换已经应用（useCanvasRenderer 先 translate+scale 再调 onRender），
+    //    原来的 `fillRect(0, 0, w, h)` 用的是**世界坐标** —— 只涂了世界正半轴那一块，
+    //    平移/缩放后另一半露白（截图里右上角整片白）。
+    //    改成先算"视口对应的世界矩形"再涂。
+    const vt0 = renderer.getViewTransform();
+    const cs0 = vt0.scale || 1;
+    const vx0 = -(w / 2 + vt0.x) / cs0;
+    const vy0 = -(h / 2 + vt0.y) / cs0;
+    const vw0 = w / cs0;
+    const vh0 = h / cs0;
+    const bg = ctx.createLinearGradient(vx0, vy0, vx0 + vw0, vy0 + vh0);
     bg.addColorStop(0, '#2a2a3e');
     bg.addColorStop(1, '#1a1a2e');
     ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(vx0, vy0, vw0, vh0);
 
     // 参考图底图（编辑模式下）
     if (editMode.value) {
@@ -653,6 +748,14 @@ const renderer = useCanvasRenderer(canvas, {
     // 网格（编辑模式开启时显示）
     if (editMode.value && gridSnapEnabled.value) {
       drawGrid(ctx, w, h);
+    }
+
+    // 建筑内部第 3 刀（2026-11-13）：房间填充 → 墙 → 门窗，在家具下面一层
+    if (currentFloor.value) {
+      drawInteriorFloor(ctx, currentFloor.value, {
+        zoom: renderer.getViewTransform().scale,
+        selectedWallId: selectedWallId.value || undefined,
+      });
     }
 
     // 绘制家具
@@ -674,47 +777,50 @@ const renderer = useCanvasRenderer(canvas, {
 // ===== 绘制函数 =====
 function drawGrid(ctx, w, h) {
   const vt = renderer.getViewTransform();
+  const cs = vt.scale || 1;          // px per cm
   const cvs = canvas.value;
-  const centerX = cvs.clientWidth / 2 + vt.x;
-  const centerY = cvs.clientHeight / 2 + vt.y;
-  const worldLeft = -centerX / vt.scale;
-  const worldTop = -centerY / vt.scale;
-  const worldRight = (cvs.clientWidth - centerX) / vt.scale;
-  const worldBottom = (cvs.clientHeight - centerY) / vt.scale;
+  // 🔴 2026-11-13：这里原来把世界坐标再转一次屏幕坐标（`(x - worldLeft) * scale`），
+  //    而 ctx 已经应用过相机变换 → 网格整体偏移，只画在世界正半轴那一块。
+  //    现在一律用**世界坐标**画线，范围由视口反算。
+  const worldLeft = -(cvs.clientWidth / 2 + vt.x) / cs;
+  const worldTop = -(cvs.clientHeight / 2 + vt.y) / cs;
+  const worldRight = (cvs.clientWidth / 2 - vt.x) / cs;
+  const worldBottom = (cvs.clientHeight / 2 - vt.y) / cs;
 
   const step = gridSize.value;
+  if (!(step > 0)) return;
   const startX = Math.floor(worldLeft / step) * step;
   const startY = Math.floor(worldTop / step) * step;
 
   // 网格线
+  ctx.save();
   ctx.strokeStyle = 'rgba(150, 180, 200, 0.18)';
-  ctx.lineWidth = 0.5;
+  ctx.lineWidth = 1 / cs;            // 屏幕上恒 1px
   ctx.beginPath();
   for (let x = startX; x <= worldRight; x += step) {
-    const sx = (x - worldLeft) * vt.scale;
-    ctx.moveTo(sx, 0);
-    ctx.lineTo(sx, cvs.clientHeight);
+    ctx.moveTo(x, worldTop);
+    ctx.lineTo(x, worldBottom);
   }
   for (let y = startY; y <= worldBottom; y += step) {
-    const sy = (y - worldTop) * vt.scale;
-    ctx.moveTo(0, sy);
-    ctx.lineTo(cvs.clientWidth, sy);
+    ctx.moveTo(worldLeft, y);
+    ctx.lineTo(worldRight, y);
   }
   ctx.stroke();
-  
-  // 网格标签
-  ctx.font = canvasFont(9);
-  ctx.fillStyle = 'rgba(150, 180, 200, 0.6)';
-  if (step >= 50) {
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    for (let x = startX; x <= worldRight; x += step) {
-      if (x !== 0 && x % (step * 2) === 0) {
-        const sx = (x - worldLeft) * vt.scale;
-        ctx.fillText(x + 'm', sx + 2, 2);
-      }
-    }
+
+  // 网格标签（每两格标一次；单位是厘米，显示走 formatLength）
+  // 字号走 canvasFont（与其它三张画布同一份字体栈），尺寸按 zoom 反算保持屏幕恒定
+  ctx.font = canvasFont(11 / cs);
+  ctx.fillStyle = 'rgba(150, 180, 200, 0.55)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const labelEvery = step * 2;
+  for (let x = Math.ceil(worldLeft / labelEvery) * labelEvery; x <= worldRight; x += labelEvery) {
+    ctx.fillText(formatLength(x), x + 3 / cs, worldTop + 3 / cs);
   }
+  for (let y = Math.ceil(worldTop / labelEvery) * labelEvery; y <= worldBottom; y += labelEvery) {
+    ctx.fillText(formatLength(y), worldLeft + 3 / cs, y + 2 / cs);
+  }
+  ctx.restore();
 }
 
 // A4: 拖拽家具时高亮吸附网格点
@@ -830,8 +936,35 @@ const multiFurnitureStartMap = ref(null); // Map<id, {x,y}>
 
 // ===== 交互 =====
 function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
-  if (interactionMode.value === 'add_furniture') {
+  // 这几种是"点一下放一个东西"的工具，不进入拖拽
+  if (['add_furniture', 'add_wall', 'add_door', 'add_window'].includes(interactionMode.value)) {
     return false;
+  }
+
+  // 墙端点优先于家具（端点通常不在家具上，但手感上"先抓墙"更符合预期）
+  if (editMode.value && !['add_wall', 'add_door', 'add_window'].includes(interactionMode.value)) {
+    const handle = hitWallHandle(wx, wy);
+    if (handle) {
+      wallDrag.value = {
+        wallId: handle.wall.id,
+        end: handle.end,
+        origin: JSON.parse(JSON.stringify(handle.wall)),
+      };
+      selectedWallId.value = handle.wall.id;
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+      renderer.requestRender();
+      return { mode: 'wall-end', wallId: handle.wall.id, end: handle.end };
+    }
+    // 点墙身 = 选中这面墙（Delete 可删）
+    const body = hitWallBody(wx, wy);
+    if (body) {
+      selectedWallId.value = body.id;
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+      renderer.requestRender();
+      return false;      // 不进入拖拽：墙身拖动暂不支持（拖动会带走整面墙，手感与对手件不同）
+    }
   }
 
   const hit = hitTest(wx, wy);
@@ -880,6 +1013,16 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
 }
 
 function handleDragMove(wx, wy, info) {
+  // 拖墙端点：直接改内存 + 重画（松手才落一条 undo，见 handleDragEnd）
+  if (wallDrag.value) {
+    const floor = currentFloor.value;
+    const w = floor && (floor.walls || []).find(x => x.id === wallDrag.value.wallId);
+    if (!w) { wallDrag.value = null; return; }
+    const p = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: Math.round(wx), y: Math.round(wy) };
+    w[wallDrag.value.end] = p;
+    renderer.requestRender();
+    return;
+  }
   if (isDraggingFurniture.value && selectedFurniture.value) {
     const dx = wx - dragStartPos.value.x;
     const dy = wy - dragStartPos.value.y;
@@ -926,6 +1069,26 @@ function handleDragMove(wx, wy, info) {
 }
 
 function handleDragEnd(wx, wy, info) {
+  // 墙端点松手：比对拖动前快照，真变了才提交（一条 undo），再重算房间
+  if (wallDrag.value) {
+    const buildingId = props.buildingNode?.id;
+    const floorId = currentFloorId.value;
+    const d = wallDrag.value;
+    wallDrag.value = null;
+    const floor = currentFloor.value;
+    const w = floor && (floor.walls || []).find(x => x.id === d.wallId);
+    if (w && buildingId && floorId) {
+      const moved = (w.start.x !== d.origin.start.x || w.start.y !== d.origin.start.y
+        || w.end.x !== d.origin.end.x || w.end.y !== d.origin.end.y);
+      if (moved) {
+        // 内存里已经是新值 → patch 传空，oldSnapshot 供 undo 还原
+        store.updateWall(buildingId, floorId, d.wallId, {}, d.origin);
+        recalcRooms();
+      }
+    }
+    renderer.requestRender();
+    return;
+  }
   if (isDraggingFurniture.value && selectedFurniture.value && info.didPan) {
     if (selectedFurnitureIds.value.length > 1 && multiFurnitureStartMap.value) {
       // 多选拖拽结束：批量更新
@@ -957,6 +1120,21 @@ function handleDragEnd(wx, wy, info) {
 }
 
 function handleCanvasClick(hit, wx, wy) {
+  // 画墙（2026-11-13）：点一下定起点，再点一下成墙，可连续画
+  if (interactionMode.value === 'add_wall') {
+    handleWallClick(wx, wy);
+    return;
+  }
+  // 门窗：点在墙上放一个
+  if (interactionMode.value === 'add_door') {
+    placeOpening('door', wx, wy);
+    return;
+  }
+  if (interactionMode.value === 'add_window') {
+    placeOpening('window', wx, wy);
+    return;
+  }
+
   // R5-1 房间模板：整间一次性放置（一条 undo）
   if (interactionMode.value === 'add_room') {
     const tpl = ROOM_TEMPLATES.find(t => t.id === selectedRoomTemplate.value);
@@ -1063,6 +1241,80 @@ function snapPoint(world) {
   };
 }
 
+// ===== 墙的命中与拖拽（2026-11-13）=====
+// 容差按**屏幕像素**给（除以 zoom），否则放大后要精确到厘米才能抓住端点。
+const WALL_HANDLE_PX = 12;
+const wallDrag = ref(null);   // { wallId, end, origin } —— origin 是拖动前的整面墙快照
+
+/** 点到墙端点（返回 {wall, end}） */
+function hitWallHandle(wx, wy) {
+  const floor = currentFloor.value;
+  if (!floor) return null;
+  const cs = renderer.getViewTransform().scale || 1;
+  const tol = WALL_HANDLE_PX / cs;
+  let best = null;
+  let bestD = Infinity;
+  for (const w of floor.walls || []) {
+    for (const end of ['start', 'end']) {
+      const p = w[end];
+      if (!p) continue;
+      const d = Math.hypot(p.x - wx, p.y - wy);
+      if (d <= tol && d < bestD) { bestD = d; best = { wall: w, end }; }
+    }
+  }
+  return best;
+}
+
+/** 点到墙身（返回命中的墙） */function hitWallBody(wx, wy) {
+  const floor = currentFloor.value;
+  if (!floor) return null;
+  const cs = renderer.getViewTransform().scale || 1;
+  const extra = 4 / cs;
+  for (const w of (floor.walls || []).slice().reverse()) {
+    const ax = w.start.x, ay = w.start.y, bx = w.end.x, by = w.end.y;
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-6) continue;
+    let t = ((wx - ax) * dx + (wy - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const px = ax + t * dx, py = ay + t * dy;
+    const d = Math.hypot(wx - px, wy - py);
+    if (d <= (Number(w.thickness) || 12) / 2 + extra) return w;
+  }
+  return null;
+}
+
+/** 点在墙上时，返回沿墙的参数 t（0..1），用于给门窗定位 */
+function wallParamAt(w, wx, wy) {
+  const dx = w.end.x - w.start.x;
+  const dy = w.end.y - w.start.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-6) return 0.5;
+  const t = ((wx - w.start.x) * dx + (wy - w.start.y) * dy) / lenSq;
+  // 两端各留 5%，否则门窗会挂在墙角上，墙体被切得只剩拐角
+  return Math.max(0.05, Math.min(0.95, t));
+}
+
+/** 在点中的墙上放一个门/窗（2026-11-13，写口已有） */
+function placeOpening(kind, wx, wy) {
+  const buildingId = props.buildingNode?.id;
+  const floorId = currentFloorId.value;
+  if (!buildingId || !floorId) return;
+  const w = hitWallBody(wx, wy);
+  if (!w) {
+    // 没有 toast 体系：这里走 console + 不留状态，避免"点了没反应又不知道为什么"
+    console.warn('[内部地图] 请点在墙上 —— 门窗只能挂在墙里');
+    return;
+  }
+  const position = wallParamAt(w, wx, wy);
+  if (kind === 'door') {
+    store.addDoor(buildingId, floorId, { wallId: w.id, position, width: 90 });
+  } else {
+    store.addWindow(buildingId, floorId, { wallId: w.id, position, width: 120, sillHeight: 90 });
+  }
+  renderer.requestRender();
+}
+
 // ===== R5-3 跨楼层复制 / 移动 =====
 const canTransfer = computed(() =>
   !!transferTargetFloorId.value
@@ -1129,6 +1381,14 @@ function confirmAddFurniture() {
 }
 
 function deleteSelected() {
+  // 选中墙 → 删墙（连带挂在上面的门窗，数据层已处理）
+  if (selectedWallId.value && currentFloorId.value) {
+    store.removeWall(props.buildingNode.id, currentFloorId.value, selectedWallId.value);
+    selectedWallId.value = null;
+    recalcRooms();
+    renderer.requestRender();
+    return;
+  }
   if (!selectedFurniture.value || !currentFloorId.value) return;
   if (!confirm(`确定删除“${selectedFurniture.value.name}”？`)) return;
   store.removeFurniture(props.buildingNode.id, currentFloorId.value, selectedFurniture.value.id);
@@ -1279,6 +1539,14 @@ function onHistoryJump() {
 
 onMounted(() => {
   renderer.initCanvas();
+  // 墙的写口在 undo/redo 之后回调这里重算房间（rooms 是派生数据，不单独入 undo 栈 ——
+  // 否则画一面墙要按两次撤销）。只认当前建筑 + 当前层。
+  store.setFloorChangeHook((buildingId, floorId) => {
+    if (buildingId !== props.buildingNode?.id) return;
+    if (floorId !== currentFloorId.value) return;
+    recalcRooms();
+    renderer.requestRender();
+  });
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('sitian:history-jump', onHistoryJump);
   window.addEventListener('sitian:label-styles-changed', onHistoryJump); // P0-2 标签样式
@@ -1311,6 +1579,8 @@ watch(() => props.buildingNode?.id, (newId, oldId) => {
 
 onUnmounted(() => {
   renderer.cleanupCanvas();
+  // 卸载时必须摘掉回调：否则切到别的建筑后，旧组件还在替新楼层重算房间
+  store.setFloorChangeHook(null);
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('sitian:history-jump', onHistoryJump);
   window.removeEventListener('sitian:label-styles-changed', onHistoryJump);
@@ -1320,6 +1590,19 @@ onUnmounted(() => {
 function handleKeydown(e) {
   const tag = document.activeElement?.tagName;
   const isEditingInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+  // Esc：先关外观浮层（它压在最上面），再处理画墙收尾
+  if (e.key === 'Escape' && showExterior.value) {
+    showExterior.value = false;
+    return;
+  }
+
+  // Esc：结束当前这段墙（画墙是连续画的，必须有个明确的收尾键）
+  if (e.key === 'Escape' && !isEditingInput && wallDraftStart.value) {
+    wallDraftStart.value = null;
+    renderer.requestRender();
+    return;
+  }
 
   if (!isEditingInput && selectedFurniture.value && editMode.value) {
     // 方向键微调家具位置

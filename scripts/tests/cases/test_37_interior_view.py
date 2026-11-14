@@ -274,7 +274,7 @@ def sub_furniture_place(cdp, building_id):
         grid: iv.gridSize, snap: iv.gridSnapEnabled,
         item: last ? {{ name: last.name, type: last.type, x: last.x, y: last.y,
           width: last.width, height: last.height }} : null,
-        expectSize: {{ w: 80, h: 60 }},
+        expectSize: {{ w: 140, h: 80 }},   // 2026-11-13 家具改真实尺寸（餐桌 140×80）
       }});
     }})()""")
     if not isinstance(res, dict) or 'after' not in res:
@@ -295,8 +295,8 @@ def sub_furniture_place(cdp, building_id):
     # 落点应贴着点击处（对网格取整后偏差 ≤ 半个步长）
     if abs(it['x'] - (-260)) > 10 + 1 / 0.2 or abs(it['y'] - 140) > 10 + 1 / 0.2:
         return False, f'家具落点偏离点击处过远 {it}'
-    if it['width'] != 80 or it['height'] != 60:
-        return False, f'未取类型默认尺寸（期望 80×60，得到 {it["width"]}×{it["height"]}）'
+    if it['width'] != 140 or it['height'] != 80:
+        return False, f'未取类型默认尺寸（期望 140×80，得到 {it["width"]}×{it["height"]}）'
     if not res.get('closed'):
         return False, f'放置后对话框未关闭 {res}'
     _j(cdp, f"(() => {{ {STORE}.undo(); return 'ok'; }})()")

@@ -55,6 +55,8 @@
     <template v-else-if="name === 'shop'"><path d="M3 9l1-4h16l1 4"/><path d="M5 9v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M9 9V5a3 3 0 0 1 6 0v4"/></template>
     <template v-else-if="name === 'play'"><polygon points="5 3 19 12 5 21 5 3"/></template>
     <template v-else-if="name === 'pause'"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></template>
+    <!-- 立方体：等轴测的三个面（外观/3D 类按钮专用，别拿 package 那个"包裹"凑） -->
+    <template v-else-if="name === 'cube'"><path d="M12 2.6 21 7.4v9.2L12 21.4 3 16.6V7.4z"/><path d="M3 7.4 12 12.2l9-4.8"/><line x1="12" y1="12.2" x2="12" y2="21.4"/></template>
     <template v-else-if="name === 'square'"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></template>
     <template v-else-if="name === 'loader'"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></template>
     <template v-else-if="name === 'git-branch'"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></template>

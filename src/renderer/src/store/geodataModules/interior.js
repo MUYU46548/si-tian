@@ -21,16 +21,250 @@ export function createInteriorModule(ctx) {
       interiorData.value[buildingId] = { buildingId, floors: [] };
     }
     const data = interiorData.value[buildingId];
+    // elevation = 本层离地高度（cm）。新层默认叠在上一层之上 300cm（常见层高）。
+    // 不用入参 `position` —— 那是历史遗留的未使用参数，语义是"插入位置"，别借来做高度。
+    const prevFloor = data.floors[data.floors.length - 1];
+    const elevation = prevFloor ? (Number(prevFloor.elevation) || 0) + 300 : 0;
     const newFloor = {
       id: `floor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: floorName || `楼层 ${data.floors.length + 1}`,
       level: data.floors.length,
+      elevation,
+      walls: [],
+      rooms: [],
+      doors: [],
+      windows: [],
       furniture: [],
       createdAt: new Date().toISOString(),
     };
     data.floors.push(newFloor);
     scheduleAutoSave();
     return newFloor;
+  }
+
+  // ── 墙 / 门窗 / 房间（2026-11-13，建筑内部地图第 1 刀）────────────────
+  // 口径：坐标与尺寸一律**厘米**（见 docs/plan/INTERIOR_COPYPLAN_20261113.md §十一）。
+  // 每个写口都过 guardWrite + 一条 undo（与 addFurniture 同一套纪律：
+  // 直接改内存而不入栈，会让"点撤销撤掉的是上一条命令"）。
+
+  function findFloor(buildingId, floorId) {
+    const data = interiorData.value[buildingId];
+    if (!data || !Array.isArray(data.floors)) return null;
+    return data.floors.find((f) => f.id === floorId) || null;
+  }
+
+  /** 老数据兜底：缺哪个数组补哪个（只补空，不动已有内容） */
+  function ensureFloorArrays(floor) {
+    if (!floor) return floor;
+    if (!Array.isArray(floor.walls)) floor.walls = [];
+    if (!Array.isArray(floor.rooms)) floor.rooms = [];
+    if (!Array.isArray(floor.doors)) floor.doors = [];
+    if (!Array.isArray(floor.windows)) floor.windows = [];
+    if (!Array.isArray(floor.furniture)) floor.furniture = [];
+    if (!Number.isFinite(floor.elevation)) floor.elevation = 0;
+    return floor;
+  }
+
+  /** 画一面墙（端点单位 cm） */
+  function addWall(buildingId, floorId, wall = {}) {
+    if (!guardWrite('画墙').ok) return null;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return null;
+    const item = {
+      id: `wall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      start: { x: Number(wall.start?.x) || 0, y: Number(wall.start?.y) || 0 },
+      end: { x: Number(wall.end?.x) || 0, y: Number(wall.end?.y) || 0 },
+      thickness: Number(wall.thickness) > 0 ? Number(wall.thickness) : 12,   // 默认 12cm（半砖墙）
+      height: Number(wall.height) > 0 ? Number(wall.height) : 280,           // 默认 280cm 层高
+      color: wall.color || '#8d7f6e',
+      ...(wall.curvePoint ? { curvePoint: { x: Number(wall.curvePoint.x) || 0, y: Number(wall.curvePoint.y) || 0 } } : {}),
+    };
+    execute({
+      type: 'add-wall',
+      label: '画墙',
+      undo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f && Array.isArray(f.walls)) f.walls = f.walls.filter((w) => w.id !== item.id);
+        notifyFloorChanged(buildingId, floorId);
+      },
+      redo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f.walls.push({ ...item });
+        notifyFloorChanged(buildingId, floorId);
+      },
+    });
+    scheduleAutoSave();
+    return item;
+  }
+
+  /** 改墙（拖端点 / 改厚度 / 改颜色）。`oldSnapshot` 给了就用它做 undo 的还原值 */
+  function updateWall(buildingId, floorId, wallId, patch = {}, oldSnapshot = null) {
+    if (!guardWrite('修改墙体').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const wall = floor.walls.find((w) => w.id === wallId);
+    if (!wall) return;
+    const before = oldSnapshot ? JSON.parse(JSON.stringify(oldSnapshot)) : JSON.parse(JSON.stringify(wall));
+    const after = { ...JSON.parse(JSON.stringify(wall)), ...JSON.parse(JSON.stringify(patch)), id: wallId };
+    execute({
+      type: 'update-wall',
+      label: '修改墙体',
+      undo: () => {
+        const f = findFloor(buildingId, floorId);
+        const w = f && f.walls.find((x) => x.id === wallId);
+        if (w) Object.assign(w, before);
+        notifyFloorChanged(buildingId, floorId);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        const w = f && f.walls.find((x) => x.id === wallId);
+        if (w) Object.assign(w, after);
+        notifyFloorChanged(buildingId, floorId);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  /** 删墙。挂在它上面的门/窗一起删（否则留下指不到墙的孤儿） */
+  function removeWall(buildingId, floorId, wallId) {
+    if (!guardWrite('删除墙体').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const idx = floor.walls.findIndex((w) => w.id === wallId);
+    if (idx === -1) return;
+    const removedWall = JSON.parse(JSON.stringify(floor.walls[idx]));
+    const removedDoors = (floor.doors || []).filter((d) => d.wallId === wallId).map((d) => ({ ...d }));
+    const removedWindows = (floor.windows || []).filter((d) => d.wallId === wallId).map((d) => ({ ...d }));
+    execute({
+      type: 'remove-wall',
+      label: '删除墙体',
+      undo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (!f) return;
+        f.walls.splice(Math.min(idx, f.walls.length), 0, removedWall);
+        f.doors.push(...removedDoors);
+        f.windows.push(...removedWindows);
+        notifyFloorChanged(buildingId, floorId);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (!f) return;
+        f.walls = f.walls.filter((w) => w.id !== wallId);
+        f.doors = (f.doors || []).filter((d) => d.wallId !== wallId);
+        f.windows = (f.windows || []).filter((d) => d.wallId !== wallId);
+        // 挂在被删墙上的房间不再成立，一并清掉（下次检测会重建）
+        f.rooms = (f.rooms || []).filter((r) => !(r.walls || []).includes(wallId));
+        notifyFloorChanged(buildingId, floorId);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  /** 门 / 窗共用：挂在某面墙上的开口（kind = 'doors' | 'windows'） */
+  function addOpening(kind, buildingId, floorId, opening = {}) {
+    if (!guardWrite(kind === 'doors' ? '加门' : '加窗').ok) return null;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return null;
+    if (!floor.walls.some((w) => w.id === opening.wallId)) return null;   // 必须挂在一面存在的墙上
+    const isDoor = kind === 'doors';
+    const item = {
+      id: `${isDoor ? 'door' : 'win'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      wallId: opening.wallId,
+      position: Math.min(1, Math.max(0, Number(opening.position) || 0.5)),
+      width: Number(opening.width) > 0 ? Number(opening.width) : (isDoor ? 90 : 120),
+      height: Number(opening.height) > 0 ? Number(opening.height) : (isDoor ? 200 : 140),
+      ...(isDoor
+        ? { type: opening.type || 'single', swingDirection: opening.swingDirection || 'left', flipSide: !!opening.flipSide }
+        : { type: opening.type || 'standard', sillHeight: Number(opening.sillHeight) || 90 }),
+    };
+    execute({
+      type: isDoor ? 'add-door' : 'add-window',
+      label: isDoor ? '加门' : '加窗',
+      undo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f) f[kind] = f[kind].filter((o) => o.id !== item.id);
+      },
+      redo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f[kind].push({ ...item });
+      },
+    });
+    scheduleAutoSave();
+    return item;
+  }
+
+  function updateOpening(kind, buildingId, floorId, openingId, patch = {}) {
+    if (!guardWrite(kind === 'doors' ? '改门' : '改窗').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const item = floor[kind].find((o) => o.id === openingId);
+    if (!item) return;
+    const before = JSON.parse(JSON.stringify(item));
+    const after = { ...before, ...JSON.parse(JSON.stringify(patch)), id: openingId };
+    execute({
+      type: kind === 'doors' ? 'update-door' : 'update-window',
+      label: kind === 'doors' ? '改门' : '改窗',
+      undo: () => {
+        const f = findFloor(buildingId, floorId);
+        const o = f && f[kind].find((x) => x.id === openingId);
+        if (o) Object.assign(o, before);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        const o = f && f[kind].find((x) => x.id === openingId);
+        if (o) Object.assign(o, after);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  function removeOpening(kind, buildingId, floorId, openingId) {
+    if (!guardWrite(kind === 'doors' ? '删门' : '删窗').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const idx = floor[kind].findIndex((o) => o.id === openingId);
+    if (idx === -1) return;
+    const removed = { ...floor[kind][idx] };
+    execute({
+      type: kind === 'doors' ? 'remove-door' : 'remove-window',
+      label: kind === 'doors' ? '删门' : '删窗',
+      undo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f[kind].splice(Math.min(idx, f[kind].length), 0, removed);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f) f[kind] = f[kind].filter((o) => o.id !== openingId);
+      },
+    });
+    scheduleAutoSave();
+  }
+
+  /**
+   * 写入一次房间检测结果。
+   *
+   * 🔴 **不入 undo 栈**（2026-11-13 用例 167 抓出来的）：房间是**派生数据**，
+   * 它的还原应该跟着墙走。若这里也压一条命令，用户画一面墙后按一次撤销只会撤掉
+   * "房间重算"这一步（墙上还在、房间没了），必须按两次才真正撤掉墙 —— 手感是错的。
+   * 所以：墙的写口在 undo/redo 之后通过 `floorChangeHook` 触发重算，rooms 不单独入栈。
+   *
+   * `detected` = `utils/roomDetection.js` 的 `detectRooms()` 输出；
+   * 名字/材质走 `mergeDetectedRooms` 继承（不能整份替换，否则用户改过的房间名会被冲掉）。
+   */
+  function setFloorRooms(buildingId, floorId, nextRooms = []) {
+    if (!guardWrite('更新房间').ok) return;
+    const floor = findFloor(buildingId, floorId);
+    if (!floor) return;
+    floor.rooms = JSON.parse(JSON.stringify(nextRooms || []));
+    scheduleAutoSave();
+  }
+
+  // 墙几何变化后的回调（UI 注册 → 重算房间）。数据层不做检测（纯函数在 utils）。
+  let floorChangeHook = null;
+  function setFloorChangeHook(fn) { floorChangeHook = typeof fn === 'function' ? fn : null; }
+  function notifyFloorChanged(buildingId, floorId) {
+    if (!floorChangeHook) return;
+    try { floorChangeHook(buildingId, floorId); } catch (e) { /* 重算失败不影响主操作 */ }
   }
 
   // 移除楼层
@@ -305,6 +539,19 @@ export function createInteriorModule(ctx) {
     addFloor,
     removeFloor,
     updateFloor,
+    // 建筑内部第 1 刀（2026-11-13）：墙 / 门窗 / 房间
+    addWall,
+    updateWall,
+    removeWall,
+    addDoor: (b, f, o) => addOpening('doors', b, f, o),
+    updateDoor: (b, f, id, p) => updateOpening('doors', b, f, id, p),
+    removeDoor: (b, f, id) => removeOpening('doors', b, f, id),
+    addWindow: (b, f, o) => addOpening('windows', b, f, o),
+    updateWindow: (b, f, id, p) => updateOpening('windows', b, f, id, p),
+    removeWindow: (b, f, id) => removeOpening('windows', b, f, id),
+    setFloorRooms,
+    setFloorChangeHook,
+    ensureFloorArrays,
     addFurniture,
     addFurnitureBatch,
     transferFurnitureBatch,

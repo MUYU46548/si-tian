@@ -210,11 +210,15 @@ export function createLabelLayers() {
         // 势力名字号按**领土屏幕面积**给；sqrt 让面积翻 4 倍字号才翻倍，避免碎国名糊成一片
         if (lb.kind === 'polity' && Number.isFinite(lb.area) && lb.area > 0) {
           const areaPx = lb.area * scale * scale;
-          // 上限 = 地图屏幕宽度的 6%（EU4 实测：马穆鲁克约占图宽 6%），再加 96px 绝对上限
-          const mapWpx = view.mapWorldSize().w * scale;
-          const cap = Math.max(24, Math.min(96, mapWpx * 0.06));
-          const byArea = Math.max(20, Math.min(cap, Math.sqrt(Math.max(1, areaPx)) * 0.32));
-          style = { ...style, fontSize: Math.min(110, byArea * fontScale) };
+          // 🔴 2026-11-13（415 省实测截图）：原上限取**地图屏幕宽**的 6% 再叠 96px 硬顶 ——
+          //   415 省在整幅档（scale 0.56）与放大档（1.4）算出来直接吃满 96px，
+          //   四个字的势力名竖排占掉半屏高，把省界和省名全压住（用户："地名挤在一起看不清"）。
+          //   EU4 那个"大国名约占图宽 6%"量的是**全图铺满视口**的档位；我们常看的是
+          //   "整幅缩在视口里"，地图宽 ≫ 视口宽，按地图宽算 → 字号随地图规模失控。
+          // 改为按**视口宽**比例 + 48px 硬顶：字号与"用户眼前这块屏"挂钩，换多大项目都一样。
+          const cap = Math.max(20, Math.min(48, W * 0.055));
+          const byArea = Math.max(18, Math.min(cap, Math.sqrt(Math.max(1, areaPx)) * 0.32));
+          style = { ...style, fontSize: Math.min(60, byArea * fontScale) };
         }
         // C2：超大国名沿领土主轴排、超宽折两行
         let shape = null;
