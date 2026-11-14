@@ -3,14 +3,18 @@
 // ── 为什么要有这一层 ─────────────────────────────────────────────────────
 // 之前家具就是一块纯色矩形（`fillRect` + 阴影）。用户原话：
 // "做出来的东西根本不值得看" —— 一块蓝方块谁也不知道是床还是沙发。
-// 这一层按**真实尺寸**把家具画成平面图符号（床头枕头、桌面四腿、灶眼、沙发靠背…），
-// 一眼能认出是什么，且与出图同一套（屏幕上什么样，纸上就什么样）。
+// 这一层按**真实尺寸**把家具画成平面图符号，与出图同一套（屏幕上什么样，纸上就什么样）。
 //
-// ── 纪律 ─────────────────────────────────────────────────────────────────
+// ── 四条纪律 ─────────────────────────────────────────────────────────────
 // 1) 零依赖、不碰 DOM / store / 响应式 → Node 单测可直接加载（`unit/test_furniture_symbols.js`）。
 // 2) 坐标：调用方已 translate 到家具中心并 rotate 到 `rotation`，这里一律用 **cm** 画
 //    （-w/2..w/2, -h/2..h/2）。线宽要除以 zoom 才能在屏幕上恒定 —— 由 `opt.zoom` 传入。
-// 3) 颜色走一套「纸上制图」色：浅填充 + 深描边，细节再淡一档。
+// 3) 🔴 **只画俯视能看见的东西**（2026-11-14 用户："有的像推翻了压在地上，特别是柜子"）。
+//    第一版给柜子画了门缝 + 把手、给桌子画了四条腿、给门画了整块矩形框 —— 那些是**立面**信息，
+//    塞进平面图里就变成"一块板被压在地上"的错觉。俯视图里：柜顶看不见门缝与把手，
+//    桌腿被桌面挡住，门只剩"门扇 + 开合弧"。改动前先问自己：
+//    **"从天花板往下看，这条线看得见吗？"**
+// 4) 颜色走一套「纸上制图」色：浅填充 + 深描边，细节再淡一档。
 //    不跟家具类型的原色（蓝/棕）走 —— 那些颜色在白底上像贴纸，且互相压不住。
 
 const FILL = '#f4f6f8';
@@ -47,7 +51,7 @@ function roundRect(ctx, x, y, w, h, r) {
 /**
  * 画一件家具的平面符号。
  *
- * @param {CanvasRenderingContext2D} ctx 已 translate/rotate 到家具体中心
+ * @param {CanvasRenderingContext2D} ctx 已 translate/rotate 到家具中心
  * @param {{width:number,height:number,type?:string,rotation?:number}} item 尺寸单位 cm
  * @param {{zoom?:number}} [opt]
  * @returns {boolean} 是否画了（未知类型会退回"通用"符号，仍返回 true）
@@ -63,6 +67,12 @@ export function drawFurnitureSymbol(ctx, item, opt = {}) {
   const type = String(item.type || 'generic');
 
   ctx.save();
+  // 阴影由调用方在**整体**上给就够了；符号内部若继承阴影，枕头/缝/边每一条都会带一层，
+  // 叠出来像"好几层板压在一起"（第一版就是这样，被用户点出来"翻了压在地上"）。
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
   ctx.fillStyle = FILL;
   ctx.strokeStyle = STROKE;
   ctx.lineWidth = lw(zoom, 1.2);
@@ -76,7 +86,7 @@ export function drawFurnitureSymbol(ctx, item, opt = {}) {
 }
 
 const SYMBOLS = {
-  /** 床：床垫 + 两个枕头（在 -h/2 这头）+ 被子压线 */
+  /** 床：床垫 + 两只枕头（在 -h/2 这头）+ 被子压线。俯视全部可见。 */
   bed(ctx, { w, h, x0, y0, zoom }) {
     roundRect(ctx, x0, y0, w, h, Math.min(w, h) * 0.04);
     ctx.fill();
@@ -95,32 +105,37 @@ const SYMBOLS = {
       ctx.stroke();
     }
     // 被子折线（横过床身 1/3 处）
-    ctx.strokeStyle = ACCENT;
+    ctx.strokeStyle = DETAIL;
+    ctx.lineWidth = lw(zoom, 1.0);
     ctx.beginPath();
     ctx.moveTo(x0 + w * 0.04, y0 + headH + (h - headH) * 0.30);
     ctx.lineTo(x0 + w * 0.96, y0 + headH + (h - headH) * 0.30);
     ctx.stroke();
   },
 
-  /** 桌：桌面 + 四角桌腿点 + 中缝 */
+  /** 桌：俯视只有桌面（腿被桌面挡住）—— 矩形 + 台面内缩边 + 一条拼接缝 */
   table(ctx, { w, h, x0, y0, zoom }) {
     rect(ctx, x0, y0, w, h);
     ctx.fill();
     ctx.stroke();
-    const s = Math.min(w, h) * 0.12;            // 腿粗
-    ctx.fillStyle = DETAIL;
-    for (const [lx, ly] of [[x0 + s * 0.6, y0 + s * 0.6], [x0 + w - s * 1.6, y0 + s * 0.6],
-      [x0 + s * 0.6, y0 + h - s * 1.6], [x0 + w - s * 1.6, y0 + h - s * 1.6]]) {
-      ctx.fillRect(lx, ly, s, s);
-    }
+    const inset = Math.max(1.5, Math.min(w, h) * 0.045);
+    ctx.strokeStyle = DETAIL;
+    ctx.lineWidth = lw(zoom, 0.9);
+    rect(ctx, x0 + inset, y0 + inset, w - inset * 2, h - inset * 2);
+    ctx.stroke();
     ctx.strokeStyle = ACCENT;
     ctx.beginPath();
-    ctx.moveTo(x0 + w * 0.5, y0 + h * 0.12);
-    ctx.lineTo(x0 + w * 0.5, y0 + h * 0.88);
+    if (w >= h) {
+      ctx.moveTo(x0 + w * 0.5, y0 + inset);
+      ctx.lineTo(x0 + w * 0.5, y0 + h - inset);
+    } else {
+      ctx.moveTo(x0 + inset, y0 + h * 0.5);
+      ctx.lineTo(x0 + w - inset, y0 + h * 0.5);
+    }
     ctx.stroke();
   },
 
-  /** 椅：坐垫 + 靠背（-h/2 侧）*/
+  /** 椅：坐垫 + 靠背（-h/2 侧）。俯视可见。 */
   chair(ctx, { w, h, x0, y0, zoom }) {
     const back = Math.max(4, h * 0.16);
     ctx.fillStyle = '#ffffff';
@@ -140,31 +155,22 @@ const SYMBOLS = {
     ctx.stroke();
   },
 
-  /** 柜：双开门 + 把手（圆形）+ 顶部挂衣杆 */
+  /**
+   * 柜：俯视只有**柜顶**。门缝、把手都在立面 —— 画出来就是"一块板被压在地上"。
+   * 保留一道台面边（柜顶比柜身略小一圈，这道沿俯视看得见）。
+   */
   chest(ctx, { w, h, x0, y0, zoom }) {
     rect(ctx, x0, y0, w, h);
     ctx.fill();
     ctx.stroke();
-    ctx.strokeStyle = ACCENT;
-    ctx.beginPath();
-    ctx.moveTo(x0 + w / 2, y0);
-    ctx.lineTo(x0 + w / 2, y0 + h);
-    ctx.stroke();
-    // 门扇内缩一格（平面图上柜子是"箱体"）
+    const inset = Math.max(1.5, Math.min(w, h) * 0.05);
     ctx.strokeStyle = DETAIL;
     ctx.lineWidth = lw(zoom, 0.9);
-    rect(ctx, x0 + w * 0.08, y0 + h * 0.08, w * 0.84, h * 0.84);
+    rect(ctx, x0 + inset, y0 + inset, w - inset * 2, h - inset * 2);
     ctx.stroke();
-    ctx.fillStyle = DETAIL;
-    const r = Math.max(1.2, Math.min(w, h) * 0.03);
-    for (const dx of [-1, 1]) {
-      ctx.beginPath();
-      ctx.arc(x0 + w / 2 + dx * w * 0.06, y0 + h / 2, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
   },
 
-  /** 装饰（瓶/摆件）：圆 + 一点枝叶 */
+  /** 装饰（瓶/摆件）：圆 + 一圈内环。俯视是"圆台顶"。 */
   decoration(ctx, { w, h, x0, y0, zoom }) {
     const r = Math.min(w, h) / 2;
     ctx.beginPath();
@@ -179,25 +185,38 @@ const SYMBOLS = {
     void x0; void y0;
   },
 
-  /** 门（家具化的门）：门扇 + 四分之一开合弧 */
+  /**
+   * 门：平面图标准画法 = 「门扇 + 四分之一开合弧」，门框只画**虚线占位**。
+   * 第一版画了整块实线矩形 + 竖线 → 看起来就是一块门板被放倒压在地上（用户原话）。
+   * 第二版把弧半径取成 max(w,h)（90×200 的门画出一个半径 200 的巨大弧）→ 也不对。
+   * 现在：扇长取**洞口宽** min(w,h)；矩形只作为很淡的虚线占位，说明这件家具占多大地方。
+   */
   door(ctx, { w, h, x0, y0, zoom }) {
-    const len = Math.max(w, h);
-    ctx.strokeStyle = STROKE;
-    ctx.lineWidth = lw(zoom, 1.2);
+    const len = Math.min(w, h);
+    // 占位框（淡虚线）：看得出这件"门"占了 90×200 的位置
+    ctx.save();
+    ctx.setLineDash([6 / zoom, 4 / zoom]);
+    ctx.strokeStyle = '#c9d3dd';
+    ctx.lineWidth = lw(zoom, 0.8);
     rect(ctx, x0, y0, w, h);
     ctx.stroke();
-    ctx.strokeStyle = ACCENT;
-    ctx.lineWidth = lw(zoom, 0.9);
+    ctx.restore();
+
+    // 门扇（一条粗线）+ 开合弧，铰点在左下
+    ctx.strokeStyle = STROKE;
+    ctx.lineWidth = lw(zoom, 1.6);
     ctx.beginPath();
     ctx.moveTo(x0, y0 + h);
-    ctx.lineTo(x0, y0 + h - len);
+    ctx.lineTo(x0 + len, y0 + h);
     ctx.stroke();
+    ctx.strokeStyle = ACCENT;
+    ctx.lineWidth = lw(zoom, 1.1);
     ctx.beginPath();
     ctx.arc(x0, y0 + h, len, -Math.PI / 2, 0);
     ctx.stroke();
   },
 
-  /** 窗（家具化的窗）：双线 + 玻璃分隔 */
+  /** 窗：俯视可见（窗洞里的玻璃）—— 矩形 + 沿长边的中分线 */
   window(ctx, { w, h, x0, y0, zoom }) {
     rect(ctx, x0, y0, w, h);
     ctx.fillStyle = '#eaf2f7';
@@ -219,26 +238,23 @@ const SYMBOLS = {
     }
   },
 
-  /** 沙发：外框 + 靠背 + 两侧扶手 + 坐垫分隔 */
+  /** 沙发：外框 + 靠背 + 两侧扶手 + 坐垫分隔。俯视全部可见。 */
   sofa(ctx, { w, h, x0, y0, zoom }) {
     const back = Math.max(6, h * 0.24);
     const arm = Math.max(6, w * 0.1);
     roundRect(ctx, x0, y0, w, h, Math.min(w, h) * 0.12);
     ctx.fill();
     ctx.stroke();
-    // 靠背（上侧）
     ctx.fillStyle = ACCENT;
     roundRect(ctx, x0, y0, w, back, Math.min(w, h) * 0.1);
     ctx.fill();
     ctx.stroke();
-    // 两侧扶手
     for (const ax of [x0, x0 + w - arm]) {
       ctx.fillStyle = ACCENT;
       rect(ctx, ax, y0 + back, arm, h - back);
       ctx.fill();
       ctx.stroke();
     }
-    // 坐垫分隔（2 个座位 → 1 条竖线）
     ctx.strokeStyle = DETAIL;
     ctx.lineWidth = lw(zoom, 0.9);
     ctx.beginPath();
@@ -247,24 +263,30 @@ const SYMBOLS = {
     ctx.stroke();
   },
 
-  /** 衣柜：箱体 + 双开门 + 挂衣杆（顶部一条横线 + 两端挂钩）*/
+  /**
+   * 衣柜：俯视只有柜顶。第一版画了双开门 + 挂衣杆（立面信息）→ 像"柜子被拍平"。
+   * 现在只留柜顶 + 一道分区线（柜顶拼缝，俯视可见）。
+   */
   wardrobe(ctx, { w, h, x0, y0, zoom }) {
     rect(ctx, x0, y0, w, h);
     ctx.fill();
     ctx.stroke();
+    const inset = Math.max(1.5, Math.min(w, h) * 0.05);
     ctx.strokeStyle = DETAIL;
     ctx.lineWidth = lw(zoom, 0.9);
-    rect(ctx, x0 + w * 0.06, y0 + h * 0.06, w * 0.88, h * 0.88);
+    rect(ctx, x0 + inset, y0 + inset, w - inset * 2, h - inset * 2);
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x0 + w / 2, y0 + h * 0.06);
-    ctx.lineTo(x0 + w / 2, y0 + h * 0.94);
-    ctx.stroke();
-    // 挂衣杆
     ctx.strokeStyle = ACCENT;
     ctx.beginPath();
-    ctx.moveTo(x0 + w * 0.14, y0 + h * 0.2);
-    ctx.lineTo(x0 + w * 0.86, y0 + h * 0.2);
+    if (w >= h) {
+      const cut = x0 + w * 0.62;
+      ctx.moveTo(cut, y0 + inset);
+      ctx.lineTo(cut, y0 + h - inset);
+    } else {
+      const cut = y0 + h * 0.62;
+      ctx.moveTo(x0 + inset, cut);
+      ctx.lineTo(x0 + w - inset, cut);
+    }
     ctx.stroke();
   },
 

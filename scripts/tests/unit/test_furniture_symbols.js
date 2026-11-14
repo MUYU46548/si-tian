@@ -34,6 +34,10 @@ function fakeCtx() {
     strokeStyle: '',
     lineJoin: '',
     _lineWidth: 1,
+    shadowBlur: 0,
+    shadowColor: '',
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
     get lineWidth() { return this._lineWidth; },
     set lineWidth(v) { this._lineWidth = v; widths.push(v); },
     save: rec('save'),
@@ -48,6 +52,7 @@ function fakeCtx() {
     stroke: rec('stroke'),
     fillRect: rec('fillRect'),
     quadraticCurveTo: rec('quadraticCurveTo'),
+    setLineDash: rec('setLineDash'),
     count(name) { return ops.filter((o) => o.name === name).length; },
   };
   return ctx;
@@ -89,19 +94,40 @@ async function main() {
     return `fill ${ctx.count('fill')} / stroke ${ctx.count('stroke')}`;
   });
 
-  check('f4 桌：四条腿（4 个 fillRect）', () => {
+  check('f4 桌：俯视看不见腿 → 只画桌面（不许 fillRect，rect 两层：桌面 + 台面边）', () => {
     const ctx = fakeCtx();
     drawFurnitureSymbol(ctx, { width: 140, height: 80, type: 'table' }, { zoom: 1 });
-    assert(ctx.count('fillRect') === 4, `桌子应画 4 条腿，实际 ${ctx.count('fillRect')}`);
-    return '4 条腿';
+    assert(ctx.count('fillRect') === 0, `桌子不该再画腿/色块（俯视被桌面挡住），实际 ${ctx.count('fillRect')} 次 fillRect`);
+    assert(ctx.count('rect') === 2, `桌面 + 台面边应为 2 个 rect，实际 ${ctx.count('rect')}`);
+    return '桌面 + 台面边';
   });
 
-  check('f5 柜：中缝竖线 + 两个把手（2 个 arc）', () => {
+  check('f5 柜：俯视看不见门缝与把手 → 只能有柜体 + 台面边（0 个 arc）', () => {
     const ctx = fakeCtx();
     drawFurnitureSymbol(ctx, { width: 120, height: 60, type: 'chest' }, { zoom: 1 });
-    assert(ctx.count('arc') === 2, `柜子把手应为 2 个，实际 ${ctx.count('arc')}`);
-    assert(ctx.count('moveTo') >= 1 && ctx.count('lineTo') >= 1, '应有中缝竖线');
-    return '双开门 + 2 把手';
+    assert(ctx.count('arc') === 0, `柜子不许画把手（立面信息），实际 ${ctx.count('arc')} 个 arc`);
+    assert(ctx.count('rect') === 2, `柜体 + 台面边应为 2 个 rect，实际 ${ctx.count('rect')}`);
+    return '柜顶 + 台面边';
+  });
+
+  check('f8 门：门扇 + 1/4 弧，且占位框必须是**虚线**（实线框=一块门板倒在地上）', () => {
+    const ctx = fakeCtx();
+    drawFurnitureSymbol(ctx, { width: 90, height: 200, type: 'door' }, { zoom: 1 });
+    assert(ctx.count('arc') === 1, `门应有 1 段开合弧，实际 ${ctx.count('arc')}`);
+    assert(ctx.count('rect') === 1, `占位框应 1 个 rect，实际 ${ctx.count('rect')}`);
+    assert(ctx.count('setLineDash') >= 1, '占位框必须走虚线（setLineDash）');
+    // 弧半径 = 洞口宽（90），不许取 max(90,200)=200（第二版的 bug：画出半径 200 的巨大弧）
+    const arc = ctx.ops.find((o) => o.name === 'arc');
+    assert(Math.abs(arc.args[2] - 90) < 1e-6, `弧半径应为洞口宽 90，实际 ${arc.args[2]}`);
+    return '虚线占位 + 半径 90 的弧';
+  });
+
+  check('f9 符号内部必须清掉阴影（否则每条笔画都带一层，像"几层板压在一起"）', () => {
+    const ctx = fakeCtx();
+    ctx.shadowBlur = 8;              // 模拟调用方给的整体阴影
+    drawFurnitureSymbol(ctx, { width: 200, height: 150, type: 'bed' }, { zoom: 1 });
+    assert(ctx.shadowBlur === 0, `画完符号后 shadowBlur 应为 0，实际 ${ctx.shadowBlur}`);
+    return 'shadowBlur → 0';
   });
 
   check('f6 线宽随 zoom 反比：放大 2 倍时同一条线只占一半世界宽度', () => {
