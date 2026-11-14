@@ -45,6 +45,37 @@ export function polygonArea(pts) {
 }
 
 /** 顶点算术平均（不是真正的面积质心，但足够做标签落点与去重） */
+/**
+ * 点是否在多边形内（射线法；**落在边界上算在内**）。
+ *
+ * 2026-11-14（台账 A28 房间双击改名）：双击要判断"点中的是哪一间"。
+ * 边界算命中很重要 —— 平面图上用户经常点在墙内侧那一条线上，判成"外面"就点不中。
+ *
+ * @param {{x:number,y:number}} pt
+ * @param {Array<{x:number,y:number}>} polygon
+ * @param {number} [eps=1e-6]
+ */
+export function pointInPolygon(pt, polygon, eps = 1e-6) {
+  const n = Array.isArray(polygon) ? polygon.length : 0;
+  if (!pt || n < 3) return false;
+  let inside = false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if (!a || !b) continue;
+    // 边界判定：叉积为 0 且落在包围盒里
+    const cross = (b.x - a.x) * (pt.y - a.y) - (b.y - a.y) * (pt.x - a.x);
+    const inBox = pt.x >= Math.min(a.x, b.x) - eps && pt.x <= Math.max(a.x, b.x) + eps
+      && pt.y >= Math.min(a.y, b.y) - eps && pt.y <= Math.max(a.y, b.y) + eps;
+    if (Math.abs(cross) <= eps && inBox) return true;
+    if (((a.y > pt.y) !== (b.y > pt.y))
+      && (pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 export function roomCentroid(polygon) {
   const pts = Array.isArray(polygon) ? polygon : [];
   if (!pts.length) return { x: 0, y: 0 };

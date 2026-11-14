@@ -125,6 +125,8 @@
             <span class="toolbar-label">间距</span>
             <button v-for="s in [20, 40, 80]" :key="s" :class="{ active: gridSize === s }" @click="gridSize = s">{{ s }}</button>
           </template>
+          <button :class="{ active: showDimensions }" @click="showDimensions = !showDimensions"
+                  title="在每面墙上标出长度（关掉可让图更干净）"><Icon name="ruler" :size="13"/> 标注</button>
         </div>
 
         <div class="toolbar-group" title="操作">
@@ -229,6 +231,11 @@
         <div class="detail-row">
           <span class="detail-label">沿墙位置</span>
           <input type="range" min="0.05" max="0.95" step="0.01" v-model.number="openingForm.position" class="opening-range" data-testid="opening-position" />
+        </div>
+        <!-- A25：门窗到墙两端的距离（只读，改位置/宽度会跟着变） -->
+        <div class="detail-row" v-if="openingEnds">
+          <span class="detail-label">距墙端</span>
+          <span class="detail-value" data-testid="opening-ends">{{ openingEnds }}</span>
         </div>
         <div class="popover-actions">
           <button class="adopt-btn" @click="saveOpeningEdit" data-testid="opening-save"
@@ -379,7 +386,7 @@ import { hasWalls } from '../interior/buildShell';
 // 出图（第 4 刀）：版式是纯函数，平面图本体仍走 drawInteriorFloor（换 print 主题）= 同源
 import { buildPlanSheet, drawPlanSheet } from '../interior/planSheet';
 import { drawFurnitureSymbol } from '../interior/furnitureSymbols';
-import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
+import { getRoomPolygon, polygonArea, pointInPolygon } from '../utils/roomDetection';
 
 const props = defineProps({
   buildingNode: { type: Object, default: null },
@@ -801,6 +808,8 @@ const selectedWallId = ref(null);
 // 选中的门窗（2026-11-14，台账 A11）：{ kind:'doors'|'windows', id, wallId }
 const selectedOpening = ref(null);
 const editingOpening = ref(false);
+// 尺寸标注（A25）：默认开（平面图没有尺寸就不像图），可在工具栏关掉以免看乱
+const showDimensions = ref(true);
 const openingForm = reactive({ kind: 'doors', width: 90, height: 200, sillHeight: 90, position: 0.5 });
 
 /**
@@ -928,6 +937,7 @@ const renderer = useCanvasRenderer(canvas, {
         theme: 'print',
         selectedWallId: selectedWallId.value || undefined,
         selectedOpeningId: selectedOpening.value?.id || undefined,
+        showDimensions: showDimensions.value,
       });
     }
 
@@ -941,6 +951,7 @@ const renderer = useCanvasRenderer(canvas, {
   onDragMove: handleDragMove,
   onDragEnd: handleDragEnd,
   onHitTest: hitTest,
+  onDblClick: handleCanvasDblClick,
   onClick: handleCanvasClick,
   onBoxSelect: handleBoxSelect,
   onWheel: handleWheel,
@@ -1553,9 +1564,62 @@ function hitOpening(wx, wy) {
   return null;
 }
 
+/**
+ * 点中的是哪一间房（台账 A28）。判据：点在房间多边形内（边界算命中）。
+ * 倒序遍历：后画的房间在上面。
+ */
+function hitRoom(wx, wy) {
+  const floor = currentFloor.value;
+  if (!floor) return null;
+  const walls = floor.walls || [];
+  const rooms = floor.rooms || [];
+  for (let i = rooms.length - 1; i >= 0; i--) {
+    const r = rooms[i];
+    const poly = getRoomPolygon(r, walls);
+    if (poly && poly.length >= 3 && pointInPolygon({ x: wx, y: wy }, poly)) return r;
+  }
+  return null;
+}
+
+/** 双击房间 → 改名（A28）。房间名字是唯一"人给"的字段，其余都由墙推出来。 */
+async function handleCanvasDblClick(hit, wx, wy) {
+  if (store.isReadOnly) {
+    setExportMsg(store.readOnlyReason || '当前为只读状态', true);
+    return;
+  }
+  const room = hitRoom(wx, wy);
+  if (!room) return;
+  const buildingId = props.buildingNode?.id;
+  const floorId = currentFloorId.value;
+  if (!buildingId || !floorId) return;
+  const next = await promptDialog.askText({ title: '房间名称', defaultValue: room.name || '' });
+  if (next === null || next === undefined) return;   // 取消
+  store.renameRoom(buildingId, floorId, room.id, String(next).trim());
+  renderer.requestRender();
+}
+
+/** 选中门窗到墙两端的距离（cm，A25）。墙不存在/长度 0 时返回空串。 */
+const openingEnds = computed(() => {
+  const sel = selectedOpening.value;
+  const floor = currentFloor.value;
+  if (!sel || !floor) return '';
+  const wall = (floor.walls || []).find((w) => w.id === sel.wallId);
+  if (!wall) return '';
+  const len = Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y);
+  if (!(len > 0)) return '';
+  const pos = Math.min(0.95, Math.max(0.05, Number(openingForm.position) || 0.5));
+  const half = Math.max(0, Number(openingForm.width) || 0) / 2;
+  const a = Math.max(0, pos * len - half);
+  const b = Math.max(0, len - pos * len - half);
+  return `${formatLength(a)} / ${formatLength(b)}`;
+});
+
 /** 选中一个门窗 → 打开改尺寸浮窗（A11：以前只有"放"，没有"改"） */
 function startOpeningEdit(op) {
   const o = op.opening || {};
+  // 选中状态在这里一并落定：调用方（点选、用例）只传 op 就够了，
+  // 少一处依赖就少一处"忘了设 selectedOpening → 浮窗里距墙端是空的"。
+  selectedOpening.value = { kind: op.kind, id: op.id, wallId: op.wallId };
   openingForm.kind = op.kind;
   openingForm.width = Number(o.width) || (op.kind === 'doors' ? 90 : 120);
   openingForm.height = Number(o.height) || (op.kind === 'doors' ? 200 : 140);

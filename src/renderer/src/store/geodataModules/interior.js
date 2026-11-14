@@ -126,6 +126,31 @@ export function createInteriorModule(ctx) {
   }
 
   /**
+   * 房间改名（2026-11-14，台账 A28）。房间是派生数据（由墙围合），但**名字是人给的**，
+   * 所以改名必须进一条 undo，且不能被下次重算冲掉（`mergeDetectedRooms` 按墙集继承名字）。
+   */
+  function renameRoom(buildingId, floorId, roomId, name) {
+    if (!guardWrite('房间改名').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const idx = floor.rooms.findIndex((r) => r.id === roomId);
+    if (idx === -1) return;
+    const trimmed = String(name == null ? '' : name).trim();
+    if ((floor.rooms[idx].name || '') === trimmed) return;
+    const before = JSON.parse(JSON.stringify(floor.rooms));
+    const after = JSON.parse(JSON.stringify(floor.rooms));
+    after[idx].name = trimmed;
+    const apply = (list) => {
+      const f = findFloor(buildingId, floorId);
+      if (!f) return;
+      // 只换 rooms（不动 walls）→ 不触发 recalcRooms，避免"改完名立刻重算"把名字洗掉
+      f.rooms = JSON.parse(JSON.stringify(list));
+    };
+    execute({ type: 'rename-room', label: '房间改名', undo: () => apply(before), redo: () => apply(after) });
+    scheduleAutoSave();
+  }
+
+  /**
    * 批量改墙（2026-11-14，台账 A13 墙联动）：**一条 undo 覆盖多面墙**。
    *
    * 为什么需要它：拖动一个墙角时，所有共用这个端点的墙都要跟着走。
@@ -590,6 +615,7 @@ export function createInteriorModule(ctx) {
     addWall,
     updateWall,
     updateWalls,
+    renameRoom,
     removeWall,
     addDoor: (b, f, o) => addOpening('doors', b, f, o),
     updateDoor: (b, f, id, p) => updateOpening('doors', b, f, id, p),

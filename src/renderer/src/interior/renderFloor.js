@@ -14,7 +14,7 @@
 //      这里改成"把墙沿长度切成若干段，开口处直接不画" —— 无覆盖、无露馅。
 //   ② 转角不做斜接，用圆盖补缝（原版同款）：按端点聚合，凡 ≥2 面墙共用的端点画一个实心圆。
 
-import { formatArea } from '../utils/interiorUnits';
+import { formatArea, formatLength } from '../utils/interiorUnits';
 import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
 
 const DEFAULT_WALL_COLOR = '#8d7f6e';
@@ -35,6 +35,8 @@ export const FLOOR_THEMES = Object.freeze({
     joint: DEFAULT_WALL_COLOR,
     door: '#d9b45a',
     window: '#7fc7e8',
+    dimText: '#9fb0c0',
+    dimBg: 'rgba(20, 24, 32, 0.72)',
   },
   print: {
     roomFill: '#e8eff7',        // 白纸上要看得出"这一间"（原来是 #eef1f5，几乎与纸同色）
@@ -46,6 +48,8 @@ export const FLOOR_THEMES = Object.freeze({
     joint: '#3e4348',
     door: '#7a5a2e',            // 门窗在白底上要够深，否则像没画
     window: '#2f6f95',
+    dimText: '#6b7783',
+    dimBg: 'rgba(255,255,255,0.86)',
   },
 });
 
@@ -144,6 +148,7 @@ function pathPolygon(ctx, pts) {
  * @param {boolean} [opts.showRooms=true]
  * @param {boolean} [opts.showLabels=true]
  * @param {boolean} [opts.showOpenings=true]
+ * @param {boolean} [opts.showDimensions=true] 沿墙长度标注
  * @param {string} [opts.selectedWallId]
  * @param {string} [opts.selectedOpeningId] 选中的门窗 id（画高亮框）
  * @returns {{walls:number, rooms:number, doors:number, windows:number}} 实际画了多少
@@ -233,6 +238,33 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
         if (selId && w.id === selId) drawOpeningHighlight(ctx, wall, w, zoom);
         stat.windows++;
       }
+    }
+  }
+
+  // ②.5 尺寸标注（2026-11-14 台账 A25）：沿墙写长度（cm→m）。
+  // 白底片垫在字下面 —— 否则压在被涂黑的墙上就看不见了。
+  if (opts.showDimensions !== false) {
+    for (const wall of walls) {
+      const len = wallLen(wall);
+      if (!(len >= 20)) continue;             // 20cm 以下的碎墙不标，标了全是噪点
+      const mid = wallPointAt(wall, 0.5);
+      const ang = Math.atan2(wall.end.y - wall.start.y, wall.end.x - wall.start.x);
+      // 字别倒过来：上坡角度超过 90° 就翻 180°
+      const rot = Math.abs(ang) > Math.PI / 2 ? ang + Math.PI : ang;
+      ctx.save();
+      ctx.translate(mid.x, mid.y);
+      ctx.rotate(rot);
+      ctx.scale(1 / zoom, 1 / zoom);          // 屏幕恒定字号
+      const label = formatLength(len);
+      ctx.font = '10px "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = theme.dimBg;
+      ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 13);
+      ctx.fillStyle = theme.dimText;
+      ctx.fillText(label, 0, 0);
+      ctx.restore();
     }
   }
 
