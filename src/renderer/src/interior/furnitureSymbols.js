@@ -14,7 +14,11 @@
 //    塞进平面图里就变成"一块板被压在地上"的错觉。俯视图里：柜顶看不见门缝与把手，
 //    桌腿被桌面挡住，门只剩"门扇 + 开合弧"。改动前先问自己：
 //    **"从天花板往下看，这条线看得见吗？"**
-// 4) 颜色走一套「纸上制图」色：浅填充 + 深描边，细节再淡一档。
+// 4) 🔌 **符号表是可注册的**（2026-11-14，用户："家具模块后续也要支持自定义绘制"）。
+//    优先级：`item.custom`（用户画的形状）> `item.symbolId`（注册过的自定义符号）> `item.type`（内置）> 通用。
+//    内置符号也走同一张表注册，所以"自定义"与"内置"没有两套代码路径。
+//    新符号的契约见 `registerFurnitureSymbol`；自定义形状的契约见 `drawCustomShape`。
+// 5) 颜色走一套「纸上制图」色：浅填充 + 深描边，细节再淡一档。
 //    不跟家具类型的原色（蓝/棕）走 —— 那些颜色在白底上像贴纸，且互相压不住。
 
 const FILL = '#f4f6f8';
@@ -78,10 +82,82 @@ export function drawFurnitureSymbol(ctx, item, opt = {}) {
   ctx.lineWidth = lw(zoom, 1.2);
   ctx.lineJoin = 'round';
 
-  const draw = SYMBOLS[type] || SYMBOLS.generic;
+  // 优先级：用户自己画的形状 > 注册过的自定义符号 > 内置类型 > 通用
+  const custom = item.custom;
+  const symbolId = item.symbolId ? String(item.symbolId) : '';
+  if (custom && drawCustomShape(ctx, custom, { w, h, zoom })) {
+    ctx.restore();
+    return true;
+  }
+  const draw = (symbolId && SYMBOLS[symbolId]) || SYMBOLS[type] || SYMBOLS.generic;
   draw(ctx, { w, h, x0, y0, zoom });
 
   ctx.restore();
+  return true;
+}
+
+/**
+ * 注册一个家具符号（内置与自定义走同一条路）。
+ *
+ * 绘制函数签名：`draw(ctx, { w, h, x0, y0, zoom })`
+ *   · 坐标系原点已是家具中心，一律用 cm 画；线宽用 `px / zoom` 保持屏幕恒定；
+ *   · 只画**俯视可见**的东西（见文件头第 3 条）。
+ *
+ * @param {string} type 符号 id（与 `item.symbolId` 或 `item.type` 对应）
+ * @param {(ctx:CanvasRenderingContext2D, box:{w:number,h:number,x0:number,y0:number,zoom:number})=>void} drawFn
+ * @returns {boolean} 是否注册成功（id 为空或 drawFn 不是函数 → false）
+ */
+export function registerFurnitureSymbol(type, drawFn) {
+  const id = String(type || '').trim();
+  if (!id || typeof drawFn !== 'function') return false;
+  SYMBOLS[id] = drawFn;
+  return true;
+}
+
+/** 注销一个自定义符号（内置符号也能注销，但内置刷新时会重新注册） */
+export function unregisterFurnitureSymbol(type) {
+  const id = String(type || '').trim();
+  if (!id || !SYMBOLS[id]) return false;
+  delete SYMBOLS[id];
+  return true;
+}
+
+/** 当前可用的符号 id（含自定义） */
+export function listFurnitureSymbols() {
+  return Object.keys(SYMBOLS);
+}
+
+/**
+ * 用户自定义形状（"后续支持自定义绘制"的契约）。
+ *
+ * `custom.points` 是**归一化坐标**（0..1，左上为 0,0），渲染时映射到家具的 w×h 上 ——
+ * 这样同一份形状换尺寸不用重画，也不会因为家具被拖动而失真。
+ *
+ * 支持两种键（都可有）：
+ *   · `points: [{x,y}]` + `closed`（默认 true）：多边形 / 折线；
+ *   · `hatch: true`：在形状内部补一层淡色（表示"实心"，俯视里的填充）。
+ *
+ * @returns {boolean} 是否真画了（没有 points 返回 false，让调用方回落）
+ */
+export function drawCustomShape(ctx, custom, { w, h, zoom }) {
+  const pts = Array.isArray(custom && custom.points) ? custom.points : null;
+  if (!pts || pts.length < 2) return false;
+  const x0 = -w / 2;
+  const y0 = -h / 2;
+  const mx = (p) => x0 + Math.max(0, Math.min(1, Number(p.x) || 0)) * w;
+  const my = (p) => y0 + Math.max(0, Math.min(1, Number(p.y) || 0)) * h;
+
+  ctx.beginPath();
+  ctx.moveTo(mx(pts[0]), my(pts[0]));
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(mx(pts[i]), my(pts[i]));
+  if (custom.closed !== false) ctx.closePath();
+  if (custom.fill !== false) {
+    ctx.fillStyle = FILL;
+    ctx.fill();
+  }
+  ctx.strokeStyle = STROKE;
+  ctx.lineWidth = lw(zoom, 1.2);
+  ctx.stroke();
   return true;
 }
 

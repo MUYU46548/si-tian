@@ -125,6 +125,53 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  /**
+   * 批量改墙（2026-11-14，台账 A13 墙联动）：**一条 undo 覆盖多面墙**。
+   *
+   * 为什么需要它：拖动一个墙角时，所有共用这个端点的墙都要跟着走。
+   * 如果逐条调 `updateWall`，一次拖动会在撤销栈里留下 3~4 条 —— 用户要按 4 次撤销才能退回。
+   *
+   * @param {Array<{wallId:string, patch?:object, oldSnapshot?:object}>} patches
+   */
+  function updateWalls(buildingId, floorId, patches = []) {
+    if (!guardWrite('修改墙体').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const before = [];
+    const after = [];
+    for (const p of patches) {
+      const w = floor.walls.find((x) => x.id === p.wallId);
+      if (!w) continue;
+      const snap = p.oldSnapshot ? JSON.parse(JSON.stringify(p.oldSnapshot)) : JSON.parse(JSON.stringify(w));
+      before.push({ wallId: p.wallId, snap });
+      // 🔴 after 必须取**当前内存里的墙**（拖动期间已经改成新值），不能拿 oldSnapshot + patch 拼：
+      //    拖拽路径 patch 是空的，那样拼出来的 after 还是旧值 —— execute 立刻执行 redo
+      //    会把墙"拖回原位"（2026-11-14 实测：拖完不动，坐标还是旧的）。
+      after.push({
+        wallId: p.wallId,
+        snap: { ...JSON.parse(JSON.stringify(w)), ...JSON.parse(JSON.stringify(p.patch || {})) },
+      });
+    }
+    if (!before.length) return;
+    const applyAll = (list) => {
+      const f = findFloor(buildingId, floorId);
+      if (!f) return;
+      for (const it of list) {
+        const w = (f.walls || []).find((x) => x.id === it.wallId);
+        if (w) Object.assign(w, JSON.parse(JSON.stringify(it.snap)));
+      }
+      notifyFloorChanged(buildingId, floorId);
+    };
+    // 拖拽期间内存里已经是新值 → 这里只入栈（与 updateWall 的"patch 传空"同一套纪律）
+    execute({
+      type: 'update-walls',
+      label: '拖动墙体',
+      undo: () => applyAll(before),
+      redo: () => applyAll(after),
+    });
+    scheduleAutoSave();
+  }
+
   /** 删墙。挂在它上面的门/窗一起删（否则留下指不到墙的孤儿） */
   function removeWall(buildingId, floorId, wallId) {
     if (!guardWrite('删除墙体').ok) return;
@@ -542,6 +589,7 @@ export function createInteriorModule(ctx) {
     // 建筑内部第 1 刀（2026-11-13）：墙 / 门窗 / 房间
     addWall,
     updateWall,
+    updateWalls,
     removeWall,
     addDoor: (b, f, o) => addOpening('doors', b, f, o),
     updateDoor: (b, f, id, p) => updateOpening('doors', b, f, id, p),

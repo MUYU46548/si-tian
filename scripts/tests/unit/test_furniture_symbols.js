@@ -61,7 +61,10 @@ function fakeCtx() {
 async function main() {
   const mod = await import('data:text/javascript;base64,'
     + Buffer.from(fs.readFileSync(SRC, 'utf8'), 'utf8').toString('base64'));
-  const { drawFurnitureSymbol, SYMBOL_TYPES } = mod;
+  const {
+    drawFurnitureSymbol, SYMBOL_TYPES, registerFurnitureSymbol,
+    unregisterFurnitureSymbol, listFurnitureSymbols, drawCustomShape,
+  } = mod;
 
   check('f1 每种类型都画得出来、不抛（含未知类型回退通用）', () => {
     const all = [...SYMBOL_TYPES, 'sofa', '不存在的类型', undefined];
@@ -147,6 +150,50 @@ async function main() {
       assert(!SYMBOL_TYPES.includes(area), `${area} 应是区域类型，不该进符号表`);
     }
     return '5 类区域不在表内';
+  });
+
+  check('f10 自定义符号可注册：symbolId 优先于 type，内置与自定义同一张表', () => {
+    let hit = 0;
+    assert(registerFurnitureSymbol('my-shelf', (ctx) => { hit++; ctx.fillRect(0, 0, 1, 1); }) === true, '注册应成功');
+    assert(listFurnitureSymbols().includes('my-shelf'), '符号表应含新 id');
+    const ctx = fakeCtx();
+    // type 给 bed（内置），symbolId 给自定义 → 必须用自定义
+    drawFurnitureSymbol(ctx, { width: 100, height: 40, type: 'bed', symbolId: 'my-shelf' }, { zoom: 1 });
+    assert(hit === 1, `自定义符号应被调用 1 次，实际 ${hit}`);
+    assert(ctx.count('fillRect') === 1, '画的是自定义那一个 fillRect（bed 不含 fillRect）');
+    assert(unregisterFurnitureSymbol('my-shelf') === true, '注销应成功');
+    assert(!listFurnitureSymbols().includes('my-shelf'), '注销后不在表里');
+    return 'symbolId 生效';
+  });
+
+  check('f11 注册校验：空 id / 非函数一律拒绝（不许把符号表搞坏）', () => {
+    assert(registerFurnitureSymbol('', () => {}) === false, '空 id 应拒绝');
+    assert(registerFurnitureSymbol('  ', () => {}) === false, '空白 id 应拒绝');
+    assert(registerFurnitureSymbol('x', null) === false, '非函数应拒绝');
+    assert(registerFurnitureSymbol('x', 123) === false, '非函数应拒绝');
+    assert(unregisterFurnitureSymbol('不存在') === false, '注销不存在的应返回 false');
+    return '4 种非法输入';
+  });
+
+  check('f12 自定义形状：归一化坐标映射到 w×h，且优先于 type', () => {
+    const ctx = fakeCtx();
+    // 归一化 0..1 的三个角 → 应落在 -50..50 / -25..25 的框内
+    drawFurnitureSymbol(ctx, {
+      width: 100, height: 50, type: 'bed',
+      custom: { points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0.5, y: 1 }], closed: true },
+    }, { zoom: 1 });
+    const moves = ctx.ops.filter((o) => o.name === 'moveTo' || o.name === 'lineTo');
+    assert(moves.length === 3, `三条边应有 3 次 moveTo/lineTo，实际 ${moves.length}`);
+    for (const m of moves) {
+      const [x, y] = m.args;
+      assert(x >= -50 - 1e-6 && x <= 50 + 1e-6, `x 越界：${x}`);
+      assert(y >= -25 - 1e-6 && y <= 25 + 1e-6, `y 越界：${y}`);
+    }
+    assert(ctx.count('arc') === 0, '给了 custom 就不该再画床的枕头（arc）');
+    // 没有 points → 不认，返回 false（调用方回落）
+    assert(drawCustomShape(fakeCtx(), { points: [] }, { w: 10, h: 10, zoom: 1 }) === false, '空 points 应返回 false');
+    assert(drawCustomShape(fakeCtx(), null, { w: 10, h: 10, zoom: 1 }) === false, 'null 应返回 false');
+    return '3 点三角形 + 2 条回落';
   });
 
   const bad = results.filter((r) => !r.ok);

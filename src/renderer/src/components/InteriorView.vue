@@ -128,7 +128,7 @@
         </div>
 
         <div class="toolbar-group" title="操作">
-          <button @click="deleteSelected" :disabled="!selectedFurniture && !selectedWallId" title="删除选中家具或墙 (Del)"><Icon name="trash" :size="13"/> 删除</button>
+          <button @click="deleteSelected" :disabled="!selectedFurniture && !selectedWallId && !selectedOpening" title="删除选中的家具 / 墙 / 门窗 (Del)"><Icon name="trash" :size="13"/> 删除</button>
           <button @click="rotateSelected" :disabled="!selectedFurniture" title="旋转选中家具 (R)">↻ 旋转</button>
           <button @click="openTransferDialog" :disabled="selectedFurnitureIds.length === 0" title="把选中的家具复制/移动到其他楼层（整批 = 一条 undo）"><Icon name="copy" :size="13"/> 跨楼层</button>
           <button @click="undo" :disabled="!store.canUndo">↶ 撤销</button>
@@ -194,6 +194,49 @@
         :world-bounds="worldBounds"
         @navigate="handleEagleEyeNavigate"
       />
+    </div>
+
+    <!-- 门窗详情浮窗（A11）：宽 / 高 / 窗台高 / 沿墙位置，都能改 -->
+    <div v-if="selectedOpening && editingOpening" class="node-detail-popover opening-popover" data-testid="opening-popover">
+      <div class="popover-header">
+        <h4>{{ openingForm.kind === 'doors' ? '门' : '窗' }}</h4>
+        <div class="popover-header-actions">
+          <button class="close-btn" @click="cancelOpeningEdit">×</button>
+        </div>
+      </div>
+      <div class="popover-body">
+        <div class="detail-row">
+          <span class="detail-label">洞口宽</span>
+          <div class="rotation-input">
+            <input type="number" v-model.number="openingForm.width" min="20" max="600" step="5" class="popover-number" data-testid="opening-width" />
+            <span class="unit-label">cm</span>
+          </div>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">高</span>
+          <div class="rotation-input">
+            <input type="number" v-model.number="openingForm.height" min="20" max="400" step="5" class="popover-number" data-testid="opening-height" />
+            <span class="unit-label">cm</span>
+          </div>
+        </div>
+        <div class="detail-row" v-if="openingForm.kind === 'windows'">
+          <span class="detail-label">窗台高</span>
+          <div class="rotation-input">
+            <input type="number" v-model.number="openingForm.sillHeight" min="0" max="300" step="5" class="popover-number" data-testid="opening-sill" />
+            <span class="unit-label">cm</span>
+          </div>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">沿墙位置</span>
+          <input type="range" min="0.05" max="0.95" step="0.01" v-model.number="openingForm.position" class="opening-range" data-testid="opening-position" />
+        </div>
+        <div class="popover-actions">
+          <button class="adopt-btn" @click="saveOpeningEdit" data-testid="opening-save"
+                  :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '保存尺寸与位置（可撤销）'">保存</button>
+          <button class="adopt-btn ghost" @click="deleteSelected" data-testid="opening-delete"
+                  :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '删除这个门窗（可撤销）'">删除</button>
+        </div>
+      </div>
     </div>
 
     <!-- 选中家具详情浮窗（可编辑） -->
@@ -755,6 +798,10 @@ const currentFloor = computed(() => floors.value.find(f => f.id === currentFloor
 // 画墙：第一次点击记起点，第二次成墙；选中墙可拖端点（第 2.5 刀的最小版）
 const wallDraftStart = ref(null);
 const selectedWallId = ref(null);
+// 选中的门窗（2026-11-14，台账 A11）：{ kind:'doors'|'windows', id, wallId }
+const selectedOpening = ref(null);
+const editingOpening = ref(false);
+const openingForm = reactive({ kind: 'doors', width: 90, height: 200, sillHeight: 90, position: 0.5 });
 
 /**
  * 重新识别本层房间。
@@ -880,6 +927,7 @@ const renderer = useCanvasRenderer(canvas, {
         zoom: renderer.getViewTransform().scale,
         theme: 'print',
         selectedWallId: selectedWallId.value || undefined,
+        selectedOpeningId: selectedOpening.value?.id || undefined,
       });
     }
 
@@ -1079,6 +1127,8 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
         wallId: handle.wall.id,
         end: handle.end,
         origin: JSON.parse(JSON.stringify(handle.wall)),
+        // A13 墙联动：所有**共用这个端点**的邻墙都要跟着走（否则拖走一面墙，另一面留在原地）
+        links: linkedWallsAt(handle.wall, handle.end),
       };
       selectedWallId.value = handle.wall.id;
       selectedFurniture.value = null;
@@ -1150,6 +1200,11 @@ function handleDragMove(wx, wy, info) {
     if (!w) { wallDrag.value = null; return; }
     const p = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: Math.round(wx), y: Math.round(wy) };
     w[wallDrag.value.end] = p;
+    // A13：共用这个端点的邻墙一起动（内存里改，松手才落一条 undo）
+    for (const l of wallDrag.value.links || []) {
+      const lw = (floor.walls || []).find((x) => x.id === l.wallId);
+      if (lw) lw[l.end] = { x: p.x, y: p.y };
+    }
     renderer.requestRender();
     return;
   }
@@ -1211,8 +1266,24 @@ function handleDragEnd(wx, wy, info) {
       const moved = (w.start.x !== d.origin.start.x || w.start.y !== d.origin.start.y
         || w.end.x !== d.origin.end.x || w.end.y !== d.origin.end.y);
       if (moved) {
-        // 内存里已经是新值 → patch 传空，oldSnapshot 供 undo 还原
-        store.updateWall(buildingId, floorId, d.wallId, {}, d.origin);
+        // A13：本墙 + 真的跟着动了的邻墙，合成**一条** undo
+        const patches = [{ wallId: d.wallId, oldSnapshot: d.origin }];
+        for (const l of d.links || []) {
+          const lw = (floor.walls || []).find((x) => x.id === l.wallId);
+          if (!lw) continue;
+          const o = l.origin && l.origin[l.end];
+          const n = lw[l.end];
+          if (!o || !n) continue;
+          if (Math.abs(o.x - n.x) > 1e-6 || Math.abs(o.y - n.y) > 1e-6) {
+            patches.push({ wallId: l.wallId, oldSnapshot: l.origin });
+          }
+        }
+        if (patches.length > 1 && typeof store.updateWalls === 'function') {
+          store.updateWalls(buildingId, floorId, patches);
+        } else {
+          // 内存里已经是新值 → patch 传空，oldSnapshot 供 undo 还原
+          store.updateWall(buildingId, floorId, d.wallId, {}, d.origin);
+        }
         recalcRooms();
       }
     }
@@ -1311,9 +1382,22 @@ function handleCanvasClick(hit, wx, wy) {
     if (!selectedFurnitureIds.value.includes(hit.id)) {
       selectedFurnitureIds.value = [hit.id];
     }
+    // 选中互斥：选家具就放下门窗/墙
+    selectedOpening.value = null;
+    selectedWallId.value = null;
   } else {
-    selectedFurniture.value = null;
-    selectedFurnitureIds.value = [];
+    const op = hitOpening(wx, wy);
+    if (op) {
+      selectedOpening.value = { kind: op.kind, id: op.id, wallId: op.wallId };
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+      selectedWallId.value = null;
+      startOpeningEdit(op);
+    } else {
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+      selectedOpening.value = null;
+    }
   }
   renderer.requestRender();
 }
@@ -1395,6 +1479,27 @@ function hitWallHandle(wx, wy) {
   return best;
 }
 
+/**
+ * 找与 `wall[end]` 这个端点重合的其它墙（台账 A13）。
+ * 判据就是坐标重合（容差 0.6cm，网格吸附后基本是整数）；同一条墙只认一次。
+ */
+function linkedWallsAt(wall, end) {
+  const floor = currentFloor.value;
+  const pt = wall && wall[end];
+  if (!floor || !pt) return [];
+  const out = [];
+  for (const w of (floor.walls || [])) {
+    if (w.id === wall.id) continue;
+    let hitEnd = null;
+    for (const e of ['start', 'end']) {
+      const p = w[e];
+      if (p && Math.hypot((p.x || 0) - (pt.x || 0), (p.y || 0) - (pt.y || 0)) <= 0.6) { hitEnd = e; break; }
+    }
+    if (hitEnd) out.push({ wallId: w.id, end: hitEnd, origin: JSON.parse(JSON.stringify(w)) });
+  }
+  return out;
+}
+
 /** 点到墙身（返回命中的墙） */function hitWallBody(wx, wy) {
   const floor = currentFloor.value;
   if (!floor) return null;
@@ -1412,6 +1517,75 @@ function hitWallHandle(wx, wy) {
     if (d <= (Number(w.thickness) || 12) / 2 + extra) return w;
   }
   return null;
+}
+
+/**
+ * 点到门窗（台账 A11）。判据：投影到墙中心线的距离 < 半墙厚 + 容差，
+ * 且沿墙方向落在 [洞口中心 ± 洞口宽/2] 内。返回 { kind, id, wallId, opening }。
+ */
+function hitOpening(wx, wy) {
+  const floor = currentFloor.value;
+  if (!floor) return null;
+  const cs = renderer.getViewTransform().scale || 1;
+  const extra = 3 / cs;
+  const walls = floor.walls || [];
+  for (const kind of ['doors', 'windows']) {
+    for (const o of [...(floor[kind] || [])].reverse()) {
+      const wall = walls.find((w) => w.id === o.wallId);
+      if (!wall) continue;
+      const ax = wall.start.x, ay = wall.start.y;
+      const dx = wall.end.x - ax, dy = wall.end.y - ay;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1e-6) continue;
+      const t = Math.max(0, Math.min(1, Number(o.position) || 0.5));
+      const px = ax + t * dx, py = ay + t * dy;
+      const len = Math.sqrt(lenSq);
+      // 法向距离
+      const dist = Math.abs((wx - px) * (-dy / len) + (wy - py) * (dx / len));
+      // 沿墙方向偏移
+      const along = Math.abs((wx - px) * (dx / len) + (wy - py) * (dy / len));
+      const half = (Number(o.width) || 90) / 2;
+      if (dist <= (Number(wall.thickness) || 12) / 2 + extra && along <= half + extra) {
+        return { kind, id: o.id, wallId: o.wallId, opening: o, wall };
+      }
+    }
+  }
+  return null;
+}
+
+/** 选中一个门窗 → 打开改尺寸浮窗（A11：以前只有"放"，没有"改"） */
+function startOpeningEdit(op) {
+  const o = op.opening || {};
+  openingForm.kind = op.kind;
+  openingForm.width = Number(o.width) || (op.kind === 'doors' ? 90 : 120);
+  openingForm.height = Number(o.height) || (op.kind === 'doors' ? 200 : 140);
+  openingForm.sillHeight = Number(o.sillHeight) || 90;
+  openingForm.position = Number(o.position) || 0.5;
+  editingOpening.value = true;
+}
+
+function cancelOpeningEdit() {
+  editingOpening.value = false;
+  selectedOpening.value = null;
+  renderer.requestRender();
+}
+
+function saveOpeningEdit() {
+  if (!selectedOpening.value || !currentFloorId.value) return;
+  const bid = props.buildingNode.id;
+  const fid = currentFloorId.value;
+  const { kind, id } = selectedOpening.value;
+  const patch = {
+    width: Math.max(20, Number(openingForm.width) || 90),
+    height: Math.max(20, Number(openingForm.height) || 200),
+    position: Math.min(0.95, Math.max(0.05, Number(openingForm.position) || 0.5)),
+  };
+  if (kind === 'windows') patch.sillHeight = Math.max(0, Number(openingForm.sillHeight) || 0);
+  // 写口自带 guardWrite + 一条 undo（改坏了按一次撤销就回来）
+  if (kind === 'doors') store.updateDoor(bid, fid, id, patch);
+  else store.updateWindow(bid, fid, id, patch);
+  editingOpening.value = false;
+  renderer.requestRender();
 }
 
 /** 点在墙上时，返回沿墙的参数 t（0..1），用于给门窗定位 */
@@ -1511,6 +1685,18 @@ function confirmAddFurniture() {
 }
 
 function deleteSelected() {
+  // 选中门窗 → 只删这一个洞（2026-11-14 台账 A11：以前放进去删不掉）
+  if (selectedOpening.value && currentFloorId.value) {
+    const bid = props.buildingNode.id;
+    const fid = currentFloorId.value;
+    const { kind, id } = selectedOpening.value;
+    if (kind === 'doors') store.removeDoor(bid, fid, id);
+    else store.removeWindow(bid, fid, id);
+    selectedOpening.value = null;
+    editingOpening.value = false;
+    renderer.requestRender();
+    return;
+  }
   // 选中墙 → 删墙（连带挂在上面的门窗，数据层已处理）
   if (selectedWallId.value && currentFloorId.value) {
     store.removeWall(props.buildingNode.id, currentFloorId.value, selectedWallId.value);
@@ -1772,6 +1958,12 @@ function handleKeydown(e) {
   // Esc：先关外观浮层（它压在最上面），再处理画墙收尾
   if (e.key === 'Escape' && showExterior.value) {
     showExterior.value = false;
+    return;
+  }
+
+  // Esc：取消选中的门窗（浮窗一起关）
+  if (e.key === 'Escape' && selectedOpening.value) {
+    cancelOpeningEdit();
     return;
   }
 
@@ -2182,6 +2374,15 @@ defineExpose({ canvas, renderer });
 }
 
 /* 家具详情浮窗 */
+.opening-popover {
+  /* 门窗浮窗放在画布区右上（header + 楼层条下面），不压住标题与工具栏 */
+  top: 132px;
+}
+
+.opening-range {
+  width: 118px;
+}
+
 .node-detail-popover {
   position: absolute;
   top: 8px;

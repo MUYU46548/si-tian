@@ -145,6 +145,7 @@ function pathPolygon(ctx, pts) {
  * @param {boolean} [opts.showLabels=true]
  * @param {boolean} [opts.showOpenings=true]
  * @param {string} [opts.selectedWallId]
+ * @param {string} [opts.selectedOpeningId] 选中的门窗 id（画高亮框）
  * @returns {{walls:number, rooms:number, doors:number, windows:number}} 实际画了多少
  */
 export function drawInteriorFloor(ctx, floor, opts = {}) {
@@ -221,12 +222,15 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
 
     // 门窗符号：在世界坐标里只用屏幕恒定尺寸画简单的框 + 线
     if (showOpenings) {
+      const selId = opts.selectedOpeningId || null;
       for (const d of ownDoors) {
         drawOpeningSymbol(ctx, wall, d, zoom, 'door', theme);
+        if (selId && d.id === selId) drawOpeningHighlight(ctx, wall, d, zoom);
         stat.doors++;
       }
       for (const w of ownWins) {
         drawOpeningSymbol(ctx, wall, w, zoom, 'window', theme);
+        if (selId && w.id === selId) drawOpeningHighlight(ctx, wall, w, zoom);
         stat.windows++;
       }
     }
@@ -259,6 +263,38 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
   ctx.restore();
 
   return stat;
+}
+
+/**
+ * 选中的门窗：沿墙画一个黄色框（世界坐标，墙厚 × 洞口宽）。
+ * 为什么不用 DOM 浮层：画布会平移缩放，浮层要每帧跟；画在 canvas 里天然跟着走。
+ */
+function drawOpeningHighlight(ctx, wall, opening, zoom) {
+  const t = Math.min(1, Math.max(0, Number(opening.position) || 0.5));
+  const p = wallPointAt(wall, t);
+  const n = wallNormal(wall);
+  const half = Math.max(2, (Number(opening.width) || 60) / 2);
+  const th = (Number(wall.thickness) || 12) / 2 + 3;
+  const dx = (wall.end.x - wall.start.x);
+  const dy = (wall.end.y - wall.start.y);
+  const len = Math.hypot(dx, dy) || 1;
+  const dir = { x: dx / len, y: dy / len };
+  const quad = [
+    { x: p.x + dir.x * half + n.x * th, y: p.y + dir.y * half + n.y * th },
+    { x: p.x - dir.x * half + n.x * th, y: p.y - dir.y * half + n.y * th },
+    { x: p.x - dir.x * half - n.x * th, y: p.y - dir.y * half - n.y * th },
+    { x: p.x + dir.x * half - n.x * th, y: p.y + dir.y * half - n.y * th },
+  ];
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(quad[0].x, quad[0].y);
+  for (let i = 1; i < quad.length; i++) ctx.lineTo(quad[i].x, quad[i].y);
+  ctx.closePath();
+  ctx.strokeStyle = '#ffb300';
+  ctx.lineWidth = 2.5 / zoom;
+  ctx.setLineDash([]);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** 门窗符号：在墙上挖开的缺口里画几笔（屏幕恒定线宽） */
