@@ -37,15 +37,15 @@ export const FLOOR_THEMES = Object.freeze({
     window: '#7fc7e8',
   },
   print: {
-    roomFill: '#eef1f5',
-    roomStroke: '#c5ced8',
+    roomFill: '#e8eff7',        // 白纸上要看得出"这一间"（原来是 #eef1f5，几乎与纸同色）
+    roomStroke: '#b9c9da',
     roomText: '#2f3742',
     roomTextHalo: 'rgba(255,255,255,0.92)',
     wall: '#3e4348',            // 平面图里墙是"涂黑"的（poche），不跟屏幕的棕色
     wallStroke: 'rgba(0,0,0,0.55)',
     joint: '#3e4348',
-    door: '#8a6d3b',
-    window: '#3f7391',
+    door: '#7a5a2e',            // 门窗在白底上要够深，否则像没画
+    window: '#2f6f95',
   },
 });
 
@@ -276,7 +276,7 @@ function drawOpeningSymbol(ctx, wall, opening, zoom, kind, theme = floorTheme('s
 
   ctx.save();
   ctx.strokeStyle = kind === 'door' ? theme.door : theme.window;
-  ctx.lineWidth = 1.5 / zoom;
+  ctx.lineWidth = 2.2 / zoom;
   ctx.beginPath();
   ctx.moveTo(jambA.x, jambA.y);
   ctx.lineTo(jambB.x, jambB.y);
@@ -284,8 +284,8 @@ function drawOpeningSymbol(ctx, wall, opening, zoom, kind, theme = floorTheme('s
   if (kind === 'window') {
     // 窗：两道平行细线（沿墙方向）
     ctx.beginPath();
-    ctx.moveTo(jambA.x - n.x * (Number(wall.thickness) || 12) * 0.25, jambA.y - n.y * (Number(wall.thickness) || 12) * 0.25);
-    ctx.lineTo(jambB.x - n.x * (Number(wall.thickness) || 12) * 0.25, jambB.y - n.y * (Number(wall.thickness) || 12) * 0.25);
+    ctx.moveTo(jambA.x - n.x * (Number(wall.thickness) || 12) * 0.34, jambA.y - n.y * (Number(wall.thickness) || 12) * 0.34);
+    ctx.lineTo(jambB.x - n.x * (Number(wall.thickness) || 12) * 0.34, jambB.y - n.y * (Number(wall.thickness) || 12) * 0.34);
     ctx.stroke();
   } else {
     // 门：门扇 + 开合弧

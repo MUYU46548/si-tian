@@ -329,12 +329,13 @@ import { getPreset, drawStyledLabel } from '../utils/labelStyles';
 // 建筑内部（2026-11-13 第 1/3 刀）：墙由工具栏画，房间由墙自动围合
 import { detectRooms, mergeDetectedRooms } from '../utils/roomDetection';
 import { drawInteriorFloor } from '../interior/renderFloor';
-import { DEFAULT_WALL_THICKNESS, formatLength, formatArea } from '../utils/interiorUnits';
+import { DEFAULT_WALL_THICKNESS, formatLength, formatArea, fitZoom } from '../utils/interiorUnits';
 // 外观（2026-11-14）：同一份楼层数据的 3D 渲染。three 只在点开时动态加载。
 import ExteriorView from './ExteriorView.vue';
 import { hasWalls } from '../interior/buildShell';
 // 出图（第 4 刀）：版式是纯函数，平面图本体仍走 drawInteriorFloor（换 print 主题）= 同源
 import { buildPlanSheet, drawPlanSheet } from '../interior/planSheet';
+import { drawFurnitureSymbol } from '../interior/furnitureSymbols';
 import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
 
 const props = defineProps({
@@ -362,12 +363,26 @@ const referenceImages = computed(() => store.interiorReferenceImages[props.build
 const referenceImage = computed(() => referenceImages.value[activeRefIndex.value] || null);
 
 // 家具类型
+/** 室内画布自己的标签样式（深字 + 白描边 + 屏幕恒定 11px） */
+const INTERIOR_LABEL_STYLE = {
+  fontFamily: 'sans-serif',
+  fontSize: 11,
+  weight: '600',
+  color: '#48535f',
+  stroke: { enabled: true, color: 'rgba(255,255,255,0.92)', width: 2.5 },
+  shadow: { enabled: false, color: 'rgba(0,0,0,0.4)', blur: 4 },
+  background: { enabled: false, color: '#ffffff', opacity: 0.5, padding: 2 },
+  lockScreenSize: true,
+};
+
 const FURNITURE_TYPES = [
   { type: 'generic', label: '通用', icon: 'package', color: '#8B8B8B' },
   { type: 'table', label: '桌子', icon: 'table', color: '#A0522D' },
   { type: 'chair', label: '椅子', icon: 'armchair', color: '#CD853F' },
   { type: 'bed', label: '床', icon: 'bed', color: '#4682B4' },
   { type: 'chest', label: '柜子', icon: 'archive', color: '#8B4513' },
+  { type: 'wardrobe', label: '衣柜', icon: 'archive', color: '#6B4226' },
+  { type: 'sofa', label: '沙发', icon: 'armchair', color: '#6E7F8D' },
   { type: 'decoration', label: '装饰', icon: 'vase', color: '#DAA520' },
   { type: 'door', label: '门', icon: 'door-open', color: '#696969' },
   { type: 'window', label: '窗', icon: 'window', color: '#87CEEB' },
@@ -794,6 +809,7 @@ const currentFurniture = computed(() => {
 function selectFloor(floorId) {
   currentFloorId.value = floorId;
   selectedFurniture.value = null;
+  fitToFloor();
   renderer.requestRender();
 }
 
@@ -840,9 +856,11 @@ const renderer = useCanvasRenderer(canvas, {
     const vy0 = -(h / 2 + vt0.y) / cs0;
     const vw0 = w / cs0;
     const vh0 = h / cs0;
+    // 2026-11-14：深紫底改**纸白**（与出图同一套主题）—— 深底上"墙+半透明房间"看着像原型，
+    // 白底才像一张平面图；出图与屏幕也因此共用同一份配色。
     const bg = ctx.createLinearGradient(vx0, vy0, vx0 + vw0, vy0 + vh0);
-    bg.addColorStop(0, '#2a2a3e');
-    bg.addColorStop(1, '#1a1a2e');
+    bg.addColorStop(0, '#ffffff');
+    bg.addColorStop(1, '#f6f7f9');
     ctx.fillStyle = bg;
     ctx.fillRect(vx0, vy0, vw0, vh0);
 
@@ -860,6 +878,7 @@ const renderer = useCanvasRenderer(canvas, {
     if (currentFloor.value) {
       drawInteriorFloor(ctx, currentFloor.value, {
         zoom: renderer.getViewTransform().scale,
+        theme: 'print',
         selectedWallId: selectedWallId.value || undefined,
       });
     }
@@ -900,7 +919,7 @@ function drawGrid(ctx, w, h) {
 
   // 网格线
   ctx.save();
-  ctx.strokeStyle = 'rgba(150, 180, 200, 0.18)';
+  ctx.strokeStyle = 'rgba(110, 130, 150, 0.16)';
   ctx.lineWidth = 1 / cs;            // 屏幕上恒 1px
   ctx.beginPath();
   for (let x = startX; x <= worldRight; x += step) {
@@ -916,7 +935,7 @@ function drawGrid(ctx, w, h) {
   // 网格标签（每两格标一次；单位是厘米，显示走 formatLength）
   // 字号走 canvasFont（与其它三张画布同一份字体栈），尺寸按 zoom 反算保持屏幕恒定
   ctx.font = canvasFont(11 / cs);
-  ctx.fillStyle = 'rgba(150, 180, 200, 0.55)';
+  ctx.fillStyle = 'rgba(110, 125, 145, 0.7)';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   const labelEvery = step * 2;
@@ -981,14 +1000,17 @@ function drawFurniture(ctx) {
       const iconSize = Math.min(item.width, item.height) * 0.6;
       if (!fast) drawIconOrEmoji(ctx, icon, 0, 0, iconSize, color);
     } else {
-      // 家具类型：实心矩形
-      ctx.fillStyle = color;
+      // 家具类型：**平面符号**（2026-11-14）—— 原来是一块纯色矩形，谁也认不出是床还是柜子。
+      // 符号按真实尺寸（cm）画，与出图同一套；拖动中（fast）也画，只是不画阴影。
       if (!fast) {
-        ctx.shadowColor = isSelected ? '#FFD700' : 'rgba(0,0,0,0.3)';
-        ctx.shadowBlur = isSelected ? 8 : 4;
+        ctx.shadowColor = isSelected ? 'rgba(255, 193, 7, 0.55)' : 'rgba(40, 50, 60, 0.16)';
+        ctx.shadowBlur = isSelected ? 10 : 3;
+        ctx.shadowOffsetY = 1;
       }
-      ctx.fillRect(-item.width / 2, -item.height / 2, item.width, item.height);
+      drawFurnitureSymbol(ctx, item, { zoom: renderer.getViewTransform().scale });
       ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      void color;
     }
 
     // 选中高亮
@@ -1002,8 +1024,8 @@ function drawFurniture(ctx) {
       ctx.strokeRect(-item.width / 2 - 2, -item.height / 2 - 2, item.width + 4, item.height + 4);
     }
 
-    // 边框（仅家具类型）
-    if (!isArea) {
+    // 边框：只有区域类型还需要（家具符号自己描边）
+    if (isArea) {
       ctx.strokeStyle = 'rgba(0,0,0,0.3)';
       ctx.lineWidth = 1;
       ctx.strokeRect(-item.width / 2, -item.height / 2, item.width, item.height);
@@ -1013,7 +1035,9 @@ function drawFurniture(ctx) {
 
     // 名称标签（P0-2：走 building 预设，与其它视图同一套样式系统）
     if (item.name && !fast) {
-      drawStyledLabel(ctx, item.name, item.x + item.width / 2, item.y + item.height + 4, getPreset('building'), {
+      // 词条样式单独给：原来借 `building` 预设（10cm 世界字号、浅灰 #D7DEE8）——
+      // 那是给深色地图准备的，白底平面图上等于看不见。这里用深字 + 白描边 + 屏幕恒定字号。
+      drawStyledLabel(ctx, item.name, item.x + item.width / 2, item.y + item.height + 6, INTERIOR_LABEL_STYLE, {
         align: 'center',
         baseline: 'top',
         screenScale: renderer.viewTransform.scale,
@@ -1604,17 +1628,41 @@ function exitEditMode() {
 }
 
 // ===== 面包屑与视图边界 =====
+/**
+ * 本层内容的外接框（**墙 + 家具**，cm）。
+ *
+ * 🔴 2026-11-14：原来只看家具 —— 只画了墙还没摆家具的楼层，边界退化成默认 ±500，
+ * 而房子可能是 900×650 且从 (0,0) 起画 → 一进建筑内部，房子在**屏幕右下角露出四分之一**
+ * （用户原话："做出来的东西根本不值得看"）。现在墙端点（±半墙厚）也算进来。
+ */
+function floorContentBounds(floor) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const eat = (x0, y0, x1, y1) => {
+    minX = Math.min(minX, x0, x1); maxX = Math.max(maxX, x0, x1);
+    minY = Math.min(minY, y0, y1); maxY = Math.max(maxY, y0, y1);
+  };
+  for (const w of (floor && floor.walls) || []) {
+    const t = (Number(w.thickness) || 12) / 2;
+    const ax = Number(w.start?.x) || 0, ay = Number(w.start?.y) || 0;
+    const bx = Number(w.end?.x) || 0, by = Number(w.end?.y) || 0;
+    eat(ax - t, ay - t, bx + t, by + t);
+  }
+  for (const f of (floor && floor.furniture) || []) {
+    eat(Number(f.x) || 0, Number(f.y) || 0, (Number(f.x) || 0) + (Number(f.width) || 0), (Number(f.y) || 0) + (Number(f.height) || 0));
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
 const viewBounds = computed(() => {
-  const items = currentFurniture.value;
-  if (items.length === 0) return { minX: -500, minY: -500, maxX: 500, maxY: 500 };
-  const xs = items.flatMap(f => [f.x, f.x + f.width]);
-  const ys = items.flatMap(f => [f.y, f.y + f.height]);
+  const b = floorContentBounds(currentFloor.value);
+  if (!b) return { minX: -500, minY: -500, maxX: 500, maxY: 500 };
   const padding = 100;
   return {
-    minX: Math.min(...xs) - padding,
-    minY: Math.min(...ys) - padding,
-    maxX: Math.max(...xs) + padding,
-    maxY: Math.max(...ys) + padding,
+    minX: b.minX - padding,
+    minY: b.minY - padding,
+    maxX: b.maxX + padding,
+    maxY: b.maxY + padding,
   };
 });
 
@@ -1635,6 +1683,26 @@ const eyeElements = computed(() => {
 
 function handleEagleEyeNavigate(world) {
   renderer.focusOn(world.x, world.y, renderer.getViewTransform().scale);
+}
+
+/**
+ * 把当前楼层铺满视口（进入视图 / 切层 / 切建筑时调用）。
+ * 用户自己平移缩放之后**不再打扰**（只在上述三个时机调）。
+ */
+function fitToFloor(padding = 0.86) {
+  const el = canvas.value;
+  if (!el || !el.clientWidth || !el.clientHeight) return;
+  const b = floorContentBounds(currentFloor.value);
+  if (!b) {
+    renderer.focusOn(0, 0, 1);
+    return;
+  }
+  const w = Math.max(100, b.maxX - b.minX);
+  const h = Math.max(100, b.maxY - b.minY);
+  const zoom = fitZoom({ w, h }, { w: el.clientWidth, h: el.clientHeight }, padding);
+  // 夹一层：沙发那么小的内容别放到 40px/cm（会糊），宫殿别缩到 0.001（看不见线）
+  const z = Math.min(6, Math.max(0.01, zoom));
+  renderer.focusOn((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2, z);
 }
 
 // ===== 生命周期 =====
@@ -1658,6 +1726,9 @@ onMounted(() => {
   window.addEventListener('sitian:label-styles-changed', onHistoryJump); // P0-2 标签样式
   window.addEventListener('sitian:marker-types-changed', onHistoryJump);  // P1-4 标记类型
 
+  // 初始取景：等画布尺寸就绪（同一帧里 clientWidth 可能是 0）
+  requestAnimationFrame(() => fitToFloor());
+
   // 初始化：如果没有楼层则创建一个
   if (props.buildingNode && floors.value.length === 0) {
     const newFloor = store.addFloor(props.buildingNode.id, '一楼');
@@ -1680,6 +1751,7 @@ watch(() => props.buildingNode?.id, (newId, oldId) => {
   } else {
     currentFloorId.value = floors.value[0]?.id || null;
   }
+  fitToFloor();
   renderer.requestRender();
 });
 
