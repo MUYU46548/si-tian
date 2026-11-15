@@ -77,6 +77,11 @@ export const INTERIOR_SHORTCUTS = Object.freeze([
     hint: '点一下放一根柱；柱从本层地面长到本层墙顶，截面在工具条里选 30/40/60/80cm',
     match: { key: '6', mod: false, shift: false },
   },
+  {
+    id: 'tool:add_hole', group: '工具', label: '画楼板洞口', keys: ['7'],
+    hint: '点两下画一个矩形洞（检修口 / 挑空）；本层楼板会被切出这个洞，楼上能看见楼下',
+    match: { key: '7', mod: false, shift: false },
+  },
 
   // ── 视图 ──
   {

@@ -101,6 +101,7 @@
           <button :class="{ active: interactionMode === 'add_window' }" @click="interactionMode = 'add_window'" title="放窗：点在墙上"><Icon name="grid" :size="13"/> 窗</button>
           <button :class="{ active: interactionMode === 'add_stairs' }" @click="startStairTool" title="画楼梯：点一下定起步点，再点一下定上落点。级数按层高自动算，上一层楼板会自动开洞"><Icon name="stairs" :size="13"/> 楼梯</button>
           <button :class="{ active: interactionMode === 'add_column' }" @click="startColumnTool" title="放柱：点一下放一根柱。柱从本层地面长到本层墙顶，截面在右边选" data-testid="tool-column"><Icon name="cube" :size="13"/> 柱</button>
+          <button :class="{ active: interactionMode === 'add_hole' }" @click="startHoleTool" title="画楼板洞口：点两下画一个矩形洞（检修口 / 挑空）。本层楼板会被切出这个洞" data-testid="tool-hole"><Icon name="square" :size="13"/> 洞口</button>
         </div>
 
         <div class="toolbar-group" title="墙厚" v-if="interactionMode === 'add_wall'">
@@ -127,6 +128,16 @@
           <button v-if="currentColumn" @click="deleteSelectedColumn" data-testid="column-delete"
                   title="删掉选中的这根柱（可撤销）">删除这根</button>
           <span v-else class="toolbar-hint">点画布放一根 · Esc 结束</span>
+        </div>
+
+        <div class="toolbar-group" title="洞口" v-if="interactionMode === 'add_hole' || currentHole">
+          <span class="toolbar-label">
+            {{ currentHole ? `洞口 ${Math.round(currentHole.w)}×${Math.round(currentHole.h)}cm` : '点两下画矩形洞' }}
+          </span>
+          <button v-if="currentHole" @click="deleteSelectedHole" data-testid="hole-delete"
+                  title="删掉这个洞口（可撤销）">删除洞口</button>
+          <button v-else @click="holeDraftStart = null" :disabled="!holeDraftStart"
+                  title="取消这一下（Esc）">取消</button>
         </div>
 
         <div class="toolbar-group" title="房间模板" v-if="interactionMode === 'add_room'">
@@ -564,7 +575,7 @@ import { withAlpha } from '../utils/colorUtil';
 import { getPreset, drawStyledLabel } from '../utils/labelStyles';
 // 建筑内部（2026-11-13 第 1/3 刀）：墙由工具栏画，房间由墙自动围合
 import { detectRooms, mergeDetectedRooms } from '../utils/roomDetection';
-import { drawInteriorFloor, drawStairSymbol } from '../interior/renderFloor';
+import { drawInteriorFloor, drawStairSymbol, drawFloorHoles } from '../interior/renderFloor';
 import { DEFAULT_WALL_THICKNESS, formatLength, formatArea, fitZoom } from '../utils/interiorUnits';
 // 外观（2026-11-14）：同一份楼层数据的 3D 渲染。three 只在点开时动态加载。
 import ExteriorView from './ExteriorView.vue';
@@ -578,11 +589,13 @@ import { findShortcut, groupShortcuts } from '../interior/shortcuts';
 // 楼梯（2026-11-15，A24/A16/A14）：几何全在 stairs.js，视图只读它 —— 2D/3D/洞口同源
 import {
   STAIR_DEFAULTS, stairTreads, stairRise, stairStepCount,
-  stairFootprint, stairTargetFloor, stairHolesForFloor, stairDirection,
+  stairFootprint, stairTargetFloor, stairDirection,
   orderFloorsByElevation, stairOutsideInfo, fitStairInside,
 } from '../interior/stairs.js';
 // 柱（2026-11-15，A24 余）：几何与命中都在 columns.js（纯函数），视图只读它
 import { COLUMN_DEFAULTS, columnAtPoint } from '../interior/columns.js';
+// 楼板洞口（2026-11-15，A16 余）：楼梯自动开的 + 手画的，合并口径只此一处
+import { allHolesForFloor, holeAtPoint, holePolygon, HOLE_DEFAULTS } from '../interior/floorHoles.js';
 import { getRoomPolygon, polygonArea, pointInPolygon } from '../utils/roomDetection';
 
 const props = defineProps({
@@ -1099,7 +1112,7 @@ const elevationText = computed(() => {
 const floorAbove = computed(() => orderedFloors.value[floorIndex.value + 1] || null);
 const floorBelow = computed(() => orderedFloors.value[floorIndex.value - 1] || null);
 /** 本层楼板上的洞（下层上行梯 + 本层下行梯）：平面图上画虚线框 */
-const floorHoles = computed(() => (currentFloorId.value ? stairHolesForFloor(floors.value, currentFloorId.value) : []));
+const floorHoles = computed(() => (currentFloorId.value ? allHolesForFloor(floors.value, currentFloorId.value) : []));
 
 /** 某部楼梯的升量与目标层（浮窗、预览、3D 都读这一处） */
 function stairInfoOf(stair) {
@@ -1182,6 +1195,7 @@ function selectFloor(floorId) {
   editingStair.value = false;
   selectedWallId.value = null;
   selectedColumnId.value = null;
+  selectedHoleId.value = null;
   // 2026-11-15（三层自查）：rooms 是派生数据，原来只在"墙变了"时重算。
   // 但跨楼层复制 / 旧项目常见"某层有墙、rooms 却是空的" —— 切过去是一张没有房间填充、
   // 没有面积、连洞口都衬不出来的空白图。切层时补算一次；只在房间为空且墙够围合时动手，
@@ -1328,6 +1342,7 @@ const renderer = useCanvasRenderer(canvas, {
     // 画墙预览 + 对齐参考线（A26）：在墙/家具之上，用户能看着线落点
     drawWallDraftPreview(ctx);
     drawStairsDraftPreview(ctx);
+    drawHoleDraftPreview(ctx);
     drawAlignGuides(ctx);
 
     // 家具自绘：轮廓预览画在最上层（在画墙/家具之上，用户点哪看哪）
@@ -1357,6 +1372,10 @@ const renderer = useCanvasRenderer(canvas, {
     // 楼梯草稿同理：用户要看见"这一跑落在哪、几级、多长"再点第二下
     if (interactionMode.value === 'add_stairs' && stairsDraftStart.value) {
       resolvePlacement(wx, wy, { from: stairsDraftStart.value });
+      renderer.requestRender();
+    }
+    // 洞口草稿：第一下之后矩形跟着光标走（用户要看见这个洞多大）
+    if (interactionMode.value === 'add_hole' && holeDraftStart.value) {
       renderer.requestRender();
     }
   },
@@ -1541,7 +1560,7 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   }
 
   // 这几种是"点一下放一个东西"的工具，不进入拖拽
-  if (['add_furniture', 'add_wall', 'add_stairs', 'add_door', 'add_window', 'add_column'].includes(interactionMode.value)) {
+  if (['add_furniture', 'add_wall', 'add_stairs', 'add_door', 'add_window', 'add_column', 'add_hole'].includes(interactionMode.value)) {
     return false;
   }
 
@@ -1855,6 +1874,11 @@ function handleCanvasClick(hit, wx, wy) {
     placeColumn(wx, wy);
     return;
   }
+  // 洞口（2026-11-15，A16 余）：点两下画一个矩形洞
+  if (interactionMode.value === 'add_hole') {
+    handleHoleClick(wx, wy);
+    return;
+  }
   // 门窗：点在墙上放一个
   if (interactionMode.value === 'add_door') {
     placeOpening('door', wx, wy);
@@ -1916,12 +1940,27 @@ function handleCanvasClick(hit, wx, wy) {
     selectedWallId.value = null;
     selectedStairId.value = null;
     selectedColumnId.value = null;
+    selectedHoleId.value = null;
     editingStair.value = false;
   } else {
     // 柱（2026-11-15，A24 余）：点中柱 → 选中（工具条里改截面 / 删）
     const col = hitColumn(wx, wy);
     if (col) {
       selectedColumnId.value = col.id;
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+      selectedWallId.value = null;
+      selectedOpening.value = null;
+      selectedStairId.value = null;
+      editingStair.value = false;
+      renderer.requestRender();
+      return;
+    }
+    // 洞口（2026-11-15，A16 余）：点中洞 → 选中（工具条里删）
+    const hl = hitHole(wx, wy);
+    if (hl) {
+      selectedHoleId.value = hl.id;
+      selectedColumnId.value = null;
       selectedFurniture.value = null;
       selectedFurnitureIds.value = [];
       selectedWallId.value = null;
@@ -1953,6 +1992,7 @@ function handleCanvasClick(hit, wx, wy) {
         selectedStairId.value = null;
         editingStair.value = false;
         selectedColumnId.value = null;
+        selectedHoleId.value = null;
       }
     }
   }
@@ -2676,6 +2716,80 @@ function deleteSelectedColumn() {
   renderer.requestRender();
 }
 
+// ===== 楼板洞口（2026-11-15，A16 余）=====
+// 手画的洞（检修口 / 挑空）：点两下画一个矩形。楼梯洞不在这里 —— 它从楼梯现算。
+const holeDraftStart = ref(null);
+const selectedHoleId = ref(null);
+const currentHoles = computed(() => currentFloor.value?.holes || []);
+const currentHole = computed(() => currentHoles.value.find((h) => h.id === selectedHoleId.value) || null);
+
+function startHoleTool() {
+  interactionMode.value = 'add_hole';
+  holeDraftStart.value = null;
+  stairsDraftStart.value = null;
+  wallDraftStart.value = null;
+  setExportMsg('');
+  renderer.requestRender();
+}
+
+function hitHole(wx, wy) {
+  return holeAtPoint(currentHoles.value, { x: wx, y: wy });
+}
+
+/**
+ * 画洞口：两次点击定矩形的两个对角（与画墙同一套手感）。
+ * 第一下之后有虚线预览跟着光标走 —— 用户要能看见“这个洞多大”再落第二下。
+ */
+function handleHoleClick(wx, wy) {
+  const floorId = currentFloorId.value;
+  if (!floorId || !props.buildingNode) return;
+  const p = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
+  const start = holeDraftStart.value;
+  if (!start) {
+    holeDraftStart.value = { x: Math.round(p.x), y: Math.round(p.y) };
+    setExportMsg('再点一下定对角（Esc 取消）');
+    renderer.requestRender();
+    return;
+  }
+  const rect = {
+    x: Math.min(start.x, p.x),
+    y: Math.min(start.y, p.y),
+    w: Math.abs(p.x - start.x),
+    h: Math.abs(p.y - start.y),
+  };
+  holeDraftStart.value = null;
+  if (rect.w < 20 || rect.h < 20) {
+    setExportMsg('洞太小了（两个方向都要 ≥ 20cm），再点一次重画', true);
+    renderer.requestRender();
+    return;
+  }
+  const created = store.addHole(props.buildingNode.id, floorId, rect);
+  if (created) {
+    selectedHoleId.value = created.id;
+    selectedColumnId.value = null;
+    selectedFurniture.value = null;
+    selectedFurnitureIds.value = [];
+    selectedWallId.value = null;
+    selectedOpening.value = null;
+    selectedStairId.value = null;
+    editingStair.value = false;
+    setExportMsg(`画了一个 ${Math.round(created.w)}×${Math.round(created.h)}cm 的洞口（Ctrl+Z 可撤）`);
+  } else {
+    setExportMsg('画洞口失败：当前是只读状态，或者落点无效', true);
+  }
+  renderer.requestRender();
+}
+
+function deleteSelectedHole() {
+  const hole = currentHole.value;
+  const floorId = currentFloorId.value;
+  if (!hole || !floorId || !props.buildingNode) return;
+  store.removeHole(props.buildingNode.id, floorId, hole.id);
+  selectedHoleId.value = null;
+  setExportMsg('删了一个洞口（Ctrl+Z 可撤）');
+  renderer.requestRender();
+}
+
 /**
  * 画楼梯：两次点击定起步点与上落点（与画墙同一套手感）。
  * 画完立刻选中并打开浮窗 —— "刚画的东西长什么样、通到哪、几级"要当场能看见，
@@ -2796,6 +2910,45 @@ function deleteSelectedStair() {
   selectedStairId.value = null;
   editingStair.value = false;
   renderer.requestRender();
+}
+
+/** 洞口草稿预览（2026-11-15，A16 余）：第一下之后跟着光标画虚线矩形 + 尺寸读数 */
+function drawHoleDraftPreview(ctx) {
+  const start = holeDraftStart.value;
+  if (!start || interactionMode.value !== 'add_hole') return;
+  const cursor = pointerWorld.value;
+  if (!cursor) return;
+  const z = renderer.getViewTransform().scale || 1;
+  const p = gridSnapEnabled.value ? snapPoint({ x: cursor.x, y: cursor.y }) : { x: cursor.x, y: cursor.y };
+  const rect = {
+    x: Math.min(start.x, p.x),
+    y: Math.min(start.y, p.y),
+    w: Math.abs(p.x - start.x),
+    h: Math.abs(p.y - start.y),
+  };
+  if (!(rect.w > 1) || !(rect.h > 1)) return;
+  ctx.save();
+  ctx.globalAlpha = 0.75;
+  drawFloorHoles(ctx, [{ poly: holePolygon(rect), label: '洞口' }], {
+    zoom: z,
+    theme: 'print',
+    showHoleLabels: false,
+  });
+  ctx.restore();
+  // 尺寸读数（屏幕恒定字号，深底浅字：压在任何底色上都读得出）
+  ctx.save();
+  ctx.translate(rect.x + rect.w / 2, rect.y + rect.h / 2);
+  ctx.scale(1 / z, 1 / z);
+  const text = `${Math.round(rect.w)}×${Math.round(rect.h)}cm`;
+  ctx.font = '11px "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(text).width;
+  ctx.fillStyle = 'rgba(18, 22, 28, 0.72)';
+  ctx.fillRect(-tw / 2 - 4, -9, tw + 8, 18);
+  ctx.fillStyle = '#e8eef6';
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
 }
 
 /**
@@ -2950,6 +3103,11 @@ function deleteSelected() {
   // 选中柱 → 删这一根（2026-11-15，A24 余）
   if (selectedColumnId.value && currentFloorId.value) {
     deleteSelectedColumn();
+    return;
+  }
+  // 选中洞口 → 删这一个（2026-11-15，A16 余）
+  if (selectedHoleId.value && currentFloorId.value) {
+    deleteSelectedHole();
     return;
   }
   // 选中墙 → 删墙（连带挂在上面的门窗，数据层已处理）
@@ -3244,6 +3402,7 @@ function runShortcut(id) {
     stairsDraftStart.value = null;
     // 切工具就放下“选中柱”（柱的设置组只在放柱模式或选中时出现，留着会闪一下又消失）
     if (id !== 'tool:add_column') selectedColumnId.value = null;
+    if (id !== 'tool:add_hole') selectedHoleId.value = null;
     clearAlignGuides();
     renderer.requestRender();
     return true;
@@ -3361,6 +3520,19 @@ function handleKeydown(e) {
     return;
   }
 
+  // Esc：取消洞口草稿（第一下之后），再按一次才退出“画洞口”
+  if (e.key === 'Escape' && !isEditingInput && holeDraftStart.value) {
+    holeDraftStart.value = null;
+    renderer.requestRender();
+    return;
+  }
+  if (e.key === 'Escape' && !isEditingInput && interactionMode.value === 'add_hole') {
+    interactionMode.value = 'pan';
+    selectedHoleId.value = null;
+    renderer.requestRender();
+    return;
+  }
+
   // Esc：结束当前这段墙（画墙是连续画的，必须有个明确的收尾键）
   if (e.key === 'Escape' && !isEditingInput && wallDraftStart.value) {
     wallDraftStart.value = null;
@@ -3409,8 +3581,8 @@ function handleKeydown(e) {
       }
     } else if (selectedFurniture.value) {
       deleteSelected();
-    } else if (selectedStairId.value || selectedWallId.value || selectedOpening.value || selectedColumnId.value) {
-      // 墙 / 门窗 / 楼梯 / 柱的删除也认 Del（以前只认家具，选中墙按 Del 没反应）
+    } else if (selectedStairId.value || selectedWallId.value || selectedOpening.value || selectedColumnId.value || selectedHoleId.value) {
+      // 墙 / 门窗 / 楼梯 / 柱 / 洞口的删除也认 Del（以前只认家具，选中墙按 Del 没反应）
       deleteSelected();
     }
   }

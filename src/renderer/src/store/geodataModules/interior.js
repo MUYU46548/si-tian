@@ -8,6 +8,7 @@ import { ref } from 'vue';
 //   updateInteriorReferenceImage / removeInteriorReferenceImage（参考图）
 import { guardWrite } from '../writeGate';
 import { normalizeColumn } from '../../interior/columns.js';
+import { normalizeHole } from '../../interior/floorHoles.js';
 
 export function createInteriorModule(ctx) {
   const { execute, scheduleAutoSave } = ctx;
@@ -67,6 +68,9 @@ export function createInteriorModule(ctx) {
     if (!Array.isArray(floor.stairs)) floor.stairs = [];
     // 2026-11-15（A24 余）：柱。每层一组，柱从本层地面长到本层墙顶（高度不是用户填的字段）。
     if (!Array.isArray(floor.columns)) floor.columns = [];
+    // 2026-11-15（A16 余）：手画的楼板洞口（检修口 / 挑空）。楼梯洞不在这个数组里 ——
+    // 它由 `floorHoles.js#allHolesForFloor` 从楼梯现算，存一份就会与楼梯脱钩。
+    if (!Array.isArray(floor.holes)) floor.holes = [];
     if (!Number.isFinite(floor.elevation)) floor.elevation = 0;
     return floor;
   }
@@ -872,6 +876,86 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  /**
+   * 画一个楼板洞口（2026-11-15，A16 余）：检修口 / 挑空 / 中庭。
+   *
+   * 与楼梯洞的区别：楼梯洞是**从楼梯现算**的（改了楼梯它自己跟着动），
+   * 手画洞是独立数据（`floor.holes`）；两者在 `floorHoles.js#allHolesForFloor` 合成一份给 2D/3D 用。
+   */
+  function addHole(buildingId, floorId, hole = {}) {
+    if (!guardWrite('画洞口').ok) return null;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return null;
+    const n = normalizeHole(hole);
+    if (!n) return null;
+    const item = {
+      id: `hole_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      x: n.x,
+      y: n.y,
+      w: n.w,
+      h: n.h,
+      label: String(hole.label || '洞口').slice(0, 20),
+    };
+    execute({
+      type: 'add-hole',
+      label: '画洞口',
+      undo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f && Array.isArray(f.holes)) f.holes = f.holes.filter((h) => h.id !== item.id);
+      },
+      redo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f.holes.push({ ...item });
+      },
+    });
+    scheduleAutoSave();
+    return item;
+  }
+
+  /** 改洞口（位置 / 尺寸 / 名字）。与 updateColumn 同一套：一条 undo，oldSnapshot 可指定 */
+  function updateHole(buildingId, floorId, holeId, patch = {}, oldSnapshot = null) {
+    if (!guardWrite('修改洞口').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const item = floor.holes.find((h) => h.id === holeId);
+    if (!item) return;
+    const before = oldSnapshot ? JSON.parse(JSON.stringify(oldSnapshot)) : JSON.parse(JSON.stringify(item));
+    const merged = { ...JSON.parse(JSON.stringify(item)), ...JSON.parse(JSON.stringify(patch)), id: holeId };
+    const n = normalizeHole(merged);
+    if (!n) return;
+    const next = { ...merged, x: n.x, y: n.y, w: n.w, h: n.h };
+    const apply = (snap) => {
+      const f = findFloor(buildingId, floorId);
+      const it = f && (f.holes || []).find((h) => h.id === holeId);
+      if (it) Object.assign(it, JSON.parse(JSON.stringify(snap)));
+    };
+    execute({ type: 'update-hole', label: '修改洞口', undo: () => apply(before), redo: () => apply(next) });
+    scheduleAutoSave();
+  }
+
+  /** 删洞口 */
+  function removeHole(buildingId, floorId, holeId) {
+    if (!guardWrite('删除洞口').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const idx = floor.holes.findIndex((h) => h.id === holeId);
+    if (idx === -1) return;
+    const removed = JSON.parse(JSON.stringify(floor.holes[idx]));
+    execute({
+      type: 'remove-hole',
+      label: '删除洞口',
+      undo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f.holes.splice(Math.min(idx, f.holes.length), 0, removed);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f) f.holes = f.holes.filter((h) => h.id !== holeId);
+      },
+    });
+    scheduleAutoSave();
+  }
+
   return {
     interiorData,
     interiorReferenceImages,
@@ -899,6 +983,10 @@ export function createInteriorModule(ctx) {
     addColumn,
     updateColumn,
     removeColumn,
+    // 建筑内部（2026-11-15，A16 余）：手画楼板洞口
+    addHole,
+    updateHole,
+    removeHole,
     setFloorChangeHook,
     ensureFloorArrays,
     addFurniture,

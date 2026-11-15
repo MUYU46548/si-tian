@@ -443,7 +443,8 @@ export function drawFloorHoles(ctx, holes, opts = {}) {
     }
     if ((maxX - minX) * zoom < 40 || (maxY - minY) * zoom < 30) continue;   // 屏幕上太小就不标
     const dir = h && h.direction === 'down' ? '下' : '上';
-    const text = `楼梯洞口（${dir}）`;
+    // 手画的洞（检修口 / 挑空）没有 direction：标签用它自己的名字，别写成“楼梯洞口”
+    const text = (h && h.holeId) ? String(h.label || '洞口') : `楼梯洞口（${dir}）`;
     ctx.save();
     ctx.translate((minX + maxX) / 2, (minY + maxY) / 2);
     ctx.scale(1 / zoom, 1 / zoom);          // 之后都是屏幕像素单位（字号不随缩放变大）

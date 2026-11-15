@@ -30,6 +30,7 @@ import {
 } from './stairs.js';
 import { furnitureBoxes } from './furnitureBoxes.js';
 import { columnBoxes } from './columns.js';
+import { allHolesForFloor } from './floorHoles.js';
 
 /** 屋顶默认参数（cm）。改这里就是改全项目的屋顶观感。 */
 export const ROOF_DEFAULTS = Object.freeze({
@@ -60,6 +61,7 @@ export const SHELL_COLORS = Object.freeze({
   roofGable: '#5c6672',     // 坡顶瓦
   roofFlat: '#b3ab9c',      // 平顶防水层
   slab: '#e0d9cc',          // 楼层分隔带（楼板侧边）
+  slabEdge: '#a89d8c',      // 洞口侧壁（比楼板深一档，洞才看得出“空”）
   fascia: '#8e8676',
   stair: '#c3b191',         // 楼梯踏步（比墙略暖，轴测里能读出“这是木头”）
   furniture: '#a89880',     // 家具缺省色（家具自己带 color 时用家具的）
@@ -447,6 +449,7 @@ export function buildBuildingShell(floors, options = {}) {
   let stairCount = 0;
   let furnitureCount = 0;
   let columnCount = 0;
+  let holeCount = 0;
   let topY = 0;
 
   // 楼层按 elevation 升序处理（用户可能改了层高顺序）。
@@ -477,6 +480,9 @@ export function buildBuildingShell(floors, options = {}) {
       const h = num(wall.height, SHELL_DEFAULTS.wallHeight) || SHELL_DEFAULTS.wallHeight;
       topY = Math.max(topY, elevation + h);
     }
+
+    // 手画洞口计数（只数用户画的；楼梯洞由 floorHoles.js 现算，不进这个数）
+    holeCount += Array.isArray(floor.holes) ? floor.holes.length : 0;
 
     // 柱（2026-11-15，A24 余）：一根柱 = 一个点 + 一个截面，从本层地面长到**本层墙顶**。
     // 高度取本层墙高（`maxWallTop`），不是全局最高 —— 否则矮墙房间的柱子会顶穿屋面。
@@ -525,14 +531,16 @@ export function buildBuildingShell(floors, options = {}) {
   // 只有"本层地面高于下一层墙顶"时才补（墙高 ≥ 层高的情况本来就贴在一起，补了会插进墙里）。
   //
   // 2026-11-15（A16/A24）：楼板不再是"一整块"—— 楼梯要穿过去，所以按洞口差集切成若干块。
-  // 洞口来源只有一条：`stairs.js` 的 `stairHolesForFloor()`（下层上行梯 + 本层下行梯）。
+  // 洞口来源：楼梯自动开的（下层上行梯 + 本层下行梯）+ 用户手画的（检修口 / 挑空）。
+  // 合并只在 `floorHoles.js#allHolesForFloor` 做一次 —— 这里再拼一遍就会出现
+  // “平面图上有洞、3D 里楼板是整块”。
   // 不在本文件里另算一遍位置，否则"板上有洞但洞不在楼梯正上方"是必然的。
   let prevTop = -Infinity;
   for (const seat of floorSeats) {
     if (seat.rect && Number.isFinite(prevTop) && seat.elevation > prevTop + 1) {
       const gap = seat.elevation - prevTop;
       const holes = seat.floor && seat.floor.id
-        ? stairHolesForFloor(ordered, seat.floor.id)
+        ? allHolesForFloor(ordered, seat.floor.id)
         : [];
       boxes.push(...slabBoxes(seat, prevTop, gap, holes, colors));
     }
@@ -586,6 +594,7 @@ export function buildBuildingShell(floors, options = {}) {
       stairs: stairCount,
       furniture: furnitureCount,
       columns: columnCount,
+      holes: holeCount,
       boxes: allBoxes.length,
       roofTriangles: (roof?.tris || []).length,
       height: bounds.size[1],
@@ -631,7 +640,7 @@ function slabBoxes(seat, prevTop, gap, holes, colors) {
     { u0: -r.halfW, u1: r.halfW, v0: -r.halfD, v1: r.halfD },
     localHoles,
   );
-  return pieces.map((pr) => {
+  const out = pieces.map((pr) => {
     const uc = (pr.u0 + pr.u1) / 2;
     const vc = (pr.v0 + pr.v1) / 2;
     return {
@@ -642,6 +651,35 @@ function slabBoxes(seat, prevTop, gap, holes, colors) {
       sz: pr.v1 - pr.v0,
     };
   });
+
+  // 洞口侧壁（2026-11-15，A16 余）：楼板与一层地面常常是同一个浅色，只切出洞的话，
+  // 轴测图上只剩一圈轮廓线 —— 用户看不见自己画的洞（实测差异填充率只有 5%）。
+  // 给每个洞加 4 块深色薄板当“井壁”，洞才有体积感；真实楼板本来也有这层侧壁。
+  const wallT = Math.min(12, Math.max(3, gap * 0.5));
+  const edgeColor = colors.slabEdge || base.color;
+  for (const h of localHoles) {
+    const w = h.u1 - h.u0;
+    const d = h.v1 - h.v0;
+    if (!(w > wallT * 2) || !(d > wallT * 2)) continue;
+    const band = (u0, u1, v0, v1) => {
+      const uc = (u0 + u1) / 2;
+      const vc = (v0 + v1) / 2;
+      out.push({
+        ...base,
+        kind: 'slab-edge',
+        color: edgeColor,
+        cx: r.cx + r.ux * uc - r.uy * vc,
+        cz: r.cy + r.uy * uc + r.ux * vc,
+        sx: u1 - u0,
+        sz: v1 - v0,
+      });
+    };
+    band(h.u0, h.u1, h.v0, h.v0 + wallT);
+    band(h.u0, h.u1, h.v1 - wallT, h.v1);
+    band(h.u0, h.u0 + wallT, h.v0, h.v1);
+    band(h.u1 - wallT, h.u1, h.v0, h.v1);
+  }
+  return out;
 }
 
 /** 一层墙的最高点（cm）：墙高缺省 280 */

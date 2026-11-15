@@ -12,7 +12,9 @@
   4) 切到“只看一层”（楼层下拉，**不删数据**）→ 空 / 有家具两张比：一层的床/桌/柜/椅
      必须全部看得见（阈值 2%）；统计条必须写“只看 …”；
   5) 顶栏统计出现“6 件家具”；
-  6) 柱（A24 余）：放两根 40cm 柱 → 统计出现“2 根柱”、画面多出两根竖柱（阈值 0.8%）。
+  6) 柱（A24 余）：放两根 40cm 柱 → 统计出现“2 根柱”、画面多出两根竖柱（阈值 0.8%）；
+  7) 手画楼板洞口（A16 余）：切回全部楼层 → 在二层画一个 250×200cm 的洞 →
+     统计出现“1 个洞口”、画面多出洞口（阈值 0.3%）。
 
 ⚠️ 两层楼的整体轴测里，一层家具被二层楼板压着看不见 —— 这不是 bug（楼板是实体）。
    要看下层就切“只看一层”（A20 余，2026-11-15 补），不用再删楼上。
@@ -263,6 +265,29 @@ def place_columns(cdp, bid, items):
     return D.eval_json(cdp, expr)
 
 
+def place_hole(cdp, bid, hole, floor_index=-1):
+    """在指定层画一个手画洞口（走产品写口 store.addHole）。floor_index=-1 = 最上层。
+
+    ⚠️ JS 数组没有负索引（`sorted[-1]` 是 undefined，不是末元素）—— 第一版就撞了这个，
+    表现是 `no-such-floor`。这里把 -1 翻译成 `sorted.length - 1`。
+    """
+    idx_expr = 'sorted.length - 1' if floor_index < 0 else str(int(floor_index))
+    expr = """(() => {
+      const s = %s, bid = %s;
+      const d = s.interiorData[bid];
+      if (!d || !(d.floors || []).length) return JSON.stringify({ err: 'no-floor' });
+      const sorted = d.floors.slice().sort((a, b) => (a.elevation || 0) - (b.elevation || 0));
+      const f = sorted[%s];
+      if (!f) return JSON.stringify({ err: 'no-such-floor' });
+      const created = s.addHole(bid, f.id, %s);
+      return JSON.stringify({
+        ok: !!created, floor: f.name,
+        count: (s.interiorData[bid].floors.find(x => x.id === f.id).holes || []).length,
+      });
+    })()""" % (D.STORE, json.dumps(bid), idx_expr, json.dumps(hole))
+    return D.eval_json(cdp, expr)
+
+
 def stats_text(cdp):
     return cdp.eval("(document.querySelector('[data-testid=exterior-stats]')||{}).textContent || ''") or ''
 
@@ -465,6 +490,31 @@ def main():
             elif d4['ratio'] < 0.008:
                 fails.append('放了两根 40cm 柱，画面只变了 %.3f%% —— 柱没画出来（阈值 0.8%%）'
                              % (100 * d4['ratio']))
+
+        # ── 判据 6：手画楼板洞口（A16 余）──
+        # 洞只影响**有楼板**的地方，所以先切回“全部楼层”（单层视图没有楼板）。
+        pick_all = set_floor_pick(cdp, ALL_FLOORS_VALUE)
+        log('  · 切回全部楼层（下拉值 %s，屋顶 %s）' % (pick_all.get('floorPick'), pick_all.get('roof')))
+        p_all_before = export_axo(cdp, '09-all-nohole')
+        hh = place_hole(cdp, bid, {'x': 300, 'y': 200, 'w': 250, 'h': 200}, floor_index=-1)
+        if hh.get('err'):
+            fails.append('画洞口失败：%s' % hh['err'])
+        else:
+            log('  · 在 %s 画了一个 250×200cm 的洞（该层共 %s 个）' % (hh.get('floor'), hh.get('count')))
+        time.sleep(1.2)
+        stats_hole = stats_text(cdp)
+        if '1 个洞口' not in stats_hole:
+            fails.append('顶栏统计没显示“1 个洞口”：%r' % stats_hole)
+        p_all_after = export_axo(cdp, '10-all-hole')
+        if p_all_before and p_all_after:
+            d5 = diff(p_all_before, p_all_after, 'nohole-vs-hole')
+            log('  · 洞口在图上占：%d 像素（%.3f%%），最大通道差 %d'
+                % (d5.get('px', -1), 100 * d5.get('ratio', -1), d5.get('maxdiff', -1)))
+            if not d5.get('ok'):
+                fails.append('洞口比对失败：%s' % d5.get('reason'))
+            elif d5['ratio'] < 0.003:
+                fails.append('画了一个 250×200cm 的洞，画面只变了 %.3f%% —— 楼板没被切（阈值 0.3%%）'
+                             % (100 * d5['ratio']))
 
         # 页面零报错（`__exErrs` 是自己挂的监听，不是读一个没人写的变量）
         errs = cdp.eval("(window.__exErrs || []).slice(0, 5)") or []

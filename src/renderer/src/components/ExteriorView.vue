@@ -129,7 +129,8 @@ const statsText = computed(() => {
   const st = s.stairs > 0 ? ` · ${s.stairs} 部楼梯` : '';
   const fu = s.furniture > 0 ? ` · ${s.furniture} 件家具` : '';
   const co = s.columns > 0 ? ` · ${s.columns} 根柱` : '';
-  return `${scope}${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${co}${fu}${h}`;
+  const ho = s.holes > 0 ? ` · ${s.holes} 个洞口` : '';
+  return `${scope}${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${co}${ho}${fu}${h}`;
 });
 
 let THREE = null;
