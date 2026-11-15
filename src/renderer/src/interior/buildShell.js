@@ -28,6 +28,7 @@ import {
   stairHolesForFloor,
   orderFloorsByElevation,
 } from './stairs.js';
+import { furnitureBoxes } from './furnitureBoxes.js';
 
 /** 屋顶默认参数（cm）。改这里就是改全项目的屋顶观感。 */
 export const ROOF_DEFAULTS = Object.freeze({
@@ -59,7 +60,8 @@ export const SHELL_COLORS = Object.freeze({
   roofFlat: '#b3ab9c',      // 平顶防水层
   slab: '#e0d9cc',          // 楼层分隔带（楼板侧边）
   fascia: '#8e8676',
-  stair: '#c3b191',         // 楼梯踏步（比墙略暖，轴测里能读出"这是木头"）
+  stair: '#c3b191',         // 楼梯踏步（比墙略暖，轴测里能读出“这是木头”）
+  furniture: '#a89880',     // 家具缺省色（家具自己带 color 时用家具的）
 });
 
 const CURVE_SAMPLES = 16;
@@ -442,6 +444,7 @@ export function buildBuildingShell(floors, options = {}) {
   let wallCount = 0;
   let openingCount = 0;
   let stairCount = 0;
+  let furnitureCount = 0;
   let topY = 0;
 
   // 楼层按 elevation 升序处理（用户可能改了层高顺序）。
@@ -471,6 +474,17 @@ export function buildBuildingShell(floors, options = {}) {
       boxes.push(...wallBoxes(wall, elevation, openings, colors));
       const h = num(wall.height, SHELL_DEFAULTS.wallHeight) || SHELL_DEFAULTS.wallHeight;
       topY = Math.max(topY, elevation + h);
+    }
+
+    // 家具（2026-11-15，A20）：每件家具一块体积，高度按类型查表。
+    // 屋顶封着的时候看不见（这是对的：室内家具不该从外面透出来），
+    // 把屋顶切到“不封顶”就能从上方看到房间里的床/桌/柜 —— 与楼梯、楼板洞口同一条观察路径。
+    // `options.furniture === false` 可关（实时预览不需要时省掉几十个 mesh）。
+    if (options.furniture !== false) {
+      const furniture = Array.isArray(floor.furniture) ? floor.furniture : [];
+      const fboxes = furnitureBoxes(furniture, elevation, { color: colors.furniture });
+      furnitureCount += fboxes.length;
+      boxes.push(...fboxes);
     }
 
     // 楼梯（2026-11-15，A24）：每级踏步一块板。目标层决定升量 ——
@@ -559,6 +573,7 @@ export function buildBuildingShell(floors, options = {}) {
       walls: wallCount,
       openings: openingCount,
       stairs: stairCount,
+      furniture: furnitureCount,
       boxes: allBoxes.length,
       roofTriangles: (roof?.tris || []).length,
       height: bounds.size[1],

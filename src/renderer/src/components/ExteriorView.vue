@@ -108,7 +108,8 @@ const statsText = computed(() => {
   if (!s.walls) return '无墙体';
   const h = s.height > 0 ? ` · 高 ${formatLength(s.height)}` : '';
   const st = s.stairs > 0 ? ` · ${s.stairs} 部楼梯` : '';
-  return `${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${h}`;
+  const fu = s.furniture > 0 ? ` · ${s.furniture} 件家具` : '';
+  return `${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${fu}${h}`;
 });
 
 let THREE = null;

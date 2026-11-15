@@ -230,3 +230,7 @@ build/eu4-scale/
 # 复现：node scripts/tests/tools/_audit_river_scale.mjs / _audit_river_density.mjs / _audit_salt_lakes.mjs
 build/river-density/
 build/salt-lakes/
+
+# 室内 3D 家具体块出图（2026-11-15）：本地证据，禁止提交
+# 复现：python scripts/tests/drill_interior_furniture_3d.py
+build/interior-furniture/
