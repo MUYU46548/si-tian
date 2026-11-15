@@ -30,6 +30,7 @@
             {{ interactionMode === 'pan' ? '拖拽家具移动 / 点击选中 / Shift+点击多选 / Shift+拖拽框选' : '' }}
             {{ interactionMode === 'add_furniture' ? '点击空白处放置家具' : '' }}
             {{ interactionMode === 'add_room' ? '选一个房间模板后点击空白处整间放置（一次可撤销）' : '' }}
+            {{ interactionMode === 'add_stairs' ? '点两下画一跑楼梯：第一下起步、第二下上落（Esc 结束这一跑）' : '' }}
             · <a href="#" @click.prevent="exitEditMode">退出</a>
           </span>
         </p>
@@ -65,13 +66,18 @@
           :key="floor.id"
           :class="['floor-tab', { active: currentFloorId === floor.id }]"
           @click="selectFloor(floor.id)"
-          :title="`${floor.name} (${floor.furniture?.length || 0} 物品)`"
+          :title="`${floor.name} (${floor.furniture?.length || 0} 物品) · 地面 ${formatLength(floor.elevation || 0)}`"
         >
           <span class="floor-level">{{ floor.level + 1 }}F</span>
           <span class="floor-name">{{ floor.name }}</span>
         </button>
       </div>
       <div class="floor-actions">
+        <!-- A14：本层标高写出来（以前 elevation 只在数据里，界面从不显示） -->
+        <span class="floor-elev" data-testid="floor-elevation"
+              :title="`本层地面标高 ${formatLength(currentElevation)}${floorAbove ? `；上一层 ${formatLength(Number(floorAbove.elevation) || 0)}` : '；上方没有楼层'}`">
+          地面 {{ formatLength(currentElevation) }}
+        </span>
         <!-- ⚠️ 本栏**不受 editMode 控制**（楼层切换在浏览态也要用），所以只读灰禁必须写在这里：
              否则只读态下这三个按钮照常可点 → 改内存但永不落盘 = 用户以为删掉了、重启又回来 -->
         <button class="floor-btn" @click="addFloor" :disabled="store.isReadOnly"
@@ -93,12 +99,23 @@
           <button :class="{ active: interactionMode === 'add_wall' }" @click="interactionMode = 'add_wall'; wallDraftStart = null" title="画墙：点一下定起点，再点一下成墙（可连续画，Esc 结束）。墙围合成房间会自动出名字和面积"><Icon name="square" :size="13"/> 画墙</button>
           <button :class="{ active: interactionMode === 'add_door' }" @click="interactionMode = 'add_door'" title="放门：点在墙上，门按点到的位置放上去"><Icon name="home" :size="13"/> 门</button>
           <button :class="{ active: interactionMode === 'add_window' }" @click="interactionMode = 'add_window'" title="放窗：点在墙上"><Icon name="grid" :size="13"/> 窗</button>
+          <button :class="{ active: interactionMode === 'add_stairs' }" @click="startStairTool" title="画楼梯：点一下定起步点，再点一下定上落点。级数按层高自动算，上一层楼板会自动开洞"><Icon name="stairs" :size="13"/> 楼梯</button>
         </div>
 
         <div class="toolbar-group" title="墙厚" v-if="interactionMode === 'add_wall'">
           <span class="toolbar-label">墙厚</span>
           <button v-for="t in [8, 12, 24]" :key="t" :class="{ active: wallThickness === t }" @click="wallThickness = t">{{ t }}cm</button>
           <button @click="wallDraftStart = null" :disabled="!wallDraftStart" title="结束当前这段墙（Esc）">结束</button>
+        </div>
+
+        <div class="toolbar-group" title="楼梯" v-if="interactionMode === 'add_stairs'">
+          <span class="toolbar-label">梯宽</span>
+          <button v-for="w in [80, 100, 120]" :key="w" :class="{ active: stairWidth === w }"
+                  @click="stairWidth = w" data-testid="stair-width-opt">{{ w }}cm</button>
+          <span class="toolbar-hint" data-testid="stair-auto-hint">
+            自动 {{ autoStepHint.steps }} 级 · 升 {{ formatLength(Math.abs(autoStepHint.rise)) }}
+          </span>
+          <button @click="stairsDraftStart = null" :disabled="!stairsDraftStart" title="结束这一跑（Esc）">结束</button>
         </div>
 
         <div class="toolbar-group" title="房间模板" v-if="interactionMode === 'add_room'">
@@ -265,6 +282,65 @@
                   :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '保存尺寸与位置（可撤销）'">保存</button>
           <button class="adopt-btn ghost" @click="deleteSelected" data-testid="opening-delete"
                   :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '删除这个门窗（可撤销）'">删除</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 楼梯详情浮窗（2026-11-15，A24）：级数 / 梯宽 / 上下行 + 通到哪一层 -->
+    <div v-if="currentStair && editingStair" class="node-detail-popover stair-popover" data-testid="stair-popover">
+      <div class="popover-header">
+        <h4>楼梯</h4>
+        <div class="popover-header-actions">
+          <button class="close-btn" @click="cancelStairEdit" title="关闭 (Esc)">×</button>
+        </div>
+      </div>
+      <div class="popover-body">
+        <!-- 通到哪：A14 把 elevation 接进视图的直接产出，用户能对上"这几级爬到多高" -->
+        <div class="detail-row">
+          <span class="detail-label">通到</span>
+          <span class="detail-value" data-testid="stair-target">
+            <template v-if="selectedStairInfo && selectedStairInfo.target">
+              {{ selectedStairInfo.target.name || '上一层' }}（{{ formatLength(Number(selectedStairInfo.target.elevation) || 0) }}）
+            </template>
+            <template v-else-if="selectedStairInfo && selectedStairInfo.dir === 'down'">本层下方没有楼层</template>
+            <template v-else>本层上方没有楼层（这一跑暂时悬空）</template>
+          </span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">级数</span>
+          <div class="rotation-input">
+            <input type="number" v-model.number="stairForm.steps" min="0" max="40" step="1" class="popover-number" data-testid="stair-steps" />
+            <span class="unit-label">级</span>
+          </div>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">梯宽</span>
+          <div class="rotation-input">
+            <input type="number" v-model.number="stairForm.width" min="40" max="400" step="10" class="popover-number" data-testid="stair-width" />
+            <span class="unit-label">cm</span>
+          </div>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">方向</span>
+          <select v-model="stairForm.direction" class="popover-select" data-testid="stair-direction">
+            <option value="up">上行（通到上一层）</option>
+            <option value="down">下行（通到下一层）</option>
+          </select>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">踏面 / 升高</span>
+          <span class="detail-value" data-testid="stair-metrics">
+            <template v-if="selectedStairInfo">
+              {{ selectedStairInfo.steps }} 级 · 每级 {{ formatLength(Math.abs(selectedStairInfo.rise) / Math.max(1, selectedStairInfo.steps)) }} · 共 {{ formatLength(Math.abs(selectedStairInfo.rise)) }}
+            </template>
+          </span>
+        </div>
+        <p class="detail-hint">级数填 0 = 自动（按层高算，{{ selectedStairInfo ? selectedStairInfo.autoSteps : '' }} 级）</p>
+        <div class="popover-actions">
+          <button class="adopt-btn" @click="saveStairEdit" data-testid="stair-save"
+                  :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '保存（可撤销）'">保存</button>
+          <button class="adopt-btn ghost" @click="deleteSelectedStair" data-testid="stair-delete"
+                  :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '删除这一跑（可撤销）'">删除</button>
         </div>
       </div>
     </div>
@@ -464,7 +540,7 @@ import { withAlpha } from '../utils/colorUtil';
 import { getPreset, drawStyledLabel } from '../utils/labelStyles';
 // 建筑内部（2026-11-13 第 1/3 刀）：墙由工具栏画，房间由墙自动围合
 import { detectRooms, mergeDetectedRooms } from '../utils/roomDetection';
-import { drawInteriorFloor } from '../interior/renderFloor';
+import { drawInteriorFloor, drawStairSymbol } from '../interior/renderFloor';
 import { DEFAULT_WALL_THICKNESS, formatLength, formatArea, fitZoom } from '../utils/interiorUnits';
 // 外观（2026-11-14）：同一份楼层数据的 3D 渲染。three 只在点开时动态加载。
 import ExteriorView from './ExteriorView.vue';
@@ -475,6 +551,12 @@ import { drawFurnitureSymbol } from '../interior/furnitureSymbols';
 import { worldPointsToCustom, customToWorldPoints } from '../interior/customShape';
 import { collectTargets, resolveSnap } from '../interior/alignment';
 import { findShortcut, groupShortcuts } from '../interior/shortcuts';
+// 楼梯（2026-11-15，A24/A16/A14）：几何全在 stairs.js，视图只读它 —— 2D/3D/洞口同源
+import {
+  STAIR_DEFAULTS, stairTreads, stairRise, stairStepCount,
+  stairFootprint, stairTargetFloor, stairHolesForFloor, stairDirection,
+  orderFloorsByElevation,
+} from '../interior/stairs.js';
 import { getRoomPolygon, polygonArea, pointInPolygon } from '../utils/roomDetection';
 
 const props = defineProps({
@@ -851,7 +933,17 @@ async function exportPlanSheet() {
     drawPlanSheet(ctx, sheet, (c) => {
       // 世界原点平移到外接框左上（版式层已按 pxPerCm 缩放，这里是 cm 坐标）
       c.translate(-(fp.minX - fp.t / 2), -(fp.minY - fp.t / 2));
-      drawInteriorFloor(c, floor, { zoom: sheet.pxPerCm, theme: 'print' });
+      // 出图与屏幕**同一份**数据与几何：楼梯、洞口、每跑的目标层都带上，
+      // 否则打印出来的平面图会缺楼梯（"屏幕上有、纸上没有"是最容易漏的双源）
+      drawInteriorFloor(c, floor, {
+        zoom: sheet.pxPerCm,
+        theme: 'print',
+        holes: floorHoles.value,
+        stairContext: (stair) => {
+          const info = stairInfoOf(stair);
+          return { ownElevation: info.own, targetElevation: info.targetElevation };
+        },
+      });
     });
 
     const dataUrl = cvs.toDataURL('image/png');
@@ -945,6 +1037,54 @@ function handleWallClick(wx, wy) {
 }
 const wallThickness = ref(DEFAULT_WALL_THICKNESS);
 
+// ===== 楼梯（2026-11-15，A24）=====
+// 两次点击画一跑（与画墙同一套手感：点起点 → 看着预览 → 点落点）。
+// 级数默认自动（按层高反算），选中后可在浮窗里改成指定级数。
+const stairsDraftStart = ref(null);
+const selectedStairId = ref(null);
+const editingStair = ref(false);
+const stairWidth = ref(STAIR_DEFAULTS.width);
+const stairForm = reactive({ width: STAIR_DEFAULTS.width, steps: 0, direction: 'up' });
+
+const currentStair = computed(() => (currentFloor.value?.stairs || []).find((s) => s.id === selectedStairId.value) || null);
+
+// A14：把 floor.elevation 真正接进视图 —— 楼层标签、楼梯目标层、上/下一层都读同一份标高
+const orderedFloors = computed(() => orderFloorsByElevation(floors.value));
+const floorIndex = computed(() => orderedFloors.value.findIndex((f) => f.id === currentFloorId.value));
+const currentElevation = computed(() => Number(currentFloor.value?.elevation) || 0);
+const floorAbove = computed(() => orderedFloors.value[floorIndex.value + 1] || null);
+const floorBelow = computed(() => orderedFloors.value[floorIndex.value - 1] || null);
+/** 本层楼板上的洞（下层上行梯 + 本层下行梯）：平面图上画虚线框 */
+const floorHoles = computed(() => (currentFloorId.value ? stairHolesForFloor(floors.value, currentFloorId.value) : []));
+
+/** 某部楼梯的升量与目标层（浮窗、预览、3D 都读这一处） */
+function stairInfoOf(stair) {
+  const own = currentElevation.value;
+  const target = stairTargetFloor(floors.value, currentFloorId.value, stair);
+  const targetElevation = target ? (Number(target.elevation) || 0) : undefined;
+  const rise = stairRise(stair, { ownElevation: own, targetElevation });
+  return {
+    own,
+    target,
+    targetElevation,
+    rise,
+    dir: stairDirection(stair),
+    autoSteps: stairStepCount({ steps: 0 }, rise),
+    steps: stairStepCount(stair, rise),
+    width: Number(stair.width) >= 40 ? Number(stair.width) : STAIR_DEFAULTS.width,
+  };
+}
+
+const selectedStairInfo = computed(() => (currentStair.value ? stairInfoOf(currentStair.value) : null));
+
+/** 工具栏提示：这一层按现在的标高，自动会是几级 */
+const autoStepHint = computed(() => {
+  const own = currentElevation.value;
+  const target = floorAbove.value;
+  const rise = target ? (Number(target.elevation) || 0) - own : STAIR_DEFAULTS.fallbackFloorHeight;
+  return { rise, steps: stairStepCount({ steps: 0 }, rise) };
+});
+
 // 当前楼层的家具列表
 const currentFurniture = computed(() => {
   const floor = floors.value.find(f => f.id === currentFloorId.value);
@@ -955,6 +1095,10 @@ const currentFurniture = computed(() => {
 function selectFloor(floorId) {
   currentFloorId.value = floorId;
   selectedFurniture.value = null;
+  // 选中态跟着楼层走：楼梯/墙/门窗都属于某一层，换了层还高亮等于指着一个不可见的对象
+  selectedStairId.value = null;
+  editingStair.value = false;
+  selectedWallId.value = null;
   fitToFloor();
   renderer.requestRender();
 }
@@ -1073,6 +1217,14 @@ const renderer = useCanvasRenderer(canvas, {
         theme: 'print',
         selectedWallId: selectedWallId.value || undefined,
         selectedOpeningId: selectedOpening.value?.id || undefined,
+        selectedStairId: selectedStairId.value || undefined,
+        // 楼板洞口（下层上行梯 / 本层下行梯，A16）—— 与 3D 用的是同一份几何
+        holes: floorHoles.value,
+        // 每部楼梯的升量各不相同，按楼梯给上下文（A14：elevation 真接进视图）
+        stairContext: (stair) => {
+          const info = stairInfoOf(stair);
+          return { ownElevation: info.own, targetElevation: info.targetElevation };
+        },
         showDimensions: showDimensions.value,
       });
     }
@@ -1085,6 +1237,7 @@ const renderer = useCanvasRenderer(canvas, {
 
     // 画墙预览 + 对齐参考线（A26）：在墙/家具之上，用户能看着线落点
     drawWallDraftPreview(ctx);
+    drawStairsDraftPreview(ctx);
     drawAlignGuides(ctx);
 
     // 家具自绘：轮廓预览画在最上层（在画墙/家具之上，用户点哪看哪）
@@ -1109,6 +1262,11 @@ const renderer = useCanvasRenderer(canvas, {
     // 画墙草稿期间：预览线 + 吸附参考线要跟着走（没有预览的话，用户点下去才知道墙在哪）
     if (interactionMode.value === 'add_wall' && wallDraftStart.value) {
       resolvePlacement(wx, wy, { from: wallDraftStart.value });
+      renderer.requestRender();
+    }
+    // 楼梯草稿同理：用户要看见"这一跑落在哪、几级、多长"再点第二下
+    if (interactionMode.value === 'add_stairs' && stairsDraftStart.value) {
+      resolvePlacement(wx, wy, { from: stairsDraftStart.value });
       renderer.requestRender();
     }
   },
@@ -1293,7 +1451,7 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   }
 
   // 这几种是"点一下放一个东西"的工具，不进入拖拽
-  if (['add_furniture', 'add_wall', 'add_door', 'add_window'].includes(interactionMode.value)) {
+  if (['add_furniture', 'add_wall', 'add_stairs', 'add_door', 'add_window'].includes(interactionMode.value)) {
     return false;
   }
 
@@ -1530,6 +1688,11 @@ function handleCanvasClick(hit, wx, wy) {
     handleWallClick(wx, wy);
     return;
   }
+  // 楼梯（2026-11-15）：点一下定起步端，再点一下定上落端
+  if (interactionMode.value === 'add_stairs') {
+    handleStairClick(wx, wy);
+    return;
+  }
   // 门窗：点在墙上放一个
   if (interactionMode.value === 'add_door') {
     placeOpening('door', wx, wy);
@@ -1586,9 +1749,11 @@ function handleCanvasClick(hit, wx, wy) {
     if (!selectedFurnitureIds.value.includes(hit.id)) {
       selectedFurnitureIds.value = [hit.id];
     }
-    // 选中互斥：选家具就放下门窗/墙
+    // 选中互斥：选家具就放下门窗/墙/楼梯
     selectedOpening.value = null;
     selectedWallId.value = null;
+    selectedStairId.value = null;
+    editingStair.value = false;
   } else {
     const op = hitOpening(wx, wy);
     if (op) {
@@ -1596,11 +1761,22 @@ function handleCanvasClick(hit, wx, wy) {
       selectedFurniture.value = null;
       selectedFurnitureIds.value = [];
       selectedWallId.value = null;
+      selectedStairId.value = null;
+      editingStair.value = false;
       startOpeningEdit(op);
     } else {
+      // 楼梯（2026-11-15）：点中梯段 → 打开浮窗（改级数/宽度/方向/删）
+      const st = hitStair(wx, wy);
       selectedFurniture.value = null;
       selectedFurnitureIds.value = [];
       selectedOpening.value = null;
+      if (st) {
+        selectedWallId.value = null;
+        startStairEdit(st);
+      } else {
+        selectedStairId.value = null;
+        editingStair.value = false;
+      }
     }
   }
   renderer.requestRender();
@@ -2248,6 +2424,145 @@ function placeOpening(kind, wx, wy) {
   renderer.requestRender();
 }
 
+// ===== 楼梯（2026-11-15，A24）=====
+/** 切到楼梯工具：清掉上次残留的草稿起点，顺手清掉上一条提示（不然旧消息看着像新反馈） */
+function startStairTool() {
+  interactionMode.value = 'add_stairs';
+  stairsDraftStart.value = null;
+  setExportMsg('');
+  renderer.requestRender();
+}
+
+/**
+ * 画楼梯：两次点击定起步点与上落点（与画墙同一套手感）。
+ * 画完立刻选中并打开浮窗 —— "刚画的东西长什么样、通到哪、几级"要当场能看见，
+ * 否则用户点完两下不知道发生了什么（这是本项目最常犯的交互毛病）。
+ */
+function handleStairClick(wx, wy) {
+  const buildingId = props.buildingNode?.id;
+  const floorId = currentFloorId.value;
+  if (!buildingId || !floorId) return;
+  const p = resolvePlacement(wx, wy, { from: stairsDraftStart.value }).xy;
+  const start = stairsDraftStart.value;
+  if (!start) {
+    stairsDraftStart.value = p;
+    renderer.requestRender();
+    return;
+  }
+  if (Math.hypot(p.x - start.x, p.y - start.y) < 40) return;   // 误点两下
+  const item = store.addStair(buildingId, floorId, { start, end: p, width: stairWidth.value });
+  stairsDraftStart.value = null;
+  clearAlignGuides();
+  if (item) {
+    selectedFurniture.value = null;
+    selectedFurnitureIds.value = [];
+    selectedWallId.value = null;
+    selectedOpening.value = null;
+    startStairEdit(item);
+    if (!floorAbove.value) setExportMsg('这一层上方没有楼层：这跑楼梯暂时是悬空的（加了楼层就会接上）');
+    else setExportMsg(`已画好一跑：${selectedStairInfo.value ? selectedStairInfo.value.steps : ''} 级，通到 ${floorAbove.value.name || '上一层'}`);
+  }
+  renderer.requestRender();
+}
+
+/** 点中楼梯（多边形内判定）：梯段矩形是任意角度的，不能只比包围盒 */
+function hitStair(wx, wy) {
+  const floor = currentFloor.value;
+  if (!floor) return null;
+  for (const s of [...(floor.stairs || [])].reverse()) {
+    const fp = stairFootprint(s);
+    if (pointInPolygon({ x: wx, y: wy }, fp.poly)) return s;
+  }
+  return null;
+}
+
+function startStairEdit(stair) {
+  if (!stair) return;
+  selectedStairId.value = stair.id;
+  editingStair.value = true;
+  const info = stairInfoOf(stair);
+  stairForm.width = info.width;
+  stairForm.steps = Math.round(Number(stair.steps)) || 0;   // 0 = 自动
+  stairForm.direction = info.dir;
+  renderer.requestRender();
+}
+
+function cancelStairEdit() {
+  editingStair.value = false;
+  selectedStairId.value = null;
+  renderer.requestRender();
+}
+
+function saveStairEdit() {
+  const stair = currentStair.value;
+  if (!stair || !currentFloorId.value) return;
+  const patch = {
+    width: Math.max(40, Number(stairForm.width) || STAIR_DEFAULTS.width),
+    steps: Math.max(0, Math.round(Number(stairForm.steps) || 0)),
+    direction: stairForm.direction === 'down' ? 'down' : 'up',
+  };
+  // 写口自带 guardWrite + 一条 undo
+  store.updateStair(props.buildingNode.id, currentFloorId.value, stair.id, patch);
+  editingStair.value = false;
+  renderer.requestRender();
+}
+
+function deleteSelectedStair() {
+  const stair = currentStair.value;
+  if (!stair || !currentFloorId.value) return;
+  store.removeStair(props.buildingNode.id, currentFloorId.value, stair.id);
+  selectedStairId.value = null;
+  editingStair.value = false;
+  renderer.requestRender();
+}
+
+/**
+ * 楼梯草稿预览：半透明的"画出来会是什么样" + 一行数字。
+ * 数字只给三个用户真正会看的：几级、升高多少、梯段多长。
+ */
+function drawStairsDraftPreview(ctx) {
+  const start = stairsDraftStart.value;
+  if (!start || interactionMode.value !== 'add_stairs') return;
+  const cursor = pointerWorld.value;
+  if (!cursor) return;
+  const z = renderer.getViewTransform().scale || 1;
+  const p = resolvePlacement(cursor.x, cursor.y, { from: start }).xy;
+  const len = Math.hypot(p.x - start.x, p.y - start.y);
+  if (!(len > 1)) return;
+  const ghost = { id: '__stair_draft__', start, end: p, width: stairWidth.value, steps: 0, direction: 'up' };
+  const info = stairInfoOf(ghost);
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  drawStairSymbol(ctx, ghost, {
+    zoom: z,
+    theme: 'print',
+    ownElevation: info.own,
+    targetElevation: info.targetElevation,
+  });
+  ctx.restore();
+
+  // 起点小方块（"这里点下去就是起步端"）
+  const s2 = 5 / z;
+  ctx.save();
+  ctx.fillStyle = '#2f6f95';
+  ctx.fillRect(start.x - s2, start.y - s2, s2 * 2, s2 * 2);
+  ctx.restore();
+
+  const label = `${info.steps} 级 · 升 ${formatLength(Math.abs(info.rise))} · 长 ${formatLength(len)}`;
+  const mx = (start.x + p.x) / 2;
+  const my = (start.y + p.y) / 2;
+  ctx.save();
+  ctx.font = canvasFont(11 / z);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillRect(mx - tw / 2 - 4 / z, my - 8 / z, tw + 8 / z, 16 / z);
+  ctx.fillStyle = '#2f6f95';
+  ctx.fillText(label, mx, my);
+  ctx.restore();
+}
+
 // ===== R5-3 跨楼层复制 / 移动 =====
 const canTransfer = computed(() =>
   !!transferTargetFloorId.value
@@ -2324,6 +2639,11 @@ function deleteSelected() {
     selectedOpening.value = null;
     editingOpening.value = false;
     renderer.requestRender();
+    return;
+  }
+  // 选中楼梯 → 删这一跑（2026-11-15，A24）
+  if (selectedStairId.value && currentFloorId.value) {
+    deleteSelectedStair();
     return;
   }
   // 选中墙 → 删墙（连带挂在上面的门窗，数据层已处理）
@@ -2615,6 +2935,7 @@ function runShortcut(id) {
     if (!editMode.value) return false;    // 浏览态不切工具（那里没有工具栏，切了用户也看不见）
     interactionMode.value = id.slice(5);
     wallDraftStart.value = null;
+    stairsDraftStart.value = null;
     clearAlignGuides();
     renderer.requestRender();
     return true;
@@ -2699,6 +3020,20 @@ function handleKeydown(e) {
     return;
   }
 
+  // Esc：取消选中的楼梯（浮窗一起关）
+  if (e.key === 'Escape' && editingStair.value) {
+    cancelStairEdit();
+    return;
+  }
+
+  // Esc：结束当前这跑楼梯（草稿起点）
+  if (e.key === 'Escape' && !isEditingInput && stairsDraftStart.value) {
+    stairsDraftStart.value = null;
+    clearAlignGuides();
+    renderer.requestRender();
+    return;
+  }
+
   // Esc：结束当前这段墙（画墙是连续画的，必须有个明确的收尾键）
   if (e.key === 'Escape' && !isEditingInput && wallDraftStart.value) {
     wallDraftStart.value = null;
@@ -2747,6 +3082,9 @@ function handleKeydown(e) {
       }
     } else if (selectedFurniture.value) {
       deleteSelected();
+    } else if (selectedStairId.value || selectedWallId.value || selectedOpening.value) {
+      // 墙 / 门窗 / 楼梯的删除也认 Del（以前只认家具，选中墙按 Del 没反应）
+      deleteSelected();
     }
   }
   if (e.key === 'Escape' && !isEditingInput) {
@@ -2763,8 +3101,12 @@ function handleKeydown(e) {
 }
 
 // 换工具时清掉对齐参考线（不然切走后洋红虚线还挂在画布上）
+// 顺带丢掉两个"点了第一下、还没点第二下"的草稿起点 —— 换工具就该从头开始
 watch(interactionMode, () => {
   clearAlignGuides();
+  wallDraftStart.value = null;
+  stairsDraftStart.value = null;
+  editingStair.value = false;
   renderer.requestRender();
 });
 
@@ -2950,6 +3292,18 @@ defineExpose({ canvas, renderer });
 .floor-actions {
   display: flex;
   gap: 4px;
+  align-items: center;
+}
+
+/* A14：本层标高（2026-11-15）。做成"读数"而不是按钮：不可点，只让人知道自己在几米 */
+.floor-elev {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  padding: 2px 6px;
+  border: 1px dashed var(--nav-border);
+  border-radius: var(--radius-sm);
+  margin-right: 2px;
+  white-space: nowrap;
 }
 
 .floor-btn {
@@ -3088,6 +3442,14 @@ defineExpose({ canvas, renderer });
   font-size: 10px;
   color: var(--text-tertiary);
   margin-left: 4px;
+}
+
+/* 工具栏里的"读数"（楼梯自动级数）：不是按钮，所以不画边框、不抢焦点 */
+.toolbar-hint {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  padding: 0 2px;
+  white-space: nowrap;
 }
 
 .toolbar-group-exit {
@@ -3262,6 +3624,19 @@ defineExpose({ canvas, renderer });
 .opening-popover {
   /* 门窗浮窗放在画布区右上（header + 楼层条下面），不压住标题与工具栏 */
   top: 132px;
+}
+
+/* 楼梯浮窗与门窗浮窗同位（两者互斥，不会同时出现） */
+.stair-popover {
+  top: 132px;
+}
+
+/* 浮窗里的一句灰字说明：写"怎么用"，不写"内部实现" */
+.detail-hint {
+  margin: 2px 0 6px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
 }
 
 .opening-range {

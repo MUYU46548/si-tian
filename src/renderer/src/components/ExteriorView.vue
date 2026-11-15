@@ -9,9 +9,10 @@
       <div class="ex-actions">
         <label class="ex-roof">
           <span>屋顶</span>
-          <select v-model="roofKind" data-testid="exterior-roof-kind">
+          <select v-model="roofKind" data-testid="exterior-roof-kind" title="去掉屋顶就能看见内部：楼梯、楼板洞口">
             <option value="gable">坡顶</option>
             <option value="flat">平顶</option>
+            <option value="none">不封顶（看内部）</option>
           </select>
         </label>
         <label class="ex-roof">
@@ -106,7 +107,8 @@ const statsText = computed(() => {
   const s = shellStats.value;
   if (!s.walls) return '无墙体';
   const h = s.height > 0 ? ` · 高 ${formatLength(s.height)}` : '';
-  return `${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${h}`;
+  const st = s.stairs > 0 ? ` · ${s.stairs} 部楼梯` : '';
+  return `${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${h}`;
 });
 
 let THREE = null;

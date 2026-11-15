@@ -21,9 +21,17 @@
 //   3) 弧墙（`curvePoint`）按 16 段采样成折线，门窗按**弧长**投影到折线上 ——
 //      弧墙上的门窗不会消失（这是最容易静默失败的一处）。
 
+import {
+  subtractRects,
+  stairBoxes,
+  stairDirection,
+  stairHolesForFloor,
+  orderFloorsByElevation,
+} from './stairs.js';
+
 /** 屋顶默认参数（cm）。改这里就是改全项目的屋顶观感。 */
 export const ROOF_DEFAULTS = Object.freeze({
-  kind: 'gable',       // 'gable' 四坡顶 / 'flat' 平顶
+  kind: 'gable',       // 'gable' 坡顶 / 'flat' 平顶 / 'none' 不封顶（看内部：楼梯、楼板洞口）
   thickness: 18,       // 屋面板厚（平顶）/ 檐口板厚（坡顶）
   fascia: 12,          // 坡顶檐口板（贴在墙顶的那块薄板）
   overhang: 45,        // 出檐（墙外皮再往外伸多少）
@@ -51,6 +59,7 @@ export const SHELL_COLORS = Object.freeze({
   roofFlat: '#b3ab9c',      // 平顶防水层
   slab: '#e0d9cc',          // 楼层分隔带（楼板侧边）
   fascia: '#8e8676',
+  stair: '#c3b191',         // 楼梯踏步（比墙略暖，轴测里能读出"这是木头"）
 });
 
 const CURVE_SAMPLES = 16;
@@ -432,10 +441,13 @@ export function buildBuildingShell(floors, options = {}) {
   const wallEndpoints = [];
   let wallCount = 0;
   let openingCount = 0;
+  let stairCount = 0;
   let topY = 0;
 
-  // 楼层按 elevation 升序处理（用户可能改了层高顺序）
-  const ordered = [...list].sort((a, b) => num(a.elevation, 0) - num(b.elevation, 0));
+  // 楼层按 elevation 升序处理（用户可能改了层高顺序）。
+  // 排序走 `stairs.js` 的**同一份**实现：楼梯要找"上一层/下一层"，两处排法不一致就会出现
+  // "平面图说通到 2F、3D 里通到 3F"（同标高两层来回换位时尤其隐蔽）。
+  const ordered = orderFloorsByElevation(list);
   // 每层的"顶标高 + 自己的外接矩形"—— 楼板要用（下一层墙顶到本层地面之间那条缝）
   const floorSeats = [];
   ordered.forEach((floor, idx) => {
@@ -460,37 +472,51 @@ export function buildBuildingShell(floors, options = {}) {
       const h = num(wall.height, SHELL_DEFAULTS.wallHeight) || SHELL_DEFAULTS.wallHeight;
       topY = Math.max(topY, elevation + h);
     }
+
+    // 楼梯（2026-11-15，A24）：每级踏步一块板。目标层决定升量 ——
+    // 上行看下一层、下行看上一层；没有目标层就按默认层高估（悬空的一跑，用户自己看着办）。
+    const stairs = Array.isArray(floor.stairs) ? floor.stairs : [];
+    for (const stair of stairs) {
+      if (!stair) continue;
+      stairCount++;
+      const target = stairDirection(stair) === 'down' ? ordered[idx - 1] : ordered[idx + 1];
+      boxes.push(...stairBoxes(stair, {
+        ownElevation: elevation,
+        targetElevation: target ? num(target.elevation, 0) : undefined,
+        color: colors.stair,
+      }));
+    }
+
     const ownPts = [];
     for (const wall of walls) {
       ownPts.push({ x: num(wall.start?.x), y: num(wall.start?.y) }, { x: num(wall.end?.x), y: num(wall.end?.y) });
     }
     const rect = ownPts.length >= 3 ? minAreaRect(convexHull(ownPts)) : null;
-    floorSeats.push({ elevation, top: elevation + maxWallTop(walls), rect, level: idx });
+    floorSeats.push({ floor, elevation, top: elevation + maxWallTop(walls), rect, level: idx });
   });
 
   // 🔴 楼板：层高 300 而墙高 280 时，两层之间会留一条 **20cm 的透光缝**（第一版截图里
   // 就是一道贯穿整栋的横亮线）。补一块楼板把缝填上，顺带在立面上形成楼层分隔带。
   // 只有"本层地面高于下一层墙顶"时才补（墙高 ≥ 层高的情况本来就贴在一起，补了会插进墙里）。
+  //
+  // 2026-11-15（A16/A24）：楼板不再是"一整块"—— 楼梯要穿过去，所以按洞口差集切成若干块。
+  // 洞口来源只有一条：`stairs.js` 的 `stairHolesForFloor()`（下层上行梯 + 本层下行梯）。
+  // 不在本文件里另算一遍位置，否则"板上有洞但洞不在楼梯正上方"是必然的。
   let prevTop = -Infinity;
   for (const seat of floorSeats) {
     if (seat.rect && Number.isFinite(prevTop) && seat.elevation > prevTop + 1) {
       const gap = seat.elevation - prevTop;
-      boxes.push({
-        kind: 'slab',
-        color: colors.slab,
-        cx: seat.rect.cx,
-        cy: (prevTop + seat.elevation) / 2,
-        cz: seat.rect.cy,
-        sx: 2 * seat.rect.halfW,
-        sy: gap,
-        sz: 2 * seat.rect.halfD,
-        rotY: Math.atan2(-seat.rect.uy, seat.rect.ux),
-      });
+      const holes = seat.floor && seat.floor.id
+        ? stairHolesForFloor(ordered, seat.floor.id)
+        : [];
+      boxes.push(...slabBoxes(seat, prevTop, gap, holes, colors));
     }
     prevTop = Math.max(prevTop, seat.top);
   }
 
-  const roof = wallEndpoints.length >= 3 ? roofGeometry(wallEndpoints, topY, opt, colors) : null;
+  const roof = (opt.kind !== 'none' && wallEndpoints.length >= 3)
+    ? roofGeometry(wallEndpoints, topY, opt, colors)
+    : null;
 
   // 包围盒（给相机取景 / 地面尺寸用）
   const min = [Infinity, Infinity, Infinity];
@@ -532,11 +558,63 @@ export function buildBuildingShell(floors, options = {}) {
       floors: ordered.length,
       walls: wallCount,
       openings: openingCount,
+      stairs: stairCount,
       boxes: allBoxes.length,
       roofTriangles: (roof?.tris || []).length,
       height: bounds.size[1],
     },
   };
+}
+
+/**
+ * 一块楼板（可能被楼梯洞口切成若干块）。
+ *
+ * 只在楼板自己的**局部坐标系**里做矩形差集：`minAreaRect` 给的是任意角度的矩形，
+ * 在世界坐标里直接切会得到斜边；转到 (u,v) 后洞也变成矩形，`subtractRects` 就能算准。
+ *
+ * @param {object} seat  { rect, elevation }  —— rect = minAreaRect 的结果
+ * @param {number} prevTop 下一层墙顶标高（板底面）
+ * @param {number} gap     板厚（cm）
+ * @param {Array<{poly:Array}>} holes 洞口多边形（世界坐标）
+ */
+function slabBoxes(seat, prevTop, gap, holes, colors) {
+  const r = seat.rect;
+  const rotY = Math.atan2(-r.uy, r.ux);
+  const cy = (prevTop + seat.elevation) / 2;
+  const base = { kind: 'slab', color: colors.slab, cy, sy: gap, rotY };
+  if (!r || !(r.halfW > 0) || !(r.halfD > 0)) return [];
+  const toLocal = (p) => {
+    const dx = num(p && p.x) - r.cx;
+    const dy = num(p && p.y) - r.cy;
+    return { u: dx * r.ux + dy * r.uy, v: -dx * r.uy + dy * r.ux };
+  };
+  const localHoles = [];
+  for (const h of holes || []) {
+    const pts = (h && h.poly) || [];
+    if (!pts.length) continue;
+    let u0 = Infinity; let u1 = -Infinity; let v0 = Infinity; let v1 = -Infinity;
+    for (const p of pts) {
+      const q = toLocal(p);
+      u0 = Math.min(u0, q.u); u1 = Math.max(u1, q.u);
+      v0 = Math.min(v0, q.v); v1 = Math.max(v1, q.v);
+    }
+    localHoles.push({ u0, u1, v0, v1 });
+  }
+  const pieces = subtractRects(
+    { u0: -r.halfW, u1: r.halfW, v0: -r.halfD, v1: r.halfD },
+    localHoles,
+  );
+  return pieces.map((pr) => {
+    const uc = (pr.u0 + pr.u1) / 2;
+    const vc = (pr.v0 + pr.v1) / 2;
+    return {
+      ...base,
+      cx: r.cx + r.ux * uc - r.uy * vc,
+      cz: r.cy + r.uy * uc + r.ux * vc,
+      sx: pr.u1 - pr.u0,
+      sz: pr.v1 - pr.v0,
+    };
+  });
 }
 
 /** 一层墙的最高点（cm）：墙高缺省 280 */

@@ -74,6 +74,54 @@ THIS SOFTWARE.
 
 ---
 
+## 5. `open3dFloorplan`（建筑内部：数据模型与平面图绘制思路）
+
+```
+MIT License
+
+Copyright (c) 2026 theLodgeStudio
+```
+
+- **来源仓库**：`theLodgeBots/open3dFloorplan`（<https://github.com/theLodgeBots/open3dFloorplan>，MIT；
+  在线版 OpenPlan3D 由 Laan Labs 维护）。本项目参考的是 **v0.9.0** 的
+  `src/lib/components/canvas/canvasRenderer.ts` 与楼层/墙体数据模型。
+- **许可证**：MIT（要求保留版权声明与本许可声明）。
+- **本项目用到哪一部分**：`src/renderer/src/interior/renderFloor.js` 的**平面图绘制思路**
+  （墙按门窗开口切段、转角用圆盖补缝）与 `store/geodataModules/interior.js` 的
+  **楼层 → 墙/门窗/房间的数据组织方式**。
+- **改了什么**（与原文的差异，见 `renderFloor.js` 文件头）：
+  ① 门窗开口不涂死背景色（原版涂 `#fafafa`，深色底会露馅），改为"墙按开口切段、开口处不画"；
+  ② 转角不做斜接，用圆盖补缝；
+  ③ 全部重写为 ESM 纯函数、无框架依赖（原版是 SvelteKit + TypeScript 组件）。
+
+MIT 许可证全文（同上 §1 正文；版权行以本节为准）：
+
+```
+MIT License
+
+Copyright (c) 2026 theLodgeStudio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
 ## 本项目**没有**引入的依赖（写在这里防重复评估）
 
 `alea` / `simplex-noise` 是 SP-1025 那边的依赖，司天这边**没有**引入：

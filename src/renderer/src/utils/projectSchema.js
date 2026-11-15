@@ -72,7 +72,15 @@ export const SNAPSHOT_KEEP = 50;
 //   “1 份 base + N 份 diff”的不变式不破）。**最新那一份永远保留** —— 丢它等于丢当前状态。
 // 代价（如实写在这里）：极致连切几百块时，能回滚的**地形**步数会少于 50 份（可能只剩个位数）。
 //   项目的另一条恢复路径（关闭司天后用 `.backups/` 里的整文件备份覆盖）不受此限。
-export const SNAPSHOT_MAX_BYTES = 3 * 1024 * 1024;
+//
+// 🔴 2026-11-15（D01）：3 MB → **6 MB**。415 省那份真实项目已经用到 2.99 MB，
+//   改一个省就把余量吃掉 → 快照回滚只剩 4 步（历史几乎等于没了）。实测该项目正文 7.4 MB、
+//   快照 50 份中真正吃体积的是 `scenarios.baseMaps[*].terrain` 整表替换（一次 ~178 KB）。
+//   真正的解法是"数组按 id 逐条 diff"，但那要改补丁格式（旧版司天不认识新补丁，
+//   跨版本回滚会失效 —— 见 memory 里的"快照补丁有新旧两代格式"事故），属于要单独评估的改动；
+//   本轮先翻倍上限，把"能退几步"从个位数抬回二十步量级，并保留"最新那份永不丢"的不变式。
+//   单测 `test_project_size.js` 守着"上限不许大到形同虚设"（≤ 8 MB），所以这里不能随手再抬。
+export const SNAPSHOT_MAX_BYTES = 6 * 1024 * 1024;
 
 // 快照覆盖的顶层键（不含 maps：MB 级，另有磁盘整文件备份兜底）
 export const SNAPSHOT_DIFF_KEYS = ['meta', 'entities', 'hyperlanes', 'scenarios'];
@@ -1103,7 +1111,7 @@ export function snapshotBytes(snapshots) {
 /**
  * 每份快照序列化后的**字节数**缓存（2026-11-05）。
  *
- * 旧写法每次 push 都 `snapshots.map(sizeOf)` —— 最多 50 份、合计 3MB 上限，
+ * 旧写法每次 push 都 `snapshots.map(sizeOf)` —— 最多 50 份、合计 6MB 上限，
  * 真机样本里这一项自成一个 **45ms** 的忙段（每存一次盘就数一遍全部快照）。
  * 快照条目是不可变的（push 只 push / shift / 换第 0 份的引用，从不改内容），
  * 所以「一份量一次」就够：`WeakMap` 以条目对象为键，丢掉的份自然被回收。

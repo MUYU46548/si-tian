@@ -162,8 +162,16 @@ export const MEMORY_WRITE_CALLSITES = [
     what: '建筑内部容器懒建（只守懒建那一段；视图导航在只读态照常工作）' },
   { id: 4, file: 'src/renderer/src/store/geodataModules/interior.js',
     fns: ['addFloor', 'removeFloor', 'updateFloor', 'removeFurniture', 'updateFurniture',
-          'updateInteriorReferenceImage', 'removeInteriorReferenceImage'],
-    what: '楼层 / 家具 / 参考图' },
+          'updateInteriorReferenceImage', 'removeInteriorReferenceImage',
+          // 2026-11-15：**补登 10 个从未登记的写口** —— 墙 / 门窗 / 房间 / 家具形状
+          // 都是 11-13 / 11-14 两轮加的，当时只加了 guardWrite 却没进契约。
+          // test_54 的 a2（反向扫描：有守卫就必须登记）当场把它们全列了出来。
+          'addWall', 'updateWall', 'updateWalls', 'renameRoom', 'removeWall',
+          'addOpening', 'updateOpening', 'removeOpening', 'setFloorRooms',
+          'setFurnitureShape',
+          // 2026-11-15（A24）：楼梯三个写口（都先 guardWrite 再 execute）
+          'addStair', 'updateStair', 'removeStair'],
+    what: '楼层 / 家具 / 参考图 / 墙体 / 门窗 / 房间 / 楼梯' },
   { id: 5, file: 'src/renderer/src/store/geodataModules/areaEditing.js',
     fns: ['updateAreaReferenceImage', 'removeAreaReferenceImage'],
     what: '区域参考图' },

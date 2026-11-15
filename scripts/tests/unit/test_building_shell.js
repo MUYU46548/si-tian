@@ -45,9 +45,44 @@ function rectRoom({ w = 400, d = 300, t = 12, h = 280, elevation = 0, id = 'f1',
   };
 }
 
+/**
+ * 把 ESM 源码按 data URL 载入（本仓 .js 是 ESM，但 package.json 没写 type=module，
+ * 直接 import 磁盘路径会被当 CJS 解析）。
+ *
+ * 2026-11-15：buildShell 现在 `import ... from './stairs.js'` —— 单文件 data URL 解析不到
+ * 相对路径，所以这里要**递归**把每个 `from './x.js'` 换成子模块的 data URL。
+ * 只处理相对静态 import（这几个几何文件都不玩动态 import）。
+ */
+async function loadEsm(absPath) {
+  const cache = new Map();
+  const build = (p) => {
+    if (cache.has(p)) return Promise.resolve(cache.get(p));
+    const src = fs.readFileSync(p, 'utf8');
+    const re = /from\s+'(\.[^']+)';/g;
+    const jobs = [];
+    let m;
+    while ((m = re.exec(src))) jobs.push({ at: m.index, end: m.index + m[0].length, spec: m[1] });
+    const parts = [];
+    let last = 0;
+    const chain = jobs.reduce((p2, j) => p2.then(async () => {
+      const child = path.resolve(path.dirname(p), j.spec);
+      const url = await build(child);
+      parts.push(src.slice(last, j.at) + `from '${url}';`);
+      last = j.end;
+    }), Promise.resolve());
+    return chain.then(() => {
+      const out = parts.join('') + src.slice(last);
+      const url = 'data:text/javascript;base64,' + Buffer.from(out, 'utf8').toString('base64');
+      cache.set(p, url);
+      return url;
+    });
+  };
+  const url = await build(absPath);
+  return import(url);
+}
+
 async function main() {
-  const mod = await import('data:text/javascript;base64,'
-    + Buffer.from(fs.readFileSync(SRC, 'utf8'), 'utf8').toString('base64'));
+  const mod = await loadEsm(SRC);
   const { buildBuildingShell, hasWalls, ROOF_DEFAULTS, SHELL_DEFAULTS } = mod;
 
   check('s1 单面直墙：挤出成 1 个盒子，长=墙长+两侧半厚，厚/高照抄，中心在墙中点', () => {
@@ -274,6 +309,53 @@ async function main() {
     const quads = r.roof.faces.filter((f) => f.length === 4).length;
     assert(quads === 2, `四边形坡面应为 2，实际 ${quads}`);
     return '2 坡 + 2 山墙';
+  });
+
+  check('s17 楼梯：两层楼 + 一部上行梯 → 18 块踏步，末级踏面 = 上一层地面', () => {
+    const f1 = rectRoom({ elevation: 0, id: 'f1' });
+    const f2 = rectRoom({ elevation: 300, id: 'f2' });
+    f1.stairs = [{
+      id: 'st1', start: { x: 100, y: 150 }, end: { x: 400, y: 150 }, width: 100, steps: 18,
+    }];
+    const r = buildBuildingShell([f1, f2], { roof: { kind: 'flat' } });
+    const steps = r.boxes.filter((b) => b.kind === 'stair');
+    assert(steps.length === 18, `应有 18 块踏步，实际 ${steps.length}`);
+    assert(r.stats.stairs === 1, `stats.stairs 应为 1，实际 ${r.stats.stairs}`);
+    // 最高一级的**顶面** = 300（上一层地面标高），误差取板厚的一半以内
+    const top = Math.max(...steps.map((b) => b.cy + b.sy / 2));
+    near(top, 300, 1e-6, '末级踏面 = 上一层地面');
+    // 楼梯沿 +x 走 → sz 是梯段宽，sx 是单级进深
+    near(steps[0].sz, 100, 1e-9, '梯段宽');
+    near(steps[0].sx, 300 / 18, 1e-6, '单级进深 = 梯段长/级数');
+    return '18 块，0→300cm';
+  });
+
+  check('s18 楼板开洞：楼梯所在的楼板被切碎，洞的面积 = 梯段宽+余量 × 梯段长+余量', () => {
+    const f1 = rectRoom({ elevation: 0, id: 'f1', w: 800, d: 600 });
+    const f2 = rectRoom({ elevation: 300, id: 'f2', w: 800, d: 600 });
+    f1.stairs = [{
+      id: 'st1', start: { x: 100, y: 300 }, end: { x: 400, y: 300 }, width: 100, steps: 18,
+    }];
+    const withHole = buildBuildingShell([f1, f2], { roof: { kind: 'flat' } });
+    const pieces = withHole.boxes.filter((b) => b.kind === 'slab');
+    assert(pieces.length >= 2, `楼板应被切碎，实际 ${pieces.length} 块`);
+    const slabArea = pieces.reduce((s, b) => s + b.sx * b.sz, 0);
+    // 楼板外用 800×600 的墙端点矩形（minAreaRect 就是它），挖掉的洞：
+    // 宽 = 100 + 2*10 余量 = 120；长 = 300 + 5 + 10 = 315
+    const expect = 800 * 600 - 120 * 315;
+    near(slabArea, expect, 1e-3, '楼板净面积 = 整板 − 洞口');
+    // 对照：同一栋楼没有楼梯 → 整块
+    f1.stairs = [];
+    const noHole = buildBuildingShell([f1, f2], { roof: { kind: 'flat' } });
+    assert(noHole.boxes.filter((b) => b.kind === 'slab').length === 1, '无楼梯时楼板应是一整块');
+    return `${pieces.length} 块，净面积 ${slabArea.toFixed(0)}`;
+  });
+
+  check('s19 屋顶设为不封顶：kind=none 时不生成屋顶（看得见楼梯与楼板洞口）', () => {
+    const r = buildBuildingShell([rectRoom({})], { roof: { kind: 'none' } });
+    assert(r.roof === null, '不封顶时不应有屋顶');
+    assert(!r.empty, '墙还在，不算空');
+    return '无屋顶';
   });
 
   const bad = results.filter((r) => !r.ok);

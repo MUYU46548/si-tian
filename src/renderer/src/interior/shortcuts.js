@@ -67,6 +67,11 @@ export const INTERIOR_SHORTCUTS = Object.freeze([
     hint: '点在墙上放一扇窗',
     match: { key: '4', mod: false, shift: false },
   },
+  {
+    id: 'tool:add_stairs', group: '工具', label: '画楼梯', keys: ['5'],
+    hint: '点两下画一跑楼梯：第一下是起步点，第二下是爬到哪；级数按层高自动算，上一层楼板自动开洞',
+    match: { key: '5', mod: false, shift: false },
+  },
 
   // ── 视图 ──
   {

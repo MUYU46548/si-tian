@@ -16,6 +16,7 @@
 
 import { formatArea, formatLength } from '../utils/interiorUnits';
 import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
+import { stairFootprint, stairTreads, stairDirection } from './stairs.js';
 
 const DEFAULT_WALL_COLOR = '#8d7f6e';
 
@@ -35,6 +36,11 @@ export const FLOOR_THEMES = Object.freeze({
     joint: DEFAULT_WALL_COLOR,
     door: '#d9b45a',
     window: '#7fc7e8',
+    stairFill: 'rgba(185, 168, 136, 0.20)',
+    stairLine: '#8a7a5e',
+    stairText: '#5d5140',
+    holeFill: 'rgba(120, 120, 130, 0.10)',
+    holeLine: 'rgba(110, 110, 125, 0.55)',
     dimText: '#9fb0c0',
     dimBg: 'rgba(20, 24, 32, 0.72)',
   },
@@ -48,6 +54,11 @@ export const FLOOR_THEMES = Object.freeze({
     joint: '#3e4348',
     door: '#7a5a2e',            // 门窗在白底上要够深，否则像没画
     window: '#2f6f95',
+    stairFill: 'rgba(140, 125, 98, 0.16)',
+    stairLine: '#4a3f2c',
+    stairText: '#2f2a20',
+    holeFill: 'rgba(90, 95, 105, 0.07)',
+    holeLine: 'rgba(70, 75, 85, 0.45)',
     dimText: '#6b7783',
     dimBg: 'rgba(255,255,255,0.86)',
   },
@@ -151,7 +162,10 @@ function pathPolygon(ctx, pts) {
  * @param {boolean} [opts.showDimensions=true] 沿墙长度标注
  * @param {string} [opts.selectedWallId]
  * @param {string} [opts.selectedOpeningId] 选中的门窗 id（画高亮框）
- * @returns {{walls:number, rooms:number, doors:number, windows:number}} 实际画了多少
+ * @param {Array}  [opts.holes] 本层楼板上的洞（`stairs.js` 的 `stairHolesForFloor()` 输出）
+ * @param {string} [opts.selectedStairId] 选中的楼梯 id（画高亮框）
+ * @param {boolean} [opts.showStairs=true]
+ * @returns {{walls:number, rooms:number, doors:number, windows:number, stairs:number}} 实际画了多少
  */
 export function drawInteriorFloor(ctx, floor, opts = {}) {
   const zoom = Number(opts.zoom) > 0 ? Number(opts.zoom) : 1;
@@ -160,10 +174,11 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
   const rooms = Array.isArray(floor && floor.rooms) ? floor.rooms : [];
   const doors = Array.isArray(floor && floor.doors) ? floor.doors : [];
   const windows = Array.isArray(floor && floor.windows) ? floor.windows : [];
+  const stairs = Array.isArray(floor && floor.stairs) ? floor.stairs : [];
   const showRooms = opts.showRooms !== false;
   const showLabels = opts.showLabels !== false;
   const showOpenings = opts.showOpenings !== false;
-  const stat = { walls: 0, rooms: 0, doors: 0, windows: 0 };
+  const stat = { walls: 0, rooms: 0, doors: 0, windows: 0, stairs: 0 };
 
   // ① 房间（墙下面那层）
   if (showRooms && rooms.length) {
@@ -200,6 +215,28 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
         ctx.fillText(label, 0, 0);
         ctx.restore();
       }
+    }
+  }
+
+  // ①.5 楼板洞口 → 楼梯（2026-11-15，A16/A24）
+  // 洞先画（虚线压在房间填充上、楼梯下面）：读图顺序是"这里是个洞，洞里有楼梯上来"。
+  if (opts.holes && opts.holes.length) drawFloorHoles(ctx, opts.holes, { zoom, theme });
+  if (opts.showStairs !== false) {
+    for (const stair of stairs) {
+      if (!stair) continue;
+      // 每部楼梯的升量各不相同（上行看上一层、下行看下一层），所以按楼梯取上下文，
+      // 不用整层一个值 —— 少了这一层，一层楼里同时有上行和下行时必有一边画错。
+      const ctxOpt = typeof opts.stairContext === 'function'
+        ? opts.stairContext(stair)
+        : { ownElevation: opts.ownElevation, targetElevation: opts.targetElevation };
+      drawStairSymbol(ctx, stair, {
+        zoom,
+        theme,
+        ownElevation: ctxOpt && ctxOpt.ownElevation,
+        targetElevation: ctxOpt && ctxOpt.targetElevation,
+        selected: !!opts.selectedStairId && opts.selectedStairId === stair.id,
+      });
+      stat.stairs++;
     }
   }
 
@@ -326,6 +363,117 @@ function drawOpeningHighlight(ctx, wall, opening, zoom) {
   ctx.lineWidth = 2.5 / zoom;
   ctx.setLineDash([]);
   ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * 本层楼板上的洞口（2026-11-15，A16）：灰底 + 虚线框。
+ *
+ * 为什么不画"梯段剖面"：洞口可能来自下层楼梯、也可能是以后的手画洞（检修口/挑空），
+ * 这里只负责表达"这块板是空的"。梯段本身由 `drawStairSymbol` 画在**所属那一层**上。
+ */
+export function drawFloorHoles(ctx, holes, opts = {}) {
+  const zoom = Number(opts.zoom) > 0 ? Number(opts.zoom) : 1;
+  const theme = opts.theme || floorTheme('screen');
+  for (const h of holes || []) {
+    const poly = Array.isArray(h) ? h : (h && h.poly);
+    if (!pathPolygon(ctx, poly)) continue;
+    ctx.save();
+    ctx.fillStyle = theme.holeFill;
+    ctx.fill();
+    ctx.setLineDash([8 / zoom, 5 / zoom]);
+    ctx.strokeStyle = theme.holeLine;
+    ctx.lineWidth = 1.4 / zoom;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/**
+ * 一部楼梯的平面符号（2026-11-15，A24）：梯段矩形 + 踏步线 + 上下行箭头 + 「上/下」。
+ *
+ * 踏步数与踏面位置全部来自 `stairs.js`（与 3D 同一份几何）—— 这里只画，不算。
+ * 尺寸口径与墙一致：线宽/字号按 zoom 反算，缩放到哪一级都是同一个视觉厚度。
+ */
+export function drawStairSymbol(ctx, stair, opts = {}) {
+  const zoom = Number(opts.zoom) > 0 ? Number(opts.zoom) : 1;
+  const theme = opts.theme || floorTheme('screen');
+  const g = stairTreads(stair, {
+    ownElevation: opts.ownElevation,
+    targetElevation: opts.targetElevation,
+  });
+  const fp = stairFootprint(stair);
+  const axis = fp.axis;
+  const half = fp.halfWidth;
+  const nx = -axis.dy;
+  const ny = axis.dx;
+
+  // ① 梯段底
+  if (pathPolygon(ctx, fp.poly)) {
+    ctx.save();
+    ctx.fillStyle = theme.stairFill;
+    ctx.fill();
+    ctx.strokeStyle = opts.selected ? '#ffb300' : theme.stairLine;
+    ctx.lineWidth = (opts.selected ? 2.2 : 1.4) / zoom;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ② 踏步线：n-1 条横线（首尾是梯段边，不重复画）
+  ctx.save();
+  ctx.strokeStyle = theme.stairLine;
+  ctx.lineWidth = 1.1 / zoom;
+  ctx.beginPath();
+  for (let i = 1; i < g.steps; i++) {
+    const t = i / g.steps;
+    const px = axis.x + axis.dx * axis.len * t;
+    const py = axis.y + axis.dy * axis.len * t;
+    ctx.moveTo(px + nx * half, py + ny * half);
+    ctx.lineTo(px - nx * half, py - ny * half);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // ③ 方向箭头（沿中线），箭头指向"走上去/走下去"的方向（起点 → 终点）
+  const t0 = 0.12;
+  const t1 = 0.84;
+  const sx = axis.x + axis.dx * axis.len * t0;
+  const sy = axis.y + axis.dy * axis.len * t0;
+  const ex = axis.x + axis.dx * axis.len * t1;
+  const ey = axis.y + axis.dy * axis.len * t1;
+  const head = Math.min(14 / zoom, axis.len * 0.2);
+  ctx.save();
+  ctx.strokeStyle = theme.stairText;
+  ctx.fillStyle = theme.stairText;
+  ctx.lineWidth = 1.6 / zoom;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  // 箭头两撇
+  for (const sign of [1, -1]) {
+    const ax = ex - axis.dx * head + nx * head * 0.6 * sign;
+    const ay = ey - axis.dy * head + ny * head * 0.6 * sign;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ax, ay);
+    ctx.stroke();
+  }
+  // ④「上 / 下」：写在箭头起点一侧，屏幕恒定字号（缩放后仍读得出）
+  const dir = stairDirection(stair);
+  const label = dir === 'down' ? '下' : '上';
+  ctx.save();
+  ctx.translate(sx - axis.dx * (12 / zoom), sy - axis.dy * (12 / zoom));
+  ctx.scale(1 / zoom, 1 / zoom);
+  ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.strokeText(label, 0, 0);
+  ctx.fillText(label, 0, 0);
+  ctx.restore();
   ctx.restore();
 }
 

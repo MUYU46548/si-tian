@@ -61,6 +61,9 @@ export function createInteriorModule(ctx) {
     if (!Array.isArray(floor.doors)) floor.doors = [];
     if (!Array.isArray(floor.windows)) floor.windows = [];
     if (!Array.isArray(floor.furniture)) floor.furniture = [];
+    // 2026-11-15（A24）：楼梯单独一组。`stairs` 挂在**人爬的这一层**上，
+    // 上行 = 通到上一层、下行 = 通到下一层（别在两层各存一份，否则改一处留一处）。
+    if (!Array.isArray(floor.stairs)) floor.stairs = [];
     if (!Number.isFinite(floor.elevation)) floor.elevation = 0;
     return floor;
   }
@@ -687,6 +690,98 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  /**
+   * 画一部楼梯（2026-11-15，台账 A24）。
+   *
+   * `steps: 0` 表示**自动**（按层高 / 17.5cm 反算级数，见 `interior/stairs.js` 的
+   * `stairStepCount`）—— 用户画的时候只用点两个点，级数是几何按标高算的；
+   * 想改级数再在浮窗里填。存 0 而不是存算好的数，是为了"以后改了层高，楼梯自己跟着变"。
+   */
+  function addStair(buildingId, floorId, stair = {}) {
+    if (!guardWrite('画楼梯').ok) return null;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return null;
+    const x0 = Number(stair.start?.x);
+    const y0 = Number(stair.start?.y);
+    const x1 = Number(stair.end?.x);
+    const y1 = Number(stair.end?.y);
+    if (![x0, y0, x1, y1].every((v) => Number.isFinite(v))) return null;
+    // 40cm 连一级踏步都放不下（也可能是误点两次同一个位置）
+    if (Math.hypot(x1 - x0, y1 - y0) < 40) return null;
+    const item = {
+      id: `stair_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      start: { x: x0, y: y0 },
+      end: { x: x1, y: y1 },
+      width: Number(stair.width) >= 40 ? Number(stair.width) : 100,
+      // 0 = 自动（按层高反算）；给了 1~40 就按给的（1 级也是合法的下沉台阶）
+      steps: Math.round(Number(stair.steps)) >= 1 ? Math.round(Number(stair.steps)) : 0,
+      direction: stair.direction === 'down' ? 'down' : 'up',
+      color: stair.color || '#b9a888',
+    };
+    execute({
+      type: 'add-stair',
+      label: '画楼梯',
+      undo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f && Array.isArray(f.stairs)) f.stairs = f.stairs.filter((s2) => s2.id !== item.id);
+      },
+      redo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f.stairs.push({ ...item });
+      },
+    });
+    scheduleAutoSave();
+    return item;
+  }
+
+  /** 改楼梯（级数 / 宽度 / 方向 / 起止点）。与 updateWall 同一套：一条 undo，oldSnapshot 可指定 */
+  function updateStair(buildingId, floorId, stairId, patch = {}, oldSnapshot = null) {
+    if (!guardWrite('修改楼梯').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const item = floor.stairs.find((s2) => s2.id === stairId);
+    if (!item) return;
+    const before = oldSnapshot ? JSON.parse(JSON.stringify(oldSnapshot)) : JSON.parse(JSON.stringify(item));
+    const next = { ...JSON.parse(JSON.stringify(item)), ...JSON.parse(JSON.stringify(patch)), id: stairId };
+    if (Number.isFinite(Number(next.width)) && Number(next.width) >= 40) next.width = Number(next.width);
+    if (Number.isFinite(Number(next.steps))) {
+      const n = Math.round(Number(next.steps));
+      // 0 = 自动；1~40 按给的夹住（不把 1~3 偷偷改成"自动"，那是最糟的体贴）
+      next.steps = n >= 1 ? Math.min(40, n) : 0;
+    }
+    next.direction = next.direction === 'down' ? 'down' : 'up';
+    const apply = (snap) => {
+      const f = findFloor(buildingId, floorId);
+      const it = f && (f.stairs || []).find((s2) => s2.id === stairId);
+      if (it) Object.assign(it, JSON.parse(JSON.stringify(snap)));
+    };
+    execute({ type: 'update-stair', label: '修改楼梯', undo: () => apply(before), redo: () => apply(next) });
+    scheduleAutoSave();
+  }
+
+  /** 删楼梯 */
+  function removeStair(buildingId, floorId, stairId) {
+    if (!guardWrite('删除楼梯').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const idx = floor.stairs.findIndex((s2) => s2.id === stairId);
+    if (idx === -1) return;
+    const removed = JSON.parse(JSON.stringify(floor.stairs[idx]));
+    execute({
+      type: 'remove-stair',
+      label: '删除楼梯',
+      undo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f.stairs.splice(Math.min(idx, f.stairs.length), 0, removed);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f) f.stairs = f.stairs.filter((s2) => s2.id !== stairId);
+      },
+    });
+    scheduleAutoSave();
+  }
+
   return {
     interiorData,
     interiorReferenceImages,
@@ -706,6 +801,10 @@ export function createInteriorModule(ctx) {
     updateWindow: (b, f, id, p) => updateOpening('windows', b, f, id, p),
     removeWindow: (b, f, id) => removeOpening('windows', b, f, id),
     setFloorRooms,
+    // 建筑内部（2026-11-15，A24）：楼梯
+    addStair,
+    updateStair,
+    removeStair,
     setFloorChangeHook,
     ensureFloorArrays,
     addFurniture,

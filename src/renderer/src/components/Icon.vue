@@ -162,6 +162,7 @@
     <template v-else-if="name === 'desert'"><path d="M3 18c3-3 6-3 9 0s6 3 9 0"/><path d="M3 13c3-3 6-3 9 0s6 3 9 0"/><path d="M17 4a2 2 0 1 0 0.01 0z"/></template>
     <template v-else-if="name === 'palm'"><path d="M12 22V10"/><path d="M12 10c-3 0-5-1.5-6-4"/><path d="M12 10c3 0 5-1.5 6-4"/><path d="M12 10c-1-3-1-5 0-7"/><path d="M12 10c2-2 4-2.5 5-2"/></template>
     <template v-else-if="name === 'ruins'"><path d="M3 21h18"/><path d="M6 21V9h4v12"/><path d="M14 21V13h4v8"/></template>
+    <template v-else-if="name === 'stairs'"><polyline points="3 20 8 20 8 15 13 15 13 10 18 10 18 5 21 5"/></template>
   </svg>
 </template>
 

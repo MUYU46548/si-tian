@@ -74,7 +74,7 @@ function auditSnapshots(project) {
     }
     rows.push({ i, at: s.at, label: s.label || '', bytes, changes: s.changes || 0, biggest });
   }
-  lines.push(`  份数 ${snaps.length}（上限 50 份 / 3 MB 由 SNAPSHOT_MAX_BYTES 控制）· 合计 ${mb(total)}`);
+  lines.push(`  份数 ${snaps.length}（上限 50 份 / 6 MB 由 SNAPSHOT_MAX_BYTES 控制）· 合计 ${mb(total)}`);
   if (baseBytes) lines.push(`  第 0 份 base ${kb(baseBytes)}（其余为逐份 diff）`);
   const top = [...rows].sort((a, b) => b.bytes - a.bytes).slice(0, 5);
   for (const r of top) {
@@ -144,7 +144,7 @@ function auditOne(file) {
   const snap = auditSnapshots(project);
   for (const l of snap.lines) console.log(l);
   if (snap.total > 3 * MB) {
-    console.log(`  ⚠️ 快照 ${mb(snap.total)} 超过 3 MB 上限 —— 0.2.4 起 pushSnapshot 会自动丢最旧的`
+    console.log(`  ⚠️ 快照 ${mb(snap.total)} 超过 6 MB 上限 —— 0.2.4 起 pushSnapshot 会自动丢最旧的`
       + '（折进 base），再存一次盘即可回落。');
   }
 

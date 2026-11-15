@@ -61,15 +61,15 @@ check('s3 Ctrl+Shift+Z 与 Ctrl+Y 都命中重做', () => {
   return '两种按法同一动作';
 });
 
-check('s4 工具键：裸 1/2/3/4 命中，带 Ctrl 不命中（不能抢浏览器快捷键）', () => {
-  const map = { 1: 'tool:pan', 2: 'tool:add_wall', 3: 'tool:add_door', 4: 'tool:add_window' };
+check('s4 工具键：裸 1~5 命中，带 Ctrl 不命中（不能抢浏览器快捷键）', () => {
+  const map = { 1: 'tool:pan', 2: 'tool:add_wall', 3: 'tool:add_door', 4: 'tool:add_window', 5: 'tool:add_stairs' };
   for (const [k, id] of Object.entries(map)) {
     const hit = findShortcut(ev(k));
     assert(hit && hit.id === id, `裸 ${k} 应命中 ${id}，实际 ${hit && hit.id}`);
     const withCtrl = findShortcut(ev(k, { ctrl: true }));
     assert(!withCtrl || withCtrl.match.mod === true, `Ctrl+${k} 不该命中工具键`);
   }
-  return '4 个工具键';
+  return `${Object.keys(map).length} 个工具键`;
 });
 
 check('s5 视图键：F / G / M 命中，按住 Alt 一律不算（输入法里会变特殊字符）', () => {
@@ -91,7 +91,7 @@ check('s6 帮助：? 与 F1 都开帮助（? 自带 Shift，必须显式声明�
 });
 
 check('s7 未登记的键返回 null（不许瞎触发）', () => {
-  for (const k of ['q', 'Escape', 'Enter', 'Backspace', '5', 'F2']) {
+  for (const k of ['q', 'Escape', 'Enter', 'Backspace', '9', 'F2']) {
     assert(findShortcut(ev(k)) === null, `${k} 不该命中任何新快捷键`);
   }
   return '6 个未登记键';
