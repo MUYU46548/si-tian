@@ -8,6 +8,14 @@
       <div class="ex-stats" data-testid="exterior-stats">{{ statsText }}</div>
       <div class="ex-actions">
         <label class="ex-roof">
+          <span>楼层</span>
+          <select v-model="floorPick" data-testid="exterior-floor-pick"
+                  title="只看某一层：楼板会挡住下层，想看下层布置就切到那一层（切过去会自动去掉屋顶）">
+            <option value="all">全部楼层</option>
+            <option v-for="f in floorOptions" :key="f.id" :value="f.id">{{ f.label }}</option>
+          </select>
+        </label>
+        <label class="ex-roof">
           <span>屋顶</span>
           <select v-model="roofKind" data-testid="exterior-roof-kind" title="去掉屋顶就能看见内部：楼梯、楼板洞口">
             <option value="gable">坡顶</option>
@@ -69,6 +77,8 @@ import { buildBuildingShell, ROOF_DEFAULTS, SHELL_COLORS } from '../interior/bui
 // 轴测插图：取景（纯函数、可单测）与离屏渲染分开，后者只在这里用（three 已是动态 import）
 import { axoFrame, axoCanvas } from '../interior/axonometric';
 import { renderAxoToDataUrl, AXO_COLORS } from '../interior/axoScene';
+// 只看某一层（A20 余）：过滤口径是纯函数，Node 可测
+import { ALL_FLOORS, floorViewOptions, floorsForView, floorViewLabel } from '../interior/floorView';
 import { formatLength } from '../utils/interiorUnits';
 
 const props = defineProps({
@@ -83,6 +93,13 @@ const status = ref('正在加载 3D 引擎…');
 const error = ref('');
 const ready = ref(false);
 const roofKind = ref(props.roofKind === 'flat' ? 'flat' : 'gable');
+// 只看某一层（A20 余）：'all' = 全部楼层。
+// 为什么需要它：两层楼的整体轴测里一层被二层楼板压着（物理正确），
+// 想看下层布置只能删楼上 —— 那是拿数据换视图，不对。
+const floorPick = ref(ALL_FLOORS);
+const floorOptions = computed(() => floorViewOptions(props.floors));
+// 真正送进几何层的那份楼层：pick 为全部时就是 props.floors 本身（同一引用，不白重建）
+const viewFloors = computed(() => floorsForView(props.floors, floorPick.value));
 const emptyBuilding = ref(false);
 const shellStats = ref({ floors: 0, walls: 0, openings: 0, height: 0 });
 
@@ -106,10 +123,12 @@ function setAxoMsg(text, isErr = false) {
 const statsText = computed(() => {
   const s = shellStats.value;
   if (!s.walls) return '无墙体';
+  const pickLabel = floorViewLabel(props.floors, floorPick.value);
+  const scope = pickLabel ? `只看 ${pickLabel} · ` : '';
   const h = s.height > 0 ? ` · 高 ${formatLength(s.height)}` : '';
   const st = s.stairs > 0 ? ` · ${s.stairs} 部楼梯` : '';
   const fu = s.furniture > 0 ? ` · ${s.furniture} 件家具` : '';
-  return `${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${fu}${h}`;
+  return `${scope}${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${fu}${h}`;
 });
 
 let THREE = null;
@@ -332,7 +351,7 @@ function placeCamera(shell) {
 function rebuild() {
   if (!scene) return;
   clearBuilding();
-  const shell = buildBuildingShell(props.floors, { roof: { kind: roofKind.value } });
+  const shell = buildBuildingShell(viewFloors.value, { roof: { kind: roofKind.value } });
   lastShell = shell;
   emptyBuilding.value = shell.empty;
   shellStats.value = { ...shell.stats, height: shell.bounds.size[1] };
@@ -451,7 +470,7 @@ async function init() {
   // 先把几何算出来（纯函数、不依赖 three）：这样即使这台机器拿不到 WebGL，
   // 顶栏的“几层/几面墙/几处门窗/多高”照样是对的 —— 不给用户一片空白。
   try {
-    const pre = buildBuildingShell(props.floors, { roof: { kind: roofKind.value } });
+    const pre = buildBuildingShell(viewFloors.value, { roof: { kind: roofKind.value } });
     lastShell = pre;
     emptyBuilding.value = pre.empty;
     shellStats.value = { ...pre.stats, height: pre.bounds.size[1] };
@@ -535,9 +554,21 @@ onBeforeUnmount(() => {
   disposeAll();
 });
 
-// 屋顶样式切换 / 楼层数据变化 → 重建（数据改了立刻反映，不留旧壳）
+// 屋顶样式切换 / 楼层数据变化 / 只看某一层 → 重建（数据改了立刻反映，不留旧壳）
 watch(roofKind, () => { if (ready.value) rebuild(); });
 watch(() => props.floors, () => { if (ready.value) rebuild(); }, { deep: true });
+// 切到单层时自动把屋顶切成“不封顶”：选这一层就是为了看里面的布置，
+// 留着屋顶等于什么都没看见。用户随时可以自己改回坡顶（这里只在切换那一刻动一次）。
+watch(floorPick, (v) => {
+  if (v !== ALL_FLOORS && roofKind.value !== 'none') roofKind.value = 'none';
+  if (ready.value) rebuild();
+});
+// 选中的楼层被删掉（平面图上删层）→ 回落“全部楼层”，不留一个指向空值的下拉
+watch(floorOptions, (opts) => {
+  if (floorPick.value !== ALL_FLOORS && !opts.some((o) => o.id === floorPick.value)) {
+    floorPick.value = ALL_FLOORS;
+  }
+});
 
 defineExpose({
   // renders = 本次打开累计渲染帧数。静止时应停止增长（验收"按需渲染"用）

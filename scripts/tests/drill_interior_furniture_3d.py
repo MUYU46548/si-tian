@@ -4,17 +4,17 @@
 
 验的不是“代码里有 furnitureBoxes 这个函数”，是**轴测图里真的能看见家具**：
 
-  1) 两层楼 · 坡顶 → 出「空房间」基线；摆 6 件家具（走 `store.addFurniture`）→ 再出一张：
+  1) 两层楼 · 坡顶 → 出“空房间”基线；摆 6 件家具（走 `store.addFurniture`）→ 再出一张：
      两张不许**大面积**不同（家具在室内；封顶时只允许透过半透明窗玻璃看见，实测 0.23%）；
-  2) 切「不封顶」→ 有家具 / 移除家具各出一张：家具必须真的画进画面（阈值 0.5%，实测 1.46%），
+  2) 切“不封顶”→ 有家具 / 移除家具各出一张：家具必须真的画进画面（阈值 0.5%，实测 1.46%），
      且差异不许跑到画面边缘（那就是整幅偏移，不是家具）；
   3) 负向探针：同一参数连出两张必须**逐像素一致**（否则第 2 条的差异不算数）；
-  4) 删掉二层（单层建筑，用户真实用法）→ 空 / 有家具两张比：一层的床/桌/柜/椅
-     必须全部看得见（阈值 2%）；
-  5) 顶栏统计出现「6 件家具」。
+  4) 切到“只看一层”（楼层下拉，**不删数据**）→ 空 / 有家具两张比：一层的床/桌/柜/椅
+     必须全部看得见（阈值 2%）；统计条必须写“只看 …”；
+  5) 顶栏统计出现“6 件家具”。
 
-⚠️ 两层楼的整体轴测里，一层家具被二层楼板压着看不见 —— 这不是 bug（楼板是实体），
-   想看下层要删掉楼上，或者等「按层出图」（记在 HANDOFF §三 A20 余项）。
+⚠️ 两层楼的整体轴测里，一层家具被二层楼板压着看不见 —— 这不是 bug（楼板是实体）。
+   要看下层就切“只看一层”（A20 余，2026-11-15 补），不用再删楼上。
 
 为什么用“两张图逐像素比”而不是“看一眼像不像”：单张图只能证明“画面里有东西”，
 证明不了“那些东西就是刚摆的家具”；同机位 A/B 才能把家具从墙、楼板、阴影里分离出来。
@@ -41,6 +41,8 @@ from lib.cdp import CDP, APP_URL, find_page_ws, skip_onboarding, wait_for, fetch
 from lib.helpers import open_harness_project, ensure_data_ready, ensure_test_building  # noqa: E402
 
 OUT_DIR = os.path.join(D.ROOT, 'build', 'interior-furniture')
+# 与 src/renderer/src/interior/floorView.js 的 ALL_FLOORS 同值（下拉里“全部楼层”的 value）
+ALL_FLOORS_VALUE = 'all'
 
 # 6 件家具：坐标是平面左上角（cm），房间 900×650，内隔墙在 x=520
 FURNITURE = [
@@ -84,7 +86,7 @@ def set_preset(cdp, preset):
 
 
 def export_axo(cdp, tag):
-    """点一次「轴测出图」，把 dataUrl 落盘。返回路径（失败返回 None）。"""
+    """点一次“轴测出图”，把 dataUrl 落盘。返回路径（失败返回 None）。"""
     cdp.eval("window.__saved = null; window.savedName = null; 1")
     cdp.eval("""(() => {
       window.sitianAPI.saveExportFile = async (o) => {
@@ -190,19 +192,35 @@ def clear_furniture(cdp, bid):
     return D.eval_json(cdp, expr)
 
 
-def remove_upper_floors(cdp, bid):
-    """只留最低一层（模拟单层建筑：用户把楼上删掉）—— 走产品写口 removeFloor。"""
+def ground_floor_id(cdp, bid):
+    """取标高最低那一层的 id（“只看一层”默认看它）。"""
     expr = """(() => {
       const s = %s, bid = %s;
       const d = s.interiorData[bid];
-      if (!d) return JSON.stringify({ err: 'no-data' });
-      const sorted = (d.floors || []).slice().sort((a, b) => (a.elevation || 0) - (b.elevation || 0));
-      const keep = sorted[0];
-      let removed = 0;
-      sorted.slice(1).forEach(f => { s.removeFloor(bid, f.id); removed++; });
-      return JSON.stringify({ removed, left: (s.interiorData[bid].floors || []).length, keep: keep && keep.id });
+      if (!d || !(d.floors || []).length) return JSON.stringify({ err: 'no-floor' });
+      const sorted = d.floors.slice().sort((a, b) => (a.elevation || 0) - (b.elevation || 0));
+      return JSON.stringify({ id: sorted[0].id, name: sorted[0].name, elevation: sorted[0].elevation });
     })()""" % (D.STORE, json.dumps(bid))
     return D.eval_json(cdp, expr)
+
+
+def set_floor_pick(cdp, value):
+    """切“楼层”下拉（'all' 或某层 id）。
+
+    ⚠️ 屋顶值必须**等一拍再读**：Vue 的 watch 是异步的（切楼层 → 自动把屋顶设成不封顶），
+    在同一次 eval 里读回来永远是旧值 —— 第一版就这么把“自动切屋顶”判成了没生效。
+    """
+    out = D.eval_json(cdp, """(() => {
+      const sel = document.querySelector('[data-testid=exterior-floor-pick]');
+      if (!sel) return JSON.stringify({ err: 'no-select' });
+      sel.value = %s;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return JSON.stringify({ ok: true, value: sel.value });
+    })()""" % json.dumps(value))
+    time.sleep(1.0)
+    out['roof'] = cdp.eval("(document.querySelector('[data-testid=exterior-roof-kind]')||{}).value || ''")
+    out['floorPick'] = cdp.eval("(document.querySelector('[data-testid=exterior-floor-pick]')||{}).value || ''")
+    return out
 
 
 def place_ground_items(cdp, bid):
@@ -284,7 +302,7 @@ def main():
 
         set_preset(cdp, 'iso')
 
-        # ① 坡顶 · 空房间（后面「家具不许穿出屋面」的对照基线）
+        # ① 坡顶 · 空房间（后面“家具不许穿出屋面”的对照基线）
         p_gable_empty = export_axo(cdp, '01-gable-empty')
         stats_empty = stats_text(cdp)
         log('  · 空房间统计：%s' % stats_empty)
@@ -301,7 +319,7 @@ def main():
         stats_full = stats_text(cdp)
         log('  · 有家具统计：%s' % stats_full)
         if '%d 件家具' % len(FURNITURE) not in stats_full:
-            fails.append('顶栏统计没显示「%d 件家具」：%r' % (len(FURNITURE), stats_full))
+            fails.append('顶栏统计没显示“%d 件家具”：%r' % (len(FURNITURE), stats_full))
 
         # ③ 坡顶 · 有家具（同一屋顶状态下比：家具在室内，画面应该几乎不变）
         p_gable_full = export_axo(cdp, '02-gable-furniture')
@@ -362,15 +380,24 @@ def main():
                 fails.append('同一参数连出两张竟然有 %.4f%% 像素不同（渲染不确定，前面的差异不算数）'
                              % (100 * d0['ratio']))
 
-        # ── 判据 4：单层建筑里，一层的床/桌/柜/椅必须全部看得见 ──
-        # 为什么另起一段：两层楼的整体轴测里，一层被二层楼板压着（这是物理正确的），
-        # 只有“桌/床/柜”这种验收得在单层建筑上做 —— 也正好是用户删掉楼上的真实用法。
-        up = remove_upper_floors(cdp, bid)
-        if up.get('err'):
-            fails.append('删楼层失败：%s' % up['err'])
-        else:
-            log('  · 只留一层（删掉 %s 层）' % up.get('removed'))
-        time.sleep(1.5)
+        # ── 判据 4：切到“只看一层”后，一层的床/桌/柜/椅必须全部看得见 ──
+        # 两层楼的整体轴测里一层被二层楼板压着（物理正确），所以要有“只看某一层”。
+        # 注意：**不删楼层、不改数据** —— 只是视图过滤（floorView.js 的口径）。
+        # 先把屋顶切回坡顶：用来验证“切到只看一层时，屋顶会自动切成不封顶”
+        set_roof(cdp, 'gable')
+        gf = ground_floor_id(cdp, bid)
+        if gf.get('err'):
+            fails.append('取一层失败：%s' % gf['err'])
+        pick = set_floor_pick(cdp, gf.get('id') or ALL_FLOORS_VALUE)
+        log('  · 只看一层：%s（下拉值 %s，屋顶 %s）'
+            % (gf.get('name'), pick.get('value'), pick.get('roof')))
+        if pick.get('err'):
+            fails.append('楼层下拉不可用：%s' % pick['err'])
+        if pick.get('roof') != 'none':
+            fails.append('切到只看一层后屋顶应自动变成不封顶，实际 %r' % pick.get('roof'))
+        stats_single = stats_text(cdp)
+        if '只看' not in stats_single:
+            fails.append('统计条没写“只看某层”：%r' % stats_single)
         p_single_empty = export_axo(cdp, '06-single-empty')
         gi = place_ground_items(cdp, bid)
         if gi.get('err'):
