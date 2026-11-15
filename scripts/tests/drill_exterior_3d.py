@@ -19,7 +19,7 @@ headless Edge，在页面里造一栋两层小楼（外墙 24cm / 层高 300cm /
   · 顶栏统计与数据一致（2 层 / 8 面墙 / 7 处门窗）。
 
 用法：
-  C:/Users/muyu/AppData/Local/Microsoft/WindowsApps/python.exe scripts/tests/drill_exterior_3d.py
+  python scripts/tests/drill_exterior_3d.py
 """
 import base64
 import json

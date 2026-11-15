@@ -38,7 +38,7 @@ def main():
         cdp = CDP(ws_url=find_page_ws(D.PORT, prefer_prefix='http://localhost:5180'))
         cdp.send('Page.enable')
         cdp.send('Emulation.setDeviceMetricsOverride', {
-            'width': 1280, 'height': 1000, 'deviceScaleFactor': 2, 'mobile': False,
+            'width': 1280, 'height': 1280, 'deviceScaleFactor': 2, 'mobile': False,
         })
         cdp.navigate(APP_URL)
         wait_for(cdp, "!!document.querySelector('.app-layout')", timeout=45, desc='应用挂载')
@@ -70,7 +70,7 @@ def main():
           const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
           const floors = (s.interiorData[__BID__] || {}).floors || [];
 
-          const W = 1180, H = 940;
+          const W = 1180, H = 1220;
           const cv = document.createElement('canvas');
           cv.width = W * 2; cv.height = H * 2;
           cv.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;width:' + W + 'px;height:' + H
@@ -112,24 +112,40 @@ def main():
             { start: { x: 300, y: 600 }, end: { x: 0, y: 600 }, thickness: t, height: 280 },
             { start: { x: 0, y: 600 }, end: { x: 0, y: 0 }, thickness: t, height: 280 },
           ]);
+          // 三居：外轮廓 1200×800，中间两道内墙（不影响外轮廓，只验证不会把轮廓搅乱）
+          const threeRoom = () => [
+            ...rect(1200, 800),
+            { start: { x: 500, y: 0 }, end: { x: 500, y: 800 }, thickness: 10, height: 280 },
+            { start: { x: 900, y: 0 }, end: { x: 900, y: 800 }, thickness: 10, height: 280 },
+          ];
+          // 凹字：四面合院围出一个院子（外环走凹口），courtyard:true 时中庭空着
+          const courtyard = () => [
+            { start: { x: 0, y: 0 }, end: { x: 900, y: 0 }, thickness: 12, height: 300 },
+            { start: { x: 900, y: 0 }, end: { x: 900, y: 800 }, thickness: 12, height: 300 },
+            { start: { x: 900, y: 800 }, end: { x: 0, y: 800 }, thickness: 12, height: 300 },
+            { start: { x: 0, y: 800 }, end: { x: 0, y: 0 }, thickness: 12, height: 300 },
+          ];
+
           const cases = [
             { name: '民居 900×650 · 四坡', walls: rect(900, 650), roof: 'hip' },
             { name: '民居 900×650 · 双坡', walls: rect(900, 650), roof: 'gable' },
             { name: '长屋 1200×420 · 四坡', walls: rect(1200, 420), roof: 'hip' },
             { name: '方院 800×800 · 平顶', walls: rect(800, 800), roof: 'flat' },
-            { name: 'L 形 · 四坡（凸包填平）', walls: Lshape(), roof: 'hip' },
-            { name: 'L 形 · 双坡（凸包填平）', walls: Lshape(), roof: 'gable' },
+            { name: 'L 形 · 四坡（精确轮廓）', walls: Lshape(), roof: 'hip' },
+            { name: 'L 形 · 双坡（精确轮廓）', walls: Lshape(), roof: 'gable' },
+            { name: '三居（内墙不影响外轮廓）', walls: threeRoom(), roof: 'hip' },
+            { name: '合院（courtyard 保留中庭）', walls: courtyard(), roof: 'flat', courtyard: true },
           ];
 
           const pad = 40;
           const cellW = (W - pad * 3) / 2;
-          const cellH = (H - 56 - pad * 4 - 40) / 3;
+          const cellH = (H - 56 - pad * 4 - 40) / 4;   // 4 行
           let i = 0;
           for (const c of cases) {
             const col = i % 2, row = Math.floor(i / 2);
             const x = pad + col * (cellW + pad);
             const y = 56 + row * (cellH + pad);
-            const fp = m.buildFootprint([{ walls: c.walls, elevation: 0 }]);
+            const fp = m.buildFootprint([{ walls: c.walls, elevation: 0 }], { courtyard: !!c.courtyard });
             if (!fp) { cell(x, y, cellW, cellH, c.name, '没有墙'); i++; continue; }
             // 缩放到格子里（留 60px 给标题）
             const z = Math.min((cellW - 80) / (fp.bbox.maxX - fp.bbox.minX), (cellH - 120) / (fp.bbox.maxY - fp.bbox.minY));
@@ -141,7 +157,7 @@ def main():
             ctx.restore();
             const size = m.symbolScreenSize(fp, z);
             cell(x, y, cellW, cellH, c.name,
-              '占地 ' + (fp.area / 1e4).toFixed(1) + ' m² · ' + Math.round(fp.rect.long) + '×' + Math.round(fp.rect.short) + ' cm · 屏幕上 ' + Math.round(size.w) + 'px 宽');
+              '占地 ' + (fp.area / 1e4).toFixed(1) + ' m² · ' + Math.round(fp.rect.long) + '×' + Math.round(fp.rect.short) + ' cm · 外环 ' + fp.ring.length + ' 点 · ' + (fp.exact ? '精确' : '凸包兜底') + (fp.polygons.length > 1 ? ' · ' + fp.polygons.length + ' 块' : ''));
             i++;
           }
 
@@ -150,7 +166,7 @@ def main():
           ctx.font = '12px "Microsoft YaHei", sans-serif';
           ctx.textAlign = 'left';
           ctx.textBaseline = 'bottom';
-          ctx.fillText('这是地图视角下的俯视符号：屋顶色块 + 墨线轮廓 + 一点点投影。还没接进 AreaMap，先看形态。', pad, H - 14);
+          ctx.fillText('地图视角下的俯视符号：墙矩形布尔并集出轮廓（L 形不再被填平）+ 屋顶色块 + 墨线 + 投影。已接进 AreaMap。', pad, H - 14);
 
           window.__preview = cv;
           return JSON.stringify({ ok: true, w: cv.width, h: cv.height });

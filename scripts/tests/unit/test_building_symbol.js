@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(process.cwd());
 const mod = await import(pathToFileURL(path.join(ROOT, 'src/renderer/src/interior/buildingSymbol.js')).href);
-const { SYMBOL_COLORS, buildFootprint, roofPlan, drawBuildingSymbol, symbolScreenSize } = mod;
+const { SYMBOL_COLORS, buildFootprint, roofPlan, drawBuildingSymbol, symbolScreenSize, footprintContains, skeletonRidge } = mod;
 
 const results = [];
 function check(name, fn) {
@@ -40,6 +40,54 @@ function room(w = 900, d = 650, t = 12) {
       { start: { x: 0, y: d }, end: { x: 0, y: 0 }, thickness: t, height: 280 },
     ],
   }];
+}
+
+
+/** L 形外墙（中心线）：(0,0)-(600,0)-(600,300)-(300,300)-(300,600)-(0,600)-(0,0) */
+const L_WALLS = [
+  { start: { x: 0, y: 0 }, end: { x: 600, y: 0 }, thickness: 12, height: 280 },
+  { start: { x: 600, y: 0 }, end: { x: 600, y: 300 }, thickness: 12, height: 280 },
+  { start: { x: 600, y: 300 }, end: { x: 300, y: 300 }, thickness: 12, height: 280 },
+  { start: { x: 300, y: 300 }, end: { x: 300, y: 600 }, thickness: 12, height: 280 },
+  { start: { x: 300, y: 600 }, end: { x: 0, y: 600 }, thickness: 12, height: 280 },
+  { start: { x: 0, y: 600 }, end: { x: 0, y: 0 }, thickness: 12, height: 280 },
+];
+
+/** 点到轮廓最短距离（测试侧独立实现，不复用被测代码） */
+function distToRing(fp, q) {
+  let best = Infinity;
+  for (const poly of fp.polygons) {
+    const ring = poly.outer;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const L2 = dx * dx + dy * dy;
+      if (!(L2 > 0)) continue;
+      const t = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / L2));
+      const d = Math.hypot(q.x - (a.x + dx * t), q.y - (a.y + dy * t));
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
+/** 点是否贴在某条轮廓边上（tol cm 内）—— 描边点本来就压在边界上 */
+function nearRing(fp, q, tol) {
+  for (const p of fp.polygons) {
+    for (let i = 0; i < p.outer.length; i++) {
+      const a = p.outer[i];
+      const b = p.outer[(i + 1) % p.outer.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const L2 = dx * dx + dy * dy;
+      if (!(L2 > 0)) continue;
+      const t = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / L2));
+      if (Math.hypot(q.x - (a.x + dx * t), q.y - (a.y + dy * t)) <= tol) return true;
+    }
+  }
+  return false;
 }
 
 /** 记录调用序列的假 ctx（只需要 drawBuildingSymbol 用到的那部分） */
@@ -175,20 +223,98 @@ check('y11 symbolScreenSize：按 zoom 换算屏幕像素（缩得太小时调�
   return `${s1.w.toFixed(1)}px @0.1`;
 });
 
-check('y12 已知限制：L 形（凹）建筑会被凸包填平（写成断言，避免以后当 bug 修）', () => {
-  // L 形：外墙走 (0,0)-(600,0)-(600,300)-(300,300)-(300,600)-(0,600)
-  const walls = [
-    { start: { x: 0, y: 0 }, end: { x: 600, y: 0 } },
-    { start: { x: 600, y: 0 }, end: { x: 600, y: 300 } },
-    { start: { x: 600, y: 300 }, end: { x: 300, y: 300 } },
-    { start: { x: 300, y: 300 }, end: { x: 300, y: 600 } },
-    { start: { x: 300, y: 600 }, end: { x: 0, y: 600 } },
-    { start: { x: 0, y: 600 }, end: { x: 0, y: 0 } },
+check('y12 L 形不再被填平：走布尔并集（exact）、外环点数 > 4、凹口真的空着', () => {
+  const fp = buildFootprint([{ walls: L_WALLS }]);
+  assert(fp.exact === true, '应走精确并集（不是凸包兜底）');
+  assert(fp.ring.length >= 6, `L 形外环至少 6 点，实际 ${fp.ring.length}`);
+  // 凸包会认 (450,450) 在内（它落在 (0,0)(600,0)(600,300)(300,600)(0,600) 围出的凸包里），L 形不该
+  assert(footprintContains(fp, { x: 450, y: 450 }) === false, '凹口里的点不该算在占地内');
+  assert(footprintContains(fp, { x: 150, y: 450 }) === true, '竖臂内部应算在占地内');
+  assert(footprintContains(fp, { x: 450, y: 150 }) === true, '横臂内部应算在占地内');
+  return `外环 ${fp.ring.length} 点，${(fp.area / 1e4).toFixed(1)} m²`;
+});
+
+check('y13 房间的墙围成一圈时，中间的洞要**填掉**（否则房子画成空心框）', () => {
+  const fp = buildFootprint(room());
+  assert(fp.polygons.length === 1, `应只有一块，实际 ${fp.polygons.length}`);
+  assert(fp.polygons[0].holes.length === 0, `默认不保留洞，实际 ${fp.polygons[0].holes.length}`);
+  assert(Math.abs(fp.areaNet - fp.area) < 1, '默认面积 = 外轮廓面积（屋顶盖满）');
+  return `洞 ${fp.polygons[0].holes.length} / 面积 ${(fp.area / 1e4).toFixed(1)} m²`;
+});
+
+check('y14 courtyard:true 时才留院子：够大的洞保留、面积扣掉', () => {
+  const fp = buildFootprint([{ walls: L_WALLS }], { courtyard: true });
+  assert(fp.polygons[0].holes.length === 1, `应保留 1 个洞，实际 ${fp.polygons[0].holes.length}`);
+  assert(fp.areaNet < fp.area - 1000, `扣洞后面积应变小：${fp.area.toFixed(0)} → ${fp.areaNet.toFixed(0)}`);
+  return `洞 ${(fp.area - fp.areaNet).toFixed(0)} cm²`;
+});
+
+check('y15 引擎炸了要退回凸包，不许整张地图画不出来', () => {
+  const boom = { union() { throw new Error('boom'); } };
+  const fp = buildFootprint(room(), { engine: boom });
+  assert(fp !== null, '引擎异常时仍应给出轮廓');
+  assert(fp.exact === false, '应标记 exact=false（走了兜底）');
+  assert(fp.ring.length >= 3, '兜底轮廓应可用');
+  return `兜底 ${fp.ring.length} 点`;
+});
+
+check('y16 两栋不相连的楼 → 两块地块，不是一个大外接框', () => {
+  const a = [
+    { start: { x: 0, y: 0 }, end: { x: 300, y: 0 } },
+    { start: { x: 300, y: 0 }, end: { x: 300, y: 300 } },
+    { start: { x: 300, y: 300 }, end: { x: 0, y: 300 } },
+    { start: { x: 0, y: 300 }, end: { x: 0, y: 0 } },
   ];
-  const fp = buildFootprint([{ walls }]);
-  // 凸包把凹角 (300,300) 之外的区域也围进来了：面积 > L 形真实面积（600*300 + 300*300 = 270000）
-  assert(fp.area > 270000 + 1000, `应被填平（凸包面积更大），实际 ${fp.area.toFixed(0)}`);
-  return `凸包 ${(fp.area / 1e4).toFixed(1)} m²（真实 27 m²）`;
+  const b = a.map((w) => ({
+    start: { x: w.start.x + 2000, y: w.start.y },
+    end: { x: w.end.x + 2000, y: w.end.y },
+  }));
+  const fp = buildFootprint([{ walls: [...a, ...b] }]);
+  assert(fp.polygons.length === 2, `应两块地块，实际 ${fp.polygons.length}`);
+  assert(fp.ring.length >= 4, '主轮廓取面积最大的那块');
+  const ctx = fakeCtx();
+  drawBuildingSymbol(ctx, fp, { zoom: 1 });
+  assert(ctx.count('closePath') >= 4, `两块 × (投影+屋顶) 至少 4 次闭合，实际 ${ctx.count('closePath')}`);
+  return `2 块`;
+});
+
+check('y17 骨架脊线：L 形的每一笔都落在轮廓内', () => {
+  const fp = buildFootprint([{ walls: L_WALLS }]);
+  const ctx = fakeCtx();
+  drawBuildingSymbol(ctx, fp, { zoom: 1, roof: 'gable' });
+  const pts = ctx.ops.filter((o) => o.name === 'moveTo' || o.name === 'lineTo').map((o) => ({ x: o.args[0], y: o.args[1] }));
+  // 脊线端点的容差放宽到 2cm：裁剪是按采样切的，边界上会有不到半个采样的误差
+  const stray = pts.filter((q) => !footprintContains(fp, q)
+    && !nearRing(fp, q, 2));
+  assert(stray.length === 0, `有 ${stray.length} 个点落在轮廓外：${JSON.stringify(stray.slice(0, 3).map((q) => [Math.round(q.x), Math.round(q.y)]))}`);
+  return `脊线全在轮廓内（${pts.length} 点）`;
+});
+
+check('y18 骨架脊线：L 形两臂各得一条，且不许贴着轮廓边（会看成双线）', () => {
+  const fp = buildFootprint([{ walls: L_WALLS }]);
+  const runs = skeletonRidge(fp.polygons, fp.rect);
+  assert(runs.length >= 2, `L 形应至少 2 段骨架，实际 ${runs.length}`);
+  const gap = Math.min(fp.rect.long, fp.rect.short) * 0.10;
+  for (const run of runs) {
+    assert(run.length >= 2, '每段至少 2 点');
+    for (const p of run) {
+      assert(footprintContains(fp, p), `骨架点 ${JSON.stringify([Math.round(p.x), Math.round(p.y)])} 落在轮廓外`);
+      assert(distToRing(fp, p) >= gap - 1e-6, `骨架点离轮廓仅 ${distToRing(fp, p).toFixed(1)}cm（阈值 ${gap.toFixed(0)}cm），会看成双线`);
+    }
+  }
+  return `${runs.length} 段 / 共 ${runs.reduce((n, r) => n + r.length, 0)} 点`;
+});
+
+check('y19 矩形平面不走骨架：直脊只画一条（骨架是给异形用的）', () => {
+  const fp = buildFootprint([{ walls: L_WALLS }]);
+  const rectFp = buildFootprint(room());
+  const a = fakeCtx();
+  const b = fakeCtx();
+  drawBuildingSymbol(a, fp, { zoom: 1, roof: 'gable' });
+  drawBuildingSymbol(b, rectFp, { zoom: 1, roof: 'gable' });
+  const movesOf = (c) => c.ops.filter((o) => o.name === 'moveTo').length;
+  assert(movesOf(a) > movesOf(b), `L 形的脊线笔数应多于矩形：${movesOf(a)} vs ${movesOf(b)}`);
+  return `L ${movesOf(a)} 笔 / 矩形 ${movesOf(b)} 笔`;
 });
 
 const bad = results.filter((r) => !r.ok);

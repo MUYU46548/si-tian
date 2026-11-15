@@ -14,16 +14,130 @@
  *
  * 接入方只要在"该画建筑的地方"调一次 `drawBuildingSymbol`，其它节点一行不动。
  *
- * ## 已知限制（写在这里，不藏着）
+ * ## 占地怎么算：墙矩形精确并集（2026-11-15 改）
  *
- * 占地用的是**墙端点的凸包**：L 形、凹字形建筑会把凹处填平。
- * 要精确轮廓需要多边形布尔（`utils/polygonBool.js` 有引擎，但是注入式的），
- * 那一步等真有异形建筑的需求再做 —— 先把"色点 → 有形状的符号"这一步走完。
+ * 第一版用**墙端点的凸包**，L 形、凹字形会被填平（斜脊还会飘到轮廓外）。
+ * 现在每条墙先按厚度扩成一个矩形，再对所有矩形做**多边形布尔并集**
+ * （`polygon-clipping@0.15.7`，纯 default 导出 —— `import * as pc` 会拿到 `{default:{}}` 静默失效）。
+ *
+ * 并集同时解决了三件事：
+ *   ① 凹处不再被填平（L 形就是 L 形）；
+ *   ② 屋子围成一圈时自然产生**洞**（院子/中庭），大洞保留、小洞填掉；
+ *   ③ 骨架不规则（斜墙、错层）也照样对 —— 精度只取决于墙数据，不取决于凸包。
+ *
+ * 引擎万一抛异常（退化输入）就退回凸包，不让整张地图画不出来。
  */
 
 // 带 .js 后缀：项目里已有这个惯例（riverRender / provinceShape 都这么写），
 // 好处是同一份代码既能在 Vite 里跑、也能被 Node 单测直接 import。
+import polygonClipping from 'polygon-clipping';
 import { convexHull, minAreaRect } from './buildShell.js';
+
+/**
+ * 洞占外环面积多大才当成"院子"保留（仅在 `opts.courtyard` 开启时生效）。
+ *
+ * 🔴 为什么默认**填掉**洞：几何上区分不了"房间内部"和"院子"——
+ * 一间房四面墙围合，中间是屋顶下的空间；一个四合院四面房围合，中间是天井。两者拓扑完全一样。
+ * 而建筑符号的默认语义是"这栋楼占多大地盘"，画成实心最不容易误读。
+ * 想看院子就显式传 `courtyard: true`，那时只保留够大的洞（小洞是楼梯井之类，填掉）。
+ */
+const COURTYARD_MIN_RATIO = 0.35;
+
+/** 多边形面积（鞋带，取绝对值） */
+function ringArea(ring) {
+  return Math.abs(ringArea2(ring)) / 2;
+}
+
+/** 有向面积的二倍（鞋带，带符号） */
+function ringArea2(ring) {
+  let a2 = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i];
+    const q = ring[(i + 1) % ring.length];
+    a2 += p.x * q.y - q.x * p.y;
+  }
+  return a2;
+}
+
+/** 统一成正向转序（布尔引擎对绕向敏感，随手画的墙方向不该影响结果） */
+function ensurePositive(ring) {
+  return ringArea2(ring) < 0 ? ring.slice().reverse() : ring.slice();
+}
+
+/** 点是否在多边形内（射线法；边界算内）——本模块不引外部几何工具，自己带一个 */
+function pointInRing(pt, ring, eps = 1e-9) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    const cross = (b.x - a.x) * (pt.y - a.y) - (b.y - a.y) * (pt.x - a.x);
+    const inBox = pt.x >= Math.min(a.x, b.x) - eps && pt.x <= Math.max(a.x, b.x) + eps
+      && pt.y >= Math.min(a.y, b.y) - eps && pt.y <= Math.max(a.y, b.y) + eps;
+    if (Math.abs(cross) <= eps && inBox) return true;
+    if (((a.y > pt.y) !== (b.y > pt.y))
+      && (pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** 一条墙 → 按厚度外扩的矩形环（4 点，[x,y]，已闭合）。太短的墙返回 null */
+function wallRect(wall) {
+  if (!wall || !wall.start || !wall.end) return null;
+  const ax = num(wall.start.x);
+  const ay = num(wall.start.y);
+  const bx = num(wall.end.x);
+  const by = num(wall.end.y);
+  const len = Math.hypot(bx - ax, by - ay);
+  if (!(len > 1)) return null;                  // 退化墙不计入
+  const t = Math.max(2, num(wall.thickness, 12));
+  const ux = (bx - ax) / len;
+  const uy = (by - ay) / len;
+  const half = t / 2;
+  // 两端各外扩半个墙厚（转角处两面墙的矩形因此重叠 → 并集连成一体）、法向 ±半个墙厚
+  const p = (s, n) => [ax + ux * s - uy * n, ay + uy * s + ux * n];
+  return [
+    p(-half, -half),
+    p(len + half, -half),
+    p(len + half, half),
+    p(-half, half),
+    p(-half, -half),          // Ring 必须闭合
+  ];
+}
+
+/**
+ * 墙集合 → 精确占地（布尔并集的结果整理成 {outer, holes}）。
+ *
+ * @returns {null | Array<{outer:Array<{x:number,y:number}>, holes:Array<Array<{x:number,y:number}>>}>}
+ */
+function unionWallRects(rects, engine, opts = {}) {
+  if (!rects.length) return null;
+  // polygon-clipping 吃 MultiPolygon = [Polygon] = [[Ring]]，Ring 是 [[x,y],…]
+  const multi = engine.union([rects[0]], ...rects.slice(1).map((r) => [r]));
+  if (!Array.isArray(multi) || !multi.length) return null;
+  const keepCourtyard = opts.courtyard === true;
+  const out = [];
+  for (const poly of multi) {
+    if (!Array.isArray(poly) || !poly.length) continue;
+    const toPts = (ring) => ring.slice(0, ring.length - 1).map(([x, y]) => ({ x, y }));
+    const outer = toPts(poly[0]);
+    if (outer.length < 3) continue;
+    const outerArea = ringArea(outer);
+    if (!(outerArea > 0)) continue;
+    const holes = [];
+    if (keepCourtyard) {
+      for (let i = 1; i < poly.length; i++) {
+        const h = toPts(poly[i]);
+        if (h.length < 3) continue;
+        // 小洞填掉（楼梯井/管道井那种），大洞当院子留着
+        if (ringArea(h) / outerArea >= COURTYARD_MIN_RATIO) holes.push(h);
+      }
+    }
+    out.push({ outer, holes });
+  }
+  return out.length ? out : null;
+}
 
 function num(v, d = 0) {
   const n = Number(v);
@@ -34,31 +148,36 @@ function num(v, d = 0) {
 export const SYMBOL_COLORS = Object.freeze({
   roof: '#cbbba4',
   roofFlat: '#d5cfc3',
-  roofRidge: '#8d7f6e',
+  roofRidge: '#79695a',
   edge: '#4a4136',
-  shadow: 'rgba(60, 48, 32, 0.22)',
-  wallLine: '#6b5f50',
+  shadow: 'rgba(60, 48, 32, 0.20)',
+  wallLine: '#7a6c5c',
 });
 
 /**
- * 从楼层数据算占地。
+ * 从楼层数据算占地（**墙矩形的精确并集**）。
  *
  * @param {Array<object>} floors `[{ walls:[{start,end,thickness}], elevation, ... }]`
- * @param {{pad?:number}} [opts] pad：轮廓外扩（cm），默认按最厚墙的一半
+ * @param {{engine?:object, courtyard?:boolean}} [opts]
+ *   · engine     布尔引擎（默认 polygon-clipping；测试可注入替身）
+ *   · courtyard  是否保留大洞当院子（默认 false = 屋顶盖满，见 COURTYARD_MIN_RATIO 的说明）
  * @returns {null | {
- *   ring: Array<{x:number,y:number}>,       // 凸包（世界 cm，逆时针/顺时针不保证）
- *   rect: {cx:number, cy:number, width:number, depth:number, angle:number}, // 最小外接矩形（angle: 弧度）
- *   area: number,                            // 占地（cm²）
- *   bbox: {minX:number, minY:number, maxX:number, maxY:number},
- *   floors: number, walls: number, maxWallTop: number
+ *   ring: Array<{x:number,y:number}>,          // 最大那块的外环（兼容老调用方）
+ *   polygons: Array<{outer:Array, holes:Array}>,// 全部地块（不相连的楼各一块）
+ *   rect: {cx,cy,u,v,halfU,halfV,long,short},   // 最小外接矩形（脊线方向靠它）
+ *   area: number,                               // 外轮廓面积之和（cm²，屋顶盖住的面积）
+ *   areaNet: number,                            // 扣掉院子洞之后的面积
+ *   bbox: {minX,minY,maxX,maxY},
+ *   floors: number, walls: number, maxWallTop: number,
+ *   exact: boolean,                             // 是否走了布尔并集（false = 退回凸包）
  * }}
  *   没有任何墙返回 null（调用方按"旧色点"回落）
  */
 export function buildFootprint(floors, opts = {}) {
   const list = Array.isArray(floors) ? floors : [];
+  const rects = [];
   const pts = [];
   let wallCount = 0;
-  let maxThick = 0;
   let maxWallTop = 0;
   let floorCount = 0;
 
@@ -67,50 +186,60 @@ export function buildFootprint(floors, opts = {}) {
     if (walls.length) floorCount += 1;
     for (const w of walls) {
       if (!w || !w.start || !w.end) continue;
-      const ax = num(w.start.x);
-      const ay = num(w.start.y);
-      const bx = num(w.end.x);
-      const by = num(w.end.y);
-      const len = Math.hypot(bx - ax, by - ay);
-      if (!(len > 1)) continue;                 // 退化墙不计入
+      const r = wallRect(w);
+      if (!r) continue;                        // 退化墙（长度 ≤1cm）
       wallCount += 1;
-      const t = Math.max(2, num(w.thickness, 12));
-      maxThick = Math.max(maxThick, t);
-      // 墙按厚度外扩：两端各外扩半个墙厚、法向各让半个墙厚 —— 只用端点会让轮廓小于实际占地
-      const ux = (bx - ax) / len;
-      const uy = (by - ay) / len;
-      const half = t / 2;
-      for (const [px, py] of [[ax, ay], [bx, by]]) {
-        for (const [su, sn] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
-          pts.push({ x: px + ux * su * half - uy * sn * half, y: py + uy * su * half + ux * sn * half });
-        }
-      }
-      // 墙顶标高：给"层数/高度"用
+      rects.push(ensurePositive(r));
+      for (const [x, y] of r) pts.push({ x, y });
       maxWallTop = Math.max(maxWallTop, num(w.height, 280));
     }
   }
 
-  if (!pts.length) return null;
-  const hull = convexHull(pts);
-  if (!hull || hull.length < 3) return null;
+  if (!rects.length) return null;
 
-  // 最小外接矩形给出"长轴方向"——屋顶脊线要沿线走，符号的朝向也靠它
-  const mr = minAreaRect(hull) || null;
+  // ① 主路：精确并集。任何异常（退化输入、引擎不可用）都退回凸包，不让地图画不出来。
+  let polygons = null;
+  let exact = false;
+  const engine = opts.engine || polygonClipping;
+  try {
+    polygons = unionWallRects(rects, engine, opts);
+    exact = !!polygons;
+  } catch (e) {
+    polygons = null;
+  }
+
+  // ② 兜底：凸包（会填平凹处，但至少画得出来）
+  if (!polygons) {
+    const hull = convexHull(pts);
+    if (!hull || hull.length < 3) return null;
+    polygons = [{ outer: hull, holes: [] }];
+  }
+
+  // 最大那块当主轮廓 —— 老调用方（AreaMap 的标签定位）只看 ring
+  let main = polygons[0];
+  let mainArea = ringArea(main.outer);
+  for (const p of polygons) {
+    const a = ringArea(p.outer);
+    if (a > mainArea) { main = p; mainArea = a; }
+  }
+  const ring = main.outer;
+
+  // 最小外接矩形：吃凸包，不吃凹轮廓（凹点会把最小矩形带偏）
+  const mr = minAreaRect(convexHull(pts)) || null;
 
   let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
-  for (const p of hull) {
+  for (const p of pts) {
     if (p.x < minX) minX = p.x;
     if (p.x > maxX) maxX = p.x;
     if (p.y < minY) minY = p.y;
     if (p.y > maxY) maxY = p.y;
   }
 
-  // 多边形面积（鞋带公式）
-  let area2 = 0;
-  for (let i = 0; i < hull.length; i++) {
-    const a = hull[i];
-    const b = hull[(i + 1) % hull.length];
-    area2 += a.x * b.y - b.x * a.y;
+  let area = 0;
+  let holeArea = 0;
+  for (const p of polygons) {
+    area += ringArea(p.outer);
+    for (const h of p.holes) holeArea += ringArea(h);
   }
 
   // 用"中心 + 长轴单位向量 u + 短轴 v + 半长"表达外接矩形：
@@ -140,22 +269,173 @@ export function buildFootprint(floors, opts = {}) {
     };
 
   return {
-    ring: hull,
+    ring,
+    polygons,
     rect,
-    area: Math.abs(area2) / 2,
+    area,
+    areaNet: Math.max(0, area - holeArea),
     bbox: { minX, minY, maxX, maxY },
     floors: Math.max(1, floorCount),
     walls: wallCount,
     maxWallTop,
-    pad: opts.pad !== undefined ? num(opts.pad) : maxThick / 2,
+    // 走出去的是并集还是凸包兜底 —— 用例/排查要看这个，不能让"填平"静默发生
+    exact,
   };
+}
+
+/**
+ * 异形平面的骨架脊线（2026-11-15 改）。
+ *
+ * 为什么需要它：外接矩形中心线对 L 形毫无意义 ——
+ * 实测 L 形 612×612 的中心线正好落在凹口那条边（y = 300）上，距离轮廓只有 6cm，
+ * 符号缩到 108px 时那 1px 的偏差等于"跟轮廓重合"，看起来就是没有脊线。
+ *
+ * 做法：沿某个轴切若干等宽带，每一带取轮廓在该带内的另一轴范围中点，连成折线。
+ * 沿长轴分带得到"横臂的脊"，沿短轴分带得到"竖臂的脊" —— L 形两臂因此各得一条。
+ *
+ * 🔴 **两个轴都算**：L 形的外接矩形是正方形（600×600），长轴取 x 还是 y 取决于
+ * 最小外接矩形的任意解，取到 x 时折线会在横臂内部拐弯、竖臂一条线都没有。
+ * 两个轴都画，谁有用谁显出来；矩形不走这条路（另有直脊 + 斜脊）。
+ *
+ * @returns {Array<Array<{x:number,y:number}>>} 若干段折线（每段 ≥2 点）
+ */
+export function skeletonRidge(polygons, rect, bandCount = 14) {
+  const polys = Array.isArray(polygons) ? polygons : [];
+  if (!rect || !polys.length) return [];
+  // 离轮廓太近的骨架段要丢掉：L 形"重叠区"的那条中线正好压在凹口边上（只差 6cm），
+  // 画出来跟轮廓重合，看着像双线。阈值按符号尺度取，不写死绝对值。
+  const minGap = Math.max(8, Math.min(rect.short, rect.long) * 0.10);
+  const keep = (p) => pointInFootprint(p, polys) && distToRings(p, polys) >= minGap;
+  const raw = [
+    ...runsAlong(polys, rect, 'u', bandCount),
+    ...runsAlong(polys, rect, 'v', bandCount),
+  ];
+  // 过滤时还要**重新分段**：中间被丢掉点之后不能拿一条直线跨过去
+  const out = [];
+  for (const run of raw) {
+    let cur = [];
+    for (const p of run) {
+      if (keep(p)) {
+        cur.push(p);
+      } else {
+        if (cur.length >= 2) out.push(cur);
+        cur = [];
+      }
+    }
+    if (cur.length >= 2) out.push(cur);
+  }
+  return out;
+}
+
+/** 沿 ax（'u' 长轴 / 'v' 短轴）分带，返回该方向上的骨架折线 */
+function runsAlong(polys, rect, ax, bandCount) {
+  const { cx, cy, u, v } = rect;
+  const along = ax === 'u' ? u : v;
+  const across = ax === 'u' ? v : u;
+  const toS = (p) => (p.x - cx) * along.x + (p.y - cy) * along.y;
+  const toT = (p) => (p.x - cx) * across.x + (p.y - cy) * across.y;
+  const fromST = (s, t) => ({
+    x: cx + along.x * s + across.x * t,
+    y: cy + along.y * s + across.y * t,
+  });
+
+  // 🔴 必须用**边与带的交点**，不能用顶点：L 形外环只有 6 个顶点，
+  //    14 条带里绝大多数一个顶点都没有 → 骨架全空。（第一版就是这么写的，测出来只剩 1 个点。）
+  const edges = [];
+  let sMin = Infinity;
+  let sMax = -Infinity;
+  for (const poly of polys) {
+    const ring = poly.outer || [];
+    for (let i = 0; i < ring.length; i++) {
+      const a = { s: toS(ring[i]), t: toT(ring[i]) };
+      const b = { s: toS(ring[(i + 1) % ring.length]), t: toT(ring[(i + 1) % ring.length]) };
+      edges.push([a, b]);
+      sMin = Math.min(sMin, a.s);
+      sMax = Math.max(sMax, a.s);
+    }
+  }
+  if (!edges.length || !(sMax > sMin)) return [];
+
+  const n = Math.max(4, Math.min(48, Math.round(bandCount)));
+  const w = (sMax - sMin) / n;
+
+  const runs = [];
+  let run = [];
+  const flush = () => {
+    if (run.length >= 2) runs.push(run);
+    run = [];
+  };
+  for (let i = 0; i < n; i++) {
+    const s0 = sMin + i * w;
+    const s1 = s0 + w;
+    const sc = (s0 + s1) / 2;
+    let tMin = Infinity;
+    let tMax = -Infinity;
+    for (const [a, b] of edges) {
+      if (Math.abs(a.s - b.s) < 1e-9) {
+        // 垂直于该轴的边：整条落在带内就两头都算
+        if (a.s >= s0 - 1e-6 && a.s <= s1 + 1e-6) {
+          tMin = Math.min(tMin, a.t, b.t);
+          tMax = Math.max(tMax, a.t, b.t);
+        }
+      } else {
+        for (const bound of [s0, s1, sc]) {
+          const k = (bound - a.s) / (b.s - a.s);
+          if (k < 0 || k > 1) continue;
+          const t = a.t + (b.t - a.t) * k;
+          if (t < tMin) tMin = t;
+          if (t > tMax) tMax = t;
+        }
+      }
+    }
+    if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMax - tMin < 1e-6) { flush(); continue; }
+    const mid = fromST(sc, (tMin + tMax) / 2);
+    if (!pointInFootprint(mid, polys)) { flush(); continue; }
+    run.push(mid);
+  }
+  flush();
+  return runs;
+}
+
+/** 点到轮廓（外环）的最短距离 */
+function distToRings(pt, polys) {
+  let best = Infinity;
+  for (const poly of polys) {
+    const ring = poly.outer || [];
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const L2 = dx * dx + dy * dy;
+      if (!(L2 > 0)) continue;
+      const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / L2));
+      const d = Math.hypot(pt.x - (a.x + dx * t), pt.y - (a.y + dy * t));
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
+/** 点是否在轮廓内（不在院洞里） */
+function pointInFootprint(pt, polys) {
+  for (const poly of polys) {
+    if (!pointInRing(pt, poly.outer, 0.001)) continue;
+    let inHole = false;
+    for (const h of poly.holes || []) {
+      if (pointInRing(pt, h, 0.001)) { inHole = true; break; }
+    }
+    if (!inHole) return true;
+  }
+  return false;
 }
 
 /**
  * 俯视屋顶线。
  *
- * 双坡（gable）：沿长轴一条脊线 + 两侧檐线（檐线就是轮廓本身，画的时候取轮廓即可）。
- * 平顶（flat）：一条内缩的"女儿墙/防水层边"。
+ * 双坡（gable）：沿长轴一条脊线（画的时候会裁剪到轮廓内）。
+ * 四坡（hip）：脊线只占中间 60%，四角再连斜脊。
+ * 平顶（flat）：无脊线，画内缩一圈。
  *
  * @returns {{ridge: Array<{x:number,y:number}>|null, kind:string}}
  */
@@ -198,35 +478,46 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
   // 双坡（gable）只画一条贯穿脊线，更像施工图而不是地图符号。
   const roof = opts.roof === 'flat' ? 'flat' : (opts.roof === 'gable' ? 'gable' : 'hip');
   const pal = { ...SYMBOL_COLORS, ...(opts.palette || {}) };
-  const ring = footprint.ring;
+  // 多块地块（不相连的楼）+ 院子洞。老数据没有 polygons 时按单个外环处理。
+  const polys = (footprint.polygons && footprint.polygons.length)
+    ? footprint.polygons
+    : [{ outer: footprint.ring, holes: [] }];
 
-  const path = () => {
-    ctx.beginPath();
+  const traceRing = (ring) => {
     ctx.moveTo(ring[0].x, ring[0].y);
     for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i].x, ring[i].y);
     ctx.closePath();
+  };
+  // 所有外环 + 所有洞进同一条 path，用 evenodd 填充 → 洞自动是空的。
+  // 分开 fill 的话，洞要么被后画的色块盖掉，要么得给每块单独擦除，比现在麻烦得多。
+  const pathAll = () => {
+    ctx.beginPath();
+    for (const p of polys) {
+      traceRing(p.outer);
+      for (const h of p.holes) traceRing(h);
+    }
   };
 
   ctx.save();
 
   // ① 投影：轮廓沿右下偏移，让人一眼看出"这是个有高度的东西"（不是一块地面色斑）
   if (opts.shadow !== false) {
-    // 🔴 偏移量必须是**屏幕像素**换算回世界单位：第一版按"长轴 × 6%%"算（最大 12cm），
+    // 🔴 偏移量必须是**屏幕像素**换算回世界单位：第一版按"长轴 × 6%"算（最大 12cm），
     //    地图缩小时只有 2~3px 且被屋顶盖住 → 完全看不见投影，房子又变成一块平色块。
     const offPx = 3.5;
     const off = offPx / zoom;
     ctx.save();
     ctx.translate(off, off * 1.1);
-    path();
+    pathAll();
     ctx.fillStyle = pal.shadow;
-    ctx.fill();
+    ctx.fill('evenodd');
     ctx.restore();
   }
 
-  // ② 屋顶面
-  path();
+  // ② 屋顶面（洞 = 院子，不盖屋顶）
+  pathAll();
   ctx.fillStyle = roof === 'flat' ? pal.roofFlat : pal.roof;
-  ctx.fill();
+  ctx.fill('evenodd');
 
   // ③ 轮廓（墨线）：选中时加粗并加一圈亮边
   ctx.strokeStyle = opts.selected ? '#ffd24a' : pal.edge;
@@ -239,32 +530,59 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
   }
 
   // ④ 屋顶线：坡顶画脊线；平顶画内缩一圈（女儿墙/防水边）
-  if (roof !== 'flat') {
-    const plan = roofPlan(footprint, roof === 'gable' ? 'gable' : 'hip');
+  const isRect = polys.length === 1 && polys[0].holes.length === 0
+    && polys[0].outer.length === 4
+    && Math.abs(footprint.area - footprint.rect.long * footprint.rect.short)
+      / Math.max(1, footprint.rect.long * footprint.rect.short) < 0.08;
+
+  // 每块外环按自己包围盒的中心内缩 ratio 画一圈
+  const traceInset = (ratio) => {
+    ctx.beginPath();
+    for (const p of polys) {
+      let bx0 = Infinity; let by0 = Infinity; let bx1 = -Infinity; let by1 = -Infinity;
+      for (const q of p.outer) {
+        if (q.x < bx0) bx0 = q.x;
+        if (q.x > bx1) bx1 = q.x;
+        if (q.y < by0) by0 = q.y;
+        if (q.y > by1) by1 = q.y;
+      }
+      const icx = (bx0 + bx1) / 2;
+      const icy = (by0 + by1) / 2;
+      for (let i = 0; i < p.outer.length; i++) {
+        const px = icx + (p.outer[i].x - icx) * ratio;
+        const py = icy + (p.outer[i].y - icy) * ratio;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    }
+    ctx.strokeStyle = pal.wallLine;
+    ctx.lineWidth = 0.9 / zoom;
+    ctx.stroke();
+  };
+
+  if (roof === 'flat') {
+    traceInset(0.86);
+  } else if (isRect) {
+    // 矩形：一条直脊（四坡取 60%，两端留给斜脊）
+    const plan = roofPlan(footprint, roof === 'hip' ? 'hip' : 'gable');
     if (plan.ridge) {
       ctx.beginPath();
       ctx.moveTo(plan.ridge[0].x, plan.ridge[0].y);
       ctx.lineTo(plan.ridge[1].x, plan.ridge[1].y);
       ctx.strokeStyle = pal.roofRidge;
-      ctx.lineWidth = 1.2 / zoom;
+      ctx.lineWidth = 1.3 / zoom;
       ctx.stroke();
     }
-    // 斜脊只在**四坡顶且轮廓确实是矩形**时画。
-    // 🔴 L 形建筑：凸包 ≠ 外接矩形，四个角里的两个落在轮廓外 → 会画出悬空的斜线
-    //    （2026-11-15 样图第一版就是这样，右下角一条线飘在形状外面）。
-    const isRect = ring.length === 4
-      && Math.abs(footprint.area - footprint.rect.long * footprint.rect.short)
-        / Math.max(1, footprint.rect.long * footprint.rect.short) < 0.08;
-    const wantHips = roof !== 'flat' && roof !== 'gable' && isRect;
-    const { cx, cy, u, v, halfU, halfV } = footprint.rect;
-    const corners = [
-      { x: cx - u.x * halfU - v.x * halfV, y: cy - u.y * halfU - v.y * halfV },
-      { x: cx + u.x * halfU - v.x * halfV, y: cy + u.y * halfU - v.y * halfV },
-      { x: cx + u.x * halfU + v.x * halfV, y: cy + u.y * halfU + v.y * halfV },
-      { x: cx - u.x * halfU + v.x * halfV, y: cy - u.y * halfU + v.y * halfV },
-    ];
-    // 只在矩形的四个角连到脊线端点（近似：取离脊线端点最近的两角）
-    if (plan.ridge && wantHips) {
+    // 四坡：四个角连到脊线端点
+    if (plan.ridge && roof === 'hip') {
+      const { cx, cy, u, v, halfU, halfV } = footprint.rect;
+      const corners = [
+        { x: cx - u.x * halfU - v.x * halfV, y: cy - u.y * halfU - v.y * halfV },
+        { x: cx + u.x * halfU - v.x * halfV, y: cy + u.y * halfU - v.y * halfV },
+        { x: cx + u.x * halfU + v.x * halfV, y: cy + u.y * halfU + v.y * halfV },
+        { x: cx - u.x * halfU + v.x * halfV, y: cy - u.y * halfU + v.y * halfV },
+      ];
       for (const end of plan.ridge) {
         const sorted = [...corners].sort((a, b) => (
           Math.hypot(a.x - end.x, a.y - end.y) - Math.hypot(b.x - end.x, b.y - end.y)
@@ -280,24 +598,45 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
       }
     }
   } else {
-    // 平顶：轮廓内缩 8% 画一圈
-    const cx = (footprint.bbox.minX + footprint.bbox.maxX) / 2;
-    const cy = (footprint.bbox.minY + footprint.bbox.maxY) / 2;
-    ctx.beginPath();
-    for (let i = 0; i < ring.length; i++) {
-      const px = cx + (ring[i].x - cx) * 0.86;
-      const py = cy + (ring[i].y - cy) * 0.86;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+    // 异形：骨架折线。外接矩形中心线对 L 形没意义（会正好压在凹口那条边上），
+    // 而沿轮廓算出来的折线自然给出「每臂一条脊 + 凹角一段垂脊」。
+    // 骨架取自边-带交点，天然在轮廓内；跨过凹口时会断成多段，所以逐段画。
+    const runs = skeletonRidge(polys, footprint.rect);
+    if (runs.length) {
+      ctx.beginPath();
+      for (const run of runs) {
+        ctx.moveTo(run[0].x, run[0].y);
+        for (let i = 1; i < run.length; i++) ctx.lineTo(run[i].x, run[i].y);
+      }
+      ctx.strokeStyle = pal.roofRidge;
+      ctx.lineWidth = 1.3 / zoom;
+      ctx.stroke();
     }
-    ctx.closePath();
-    ctx.strokeStyle = pal.wallLine;
-    ctx.lineWidth = 0.9 / zoom;
-    ctx.stroke();
   }
 
   ctx.restore();
   return true;
+}
+
+/**
+ * 点是否落在建筑占地内（外环内、且不在保留的院洞里）。
+ *
+ * 给命中检测用：地图上按包围盒命中会把 L 形的凹口也算进去，点凹口会选中建筑。
+ */
+export function footprintContains(footprint, pt) {
+  if (!footprint || !pt) return false;
+  const polys = (footprint.polygons && footprint.polygons.length)
+    ? footprint.polygons
+    : [{ outer: footprint.ring, holes: [] }];
+  for (const p of polys) {
+    if (!p.outer || !pointInRing(pt, p.outer)) continue;
+    let inHole = false;
+    for (const h of p.holes || []) {
+      if (pointInRing(pt, h)) { inHole = true; break; }
+    }
+    if (!inHole) return true;
+  }
+  return false;
 }
 
 /**

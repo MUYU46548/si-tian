@@ -4,7 +4,7 @@
 
 把每类家具摆一排、放大到能看清笔画，截图存 `build/furniture-look/`。
 用法：
-  C:/Users/muyu/AppData/Local/Microsoft/WindowsApps/python.exe scripts/tests/drill_furniture_look.py
+  python scripts/tests/drill_furniture_look.py
 """
 import json
 import os
