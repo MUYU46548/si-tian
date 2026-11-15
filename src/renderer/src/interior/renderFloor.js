@@ -17,6 +17,7 @@
 import { formatArea, formatLength } from '../utils/interiorUnits';
 import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
 import { stairFootprint, stairTreads, stairDirection } from './stairs.js';
+import { columnFootprint } from './columns.js';
 
 const DEFAULT_WALL_COLOR = '#8d7f6e';
 
@@ -39,6 +40,10 @@ export const FLOOR_THEMES = Object.freeze({
     stairFill: 'rgba(185, 168, 136, 0.20)',
     stairLine: '#8a7a5e',
     stairText: '#5d5140',
+    // 柱：实心填充 + 对角交叉线（建筑图里柱子的常见画法，一眼与家具块区分）
+    columnFill: '#8d7f6e',
+    columnLine: 'rgba(0,0,0,0.5)',
+    columnCross: 'rgba(255,255,255,0.5)',
     holeFill: 'rgba(120, 120, 130, 0.10)',
     holeLine: 'rgba(110, 110, 125, 0.55)',
     dimText: '#9fb0c0',
@@ -57,6 +62,9 @@ export const FLOOR_THEMES = Object.freeze({
     stairFill: 'rgba(140, 125, 98, 0.16)',
     stairLine: '#4a3f2c',
     stairText: '#2f2a20',
+    columnFill: '#2f343b',
+    columnLine: '#2f343b',
+    columnCross: 'rgba(255,255,255,0.7)',
     holeFill: 'rgba(90, 95, 105, 0.07)',
     holeLine: 'rgba(70, 75, 85, 0.45)',
     dimText: '#6b7783',
@@ -178,7 +186,7 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
   const showRooms = opts.showRooms !== false;
   const showLabels = opts.showLabels !== false;
   const showOpenings = opts.showOpenings !== false;
-  const stat = { walls: 0, rooms: 0, doors: 0, windows: 0, stairs: 0 };
+  const stat = { walls: 0, rooms: 0, doors: 0, windows: 0, stairs: 0, columns: 0 };
 
   // ① 房间（墙下面那层）
   if (showRooms && rooms.length) {
@@ -275,6 +283,21 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
         if (selId && w.id === selId) drawOpeningHighlight(ctx, wall, w, zoom);
         stat.windows++;
       }
+    }
+  }
+
+  // ②.2 柱（2026-11-15，A24 余）：压在墙上画 —— 柱是墙里的竖向构件，
+  // 画在墙下面会被涂黑的墙线整根盖掉（打印态尤其明显）。
+  if (opts.showColumns !== false) {
+    const cols = Array.isArray(floor && floor.columns) ? floor.columns : [];
+    for (const col of cols) {
+      if (!col) continue;
+      drawColumnSymbol(ctx, col, {
+        zoom,
+        theme,
+        selected: !!opts.selectedColumnId && opts.selectedColumnId === col.id,
+      });
+      stat.columns++;
     }
   }
 
@@ -436,6 +459,34 @@ export function drawFloorHoles(ctx, holes, opts = {}) {
     ctx.fillText(text, 0, 0);
     ctx.restore();
   }
+}
+
+/**
+ * 一根柱的平面符号（2026-11-15，A24 余）：实心方 + 对角交叉线 + 选中高亮。
+ *
+ * 为什么带交叉线而不是纯色块：家具也是纯色块，并排时分不清“这是柱还是柜子”；
+ * 建筑图里柱子本来就常画成带对角线的实心矩形，读图的人一眼认得。
+ */
+export function drawColumnSymbol(ctx, col, opts = {}) {
+  const fp = columnFootprint(col);
+  if (!fp) return;
+  const zoom = Number(opts.zoom) > 0 ? Number(opts.zoom) : 1;
+  const theme = opts.theme || floorTheme('screen');
+  ctx.save();
+  ctx.fillStyle = theme.columnFill;
+  ctx.fillRect(fp.x, fp.y, fp.w, fp.h);
+  // 对角交叉线（屏幕恒定线宽：缩到哪一级都一样细）
+  ctx.strokeStyle = theme.columnCross;
+  ctx.lineWidth = 1 / zoom;
+  ctx.beginPath();
+  ctx.moveTo(fp.x, fp.y); ctx.lineTo(fp.x + fp.w, fp.y + fp.h);
+  ctx.moveTo(fp.x + fp.w, fp.y); ctx.lineTo(fp.x, fp.y + fp.h);
+  ctx.stroke();
+  // 外框：选中时加粗高亮
+  ctx.strokeStyle = opts.selected ? '#58a6ff' : theme.columnLine;
+  ctx.lineWidth = (opts.selected ? 2.4 : 1.2) / zoom;
+  ctx.strokeRect(fp.x, fp.y, fp.w, fp.h);
+  ctx.restore();
 }
 
 /**

@@ -11,7 +11,8 @@
   3) 负向探针：同一参数连出两张必须**逐像素一致**（否则第 2 条的差异不算数）；
   4) 切到“只看一层”（楼层下拉，**不删数据**）→ 空 / 有家具两张比：一层的床/桌/柜/椅
      必须全部看得见（阈值 2%）；统计条必须写“只看 …”；
-  5) 顶栏统计出现“6 件家具”。
+  5) 顶栏统计出现“6 件家具”；
+  6) 柱（A24 余）：放两根 40cm 柱 → 统计出现“2 根柱”、画面多出两根竖柱（阈值 0.8%）。
 
 ⚠️ 两层楼的整体轴测里，一层家具被二层楼板压着看不见 —— 这不是 bug（楼板是实体）。
    要看下层就切“只看一层”（A20 余，2026-11-15 补），不用再删楼上。
@@ -55,6 +56,13 @@ FURNITURE = [
     # 二层（elevation 300）
     {'type': 'wardrobe', 'name': '衣柜', 'x': 80, 'y': 60, 'width': 120, 'height': 60, 'rotation': 0, 'color': '#6b4226'},
     {'type': 'sofa', 'name': '沙发', 'x': 300, 'y': 250, 'width': 200, 'height': 80, 'rotation': 0, 'color': '#6e7f8d'},
+]
+
+
+# 柱（A24 余）：两根 40cm 方柱，放在大厅与右房间中间
+COLUMNS = [
+    {'x': 260, 'y': 325, 'size': 40},
+    {'x': 710, 'y': 325, 'size': 40},
 ]
 
 
@@ -239,6 +247,22 @@ def place_ground_items(cdp, bid):
     return D.eval_json(cdp, expr)
 
 
+def place_columns(cdp, bid, items):
+    """放柱（走产品写口 store.addColumn）。items: [{x, y, size}]"""
+    expr = """(() => {
+      const s = %s, bid = %s;
+      const d = s.interiorData[bid];
+      if (!d || !(d.floors || []).length) return JSON.stringify({ err: 'no-floor' });
+      const sorted = d.floors.slice().sort((a, b) => (a.elevation || 0) - (b.elevation || 0));
+      const fid = sorted[0].id;
+      const items = %s;
+      let placed = 0;
+      items.forEach(it => { if (s.addColumn(bid, fid, it)) placed++; });
+      return JSON.stringify({ placed, count: (s.interiorData[bid].floors.find(f => f.id === fid).columns || []).length });
+    })()""" % (D.STORE, json.dumps(bid), json.dumps(items))
+    return D.eval_json(cdp, expr)
+
+
 def stats_text(cdp):
     return cdp.eval("(document.querySelector('[data-testid=exterior-stats]')||{}).textContent || ''") or ''
 
@@ -418,6 +442,29 @@ def main():
                                  % (100 * d3['ratio']))
                 if d3['maxdiff'] < 40:
                     fails.append('单层差异最大只有 %d 通道差 —— 不像家具体块' % d3['maxdiff'])
+
+        # ── 判据 5：柱（A24 余）—— 放两根柱，画面必须多出两根竖柱 ──
+        pc = place_columns(cdp, bid, COLUMNS)
+        if pc.get('err'):
+            fails.append('放柱失败：%s' % pc['err'])
+        else:
+            log('  · 放了 %s 根柱（本层共 %s 根）' % (pc.get('placed'), pc.get('count')))
+            if pc.get('placed') != len(COLUMNS):
+                fails.append('柱数量不对：放了 %s，期望 %s' % (pc.get('placed'), len(COLUMNS)))
+        time.sleep(1.2)
+        stats_cols = stats_text(cdp)
+        if '%d 根柱' % len(COLUMNS) not in stats_cols:
+            fails.append('顶栏统计没显示“%d 根柱”：%r' % (len(COLUMNS), stats_cols))
+        p_single_cols = export_axo(cdp, '08-single-columns')
+        if p_single_full and p_single_cols:
+            d4 = diff(p_single_full, p_single_cols, 'single-furniture-vs-columns')
+            log('  · 柱在图上占：%d 像素（%.3f%%），最大通道差 %d'
+                % (d4.get('px', -1), 100 * d4.get('ratio', -1), d4.get('maxdiff', -1)))
+            if not d4.get('ok'):
+                fails.append('柱比对失败：%s' % d4.get('reason'))
+            elif d4['ratio'] < 0.008:
+                fails.append('放了两根 40cm 柱，画面只变了 %.3f%% —— 柱没画出来（阈值 0.8%%）'
+                             % (100 * d4['ratio']))
 
         # 页面零报错（`__exErrs` 是自己挂的监听，不是读一个没人写的变量）
         errs = cdp.eval("(window.__exErrs || []).slice(0, 5)") or []

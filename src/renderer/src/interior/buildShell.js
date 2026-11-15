@@ -29,6 +29,7 @@ import {
   orderFloorsByElevation,
 } from './stairs.js';
 import { furnitureBoxes } from './furnitureBoxes.js';
+import { columnBoxes } from './columns.js';
 
 /** 屋顶默认参数（cm）。改这里就是改全项目的屋顶观感。 */
 export const ROOF_DEFAULTS = Object.freeze({
@@ -445,6 +446,7 @@ export function buildBuildingShell(floors, options = {}) {
   let openingCount = 0;
   let stairCount = 0;
   let furnitureCount = 0;
+  let columnCount = 0;
   let topY = 0;
 
   // 楼层按 elevation 升序处理（用户可能改了层高顺序）。
@@ -474,6 +476,15 @@ export function buildBuildingShell(floors, options = {}) {
       boxes.push(...wallBoxes(wall, elevation, openings, colors));
       const h = num(wall.height, SHELL_DEFAULTS.wallHeight) || SHELL_DEFAULTS.wallHeight;
       topY = Math.max(topY, elevation + h);
+    }
+
+    // 柱（2026-11-15，A24 余）：一根柱 = 一个点 + 一个截面，从本层地面长到**本层墙顶**。
+    // 高度取本层墙高（`maxWallTop`），不是全局最高 —— 否则矮墙房间的柱子会顶穿屋面。
+    if (options.columns !== false) {
+      const cols = Array.isArray(floor.columns) ? floor.columns : [];
+      const cboxes = columnBoxes(cols, elevation, { wallHeight: maxWallTop(walls) || SHELL_DEFAULTS.wallHeight });
+      columnCount += cboxes.length;
+      boxes.push(...cboxes);
     }
 
     // 家具（2026-11-15，A20）：每件家具一块体积，高度按类型查表。
@@ -574,6 +585,7 @@ export function buildBuildingShell(floors, options = {}) {
       openings: openingCount,
       stairs: stairCount,
       furniture: furnitureCount,
+      columns: columnCount,
       boxes: allBoxes.length,
       roofTriangles: (roof?.tris || []).length,
       height: bounds.size[1],

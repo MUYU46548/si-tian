@@ -72,6 +72,11 @@ export const INTERIOR_SHORTCUTS = Object.freeze([
     hint: '点两下画一跑楼梯：第一下是起步点，第二下是爬到哪；级数按层高自动算，上一层楼板自动开洞',
     match: { key: '5', mod: false, shift: false },
   },
+  {
+    id: 'tool:add_column', group: '工具', label: '放柱', keys: ['6'],
+    hint: '点一下放一根柱；柱从本层地面长到本层墙顶，截面在工具条里选 30/40/60/80cm',
+    match: { key: '6', mod: false, shift: false },
+  },
 
   // ── 视图 ──
   {

@@ -7,6 +7,7 @@ import { ref } from 'vue';
 //   removeFurniture（直接改内存）/ updateFurniture（先改内存后 execute）
 //   updateInteriorReferenceImage / removeInteriorReferenceImage（参考图）
 import { guardWrite } from '../writeGate';
+import { normalizeColumn } from '../../interior/columns.js';
 
 export function createInteriorModule(ctx) {
   const { execute, scheduleAutoSave } = ctx;
@@ -64,6 +65,8 @@ export function createInteriorModule(ctx) {
     // 2026-11-15（A24）：楼梯单独一组。`stairs` 挂在**人爬的这一层**上，
     // 上行 = 通到上一层、下行 = 通到下一层（别在两层各存一份，否则改一处留一处）。
     if (!Array.isArray(floor.stairs)) floor.stairs = [];
+    // 2026-11-15（A24 余）：柱。每层一组，柱从本层地面长到本层墙顶（高度不是用户填的字段）。
+    if (!Array.isArray(floor.columns)) floor.columns = [];
     if (!Number.isFinite(floor.elevation)) floor.elevation = 0;
     return floor;
   }
@@ -782,6 +785,93 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  /**
+   * 放一根柱（2026-11-15，A24 余）。
+   *
+   * 柱 = 一个点 + 一个截面；高度是**本层净高**（墙顶），不是用户填的字段 ——
+   * 让人填高度只会得到一堆“看着对、3D 里顶不到梁”的柱子。截面夹在 15~200cm（`columns.js`）。
+   */
+  function addColumn(buildingId, floorId, column = {}) {
+    if (!guardWrite('放柱').ok) return null;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return null;
+    const n = normalizeColumn(column);
+    if (!n) return null;
+    const item = {
+      id: `column_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      x: Number(column.x),
+      y: Number(column.y),
+      size: n.size,
+      shape: n.shape,
+      color: n.color,
+    };
+    execute({
+      type: 'add-column',
+      label: '放柱',
+      undo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f && Array.isArray(f.columns)) f.columns = f.columns.filter((c) => c.id !== item.id);
+      },
+      redo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f.columns.push({ ...item });
+      },
+    });
+    scheduleAutoSave();
+    return item;
+  }
+
+  /** 改柱（截面 / 位置 / 颜色）。与 updateStair 同一套：一条 undo，oldSnapshot 可指定 */
+  function updateColumn(buildingId, floorId, columnId, patch = {}, oldSnapshot = null) {
+    if (!guardWrite('修改柱').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const item = floor.columns.find((c) => c.id === columnId);
+    if (!item) return;
+    const before = oldSnapshot ? JSON.parse(JSON.stringify(oldSnapshot)) : JSON.parse(JSON.stringify(item));
+    const merged = { ...JSON.parse(JSON.stringify(item)), ...JSON.parse(JSON.stringify(patch)), id: columnId };
+    const n = normalizeColumn(merged);
+    if (!n) return;
+    const next = {
+      ...merged,
+      x: Number(merged.x),
+      y: Number(merged.y),
+      size: n.size,
+      shape: n.shape,
+      color: n.color,
+    };
+    const apply = (snap) => {
+      const f = findFloor(buildingId, floorId);
+      const it = f && (f.columns || []).find((c) => c.id === columnId);
+      if (it) Object.assign(it, JSON.parse(JSON.stringify(snap)));
+    };
+    execute({ type: 'update-column', label: '修改柱', undo: () => apply(before), redo: () => apply(next) });
+    scheduleAutoSave();
+  }
+
+  /** 删柱 */
+  function removeColumn(buildingId, floorId, columnId) {
+    if (!guardWrite('删除柱').ok) return;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return;
+    const idx = floor.columns.findIndex((c) => c.id === columnId);
+    if (idx === -1) return;
+    const removed = JSON.parse(JSON.stringify(floor.columns[idx]));
+    execute({
+      type: 'remove-column',
+      label: '删除柱',
+      undo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (f) f.columns.splice(Math.min(idx, f.columns.length), 0, removed);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (f) f.columns = f.columns.filter((c) => c.id !== columnId);
+      },
+    });
+    scheduleAutoSave();
+  }
+
   return {
     interiorData,
     interiorReferenceImages,
@@ -805,6 +895,10 @@ export function createInteriorModule(ctx) {
     addStair,
     updateStair,
     removeStair,
+    // 建筑内部（2026-11-15，A24 余）：柱
+    addColumn,
+    updateColumn,
+    removeColumn,
     setFloorChangeHook,
     ensureFloorArrays,
     addFurniture,

@@ -128,7 +128,8 @@ const statsText = computed(() => {
   const h = s.height > 0 ? ` · 高 ${formatLength(s.height)}` : '';
   const st = s.stairs > 0 ? ` · ${s.stairs} 部楼梯` : '';
   const fu = s.furniture > 0 ? ` · ${s.furniture} 件家具` : '';
-  return `${scope}${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${fu}${h}`;
+  const co = s.columns > 0 ? ` · ${s.columns} 根柱` : '';
+  return `${scope}${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${co}${fu}${h}`;
 });
 
 let THREE = null;

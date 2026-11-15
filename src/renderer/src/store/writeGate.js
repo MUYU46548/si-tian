@@ -170,8 +170,10 @@ export const MEMORY_WRITE_CALLSITES = [
           'addOpening', 'updateOpening', 'removeOpening', 'setFloorRooms',
           'setFurnitureShape',
           // 2026-11-15（A24）：楼梯三个写口（都先 guardWrite 再 execute）
-          'addStair', 'updateStair', 'removeStair'],
-    what: '楼层 / 家具 / 参考图 / 墙体 / 门窗 / 房间 / 楼梯' },
+          'addStair', 'updateStair', 'removeStair',
+          // 2026-11-15（A24 余）：柱三个写口（同上）
+          'addColumn', 'updateColumn', 'removeColumn'],
+    what: '楼层 / 家具 / 参考图 / 墙体 / 门窗 / 房间 / 楼梯 / 柱' },
   { id: 5, file: 'src/renderer/src/store/geodataModules/areaEditing.js',
     fns: ['updateAreaReferenceImage', 'removeAreaReferenceImage'],
     what: '区域参考图' },

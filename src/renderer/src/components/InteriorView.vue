@@ -100,6 +100,7 @@
           <button :class="{ active: interactionMode === 'add_door' }" @click="interactionMode = 'add_door'" title="放门：点在墙上，门按点到的位置放上去"><Icon name="home" :size="13"/> 门</button>
           <button :class="{ active: interactionMode === 'add_window' }" @click="interactionMode = 'add_window'" title="放窗：点在墙上"><Icon name="grid" :size="13"/> 窗</button>
           <button :class="{ active: interactionMode === 'add_stairs' }" @click="startStairTool" title="画楼梯：点一下定起步点，再点一下定上落点。级数按层高自动算，上一层楼板会自动开洞"><Icon name="stairs" :size="13"/> 楼梯</button>
+          <button :class="{ active: interactionMode === 'add_column' }" @click="startColumnTool" title="放柱：点一下放一根柱。柱从本层地面长到本层墙顶，截面在右边选" data-testid="tool-column"><Icon name="cube" :size="13"/> 柱</button>
         </div>
 
         <div class="toolbar-group" title="墙厚" v-if="interactionMode === 'add_wall'">
@@ -116,6 +117,16 @@
             自动 {{ autoStepHint.steps }} 级 · 升 {{ formatLength(Math.abs(autoStepHint.rise)) }}
           </span>
           <button @click="stairsDraftStart = null" :disabled="!stairsDraftStart" title="结束这一跑（Esc）">结束</button>
+        </div>
+
+        <div class="toolbar-group" title="柱" v-if="interactionMode === 'add_column' || currentColumn">
+          <span class="toolbar-label">柱截面</span>
+          <button v-for="s in COLUMN_SIZE_OPTIONS" :key="s"
+                  :class="{ active: (currentColumn ? currentColumn.size : columnSize) === s }"
+                  @click="applyColumnSize(s)" data-testid="column-size-opt">{{ s }}cm</button>
+          <button v-if="currentColumn" @click="deleteSelectedColumn" data-testid="column-delete"
+                  title="删掉选中的这根柱（可撤销）">删除这根</button>
+          <span v-else class="toolbar-hint">点画布放一根 · Esc 结束</span>
         </div>
 
         <div class="toolbar-group" title="房间模板" v-if="interactionMode === 'add_room'">
@@ -570,6 +581,8 @@ import {
   stairFootprint, stairTargetFloor, stairHolesForFloor, stairDirection,
   orderFloorsByElevation, stairOutsideInfo, fitStairInside,
 } from '../interior/stairs.js';
+// 柱（2026-11-15，A24 余）：几何与命中都在 columns.js（纯函数），视图只读它
+import { COLUMN_DEFAULTS, columnAtPoint } from '../interior/columns.js';
 import { getRoomPolygon, polygonArea, pointInPolygon } from '../utils/roomDetection';
 
 const props = defineProps({
@@ -1063,6 +1076,15 @@ const stairForm = reactive({ width: STAIR_DEFAULTS.width, steps: 0, direction: '
 
 const currentStair = computed(() => (currentFloor.value?.stairs || []).find((s) => s.id === selectedStairId.value) || null);
 
+// ===== 柱（2026-11-15，A24 余）=====
+// 柱只有一个点 + 一个截面：点一下放一根，选中后改截面或删掉。
+// 高度不是用户填的字段 —— 从本层地面长到本层墙顶（`columns.js` 的口径，3D 也读同一份）。
+const COLUMN_SIZE_OPTIONS = [30, 40, 60, 80];
+const selectedColumnId = ref(null);
+const columnSize = ref(COLUMN_DEFAULTS.size);
+const currentColumns = computed(() => currentFloor.value?.columns || []);
+const currentColumn = computed(() => currentColumns.value.find((c) => c.id === selectedColumnId.value) || null);
+
 // A14：把 floor.elevation 真正接进视图 —— 楼层标签、楼梯目标层、上/下一层都读同一份标高
 const orderedFloors = computed(() => orderFloorsByElevation(floors.value));
 const floorIndex = computed(() => orderedFloors.value.findIndex((f) => f.id === currentFloorId.value));
@@ -1155,10 +1177,11 @@ const currentFurniture = computed(() => {
 function selectFloor(floorId) {
   currentFloorId.value = floorId;
   selectedFurniture.value = null;
-  // 选中态跟着楼层走：楼梯/墙/门窗都属于某一层，换了层还高亮等于指着一个不可见的对象
+  // 选中态跟着楼层走：楼梯/墙/门窗/柱都属于某一层，换了层还高亮等于指着一个不可见的对象
   selectedStairId.value = null;
   editingStair.value = false;
   selectedWallId.value = null;
+  selectedColumnId.value = null;
   // 2026-11-15（三层自查）：rooms 是派生数据，原来只在"墙变了"时重算。
   // 但跨楼层复制 / 旧项目常见"某层有墙、rooms 却是空的" —— 切过去是一张没有房间填充、
   // 没有面积、连洞口都衬不出来的空白图。切层时补算一次；只在房间为空且墙够围合时动手，
@@ -1284,6 +1307,7 @@ const renderer = useCanvasRenderer(canvas, {
         selectedWallId: selectedWallId.value || undefined,
         selectedOpeningId: selectedOpening.value?.id || undefined,
         selectedStairId: selectedStairId.value || undefined,
+        selectedColumnId: selectedColumnId.value || undefined,
         // 楼板洞口（下层上行梯 / 本层下行梯，A16）—— 与 3D 用的是同一份几何
         holes: floorHoles.value,
         // 每部楼梯的升量各不相同，按楼梯给上下文（A14：elevation 真接进视图）
@@ -1517,7 +1541,7 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
   }
 
   // 这几种是"点一下放一个东西"的工具，不进入拖拽
-  if (['add_furniture', 'add_wall', 'add_stairs', 'add_door', 'add_window'].includes(interactionMode.value)) {
+  if (['add_furniture', 'add_wall', 'add_stairs', 'add_door', 'add_window', 'add_column'].includes(interactionMode.value)) {
     return false;
   }
 
@@ -1826,6 +1850,11 @@ function handleCanvasClick(hit, wx, wy) {
     handleStairClick(wx, wy);
     return;
   }
+  // 柱（2026-11-15，A24 余）：点一下放一根
+  if (interactionMode.value === 'add_column') {
+    placeColumn(wx, wy);
+    return;
+  }
   // 门窗：点在墙上放一个
   if (interactionMode.value === 'add_door') {
     placeOpening('door', wx, wy);
@@ -1882,12 +1911,26 @@ function handleCanvasClick(hit, wx, wy) {
     if (!selectedFurnitureIds.value.includes(hit.id)) {
       selectedFurnitureIds.value = [hit.id];
     }
-    // 选中互斥：选家具就放下门窗/墙/楼梯
+    // 选中互斥：选家具就放下门窗/墙/楼梯/柱
     selectedOpening.value = null;
     selectedWallId.value = null;
     selectedStairId.value = null;
+    selectedColumnId.value = null;
     editingStair.value = false;
   } else {
+    // 柱（2026-11-15，A24 余）：点中柱 → 选中（工具条里改截面 / 删）
+    const col = hitColumn(wx, wy);
+    if (col) {
+      selectedColumnId.value = col.id;
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+      selectedWallId.value = null;
+      selectedOpening.value = null;
+      selectedStairId.value = null;
+      editingStair.value = false;
+      renderer.requestRender();
+      return;
+    }
     const op = hitOpening(wx, wy);
     if (op) {
       selectedOpening.value = { kind: op.kind, id: op.id, wallId: op.wallId };
@@ -1909,6 +1952,7 @@ function handleCanvasClick(hit, wx, wy) {
       } else {
         selectedStairId.value = null;
         editingStair.value = false;
+        selectedColumnId.value = null;
       }
     }
   }
@@ -2566,6 +2610,72 @@ function startStairTool() {
   renderer.requestRender();
 }
 
+// ===== 柱（2026-11-15，A24 余）=====
+
+/** 命中一根柱（容差 6cm：手指点不准时给一点余量） */
+function hitColumn(wx, wy) {
+  return columnAtPoint(currentColumns.value, { x: wx, y: wy }, 6);
+}
+
+function startColumnTool() {
+  interactionMode.value = 'add_column';
+  stairsDraftStart.value = null;
+  wallDraftStart.value = null;
+  setExportMsg('');
+  renderer.requestRender();
+}
+
+/**
+ * 点一下放一根柱。落点按网格吸附（和家具同一套手感），放完立刻选中 ——
+ * 用户要能马上看见“这根柱多粗、在哪”，否则点完不知道发生了什么。
+ */
+function placeColumn(wx, wy) {
+  const floorId = currentFloorId.value;
+  if (!floorId || !props.buildingNode) return;
+  const p = gridSnapEnabled.value ? snapPoint({ x: wx, y: wy }) : { x: wx, y: wy };
+  const created = store.addColumn(props.buildingNode.id, floorId, {
+    x: Math.round(p.x),
+    y: Math.round(p.y),
+    size: columnSize.value,
+  });
+  if (created) {
+    selectedColumnId.value = created.id;
+    selectedFurniture.value = null;
+    selectedFurnitureIds.value = [];
+    selectedWallId.value = null;
+    selectedOpening.value = null;
+    selectedStairId.value = null;
+    editingStair.value = false;
+    setExportMsg(`放了一根 ${created.size}cm 的柱（Ctrl+Z 可撤）`);
+  } else {
+    setExportMsg('放柱失败：当前是只读状态，或者落点无效', true);
+  }
+  renderer.requestRender();
+}
+
+/** 改柱截面：选中了就改这一根（一条 undo），没选中就记住下次放多大 */
+function applyColumnSize(size) {
+  const s = Number(size);
+  if (!Number.isFinite(s)) return;
+  columnSize.value = s;
+  const col = currentColumn.value;
+  if (!col) return;
+  const floorId = currentFloorId.value;
+  if (!floorId || !props.buildingNode) return;
+  store.updateColumn(props.buildingNode.id, floorId, col.id, { size: s }, { ...col });
+  renderer.requestRender();
+}
+
+function deleteSelectedColumn() {
+  const col = currentColumn.value;
+  const floorId = currentFloorId.value;
+  if (!col || !floorId || !props.buildingNode) return;
+  store.removeColumn(props.buildingNode.id, floorId, col.id);
+  selectedColumnId.value = null;
+  setExportMsg('删了一根柱（Ctrl+Z 可撤）');
+  renderer.requestRender();
+}
+
 /**
  * 画楼梯：两次点击定起步点与上落点（与画墙同一套手感）。
  * 画完立刻选中并打开浮窗 —— "刚画的东西长什么样、通到哪、几级"要当场能看见，
@@ -2835,6 +2945,11 @@ function deleteSelected() {
   // 选中楼梯 → 删这一跑（2026-11-15，A24）
   if (selectedStairId.value && currentFloorId.value) {
     deleteSelectedStair();
+    return;
+  }
+  // 选中柱 → 删这一根（2026-11-15，A24 余）
+  if (selectedColumnId.value && currentFloorId.value) {
+    deleteSelectedColumn();
     return;
   }
   // 选中墙 → 删墙（连带挂在上面的门窗，数据层已处理）
@@ -3127,6 +3242,8 @@ function runShortcut(id) {
     interactionMode.value = id.slice(5);
     wallDraftStart.value = null;
     stairsDraftStart.value = null;
+    // 切工具就放下“选中柱”（柱的设置组只在放柱模式或选中时出现，留着会闪一下又消失）
+    if (id !== 'tool:add_column') selectedColumnId.value = null;
     clearAlignGuides();
     renderer.requestRender();
     return true;
@@ -3236,6 +3353,14 @@ function handleKeydown(e) {
     return;
   }
 
+  // Esc：结束“放柱”（回到拖手）—— 别把整个编辑模式关掉（用户只是想停止放柱）
+  if (e.key === 'Escape' && !isEditingInput && interactionMode.value === 'add_column') {
+    interactionMode.value = 'pan';
+    selectedColumnId.value = null;
+    renderer.requestRender();
+    return;
+  }
+
   // Esc：结束当前这段墙（画墙是连续画的，必须有个明确的收尾键）
   if (e.key === 'Escape' && !isEditingInput && wallDraftStart.value) {
     wallDraftStart.value = null;
@@ -3284,8 +3409,8 @@ function handleKeydown(e) {
       }
     } else if (selectedFurniture.value) {
       deleteSelected();
-    } else if (selectedStairId.value || selectedWallId.value || selectedOpening.value) {
-      // 墙 / 门窗 / 楼梯的删除也认 Del（以前只认家具，选中墙按 Del 没反应）
+    } else if (selectedStairId.value || selectedWallId.value || selectedOpening.value || selectedColumnId.value) {
+      // 墙 / 门窗 / 楼梯 / 柱的删除也认 Del（以前只认家具，选中墙按 Del 没反应）
       deleteSelected();
     }
   }
