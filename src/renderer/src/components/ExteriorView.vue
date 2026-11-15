@@ -14,6 +14,20 @@
             <option value="flat">平顶</option>
           </select>
         </label>
+        <label class="ex-roof">
+          <span>角度</span>
+          <select v-model="axoPreset" data-testid="exterior-axo-preset" title="轴测出图用的投影角度">
+            <option value="iso">等轴测 45°/35°</option>
+            <option value="dimetric">二测 2:1</option>
+            <option value="high">高视 45°/60°</option>
+          </select>
+        </label>
+        <button class="ex-btn" @click="exportAxo" :disabled="!ready || axoBusy || emptyBuilding"
+                data-testid="exterior-axo-export"
+                :title="emptyBuilding ? '这栋楼还没有墙，没有可出的图' : '把当前屋顶/楼层渲成一张轴测插图（3600×2400，带墨线），存成 PNG'">
+          {{ axoBusy ? '出图中…' : '轴测出图' }}
+        </button>
+        <span v-if="axoMsg" class="ex-axo-msg" :class="{ err: axoMsgErr }" data-testid="exterior-axo-msg">{{ axoMsg }}</span>
         <button class="ex-btn" @click="resetView" :disabled="!ready" title="回到初始机位">复位视角</button>
         <button class="ex-btn primary" @click="$emit('close')" title="回到平面图">关闭</button>
       </div>
@@ -51,6 +65,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import { buildBuildingShell, ROOF_DEFAULTS, SHELL_COLORS } from '../interior/buildShell';
+// 轴测插图：取景（纯函数、可单测）与离屏渲染分开，后者只在这里用（three 已是动态 import）
+import { axoFrame, axoCanvas } from '../interior/axonometric';
+import { renderAxoToDataUrl, AXO_COLORS } from '../interior/axoScene';
 import { formatLength } from '../utils/interiorUnits';
 
 const props = defineProps({
@@ -67,6 +84,23 @@ const ready = ref(false);
 const roofKind = ref(props.roofKind === 'flat' ? 'flat' : 'gable');
 const emptyBuilding = ref(false);
 const shellStats = ref({ floors: 0, walls: 0, openings: 0, height: 0 });
+
+// ===== 轴测出图（2026-11-15）=====
+const axoPreset = ref('iso');
+const axoBusy = ref(false);
+const axoMsg = ref('');
+const axoMsgErr = ref(false);
+let axoMsgTimer = 0;
+
+function setAxoMsg(text, isErr = false) {
+  axoMsg.value = text;
+  axoMsgErr.value = isErr;
+  if (axoMsgTimer) clearTimeout(axoMsgTimer);
+  // 失败不设 TTL（"失败要看得见"是本项目纪律）；成功 5 秒淡出
+  axoMsgTimer = window.setTimeout(() => {
+    if (!isErr) { axoMsg.value = ''; axoMsgTimer = 0; }
+  }, 5000);
+}
 
 const statsText = computed(() => {
   const s = shellStats.value;
@@ -313,6 +347,58 @@ function rebuild() {
   }
   status.value = '';
   startLoop();
+}
+
+/**
+ * 轴测出图（2026-11-15）。
+ *
+ * 为什么不用主视口那个 renderer：主视口是 `preserveDrawingBuffer: false`（省显存），
+ * 且 3600×2400 会把正在看的画面抖一下。这里另起一个离屏 renderer，
+ * 渲完立刻 dispose —— 一次性开销，不影响交互。
+ */
+async function exportAxo() {
+  if (axoBusy.value) return;
+  if (!lastShell || lastShell.empty) {
+    setAxoMsg('这栋楼还没有墙，没有可出的图', true);
+    return;
+  }
+  if (!THREE) {
+    setAxoMsg('3D 引擎还没加载完，稍等一下再点', true);
+    return;
+  }
+  axoBusy.value = true;
+  setAxoMsg('正在渲染轴测图…');
+  // 让浏览器先把"出图中…"画出来，再做重活（否则用户以为按钮没反应）
+  await new Promise((r) => setTimeout(r, 30));
+  try {
+    const canvasSize = axoCanvas('print');
+    const frame = axoFrame(lastShell.bounds, {
+      preset: axoPreset.value,
+      aspect: canvasSize.width / canvasSize.height,
+      margin: 0.08,
+      fit: 'silhouette',
+    });
+    const out = renderAxoToDataUrl(THREE, lastShell, {
+      frame,
+      canvas: canvasSize,
+      roofColor: roofKind.value === 'flat' ? AXO_COLORS.roofFlat : AXO_COLORS.roofGable,
+    });
+    const name = `${props.buildingName || '建筑'}-轴测.png`.replace(/[\\/:*?"<>|]/g, '_');
+    const api = window.sitianAPI;
+    if (!api || !api.saveExportFile) throw new Error('当前环境不支持导出（缺少保存通道）');
+    const r = await api.saveExportFile({ dataUrl: out.dataUrl, defaultName: name });
+    if (r && r.success) {
+      setAxoMsg(`已导出 ${out.width}×${out.height}：${(r.path || name).split(/[\\/]/).pop()}`);
+    } else if (r && r.canceled) {
+      setAxoMsg('');
+    } else {
+      setAxoMsg(`导出失败：${(r && r.error) || '未知原因'}`, true);
+    }
+  } catch (e) {
+    setAxoMsg(`出图失败：${e && e.message ? e.message : String(e)}`, true);
+  } finally {
+    axoBusy.value = false;
+  }
 }
 
 function resetView() {
@@ -567,6 +653,16 @@ defineExpose({
 }
 .ex-fallback p { margin: 0; }
 .ex-fallback-sub { color: #7c6a5c; font-size: 12px; }
+.ex-axo-msg {
+  font-size: 11px;
+  color: #9fb0c0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-axo-msg.err { color: #e0705f; }
+
 .ex-hint {
   position: absolute;
   left: 12px;
