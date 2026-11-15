@@ -140,6 +140,20 @@
                   title="取消这一下（Esc）">取消</button>
         </div>
 
+        <div class="toolbar-group" title="多选墙" v-if="selectedWallIds.length > 1">
+          <span class="toolbar-label" data-testid="walls-selected">{{ selectedWallIds.length }} 面墙已选</span>
+          <button @click="deleteSelectedWalls" data-testid="walls-delete" title="一次删掉这些墙（挂在上面的门窗一起删，一条撤销）">删除选中</button>
+          <button @click="clearWallSelection" title="取消选中（Esc）">取消选中</button>
+        </div>
+
+        <div class="toolbar-group" title="房间" v-if="currentRoom">
+          <span class="toolbar-label" data-testid="room-selected">
+            {{ currentRoom.name || '未命名房间' }} · {{ formatArea(currentRoomArea) }}
+          </span>
+          <button @click="renameSelectedRoom" data-testid="room-rename" title="给这间房起个名字（双击房间也可以）">改名</button>
+          <button @click="selectedRoomId = null" title="取消选中（Esc）">取消选中</button>
+        </div>
+
         <div class="toolbar-group" title="房间模板" v-if="interactionMode === 'add_room'">
           <span class="toolbar-label">模板</span>
           <button
@@ -1098,6 +1112,40 @@ const columnSize = ref(COLUMN_DEFAULTS.size);
 const currentColumns = computed(() => currentFloor.value?.columns || []);
 const currentColumn = computed(() => currentColumns.value.find((c) => c.id === selectedColumnId.value) || null);
 
+// 房间选中（2026-11-15，A29）：单击房间就选中并高亮（双击改名是 A28，早就有）。
+// 房间是**面**，所以它的命中排在最后：点在墙/柱/家具/洞上时优先选那些，点空白才落到房间。
+const selectedRoomId = ref(null);
+const currentRoom = computed(() => (currentFloor.value?.rooms || []).find((r) => r.id === selectedRoomId.value) || null);
+const currentRoomArea = computed(() => {
+  const r = currentRoom.value;
+  if (!r) return 0;
+  return polygonArea(getRoomPolygon(r, currentFloor.value?.walls || []));
+});
+
+// 多选墙（2026-11-15，A30）：Shift/Ctrl+点击墙追加，Del 一次删（一条 undo）。
+// `selectedWallId` 仍保留为“主选中”（很多老路径按它判断），数组是它的超集。
+const selectedWallIds = ref([]);
+
+function clearWallSelection() {
+  selectedWallIds.value = [];
+  selectedWallId.value = null;
+  renderer.requestRender();
+}
+
+/** 批量删墙：一条 undo（store.removeWalls 是原子操作，不循环调 removeWall） */
+function deleteSelectedWalls() {
+  const ids = selectedWallIds.value.slice();
+  const floorId = currentFloorId.value;
+  const buildingId = props.buildingNode?.id;
+  if (ids.length < 1 || !floorId || !buildingId) return;
+  if (ids.length > 1 && !confirm(`确定删除选中的 ${ids.length} 面墙？挂在上面的门窗会一起删掉。`)) return;
+  const n = store.removeWalls(buildingId, floorId, ids);
+  selectedWallIds.value = [];
+  selectedWallId.value = null;
+  setExportMsg(`删了 ${n} 面墙（Ctrl+Z 可撤）`);
+  renderer.requestRender();
+}
+
 // A14：把 floor.elevation 真正接进视图 —— 楼层标签、楼梯目标层、上/下一层都读同一份标高
 const orderedFloors = computed(() => orderFloorsByElevation(floors.value));
 const floorIndex = computed(() => orderedFloors.value.findIndex((f) => f.id === currentFloorId.value));
@@ -1196,6 +1244,8 @@ function selectFloor(floorId) {
   selectedWallId.value = null;
   selectedColumnId.value = null;
   selectedHoleId.value = null;
+  selectedRoomId.value = null;
+  selectedWallIds.value = [];
   // 2026-11-15（三层自查）：rooms 是派生数据，原来只在"墙变了"时重算。
   // 但跨楼层复制 / 旧项目常见"某层有墙、rooms 却是空的" —— 切过去是一张没有房间填充、
   // 没有面积、连洞口都衬不出来的空白图。切层时补算一次；只在房间为空且墙够围合时动手，
@@ -1319,9 +1369,11 @@ const renderer = useCanvasRenderer(canvas, {
         zoom: renderer.getViewTransform().scale,
         theme: 'print',
         selectedWallId: selectedWallId.value || undefined,
+        selectedWallIds: selectedWallIds.value,
         selectedOpeningId: selectedOpening.value?.id || undefined,
         selectedStairId: selectedStairId.value || undefined,
         selectedColumnId: selectedColumnId.value || undefined,
+        selectedRoomId: selectedRoomId.value || undefined,
         // 楼板洞口（下层上行梯 / 本层下行梯，A16）—— 与 3D 用的是同一份几何
         holes: floorHoles.value,
         // 每部楼梯的升量各不相同，按楼梯给上下文（A14：elevation 真接进视图）
@@ -1576,6 +1628,7 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
         links: linkedWallsAt(handle.wall, handle.end),
       };
       selectedWallId.value = handle.wall.id;
+      selectedWallIds.value = [handle.wall.id];
       selectedFurniture.value = null;
       selectedFurnitureIds.value = [];
       renderer.requestRender();
@@ -1584,9 +1637,19 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
     // 点墙身 = 选中这面墙（Delete 可删）
     const body = hitWallBody(wx, wy);
     if (body) {
-      selectedWallId.value = body.id;
+      if (shiftKey || ctrlKey) {
+        // 多选（A30）：Shift/Ctrl+点击墙 = 加进 / 移出选择（与家具多选同一套手感）
+        const i = selectedWallIds.value.indexOf(body.id);
+        if (i === -1) selectedWallIds.value.push(body.id);
+        else selectedWallIds.value.splice(i, 1);
+        selectedWallId.value = selectedWallIds.value[selectedWallIds.value.length - 1] || null;
+      } else {
+        selectedWallIds.value = [body.id];
+        selectedWallId.value = body.id;
+      }
       selectedFurniture.value = null;
       selectedFurnitureIds.value = [];
+      selectedRoomId.value = null;
       renderer.requestRender();
       return false;      // 不进入拖拽：墙身拖动暂不支持（拖动会带走整面墙，手感与对手件不同）
     }
@@ -1853,6 +1916,11 @@ function handleDragEnd(wx, wy, info) {
 }
 
 function handleCanvasClick(hit, wx, wy) {
+  // 每次点击先放下房间选中（A29）：房间是“面”，点在别的东西上时不该还亮着它
+  selectedRoomId.value = null;
+  // 多选墙（A30）：点空白 / 家具 / 柱 / 洞时放下墙的多选；点在墙（含端点）上时保留 ——
+  // 墙的选中发生在 onDragStart（pointerdown），onClick 在 pointerup，清早了会把刚选的墙抹掉。
+  if (!hitWallBody(wx, wy) && !hitWallHandle(wx, wy)) selectedWallIds.value = [];
   // 家具自绘（2026-11-14）：编辑期间画布点击只用于加点，不做选中/放置
   if (shapeEdit.active) {
     addShapePoint(wx, wy);
@@ -1993,6 +2061,9 @@ function handleCanvasClick(hit, wx, wy) {
         editingStair.value = false;
         selectedColumnId.value = null;
         selectedHoleId.value = null;
+        // 房间（A29）：点在空白处 → 落在哪间房里就选中哪间；点建筑外 = 什么都不选
+        const room = hitRoom(wx, wy);
+        selectedRoomId.value = room ? room.id : null;
       }
     }
   }
@@ -2532,6 +2603,22 @@ function hitRoom(wx, wy) {
     if (poly && poly.length >= 3 && pointInPolygon({ x: wx, y: wy }, poly)) return r;
   }
   return null;
+}
+
+/** 工具条里的“改名”：与双击房间走同一条写口（renameRoom，一条 undo） */
+async function renameSelectedRoom() {
+  const room = currentRoom.value;
+  const buildingId = props.buildingNode?.id;
+  const floorId = currentFloorId.value;
+  if (!room || !buildingId || !floorId) return;
+  if (store.isReadOnly) {
+    setExportMsg(store.readOnlyReason || '当前为只读状态', true);
+    return;
+  }
+  const next = await promptDialog.askText({ title: '房间名称', defaultValue: room.name || '' });
+  if (next === null || next === undefined) return;
+  store.renameRoom(buildingId, floorId, room.id, String(next).trim());
+  renderer.requestRender();
 }
 
 /** 双击房间 → 改名（A28）。房间名字是唯一"人给"的字段，其余都由墙推出来。 */
@@ -3114,6 +3201,7 @@ function deleteSelected() {
   if (selectedWallId.value && currentFloorId.value) {
     store.removeWall(props.buildingNode.id, currentFloorId.value, selectedWallId.value);
     selectedWallId.value = null;
+    selectedWallIds.value = [];
     recalcRooms();
     renderer.requestRender();
     return;
@@ -3533,6 +3621,19 @@ function handleKeydown(e) {
     return;
   }
 
+  // Esc：先放下房间选中（A29），再按才走其它 Esc 语义（别一按 Esc 就退出整个编辑模式）
+  if (e.key === 'Escape' && !isEditingInput && selectedRoomId.value) {
+    selectedRoomId.value = null;
+    renderer.requestRender();
+    return;
+  }
+
+  // Esc：放下墙的多选（A30）
+  if (e.key === 'Escape' && !isEditingInput && selectedWallIds.value.length) {
+    clearWallSelection();
+    return;
+  }
+
   // Esc：结束当前这段墙（画墙是连续画的，必须有个明确的收尾键）
   if (e.key === 'Escape' && !isEditingInput && wallDraftStart.value) {
     wallDraftStart.value = null;
@@ -3570,6 +3671,11 @@ function handleKeydown(e) {
   }
   
   if (e.key === 'Delete' && !isEditingInput) {
+    // 多选墙（A30）：一次删掉（一条 undo）—— 优先于其它单选分支
+    if (selectedWallIds.value.length > 1) {
+      deleteSelectedWalls();
+      return;
+    }
     if (selectedFurnitureIds.value.length > 1) {
       if (confirm(`确定删除选中的 ${selectedFurnitureIds.value.length} 件家具？`)) {
         for (const id of [...selectedFurnitureIds.value]) {

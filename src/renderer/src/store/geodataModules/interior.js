@@ -242,6 +242,53 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  /**
+   * 批量删墙（2026-11-15，A30）：多选后一次删掉，**一条 undo**。
+   *
+   * 为什么不循环调 removeWall：那样 N 面墙就是 N 条 undo —— 用户按一次 Ctrl+Z 只回来一面，
+   * 看着像“撤销坏了”。批量删必须是原子操作（与 addFurnitureBatch 同一条纪律）。
+   */
+  function removeWalls(buildingId, floorId, wallIds = []) {
+    if (!guardWrite('删除墙体').ok) return 0;
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return 0;
+    const ids = [...new Set((wallIds || []).map(String))]
+      .filter((id) => floor.walls.some((w) => w.id === id));
+    if (!ids.length) return 0;
+    const idSet = new Set(ids);
+    const removedWalls = floor.walls.filter((w) => idSet.has(w.id)).map((w) => JSON.parse(JSON.stringify(w)));
+    const removedDoors = (floor.doors || []).filter((d) => idSet.has(d.wallId)).map((d) => ({ ...d }));
+    const removedWindows = (floor.windows || []).filter((d) => idSet.has(d.wallId)).map((d) => ({ ...d }));
+    const removedRooms = (floor.rooms || [])
+      .filter((r) => (r.walls || []).some((id) => idSet.has(id)))
+      .map((r) => JSON.parse(JSON.stringify(r)));
+    execute({
+      type: 'remove-walls',
+      label: `删除 ${ids.length} 面墙`,
+      undo: () => {
+        const f = ensureFloorArrays(findFloor(buildingId, floorId));
+        if (!f) return;
+        // 插回数组末尾：墙面顺序不影响几何，房间会由墙重新算出来
+        f.walls.push(...removedWalls);
+        f.doors.push(...removedDoors);
+        f.windows.push(...removedWindows);
+        f.rooms.push(...removedRooms);
+        notifyFloorChanged(buildingId, floorId);
+      },
+      redo: () => {
+        const f = findFloor(buildingId, floorId);
+        if (!f) return;
+        f.walls = f.walls.filter((w) => !idSet.has(w.id));
+        f.doors = (f.doors || []).filter((d) => !idSet.has(d.wallId));
+        f.windows = (f.windows || []).filter((d) => !idSet.has(d.wallId));
+        f.rooms = (f.rooms || []).filter((r) => !(r.walls || []).some((id) => idSet.has(id)));
+        notifyFloorChanged(buildingId, floorId);
+      },
+    });
+    scheduleAutoSave();
+    return ids.length;
+  }
+
   /** 门 / 窗共用：挂在某面墙上的开口（kind = 'doors' | 'windows'） */
   function addOpening(kind, buildingId, floorId, opening = {}) {
     if (!guardWrite(kind === 'doors' ? '加门' : '加窗').ok) return null;
@@ -968,6 +1015,7 @@ export function createInteriorModule(ctx) {
     updateWalls,
     renameRoom,
     removeWall,
+    removeWalls,
     addDoor: (b, f, o) => addOpening('doors', b, f, o),
     updateDoor: (b, f, id, p) => updateOpening('doors', b, f, id, p),
     removeDoor: (b, f, id) => removeOpening('doors', b, f, id),

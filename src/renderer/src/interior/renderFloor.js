@@ -194,11 +194,17 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
       const poly = getRoomPolygon(room, walls);
       if (poly.length < 3) continue;
       if (!pathPolygon(ctx, poly)) continue;
+      const isSel = !!opts.selectedRoomId && opts.selectedRoomId === room.id;
       ctx.save();
       ctx.fillStyle = room.color || theme.roomFill;
       ctx.fill();
-      ctx.strokeStyle = room.color || theme.roomStroke;
-      ctx.lineWidth = 1 / zoom;
+      // 选中房间（A29）：叠一层亮色 + 亮描边 —— 只靠描边在浅色纸上看不清“选中的是哪一间”
+      if (isSel) {
+        ctx.fillStyle = 'rgba(88, 166, 255, 0.22)';
+        ctx.fill();
+      }
+      ctx.strokeStyle = isSel ? '#58a6ff' : (room.color || theme.roomStroke);
+      ctx.lineWidth = (isSel ? 2.6 : 1) / zoom;
       ctx.stroke();
       ctx.restore();
       stat.rooms++;
@@ -256,7 +262,8 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
     const segs = wallSolidSegments(wall, openings);
     // 打印态统一用涂黑墙：木色墙在纸上印出来是脏灰，且与家具色分不开
     const color = opts.theme === 'print' ? theme.wall : (wall.color || theme.wall);
-    const selected = opts.selectedWallId && opts.selectedWallId === wall.id;
+    const selected = (opts.selectedWallId && opts.selectedWallId === wall.id)
+      || (Array.isArray(opts.selectedWallIds) && opts.selectedWallIds.includes(wall.id));
     for (const [t0, t1] of segs) {
       const quad = segmentQuad(wall, t0, t1, wall.thickness);
       if (!pathPolygon(ctx, quad)) continue;

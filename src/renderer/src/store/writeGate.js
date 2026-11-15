@@ -166,7 +166,7 @@ export const MEMORY_WRITE_CALLSITES = [
           // 2026-11-15：**补登 10 个从未登记的写口** —— 墙 / 门窗 / 房间 / 家具形状
           // 都是 11-13 / 11-14 两轮加的，当时只加了 guardWrite 却没进契约。
           // test_54 的 a2（反向扫描：有守卫就必须登记）当场把它们全列了出来。
-          'addWall', 'updateWall', 'updateWalls', 'renameRoom', 'removeWall',
+          'addWall', 'updateWall', 'updateWalls', 'renameRoom', 'removeWall', 'removeWalls',
           'addOpening', 'updateOpening', 'removeOpening', 'setFloorRooms',
           'setFurnitureShape',
           // 2026-11-15（A24）：楼梯三个写口（都先 guardWrite 再 execute）
