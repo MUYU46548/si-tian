@@ -53,6 +53,7 @@ function fakeCtx() {
     fillRect: rec('fillRect'),
     quadraticCurveTo: rec('quadraticCurveTo'),
     setLineDash: rec('setLineDash'),
+    quadraticCurveTo: rec('quadraticCurveTo'),
     count(name) { return ops.filter((o) => o.name === name).length; },
   };
   return ctx;
@@ -194,6 +195,31 @@ async function main() {
     assert(drawCustomShape(fakeCtx(), { points: [] }, { w: 10, h: 10, zoom: 1 }) === false, '空 points 应返回 false');
     assert(drawCustomShape(fakeCtx(), null, { w: 10, h: 10, zoom: 1 }) === false, 'null 应返回 false');
     return '3 点三角形 + 2 条回落';
+  });
+
+  check('f13 自定义形状 · 平滑：走二次贝塞尔，不再用直线段', () => {
+    const ctx = fakeCtx();
+    drawFurnitureSymbol(ctx, {
+      width: 200, height: 120, type: 'generic',
+      custom: {
+        points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }],
+        smooth: true,
+      },
+    }, { zoom: 1 });
+    assert(ctx.count('quadraticCurveTo') === 4, `4 个点应出 4 段曲线，实际 ${ctx.count('quadraticCurveTo')}`);
+    assert(ctx.count('lineTo') === 0, `平滑模式下不该有 lineTo，实际 ${ctx.count('lineTo')}`);
+    return '4 段曲线 / 0 直线';
+  });
+
+  check('f14 自定义形状 · 不平滑（默认）：仍是折线，不许误用曲线', () => {
+    const ctx = fakeCtx();
+    drawFurnitureSymbol(ctx, {
+      width: 200, height: 120, type: 'generic',
+      custom: { points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0.5, y: 1 }] },
+    }, { zoom: 1 });
+    assert(ctx.count('quadraticCurveTo') === 0, '默认必须走直线');
+    assert(ctx.count('lineTo') === 2, `3 个点应有 2 条直线，实际 ${ctx.count('lineTo')}`);
+    return '2 条直线';
   });
 
   const bad = results.filter((r) => !r.ok);

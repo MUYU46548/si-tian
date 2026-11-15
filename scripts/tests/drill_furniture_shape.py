@@ -131,6 +131,56 @@ def main():
         time.sleep(0.6)
         p4, s4 = D.shot(cdp, os.path.join(OUT_DIR, '04-reset'))
         print('  · %s %s' % (p4, s4))
+
+        # 平滑：给床画一圈圆润的轮廓，看曲线是不是真的圆了
+        cdp.eval("""(() => {
+          const s = %s, iv = %s;
+          const f = iv.currentFloor;
+          const bed = f.furniture.find(x => x.type === 'bed');
+          if (!bed) return 1;
+          iv.selectedFurniture = bed;
+          iv.startShapeEdit();
+          const cx = bed.x + bed.width / 2, cy = bed.y + bed.height / 2;
+          iv.shapeEdit.points = [];
+          // 8 个点围一圈（近似椭圆），开平滑后应该看不到棱角
+          for (let i = 0; i < 8; i++) {
+            const a = (Math.PI * 2 * i) / 8;
+            iv.shapeEdit.points.push({ x: cx + Math.cos(a) * bed.width * 0.5, y: cy + Math.sin(a) * bed.height * 0.5 });
+          }
+          iv.shapeEdit.smooth = true;
+          iv.renderer.requestRender();
+          return 1;
+        })()""" % (STORE, IV))
+        time.sleep(0.5)
+        p5, s5 = D.shot(cdp, os.path.join(OUT_DIR, '05-smooth-drawing'))
+        print('  · %s %s' % (p5, s5))
+        cdp.eval("(() => { %s.finishShapeEdit(); return 1; })()" % IV)
+        time.sleep(0.5)
+        p6, s6 = D.shot(cdp, os.path.join(OUT_DIR, '06-smooth-saved'))
+        print('  · %s %s' % (p6, s6))
+
+        # 对齐参考线 + 画墙预览（A26）：起一段墙，光标停在右墙角附近
+        cdp.eval("""(() => {
+          const iv = %s;
+          iv.editMode = true;
+          iv.interactionMode = 'add_wall';
+          const f = iv.currentFloor;
+          const w = (f.walls || [])[0];
+          iv.wallDraftStart = w ? { x: w.end.x, y: w.end.y } : { x: 0, y: 0 };
+          iv.pointerWorld = { x: (w ? w.end.x : 0) + 160, y: (w ? w.end.y : 0) + 60 };
+          iv.renderer.requestRender();
+          return 1;
+        })()""" % IV)
+        time.sleep(0.5)
+        p7, s7 = D.shot(cdp, os.path.join(OUT_DIR, '07-align-guides'))
+        print('  · %s %s' % (p7, s7))
+
+        # 快捷键一览（A27）
+        cdp.eval("(() => { const iv = %s; iv.wallDraftStart = null; iv.editMode = false; iv.shortcutsHelpOpen = true; return 1; })()" % IV)
+        time.sleep(0.6)
+        p8, s8 = D.shot(cdp, os.path.join(OUT_DIR, '08-shortcuts'))
+        print('  · %s %s' % (p8, s8))
+        cdp.eval("(() => { %s.shortcutsHelpOpen = false; return 1; })()" % IV)
     finally:
         try:
             if cdp:

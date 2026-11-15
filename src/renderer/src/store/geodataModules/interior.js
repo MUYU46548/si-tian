@@ -531,7 +531,13 @@ export function createInteriorModule(ctx) {
         if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
         cleaned.push({ x, y });
       }
-      next = { points: cleaned, closed: custom.closed !== false, fill: custom.fill !== false };
+      // 🔴 smooth 必须一起存：漏了它「平滑」按钮保存后等于没按（单测 test_176 抓到）
+      next = {
+        points: cleaned,
+        closed: custom.closed !== false,
+        fill: custom.fill !== false,
+        smooth: custom.smooth === true,
+      };
     }
 
     const snap = (o) => (o ? JSON.parse(JSON.stringify(o)) : null);

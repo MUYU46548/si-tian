@@ -148,9 +148,28 @@ export function drawCustomShape(ctx, custom, { w, h, zoom }) {
   const my = (p) => y0 + Math.max(0, Math.min(1, Number(p.y) || 0)) * h;
 
   ctx.beginPath();
-  ctx.moveTo(mx(pts[0]), my(pts[0]));
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(mx(pts[i]), my(pts[i]));
-  if (custom.closed !== false) ctx.closePath();
+  if (custom.smooth && pts.length >= 3) {
+    // 平滑（2026-11-15）：用**中点二次贝塞尔**把折线抹圆 —— 每个顶点当控制点、边中点当端点。
+    // 这样数据里仍然只存"点"，曲线是渲染时算出来的：不引入新的路径语法，
+    // 换尺寸、改顶点、存模板全都照旧（存贝塞尔控制点的话，这四件事都要各写一套）。
+    const at = (i) => {
+      const p = pts[((i % pts.length) + pts.length) % pts.length];
+      return { x: mx(p), y: my(p) };
+    };
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const first = mid(at(0), at(1));
+    ctx.moveTo(first.x, first.y);
+    for (let i = 1; i <= pts.length; i++) {
+      const c = at(i);
+      const m = mid(at(i), at(i + 1));
+      ctx.quadraticCurveTo(c.x, c.y, m.x, m.y);
+    }
+    ctx.closePath();
+  } else {
+    ctx.moveTo(mx(pts[0]), my(pts[0]));
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(mx(pts[i]), my(pts[i]));
+    if (custom.closed !== false) ctx.closePath();
+  }
   if (custom.fill !== false) {
     ctx.fillStyle = FILL;
     ctx.fill();

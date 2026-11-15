@@ -104,6 +104,7 @@ export function worldPointsToCustom(worldPts, item, opts = {}) {
     points,
     closed: opts.closed !== false,
     fill: opts.fill !== false,
+    smooth: opts.smooth === true,       // 平滑 = 渲染时用中点贝塞尔（数据仍是点）
     extent: { x: c.x - halfW, y: c.y - halfH, width: nw, height: nh },
   };
 }
@@ -143,5 +144,6 @@ export function sanitizeCustom(custom) {
     points,
     closed: custom.closed !== false,
     fill: custom.fill !== false,
+    smooth: custom.smooth === true,
   };
 }
