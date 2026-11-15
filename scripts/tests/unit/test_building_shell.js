@@ -358,6 +358,77 @@ async function main() {
     return '无屋顶';
   });
 
+  // ── A23/A15：房间地面 / 吊顶面（2026-11-15）────────────────────────────
+  const rectPoly = (w = 400, d = 300) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: d }, { x: 0, y: d }];
+  const roomOf = (mask = {}, poly) => Object.assign({
+    id: 'r1', name: '客厅', walls: ['w0', 'w1', 'w2', 'w3'],
+    floorTexture: 'wood', polygon: poly || rectPoly(),
+  }, mask);
+  const triArea = (tris) => tris.reduce((s, t) => {
+    const a = t[0]; const b = t[1]; const c = t[2];
+    return s + Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])) / 2;
+  }, 0);
+
+  check('s20 房间地面（A23）：一间房 → 1 块面、2 个三角形，颜色来自材质', () => {
+    const f = rectRoom({});
+    f.rooms = [roomOf()];
+    const r = buildBuildingShell([f], { roof: { kind: 'none' } });
+    const floors = r.surfaces.filter((s) => s.kind === 'room-floor');
+    assert(floors.length === 1, `应只有 1 块房间地面，实际 ${floors.length}`);
+    assert(floors[0].tris.length === 2, `矩形应切成 2 个三角形，实际 ${floors[0].tris.length}`);
+    assert(/^#[0-9a-f]{6}$/i.test(floors[0].color), `颜色必须是 #hex：${floors[0].color}`);
+    assert(r.stats.roomFloors === 1, `统计 roomFloors 应为 1，实际 ${r.stats.roomFloors}`);
+    assert(r.stats.ceilings === 0, '没设吊顶时不该有天花板');
+    // 地面必须抬 1cm（避免与地面/楼板共面 z-fighting）
+    const ys = floors[0].tris.flat().map((p) => p[1]);
+    near(Math.min(...ys), 1, 1e-6, '地面标高');
+    return `1 块 / 2 三角形 / 面积 ${triArea(floors[0].tris)}`;
+  });
+
+  check('s21 吊顶（A15）：默认不生成，显式打开才画；净高超过墙顶被夹住', () => {
+    const f = rectRoom({ h: 280 });
+    f.rooms = [roomOf({ floorTexture: 'tile', ceiling: { texture: 'plaster', height: 240 } })];
+    const off = buildBuildingShell([f], { roof: { kind: 'none' } });
+    assert(off.stats.ceilings === 0, `默认应不生成吊顶（否则会盖住房间），实际 ${off.stats.ceilings}`);
+
+    const on = buildBuildingShell([f], { roof: { kind: 'none' }, ceilings: true });
+    assert(on.stats.ceilings === 1, `打开后应有 1 间吊顶，实际 ${on.stats.ceilings}`);
+    const ceil = on.surfaces.find((s) => s.kind === 'room-ceiling');
+    near(Math.min(...ceil.tris.flat().map((p) => p[1])), 240, 1e-6, '吊顶标高 = 净高');
+
+    // 净高 800 打进 280 墙高的房间 → 夹到墙顶，不许飘在墙上方
+    f.rooms[0].ceiling = { texture: 'plaster', height: 800 };
+    const clamp = buildBuildingShell([f], { roof: { kind: 'none' }, ceilings: true });
+    near(Math.min(...clamp.surfaces.find((s) => s.kind === 'room-ceiling').tris.flat().map((p) => p[1])),
+      280, 1e-6, '超过墙顶应夹到墙顶');
+    return '默认 0 / 打开 1 / 净高夹到墙顶';
+  });
+
+  check('s22 L 形房间：三角面积守恒，不会铺到隔壁（包围盒近似会多铺）', () => {
+    // 400×300 的方框里挖掉右下 250×150：面积 = 400*150 + 150*150 = 82500
+    const Lpoly = [
+      { x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 150 },
+      { x: 150, y: 150 }, { x: 150, y: 300 }, { x: 0, y: 300 },
+    ];
+    const f = rectRoom({});
+    f.rooms = [roomOf({ polygon: Lpoly })];
+    const r = buildBuildingShell([f], { roof: { kind: 'none' } });
+    const floor = r.surfaces.find((s) => s.kind === 'room-floor');
+    assert(floor.tris.length === Lpoly.length - 2, `L 形应切成 n−2=4 个三角形，实际 ${floor.tris.length}`);
+    const area = triArea(floor.tris);
+    near(area, 82500, 1e-3, '三角面积和');
+    assert(area < 400 * 300 - 1, '面积应小于包围盒（判据本身要能区分）');
+    return `4 三角形 / 面积 ${area}（包围盒 120000）`;
+  });
+
+  check('s23 rooms:false 可关掉房间面（实时预览不需要时省几何）', () => {
+    const f = rectRoom({});
+    f.rooms = [roomOf({ ceiling: { texture: 'plaster', height: 240 } })];
+    const r = buildBuildingShell([f], { roof: { kind: 'none' }, ceilings: true, rooms: false });
+    assert(r.surfaces.length === 0, `关掉后不该有房间面，实际 ${r.surfaces.length}`);
+    return '0 块面';
+  });
+
   const bad = results.filter((r) => !r.ok);
   for (const r of results) {
     console.log(`${r.ok ? '  ok  ' : '  FAIL'}  ${r.name}${r.detail ? `  —— ${r.detail}` : ''}`);

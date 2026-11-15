@@ -9,6 +9,7 @@ import { ref } from 'vue';
 import { guardWrite } from '../writeGate';
 import { normalizeColumn } from '../../interior/columns.js';
 import { normalizeHole } from '../../interior/floorHoles.js';
+import { normalizeFloorTexture, normalizeCeiling } from '../../interior/floorPatterns.js';
 
 export function createInteriorModule(ctx) {
   const { execute, scheduleAutoSave } = ctx;
@@ -158,6 +159,53 @@ export function createInteriorModule(ctx) {
     };
     execute({ type: 'rename-room', label: '房间改名', undo: () => apply(before), redo: () => apply(after) });
     scheduleAutoSave();
+  }
+
+  /**
+   * 房间材质（2026-11-15，A23/A15）：地面材质 + 吊顶（材质/净高），**一条 undo 全覆盖**。
+   *
+   * 为什么不是「改颜色」那种散写口：材质写在房间对象上，而房间是**派生数据** ——
+   * 墙一动就重算（`mergeDetectedRooms`）。所以这里必须②把字段跟着继承（见 roomDetection.js），
+   * 否则用户设好一片木地板，拖一下墙就变回默认值，且不报错。
+   *
+   * @param {string} buildingId
+   * @param {string} floorId
+   * @param {string} roomId
+   * @param {{floorTexture?:string, ceiling?:{texture:string,height?:number}|null}} patch
+   * @returns {{ok:boolean, changed?:boolean, rejected?:string, message?:string}}
+   */
+  function setRoomMaterial(buildingId, floorId, roomId, patch = {}) {
+    if (!guardWrite('改房间材质').ok) {
+      return { ok: false, rejected: 'readonly', message: '只读态不允许改房间材质' };
+    }
+    const floor = ensureFloorArrays(findFloor(buildingId, floorId));
+    if (!floor) return { ok: false, rejected: 'no-floor', message: '找不到这一层' };
+    const idx = floor.rooms.findIndex((r) => r && r.id === roomId);
+    if (idx < 0) return { ok: false, rejected: 'not-found', message: '这间房不在这一层（房间可能被重算过）' };
+
+    const before = JSON.parse(JSON.stringify(floor.rooms));
+    const after = JSON.parse(JSON.stringify(floor.rooms));
+    const target = after[idx];
+    if (Object.prototype.hasOwnProperty.call(patch, 'floorTexture')) {
+      target.floorTexture = normalizeFloorTexture(patch.floorTexture);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'ceiling')) {
+      const ceil = normalizeCeiling(patch.ceiling);
+      // 空值不落盘：没有吊顶就删掉字段（`.sitian` 里不留 `ceiling: null`）
+      if (ceil) target.ceiling = ceil;
+      else delete target.ceiling;
+    }
+    if (JSON.stringify(before) === JSON.stringify(after)) return { ok: true, changed: false };
+
+    const apply = (list) => {
+      const f = findFloor(buildingId, floorId);
+      if (!f) return;
+      // 只换 rooms（不动 walls）→ 不触发重算，材质不会被下一次围合洗掉
+      f.rooms = JSON.parse(JSON.stringify(list));
+    };
+    execute({ type: 'set-room-material', label: '房间材质', undo: () => apply(before), redo: () => apply(after) });
+    scheduleAutoSave();
+    return { ok: true, changed: true };
   }
 
   /**
@@ -1014,6 +1062,7 @@ export function createInteriorModule(ctx) {
     updateWall,
     updateWalls,
     renameRoom,
+    setRoomMaterial,
     removeWall,
     removeWalls,
     addDoor: (b, f, o) => addOpening('doors', b, f, o),

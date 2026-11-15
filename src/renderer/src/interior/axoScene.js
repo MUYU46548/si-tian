@@ -96,6 +96,27 @@ export function buildAxoScene(THREE, shell, opts = {}) {
     group.add(edges);
   }
 
+  // ①.5 房间地面 / 吊顶面（2026-11-15，A23/A15）：一块面一个 mesh（面数本来就不多）
+  //
+  // 为什么必须补这里：`exportAxo` 拿的是 `lastShell`，而插图镜头**看不见组合层的顶点色**，
+  // 漏了这一段就是“视口里铺了地板、出图上是白地”，用户会拿两张图对不上。
+  // 插图风格本来就不吃光照阴影（只按朝向分面），所以不投影、不接收。
+  for (const s of shell.surfaces || []) {
+    if (!s || !Array.isArray(s.tris) || !s.tris.length) continue;
+    const pos = [];
+    for (const t of s.tris) {
+      for (const p of t || []) pos.push(p[0], p[1], p[2]);
+    }
+    if (!pos.length) continue;
+    const geo = track(new THREE.BufferGeometry());
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, solidMat(s.color || '#d8d3c8'));
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    group.add(mesh);
+  }
+
   // ② 坡面（三/四边形）：扇形三角化 + 外轮廓描边
   for (const face of (shell.roof && shell.roof.faces) || []) {
     if (!face || face.length < 3) continue;

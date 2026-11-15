@@ -35,13 +35,17 @@ function near(a, b, tol, label) {
 /**
  * 把 ESM 源码按 data URL 载入，并把相对 import 递归换成子模块的 data URL
  * （本仓 .js 是 ESM，但 package.json 没写 type=module；与 test_building_shell.js 同一份手法）。
+ *
+ * ⚠️ 正则必须认 `../`：buildShell 会跨目录 import（`../utils/roomDetection.js`）——
+ * 只匹配 `./` 时那一句原样留在源码里，Node 会报
+ * `ERR_UNSUPPORTED_RESOLVE_REQUEST: Invalid relative URL`，看起来像产品代码坏了。
  */
 async function loadEsm(absPath) {
   const cache = new Map();
   const build = (p) => {
     if (cache.has(p)) return Promise.resolve(cache.get(p));
     const src = fs.readFileSync(p, 'utf8');
-    const re = /from\s+'(\.\/[^']+)';/g;
+    const re = /from\s+'(\.{1,2}\/[^']+)';/g;
     const jobs = [];
     let m;
     while ((m = re.exec(src))) jobs.push({ at: m.index, end: m.index + m[0].length, spec: m[1] });

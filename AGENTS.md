@@ -32,7 +32,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**178 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**134 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**135 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - **退出码 3 = 环境没起来（不是产品结论）**（2026-11-08）：`store.nodes` 恒 0 / 页面被关掉 /
     harness 基线项目打不开（`no-app`、`browser-dev-mode`）时，整轮**中止**并印一段横幅，
@@ -167,6 +167,12 @@
   读数（415 省 / 7.87 MB）：6 MB 上限下 **50 / 50 / 50 / 14 步**（补丁 10 KB / 11 KB / 367 B / 394 KB），
   3 MB 上限下整表重算只剩 **3 步** —— 那份"改一次就只剩 4 步"的传闻出自这里。
   守门 `scripts/tests/unit/test_snapshot_depth.js`（8 条，含"上限压到 1 字节只留最新 1 份""去掉 id 退回整表替换"两条负向探针）。
+- **房间材质 / 吊顶真机演练（A23/A15，2026-11-15）**: `python scripts/tests/drill_room_materials.py`
+  —— Vite(5180) + Edge(9333)。2D 用 `canvas.toDataURL`（每次拍前**切层再切回**强制重建）；
+  3D 用整页截图，但拍之前要**调组件自己的 `tick()` 踢一帧** —— headless 下 `startLoop()` 里的 raf
+  会挂住不触发，`rebuild()` 明明换了场景、两张截图却 **0 像素差**（看起来像"材质没接进 3D"）。
+  判据 20 条：2D 材质占 48.74% / 同设置复拍 0 px / 吊顶注记 3699 px / 3D 瓷砖 vs 纯色 8.89% /
+  只改一间 8.83% / 吊顶 28.75% / 统计条 / store 回读 / 一次 undo / 零报错。产物 `build/room-materials/`。
 - **N1 像素基线（渲染层接口化的判据）**: `python scripts/tests/drill_scenario_pixels.py --tag before` 留底、
   `--tag after` 再拍一次、`--compare before after` 比 —— 起 Vite(5180)+Edge(9222)，用**自带底图（3 省）**固定取景，
   落 `build/pixel-baseline/<tag>.json`（整图 FNV-1a + **关标注**后的几何层指纹 + camera）与同名 PNG。
@@ -672,7 +678,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 178 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 134 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 135 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |

@@ -343,6 +343,9 @@ export function mergeDetectedRooms(prevRooms, detected, opts = {}) {
       used.add(hitExact);
       return { ...base, id: hitExact.id || base.id, name: hitExact.name || '',
         floorTexture: hitExact.floorTexture || 'wood', color: hitExact.color,
+        // 吊顶（A15）也要跟着继承：房间是派生数据，墙一动就重算 ——
+        // 不继承就是“设好的吊顶被拖一下墙抹掉”，而且不报错（同名字/材质的坑）。
+        ...(hitExact.ceiling ? { ceiling: { ...hitExact.ceiling } } : {}),
         roomType: hitExact.roomType };
     }
 
@@ -360,7 +363,9 @@ export function mergeDetectedRooms(prevRooms, detected, opts = {}) {
     if (best && bestD <= tol) {
       used.add(best);
       return { ...base, id: best.id || base.id, name: best.name || '',
-        floorTexture: best.floorTexture || 'wood', color: best.color, roomType: best.roomType };
+        floorTexture: best.floorTexture || 'wood', color: best.color,
+        ...(best.ceiling ? { ceiling: { ...best.ceiling } } : {}),
+        roomType: best.roomType };
     }
 
     // ③ 新房间

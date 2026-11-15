@@ -18,6 +18,12 @@ import { formatArea, formatLength } from '../utils/interiorUnits';
 import { getRoomPolygon, polygonArea } from '../utils/roomDetection';
 import { stairFootprint, stairTreads, stairDirection } from './stairs.js';
 import { columnFootprint } from './columns.js';
+import {
+  normalizeFloorTexture, normalizeCeiling, ceilingTextureOf,
+  floorPatternSegments, floorPatternStyle,
+  floorTextureCss, floorTextureLineCss,
+} from './floorPatterns.js';
+import { insetPolygon } from './triangulate.js';
 
 const DEFAULT_WALL_COLOR = '#8d7f6e';
 
@@ -48,6 +54,9 @@ export const FLOOR_THEMES = Object.freeze({
     holeLine: 'rgba(110, 110, 125, 0.55)',
     dimText: '#9fb0c0',
     dimBg: 'rgba(20, 24, 32, 0.72)',
+    // 吊顶注记（A15）：虚线框 + 副标题。深底用浅青，白纸用深青（各自压得住底色）
+    ceilingLine: 'rgba(150, 200, 220, 0.75)',
+    ceilingText: '#a9c6d6',
   },
   print: {
     roomFill: '#e8eff7',        // 白纸上要看得出"这一间"（原来是 #eef1f5，几乎与纸同色）
@@ -69,6 +78,8 @@ export const FLOOR_THEMES = Object.freeze({
     holeLine: 'rgba(70, 75, 85, 0.45)',
     dimText: '#6b7783',
     dimBg: 'rgba(255,255,255,0.86)',
+    ceilingLine: 'rgba(70, 120, 140, 0.7)',
+    ceilingText: '#436472',
   },
 });
 
@@ -158,6 +169,75 @@ function pathPolygon(ctx, pts) {
 }
 
 /**
+ * 房间包围盒（纹理铺设范围；纹理线会再被裁进房间多边形里）
+ */
+function polyBounds(poly) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of poly) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * 房间地面（2026-11-15，A23）：**用户自选色 > 材质纹理 > 主题纯色**。
+ *
+ * 自己管路径（先 fill 底色，再 clip 画纹理线，最后把多边形路径重新建回来）——
+ * `ctx.clip()` 会吃掉当前路径，不重建的话调用方的描边会画到纹理线上去。
+ *
+ * @returns {string} 实际用到的材质 id（`none` = 纯色）
+ */
+function paintRoomFloor(ctx, poly, room, { zoom, theme }) {
+  const texId = normalizeFloorTexture(room && room.floorTexture);
+  const custom = room && room.color;
+  if (!pathPolygon(ctx, poly)) return texId;
+  if (custom) { ctx.fillStyle = custom; ctx.fill(); return texId; }
+
+  const base = floorTextureCss(texId, theme);
+  if (base) {
+    ctx.fillStyle = base;
+    ctx.fill();
+    const segs = floorPatternSegments(texId, polyBounds(poly));
+    if (segs.length) {
+      const st = floorPatternStyle(texId, theme);
+      ctx.save();
+      ctx.clip();                       // 裁进房间：矩形房间之外的部分不画
+      ctx.beginPath();
+      for (const s of segs) { ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); }
+      ctx.globalAlpha = st.alpha;
+      ctx.strokeStyle = floorTextureLineCss(texId, theme);
+      ctx.lineWidth = st.widthPx / zoom;
+      ctx.stroke();
+      ctx.restore();
+    }
+    return texId;
+  }
+
+  ctx.fillStyle = theme.roomFill;
+  ctx.fill();
+  return texId;
+}
+
+/**
+ * 吊顶虚线框（2026-11-15，A15）：沿房间内缩一圈画虚线。
+ * 为什么是虚线 + 内缩：实线贴墙会和墙线混成一条，内缩一圈才读得出"这是吊顶范围"。
+ */
+function strokeCeilingOutline(ctx, poly, { zoom, theme }) {
+  const ins = insetPolygon(poly, 14);
+  if (ins.length < 3 || !pathPolygon(ctx, ins)) return false;
+  ctx.save();
+  ctx.setLineDash([7 / zoom, 5 / zoom]);
+  ctx.strokeStyle = theme.ceilingLine;
+  ctx.lineWidth = 0.9 / zoom;
+  ctx.stroke();
+  ctx.restore();
+  return true;
+}
+
+/**
  * 画一层：房间填充 → 墙 → 转角圆盖 → 门窗符号 → 房间名/面积。
  *
  * @param {CanvasRenderingContext2D} ctx 已按相机变换过
@@ -193,11 +273,12 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
     for (const room of rooms) {
       const poly = getRoomPolygon(room, walls);
       if (poly.length < 3) continue;
-      if (!pathPolygon(ctx, poly)) continue;
       const isSel = !!opts.selectedRoomId && opts.selectedRoomId === room.id;
+      const ceil = normalizeCeiling(room.ceiling);
       ctx.save();
-      ctx.fillStyle = room.color || theme.roomFill;
-      ctx.fill();
+      // 地面材质（A23）自己管路径；回来之后必须重新建一次多边形路径再描边
+      paintRoomFloor(ctx, poly, room, { zoom, theme });
+      if (!pathPolygon(ctx, poly)) { ctx.restore(); continue; }
       // 选中房间（A29）：叠一层亮色 + 亮描边 —— 只靠描边在浅色纸上看不清“选中的是哪一间”
       if (isSel) {
         ctx.fillStyle = 'rgba(88, 166, 255, 0.22)';
@@ -206,8 +287,11 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
       ctx.strokeStyle = isSel ? '#58a6ff' : (room.color || theme.roomStroke);
       ctx.lineWidth = (isSel ? 2.6 : 1) / zoom;
       ctx.stroke();
+      // 吊顶范围（A15）：虚线压在最上层，才不会被地面纹理吃掉
+      if (ceil) strokeCeilingOutline(ctx, poly, { zoom, theme });
       ctx.restore();
       stat.rooms++;
+      if (ceil) stat.ceilingRooms = (stat.ceilingRooms || 0) + 1;
 
       if (showLabels) {
         const area = polygonArea(poly);
@@ -217,16 +301,38 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.scale(1 / zoom, 1 / zoom);          // 字号按屏幕像素给
-        ctx.font = '13px "Microsoft YaHei", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         // 深色底 + 浅色字，描边保证压在任何底色上都读得出
+        ctx.font = '13px "Microsoft YaHei", sans-serif';
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.strokeStyle = theme.roomTextHalo;
         ctx.strokeText(label, 0, 0);
         ctx.fillStyle = theme.roomText;
         ctx.fillText(label, 0, 0);
+        // 吊顶副标题（A15）：材质名 + 净高。
+        // 位置**放在房间内缩矩形的左上角**，不进房间名那一行 ——
+        // 第一版接在面积下面（两行只隔 4px），第二版改到上方仍然和名字挤成一团；
+        // 平面图里这种注记本来就该贴墙角，不抢中心那行"房间名 · 面积"。
+        if (ceil) {
+          const sub = `${ceilingTextureOf(ceil.texture).label}吊顶 ${formatLength(ceil.height)}`;
+          const ins = insetPolygon(poly, 26);
+          const box = polyBounds(ins.length >= 3 ? ins : poly);
+          ctx.save();
+          ctx.translate(box.minX + 8, box.minY + 8);
+          ctx.scale(1 / zoom, 1 / zoom);
+          ctx.font = '11px "Microsoft YaHei", sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.lineWidth = 3;
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = theme.roomTextHalo;
+          ctx.strokeText(sub, 0, 0);
+          ctx.fillStyle = theme.ceilingText;
+          ctx.fillText(sub, 0, 0);
+          ctx.restore();
+        }
         ctx.restore();
       }
     }

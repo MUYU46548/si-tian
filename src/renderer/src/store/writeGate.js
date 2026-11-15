@@ -169,6 +169,8 @@ export const MEMORY_WRITE_CALLSITES = [
           'addWall', 'updateWall', 'updateWalls', 'renameRoom', 'removeWall', 'removeWalls',
           'addOpening', 'updateOpening', 'removeOpening', 'setFloorRooms',
           'setFurnitureShape',
+          // 2026-11-15（A23/A15）：房间材质（地面纹理 + 吊顶）
+          'setRoomMaterial',
           // 2026-11-15（A24）：楼梯三个写口（都先 guardWrite 再 execute）
           'addStair', 'updateStair', 'removeStair',
           // 2026-11-15（A24 余）：柱三个写口（同上）

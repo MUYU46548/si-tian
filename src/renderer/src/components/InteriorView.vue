@@ -151,6 +151,26 @@
             {{ currentRoom.name || '未命名房间' }} · {{ formatArea(currentRoomArea) }}
           </span>
           <button @click="renameSelectedRoom" data-testid="room-rename" title="给这间房起个名字（双击房间也可以）">改名</button>
+          <label class="toolbar-field" title="房间地面材质：平面图上铺纹理，3D 里用同一份底色">
+            <span>地面</span>
+            <select :value="currentRoomFloorTexture" @change="applyRoomFloorTexture($event.target.value)"
+                    data-testid="room-floor-texture">
+              <option v-for="t in FLOOR_TEXTURES" :key="t.id" :value="t.id">{{ t.label }}</option>
+            </select>
+          </label>
+          <label class="toolbar-field" title="吊顶材质：平面图上画虚线范围并标注净高；3D 里要打开外观面板的“吊顶”开关才画出来">
+            <span>吊顶</span>
+            <select :value="currentRoomCeilingTexture" @change="applyRoomCeilingTexture($event.target.value)"
+                    data-testid="room-ceiling-texture">
+              <option v-for="t in CEILING_TEXTURES" :key="t.id" :value="t.id">{{ t.label }}</option>
+            </select>
+          </label>
+          <label v-if="currentRoomCeiling" class="toolbar-field" title="吊顶净高（离本层地面）：最低 200cm、最高 800cm，超出会被夹住">
+            <span>净高</span>
+            <input type="number" :value="currentRoomCeilingHeight" min="200" max="800" step="5"
+                   @change="applyRoomCeilingHeight($event.target.value)" data-testid="room-ceiling-height" />
+            <span class="unit">cm</span>
+          </label>
           <button @click="selectedRoomId = null" title="取消选中（Esc）">取消选中</button>
         </div>
 
@@ -605,6 +625,9 @@ import { getPreset, drawStyledLabel } from '../utils/labelStyles';
 // 建筑内部（2026-11-13 第 1/3 刀）：墙由工具栏画，房间由墙自动围合
 import { detectRooms, mergeDetectedRooms } from '../utils/roomDetection';
 import { drawInteriorFloor, drawStairSymbol, drawFloorHoles } from '../interior/renderFloor';
+import {
+  FLOOR_TEXTURES, CEILING_TEXTURES, normalizeCeiling,
+} from '../interior/floorPatterns';
 import { DEFAULT_WALL_THICKNESS, formatLength, formatArea, fitZoom } from '../utils/interiorUnits';
 // 外观（2026-11-14）：同一份楼层数据的 3D 渲染。three 只在点开时动态加载。
 import ExteriorView from './ExteriorView.vue';
@@ -2620,6 +2643,57 @@ function hitRoom(wx, wy) {
   return null;
 }
 
+// ===== 房间材质（2026-11-15，A23/A15）：地面纹理 + 吊顶 =====
+// 三项都走 `store.setRoomMaterial` —— 一条 undo 覆盖整组改动；
+// 那个写口只换 rooms、不动 walls（动了墙会触发重算，材质被围合结果洗掉）。
+// 材质本身的口径（色表 / 纹理线 / 净高夹取）在 `interior/floorPatterns.js`，2D 与 3D 共用同一份。
+const currentRoomFloorTexture = computed(() => (currentRoom.value && currentRoom.value.floorTexture) || 'wood');
+const currentRoomCeiling = computed(() => normalizeCeiling(currentRoom.value && currentRoom.value.ceiling));
+const currentRoomCeilingTexture = computed(() => (currentRoomCeiling.value ? currentRoomCeiling.value.texture : 'none'));
+const currentRoomCeilingHeight = computed(() => (currentRoomCeiling.value ? currentRoomCeiling.value.height : 260));
+
+/** 统一入口：拦只读 → 调写口 → 把结果说给用户（被拒要说原因，不许静默） */
+function applyRoomMaterial(patch, receipt) {
+  const room = currentRoom.value;
+  const buildingId = props.buildingNode && props.buildingNode.id;
+  const floorId = currentFloorId.value;
+  if (!room || !buildingId || !floorId) return;
+  if (store.isReadOnly) {
+    setExportMsg(store.readOnlyReason || '当前为只读状态', true);
+    return;
+  }
+  const res = store.setRoomMaterial(buildingId, floorId, room.id, patch);
+  if (!res || res.ok === false) {
+    setExportMsg((res && res.message) || '改房间材质失败', true);
+    return;
+  }
+  if (res.changed === false) return;
+  setExportMsg(`${receipt}（Ctrl+Z 可撤）`);
+  renderer.requestRender();
+}
+
+function applyRoomFloorTexture(v) {
+  const t = FLOOR_TEXTURES.find((x) => x.id === v) || FLOOR_TEXTURES[0];
+  applyRoomMaterial({ floorTexture: t.id }, `地面材质：${t.label}`);
+}
+
+function applyRoomCeilingTexture(v) {
+  const t = CEILING_TEXTURES.find((x) => x.id === v) || CEILING_TEXTURES[0];
+  if (t.id === 'none') {
+    applyRoomMaterial({ ceiling: null }, '去掉吊顶');
+    return;
+  }
+  applyRoomMaterial({ ceiling: { texture: t.id, height: currentRoomCeilingHeight.value } }, `吊顶：${t.label}`);
+}
+
+function applyRoomCeilingHeight(v) {
+  const cur = currentRoomCeiling.value;
+  if (!cur) return;
+  const h = Number(v);
+  if (!Number.isFinite(h) || h <= 0) return;
+  applyRoomMaterial({ ceiling: { texture: cur.texture, height: h } }, `吊顶净高：${formatLength(h)}`);
+}
+
 /** 工具条里的“改名”：与双击房间走同一条写口（renameRoom，一条 undo） */
 async function renameSelectedRoom() {
   const room = currentRoom.value;
@@ -4070,6 +4144,34 @@ defineExpose({ canvas, renderer });
   font-size: 10px;
   color: var(--text-tertiary);
   margin-left: 4px;
+}
+
+/* 工具栏里的下拉/数字输入（房间材质，2026-11-15 A23/A15）：
+   与按钮同一行时要矮一号、带边框，否则和普通文字混在一起看不出能点 */
+.toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.toolbar-field select,
+.toolbar-field input {
+  height: 20px;
+  font-size: 10px;
+  padding: 0 3px;
+  border: 1px solid var(--nav-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+}
+.toolbar-field input[type="number"] {
+  width: 48px;
+}
+.toolbar-field .unit {
+  font-size: 9px;
+  color: var(--text-tertiary);
 }
 
 /* 工具栏里的"读数"（楼梯自动级数）：不是按钮，所以不画边框、不抢焦点 */

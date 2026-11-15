@@ -31,6 +31,12 @@ import {
 import { furnitureBoxes } from './furnitureBoxes.js';
 import { columnBoxes } from './columns.js';
 import { allHolesForFloor } from './floorHoles.js';
+import { getRoomPolygon } from '../utils/roomDetection.js';
+import { earClip } from './triangulate.js';
+import { normalizeCeiling, floorTextureThree, ceilingTextureThree } from './floorPatterns.js';
+
+/** 房间地面面抬高量（cm）：贴地 1cm，避免与楼板 / 地面共面打架（z-fighting 会闪） */
+const ROOM_SURFACE_LIFT = 1;
 
 /** 屋顶默认参数（cm）。改这里就是改全项目的屋顶观感。 */
 export const ROOF_DEFAULTS = Object.freeze({
@@ -443,6 +449,7 @@ export function buildBuildingShell(floors, options = {}) {
   const list = Array.isArray(floors) ? floors.filter(Boolean) : [];
 
   const boxes = [];
+  const surfaces = [];      // 房间地面 / 吊顶（三角面，见下面 A23/A15 那段）
   const wallEndpoints = [];
   let wallCount = 0;
   let openingCount = 0;
@@ -450,6 +457,8 @@ export function buildBuildingShell(floors, options = {}) {
   let furnitureCount = 0;
   let columnCount = 0;
   let holeCount = 0;
+  let roomFloorCount = 0;
+  let ceilingCount = 0;
   let topY = 0;
 
   // 楼层按 elevation 升序处理（用户可能改了层高顺序）。
@@ -524,6 +533,46 @@ export function buildBuildingShell(floors, options = {}) {
     }
     const rect = ownPts.length >= 3 ? minAreaRect(convexHull(ownPts)) : null;
     floorSeats.push({ floor, elevation, top: elevation + maxWallTop(walls), rect, level: idx });
+
+    // 房间地面 / 吊顶面（2026-11-15，A23/A15）
+    //
+    // 为什么是**三角面**而不是盒子：房间是多边形（L 形、带凹角都有），
+    // 拿包围盒近似会多铺一整块到隔壁房间去 —— 比不铺更错。耳切法见 `interior/triangulate.js`。
+    // 为什么地面要抬 1cm：楼板与地面共面会 z-fighting（整片闪烁），1cm 在轴测里看不出来。
+    // 吊顶默认**不生成**：`kind !== 'none'` 时它在屋里根本看不见，
+    // 而 `kind === 'none'`（"看进去"模式）下它会正好把房间盖住 —— 那两个都不是用户想要的。
+    // 所以要显式 `options.ceilings === true` 才生成（外观面板一个开关，默认关）。
+    if (options.rooms !== false) {
+      const rooms = Array.isArray(floor.rooms) ? floor.rooms : [];
+      for (const room of rooms) {
+        const poly = getRoomPolygon(room, walls);
+        if (poly.length < 3) continue;
+        const tris = earClip(poly);
+        if (!tris.length) continue;
+        const y = elevation + ROOM_SURFACE_LIFT;
+        surfaces.push({
+          kind: 'room-floor',
+          color: floorTextureThree(room && room.floorTexture),
+          tris: tris.map((t) => t.map((p) => [p.x, y, p.y])),
+        });
+        roomFloorCount++;
+
+        const ceil = normalizeCeiling(room && room.ceiling);
+        if (ceil && options.ceilings === true) {
+          // 吊顶高不许超过本层墙顶（用户把 2.8 打进 3.5 米层高的房间时，板会飘在墙上方）
+          const wallTop = maxWallTop(walls) || SHELL_DEFAULTS.wallHeight;
+          const h = Math.min(ceil.height, wallTop);
+          const yTop = elevation + h;
+          surfaces.push({
+            kind: 'room-ceiling',
+            color: ceilingTextureThree(ceil.texture),
+            // 顶点顺序反过来 = 法向朝下（渲染层也开 DoubleSide，双保险）
+            tris: tris.map((t) => [[t[0].x, yTop, t[0].y], [t[2].x, yTop, t[2].y], [t[1].x, yTop, t[1].y]]),
+          });
+          ceilingCount++;
+        }
+      }
+    }
   });
 
   // 🔴 楼板：层高 300 而墙高 280 时，两层之间会留一条 **20cm 的透光缝**（第一版截图里
@@ -572,8 +621,10 @@ export function buildBuildingShell(floors, options = {}) {
     }
   }
   for (const t of roof?.tris || []) for (const p of t) eat(p[0], p[1], p[2]);
+  // 房间面也要算进包围盒：单层视图里可能只有地面、没有墙（相机不能把地面切掉）
+  for (const s of surfaces) for (const t of s.tris) for (const p of t) eat(p[0], p[1], p[2]);
 
-  const empty = allBoxes.length === 0 && !(roof?.tris || []).length;
+  const empty = allBoxes.length === 0 && !(roof?.tris || []).length && surfaces.length === 0;
   const bounds = empty
     ? { min: [0, 0, 0], max: [0, 0, 0], size: [0, 0, 0], center: [0, 0, 0] }
     : {
@@ -584,6 +635,7 @@ export function buildBuildingShell(floors, options = {}) {
 
   return {
     boxes: allBoxes,     // 墙 + 门窗填充 + 檐口 + 顶板：渲染层一份列表画完
+    surfaces,            // 房间地面 / 吊顶（三角面；渲染层按顶点色建一个 mesh）
     roof,
     bounds,
     empty,
@@ -595,6 +647,8 @@ export function buildBuildingShell(floors, options = {}) {
       furniture: furnitureCount,
       columns: columnCount,
       holes: holeCount,
+      roomFloors: roomFloorCount,
+      ceilings: ceilingCount,
       boxes: allBoxes.length,
       roofTriangles: (roof?.tris || []).length,
       height: bounds.size[1],

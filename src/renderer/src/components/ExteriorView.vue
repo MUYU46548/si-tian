@@ -23,6 +23,14 @@
             <option value="none">不封顶（看内部）</option>
           </select>
         </label>
+        <label class="ex-roof ex-check">
+          <input type="checkbox" v-model="ceilingsOn" data-testid="exterior-ceilings"
+                 :disabled="floorPick !== 'all'"
+                 :title="floorPick !== 'all'
+                   ? '只看某一层时吊顶会把房间盖住，所以关掉（要看吊顶请切回“全部楼层”）'
+                   : '画出每个房间的吊顶。从窗口斜看进去时房间是封闭的（不再一眼看穿到对侧墙顶）；从正上方看会盖住布置，看完关掉即可'">
+          <span>吊顶</span>
+        </label>
         <label class="ex-roof">
           <span>角度</span>
           <select v-model="axoPreset" data-testid="exterior-axo-preset" title="轴测出图用的投影角度">
@@ -93,6 +101,8 @@ const status = ref('正在加载 3D 引擎…');
 const error = ref('');
 const ready = ref(false);
 const roofKind = ref(props.roofKind === 'flat' ? 'flat' : 'gable');
+// 吊顶（A15）：默认关 —— 见 buildShell 里那段注释，两个屋顶档位下它都不是"默认想要"的东西
+const ceilingsOn = ref(false);
 // 只看某一层（A20 余）：'all' = 全部楼层。
 // 为什么需要它：两层楼的整体轴测里一层被二层楼板压着（物理正确），
 // 想看下层布置只能删楼上 —— 那是拿数据换视图，不对。
@@ -130,7 +140,9 @@ const statsText = computed(() => {
   const fu = s.furniture > 0 ? ` · ${s.furniture} 件家具` : '';
   const co = s.columns > 0 ? ` · ${s.columns} 根柱` : '';
   const ho = s.holes > 0 ? ` · ${s.holes} 个洞口` : '';
-  return `${scope}${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${co}${ho}${fu}${h}`;
+  const rf = s.roomFloors > 0 ? ` · ${s.roomFloors} 间房铺了地面` : '';
+  const ce = s.ceilings > 0 ? ` · ${s.ceilings} 间吊顶` : '';
+  return `${scope}${s.floors} 层 · ${s.walls} 面墙 · ${s.openings} 处门窗${st}${co}${ho}${fu}${rf}${ce}${h}`;
 });
 
 let THREE = null;
@@ -216,6 +228,47 @@ function clearBuilding() {
   buildingGroup = null;
 }
 
+/**
+ * 房间地面 / 吊顶面 → 一个带顶点色的 mesh（2026-11-15，A23/A15）。
+ *
+ * 材质用 DoubleSide：吊顶的三角顶点顺序是反的（法向朝下），单面材质从上方就看不见。
+ * `polygonOffset` 是第二道保险 —— 地面已经抬高 1cm，但轴测里 1cm 会随缩放变小。
+ */
+function buildSurfaceMesh(surfaces) {
+  const list = Array.isArray(surfaces) ? surfaces : [];
+  if (!list.length) return null;
+  const pos = [];
+  const col = [];
+  const c = new THREE.Color();
+  for (const s of list) {
+    for (const t of (s.tris || [])) {
+      if (!t || t.length < 3) continue;
+      c.set(sc(s.color));
+      for (const p of t) {
+        pos.push(p[0], p[1], p[2]);
+        col.push(c.r, c.g, c.b);
+      }
+    }
+  }
+  if (!pos.length) return null;
+  const geo = track(new THREE.BufferGeometry());
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const mat = track(new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.88,
+    metalness: 0.02,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  }));
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
 /** 把外壳几何塞进场景（box 分不透明/玻璃两批，用 InstancedMesh） */
 function buildBuildingMesh(shell) {
   buildingGroup = new THREE.Group();
@@ -264,6 +317,13 @@ function buildBuildingMesh(shell) {
     if (gmesh.instanceColor) gmesh.instanceColor.needsUpdate = true;
     buildingGroup.add(gmesh);
   }
+
+  // 房间地面 / 吊顶面（2026-11-15，A23/A15）：三角面 + 顶点色，一个 mesh 画完。
+  //
+  // 为什么和盒子分开：盒子是 InstancedMesh（一份几何 + 每实例色），
+  // 房间面是**任意多边形**，只能逐三角形建几何 —— 混进盒子那批就得造 N 种几何。
+  const surf = buildSurfaceMesh(shell.surfaces);
+  if (surf) buildingGroup.add(surf);
 
   // 屋顶坡面（坡顶才有面；平顶是盒子，已在上面那批里）
   const faces = shell.roof?.faces || [];
@@ -353,7 +413,7 @@ function placeCamera(shell) {
 function rebuild() {
   if (!scene) return;
   clearBuilding();
-  const shell = buildBuildingShell(viewFloors.value, { roof: { kind: roofKind.value } });
+  const shell = buildBuildingShell(viewFloors.value, { roof: { kind: roofKind.value }, ceilings: ceilingsOn.value });
   lastShell = shell;
   emptyBuilding.value = shell.empty;
   shellStats.value = { ...shell.stats, height: shell.bounds.size[1] };
@@ -472,7 +532,7 @@ async function init() {
   // 先把几何算出来（纯函数、不依赖 three）：这样即使这台机器拿不到 WebGL，
   // 顶栏的“几层/几面墙/几处门窗/多高”照样是对的 —— 不给用户一片空白。
   try {
-    const pre = buildBuildingShell(viewFloors.value, { roof: { kind: roofKind.value } });
+    const pre = buildBuildingShell(viewFloors.value, { roof: { kind: roofKind.value }, ceilings: ceilingsOn.value });
     lastShell = pre;
     emptyBuilding.value = pre.empty;
     shellStats.value = { ...pre.stats, height: pre.bounds.size[1] };
@@ -558,11 +618,14 @@ onBeforeUnmount(() => {
 
 // 屋顶样式切换 / 楼层数据变化 / 只看某一层 → 重建（数据改了立刻反映，不留旧壳）
 watch(roofKind, () => { if (ready.value) rebuild(); });
+watch(ceilingsOn, () => { if (ready.value) rebuild(); });
 watch(() => props.floors, () => { if (ready.value) rebuild(); }, { deep: true });
 // 切到单层时自动把屋顶切成“不封顶”：选这一层就是为了看里面的布置，
 // 留着屋顶等于什么都没看见。用户随时可以自己改回坡顶（这里只在切换那一刻动一次）。
 watch(floorPick, (v) => {
   if (v !== ALL_FLOORS && roofKind.value !== 'none') roofKind.value = 'none';
+  // 单层视图里吊顶会把房间整个盖住（正是这个视图要避免的事）→ 切过去就关掉
+  if (v !== ALL_FLOORS) ceilingsOn.value = false;
   if (ready.value) rebuild();
 });
 // 选中的楼层被删掉（平面图上删层）→ 回落“全部楼层”，不留一个指向空值的下拉
@@ -630,6 +693,20 @@ defineExpose({
   border: 1px solid #d5dae1;
   border-radius: 4px;
   padding: 0 4px;
+}
+/* 吊顶开关（A15）：和下拉同一行，方框靠得近一点，别看着像另一个控件组 */
+.ex-check {
+  cursor: pointer;
+  user-select: none;
+}
+.ex-check input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #4b7ea8;
+}
+.ex-check input:disabled + span {
+  opacity: 0.55;
 }
 .ex-btn {
   height: 24px;
