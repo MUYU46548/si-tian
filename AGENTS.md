@@ -32,7 +32,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**178 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**133 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**134 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - **退出码 3 = 环境没起来（不是产品结论）**（2026-11-08）：`store.nodes` 恒 0 / 页面被关掉 /
     harness 基线项目打不开（`no-app`、`browser-dev-mode`）时，整轮**中止**并印一段横幅，
@@ -161,6 +161,12 @@
   （退出落盘 / 强杀）仍由 `drill_quit_flush.py` 守，两者不重复。
 - 保存链真机诊断: `python scripts/tests/diag_t2_save.py`（dev 模式起真实 Electron，可读 `projectStore` 的
   `dirty/saveStatus/lastError`；用**工作副本**打开项目 → 真实项目只读、跑前备份跑后还原配置）
+- **快照回滚深度实测（D01 验收，2026-11-15）**: `node scripts/tests/tools/probe_snapshot_depth.mjs`
+  —— **只读**真实项目（跑前跑后 sha256 比对），量"改一条河 / 改一个省 / 涂一笔归属 / 整表重算地形"
+  各能退几步，并**逐份 restore 核对内容**（不是只数个数）；产物 `build/snapshot-depth/{result.json,summary.md}`。
+  读数（415 省 / 7.87 MB）：6 MB 上限下 **50 / 50 / 50 / 14 步**（补丁 10 KB / 11 KB / 367 B / 394 KB），
+  3 MB 上限下整表重算只剩 **3 步** —— 那份"改一次就只剩 4 步"的传闻出自这里。
+  守门 `scripts/tests/unit/test_snapshot_depth.js`（8 条，含"上限压到 1 字节只留最新 1 份""去掉 id 退回整表替换"两条负向探针）。
 - **N1 像素基线（渲染层接口化的判据）**: `python scripts/tests/drill_scenario_pixels.py --tag before` 留底、
   `--tag after` 再拍一次、`--compare before after` 比 —— 起 Vite(5180)+Edge(9222)，用**自带底图（3 省）**固定取景，
   落 `build/pixel-baseline/<tag>.json`（整图 FNV-1a + **关标注**后的几何层指纹 + camera）与同名 PNG。
@@ -666,7 +672,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 178 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 133 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 134 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |
