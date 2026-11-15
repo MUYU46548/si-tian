@@ -585,18 +585,66 @@ export function drawStairSymbol(ctx, stair, opts = {}) {
   ctx.restore();
 }
 
+/**
+ * 门的开合几何（2026-11-15，A12）：铰点 + 门扇 + 90° 弧。
+ *
+ * 旧画法的错：圆心放在**洞口中心**、半径只取**半个洞口** —— 弧从门扇中点扫起，
+ * 图上看起来像“半个门”，与制图习惯（铰点在门框一端、门扇长 = 洞口宽、弧扫 90°）对不上。
+ *
+ * 口径：
+ *   · 铰点 `hinge` 默认在洞口**起点端**（沿墙方向的 start 侧）；`opening.swingDirection === 'right'` 换到另一端；
+ *   · 门扇长 = 洞口宽，画在**开启位置**（垂直墙面）；
+ *   · 弧圆心 = 铰点、半径 = 洞口宽，从墙线（关闭位置）扫到门扇（开启位置），正好 90°；
+ *   · `opening.flipSide === true` 让门扇开向墙的另一侧（默认开向墙的左法向）。
+ *
+ * ⚠️ 字段用的是 `store.addOpening` 早就在写的 `swingDirection` / `flipSide` ——
+ *    不另起一套 `hinge` / `swing`，否则同一件事两套命名，改一处另一处不动。
+ *
+ * @param {object} wall  { start, end, thickness }
+ * @param {object} opening { position, width, swingDirection?, flipSide? }
+ * @returns {{hinge:object, other:object, leaf:object, radius:number, width:number,
+ *            normal:object, angStart:number, angEnd:number, delta:number,
+ *            jambA:object, jambB:object, center:object, dir:object}}
+ */
+export function doorSwingGeometry(wall, opening) {
+  const width = Math.max(2, Number(opening && opening.width) || 90);
+  const t = Math.min(1, Math.max(0, Number(opening && opening.position) || 0.5));
+  const center = wallPointAt(wall, t);
+  const n = wallNormal(wall);
+  const len = Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y) || 1;
+  const dir = { x: (wall.end.x - wall.start.x) / len, y: (wall.end.y - wall.start.y) / len };
+  const half = width / 2;
+  const jambA = { x: center.x - dir.x * half, y: center.y - dir.y * half };
+  const jambB = { x: center.x + dir.x * half, y: center.y + dir.y * half };
+  const hingeAtStart = !opening || opening.swingDirection !== 'right';
+  const hinge = hingeAtStart ? jambA : jambB;
+  const other = hingeAtStart ? jambB : jambA;
+  const swingSign = opening && opening.flipSide ? -1 : 1;
+  const normal = { x: n.x * swingSign, y: n.y * swingSign };
+  const leaf = { x: hinge.x + normal.x * width, y: hinge.y + normal.y * width };
+  const angStart = Math.atan2(other.y - hinge.y, other.x - hinge.x);   // 关闭位置（沿墙指向另一侧门框）
+  const angLeaf = Math.atan2(normal.y, normal.x);                      // 开启位置（垂直墙）
+  let delta = angLeaf - angStart;
+  while (delta > Math.PI) delta -= 2 * Math.PI;
+  while (delta < -Math.PI) delta += 2 * Math.PI;
+  return {
+    hinge, other, leaf, radius: width, width, normal,
+    angStart, angEnd: angStart + delta, delta,
+    jambA, jambB, center, dir,
+  };
+}
+
 /** 门窗符号：在墙上挖开的缺口里画几笔（屏幕恒定线宽） */
 function drawOpeningSymbol(ctx, wall, opening, zoom, kind, theme = floorTheme('screen')) {
-  const t = Math.min(1, Math.max(0, Number(opening.position) || 0.5));
-  const p = wallPointAt(wall, t);
+  const g = doorSwingGeometry(wall, opening);
+  const p = g.center;
   const n = wallNormal(wall);
-  const half = Math.max(2, (Number(opening.width) || 60) / 2);
-  const a = { x: p.x + n.x * (Number(wall.thickness) || 12) / 2, y: p.y + n.y * (Number(wall.thickness) || 12) / 2 };
-  const b = { x: p.x - n.x * (Number(wall.thickness) || 12) / 2, y: p.y - n.y * (Number(wall.thickness) || 12) / 2 };
-  const dir = { x: (wall.end.x - wall.start.x) / (Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y) || 1),
-    y: (wall.end.y - wall.start.y) / (Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y) || 1) };
-  const jambA = { x: a.x - dir.x * half, y: a.y - dir.y * half };
-  const jambB = { x: a.x + dir.x * half, y: a.y + dir.y * half };
+  const half = g.width / 2;
+  const thickness = Number(wall.thickness) || 12;
+  const a = { x: p.x + n.x * thickness / 2, y: p.y + n.y * thickness / 2 };
+  const b = { x: p.x - n.x * thickness / 2, y: p.y - n.y * thickness / 2 };
+  const jambA = g.jambA;
+  const jambB = g.jambB;
 
   ctx.save();
   ctx.strokeStyle = kind === 'door' ? theme.door : theme.window;
@@ -608,23 +656,21 @@ function drawOpeningSymbol(ctx, wall, opening, zoom, kind, theme = floorTheme('s
   if (kind === 'window') {
     // 窗：两道平行细线（沿墙方向）
     ctx.beginPath();
-    ctx.moveTo(jambA.x - n.x * (Number(wall.thickness) || 12) * 0.34, jambA.y - n.y * (Number(wall.thickness) || 12) * 0.34);
-    ctx.lineTo(jambB.x - n.x * (Number(wall.thickness) || 12) * 0.34, jambB.y - n.y * (Number(wall.thickness) || 12) * 0.34);
+    ctx.moveTo(jambA.x - n.x * thickness * 0.34, jambA.y - n.y * thickness * 0.34);
+    ctx.lineTo(jambB.x - n.x * thickness * 0.34, jambB.y - n.y * thickness * 0.34);
     ctx.stroke();
   } else {
-    // 门：门扇 + 开合弧
-    const leaf = { x: jambA.x + n.x * half, y: jambA.y + n.y * half };
+    // 门：门扇（开启位置，长 = 洞口宽）+ 90° 开合弧（圆心 = 铰点，半径 = 洞口宽）
     ctx.beginPath();
-    ctx.moveTo(jambA.x, jambA.y);
-    ctx.lineTo(leaf.x, leaf.y);
+    ctx.moveTo(g.hinge.x, g.hinge.y);
+    ctx.lineTo(g.leaf.x, g.leaf.y);
     ctx.stroke();
-    const ang0 = Math.atan2(jambA.y - p.y, jambA.x - p.x);
-    const ang1 = Math.atan2(leaf.y - p.y, leaf.x - p.x);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, half, Math.min(ang0, ang1), Math.max(ang0, ang1));
-    ctx.globalAlpha = 0.5;
+    ctx.arc(g.hinge.x, g.hinge.y, g.radius, g.angStart, g.angEnd, g.delta < 0);
+    ctx.globalAlpha = 0.55;
     ctx.stroke();
   }
   ctx.restore();
   void b;
+  void half;
 }

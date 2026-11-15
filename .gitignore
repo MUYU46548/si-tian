@@ -234,3 +234,7 @@ build/salt-lakes/
 # 室内 3D 家具体块出图（2026-11-15）：本地证据，禁止提交
 # 复现：python scripts/tests/drill_interior_furniture_3d.py
 build/interior-furniture/
+
+# 门开合弧的三张对照图（2026-11-15）：本地证据，禁止提交
+# 复现：python scripts/tests/drill_door_swing.py
+build/door-swing/

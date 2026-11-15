@@ -304,6 +304,21 @@
             <span class="unit-label">cm</span>
           </div>
         </div>
+        <!-- A12（2026-11-15）：门的铰点与开向 —— 弧从铰点扫 90°，画法与制图习惯一致 -->
+        <div class="detail-row" v-if="openingForm.kind === 'doors'">
+          <span class="detail-label">铰点</span>
+          <select v-model="openingForm.hinge" class="popover-select" data-testid="door-hinge">
+            <option value="start">左侧门框</option>
+            <option value="end">右侧门框</option>
+          </select>
+        </div>
+        <div class="detail-row" v-if="openingForm.kind === 'doors'">
+          <span class="detail-label">开向</span>
+          <select v-model="openingForm.swing" class="popover-select" data-testid="door-swing">
+            <option value="in">向内开</option>
+            <option value="out">向外开</option>
+          </select>
+        </div>
         <div class="detail-row">
           <span class="detail-label">沿墙位置</span>
           <input type="range" min="0.05" max="0.95" step="0.01" v-model.number="openingForm.position" class="opening-range" data-testid="opening-position" />
@@ -1044,7 +1059,7 @@ const selectedOpening = ref(null);
 const editingOpening = ref(false);
 // 尺寸标注（A25）：默认开（平面图没有尺寸就不像图），可在工具栏关掉以免看乱
 const showDimensions = ref(true);
-const openingForm = reactive({ kind: 'doors', width: 90, height: 200, sillHeight: 90, position: 0.5 });
+const openingForm = reactive({ kind: 'doors', width: 90, height: 200, sillHeight: 90, position: 0.5, hinge: 'start', swing: 'in' });
 
 /**
  * 重新识别本层房间。
@@ -2670,6 +2685,8 @@ function startOpeningEdit(op) {
   openingForm.height = Number(o.height) || (op.kind === 'doors' ? 200 : 140);
   openingForm.sillHeight = Number(o.sillHeight) || 90;
   openingForm.position = Number(o.position) || 0.5;
+  openingForm.hinge = o.swingDirection === 'right' ? 'end' : 'start';
+  openingForm.swing = o.flipSide ? 'out' : 'in';
   editingOpening.value = true;
 }
 
@@ -2690,6 +2707,12 @@ function saveOpeningEdit() {
     position: Math.min(0.95, Math.max(0.05, Number(openingForm.position) || 0.5)),
   };
   if (kind === 'windows') patch.sillHeight = Math.max(0, Number(openingForm.sillHeight) || 0);
+  // 门才有铰点/开向（A12）：窗是平推的，没有开合弧。
+  // 写回的是 store 早就有的字段 swingDirection / flipSide（不另起一套命名）
+  if (kind === 'doors') {
+    patch.swingDirection = openingForm.hinge === 'end' ? 'right' : 'left';
+    patch.flipSide = openingForm.swing === 'out';
+  }
   // 写口自带 guardWrite + 一条 undo（改坏了按一次撤销就回来）
   if (kind === 'doors') store.updateDoor(bid, fid, id, patch);
   else store.updateWindow(bid, fid, id, patch);
