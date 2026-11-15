@@ -427,7 +427,7 @@
 
 ### 做法
 
-`interior/buildingSymbol.js` 的占地从「墙端点的凸包」换成「**墙矩形的布尔并集**」：
+`interior/buildingSymbol.js` 的占地从“墙端点的凸包”换成“**墙矩形的布尔并集**”：
 
 | 步骤 | 说明 |
 |---|---|
