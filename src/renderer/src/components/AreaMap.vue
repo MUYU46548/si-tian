@@ -330,6 +330,9 @@ import { fadedAlpha } from '../utils/entityStatus';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
 import { pointsBBox, bboxInViewport, pointInViewport, pointInPolygon, convexHull, simplifyPath } from '../utils/geometry';
 import { validateRegionTrace } from '../utils/regionTrace';
+// 建筑在地图上的俯视符号（2026-11-15）：**独立模块**，这里只做一处消费。
+// 模块负责"从楼层算占地 + 怎么画"，不知道地图、相机、节点位置。
+import { buildFootprint, drawBuildingSymbol } from '../interior/buildingSymbol.js';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -555,6 +558,9 @@ const renderer = useCanvasRenderer(canvas, {
     }
 
     const vp = getViewport();
+
+    // 建筑占地的帧缓存：一帧内的绘制与命中复用同一份结果
+    _fpCache.clear();
 
     // 绘制区域多边形
     drawZones(ctx, vp);
@@ -1032,6 +1038,83 @@ function drawGrid(ctx, w, h) {
   }
 }
 
+// ===== 建筑符号（2026-11-15）=====
+// 一帧内 drawNodes 与 hitTest 会重复问同一栋楼，缓存一帧；onRender 开头清空。
+// 不做跨帧缓存：楼层数据改了（改墙、加层）没有任何可靠变更信号，宁可每帧重算
+// —— 凸包对一栋楼是常数级，几十栋也就十万次乘加。
+let _fpCache = new Map();
+
+/** 楼层的占地（世界 = 建筑内部局部 cm 坐标，不是地图坐标） */
+function footprintFor(node) {
+  if (!node || node.layer !== 'building') return null;
+  if (_fpCache.has(node.id)) return _fpCache.get(node.id);
+  const data = store.interiorData && store.interiorData[node.id];
+  const floors = (data && data.floors) || null;
+  const fp = floors && floors.length ? buildFootprint(floors) : null;
+  _fpCache.set(node.id, fp);
+  return fp;
+}
+
+// 符号长边的目标屏幕尺寸（px）。下限保证缩远时还看得出是栋房子，
+// 上限防止拉近后一栋民居盖住半个区域。
+const SYMBOL_MIN_PX = 34;
+const SYMBOL_MAX_PX = 220;
+
+/**
+ * 建筑符号在地图上的落位。
+ *
+ * 🔴 两处坐标系换算，缺一个就会画错：
+ *
+ * ① **位置**：楼层里的墙是"建筑内部局部坐标"（从 0,0 起，单位 cm），地图节点只有一个世界坐标。
+ *    所以要把占地的**中心**平移到节点位置，否则所有建筑都画到地图原点。
+ *
+ * ② **尺寸**：地图单位与 cm 之间**没有任何比例关系**（节点只是一个点）。
+ *    按真实 cm 画，一栋 900cm 的房子会比整个区域还大。所以符号按"屏幕像素"定尺寸：
+ *    缩远时恒定 34px（看得出是建筑），拉近时按真实比例放大（最多 220px），
+ *    这样"大房子比小房子大"仍然成立，但不会失控。
+ *
+ * @param {object} node
+ * @param {number} zNow 地图的 px per 世界单位
+ */
+function buildingSymbolOf(node, zNow) {
+  const fp = footprintFor(node);
+  if (!fp) return null;
+  const z = Math.max(0.0001, zNow || 1);
+  const long = Math.max(1, fp.rect.long);
+  // 按真实比例换算出来的屏幕长边，再夹到 [MIN, MAX]
+  const naturalPx = long * z;
+  const targetPx = Math.min(SYMBOL_MAX_PX, Math.max(SYMBOL_MIN_PX, naturalPx));
+  // k = 目标屏幕像素 / 真实屏幕像素 —— 画的时候 ctx.scale(k) 即可
+  const k = targetPx / naturalPx;
+
+  const cx = (fp.bbox.minX + fp.bbox.maxX) / 2;
+  const cy = (fp.bbox.minY + fp.bbox.maxY) / 2;
+  const nx = node.coordinate?.x || 0;
+  const ny = node.coordinate?.y || 0;
+
+  // 屏幕上的半宽 = bbox半宽 × z × k；换算回世界单位再除 z → 就是 bbox半宽 × k。
+  // （第一版多除了一次 z，命中框只有该有的一半大）
+  const halfW = ((fp.bbox.maxX - fp.bbox.minX) / 2) * k;
+  const halfH = ((fp.bbox.maxY - fp.bbox.minY) / 2) * k;
+
+  return {
+    fp,
+    k,
+    cx,
+    cy,
+    nx,
+    ny,
+    // 屏幕尺寸：世界宽 × z × k（同样差点漏掉 z）
+    pxW: (fp.bbox.maxX - fp.bbox.minX) * z * k,
+    pxH: (fp.bbox.maxY - fp.bbox.minY) * z * k,
+    // 命中用的世界包围盒
+    bbox: {
+      minX: nx - halfW, maxX: nx + halfW,
+      minY: ny - halfH, maxY: ny + halfH,
+    },
+  };
+}
+
 function drawNodes(ctx, vp) {
   const nodes = areaPlaces.value;
   const fast = renderer.isFastMode(); // 批次C2：拖拽中跳过光晕与名称标签
@@ -1048,39 +1131,61 @@ function drawNodes(ctx, vp) {
     if (fade < 1) { ctx.save(); ctx.globalAlpha = fade; }
     const color = getNodeColor(node.layer);
 
-    ctx.fillStyle = color;
-    if (!fast) {
-      ctx.shadowColor = color;
-      ctx.shadowBlur = isSelected ? 12 : 6;
-    }
-    ctx.beginPath();
-    ctx.arc(x, y, isSelected ? 8 : 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    // 建筑：有楼层数据就画**占地符号**（一个圆点看不出这是栋多大的房子、朝哪边）
+    const zNow = renderer.viewTransform.scale || 1;
+    const sym = node.layer === 'building' ? buildingSymbolOf(node, zNow) : null;
+    // 符号本身就是屏幕恒定的，只有拖拽中（fast）退回圆点省开销
+    const useSymbol = !!(sym && !fast);
 
-    if (isDraft) {
-      ctx.strokeStyle = '#888888';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
+    if (useSymbol) {
+      ctx.save();
+      ctx.translate(sym.nx, sym.ny);
+      ctx.scale(sym.k, sym.k);
+      ctx.translate(-sym.cx, -sym.cy);
+      drawBuildingSymbol(ctx, sym.fp, {
+        // 线宽按"缩放后的像素密度"算：zNow × k 才是最终屏幕上的 px per cm
+        zoom: zNow * sym.k,
+        roof: 'hip',                                  // 四坡：缩小时四条斜脊最像"房子"
+        selected: isSelected || isMultiSelected,
+      });
+      ctx.restore();
+    } else {
+      ctx.fillStyle = color;
+      if (!fast) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = isSelected ? 12 : 6;
+      }
       ctx.beginPath();
-      ctx.arc(x, y, 10, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+      ctx.arc(x, y, isSelected ? 8 : 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
 
-    if (isSelected || isMultiSelected) {
-      ctx.strokeStyle = isSelected ? '#FFD700' : '#58a6ff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(x, y, 12, 0, Math.PI * 2);
-      ctx.stroke();
+      if (isDraft) {
+        ctx.strokeStyle = '#888888';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      if (isSelected || isMultiSelected) {
+        ctx.strokeStyle = isSelected ? '#FFD700' : '#58a6ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 12, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     if (!fast) {
       const label = node.displayName || node.name;
       if (label) {
+        // 符号模式下标签挂到**占地底部**（否则会压在屋顶上）
+        const ly = useSymbol ? sym.bbox.maxY + 6 / zNow : y + 12;
         // P0-2：节点标签按 layer 匹配样式预设（与行星地图同一套）
-        drawStyledLabel(ctx, label, x, y + 12, getPresetForLayer(node.layer), {
+        drawStyledLabel(ctx, label, x, ly, getPresetForLayer(node.layer), {
           align: 'center',
           baseline: 'top',
           screenScale: renderer.viewTransform.scale,
@@ -1661,6 +1766,15 @@ function handleWheel(e) {
 
 function hitTest(wx, wy) {
   const nodes = areaPlaces.value;
+  // 建筑符号占几百 cm²，只按 14 单位的圆去点，点屋顶边角是选不中的。
+  // 先按占地包围盒命中，再走原来的圆点判定（小建筑/没楼层数据的仍按圆点）。
+  for (const node of nodes) {
+    if (node.layer !== 'building') continue;
+    const sym = buildingSymbolOf(node, renderer.viewTransform.scale || 1);
+    if (!sym) continue;
+    const b = sym.bbox;
+    if (wx >= b.minX - 4 && wx <= b.maxX + 4 && wy >= b.minY - 4 && wy <= b.maxY + 4) return node;
+  }
   for (const node of nodes) {
     const dx = wx - (node.coordinate?.x || 0);
     const dy = wy - (node.coordinate?.y || 0);

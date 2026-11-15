@@ -9,7 +9,7 @@
   3) 版面必须能看见墙（中间图面带深色像素）与房间名（中图区有文字级墨点）。
 
 用法：
-  C:/Users/muyu/AppData/Local/Microsoft/WindowsApps/python.exe scripts/tests/drill_plan_export.py
+  python scripts/tests/drill_plan_export.py
 """
 import base64
 import json

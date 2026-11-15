@@ -8,7 +8,7 @@
 产物：build/building-symbol/preview.png（含真实 harness 建筑 + 四种典型平面）
 
 用法：
-  C:/Users/muyu/AppData/Local/Microsoft/WindowsApps/python.exe scripts/tests/drill_symbol_preview.py
+  python scripts/tests/drill_symbol_preview.py
 """
 import json
 import os

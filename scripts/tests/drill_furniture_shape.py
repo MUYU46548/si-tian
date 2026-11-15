@@ -9,7 +9,7 @@
   04-reset       恢复默认后（回到内置符号）
 
 用法：
-  C:/Users/muyu/AppData/Local/Microsoft/WindowsApps/python.exe scripts/tests/drill_furniture_shape.py
+  python scripts/tests/drill_furniture_shape.py
 """
 import json
 import os

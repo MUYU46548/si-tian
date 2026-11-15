@@ -8,7 +8,7 @@
   3) 版面必须有东西：整幅非白占比、中心建筑区域墨量、画面四角必须是纸色（不能是黑边/空白画布）。
 
 用法：
-  C:/Users/muyu/AppData/Local/Microsoft/WindowsApps/python.exe scripts/tests/drill_axonometric.py
+  python scripts/tests/drill_axonometric.py
 """
 import base64
 import json

@@ -6,7 +6,7 @@
 而不是凭印象改。产物 `build/editor-look/`。
 
 用法：
-  C:/Users/muyu/AppData/Local/Microsoft/WindowsApps/python.exe scripts/tests/drill_editor_look.py
+  python scripts/tests/drill_editor_look.py
 """
 import os
 import sys

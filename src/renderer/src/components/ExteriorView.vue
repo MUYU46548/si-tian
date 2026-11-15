@@ -446,7 +446,7 @@ function onVisibility() {
 
 async function init() {
   // 先把几何算出来（纯函数、不依赖 three）：这样即使这台机器拿不到 WebGL，
-  // 顶栏的「几层/几面墙/几处门窗/多高」照样是对的 —— 不给用户一片空白。
+  // 顶栏的“几层/几面墙/几处门窗/多高”照样是对的 —— 不给用户一片空白。
   try {
     const pre = buildBuildingShell(props.floors, { roof: { kind: roofKind.value } });
     lastShell = pre;
