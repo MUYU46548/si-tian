@@ -261,6 +261,84 @@ export function subtractRects(rect, holes = []) {
   return out;
 }
 
+// ── 越界检测（"楼梯画到墙外/室外了"）──────────────────────────────────────
+
+/**
+ * 梯段有多少落在"室内之外"。
+ *
+ * 为什么要有它：用户点两下画一跑，落点很容易越过外墙（2026-11-15 暮雨看截图第一眼就问
+ * "楼梯超出墙壁边界了？"）。**不能静默把梯段裁短**（那是替用户改数据），但必须让他看见
+ * ——所以这里只做判定，裁不裁、怎么裁由 UI 决定（提示 + 一键收进）。
+ *
+ * 判据用 `isInside(point)` 回调（由视图给：点是否落在本层任一房间多边形内），
+ * 采样 **n×n 个格心**（不是四角：格心不会被"角正好压在墙线上"这种边界情况骗到）。
+ *
+ * @param {object} stair
+ * @param {(p:{x:number,y:number})=>boolean} isInside
+ * @param {{grid?:number}} [opts]
+ * @returns {{samples:number, outside:number, ratio:number}}
+ */
+export function stairOutsideInfo(stair, isInside, opts = {}) {
+  if (typeof isInside !== 'function') return { samples: 0, outside: 0, ratio: 0 };
+  const fp = stairFootprint(stair, opts);
+  const axis = fp.axis;
+  const half = fp.halfWidth;
+  const n = Math.max(2, Math.round(num(opts.grid, 5)));
+  const nx = -axis.dy;
+  const ny = axis.dx;
+  let samples = 0;
+  let outside = 0;
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const cx = axis.x + axis.dx * axis.len * t;
+    const cy = axis.y + axis.dy * axis.len * t;
+    for (let j = 0; j < n; j++) {
+      const u = (((j + 0.5) / n) * 2 - 1) * half;
+      samples++;
+      let inside = false;
+      try { inside = isInside({ x: cx + nx * u, y: cy + ny * u }) === true; } catch (e) { inside = true; }
+      if (!inside) outside++;
+    }
+  }
+  return { samples, outside, ratio: samples ? outside / samples : 0 };
+}
+
+/**
+ * 把一跑楼梯"收进室内"：两端沿中心线往里收，返回**收得最少的那个解**。
+ *
+ * 只在用户点「收进房间」时调用（一次 undo）。找不到能收进去的位置就返回 null，
+ * 由 UI 说"这跑太长了，收不进去，请重画或改小梯宽"——不假装成功。
+ *
+ * @returns {{start:{x,y}, end:{x,y}}|null}
+ */
+export function fitStairInside(stair, isInside, opts = {}) {
+  if (typeof isInside !== 'function') return null;
+  const axis = stairAxis(stair);
+  if (!(axis.len > 0)) return null;
+  const minLen = Math.max(40, num(opts.minLen, 40));
+  const steps = 20;
+  let best = null;
+  for (let a = 0; a <= steps; a++) {
+    const t0 = (a / steps) * 0.45;
+    for (let b = 0; b <= steps; b++) {
+      const t1 = 1 - (b / steps) * 0.45;
+      const len = axis.len * (t1 - t0);
+      if (len < minLen) continue;
+      const cand = {
+        ...stair,
+        start: { x: axis.x + axis.dx * axis.len * t0, y: axis.y + axis.dy * axis.len * t0 },
+        end: { x: axis.x + axis.dx * axis.len * t1, y: axis.y + axis.dy * axis.len * t1 },
+      };
+      const info = stairOutsideInfo(cand, isInside, opts);
+      if (info.outside === 0) {
+        // 收得最少（保留长度最长）的那个解
+        if (!best || len > best.len) best = { len, start: cand.start, end: cand.end };
+      }
+    }
+  }
+  return best ? { start: best.start, end: best.end } : null;
+}
+
 // ── 楼层视角：本层楼板上的洞 ─────────────────────────────────────────────
 
 /**

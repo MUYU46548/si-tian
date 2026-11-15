@@ -63,6 +63,7 @@ async function main() {
     STAIR_DEFAULTS, stairAxis, stairRise, stairStepCount, stairTreads,
     stairFootprint, stairHolePolygon, stairBoxes, subtractRects,
     orderFloorsByElevation, stairHolesForFloor, stairTargetFloor, stairDirection,
+    stairOutsideInfo, fitStairInside,
   } = mod;
 
   check('t1 中心线：起点/终点/长度/单位方向/rotY 与墙同一套换算', () => {
@@ -236,6 +237,45 @@ async function main() {
     assert(stairDirection(stair()) === 'up' && stairDirection(stair({ direction: 'down' })) === 'down', '方向归一');
     assert(stairDirection(stair({ direction: '乱七八糟' })) === 'up', '未知方向回落 up');
     return 'up/down 都对';
+  });
+
+  check('t13 越界判定：全在房间内 = 0；一半露在外面 = 有比例；全在外 = 100%', () => {
+    const room = { x0: -400, y0: -300, x1: 400, y1: 300 };
+    const isInside = (p) => p.x >= room.x0 && p.x <= room.x1 && p.y >= room.y0 && p.y <= room.y1;
+    const inside = stairOutsideInfo(stair({ start: { x: -200, y: -150 }, end: { x: -200, y: 150 } }), isInside);
+    assert(inside.outside === 0, `房间内的楼梯不该有越界采样，实际 ${inside.outside}/${inside.samples}`);
+    assert(inside.samples === 25, `默认 5×5 采样，实际 ${inside.samples}`);
+    // 从 y=-150 拉到 y=450：后 1/3 在房间外
+    const cross = stairOutsideInfo(stair({ start: { x: -200, y: -150 }, end: { x: -200, y: 450 } }), isInside);
+    assert(cross.outside > 0 && cross.ratio > 0.15 && cross.ratio < 0.85,
+      `跨墙的楼梯越界比例应在 15%~85%，实际 ${(cross.ratio * 100).toFixed(0)}%`);
+    const far = stairOutsideInfo(stair({ start: { x: 2000, y: -150 }, end: { x: 2000, y: 150 } }), isInside);
+    assert(far.ratio === 1, `完全在外的楼梯应为 100%，实际 ${(far.ratio * 100).toFixed(0)}%`);
+    // 没有判定函数时不许炸（视图里房间还没围合时会传 undefined）
+    assert(stairOutsideInfo(stair(), null).outside === 0, '无判定函数应返回 0 而不是抛错');
+    return `跨墙 ${(cross.ratio * 100).toFixed(0)}%`;
+  });
+
+  check('t14 收进房间：跨墙的那跑能收进去且越界归零；收不进去时返回 null', () => {
+    const room = { x0: -400, y0: -300, x1: 400, y1: 300 };
+    const isInside = (p) => p.x >= room.x0 && p.x <= room.x1 && p.y >= room.y0 && p.y <= room.y1;
+    const cross = stair({ start: { x: -200, y: -150 }, end: { x: -200, y: 450 } });
+    assert(stairOutsideInfo(cross, isInside).outside > 0, '前提：这一跑本来就越界');
+    const fit = fitStairInside(cross, isInside);
+    assert(fit, '应能收进房间');
+    const after = stairOutsideInfo({ ...cross, start: fit.start, end: fit.end }, isInside);
+    assert(after.outside === 0, `收进后不该再越界，实际 ${after.outside}/${after.samples}`);
+    const len = Math.hypot(fit.end.x - fit.start.x, fit.end.y - fit.start.y);
+    assert(len >= 40, `收进后长度应 ≥40cm，实际 ${len.toFixed(0)}`);
+    // 本来就在房间内：原样返回（不该被莫名缩短）
+    const ok = stair({ start: { x: -200, y: -150 }, end: { x: -200, y: 150 } });
+    const same = fitStairInside(ok, isInside);
+    near(same.start.y, -150, 1e-6, '全在内时起点不该动');
+    near(same.end.y, 150, 1e-6, '全在内时终点不该动');
+    // 房间小到放不下（梯段宽 100、房间只有 30 宽）→ null，不假装成功
+    const tiny = (p) => p.x >= -15 && p.x <= 15 && p.y >= -15 && p.y <= 15;
+    assert(fitStairInside(cross, tiny) === null, '放不下时应返回 null');
+    return `收进后 ${len.toFixed(0)}cm`;
   });
 
   const pass = results.filter((r) => r.ok).length;

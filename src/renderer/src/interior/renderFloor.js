@@ -279,8 +279,22 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
   }
 
   // ②.5 尺寸标注（2026-11-14 台账 A25）：沿墙写长度（cm→m）。
-  // 白底片垫在字下面 —— 否则压在被涂黑的墙上就看不见了。
-  if (opts.showDimensions !== false) {
+  //
+  // 🔴 2026-11-15（暮雨看平面图抓出来）：字原来压在墙中心线上 —— 打印态的墙是涂黑的（poche），
+  //    白底片盖不住整条墙，读起来像"墙上有字"。改成**贴到墙的外侧**（离墙皮 9cm）：
+  //    外墙的尺寸写在外面，是制图的基本规矩；内墙（两侧都是房间）则写到远离建筑中心那一侧。
+  if (opts.showDimensions !== false && walls.length) {
+    // 建筑中心：所有墙端点的平均（够用，且不引入包围盒那种 L 形失效）
+    let cx = 0;
+    let cy = 0;
+    let n = 0;
+    for (const w of walls) {
+      for (const p of [w.start, w.end]) {
+        if (!p) continue;
+        cx += p.x; cy += p.y; n++;
+      }
+    }
+    if (n) { cx /= n; cy /= n; }
     for (const wall of walls) {
       const len = wallLen(wall);
       if (!(len >= 20)) continue;             // 20cm 以下的碎墙不标，标了全是噪点
@@ -288,8 +302,12 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
       const ang = Math.atan2(wall.end.y - wall.start.y, wall.end.x - wall.start.x);
       // 字别倒过来：上坡角度超过 90° 就翻 180°
       const rot = Math.abs(ang) > Math.PI / 2 ? ang + Math.PI : ang;
+      const nrm = wallNormal(wall);
+      // "外侧" = 法向背离建筑中心的那一侧（法向与"中心→墙中点"同向就取正）
+      const sign = (nrm.x * (mid.x - cx) + nrm.y * (mid.y - cy)) >= 0 ? 1 : -1;
+      const off = Math.max(1, Number(wall.thickness) || 12) / 2 + 9;   // 墙皮外 9cm
       ctx.save();
-      ctx.translate(mid.x, mid.y);
+      ctx.translate(mid.x + nrm.x * off * sign, mid.y + nrm.y * off * sign);
       ctx.rotate(rot);
       ctx.scale(1 / zoom, 1 / zoom);          // 屏幕恒定字号
       const label = formatLength(len);
@@ -297,6 +315,7 @@ export function drawInteriorFloor(ctx, floor, opts = {}) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const tw = ctx.measureText(label).width;
+      // 白底片：标注移出墙体后仍要能在家具/填充上读出来
       ctx.fillStyle = theme.dimBg;
       ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 13);
       ctx.fillStyle = theme.dimText;
@@ -375,7 +394,8 @@ function drawOpeningHighlight(ctx, wall, opening, zoom) {
 export function drawFloorHoles(ctx, holes, opts = {}) {
   const zoom = Number(opts.zoom) > 0 ? Number(opts.zoom) : 1;
   const theme = opts.theme || floorTheme('screen');
-  for (const h of holes || []) {
+  const list = holes || [];
+  for (const h of list) {
     const poly = Array.isArray(h) ? h : (h && h.poly);
     if (!pathPolygon(ctx, poly)) continue;
     ctx.save();
@@ -385,6 +405,35 @@ export function drawFloorHoles(ctx, holes, opts = {}) {
     ctx.strokeStyle = theme.holeLine;
     ctx.lineWidth = 1.4 / zoom;
     ctx.stroke();
+    ctx.restore();
+  }
+  // 洞不写字就是一块"没解释的虚线框"（用户只会问"这虚线是什么"）。
+  // 只在洞够大时标，免得小洞上糊一片字。
+  if (!list.length || opts.showHoleLabels === false) return;
+  for (const h of list) {
+    const poly = Array.isArray(h) ? h : (h && h.poly);
+    if (!poly || poly.length < 3) continue;
+    let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
+    for (const p of poly) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    if ((maxX - minX) * zoom < 40 || (maxY - minY) * zoom < 30) continue;   // 屏幕上太小就不标
+    const dir = h && h.direction === 'down' ? '下' : '上';
+    const text = `楼梯洞口（${dir}）`;
+    ctx.save();
+    ctx.translate((minX + maxX) / 2, (minY + maxY) / 2);
+    ctx.scale(1 / zoom, 1 / zoom);          // 之后都是屏幕像素单位（字号不随缩放变大）
+    ctx.font = '11px "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(text).width;
+    // 🔴 白底片垫底，不用 strokeText 描边：10px 的字配 3px 描边会把笔画糊成一团
+    //    （2026-11-15 二层留证图上亲眼看到洞口标签糊成一坨灰，改为与尺寸标注同一套写法）。
+    ctx.fillStyle = theme.dimBg;
+    ctx.fillRect(-tw / 2 - 4, -9, tw + 8, 18);
+    ctx.fillStyle = theme.dimText;
+    ctx.fillText(text, 0, 0);
     ctx.restore();
   }
 }

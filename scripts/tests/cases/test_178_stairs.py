@@ -106,8 +106,8 @@ def run(cdp):
       // ── b) 两次点击画一跑（走组件真实入口）──
       iv.startStairTool();
       await tick();
-      iv.handleStairClick(-300, 0);
-      iv.handleStairClick(-300, 320);
+      iv.handleStairClick(-260, 140);
+      iv.handleStairClick(-260, -160);
       await tick();
       d = s.interiorData[bid];
       const f1b = d.floors.find(f => f.id === f1.id);
@@ -123,19 +123,26 @@ def run(cdp):
       if (!iv.editingStair || iv.selectedStairId !== st1.id) {
         fails.push('b5 画完没有选中并打开浮窗（用户看不出刚画了什么）');
       }
+      // 房间内的这跑不该被判越界（判据太松会变成狼来了）
+      const outside0 = iv.selectedStairOutside;
+      if (outside0) fails.push('b6 正常画在房间里的楼梯被判成越界（比例 '
+        + Math.round((outside0.ratio || 0) * 100) + '%%）');
+      if (document.querySelector('[data-testid=stair-outside]')) {
+        fails.push('b7 没越界却显示了越界警告行');
+      }
 
       // 级数按层高自动算：300 / 17.5 ≈ 17
       const stairsMod = await import('/src/interior/stairs.js');
       const auto = stairsMod.stairStepCount(st1, 300);
       detail.autoSteps = auto;
-      if (auto !== 17) fails.push('b6 自动级数应为 17（300cm / 17.5cm），实际 ' + auto);
+      if (auto !== 17) fails.push('b8 自动级数应为 17（300cm / 17.5cm），实际 ' + auto);
       if (!document.querySelector('[data-testid=stair-popover]')) {
-        fails.push('b7 楼梯浮窗没渲染出来');
+        fails.push('b9 楼梯浮窗没渲染出来');
       }
       const targetEl = document.querySelector('[data-testid=stair-target]');
       detail.target = targetEl ? (targetEl.textContent || '').trim() : null;
       if (!detail.target || !detail.target.includes('二层') && !detail.target.includes('上一')) {
-        fails.push('b8 浮窗没说清"通到哪一层"，实际：' + detail.target);
+        fails.push('b10 浮窗没说清"通到哪一层"，实际：' + detail.target);
       }
 
       // ── c) 浮窗改级数 → 落库；撤销一次 → 回自动 ──
@@ -208,6 +215,137 @@ def run(cdp):
       const back = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || []).length;
       if (back !== 1) fails.push('g2 撤销一次没把楼梯恢复，实际 ' + back);
 
+      // ── h) 越界：跨过南墙的那一跑要被判出来；“收进房间”能收进去；一次撤销能退回 ──
+      iv.startStairTool();
+      await tick();
+      const snapKeep = iv.gridSnapEnabled;
+      iv.gridSnapEnabled = false;         // 关掉网格吸附：这一步要精确的 450cm 落点
+      let curFloor = s.interiorData[bid].floors.find(f => f.id === f1.id);
+      const seenIds = new Set((curFloor.stairs || []).map(x => x.id));
+      iv.handleStairClick(-260, 150);
+      iv.handleStairClick(-260, 450);     // 450cm 在南墙（300cm）之外 —— 就是暮雨看到的那种
+      await tick();
+      curFloor = s.interiorData[bid].floors.find(f => f.id === f1.id);
+      // 按 id 取"新画的那一跑"（不靠坐标猜：网格吸附会挪点）
+      let cross = (curFloor.stairs || []).find(x => !seenIds.has(x.id));
+      if (!cross) {
+        fails.push('h1 跨墙那一跑没画上（用例准备失败）');
+      } else {
+        const outCross = stairsMod.stairOutsideInfo(cross, iv.isPointInAnyRoom);
+        detail.outCross = Math.round(outCross.ratio * 100);
+        detail.crossEnd = cross.end;
+        if (!(outCross.ratio > 0.05)) {
+          fails.push('h2 画到墙外的楼梯没被判越界（比例 ' + Math.round(outCross.ratio * 100) + '%%）');
+        }
+        if (!document.querySelector('[data-testid=stair-outside]')) {
+          fails.push('h3 浮窗里没有越界提示行');
+        }
+        const fitBtn = document.querySelector('[data-testid=stair-fit]');
+        if (!fitBtn) fails.push('h4 浮窗里没有“收进房间”按钮');
+        if (fitBtn) {
+          fitBtn.click();
+          await tick();
+          const after = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])
+            .find(x => x.id === cross.id);
+          const outAfter = after ? stairsMod.stairOutsideInfo(after, iv.isPointInAnyRoom) : null;
+          detail.outAfterFit = after ? Math.round(outAfter.ratio * 100) : null;
+          if (!after) fails.push('h5 收进房间后楼梯不见了');
+          else if (outAfter.outside !== 0) {
+            fails.push('h6 点了“收进房间”还是越界（' + Math.round(outAfter.ratio * 100) + '%%）');
+          }
+          const lenAfter = after ? Math.hypot(after.end.x - after.start.x, after.end.y - after.start.y) : 0;
+          detail.fitLen = Math.round(lenAfter);
+          if (!(lenAfter >= 40)) fails.push('h7 收进房间后长度不足 40cm（' + Math.round(lenAfter) + '）');
+          s.undo();
+          const back = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])
+            .find(x => x.id === cross.id);
+          const outBack = back ? stairsMod.stairOutsideInfo(back, iv.isPointInAnyRoom) : null;
+          if (!back || !(outBack.ratio > 0.05)) {
+            fails.push('h8 撤销一次没退回越界状态（收进房间不是一条 undo？）');
+          }
+          // 这一跑用完就删，别把两层楼弄乱
+          iv.startStairEdit(back);
+          iv.deleteSelectedStair();
+          await tick();
+          iv.gridSnapEnabled = snapKeep;
+        }
+      }
+
+      // ── i) 拖拽：拖梯身整体平移 / 拖端点改走向，各一条 undo ──
+      iv.startStairTool();
+      await tick();
+      let cur2 = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])[0];
+      if (!cur2) {
+        fails.push('i1 找不到房间内那跑楼梯（用例准备失败）');
+      } else {
+        iv.selectFloor(f1.id);
+        iv.interactionMode = 'pan';       // 关键：add_stairs 模式下不进入拖拽（那是一次性放置工具）
+        await tick();
+        const mid = { x: (cur2.start.x + cur2.end.x) / 2, y: (cur2.start.y + cur2.end.y) / 2 };
+        const snap0 = iv.gridSnapEnabled;
+        iv.gridSnapEnabled = false;
+        const before = JSON.parse(JSON.stringify(cur2));
+        const info = iv.handleDragStart(mid.x, mid.y, 0, false, false, false);
+        if (!info || info.mode !== 'node') {
+          fails.push('i2 点在梯身上没有进入拖拽（mode=' + (info && info.mode) + '）');
+          return JSON.stringify({ fails, detail });
+        }
+        iv.handleDragMove(mid.x + 60, mid.y + 0, info);
+        iv.handleDragEnd(mid.x + 60, mid.y + 0, info);
+        let movedStair = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])[0];
+        detail.dragDx = Math.round(movedStair.start.x - before.start.x);
+        if (Math.abs(detail.dragDx - 60) > 1) {
+          fails.push('i3 拖梯身没整段平移（dx=' + detail.dragDx + '，期望 60）');
+        }
+        if (Math.abs(movedStair.end.x - before.end.x - 60) > 1) {
+          fails.push('i4 拖梯身时终点没跟着走（两端脱开了）');
+        }
+        // 拖端点
+        const grab = { x: movedStair.start.x, y: movedStair.start.y };
+        const info2 = iv.handleDragStart(grab.x, grab.y, 0, false, false, false);
+        if (!info2 || info2.mode !== 'node') fails.push('i5 拖端点没进入拖拽（mode=' + (info2 && info2.mode) + '）');
+        iv.handleDragMove(grab.x, grab.y + 40, info2);
+        iv.handleDragEnd(grab.x, grab.y + 40, info2);
+        let endStair = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])[0];
+        detail.dragEndDy = Math.round(endStair.start.y - grab.y);
+        if (Math.abs(detail.dragEndDy - 40) > 1) {
+          fails.push('i6 拖起步端没改坐标（dy=' + detail.dragEndDy + '，期望 40）');
+        }
+        iv.gridSnapEnabled = snap0;
+        s.undo();
+        s.undo();
+        let undone = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])[0];
+        if (Math.abs(undone.start.x - before.start.x) > 1 || Math.abs(undone.start.y - before.start.y) > 1) {
+          fails.push('i7 两次撤销没退回拖动前的位置');
+        }
+
+        // ── j) 翻转起止点：一条 undo ──
+        const pre = JSON.parse(JSON.stringify(undone));
+        iv.startStairEdit(undone);
+        iv.flipStair();
+        const flipped = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])[0];
+        if (Math.abs(flipped.start.x - pre.end.x) > 1e-6 || Math.abs(flipped.end.y - pre.start.y) > 1e-6) {
+          fails.push('j1 翻转起止点没生效');
+        }
+        s.undo();
+        const backFlip = (s.interiorData[bid].floors.find(f => f.id === f1.id).stairs || [])[0];
+        if (Math.abs(backFlip.start.y - pre.start.y) > 1e-6) fails.push('j2 翻转撤销没回原位');
+        detail.flip = 'ok';
+      }
+
+      // ── k) 切层自动识别房间：二层有墙却没 rooms 时，切过去不能是空白图 ──
+      const f2data = s.interiorData[bid].floors.find(f => f.id === f2.id);
+      f2data.rooms = [];                 // 模拟旧项目 / 跨层复制后的空房间（只改内存）
+      iv.selectFloor(f1.id);
+      await tick();
+      iv.selectFloor(f2.id);
+      await tick();
+      detail.rooms2f = (f2data.rooms || []).length;
+      if (!(detail.rooms2f > 0)) {
+        fails.push('k1 切到二层没有自动识别房间（rooms 仍为空，平面图会是空白）');
+      }
+      iv.selectFloor(f1.id);
+
       // 不清场：Python 侧还要拿这栋两层楼导两张图（平面图 + 3D）做人工复核
       iv.cancelStairEdit();
       iv.editMode = false;
@@ -261,6 +399,15 @@ def run(cdp):
         shots['plan'] = _save(
             cdp.eval("document.querySelector('.interior-container canvas').toDataURL('image/png')"),
             'test-178-plan.png')
+        # 二层平面图：楼梯属于一层，但楼板洞口要在这层画成虚线框（洞的归属靠这条体现）
+        cdp.eval("(() => { const iv = %s; if (iv.floors && iv.floors[1]) iv.selectFloor(iv.floors[1].id); return 1; })()" % IV)
+        cdp.eval("new Promise(r => { try { %s.renderer.requestRender(); } catch (e) {} "
+                 "requestAnimationFrame(() => requestAnimationFrame(() => r(1))); })" % IV)
+        shots['plan2'] = _save(
+            cdp.eval("document.querySelector('.interior-container canvas').toDataURL('image/png')"),
+            'test-178-plan-2f.png')
+        cdp.eval("(() => { const iv = %s; if (iv.floors && iv.floors[0]) iv.selectFloor(iv.floors[0].id); return 1; })()" % IV)
+        cdp.eval("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))")
     except Exception:
         pass
     try:

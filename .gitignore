@@ -38,6 +38,8 @@ __pycache__/
 
 # 测试临时
 .test-edge-profile/
+# 3D 真机截图用的隔离 Edge profile（test_178 抓 3D 留证时拉起）
+.test-edge-profile-3d/
 # 常驻实验室（scripts/tests/tools/_lab.py up）残留：Edge 用户目录 + 进程号
 .lab-edge-profile/
 .lab-pids.json

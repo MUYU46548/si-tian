@@ -75,8 +75,8 @@
       <div class="floor-actions">
         <!-- A14：本层标高写出来（以前 elevation 只在数据里，界面从不显示） -->
         <span class="floor-elev" data-testid="floor-elevation"
-              :title="`本层地面标高 ${formatLength(currentElevation)}${floorAbove ? `；上一层 ${formatLength(Number(floorAbove.elevation) || 0)}` : '；上方没有楼层'}`">
-          地面 {{ formatLength(currentElevation) }}
+              :title="`本层地面标高 ${elevationText}${floorAbove ? `；上一层 ${formatLength(Number(floorAbove.elevation) || 0)}` : '；上方没有楼层'}`">
+          地面 {{ elevationText }}
         </span>
         <!-- ⚠️ 本栏**不受 editMode 控制**（楼层切换在浏览态也要用），所以只读灰禁必须写在这里：
              否则只读态下这三个按钮照常可点 → 改内存但永不落盘 = 用户以为删掉了、重启又回来 -->
@@ -306,6 +306,11 @@
             <template v-else>本层上方没有楼层（这一跑暂时悬空）</template>
           </span>
         </div>
+        <!-- 越界（2026-11-15 暮雨反馈）：楼梯画到墙外是"看得见但没人说"的错，这里必须报 -->
+        <div class="detail-row stair-warn" v-if="selectedStairOutside" data-testid="stair-outside">
+          <span class="detail-label">越界</span>
+          <span class="detail-value warn">{{ selectedStairOutsidePct }}% 在房间外（画到墙外了）</span>
+        </div>
         <div class="detail-row">
           <span class="detail-label">级数</span>
           <div class="rotation-input">
@@ -336,9 +341,17 @@
           </span>
         </div>
         <p class="detail-hint">级数填 0 = 自动（按层高算，{{ selectedStairInfo ? selectedStairInfo.autoSteps : '' }} 级）</p>
+        <p class="detail-hint">画布上可以直接拖：拖梯身整体挪、拖两端的方点改走向</p>
         <div class="popover-actions">
           <button class="adopt-btn" @click="saveStairEdit" data-testid="stair-save"
                   :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '保存（可撤销）'">保存</button>
+          <button class="adopt-btn" @click="fitStairIntoRooms" data-testid="stair-fit"
+                  v-if="selectedStairOutside"
+                  :disabled="store.isReadOnly"
+                  :title="store.isReadOnly ? store.readOnlyReason : '沿中心线把两端收进房间（保留最长的那段，可撤销）'">收进房间</button>
+          <button class="adopt-btn ghost" @click="flipStair" data-testid="stair-flip"
+                  :disabled="store.isReadOnly"
+                  :title="store.isReadOnly ? store.readOnlyReason : '翻转起止点（方向画反了不用重画，可撤销）'">翻转起止</button>
           <button class="adopt-btn ghost" @click="deleteSelectedStair" data-testid="stair-delete"
                   :disabled="store.isReadOnly" :title="store.isReadOnly ? store.readOnlyReason : '删除这一跑（可撤销）'">删除</button>
         </div>
@@ -555,7 +568,7 @@ import { findShortcut, groupShortcuts } from '../interior/shortcuts';
 import {
   STAIR_DEFAULTS, stairTreads, stairRise, stairStepCount,
   stairFootprint, stairTargetFloor, stairHolesForFloor, stairDirection,
-  orderFloorsByElevation,
+  orderFloorsByElevation, stairOutsideInfo, fitStairInside,
 } from '../interior/stairs.js';
 import { getRoomPolygon, polygonArea, pointInPolygon } from '../utils/roomDetection';
 
@@ -1043,6 +1056,8 @@ const wallThickness = ref(DEFAULT_WALL_THICKNESS);
 const stairsDraftStart = ref(null);
 const selectedStairId = ref(null);
 const editingStair = ref(false);
+// 拖拽：mode = 'move' 整体平移 / 'start' 拖起步端 / 'end' 拖上落端（松手才落一条 undo）
+const stairDrag = ref(null);
 const stairWidth = ref(STAIR_DEFAULTS.width);
 const stairForm = reactive({ width: STAIR_DEFAULTS.width, steps: 0, direction: 'up' });
 
@@ -1052,6 +1067,13 @@ const currentStair = computed(() => (currentFloor.value?.stairs || []).find((s) 
 const orderedFloors = computed(() => orderFloorsByElevation(floors.value));
 const floorIndex = computed(() => orderedFloors.value.findIndex((f) => f.id === currentFloorId.value));
 const currentElevation = computed(() => Number(currentFloor.value?.elevation) || 0);
+/** 标高读数按制图写法：±0.00 / +3.00 / −1.50（负号用 U+2212，不用连字符） */
+const elevationText = computed(() => {
+  const v = currentElevation.value;
+  if (Math.abs(v) < 0.5) return '±0.00';
+  const m = Math.abs(v / 100).toFixed(2);
+  return (v > 0 ? '+' : '\u2212') + m;
+});
 const floorAbove = computed(() => orderedFloors.value[floorIndex.value + 1] || null);
 const floorBelow = computed(() => orderedFloors.value[floorIndex.value - 1] || null);
 /** 本层楼板上的洞（下层上行梯 + 本层下行梯）：平面图上画虚线框 */
@@ -1077,6 +1099,44 @@ function stairInfoOf(stair) {
 
 const selectedStairInfo = computed(() => (currentStair.value ? stairInfoOf(currentStair.value) : null));
 
+/**
+ * 点是否在**本层某个房间**里（房间由墙自动围合）。
+ *
+ * 这是"楼梯画到墙外"的判据。房间还没围合（墙不足 3 面）时退化为"墙端点包围盒 + 20cm"，
+ * 至少能挡住"画到很远的外面去"；没有墙就一律算室内（那时建筑本就没有边界可言）。
+ */
+function isPointInAnyRoom(pt) {
+  const floor = currentFloor.value;
+  if (!floor || !pt) return true;
+  const walls = Array.isArray(floor.walls) ? floor.walls : [];
+  const rooms = Array.isArray(floor.rooms) ? floor.rooms : [];
+  if (rooms.length) {
+    for (const r of rooms) {
+      const poly = getRoomPolygon(r, walls);
+      if (poly.length >= 3 && pointInPolygon(pt, poly)) return true;
+    }
+    return false;
+  }
+  const pts = walls.flatMap((w) => [w.start, w.end]).filter(Boolean);
+  if (!pts.length) return true;
+  const pad = 20;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  return pt.x >= Math.min(...xs) - pad && pt.x <= Math.max(...xs) + pad
+    && pt.y >= Math.min(...ys) - pad && pt.y <= Math.max(...ys) + pad;
+}
+
+/** 选中楼梯的越界信息（>0 = 有采样落在房间外）；没越界返回 null，界面据此不显示警告 */
+const selectedStairOutside = computed(() => {
+  const s = currentStair.value;
+  if (!s) return null;
+  const info = stairOutsideInfo(s, isPointInAnyRoom);
+  return info.outside > 0 ? info : null;
+});
+const selectedStairOutsidePct = computed(() => (selectedStairOutside.value
+  ? Math.max(1, Math.round(selectedStairOutside.value.ratio * 100))
+  : 0));
+
 /** 工具栏提示：这一层按现在的标高，自动会是几级 */
 const autoStepHint = computed(() => {
   const own = currentElevation.value;
@@ -1099,6 +1159,12 @@ function selectFloor(floorId) {
   selectedStairId.value = null;
   editingStair.value = false;
   selectedWallId.value = null;
+  // 2026-11-15（三层自查）：rooms 是派生数据，原来只在"墙变了"时重算。
+  // 但跨楼层复制 / 旧项目常见"某层有墙、rooms 却是空的" —— 切过去是一张没有房间填充、
+  // 没有面积、连洞口都衬不出来的空白图。切层时补算一次；只在房间为空且墙够围合时动手，
+  // 免得每次切层都写盘（setFloorRooms 会 scheduleAutoSave）。
+  const floor = currentFloor.value;
+  if (floor && (floor.walls || []).length >= 3 && !(floor.rooms || []).length) recalcRooms();
   fitToFloor();
   renderer.requestRender();
 }
@@ -1481,6 +1547,30 @@ function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
       renderer.requestRender();
       return false;      // 不进入拖拽：墙身拖动暂不支持（拖动会带走整面墙，手感与对手件不同）
     }
+
+    // 楼梯（2026-11-15）：拖端点改走向、拖梯身整体平移。以前只能改数值或删了重画
+    const st = hitStair(wx, wy);
+    if (st) {
+      const cs = renderer.getViewTransform().scale || 1;
+      const tol = WALL_HANDLE_PX / cs;
+      const near = (p) => p && Math.hypot(p.x - wx, p.y - wy) <= tol;
+      const mode = near(st.start) ? 'start' : (near(st.end) ? 'end' : 'move');
+      stairDrag.value = {
+        stairId: st.id,
+        mode,
+        origin: JSON.parse(JSON.stringify(st)),
+        grab: { x: wx, y: wy },
+        wasEditing: editingStair.value,
+      };
+      selectedStairId.value = st.id;
+      editingStair.value = false;       // 拖动期间收掉浮窗（里面的数字会一直跳）
+      selectedFurniture.value = null;
+      selectedFurnitureIds.value = [];
+      selectedWallId.value = null;
+      selectedOpening.value = null;
+      renderer.requestRender();
+      return { mode: 'node', nodeId: `stair:${st.id}` };
+    }
   }
 
   const hit = hitTest(wx, wy);
@@ -1538,6 +1628,27 @@ function handleDragMove(wx, wy, info) {
       shapeEdit.cursor = { x: wx, y: wy };
       renderer.requestRender();
     }
+    return;
+  }
+
+  // 拖楼梯：只改内存 + 重画，松手才落一条 undo（与拖墙端点同一套手感）
+  if (stairDrag.value) {
+    const d = stairDrag.value;
+    const floor = currentFloor.value;
+    const st = floor && (floor.stairs || []).find((x) => x.id === d.stairId);
+    if (!st) { stairDrag.value = null; return; }
+    if (d.mode === 'move') {
+      const dx = wx - d.grab.x;
+      const dy = wy - d.grab.y;
+      st.start = { x: d.origin.start.x + dx, y: d.origin.start.y + dy };
+      st.end = { x: d.origin.end.x + dx, y: d.origin.end.y + dy };
+    } else {
+      // 拖端点：另一头当正交基准（Shift 走直角），并吸附到墙端点/轴线
+      const other = d.mode === 'start' ? d.origin.end : d.origin.start;
+      const p = resolvePlacement(wx, wy, { from: other }).xy;
+      st[d.mode] = { x: p.x, y: p.y };
+    }
+    renderer.requestRender();
     return;
   }
 
@@ -1609,6 +1720,28 @@ function handleDragEnd(wx, wy, info) {
   // mouseup 仍会走到这里。不挡的话会把"上一次的墙段"之类收尾动作跑掉。
   if (shapeEdit.active) return;
   clearAlignGuides();
+
+  // 楼梯松手：真变了才提交（一条 undo），并把浮窗按原样恢复
+  if (stairDrag.value) {
+    const d = stairDrag.value;
+    stairDrag.value = null;
+    const floor = currentFloor.value;
+    const st = floor && (floor.stairs || []).find((x) => x.id === d.stairId);
+    const moved = st && (st.start.x !== d.origin.start.x || st.start.y !== d.origin.start.y
+      || st.end.x !== d.origin.end.x || st.end.y !== d.origin.end.y);
+    if (moved && currentFloorId.value) {
+      // 内存已是新值 → patch 传空，oldSnapshot 供 undo 还原（与 updateWall 同纪律）
+      store.updateStair(props.buildingNode.id, currentFloorId.value, d.stairId, {}, d.origin);
+      editingStair.value = !!d.wasEditing;
+      // 拖完当场体检：越界要说出来（拖动是最容易拖出墙外的操作）
+      const out = stairOutsideInfo(st, isPointInAnyRoom);
+      if (out.outside > 0) {
+        setExportMsg(`这一跑有 ${Math.max(1, Math.round(out.ratio * 100))}% 在房间外，可点浮窗里的“收进房间”拉回`, true);
+      }
+    }
+    renderer.requestRender();
+    return;
+  }
 
   // 墙端点松手：比对拖动前快照，真变了才提交（一条 undo），再重算房间
   if (wallDrag.value) {
@@ -2459,8 +2592,16 @@ function handleStairClick(wx, wy) {
     selectedWallId.value = null;
     selectedOpening.value = null;
     startStairEdit(item);
-    if (!floorAbove.value) setExportMsg('这一层上方没有楼层：这跑楼梯暂时是悬空的（加了楼层就会接上）');
-    else setExportMsg(`已画好一跑：${selectedStairInfo.value ? selectedStairInfo.value.steps : ''} 级，通到 ${floorAbove.value.name || '上一层'}`);
+    // 落成后当场体检：先看"有没有画到墙外"，再看"有没有上一层" —— 两件都是用户看不见的错误
+    const out = stairOutsideInfo(item, isPointInAnyRoom);
+    if (out.outside > 0) {
+      setExportMsg(`这一跑有 ${Math.max(1, Math.round(out.ratio * 100))}% 落在房间外（画到墙外/室外了）。`
+        + '点浮窗里的“收进房间”可以拉回来，或拖端点自己调', true);
+    } else if (!floorAbove.value) {
+      setExportMsg('这一层上方没有楼层：这跑楼梯暂时是悬空的（加了楼层就会接上）');
+    } else {
+      setExportMsg(`已画好一跑：${selectedStairInfo.value ? selectedStairInfo.value.steps : ''} 级，通到 ${floorAbove.value.name || '上一层'}`);
+    }
   }
   renderer.requestRender();
 }
@@ -2507,6 +2648,37 @@ function saveStairEdit() {
   renderer.requestRender();
 }
 
+/**
+ * 把这一跑收进房间（2026-11-15，用户反馈"楼梯超出墙壁边界"）。
+ *
+ * 为什么不画的时候直接夹住：夹住会**替用户改落点**，他点哪儿就该是哪儿；
+ * 但越界这件事必须看得见 —— 所以是"提示 + 一键收进"，一次 undo 可回退。
+ */
+function fitStairIntoRooms() {
+  const stair = currentStair.value;
+  if (!stair || !currentFloorId.value) return;
+  const fit = fitStairInside(stair, isPointInAnyRoom);
+  if (!fit) {
+    // 收不进去就是收不进去（梯段比房间还长 / 整段在室外），别假装成功
+    setExportMsg('这跑收不进房间：梯段比房间还长，或整段都在墙外 —— 请改小梯宽、缩短，或删掉重画（房间还没围合时先画墙）', true);
+    return;
+  }
+  store.updateStair(props.buildingNode.id, currentFloorId.value, stair.id, fit, JSON.parse(JSON.stringify(stair)));
+  setExportMsg('已把这一跑收进房间（可撤销）');
+  renderer.requestRender();
+}
+
+/** 翻转起止点（方向画反了不用重画）：一条 undo */
+function flipStair() {
+  const stair = currentStair.value;
+  if (!stair || !currentFloorId.value) return;
+  store.updateStair(props.buildingNode.id, currentFloorId.value, stair.id, {
+    start: { x: stair.end.x, y: stair.end.y },
+    end: { x: stair.start.x, y: stair.start.y },
+  }, JSON.parse(JSON.stringify(stair)));
+  renderer.requestRender();
+}
+
 function deleteSelectedStair() {
   const stair = currentStair.value;
   if (!stair || !currentFloorId.value) return;
@@ -2541,6 +2713,22 @@ function drawStairsDraftPreview(ctx) {
   });
   ctx.restore();
 
+  // 画的时候就把"这一跑会伸出墙外"画出来（橙色虚线框）：等落完再报错就晚了
+  const outside = stairOutsideInfo(ghost, isPointInAnyRoom);
+  const fpDraft = stairFootprint(ghost);
+  if (outside.outside > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 2 / z;
+    ctx.setLineDash([7 / z, 4 / z]);
+    ctx.beginPath();
+    ctx.moveTo(fpDraft.poly[0].x, fpDraft.poly[0].y);
+    for (let i = 1; i < fpDraft.poly.length; i++) ctx.lineTo(fpDraft.poly[i].x, fpDraft.poly[i].y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // 起点小方块（"这里点下去就是起步端"）
   const s2 = 5 / z;
   ctx.save();
@@ -2548,7 +2736,10 @@ function drawStairsDraftPreview(ctx) {
   ctx.fillRect(start.x - s2, start.y - s2, s2 * 2, s2 * 2);
   ctx.restore();
 
-  const label = `${info.steps} 级 · 升 ${formatLength(Math.abs(info.rise))} · 长 ${formatLength(len)}`;
+  const overPct = Math.max(1, Math.round(outside.ratio * 100));
+  const label = outside.outside > 0
+    ? `${info.steps} 级 · 升 ${formatLength(Math.abs(info.rise))} · 长 ${formatLength(len)} · ⚠ ${overPct}% 在房间外`
+    : `${info.steps} 级 · 升 ${formatLength(Math.abs(info.rise))} · 长 ${formatLength(len)}`;
   const mx = (start.x + p.x) / 2;
   const my = (start.y + p.y) / 2;
   ctx.save();
@@ -2558,7 +2749,7 @@ function drawStairsDraftPreview(ctx) {
   const tw = ctx.measureText(label).width;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.fillRect(mx - tw / 2 - 4 / z, my - 8 / z, tw + 8 / z, 16 / z);
-  ctx.fillStyle = '#2f6f95';
+  ctx.fillStyle = outside.outside > 0 ? '#b45309' : '#2f6f95';
   ctx.fillText(label, mx, my);
   ctx.restore();
 }
@@ -3023,6 +3214,17 @@ function handleKeydown(e) {
   // Esc：取消选中的楼梯（浮窗一起关）
   if (e.key === 'Escape' && editingStair.value) {
     cancelStairEdit();
+    return;
+  }
+
+  // Esc：拖动中 → 取消这次拖动（把内存改回拖动前，松手前的值不落库）
+  if (e.key === 'Escape' && stairDrag.value) {
+    const d = stairDrag.value;
+    stairDrag.value = null;
+    const floor = currentFloor.value;
+    const st = floor && (floor.stairs || []).find((x) => x.id === d.stairId);
+    if (st) { st.start = d.origin.start; st.end = d.origin.end; }
+    renderer.requestRender();
     return;
   }
 
@@ -3629,6 +3831,16 @@ defineExpose({ canvas, renderer });
 /* 楼梯浮窗与门窗浮窗同位（两者互斥，不会同时出现） */
 .stair-popover {
   top: 132px;
+}
+
+/* 楼梯越界：橙色字（不是红色 —— 数据没坏，只是位置不对，可以一键收进） */
+.detail-value.warn {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.stair-warn .detail-label {
+  color: #b45309;
 }
 
 /* 浮窗里的一句灰字说明：写"怎么用"，不写"内部实现" */
