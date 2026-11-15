@@ -241,7 +241,7 @@ function wallBoxes(wall, elevation, openings, colors) {
 
 // ── 凸包 + 最小外接矩形（屋顶用）─────────────────────────────────────────
 
-function convexHull(points) {
+export function convexHull(points) {
   const pts = [...points].sort((a, b) => (a.x - b.x) || (a.y - b.y));
   if (pts.length < 3) return pts;
   const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
@@ -265,7 +265,7 @@ function convexHull(points) {
  * 最小面积外接矩形（旋转卡壳）。返回 { cx, cy, ux, uy, halfW, halfD }：
  * 中心、长轴单位向量、沿长轴的半长、垂直长轴的半宽（cm）。
  */
-function minAreaRect(hull) {
+export function minAreaRect(hull) {
   const n = hull.length;
   if (n < 3) return null;
   let best = null;
