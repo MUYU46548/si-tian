@@ -500,6 +500,82 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  /**
+   * 设置/清除家具的自定义形状（2026-11-14，家具自绘）。
+   *
+   * @param {object|null} custom `{ points:[{x,y}…], closed, fill }`（归一化 0..1）；null = 恢复内置符号
+   * @param {object} [sizePatch] 形状撑大了包围框时一起写（width/height/x/y），保证边一条 undo 一起回滚
+   *
+   * 为什么单独开写口而不复用 `updateFurniture`：
+   *   ① 后者的 undo label 固定是"移动家具"，画形状按撤销出现"撤销移动家具"会让人以为撤错了；
+   *   ② 这里必须**先校验 shape 再落**（脏数据进项目后每次渲染都会炸），updateFurniture 不管校验；
+   *   ③ 清除形状要 `delete` 字段，Object.assign 做不到。
+   */
+  function setFurnitureShape(buildingId, floorId, furnitureId, custom, sizePatch = null) {
+    if (!guardWrite('绘制家具形状').ok) return false;
+    const data = interiorData.value[buildingId];
+    if (!data) return false;
+    const floor = data.floors.find(f => f.id === floorId);
+    if (!floor || !floor.furniture) return false;
+    const item = floor.furniture.find(f => f.id === furnitureId);
+    if (!item) return false;
+
+    let next = null;
+    if (custom) {
+      const pts = Array.isArray(custom.points) ? custom.points : null;
+      if (!pts || pts.length < 3) return false;
+      const cleaned = [];
+      for (const p of pts) {
+        const x = Number(p && p.x);
+        const y = Number(p && p.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+        cleaned.push({ x, y });
+      }
+      next = { points: cleaned, closed: custom.closed !== false, fill: custom.fill !== false };
+    }
+
+    const snap = (o) => (o ? JSON.parse(JSON.stringify(o)) : null);
+    const before = {
+      custom: snap(item.custom),
+      width: item.width, height: item.height, x: item.x, y: item.y,
+    };
+    const after = {
+      custom: snap(next),
+      width: sizePatch && Number.isFinite(Number(sizePatch.width)) ? Number(sizePatch.width) : item.width,
+      height: sizePatch && Number.isFinite(Number(sizePatch.height)) ? Number(sizePatch.height) : item.height,
+      x: sizePatch && Number.isFinite(Number(sizePatch.x)) ? Number(sizePatch.x) : item.x,
+      y: sizePatch && Number.isFinite(Number(sizePatch.y)) ? Number(sizePatch.y) : item.y,
+    };
+
+    const apply = (st) => {
+      const it = (findFloor(buildingId, floorId)?.furniture || []).find(f => f.id === furnitureId);
+      if (!it) return;
+      if (st.custom) it.custom = snap(st.custom);
+      else delete it.custom;
+      it.width = st.width;
+      it.height = st.height;
+      it.x = st.x;
+      it.y = st.y;
+    };
+
+    apply(after);
+    execute({
+      type: 'furniture-shape',
+      label: next ? '绘制家具形状' : '恢复默认符号',
+      undo: () => apply(before),
+      redo: () => apply(after),
+    });
+    scheduleAutoSave();
+    return true;
+  }
+
+  /** 读一件家具（编辑器进入时预填形状用；找不到返回 null） */
+  function findFurniture(buildingId, floorId, furnitureId) {
+    const data = interiorData.value[buildingId];
+    const floor = data && data.floors.find(f => f.id === floorId);
+    return (floor && (floor.furniture || []).find(f => f.id === furnitureId)) || null;
+  }
+
   // 更新家具属性（支持 undo：传 oldSnapshot 记录变更前的值）
   function updateFurniture(buildingId, floorId, furnitureId, updates, oldSnapshot = null) {
     // ⚠️ 本函数**先改内存、后 execute**（Object.assign 在 execute 之前）→ 必须守函数首行，
@@ -631,6 +707,8 @@ export function createInteriorModule(ctx) {
     transferFurnitureBatch,
     removeFurniture,
     updateFurniture,
+    setFurnitureShape,
+    findFurniture,
     beginMultiFurnitureCapture,
     endMultiFurnitureCapture,
     updateInteriorReferenceImage,

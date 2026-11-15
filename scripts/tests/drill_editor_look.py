@@ -44,6 +44,15 @@ def main():
         wait_for(cdp, "!!document.querySelector('.app-layout')", timeout=45, desc='重载')
         wait_for(cdp, "!document.querySelector('.onboarding-overlay')", timeout=30, desc='引导层')
         skip_onboarding(cdp)
+        # 恢复提示层（.recovery-overlay）会**盖住整页**：上一次异常退出留下的未保存备份。
+        # 不点掉的话截图里只有这个弹窗（2026-11-14 第一次跑就中）。
+        cdp.eval("""(() => {
+          const b = document.querySelector('.recovery-overlay .btn-discard');
+          if (b) b.click();
+          return 1;
+        })()""")
+        time.sleep(0.3)
+        wait_for(cdp, "!document.querySelector('.recovery-overlay')", timeout=10, desc='恢复提示已关')
         ensure_data_ready(cdp)
         ok, info = open_harness_project(cdp)
         if not ok:

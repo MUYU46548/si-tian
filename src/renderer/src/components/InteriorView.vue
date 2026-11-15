@@ -189,6 +189,21 @@
 
     <div class="canvas-wrapper">
       <canvas ref="canvas"></canvas>
+
+      <!-- 家具自绘提示条（2026-11-14）：只在这个模式出现，写明怎么结束 -->
+      <div v-if="shapeEdit.active" class="shape-edit-bar" data-testid="shape-edit-bar">
+        <span class="shape-hint">
+          在<b>{{ shapeItem?.name || '家具' }}</b>上依次点出轮廓
+        </span>
+        <span class="shape-count" data-testid="shape-count">{{ shapePointCount }} 点</span>
+        <button class="shape-btn" @click="undoShapePoint" :disabled="!shapePointCount"
+                title="撤掉最后一个点 (Backspace)">撤一点</button>
+        <button class="shape-btn primary" @click="finishShapeEdit" :disabled="shapePointCount < 3"
+                :title="shapePointCount < 3 ? '至少 3 个点才能围出形状' : '闭合并保存 (Enter / 双击)'">完成</button>
+        <button class="shape-btn" @click="cancelShapeEdit" title="放弃这次绘制 (Esc)">取消</button>
+        <span class="shape-tip">双击或 Enter 闭合 · 点回起点也能闭合</span>
+      </div>
+
       <eagle-eye
         v-if="viewBounds"
         :view-bounds="viewportBounds"
@@ -247,7 +262,7 @@
     </div>
 
     <!-- 选中家具详情浮窗（可编辑） -->
-    <div v-if="selectedFurniture && !editMode" class="node-detail-popover">
+    <div v-if="selectedFurniture && !editMode && !shapeEdit.active" class="node-detail-popover">
       <div class="popover-header">
         <h4 v-if="!editingPopover">{{ selectedFurniture.name }}</h4>
         <input v-else v-model="editForm.name" class="popover-title-input" placeholder="家具名称" />
@@ -284,6 +299,23 @@
             <span class="unit-label">°</span>
           </div>
           <span v-else class="detail-value">{{ selectedFurniture.rotation || 0 }}°</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">形状</span>
+          <span class="detail-value" data-testid="shape-state">
+            {{ selectedFurniture.custom ? `自定义（${selectedFurniture.custom.points.length} 点）` : '内置符号' }}
+          </span>
+        </div>
+        <div class="shape-actions">
+          <button class="adopt-btn" @click="startShapeEdit" data-testid="shape-draw"
+                  :disabled="store.isReadOnly"
+                  :title="store.isReadOnly ? store.readOnlyReason : '在画布上点出这件家具的轮廓（可再点一次接着改）'">
+            <Icon name="pencil" :size="12" /> 画形状
+          </button>
+          <button v-if="selectedFurniture.custom" class="adopt-btn ghost" @click="clearFurnitureShape"
+                  data-testid="shape-reset" :disabled="store.isReadOnly" title="丢掉自定义形状，恢复内置符号">
+            恢复默认
+          </button>
         </div>
         <div v-if="editingPopover" class="popover-actions">
           <button class="adopt-btn" @click="saveEditPopover">保存</button>
@@ -386,6 +418,7 @@ import { hasWalls } from '../interior/buildShell';
 // 出图（第 4 刀）：版式是纯函数，平面图本体仍走 drawInteriorFloor（换 print 主题）= 同源
 import { buildPlanSheet, drawPlanSheet } from '../interior/planSheet';
 import { drawFurnitureSymbol } from '../interior/furnitureSymbols';
+import { worldPointsToCustom, customToWorldPoints } from '../interior/customShape';
 import { getRoomPolygon, polygonArea, pointInPolygon } from '../utils/roomDetection';
 
 const props = defineProps({
@@ -899,6 +932,11 @@ function removeFloor() {
 }
 
 // ===== Canvas Renderer =====
+const shapeEdit = reactive({ active: false, furnitureId: null, points: [], cursor: null });
+
+const shapeItem = computed(() => currentFurniture.value.find((f) => f.id === shapeEdit.furnitureId) || null);
+const shapePointCount = computed(() => shapeEdit.points.length);
+
 const renderer = useCanvasRenderer(canvas, {
   onRender: (ctx, w, h) => {
     // 🔴 背景必须铺满**整个视口**（2026-11-13 截图抓出来的既有缺陷）：
@@ -946,6 +984,9 @@ const renderer = useCanvasRenderer(canvas, {
 
     // A4: 拖拽家具时高亮吸附网格点
     drawDragHighlight(ctx);
+
+    // 家具自绘：轮廓预览画在最上层（在画墙/家具之上，用户点哪看哪）
+    drawShapeEditPreview(ctx);
   },
   onDragStart: handleDragStart,
   onDragMove: handleDragMove,
@@ -955,6 +996,12 @@ const renderer = useCanvasRenderer(canvas, {
   onClick: handleCanvasClick,
   onBoxSelect: handleBoxSelect,
   onWheel: handleWheel,
+  // 自绘时的橡皮筋要跟着光标走（其余时候不做任何事，避免无谓重绘）
+  onPointerMove: (wx, wy) => {
+    if (!shapeEdit.active) return;
+    shapeEdit.cursor = { x: wx, y: wy };
+    renderer.requestRender();
+  },
   interactionMode: interactionMode,
 });
 
@@ -1125,6 +1172,9 @@ const multiFurnitureStartMap = ref(null); // Map<id, {x,y}>
 
 // ===== 交互 =====
 function handleDragStart(wx, wy, button, shiftKey, ctrlKey, panTry) {
+  // 画形状期间：画布只用来点顶点，不许顺手把家具拖走或平移画布
+  if (shapeEdit.active) return false;
+
   // 这几种是"点一下放一个东西"的工具，不进入拖拽
   if (['add_furniture', 'add_wall', 'add_door', 'add_window'].includes(interactionMode.value)) {
     return false;
@@ -1265,6 +1315,10 @@ function handleDragMove(wx, wy, info) {
 }
 
 function handleDragEnd(wx, wy, info) {
+  // 画形状期间：mousedown 已被 handleDragStart 拦掉（返回 false → panSuppressed），
+  // mouseup 仍会走到这里。不挡的话会把"上一次的墙段"之类收尾动作跑掉。
+  if (shapeEdit.active) return;
+
   // 墙端点松手：比对拖动前快照，真变了才提交（一条 undo），再重算房间
   if (wallDrag.value) {
     const buildingId = props.buildingNode?.id;
@@ -1332,6 +1386,12 @@ function handleDragEnd(wx, wy, info) {
 }
 
 function handleCanvasClick(hit, wx, wy) {
+  // 家具自绘（2026-11-14）：编辑期间画布点击只用于加点，不做选中/放置
+  if (shapeEdit.active) {
+    addShapePoint(wx, wy);
+    return;
+  }
+
   // 画墙（2026-11-13）：点一下定起点，再点一下成墙，可连续画
   if (interactionMode.value === 'add_wall') {
     handleWallClick(wx, wy);
@@ -1564,6 +1624,174 @@ function hitOpening(wx, wy) {
   return null;
 }
 
+// ===== 家具自绘（2026-11-14）=====
+// 用户在画布上依次点出轮廓 → 双击 / Enter 闭合 → 存进 item.custom（归一化坐标，换尺寸不用重画）。
+// 渲染侧早就有契约（furnitureSymbols 的 drawCustomShape），这里补的是"画"的入口。
+function startShapeEdit() {
+  const item = selectedFurniture.value;
+  if (!item) return;
+  if (store.isReadOnly) {
+    setExportMsg(store.readOnlyReason || '当前为只读状态', true);
+    return;
+  }
+  // 已经画过的形状**预填**：进来就是继续改，而不是从零重画
+  const pre = customToWorldPoints(item.custom, item);
+  shapeEdit.active = true;
+  shapeEdit.furnitureId = item.id;
+  shapeEdit.points = pre;
+  shapeEdit.cursor = null;
+  selectedOpening.value = null;
+  selectedWallId.value = null;
+  setExportMsg('');
+  renderer.requestRender();
+}
+
+function addShapePoint(wx, wy) {
+  if (!shapeEdit.active) return;
+  const pts = shapeEdit.points;
+  const last = pts[pts.length - 1];
+  // 去重：双击会在同一处连发两次 click；手抖也会点重。5cm 内视作同一点。
+  if (last && Math.hypot(last.x - wx, last.y - wy) < 5) return;
+  // 点回起点附近 → 直接闭合（3 点以上才允许，免得两下就"闭合"成一条线）
+  const first = pts[0];
+  if (pts.length >= 3 && first && Math.hypot(first.x - wx, first.y - wy) < 8) {
+    finishShapeEdit();
+    return;
+  }
+  pts.push({ x: wx, y: wy });
+  renderer.requestRender();
+}
+
+function undoShapePoint() {
+  if (!shapeEdit.active || !shapeEdit.points.length) return;
+  shapeEdit.points.pop();
+  renderer.requestRender();
+}
+
+function cancelShapeEdit() {
+  shapeEdit.active = false;
+  shapeEdit.furnitureId = null;
+  shapeEdit.points = [];
+  shapeEdit.cursor = null;
+  renderer.requestRender();
+}
+
+/**
+ * 闭合保存。少于 3 点不写（不构成面）；写的时候把"形状撑大了包围框"一起带上（同一条 undo）。
+ */
+function finishShapeEdit() {
+  const item = shapeItem.value;
+  if (!shapeEdit.active || !item) return false;
+  if (shapeEdit.points.length < 3) {
+    setExportMsg('至少要 3 个点才能围出一块形状', true);
+    return false;
+  }
+  const built = worldPointsToCustom(shapeEdit.points, item);
+  if (!built) {
+    setExportMsg('形状数据无效（点太少或家具尺寸为 0）', true);
+    return false;
+  }
+  const grew = Math.abs(built.extent.width - item.width) > 1e-6
+    || Math.abs(built.extent.height - item.height) > 1e-6
+    || Math.abs(built.extent.x - item.x) > 1e-6
+    || Math.abs(built.extent.y - item.y) > 1e-6;
+  const ok = store.setFurnitureShape(
+    props.buildingNode.id,
+    currentFloorId.value,
+    item.id,
+    { points: built.points, closed: built.closed, fill: built.fill },
+    grew ? built.extent : null,
+  );
+  if (!ok) {
+    setExportMsg('保存形状失败（只读或数据无效）', true);
+    return false;
+  }
+  shapeEdit.active = false;
+  shapeEdit.furnitureId = null;
+  shapeEdit.points = [];
+  shapeEdit.cursor = null;
+  setExportMsg(grew ? '已保存自定义形状（包围框随之调整）' : '已保存自定义形状');
+  renderer.requestRender();
+  return true;
+}
+
+/** 恢复内置符号（删掉 custom） */
+function clearFurnitureShape() {
+  const item = selectedFurniture.value || shapeItem.value;
+  if (!item) return;
+  store.setFurnitureShape(props.buildingNode.id, currentFloorId.value, item.id, null, null);
+  renderer.requestRender();
+}
+
+function drawShapeEditPreview(ctx) {
+  if (!shapeEdit.active) return;
+  const item = shapeItem.value;
+  const z = renderer.getViewTransform().scale || 1;
+  const pts = shapeEdit.points;
+  ctx.save();
+
+  // 家具包围框（虚线）：让用户知道"画到框外会自动撑大框"
+  if (item) {
+    ctx.strokeStyle = 'rgba(255, 179, 0, 0.75)';
+    ctx.lineWidth = 1.5 / z;
+    ctx.setLineDash([8 / z, 6 / z]);
+    ctx.strokeRect(item.x, item.y, item.width, item.height);
+    ctx.setLineDash([]);
+  }
+
+  if (pts.length) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    // 实时闭合预览：>=3 点时把最后一点连回起点
+    if (pts.length >= 3) ctx.lineTo(pts[0].x, pts[0].y);
+    ctx.strokeStyle = 'rgba(255, 152, 0, 0.95)';
+    ctx.lineWidth = 2 / z;
+    ctx.stroke();
+
+    // 半透明填充预览：一眼看出"将是这块面"
+    if (pts.length >= 3) {
+      ctx.fillStyle = 'rgba(255, 179, 0, 0.16)';
+      ctx.fill();
+    }
+
+    // 顶点
+    for (let i = 0; i < pts.length; i++) {
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, 4 / z, 0, Math.PI * 2);
+      ctx.fillStyle = i === 0 ? '#ff6d00' : '#fff';
+      ctx.fill();
+      ctx.strokeStyle = '#ff6d00';
+      ctx.lineWidth = 1.5 / z;
+      ctx.stroke();
+    }
+
+    // 橡皮筋：最后一点 → 光标
+    if (shapeEdit.cursor) {
+      ctx.beginPath();
+      ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+      ctx.lineTo(shapeEdit.cursor.x, shapeEdit.cursor.y);
+      ctx.strokeStyle = 'rgba(255, 152, 0, 0.55)';
+      ctx.lineWidth = 1.5 / z;
+      ctx.setLineDash([6 / z, 5 / z]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  } else if (shapeEdit.cursor) {
+    // 还没点第一个点：给一个跟随光标的小十字，确认"正在画"
+    ctx.strokeStyle = 'rgba(255, 152, 0, 0.6)';
+    ctx.lineWidth = 1.5 / z;
+    const r = 6 / z;
+    ctx.beginPath();
+    ctx.moveTo(shapeEdit.cursor.x - r, shapeEdit.cursor.y);
+    ctx.lineTo(shapeEdit.cursor.x + r, shapeEdit.cursor.y);
+    ctx.moveTo(shapeEdit.cursor.x, shapeEdit.cursor.y - r);
+    ctx.lineTo(shapeEdit.cursor.x, shapeEdit.cursor.y + r);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /**
  * 点中的是哪一间房（台账 A28）。判据：点在房间多边形内（边界算命中）。
  * 倒序遍历：后画的房间在上面。
@@ -1583,6 +1811,11 @@ function hitRoom(wx, wy) {
 
 /** 双击房间 → 改名（A28）。房间名字是唯一"人给"的字段，其余都由墙推出来。 */
 async function handleCanvasDblClick(hit, wx, wy) {
+  // 家具自绘：双击 = 闭合保存（第一击已由 onClick 加点，双击的第二次 click 被 5cm 去重挡掉）
+  if (shapeEdit.active) {
+    finishShapeEdit();
+    return;
+  }
   if (store.isReadOnly) {
     setExportMsg(store.readOnlyReason || '当前为只读状态', true);
     return;
@@ -2020,6 +2253,27 @@ function handleKeydown(e) {
   const isEditingInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
   // Esc：先关外观浮层（它压在最上面），再处理画墙收尾
+  // 家具自绘（2026-11-14）：Enter 闭合、Esc 取消、Backspace 撤一点
+  // 必须在最前 —— 否则 Backspace 会走到别的分支、Delete 会把家具删掉
+  if (shapeEdit.active && !isEditingInput) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finishShapeEdit();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelShapeEdit();
+      return;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      undoShapePoint();
+      return;
+    }
+    return;   // 自绘期间吞掉其它快捷键（R 旋转、方向键微调都不该在画形状时生效）
+  }
+
   if (e.key === 'Escape' && showExterior.value) {
     showExterior.value = false;
     return;
@@ -2435,6 +2689,61 @@ defineExpose({ canvas, renderer });
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* ===== 家具自绘（2026-11-14）===== */
+.shape-edit-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;              /* 在 eagle-eye 之上，别被小地图压住 */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(255, 247, 235, 0.97);
+  border: 1px solid #f0c48a;
+  box-shadow: 0 4px 14px rgba(60, 40, 10, 0.14);
+  font-size: 12px;
+  color: #6b4a1d;
+  max-width: calc(100% - 32px);
+  flex-wrap: wrap;
+}
+.shape-hint b { color: #3f2a0c; font-weight: 600; }
+.shape-count {
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: rgba(240, 170, 60, 0.22);
+  color: #8a5c15;
+}
+.shape-btn {
+  /* 工具栏按钮一律“图标/文字 + 最小宽度”（项目纪律：用 min-width 不用 width） */
+  min-width: 56px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #d9b483;
+  background: #fff;
+  color: #6b4a1d;
+  font-size: 12px;
+  cursor: pointer;
+}
+.shape-btn:hover:not(:disabled) { background: #fff4e3; }
+.shape-btn.primary {
+  background: #e08a2b;
+  border-color: #cf7a1d;
+  color: #fff;
+}
+.shape-btn.primary:hover:not(:disabled) { background: #ce7c21; }
+.shape-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.shape-tip { color: #9a7743; font-size: 11px; }
+
+.shape-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 /* 家具详情浮窗 */
