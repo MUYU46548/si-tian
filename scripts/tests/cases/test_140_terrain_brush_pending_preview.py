@@ -158,6 +158,16 @@ DRAG = r"""(async () => {
     + Math.abs(pxMid[i][1] - pxPre[i][1]) + Math.abs(pxMid[i][2] - pxPre[i][2])
     + Math.abs(pxMid[i][3] - pxPre[i][3]));
 
+  // 定向判据（替代"对照点一个字节都没变"）：整屏像素会因渲染重修微动（实测每通道 ~20），
+  // 绝对判据在这种环境下必然红。但"预览画到了别处"会留下**可辨认的笔迹色**，
+  // 所以改判"笔迹处更接近笔迹色、对照点不是笔迹色"。色表取产品自己那份（唯一实现）。
+  const tt = (await import('/src/utils/terrainBrush.js')).TERRAIN_TYPES;
+  const baseC = (tt[TYPE] && tt[TYPE].base) || [0, 0, 0];
+  const colorDist = (c) => Math.abs(c[0] - baseC[0]) + Math.abs(c[1] - baseC[1]) + Math.abs(c[2] - baseC[2]);
+  const strokeDist = colorDist(pxMid[0]);     // 笔迹处：应当更接近笔迹色
+  const ctrlDist = colorDist(pxMid[3]);       // 对照点：不应当接近笔迹色
+  const ctrlDistBefore = colorDist(pxPre[3]);
+
   // ③ 抬手落库
   canvas.dispatchEvent(mk(path[path.length - 1][0], path[path.length - 1][1], 'mouseup'));
   await frame();
@@ -199,6 +209,7 @@ DRAG = r"""(async () => {
     type: TYPE, pend0, pendingAt, preview: preview.length, brushing, midCount, afterCount, pendAfter,
     runs, mode, edit, pixelDiff,
     pxDelta, pxBefore, pxDuring, pxTries, deltas, pxPre, pxMid,
+    baseColor: baseC, strokeDist, ctrlDist, ctrlDistBefore,
     checked, miss, outside, bytesChanged,
     undoExact, undoCount, redoCount, preCount,
     undoDelta: h1 - h0,
@@ -236,21 +247,79 @@ def sub_source_guards():
     return True, '预览与落库共用 forEachCell/forEachInterpolatedCell；拖动中只累积、松手才提交'
 
 
+CANVAS_FP = """(() => {
+  const cv = document.querySelector('.planet-map-container .canvas-wrapper canvas');
+  if (!cv) return -1;
+  const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+  let h = 2166136261;
+  for (let i = 0; i < d.length; i += 64) { h ^= d[i]; h = Math.imul(h, 16777619); }
+  return h >>> 0;
+})()"""
+
+
+def wait_canvas_stable(cdp, need=3, timeout=35.0, step=0.4):
+    """等画布指纹连续 need 次相同。
+
+    🔴 2026-11-16：地形栅格是分块烘焙的，**精修完成时会整屏重绘一次**；若此时正在采样
+    “远离笔迹的对照点”，它会跟着变 → 判据报“对照点也变色了”，看起来像预览圈画错了地方。
+    固定 `time.sleep(10)` 在单跑时够、在全量里不够（前面的用例把 CPU 弄热了），所以改成
+    轮询指纹：等画面真的静止再开始取色。
+    """
+    t0 = time.time()
+    last = None
+    same = 0
+    while time.time() - t0 < timeout:
+        v = cdp.eval(CANVAS_FP)
+        if isinstance(v, int) and v >= 0 and v == last:
+            same += 1
+            if same >= need:
+                return True, time.time() - t0
+        else:
+            same = 0
+            last = v
+        time.sleep(step)
+    return False, time.time() - t0
+
+
 def run(cdp):
     wait_for(cdp, "!!document.querySelector('.app-layout')", desc='应用挂载')
     r = goto_planet(cdp, A('曜川星'))
     if r != 'planet':
         return False, f'导航行星失败 ({r})'
-    time.sleep(1.2)
+    # 行星视图是异步组件：编辑入口按钮可能出现得比 `.planet-map-container` 晚
+    #（全量里有前面的用例把 CPU 弄热，实测 1 秒内还没渲染出来 → enter_edit 返回 no-btn）
+    wait_for(cdp, "!!document.querySelector('.planet-map-container .map-header .edit-entry-btn')",
+             timeout=20, desc='编辑入口')
     if enter_edit(cdp) != 'ok':
         return False, '进入编辑模式失败'
+    # click 在按钮被灰禁时是**静默 no-op** → 要看状态，不能看“点过了”
+    # 确定性：把地形栅格切成**同步烘焙**（产品自带开关，见 heightmapRaster.js）。
+    # 分块烘焙在精修阶段画面静止（只写内存）、完成时才整屏 putImageData —— 拖动中途撞上那一下，
+    # “远离笔迹的对照点”会跟着变（实测四个探针同时变），判据就废了。
+    cdp.eval(f"window.__SITIAN_RASTER_SYNC__ = true; {PM}.renderer.requestRender(); 'ok'")
+    stable0, swait = wait_canvas_stable(cdp)
+    if not stable0:
+        return False, f'同步烘焙后画面 {swait:.1f}s 内没静止'
+
+    entered = False
+    for _ in range(30):
+        if cdp.eval("(() => { const el = document.querySelector('.planet-map-container');"
+                    " return !!(el && el.__vueParentComponent && el.__vueParentComponent.setupState.editMode); })()"):
+            entered = True
+            break
+        time.sleep(0.2)
+    if not entered:
+        return False, '点了“编辑地图”但 editMode 仍为 false（按钮灰禁或点击没生效）'
     time.sleep(0.7)
     cdp.eval(f"{PM}.renderer.focusOn(0, 0, 1.0); {PM}.renderer.requestRender(); 'ok'")
-    time.sleep(0.5)
+    stable, waited = wait_canvas_stable(cdp)
+    if not stable:
+        return False, f'画面 {waited:.1f} 秒内没静止（分块烘焙仍在推进），像素判据无法成立'
 
     res = cdp.eval(DRAG.replace('PM', PM).replace('STORE', STORE))
     if isinstance(res, dict):
         return False, f'探针异常：{res}'
+    cdp.eval("window.__SITIAN_RASTER_SYNC__ = false; 'ok'")   # 恢复产品默认
     data = json.loads(res)
     if data.get('__err__'):
         return False, f'探针失败：{data["__err__"]}'
@@ -263,8 +332,15 @@ def run(cdp):
                      f'runs={data.get("runs")} mode={data.get("mode")} edit={data.get("edit")} '
                      f'brushing={data.get("brushing")}；单点探针差 {data.get("pxDelta")}）')
     # 对照：远离笔迹的那个点必须**没变** —— 否则"变色"可能只是整帧重绘的巧合
-    if (data.get('deltas') or [0, 0, 0, 0])[3] != 0:
-        fails.append(f'远离笔迹的对照点也变色了（{data.get("deltas")}）—— 像素判据不成立')
+    # 对照点：不许变成笔迹色（判据是"定向"的，见 DRAG 里的注释 —— 整屏重绘会让所有点微动）
+    ctrl_d = data.get('ctrlDist')
+    stroke_d = data.get('strokeDist')
+    if ctrl_d is not None and stroke_d is not None:
+        if ctrl_d < 60:
+            fails.append(f'远离笔迹的对照点被染成了笔迹色（色距 {ctrl_d} < 60；'
+                         f'deltas={data.get("deltas")}）—— 预览画到了不该画的地方')
+        elif not (stroke_d < ctrl_d):
+            fails.append(f'笔迹处没有比对照点更接近笔迹色（{stroke_d} vs {ctrl_d}）—— "将涂格"没画在笔迹上')
     if not (data.get('pend0', 0) > 0):
         fails.append(f'按下后没有"将涂格"（{data.get("pend0")}）')
     if not (data.get('pendingAt') and data['pendingAt'][-1] > data['pend0']):

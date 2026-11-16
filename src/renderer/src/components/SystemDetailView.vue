@@ -809,6 +809,26 @@ function snapOrbitRadius(r) {
   return Math.max(ORBIT_RING_START, ORBIT_RING_START + Math.max(0, n) * ORBIT_RING_STEP);
 }
 
+/**
+ * 拖拽落点 → 吸附后的系内坐标（**唯一实现**）。
+ *
+ * 2026-11-16 抽出来：吸附以前只写在 `onDragMove` 里，用例要算"该落在哪"只能照抄一遍公式
+ * （第二份实现，改了必然漂）。预览、落库、用例现在走同一份。
+ *
+ * @param {number} wx 系内 x（世界单位）
+ * @param {number} wy 系内 y
+ * @returns {{x:number, y:number, snapped:boolean}}
+ */
+function applyOrbitSnap(wx, wy) {
+  const dist = Math.sqrt(wx * wx + wy * wy);
+  const snapped = snapOrbitRadius(dist);
+  if (dist > 0 && Math.abs(dist - snapped) < ORBIT_SNAP_THRESHOLD) {
+    const ratio = snapped / dist;             // 吸附：保持角度，半径换标准槽
+    return { x: wx * ratio, y: wy * ratio, snapped: true };
+  }
+  return { x: wx, y: wy, snapped: false };
+}
+
 function drawOrbitDragPreview(ctx) {
   if (!dragPlanet.value) return;
   const px = dragPlanet.value.x;
@@ -1270,19 +1290,11 @@ const renderer = useCanvasRenderer(canvas, {
   onDragMove: (wx, wy, dragInfo) => {
     if (dragInfo.mode !== 'node') return;
     if (!dragPlanet.value || dragPlanet.value.nodeId !== dragInfo.nodeId) return;
-    // C2: 拖拽轨道 — 拖拽位置吸附到最近的标准轨道槽
-    const dist = Math.sqrt(wx * wx + wy * wy);
-    const snapped = snapOrbitRadius(dist);
-    let sx = wx, sy = wy;
-    if (Math.abs(dist - snapped) < ORBIT_SNAP_THRESHOLD && dist > 0) {
-      // 吸附：保持角度，半径替换为标准轨道
-      const ratio = snapped / dist;
-      sx = wx * ratio;
-      sy = wy * ratio;
-    }
-    dragPlanet.value = { nodeId: dragInfo.nodeId, x: sx, y: sy };
+    // C2: 拖拽轨道 — 拖拽位置吸附到最近的标准轨道槽（唯一实现在 applyOrbitSnap）
+    const p = applyOrbitSnap(wx, wy);
+    dragPlanet.value = { nodeId: dragInfo.nodeId, x: p.x, y: p.y };
     const base = sysBase();
-    store.updateNodePosition(dragInfo.nodeId, base.x + sx, base.y + sy);
+    store.updateNodePosition(dragInfo.nodeId, base.x + p.x, base.y + p.y);
   },
   onDragEnd: (wx, wy, dragInfo) => {
     if (dragInfo.mode === 'node') {

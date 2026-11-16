@@ -50,6 +50,7 @@
     >⬡改形状</button>
     <button
       class="more-toggle"
+      data-testid="scenario-more"
       :class="{ active: moreOpen, 'has-advanced': advancedToolActive }"
       @click="$emit('toggleMore')"
       title="更多 — 拆分 / 合并 / 点击填充 / 描轮廓 / 擦除 / 聚落 / 标记 / 道路，以及吸附与底图"

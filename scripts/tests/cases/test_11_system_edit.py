@@ -91,15 +91,20 @@ def run(cdp):
       c.dispatchEvent(mk(p.x + 80, p.y + 50, 'mousemove'));
       c.dispatchEvent(mk(p.x + 80, p.y + 50, 'mouseup'));
       const base = store.nodes.find(n => n.id === __alias('曜川星系')).coordinate;
-      // 期望值：按同一整数量化反算落点世界坐标，再叠加系坐标基准
+      // 期望值：按同一整数量化反算落点世界坐标，再叠加系坐标基准。
+      // 🔴 2026-11-16：还要过产品自己的轨道吸附（`applyOrbitSnap`，C2 之后拖拽会吸附到标准轨道槽）。
+      //    以前这里直接拿未吸附的坐标当期望，于是"产品是对的、用例是旧的" → 一直红。
       const endW = st.renderer.screenToWorld(
         Math.trunc(r.left + toSX(p.x + 80)) - r.left,
         Math.trunc(r.top + toSY(p.y + 50)) - r.top
       );
+      const landed = st.applyOrbitSnap(endW.x, endW.y);
       return JSON.stringify({
         id: p.id, before,
         after: { x: node.coordinate.x, y: node.coordinate.y },
-        expect: { x: base.x + endW.x, y: base.y + endW.y },
+        expect: { x: base.x + landed.x, y: base.y + landed.y },
+        raw: { x: base.x + endW.x, y: base.y + endW.y },
+        snapped: landed.snapped,
         dragging: st.dragPlanet,
         userMoved: node.userMoved,
       });
@@ -112,6 +117,11 @@ def run(cdp):
     ex, ey = drag['expect']['x'], drag['expect']['y']
     if ax is None or abs(ax - ex) > 0.01 or abs(ay - ey) > 0.01:
         return False, f'拖拽坐标换算异常 after={drag["after"]} expect={drag["expect"]}'
+    # 吸附真的起作用了吗（否则"标准槽吸附"被删掉这条判据也照样绿）
+    if drag.get('snapped'):
+        raw = drag.get('raw') or {}
+        if abs(float(raw.get('x', 0)) - ex) < 1e-6 and abs(float(raw.get('y', 0)) - ey) < 1e-6:
+            return False, '标了 snapped 但期望值与未吸附坐标一致 —— 该判据在空转'
     if (ax, ay) == (drag['before']['x'], drag['before']['y']):
         return False, '拖拽未改变 store 坐标'
     if not drag['userMoved']:

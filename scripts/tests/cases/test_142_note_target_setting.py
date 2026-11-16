@@ -89,10 +89,12 @@ def sub_source_guards():
     if "setSitianConfig('noteTarget'" not in settings:
         bad.append('设置面板没把目录写进 noteTarget 配置')
     # 🔴 设置面板不许自己拼落点（那会变成第二份规则）。
-    #    说明文案里出现“03 设定”是允许的（那是给用户看的）；要抓的是**拼路径**。
-    for banned in ("path.join(", "from 'path'", '02 场景地点', '11 地理系统'):
+    # 2026-11-16 收紧口径：**目录名不再是违禁词** —— 2026-11-08 起“哪个目录算地名容器”是
+    # 用户配置（`geoContainerDirs`），placeholder 里给例子（`03 设定/02 场景地点`）是必要的，
+    # 那是给用户看的文案，不是第二份实现。要抓的是**拼路径 / 自己算落点**：
+    for banned in ("path.join(", "from 'path'", 'resolveNoteTarget(', 'path.resolve('):
         if banned in settings:
-            bad.append(f'设置面板里出现了落点规则片段 {banned}（应是唯一实现在 noteTarget.js）')
+            bad.append(f'设置面板里出现了落点计算 {banned}（应是唯一实现在 noteTarget.js）')
     src = _read(MAIN)
     start = src.find("ipcMain.handle('create-obsidian-note'")
     end = src.find('ipcMain.handle(', start + 10)

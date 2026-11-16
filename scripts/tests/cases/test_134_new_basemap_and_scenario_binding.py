@@ -88,10 +88,16 @@ def _seed_base(cdp):
 
 
 def _open_more(cdp):
-    """“更多”默认收起 —— 底图行（含“空底图”按钮）在它里面。"""
+    """“更多”默认收起 —— 底图行（含“空底图”按钮）在它里面。
+
+    🔴 2026-11-16：不能在**全页**找“更多” —— 顶栏（App.vue 的 `.header-more`）也有一个同名按钮，
+    2026-11-08 起这条用例一直点错面板（于是等 `basemap-add-empty` 超时）。先认 testid，
+    再回退到限定在 `.scenario-toolbar` 里的选择器。
+    """
     cdp.eval("""(() => {
-      const b = Array.from(document.querySelectorAll('button'))
-        .find(x => (x.textContent || '').trim().startsWith('更多'));
+      const b = document.querySelector('[data-testid="scenario-more"]')
+        || Array.from(document.querySelectorAll('.scenario-toolbar button'))
+          .find(x => (x.textContent || '').trim() === '更多');
       if (b && !b.classList.contains('active')) b.click();
       return 'ok';
     })()""")

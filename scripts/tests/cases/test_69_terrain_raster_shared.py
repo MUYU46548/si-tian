@@ -118,11 +118,14 @@ JS_PURE = r"""(async () => {
     ck('f1 ★ 方块档 landsea 只有两种颜色（陆 / 海）', seaUniq.size === 2, { colors: seaUniq.size });
     ck('f1 ★ 方块档 height 是多色色带（配色真的接上了，不是空图）', hygUniq.size >= 3, { colors: hygUniq.size });
 
-    // ★ 平滑档（反“拼豆”）：① 画布是**子格分辨率**（比世界尺寸小，靠绘制端插值放大）；
-    //    ② 陆海边界因此出现**过渡色**（渐变），颜色数严格多于方块档。
+    // ★ 平滑档（反“拼豆”）：① 底档按**固定烘焙宽度**（2026-11-08 用户拍板 4096），
+    //    不再按“世界宽 × 倍数 / 格距”；② 陆海边界因此出现**过渡色**（渐变），颜色数严格多于方块档。
     const smL = built.landsea;
-    ck('f1 ★ 平滑档画布为子格分辨率（边长远小于世界尺寸）',
-       smL.canvas.width > 0 && smL.canvas.width < smL.w,
+    ck('f1 ★ 平滑档底档按固定烘焙宽度（BAKE_BASE_WIDTH，与格数脱钩）',
+       smL.canvas.width === M.BAKE_BASE_WIDTH,
+       { cw: smL.canvas.width, expect: M.BAKE_BASE_WIDTH, w: smL.w, h: smL.h });
+    ck('f1 ★ 画布高按世界比例（不是方形、也不是按格数放大）',
+       Math.abs(smL.canvas.height / smL.canvas.width - smL.h / smL.w) < 0.02,
        { cw: smL.canvas.width, ch: smL.canvas.height, w: smL.w, h: smL.h });
     const smUniq = uniq(smL);
     ck('f1 ★ 平滑档出现过渡色（陆海边界渐变而非常数硬边）',
@@ -167,26 +170,47 @@ JS_PIXEL = r"""(async () => {
   if (d) store.selectDomain(d);
   if (g) store.selectSystem(g);
   store.selectPlanet(planet);
-  await tick(600);
+  // 🔴 2026-11-16：这里原来是一串固定 await tick(600) —— 行星视图是**异步组件**，
+  //    第一次渲染可能慢过 600ms，于是“编辑地图”按钮那一刻还不在 DOM（find 返回 null），
+  //    点击静默没发生、editMode 一直 false，表现就是“着色下拉不存在”。
+  //    所有等待一律改成**轮询到条件成立**，别再拿固定 sleep 赌渲染时机。
+  const waitFor = async (fn, ms = 5000, step = 100) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      const v = fn();
+      if (v) return v;
+      await tick(step);
+    }
+    return null;
+  };
 
-  // 进编辑态 + 高度模式（该模式下高度图**强制显示**，无需先开图层）
-  const btn = Array.from(document.querySelectorAll('button'))
-    .find(x => x.classList.contains('edit-entry-btn') || (x.textContent || '').includes('编辑地图'));
-  if (btn) btn.click();
-  await tick(500);
-  const el = document.querySelector('.planet-map-container');
+  const el = await waitFor(() => document.querySelector('.planet-map-container'));
   const pm = el && el.__vueParentComponent && el.__vueParentComponent.setupState;
   ck('装置：PlanetMap 已挂载', !!pm, null);
   if (!pm || typeof pm.setInteractionMode !== 'function') return JSON.stringify({ fails, notes });
 
   // ⚠️ 高度图挂在 **PlanetMap 的 setupState** 上（store 上没有 currentMapData）——
   //    写成 store.currentMapData 会恒为 undefined，装置断言直接假红。
-  const hm = pm.currentMapData && pm.currentMapData.heightmap;
-  ck('装置：当前行星有高度图（否则没有栅格可画）', !!(hm && hm.h && hm.grid), null);
-  if (!(hm && hm.h && hm.grid)) return JSON.stringify({ fails, notes });
+  const hm = await waitFor(() => pm.currentMapData && pm.currentMapData.heightmap
+    && pm.currentMapData.heightmap.h && pm.currentMapData.heightmap.grid && pm.currentMapData.heightmap);
+  ck('装置：当前行星有高度图（否则没有栅格可画）', !!hm, null);
+  if (!hm) return JSON.stringify({ fails, notes });
+
+  // 进编辑态：点入口（容器内精确定位，再用文本兜底）× 轮询到 editMode 真的变 true。
+  // 入口被灰禁时 click 是静默 no-op，所以必须看状态，不能看“点过了”。
+  const btn = document.querySelector('.planet-map-container .map-header .edit-entry-btn')
+    || Array.from(document.querySelectorAll('.planet-map-container button'))
+      .find(x => (x.textContent || '').trim() === '编辑地图');
+  if (btn) btn.click();
+  const entered = await waitFor(() => pm.editMode === true, 4000);
+  ck('装置：已进入编辑态（工具栏只在编辑态渲染）', !!entered,
+     { btn: !!btn, disabled: !!(btn && btn.disabled),
+       headerButtons: Array.from(document.querySelectorAll('.planet-map-container .map-header button'))
+         .map(b => (b.textContent || '').trim()).slice(0, 6) });
 
   pm.setInteractionMode('height');
-  await tick(400);
+  const selReady = await waitFor(() => document.querySelector('[data-testid="heightmap-raster-kind"]'), 3000);
+  ck('装置：高度模式工具栏已渲染', !!selReady, { editMode: !!pm.editMode, mode: pm.interactionMode });
 
   const cv = document.querySelector('.planet-map-container .canvas-wrapper canvas');
   ck('装置：画布已就绪', !!cv, null);

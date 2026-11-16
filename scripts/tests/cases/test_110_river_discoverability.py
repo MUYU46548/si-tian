@@ -97,14 +97,19 @@ def source_gates():
 
 JS_BUTTON = r"""
 (async () => {
-  const more = Array.from(document.querySelectorAll('button'))
-    .find(b => (b.textContent || '').trim().includes('更多'));
+  // 🔴 2026-11-16：不能在全页找“更多” —— 顶栏（App.vue 的 .header-more）也有一个同名按钮，
+  //    2026-11-08 加进来之后本用例一直点错面板（点开顶栏浮层，自然找不到底图相关按钮）。
+  //    先认 testid，再用限定在剧本工具栏里的回退选择器。
+  const more = document.querySelector('[data-testid="scenario-more"]')
+    || Array.from(document.querySelectorAll('.scenario-toolbar button'))
+      .find(b => (b.textContent || '').trim() === '更多');
   if (more) { more.click(); await new Promise(r => setTimeout(r, 220)); }
   const el = document.querySelector('[data-testid="basemap-synthesize-terrain"]');
   return JSON.stringify({
     exists: !!el,
     text: el ? (el.textContent || '').trim() : null,
     disabled: el ? !!el.disabled : null,
+    panelOpen: !!document.querySelector('.toolbar-more'),
   });
 })()
 """
