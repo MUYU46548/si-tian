@@ -148,6 +148,10 @@ function num(v, d = 0) {
 export const SYMBOL_COLORS = Object.freeze({
   roof: '#cbbba4',
   roofFlat: '#d5cfc3',
+  // 多层楼的**下层屋面**（顶层面内缩后露出的那一圈腰檐）：比屋顶深一档，
+  // 一眼能看出"底下还有一层"，又不至于像阴影那样把房子压黑。
+  roofLower: '#b9a88f',
+  roofFlatLower: '#c3bdb0',
   roofRidge: '#79695a',
   edge: '#4a4136',
   shadow: 'rgba(60, 48, 32, 0.20)',
@@ -457,6 +461,73 @@ export function roofPlan(footprint, kind = 'gable') {
 }
 
 /**
+ * 楼层数 → 顶层面的内缩比例（2026-11-16，屋顶随层数变化）。
+ *
+ * 口径：一层 = 1（不内缩，走原路径）；每多一层顶面缩 **12%**，最少到 66%。
+ * 为什么是 12%（2026-11-16 第一版写 7% 被自己看图否掉）：符号在地图上按屏幕尺寸画
+ * （长边 34~220px），7% 在最小档只有 2~3px —— 两层与三层**看图上分不出来**
+ * （`drill_symbol_preview.py` 的层数对比图里，三层那张被读成"两层的复制品"）。
+ * 12% 在 34px 档是 4px、在 108px 档是 13px：两层就看得出退台，三层与两层也能分开。
+ */
+export function topInsetFor(floors) {
+  const n = Math.max(1, Math.round(num(floors, 1)) || 1);
+  return Math.max(0.66, 1 - 0.12 * (n - 1));
+}
+
+/** footprint 的地块列表（老数据没有 `polygons` 时按单个外环处理） */
+export function polygonsOf(fp) {
+  if (fp && fp.polygons && fp.polygons.length) return fp.polygons;
+  return [{ outer: (fp && fp.ring) || [], holes: [] }];
+}
+
+/**
+ * 把占地轮廓按包围盒中心**等比内缩**（纯函数，返回同形对象，不改入参）。
+ *
+ * 用途：多层楼的顶层面。为什么不直接用 `ctx.scale`：那会把 `lineWidth` 一起缩掉，
+ * 每处描边都得补一次补偿；而这里的绘制全是世界坐标 + `1/zoom` 线宽，几何内缩最省事、
+ * 也最好测（Node 里能逐点断言）。
+ */
+export function insetFootprint(fp, factor) {
+  if (!fp || !fp.bbox) return fp;
+  const f = Math.max(0.2, Math.min(1, num(factor, 1)));
+  if (f === 1) return fp;
+  const cx = (fp.bbox.minX + fp.bbox.maxX) / 2;
+  const cy = (fp.bbox.minY + fp.bbox.maxY) / 2;
+  const sc = (ring) => (Array.isArray(ring) ? ring : [])
+    .map((pt) => ({ x: cx + (pt.x - cx) * f, y: cy + (pt.y - cy) * f }));
+  const polygons = polygonsOf(fp).map((p) => ({
+    outer: sc(p.outer),
+    holes: (p.holes || []).map(sc),
+  }));
+  const rect = fp.rect ? {
+    ...fp.rect,
+    cx: cx + (fp.rect.cx - cx) * f,
+    cy: cy + (fp.rect.cy - cy) * f,
+    halfU: fp.rect.halfU * f,
+    halfV: fp.rect.halfV * f,
+    long: fp.rect.long * f,
+    short: fp.rect.short * f,
+  } : fp.rect;
+  const bbox = {
+    minX: cx + (fp.bbox.minX - cx) * f,
+    minY: cy + (fp.bbox.minY - cy) * f,
+    maxX: cx + (fp.bbox.maxX - cx) * f,
+    maxY: cy + (fp.bbox.maxY - cy) * f,
+  };
+  return {
+    ...fp,
+    ring: sc(fp.ring),
+    polygons,
+    rect,
+    bbox,
+    // 面积按比例平方近似（矩形/多边形在等比缩放下成立；isRect 判据只用它比值）
+    area: (fp.area || 0) * f * f,
+    areaNet: (fp.areaNet || 0) * f * f,
+    inset: f,
+  };
+}
+
+/**
  * 画建筑符号。
  *
  * 调用方负责：把 ctx 变换到**世界坐标**（跟其它地图元素同一套相机），并把 `zoom`（px per cm）传进来 ——
@@ -490,13 +561,24 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
   };
   // 所有外环 + 所有洞进同一条 path，用 evenodd 填充 → 洞自动是空的。
   // 分开 fill 的话，洞要么被后画的色块盖掉，要么得给每块单独擦除，比现在麻烦得多。
-  const pathAll = () => {
+  const pathAll = () => pathOf(polys);
+  const pathOf = (ps) => {
     ctx.beginPath();
-    for (const p of polys) {
+    for (const p of ps) {
       traceRing(p.outer);
       for (const h of p.holes) traceRing(h);
     }
   };
+
+  // ── 楼层数 → 屋顶长相（2026-11-16）────────────────────────────────────
+  // 之前两层楼与一层楼画得**一模一样**（符号不看 `floors`）：地图上"这家是楼"读不出来。
+  // 口径：**顶层面按层数内缩一圈**，外面那圈是底下那层的腰檐 —— 俯视看多层楼就是这个样子；
+  // 层数越多顶越小、投影越长。**一层楼走原路径，逐像素不变**（像素基线不受影响）。
+  const floors = Math.max(1, Math.round(num(opts.floors, footprint.floors || 1)) || 1);
+  const topFp = floors > 1 ? insetFootprint(footprint, topInsetFor(floors)) : null;
+  const topPolys = topFp ? polygonsOf(topFp) : null;
+  const ridgePolys = topPolys || polys;
+  const ridgeFp = topFp || footprint;
 
   ctx.save();
 
@@ -504,7 +586,8 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
   if (opts.shadow !== false) {
     // 🔴 偏移量必须是**屏幕像素**换算回世界单位：第一版按"长轴 × 6%"算（最大 12cm），
     //    地图缩小时只有 2~3px 且被屋顶盖住 → 完全看不见投影，房子又变成一块平色块。
-    const offPx = 3.5;
+    // 投影也跟着长（高 = 更厚的影子），但**封顶 +2.8px**：再长就会越出符号、读成另一栋
+    const offPx = 3.5 + (topFp ? Math.min(2.8, 1.4 * (floors - 1)) : 0);
     const off = offPx / zoom;
     ctx.save();
     ctx.translate(off, off * 1.1);
@@ -515,30 +598,52 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
   }
 
   // ② 屋顶面（洞 = 院子，不盖屋顶）
-  pathAll();
-  ctx.fillStyle = roof === 'flat' ? pal.roofFlat : pal.roof;
-  ctx.fill('evenodd');
+  if (topFp) {
+    // 多层：先铺整块轮廓的下层屋面（深一档），顶层面再内缩压上去 —— 中间那圈就是腰檐
+    pathAll();
+    ctx.fillStyle = roof === 'flat' ? pal.roofFlatLower : pal.roofLower;
+    ctx.fill('evenodd');
+    pathOf(topPolys);
+    ctx.fillStyle = roof === 'flat' ? pal.roofFlat : pal.roof;
+    ctx.fill('evenodd');
+  } else {
+    pathAll();
+    ctx.fillStyle = roof === 'flat' ? pal.roofFlat : pal.roof;
+    ctx.fill('evenodd');
+  }
 
   // ③ 轮廓（墨线）：选中时加粗并加一圈亮边
-  ctx.strokeStyle = opts.selected ? '#ffd24a' : pal.edge;
-  ctx.lineWidth = (opts.selected ? 2.6 : 1.6) / zoom;
-  ctx.stroke();
+  if (topFp) {
+    // 多层：外轮廓（腰檐外边）+ 顶层面内边各描一圈，中间那圈色带就是"底下一层的檐"
+    pathAll();
+    ctx.strokeStyle = opts.selected ? '#ffd24a' : pal.edge;
+    ctx.lineWidth = (opts.selected ? 2.6 : 1.6) / zoom;
+    ctx.stroke();
+    pathOf(topPolys);
+    ctx.stroke();
+  } else {
+    pathAll();
+    ctx.strokeStyle = opts.selected ? '#ffd24a' : pal.edge;
+    ctx.lineWidth = (opts.selected ? 2.6 : 1.6) / zoom;
+    ctx.stroke();
+  }
   if (opts.selected) {
     ctx.strokeStyle = 'rgba(255, 210, 74, 0.45)';
     ctx.lineWidth = 6 / zoom;
+    if (topFp) pathOf(topPolys); else pathAll();
     ctx.stroke();
   }
 
   // ④ 屋顶线：坡顶画脊线；平顶画内缩一圈（女儿墙/防水边）
-  const isRect = polys.length === 1 && polys[0].holes.length === 0
-    && polys[0].outer.length === 4
-    && Math.abs(footprint.area - footprint.rect.long * footprint.rect.short)
-      / Math.max(1, footprint.rect.long * footprint.rect.short) < 0.08;
+  const isRect = ridgePolys.length === 1 && ridgePolys[0].holes.length === 0
+    && ridgePolys[0].outer.length === 4
+    && Math.abs(ridgeFp.area - ridgeFp.rect.long * ridgeFp.rect.short)
+      / Math.max(1, ridgeFp.rect.long * ridgeFp.rect.short) < 0.08;
 
   // 每块外环按自己包围盒的中心内缩 ratio 画一圈
   const traceInset = (ratio) => {
     ctx.beginPath();
-    for (const p of polys) {
+    for (const p of ridgePolys) {
       let bx0 = Infinity; let by0 = Infinity; let bx1 = -Infinity; let by1 = -Infinity;
       for (const q of p.outer) {
         if (q.x < bx0) bx0 = q.x;
@@ -565,7 +670,7 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
     traceInset(0.86);
   } else if (isRect) {
     // 矩形：一条直脊（四坡取 60%，两端留给斜脊）
-    const plan = roofPlan(footprint, roof === 'hip' ? 'hip' : 'gable');
+    const plan = roofPlan(ridgeFp, roof === 'hip' ? 'hip' : 'gable');
     if (plan.ridge) {
       ctx.beginPath();
       ctx.moveTo(plan.ridge[0].x, plan.ridge[0].y);
@@ -576,7 +681,7 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
     }
     // 四坡：四个角连到脊线端点
     if (plan.ridge && roof === 'hip') {
-      const { cx, cy, u, v, halfU, halfV } = footprint.rect;
+      const { cx, cy, u, v, halfU, halfV } = ridgeFp.rect;
       const corners = [
         { x: cx - u.x * halfU - v.x * halfV, y: cy - u.y * halfU - v.y * halfV },
         { x: cx + u.x * halfU - v.x * halfV, y: cy + u.y * halfU - v.y * halfV },
@@ -601,7 +706,7 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
     // 异形：骨架折线。外接矩形中心线对 L 形没意义（会正好压在凹口那条边上），
     // 而沿轮廓算出来的折线自然给出「每臂一条脊 + 凹角一段垂脊」。
     // 骨架取自边-带交点，天然在轮廓内；跨过凹口时会断成多段，所以逐段画。
-    const runs = skeletonRidge(polys, footprint.rect);
+    const runs = skeletonRidge(ridgePolys, ridgeFp.rect);
     if (runs.length) {
       ctx.beginPath();
       for (const run of runs) {

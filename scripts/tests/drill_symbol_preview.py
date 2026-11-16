@@ -70,7 +70,7 @@ def main():
           const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
           const floors = (s.interiorData[__BID__] || {}).floors || [];
 
-          const W = 1180, H = 1220;
+          const W = 1180, H = 1760;
           const cv = document.createElement('canvas');
           cv.width = W * 2; cv.height = H * 2;
           cv.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;width:' + W + 'px;height:' + H
@@ -135,11 +135,16 @@ def main():
             { name: 'L 形 · 双坡（精确轮廓）', walls: Lshape(), roof: 'gable' },
             { name: '三居（内墙不影响外轮廓）', walls: threeRoom(), roof: 'hip' },
             { name: '合院（courtyard 保留中庭）', walls: courtyard(), roof: 'flat', courtyard: true },
+            // 2026-11-16：**屋顶随层数变化**（一层走原路径，两层起顶层面内缩一圈 = 底下那层的腰檐）
+            { name: '民居 900×650 · 一层', walls: rect(900, 650), roof: 'hip', floors: 1 },
+            { name: '民居 900×650 · 两层', walls: rect(900, 650), roof: 'hip', floors: 2 },
+            { name: '民居 900×650 · 三层', walls: rect(900, 650), roof: 'hip', floors: 3 },
           ];
 
           const pad = 40;
           const cellW = (W - pad * 3) / 2;
-          const cellH = (H - 56 - pad * 4 - 40) / 4;   // 4 行
+          const rows = Math.ceil(cases.length / 2);    // 行数跟着用例数走（加层数对比后不再是 4 行）
+          const cellH = (H - 56 - pad * (rows + 1)) / rows;
           let i = 0;
           for (const c of cases) {
             const col = i % 2, row = Math.floor(i / 2);
@@ -153,7 +158,7 @@ def main():
             ctx.translate(x + cellW / 2, y + cellH / 2 + 16);
             ctx.scale(z, z);
             ctx.translate(-(fp.bbox.minX + fp.bbox.maxX) / 2, -(fp.bbox.minY + fp.bbox.maxY) / 2);
-            m.drawBuildingSymbol(ctx, fp, { zoom: z, roof: c.roof });
+            m.drawBuildingSymbol(ctx, fp, { zoom: z, roof: c.roof, floors: c.floors || 1 });
             ctx.restore();
             const size = m.symbolScreenSize(fp, z);
             cell(x, y, cellW, cellH, c.name,
@@ -173,8 +178,22 @@ def main():
         })()""".replace('__BID__', json.dumps(bid)))
         print('  · 画布：%s' % made)
         time.sleep(0.8)
-        p, s = D.shot(cdp, os.path.join(OUT_DIR, 'preview'))
-        print('  · %s %s' % (p, s))
+        # ⚠️ 不能再用**页面截图**：画布比视口高（8+ 格），页面截图会把下半截裁掉
+        #    （2026-11-16 加层数对比时真踩：三层那张根本不在图里）。
+        #    这里直接取**画布本体**的 dataURL —— 分辨率也正好是 2 倍像素。
+        from lib.cdp import fetch_string                     # noqa: E402
+        data_url = fetch_string(
+            cdp,
+            "window.__preview.toDataURL('image/png').length",
+            lambda i, j: ("window.__preview.toDataURL('image/png')"
+                          f".slice({i}, {j})"),
+            desc='预览画布 PNG',
+        )
+        import base64                                        # noqa: E402
+        png_path = os.path.join(OUT_DIR, 'preview.png')
+        with open(png_path, 'wb') as f:
+            f.write(base64.b64decode(data_url.split(',', 1)[1]))
+        print('  · %s（%d KB，画布本体）' % (png_path, len(data_url) // 1024))
         print('\n✅ 符号样图：%s' % os.path.join(OUT_DIR, 'preview.png'))
         return 0
     finally:
