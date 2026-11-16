@@ -50,12 +50,16 @@ export function invalidateViewPatch() {
 export function viewPatchFor(kind, view) {
   const p = state.patch;
   if (!p || !p.canvas) return null;
-  if (kind && p.kind !== kind) return null;
+  // 排障记账（2026-11-16）：“这一帧为什么没贴块”。没有这三条计数时，
+  // “块烘好了、也画过、但最终帧里没有它”只能靠猜。
+  const miss = (why) => { state.miss = state.miss || {}; state.miss[why] = (state.miss[why] || 0) + 1; state.lastMiss = why; return null; };
+  if (kind && p.kind !== kind) return miss('kind');
   // 🔴 必须**同时校验相机**：块是按某个机位烘的，机位一变（缩放/平移）就作废。
   //    只校验高度图的话，缩回远景时会把“上一档的清晰块”盖在糊底图上，画面出现一条边界。
-  if (view && p.key !== cameraKey(view)) return null;
+  if (view && p.key !== cameraKey(view)) return miss('camera');
   const hm = bakeHeightmap();
-  if (hm !== p.hm) return null;      // 高度图换了（涂抹/撤销/重生成）→ 旧块不能用
+  if (hm !== p.hm) return miss('hm');      // 高度图换了（涂抹/撤销/重生成）→ 旧块不能用
+  state.hits = (state.hits || 0) + 1;
   return p;
 }
 
@@ -145,6 +149,13 @@ export function drawViewPatch(c, kind, view) {
   if (!patchEnabled()) return;
   const p = viewPatchFor(kind, view);
   if (!p) return;
+  // 排障记账（2026-11-16）：这一帧贴上去的块**是粗档还是精修完的**。
+  // 分块烘焙先铺 1/10 宽粗档、精修只写内存、完成时才 putImageData —— 也就是说
+  // “块已经就位” ≠ “块是清晰的”。只记 `patches` 数分不出这两种情况。
+  const bake = p.canvas && p.canvas.__sitianBake;
+  if (bake && bake.done === false) state.drawnCoarse = (state.drawnCoarse || 0) + 1;
+  else state.drawnSharp = (state.drawnSharp || 0) + 1;
+  state.lastDrawnDone = !!(bake && bake.done);
   c.drawImage(p.canvas, p.rect.minX, p.rect.minY, p.rect.w, p.rect.h);
 }
 

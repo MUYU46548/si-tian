@@ -477,15 +477,26 @@
   ② **河层帧（3.5×）略糊**（`riverHash 7be13ef5 → 93949c84`，202,950 px 但平均通道差 0.51）。
   ②已二分到**视口块那条路**：`__SITIAN_VIEW_PATCH__=false` 时两种代码都得到 `b107ace5`（逐像素一致），
   开着块时 `patchRect / patchKey / patchBake.done` 两边完全相同，只有 `lastMs` 从 4416 → 222ms
-  （块烘快了 20 倍）—— 即“块内容一样、结果不同”，下一步量**整幅底图 canvas 的 `__sitianBake` 状态**与
-  patch 的 `bakeWidth`，并检查 `notifyRerender()` 之后的最后一帧是否真的画了块。
+  （块烘快了 20 倍）。
+  **2026-11-16 第二轮把②又钉了一步（仍未定案，别当已修）**：
+  · `drill_scenario_pixels --dump-patch` 落**块本体** PNG → 两版 **471,040 像素逐像素相同（0 差）**；
+  · 两帧做 ±1 px 平移对照：0 位移时平均差 0.51，平移一格反而到 3.3~3.8 —— **不是错位**；
+  · `--extra-wait 2.5` 多等 2.5 秒再拍：`riverHash` 一个字符都没变 —— **不是没稳住**；
+  · 同一帧里块**确实被贴上**（新加的 `hits / miss / lastMiss / drawnCoarse / drawnSharp` 记账：hits=3、无 miss、
+    最后一次 `lastDrawnDone=true`）。
+  也就是说“同样的块画布 + 同样的贴图参数，合成结果却不同”。下一步三条（按性价比排）：
+  ① 在页面里取块内某点的**期望色**（块 canvas 的 getImageData）与**帧上的实际色**比对，看差在合成端还是采样端；
+  ② 查基帧（`blitted`）这条路：`window.__SITIAN_FRAME_LOG__` 的 `blitted/building` 字段能定位“贴的是旧位图”；
+  ③ 关掉 `provinces.fill` 位图（`attachProvinceFillBitmap`）再拍一次河层帧，排除省色块位图参与合成。
   ⚠️ 顺带两条**探针纪律**（都是这一轮踩的）：`eval_json` 默认要求返回含 `fails` 的对象，读排障口要显式
   `required=None`，否则记账静默变 `null`（看起来像“排障口没挂上”）；**排障口只记摘要**——
   `viewBake.patch.hm` 是整个高度图，一条日志 2 MB，直接把终端输出撑爆。
-  🔧 这一轮留下的工具（都已入库、都不改渲染）：`drill_scenario_pixels.py --dump-pre`（把取指纹那一刻的
-  画布也落 PNG —— 正是它抓到“首帧少一个城镇名”）、同一脚本记 `viewBake` / `reliefSlot` 摘要、
-  `probe_scale_frames.py` 的 `counts.hmRaw / hmReactive`、`reliefRasterSlot.js` 把
-  `window.__SITIAN_RELIEF_SLOT__` 真正挂上（注释里写了名字却从没挂过，真机探针永远读到 null）。
+  🔧 这一轮留下的工具（都已入库、都不改渲染）：`drill_scenario_pixels.py` 的 `--dump-pre`（取指纹那一刻的画布）、
+  `--dump-patch`（视口块本体）、`--extra-wait N`（分辨“变了”与“没稳住”），以及同脚本记的
+  `viewBake` / `reliefSlot` / `frameLogTail` 摘要；`scenario/viewBake.js` 的
+  `hits / miss / lastMiss / drawnCoarse / drawnSharp / lastDrawnDone`；`probe_scale_frames.py` 的
+  `counts.hmRaw / hmReactive`；`reliefRasterSlot.js` 把 `window.__SITIAN_RELIEF_SLOT__` 真正挂上
+  （注释里写了名字却从没挂过，真机探针永远读到 null）。
 - **六个浮层的视觉直判**: `npm run test:overlays`（`drill_scenario_overlays_visual.py`）—— 每块面板 9 条：
   包装节点**恰好 1 个**（重复 = 两块面板精确重叠，2026-11-03 真实踩到）、可见面积、完整在视口内、
   `elementFromPoint(面板中心)` 没被盖、背景不透明、正文对比度 ≥4.5:1（暗色）、不整块挡死画布、

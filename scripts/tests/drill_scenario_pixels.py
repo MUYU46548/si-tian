@@ -187,6 +187,8 @@ def main():
     if '--tag' in args:
         tag = args[args.index('--tag') + 1]
     dump_pre = '--dump-pre' in args
+    dump_patch = '--dump-patch' in args
+    extra_wait = float(args[args.index('--extra-wait') + 1]) if '--extra-wait' in args else 0.0
     # 2026-11-03 第 6 刀：`--raster` 决定拍**哪一层网格数据**。
     # 为什么加：默认政治档（landsea）拍不到“高度/浮雕”那一层，于是地形观感（等高线、晕渲、色带）
     # 一直没有目视判据 —— 之前所有关于“地形糊不糊”的讨论都建立在一张政治档截图上，那本身就是错的。
@@ -465,6 +467,11 @@ def main():
             ck('河层取景（最长那条河 / 3.5×）', True, json.dumps(cam, ensure_ascii=False))
             time.sleep(0.6)
             wait_bakes(cdp)
+            if extra_wait > 0:
+                # `--extra-wait`：多等一会儿再拍。用来分辨“画面真的变了”与“还没稳住”
+                # （视口块/底档都是异步烘的，判据窗口比它们短就会拍到中间态）。
+                time.sleep(extra_wait)
+                wait_bakes(cdp)
             rf_ok, river_fp = eval_json(cdp, FP_JS, required=('hash',), desc='指纹·河层')
             if not rf_ok or river_fp.get('error'):
                 ck('取河层指纹', False, river_fp)
@@ -520,6 +527,9 @@ def main():
               ? { done: p.canvas.__sitianBake.done, progress: p.canvas.__sitianBake.progress } : null,
             key: s.key, busy: !!s.busy, lastMs: s.lastMs || 0,
             patches: s.patches || 0, skipped: s.skipped || 0,
+            drawnCoarse: s.drawnCoarse || 0, drawnSharp: s.drawnSharp || 0,
+            lastDrawnDone: s.lastDrawnDone === undefined ? null : !!s.lastDrawnDone,
+            hits: s.hits || 0, miss: s.miss || null, lastMiss: s.lastMiss || null,
           });
         })()""", required=None, desc='视口块状态')
         if vb_ok and vb:
@@ -529,6 +539,23 @@ def main():
                               required=None, desc='浮雕槽状态')
         if rs_ok and rs:
             record['reliefSlot'] = rs
+        if dump_patch:
+            # `--dump-patch`：把视口块**本身**（那块离屏 canvas）落一张 PNG。
+            # 用途：河层帧一变就得回答"是块的内容变了，还是贴它的方式变了"——
+            # 只比整帧永远分不清这两件事。
+            pk = fetch_string(
+                cdp,
+                "(() => { const s = window.__SITIAN_VIEW_BAKE__; const c = s && s.patch && s.patch.canvas;"
+                " return c ? c.toDataURL('image/png').length : 0; })()",
+                lambda i, j: ("(() => { const s = window.__SITIAN_VIEW_BAKE__; const c = s && s.patch && s.patch.canvas;"
+                              f" return c ? c.toDataURL('image/png').slice({i}, {j}) : ''; }})()"),
+                desc='视口块 PNG dataUrl',
+            )
+            if pk:
+                import base64 as _b64
+                with open(os.path.join(OUT_DIR, f'{tag}-patch.png'), 'wb') as f:
+                    f.write(_b64.b64decode(pk.split(',', 1)[1]))
+                print('  → %s（视口块本体）' % os.path.join(OUT_DIR, f'{tag}-patch.png'), flush=True)
         if river_fp:
             record.update({
                 'riverHash': river_fp.get('hash'),
