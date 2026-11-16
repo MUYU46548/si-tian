@@ -33,6 +33,7 @@ const MIN_PROVINCES = 2000;
 const MIN_W = 512;
 const MAX_W = 2048;
 const STEP = 128;          // 烘焙宽度按 128 一档（别为取整把像素量翻倍）
+const MAX_STRETCH = 1.5;   // 位图最多被拉大这么多倍（再大就交给逐省矢量，见口径 ④）
 
 let slot = null;           // { key, ppu, canvas, minX, minY, w, h, provinces, ms }
 
@@ -108,9 +109,14 @@ export function provinceFillBitmap(view, terrain, paint) {
   const tl = (view && view.timeline) || {};
   const k = Number(view.eraIndex) || 0;
   const sc = tl.scenarios && tl.scenarios[k];
+  // ⚠️ `view.date` 是**对象** `{y,m,d}`（`tlDate = ref({y:0,m:null,d:null})`）：
+  //    直接 `String(date)` 会得到 "[object Object]"，拖时间轴时键不变 → 屏幕上是旧颜色。
+  //    （这条是单测 test_province_fill_bake 抓到的，不是自己想到的。）
+  const dateKey = view.date && typeof view.date === 'object'
+    ? [view.date.y, view.date.m == null ? '' : view.date.m, view.date.d == null ? '' : view.date.d].join('-')
+    : String(view.date == null ? '' : view.date);
   const key = [
-    view.baseMapKey || '', refId(terrain), refId(tl.scenarios), k,
-    view.date == null ? '' : String(view.date),
+    view.baseMapKey || '', refId(terrain), refId(tl.scenarios), k, dateKey,
     view.diffMode || '', view.rasterLayer || '', view.mode || '',
     view.politicalWash == null ? '' : String(view.politicalWash),
     view.showBiomes ? 'biomes' : '', refId(view.selectedScenario),   // 群系图层 / 时间轴不可用时的兜底取色
@@ -122,13 +128,16 @@ export function provinceFillBitmap(view, terrain, paint) {
   const needPpu = need / rect.w;
   // ① 放大超过位图精度 → 不烘（逐省矢量更清楚，而且放大后大部分省在裁剪区外，本来就不慢）
   if (scale > needPpu * 1.05) return null;
-  // ④ 只长不缩 + **容忍 1.33 倍拉伸**：键相同且手里这张够宽 → 直接复用。
-  //    原来卡在 0.995（差一点点就重烘）。滚轮是 1.15 一格（`helpers.js#zoomFactor`），
-  //    于是旧口径**每一格都整幅重烘**；实测 1 万省跨一档（探针直接 ×1.6）= 一帧 348ms、其中重烘 284ms。
-  //    现在两格以内（≤1.33 倍）复用同一张、只是拉大一点点；
-  //    ⚠️ 跨过 1.33 倍**仍会重烘一次**（1 万省 ≈284ms、2 万省 ≈600ms）—— 这是位图方案的已知代价，
-  //    要彻底消掉得把这遍烘焙分片（或推迟到相机静止后），记在方寸卡 task-20261116-001 的余项里。
-  if (slot && slot.key === key && slot.ppu >= needPpu * 0.75) return slot;
+  // ④ 复用口径（2026-11-16 定稿）：**同键 + 手里这张够宽（允许拉大到 MAX_STRETCH 倍）→ 复用；
+  //    不够宽 → 返回 null 走逐省矢量，不重烘。**
+  //    为什么不再“重烘一张更清楚的”：滚轮 1.15 一格（`helpers.js#zoomFactor`），旧口径几乎每格
+  //    都触发整幅重烘 —— 1 万省实测 284ms（那一帧 348ms）；而放大档的逐省矢量只有 28~69ms
+  //    （Skia 按裁剪区把屏外省剔掉）。重烘纯亏。
+  //    代价：放大到 1.5 倍以上就没有位图了（这时本来就该看矢量细节），缩回去自动复用原来那张。
+  if (slot && slot.key === key) {
+    if (slot.ppu >= needPpu / MAX_STRETCH) return slot;
+    return null;
+  }
 
   const ppu = needPpu;
   const cw = Math.max(1, Math.round(rect.w * ppu));

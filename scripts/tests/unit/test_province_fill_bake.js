@@ -122,35 +122,42 @@ function fakeTerrain(n) {
 
   // 换剧本对象（= 归属编辑后的新对象）→ 必须重烘
   const sc2 = { id: 'sc', ownership: { p0: 'f1' }, polities: [] };
-  const b3 = M.provinceFillBitmap(view({ timeline: { scenarios: [sc2] } }), big, () => { calls.push('paint3'); });
+  const tl2 = { scenarios: [sc2] };   // 同上：跨调用复用，才能测“同数据不重烘”
+  const b3 = M.provinceFillBitmap(view({ timeline: tl2 }), big, () => { calls.push('paint3'); });
   ok('④ 换剧本对象 → 重烘', b3 !== b1 && calls.includes('paint3'));
 
   // 换日期（时间轴拖动）→ 必须重烘
   const bakesBeforeDate = window.__SITIAN_PROV_BITMAP_STAT__.bakes;
-  M.provinceFillBitmap(view({ date: { y: 1310 }, timeline: { scenarios: [sc2] } }), big, () => { calls.push('paint4'); });
+  M.provinceFillBitmap(view({ date: { y: 1310 }, timeline: tl2 }), big, () => { calls.push('paint4'); });
   ok('④ 换日期 → 重烘', window.__SITIAN_PROV_BITMAP_STAT__.bakes === bakesBeforeDate + 1 && calls.includes('paint4'));
 
   // 开群系图层（取色口径变了）→ 必须重烘
   const bakesBeforeBiome = window.__SITIAN_PROV_BITMAP_STAT__.bakes;
-  M.provinceFillBitmap(view({ showBiomes: true, date: { y: 1310 }, timeline: { scenarios: [sc2] } }), big, () => { calls.push('paint5'); });
+  M.provinceFillBitmap(view({ showBiomes: true, date: { y: 1310 }, timeline: tl2 }), big, () => { calls.push('paint5'); });
   ok('④ 开群系图层 → 重烘', window.__SITIAN_PROV_BITMAP_STAT__.bakes === bakesBeforeBiome + 1 && calls.includes('paint5'));
 
   // 换地形数组（涂抹/撤销换引用）→ 必须重烘
   const big2 = fakeTerrain(2000);
   const bakesBeforeTerrain = window.__SITIAN_PROV_BITMAP_STAT__.bakes;
-  M.provinceFillBitmap(view({ showBiomes: true, date: { y: 1310 }, timeline: { scenarios: [sc2] } }), big2, () => { calls.push('paint6'); });
+  M.provinceFillBitmap(view({ showBiomes: true, date: { y: 1310 }, timeline: tl2 }), big2, () => { calls.push('paint6'); });
   ok('④ 换地形数组 → 重烘', window.__SITIAN_PROV_BITMAP_STAT__.bakes === bakesBeforeTerrain + 1 && calls.includes('paint6'));
 
   // ── ⑤ 放大超过位图精度 → 不烘 ─────────────────────────────────────────
-  const far = view({ cameraScale: 40, showBiomes: true, date: { y: 1310 }, timeline: { scenarios: [sc2] } });
+  const far = view({ cameraScale: 40, showBiomes: true, date: { y: 1310 }, timeline: tl2 });
   ok('⑤ 放大超过位图精度 → 不烘（退回逐省矢量）', M.provinceFillBitmap(far, big2, () => { calls.push('paint7'); }) === null);
   ok('⑤ 这一档一次都没画', !calls.includes('paint7'));
 
   // ── 反证：键里漏掉某个取色输入就会“假命中” ───────────────────────────
   // 关掉群系后，键必须与“开着群系”那张不同 —— 否则重新打开图层时屏幕上是旧颜色
   const bakesBeforeOff = window.__SITIAN_PROV_BITMAP_STAT__.bakes;
-  M.provinceFillBitmap(view({ showBiomes: false, date: { y: 1310 }, timeline: { scenarios: [sc2] } }), big2, () => { calls.push('paint8'); });
+  M.provinceFillBitmap(view({ showBiomes: false, date: { y: 1310 }, timeline: tl2 }), big2, () => { calls.push('paint8'); });
   ok('反证：关掉群系图层也会重烘（键含该开关）', window.__SITIAN_PROV_BITMAP_STAT__.bakes === bakesBeforeOff + 1 && calls.includes('paint8'));
+  // 放大到超过 1.5 倍拉伸 → 交给逐省矢量，**不许再重烘**（重烘 284ms，矢量只要 28~69ms）
+  const bakesBeforeZoom = window.__SITIAN_PROV_BITMAP_STAT__.bakes;
+  const far2 = view({ cameraScale: 10, date: { y: 1310 }, timeline: tl2 });
+  ok('④ 放大超过 1.5 倍拉伸 → 返回 null（走逐省矢量）', M.provinceFillBitmap(far2, big2, () => { calls.push('paint9'); }) === null);
+  ok('④ 这一档也没有重烘（bakes 不动、画法没跑）',
+     window.__SITIAN_PROV_BITMAP_STAT__.bakes === bakesBeforeZoom && !calls.includes('paint9'));
 
   delete global.document;
   delete global.window;
