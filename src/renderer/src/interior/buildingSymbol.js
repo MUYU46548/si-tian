@@ -32,6 +32,8 @@
 // 好处是同一份代码既能在 Vite 里跑、也能被 Node 单测直接 import。
 import polygonClipping from 'polygon-clipping';
 import { convexHull, minAreaRect } from './buildShell.js';
+// 异形平面的矩形拆分（2026-11-16）：每条臂一个矩形、一条标准屋脊；拆不动就退回骨架折线
+import { decomposeFootprint, ridgeOfRect, hipsOfRect } from './rectDecompose.js';
 
 /**
  * 洞占外环面积多大才当成"院子"保留（仅在 `opts.courtyard` 开启时生效）。
@@ -703,19 +705,49 @@ export function drawBuildingSymbol(ctx, footprint, opts = {}) {
       }
     }
   } else {
-    // 异形：骨架折线。外接矩形中心线对 L 形没意义（会正好压在凹口那条边上），
-    // 而沿轮廓算出来的折线自然给出「每臂一条脊 + 凹角一段垂脊」。
-    // 骨架取自边-带交点，天然在轮廓内；跨过凹口时会断成多段，所以逐段画。
-    const runs = skeletonRidge(ridgePolys, ridgeFp.rect);
-    if (runs.length) {
-      ctx.beginPath();
-      for (const run of runs) {
-        ctx.moveTo(run[0].x, run[0].y);
-        for (let i = 1; i < run.length; i++) ctx.lineTo(run[i].x, run[i].y);
-      }
+    // 异形（2026-11-16，队列最后一项）：**矩形拆分** → 每条臂一条标准屋脊。
+    //
+    // L 形 / 凹形 / 三合院的楼是几条臂拼起来的，真实画法是每臂一条脊、交接处垂脊；
+    // 以前用 `skeletonRidge` 沿轮廓分带取中点，折线会在臂里拐弯、还能跨过凹口。
+    //
+    // 拆不动的形状（有斜边 / 曲线墙）会自动返回空数组 —— 那种硬拆是一堆锯齿小条，
+    // 比骨架更难看，所以保留骨架做回落（两条路都留了用例）。
+    // 细条的阈值跟着**屏幕尺寸**走：8px 以下的块在这个符号上就是一个黑点。
+    const minSideCm = Math.max(40, Math.min(260, 8 / zoom));
+    const blocks = decomposeFootprint(ridgeFp, { minSideCm, maxCount: 6 });
+    if (blocks.length >= 2) {
       ctx.strokeStyle = pal.roofRidge;
-      ctx.lineWidth = 1.3 / zoom;
-      ctx.stroke();
+      for (const b of blocks) {
+        const ridge = ridgeOfRect(b, roof === 'hip' ? 'hip' : 'gable');
+        ctx.beginPath();
+        ctx.moveTo(ridge[0].x, ridge[0].y);
+        ctx.lineTo(ridge[1].x, ridge[1].y);
+        ctx.lineWidth = 1.3 / zoom;
+        ctx.stroke();
+        if (roof !== 'hip') continue;
+        // 斜脊只画到**落在外轮廓上的角**：两块共用边上的角画了就是一堆假线
+        ctx.beginPath();
+        for (const hip of hipsOfRect(b, ridge)) {
+          if (distToRings(hip.to, ridgePolys) > 2) continue;
+          ctx.moveTo(hip.from.x, hip.from.y);
+          ctx.lineTo(hip.to.x, hip.to.y);
+        }
+        ctx.lineWidth = 0.9 / zoom;
+        ctx.stroke();
+      }
+    } else {
+      // 回落：骨架折线（外接矩形中心线对 L 形没意义，会正好压在凹口那条边上）
+      const runs = skeletonRidge(ridgePolys, ridgeFp.rect);
+      if (runs.length) {
+        ctx.beginPath();
+        for (const run of runs) {
+          ctx.moveTo(run[0].x, run[0].y);
+          for (let i = 1; i < run.length; i++) ctx.lineTo(run[i].x, run[i].y);
+        }
+        ctx.strokeStyle = pal.roofRidge;
+        ctx.lineWidth = 1.3 / zoom;
+        ctx.stroke();
+      }
     }
   }
 
