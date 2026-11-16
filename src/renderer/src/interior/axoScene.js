@@ -27,6 +27,7 @@
 
 import { fitText } from './planSheet.js';
 import { axoDirection } from './axonometric.js';
+import { earClip } from './triangulate.js';
 import {
   AXO_TONES,
   axialTone,
@@ -56,6 +57,8 @@ export const AXO_COLORS = Object.freeze({
   figure: '#22262c',
   treeTrunk: '#4a3b2f',
   treeCrown: '#3c4a3f',
+  road: '#c9bfa8',        // 聚落路面（比地面深一档才看得出是路；初版 #ded5c2 和地面几乎同色）
+  plainWall: '#d6cfc0',   // 没画内部的建筑（体块）：比有内部图的墙浅一档
 });
 
 // ── 平涂：面的颜色全部写进顶点色 ─────────────────────────────────────────
@@ -151,38 +154,42 @@ function withPlinths(shell, opts) {
  * InstancedMesh 没有"每实例边线"。插图是**一次性离屏渲染**（不是每帧），
  * 几百个 Mesh 的 draw call 完全可以接受。
  */
-export function buildAxoScene(THREE, shell, opts = {}) {
-  const scene = new THREE.Scene();
-  const paper = opts.paper || AXO_COLORS.paper;
-  scene.background = new THREE.Color(paper).convertSRGBToLinear();
+// ── 场景装配的可复用件（单栋插图 / 聚落鸟瞰 共用）────────────────────────
 
-  const group = new THREE.Group();
+/** 一次性渲染的资源登记 + 三种共用材质。`disposables` 由调用方负责释放 */
+function paintCtx(THREE, opts) {
   const disposables = [];
-  const track = (x) => {
-    disposables.push(x);
-    return x;
-  };
-
+  const track = (x) => { disposables.push(x); return x; };
   const lineMat = track(new THREE.LineBasicMaterial({
     color: new THREE.Color(AXO_COLORS.line).convertSRGBToLinear(),
     transparent: true,
     opacity: 0.9,
   }));
-
   // 平涂材质（2026-11-16）：颜色全在**顶点色**里（每个面一个档），材质只当壳用。
   // 为什么不用 MeshLambert：连续明暗在纸上糊成一片渐变，两个立面差得又不够；
-  // 参考试作里的建筑插图都是“一块面一个色”，色块边界才立得住。
+  // 试作里的建筑插图都是“一块面一个色”，色块边界才立得住。
   const flatMat = track(new THREE.MeshBasicMaterial({ vertexColors: true }));
   // 玻璃单独一份：半透明 + 顶点色（同一个着色逻辑，只是要透）
   const glassMat = track(new THREE.MeshBasicMaterial({
     vertexColors: true, transparent: true, opacity: 0.55,
   }));
-
   const edgeCache = new Map();
   const edgeOf = (geo) => {
     if (!edgeCache.has(geo)) edgeCache.set(geo, track(new THREE.EdgesGeometry(geo, 1)));
     return edgeCache.get(geo);
   };
+  return { opts, disposables, track, lineMat, flatMat, glassMat, edgeOf };
+}
+
+/**
+ * 把一栋楼的盒子 / 房间地面 / 坡面塞进 group（可整体平移 —— 聚落鸟瞰靠这个摆位）。
+ * @param {number[]} offset [dx,dy,dz]，单位 cm
+ */
+function addShellGeometry(THREE, group, c, shell, offset = [0, 0, 0]) {
+  const ox = num(offset[0]);
+  const oy = num(offset[1]);
+  const oz = num(offset[2]);
+  const { track, lineMat, flatMat, glassMat, edgeOf, opts } = c;
 
   // ① 盒子（墙 / 楼板 / 门窗框 / 平顶）+ 勒脚带
   for (const b of withPlinths(shell, opts)) {
@@ -191,7 +198,7 @@ export function buildAxoScene(THREE, shell, opts = {}) {
     const isGlass = b.kind === 'window';
     paintBoxFaces(THREE, geo, b.color || (isGlass ? AXO_COLORS.glass : '#e6e1d6'), rotY);
     const mesh = new THREE.Mesh(geo, isGlass ? glassMat : flatMat);
-    mesh.position.set(num(b.cx), num(b.cy), num(b.cz));
+    mesh.position.set(num(b.cx) + ox, num(b.cy) + oy, num(b.cz) + oz);
     mesh.rotation.y = rotY;
     // 只投影、**不接收**：体块建筑一旦自阴影，屋顶会被自己投出的影子盖出"塌陷斑"
     // （第四版截图里左上坡面那块不规则暗区就是它）。插图的明暗只该由朝向决定。
@@ -213,15 +220,14 @@ export function buildAxoScene(THREE, shell, opts = {}) {
     if (!s || !Array.isArray(s.tris) || !s.tris.length) continue;
     const pos = [];
     for (const t of s.tris) {
-      for (const p of t || []) pos.push(p[0], p[1], p[2]);
+      for (const p of t || []) pos.push(p[0] + ox, p[1] + oy, p[2] + oz);
     }
     if (!pos.length) continue;
     const geo = track(new THREE.BufferGeometry());
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.computeVertexNormals();
     // 房间地面都是水平的 → 一个档就够（按第一个三角面算，别逐面）
-    const n = faceNormal(s.tris[0]);
-    paintFlat(THREE, geo, s.color || '#d8d3c8', wallTone(n));
+    paintFlat(THREE, geo, s.color || '#d8d3c8', wallTone(faceNormal(s.tris[0])));
     const mesh = new THREE.Mesh(geo, flatMat);
     mesh.castShadow = false;
     mesh.receiveShadow = false;
@@ -234,7 +240,7 @@ export function buildAxoScene(THREE, shell, opts = {}) {
     if (!face || face.length < 3) continue;
     const pos = [];
     for (let i = 1; i < face.length - 1; i++) {
-      for (const p of [face[0], face[i], face[i + 1]]) pos.push(p[0], p[1], p[2]);
+      for (const p of [face[0], face[i], face[i + 1]]) pos.push(p[0] + ox, p[1] + oy, p[2] + oz);
     }
     const geo = track(new THREE.BufferGeometry());
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -249,12 +255,76 @@ export function buildAxoScene(THREE, shell, opts = {}) {
     for (let i = 0; i < face.length; i++) {
       const a = face[i];
       const b = face[(i + 1) % face.length];
-      lp.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+      lp.push(a[0] + ox, a[1] + oy, a[2] + oz, b[0] + ox, b[1] + oy, b[2] + oz);
     }
     const lgeo = track(new THREE.BufferGeometry());
     lgeo.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
     group.add(new THREE.LineSegments(lgeo, lineMat));
   }
+}
+
+/** 地面（一块纸色板，给建筑一个"落在地上"的依据，不画边线） */
+function addGround(THREE, group, c, bounds, opts = {}) {
+  const { track } = c;
+  const size = Array.isArray(bounds.size) ? bounds.size : [1000, 300, 1000];
+  const center = Array.isArray(bounds.center) ? bounds.center : [0, 0, 0];
+  // 地面板尺寸可调（2026-11-16）：
+  //   单栋插图默认 3 倍 + 2m → 铺满整幅（地面色本来就和纸几乎同色，读起来就是"纸"；
+  //   边界留在画面里反而会在四角冒出一条淡色斜边，比不铺还难看）；
+  //   聚落是**基地平面**，传 1.35 倍 —— 那儿要看得见"地块边界"。
+  const groundScale = num(opts.groundScale, 3);
+  const groundPadCm = num(opts.groundPadCm, 2000);
+  const groundSize = Math.max(size[0], size[2]) * groundScale + groundPadCm;
+  const gGeo = track(new THREE.PlaneGeometry(groundSize, groundSize));
+  const gMat = track(new THREE.MeshLambertMaterial({
+    color: new THREE.Color(opts.ground || AXO_COLORS.ground).convertSRGBToLinear(),
+  }));
+  const ground = new THREE.Mesh(gGeo, gMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(center[0], num((bounds.min || [])[1], -1) - 0.5, center[2]);
+  ground.receiveShadow = true;
+  group.add(ground);
+}
+
+/** 光：主光从左前上方（与轴测角一致 → 两个可见立面一明一暗）+ 一盏补光 */
+function addSunLights(THREE, scene, size, opts = {}) {
+  const ambient = new THREE.AmbientLight(0xffffff, 0.42);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xffffff, 0.86);
+  // 🔴 方向光只看方向，但**阴影相机是挂在 position 上的**：position 太近（第一版只写了方向量，
+  //    距原点 3 个单位）→ 建筑有一半落在近裁剪面后面 → 地面阴影缺一块（截图里右下那个直角缺口）。
+  //    乘一个远距离，方向不变，整栋都进得了阴影相机的视锥。
+  sun.position.set(-1.2, 2.4, 1.6).multiplyScalar(3000);
+  // 落影（2026-11-15）：不开阴影时房子是"飘在纸上的"，一眼假。只渲一次，成本可接受。
+  if (opts.shadow !== false) {
+    sun.castShadow = true;
+    // 4096：3600px 的成品图上，2048 的影子边缘会是一格一格的锯齿
+    sun.shadow.mapSize.set(4096, 4096);
+    // 范围要盖住"整片内容 + 影子伸出去的那一截"（只按包围盒*0.9 会裁出缺口）
+    const r = Math.hypot(num(size[0], 100), num(size[1], 100), num(size[2], 100)) * 2.2 + 400;
+    const cam = sun.shadow.camera;
+    cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+    cam.near = 1; cam.far = 12000;
+    cam.updateProjectionMatrix();
+    // 别让阴影边缘糊成一团灰（体块建筑的影子要"硬"才像手绘）
+    if ('radius' in sun.shadow) sun.shadow.radius = 2;
+    if ('bias' in sun.shadow) sun.shadow.bias = -0.0005;
+  }
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.2);
+  fill.position.set(1.4, 0.5, -1.2);
+  scene.add(fill);
+}
+
+
+export function buildAxoScene(THREE, shell, opts = {}) {
+  const c = paintCtx(THREE, opts);
+  const scene = new THREE.Scene();
+  const paper = opts.paper || AXO_COLORS.paper;
+  scene.background = new THREE.Color(paper).convertSRGBToLinear();
+  const group = new THREE.Group();
+
+  addShellGeometry(THREE, group, c, shell, [0, 0, 0]);
 
   // ②.5 比例人 / 树（2026-11-16）：**面向相机的平面**（正交下等于 1:1 的立面剪影），
   //     站在地面、楼的左前方。用 Basic 材质（不吃光），剪影才是纯墨色。
@@ -270,13 +340,13 @@ export function buildAxoScene(THREE, shell, opts = {}) {
       for (const part of sil.parts) {
         const pts = (part.points || []).map((p) => new THREE.Vector2(num(p[0]), num(p[1])));
         if (pts.length < 3) continue;
-        const shape = track(new THREE.Shape(pts));
-        const geo = track(new THREE.ShapeGeometry(shape));
+        const shape = c.track(new THREE.Shape(pts));
+        const geo = c.track(new THREE.ShapeGeometry(shape));
         const hex = part.kind === 'crown'
           ? AXO_COLORS.treeCrown
           : (part.kind === 'trunk' ? AXO_COLORS.treeTrunk : AXO_COLORS.figure);
         paintFlat(THREE, geo, hex, AXO_TONES.lit);
-        const mat = track(new THREE.MeshBasicMaterial({
+        const mat = c.track(new THREE.MeshBasicMaterial({
           vertexColors: true, side: THREE.DoubleSide,
         }));
         const mesh = new THREE.Mesh(geo, mat);
@@ -293,53 +363,12 @@ export function buildAxoScene(THREE, shell, opts = {}) {
     }
   }
 
-  // ③ 地面（一块纸色板，给建筑一个"落在地上"的依据，不画边线）
   const bounds = shell.bounds || {};
-  const size = Array.isArray(bounds.size) ? bounds.size : [1000, 300, 1000];
-  const center = Array.isArray(bounds.center) ? bounds.center : [0, 0, 0];
-  const groundSize = Math.max(size[0], size[2]) * 3 + 2000;
-  const gGeo = track(new THREE.PlaneGeometry(groundSize, groundSize));
-  const gMat = track(new THREE.MeshLambertMaterial({
-    color: new THREE.Color(opts.ground || AXO_COLORS.ground).convertSRGBToLinear(),
-  }));
-  const ground = new THREE.Mesh(gGeo, gMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(center[0], num(bounds.min && bounds.min[1], -1) - 0.5, center[2]);
-  ground.receiveShadow = true;
-  group.add(ground);
-
+  addGround(THREE, group, c, bounds, opts);
   scene.add(group);
+  addSunLights(THREE, scene, Array.isArray(bounds.size) ? bounds.size : [1000, 300, 1000], opts);
 
-  // ④ 光：主光从左前上方（与轴测角一致 → 两个可见立面一明一暗）
-  // 环境光压低到 0.42：第一版是 0.62，两个立面亮度几乎一样，整栋像一块白积木。
-  const ambient = new THREE.AmbientLight(0xffffff, 0.42);
-  scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xffffff, 0.86);
-  // 🔴 方向光只看方向，但**阴影相机是挂在 position 上的**：position 太近（第一版只写了方向量，
-  //    距原点 3 个单位）→ 建筑有一半落在近裁剪面后面 → 地面阴影缺一块（截图里右下那个直角缺口）。
-  //    乘一个远距离，方向不变，整栋都进得了阴影相机的视锥。
-  sun.position.set(-1.2, 2.4, 1.6).multiplyScalar(3000);
-  // 落影（2026-11-15）：不开阴影时房子是"飘在纸上的"，一眼假。只渲一次，成本可接受。
-  if (opts.shadow !== false) {
-    sun.castShadow = true;
-    // 4096：3600px 的成品图上，2048 的影子边缘会是一格一格的锯齿
-    sun.shadow.mapSize.set(4096, 4096);
-    // 范围要盖住"整栋 + 影子伸出去的那一截"（第一版只按包围盒*0.9，右侧影子被裁出一个缺口）
-    const r = Math.hypot(num(size[0], 100), num(size[1], 100), num(size[2], 100)) * 2.2 + 400;
-    const cam = sun.shadow.camera;
-    cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
-    cam.near = 1; cam.far = 12000;
-    cam.updateProjectionMatrix();
-    // 别让阴影边缘糊成一团灰（体块建筑的影子要"硬"才像手绘）
-    if ('radius' in sun.shadow) sun.shadow.radius = 2;
-    if ('bias' in sun.shadow) sun.shadow.bias = -0.0005;
-  }
-  scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.2);
-  fill.position.set(1.4, 0.5, -1.2);
-  scene.add(fill);
-
-  return { scene, group, disposables };
+  return { scene, group, disposables: c.disposables };
 }
 
 /**
@@ -351,13 +380,12 @@ export function buildAxoScene(THREE, shell, opts = {}) {
  * @param {object} opts { frame, canvas, roofColor / paper / ground, propsList, preset, shadow }
  * @returns {{canvas:HTMLCanvasElement, width:number, height:number, drawCalls:number}}
  */
-function renderSceneCanvas(THREE, shell, opts = {}) {
+function renderSceneCanvas(THREE, built, opts = {}) {
   const frame = opts.frame;
   const canvasSize = opts.canvas || { width: 3600, height: 2400 };
   const W = Math.max(64, Math.round(num(canvasSize.width, 3600)));
   const H = Math.max(64, Math.round(num(canvasSize.height, 2400)));
 
-  const built = buildAxoScene(THREE, shell, opts);
   const cv = document.createElement('canvas');
   cv.width = W;
   cv.height = H;
@@ -419,7 +447,7 @@ function renderSceneCanvas(THREE, shell, opts = {}) {
  * @returns {{dataUrl:string, width:number, height:number, drawCalls:number}}
  */
 export function renderAxoToDataUrl(THREE, shell, opts = {}) {
-  const inner = renderSceneCanvas(THREE, shell, opts);
+  const inner = renderSceneCanvas(THREE, buildAxoScene(THREE, shell, opts), opts);
   const dataUrl = inner.canvas.toDataURL('image/png');
   inner.dispose();
   return {
@@ -561,7 +589,8 @@ export function drawAxoSheet(ctx, plan, model) {
 export function renderAxoSheet(THREE, shell, opts = {}) {
   const caption = (opts.caption && typeof opts.caption === 'object') ? opts.caption : null;
   const plan = opts.plan || axoSheetPlan(opts.canvas, { caption: !!caption });
-  const inner = renderSceneCanvas(THREE, shell, { ...opts, canvas: plan.render });
+  const sceneOpts = { ...opts, canvas: plan.render };
+  const inner = renderSceneCanvas(THREE, buildAxoScene(THREE, shell, sceneOpts), sceneOpts);
 
   const W = plan.canvas.width;
   const H = plan.canvas.height;
@@ -586,3 +615,167 @@ export function renderAxoSheet(THREE, shell, opts = {}) {
   return { dataUrl, width: W, height: H, drawCalls: inner.drawCalls };
 }
 
+
+// ── 聚落鸟瞰（2026-11-16）────────────────────────────────────────────────
+//
+// 与单栋插图共用同一套平涂/墨线/俯视落影，区别只有三点：
+//   · 一次画多栋（每栋一个 shell + 自己的偏移）；
+//   · 地面先铺一块大板，再铺道路（路面是折线偏移出来的带，见 `settlement.roadRibbon`）；
+//   · 图注用聚落的说法（建筑/道路/镇域），并加一根**比例尺** ——
+//     镇子尺度下“一个 1.70 m 的人”只有几个像素，尺子才是对的参照物。
+
+/** 道路：折线带 → 地面上的浅色面 + 一圈墨线 */
+function addRoads(THREE, group, c, roads) {
+  const y = 1.5;   // 抬高 1.5cm：与地面共面会闪（z-fighting）
+  for (const r of Array.isArray(roads) ? roads : []) {
+    const poly = ((r && r.poly) || [])
+      .filter((p) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+      .map((p) => ({ x: num(p.x), y: num(p.y) }));
+    if (poly.length < 3) continue;
+    const tris = earClip(poly);
+    if (!tris.length) continue;
+    const pos = [];
+    for (const t of tris) for (const p of t) pos.push(p.x, y, p.y);
+    const geo = c.track(new THREE.BufferGeometry());
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.computeVertexNormals();
+    // 路面水平 → 一档就够。颜色用插图自己的，**不跟地图上的道路色**：
+    // 地图上那是屏幕配色（橙黄），印在纸上会变成一条刺眼的带子。
+    paintFlat(THREE, geo, AXO_COLORS.road, wallTone({ x: 0, y: 1, z: 0 }));
+    // 双面：路带的绕序一旦反了，单面材质会把整块路面剔掉、只剩两圈线
+    // （第一版就这样“只有路缘没有路面”）。绕序在 settlement 里已统一成逆时针，这里是保险。
+    const roadMat = c.track(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+    const mesh = new THREE.Mesh(geo, roadMat);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    group.add(mesh);
+    // 边线：闭合一圈（两条边各一条，路面才读得出宽度）
+    const lp = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      lp.push(a.x, y, a.y, b.x, y, b.y);
+    }
+    const lgeo = c.track(new THREE.BufferGeometry());
+    lgeo.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+    group.add(new THREE.LineSegments(lgeo, c.lineMat));
+  }
+}
+
+/**
+ * 聚落场景：地面 + 若干栋（每栋一个 shell + 偏移）+ 道路。
+ *
+ * @param {Array<{shell:object, offset:number[]}>} items
+ * @param {object} opts { bounds, roads, shadow, paper, ground }
+ */
+export function buildSettlementScene(THREE, items, opts = {}) {
+  const c = paintCtx(THREE, opts);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(opts.paper || AXO_COLORS.paper).convertSRGBToLinear();
+  const group = new THREE.Group();
+  const bounds = opts.bounds || {
+    min: [0, 0, 0], max: [0, 0, 0], size: [1000, 300, 1000], center: [0, 0, 0],
+  };
+  addGround(THREE, group, c, bounds, opts);
+  for (const it of Array.isArray(items) ? items : []) {
+    if (!it || !it.shell || it.shell.empty) continue;
+    addShellGeometry(THREE, group, c, it.shell, it.offset || [0, 0, 0]);
+  }
+  addRoads(THREE, group, c, opts.roads);
+  scene.add(group);
+  addSunLights(THREE, scene, bounds.size, opts);
+  return { scene, group, disposables: c.disposables };
+}
+
+/**
+ * 比例尺（画在图面左下角）。
+ *
+ * 为什么画在**图面**上而不是图注条里：图注条那点高度塞不下“尺子 + 三段刻度字”，
+ * 而图面左下角通常是空纸（地面板是斜的菱形，左下角在板子外面）。
+ */
+function drawScaleBarOnSheet(ctx, plan, bar) {
+  const ticks = Array.isArray(bar && bar.ticks) ? bar.ticks : [];
+  if (!bar || !(bar.px > 0)) return;
+  const W = plan.canvas.width;
+  const unit = W / 3600;                       // 以 3600 宽为基准的尺寸单位
+  const pad = Math.round(W * 0.022);
+  const barH = Math.max(8, Math.round(22 * unit));
+  const x = pad + Math.round(24 * unit);
+  const y = plan.render.height - pad - Math.round(46 * unit);
+  const font = Math.max(12, Math.round(38 * unit));
+
+  ctx.save();
+  // 白底浮片（制图惯例）：地面是浅色，尺子直接压上去会糊
+  ctx.fillStyle = 'rgba(246,243,234,0.88)';
+  ctx.strokeStyle = AXO_COLORS.line;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = Math.max(1, Math.round(1.5 * unit));
+  const plateW = bar.px + Math.round(48 * unit);
+  const plateH = barH + Math.round(74 * unit);
+  ctx.beginPath();
+  ctx.rect(x - Math.round(16 * unit), y - Math.round(34 * unit), plateW, plateH);
+  ctx.fill();
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // 三格黑白交替
+  const seg = bar.px / 3;
+  ctx.strokeStyle = AXO_COLORS.line;
+  ctx.fillStyle = AXO_COLORS.line;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.rect(x + i * seg, y, seg, barH);
+    if (i % 2 === 0) ctx.fill();
+    else ctx.stroke();
+  }
+  ctx.lineWidth = Math.max(1, Math.round(1.5 * unit));
+  ctx.strokeRect(x, y, bar.px, barH);
+
+  // 刻度文字：0 / 中 / 全长
+  ctx.font = `400 ${font}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+  ctx.fillStyle = AXO_COLORS.line;
+  ctx.textBaseline = 'top';
+  for (let i = 0; i < ticks.length; i++) {
+    const t = ticks[i];
+    if (i === 0) ctx.textAlign = 'left';
+    else if (i === ticks.length - 1) ctx.textAlign = 'right';
+    else ctx.textAlign = 'center';
+    ctx.fillText(String(t.label || ''), x + num(t.px), y + barH + Math.round(6 * unit));
+  }
+  ctx.restore();
+}
+
+/**
+ * 出**聚落插图**：地面 + 多栋 + 道路 + 比例尺 + 图注纸带，返回 dataURL。
+ *
+ * @param {Array} items [{ shell, offset }]
+ * @param {object} opts { frame, plan, caption, roads, bounds, shadow, paper, ground }
+ */
+export function renderSettlementSheet(THREE, items, opts = {}) {
+  const caption = (opts.caption && typeof opts.caption === 'object') ? opts.caption : null;
+  const plan = opts.plan || axoSheetPlan(opts.canvas, { caption: !!caption });
+  const sceneOpts = { ...opts, canvas: plan.render };
+  const inner = renderSceneCanvas(THREE, buildSettlementScene(THREE, items, sceneOpts), sceneOpts);
+
+  const W = plan.canvas.width;
+  const H = plan.canvas.height;
+  const out = document.createElement('canvas');
+  out.width = W;
+  out.height = H;
+  const ctx = out.getContext('2d');
+  if (!ctx) throw new Error('拿不到画布上下文');
+  ctx.fillStyle = AXO_COLORS.paper;
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(inner.canvas, 0, 0);
+  if (caption) drawScaleBarOnSheet(ctx, plan, caption.scaleBar);
+  if (caption && plan.band) drawAxoSheet(ctx, plan, caption);
+  const dataUrl = out.toDataURL('image/png');
+
+  // 释放：渲染器要等取完图才放（先放会丢上下文）
+  inner.dispose();
+  inner.canvas.width = 0;
+  inner.canvas.height = 0;
+  out.width = 0;
+  out.height = 0;
+  return { dataUrl, width: W, height: H, drawCalls: inner.drawCalls };
+}

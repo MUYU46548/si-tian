@@ -39,6 +39,13 @@ def log(msg):
     print(msg, flush=True)
 
 
+def px_at(info, x, y):
+    """一个像素的灰度（RGB / RGBA 的 PNG 都支持）"""
+    row = info['rows'][max(0, min(info['h'] - 1, int(y)))]
+    o = max(0, min(info['w'] - 1, int(x))) * info['bpp']
+    return (row[o] + row[o + 1] + row[o + 2]) // 3
+
+
 def dark_frac(info, box, thr=150, step=2):
     """区域内**近黑**像素占比（灰度 < thr）。
 
@@ -277,8 +284,12 @@ def main():
             band_top = h - int(round(h * BAND_RATIO))
             whole = ink(0, 0, w, h)
             center = ink(w * 0.30, h * 0.20, w * 0.70, band_top * 0.85)
-            corner_tl = ink(0, 0, w * 0.08, h * 0.08)
-            corner_tr = ink(w * 0.92, 0, w, h * 0.08)
+            # 2026-11-16：插图现在铺了一块与纸同色的地面板（单栋也要"落在地上"），
+            # 所以四角不再要求"纸色"，改判"够亮 + 四角一致"—— 黑边 / 空画布 / 整幅跑偏照样抓得住。
+            corners = [px_at(info, x, y) for (x, y) in [
+                (8, 8), (w - 8, 8), (8, band_top - 8), (w - 8, band_top - 8)]]
+            cmin = min(corners)
+            cmax = max(corners)
             band_left = dark_frac(info, (0, band_top, w * 0.34, h))
             band_mid = dark_frac(info, (w * 0.34, band_top, w * 0.82, h))
             band_right = dark_frac(info, (w * 0.82, band_top, w, h))
@@ -289,14 +300,16 @@ def main():
                 fails.append('01-iso：整幅几乎没有内容（非白占比 %.3f）' % whole)
             if center < 0.30:
                 fails.append('01-iso：画面中间没有建筑（墨量 %.3f）' % center)
-            if corner_tl > 0.06 or corner_tr > 0.06:
-                fails.append('01-iso：上两角不是纸色（左上 %.3f / 右上 %.3f）' % (corner_tl, corner_tr))
+            if cmin < 190:
+                fails.append('01-iso：四角里有暗的（最暗 %d）—— 可能整幅跑偏/被切/黑边' % cmin)
+            if cmax - cmin > 30:
+                fails.append('01-iso：四角颜色差太多（%d ~ %d）—— 画面可能没铺满' % (cmin, cmax))
             for name, v in (('左（图名）', band_left), ('中（层数·占地·投影·方位）', band_mid),
                             ('右（指北针＋出处）', band_right)):
                 if v <= 0.0005:
                     fails.append('01-iso：图注%s那一段是空的（近黑 %.4f）' % (name, v))
-            log('  · 01-iso %dx%d 整幅 %.3f 中心 %.3f 上角 %.3f/%.3f 图注条 左 %.4f 中 %.4f 右 %.4f'
-                % (w, h, whole, center, corner_tl, corner_tr, band_left, band_mid, band_right))
+            log('  · 01-iso %dx%d 整幅 %.3f 中心 %.3f 四角 %d~%d 图注条 左 %.4f 中 %.4f 右 %.4f'
+                % (w, h, whole, center, cmin, cmax, band_left, band_mid, band_right))
 
         for tag in ('02-dimetric', '03-high'):
             r = shots.get(tag)

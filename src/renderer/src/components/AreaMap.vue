@@ -25,6 +25,13 @@
         </p>
       </div>
       <div class="header-actions">
+        <button class="adopt-btn" data-testid="area-settlement-export" @click="exportSettlement"
+                :disabled="settlementBusy || settlementBuildingCount === 0"
+                :title="settlementBuildingCount === 0
+                  ? '这个区域还没有建筑，先在地图上放几栋再出图'
+                  : '把这个区域里的建筑和道路合成一张鸟瞰插图（3600×2400，带比例尺与图注）'"><Icon name="map" :size="14"/> {{ settlementBusy ? '出图中…' : '聚落鸟瞰' }}</button>
+        <span v-if="settlementMsg" class="settlement-msg" :class="{ err: settlementMsgErr }"
+              data-testid="area-settlement-msg">{{ settlementMsg }}</span>
         <template v-if="!editMode">
           <button class="adopt-btn edit-entry-btn" @click="enterEditMode" :disabled="store.isReadOnly"
                   :title="store.isReadOnly ? store.readOnlyReason : '进入编辑模式：绘制区域/道路/标记等'"><Icon name="pencil" :size="14"/> 编辑地图</button>
@@ -333,6 +340,10 @@ import { validateRegionTrace } from '../utils/regionTrace';
 // 建筑在地图上的俯视符号（2026-11-15）：**独立模块**，这里只做一处消费。
 // 模块负责"从楼层算占地 + 怎么画"，不知道地图、相机、节点位置。
 import { buildFootprint, drawBuildingSymbol } from '../interior/buildingSymbol.js';
+// 聚落鸟瞰（2026-11-16）：把区域里的建筑 + 道路合成一张插图。
+// 采集/摆位在 settlement.js（纯函数、有单测），装配与 three 动态加载在 settlementExport.js
+// （组件自己 import three 会撞上“three 只许在登记过的组件里动态加载”的闸门）。
+import { renderSettlementPng } from '../interior/settlementExport.js';
 import { alignItems, distributeItems, diffPositions } from '../utils/align';
 import { setClipboard, getClipboard, cloneItem } from '../utils/clipboard';
 import { showStatusBar, hideStatusBar, setStatusThrottled, setStatus } from '../composables/useStatusBar';
@@ -518,6 +529,72 @@ const zoneDragSnapshot = ref(null);
 // 定位高亮
 const focusHighlightNode = ref(null);
 const focusHighlightTimer = ref(null);
+
+// ===== 聚落鸟瞰（2026-11-16）=====
+// 只读数据 + 只写一张 PNG，所以**不进写闸门**、只读态也能用。
+// 出图那套装配（three 动态加载 / 几何 / 取景 / 图注）全在 interior/settlementExport.js：
+// 组件自己 import three 会撞上“three 只许在登记过的组件里动态加载”的闸门，
+// 而一次性出图套不上组件那套 rAF/可见性纪律 —— 收在模块里更干净。
+const settlementBusy = ref(false);
+const settlementMsg = ref('');
+const settlementMsgErr = ref(false);
+let settlementMsgTimer = 0;
+const settlementBuildingCount = computed(
+  () => (areaPlaces.value || []).filter((n) => n && n.layer === 'building').length,
+);
+
+function setSettlementMsg(text, isErr = false) {
+  settlementMsg.value = text;
+  settlementMsgErr.value = isErr;
+  if (settlementMsgTimer) clearTimeout(settlementMsgTimer);
+  // 失败不设 TTL（“失败要看得见”是本项目纪律）；成功 6 秒淡出
+  settlementMsgTimer = window.setTimeout(() => {
+    if (!isErr) { settlementMsg.value = ''; settlementMsgTimer = 0; }
+  }, 6000);
+}
+
+async function exportSettlement() {
+  if (settlementBusy.value) return;
+  const name = props.areaNode?.name || '聚落';
+  if (!settlementBuildingCount.value) {
+    setSettlementMsg('这个区域还没有建筑，先在地图上放几栋再出图', true);
+    return;
+  }
+  settlementBusy.value = true;
+  setSettlementMsg('正在出鸟瞰图…');
+  // 让浏览器先把“出图中…”画出来（渲染要几百毫秒，否则用户以为按钮没反应）
+  await new Promise((r) => setTimeout(r, 30));
+  try {
+    // 排障/演练口（只读，不写任何数据）：出对照图用，证明道路与体块真的画上去了
+    const over = (typeof window !== 'undefined' && window.__SITIAN_SETTLEMENT_OPTS__) || {};
+    const out = await renderSettlementPng({
+      name,
+      places: areaPlaces.value,
+      routes: areaRoutes.value,
+      interiorData: store.interiorData,
+      opts: over,
+    });
+    if (out && out.empty) {
+      setSettlementMsg(out.reason || '这个区域里没有可画的东西', true);
+      return;
+    }
+    const api = window.sitianAPI;
+    if (!api || !api.saveExportFile) throw new Error('当前环境不支持导出（缺少保存通道）');
+    const fileName = `${name}-聚落鸟瞰.png`.replace(/[\/:*?"<>|]/g, '_');
+    const r = await api.saveExportFile({ dataUrl: out.dataUrl, defaultName: fileName });
+    if (r && r.success) {
+      setSettlementMsg(`已导出 ${out.width}×${out.height}：${(r.path || fileName).split(/[\/]/).pop()}`);
+    } else if (r && r.canceled) {
+      setSettlementMsg('');
+    } else {
+      setSettlementMsg(`导出失败：${(r && r.error) || '未知原因'}`, true);
+    }
+  } catch (e) {
+    setSettlementMsg(`出图失败：${e && e.message ? e.message : String(e)}`, true);
+  } finally {
+    settlementBusy.value = false;
+  }
+}
 
 // ===== Canvas Renderer =====
 // 世界坐标视口（批次C2）：各绘制循环裁剪用；canvas 未就绪时返回 null（不过滤）
@@ -2388,6 +2465,20 @@ defineExpose({ canvas, renderer });
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+  align-items: center;
+}
+
+/* 聚落鸟瞰的出图回执：跟着按钮走，成功几秒后自己淡出 */
+.settlement-msg {
+  font-size: 12px;
+  color: var(--text-secondary, #8a93a0);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settlement-msg.err {
+  color: #e06c75;
 }
 
 /* 与行星地图同款按钮基底（批次D4：此前缺失导致编辑入口退化为浏览器默认按钮样式） */

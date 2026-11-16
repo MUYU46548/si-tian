@@ -308,6 +308,21 @@ async function main() {
       // 必须在 mounted 里加载，不许模块顶层就 await（顶层会在 chunk 求值时立刻拉 three）
       assert(src.includes('onMounted('), `${f} 用了 three 但没在 onMounted 里初始化`);
     }
+
+    // 🔴 非组件模块（interior/*.js）也要守同一条底线（2026-11-16 聚落鸟瞰加的）：
+    // 一次性出图不套组件的 rAF/可见性纪律，所以判据换成“攒资源的那一层必须真的释放”。
+    const INTERIOR = path.join(ROOT, 'src/renderer/src/interior');
+    const THREE_LAZY_MODULES = ['settlementExport.js'];
+    for (const f of fs.readdirSync(INTERIOR).filter((x) => x.endsWith('.js'))) {
+      const src = fs.readFileSync(path.join(INTERIOR, f), 'utf8');
+      assert(!/from\s+['"]three['"]/.test(src), `interior/${f} 静态 import 了 three（首屏会被背进去）`);
+      if (!/import\(['"]three['"]\)/.test(src)) continue;
+      assert(THREE_LAZY_MODULES.includes(f), `interior/${f} 动态引了 three 但不在白名单里`);
+      // 它自己不持有 renderer，释放必须在它调用的渲染层里（axoScene 的 dispose()/forceContextLoss）
+      assert(/renderSettlementSheet|renderAxoSheet|renderAxoToDataUrl/.test(src), `interior/${f} 用了 three 但没走统一的出图入口`);
+      const scene = fs.readFileSync(path.join(INTERIOR, 'axoScene.js'), 'utf8');
+      assert(scene.includes('forceContextLoss()') && scene.includes('.dispose()'), 'axoScene 缺释放纪律');
+    }
     return 'ok';
   });
 
