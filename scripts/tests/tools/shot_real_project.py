@@ -169,6 +169,12 @@ def main():
         cdp.eval("window.__SITIAN_VIEW_PATCH__ = %s; 1" % ('false' if flag('no-view-patch') else 'true'))
         # 心跳 + 页面错误收集（必须装在打开项目之前）
         cdp.eval("window.__WANT_RENDER_PROFILE__ = %s; 1" % ('true' if flag('profile-render') else 'false'))
+        # 任意排障开关（2026-11-16）：`--js "window.__SITIAN_PROV_BITMAP__=false; 1"`
+        # 用途：同一份项目拍两张对照图（例如省色块位图开/关），再逐像素对拍。
+        js_opt = arg('js', '')
+        if js_opt:
+            log('注入：%s' % js_opt)
+            cdp.eval(js_opt)
         cdp.eval("""(() => {
           window.__hb = []; window.__errs = [];
           window.__hbTimer = setInterval(() => window.__hb.push(Math.round(performance.now())), 100);

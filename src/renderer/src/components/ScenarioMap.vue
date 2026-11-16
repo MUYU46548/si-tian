@@ -997,6 +997,7 @@ import { renderProfiler, attachFrameTotal } from '../scenario/renderProfile';
 import { rasterProgressiveOpts, setRasterRefineHandler, bakeWidthFor } from '../scenario/rasterRefine';
 import { reliefRasterFor } from '../scenario/reliefRasterSlot';
 import { reliefPatchPass } from '../scenario/viewBake';
+import { attachProvinceFillBitmap } from '../scenario/provinceFillBake';   // 规模刀 2：省色块整幅位图
 import { drawSeaDetailLayer, drawPoliticalCoastLayer } from '../scenario/layers/coast';
 import { drawProvincesLayer, drawProvinceBordersLayer, drawPolityBordersLayer } from '../scenario/layers/provinces';
 // N1 刀 1：文字标注层（四档统一避让排布 / 地形注记 / 浮动地名）
@@ -4492,7 +4493,7 @@ function makeLayerView(opts) {
   // A2：过渡态只属于**画布这一帧**。`snapshot: true`（导出/切片）永远是确定态 ——
   // 导两次必须逐像素一致，不能因为"正好赶上过渡"就导出一张中间色。
   const eraFadeNow = (opts && opts.snapshot) ? null : eraFade.current();
-  return {
+  return attachProvinceFillBitmap({
     w: cw(),
     h: ch(),
     px,
@@ -4614,7 +4615,7 @@ function makeLayerView(opts) {
     vx,
     vy,
     formatPopulation,
-  };
+  }, eraFadeNow, !!(opts && opts.snapshot));
 }
 
 const labelLayers = createLabelLayers();

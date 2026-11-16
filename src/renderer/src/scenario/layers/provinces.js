@@ -47,30 +47,26 @@ export function isOpaqueColor(col) {
 //
 //   🔴 试过并**否决**的写法（别再来一遍）：把同色描边按颜色合成 4 条 Path2D 一次描。
 //      像素几乎一样（28px/最大差 1），但**性能是负的**：1 万省实测 stroke 从 45ms/帧
-//      抬到 250ms/帧 —— 一条 Path2D 里塞 2500 个闭合子路径，Skia 的描边开销比
-//      “逐省小笔画”高约 5 倍。合批只对**一次性**的几何（省界第一遍）有效，对“每帧都要描一遍”
-//      的路径反而更贵。
-export function drawProvincesLayer(c, view, opts = {}) {
-  if (!view.baseMap || !view.baseMap.terrain) return;
-  const fills = opts.fills !== false;
-  const tl = view.timeline;
-  const k = view.eraIndex;
-  // 归属查询必须吃**日期**（月日精度）：同一年内 6 月前后归主不同
-  const at = view.date;
-  const scenarioMode = view.mode === 'scenario' && tl.scenarios.length > 0;
+//      抬到 250ms/帧，整帧 301.6 → 575.6ms —— 一条 Path2D 里塞 2500 个闭合子路径，
+//      Skia 的描边开销比“逐省小笔画”高约 5 倍。合批只对**一次性**的几何（省界第一遍）有效，
+//      对“每帧都要描一遍”的路径反而更贵。
+//
+// 2026-11-16 第二刀（规模刀 2）：**省身改为可整幅烘焙的位图**（`scenario/provinceFillBake.js`）。
+//   省数 ≥ 2000 且相机在适屏档时，整幅只烘一次、每帧 `drawImage` 一次；
+//   位图失效键取对象引用（地形 / 剧本 / ownership / polities / 日期 / 档位），写口一换对象就重烘。
+//   绘制实现仍然只有下面这一份 `paintProvinceBodies`（烘焙时 `px()` 换成烘焙分辨率）。
+/**
+ * 省身绘制：填色 + 同色描边 / 虚线海界 / 不填色时的省界。**唯一实现**。
+ * 直接画（小项目、放大档、过渡期）与位图烘焙都走这里 —— 两份实现必然漂移。
+ * 不在里面 save/restore：调用方负责外层状态。
+ */
+export function paintProvinceBodies(c, view, terrain, fills = true) {
+  const alpha0 = c.globalAlpha;
   // 政治水洗（2026-11-03）：默认 1（= 旧口径，不透明）；浮雕底打开时 ~0.42
   const wash = view.politicalWash == null ? 1 : view.politicalWash;
-  const alpha0 = c.globalAlpha;
   // 线宽/虚线段都是“相机 → 像素”的函数，一帧里不变：提到循环外
   const pxDash = view.px(6), pxGap = view.px(4), pxSea = view.px(1.2);
   const pxSame = view.px(1.6), pxNoFill = view.px(0.9);
-  const eu4 = scenarioMode && view.diffMode === 'eu4';
-  const outline = scenarioMode && view.diffMode === 'outline';
-  // ③ 变化省集合：原来每省一次 `changed.includes(id)` = O(N·M)
-  const changedSet = (outline && k > 0) ? new Set(tl.eraChg[k]?.changed || []) : null;
-
-  const terrain = view.rawTerrain();
-  c.save();                                   // ① 整层一对（原来每省 2 对）
   for (let i = 0; i < terrain.length; i++) {
     const rp = view.rawProvOf(terrain[i]);
     // 路径按省缓存（Path2D）：几何不变时每帧只做 fill/stroke，不再重描 2.4 万个顶点
@@ -110,36 +106,78 @@ export function drawProvincesLayer(c, view, opts = {}) {
       c.lineWidth = pxNoFill;
       c.stroke(path);
     }
+  }
+}
 
-    // EU4 式斜线占领：底色是**旧主**色（上面刚填的），斜线用**新主**色
-    if (eu4 && view.isStriped(tl, k, rp.id, at)) {
-      const newCol = view.polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[rp.id]);
-      const b = view.provinceBBox(rp);
-      const dy = b.maxY - b.minY;
-      const step = view.px(8.5);
-      c.save();
-      c.clip(path);                   // 复用缓存路径做裁剪
-      c.globalAlpha = 0.92;
-      c.strokeStyle = newCol;
-      c.lineWidth = view.px(3.2);
-      for (let t = b.minX - dy - 20; t < b.maxX + 20; t += step) {
-        c.beginPath();
-        c.moveTo(t, b.minY - 20);
-        c.lineTo(t + dy + 40, b.maxY + 20);
-        c.stroke();
+export function drawProvincesLayer(c, view, opts = {}) {
+  if (!view.baseMap || !view.baseMap.terrain) return;
+  const fills = opts.fills !== false;
+  const tl = view.timeline;
+  const k = view.eraIndex;
+  // 归属查询必须吃**日期**（月日精度）：同一年内 6 月前后归主不同
+  const at = view.date;
+  const scenarioMode = view.mode === 'scenario' && tl.scenarios.length > 0;
+  const eu4 = scenarioMode && view.diffMode === 'eu4';
+  const outline = scenarioMode && view.diffMode === 'outline';
+  // ③ 变化省集合：原来每省一次 `changed.includes(id)` = O(N·M)
+  const changedSet = (outline && k > 0) ? new Set(tl.eraChg[k]?.changed || []) : null;
+
+  const terrain = view.rawTerrain();
+  // 刀 2：省数够多且相机在适屏档 → 整幅位图（一帧一次 drawImage）；否则直接画（唯一实现同一份）
+  // 依赖一律从 view 取（层的纪律）：位图由 `ScenarioMap` 注入，层自己不 import 渲染模块
+  const bmp = (fills && typeof view.provinceFillBitmap === 'function')
+    ? view.provinceFillBitmap(terrain, (bc, bv, bt) => paintProvinceBodies(bc, bv, bt, true))
+    : null;
+  c.save();                                   // 整层一对（原来每省 2 对）
+  if (bmp) {
+    c.globalAlpha = 1;
+    c.imageSmoothingEnabled = true;
+    c.drawImage(bmp.canvas, bmp.minX, bmp.minY, bmp.w, bmp.h);
+  } else {
+    paintProvinceBodies(c, view, terrain, fills);
+  }
+
+  // 装饰（EU4 斜线 / 变化描边）必须逐省：它们叠在**本省**省身之上
+  // ⚠️ 第 0 代一律没有“上一代”→ `isStriped` 恒 false、`eraChg[0]` 也没有变化集，整段可以跳过
+  //    （2 万省时这一跳省掉 2 万次 `isStriped`，是位图化之后剩下的最大一笔逐省开销）
+  if (k > 0 && (eu4 || changedSet)) {
+    for (let i = 0; i < terrain.length; i++) {
+      const rp = view.rawProvOf(terrain[i]);
+      const striped = eu4 && view.isStriped(tl, k, rp.id, at);
+      const outlined = !striped && changedSet && changedSet.has(rp.id);
+      if (!striped && !outlined) continue;
+      const path = view.provincePathFor(rp, view.altStraight);
+      if (!path) continue;
+      // EU4 式斜线占领：底色是**旧主**色（上面刚填的），斜线用**新主**色
+      if (striped) {
+        const newCol = view.polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[rp.id]);
+        const b = view.provinceBBox(rp);
+        const dy = b.maxY - b.minY;
+        const step = view.px(8.5);
+        c.save();
+        c.clip(path);                   // 复用缓存路径做裁剪
+        c.globalAlpha = 0.92;
+        c.strokeStyle = newCol;
+        c.lineWidth = view.px(3.2);
+        for (let t = b.minX - dy - 20; t < b.maxX + 20; t += step) {
+          c.beginPath();
+          c.moveTo(t, b.minY - 20);
+          c.lineTo(t + dy + 40, b.maxY + 20);
+          c.stroke();
+        }
+        c.restore();
+        c.save();
+        c.lineWidth = view.px(1.4);
+        c.strokeStyle = newCol;
+        c.stroke(path);
+        c.restore();
+      } else {
+        c.save();
+        c.lineWidth = view.px(2);
+        c.strokeStyle = '#ffffff';
+        c.stroke(path);
+        c.restore();
       }
-      c.restore();
-      c.save();
-      c.lineWidth = view.px(1.4);
-      c.strokeStyle = newCol;
-      c.stroke(path);
-      c.restore();
-    } else if (changedSet && changedSet.has(rp.id)) {
-      c.save();
-      c.lineWidth = view.px(2);
-      c.strokeStyle = '#ffffff';
-      c.stroke(path);
-      c.restore();
     }
   }
   c.restore();
