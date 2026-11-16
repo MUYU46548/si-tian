@@ -81,9 +81,15 @@ def source_gates():
                           ("export const SEA_EDGE = 'rgba(", '海界色常量（单源）')):
         if needle not in pal:
             fails.append(f'源码闸门缺失：{label}（找不到 `{needle}`）')
-    # “海界 = 淡虚线”：2026-10-30 起绘制体在 `scenario/layers/provinces.js`，判据跟着搬家
+    # “海界 = 淡虚线”：2026-10-30 起绘制体在 `scenario/layers/provinces.js`，判据跟着搬家。
+    # 2026-11-16：`aaa04fd`（省色块批处理性能改动）把虚线长度提成局部变量 `pxDash/pxGap`，
+    # 字面量写法消失 → 闸门认两种写法，但**6/4 这两个数必须还在**（否则“引了变量”是空闸门）。
     prov_layer = _code_only(_read('src/renderer/src/scenario/layers/provinces.js'))
-    if 'setLineDash([view.px(6), view.px(4)])' not in prov_layer:
+    dash_literal = 'setLineDash([view.px(6), view.px(4)])' in prov_layer
+    dash_vars = ('setLineDash([pxDash, pxGap])' in prov_layer
+                 and 'pxDash = view.px(6)' in prov_layer
+                 and 'pxGap = view.px(4)' in prov_layer)
+    if not (dash_literal or dash_vars):
         fails.append('源码闸门缺失：海界 = 淡虚线（scenario/layers/provinces.js 里找不到 6/4 虚线）')
     for needle in ("const SEA_FILL = 'rgba(", "const SEA_EDGE = 'rgba("):
         if needle in sc:
