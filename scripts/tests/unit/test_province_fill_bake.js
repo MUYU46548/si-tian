@@ -114,8 +114,9 @@ function fakeTerrain(n) {
   ok('③ 烘焙时 px() 用的是烘焙分辨率', !calls.includes('bad-px'));
   const bakes1 = window.__SITIAN_PROV_BITMAP_STAT__.bakes;
 
-  const b2 = M.provinceFillBitmap(view(), big, () => { calls.push('paint2'); });
-  ok('③ 同一份数据再叫 → 不重烘（返回同一个槽）', b2 === b1);
+  // 放大一档（scale 1.6×）→ 仍复用（容忍 1.33 倍拉伸），不许整幅重烘
+  const b2 = M.provinceFillBitmap(view({ cameraScale: 1.6 }), big, () => { calls.push('paint2'); });
+  ok('③ 同一份数据 + 放大一档 → 不重烘（容忍拉伸复用）', b2 === b1);
   ok('③ 同一份数据再叫 → bakes 计数不动', window.__SITIAN_PROV_BITMAP_STAT__.bakes === bakes1);
   ok('③ 同一份数据再叫 → 画法没再跑', !calls.includes('paint2'));
 

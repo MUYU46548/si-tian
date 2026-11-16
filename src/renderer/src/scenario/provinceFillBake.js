@@ -122,8 +122,13 @@ export function provinceFillBitmap(view, terrain, paint) {
   const needPpu = need / rect.w;
   // ① 放大超过位图精度 → 不烘（逐省矢量更清楚，而且放大后大部分省在裁剪区外，本来就不慢）
   if (scale > needPpu * 1.05) return null;
-  // ④ 只长不缩：键相同且手里这张够宽 → 直接复用
-  if (slot && slot.key === key && slot.ppu >= needPpu * 0.995) return slot;
+  // ④ 只长不缩 + **容忍 1.33 倍拉伸**：键相同且手里这张够宽 → 直接复用。
+  //    原来卡在 0.995（差一点点就重烘）。滚轮是 1.15 一格（`helpers.js#zoomFactor`），
+  //    于是旧口径**每一格都整幅重烘**；实测 1 万省跨一档（探针直接 ×1.6）= 一帧 348ms、其中重烘 284ms。
+  //    现在两格以内（≤1.33 倍）复用同一张、只是拉大一点点；
+  //    ⚠️ 跨过 1.33 倍**仍会重烘一次**（1 万省 ≈284ms、2 万省 ≈600ms）—— 这是位图方案的已知代价，
+  //    要彻底消掉得把这遍烘焙分片（或推迟到相机静止后），记在方寸卡 task-20261116-001 的余项里。
+  if (slot && slot.key === key && slot.ppu >= needPpu * 0.75) return slot;
 
   const ppu = needPpu;
   const cw = Math.max(1, Math.round(rect.w * ppu));
