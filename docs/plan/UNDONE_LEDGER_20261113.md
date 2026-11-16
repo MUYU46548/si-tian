@@ -117,6 +117,7 @@
 | E10 | pan 帧时探针（≥300 帧 p50/p95/max） | PLAN§五 前置 4 | **未做** |
 | E11 | 基准落档 `fixtures/geo-baseline/` | PLAN§五 前置 3 | **未做** |
 | E12 | 导出 drill（`drill_w1_verdict.py` 至今跑不通） | PLAN§五 | **未做** |
+| E13 | **`test_58`（重复导入不覆盖）在序列里偶发红** | 2026-11-16 全量 4 次里红 2 次 | **未修（根因未定）** | 红时读数：`merged` 全 0、`nothingNew=true`、`nameNow`（改名后立刻读到）是对的、但 400ms 后 `getEntity(first).name` 回到笔记原名。单跑必绿。已排除的：`importFromVault` 在 `total === 0` 时**直接 return**（源码 l.400），不可能覆盖；`updateEntity` 走 `execute()`（`redo` 里换 `entities` 引用 → `watch(entities)` `flush:'sync'` → `refreshEntities` 推画布）。下一步查"改名后 200–600ms 之间谁把旧名推回了项目"——最可能是画布侧一次 `scheduleAutoSave`（800ms 防抖）走了 `syncFromCanvas`，而画布节点名当时还是旧的（refreshEntities 被 `source !== 'project'` 挡过一拍）。取证方式：在用例里逐拍记录 `project.entities[first].name` / `store.nodes[first].name` / `saveStatus`，只能在全量序列里复现（单跑全对） |
 
 ---
 
