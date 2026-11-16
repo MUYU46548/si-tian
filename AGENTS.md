@@ -32,7 +32,7 @@
 - 从 Obsidian 提取数据: `npm run extract-data`
 - 回归测试: `python scripts/tests/run_tests.py`（**178 用例**；须用系统 Python，Hermes 自带 venv 缺 `websocket-client`）
   - 数据源默认 = **仓库内合成 fixture**（`scripts/tests/fixtures/vault-fixture/`，由 `fixtures/make_vault_fixture.py` 生成：层级结构同构、内容全虚构、地图几何程序合成）→ **用户改自己的世界观数据不会让用例变红**；要对着真实库跑加 `--real-data`
-  - 该命令会先跑 `scripts/tests/unit/*.js`（**138 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
+  - 该命令会先跑 `scripts/tests/unit/*.js`（**141 个** Node 单元测试文件：主进程文件 I/O + 真实 git 同步 + 令牌加密保管 + 纯函数层若干，CDP 用例的 mock 覆盖不到），失败计为 1 个失败用例
   - 单跑某个用例：`python scripts/tests/run_tests.py test_47`
   - **退出码 3 = 环境没起来（不是产品结论）**（2026-11-08）：`store.nodes` 恒 0 / 页面被关掉 /
     harness 基线项目打不开（`no-app`、`browser-dev-mode`）时，整轮**中止**并印一段横幅，
@@ -48,6 +48,11 @@
 - **事件账本查询/录入（2026-10-22，三刀第一刀）**: `node scripts/ledger-query.mjs --project <file.sitian> --at 1350 --a 瓯 --b 梁`（答「某年两方什么关系」）；`--list` 清点；`--add '<json>' --apply` 录入（默认 dry-run，写前备份 + 写后读回校验；PowerShell 用 `--add @事件.json`）。语义/形状见 [docs/SCENARIO_EVENT_LEDGER.md](docs/SCENARIO_EVENT_LEDGER.md)
 - **账本引擎 v3 试算（2026-10-24，第 3 件）**: `node scripts/ledger-dryrun.mjs --project <file.sitian>` —— **只读**：把每段剧本的 `initialOwnership + changeEvents` 迁成事件流（`src/ledger/`）再回放，与落盘缓存 `ownership` **逐省对拍**；有冲突非 0 退出，跑完自证文件未动。回放是**唯一实现**（`src/ledger/replay.js`；`utils/scenarioLedgerV2.deriveFrom` 只是 v2 形状适配器）。415 孤本实测：13 段 / 冲突 0 / 11ms
 - **读料扫描（2026-10-22，三刀第二刀）**: `node scripts/vault-scan.mjs --vault <库根> --out <目录> [--geodata]` —— 全库只读归类（地图实体 / 资料 / 待人工），产物 `scan-report.json` + `待人工.md`（每条带原因与凭据）+ 可选 `geodata.json` 试导；输出目录在库内会被拒绝，跑完自动对比库指纹证明一个字节都没写。归类口径见 [docs/VAULT_BRIDGE.md](docs/VAULT_BRIDGE.md)
+- **家具真实尺寸重排（A18，2026-11-16）**: `node scripts/rearrange-furniture-sizes.mjs --project <文件.sitian> [--apply] [--json]`
+  （默认 dry-run 出清单；`--apply` 先备份到 `<项目>.backups/` 再写、**写后回读校验**：仍有未到位或件数变了都算失败）。
+  口径：只动家具（门窗洞口 / 院落·园林·走廊·水池·围墙一律不碰）、改尺寸**保持中心点**、容差内不动（可反复跑）、缺尺寸不猜。
+  尺寸表唯一实现在 `interior/furnitureSizes.js`（UI 放新家具与这条命令共用；守门 `unit/test_furniture_sizes.js` 14/14，含真跑 CLI 的冒烟）。
+  ⚠️ 跑 `--apply` 前先在司天里**关掉该项目**（内存态会把改动盖回去）。
 - `.sitian` 缓存垃圾清理: `npm run clean-cache-junk`（默认 dry-run，`-- --apply` 才写盘；清空名地形 / 空壳底图 / 测试残留节点，删前自检「引用 / 包围盒 / 子节点」，备份落 `backups/cleanup-<ts>/`）
 - **备份目录瘦身（2026-10-30 用户拍板：保留最近 3 份）**: `npm run prune-backups`（默认 dry-run，`-- --apply` 才动盘）。每个 `<项目>.sitian.backups/` 与 `<库>/.sitian/backups/` 按 mtime 留最近 N 份（`-- --keep 5` 可改），**超出的"复制 → 校验大小 → 删源"移到归档盘**（默认 `E:\归档\司天备份-<日期>`，不删）；`*.session-baseline.sitian`（打开时的样子）**不参与轮转**。应用侧同口径：`projectHandler.js#BACKUP_KEEP = 3`、`main/index.js` 缓存备份 = 3
 - **隐私与署名扫描（发布门槛③，2026-11-05）**: `node scripts/privacy-scan.mjs` —— 三个作用域
@@ -780,7 +785,7 @@
 | 锚点 | 期望值 | 核对方式 |
 |---|---|---|
 | 测试用例数 | 178 | `ls scripts/tests/cases/test_*.py \| wc -l` |
-| Node 单测文件数 | 138 | `ls scripts/tests/unit/*.js \| wc -l` |
+| Node 单测文件数 | 141 | `ls scripts/tests/unit/*.js \| wc -l` |
 | store 模块数 | 9 | `ls src/renderer/src/store/geodataModules/` |
 | App.vue 异步面板 | 25 | `grep -c defineAsyncComponent src/renderer/src/App.vue` |
 | IPC handle 数 | 49 | `grep -c "ipcMain.handle" src/main/index.js` |

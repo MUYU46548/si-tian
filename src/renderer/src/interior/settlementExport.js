@@ -33,6 +33,7 @@ import {
  * @param {Array} [input.places] 区域子节点
  * @param {Array} [input.routes] 区域道路
  * @param {object} [input.interiorData]
+ * @param {'iso'|'dimetric'|'high'} [input.preset] 投影角（默认等轴测）
  * @param {object} [input.opts] 排障开关（只读）：{ roads:false, plain:false, caption:false }
  * @returns {Promise<{empty:true, reason:string} | {
  *   dataUrl:string, width:number, height:number, stats:object, buildings:number, roads:number }>}
@@ -70,7 +71,8 @@ export async function renderSettlementPng(input = {}) {
   // three 动态 import：整仓只有 System3DView / ExteriorView / 这里三处会拉它
   const THREE = await import('three');
   const canvasSize = axoCanvas('print');
-  const preset = 'iso';
+  // 投影角（2026-11-16）：与单栋轴测同一套预设。换角度时指北针、图注里的“方位”都跟着变
+  const preset = AXO_PRESETS[input.preset] ? input.preset : 'iso';
   const wantCaption = over.caption !== false;
   const plan = axoSheetPlan(canvasSize, { caption: wantCaption });
   const frame = axoFrame(bounds, {

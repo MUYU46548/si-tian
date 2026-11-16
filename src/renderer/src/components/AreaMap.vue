@@ -25,6 +25,13 @@
         </p>
       </div>
       <div class="header-actions">
+        <select v-model="settlementPreset" data-testid="area-settlement-preset"
+                :disabled="settlementBuildingCount === 0"
+                class="settlement-preset" title="鸟瞰图用的投影角度（等轴测 / 二测 / 高视）">
+          <option value="iso">等轴测 45°/35°</option>
+          <option value="dimetric">二测 2:1</option>
+          <option value="high">高视 45°/60°</option>
+        </select>
         <button class="adopt-btn" data-testid="area-settlement-export" @click="exportSettlement"
                 :disabled="settlementBusy || settlementBuildingCount === 0"
                 :title="settlementBuildingCount === 0
@@ -536,6 +543,8 @@ const focusHighlightTimer = ref(null);
 // 组件自己 import three 会撞上“three 只许在登记过的组件里动态加载”的闸门，
 // 而一次性出图套不上组件那套 rAF/可见性纪律 —— 收在模块里更干净。
 const settlementBusy = ref(false);
+// 鸟瞰的投影角（与单栋轴测同一套预设）
+const settlementPreset = ref('iso');
 const settlementMsg = ref('');
 const settlementMsgErr = ref(false);
 let settlementMsgTimer = 0;
@@ -572,6 +581,7 @@ async function exportSettlement() {
       places: areaPlaces.value,
       routes: areaRoutes.value,
       interiorData: store.interiorData,
+      preset: settlementPreset.value,
       opts: over,
     });
     if (out && out.empty) {
@@ -2480,6 +2490,19 @@ defineExpose({ canvas, renderer });
 .settlement-msg.err {
   color: #e06c75;
 }
+
+/* 鸟瞰的投影角下拉：与按钮同一行、同一套高度 */
+.settlement-preset {
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #8a93a0);
+  background: var(--bg-secondary, #1c2230);
+  border: 1px solid var(--border-color, #2d3646);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.settlement-preset:disabled { opacity: 0.5; cursor: default; }
 
 /* 与行星地图同款按钮基底（批次D4：此前缺失导致编辑入口退化为浏览器默认按钮样式） */
 .adopt-btn {

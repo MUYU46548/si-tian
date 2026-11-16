@@ -630,6 +630,8 @@ import { getPreset, drawStyledLabel } from '../utils/labelStyles';
 // 建筑内部（2026-11-13 第 1/3 刀）：墙由工具栏画，房间由墙自动围合
 import { detectRooms, mergeDetectedRooms } from '../utils/roomDetection';
 import { drawInteriorFloor, drawStairSymbol, drawFloorHoles } from '../interior/renderFloor';
+// 家具真实尺寸表（A18）：UI 与"重排旧项目"命令共用一份
+import { furnitureSize } from '../interior/furnitureSizes.js';
 import {
   FLOOR_TEXTURES, CEILING_TEXTURES, normalizeCeiling,
 } from '../interior/floorPatterns';
@@ -907,22 +909,10 @@ const ROOM_TEMPLATES = [
 function getDefaultSize(type) {
   // 2026-11-13：从"整数凑的方块"改成**真实尺寸**（cm）。原来一张床 100×80 ——
   // 比单人床还小，房间和家具的比例一眼就不对。坐标口径见 utils/interiorUnits.js。
-  const defaults = {
-    generic: { w: 80, h: 60 },
-    table: { w: 140, h: 80 },      // 餐桌/书桌
-    chair: { w: 45, h: 45 },
-    bed: { w: 200, h: 150 },       // 双人床
-    chest: { w: 120, h: 60 },      // 衣柜/书柜/货架
-    decoration: { w: 40, h: 40 },
-    door: { w: 90, h: 20 },
-    window: { w: 120, h: 20 },
-    courtyard: { w: 600, h: 600 },
-    garden: { w: 800, h: 600 },
-    corridor: { w: 200, h: 80 },
-    pond: { w: 300, h: 200 },
-    wall: { w: 600, h: 24 },
-  };
-  return defaults[type] || { w: 80, h: 60 };
+  // 2026-11-16（A18）：表搬到 interior/furnitureSizes.js —— 重排旧项目的命令用的是**同一份**，
+  // 否则"UI 放的新家具是 200×150、命令算的是另一套"，两边迟早漂移。
+  const s = furnitureSize(type);
+  return { w: s.w, h: s.h };
 }
 
 // 类型变化时自动调整默认尺寸

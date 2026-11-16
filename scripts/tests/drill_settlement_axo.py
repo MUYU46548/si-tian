@@ -91,10 +91,19 @@ def make_town(cdp, bid):
     return _j(cdp, expr)
 
 
-def run_export(cdp, tag, opts=None):
-    """设排障口 → 真实点按钮 → 拿 dataUrl 落盘解析。返回 {path,img}"""
+def run_export(cdp, tag, opts=None, preset=None):
+    """设排障口 / 投影角 → 真实点按钮 → 拿 dataUrl 落盘解析。返回 {path,img}"""
     payload = 'null' if opts is None else json.dumps(opts)
     cdp.eval('window.__SITIAN_SETTLEMENT_OPTS__ = %s' % payload)
+    if preset:
+        _j(cdp, """(() => {
+          const sel = document.querySelector('[data-testid=area-settlement-preset]');
+          if (!sel) return JSON.stringify({ ok: false, why: 'no-select' });
+          sel.value = %s;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          return JSON.stringify({ ok: true, value: sel.value });
+        })()""" % json.dumps(preset))
+        time.sleep(0.2)
     cdp.eval("""(() => {
       window.__saved = null;
       window.savedName = null;
@@ -205,6 +214,12 @@ def main():
         else:
             shots['04'] = r
         cdp.eval('window.__SITIAN_SETTLEMENT_OPTS__ = null')
+        # ⑤ 投影角：换成二测 2:1 再出一张（下拉走产品自己的 <select>）
+        r = run_export(cdp, '05-dimetric', preset='dimetric')
+        if r.get('error'):
+            fails.append(r['error'])
+        else:
+            shots['05'] = r
 
         # ── 判据 ────────────────────────────────────────────────────────
         if '01' in shots:
@@ -269,6 +284,22 @@ def main():
                     fails.append('道路几乎没画上去（关掉后只差 %.3f%%）' % (d['frac'] * 100))
                 if d['frac'] > 0.5:
                     fails.append('关掉道路竟差 %.0f%%（整幅都变了）—— 图面不该跟着重排' % (d['frac'] * 100))
+            # 投影角：换二测后整幅都该变（视角变了），且仍然是一张有内容的图
+            if '05' in shots:
+                d5 = AX.compare(info, shots['05']['img'], region=(0, 0, w, band_top))
+                img5 = shots['05']['img']
+                c5 = [AX.px_at(img5, x, y) for (x, y) in [
+                    (6, 6), (w - 6, 6), (6, band_top - 6), (w - 6, band_top - 6)]]
+                lines5 = AX.dark_frac(img5, (0, 0, w, band_top), thr=120)
+                log('  · 05 二测 2:1：与等轴测差 %.2f%% · 四角 %d~%d · 墨线 %.4f'
+                    % (d5['frac'] * 100, min(c5), max(c5), lines5))
+                if d5['frac'] < 0.05:
+                    fails.append('换投影角后画面几乎没变（差 %.2f%%）—— 下拉没接上？' % (d5['frac'] * 100))
+                if min(c5) < 180:
+                    fails.append('二测那张四角有暗的（最暗 %d）—— 可能整幅跑偏被切' % min(c5))
+                if lines5 < 0.004:
+                    fails.append('二测那张几乎没有墨线（%.4f）' % lines5)
+
             # 体块：关掉两栋"只有体块"的建筑，差异要明显
             if '03' in shots:
                 d = AX.compare(info, shots['03']['img'], region=(0, 0, w, band_top))
