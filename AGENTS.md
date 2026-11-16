@@ -488,6 +488,14 @@
   ① 在页面里取块内某点的**期望色**（块 canvas 的 getImageData）与**帧上的实际色**比对，看差在合成端还是采样端；
   ② 查基帧（`blitted`）这条路：`window.__SITIAN_FRAME_LOG__` 的 `blitted/building` 字段能定位“贴的是旧位图”；
   ③ 关掉 `provinces.fill` 位图（`attachProvinceFillBitmap`）再拍一次河层帧，排除省色块位图参与合成。
+  🔴 **2026-11-16 第三条线索（目前最像真凶，下一轮从这里接）**：帧日志（`frameLogTail`，现已真正接进 drill）
+  显示两版**同一帧**的耗时差一个量级 —— 切到 3.5× 那一帧（n=25）基线 **195.8ms**、markRaw 版 **22.8ms**，
+  两次复现稳定（192.6 / 195.8 vs 22.8）。紧随其后的两帧（26~28）两边都是 5~16ms。
+  也就是说**基线在那帧里多做了一大块重建（≈173ms），markRaw 版没有做** —— 若那笔重建正是
+  海深/等深线（`getSeaDetail`，开图采样里 `coord @contour.js` 曾占 394ms）或浮雕档的 prep，
+  那么“markRaw 版略糊”就不是错觉而是**少画了一层细节**：缓存命中的旧图 vs 刚重建的新图。
+  下一步直接量 `__SITIAN_RENDER_STAGES__`（`scenario/renderProfile.js`）里 n=25 这一帧的**逐层耗时**，
+  就能指到具体层；指到了再看那层的缓存键为什么在基线里失效、在 markRaw 版里命中。
   ⚠️ 顺带两条**探针纪律**（都是这一轮踩的）：`eval_json` 默认要求返回含 `fails` 的对象，读排障口要显式
   `required=None`，否则记账静默变 `null`（看起来像“排障口没挂上”）；**排障口只记摘要**——
   `viewBake.patch.hm` 是整个高度图，一条日志 2 MB，直接把终端输出撑爆。

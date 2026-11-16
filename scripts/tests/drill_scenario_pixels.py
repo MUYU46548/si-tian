@@ -133,6 +133,17 @@ RIVER_CAM_JS = """(() => {
     mid: { x: Math.round(mid.x * 100) / 100, y: Math.round(mid.y * 100) / 100 } });
 })()"""
 
+# 帧日志尾巴（2026-11-16）：分辨“块画了但屏幕贴的是旧位图”。
+# `blitted` = 这一帧贴的是基帧缓存（静态层位图）；`building` = 正在重建基帧。
+# 只取最近 6 条**摘要**（不要原始对象：里面有大数组）。
+FL_TAIL_JS = """(() => {
+  const L = window.__SITIAN_FRAME_LOG__ || [];
+  return JSON.stringify(L.slice(-6).map((e) => ({
+    n: e.n, ms: e.ms, blitted: !!e.blitted, building: !!e.building,
+    cam: e.cam, riverVer: e.riverVer, px: e.px,
+  })));
+})()"""
+
 # 负向探针：最宽的 20 条河压细 40% → 河层指纹必须变，否则这枚判据是摆设
 RIVER_SENS_JS = """(() => {
   const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
@@ -556,6 +567,13 @@ def main():
                 with open(os.path.join(OUT_DIR, f'{tag}-patch.png'), 'wb') as f:
                     f.write(_b64.b64decode(pk.split(',', 1)[1]))
                 print('  → %s（视口块本体）' % os.path.join(OUT_DIR, f'{tag}-patch.png'), flush=True)
+        # 帧日志尾巴（2026-11-16）：`blitted` = 这一帧贴的是**基帧缓存**（静态层位图）,
+        # `building` = 正在重建基帧。河层帧只有“背景 + 河”两层，最容易暴露
+        # “块画了、但屏幕上贴的是旧位图”。`window.__SITIAN_FRAME_LOG__` 由
+        # `ScenarioMap#recordFrameProbe` 惰性建；读不到空数组 = 这条路没经过它。
+        fl_ok, fl = eval_json(cdp, FL_TAIL_JS, required=None, desc='帧日志尾巴')
+        if fl_ok and fl:
+            record['frameLogTail'] = fl
         if river_fp:
             record.update({
                 'riverHash': river_fp.get('hash'),
