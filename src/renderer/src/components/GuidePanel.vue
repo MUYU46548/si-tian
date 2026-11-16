@@ -49,6 +49,10 @@
           </template>
           <p v-if="currentSection.cite" class="g-cite">出处：{{ currentSection.cite }}</p>
         </article>
+
+        <!-- 右留白（2026-11-16 统一版式）：暮雨要求「右侧留空，预留给后续使用」。
+             这里**不塞占位文案** —— 空就是空。 -->
+        <aside class="guide-rail" aria-hidden="true"></aside>
       </div>
 
       <footer class="guide-footer">
@@ -167,6 +171,13 @@ defineExpose({ open, close, isOpen });
 .close-btn:hover { background: #eef2f7; border-color: #d5dbe3; }
 
 .guide-body { flex: 1; display: flex; min-height: 0; }
+/* ── 2026-11-16 统一版式（暮雨授权「仅限本次手册样式统一重制」）─────────
+   三家（方寸 / 绒花墨坊 / 司天）此前**各写各的**，暮雨原话「全都不一样，神了，
+   全是看都没看从头瞎造，而且每个都不好用，很丑」。统一骨架：**左目录 / 中正文 / 右留白**。
+
+   这里只动两处，文案与搜索逻辑一个字没改：
+   ① 中栏不再 `flex:1` 撑满 —— 撑满时右边界贴着弹窗边，读一行要走完整个 980px；
+   ② 新增右留白 220（真的空，不画边框）。 */
 .guide-toc {
   width: 240px;
   flex-shrink: 0;
@@ -192,7 +203,12 @@ defineExpose({ open, close, isOpen });
 .guide-toc-item.active { background: #e6efff; border-color: #bcd2f7; color: #1c4fa1; font-weight: 600; }
 .guide-none { font-size: 12px; color: #6b7785; line-height: 1.6; padding: 6px; }
 
-.guide-content { flex: 1; overflow-y: auto; padding: 16px 22px 24px; }
+.guide-content { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 26px 26px; max-width: 760px; }
+/* 右留白：**真的空** —— 不画边框、不画底色。第一版给方寸加了 border-left，
+   截图就是一大块带边框空白、像界面画崩了，回了话之后已废。
+   窄屏先收掉它（留白不该在弹窗里挤掉正文）。 */
+.guide-rail { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 900px) { .guide-rail { display: none; } .guide-content { max-width: none; } }
 .guide-content h3 { margin: 0 0 10px; font-size: 16px; color: #16222e; }
 .g-p { font-size: 13px; line-height: 1.75; color: #2b3a4a; margin: 0 0 10px; }
 .g-steps, .g-list { font-size: 13px; line-height: 1.75; color: #2b3a4a; margin: 0 0 12px; padding-left: 22px; }
