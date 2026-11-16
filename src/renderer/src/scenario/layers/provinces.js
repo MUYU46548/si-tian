@@ -24,6 +24,32 @@ export function isOpaqueColor(col) {
   return parts.length < 4 || Number(parts[3]) >= 1;
 }
 
+// 2026-11-16（1 万/2 万省压测）：**每省的固定开销**是这一层的大头，但不是全部。
+//   压测读数（`probe_scale_frames`，Vite+Edge headless，1080×634）：
+//     3,000 省 暖帧 24.1ms ／ 10,000 省 292ms ／ 20,000 省 646ms
+//   CPU 采样（2 万省，15 帧 6472ms）：restore 34.3% + save 13.6% + stroke 13.1%，
+//   而真正的 `fill` 只有 4.6% —— 61% 花在“每个省两对 save/restore 加一次同色描边”上。
+//
+//   这一刀做了（**逐像素一致**：`drill_scenario_pixels --tag p20261116c` 主帧 hash 9910bd4 /
+//   hashNoLabels 80b07d44 / riverHash 7be13ef5，与基线 v20261108l 三项全等）：
+//     ① 整层一对 save/restore（原来每省 2 对 = 2 万省 4 万次状态栈进出）；
+//     ② `politicalWash` / `px()` 提到循环外（一帧里是常量，原来每省现取 3~5 次）；
+//     ③ `diffMode === 'outline'` 的 `changed.includes(id)` 改成按帧建一次 Set —— 原来是
+//        每省一次 O(M) 线性查找（O(N·M)），语义不变只是换了查法。
+//       （EU4 斜线 / 变化描边这两档仍然逐省：装饰必须压在**本省**的同色描边之上。）
+//
+//   实测结果（同一台机器，前后各跑一遍）：
+//     · JS 侧 CPU：15 帧 6472ms → 4300ms（-33%）；
+//     · **放大档帧时间 291~295ms → 28~69ms**（放大后大部分省在裁剪区外，省下的状态栈直接见效）；
+//     · 适屏档帧时间基本没动（292 → 293~306ms）—— 因为瓶颈是**原生光栅化**（1 万次
+//       stroke 相加 ≈ 180ms/帧），不是 JS。要动它必须换画法（省色块位图化），见
+//       方寸卡 task-20261116-001，不在这一刀里。
+//
+//   🔴 试过并**否决**的写法（别再来一遍）：把同色描边按颜色合成 4 条 Path2D 一次描。
+//      像素几乎一样（28px/最大差 1），但**性能是负的**：1 万省实测 stroke 从 45ms/帧
+//      抬到 250ms/帧 —— 一条 Path2D 里塞 2500 个闭合子路径，Skia 的描边开销比
+//      “逐省小笔画”高约 5 倍。合批只对**一次性**的几何（省界第一遍）有效，对“每帧都要描一遍”
+//      的路径反而更贵。
 export function drawProvincesLayer(c, view, opts = {}) {
   if (!view.baseMap || !view.baseMap.terrain) return;
   const fills = opts.fills !== false;
@@ -32,54 +58,61 @@ export function drawProvincesLayer(c, view, opts = {}) {
   // 归属查询必须吃**日期**（月日精度）：同一年内 6 月前后归主不同
   const at = view.date;
   const scenarioMode = view.mode === 'scenario' && tl.scenarios.length > 0;
+  // 政治水洗（2026-11-03）：默认 1（= 旧口径，不透明）；浮雕底打开时 ~0.42
+  const wash = view.politicalWash == null ? 1 : view.politicalWash;
+  const alpha0 = c.globalAlpha;
+  // 线宽/虚线段都是“相机 → 像素”的函数，一帧里不变：提到循环外
+  const pxDash = view.px(6), pxGap = view.px(4), pxSea = view.px(1.2);
+  const pxSame = view.px(1.6), pxNoFill = view.px(0.9);
+  const eu4 = scenarioMode && view.diffMode === 'eu4';
+  const outline = scenarioMode && view.diffMode === 'outline';
+  // ③ 变化省集合：原来每省一次 `changed.includes(id)` = O(N·M)
+  const changedSet = (outline && k > 0) ? new Set(tl.eraChg[k]?.changed || []) : null;
 
-  view.rawTerrain().forEach(prov => {
-    const rp = view.rawProvOf(prov);
+  const terrain = view.rawTerrain();
+  c.save();                                   // ① 整层一对（原来每省 2 对）
+  for (let i = 0; i < terrain.length; i++) {
+    const rp = view.rawProvOf(terrain[i]);
     // 路径按省缓存（Path2D）：几何不变时每帧只做 fill/stroke，不再重描 2.4 万个顶点
     const path = view.provincePathFor(rp, view.altStraight);
-    if (!path) return;
+    if (!path) continue;
     const fillCol = view.getProvinceColor(rp);
     // 政治档的海面由 `landsea` 栅格画**深度色带**；海域省再盖 SEA_FILL 会把青绿浅滩压成深蓝
     const seaFromRaster = rp.kind === 'sea' && view.rasterLayer === 'landsea';
     if (fills && !seaFromRaster) {
-      // 政治水洗（2026-11-03）：`view.politicalWash` 默认 1（= 旧口径，不透明）。
-      // 地形浮雕底打开时降到 ~0.42 —— 让山体阴影/地形色从政治色下面透出来，
-      // 这是"像 EU4"的构图比例（一屏 65% 地形 + 25% 政治 + 10% 线字）里最关键的一层。
-      const wash = view.politicalWash == null ? 1 : view.politicalWash;
-      c.save();
+      // 地形浮雕底打开时用 politicalWash 让山体阴影/地形色从政治色下面透出来 ——
+      // 这是“像 EU4”的构图比例（一屏 65% 地形 + 25% 政治 + 10% 线字）里最关键的一层。
       c.globalAlpha = wash;
       c.fillStyle = fillCol;
       // 多环实体：一条路径覆盖所有环；evenodd 与命中口径一致 → 洞真空、飞地真画
       c.fill(path, 'evenodd');
-      c.restore();
     }
     // 同色描边（~1px）：抹掉相邻省份之间的**亚像素缝**（共享弧两端 Chaikin 邻域不同）
     if (rp.kind === 'sea') {
       // 海界 = 淡虚线（实线是陆地省界，虚线一眼区分水陆）
-      c.setLineDash([view.px(6), view.px(4)]);
+      c.globalAlpha = alpha0;
+      c.setLineDash([pxDash, pxGap]);
       c.strokeStyle = view.SEA_EDGE;
-      c.lineWidth = view.px(1.2);
+      c.lineWidth = pxSea;
       c.stroke(path);
       c.setLineDash([]);
     } else if (fills && isOpaqueColor(fillCol)) {
-      // 同色描边也走同一个水洗值：否则浮雕底上会浮出一圈"实色描边"（比省身还重）
-      const wash = view.politicalWash == null ? 1 : view.politicalWash;
-      c.save();
+      // 同色描边也走同一个水洗值：否则浮雕底上会浮出一圈“实色描边”（比省身还重）
       c.globalAlpha = wash;
       c.strokeStyle = fillCol;
       // 1.6px：相邻两省各 0.8px 正好把 1~3px 的白点/针孔盖住
-      c.lineWidth = view.px(1.6);
+      c.lineWidth = pxSame;
       c.stroke(path);
-      c.restore();
     } else if (!fills) {
-      // 不填色时，省界**必须**自己画出来（否则"没有省份"和"有省份"看起来一样）
+      // 不填色时，省界**必须**自己画出来（否则“没有省份”和“有省份”看起来一样）
+      c.globalAlpha = alpha0;
       c.strokeStyle = view.BORDER_COLOR;
-      c.lineWidth = view.px(0.9);
+      c.lineWidth = pxNoFill;
       c.stroke(path);
     }
 
     // EU4 式斜线占领：底色是**旧主**色（上面刚填的），斜线用**新主**色
-    if (scenarioMode && view.diffMode === 'eu4' && view.isStriped(tl, k, rp.id, at)) {
+    if (eu4 && view.isStriped(tl, k, rp.id, at)) {
       const newCol = view.polityColor(tl.scenarios[k], tl.scenarios[k].ownership?.[rp.id]);
       const b = view.provinceBBox(rp);
       const dy = b.maxY - b.minY;
@@ -101,15 +134,15 @@ export function drawProvincesLayer(c, view, opts = {}) {
       c.strokeStyle = newCol;
       c.stroke(path);
       c.restore();
-    } else if (scenarioMode && view.diffMode === 'outline'
-               && k > 0 && (tl.eraChg[k]?.changed || []).includes(rp.id)) {
+    } else if (changedSet && changedSet.has(rp.id)) {
       c.save();
       c.lineWidth = view.px(2);
       c.strokeStyle = '#ffffff';
       c.stroke(path);
       c.restore();
     }
-  });
+  }
+  c.restore();
 }
 
 /**
