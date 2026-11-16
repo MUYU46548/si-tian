@@ -10,7 +10,10 @@
      三段都有东西 —— 只有一片字挤在一角不算；
   5) **比例人与树**：关掉它们再出一张，两张必须**只差在楼的左前方**（证明人/树真的画上去了，
      且没有被画到右侧或者跑出画面）；
-  6) 关掉图注再出一张：底部那条带子必须**几乎没有近黑像素**（反过来证明图注是画上去的，不是底图自带）。
+  6) 关掉图注再出一张：底部那条带子必须**几乎没有近黑像素**（反过来证明图注是画上去的，不是底图自带）；
+  7) **L 形楼屋顶按臂拆开**（2026-11-16）：把楼改成 L 形后，产品同一个 `buildBuildingShell`
+     必须给出 2 块屋顶 / 2 条互相垂直的脊；再关掉拆分（`__SITIAN_ROOF_SPLIT__=false`）重出一张，
+     两张图必须**差在屋顶上**（证明这条路真的接进出图，不是死代码；四角一致 = 取景没动）。
 
 用法：
   python scripts/tests/drill_axonometric.py
@@ -26,7 +29,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import drill_exterior_3d as D                                   # noqa: E402
 import drill_plan_export as P                                   # noqa: E402  复用 PNG 解析
-from lib.cdp import CDP, APP_URL, find_page_ws, skip_onboarding, wait_for, fetch_string  # noqa: E402
+from lib.cdp import CDP, APP_URL, find_page_ws, skip_onboarding, wait_for, fetch_string, eval_json  # noqa: E402
 from lib.helpers import open_harness_project, ensure_data_ready, ensure_test_building  # noqa: E402
 
 OUT_DIR = os.path.join(D.ROOT, 'build', 'axonometric')
@@ -144,6 +147,80 @@ def set_opts(cdp, opts):
     """设置/清掉排障口（产品代码只读它，不写任何数据）"""
     payload = 'null' if opts is None else json.dumps(opts)
     cdp.eval('window.__SITIAN_AXO_OPTS__ = %s' % payload)
+
+
+L_WALLS_JS = """
+      const T = 24, H = 280;
+      // L 形外墙（中心线）：横臂 900×300 + 竖臂 300×600（两臂都是长条形，屋顶才不会退化成攒尖）
+      const pts = [[0,0],[900,0],[900,300],[300,300],[300,900],[0,900]];
+      const walls = [];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        walls.push(s.addWall(bid, f1.id, {
+          start: {x:a[0], y:a[1]}, end: {x:b[0], y:b[1]}, thickness: T, height: H, color: '#d9d2c2',
+        }));
+      }
+      s.addDoor(bid, f1.id, { wallId: walls[0].id, position: 0.5, width: 100, height: 210 });
+"""
+
+
+def build_lshape(cdp, bid):
+    """把测试建筑改成 **L 形单层**（屋顶那一格只需要顶层轮廓）。
+
+    为什么要单层：屋顶只看最上面那层的墙；两层楼会把"屋顶变没变"和"楼板/楼层"混在一起。
+    """
+    ok, info = eval_json(cdp, """(() => {
+      const s = %s, iv = %s, bid = %s;
+      let d = s.interiorData[bid];
+      if (!d || !(d.floors || []).length) s.addFloor(bid, '一层');
+      d = s.interiorData[bid];
+      while (d.floors.length > 1) {
+        const extra = d.floors[d.floors.length - 1];
+        s.removeFloor(bid, extra.id);
+        d = s.interiorData[bid];
+      }
+      const f1 = d.floors[0];
+      (f1.walls || []).slice().forEach(w => s.removeWall(bid, f1.id, w.id));
+      (f1.doors || []).slice().forEach(o => s.removeDoor(bid, f1.id, o.id));
+      (f1.windows || []).slice().forEach(o => s.removeWindow(bid, f1.id, o.id));
+      %s
+      iv.editMode = false;
+      d = s.interiorData[bid];
+      return JSON.stringify({
+        fails: [],
+        floors: d.floors.length,
+        walls: d.floors.reduce((n, f) => n + (f.walls || []).length, 0),
+      });
+    })()""" % (D.STORE, D.IV, json.dumps(bid), L_WALLS_JS), desc='L 形 fixture')
+    return ok, info
+
+
+def roof_geometry(cdp, bid):
+    """页面内直接算一遍 3D 外壳：拆分开 / 关 两种状态的块数与面数。
+
+    为什么不看 DOM：外观面板不显示"屋顶几块"，而这条判据要的是**几何事实**。
+    走与产品**同一个** `buildBuildingShell`（同一份 floors），不是另写一套。
+    """
+    return eval_json(cdp, """(async () => {
+      const s = %s, bid = %s;
+      const d = s.interiorData[bid];
+      const mod = await import('/src/interior/buildShell.js');
+      window.__SITIAN_ROOF_SPLIT__ = false;
+      const off = mod.buildBuildingShell(d.floors, { roof: { kind: 'gable' } });
+      delete window.__SITIAN_ROOF_SPLIT__;
+      const on = mod.buildBuildingShell(d.floors, { roof: { kind: 'gable' } });
+      const ridges = (on.roof && on.roof.ridges) || [];
+      const dirs = ridges.map(r => [r[1][0] - r[0][0], r[1][2] - r[0][2]]);
+      const len = dirs.map(v => Math.hypot(v[0], v[1]));
+      const cos = dirs.length === 2 && len[0] > 0 && len[1] > 0
+        ? Math.abs(dirs[0][0] * dirs[1][0] + dirs[0][1] * dirs[1][1]) / (len[0] * len[1]) : 1;
+      return JSON.stringify({
+        fails: [],
+        blocksOn: on.stats.roofBlocks, facesOn: on.roof.faces.length, ridges: ridges.length,
+        ridgeLen: len.map(v => Math.round(v)), ridgeCos: Number(cos.toFixed(3)),
+        blocksOff: off.stats.roofBlocks, facesOff: off.roof.faces.length,
+      });
+    })()""" % (D.STORE, json.dumps(bid)), desc='屋顶几何')
 
 
 def run_one(cdp, preset, tag, fails, opts=None):
@@ -361,6 +438,80 @@ def main():
                 fails.append('关掉图注后底部仍有近黑像素（%.4f）—— 图注不是画上去的？' % bare)
             if not (with_cap > bare * 5):
                 fails.append('有图注 / 无图注的底部没拉开差距（%.4f vs %.4f）' % (with_cap, bare))
+
+        # ④ L 形楼：屋顶必须**按臂拆开**（2026-11-16 收口）
+        #    · 几何：调产品同一个 `buildBuildingShell` → 2 块 / 2 条互相垂直的脊；
+        #    · 出图：关掉拆分再拍一张，两张要差在屋顶上（证明这条路真的接进了出图，不是死代码）。
+        ok, linfo = build_lshape(cdp, bid)
+        if not ok:
+            fails.append('L 形 fixture 失败：%s' % linfo)
+        else:
+            time.sleep(1.6)          # floors 变了 → 外观视图自己 rebuild
+            ok, geo = roof_geometry(cdp, bid)
+            if not ok:
+                fails.append('L 形屋顶几何求值失败：%s' % geo)
+            else:
+                log('  · L 形：拆开 %d 块 / %d 面 / %d 条脊（cos %.3f，脊长 %s）；关掉 %d 块 / %d 面'
+                    % (geo['blocksOn'], geo['facesOn'], geo['ridges'], geo['ridgeCos'],
+                       geo['ridgeLen'], geo['blocksOff'], geo['facesOff']))
+                if geo['blocksOn'] != 2:
+                    fails.append('L 形屋顶应拆成 2 块，实际 %s —— 还是一整块盖在凹口上' % geo['blocksOn'])
+                if geo['ridges'] != 2:
+                    fails.append('L 形屋顶应有 2 条屋脊（每臂一条），实际 %s' % geo['ridges'])
+                if geo['ridgeCos'] > 0.1:
+                    fails.append('两条屋脊应互相垂直，实际 cos=%.3f' % geo['ridgeCos'])
+                if geo['blocksOff'] != 0 or geo['facesOff'] != 4:
+                    fails.append('关掉拆分后应退回整块（0 块 / 4 面），实际 %s 块 / %s 面'
+                                 % (geo['blocksOff'], geo['facesOff']))
+
+            on_shot = run_one(cdp, 'iso', '06-lshape-split', fails)
+            if on_shot:
+                shots['06-lshape-split'] = on_shot
+            # 关掉拆分再拍：**必须动一次屋顶下拉**迫使 rebuild —— 出图用的是缓存的 lastShell，
+            # 只改排障口不会重建几何，两张图会一模一样（那就成了假绿）。
+            cdp.eval('window.__SITIAN_ROOF_SPLIT__ = false')
+            for kind in ('flat', 'gable'):
+                cdp.eval("""(() => {
+                  const sel = document.querySelector('[data-testid=exterior-roof-kind]');
+                  if (!sel) return 0;
+                  sel.value = %s;
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  return 1;
+                })()""" % json.dumps(kind))
+                time.sleep(0.5)
+            off_shot = run_one(cdp, 'iso', '07-lshape-single', fails)
+            if off_shot:
+                shots['07-lshape-single'] = off_shot
+            cdp.eval('delete window.__SITIAN_ROOF_SPLIT__')
+            # 复位成坡顶（下一轮/人工接着看时是正常状态）
+            for kind in ('flat', 'gable'):
+                cdp.eval("""(() => {
+                  const sel = document.querySelector('[data-testid=exterior-roof-kind]');
+                  if (!sel) return 0;
+                  sel.value = %s;
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  return 1;
+                })()""" % json.dumps(kind))
+                time.sleep(0.4)
+
+            if on_shot and off_shot:
+                w = on_shot['img']['w']
+                h = on_shot['img']['h']
+                band_top = h - int(round(h * BAND_RATIO))
+                d = compare(on_shot['img'], off_shot['img'], region=(0, 0, w, band_top))
+                corners_on = [px_at(on_shot['img'], x, y) for (x, y) in [(8, 8), (w - 8, 8), (8, band_top - 8), (w - 8, band_top - 8)]]
+                corners_off = [px_at(off_shot['img'], x, y) for (x, y) in [(8, 8), (w - 8, 8), (8, band_top - 8), (w - 8, band_top - 8)]]
+                log('  · L 形出图对照：逐像素差 %.2f%%；四角 拆开 %s / 整块 %s'
+                    % (d['frac'] * 100, corners_on, corners_off))
+                if d['frac'] < 0.02:
+                    fails.append('L 形"拆开 vs 整块"两张图几乎一样（差 %.3f%%）—— 拆分没进出图路径'
+                                 % (d['frac'] * 100))
+                if d['frac'] > 0.45:
+                    fails.append('L 形两张图差得太多（%.1f%%）—— 不像只换了屋顶，取景可能也动了'
+                                 % (d['frac'] * 100))
+                if max(abs(a - b) for a, b in zip(corners_on, corners_off)) > 12:
+                    fails.append('两张图的四角不一致（取景变了，比较失去意义）：%s vs %s'
+                                 % (corners_on, corners_off))
 
         if fails:
             log('\n❌ 轴测插图有问题：')

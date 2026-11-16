@@ -34,6 +34,12 @@ import { allHolesForFloor } from './floorHoles.js';
 import { getRoomPolygon } from '../utils/roomDetection.js';
 import { earClip } from './triangulate.js';
 import { normalizeCeiling, floorTextureThree, ceilingTextureThree } from './floorPatterns.js';
+import { convexHull, minAreaRect } from './polyGeom.js';
+// 屋顶要按占地（墙矩形并集）逐块起坡 —— 拆分的输入就是这份轮廓（2026-11-16）。
+// 两个几何小工具从本文件搬到了 polyGeom.js，这里 re-export 保住 buildingSymbol 的老 import。
+import { buildFootprint } from './footprint.js';
+import { decomposeFootprint, ridgeAxisOf } from './rectDecompose.js';
+export { convexHull, minAreaRect };
 
 /** 房间地面面抬高量（cm）：贴地 1cm，避免与楼板 / 地面共面打架（z-fighting 会闪） */
 const ROOM_SURFACE_LIFT = 1;
@@ -259,79 +265,6 @@ function wallBoxes(wall, elevation, openings, colors) {
   return boxes;
 }
 
-// ── 凸包 + 最小外接矩形（屋顶用）─────────────────────────────────────────
-
-export function convexHull(points) {
-  const pts = [...points].sort((a, b) => (a.x - b.x) || (a.y - b.y));
-  if (pts.length < 3) return pts;
-  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower = [];
-  for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 1e-6) lower.pop();
-    lower.push(p);
-  }
-  const upper = [];
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const p = pts[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 1e-6) upper.pop();
-    upper.push(p);
-  }
-  upper.pop();
-  lower.pop();
-  return lower.concat(upper);
-}
-
-/**
- * 最小面积外接矩形（旋转卡壳）。返回 { cx, cy, ux, uy, halfW, halfD }：
- * 中心、长轴单位向量、沿长轴的半长、垂直长轴的半宽（cm）。
- */
-export function minAreaRect(hull) {
-  const n = hull.length;
-  if (n < 3) return null;
-  let best = null;
-  for (let i = 0; i < n; i++) {
-    const a = hull[i];
-    const b = hull[(i + 1) % n];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy);
-    if (!(len > 1e-6)) continue;
-    const ux = dx / len;
-    const uy = dy / len;
-    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
-    for (const p of hull) {
-      const pu = p.x * ux + p.y * uy;
-      const pv = -p.x * uy + p.y * ux;
-      minU = Math.min(minU, pu); maxU = Math.max(maxU, pu);
-      minV = Math.min(minV, pv); maxV = Math.max(maxV, pv);
-    }
-    const area = (maxU - minU) * (maxV - minV);
-    if (!best || area < best.area - 1e-6) {
-      const cu = (minU + maxU) / 2;
-      const cv = (minV + maxV) / 2;
-      best = {
-        area,
-        // 反投影回平面坐标：p = u * cu + v * cv
-        cx: cu * ux - cv * uy,
-        cy: cu * uy + cv * ux,
-        ux, uy,
-        halfU: (maxU - minU) / 2,
-        halfV: (maxV - minV) / 2,
-      };
-    }
-  }
-  if (!best) return null;
-  // 长轴统一：让 ux,uy 指长边方向
-  if (best.halfU < best.halfV) {
-    return {
-      cx: best.cx, cy: best.cy,
-      ux: -best.uy, uy: best.ux,
-      halfW: best.halfV, halfD: best.halfU,
-    };
-  }
-  return { cx: best.cx, cy: best.cy, ux: best.ux, uy: best.uy, halfW: best.halfU, halfD: best.halfV };
-}
-
 /**
  * 屋顶几何。返回 { kind, fascia, tris, boxes, stats }：
  *   · 平顶 = 一块厚板（box）+ 檐口板
@@ -430,6 +363,217 @@ function roofGeometry(endpoints, topY, opt, colors) {
     tris,
     stats: { ridgeHeight: rise, eaveY: eave, ridgeY },
   };
+}
+
+// ── 屋顶：异形平面按矩形拆分，逐块起坡（2026-11-16）──────────────────────
+//
+// 以前屋顶拿"所有墙端点的凸包 + 一个最小外接矩形"起坡：L 形 / 凹形 / 三合院的楼，
+// 凹口会被整个盖住 —— 3D 里就是一大块方屋顶压在 L 形的缺口上（地图符号 `buildingSymbol`
+// 早就按臂拆了，两边对不上）。现在：先把占地拆成若干矩形（`rectDecompose`，与地图符号
+// **同一份**拆分），每块各起一个标准四坡屋顶。
+//
+// 交接处怎么不出破面（这一段踩了三轮，别再改回去）：
+//   · **贴着邻居的边一律不出檐**（邻居挨住一小段也算）：出檐会从邻居身子上面探出去
+//     一截，在内转角就是一片穿出对方屋面的薄三角（第一版实测截图里非常显眼）。
+//   · **不往邻居里延**：延出去的屋面必然在某个位置高过邻居（两臂坡度略有差别），
+//     那道剖切边就悬在空中，看起来比不延更糟。
+//   · 于是两块屋面在**共边处都是檐口标高**，天然接上，屏幕上是一条 V 形谷线 ——
+//     真实屋谷比檐口高一点，但外观读起来是对的，而且完全不漏、不穿插。
+//
+// 单块矩形（以及有斜边 / 曲线墙、拆不动的形状）**走原来的整块路径**，逐像素不变。
+
+/** 拆分门槛（cm / 块数）：3D 比地图符号精细，可以切得比它细一点 */
+const ROOF_SPLIT = Object.freeze({ minSideCm: 60, maxCount: 8 });
+
+/**
+ * 排障口：`window.__SITIAN_ROOF_SPLIT__ = false` 退回"一整块屋顶"。
+ * 只给演练做前后对照用（`drill_axonometric.py` 的 L 形那一格），产品里没人写它。
+ */
+function roofSplitEnabled() {
+  try {
+    return !(typeof window !== 'undefined' && window.__SITIAN_ROOF_SPLIT__ === false);
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
+ * 每块矩形四条边**被邻居盖住的比例**（0~1）。
+ *
+ * 判据与 `rectDecompose#markAttachments` 同一套（贴边 1.5cm）。
+ * 拿它决定"这条边能不能出檐"：只要邻居挨着一小段，出檐就会从邻居身子上面探出去
+ * ——L 形内转角那片穿出对方屋面的薄三角就是这么来的（第一版实测截图里非常显眼）。
+ */
+function withRoofSides(blocks) {
+  const eps = 1.5;
+  return blocks.map((a) => {
+    const la = a.local;
+    const covers = { uPlus: 0, uMinus: 0, vPlus: 0, vMinus: 0 };
+    const add = (key, a0, a1, b0, b1) => {
+      const lo = Math.max(a0, b0);
+      const hi = Math.min(a1, b1);
+      if (hi - lo <= 1) return;
+      covers[key] = Math.min(1, covers[key] + (hi - lo) / Math.max(1, a1 - a0));
+    };
+    for (const b of blocks) {
+      if (a === b) continue;
+      const lb = b.local;
+      if (Math.abs(la.s1 - lb.s0) < eps) add('uPlus', la.t0, la.t1, lb.t0, lb.t1);
+      if (Math.abs(la.s0 - lb.s1) < eps) add('uMinus', la.t0, la.t1, lb.t0, lb.t1);
+      if (Math.abs(la.t1 - lb.t0) < eps) add('vPlus', la.s0, la.s1, lb.s0, lb.s1);
+      if (Math.abs(la.t0 - lb.t1) < eps) add('vMinus', la.s0, la.s1, lb.s0, lb.s1);
+    }
+    return { ...a, covers };
+  });
+}
+
+/**
+ * 逐块起坡。返回与 `roofGeometry` **同形**的对象（渲染层一行不用改）：
+ *   { kind, fascia:null, boxes(檐口/顶板), faces, tris, ridges, stats }
+ * 多块时檐口不止一块，所以 `fascia` 一律为空、全部塞进 `boxes`（kind = 'roof-fascia'）。
+ */
+function roofFromBlocks(blocks, topY, opt, colors) {
+  const ov = Math.max(0, num(opt.overhang, ROOF_DEFAULTS.overhang));
+  const fasciaThickness = num(opt.fascia, ROOF_DEFAULTS.fascia);
+  const flatThickness = num(opt.thickness, ROOF_DEFAULTS.thickness);
+  const flat = (opt.kind || ROOF_DEFAULTS.kind) === 'flat';
+  const boxes = [];
+  const faces = [];
+  const tris = [];
+  const ridges = [];
+  let maxRise = 0;
+
+  for (const b of withRoofSides(blocks)) {
+    const axis = ridgeAxisOf(b);
+    const ux = num(b.u && b.u.x, 1); const uy = num(b.u && b.u.y);
+    const vx = num(b.v && b.v.x); const vy = num(b.v && b.v.y, 1);
+    const cx = num(b.cx); const cy = num(b.cy);
+    const halfU = Math.max(1, num(b.halfU));
+    const halfV = Math.max(1, num(b.halfV));
+    const rotY = Math.atan2(-uy, ux);
+    // 局部 (u, v) → 世界。与 `rectDecompose#frameOf` 的 toWorld 同一口径。
+    const W = (su, sv, y) => [cx + ux * su + vx * sv, y, cy + uy * su + vy * sv];
+
+    // 每条边：只要邻居**挨着这条边**（哪怕只盖住一小段）就不出檐 ——
+    // 出檐会从邻居身子上面探出去一截，在 L 形内转角就是一片穿出对方屋面的破面
+    // （第一版按"整条被接住"判，实测截图里那块三角面非常显眼）。
+    const TOUCH = 0.2;
+    const out = {
+      uPlus: b.covers.uPlus > TOUCH ? 0 : ov,
+      uMinus: b.covers.uMinus > TOUCH ? 0 : ov,
+      vPlus: b.covers.vPlus > TOUCH ? 0 : ov,
+      vMinus: b.covers.vMinus > TOUCH ? 0 : ov,
+    };
+    const eU0 = -halfU - out.uMinus;
+    const eU1 = halfU + out.uPlus;
+    const eV0 = -halfV - out.vMinus;
+    const eV1 = halfV + out.vPlus;
+
+    // 脊方向：横边（垂直于脊的那两条）在脊沿 u 时是 u±、脊沿 v 时是 v±
+    const alongU = axis.alongU;
+
+    // 檐口板：这块自己的范围（不出檐的边上只到共边，两块檐口在共边处接上）
+    const fc = W((eU0 + eU1) / 2, (eV0 + eV1) / 2, topY - fasciaThickness / 2 + 1);
+    boxes.push({
+      kind: 'roof-fascia',
+      color: colors.fascia,
+      cx: fc[0], cy: fc[1], cz: fc[2],
+      sx: eU1 - eU0, sy: fasciaThickness, sz: eV1 - eV0,
+      rotY,
+    });
+
+    if (flat) {
+      const rb = W((eU0 + eU1) / 2, (eV0 + eV1) / 2, topY + flatThickness / 2);
+      boxes.push({
+        kind: 'roof',
+        color: colors.roofFlat,
+        cx: rb[0], cy: rb[1], cz: rb[2],
+        sx: eU1 - eU0, sy: flatThickness, sz: eV1 - eV0,
+        rotY,
+      });
+      continue;
+    }
+
+    // 坡高按**这块自己的**宽度算：一条楼里各臂坡度一致（同 riseRatio），天沟才对得上
+    const shortHalf = Math.min(eU1 - eU0, eV1 - eV0) / 2;
+    const rise = clamp(
+      shortHalf * num(opt.riseRatio, ROOF_DEFAULTS.riseRatio),
+      num(opt.minRise, ROOF_DEFAULTS.minRise),
+      num(opt.maxRise, ROOF_DEFAULTS.maxRise),
+    );
+    maxRise = Math.max(maxRise, rise);
+    const ridgeY = topY + rise;
+
+    // 归一到 (s = 脊方向坐标, t = 横向坐标)，下面一套公式两种朝向共用
+    const s0 = alongU ? eU0 : eV0;
+    const s1 = alongU ? eU1 : eV1;
+    const t0 = alongU ? eV0 : eU0;
+    const t1 = alongU ? eV1 : eU1;
+    const halfDepth = (t1 - t0) / 2;
+    const tMid = (t0 + t1) / 2;
+    // 四坡：脊两端各内收半个进深（两端留斜脊）
+    let sA = s0 + halfDepth;
+    let sB = s1 - halfDepth;
+    if (sB <= sA) { const mid = (s0 + s1) / 2; sA = mid; sB = mid; }   // 比宽还短 → 攒尖
+
+    const P = (s, t, y) => {
+      const su = alongU ? s : t;
+      const sv = alongU ? t : s;
+      return W(su, sv, y);
+    };
+    const eC1 = P(s1, t1, topY);   // +s +t
+    const eC2 = P(s1, t0, topY);   // +s -t
+    const eC3 = P(s0, t1, topY);   // -s +t
+    const eC4 = P(s0, t0, topY);   // -s -t
+    const rA = P(sA, tMid, ridgeY);
+    const rB = P(sB, tMid, ridgeY);
+
+    // 面序与单块路径完全一致（渲染层按面算法线，顺序变了会一半朝里）
+    faces.push([eC1, eC3, rA, rB]);
+    tris.push([eC1, eC3, rA], [eC1, rA, rB]);
+    faces.push([eC2, eC4, rA, rB]);
+    tris.push([eC2, eC4, rA], [eC2, rA, rB]);
+    // 端头收山（斜脊）：两端都收 —— 与邻居共用的那条边也收，
+    // 因为共边两侧的屋面都在**檐口标高**接上，收山只是一片斜脊，不会悬空
+    faces.push([eC1, eC2, rB]);
+    tris.push([eC1, eC2, rB]);
+    faces.push([eC3, eC4, rA]);
+    tris.push([eC3, eC4, rA]);
+    ridges.push([rA, rB]);
+  }
+
+  if (!faces.length && !boxes.length) return null;
+  return {
+    kind: flat ? 'flat' : 'gable',
+    fascia: null,
+    boxes,
+    faces,
+    tris,
+    ridges,
+    stats: { ridgeHeight: maxRise, eaveY: topY, ridgeY: topY + maxRise, roofBlocks: blocks.length },
+  };
+}
+
+/**
+ * 屋顶入口：能拆就逐块起坡，拆不动就走原来的整块路径。
+ *
+ * 拆分失败（没有墙 / 有斜边 / 引擎异常）**一律退回老路径** —— 外观视图不能因为
+ * 屋顶里的一个 NaN 就整块空掉。
+ */
+function roofForBuilding(floors, endpoints, topY, opt, colors) {
+  if (roofSplitEnabled()) {
+    try {
+      const fp = buildFootprint(floors);
+      const blocks = fp ? decomposeFootprint(fp, ROOF_SPLIT) : [];
+      if (blocks.length >= 2) {
+        const multi = roofFromBlocks(blocks, topY, opt, colors);
+        if (multi) return multi;
+      }
+    } catch (e) {
+      /* 拆不动就算了，下面还有整块路径 */
+    }
+  }
+  return roofGeometry(endpoints, topY, opt, colors);
 }
 
 // ── 主入口 ───────────────────────────────────────────────────────────────
@@ -597,7 +741,7 @@ export function buildBuildingShell(floors, options = {}) {
   }
 
   const roof = (opt.kind !== 'none' && wallEndpoints.length >= 3)
-    ? roofGeometry(wallEndpoints, topY, opt, colors)
+    ? roofForBuilding(ordered, wallEndpoints, topY, opt, colors)
     : null;
 
   // 包围盒（给相机取景 / 地面尺寸用）
@@ -608,7 +752,9 @@ export function buildBuildingShell(floors, options = {}) {
     min[1] = Math.min(min[1], y); max[1] = Math.max(max[1], y);
     min[2] = Math.min(min[2], z); max[2] = Math.max(max[2], z);
   };
-  const allBoxes = [...boxes, ...(roof ? [roof.fascia, ...(roof.boxes || [])] : [])];
+  // 屋顶里的檐口可能是**多块**（异形平面逐块起坡）：多块时 `roof.fascia` 是 null，
+  // 檐口都塞在 `roof.boxes` 里 —— 这里滤掉空值，两种形状共用一个循环。
+  const allBoxes = [...boxes, ...(roof ? [roof.fascia, ...(roof.boxes || [])].filter(Boolean) : [])];
   for (const b of allBoxes) {
     // 盒子有旋转：按四个角算轴对齐包围盒（少算会裁掉一角）
     const cos = Math.cos(b.rotY || 0);
@@ -651,6 +797,8 @@ export function buildBuildingShell(floors, options = {}) {
       ceilings: ceilingCount,
       boxes: allBoxes.length,
       roofTriangles: (roof?.tris || []).length,
+      // 屋顶拆成了几块（1 = 矩形楼走的整块路径；≥2 = 异形平面逐块起坡）
+      roofBlocks: roof?.stats?.roofBlocks || 0,
       height: bounds.size[1],
     },
   };

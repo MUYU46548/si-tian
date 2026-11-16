@@ -259,13 +259,31 @@ export function decomposeFootprint(fp, opts = {}) {
  * @returns {Array<{x:number,y:number}>} 两个端点
  */
 export function ridgeOfRect(r, kind = 'hip') {
-  const alongU = ridgeAlongU(r);
-  const dir = alongU ? r.u : r.v;
-  const half = (alongU ? r.halfU : r.halfV) * (kind === 'gable' ? 1 : 0.6);
+  const axis = ridgeAxisOf(r);
+  const dir = axis.dir;
+  const half = axis.halfLen * (kind === 'gable' ? 1 : 0.6);
   return [
     { x: r.cx - dir.x * half, y: r.cy - dir.y * half },
     { x: r.cx + dir.x * half, y: r.cy + dir.y * half },
   ];
+}
+
+/**
+ * 一块矩形的屋脊**方向**（不含"画多长"这件事）。
+ *
+ * 3D 屋顶也走这一条：地图符号上脊是横的、3D 里脊是竖的，是最容易被用户一眼看穿的错。
+ *
+ * @param {object} r `decomposeRing / decomposeFootprint` 的一个元素
+ * @returns {{alongU:boolean, dir:{x:number,y:number}, halfLen:number}}
+ *   alongU = 脊沿 u 轴；dir = 脊方向的单位向量；halfLen = 脊方向的半长（cm）
+ */
+export function ridgeAxisOf(r) {
+  const alongU = ridgeAlongU(r);
+  return {
+    alongU,
+    dir: alongU ? r.u : r.v,
+    halfLen: alongU ? r.halfU : r.halfV,
+  };
 }
 
 /**

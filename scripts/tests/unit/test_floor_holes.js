@@ -35,15 +35,21 @@ async function loadEsm(absPath) {
   const build = (p) => {
     if (cache.has(p)) return Promise.resolve(cache.get(p));
     const src = fs.readFileSync(p, 'utf8');
-    const re = /from\s+'(\.\.?\/[^']+)';/g;
+    const re = /from\s+'([^']+)';/g;
     const jobs = [];
     let m;
     while ((m = re.exec(src))) jobs.push({ at: m.index, end: m.index + m[0].length, spec: m[1] });
     const parts = [];
     let last = 0;
     const chain = jobs.reduce((p2, j) => p2.then(async () => {
-      const child = path.resolve(path.dirname(p), j.spec);
-      const url = await build(child);
+      // 裸包名（buildShell → footprint → polygon-clipping）**不递归改写**：
+      // 那是 CJS，交回 Node 自己解析成 file:// URL，ESM 里默认导入就是 module.exports。
+      let url;
+      if (j.spec.startsWith('.')) {
+        url = await build(path.resolve(path.dirname(p), j.spec));
+      } else {
+        url = require('url').pathToFileURL(require.resolve(j.spec, { paths: [ROOT] })).href;
+      }
       parts.push(src.slice(last, j.at) + `from '${url}';`);
       last = j.end;
     }), Promise.resolve());

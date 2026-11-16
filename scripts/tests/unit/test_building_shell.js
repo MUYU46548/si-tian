@@ -46,6 +46,44 @@ function rectRoom({ w = 400, d = 300, t = 12, h = 280, elevation = 0, id = 'f1',
 }
 
 /**
+ * L 形外墙（中心线）：横臂 600×300 + 竖臂 300×600（两臂都是长条形 —— 正方形臂会退化成攒尖）。
+ * 这是"异形平面"的最小样本：外接矩形 600×900 会把凹口整个盖住，
+ * 而真实的房子是两条臂各一条脊。
+ */
+function lRoom({ t = 24, h = 280, elevation = 0, id = 'f1' } = {}) {
+  const pts = [
+    { x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 300 },
+    { x: 300, y: 300 }, { x: 300, y: 900 }, { x: 0, y: 900 },
+  ];
+  const walls = pts.map((p, i) => ({
+    id: `lw${i}`, start: { ...p }, end: { ...pts[(i + 1) % pts.length] }, thickness: t, height: h,
+  }));
+  return {
+    id, name: id, level: 0, elevation, walls, doors: [], windows: [], furniture: [],
+  };
+}
+
+/** 点 (x, y)（平面坐标）落在屋面的投影里吗 —— 只看 XZ 的三角形内外 */
+function roofCovers(faces, x, y) {
+  // 曲面点是 [x, 标高, z]，投影只看第 0 / 第 2 个分量
+  const inTri = (a, b, c) => {
+    const sign = (px, py, qx, qy, rx, ry) => (px - rx) * (qy - ry) - (qx - rx) * (py - ry);
+    const d1 = sign(x, y, a[0], a[2], b[0], b[2]);
+    const d2 = sign(x, y, b[0], b[2], c[0], c[2]);
+    const d3 = sign(x, y, c[0], c[2], a[0], a[2]);
+    const neg = d1 < 0 || d2 < 0 || d3 < 0;
+    const pos = d1 > 0 || d2 > 0 || d3 > 0;
+    return !(neg && pos);
+  };
+  for (const f of faces) {
+    for (let i = 1; i + 1 < f.length; i++) {
+      if (inTri(f[0], f[i], f[i + 1])) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 把 ESM 源码按 data URL 载入（本仓 .js 是 ESM，但 package.json 没写 type=module，
  * 直接 import 磁盘路径会被当 CJS 解析）。
  *
@@ -58,15 +96,21 @@ async function loadEsm(absPath) {
   const build = (p) => {
     if (cache.has(p)) return Promise.resolve(cache.get(p));
     const src = fs.readFileSync(p, 'utf8');
-    const re = /from\s+'(\.[^']+)';/g;
+    const re = /from\s+'([^']+)';/g;
     const jobs = [];
     let m;
     while ((m = re.exec(src))) jobs.push({ at: m.index, end: m.index + m[0].length, spec: m[1] });
     const parts = [];
     let last = 0;
     const chain = jobs.reduce((p2, j) => p2.then(async () => {
-      const child = path.resolve(path.dirname(p), j.spec);
-      const url = await build(child);
+      // 裸包名（buildShell → footprint → polygon-clipping）**不递归改写**：
+      // 那是 CJS，交回 Node 自己解析成 file:// URL，ESM 里默认导入就是 module.exports。
+      let url;
+      if (j.spec.startsWith('.')) {
+        url = await build(path.resolve(path.dirname(p), j.spec));
+      } else {
+        url = require('url').pathToFileURL(require.resolve(j.spec, { paths: [ROOT] })).href;
+      }
       parts.push(src.slice(last, j.at) + `from '${url}';`);
       last = j.end;
     }), Promise.resolve());
@@ -427,6 +471,84 @@ async function main() {
     const r = buildBuildingShell([f], { roof: { kind: 'none' }, ceilings: true, rooms: false });
     assert(r.surfaces.length === 0, `关掉后不该有房间面，实际 ${r.surfaces.length}`);
     return '0 块面';
+  });
+
+  // ── 异形平面逐块起坡（2026-11-16）─────────────────────────────────────
+  // 用户在 3D 里看到的是"屋顶有几条脊"：L 形楼必须两臂各一条、凹口不许被盖住。
+  // 判据落在**几何**上（脊的方向、凹口有没有屋面），不靠截图。
+
+  check('s24 L 形坡顶：拆成 2 块、两臂各一条脊（互相垂直）、凹口没被盖住', () => {
+    const r = buildBuildingShell([lRoom()], { roof: { kind: 'gable' } });
+    assert(r.roof.kind === 'gable', `屋顶类型，实际 ${r.roof.kind}`);
+    assert(r.stats.roofBlocks === 2, `应拆成 2 块，实际 ${r.stats.roofBlocks}`);
+    assert(r.roof.ridges.length === 2, `应两条脊，实际 ${r.roof.ridges.length}`);
+    const dirs = r.roof.ridges.map(([a, b]) => ({ x: b[0] - a[0], z: b[2] - a[2] }));
+    const lens = dirs.map((d) => Math.hypot(d.x, d.z));
+    assert(lens.every((l) => l > 50), `每条脊都得有长度，实际 ${lens.map((l) => l.toFixed(0))}`);
+    const cos = Math.abs(dirs[0].x * dirs[1].x + dirs[0].z * dirs[1].z) / (lens[0] * lens[1]);
+    assert(cos < 0.1, `两条脊应互相垂直（一个是横臂、一个是竖臂），实际 cos=${cos.toFixed(2)}`);
+    assert(!roofCovers(r.roof.faces, 520, 520), '凹口被屋顶盖住了（说明还是一整块外接矩形）');
+    assert(roofCovers(r.roof.faces, 520, 150), '横臂上应当有屋面');
+    assert(roofCovers(r.roof.faces, 150, 520), '竖臂上应当有屋面');
+    return `2 块 / 2 条脊（cos ${cos.toFixed(2)}）/ 凹口 0 覆盖`;
+  });
+
+  check('s25 矩形楼仍走整块路径（逐像素保护）：4 面 / 6 三角 / 脊高不变', () => {
+    const r = buildBuildingShell([rectRoom({ w: 1000, d: 800 })], { roof: { kind: 'gable' } });
+    assert(r.stats.roofBlocks === 0, `矩形楼不该拆分，实际 ${r.stats.roofBlocks}`);
+    assert(r.roof.faces.length === 4, `坡面数应为 4，实际 ${r.roof.faces.length}`);
+    near(r.roof.stats.ridgeHeight, (400 + ROOF_DEFAULTS.overhang) * ROOF_DEFAULTS.riseRatio, 1e-6, '脊高');
+    return '4 面 / 6 三角';
+  });
+
+  check('s26 排障口 __SITIAN_ROOF_SPLIT__=false：L 形退回整块（出图对照要用）', () => {
+    const prev = globalThis.window;
+    globalThis.window = { __SITIAN_ROOF_SPLIT__: false };
+    try {
+      const r = buildBuildingShell([lRoom()], { roof: { kind: 'gable' } });
+      assert(r.stats.roofBlocks === 0, `关掉拆分后不该拆，实际 ${r.stats.roofBlocks}`);
+      assert(r.roof.faces.length === 4, `老路径应是 4 个面，实际 ${r.roof.faces.length}`);
+      assert(roofCovers(r.roof.faces, 520, 520), '老路径本来就该把凹口盖住（这才叫"对照"）');
+      return '退回 4 面 / 凹口被盖（符合预期）';
+    } finally {
+      if (prev === undefined) delete globalThis.window;
+      else globalThis.window = prev;
+    }
+  });
+
+  check('s27 L 形平顶：每块一块顶板 + 一块檐口，凹口同样不铺', () => {
+    const r = buildBuildingShell([lRoom()], { roof: { kind: 'flat' } });
+    assert(r.stats.roofBlocks === 2, `应拆成 2 块，实际 ${r.stats.roofBlocks}`);
+    assert(r.roof.tris.length === 0, '平顶不该有三角面');
+    assert(r.roof.boxes.filter((b) => b.kind === 'roof').length === 2, '应两块顶板');
+    assert(r.roof.boxes.filter((b) => b.kind === 'roof-fascia').length === 2, '应两块檐口');
+    // 顶板都是矩形：凹口中心不该落在任何一块顶板里
+    const covers = r.roof.boxes.filter((b) => b.kind === 'roof').some((b) => {
+      const cos = Math.cos(b.rotY || 0);
+      const sin = Math.sin(b.rotY || 0);
+      const dx = 520 - b.cx;
+      const dz = 520 - b.cz;
+      const u = dx * cos - dz * sin;
+      const v = dx * sin + dz * cos;
+      return Math.abs(u) <= b.sx / 2 && Math.abs(v) <= b.sz / 2;
+    });
+    assert(!covers, '凹口被平顶盖住了');
+    return '2 顶板 + 2 檐口 / 凹口 0 覆盖';
+  });
+
+  check('s28 有斜边的楼（五边形）：拆不动就退回整块，不抛异常', () => {
+    const pts = [
+      { x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 300 },
+      { x: 450, y: 600 }, { x: 0, y: 600 },
+    ];
+    const walls = pts.map((p, i) => ({
+      id: `sw${i}`, start: { ...p }, end: { ...pts[(i + 1) % pts.length] }, thickness: 24, height: 280,
+    }));
+    const r = buildBuildingShell([{ id: 'f1', elevation: 0, walls, doors: [], windows: [] }], { roof: { kind: 'gable' } });
+    assert(r.stats.roofBlocks === 0, `斜边楼不该拆分，实际 ${r.stats.roofBlocks}`);
+    assert(r.roof.faces.length === 4, `应退回整块（4 面），实际 ${r.roof.faces.length}`);
+    assert(r.roof.tris.every((t) => t.every((p) => p.every((n) => Number.isFinite(n)))), '不许出现 NaN');
+    return '退回整块 / 4 面 / 无 NaN';
   });
 
   const bad = results.filter((r) => !r.ok);
