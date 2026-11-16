@@ -5,6 +5,11 @@
         <div class="header-title-row">
           <button class="back-btn" @click="store.backToArea()" title="返回区域地图">← 返回</button>
           <h2>{{ buildingNode?.name }} — 建筑内部</h2>
+          <!-- A21：整栋占地（世界平面尺寸）。读节点上的派生字段，指纹对不上时现算 -->
+          <span v-if="buildingFootprintText" class="building-size" data-testid="building-footprint"
+                :title="`整栋建筑的外接尺寸（含墙厚）与屋顶盖住的面积：${buildingFootprintText}`">
+            整栋 {{ buildingFootprintText }}
+          </span>
           <!-- 相邻建筑切换器 -->
           <div v-if="sameAreaBuildings.length > 1" class="building-switcher">
             <button class="building-switch-btn" @click="showBuildingMenu = !showBuildingMenu" title="切换同区域建筑">
@@ -648,6 +653,8 @@ import {
 import { COLUMN_DEFAULTS, columnAtPoint } from '../interior/columns.js';
 // 楼板洞口（2026-11-15，A16 余）：楼梯自动开的 + 手画的，合并口径只此一处
 import { allHolesForFloor, holeAtPoint, holePolygon, HOLE_DEFAULTS } from '../interior/floorHoles.js';
+// A21（2026-11-16）：整栋占地（节点上的派生字段 + 读侧兜底）
+import { readFootprint, describeFootprint } from '../interior/footprintField.js';
 import { getRoomPolygon, polygonArea, pointInPolygon } from '../utils/roomDetection';
 
 const props = defineProps({
@@ -941,6 +948,16 @@ const floors = computed(() => {
   const data = store.interiorData[props.buildingNode.id];
   return data?.floors || [];
 });
+
+// A21（2026-11-16）：整栋占地。优先用节点上的派生字段（指纹一致才作数），
+// 不一致/缺失时现算 —— 所以旧项目、外部改过的文件、还没刷新的现场都能显示正确尺寸。
+const buildingFootprint = computed(() => {
+  const node = props.buildingNode;
+  if (!node) return null;
+  const data = store.interiorData && store.interiorData[node.id];
+  return readFootprint(node, data && data.floors);
+});
+const buildingFootprintText = computed(() => describeFootprint(buildingFootprint.value));
 
 // 外观（3D）：没有墙就没什么可看的 —— 按钮灰禁并说明原因，不让用户点进去看空白
 const showExterior = ref(false);
@@ -3511,6 +3528,10 @@ onMounted(() => {
   window.addEventListener('sitian:label-styles-changed', onHistoryJump); // P0-2 标签样式
   window.addEventListener('sitian:marker-types-changed', onHistoryJump);  // P1-4 标记类型
 
+  // A21：旧项目 / 旧版本的项目文件里没有占地字段 —— 打开这栋楼时补算一次。
+  // 只改内存（随后续正常保存落盘），不单独占一条 undo；只读态由 store 自己拒绝。
+  if (props.buildingNode && props.buildingNode.id) store.refreshFootprint(props.buildingNode.id);
+
   // 初始取景：等画布尺寸就绪（同一帧里 clientWidth 可能是 0）
   requestAnimationFrame(() => fitToFloor());
 
@@ -3848,6 +3869,19 @@ defineExpose({ canvas, renderer });
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* A21（2026-11-16）：整栋占地，如“整栋 9.1 × 6.6 m · 60.4 ㎡”。等宽数字，改墙时不抖。 */
+.building-size {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--btn-bg);
+  border: 1px solid var(--nav-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .back-btn {

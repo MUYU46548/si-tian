@@ -10,9 +10,11 @@ import { guardWrite } from '../writeGate';
 import { normalizeColumn } from '../../interior/columns.js';
 import { normalizeHole } from '../../interior/floorHoles.js';
 import { normalizeFloorTexture, normalizeCeiling } from '../../interior/floorPatterns.js';
+// A21（2026-11-16）：节点上的建筑占地派生字段。纯函数算尺寸 + 指纹，写回由本模块负责。
+import { footprintField } from '../../interior/footprintField.js';
 
 export function createInteriorModule(ctx) {
-  const { execute, scheduleAutoSave } = ctx;
+  const { execute, scheduleAutoSave, nodes, isReadOnly } = ctx;
 
   const interiorData = ref({});
   const interiorReferenceImages = ref({});
@@ -436,10 +438,58 @@ export function createInteriorModule(ctx) {
     scheduleAutoSave();
   }
 
+  /**
+   * A21（2026-11-16）：把整栋的占地尺寸**写回节点**（`node.footprint = { w, h, area, stamp }`）。
+   *
+   * 何时调用：`notifyFloorChanged`（墙/门窗/房间的每条写口在 undo **与** redo 里都会走它），
+   * 以及 `removeFloor`（删掉一层会改变整栋并集）。
+   *
+   * 为什么不进 undo 栈：它是**派生缓存**，来源是墙。撤销墙的时候同一条路径会把字段算回旧值，
+   * 再压一条“更新占地”的命令只会让用户多按一次 Ctrl+Z（与 rooms 同一条纪律，见 setFloorRooms）。
+   *
+   * 为什么不写盘：本函数只改内存，落盘由各自的 `scheduleAutoSave` 带着走（节点 → 项目实体
+   * 那条路由 `nodeToProjectEntity` 原样带走未知字段）。删除楼层那条路自己不排保存，
+   * 所以这里显式补一次 —— 否则“删了一层、占地没变”会一直到下次保存才落定。
+   *
+   * 只读态直接返回：没有项目时不该改内存中的节点（读取侧 `readFootprint` 会现算，界面照样正确）。
+   */
+  function refreshFootprint(buildingId) {
+    if (!buildingId) return null;
+    // ⚠️ `writeGate` 导出的 `isReadOnly` 是 **computed ref**（不是函数）；老写法
+    // `typeof isReadOnly === 'function'` 恒为 false = 检查形同虚设（只读态照样改内存）。
+    // 这里两种形态都认：函数（调用）/ ref（读 .value）。
+    const readOnlyNow = () => {
+      if (typeof isReadOnly === 'function') return !!isReadOnly();
+      if (isReadOnly && typeof isReadOnly === 'object' && 'value' in isReadOnly) return !!isReadOnly.value;
+      return false;
+    };
+    if (readOnlyNow()) return null;
+    const list = nodes && Array.isArray(nodes.value) ? nodes.value : null;
+    if (!list) return null;
+    const node = list.find((n) => n && n.id === buildingId);
+    if (!node) return null;
+    const data = interiorData.value[buildingId];
+    const field = footprintField(data && data.floors);
+    if (!field) {
+      // 墙都删光了：字段一并删掉，不留 0×0 的占位（空值不落盘）
+      if (node.footprint) delete node.footprint;
+      return null;
+    }
+    const cur = node.footprint;
+    if (cur && cur.stamp === field.stamp && cur.w === field.w && cur.h === field.h
+      && cur.area === field.area) {
+      return cur;                       // 没变就不换引用，免得白触发一次渲染与 diff
+    }
+    node.footprint = field;
+    return field;
+  }
+
   // 墙几何变化后的回调（UI 注册 → 重算房间）。数据层不做检测（纯函数在 utils）。
   let floorChangeHook = null;
   function setFloorChangeHook(fn) { floorChangeHook = typeof fn === 'function' ? fn : null; }
   function notifyFloorChanged(buildingId, floorId) {
+    // A21：占地是整栋的派生字段 → 每次几何变化先刷新它（与有没有 UI 挂 hook 无关）
+    try { refreshFootprint(buildingId); } catch (e) { /* 派生失败不影响主操作 */ }
     if (!floorChangeHook) return;
     try { floorChangeHook(buildingId, floorId); } catch (e) { /* 重算失败不影响主操作 */ }
   }
@@ -454,6 +504,9 @@ export function createInteriorModule(ctx) {
     data.floors.splice(idx, 1);
     // 重新编号
     data.floors.forEach((f, i) => f.level = i);
+    // A21：整栋并集变了（删掉的这层可能有墙）→ 重算占地。floorId 传 null：
+    // 那一层已经不存在了，UI 侧的房间重算不该去碰它（hook 里按 id 过滤）。
+    notifyFloorChanged(buildingId, null);
     scheduleAutoSave();
   }
 
@@ -1085,6 +1138,9 @@ export function createInteriorModule(ctx) {
     updateHole,
     removeHole,
     setFloorChangeHook,
+    // A21（2026-11-16）：整栋占地派生字段。正常是几何一变自动刷新；
+    // 这个出口给“打开建筑内部时补算一次”（旧项目/旧版本字段缺失），以及给用例直接核对。
+    refreshFootprint,
     ensureFloorArrays,
     addFurniture,
     addFurnitureBatch,

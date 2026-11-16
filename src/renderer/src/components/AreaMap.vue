@@ -1046,6 +1046,9 @@ let _fpCache = new Map();
 
 /** 楼层的占地（世界 = 建筑内部局部 cm 坐标，不是地图坐标） */
 function footprintFor(node) {
+  // A21（2026-11-16）：节点上另有 `node.footprint = { w, h, area, stamp }` —— 那是**尺寸**
+  // （给信息条 / 3D / 统计用）。画符号要的是整圈轮廓（ring / polygons / rect / bbox），
+  // 尺寸给不出来，所以这里照旧从墙算，别拿字段去顶替（顶替的结果是只剩一个方框）。
   if (!node || node.layer !== 'building') return null;
   if (_fpCache.has(node.id)) return _fpCache.get(node.id);
   const data = store.interiorData && store.interiorData[node.id];

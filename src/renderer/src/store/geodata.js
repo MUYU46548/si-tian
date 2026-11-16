@@ -123,7 +123,7 @@ export const useGeodataStore = defineStore('geodata', () => {
   // 生成地形时同一条 undo 里写地形注记（2026-11-04；与河同一笔，写口在 provinceEditing）
   provinceGridOps.setTerrainLabels = provinceEditingModule.setTerrainLabels;
   const searchModule = createSearchModule({ nodes, scenarios: scenarioEditingModule.scenarios });
-  const interiorModule = createInteriorModule({ execute, scheduleAutoSave });
+  const interiorModule = createInteriorModule({ execute, scheduleAutoSave, nodes, isReadOnly: gateIsReadOnly });
   const areaEditingModule = createAreaEditingModule({ execute, scheduleAutoSave });
   // 太空实体编辑（B6 太空标记 / B7 部队卡片）：扁平数组，坐标系为“相对恒星”的系内偏移
   const spaceEditingModule = createSpaceEditingModule({ execute, scheduleAutoSave });
@@ -2019,6 +2019,11 @@ export const useGeodataStore = defineStore('geodata', () => {
   function entityNodeFields(e) {
     const fields = entityToNode(e);
     delete fields.coordinate;
+    // A21（2026-11-16）：建筑占地同样是**画布算出来的**派生字段，项目里那份只是保存时刻的快照。
+    // 若让它跟着实体回写画布，一次在途保存就能把刚撤销的字段改回旧值 —— 真机 drill 抓到过
+    // （撤销后 immediateW=924、0.9s 后 fieldW=1224，而墙本身已经回到 924）。
+    // 与坐标同一个口径：以画布为准，项目侧的值不回写。
+    delete fields.footprint;
     return fields;
   }
 
@@ -2048,6 +2053,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       const next = entityNodeFields(e);
       for (const k of Object.keys(n)) {
         if (k === 'coordinate') continue;   // 坐标以画布为准，本函数不碰（entityNodeFields 已摘掉它）
+        // A21：占地同理 —— 画布自己算，实体上那份可能是旧快照（它已不在 next 里，
+        // 若不时这里会把它当"实体上已没有的字段"删掉，等于每次保存都清一次字段）
+        if (k === 'footprint') continue;
         if (!(k in next)) delete n[k];      // 实体上已没有的字段也要跟着消失（否则留下陈旧值）
       }
       Object.assign(n, next);

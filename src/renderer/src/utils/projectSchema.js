@@ -483,6 +483,17 @@ export function stripEmptyEntityValues(project) {
     const noY = c === undefined || c === null || c.y === null || c.y === undefined;
     if (isPlainObject(c) && noX && noY) delete out.coordinate;
     if (out.sourcePath === '') delete out.sourcePath;
+    // A21（2026-11-16）：建筑占地是**派生字段**（由墙算出来）。没有墙就没有尺寸，
+    // 任何“宽度取不到/为 0”的形态都不该占一行 —— 读取侧会现算，留着只会让文件里
+    // 多出一串没人能验证的数字。
+    const fp = out.footprint;
+    if (fp !== undefined) {
+      const w = Number(fp && fp.w);
+      const h = Number(fp && fp.h);
+      if (!isPlainObject(fp) || !(w > 0) || !(h > 0) || typeof fp.stamp !== 'string' || !fp.stamp) {
+        delete out.footprint;
+      }
+    }
     entities[id] = out;
   }
   return { ...project, entities };
@@ -604,6 +615,25 @@ export function validateProject(raw) {
       origin: value.origin === 'obsidian' ? 'obsidian' : 'project',
       sourcePath: typeof value.sourcePath === 'string' ? value.sourcePath : '',
     };
+    // A21（2026-11-16）：建筑占地是派生字段。形状不对（缺 stamp / 宽高不是正数）就丢掉并记一条 ——
+    // 读取侧 `readFootprint` 会按墙现算，丢掉它不会让界面少任何信息，留着坏数据反而
+    // 会出现“地图上 9 米、信息条上 0 米”。
+    if (entities[id].footprint !== undefined) {
+      const fp = entities[id].footprint;
+      const w = Number(fp && fp.w);
+      const h = Number(fp && fp.h);
+      if (!isPlainObject(fp) || !(w > 0) || !(h > 0) || typeof fp.stamp !== 'string' || !fp.stamp) {
+        delete entities[id].footprint;
+        problems.push(`实体 ${id} 的 footprint 形状不合法，已丢弃（打开建筑内部时按墙重算）`);
+      } else {
+        entities[id].footprint = {
+          w: Math.round(w * 10) / 10,
+          h: Math.round(h * 10) / 10,
+          area: Math.max(0, Math.round(Number(fp.area) || 0)),
+          stamp: fp.stamp,
+        };
+      }
+    }
   }
   // 悬空 / 自引用 parentId
   for (const e of Object.values(entities)) {

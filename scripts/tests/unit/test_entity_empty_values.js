@@ -205,6 +205,21 @@ async function main() {
     return '4 种畸形输入都没抛';
   });
 
+  await check('A8 占地派生字段（A21）：宽度取不到 / 为 0 / 缺指纹 都不写进磁盘', () => {
+    const base = S.createEntity({ name: '戊', layer: 'building' });
+    const good = { ...base, id: 'b-good', footprint: { w: 912, h: 662, area: 603744, stamp: '1d1aa193' } };
+    const zero = { ...base, id: 'b-zero', footprint: { w: 0, h: 0, area: 0, stamp: 'x' } };
+    const noStamp = { ...base, id: 'b-nostamp', footprint: { w: 900, h: 600 } };
+    const out = S.stripEmptyEntityValues({
+      entities: { [good.id]: good, [zero.id]: zero, [noStamp.id]: noStamp },
+    });
+    assert('footprint' in out.entities['b-good'], '有尺寸的占地必须保留（这是 A21 的落盘形态）');
+    eq(out.entities['b-good'].footprint.w, 912, '宽度原样');
+    assert(!('footprint' in out.entities['b-zero']), '0x0 的占位不该写进磁盘（没有墙 = 没有尺寸）');
+    assert(!('footprint' in out.entities['b-nostamp']), '缺指纹就无法判断新鲜度，不许写');
+    return '保留 1 / 剥掉 2';
+  });
+
   // ══════════════════════════════════════════════════════════════
   // B. 没有完成态
   // ══════════════════════════════════════════════════════════════
