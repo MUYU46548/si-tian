@@ -30,11 +30,11 @@ const DIMETRIC_AZIMUTH = (Math.atan(2) * 180) / Math.PI;               // 63.434
 
 export const AXO_PRESETS = Object.freeze({
   /** 严格的等轴测：三轴等缩，正六边形投影关系（45° / asin(1/√3)） */
-  iso: { azimuth: 45, elevation: ISO_ELEVATION, label: '等轴测 45°/35.26°（三轴等缩）' },
+  iso: { azimuth: 45, elevation: ISO_ELEVATION, label: '等轴测 45°/35.26°（三轴等缩）', short: '等轴测 45°/35.26°' },
   /** 二测 2:1：进深压一半，日式/像素风插画常用（atan2 / 30°） */
-  dimetric: { azimuth: DIMETRIC_AZIMUTH, elevation: 30, label: '二测 2:1（进深压一半）' },
+  dimetric: { azimuth: DIMETRIC_AZIMUTH, elevation: 30, label: '二测 2:1（进深压一半）', short: '二测 2:1' },
   /** 俯视一点：60° 仰角，看屋顶为主（有院墙/庭院时用） */
-  high: { azimuth: 45, elevation: 60, label: '高视 45°/60°' },
+  high: { azimuth: 45, elevation: 60, label: '高视 45°/60°', short: '高视 45°/60°' },
 });
 
 function num(v, d = 0) {
@@ -115,20 +115,34 @@ export function axoFrame(bounds, opts = {}) {
     const uz = up.z / ul;
 
     let minR = Infinity; let maxR = -Infinity; let minU = Infinity; let maxU = -Infinity;
-    for (const sx of [-0.5, 0.5]) {
-      for (const sy of [-0.5, 0.5]) {
-        for (const sz of [-0.5, 0.5]) {
-          const px = size[0] * sx;
-          const py = size[1] * sy;
-          const pz = size[2] * sz;
-          const pr = px * rx + pz * rz;
-          const pu = px * ux + py * uy + pz * uz;
-          if (pr < minR) minR = pr;
-          if (pr > maxR) maxR = pr;
-          if (pu < minU) minU = pu;
-          if (pu > maxU) maxU = pu;
+    // 参与取景的点：传了 `points`（世界坐标）就按它算，否则用包围盒的 8 个角。
+    // 为什么允许传点：比例人/树是**斜着摆在世界里**的，拿它们的轴对齐包围盒并进楼的大盒子，
+    // 会把深度方向撑成两三倍（实测 900×650 的房子并进一个人一棵树 → 深度 650 → 1427），
+    // 楼在画面里白白小一半。按投影轮廓算才准。
+    const pts = Array.isArray(opts.points) && opts.points.length
+      ? opts.points
+      : (() => {
+        const out = [];
+        for (const sx of [-0.5, 0.5]) {
+          for (const sy of [-0.5, 0.5]) {
+            for (const sz of [-0.5, 0.5]) {
+              out.push([size[0] * sx, size[1] * sy, size[2] * sz]);
+            }
+          }
         }
-      }
+        return out;
+      })();
+    const relative = Array.isArray(opts.points) && opts.points.length > 0;
+    for (const p of pts) {
+      const px = num(p[0]) - (relative ? center[0] : 0);
+      const py = num(p[1]) - (relative ? center[1] : 0);
+      const pz = num(p[2]) - (relative ? center[2] : 0);
+      const pr = px * rx + pz * rz;
+      const pu = px * ux + py * uy + pz * uz;
+      if (pr < minR) minR = pr;
+      if (pr > maxR) maxR = pr;
+      if (pu < minU) minU = pu;
+      if (pu > maxU) maxU = pu;
     }
     spanW = (maxR - minR);
     spanH = (maxU - minU);

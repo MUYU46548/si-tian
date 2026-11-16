@@ -70,3 +70,15 @@ export function floorViewLabel(floors, pick) {
   const hit = floorViewOptions(floors).find((o) => o.id === String(pick));
   return hit ? hit.label : '';
 }
+
+/**
+ * 这一层的名字本身（不带“地面 3.00 m”那段补充说明）。
+ * 图注这类短字段用它 —— 一整条 `二层 · 地面 3.00 m` 塞进一行会挤掉别的字。
+ * @param {Array} floors
+ * @param {string} pick
+ * @returns {string}
+ */
+export function floorViewName(floors, pick) {
+  const label = floorViewLabel(floors, pick);
+  return label ? label.split(' · ')[0] : '';
+}

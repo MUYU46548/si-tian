@@ -104,7 +104,9 @@ def png_regions(data):
                     dark += 1
         return round(dark / max(1, total), 4)
 
-    return {'ok': True, 'w': width, 'h': height, 'ink': ink}
+    # rows / bpp 一并带出去：轴测插图那条演练要比两张图（关掉比例人再出一张），
+    # 逐像素对照得拿到原始行（以前只回 ink，看图的人没得比）
+    return {'ok': True, 'w': width, 'h': height, 'ink': ink, 'rows': rows, 'bpp': bpp}
 
 
 def main():

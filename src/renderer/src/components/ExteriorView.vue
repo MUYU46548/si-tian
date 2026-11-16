@@ -41,7 +41,7 @@
         </label>
         <button class="ex-btn" @click="exportAxo" :disabled="!ready || axoBusy || emptyBuilding"
                 data-testid="exterior-axo-export"
-                :title="emptyBuilding ? '这栋楼还没有墙，没有可出的图' : '把当前屋顶/楼层渲成一张轴测插图（3600×2400，带墨线），存成 PNG'">
+                :title="emptyBuilding ? '这栋楼还没有墙，没有可出的图' : '把当前屋顶/楼层渲成一张轴测插图（3600×2400），带墨线、比例人与树、底部图注，存成 PNG'">
           {{ axoBusy ? '出图中…' : '轴测出图' }}
         </button>
         <span v-if="axoMsg" class="ex-axo-msg" :class="{ err: axoMsgErr }" data-testid="exterior-axo-msg">{{ axoMsg }}</span>
@@ -83,10 +83,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import { buildBuildingShell, ROOF_DEFAULTS, SHELL_COLORS } from '../interior/buildShell';
 // 轴测插图：取景（纯函数、可单测）与离屏渲染分开，后者只在这里用（three 已是动态 import）
-import { axoFrame, axoCanvas } from '../interior/axonometric';
-import { renderAxoToDataUrl, AXO_COLORS } from '../interior/axoScene';
+import { axoFrame, axoCanvas, AXO_PRESETS } from '../interior/axonometric';
+import { renderAxoSheet, AXO_COLORS } from '../interior/axoScene';
+// 插图上的“配角”与图注（纯函数，Node 可测）：比例人/树摆在哪、墙面色阶、图注写什么
+import { axoCaptionModel, axoSheetPlan, propPlacements, propFitPoints, PROP_DEFAULTS } from '../interior/axoProps';
+import { footprintField, describeFootprint } from '../interior/footprintField';
 // 只看某一层（A20 余）：过滤口径是纯函数，Node 可测
-import { ALL_FLOORS, floorViewOptions, floorsForView, floorViewLabel } from '../interior/floorView';
+import { ALL_FLOORS, floorViewOptions, floorsForView, floorViewLabel, floorViewName } from '../interior/floorView';
 import { formatLength } from '../utils/interiorUnits';
 
 const props = defineProps({
@@ -115,6 +118,8 @@ const shellStats = ref({ floors: 0, walls: 0, openings: 0, height: 0 });
 
 // ===== 轴测出图（2026-11-15）=====
 const axoPreset = ref('iso');
+// 图注里“屋顶”那一格写什么（说人话：坡顶 / 平顶 / 不封顶）
+const ROOF_TEXT = Object.freeze({ gable: '坡顶', flat: '平顶', none: '不封顶（看内部）' });
 const axoBusy = ref(false);
 const axoMsg = ref('');
 const axoMsgErr = ref(false);
@@ -455,16 +460,52 @@ async function exportAxo() {
   // 让浏览器先把"出图中…"画出来，再做重活（否则用户以为按钮没反应）
   await new Promise((r) => setTimeout(r, 30));
   try {
+    // 排障/演练口（只读，不写任何数据）：真机要出“关掉比例人”“关掉图注”的对照图，
+    // 好让判据能证明这两样东西**真的画上去了**，而不是只看一张看着不错的图。
+    const over = (typeof window !== 'undefined' && window.__SITIAN_AXO_OPTS__) || {};
+    const preset = axoPreset.value;
     const canvasSize = axoCanvas('print');
-    const frame = axoFrame(lastShell.bounds, {
-      preset: axoPreset.value,
-      aspect: canvasSize.width / canvasSize.height,
-      margin: 0.08,
-      fit: 'silhouette',
+    // 比例人 / 树：站在楼的左前方。取景按**投影点**算（不是把包围盒并起来）——
+    // 并包围盒会把深度方向撑大，楼在画面里白白小一半
+    const placements = over.props === false
+      ? []
+      : propPlacements(lastShell.bounds, { preset });
+    const fitPoints = propFitPoints(lastShell.bounds, placements, preset);
+    const floorCount = Array.isArray(props.floors) ? props.floors.length : 0;
+    const fp = footprintField(props.floors);
+    const caption = over.caption === false ? null : axoCaptionModel({
+      name: props.buildingName,
+      floors: floorCount,
+      scope: floorViewName(props.floors, floorPick.value),
+      sizeText: describeFootprint(fp),
+      // 图注用**短名**：下拉里那句“（三轴等缩）”是给人挑角度的，塞进图注一格会溢出被省略号吃掉
+      projection: (AXO_PRESETS[preset] || AXO_PRESETS.iso).short
+        || (AXO_PRESETS[preset] || AXO_PRESETS.iso).label,
+      preset,
+      roofText: ROOF_TEXT[roofKind.value] || '',
+      personCm: PROP_DEFAULTS.personCm,
+      showPerson: placements.length > 0,
+      date: new Date().toISOString().slice(0, 10),
+      version: (typeof window !== 'undefined' && window.sitianAPI && window.sitianAPI.version) || '',
     });
-    const out = renderAxoToDataUrl(THREE, lastShell, {
+    const plan = axoSheetPlan(canvasSize, { caption: !!caption });
+    const frame = axoFrame(lastShell.bounds, {
+      preset,
+      // 宽高比按**去掉图注条之后**那块图面算 —— 不然图会被下方纸带压扁
+      aspect: plan.render.width / plan.render.height,
+      // 留白 10%：楼 + 人 + 树一起进画面，边上还要有气（8% 在二测/高视下贴边）
+      margin: 0.10,
+      fit: 'silhouette',
+      points: fitPoints,
+    });
+    const out = renderAxoSheet(THREE, lastShell, {
       frame,
-      canvas: canvasSize,
+      plan,
+      caption,
+      preset,
+      propsList: placements,
+      plinth: over.plinth,
+      shadow: over.shadow,
       roofColor: roofKind.value === 'flat' ? AXO_COLORS.roofFlat : AXO_COLORS.roofGable,
     });
     const name = `${props.buildingName || '建筑'}-轴测.png`.replace(/[\\/:*?"<>|]/g, '_');

@@ -132,6 +132,18 @@ check('x10 画幅预设：print 是 3:2 且 ≥3600 宽；未知名回落 print'
   return `${p.width}×${p.height}`;
 });
 
+check('x11 每个预设都有短名（图注一格放得下），且短名比 label 短', () => {
+  const names = Object.keys(AXO_PRESETS);
+  for (const key of names) {
+    const p = AXO_PRESETS[key];
+    assert(typeof p.short === 'string' && p.short.length > 0, `${key} 缺 short —— 图注里会退回去用长 label`);
+    // 图注一共 5 格、每格约 400px、字号约 34px ≈ 12~14 个汉字宽
+    assert(p.short.length <= 14, `${key} 的 short 有 ${p.short.length} 字，图注里会被省略号吃掉`);
+    assert(p.short.length <= p.label.length, `${key} 的 short 不该比 label 还长`);
+  }
+  return `${names.length} 个预设`;
+});
+
 const bad = results.filter((r) => !r.ok);
 console.log(`\n${bad.length ? '❌' : '✅'} axonometric 单测：${results.length - bad.length}/${results.length} 通过`);
 process.exit(bad.length ? 1 : 0);
