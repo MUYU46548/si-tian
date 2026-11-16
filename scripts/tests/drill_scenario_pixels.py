@@ -186,6 +186,7 @@ def main():
         scene_name = args[args.index('--scene') + 1]
     if '--tag' in args:
         tag = args[args.index('--tag') + 1]
+    dump_pre = '--dump-pre' in args
     # 2026-11-03 第 6 刀：`--raster` 决定拍**哪一层网格数据**。
     # 为什么加：默认政治档（landsea）拍不到“高度/浮雕”那一层，于是地形观感（等高线、晕渲、色带）
     # 一直没有目视判据 —— 之前所有关于“地形糊不糊”的讨论都建立在一张政治档截图上，那本身就是错的。
@@ -409,6 +410,24 @@ def main():
             ck('取像素指纹', False, fp)
             return 1
 
+        # `--dump-pre`：把**取指纹这一刻**的画布也落一张 PNG（2026-11-16 加）。
+        # 为什么需要：`hash` 与 PNG 不是同一时刻 —— 中间的“关标注 / 开标注”会强制重建一遍。
+        # 于是“hash 变了但 PNG 一样”有两种可能：① 真的没变（判据假红）；② 首帧画得不对、
+        # 被那次重建修好了（**用户看得到的陈旧**）。只有把这一帧也留底才能分辨。
+        if dump_pre:
+            pre_png = fetch_string(
+                cdp,
+                "document.querySelector('.scenario-map-container canvas').toDataURL('image/png').length",
+                lambda i, j: ("document.querySelector('.scenario-map-container canvas')"
+                              f".toDataURL('image/png').slice({i}, {j})"),
+                desc='首帧 PNG dataUrl',
+            )
+            import base64
+            pre_path = os.path.join(OUT_DIR, f'{tag}-prefp.png')
+            with open(pre_path, 'wb') as f:
+                f.write(base64.b64decode(pre_png.split(',', 1)[1]))
+            print(f'  → {pre_path}（取指纹那一刻的画布）', flush=True)
+
         on_ok, on = eval_json(cdp, TOGGLE_LABELS_JS + '(false)', required=('ok',), desc='关标注')
         time.sleep(0.4)
         wait_bakes(cdp)
@@ -480,6 +499,36 @@ def main():
             'colors': fp['colors'],
             'showLabelsToggle': bool(on_ok and on.get('ok')),
         }
+        # 视口块（`scenario/viewBake.js`）与浮雕槽的状态：**河层帧的清晰度取决于它们**，
+        # 而它们都是“相机静止后异步烘一块”的（260ms 延迟 + 分块精修）。只记 hash 不记状态，
+        # 一出差异就只能猜“是几何变了还是块没烘完”。
+        # ⚠️ `required=None`：这两口返回的是**任意 JSON**（不是带 `fails` 的判据对象）；
+        # 用默认 `required=('fails',)` 会直接被判失败、记账静默丢掉（第一版就这么丢的：
+        # 读出来 `viewBake: null`，看起来像“排障口没挂上”，其实是 `eval_json` 拒收）。
+        # ⚠️ 只记**摘要**，不记载荷：`patch.hm` 是整个高度图（34.8 万格 → 一条日志 2 MB，
+        # 直接把终端输出撑爆）。排障要的是“块有没有、烘到哪一步、机位键是什么”。
+        vb_ok, vb = eval_json(cdp, """(() => {
+          const s = window.__SITIAN_VIEW_BAKE__;
+          if (!s) return JSON.stringify(null);
+          const p = s.patch || null;
+          return JSON.stringify({
+            hasPatch: !!p,
+            patchKind: p ? p.kind : null,
+            patchKey: p ? p.key : null,
+            patchRect: p ? p.rect : null,
+            patchBake: p && p.canvas && p.canvas.__sitianBake
+              ? { done: p.canvas.__sitianBake.done, progress: p.canvas.__sitianBake.progress } : null,
+            key: s.key, busy: !!s.busy, lastMs: s.lastMs || 0,
+            patches: s.patches || 0, skipped: s.skipped || 0,
+          });
+        })()""", required=None, desc='视口块状态')
+        if vb_ok and vb:
+            record['viewBake'] = vb
+        rs_ok, rs = eval_json(cdp,
+                              "JSON.stringify((window.__SITIAN_RELIEF_SLOT__ && window.__SITIAN_RELIEF_SLOT__()) || null)",
+                              required=None, desc='浮雕槽状态')
+        if rs_ok and rs:
+            record['reliefSlot'] = rs
         if river_fp:
             record.update({
                 'riverHash': river_fp.get('hash'),

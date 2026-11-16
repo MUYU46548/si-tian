@@ -35,3 +35,7 @@ export function reliefRasterFor(hm, need, build) {
 export function reliefSlotInfo() {
   return { hasRaster: !!(slot.raster && slot.raster.canvas), width: slot.width, hm: slot.hm ? 'obj' : null };
 }
+
+// 排障口挂到 window（2026-11-16）：注释里一直写着 `window.__SITIAN_RELIEF_SLOT__`，但从没挂上过 ——
+// 真机探针读到的永远是 null，看起来像“没烘过”，实际是“没人挂”。烘焙宽度/命中与否要靠它判。
+if (typeof window !== 'undefined' && window) window.__SITIAN_RELIEF_SLOT__ = reliefSlotInfo;

@@ -88,6 +88,10 @@ MEASURE_JS = r"""
       provinces: (sm.baseMap && sm.baseMap.terrain ? sm.baseMap.terrain.length : 0),
       hmCells: (sm.baseMap && sm.baseMap.heightmap && sm.baseMap.heightmap.h ? sm.baseMap.heightmap.h.length : 0),
       rivers: (sm.baseMap && sm.baseMap.rivers ? sm.baseMap.rivers.length : 0),
+      // 排障口（2026-11-16）：高度图是不是被 Vue 代理了 —— `__v_skip` 有值 = 已标 raw。
+      // 读它是因为“Vue 响应式开销”在 CPU 采样里只表现为匿名 `get` / `isRef`，看不出是谁的数据。
+      hmRaw: !!(sm.baseMap && sm.baseMap.heightmap && sm.baseMap.heightmap.__v_skip),
+      hmReactive: !!(sm.baseMap && sm.baseMap.heightmap && typeof sm.baseMap.heightmap.__v_isReactive === 'boolean'),
     };
     stage('warm');
     for (let i = 0; i < 8; i++) { one('warm-' + i); await sleep(0); }

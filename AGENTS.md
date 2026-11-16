@@ -465,6 +465,27 @@
   ⚠️ 探针的两个口径坑：`Page.captureScreenshot` 与 `canvas.toDataURL` 的 PNG `colorType` 不同
   （2 = RGB / 6 = RGBA，见上一条纪律）；`__SITIAN_RASTER_SYNC__ = true` 会把“先粗后精”变成同步烘，
   读数会看到放大器级的假冻结 —— 报数前先确认口径。
+- **开图提速原型：让 Vue 不再代理底图几何（`markRaw`）—— 读数很大，但像素判据没全绿，故未提交**（2026-11-16）：
+  1 万省压测项目 `--profile-open` 量出开图段 CPU 7.4s 里 **Vue 响应式占 1.48s**
+  （`get` 844 + `isRef` 214 + `createReactiveObject` 419）——34.8 万高度格点 + 1 万个省的顶点每个都被包了
+  一层 Proxy，而画布每帧都要读一遍（**读的是数据，不是响应式**）。原型做法：在装载口（`loadScenarioState`
+  / `applyScenarioState` 三条分支）、`commitHeightmap`（底图侧）、底图导入处**原地** `markRaw(toRaw(...))`
+  高度图与 `terrain`（符合“底图写入一律整体替换”的纪律）。读数：**开图 5.9s → 2.4s**、开图段 CPU
+  7381 → **3446ms**、最长主线程空洞 4857 → **1214ms**、平移帧 61.8 → **24.3ms**。
+  🔴 两处**未解释**的像素差，所以补丁搁在 `build/geometry-raw/markRaw-prototype.patch`（未入库）：
+  ① 开图**首帧**少一个城镇名（872 px / 0.18%；定稿帧与 `v20261108l` 逐像素一致，且**只标其中一类也会出现**）；
+  ② **河层帧（3.5×）略糊**（`riverHash 7be13ef5 → 93949c84`，202,950 px 但平均通道差 0.51）。
+  ②已二分到**视口块那条路**：`__SITIAN_VIEW_PATCH__=false` 时两种代码都得到 `b107ace5`（逐像素一致），
+  开着块时 `patchRect / patchKey / patchBake.done` 两边完全相同，只有 `lastMs` 从 4416 → 222ms
+  （块烘快了 20 倍）—— 即“块内容一样、结果不同”，下一步量**整幅底图 canvas 的 `__sitianBake` 状态**与
+  patch 的 `bakeWidth`，并检查 `notifyRerender()` 之后的最后一帧是否真的画了块。
+  ⚠️ 顺带两条**探针纪律**（都是这一轮踩的）：`eval_json` 默认要求返回含 `fails` 的对象，读排障口要显式
+  `required=None`，否则记账静默变 `null`（看起来像“排障口没挂上”）；**排障口只记摘要**——
+  `viewBake.patch.hm` 是整个高度图，一条日志 2 MB，直接把终端输出撑爆。
+  🔧 这一轮留下的工具（都已入库、都不改渲染）：`drill_scenario_pixels.py --dump-pre`（把取指纹那一刻的
+  画布也落 PNG —— 正是它抓到“首帧少一个城镇名”）、同一脚本记 `viewBake` / `reliefSlot` 摘要、
+  `probe_scale_frames.py` 的 `counts.hmRaw / hmReactive`、`reliefRasterSlot.js` 把
+  `window.__SITIAN_RELIEF_SLOT__` 真正挂上（注释里写了名字却从没挂过，真机探针永远读到 null）。
 - **六个浮层的视觉直判**: `npm run test:overlays`（`drill_scenario_overlays_visual.py`）—— 每块面板 9 条：
   包装节点**恰好 1 个**（重复 = 两块面板精确重叠，2026-11-03 真实踩到）、可见面积、完整在视口内、
   `elementFromPoint(面板中心)` 没被盖、背景不透明、正文对比度 ≥4.5:1（暗色）、不整块挡死画布、
