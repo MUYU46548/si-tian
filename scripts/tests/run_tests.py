@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 回归测试编排器（阶段 2：回归测试基线，2026-08-16）
@@ -675,6 +675,35 @@ def apply_viewport(cdp):
         print(f'  ⚠️ 设置回归视口失败（将用默认视口跑，几何类用例可能误红）：{e}')
 
 
+def _error_overlay(cdp):
+    """用例结束时页面上有没有“应用遇到错误”面板（`errorReport.js` 的 `#sitian-error-overlay`）。
+
+    为什么放在**所有用例共用**的这一层（2026-11-24）：
+      0.5.1 用户实测里连着弹 `planetCount is not defined` / `getState is not defined`，
+      而当时 178 条用例是**全绿**的。原因不是用例写得差，而是**没有一条用例看过这个面板**
+      （全仓 `sitian-error-overlay` 命中数 = 0）：每个用例只验自己那几步，
+      而这两处崩溃发生在“行星 ≤ 2 颗时画名字”“底图带 Azgaar 数据时画边界层”这类
+      **只有特定数据形状才会走到**的分支上 —— 用例自己的断言根本不会碰到。
+      于是“页面炸了”这件事在测试侧完全不可见，只排队等用户手点。
+
+    返回 `''` = 干净；否则返回一段可读摘要（面板里的消息行）。
+    读不到（页面已崩/无 cdp）时返回 `''`（不把读失败算成产品红）。
+    """
+    try:
+        raw = cdp.eval("""(() => {
+          const el = document.getElementById('sitian-error-overlay');
+          if (!el) return '';
+          const pre = el.querySelector('[data-role=detail]');
+          return (pre && pre.textContent ? pre.textContent : '(无详情)').slice(0, 600);
+        })()""")
+    except Exception:
+        return ''
+    if not isinstance(raw, str):
+        return ''
+    return ' / '.join(line.strip() for line in raw.splitlines()
+                      if line.strip().startswith(('消息:', '组件:', '钩子:')))[:400]
+
+
 def _reload_page(cdp):
     """用例之间刷新页面（隔离状态）+ 等数据就绪 + 重开 harness 项目。
 
@@ -981,6 +1010,18 @@ def main():
             try:
                 mod = load_case(os.path.join(cases_dir, cf))
                 ok, detail = mod.run(cdp)
+                # 🔴 全局错误面板判据（2026-11-24）：
+                # 0.5.1 用户实测里连着弹 `planetCount is not defined` / `getState is not defined`，
+                # 而**当时 178 条用例全绿** —— 因为窗口顶部那块“应用遇到错误”面板（errorReport.js）
+                # **没有一条用例查过**（全仓 `sitian-error-overlay` 命中数 = 0）。
+                # 一条用例只验自己那几步，验不到“画布某个分支抛了 ReferenceError 然后被吞掉”。
+                # 所以这里加**所有用例共用的**一层：用例自称通过时，再看页面上有没有错误面板；
+                # 有就翻红，并把面板里的消息一起报出来（便于直接定位）。
+                if ok:
+                    been = _error_overlay(cdp)
+                    if been:
+                        ok = False
+                        detail = f'页面弹了错误面板（用例自身步骤都过了，但渲染层抛了未捕获异常）：{been}'
                 if ok:
                     passed += 1
                     print(f'  ✅ {name} — {detail}')

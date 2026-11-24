@@ -221,8 +221,12 @@ const planetLayouts = computed(() => {
     if (!moonsByParent.has(moon.parentId)) moonsByParent.set(moon.parentId, []);
     moonsByParent.get(moon.parentId).push(moon);
   }
-  const planetCount = layouts.length;
-  for (let pi = 0; pi < planetCount; pi++) {
+  // 快照：这里只装行星（卫星在后面 push 进同一个数组），所以先记下长度，
+  // 避免遍历时把刚 push 的卫星也当成母行星再绕一圈。
+  // 快照：这里只装行星（卫星在后面 push 进同一个数组），所以先记下长度，
+  // 避免遍历时把刚 push 的卫星也当成母行星再绕一圈。
+  const hostCount = layouts.length;
+  for (let pi = 0; pi < hostCount; pi++) {
     const planet = layouts[pi];
     const moons = moonsByParent.get(planet.id);
     if (!moons) continue;
@@ -244,6 +248,13 @@ const planetLayouts = computed(() => {
   }
   return layouts;
 });
+
+// 行星条数（**不含卫星**）：只用于“行星名怎么排”这一条观感判断。
+// 🔴 0.5.1 崩溃回归：这里之前直接用了 `planetCount`，而那个名字只在 `planetLayouts`
+//    **computed 的回调内部**声明过（局部 const），`drawPlanets` 里读它 = 读一个不存在的全局 →
+//    1~2 颗行星的系里一画名字就 ReferenceError（`planetCount is not defined`）。
+//    另：口径必须是“非卫星”，用 `planetLayouts.length` 会把卫星算进去，两套排字规则跟着漂。
+const planetCount = computed(() => planetLayouts.value.filter((p) => !p.isMoon).length);
 
 // “设为卫星”母行星候选：系内恒星直接子，排除自身（卫星不能绕自己）
 const pickHostCandidates = computed(() =>

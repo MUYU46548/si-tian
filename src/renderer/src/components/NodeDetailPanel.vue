@@ -491,6 +491,7 @@
 </template>
 
 <script setup>
+import { targetMatches, targetClosest } from '../utils/eventTarget';
 import { iconSvg } from '../utils/iconSvg';
 import Icon from './Icon.vue';
 import NotePicker from './NotePicker.vue';
@@ -1086,7 +1087,8 @@ function openInObsidian(linkName) {
 
 // 事件委托处理点击
 function handlePanelClick(e) {
-  const wikilink = e.target.closest('.wikilink');
+  // `e.target` 可能是非元素（合成/程序化派发）→ 防御式取，别让一次点击炸掉整个面板
+  const wikilink = targetClosest(e.target, '.wikilink');
   if (wikilink) {
     e.preventDefault();
     const linkName = wikilink.getAttribute('data-link');

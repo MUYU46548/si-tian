@@ -454,6 +454,7 @@
 </template>
 
 <script setup>
+import { targetMatches } from './utils/eventTarget';
 import { iconSvg } from './utils/iconSvg';
 // 星系/星域视图的布局 + 凸包 + 配色 + 航道色：**与画布共用唯一实现**
 // （§bug 导出与画布不同源，2026-10-18 第十二修：原先 App.vue 自带第二套 convexHull / 配色 / 星云）
@@ -764,7 +765,9 @@ function toggleDropdown(level) {
 }
 
 function handleClickOutside(e) {
-  if (!e.target.closest('.breadcrumb-item')) {
+  // 🔴 `e.target` 不保证是元素（合成/程序化派发时是 window/document）→ 走防御式判定，
+  //    否则点一下就 `TypeError: e.target.closest is not a function`（2026-11-24 闸门抓到）
+  if (!targetMatches(e.target, '.breadcrumb-item')) {
     Object.keys(dropdowns).forEach(key => {
       dropdowns[key] = false;
     });

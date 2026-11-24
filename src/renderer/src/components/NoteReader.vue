@@ -27,6 +27,7 @@
 // ![[图]] 能显示；有返回栈。数据只走 `vaultIndexStore`（主进程只读 + 库根 containment），
 // 不 import geodata / projectStore，也不写任何笔记。
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { targetClosest } from '../utils/eventTarget';
 import { marked } from 'marked';
 import { useVaultIndexStore } from '../store/vaultIndex';
 import { OPEN_NOTE_EVENT } from '../utils/noteReader';
@@ -137,7 +138,8 @@ function close() {
 }
 
 function onContentClick(e) {
-  const a = e.target && e.target.closest ? e.target.closest('.note-wikilink') : null;
+  // 统一走 utils/eventTarget.js（本处原来的三元防御是同一件事的手写版，收口一份）
+  const a = targetClosest(e.target, '.note-wikilink');
   if (!a) return;
   e.preventDefault();
   openTarget(a.getAttribute('data-target') || '');

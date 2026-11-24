@@ -1070,6 +1070,7 @@
 </template>
 
 <script setup>
+import { targetMatches, targetClosest } from '../utils/eventTarget';
 import Icon from './Icon.vue';
 import { ref, computed, watch, reactive, onMounted, onUnmounted, nextTick } from 'vue';
 import { useGeodataStore } from '../store/geodata';
@@ -2405,8 +2406,9 @@ function onHistoryJump() { renderer.requestRender(); }
 
 // ===== 编辑面板拖拽 =====
 function handlePanelHeaderDrag(e) {
-  if (e.target.closest('button, input, select, textarea, a, label')) return;
-  const header = e.target.closest('.province-editor .editor-header');
+  // `e.target` 不保证是元素（程序化派发时是 window）→ 防御式取，避免一次拖拽炸掉整帧
+  if (targetMatches(e.target, 'button, input, select, textarea, a, label')) return;
+  const header = targetClosest(e.target, '.province-editor .editor-header');
   if (!header) return;
   const panel = header.closest('.province-editor');
   if (!panel) return;

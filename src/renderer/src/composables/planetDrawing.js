@@ -2082,46 +2082,6 @@ function getContrastColor(hex) {
   return luminance > 0.5 ? '#2D3436' : '#FFFFFF';
 }
 
-  return {
-    drawReferenceImage,
-    drawFog,
-    drawBackground,
-    drawTerrain,
-    drawElevation,
-    drawClimate,
-    drawPrecipitation,
-    drawTerrainLabels,
-    drawReliefIcons,
-    drawReliefTrail,
-    drawBrushTrail,
-    drawReliefSelection,
-    drawRivers,
-    drawRegions,
-    drawPlaces,
-    drawMarkers,
-    drawRoutes,
-    drawRoutePolyline,
-    drawTextOnPath,
-    drawClusters,
-    drawTextLabels,
-    drawEditHelpers,
-    drawSelectedHighlight,
-    drawSelectionHandles,
-    drawHeightmap,
-    drawHeightmapRaster,
-    heightmapOutlineStats,
-    drawHeightBrushPreview,
-    drawTerrainBrushPreview,
-    drawPoliticalBorders,
-    drawBiomeContours,
-    drawCoastlineAndRidges,
-    drawCultureReligionRegions,
-    getPolygonCenter,
-    darkenColor,
-    getContrastColor,
-  };
-}
-
 // ============================================================
 // Azgaar .map 参考图层（C: 政治实体 → A: 自然区划 → B: 山脊/海岸 → D: 文化/宗教）
 // ============================================================
@@ -2410,4 +2370,44 @@ function drawCultureReligionRegions(ctx) {
   }
 
   ctx.restore();
+}
+
+  return {
+    drawReferenceImage,
+    drawFog,
+    drawBackground,
+    drawTerrain,
+    drawElevation,
+    drawClimate,
+    drawPrecipitation,
+    drawTerrainLabels,
+    drawReliefIcons,
+    drawReliefTrail,
+    drawBrushTrail,
+    drawReliefSelection,
+    drawRivers,
+    drawRegions,
+    drawPlaces,
+    drawMarkers,
+    drawRoutes,
+    drawRoutePolyline,
+    drawTextOnPath,
+    drawClusters,
+    drawTextLabels,
+    drawEditHelpers,
+    drawSelectedHighlight,
+    drawSelectionHandles,
+    drawHeightmap,
+    drawHeightmapRaster,
+    heightmapOutlineStats,
+    drawHeightBrushPreview,
+    drawTerrainBrushPreview,
+    drawPoliticalBorders,
+    drawBiomeContours,
+    drawCoastlineAndRidges,
+    drawCultureReligionRegions,
+    getPolygonCenter,
+    darkenColor,
+    getContrastColor,
+  };
 }

@@ -1536,6 +1536,10 @@ function drawDragHighlight(ctx) {
   const centerX = cvs.clientWidth / 2 + vt.x;
   const centerY = cvs.clientHeight / 2 + vt.y;
   const worldLeft = -centerX / vt.scale;
+  // 🔴 2026-11-24：这里原来直接引用 `worldTop`，而那个名字只是 `drawGrid` 的**局部变量**
+  //    → 拖动家具一吸附就 ReferenceError（`worldTop is not defined`）。
+  //    视口反算口径与 drawGrid 必须一致（两边都从相机推世界矩形），否则吸附点会错位。
+  const worldTop = -centerY / vt.scale;
   if (isDraggingFurniture.value && gridSnapEnabled.value && dragPreviewPos.value && selectedFurniture.value) {
     const item = selectedFurniture.value;
     const snapX = Math.round(dragPreviewPos.value.x / step) * step;

@@ -24,6 +24,7 @@
 
 <script setup>
 import Icon from './Icon.vue';
+import { targetMatches } from '../utils/eventTarget';
 // U3: 统一右键菜单组件 — 配合 useContextMenu 使用，定位状态由 composable 管理
 const props = defineProps({
   state: { type: Object, required: true },
@@ -39,7 +40,9 @@ function onSelect(item) {
 }
 
 function onGlobalMouseDown(e) {
-  if (props.state.visible && !e.target.closest('.sitian-context-menu')) {
+  // `e.target` **不保证是元素**（程序化派发打到 window 上、合成事件、文本节点都没有 `closest`）
+  // → 统一走 utils/eventTarget.js 的防御式判定（2026-11-24 页面错误判据抓到过这里）。
+  if (props.state.visible && !targetMatches(e.target, '.sitian-context-menu')) {
     emit('close');
   }
 }

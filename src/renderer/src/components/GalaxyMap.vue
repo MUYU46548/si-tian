@@ -150,6 +150,7 @@ import { useLayersStore } from '../store/layers';
 // 叙事状态淡化（2026-09-24）：已毁灭/荒废/封印/失联的实体在画布上降视觉权重
 import { fadedAlpha } from '../utils/entityStatus';
 import { withAlpha, toHex6 } from '../utils/colorUtil';
+import { targetMatches } from '../utils/eventTarget';
 // 布局 / 凸包 / 配色 / 航道色：与“导出 PNG(全图)”**共用同一份实现**
 // （§bug 导出与画布不同源：这些原先在 App.vue 里各有一份，两边结果不一致且不报错）
 import {
@@ -1504,7 +1505,9 @@ function onNodeRemovedFromMap(e) {
 
 // ===== 键盘删除选中节点（Delete 键，多选时批量删除） =====
 function handleGlobalKeydown(e) {
-  if (e.target.closest('input, textarea, select')) return;
+  // `e.target` 在程序化派发（`window.dispatchEvent(new KeyboardEvent(...))`）时是 `window`，
+  // 没有 `closest` → 直接调会 TypeError 并弹错误面板。统一走 utils/eventTarget.js。
+  if (targetMatches(e.target, 'input, textarea, select')) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.value.size > 0) {
     e.preventDefault();
     const ids = [...selectedNodeIds.value];

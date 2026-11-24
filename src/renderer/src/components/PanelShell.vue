@@ -26,6 +26,7 @@
 </template>
 
 <script setup>
+import { targetMatches } from '../utils/eventTarget';
 import { ref } from 'vue';
 
 /**
@@ -54,8 +55,9 @@ const collapsed = ref(false);
 const dragPos = ref(null);
 
 function onHeaderMouseDown(e) {
-  // header 内交互元素（按钮/输入框等）不触发拖拽
-  if (e.target.closest('button, input, select, textarea, a, label')) return;
+  // header 内交互元素（按钮/输入框等）不触发拖拽。
+  // 🔴 `e.target` 不保证是元素（合成/程序化派发的 target 可能是 window）→ 走防御式判定。
+  if (targetMatches(e.target, 'button, input, select, textarea, a, label')) return;
   const panel = rootEl.value;
   if (!panel) return;
   e.preventDefault();
