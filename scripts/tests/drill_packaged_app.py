@@ -166,7 +166,17 @@ STATE_JS = """(() => {
     if (!ps) return JSON.stringify({ err: 'no-project-store' });
     const p = ps.project || null;
     const tip = (document.querySelector('.sample-tip') || {}).textContent || '';
-    if (!p) return JSON.stringify({ opened: false, tip });
+    if (!p) return JSON.stringify({ opened: false, tip,
+      lastError: ps.lastError || '',
+      saveStatus: ps.saveStatus,
+      openProgress: (typeof ps.openProgress === 'object' && ps.openProgress) || null,
+      openElapsedMs: ps.openProgress && ps.openProgress.startedAt
+        ? (Date.now() - ps.openProgress.startedAt) : null,
+      hasProjectOpenApi: !!(window.sitianAPI && window.sitianAPI.projectOpen),
+      hasSampleApi: !!(window.sitianAPI && window.sitianAPI.sampleProjectOpen),
+      hasSelectView: !!document.querySelector('.world-selector, .world-select'),
+      bodyHead: (document.body.innerText || '').slice(0, 200).replace(/\s+/g, ' '),
+    });
     const sc = p.scenarios || {};
     const bms = sc.baseMaps || {};
     const k = Object.keys(bms)[0] || '';
@@ -312,6 +322,24 @@ def main():
             print('打包版 CDP 未就绪（见 %s）' % os.path.join(OUT, 'electron.log'))
             return 1
         cdp = CDP(ws_url=find_page_ws(CDP_PORT, timeout=120, prefer_prefix='file://'))
+        # 🔴 headless/后台窗口下 `requestAnimationFrame` 可能**永不触发**（AGENTS.md 记过：
+        #    drill_room_materials 里 3D tick 就是这么挂住的）。而 projectStore 的
+        #    `nextPaint()` 用双层 rAF 等"下一帧再干活" —— rAF 不触发，整条打开流程就**永久停**
+        #    在"正在打开项目文件…"（实测 openElapsedMs=239013 而不返回，主进程却 21ms 就干完了）。
+        #    这里给 rAF 加一个 setTimeout 兜底，让演练在无帧环境下也能推进。
+        #    ⚠️ 这是**演练环境**的补丁，不是产品缺陷：真机窗口可见时 rAF 正常。
+        cdp.eval(
+            "(() => {"
+            " if (window.__RAF_FALLBACK__) return 'already';"
+            " const raf = window.requestAnimationFrame;"
+            " window.requestAnimationFrame = function (cb) {"
+            "  const id = setTimeout(() => { try { cb(performance.now()); } catch (e) {} }, 16);"
+            "  try { raf.call(window, () => { try { clearTimeout(id); } catch (e) {} }); } catch (e) {}"
+            "  return id;"
+            " };"
+            " window.__RAF_FALLBACK__ = true;"
+            " return 'installed';"
+            "})()")
         wait_for(cdp, "document.readyState === 'complete' && !!document.querySelector('.app-layout')",
                  timeout=180, desc='打包版挂载')
 
