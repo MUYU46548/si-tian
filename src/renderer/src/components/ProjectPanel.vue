@@ -141,9 +141,8 @@
         <div v-if="!proj.availableProjects.length" class="pp-empty">
           这个目录里还没有 .sitian 项目文件
         </div>
+        <template v-for="it in proj.availableProjects" :key="it.filePath">
         <div
-          v-for="it in proj.availableProjects"
-          :key="it.filePath"
           class="pp-item"
           :class="{ active: it.filePath === proj.filePath }"
           :title="it.filePath"
@@ -175,8 +174,15 @@
           ><Icon name="trash" :size="12" /><span class="pp-item-del-txt">删除</span></button>
         </div>
 
-        <!-- 删除项目的确认条 -->
-        <div v-if="pendingProjectDelete" class="pp-confirm pp-confirm-project" data-testid="pp-delete-confirm">
+        <!-- 🔴 删除项目的确认条（2026-11-24）：**紧跟被点的那一行**，而不是排在整张列表之后。
+             为什么：原来它渲染在整个列表末尾，实测 rect.bottom=801 而面板底边只到 750 ——
+             用户点完"删除"看到的是被面板下沿切掉半截的确认条（甚至完全在滚动区外），
+             读起来就是"点了没反应"。放在行内即可，`v-if` 保证同一时刻只有一条。 -->
+        <div
+          v-if="pendingProjectDelete && pendingProjectDelete.filePath === it.filePath"
+          class="pp-confirm pp-confirm-project"
+          data-testid="pp-delete-confirm"
+        >
           <div>
             把 <b>{{ pendingProjectDelete.label }}</b> 移到回收站？
             <div class="pp-confirm-sub">
@@ -198,6 +204,7 @@
             <button class="pp-btn" @click="pendingProjectDelete = null">取消</button>
           </div>
         </div>
+        </template>
       </div>
 
       <!-- 实体浏览器 -->
@@ -479,6 +486,16 @@ function askDeleteProject(it) {
     keepBackups: false,
   };
   setTip('请确认：删除后项目文件进系统回收站（可从回收站还原）');
+  // 🔴 必须把确认条**滚进视野**（2026-11-24 实测）：
+  //    确认条紧跟在被点的那一行之后。若那一行本来就在面板可视区靠下的位置
+  //    （或者用户是从列表底部往上点的），确认条会被面板下沿切掉半截、甚至完全在可视区外 ——
+  //    用户点完"删除"什么都没看见，读起来就是"点了没反应"，
+  //    然后他会去点**原来那个位置**（现在是一行项目，直接打开了别的项目）。
+  //    这不是美观问题，是"二次确认形同虚设"。
+  nextTick(() => {
+    const el = document.querySelector('[data-testid=pp-delete-confirm]');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  });
 }
 
 async function confirmDeleteProject() {
