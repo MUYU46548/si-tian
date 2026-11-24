@@ -292,32 +292,74 @@ async function gitSnapshot({ filePath, message = '司天快照' }) {
 }
 
 /**
- * 🔴 **删除项目（默认进回收站）** —— 2026-11-24 用户拍板：
- *   删除项目这个功能必须要有，默认移到回收站，否则整个软件都不完整（原话）。
+ * 🔴 **删除项目（默认进"应用自有回收站"，可在应用内撤回）** —— 2026-11-24 用户拍板两次：
+ *   ① 删除项目这个功能必须要有，默认移到回收站，否则整个软件都不完整。
+ *   ② 还原没做，因为司天内根本没还原按钮；难道指望用户去回收站自己找（可能有几千个文件）？
+ *      另外可以学同系列产品的做法，弄个输入项目名全名再确认删除。
  *
- * 为什么原先没有、现在必须有：
- *   产品一直只有"删除实体"与"删除世界卡片"，**项目文件本身没有任何删除入口** ——
- *   用户做完测试项目后只能在资源管理器里翻 `Documents/SiTianProjects/` 手删，
- *   或者靠"定位文件"这个隐藏出路。一个"新建了却删不掉"的软件确实不完整。
+ * 所以口径从"丢进系统回收站"改成**应用自己的回收站目录**：
+ *   `<项目目录>/.sitian-trash/<时间戳>/` 里放 `project.sitian` + `backups/` + `meta.json`。
+ *   删完在应用里点"撤回最近一次删除"就能原样搬回原位 —— 用户不需要离开软件去找。
  *
- * 口径（三条，都对应一条具体风险）：
- *   · **默认进回收站**（`shell.trashItem`），不是 `unlink` —— 删错了能从系统回收站捞回来。
- *     `trashItem` 失败（某些网络盘 / 权限不足）时**不自动降级成真删**：回收就报错，
- *     让用户自己决定要不要硬删（下面 `hard` 分支），绝不"悄悄换个更狠的删法"。
- *   · **备份目录一起处理**：`<名>.sitian.backups/` 是同一个项目的附属物，只删主文件会留下
- *     一堆孤儿备份（用户看到的就是"删了还在"）。默认一起进回收站；
- *     `keepBackups: true` 时留着（有人只是想清掉"当前这个项目"，历史留底还想留）。
- *   · **主文件必须在 .sitian 白名单内**（`assertProjectPath`），备份目录由 `backupDirFor`
- *     算出来而不是由调用方传 —— 绝不允许外部传一个任意路径进来被删。
+ * 三条设计约束（每条都对应一个具体的翻车方式）：
+ *   · **搬，不删**：用 `rename`（同盘瞬时）。跨盘时 rename 会 EXDEV → 退化成 copy + 校验大小 + 才删源。
+ *     任何一步失败都回滚（把已搬的搬回去），绝不留"删了一半"。
+ *   · **记下原位**：`meta.json` 里存原始绝对路径 + 时间 + 是否带备份目录。
+ *     撤回时按它搬回去；原目录已被删就先重建。
+ *   · **有自己的上限**：回收站里最多留最近 `TRASH_KEEP` 份（默认 20），超出的才真删（还是只删
+ *     应用自己的回收站里的东西，不碰用户目录）。
  *
- * ⚠️ 调用方（渲染层）**必须自己先关项目**：本函数只碰磁盘，不碰内存态。
- *    正在打开的项目被删掉后，下一次自动保存会把文件重新写出来（"删了又回来"）。
+ * ⚠️ 调用方（渲染层）**必须先关项目**：本函数只碰磁盘，不碰内存态。
+ *    正在打开的项目被搬走后，下一次自动保存会把文件重新写出来（"删了又回来"）。
  *
- * @param {{filePath: string, keepBackups?: boolean, hard?: boolean}} payload
- * @param {(p: string) => Promise<void>} trashItem 注入的 `shell.trashItem`（便于纯 Node 单测）
- * @returns {{success: true, filePath: string, trashed: string[], keptBackups: string[], mode: string}}
+ * @param {{filePath: string, keepBackups?: boolean}} payload
+ * @returns {Promise<{success: true, filePath: string, trashDir: string, entryId: string,
+ *                    moved: string[], keptBackups: string[], mode: string}>}
  */
-async function deleteProjectFile(payload = {}, trashItem) {
+
+/** 应用回收站根目录（与项目同目录，跟着项目走，不污染用户其它位置） */
+function trashRootFor(filePath) {
+  return path.join(path.dirname(filePath), '.sitian-trash');
+}
+
+// 回收站保留份数。为什么是 20 而不是 3：项目备份轮转留 3 份是"最新状态回滚"，
+// 而这里是"我删错了要找回"，用户可能过几天才想起来 —— 20 份 × 单项目大小，
+// 对一个 8MB 的项目约 160MB 上限，可接受。
+const TRASH_KEEP = 20;
+
+/** 跨盘安全的移动：先 rename，EXDEV/EPERM 时退化为 copy → 校验大小 → 删源 */
+async function movePath(from, to) {
+  await ensureDir(path.dirname(to));
+  try {
+    await fs.rename(from, to);
+    return 'rename';
+  } catch (e) {
+    if (e && (e.code === 'EXDEV' || e.code === 'EPERM' || e.code === 'EACCES')) {
+      await copyThenRemove(from, to);
+      return 'copy';
+    }
+    throw e;
+  }
+}
+
+/** 目录/文件通用 copy → 比对大小 → 删源（任何一步失败都抛，由调用方回滚） */
+async function copyThenRemove(from, to) {
+  const st = await fs.stat(from);
+  if (st.isDirectory()) {
+    await fs.cp(from, to, { recursive: true, force: true });
+    // 校验：目标目录存在即认为搬完（逐文件比对代价太大，且源还没删，出错能回滚）
+    const st2 = await fs.stat(to);
+    if (!st2.isDirectory()) throw new Error(`复制目录后目标不存在：${to}`);
+  } else {
+    await fs.copyFile(from, to);
+    const a = await fs.stat(from);
+    const b = await fs.stat(to);
+    if (a.size !== b.size) throw new Error(`复制后大小不一致（${a.size} → ${b.size}）：${to}`);
+  }
+  await fs.rm(from, { recursive: true, force: true });
+}
+
+async function deleteProjectFile(payload = {}) {
   const filePath = assertProjectPath(payload.filePath);
   const exists = await fileExists(filePath);
   const backupDir = backupDirFor(filePath);
@@ -325,42 +367,190 @@ async function deleteProjectFile(payload = {}, trashItem) {
   if (!exists && !backupExists) {
     throw new Error(`项目文件不存在（可能已被删除或移动）：${filePath}`);
   }
-  const hard = payload.hard === true;
-  if (hard) {
-    // 真删：**必须显式要求**（UI 上是一条单独的、带二次确认的选项）
-    throw new Error('不支持永久删除（避免误操作）—— 请使用默认的"移到回收站"，'
-      + '确需彻底删除请到系统回收站里清空');
-  }
-  if (typeof trashItem !== 'function') {
-    throw new Error('当前环境不支持"移到回收站"（shell.trashItem 不可用）');
+  if (payload.hard === true) {
+    // 永久删除：**不给做**。要彻底清理请到应用回收站目录里自己删（或清空回收站）。
+    throw new Error('不支持永久删除（避免误操作）—— 请使用默认的"删除（可撤回）"，'
+      + '确需彻底删除请到项目目录下的 .sitian-trash 里清理');
   }
 
-  const trashed = [];
+  // 一个删除动作 = 一个带时间戳的回收站条目
+  const entryId = stamp();
+  const trashDir = path.join(trashRootFor(filePath), entryId);
+  await ensureDir(trashDir);
+
+  const base = path.basename(filePath);                 // 例：我的世界.sitian
+  const moved = [];
   const keptBackups = [];
-  if (exists) {
-    await trashItem(filePath);
-    trashed.push(filePath);
-  }
-  if (backupExists) {
-    if (payload.keepBackups === true) {
-      keptBackups.push(backupDir);
-    } else {
-      await trashItem(backupDir);
-      trashed.push(backupDir);
+  const plan = [];                                      // [{from, to}] —— 用于回滚
+
+  try {
+    if (exists) {
+      const to = path.join(trashDir, base);
+      plan.push({ from: filePath, to });
+      await movePath(filePath, to);
+      moved.push(filePath);
     }
+    if (backupExists) {
+      if (payload.keepBackups === true) {
+        keptBackups.push(backupDir);
+      } else {
+        const to = path.join(trashDir, base + '.backups');
+        plan.push({ from: backupDir, to });
+        await movePath(backupDir, to);
+        moved.push(backupDir);
+      }
+    }
+    // 自证：主文件确实不在原位了（否则上层会以为删成功、下一次保存又把它写回来）
+    if (await fileExists(filePath)) {
+      throw new Error(`搬走后文件仍在原位：${filePath}（可能被占用）`);
+    }
+  } catch (err) {
+    // 🔴 回滚：把已经搬走的按**倒序**搬回去。宁可让用户看到一次失败，也不留半删状态。
+    for (const step of plan.slice().reverse()) {
+      try {
+        if (await fileExists(step.to)) await movePath(step.to, step.from);
+      } catch (rollbackErr) {
+        // 回滚也失败：把这个信息带进错误里（否则用户看到"删除失败"却发现文件也不见了）
+        err.message += `；回滚 ${step.from} 也失败：${(rollbackErr && rollbackErr.message) || rollbackErr}`;
+      }
+    }
+    throw err;
   }
-  // 自证：主文件确实不在原位了（否则上层会以为删成功、下一次保存又把它写回来）
-  if (await fileExists(filePath)) {
-    throw new Error(`移到回收站后文件仍在原位：${filePath}（可能被占用）`);
-  }
+
+  // 记下原位 —— 撤回就靠它
+  const meta = {
+    id: entryId,
+    filePath,
+    base,
+    deletedAt: new Date().toISOString(),
+    keepBackups: payload.keepBackups === true,
+    moved,
+  };
+  await fs.writeFile(path.join(trashDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf-8');
+
+  // 轮转：回收站里只留最近 TRASH_KEEP 份（按目录名 = 时间戳排序）
+  let pruned = 0;
+  try {
+    const root = trashRootFor(filePath);
+    const entries = (await fs.readdir(root, { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+    for (const name of entries.slice(0, Math.max(0, entries.length - TRASH_KEEP))) {
+      await fs.rm(path.join(root, name), { recursive: true, force: true }).catch(() => {});
+      pruned++;
+    }
+  } catch (e) { /* 轮转失败不影响删除本身 */ }
+
   return {
     success: true,
     filePath,
-    trashed,
+    trashDir,
+    entryId,
+    moved,
     keptBackups,
-    mode: 'trash',
+    pruned,
+    mode: 'app-trash',
   };
 }
+
+/**
+ * **撤回最近一次删除**（或指定某一条）。照同系列产品的做法：
+ * 应用内一键搬回原位，不让用户去系统回收站里翻。
+ *
+ * @param {{filePath?: string, entryId?: string}} payload
+ *        `filePath` = 项目原本的路径（用来定位 `.sitian-trash`），可省（只有一份回收站时自动找）
+ * @returns {Promise<{success: true, restored: string[], entryId: string, filePath: string}>}
+ */
+async function restoreDeletedProject(payload = {}) {
+  // 定位回收站：优先用调用方给的原路径；否则在默认项目目录里找最近的一条
+  let root = '';
+  let wanted = payload.entryId ? String(payload.entryId) : '';
+  if (payload.filePath) {
+    root = trashRootFor(assertProjectPath(payload.filePath));
+  } else if (payload.trashRoot) {
+    root = String(payload.trashRoot);
+  } else {
+    throw new Error('撤回需要知道项目原本的路径（filePath）或回收站目录（trashRoot）');
+  }
+  let entries = [];
+  try {
+    entries = (await fs.readdir(root, { withFileTypes: true }))
+      .filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  } catch (e) {
+    throw new Error(`回收站目录不存在或不可读：${root}`);
+  }
+  if (!entries.length) throw new Error('回收站是空的，没有可撤回的删除');
+  // 默认取**最近**一条（目录名是时间戳，字典序即时间序）
+  const entryId = wanted && entries.includes(wanted) ? wanted : entries[entries.length - 1];
+  const entryDir = path.join(root, entryId);
+  const metaPath = path.join(entryDir, 'meta.json');
+  let meta;
+  try {
+    meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+  } catch (e) {
+    throw new Error(`回收站条目缺少 meta.json（无法知道原位置）：${entryDir}`);
+  }
+  if (!meta || !meta.filePath) throw new Error(`回收站条目信息不完整：${entryDir}`);
+
+  const restored = [];
+  const plan = [];
+  try {
+    // 主文件：回收站里的名字是 basename
+    const srcFile = path.join(entryDir, meta.base);
+    if (await fileExists(srcFile)) {
+      if (await fileExists(meta.filePath)) {
+        throw new Error(`原位置已经有同名文件，不能覆盖：${meta.filePath}`);
+      }
+      plan.push({ from: srcFile, to: meta.filePath });
+      await movePath(srcFile, meta.filePath);
+      restored.push(meta.filePath);
+    }
+    // 备份目录
+    const srcBk = path.join(entryDir, meta.base + '.backups');
+    if (await fileExists(srcBk)) {
+      const dstBk = backupDirFor(meta.filePath);
+      if (!(await fileExists(dstBk))) {
+        plan.push({ from: srcBk, to: dstBk });
+        await movePath(srcBk, dstBk);
+        restored.push(dstBk);
+      }
+    }
+  } catch (err) {
+    for (const step of plan.slice().reverse()) {
+      try { if (await fileExists(step.to)) await movePath(step.to, step.from); } catch (e2) { /* 尽力而为 */ }
+    }
+    throw err;
+  }
+
+  // 清掉这个回收站条目（它已经被搬回去了）
+  await fs.rm(entryDir, { recursive: true, force: true }).catch(() => {});
+  return { success: true, restored, entryId, filePath: meta.filePath };
+}
+
+/** 列出回收站里有什么（UI 要能显示"最近删掉的 N 个"，否则用户不知道能撤回什么） */
+async function listDeletedProjects(payload = {}) {
+  const roots = [];
+  if (payload.dir) roots.push(path.join(String(payload.dir), '.sitian-trash'));
+  if (payload.filePath) roots.push(trashRootFor(String(payload.filePath)));
+  const out = [];
+  for (const root of roots) {
+    let dirs = [];
+    try {
+      dirs = (await fs.readdir(root, { withFileTypes: true }))
+        .filter((d) => d.isDirectory()).map((d) => d.name).sort().reverse();
+    } catch (e) { continue; }
+    for (const name of dirs) {
+      try {
+        const meta = JSON.parse(await fs.readFile(path.join(root, name, 'meta.json'), 'utf-8'));
+        out.push({ entryId: name, trashRoot: root, ...meta });
+      } catch (e) { /* 坏条目跳过（不因为一条坏数据整张列表不可用） */ }
+    }
+  }
+  out.sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)));
+  return { success: true, items: out, roots };
+}
+
 
 /**
  * 注册 IPC。依赖全部注入（本文件不 require('electron')）。
@@ -630,10 +820,10 @@ function registerProjectHandlers(deps) {
     }
   });
 
-  // 🔴 删除项目（默认进回收站，2026-11-24 用户拍板 —— 见 deleteProjectFile 头注）
+  // 🔴 删除项目（进应用自有回收站，可在应用内撤回，2026-11-24 用户拍板两次）
   ipcMain.handle('project-delete', async (event, payload = {}) => {
     try {
-      const res = await deleteProjectFile(payload, shell.trashItem);
+      const res = await deleteProjectFile(payload);
       // 删的正好是"上次打开的项目" → 清掉这个记忆，否则下次启动会为一个不存在的路径报错
       try {
         if (getLastProjectPath() && path.resolve(getLastProjectPath()) === path.resolve(res.filePath)) {
@@ -641,6 +831,27 @@ function registerProjectHandlers(deps) {
         }
       } catch (e) { /* 清记忆失败不影响删除结果 */ }
       return ok(res);
+    } catch (err) {
+      return fail(err);
+    }
+  });
+
+  // 撤回最近一次删除（或指定条目）—— 用户原话："你难道指望用户去回收站自己找？"
+  ipcMain.handle('project-restore-deleted', async (event, payload = {}) => {
+    try {
+      const res = await restoreDeletedProject(payload);
+      try { await setLastProjectPath(res.filePath); } catch (e) { /* 记不住也行 */ }
+      return ok(res);
+    } catch (err) {
+      return fail(err);
+    }
+  });
+
+  // 回收站里有什么（UI 要能列出"最近删掉的 N 个"，否则用户不知道能撤回什么）
+  ipcMain.handle('project-list-deleted', async (event, payload = {}) => {
+    try {
+      const dir = payload.dir || getDefaultProjectDir();
+      return ok(await listDeletedProjects({ ...payload, dir }));
     } catch (err) {
       return fail(err);
     }
@@ -736,5 +947,9 @@ module.exports = {
   listBaseMapSources,
   readBaseMapSource,
   deleteProjectFile,
+  restoreDeletedProject,
+  listDeletedProjects,
+  trashRootFor,
+  TRASH_KEEP,
   registerProjectHandlers,
 };

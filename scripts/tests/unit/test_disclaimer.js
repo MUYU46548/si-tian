@@ -120,9 +120,12 @@ async function main() {
   });
 
   // ---------- 2. 文案骨架 ----------
-  check('t0 13 节骨架：节号 1..13 连续、标题非空、每节至少一个内容块', () => {
-    eq(DISCLAIMER_SECTION_COUNT, 13, '总节数');
-    eq(DISCLAIMER_FULL.length, 13, 'DISCLAIMER_FULL 长度');
+  // 2026-11-24：13 节 -> 12 节。用户拍板删掉了原第 12 节（适用法律与争议解决，
+  //    内含【待定：司法辖区】的空条款：留着一条"看起来像约定、其实什么都没约定"的条款
+  //    比不写更糟）。删完编号必须接上，所以这里守 12 节连续。
+  check('t0 12 节骨架：节号 1..12 连续、标题非空、每节至少一个内容块', () => {
+    eq(DISCLAIMER_SECTION_COUNT, 12, '总节数');
+    eq(DISCLAIMER_FULL.length, 12, 'DISCLAIMER_FULL 长度');
     DISCLAIMER_FULL.forEach((sec, i) => {
       eq(sec.n, i + 1, `第 ${i + 1} 节的编号`);
       assert(typeof sec.title === 'string' && sec.title.trim().length >= 2, `第 ${sec.n} 节标题为空`);

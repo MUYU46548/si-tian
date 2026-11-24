@@ -1,0 +1,11 @@
+{
+  "ts": "20261109-212025",
+  "targetWidth": 3840,
+  "images": [],
+  "notes": [
+    "sample-relief-off: 导出失败 timeout",
+    "sample-relief-on: 导出失败 timeout",
+    "real415-relief-off: 导出失败 timeout",
+    "运行失败：CDP target not found"
+  ]
+}

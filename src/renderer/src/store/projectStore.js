@@ -78,6 +78,12 @@ export const useProjectStore = defineStore('project', () => {
   // `active` 期间 `ProjectLoadingOverlay` 盖住整页；`text` 说清当前阶段（打开 → 读数据 → 绘制）。
   // ⚠️ 关键不是“有没有这个状态”，而是**它得先画出来再做重活** —— 见 `nextPaint()` 的注释。
   const openProgress = ref({ active: false, text: '', startedAt: 0 });
+  /**
+   * 最近一次删除（2026-11-24）：`{ filePath, label, entryId, trashDir, at }` 或 null。
+   * 为什么要有它：删完要给一条**就在手边的"撤回"**。用户原话
+   * 「还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找（可能有几千个文件）？」
+   */
+  const lastDeleted = ref(null);
 
   // ===== 计算属性 =====
   const isOpen = computed(() => !!project.value);
@@ -994,8 +1000,45 @@ export const useProjectStore = defineStore('project', () => {
     const res = await a.projectDelete({ filePath: path0, keepBackups: opts.keepBackups === true });
     if (res && res.success) {
       try { await refreshProjectList(); } catch (e) { /* 列表刷新失败不影响删除结果 */ }
+      // 记一下"刚删了什么"，撤回提示要用（用户原话：指望用户去回收站自己找？）
+      lastDeleted.value = {
+        filePath: path0,
+        label: (res && res.label) || path0.split(/[\\/]/).pop(),
+        entryId: (res && res.entryId) || '',
+        trashDir: (res && res.trashDir) || '',
+        at: new Date().toISOString(),
+      };
     }
     return res || { success: false, error: '删除失败' };
+  }
+
+  /**
+   * **撤回最近一次删除**（2026-11-24 用户拍板）：
+   * 「还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找（可能有几千个文件）？」
+   *
+   * 删除已经改成进**应用自有回收站**（`<项目目录>/.sitian-trash/<时间戳>/`），
+   * 所以撤回也在应用里点 —— 不需要离开软件、不需要在系统回收站里翻。
+   *
+   * @param {string} filePath 目标项目**原本**的路径（默认 = 刚删的那个）
+   */
+  async function restoreDeletedProject(filePath = '') {
+    const a = api();
+    if (!a || !a.projectRestoreDeleted) return { success: false, error: API_MISSING };
+    const target = filePath || (lastDeleted.value && lastDeleted.value.filePath) || '';
+    if (!target) return { success: false, error: '不知道要撤回哪一个（没有最近删除记录）' };
+    const res = await a.projectRestoreDeleted({ filePath: target });
+    if (res && res.success) {
+      lastDeleted.value = null;
+      try { await refreshProjectList(); } catch (e) { /* 列表刷新失败不影响撤回结果 */ }
+    }
+    return res || { success: false, error: '撤回失败' };
+  }
+
+  /** 列出回收站里有什么（UI 上给"最近删除的 N 个"，否则用户不知道能撤回什么） */
+  async function listDeletedProjects(dir = '') {
+    const a = api();
+    if (!a || !a.projectListDeleted) return { success: false, error: API_MISSING };
+    return a.projectListDeleted({ dir: dir || projectDir.value });
   }
 
   async function backupNow() {
@@ -1346,6 +1389,7 @@ export const useProjectStore = defineStore('project', () => {
   return {
     // state
     project, filePath, projectDir, availableProjects, saveStatus, lastSavedAt, lastError, dirty,
+    lastDeleted,
     openProgress,
     restoreLastProject,
     createEntities,
@@ -1356,7 +1400,8 @@ export const useProjectStore = defineStore('project', () => {
     importFromVault, mergeVaultPayload,
     // R15/A-0：笔记改名断线检测 + 重连（id 不变 → 编辑成果保留）
     scanBrokenLinks, relinkEntity,
-    refreshProjectList, chooseProjectDir, revealProject, deleteProject, backupNow, gitSnapshot, restoreProjectSnapshot,
+    refreshProjectList, chooseProjectDir, revealProject, deleteProject, restoreDeletedProject, listDeletedProjects,
+    backupNow, gitSnapshot, restoreProjectSnapshot,
     // entity CRUD
     getEntity, childrenOf, descendantsOf, parentCandidates, createEntity, updateEntity,
     renameEntity, deleteEntity, moveEntity, moveEntities, setEntityCoordinate, previewEntityId, importEntities,

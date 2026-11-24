@@ -1,0 +1,732 @@
+{
+  "at": "2026-11-15T13:19:33.411Z",
+  "shape": {
+    "file": "C:\\Users\\muyu\\Documents\\SiTianProjects\\绒花计划.sitian",
+    "bytes": 8250202,
+    "entities": 120,
+    "scenarios": 14,
+    "mapKey": "desite",
+    "provinces": 415,
+    "rivers": 573
+  },
+  "untouched": true,
+  "sha256": "e54cd5af3cf95b68b856496ae48eb27c555ed8ffcc77faf21d459fe6bf21c4e7",
+  "limits": {
+    "maxBytes": 6291456,
+    "keep": 50
+  },
+  "baseline": {
+    "count": 16,
+    "total": 3132177,
+    "baseTotal": 2345977,
+    "patchTotal": 785057,
+    "parts": [
+      {
+        "index": 0,
+        "at": "2026-10-27T06:50:06.804Z",
+        "label": "自动保存",
+        "changes": 10,
+        "baseBytes": 2345977,
+        "patchBytes": 19,
+        "total": 2345996
+      },
+      {
+        "index": 1,
+        "at": "2026-10-27T06:50:11.195Z",
+        "label": "自动保存",
+        "changes": 4,
+        "baseBytes": 0,
+        "patchBytes": 36069,
+        "total": 36069
+      },
+      {
+        "index": 2,
+        "at": "2026-11-04T05:02:04.961Z",
+        "label": "自动保存",
+        "changes": 2,
+        "baseBytes": 0,
+        "patchBytes": 539,
+        "total": 539
+      },
+      {
+        "index": 3,
+        "at": "2026-11-04T05:04:39.902Z",
+        "label": "自动保存",
+        "changes": 4,
+        "baseBytes": 0,
+        "patchBytes": 389,
+        "total": 389
+      },
+      {
+        "index": 4,
+        "at": "2026-11-04T06:37:26.932Z",
+        "label": "自动保存",
+        "changes": 4,
+        "baseBytes": 0,
+        "patchBytes": 182629,
+        "total": 182629
+      },
+      {
+        "index": 5,
+        "at": "2026-11-04T09:05:41.411Z",
+        "label": "自动保存",
+        "changes": 77,
+        "baseBytes": 0,
+        "patchBytes": 37773,
+        "total": 37773
+      },
+      {
+        "index": 6,
+        "at": "2026-11-04T09:07:43.896Z",
+        "label": "自动保存",
+        "changes": 34,
+        "baseBytes": 0,
+        "patchBytes": 19589,
+        "total": 19589
+      },
+      {
+        "index": 7,
+        "at": "2026-11-04T09:10:04.960Z",
+        "label": "自动保存",
+        "changes": 34,
+        "baseBytes": 0,
+        "patchBytes": 18922,
+        "total": 18922
+      },
+      {
+        "index": 8,
+        "at": "2026-11-04T09:20:09.885Z",
+        "label": "自动保存",
+        "changes": 3,
+        "baseBytes": 0,
+        "patchBytes": 326,
+        "total": 326
+      },
+      {
+        "index": 9,
+        "at": "2026-11-04T09:40:37.906Z",
+        "label": "自动保存",
+        "changes": 181,
+        "baseBytes": 0,
+        "patchBytes": 60365,
+        "total": 60365
+      },
+      {
+        "index": 10,
+        "at": "2026-11-04T09:42:31.093Z",
+        "label": "自动保存",
+        "changes": 74,
+        "baseBytes": 0,
+        "patchBytes": 29608,
+        "total": 29608
+      },
+      {
+        "index": 11,
+        "at": "2026-11-04T09:51:14.934Z",
+        "label": "自动保存",
+        "changes": 12,
+        "baseBytes": 0,
+        "patchBytes": 11361,
+        "total": 11361
+      },
+      {
+        "index": 12,
+        "at": "2026-11-04T09:54:57.934Z",
+        "label": "自动保存",
+        "changes": 125,
+        "baseBytes": 0,
+        "patchBytes": 44691,
+        "total": 44691
+      },
+      {
+        "index": 13,
+        "at": "2026-11-04T09:56:31.936Z",
+        "label": "自动保存",
+        "changes": 48,
+        "baseBytes": 0,
+        "patchBytes": 22210,
+        "total": 22210
+      },
+      {
+        "index": 14,
+        "at": "2026-11-04T09:58:13.947Z",
+        "label": "自动保存",
+        "changes": 3,
+        "baseBytes": 0,
+        "patchBytes": 326,
+        "total": 326
+      },
+      {
+        "index": 15,
+        "at": "2026-11-04T12:45:23.301Z",
+        "label": "自动保存",
+        "changes": 1150,
+        "baseBytes": 0,
+        "patchBytes": 320241,
+        "total": 320241
+      }
+    ]
+  },
+  "cases": [
+    {
+      "kind": "river",
+      "capMB": 3,
+      "edits": 60,
+      "finalSnapshots": 50,
+      "finalBytes": 2939384,
+      "keptEdits": 50,
+      "reachableSteps": 50,
+      "perEditPatchBytes": {
+        "min": 108,
+        "median": 9933,
+        "max": 12468
+      },
+      "restoreChecks": {
+        "total": 50,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 10973,
+          "kept": 17,
+          "bytes": 3143222
+        },
+        {
+          "k": 2,
+          "patchBytes": 10771,
+          "kept": 17,
+          "bytes": 3118344
+        },
+        {
+          "k": 3,
+          "patchBytes": 9695,
+          "kept": 18,
+          "bytes": 3128111
+        },
+        {
+          "k": 4,
+          "patchBytes": 9714,
+          "kept": 19,
+          "bytes": 3137897
+        },
+        {
+          "k": 5,
+          "patchBytes": 10421,
+          "kept": 18,
+          "bytes": 2988188
+        },
+        {
+          "k": 58,
+          "patchBytes": 9584,
+          "kept": 50,
+          "bytes": 2938942
+        },
+        {
+          "k": 59,
+          "patchBytes": 9905,
+          "kept": 50,
+          "bytes": 2939247
+        },
+        {
+          "k": 60,
+          "patchBytes": 10087,
+          "kept": 50,
+          "bytes": 2939384
+        }
+      ],
+      "kept": 50
+    },
+    {
+      "kind": "river",
+      "capMB": 6,
+      "edits": 60,
+      "finalSnapshots": 50,
+      "finalBytes": 2939384,
+      "keptEdits": 50,
+      "reachableSteps": 50,
+      "perEditPatchBytes": {
+        "min": 108,
+        "median": 9933,
+        "max": 12468
+      },
+      "restoreChecks": {
+        "total": 50,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 10973,
+          "kept": 17,
+          "bytes": 3143222
+        },
+        {
+          "k": 2,
+          "patchBytes": 10771,
+          "kept": 18,
+          "bytes": 3154065
+        },
+        {
+          "k": 3,
+          "patchBytes": 9695,
+          "kept": 19,
+          "bytes": 3163832
+        },
+        {
+          "k": 4,
+          "patchBytes": 9714,
+          "kept": 20,
+          "bytes": 3173618
+        },
+        {
+          "k": 5,
+          "patchBytes": 10421,
+          "kept": 21,
+          "bytes": 3184111
+        },
+        {
+          "k": 58,
+          "patchBytes": 9584,
+          "kept": 50,
+          "bytes": 2938942
+        },
+        {
+          "k": 59,
+          "patchBytes": 9905,
+          "kept": 50,
+          "bytes": 2939247
+        },
+        {
+          "k": 60,
+          "patchBytes": 10087,
+          "kept": 50,
+          "bytes": 2939384
+        }
+      ],
+      "kept": 50
+    },
+    {
+      "kind": "province",
+      "capMB": 3,
+      "edits": 60,
+      "finalSnapshots": 50,
+      "finalBytes": 2994458,
+      "keptEdits": 50,
+      "reachableSteps": 50,
+      "perEditPatchBytes": {
+        "min": 10964,
+        "median": 10965,
+        "max": 10965
+      },
+      "restoreChecks": {
+        "total": 50,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 10964,
+          "kept": 17,
+          "bytes": 3143213
+        },
+        {
+          "k": 2,
+          "patchBytes": 10964,
+          "kept": 17,
+          "bytes": 3118528
+        },
+        {
+          "k": 3,
+          "patchBytes": 10964,
+          "kept": 18,
+          "bytes": 3129564
+        },
+        {
+          "k": 4,
+          "patchBytes": 10964,
+          "kept": 19,
+          "bytes": 3140600
+        },
+        {
+          "k": 5,
+          "patchBytes": 10964,
+          "kept": 18,
+          "bytes": 2991434
+        },
+        {
+          "k": 58,
+          "patchBytes": 10965,
+          "kept": 50,
+          "bytes": 2994456
+        },
+        {
+          "k": 59,
+          "patchBytes": 10965,
+          "kept": 50,
+          "bytes": 2994458
+        },
+        {
+          "k": 60,
+          "patchBytes": 10965,
+          "kept": 50,
+          "bytes": 2994458
+        }
+      ],
+      "kept": 50
+    },
+    {
+      "kind": "province",
+      "capMB": 6,
+      "edits": 60,
+      "finalSnapshots": 50,
+      "finalBytes": 2994458,
+      "keptEdits": 50,
+      "reachableSteps": 50,
+      "perEditPatchBytes": {
+        "min": 10964,
+        "median": 10965,
+        "max": 10965
+      },
+      "restoreChecks": {
+        "total": 50,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 10964,
+          "kept": 17,
+          "bytes": 3143213
+        },
+        {
+          "k": 2,
+          "patchBytes": 10964,
+          "kept": 18,
+          "bytes": 3154249
+        },
+        {
+          "k": 3,
+          "patchBytes": 10964,
+          "kept": 19,
+          "bytes": 3165285
+        },
+        {
+          "k": 4,
+          "patchBytes": 10964,
+          "kept": 20,
+          "bytes": 3176321
+        },
+        {
+          "k": 5,
+          "patchBytes": 10964,
+          "kept": 21,
+          "bytes": 3187357
+        },
+        {
+          "k": 58,
+          "patchBytes": 10965,
+          "kept": 50,
+          "bytes": 2994456
+        },
+        {
+          "k": 59,
+          "patchBytes": 10965,
+          "kept": 50,
+          "bytes": 2994458
+        },
+        {
+          "k": 60,
+          "patchBytes": 10965,
+          "kept": 50,
+          "bytes": 2994458
+        }
+      ],
+      "kept": 50
+    },
+    {
+      "kind": "regen",
+      "capMB": 3,
+      "edits": 60,
+      "finalSnapshots": 3,
+      "finalBytes": 3007413,
+      "keptEdits": 3,
+      "reachableSteps": 3,
+      "perEditPatchBytes": {
+        "min": 54740,
+        "median": 403009,
+        "max": 407119
+      },
+      "restoreChecks": {
+        "total": 3,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 337765,
+          "kept": 8,
+          "bytes": 3143785
+        },
+        {
+          "k": 2,
+          "patchBytes": 362355,
+          "kept": 2,
+          "bytes": 2839255
+        },
+        {
+          "k": 3,
+          "patchBytes": 54740,
+          "kept": 3,
+          "bytes": 2894071
+        },
+        {
+          "k": 4,
+          "patchBytes": 385272,
+          "kept": 3,
+          "bytes": 2941578
+        },
+        {
+          "k": 5,
+          "patchBytes": 394857,
+          "kept": 2,
+          "bytes": 2919264
+        },
+        {
+          "k": 58,
+          "patchBytes": 407023,
+          "kept": 3,
+          "bytes": 3008034
+        },
+        {
+          "k": 59,
+          "patchBytes": 406436,
+          "kept": 2,
+          "bytes": 2952596
+        },
+        {
+          "k": 60,
+          "patchBytes": 54740,
+          "kept": 3,
+          "bytes": 3007413
+        }
+      ],
+      "kept": 3
+    },
+    {
+      "kind": "regen",
+      "capMB": 6,
+      "edits": 60,
+      "finalSnapshots": 14,
+      "finalBytes": 6073034,
+      "keptEdits": 14,
+      "reachableSteps": 14,
+      "perEditPatchBytes": {
+        "min": 54740,
+        "median": 403009,
+        "max": 407119
+      },
+      "restoreChecks": {
+        "total": 14,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 337765,
+          "kept": 17,
+          "bytes": 3470018
+        },
+        {
+          "k": 2,
+          "patchBytes": 362355,
+          "kept": 18,
+          "bytes": 3832449
+        },
+        {
+          "k": 3,
+          "patchBytes": 54740,
+          "kept": 19,
+          "bytes": 3887265
+        },
+        {
+          "k": 4,
+          "patchBytes": 385272,
+          "kept": 20,
+          "bytes": 4272613
+        },
+        {
+          "k": 5,
+          "patchBytes": 394857,
+          "kept": 21,
+          "bytes": 4667546
+        },
+        {
+          "k": 58,
+          "patchBytes": 407023,
+          "kept": 13,
+          "bytes": 6015381
+        },
+        {
+          "k": 59,
+          "patchBytes": 406436,
+          "kept": 13,
+          "bytes": 6018217
+        },
+        {
+          "k": 60,
+          "patchBytes": 54740,
+          "kept": 14,
+          "bytes": 6073034
+        }
+      ],
+      "kept": 14
+    },
+    {
+      "kind": "owner",
+      "capMB": 3,
+      "edits": 60,
+      "finalSnapshots": 50,
+      "finalBytes": 2474211,
+      "keptEdits": 50,
+      "reachableSteps": 50,
+      "perEditPatchBytes": {
+        "min": 250,
+        "median": 367,
+        "max": 442
+      },
+      "restoreChecks": {
+        "total": 50,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 369,
+          "kept": 17,
+          "bytes": 3132619
+        },
+        {
+          "k": 2,
+          "patchBytes": 367,
+          "kept": 18,
+          "bytes": 3133059
+        },
+        {
+          "k": 3,
+          "patchBytes": 351,
+          "kept": 19,
+          "bytes": 3133483
+        },
+        {
+          "k": 4,
+          "patchBytes": 369,
+          "kept": 20,
+          "bytes": 3133925
+        },
+        {
+          "k": 5,
+          "patchBytes": 367,
+          "kept": 21,
+          "bytes": 3134365
+        },
+        {
+          "k": 58,
+          "patchBytes": 260,
+          "kept": 50,
+          "bytes": 2473967
+        },
+        {
+          "k": 59,
+          "patchBytes": 369,
+          "kept": 50,
+          "bytes": 2474153
+        },
+        {
+          "k": 60,
+          "patchBytes": 353,
+          "kept": 50,
+          "bytes": 2474211
+        }
+      ],
+      "kept": 50
+    },
+    {
+      "kind": "owner",
+      "capMB": 6,
+      "edits": 60,
+      "finalSnapshots": 50,
+      "finalBytes": 2474211,
+      "keptEdits": 50,
+      "reachableSteps": 50,
+      "perEditPatchBytes": {
+        "min": 250,
+        "median": 367,
+        "max": 442
+      },
+      "restoreChecks": {
+        "total": 50,
+        "failed": 0,
+        "failures": []
+      },
+      "timeline": [
+        {
+          "k": 1,
+          "patchBytes": 369,
+          "kept": 17,
+          "bytes": 3132619
+        },
+        {
+          "k": 2,
+          "patchBytes": 367,
+          "kept": 18,
+          "bytes": 3133059
+        },
+        {
+          "k": 3,
+          "patchBytes": 351,
+          "kept": 19,
+          "bytes": 3133483
+        },
+        {
+          "k": 4,
+          "patchBytes": 369,
+          "kept": 20,
+          "bytes": 3133925
+        },
+        {
+          "k": 5,
+          "patchBytes": 367,
+          "kept": 21,
+          "bytes": 3134365
+        },
+        {
+          "k": 58,
+          "patchBytes": 260,
+          "kept": 50,
+          "bytes": 2473967
+        },
+        {
+          "k": 59,
+          "patchBytes": 369,
+          "kept": 50,
+          "bytes": 2474153
+        },
+        {
+          "k": 60,
+          "patchBytes": 353,
+          "kept": 50,
+          "bytes": 2474211
+        }
+      ],
+      "kept": 50
+    }
+  ]
+}

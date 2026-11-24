@@ -1,0 +1,137 @@
+diff --git a/src/renderer/src/store/geodataModules/scenarioEditing.js b/src/renderer/src/store/geodataModules/scenarioEditing.js
+index 9196e37..b86d027 100644
+--- a/src/renderer/src/store/geodataModules/scenarioEditing.js
++++ b/src/renderer/src/store/geodataModules/scenarioEditing.js
+@@ -3,7 +3,7 @@
+ // 所有 mutation 走 execute（redo 内写入，防双写铁律）
+ 
+ 
+-import { ref, toRaw } from 'vue';
++import { ref, toRaw, markRaw } from 'vue';
+ // 内存编辑闸门：本模块有 2 个“不走 execute()”的直接写（剧本导入 / .map 图层同步），只读态必须同样拦
+ import { normalizeNotePath } from '../../utils/noteBinding';
+ import { guardWrite } from '../writeGate';
+@@ -110,6 +110,54 @@ import {
+ // 一次 Ctrl+Z 数据与账一起退回。摘要只收格数/格距，绝不把高度图塞进账（`summaryOf` 会抛）。
+ import { makeGenRecord, appendGenRecord, terrainSummary, isValidBBox } from '../../utils/genProvenance';
+ 
++/**
++ * 高度图 → **标 raw**（2026-11-16，开图计时最大的一笔）。
++ *
++ * 实测（1 万省压测项目 `bench-p10000-g768`，`probe_scale_frames --profile --profile-open`）：
++ * 开图段 CPU 7.4 秒里 **Vue 响应式占 1.48 秒** ——
++ *   `get` 844ms + `isRef` 214ms + `createReactiveObject` 419ms。
++ * 原因是 34.8 万个格点每个都被包了一层 Proxy，而画布每帧都要把这 34.8 万个格子读一遍：
++ * **读的是数据，不是“响应式”**。
++ *
++ * 为什么可以标 raw：本仓底图写入**一律整体替换**
++ * （`baseMaps.value = { ...baseMaps.value, [k]: { ...bm, heightmap: next } }`，60+ 处；
++ * 高度图唯一写口是 `commitHeightmap`，每次都是新对象）。层级追踪只需要**引用**：
++ * 换对象 = 引用变 = 该重绘的地方照样重绘。
++ * ⚠️ 反过来说：**就地改**高度图（`hm.h[i] = …`）本来是本仓禁区
++ * （`ScenarioMap` 2026-10-24 去掉 deep watch 时写死的纪律），标 raw 之后这种写法会**静默不重绘**。
++ * 行星视图的高度笔刷是就地改 + 自己 `requestRender()`，不依赖这条链路（`usePlanetHeightBrush`）。
++ *
++ * ⚠️ **一条还没解释清的现象**（别当“已解决”）：标 raw 之后开图首帧与基线差 **872 像素（0.18%）**，
++ * 位置是**一个城镇名**没画（`drill_scenario_pixels --dump-pre` 抓到的首帧 PNG vs 定稿 PNG）。
++ * 已排除：对象身份变化（原地打标后一样）、计划缓存陈旧（强制重算还是少这一个）、字体加载
++ * （重算走同一套 `measureText`）；而且**只标其中一类也一样**（只标高度图 / 只标省份都会出现）
++ * —— 所以不是“哪一类几何”的问题，而是**首帧来得更早**带来的时序差异。
++ * **定稿帧逐像素一致**（`hashNoLabels` 与最终 PNG 全等）。下一轮先查 `labelDetailNow()` 的
++ * 滞回状态（`scenario/interaction/markers.js`）：首帧采样时机不同会落到不同详略档。
++ */
++function rawHeightmap(hm) {
++  if (!hm || typeof hm !== 'object') return hm;
++  // ⚠️ 必须先 `toRaw`：装载口拿到的可能是**已经被代理过**的高度图（项目对象本身是响应式的），
++  //    对着 Proxy 调 markRaw 只会把 `__v_skip` 定义到 target 上、**返回的仍是那个 Proxy** ——
++  //    实测第一次就是这么写的：`__v_skip` 读得到，`get` 那 844ms 一点没少。
++  return markRaw(toRaw(hm));
++}
++
++/** 底图表里所有自持高度图 / 省份几何一起标 raw（装载口用；绑定行星的底图没有 heightmap 字段，不影响） */
++function rawBaseMaps(map) {
++  if (!map || typeof map !== 'object') return map;
++  // ⚠️ **原地打标、不复制对象**：`markRaw` 只加一个不可枚举的 `__v_skip`，
++  //    表 / 底图 / 数组的对象身份、内容、JSON 序列化全不变（画布里有若干“按引用做缓存键”的地方）。
++  for (const bm of Object.values(map)) {
++    if (!bm || typeof bm !== 'object') continue;
++    if (bm.heightmap) rawHeightmap(bm.heightmap);
++    // 省份多边形（`terrain`）：10,000 个省 = 10,000 个对象 + 几十万个顶点，画布每帧按引用遍历。
++    // 同一份纪律（改几何一律换数组）→ 标 raw 后 Vue 不再给每个顶点建 Proxy。
++    if (Array.isArray(bm.terrain)) markRaw(toRaw(bm.terrain));
++  }
++  return map;
++}
++
+ export function createScenarioEditingModule(ctx) {
+   const {
+     execute, scheduleAutoSave, saveScenarios, scheduleAutoSaveScenarios, mapData, scheduleAutoSaveMap,
+@@ -184,6 +232,10 @@ export function createScenarioEditingModule(ctx) {
+     const bm = baseMaps.value[baseMapKey];
+     if (!bm) return { owner: 'none' };
+     const pid = boundPlanetId(bm);
++    // 底图侧那份标 raw（见文件顶 `rawHeightmap` 的实测与理由）；行星侧那份**不动** ——
++    // PlanetMap 的高度笔刷是就地改 + 自己 requestRender，那边保持原样可以零风险。
++    const nextRaw = nextHeightmap && typeof nextHeightmap === 'object'
++      ? markRaw(toRaw(nextHeightmap)) : nextHeightmap;
+     // `touch=false` 供 undo 使用：撤销回填不打时间戳 —— 与 M1b 之前“undo 闭包里不写 updatedAt”逐字段一致。
+     const stamp = touch ? { updatedAt: new Date().toISOString() } : {};
+     if (pid) {
+@@ -196,10 +248,10 @@ export function createScenarioEditingModule(ctx) {
+       // 🔴 **悬空绑定**（行星已被删除 / 改名而未级联）：与 `resolveHeightmap` 的 dangling 口径保持一致 ——
+       //    回落到底图自身写入。**绝不静默 return**：那等于把用户刚涂的一笔直接丢掉，且没有任何反馈
+       //    （底图侧那份在绑定期被 delete 掉了，所以必须在这里把 newHeightmap 落到底图侧）。
+-      baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...bm, heightmap: nextHeightmap, ...stamp } };
++      baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...bm, heightmap: nextRaw, ...stamp } };
+       return { owner: 'self', planetId: pid, dangling: true };
+     }
+-    baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...bm, heightmap: nextHeightmap, ...stamp } };
++    baseMaps.value = { ...baseMaps.value, [baseMapKey]: { ...bm, heightmap: nextRaw, ...stamp } };
+     return { owner: 'self', planetId: null, dangling: false };
+   }
+ 
+@@ -561,7 +613,7 @@ export function createScenarioEditingModule(ctx) {
+       burgs: Array.isArray(b.burgs) ? b.burgs : [],
+       rivers: normalizeBaseMapRivers(b.rivers),
+       routes: normalizeBaseMapRoutes(b.routes),
+-      ...((b.heightmap && (b.heightmap.h || []).length) ? { heightmap: b.heightmap } : {}),
++      ...((b.heightmap && (b.heightmap.h || []).length) ? { heightmap: rawHeightmap(b.heightmap) } : {}),
+       referenceImages: [],
+       ...(b.source ? { source: b.source } : {}),
+       createdAt: now,
+@@ -630,7 +682,7 @@ export function createScenarioEditingModule(ctx) {
+     }
+ 
+     const after = { ...target };
+-    if (plan.heightmap) after.heightmap = src.heightmap;
++    if (plan.heightmap) after.heightmap = rawHeightmap(src.heightmap);
+     if (plan.rivers) after.rivers = src.rivers;
+     if (plan.routes) after.routes = src.routes;
+     if (plan.burgs) after.burgs = src.burgs;
+@@ -3229,7 +3281,7 @@ export function createScenarioEditingModule(ctx) {
+ 
+   function loadScenarioState(data) {
+     if (!data || typeof data !== 'object') return;
+-    if (data.baseMaps) baseMaps.value = data.baseMaps;
++    if (data.baseMaps) baseMaps.value = rawBaseMaps(data.baseMaps);
+     if (data.scenarios) scenarios.value = normalizeScenarioDatesDict(data.scenarios);
+     // 剧本集随容器一起装载；没有该字段 = 旧数据 → 清空（全部落默认组）
+     if (data.groups !== undefined) scenarioGroups.value = sanitizeScenarioGroups(data.groups);
+@@ -3320,14 +3372,14 @@ export function createScenarioEditingModule(ctx) {
+ 
+     if (data.baseMaps) {
+       if (fresh) {
+-        baseMaps.value = data.baseMaps;
++        baseMaps.value = rawBaseMaps(data.baseMaps);
+       } else if (fillMissingOnly) {
+         const missing = Object.keys(data.baseMaps).filter((k) => !(k in (baseMaps.value || {})));
+         if (missing.length) {
+-          baseMaps.value = { ...baseMaps.value, ...Object.fromEntries(missing.map((k) => [k, data.baseMaps[k]])) };
++          baseMaps.value = { ...baseMaps.value, ...rawBaseMaps(Object.fromEntries(missing.map((k) => [k, data.baseMaps[k]]))) };
+         }
+       } else {
+-        baseMaps.value = { ...baseMaps.value, ...data.baseMaps };
++        baseMaps.value = { ...baseMaps.value, ...rawBaseMaps(data.baseMaps) };
+       }
+     }
+     if (data.scenarios) {

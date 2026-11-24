@@ -16,10 +16,10 @@
  */
 
 /** 条款版本：**实质内容变更时手动升**（不是应用版本号） */
-export const DISCLAIMER_VERSION = '1.2.0';
+export const DISCLAIMER_VERSION = '1.3.0';
 
 /** 生效日期 */
-export const DISCLAIMER_UPDATED_AT = '2026-11-07';
+export const DISCLAIMER_UPDATED_AT = '2026-11-24';
 
 /** localStorage 键：带版本号 → 升版本 = 老 ack 自动失效 = 重新确认 */
 export const DISCLAIMER_ACK_KEY = `sitian_disclaimer_ack_v${DISCLAIMER_VERSION}`;
@@ -238,15 +238,11 @@ export const DISCLAIMER_FULL = [
     ],
   },
   {
+    // 2026-11-24 用户拍板删掉原第 12 节（适用法律与争议解决）：
+    // 「这个可以整个删掉，留着就是漏洞。」—— 留着一条【待定：司法辖区】的空条款，
+    // 比不写更糟：它看起来像一份有效约定，实际什么都没约定。删掉并把编号接上（13 → 12），
+    // 免得用户看到 1..11, 13 以为漏了一节。条款实质变更 → DISCLAIMER_VERSION 已升到 1.3.0。
     n: 12,
-    title: '适用法律与争议解决',
-    blocks: [
-      { type: 'p', text: '本声明的订立、效力、解释、履行与争议解决，适用【待定：司法辖区】法律。' },
-      { type: 'note', text: '本条留待产品方确定司法辖区后补全 —— 在填写完成前，本条不构成对争议解决方式的有效约定。' },
-    ],
-  },
-  {
-    n: 13,
     title: '其他',
     blocks: [
       { type: 'list', items: [

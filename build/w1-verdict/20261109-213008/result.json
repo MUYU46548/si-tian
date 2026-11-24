@@ -1,0 +1,11 @@
+{
+  "ts": "20261109-213008",
+  "targetWidth": 3840,
+  "images": [],
+  "notes": [
+    "运行失败：CDP target not found"
+  ],
+  "visibility": {
+    "sample": "{\"hidden\":false,\"vis\":\"visible\"}"
+  }
+}

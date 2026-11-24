@@ -114,6 +114,13 @@ contextBridge.exposeInMainWorld('sitianAPI', {
    * 渲染层调用前**必须先关项目**（否则下一次自动保存会把文件重新写出来）。
    */
   projectDelete: (payload) => ipcRenderer.invoke('project-delete', payload),
+  /**
+   * 撤回删除 + 列出回收站（2026-11-24）。用户原话：
+   * 「还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找？」
+   * 所以删除改成进**应用自有**回收站（<项目目录>/.sitian-trash/），撤回也在应用里点。
+   */
+  projectRestoreDeleted: (payload) => ipcRenderer.invoke('project-restore-deleted', payload),
+  projectListDeleted: (payload) => ipcRenderer.invoke('project-list-deleted', payload),
   projectBackupNow: (filePath) => ipcRenderer.invoke('project-backup-now', filePath),
   /** 示例项目（2026-11-05）：主进程把安装包里的示例复制到文档目录，返回可写路径 */
   sampleProjectOpen: () => ipcRenderer.invoke('sample-project-open'),

@@ -142,68 +142,117 @@
           这个目录里还没有 .sitian 项目文件
         </div>
         <template v-for="it in proj.availableProjects" :key="it.filePath">
-        <div
-          class="pp-item"
-          :class="{ active: it.filePath === proj.filePath }"
-          :title="it.filePath"
-          @click="openAt(it)"
-        >
-          <div class="pp-item-main">
-            <div class="pp-item-name">{{ (it.meta && it.meta.name) || it.name }}</div>
-            <div class="pp-item-sub">
-              {{ it.entityCount || 0 }} 实体<span v-if="it.mtime"> · {{ fmtTime(it.mtime) }}</span>
+          <div
+            class="pp-item"
+            :class="{ active: it.filePath === proj.filePath }"
+            :title="it.filePath"
+            @click="openAt(it)"
+          >
+            <div class="pp-item-main">
+              <div class="pp-item-name">{{ (it.meta && it.meta.name) || it.name }}</div>
+              <div class="pp-item-sub">
+                {{ it.entityCount || 0 }} 实体<span v-if="it.mtime"> · {{ fmtTime(it.mtime) }}</span>
+              </div>
+              <!-- 2026-10-25：同名副本只显示 meta.name 时无法分辨。文件名才是目录里唯一的标识 -->
+              <div v-if="fileHint(it)" class="pp-item-file" :title="it.filePath">{{ fileHint(it) }}</div>
             </div>
-            <!-- 🔴 2026-10-25：同名副本只显示 meta.name 时无法分辨（用户实测：
-                 “两个同名同时的项目中随便选了一个”，以为副本不存在）。
-                 文件名才是目录里唯一的标识 —— meta.name 与文件名不一致时才多给这一行。 -->
-            <div v-if="fileHint(it)" class="pp-item-file" :title="it.filePath">{{ fileHint(it) }}</div>
+            <span v-if="it.error" class="pp-warn" title="文件读取失败（可能是损坏的 JSON）">!</span>
+            <!-- 删除项目（2026-11-24 用户拍板：必须有，可撤回）。带文字而不是纯图标：
+                 这个按钮平时隐藏（只在悬停该行时出现），纯图标 + title 在没看到按钮时毫无提示。 -->
+            <button
+              class="pp-item-del"
+              :data-testid="'pp-del-' + it.name"
+              :title="`删除 ${(it.meta && it.meta.name) || it.name}：可撤回（进本面板的回收站）`"
+              @click.stop="askDeleteProject(it)"
+            ><Icon name="trash" :size="12" /><span class="pp-item-del-txt">删除</span></button>
           </div>
-          <span v-if="it.error" class="pp-warn" title="文件读取失败（可能是损坏的 JSON）">!</span>
-          <!-- 🔴 删除项目（2026-11-24 用户拍板：默认进回收站）
-               —— 此前**没有任何删除项目文件的入口**，做完测试项目只能去资源管理器手删。
-               两段式确认（不弹原生 confirm：headless 下会被自动拒绝），
-               并把"会删掉什么"写清楚（文件 + 备份目录）。
-               ⚠️ 带文字而不是纯图标：这个按钮平时是隐藏的（只在悬停该行时出现），
-               纯图标 + title 在"还没看到按钮"的时候一点提示都没有
-               （test_icon_buttons 闸门也要求：图标按钮得有可见文字）。 -->
+
+          <!-- 删除确认：**紧跟被点的那一行**（不是排在列表末尾）。
+               排在末尾时确认条会被面板下沿切掉半截，用户读起来就是"点了没反应"。
+               v-if 按 filePath 匹配，保证同一时刻只有一条。 -->
+          <div
+            v-if="pendingProjectDelete && pendingProjectDelete.filePath === it.filePath"
+            class="pp-confirm pp-confirm-project"
+            data-testid="pp-delete-confirm"
+          >
+            <div>
+              把 <b>{{ pendingProjectDelete.label }}</b> 删除？
+              <div class="pp-confirm-sub">
+                项目文件与它的备份目录（<span class="pp-path">{{ pendingProjectDelete.backupDirName }}</span>）
+                会一起移进本面板的回收站，删完点"撤回"就能原样搬回来。
+              </div>
+            </div>
+            <!-- 输入项目全名才能删（2026-11-24 用户要求，照同系列产品的做法）：
+                 多打十几个字，换掉"手滑删掉整本书"这类不可逆事故。全名精确相等，不是"包含"。 -->
+            <label class="pp-confirm-tic">
+              <span class="pp-confirm-tic-label">
+                请输入项目名 <b>{{ pendingProjectDelete.label }}</b> 以确认：
+              </span>
+              <input
+                v-model="pendingProjectDelete.typed"
+                class="pp-input"
+                data-testid="pp-delete-typed-name"
+                :placeholder="pendingProjectDelete.label"
+                autocomplete="off"
+                spellcheck="false"
+                @keydown.enter="confirmDeleteProject"
+              />
+            </label>
+            <label class="pp-confirm-opt">
+              <input v-model="pendingProjectDelete.keepBackups" type="checkbox" data-testid="pp-delete-keep-backups" />
+              只删项目文件，保留备份历史
+            </label>
+            <div class="pp-confirm-actions">
+              <button
+                class="pp-btn danger"
+                data-testid="pp-delete-confirm-btn"
+                :disabled="deletingProject || !deleteTypedOk"
+                :title="deleteTypedOk ? '' : '请先输入完整的项目名'"
+                @click="confirmDeleteProject"
+              >{{ deletingProject ? '删除中…' : '删除（可撤回）' }}</button>
+              <button class="pp-btn" @click="pendingProjectDelete = null">取消</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 撤回最近一次删除（2026-11-24 用户拍板）：
+             原话：还原没做，因为司天内根本没还原按钮；难道指望用户去回收站自己找（可能有几千个文件）？
+             删除改成进应用自有回收站（<项目目录>/.sitian-trash/），撤回也在应用里一点即回。
+             ⚠️ 这一段必须在 v-for **外面**：删完列表变空时也必须看得见。 -->
+        <div v-if="proj.lastDeleted" class="pp-restore" data-testid="pp-restore-deleted">
+          <span class="pp-restore-text">
+            已删除 {{ proj.lastDeleted.label }}
+          </span>
           <button
-            class="pp-item-del"
-            :data-testid="'pp-del-' + it.name"
-            :title="`删除“${(it.meta && it.meta.name) || it.name}”：移到系统回收站（可从回收站还原）`"
-            @click.stop="askDeleteProject(it)"
-          ><Icon name="trash" :size="12" /><span class="pp-item-del-txt">删除</span></button>
+            class="pp-btn"
+            data-testid="pp-restore-deleted-btn"
+            :disabled="restoringDeleted"
+            @click="doRestoreDeleted"
+          >{{ restoringDeleted ? '撤回中…' : '撤回' }}</button>
         </div>
 
-        <!-- 🔴 删除项目的确认条（2026-11-24）：**紧跟被点的那一行**，而不是排在整张列表之后。
-             为什么：原来它渲染在整个列表末尾，实测 rect.bottom=801 而面板底边只到 750 ——
-             用户点完"删除"看到的是被面板下沿切掉半截的确认条（甚至完全在滚动区外），
-             读起来就是"点了没反应"。放在行内即可，`v-if` 保证同一时刻只有一条。 -->
-        <div
-          v-if="pendingProjectDelete && pendingProjectDelete.filePath === it.filePath"
-          class="pp-confirm pp-confirm-project"
-          data-testid="pp-delete-confirm"
-        >
-          <div>
-            把 <b>{{ pendingProjectDelete.label }}</b> 移到回收站？
-            <div class="pp-confirm-sub">
-              项目文件与它的备份目录（<span class="pp-path">{{ pendingProjectDelete.backupDirName }}</span>）
-              会一起进系统回收站，可以还原。
+        <!-- 回收站清单：让用户知道"还能找回哪些"（同样在 v-for 外面） -->
+        <template v-if="deletedItems.length">
+          <div class="pp-label pp-label-sub">
+            回收站（{{ deletedItems.length }}）—— 可撤回
+          </div>
+          <div
+            v-for="d in deletedItems"
+            :key="d.entryId"
+            class="pp-item pp-item-deleted"
+            :data-testid="'pp-deleted-' + d.entryId"
+          >
+            <div class="pp-item-main">
+              <div class="pp-item-name">{{ d.base || d.filePath }}</div>
+              <div class="pp-item-sub">删除于 {{ fmtTime(d.deletedAt) }}</div>
             </div>
-          </div>
-          <label class="pp-confirm-opt">
-            <input v-model="pendingProjectDelete.keepBackups" type="checkbox" data-testid="pp-delete-keep-backups" />
-            只删项目文件，保留备份历史
-          </label>
-          <div class="pp-confirm-actions">
             <button
-              class="pp-btn danger"
-              data-testid="pp-delete-confirm-btn"
-              :disabled="deletingProject"
-              @click="confirmDeleteProject"
-            >{{ deletingProject ? '删除中…' : '移到回收站' }}</button>
-            <button class="pp-btn" @click="pendingProjectDelete = null">取消</button>
+              class="pp-btn"
+              :data-testid="'pp-restore-' + d.entryId"
+              :disabled="restoringDeleted"
+              @click.stop="doRestoreEntry(d)"
+            >撤回</button>
           </div>
-        </div>
         </template>
       </div>
 
@@ -444,7 +493,11 @@ const creatorOpen = ref(false);
  * 这期间的点击落到底下的画布/世界选择视图上（用户看到的就是“点不了”）。
  * 自动聚焦让这个入口**不依赖点击**：面板一出现就能直接打字。同理 `.pp-name-row` 整行可点。
  */
-onMounted(() => { nextTick(() => nameInputEl.value?.focus?.()); });
+onMounted(() => {
+  nextTick(() => nameInputEl.value?.focus?.());
+  // 回收站列表：面板一打开就拉一次，用户才知道"有东西能撤回"
+  refreshDeletedList();
+});
 
 /** 点“项目名称”这一行的空白处也聚焦输入框（扩大命中区；点到按钮时不抢焦点） */
 function focusNameInput(e) {
@@ -484,8 +537,9 @@ function askDeleteProject(it) {
     label: (it.meta && it.meta.name) || it.name || it.filePath,
     backupDirName: backupDirNameOf(it.filePath),
     keepBackups: false,
+    typed: '',            // 用户输入的项目名（必须与 label 完全一致才允许删）
   };
-  setTip('请确认：删除后项目文件进系统回收站（可从回收站还原）');
+  setTip('请确认：删除后可在本面板的回收站里一键撤回');
   // 🔴 必须把确认条**滚进视野**（2026-11-24 实测）：
   //    确认条紧跟在被点的那一行之后。若那一行本来就在面板可视区靠下的位置
   //    （或者用户是从列表底部往上点的），确认条会被面板下沿切掉半截、甚至完全在可视区外 ——
@@ -498,11 +552,27 @@ function askDeleteProject(it) {
   });
 }
 
+/**
+ * 「输入项目全名才能删」的判据（2026-11-24 用户要求）。
+ * 严格相等：前后空白去掉后逐字符比较 —— 不用"包含"，因为包含会被
+ * 「测试」两个字删掉「测试项目」这种事绕过去。
+ */
+const deleteTypedOk = computed(() => {
+  const pd = pendingProjectDelete.value;
+  if (!pd) return false;
+  return String(pd.typed || '').trim() === String(pd.label || '').trim();
+});
+
 async function confirmDeleteProject() {
   const pd = pendingProjectDelete.value;
   if (!pd || deletingProject.value) return;
+  // 双保险：按钮 disabled 只是 UI，这里再判一次（程序化触发也拦得住）
+  if (!deleteTypedOk.value) {
+    setTip(`请先输入完整的项目名“${pd.label}”再删除`, 'err');
+    return;
+  }
   deletingProject.value = true;
-  setTip('正在移到回收站…');
+  setTip('正在删除…');
   try {
     const res = await proj.deleteProject(pd.filePath, { keepBackups: pd.keepBackups });
     if (!res || res.success !== true) {
@@ -511,9 +581,59 @@ async function confirmDeleteProject() {
     }
     pendingProjectDelete.value = null;
     const kept = (res.keptBackups || []).length ? '（备份历史已保留）' : '';
-    setTip(`已把“${pd.label}”移到回收站${kept} —— 可从系统回收站还原`, 'ok');
+    setTip(`已删除“${pd.label}”${kept} —— 可在上方或下方回收站点“撤回”找回`, 'ok');
+    await refreshDeletedList();
   } finally {
     deletingProject.value = false;
+  }
+}
+
+// ── 撤回删除（2026-11-24）────────────────────────────────────────────────
+// 原话：难道指望用户去回收站自己找（可能有几千个文件）？—— 撤回必须在应用里一键可达。
+const restoringDeleted = ref(false);
+const deletedItems = ref([]);
+
+async function refreshDeletedList() {
+  try {
+    const res = await proj.listDeletedProjects();
+    deletedItems.value = (res && res.success && Array.isArray(res.items)) ? res.items : [];
+  } catch (e) {
+    deletedItems.value = [];
+  }
+}
+
+async function doRestoreEntry(d) {
+  if (!d || restoringDeleted.value) return;
+  restoringDeleted.value = true;
+  setTip('正在撤回…');
+  try {
+    const res = await proj.restoreDeletedProject(d.filePath);
+    if (!res || res.success !== true) {
+      setTip((res && res.error) || '撤回失败', 'err');
+      return;
+    }
+    setTip(`已撤回“${(d.base || d.filePath)}”到原位置`, 'ok');
+    await refreshDeletedList();
+  } finally {
+    restoringDeleted.value = false;
+  }
+}
+
+async function doRestoreDeleted() {
+  const ld = proj.lastDeleted;
+  if (!ld || restoringDeleted.value) return;
+  restoringDeleted.value = true;
+  setTip('正在撤回…');
+  try {
+    const res = await proj.restoreDeletedProject(ld.filePath);
+    if (!res || res.success !== true) {
+      setTip((res && res.error) || '撤回失败', 'err');
+      return;
+    }
+    setTip(`已撤回“${ld.label}”到原位置`, 'ok');
+    await refreshDeletedList();
+  } finally {
+    restoringDeleted.value = false;
   }
 }
 
@@ -1325,6 +1445,23 @@ refresh();
   cursor: pointer;
 }
 .pp-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.pp-confirm-tic { display: flex; flex-direction: column; gap: 4px; }
+.pp-confirm-tic-label { font-size: 11.5px; color: var(--planet-text-secondary); line-height: 1.5; }
+.pp-confirm-tic .pp-input { width: 100%; box-sizing: border-box; }
+/* 撤回条 + 回收站列表（2026-11-24）：删除之后必须有一条"就在手边"的撤回路径 */
+.pp-restore {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  margin: 4px 0;
+  border: 1px solid var(--planet-editor-border, #2b4a63);
+  border-radius: var(--radius-sm);
+  background: rgba(88, 166, 255, 0.08);
+}
+.pp-restore-text { flex: 1; min-width: 0; color: var(--planet-text); font-size: 11.5px; }
+.pp-label-sub { margin-top: 8px; font-size: 11px; opacity: 0.85; }
+.pp-item-deleted { opacity: 0.9; }
 /* 文件名（只在显示名与文件名不一致时出现，用来分辨同名副本）；等宽 + 可换行，路径尾巴不能看丢 */
 .pp-item-file {
   color: var(--planet-text-secondary);

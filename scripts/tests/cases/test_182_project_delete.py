@@ -156,6 +156,49 @@ def run(cdp):
     if '备份' not in (confirm.get('text') or ''):
         return False, f'确认条没说备份目录会怎么处理：{confirm.get("text")}'
 
+    # ── c2) **必须输入项目全名才能删**（2026-11-24 用户要求，照同系列产品的做法）──
+    #       判据三层：① 输入框在；② 没输入/输错时按钮是禁用的；③ 输对了才可用。
+    typed_gate = _j(cdp.eval("""(() => {
+      const box = document.querySelector('[data-testid=pp-delete-confirm]');
+      const btn = document.querySelector('[data-testid=pp-delete-confirm-btn]');
+      const inp = document.querySelector('[data-testid=pp-delete-typed-name]');
+      if (!box || !btn || !inp) {
+        return JSON.stringify({ ok: false, hasBox: !!box, hasBtn: !!btn, hasInput: !!inp });
+      }
+      const idleDisabled = btn.disabled;
+      inp.value = '不匹配的名字xyz';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      return JSON.stringify({
+        ok: true,
+        idleDisabled: idleDisabled,
+        wrongDisabled: btn.disabled,
+        placeholder: inp.placeholder || '',
+      });
+    })()"""))
+    if not typed_gate.get('ok'):
+        return False, f'确认条里没有"输入项目全名"这一道（{typed_gate}）'
+    if not typed_gate.get('idleDisabled'):
+        return False, '还没输入项目名，删除按钮却是可点的（这一道形同虚设）'
+    if not typed_gate.get('wrongDisabled'):
+        return False, '输入了错误的名字，删除按钮仍然可点（判据没生效）'
+
+    # 输入正确的全名 → 按钮可用（用 placeholder，它就是项目名）
+    cdp.eval("""(() => {
+      const inp = document.querySelector('[data-testid=pp-delete-typed-name]');
+      if (!inp) return 'no-input';
+      inp.value = inp.placeholder || '';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'ok';
+    })()""")
+    time.sleep(0.35)
+    after_type = _j(cdp.eval("""(() => {
+      const btn = document.querySelector('[data-testid=pp-delete-confirm-btn]');
+      return JSON.stringify({ disabled: btn ? btn.disabled : null });
+    })()"""))
+    if after_type.get('disabled') is not False:
+        return False, (f'输入了正确的项目名，删除按钮仍不可点'
+                       f'（姓名判据：{typed_gate} / 输入后：{after_type}）')
+
     # ── d) 取消 → 什么都没发生 ────────────────────────────────────────────────
     cdp.eval("""(() => {
       const box = document.querySelector('[data-testid=pp-delete-confirm]');
@@ -192,9 +235,18 @@ def run(cdp):
     if not target.get('targetPath'):
         return False, f'挑不到要删的那一条（{target}）'
     time.sleep(0.5)
+    # 第二次点开确认条后，同样必须先输入全名才允许删（这一道不是只挡第一次）
+    cdp.eval("""(() => {
+      const inp = document.querySelector('[data-testid=pp-delete-typed-name]');
+      if (!inp) return 'no-input';
+      inp.value = inp.placeholder || '';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'ok';
+    })()""")
+    time.sleep(0.35)
     cdp.eval("""(() => {
       const b = document.querySelector('[data-testid=pp-delete-confirm-btn]');
-      if (b) b.click();
+      if (b && !b.disabled) b.click();
       return 'ok';
     })()""")
     time.sleep(1.2)
@@ -216,12 +268,57 @@ def run(cdp):
         return False, ('删的是当前打开的项目，但它还开着 —— 下一次自动保存会把文件写回来，'
                        f'用户看到的就是"删不掉"（isOpen={after.get("isOpen")}, filePath={after.get("filePath")}）')
 
+    # ── f2) **撤回**：删完必须能在应用里一键找回（2026-11-24 用户要求）──────
+    #        「还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找？」
+    restore_ui = _j(cdp.eval(f"""(() => {{
+      const proj = ({PROJ});
+      const bar = document.querySelector('[data-testid=pp-restore-deleted]');
+      const btn = document.querySelector('[data-testid=pp-restore-deleted-btn]');
+      const list = document.querySelectorAll('[data-testid^=pp-restore-]');
+      return JSON.stringify({{
+        hasBar: !!bar,
+        hasBtn: !!btn,
+        btnText: btn ? (btn.textContent || '').trim() : '',
+        lastDeleted: proj.lastDeleted ? proj.lastDeleted.filePath : null,
+        restoreControls: list.length,
+      }});
+    }})()"""))
+    if not (restore_ui.get('hasBar') and restore_ui.get('hasBtn')):
+        return False, f'删完没有可点的"撤回"入口（{restore_ui}）—— 用户只能自己去回收站翻'
+    if not restore_ui.get('lastDeleted'):
+        return False, f'删除后 store 没记下 lastDeleted（撤回不知道找哪个，{restore_ui}）'
+
+    restored = _j(cdp.eval("""(() => {
+      const b = document.querySelector('[data-testid=pp-restore-deleted-btn]');
+      if (!b) return JSON.stringify({ clicked: false });
+      b.click();
+      return JSON.stringify({ clicked: true, disabled: b.disabled });
+    })()"""))
+    if not restored.get('clicked'):
+        return False, '点不到撤回按钮'
+    time.sleep(1.5)
+    after_restore = _j(cdp.eval(f"""(() => {{
+      const proj = ({PROJ});
+      const items = Array.from(document.querySelectorAll('.project-panel .pp-item'));
+      return JSON.stringify({{
+        files: items.map(it => it.getAttribute('title') || ''),
+        lastDeleted: proj.lastDeleted ? proj.lastDeleted.filePath : null,
+        barGone: !document.querySelector('[data-testid=pp-restore-deleted]'),
+      }});
+    }})()"""))
+    if target.get('targetPath') not in (after_restore.get('files') or []):
+        return False, (f'点了撤回，但那条没回到项目列表（{after_restore}）；'
+                       '用户会以为撤回失败')
+    if not after_restore.get('barGone'):
+        return False, '撤回成功了，但"撤回"提示条还挂着（会误导用户再点一次）'
+
     # ── g) 全程零错误面板 ────────────────────────────────────────────────────
     panel = _error_panel(cdp)
     if panel:
         return False, f'删除过程中弹了错误面板：{panel}'
 
-    return True, (f'删除入口齐备（{listed["count"]} 条都有带文字的「删除」）→ 两段式确认（含回收站说明 + '
-                  f'保留备份选项）→ 取消无副作用 → 确认后该条消失'
+    return True, (f'删除入口齐备（{listed["count"]} 条都有带文字的「删除」）→ '
+                  f'确认条要求**输入项目全名**（错名字按钮禁用）→ 取消无副作用 → '
+                  f'确认后该条消失 → **撤回把它找回来**'
                   + ('，且当前项目被正确关闭（不会"删了又回来"）' if target.get('wasCurrent') else '')
-                  + '；全程零错误面板。⚠️ 真实进回收站由 test_project_delete.js 守（本层是 mock API）')
+                  + '；全程零错误面板。⚠️ 真实搬进/搬出回收站由 test_project_delete.js 守（本层是 mock API）')

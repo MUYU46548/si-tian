@@ -3,7 +3,8 @@
 """用例 83：免责声明（首启强制确认 + 随时可查 + UI 基座试点）
 
 来源：`docs/PROPOSAL_DISCLAIMER_AND_UI.md` 方案 A（2026-10-06 定稿落地）。
-  ① 条款 13 节，**保留未成年人条款**（暮雨拍板）；
+  ① 条款节数 = 模块声明的 DISCLAIMER_SECTION_COUNT（2026-11-24 起为 12 节），
+     且**保留未成年人条款**；
   ② 首启强制确认：滚到底才可勾选 / Esc 不关 / 点遮罩不关 / “不同意并退出”；
   ③ “关于 → 免责声明”随时可查，条款升版本后再次要求确认；
   ④ 试点 UI 基座：Tailwind utilities-only（不引 preflight）+ shadcn-vue Button/Dialog/Card。
@@ -197,9 +198,10 @@ G1_JS = r"""(() => {
   if (q('[data-testid="disclaimer-close"]')) fails.push('阻断态不应出现“关闭”按钮（可绕过确认）');
   if (q('.onboarding-overlay')) fails.push('新手引导与免责声明同屏（声明会被盖住）');
 
-  // 13 节都渲染出来了
+  // 全部节都渲染出来了（节数由模块声明，不在这里写死）
   const secs = document.querySelectorAll('[data-testid^="disclaimer-section-"]').length;
-  if (secs !== 13) fails.push(`只渲染了 ${secs} 节条款（应为 13）`);
+  const want = window.__EXPECT_SECTIONS__;
+  if (secs !== want) fails.push(`只渲染了 ${secs} 节条款（模块声明 ${want} 节）`);
 
   // 焦点应被陷阱落在弹窗内
   const ae = document.activeElement;
@@ -243,12 +245,15 @@ def sub_gate_blocks(cdp):
     _reload(cdp)
     _wait_dialog(cdp, True)
     time.sleep(0.4)
+    # 🔴 重载会清掉 window 上的注入值 —— g1 必须在**重载之后**再注入一次，
+    #    否则断言拿到 undefined（2026-11-24 实测，就卡在这一句）。
+    cdp.eval('window.__EXPECT_SECTIONS__ = %d;' % int(_expected_sections()))
     ok, res = eval_json(cdp, G1_JS, desc='首启阻断断言', required=('fails',))
     if not ok:
         return False, res
     if res['fails']:
         return False, '首启阻断断言失败：' + '；'.join(res['fails'])
-    return True, (f"弹窗阻断 + role=dialog / aria-modal=true + 勾选框禁用 + 13 节渲染 + 焦点在弹窗内"
+    return True, (f"弹窗阻断 + role=dialog / aria-modal=true + 勾选框禁用 + 全节渲染 + 焦点在弹窗内"
                   f" + 底部按钮对比度 {res.get('contrast')}")
 
 
@@ -416,8 +421,9 @@ def sub_view_mode(cdp):
       if (q('[data-testid="disclaimer-ack-checkbox"]')) fails.push('查看模式不该出现勾选框（已确认过的条款不必再勾）');
       if (q('[data-testid="disclaimer-scroll"]')) {
         // 查看模式仍有全文可读
-        if (document.querySelectorAll('[data-testid^="disclaimer-section-"]').length !== 13) {
-          fails.push('查看模式没渲染 13 节');
+        const shown2 = document.querySelectorAll('[data-testid^="disclaimer-section-"]').length;
+        if (shown2 !== window.__EXPECT_SECTIONS__) {
+          fails.push(`查看模式渲染 ${shown2} 节，模块声明 ${window.__EXPECT_SECTIONS__} 节`);
         }
       }
       return JSON.stringify({ fails });
@@ -515,8 +521,36 @@ def sub_guide_entry(cdp):
 
 
 # ══════════════════════════════════════════════════════════════════
+def _expected_sections():
+    """从 disclaimer.js 源码里数出节数 —— 不在用例里写死数字。
+
+    2026-11-24：用户拍板删掉原第 12 节（适用法律与争议解决的空条款），节数从 13 变 12。
+    以后再增删条款，这个函数自动跟上，不会出现"产品改了、用例还在数 13"的假红。
+    优先返回模块导出的 DISCLAIMER_SECTION_COUNT；读不到就退回数 `n:` 的个数。
+    """
+    import io as _io
+    import re as _re
+    try:
+        src = _io.open(os.path.join(ROOT, 'src', 'renderer', 'src', 'utils', 'disclaimer.js'),
+                       encoding='utf-8').read()
+    except Exception:
+        return -1
+    m = _re.search(r'export\s+const\s+DISCLAIMER_SECTION_COUNT\s*=\s*(\d+)', src)
+    if not m:
+        # 本仓是 `DISCLAIMER_SECTION_COUNT = DISCLAIMER_FULL.length`，所以数数组里的节
+        m = _re.search(r'export\s+const\s+DISCLAIMER_SECTION_COUNT\s*=\s*DISCLAIMER_FULL\.length', src)
+        if m:
+            return len(_re.findall(r'^\s*n:\s*\d+,', src, _re.M))
+    if m:
+        return int(m.group(1))
+    return len(_re.findall(r'^\s*n:\s*\d+,', src, _re.M))
+
+
 def run(cdp):
     ensure_data_ready(cdp)
+    # 2026-11-24：节数不再写死在这里 —— 让用例直接问模块自己要多少节。
+    # 这样以后加/删条款只需改 disclaimer.js，不会出现"产品改了、用例还在数 13"的假红。
+    _want = _expected_sections()
     try:
         results = []
         for name, fn in (('g0 源码守卫', sub_source_guards),
@@ -527,6 +561,9 @@ def run(cdp):
                          ('g5 随时可查', sub_view_mode),
                          ('g6 使用手册', sub_guide_entry)):
             try:
+                # 每个子测试前重新注入节数期望值：子测试之间会重载页面，
+                # 注入在 `window` 上的变量会随导航丢掉（2026-11-24 实测：g1/g5 读到 undefined）。
+                cdp.eval(f'window.__EXPECT_SECTIONS__ = {int(_want)};')
                 ok, detail = fn(cdp)
             except Exception as e:
                 ok, detail = False, f'异常: {e}'

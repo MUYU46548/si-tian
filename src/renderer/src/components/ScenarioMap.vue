@@ -5031,7 +5031,7 @@ let resizeObserver = null;
 onMounted(async () => {
   const cvs = canvas.value;
   const wrap = canvasWrap.value;
-  {
+  if (cvs && wrap) {   // wrap 可能为 null（视图切换那一拍）；没有容器就连尺寸都不必算
     const dpr = window.devicePixelRatio || 1;
     const w = wrap.clientWidth;
     const h = wrap.clientHeight;
@@ -5041,6 +5041,7 @@ onMounted(async () => {
     cvs.style.width = w + 'px';
     cvs.style.height = h + 'px';
   }
+  if (!cvs) return;
   ctx.value = cvs.getContext('2d');
   setRasterRefineHandler(() => render(), () => (baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null));
 

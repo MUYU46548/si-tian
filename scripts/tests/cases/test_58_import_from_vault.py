@@ -241,20 +241,46 @@ def run(cdp):
       const M = await import('/src/store/projectStore.js');
       const proj = M.useProjectStore(pinia);
       const first = Object.keys(proj.entities)[0];
+      const firstEntity = proj.entities[first] || null;
+      const srcPathOfFirst = firstEntity ? firstEntity.sourcePath : null;
+      // mock 的 __projects 跨用例存在：看这个键在别的项目里是不是也有
+      const mp = window.__projects || {};
+      const sameKeyElsewhere = Object.keys(mp).filter(fp => (mp[fp].entities || {})[first])
+        .map(fp => fp);
       const renameRes = proj.renameEntity(first, '我改过的名字');
       const nameNow = (proj.getEntity(first) || {}).name || null;
       await new Promise(r => setTimeout(r, 200));
+      const keysBefore = Object.keys(proj.entities);
+      const firstIdxBefore = keysBefore.indexOf(first);
       const again = await proj.importFromVault();
       await new Promise(r => setTimeout(r, 400));
+      const keysAfter = Object.keys(proj.entities);
       const e = proj.getEntity(first);
+      const diag = {
+        firstKey: first,
+        stillHasFirst: !!proj.entities[first],
+        nameOfFirst: proj.entities[first] ? proj.entities[first].name : null,
+        firstIdxBefore: firstIdxBefore,
+        firstIdxAfter: keysAfter.indexOf(first),
+        keyCountBefore: keysBefore.length,
+        keyCountAfter: keysAfter.length,
+        firstFiveBefore: keysBefore.slice(0, 5),
+        firstFiveAfter: keysAfter.slice(0, 5),
+        renamedKey: Object.keys(proj.entities).find(k => (proj.entities[k] || {}).name === '我改过的名字') || null,
+        srcPathOfFirst: srcPathOfFirst,
+        sameKeyElsewhere: sameKeyElsewhere,
+        mockProjectCount: Object.keys(mp).length,
+      };
       // 失败时能一眼看出“改名到底有没有落进内存”：闸门状态 / 写入回执 / 改完立刻读到的名字
       const wg = await import('/src/store/writeGate.js')
         .then(m => m.describeWriteGate()).catch(err => String(err));
-      return JSON.stringify({ merged: again.merged || null, nothingNew: !!again.nothingNew,
+      return JSON.stringify({ diag, merged: again.merged || null, nothingNew: !!again.nothingNew,
         name: e ? e.name : null, renameRes: renameRes || null, nameNow: nameNow,
         gate: wg, source: app._instance.setupState.store.canvasSource,
         isOpen: !!proj.isOpen, filePath: proj.filePath || '' });
     })()""" % APP), '重复导入不覆盖')
+    import sys as _sys
+    print('   [c2 诊断] ' + str(keep.get('diag')), file=_sys.stderr)
     if keep.get('name') != '我改过的名字':
         # 2026-11-07：把“改名本身没生效”与“重复导入盖掉了”分开报 —— 两者的处置完全不同。
         # ⚠️ `updateEntity` 目前**不看** `execute()` 的返回值（写闸门拒绝时仍回 success:true），

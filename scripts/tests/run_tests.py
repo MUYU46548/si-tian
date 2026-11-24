@@ -88,6 +88,8 @@ USE_REAL_VAULT = os.environ.get('SITIAN_TEST_REAL_VAULT') == '1'
 _args = sys.argv[1:]
 _case_names = []
 _retry_env = 0
+_fast_only = False      # --fast：只跑静态闸门（Node 单测 + 源码守卫），不开浏览器
+_since = ''             # --since <git-ref>：只跑与这些改动**相关**的用例
 _i = 0
 while _i < len(_args):
     if _args[_i] == '--vault' and _i + 1 < len(_args):
@@ -96,6 +98,10 @@ while _i < len(_args):
         EDGE_EXE = _args[_i + 1]; _i += 2
     elif _args[_i] == '--real-data':
         USE_REAL_VAULT = True; _i += 1
+    elif _args[_i] == '--fast':
+        _fast_only = True; _i += 1
+    elif _args[_i] == '--since' and _i + 1 < len(_args):
+        _since = _args[_i + 1]; _i += 2
     elif _args[_i] == '--retry-env' and _i + 1 < len(_args):
         try:
             _retry_env = max(0, int(_args[_i + 1]))
@@ -377,6 +383,25 @@ MOCK_SCRIPT = """<script>
         //    把中间几千行一起吃掉 —— 表现为 mock 里的 projectSave 凭空消失，
         //    看起来像产品回归（2026-11-24 本轮的教训）。
 
+        projectRestoreDeleted: async (payload = {}) => {
+          window.__MOCK_TRASHED = window.__MOCK_TRASHED || [];
+          window.__projects = window.__projects || {};
+          const fp = String((payload && payload.filePath) || '');
+          const idx = window.__MOCK_TRASHED.indexOf(fp);
+          if (idx < 0) return { success: false, error: '回收站里没有这一项' };
+          window.__MOCK_TRASHED.splice(idx, 1);
+          // 撤回：把条目放回列表（内容用当前基线项目的副本，够用例判"回来了"）
+          const base = Object.values(window.__projects)[0] || null;
+          window.__projects[fp] = base ? JSON.parse(JSON.stringify(base)) : { version: '1.0.0', meta: {}, entities: {} };
+          return { success: true, restored: [fp], entryId: 'mock-entry', filePath: fp };
+        },
+        projectListDeleted: async (payload = {}) => {
+          window.__MOCK_TRASHED = window.__MOCK_TRASHED || [];
+          return { success: true, items: window.__MOCK_TRASHED.map((fp, i) => ({
+            entryId: 'mock-' + i, filePath: fp, base: String(fp).split('/').pop(),
+            deletedAt: new Date().toISOString(),
+          })), roots: ['mock/.sitian-trash'] };
+        },
         projectDelete: async (payload = {}) => {
           window.__projects = window.__projects || {};
           window.__MOCK_TRASHED = window.__MOCK_TRASHED || [];
@@ -724,6 +749,21 @@ def _error_overlay(cdp):
         return ''
     if not isinstance(raw, str):
         return ''
+    # 把堆栈也带上（只取前 3 行调用帧）—— 只有一句话定位不了是哪个文件
+    try:
+        extra = cdp.eval("""(() => {
+          const el = document.getElementById('sitian-error-overlay');
+          const pre = el && el.querySelector('[data-role=detail]');
+          const t = pre ? pre.textContent : '';
+          const i = t.indexOf('堆栈:');
+          const m = i >= 0 ? [t.slice(i)] : null;
+          if (!m) return '';
+          return m[0].split('\n').slice(1, 5).join(' | ');
+        })()""")
+        if isinstance(extra, str) and extra:
+            raw = raw + ' | ' + extra[:300]
+    except Exception:
+        pass
     return ' / '.join(line.strip() for line in raw.splitlines()
                       if line.strip().startswith(('消息:', '组件:', '钩子:')))[:400]
 
@@ -930,6 +970,110 @@ def run_node_unit_tests():
     return {'ok': True, 'detail': f'{len(files)} 个 Node 单元测试全通过', 'output': '\n'.join(outputs)}
 
 
+
+# ============================================================
+# 按改动面选跑（2026-11-24，用户：「全量真有必要每天跑吗？太浪费时间了」）
+# ============================================================
+# 背景：全量 183 条 CDP 用例 ≈ 17 分钟；只跑 143 个 Node 静态闸门 ≈ 50 秒。
+# 差的 16 分钟全花在「起浏览器 + 每条用例后刷新页面」上。
+#
+# 所以给两条更省的路（都**不降低判据**，只是别每步都跑全部）：
+#   --fast          只跑静态闸门。改注释/改文案/改纯函数时够用，50 秒。
+#   --since <ref>   按 git 改动**自动挑**要跑哪几条 CDP 用例。改了 3 个文件就不必跑 183 条。
+# 什么时候仍然要跑全量（写进用法里，别让人以为 --fast 是万能）：
+#   · 发版前（打安装包之前）
+#   · 动了 run_tests.py 本身 / mock 注入脚本 / 共享 store
+#   · 一次改了很多个不相关的模块
+# ============================================================
+
+# 文件路径片段 → 相关用例的**关键词**（对应 cases/test_*.py 的文件名）
+# 宁可多跑（关键词命中就带上），不可漏跑：一个模块对应多条用例就都列上。
+CHANGE_TO_CASES = [
+    # 剧本 / 地图主视图
+    ('components/ScenarioMap.vue', ['scenario', 'province', 'toolbar', 'timeline', 'ledger', 'slice', 'import', 'reimport']),
+    ('scenario/', ['scenario', 'province', 'timeline', 'ledger', 'pixel']),
+    ('store/geodata.js', ['scenario', 'province', 'geodata', 'canvas', 'wiring']),
+    ('store/undo.js', ['undo', 'history']),
+    ('store/projectStore.js', ['project', 'save', 'import', 'undo']),
+    # 行星 / 区域 / 建筑
+    ('components/PlanetMap.vue', ['planet', 'terrain', 'azgaar', 'relief', 'channel', 'marker', 'route']),
+    ('composables/planet', ['planet', 'terrain']),
+    ('components/AreaMap.vue', ['area', 'building', 'symbol']),
+    ('components/InteriorView.vue', ['interior', 'wall', 'furniture', 'stair', 'room', 'door', 'plan_sheet']),
+    ('components/ExteriorView.vue', ['exterior', 'axonometric', '3d']),
+    ('interior/', ['interior', 'wall', 'furniture', 'symbol', 'axonometric', 'settlement']),
+    # 星系 / 恒星系
+    ('components/SystemDetailView.vue', ['system', 'moon', 'space']),
+    ('components/GalaxyMap.vue', ['galaxy', 'system', 'navigation']),
+    ('galaxy/', ['galaxy', 'system']),
+    # 项目面板 / 世界选择 / 项目文件 IO
+    ('components/ProjectPanel.vue', ['project', 'panel']),
+    ('handlers/projectHandler.js', ['project', 'save', 'import', 'io', 'delete']),
+    ('main/index.js', ['project', 'save', 'vault', 'diag', 'sample']),
+    ('preload/', ['project', 'panel', 'diag']),
+    ('components/WorldSelector.vue', ['world', 'sample', 'vault']),
+    ('components/EntityCreator.vue', ['project', 'entity', 'place']),
+    # 免责声明 / 关于 / 手册
+    ('utils/disclaimer.js', ['disclaimer']),
+    ('components/DisclaimerDialog.vue', ['disclaimer']),
+    ('components/AboutPanel.vue', ['disclaimer', 'guide']),
+    ('components/userGuide.js', ['disclaimer', 'guide']),
+    # UI 基建
+    ('components/ui/', ['overlay', 'panel', 'toolbar_ux']),
+    ('utils/eventTarget.js', ['panel', 'overlay']),
+    ('utils/errorReport.js', ['panel', 'overlay']),
+    # 渲染 / 性能 / 像素基线
+    ('scenario/provinceFillBake.js', ['pixel', 'province']),
+    ('scenario/reliefRasterSlot.js', ['pixel', 'relief']),
+    ('scenario/viewBake.js', ['pixel']),
+    ('utils/heightmapRaster.js', ['terrain', 'raster', 'pixel']),
+    # 导出
+    ('export/', ['export', 'plan_sheet', 'axonometric', 'slice']),
+]
+
+
+def _changed_files_since(ref):
+    """`git diff --name-only <ref>...HEAD` + 工作区未提交的改动（都算"这次改的"）。"""
+    import subprocess as _sp
+    out = set()
+    for args in (['git', 'diff', '--name-only', ref, 'HEAD'],
+                 ['git', 'diff', '--name-only'],
+                 ['git', 'diff', '--name-only', '--cached'],
+                 ['git', 'ls-files', '--others', '--exclude-standard']):
+        try:
+            r = _sp.run(args, cwd=ROOT, capture_output=True, text=True, timeout=30)
+            if r.returncode == 0:
+                out.update(x.strip().replace('\\', '/') for x in (r.stdout or '').splitlines() if x.strip())
+        except Exception:
+            pass
+    return sorted(out)
+
+
+def cases_for_changes(files, all_cases):
+    """按改动文件挑用例。返回 (选中的用例文件, 命中的关键词, 是否因为"无关改动"而选不出来)。
+
+    ⚠️ 保守原则：**任何一条改动匹配不到关键词时，返回全部用例** ——
+    宁可多跑 17 分钟，也不能因为"这张表没覆盖到"而漏掉该跑的。
+    """
+    picked = set()
+    hits = set()
+    unmapped = []
+    for f in files:
+        matched = False
+        for frag, keys in CHANGE_TO_CASES:
+            if frag in f:
+                matched = True
+                hits.update(keys)
+        if not matched and f.startswith(('src/renderer/', 'src/main/', 'src/preload/')):
+            unmapped.append(f)
+    if unmapped:
+        # 有源码改动没被这张表覆盖 → 跑全量（不改判据，只保证不漏）
+        return list(all_cases), sorted(hits), unmapped
+    if not hits:
+        return [], [], []
+    sel = [c for c in all_cases if any(k in c for k in hits)]
+    return sel, sorted(hits), []
+
 def main():
     # 用例过滤参数（--vault/--edge 已在常量解析阶段从 argv 剥离）
     case_names = _case_names
@@ -940,6 +1084,25 @@ def main():
         if not case_files:
             print('未找到匹配用例:', case_names)
             return 2
+
+    # ── --since：按改动面挑用例（不降低判据，只是别每次都跑全部）──────────
+    if _since:
+        changed = _changed_files_since(_since)
+        picked, hits, unmapped = cases_for_changes(changed, case_files)
+        if unmapped:
+            print(f'⚠️ 有 {len(unmapped)} 个源码改动没被"改动→用例"表覆盖 → 保守起见跑**全部**用例：')
+            for u in unmapped[:8]:
+                print(f'   · {u}')
+            print('   （要收窄范围：把该模块补进 run_tests.py 的 CHANGE_TO_CASES）')
+        elif not picked:
+            print(f'--since {_since}：改动里没有任何源码文件（{len(changed)} 个文件都不相关）→ 没有要跑的用例')
+            unit = run_node_unit_tests()
+            return 0 if unit.get('ok') else 1
+        else:
+            case_files = sorted(picked)
+            print(f'--since {_since}：{len(changed)} 个改动文件 → 关键词 {hits}')
+        if not case_files:
+            print('没有匹配到用例（这可能是"改动→用例"表需要补）')
 
     print('=== SiTian 回归测试 ===')
     print(f'用例: {len(case_files)} 个')
@@ -953,6 +1116,12 @@ def main():
     else:
         print(f'前置 Node 单元测试 ❌ {unit["detail"]}')
         print(unit['output'])
+
+    if _fast_only:
+        # --fast：只跑静态闸门（Node 单测 + 源码守卫）。约 50 秒，不开浏览器。
+        print('--fast：只跑静态闸门（不开浏览器）。需要跑 CDP 用例时去掉这个开关。')
+        print('⚠️ 发版前、动了 run_tests.py / mock 注入 / 共享 store 时，必须跑全量。')
+        return 0 if unit.get('ok') else 1
 
     handles = []
     try:

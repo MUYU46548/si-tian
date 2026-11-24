@@ -1,0 +1,11 @@
+{
+  "ts": "20261109-211008",
+  "targetWidth": 3840,
+  "images": [],
+  "notes": [
+    "sample-relief-off: ['\"更多\"里找不到 export-png']",
+    "sample-relief-on: 导出失败 等待超时: 导出产物 | !!window.__w1Export",
+    "real415-relief-off: ['\"更多\"里找不到 export-png']",
+    "real415-relief-on: 导出失败 等待超时: 导出产物 | !!window.__w1Export"
+  ]
+}

@@ -120,9 +120,12 @@ async function main() {
     return '硬承诺到位，旧约束已清';
   });
 
-  await check('5 条款版本 1.2.0 @ 2026-11-07（实质变更要让老 ack 失效）', async () => {
-    assert(D.DISCLAIMER_VERSION === '1.2.0', `DISCLAIMER_VERSION=${D.DISCLAIMER_VERSION}（应为 1.2.0）`);
-    assert(D.DISCLAIMER_UPDATED_AT === '2026-11-07', `DISCLAIMER_UPDATED_AT=${D.DISCLAIMER_UPDATED_AT}（应为 2026-11-07）`);
+  await check('5 条款版本 1.3.0 @ 2026-11-24（实质变更要让老 ack 失效）', async () => {
+    // 2026-11-24：升版理由是**实质变更**——用户拍板删掉了原第 12 节
+    // （适用法律与争议解决，内含【待定：司法辖区】的空条款）。
+    // 删掉那条空白约定属于条款实质变化，所以版本必须动，否则老用户的 ack 会继续生效。
+    assert(D.DISCLAIMER_VERSION === '1.3.0', `DISCLAIMER_VERSION=${D.DISCLAIMER_VERSION}（应为 1.3.0）`);
+    assert(D.DISCLAIMER_UPDATED_AT === '2026-11-24', `DISCLAIMER_UPDATED_AT=${D.DISCLAIMER_UPDATED_AT}（应为 2026-11-24）`);
     assert(D.DISCLAIMER_ACK_KEY.includes(D.DISCLAIMER_VERSION), 'ack 键名没带版本号 —— 老确认不会被作废');
     return `v${D.DISCLAIMER_VERSION} @ ${D.DISCLAIMER_UPDATED_AT}`;
   });

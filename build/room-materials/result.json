@@ -1,0 +1,107 @@
+{
+  "fails": [],
+  "checks": [
+    {
+      "ok": true,
+      "msg": "一层两间房已建好",
+      "detail": "rooms=[[{\"id\": \"room_hall\", \"t\": \"none\"}, {\"id\": \"room_bed\", \"t\": \"none\"}], [{\"id\": \"room_study\", \"t\": \"stone\"}]]"
+    },
+    {
+      "ok": true,
+      "msg": "材质写进了 store",
+      "detail": "hall=wood bed=tile"
+    },
+    {
+      "ok": true,
+      "msg": "平面图上材质占满两间房",
+      "detail": "48.74% > 12%"
+    },
+    {
+      "ok": true,
+      "msg": "同参数连拍逐像素一致（前面的差异不是噪声）",
+      "detail": "0 px"
+    },
+    {
+      "ok": true,
+      "msg": "吊顶写进了 store",
+      "detail": "{\"texture\": \"plaster\", \"height\": 240}"
+    },
+    {
+      "ok": true,
+      "msg": "吊顶虚线框 + 净高注记画出来了",
+      "detail": "3822 px ≥ 300"
+    },
+    {
+      "ok": true,
+      "msg": "去掉吊顶后画面回到基线（不是“加得上、去不掉”）",
+      "detail": "0 px ≤ 60"
+    },
+    {
+      "ok": true,
+      "msg": "一次 undo 把吊顶撤掉（store.undo 与 Ctrl+Z 同一入口）",
+      "detail": "{\"before\": {\"texture\": \"plaster\", \"height\": 240}, \"after\": null, \"canUndo\": true}"
+    },
+    {
+      "ok": true,
+      "msg": "统计条报了房间地面数",
+      "detail": "2 层 · 9 面墙 · 7 处门窗 · 3 间房铺了地面 · 高 7.83 m"
+    },
+    {
+      "ok": true,
+      "msg": "单层视图里材质也写进去了",
+      "detail": "hall=tile bed=tile"
+    },
+    {
+      "ok": true,
+      "msg": "改材质后 3D 真的出了新帧",
+      "detail": "delta=2"
+    },
+    {
+      "ok": true,
+      "msg": "3D 里房间地面真的换了颜色",
+      "detail": "8.89% > 2%"
+    },
+    {
+      "ok": true,
+      "msg": "只改一间房也会变（不是整层一个材质）",
+      "detail": "8.83% > 0.5%"
+    },
+    {
+      "ok": true,
+      "msg": "顶层房间吊顶写进去了",
+      "detail": "{\"texture\": \"plaster\", \"height\": 240}"
+    },
+    {
+      "ok": true,
+      "msg": "吊顶开关能打开",
+      "detail": "\"\""
+    },
+    {
+      "ok": true,
+      "msg": "开吊顶后 3D 真的出了新帧",
+      "detail": "delta=2"
+    },
+    {
+      "ok": true,
+      "msg": "顶层房间被吊顶盖住（差异够大）",
+      "detail": "28.75% > 3%"
+    },
+    {
+      "ok": true,
+      "msg": "统计条报了吊顶间数",
+      "detail": "2 层 · 9 面墙 · 7 处门窗 · 3 间房铺了地面 · 1 间吊顶 · 高 5.80 m"
+    },
+    {
+      "ok": true,
+      "msg": "只看某一层时吊顶自动关掉且开关灰禁",
+      "detail": "{\"exists\": true, \"checked\": false, \"disabled\": true}"
+    },
+    {
+      "ok": true,
+      "msg": "页面全程零 JS 报错",
+      "detail": "[]"
+    }
+  ],
+  "at": "2026-11-15 22:12:23",
+  "out": "E:\\CODE\\CangKu\\SiTian\\build\\room-materials"
+}
