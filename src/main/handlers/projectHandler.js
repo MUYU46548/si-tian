@@ -292,6 +292,77 @@ async function gitSnapshot({ filePath, message = '司天快照' }) {
 }
 
 /**
+ * 🔴 **删除项目（默认进回收站）** —— 2026-11-24 用户拍板：
+ *   删除项目这个功能必须要有，默认移到回收站，否则整个软件都不完整（原话）。
+ *
+ * 为什么原先没有、现在必须有：
+ *   产品一直只有"删除实体"与"删除世界卡片"，**项目文件本身没有任何删除入口** ——
+ *   用户做完测试项目后只能在资源管理器里翻 `Documents/SiTianProjects/` 手删，
+ *   或者靠"定位文件"这个隐藏出路。一个"新建了却删不掉"的软件确实不完整。
+ *
+ * 口径（三条，都对应一条具体风险）：
+ *   · **默认进回收站**（`shell.trashItem`），不是 `unlink` —— 删错了能从系统回收站捞回来。
+ *     `trashItem` 失败（某些网络盘 / 权限不足）时**不自动降级成真删**：回收就报错，
+ *     让用户自己决定要不要硬删（下面 `hard` 分支），绝不"悄悄换个更狠的删法"。
+ *   · **备份目录一起处理**：`<名>.sitian.backups/` 是同一个项目的附属物，只删主文件会留下
+ *     一堆孤儿备份（用户看到的就是"删了还在"）。默认一起进回收站；
+ *     `keepBackups: true` 时留着（有人只是想清掉"当前这个项目"，历史留底还想留）。
+ *   · **主文件必须在 .sitian 白名单内**（`assertProjectPath`），备份目录由 `backupDirFor`
+ *     算出来而不是由调用方传 —— 绝不允许外部传一个任意路径进来被删。
+ *
+ * ⚠️ 调用方（渲染层）**必须自己先关项目**：本函数只碰磁盘，不碰内存态。
+ *    正在打开的项目被删掉后，下一次自动保存会把文件重新写出来（"删了又回来"）。
+ *
+ * @param {{filePath: string, keepBackups?: boolean, hard?: boolean}} payload
+ * @param {(p: string) => Promise<void>} trashItem 注入的 `shell.trashItem`（便于纯 Node 单测）
+ * @returns {{success: true, filePath: string, trashed: string[], keptBackups: string[], mode: string}}
+ */
+async function deleteProjectFile(payload = {}, trashItem) {
+  const filePath = assertProjectPath(payload.filePath);
+  const exists = await fileExists(filePath);
+  const backupDir = backupDirFor(filePath);
+  const backupExists = await fileExists(backupDir);
+  if (!exists && !backupExists) {
+    throw new Error(`项目文件不存在（可能已被删除或移动）：${filePath}`);
+  }
+  const hard = payload.hard === true;
+  if (hard) {
+    // 真删：**必须显式要求**（UI 上是一条单独的、带二次确认的选项）
+    throw new Error('不支持永久删除（避免误操作）—— 请使用默认的"移到回收站"，'
+      + '确需彻底删除请到系统回收站里清空');
+  }
+  if (typeof trashItem !== 'function') {
+    throw new Error('当前环境不支持"移到回收站"（shell.trashItem 不可用）');
+  }
+
+  const trashed = [];
+  const keptBackups = [];
+  if (exists) {
+    await trashItem(filePath);
+    trashed.push(filePath);
+  }
+  if (backupExists) {
+    if (payload.keepBackups === true) {
+      keptBackups.push(backupDir);
+    } else {
+      await trashItem(backupDir);
+      trashed.push(backupDir);
+    }
+  }
+  // 自证：主文件确实不在原位了（否则上层会以为删成功、下一次保存又把它写回来）
+  if (await fileExists(filePath)) {
+    throw new Error(`移到回收站后文件仍在原位：${filePath}（可能被占用）`);
+  }
+  return {
+    success: true,
+    filePath,
+    trashed,
+    keptBackups,
+    mode: 'trash',
+  };
+}
+
+/**
  * 注册 IPC。依赖全部注入（本文件不 require('electron')）。
  * @param {{ ipcMain, dialog, shell, getMainWindow?: () => any,
  *           getDefaultProjectDir: () => string, getLastProjectPath?: () => string,
@@ -559,6 +630,22 @@ function registerProjectHandlers(deps) {
     }
   });
 
+  // 🔴 删除项目（默认进回收站，2026-11-24 用户拍板 —— 见 deleteProjectFile 头注）
+  ipcMain.handle('project-delete', async (event, payload = {}) => {
+    try {
+      const res = await deleteProjectFile(payload, shell.trashItem);
+      // 删的正好是"上次打开的项目" → 清掉这个记忆，否则下次启动会为一个不存在的路径报错
+      try {
+        if (getLastProjectPath() && path.resolve(getLastProjectPath()) === path.resolve(res.filePath)) {
+          await setLastProjectPath('');
+        }
+      } catch (e) { /* 清记忆失败不影响删除结果 */ }
+      return ok(res);
+    } catch (err) {
+      return fail(err);
+    }
+  });
+
   /**
    * 🔴 只读：主进程侧“当前项目路径”的**权威回答**（2026-10-11）。
    * 为什么要它：底图来源备份发生在 `ScenarioMap` 的导入流程里，而那个组件**不该**为了
@@ -648,5 +735,6 @@ module.exports = {
   saveBaseMapSource,
   listBaseMapSources,
   readBaseMapSource,
+  deleteProjectFile,
   registerProjectHandlers,
 };

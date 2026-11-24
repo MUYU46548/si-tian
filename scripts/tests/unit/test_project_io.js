@@ -263,7 +263,10 @@ async function main() {
       'project-get-last-path',
       // 原始底图来源备份（2026-10-11）：导入 `.map` 时把原文留一份到项目备份目录
       // 2026-10-13：补 `basemap-source-read`（只读读回 —— “从留底恢复”用）
-      'basemap-source-save', 'basemap-source-list', 'basemap-source-read', 'project-current-path'];
+      'basemap-source-save', 'basemap-source-list', 'basemap-source-read', 'project-current-path',
+      // 删除项目（2026-11-24 用户拍板：必须有，默认进回收站）。主进程侧只碰磁盘，
+      // 真实落盘/回收站行为由 `test_project_delete.js` 守（本文件只验通道注册与端到端调用）。
+      'project-delete'];
     for (const ch of expected) assert(handlers.has(ch), `未注册通道 ${ch}`);
     const unregistered = [...handlers.keys()].filter(c => !expected.includes(c));
     assert(unregistered.length === 0,

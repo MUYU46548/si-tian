@@ -160,6 +160,43 @@
             <div v-if="fileHint(it)" class="pp-item-file" :title="it.filePath">{{ fileHint(it) }}</div>
           </div>
           <span v-if="it.error" class="pp-warn" title="文件读取失败（可能是损坏的 JSON）">!</span>
+          <!-- 🔴 删除项目（2026-11-24 用户拍板：默认进回收站）
+               —— 此前**没有任何删除项目文件的入口**，做完测试项目只能去资源管理器手删。
+               两段式确认（不弹原生 confirm：headless 下会被自动拒绝），
+               并把"会删掉什么"写清楚（文件 + 备份目录）。
+               ⚠️ 带文字而不是纯图标：这个按钮平时是隐藏的（只在悬停该行时出现），
+               纯图标 + title 在"还没看到按钮"的时候一点提示都没有
+               （test_icon_buttons 闸门也要求：图标按钮得有可见文字）。 -->
+          <button
+            class="pp-item-del"
+            :data-testid="'pp-del-' + it.name"
+            :title="`删除“${(it.meta && it.meta.name) || it.name}”：移到系统回收站（可从回收站还原）`"
+            @click.stop="askDeleteProject(it)"
+          ><Icon name="trash" :size="12" /><span class="pp-item-del-txt">删除</span></button>
+        </div>
+
+        <!-- 删除项目的确认条 -->
+        <div v-if="pendingProjectDelete" class="pp-confirm pp-confirm-project" data-testid="pp-delete-confirm">
+          <div>
+            把 <b>{{ pendingProjectDelete.label }}</b> 移到回收站？
+            <div class="pp-confirm-sub">
+              项目文件与它的备份目录（<span class="pp-path">{{ pendingProjectDelete.backupDirName }}</span>）
+              会一起进系统回收站，可以还原。
+            </div>
+          </div>
+          <label class="pp-confirm-opt">
+            <input v-model="pendingProjectDelete.keepBackups" type="checkbox" data-testid="pp-delete-keep-backups" />
+            只删项目文件，保留备份历史
+          </label>
+          <div class="pp-confirm-actions">
+            <button
+              class="pp-btn danger"
+              data-testid="pp-delete-confirm-btn"
+              :disabled="deletingProject"
+              @click="confirmDeleteProject"
+            >{{ deletingProject ? '删除中…' : '移到回收站' }}</button>
+            <button class="pp-btn" @click="pendingProjectDelete = null">取消</button>
+          </div>
         </div>
       </div>
 
@@ -421,6 +458,47 @@ const canCreate = computed(() => !!newName.value.trim());   // 项目文件的�
 
 const seeding = ref(false);
 const importing = ref(false);
+
+// ── 删除项目（2026-11-24 用户拍板：必须有，默认进回收站）────────────────────
+// 两段式确认再删 —— 删项目文件是不可撤销的（不进 undo.js 的撤销栈，回收站才是后悔药）。
+// `pendingProjectDelete` 只存"待确认的那一条"，确认后清空。
+const pendingProjectDelete = ref(null);   // { filePath, label, backupDirName, keepBackups }
+const deletingProject = ref(false);
+
+function backupDirNameOf(filePath) {
+  // 与主进程 `backupDirFor` 同一口径：`<name>.sitian.backups`
+  const name = String(filePath || '').split(/[\\/]/).pop() || '';
+  return `${name}.backups`;
+}
+
+function askDeleteProject(it) {
+  pendingProjectDelete.value = {
+    filePath: it.filePath,
+    label: (it.meta && it.meta.name) || it.name || it.filePath,
+    backupDirName: backupDirNameOf(it.filePath),
+    keepBackups: false,
+  };
+  setTip('请确认：删除后项目文件进系统回收站（可从回收站还原）');
+}
+
+async function confirmDeleteProject() {
+  const pd = pendingProjectDelete.value;
+  if (!pd || deletingProject.value) return;
+  deletingProject.value = true;
+  setTip('正在移到回收站…');
+  try {
+    const res = await proj.deleteProject(pd.filePath, { keepBackups: pd.keepBackups });
+    if (!res || res.success !== true) {
+      setTip((res && res.error) || '删除失败', 'err');
+      return;
+    }
+    pendingProjectDelete.value = null;
+    const kept = (res.keptBackups || []).length ? '（备份历史已保留）' : '';
+    setTip(`已把“${pd.label}”移到回收站${kept} —— 可从系统回收站还原`, 'ok');
+  } finally {
+    deletingProject.value = false;
+  }
+}
 
 // ── R15/A-0：笔记改名断线检测（2026-09-27）──────────────────────────────
 const scanning = ref(false);
@@ -1184,6 +1262,52 @@ refresh();
   text-overflow: ellipsis;
 }
 .pp-item-sub { color: var(--planet-text-secondary); font-size: 10.5px; }
+/* 删除项目：只在悬停/聚焦该行时出现（平时不抢"点开项目"这一下的命中区）。
+   ⚠️ 必须可见文字之外还有 title —— 纯图标按钮由 test_icon_buttons 闸门管，
+   `title` 是它的可读性判据（同 2026-11-08 顶栏收口的做法）。 */
+.pp-item-del {
+  flex: none;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--planet-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.pp-item-del-txt { white-space: nowrap; }
+.pp-item:hover .pp-item-del,
+.pp-item:focus-within .pp-item-del { display: inline-flex; }
+.pp-item-del:hover {
+  background: rgba(255, 123, 114, 0.18);
+  border-color: rgba(255, 123, 114, 0.5);
+  color: #ff7b72;
+}
+.pp-confirm-project {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.pp-confirm-sub {
+  margin-top: 4px;
+  color: var(--planet-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.pp-confirm-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--planet-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.pp-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 /* 文件名（只在显示名与文件名不一致时出现，用来分辨同名副本）；等宽 + 可换行，路径尾巴不能看丢 */
 .pp-item-file {
   color: var(--planet-text-secondary);

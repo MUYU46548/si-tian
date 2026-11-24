@@ -146,6 +146,15 @@ import { LAYER_LABELS } from '../utils/projectSchema';
 
 const props = defineProps({
   open: { type: Boolean, default: false },
+  /**
+   * 预设值（2026-11-24，给“在地图上就地新建地点”用）：
+   * 用户报怨“想加个地点没地方加”—— 入口一直只在**项目面板**里，而人的心智是
+   * “我看着这块地方，就想在这儿放一个点”。从地图右键进来时把**当前坐标**
+   * 和**当前层级的父实体**一起带进来，省掉"再去填一遍坐标"。
+   * 全部字段都可缺省（面板里手动打开时传空对象），不影响原行为。
+   * @type {{ layer?: string, parentId?: string, x?: number|string, y?: number|string }}
+   */
+  preset: { type: Object, default: () => ({}) },
 });
 const emit = defineEmits(['close', 'goto']);
 
@@ -322,7 +331,17 @@ function create() {
 }
 
 // 打开时自动聚焦名称输入
-watch(() => props.open, (v) => { if (v) nextTick(() => nameInput.value?.focus()); });
+// 2026-11-24：同时把 `preset` 灌进表单（从地图右键进来时带坐标与父级）。
+// ⚠️ 只在**打开的那一下**灌，用户关掉再开才重灌 —— 不能在打字过程中被覆盖。
+watch(() => props.open, (v) => {
+  if (!v) return;
+  const p = props.preset || {};
+  if (p.parentId) parentId.value = String(p.parentId);
+  if (p.layer) layer.value = String(p.layer);
+  if (p.x != null && p.x !== '') coordX.value = String(p.x);
+  if (p.y != null && p.y !== '') coordY.value = String(p.y);
+  nextTick(() => nameInput.value?.focus());
+}, { immediate: true });
 </script>
 
 <style scoped>

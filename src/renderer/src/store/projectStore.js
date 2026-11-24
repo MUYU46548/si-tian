@@ -960,6 +960,44 @@ export const useProjectStore = defineStore('project', () => {
     return a.projectReveal(filePath.value);
   }
 
+  /**
+   * 🔴 删除项目文件（默认进回收站）—— 2026-11-24 用户拍板：
+   *   “'删除项目'这个功能必须要有，默认移到回收站，否则整个软件都不完整。”
+   *
+   * 两条口径，都是为了避免"删了又回来 / 删了还在"：
+   *   ① **先关项目，再删文件**：内存里还开着的话，下一次自动保存（800ms 防抖）
+   *      会把刚删掉的文件重新写出来 —— 用户看到的就是"删不掉"。
+   *      所以这里**自己负责关**（而不是要求调用方记得），关不掉就不删。
+   *   ② 关掉之后**刷新目录列表**：`availableProjects` 里那条不该还留着。
+   *
+   * `opts.keepBackups = true` 只删当前项目文件、留下 `.backups/` 历史留底。
+   *
+   * ⚠️ 目标可以是**没打开的那个项目**（列表里右键删一个别处的项目）—— 那时不需要关，
+   *    但要保证关的是"正在开的那个"，且别把当前项目误关。
+   *
+   * @param {string} target 目标项目路径（默认 = 当前打开的项目）
+   * @param {{keepBackups?: boolean}} opts
+   */
+  async function deleteProject(target = '', opts = {}) {
+    const a = api();
+    if (!a || !a.projectDelete) return { success: false, error: API_MISSING };
+    const path0 = target || filePath.value;
+    if (!path0) return { success: false, error: '没有要删除的项目文件' };
+    const isCurrent = filePath.value && path0 === filePath.value;
+    if (isCurrent) {
+      // 关不掉（保存失败等）→ 不删。宁可报错，也不能让用户以为删了、实际下一拍又写回来。
+      const closed = await closeProject();
+      if (!closed || closed.success !== true) {
+        return { success: false, error: `项目没能关闭（${(closed && closed.error) || '未知原因'}），为安全起见**没有删除**：请先处理保存问题` };
+      }
+    }
+    const res = await a.projectDelete({ filePath: path0, keepBackups: opts.keepBackups === true });
+    if (res && res.success) {
+      try { await refreshProjectList(); } catch (e) { /* 列表刷新失败不影响删除结果 */ }
+    }
+    return res || { success: false, error: '删除失败' };
+  }
+
   async function backupNow() {
     const a = api();
     if (!a || !a.projectBackupNow || !filePath.value) return { success: false, error: '没有可备份的项目文件' };
@@ -1318,7 +1356,7 @@ export const useProjectStore = defineStore('project', () => {
     importFromVault, mergeVaultPayload,
     // R15/A-0：笔记改名断线检测 + 重连（id 不变 → 编辑成果保留）
     scanBrokenLinks, relinkEntity,
-    refreshProjectList, chooseProjectDir, revealProject, backupNow, gitSnapshot, restoreProjectSnapshot,
+    refreshProjectList, chooseProjectDir, revealProject, deleteProject, backupNow, gitSnapshot, restoreProjectSnapshot,
     // entity CRUD
     getEntity, childrenOf, descendantsOf, parentCandidates, createEntity, updateEntity,
     renameEntity, deleteEntity, moveEntity, moveEntities, setEntityCoordinate, previewEntityId, importEntities,

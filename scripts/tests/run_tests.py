@@ -366,6 +366,30 @@ MOCK_SCRIPT = """<script>
         },
         projectPickDir: async () => ({ success: true, dir: 'mock/picked' }),
         projectReveal: async (filePath) => ({ success: true, filePath: filePath }),
+        // 🔴 删除项目（2026-11-24 用户拍板：必须有，默认进回收站）。
+        // mock 必须**有状态**：真的把那条从 `window.__projects` 里摘掉 —— 否则
+        // `refreshProjectList()` 一刷新又把它列回来，用例读起来像“删了还在”
+        // （那会是**假红**：产品其实没问题，是 mock 没删）。
+        // 真实进回收站的行为由 `test_project_delete.js` 守（注入 trashItem + 真临时目录）。
+        // ⚠️ 这里刻意用**行注释**而不是块注释：`test_85` 的源码守卫会先把块注释整段剥掉，
+        //    而本文件的 Python 说明串里有 `*.json` / `*.js` 这种写法（它们的开头两个字
+        //    恰好是块注释的起始符），一旦这里再开一个块注释，它就会跟那几处配错对、
+        //    把中间几千行一起吃掉 —— 表现为 mock 里的 projectSave 凭空消失，
+        //    看起来像产品回归（2026-11-24 本轮的教训）。
+
+        projectDelete: async (payload = {}) => {
+          window.__projects = window.__projects || {};
+          window.__MOCK_TRASHED = window.__MOCK_TRASHED || [];
+          const fp = String(payload.filePath || '');
+          if (!fp) return { success: false, error: '没有要删除的项目文件' };
+          if (!window.__projects[fp]) return { success: false, error: '项目文件不存在：' + fp };
+          delete window.__projects[fp];
+          window.__MOCK_TRASHED.push(fp);
+          return {
+            success: true, filePath: fp, trashed: [fp], keptBackups: [],
+            mode: 'trash',
+          };
+        },
         projectBackupNow: async () => ({ success: true, backedUp: true, backupPath: 'mock/x.sitian' }),
         projectGitSnapshot: async () => ({ success: false, skipped: true, reason: 'mock 环境非 git 仓库' }),
         // 🔴 原始底图来源备份（2026-10-11）：mock 里要**如实回报成功**，

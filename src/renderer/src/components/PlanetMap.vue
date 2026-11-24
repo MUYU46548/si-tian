@@ -465,6 +465,16 @@
       </div>
       <!-- 右键菜单 -->
       <context-menu :state="ctxMenu.state" @close="ctxMenu.close()" />
+      <!-- 在这里新建地点（2026-11-24）：右键空白处 → 带坐标打开创建对话框。
+           复用项目面板的同一个 EntityCreator（同一个创建口 = 同一条 undo + 自动保存），
+           只是把"右边这块地方"的坐标与父级预先填好。 -->
+      <entity-creator
+        v-if="newPlaceOpen"
+        :open="newPlaceOpen"
+        :preset="newPlaceHere"
+        @close="newPlaceOpen = false"
+        @goto="onCreatedPlaceGoto"
+      />
       <eagle-eye
         :view-bounds="viewBounds"
         :elements="eagleEyeElements"
@@ -1158,6 +1168,7 @@ import SnapshotPanel from './SnapshotPanel.vue';
 import HistoryPanel from './HistoryPanel.vue';
 import ZoomControls from './ZoomControls.vue';
 import ContextMenu from './ContextMenu.vue';
+import EntityCreator from './EntityCreator.vue';
 
 const store = useGeodataStore();
 const layers = useLayersStore();
@@ -1631,6 +1642,22 @@ function onRender(ctx, w, h) {
 
 // ===== 命中检测 =====
 const ctxMenu = useContextMenu();
+
+// 「在这里新建地点」（2026-11-24）：右键空白处打开创建对话框，带上该处的世界坐标。
+// 用户报怨"想加个地点都没地方加"——入口此前只在项目面板里，而人的心智是"看着这块地方
+// 就想在这儿放个点"。这里只负责**打开对话框并预填**，创建仍走 store.createEntity 同一条口。
+const newPlaceOpen = ref(false);
+const newPlaceHere = ref({});     // { x, y, parentId, layer } —— 传给 EntityCreator 的 preset
+
+/** 创建完成后把画布定位到新地点（与面板里的 @goto 同一语义） */
+function onCreatedPlaceGoto(payload) {
+  const id = payload && (payload.id || (payload.entity && payload.entity.id));
+  if (!id) { newPlaceOpen.value = false; return; }
+  const node = store.nodes.find((n) => n && n.id === id);
+  if (node) { try { renderer.focusOn(node.coordinate?.x ?? 0, node.coordinate?.y ?? 0, 1); } catch (e) { /* 定位失败不该影响创建结果 */ } }
+  newPlaceOpen.value = false;
+  renderer.requestRender();
+}
 const hitTestModule = createPlanetHitTest(() => ({
   layers, currentMapData: currentMapData.value, places: places.value,
   terrainHit: terrainHit.value,
@@ -1944,6 +1971,27 @@ const renderer = useCanvasRenderer(canvas, {
     } else if (!hit) {
       const clip = getClipboard();
       if (clip && ['markers', 'textLabels', 'planetObjects'].includes(clip.kind)) { items.push({ key: 'ctx-paste', label: '粘贴', icon: 'clipboard', action: () => pasteClipboard() }); }
+      // 🔴 在这里新建地点（2026-11-24）：用户报怨"想加个地点用来测试都没地方加"——
+      //    此前唯一的入口是**项目面板 → + 新建实体**，而人的心智是"我看着这块地方就想在这儿放个点"。
+      //    这里把**右键处的世界坐标**一起带进创建对话框（省掉再去手填坐标），
+      //    父级默认当前行星（地点的自然归属）。不写盘、不进 undo —— 只是打开对话框；
+      //    真正的创建仍走 store.createEntity（一条 undo + 自动保存），与面板入口完全同一条路。
+      items.push({ separator: true });
+      items.push({
+        key: 'ctx-place-new-here',
+        label: store.isReadOnly ? '在这里新建地点（只读：先打开项目）' : '在这里新建地点…',
+        icon: 'map-pin',
+        disabled: store.isReadOnly,
+        action: () => {
+          newPlaceHere.value = {
+            x: Math.round(wx),
+            y: Math.round(wy),
+            parentId: props.planet?.id || '',
+            layer: 'location',
+          };
+          newPlaceOpen.value = true;
+        },
+      });
     }
     if (!items.length) return;
     const vt = renderer.viewTransform; const cvs = canvas.value; if (!cvs) return;

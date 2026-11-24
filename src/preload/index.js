@@ -108,6 +108,12 @@ contextBridge.exposeInMainWorld('sitianAPI', {
   projectGetLastPath: () => ipcRenderer.invoke('project-get-last-path'),
   projectPickDir: () => ipcRenderer.invoke('project-pick-dir'),
   projectReveal: (filePath) => ipcRenderer.invoke('project-reveal', filePath),
+  /**
+   * 🔴 删除项目（2026-11-24 用户拍板：默认进回收站）。
+   * `payload = { filePath, keepBackups?: boolean }` —— 主进程侧只碰磁盘，
+   * 渲染层调用前**必须先关项目**（否则下一次自动保存会把文件重新写出来）。
+   */
+  projectDelete: (payload) => ipcRenderer.invoke('project-delete', payload),
   projectBackupNow: (filePath) => ipcRenderer.invoke('project-backup-now', filePath),
   /** 示例项目（2026-11-05）：主进程把安装包里的示例复制到文档目录，返回可写路径 */
   sampleProjectOpen: () => ipcRenderer.invoke('sample-project-open'),

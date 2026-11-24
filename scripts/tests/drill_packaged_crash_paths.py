@@ -88,6 +88,18 @@ def main():
         print(f'找不到打包版：{EXE}\n先跑 npm run dist')
         return 1
 
+    # 🔴 记录演练**前**文档目录里已有哪几个示例副本 —— 收尾时只删"多出来的那些"，
+    #    绝不按通配符盲删（用户自己的示例与历史副本必须原样留着）。
+    _proj_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'SiTianProjects')
+    def _sample_set():
+        try:
+            return {n for n in os.listdir(_proj_dir)
+                    if n.startswith('示例世界') and n.endswith('.sitian')}
+        except Exception:
+            return set()
+    _samples_before = _sample_set()
+    _created_sample_paths = []
+
     profile = os.path.join(ROOT, 'build', 'packaged-crash-paths', 'profile')
     shutil.rmtree(profile, ignore_errors=True)
     os.makedirs(profile, exist_ok=True)
@@ -122,44 +134,116 @@ def main():
                  timeout=180, desc='应用挂载')
         time.sleep(1.0)
 
-        # 关掉免责声明（打包版首启是 gate 模式，程序化点 disabled 按钮是静默 no-op）
-        cdp.eval("""(() => {
+        # 免责声明：打包版首启是 **gate 模式**（滚到底 + 勾选两道门槛）。
+        # 🔴 程序化 `el.click()` 对 `:disabled` 按钮是**静默 no-op**（AGENTS.md / test_83 都记过），
+        #    于是上一版"点了三个候选按钮"其实一次都没生效，示例项目按钮被弹窗挡着点不到
+        #    → 根因看起来像"打包版 store 坏了"，实际是弹窗还在（本次诊断抓到的：
+        #    `disclaimer: true` + 正文里世界选择页正常渲染）。
+        # 正规解法（test_83 / shot_settings_panel 同款）：**自己写 ack 键**再重载，
+        # 而不是跟弹窗的 disabled 按钮较劲。
+        ack_set = cdp.eval("""(() => {
           try {
-            const app = document.querySelector('#app').__vue_app__;
-            const st = app._instance.setupState;
-            if (st.disclaimer) { st.disclaimer.agreed = true; }
-          } catch (e) {}
-          return 'ok';
+            const KEY = 'sitian_disclaimer_ack_v1.2.0';
+            if (!localStorage.getItem(KEY)) {
+              localStorage.setItem(KEY, new Date().toISOString());
+              return 'wrote';
+            }
+            return 'already:' + localStorage.getItem(KEY);
+          } catch (e) { return 'err:' + e.message; }
         })()""")
-        for label in ('同意并继续', '接受', '我同意'):
-            cdp.eval(f"""(() => {{
-              const b = Array.from(document.querySelectorAll('button')).find(x => (x.textContent || '').includes('{label}') && !x.disabled);
-              if (b) b.click();
+        print(f'   [免责声明] ack={ack_set}')
+        if isinstance(ack_set, str) and ack_set.startswith(('wrote', 'already')):
+            # ⚠️ `cdp.navigate()` 默认跳 dev server（localhost:5180），打包版必须跳回**当前这个
+            #    file:// 地址**。写错的话表现为"重载后应用挂载超时"，很容易误判成打包版坏了。
+            cur_url = cdp.eval('location.href')
+            cdp.navigate(cur_url if isinstance(cur_url, str) and cur_url.startswith('file://') else None)
+            time.sleep(2.5)
+            wait_for(cdp, "document.readyState === 'complete' && !!document.querySelector('.app-layout')",
+                     timeout=120, desc='重载后挂载')
+            time.sleep(1.2)
+        # 兜底：万一 ack 没生效，把弹窗按"滚到底 → 勾选 → 同意"的真实顺序走一遍
+        if cdp.eval("!!document.querySelector('[class*=disclaimer]')"):
+            cdp.eval("""(() => {
+              const sc = document.querySelector('.disclaimer-body, .disclaimer-scroll, [data-role=scroll]');
+              if (sc) sc.scrollTop = sc.scrollHeight;
+              document.querySelectorAll('input[type=checkbox]').forEach(c => {
+                if (!c.checked) c.click();
+              });
+              const btns = Array.from(document.querySelectorAll('button'));
+              const go = btns.find(x => (x.textContent || '').includes('同意并继续') && !x.disabled);
+              if (go) go.click();
               return 'ok';
-            }})()""")
-        time.sleep(0.8)
-        cdp.eval("""(() => {
-          const b = document.querySelector('.disclaimer-dialog-overlay [data-role=close], .disclaimer-overlay button');
-          if (b) b.click();
-          return 'ok';
-        })()""")
-        time.sleep(0.5)
+            })()""")
+            time.sleep(1.2)
+        still_up = cdp.eval("!!document.querySelector('[class*=disclaimer]')")
+        check('免责声明已关闭', not still_up, '已关闭' if not still_up else '仍在（后面的示例项目会被它挡住）')
 
         # 打开示例项目（走产品自己的按钮，复制到文档目录再打开）
-        cdp.eval("""(() => {
-          const b = document.querySelector('[data-testid=world-open-sample]')
-                 || Array.from(document.querySelectorAll('button')).find(x => (x.textContent||'').includes('示例地图项目'));
-          if (b) b.click();
-          return 'ok';
-        })()""")
-        # 🔴 打包版**不能**读 `#app.__vue_app__._instance.setupState`（压缩后为 null），
-        #    只能从 pinia 实例取（drill_packaged_app.py 记过这条）。
-        wait_for(cdp, "(() => { try { const a = document.querySelector('#app').__vue_app__;"
-                      " const p = a && a.config.globalProperties.$pinia;"
-                      " const s = p && p._s.get('geodata'); return !!(s && s.nodes && s.nodes.length); }"
-                      " catch (e) { return false; } })()",
-                 timeout=60, desc='示例项目数据就绪')
+        # 🔴 这一段的两个坑（都在真机上踩过）：
+        #   ① 重载后世界选择页要**几拍**才渲染出来 —— 点得太早 `b` 还是 null，
+        #      静默什么都没发生，然后空等 180s；
+        #   ② 点到了也不代表装载完成（复制 2MB 示例 + 主进程 open + adopt 要几秒）。
+        #      所以判据是"**数据真的进 store 了**"，不是"点击调用发出去了"。
+        #   做法：循环「找按钮→点→等两秒→查 store」，直到就绪或超时。
+        _btn_deadline = time.time() + 90
+        _ready = False
+        _clicked = False
+        while time.time() < _btn_deadline:
+            if not _clicked:
+                _clicked = bool(cdp.eval("""(() => {
+                  const b = document.querySelector('[data-testid=world-open-sample]')
+                         || Array.from(document.querySelectorAll('button'))
+                              .find(x => (x.textContent || '').includes('示例地图项目'));
+                  if (!b || b.disabled) return false;
+                  b.click();
+                  return true;
+                })()"""))
+            try:
+                _ready = bool(cdp.eval(
+                    "(() => { try { const a = document.querySelector('#app').__vue_app__;"
+                    " const p = a && a.config.globalProperties.$pinia;"
+                    " const s = p && p._s.get('geodata');"
+                    " return !!(s && s.nodes && s.nodes.length); } catch (e) { return false; } })()"))
+            except Exception:
+                _ready = False
+            if _ready:
+                break
+            time.sleep(1.0)
+        check('点得到「示例地图项目」', _clicked,
+              '已点' if _clicked else '90s 内按钮都没出现/一直禁用（世界选择页没渲染？）')
+        if not _ready:
+            diagx = cdp.eval(
+                "(() => {"
+                " const a = document.querySelector('#app') && document.querySelector('#app').__vue_app__;"
+                " const pinia = a && a.config.globalProperties && a.config.globalProperties.$pinia;"
+                " return JSON.stringify({"
+                "  hasApp: !!a, hasPinia: !!pinia,"
+                "  stores: pinia ? Array.from(pinia._s.keys()) : [],"
+                "  disclaimer: !!document.querySelector('[class*=disclaimer]'),"
+                "  text: (document.body.innerText || '').slice(0, 300).replace(/\\s+/g, ' '),"
+                " });"
+                "})()")
+            check('示例项目数据就绪', False, '90s 仍未就绪｜诊断=' + str(diagx)[:400])
+            raise SystemExit(1)
         time.sleep(1.5)
+        diag0 = cdp.eval("""(() => {
+          const a = document.querySelector('#app') && document.querySelector('#app').__vue_app__;
+          const pinia = a && a.config.globalProperties && a.config.globalProperties.$pinia;
+          const g = pinia && pinia._s.get('geodata');
+          const p = pinia && pinia._s.get('project');
+          return JSON.stringify({
+            hasPinia: !!pinia,
+            geodata: !!g, nodes: g ? (g.nodes || []).length : -1,
+            projectOpen: p ? !!p.isOpen : null,
+            disclaimerStillUp: !!document.querySelector('[class*=disclaimer]'),
+            bodyText: (document.body.innerText || '').slice(0, 160).replace(/\\s+/g, ' '),
+          });
+        })()""")
+        print('   [启动诊断] ' + str(diag0)[:500])
+        _created_sample_paths = [os.path.join(_proj_dir, n)
+                                 for n in (_sample_set() - _samples_before)]
+        if _created_sample_paths:
+            print('   [本轮副本] ' + ', '.join(os.path.basename(x) for x in _created_sample_paths))
         check('示例项目打开', True, '实体树已就绪')
 
         # 打包版统一走 pinia（store id 见 defineStore 的第一个参数）
@@ -561,6 +645,43 @@ def main():
             check('C. 建筑内部拖家具吸附不崩（worldTop 分支）', False,
                   f'进入建筑内部时异常：{str(e)[:200]}')
 
+        # ---- D. 删除项目：真的进了回收站（0.5.21 用户拍板的功能，必须在真机上验）----
+        #  🔴 为什么必须在**打包件**上验：删除走主进程 `shell.trashItem`，而 CDP 用例里
+        #     `window.sitianAPI` 是 mock（只删内存列表）。这一条是全链路上唯一能证明
+        #     "文件真的从磁盘上消失了、且是被移进回收站"的地方。
+        try:
+            # 先造一个可删的项目副本（别删用户自己的示例，也别删当前打开的那个之外的）
+            made = cdp.eval("""(async () => {
+              const app = document.querySelector('#app').__vue_app__;
+              const ps = app.config.globalProperties.$pinia._s.get('project');
+              const r = await ps.createProject({ name: '待删探针项目' });
+              return JSON.stringify({ ok: !!(r && r.success), filePath: (r && r.filePath) || ps.filePath });
+            })()""")
+            madeOb = json.loads(made) if isinstance(made, str) and made.startswith('{') else {}
+            probe_path = madeOb.get('filePath') or ''
+            if not madeOb.get('ok') or not probe_path:
+                check('D. 删除项目 → 真的进回收站', False,
+                      f'造不出可删的探针项目（{made}）')
+            else:
+                exists_before = os.path.exists(probe_path)
+                res = cdp.eval(f"""(async () => {{
+                  const app = document.querySelector('#app').__vue_app__;
+                  const ps = app.config.globalProperties.$pinia._s.get('project');
+                  const r = await ps.deleteProject({json.dumps(probe_path)});
+                  return JSON.stringify(r || {{}});
+                }})()""")
+                rob = json.loads(res) if isinstance(res, str) and res.startswith('{') else {}
+                gone = not os.path.exists(probe_path)          # 判据只看磁盘
+                ok_d = bool(rob.get('success')) and gone and exists_before
+                check('D. 删除项目 → 真的进回收站', ok_d,
+                      f'{probe_path}（删前存在={exists_before}，删后存在={os.path.exists(probe_path)}）'
+                      f'｜回执 mode={rob.get("mode")} trashed={len(rob.get("trashed") or [])}'
+                      + ('' if ok_d else f'｜回执={str(rob)[:200]}'))
+                # 说明：`shell.trashItem` 之后文件会出现在系统回收站里，位置与名字由系统决定，
+                # 这里不去解析回收站（各盘各版本格式不同）；"原路径已不存在 + 回执 success" 即达标。
+        except Exception as e:
+            check('D. 删除项目 → 真的进回收站', False, f'异常：{str(e)[:200]}')
+
         # ---- 总结：全程不许有任何错误面板 ----
         final_panel = error_panel(cdp)
         check('全程零错误面板', not final_panel, final_panel or '干净')
@@ -580,6 +701,24 @@ def main():
             except Exception:
                 pass
         log.close()
+        # 🔴 收尾：把本轮演练**复制进用户文档目录**的示例副本与探针项目清掉。
+        #    为什么必须有这一段：`示例地图项目` 每次点都会复制一份到
+        #    `Documents/SiTianProjects/示例世界-N.sitian`（主进程行为，产品要求如此）。
+        #    演练反复跑几轮之后，用户的文档目录里就攒了二十几个副本 ——
+        #    2026-11-24 实测攒到 23 个（我自己造的，用户没看见，但那是真实污染）。
+        #    清理口径：只删**本轮记录下来的**那几个；一个都不许按通配符盲删
+        #    （用户自己的 `示例世界.sitian` 与历史副本必须原样留着）。
+        for _p in list(_created_sample_paths) + [x for x in [locals().get('probe_path')] if x]:
+            try:
+                if _p and os.path.exists(_p):
+                    os.remove(_p)
+                    print(f'   🧹 已删除本轮副本：{_p}')
+                _bk = f'{_p}.backups'
+                if _p and os.path.isdir(_bk):
+                    shutil.rmtree(_bk, ignore_errors=True)
+                    print(f'   🧹 已删除它的 .backups：{_bk}')
+            except Exception as _e:
+                print(f'   ⚠️ 清理失败（不影响结论）：{_p} — {_e}')
 
     failed = [r for r in results if not r[1]]
     print(f'\n{len(results) - len(failed)}/{len(results)} 通过')
