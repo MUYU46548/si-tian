@@ -477,7 +477,7 @@ async function main() {
 
   check('b5 源码闸门：卫星不许再是纯色灰球，云层要真的叠上去且自己转', () => {
     const src = codeOnly(read('src/renderer/src/components/System3DView.vue'));
-    assert(src.includes('getPlanetTexture(moon.classId)'), '卫星没有用地表贴图（还是一颗纯色灰球）');
+    assert(/getPlanetTexture\(moon\.classId/.test(src), '卫星没有用地表贴图（还是一颗纯色灰球）');
     assert(!/new THREE\.MeshLambertMaterial\(\{ color: 0xb8b4ac \}\)/.test(src),
       '还留着"卫星 = 灰球"的老写法');
     assert(src.includes("body.kind === 'planet' ? getCloudTexture(body.classId) : null"),
@@ -523,6 +523,40 @@ async function main() {
     assert(src.includes('mesh.add(shadow)'), '暗带没挂在行星本体上（挂 holder 的话不跟着自转/倾角）');
     assert(src.includes('vLocalPos.y / uRadius'), '暗带没用"到环面的距离"（局部 y）算，投影方向会错');
     assert(src.includes('stats.ringShadows = ringShadowCount'), '缺 ringShadows 计数（判据 A5 读它）');
+    return 'ok';
+  });
+
+  check('a17 取色口（A 方案）：覆盖回落 + 缓存键带色板 + 脏值不炸', () => {
+    const base = P.paletteForClass('ocean');
+    assert(base.base === P.planetClassDef('ocean').base, '没覆盖时必须原样返回类别定义');
+    const ov = { base: '#112233', land: ['#445566'], atmosphere: '#778899' };
+    const got = P.paletteForClass('ocean', ov);
+    assert(got.base === '#112233' && got.atmosphere === '#778899', '覆盖项没生效');
+    assert(got.land.length === 1 && got.land[0] === '#445566', 'land 覆盖没生效');
+    assert(got.cap === P.planetClassDef('ocean').cap, '没覆盖的字段必须回落默认值（cap）');
+    // 脏值：不是 #rrggbb 的一律回落，绝不把 undefined 塞进渲染
+    for (const dirty of ['red', '', null, 42, '#12', '#1122334']) {
+      const d = P.paletteForClass('ocean', { base: dirty, land: ['red', null] });
+      assert(d.base === P.planetClassDef('ocean').base, 'dirty color did not fall back: ' + String(dirty));
+      assert(Array.isArray(d.land) && d.land.every((x) => /^#[0-9a-fA-F]{6}$/.test(x)), 'land 里留了脏值');
+    }
+    // 🔴 缓存键：不同色板必须给出不同的键 —— 否则"改一颗，同类的另一颗也变"
+    assert(P.paletteKey(null) === 'stock', '没覆盖的键应为 stock');
+    assert(P.paletteKey(ov) !== P.paletteKey({ base: '#112234' }), '不同色板给了同一个键');
+    assert(P.paletteKey(ov) === P.paletteKey({ ...ov }), '同一色板两次必须同键（否则每帧重画）');
+    // 大气边光也走这个口
+    assert(P.atmosphereForClass('ocean', { atmosphere: '#00ff00' }).color === '#00ff00',
+      '大气色没跟着覆盖走');
+    return 'ok';
+  });
+
+  check('b8 源码闸门：2D/3D 必须共用同一个取色口（不许各算一套）', () => {
+    const three = codeOnly(read('src/renderer/src/components/System3DView.vue'));
+    const detail = codeOnly(read('src/renderer/src/components/SystemDetailView.vue'));
+    assert(three.includes('getPlanetTexture(body.classId, body.palette)'), '3D 没把逐颗色板传下去');
+    assert(three.includes('atmosphereForClass(classId, hit.body.palette)'), '改类型后大气色没跟着色板走');
+    assert(detail.includes('getPlanetDisc(classId, pxSize, planet.planetColors)'), '2D 圆盘没把色板传下去');
+    assert(read('src/renderer/src/utils/planetArt.js').includes('paletteKey(palette)'), '缓存键没带色板');
     return 'ok';
   });
 

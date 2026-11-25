@@ -128,8 +128,8 @@ const ATMO_STRENGTH = Object.freeze({
  * @returns {{ color: string, strength: number, kind: 'terra'|'bands'|'dead' }}
  *   `color` 恒为 `#rrggbb`（脏值回落主色），`strength` 恒落在 [0.2, 1.2]。
  */
-export function atmosphereForClass(classId) {
-  const def = planetClassDef(classId);
+export function atmosphereForClass(classId, palette) {
+  const def = paletteForClass(classId, palette);
   const raw = typeof def.atmosphere === 'string' && def.atmosphere[0] === '#'
     ? def.atmosphere
     : def.base;
@@ -154,6 +154,45 @@ export function hexAlpha(hex, alpha) {
 /** 纹理缓存：按 classId 只画一次（同一进程内复用，离开 3D 不必清 —— 见 System3DView 的说明） */
 const textureCache = new Map();
 
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * 一颗行星的**取色口**（2026-11-25 第五轮，用户："多种颜色可以选吗？甚至 DIY？"）。
+ *
+ * 输入是类别 id + 可选的覆盖调色板（`node.planetColors = { base, land[], cap, atmosphere }`），
+ * 输出永远是"一条完整的类别定义"——**没覆盖的字段回落类别默认值**。
+ * 2D 圆盘、3D 球面、大气边光**全走这一个口**，两边不许各算一套（那样 2D/3D 一定会漂）。
+ *
+ * 脏值纪律：覆盖项必须是合法 `#rrggbb`（或 `land` 是合法数组），否则**静默回落到默认值**——
+ * 绝不把 `undefined` 丢给 `THREE.Color()`（那会变成黑球，而且报错发生在渲染循环里）。
+ */
+export function paletteForClass(classId, overrides) {
+  const def = planetClassDef(classId);
+  const o = overrides && typeof overrides === 'object' ? overrides : null;
+  if (!o) return def;
+  const pick = (k) => (typeof o[k] === 'string' && HEX6.test(o[k]) ? o[k] : def[k]);
+  const land = Array.isArray(o.land)
+    ? o.land.filter((x) => typeof x === 'string' && HEX6.test(x))
+    : [];
+  return {
+    ...def,
+    base: pick('base'),
+    cap: pick('cap'),
+    atmosphere: pick('atmosphere'),
+    land: land.length ? land : def.land,
+  };
+}
+
+/**
+ * 覆盖调色板的缓存键（没覆盖 = `stock`）。
+ * 🔴 纹理缓存键**必须**带它：缓存键只写 `classId` 的话，改了一颗行星的海色，
+ *    同类别的另一颗会跟着变（读到同一张缓存纹理）—— 这正是 A 方案最容易踩的坑。
+ */
+export function paletteKey(overrides) {
+  if (!overrides || typeof overrides !== 'object') return 'stock';
+  return hashString(JSON.stringify(overrides)).toString(16);
+}
+
 /**
  * 平面纹理（等距圆柱风格）：3D 观景的球面贴图。
  *
@@ -167,12 +206,12 @@ const textureCache = new Map();
  * @param {string} classId
  * @returns {HTMLCanvasElement}
  */
-export function getPlanetTexture(classId) {
-  const key = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
+export function getPlanetTexture(classId, palette) {
+  const ck = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
+  const key = `${ck}:${paletteKey(palette)}`;
   const cached = textureCache.get(key);
   if (cached) return cached;
-  const def = planetClassDef(key);
-  const rng = new SeededRng(hashString(key));
+  const def = paletteForClass(ck, palette);
   const W = 512;
   const H = 256;
   /** 与旧 256×128 版保持**同一套构图**的缩放系数 */
@@ -383,14 +422,14 @@ const discCache = new Map();
  * @param {number} px 目标像素直径（内部取 48/96/128 档，避免每帧重画）
  * @returns {HTMLCanvasElement}
  */
-export function getPlanetDisc(classId, px = 48) {
+export function getPlanetDisc(classId, px = 48, palette) {
   const cid = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
   const bucket = px <= 48 ? 48 : px <= 96 ? 96 : 128;
-  const key = `${cid}:${bucket}`;
+  const key = `${cid}:${bucket}:${paletteKey(palette)}`;
   const hitP = discCache.get(key);
   if (hitP) return hitP;
 
-  const def = planetClassDef(cid);
+  const def = paletteForClass(cid, palette);
   const S = bucket;
   const R = S / 2;
   const c = document.createElement('canvas');
@@ -408,7 +447,7 @@ export function getPlanetDisc(classId, px = 48) {
   g.fillRect(0, 0, S, S);
 
   // 贴图：取赤道带一块铺满圆盘（等价于"正面"）
-  const tex = getPlanetTexture(cid);
+  const tex = getPlanetTexture(cid, palette);
   g.drawImage(tex, 0, (tex.height - tex.height / 2) / 2, tex.width, tex.height / 2, 0, 0, S, S);
 
   // 球面光照：左上受光、右下入影（与 3D 观景同侧，切视图不"翻灯"）

@@ -219,7 +219,9 @@ export function buildSystem3dScene(input = {}) {
       classId: cid,
       // 大气边缘光参数（2026-11-25）：**每颗行星都有**，浓淡按类别分档。
       // 空间站没有大气（它是金属壳，给光晕会像颗小行星）。
-      atmo: station ? null : atmosphereForClass(cid),
+      atmo: station ? null : atmosphereForClass(cid, node.planetColors),
+      // 逐颗覆盖的调色板（A 方案）：没设就是 null → 一律回落类别默认色
+      palette: node.planetColors && typeof node.planetColors === 'object' ? node.planetColors : null,
       orbit,
       size: station ? SYS3D_GEOM.stationSize : SYS3D_GEOM.planetBaseSize * sizeScale,
       // 初始相位（散列）与公转角速度（开普勒式：外圈慢）
@@ -239,6 +241,7 @@ export function buildSystem3dScene(input = {}) {
           classId: mClassId,
           // 2026-11-25 第二轮：卫星也有大气，但**薄一档**（用户："卫星仍然没有大气"）
           atmo: { ...mAtmo, strength: mAtmo.strength * SYS3D_GEOM.moonAtmoScale },
+          palette: m.planetColors && typeof m.planetColors === 'object' ? m.planetColors : null,
           orbit: SYS3D_GEOM.planetBaseSize * sizeScale + 0.75 + mi * 0.45,
           size: SYS3D_GEOM.moonSize * (0.85 + unit(`msize:${mKey}`) * 0.4),
           phase: unit(`mphase:${mKey}`) * Math.PI * 2,

@@ -141,7 +141,7 @@ function onClassChange(e) {
     hit.mat.needsUpdate = true;
     // 大气色/浓淡也跟着类别走：荒芜 → 盖亚，边缘光不能还是原来那圈土黄
     if (hit.atmoMat) {
-      const atmo = atmosphereForClass(classId);
+      const atmo = atmosphereForClass(classId, hit.body.palette);
       hit.atmoMat.uniforms.uColor.value.set(atmo.color);
       hit.atmoMat.userData.baseStrength = atmo.strength * ATMO_GAIN;
       hit.atmoMat.uniforms.uStrength.value = atmo.strength * ATMO_GAIN * atmoScale;
@@ -749,7 +749,7 @@ function buildScene() {
     pivot.rotation.y = body.phase;
     scene.add(pivot);
 
-    const tex = new THREE.CanvasTexture(getPlanetTexture(body.classId));
+    const tex = new THREE.CanvasTexture(getPlanetTexture(body.classId, body.palette));
     tex.encoding = THREE.sRGBEncoding;
     track(tex);
     const mat = new THREE.MeshLambertMaterial({ map: tex });
@@ -838,7 +838,7 @@ function buildScene() {
     for (const moon of body.moons) {
       // 2026-11-25 第二轮：卫星不再是一颗灰球 —— 用地表美术库的同一套类别贴图
       //（`barren`/`frozen` 两种），段数 12×8 → 20×14（近景才不是多面体）。
-      const mTex = new THREE.CanvasTexture(getPlanetTexture(moon.classId));
+      const mTex = new THREE.CanvasTexture(getPlanetTexture(moon.classId, moon.palette));
       mTex.encoding = THREE.sRGBEncoding;
       track(mTex);
       const mGeo = new THREE.SphereGeometry(moon.size, 20, 14);

@@ -1067,7 +1067,7 @@ function drawPlanets(ctx) {
       // 视觉放大 1.45×（**命中半径不变**）：7px 的球看不清纹理，而放大命中区会改变点选手感。
       const vis = planet.isMoon ? r : r * 1.45;
       const pxSize = Math.max(24, Math.round(vis * 2 * scale));
-      const disc = getPlanetDisc(classId, pxSize);
+      const disc = getPlanetDisc(classId, pxSize, planet.planetColors);
       const d = (vis * 2) / 0.94;   // 圆盘可见直径 = 画布 0.94 → 反算绘制边长
       if (matched || isHovered) {
         ctx.shadowColor = matched
